@@ -1,4 +1,5 @@
-// 网络来源库流媒体的播放期 HTTP 头解析（v1：WebDAV Basic 认证）。
+// 网络来源库流媒体的播放期 HTTP 头解析（v1：WebDAV Basic 认证）+ AList 来源的
+// 播放期直链解析器（条目地址 → fs/get 换临期签名 raw_url）。
 //
 // 凭据红线：密码只活在 SourceLibraryCredentialStore（Preferences），不落
 // MediaSources.configJson，也**不复制进每行 VideoBooks.streamSpecJson**——按
@@ -9,9 +10,11 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi/src/media/alist/alist_stream_url_resolver.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/stream_auth_scope.dart';
+import 'package:fushi/src/media/video/stream_url_resolver.dart';
 
 /// 按 [sourceId] 解析打开该来源流媒体（视频流 / spec 里的字幕 URL）所需的
 /// HTTP 头。
@@ -46,4 +49,32 @@ Future<Map<String, String>> resolveSourceStreamHeaders({
   if (username.isEmpty && password.isEmpty) return const <String, String>{};
   final String token = base64Encode(utf8.encode('$username:$password'));
   return <String, String>{'Authorization': 'Basic $token'};
+}
+
+/// 按 [sourceId] 解析该来源条目的**播放期直链解析器**；null = 条目地址即流地址。
+///
+/// 目前只有 AList / OpenList 来源需要：落库的 `<根>/d/<路径>` 是稳定地址，
+/// 真正可播的 `raw_url` 带临期签名，起播那一刻才经 `/api/fs/get` 现取。凭据同
+/// [resolveSourceStreamHeaders] 的红线：账号来自 configJson、密码来自凭据存储，
+/// 不落行级 spec。签名直链本身不带任何认证头（`raw_url` 多指向存储后端或站点
+/// `/p/` 代理，与 API 不同源），故 alist 来源的 [resolveSourceStreamHeaders]
+/// 恒空。
+Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
+  required FushiDatabase db,
+  required int? sourceId,
+}) async {
+  if (sourceId == null) return null;
+  final SourceLibraryRow? source = await db.getMediaSourceById(sourceId);
+  if (source == null || source.transport != 'alist') return null;
+  final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
+  final String baseUrl = (cfg['baseUrl'] as String?) ?? '';
+  if (baseUrl.trim().isEmpty) return null;
+  final String username = (cfg['username'] as String?) ?? '';
+  final SourceLibrarySecret secret =
+      await SourceLibraryCredentialStore(db).readSecret(source.id);
+  return AListStreamUrlResolver(
+    baseUrl: baseUrl,
+    username: username,
+    password: secret.password,
+  );
 }

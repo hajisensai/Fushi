@@ -60,6 +60,8 @@ const Set<String> kSourceConfigAllowedKeys = <String>{
   'port',
   'username',
   'useTls',
+  // AList / OpenList 站点根（`https://od.example.com`）；非敏感，条目地址由它派生。
+  'baseUrl',
 };
 
 /// 把来源连接参数编码为 configJson 字符串。

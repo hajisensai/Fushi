@@ -13,10 +13,10 @@
 // Preferences（键 `media_source_secret_<id>`），绝不进入 configJson。
 //
 // 网络来源三域全开放，transport 集按域收窄（[_networkTransports]）：
-// - 'book'：SFTP/FTP/WebDAV（EPUB 小体积、扫描时下载后导入）；
-// - 'manga'：SFTP/FTP/WebDAV（整卷下载后导入，重扫有标题预检不重下载）；
-// - 'video'：仅 WebDAV（条目 URL 按流媒体书原地入库播放；SFTP/FTP 无 HTTP
-//   直链、播放器吃不了，扫描器也会拒绝）。
+// - 'book'：SFTP/FTP/WebDAV/AList（EPUB 小体积、扫描时下载后导入）；
+// - 'manga'：SFTP/FTP/WebDAV/AList（整卷下载后导入，重扫有标题预检不重下载）；
+// - 'video'：仅 WebDAV / AList（条目 URL 按流媒体书原地入库播放，AList 起播前
+//   经 fs/get 换签名直链；SFTP/FTP 无 HTTP 直链、播放器吃不了，扫描器也会拒绝）。
 // WebDAV 的 rootPath 即完整集合 URL（scheme/host/端口/路径都在里面），无需单独存
 // host/port（见 NetworkSourceFileSystem）。
 
@@ -28,6 +28,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/alist/alist_api_client.dart';
+import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
@@ -141,11 +143,12 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   /// 不再出现任何 `ref.*`，BUG-513 的不变量（ref 只在 initState）继续成立。
   late final AppModel _appModel;
 
-  /// 本域可选的网络传输：书/漫画三 transport 全通（远端文件下载后导入）；
-  /// 视频仅 WebDAV（条目 URL 原地流播，SFTP/FTP 无 HTTP 直链，扫描器会拒）。
+  /// 本域可选的网络传输：书/漫画四 transport 全通（远端文件下载后导入）；
+  /// 视频仅 WebDAV 与 AList/OpenList（条目 URL 原地流播——AList 起播前经 fs/get
+  /// 换签名直链；SFTP/FTP 无 HTTP 直链，扫描器会拒）。
   List<String> get _networkTransports => widget.mediaKind == 'video'
-      ? const <String>['webdav']
-      : const <String>['sftp', 'ftp', 'webdav'];
+      ? const <String>['webdav', 'alist']
+      : const <String>['sftp', 'ftp', 'webdav', 'alist'];
 
   /// 页面页头与所有行级 mutation 共用的忙状态。
   bool get isBusy =>
@@ -677,7 +680,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             1;
   }
 
-  /// 添加来源：让用户选本地文件夹或网络来源（三域全开放；视频网络仅 WebDAV）。
+  /// 添加来源：让用户选本地文件夹或网络来源（三域全开放；视频网络仅 WebDAV/AList）。
   ///
   /// 公开给外层的唯一动作入口（对话框页脚 / 页面页头按钮都调它）。
   Future<void> addSource() async {
@@ -971,6 +974,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       'port': result.port,
       'username': result.username,
       'useTls': result.useTls,
+      // AList：站点根单独存（rootPath 是 `<根>/d/<目录>`，根带子路径时从
+      // rootPath 反推不唯一）。其它 transport 为 null，encodeSourceConfig 会丢。
+      'baseUrl': result.baseUrl,
     });
 
     final int newId = await _db.insertMediaSource(
@@ -1581,9 +1587,10 @@ class _NetworkSourceResult {
     this.password,
     this.privateKey,
     this.useTls = false,
+    this.baseUrl,
   });
 
-  final String transport; // 'sftp' | 'ftp'
+  final String transport; // 'sftp' | 'ftp' | 'webdav' | 'alist'
   final String host;
   final int port;
   final String username;
@@ -1592,17 +1599,21 @@ class _NetworkSourceResult {
   final String? password;
   final String? privateKey;
   final bool useTls;
+
+  /// 仅 AList：站点根地址。
+  final String? baseUrl;
 }
 
 /// 网络来源连接表单：在 [transports] 里选 transport，填 host/port/user/password
-/// （SFTP 可用私钥、FTP 可开 TLS；WebDAV 用整 URL）+ 远端根路径 + 可选显示名，
-/// 附「测试连接」（复用 sync 后端）。
+/// （SFTP 可用私钥、FTP 可开 TLS；WebDAV 用整 URL；AList 用站点根 + 站内目录，
+/// 账号可空 = 游客）+ 远端根路径 + 可选显示名，附「测试连接」（复用 sync 后端 /
+/// AList API）。
 class _NetworkSourceFormDialog extends StatefulWidget {
   const _NetworkSourceFormDialog({
     this.transports = const <String>['sftp', 'ftp', 'webdav'],
   });
 
-  /// 本域可选的传输集（视频域收窄到仅 WebDAV）。首项是初始选中。
+  /// 本域可选的传输集（视频域收窄到 WebDAV/AList）。首项是初始选中。
   final List<String> transports;
 
   @override
@@ -1643,6 +1654,11 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
 
   bool get _isWebDav => _transport == 'webdav';
 
+  bool get _isAList => _transport == 'alist';
+
+  /// 输入框里的 URL 类字段（WebDAV 集合 URL / AList 站点根）都在 [_urlController]。
+  bool get _usesUrlField => _isWebDav || _isAList;
+
   int get _port =>
       int.tryParse(_portController.text.trim()) ?? (_isSftp ? 22 : 21);
 
@@ -1650,18 +1666,26 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     if (value == _transport) return;
     setState(() {
       _transport = value;
-      // 未手动改过端口时，切协议自动填默认端口（WebDAV 无独立端口字段，端口在 URL 里）。
-      if (!_portTouched && !_isWebDav) {
+      // 未手动改过端口时，切协议自动填默认端口（WebDAV/AList 无独立端口字段，端口在 URL 里）。
+      if (!_portTouched && !_usesUrlField) {
         _portController.text = _isSftp ? '22' : '21';
       }
-      if (_isSftp || _isWebDav) _useTls = false;
+      if (_isSftp || _usesUrlField) _useTls = false;
     });
   }
 
   /// 校验必填项：
   /// - WebDAV：URL（http/https）+ 用户名 + 密码。
+  /// - AList：站点根 URL（http/https）；账号密码可空（游客）。
   /// - SFTP/FTP：host / username / remotePath 非空，且密码或私钥至少一个。
   String? _validate() {
+    if (_isAList) {
+      final String url = _urlController.text.trim();
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        return t.media_source_alist_missing_fields;
+      }
+      return null;
+    }
     if (_isWebDav) {
       final String url = _urlController.text.trim();
       if (url.isEmpty ||
@@ -1699,7 +1723,21 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
       final String user = _userController.text.trim();
       final String pass = _passwordController.text;
       final String key = _keyController.text.trim();
-      if (_isWebDav) {
+      if (_isAList) {
+        // 真列一次站内目录：游客关掉 / 账号错 / 目录不存在都会在这里报出来。
+        final AListApiClient api = AListApiClient(
+          baseUrl: normalizeUrlInput(_urlController.text),
+          providerId: 'alist-source',
+          username: user,
+          password: pass,
+          client: createAppHttpIoClient(),
+        );
+        try {
+          await api.list(_alistFolder, perPage: 1);
+        } finally {
+          api.close();
+        }
+      } else if (_isWebDav) {
         // 复用 sync 子系统的 WebDAV 后端探活（PROPFIND Depth:0）。
         await WebDavSyncBackend.instance.testConnection(
           url: _urlController.text.trim(),
@@ -1741,6 +1779,17 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     }
   }
 
+  /// AList 站内目录：空 = 站点根 `/`；补前导斜杠、去尾斜杠。
+  String get _alistFolder {
+    String folder = _pathController.text.trim();
+    if (folder.isEmpty) return '/';
+    if (!folder.startsWith('/')) folder = '/$folder';
+    while (folder.length > 1 && folder.endsWith('/')) {
+      folder = folder.substring(0, folder.length - 1);
+    }
+    return folder;
+  }
+
   void _submit() {
     final String? error = _validate();
     if (error != null) {
@@ -1749,6 +1798,34 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
     }
     final String pass = _passwordController.text;
     final String key = _keyController.text.trim();
+    if (_isAList) {
+      // AList：rootPath = `<站点根>/d/<站内目录>`（alist_source_url.dart），站点根另存
+      // configJson.baseUrl。全角同样折（同 WebDAV）。
+      final String baseUrl = normalizeAListBaseUrl(
+        normalizeUrlInput(_urlController.text),
+      );
+      final Uri u = Uri.tryParse(baseUrl) ?? Uri();
+      final String folder = _alistFolder;
+      final String label = _labelController.text.trim().isNotEmpty
+          ? _labelController.text.trim()
+          // 站点根目录没有可用的末段名，回退主机名。
+          : (folder == '/' ? u.host : '');
+      Navigator.pop(
+        context,
+        _NetworkSourceResult(
+          transport: 'alist',
+          host: u.host,
+          port: u.hasPort ? u.port : (u.scheme == 'https' ? 443 : 80),
+          username: _userController.text.trim(),
+          remotePath: alistSourceUrlFor(baseUrl: baseUrl, path: folder),
+          label: label,
+          password: pass.isEmpty ? null : pass,
+          useTls: false,
+          baseUrl: baseUrl,
+        ),
+      );
+      return;
+    }
     if (_isWebDav) {
       // WebDAV：URL 既是连接目标也是来源 rootPath；host/port 仅供列表展示，从 URL 派生。
       // 归一化必须在这里做而不是只靠输入框的 url 键盘：这串 url 会原样存进
@@ -1807,6 +1884,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                       label: Text(switch (tp) {
                         'sftp' => 'SFTP',
                         'ftp' => 'FTP',
+                        'alist' => 'AList',
                         _ => 'WebDAV',
                       }),
                     ),
@@ -1827,7 +1905,22 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                 ),
                 const SizedBox(height: 12),
               ],
-              if (!_isWebDav) ...<Widget>[
+              // AList / OpenList：站点根 + 站内目录；账号可空（游客）。
+              if (_isAList) ...<Widget>[
+                FushiTextField(
+                  controller: _urlController,
+                  labelText: t.media_source_alist_url,
+                  hintText: 'https://od.example.com',
+                  keyboardType: TextInputType.url,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  t.media_source_alist_account_hint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+              ],
+              if (!_usesUrlField) ...<Widget>[
                 FushiTextField(
                   controller: _hostController,
                   labelText: t.sync_host,
@@ -1862,7 +1955,7 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                   maxLines: 4,
                 ),
               ],
-              if (!_isSftp && !_isWebDav) ...<Widget>[
+              if (!_isSftp && !_usesUrlField) ...<Widget>[
                 const SizedBox(height: 4),
                 AdaptiveSettingsSwitchRow(
                   title: t.sync_use_tls,
@@ -1874,8 +1967,10 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                 const SizedBox(height: 12),
                 FushiTextField(
                   controller: _pathController,
-                  labelText: t.media_source_network_remote_path,
-                  hintText: '/books',
+                  labelText: _isAList
+                      ? t.media_source_alist_folder
+                      : t.media_source_network_remote_path,
+                  hintText: _isAList ? '/' : '/books',
                 ),
               ],
               const SizedBox(height: 12),

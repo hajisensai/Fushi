@@ -6,6 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cover_cache.dart'
@@ -1285,6 +1286,29 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     Iterable<OpdsServerConfig> servers,
   ) async {
     await setPref('discovery_opds_servers', encodeOpdsServerConfigs(servers));
+    notifyListeners();
+  }
+
+  /// 用户自配的 AList / OpenList 站点清单（设备本地；含 base64 密码）。
+  /// 逐条容错同 [discoveryOpdsServers]。
+  List<AListSiteConfig> get discoveryAListSites {
+    final String raw =
+        getPref('discovery_alist_sites', defaultValue: '') as String;
+    if (raw.trim().isEmpty) return const <AListSiteConfig>[];
+    try {
+      return decodeAListSiteConfigs(raw);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.discoveryAListSites.decode',
+        error,
+        stack,
+      );
+      return const <AListSiteConfig>[];
+    }
+  }
+
+  Future<void> setDiscoveryAListSites(Iterable<AListSiteConfig> sites) async {
+    await setPref('discovery_alist_sites', encodeAListSiteConfigs(sites));
     notifyListeners();
   }
 

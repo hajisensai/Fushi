@@ -21,6 +21,9 @@ library;
 /// 覆盖本仓真实出站 client 与常见第三方约定。宁可多脱一个也不漏：这里处理的是
 /// **错误文本**，多脱一个参数只损失一点排查信息，漏一个就是把用户凭据发出去。
 const Set<String> kCredentialQueryParams = <String>{
+  // AList / OpenList 临期签名直链（`/p/...?sign=`）：单路径、会过期，但拿到就能
+  // 在有效期内直下该文件，照样不进可上传日志。
+  'sign',
   'api_key',
   'apikey',
   'key',

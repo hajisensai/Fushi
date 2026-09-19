@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart';
 import 'package:fushi/src/pages/implementations/discovery_source_settings_section.dart';
+import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -169,6 +170,15 @@ SettingsDestination buildServicesDestination() {
                 ? t.settings_service_not_configured
                 : t.settings_service_configured,
             body: (SettingsContext c) => const OpdsServerSettingsSection(),
+          ),
+          _servicePage(
+            id: 'services.alist_sites',
+            title: t.discovery_alist_settings_title,
+            status: (SettingsContext c) =>
+                c.appModel.prefsRepo.discoveryAListSites.isEmpty
+                ? t.settings_service_not_configured
+                : t.settings_service_configured,
+            body: (SettingsContext c) => const AListSiteSettingsSection(),
           ),
         ],
       ),

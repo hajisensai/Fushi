@@ -24,9 +24,10 @@
 // - manga：三 transport 全通（[_importMangaRemote]：读远端 `.mokuro` 派生标题做
 //   去重预检，未命中才整卷镜像到临时目录，交给既有 MangaImporter——落库产物与
 //   本地导入逐字节同构）。
-// - video：仅 WebDAV（条目路径即 http(s) URL，按流媒体书原地入库
-//   videoPath=URL，播放走既有 stream 通道 + 打开时按 sourceId 现解析 Basic 认证，
-//   见 source_stream_headers.dart）；SFTP/FTP 无 HTTP 直链、播放器吃不了，仍拒绝。
+// - video：仅 WebDAV / AList（条目路径即 http(s) URL，按流媒体书原地入库
+//   videoPath=URL，播放走既有 stream 通道 + 打开时按 sourceId 现解析 Basic 认证 /
+//   AList 换签名直链，见 source_stream_headers.dart）；SFTP/FTP 无 HTTP 直链、
+//   播放器吃不了，仍拒绝。
 
 import 'dart:convert';
 import 'dart:io';
@@ -84,6 +85,12 @@ const Set<String> kScanBookExtensions = <String>{'epub', 'pdf'};
 
 /// Subtitle whitelist shared with the video import dialog (no lrc).
 const Set<String> kScanVideoSubtitleExts = <String>{'srt', 'vtt', 'ass', 'ssa'};
+
+/// 视频域允许的网络传输：条目路径本身是可原地流播的 http(s) URL。
+const Set<String> kStreamableVideoSourceTransports = <String>{
+  'webdav',
+  'alist'
+};
 
 /// 漫画 manifest 扩展名白名单（小写、不带点）。页图目录不靠扩展名代表整卷，
 /// 由 [planScanFromFileList] 按目录结构另行归组。
@@ -490,6 +497,7 @@ class SourceLibraryScanner {
       privateKey:
           (privateKey != null && privateKey.isNotEmpty) ? privateKey : null,
       useTls: (config['useTls'] as bool?) ?? false,
+      baseUrl: (config['baseUrl'] as String?),
     ));
   }
 
@@ -558,13 +566,14 @@ class SourceLibraryScanner {
           'Unsupported media kind for scan (expected book | video | manga)',
         );
       }
-      // 网络视频来源仅支持 WebDAV：条目路径本身就是 http(s) URL，可按流媒体书
-      // 原地入库播放（[_importVideos] streamInPlace）；SFTP/FTP 远端路径无 HTTP
-      // 直链、播放器吃不了，仍拒绝（放开需要本地转流桥，留后续）。
+      // 网络视频来源仅支持 WebDAV 与 AList/OpenList：条目路径本身就是 http(s)
+      // URL，可按流媒体书原地入库播放（[_importVideos] streamInPlace；AList 条目
+      // 播放前再经 fs/get 换签名直链，见 source_stream_headers.dart）；SFTP/FTP
+      // 远端路径无 HTTP 直链、播放器吃不了，仍拒绝（放开需要本地转流桥，留后续）。
       if (!files.isLocal &&
           kind == SourceLibraryKind.video &&
-          source.transport != 'webdav') {
-        throw StateError('Network video sources support WebDAV only');
+          !kStreamableVideoSourceTransports.contains(source.transport)) {
+        throw StateError('Network video sources support WebDAV/AList only');
       }
       final List<SourceFileEntry> entries = await files.listFiles(
         source.rootPath,
@@ -1075,7 +1084,7 @@ class SourceLibraryScanner {
         firstError: null,
       );
     }
-    // 网络（仅 WebDAV 能走到这里，[scan] 入口已拒 SFTP/FTP）：条目路径就是
+    // 网络（仅 WebDAV/AList 能走到这里，[scan] 入口已拒 SFTP/FTP）：条目路径就是
     // http(s) URL，按流媒体书**原地**入库——videoPath=URL、sidecar 字幕 URL 进
     // streamSpecJson，播放走既有 stream 通道（isStreamVideoBook 判据 =
     // videoPath 是 http）。不下载视频、不抽封面、不解析 cue（字幕由播放页按

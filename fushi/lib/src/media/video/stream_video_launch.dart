@@ -1,3 +1,4 @@
+import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/youtube_stream_cache.dart';
@@ -76,6 +77,10 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   // header 合并后同时用于视频流与 spec.subtitleUrl 字幕下载；仅直链分支消费
   // （YouTube 书不出自来源库）。
   Map<String, String> sourceHttpHeaders = const <String, String>{},
+  // 来源库 AList 视频：条目地址是稳定的 `<根>/d/<路径>`，起播前经 fs/get 换临期
+  // 签名直链（source_stream_headers.dart 的 resolveSourceStreamUrlResolver）。
+  // 仅直链分支消费。
+  StreamUrlResolver? sourceUrlResolver,
 }) async {
   final String url = book.videoPath;
   final StreamVideoSpec spec =
@@ -183,6 +188,7 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
         ...spec.httpHeaderFields,
         ...sourceHttpHeaders,
       },
+      urlResolver: sourceUrlResolver,
     );
   }
   final RemoteVideoInfo info =
