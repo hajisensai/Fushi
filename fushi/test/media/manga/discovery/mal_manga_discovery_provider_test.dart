@@ -183,10 +183,14 @@ void main() {
     ]);
     await provider.fetchSnapshot();
     expect(requests, 4);
-    expect(waits, List<Duration>.filled(3, const Duration(seconds: 1)));
+    // BUG-2595 起共享 gate 间隔 1.1 s（≈54/min，天然满足 Jikan 3/s + 60/min）。
+    expect(
+      waits,
+      List<Duration>.filled(3, const Duration(milliseconds: 1100)),
+    );
   });
 
-  for (final int status in <int>[403, 429, 503]) {
+  for (final int status in <int>[403, 503]) {
     test('HTTP $status 明确失败且不绕过 gate 自动重试', () async {
       int requests = 0;
       final MalMangaDiscoveryProvider provider = providerWith((
@@ -209,6 +213,44 @@ void main() {
       expect(requests, 1);
     });
   }
+
+  test('HTTP 429 按 Retry-After 有界重试（gate 级），用尽后仍明确失败', () async {
+    // BUG-2595：429 由共享 gate 就地重发同一请求（默认最多 2 次），冷却走注入的
+    // sleep 而不是真等；漫画发现与视频刮削共用这把 gate，语义一致。
+    int requests = 0;
+    final List<Duration> waits = <Duration>[];
+    DateTime now = DateTime(2026);
+    final MalMangaDiscoveryProvider provider = MalMangaDiscoveryProvider(
+      client: MockClient((http.Request request) async {
+        requests++;
+        return http.Response('limited', 429,
+            headers: <String, String>{'retry-after': '7'});
+      }),
+      requestGate: MalVideoMetadataRequestGate(
+        interval: Duration.zero,
+        now: () => now,
+        sleep: (Duration duration) async {
+          waits.add(duration);
+          now = now.add(duration);
+        },
+      ),
+    );
+    addTearDown(provider.close);
+    await expectLater(
+      provider.fetchSnapshot(),
+      throwsA(
+        isA<VideoMetadataNetworkException>().having(
+          (VideoMetadataNetworkException error) => error.statusCode,
+          'statusCode',
+          429,
+        ),
+      ),
+    );
+    expect(requests, 3, reason: '首发 + 2 次有界重试');
+    expect(waits.where((Duration d) => d >= const Duration(seconds: 7)).length,
+        greaterThanOrEqualTo(2),
+        reason: '每次重试前都等够 Retry-After');
+  });
 
   test('错误 JSON 不能伪装成空发现页', () async {
     final MalMangaDiscoveryProvider provider = providerWith(

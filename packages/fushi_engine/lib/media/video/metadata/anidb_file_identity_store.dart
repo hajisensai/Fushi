@@ -14,6 +14,7 @@ class AnidbFileIdentityRecord {
     this.identity,
     this.filePath,
     this.fileModifiedAt,
+    this.missAttempts = 0,
   });
 
   final String ed2k;
@@ -23,13 +24,26 @@ class AnidbFileIdentityRecord {
   final DateTime? fileModifiedAt;
   final DateTime resolvedAt;
 
+  /// FILE 连续回 320 的次数（识别成功即归零）。
+  final int missAttempts;
+
   bool get isMatch => identity != null;
 
-  /// 未收录的记录是否还没到复查期：AniDB 收录有滞后，一周后再问一次。
+  /// 未收录的记录是否还不该再问：Shoko `CheckAniDBFileUpdatesJob` 按
+  /// `File_UpdateFrequency`（默认每日）重扫未识别文件，尝试次数超过
+  /// `MaxAutoScanAttemptsPerFile`（默认 15）就不再自动重扫。AniDB 收录新文件
+  /// 通常在几天内，每日一问既跟得上又不刷服务器。
   bool isFreshMiss(DateTime now) =>
-      identity == null && now.difference(resolvedAt) < unknownFileRecheck;
+      identity == null &&
+      (missAttempts >= maxMissAttempts ||
+          now.difference(resolvedAt) < unknownFileRecheck);
 
-  static const Duration unknownFileRecheck = Duration(days: 7);
+  /// 复查次数用尽：不再自动问 AniDB（换文件内容会有新键，自然重来）。
+  bool get isExhaustedMiss =>
+      identity == null && missAttempts >= maxMissAttempts;
+
+  static const Duration unknownFileRecheck = Duration(days: 1);
+  static const int maxMissAttempts = 15;
 }
 
 /// 文件级 AniDB 身份的持久层；[AnidbHashIdentityService] 先查它再算哈希 / 发 FILE。
@@ -51,7 +65,7 @@ abstract interface class AnidbFileIdentityStore {
   Future<void> save(AnidbFileIdentityRecord record);
 }
 
-/// Drift 实现：`anidb_file_identities`（schema v106）。
+/// Drift 实现：`anidb_file_identities`（schema v106，v108 加 `miss_attempts`）。
 class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
   AnidbFileIdentityDatabaseStore(this._database);
 
@@ -104,6 +118,7 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
       episodeKanjiTitle: Value(identity?.episodeKanjiTitle ?? ''),
       filePath: Value(record.filePath),
       fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
+      missAttempts: Value(identity == null ? record.missAttempts : 0),
       resolvedAt: Value(record.resolvedAt.millisecondsSinceEpoch),
       updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
@@ -135,6 +150,7 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
           ? null
           : DateTime.fromMillisecondsSinceEpoch(row.fileModifiedAt!),
       resolvedAt: DateTime.fromMillisecondsSinceEpoch(row.resolvedAt),
+      missAttempts: row.missAttempts,
     );
   }
 }

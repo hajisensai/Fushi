@@ -3114,6 +3114,9 @@ class AnidbFileIdentities extends Table {
   TextColumn get episodeKanjiTitle => text().withDefault(const Constant(''))();
   TextColumn get filePath => text().nullable()();
   IntColumn get fileModifiedAt => integer().nullable()();
+  /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
+  /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
+  IntColumn get missAttempts => integer().withDefault(const Constant(0))();
   IntColumn get resolvedAt => integer()();
   IntColumn get updatedAt => integer()();
 

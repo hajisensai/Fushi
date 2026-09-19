@@ -24,7 +24,9 @@ class AnidbHashIdentityResult {
       this.mapping,
       this.error,
       this.mappingError,
-      this.fromStore = false});
+      this.fromStore = false,
+      this.missAttempts = 0,
+      this.missExhausted = false});
   final AnidbHashIdentityStatus status;
   final AnidbEd2kHash? hash;
   final AnidbFileIdentity? identity;
@@ -38,6 +40,11 @@ class AnidbHashIdentityResult {
 
   /// 这次结果是从持久层直接复用的（没算哈希、没发 FILE）。
   final bool fromStore;
+
+  /// `notFound` 时：这份内容连续被 AniDB 回 320 的次数，以及是否已用尽自动
+  /// 复查次数（Shoko `MaxAutoScanAttemptsPerFile` 15）。
+  final int missAttempts;
+  final bool missExhausted;
 }
 
 typedef AnidbFileHasher = Future<AnidbEd2kHash> Function(String path,
@@ -103,6 +110,8 @@ class AnidbHashIdentityService {
       final FileStat stat = await File(absolutePath).stat();
       final AnidbFileIdentityStore? store = _store;
       final DateTime now = _now();
+      // 到期复查的 320 行：把已累计的复查次数带到这一轮（Shoko 每文件计数）。
+      int missAttempts = 0;
       // 持久层快路径：同路径、同大小、同 mtime 就是上次那份内容，直接复用。
       if (store != null && stat.type == FileSystemEntityType.file) {
         final AnidbFileIdentityRecord? known = await store.findForFile(
@@ -111,6 +120,7 @@ class AnidbHashIdentityService {
           onProgress?.call(stat.size, stat.size);
           return _fromRecord(known, stat, isCancelled);
         }
+        if (known != null) missAttempts = known.missAttempts;
       }
       hash = _hashes.remove(absolutePath);
       if (hash == null ||
@@ -134,9 +144,10 @@ class AnidbHashIdentityService {
             await store.findByHash(ed2k: hash.ed2k, size: hash.size);
         if (known != null && (known.isMatch || known.isFreshMiss(now))) {
           await store.save(_recordFor(hash, known.identity, absolutePath,
-              resolvedAt: known.resolvedAt));
+              resolvedAt: known.resolvedAt, missAttempts: known.missAttempts));
           return _fromRecord(known, stat, isCancelled);
         }
+        if (known != null) missAttempts = known.missAttempts;
       }
       final AnidbIdentityLookup lookup = _lookup ?? _client.lookup;
       AnidbFileIdentity? identity =
@@ -150,10 +161,12 @@ class AnidbHashIdentityService {
         _checkCancelled(isCancelled);
       }
       if (identity == null) {
-        await store
-            ?.save(_recordFor(hash, null, absolutePath, resolvedAt: now));
+        await store?.save(_recordFor(hash, null, absolutePath,
+            resolvedAt: now, missAttempts: missAttempts + 1));
         return AnidbHashIdentityResult(
-            status: AnidbHashIdentityStatus.notFound, hash: hash);
+            status: AnidbHashIdentityStatus.notFound,
+            hash: hash,
+            missAttempts: missAttempts + 1);
       }
       await store
           ?.save(_recordFor(hash, identity, absolutePath, resolvedAt: now));
@@ -204,7 +217,9 @@ class AnidbHashIdentityService {
       return AnidbHashIdentityResult(
           status: AnidbHashIdentityStatus.notFound,
           hash: hash,
-          fromStore: true);
+          fromStore: true,
+          missAttempts: record.missAttempts,
+          missExhausted: record.isExhaustedMiss);
     }
     AnimeIdentityMappingResult? mapping;
     Object? mappingError;
@@ -226,14 +241,15 @@ class AnidbHashIdentityService {
 
   static AnidbFileIdentityRecord _recordFor(
           AnidbEd2kHash hash, AnidbFileIdentity? identity, String absolutePath,
-          {required DateTime resolvedAt}) =>
+          {required DateTime resolvedAt, int missAttempts = 0}) =>
       AnidbFileIdentityRecord(
           ed2k: hash.ed2k,
           size: hash.size,
           identity: identity,
           filePath: absolutePath,
           fileModifiedAt: hash.modifiedAt,
-          resolvedAt: resolvedAt);
+          resolvedAt: resolvedAt,
+          missAttempts: identity == null ? missAttempts : 0);
 
   static void _checkCancelled(bool Function()? isCancelled) {
     if (isCancelled?.call() ?? false) throw const AnidbHashCancelled();

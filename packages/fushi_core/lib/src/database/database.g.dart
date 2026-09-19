@@ -52937,6 +52937,18 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _missAttemptsMeta = const VerificationMeta(
+    'missAttempts',
+  );
+  @override
+  late final GeneratedColumn<int> missAttempts = GeneratedColumn<int>(
+    'miss_attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _resolvedAtMeta = const VerificationMeta(
     'resolvedAt',
   );
@@ -52975,6 +52987,7 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     episodeKanjiTitle,
     filePath,
     fileModifiedAt,
+    missAttempts,
     resolvedAt,
     updatedAt,
   ];
@@ -53108,6 +53121,15 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         ),
       );
     }
+    if (data.containsKey('miss_attempts')) {
+      context.handle(
+        _missAttemptsMeta,
+        missAttempts.isAcceptableOrUnknown(
+          data['miss_attempts']!,
+          _missAttemptsMeta,
+        ),
+      );
+    }
     if (data.containsKey('resolved_at')) {
       context.handle(
         _resolvedAtMeta,
@@ -53189,6 +53211,10 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         DriftSqlType.int,
         data['${effectivePrefix}file_modified_at'],
       ),
+      missAttempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}miss_attempts'],
+      )!,
       resolvedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}resolved_at'],
@@ -53222,6 +53248,10 @@ class AnidbFileIdentityRow extends DataClass
   final String episodeKanjiTitle;
   final String? filePath;
   final int? fileModifiedAt;
+
+  /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
+  /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
+  final int missAttempts;
   final int resolvedAt;
   final int updatedAt;
   const AnidbFileIdentityRow({
@@ -53239,6 +53269,7 @@ class AnidbFileIdentityRow extends DataClass
     required this.episodeKanjiTitle,
     this.filePath,
     this.fileModifiedAt,
+    required this.missAttempts,
     required this.resolvedAt,
     required this.updatedAt,
   });
@@ -53269,6 +53300,7 @@ class AnidbFileIdentityRow extends DataClass
     if (!nullToAbsent || fileModifiedAt != null) {
       map['file_modified_at'] = Variable<int>(fileModifiedAt);
     }
+    map['miss_attempts'] = Variable<int>(missAttempts);
     map['resolved_at'] = Variable<int>(resolvedAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -53300,6 +53332,7 @@ class AnidbFileIdentityRow extends DataClass
       fileModifiedAt: fileModifiedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(fileModifiedAt),
+      missAttempts: Value(missAttempts),
       resolvedAt: Value(resolvedAt),
       updatedAt: Value(updatedAt),
     );
@@ -53327,6 +53360,7 @@ class AnidbFileIdentityRow extends DataClass
       episodeKanjiTitle: serializer.fromJson<String>(json['episodeKanjiTitle']),
       filePath: serializer.fromJson<String?>(json['filePath']),
       fileModifiedAt: serializer.fromJson<int?>(json['fileModifiedAt']),
+      missAttempts: serializer.fromJson<int>(json['missAttempts']),
       resolvedAt: serializer.fromJson<int>(json['resolvedAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -53349,6 +53383,7 @@ class AnidbFileIdentityRow extends DataClass
       'episodeKanjiTitle': serializer.toJson<String>(episodeKanjiTitle),
       'filePath': serializer.toJson<String?>(filePath),
       'fileModifiedAt': serializer.toJson<int?>(fileModifiedAt),
+      'missAttempts': serializer.toJson<int>(missAttempts),
       'resolvedAt': serializer.toJson<int>(resolvedAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -53369,6 +53404,7 @@ class AnidbFileIdentityRow extends DataClass
     String? episodeKanjiTitle,
     Value<String?> filePath = const Value.absent(),
     Value<int?> fileModifiedAt = const Value.absent(),
+    int? missAttempts,
     int? resolvedAt,
     int? updatedAt,
   }) => AnidbFileIdentityRow(
@@ -53390,6 +53426,7 @@ class AnidbFileIdentityRow extends DataClass
     fileModifiedAt: fileModifiedAt.present
         ? fileModifiedAt.value
         : this.fileModifiedAt,
+    missAttempts: missAttempts ?? this.missAttempts,
     resolvedAt: resolvedAt ?? this.resolvedAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -53431,6 +53468,9 @@ class AnidbFileIdentityRow extends DataClass
       fileModifiedAt: data.fileModifiedAt.present
           ? data.fileModifiedAt.value
           : this.fileModifiedAt,
+      missAttempts: data.missAttempts.present
+          ? data.missAttempts.value
+          : this.missAttempts,
       resolvedAt: data.resolvedAt.present
           ? data.resolvedAt.value
           : this.resolvedAt,
@@ -53455,6 +53495,7 @@ class AnidbFileIdentityRow extends DataClass
           ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
           ..write('filePath: $filePath, ')
           ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('missAttempts: $missAttempts, ')
           ..write('resolvedAt: $resolvedAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -53477,6 +53518,7 @@ class AnidbFileIdentityRow extends DataClass
     episodeKanjiTitle,
     filePath,
     fileModifiedAt,
+    missAttempts,
     resolvedAt,
     updatedAt,
   );
@@ -53498,6 +53540,7 @@ class AnidbFileIdentityRow extends DataClass
           other.episodeKanjiTitle == this.episodeKanjiTitle &&
           other.filePath == this.filePath &&
           other.fileModifiedAt == this.fileModifiedAt &&
+          other.missAttempts == this.missAttempts &&
           other.resolvedAt == this.resolvedAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -53518,6 +53561,7 @@ class AnidbFileIdentitiesCompanion
   final Value<String> episodeKanjiTitle;
   final Value<String?> filePath;
   final Value<int?> fileModifiedAt;
+  final Value<int> missAttempts;
   final Value<int> resolvedAt;
   final Value<int> updatedAt;
   final Value<int> rowid;
@@ -53536,6 +53580,7 @@ class AnidbFileIdentitiesCompanion
     this.episodeKanjiTitle = const Value.absent(),
     this.filePath = const Value.absent(),
     this.fileModifiedAt = const Value.absent(),
+    this.missAttempts = const Value.absent(),
     this.resolvedAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -53555,6 +53600,7 @@ class AnidbFileIdentitiesCompanion
     this.episodeKanjiTitle = const Value.absent(),
     this.filePath = const Value.absent(),
     this.fileModifiedAt = const Value.absent(),
+    this.missAttempts = const Value.absent(),
     required int resolvedAt,
     required int updatedAt,
     this.rowid = const Value.absent(),
@@ -53577,6 +53623,7 @@ class AnidbFileIdentitiesCompanion
     Expression<String>? episodeKanjiTitle,
     Expression<String>? filePath,
     Expression<int>? fileModifiedAt,
+    Expression<int>? missAttempts,
     Expression<int>? resolvedAt,
     Expression<int>? updatedAt,
     Expression<int>? rowid,
@@ -53597,6 +53644,7 @@ class AnidbFileIdentitiesCompanion
       if (episodeKanjiTitle != null) 'episode_kanji_title': episodeKanjiTitle,
       if (filePath != null) 'file_path': filePath,
       if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (missAttempts != null) 'miss_attempts': missAttempts,
       if (resolvedAt != null) 'resolved_at': resolvedAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -53618,6 +53666,7 @@ class AnidbFileIdentitiesCompanion
     Value<String>? episodeKanjiTitle,
     Value<String?>? filePath,
     Value<int?>? fileModifiedAt,
+    Value<int>? missAttempts,
     Value<int>? resolvedAt,
     Value<int>? updatedAt,
     Value<int>? rowid,
@@ -53637,6 +53686,7 @@ class AnidbFileIdentitiesCompanion
       episodeKanjiTitle: episodeKanjiTitle ?? this.episodeKanjiTitle,
       filePath: filePath ?? this.filePath,
       fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      missAttempts: missAttempts ?? this.missAttempts,
       resolvedAt: resolvedAt ?? this.resolvedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -53688,6 +53738,9 @@ class AnidbFileIdentitiesCompanion
     if (fileModifiedAt.present) {
       map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
     }
+    if (missAttempts.present) {
+      map['miss_attempts'] = Variable<int>(missAttempts.value);
+    }
     if (resolvedAt.present) {
       map['resolved_at'] = Variable<int>(resolvedAt.value);
     }
@@ -53717,6 +53770,7 @@ class AnidbFileIdentitiesCompanion
           ..write('episodeKanjiTitle: $episodeKanjiTitle, ')
           ..write('filePath: $filePath, ')
           ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('missAttempts: $missAttempts, ')
           ..write('resolvedAt: $resolvedAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -92953,6 +93007,7 @@ typedef $$AnidbFileIdentitiesTableCreateCompanionBuilder =
       Value<String> episodeKanjiTitle,
       Value<String?> filePath,
       Value<int?> fileModifiedAt,
+      Value<int> missAttempts,
       required int resolvedAt,
       required int updatedAt,
       Value<int> rowid,
@@ -92973,6 +93028,7 @@ typedef $$AnidbFileIdentitiesTableUpdateCompanionBuilder =
       Value<String> episodeKanjiTitle,
       Value<String?> filePath,
       Value<int?> fileModifiedAt,
+      Value<int> missAttempts,
       Value<int> resolvedAt,
       Value<int> updatedAt,
       Value<int> rowid,
@@ -93054,6 +93110,11 @@ class $$AnidbFileIdentitiesTableFilterComposer
 
   ColumnFilters<int> get fileModifiedAt => $composableBuilder(
     column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -93147,6 +93208,11 @@ class $$AnidbFileIdentitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => ColumnOrderings(column),
@@ -93231,6 +93297,11 @@ class $$AnidbFileIdentitiesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get missAttempts => $composableBuilder(
+    column: $table.missAttempts,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => column,
@@ -93297,6 +93368,7 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<String> episodeKanjiTitle = const Value.absent(),
                 Value<String?> filePath = const Value.absent(),
                 Value<int?> fileModifiedAt = const Value.absent(),
+                Value<int> missAttempts = const Value.absent(),
                 Value<int> resolvedAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -93315,6 +93387,7 @@ class $$AnidbFileIdentitiesTableTableManager
                 episodeKanjiTitle: episodeKanjiTitle,
                 filePath: filePath,
                 fileModifiedAt: fileModifiedAt,
+                missAttempts: missAttempts,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -93335,6 +93408,7 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<String> episodeKanjiTitle = const Value.absent(),
                 Value<String?> filePath = const Value.absent(),
                 Value<int?> fileModifiedAt = const Value.absent(),
+                Value<int> missAttempts = const Value.absent(),
                 required int resolvedAt,
                 required int updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -93353,6 +93427,7 @@ class $$AnidbFileIdentitiesTableTableManager
                 episodeKanjiTitle: episodeKanjiTitle,
                 filePath: filePath,
                 fileModifiedAt: fileModifiedAt,
+                missAttempts: missAttempts,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
