@@ -76,7 +76,17 @@ void main() {
       ),
     );
     final InAppWebViewController controller = await ready.future;
-    await tester.pump(const Duration(milliseconds: 500));
+    // iOS 上 onLoadStop 可能先于平台视图拿到尺寸（innerWidth 0 → 布局矩形全错），
+    // 等真实视口出现再注册高亮取矩形。
+    int viewportWidth = 0;
+    for (int i = 0; i < 40 && viewportWidth <= 0; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+      final dynamic w = await controller.evaluateJavascript(
+        source: 'window.innerWidth',
+      );
+      viewportWidth = (w is num) ? w.toInt() : 0;
+    }
+    expect(viewportWidth, greaterThan(0), reason: 'WebView 视口一直是 0 宽');
 
     final dynamic raw = await controller.evaluateJavascript(
       source: '''
