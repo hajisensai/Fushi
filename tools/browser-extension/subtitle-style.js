@@ -81,10 +81,11 @@
   }
 
   // 字体串只允许字体名、引号、逗号、空格、连字符；分号/花括号等一律剥掉——setProperty 本就
-  // 不会让值逃出声明，这里再收紧一层，顺带限长。
+  // 不会让值逃出声明，这里再收紧一层，顺带限长。范围上界必须写成 \uffff 转义：裸 U+FFFF 是
+  // Unicode 非字符，Chrome 会把整个文件判成「不是 UTF-8」拒绝加载扩展（守卫 utf8-shippable.test.js）。
   function normalizeFontFamily(v) {
     if (typeof v !== 'string') return '';
-    var s = v.replace(/[^\w\s,"'\-. -￿]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+    var s = v.replace(/[^\w\s,"'\-.\u00a0-\uffff]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
     return s;
   }
 
