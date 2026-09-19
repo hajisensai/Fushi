@@ -1107,6 +1107,101 @@ void main() {
     expect(collections.single.name, 'Show (2026)');
   });
 
+  test(
+      'sidecar extension follows the downloaded file name, not the pre-download guess',
+      () async {
+    // SubDL 这类打包源的候选名是 `<release>.srt` 猜测，解 zip 后才知道是 .ass；
+    // 管线落盘的扩展名必须按 download.fileName 定。字节要过时轴校验，给真 cue。
+    final Uint8List subtitleBytes = Uint8List.fromList(
+      utf8.encode('1\n00:00:01,000 --> 00:00:02,000\nhi\n'),
+    );
+    final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+      bytes: subtitleBytes,
+      downloadFileName: 'Show.S01E02.zh.ass',
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      subtitleProvider: subtitleProvider,
+    );
+    addTearDown(environment.close);
+    const String jobId = 'subtitle-ext-from-download-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.subtitle,
+    );
+    final Directory season = Directory(
+      p.join(environment.root.path, 'Show (2026)', 'Season 01'),
+    );
+    await season.create(recursive: true);
+    final File video = File(
+      p.join(season.path, 'Show (2026) - S01E02.mkv'),
+    );
+    await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: p.basename(video.path),
+        currentRelativePath: p.basename(video.path),
+        targetRelativePath: Value<String?>(p.basename(video.path)),
+        finalAbsolutePath: Value<String?>(video.path),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        sizeBytes: Value<int?>(await video.length()),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final VideoDownloadJobFileRow jobFile =
+        (await environment.database.getVideoDownloadJobFiles(jobId)).single;
+    final String guessedTarget = p.join(
+      season.path,
+      'Show (2026) - S01E02.zh-cn.srt',
+    );
+    await environment.database.upsertVideoDownloadJobSubtitle(
+      VideoDownloadJobSubtitlesCompanion.insert(
+        subtitleId: '$jobId:auto',
+        jobId: jobId,
+        jobFileId: Value<int?>(jobFile.id),
+        provider: 'opensubtitles',
+        selectedSubtitleId: const Value<String?>('subtitle-42'),
+        language: const Value<String?>('zh-cn'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        originalFileName: const Value<String?>('Show.S01E02.zh.srt'),
+        // 下载前按候选名猜出的 .srt 目标已持久化（resolving），进程重启后续跑：
+        // 管线复用这一行，落盘扩展名仍要按下载后的真实文件名改成 .ass。
+        stagedPath: Value<String?>('$guessedTarget.$jobId.fushi.tmp'),
+        finalPath: Value<String?>(guessedTarget),
+        status: const Value<String>(VideoDownloadJobSubtitleStatus.resolving),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final VideoDownloadJobSubtitleRow subtitle =
+        (await environment.database.getVideoDownloadJobSubtitles(jobId)).single;
+    expect(subtitle.status, VideoDownloadJobSubtitleStatus.placed);
+    expect(subtitle.originalFileName, 'Show.S01E02.zh.ass');
+    expect(
+      subtitle.finalPath,
+      p.join(season.path, 'Show (2026) - S01E02.zh-cn.ass'),
+    );
+    expect(await File(subtitle.finalPath!).exists(), isTrue);
+    expect(await File(guessedTarget).exists(), isFalse);
+  });
+
   test('scrape never falls back to a same-title unrelated local work',
       () async {
     final _PipelineEnvironment environment = await _PipelineEnvironment.create(
@@ -2567,9 +2662,12 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
   @override
   bool get allowsFreeProbeDownload => false;
 
-  _FakeSubtitleProvider({required this.bytes});
+  _FakeSubtitleProvider({required this.bytes, this.downloadFileName});
 
   final Uint8List bytes;
+
+  /// 下载后才知道的真实文件名（SubDL 解 zip 的形态）；null = 与候选名相同。
+  final String? downloadFileName;
   final _FakeSubtitleCandidate candidate = _FakeSubtitleCandidate();
   int searchCalls = 0;
   int downloadCalls = 0;
@@ -2597,7 +2695,7 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
     downloadCalls += 1;
     return VideoSubtitleDownload(
       bytes: bytes,
-      fileName: candidate.fileName,
+      fileName: downloadFileName ?? candidate.fileName,
       language: candidate.language,
     );
   }
