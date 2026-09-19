@@ -7,6 +7,7 @@ import android.util.Log
 import eu.kanade.tachiyomi.animesource.AnimeCatalogueSource
 import eu.kanade.tachiyomi.animesource.AnimeSource
 import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
+import eu.kanade.tachiyomi.animesource.host.AnimeVideoLoader
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.NetworkHelper
 import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
@@ -414,7 +415,9 @@ class MihonChannelHandler(private val app: Application) {
                 val input = arguments.requiredMap("episodeData")
                 val episode = loaded.episodeCache[cacheKey(source, input.requiredString("url"))]
                     ?: episodeFromBridge(input)
-                catalogue.getVideoList(episode).map { video -> video.toBridgeMap() }
+                // 两代扩展共用的宿主取流器（与桌面 sidecar 同一份源码）：Hoster 展开、
+                // `resolveVideo`、lib 14 的 `getVideoUrl`，解析不出的候选不过通道。
+                AnimeVideoLoader.loadVideos(catalogue, episode).map { video -> video.toBridgeMap() }
             }
             "preferencesAnime", "setPreferenceAnime" -> {
                 val configurable = source as? ConfigurableAnimeSource

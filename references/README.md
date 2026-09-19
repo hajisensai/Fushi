@@ -12,7 +12,7 @@
 首次拉取：
 
 ```bash
-git submodule update --init --recursive references/ReinaManager
+git submodule update --init --recursive references/ReinaManager references/mangayomi
 ```
 
 有意识地更新固定版本：
@@ -24,3 +24,10 @@ git add references/ReinaManager
 ```
 
 更新时同时复核许可证、截图与本文记录；不要把子模块改成 Hibiki 的运行时依赖。
+
+## mangayomi
+
+- 上游：<https://github.com/kodjodevf/mangayomi>
+- 用途：Aniyomi / Mihon 扩展在桌面（M-Extension-Server sidecar `/dalvik` JSON RPC）与 Android 上的适配参考——`lib/eval/mihon/service.dart` 的请求形状与响应解析、`lib/services/get_video_list.dart` 到 `lib/modules/anime/anime_player_view.dart` 的取流 → 选流 → media_kit 播放链、Cloudflare cookie / UA 回灌、torrent 型源分流。Hibiki 的视频源扩展走本仓 `third_party/m_extension_server`（同一 sidecar 血统，vendored）+ `fushi/lib/src/media/video/online/`，只借鉴调用面与容错，不复制其 Dart 代码。
+- 当前固定提交：`6402a7e31a50d24151591b051e59ecb88eecf957`（2026-09-19）。
+- 上游许可证：Apache-2.0；Hibiki 为 GPL-3.0。子模块保持独立上游历史与许可证；若未来要移植代码，必须先单独做许可证与署名审查。

@@ -88,7 +88,7 @@ void main() {
   });
 
   test(
-    'stream resolution picks the best quality and exposes its headers',
+    'stream resolution picks the preferred candidate and exposes its headers',
     () async {
       runtime.videos = <Object?>[
         <Object?, Object?>{
@@ -98,7 +98,10 @@ void main() {
         },
         <Object?, Object?>{
           'url': 'https://cdn.example/1080.m3u8',
-          'quality': '1080p',
+          'videoUrl': 'https://cdn.example/1080.m3u8',
+          'videoTitle': '1080p',
+          'resolution': 1080,
+          'preferred': true,
           'headers': <Object?, Object?>{'Referer': 'https://site.example/1080'},
           'subtitleTracks': <Object?>[
             <Object?, Object?>{
@@ -275,20 +278,22 @@ void main() {
           MihonEpisode(url: '/a', name: 'a', uploadedAt: 9, number: 1),
         ]);
     expect(sorted.map((MihonEpisode e) => e.url), <String>['/a', '/b', '/c']);
+    // 扩展已按用户偏好排过序：第一条就是它认为最合适的，不再按行数硬推最高。
     expect(
       chooseBestAnimeVideo(const <MihonVideo>[
-        MihonVideo(url: 'x', quality: 'Auto'),
+        MihonVideo(url: 'x', quality: '720p'),
         MihonVideo(url: 'y', quality: '480p'),
         MihonVideo(url: 'z', quality: 'Doodstream 1080p'),
       ]).url,
-      'z',
+      'x',
     );
+    // lib 16 的 `preferred` 优先于顺序（与 Aniyomi `selectBestVideo` 同口径）。
     expect(
       chooseBestAnimeVideo(const <MihonVideo>[
         MihonVideo(url: 'x', quality: 'Server A'),
-        MihonVideo(url: 'y', quality: 'Server B'),
+        MihonVideo(url: 'y', quality: 'Server B', preferred: true),
       ]).url,
-      'x',
+      'y',
     );
   });
 }
