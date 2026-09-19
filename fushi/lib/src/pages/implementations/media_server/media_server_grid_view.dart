@@ -88,6 +88,21 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     }
   }
 
+  /// 一页落地后主动补拉：视口没铺满不会有滚动事件；而 `_items` 为空时根本没挂
+  /// `CustomScrollView`（`hasClients == false`），[_onScroll] 会直接 return——搜索
+  /// 把关后首页可以是「0 条命中但 hasMore」（BUG-2608 的第三种形状），这时要绕过
+  /// 滚动控制器直接续扫，否则用户永远停在「无结果」。
+  void _fillViewportAfterPage() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_scrollController.hasClients) {
+        _onScroll();
+      } else if (_hasMore) {
+        unawaited(_loadMore());
+      }
+    });
+  }
+
   Future<MediaServerPage> _fetch(int startIndex) {
     if (_searchMode) {
       return _browser.search(_query, startIndex: startIndex);
@@ -124,7 +139,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         _loading = false;
       });
       // 首页没铺满视口时不会有滚动事件，主动再问一页（大字体 / 高窗口）。
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+      _fillViewportAfterPage();
     } catch (e) {
       if (!mounted || generation != _generation) return;
       setState(() {
@@ -141,18 +156,21 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
     try {
       final MediaServerPage page = await _fetch(_nextStartIndex);
       if (!mounted || generation != _generation) return;
+      // 进度守卫：服务器某页回 0 行且 nextStartIndex 没前进，而 totalCount 仍说
+      // 有更多——下面的主动补拉会无限续请求，这里把它当作到尾。
+      final bool advanced = page.nextStartIndex > _nextStartIndex;
       setState(() {
         _items = List<MediaServerItem>.unmodifiable(<MediaServerItem>[
           ..._items,
           ...page.items,
         ]);
         _nextStartIndex = page.nextStartIndex;
-        _hasMore = page.hasMore;
+        _hasMore = page.hasMore && advanced;
         _loadingMore = false;
       });
       // 追加页也可能没铺满视口（搜索把关后一页可以只剩几条甚至 0 条，BUG-2608；
       // 浏览滤掉非视频域类型也一样），没有滚动事件就得主动再问一页。
-      WidgetsBinding.instance.addPostFrameCallback((_) => _onScroll());
+      _fillViewportAfterPage();
     } catch (e) {
       if (!mounted || generation != _generation) return;
       debugPrint('[media-server] load more failed: $e');
@@ -283,6 +301,11 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
           label: Text(t.retry),
         ),
       );
+    }
+    if (_items.isEmpty && (_hasMore || _loadingMore)) {
+      // 首页 0 条但服务器还有后续页（搜索把关后常见）：续扫期间显示进度而不是
+      // 先闪一下「无结果」。
+      return Center(child: adaptiveIndicator(context: context));
     }
     if (_items.isEmpty) {
       return FushiPlaceholderMessage(

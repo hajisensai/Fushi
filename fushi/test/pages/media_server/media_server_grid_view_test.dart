@@ -154,6 +154,78 @@ void main() {
     );
   });
 
+  testWidgets('搜索首页 0 条但 hasMore：不挂滚动视图也要自动续扫，直到命中出现', (
+    WidgetTester tester,
+  ) async {
+    // BUG-2608 第三种形状：服务器前 500 行全被客户端把关滤掉、精确命中在后面。
+    // 空态没有 CustomScrollView，_onScroll 拿不到 hasClients，必须绕过它续扫。
+    final List<MediaServerItem> hit = fakeMovies(1, prefix: 'hit');
+    browser.searchPager = (int startIndex, int limit) {
+      if (startIndex == 0) {
+        return const MediaServerPage(
+          items: <MediaServerItem>[],
+          totalCount: 900,
+          startIndex: 0,
+          nextStartIndex: 500,
+        );
+      }
+      return MediaServerPage(
+        items: hit,
+        totalCount: 900,
+        startIndex: startIndex,
+        nextStartIndex: 900,
+      );
+    };
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('media-server-grid-search')),
+      'hit',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    final List<int> starts = browser.requests
+        .where((FakePageRequest r) => r.kind == 'search')
+        .map((FakePageRequest r) => r.startIndex)
+        .toList();
+    expect(starts, <int>[0, 500], reason: '首页 0 条后按 nextStartIndex 续扫');
+    expect(
+      find.byKey(const ValueKey<String>('media-server-grid-card-hit-0')),
+      findsOneWidget,
+    );
+    expect(find.byType(FushiPlaceholderMessage), findsNothing);
+  });
+
+  testWidgets('续扫时 nextStartIndex 不前进 → 视为到尾，不无限自动翻页', (
+    WidgetTester tester,
+  ) async {
+    int calls = 0;
+    browser.searchPager = (int startIndex, int limit) {
+      calls++;
+      // 服务器坏了：totalCount 说还有，但页面永远 0 行、游标不动。
+      return MediaServerPage(
+        items: const <MediaServerItem>[],
+        totalCount: 900,
+        startIndex: startIndex,
+        nextStartIndex: startIndex,
+      );
+    };
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('media-server-grid-search')),
+      'hit',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+
+    expect(calls, lessThanOrEqualTo(2), reason: '首页 + 至多一次续扫就该停');
+    expect(find.byType(FushiPlaceholderMessage), findsOneWidget);
+  });
+
   testWidgets('电影点卡直接播放：info 是它自己、不带同伴', (WidgetTester tester) async {
     browser.children['lib-movies'] = fakeMovies(3);
     await tester.pumpWidget(harness());
