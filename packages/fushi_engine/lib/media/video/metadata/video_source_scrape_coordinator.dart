@@ -1303,6 +1303,16 @@ class VideoSourceScrapeCoordinator
         tmdb.metadata,
         preferredLanguage: _locale,
       );
+      // MAL cour 季缺分集（播出中的作品 Jikan 常给 0 集）→ 按映射表显式的
+      // 「TMDB 第 S 季从第 O+1 集起」切片补集，本地文件才挂得上分集行。
+      if (expansion != null) {
+        metadata = fillSeasonsFromTmdbSlices(
+          metadata,
+          tmdb.metadata,
+          expansion.tmdbSlices,
+          preferredLanguage: _locale,
+        );
+      }
     }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
     // MAL 映射唯一为前提——那是 MAL 那边的事。唯一不写的情况是它与已确认的
@@ -1592,12 +1602,42 @@ class VideoSourceScrapeCoordinator
     final Map<String, (int, int)> overrides = <String, (int, int)>{};
     final Set<int> neededIndexes = <int>{};
     bool complete = true;
+    // 「第 S 季第 E 集」先按映射表的 TVDB / TMDB 季号 + 集偏移解析（同一个
+    // TVDB 季常常装着多个 MAL cour：Bleach 千年血战篇四个 cour 都是 tvdb S17，
+    // 偏移 0/13/26/40）。命中后本地集号减偏移就是那个 cour 的集号。缓存按
+    // (季, 集) 去重，同一季一批文件只算一次。
+    final Map<(int, int), Future<_MappedSeasonHit?>> seasonHits =
+        <(int, int), Future<_MappedSeasonHit?>>{};
+    Future<_MappedSeasonHit?> resolveSeasonHint(int season, int episode) =>
+        seasonHits[(season, episode)] ??= _resolveMappedSeasonHit(
+          seasonEntries,
+          season: season,
+          episode: episode,
+          primaryIndex: primaryIndex,
+          primaryCount: primaryCount,
+          workAt: workAt,
+          warnings: warnings,
+          localTitle: localWork.title,
+        );
     for (final MapEntry<String, ({int? season, int? episode})> entry
         in parsedMembers.entries) {
       final ({int? season, int? episode}) info = entry.value;
       final int? episode = info.episode;
       if (episode == null) continue;
       if (info.season case final int season) {
+        final _MappedSeasonHit? hit = await resolveSeasonHint(season, episode);
+        if (hit != null) {
+          if (hit.index == null) {
+            // 映射表认识这一季，但集号落不进任何 cour 的范围（续作还没进表）。
+            complete = false;
+            continue;
+          }
+          final int index = hit.index!;
+          overrides[entry.key] = (index + 1, hit.episode);
+          if (index != primaryIndex) neededIndexes.add(index);
+          continue;
+        }
+        // 映射表对这一季没有 TVDB / TMDB 季号信息：退回「条目序号 = 本地季序」。
         final int index = season - 1;
         if (index == primaryIndex) continue;
         if (index >= 0 && index < seasonEntries.length) {
@@ -1708,7 +1748,88 @@ class VideoSourceScrapeCoordinator
       extraSeasons: extra,
       episodeOverrides: overrides,
       complete: complete,
+      // 全部条目都带上（不只本地出现的季）：MAL 没给集数时，切片终点要靠同一
+      // TMDB 季里下一个 cour 的偏移。
+      tmdbSlices: <int, TmdbSeasonSlice>{
+        for (int index = 0; index < seasonEntries.length; index++)
+          if (seasonEntries[index].tmdbSeason case final int tmdbSeason)
+            index + 1: (
+              tmdbSeason: tmdbSeason,
+              offset: seasonEntries[index].tmdbEpisodeOffset ?? 0,
+            ),
+      },
     );
+  }
+
+  /// 把本地「第 [season] 季第 [episode] 集」按映射表解析成「第几个条目的第几集」。
+  ///
+  /// 候选 = TVDB 季号等于 [season] 的条目（按 tvdb 偏移）∪ TMDB 季号等于
+  /// [season] 的条目（按 tmdb 偏移）；同一命名空间内取偏移最大且仍小于集号的
+  /// 条目，再用该条目的集数验一次落不落得进去（集数未知视为落得进）。
+  /// TVDB 与 TMDB 各自解出不同结果时取 TVDB（Sonarr / Plex 式 `Season NN` 目录
+  /// 几乎都是 TVDB 编号）并记一条说明。
+  ///
+  /// 返回 `null` = 映射表对这一季没有任何季号信息，调用方退回序号法；返回
+  /// `index == null` = 映射表认识这一季但集号落不进任何条目（已记警告）。
+  static Future<_MappedSeasonHit?> _resolveMappedSeasonHit(
+    List<AnimeIdentityEntry> seasonEntries, {
+    required int season,
+    required int episode,
+    required int primaryIndex,
+    required int primaryCount,
+    required Future<VideoMetadataWork?> Function(int index) workAt,
+    required List<SourceScrapeIssue> warnings,
+    required String localTitle,
+  }) async {
+    Future<({int index, int episode})?> resolveIn(
+      int? Function(AnimeIdentityEntry entry) seasonOf,
+      int? Function(AnimeIdentityEntry entry) offsetOf,
+    ) async {
+      int? bestIndex;
+      int bestOffset = -1;
+      for (int index = 0; index < seasonEntries.length; index++) {
+        final AnimeIdentityEntry entry = seasonEntries[index];
+        if (seasonOf(entry) != season) continue;
+        final int offset = offsetOf(entry) ?? 0;
+        if (offset < episode && offset > bestOffset) {
+          bestOffset = offset;
+          bestIndex = index;
+        }
+      }
+      if (bestIndex == null) return null;
+      final int local = episode - bestOffset;
+      final int count = bestIndex == primaryIndex
+          ? primaryCount
+          : (await workAt(bestIndex))?.episodeCount ?? 0;
+      if (count > 0 && local > count) return null;
+      return (index: bestIndex, episode: local);
+    }
+
+    final bool known = seasonEntries.any((AnimeIdentityEntry entry) =>
+        entry.tvdbSeason == season || entry.tmdbSeason == season);
+    if (!known) return null;
+    final ({int index, int episode})? tvdb = await resolveIn(
+      (AnimeIdentityEntry entry) => entry.tvdbSeason,
+      (AnimeIdentityEntry entry) => entry.tvdbEpisodeOffset,
+    );
+    final ({int index, int episode})? tmdb = await resolveIn(
+      (AnimeIdentityEntry entry) => entry.tmdbSeason,
+      (AnimeIdentityEntry entry) => entry.tmdbEpisodeOffset,
+    );
+    final ({int index, int episode})? hit = tvdb ?? tmdb;
+    if (hit == null) {
+      warnings.add(SourceScrapeIssue(
+          workTitle: localTitle,
+          message: '第 $season 季第 $episode 集不在跨站映射表已知的各季集范围内（续作可能尚未入表），未自动对齐。'));
+      return const _MappedSeasonHit(index: null, episode: 0);
+    }
+    if (tvdb != null && tmdb != null && tvdb != tmdb) {
+      warnings.add(SourceScrapeIssue(
+          workTitle: localTitle,
+          message:
+              '第 $season 季第 $episode 集按 TVDB 与 TMDB 编号解出不同的季集，已按 TVDB 编号对齐；若目录按 TMDB 编号请手动确认。'));
+    }
+    return _MappedSeasonHit(index: hit.index, episode: hit.episode);
   }
 
   static bool _isUsableResolution(VideoMetadataResolution resolution) =>
@@ -1785,16 +1906,30 @@ class VideoSourceScrapeCoordinator
         AnidbUdpFailure.clientOutdated ||
         AnidbUdpFailure.clientBanned =>
           'AniDB 客户端不可用，请核对注册的客户端名称与版本。',
-        AnidbUdpFailure.network ||
-        AnidbUdpFailure.timeout =>
+        AnidbUdpFailure.network =>
           'AniDB UDP 连接失败，请检查 UDP 9000 网络与防火墙；普通 HTTP 代理不能代替 UDP 连接。',
+        // 超时 ≠ 封禁（Shoko 同样只重发一次就按超时上报）：本文件跳过、下次扫描
+        // 重试；只有连续超时才进入退避，退避窗口内的文件报 backoff。
+        AnidbUdpFailure.timeout => 'AniDB UDP 请求超时（同一报文已重发一次仍无应答），本文件跳过，下次扫描重试；'
+            '持续超时请检查 UDP 9000 端口与防火墙。',
+        AnidbUdpFailure.backoff =>
+          'AniDB 连续无应答，已退避 ${_blockRemainingLabel()}，本文件下次扫描重试。',
         AnidbUdpFailure.banned ||
         AnidbUdpFailure.maintenance =>
-          'AniDB 当前限流或维护，已暂停请求，请稍后重试。',
+          'AniDB 当前限流或维护，已暂停请求 ${_blockRemainingLabel()}，请稍后重试。',
         _ => 'AniDB 未返回有效文件身份，请检查账号及客户端配置后重试。',
       };
     }
     return '无法完成 AniDB 文件识别，请确认文件可读且未被修改，并检查账号和网络配置。';
+  }
+
+  /// 进程级退避 / 封禁剩余时长的人话：`3 分钟` / `40 秒`。
+  static String _blockRemainingLabel() {
+    final Duration remaining = AnidbUdpFileClient.sharedBlockRemaining;
+    if (remaining >= const Duration(minutes: 1)) {
+      return '${(remaining.inSeconds / 60).ceil()} 分钟';
+    }
+    return '${remaining.inSeconds.clamp(1, 59)} 秒';
   }
 
   static bool _isProviderFailure(Object error) =>
@@ -3048,6 +3183,7 @@ class _SeasonExpansion {
     this.extraSeasons = const <VideoMetadataSeason>[],
     this.episodeOverrides = const <String, (int, int)>{},
     this.complete = true,
+    this.tmdbSlices = const <int, TmdbSeasonSlice>{},
   });
 
   final int? primarySeasonNumber;
@@ -3056,6 +3192,18 @@ class _SeasonExpansion {
 
   /// false = 有季 / 集没能对齐或拉取失败，季集记录不能当权威删除依据。
   final bool complete;
+
+  /// 卡片季号 → 该 MAL cour 在 TMDB 剧里的位置（映射表显式给的 `season.tmdb` /
+  /// `episode_offset.tmdb`），供 MAL 缺集时按切片从 TMDB 补分集。
+  final Map<int, TmdbSeasonSlice> tmdbSlices;
+}
+
+/// [_resolveMappedSeasonHit] 的结果：[index] 为 null 表示映射表认识这一季但
+/// 集号落不进任何条目。
+class _MappedSeasonHit {
+  const _MappedSeasonHit({required this.index, required this.episode});
+  final int? index;
+  final int episode;
 }
 
 class _ResolvedWork {

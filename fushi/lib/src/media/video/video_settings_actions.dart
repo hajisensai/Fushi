@@ -109,6 +109,7 @@ String aniDbLoginFailureMessage(AnidbUdpException error) =>
       AnidbUdpFailure.network ||
       AnidbUdpFailure.timeout =>
         t.video_anidb_login_test_failed_network,
+      AnidbUdpFailure.backoff => t.video_anidb_login_test_failed_backoff,
       AnidbUdpFailure.banned ||
       AnidbUdpFailure.maintenance =>
         t.video_anidb_login_test_failed_blocked,
