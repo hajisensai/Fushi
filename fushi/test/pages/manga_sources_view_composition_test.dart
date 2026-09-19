@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/import/import_page_segments.dart';
 import 'package:path/path.dart' as p;
 
 import '../helpers/source_guard.dart';
@@ -42,9 +43,21 @@ void main() {
     test('Mihon 扩展管理内嵌在「来源」视图里，不是另一个顶层 tab', () {
       expect(
         sources,
-        contains('MihonExtensionsPage(embedded: true)'),
+        contains('MihonExtensionsPage('),
         reason: '用户口径：漫画扩展就是来源，必须收进「来源」视图当一节',
       );
+      expect(sources, contains('embedded: true'));
+      // 2026-09-19 分段化：仓库 / 扩展两段由同一个内嵌 widget 按 sections 渲染，
+      // 其它段传空集——widget 常驻树里（key 固定），切段不丢筛选 / 批量安装状态。
+      expect(sources, contains("ValueKey<String>('manga_mihon_extensions')"));
+      expect(sources, contains('sections: mihonSections'));
+    });
+
+    test('顶部是与视频「导入」视图同构的分段选择器', () {
+      expect(sources, contains('ImportPageSegmentBar('));
+      for (final ImportPageSegment segment in ImportPageSegment.values) {
+        expect(sources, contains('ImportPageSegment.${segment.name}'));
+      }
     });
 
     test('macOS 的「来源」视图有 Aidoku 单包与仓库导入入口', () {
@@ -87,9 +100,9 @@ void main() {
       expect(dialogSource, isNot(contains('AlertDialog.adaptive(')));
     });
 
-    test('扩展提供的在线来源设置也在同一视图内', () {
-      expect(sources, contains('_buildOnlineSource('));
-      expect(sources, contains('t.mihon_sources_title'));
+    test('扩展提供的在线来源设置也在同一视图内（「在线源」段）', () {
+      expect(sources, contains('MihonInstalledSourcesSection('));
+      expect(sources, contains('if (segment == ImportPageSegment.sources)'));
     });
 
     // BUG-1431，用户口径：「mokuro 不应该单独显示，应该和漫画扩展同一层级」。
@@ -98,8 +111,10 @@ void main() {
       expect(sources, contains('MokuroMoeSourceRow()'));
       expect(
         sources.indexOf('MokuroMoeSourceRow()'),
-        greaterThan(sources.indexOf('t.mihon_sources_title')),
-        reason: '它必须排在「漫画源」小标题之后，与扩展提供的在线源同节',
+        greaterThan(
+          sources.indexOf('if (segment == ImportPageSegment.sources)'),
+        ),
+        reason: '它必须落在「在线源」段里，与扩展提供的在线源同段',
       );
       final String localRoots = maskComments(
         File(p.join('lib', 'src', 'pages', 'implementations',
