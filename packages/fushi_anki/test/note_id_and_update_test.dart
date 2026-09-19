@@ -33,7 +33,14 @@ class _RecordingService extends AnkiConnectService {
   Future<bool> mediaFileExists(String filename) async => false;
 
   @override
-  Future<Map<String, String>?> notesInfo(int noteId) async => existingFields;
+  Future<AnkiConnectNoteInfo?> noteInfo(int noteId) async {
+    final Map<String, String>? fields = existingFields;
+    if (fields == null) return null;
+    return (modelName: noteModelName, fields: fields);
+  }
+
+  /// 假 note 的笔记类型名；null = 服务端没给，仓库跳过类型校验。
+  String? noteModelName;
 
   @override
   Future<void> storeMediaFile({

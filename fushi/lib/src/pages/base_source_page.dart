@@ -9,7 +9,8 @@ import 'package:fushi_core/fushi_core.dart' show kStatSourceBook;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
 import 'package:fushi/pages.dart';
-import 'package:fushi_anki/fushi_anki.dart' show AnkiOpenWordOutcome;
+import 'package:fushi_anki/fushi_anki.dart'
+    show AnkiMiningPayload, AnkiOpenWordOutcome;
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -1439,8 +1440,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       repo: repo,
       expression: expression,
       reading: reading,
+      // BUG-2605：走到 mineNew 的三条路（点「新增为重复卡」/ AnkiMobile「再加一张」/
+      // 反查为空后重制）用户都已被告知「这张卡已有」并选择继续，请求必须带上
+      // allowDuplicate，否则两后端的 addNote 仍按全局 allowDupes（默认关）判重拒掉。
       mineNew: () async {
-        final res = await onMineFromPopup(fields);
+        final res = await onMineFromPopup(
+          AnkiMiningPayload.withAllowDuplicate(fields),
+        );
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {

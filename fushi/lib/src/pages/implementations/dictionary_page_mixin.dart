@@ -515,8 +515,12 @@ mixin DictionaryPageMixin {
       repo: repo,
       expression: expression,
       reading: reading,
+      // BUG-2605：与 base_source_page 同口径——mineNew 只在用户已被告知「卡已有」
+      // 并选择继续后才会被调，请求必须带 allowDuplicate。
       mineNew: () async {
-        final res = await onMineEntry(fields);
+        final res = await onMineEntry(
+          AnkiMiningPayload.withAllowDuplicate(fields),
+        );
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {

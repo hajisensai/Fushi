@@ -52,6 +52,9 @@ public interface AnkiProvider {
     /** 整体覆盖一条笔记的字段（按笔记类型的字段顺序）。 */
     boolean updateNoteFields(long noteId, String[] fields);
 
+    /** 整体覆盖一条笔记的标签集合（BUG-2606；并集由调用方算好再传）。 */
+    boolean updateNoteTags(long noteId, Set<String> tags);
+
     /**
      * 找出 {@code modelId} 下首字段等于 {@code key} 的笔记。
      *
