@@ -84,13 +84,20 @@ class InspectHandler {
         val info = PackageTools.getPackageInfo(apkFile.absolutePath)
         val metadata = info.applicationInfo.metaData
         val versionName: String = info.versionName.orEmpty()
+        // Manga (Mihon) and anime (Aniyomi) extensions share the APK packaging
+        // but declare different manifest features and source classes; the
+        // kind is read from the declared source class metadata, never from the
+        // package name. An APK that declares both is not a shape either
+        // ecosystem produces, so the manga class wins deterministically.
+        val mangaClasses = metadata.getString(MANGA_CLASS_METADATA)
+        val animeClasses = metadata.getString(ANIME_CLASS_METADATA)
+        val kind = if (mangaClasses == null && animeClasses != null) "anime" else "manga"
         val libVersion: Double? = metadata.getString("tachiyomix.extensionLib")
             ?.toDoubleOrNull()
             ?: versionName.substringBeforeLast('.').toDoubleOrNull()
-        if (libVersion != 1.4 && libVersion != 1.6) {
-            throw IllegalArgumentException("Unsupported extension-lib version")
-        }
-        val classes: List<String> = metadata.getString("tachiyomi.extension.class")
+        val libVersionLabel = supportedLibVersionLabel(kind, libVersion)
+            ?: throw IllegalArgumentException("Unsupported extension-lib version")
+        val classes: List<String> = (mangaClasses ?: animeClasses)
             ?.split(";")
             ?.map(String::trim)
             .orEmpty()
@@ -103,11 +110,38 @@ class InspectHandler {
                 ),
             "versionCode" to info.versionCode,
             "versionName" to versionName,
-            "libVersion" to if (libVersion == 1.4) "1.4" else "1.6",
+            "libVersion" to libVersionLabel,
             "signerSha256" to signerSha256,
             "sourceClasses" to classes,
+            "kind" to kind,
         )
     }
 
     private data class InspectRequest(val data: String)
+
+    companion object {
+        const val MANGA_CLASS_METADATA = "tachiyomi.extension.class"
+        const val ANIME_CLASS_METADATA = "tachiyomi.animeextension.class"
+
+        /**
+         * The extension-lib generations this sidecar can host, as the label
+         * the host stores. Manga: Mihon extensions-lib 1.4 / 1.6. Anime:
+         * Aniyomi extensions-lib 14 only -- the vendored
+         * `eu.kanade.tachiyomi.animesource` ABI is the lib-14 shape
+         * (`Video(url, quality, videoUrl, headers, ...)`, `getVideoList(episode)`);
+         * lib 16 moved to the hoster API and a different `Video` constructor,
+         * so a lib-16 APK would load and then fail at the first call. Refusing
+         * it here keeps the failure at install time with a clear reason.
+         */
+        internal fun supportedLibVersionLabel(kind: String, libVersion: Double?): String? =
+            when (kind) {
+                "anime" -> if (libVersion == 14.0) "14" else null
+                else ->
+                    when (libVersion) {
+                        1.4 -> "1.4"
+                        1.6 -> "1.6"
+                        else -> null
+                    }
+            }
+    }
 }

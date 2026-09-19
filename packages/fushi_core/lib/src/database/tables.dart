@@ -2720,6 +2720,12 @@ class MangaExtensionStores extends Table {
   IntColumn get lastSyncAt => integer().nullable()();
   TextColumn get lastError => text().nullable()();
 
+  /// v107：仓库承载的扩展媒体种类，`'manga'`（Mihon 漫画扩展）| `'anime'`
+  /// （Aniyomi 视频扩展）。两个生态的索引格式同源、宿主运行时同一个，只有扩展
+  /// APK 的 manifest feature 与源接口不同，所以共用三张表按本列分片，而不是
+  /// 复制一套 `video_*` 表。存量行全部是漫画，默认值即历史事实。
+  TextColumn get mediaKind => text().withDefault(const Constant('manga'))();
+
   @override
   Set<Column> get primaryKey => {indexUrl};
 }
@@ -2742,6 +2748,11 @@ class MangaExtensions extends Table {
   BoolColumn get enabled => boolean().withDefault(const Constant(true))();
   IntColumn get installedAt => integer()();
 
+  /// v107：`'manga'` | `'anime'`，安装时由 APK manifest feature 判定
+  /// （`tachiyomi.extension` / `tachiyomi.animeextension`）；见
+  /// [MangaExtensionStores.mediaKind]。
+  TextColumn get mediaKind => text().withDefault(const Constant('manga'))();
+
   @override
   Set<Column> get primaryKey => {packageName};
 }
@@ -2760,6 +2771,10 @@ class MangaOnlineSources extends Table {
   BoolColumn get enabled => boolean().withDefault(const Constant(true))();
   BoolColumn get pinned => boolean().withDefault(const Constant(false))();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// v107：`'manga'` | `'anime'`，冗余自所属扩展行，让「列出全部视频源」不必
+  /// 联表；见 [MangaExtensionStores.mediaKind]。
+  TextColumn get mediaKind => text().withDefault(const Constant('manga'))();
 
   @override
   Set<Column> get primaryKey => {extensionPackage, sourceId};

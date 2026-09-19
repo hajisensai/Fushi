@@ -5075,5 +5075,14 @@
   "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）",
   "shortcut_lookup_page_escape_minimize": "查词页按返回键最小化窗口",
   "shortcut_lookup_page_escape_minimize_hint": "置顶快捷键唤出查词页后，在查词页按返回键（默认 Esc）把窗口收回去，直接回到之前的程序；查询和结果原样保留。",
-  "video_subtitle_remote_player_rendered": "服务器无法抽取该字幕轨，已改由播放器直接渲染（不可逐字查词）：$label"
+  "video_subtitle_remote_player_rendered": "服务器无法抽取该字幕轨，已改由播放器直接渲染（不可逐字查词）：$label",
+  "video_extensions_title": "视频源扩展",
+  "video_online_sources_title": "视频源",
+  "video_online_sources_hint": "第三方 Aniyomi 扩展（extensions-lib 14）。内容来自各扩展对应的站点，在内置播放器中播放。",
+  "video_online_sources_empty": "没有已启用的视频源。请先安装并启用视频扩展。",
+  "video_online_episodes_title": "剧集",
+  "video_online_episodes_empty": "没有找到剧集。",
+  "video_online_stream_choose": "选择线路",
+  "video_online_stream_none": "该集没有可播放的流。",
+  "video_online_stream_resolving": "正在解析流…"
 }

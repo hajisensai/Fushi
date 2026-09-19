@@ -735,7 +735,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 106;
+  int get schemaVersion => 107;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3232,6 +3232,31 @@ class FushiDatabase extends _$FushiDatabase
               'CREATE INDEX IF NOT EXISTS idx_anidb_file_identities_anime '
               'ON anidb_file_identities (anidb_anime_id)',
             );
+          }
+          if (from < 107) {
+            // v107（视频在线源扩展）：Mihon 扩展三张表加 media_kind 列，把
+            // Aniyomi 视频扩展与漫画扩展分片在同一套表里（仓库索引格式同源、
+            // 宿主运行时同一个）。存量行全是漫画，列默认值 'manga' 即历史事实，
+            // 无需回填。幂等：fresh 库由 createAll 带列建表；重复升级被
+            // _columnExists 短路；部分表形态的种子库先查 _tableExists。
+            if (await _tableExists('manga_extension_stores') &&
+                !await _columnExists('manga_extension_stores', 'media_kind')) {
+              await m.addColumn(
+                mangaExtensionStores,
+                mangaExtensionStores.mediaKind,
+              );
+            }
+            if (await _tableExists('manga_extensions') &&
+                !await _columnExists('manga_extensions', 'media_kind')) {
+              await m.addColumn(mangaExtensions, mangaExtensions.mediaKind);
+            }
+            if (await _tableExists('manga_online_sources') &&
+                !await _columnExists('manga_online_sources', 'media_kind')) {
+              await m.addColumn(
+                mangaOnlineSources,
+                mangaOnlineSources.mediaKind,
+              );
+            }
           }
         },
         onCreate: (m) async {

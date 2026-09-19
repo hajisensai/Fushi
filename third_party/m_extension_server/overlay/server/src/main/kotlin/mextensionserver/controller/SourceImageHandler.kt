@@ -1,6 +1,7 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.source.online.HttpSource
 import fi.iki.elonen.NanoHTTPD
 import mextensionserver.impl.MExtensionServerLoader
@@ -28,9 +29,16 @@ class SourceImageHandler {
                 )
             val image =
                 MExtensionServerLoader.invokeWithExtension(request.data) { loaded ->
-                    val source =
-                        MihonInvoker.selectSource(loaded.sources, data) as? HttpSource
-                            ?: throw IllegalArgumentException("Source is not an HTTP source")
+                    val source = MihonInvoker.selectSource(loaded.sources, data)
+                    // Covers of manga and anime sources are fetched the same
+                    // way: the source's own OkHttp client plus its default
+                    // headers (Referer / User-Agent the site expects).
+                    val (client, headers) =
+                        when (source) {
+                            is HttpSource -> source.client to source.headers
+                            is AnimeHttpSource -> source.client to source.headers
+                            else -> throw IllegalArgumentException("Source is not an HTTP source")
+                        }
                     MihonInvoker.preparePreferences(data, source)
                     // Covers are fetched with the source's own client, so they need the
                     // host-owned session too (BUG-2425). Without this a login-gated source
@@ -40,12 +48,12 @@ class SourceImageHandler {
                     SourceCookieInjection.injectRequestCookies(session, source)
                     SourceCookieInjection.applyRequestUserAgent(session, source)
                     val response =
-                        source.client
+                        client
                             .newCall(
                                 Request
                                     .Builder()
                                     .url(request.url)
-                                    .headers(source.headers)
+                                    .headers(headers)
                                     .build(),
                             ).execute()
                     try {

@@ -34,12 +34,16 @@ enum StoreRestrictedCapability {
   /// 导入的本地漫画。iOS 只保留本地导入 + 阅读。
   onlineMangaSource,
 
+  /// 在线视频源宿主：Aniyomi 扩展（与 [onlineMangaSource] 同一个运行时、同一条
+  /// 合规理由——运行时加载第三方仓库提供的内容源）。iOS 只保留本地导入 + 播放。
+  onlineVideoSource,
+
   /// 统一下载中心（torrent / 磁力 / 直链队列），含外接 qBittorrent 后端。
   downloads;
 
   /// 本能力在目标平台上**是否存在**（与用户意愿、与运行时能否跑起来都无关）。
   ///
-  /// 三个值当前判据相同，仍逐个走枚举而不是塌成一个裸常量：它们是三条互相独立的
+  /// 四个值当前判据相同，仍逐个走枚举而不是塌成一个裸常量：它们是四条互相独立的
   /// 合规理由，将来任意一条被单独放开（例如只保留用户自配 OPDS）时，改动面应该
   /// 是这里的一行，而不是回头去把一个被共享的布尔拆开。
   bool availableOn({required bool isIOS}) => !isIOS;

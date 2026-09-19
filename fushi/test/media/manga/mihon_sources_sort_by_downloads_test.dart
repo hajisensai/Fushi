@@ -23,6 +23,7 @@ MihonAvailableExtension _ext(String packageName, String store, int? count) =>
 
 MangaOnlineSourceRow _source(String pkg, String id, int sortOrder) =>
     MangaOnlineSourceRow(
+      mediaKind: 'manga',
       extensionPackage: pkg,
       sourceId: id,
       name: id,

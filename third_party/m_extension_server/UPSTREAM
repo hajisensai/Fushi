@@ -25,6 +25,20 @@ server-build.gradle.patch   Hibiki changes to upstream files that are too
                             small to justify a full-file overlay.
 LICENSE / NOTICE            MPL-2.0 text and the modification notice.
 
+Android host reuse (2026-09-19)
+-------------------------------
+fushi/android/app/build.gradle (`prepareAniyomiSourceApi`) compiles two
+subtrees of upstream_src/ straight into the Android app, unmodified:
+  server/src/main/kotlin/eu/kanade/tachiyomi/animesource/**   Aniyomi
+      (video) extension ABI, the extensions-lib 14 shape
+  server/src/main/kotlin/eu/kanade/tachiyomi/util/lang/CoroutinesExtensions.kt
+      `eu.kanade.tachiyomi.util.lang.awaitSingle`, which the anime sources
+      import and Mihon's source-api does not provide
+This keeps the desktop sidecar and the Android host on one anime ABI. The
+manga ABI on Android still comes from the pinned Mihon commit
+(`prepareMihonSourceApi`), not from this tree. Changing these files here
+changes the Android build too.
+
 upstream_src/ excludes exactly two things from the upstream commit:
   .git/       clone metadata, not source
   .DS_Store   macOS Finder metadata that upstream had committed

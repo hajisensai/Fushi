@@ -77,8 +77,25 @@ const List<String> _hostAbiReferences = <String>[
   'eu.kanade.tachiyomi.source.model.SMangaUpdate',
   'eu.kanade.tachiyomi.source.model.UpdateStrategy',
   'eu.kanade.tachiyomi.source.online.HttpSource',
+  // Aniyomi（视频）扩展的宿主 ABI（样本：yuzono anime-repo
+  // `aniyomi-all.animeonsen-v14.10.apk`，lib 14）。与漫画同一条理由，只是包名不同。
+  'eu.kanade.tachiyomi.animesource.AnimeSource',
+  'eu.kanade.tachiyomi.animesource.AnimeSourceFactory',
+  'eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource',
+  'eu.kanade.tachiyomi.animesource.model.AnimeFilter',
+  'eu.kanade.tachiyomi.animesource.model.AnimeFilterList',
+  'eu.kanade.tachiyomi.animesource.model.AnimesPage',
+  'eu.kanade.tachiyomi.animesource.model.SAnime',
+  'eu.kanade.tachiyomi.animesource.model.SEpisode',
+  'eu.kanade.tachiyomi.animesource.model.Track',
+  'eu.kanade.tachiyomi.animesource.model.Video',
+  'eu.kanade.tachiyomi.animesource.online.AnimeHttpSource',
+  'eu.kanade.tachiyomi.animesource.online.ParsedAnimeHttpSource',
   // 宿主自己一次都不调，最容易被 R8 整包删掉
   'eu.kanade.tachiyomi.util.JsoupExtensionsKt',
+  // 视频扩展经 `eu.kanade.tachiyomi.util.lang.awaitSingle` 桥 Rx → 协程（随
+  // sidecar 的 vendored 源码一起编进 Android，见 build.gradle prepareAniyomiSourceApi）。
+  'eu.kanade.tachiyomi.util.lang.CoroutinesExtensionsKt',
   // Kotlin 运行时：扩展 dex 不打包，构造函数里就会用
   'kotlin.Lazy',
   'kotlin.LazyKt',

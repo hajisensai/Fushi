@@ -2,6 +2,42 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+/// 一个扩展 APK 承载的媒体种类。
+///
+/// Mihon（漫画）与 Aniyomi（视频）扩展共用 APK 打包、仓库索引格式、宿主运行时与
+/// 安装/信任/偏好基础设施，只在 manifest feature（`tachiyomi.extension` /
+/// `tachiyomi.animeextension`）与源接口（`Source` / `AnimeSource`）上分岔。
+/// 持久化值 [dbValue] 落 `manga_extension_stores` / `manga_extensions` /
+/// `manga_online_sources` 三表的 `media_kind` 列（v107），表名冻结不追改。
+enum MihonMediaKind {
+  manga('manga'),
+  anime('anime');
+
+  const MihonMediaKind(this.dbValue);
+
+  final String dbValue;
+
+  static MihonMediaKind fromDbValue(String? value) => switch (value) {
+    'anime' => MihonMediaKind.anime,
+    _ => MihonMediaKind.manga,
+  };
+
+  /// 桌面 sidecar `/inspect` 与 Android `inspectExtension` 回传的 `kind`。
+  static MihonMediaKind fromInspectionJson(Object? value) =>
+      fromDbValue(value?.toString());
+
+  /// 本生态可安装的 extensions-lib 版本标签（`MihonExtensionInspection.libVersion`）。
+  ///
+  /// 漫画：Mihon 1.4 / 1.6。视频：Aniyomi **14** 一个版本——桌面 sidecar 与 Android
+  /// 宿主编入的 `animesource` ABI 是 lib 14 形态（`Video(url, quality, videoUrl,
+  /// headers, …)` + `getVideoList(episode)`）；lib 16 换了 `Video` 构造签名并改走
+  /// Hoster API，装进来会在第一次取流时炸，所以在安装门拒掉并说明原因。
+  List<String> get supportedLibVersions => switch (this) {
+    MihonMediaKind.manga => const <String>['1.4', '1.6'],
+    MihonMediaKind.anime => const <String>['14'],
+  };
+}
+
 @immutable
 class MihonCapabilities {
   const MihonCapabilities({
@@ -47,6 +83,7 @@ class MihonExtensionInspection {
     required this.libVersion,
     required this.signerSha256,
     required this.sourceClasses,
+    this.kind = MihonMediaKind.manga,
   });
 
   factory MihonExtensionInspection.fromJson(Map<String, Object?> json) =>
@@ -60,6 +97,8 @@ class MihonExtensionInspection {
         sourceClasses:
             (json['sourceClasses'] as List<Object?>? ?? const <Object?>[])
                 .cast<String>(),
+        // 旧宿主（没有 kind 字段）只认漫画扩展，缺省即漫画。
+        kind: MihonMediaKind.fromInspectionJson(json['kind']),
       );
 
   final String packageName;
@@ -81,6 +120,10 @@ class MihonExtensionInspection {
   final String libVersion;
   final String signerSha256;
   final List<String> sourceClasses;
+
+  /// 由 APK manifest 的源类元数据判定（`tachiyomi.extension.class` /
+  /// `tachiyomi.animeextension.class`），不看包名。
+  final MihonMediaKind kind;
 }
 
 @immutable
@@ -119,8 +162,16 @@ class MihonSource {
   final String baseUrl;
 }
 
+/// 源浏览网格里的一张卡：漫画作品与视频作品在网格上长得一样（封面 + 标题，
+/// 以源内 `url` 为身份），浏览页按它渲染、按具体类型分派详情页。
+abstract interface class MihonCatalogueEntry {
+  String get url;
+  String get title;
+  String? get coverUrl;
+}
+
 @immutable
-class MihonManga {
+class MihonManga implements MihonCatalogueEntry {
   const MihonManga({
     required this.url,
     required this.title,
@@ -145,8 +196,11 @@ class MihonManga {
     initialized: json['initialized'] == true,
   );
 
+  @override
   final String url;
+  @override
   final String title;
+  @override
   final String? coverUrl;
   final String? artist;
   final String? author;
@@ -475,4 +529,203 @@ class MihonCloudflareChallengeException extends MihonRuntimeException {
 
   final Uri url;
   final String? userAgent;
+}
+
+/// Aniyomi 扩展的作品条目（sidecar `JAnime` / Android `SAnime` 桥接形状）。
+///
+/// 与 [MihonManga] 逐字段同构（上游两套模型本就是复制的），但刻意不共用一个类：
+/// 视频侧的调用面（剧集/取流）不该拿到一个叫「manga」的类型，两边各自演进也不
+/// 会互相牵连。
+@immutable
+class MihonAnime implements MihonCatalogueEntry {
+  const MihonAnime({
+    required this.url,
+    required this.title,
+    this.coverUrl,
+    this.artist,
+    this.author,
+    this.description,
+    this.genre,
+    this.status = 0,
+    this.initialized = false,
+  });
+
+  factory MihonAnime.fromJson(Map<String, Object?> json) => MihonAnime(
+    url: json['url']?.toString() ?? '',
+    title: json['title']?.toString() ?? '',
+    coverUrl: (json['thumbnail_url'] ?? json['coverUrl'])?.toString(),
+    artist: json['artist']?.toString(),
+    author: json['author']?.toString(),
+    description: json['description']?.toString(),
+    genre: json['genre']?.toString(),
+    status: (json['status'] as num?)?.toInt() ?? 0,
+    initialized: json['initialized'] == true,
+  );
+
+  @override
+  final String url;
+  @override
+  final String title;
+  @override
+  final String? coverUrl;
+  final String? artist;
+  final String? author;
+  final String? description;
+  final String? genre;
+  final int status;
+  final bool initialized;
+
+  /// 同 [MihonManga.mergedWithDetails]：详情是增量，身份 `url` 只来自入参。
+  MihonAnime mergedWithDetails(MihonAnime update) => MihonAnime(
+    url: url,
+    title: update.title.isNotEmpty ? update.title : title,
+    coverUrl: update.coverUrl ?? coverUrl,
+    artist: update.artist ?? artist,
+    author: update.author ?? author,
+    description: update.description ?? description,
+    genre: update.genre ?? genre,
+    status: update.status != 0 ? update.status : status,
+    initialized: update.initialized || initialized,
+  );
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'url': url,
+    'title': title,
+    'thumbnail_url': coverUrl,
+    'artist': artist,
+    'author': author,
+    'description': description,
+    'genre': genre,
+    'status': status,
+    'initialized': initialized,
+  };
+}
+
+@immutable
+class MihonAnimePage {
+  const MihonAnimePage({required this.items, required this.hasNextPage});
+
+  factory MihonAnimePage.fromJson(Map<String, Object?> json) => MihonAnimePage(
+    items: (json['animes'] as List<Object?>? ?? const <Object?>[])
+        .cast<Map<Object?, Object?>>()
+        .map(
+          (Map<Object?, Object?> value) =>
+              MihonAnime.fromJson(value.cast<String, Object?>()),
+        )
+        .toList(growable: false),
+    hasNextPage: json['hasNextPage'] == true,
+  );
+
+  final List<MihonAnime> items;
+  final bool hasNextPage;
+}
+
+/// 一集（sidecar `JEpisode` / Android `SEpisode`）。`url` 是源内稳定身份。
+@immutable
+class MihonEpisode {
+  const MihonEpisode({
+    required this.url,
+    required this.name,
+    required this.uploadedAt,
+    required this.number,
+    this.scanlator,
+  });
+
+  factory MihonEpisode.fromJson(Map<String, Object?> json) => MihonEpisode(
+    url: json['url']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    uploadedAt: (json['date_upload'] as num?)?.toInt() ?? 0,
+    number: (json['episode_number'] as num?)?.toDouble() ?? 0,
+    scanlator: json['scanlator']?.toString(),
+  );
+
+  final String url;
+  final String name;
+  final int uploadedAt;
+  final double number;
+  final String? scanlator;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'url': url,
+    'name': name,
+    'date_upload': uploadedAt,
+    'episode_number': number,
+    'scanlator': scanlator,
+  };
+}
+
+/// 一条外挂字幕/音轨（Aniyomi `Track`）。
+@immutable
+class MihonVideoTrack {
+  const MihonVideoTrack({required this.url, required this.lang});
+
+  factory MihonVideoTrack.fromJson(Map<String, Object?> json) =>
+      MihonVideoTrack(
+        url: json['url']?.toString() ?? '',
+        lang: json['lang']?.toString() ?? '',
+      );
+
+  final String url;
+
+  /// 扩展给的语言**标签**（如 `日本語` / `English`），不是 BCP-47 码。
+  final String lang;
+}
+
+/// 一集的一个可播候选（Aniyomi lib 14 `Video`，经 sidecar/Android 投影后的五字段）。
+///
+/// 一集通常回多条：不同画质、不同 hoster。播放器要的是 [resolvedUrl] + [headers]
+/// （站点防盗链几乎都靠 Referer/User-Agent）；[quality] 只是给用户挑的标签。
+@immutable
+class MihonVideo {
+  const MihonVideo({
+    required this.url,
+    required this.quality,
+    this.videoUrl,
+    this.headers = const <String, String>{},
+    this.subtitleTracks = const <MihonVideoTrack>[],
+    this.audioTracks = const <MihonVideoTrack>[],
+  });
+
+  factory MihonVideo.fromJson(Map<String, Object?> json) => MihonVideo(
+    url: json['url']?.toString() ?? '',
+    quality: json['quality']?.toString() ?? '',
+    videoUrl: json['videoUrl']?.toString(),
+    headers: (json['headers'] as Map<Object?, Object?>? ?? const {}).map(
+      (Object? key, Object? value) =>
+          MapEntry<String, String>(key.toString(), value?.toString() ?? ''),
+    ),
+    subtitleTracks: _tracks(json['subtitleTracks']),
+    audioTracks: _tracks(json['audioTracks']),
+  );
+
+  static List<MihonVideoTrack> _tracks(Object? value) =>
+      (value as List<Object?>? ?? const <Object?>[])
+          .whereType<Map<Object?, Object?>>()
+          .map(
+            (Map<Object?, Object?> item) =>
+                MihonVideoTrack.fromJson(item.cast<String, Object?>()),
+          )
+          .where((MihonVideoTrack track) => track.url.isNotEmpty)
+          .toList(growable: false);
+
+  final String url;
+  final String quality;
+  final String? videoUrl;
+  final Map<String, String> headers;
+  final List<MihonVideoTrack> subtitleTracks;
+  final List<MihonVideoTrack> audioTracks;
+
+  /// 直接交给播放器的地址：lib 14 约定 `videoUrl` 为空时 `url` 本身就是流地址。
+  String get resolvedUrl {
+    final String? direct = videoUrl;
+    return direct != null && direct.isNotEmpty && direct != 'null'
+        ? direct
+        : url;
+  }
+
+  /// 画质标签里能解出的行数（`1080p` → 1080；`Auto` / hoster 名 → null），供排序。
+  int? get resolutionHint {
+    final RegExpMatch? match = RegExp(r'(\d{3,4})\s*[pP]').firstMatch(quality);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
 }

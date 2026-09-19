@@ -25830,6 +25830,18 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     indexUrl,
@@ -25845,6 +25857,7 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
     lastModified,
     lastSyncAt,
     lastError,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -25954,6 +25967,12 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
         lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
       );
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -26015,6 +26034,10 @@ class $MangaExtensionStoresTable extends MangaExtensionStores
         DriftSqlType.string,
         data['${effectivePrefix}last_error'],
       ),
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -26040,6 +26063,12 @@ class MangaExtensionStoreRow extends DataClass
   final String? lastModified;
   final int? lastSyncAt;
   final String? lastError;
+
+  /// v107：仓库承载的扩展媒体种类，`'manga'`（Mihon 漫画扩展）| `'anime'`
+  /// （Aniyomi 视频扩展）。两个生态的索引格式同源、宿主运行时同一个，只有扩展
+  /// APK 的 manifest feature 与源接口不同，所以共用三张表按本列分片，而不是
+  /// 复制一套 `video_*` 表。存量行全部是漫画，默认值即历史事实。
+  final String mediaKind;
   const MangaExtensionStoreRow({
     required this.indexUrl,
     required this.name,
@@ -26054,6 +26083,7 @@ class MangaExtensionStoreRow extends DataClass
     this.lastModified,
     this.lastSyncAt,
     this.lastError,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -26087,6 +26117,7 @@ class MangaExtensionStoreRow extends DataClass
     if (!nullToAbsent || lastError != null) {
       map['last_error'] = Variable<String>(lastError);
     }
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -26119,6 +26150,7 @@ class MangaExtensionStoreRow extends DataClass
       lastError: lastError == null && nullToAbsent
           ? const Value.absent()
           : Value(lastError),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -26141,6 +26173,7 @@ class MangaExtensionStoreRow extends DataClass
       lastModified: serializer.fromJson<String?>(json['lastModified']),
       lastSyncAt: serializer.fromJson<int?>(json['lastSyncAt']),
       lastError: serializer.fromJson<String?>(json['lastError']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -26160,6 +26193,7 @@ class MangaExtensionStoreRow extends DataClass
       'lastModified': serializer.toJson<String?>(lastModified),
       'lastSyncAt': serializer.toJson<int?>(lastSyncAt),
       'lastError': serializer.toJson<String?>(lastError),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -26177,6 +26211,7 @@ class MangaExtensionStoreRow extends DataClass
     Value<String?> lastModified = const Value.absent(),
     Value<int?> lastSyncAt = const Value.absent(),
     Value<String?> lastError = const Value.absent(),
+    String? mediaKind,
   }) => MangaExtensionStoreRow(
     indexUrl: indexUrl ?? this.indexUrl,
     name: name ?? this.name,
@@ -26193,6 +26228,7 @@ class MangaExtensionStoreRow extends DataClass
     lastModified: lastModified.present ? lastModified.value : this.lastModified,
     lastSyncAt: lastSyncAt.present ? lastSyncAt.value : this.lastSyncAt,
     lastError: lastError.present ? lastError.value : this.lastError,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaExtensionStoreRow copyWithCompanion(MangaExtensionStoresCompanion data) {
     return MangaExtensionStoreRow(
@@ -26221,6 +26257,7 @@ class MangaExtensionStoreRow extends DataClass
           ? data.lastSyncAt.value
           : this.lastSyncAt,
       lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -26239,7 +26276,8 @@ class MangaExtensionStoreRow extends DataClass
           ..write('etag: $etag, ')
           ..write('lastModified: $lastModified, ')
           ..write('lastSyncAt: $lastSyncAt, ')
-          ..write('lastError: $lastError')
+          ..write('lastError: $lastError, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -26259,6 +26297,7 @@ class MangaExtensionStoreRow extends DataClass
     lastModified,
     lastSyncAt,
     lastError,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -26276,7 +26315,8 @@ class MangaExtensionStoreRow extends DataClass
           other.etag == this.etag &&
           other.lastModified == this.lastModified &&
           other.lastSyncAt == this.lastSyncAt &&
-          other.lastError == this.lastError);
+          other.lastError == this.lastError &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaExtensionStoresCompanion
@@ -26294,6 +26334,7 @@ class MangaExtensionStoresCompanion
   final Value<String?> lastModified;
   final Value<int?> lastSyncAt;
   final Value<String?> lastError;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaExtensionStoresCompanion({
     this.indexUrl = const Value.absent(),
@@ -26309,6 +26350,7 @@ class MangaExtensionStoresCompanion
     this.lastModified = const Value.absent(),
     this.lastSyncAt = const Value.absent(),
     this.lastError = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaExtensionStoresCompanion.insert({
@@ -26325,6 +26367,7 @@ class MangaExtensionStoresCompanion
     this.lastModified = const Value.absent(),
     this.lastSyncAt = const Value.absent(),
     this.lastError = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : indexUrl = Value(indexUrl),
        name = Value(name),
@@ -26343,6 +26386,7 @@ class MangaExtensionStoresCompanion
     Expression<String>? lastModified,
     Expression<int>? lastSyncAt,
     Expression<String>? lastError,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -26359,6 +26403,7 @@ class MangaExtensionStoresCompanion
       if (lastModified != null) 'last_modified': lastModified,
       if (lastSyncAt != null) 'last_sync_at': lastSyncAt,
       if (lastError != null) 'last_error': lastError,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -26377,6 +26422,7 @@ class MangaExtensionStoresCompanion
     Value<String?>? lastModified,
     Value<int?>? lastSyncAt,
     Value<String?>? lastError,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaExtensionStoresCompanion(
@@ -26393,6 +26439,7 @@ class MangaExtensionStoresCompanion
       lastModified: lastModified ?? this.lastModified,
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
       lastError: lastError ?? this.lastError,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -26439,6 +26486,9 @@ class MangaExtensionStoresCompanion
     if (lastError.present) {
       map['last_error'] = Variable<String>(lastError.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -26461,6 +26511,7 @@ class MangaExtensionStoresCompanion
           ..write('lastModified: $lastModified, ')
           ..write('lastSyncAt: $lastSyncAt, ')
           ..write('lastError: $lastError, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -26619,6 +26670,18 @@ class $MangaExtensionsTable extends MangaExtensions
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     packageName,
@@ -26634,6 +26697,7 @@ class $MangaExtensionsTable extends MangaExtensions
     signerSha256,
     enabled,
     installedAt,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -26763,6 +26827,12 @@ class $MangaExtensionsTable extends MangaExtensions
     } else if (isInserting) {
       context.missing(_installedAtMeta);
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -26824,6 +26894,10 @@ class $MangaExtensionsTable extends MangaExtensions
         DriftSqlType.int,
         data['${effectivePrefix}installed_at'],
       )!,
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -26848,6 +26922,11 @@ class MangaExtensionRow extends DataClass
   final String signerSha256;
   final bool enabled;
   final int installedAt;
+
+  /// v107：`'manga'` | `'anime'`，安装时由 APK manifest feature 判定
+  /// （`tachiyomi.extension` / `tachiyomi.animeextension`）；见
+  /// [MangaExtensionStores.mediaKind]。
+  final String mediaKind;
   const MangaExtensionRow({
     required this.packageName,
     this.storeUrl,
@@ -26862,6 +26941,7 @@ class MangaExtensionRow extends DataClass
     required this.signerSha256,
     required this.enabled,
     required this.installedAt,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -26881,6 +26961,7 @@ class MangaExtensionRow extends DataClass
     map['signer_sha256'] = Variable<String>(signerSha256);
     map['enabled'] = Variable<bool>(enabled);
     map['installed_at'] = Variable<int>(installedAt);
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -26901,6 +26982,7 @@ class MangaExtensionRow extends DataClass
       signerSha256: Value(signerSha256),
       enabled: Value(enabled),
       installedAt: Value(installedAt),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -26923,6 +27005,7 @@ class MangaExtensionRow extends DataClass
       signerSha256: serializer.fromJson<String>(json['signerSha256']),
       enabled: serializer.fromJson<bool>(json['enabled']),
       installedAt: serializer.fromJson<int>(json['installedAt']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -26942,6 +27025,7 @@ class MangaExtensionRow extends DataClass
       'signerSha256': serializer.toJson<String>(signerSha256),
       'enabled': serializer.toJson<bool>(enabled),
       'installedAt': serializer.toJson<int>(installedAt),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -26959,6 +27043,7 @@ class MangaExtensionRow extends DataClass
     String? signerSha256,
     bool? enabled,
     int? installedAt,
+    String? mediaKind,
   }) => MangaExtensionRow(
     packageName: packageName ?? this.packageName,
     storeUrl: storeUrl.present ? storeUrl.value : this.storeUrl,
@@ -26973,6 +27058,7 @@ class MangaExtensionRow extends DataClass
     signerSha256: signerSha256 ?? this.signerSha256,
     enabled: enabled ?? this.enabled,
     installedAt: installedAt ?? this.installedAt,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaExtensionRow copyWithCompanion(MangaExtensionsCompanion data) {
     return MangaExtensionRow(
@@ -27003,6 +27089,7 @@ class MangaExtensionRow extends DataClass
       installedAt: data.installedAt.present
           ? data.installedAt.value
           : this.installedAt,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -27021,7 +27108,8 @@ class MangaExtensionRow extends DataClass
           ..write('apkSha256: $apkSha256, ')
           ..write('signerSha256: $signerSha256, ')
           ..write('enabled: $enabled, ')
-          ..write('installedAt: $installedAt')
+          ..write('installedAt: $installedAt, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -27041,6 +27129,7 @@ class MangaExtensionRow extends DataClass
     signerSha256,
     enabled,
     installedAt,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -27058,7 +27147,8 @@ class MangaExtensionRow extends DataClass
           other.apkSha256 == this.apkSha256 &&
           other.signerSha256 == this.signerSha256 &&
           other.enabled == this.enabled &&
-          other.installedAt == this.installedAt);
+          other.installedAt == this.installedAt &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
@@ -27075,6 +27165,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
   final Value<String> signerSha256;
   final Value<bool> enabled;
   final Value<int> installedAt;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaExtensionsCompanion({
     this.packageName = const Value.absent(),
@@ -27090,6 +27181,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     this.signerSha256 = const Value.absent(),
     this.enabled = const Value.absent(),
     this.installedAt = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaExtensionsCompanion.insert({
@@ -27106,6 +27198,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     required String signerSha256,
     this.enabled = const Value.absent(),
     required int installedAt,
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : packageName = Value(packageName),
        name = Value(name),
@@ -27131,6 +27224,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     Expression<String>? signerSha256,
     Expression<bool>? enabled,
     Expression<int>? installedAt,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -27147,6 +27241,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
       if (signerSha256 != null) 'signer_sha256': signerSha256,
       if (enabled != null) 'enabled': enabled,
       if (installedAt != null) 'installed_at': installedAt,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -27165,6 +27260,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     Value<String>? signerSha256,
     Value<bool>? enabled,
     Value<int>? installedAt,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaExtensionsCompanion(
@@ -27181,6 +27277,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
       signerSha256: signerSha256 ?? this.signerSha256,
       enabled: enabled ?? this.enabled,
       installedAt: installedAt ?? this.installedAt,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -27227,6 +27324,9 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
     if (installedAt.present) {
       map['installed_at'] = Variable<int>(installedAt.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -27249,6 +27349,7 @@ class MangaExtensionsCompanion extends UpdateCompanion<MangaExtensionRow> {
           ..write('signerSha256: $signerSha256, ')
           ..write('enabled: $enabled, ')
           ..write('installedAt: $installedAt, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -27355,6 +27456,18 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _mediaKindMeta = const VerificationMeta(
+    'mediaKind',
+  );
+  @override
+  late final GeneratedColumn<String> mediaKind = GeneratedColumn<String>(
+    'media_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('manga'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     extensionPackage,
@@ -27365,6 +27478,7 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
     enabled,
     pinned,
     sortOrder,
+    mediaKind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -27437,6 +27551,12 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('media_kind')) {
+      context.handle(
+        _mediaKindMeta,
+        mediaKind.isAcceptableOrUnknown(data['media_kind']!, _mediaKindMeta),
+      );
+    }
     return context;
   }
 
@@ -27478,6 +27598,10 @@ class $MangaOnlineSourcesTable extends MangaOnlineSources
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      mediaKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}media_kind'],
+      )!,
     );
   }
 
@@ -27499,6 +27623,10 @@ class MangaOnlineSourceRow extends DataClass
   final bool enabled;
   final bool pinned;
   final int sortOrder;
+
+  /// v107：`'manga'` | `'anime'`，冗余自所属扩展行，让「列出全部视频源」不必
+  /// 联表；见 [MangaExtensionStores.mediaKind]。
+  final String mediaKind;
   const MangaOnlineSourceRow({
     required this.extensionPackage,
     required this.sourceId,
@@ -27508,6 +27636,7 @@ class MangaOnlineSourceRow extends DataClass
     required this.enabled,
     required this.pinned,
     required this.sortOrder,
+    required this.mediaKind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -27520,6 +27649,7 @@ class MangaOnlineSourceRow extends DataClass
     map['enabled'] = Variable<bool>(enabled);
     map['pinned'] = Variable<bool>(pinned);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['media_kind'] = Variable<String>(mediaKind);
     return map;
   }
 
@@ -27533,6 +27663,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: Value(enabled),
       pinned: Value(pinned),
       sortOrder: Value(sortOrder),
+      mediaKind: Value(mediaKind),
     );
   }
 
@@ -27550,6 +27681,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: serializer.fromJson<bool>(json['enabled']),
       pinned: serializer.fromJson<bool>(json['pinned']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      mediaKind: serializer.fromJson<String>(json['mediaKind']),
     );
   }
   @override
@@ -27564,6 +27696,7 @@ class MangaOnlineSourceRow extends DataClass
       'enabled': serializer.toJson<bool>(enabled),
       'pinned': serializer.toJson<bool>(pinned),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'mediaKind': serializer.toJson<String>(mediaKind),
     };
   }
 
@@ -27576,6 +27709,7 @@ class MangaOnlineSourceRow extends DataClass
     bool? enabled,
     bool? pinned,
     int? sortOrder,
+    String? mediaKind,
   }) => MangaOnlineSourceRow(
     extensionPackage: extensionPackage ?? this.extensionPackage,
     sourceId: sourceId ?? this.sourceId,
@@ -27585,6 +27719,7 @@ class MangaOnlineSourceRow extends DataClass
     enabled: enabled ?? this.enabled,
     pinned: pinned ?? this.pinned,
     sortOrder: sortOrder ?? this.sortOrder,
+    mediaKind: mediaKind ?? this.mediaKind,
   );
   MangaOnlineSourceRow copyWithCompanion(MangaOnlineSourcesCompanion data) {
     return MangaOnlineSourceRow(
@@ -27598,6 +27733,7 @@ class MangaOnlineSourceRow extends DataClass
       enabled: data.enabled.present ? data.enabled.value : this.enabled,
       pinned: data.pinned.present ? data.pinned.value : this.pinned,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      mediaKind: data.mediaKind.present ? data.mediaKind.value : this.mediaKind,
     );
   }
 
@@ -27611,7 +27747,8 @@ class MangaOnlineSourceRow extends DataClass
           ..write('baseUrl: $baseUrl, ')
           ..write('enabled: $enabled, ')
           ..write('pinned: $pinned, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('mediaKind: $mediaKind')
           ..write(')'))
         .toString();
   }
@@ -27626,6 +27763,7 @@ class MangaOnlineSourceRow extends DataClass
     enabled,
     pinned,
     sortOrder,
+    mediaKind,
   );
   @override
   bool operator ==(Object other) =>
@@ -27638,7 +27776,8 @@ class MangaOnlineSourceRow extends DataClass
           other.baseUrl == this.baseUrl &&
           other.enabled == this.enabled &&
           other.pinned == this.pinned &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.mediaKind == this.mediaKind);
 }
 
 class MangaOnlineSourcesCompanion
@@ -27651,6 +27790,7 @@ class MangaOnlineSourcesCompanion
   final Value<bool> enabled;
   final Value<bool> pinned;
   final Value<int> sortOrder;
+  final Value<String> mediaKind;
   final Value<int> rowid;
   const MangaOnlineSourcesCompanion({
     this.extensionPackage = const Value.absent(),
@@ -27661,6 +27801,7 @@ class MangaOnlineSourcesCompanion
     this.enabled = const Value.absent(),
     this.pinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MangaOnlineSourcesCompanion.insert({
@@ -27672,6 +27813,7 @@ class MangaOnlineSourcesCompanion
     this.enabled = const Value.absent(),
     this.pinned = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.mediaKind = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : extensionPackage = Value(extensionPackage),
        sourceId = Value(sourceId),
@@ -27686,6 +27828,7 @@ class MangaOnlineSourcesCompanion
     Expression<bool>? enabled,
     Expression<bool>? pinned,
     Expression<int>? sortOrder,
+    Expression<String>? mediaKind,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -27697,6 +27840,7 @@ class MangaOnlineSourcesCompanion
       if (enabled != null) 'enabled': enabled,
       if (pinned != null) 'pinned': pinned,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (mediaKind != null) 'media_kind': mediaKind,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -27710,6 +27854,7 @@ class MangaOnlineSourcesCompanion
     Value<bool>? enabled,
     Value<bool>? pinned,
     Value<int>? sortOrder,
+    Value<String>? mediaKind,
     Value<int>? rowid,
   }) {
     return MangaOnlineSourcesCompanion(
@@ -27721,6 +27866,7 @@ class MangaOnlineSourcesCompanion
       enabled: enabled ?? this.enabled,
       pinned: pinned ?? this.pinned,
       sortOrder: sortOrder ?? this.sortOrder,
+      mediaKind: mediaKind ?? this.mediaKind,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -27752,6 +27898,9 @@ class MangaOnlineSourcesCompanion
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (mediaKind.present) {
+      map['media_kind'] = Variable<String>(mediaKind.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -27769,6 +27918,7 @@ class MangaOnlineSourcesCompanion
           ..write('enabled: $enabled, ')
           ..write('pinned: $pinned, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('mediaKind: $mediaKind, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -71890,6 +72040,7 @@ typedef $$MangaExtensionStoresTableCreateCompanionBuilder =
       Value<String?> lastModified,
       Value<int?> lastSyncAt,
       Value<String?> lastError,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaExtensionStoresTableUpdateCompanionBuilder =
@@ -71907,6 +72058,7 @@ typedef $$MangaExtensionStoresTableUpdateCompanionBuilder =
       Value<String?> lastModified,
       Value<int?> lastSyncAt,
       Value<String?> lastError,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -71981,6 +72133,11 @@ class $$MangaExtensionStoresTableFilterComposer
 
   ColumnFilters<String> get lastError => $composableBuilder(
     column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -72058,6 +72215,11 @@ class $$MangaExtensionStoresTableOrderingComposer
     column: $table.lastError,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaExtensionStoresTableAnnotationComposer
@@ -72119,6 +72281,9 @@ class $$MangaExtensionStoresTableAnnotationComposer
 
   GeneratedColumn<String> get lastError =>
       $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaExtensionStoresTableTableManager
@@ -72177,6 +72342,7 @@ class $$MangaExtensionStoresTableTableManager
                 Value<String?> lastModified = const Value.absent(),
                 Value<int?> lastSyncAt = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionStoresCompanion(
                 indexUrl: indexUrl,
@@ -72192,6 +72358,7 @@ class $$MangaExtensionStoresTableTableManager
                 lastModified: lastModified,
                 lastSyncAt: lastSyncAt,
                 lastError: lastError,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -72209,6 +72376,7 @@ class $$MangaExtensionStoresTableTableManager
                 Value<String?> lastModified = const Value.absent(),
                 Value<int?> lastSyncAt = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionStoresCompanion.insert(
                 indexUrl: indexUrl,
@@ -72224,6 +72392,7 @@ class $$MangaExtensionStoresTableTableManager
                 lastModified: lastModified,
                 lastSyncAt: lastSyncAt,
                 lastError: lastError,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -72270,6 +72439,7 @@ typedef $$MangaExtensionsTableCreateCompanionBuilder =
       required String signerSha256,
       Value<bool> enabled,
       required int installedAt,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaExtensionsTableUpdateCompanionBuilder =
@@ -72287,6 +72457,7 @@ typedef $$MangaExtensionsTableUpdateCompanionBuilder =
       Value<String> signerSha256,
       Value<bool> enabled,
       Value<int> installedAt,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -72361,6 +72532,11 @@ class $$MangaExtensionsTableFilterComposer
 
   ColumnFilters<int> get installedAt => $composableBuilder(
     column: $table.installedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -72438,6 +72614,11 @@ class $$MangaExtensionsTableOrderingComposer
     column: $table.installedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaExtensionsTableAnnotationComposer
@@ -72501,6 +72682,9 @@ class $$MangaExtensionsTableAnnotationComposer
     column: $table.installedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaExtensionsTableTableManager
@@ -72553,6 +72737,7 @@ class $$MangaExtensionsTableTableManager
                 Value<String> signerSha256 = const Value.absent(),
                 Value<bool> enabled = const Value.absent(),
                 Value<int> installedAt = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionsCompanion(
                 packageName: packageName,
@@ -72568,6 +72753,7 @@ class $$MangaExtensionsTableTableManager
                 signerSha256: signerSha256,
                 enabled: enabled,
                 installedAt: installedAt,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -72585,6 +72771,7 @@ class $$MangaExtensionsTableTableManager
                 required String signerSha256,
                 Value<bool> enabled = const Value.absent(),
                 required int installedAt,
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaExtensionsCompanion.insert(
                 packageName: packageName,
@@ -72600,6 +72787,7 @@ class $$MangaExtensionsTableTableManager
                 signerSha256: signerSha256,
                 enabled: enabled,
                 installedAt: installedAt,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -72641,6 +72829,7 @@ typedef $$MangaOnlineSourcesTableCreateCompanionBuilder =
       Value<bool> enabled,
       Value<bool> pinned,
       Value<int> sortOrder,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder =
@@ -72653,6 +72842,7 @@ typedef $$MangaOnlineSourcesTableUpdateCompanionBuilder =
       Value<bool> enabled,
       Value<bool> pinned,
       Value<int> sortOrder,
+      Value<String> mediaKind,
       Value<int> rowid,
     });
 
@@ -72702,6 +72892,11 @@ class $$MangaOnlineSourcesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -72754,6 +72949,11 @@ class $$MangaOnlineSourcesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get mediaKind => $composableBuilder(
+    column: $table.mediaKind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$MangaOnlineSourcesTableAnnotationComposer
@@ -72790,6 +72990,9 @@ class $$MangaOnlineSourcesTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get mediaKind =>
+      $composableBuilder(column: $table.mediaKind, builder: (column) => column);
 }
 
 class $$MangaOnlineSourcesTableTableManager
@@ -72840,6 +73043,7 @@ class $$MangaOnlineSourcesTableTableManager
                 Value<bool> enabled = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaOnlineSourcesCompanion(
                 extensionPackage: extensionPackage,
@@ -72850,6 +73054,7 @@ class $$MangaOnlineSourcesTableTableManager
                 enabled: enabled,
                 pinned: pinned,
                 sortOrder: sortOrder,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -72862,6 +73067,7 @@ class $$MangaOnlineSourcesTableTableManager
                 Value<bool> enabled = const Value.absent(),
                 Value<bool> pinned = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<String> mediaKind = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MangaOnlineSourcesCompanion.insert(
                 extensionPackage: extensionPackage,
@@ -72872,6 +73078,7 @@ class $$MangaOnlineSourcesTableTableManager
                 enabled: enabled,
                 pinned: pinned,
                 sortOrder: sortOrder,
+                mediaKind: mediaKind,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -1,6 +1,9 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import eu.kanade.tachiyomi.animesource.model.AnimeFilter
+import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -145,8 +148,79 @@ internal fun filterResponseForBridge(result: Any?): Any? =
     when (result) {
         is FilterList -> result.map { it.toBridgeMap() }
         is FiltersResponse -> mapOf("filterList" to result.filterList?.map { it.toBridgeMap() }.orEmpty())
+        // Aniyomi's filter model is a parallel sealed hierarchy with the same
+        // eight shapes; it goes through the same explicit wire so the host can
+        // reuse one decoder for both ecosystems.
+        is AnimeFilterList -> result.map { it.toBridgeMap() }
+        // `getVideoList` hands back the extension's `Video` objects verbatim.
+        // Jackson would serialize their okhttp `Headers` and the transient
+        // download-progress fields into an unstable shape; project the five
+        // fields the player needs instead.
+        is List<*> ->
+            if (result.isNotEmpty() && result.all { it is Video }) {
+                result.map { (it as Video).toBridgeMap() }
+            } else {
+                result
+            }
         else -> result
     }
+
+internal fun Video.toBridgeMap(): Map<String, Any?> =
+    mapOf(
+        "url" to url,
+        "quality" to quality,
+        "videoUrl" to videoUrl,
+        "headers" to
+            headers?.let { headers ->
+                (0 until headers.size).associate { index -> headers.name(index) to headers.value(index) }
+            },
+        "subtitleTracks" to subtitleTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
+        "audioTracks" to audioTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
+    )
+
+private fun AnimeFilter<*>.toBridgeMap(): Map<String, Any?> {
+    val filter = this
+    val type =
+        when (filter) {
+            is AnimeFilter.Header -> "header"
+            is AnimeFilter.Separator -> "separator"
+            is AnimeFilter.Select<*> -> "select"
+            is AnimeFilter.Text -> "text"
+            is AnimeFilter.CheckBox -> "checkBox"
+            is AnimeFilter.TriState -> "triState"
+            is AnimeFilter.Group<*> -> "group"
+            is AnimeFilter.Sort -> "sort"
+        }
+    return buildMap {
+        put("name", filter.name)
+        put("type", type)
+        when (filter) {
+            is AnimeFilter.Select<*> -> {
+                put("state", filter.state)
+                put("values", filter.values.map { value -> value.toString() })
+            }
+            is AnimeFilter.Text -> put("state", filter.state)
+            is AnimeFilter.CheckBox -> put("state", filter.state)
+            is AnimeFilter.TriState -> put("state", filter.state)
+            is AnimeFilter.Group<*> ->
+                put(
+                    "children",
+                    filter.state.filterIsInstance<AnimeFilter<*>>().map { child -> child.toBridgeMap() },
+                )
+            is AnimeFilter.Sort -> {
+                put("values", filter.values.toList())
+                put(
+                    "state",
+                    mapOf(
+                        "index" to (filter.state?.index ?: 0),
+                        "ascending" to (filter.state?.ascending ?: true),
+                    ),
+                )
+            }
+            else -> Unit
+        }
+    }
+}
 
 private fun Filter<*>.toBridgeMap(): Map<String, Any?> {
     val filter = this

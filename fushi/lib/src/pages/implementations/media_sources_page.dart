@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_page.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';
@@ -161,6 +162,38 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
                     scrapeTaskController: widget.scrapeTaskController,
                     onLibraryChanged: widget.onLibraryChanged,
                   ),
+                  // 视频源扩展（Aniyomi）的入口。iOS 与无 Mihon 宿主的平台整节
+                  // 不出现（[isVideoOnlineSourcesAvailable]），与漫画来源页的
+                  // 在线源三节同一口径。独立成页而不是嵌进来：扩展列表是
+                  // sliver（见 [VideoOnlineSourcesPage]）。
+                  if (widget.mediaKind == 'video' &&
+                      isVideoOnlineSourcesAvailable) ...<Widget>[
+                    const SizedBox(height: 28),
+                    Text(
+                      t.video_online_sources_title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    FushiCard(
+                      padding: EdgeInsets.zero,
+                      child: FushiListItem(
+                        key: const ValueKey<String>(
+                          'video_online_sources_entry',
+                        ),
+                        leading: const Icon(Icons.extension_outlined),
+                        title: Text(t.video_extensions_title),
+                        subtitle: Text(t.video_online_sources_hint),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push(
+                          adaptivePageRoute<void>(
+                            context: context,
+                            builder: (BuildContext context) =>
+                                const VideoOnlineSourcesPage(),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

@@ -1,6 +1,7 @@
 package app.fushi.reader.mihon
 
 import android.app.Application
+import android.content.SharedPreferences
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
@@ -10,6 +11,8 @@ import androidx.preference.PreferenceGroup
 import androidx.preference.PreferenceManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.ConfigurableAnimeSource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 
 internal object MihonPreferenceBridge {
@@ -19,17 +22,44 @@ internal object MihonPreferenceBridge {
         app: Application,
         source: ConfigurableSource,
         values: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> = applyAndRead(
+        app,
+        sourceId = source.id,
+        setup = source::setupPreferenceScreen,
+        shared = source.getSourcePreferences(),
+        values = values,
+    )
+
+    /** Aniyomi 的可配置源：同一套偏好屏 / SharedPreferences 约定，只是接口不同。 */
+    fun applyAndRead(
+        app: Application,
+        source: ConfigurableAnimeSource,
+        values: List<Map<String, Any?>>,
+    ): List<Map<String, Any?>> = applyAndRead(
+        app,
+        sourceId = (source as AnimeSource).id,
+        setup = source::setupPreferenceScreen,
+        shared = source.getSourcePreferences(),
+        values = values,
+    )
+
+    private fun applyAndRead(
+        app: Application,
+        sourceId: Long,
+        setup: (PreferenceScreen) -> Unit,
+        shared: SharedPreferences,
+        values: List<Map<String, Any?>>,
     ): List<Map<String, Any?>> {
         val context = values.firstOrNull { item -> item["key"] == CONTEXT_KEY }
         val changedKey = context?.get("changedPreferenceKey")?.toString()
         val manager = PreferenceManager(app).apply {
-            sharedPreferencesName = "source_${source.id}"
+            sharedPreferencesName = "source_$sourceId"
         }
         val screen = manager.createPreferenceScreen(app)
-        source.setupPreferenceScreen(screen)
+        setup(screen)
         values
             .filterNot { item -> item["key"] == CONTEXT_KEY }
-            .forEach { item -> applyValue(source, screen, item, item["key"] == changedKey) }
+            .forEach { item -> applyValue(shared, screen, item, item["key"] == changedKey) }
         return flatten(screen).map { preference -> serialize(preference) }
     }
 
@@ -41,8 +71,16 @@ internal object MihonPreferenceBridge {
         applyAndRead(app, source, values)
     }
 
+    fun apply(
+        app: Application,
+        source: ConfigurableAnimeSource,
+        values: List<Map<String, Any?>>,
+    ) {
+        applyAndRead(app, source, values)
+    }
+
     private fun applyValue(
-        source: ConfigurableSource,
+        shared: SharedPreferences,
         screen: PreferenceScreen,
         item: Map<String, Any?>,
         notify: Boolean,
@@ -50,7 +88,6 @@ internal object MihonPreferenceBridge {
         val key = item["key"]?.toString().orEmpty()
         if (key.isEmpty()) return
         val preference = screen.findPreference<Preference>(key)
-        val shared = source.getSourcePreferences()
         val editor = shared.edit()
         val value: Any? = when {
             item["checkBoxPreference"] is Map<*, *> ->
