@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/misc/floating_lyric_hint.dart';
 import 'package:fushi_audio/fushi_audio.dart';
@@ -77,8 +78,13 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     final AudioCue? cue = controller.displayCueForFloatingLyric;
     final bool playing = controller.isPlaying;
 
+    // eink：surfaceContainerHighest 塌成页面底色，迷你条与上方正文连成一片；
+    // 顶上描一条线切出来（推荐包下载条同款）。
     return Material(
       color: scheme.surfaceContainerHighest,
+      shape: isEinkTheme(context)
+          ? Border(top: BorderSide(color: scheme.outline))
+          : null,
       child: InkWell(
         onTap: () => appModel.openBackgroundListeningBook(ref),
         child: Padding(
@@ -197,8 +203,13 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
     );
   }
 
-  Widget _coverFallback(ColorScheme scheme) => ColoredBox(
-        color: scheme.primaryContainer,
+  // eink：primaryContainer 塌成页面底色，补描边免得只剩一枚悬空耳机图标。
+  Widget _coverFallback(ColorScheme scheme) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          border:
+              isEinkTheme(context) ? Border.all(color: scheme.outline) : null,
+        ),
         child: Icon(
           Icons.headphones,
           size: 20,

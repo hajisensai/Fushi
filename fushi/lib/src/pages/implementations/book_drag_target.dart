@@ -55,7 +55,11 @@ class _BookDragTargetState extends State<BookDragTarget> {
               Positioned.fill(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: hoverColor.withValues(alpha: 0.2),
+                    // eink：半透明罩在墨水屏上合成抖动灰；只留描边 + 图标
+                    // （CollectionDropTarget / CollectionShelfRow 同款处理）。
+                    color: isEinkTheme(context)
+                        ? null
+                        : hoverColor.withValues(alpha: 0.2),
                     borderRadius: tokens.radii.cardRadius,
                     border: Border.all(
                       color: hoverColor,

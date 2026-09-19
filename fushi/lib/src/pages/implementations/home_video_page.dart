@@ -4631,11 +4631,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                         right: 0,
                         bottom: 0,
                         child: IgnorePointer(
+                          // eink：半透明黑轨道压在封面上是抖动灰，改实心页面
+                          // 底色轨道（进度色 primary 已是前景色）。
                           child: LinearProgressIndicator(
                             value: progressFraction,
                             minHeight: 3,
-                            backgroundColor:
-                                Colors.black.withValues(alpha: 0.35),
+                            backgroundColor: isEinkTheme(context)
+                                ? Theme.of(context).colorScheme.surface
+                                : Colors.black.withValues(alpha: 0.35),
                             color: Theme.of(context).colorScheme.primary,
                           ),
                         ),
@@ -5930,8 +5933,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 封面衬底（UI 巡检 PR-4）：contain 的非 16:9 封面在 16:9 槽位里露出的空带
   /// 垫 surfaceContainer（与共享 [ShelfCoverPlaceholder] 占位同色），本地 / 远端卡共用。
   Widget _coverBacking(Widget cover) {
-    return ColoredBox(
-      color: Theme.of(context).colorScheme.surfaceContainer,
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    // eink：surfaceContainer 塌成页面底色，非 16:9 的封面在行里悬空没有槽位
+    // 边界；描一圈边把 16:9 槽位画出来（ShelfCoverPlaceholder 同款）。
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        border:
+            isEinkTheme(context) ? Border.all(color: colors.outline) : null,
+      ),
       child: cover,
     );
   }
@@ -6382,13 +6392,20 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       };
 
   /// 下拉筛选 chip 视觉（激活态描主色），与搜索框同高。
+  ///
+  /// eink：primary / outline / onSurfaceVariant 全塌成前景色，激活与未激活逐像素
+  /// 相同；改反色填充表达激活（chipTheme / segmentedButtonTheme 同一套处理）。
   Widget _filterDropdownChip({required String label, required bool active}) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final Color foreground = active ? colors.primary : colors.onSurfaceVariant;
+    final bool eink = isEinkTheme(context);
+    final Color foreground = active
+        ? (eink ? colors.surface : colors.primary)
+        : colors.onSurfaceVariant;
     return Container(
       height: 40,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
+        color: active && eink ? colors.onSurface : null,
         border: Border.all(color: active ? colors.primary : colors.outline),
         borderRadius: BorderRadius.circular(4),
       ),
@@ -7315,10 +7332,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     right: 0,
                     bottom: 0,
                     child: IgnorePointer(
+                      // eink：同横排卡——半透明轨道换实心页面底色。
                       child: LinearProgressIndicator(
                         value: watchFrac,
                         minHeight: 3,
-                        backgroundColor: Colors.black.withValues(alpha: 0.35),
+                        backgroundColor: isEinkTheme(context)
+                            ? Theme.of(context).colorScheme.surface
+                            : Colors.black.withValues(alpha: 0.35),
                         color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
