@@ -75,6 +75,55 @@ void main() {
     expect(all.single.isDir, isTrue);
   });
 
+  test('listAll keeps paging on full pages when the driver reports total 0',
+      () async {
+    // 部分存储驱动恒报 total: 0 却真有内容——满页时不能被 0 截断成一页，
+    // 短页才收尾。
+    final List<int> pages = <int>[];
+    final AListApiClient api = AListApiClient(
+      baseUrl: 'https://od.example.com',
+      providerId: 't',
+      client: MockClient((http.Request request) async {
+        final Map<String, dynamic> body =
+            jsonDecode(request.body) as Map<String, dynamic>;
+        final int page = body['page'] as int;
+        pages.add(page);
+        final int count = page < 3 ? 2 : 1;
+        return _json(_ok(<String, dynamic>{
+          'content': <Map<String, dynamic>>[
+            for (int i = 0; i < count; i++)
+              <String, dynamic>{'name': 'p$page-$i', 'is_dir': false},
+          ],
+          'total': 0,
+        }));
+      }),
+    );
+    final List<AListEntry> all = await api.listAll('/x', perPage: 2);
+    expect(pages, <int>[1, 2, 3]);
+    expect(all.length, 5);
+  });
+
+  test('listAll caps the page count when total and page length both lie',
+      () async {
+    int calls = 0;
+    final AListApiClient api = AListApiClient(
+      baseUrl: 'https://od.example.com',
+      providerId: 't',
+      client: MockClient((http.Request request) async {
+        calls++;
+        return _json(_ok(<String, dynamic>{
+          'content': <Map<String, dynamic>>[
+            for (int i = 0; i < 2; i++)
+              <String, dynamic>{'name': 'x$calls-$i', 'is_dir': false},
+          ],
+          'total': 0,
+        }));
+      }),
+    );
+    await api.listAll('/x', perPage: 2);
+    expect(calls, kAListListAllMaxPages);
+  });
+
   test('401 with an account: re-login once and retry with the new token',
       () async {
     final List<String?> seenAuth = <String?>[];

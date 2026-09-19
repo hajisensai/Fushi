@@ -66,6 +66,10 @@ class AListFileLink {
   final int? sizeBytes;
 }
 
+/// [AListApiClient.listAll] 最多翻多少页（perPage=200 → 4 万条）；到顶即停，
+/// 防站点 total 与页长同时失真时无限翻页。
+const int kAListListAllMaxPages = 200;
+
 class AListApiClient {
   AListApiClient({
     required String baseUrl,
@@ -132,8 +136,11 @@ class AListApiClient {
         password: password,
       );
       all.addAll(result.entries);
-      final bool more =
-          result.entries.length >= perPage && page * perPage < result.total;
+      // 满页才可能还有下一页；total 只在 > 0 时可信（部分驱动恒报 0，不能拿它
+      // 把满页截断成一页）。页数封顶防 total 与页长都失真时的死循环。
+      final bool more = result.entries.length >= perPage &&
+          (result.total <= 0 || page * perPage < result.total) &&
+          page < kAListListAllMaxPages;
       if (!more) break;
     }
     return all;
