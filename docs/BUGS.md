@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2408 条。点号进各自文件。
+> 共 2409 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2607](bugs/BUG-2607-ios-highlight-user-select-none-webkit.md) | ✅ | ✅ | iOS 触屏阅读器查词/划选/收藏高亮全部不画：WebKit 不绘制 user-select:none 文字上的 ::highlight |
 | [BUG-2604](bugs/BUG-2604-ffmpeg-min-av1-hwaccel-only.md) | ✅ | ✅ | AV1 视频制卡截帧/动图/片段导出恒 ffmpeg exit 69：捆绑 ffmpeg-min 只有 hwaccel 空壳的原生 av1 解码器 |
 | [BUG-2603](bugs/BUG-2603-quick-action-chip-ellipsis.md) | ✅ | ✅ | 书卡长按菜单快捷 chip 在移动端被截成「查…/导…/从…」 |
 | [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
