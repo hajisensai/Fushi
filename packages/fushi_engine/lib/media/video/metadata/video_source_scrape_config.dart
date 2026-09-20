@@ -42,18 +42,25 @@ const int kVideoMetadataMaxStaffImages = 10;
 const String kVideoAniDbUsernamePref = 'video_anidb_username';
 const String kVideoAniDbPasswordPref = 'video_anidb_password';
 
-/// 全局主资料源偏好（`mal` / `tmdb`）。另一个源恒为兜底源；默认 MAL 沿用
-/// 2026-09-07 的决定，用户可切 TMDB。
+/// 全局主资料源偏好（`anidb` / `mal` / `tmdb`）。2026-09-20 用户拍板对齐 Shoko：
+/// 默认 **AniDB 为主源**（哈希给出的 aid 直接就是作品身份，anime XML 出核心资料
+/// 与全集播出日），TMDB 补充 / 兜底；MAL 保留为可选主源（MAL ↔ TMDB 互为兜底），
+/// AniDB 主源下 MAL 只是交叉引用（Shoko `CrossRef_AniDB_MAL`）。
 const String kVideoMetadataPrimaryProviderPref =
     'video_metadata_primary_provider';
 
-/// 用户可选的主资料源全集。注册进生产 registry 的就是这两家；其余枚举值
-/// （AniDB / Bangumi / Douban / AniList / Fanart）只是历史身份兼容，不可选。
+/// 用户可选的主资料源全集。注册进生产 registry 的就是这三家；其余枚举值
+/// （Bangumi / Douban / AniList / Fanart）只是历史身份兼容，不可选。
 const List<VideoMetadataProviderKind> kSelectableVideoMetadataProviders =
     <VideoMetadataProviderKind>[
+  VideoMetadataProviderKind.anidb,
   VideoMetadataProviderKind.mal,
   VideoMetadataProviderKind.tmdb,
 ];
+
+/// 默认主源（Shoko 形态）。
+const VideoMetadataProviderKind kDefaultVideoMetadataPrimaryProvider =
+    VideoMetadataProviderKind.anidb;
 
 /// 把偏好值 / `provider_override` 列值解析成可选主源；非法或历史值（如旧
 /// `bangumi` override）返回 `null`，由调用方回落到全局默认。
@@ -67,12 +74,13 @@ VideoMetadataProviderKind? parseSelectableVideoMetadataProvider(
       : null;
 }
 
-/// 双源策略里某个主源的兜底源：MAL ↔ TMDB 互为兜底；其它主源（AniDB 等
-/// 单源语义）没有兜底。
+/// 双源策略里某个主源的兜底源：AniDB → TMDB（Shoko：TMDB 恒为 AniDB 的补充）；
+/// MAL ↔ TMDB 互为兜底；其它历史主源没有兜底。
 VideoMetadataProviderKind? videoMetadataFallbackProvider(
   VideoMetadataProviderKind primary,
 ) =>
     switch (primary) {
+      VideoMetadataProviderKind.anidb => VideoMetadataProviderKind.tmdb,
       VideoMetadataProviderKind.mal => VideoMetadataProviderKind.tmdb,
       VideoMetadataProviderKind.tmdb => VideoMetadataProviderKind.mal,
       _ => null,
@@ -97,7 +105,7 @@ class VideoSourceScrapeGlobalConfig {
     this.anidbUsername = '',
     this.anidbPassword = '',
     this.locale = kFallbackVideoMetadataLocale,
-    this.primaryProvider = VideoMetadataProviderKind.mal,
+    this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
     this.identifierWords = ScrapeIdentifierWords.empty,
     this.maxPosters = kVideoMetadataDefaultMaxImages,
     this.maxBackdrops = kVideoMetadataDefaultMaxImages,
@@ -230,7 +238,7 @@ class VideoSourceScrapeGlobalConfig {
       primaryProvider: parseSelectableVideoMetadataProvider(
             read(kVideoMetadataPrimaryProviderPref),
           ) ??
-          VideoMetadataProviderKind.mal,
+          kDefaultVideoMetadataPrimaryProvider,
       // 解析失败不抛：非法行在这里被丢弃，错误说明由设置页自己再解析一次展示。
       identifierWords: ScrapeIdentifierWords.parse(
         preferences.getPref(kVideoMetadataIdentifierWordsPref, defaultValue: '')

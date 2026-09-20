@@ -42,6 +42,8 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart'
+    show metadataUniqueStrings;
 import 'package:fushi_engine/media/video/metadata/anime_offline_identity_resolver.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
@@ -72,10 +74,20 @@ class VideoSourceScrapeCoordinator
   }) {
     final AnimeIdentityMapping? sharedMapping = identityMapping ??
         (enableOfflineTitleIndex ? AnimeIdentityMapping() : null);
+    final VideoMetadataProviderRegistry effectiveRegistry =
+        registry ?? _createRegistry(config);
+    // 集信息首选 AniDB HTTP anime XML（Shoko：一次拿全集播出日），UDP EPISODE 兜底。
+    Future<AnidbEpisodeInfo?> episodeInfoFromXml(
+        {required int animeId, required int episodeId}) async {
+      final VideoMetadataProvider? provider =
+          effectiveRegistry.provider(VideoMetadataProviderKind.anidb);
+      if (provider is! AniDbVideoMetadataProvider) return null;
+      return provider.episodeInfo(animeId: animeId, episodeId: episodeId);
+    }
     return VideoSourceScrapeCoordinator._(
       database: database,
       config: config,
-      registry: registry,
+      registry: effectiveRegistry,
       primaryProvider: primaryProvider,
       hashIdentityService: hashIdentityService,
       resolvedHashIdentityService: hashIdentityService ??
@@ -83,6 +95,7 @@ class VideoSourceScrapeCoordinator
               enabled: config.hashEnabled,
               config: config.anidbUdpConfig,
               mapping: sharedMapping,
+              episodeInfoSource: episodeInfoFromXml,
               store: AnidbFileIdentityDatabaseStore(database)),
       assetDownloader: assetDownloader,
       identityMapping: identityMapping,
@@ -293,8 +306,10 @@ class VideoSourceScrapeCoordinator
     if (identityInput) {
       final VideoMetadataLookup? lookup =
           explicit.length == 1 ? explicit.single : null;
+      // 手动给的 id 只要是可选生产主源（AniDB / MAL / TMDB）的就直取——与
+      // resolver `_acceptsIdentity`、协调器 `acceptsCanonical` 同一判据。
       if (lookup == null ||
-          !chain.contains(lookup.provider) ||
+          !kSelectableVideoMetadataProviders.contains(lookup.provider) ||
           !RegExp(r'^[0-9]+$').hasMatch(lookup.externalId) ||
           (int.tryParse(lookup.externalId) ?? 0) <= 0) {
         throw const FormatException('Invalid video metadata work ID');
@@ -312,7 +327,8 @@ class VideoSourceScrapeCoordinator
       return <VideoSourceScrapeConfirmationCandidate>[
         if (result != null)
           VideoSourceScrapeConfirmationCandidate(
-              lookup: lookup.provider == VideoMetadataProviderKind.mal
+              lookup: lookup.provider == VideoMetadataProviderKind.mal ||
+                      lookup.provider == VideoMetadataProviderKind.anidb
                   ? VideoMetadataLookup(
                       provider: lookup.provider,
                       externalId: lookup.externalId,
@@ -966,15 +982,23 @@ class VideoSourceScrapeCoordinator
     final List<VideoMetadataProviderKind> chain =
         _providerChain(selectedProvider);
     final bool twoSourcePolicy = _isTwoSourcePolicy(selectedProvider);
+    // 已确认 / 已落库 / NFO 默认身份只要来自**仍可选的生产主源**（AniDB / MAL /
+    // TMDB）就是有效的规范绑定，不因用户切换默认主源而被静默换源重识别（对齐
+    // 2026-09-20 默认从 MAL 切到 AniDB：存量 MAL 作品保持身份，由仍注册的 MAL
+    // provider 续刮）。只有退役 provider（bangumi / douban / anilist …）才算旧身份。
     bool acceptsCanonical(VideoMetadataLookup lookup) =>
-        chain.contains(lookup.provider);
+        chain.contains(lookup.provider) ||
+        kSelectableVideoMetadataProviders.contains(lookup.provider);
     final VideoMetadataLookup? confirmedCanonical =
         confirmedLookup != null && acceptsCanonical(confirmedLookup)
             ? confirmedLookup
             : null;
-    // The first persisted identity is the primary. A retired primary's TMDB
-    // cross-reference must not silently become a new canonical binding.
-    final VideoMetadataLookup? storedPrimary = storedLookups.firstOrNull;
+    // Only an identity flagged primary counts as "the" primary. A retired
+    // primary's TMDB cross-reference must not silently become a new canonical
+    // binding; a work that never had a primary (NFO-indexed cross references
+    // only) has nothing retired and keeps its hints.
+    final VideoMetadataLookup? storedPrimary =
+        await _store.primaryLookupForWork(localWork);
     final bool retiredStoredIdentity = twoSourcePolicy &&
         storedPrimary != null &&
         !acceptsCanonical(storedPrimary);
@@ -997,11 +1021,23 @@ class VideoSourceScrapeCoordinator
     final bool retiredNfoIdentity = twoSourcePolicy &&
         nfoIdentityOwner != null &&
         !acceptsCanonical(nfoIdentityOwner);
+    // TMDB 的 /movie 与 /tv 是两个 id 空间：`<movie>` NFO 里的 TMDB id 不能成为
+    // 剧集单元的规范身份（反之亦然），否则一份放错的 NFO 会把整个合集刮成电影。
+    // MAL / AniDB 同一 id 空间不分形态，不受此限（与 `_tmdbSupplement` 的
+    // incompatibleHint、`mergeNfoAuthority` 的 TMDB 形态门同一判据）。
+    bool sameTmdbNamespace(VideoMetadataLookup lookup) =>
+        lookup.provider != VideoMetadataProviderKind.tmdb ||
+        lookup.mediaKind == kind;
     final VideoMetadataLookup? nfoCanonical = twoSourcePolicy
-        ? (nfoPrimary != null && acceptsCanonical(nfoPrimary)
+        ? (nfoPrimary != null &&
+                acceptsCanonical(nfoPrimary) &&
+                sameTmdbNamespace(nfoPrimary)
             ? nfoPrimary
             : null)
-        : nfoLookups.where(acceptsCanonical).firstOrNull;
+        : nfoLookups
+            .where(acceptsCanonical)
+            .where(sameTmdbNamespace)
+            .firstOrNull;
     final VideoMetadataLookup? storedSameSource = confirmedCanonical == null
         ? null
         : _lookupForProvider(storedLookups, confirmedCanonical.provider);
@@ -1074,7 +1110,8 @@ class VideoSourceScrapeCoordinator
     cancellationToken.throwIfCancelled();
     if (hashEvidence.conflicting) {
       final List<_SplitWork> split =
-          await _splitByAnidbWork(localWork, hashEvidence, source);
+          await _splitByAnidbWork(localWork, hashEvidence, source,
+              primaryProvider: selectedProvider);
       if (split.isNotEmpty) {
         final int movies = split
             .where((_SplitWork s) => s.kind == VideoMetadataMediaKind.movie)
@@ -1105,37 +1142,55 @@ class VideoSourceScrapeCoordinator
             : VideoMetadataMediaKind.tv;
       }
     }
+    // 主源是 AniDB（Shoko 形态）时哈希给出的 aid 直接就是作品身份，不经 Fribb；
+    // 主源是 MAL 时才有「AniDB → MAL 一对多」这层。
+    final bool anidbPrimary =
+        selectedProvider == VideoMetadataProviderKind.anidb;
     // 跨站映射一对多（Fribb 把一个 AniDB 作品映到多个 MAL 条目）：AniDB 身份本身
     // 已经成立，只是 MAL 那边要选——把各候选拉出来交 AI / 人工，不再让作品悬空。
-    final bool hashMappingAmbiguous = hashDecidesIdentity &&
+    final bool hashMappingAmbiguous = !anidbPrimary &&
+        hashDecidesIdentity &&
         hashEvidence.animeId != null &&
         hashEvidence.mappedMalIds.length > 1;
     final int? canonicalMalId =
         canonicalLookup?.provider == VideoMetadataProviderKind.mal
             ? int.tryParse(canonicalLookup!.externalId)
             : null;
-    // 哈希与已确认身份打架：文件确定属于 AniDB X，X 映到的 MAL 里没有当前这个
-    // 已确认的 MAL id。保留已确认身份（手动指定不得静默换源），只报出来。
+    final int? canonicalAnidbId =
+        canonicalLookup?.provider == VideoMetadataProviderKind.anidb
+            ? int.tryParse(canonicalLookup!.externalId)
+            : null;
+    // 哈希与已确认身份打架：文件确定属于 AniDB X，而当前已确认的是别的 AniDB
+    // 作品 / X 映到的 MAL 里没有当前这个 MAL id。保留已确认身份（手动指定不得
+    // 静默换源），只报出来。
     final bool hashContradictsCanonical = !hashDecidesIdentity &&
         hashEvidence.animeId != null &&
-        canonicalMalId != null &&
-        hashEvidence.mappedMalIds.isNotEmpty &&
-        !hashEvidence.mappedMalIds.contains(canonicalMalId);
+        ((canonicalAnidbId != null && canonicalAnidbId != hashEvidence.animeId) ||
+            (canonicalMalId != null &&
+                hashEvidence.mappedMalIds.isNotEmpty &&
+                !hashEvidence.mappedMalIds.contains(canonicalMalId)));
     if (hashContradictsCanonical) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
           message:
               '文件哈希指向 AniDB ${hashEvidence.animeId}（anime-lists 映射 MAL ${hashEvidence.mappedMalIds.join('/')}），'
-              '与当前已确认身份 MAL $canonicalMalId 不一致；已保留当前身份，未改写。'));
+              '与当前已确认身份 ${canonicalAnidbId != null ? 'AniDB $canonicalAnidbId' : 'MAL $canonicalMalId'} 不一致；已保留当前身份，未改写。'));
     }
-    final VideoMetadataLookup? hashLookup =
-        !hashDecidesIdentity || hashEvidence.malId == null
-            ? null
-            : VideoMetadataLookup(
-                provider: VideoMetadataProviderKind.mal,
-                externalId: '${hashEvidence.malId}',
+    final VideoMetadataLookup? hashLookup = !hashDecidesIdentity
+        ? null
+        : anidbPrimary && hashEvidence.animeId != null
+            ? VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.anidb,
+                externalId: '${hashEvidence.animeId}',
                 mediaKind: kind,
-              );
+              )
+            : hashEvidence.malId == null
+                ? null
+                : VideoMetadataLookup(
+                    provider: VideoMetadataProviderKind.mal,
+                    externalId: '${hashEvidence.malId}',
+                    mediaKind: kind,
+                  );
     final List<String> searchTitles = <String>[
       if (hashDecidesIdentity && hashEvidence.animeId != null)
         ...hashEvidence.titles
@@ -1146,7 +1201,8 @@ class VideoSourceScrapeCoordinator
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
     final AnimeOfflineIdentity? offline =
         hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous
-            ? await _identifyOffline(searchTitles, kind, warnings, localWork)
+            ? await _identifyOffline(searchTitles, kind, warnings, localWork,
+                primaryProvider: selectedProvider)
             : null;
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
       if (offline != null)
@@ -1353,9 +1409,10 @@ class VideoSourceScrapeCoordinator
     // 绝对集号）时，用 Fribb 同一 TMDB 剧的季条目序列把各季映射到各自 MAL id
     // 逐季抓分集，绝对集号经 anime-relations 重定向；卡片仍是这一个合集。
     _SeasonExpansion? expansion;
-    if (metadata.provider == VideoMetadataProviderKind.mal &&
+    if ((metadata.provider == VideoMetadataProviderKind.mal ||
+            metadata.provider == VideoMetadataProviderKind.anidb) &&
         metadata.kind == VideoMetadataMediaKind.tv &&
-        resolvedLookup.provider == VideoMetadataProviderKind.mal) {
+        resolvedLookup.provider == metadata.provider) {
       expansion = await _expandMalSeasons(
         localWork: localWork,
         primary: metadata,
@@ -1396,6 +1453,8 @@ class VideoSourceScrapeCoordinator
           ),
         );
       }
+      // Shoko：TMDB 恒为 AniDB 的补充（描述 / 图片 / 集标题源序）；MAL 主源仍按
+      // 缺项才补。
       final _TmdbSupplementResult tmdb =
           metadata.provider == VideoMetadataProviderKind.mal &&
                   !_needsTmdbSupplement(metadata, seasonEpisodesAuthoritative)
@@ -1432,7 +1491,7 @@ class VideoSourceScrapeCoordinator
       // 播出日在 TMDB 里找对应——① MAL 有分集的季用 TMDB 集补空；② MAL 一集
       // 都没有的季用本地文件 AniDB 身份里的集标题核对后按 AniDB 集号落集。
       if (tmdb.metadata != null &&
-          metadata.provider == VideoMetadataProviderKind.mal &&
+          metadata.provider != VideoMetadataProviderKind.tmdb &&
           metadata.kind == VideoMetadataMediaKind.tv) {
         final Set<int> sliced = expansion?.tmdbSlices.keys.toSet() ?? <int>{};
         final Map<int, List<TmdbEpisodeMatchSource>> anidbSources =
@@ -1511,8 +1570,14 @@ class VideoSourceScrapeCoordinator
     if (tmdbShow != null &&
         !hashContradictsCanonical &&
         metadata.kind == VideoMetadataMediaKind.tv) {
+      // AniDB 主源：来源池 = anime XML 全集（Shoko 用本地 AniDB_Episode 表，
+      // 即整部作品的集），文件身份只决定文件绑到哪个 eid；其它主源仍只有有身份
+      // 的文件那几集。
       final _AnidbLinkSources sources =
-          _anidbLinkSources(localWork, hashEvidence);
+          metadata.provider == VideoMetadataProviderKind.anidb
+              ? await _anidbWorkLinkSources(primaryHydration.metadata,
+                  resolvedLookup, localWork, hashEvidence, warnings)
+              : _anidbLinkSources(localWork, hashEvidence);
       if (sources.isNotEmpty) {
         tmdbEpisodeAliases ??=
             await _tmdbEpisodeAliases(tmdbShow, warnings, localWork.title);
@@ -1612,8 +1677,9 @@ class VideoSourceScrapeCoordinator
   Future<List<_SplitWork>> _splitByAnidbWork(
     VideoSourceScrapeWork localWork,
     _HashWorkEvidence evidence,
-    SourceLibraryRow? source,
-  ) async {
+    SourceLibraryRow? source, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
     final MediaCollectionRow? collection = localWork.collection;
     if (collection == null || collection.sourceFolderPath != null) {
       return const <_SplitWork>[];
@@ -1639,7 +1705,14 @@ class VideoSourceScrapeCoordinator
         ].map((String t) => t.trim()).firstWhere((String t) => t.isNotEmpty,
             orElse: () => fallback);
     VideoMetadataLookup? lookupFor(
-        AnimeIdentityEntry? entry, VideoMetadataMediaKind kind) {
+        AnimeIdentityEntry? entry, VideoMetadataMediaKind kind,
+        {required int animeId}) {
+      if (primaryProvider == VideoMetadataProviderKind.anidb) {
+        return VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '$animeId',
+            mediaKind: kind);
+      }
       if (entry == null) return null;
       if (entry.malIds.length == 1) {
         return VideoMetadataLookup(
@@ -1672,7 +1745,7 @@ class VideoSourceScrapeCoordinator
         members: group.value,
         title: titleOf(identity, group.value.first.title),
         kind: kind,
-        lookup: lookupFor(entry, kind),
+        lookup: lookupFor(entry, kind, animeId: group.key),
       ));
     }
 
@@ -1883,8 +1956,9 @@ class VideoSourceScrapeCoordinator
     List<String> titles,
     VideoMetadataMediaKind kind,
     List<SourceScrapeIssue> warnings,
-    VideoSourceScrapeWork work,
-  ) async {
+    VideoSourceScrapeWork work, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
     final AnimeOfflineIdentityResolver? resolver = offlineIdentityResolver;
     if (resolver == null) return null;
     final AnimeOfflineIdentityResolution resolution = await resolver.resolve(
@@ -1894,7 +1968,10 @@ class VideoSourceScrapeCoordinator
     switch (resolution.status) {
       case AnimeOfflineIdentityStatus.matched:
         final AnimeOfflineIdentity identity = resolution.identity!;
-        if (!identity.hasOnlineIdentity) {
+        // AniDB 主源：离线索引命中的 aid 本身就是主源身份，不要求映射表有 MAL/TMDB。
+        if (!identity.hasOnlineIdentity &&
+            !_providerChain(primaryProvider)
+                .contains(VideoMetadataProviderKind.anidb)) {
           warnings.add(SourceScrapeIssue(
               workTitle: work.title,
               message:
@@ -1934,10 +2011,22 @@ class VideoSourceScrapeCoordinator
   }) async {
     const _SeasonExpansion none = _SeasonExpansion();
     final AnimeIdentityMapping? mapping = identityMapping;
-    final VideoMetadataProvider? provider =
-        _registry.provider(VideoMetadataProviderKind.mal);
-    final int? malId = int.tryParse(primaryLookup.externalId);
-    if (mapping == null || provider == null || malId == null) return none;
+    final VideoMetadataProviderKind namespace = primaryLookup.provider;
+    if (namespace != VideoMetadataProviderKind.mal &&
+        namespace != VideoMetadataProviderKind.anidb) {
+      return none;
+    }
+    final VideoMetadataProvider? provider = _registry.provider(namespace);
+    final int? primaryId = int.tryParse(primaryLookup.externalId);
+    if (mapping == null || provider == null || primaryId == null) return none;
+    // 同一函数服务两套主源命名空间：条目在 MAL 侧要 malIds 唯一，在 AniDB 侧就是
+    // anidbId。
+    int? idOf(AnimeIdentityEntry entry) =>
+        namespace == VideoMetadataProviderKind.mal
+            ? (entry.malIds.length == 1 ? entry.malIds.single : null)
+            : entry.anidbId;
+    final String label =
+        namespace == VideoMetadataProviderKind.mal ? 'MAL' : 'AniDB';
 
     // 识别词的集偏移已经先于本步生效：这里看到的集号是纠正后的编号，跨季
     // 折算才不会拿错编号去累加。
@@ -1964,10 +2053,18 @@ class VideoSourceScrapeCoordinator
     if (!anySeasonHint && !anyBeyond) return none;
 
     final List<AnimeIdentityEntry> seasonEntries;
+    int? relationsMalId;
     try {
+      final List<AnimeIdentityEntry> own =
+          namespace == VideoMetadataProviderKind.mal
+              ? await mapping.entriesForMal(primaryId)
+              : <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ];
       final Set<int> tmdbIds = <int>{
-        for (final AnimeIdentityEntry entry
-            in await mapping.entriesForMal(malId))
+        for (final AnimeIdentityEntry entry in own)
           if (entry.tmdbId case final int id)
             if (!entry.isMovie) id,
       };
@@ -1975,14 +2072,20 @@ class VideoSourceScrapeCoordinator
         warnings.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message:
-                '多季映射：MAL $malId 在跨站映射表里没有唯一的 TMDB 剧 id，各季无法自动对齐；只保留当前季的分集资料。'));
+                '多季映射：$label $primaryId 在跨站映射表里没有唯一的 TMDB 剧 id，各季无法自动对齐；只保留当前季的分集资料。'));
         return none;
       }
       seasonEntries = <AnimeIdentityEntry>[
         for (final AnimeIdentityEntry entry
             in await mapping.entriesForTmdbTv(tmdbIds.single))
-          if (entry.tmdbSeason != 0 && entry.malIds.length == 1) entry,
+          if (entry.tmdbSeason != 0 && idOf(entry) != null) entry,
       ];
+      // anime-relations 显式表按 MAL id 记规则：AniDB 主源时用本条目映到的唯一 MAL。
+      relationsMalId = namespace == VideoMetadataProviderKind.mal
+          ? primaryId
+          : (own.singleOrNull?.malIds.length == 1
+              ? own.single.malIds.single
+              : null);
     } on Object catch (error) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
@@ -1990,11 +2093,11 @@ class VideoSourceScrapeCoordinator
       return none;
     }
     final int primaryIndex = seasonEntries
-        .indexWhere((AnimeIdentityEntry entry) => entry.malIds.contains(malId));
+        .indexWhere((AnimeIdentityEntry entry) => idOf(entry) == primaryId);
     if (primaryIndex < 0) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
-          message: '多季映射：MAL $malId 不在其 TMDB 剧的季条目序列里，各季无法自动对齐。'));
+          message: '多季映射：$label $primaryId 不在其 TMDB 剧的季条目序列里，各季无法自动对齐。'));
       return none;
     }
     final int primarySeasonNumber = primaryIndex + 1;
@@ -2003,8 +2106,8 @@ class VideoSourceScrapeCoordinator
       primaryIndex: primary,
     };
     VideoMetadataLookup lookupAt(int index) => VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '${seasonEntries[index].malIds.single}',
+          provider: namespace,
+          externalId: '${idOf(seasonEntries[index])}',
           mediaKind: VideoMetadataMediaKind.tv,
         );
     Future<VideoMetadataWork?> workAt(int index) async {
@@ -2078,7 +2181,8 @@ class VideoSourceScrapeCoordinator
       // 绝对集号越过当前季：先查显式表，再按各季集数累加。
       (int, int)? target;
       final AnimeEpisodeRelationsCatalog? relations = episodeRelations;
-      if (relations != null) {
+      final int? malId = relationsMalId;
+      if (relations != null && malId != null) {
         try {
           final AnimeEpisodeRedirection? redirect =
               await relations.redirect(malId: malId, episode: episode);
@@ -2129,7 +2233,7 @@ class VideoSourceScrapeCoordinator
         warnings.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message:
-                '第 ${index + 1} 季（MAL ${seasonEntries[index].malIds.single}）资料拉取失败，该季分集暂缺。'));
+                '第 ${index + 1} 季（$label ${idOf(seasonEntries[index])}）资料拉取失败，该季分集暂缺。'));
         continue;
       }
       // MAL 一个 cour 一个条目，各自只列本 cour 的声优 / 职员；卡片是整部作品，
@@ -2271,15 +2375,23 @@ class VideoSourceScrapeCoordinator
     final AnimeIdentityMapping? mapping = identityMapping;
     if (mapping == null ||
         resolved == null ||
-        resolved.provider != VideoMetadataProviderKind.mal) {
+        (resolved.provider != VideoMetadataProviderKind.mal &&
+            resolved.provider != VideoMetadataProviderKind.anidb)) {
       return null;
     }
-    final int? malId = int.tryParse(resolved.externalId);
-    if (malId == null) return null;
+    final int? primaryId = int.tryParse(resolved.externalId);
+    if (primaryId == null) return null;
     try {
+      final List<AnimeIdentityEntry> entries =
+          resolved.provider == VideoMetadataProviderKind.anidb
+              ? <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ]
+              : await mapping.entriesForMal(primaryId);
       final Set<int> tmdbIds = <int>{
-        for (final AnimeIdentityEntry entry
-            in await mapping.entriesForMal(malId))
+        for (final AnimeIdentityEntry entry in entries)
           if (entry.tmdbId case final int id)
             if (entry.isMovie == (kind == VideoMetadataMediaKind.movie)) id,
       };
@@ -2303,8 +2415,11 @@ class VideoSourceScrapeCoordinator
         _lookupForCandidate(work, VideoMetadataProviderKind.mal)?.externalId;
     final String? tmdbId =
         _lookupForCandidate(work, VideoMetadataProviderKind.tmdb)?.externalId;
+    final String? anidbId =
+        _lookupForCandidate(work, VideoMetadataProviderKind.anidb)?.externalId;
     return (offline.malId != null && malId == '${offline.malId}') ||
-        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}');
+        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}') ||
+        anidbId == '${offline.anidbId}';
   }
 
   /// Shoko `TmdbSearchService.GetAnimePrequelChainRoot`：沿 MAL Prequel 关系回溯到
@@ -2586,6 +2701,71 @@ class VideoSourceScrapeCoordinator
     );
   }
 
+  /// AniDB 主源的 Shoko 式来源池：anime XML 里整部作品的正片（季 1）与 `S` 型
+  /// 特典（季 0），每集带播出日 + 全部语言集名（provider 的别名能力）；再并上
+  /// 文件身份给的集（同集号不重复）。XML 拉不到就退回只用文件身份。
+  Future<_AnidbLinkSources> _anidbWorkLinkSources(
+    VideoMetadataWork anidbWork,
+    VideoMetadataLookup lookup,
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    List<SourceScrapeIssue> warnings,
+  ) async {
+    final _AnidbLinkSources fromFiles =
+        _anidbLinkSources(localWork, evidence);
+    if (lookup.provider != VideoMetadataProviderKind.anidb) return fromFiles;
+    final VideoMetadataProvider? provider =
+        _registry.provider(VideoMetadataProviderKind.anidb);
+    Future<Map<int, List<String>>> aliasesOf(int seasonNumber) async {
+      if (provider is! VideoMetadataEpisodeAliasProvider) {
+        return const <int, List<String>>{};
+      }
+      try {
+        return await (provider as VideoMetadataEpisodeAliasProvider)
+            .fetchEpisodeTitleAliases(lookup, seasonNumber: seasonNumber);
+      } on Object catch (error) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            message: 'AniDB 集名别名拉取失败（$error），逐集链接只用资料语言集名。'));
+        return const <int, List<String>>{};
+      }
+    }
+    final Map<int, TmdbEpisodeMatchSource> regular =
+        <int, TmdbEpisodeMatchSource>{
+      for (final TmdbEpisodeMatchSource source in fromFiles.regular)
+        source.number: source,
+    };
+    final Map<int, TmdbEpisodeMatchSource> specials =
+        <int, TmdbEpisodeMatchSource>{
+      for (final TmdbEpisodeMatchSource source in fromFiles.specials)
+        source.number: source,
+    };
+    for (final VideoMetadataSeason season in anidbWork.seasons) {
+      if (season.seasonNumber != 0 && season.seasonNumber != 1) continue;
+      final Map<int, TmdbEpisodeMatchSource> pool =
+          season.seasonNumber == 0 ? specials : regular;
+      final Map<int, List<String>> aliases = await aliasesOf(season.seasonNumber);
+      for (final VideoMetadataEpisode episode in season.episodes) {
+        // 文件身份里的那几集也并上 XML 的集名 / 播出日：FILE 只给三语集名、
+        // 播出日常缺，XML 是同一集更全的一份，合并而不是二选一。
+        final TmdbEpisodeMatchSource? fromFile = pool[episode.episodeNumber];
+        pool[episode.episodeNumber] = TmdbEpisodeMatchSource(
+          number: episode.episodeNumber,
+          titles: metadataUniqueStrings(<String?>[
+            ...?fromFile?.titles,
+            episode.title,
+            ...?aliases[episode.episodeNumber],
+          ]),
+          airDate: fromFile?.airDate ?? episode.airDate,
+        );
+      }
+    }
+    return _AnidbLinkSources(
+      regular: regular.values.toList(growable: false),
+      specials: specials.values.toList(growable: false),
+    );
+  }
+
   /// 卡片季 → TMDB 切片：多季扩展给的整套；单季卡片时用主 MAL 条目在映射表里
   /// 的 `season.tmdb` / `episode_offset.tmdb` 钉到卡片唯一的正片季上。没有
   /// 映射信息就空表（链接只能靠已带 TMDB id 的卡片集或 TMDB 主源换算）。
@@ -2604,10 +2784,11 @@ class VideoSourceScrapeCoordinator
       return expansion.tmdbSlices;
     }
     final AnimeIdentityMapping? mapping = identityMapping;
-    final int? malId = lookup.provider == VideoMetadataProviderKind.mal
+    final int? primaryId = lookup.provider == VideoMetadataProviderKind.mal ||
+            lookup.provider == VideoMetadataProviderKind.anidb
         ? int.tryParse(lookup.externalId)
         : null;
-    if (mapping == null || malId == null) {
+    if (mapping == null || primaryId == null) {
       return const <int, TmdbSeasonSlice>{};
     }
     final List<VideoMetadataSeason> regular = <VideoMetadataSeason>[
@@ -2617,8 +2798,16 @@ class VideoSourceScrapeCoordinator
     if (regular.length != 1) return const <int, TmdbSeasonSlice>{};
     final List<AnimeIdentityEntry> entries;
     try {
+      final List<AnimeIdentityEntry> own =
+          lookup.provider == VideoMetadataProviderKind.anidb
+              ? <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ]
+              : await mapping.entriesForMal(primaryId);
       entries = <AnimeIdentityEntry>[
-        for (final AnimeIdentityEntry entry in await mapping.entriesForMal(malId))
+        for (final AnimeIdentityEntry entry in own)
           if (!entry.isMovie && entry.tmdbSeason != null) entry,
       ];
     } on Object {
@@ -4142,12 +4331,13 @@ class _EffectiveSourceSettings {
     VideoSourceScrapeSettingRow? row,
     VideoSourceScrapeGlobalConfig config, {
     required bool allowProtectedOverwrite,
-    VideoMetadataProviderKind primaryProvider = VideoMetadataProviderKind.mal,
+    VideoMetadataProviderKind primaryProvider =
+        kDefaultVideoMetadataPrimaryProvider,
   }) {
     return _EffectiveSourceSettings(
       enabled: row?.enabled ?? true,
-      // 来源级 provider_override：mal / tmdb 覆盖全局主源；NULL 或历史值
-      // （bangumi / douban / anilist / anidb）回落全局默认。
+      // 来源级 provider_override：anidb / mal / tmdb 覆盖全局主源；NULL 或历史值
+      // （bangumi / douban / anilist）回落全局默认。
       provider: parseSelectableVideoMetadataProvider(row?.providerOverride) ??
           primaryProvider,
       // 来源级 metadata_locale：NULL / 全空白 = 跟随全局。

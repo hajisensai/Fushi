@@ -135,14 +135,18 @@ VideoMetadataWork supplementVideoMetadataWithTmdb(
 ) =>
     supplementVideoMetadata(primary, tmdb);
 
-/// 各 provider 返回文本（简介 / 标语）的语言约定：Jikan synopsis 恒英文；
-/// TMDB 按请求 locale 返回，即调用方传入的首选语言；其它源未知（不覆盖）。
+/// 各 provider 返回文本（简介 / 标语）的语言约定：Jikan synopsis 恒英文；AniDB
+/// description 也恒英文（Shoko 同样把它当 English，`DescriptionSourceOrder =
+/// [TMDB, AniDB]` 让资料语言的 TMDB 简介优先）；TMDB 按请求 locale 返回，即调用
+/// 方传入的首选语言；其它源未知（不覆盖）。标题不在此列：Shoko
+/// `SeriesTitleSourceOrder = [AniDB, TMDB]`，AniDB 主源标题自己已按语言选过。
 String? _providerTextLanguage(
   VideoMetadataProviderKind provider,
   String? preferredLanguage,
 ) =>
     switch (provider) {
       VideoMetadataProviderKind.mal => 'en',
+      VideoMetadataProviderKind.anidb => 'en',
       VideoMetadataProviderKind.tmdb => preferredLanguage,
       _ => null,
     };

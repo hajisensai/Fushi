@@ -46,7 +46,7 @@
 
 | # | 项 | Shoko | 本仓 | 状态 |
 |---|---|---|---|---|
-| 4.1 | 来源集 | AniDB 集（HTTP 资料：多语言标题 + 播出日） | ① MAL cour 分集（Jikan `aired` + 按资料语言选的标题）；② 本地文件 AniDB 身份里的三语集标题（**无播出日**） | 🟡 生产 registry 不装配 AniDB HTTP 资料链（CLAUDE.md 规则），拿不到 AniDB 集播出日；② 只能靠标题 |
+| 4.1 | 来源集 | AniDB 集（HTTP 资料：多语言标题 + 播出日） | ① MAL cour 分集（Jikan `aired` + 按资料语言选的标题）；② 本地文件 AniDB 身份里的三语集标题（**无播出日**） | 🟡 第三轮时生产 registry 不装配 AniDB HTTP 资料链，拿不到 AniDB 集播出日；② 只能靠标题 → 第四轮 UDP `EPISODE` 补播出日 → **第 10 节起 HTTP anime XML 装配为首选来源** |
 | 4.2 | 候选池 | 全部非特典季的 TMDB 集，特典单独一池 | 全部非特典季；本作品其它季已用掉的 TMDB 集（按 tmdb 集 id）不进池 | ✅（特典池未做：本仓来源集只有正片） |
 | 4.3 | 四轮接受 | Pass1 `DateAndTitle`；Pass2 `Title`；Pass3 除 `FirstAvailable/None`；Pass4 全部 | 同 | ✅ |
 | 4.4 | 定季锁定 | 第二轮起候选池收窄到已链接的季（+S0） | 同（无 S0） | ✅ |
@@ -71,7 +71,7 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 - 4.9 跨作品剔除已占用 TMDB 集：Shoko 默认关；本仓同作品内剔除。
 - 4.5 相似度算法逐字照搬：阈值对齐，算法用本仓带全半角 / 繁简折叠的 Dice ∨ Levenshtein。
 
-结构性差异（第四轮已补，见第 7 节）：生产 registry 不装配 AniDB HTTP 资料链（CLAUDE.md 规则），AniDB 集播出日改由 UDP `EPISODE` 逐集取得；②路径现在带播出日 + 三语集标题。
+结构性差异（第四轮已补，见第 7 节；第 10 节起 HTTP anime XML 成为首选、UDP `EPISODE` 兜底）：第四轮时生产 registry 不装配 AniDB HTTP 资料链，AniDB 集播出日改由 UDP `EPISODE` 逐集取得；②路径现在带播出日 + 三语集标题。
 
 ## 7. 第四轮（2026-09-20）：集级链接成为主判据 + 全面盘点
 
@@ -82,7 +82,7 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 | # | 项 | Shoko | 本仓（本轮后） | 状态 |
 |---|---|---|---|---|
 | 7.1.1 | 文件落到哪一集 | AniDB 集身份（播出日 + 标题）在 TMDB 剧全部季里逐集对出来；文件名从不参与识别 | `linkAnidbEpisodesToTmdb`（`video_metadata_merge.dart`）+ 协调器 `_applyAnidbEpisodeLinks`：有 AniDB 身份的成员以链接结果为 (季, 集)，与文件名不符时按身份归位并记说明；无身份成员仍按文件名 | ✅ |
-| 7.1.2 | AniDB 集播出日 | HTTP anime XML 全集自带 | UDP `EPISODE eid=`（`AnidbUdpFileClient.episode`，240/340，会话续期同 FILE）；FILE 命中后紧接着问一次，存量行 sweep 时补问回填；`anidb_file_identities.episode_aired_at` | ✅（多一个 UDP 请求 / 新文件；HTTP anime 链仍不装配） |
+| 7.1.2 | AniDB 集播出日 | HTTP anime XML 全集自带 | UDP `EPISODE eid=`（`AnidbUdpFileClient.episode`，240/340，会话续期同 FILE）；FILE 命中后紧接着问一次，存量行 sweep 时补问回填；`anidb_file_identities.episode_aired_at` | ✅（第四轮：多一个 UDP 请求 / 新文件；第 10 节起 HTTP anime XML 首选、UDP 兜底） |
 | 7.1.3 | 候选池 | 整剧非特典季；无偏移算术 | 同：整剧；Fribb 切片只用于把 TMDB (S,E) 换算成卡片键（卡片季 = cour），不再决定集号 | ✅ |
 | 7.1.4 | TMDB (S,E) → 本地呈现 | 直接就是 S/E | 三步换算：TMDB 主源直用 / 卡片里已带该 TMDB id 的集 / Fribb 切片（`_cardKeyFromSlices`，越过 cour 已知集数不落）；都不行 → 链接成立但 `cardKey` 为 null、记说明、保留文件名键 | 🟡 卡片模型是 cour，不是 TMDB 季 |
 | 7.1.5 | 特典 | `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`；C/T/P/O 不匹配 | `matchSpecialsToTmdb`（S0 池、同一评分链）；`S<n>` 型 epno 落卡片 (0, E)、卡片无第 0 季就补一季；C/T/P/O 不进池；AniDB HTTP 解析器 `S` 型特典落第 0 季 | ✅ |
@@ -137,7 +137,7 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 
 互联面：`VideoMetadataOrderingHost`（`listVideoMetadataEpisodeGroups` / `setVideoMetadataEpisodeGroup`）经 `POST /api/library/metadata/episode-groups` / `episode-group` 暴露，能力位 `liveLibrary.videoMetadataOrdering`；客户端 `InterconnectSyncBackend.listRemoteVideoMetadataEpisodeGroups / setRemoteVideoMetadataEpisodeGroup`，远端合集详情页菜单「在 host 上选择 TMDB 集编排…」复用同一张 `showVideoTmdbOrderingPicker`，host 回传 entry 落本地镜像；老 host 404 → 「对端不支持」。
 
-仍有意保留（不是差距，是路径 / 产品决策）：① 生产 registry 不装配 AniDB HTTP 资料链，播出日走 UDP `EPISODE`（CLAUDE.md 规则）；② 作品资料主源 MAL / TMDB 用户可选、AniDB 只做身份（2026-09-07/08 拍板）；③ 公司 logo 不落（无模型、无消费点）。
+第六轮结束时仍保留的差异：① 生产 registry 不装配 AniDB HTTP 资料链，播出日走 UDP `EPISODE`；② 作品资料主源 MAL / TMDB 用户可选、AniDB 只做身份；③ 公司 logo 不落；④ 图片语言序「资料语言最先」；⑤ 无独立 CrossRef 表。①② 在第 10 节按 Shoko 对齐；③④⑤ 用户 2026-09-20 拍板保持不变。
 
 ### 9.1 本轮新增守卫 / 测试
 
@@ -151,3 +151,29 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 - `video_metadata_provider_contract_test.dart`：原语不在资料语言序时补拉一次 `/images`，重复 URL 不进池。
 - `settings_schema_coverage_test.dart`：四个新设置项登记专项覆盖。
 - `interconnect_video_metadata_ordering_host_test.dart`：能力位、列分组 + current、设排序写行 / 上锁 / 带分组 lookup 重刮、选回默认、无 TMDB 身份空表、未知键 409、坏 groupId 400。
+
+## 10. 第六轮 b（2026-09-20）：AniDB 主源 + HTTP anime XML 链 + MAL 交叉引用
+
+用户对第六轮尾表五项的决定：「1. 路径差异按照 Shoko 的走 2. 按照 Shoko 的走 3、4、5 保持不变」；随后「刮削直接砍掉 MAL」又改为「不砍 MAL，按 Shoko 的做法看是否要加」——Shoko 的形态是 AniDB 识别 / 组织（必需）+ TMDB 补充 + MAL 只作交叉引用 id，据此落地：
+
+| # | Shoko | Fushi（本轮） | 状态 |
+|---|---|---|---|
+| 10.1 | `AnidbService.GetAnime`：`AnimeDoc_{aid}.xml` 落盘，`MinimumHoursToRedownloadAnimeInfo`=24h 内直接用；过期才远程；远程失败 / 封禁回旧 XML | `AniDbVideoMetadataProvider(xmlCacheDirectory:)` → `<support>/anidb_anime/AnimeDoc_{aid}.xml`，`_loadAnime` 同一取数顺序；生产 registry 装配 AniDB provider（client 仍是随包 `fushiplayer` / 用户自定义，进程级 2s+ 限流闸不变） | ✅ |
+| 10.2 | 集播出日 / 集名来自本地 `AniDB_Episode` 表（整部作品一次 HTTP） | `AnidbHashIdentityService(episodeInfoSource:)` 先问 `AniDbVideoMetadataProvider.episodeInfo(aid, eid)`（XML），拿不到才 UDP `EPISODE`；一文件多集的其它集同路径 | ✅ |
+| 10.3 | 默认主源 AniDB；`SeriesTitleSourceOrder=[AniDB,TMDB]`、`DescriptionSourceOrder=[TMDB,AniDB]` | `kDefaultVideoMetadataPrimaryProvider = anidb`，`kSelectableVideoMetadataProviders = [anidb, mal, tmdb]`，`videoMetadataFallbackProvider(anidb) = tmdb`（TMDB 恒为补充：AniDB 主源无条件跑 `_tmdbSupplement`，简介按资料语言感知择优；MAL 主源仍缺项才补）；设置页下拉由白名单生成，`video_metadata_provider_anidb` 文案 | ✅ |
+| 10.4 | 哈希 aid = series 身份，与 MAL 无关 | AniDB 主源：`hashLookup` = `anidb:<aid>`，`hashMappingAmbiguous` 只在非 AniDB 主源成立（Fribb 一对多不算歧义）；`_splitByAnidbWork` 拆出的单元直接给 `anidb` lookup；离线标题索引命中 AniDB 也直接成身份 | ✅ |
+| 10.5 | `CrossRef_AniDB_MAL`：anime XML `<resources type="2">` | `_parseAnime` 收 `malIds`，`_mapAnime` 落 `VideoMetadataId(type: 'mal', isDefault: false)`；Fribb 的一对多 MAL 映射**不**落交叉引用 | ✅ |
+| 10.6 | `MatchAnidbToTmdbEpisodes` 来源池 = 整部作品的 AniDB 集 | AniDB 主源：`_anidbWorkLinkSources` = 文件身份集 ∪ anime XML 全集（同一集合并集名 / 播出日，`fetchEpisodeTitleAliases` 给全部语言集名）；其它主源仍只有有身份的文件那几集 | ✅ |
+| 10.7 | `TmdbSearchService` 沿 Prequel 链回溯根作品搜 TMDB 剧 | `AniDbVideoMetadataProvider implements VideoMetadataRelationsProvider`：`fetchPrequels` 读 `<relatedanime type="Prequel">`，`_prequelRootTitles` 对 AniDB 主源也生效 | ✅ |
+| 10.8 | 切换资料源不重识别既有 series | `acceptsCanonical` / resolver `_acceptsIdentity` / `searchManualCandidates`：来自三家可选主源的已确认 / 落库 / NFO 默认 / 显式 / 手动身份一律直取，不因默认主源变化换源重搜；`primaryLookupForWork` 只认 `isPrimary` 行为「旧主源」（NFO 索引出的纯交叉引用不算退役、提示保留）；`<movie>` NFO 的 TMDB id 不进剧集单元的规范身份 | ✅ |
+| 10.9 | MAL 只是交叉引用 | MAL provider 保留可选主源（MAL ↔ TMDB 互为兜底）；AniDB 主源下不参与识别、不落 Fribb 映射 | ✅（用户决定：不砍） |
+| ③④⑤ | 公司 logo / 图片语言序 `[None, Main, English]` / 独立 CrossRef 表 | 不落 / 「资料语言最先」`[locale, Main, en, '']` / 分集行内联交叉引用 | 保持不变（用户拍板） |
+
+### 10.1 本轮新增 / 改写守卫与测试
+
+- `anidb_provider_shoko_chain_test.dart`（新）：MAL 交叉引用只收 type 2 且非默认；前传只收 Prequel；逐集全部语言别名（季 0 = 特典，季 2 空）；`episodeInfo` 正片 / `S` 型特典 / 不在作品里 → null、一次请求；磁盘缓存：下载落盘 + 新实例 24h 内零请求、过期重下失败回旧 XML、成功覆盖、封禁回旧、无缓存时作品层 catalog-only + 集层抛网络异常；身份服务 XML 优先、XML 空 / 抛错退 UDP。
+- `anidb_primary_coordinator_test.dart`（新）：默认主源 AniDB + 哈希 aid（Fribb 一对多）直接成身份、MAL 零调用、TMDB 补充；无哈希按 AniDB 标题识别 + TMDB 交叉引用；存量 MAL 主身份在 AniDB 默认下原样保留；AniDB 文件身份决定 TMDB (季, 集)（与文件名相反的绑定）。
+- `video_source_scrape_coordinator_test.dart`：「registry 缺 AniDB 即 fail closed」改为「TMDB 按兜底源识别」；手动 `tmdb=` / `mal=` 不再是格式错误；「退役 provider 交叉引用保留」在 AniDB 双源语义下仍成立（`primaryLookupForWork` 修法）；`<movie>` NFO TMDB id 不进 TV 命名空间（新形态门）。
+- `mal_hash_coordinator_test.dart`：夹具 `provider_override` 由历史值 `anidb` 改为显式 `mal`；三条「退役 AniDB 主身份」改为「既有 AniDB 主身份在 MAL 来源下保持规范、TMDB 只补充」；「不同作品要人工确认」改为第六轮的「按 AniDB 作品拆合集」语义（该用例自第六轮起已红，本轮补正）。
+- `video_metadata_production_registry_test.dart` / `video_source_scrape_provider_override_test.dart` / `video_source_scrape_global_settings_test.dart`：白名单三家、默认 AniDB、`anidb` 可解析、AniDB → TMDB 兜底、AniDB 身份 URL 直取。
+- 其余 MAL 形态的协调器用例显式传 `primaryProvider: VideoMetadataProviderKind.mal`。

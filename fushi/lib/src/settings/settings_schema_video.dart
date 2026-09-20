@@ -870,11 +870,11 @@ SettingsDestination buildVideoDestination() {
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoMetadataPrimaryProviderPref,
                                 defaultValue:
-                                    VideoMetadataProviderKind.mal.name,
+                                    kDefaultVideoMetadataPrimaryProvider.name,
                               )
                               as String,
                         ) ??
-                        VideoMetadataProviderKind.mal)
+                        kDefaultVideoMetadataPrimaryProvider)
                     .name,
             onChanged: (SettingsContext settingsContext, String value) async {
               await commitVideoMetadataRuntimePreference(

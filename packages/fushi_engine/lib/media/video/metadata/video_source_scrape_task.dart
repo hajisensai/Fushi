@@ -36,6 +36,10 @@ class SourceScrapeIssue {
   final String workTitle;
   final String message;
   final String? path;
+
+  @override
+  String toString() =>
+      'SourceScrapeIssue($workTitle: $message${path == null ? '' : ' @ $path'})';
 }
 
 class SourceScrapeReport {

@@ -83,7 +83,22 @@ class VideoMetadataDatabaseStore {
   /// identity must never be promoted merely because the old primary retired.
   Future<List<VideoMetadataLookup>> lookupsForWork(
     VideoSourceScrapeWork localWork,
-  ) async {
+  ) =>
+      _lookupsForWork(localWork, primaryOnly: false);
+
+  /// 仅返回被标为 `isPrimary` 的作品身份；没有主身份（例如只由本地 NFO 索引
+  /// 出交叉引用、尚未被任何主源识别过的作品）返回 null。调用方据此区分「旧主源
+  /// 已退役，需要重识别」与「从来没有主身份，交叉引用只是提示」——后者不该被
+  /// 当成退役主源而把提示一起丢掉。
+  Future<VideoMetadataLookup?> primaryLookupForWork(
+    VideoSourceScrapeWork localWork,
+  ) async =>
+      (await _lookupsForWork(localWork, primaryOnly: true)).firstOrNull;
+
+  Future<List<VideoMetadataLookup>> _lookupsForWork(
+    VideoSourceScrapeWork localWork, {
+    required bool primaryOnly,
+  }) async {
     final VideoMetadataWorkRow? row = localWork.collection == null
         ? await database.getVideoMetadataWorkByBook(
             localWork.members.single.bookUid,
@@ -102,9 +117,10 @@ class VideoMetadataDatabaseStore {
       ...identities.where(
         (VideoMetadataProviderIdentityRow value) => value.isPrimary,
       ),
-      ...identities.where(
-        (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
-      ),
+      if (!primaryOnly)
+        ...identities.where(
+          (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
+        ),
     ];
     final List<VideoMetadataLookup> result = <VideoMetadataLookup>[];
     for (final VideoMetadataProviderIdentityRow identity in ordered) {

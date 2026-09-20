@@ -5162,5 +5162,6 @@
   "video_metadata_image_limit_hint": "0 = 不限。按资料语言 → 原语 → 英文 → 无字图的顺序保留评分最高的几张。",
   "video_metadata_download_staff_images": "下载演职员头像",
   "video_metadata_download_staff_images_hint": "刮削时把演职员头像存到本地（每部作品最多 10 张）；关闭时按需从 TMDB 加载。",
-  "remote_collection_tmdb_ordering_on_host": "在 host 上选择 TMDB 集编排…"
+  "remote_collection_tmdb_ordering_on_host": "在 host 上选择 TMDB 集编排…",
+  "video_metadata_provider_anidb": "AniDB（哈希身份 + 作品 XML）"
 }

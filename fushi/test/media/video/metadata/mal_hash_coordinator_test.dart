@@ -36,6 +36,8 @@ void main() {
       _Provider? mal, _Provider? tmdb, _HashService hash) {
     addTearDown(hash.close);
     return VideoSourceScrapeCoordinator(
+      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+      primaryProvider: VideoMetadataProviderKind.mal,
       database: db,
       config: const VideoSourceScrapeGlobalConfig(),
       hashIdentityService: hash,
@@ -95,9 +97,13 @@ void main() {
         <String>['AniDB 哈希识别已关闭（设置 → 在线服务 → AniDB），本批只按标题识别。']);
   });
 
+  // 2026-09-20 起 AniDB 是可选的生产主源（且为默认）：库里 / NFO 里既有的
+  // AniDB 主身份不再是「退役源、需按 MAL 重识别」，而是有效的规范绑定——来源
+  // 选 MAL 也不换源（「手动指定的身份不得静默换源」），由仍注册的 AniDB provider
+  // 续刮；它带的 TMDB 交叉引用按 TMDB 补充路径取，不升格为主身份。
   for (final String legacy in <String>['database', 'nfo', 'both']) {
     test(
-        'retired AniDB primary in $legacy never promotes its TMDB cross-reference',
+        'existing AniDB primary in $legacy stays canonical under a MAL source and keeps TMDB as supplement',
         () async {
       final SourceLibraryRow source = await _source(db, directory);
       if (legacy != 'nfo') {
@@ -113,39 +119,48 @@ void main() {
                     type: 'anidb', value: '100', isDefault: true),
                 const VideoMetadataId(type: 'tmdb', value: '99'),
               ],
-              plot: 'Old wrong plot',
+              plot: 'Old plot',
             ));
       }
       final File nfo = File(p.join(directory.path, 'Show.nfo'));
       const String legacyNfo =
-          '<movie><title>Old wrong work</title><plot>Old wrong plot</plot>'
+          '<movie><title>Old work</title><plot>Old plot</plot>'
           '<uniqueid type="anidb" default="true">100</uniqueid>'
           '<uniqueid type="tmdb">99</uniqueid></movie>';
       if (legacy != 'database') await nfo.writeAsString(legacyNfo);
+      final _Provider anidb = _Provider(VideoMetadataProviderKind.anidb);
       final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
       final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
-      final SourceScrapeReport report = await scrape(
-          coordinator(mal, tmdb, _HashService(enabled: false)), source);
+      final VideoSourceScrapeCoordinator runner = VideoSourceScrapeCoordinator(
+        primaryProvider: VideoMetadataProviderKind.mal,
+        database: db,
+        config: const VideoSourceScrapeGlobalConfig(),
+        hashIdentityService: _HashService(enabled: false),
+        registry: VideoMetadataProviderRegistry(
+            <VideoMetadataProvider>[anidb, mal, tmdb]),
+      );
+      final SourceScrapeReport report = await scrape(runner, source);
       expect(report.succeededWorks, 1, reason: '${report.errors}');
-      expect(mal.searchCalls, greaterThan(0));
-      expect(await _primaryProvider(db), 'mal');
-      expect(tmdb.fetchedIds, isNot(contains('99')));
+      expect(mal.searchCalls, 0, reason: '已有身份不重识别');
+      expect(mal.fetchedIds, isEmpty);
+      expect(anidb.fetchedIds, <String>['100']);
+      expect(await _primaryProvider(db), 'anidb');
       final VideoMetadataWorkRow stored =
           (await db.getVideoMetadataWorkByBook('book-0'))!;
-      expect(stored.overview, 'mal plot');
       final List<VideoMetadataProviderIdentityRow> ids =
           await db.getVideoMetadataProviderIdentities(workId: stored.id);
       expect(
           ids.any((VideoMetadataProviderIdentityRow id) =>
-              id.provider == 'tmdb' && id.externalId == '99'),
-          isFalse);
+              id.provider == 'tmdb' && id.isPrimary),
+          isFalse,
+          reason: 'TMDB 交叉引用不升格为主身份');
       if (legacy != 'database') {
         expect(await nfo.readAsString(), legacyNfo);
         expect(
             report.warnings
                 .map((SourceScrapeIssue issue) => issue.message)
                 .join(),
-            contains('旧资料源'));
+            isNot(contains('旧资料源')));
       }
     });
   }
@@ -183,6 +198,8 @@ void main() {
     final _HashService hash = _HashService(enabled: false);
     addTearDown(hash.close);
     final VideoSourceScrapeCoordinator runner = VideoSourceScrapeCoordinator(
+      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+      primaryProvider: VideoMetadataProviderKind.mal,
       database: db,
       // 资料语言显式写死 zh-CN：本用例测的是「简介语言感知」，它**只在资料语言
       // 不是英语时**才有可观察行为（MAL 简介恒英文）。以前这里吃全局默认值，
@@ -426,7 +443,10 @@ void main() {
     expect(report.warnings.single.message, contains('哈希识别未执行'));
   });
 
-  test('hash different anime requires confirmation', () async {
+  test('hash different anime splits the playlist per AniDB work (Shoko)',
+      () async {
+    // 第六轮对齐 Shoko 多 series：成员分属不同 AniDB 作品不再整合集挂起等人工，
+    // 而是按作品拆成各自的播放列表合集分别刮削（`_splitByAnidbWork`）。
     final SourceLibraryRow source = await _source(db, directory, count: 2);
     final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
       _matched(malIds: <int>{42}),
@@ -436,12 +456,25 @@ void main() {
     final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
     final SourceScrapeReport report =
         await scrape(coordinator(mal, tmdb, hash), source);
-    expect(report.pendingConfirmations, 1);
-    expect(report.succeededWorks, 0);
-    expect(hash.calls, 2);
-    expect(mal.searchCalls, 0);
-    expect(mal.fetchedIds, isEmpty);
-    expect(tmdb.searchCalls, 0);
+    // 原合集 2 个成员各问一次，拆出的两个单元各再问一次（真实服务由
+    // `anidb_file_identities` 持久层命中，不重算哈希不重发 FILE）。
+    expect(hash.calls, 4);
+    expect(report.pendingConfirmations, 0);
+    expect(report.failedWorks, 0, reason: '${report.errors}');
+    expect(report.succeededWorks, 2, reason: '两部作品各自成合集刮削');
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message).join(),
+        contains('拆开各自刮削'));
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections.map((MediaCollectionRow c) => c.name),
+        unorderedEquals(<String>['Show', 'Show（AniDB 101）']));
+    // aid 100 的成员留在原合集，aid 101 的成员进新合集。
+    final MediaCollectionRow split = collections
+        .singleWhere((MediaCollectionRow c) => c.name == 'Show（AniDB 101）');
+    expect(
+        (await db.getCollectionItems(split.id))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-1']);
   });
 
   // 对齐 Shoko（BUG-2586）：anime-lists 一对多不是「作品悬空」——AniDB 身份已
@@ -656,7 +689,9 @@ Future<SourceLibraryRow> _source(FushiDatabase db, Directory root,
   await db.upsertVideoSourceScrapeSettings(
       VideoSourceScrapeSettingsCompanion.insert(
           sourceId: Value<int>(sourceId),
-          providerOverride: const Value<String?>('anidb'),
+          // 显式 MAL：2026-09-20 起 `anidb` 不再是回落全局默认的历史值，而是
+          // 真正的 AniDB 主源。
+          providerOverride: const Value<String?>('mal'),
           writeNfo: const Value<bool>(false),
           writeImages: const Value<bool>(false),
           updatedAt: 1));

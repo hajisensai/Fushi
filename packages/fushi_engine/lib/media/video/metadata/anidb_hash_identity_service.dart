@@ -59,6 +59,11 @@ typedef AnidbIdentityLookup = Future<AnidbFileIdentity?> Function(
 typedef AnidbEpisodeLookup = Future<AnidbEpisodeInfo?> Function(
     {required int episodeId});
 
+/// 按 (aid, eid) 取集信息的**首选**来源——AniDB HTTP anime XML（Shoko 路径：
+/// 一次拿全集播出日 / 集名，本地缓存 24h）。返回 null / 抛错 → 退到 UDP `EPISODE`。
+typedef AnidbEpisodeInfoSource = Future<AnidbEpisodeInfo?> Function(
+    {required int animeId, required int episodeId});
+
 /// Hashing is strictly opt-in and requires a registered, configured UDP client.
 /// A positive FILE response remains a match even if MAL mapping is unavailable.
 ///
@@ -74,6 +79,7 @@ class AnidbHashIdentityService {
       AnidbFileHasher? hasher,
       AnidbIdentityLookup? lookup,
       AnidbEpisodeLookup? episodeLookup,
+      AnidbEpisodeInfoSource? episodeInfoSource,
       AnidbFileIdentityStore? store,
       DateTime Function()? now,
       this.maxCachedHashes = 512})
@@ -84,6 +90,7 @@ class AnidbHashIdentityService {
         _hasher = hasher ?? hashAnidbFile,
         _lookup = lookup,
         _episodeLookup = episodeLookup,
+        _episodeInfoSource = episodeInfoSource,
         _store = store,
         _now = now ?? DateTime.now;
 
@@ -96,6 +103,7 @@ class AnidbHashIdentityService {
   final AnidbFileHasher _hasher;
   final AnidbIdentityLookup? _lookup;
   final AnidbEpisodeLookup? _episodeLookup;
+  final AnidbEpisodeInfoSource? _episodeInfoSource;
   final AnidbFileIdentityStore? _store;
   final DateTime Function() _now;
   final LinkedHashMap<String, AnidbEd2kHash> _hashes =
@@ -270,9 +278,25 @@ class AnidbHashIdentityService {
   Future<AnidbFileIdentity> _withEpisodeInfo(AnidbFileIdentity identity) async {
     final bool needMain = identity.episodeAiredAt == null;
     if (!needMain && !identity.hasUnresolvedOtherEpisodes) return identity;
-    final AnidbEpisodeLookup? lookup =
+    final AnidbEpisodeLookup? udp =
         _episodeLookup ?? (_lookup == null ? _client.episode : null);
-    if (lookup == null) return identity;
+    final AnidbEpisodeInfoSource? xml = _episodeInfoSource;
+    if (udp == null && xml == null) return identity;
+    // Shoko 路径优先：anime XML 里整部作品的集都在（一次请求、24h 缓存）；XML 拿
+    // 不到这一集（作品未收录 / HTTP 链不可用）再按 eid 走 UDP EPISODE。
+    Future<AnidbEpisodeInfo?> lookup({required int episodeId}) async {
+      if (xml != null) {
+        try {
+          final AnidbEpisodeInfo? fromXml =
+              await xml(animeId: identity.animeId, episodeId: episodeId);
+          if (fromXml != null) return fromXml;
+        } on Object {
+          // XML 链失败不影响 UDP 兜底。
+        }
+      }
+      return udp == null ? null : udp(episodeId: episodeId);
+    }
+
     AnidbFileIdentity result = identity;
     if (needMain) {
       final AnidbEpisodeInfo? info =
