@@ -80,6 +80,86 @@ void main() {
       },
     );
 
+    // Shoko 图片语言序的 Main 槽：资料语言不含原语时按原语再拉一次 images 补进
+    // 候选池（否则 zh 用户根本收不到日文海报）。
+    test('fetchWork tops up original-language images when the metadata '
+        'language leaves them out', () async {
+      final List<String> imageLanguages = <String>[];
+      final MockClient client = MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/tv/77/images')) {
+          imageLanguages
+              .add(request.url.queryParameters['include_image_language'] ?? '');
+          return _json(<String, Object?>{
+            'posters': <Object?>[
+              <String, Object?>{
+                'file_path': '/ja-poster.jpg',
+                'iso_639_1': 'ja',
+                'vote_average': 5.0,
+              },
+              // 与详情里已有的同一张：不重复进池。
+              <String, Object?>{
+                'file_path': '/zh-poster.jpg',
+                'iso_639_1': 'zh',
+                'vote_average': 9.0,
+              },
+            ],
+          });
+        }
+        if (request.url.path.endsWith('/tv/77')) {
+          return _json(<String, Object?>{
+            'id': 77,
+            'name': 'Show',
+            'original_language': 'ja',
+            'images': <String, Object?>{
+              'posters': <Object?>[
+                <String, Object?>{
+                  'file_path': '/zh-poster.jpg',
+                  'iso_639_1': 'zh',
+                  'vote_average': 9.0,
+                },
+              ],
+            },
+          });
+        }
+        if (request.url.path.endsWith('/tv/78')) {
+          return _json(<String, Object?>{
+            'id': 78,
+            'name': 'English show',
+            'original_language': 'en',
+          });
+        }
+        return _json(<String, Object?>{});
+      });
+      final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+        apiKey: 'KEY',
+        client: client,
+        language: 'zh-CN',
+      );
+      final VideoMetadataWork work = (await provider.fetchWork(
+        const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '77',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+      ))!;
+      expect(imageLanguages, <String>['ja']);
+      expect(
+        work.images
+            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover)
+            .map((VideoMetadataImage i) => i.language)
+            .toList(),
+        <String?>['zh', 'ja'],
+        reason: '原语海报补进来，重复 URL 只一张',
+      );
+      // 原语已在资料语言序里（en）→ 不多拉。
+      await provider.fetchWork(const VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.tmdb,
+        externalId: '78',
+        mediaKind: VideoMetadataMediaKind.tv,
+      ));
+      expect(imageLanguages, <String>['ja']);
+    });
+
     test(
       'listEpisodeGroups exposes every alternate ordering (Shoko '
       'TMDB_AlternateOrdering) and group-mode title aliases follow the group '

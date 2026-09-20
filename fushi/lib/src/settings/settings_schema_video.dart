@@ -915,6 +915,71 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 图片保留张数（Shoko TMDB.MaxAutoPosters / Backdrops / Logos，默认 10，
+          // 0 = 不限）与演职员头像落地（AutoDownloadStaffImages）。改后经
+          // commitVideoMetadataRuntimePreference 同款路径重建刮削快照。
+          for (final (String key, String title, IconData icon) limit
+              in <(String, String, IconData)>[
+            (
+              kVideoMetadataMaxPostersPref,
+              t.video_metadata_max_posters,
+              Icons.image_outlined
+            ),
+            (
+              kVideoMetadataMaxBackdropsPref,
+              t.video_metadata_max_backdrops,
+              Icons.panorama_outlined
+            ),
+            (
+              kVideoMetadataMaxLogosPref,
+              t.video_metadata_max_logos,
+              Icons.title_outlined
+            ),
+          ])
+            SettingsStepperItem(
+              id: 'video.library.${limit.$1}',
+              title: limit.$2,
+              subtitle: t.video_metadata_image_limit_hint,
+              icon: limit.$3,
+              value: (SettingsContext settingsContext) {
+                final Object? raw = settingsContext.appModel.prefsRepo.getPref(
+                  limit.$1,
+                  defaultValue: kVideoMetadataDefaultMaxImages,
+                );
+                return (raw is int
+                        ? raw
+                        : int.tryParse('$raw') ??
+                            kVideoMetadataDefaultMaxImages)
+                    .toDouble();
+              },
+              step: 1,
+              min: 0,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (SettingsContext settingsContext, double v) async {
+                await settingsContext.appModel.prefsRepo
+                    .setPref(limit.$1, v.round());
+                await settingsContext.appModel
+                    .reloadVideoDownloadPipelineRuntime();
+              },
+            ),
+          SettingsSwitchItem(
+            id: 'video.library.metadata_download_staff_images',
+            title: t.video_metadata_download_staff_images,
+            subtitle: t.video_metadata_download_staff_images_hint,
+            icon: Icons.people_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.getPref(
+                  kVideoMetadataStaffImagesPref,
+                  defaultValue: false,
+                ) as bool,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setPref(kVideoMetadataStaffImagesPref, value);
+              await settingsContext.appModel
+                  .reloadVideoDownloadPipelineRuntime();
+            },
+          ),
           // 识别词（设计稿 C 二期，对标 MoviePilot WordsMatcher）：用户词表在
           // 识别前改写标题、屏蔽发布组等噪声块、偏移集号。词表是多行文本，
           // 单行的 SettingsTextItem 装不下，所以走 action + 编辑对话框。

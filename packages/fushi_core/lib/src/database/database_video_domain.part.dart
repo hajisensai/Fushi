@@ -692,6 +692,18 @@ mixin _FushiDbVideoDomain
         );
       });
 
+  /// 人物照片落地后回写本地路径（Shoko `AutoDownloadStaffImages`）；行不存在不写。
+  Future<void> updateVideoMetadataPersonProfilePath(
+    String personKey,
+    String? profilePath,
+  ) =>
+      (update(videoMetadataPeople)
+            ..where(($VideoMetadataPeopleTable t) =>
+                t.personKey.equals(personKey)))
+          .write(VideoMetadataPeopleCompanion(
+        profilePath: Value<String?>(profilePath),
+      ));
+
   Future<VideoMetadataPersonRow?> getVideoMetadataPerson(String personKey) =>
       (select(videoMetadataPeople)
             ..where(

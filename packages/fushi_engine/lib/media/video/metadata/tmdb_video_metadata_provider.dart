@@ -172,7 +172,32 @@ class TmdbVideoMetadataProvider
       cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
     );
     if (payload == null) return null;
-    final VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
+    VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
+    // Shoko 图片语言序里的 `Main` = 片子原语。请求端按资料语言过滤图片，原语
+    // 不在其中时（zh-CN 用户看日本动画）再按原语补拉一次 images（独立缓存键、
+    // 轻量），否则原语海报根本进不了候选池。
+    final String? original =
+        VideoMetadataLanguages.primarySubtagOf(work.originalLanguage);
+    if (original != null &&
+        !_languages.imageLanguages
+            .any((String tag) => tag.toLowerCase() == original)) {
+      final Map<String, Object?>? images = await _getObjectOrNull(
+        '$path/images',
+        operation: 'TMDB ${lookup.mediaKind.name} images ($original)',
+        query: <String, String>{'include_image_language': original},
+        cacheKey:
+            'tmdb:images:${lookup.mediaKind.name}:${lookup.externalId}:$original',
+      );
+      if (images != null) {
+        final Set<String> known =
+            work.images.map((VideoMetadataImage i) => i.url).toSet();
+        work = work.copyWith(images: <VideoMetadataImage>[
+          ...work.images,
+          for (final VideoMetadataImage image in _mapImageSet(images))
+            if (known.add(image.url)) image,
+        ]);
+      }
+    }
     return lookup.episodeGroupId == null
         ? work
         : work.copyWith(episodeGroupId: lookup.episodeGroupId);

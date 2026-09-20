@@ -1113,6 +1113,10 @@ class VideoMetadataDatabaseStore {
         _ => kind.name,
       };
 
+  /// 人物行主键（`person:<provider>:<id>` / 按名字摘要），与 apply 写
+  /// `video_metadata_people` 时用的同一把键——人物照片落地要按它回写 `profilePath`。
+  static String personKeyFor(VideoMetadataPerson person) => _personKey(person);
+
   static String _personKey(VideoMetadataPerson person) {
     final VideoMetadataId? id = _primaryIdFrom(person.ids);
     return id == null

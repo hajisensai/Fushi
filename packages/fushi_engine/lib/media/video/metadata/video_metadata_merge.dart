@@ -1074,23 +1074,40 @@ String _imageSlotKey(VideoMetadataImage image) => <Object?>[
 /// 传值——于是无论用户是谁、资料语言是什么，海报永远中文优先。默认值把「忘了接线」
 /// 伪装成了「有意的排序策略」，所以这里不再留默认值，强迫调用方说出用哪种语言。
 /// 派生用 `VideoMetadataLanguages.imageLanguages`。
+/// 每类图保留几张（Shoko `TMDB.MaxAuto*`）：[maxPerKind] 没给的图种 1 张，
+/// 0 = 不限；分集剧照（`thumb`）恒 1（Shoko `MaxAutoThumbnails = 1`）。
+///
+/// [mainLanguage]（作品原语，Shoko 图片语言序里的 `Main` 槽）插到 [languageOrder]
+/// 的资料语言之后、英文之前：用户资料语言的图仍最先，其次是片子原语的图，再
+/// 英文、再无字图——与 Shoko `[None, Main, English]` 相比多了「资料语言在前」这一
+/// 层，这是本仓已定的产品行为（BUG：用户设 ja 却拿到中文海报）。同一 URL 只算
+/// 一张（TMDB 详情的 `poster_path` 与 `images.posters` 会重复）。
 List<VideoMetadataImage> selectVideoMetadataImages({
   required Iterable<VideoMetadataImage> primary,
   required List<String> languageOrder,
-  int maxBackdrops = 3,
+  Map<VideoMetadataImageKind, int> maxPerKind =
+      const <VideoMetadataImageKind, int>{VideoMetadataImageKind.backdrop: 3},
+  String? mainLanguage,
 }) {
-  assert(maxBackdrops > 0);
+  final List<String> order = imageLanguageOrderWithMain(languageOrder,
+      mainLanguage: mainLanguage);
   final Map<String, List<VideoMetadataImage>> primaryGroups = _groupImages(
     primary,
   );
   final List<VideoMetadataImage> selected = <VideoMetadataImage>[];
-  for (final List<VideoMetadataImage> preferred in primaryGroups.values) {
-    if (preferred.isEmpty) continue;
-    preferred.sort((VideoMetadataImage a, VideoMetadataImage b) =>
-        _compareImages(a, b, languageOrder));
-    final bool isBackdrop =
-        preferred.first.kind == VideoMetadataImageKind.backdrop;
-    selected.addAll(preferred.take(isBackdrop ? maxBackdrops : 1));
+  for (final List<VideoMetadataImage> group in primaryGroups.values) {
+    if (group.isEmpty) continue;
+    final Set<String> seenUrls = <String>{};
+    final List<VideoMetadataImage> preferred = <VideoMetadataImage>[
+      for (final VideoMetadataImage image in group)
+        if (seenUrls.add(image.url)) image,
+    ]..sort((VideoMetadataImage a, VideoMetadataImage b) =>
+        _compareImages(a, b, order));
+    final VideoMetadataImageKind kind = preferred.first.kind;
+    final int limit = kind == VideoMetadataImageKind.thumb
+        ? 1
+        : (maxPerKind[kind] ?? 1);
+    selected.addAll(limit <= 0 ? preferred : preferred.take(limit));
   }
   selected.sort((VideoMetadataImage a, VideoMetadataImage b) {
     final int bySeason = (a.seasonNumber ?? -1).compareTo(b.seasonNumber ?? -1);
@@ -1101,6 +1118,21 @@ List<VideoMetadataImage> selectVideoMetadataImages({
     return a.kind.index.compareTo(b.kind.index);
   });
   return selected;
+}
+
+/// 把作品原语（Shoko `Main`）插进图片语言序：资料语言之后、其余之前；已在序里
+/// 或没给就原样返回。
+List<String> imageLanguageOrderWithMain(
+  List<String> languageOrder, {
+  String? mainLanguage,
+}) {
+  final String main = mainLanguage?.trim().toLowerCase() ?? '';
+  if (main.isEmpty ||
+      languageOrder.any((String tag) => tag.toLowerCase() == main)) {
+    return languageOrder;
+  }
+  if (languageOrder.isEmpty) return <String>[main];
+  return <String>[languageOrder.first, main, ...languageOrder.skip(1)];
 }
 
 Map<String, List<VideoMetadataImage>> _groupImages(

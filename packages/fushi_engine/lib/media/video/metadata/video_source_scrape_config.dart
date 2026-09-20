@@ -24,6 +24,21 @@ const String kVideoMetadataLocalePref = 'video_metadata_locale';
 const String kVideoMetadataIdentifierWordsPref =
     'video_metadata_identifier_words';
 const String kVideoAniDbHashEnabledPref = 'video_anidb_hash_enabled';
+
+/// 每部作品每类图保留张数上限（Shoko `TMDB.MaxAutoPosters` / `MaxAutoBackdrops`
+/// / `MaxAutoLogos`，默认都是 10；0 = 不限）。分集剧照恒 1（`MaxAutoThumbnails`）。
+const String kVideoMetadataMaxPostersPref = 'video_metadata_max_posters';
+const String kVideoMetadataMaxBackdropsPref = 'video_metadata_max_backdrops';
+const String kVideoMetadataMaxLogosPref = 'video_metadata_max_logos';
+const int kVideoMetadataDefaultMaxImages = 10;
+
+/// 刮削时把演职员头像下到本地（Shoko `TMDB.AutoDownloadStaffImages`）。默认关：
+/// Shoko 默认 `AutoDownloadCrewAndCast = false` 根本不拉人物，本仓照片走按需
+/// 缓存已等价；开了才落地，每部作品最多 [kVideoMetadataMaxStaffImages] 张
+/// （Shoko `MaxAutoStaffImages`）。
+const String kVideoMetadataStaffImagesPref =
+    'video_metadata_download_staff_images';
+const int kVideoMetadataMaxStaffImages = 10;
 const String kVideoAniDbUsernamePref = 'video_anidb_username';
 const String kVideoAniDbPasswordPref = 'video_anidb_password';
 
@@ -84,7 +99,25 @@ class VideoSourceScrapeGlobalConfig {
     this.locale = kFallbackVideoMetadataLocale,
     this.primaryProvider = VideoMetadataProviderKind.mal,
     this.identifierWords = ScrapeIdentifierWords.empty,
+    this.maxPosters = kVideoMetadataDefaultMaxImages,
+    this.maxBackdrops = kVideoMetadataDefaultMaxImages,
+    this.maxLogos = kVideoMetadataDefaultMaxImages,
+    this.downloadStaffImages = false,
   });
+
+  /// 每类图保留张数（0 = 不限），见 [kVideoMetadataMaxPostersPref] 等。
+  final int maxPosters, maxBackdrops, maxLogos;
+
+  /// 见 [kVideoMetadataStaffImagesPref]。
+  final bool downloadStaffImages;
+
+  /// 图种 → 上限，喂 `selectVideoMetadataImages(maxPerKind:)`。
+  Map<VideoMetadataImageKind, int> get maxImagesPerKind =>
+      <VideoMetadataImageKind, int>{
+        VideoMetadataImageKind.cover: maxPosters,
+        VideoMetadataImageKind.backdrop: maxBackdrops,
+        VideoMetadataImageKind.logo: maxLogos,
+      };
 
   /// 全局主资料源（来源级 `provider_override` 可覆盖）；另一个可选源恒为兜底。
   final VideoMetadataProviderKind primaryProvider;
@@ -126,6 +159,10 @@ class VideoSourceScrapeGlobalConfig {
         locale,
         primaryProvider.name,
         identifierWords.source,
+        maxPosters,
+        maxBackdrops,
+        maxLogos,
+        downloadStaffImages,
       ].join('\u0000');
 
   /// 本批次的**全局**资料语言（BCP-47）。来源级 `metadata_locale` 可覆盖，所以
@@ -160,6 +197,14 @@ class VideoSourceScrapeGlobalConfig {
   }) {
     String read(String key, [String fallback = '']) =>
         (preferences.getPref(key, defaultValue: fallback) as String).trim();
+    int readLimit(String key) {
+      final Object? raw =
+          preferences.getPref(key, defaultValue: kVideoMetadataDefaultMaxImages);
+      final int value = raw is int
+          ? raw
+          : int.tryParse('$raw') ?? kVideoMetadataDefaultMaxImages;
+      return value < 0 ? kVideoMetadataDefaultMaxImages : value;
+    }
     final String uiLocale = uiLocaleTag.trim().isEmpty
         ? kFallbackVideoMetadataLocale
         : uiLocaleTag.trim();
@@ -191,6 +236,11 @@ class VideoSourceScrapeGlobalConfig {
         preferences.getPref(kVideoMetadataIdentifierWordsPref, defaultValue: '')
             as String,
       ).identifierWords,
+      maxPosters: readLimit(kVideoMetadataMaxPostersPref),
+      maxBackdrops: readLimit(kVideoMetadataMaxBackdropsPref),
+      maxLogos: readLimit(kVideoMetadataMaxLogosPref),
+      downloadStaffImages: preferences.getPref(kVideoMetadataStaffImagesPref,
+          defaultValue: false) as bool,
     );
   }
 }

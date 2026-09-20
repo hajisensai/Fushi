@@ -38,6 +38,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anime_episode_relations.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/anime_offline_identity_resolver.dart';
@@ -790,6 +791,8 @@ class VideoSourceScrapeCoordinator
           unchangedArtifacts += sidecars.unchangedArtifacts;
           warnings.addAll(sidecars.warnings);
           errors.addAll(sidecars.errors);
+          await _downloadStaffImages(
+            localWork, metadata, warnings, cancellationToken);
           succeeded++;
           // 播「这个作品刮完了」。放在 succeeded++ 之后：只有真正刮成功的作品
           // 才值得去补字幕，失败的连身份都不可信。
@@ -3176,8 +3179,12 @@ class VideoSourceScrapeCoordinator
       primary: primary,
       // 本趟的有效资料语言（来源级覆盖 > 全局），与 TMDB 请求端的
       // include_image_language 同源——两端必须一致，否则请求回来的图会在选择
-      // 阶段被另一套语言序重新排一遍。
+      // 阶段被另一套语言序重新排一遍。原语（Shoko `Main` 槽）由 provider 另拉一
+      // 次补进候选池，这里同样插进语言序。
       languageOrder: VideoMetadataLanguages(_locale).imageLanguages,
+      mainLanguage: VideoMetadataLanguages.primarySubtagOf(
+          metadata.originalLanguage),
+      maxPerKind: config.maxImagesPerKind,
     );
     final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
       for (final VideoMetadataSeason season in metadata.seasons)
@@ -3206,6 +3213,62 @@ class VideoSourceScrapeCoordinator
           .toList(),
       seasons: seasons,
     );
+  }
+
+  /// 演职员头像落地（Shoko `AutoDownloadStaffImages` / `MaxAutoStaffImages`）：
+  /// 开关开着时把作品级演职员的 TMDB 头像下到 `<video_covers>/people/`，回写
+  /// `video_metadata_people.profile_path`；已落地的跳过，每部作品最多
+  /// [kVideoMetadataMaxStaffImages] 张，失败只记说明不影响刮削结论。
+  Future<void> _downloadStaffImages(
+    VideoSourceScrapeWork localWork,
+    VideoMetadataWork metadata,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeCancellationToken cancellationToken,
+  ) async {
+    if (!config.downloadStaffImages || metadata.credits.isEmpty) return;
+    Directory? directory;
+    int downloaded = 0;
+    final Set<String> seen = <String>{};
+    for (final VideoMetadataCredit credit in metadata.credits) {
+      if (downloaded >= kVideoMetadataMaxStaffImages) break;
+      final String? url = credit.person.profileUrl?.trim();
+      if (url == null || url.isEmpty) continue;
+      final String personKey =
+          VideoMetadataDatabaseStore.personKeyFor(credit.person);
+      if (!seen.add(personKey)) continue;
+      final VideoMetadataPersonRow? row =
+          await database.getVideoMetadataPerson(personKey);
+      if (row == null) continue;
+      if (row.profilePath case final String existing
+          when existing.isNotEmpty && File(existing).existsSync()) {
+        downloaded++;
+        continue;
+      }
+      cancellationToken.throwIfCancelled();
+      final VideoMetadataDownloadedAsset asset;
+      try {
+        asset = await assetDownloader.download(url);
+      } on VideoSourceScrapeCancelled {
+        rethrow;
+      } catch (error) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: url,
+          message: '人物照片下载失败（${credit.person.name}）：$error',
+        ));
+        continue;
+      }
+      directory ??= Directory(p.join(
+          (await enginePaths.videoCoversDirectory()).path, 'people'));
+      await directory.create(recursive: true);
+      final String safeName =
+          personKey.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+      final File file =
+          File(p.join(directory.path, '$safeName.${asset.extension}'));
+      await file.writeAsBytes(asset.bytes, flush: true);
+      await database.updateVideoMetadataPersonProfilePath(personKey, file.path);
+      downloaded++;
+    }
   }
 
   Future<_SidecarOutcome> _writeSidecars({
