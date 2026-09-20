@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
@@ -139,10 +138,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return _buildEmbeddedShell(content);
   }
 
-  /// [onNavPane] 为 true 时搜索框画在宽屏导航窗格的 tonal 底上（`surfaces.card`），
-  /// 那里 `surfaces.search` 与底色只差一档、几乎糊掉，故再提一档到 `surfaces.overlay`；
-  /// 窄屏单列画在页面底（`surfaces.page`）上，保持原来的 `surfaces.search`。
-  Widget _buildSearchField({bool onNavPane = false}) {
+  /// 宽屏导航窗格与窄屏单列都直接画在页面底（`surfaces.page`）上，搜索框统一取
+  /// `surfaces.search` 填充。（导航窗格曾单独铺一层 `surfaces.card` tonal 底、搜索
+  /// 框在那上面再提一档到 `surfaces.overlay`；窗格底已随分隔线一起撤掉，见
+  /// [_buildWideLayout]。）
+  Widget _buildSearchField() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
     // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
@@ -186,11 +186,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   ),
             isDense: true,
             filled: !eink,
-            fillColor: eink
-                ? null
-                : (onNavPane
-                      ? tokens.surfaces.overlay
-                      : tokens.surfaces.search),
+            fillColor: eink ? null : tokens.surfaces.search,
             border: eink
                 ? OutlineInputBorder(
                     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
@@ -339,42 +335,35 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       (SettingsDestination destination) =>
           destination.id == selectedDestinationId,
     );
-    final bool cupertino = isCupertinoPlatform(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color dividerColor = cupertino
-        ? CupertinoColors.separator.resolveFrom(context)
-        : tokens.surfaces.outline;
-    // MD3 list-detail: the nav pane sits on the tonal container token
-    // (`surfaces.card`) while the detail pane stays on the base page surface.
-    // Material only — Cupertino keeps its system background untouched.
-    final Color? navPaneColor = cupertino ? null : tokens.surfaces.card;
+    // 两个窗格都直接落在页面底上，中间不画分隔线、导航窗格也不单独铺 tonal 底：
+    // BUG-2443 曾把窗格提到 `surfaces.card` 并保留 1px 分隔线，让线两侧读出「两个
+    // 窗格」；用户实机反馈（2026-09-20 截图）那条线本身就是多余的——左边一块圆角
+    // 色块、右边一张分组卡、中间再夹一条竖线，接缝反而最扎眼。分层交给导航列表的
+    // pill 选中态与右侧分组卡自己表达，窗格之间只留空白。
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
-      dividerColor: dividerColor,
-      supporting: Container(
-        color: navPaneColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _buildSearchField(onNavPane: true),
-            Expanded(
-              child: _searchQuery.trim().isEmpty
-                  ? renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
-                    )
-                  : _buildSearchResults(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      wide: true,
-                    ),
-            ),
-          ],
-        ),
+      showDivider: false,
+      supporting: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildSearchField(),
+          Expanded(
+            child: _searchQuery.trim().isEmpty
+                ? renderer.buildDestinationList(
+                    settingsContext: settingsContext,
+                    destinations: destinations,
+                    selectedDestinationId: selectedDestinationId,
+                    onDestinationSelected: _selectDestination,
+                    pushRoutes: false,
+                  )
+                : _buildSearchResults(
+                    settingsContext: settingsContext,
+                    destinations: destinations,
+                    wide: true,
+                  ),
+          ),
+        ],
       ),
       // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
       // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch

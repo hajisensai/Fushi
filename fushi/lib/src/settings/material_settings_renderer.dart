@@ -106,11 +106,12 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             AdaptiveSettingsSection(
               key: ValueKey<SettingsNavigationGroupId>(group.id),
               title: group.id.title(context),
-              // 宽屏主从（pushRoutes:false）下导航窗格自己已经是一块 tonal 面
-              // （`surfaces.card`），分组再铺一层同色卡片就是卡中卡：卡片边界看不见，
-              // 窗格却因此少了一整块可辨的实色面。那里分组只做分段与标题，填充交给
-              // 窗格本身。窄屏 push 列表没有窗格底、直接铺在 `surfaces.page` 上，
-              // 分组卡仍是它唯一的容器，保持不变。
+              // 宽屏主从（pushRoutes:false）下导航窗格不铺分组卡：分组只做分段与
+              // 标题，行直接落在页面底上、由 pill 选中态表达层级。用户实机反馈
+              // （2026-09-20）窗格被卡片包住再配一条分隔线接缝最扎眼，窗格自己的
+              // tonal 底与分隔线已一并撤掉（见 settings_home_page._buildWideLayout），
+              // 这里若再铺卡就又回到「左边一块色块」。窄屏 push 列表直接铺在
+              // `surfaces.page` 上，分组卡仍是它唯一的容器，保持不变。
               surfaceColor: pushRoutes ? null : Colors.transparent,
               children: group.destinations
                   .map(destinationRow)
