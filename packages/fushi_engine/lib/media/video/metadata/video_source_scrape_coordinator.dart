@@ -578,6 +578,9 @@ class VideoSourceScrapeCoordinator
     int protectedArtifacts = 0;
     int unchangedArtifacts = 0;
     List<VideoSourceScrapeWork> works = const <VideoSourceScrapeWork>[];
+    // 本趟的已确认身份：调用方给的 + 途中按 AniDB 作品拆出来的电影子单元。
+    final Map<String, VideoMetadataLookup> lookups =
+        <String, VideoMetadataLookup>{...confirmedLookups};
     try {
       cancellationToken.throwIfCancelled();
       works =
@@ -652,7 +655,7 @@ class VideoSourceScrapeCoordinator
             localWork,
             settings.provider,
             warnings,
-            confirmedLookup: confirmedLookups[localWork.stableKey],
+            confirmedLookup: lookups[localWork.stableKey],
             cancellationToken: cancellationToken,
             onHashProgress: (String path, int bytes, int totalBytes) =>
                 onProgress(
@@ -674,6 +677,44 @@ class VideoSourceScrapeCoordinator
             onConfirmation: onConfirmation,
           );
           if (resolved.pending) {
+            // Shoko：文件身份决定作品归属——一个目录里几部剧场版各自是各自的
+            // AniDB 作品，就拆成几部电影各自刮（`CrossRef_AniDB_TMDB_Movie`），
+            // 不再作为一个「待拆分合集」悬着。子单元插在本单元之后按序处理，
+            // 身份由 Fribb 映射给出；合集级残留作品行一并清掉。
+            final List<_SplitMovieWork> split = resolved.splitInto;
+            if (split.isNotEmpty) {
+              works = <VideoSourceScrapeWork>[
+                ...works.take(index + 1),
+                for (final _SplitMovieWork piece in split) piece.work,
+                ...works.skip(index + 1),
+              ];
+              for (final _SplitMovieWork piece in split) {
+                lookups[piece.work.stableKey] = piece.lookup;
+              }
+              if (localWork.collection case final MediaCollectionRow c) {
+                await _store.removeCollectionOwnedWork(c.id);
+              }
+              // 总数变了：run 行与进度条按新的作品数走。
+              await _publish(
+                runId,
+                onProgress,
+                VideoSourceScrapeProgress(
+                  phase: VideoSourceScrapePhase.recognizing,
+                  sourceId: source.id,
+                  sourceLabel: source.label,
+                  currentWorkTitle: localWork.title,
+                  current: index,
+                  total: works.length,
+                ),
+                totalWorks: works.length,
+              );
+              warnings.add(SourceScrapeIssue(
+                workTitle: localWork.title,
+                message: resolved.reason ??
+                    '成员分属不同 AniDB 电影作品，已拆成 ${split.length} 部电影各自刮削。',
+              ));
+              continue;
+            }
             pending++;
             warnings.add(SourceScrapeIssue(
               workTitle: localWork.title,
@@ -899,10 +940,14 @@ class VideoSourceScrapeCoordinator
     final VideoNameInfo parsed =
         parseVideoFilename(p.basename(localWork.members.first.videoPath));
     final int? seasonNumber = _parsedSeason(localWork, parsed);
+    // 单文件单元带着已确认身份时，形态跟身份走（`Movie 01.mkv` 这种带序号的
+    // 剧场版文件名会被误判成剧集；按 AniDB 作品拆出来的电影子单元就是这样）。
     final VideoMetadataMediaKind kind =
-        localWork.isEpisodic || parsed.episode != null
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie;
+        !localWork.isEpisodic && confirmedLookup != null
+            ? confirmedLookup.mediaKind
+            : localWork.isEpisodic || parsed.episode != null
+                ? VideoMetadataMediaKind.tv
+                : VideoMetadataMediaKind.movie;
     VideoMetadataWork? nfo = await VideoNfoReader(
       generatedArtifactChecker:
           DatabaseSidecarGeneratedArtifactChecker(database),
@@ -1025,6 +1070,16 @@ class VideoSourceScrapeCoordinator
         localWork, warnings, cancellationToken, onHashProgress);
     cancellationToken.throwIfCancelled();
     if (hashEvidence.conflicting) {
+      final List<_SplitMovieWork> split =
+          await _splitIntoMovieWorks(localWork, hashEvidence, source);
+      if (split.isNotEmpty) {
+        return _ResolvedWork(
+            pending: true,
+            status: VideoMetadataResolutionStatus.ambiguous,
+            reason:
+                'AniDB 文件哈希识别出 ${split.length} 部不同的电影作品（${split.map((_SplitMovieWork s) => 'aid ${s.animeId}').join('、')}），已按 Shoko 方式拆成独立电影各自刮削。',
+            splitInto: split);
+      }
       return const _ResolvedWork(
           pending: true,
           status: VideoMetadataResolutionStatus.ambiguous,
@@ -1489,6 +1544,60 @@ class VideoSourceScrapeCoordinator
       anidbEpisodeXrefs: anidbXrefs,
       anidbAdditionalBindings: anidbAdditional,
     );
+  }
+
+  /// 成员分属不同 AniDB 作品且**每个成员**的作品在 Fribb 映射里都是电影：按
+  /// 成员拆成单文件电影子单元（Shoko `CrossRef_AniDB_TMDB_Movie`：AniDB 电影型
+  /// 作品直接链 TMDB 电影）。身份走用户的主源顺序——有 MAL id 用 MAL（TMDB 电影
+  /// 由映射表兜底接力），否则直接 TMDB 电影 id。任一成员没身份 / 不是电影 /
+  /// 映射表缺条目 → 空表（保持原「请拆分合集」的待确认）；电视剧混放无法拆：
+  /// 剧集作品以合集为锚、一个合集只能有一部。
+  Future<List<_SplitMovieWork>> _splitIntoMovieWorks(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    SourceLibraryRow? source,
+  ) async {
+    final AnimeIdentityMapping? mapping = identityMapping;
+    if (mapping == null || !localWork.isEpisodic) {
+      return const <_SplitMovieWork>[];
+    }
+    final List<_SplitMovieWork> result = <_SplitMovieWork>[];
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      if (identity == null) return const <_SplitMovieWork>[];
+      final AnimeIdentityEntry? entry =
+          await mapping.entryForAnidb(identity.animeId);
+      if (entry == null || !entry.isMovie) return const <_SplitMovieWork>[];
+      final VideoMetadataLookup? lookup = entry.malIds.length == 1
+          ? VideoMetadataLookup(
+              provider: VideoMetadataProviderKind.mal,
+              externalId: '${entry.malIds.single}',
+              mediaKind: VideoMetadataMediaKind.movie)
+          : entry.tmdbId != null
+              ? VideoMetadataLookup(
+                  provider: VideoMetadataProviderKind.tmdb,
+                  externalId: '${entry.tmdbId}',
+                  mediaKind: VideoMetadataMediaKind.movie)
+              : null;
+      if (lookup == null) return const <_SplitMovieWork>[];
+      result.add(_SplitMovieWork(
+        work: VideoSourceScrapeWork(
+          source: source,
+          title: <String>[
+            identity.englishTitle,
+            identity.romajiTitle,
+            identity.kanjiTitle,
+            member.title,
+          ].map((String t) => t.trim()).firstWhere(
+              (String t) => t.isNotEmpty,
+              orElse: () => member.title),
+          members: <VideoBookRow>[member],
+        ),
+        lookup: lookup,
+        animeId: identity.animeId,
+      ));
+    }
+    return result;
   }
 
   static const String _hashDisabledNotice =
@@ -3884,6 +3993,19 @@ class _SeasonExpansion {
 
 /// [_applyAnidbEpisodeLinks] 的结果：成员 (季, 集) 覆盖 + 链接成功成员的交叉引用
 /// （带评级）。
+/// 按 AniDB 作品拆出来的一部电影子单元：单文件 `book:` 单元 + 由映射表给出的
+/// 已确认身份。
+class _SplitMovieWork {
+  const _SplitMovieWork({
+    required this.work,
+    required this.lookup,
+    required this.animeId,
+  });
+  final VideoSourceScrapeWork work;
+  final VideoMetadataLookup lookup;
+  final int animeId;
+}
+
 class _AppliedAnidbLinks {
   const _AppliedAnidbLinks(this.overrides, this.xrefs, this.additional);
   final Map<String, (int, int)> overrides;
@@ -3921,9 +4043,14 @@ class _ResolvedWork {
     this.anidbEpisodeXrefs = const <String, AnidbEpisodeXref>{},
     this.anidbAdditionalBindings =
         const <String, Map<(int, int), AnidbEpisodeXref>>{},
+    this.splitInto = const <_SplitMovieWork>[],
   });
 
   final VideoMetadataWork? metadata;
+
+  /// `pending` 的一种特殊形态：成员分属不同 AniDB 电影作品，已拆成这些子单元，
+  /// 调用方把它们接着刮而不是记一条待确认。
+  final List<_SplitMovieWork> splitInto;
 
   /// 一文件多集：成员 `bookUid` → 额外卡片 (季, 集) → 该集 AniDB 身份。
   final AnidbAdditionalEpisodeBindings anidbAdditionalBindings;

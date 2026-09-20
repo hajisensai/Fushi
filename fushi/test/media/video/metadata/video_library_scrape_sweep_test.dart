@@ -208,6 +208,31 @@ void main() {
     expect(runner.sourceIds, isEmpty, reason: '同一进程只排一次');
   });
 
+  // 按 AniDB 作品拆成多部电影的目录：合集级作品行不存在，但每个成员都有自己带
+  // 身份的电影作品行 → 已识别，不进待确认、不反复自动补刮。
+  test('成员各自拥有带身份的电影作品行的合集单元算已识别（电影拆分后不再悬着）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('m1', 'D:/A/Bleach Movie 01.mkv', sourceId,
+        title: 'Bleach Movie 01');
+    await addVideo('m2', 'D:/A/Bleach Movie 02.mkv', sourceId,
+        title: 'Bleach Movie 02');
+    final int collectionId =
+        await db.createMediaCollection('Bleach Movies', collectionType: 'playlist');
+    await db.addToCollection(collectionId, MediaKind.video, 'm1');
+    await db.addToCollection(collectionId, MediaKind.video, 'm2');
+    await seedIdentityForBook('m1');
+    expect(await sweep().sweepAndListPending(), hasLength(1),
+        reason: '只有一个成员有作品行时仍是待确认');
+    expect(runner.sourceIds, <int>[sourceId]);
+    runner.sourceIds.clear();
+
+    await seedIdentityForBook('m2');
+    expect(await sweep().sweepAndListPending(), isEmpty,
+        reason: '两个成员都各自拥有带身份的作品行 = 已识别');
+    expect(runner.sourceIds, isEmpty, reason: '不再自动补刮');
+  });
+
   test('来源刮削开关关闭时既不进队列也不补刮', () async {
     final int sourceId = await addSource('D:/A');
     await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,

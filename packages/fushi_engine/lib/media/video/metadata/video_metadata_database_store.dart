@@ -550,6 +550,15 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// 删掉合集自己拥有的作品行（成员按 AniDB 作品拆成各自的电影作品后，合集级
+  /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
+  /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
+  Future<void> removeCollectionOwnedWork(int collectionId) async {
+    await (database.delete(database.videoMetadataWorks)
+          ..where((table) => table.collectionId.equals(collectionId)))
+        .go();
+  }
+
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
     final Set<String> memberBookUids =
         (await database.getCollectionItems(collectionId))

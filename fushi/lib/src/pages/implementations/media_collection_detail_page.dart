@@ -313,12 +313,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             !localExtraUids.contains(slot.entryKey))
         .toList(growable: false);
     // 集级刮削资料（一集一行、episodeNumber 非空才算集级；见 [_episodeMetaByUid]）。
+    // 合集没有自己的作品行时（成员按 AniDB 作品拆成了各自的电影作品），成员自己
+    // 的作品级投影（episodeNumber 为空）也拿来当卡片标题 / 简介——那就是这部
+    // 电影的资料。
     final Map<String, VideoScrapeMetaRow> episodeMeta =
         <String, VideoScrapeMetaRow>{};
     for (final VideoBookRow member in members) {
       final VideoScrapeMetaRow? row =
           await widget.database.getVideoScrapeMeta(member.bookUid);
-      if (row != null && row.episodeNumber != null) {
+      if (row != null && (row.episodeNumber != null || canonicalWork == null)) {
         episodeMeta[member.bookUid] = row;
       }
     }

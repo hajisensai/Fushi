@@ -364,14 +364,24 @@ class VideoLibraryScrapeSweep {
           ? _database.getVideoMetadataWorkByBook(work.members.single.bookUid)
           : _database.getVideoMetadataWorkByCollection(work.collection!.id);
 
-  /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。
+  /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
+  /// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成
+  /// 多部电影的目录——它不是待确认，也不该反复进自动补刮）。
   Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) async {
     final VideoMetadataWorkRow? row = await _canonicalWork(work);
-    if (row == null) return false;
-    final List<VideoMetadataProviderIdentityRow> identities =
-        await _database.getVideoMetadataProviderIdentities(workId: row.id);
-    return identities.isNotEmpty;
+    if (row != null) return _hasIdentity(row);
+    if (work.collection == null) return false;
+    for (final VideoBookRow member in work.members) {
+      final VideoMetadataWorkRow? owned =
+          await _database.getVideoMetadataWorkByBook(member.bookUid);
+      if (owned == null || !await _hasIdentity(owned)) return false;
+    }
+    return work.members.isNotEmpty;
   }
+
+  Future<bool> _hasIdentity(VideoMetadataWorkRow row) async =>
+      (await _database.getVideoMetadataProviderIdentities(workId: row.id))
+          .isNotEmpty;
 }
 
 class _PlannedWorks {

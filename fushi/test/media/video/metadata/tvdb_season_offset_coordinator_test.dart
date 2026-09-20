@@ -328,6 +328,90 @@ void main() {
     );
   });
 
+  // Shoko `CrossRef_AniDB_TMDB_Movie`：一个目录里两部剧场版，文件名带序号被计划
+  // 器当成一个剧集单元；哈希说它们是两个不同的 AniDB 电影作品 → 拆成两部电影各
+  // 自刮，而不是「成员分属不同作品，请拆分合集」悬着。
+  test(
+      'members hashed to different AniDB movie works split into one movie '
+      'work per file (Shoko movie cross-reference)', () async {
+    const String fribbMovies = '['
+        '{"anidb_id":4835,"mal_id":9001,"themoviedb_id":{"movie":[31112]},'
+        '"type":"MOVIE"},'
+        '{"anidb_id":5586,"mal_id":9002,"themoviedb_id":{"movie":[31113]},'
+        '"type":"MOVIE"}'
+        ']';
+    AnidbHashIdentityResult movie(int animeId, int malId, String title) =>
+        AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.matched,
+          hash: AnidbEd2kHash(
+              ed2k: 'abcdef0123456789abcdef0123456789',
+              size: animeId,
+              modifiedAt: DateTime(2026),
+              changedAt: DateTime(2026)),
+          identity: AnidbFileIdentity(
+              fileId: animeId * 10,
+              animeId: animeId,
+              episodeId: animeId * 100,
+              episodeNumber: '1',
+              romajiTitle: title,
+              kanjiTitle: '',
+              englishTitle: title,
+              episodeTitle: 'Complete Movie',
+              episodeRomajiTitle: '',
+              episodeKanjiTitle: ''),
+          mapping:
+              AnimeIdentityMappingResult(anidbId: animeId, malIds: <int>{malId}),
+        );
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      'Bleach Movie 01.mkv': movie(4835, 9001, 'Bleach: Memories of Nobody'),
+      'Bleach Movie 02.mkv':
+          movie(5586, 9002, 'Bleach: The DiamondDust Rebellion'),
+    });
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>['Bleach Movie 01.mkv', 'Bleach Movie 02.mkv'],
+      fribb: fribbMovies,
+      hash: hash,
+    );
+    expect(report.pendingConfirmations, 0,
+        reason: '不再是待确认：${report.warnings.map((i) => i.message)}');
+    expect(report.succeededWorks, 2, reason: '${report.errors}');
+    final MediaCollectionRow collection =
+        (await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'))!;
+    expect(await db.getVideoMetadataWorkByCollection(collection.id), isNull,
+        reason: '合集级作品行不存在（拆成了成员各自的电影）');
+    final VideoMetadataWorkRow first =
+        (await db.getVideoMetadataWorkByBook('book-0'))!;
+    final VideoMetadataWorkRow second =
+        (await db.getVideoMetadataWorkByBook('book-1'))!;
+    expect(first.mediaType, 'movie');
+    expect(second.mediaType, 'movie');
+    expect(first.title, 'Bleach: Memories of Nobody');
+    expect(second.title, 'Bleach: The DiamondDust Rebellion');
+    Future<Map<String, String>> identitiesOf(int workId) async => <String, String>{
+          for (final VideoMetadataProviderIdentityRow row
+              in await db.getVideoMetadataProviderIdentities(workId: workId))
+            row.provider: row.externalId,
+        };
+    expect(await identitiesOf(first.id),
+        containsPair('mal', '9001'));
+    expect(await identitiesOf(first.id),
+        containsPair('anidb', '4835'),
+        reason: 'AniDB 作品 id 由哈希直接落库');
+    expect(await identitiesOf(second.id), containsPair('mal', '9002'));
+    expect(await identitiesOf(second.id), containsPair('anidb', '5586'));
+    expect(
+      report.warnings.any((SourceScrapeIssue i) =>
+          i.message.contains('2 部不同的电影作品') &&
+          i.message.contains('拆成独立电影')),
+      isTrue,
+      reason: '${report.warnings.map((i) => i.message)}',
+    );
+  });
+
   // Shoko `CrossRef_File_Episode`：一个文件覆盖两集（AniDB FILE other episodes）
   // → 两条分集行都绑到这一个文件，各带自己的 AniDB 身份与链接评级。
   test(
@@ -525,7 +609,23 @@ class _MalProvider implements VideoMetadataProvider {
   (String, int?)? _entry(String id) =>
       id == '60636' ? ('Bleach TYBW 4', lastCourEpisodes) : _entries[id];
 
+  /// 两部剧场版（电影型作品拆分测试用）。
+  static const Map<String, String> _movies = <String, String>{
+    '9001': 'Bleach: Memories of Nobody',
+    '9002': 'Bleach: The DiamondDust Rebellion',
+  };
+
   VideoMetadataWork? _work(String id) {
+    if (_movies[id] case final String movieTitle) {
+      return VideoMetadataWork(
+        provider: providerKind,
+        kind: VideoMetadataMediaKind.movie,
+        title: movieTitle,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: 'mal', value: id, isDefault: true),
+        ],
+      );
+    }
     final (String, int?)? entry = _entry(id);
     if (entry == null) return null;
     return VideoMetadataWork(
