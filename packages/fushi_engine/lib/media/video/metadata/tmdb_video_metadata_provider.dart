@@ -254,8 +254,7 @@ class TmdbVideoMetadataProvider
     required int seasonNumber,
   }) async {
     _validateLookup(lookup);
-    if (lookup.mediaKind != VideoMetadataMediaKind.tv ||
-        lookup.episodeGroupId != null) {
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <int, List<String>>{};
     }
     final String own = VideoMetadataLanguages(language).primarySubtag;
@@ -269,13 +268,57 @@ class TmdbVideoMetadataProvider
           original != own)
         original,
     ];
+    if (lookup.episodeGroupId case final String groupId) {
+      // 备选排序下的季是分组：别名仍只能按**默认**季拉（TMDB 的季端点没有
+      // 分组维度），再按分组里每集自带的默认 (季, 集) 换回分组集号。
+      final Map<int, (int, int)> defaultKeys = <int, (int, int)>{};
+      for (final Object? node
+          in metadataList((await _episodeGroupDetails(groupId))?['groups'])) {
+        final Map<String, Object?>? group = metadataObject(node);
+        if (group == null || metadataInt(group['order']) != seasonNumber) {
+          continue;
+        }
+        int index = 0;
+        for (final Object? episodeNode in metadataList(group['episodes'])) {
+          final Map<String, Object?>? episode = metadataObject(episodeNode);
+          final int groupEpisode = (metadataInt(episode?['order']) ?? index) + 1;
+          index++;
+          final int? season = metadataInt(episode?['season_number']);
+          final int? number = metadataInt(episode?['episode_number']);
+          if (season == null || number == null) continue;
+          defaultKeys[groupEpisode] = (season, number);
+        }
+      }
+      final Map<int, Map<int, List<String>>> bySeason =
+          <int, Map<int, List<String>>>{};
+      for (final int season
+          in defaultKeys.values.map(((int, int) key) => key.$1).toSet()) {
+        bySeason[season] =
+            await _seasonTitleAliases(lookup.externalId, season, languages);
+      }
+      return <int, List<String>>{
+        for (final MapEntry<int, (int, int)> entry in defaultKeys.entries)
+          if (bySeason[entry.value.$1]?[entry.value.$2]
+              case final List<String> names)
+            entry.key: names,
+      };
+    }
+    return _seasonTitleAliases(lookup.externalId, seasonNumber, languages);
+  }
+
+  /// 默认季编号下一季各集在 [languages] 里的集名（集号 → 集名列表）。
+  Future<Map<int, List<String>>> _seasonTitleAliases(
+    String showId,
+    int seasonNumber,
+    List<String> languages,
+  ) async {
     final Map<int, List<String>> aliases = <int, List<String>>{};
     for (final String code in languages) {
       final Map<String, Object?>? payload = await _getObjectOrNull(
-        '/tv/${lookup.externalId}/season/$seasonNumber',
+        '/tv/$showId/season/$seasonNumber',
         operation: 'TMDB season titles ($code)',
         query: <String, String>{'language': code},
-        cacheKey: 'tmdb:season:${lookup.externalId}:$seasonNumber:$code',
+        cacheKey: 'tmdb:season:$showId:$seasonNumber:$code',
       );
       if (payload == null) continue;
       for (final Object? node in metadataList(payload['episodes'])) {
@@ -287,6 +330,34 @@ class TmdbVideoMetadataProvider
       }
     }
     return aliases;
+  }
+
+  @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  ) async {
+    _validateLookup(lookup);
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
+      return const <VideoMetadataEpisodeGroupSummary>[];
+    }
+    final Map<String, Object?>? payload = await _getObjectOrNull(
+      '/tv/${lookup.externalId}/episode_groups',
+      operation: 'TMDB episode groups',
+      cacheKey: 'tmdb:episode-groups:${lookup.externalId}',
+    );
+    return <VideoMetadataEpisodeGroupSummary>[
+      for (final Object? node in metadataList(payload?['results']))
+        if (metadataObject(node) case final Map<String, Object?> summary)
+          if (metadataString(summary['id']) case final String id)
+            VideoMetadataEpisodeGroupSummary(
+              id: id,
+              name: metadataString(summary['name']) ?? id,
+              type: metadataInt(summary['type']) ?? 0,
+              description: metadataString(summary['description']),
+              groupCount: metadataInt(summary['group_count']),
+              episodeCount: metadataInt(summary['episode_count']),
+            ),
+    ];
   }
 
   @override

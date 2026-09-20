@@ -289,6 +289,29 @@ mixin _FushiDbVideoDomain
         .write(VideoMetadataWorksCompanion(updatedAt: Value<int>(updatedAt)));
   }
 
+  /// 用户选定的 TMDB 备选排序（`episode_group_id`；`null` = TMDB 默认排序），
+  /// 同时把 `episodeGroup` 加进字段锁——之后刮削不再用自动挑的分组覆盖它
+  /// （Shoko `PreferredAlternateOrderingID`）。锁字段名与
+  /// `VideoMetadataLockableField.episodeGroup.name` 同一 wire 值。
+  Future<void> setVideoMetadataWorkEpisodeGroup(
+    int workId,
+    String? episodeGroupId,
+  ) async {
+    final VideoMetadataWorkRow? row = await getVideoMetadataWorkById(workId);
+    if (row == null) return;
+    final List<String> locked = <String>[
+      for (final String part in (row.lockedFields ?? '').split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    if (!locked.contains('episodeGroup')) locked.add('episodeGroup');
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(
+      episodeGroupId: Value<String?>(episodeGroupId),
+      lockedFields: Value<String?>(locked.join(',')),
+    ));
+  }
+
   /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
   /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
   Future<void> setVideoMetadataWorkLockedFields(

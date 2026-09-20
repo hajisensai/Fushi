@@ -81,6 +81,121 @@ void main() {
     );
 
     test(
+      'listEpisodeGroups exposes every alternate ordering (Shoko '
+      'TMDB_AlternateOrdering) and group-mode title aliases follow the group '
+      'numbering',
+      () async {
+        final List<String> seasonRequests = <String>[];
+        final MockClient client = MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/tv/65942/episode_groups')) {
+            return _json(<String, Object?>{
+              'results': <Object?>[
+                <String, Object?>{
+                  'id': 'absolute',
+                  'type': 2,
+                  'name': 'Absolute',
+                  'group_count': 1,
+                  'episode_count': 66,
+                  'description': 'One long run',
+                },
+                <String, Object?>{
+                  'id': 'seasons',
+                  'type': 6,
+                  'name': 'Seasons',
+                  'group_count': 3,
+                  'episode_count': 66,
+                },
+                <String, Object?>{'name': 'no id, dropped'},
+              ],
+            });
+          }
+          if (request.url.path.endsWith('/tv/episode_group/seasons')) {
+            return _json(<String, Object?>{
+              'id': 'seasons',
+              'groups': <Object?>[
+                <String, Object?>{
+                  'id': 'season-3',
+                  'name': 'Season 3',
+                  'order': 3,
+                  'episodes': <Object?>[
+                    for (int i = 0; i < 2; i++)
+                      <String, Object?>{
+                        'id': 5100 + i,
+                        'order': i,
+                        'season_number': 1,
+                        'episode_number': 51 + i,
+                        'name': 'Episode ${i + 1}',
+                      },
+                  ],
+                },
+              ],
+            });
+          }
+          if (request.url.path.endsWith('/tv/65942')) {
+            return _json(<String, Object?>{
+              'id': 65942,
+              'name': 'Re:Zero',
+              'original_language': 'ja',
+            });
+          }
+          if (request.url.path.endsWith('/tv/65942/season/1')) {
+            seasonRequests.add(request.url.queryParameters['language'] ?? '');
+            return _json(<String, Object?>{
+              'episodes': <Object?>[
+                <String, Object?>{'episode_number': 51, 'name': 'Alias 51'},
+                <String, Object?>{'episode_number': 52, 'name': 'Alias 52'},
+                <String, Object?>{'episode_number': 53, 'name': 'Alias 53'},
+              ],
+            });
+          }
+          return _json(<String, Object?>{'groups': <Object?>[]});
+        });
+        final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+          apiKey: 'KEY',
+          client: client,
+          language: 'zh-CN',
+        );
+        const VideoMetadataLookup lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '65942',
+          mediaKind: VideoMetadataMediaKind.tv,
+        );
+        final List<VideoMetadataEpisodeGroupSummary> groups =
+            await provider.listEpisodeGroups(lookup);
+        expect(groups.map((g) => g.id), <String>['absolute', 'seasons'],
+            reason: '不按类型过滤，没 id 的丢');
+        expect(groups.first.type, 2);
+        expect(groups.first.groupCount, 1);
+        expect(groups.first.episodeCount, 66);
+        expect(groups.first.description, 'One long run');
+        expect(
+          await provider.listEpisodeGroups(const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.tmdb,
+            externalId: '7',
+            mediaKind: VideoMetadataMediaKind.movie,
+          )),
+          isEmpty,
+        );
+
+        // 分组模式下的集名别名：按默认季拉，再换回分组 (季, 集)。
+        const VideoMetadataLookup grouped = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '65942',
+          mediaKind: VideoMetadataMediaKind.tv,
+          episodeGroupId: 'seasons',
+        );
+        final Map<int, List<String>> aliases =
+            await provider.fetchEpisodeTitleAliases(grouped, seasonNumber: 3);
+        expect(aliases, <int, List<String>>{
+          1: <String>['Alias 51', 'Alias 51'],
+          2: <String>['Alias 52', 'Alias 52'],
+        });
+        expect(seasonRequests, <String>['en-US', 'ja'],
+            reason: '资料语言 zh 之外补 en-US 与原语 ja，只拉默认第 1 季');
+      },
+    );
+
+    test(
       'maps details, external ids, credits, seasons, episodes and images',
       () async {
         final MockClient client = MockClient((http.Request request) async {

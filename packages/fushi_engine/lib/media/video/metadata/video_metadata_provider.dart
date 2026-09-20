@@ -76,6 +76,35 @@ abstract interface class VideoMetadataEpisodeGroupProvider {
     required int seasonNumber,
     int? episodeCount,
   });
+
+  /// 这部剧在资料源上的全部备选排序（TMDB episode groups；Shoko
+  /// `TMDB_AlternateOrdering` 整套下载后由用户选 `PreferredAlternateOrderingID`）。
+  /// 不按类型过滤——用户选择不受「季」类型限制。非剧集 / 没有 → 空表。
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  );
+}
+
+/// 一条备选排序的摘要（TMDB `/tv/{id}/episode_groups` 的 `results[]`）。
+class VideoMetadataEpisodeGroupSummary {
+  const VideoMetadataEpisodeGroupSummary({
+    required this.id,
+    required this.name,
+    required this.type,
+    this.description,
+    this.groupCount,
+    this.episodeCount,
+  });
+
+  final String id;
+  final String name;
+
+  /// TMDB 排序类型：1 原播出、2 绝对集号、3 DVD、4 数字发行、5 故事线、6 制作、
+  /// 7 电视播出（Shoko `AlternateOrderingType` 同值域）。
+  final int type;
+  final String? description;
+  final int? groupCount;
+  final int? episodeCount;
 }
 
 /// 集级匹配（Shoko `MatchAnidbToTmdbEpisodes`）用的集名多语言能力：资料语言

@@ -125,6 +125,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
     show
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
+import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -6866,6 +6867,62 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _refresh();
   }
 
+  /// 合集详情页「TMDB 集编排」：选一套 TMDB 备选排序（或选回默认）决定这部剧的
+  /// 季集划分（Shoko `PreferredAlternateOrderingID`）。三样事实同样问计划器要，
+  /// 写排序 + 重刮都在 [chooseVideoTmdbOrdering] 里，与 [_rescrapeCollection]
+  /// 共用同一条 `rescrapeWorkWithLookup` 管线。
+  Future<void> _chooseTmdbOrdering(MediaCollectionRow collection) async {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final VideoMetadataWorkRow? work =
+        await db.getVideoMetadataWorkByCollection(collection.id);
+    if (!mounted) return;
+    if (work == null) {
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_unavailable,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final List<VideoPendingScrapeWork> planned =
+        await planScrapeWorksForCollection(db, collection.id);
+    if (!mounted) return;
+    if (planned.isEmpty) {
+      FushiToast.show(
+        msg: t.collection_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final VideoPendingScrapeWork? chosen = planned.length == 1
+        ? planned.single
+        : await _pickCollectionScrapeWork(planned);
+    if (chosen == null || !mounted) return;
+    bool changed = false;
+    try {
+      changed = await chooseVideoTmdbOrdering(
+        context: context,
+        database: db,
+        controller: controller,
+        source: chosen.source,
+        workTitle: chosen.work.title,
+        workStableKey: chosen.work.stableKey,
+        workId: work.id,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.chooseTmdbOrdering', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (changed && mounted) _refresh();
+  }
+
   /// 合集在刮削计划里对应多个独立作品时，让用户选一个重刮（BUG-2433）。
   ///
   /// 取消返回 null。列表项标题就是计划器给出的作品标题，与待确认队列、批次刮削
@@ -7225,6 +7282,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:
               widget.scrapeTaskController == null ? null : _rescrapeCollection,
+          onChooseTmdbOrdering:
+              widget.scrapeTaskController == null ? null : _chooseTmdbOrdering,
         ),
       ),
     );

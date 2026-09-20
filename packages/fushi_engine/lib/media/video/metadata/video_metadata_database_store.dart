@@ -235,7 +235,11 @@ class VideoMetadataDatabaseStore {
           status: Value<String?>(metadata.status),
           originalLanguage: Value<String?>(metadata.originalLanguage),
           homepage: Value<String?>(metadata.homepage),
-          episodeGroupId: Value<String?>(metadata.episodeGroupId),
+          episodeGroupId: Value<String?>(
+            isLocked(VideoMetadataLockableField.episodeGroup)
+                ? existingWork!.episodeGroupId
+                : metadata.episodeGroupId,
+          ),
           updatedAt: now,
         ),
       );

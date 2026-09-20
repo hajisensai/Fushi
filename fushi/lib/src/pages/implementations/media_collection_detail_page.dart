@@ -71,6 +71,7 @@ class MediaCollectionDetailPage extends StatefulWidget {
     this.deleteMembersLocalFilesSubtitle,
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
+    this.onChooseTmdbOrdering,
     super.key,
   });
 
@@ -122,6 +123,11 @@ class MediaCollectionDetailPage extends StatefulWidget {
   /// 详情页不自己造）。null = 当前装配拿不到 controller，菜单项整条不渲染。
   final Future<void> Function(MediaCollectionRow collection)?
       onRescrapeCollection;
+
+  /// 「TMDB 集编排」（备选排序，Shoko `PreferredAlternateOrderingID`）：同样由
+  /// 库页注入（要刮削 controller 重刮）。null = 菜单项不渲染。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onChooseTmdbOrdering;
 
   @override
   State<MediaCollectionDetailPage> createState() =>
@@ -1871,6 +1877,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.onRescrapeCollection?.call(_collection);
         if (mounted) await _reload();
         return;
+      case _CollectionManageAction.tmdbOrdering:
+        await widget.onChooseTmdbOrdering?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.sortBySeason:
         await _sortBySeason();
         return;
@@ -1983,6 +1993,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 _CollectionManageAction.rescrape,
                 Icons.image_search,
                 t.collection_rescrape,
+              ),
+            // TMDB 备选排序只对已刮出剧集作品行的合集有意义。
+            if (widget.onChooseTmdbOrdering != null)
+              _manageMenuItem(
+                _CollectionManageAction.tmdbOrdering,
+                Icons.low_priority,
+                t.collection_tmdb_ordering,
+                enabled: _canonicalWork?.mediaType == 'tv',
               ),
             const PopupMenuDivider(),
             _manageMenuItem(
@@ -2150,6 +2168,7 @@ enum _CollectionManageAction {
   setCover,
   resetCover,
   rescrape,
+  tmdbOrdering,
   sortBySeason,
   subtitles,
   renameEpisodes,

@@ -108,7 +108,7 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 | 7.3.2 | 刷新节奏 | `UpdateShow` 1 h 跳过窗口 + 每日 `/tv/changes` 增量（14 天窗口）+ 过期整拉 | `VideoLibraryScrapeSweep` 加刷新积压：`TmdbVideoMetadataProvider.changedTvShowIds`（`/tv/changes` 按 13 天窗口分页）每 12 h 问一次、与库内 TMDB id 求交集只重刷变过的；上次刮削 >14 天的整部重刷、每轮 ≤20 部 | ✅ |
 | 7.3.3 | 链接卫生 | 刷新后重跑集级匹配，UserVerified 保留，孤儿 xref 清理 | 重刷走 `scrapeWorkSubsets`：已确认身份复用、集级链接按新资料重算、分集行整季替换（xref 随绑定重写，解绑即清） | ✅ |
 | 7.3.4 | 电影型作品 | AniDB 集 → TMDB 电影（`CrossRef_AniDB_TMDB_Movie`，≤4 集短篇先搜电影再退剧） | **未做**。本仓 kind 由本地文件形状决定（多文件 = tv）；三部剧场版一个目录时哈希给出三个不同 aid → 现报「成员分属不同作品，请拆分合集」。要对齐得让协调器在「成员分属不同 AniDB 作品且各自映射 Fribb 电影条目」时按成员拆成独立电影作品——涉及计划器 / works 表以合集为锚的持久模型，需先拍板卡片形态 | ❌ 待决策 |
-| 7.3.5 | TMDB 备选排序 | `TMDB_AlternateOrdering` 下载 + 每剧 `PreferredAlternateOrderingID`，API 按它给 S/E | 只在解析季不在正常季时自动挑 type=6 分组（`resolveEpisodeGroup`），`episodeGroupId` 已持久在作品行；缺用户选择 UI 与「用备选排序做集级链接」 | ❌ 待 UI 决策 |
+| 7.3.5 | TMDB 备选排序 | `TMDB_AlternateOrdering` 下载 + 每剧 `PreferredAlternateOrderingID`，API 按它给 S/E | 第五轮：`VideoMetadataEpisodeGroupProvider.listEpisodeGroups`（`/tv/{id}/episode_groups` 全部类型）经 `VideoSourceScrapeEpisodeOrdering` / controller 暴露；合集详情页菜单「TMDB 集编排…」列分组 + 「TMDB 默认排序」单选（`video_tmdb_ordering_dialog.dart`），选定写作品行 `episode_group_id` 并上 `episodeGroup` 字段锁（`setVideoMetadataWorkEpisodeGroup`；刮削不再用自动挑的分组覆盖）→ 以既有身份重刮，`_hydrateWork` 拿到的季集即分组编排、AniDB 集级链接按它重算；分组模式下 Fribb 切片停用（两套编号对不上）、集名别名按默认季拉再换回分组集号。不自动挑非 type=6 的分组（与 Shoko 一样由用户选） | ✅ |
 | 7.3.6 | 图片 / 网络 / 公司 / 多语言标题 | 各类型上限、`Main` 原语槽、people/studio 图 | 每层每类 1 张（backdrop ≤3）、语言序 `[locale, en, '']`、无原语槽 | 🟡 低价值，不动 |
 
 ### 7.4 本轮新增守卫 / 测试

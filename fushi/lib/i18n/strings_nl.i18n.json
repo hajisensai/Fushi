@@ -5139,5 +5139,13 @@
   "jellyfin_route_remove": "Remove route",
   "jellyfin_route_switched": "Switched to $url",
   "media_server_route_switch": "Switch route",
-  "collection_episode_anidb_number": "AniDB ep $number"
+  "collection_episode_anidb_number": "AniDB ep $number",
+  "collection_tmdb_ordering": "TMDB episode ordering…",
+  "collection_tmdb_ordering_default": "TMDB default ordering",
+  "collection_tmdb_ordering_hint": "Pick which TMDB ordering decides seasons and episodes for this show. AniDB episode links are recomputed against it.",
+  "collection_tmdb_ordering_none": "TMDB has no alternate orderings for this show",
+  "collection_tmdb_ordering_unavailable": "No TMDB identity yet; scrape the show first",
+  "collection_tmdb_ordering_saved": "Ordering saved, rescraping…",
+  "collection_tmdb_ordering_counts": "$groups groups · $episodes episodes",
+  "video_work_field_episode_group": "TMDB episode ordering"
 }

@@ -998,6 +998,11 @@ class _FakeEpisodeGroupProvider extends _FakeProvider
   int? requestedEpisodeCount;
 
   @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+          VideoMetadataLookup lookup) async =>
+      const <VideoMetadataEpisodeGroupSummary>[];
+
+  @override
   Future<VideoMetadataLookup?> resolveEpisodeGroup(
     VideoMetadataLookup lookup, {
     required int seasonNumber,

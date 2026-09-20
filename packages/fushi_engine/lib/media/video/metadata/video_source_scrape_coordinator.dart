@@ -47,7 +47,8 @@ class VideoSourceScrapeCoordinator
     implements
         VideoSourceScrapeRunner,
         VideoSourceScrapeInterruptible,
-        VideoSourceScrapeManualBinding {
+        VideoSourceScrapeManualBinding,
+        VideoSourceScrapeEpisodeOrdering {
   /// 默认装配：哈希服务与离线 id 接力**共用同一份** Fribb 映射表（以前各自
   /// 下载、各解一份 16 MB JSON），并接上 `anidb_file_identities` 持久层（v106）。
   factory VideoSourceScrapeCoordinator({
@@ -363,6 +364,21 @@ class VideoSourceScrapeCoordinator
         _manualSearchProvider(lookup.provider);
     if (provider == null) return Future<VideoMetadataWork?>.value(null);
     return provider.fetchWork(lookup);
+  }
+
+  @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  ) {
+    final VideoMetadataProvider? provider =
+        _manualSearchProvider(lookup.provider);
+    if (provider == null || provider is! VideoMetadataEpisodeGroupProvider) {
+      return Future<List<VideoMetadataEpisodeGroupSummary>>.value(
+        const <VideoMetadataEpisodeGroupSummary>[],
+      );
+    }
+    return (provider as VideoMetadataEpisodeGroupProvider)
+        .listEpisodeGroups(lookup);
   }
 
   @override
@@ -2328,6 +2344,12 @@ class VideoSourceScrapeCoordinator
     _SeasonExpansion? expansion,
     VideoMetadataLookup lookup,
   ) async {
+    // 备选排序下 TMDB 剧的 (季, 集) 是分组编排，Fribb 切片说的是默认编排——两套
+    // 编号对不上，切片一律不用（TMDB 主源直用分组 (季, 集)；MAL 主源只能靠已
+    // 带 TMDB id 的卡片集换算）。
+    if (metadata.episodeGroupId != null) {
+      return const <int, TmdbSeasonSlice>{};
+    }
     if (expansion != null && expansion.tmdbSlices.isNotEmpty) {
       return expansion.tmdbSlices;
     }

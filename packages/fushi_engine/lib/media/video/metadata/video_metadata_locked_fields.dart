@@ -19,6 +19,11 @@ enum VideoMetadataLockableField {
   rating,
   cover,
   backdrop,
+
+  /// TMDB 备选排序（`episode_group_id`）：用户在合集菜单里选定 / 选回默认后上锁，
+  /// 刮削不再用自动挑的分组覆盖（Shoko `PreferredAlternateOrderingID` 是用户
+  /// 意图，不是刮削产物）。
+  episodeGroup,
 }
 
 const Map<String, VideoMetadataLockableField> _byName =
@@ -32,6 +37,7 @@ const Map<String, VideoMetadataLockableField> _byName =
   'rating': VideoMetadataLockableField.rating,
   'cover': VideoMetadataLockableField.cover,
   'backdrop': VideoMetadataLockableField.backdrop,
+  'episodeGroup': VideoMetadataLockableField.episodeGroup,
 };
 
 /// 解析 `locked_fields` 列。NULL / 空 / 全是未知值都返回空集合（= 无锁）。
