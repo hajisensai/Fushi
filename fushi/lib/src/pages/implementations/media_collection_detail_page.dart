@@ -24,6 +24,7 @@ import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -1417,95 +1418,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     String title,
     List<VideoMetadataCreditSummary> credits,
     FushiDesignTokens tokens,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          child: Text(title, style: Theme.of(context).textTheme.titleLarge),
-        ),
-        SizedBox(height: tokens.spacing.card),
-        SizedBox(
-          height: 224,
-          child: HorizontalDragScrollable(
-            child: ListView.separated(
-              padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              scrollDirection: Axis.horizontal,
-              itemCount: credits.length,
-              separatorBuilder: (_, __) => SizedBox(width: tokens.spacing.card),
-              itemBuilder: (BuildContext context, int index) {
-                final VideoMetadataCreditSummary credit = credits[index];
-                final String? path = credit.person.profilePath;
-                final String? url = credit.person.profileUrl;
-                final ImageProvider? image =
-                    path != null && File(path).existsSync()
-                        ? FileImage(File(path))
-                        : (url == null ? null : AppCachedHttpImage(url));
-                return SizedBox(
-                  key: ValueKey<String>(
-                      'video-work-credit-${credit.person.personKey}-$index'),
-                  width: 132,
-                  child: FushiCard(
-                    padding: EdgeInsets.zero,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Expanded(
-                          child: image == null
-                              ? const ColoredBox(
-                                  color: Color(0x1FFFFFFF),
-                                  child: Icon(Icons.person_outline, size: 42),
-                                )
-                              : Image(
-                                  image: image,
-                                  fit: BoxFit.cover,
-                                  // BUG-2496：坏头像文件解码失败退回占位，不当致命错误。
-                                  errorBuilder: (_, Object error, __) {
-                                    ErrorLogService.instance.logDiagnostic(
-                                      'MediaCollectionDetailPage.credit.coverDecode',
-                                      '${path ?? url}: $error',
-                                    );
-                                    return const ColoredBox(
-                                      color: Color(0x1FFFFFFF),
-                                      child: Icon(Icons.person_outline,
-                                          size: 42),
-                                    );
-                                  },
-                                ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 8, 9, 2),
-                          child: Text(
-                            credit.person.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(9, 0, 9, 9),
-                          child: Text(
-                            credit.character?.name ??
-                                (credit.roleName.isEmpty
-                                    ? credit.creditKind
-                                    : credit.roleName),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  ) =>
+      VideoCreditRail(title: title, credits: credits, tokens: tokens);
 
   Widget _buildExtrasSection(FushiDesignTokens tokens) {
     if (_workExtras.isEmpty) return const SizedBox.shrink();

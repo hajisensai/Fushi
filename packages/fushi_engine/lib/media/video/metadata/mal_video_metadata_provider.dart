@@ -14,6 +14,24 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 const String malIncompleteCreditEndpointsKey =
     'mal_incomplete_credit_endpoints';
 
+/// 某个 MAL 作品的 characters / staff 端点本轮没拉下来（`fetchWork` 把端点名
+/// 记在 [malIncompleteCreditEndpointsKey]）。协调器据此决定要不要补 TMDB，
+/// 落库层据此决定不用残缺表覆盖库里已有的完整表。
+bool hasIncompleteMalCredits(VideoMetadataWork work) {
+  final Object? endpoints = work.rawPayload?[malIncompleteCreditEndpointsKey];
+  return endpoints is List && endpoints.isNotEmpty;
+}
+
+/// MAL CDN 的「无图」占位：人物 / 角色 / 作品没有图时 Jikan 不给 null，而是
+/// 这些站点资源。`questionmark_23.gif`（人物、作品）、
+/// `img/sp/icon/apple-touch-icon-256.png`（角色）以及同目录其它尺寸变体。
+bool isMalPlaceholderImageUrl(String url) {
+  final String path =
+      Uri.tryParse(url)?.path.toLowerCase() ?? url.toLowerCase();
+  return path.contains('/images/questionmark_') ||
+      path.contains('/img/sp/icon/');
+}
+
 /// MAL metadata delivered by the public, read-only Jikan v4 API.
 class MalVideoMetadataProvider
     implements VideoMetadataProvider, VideoMetadataRelationsProvider {
@@ -358,11 +376,17 @@ class MalVideoMetadataProvider
         ]);
   }
 
+  /// MAL 对没有图的人物 / 角色 / 作品**不返回 null**，而是给站点占位图
+  /// （`images/questionmark_23.gif`、`img/sp/icon/apple-touch-icon-256.png`）。
+  /// 原样落库会让详情页把问号图当真照片加载，还挡住合并层用 TMDB 照片补空
+  /// （`profileUrl: primary ?? supplement`）。这里把占位图归一成「无图」，与
+  /// Shoko 对 AniDB 空 picname 的处理同义（BUG-2612）。
   String? _image(Map<String, Object?> item) {
     final Map<String, Object?>? images = metadataObject(item['images']);
     final Map<String, Object?>? jpg = metadataObject(images?['jpg']);
-    return metadataString(jpg?['large_image_url']) ??
+    final String? url = metadataString(jpg?['large_image_url']) ??
         metadataString(jpg?['image_url']);
+    return url == null || isMalPlaceholderImageUrl(url) ? null : url;
   }
 
   List<String> _names(Object? items) =>
@@ -419,7 +443,9 @@ class MalVideoMetadataRequestGate {
       VideoMetadataRetrySleep? sleep,
       this.interval = const Duration(milliseconds: 1100),
       this.cacheTtl = const Duration(hours: 1),
-      this.maxRateLimitRetries = 2})
+      this.maxRateLimitRetries = 2,
+      this.maxTransientRetries = 2,
+      this.transientBackoff = const Duration(seconds: 2)})
       : _now = now ?? DateTime.now,
         _sleep = sleep ?? Future<void>.delayed;
   final VideoMetadataNow _now;
@@ -429,6 +455,16 @@ class MalVideoMetadataRequestGate {
 
   /// 同一请求收到 429 后在冷却期满时重试的次数上限。
   final int maxRateLimitRetries;
+
+  /// 同一请求遇到 5xx / 超时后原地重试的次数上限。Jikan 是 MAL 的只读镜像，
+  /// 上游连不上时整批返回 504（`Jikan failed to connect to MyAnimeList`），
+  /// 多为秒级抖动；MAL transport 钉死 `maxAttempts: 1` 把重试权全交给本闸门，
+  /// 所以 5xx 只能在这里重试，否则 characters / staff 一抖就整张声优表空掉
+  /// （BUG-2612）。退避 [transientBackoff] × 第几次（默认 2 s、4 s），与 429
+  /// 的全局冷却不同——5xx 不是配额问题，不推后 `_nextStart`，退避期满后队列
+  /// 立刻继续。
+  final int maxTransientRetries;
+  final Duration transientBackoff;
   DateTime? _nextStart;
   Future<void> _queue = Future<void>.value();
   final Map<String, ({DateTime expires, String body})> _cache =
@@ -454,7 +490,9 @@ class MalVideoMetadataRequestGate {
       String key, Future<VideoMetadataHttpResponse> Function() request) async {
     final Completer<String> result = Completer<String>();
     _queue = _queue.then((_) async {
-      for (int attempt = 0;; attempt++) {
+      int rateLimitRetries = 0;
+      int transientRetries = 0;
+      for (;;) {
         try {
           final Duration wait = _nextStart?.difference(_now()) ?? Duration.zero;
           if (wait > Duration.zero) await _sleep(wait);
@@ -478,7 +516,12 @@ class MalVideoMetadataRequestGate {
             if (_nextStart == null || cooldown.isAfter(_nextStart!)) {
               _nextStart = cooldown;
             }
-            if (attempt < maxRateLimitRetries) continue;
+            if (rateLimitRetries++ < maxRateLimitRetries) continue;
+          } else if (_isTransientFailure(error) &&
+              transientRetries < maxTransientRetries) {
+            transientRetries++;
+            await _sleep(transientBackoff * transientRetries);
+            continue;
           }
           result.completeError(error, stack);
           return;
@@ -487,4 +530,10 @@ class MalVideoMetadataRequestGate {
     });
     return result.future;
   }
+
+  /// 5xx、超时与连接层失败（transport 把它们都包成无状态码的
+  /// [VideoMetadataNetworkException]）。4xx 是确定性答案，不重试。
+  static bool _isTransientFailure(Object error) =>
+      error is VideoMetadataNetworkException &&
+      (error.statusCode == null || error.statusCode! >= 500);
 }

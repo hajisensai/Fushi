@@ -1230,7 +1230,7 @@ class VideoSourceScrapeCoordinator
     );
     VideoMetadataWork metadata = primaryHydration.metadata;
     if (metadata.provider == VideoMetadataProviderKind.mal &&
-        _hasIncompleteMalCredits(metadata)) {
+        hasIncompleteMalCredits(metadata)) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
           message: 'MAL 演职员资料抓取不完整，已保留作品身份和现有资料；将尝试严格匹配 TMDB 补充缺项。'));
@@ -1282,6 +1282,14 @@ class VideoSourceScrapeCoordinator
           ...expansion.extraSeasons,
         ]..sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
                 a.seasonNumber.compareTo(b.seasonNumber)));
+      }
+      if (expansion != null && expansion.extraCredits.isNotEmpty) {
+        metadata = metadata.copyWith(
+          credits: mergeVideoMetadataCredits(
+            metadata.credits,
+            expansion.extraCredits,
+          ),
+        );
       }
       final _TmdbSupplementResult tmdb =
           metadata.provider == VideoMetadataProviderKind.mal &&
@@ -1758,6 +1766,7 @@ class VideoSourceScrapeCoordinator
     }
 
     final List<VideoMetadataSeason> extra = <VideoMetadataSeason>[];
+    final List<VideoMetadataCredit> extraCredits = <VideoMetadataCredit>[];
     for (final int index in neededIndexes.toList()..sort()) {
       if (index == primaryIndex) continue;
       final VideoMetadataWork? work = await workAt(index);
@@ -1769,6 +1778,9 @@ class VideoSourceScrapeCoordinator
                 '第 ${index + 1} 季（MAL ${seasonEntries[index].malIds.single}）资料拉取失败，该季分集暂缺。'));
         continue;
       }
+      // MAL 一个 cour 一个条目，各自只列本 cour 的声优 / 职员；卡片是整部作品，
+      // 后续 cour 新登场角色的声优也要进作品级人物表（BUG-2612）。
+      extraCredits.addAll(work.credits);
       final VideoMetadataLookup lookup = lookupAt(index);
       List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[];
       List<VideoMetadataEpisode> episodes = const <VideoMetadataEpisode>[];
@@ -1803,6 +1815,7 @@ class VideoSourceScrapeCoordinator
     return _SeasonExpansion(
       primarySeasonNumber: primarySeasonNumber,
       extraSeasons: extra,
+      extraCredits: extraCredits,
       episodeOverrides: overrides,
       complete: complete,
       // 全部条目都带上（不只本地出现的季）：MAL 没给集数时，切片终点要靠同一
@@ -2239,16 +2252,11 @@ class VideoSourceScrapeCoordinator
       error is TlsException ||
       error is http.ClientException;
 
-  static bool _hasIncompleteMalCredits(VideoMetadataWork work) {
-    final Object? endpoints = work.rawPayload?[malIncompleteCreditEndpointsKey];
-    return endpoints is List && endpoints.isNotEmpty;
-  }
-
   static bool _needsTmdbSupplement(
           VideoMetadataWork work, bool episodesComplete) =>
       (work.plot?.trim().isEmpty ?? true) ||
       work.credits.isEmpty ||
-      _hasIncompleteMalCredits(work) ||
+      hasIncompleteMalCredits(work) ||
       !work.images.any((VideoMetadataImage image) =>
           image.kind == VideoMetadataImageKind.cover) ||
       !work.images.any((VideoMetadataImage image) =>
@@ -3504,6 +3512,7 @@ class _SeasonExpansion {
   const _SeasonExpansion({
     this.primarySeasonNumber,
     this.extraSeasons = const <VideoMetadataSeason>[],
+    this.extraCredits = const <VideoMetadataCredit>[],
     this.episodeOverrides = const <String, (int, int)>{},
     this.complete = true,
     this.tmdbSlices = const <int, TmdbSeasonSlice>{},
@@ -3511,6 +3520,9 @@ class _SeasonExpansion {
 
   final int? primarySeasonNumber;
   final List<VideoMetadataSeason> extraSeasons;
+
+  /// 其它 cour 条目的人物关系，按主条目的表合并（同人同角色去重、只补空）。
+  final List<VideoMetadataCredit> extraCredits;
   final Map<String, (int, int)> episodeOverrides;
 
   /// false = 有季 / 集没能对齐或拉取失败，季集记录不能当权威删除依据。
