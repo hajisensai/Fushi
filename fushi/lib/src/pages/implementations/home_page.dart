@@ -74,7 +74,9 @@ import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinServerConfig;
+    show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -2710,8 +2712,29 @@ class _HomePageState extends BasePageState<HomePage>
         MediaServerEntry(
           browser: config.buildClient(),
           accountName: config.username,
+          routeUrls: config.routeUrls,
+          onSwitchRoute: (String url) => _switchMediaServerRoute(config, url),
         ),
     ];
+  }
+
+  /// 视频页服务器卡片上的「切换线路」：写回配置并失效这台的远端清单缓存槽
+  /// （槽里的封面 / 流 URL 烤着旧线路的 host）。与设置页 `_switchRoute` 同口径；
+  /// 身份锚（[JellyfinServerConfig.serverUrl]）不变，历史 / 封面磁盘缓存照常。
+  Future<void> _switchMediaServerRoute(
+    JellyfinServerConfig config,
+    String url,
+  ) async {
+    final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
+    await syncRepo.upsertJellyfinServer(
+      config.copyWithRoutes(activeServerUrl: url),
+    );
+    ref.read(remoteLibraryCacheProvider).invalidateSource(
+          JellyfinVideoClient.sourceIdFor(
+            serverUrl: config.serverUrl,
+            userId: config.userId,
+          ),
+        );
   }
 
   Widget _buildTabContent(HomeTab tab) {

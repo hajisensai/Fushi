@@ -69,10 +69,38 @@ class JellyfinServerConfig {
     this.serverName,
     this.libraryIds = const <String>[],
     this.deviceId = JellyfinApi.kLegacyDeviceId,
+    this.alternateUrls = const <String>[],
+    this.activeServerUrl = '',
   });
 
   /// 归一化后的服务器根 URL（[JellyfinApi.normalizeServerUrl] 口径）。
+  ///
+  /// 这是**登录时用的那条地址**，同时也是这台服务器在本机的身份锚
+  /// （[JellyfinVideoClient.sourceIdFor] / 封面缓存命名空间 / 浏览页 PageStorage
+  /// 键全都拿它拼）。多线路之后它**不再是请求一定走的地址**——请求走
+  /// [effectiveServerUrl]；身份锚保持不变，切线路才不会把远端清单缓存槽、封面
+  /// 缓存与浏览页状态一起切成另一台「新服务器」。
   final String serverUrl;
+
+  /// 这台服务器的其它访问地址（线路）：局域网 / 公网 / 反代 / 内网穿透各一条，
+  /// 归一化口径同 [serverUrl]、不含 [serverUrl] 本身、去重且保持用户添加顺序。
+  /// 令牌按 DeviceId 归属、与地址无关，所以同一份 [accessToken] 在每条线路上都
+  /// 直接可用，添加线路不需要重新登录。
+  final List<String> alternateUrls;
+
+  /// 当前请求走的线路；空串 = [serverUrl]。持久化只在它不等于 [serverUrl] 时
+  /// 才写，旧配置读进来自然落到主地址。**必须**是 [routeUrls] 之一，不是的话
+  /// [effectiveServerUrl] 回落主地址（线路被删了但 active 没同步清掉的防御）。
+  final String activeServerUrl;
+
+  /// 全部线路：主地址在首位，后面按添加顺序。
+  List<String> get routeUrls => <String>[serverUrl, ...alternateUrls];
+
+  /// 请求实际走的根 URL（[buildClient] 用它建 [JellyfinApi]）。
+  String get effectiveServerUrl =>
+      activeServerUrl.isNotEmpty && routeUrls.contains(activeServerUrl)
+          ? activeServerUrl
+          : serverUrl;
   final String username;
   final String userId;
   final String accessToken;
@@ -98,6 +126,9 @@ class JellyfinServerConfig {
         if (serverName != null) 'serverName': serverName,
         if (libraryIds.isNotEmpty) 'libraryIds': libraryIds,
         if (deviceId != JellyfinApi.kLegacyDeviceId) 'deviceId': deviceId,
+        if (alternateUrls.isNotEmpty) 'alternateUrls': alternateUrls,
+        if (activeServerUrl.isNotEmpty && activeServerUrl != serverUrl)
+          'activeServerUrl': activeServerUrl,
       };
 
   static JellyfinServerConfig? fromJson(Map<String, dynamic> json) {
@@ -107,6 +138,14 @@ class JellyfinServerConfig {
     if (serverUrl.isEmpty || userId.isEmpty || accessToken.isEmpty) {
       return null;
     }
+    final List<String> alternateUrls = normalizeAlternateUrls(
+      serverUrl,
+      <String>[
+        for (final Object? raw
+            in (json['alternateUrls'] as List?) ?? const <Object?>[])
+          if (raw is String) raw,
+      ],
+    );
     return JellyfinServerConfig(
       serverUrl: serverUrl,
       username: (json['username'] as String?) ?? '',
@@ -120,7 +159,24 @@ class JellyfinServerConfig {
       deviceId: ((json['deviceId'] as String?) ?? '').isEmpty
           ? JellyfinApi.kLegacyDeviceId
           : json['deviceId'] as String,
+      alternateUrls: alternateUrls,
+      activeServerUrl: (json['activeServerUrl'] as String?) ?? '',
     );
+  }
+
+  /// 备用线路清单的唯一整理点：去空、去重、剔掉与主地址 [serverUrl] 相同的项，
+  /// 保持首次出现顺序。[fromJson]（旧 JSON 手改 / 备份还原）与 [copyWithRoutes]
+  /// （UI 添加）都经这里，`routeUrls` 里才不会出现两条一样的线路。
+  static List<String> normalizeAlternateUrls(
+    String serverUrl,
+    Iterable<String> urls,
+  ) {
+    final List<String> result = <String>[];
+    for (final String url in urls) {
+      if (url.isEmpty || url == serverUrl || result.contains(url)) continue;
+      result.add(url);
+    }
+    return result;
   }
 
   /// 复制并替换要枚举的媒体库（设置页保存选择用）。
@@ -133,14 +189,44 @@ class JellyfinServerConfig {
         serverName: serverName,
         libraryIds: ids,
         deviceId: deviceId,
+        alternateUrls: alternateUrls,
+        activeServerUrl: activeServerUrl,
       );
 
+  /// 复制并替换线路：[alternateUrls] 缺省不动；[activeServerUrl] 缺省不动，
+  /// 但结果里 active 不在新的 [routeUrls] 内时（删掉了正在用的线路）回落主地址。
+  JellyfinServerConfig copyWithRoutes({
+    List<String>? alternateUrls,
+    String? activeServerUrl,
+  }) {
+    final List<String> nextAlternates = alternateUrls == null
+        ? this.alternateUrls
+        : normalizeAlternateUrls(serverUrl, alternateUrls);
+    final String requestedActive = activeServerUrl ?? this.activeServerUrl;
+    final String nextActive =
+        requestedActive == serverUrl || !nextAlternates.contains(requestedActive)
+            ? ''
+            : requestedActive;
+    return JellyfinServerConfig(
+      serverUrl: serverUrl,
+      username: username,
+      userId: userId,
+      accessToken: accessToken,
+      serverName: serverName,
+      libraryIds: libraryIds,
+      deviceId: deviceId,
+      alternateUrls: nextAlternates,
+      activeServerUrl: nextActive,
+    );
+  }
+
   /// 从配置构造可用客户端（每次取数新建实例，缓存身份见
-  /// [JellyfinVideoClient.remoteLibrarySourceId]）。
+  /// [JellyfinVideoClient.remoteLibrarySourceId]）。请求走当前线路
+  /// [effectiveServerUrl]，身份锚仍是 [serverUrl]。
   JellyfinVideoClient buildClient({http.Client? httpClient}) =>
       JellyfinVideoClient(
         api: JellyfinApi(
-          serverUrl: serverUrl,
+          serverUrl: effectiveServerUrl,
           accessToken: accessToken,
           deviceId: deviceId,
           client: httpClient,
@@ -148,6 +234,7 @@ class JellyfinServerConfig {
         userId: userId,
         libraryIds: libraryIds,
         serverName: serverName,
+        identityServerUrl: serverUrl,
       );
 }
 
@@ -1649,10 +1736,17 @@ class JellyfinVideoClient
     required this.userId,
     this.libraryIds = const <String>[],
     this.serverName,
-  });
+    String? identityServerUrl,
+  }) : identityServerUrl = identityServerUrl ?? api.serverUrl;
 
   final JellyfinApi api;
   final String userId;
+
+  /// 这台服务器在本机的身份锚（= [JellyfinServerConfig.serverUrl]，登录时的主
+  /// 地址）。[api.serverUrl] 是请求实际走的**当前线路**，多线路之后两者可以不同；
+  /// 缓存槽身份 / 封面缓存命名空间只认这个，切线路不换身份。缺省 = api 的地址
+  /// （单线路 / 直接 new 的测试路径两者天然相同）。
+  final String identityServerUrl;
 
   /// 画质档（成熟客户端的「画质」菜单）。码率取 Jellyfin web 同一阶梯的常用几档，
   /// 宽度上限让服务器转码时真的缩到那一档，而不是只降码率不降分辨率。
@@ -1714,7 +1808,7 @@ class JellyfinVideoClient
 
   @override
   String get remoteLibrarySourceId =>
-      sourceIdFor(serverUrl: api.serverUrl, userId: userId);
+      sourceIdFor(serverUrl: identityServerUrl, userId: userId);
 
   @override
   Future<Uint8List> fetchRemoteCover(String coverUrl) =>
@@ -1724,7 +1818,7 @@ class JellyfinVideoClient
   /// 换令牌（重新登录同账号）不变——封面没变别白白重下；换服务器/账号必变。
   @override
   String get coverCacheNamespace =>
-      'jellyfin-${sha1.convert(utf8.encode('${api.serverUrl}|$userId'))}';
+      'jellyfin-${sha1.convert(utf8.encode('$identityServerUrl|$userId'))}';
 
   /// 把一个条目适配成 [RemoteVideoInfo]（列表卡片消费）。
   ///
