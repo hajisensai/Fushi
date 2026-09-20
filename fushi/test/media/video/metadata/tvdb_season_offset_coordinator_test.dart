@@ -158,11 +158,12 @@ void main() {
   });
 
   // Shoko 主路径（`MatchAnidbToTmdbEpisodes`）：映射表没给季/偏移、MAL 又一集
-  // 都没有时，用本地文件 AniDB 身份里的集标题在 TMDB 里逐集核对，核对通过的
-  // 按 AniDB 集号落集。
+  // 都没有时，本地文件的 AniDB 集标题在 TMDB 里逐集核对，核对通过的文件直接
+  // 落到对上的 TMDB 集（卡片里 TMDB 第 2 季是补充源整季并进来的）；文件名的
+  // `S01E0x` 不算数。
   test(
       'without mapping offsets, AniDB episode titles verify against TMDB '
-      'episodes and land under the AniDB episode number (Shoko path)',
+      'episodes and the files land on those TMDB episodes (Shoko path)',
       () async {
     const String fribbNoSeason = '['
         '{"anidb_id":19079,"mal_id":60636,"themoviedb_id":{"tv":30984},'
@@ -170,11 +171,11 @@ void main() {
         ']';
     final _MalProvider mal = _MalProvider();
     final _TmdbProvider tmdb = _TmdbProvider();
-    final _HashService hash = _HashService(<AnidbHashIdentityResult>[
-      _identity(1, 'The Calamity', 'Kashin', '禍進'),
-      _identity(2, 'Ashes of the Quincy', '', ''),
-      _identity(3, 'Totally Unrelated Title', '', ''),
-    ]);
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      'Bleach S01E01.mkv': _identity(1, 'The Calamity', 'Kashin', '禍進'),
+      'Bleach S01E02.mkv': _identity(2, 'Ashes of the Quincy', '', ''),
+      'Bleach S01E03.mkv': _identity(3, 'Totally Unrelated Title', '', ''),
+    });
     final SourceScrapeReport report = await scrape(
       mal,
       tmdb,
@@ -188,25 +189,92 @@ void main() {
     );
     expect(report.succeededWorks, 1, reason: '${report.errors}');
     final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
-    expect(bound[(1, 1)]?.$1, 'book-0');
-    expect(bound[(1, 1)]?.$2, 'The Calamity', reason: '标题核对 → TMDB S2E41');
-    expect(bound[(1, 2)]?.$1, 'book-1');
-    expect(bound[(1, 2)]?.$2, 'Ashes of the Quincy');
+    expect(bound[(2, 41)]?.$1, 'book-0', reason: '标题核对 → TMDB S2E41');
+    expect(bound[(2, 41)]?.$2, 'The Calamity');
+    expect(bound[(2, 42)]?.$1, 'book-1');
+    expect(bound[(2, 42)]?.$2, 'Ashes of the Quincy');
+    expect(bound[(1, 1)]?.$1, isNull, reason: '文件名的 S01E01 不算数');
     // 第 3 集标题对不上：季虽被前两集锁到 S2，但顺序兜底（firstAvailable）不算
     // 核对，不得按 AniDB 集号落进 TMDB 集——不绑，留给人工。
-    expect(bound[(1, 3)]?.$2, isNot('TYBW #43'));
+    expect(bound[(2, 43)]?.$1, isNull);
+    expect(bound.values.map(((String?, String?) v) => v.$1),
+        isNot(contains('book-2')));
     expect(
       report.warnings.any((SourceScrapeIssue issue) =>
-          issue.message.contains('按 AniDB 文件身份的集标题') &&
-          issue.message.contains('对上 2 集')),
+          issue.message.contains('AniDB 文件身份 → TMDB 集逐集链接') &&
+          issue.message.contains('2 个文件对上')),
       isTrue,
       reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
+    );
+  });
+
+  // Shoko 的识别链里文件名从不参与：文件落到哪一集由 AniDB 集（播出日 + 集
+  // 标题）在 TMDB 剧里逐集对出来决定。文件名对的照旧，文件名错的按身份归位。
+  test(
+      'AniDB file identity (air date + title) decides the card episode over '
+      'the filename, Shoko style', () async {
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    DateTime aired(int tmdbEpisode) =>
+        DateTime.parse('${_TmdbProvider.tybwAirDate(tmdbEpisode)}T00:00:00Z');
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      // 文件名 S17E41 = cour 4 第 1 集，身份也是第 1 集：一致。
+      'Bleach S17E41.mkv':
+          _identity(1, 'The Calamity', 'Kashin', '禍進', airedAt: aired(41)),
+      // 文件名写成 S17E12（cour 1 第 12 集），身份却是 cour 4 第 2 集
+      //（标题 + 播出日都对 TMDB S2E42）：按身份归位到卡片第 5 季第 2 集。
+      'Bleach S17E12.mkv':
+          _identity(2, 'Ashes of the Quincy', '', '', airedAt: aired(42)),
+      // 文件名 S17E44 = cour 4 第 4 集，身份第 4 集但只有日文集名（TMDB 只有
+      // 英文）：靠播出日对上 S2E44（date 评级），一致。
+      'Bleach S17E44.mkv': _identity(4, '', '', '灰の残響', airedAt: aired(44)),
+    });
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>[
+        'Bleach S17E41.mkv',
+        'Bleach S17E12.mkv',
+        'Bleach S17E44.mkv',
+      ],
+      hash: hash,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
+    expect(bound[(5, 1)]?.$1, 'book-0');
+    expect(bound[(5, 2)]?.$1, 'book-1', reason: '身份胜过文件名');
+    expect(bound[(2, 12)]?.$1, isNull, reason: '不再按文件名落到 cour 1');
+    expect(bound[(5, 4)]?.$1, 'book-2', reason: '仅播出日对上也够');
+    final Iterable<String> messages =
+        report.warnings.map((SourceScrapeIssue i) => i.message);
+    expect(
+      messages.any((String m) =>
+          m.contains('Bleach S17E12.mkv') &&
+          m.contains('第 2 季第 12 集') &&
+          m.contains('第 5 季第 2 集') &&
+          m.contains('按身份归位')),
+      isTrue,
+      reason: '$messages',
+    );
+    expect(
+      messages.any((String m) =>
+          m.contains('AniDB 文件身份 → TMDB 集逐集链接') &&
+          m.contains('3 个文件对上') &&
+          m.contains('1 个与文件名不符')),
+      isTrue,
+      reason: '$messages',
+    );
+    expect(
+      messages.any((String m) => m.contains('aired=${_TmdbProvider.tybwAirDate(41)}')),
+      isTrue,
+      reason: '识别日志带播出日',
     );
   });
 }
 
 AnidbHashIdentityResult _identity(
-        int epno, String english, String romaji, String kanji) =>
+        int epno, String english, String romaji, String kanji,
+        {DateTime? airedAt}) =>
     AnidbHashIdentityResult(
       status: AnidbHashIdentityStatus.matched,
       hash: AnidbEd2kHash(
@@ -224,10 +292,12 @@ AnidbHashIdentityResult _identity(
           englishTitle: '',
           episodeTitle: english,
           episodeRomajiTitle: romaji,
-          episodeKanjiTitle: kanji),
+          episodeKanjiTitle: kanji,
+          episodeAiredAt: airedAt),
       mapping: AnimeIdentityMappingResult(anidbId: 19079, malIds: <int>{60636}),
     );
 
+/// 按文件名给身份（协调器按路径顺序哈希，不能靠调用次序对号）。
 class _HashService extends AnidbHashIdentityService {
   _HashService(this.results)
       : super(
@@ -237,20 +307,15 @@ class _HashService extends AnidbHashIdentityService {
                 password: 'test',
                 clientName: 'testclient',
                 clientVersion: 1));
-  final List<AnidbHashIdentityResult> results;
-  int calls = 0;
+  final Map<String, AnidbHashIdentityResult> results;
   @override
   bool get isConfigured => true;
   @override
   Future<AnidbHashIdentityResult> identifyFile(String path,
       {bool Function()? isCancelled,
-      void Function(int, int)? onProgress}) async {
-    final int index = calls++;
-    return index < results.length
-        ? results[index]
-        : const AnidbHashIdentityResult(
-            status: AnidbHashIdentityStatus.notFound);
-  }
+      void Function(int, int)? onProgress}) async =>
+      results[p.basename(path)] ??
+      const AnidbHashIdentityResult(status: AnidbHashIdentityStatus.notFound);
 }
 
 Future<SourceLibraryRow> _source(
@@ -440,8 +505,21 @@ class _TmdbProvider implements VideoMetadataProvider {
             (2, _) => 'TYBW #$number',
             _ => 'Special #$number',
           },
+          airDate: seasonNumber == 2 ? tybwAirDate(number) : null,
+          ids: <VideoMetadataId>[
+            VideoMetadataId(
+                type: 'tmdb', value: '${seasonNumber * 1000 + number}'),
+          ],
         ),
     ];
+  }
+
+  /// 第 2 季逐周播出：第 n 集 = 2025-10-04 起第 n−1 周（`yyyy-MM-dd`）。
+  static String tybwAirDate(int number) {
+    final DateTime date =
+        DateTime.utc(2025, 10, 4).add(Duration(days: 7 * (number - 1)));
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}';
   }
 
   @override

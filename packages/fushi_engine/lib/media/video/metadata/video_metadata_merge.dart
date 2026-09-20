@@ -543,6 +543,164 @@ TmdbEpisodeMatchOutcome fillEmptySeasonsFromEpisodeTitles(
   );
 }
 
+/// 一条「AniDB 集 → TMDB 集」链接：Shoko `CrossRef_AniDB_TMDB_Episode` 在本仓
+/// 的即时形态（不落独立表——输入都在本地缓存里，重算是确定性的；落库的是
+/// 成员最终绑到的分集行）。
+class AnidbTmdbEpisodeLink {
+  const AnidbTmdbEpisodeLink({
+    required this.anidbEpisodeNumber,
+    required this.tmdbEpisode,
+    required this.rating,
+    required this.cardKey,
+  });
+
+  /// AniDB 正片集号（epno）。
+  final int anidbEpisodeNumber;
+
+  /// 对上的 TMDB 集（**TMDB 自己的** 季/集号，未重编）。
+  final VideoMetadataEpisode tmdbEpisode;
+  final TmdbEpisodeMatchRating rating;
+
+  /// 这一集在本卡片里的 (季, 集)；null = TMDB 那一季在卡片里没有对应（映射表
+  /// 没给切片、卡片也没那一季），链接成立但落不下来。
+  final (int, int)? cardKey;
+}
+
+/// [linkAnidbEpisodesToTmdb] 的结果：可能补了分集的作品 + 每个 AniDB 集号的链接。
+typedef AnidbEpisodeLinkOutcome = ({
+  VideoMetadataWork work,
+  Map<int, AnidbTmdbEpisodeLink> links,
+});
+
+/// Shoko `MatchAnidbToTmdbEpisodes` 的主路径：本地文件的 AniDB 集身份（集号 +
+/// 三语集标题 + 播出日）在 TMDB 剧**全部**正片季里逐集找对应，文件名给的季集
+/// 不参与。对上的 TMDB 集再换算成本卡片的 (季, 集)：
+///  1. 主源就是 TMDB → 卡片季 = TMDB 季，直接用；
+///  2. 卡片里某一集已带这条 TMDB 分集 id（切片 / 合并 / 标题匹配时并进来的）
+///     → 用那一集的 (季, 集)；
+///  3. 映射表切片 [slices]（卡片季 → TMDB 第 S 季从第 O+1 集起）能覆盖 → 卡片
+///     季 = 该切片、集 = TMDB 集号 − O，并把这条 TMDB 集补进卡片那一季（已有
+///     同号集只补空）；
+///  4. 都不行 → [AnidbTmdbEpisodeLink.cardKey] 为 null，调用方记说明。
+///
+/// `firstAvailable`（季锁定后的顺序兜底，标题/日期都没核对）不产生链接——
+/// 与 [fillEmptySeasonsFromEpisodeTitles] 同一条纪律。
+AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
+  VideoMetadataWork primary,
+  VideoMetadataWork? tmdb,
+  List<TmdbEpisodeMatchSource> sources, {
+  Map<int, TmdbSeasonSlice> slices = const <int, TmdbSeasonSlice>{},
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+  String? preferredLanguage,
+}) {
+  final Map<int, AnidbTmdbEpisodeLink> links = <int, AnidbTmdbEpisodeLink>{};
+  final VideoMetadataWork? show =
+      primary.provider == VideoMetadataProviderKind.tmdb ? primary : tmdb;
+  if (show == null || sources.isEmpty) return (work: primary, links: links);
+  final List<VideoMetadataEpisode> pool = <VideoMetadataEpisode>[
+    for (final VideoMetadataSeason season in show.seasons) ...season.episodes,
+  ];
+  if (pool.isEmpty) return (work: primary, links: links);
+  final Map<int, TmdbEpisodeMatch> matches = Map<int, TmdbEpisodeMatch>.of(
+      matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases))
+    ..removeWhere((int _, TmdbEpisodeMatch match) =>
+        match.rating == TmdbEpisodeMatchRating.firstAvailable);
+  if (matches.isEmpty) return (work: primary, links: links);
+
+  final bool tmdbPrimary = identical(show, primary);
+  final bool preferSupplementTitle = _preferSupplementTitle(
+    primary.provider,
+    show.provider,
+    preferredLanguage,
+  );
+  // 卡片里已带 TMDB 分集 id 的集：`tmdb:<id>` → (季, 集)。
+  final Map<String, (int, int)> cardKeyByTmdbId = <String, (int, int)>{
+    for (final VideoMetadataSeason season in primary.seasons)
+      for (final VideoMetadataEpisode episode in season.episodes)
+        for (final String key in _tmdbEpisodeKeys(episode))
+          key: (season.seasonNumber, episode.episodeNumber),
+  };
+  // 待补进卡片季的 TMDB 集（已重编成卡片 (季, 集)）。
+  final Map<int, List<VideoMetadataEpisode>> inserts =
+      <int, List<VideoMetadataEpisode>>{};
+  for (final MapEntry<int, TmdbEpisodeMatch> entry in matches.entries) {
+    final VideoMetadataEpisode tmdbEpisode = entry.value.episode;
+    (int, int)? cardKey;
+    if (tmdbPrimary) {
+      cardKey = (tmdbEpisode.seasonNumber, tmdbEpisode.episodeNumber);
+    } else {
+      for (final String key in _tmdbEpisodeKeys(tmdbEpisode)) {
+        cardKey = cardKeyByTmdbId[key];
+        if (cardKey != null) break;
+      }
+      if (cardKey == null) {
+        final (int, int)? sliced =
+            _cardKeyFromSlices(primary, tmdbEpisode, slices);
+        if (sliced != null) {
+          cardKey = sliced;
+          (inserts[sliced.$1] ??= <VideoMetadataEpisode>[])
+              .add(_renumberEpisode(tmdbEpisode, sliced.$1, sliced.$2));
+        }
+      }
+    }
+    links[entry.key] = AnidbTmdbEpisodeLink(
+      anidbEpisodeNumber: entry.key,
+      tmdbEpisode: tmdbEpisode,
+      rating: entry.value.rating,
+      cardKey: cardKey,
+    );
+  }
+  if (inserts.isEmpty) return (work: primary, links: links);
+  return (
+    work: primary.copyWith(seasons: <VideoMetadataSeason>[
+      for (final VideoMetadataSeason season in primary.seasons)
+        if (inserts[season.seasonNumber] case final List<VideoMetadataEpisode> add)
+          season.copyWith(
+            episodes: _mergeEpisodes(
+              season.episodes,
+              add,
+              preferSupplementTitle: preferSupplementTitle,
+            ),
+          )
+        else
+          season,
+    ]),
+    links: links,
+  );
+}
+
+/// 按映射表切片把 TMDB (季, 集) 换算成卡片 (季, 集)：同一 TMDB 季里偏移最大且
+/// 仍小于集号的切片；卡片那一季必须已存在（补集只补进已有的季），已知集数时
+/// 集号还要落得进去。都不满足返回 null。
+(int, int)? _cardKeyFromSlices(
+  VideoMetadataWork primary,
+  VideoMetadataEpisode tmdbEpisode,
+  Map<int, TmdbSeasonSlice> slices,
+) {
+  int? bestSeason;
+  int bestOffset = -1;
+  for (final MapEntry<int, TmdbSeasonSlice> entry in slices.entries) {
+    final TmdbSeasonSlice slice = entry.value;
+    if (slice.tmdbSeason != tmdbEpisode.seasonNumber ||
+        slice.offset >= tmdbEpisode.episodeNumber ||
+        slice.offset <= bestOffset) {
+      continue;
+    }
+    bestSeason = entry.key;
+    bestOffset = slice.offset;
+  }
+  if (bestSeason == null) return null;
+  final int episodeNumber = tmdbEpisode.episodeNumber - bestOffset;
+  for (final VideoMetadataSeason season in primary.seasons) {
+    if (season.seasonNumber != bestSeason) continue;
+    final int? count = season.episodeCount;
+    if (count != null && count > 0 && episodeNumber > count) return null;
+    return (bestSeason, episodeNumber);
+  }
+  return null;
+}
+
 /// [tmdb] 的全部分集，去掉已经出现在 [primary] 某一季里的（按 TMDB 分集 id）。
 List<VideoMetadataEpisode> _unusedTmdbEpisodes(
   VideoMetadataWork primary,

@@ -735,7 +735,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 108;
+  int get schemaVersion => 109;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3269,6 +3269,20 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(
                 anidbFileIdentities,
                 anidbFileIdentities.missAttempts,
+              );
+            }
+          }
+          if (from < 109) {
+            // v109（AniDB 对齐 Shoko，集级）：anidb_file_identities 加
+            // episode_aired_at，记 UDP EPISODE 返回的集播出日，供 AniDB 集 →
+            // TMDB 集按「播出日 + 标题」逐集链接。存量行为 null，sweep 时补问一次
+            // 即回填，无需迁移回填。幂等守卫同 v108。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists(
+                    'anidb_file_identities', 'episode_aired_at')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.episodeAiredAt,
               );
             }
           }

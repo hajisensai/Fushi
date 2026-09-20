@@ -65,7 +65,8 @@ abstract interface class AnidbFileIdentityStore {
   Future<void> save(AnidbFileIdentityRecord record);
 }
 
-/// Drift 实现：`anidb_file_identities`（schema v106，v108 加 `miss_attempts`）。
+/// Drift 实现：`anidb_file_identities`（schema v106，v108 加 `miss_attempts`，
+/// v109 加 `episode_aired_at`）。
 class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
   AnidbFileIdentityDatabaseStore(this._database);
 
@@ -116,6 +117,8 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
       episodeTitle: Value(identity?.episodeTitle ?? ''),
       episodeRomajiTitle: Value(identity?.episodeRomajiTitle ?? ''),
       episodeKanjiTitle: Value(identity?.episodeKanjiTitle ?? ''),
+      episodeAiredAt:
+          Value(identity?.episodeAiredAt?.toUtc().millisecondsSinceEpoch),
       filePath: Value(record.filePath),
       fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
       missAttempts: Value(identity == null ? record.missAttempts : 0),
@@ -144,6 +147,10 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
               episodeTitle: row.episodeTitle,
               episodeRomajiTitle: row.episodeRomajiTitle,
               episodeKanjiTitle: row.episodeKanjiTitle,
+              episodeAiredAt: row.episodeAiredAt == null
+                  ? null
+                  : DateTime.fromMillisecondsSinceEpoch(row.episodeAiredAt!,
+                      isUtc: true),
             ),
       filePath: row.filePath,
       fileModifiedAt: row.fileModifiedAt == null

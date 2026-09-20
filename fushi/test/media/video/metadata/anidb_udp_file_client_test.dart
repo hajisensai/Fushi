@@ -738,4 +738,112 @@ void main() {
       await client.close();
     });
   });
+
+  group('EPISODE (Shoko `RequestGetEpisode`: air date for episode linking)', () {
+    // wiki: eid|aid|length|rating|votes|epno|eng|romaji|kanji|aired|type
+    const String episode =
+        '313835|19079|24|850|12|04|The Calamity|Kajin|禍進|1777075200|1';
+
+    test('240 parses eid/aid/epno and aired as a UTC day', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n$episode'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info, isNotNull);
+      expect(info!.episodeId, 313835);
+      expect(info.animeId, 19079);
+      expect(info.episodeNumber, '04');
+      expect(info.airedAt, DateTime.utc(2026, 4, 25));
+      final String request =
+          fake.packets.firstWhere((p) => p.startsWith('EPISODE '));
+      expect(request, contains('eid=313835'));
+      expect(request, contains('s=Ab12'));
+      // 同一 eid 第二次不再上网。
+      await client.episode(episodeId: 313835);
+      expect(fake.packets.where((p) => p.startsWith('EPISODE ')).length, 1);
+      await client.close();
+    });
+
+    test('340 NO SUCH EPISODE is null, not an error', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 340 NO SUCH EPISODE'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      expect(await client.episode(episodeId: 1), isNull);
+      await client.close();
+    });
+
+    test('aired = 0 (unknown) yields a null air date', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n313835|19079|24|0|0|04||||0|1'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info?.airedAt, isNull);
+      expect(info?.episodeNumber, '04');
+      await client.close();
+    });
+
+    test('rejects truncated or non-numeric fields', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n313835|19079|24|850|12|04|x|y'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      await expectLater(
+        client.episode(episodeId: 313835),
+        throwsA(
+          isA<AnidbUdpException>().having(
+            (e) => e.reason,
+            'reason',
+            AnidbUdpFailure.malformedResponse,
+          ),
+        ),
+      );
+      await client.close();
+    });
+
+    test('an expired session re-authenticates once and resends EPISODE',
+        () async {
+      int episodeCalls = 0;
+      final _Fake fake = _Fake((packet, tag) {
+        if (packet.startsWith('EPISODE ')) {
+          episodeCalls++;
+          return episodeCalls == 1
+              ? '$tag 506 INVALID SESSION'
+              : '$tag 240 EPISODE\n$episode';
+        }
+        return _normal(packet, tag);
+      });
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info?.airedAt, DateTime.utc(2026, 4, 25));
+      expect(fake.packets.where((p) => p.startsWith('AUTH ')).length, 2);
+      expect(episodeCalls, 2);
+      await client.close();
+    });
+  });
 }

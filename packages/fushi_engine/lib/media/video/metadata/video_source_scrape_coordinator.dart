@@ -1269,6 +1269,10 @@ class VideoSourceScrapeCoordinator
       };
       if (!expansion.complete) seasonEpisodesAuthoritative = false;
     }
+    // Shoko 式 AniDB 集 → TMDB 集链接要用的 TMDB 剧骨架与 en-US / 原语集名：
+    // 主源不是 TMDB 时来自补充源，主源就是 TMDB 时就是它自己。
+    VideoMetadataWork? tmdbShow;
+    Map<(int, int), List<String>>? tmdbEpisodeAliases;
     if (metadata.provider != VideoMetadataProviderKind.tmdb) {
       metadata = _preserveTmdbIdentity(metadata, tmdbLookupHint);
       metadata = remapStandaloneVideoMetadataSeason(
@@ -1305,6 +1309,7 @@ class VideoSourceScrapeCoordinator
                   localWork.title,
                   lookupHint: tmdbLookupHint,
                 );
+      tmdbShow = tmdb.metadata;
       // 有序合并：主源标量独占、补充只填空、集合并集；简介按刮削语言感知
       // （MAL 简介恒英文，zh-CN 用户拿到 TMDB 中文简介时以后者为准）。
       metadata = supplementVideoMetadata(
@@ -1338,6 +1343,7 @@ class VideoSourceScrapeCoordinator
                 ? await _tmdbEpisodeAliases(
                     tmdb.metadata!, warnings, localWork.title)
                 : const <(int, int), List<String>>{};
+        if (aliases.isNotEmpty) tmdbEpisodeAliases = aliases;
         final TmdbEpisodeMatchOutcome enriched =
             enrichSeasonsByTmdbEpisodeMatch(
           metadata,
@@ -1373,6 +1379,39 @@ class VideoSourceScrapeCoordinator
           _noteEpisodeMatches(warnings, localWork.title, filled.ratings,
               how: '按 AniDB 文件身份的集标题');
         }
+      }
+    }
+    // Shoko 主路径（`MatchAnidbToTmdbEpisodes`）：有 AniDB 文件身份的成员，
+    // 它落到哪一集由 AniDB 集（播出日 + 三语集标题）在 TMDB 剧全部季里逐集
+    // 对出来决定，文件名解析的季集只是没有身份时的退路。Shoko 里文件名从不
+    // 参与识别；这里同理——身份与文件名不符时按身份、记一条说明。
+    if (metadata.provider == VideoMetadataProviderKind.tmdb) {
+      tmdbShow = metadata;
+    }
+    if (tmdbShow != null &&
+        !hashContradictsCanonical &&
+        metadata.kind == VideoMetadataMediaKind.tv) {
+      final List<TmdbEpisodeMatchSource> sources =
+          _anidbLinkSources(localWork, hashEvidence);
+      if (sources.isNotEmpty) {
+        tmdbEpisodeAliases ??=
+            await _tmdbEpisodeAliases(tmdbShow, warnings, localWork.title);
+        final AnidbEpisodeLinkOutcome linked = linkAnidbEpisodesToTmdb(
+          metadata,
+          tmdbShow,
+          sources,
+          slices: await _cardSlices(metadata, expansion, resolvedLookup),
+          candidateAliases: tmdbEpisodeAliases,
+          preferredLanguage: _locale,
+        );
+        metadata = linked.work;
+        episodeOverrides = _applyAnidbEpisodeLinks(
+          localWork,
+          hashEvidence,
+          linked.links,
+          episodeOverrides,
+          warnings,
+        );
       }
     }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
@@ -1470,9 +1509,11 @@ class VideoSourceScrapeCoordinator
             message:
                 'AniDB ED2K 文件识别${result.fromStore ? '（已记录，未重算）' : '成功'}：${p.basename(member.videoPath)}; '
                 'hash=${result.matchedEd2k ?? result.hash?.ed2k}; fileId=${identity.fileId}; animeId=${identity.animeId}; '
-                'episodeId=${identity.episodeId}; episodeNumber=${identity.episodeNumber}。'
+                'episodeId=${identity.episodeId}; episodeNumber=${identity.episodeNumber}'
+                '${identity.episodeAirDate == null ? '' : '; aired=${identity.episodeAirDate}'}。'
                 '$mappingNote'
-                'AniDB 原生集号仅记录，不推断 MAL 季集对应。'));
+                '季集由 AniDB 集在 TMDB 逐集链接决定（Shoko 式），不推断 MAL 集号。'
+                '${result.episodeInfoError == null ? '' : '集播出日补问失败（${result.episodeInfoError}），本轮只按集标题链接。'}'));
       } else if (result.status != AnidbHashIdentityStatus.disabled) {
         warnings.add(SourceScrapeIssue(
             workTitle: work.title,
@@ -2132,20 +2173,148 @@ class VideoSourceScrapeCoordinator
       if (identity == null || epno == null || key == null) continue;
       if (!emptySeasons.contains(key.$1)) continue;
       (result[key.$1] ??= <int, TmdbEpisodeMatchSource>{})[epno] =
-          TmdbEpisodeMatchSource(
-        number: epno,
-        titles: <String>[
-          identity.episodeTitle,
-          identity.episodeRomajiTitle,
-          identity.episodeKanjiTitle,
-        ].where((String title) => title.trim().isNotEmpty).toList(),
-      );
+          _anidbMatchSource(identity, epno);
     }
     return <int, List<TmdbEpisodeMatchSource>>{
       for (final MapEntry<int, Map<int, TmdbEpisodeMatchSource>> entry
           in result.entries)
         entry.key: entry.value.values.toList(growable: false),
     };
+  }
+
+  /// 一条 AniDB 文件身份 → 逐集匹配器的来源集（集号 + 三语集标题 + 播出日）。
+  static TmdbEpisodeMatchSource _anidbMatchSource(
+          AnidbFileIdentity identity, int epno) =>
+      TmdbEpisodeMatchSource(
+        number: epno,
+        titles: <String>[
+          identity.episodeTitle,
+          identity.episodeRomajiTitle,
+          identity.episodeKanjiTitle,
+        ].where((String title) => title.trim().isNotEmpty).toList(),
+        airDate: identity.episodeAirDate,
+      );
+
+  /// Shoko 主路径的来源集：全部带 AniDB 正片身份的成员，按 AniDB 集号去重
+  /// （同一集的 v1/v2 两个文件是同一来源集），**不看文件名**。特典（`S1` /
+  /// `C2` …）不进正片池，留给后续 S0 放置。
+  static List<TmdbEpisodeMatchSource> _anidbLinkSources(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+  ) {
+    final Map<int, TmdbEpisodeMatchSource> byNumber =
+        <int, TmdbEpisodeMatchSource>{};
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      final int? epno = _anidbEpisodeNumber(identity);
+      if (identity == null || epno == null) continue;
+      byNumber.putIfAbsent(epno, () => _anidbMatchSource(identity, epno));
+    }
+    return byNumber.values.toList(growable: false);
+  }
+
+  /// 卡片季 → TMDB 切片：多季扩展给的整套；单季卡片时用主 MAL 条目在映射表里
+  /// 的 `season.tmdb` / `episode_offset.tmdb` 钉到卡片唯一的正片季上。没有
+  /// 映射信息就空表（链接只能靠已带 TMDB id 的卡片集或 TMDB 主源换算）。
+  Future<Map<int, TmdbSeasonSlice>> _cardSlices(
+    VideoMetadataWork metadata,
+    _SeasonExpansion? expansion,
+    VideoMetadataLookup lookup,
+  ) async {
+    if (expansion != null && expansion.tmdbSlices.isNotEmpty) {
+      return expansion.tmdbSlices;
+    }
+    final AnimeIdentityMapping? mapping = identityMapping;
+    final int? malId = lookup.provider == VideoMetadataProviderKind.mal
+        ? int.tryParse(lookup.externalId)
+        : null;
+    if (mapping == null || malId == null) {
+      return const <int, TmdbSeasonSlice>{};
+    }
+    final List<VideoMetadataSeason> regular = <VideoMetadataSeason>[
+      for (final VideoMetadataSeason season in metadata.seasons)
+        if (season.seasonNumber != 0) season,
+    ];
+    if (regular.length != 1) return const <int, TmdbSeasonSlice>{};
+    final List<AnimeIdentityEntry> entries;
+    try {
+      entries = <AnimeIdentityEntry>[
+        for (final AnimeIdentityEntry entry in await mapping.entriesForMal(malId))
+          if (!entry.isMovie && entry.tmdbSeason != null) entry,
+      ];
+    } on Object {
+      // 映射表拉不到：本步只是换算辅助，链接仍可经卡片已有 TMDB id 落地。
+      return const <int, TmdbSeasonSlice>{};
+    }
+    if (entries.length != 1) return const <int, TmdbSeasonSlice>{};
+    return <int, TmdbSeasonSlice>{
+      regular.single.seasonNumber: (
+        tmdbSeason: entries.single.tmdbSeason!,
+        offset: entries.single.tmdbEpisodeOffset ?? 0,
+      ),
+    };
+  }
+
+  /// 把链接落成成员覆盖：有 AniDB 正片身份的成员，卡片 (季, 集) 以链接为准；
+  /// 与文件名解出的键不同时记一条说明（Shoko：文件名不参与识别）。落不下来
+  /// （`cardKey == null`）的链接只记说明、保留原键。
+  static Map<String, (int, int)> _applyAnidbEpisodeLinks(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    Map<int, AnidbTmdbEpisodeLink> links,
+    Map<String, (int, int)> episodeOverrides,
+    List<SourceScrapeIssue> warnings,
+  ) {
+    if (links.isEmpty) return episodeOverrides;
+    Map<String, (int, int)> result = episodeOverrides;
+    int linkedCount = 0, corrected = 0;
+    final Map<TmdbEpisodeMatchRating, int> ratings =
+        <TmdbEpisodeMatchRating, int>{};
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      final int? epno = _anidbEpisodeNumber(identity);
+      final AnidbTmdbEpisodeLink? link = epno == null ? null : links[epno];
+      if (identity == null || link == null) continue;
+      final VideoMetadataEpisode tmdb = link.tmdbEpisode;
+      final (int, int)? cardKey = link.cardKey;
+      if (cardKey == null) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            path: member.videoPath,
+            message:
+                'AniDB 集 ${identity.episodeNumber}（eid ${identity.episodeId}）已对上 TMDB '
+                'S${tmdb.seasonNumber}E${tmdb.episodeNumber}（${_ratingLabel(link.rating)}），'
+                '但本卡片没有对应季（映射表无该季切片），保留文件名解析的季集。'));
+        continue;
+      }
+      linkedCount++;
+      ratings[link.rating] = (ratings[link.rating] ?? 0) + 1;
+      final (int, int)? current = localEpisodeKeyFor(member, result);
+      if (current == cardKey) continue;
+      corrected++;
+      result = <String, (int, int)>{...result, member.bookUid: cardKey};
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: member.videoPath,
+          message:
+              '${p.basename(member.videoPath)}：文件名解析为 ${current == null ? '无季集' : '第 ${current.$1} 季第 ${current.$2} 集'}，'
+              'AniDB 文件身份（集 ${identity.episodeNumber}${identity.episodeAirDate == null ? '' : '，播出 ${identity.episodeAirDate}'}）'
+              '经 TMDB S${tmdb.seasonNumber}E${tmdb.episodeNumber} 对应到第 ${cardKey.$1} 季第 ${cardKey.$2} 集'
+              '（${_ratingLabel(link.rating)}），按身份归位。'));
+    }
+    if (linkedCount > 0) {
+      final String detail = <String>[
+        for (final TmdbEpisodeMatchRating rating
+            in TmdbEpisodeMatchRating.values)
+          if (ratings[rating] case final int n) '${_ratingLabel(rating)} $n',
+      ].join('、');
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          message:
+              'AniDB 文件身份 → TMDB 集逐集链接（Shoko 式）：$linkedCount 个文件对上（$detail）'
+              '${corrected == 0 ? '，与文件名一致' : '，其中 $corrected 个与文件名不符、已按身份归位'}。'));
+    }
+    return result;
   }
 
   /// 逐集核对结果的一条说明（按季汇总评级），零命中不记。

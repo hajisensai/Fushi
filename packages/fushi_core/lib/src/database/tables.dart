@@ -3117,6 +3117,10 @@ class AnidbFileIdentities extends Table {
   /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
   /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
   IntColumn get missAttempts => integer().withDefault(const Constant(0))();
+  /// v109：AniDB 集播出日（UDP `EPISODE` 的 `aired`，UTC 零点毫秒）。Shoko
+  /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
+  /// （存量行 / EPISODE 未答），下次 sweep 补问。
+  IntColumn get episodeAiredAt => integer().nullable()();
   IntColumn get resolvedAt => integer()();
   IntColumn get updatedAt => integer()();
 

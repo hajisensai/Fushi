@@ -75,6 +75,7 @@ class AnidbFileIdentity {
     required this.episodeTitle,
     required this.episodeRomajiTitle,
     required this.episodeKanjiTitle,
+    this.episodeAiredAt,
   });
   final int fileId, animeId, episodeId;
   final String episodeNumber,
@@ -84,6 +85,52 @@ class AnidbFileIdentity {
       episodeTitle,
       episodeRomajiTitle,
       episodeKanjiTitle;
+
+  /// 集播出日（UTC 零点；UDP `EPISODE` 的 `aired`）。FILE 应答里没有这一项，
+  /// 由 [AnidbUdpFileClient.episode] 另问一次补上；null = 尚未取到 / AniDB
+  /// 未登记。Shoko 集级链接的第一评级 DateAndTitle 靠它。
+  final DateTime? episodeAiredAt;
+
+  /// `yyyy-MM-dd`，与 TMDB 集 `airDate` 同形，直接喂逐集匹配器。
+  String? get episodeAirDate {
+    final DateTime? aired = episodeAiredAt;
+    if (aired == null) return null;
+    final DateTime utc = aired.toUtc();
+    return '${utc.year.toString().padLeft(4, '0')}-'
+        '${utc.month.toString().padLeft(2, '0')}-'
+        '${utc.day.toString().padLeft(2, '0')}';
+  }
+
+  AnidbFileIdentity copyWith({DateTime? episodeAiredAt}) => AnidbFileIdentity(
+        fileId: fileId,
+        animeId: animeId,
+        episodeId: episodeId,
+        episodeNumber: episodeNumber,
+        romajiTitle: romajiTitle,
+        kanjiTitle: kanjiTitle,
+        englishTitle: englishTitle,
+        episodeTitle: episodeTitle,
+        episodeRomajiTitle: episodeRomajiTitle,
+        episodeKanjiTitle: episodeKanjiTitle,
+        episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+      );
+}
+
+/// UDP `EPISODE` 应答（wiki UDP_API_Definition：
+/// `eid|aid|length|rating|votes|epno|eng|romaji|kanji|aired|type`）。
+/// 只保留集级链接要用的字段；Shoko `RequestGetEpisode` 同样只取 eid/aid。
+class AnidbEpisodeInfo {
+  const AnidbEpisodeInfo({
+    required this.episodeId,
+    required this.animeId,
+    required this.episodeNumber,
+    required this.airedAt,
+  });
+  final int episodeId, animeId;
+  final String episodeNumber;
+
+  /// 播出日（UTC 零点）；AniDB 未登记（`aired` 为 0）时为 null。
+  final DateTime? airedAt;
 }
 
 /// Request/response transport; implementations must discard other peers/tags.
@@ -129,6 +176,7 @@ class AnidbUdpFileClient {
   Future<void> _tail = Future<void>.value();
   int _tag = 0;
   final Map<String, AnidbFileIdentity?> _cache = {};
+  final Map<int, AnidbEpisodeInfo?> _episodes = {};
 
   /// 320 未收录只在批次尺度内去重：客户端与协调器同寿命，永久缓存会让 AniDB
   /// 后来收录的文件在本进程里再也查不到；持久层另有 7 天复查期。
@@ -275,6 +323,60 @@ class AnidbUdpFileClient {
         'ed2k': ed2k.toLowerCase(),
         'fmask': '6000000000',
         'amask': '00e0f000',
+        's': _session!,
+      });
+
+  /// 按 eid 取集信息（主要是播出日）。240 → 信息；340 NO SUCH EPISODE → null。
+  /// 与 [lookup] 同一条串行队列、同一套节流 / 退避 / 会话续期；每 eid 在客户端
+  /// 寿命内只问一次。
+  Future<AnidbEpisodeInfo?> episode({required int episodeId}) =>
+      _serialize(() async {
+        if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
+        if (!config.isAvailable) {
+          throw const AnidbUdpException(AnidbUdpFailure.unavailable);
+        }
+        if (_terminalFailure != null) throw _terminalFailure!;
+        if (episodeId <= 0) {
+          throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
+        }
+        if (_episodes.containsKey(episodeId)) return _episodes[episodeId];
+        if (_episodes.length >= 2048) _episodes.remove(_episodes.keys.first);
+        await _ensureSession();
+        _Reply reply = await _requestEpisode(episodeId);
+        if (reply.code == 501 || reply.code == 506 || reply.code == 505) {
+          _session = null;
+          await _ensureSession();
+          reply = await _requestEpisode(episodeId);
+        }
+        if (reply.code == 340) return _episodes[episodeId] = null;
+        if (reply.code != 240) _fail(reply.code);
+        final List<String> fields = reply.data.split('|');
+        if (fields.length < 10) {
+          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+        }
+        final int? eid = int.tryParse(fields[0]);
+        final int? aid = int.tryParse(fields[1]);
+        final int? aired = int.tryParse(fields[9].trim());
+        if (eid == null ||
+            eid <= 0 ||
+            aid == null ||
+            aid <= 0 ||
+            aired == null ||
+            !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[5])) {
+          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+        }
+        return _episodes[episodeId] = AnidbEpisodeInfo(
+          episodeId: eid,
+          animeId: aid,
+          episodeNumber: fields[5],
+          airedAt: aired <= 0
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(aired * 1000, isUtc: true),
+        );
+      });
+
+  Future<_Reply> _requestEpisode(int episodeId) => _request('EPISODE', {
+        'eid': '$episodeId',
         's': _session!,
       });
 

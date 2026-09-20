@@ -219,5 +219,141 @@ void main() {
       // AniDB 集号不得套到 TMDB 集，留空交人工。
       expect(outcome.ratings.containsKey((3, 7)), isFalse);
     });
+
+    group('linkAnidbEpisodesToTmdb (Shoko 主路径：AniDB 集 → TMDB 集 → 卡片键)', () {
+      // 单 cour 卡片：Fribb 把它钉在 TMDB S2 从第 2 集起（offset 1），MAL 给了
+      // 3 集但没有 TMDB id。
+      VideoMetadataWork cour() => VideoMetadataWork(
+            provider: VideoMetadataProviderKind.mal,
+            kind: VideoMetadataMediaKind.tv,
+            title: 'Show 2nd cour',
+            seasons: <VideoMetadataSeason>[
+              VideoMetadataSeason(
+                seasonNumber: 1,
+                title: 'cour',
+                episodeCount: 3,
+                episodes: <VideoMetadataEpisode>[
+                  for (int n = 1; n <= 3; n++)
+                    VideoMetadataEpisode(
+                        seasonNumber: 1, episodeNumber: n, title: 'MAL $n'),
+                ],
+              ),
+            ],
+          );
+      const Map<int, TmdbSeasonSlice> slices = <int, TmdbSeasonSlice>{
+        1: (tmdbSeason: 2, offset: 1),
+      };
+
+      test('date + title lands the AniDB episode on the sliced card key', () {
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          cour(),
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[
+            // AniDB 第 1 集 = TMDB S2E2（播出日 + 标题都对上）。
+            _src(1, <String>['The Calamity', '禍進譚'], '2025-07-13'),
+            // AniDB 第 2 集只有播出日对上（标题是日文原文，TMDB 只有英文）。
+            _src(2, <String>['灰'], '2025-07-20'),
+          ],
+          slices: slices,
+        );
+        final AnidbTmdbEpisodeLink first = outcome.links[1]!;
+        expect(first.rating, TmdbEpisodeMatchRating.dateAndTitle);
+        expect(first.tmdbEpisode.seasonNumber, 2);
+        expect(first.tmdbEpisode.episodeNumber, 2);
+        expect(first.cardKey, (1, 1), reason: 'S2E2 − offset 1 = cour 第 1 集');
+        final AnidbTmdbEpisodeLink second = outcome.links[2]!;
+        expect(second.rating, TmdbEpisodeMatchRating.date);
+        expect(second.cardKey, (1, 2));
+        // 对上的 TMDB 集补进卡片季（同号 MAL 集只补空：标题仍是 MAL 的）。
+        final List<VideoMetadataEpisode> episodes =
+            outcome.work.seasons.single.episodes;
+        expect(episodes.map((e) => e.episodeNumber), <int>[1, 2, 3]);
+        expect(episodes[0].ids.any((id) => id.type == 'tmdb'), isTrue);
+        expect(episodes[0].airDate, '2025-07-13');
+        expect(episodes[2].ids.any((id) => id.type == 'tmdb'), isFalse);
+      });
+
+      test('a card episode already carrying the TMDB id is reused as-is', () {
+        final VideoMetadataWork primary = VideoMetadataWork(
+          provider: VideoMetadataProviderKind.mal,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Show',
+          seasons: <VideoMetadataSeason>[
+            VideoMetadataSeason(
+              seasonNumber: 5,
+              title: 'cour',
+              episodes: <VideoMetadataEpisode>[
+                // 切片阶段已把 TMDB S2E3 重编成卡片 (5, 9)。
+                _tmdb(2, 3, 'Ashes', '2025-07-20')
+                    .copyWith(seasonNumber: 5, episodeNumber: 9),
+              ],
+            ),
+          ],
+        );
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          primary,
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[_src(3, <String>['Ashes'], '2025-07-20')],
+        );
+        expect(outcome.links[3]?.cardKey, (5, 9));
+        expect(identical(outcome.work, primary), isTrue,
+            reason: '没有新增分集，作品原样');
+      });
+
+      test('TMDB-primary works use the TMDB (season, episode) directly', () {
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          tmdbWork(),
+          null,
+          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
+        );
+        expect(outcome.links[4]?.cardKey, (2, 4));
+        expect(outcome.links[4]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+      });
+
+      test('no slice for the matched TMDB season → link without a card key',
+          () {
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          cour(),
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[
+            _src(1, <String>['The Beginning'], '2024-01-07'),
+          ],
+          slices: slices,
+        );
+        final AnidbTmdbEpisodeLink link = outcome.links[1]!;
+        expect(link.tmdbEpisode.seasonNumber, 1);
+        expect(link.cardKey, isNull, reason: '切片只覆盖 TMDB S2');
+        expect(outcome.work.seasons.single.episodes.length, 3,
+            reason: '落不下来的链接不补集');
+      });
+
+      test('an episode beyond the known cour episode count is not forced in',
+          () {
+        // AniDB 第 4 集对上 TMDB S2E4 → cour 第 3 集？cour 只有 3 集且 S2E4 −
+        // offset 1 = 3 落得进；换成 offset 0 的切片就越界。
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          cour(),
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
+          slices: const <int, TmdbSeasonSlice>{1: (tmdbSeason: 2, offset: 0)},
+        );
+        expect(outcome.links[4]?.cardKey, isNull,
+            reason: 'S2E4 − 0 = 4 > episodeCount 3');
+      });
+
+      test('first-available never produces a link', () {
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          cour(),
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[
+            _src(1, <String>['The Calamity'], '2025-07-13'),
+            _src(2, <String>['???']),
+          ],
+          slices: slices,
+        );
+        expect(outcome.links.containsKey(1), isTrue);
+        expect(outcome.links.containsKey(2), isFalse);
+      });
+    });
   });
 }
