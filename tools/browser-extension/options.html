@@ -435,6 +435,20 @@
               </span>
               <span class="range-wrap"><input class="range-input" id="subtitleStylePadding" type="range" min="0" max="300" step="10"><output for="subtitleStylePadding" data-unit="%"></output></span>
             </label>
+            <label class="setting-row" for="subtitleStyleBoxWidth">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBoxWidth_title">底板宽度</strong>
+                <small data-i18n="opt_subtitleStyleBoxWidth_desc">视频画面宽度的百分比（20–100%），文字在其中换行；0 为随内容撑开。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleBoxWidth" type="range" min="0" max="100" step="5"><output for="subtitleStyleBoxWidth" data-unit="%" data-zero="opt_subtitleStyle_auto"></output></span>
+            </label>
+            <label class="setting-row" for="subtitleStyleBoxHeight">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBoxHeight_title">底板高度</strong>
+                <small data-i18n="opt_subtitleStyleBoxHeight_desc">视频画面高度的百分比（5–60%），文字垂直居中；内容更多时自动加高。0 为随内容。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleBoxHeight" type="range" min="0" max="60" step="1"><output for="subtitleStyleBoxHeight" data-unit="%" data-zero="opt_subtitleStyle_auto"></output></span>
+            </label>
             <div class="setting-row setting-row-static">
               <span class="setting-copy">
                 <strong data-i18n="opt_resetSubtitleStyle_title">恢复默认外观</strong>

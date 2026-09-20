@@ -91,6 +91,38 @@ test('applyTo：非默认 setProperty、默认 removeProperty；坏元素不抛'
   assert.doesNotThrow(() => S.applyTo(null, {}));
 });
 
+// 用户 2026-09-20：「浏览器插件底板长宽无法自定义」——底板宽 / 高是视频盒的百分比（0 = 随内容），
+// 覆盖层是 fixed 定位、CSS 百分比只对视口算，所以不走 --fushi-sub-* 变量，而是 boxPx 按视频盒折 px、
+// applyBox 写 style.width / minHeight；覆盖层与设置页预览同一算法。
+test('底板宽 / 高：默认 0 = 随内容；非 0 夹进 [下限, 上限]；boxPx 按 frame 折 px；applyBox 非 0 写 px、0 清空', () => {
+  const S = loadStyle();
+  assert.strictEqual(S.DEFAULTS.boxWidth, 0);
+  assert.strictEqual(S.DEFAULTS.boxHeight, 0);
+  assert.deepEqual(S.toCssVars({ boxWidth: 80, boxHeight: 30 }), S.toCssVars(null), '宽高不产生 CSS 变量');
+  assert.strictEqual(S.isDefault({ boxWidth: 80 }), false);
+  // 0 与「坏值」都回 0；1–19 抬到下限 20；越上限夹到 100。高同理（下限 5、上限 60）。
+  assert.strictEqual(S.normalize({ boxWidth: 0 }).boxWidth, 0);
+  assert.strictEqual(S.normalize({ boxWidth: 'x' }).boxWidth, 0);
+  assert.strictEqual(S.normalize({ boxWidth: 5 }).boxWidth, 20);
+  assert.strictEqual(S.normalize({ boxWidth: 250 }).boxWidth, 100);
+  assert.strictEqual(S.normalize({ boxHeight: 2 }).boxHeight, 5);
+  assert.strictEqual(S.normalize({ boxHeight: 99 }).boxHeight, 60);
+  assert.strictEqual(S.normalize({ boxHeight: -3 }).boxHeight, 0, '负数夹到 0 = 随内容');
+  const frame = { width: 1280, height: 720 };
+  assert.deepEqual(S.boxPx(null, frame), { width: 0, minHeight: 0 });
+  assert.deepEqual(S.boxPx({ boxWidth: 75, boxHeight: 20 }, frame), { width: 960, minHeight: 144 });
+  assert.deepEqual(S.boxPx({ boxWidth: 75, boxHeight: 20 }, null), { width: 0, minHeight: 0 }, '没有盒就随内容');
+  assert.deepEqual(S.boxPx({ boxWidth: 75 }, { width: 0, height: 720 }), { width: 0, minHeight: 0 });
+  const el = { style: { width: '1px', minHeight: '1px' } };
+  S.applyBox(el, { boxWidth: 50, boxHeight: 10 }, frame);
+  assert.strictEqual(el.style.width, '640px');
+  assert.strictEqual(el.style.minHeight, '72px');
+  S.applyBox(el, null, frame);
+  assert.strictEqual(el.style.width, '', '回默认要清空，交还 CSS 的随内容');
+  assert.strictEqual(el.style.minHeight, '');
+  assert.doesNotThrow(() => S.applyBox(null, {}, frame));
+});
+
 // 用户 2026-09-20：「字体不要手填而是下拉框并且可以下载字体」——下拉两组：本机字体栈
 // （FONT_SUGGESTIONS）+ Fushi 字体库（app /api/extension/fonts）；库字体经 @font-face 挂进页面。
 test('字体库辅助：栈标签取前两个 family；库条目值带引号且剥引号反斜杠；命中判据与存值同形', () => {
@@ -168,6 +200,14 @@ test('覆盖层 CSS：每项外观读 --fushi-sub-* 并有默认值；options.cs
   assert.deepEqual(subVarDefaults(previewBlock), defaults, 'options.css 预览默认值必须与覆盖层一致');
   const content = fs.readFileSync(path.join(__dirname, 'vendor', 'content.css'), 'utf8');
   assert.match(content, /#fushi-subtitle-overlay \{[\s\S]*?--fushi-sub-scale: 1;/);
+  // 底板宽 / 高写的是 border-box 的外尺寸；底板高于文字时文字垂直居中——覆盖层与预览都得是
+  // grid + align-content:center + box-sizing:border-box，少一处两边观感就不一样。
+  for (const [name, b] of [['覆盖层', block], ['预览', previewBlock]]) {
+    assert.match(b, /box-sizing: border-box;/, name + ' 应 border-box');
+    assert.match(b, /display: grid;/, name + ' 应 display:grid');
+    assert.match(b, /align-content: center;/, name + ' 应 align-content:center');
+  }
+  assert.match(overlay, /#fushi-subtitle-overlay \.fushi-subtitle-overlay-text \{\s*display: block;/, '文字层是网格项，块级');
 });
 
 // ───────── ③ subtitle-panel.js 接线 ─────────
@@ -453,4 +493,22 @@ test('background subtitleFontDownload：POST /api/extension/fonts/download {name
   assert.strictEqual(r2.ok, false);
   assert.strictEqual(r2.error, 'unknown_font');
   assert.strictEqual(r2.status, 404);
+});
+
+test('底板宽 / 高落到覆盖层：按视频盒折 px 写 style.width / minHeight；设置改动经 storage 立刻重摆；回默认清空', () => {
+  const w = loadWorld({ subtitleStyle: { boxWidth: 50, boxHeight: 10 } });
+  w.setTrack('ja', CUES);
+  w.tick();
+  const el = w.overlayEl();
+  assert.ok(el, '覆盖层应已挂出');
+  // loadWorld 的视频盒 1280×720。
+  assert.strictEqual(el.style.width, '640px');
+  assert.strictEqual(el.style.minHeight, '72px');
+  assert.strictEqual(el.style.maxWidth, '1468px', '视口夹取照旧，宽写的是 width、不动 max-width');
+  w.storage.set({ subtitleStyle: { boxWidth: 100 } });
+  assert.strictEqual(el.style.width, '1280px');
+  assert.strictEqual(el.style.minHeight, '', '高回 0 = 清空');
+  w.storage.remove('subtitleStyle');
+  assert.strictEqual(el.style.width, '', '删键回默认：宽清空、随内容');
+  assert.strictEqual(el.style.minHeight, '');
 });

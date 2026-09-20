@@ -560,6 +560,12 @@
     // 视频底缘压住进度条——底锚后任何视频高度都出不了界。
     el.style.top = (rect.top + rect.height * pos.y) + 'px';
     el.style.maxWidth = Math.round(maxW) + 'px';
+    // 底板宽 / 高（外观设置 boxWidth / boxHeight，视频盒的百分比；0 = 随内容）。是视频盒的比例
+    // 而非视口的，所以不能交给 CSS 百分比，随每次重摆按当前 rect 折 px；宽仍被上面的 max-width
+    // 夹住，永远不出视口。subtitle-style.js 缺席（旧测试壳）时不写，观感同旧版。
+    if (window.fushiSubtitleStyle && typeof window.fushiSubtitleStyle.applyBox === 'function') {
+      window.fushiSubtitleStyle.applyBox(el, st.overlayStyle, rect);
+    }
   }
 
   // 把拖到的像素点夹回视频盒内再换算成分数：中心至少离视频左右缘 8px；底边锚不低于视频底缘、

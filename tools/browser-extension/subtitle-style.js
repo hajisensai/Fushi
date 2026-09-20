@@ -1,5 +1,5 @@
 // 视频上自绘字幕（#fushi-subtitle-overlay）的外观设置：字体、大小、字重、字间距、行高、对齐、
-// 文字颜色、描边，以及底板的颜色 / 不透明度 / 圆角 / 内边距。
+// 文字颜色、描边，以及底板的颜色 / 不透明度 / 圆角 / 内边距 / 宽 / 高。
 //
 // 存储：chrome.storage.local.subtitleStyle = 一个对象（部分字段也可缺省），字段名对齐 app 侧
 // VideoSubtitleStyle（fontSize / fontWeight / textColor / shadow* / background*）。底板开关仍是
@@ -8,6 +8,9 @@
 // 落地方式：content-css-overlay.css 里覆盖层的每一项外观都读 --fushi-sub-* 变量并给默认值；
 // 这里把设置对象翻成「与默认不同的那几个变量」，subtitle-panel.js 逐个 setProperty 到覆盖层根，
 // 默认值的变量 removeProperty 交还 CSS。options 页的实时预览走同一份 toCssVars。
+// 底板宽 / 高是例外：它们是**视频盒的百分比**，而覆盖层是 position:fixed，CSS 百分比只会对
+// 视口算，所以不走变量——boxPx 按当前视频盒折成 px，applyBox 写进 style.width / minHeight
+// （覆盖层每次重摆、预览每次改动 / 视口变化各调一次）。0 = 随内容（默认，即旧观感）。
 //
 // 纯函数、无 DOM、无 chrome.*；content script（subtitle-panel.js）、options 页、测试共用。
 (function () {
@@ -32,6 +35,8 @@
     backgroundOpacity: 72, // 百分比
     borderRadius: 8,       // px
     padding: 100,          // 百分比（默认 6px 12px 7px）
+    boxWidth: 0,           // 视频宽的百分比；0 = 随内容（文字撑开，最宽到 subtitle-panel 的视口夹取）
+    boxHeight: 0,          // 视频高的百分比（下限，内容更高时自动加高）；0 = 随内容
   });
   var LIMITS = Object.freeze({
     fontScale: [50, 300],
@@ -41,7 +46,11 @@
     backgroundOpacity: [0, 100],
     borderRadius: [0, 32],
     padding: [0, 300],
+    boxWidth: [0, 100],
+    boxHeight: [0, 60],
   });
+  // 宽 / 高非 0 时的下限：再窄就一字一行、再矮就等于没设。0 单独表示「随内容」，不受下限约束。
+  var BOX_FLOOR = Object.freeze({ boxWidth: 20, boxHeight: 5 });
   var ALIGNS = { left: true, center: true, right: true };
   var SHADOWS = {
     none: 'none',
@@ -69,6 +78,13 @@
     if (n < range[0]) n = range[0];
     if (n > range[1]) n = range[1];
     return n;
+  }
+
+  // 底板宽 / 高：0 原样保留（随内容），其余夹进 [下限, 上限]。
+  function clampBox(v, key) {
+    var n = clampInt(v, LIMITS[key], DEFAULTS[key]);
+    if (n === 0) return 0;
+    return Math.max(BOX_FLOOR[key], n);
   }
 
   function normalizeHex(v) {
@@ -106,6 +122,8 @@
       backgroundOpacity: clampInt(c.backgroundOpacity, LIMITS.backgroundOpacity, DEFAULTS.backgroundOpacity),
       borderRadius: clampInt(c.borderRadius, LIMITS.borderRadius, DEFAULTS.borderRadius),
       padding: clampInt(c.padding, LIMITS.padding, DEFAULTS.padding),
+      boxWidth: clampBox(c.boxWidth, 'boxWidth'),
+      boxHeight: clampBox(c.boxHeight, 'boxHeight'),
     };
   }
 
@@ -199,6 +217,30 @@
     return out.join('\n');
   }
 
+  // 底板宽 / 高 → px。frame 是「视频盒」（覆盖层传 video.getBoundingClientRect()，预览传预览
+  // 舞台的盒），只认 {width, height} 两个有限正数；缺 / 坏 frame 与 0 值都给 0 = 随内容。
+  function boxPx(style, frame) {
+    var s = normalize(style);
+    var fw = frame && isFinite(frame.width) && frame.width > 0 ? frame.width : 0;
+    var fh = frame && isFinite(frame.height) && frame.height > 0 ? frame.height : 0;
+    return {
+      width: s.boxWidth > 0 && fw > 0 ? Math.round(fw * s.boxWidth / 100) : 0,
+      minHeight: s.boxHeight > 0 && fh > 0 ? Math.round(fh * s.boxHeight / 100) : 0,
+    };
+  }
+
+  // 把底板宽 / 高写到元素上：非 0 写 px，0 清空交还 CSS（覆盖层 = 随内容 + max-width 视口夹取）。
+  // 宽写的是 width 而非 min-width：固定底板就该固定，文字在其中换行；高写 min-height，内容更
+  // 高时只加高不裁字。两者都以 border-box 计（CSS 里已设 box-sizing）。
+  function applyBox(el, style, frame) {
+    if (!el || !el.style) return;
+    var box = boxPx(style, frame);
+    try {
+      el.style.width = box.width > 0 ? box.width + 'px' : '';
+      el.style.minHeight = box.minHeight > 0 ? box.minHeight + 'px' : '';
+    } catch (_) {}
+  }
+
   // 把变量套到元素上（覆盖层根 / options 预览）。
   function applyTo(el, style) {
     if (!el || !el.style) return;
@@ -215,6 +257,7 @@
     KEY: KEY,
     DEFAULTS: DEFAULTS,
     LIMITS: LIMITS,
+    BOX_FLOOR: BOX_FLOOR,
     SHADOWS: SHADOWS,
     FONT_SUGGESTIONS: FONT_SUGGESTIONS,
     DEFAULT_FONT_FAMILY: DEFAULT_FONT_FAMILY,
@@ -224,6 +267,8 @@
     isDefault: isDefault,
     toCssVars: toCssVars,
     applyTo: applyTo,
+    boxPx: boxPx,
+    applyBox: applyBox,
     fontStackLabel: fontStackLabel,
     fontFamilyValueOf: fontFamilyValueOf,
     matchesFushiFont: matchesFushiFont,

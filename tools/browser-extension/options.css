@@ -676,12 +676,16 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
 /* ── 字幕外观：预览 + 滑杆 / 颜色 / 文本控件 ── */
 /* 预览用与 content-css-overlay.css #fushi-subtitle-overlay 同一组 --fushi-sub-* 默认值
    （守卫 subtitle-style.test.js 钉两处一致），用户改的项由 options.js 经同一份 toCssVars 覆盖。 */
+/* 预览舞台充当「视频盒」：底板宽 / 高的百分比按它的盒折 px（options.js 经 applyBox 写到预览
+   节点上，与覆盖层按视频盒同一算法）。给个视频状的比例，比例值才看得出效果。 */
 .subtitle-preview {
   display: grid;
   place-items: center;
+  aspect-ratio: 21 / 9;
   min-height: 132px;
   margin-bottom: 8px;
-  padding: 18px 20px;
+  /* 留白挪到字幕节点的 max-width 上：舞台自身的盒就是「视频盒」，100% 宽的底板贴到舞台边。 */
+  padding: 0;
   border-radius: 14px;
   background:
     radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.16), transparent 55%),
@@ -700,7 +704,10 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   --fushi-sub-radius: 8px;
   --fushi-sub-padding: 6px 12px 7px;
   --fushi-sub-shadow: 0 1px 3px #000, 1px 0 2px #000, -1px 0 2px #000;
-  max-width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  align-content: center;
+  max-width: calc(100% - 40px);
   padding: var(--fushi-sub-padding);
   border-radius: var(--fushi-sub-radius);
   color: var(--fushi-sub-color);

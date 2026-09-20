@@ -631,6 +631,8 @@ const subtitleStyleFields = Object.freeze({
   subtitleStyleBackgroundOpacity: { field: 'backgroundOpacity', kind: 'range' },
   subtitleStyleBorderRadius: { field: 'borderRadius', kind: 'range' },
   subtitleStylePadding: { field: 'padding', kind: 'range' },
+  subtitleStyleBoxWidth: { field: 'boxWidth', kind: 'range' },
+  subtitleStyleBoxHeight: { field: 'boxHeight', kind: 'range' },
 });
 // 颜色控件的「跟随主题」态：<input type=color> 没有空值，这里用 data-auto 记住并显示主题默认色。
 const subtitleColorDefaults = SUB ? {
@@ -643,8 +645,21 @@ function formatRangeOutput(id, value) {
   const out = document.querySelector('output[for="' + id + '"]');
   if (!out) return;
   const unit = out.dataset.unit || '';
-  if (unit === 'em') out.textContent = (Number(value) / 100).toFixed(2) + ' em';
+  // data-zero：0 有专门含义（底板宽 / 高的「随内容」），显示文案而不是「0%」。
+  if (out.dataset.zero && Number(value) === 0) out.textContent = tr(out.dataset.zero);
+  else if (unit === 'em') out.textContent = (Number(value) / 100).toFixed(2) + ' em';
   else out.textContent = String(value) + unit;
+}
+
+// 底板宽 / 高落到预览节点：预览舞台的盒充当「视频盒」（覆盖层按 video 盒同一算法 applyBox）。
+// 舞台宽随窗口变，所以窗口 resize 也要重算一次。
+function applySubtitlePreviewBox() {
+  if (!SUB) return;
+  const preview = $('subtitleStylePreviewCue');
+  const stage = $('subtitleStylePreview');
+  if (!preview || !stage) return;
+  const frame = typeof stage.getBoundingClientRect === 'function' ? stage.getBoundingClientRect() : null;
+  SUB.applyBox(preview, subtitleStyleCurrent, frame);
 }
 
 function fillSubtitleStyleInputs(style) {
@@ -672,6 +687,7 @@ function fillSubtitleStyleInputs(style) {
   const preview = $('subtitleStylePreviewCue');
   if (preview) {
     SUB.applyTo(preview, s);
+    applySubtitlePreviewBox();
     // 底板开关同步进预览（与覆盖层 data-bare 同义）。
     const bg = $('subtitleOverlayBackground');
     if (bg) { if (bg.checked) preview.removeAttribute('data-bare'); else preview.setAttribute('data-bare', ''); }
@@ -835,7 +851,7 @@ async function loadSubtitleStyle() {
   on('subtitleStyleFontFamily', 'focus', () => { refreshFontLibrary(false); });
   // 换语言：optgroup 标签与列表按钮文案是 JS 写的，不经 data-i18n，自己重绘。
   if (self.fushiI18n && typeof self.fushiI18n.onChange === 'function') {
-    self.fushiI18n.onChange(() => { fillFontFamilySelect(); renderFontLibrary(); });
+    self.fushiI18n.onChange(() => { fillSubtitleStyleInputs(subtitleStyleCurrent); renderFontLibrary(); });
   }
   for (const [id, spec] of Object.entries(subtitleStyleFields)) {
     const el = $(id);
@@ -849,10 +865,14 @@ async function loadSubtitleStyle() {
     el.addEventListener('input', () => writeSubtitleStyle(false));
     el.addEventListener('change', () => {
       writeSubtitleStyle(true);
+      // 松手后把滑杆对齐到夹过的值：拖动中 fill 不碰有焦点的控件，底板宽 / 高有「非 0 下限」
+      // （5% → 20%），不对齐的话滑杆停在 5、文案却是 20%。
+      if (spec.kind === 'range' && subtitleStyleCurrent) el.value = String(subtitleStyleCurrent[spec.field]);
       toast(tr('opt_toast_updated', { name: el.closest('.setting-row').querySelector('strong').textContent }));
     });
   }
   on('subtitleOverlayBackground', 'change', () => fillSubtitleStyleInputs(subtitleStyleCurrent));
+  window.addEventListener('resize', applySubtitlePreviewBox);
   on('resetSubtitleStyle', 'click', async () => {
     await chrome.storage.local.remove('subtitleStyle');
     fillSubtitleStyleInputs(null);
