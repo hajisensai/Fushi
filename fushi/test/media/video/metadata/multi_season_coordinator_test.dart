@@ -111,6 +111,27 @@ void main() {
     expect(bound.keys.where(((int, int) key) => key.$1 == 2), hasLength(10));
   });
 
+  test('later cours contribute their own voice cast to the work (BUG-2612)',
+      () async {
+    final _MalProvider mal = _MalProvider();
+    final SourceScrapeReport report = await scrape(mal, fileNames: <String>[
+      'Frieren S01E01.mkv',
+      'Frieren S02E01.mkv',
+    ]);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final MediaCollectionRow collection =
+        (await db.getMediaCollectionByNaturalKey('Frieren', 'playlist'))!;
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final List<VideoMetadataCreditRow> credits =
+        await db.getVideoMetadataCredits(workId: work.id);
+    expect(
+      credits.map((VideoMetadataCreditRow c) => c.roleName).toList(),
+      <String>['Frieren', 'Ubel'],
+      reason: '主角不重复，第二季新登场的 Ubel 进作品级人物表',
+    );
+  });
+
   test('absolute numbering is redirected through anime-relations', () async {
     final _MalProvider mal = _MalProvider();
     final SourceScrapeReport report = await scrape(mal, fileNames: <String>[
@@ -220,8 +241,31 @@ class _MalProvider implements VideoMetadataProvider {
       ids: <VideoMetadataId>[
         VideoMetadataId(type: 'mal', value: id, isDefault: true),
       ],
+      // 每个 cour 各列自己的声优：主角两季都在，Ubel 只在第二季登场。
+      credits: <VideoMetadataCredit>[
+        _voice('Tanezaki, Atsumi', 'Frieren', 'p1', photo: id == '52991'),
+        if (id == '59978') _voice('Ichinose, Kana', 'Ubel', 'p2'),
+      ],
     );
   }
+
+  static VideoMetadataCredit _voice(
+    String person,
+    String role,
+    String personId, {
+    bool photo = true,
+  }) =>
+      VideoMetadataCredit(
+        kind: VideoMetadataCreditKind.voiceActor,
+        person: VideoMetadataPerson(
+          name: person,
+          profileUrl: photo ? 'https://img/$personId.jpg' : null,
+          ids: <VideoMetadataId>[VideoMetadataId(type: 'mal', value: personId)],
+        ),
+        character: VideoMetadataCharacter(name: role),
+        roleName: role,
+        language: 'ja',
+      );
 
   @override
   Future<List<VideoMetadataWork>> search(

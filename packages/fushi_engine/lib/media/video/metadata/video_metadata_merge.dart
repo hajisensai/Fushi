@@ -4,6 +4,7 @@
 /// 不因此变为新的主资料源。
 library;
 
+import 'dart:math';
 import 'package:fushi_engine/media/video/metadata/tmdb_episode_matcher.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
@@ -75,7 +76,7 @@ VideoMetadataWork supplementVideoMetadata(
     studios: _unionStrings(primary.studios, supplement.studios),
     countries: _unionStrings(primary.countries, supplement.countries),
     keywords: _unionStrings(primary.keywords, supplement.keywords),
-    credits: _mergeCredits(primary.credits, supplement.credits),
+    credits: mergeVideoMetadataCredits(primary.credits, supplement.credits),
     seasons: _mergeSeasons(
       primary.seasons,
       supplement.seasons,
@@ -685,7 +686,7 @@ VideoMetadataEpisode _mergeEpisode(
       ratingVotes: primary.ratingVotes ?? supplement.ratingVotes,
       runtimeMinutes: primary.runtimeMinutes ?? supplement.runtimeMinutes,
       ids: _mergeIds(primary.ids, supplement.ids),
-      credits: _mergeCredits(primary.credits, supplement.credits),
+      credits: mergeVideoMetadataCredits(primary.credits, supplement.credits),
       images: _mergeImagesFillingMissing(primary.images, supplement.images),
     );
 
@@ -705,7 +706,15 @@ List<VideoMetadataId> _mergeIds(
   return result;
 }
 
-List<VideoMetadataCredit> _mergeCredits(
+/// 人物关系并集：主表原序保留，补充表里同一条关系（同人、同角色、同类）只往
+/// 主条目补空（照片、id、简介），新关系追加到尾部。
+///
+/// 「同一条关系」跨源判定（BUG-2612）：MAL 声优是 `voiceActor` + 「姓, 名」，
+/// TMDB 动画演员是 `actor` + 「名 姓」+ 角色「X (voice)」——字面 key 永不相撞，
+/// 同一个声优就会出现两次，而且 MAL 那条没照片时 TMDB 的照片也补不进来。
+/// 所以 key 里 actor / voiceActor 同组、人名按词集合比较、角色名去掉配音
+/// 后缀；导演 / 编剧等职员 kind 不同组，不会被误并。
+List<VideoMetadataCredit> mergeVideoMetadataCredits(
   Iterable<VideoMetadataCredit> primary,
   Iterable<VideoMetadataCredit> supplement,
 ) {
@@ -714,12 +723,17 @@ List<VideoMetadataCredit> _mergeCredits(
     for (int index = 0; index < result.length; index++)
       _creditKey(result[index]): index,
   };
+  // 追加条目的 order 接在主表之后：补充表（第二 cour / TMDB 汇总）各自从 0 起，
+  // 落库后读侧 ORDER BY sortOrder 会让第二季配角与第一季主角交错。
+  int nextOrder = result.isEmpty
+      ? 0
+      : result.map((VideoMetadataCredit c) => c.order).reduce(max) + 1;
   for (final VideoMetadataCredit credit in supplement) {
     final String key = _creditKey(credit);
     final int? existingIndex = indexByKey[key];
     if (existingIndex == null) {
       indexByKey[key] = result.length;
-      result.add(credit);
+      result.add(credit.copyWith(order: nextOrder++));
     } else {
       result[existingIndex] = _mergeCredit(result[existingIndex], credit);
     }
@@ -779,13 +793,37 @@ VideoMetadataCharacter _mergeCharacter(
     );
 
 String _creditKey(VideoMetadataCredit credit) => <String>[
-      credit.kind.name,
-      _textKey(credit.person.name),
-      _textKey(credit.roleName ?? credit.character?.name ?? ''),
+      switch (credit.kind) {
+        VideoMetadataCreditKind.actor ||
+        VideoMetadataCreditKind.voiceActor =>
+          'cast',
+        _ => credit.kind.name,
+      },
+      _personNameKey(credit.person.name),
+      _textKey(stripVoiceRoleSuffix(
+          credit.roleName ?? credit.character?.name ?? '')),
     ].join('|');
 
 String _textKey(String value) =>
     value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+/// 人名按词集合比较：「Hanae, Natsuki」（MAL）与「Natsuki Hanae」（TMDB）同一人。
+String _personNameKey(String name) {
+  final List<String> words = _textKey(name)
+      .split(RegExp(r'[,\s]+'))
+      .where((String word) => word.isNotEmpty)
+      .toList()
+    ..sort();
+  return words.join(' ');
+}
+
+/// TMDB 给配音角色的名字带 `(voice)` 后缀（「Frieren (voice)」），Shoko 入库
+/// 时同样剥掉；这里给合并 key 与 provider 共用。
+String stripVoiceRoleSuffix(String role) =>
+    role.replaceFirst(_voiceRoleSuffix, '').trim();
+
+final RegExp _voiceRoleSuffix =
+    RegExp(r'\s*\(voice\)\s*$', caseSensitive: false);
 
 List<VideoMetadataImage> _mergeImagesFillingMissing(
   Iterable<VideoMetadataImage> primary,

@@ -4,6 +4,8 @@ library;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -232,8 +234,16 @@ class VideoMetadataDatabaseStore {
             ? (lockedTerms['studio'] ?? const <String>[])
             : metadata.studios,
       );
+      // 来源本轮人物表残缺（MAL characters / staff 端点抖动）而库里已有上一轮
+      // 的表：只补不覆盖，否则一次 504 就把整张声优表清空（BUG-2612）。
+      final bool keepExistingCredits = hasIncompleteMalCredits(metadata) &&
+          (await database.getVideoMetadataCredits(workId: workId)).isNotEmpty;
       await _replaceCredits(
-          workId: workId, credits: metadata.credits, now: now);
+        workId: workId,
+        credits: metadata.credits,
+        now: now,
+        keepExisting: keepExistingCredits,
+      );
       await _replaceImages(
         workId: workId,
         images: metadata.images,
@@ -676,6 +686,7 @@ class VideoMetadataDatabaseStore {
     int? episodeId,
     required List<VideoMetadataCredit> credits,
     required int now,
+    bool keepExisting = false,
   }) async {
     final List<VideoMetadataPeopleCompanion> people =
         <VideoMetadataPeopleCompanion>[];
@@ -738,6 +749,7 @@ class VideoMetadataDatabaseStore {
       seasonId: seasonId,
       episodeId: episodeId,
       credits: rows,
+      keepExisting: keepExisting,
     );
     for (final VideoMetadataCredit credit in credits) {
       await _mergeEntityIdentities(

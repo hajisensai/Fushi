@@ -512,11 +512,53 @@ mixin _FushiDbVideoDomain
                 ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid)))
           .getSingleOrNull();
 
+  /// 人物 upsert：名字与时间戳照新值写，描述性字段（照片、简介、生卒、性别、
+  /// 出生地、原名）**只补空不抹掉**——同一人会被多个来源、多次刮削反复写入，
+  /// AniDB 职员没有照片、NFO 回灌没有 id，一次带 null 的写入不该把上一轮拿到的
+  /// 照片抹成空（Shoko 对 creator 同样是 fill-if-empty，BUG-2612）。
   Future<void> upsertVideoMetadataPeople(
     List<VideoMetadataPeopleCompanion> people,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataPeople, people);
+        batch.insertAll(
+          videoMetadataPeople,
+          people,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataPeopleTable old,
+              $VideoMetadataPeopleTable excluded,
+            ) =>
+                VideoMetadataPeopleCompanion.custom(
+              name: excluded.name,
+              originalName: coalesce(<Expression<String>>[
+                excluded.originalName,
+                old.originalName,
+              ]),
+              biography: coalesce(<Expression<String>>[
+                excluded.biography,
+                old.biography,
+              ]),
+              birthday: coalesce(<Expression<String>>[
+                excluded.birthday,
+                old.birthday,
+              ]),
+              deathday: coalesce(<Expression<String>>[
+                excluded.deathday,
+                old.deathday,
+              ]),
+              gender: coalesce(<Expression<int>>[excluded.gender, old.gender]),
+              placeOfBirth: coalesce(<Expression<String>>[
+                excluded.placeOfBirth,
+                old.placeOfBirth,
+              ]),
+              profileUrl: coalesce(<Expression<String>>[
+                excluded.profileUrl,
+                old.profileUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
 
   Future<VideoMetadataPersonRow?> getVideoMetadataPerson(String personKey) =>
@@ -525,11 +567,33 @@ mixin _FushiDbVideoDomain
                 ($VideoMetadataPeopleTable t) => t.personKey.equals(personKey)))
           .getSingleOrNull();
 
+  /// 角色 upsert：与 [upsertVideoMetadataPeople] 同规则，简介与角色图只补空。
   Future<void> upsertVideoMetadataCharacters(
     List<VideoMetadataCharactersCompanion> characters,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataCharacters, characters);
+        batch.insertAll(
+          videoMetadataCharacters,
+          characters,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataCharactersTable old,
+              $VideoMetadataCharactersTable excluded,
+            ) =>
+                VideoMetadataCharactersCompanion.custom(
+              name: excluded.name,
+              description: coalesce(<Expression<String>>[
+                excluded.description,
+                old.description,
+              ]),
+              imageUrl: coalesce(<Expression<String>>[
+                excluded.imageUrl,
+                old.imageUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
 
   Future<VideoMetadataCharacterRow?> getVideoMetadataCharacter(
@@ -754,11 +818,16 @@ mixin _FushiDbVideoDomain
   }
 
   /// 整体替换 work / season / episode 之一的职员表。人物与角色实体需先 upsert。
+  ///
+  /// [keepExisting] = true 时不删旧行，只追加库里还没有的关系（按唯一键
+  /// `{owner, personKey, creditKind, roleName}` 判重）：来源本轮人物表残缺
+  /// （MAL characters 端点抖动）时用它，免得残缺表覆盖上一轮的完整表。
   Future<void> replaceVideoMetadataCredits({
     int? workId,
     int? seasonId,
     int? episodeId,
     required List<VideoMetadataCreditsCompanion> credits,
+    bool keepExisting = false,
   }) {
     _requireOneVideoMetadataOwner(
       workId: workId,
@@ -766,19 +835,21 @@ mixin _FushiDbVideoDomain
       episodeId: episodeId,
     );
     return transaction(() async {
-      final DeleteStatement<$VideoMetadataCreditsTable, VideoMetadataCreditRow>
-          statement = delete(videoMetadataCredits);
-      if (workId != null) {
-        statement
-            .where(($VideoMetadataCreditsTable t) => t.workId.equals(workId));
-      } else if (seasonId != null) {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
-      } else {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+      if (!keepExisting) {
+        final DeleteStatement<$VideoMetadataCreditsTable,
+            VideoMetadataCreditRow> statement = delete(videoMetadataCredits);
+        if (workId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.workId.equals(workId));
+        } else if (seasonId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
+        } else {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+        }
+        await statement.go();
       }
-      await statement.go();
       for (final VideoMetadataCreditsCompanion credit in credits) {
         await into(videoMetadataCredits).insert(
           credit.copyWith(
@@ -786,6 +857,7 @@ mixin _FushiDbVideoDomain
             seasonId: Value<int?>(seasonId),
             episodeId: Value<int?>(episodeId),
           ),
+          mode: keepExisting ? InsertMode.insertOrIgnore : InsertMode.insert,
         );
       }
     });

@@ -2,6 +2,8 @@ library;
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart'
+    show stripVoiceRoleSuffix;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -149,9 +151,13 @@ class TmdbVideoMetadataProvider
       path,
       operation: 'TMDB ${lookup.mediaKind.name} details',
       query: <String, String>{
+        // 剧集额外带 aggregate_credits：`credits` 对剧只给常驻主演（一季十来
+        // 人），全剧所有登场角色的配音要看跨季汇总——Shoko 是逐集 credits 再按
+        // (人, 角色) 归并，aggregate_credits 就是同一语义的服务端版本（BUG-2612）。
         'append_to_response':
             'external_ids,credits,images,content_ratings,release_dates,keywords,'
-                'alternative_titles,translations',
+                'alternative_titles,translations'
+                '${lookup.mediaKind == VideoMetadataMediaKind.tv ? ',aggregate_credits' : ''}',
         'include_image_language': _languages.tmdbIncludeImageLanguage,
       },
       cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
@@ -607,7 +613,7 @@ class TmdbVideoMetadataProvider
       }.toList(),
       keywords: _keywordNames(item['keywords']),
       ids: ids,
-      credits: _mapCredits(item['credits']),
+      credits: _mapWorkCredits(item),
       images: _dedupeImages(<VideoMetadataImage>[
         ..._mapPrimaryImages(item),
         ..._mapImageSet(item['images']),
@@ -751,6 +757,52 @@ class TmdbVideoMetadataProvider
     ];
   }
 
+  /// 作品级人物表：剧集有 `aggregate_credits` 就用它（全季汇总，一人多角色
+  /// 展开成多条、一人多职位展开成多条，`credits` 只补它没有的），电影只有
+  /// `credits`。
+  List<VideoMetadataCredit> _mapWorkCredits(Map<String, Object?> item) {
+    final Map<String, Object?>? aggregate =
+        metadataObject(item['aggregate_credits']);
+    if (aggregate == null) return _mapCredits(item['credits']);
+    final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[
+      ..._mapCrew(_flattenAggregate(aggregate['crew'], 'jobs', 'job')),
+      ..._mapCast(_flattenAggregate(aggregate['cast'], 'roles', 'character')),
+    ];
+    final Set<String> seen = <String>{
+      for (final VideoMetadataCredit credit in credits) _creditIdentity(credit),
+    };
+    for (final VideoMetadataCredit credit in _mapCredits(item['credits'])) {
+      if (seen.add(_creditIdentity(credit))) credits.add(credit);
+    }
+    return credits;
+  }
+
+  /// `aggregate_credits` 把同一人的多条角色 / 职位收在 `roles[]` / `jobs[]` 里，
+  /// 展平成与 `credits` 同形的条目（每条带自己的 `credit_id`），复用同一套映射。
+  List<Object?> _flattenAggregate(
+    Object? nodes,
+    String listKey,
+    String valueKey,
+  ) =>
+      <Object?>[
+        for (final Object? node in metadataList(nodes))
+          if (metadataObject(node) case final Map<String, Object?> person)
+            for (final Object? entryNode in metadataList(person[listKey]))
+              if (metadataObject(entryNode)
+                  case final Map<String, Object?> entry)
+                <String, Object?>{
+                  ...person,
+                  valueKey: entry[valueKey],
+                  'credit_id': entry['credit_id'],
+                },
+      ];
+
+  String _creditIdentity(VideoMetadataCredit credit) => <String>[
+        credit.kind.name,
+        credit.person.id ?? credit.person.name.toLowerCase(),
+        (credit.roleName ?? credit.job ?? '').toLowerCase(),
+      ].join('|');
+
   List<VideoMetadataCredit> _mapCrew(List<Object?> nodes) {
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
     for (final Object? node in nodes) {
@@ -789,11 +841,21 @@ class TmdbVideoMetadataProvider
       final Map<String, Object?>? item = metadataObject(node);
       final String? name = metadataString(item?['name']);
       if (item == null || name == null) continue;
-      final String? characterName = metadataString(item['character']);
+      final String? rawCharacter = metadataString(item['character']);
+      // 「Frieren (voice)」= 配音角色：与 MAL / AniDB 的声优同类，才能在合并
+      // 层认成同一条关系、在详情页落进「配音」轨道；后缀剥掉（同 Shoko）。
+      final bool voice = rawCharacter != null &&
+          stripVoiceRoleSuffix(rawCharacter) != rawCharacter.trim();
+      final String? stripped =
+          rawCharacter == null ? null : stripVoiceRoleSuffix(rawCharacter);
+      final String? characterName =
+          stripped == null || stripped.isEmpty ? null : stripped;
       credits.add(VideoMetadataCredit(
         kind: guest
             ? VideoMetadataCreditKind.guest
-            : VideoMetadataCreditKind.actor,
+            : voice
+                ? VideoMetadataCreditKind.voiceActor
+                : VideoMetadataCreditKind.actor,
         person: _mapPerson(item, name),
         character: characterName == null
             ? null

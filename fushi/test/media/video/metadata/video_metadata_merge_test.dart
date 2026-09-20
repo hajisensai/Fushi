@@ -848,4 +848,114 @@ void main() {
     expect(merged.seasons.single.episodes.single.title, 'Primary episode');
     expect(merged.seasons.single.episodes.single.plot, 'TMDB episode plot');
   });
+
+  group('mergeVideoMetadataCredits 跨源同一关系（BUG-2612）', () {
+    VideoMetadataCredit mal(String name, String role, {String? photo}) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.voiceActor,
+          person: VideoMetadataPerson(
+            name: name,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: name.hashCode.toString()),
+            ],
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+          language: 'ja',
+        );
+    VideoMetadataCredit tmdb(String name, String role, {String? photo}) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.actor,
+          person: VideoMetadataPerson(
+            name: name,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'tmdb', value: name.hashCode.toString()),
+            ],
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+        );
+
+    test('追加的补充条目 order 接在主表之后，不与主表从 0 起交错', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 0),
+          mal('Ichinose, Kana', 'Fern').copyWith(order: 1),
+        ],
+        <VideoMetadataCredit>[
+          // 第二 cour / TMDB 汇总各自从 0 起。
+          mal('Kobayashi, Chiaki', 'Stark').copyWith(order: 0),
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 1),
+          mal('Toyosaki, Aki', 'Ubel').copyWith(order: 2),
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>[
+          'Tanezaki, Atsumi',
+          'Ichinose, Kana',
+          'Kobayashi, Chiaki',
+          'Toyosaki, Aki',
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.order).toList(),
+        <int>[0, 1, 2, 3],
+        reason: '落库后 ORDER BY sortOrder 才不会让第二季配角插进第一季主角中间',
+      );
+    });
+
+    test('MAL「姓, 名」声优与 TMDB「名 姓」演员 + (voice) 角色认成同一条', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[mal('Tanezaki, Atsumi', 'Frieren')],
+        <VideoMetadataCredit>[
+          tmdb('Atsumi Tanezaki', 'Frieren (voice)', photo: 'tmdb-photo'),
+        ],
+      );
+      expect(merged, hasLength(1));
+      final VideoMetadataCredit credit = merged.single;
+      expect(credit.kind, VideoMetadataCreditKind.voiceActor,
+          reason: '主源的 kind 与名字保留');
+      expect(credit.person.name, 'Tanezaki, Atsumi');
+      expect(credit.person.profileUrl, 'tmdb-photo',
+          reason: 'MAL 没照片（占位已归 null）时用 TMDB 的补');
+      expect(
+        credit.person.ids.map((VideoMetadataId id) => id.type),
+        containsAll(<String>['mal', 'tmdb']),
+      );
+    });
+
+    test('同人不同角色、同角色不同人都不并', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[mal('Ichinose, Kana', 'Ubel')],
+        <VideoMetadataCredit>[
+          tmdb('Kana Ichinose', 'Young Ubel (voice)'),
+          tmdb('Someone Else', 'Ubel (voice)'),
+        ],
+      );
+      expect(merged, hasLength(3));
+    });
+
+    test('导演与同名演员不会因为人名相同而并掉', () {
+      final VideoMetadataCredit director = VideoMetadataCredit(
+        kind: VideoMetadataCreditKind.director,
+        person: VideoMetadataPerson(name: 'Saito Keiichiro'),
+        job: 'Director',
+      );
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[director],
+        <VideoMetadataCredit>[tmdb('Keiichiro Saito', 'Cameo')],
+      );
+      expect(merged, hasLength(2));
+    });
+
+    test('stripVoiceRoleSuffix 只剥尾部 (voice)', () {
+      expect(stripVoiceRoleSuffix('Frieren (voice)'), 'Frieren');
+      expect(stripVoiceRoleSuffix('Frieren (Voice) '), 'Frieren');
+      expect(stripVoiceRoleSuffix('Voice of Reason'), 'Voice of Reason');
+      expect(stripVoiceRoleSuffix('Himmel (young)'), 'Himmel (young)');
+    });
+  });
 }
