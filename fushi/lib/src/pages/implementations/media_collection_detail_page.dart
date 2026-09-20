@@ -543,6 +543,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return _episodeNumbersCache;
   }
 
+  /// 绑定文件的 AniDB 原生集号（刮削时经 ED2K 哈希识别写进分集行，Shoko 式两套
+  /// 编号并存）；没有身份 → null 不占位。
+  String? _episodeIdentityLabel(CollectionEpisodeSlot slot) {
+    final String? epno =
+        _canonicalEpisodeByUid[slot.entryKey]?.anidbEpisodeNumber?.trim();
+    if (epno == null || epno.isEmpty) return null;
+    return t.collection_episode_anidb_number(number: epno);
+  }
+
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(CollectionEpisodeSlot slot) {
     final String? summary = (_canonicalEpisodeByUid[slot.entryKey]?.overview ??
@@ -1676,6 +1685,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // 解析不出时回退顺位号。
       number: '${_episodeDisplayNumber(episode, index)}',
       title: _episodeDisplayTitle(episode),
+      identityLabel: _episodeIdentityLabel(episode),
       summary: _episodeSummary(episode),
       completed: episode.completed,
       positionMs: episode.positionMs,

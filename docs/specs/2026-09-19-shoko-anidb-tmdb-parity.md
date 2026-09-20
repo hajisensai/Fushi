@@ -71,4 +71,46 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 - 4.9 跨作品剔除已占用 TMDB 集：Shoko 默认关；本仓同作品内剔除。
 - 4.5 相似度算法逐字照搬：阈值对齐，算法用本仓带全半角 / 繁简折叠的 Dice ∨ Levenshtein。
 
-结构性差异：生产 registry 不装配 AniDB HTTP 资料链（CLAUDE.md 规则），Shoko「AniDB 集播出日 → TMDB 集」的原始输入本仓拿不到；②路径只有 AniDB 文件身份的三语集标题（无播出日），靠 4.8 的 en-US / 原语集名对齐。
+结构性差异（第四轮已补，见第 7 节）：生产 registry 不装配 AniDB HTTP 资料链（CLAUDE.md 规则），AniDB 集播出日改由 UDP `EPISODE` 逐集取得；②路径现在带播出日 + 三语集标题。
+
+## 7. 第四轮（2026-09-20）：集级链接成为主判据 + 全面盘点
+
+用户拍板「对齐 Shoko 的实现，并把剩下的差距也对齐」。本轮先补齐第 4 节的结构性缺口，再按两份盘点（AniDB 文件身份链 / TMDB 链接层）逐项处理。分支 `worktree-shoko-anidb-episode-link`，schema v109。
+
+### 7.1 集级链接（`TmdbLinkingService.MatchAnidbToTmdbEpisodes` 主路径）
+
+| # | 项 | Shoko | 本仓（本轮后） | 状态 |
+|---|---|---|---|---|
+| 7.1.1 | 文件落到哪一集 | AniDB 集身份（播出日 + 标题）在 TMDB 剧全部季里逐集对出来；文件名从不参与识别 | `linkAnidbEpisodesToTmdb`（`video_metadata_merge.dart`）+ 协调器 `_applyAnidbEpisodeLinks`：有 AniDB 身份的成员以链接结果为 (季, 集)，与文件名不符时按身份归位并记说明；无身份成员仍按文件名 | ✅ |
+| 7.1.2 | AniDB 集播出日 | HTTP anime XML 全集自带 | UDP `EPISODE eid=`（`AnidbUdpFileClient.episode`，240/340，会话续期同 FILE）；FILE 命中后紧接着问一次，存量行 sweep 时补问回填；`anidb_file_identities.episode_aired_at` | ✅（多一个 UDP 请求 / 新文件；HTTP anime 链仍不装配） |
+| 7.1.3 | 候选池 | 整剧非特典季；无偏移算术 | 同：整剧；Fribb 切片只用于把 TMDB (S,E) 换算成卡片键（卡片季 = cour），不再决定集号 | ✅ |
+| 7.1.4 | TMDB (S,E) → 本地呈现 | 直接就是 S/E | 三步换算：TMDB 主源直用 / 卡片里已带该 TMDB id 的集 / Fribb 切片（`_cardKeyFromSlices`，越过 cour 已知集数不落）；都不行 → 链接成立但 `cardKey` 为 null、记说明、保留文件名键 | 🟡 卡片模型是 cour，不是 TMDB 季 |
+| 7.1.5 | 特典 | `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`；C/T/P/O 不匹配 | `matchSpecialsToTmdb`（S0 池、同一评分链）；`S<n>` 型 epno 落卡片 (0, E)、卡片无第 0 季就补一季；C/T/P/O 不进池；AniDB HTTP 解析器 `S` 型特典落第 0 季 | ✅ |
+| 7.1.6 | `CrossRef_AniDB_TMDB_Episode` 持久化 | 独立表，UserVerified 保留 | 不建独立表（输入全在本地缓存、重算确定性）；落到 `video_metadata_episodes.anidb_episode_id / anidb_episode_number / anidb_match_rating`（随绑定写，换书 / 解绑清掉）；手动指定作品身份即 UserVerified，集级手动链接没有 UI | 🟡 |
+| 7.1.7 | 两套编号并存 | API 同时给 AniDB (type, epno) 与 TMDB (S,E) | 分集行三列 + 合集详情集卡序号下小字「AniDB 第 04 集」（`CollectionEpisodeCard.identityLabel`，i18n `collection_episode_anidb_number`）；序号本身仍是文件名 / 卡片键 | ✅ |
+| 7.1.8 | firstAvailable | 无条件接受 | 不产生链接（无核对界面）；其余评级都接受、弱评级在说明里标出 | 🟡 有意 |
+
+### 7.2 AniDB 文件身份链（盘点 A）
+
+| # | 项 | Shoko | 本仓（本轮后） | 状态 |
+|---|---|---|---|---|
+| 7.2.1 | FILE 掩码 | fmask `77 00 C0 D9 00`（aid/eid/gid/other eps/deprecated/state/quality/source/langs/描述/播出/文件名）+ amask 组名 | fmask `67 00 00 00 00`（aid/eid/other eps/deprecated/state）+ amask 三语作品名 / epno / 三语集名；不取 gid / 画质 / 语言 / 组名（刮削不消费） | ✅ 消费到的都取了 |
+| 7.2.2 | 一文件多集 | `CrossRef_File_Episode` Percentage / EpisodeOrder，一文件绑多集 | `AnidbFileIdentity.otherEpisodes`（eid + 百分比，eid 列表与 other-eps 列两种写法都解）→ `anidb_file_identities.other_episodes` JSON；**只绑主集**，其余集写进识别说明 | 🟡 多绑定要动「一书一集」（`video_metadata_episodes.book_uid` UNIQUE）与进度模型——待决策 |
+| 7.2.3 | 过时 / CRC / 版本 | `deprecated` → IsCorrupted；state 位 CRCMatch/CRCErr/IsV2…；重扫补资料 | `isDeprecated` / `fileState`（`crcMatches` / `fileVersion`）落库并写进识别说明；不做周期重问 FILE（Shoko 也只在资料缺失时） | ✅ |
+| 7.2.4 | 特典类型 | EpisodeType 枚举，S/C/T/P/O 都存 | `S` 型进 S0 链接；C/T/P/O 身份照存（epno 原文）、不进池、按文件名落 | ✅（与 Shoko 匹配面一致） |
+| 7.2.5 | 哈希 / 搬家 / MAL 映射 / 关系 / 复查节奏 | — | 盘点结论：等价或更强（红蓝双 ED2K、`(ed2k,size)` 键、Fribb 一对多显式确认、320 每日 ≤15 次）；`<relatedanime>` 只服务 Shoko 的分组，本仓无分组概念 | ✅ / 不适用 |
+
+### 7.3 TMDB 链接层（盘点 B）
+
+| # | 项 | Shoko | 本仓（本轮后） | 状态 |
+|---|---|---|---|---|
+| 7.3.1 | 成人向 | `AutoLinkRestricted` + 搜索 `include_adult = anime.IsRestricted` | `VideoMetadataSearchRequest.includeAdult` → `include_adult=true`，主源分级 MAL `Rx` / AniDB `R18+` 时打开（MAL 作品补 `contentRating`）；无单独开关（默认过滤即 Shoko 的 AutoLinkRestricted=false 语义） | ✅ |
+| 7.3.2 | 刷新节奏 | `UpdateShow` 1 h 跳过窗口 + 每日 `/tv/changes` 增量（14 天窗口）+ 过期整拉 | `VideoLibraryScrapeSweep` 加刷新积压：`TmdbVideoMetadataProvider.changedTvShowIds`（`/tv/changes` 按 13 天窗口分页）每 12 h 问一次、与库内 TMDB id 求交集只重刷变过的；上次刮削 >14 天的整部重刷、每轮 ≤20 部 | ✅ |
+| 7.3.3 | 链接卫生 | 刷新后重跑集级匹配，UserVerified 保留，孤儿 xref 清理 | 重刷走 `scrapeWorkSubsets`：已确认身份复用、集级链接按新资料重算、分集行整季替换（xref 随绑定重写，解绑即清） | ✅ |
+| 7.3.4 | 电影型作品 | AniDB 集 → TMDB 电影（`CrossRef_AniDB_TMDB_Movie`，≤4 集短篇先搜电影再退剧） | **未做**。本仓 kind 由本地文件形状决定（多文件 = tv）；三部剧场版一个目录时哈希给出三个不同 aid → 现报「成员分属不同作品，请拆分合集」。要对齐得让协调器在「成员分属不同 AniDB 作品且各自映射 Fribb 电影条目」时按成员拆成独立电影作品——涉及计划器 / works 表以合集为锚的持久模型，需先拍板卡片形态 | ❌ 待决策 |
+| 7.3.5 | TMDB 备选排序 | `TMDB_AlternateOrdering` 下载 + 每剧 `PreferredAlternateOrderingID`，API 按它给 S/E | 只在解析季不在正常季时自动挑 type=6 分组（`resolveEpisodeGroup`），`episodeGroupId` 已持久在作品行；缺用户选择 UI 与「用备选排序做集级链接」 | ❌ 待 UI 决策 |
+| 7.3.6 | 图片 / 网络 / 公司 / 多语言标题 | 各类型上限、`Main` 原语槽、people/studio 图 | 每层每类 1 张（backdrop ≤3）、语言序 `[locale, en, '']`、无原语槽 | 🟡 低价值，不动 |
+
+### 7.4 本轮新增守卫 / 测试
+
+`anidb_udp_file_client_test.dart`（EPISODE 5 条 + FILE 列 5 条）、`anidb_hash_identity_service_test.dart`（播出日回填 4 条 + other_episodes 编解码）、`tmdb_episode_matcher_test.dart`（特典池 + 链接换算 7 条）、`tvdb_season_offset_coordinator_test.dart`（Bleach 端到端：文件名 S17E12 / S00E02 错、哈希身份对 → 按身份归位；分集行 xref）、`anidb_video_metadata_provider_test.dart`（第 0 季）、`video_metadata_provider_contract_test.dart`（include_adult、/tv/changes 分页与 14 天窗口）、`video_library_scrape_sweep_test.dart`（刷新探针 / 过期 / 上限 / 探针失败）、`migration_v109_anidb_episode_aired_at_test.dart`。

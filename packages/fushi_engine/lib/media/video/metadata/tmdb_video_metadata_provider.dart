@@ -10,6 +10,13 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:http/http.dart' as http;
 
+/// TMDB changes API 能回看的最大跨度（Shoko `IncrementalChangesWindowDays` 同为
+/// 14 天）；更早的变动只能整部重拉。
+const Duration kTmdbChangesWindow = Duration(days: 14);
+
+/// 单次 `/tv/changes` 请求允许的最大 start/end 跨度（TMDB 限 14 天）。
+const Duration kTmdbChangesRequestWindow = Duration(days: 13);
+
 class TmdbVideoMetadataProvider
     implements
         VideoMetadataProvider,
@@ -1061,6 +1068,58 @@ class TmdbVideoMetadataProvider
   double? _positiveDouble(Object? value) {
     final double? parsed = metadataDouble(value);
     return parsed != null && parsed > 0 ? parsed : null;
+  }
+
+  /// TMDB `/tv/changes`：[since] 之后有资料变动的剧 id（Shoko
+  /// `TmdbMetadataService.GetShowChangedItemsAsync` 的增量刷新输入）。TMDB 只给
+  /// 最近 14 天、每次最多 14 天窗口、结果分页；这里按天切窗口逐页拉齐。
+  /// 调用方拿它和本地已识别作品的 TMDB id 求交集，只重刷真变过的剧。
+  Future<Set<int>> changedTvShowIds({
+    required DateTime since,
+    DateTime? until,
+    int maxPages = 50,
+  }) async {
+    final DateTime end = (until ?? DateTime.now()).toUtc();
+    DateTime start = since.toUtc();
+    if (end.difference(start) > kTmdbChangesWindow) {
+      start = end.subtract(kTmdbChangesWindow);
+    }
+    final Set<int> ids = <int>{};
+    int pagesLeft = maxPages;
+    DateTime windowStart = start;
+    while (!windowStart.isAfter(end) && pagesLeft > 0) {
+      final DateTime windowEnd = windowStart.add(kTmdbChangesRequestWindow);
+      final DateTime clampedEnd = windowEnd.isAfter(end) ? end : windowEnd;
+      for (int page = 1; pagesLeft > 0; page++) {
+        pagesLeft--;
+        final Map<String, Object?> payload = await _getObject(
+          '/tv/changes',
+          operation: 'TMDB tv changes',
+          query: <String, String>{
+            'start_date': _dateOnly(windowStart),
+            'end_date': _dateOnly(clampedEnd),
+            'page': '$page',
+          },
+          cacheKey:
+              'tmdb:tv-changes:${_dateOnly(windowStart)}:${_dateOnly(clampedEnd)}:$page',
+        );
+        for (final Object? node in metadataList(payload['results'])) {
+          final int? id = metadataInt(metadataObject(node)?['id']);
+          if (id != null && id > 0) ids.add(id);
+        }
+        final int totalPages = metadataInt(payload['total_pages']) ?? 1;
+        if (page >= totalPages) break;
+      }
+      windowStart = clampedEnd.add(const Duration(days: 1));
+    }
+    return ids;
+  }
+
+  static String _dateOnly(DateTime date) {
+    final DateTime utc = date.toUtc();
+    return '${utc.year.toString().padLeft(4, '0')}-'
+        '${utc.month.toString().padLeft(2, '0')}-'
+        '${utc.day.toString().padLeft(2, '0')}';
   }
 
   Future<Map<String, Object?>> _getObject(

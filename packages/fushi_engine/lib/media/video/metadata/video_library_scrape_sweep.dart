@@ -23,9 +23,15 @@
 library;
 
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+/// 「[since] 之后 TMDB 上有变动的剧 id」探针（生产装配
+/// `TmdbVideoMetadataProvider.changedTvShowIds`）。
+typedef TmdbChangedTvIdsProbe = Future<Set<int>> Function(
+    {required DateTime since});
 
 /// 一条待确认（未识别）作品：来源 + 当前计划里的作品。
 ///
@@ -100,12 +106,41 @@ class VideoLibraryScrapeSweep {
     required VideoSourceScrapeTaskController controller,
     bool Function()? isEnabled,
     bool Function()? isHashReady,
+    TmdbChangedTvIdsProbe? tmdbChangedTvIds,
+    DateTime Function()? now,
+    this.refreshProbeInterval = const Duration(hours: 12),
+    this.staleAfter = const Duration(days: 14),
+    this.maxRefreshPerSweep = 20,
   })  : _database = database,
         _controller = controller,
         _isEnabled = isEnabled,
-        _isHashReady = isHashReady;
+        _isHashReady = isHashReady,
+        _tmdbChangedTvIds = tmdbChangedTvIds,
+        _now = now ?? DateTime.now;
 
   final FushiDatabase _database;
+  final DateTime Function() _now;
+
+  /// 对齐 Shoko 的资料刷新（`TmdbMetadataService.UpdateShow` + 每日
+  /// `/tv/changes` 增量）：已识别作品不是刮完就永远不动——
+  ///  * 探针每 [refreshProbeInterval] 问一次 TMDB「自最早一次刮削以来谁变了」，
+  ///    与本地作品的 TMDB id 求交集，只重刷真变过的（分集补齐、标题/简介修订、
+  ///    季结构调整都会触发）；
+  ///  * 上次刮削早于 [staleAfter] 的作品超出 changes 回看窗口，直接整部重刷，
+  ///    每轮最多 [maxRefreshPerSweep] 部（保护配额，下轮接着刷）。
+  /// 重刷走既有 `scrapeWorkSubsets`：已确认身份原样复用（不重新标题搜索）、
+  /// 集级链接按新资料重算——Shoko 刷新后 `MatchAnidbToTmdbEpisodes` 重跑、
+  /// UserVerified 保留，这里手动指定的身份就是那份 UserVerified。null = 不探针
+  /// （测试 / 没有 TMDB）。
+  final TmdbChangedTvIdsProbe? _tmdbChangedTvIds;
+  final Duration refreshProbeInterval;
+  final Duration staleAfter;
+  final int maxRefreshPerSweep;
+  DateTime? _lastRefreshProbeAt;
+
+  /// 本进程里每部作品最近一次因刷新入批的时刻（同一部在 [refreshProbeInterval]
+  /// 内不重复刷）。
+  final Map<String, DateTime> _refreshedAt = <String, DateTime>{};
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
@@ -149,6 +184,76 @@ class VideoLibraryScrapeSweep {
       }
     }
     return _PlannedWorks(pending: pending, identified: identified);
+  }
+
+  /// 需要刷新资料的已识别作品（见 [_tmdbChangedTvIds] 的说明）。
+  Future<List<VideoPendingScrapeWork>> _refreshBacklog(
+      List<VideoPendingScrapeWork> identified) async {
+    if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
+    final DateTime now = _now();
+    final List<VideoPendingScrapeWork> stale = <VideoPendingScrapeWork>[];
+    final List<(VideoPendingScrapeWork, int, DateTime)> fresh =
+        <(VideoPendingScrapeWork, int, DateTime)>[];
+    for (final VideoPendingScrapeWork entry in identified) {
+      final DateTime? refreshed = _refreshedAt[entry.work.stableKey];
+      if (refreshed != null &&
+          now.difference(refreshed) < refreshProbeInterval) {
+        continue;
+      }
+      final VideoMetadataWorkRow? row = await _canonicalWork(entry.work);
+      if (row == null) continue;
+      final DateTime scrapedAt =
+          DateTime.fromMillisecondsSinceEpoch(row.updatedAt);
+      if (now.difference(scrapedAt) >= staleAfter) {
+        if (stale.length < maxRefreshPerSweep) stale.add(entry);
+        continue;
+      }
+      final int? tmdbId = _tmdbShowId(
+          await _database.getVideoMetadataProviderIdentities(workId: row.id),
+          row);
+      if (tmdbId != null) fresh.add((entry, tmdbId, scrapedAt));
+    }
+    final List<VideoPendingScrapeWork> result = <VideoPendingScrapeWork>[
+      ...stale,
+    ];
+    final TmdbChangedTvIdsProbe? probe = _tmdbChangedTvIds;
+    final DateTime? lastProbe = _lastRefreshProbeAt;
+    if (probe != null &&
+        fresh.isNotEmpty &&
+        (lastProbe == null ||
+            now.difference(lastProbe) >= refreshProbeInterval)) {
+      DateTime since = fresh.first.$3;
+      for (final (_, _, DateTime scrapedAt) in fresh) {
+        if (scrapedAt.isBefore(since)) since = scrapedAt;
+      }
+      _lastRefreshProbeAt = now;
+      final Set<int> changed;
+      try {
+        changed = await probe(since: since);
+      } catch (_) {
+        // 探针失败只是这一轮不刷；下次到点再问。
+        return result;
+      }
+      for (final (VideoPendingScrapeWork entry, int tmdbId, _) in fresh) {
+        if (changed.contains(tmdbId) && result.length < maxRefreshPerSweep) {
+          result.add(entry);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// 作品级 TMDB 剧 id（只对电视剧；电影不走 `/tv/changes`）。
+  static int? _tmdbShowId(
+      List<VideoMetadataProviderIdentityRow> identities,
+      VideoMetadataWorkRow row) {
+    if (row.mediaType != VideoMetadataMediaKind.tv.name) return null;
+    for (final VideoMetadataProviderIdentityRow identity in identities) {
+      if (identity.provider == VideoMetadataProviderKind.tmdb.name) {
+        return int.tryParse(identity.externalId);
+      }
+    }
+    return null;
   }
 
   /// 已识别作品里还有成员没记过文件级 AniDB 身份的那些（哈希待补）。
@@ -202,11 +307,26 @@ class VideoLibraryScrapeSweep {
           claim(entry);
         }
       }
+      // 资料刷新（变过的 / 过期的已识别作品）：不走 _attemptedWorkKeys（那是
+      // 「查无就不再自动试」的记账，刷新要能周期性重来），按刷新时刻自己记。
+      final List<String> refreshing = <String>[];
+      for (final VideoPendingScrapeWork entry
+          in await _refreshBacklog(planned.identified)) {
+        if (claimed.contains(entry.work.stableKey)) continue;
+        refreshing.add(entry.work.stableKey);
+        subsets
+            .putIfAbsent(entry.source, () => <VideoSourceScrapeWork>[])
+            .add(entry.work);
+      }
       if (subsets.isEmpty) return pending;
       if (_controller.isBusy) return pending;
       // 记账放在真正提交批次前一刻：中途被互斥门挡回的作品不算「已尝试」，
       // 否则本进程再也不会自动碰它们。
       _attemptedWorkKeys.addAll(claimed);
+      final DateTime refreshedAt = _now();
+      for (final String key in refreshing) {
+        _refreshedAt[key] = refreshedAt;
+      }
       try {
         await _controller.scrapeWorkSubsets(subsets);
       } catch (_) {
@@ -239,12 +359,14 @@ class VideoLibraryScrapeSweep {
           .where((SourceLibraryRow source) => source.transport == 'local')
           .toList(growable: false);
 
+  Future<VideoMetadataWorkRow?> _canonicalWork(VideoSourceScrapeWork work) =>
+      work.collection == null
+          ? _database.getVideoMetadataWorkByBook(work.members.single.bookUid)
+          : _database.getVideoMetadataWorkByCollection(work.collection!.id);
+
   /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。
   Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) async {
-    final VideoMetadataWorkRow? row = work.collection == null
-        ? await _database
-            .getVideoMetadataWorkByBook(work.members.single.bookUid)
-        : await _database.getVideoMetadataWorkByCollection(work.collection!.id);
+    final VideoMetadataWorkRow? row = await _canonicalWork(work);
     if (row == null) return false;
     final List<VideoMetadataProviderIdentityRow> identities =
         await _database.getVideoMetadataProviderIdentities(workId: row.id);

@@ -30,6 +30,20 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.d
   return (parsed.season ?? 1, episode);
 }
 
+/// 一个文件的 AniDB 集身份 + 它与 TMDB 集链接的评级（Shoko
+/// `CrossRef_AniDB_TMDB_Episode`），随绑定写到分集行。[matchRating] 为 null =
+/// 没经 TMDB 逐集链接（无 TMDB 剧 / 没对上），只记 AniDB 原生身份。
+class AnidbEpisodeXref {
+  const AnidbEpisodeXref({
+    required this.episodeId,
+    required this.episodeNumber,
+    this.matchRating,
+  });
+  final int episodeId;
+  final String episodeNumber;
+  final String? matchRating;
+}
+
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
     required this.workId,
@@ -142,6 +156,8 @@ class VideoMetadataDatabaseStore {
     VideoMetadataWork metadata, {
     bool seasonEpisodesAuthoritative = true,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
+    Map<String, AnidbEpisodeXref> anidbEpisodeXrefs =
+        const <String, AnidbEpisodeXref>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -372,16 +388,32 @@ class VideoMetadataDatabaseStore {
         final List<VideoMetadataEpisodesCompanion> episodeRows =
             <VideoMetadataEpisodesCompanion>[
           for (final VideoMetadataEpisode episode in season.episodes)
-            VideoMetadataEpisodesCompanion.insert(
+            () {
+              final String? bookUid = localEpisodeBooks[(
+                    episode.seasonNumber,
+                    episode.episodeNumber,
+                  )]
+                      ?.bookUid ??
+                  existingEpisodes[episode.episodeNumber]?.bookUid;
+              // AniDB 集身份跟着绑定的文件走：这一轮有身份就写，没有身份但书还
+              // 是原来那本就保留旧值，换了书 / 解绑就清掉。
+              final AnidbEpisodeXref? xref =
+                  bookUid == null ? null : anidbEpisodeXrefs[bookUid];
+              final VideoMetadataEpisodeRow? existing =
+                  existingEpisodes[episode.episodeNumber];
+              final bool keepExisting = xref == null &&
+                  existing != null &&
+                  existing.bookUid != null &&
+                  existing.bookUid == bookUid;
+              return VideoMetadataEpisodesCompanion.insert(
               seasonId: seasonId,
-              bookUid: Value<String?>(
-                localEpisodeBooks[(
-                      episode.seasonNumber,
-                      episode.episodeNumber,
-                    )]
-                        ?.bookUid ??
-                    existingEpisodes[episode.episodeNumber]?.bookUid,
-              ),
+              bookUid: Value<String?>(bookUid),
+              anidbEpisodeId: Value<int?>(
+                  xref?.episodeId ?? (keepExisting ? existing.anidbEpisodeId : null)),
+              anidbEpisodeNumber: Value<String?>(xref?.episodeNumber ??
+                  (keepExisting ? existing.anidbEpisodeNumber : null)),
+              anidbMatchRating: Value<String?>(xref?.matchRating ??
+                  (keepExisting ? existing.anidbMatchRating : null)),
               episodeNumber: episode.episodeNumber,
               absoluteNumber: Value<int?>(
                 episode.absoluteNumber ??
@@ -429,7 +461,8 @@ class VideoMetadataDatabaseStore {
                         : null),
               ),
               updatedAt: now,
-            ),
+            );
+            }(),
         ];
         if (seasonEpisodesAuthoritative) {
           await database.replaceVideoMetadataEpisodes(seasonId, episodeRows);

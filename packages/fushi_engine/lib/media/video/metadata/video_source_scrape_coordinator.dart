@@ -159,6 +159,8 @@ class VideoSourceScrapeCoordinator
   final bool _ownsEpisodeRelations;
 
   /// 每个作品最近一次解析出的成员 (季, 集) 覆盖，与 resolvedWorkCache 同键。
+  final Map<String, Map<String, AnidbEpisodeXref>> _anidbXrefCache =
+      <String, Map<String, AnidbEpisodeXref>>{};
   final Map<String, Map<String, (int, int)>> _episodeOverridesCache =
       <String, Map<String, (int, int)>>{};
   final bool _ownsRegistry;
@@ -695,6 +697,7 @@ class VideoSourceScrapeCoordinator
             metadata,
             seasonEpisodesAuthoritative: resolved.seasonEpisodesAuthoritative,
             episodeOverrides: resolved.episodeOverrides,
+            anidbEpisodeXrefs: resolved.anidbEpisodeXrefs,
           );
 
           cancellationToken.throwIfCancelled();
@@ -867,6 +870,8 @@ class VideoSourceScrapeCoordinator
             authoritativeSeasonEpisodesCache[cacheKey] ?? false,
         episodeOverrides:
             _episodeOverridesCache[cacheKey] ?? const <String, (int, int)>{},
+        anidbEpisodeXrefs:
+            _anidbXrefCache[cacheKey] ?? const <String, AnidbEpisodeXref>{},
       );
     }
 
@@ -1386,6 +1391,17 @@ class VideoSourceScrapeCoordinator
     // 它落到哪一集由 AniDB 集（播出日 + 三语集标题）在 TMDB 剧全部季里逐集
     // 对出来决定，文件名解析的季集只是没有身份时的退路。Shoko 里文件名从不
     // 参与识别；这里同理——身份与文件名不符时按身份、记一条说明。
+    // 每个有身份的成员都先落一条只带 AniDB 原生身份的交叉引用（无 TMDB 剧也
+    // 呈现 AniDB 编号），链接成功的再补评级。
+    Map<String, AnidbEpisodeXref> anidbXrefs = <String, AnidbEpisodeXref>{
+      for (final MapEntry<String, AnidbFileIdentity> entry
+          in hashEvidence.identities.entries)
+        if (!hashContradictsCanonical)
+          entry.key: AnidbEpisodeXref(
+            episodeId: entry.value.episodeId,
+            episodeNumber: entry.value.episodeNumber,
+          ),
+    };
     if (metadata.provider == VideoMetadataProviderKind.tmdb) {
       tmdbShow = metadata;
     }
@@ -1407,7 +1423,7 @@ class VideoSourceScrapeCoordinator
           preferredLanguage: _locale,
         );
         metadata = linked.work;
-        episodeOverrides = _applyAnidbEpisodeLinks(
+        final _AppliedAnidbLinks applied = _applyAnidbEpisodeLinks(
           localWork,
           hashEvidence,
           linked.links,
@@ -1415,6 +1431,8 @@ class VideoSourceScrapeCoordinator
           episodeOverrides,
           warnings,
         );
+        episodeOverrides = applied.overrides;
+        anidbXrefs = <String, AnidbEpisodeXref>{...anidbXrefs, ...applied.xrefs};
       }
     }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
@@ -1438,10 +1456,12 @@ class VideoSourceScrapeCoordinator
     resolvedWorkCache[cacheKey] = metadata;
     authoritativeSeasonEpisodesCache[cacheKey] = seasonEpisodesAuthoritative;
     _episodeOverridesCache[cacheKey] = episodeOverrides;
+    _anidbXrefCache[cacheKey] = anidbXrefs;
     return _ResolvedWork(
       metadata: metadata,
       seasonEpisodesAuthoritative: seasonEpisodesAuthoritative,
       episodeOverrides: episodeOverrides,
+      anidbEpisodeXrefs: anidbXrefs,
     );
   }
 
@@ -2300,7 +2320,7 @@ class VideoSourceScrapeCoordinator
   /// 把链接落成成员覆盖：有 AniDB 正片身份的成员，卡片 (季, 集) 以链接为准；
   /// 与文件名解出的键不同时记一条说明（Shoko：文件名不参与识别）。落不下来
   /// （`cardKey == null`）的链接只记说明、保留原键。
-  static Map<String, (int, int)> _applyAnidbEpisodeLinks(
+  static _AppliedAnidbLinks _applyAnidbEpisodeLinks(
     VideoSourceScrapeWork localWork,
     _HashWorkEvidence evidence,
     Map<int, AnidbTmdbEpisodeLink> links,
@@ -2308,7 +2328,10 @@ class VideoSourceScrapeCoordinator
     Map<String, (int, int)> episodeOverrides,
     List<SourceScrapeIssue> warnings,
   ) {
-    if (links.isEmpty && specialLinks.isEmpty) return episodeOverrides;
+    final Map<String, AnidbEpisodeXref> xrefs = <String, AnidbEpisodeXref>{};
+    if (links.isEmpty && specialLinks.isEmpty) {
+      return _AppliedAnidbLinks(episodeOverrides, xrefs);
+    }
     Map<String, (int, int)> result = episodeOverrides;
     int linkedCount = 0, corrected = 0;
     final Map<TmdbEpisodeMatchRating, int> ratings =
@@ -2337,6 +2360,11 @@ class VideoSourceScrapeCoordinator
       }
       linkedCount++;
       ratings[link.rating] = (ratings[link.rating] ?? 0) + 1;
+      xrefs[member.bookUid] = AnidbEpisodeXref(
+        episodeId: identity.episodeId,
+        episodeNumber: identity.episodeNumber,
+        matchRating: link.rating.name,
+      );
       final (int, int)? current = localEpisodeKeyFor(member, result);
       if (current == cardKey) continue;
       corrected++;
@@ -2362,7 +2390,7 @@ class VideoSourceScrapeCoordinator
               'AniDB 文件身份 → TMDB 集逐集链接（Shoko 式）：$linkedCount 个文件对上（$detail）'
               '${corrected == 0 ? '，与文件名一致' : '，其中 $corrected 个与文件名不符、已按身份归位'}。'));
     }
-    return result;
+    return _AppliedAnidbLinks(result, xrefs);
   }
 
   /// 逐集核对结果的一条说明（按季汇总评级），零命中不记。
@@ -3753,6 +3781,14 @@ class _SeasonExpansion {
   final Map<int, TmdbSeasonSlice> tmdbSlices;
 }
 
+/// [_applyAnidbEpisodeLinks] 的结果：成员 (季, 集) 覆盖 + 链接成功成员的交叉引用
+/// （带评级）。
+class _AppliedAnidbLinks {
+  const _AppliedAnidbLinks(this.overrides, this.xrefs);
+  final Map<String, (int, int)> overrides;
+  final Map<String, AnidbEpisodeXref> xrefs;
+}
+
 /// [_anidbLinkSources] 的结果：正片来源集（键 = AniDB 集号）与 `S` 型特典来源集
 /// （键 = 特典序号）。
 class _AnidbLinkSources {
@@ -3778,6 +3814,7 @@ class _ResolvedWork {
     this.status,
     this.seasonEpisodesAuthoritative = false,
     this.episodeOverrides = const <String, (int, int)>{},
+    this.anidbEpisodeXrefs = const <String, AnidbEpisodeXref>{},
   });
 
   final VideoMetadataWork? metadata;
@@ -3785,6 +3822,9 @@ class _ResolvedWork {
   /// 成员 `bookUid` → 本地 (季, 集)：多季合集逐季映射 / 绝对集号重定向的结果，
   /// 入库、sidecar、旧投影三处共用。
   final Map<String, (int, int)> episodeOverrides;
+
+  /// 成员 `bookUid` → AniDB 集身份（+ TMDB 链接评级），随绑定写到分集行。
+  final Map<String, AnidbEpisodeXref> anidbEpisodeXrefs;
   final bool pending;
   final String? reason;
 

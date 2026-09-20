@@ -53,8 +53,10 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
+import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
@@ -2425,6 +2427,14 @@ class _HomePageState extends BasePageState<HomePage>
       isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
       // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
       isHashReady: () => config.anidbHashReady,
+      // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
+      tmdbChangedTvIds: ({required DateTime since}) {
+        final VideoMetadataProvider? tmdb =
+            coordinator.registry.provider(VideoMetadataProviderKind.tmdb);
+        return tmdb is TmdbVideoMetadataProvider && tmdb.isAvailable
+            ? tmdb.changedTvShowIds(since: since)
+            : Future<Set<int>>.value(const <int>{});
+      },
     );
     return controller;
   }

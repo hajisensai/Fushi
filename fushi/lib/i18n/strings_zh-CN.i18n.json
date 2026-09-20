@@ -5138,5 +5138,6 @@
   "jellyfin_route_verify_failed": "$url 上的服务器不接受当前登录，可能不是同一台服务器，或登录已过期：$reason",
   "jellyfin_route_remove": "删除线路",
   "jellyfin_route_switched": "已切换到 $url",
-  "media_server_route_switch": "切换线路"
+  "media_server_route_switch": "切换线路",
+  "collection_episode_anidb_number": "AniDB 第 $number 集"
 }

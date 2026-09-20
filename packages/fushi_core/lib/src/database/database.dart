@@ -3308,6 +3308,32 @@ class FushiDatabase extends _$FushiDatabase
                 );
               }
             }
+            // 分集行带上绑定文件的 AniDB 集身份（eid / 原生集号 / TMDB 链接评级），
+            // Shoko 的 CrossRef_AniDB_TMDB_Episode 在本仓的落点；存量行 null，
+            // 下次刮削时随绑定一起写。
+            if (await _tableExists('video_metadata_episodes')) {
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_id')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeId,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_number')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeNumber,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_match_rating')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbMatchRating,
+                );
+              }
+            }
           }
         },
         onCreate: (m) async {

@@ -31829,6 +31829,39 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _anidbEpisodeIdMeta = const VerificationMeta(
+    'anidbEpisodeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbEpisodeId = GeneratedColumn<int>(
+    'anidb_episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbEpisodeNumberMeta =
+      const VerificationMeta('anidbEpisodeNumber');
+  @override
+  late final GeneratedColumn<String> anidbEpisodeNumber =
+      GeneratedColumn<String>(
+        'anidb_episode_number',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _anidbMatchRatingMeta = const VerificationMeta(
+    'anidbMatchRating',
+  );
+  @override
+  late final GeneratedColumn<String> anidbMatchRating = GeneratedColumn<String>(
+    'anidb_match_rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -31854,6 +31887,9 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   ];
   @override
@@ -31953,6 +31989,33 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         ),
       );
     }
+    if (data.containsKey('anidb_episode_id')) {
+      context.handle(
+        _anidbEpisodeIdMeta,
+        anidbEpisodeId.isAcceptableOrUnknown(
+          data['anidb_episode_id']!,
+          _anidbEpisodeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_episode_number')) {
+      context.handle(
+        _anidbEpisodeNumberMeta,
+        anidbEpisodeNumber.isAcceptableOrUnknown(
+          data['anidb_episode_number']!,
+          _anidbEpisodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_match_rating')) {
+      context.handle(
+        _anidbMatchRatingMeta,
+        anidbMatchRating.isAcceptableOrUnknown(
+          data['anidb_match_rating']!,
+          _anidbMatchRatingMeta,
+        ),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -32025,6 +32088,18 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         DriftSqlType.int,
         data['${effectivePrefix}runtime_minutes'],
       ),
+      anidbEpisodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_episode_id'],
+      ),
+      anidbEpisodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_episode_number'],
+      ),
+      anidbMatchRating: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_match_rating'],
+      ),
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
@@ -32054,6 +32129,14 @@ class VideoMetadataEpisodeRow extends DataClass
   final double? rating;
   final int? ratingCount;
   final int? runtimeMinutes;
+
+  /// v109：绑到这一集的文件的 AniDB 集身份（Shoko `CrossRef_AniDB_TMDB_Episode`
+  /// 在本仓的落点）：AniDB eid、原生集号（`04` / `S1`）、与 TMDB 集对上的评级
+  /// （`dateAndTitle` … `dateKinda`；null = 没经 TMDB 链接、按文件名落的）。
+  /// AniDB 原生编号与 TMDB (季, 集) 两套并存，UI 可同时呈现。
+  final int? anidbEpisodeId;
+  final String? anidbEpisodeNumber;
+  final String? anidbMatchRating;
   final int updatedAt;
   const VideoMetadataEpisodeRow({
     required this.id,
@@ -32068,6 +32151,9 @@ class VideoMetadataEpisodeRow extends DataClass
     this.rating,
     this.ratingCount,
     this.runtimeMinutes,
+    this.anidbEpisodeId,
+    this.anidbEpisodeNumber,
+    this.anidbMatchRating,
     required this.updatedAt,
   });
   @override
@@ -32103,6 +32189,15 @@ class VideoMetadataEpisodeRow extends DataClass
     if (!nullToAbsent || runtimeMinutes != null) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes);
     }
+    if (!nullToAbsent || anidbEpisodeId != null) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId);
+    }
+    if (!nullToAbsent || anidbEpisodeNumber != null) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber);
+    }
+    if (!nullToAbsent || anidbMatchRating != null) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating);
+    }
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
@@ -32137,6 +32232,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: runtimeMinutes == null && nullToAbsent
           ? const Value.absent()
           : Value(runtimeMinutes),
+      anidbEpisodeId: anidbEpisodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeId),
+      anidbEpisodeNumber: anidbEpisodeNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeNumber),
+      anidbMatchRating: anidbMatchRating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbMatchRating),
       updatedAt: Value(updatedAt),
     );
   }
@@ -32159,6 +32263,11 @@ class VideoMetadataEpisodeRow extends DataClass
       rating: serializer.fromJson<double?>(json['rating']),
       ratingCount: serializer.fromJson<int?>(json['ratingCount']),
       runtimeMinutes: serializer.fromJson<int?>(json['runtimeMinutes']),
+      anidbEpisodeId: serializer.fromJson<int?>(json['anidbEpisodeId']),
+      anidbEpisodeNumber: serializer.fromJson<String?>(
+        json['anidbEpisodeNumber'],
+      ),
+      anidbMatchRating: serializer.fromJson<String?>(json['anidbMatchRating']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
@@ -32178,6 +32287,9 @@ class VideoMetadataEpisodeRow extends DataClass
       'rating': serializer.toJson<double?>(rating),
       'ratingCount': serializer.toJson<int?>(ratingCount),
       'runtimeMinutes': serializer.toJson<int?>(runtimeMinutes),
+      'anidbEpisodeId': serializer.toJson<int?>(anidbEpisodeId),
+      'anidbEpisodeNumber': serializer.toJson<String?>(anidbEpisodeNumber),
+      'anidbMatchRating': serializer.toJson<String?>(anidbMatchRating),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
@@ -32195,6 +32307,9 @@ class VideoMetadataEpisodeRow extends DataClass
     Value<double?> rating = const Value.absent(),
     Value<int?> ratingCount = const Value.absent(),
     Value<int?> runtimeMinutes = const Value.absent(),
+    Value<int?> anidbEpisodeId = const Value.absent(),
+    Value<String?> anidbEpisodeNumber = const Value.absent(),
+    Value<String?> anidbMatchRating = const Value.absent(),
     int? updatedAt,
   }) => VideoMetadataEpisodeRow(
     id: id ?? this.id,
@@ -32213,6 +32328,15 @@ class VideoMetadataEpisodeRow extends DataClass
     runtimeMinutes: runtimeMinutes.present
         ? runtimeMinutes.value
         : this.runtimeMinutes,
+    anidbEpisodeId: anidbEpisodeId.present
+        ? anidbEpisodeId.value
+        : this.anidbEpisodeId,
+    anidbEpisodeNumber: anidbEpisodeNumber.present
+        ? anidbEpisodeNumber.value
+        : this.anidbEpisodeNumber,
+    anidbMatchRating: anidbMatchRating.present
+        ? anidbMatchRating.value
+        : this.anidbMatchRating,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   VideoMetadataEpisodeRow copyWithCompanion(
@@ -32239,6 +32363,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: data.runtimeMinutes.present
           ? data.runtimeMinutes.value
           : this.runtimeMinutes,
+      anidbEpisodeId: data.anidbEpisodeId.present
+          ? data.anidbEpisodeId.value
+          : this.anidbEpisodeId,
+      anidbEpisodeNumber: data.anidbEpisodeNumber.present
+          ? data.anidbEpisodeNumber.value
+          : this.anidbEpisodeNumber,
+      anidbMatchRating: data.anidbMatchRating.present
+          ? data.anidbMatchRating.value
+          : this.anidbMatchRating,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -32258,6 +32391,9 @@ class VideoMetadataEpisodeRow extends DataClass
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -32277,6 +32413,9 @@ class VideoMetadataEpisodeRow extends DataClass
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   );
   @override
@@ -32295,6 +32434,9 @@ class VideoMetadataEpisodeRow extends DataClass
           other.rating == this.rating &&
           other.ratingCount == this.ratingCount &&
           other.runtimeMinutes == this.runtimeMinutes &&
+          other.anidbEpisodeId == this.anidbEpisodeId &&
+          other.anidbEpisodeNumber == this.anidbEpisodeNumber &&
+          other.anidbMatchRating == this.anidbMatchRating &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -32312,6 +32454,9 @@ class VideoMetadataEpisodesCompanion
   final Value<double?> rating;
   final Value<int?> ratingCount;
   final Value<int?> runtimeMinutes;
+  final Value<int?> anidbEpisodeId;
+  final Value<String?> anidbEpisodeNumber;
+  final Value<String?> anidbMatchRating;
   final Value<int> updatedAt;
   const VideoMetadataEpisodesCompanion({
     this.id = const Value.absent(),
@@ -32326,6 +32471,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   VideoMetadataEpisodesCompanion.insert({
@@ -32341,6 +32489,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     required int updatedAt,
   }) : seasonId = Value(seasonId),
        episodeNumber = Value(episodeNumber),
@@ -32358,6 +32509,9 @@ class VideoMetadataEpisodesCompanion
     Expression<double>? rating,
     Expression<int>? ratingCount,
     Expression<int>? runtimeMinutes,
+    Expression<int>? anidbEpisodeId,
+    Expression<String>? anidbEpisodeNumber,
+    Expression<String>? anidbMatchRating,
     Expression<int>? updatedAt,
   }) {
     return RawValuesInsertable({
@@ -32373,6 +32527,10 @@ class VideoMetadataEpisodesCompanion
       if (rating != null) 'rating': rating,
       if (ratingCount != null) 'rating_count': ratingCount,
       if (runtimeMinutes != null) 'runtime_minutes': runtimeMinutes,
+      if (anidbEpisodeId != null) 'anidb_episode_id': anidbEpisodeId,
+      if (anidbEpisodeNumber != null)
+        'anidb_episode_number': anidbEpisodeNumber,
+      if (anidbMatchRating != null) 'anidb_match_rating': anidbMatchRating,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
@@ -32390,6 +32548,9 @@ class VideoMetadataEpisodesCompanion
     Value<double?>? rating,
     Value<int?>? ratingCount,
     Value<int?>? runtimeMinutes,
+    Value<int?>? anidbEpisodeId,
+    Value<String?>? anidbEpisodeNumber,
+    Value<String?>? anidbMatchRating,
     Value<int>? updatedAt,
   }) {
     return VideoMetadataEpisodesCompanion(
@@ -32405,6 +32566,9 @@ class VideoMetadataEpisodesCompanion
       rating: rating ?? this.rating,
       ratingCount: ratingCount ?? this.ratingCount,
       runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+      anidbEpisodeId: anidbEpisodeId ?? this.anidbEpisodeId,
+      anidbEpisodeNumber: anidbEpisodeNumber ?? this.anidbEpisodeNumber,
+      anidbMatchRating: anidbMatchRating ?? this.anidbMatchRating,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -32448,6 +32612,15 @@ class VideoMetadataEpisodesCompanion
     if (runtimeMinutes.present) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes.value);
     }
+    if (anidbEpisodeId.present) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId.value);
+    }
+    if (anidbEpisodeNumber.present) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber.value);
+    }
+    if (anidbMatchRating.present) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -32469,6 +32642,9 @@ class VideoMetadataEpisodesCompanion
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -77243,6 +77419,9 @@ typedef $$VideoMetadataEpisodesTableCreateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       required int updatedAt,
     });
 typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
@@ -77259,6 +77438,9 @@ typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       Value<int> updatedAt,
     });
 
@@ -77472,6 +77654,21 @@ class $$VideoMetadataEpisodesTableFilterComposer
 
   ColumnFilters<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -77691,6 +77888,21 @@ class $$VideoMetadataEpisodesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -77788,6 +78000,21 @@ class $$VideoMetadataEpisodesTableAnnotationComposer
 
   GeneratedColumn<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => column,
   );
 
@@ -78007,6 +78234,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
               }) => VideoMetadataEpisodesCompanion(
                 id: id,
@@ -78021,6 +78251,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           createCompanionCallback:
@@ -78037,6 +78270,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 required int updatedAt,
               }) => VideoMetadataEpisodesCompanion.insert(
                 id: id,
@@ -78051,6 +78287,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0

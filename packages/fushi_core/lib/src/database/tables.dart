@@ -1667,6 +1667,14 @@ class VideoMetadataEpisodes extends Table {
   RealColumn get rating => real().nullable()();
   IntColumn get ratingCount => integer().nullable()();
   IntColumn get runtimeMinutes => integer().nullable()();
+
+  /// v109：绑到这一集的文件的 AniDB 集身份（Shoko `CrossRef_AniDB_TMDB_Episode`
+  /// 在本仓的落点）：AniDB eid、原生集号（`04` / `S1`）、与 TMDB 集对上的评级
+  /// （`dateAndTitle` … `dateKinda`；null = 没经 TMDB 链接、按文件名落的）。
+  /// AniDB 原生编号与 TMDB (季, 集) 两套并存，UI 可同时呈现。
+  IntColumn get anidbEpisodeId => integer().nullable()();
+  TextColumn get anidbEpisodeNumber => text().nullable()();
+  TextColumn get anidbMatchRating => text().nullable()();
   IntColumn get updatedAt => integer()();
 
   @override

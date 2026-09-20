@@ -83,6 +83,29 @@ void main() {
     );
   }
 
+  /// 分集行上的 AniDB 交叉引用：(季, 集) → (eid, 原生集号, 评级)。
+  Future<Map<(int, int), (int?, String?, String?)>> episodeXrefs() async {
+    final MediaCollectionRow collection =
+        (await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'))!;
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final Map<(int, int), (int?, String?, String?)> result =
+        <(int, int), (int?, String?, String?)>{};
+    for (final VideoMetadataSeasonRow season
+        in await db.getVideoMetadataSeasons(work.id)) {
+      for (final VideoMetadataEpisodeRow episode
+          in await db.getVideoMetadataEpisodes(season.id)) {
+        if (episode.anidbEpisodeId == null) continue;
+        result[(season.seasonNumber, episode.episodeNumber)] = (
+          episode.anidbEpisodeId,
+          episode.anidbEpisodeNumber,
+          episode.anidbMatchRating,
+        );
+      }
+    }
+    return result;
+  }
+
   Future<Map<(int, int), (String?, String?)>> boundEpisodes() async {
     final MediaCollectionRow collection =
         (await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'))!;
@@ -266,6 +289,15 @@ void main() {
     expect(bound[(5, 4)]?.$1, 'book-2', reason: '仅播出日对上也够');
     expect(bound[(0, 1)]?.$1, 'book-3', reason: 'AniDB S1 → TMDB S0E1');
     expect(bound[(0, 2)]?.$1, isNull, reason: '文件名的 S00E02 不算数');
+    // Shoko CrossRef_AniDB_TMDB_Episode 的落点：分集行带 AniDB eid / 原生集号 /
+    // 链接评级，两套编号并存。
+    final Map<(int, int), (int?, String?, String?)> xrefs =
+        await episodeXrefs();
+    expect(xrefs[(5, 1)], (301, '01', 'dateAndTitle'));
+    expect(xrefs[(5, 2)], (302, '02', 'dateAndTitle'));
+    expect(xrefs[(5, 4)], (304, '04', 'date'));
+    expect(xrefs[(0, 1)], (391, 'S1', 'title'));
+    expect(xrefs.containsKey((5, 3)), isFalse, reason: '没绑文件的集没有身份');
     final Iterable<String> messages =
         report.warnings.map((SourceScrapeIssue i) => i.message);
     expect(

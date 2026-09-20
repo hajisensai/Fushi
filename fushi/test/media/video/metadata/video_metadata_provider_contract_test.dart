@@ -270,6 +270,52 @@ void main() {
     );
 
     test(
+      'changedTvShowIds pages /tv/changes and clamps to the 14-day window',
+      () async {
+        final List<Uri> calls = <Uri>[];
+        final MockClient client = MockClient((http.Request request) async {
+          calls.add(request.url);
+          final int page = int.parse(request.url.queryParameters['page']!);
+          return _json(<String, Object?>{
+            'page': page,
+            'total_pages': 2,
+            'results': <Object?>[
+              <String, Object?>{'id': 1000 + page, 'adult': false},
+              <String, Object?>{'id': 30984, 'adult': false},
+            ],
+          });
+        });
+        final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+          apiKey: 'KEY',
+          client: client,
+          language: 'en-US',
+        );
+        final DateTime until = DateTime.utc(2026, 9, 20);
+        final Set<int> ids = await provider.changedTvShowIds(
+          since: DateTime.utc(2026, 9, 15),
+          until: until,
+        );
+        expect(ids, <int>{1001, 1002, 30984});
+        expect(calls, hasLength(2), reason: '两页，一个窗口');
+        expect(calls.first.path, endsWith('/tv/changes'));
+        expect(calls.first.queryParameters['start_date'], '2026-09-15');
+        expect(calls.first.queryParameters['end_date'], '2026-09-20');
+        expect(calls.last.queryParameters['page'], '2');
+
+        // 40 天前：只能回看 14 天，切成两个 ≤13 天的窗口。
+        calls.clear();
+        await provider.changedTvShowIds(
+          since: DateTime.utc(2026, 8, 10),
+          until: until,
+        );
+        expect(calls.first.queryParameters['start_date'], '2026-09-06');
+        expect(calls.first.queryParameters['end_date'], '2026-09-19');
+        expect(calls.map((Uri u) => u.queryParameters['start_date']).toSet(),
+            <String>{'2026-09-06', '2026-09-20'});
+      },
+    );
+
+    test(
       'include_adult is sent only when the request asks for it (Shoko '
       'AutoSearchForShow includeRestricted)',
       () async {
