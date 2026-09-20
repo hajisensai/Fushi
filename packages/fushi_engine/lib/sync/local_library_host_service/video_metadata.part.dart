@@ -138,6 +138,89 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
     return VideoMetadataWriteResult.ok(entry);
   }
 
+  // ── TMDB 备选排序（Shoko PreferredAlternateOrderingID 的互联面）──────────
+
+  @override
+  Future<VideoMetadataEpisodeGroupListing?> listVideoMetadataEpisodeGroups({
+    required VideoMetadataWorkKey key,
+  }) async {
+    final _PlannedUnitResolution resolved = await _plannedUnitForKey(key);
+    if (resolved.ambiguous.isNotEmpty) return null;
+    final VideoPendingScrapeWork? unit = resolved.unit;
+    const VideoMetadataEpisodeGroupListing empty =
+        VideoMetadataEpisodeGroupListing(
+      groups: <VideoMetadataEpisodeGroupSummary>[],
+      current: null,
+    );
+    if (unit == null) return empty;
+    final VideoMetadataWorkRow? row = await _workRowForTarget(unit.work);
+    if (row == null || row.mediaType != VideoMetadataMediaKind.tv.name) {
+      return empty;
+    }
+    final VideoMetadataProviderIdentityRow? tmdb =
+        (await _db.getVideoMetadataProviderIdentities(workId: row.id))
+            .where((VideoMetadataProviderIdentityRow i) =>
+                i.provider == VideoMetadataProviderKind.tmdb.name)
+            .firstOrNull;
+    final VideoSourceScrapeTaskController? controller =
+        await _scrapeController?.call();
+    if (tmdb == null || controller == null) {
+      return VideoMetadataEpisodeGroupListing(
+        groups: const <VideoMetadataEpisodeGroupSummary>[],
+        current: row.episodeGroupId,
+      );
+    }
+    return VideoMetadataEpisodeGroupListing(
+      groups: await controller.listEpisodeGroups(VideoMetadataLookup(
+        provider: VideoMetadataProviderKind.tmdb,
+        externalId: tmdb.externalId,
+        mediaKind: VideoMetadataMediaKind.tv,
+      )),
+      current: row.episodeGroupId,
+    );
+  }
+
+  @override
+  Future<VideoMetadataWriteResult> setVideoMetadataEpisodeGroup({
+    required VideoMetadataWorkKey key,
+    required String? groupId,
+  }) async {
+    final _PlannedUnitResolution resolved = await _plannedUnitForKey(key);
+    if (resolved.ambiguous.isNotEmpty) {
+      return VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.ambiguousWork,
+        ambiguousWorks: <VideoMetadataWorkKey>[
+          for (final VideoPendingScrapeWork u in resolved.ambiguous)
+            VideoMetadataWorkKey.book(u.work.members.single.bookUid),
+        ],
+      );
+    }
+    final VideoPendingScrapeWork? unit = resolved.unit;
+    final VideoMetadataWorkRow? row =
+        unit == null ? null : await _workRowForTarget(unit.work);
+    if (unit == null || row == null) {
+      return const VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.notPlanned,
+      );
+    }
+    await _runExclusive(
+        () => _db.setVideoMetadataWorkEpisodeGroup(row.id, groupId));
+    final VideoMetadataLookup? lookup = await lookupOfWork(_db, row.id);
+    if (lookup == null) {
+      return const VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.notPlanned,
+      );
+    }
+    return scrapeVideoMetadata(key: key, lookup: lookup);
+  }
+
+  Future<VideoMetadataWorkRow?> _workRowForTarget(
+    VideoSourceScrapeWork target,
+  ) =>
+      target.collection == null
+          ? _db.getVideoMetadataWorkByBook(target.members.single.bookUid)
+          : _db.getVideoMetadataWorkByCollection(target.collection!.id);
+
   /// 自然键 → 计划器里的作品单元。
   ///
   /// 合集键走 `planScrapeWorksForCollection`（BUG-2433：可能是一个合集级单元，

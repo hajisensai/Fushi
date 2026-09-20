@@ -86,7 +86,7 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 | 7.1.3 | 候选池 | 整剧非特典季；无偏移算术 | 同：整剧；Fribb 切片只用于把 TMDB (S,E) 换算成卡片键（卡片季 = cour），不再决定集号 | ✅ |
 | 7.1.4 | TMDB (S,E) → 本地呈现 | 直接就是 S/E | 三步换算：TMDB 主源直用 / 卡片里已带该 TMDB id 的集 / Fribb 切片（`_cardKeyFromSlices`，越过 cour 已知集数不落）；都不行 → 链接成立但 `cardKey` 为 null、记说明、保留文件名键 | 🟡 卡片模型是 cour，不是 TMDB 季 |
 | 7.1.5 | 特典 | `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`；C/T/P/O 不匹配 | `matchSpecialsToTmdb`（S0 池、同一评分链）；`S<n>` 型 epno 落卡片 (0, E)、卡片无第 0 季就补一季；C/T/P/O 不进池；AniDB HTTP 解析器 `S` 型特典落第 0 季 | ✅ |
-| 7.1.6 | `CrossRef_AniDB_TMDB_Episode` 持久化 | 独立表，UserVerified 保留 | 不建独立表（输入全在本地缓存、重算确定性）；落到 `video_metadata_episodes.anidb_episode_id / anidb_episode_number / anidb_match_rating`（随绑定写，换书 / 解绑清掉）；手动指定作品身份即 UserVerified，集级手动链接没有 UI | 🟡 |
+| 7.1.6 | `CrossRef_AniDB_TMDB_Episode` 持久化 | 独立表，UserVerified 保留 | 不建独立表（输入全在本地缓存、重算确定性）；落到 `video_metadata_episodes.anidb_episode_id / anidb_episode_number / anidb_match_rating`（随绑定写，换书 / 解绑清掉）。**第六轮（schema v111）补 UserVerified**：集卡菜单「手动指定季集…」写 `video_episode_binding_overrides`（`book_uid` → 季集）并立刻改绑分集行（`rebindVideoEpisodeToBook`，评级 `userVerified`）；刮削时协调器把它当最高优先级——`_applyAnidbEpisodeLinks` 跳过这些成员、`episodeOverrides` 以它为准、xref 评级写 `userVerified`；可清除回自动 | ✅ |
 | 7.1.7 | 两套编号并存 | API 同时给 AniDB (type, epno) 与 TMDB (S,E) | 分集行三列 + 合集详情集卡序号下小字「AniDB 第 04 集」（`CollectionEpisodeCard.identityLabel`，i18n `collection_episode_anidb_number`）；序号本身仍是文件名 / 卡片键 | ✅ |
 | 7.1.8 | firstAvailable | 第四遍「every match is accepted」，含 FirstAvailable | 第五轮起同样成链：`linkAnidbEpisodesToTmdb` 不再丢弃，评级 `firstAvailable` 随行落 `anidb_match_rating`、说明里标「顺序兜底 N」；`fillEmptySeasonsFromEpisodeTitles`（输入不是文件身份）仍丢弃 | ✅ |
 
@@ -107,9 +107,9 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 | 7.3.1 | 成人向 | `AutoLinkRestricted` + 搜索 `include_adult = anime.IsRestricted` | `VideoMetadataSearchRequest.includeAdult` → `include_adult=true`，主源分级 MAL `Rx` / AniDB `R18+` 时打开（MAL 作品补 `contentRating`）；无单独开关（默认过滤即 Shoko 的 AutoLinkRestricted=false 语义） | ✅ |
 | 7.3.2 | 刷新节奏 | `UpdateShow` 1 h 跳过窗口 + 每日 `/tv/changes` 增量（14 天窗口）+ 过期整拉 | `VideoLibraryScrapeSweep` 加刷新积压：`TmdbVideoMetadataProvider.changedTvShowIds`（`/tv/changes` 按 13 天窗口分页）每 12 h 问一次、与库内 TMDB id 求交集只重刷变过的；上次刮削 >14 天的整部重刷、每轮 ≤20 部 | ✅ |
 | 7.3.3 | 链接卫生 | 刷新后重跑集级匹配，UserVerified 保留，孤儿 xref 清理 | 重刷走 `scrapeWorkSubsets`：已确认身份复用、集级链接按新资料重算、分集行整季替换（xref 随绑定重写，解绑即清） | ✅ |
-| 7.3.4 | 电影型作品 | AniDB 集 → TMDB 电影（`CrossRef_AniDB_TMDB_Movie`，≤4 集短篇先搜电影再退剧） | 第五轮：成员哈希分属不同 AniDB 作品且**每个成员**在 Fribb 映射里都是电影（`isMovie`）→ 协调器 `_splitIntoMovieWorks` 按成员拆成单文件电影子单元（`_ResolvedWork.splitInto`），插进本趟队列各自刮：身份按主源顺序（有 MAL id 用 MAL、TMDB 电影经映射兜底；否则直接 TMDB 电影 id），单文件单元的形态跟已确认身份走（`Movie 01.mkv` 不再被文件名序号判成剧集）；合集级残留作品行 `removeCollectionOwnedWork` 清掉；sweep 把「成员各自拥有带身份的作品行」的合集单元算已识别；合集详情页无合集级作品时成员自己的电影投影当卡片标题 / 简介。作品 kind 仍由本地形状 + 身份共同决定（Shoko 由 AniDB 类型决定）；**电视剧混放**（同目录两部不同剧）仍是待确认——剧集作品以合集为锚、一合集一部 | ✅ 电影 / 🟡 剧混放 |
+| 7.3.4 | 电影型 / 多作品 | AniDB 作品类型决定形态；一个目录几部作品就是几个 series；电影链 `CrossRef_AniDB_TMDB_Movie` | 第五轮拆电影；**第六轮泛化为 `_splitByAnidbWork`**：成员哈希分属不同 AniDB 作品（全部成员都有身份）→ 电影型成员各自成单文件电影单元，其余每个 AniDB 作品**新建一个播放列表合集**收下该组成员当 `collection:` 剧集单元（Shoko 多 series 的合集等价物），身份按主源顺序给或让子单元自己识别；原播放列表视频成员全被拆走时 `deleteMediaCollectionWithAssets` 整删（写墓碑，重扫不按原名重建），否则只移走已拆成员并清合集级残留；重扫归组器不再把已属别的播放列表的文件按 overlap 并回。**形态来源对齐**：FILE amask 加 anime type（`anidb_file_identities.anime_type`，v111），单文件单元哈希决定身份时 kind 跟 AniDB `Movie`/非 Movie 走，Fribb `isMovie` 只作旧行兜底。目录合集本就不进剧集单元（计划器把目录成员各自当 `book:`），不在此路径 | ✅ |
 | 7.3.5 | TMDB 备选排序 | `TMDB_AlternateOrdering` 下载 + 每剧 `PreferredAlternateOrderingID`，API 按它给 S/E | 第五轮：`VideoMetadataEpisodeGroupProvider.listEpisodeGroups`（`/tv/{id}/episode_groups` 全部类型）经 `VideoSourceScrapeEpisodeOrdering` / controller 暴露；合集详情页菜单「TMDB 集编排…」列分组 + 「TMDB 默认排序」单选（`video_tmdb_ordering_dialog.dart`），选定写作品行 `episode_group_id` 并上 `episodeGroup` 字段锁（`setVideoMetadataWorkEpisodeGroup`；刮削不再用自动挑的分组覆盖）→ 以既有身份重刮，`_hydrateWork` 拿到的季集即分组编排、AniDB 集级链接按它重算；分组模式下 Fribb 切片停用（两套编号对不上）、集名别名按默认季拉再换回分组集号。不自动挑非 type=6 的分组（与 Shoko 一样由用户选） | ✅ |
-| 7.3.6 | 图片 / 网络 / 公司 / 多语言标题 | 各类型上限、`Main` 原语槽、people/studio 图 | 每层每类 1 张（backdrop ≤3）、语言序 `[locale, en, '']`、无原语槽 | 🟡 低价值，不动 |
+| 7.3.6 | 图片 / 网络 / 公司 / 多语言标题 | 各类型上限（`MaxAutoPosters/Backdrops/Logos` 默认 10，0 不限）、语言序 `[None, Main, English]`、`AutoDownloadStaffImages`、公司 logo | 第六轮：全局偏好 `video_metadata_max_posters/backdrops/logos`（默认 10，0 不限；设置页三个步进器）进 `VideoSourceScrapeGlobalConfig` + 指纹，`selectVideoMetadataImages(maxPerKind:)` 按上限保留、同 URL 去重、剧照恒 1；原语 `Main` 槽：`imageLanguageOrderWithMain` 把作品原语插在资料语言之后英文之前（保留本仓「资料语言最先」的既定行为），TMDB provider 在原语不在资料语言序时按原语补拉一次 `/images`；演职员头像 `video_metadata_download_staff_images`（默认关，与 Shoko `AutoDownloadCrewAndCast=false` 的净效果一致）开了落 `<video_covers>/people/`、回写 `profile_path`、每部 ≤10。**公司 logo 仍不落**：模型 `studios` 是字符串、无消费点 | ✅ / 🟡 公司 logo |
 
 ### 7.4 本轮新增守卫 / 测试
 
@@ -130,3 +130,24 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 - `video_metadata_locked_fields_test.dart`：`setVideoMetadataWorkEpisodeGroup` 写排序 + 上锁，apply 不覆盖，选回默认同样锁住。
 - `video_tmdb_ordering_dialog_test.dart`：选分组 → 写行 + 锁 + 以带分组 id 的 lookup 重刮；选回默认；取消不动。
 - `video_library_scrape_sweep_test.dart`：成员各自拥有带身份的电影作品行的合集单元算已识别。
+
+## 9. 第六轮（2026-09-20）：第五轮尾表里「仍未对齐」的五项
+
+用户目标仍是「全量对齐 Shoko」，把第五轮尾表列出的五项也做掉：电视剧混放拆分（7.3.4 泛化）、图片上限 / 原语槽 / 人物图（7.3.6）、集级 UserVerified 手动链接（7.1.6）、互联 host 端备选排序、作品 kind 来自 AniDB 动画类型（7.3.4）。schema v111（`anidb_file_identities.anime_type` + `video_episode_binding_overrides`）。
+
+互联面：`VideoMetadataOrderingHost`（`listVideoMetadataEpisodeGroups` / `setVideoMetadataEpisodeGroup`）经 `POST /api/library/metadata/episode-groups` / `episode-group` 暴露，能力位 `liveLibrary.videoMetadataOrdering`；客户端 `InterconnectSyncBackend.listRemoteVideoMetadataEpisodeGroups / setRemoteVideoMetadataEpisodeGroup`，远端合集详情页菜单「在 host 上选择 TMDB 集编排…」复用同一张 `showVideoTmdbOrderingPicker`，host 回传 entry 落本地镜像；老 host 404 → 「对端不支持」。
+
+仍有意保留（不是差距，是路径 / 产品决策）：① 生产 registry 不装配 AniDB HTTP 资料链，播出日走 UDP `EPISODE`（CLAUDE.md 规则）；② 作品资料主源 MAL / TMDB 用户可选、AniDB 只做身份（2026-09-07/08 拍板）；③ 公司 logo 不落（无模型、无消费点）。
+
+### 9.1 本轮新增守卫 / 测试
+
+- `migration_v111_anime_type_episode_pin_test.dart`：v110 → v111 加列建表、持久层写读 `anime_type`、`rebindVideoEpisodeToBook` 改绑 + 身份随文件走 + 目标不存在不动 + 清除 + FK 级联。
+- `tvdb_season_offset_coordinator_test.dart`：两部电视剧一个播放列表 → 拆成两个合集各自刮、原合集删除带墓碑；电影拆分改为整删原合集；用户钉死的季集胜过 AniDB 链接且评级 `userVerified`。
+- `anidb_udp_file_client_test.dart`：FILE 14 列（anime type）。
+- `video_folder_group_coordinator_test.dart`：已属别的播放列表的文件重扫不并回。
+- `video_episode_binding_dialog_test.dart`：选集写钉 + 立刻改绑；清除；无季集提示。
+- `video_metadata_merge_test.dart`：每类上限 / 0 不限 / 剧照恒 1 / 同 URL 去重 / 原语槽次序与落选。
+- `anidb_hash_config_test.dart`：图片上限与人物图偏好读取（负数回默认）、进指纹。
+- `video_metadata_provider_contract_test.dart`：原语不在资料语言序时补拉一次 `/images`，重复 URL 不进池。
+- `settings_schema_coverage_test.dart`：四个新设置项登记专项覆盖。
+- `interconnect_video_metadata_ordering_host_test.dart`：能力位、列分组 + current、设排序写行 / 上锁 / 带分组 lookup 重刮、选回默认、无 TMDB 身份空表、未知键 409、坏 groupId 400。

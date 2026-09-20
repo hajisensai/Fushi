@@ -363,6 +363,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 视频刮削元数据同步 / 远程刮削 / 代刮回写（`/api/library/metadata*`）。老
         // host 无此字段 → client 跳过元数据同步并隐藏远程刮削入口。
         'videoMetadata': _libraryService is VideoMetadataHost,
+        // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
+        'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
         'serviceConfig': _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。

@@ -1943,6 +1943,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await widget.remote?.scrapeForHost?.call(_collection);
         if (mounted) await _reload();
         return;
+      case _CollectionManageAction.tmdbOrderingOnHost:
+        await widget.remote?.chooseTmdbOrderingOnHost?.call(_collection);
+        if (mounted) await _reload();
+        return;
       case _CollectionManageAction.splitBySeason:
         await _splitBySeason();
         return;
@@ -2088,6 +2092,12 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 Icons.cloud_upload_outlined,
                 t.remote_collection_scrape_push_to_host,
               ),
+            if (widget.remote?.chooseTmdbOrderingOnHost != null)
+              _manageMenuItem(
+                _CollectionManageAction.tmdbOrderingOnHost,
+                Icons.low_priority,
+                t.remote_collection_tmdb_ordering_on_host,
+              ),
             _manageMenuItem(
               _CollectionManageAction.splitBySeason,
               Icons.call_split,
@@ -2206,6 +2216,7 @@ enum _CollectionManageAction {
   resetCover,
   rescrape,
   tmdbOrdering,
+  tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
   renameEpisodes,

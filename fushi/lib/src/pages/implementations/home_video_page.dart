@@ -7014,7 +7014,70 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               widget.scrapeTaskController == null
           ? null
           : _scrapeCollectionForHost,
+      chooseTmdbOrderingOnHost:
+          _metadataBackend == null ? null : _chooseTmdbOrderingOnHost,
     );
+  }
+
+  /// TMDB 备选排序在 host 上选：列表从 host 拿（host 的 TMDB 配置 / 网络），选定
+  /// 后 host 写行 + 锁 + 重刮，回传 entry 落本地镜像（与 7a 同一收尾）。
+  Future<void> _chooseTmdbOrderingOnHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    if (backend == null) return;
+    VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    try {
+      var listed = await backend.listRemoteVideoMetadataEpisodeGroups(key: key);
+      if (listed.conflict?.conflict == VideoMetadataConflict.ambiguousWork) {
+        if (!mounted) return;
+        final VideoMetadataWorkKey? picked =
+            await _pickRemoteWorkKey(listed.conflict!.ambiguousWorks);
+        if (picked == null) return;
+        key = picked;
+        listed = await backend.listRemoteVideoMetadataEpisodeGroups(key: key);
+      }
+      final VideoMetadataEpisodeGroupListing? listing = listed.listing;
+      if (!mounted) return;
+      if (listing == null) {
+        await _finishRemoteMetadataWrite(listed.conflict!);
+        return;
+      }
+      if (listing.groups.isEmpty && listing.current == null) {
+        FushiToast.show(
+          msg: t.collection_tmdb_ordering_none,
+          severity: ToastSeverity.info,
+        );
+        return;
+      }
+      final VideoTmdbOrderingChoice? choice = await showVideoTmdbOrderingPicker(
+        context: context,
+        groups: listing.groups,
+        initial: listing.current,
+      );
+      if (choice == null || !mounted) return;
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_saved,
+        severity: ToastSeverity.info,
+      );
+      await _finishRemoteMetadataWrite(
+        await backend.setRemoteVideoMetadataEpisodeGroup(
+          key: key,
+          groupId: choice.groupId,
+        ),
+      );
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.chooseTmdbOrderingOnHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   // ── 互联刮削元数据（7a / 7b）────────────────────────────────────────────

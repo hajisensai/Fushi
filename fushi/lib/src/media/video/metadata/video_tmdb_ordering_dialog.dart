@@ -66,10 +66,10 @@ Future<bool> chooseVideoTmdbOrdering({
     );
     return false;
   }
-  final _OrderingChoice? picked = await showAppDialog<_OrderingChoice>(
+  final VideoTmdbOrderingChoice? picked = await showVideoTmdbOrderingPicker(
     context: context,
-    builder: (BuildContext context) =>
-        _VideoTmdbOrderingDialog(groups: groups, initial: row.episodeGroupId),
+    groups: groups,
+    initial: row.episodeGroupId,
   );
   if (picked == null || !context.mounted) return false;
   await database.setVideoMetadataWorkEpisodeGroup(workId, picked.groupId);
@@ -93,10 +93,23 @@ Future<bool> chooseVideoTmdbOrdering({
 }
 
 /// 对话框返回值：`groupId == null` = TMDB 默认排序（与「取消」区分开）。
-class _OrderingChoice {
-  const _OrderingChoice(this.groupId);
+class VideoTmdbOrderingChoice {
+  const VideoTmdbOrderingChoice(this.groupId);
   final String? groupId;
 }
+
+/// 只弹选择框（不写库）：本机与互联远端两条路径共用同一张列表，数据源由调用方给。
+/// 取消 → null。
+Future<VideoTmdbOrderingChoice?> showVideoTmdbOrderingPicker({
+  required BuildContext context,
+  required List<VideoMetadataEpisodeGroupSummary> groups,
+  required String? initial,
+}) =>
+    showAppDialog<VideoTmdbOrderingChoice>(
+      context: context,
+      builder: (BuildContext context) =>
+          _VideoTmdbOrderingDialog(groups: groups, initial: initial),
+    );
 
 class _VideoTmdbOrderingDialog extends StatefulWidget {
   const _VideoTmdbOrderingDialog({required this.groups, required this.initial});
@@ -169,7 +182,8 @@ class _VideoTmdbOrderingDialogState extends State<_VideoTmdbOrderingDialog> {
         adaptiveDialogAction(
           context: context,
           isDefaultAction: true,
-          onPressed: () => Navigator.pop(context, _OrderingChoice(_selected)),
+          onPressed: () =>
+              Navigator.pop(context, VideoTmdbOrderingChoice(_selected)),
           child: Text(t.dialog_save),
         ),
       ],
