@@ -878,6 +878,35 @@ void main() {
           roleName: role,
         );
 
+    test('追加的补充条目 order 接在主表之后，不与主表从 0 起交错', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 0),
+          mal('Ichinose, Kana', 'Fern').copyWith(order: 1),
+        ],
+        <VideoMetadataCredit>[
+          // 第二 cour / TMDB 汇总各自从 0 起。
+          mal('Kobayashi, Chiaki', 'Stark').copyWith(order: 0),
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 1),
+          mal('Toyosaki, Aki', 'Ubel').copyWith(order: 2),
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>[
+          'Tanezaki, Atsumi',
+          'Ichinose, Kana',
+          'Kobayashi, Chiaki',
+          'Toyosaki, Aki',
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.order).toList(),
+        <int>[0, 1, 2, 3],
+        reason: '落库后 ORDER BY sortOrder 才不会让第二季配角插进第一季主角中间',
+      );
+    });
+
     test('MAL「姓, 名」声优与 TMDB「名 姓」演员 + (voice) 角色认成同一条', () {
       final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
         <VideoMetadataCredit>[mal('Tanezaki, Atsumi', 'Frieren')],

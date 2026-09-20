@@ -4,6 +4,7 @@
 /// 不因此变为新的主资料源。
 library;
 
+import 'dart:math';
 import 'package:fushi_engine/media/video/metadata/tmdb_episode_matcher.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
@@ -722,12 +723,17 @@ List<VideoMetadataCredit> mergeVideoMetadataCredits(
     for (int index = 0; index < result.length; index++)
       _creditKey(result[index]): index,
   };
+  // 追加条目的 order 接在主表之后：补充表（第二 cour / TMDB 汇总）各自从 0 起，
+  // 落库后读侧 ORDER BY sortOrder 会让第二季配角与第一季主角交错。
+  int nextOrder = result.isEmpty
+      ? 0
+      : result.map((VideoMetadataCredit c) => c.order).reduce(max) + 1;
   for (final VideoMetadataCredit credit in supplement) {
     final String key = _creditKey(credit);
     final int? existingIndex = indexByKey[key];
     if (existingIndex == null) {
       indexByKey[key] = result.length;
-      result.add(credit);
+      result.add(credit.copyWith(order: nextOrder++));
     } else {
       result[existingIndex] = _mergeCredit(result[existingIndex], credit);
     }
