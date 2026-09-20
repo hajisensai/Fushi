@@ -5147,5 +5147,13 @@
   "collection_tmdb_ordering_unavailable": "作品还没有 TMDB 身份，先刮削",
   "collection_tmdb_ordering_saved": "已选定排序，正在重刮…",
   "collection_tmdb_ordering_counts": "$groups 组 · $episodes 集",
-  "video_work_field_episode_group": "TMDB 集编排"
+  "video_work_field_episode_group": "TMDB 集编排",
+  "collection_episode_link_manual": "手动指定季集…",
+  "collection_episode_link_hint": "钉死这个文件对应的季集，之后每次刮削都保留（Shoko UserVerified）。",
+  "collection_episode_link_season": "第 $number 季",
+  "collection_episode_link_episode": "第 $number 集",
+  "collection_episode_link_saved": "已手动指定季集，刮削时保留",
+  "collection_episode_link_clear": "清除手动指定",
+  "collection_episode_link_cleared": "已清除手动指定，下次刮削回到自动链接",
+  "collection_episode_link_unavailable": "先刮出作品资料再指定"
 }

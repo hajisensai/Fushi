@@ -182,6 +182,7 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
           identity?.otherEpisodes ?? const <AnidbEpisodeShare>[])),
       isDeprecated: Value(identity?.isDeprecated ?? false),
       fileState: Value(identity?.fileState ?? 0),
+      animeType: Value(identity?.animeType ?? ''),
       filePath: Value(record.filePath),
       fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
       missAttempts: Value(identity == null ? record.missAttempts : 0),
@@ -217,6 +218,7 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
               otherEpisodes: decodeOtherEpisodes(row.otherEpisodes),
               isDeprecated: row.isDeprecated,
               fileState: row.fileState,
+              animeType: row.animeType,
             ),
       filePath: row.filePath,
       fileModifiedAt: row.fileModifiedAt == null

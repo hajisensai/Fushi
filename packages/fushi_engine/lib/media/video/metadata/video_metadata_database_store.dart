@@ -30,6 +30,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.d
   return (parsed.season ?? 1, episode);
 }
 
+/// 分集行 `anidb_match_rating` 的「用户手动钉死」值（Shoko `MatchRating.UserVerified`）；
+/// 其余值是 `TmdbEpisodeMatchRating.name`。
+const String kUserVerifiedMatchRating = 'userVerified';
+
 /// 一个文件的 AniDB 集身份 + 它与 TMDB 集链接的评级（Shoko
 /// `CrossRef_AniDB_TMDB_Episode`），随绑定写到分集行。[matchRating] 为 null =
 /// 没经 TMDB 逐集链接（无 TMDB 剧 / 没对上），只记 AniDB 原生身份。

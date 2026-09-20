@@ -1685,6 +1685,23 @@ class VideoMetadataEpisodes extends Table {
       ];
 }
 
+// ── video_episode_binding_overrides ─────────────────────────────────
+/// v111：用户手动钉死的「文件 → 卡片 (季, 集)」绑定（Shoko
+/// `CrossRef_AniDB_TMDB_Episode.MatchRating = UserVerified`）。刮削时协调器把它
+/// 当作最高优先级的分集键：AniDB 集级链接、文件名解析都不再改这一集；分集行的
+/// `anidb_match_rating` 写 `userVerified`。删视频随 FK 一起清；清除手动指定即删行。
+@DataClassName('VideoEpisodeBindingOverrideRow')
+class VideoEpisodeBindingOverrides extends Table {
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+  IntColumn get seasonNumber => integer()();
+  IntColumn get episodeNumber => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{bookUid};
+}
+
 // ── video_metadata_people / characters ──────────────────────────────
 // TEXT 主键由抓取层生成（首个可用 provider + 外部 id；无 id 时使用规范化内容 hash），
 // 让一次事务可在插入 credit 前确定引用，并允许多个 provider identity 汇聚到同一人。
@@ -3142,6 +3159,11 @@ class AnidbFileIdentities extends Table {
 
   /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
   IntColumn get fileState => integer().withDefault(const Constant(0))();
+
+  /// v111：AniDB 动画类型原文（FILE amask 的 anime type：`TV Series` / `Movie` /
+  /// `OVA` / `Web` / `TV Special` / `Music Video` / `Other`）；'' = 旧行未取到。
+  /// Shoko 的作品形态（剧集 / 电影）由它决定，本仓单文件作品的 kind 跟它走。
+  TextColumn get animeType => text().withDefault(const Constant(''))();
   IntColumn get resolvedAt => integer()();
   IntColumn get updatedAt => integer()();
 

@@ -703,6 +703,7 @@ void _requireOneVideoMetadataOwner({
   UpdateFeedEntries,
   MangaDownloadJobs,
   AnidbFileIdentities,
+  VideoEpisodeBindingOverrides,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -735,7 +736,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 110;
+  int get schemaVersion => 111;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3370,6 +3371,22 @@ class FushiDatabase extends _$FushiDatabase
               }
             }
             await _ensureIndexes();
+          }
+          if (from < 111) {
+            // v111：① anidb_file_identities.anime_type——FILE amask 取回的 AniDB
+            // 动画类型，Shoko 的作品形态来源（存量行 ''，下次 FILE 命中时补）；
+            // ② video_episode_binding_overrides——用户手动钉死的文件 → 季集绑定
+            // （Shoko UserVerified），刮削时最高优先级、每次重刮都保留。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists('anidb_file_identities', 'anime_type')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.animeType,
+              );
+            }
+            if (!await _tableExists('video_episode_binding_overrides')) {
+              await m.createTable(videoEpisodeBindingOverrides);
+            }
           }
         },
         onCreate: (m) async {

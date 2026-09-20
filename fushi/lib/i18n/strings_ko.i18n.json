@@ -5147,5 +5147,13 @@
   "collection_tmdb_ordering_unavailable": "No TMDB identity yet; scrape the show first",
   "collection_tmdb_ordering_saved": "Ordering saved, rescraping…",
   "collection_tmdb_ordering_counts": "$groups groups · $episodes episodes",
-  "video_work_field_episode_group": "TMDB episode ordering"
+  "video_work_field_episode_group": "TMDB episode ordering",
+  "collection_episode_link_manual": "Pin to season/episode…",
+  "collection_episode_link_hint": "Pin which episode this file is. Kept on every rescrape (Shoko UserVerified).",
+  "collection_episode_link_season": "Season $number",
+  "collection_episode_link_episode": "Episode $number",
+  "collection_episode_link_saved": "Episode pinned; kept on rescrape",
+  "collection_episode_link_clear": "Clear manual pin",
+  "collection_episode_link_cleared": "Manual pin cleared; the next scrape links automatically",
+  "collection_episode_link_unavailable": "Scrape the show first"
 }

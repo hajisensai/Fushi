@@ -1478,6 +1478,12 @@ class VideoSourceScrapeCoordinator
         }
       }
     }
+    // 用户手动钉死的季集（Shoko `MatchRating.UserVerified`）：最高优先级，
+    // AniDB 集级链接与文件名解析都不再动这些成员。
+    final Map<String, VideoEpisodeBindingOverrideRow> userVerified =
+        await database.getVideoEpisodeBindingOverrides(<String>[
+      for (final VideoBookRow member in localWork.members) member.bookUid,
+    ]);
     // Shoko 主路径（`MatchAnidbToTmdbEpisodes`）：有 AniDB 文件身份的成员，
     // 它落到哪一集由 AniDB 集（播出日 + 三语集标题）在 TMDB 剧全部季里逐集
     // 对出来决定，文件名解析的季集只是没有身份时的退路。Shoko 里文件名从不
@@ -1523,11 +1529,35 @@ class VideoSourceScrapeCoordinator
           linked.specialLinks,
           episodeOverrides,
           warnings,
+          skipMembers: userVerified.keys.toSet(),
         );
         episodeOverrides = applied.overrides;
         anidbXrefs = <String, AnidbEpisodeXref>{...anidbXrefs, ...applied.xrefs};
         anidbAdditional = applied.additional;
       }
+    }
+    if (userVerified.isNotEmpty) {
+      episodeOverrides = <String, (int, int)>{
+        ...episodeOverrides,
+        for (final VideoEpisodeBindingOverrideRow row in userVerified.values)
+          row.bookUid: (row.seasonNumber, row.episodeNumber),
+      };
+      anidbXrefs = <String, AnidbEpisodeXref>{
+        ...anidbXrefs,
+        for (final MapEntry<String, AnidbFileIdentity> entry
+            in hashEvidence.identities.entries)
+          if (userVerified.containsKey(entry.key))
+            entry.key: AnidbEpisodeXref(
+              episodeId: entry.value.episodeId,
+              episodeNumber: entry.value.episodeNumber,
+              matchRating: kUserVerifiedMatchRating,
+            ),
+      };
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          message:
+              '${userVerified.length} 个文件按用户手动指定的季集绑定（UserVerified），本轮不改：'
+              '${userVerified.values.map((VideoEpisodeBindingOverrideRow r) => '${p.basename(localWork.members.firstWhere((VideoBookRow m) => m.bookUid == r.bookUid).videoPath)} → 第 ${r.seasonNumber} 季第 ${r.episodeNumber} 集').join('、')}。'));
     }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
     // MAL 映射唯一为前提——那是 MAL 那边的事。唯一不写的情况是它与已确认的
@@ -2609,8 +2639,9 @@ class VideoSourceScrapeCoordinator
     Map<int, AnidbTmdbEpisodeLink> links,
     Map<int, AnidbTmdbEpisodeLink> specialLinks,
     Map<String, (int, int)> episodeOverrides,
-    List<SourceScrapeIssue> warnings,
-  ) {
+    List<SourceScrapeIssue> warnings, {
+    Set<String> skipMembers = const <String>{},
+  }) {
     final Map<String, AnidbEpisodeXref> xrefs = <String, AnidbEpisodeXref>{};
     final Map<String, Map<(int, int), AnidbEpisodeXref>> additional =
         <String, Map<(int, int), AnidbEpisodeXref>>{};
@@ -2633,6 +2664,8 @@ class VideoSourceScrapeCoordinator
     for (final VideoBookRow member in localWork.members) {
       final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
       if (identity == null) continue;
+      // 用户手动钉死的成员（UserVerified）：主集与其余集都不由自动链接决定。
+      if (skipMembers.contains(member.bookUid)) continue;
       // 一文件多集：其余集各自成链、各自落成同一文件的额外绑定（Shoko
       // `CrossRef_File_Episode` 一文件多条）。主集没链上不影响其余集。
       for (final AnidbEpisodeShare share in identity.otherEpisodes) {

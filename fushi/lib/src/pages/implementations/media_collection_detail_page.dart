@@ -8,6 +8,7 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
+import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
@@ -1797,6 +1798,19 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ],
             ),
           ),
+        // 集级 UserVerified（Shoko）：把这个文件钉到规范作品的某一季某一集，之后
+        // 每次刮削都保留。只对本地文件、且合集已刮出剧集作品时出现。
+        if (episode.local != null && _canonicalWork?.mediaType == 'tv')
+          PopupMenuItem<_EpisodeMenuAction>(
+            value: _EpisodeMenuAction.pinEpisode,
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.push_pin_outlined, size: 20),
+                const SizedBox(width: 12),
+                Text(t.collection_episode_link_manual),
+              ],
+            ),
+          ),
         PopupMenuItem<_EpisodeMenuAction>(
           value: _EpisodeMenuAction.removeFromCollection,
           child: Row(
@@ -1817,11 +1831,30 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         await _showEpisodeMediaInfo(episode);
       case _EpisodeMenuAction.clearWatchProgress:
         await _clearEpisodeWatchProgress(episode);
+      case _EpisodeMenuAction.pinEpisode:
+        await _pinEpisodeBinding(episode);
       case _EpisodeMenuAction.removeFromCollection:
         await _removeEpisode(episode);
       case null:
         break;
     }
+  }
+
+  /// 手动指定这个文件对应的季集（Shoko UserVerified）：写覆盖表并立刻改绑分集行，
+  /// 重载后集卡的集名 / AniDB 角标跟着新行走。
+  Future<void> _pinEpisodeBinding(CollectionEpisodeSlot episode) async {
+    final VideoBookRow? local = episode.local;
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (local == null || work == null) return;
+    final bool changed = await pinVideoEpisodeBinding(
+      context: context,
+      database: widget.database,
+      workId: work.id,
+      bookUid: local.bookUid,
+    );
+    if (!changed || !mounted) return;
+    widget.onChanged();
+    await _reload();
   }
 
   /// 清除某一集的观看进度（行级四列 + 互联 LWW 镜像键，见
@@ -2164,6 +2197,7 @@ enum _EpisodeMenuAction {
   download,
   mediaInfo,
   clearWatchProgress,
+  pinEpisode,
   removeFromCollection,
 }
 

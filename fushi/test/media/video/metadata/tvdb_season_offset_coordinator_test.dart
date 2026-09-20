@@ -410,6 +410,60 @@ void main() {
     );
   });
 
+  // Shoko `MatchRating.UserVerified`：用户手动钉死的季集最高优先级，AniDB 集级
+  // 链接与文件名都不再动它，评级写 userVerified。
+  test('a user-pinned episode binding wins over the AniDB episode link',
+      () async {
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    DateTime aired(int tmdbEpisode) =>
+        DateTime.parse('${_TmdbProvider.tybwAirDate(tmdbEpisode)}T00:00:00Z');
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      'Bleach S17E41.mkv':
+          _identity(1, 'The Calamity', 'Kashin', '禍進', airedAt: aired(41)),
+      // 身份说是第 2 集（会链到 S2E42 → 卡片 (5, 2)），用户钉死为第 5 季第 3 集。
+      'Bleach S17E42.mkv':
+          _identity(2, 'Ashes of the Quincy', '', '', airedAt: aired(42)),
+    });
+    // 先把成员书种出来，才能挂手动指定（FK）。
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('book-1'),
+      title: const Value<String>('Bleach'),
+      videoPath: Value<String>(p.join(directory.path, 'Bleach S17E42.mkv')),
+    ));
+    await db.setVideoEpisodeBindingOverride('book-1',
+        seasonNumber: 5, episodeNumber: 3);
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>['Bleach S17E41.mkv', 'Bleach S17E42.mkv'],
+      hash: hash,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
+    expect(bound[(5, 1)]?.$1, 'book-0');
+    expect(bound[(5, 3)]?.$1, 'book-1', reason: '手动指定胜过身份链接');
+    expect(bound[(5, 2)]?.$1, isNull);
+    final Map<(int, int), (int?, String?, String?)> xrefs =
+        await episodeXrefs();
+    expect(xrefs[(5, 3)], (302, '02', 'userVerified'),
+        reason: 'AniDB 身份仍随文件记录，评级标 UserVerified');
+    expect(
+      report.warnings.any((SourceScrapeIssue i) =>
+          i.message.contains('UserVerified') &&
+          i.message.contains('Bleach S17E42.mkv') &&
+          i.message.contains('第 5 季第 3 集')),
+      isTrue,
+      reason: '${report.warnings.map((i) => i.message)}',
+    );
+    expect(
+      report.warnings.any((SourceScrapeIssue i) =>
+          i.message.contains('Bleach S17E42.mkv') && i.message.contains('按身份归位')),
+      isFalse,
+      reason: '钉死的成员不再被自动链接归位',
+    );
+  });
+
   // Shoko 按 AniDB 作品建多个 series：同一播放列表里两部不同的电视剧（这里是
   // TYBW 第 1、2 cour，各自是独立 AniDB 作品）→ 拆成两个合集各自刮，原合集删除。
   test(

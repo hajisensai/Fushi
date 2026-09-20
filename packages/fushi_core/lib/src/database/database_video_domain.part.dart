@@ -527,6 +527,106 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
+  // ── video_episode_binding_overrides（v111，Shoko UserVerified）──
+
+  /// 某文件的手动季集指定；没有 → null。
+  Future<VideoEpisodeBindingOverrideRow?> getVideoEpisodeBindingOverride(
+    String bookUid,
+  ) =>
+      (select(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  /// 一批文件的手动季集指定（刮削一个作品单元时按成员批量取）。
+  Future<Map<String, VideoEpisodeBindingOverrideRow>>
+      getVideoEpisodeBindingOverrides(Iterable<String> bookUids) async {
+    final List<String> uids = bookUids.toList(growable: false);
+    if (uids.isEmpty) return const <String, VideoEpisodeBindingOverrideRow>{};
+    final List<VideoEpisodeBindingOverrideRow> rows =
+        await (select(videoEpisodeBindingOverrides)
+              ..where(($VideoEpisodeBindingOverridesTable t) =>
+                  t.bookUid.isIn(uids)))
+            .get();
+    return <String, VideoEpisodeBindingOverrideRow>{
+      for (final VideoEpisodeBindingOverrideRow row in rows) row.bookUid: row,
+    };
+  }
+
+  /// 写 / 覆盖某文件的手动季集指定。
+  Future<void> setVideoEpisodeBindingOverride(
+    String bookUid, {
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      into(videoEpisodeBindingOverrides).insertOnConflictUpdate(
+        VideoEpisodeBindingOverridesCompanion.insert(
+          bookUid: bookUid,
+          seasonNumber: seasonNumber,
+          episodeNumber: episodeNumber,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+  /// 清除手动季集指定；下次刮削回到自动链接。
+  Future<void> clearVideoEpisodeBindingOverride(String bookUid) =>
+      (delete(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .go();
+
+  /// 把 [bookUid] 立刻改绑到 [workId] 下的 (季, 集) 分集行：原先绑它的行解绑
+  /// （AniDB 身份三列随之清），目标行绑上并继承该文件的 AniDB eid / 原生集号、
+  /// 评级写 `userVerified`。目标行不存在返回 false（UI 只让选已有的集）。
+  Future<bool> rebindVideoEpisodeToBook({
+    required int workId,
+    required String bookUid,
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      transaction(() async {
+        final VideoMetadataSeasonRow? season =
+            await (select(videoMetadataSeasons)
+                  ..where(($VideoMetadataSeasonsTable t) =>
+                      t.workId.equals(workId) &
+                      t.seasonNumber.equals(seasonNumber)))
+                .getSingleOrNull();
+        if (season == null) return false;
+        final VideoMetadataEpisodeRow? target =
+            await (select(videoMetadataEpisodes)
+                  ..where(($VideoMetadataEpisodesTable t) =>
+                      t.seasonId.equals(season.id) &
+                      t.episodeNumber.equals(episodeNumber)))
+                .getSingleOrNull();
+        if (target == null) return false;
+        final List<VideoMetadataEpisodeRow> bound =
+            await getVideoMetadataEpisodesByBook(bookUid);
+        final VideoMetadataEpisodeRow? primary = bound.firstOrNull;
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        for (final VideoMetadataEpisodeRow row in bound) {
+          if (row.id == target.id) continue;
+          await (update(videoMetadataEpisodes)
+                ..where(($VideoMetadataEpisodesTable t) => t.id.equals(row.id)))
+              .write(VideoMetadataEpisodesCompanion(
+            bookUid: const Value<String?>(null),
+            anidbEpisodeId: const Value<int?>(null),
+            anidbEpisodeNumber: const Value<String?>(null),
+            anidbMatchRating: const Value<String?>(null),
+            updatedAt: Value<int>(now),
+          ));
+        }
+        await (update(videoMetadataEpisodes)
+              ..where(($VideoMetadataEpisodesTable t) => t.id.equals(target.id)))
+            .write(VideoMetadataEpisodesCompanion(
+          bookUid: Value<String?>(bookUid),
+          anidbEpisodeId: Value<int?>(primary?.anidbEpisodeId),
+          anidbEpisodeNumber: Value<String?>(primary?.anidbEpisodeNumber),
+          anidbMatchRating: const Value<String?>('userVerified'),
+          updatedAt: Value<int>(now),
+        ));
+        return true;
+      });
+
   /// 绑到同一个文件的全部分集行（v110 起一文件可绑多集：AniDB FILE 的 other
   /// episodes），按季、集排序。
   Future<List<VideoMetadataEpisodeRow>> getVideoMetadataEpisodesByBook(
