@@ -138,12 +138,14 @@ class JellyfinServerConfig {
     if (serverUrl.isEmpty || userId.isEmpty || accessToken.isEmpty) {
       return null;
     }
+    // 与 _addRoute 同口径先归一化（手改 JSON / 备份还原带尾斜杠或大写 scheme
+    // 时，否则 contains 不中、active 静默回落主地址）。
     final List<String> alternateUrls = normalizeAlternateUrls(
       serverUrl,
       <String>[
         for (final Object? raw
             in (json['alternateUrls'] as List?) ?? const <Object?>[])
-          if (raw is String) raw,
+          if (raw is String) JellyfinApi.normalizeServerUrl(raw),
       ],
     );
     return JellyfinServerConfig(
@@ -160,9 +162,35 @@ class JellyfinServerConfig {
           ? JellyfinApi.kLegacyDeviceId
           : json['deviceId'] as String,
       alternateUrls: alternateUrls,
-      activeServerUrl: (json['activeServerUrl'] as String?) ?? '',
+      activeServerUrl: JellyfinApi.normalizeServerUrl(
+        (json['activeServerUrl'] as String?) ?? '',
+      ),
     );
   }
+
+  /// 这台服务器是否经 [url] 可达（登录地址或任一备用线路）。同一账号从任一线路
+  /// 重新登录都算同一台——否则令牌过期时用公网地址再登一次会生成第二条记录
+  /// （两个 sourceId / 两套封面 namespace / 两张卡）。
+  bool ownsRoute(String url) => routeUrls.contains(url);
+
+  /// 重新登录后的配置：身份锚（登录地址）、线路、库选择照旧，只换会话字段，
+  /// 并把本次真正连通的 [signedInUrl] 设为当前线路（它是登录地址时 active 清空）。
+  JellyfinServerConfig withRefreshedSession({
+    required String username,
+    required String accessToken,
+    required String deviceId,
+    required String signedInUrl,
+    String? serverName,
+  }) => JellyfinServerConfig(
+    serverUrl: serverUrl,
+    username: username,
+    userId: userId,
+    accessToken: accessToken,
+    serverName: serverName ?? this.serverName,
+    libraryIds: libraryIds,
+    deviceId: deviceId,
+    alternateUrls: alternateUrls,
+  ).copyWithRoutes(activeServerUrl: signedInUrl);
 
   /// 备用线路清单的唯一整理点：去空、去重、剔掉与主地址 [serverUrl] 相同的项，
   /// 保持首次出现顺序。[fromJson]（旧 JSON 手改 / 备份还原）与 [copyWithRoutes]

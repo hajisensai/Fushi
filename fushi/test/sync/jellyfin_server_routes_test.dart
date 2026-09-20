@@ -103,6 +103,48 @@ void main() {
       expect(c.activeServerUrl, isEmpty);
     });
 
+    test('ownsRoute：登录地址与备用线路都算这台；别的地址不算', () {
+      final JellyfinServerConfig c = _base.copyWithRoutes(
+        alternateUrls: <String>[_wan],
+      );
+      expect(c.ownsRoute(_lan), isTrue);
+      expect(c.ownsRoute(_wan), isTrue);
+      expect(c.ownsRoute(_proxy), isFalse);
+    });
+
+    test('withRefreshedSession：经备用线路重登只换令牌，身份/线路/库选择照旧、'
+        'active 切到本次登录地址；经登录地址重登 active 清空', () {
+      final JellyfinServerConfig c = _base.copyWithRoutes(
+        alternateUrls: <String>[_wan, _proxy],
+        activeServerUrl: _proxy,
+      );
+      final JellyfinServerConfig viaWan = c.withRefreshedSession(
+        username: 'alice',
+        accessToken: 'tok-2',
+        deviceId: 'dev-2',
+        signedInUrl: _wan,
+      );
+      expect(viaWan.serverUrl, _lan, reason: '身份锚不变，sourceId 不变');
+      expect(_idOf(viaWan), _idOf(_base));
+      expect(viaWan.accessToken, 'tok-2');
+      expect(viaWan.deviceId, 'dev-2');
+      expect(viaWan.serverName, 'NAS', reason: '没给 serverName 时沿用旧值');
+      expect(viaWan.libraryIds, <String>['lib-anime']);
+      expect(viaWan.alternateUrls, <String>[_wan, _proxy]);
+      expect(viaWan.effectiveServerUrl, _wan);
+
+      final JellyfinServerConfig viaLan = c.withRefreshedSession(
+        username: 'alice',
+        accessToken: 'tok-3',
+        deviceId: 'dev-1',
+        signedInUrl: _lan,
+        serverName: 'NAS2',
+      );
+      expect(viaLan.activeServerUrl, '');
+      expect(viaLan.effectiveServerUrl, _lan);
+      expect(viaLan.serverName, 'NAS2');
+    });
+
     test('copyWithLibraryIds 保留线路', () {
       final JellyfinServerConfig c = _base
           .copyWithRoutes(alternateUrls: <String>[_wan], activeServerUrl: _wan)
@@ -158,6 +200,21 @@ void main() {
           'accessToken': 'tok-1',
           'alternateUrls': <Object?>[_lan, _wan, 42, _wan, ''],
           'activeServerUrl': _wan,
+        },
+      );
+      expect(back!.alternateUrls, <String>[_wan]);
+      expect(back.effectiveServerUrl, _wan);
+    });
+
+    test('JSON 里的线路带尾斜杠 / 大写 scheme：读回时归一化，active 仍命中', () {
+      final JellyfinServerConfig? back = JellyfinServerConfig.fromJson(
+        <String, dynamic>{
+          'serverUrl': _lan,
+          'username': 'alice',
+          'userId': 'u-alice',
+          'accessToken': 'tok-1',
+          'alternateUrls': <Object?>['HTTPS://emby.example.com/'],
+          'activeServerUrl': 'https://emby.example.com/',
         },
       );
       expect(back!.alternateUrls, <String>[_wan]);

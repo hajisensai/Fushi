@@ -190,12 +190,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       );
       // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
       // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
-      final String id = _idOf(fresh);
+      // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
+      // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
       final List<JellyfinServerConfig> existing =
           await _syncRepo.getJellyfinServers();
       JellyfinServerConfig? previous;
       for (final JellyfinServerConfig s in existing) {
-        if (_idOf(s) == id) {
+        if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
           previous = s;
           break;
         }
@@ -203,7 +204,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       await _syncRepo.upsertJellyfinServer(
         previous == null
             ? fresh
-            : fresh.copyWithLibraryIds(previous.libraryIds),
+            : previous.withRefreshedSession(
+                username: username,
+                accessToken: auth.accessToken,
+                deviceId: deviceId,
+                signedInUrl: serverUrl,
+                serverName: auth.serverName,
+              ),
       );
       if (!mounted) return;
       _urlController.clear();
