@@ -10,6 +10,7 @@ class VideoMetadataSearchRequest {
     this.year,
     this.seasonNumber,
     this.limit = 15,
+    this.includeAdult = false,
   });
 
   final String title;
@@ -17,6 +18,12 @@ class VideoMetadataSearchRequest {
   final int? year;
   final int? seasonNumber;
   final int limit;
+
+  /// 作品已知是成人向（AniDB `restricted` / MAL `Rx`）时让 TMDB 搜索带
+  /// `include_adult=true`（Shoko `AutoSearchForShow(includeRestricted:
+  /// anime.IsRestricted)`）；TMDB 默认把成人条目从搜索结果里剔掉，不带这个
+  /// 参数这类作品永远补不到 TMDB。
+  final bool includeAdult;
 }
 
 class VideoMetadataLookup {

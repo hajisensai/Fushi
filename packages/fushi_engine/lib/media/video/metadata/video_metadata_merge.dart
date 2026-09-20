@@ -566,10 +566,12 @@ class AnidbTmdbEpisodeLink {
   final (int, int)? cardKey;
 }
 
-/// [linkAnidbEpisodesToTmdb] 的结果：可能补了分集的作品 + 每个 AniDB 集号的链接。
+/// [linkAnidbEpisodesToTmdb] 的结果：可能补了分集的作品 + 每个 AniDB 正片集号的
+/// 链接 + 每个 AniDB 特典序号（`S3` → 3）的链接（落在卡片第 0 季）。
 typedef AnidbEpisodeLinkOutcome = ({
   VideoMetadataWork work,
   Map<int, AnidbTmdbEpisodeLink> links,
+  Map<int, AnidbTmdbEpisodeLink> specialLinks,
 });
 
 /// Shoko `MatchAnidbToTmdbEpisodes` 的主路径：本地文件的 AniDB 集身份（集号 +
@@ -589,24 +591,41 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   VideoMetadataWork primary,
   VideoMetadataWork? tmdb,
   List<TmdbEpisodeMatchSource> sources, {
+  List<TmdbEpisodeMatchSource> specialSources =
+      const <TmdbEpisodeMatchSource>[],
   Map<int, TmdbSeasonSlice> slices = const <int, TmdbSeasonSlice>{},
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
   String? preferredLanguage,
 }) {
   final Map<int, AnidbTmdbEpisodeLink> links = <int, AnidbTmdbEpisodeLink>{};
+  final Map<int, AnidbTmdbEpisodeLink> specialLinks =
+      <int, AnidbTmdbEpisodeLink>{};
+  AnidbEpisodeLinkOutcome none() =>
+      (work: primary, links: links, specialLinks: specialLinks);
   final VideoMetadataWork? show =
       primary.provider == VideoMetadataProviderKind.tmdb ? primary : tmdb;
-  if (show == null || sources.isEmpty) return (work: primary, links: links);
+  if (show == null || (sources.isEmpty && specialSources.isEmpty)) {
+    return none();
+  }
   final List<VideoMetadataEpisode> pool = <VideoMetadataEpisode>[
     for (final VideoMetadataSeason season in show.seasons) ...season.episodes,
   ];
-  if (pool.isEmpty) return (work: primary, links: links);
-  final Map<int, TmdbEpisodeMatch> matches = Map<int, TmdbEpisodeMatch>.of(
-      matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases))
-    ..removeWhere((int _, TmdbEpisodeMatch match) =>
-        match.rating == TmdbEpisodeMatchRating.firstAvailable);
-  if (matches.isEmpty) return (work: primary, links: links);
+  if (pool.isEmpty) return none();
+  bool unverified(int _, TmdbEpisodeMatch match) =>
+      match.rating == TmdbEpisodeMatchRating.firstAvailable;
+  final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
+      ? const <int, TmdbEpisodeMatch>{}
+      : (Map<int, TmdbEpisodeMatch>.of(matchEpisodesToTmdb(sources, pool,
+          candidateAliases: candidateAliases))
+        ..removeWhere(unverified));
+  final Map<int, TmdbEpisodeMatch> specialMatches = specialSources.isEmpty
+      ? const <int, TmdbEpisodeMatch>{}
+      : (Map<int, TmdbEpisodeMatch>.of(matchSpecialsToTmdb(
+          specialSources, pool,
+          candidateAliases: candidateAliases))
+        ..removeWhere(unverified));
+  if (matches.isEmpty && specialMatches.isEmpty) return none();
 
   final bool tmdbPrimary = identical(show, primary);
   final bool preferSupplementTitle = _preferSupplementTitle(
@@ -651,22 +670,61 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
       cardKey: cardKey,
     );
   }
-  if (inserts.isEmpty) return (work: primary, links: links);
+  // 特典：TMDB 第 0 季就是卡片第 0 季（补充源整季并进来的 / TMDB 主源自带），
+  // 卡片键 = (0, TMDB 集号)；卡片里没有第 0 季就先建一季只放对上的这几集。
+  final bool hasSeasonZero =
+      primary.seasons.any((VideoMetadataSeason s) => s.seasonNumber == 0);
+  for (final MapEntry<int, TmdbEpisodeMatch> entry in specialMatches.entries) {
+    final VideoMetadataEpisode tmdbEpisode = entry.value.episode;
+    final (int, int) cardKey = (0, tmdbEpisode.episodeNumber);
+    specialLinks[entry.key] = AnidbTmdbEpisodeLink(
+      anidbEpisodeNumber: entry.key,
+      tmdbEpisode: tmdbEpisode,
+      rating: entry.value.rating,
+      cardKey: cardKey,
+    );
+    final bool present = tmdbPrimary ||
+        _tmdbEpisodeKeys(tmdbEpisode).any(cardKeyByTmdbId.containsKey);
+    if (!present) {
+      (inserts[0] ??= <VideoMetadataEpisode>[]).add(tmdbEpisode);
+    }
+  }
+  if (inserts.isEmpty) {
+    return (work: primary, links: links, specialLinks: specialLinks);
+  }
+  final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
+    for (final VideoMetadataSeason season in primary.seasons)
+      if (inserts[season.seasonNumber] case final List<VideoMetadataEpisode> add)
+        season.copyWith(
+          episodes: _mergeEpisodes(
+            season.episodes,
+            add,
+            preferSupplementTitle: preferSupplementTitle,
+          ),
+        )
+      else
+        season,
+    if (!hasSeasonZero)
+      if (inserts[0] case final List<VideoMetadataEpisode> add)
+        VideoMetadataSeason(
+        seasonNumber: 0,
+        title: show.seasons
+                .where((VideoMetadataSeason s) => s.seasonNumber == 0)
+                .firstOrNull
+                ?.title ??
+            'Specials',
+        episodes: _mergeEpisodes(
+          const <VideoMetadataEpisode>[],
+          add,
+          preferSupplementTitle: preferSupplementTitle,
+        ),
+      ),
+  ]..sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
+      a.seasonNumber.compareTo(b.seasonNumber));
   return (
-    work: primary.copyWith(seasons: <VideoMetadataSeason>[
-      for (final VideoMetadataSeason season in primary.seasons)
-        if (inserts[season.seasonNumber] case final List<VideoMetadataEpisode> add)
-          season.copyWith(
-            episodes: _mergeEpisodes(
-              season.episodes,
-              add,
-              preferSupplementTitle: preferSupplementTitle,
-            ),
-          )
-        else
-          season,
-    ]),
+    work: primary.copyWith(seasons: seasons),
     links: links,
+    specialLinks: specialLinks,
   );
 }
 

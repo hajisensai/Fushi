@@ -208,6 +208,21 @@ void main() {
     );
   });
 
+  test('adult content ratings (MAL Rx / AniDB R18+) open TMDB include_adult',
+      () {
+    expect(VideoSourceScrapeCoordinator.isAdultContentRating('Rx - Hentai'),
+        isTrue);
+    expect(VideoSourceScrapeCoordinator.isAdultContentRating('R18+'), isTrue);
+    expect(
+        VideoSourceScrapeCoordinator.isAdultContentRating('R+ - Mild Nudity'),
+        isFalse);
+    expect(
+        VideoSourceScrapeCoordinator.isAdultContentRating(
+            'R - 17+ (violence & profanity)'),
+        isFalse);
+    expect(VideoSourceScrapeCoordinator.isAdultContentRating(null), isFalse);
+  });
+
   // Shoko 的识别链里文件名从不参与：文件落到哪一集由 AniDB 集（播出日 + 集
   // 标题）在 TMDB 剧里逐集对出来决定。文件名对的照旧，文件名错的按身份归位。
   test(
@@ -228,6 +243,9 @@ void main() {
       // 文件名 S17E44 = cour 4 第 4 集，身份第 4 集但只有日文集名（TMDB 只有
       // 英文）：靠播出日对上 S2E44（date 评级），一致。
       'Bleach S17E44.mkv': _identity(4, '', '', '灰の残響', airedAt: aired(44)),
+      // 文件名写成 S00E02，身份是 AniDB 特典 S1「Special #1」：特典只在 TMDB
+      // 第 0 季池里按标题对，落卡片 (0, 1) 而不是文件名的 (0, 2)。
+      'Bleach S00E02.mkv': _special(1, 'Special #1'),
     });
     final SourceScrapeReport report = await scrape(
       mal,
@@ -236,6 +254,7 @@ void main() {
         'Bleach S17E41.mkv',
         'Bleach S17E12.mkv',
         'Bleach S17E44.mkv',
+        'Bleach S00E02.mkv',
       ],
       hash: hash,
     );
@@ -245,6 +264,8 @@ void main() {
     expect(bound[(5, 2)]?.$1, 'book-1', reason: '身份胜过文件名');
     expect(bound[(2, 12)]?.$1, isNull, reason: '不再按文件名落到 cour 1');
     expect(bound[(5, 4)]?.$1, 'book-2', reason: '仅播出日对上也够');
+    expect(bound[(0, 1)]?.$1, 'book-3', reason: 'AniDB S1 → TMDB S0E1');
+    expect(bound[(0, 2)]?.$1, isNull, reason: '文件名的 S00E02 不算数');
     final Iterable<String> messages =
         report.warnings.map((SourceScrapeIssue i) => i.message);
     expect(
@@ -259,8 +280,8 @@ void main() {
     expect(
       messages.any((String m) =>
           m.contains('AniDB 文件身份 → TMDB 集逐集链接') &&
-          m.contains('3 个文件对上') &&
-          m.contains('1 个与文件名不符')),
+          m.contains('4 个文件对上') &&
+          m.contains('2 个与文件名不符')),
       isTrue,
       reason: '$messages',
     );
@@ -298,6 +319,29 @@ AnidbHashIdentityResult _identity(
     );
 
 /// 按文件名给身份（协调器按路径顺序哈希，不能靠调用次序对号）。
+/// AniDB `S` 型特典身份（epno `S<n>`），只有英文集名、无播出日。
+AnidbHashIdentityResult _special(int number, String english) =>
+    AnidbHashIdentityResult(
+      status: AnidbHashIdentityStatus.matched,
+      hash: AnidbEd2kHash(
+          ed2k: '0123456789abcdef0123456789abcdef',
+          size: 900 + number,
+          modifiedAt: DateTime(2026),
+          changedAt: DateTime(2026)),
+      identity: AnidbFileIdentity(
+          fileId: 4900 + number,
+          animeId: 19079,
+          episodeId: 390 + number,
+          episodeNumber: 'S$number',
+          romajiTitle: 'Bleach: Sennen Kessen-hen - Kashin-tan',
+          kanjiTitle: 'BLEACH 千年血戦篇-禍進譚-',
+          englishTitle: '',
+          episodeTitle: english,
+          episodeRomajiTitle: '',
+          episodeKanjiTitle: ''),
+      mapping: AnimeIdentityMappingResult(anidbId: 19079, malIds: <int>{60636}),
+    );
+
 class _HashService extends AnidbHashIdentityService {
   _HashService(this.results)
       : super(

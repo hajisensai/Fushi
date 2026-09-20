@@ -36,6 +36,7 @@ class VideoMetadataResolveRequest {
     this.episodeCount,
     this.confirmedLookup,
     this.fallbackProvider,
+    this.includeAdult = false,
     List<String> identityHints = const <String>[],
   })  : assert(fallbackProvider != selectedProvider),
         titleCandidates = List<String>.unmodifiable(titleCandidates),
@@ -63,6 +64,9 @@ class VideoMetadataResolveRequest {
   final int? episodeCount;
   final VideoMetadataLookup? confirmedLookup;
   final List<String> identityHints;
+
+  /// 透传给 [VideoMetadataSearchRequest.includeAdult]。
+  final bool includeAdult;
 }
 
 class VideoMetadataResolution {
@@ -439,6 +443,7 @@ class VideoMetadataResolver {
           mediaKind: request.mediaKind,
           year: year,
           seasonNumber: request.seasonNumber,
+          includeAdult: request.includeAdult,
         ),
       );
       return <VideoMetadataWork>[

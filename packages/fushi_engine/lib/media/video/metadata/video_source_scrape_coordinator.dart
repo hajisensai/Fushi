@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:meta/meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
@@ -1391,7 +1392,7 @@ class VideoSourceScrapeCoordinator
     if (tmdbShow != null &&
         !hashContradictsCanonical &&
         metadata.kind == VideoMetadataMediaKind.tv) {
-      final List<TmdbEpisodeMatchSource> sources =
+      final _AnidbLinkSources sources =
           _anidbLinkSources(localWork, hashEvidence);
       if (sources.isNotEmpty) {
         tmdbEpisodeAliases ??=
@@ -1399,7 +1400,8 @@ class VideoSourceScrapeCoordinator
         final AnidbEpisodeLinkOutcome linked = linkAnidbEpisodesToTmdb(
           metadata,
           tmdbShow,
-          sources,
+          sources.regular,
+          specialSources: sources.specials,
           slices: await _cardSlices(metadata, expansion, resolvedLookup),
           candidateAliases: tmdbEpisodeAliases,
           preferredLanguage: _locale,
@@ -1409,6 +1411,7 @@ class VideoSourceScrapeCoordinator
           localWork,
           hashEvidence,
           linked.links,
+          linked.specialLinks,
           episodeOverrides,
           warnings,
         );
@@ -1504,6 +1507,17 @@ class VideoSourceScrapeCoordinator
           1 => 'MAL 作品映射=${malIds.single}。',
           _ => 'MAL 映射候选=${malIds.join('/')}（anime-lists 一对多，待确认）。',
         };
+        // Shoko `CrossRef_File_Episode` / `ReleaseInfo.IsCorrupted` 对应的三条
+        // 文件级事实：一文件多集、AniDB 标过时、CRC 不符。本仓一书一集，多集
+        // 文件只绑主集、把其余集记在说明里（多绑定要动进度/卡片模型）。
+        final String fileNotes = <String>[
+          if (identity.otherEpisodes.isNotEmpty)
+            '本文件还覆盖 AniDB 集 ${identity.otherEpisodes.map((AnidbEpisodeShare s) => 'eid ${s.episodeId}（${s.percentage}%）').join('、')}；本仓一文件绑一集，只绑主集 eid ${identity.episodeId}。',
+          if (identity.isDeprecated) 'AniDB 已把这份文件标为过时版本（有更新版本或已撤下）。',
+          if (identity.crcMatches == false)
+            'AniDB 登记的 CRC 与这份文件不符（可能损坏或非官方版本）。',
+          if (identity.fileVersion > 1) '文件版本 v${identity.fileVersion}。',
+        ].join();
         warnings.add(SourceScrapeIssue(
             workTitle: work.title,
             message:
@@ -1513,6 +1527,7 @@ class VideoSourceScrapeCoordinator
                 '${identity.episodeAirDate == null ? '' : '; aired=${identity.episodeAirDate}'}。'
                 '$mappingNote'
                 '季集由 AniDB 集在 TMDB 逐集链接决定（Shoko 式），不推断 MAL 集号。'
+                '$fileNotes'
                 '${result.episodeInfoError == null ? '' : '集播出日补问失败（${result.episodeInfoError}），本轮只按集标题链接。'}'));
       } else if (result.status != AnidbHashIdentityStatus.disabled) {
         warnings.add(SourceScrapeIssue(
@@ -2138,10 +2153,28 @@ class VideoSourceScrapeCoordinator
     return aliases;
   }
 
+  /// 主源分级是否成人向：MAL / Jikan `Rx - Hentai`，AniDB `restricted` 映射的
+  /// `R18+`，以及 TMDB 自己的 `adult` 折成的 `R18+`。`R+ - Mild Nudity` 不算。
+  @visibleForTesting
+  static bool isAdultContentRating(String? contentRating) {
+    final String rating = (contentRating ?? '').trim().toUpperCase();
+    return rating.startsWith('RX') || rating.startsWith('R18');
+  }
+
   /// AniDB epno 的正片集号（`S1` / `C2` / `T1` 等特典前缀 → null）。
   static int? _anidbEpisodeNumber(AnidbFileIdentity? identity) {
     if (identity == null) return null;
     final int? number = int.tryParse(identity.episodeNumber.trim());
+    return number == null || number <= 0 ? null : number;
+  }
+
+  /// AniDB epno 的 `S` 型特典序号（`S3` → 3）；正片与 C/T/P/O → null。Shoko
+  /// 只把 Episode + Special 拿去和 TMDB 对，C/T/P/O 不进池。
+  static int? _anidbSpecialNumber(AnidbFileIdentity? identity) {
+    if (identity == null) return null;
+    final RegExpMatch? match =
+        RegExp(r'^S(\d+)$').firstMatch(identity.episodeNumber.trim());
+    final int? number = match == null ? null : int.tryParse(match.group(1)!);
     return number == null || number <= 0 ? null : number;
   }
 
@@ -2195,22 +2228,31 @@ class VideoSourceScrapeCoordinator
         airDate: identity.episodeAirDate,
       );
 
-  /// Shoko 主路径的来源集：全部带 AniDB 正片身份的成员，按 AniDB 集号去重
-  /// （同一集的 v1/v2 两个文件是同一来源集），**不看文件名**。特典（`S1` /
-  /// `C2` …）不进正片池，留给后续 S0 放置。
-  static List<TmdbEpisodeMatchSource> _anidbLinkSources(
+  /// Shoko 主路径的来源集：全部带 AniDB 身份的成员，正片按集号、`S` 型特典按
+  /// 特典序号各自去重（同一集的 v1/v2 两个文件是同一来源集），**不看文件名**。
+  /// C/T/P/O 型不进任何池（Shoko 同）。
+  static _AnidbLinkSources _anidbLinkSources(
     VideoSourceScrapeWork localWork,
     _HashWorkEvidence evidence,
   ) {
-    final Map<int, TmdbEpisodeMatchSource> byNumber =
+    final Map<int, TmdbEpisodeMatchSource> regular =
+        <int, TmdbEpisodeMatchSource>{};
+    final Map<int, TmdbEpisodeMatchSource> specials =
         <int, TmdbEpisodeMatchSource>{};
     for (final VideoBookRow member in localWork.members) {
       final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
-      final int? epno = _anidbEpisodeNumber(identity);
-      if (identity == null || epno == null) continue;
-      byNumber.putIfAbsent(epno, () => _anidbMatchSource(identity, epno));
+      if (identity == null) continue;
+      if (_anidbEpisodeNumber(identity) case final int epno) {
+        regular.putIfAbsent(epno, () => _anidbMatchSource(identity, epno));
+      } else if (_anidbSpecialNumber(identity) case final int special) {
+        specials.putIfAbsent(
+            special, () => _anidbMatchSource(identity, special));
+      }
     }
-    return byNumber.values.toList(growable: false);
+    return _AnidbLinkSources(
+      regular: regular.values.toList(growable: false),
+      specials: specials.values.toList(growable: false),
+    );
   }
 
   /// 卡片季 → TMDB 切片：多季扩展给的整套；单季卡片时用主 MAL 条目在映射表里
@@ -2262,19 +2304,25 @@ class VideoSourceScrapeCoordinator
     VideoSourceScrapeWork localWork,
     _HashWorkEvidence evidence,
     Map<int, AnidbTmdbEpisodeLink> links,
+    Map<int, AnidbTmdbEpisodeLink> specialLinks,
     Map<String, (int, int)> episodeOverrides,
     List<SourceScrapeIssue> warnings,
   ) {
-    if (links.isEmpty) return episodeOverrides;
+    if (links.isEmpty && specialLinks.isEmpty) return episodeOverrides;
     Map<String, (int, int)> result = episodeOverrides;
     int linkedCount = 0, corrected = 0;
     final Map<TmdbEpisodeMatchRating, int> ratings =
         <TmdbEpisodeMatchRating, int>{};
     for (final VideoBookRow member in localWork.members) {
       final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
-      final int? epno = _anidbEpisodeNumber(identity);
-      final AnidbTmdbEpisodeLink? link = epno == null ? null : links[epno];
-      if (identity == null || link == null) continue;
+      if (identity == null) continue;
+      AnidbTmdbEpisodeLink? link;
+      if (_anidbEpisodeNumber(identity) case final int epno) {
+        link = links[epno];
+      } else if (_anidbSpecialNumber(identity) case final int special) {
+        link = specialLinks[special];
+      }
+      if (link == null) continue;
       final VideoMetadataEpisode tmdb = link.tmdbEpisode;
       final (int, int)? cardKey = link.cardKey;
       if (cardKey == null) {
@@ -2690,6 +2738,9 @@ class VideoSourceScrapeCoordinator
           titleCandidates: candidates,
           year: rootTitles.isEmpty ? primary.year : null,
           seasonNumber: seasonNumber,
+          // Shoko `includeRestricted: anime.IsRestricted`：主源已知成人向才
+          // 让 TMDB 搜索放开 include_adult，其它作品维持 TMDB 默认过滤。
+          includeAdult: isAdultContentRating(primary.contentRating),
         ));
         if (resolution.status == VideoMetadataResolutionStatus.matched) {
           work = resolution.work;
@@ -3700,6 +3751,15 @@ class _SeasonExpansion {
   /// 卡片季号 → 该 MAL cour 在 TMDB 剧里的位置（映射表显式给的 `season.tmdb` /
   /// `episode_offset.tmdb`），供 MAL 缺集时按切片从 TMDB 补分集。
   final Map<int, TmdbSeasonSlice> tmdbSlices;
+}
+
+/// [_anidbLinkSources] 的结果：正片来源集（键 = AniDB 集号）与 `S` 型特典来源集
+/// （键 = 特典序号）。
+class _AnidbLinkSources {
+  const _AnidbLinkSources({required this.regular, required this.specials});
+  final List<TmdbEpisodeMatchSource> regular;
+  final List<TmdbEpisodeMatchSource> specials;
+  bool get isNotEmpty => regular.isNotEmpty || specials.isNotEmpty;
 }
 
 /// [_resolveMappedSeasonHit] 的结果：[index] 为 null 表示映射表认识这一季但

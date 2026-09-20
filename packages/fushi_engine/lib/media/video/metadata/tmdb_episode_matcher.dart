@@ -66,22 +66,52 @@ Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
-}) {
-  final List<_Candidate> pool = <_Candidate>[
-    for (final VideoMetadataEpisode episode in tmdbEpisodes)
-      if (episode.seasonNumber != 0)
-        _Candidate(
-          episode,
-          candidateAliases[(episode.seasonNumber, episode.episodeNumber)] ??
-              const <String>[],
-        ),
-  ]..sort((_Candidate a, _Candidate b) {
-      final int season =
-          a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
-      return season != 0
-          ? season
-          : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
-    });
+}) =>
+    _matchAgainstPool(
+      sources,
+      _pool(tmdbEpisodes, candidateAliases, specials: false),
+    );
+
+/// 特典版：AniDB `S` 型集只在 TMDB 第 0 季池里找（Shoko `GetEpisodeList`：
+/// `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`），评分链与
+/// 正片完全相同；来源集号是特典自己的序号（`S3` → 3）。C/T/P/O 型不进任何池
+///（Shoko 同样只匹配 Episode + Special）。
+Map<int, TmdbEpisodeMatch> matchSpecialsToTmdb(
+  List<TmdbEpisodeMatchSource> sources,
+  Iterable<VideoMetadataEpisode> tmdbEpisodes, {
+  Map<(int, int), List<String>> candidateAliases =
+      const <(int, int), List<String>>{},
+}) =>
+    _matchAgainstPool(
+      sources,
+      _pool(tmdbEpisodes, candidateAliases, specials: true),
+    );
+
+List<_Candidate> _pool(
+  Iterable<VideoMetadataEpisode> tmdbEpisodes,
+  Map<(int, int), List<String>> candidateAliases, {
+  required bool specials,
+}) =>
+    <_Candidate>[
+      for (final VideoMetadataEpisode episode in tmdbEpisodes)
+        if ((episode.seasonNumber == 0) == specials)
+          _Candidate(
+            episode,
+            candidateAliases[(episode.seasonNumber, episode.episodeNumber)] ??
+                const <String>[],
+          ),
+    ]..sort((_Candidate a, _Candidate b) {
+        final int season =
+            a.episode.seasonNumber.compareTo(b.episode.seasonNumber);
+        return season != 0
+            ? season
+            : a.episode.episodeNumber.compareTo(b.episode.episodeNumber);
+      });
+
+Map<int, TmdbEpisodeMatch> _matchAgainstPool(
+  List<TmdbEpisodeMatchSource> sources,
+  List<_Candidate> pool,
+) {
   final List<_Source> ordered = <_Source>[
     for (final TmdbEpisodeMatchSource source in sources) _Source(source),
   ]..sort((_Source a, _Source b) => a.source.number.compareTo(b.source.number));

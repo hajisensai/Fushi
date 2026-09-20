@@ -429,8 +429,22 @@ void main() {
           'https://cdn.anidb.net/images/main/character.jpg',
         );
 
-        expect(work.seasons.single.episodes.length, 2);
-        expect(seasons.single.episodes.length, 2);
+        // 正片一季 + `S` 型特典落第 0 季（Shoko EpisodeType.Special）；C/T/P/O
+        // 不取。
+        expect(work.seasons.map((s) => s.seasonNumber), <int>[1, 0]);
+        expect(work.seasons.first.episodes.length, 2);
+        expect(seasons.map((s) => s.seasonNumber), <int>[1, 0]);
+        expect(seasons.first.episodes.length, 2);
+        final VideoMetadataSeason specials = seasons.last;
+        expect(specials.episodes.single.episodeNumber, 1);
+        expect(specials.episodes.single.seasonNumber, 0);
+        expect(specials.episodes.single.title, 'Special');
+        expect(specials.episodes.single.absoluteNumber, isNull);
+        expect(
+          (await provider.fetchEpisodes(lookup, seasonNumber: 0))
+              .map((VideoMetadataEpisode value) => value.title),
+          <String>['Special'],
+        );
         expect(
           episodes.map((VideoMetadataEpisode value) => value.title),
           <String>['Not a Tool', 'Never Coming Back'],

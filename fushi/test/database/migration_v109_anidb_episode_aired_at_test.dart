@@ -8,7 +8,9 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 /// v109（AniDB 对齐 Shoko，集级）：`anidb_file_identities` 加
 /// `episode_aired_at`——UDP `EPISODE` 返回的集播出日（UTC 零点毫秒），供
-/// AniDB 集 → TMDB 集按「播出日 + 标题」逐集链接。存量行 null，sweep 时补问回填。
+/// AniDB 集 → TMDB 集按「播出日 + 标题」逐集链接；存量行 null，sweep 时补问回填。
+/// 同一步加 FILE 掩码扩展后的 `other_episodes`（一文件多集 JSON）/
+/// `is_deprecated` / `file_state`（CRC 正误、文件版本），存量行取默认值。
 void main() {
   test(
     'v108 → v109 adds nullable episode_aired_at and keeps existing rows',
@@ -26,11 +28,16 @@ void main() {
       expect(await original.getCollectionBookAliases(), isEmpty);
       await original.close();
 
-      // 把表退回 v108 形态（没有 episode_aired_at 列）并塞一行已识别的存量数据。
+      // 把表退回 v108 形态（没有四列新列）并塞一行已识别的存量数据。
       final sqlite.Database raw = sqlite.sqlite3.open(path);
-      raw.execute(
-        'ALTER TABLE anidb_file_identities DROP COLUMN episode_aired_at',
-      );
+      for (final String column in <String>[
+        'episode_aired_at',
+        'other_episodes',
+        'is_deprecated',
+        'file_state',
+      ]) {
+        raw.execute('ALTER TABLE anidb_file_identities DROP COLUMN $column');
+      }
       raw.execute(
         'INSERT INTO anidb_file_identities (ed2k, file_size, anidb_file_id, '
         'anidb_anime_id, anidb_episode_id, episode_number, file_path, '
@@ -56,6 +63,9 @@ void main() {
       expect(hit!.anidbEpisodeId, 313835);
       expect(hit.episodeNumber, '04');
       expect(hit.episodeAiredAt, isNull);
+      expect(hit.otherEpisodes, '');
+      expect(hit.isDeprecated, isFalse);
+      expect(hit.fileState, 0);
 
       // 回填写得进、读得出（其余列原样）。
       await migrated.upsertAnidbFileIdentity(
@@ -67,6 +77,9 @@ void main() {
           anidbEpisodeId: const Value(313835),
           episodeNumber: const Value('04'),
           episodeAiredAt: Value(DateTime.utc(2026, 4, 25).millisecondsSinceEpoch),
+          otherEpisodes: const Value('[[313836,50]]'),
+          isDeprecated: const Value(true),
+          fileState: const Value(5),
           filePath: const Value('/v/Bleach S17E44.mkv'),
           resolvedAt: const Value(2000),
           updatedAt: const Value(4000),
@@ -98,6 +111,9 @@ void main() {
         filled?.episodeAiredAt,
         DateTime.utc(2026, 4, 25).millisecondsSinceEpoch,
       );
+      expect(filled?.otherEpisodes, '[[313836,50]]');
+      expect(filled?.isDeprecated, isTrue);
+      expect(filled?.fileState, 5);
       expect(filled?.anidbEpisodeId, 313835, reason: '身份列不受回填影响');
     },
   );

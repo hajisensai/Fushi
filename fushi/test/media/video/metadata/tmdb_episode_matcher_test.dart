@@ -113,6 +113,29 @@ void main() {
     expect(matches, isEmpty);
   });
 
+  test('specials match only inside TMDB season 0 (Shoko special pool)', () {
+    final Map<int, TmdbEpisodeMatch> matches = matchSpecialsToTmdb(
+      <TmdbEpisodeMatchSource>[
+        _src(1, <String>['Recap Special'], '2024-06-01'),
+        // 标题是正片 S1E1 的：正片池不对特典开放，什么都对不上。
+        _src(2, <String>['The Beginning'], '2024-01-07'),
+      ],
+      _show,
+    );
+    expect(matches[1]?.episode.seasonNumber, 0);
+    expect(matches[1]?.episode.episodeNumber, 1);
+    expect(matches[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+    expect(matches.containsKey(2), isFalse);
+    // 反过来正片池也没有第 0 季。
+    expect(
+      matchEpisodesToTmdb(
+        <TmdbEpisodeMatchSource>[_src(1, <String>['Recap Special'], '2024-06-01')],
+        _show,
+      ),
+      isEmpty,
+    );
+  });
+
   group('merge helpers', () {
     VideoMetadataWork tmdbWork() => VideoMetadataWork(
           provider: VideoMetadataProviderKind.tmdb,
@@ -339,6 +362,39 @@ void main() {
         );
         expect(outcome.links[4]?.cardKey, isNull,
             reason: 'S2E4 − 0 = 4 > episodeCount 3');
+      });
+
+      test('specials land on card season 0, created when the card lacks it',
+          () {
+        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+          cour(),
+          VideoMetadataWork(
+            provider: VideoMetadataProviderKind.tmdb,
+            kind: VideoMetadataMediaKind.tv,
+            title: 'Show',
+            seasons: <VideoMetadataSeason>[
+              VideoMetadataSeason(
+                  seasonNumber: 0,
+                  title: 'Specials',
+                  episodes: _show.where((e) => e.seasonNumber == 0).toList()),
+              ...tmdbWork().seasons,
+            ],
+          ),
+          const <TmdbEpisodeMatchSource>[],
+          specialSources: <TmdbEpisodeMatchSource>[
+            _src(1, <String>['Recap Special'], '2024-06-01'),
+          ],
+          slices: slices,
+        );
+        expect(outcome.links, isEmpty);
+        expect(outcome.specialLinks[1]?.cardKey, (0, 1));
+        expect(outcome.specialLinks[1]?.rating,
+            TmdbEpisodeMatchRating.dateAndTitle);
+        final VideoMetadataSeason zero = outcome.work.seasons.first;
+        expect(zero.seasonNumber, 0, reason: '卡片原本没有第 0 季，补一季');
+        expect(zero.title, 'Specials');
+        expect(zero.episodes.single.title, 'Recap Special');
+        expect(outcome.work.seasons.map((s) => s.seasonNumber), <int>[0, 1]);
       });
 
       test('first-available never produces a link', () {

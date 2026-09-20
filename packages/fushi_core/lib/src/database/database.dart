@@ -3274,16 +3274,39 @@ class FushiDatabase extends _$FushiDatabase
           }
           if (from < 109) {
             // v109（AniDB 对齐 Shoko，集级）：anidb_file_identities 加
-            // episode_aired_at，记 UDP EPISODE 返回的集播出日，供 AniDB 集 →
-            // TMDB 集按「播出日 + 标题」逐集链接。存量行为 null，sweep 时补问一次
-            // 即回填，无需迁移回填。幂等守卫同 v108。
-            if (await _tableExists('anidb_file_identities') &&
-                !await _columnExists(
-                    'anidb_file_identities', 'episode_aired_at')) {
-              await m.addColumn(
-                anidbFileIdentities,
-                anidbFileIdentities.episodeAiredAt,
-              );
+            // episode_aired_at（UDP EPISODE 的集播出日，供 AniDB 集 → TMDB 集按
+            // 「播出日 + 标题」逐集链接；存量行 null，sweep 时补问一次回填），
+            // 以及 FILE 掩码扩展后多出的 other_episodes（一文件多集）/
+            // is_deprecated / file_state（CRC 正误、文件版本）。存量行取默认值即
+            // 「未知」，下次识别时随 FILE 应答一起落。幂等守卫同 v108。
+            if (await _tableExists('anidb_file_identities')) {
+              if (!await _columnExists(
+                  'anidb_file_identities', 'episode_aired_at')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.episodeAiredAt,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'other_episodes')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.otherEpisodes,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'is_deprecated')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.isDeprecated,
+                );
+              }
+              if (!await _columnExists('anidb_file_identities', 'file_state')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.fileState,
+                );
+              }
             }
           }
         },

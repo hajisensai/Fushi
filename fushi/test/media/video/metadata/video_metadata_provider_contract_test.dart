@@ -270,6 +270,48 @@ void main() {
     );
 
     test(
+      'include_adult is sent only when the request asks for it (Shoko '
+      'AutoSearchForShow includeRestricted)',
+      () async {
+        final List<Uri> searches = <Uri>[];
+        final MockClient client = MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/search/multi')) {
+            searches.add(request.url);
+          }
+          return _json(<String, Object?>{'results': <Object?>[]});
+        });
+        final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+          apiKey: 'KEY',
+          client: client,
+          language: 'en-US',
+        );
+        await provider.search(const VideoMetadataSearchRequest(
+          title: 'Plain',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ));
+        expect(searches, isNotEmpty);
+        expect(
+          searches.every(
+              (Uri uri) => !uri.queryParameters.containsKey('include_adult')),
+          isTrue,
+          reason: '默认维持 TMDB 的成人过滤',
+        );
+        searches.clear();
+        await provider.search(const VideoMetadataSearchRequest(
+          title: 'Restricted',
+          mediaKind: VideoMetadataMediaKind.tv,
+          includeAdult: true,
+        ));
+        expect(searches, isNotEmpty);
+        expect(
+          searches.every(
+              (Uri uri) => uri.queryParameters['include_adult'] == 'true'),
+          isTrue,
+        );
+      },
+    );
+
+    test(
       'BUG-1461 localized search keeps the English title used to match',
       () async {
         final List<String> requestedLanguages = <String>[];

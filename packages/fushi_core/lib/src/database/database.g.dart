@@ -52960,6 +52960,45 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _otherEpisodesMeta = const VerificationMeta(
+    'otherEpisodes',
+  );
+  @override
+  late final GeneratedColumn<String> otherEpisodes = GeneratedColumn<String>(
+    'other_episodes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _isDeprecatedMeta = const VerificationMeta(
+    'isDeprecated',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeprecated = GeneratedColumn<bool>(
+    'is_deprecated',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deprecated" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _fileStateMeta = const VerificationMeta(
+    'fileState',
+  );
+  @override
+  late final GeneratedColumn<int> fileState = GeneratedColumn<int>(
+    'file_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _resolvedAtMeta = const VerificationMeta(
     'resolvedAt',
   );
@@ -53000,6 +53039,9 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     fileModifiedAt,
     missAttempts,
     episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
     resolvedAt,
     updatedAt,
   ];
@@ -53151,6 +53193,30 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         ),
       );
     }
+    if (data.containsKey('other_episodes')) {
+      context.handle(
+        _otherEpisodesMeta,
+        otherEpisodes.isAcceptableOrUnknown(
+          data['other_episodes']!,
+          _otherEpisodesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_deprecated')) {
+      context.handle(
+        _isDeprecatedMeta,
+        isDeprecated.isAcceptableOrUnknown(
+          data['is_deprecated']!,
+          _isDeprecatedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('file_state')) {
+      context.handle(
+        _fileStateMeta,
+        fileState.isAcceptableOrUnknown(data['file_state']!, _fileStateMeta),
+      );
+    }
     if (data.containsKey('resolved_at')) {
       context.handle(
         _resolvedAtMeta,
@@ -53240,6 +53306,18 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         DriftSqlType.int,
         data['${effectivePrefix}episode_aired_at'],
       ),
+      otherEpisodes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}other_episodes'],
+      )!,
+      isDeprecated: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deprecated'],
+      )!,
+      fileState: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_state'],
+      )!,
       resolvedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}resolved_at'],
@@ -53282,6 +53360,16 @@ class AnidbFileIdentityRow extends DataClass
   /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
   /// （存量行 / EPISODE 未答），下次 sweep 补问。
   final int? episodeAiredAt;
+
+  /// v109：主集之外本文件还覆盖的 AniDB 集，JSON `[[eid, 百分比], …]`（Shoko
+  /// `CrossRef_File_Episode` 的 Percentage）；单集文件为 `''`。
+  final String otherEpisodes;
+
+  /// v109：AniDB FILE `deprecated` 位——该文件已被标为过时版本。
+  final bool isDeprecated;
+
+  /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
+  final int fileState;
   final int resolvedAt;
   final int updatedAt;
   const AnidbFileIdentityRow({
@@ -53301,6 +53389,9 @@ class AnidbFileIdentityRow extends DataClass
     this.fileModifiedAt,
     required this.missAttempts,
     this.episodeAiredAt,
+    required this.otherEpisodes,
+    required this.isDeprecated,
+    required this.fileState,
     required this.resolvedAt,
     required this.updatedAt,
   });
@@ -53335,6 +53426,9 @@ class AnidbFileIdentityRow extends DataClass
     if (!nullToAbsent || episodeAiredAt != null) {
       map['episode_aired_at'] = Variable<int>(episodeAiredAt);
     }
+    map['other_episodes'] = Variable<String>(otherEpisodes);
+    map['is_deprecated'] = Variable<bool>(isDeprecated);
+    map['file_state'] = Variable<int>(fileState);
     map['resolved_at'] = Variable<int>(resolvedAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -53370,6 +53464,9 @@ class AnidbFileIdentityRow extends DataClass
       episodeAiredAt: episodeAiredAt == null && nullToAbsent
           ? const Value.absent()
           : Value(episodeAiredAt),
+      otherEpisodes: Value(otherEpisodes),
+      isDeprecated: Value(isDeprecated),
+      fileState: Value(fileState),
       resolvedAt: Value(resolvedAt),
       updatedAt: Value(updatedAt),
     );
@@ -53399,6 +53496,9 @@ class AnidbFileIdentityRow extends DataClass
       fileModifiedAt: serializer.fromJson<int?>(json['fileModifiedAt']),
       missAttempts: serializer.fromJson<int>(json['missAttempts']),
       episodeAiredAt: serializer.fromJson<int?>(json['episodeAiredAt']),
+      otherEpisodes: serializer.fromJson<String>(json['otherEpisodes']),
+      isDeprecated: serializer.fromJson<bool>(json['isDeprecated']),
+      fileState: serializer.fromJson<int>(json['fileState']),
       resolvedAt: serializer.fromJson<int>(json['resolvedAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -53423,6 +53523,9 @@ class AnidbFileIdentityRow extends DataClass
       'fileModifiedAt': serializer.toJson<int?>(fileModifiedAt),
       'missAttempts': serializer.toJson<int>(missAttempts),
       'episodeAiredAt': serializer.toJson<int?>(episodeAiredAt),
+      'otherEpisodes': serializer.toJson<String>(otherEpisodes),
+      'isDeprecated': serializer.toJson<bool>(isDeprecated),
+      'fileState': serializer.toJson<int>(fileState),
       'resolvedAt': serializer.toJson<int>(resolvedAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -53445,6 +53548,9 @@ class AnidbFileIdentityRow extends DataClass
     Value<int?> fileModifiedAt = const Value.absent(),
     int? missAttempts,
     Value<int?> episodeAiredAt = const Value.absent(),
+    String? otherEpisodes,
+    bool? isDeprecated,
+    int? fileState,
     int? resolvedAt,
     int? updatedAt,
   }) => AnidbFileIdentityRow(
@@ -53470,6 +53576,9 @@ class AnidbFileIdentityRow extends DataClass
     episodeAiredAt: episodeAiredAt.present
         ? episodeAiredAt.value
         : this.episodeAiredAt,
+    otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+    isDeprecated: isDeprecated ?? this.isDeprecated,
+    fileState: fileState ?? this.fileState,
     resolvedAt: resolvedAt ?? this.resolvedAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -53517,6 +53626,13 @@ class AnidbFileIdentityRow extends DataClass
       episodeAiredAt: data.episodeAiredAt.present
           ? data.episodeAiredAt.value
           : this.episodeAiredAt,
+      otherEpisodes: data.otherEpisodes.present
+          ? data.otherEpisodes.value
+          : this.otherEpisodes,
+      isDeprecated: data.isDeprecated.present
+          ? data.isDeprecated.value
+          : this.isDeprecated,
+      fileState: data.fileState.present ? data.fileState.value : this.fileState,
       resolvedAt: data.resolvedAt.present
           ? data.resolvedAt.value
           : this.resolvedAt,
@@ -53543,6 +53659,9 @@ class AnidbFileIdentityRow extends DataClass
           ..write('fileModifiedAt: $fileModifiedAt, ')
           ..write('missAttempts: $missAttempts, ')
           ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
           ..write('resolvedAt: $resolvedAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -53550,7 +53669,7 @@ class AnidbFileIdentityRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     ed2k,
     fileSize,
     anidbFileId,
@@ -53567,9 +53686,12 @@ class AnidbFileIdentityRow extends DataClass
     fileModifiedAt,
     missAttempts,
     episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
     resolvedAt,
     updatedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -53590,6 +53712,9 @@ class AnidbFileIdentityRow extends DataClass
           other.fileModifiedAt == this.fileModifiedAt &&
           other.missAttempts == this.missAttempts &&
           other.episodeAiredAt == this.episodeAiredAt &&
+          other.otherEpisodes == this.otherEpisodes &&
+          other.isDeprecated == this.isDeprecated &&
+          other.fileState == this.fileState &&
           other.resolvedAt == this.resolvedAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -53612,6 +53737,9 @@ class AnidbFileIdentitiesCompanion
   final Value<int?> fileModifiedAt;
   final Value<int> missAttempts;
   final Value<int?> episodeAiredAt;
+  final Value<String> otherEpisodes;
+  final Value<bool> isDeprecated;
+  final Value<int> fileState;
   final Value<int> resolvedAt;
   final Value<int> updatedAt;
   final Value<int> rowid;
@@ -53632,6 +53760,9 @@ class AnidbFileIdentitiesCompanion
     this.fileModifiedAt = const Value.absent(),
     this.missAttempts = const Value.absent(),
     this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
     this.resolvedAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -53653,6 +53784,9 @@ class AnidbFileIdentitiesCompanion
     this.fileModifiedAt = const Value.absent(),
     this.missAttempts = const Value.absent(),
     this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
     required int resolvedAt,
     required int updatedAt,
     this.rowid = const Value.absent(),
@@ -53677,6 +53811,9 @@ class AnidbFileIdentitiesCompanion
     Expression<int>? fileModifiedAt,
     Expression<int>? missAttempts,
     Expression<int>? episodeAiredAt,
+    Expression<String>? otherEpisodes,
+    Expression<bool>? isDeprecated,
+    Expression<int>? fileState,
     Expression<int>? resolvedAt,
     Expression<int>? updatedAt,
     Expression<int>? rowid,
@@ -53699,6 +53836,9 @@ class AnidbFileIdentitiesCompanion
       if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
       if (missAttempts != null) 'miss_attempts': missAttempts,
       if (episodeAiredAt != null) 'episode_aired_at': episodeAiredAt,
+      if (otherEpisodes != null) 'other_episodes': otherEpisodes,
+      if (isDeprecated != null) 'is_deprecated': isDeprecated,
+      if (fileState != null) 'file_state': fileState,
       if (resolvedAt != null) 'resolved_at': resolvedAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -53722,6 +53862,9 @@ class AnidbFileIdentitiesCompanion
     Value<int?>? fileModifiedAt,
     Value<int>? missAttempts,
     Value<int?>? episodeAiredAt,
+    Value<String>? otherEpisodes,
+    Value<bool>? isDeprecated,
+    Value<int>? fileState,
     Value<int>? resolvedAt,
     Value<int>? updatedAt,
     Value<int>? rowid,
@@ -53743,6 +53886,9 @@ class AnidbFileIdentitiesCompanion
       fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
       missAttempts: missAttempts ?? this.missAttempts,
       episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+      otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+      isDeprecated: isDeprecated ?? this.isDeprecated,
+      fileState: fileState ?? this.fileState,
       resolvedAt: resolvedAt ?? this.resolvedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -53800,6 +53946,15 @@ class AnidbFileIdentitiesCompanion
     if (episodeAiredAt.present) {
       map['episode_aired_at'] = Variable<int>(episodeAiredAt.value);
     }
+    if (otherEpisodes.present) {
+      map['other_episodes'] = Variable<String>(otherEpisodes.value);
+    }
+    if (isDeprecated.present) {
+      map['is_deprecated'] = Variable<bool>(isDeprecated.value);
+    }
+    if (fileState.present) {
+      map['file_state'] = Variable<int>(fileState.value);
+    }
     if (resolvedAt.present) {
       map['resolved_at'] = Variable<int>(resolvedAt.value);
     }
@@ -53831,6 +53986,9 @@ class AnidbFileIdentitiesCompanion
           ..write('fileModifiedAt: $fileModifiedAt, ')
           ..write('missAttempts: $missAttempts, ')
           ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
           ..write('resolvedAt: $resolvedAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -93069,6 +93227,9 @@ typedef $$AnidbFileIdentitiesTableCreateCompanionBuilder =
       Value<int?> fileModifiedAt,
       Value<int> missAttempts,
       Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
       required int resolvedAt,
       required int updatedAt,
       Value<int> rowid,
@@ -93091,6 +93252,9 @@ typedef $$AnidbFileIdentitiesTableUpdateCompanionBuilder =
       Value<int?> fileModifiedAt,
       Value<int> missAttempts,
       Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
       Value<int> resolvedAt,
       Value<int> updatedAt,
       Value<int> rowid,
@@ -93182,6 +93346,21 @@ class $$AnidbFileIdentitiesTableFilterComposer
 
   ColumnFilters<int> get episodeAiredAt => $composableBuilder(
     column: $table.episodeAiredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileState => $composableBuilder(
+    column: $table.fileState,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -93285,6 +93464,21 @@ class $$AnidbFileIdentitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileState => $composableBuilder(
+    column: $table.fileState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => ColumnOrderings(column),
@@ -93379,6 +93573,19 @@ class $$AnidbFileIdentitiesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileState =>
+      $composableBuilder(column: $table.fileState, builder: (column) => column);
+
   GeneratedColumn<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => column,
@@ -93447,6 +93654,9 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<int?> fileModifiedAt = const Value.absent(),
                 Value<int> missAttempts = const Value.absent(),
                 Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
                 Value<int> resolvedAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -93467,6 +93677,9 @@ class $$AnidbFileIdentitiesTableTableManager
                 fileModifiedAt: fileModifiedAt,
                 missAttempts: missAttempts,
                 episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -93489,6 +93702,9 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<int?> fileModifiedAt = const Value.absent(),
                 Value<int> missAttempts = const Value.absent(),
                 Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
                 required int resolvedAt,
                 required int updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -93509,6 +93725,9 @@ class $$AnidbFileIdentitiesTableTableManager
                 fileModifiedAt: fileModifiedAt,
                 missAttempts: missAttempts,
                 episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

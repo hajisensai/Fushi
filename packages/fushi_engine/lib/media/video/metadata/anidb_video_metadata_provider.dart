@@ -200,6 +200,7 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
         anime,
         _mergedTitles(anime.titles, catalogRecord, animeId: anime.animeId),
       ),
+      if (anime.specials.isNotEmpty) _mapSpecials(anime),
     ];
   }
 
@@ -209,7 +210,8 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     required int seasonNumber,
   }) async {
     final int animeId = _validateLookup(lookup);
-    if (lookup.mediaKind == VideoMetadataMediaKind.movie || seasonNumber != 1) {
+    if (lookup.mediaKind == VideoMetadataMediaKind.movie ||
+        (seasonNumber != 1 && seasonNumber != 0)) {
       return const <VideoMetadataEpisode>[];
     }
     if (isBanned) {
@@ -229,7 +231,8 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
         'AniDB episode metadata is unavailable',
       );
     }
-    return List<VideoMetadataEpisode>.unmodifiable(anime.episodes);
+    return List<VideoMetadataEpisode>.unmodifiable(
+        seasonNumber == 0 ? anime.specials : anime.episodes);
   }
 
   Future<_AniDbAnime?> _anime(int animeId) async {
@@ -373,6 +376,10 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     final List<VideoMetadataEpisode> episodes = _parseEpisodes(
       root.getElement('episodes'),
     );
+    final List<VideoMetadataEpisode> specials = _parseEpisodes(
+      root.getElement('episodes'),
+      specials: true,
+    );
     final List<_AniDbCreator> creators = _parseCreators(
       root.getElement('creators'),
     );
@@ -408,6 +415,7 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       ]),
       credits: credits,
       episodes: episodes,
+      specials: specials,
     );
   }
 
@@ -427,7 +435,10 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     );
     final _SelectedTitles selected = _selectTitles(titles);
     final List<VideoMetadataSeason> seasons = kind == VideoMetadataMediaKind.tv
-        ? <VideoMetadataSeason>[_mapSeason(anime, titles)]
+        ? <VideoMetadataSeason>[
+            _mapSeason(anime, titles),
+            if (anime.specials.isNotEmpty) _mapSpecials(anime),
+          ]
         : const <VideoMetadataSeason>[];
     return VideoMetadataWork(
       provider: providerKind,
@@ -505,6 +516,17 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     );
   }
 
+  /// AniDB `S` 型特典 → 第 0 季（TMDB 的 Specials 同一位置）。
+  VideoMetadataSeason _mapSpecials(_AniDbAnime anime) => VideoMetadataSeason(
+        seasonNumber: 0,
+        title: 'Specials',
+        episodeCount: anime.specials.length,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '${anime.animeId}'),
+        ],
+        episodes: anime.specials,
+      );
+
   VideoMetadataWork _catalogWork(
     AniDbTitleRecord record,
     VideoMetadataMediaKind kind, {
@@ -557,14 +579,23 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
           )
           .toList();
 
-  List<VideoMetadataEpisode> _parseEpisodes(XmlElement? parent) {
+  /// [specials] = false：正片（epno 纯数字）；true：`S` 型特典（Shoko
+  /// `EpisodeType.Special`），落第 0 季、集号取 `S` 后的序号。C/T/P/O（片头
+  /// 片尾 / 预告 / 恶搞 / 其它）两边都不取——Shoko 也只把 Episode + Special
+  /// 拿去和 TMDB 对。
+  List<VideoMetadataEpisode> _parseEpisodes(
+    XmlElement? parent, {
+    bool specials = false,
+  }) {
     final Map<int, VideoMetadataEpisode> episodes =
         <int, VideoMetadataEpisode>{};
+    final RegExp shape = specials ? RegExp(r'^S(\d+)$') : RegExp(r'^(\d+)$');
+    final int seasonNumber = specials ? 0 : 1;
     for (final XmlElement element
         in parent?.findElements('episode') ?? const <XmlElement>[]) {
-      final String epno = _text(element.getElement('epno')) ?? '';
-      final RegExpMatch? numberMatch = RegExp(r'^(\d+)').firstMatch(epno);
-      if (numberMatch == null) continue; // specials use S/C/T/P/O prefixes
+      final String epno = (_text(element.getElement('epno')) ?? '').trim();
+      final RegExpMatch? numberMatch = shape.firstMatch(epno);
+      if (numberMatch == null) continue;
       final int? episodeNumber = int.tryParse(numberMatch.group(1)!);
       if (episodeNumber == null || episodeNumber <= 0) continue;
       final int? episodeId = int.tryParse(
@@ -600,13 +631,13 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       episodes.putIfAbsent(
         episodeNumber,
         () => VideoMetadataEpisode(
-          seasonNumber: 1,
+          seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
           title: _selectTitles(record).title,
           plot: _text(element.getElement('summary')),
           airDate: airDate,
           year: metadataYear(airDate),
-          absoluteNumber: episodeNumber,
+          absoluteNumber: specials ? null : episodeNumber,
           rating: _positiveDouble(_text(ratingElement)),
           ratingVotes: _positiveInt(ratingElement?.getAttribute('votes')),
           runtimeMinutes: _positiveInt(_text(element.getElement('length'))),
@@ -1007,6 +1038,7 @@ class _AniDbAnime {
     required this.studios,
     required this.credits,
     required this.episodes,
+    this.specials = const <VideoMetadataEpisode>[],
   });
 
   final int animeId;
@@ -1025,6 +1057,9 @@ class _AniDbAnime {
   final List<String> studios;
   final List<VideoMetadataCredit> credits;
   final List<VideoMetadataEpisode> episodes;
+
+  /// `S` 型特典（第 0 季）。
+  final List<VideoMetadataEpisode> specials;
 }
 
 class _AniDbAnimeCacheEntry {

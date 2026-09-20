@@ -82,9 +82,11 @@ class TmdbVideoMetadataProvider
             if (request.year != null) 'year': '${request.year}',
             'page': '1',
             'language': responseLanguage,
+            if (request.includeAdult) 'include_adult': 'true',
           },
           cacheKey: 'tmdb:search:${request.mediaKind.name}:'
-              '${request.title}:${request.year}:$responseLanguage',
+              '${request.title}:${request.year}:$responseLanguage'
+              '${request.includeAdult ? ':adult' : ''}',
         );
       } on Object {
         // 配置语言是主请求；它失败时维持原有失败语义。补充语言只负责别名，

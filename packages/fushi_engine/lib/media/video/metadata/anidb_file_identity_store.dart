@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart';
@@ -44,6 +46,35 @@ class AnidbFileIdentityRecord {
 
   static const Duration unknownFileRecheck = Duration(days: 1);
   static const int maxMissAttempts = 15;
+}
+
+/// `other_episodes` 列的编码：`[[eid, 百分比], …]`，空列表存 `''`。
+String encodeOtherEpisodes(List<AnidbEpisodeShare> shares) => shares.isEmpty
+    ? ''
+    : jsonEncode(<List<int>>[
+        for (final AnidbEpisodeShare share in shares)
+          <int>[share.episodeId, share.percentage],
+      ]);
+
+/// [encodeOtherEpisodes] 的逆；坏数据当空（身份主列不受影响）。
+List<AnidbEpisodeShare> decodeOtherEpisodes(String raw) {
+  if (raw.trim().isEmpty) return const <AnidbEpisodeShare>[];
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    return const <AnidbEpisodeShare>[];
+  }
+  if (decoded is! List) return const <AnidbEpisodeShare>[];
+  return <AnidbEpisodeShare>[
+    for (final Object? item in decoded)
+      if (item is List &&
+          item.length == 2 &&
+          item[0] is int &&
+          item[1] is int &&
+          (item[0] as int) > 0)
+        AnidbEpisodeShare(episodeId: item[0] as int, percentage: item[1] as int),
+  ];
 }
 
 /// 文件级 AniDB 身份的持久层；[AnidbHashIdentityService] 先查它再算哈希 / 发 FILE。
@@ -119,6 +150,10 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
       episodeKanjiTitle: Value(identity?.episodeKanjiTitle ?? ''),
       episodeAiredAt:
           Value(identity?.episodeAiredAt?.toUtc().millisecondsSinceEpoch),
+      otherEpisodes: Value(encodeOtherEpisodes(
+          identity?.otherEpisodes ?? const <AnidbEpisodeShare>[])),
+      isDeprecated: Value(identity?.isDeprecated ?? false),
+      fileState: Value(identity?.fileState ?? 0),
       filePath: Value(record.filePath),
       fileModifiedAt: Value(record.fileModifiedAt?.millisecondsSinceEpoch),
       missAttempts: Value(identity == null ? record.missAttempts : 0),
@@ -151,6 +186,9 @@ class AnidbFileIdentityDatabaseStore implements AnidbFileIdentityStore {
                   ? null
                   : DateTime.fromMillisecondsSinceEpoch(row.episodeAiredAt!,
                       isUtc: true),
+              otherEpisodes: decodeOtherEpisodes(row.otherEpisodes),
+              isDeprecated: row.isDeprecated,
+              fileState: row.fileState,
             ),
       filePath: row.filePath,
       fileModifiedAt: row.fileModifiedAt == null

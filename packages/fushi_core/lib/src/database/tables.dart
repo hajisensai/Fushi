@@ -3121,6 +3121,17 @@ class AnidbFileIdentities extends Table {
   /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
   /// （存量行 / EPISODE 未答），下次 sweep 补问。
   IntColumn get episodeAiredAt => integer().nullable()();
+
+  /// v109：主集之外本文件还覆盖的 AniDB 集，JSON `[[eid, 百分比], …]`（Shoko
+  /// `CrossRef_File_Episode` 的 Percentage）；单集文件为 `''`。
+  TextColumn get otherEpisodes => text().withDefault(const Constant(''))();
+
+  /// v109：AniDB FILE `deprecated` 位——该文件已被标为过时版本。
+  BoolColumn get isDeprecated =>
+      boolean().withDefault(const Constant(false))();
+
+  /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
+  IntColumn get fileState => integer().withDefault(const Constant(0))();
   IntColumn get resolvedAt => integer()();
   IntColumn get updatedAt => integer()();
 

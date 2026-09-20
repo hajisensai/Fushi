@@ -347,6 +347,19 @@ void main() {
     });
   });
 
+  test('other_episodes column round-trips and tolerates garbage', () {
+    const List<AnidbEpisodeShare> shares = <AnidbEpisodeShare>[
+      AnidbEpisodeShare(episodeId: 301, percentage: 50),
+      AnidbEpisodeShare(episodeId: 302, percentage: 50),
+    ];
+    expect(encodeOtherEpisodes(const <AnidbEpisodeShare>[]), '');
+    expect(encodeOtherEpisodes(shares), '[[301,50],[302,50]]');
+    expect(decodeOtherEpisodes('[[301,50],[302,50]]'), shares);
+    expect(decodeOtherEpisodes(''), isEmpty);
+    expect(decodeOtherEpisodes('not json'), isEmpty);
+    expect(decodeOtherEpisodes('[[0,50],["x",1],[303]]'), isEmpty);
+  });
+
   group('episode air date (Shoko DateAndTitle input via UDP EPISODE)', () {
     final DateTime aired = DateTime.utc(2026, 4, 25);
     AnimeIdentityMapping mapping() => AnimeIdentityMapping(
