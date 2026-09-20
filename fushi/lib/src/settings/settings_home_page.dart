@@ -27,10 +27,11 @@ class SettingsHomePage extends BasePage {
 
 class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     with SettingsContextHost<SettingsHomePage> {
-  // 默认选中 schema 首个可见分类（当前重排后是「阅读」），与宽屏导航列表的
+  // 默认选中 schema 首个可见分类（当前为「外观与交互」），与宽屏导航列表的
   // 视觉首项一致：不再硬编码某个 id——分类顺序的唯一真相源是 buildSettingsSchema
   // （有顺序守卫），这里在 build 里首次解析时取 destinations.first.id，顺序调整
-  // 时默认项自动跟随，不会再脱节。
+  // 时默认项自动跟随，不会再脱节。分块渲染同样不改顺序（groupSettingsDestinations
+  // 只切段），故首项仍是视觉首项。
   SettingsDestinationId? _selectedDestinationId;
 
   // 设置搜索：跨全部分类按标题/副标题/分区/分类名过滤配置项，点结果跳转到
@@ -135,59 +136,27 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         );
       },
     );
-    // 设置页使用一套更克制的深色编辑器式层级。主题只包住设置路由的内容，
-    // 不改动阅读器、播放器等其它页面的全局配色；亮色模式则沿用应用当前色板。
-    return _buildEmbeddedShell(
-      Theme(data: _settingsTheme(context), child: content),
-    );
+    return _buildEmbeddedShell(content);
   }
 
-  ThemeData _settingsTheme(BuildContext context) {
-    final ThemeData base = Theme.of(context);
-    if (base.brightness != Brightness.dark) return base;
-    const Color ink = Color(0xFF10131D);
-    const Color panel = Color(0xFF171B28);
-    const Color panelRaised = Color(0xFF1D2232);
-    const Color violet = Color(0xFF7C8CFF);
-    const Color violetContainer = Color(0xFF2C3157);
-    const Color text = Color(0xFFF2F3FF);
-    const Color textMuted = Color(0xFFAEB4CA);
-    const Color outline = Color(0xFF333A52);
-    final ColorScheme scheme = base.colorScheme.copyWith(
-      primary: violet,
-      onPrimary: const Color(0xFF111426),
-      primaryContainer: violetContainer,
-      onPrimaryContainer: text,
-      secondary: const Color(0xFFFF9D83),
-      onSecondary: const Color(0xFF24120F),
-      secondaryContainer: const Color(0xFF432A35),
-      onSecondaryContainer: const Color(0xFFFFDAD2),
-      surface: ink,
-      surfaceContainerLowest: const Color(0xFF0C0F17),
-      surfaceContainerLow: panel,
-      surfaceContainer: const Color(0xFF1A1F2C),
-      surfaceContainerHigh: panelRaised,
-      surfaceContainerHighest: const Color(0xFF252B3D),
-      onSurface: text,
-      onSurfaceVariant: textMuted,
-      outline: outline,
-      outlineVariant: const Color(0xFF2B3145),
-    );
-    return base.copyWith(
-      colorScheme: scheme,
-      scaffoldBackgroundColor: ink,
-      canvasColor: ink,
-      dividerColor: outline,
-      inputDecorationTheme: base.inputDecorationTheme.copyWith(
-        filled: true,
-        fillColor: panelRaised,
-        hintStyle: base.textTheme.bodyLarge?.copyWith(color: textMuted),
-      ),
-    );
-  }
-
-  Widget _buildSearchField() {
+  /// [onNavPane] 为 true 时搜索框画在宽屏导航窗格的 tonal 底上（`surfaces.card`），
+  /// 那里 `surfaces.search` 与底色只差一档、几乎糊掉，故再提一档到 `surfaces.overlay`；
+  /// 窄屏单列画在页面底（`surfaces.page`）上，保持原来的 `surfaces.search`。
+  Widget _buildSearchField({bool onNavPane = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
+    // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
+    // outlineVariant 深一档，在同一屏里是第三种强度的线。
+    //
+    // eink 例外：填充在 eink scheme 下塌缩成背景色，描边是唯一的边界信号，
+    // 那里把 enabled/focused 交回主题默认（enabledBorder/focusedBorder 传 null
+    // 即回落主题；只覆盖 border 会被主题的 enabledBorder 顶掉）。
+    final bool eink = isEinkTheme(context);
+    final InputBorder flatBorder = OutlineInputBorder(
+      // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+      borderRadius: tokens.radii.controlRadius,
+      borderSide: BorderSide.none,
+    );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.page,
@@ -204,10 +173,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           controller: _searchController,
           decoration: InputDecoration(
             hintText: t.settings_search_hint,
-            prefixIcon: Icon(
-              Icons.search,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+            prefixIcon: const Icon(Icons.search),
             suffixIcon: _searchQuery.isEmpty
                 ? null
                 : IconButton(
@@ -219,26 +185,28 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                     },
                   ),
             isDense: true,
-            filled: true,
-            fillColor: tokens.surfaces.search,
-            contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: tokens.radii.controlRadius,
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: tokens.radii.controlRadius,
-              borderSide: BorderSide(
-                color: tokens.surfaces.outline.withValues(alpha: 0.45),
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: tokens.radii.controlRadius,
-              borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.primary,
-                width: 1.4,
-              ),
-            ),
+            filled: !eink,
+            fillColor: eink
+                ? null
+                : (onNavPane
+                      ? tokens.surfaces.overlay
+                      : tokens.surfaces.search),
+            border: eink
+                ? OutlineInputBorder(
+                    // MD3 守卫：圆角一律走 design tokens，不自持字面量。
+                    borderRadius: tokens.radii.controlRadius,
+                  )
+                : flatBorder,
+            enabledBorder: eink ? null : flatBorder,
+            focusedBorder: eink
+                ? null
+                : OutlineInputBorder(
+                    borderRadius: tokens.radii.controlRadius,
+                    borderSide: BorderSide(
+                      color: Theme.of(context).colorScheme.primary,
+                      width: 2,
+                    ),
+                  ),
           ),
           onChanged: (String value) => setState(() => _searchQuery = value),
         ),
@@ -294,12 +262,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
 
   /// 点搜索结果：登记滚动定位挂点、清空搜索，宽屏切主从选中分类，窄屏 push
   /// 详情页；目标行由 SettingsSchemaItem 消费挂点后滚入视口并闪烁高亮。
-  /// body 合成条目（bodySearchEntries）不登记挂点——body 行不是 schema item，
-  /// 挂点永远不会被消费，跳转到分类正文即为完整语义。
+  /// 正文条目仅在已声明真实挂点时登记定位请求，避免遗留未消费的目标。
   void _openSearchResult(SettingsSearchEntry entry, {required bool wide}) {
-    SettingsSearchReveal.pendingItemId = entry.isBodyEntry
-        ? null
-        : entry.item.id;
+    SettingsSearchReveal.pendingItemId = entry.hasRevealTarget
+        ? entry.item.id
+        : null;
     _searchController.clear();
     setState(() {
       _searchQuery = '';
@@ -378,60 +345,35 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         ? CupertinoColors.separator.resolveFrom(context)
         : tokens.surfaces.outline;
     // MD3 list-detail: the nav pane sits on the tonal container token
-    // (`surfaces.group`) while the detail pane stays on the base page surface.
+    // (`surfaces.card`) while the detail pane stays on the base page surface.
     // Material only — Cupertino keeps its system background untouched.
-    final Color? navPaneColor = cupertino ? null : tokens.surfaces.group;
+    final Color? navPaneColor = cupertino ? null : tokens.surfaces.card;
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
-      supportingWidth: 368,
       dividerColor: dividerColor,
-      supporting: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: navPaneColor,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: tokens.surfaces.outline.withValues(alpha: 0.78),
+      supporting: Container(
+        color: navPaneColor,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _buildSearchField(onNavPane: true),
+            Expanded(
+              child: _searchQuery.trim().isEmpty
+                  ? renderer.buildDestinationList(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      selectedDestinationId: selectedDestinationId,
+                      onDestinationSelected: _selectDestination,
+                      pushRoutes: false,
+                    )
+                  : _buildSearchResults(
+                      settingsContext: settingsContext,
+                      destinations: destinations,
+                      wide: true,
+                    ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _buildSearchField(),
-              Expanded(
-                // Cupertino 的 buildDestinationList 是不可滚动的
-                // CupertinoListSection（Material 自带 ListView）；分类数增长 +
-                // 搜索框占高后，在有界 pane 里必须由外层补滚动，否则 RenderFlex
-                // 溢出（BUG-009 同源）。
-                child: _searchQuery.trim().isEmpty
-                    ? (cupertino
-                          ? SingleChildScrollView(
-                              child: renderer.buildDestinationList(
-                                settingsContext: settingsContext,
-                                destinations: destinations,
-                                selectedDestinationId: selectedDestinationId,
-                                onDestinationSelected: _selectDestination,
-                                pushRoutes: false,
-                              ),
-                            )
-                          : renderer.buildDestinationList(
-                              settingsContext: settingsContext,
-                              destinations: destinations,
-                              selectedDestinationId: selectedDestinationId,
-                              onDestinationSelected: _selectDestination,
-                              pushRoutes:
-                                  false, // master-detail keeps selection in-pane.
-                            ))
-                    : _buildSearchResults(
-                        settingsContext: settingsContext,
-                        destinations: destinations,
-                        wide: true,
-                      ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
       // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
@@ -441,71 +383,12 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       // 详情正文填满 pane 整宽：UI 巡检 PR-5 曾按 MD3 list-detail 惯例加过
       // 960 限宽 + 左对齐，用户实机反馈「右边空了一大堆」（2026-07-22 截图，
       // 4K 窗口下右侧 2400px 空白）——用户拍板回滚到填满整宽的原始形态。
-      primary: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _buildDetailHeader(selected),
-          Expanded(
-            child: KeyedSubtree(
-              key: ValueKey<SettingsDestinationId>(selected.id),
-              child: renderer.buildDetailContent(
-                settingsContext: settingsContext,
-                destination: selected,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDetailHeader(SettingsDestination destination) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page + tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page,
-        tokens.spacing.gap,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              borderRadius: tokens.radii.controlRadius,
-            ),
-            child: Icon(destination.icon, color: scheme.primary),
-          ),
-          SizedBox(width: tokens.spacing.gap + 4),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  destination.title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                if (destination.summary != null) ...<Widget>[
-                  const SizedBox(height: 4),
-                  Text(
-                    destination.summary!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
+      primary: KeyedSubtree(
+        key: ValueKey<SettingsDestinationId>(selected.id),
+        child: renderer.buildDetailContent(
+          settingsContext: settingsContext,
+          destination: selected,
+        ),
       ),
     );
   }
