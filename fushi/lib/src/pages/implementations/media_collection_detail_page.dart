@@ -201,8 +201,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// v77 作品级人物关系；无规范资料时为 null，hero 保持既有 v68 投影形态。
   VideoMetadataWorkCredits? _workCredits;
   VideoMetadataWorkRow? _canonicalWork;
-  Map<String, VideoMetadataEpisodeRow> _canonicalEpisodeByUid =
-      const <String, VideoMetadataEpisodeRow>{};
+  /// 成员文件 → 绑到它的规范分集行（按季、集有序）。v110 起一文件可绑多集
+  /// （AniDB 一文件多集），列表首条是主集；单集文件恒为一条。
+  Map<String, List<VideoMetadataEpisodeRow>> _canonicalEpisodesByUid =
+      const <String, List<VideoMetadataEpisodeRow>>{};
   String? _canonicalCoverPath;
   String? _canonicalCoverRemoteUrl;
   List<VideoMetadataTermRow> _workTerms = const <VideoMetadataTermRow>[];
@@ -273,8 +275,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final List<VideoMetadataTermRow> workTerms = canonicalWork == null
         ? const <VideoMetadataTermRow>[]
         : await widget.database.getVideoMetadataTermsForWork(canonicalWork.id);
-    final Map<String, VideoMetadataEpisodeRow> canonicalEpisodes =
-        <String, VideoMetadataEpisodeRow>{};
+    final Map<String, List<VideoMetadataEpisodeRow>> canonicalEpisodes =
+        <String, List<VideoMetadataEpisodeRow>>{};
     final List<VideoMetadataImageRow> canonicalImages = canonicalWork == null
         ? const <VideoMetadataImageRow>[]
         : await widget.database.getVideoMetadataImages(
@@ -286,7 +288,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         for (final VideoMetadataEpisodeRow episode
             in await widget.database.getVideoMetadataEpisodes(season.id)) {
           if (episode.bookUid case final String uid) {
-            canonicalEpisodes[uid] = episode;
+            (canonicalEpisodes[uid] ??= <VideoMetadataEpisodeRow>[])
+                .add(episode);
           }
         }
       }
@@ -324,7 +327,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       };
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
-      _canonicalEpisodeByUid = canonicalEpisodes;
+      _canonicalEpisodesByUid = canonicalEpisodes;
       _workCredits = workCredits;
       _canonicalWork = canonicalWork;
       _workTerms = workTerms;
@@ -499,9 +502,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 回填进 title（那不是集名，与 episode_rename.dart 同判据），此时不当集名用。
   /// 无集级资料 → null，调用方回落 [VideoBookRow.title]（文件名现状，零变化）。
   String? _scrapedEpisodeTitle(CollectionEpisodeSlot slot) {
-    final String? canonical =
-        _canonicalEpisodeByUid[slot.entryKey]?.title?.trim();
-    if (canonical != null && canonical.isNotEmpty) return canonical;
+    // 一文件多集：各集集名用「 / 」并列（Shoko 的 01-02 合集文件同样两集都列）。
+    final String canonical = <String>[
+      for (final VideoMetadataEpisodeRow episode
+          in _canonicalEpisodesByUid[slot.entryKey] ??
+              const <VideoMetadataEpisodeRow>[])
+        if (episode.title?.trim() case final String title when title.isNotEmpty)
+          title,
+    ].join(' / ');
+    if (canonical.isNotEmpty) return canonical;
     final VideoScrapeMetaRow? meta = _episodeMetaByUid[slot.entryKey];
     if (meta == null) return null;
     final String title = meta.title.trim();
@@ -546,17 +555,24 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   /// 绑定文件的 AniDB 原生集号（刮削时经 ED2K 哈希识别写进分集行，Shoko 式两套
   /// 编号并存）；没有身份 → null 不占位。
   String? _episodeIdentityLabel(CollectionEpisodeSlot slot) {
-    final String? epno =
-        _canonicalEpisodeByUid[slot.entryKey]?.anidbEpisodeNumber?.trim();
-    if (epno == null || epno.isEmpty) return null;
+    final String epno = <String>[
+      for (final VideoMetadataEpisodeRow episode
+          in _canonicalEpisodesByUid[slot.entryKey] ??
+              const <VideoMetadataEpisodeRow>[])
+        if (episode.anidbEpisodeNumber?.trim() case final String number
+            when number.isNotEmpty)
+          number,
+    ].join(' / ');
+    if (epno.isEmpty) return null;
     return t.collection_episode_anidb_number(number: epno);
   }
 
   /// 集简介（集级刮削 summary；无 → null 不占位）。
   String? _episodeSummary(CollectionEpisodeSlot slot) {
-    final String? summary = (_canonicalEpisodeByUid[slot.entryKey]?.overview ??
-            _episodeMetaByUid[slot.entryKey]?.summary)
-        ?.trim();
+    final String? summary =
+        (_canonicalEpisodesByUid[slot.entryKey]?.firstOrNull?.overview ??
+                _episodeMetaByUid[slot.entryKey]?.summary)
+            ?.trim();
     return (summary == null || summary.isEmpty) ? null : summary;
   }
 

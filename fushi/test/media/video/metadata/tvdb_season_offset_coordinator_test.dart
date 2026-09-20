@@ -327,6 +327,75 @@ void main() {
       reason: '识别日志带播出日',
     );
   });
+
+  // Shoko `CrossRef_File_Episode`：一个文件覆盖两集（AniDB FILE other episodes）
+  // → 两条分集行都绑到这一个文件，各带自己的 AniDB 身份与链接评级。
+  test(
+      'a multi-episode file (AniDB other episodes) binds to every linked '
+      'card episode with its own xref', () async {
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    DateTime aired(int tmdbEpisode) =>
+        DateTime.parse('${_TmdbProvider.tybwAirDate(tmdbEpisode)}T00:00:00Z');
+    final AnidbHashIdentityResult double =
+        _identity(1, 'The Calamity', 'Kashin', '禍進', airedAt: aired(41));
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      // 文件名只说 E41；FILE 说它还覆盖第 2 集（EPISODE 已答：集号 / 集名 /
+      // 播出日），第 3 集只有 eid（EPISODE 没答）。
+      'Bleach S17E41.mkv': AnidbHashIdentityResult(
+        status: double.status,
+        hash: double.hash,
+        identity: double.identity!.copyWith(otherEpisodes: <AnidbEpisodeShare>[
+          AnidbEpisodeShare(
+              episodeId: 302,
+              percentage: 40,
+              episodeNumber: '02',
+              airedAt: aired(42),
+              englishTitle: 'Ashes of the Quincy'),
+          const AnidbEpisodeShare(episodeId: 303, percentage: 20),
+        ]),
+        mapping: double.mapping,
+      ),
+      'Bleach S17E44.mkv': _identity(4, '', '', '灰の残響', airedAt: aired(44)),
+    });
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>['Bleach S17E41.mkv', 'Bleach S17E44.mkv'],
+      hash: hash,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
+    expect(bound[(5, 1)]?.$1, 'book-0');
+    expect(bound[(5, 2)]?.$1, 'book-0', reason: '同一文件再绑第 2 集');
+    expect(bound[(5, 3)]?.$1, isNull, reason: 'EPISODE 没答的集不猜');
+    expect(bound[(5, 4)]?.$1, 'book-1');
+    final Map<(int, int), (int?, String?, String?)> xrefs =
+        await episodeXrefs();
+    expect(xrefs[(5, 1)], (301, '01', 'dateAndTitle'));
+    expect(xrefs[(5, 2)], (302, '02', 'dateAndTitle'),
+        reason: '额外绑定带的是那一集自己的 eid，不是主集的');
+    expect(await db.getVideoMetadataEpisodesByBook('book-0'),
+        hasLength(2));
+    final Iterable<String> messages =
+        report.warnings.map((SourceScrapeIssue i) => i.message);
+    expect(
+      messages.any((String m) =>
+          m.contains('Bleach S17E41.mkv') &&
+          m.contains('本文件还覆盖 AniDB 集 02') &&
+          m.contains('第 5 季第 2 集') &&
+          m.contains('同一文件再绑一集')),
+      isTrue,
+      reason: '$messages',
+    );
+    expect(
+      messages.any((String m) =>
+          m.contains('AniDB 文件身份 → TMDB 集逐集链接') &&
+          m.contains('一文件多集额外绑定 1 条')),
+      isTrue,
+      reason: '$messages',
+    );
+  });
 }
 
 AnidbHashIdentityResult _identity(

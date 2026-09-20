@@ -34,7 +34,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 109);
+      expect(migrated.schemaVersion, 110);
       expect(
         await migrated.anidbFileIdentityByHash(
           ed2k: '0123456789abcdef0123456789abcdef',
@@ -76,7 +76,7 @@ void main() {
       addTearDown(reopened.close);
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 109);
+      expect(probe.select('PRAGMA user_version').first.values.first, 110);
       expect(
         probe
             .select(

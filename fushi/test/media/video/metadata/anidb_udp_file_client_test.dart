@@ -818,6 +818,10 @@ void main() {
       expect(info.animeId, 19079);
       expect(info.episodeNumber, '04');
       expect(info.airedAt, DateTime.utc(2026, 4, 25));
+      // 三语集名也留下（一文件多集里「其余集」的标题只有 EPISODE 能给）。
+      expect(info.englishTitle, 'The Calamity');
+      expect(info.romajiTitle, 'Kajin');
+      expect(info.kanjiTitle, '禍進');
       final String request =
           fake.packets.firstWhere((p) => p.startsWith('EPISODE '));
       expect(request, contains('eid=313835'));

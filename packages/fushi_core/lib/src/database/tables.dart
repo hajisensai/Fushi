@@ -1654,9 +1654,11 @@ class VideoMetadataEpisodes extends Table {
       .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
 
   /// 可选的本地分集绑定。删视频只解绑，源侧季集骨架继续保留供重链。
+  /// v110 起**不再唯一**：一个文件可以绑多条分集行（AniDB FILE 的 other
+  /// episodes——`01-02` 合集文件覆盖两集；Shoko `CrossRef_File_Episode` 一文件
+  /// 多集）。播放进度仍按文件（`video_books`）记，看完一个文件两集都算完成。
   TextColumn get bookUid => text()
       .nullable()
-      .unique()
       .references(VideoBooks, #bookUid, onDelete: KeyAction.setNull)();
   IntColumn get episodeNumber => integer()();
   IntColumn get absoluteNumber => integer().nullable()();

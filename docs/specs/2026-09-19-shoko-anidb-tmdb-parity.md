@@ -88,14 +88,14 @@ Shoko 不用 Jikan/MAL，无对照。本仓：429 按 `Retry-After` 冷却后就
 | 7.1.5 | 特典 | `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`；C/T/P/O 不匹配 | `matchSpecialsToTmdb`（S0 池、同一评分链）；`S<n>` 型 epno 落卡片 (0, E)、卡片无第 0 季就补一季；C/T/P/O 不进池；AniDB HTTP 解析器 `S` 型特典落第 0 季 | ✅ |
 | 7.1.6 | `CrossRef_AniDB_TMDB_Episode` 持久化 | 独立表，UserVerified 保留 | 不建独立表（输入全在本地缓存、重算确定性）；落到 `video_metadata_episodes.anidb_episode_id / anidb_episode_number / anidb_match_rating`（随绑定写，换书 / 解绑清掉）；手动指定作品身份即 UserVerified，集级手动链接没有 UI | 🟡 |
 | 7.1.7 | 两套编号并存 | API 同时给 AniDB (type, epno) 与 TMDB (S,E) | 分集行三列 + 合集详情集卡序号下小字「AniDB 第 04 集」（`CollectionEpisodeCard.identityLabel`，i18n `collection_episode_anidb_number`）；序号本身仍是文件名 / 卡片键 | ✅ |
-| 7.1.8 | firstAvailable | 无条件接受 | 不产生链接（无核对界面）；其余评级都接受、弱评级在说明里标出 | 🟡 有意 |
+| 7.1.8 | firstAvailable | 第四遍「every match is accepted」，含 FirstAvailable | 第五轮起同样成链：`linkAnidbEpisodesToTmdb` 不再丢弃，评级 `firstAvailable` 随行落 `anidb_match_rating`、说明里标「顺序兜底 N」；`fillEmptySeasonsFromEpisodeTitles`（输入不是文件身份）仍丢弃 | ✅ |
 
 ### 7.2 AniDB 文件身份链（盘点 A）
 
 | # | 项 | Shoko | 本仓（本轮后） | 状态 |
 |---|---|---|---|---|
 | 7.2.1 | FILE 掩码 | fmask `77 00 C0 D9 00`（aid/eid/gid/other eps/deprecated/state/quality/source/langs/描述/播出/文件名）+ amask 组名 | fmask `67 00 00 00 00`（aid/eid/other eps/deprecated/state）+ amask 三语作品名 / epno / 三语集名；不取 gid / 画质 / 语言 / 组名（刮削不消费） | ✅ 消费到的都取了 |
-| 7.2.2 | 一文件多集 | `CrossRef_File_Episode` Percentage / EpisodeOrder，一文件绑多集 | `AnidbFileIdentity.otherEpisodes`（eid + 百分比，eid 列表与 other-eps 列两种写法都解）→ `anidb_file_identities.other_episodes` JSON；**只绑主集**，其余集写进识别说明 | 🟡 多绑定要动「一书一集」（`video_metadata_episodes.book_uid` UNIQUE）与进度模型——待决策 |
+| 7.2.2 | 一文件多集 | `CrossRef_File_Episode` Percentage / EpisodeOrder，一文件绑多集 | 第五轮（schema v110）：`video_metadata_episodes.book_uid` 去掉列级 UNIQUE（alterTable 重建，FK OFF 夹住）；其余集的集号 / 播出日 / 三语集名由 `EPISODE eid=` 补问（`AnidbEpisodeShare.isResolved`，与主集播出日同一回填路径，落 `other_episodes` JSON 7 元组）并与主集同池进 TMDB 逐集链接；成链的落成同一文件的**额外绑定**（`AnidbAdditionalEpisodeBindings`，store `apply(additionalEpisodeBindings:)`），各带自己的 eid / 评级。进度仍按文件（`video_books`）记——看完一个文件两集都算完成，与 Shoko 同。合集详情页集卡把两集集名 / AniDB 集号用「 / 」并列；sidecar / 旧投影只跟主集 | ✅ |
 | 7.2.3 | 过时 / CRC / 版本 | `deprecated` → IsCorrupted；state 位 CRCMatch/CRCErr/IsV2…；重扫补资料 | `isDeprecated` / `fileState`（`crcMatches` / `fileVersion`）落库并写进识别说明；不做周期重问 FILE（Shoko 也只在资料缺失时） | ✅ |
 | 7.2.4 | 特典类型 | EpisodeType 枚举，S/C/T/P/O 都存 | `S` 型进 S0 链接；C/T/P/O 身份照存（epno 原文）、不进池、按文件名落 | ✅（与 Shoko 匹配面一致） |
 | 7.2.5 | 哈希 / 搬家 / MAL 映射 / 关系 / 复查节奏 | — | 盘点结论：等价或更强（红蓝双 ED2K、`(ed2k,size)` 键、Fribb 一对多显式确认、320 每日 ≤15 次）；`<relatedanime>` 只服务 Shoko 的分组，本仓无分组概念 | ✅ / 不适用 |

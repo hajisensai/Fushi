@@ -735,7 +735,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 109;
+  int get schemaVersion => 110;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3334,6 +3334,42 @@ class FushiDatabase extends _$FushiDatabase
                 );
               }
             }
+          }
+          if (from < 110) {
+            // v110：video_metadata_episodes.book_uid 去掉列级 UNIQUE——AniDB
+            // FILE 给出的「一文件多集」（`01-02` 合集文件）要绑到两条分集行，
+            // Shoko `CrossRef_File_Episode` 一文件多集。列级 UNIQUE 是内联约束、
+            // SQLite 不能单独 DROP，走 alterTable 按当前 Dart 定义重建 + 按列名拷
+            // 贝（v67 先例），`id` 原值保留所以四张以 id 引用的子表（identities /
+            // credits / images CASCADE、sidecar SET NULL）不悬空；FK OFF/ON 夹住
+            // 重建（v57 先例），否则 DROP 旧表会级联清空子表。幂等守卫：只在
+            // 自动唯一索引仍只覆盖 book_uid 时才重建，mid-ladder 由 createTable
+            // fresh 建出的表已是新 shape 直接短路。
+            if (await _tableExists('video_metadata_episodes') &&
+                await _hasUniqueIndexOnColumn(
+                    'video_metadata_episodes', 'book_uid')) {
+              final bool foreignKeysWereOn = await _foreignKeysEnabled();
+              await customStatement('PRAGMA foreign_keys = OFF');
+              try {
+                await m.alterTable(TableMigration(videoMetadataEpisodes));
+                if (await _tableExists('video_metadata_seasons') &&
+                    await _tableExists('video_books')) {
+                  final List<QueryRow> violations = await customSelect(
+                          'PRAGMA foreign_key_check(video_metadata_episodes)')
+                      .get();
+                  if (violations.isNotEmpty) {
+                    throw StateError(
+                        'v110 migration left ${violations.length} FK '
+                        'violations in video_metadata_episodes');
+                  }
+                }
+              } finally {
+                if (foreignKeysWereOn) {
+                  await customStatement('PRAGMA foreign_keys = ON');
+                }
+              }
+            }
+            await _ensureIndexes();
           }
         },
         onCreate: (m) async {

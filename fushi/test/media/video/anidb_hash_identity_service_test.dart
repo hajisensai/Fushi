@@ -358,6 +358,27 @@ void main() {
     expect(decodeOtherEpisodes(''), isEmpty);
     expect(decodeOtherEpisodes('not json'), isEmpty);
     expect(decodeOtherEpisodes('[[0,50],["x",1],[303]]'), isEmpty);
+    // 问到集信息的份额多带 epno / 播出日 / 三语集名；两种长度同列并存。
+    final List<AnidbEpisodeShare> resolved = <AnidbEpisodeShare>[
+      AnidbEpisodeShare(
+          episodeId: 301,
+          percentage: 50,
+          episodeNumber: '02',
+          airedAt: DateTime.utc(2026, 4, 25),
+          englishTitle: 'Ashes',
+          romajiTitle: 'Hai',
+          kanjiTitle: '灰'),
+      const AnidbEpisodeShare(episodeId: 302, percentage: 50),
+    ];
+    final String encoded = encodeOtherEpisodes(resolved);
+    expect(encoded,
+        '[[301,50,"02",${DateTime.utc(2026, 4, 25).millisecondsSinceEpoch},"Ashes","Hai","灰"],[302,50]]');
+    expect(decodeOtherEpisodes(encoded), resolved);
+    expect(decodeOtherEpisodes(encoded).first.isResolved, isTrue);
+    expect(decodeOtherEpisodes(encoded).first.airDate, '2026-04-25');
+    expect(decodeOtherEpisodes(encoded).first.titles,
+        <String>['Ashes', 'Hai', '灰']);
+    expect(decodeOtherEpisodes(encoded).last.isResolved, isFalse);
   });
 
   group('episode air date (Shoko DateAndTitle input via UDP EPISODE)', () {
@@ -461,6 +482,66 @@ void main() {
       expect(result.episodeInfoError, isA<AnidbUdpException>());
       expect(store.records.single.identity?.episodeAiredAt, isNull,
           reason: '留 null 让下次 sweep 再补');
+    });
+
+    test(
+        'other episodes of a multi-episode file get their number / titles / '
+        'air date from EPISODE and are persisted (one file, many episodes)',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      final List<int> asked = <int>[];
+      AnidbEpisodeInfo info(int eid) => AnidbEpisodeInfo(
+          episodeId: eid,
+          animeId: 2,
+          episodeNumber: eid == 3 ? '01' : '0${eid - 2}',
+          airedAt: aired.add(Duration(days: 7 * (eid - 3))),
+          englishTitle: 'Ep $eid',
+          romajiTitle: 'Rom $eid',
+          kanjiTitle: '');
+      final AnidbHashIdentityService s = AnidbHashIdentityService(
+        enabled: true,
+        config: config,
+        mapping: mapping(),
+        store: store,
+        hasher: (String path, {isCancelled, onProgress}) async {
+          final FileStat stat = await File(path).stat();
+          return AnidbEd2kHash(
+              ed2k: 'a',
+              size: stat.size,
+              modifiedAt: stat.modified,
+              changedAt: stat.changed);
+        },
+        lookup: ({required int size, required String ed2k}) async =>
+            identity.copyWith(otherEpisodes: const <AnidbEpisodeShare>[
+          AnidbEpisodeShare(episodeId: 4, percentage: 50),
+          AnidbEpisodeShare(episodeId: 5, percentage: 50),
+        ]),
+        episodeLookup: ({required int episodeId}) async {
+          asked.add(episodeId);
+          return episodeId == 5 ? null : info(episodeId);
+        },
+      );
+      addTearDown(s.close);
+      final AnidbHashIdentityResult result = await s.identifyFile(file.path);
+      expect(result.status, AnidbHashIdentityStatus.matched);
+      expect(asked, <int>[3, 4, 5], reason: '主集 + 其余每集各问一次');
+      final List<AnidbEpisodeShare> shares = result.identity!.otherEpisodes;
+      expect(shares.length, 2);
+      expect(shares[0].isResolved, isTrue);
+      expect(shares[0].episodeNumber, '02');
+      expect(shares[0].airDate, '2026-05-02');
+      expect(shares[0].titles, <String>['Ep 4', 'Rom 4']);
+      expect(shares[1].isResolved, isFalse, reason: '340 → 留待下次再问');
+      expect(result.identity!.hasUnresolvedOtherEpisodes, isTrue);
+      // 落库的就是补全后的份额；再看一次只补没解出的那一集。
+      expect(store.records.single.identity?.otherEpisodes, shares);
+      asked.clear();
+      await s.identifyFile(file.path);
+      expect(asked, <int>[5]);
     });
 
     test('340 / unknown air date leaves the identity untouched', () async {

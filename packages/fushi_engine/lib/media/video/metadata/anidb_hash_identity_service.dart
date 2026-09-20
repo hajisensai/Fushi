@@ -187,11 +187,12 @@ class AnidbHashIdentityService {
             missAttempts: missAttempts + 1);
       }
       // Shoko 集级链接要 AniDB 集播出日，FILE 应答里没有，紧接着按 eid 问一次
-      // EPISODE 再落库；问不到不影响身份本身。
+      // EPISODE 再落库；一文件多集时其余集的集号 / 集名 / 播出日也只有 EPISODE
+      // 能给，一起问。问不到不影响身份本身。
       Object? episodeInfoError;
       AnidbFileIdentity resolved = identity;
       try {
-        resolved = await _withEpisodeAirDate(resolved);
+        resolved = await _withEpisodeInfo(resolved);
       } on Object catch (error) {
         episodeInfoError = error;
       }
@@ -231,18 +232,21 @@ class AnidbHashIdentityService {
     }
   }
 
-  /// 已识别但还没有集播出日的记录（v109 之前落的行 / 上次 EPISODE 没答）：
-  /// 补问一次并写回；失败把错误随结果带出、身份照旧。AniDB 本就没登记播出日
-  /// （`aired` = 0）的集仍是 null，客户端寿命内不会重复问同一个 eid。
+  /// 已识别但还没有集播出日 / 其余集集信息的记录（v109 之前落的行 / 上次
+  /// EPISODE 没答）：补问一次并写回；失败把错误随结果带出、身份照旧。AniDB 本
+  /// 就没登记播出日（`aired` = 0）的集仍是 null，客户端寿命内不会重复问同一个
+  /// eid。
   Future<_BackfilledRecord> _backfillEpisodeAirDate(
       AnidbFileIdentityRecord record, AnidbFileIdentityStore store) async {
     final AnidbFileIdentity? identity = record.identity;
-    if (identity == null || identity.episodeAiredAt != null) {
+    if (identity == null ||
+        (identity.episodeAiredAt != null &&
+            !identity.hasUnresolvedOtherEpisodes)) {
       return _BackfilledRecord(record);
     }
     final AnidbFileIdentity filled;
     try {
-      filled = await _withEpisodeAirDate(identity);
+      filled = await _withEpisodeInfo(identity);
     } on Object catch (error) {
       return _BackfilledRecord(record, error: error);
     }
@@ -259,18 +263,43 @@ class AnidbHashIdentityService {
     return _BackfilledRecord(updated);
   }
 
-  /// 按 eid 问 EPISODE 取播出日；已有播出日或 AniDB 回 340 时原样返回。
-  /// 注入了 FILE 假实现（[_lookup]）却没注入 EPISODE 的调用方视为把 AniDB 侧
-  /// 整体换掉了：不补问，绝不因此去开真 socket。
-  Future<AnidbFileIdentity> _withEpisodeAirDate(
-      AnidbFileIdentity identity) async {
-    if (identity.episodeAiredAt != null) return identity;
+  /// 按 eid 问 EPISODE：主集取播出日，其余集（一文件多集）取集号 / 播出日 /
+  /// 三语集名；都齐了或 AniDB 回 340 时原样返回。注入了 FILE 假实现
+  /// （[_lookup]）却没注入 EPISODE 的调用方视为把 AniDB 侧整体换掉了：不补问，
+  /// 绝不因此去开真 socket。
+  Future<AnidbFileIdentity> _withEpisodeInfo(AnidbFileIdentity identity) async {
+    final bool needMain = identity.episodeAiredAt == null;
+    if (!needMain && !identity.hasUnresolvedOtherEpisodes) return identity;
     final AnidbEpisodeLookup? lookup =
         _episodeLookup ?? (_lookup == null ? _client.episode : null);
     if (lookup == null) return identity;
-    final AnidbEpisodeInfo? info = await lookup(episodeId: identity.episodeId);
-    final DateTime? aired = info?.airedAt;
-    return aired == null ? identity : identity.copyWith(episodeAiredAt: aired);
+    AnidbFileIdentity result = identity;
+    if (needMain) {
+      final AnidbEpisodeInfo? info =
+          await lookup(episodeId: identity.episodeId);
+      if (info?.airedAt case final DateTime aired) {
+        result = result.copyWith(episodeAiredAt: aired);
+      }
+    }
+    if (identity.hasUnresolvedOtherEpisodes) {
+      bool changed = false;
+      final List<AnidbEpisodeShare> shares = <AnidbEpisodeShare>[];
+      for (final AnidbEpisodeShare share in identity.otherEpisodes) {
+        if (share.isResolved) {
+          shares.add(share);
+          continue;
+        }
+        final AnidbEpisodeInfo? info = await lookup(episodeId: share.episodeId);
+        if (info == null) {
+          shares.add(share);
+          continue;
+        }
+        shares.add(share.withInfo(info));
+        changed = true;
+      }
+      if (changed) result = result.copyWith(otherEpisodes: shares);
+    }
+    return result;
   }
 
   /// 持久层记录 → 与在线路径同形的结果；Fribb 映射照查（本地表，便宜），

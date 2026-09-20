@@ -957,11 +957,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
       }
     }
+    // 一文件多集（v110）时同一文件有多条分集行：时长按集累加。
     final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
     for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
       if (episode.bookUid case final String uid) {
         if (episode.runtimeMinutes case final int minutes) {
-          runtimeMinutesByBookUid[uid] = minutes;
+          runtimeMinutesByBookUid[uid] =
+              (runtimeMinutesByBookUid[uid] ?? 0) + minutes;
         }
       }
     }

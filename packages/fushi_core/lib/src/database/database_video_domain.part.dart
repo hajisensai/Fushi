@@ -504,13 +504,21 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
-  Future<VideoMetadataEpisodeRow?> getVideoMetadataEpisodeByBook(
+  /// 绑到同一个文件的全部分集行（v110 起一文件可绑多集：AniDB FILE 的 other
+  /// episodes），按季、集排序。
+  Future<List<VideoMetadataEpisodeRow>> getVideoMetadataEpisodesByBook(
     String bookUid,
   ) =>
       (select(videoMetadataEpisodes)
             ..where(
-                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid)))
-          .getSingleOrNull();
+                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid))
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.seasonId),
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
 
   /// 人物 upsert：名字与时间戳照新值写，描述性字段（照片、简介、生卒、性别、
   /// 出生地、原名）**只补空不抹掉**——同一人会被多个来源、多次刮削反复写入，

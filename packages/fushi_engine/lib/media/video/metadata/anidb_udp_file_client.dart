@@ -66,23 +66,82 @@ class AnidbUdpException implements Exception {
 /// 一个文件覆盖的另一条 AniDB 集（Shoko `CrossRef_File_Episode` 的
 /// `EpisodeID` + `Percentage`）：`01-02` 合集、拆成两半的剧场版都会出现。
 class AnidbEpisodeShare {
-  const AnidbEpisodeShare({required this.episodeId, required this.percentage});
+  const AnidbEpisodeShare({
+    required this.episodeId,
+    required this.percentage,
+    this.episodeNumber,
+    this.airedAt,
+    this.englishTitle,
+    this.romajiTitle,
+    this.kanjiTitle,
+  });
   final int episodeId;
 
   /// 该集占本文件的百分比（AniDB 给的；没给时按份数均分）。
   final int percentage;
 
+  /// FILE 应答只给 eid；集号 / 播出日 / 三语集名要再问一次 `EPISODE eid=`
+  /// 才有（[AnidbUdpFileClient.episode]），问到前全为 null。有了这些这一集才能
+  /// 与主集一样进 TMDB 逐集链接、绑成第二条分集行（Shoko `CrossRef_File_Episode`
+  /// 一文件多集）。
+  final String? episodeNumber;
+  final DateTime? airedAt;
+  final String? englishTitle, romajiTitle, kanjiTitle;
+
+  /// 集信息已问到（集号在手；播出日 / 集名可能 AniDB 本就没登记）。
+  bool get isResolved => episodeNumber != null;
+
+  /// `yyyy-MM-dd`，与 [AnidbFileIdentity.episodeAirDate] 同形。
+  String? get airDate => _airDateOf(airedAt);
+
+  /// 三语集名里非空的那几条。
+  List<String> get titles => <String>[
+        for (final String? title in <String?>[
+          englishTitle,
+          romajiTitle,
+          kanjiTitle
+        ])
+          if (title != null && title.trim().isNotEmpty) title,
+      ];
+
+  /// 把 `EPISODE` 应答填进来（eid 不同则原样返回）。
+  AnidbEpisodeShare withInfo(AnidbEpisodeInfo info) => info.episodeId != episodeId
+      ? this
+      : AnidbEpisodeShare(
+          episodeId: episodeId,
+          percentage: percentage,
+          episodeNumber: info.episodeNumber,
+          airedAt: info.airedAt,
+          englishTitle: info.englishTitle,
+          romajiTitle: info.romajiTitle,
+          kanjiTitle: info.kanjiTitle,
+        );
+
   @override
   bool operator ==(Object other) =>
       other is AnidbEpisodeShare &&
       other.episodeId == episodeId &&
-      other.percentage == percentage;
+      other.percentage == percentage &&
+      other.episodeNumber == episodeNumber &&
+      other.airedAt == airedAt &&
+      other.englishTitle == englishTitle &&
+      other.romajiTitle == romajiTitle &&
+      other.kanjiTitle == kanjiTitle;
 
   @override
   int get hashCode => Object.hash(episodeId, percentage);
 
   @override
-  String toString() => 'AnidbEpisodeShare($episodeId, $percentage%)';
+  String toString() =>
+      'AnidbEpisodeShare($episodeId, $percentage%${episodeNumber == null ? '' : ', ep $episodeNumber'})';
+}
+
+String? _airDateOf(DateTime? aired) {
+  if (aired == null) return null;
+  final DateTime utc = aired.toUtc();
+  return '${utc.year.toString().padLeft(4, '0')}-'
+      '${utc.month.toString().padLeft(2, '0')}-'
+      '${utc.day.toString().padLeft(2, '0')}';
 }
 
 /// AniDB FILE `state` 位（Shoko `GetFile_State`）。
@@ -159,16 +218,17 @@ class AnidbFileIdentity {
   final DateTime? episodeAiredAt;
 
   /// `yyyy-MM-dd`，与 TMDB 集 `airDate` 同形，直接喂逐集匹配器。
-  String? get episodeAirDate {
-    final DateTime? aired = episodeAiredAt;
-    if (aired == null) return null;
-    final DateTime utc = aired.toUtc();
-    return '${utc.year.toString().padLeft(4, '0')}-'
-        '${utc.month.toString().padLeft(2, '0')}-'
-        '${utc.day.toString().padLeft(2, '0')}';
-  }
+  String? get episodeAirDate => _airDateOf(episodeAiredAt);
 
-  AnidbFileIdentity copyWith({DateTime? episodeAiredAt}) => AnidbFileIdentity(
+  /// 还没问到集信息的其余集（要补 `EPISODE`）。
+  bool get hasUnresolvedOtherEpisodes =>
+      otherEpisodes.any((AnidbEpisodeShare share) => !share.isResolved);
+
+  AnidbFileIdentity copyWith({
+    DateTime? episodeAiredAt,
+    List<AnidbEpisodeShare>? otherEpisodes,
+  }) =>
+      AnidbFileIdentity(
         fileId: fileId,
         animeId: animeId,
         episodeId: episodeId,
@@ -180,7 +240,7 @@ class AnidbFileIdentity {
         episodeRomajiTitle: episodeRomajiTitle,
         episodeKanjiTitle: episodeKanjiTitle,
         episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
-        otherEpisodes: otherEpisodes,
+        otherEpisodes: otherEpisodes ?? this.otherEpisodes,
         isDeprecated: isDeprecated,
         fileState: fileState,
       );
@@ -195,12 +255,18 @@ class AnidbEpisodeInfo {
     required this.animeId,
     required this.episodeNumber,
     required this.airedAt,
+    this.englishTitle = '',
+    this.romajiTitle = '',
+    this.kanjiTitle = '',
   });
   final int episodeId, animeId;
   final String episodeNumber;
 
   /// 播出日（UTC 零点）；AniDB 未登记（`aired` 为 0）时为 null。
   final DateTime? airedAt;
+
+  /// 三语集名（`eng|romaji|kanji`）；一文件多集里「其余集」的标题只有这里能拿到。
+  final String englishTitle, romajiTitle, kanjiTitle;
 }
 
 /// Request/response transport; implementations must discard other peers/tags.
@@ -523,6 +589,9 @@ class AnidbUdpFileClient {
           airedAt: aired <= 0
               ? null
               : DateTime.fromMillisecondsSinceEpoch(aired * 1000, isUtc: true),
+          englishTitle: fields[6].trim(),
+          romajiTitle: fields[7].trim(),
+          kanjiTitle: fields[8].trim(),
         );
       });
 

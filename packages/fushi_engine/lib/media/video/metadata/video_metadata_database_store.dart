@@ -44,6 +44,13 @@ class AnidbEpisodeXref {
   final String? matchRating;
 }
 
+/// 一个文件覆盖的**额外**分集（AniDB FILE other episodes，Shoko
+/// `CrossRef_File_Episode` 一文件多集）：成员 `bookUid` → 额外卡片 (季, 集) →
+/// 那一集的 AniDB 身份。主集仍由 [localEpisodeKeyFor] 决定；这里的键只多绑、
+/// 不改主键，sidecar / 旧投影只跟主集。
+typedef AnidbAdditionalEpisodeBindings
+    = Map<String, Map<(int, int), AnidbEpisodeXref>>;
+
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
     required this.workId,
@@ -151,6 +158,10 @@ class VideoMetadataDatabaseStore {
 
   /// [episodeOverrides]：成员 `bookUid` → 本地 (季, 集)。多季合集 / 绝对集号
   /// 重定向后由协调器给出，覆盖单纯按文件名解析的键；没有条目的成员照旧解析。
+  ///
+  /// [additionalEpisodeBindings]：一文件多集的额外绑定（见
+  /// [AnidbAdditionalEpisodeBindings]）；同一文件因此出现在多条分集行上，
+  /// v110 起 `book_uid` 不再唯一。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
@@ -158,6 +169,8 @@ class VideoMetadataDatabaseStore {
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
     Map<String, AnidbEpisodeXref> anidbEpisodeXrefs =
         const <String, AnidbEpisodeXref>{},
+    AnidbAdditionalEpisodeBindings additionalEpisodeBindings =
+        const <String, Map<(int, int), AnidbEpisodeXref>>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -356,7 +369,8 @@ class VideoMetadataDatabaseStore {
       }
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
-          _localEpisodeBooks(localWork.members, episodeOverrides);
+          _localEpisodeBooks(
+              localWork.members, episodeOverrides, additionalEpisodeBindings);
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -396,9 +410,15 @@ class VideoMetadataDatabaseStore {
                       ?.bookUid ??
                   existingEpisodes[episode.episodeNumber]?.bookUid;
               // AniDB 集身份跟着绑定的文件走：这一轮有身份就写，没有身份但书还
-              // 是原来那本就保留旧值，换了书 / 解绑就清掉。
-              final AnidbEpisodeXref? xref =
-                  bookUid == null ? null : anidbEpisodeXrefs[bookUid];
+              // 是原来那本就保留旧值，换了书 / 解绑就清掉。一文件多集时，额外
+              // 绑定的那一集用它自己的 AniDB 身份，不是主集的。
+              final AnidbEpisodeXref? xref = bookUid == null
+                  ? null
+                  : additionalEpisodeBindings[bookUid]?[(
+                        episode.seasonNumber,
+                        episode.episodeNumber,
+                      )] ??
+                      anidbEpisodeXrefs[bookUid];
               final VideoMetadataEpisodeRow? existing =
                   existingEpisodes[episode.episodeNumber];
               final bool keepExisting = xref == null &&
@@ -503,7 +523,15 @@ class VideoMetadataDatabaseStore {
           }
           final VideoBookRow? book =
               localEpisodeBooks[(episode.seasonNumber, episode.episodeNumber)];
-          if (book != null) episodesByBookUid[book.bookUid] = episode;
+          // 旧投影 / 改书名只跟主集：一文件多集的额外绑定不进 bookUid → 集表。
+          if (book != null &&
+              additionalEpisodeBindings[book.bookUid]?.containsKey((
+                    episode.seasonNumber,
+                    episode.episodeNumber,
+                  )) !=
+                  true) {
+            episodesByBookUid[book.bookUid] = episode;
+          }
         }
       }
       await _writeLegacyProjection(localWork, metadata, episodesByBookUid);
@@ -1021,15 +1049,26 @@ class VideoMetadataDatabaseStore {
     }
   }
 
+  /// 卡片 (季, 集) → 成员文件。主键先占位（一集只能有一本书、先到先得），再把
+  /// 一文件多集的额外键补进去（同样先到先得，不抢别的文件的主集）。
   static Map<(int, int), VideoBookRow> _localEpisodeBooks(
     Iterable<VideoBookRow> books,
     Map<String, (int, int)> episodeOverrides,
+    AnidbAdditionalEpisodeBindings additionalEpisodeBindings,
   ) {
     final Map<(int, int), VideoBookRow> result = <(int, int), VideoBookRow>{};
     for (final VideoBookRow book in books) {
       final (int, int)? key = localEpisodeKeyFor(book, episodeOverrides);
       if (key == null) continue;
       result.putIfAbsent(key, () => book);
+    }
+    for (final VideoBookRow book in books) {
+      final Map<(int, int), AnidbEpisodeXref>? extra =
+          additionalEpisodeBindings[book.bookUid];
+      if (extra == null) continue;
+      for (final (int, int) key in extra.keys) {
+        result.putIfAbsent(key, () => book);
+      }
     }
     return result;
   }

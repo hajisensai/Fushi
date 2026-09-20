@@ -51,9 +51,22 @@ class AnidbFileIdentityRecord {
 /// `other_episodes` 列的编码：`[[eid, 百分比], …]`，空列表存 `''`。
 String encodeOtherEpisodes(List<AnidbEpisodeShare> shares) => shares.isEmpty
     ? ''
-    : jsonEncode(<List<int>>[
+    : jsonEncode(<List<Object?>>[
         for (final AnidbEpisodeShare share in shares)
-          <int>[share.episodeId, share.percentage],
+          // 未问到集信息：`[eid, pct]`；问到了：再接 `epno, airedMs|null,
+          // eng, romaji, kanji`（同一列两种长度并存，v109 存量行照旧可读）。
+          if (share.episodeNumber case final String epno)
+            <Object?>[
+              share.episodeId,
+              share.percentage,
+              epno,
+              share.airedAt?.millisecondsSinceEpoch,
+              share.englishTitle ?? '',
+              share.romajiTitle ?? '',
+              share.kanjiTitle ?? '',
+            ]
+          else
+            <Object?>[share.episodeId, share.percentage],
       ]);
 
 /// [encodeOtherEpisodes] 的逆；坏数据当空（身份主列不受影响）。
@@ -69,11 +82,26 @@ List<AnidbEpisodeShare> decodeOtherEpisodes(String raw) {
   return <AnidbEpisodeShare>[
     for (final Object? item in decoded)
       if (item is List &&
-          item.length == 2 &&
+          (item.length == 2 || item.length == 7) &&
           item[0] is int &&
           item[1] is int &&
           (item[0] as int) > 0)
-        AnidbEpisodeShare(episodeId: item[0] as int, percentage: item[1] as int),
+        if (item.length == 2 || item[2] is! String)
+          AnidbEpisodeShare(
+              episodeId: item[0] as int, percentage: item[1] as int)
+        else
+          AnidbEpisodeShare(
+            episodeId: item[0] as int,
+            percentage: item[1] as int,
+            episodeNumber: item[2] as String,
+            airedAt: item[3] is int
+                ? DateTime.fromMillisecondsSinceEpoch(item[3] as int,
+                    isUtc: true)
+                : null,
+            englishTitle: item[4] is String ? item[4] as String : '',
+            romajiTitle: item[5] is String ? item[5] as String : '',
+            kanjiTitle: item[6] is String ? item[6] as String : '',
+          ),
   ];
 }
 

@@ -50,7 +50,7 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 109);
+      expect(migrated.schemaVersion, 110);
 
       // 存量行保留，新列默认 0。
       final AnidbFileIdentityRow? hit = await migrated.anidbFileIdentityByHash(
@@ -89,7 +89,7 @@ void main() {
       addTearDown(reopened.close);
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 109);
+      expect(probe.select('PRAGMA user_version').first.values.first, 110);
       expect(
         probe
             .select('PRAGMA table_info(anidb_file_identities)')
@@ -153,7 +153,7 @@ void main() {
       expect(row?.missAttempts, 3, reason: '既有计数原样保留');
       final sqlite.Database probe = sqlite.sqlite3.open(path);
       addTearDown(probe.dispose);
-      expect(probe.select('PRAGMA user_version').first.values.first, 109);
+      expect(probe.select('PRAGMA user_version').first.values.first, 110);
       expect(
         probe
             .select('PRAGMA table_info(anidb_file_identities)')
