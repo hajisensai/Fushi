@@ -528,6 +528,7 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
     this.minSplitWidth = 840,
     this.supportingWidth,
     this.dividerColor,
+    this.showDivider = true,
   });
 
   final Widget primary;
@@ -536,6 +537,10 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
   final double minSplitWidth;
   final double? supportingWidth;
   final Color? dividerColor;
+
+  /// 为 false 时两个窗格之间不画 1px 分隔线（也不占那 1px），窗格边界只由各自
+  /// 的内容表达。设置主页的宽屏主从用它：用户实报窗格之间那条竖线多余。
+  final bool showDivider;
 
   @override
   Widget build(BuildContext context) {
@@ -548,11 +553,13 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
             supportingPaneWidthForLayout(constraints.maxWidth);
         final Color resolvedDividerColor =
             dividerColor ?? Theme.of(context).dividerColor;
-        final Widget divider = VerticalDivider(
-          width: 1,
-          thickness: 1,
-          color: resolvedDividerColor,
-        );
+        final Widget? divider = showDivider
+            ? VerticalDivider(
+                width: 1,
+                thickness: 1,
+                color: resolvedDividerColor,
+              )
+            : null;
         final Widget fixedSupporting = SizedBox(
           width: resolvedSupportingWidth,
           child: supporting,
@@ -570,8 +577,16 @@ class MaterialSupportingPaneLayout extends StatelessWidget {
           // scroll view fill the pane, so its content stays top-aligned.
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: supportingSide == SupportingPaneSide.start
-              ? <Widget>[fixedSupporting, divider, flexiblePrimary]
-              : <Widget>[flexiblePrimary, divider, fixedSupporting],
+              ? <Widget>[
+                  fixedSupporting,
+                  if (divider != null) divider,
+                  flexiblePrimary,
+                ]
+              : <Widget>[
+                  flexiblePrimary,
+                  if (divider != null) divider,
+                  fixedSupporting,
+                ],
         );
       },
     );
