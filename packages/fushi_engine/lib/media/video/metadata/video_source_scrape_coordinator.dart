@@ -40,6 +40,7 @@ import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anime_episode_relations.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/anime_offline_identity_resolver.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
@@ -3263,10 +3264,21 @@ class VideoSourceScrapeCoordinator
       await directory.create(recursive: true);
       final String safeName =
           personKey.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
-      final File file =
-          File(p.join(directory.path, '$safeName.${asset.extension}'));
-      await file.writeAsBytes(asset.bytes, flush: true);
-      await database.updateVideoMetadataPersonProfilePath(personKey, file.path);
+      // 与所有封面类落盘同一收口（写盘 + 解码缓存驱逐在 writer 里，守卫
+      // media_cover_write_guard 不放行裸写）。
+      final String destPath =
+          p.join(directory.path, '$safeName.${asset.extension}');
+      try {
+        await writeCoverBytesAtomically(bytes: asset.bytes, destPath: destPath);
+      } on CoverImageInvalidException catch (error) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: url,
+          message: '人物照片不是完整图片，未落地（${credit.person.name}）：$error',
+        ));
+        continue;
+      }
+      await database.updateVideoMetadataPersonProfilePath(personKey, destPath);
       downloaded++;
     }
   }
