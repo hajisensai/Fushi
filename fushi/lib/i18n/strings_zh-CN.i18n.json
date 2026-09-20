@@ -5126,5 +5126,17 @@
   "video_subdl_settings_hint": "为电影与剧集提供英文及多语种字幕，按 IMDb / TMDB id 匹配。需要免费 API key；下载按 IP 计匿名每日额度。",
   "video_subdl_enabled_hint": "关闭后即使已填 API key 也不再搜索 SubDL。",
   "video_subdl_api_key_hint": "在 subdl.com/panel/api 免费获取 API key",
-  "onboarding_online_services_subdl": "用于查找电影与剧集的英文及多语种字幕。注册免费 SubDL 账号后在面板生成 API 密钥，填入设置并开启字幕来源。"
+  "onboarding_online_services_subdl": "用于查找电影与剧集的英文及多语种字幕。注册免费 SubDL 账号后在面板生成 API 密钥，填入设置并开启字幕来源。",
+  "jellyfin_routes_title": "线路",
+  "jellyfin_routes_hint": "为这台服务器添加其它访问地址（局域网 / 公网 / 反代），随时切换；登录状态在每条线路上通用。",
+  "jellyfin_route_primary_label": "登录地址",
+  "jellyfin_route_active_label": "使用中",
+  "jellyfin_route_url": "线路地址",
+  "jellyfin_route_add": "添加线路",
+  "jellyfin_route_add_failed": "添加线路失败",
+  "jellyfin_route_exists": "这条线路已经在列表里",
+  "jellyfin_route_verify_failed": "$url 上的服务器不接受当前登录，可能不是同一台服务器，或登录已过期：$reason",
+  "jellyfin_route_remove": "删除线路",
+  "jellyfin_route_switched": "已切换到 $url",
+  "media_server_route_switch": "切换线路"
 }

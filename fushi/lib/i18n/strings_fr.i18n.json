@@ -5126,5 +5126,17 @@
   "video_subdl_settings_hint": "Subtitles in English and many other languages for movies and TV, matched by IMDb / TMDB id. A free API key is required; downloads count toward an anonymous daily limit per IP.",
   "video_subdl_enabled_hint": "Off means SubDL is skipped even when an API key is saved.",
   "video_subdl_api_key_hint": "Get a free API key at subdl.com/panel/api",
-  "onboarding_online_services_subdl": "Find English and multilingual subtitles for movies and TV. Register a free SubDL account, generate an API key in the panel, then enter it in settings and enable this subtitle source."
+  "onboarding_online_services_subdl": "Find English and multilingual subtitles for movies and TV. Register a free SubDL account, generate an API key in the panel, then enter it in settings and enable this subtitle source.",
+  "jellyfin_routes_title": "Routes",
+  "jellyfin_routes_hint": "Add this server's other addresses (LAN, public, reverse proxy) and switch between them at any time. Your sign-in works on every route.",
+  "jellyfin_route_primary_label": "Sign-in address",
+  "jellyfin_route_active_label": "In use",
+  "jellyfin_route_url": "Route URL",
+  "jellyfin_route_add": "Add route",
+  "jellyfin_route_add_failed": "Could not add the route",
+  "jellyfin_route_exists": "This route is already in the list",
+  "jellyfin_route_verify_failed": "The server at $url did not accept the current sign-in. It may be a different server, or the sign-in has expired: $reason",
+  "jellyfin_route_remove": "Remove route",
+  "jellyfin_route_switched": "Switched to $url",
+  "media_server_route_switch": "Switch route"
 }

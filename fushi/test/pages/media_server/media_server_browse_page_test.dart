@@ -232,4 +232,61 @@ void main() {
     expect(find.byType(MediaServerHomeView), findsNothing, reason: 'B 退一层');
     expect(outer.length, 2, reason: 'B 被本页消费，不再上溯');
   });
+
+  testWidgets('多线路：卡片出「切换线路」菜单，选另一条 → 回调 + 列表重取；单线路无入口',
+      (WidgetTester tester) async {
+    final FakeMediaServerBrowser a = fakeServer('a', 'Alpha');
+    final FakeMediaServerBrowser b = fakeServer('b', 'Beta');
+    final List<String> switched = <String>[];
+    int loads = 0;
+    // 切换后 loadServers 重取：Beta 换成按新线路建的浏览器。
+    final FakeMediaServerBrowser bWan = FakeMediaServerBrowser(
+      serverId: 'fake:b',
+      displayName: 'Beta',
+      serverUrl: 'https://b.example.com',
+    );
+    final Widget page = MediaServerBrowsePage(
+      navigation: const Text('nav-probe'),
+      repo: VideoBookRepository(database),
+      loadServers: () async {
+        loads++;
+        return <MediaServerEntry>[
+          MediaServerEntry(browser: a),
+          MediaServerEntry(
+            browser: switched.isEmpty ? b : bWan,
+            routeUrls: const <String>['http://b:8096', 'https://b.example.com'],
+            onSwitchRoute: (String url) async => switched.add(url),
+          ),
+        ];
+      },
+      onPlay: (BuildContext _, MediaServerPlayRequest __) {},
+      onOpenSettings: () => settingsOpened++,
+      systemBackActive: true,
+    );
+    await tester.pumpWidget(
+      TranslationProvider(child: MaterialApp(home: Scaffold(body: page))),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('media-server-route-switch-fake:a')),
+      findsNothing,
+      reason: '单线路不出切换入口',
+    );
+    final Finder switcher =
+        find.byKey(const ValueKey<String>('media-server-route-switch-fake:b'));
+    expect(switcher, findsOneWidget);
+
+    await tester.tap(switcher);
+    await tester.pumpAndSettle();
+    expect(find.text('https://b.example.com'), findsOneWidget, reason: '菜单列出线路');
+    await tester.tap(find.text('https://b.example.com').last);
+    await tester.pumpAndSettle();
+
+    expect(switched, <String>['https://b.example.com']);
+    expect(loads, 2, reason: '切换后列表重取');
+    expect(find.text('https://b.example.com'), findsOneWidget, reason: '卡片显示新线路');
+    expect(find.text('http://b:8096'), findsNothing);
+    expect(find.byType(MediaServerHomeView), findsNothing, reason: '切线路不进首页');
+  });
 }

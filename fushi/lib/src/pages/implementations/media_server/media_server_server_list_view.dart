@@ -7,13 +7,27 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_home_v
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/utils.dart';
 
-/// 一台已登录的媒体服务器（浏览器 + 展示用账号名）。账号名不在
+/// 一台已登录的媒体服务器（浏览器 + 展示用账号名 + 线路）。账号名与线路都不在
 /// [MediaServerBrowser] 契约里（契约只管浏览与播放），由装配处从服务器配置带来。
 class MediaServerEntry {
-  const MediaServerEntry({required this.browser, this.accountName});
+  const MediaServerEntry({
+    required this.browser,
+    this.accountName,
+    this.routeUrls = const <String>[],
+    this.onSwitchRoute,
+  });
 
   final MediaServerBrowser browser;
   final String? accountName;
+
+  /// 这台服务器的全部访问地址（登录地址在首位）；少于两条 = 卡片不出切换入口。
+  /// 当前线路就是 [MediaServerBrowser.serverUrl]（浏览器按当前线路建）。
+  final List<String> routeUrls;
+
+  /// 切到某条线路（写配置 + 失效缓存槽）；完成后列表重取，新浏览器按新线路建。
+  final Future<void> Function(String url)? onSwitchRoute;
+
+  bool get canSwitchRoute => onSwitchRoute != null && routeUrls.length > 1;
 }
 
 /// 「选择服务器」：每台一张卡（服务器名 / URL / 账号），点进那台的首页。
@@ -167,6 +181,10 @@ class _MediaServerListViewState extends State<MediaServerListView> {
               ),
               entry: entry,
               onTap: () => _openServer(entry),
+              onSwitchRoute: (String url) async {
+                await entry.onSwitchRoute?.call(url);
+                if (mounted) _reload();
+              },
             ),
           ),
       ],
@@ -175,10 +193,16 @@ class _MediaServerListViewState extends State<MediaServerListView> {
 }
 
 class _ServerCard extends StatelessWidget {
-  const _ServerCard({required this.entry, required this.onTap, super.key});
+  const _ServerCard({
+    required this.entry,
+    required this.onTap,
+    required this.onSwitchRoute,
+    super.key,
+  });
 
   final MediaServerEntry entry;
   final VoidCallback onTap;
+  final Future<void> Function(String url) onSwitchRoute;
 
   @override
   Widget build(BuildContext context) {
@@ -222,6 +246,40 @@ class _ServerCard extends StatelessWidget {
               ],
             ),
           ),
+          // 多线路时卡片右侧一个「切换线路」菜单：出门在外从局域网地址切到公网地址
+          // 不用进设置；只有一条线路时不出这个入口。
+          if (entry.canSwitchRoute)
+            PopupMenuButton<String>(
+              key: ValueKey<String>(
+                'media-server-route-switch-${browser.serverId}',
+              ),
+              tooltip: t.media_server_route_switch,
+              icon: const Icon(Icons.alt_route_rounded),
+              initialValue: browser.serverUrl,
+              onSelected: (String url) {
+                if (url != browser.serverUrl) unawaited(onSwitchRoute(url));
+              },
+              itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                for (final String url in entry.routeUrls)
+                  PopupMenuItem<String>(
+                    value: url,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          url == browser.serverUrl
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(url, overflow: TextOverflow.ellipsis),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
           const Icon(Icons.chevron_right_rounded),
         ],
       ),
