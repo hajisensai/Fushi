@@ -169,12 +169,21 @@ class AnidbFileIdentity {
     required this.episodeTitle,
     required this.episodeRomajiTitle,
     required this.episodeKanjiTitle,
+    this.animeType = '',
     this.episodeAiredAt,
     this.otherEpisodes = const <AnidbEpisodeShare>[],
     this.isDeprecated = false,
     this.fileState = 0,
   });
   final int fileId, animeId, episodeId;
+
+  /// AniDB 动画类型原文（FILE amask byte1 bit4：`TV Series` / `OVA` / `Movie` /
+  /// `Web` / `TV Special` / `Music Video` / `Other`）；'' = 未取到（v111 之前
+  /// 落的行）。Shoko 的作品形态由它决定，本仓单文件单元的 kind 也跟它走。
+  final String animeType;
+
+  /// AniDB 说这是电影（Shoko `AnimeType.Movie`）。
+  bool get isMovieType => animeType.trim().toLowerCase() == 'movie';
   final String episodeNumber,
       romajiTitle,
       kanjiTitle,
@@ -227,6 +236,7 @@ class AnidbFileIdentity {
   AnidbFileIdentity copyWith({
     DateTime? episodeAiredAt,
     List<AnidbEpisodeShare>? otherEpisodes,
+    String? animeType,
   }) =>
       AnidbFileIdentity(
         fileId: fileId,
@@ -239,6 +249,7 @@ class AnidbFileIdentity {
         episodeTitle: episodeTitle,
         episodeRomajiTitle: episodeRomajiTitle,
         episodeKanjiTitle: episodeKanjiTitle,
+        animeType: animeType ?? this.animeType,
         episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
         otherEpisodes: otherEpisodes ?? this.otherEpisodes,
         isDeprecated: isDeprecated,
@@ -433,14 +444,14 @@ class AnidbUdpFileClient {
       });
 
   /// 220 FILE 数据行 → 身份。列序由 [_requestFile] 的掩码决定：
-  /// `fid|aid|eid|other eps|deprecated|state|romaji|kanji|english|epno|ep|ep romaji|ep kanji`
+  /// `fid|aid|eid|other eps|deprecated|state|type|romaji|kanji|english|epno|ep|ep romaji|ep kanji`
   /// （Shoko `RequestGetFile.ParseResponse` 同样按掩码固定下标取列）。
   /// eid 列可能是 `eid'eid,pct` 列表（一文件多集），首项是主集；
   /// `other eps` 两种写法：`eid'pct'eid'pct` 或 `eid,pct'eid,pct`。
   @visibleForTesting
   static AnidbFileIdentity parseFileReply(String data) {
     final List<String> fields = data.split('|');
-    if (fields.length < 13) {
+    if (fields.length < 14) {
       throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
     }
     final int? fileId = int.tryParse(fields[0].trim());
@@ -451,7 +462,7 @@ class AnidbUdpFileClient {
         animeId == null ||
         animeId <= 0 ||
         episodes.isEmpty ||
-        !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[9])) {
+        !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[10])) {
       throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
     }
     // 主集之外的集：eid 列表的其余项 + other episodes 列，按 eid 去重保序。
@@ -470,13 +481,14 @@ class AnidbUdpFileClient {
       otherEpisodes: others,
       isDeprecated: fields[4].trim() == '1',
       fileState: int.tryParse(fields[5].trim()) ?? 0,
-      romajiTitle: fields[6],
-      kanjiTitle: fields[7],
-      englishTitle: fields[8],
-      episodeNumber: fields[9],
-      episodeTitle: fields[10],
-      episodeRomajiTitle: fields[11],
-      episodeKanjiTitle: fields[12],
+      animeType: fields[6].trim(),
+      romajiTitle: fields[7],
+      kanjiTitle: fields[8],
+      englishTitle: fields[9],
+      episodeNumber: fields[10],
+      episodeTitle: fields[11],
+      episodeRomajiTitle: fields[12],
+      episodeKanjiTitle: fields[13],
     );
   }
 
@@ -534,12 +546,13 @@ class AnidbUdpFileClient {
 
   // fmask byte1: bit6 aid, bit5 eid, bit2 other episodes, bit1 deprecated,
   // bit0 state（Shoko 取 0x77，本仓不要 gid / mylist）。fid 恒为首列。
-  // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
+  // amask byte1 bit4 = anime type（Shoko 的作品形态来源；本仓 kind 跟它走）；
+  // byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
   Future<_Reply> _requestFile(int size, String ed2k) => _request('FILE', {
         'size': '$size',
         'ed2k': ed2k.toLowerCase(),
         'fmask': '6700000000',
-        'amask': '00e0f000',
+        'amask': '10e0f000',
         's': _session!,
       });
 

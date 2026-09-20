@@ -379,10 +379,9 @@ void main() {
     expect(report.pendingConfirmations, 0,
         reason: '不再是待确认：${report.warnings.map((i) => i.message)}');
     expect(report.succeededWorks, 2, reason: '${report.errors}');
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'))!;
-    expect(await db.getVideoMetadataWorkByCollection(collection.id), isNull,
-        reason: '合集级作品行不存在（拆成了成员各自的电影）');
+    expect(await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'), isNull,
+        reason: '视频成员全被拆走 → 原播放列表整个删除（带墓碑，重扫不再按文件名重建）');
+    expect(await db.hasCollectionDeletionTombstone('Bleach', 'playlist'), isTrue);
     final VideoMetadataWorkRow first =
         (await db.getVideoMetadataWorkByBook('book-0'))!;
     final VideoMetadataWorkRow second =
@@ -405,8 +404,92 @@ void main() {
     expect(await identitiesOf(second.id), containsPair('anidb', '5586'));
     expect(
       report.warnings.any((SourceScrapeIssue i) =>
-          i.message.contains('2 部不同的电影作品') &&
-          i.message.contains('拆成独立电影')),
+          i.message.contains('2 部不同作品') && i.message.contains('2 部电影')),
+      isTrue,
+      reason: '${report.warnings.map((i) => i.message)}',
+    );
+  });
+
+  // Shoko 按 AniDB 作品建多个 series：同一播放列表里两部不同的电视剧（这里是
+  // TYBW 第 1、2 cour，各自是独立 AniDB 作品）→ 拆成两个合集各自刮，原合集删除。
+  test(
+      'members hashed to different AniDB TV works split into one collection '
+      'per work (Shoko multi-series)', () async {
+    AnidbHashIdentityResult show(int animeId, int malId, String title, int epno) =>
+        AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.matched,
+          hash: AnidbEd2kHash(
+              ed2k: 'abcdef0123456789abcdef0123456789',
+              size: animeId * 10 + epno,
+              modifiedAt: DateTime(2026),
+              changedAt: DateTime(2026)),
+          identity: AnidbFileIdentity(
+              fileId: animeId * 10 + epno,
+              animeId: animeId,
+              episodeId: animeId * 100 + epno,
+              episodeNumber: '0$epno',
+              romajiTitle: title,
+              kanjiTitle: '',
+              englishTitle: title,
+              animeType: 'TV Series',
+              episodeTitle: '',
+              episodeRomajiTitle: '',
+              episodeKanjiTitle: ''),
+          mapping:
+              AnimeIdentityMappingResult(anidbId: animeId, malIds: <int>{malId}),
+        );
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      'Bleach S17E01.mkv': show(15449, 41467, 'Bleach TYBW 1', 1),
+      'Bleach S17E02.mkv': show(15449, 41467, 'Bleach TYBW 1', 2),
+      'Bleach S17E14.mkv': show(17765, 53998, 'Bleach TYBW 2', 1),
+    });
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>[
+        'Bleach S17E01.mkv',
+        'Bleach S17E02.mkv',
+        'Bleach S17E14.mkv',
+      ],
+      hash: hash,
+    );
+    expect(report.pendingConfirmations, 0,
+        reason: '${report.warnings.map((i) => i.message)}');
+    expect(report.succeededWorks, 2, reason: '${report.errors}');
+    expect(await db.getMediaCollectionByNaturalKey('Bleach', 'playlist'), isNull,
+        reason: '原播放列表整删');
+    final MediaCollectionRow first =
+        (await db.getMediaCollectionByNaturalKey('Bleach TYBW 1', 'playlist'))!;
+    final MediaCollectionRow second =
+        (await db.getMediaCollectionByNaturalKey('Bleach TYBW 2', 'playlist'))!;
+    expect(
+        (await db.getCollectionItems(first.id))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-0', 'book-1']);
+    expect(
+        (await db.getCollectionItems(second.id))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-2']);
+    final VideoMetadataWorkRow firstWork =
+        (await db.getVideoMetadataWorkByCollection(first.id))!;
+    final VideoMetadataWorkRow secondWork =
+        (await db.getVideoMetadataWorkByCollection(second.id))!;
+    expect(firstWork.mediaType, 'tv');
+    expect(firstWork.title, 'Bleach TYBW 1');
+    expect(secondWork.title, 'Bleach TYBW 2');
+    Future<Map<String, String>> identitiesOf(int workId) async => <String, String>{
+          for (final VideoMetadataProviderIdentityRow row
+              in await db.getVideoMetadataProviderIdentities(workId: workId))
+            row.provider: row.externalId,
+        };
+    expect(await identitiesOf(firstWork.id), containsPair('mal', '41467'));
+    expect(await identitiesOf(firstWork.id), containsPair('anidb', '15449'));
+    expect(await identitiesOf(secondWork.id), containsPair('mal', '53998'));
+    expect(
+      report.warnings.any((SourceScrapeIssue i) =>
+          i.message.contains('2 部不同作品') && i.message.contains('2 个剧集合集')),
       isTrue,
       reason: '${report.warnings.map((i) => i.message)}',
     );
