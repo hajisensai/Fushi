@@ -1,5 +1,7 @@
 #include "hook_toolbar_window.h"
 
+#include "low_level_mouse_hook.h"
+
 #include <d2d1helper.h>
 #include <dwrite_3.h>
 #include <windowsx.h>
@@ -589,6 +591,7 @@ HookToolbarWindow::HookToolbarWindow() = default;
 
 HookToolbarWindow::~HookToolbarWindow() {
   if (hwnd_ != nullptr) {
+    fushi::UnregisterOverlayClickShield(hwnd_);
     DestroyWindow(hwnd_);
     hwnd_ = nullptr;
   }
@@ -683,6 +686,9 @@ bool HookToolbarWindow::Show(hook_toolbar::Profile profile,
                height, SWP_NOACTIVATE);
   ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
   visible_ = true;
+  // BUG-2613 — 工具条压在游戏上、按钮又是可点的：点按钮的物理左键同样得对采样型
+  // 引擎隐藏。每次 Show 都登记（幂等，顺带刷新绑定的游戏 HWND）。
+  fushi::RegisterOverlayClickShield(hwnd_);
   Render();
   return true;
 }
@@ -704,6 +710,7 @@ void HookToolbarWindow::Hide() {
   tooltip_.Hide();
   CancelPointerGesture();
   if (hwnd_ != nullptr) {
+    fushi::UnregisterOverlayClickShield(hwnd_);
     ShowWindow(hwnd_, SW_HIDE);
   }
 }

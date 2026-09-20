@@ -209,6 +209,32 @@ static_assert(kLowLevelMouseShieldReleaseMessage ==
                   fushi_voice_hook::kSampledInputShieldReleaseWindowMessage,
               "host/helper sampled-input release message drifted");
 
+// BUG-2613 — 覆盖窗口左键护盾（接口说明见 .h）。
+//
+// 登记表是不可变快照：窗口线程在 g_binding_mutex 下整表复制-替换，回调只做一次
+// atomic_load 然后线性扫（表很小：一两张卡 + 台词浮窗 + 工具条）。game 在登记时由
+// 解析器解出，nullptr = 这张窗口此刻没有可保护的游戏，回调直接跳过。
+struct OverlayClickShieldEntry {
+  HWND overlay = nullptr;
+  HWND game = nullptr;
+};
+struct OverlayClickShieldTable {
+  std::vector<OverlayClickShieldEntry> entries;
+};
+std::shared_ptr<const OverlayClickShieldTable> g_overlay_shield_table;
+// 表里 game != nullptr 的条目数。它是回调的纯比较快门，也是钩子安装的第二个理由
+// （见 HookWanted）。
+std::atomic<size_t> g_overlay_shield_count{0};
+std::atomic<HWND (*)()> g_overlay_shield_game_resolver{nullptr};
+// 在飞的覆盖窗口左键事务。只在钩子线程写（回调与它自己的定时器），所以不需要
+// 锁；两个字段之间没有原子性要求——id 是真值，game 只是它的附属。
+std::atomic<HWND> g_overlay_transaction_game{nullptr};
+std::atomic<uint64_t> g_overlay_transaction_id{0};
+std::atomic<uint32_t> g_overlay_transaction_counter{0};
+// transaction_id 高 16 位打上标记，日志里一眼能和 attached 事务（高 32 位是快照
+// token）区分开。
+constexpr uint64_t kOverlayTransactionTag = 0x4F56ull << 48;  // 'OV'
+
 // BUG-1286 — 回调最近一次被调用的时刻。存活性判据的一半（另一半是光标是否移动过）。
 // 只在回调里写、只在钩子线程的定时器里读，relaxed 足够：判据比较的是「有没有变化」，
 // 不依赖它与其他内存的顺序关系。
@@ -272,6 +298,93 @@ bool IsButtonUpMessage(WPARAM message) {
          message == WM_MBUTTONUP || message == WM_XBUTTONUP ||
          message == WM_NCLBUTTONUP || message == WM_NCRBUTTONUP ||
          message == WM_NCMBUTTONUP || message == WM_NCXBUTTONUP;
+}
+
+// BUG-2613 — 钩子是否应该装着：查词卡目标 与 登记的覆盖窗口 任一存在即要。
+// 卸载路径（宽限期定时器 / 存活性补装）都问这里，而不是只看 g_target。
+bool HookWanted() {
+  return g_target.load(std::memory_order_relaxed) != nullptr ||
+         g_overlay_shield_count.load(std::memory_order_relaxed) != 0;
+}
+
+// 光标下的窗口是否为已登记的覆盖窗口（或其子窗，WebView2 的宿主子 HWND 就是这种）。
+// 命中返回该条目绑定的游戏 HWND，否则 nullptr。只在按键事件上跑：一次 WindowFromPoint
+// + GetAncestor + 小表线性扫，与既有的卡内/卡外判定同量级。
+HWND OverlayClickShieldGameAt(POINT pt) {
+  const auto table = std::atomic_load_explicit(&g_overlay_shield_table,
+                                               std::memory_order_acquire);
+  if (table == nullptr) return nullptr;
+  const HWND hit = WindowFromPoint(pt);
+  if (hit == nullptr) return nullptr;
+  const HWND root = GetAncestor(hit, GA_ROOT);
+  for (const OverlayClickShieldEntry& entry : table->entries) {
+    if (entry.game == nullptr) continue;
+    if (entry.overlay == hit || entry.overlay == root) return entry.game;
+  }
+  return nullptr;
+}
+
+uint64_t NextOverlayTransactionId() {
+  uint32_t counter =
+      g_overlay_transaction_counter.fetch_add(1, std::memory_order_relaxed) +
+      1u;
+  if (counter == 0) {
+    counter = g_overlay_transaction_counter.fetch_add(
+                  1, std::memory_order_relaxed) +
+              1u;
+  }
+  return kOverlayTransactionTag | counter;
+}
+
+// 结束在飞的覆盖窗口事务：发布 release（active_buttons=0）。写者忙时发布失败，
+// 事务保留，由下一次 up / 下一次 down / 宽限期定时器重试——一条 down 请求若永远
+// 没有 release，注入侧会把游戏里之后的每一次左键都藏掉，所以重试路径必须有三条。
+// 返回 true = 已无在飞事务。
+bool EndOverlayClickShieldTransaction() {
+  const uint64_t id = g_overlay_transaction_id.load(std::memory_order_relaxed);
+  if (id == 0) return true;
+  const HWND game = g_overlay_transaction_game.load(std::memory_order_relaxed);
+  if (VoiceHookReader::Instance().TryPublishOverlayClickShieldTransaction(
+          game, id, false) == 0) {
+    return false;
+  }
+  g_overlay_transaction_id.store(0, std::memory_order_relaxed);
+  g_overlay_transaction_game.store(nullptr, std::memory_order_relaxed);
+  return true;
+}
+
+// 左键 down 落在登记的覆盖窗口上：同步发布 Popup owner 的 down 请求。回调里
+// 只做一次 CAS，失败即 fail-open（这一下会漏给游戏，但绝不阻塞系统输入）。
+void BeginOverlayClickShieldTransaction(POINT pt) {
+  if (g_overlay_shield_count.load(std::memory_order_relaxed) == 0 &&
+      g_overlay_transaction_id.load(std::memory_order_relaxed) == 0) {
+    return;
+  }
+  // 同一物理键的新 down 证明上一笔事务已经结束（up 丢了 / release 发布失败）：
+  // 先补发 release。补不上时旧事务**保留**——只有下面新的 down 请求真的发布成功
+  // （它替换的是同一个请求槽，注入侧的 latch 跨代际保留「按下后一直隐藏到物理
+  // 松开」的不变式）才把它换掉；新 down 不落在覆盖窗口上或发布失败，旧事务仍留给
+  // up / 定时器去 release，否则请求槽会永远停在 down。
+  EndOverlayClickShieldTransaction();
+  const HWND game = OverlayClickShieldGameAt(pt);
+  if (game == nullptr) return;
+  const uint64_t id = NextOverlayTransactionId();
+  if (VoiceHookReader::Instance().TryPublishOverlayClickShieldTransaction(
+          game, id, true) == 0) {
+    return;
+  }
+  g_overlay_transaction_game.store(game, std::memory_order_relaxed);
+  g_overlay_transaction_id.store(id, std::memory_order_relaxed);
+}
+
+// 宽限期定时器上的对账：物理左键仍按着就继续等；已松开就补发 release。
+// 返回 true = 仍有在飞事务（调用方续表）。
+bool ReconcileOverlayClickShieldTransactionWithPhysicalState() {
+  if (g_overlay_transaction_id.load(std::memory_order_relaxed) == 0) {
+    return false;
+  }
+  if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) return true;
+  return !EndOverlayClickShieldTransaction();
 }
 
 uint32_t ReconcileSwallowedButtonsWithPhysicalState() {
@@ -1175,6 +1288,9 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
     const uint32_t bit = button_bit;
     if (wparam == WM_LBUTTONUP) {
       EndAttachedGlyphTransaction(info->pt);
+      // BUG-2613 — 覆盖窗口事务的配对 up：也在 g_target 闸门之前，台词浮窗上的
+      // 点击根本没有 g_target。
+      EndOverlayClickShieldTransaction();
     }
     if (bit != 0) {
       const uint32_t previous = g_direct_input_shield_buttons.fetch_and(
@@ -1223,6 +1339,12 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
         RequestDirectInputShieldFinalize();
       }
     }
+  }
+  // BUG-2613 — 落在登记的覆盖窗口上的左键 down：向注入侧发布 Popup 护盾请求，
+  // 事件本身不吞。放在 g_target 闸门之前：hook 台词浮窗 / 穿透工具条上的点击没有
+  // 查词卡目标，却同样不能让采样型引擎看见。
+  if (wparam == WM_LBUTTONDOWN) {
+    BeginOverlayClickShieldTransaction(info->pt);
   }
   const HWND target = g_target.load(std::memory_order_acquire);
   if (target == nullptr) {
@@ -1393,7 +1515,8 @@ void HookThreadMain() {
       const bool has_pending_button =
           g_swallowed_buttons.load(std::memory_order_relaxed) != 0 ||
           g_direct_input_shield_buttons.load(std::memory_order_relaxed) != 0 ||
-          HasActiveAttachedGlyphTransaction();
+          HasActiveAttachedGlyphTransaction() ||
+          g_overlay_transaction_id.load(std::memory_order_relaxed) != 0;
       if (disarm_timer != 0 && !has_pending_button) {
         KillTimer(nullptr, disarm_timer);
         disarm_timer = 0;
@@ -1427,7 +1550,7 @@ void HookThreadMain() {
       const BOOL got_cursor = GetCursorPos(&cursor);
       const ULONGLONG seen_tick =
           g_callback_tick.load(std::memory_order_relaxed);
-      if (g_target.load(std::memory_order_relaxed) != nullptr) {
+      if (HookWanted()) {
         if (hook == nullptr) {
           // armed 但没有钩子：Arm 那次 SetWindowsHookEx 失败，或 kThreadArm 根本没
           // 送达（PostThreadMessage 会失败，旧实现没检查返回值）。补装。
@@ -1497,15 +1620,17 @@ void HookThreadMain() {
           ReconcileDirectInputShieldButtonsWithPhysicalState();
       const bool attached_still_held =
           ReconcileAttachedGlyphTransactionWithPhysicalState();
+      const bool overlay_still_held =
+          ReconcileOverlayClickShieldTransactionWithPhysicalState();
       if (still_held != 0 || shield_still_held != 0 ||
-          attached_still_held) {
+          attached_still_held || overlay_still_held) {
         disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
         continue;
       }
       // 宽限期内没有新的 Arm（有的话定时器早被杀掉）——真正闲置，卸钩子。
       // 再核一次 g_target 防御 Arm 消息尚在队列里的窗口期。
-      if (hook != nullptr &&
-          g_target.load(std::memory_order_relaxed) == nullptr) {
+      // BUG-2613 — 登记着覆盖窗口时同样不卸：它们的护盾请求只能在回调里发。
+      if (hook != nullptr && !HookWanted()) {
         UnhookWindowsHookEx(hook);
         hook = nullptr;
         g_hook_active.store(false, std::memory_order_release);
@@ -1638,6 +1763,104 @@ MouseHookWheel UnpackMouseHookWheel(LPARAM lparam) {
   wheel.ctrl = ((raw >> 33) & 0x1ull) != 0;
   wheel.alt = ((raw >> 34) & 0x1ull) != 0;
   return wheel;
+}
+
+void SetOverlayClickShieldGameResolver(HWND (*resolver)()) {
+  g_overlay_shield_game_resolver.store(resolver, std::memory_order_release);
+}
+
+namespace {
+
+// 用新表替换登记表并重算快门计数。调用方持 g_binding_mutex。返回新计数。
+size_t PublishOverlayClickShieldTable(
+    std::shared_ptr<OverlayClickShieldTable> next) {
+  size_t count = 0;
+  for (const OverlayClickShieldEntry& entry : next->entries) {
+    if (entry.game != nullptr) ++count;
+  }
+  std::shared_ptr<const OverlayClickShieldTable> immutable = std::move(next);
+  std::atomic_store_explicit(&g_overlay_shield_table, std::move(immutable),
+                             std::memory_order_release);
+  g_overlay_shield_count.store(count, std::memory_order_release);
+  return count;
+}
+
+std::shared_ptr<OverlayClickShieldTable> CopyOverlayClickShieldTable() {
+  auto next = std::make_shared<OverlayClickShieldTable>();
+  const auto current = std::atomic_load_explicit(
+      &g_overlay_shield_table, std::memory_order_acquire);
+  if (current != nullptr) next->entries = current->entries;
+  return next;
+}
+
+}  // namespace
+
+void RegisterOverlayClickShield(HWND overlay) {
+  if (overlay == nullptr) return;
+  // 解析器在锁外跑：它会 EnumWindows，且不碰本模块的任何状态。
+  HWND (*const resolver)() =
+      g_overlay_shield_game_resolver.load(std::memory_order_acquire);
+  const HWND game = resolver != nullptr ? resolver() : nullptr;
+  size_t count = 0;
+  {
+    std::lock_guard<std::mutex> guard(g_binding_mutex);
+    auto next = CopyOverlayClickShieldTable();
+    bool found = false;
+    for (OverlayClickShieldEntry& entry : next->entries) {
+      if (entry.overlay == overlay) {
+        entry.game = game;
+        found = true;
+      }
+    }
+    if (!found) next->entries.push_back(OverlayClickShieldEntry{overlay, game});
+    count = PublishOverlayClickShieldTable(std::move(next));
+  }
+  if (count == 0) {
+    // 没有可保护的游戏：不为它装钩子。已装的钩子由既有的 g_target 生命周期管。
+    return;
+  }
+  const DWORD thread_id = EnsureHookThread();
+  if (thread_id == 0) return;
+  // kThreadArm 的无 ack 形态：钩子没装就装上，装着就取消挂起的宽限期卸载。
+  PostThreadMessage(thread_id, kThreadArm, 0, 0);
+}
+
+void UnregisterOverlayClickShield(HWND overlay) {
+  if (overlay == nullptr) return;
+  size_t count = 0;
+  {
+    std::lock_guard<std::mutex> guard(g_binding_mutex);
+    auto next = CopyOverlayClickShieldTable();
+    auto& entries = next->entries;
+    bool changed = false;
+    for (size_t index = 0; index < entries.size();) {
+      if (entries[index].overlay == overlay) {
+        entries.erase(entries.begin() + static_cast<ptrdiff_t>(index));
+        changed = true;
+      } else {
+        ++index;
+      }
+    }
+    if (!changed) return;
+    count = PublishOverlayClickShieldTable(std::move(next));
+  }
+  if (count != 0 || g_target.load(std::memory_order_acquire) != nullptr) {
+    return;
+  }
+  // 最后一张覆盖窗口撤了、也没有查词卡目标：走既有的宽限期卸载。在飞的事务由
+  // 定时器对账兜底（宽限期内 up 到来照常 release；卸钩前会等它排空）。
+  const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
+  if (thread_id != 0) {
+    PostThreadMessage(thread_id, kThreadDisarm, 0, 0);
+  }
+}
+
+size_t OverlayClickShieldCountForTest() {
+  return g_overlay_shield_count.load(std::memory_order_acquire);
+}
+
+bool OverlayClickShieldTransactionActiveForTest() {
+  return g_overlay_transaction_id.load(std::memory_order_acquire) != 0;
 }
 
 void ArmLowLevelMouseHook(HWND target) {

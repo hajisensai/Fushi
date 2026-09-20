@@ -515,6 +515,14 @@ class VoiceHookReader {
                                              uint32_t active_buttons,
                                              bool allow_risk);
 
+  // BUG-2613 — 覆盖窗口左键事务（owner=Popup）的回调安全发布：WH_MOUSE_LL 专用，
+  // try_lock + 单次 CAS、不做 HWND 查询，写者忙即返回 0 让调用方 fail-open。
+  // |down|=true 发布 active_buttons=Left，false 发布同一 transaction_id 的 release。
+  // |game| 由登记点在窗口线程按会话 pid 解出（见 SetOverlayClickShieldGameResolver）。
+  uint32_t TryPublishOverlayClickShieldTransaction(HWND game,
+                                                   uint64_t transaction_id,
+                                                   bool down);
+
   // 同一拍读取 coherent request + hook 状态，供 attached 工作台显示
   // verified/partial/known-uncovered/faulted 与琥珀色 risk 标记。
   VoiceHookLookupShieldStatus LookupShieldStatus();
