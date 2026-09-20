@@ -585,8 +585,10 @@ typedef AnidbEpisodeLinkOutcome = ({
 ///     同号集只补空）；
 ///  4. 都不行 → [AnidbTmdbEpisodeLink.cardKey] 为 null，调用方记说明。
 ///
-/// `firstAvailable`（季锁定后的顺序兜底，标题/日期都没核对）不产生链接——
-/// 与 [fillEmptySeasonsFromEpisodeTitles] 同一条纪律。
+/// `firstAvailable`（季锁定后的顺序兜底，标题/日期都没核对）**照样成链**——
+/// Shoko `MatchAnidbToTmdbEpisodes` 第四遍「every match is accepted」，评级随
+/// 链接落进分集行 `anidb_match_rating` 并在识别说明里标「顺序兜底」，用户能看出
+/// 哪几集是猜的。[fillEmptySeasonsFromEpisodeTitles] 的输入不是文件身份，仍然丢弃。
 AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   VideoMetadataWork primary,
   VideoMetadataWork? tmdb,
@@ -612,19 +614,13 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
     for (final VideoMetadataSeason season in show.seasons) ...season.episodes,
   ];
   if (pool.isEmpty) return none();
-  bool unverified(int _, TmdbEpisodeMatch match) =>
-      match.rating == TmdbEpisodeMatchRating.firstAvailable;
   final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
       ? const <int, TmdbEpisodeMatch>{}
-      : (Map<int, TmdbEpisodeMatch>.of(matchEpisodesToTmdb(sources, pool,
-          candidateAliases: candidateAliases))
-        ..removeWhere(unverified));
+      : matchEpisodesToTmdb(sources, pool, candidateAliases: candidateAliases);
   final Map<int, TmdbEpisodeMatch> specialMatches = specialSources.isEmpty
       ? const <int, TmdbEpisodeMatch>{}
-      : (Map<int, TmdbEpisodeMatch>.of(matchSpecialsToTmdb(
-          specialSources, pool,
-          candidateAliases: candidateAliases))
-        ..removeWhere(unverified));
+      : matchSpecialsToTmdb(specialSources, pool,
+          candidateAliases: candidateAliases);
   if (matches.isEmpty && specialMatches.isEmpty) return none();
 
   final bool tmdbPrimary = identical(show, primary);

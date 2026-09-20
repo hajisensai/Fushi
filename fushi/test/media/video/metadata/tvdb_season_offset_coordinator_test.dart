@@ -217,15 +217,19 @@ void main() {
     expect(bound[(2, 42)]?.$1, 'book-1');
     expect(bound[(2, 42)]?.$2, 'Ashes of the Quincy');
     expect(bound[(1, 1)]?.$1, isNull, reason: '文件名的 S01E01 不算数');
-    // 第 3 集标题对不上：季虽被前两集锁到 S2，但顺序兜底（firstAvailable）不算
-    // 核对，不得按 AniDB 集号落进 TMDB 集——不绑，留给人工。
-    expect(bound[(2, 43)]?.$1, isNull);
-    expect(bound.values.map(((String?, String?) v) => v.$1),
-        isNot(contains('book-2')));
+    // 第 3 集标题对不上：季被前两集锁到 S2，Shoko 第四遍把剩下的集按顺序落进
+    // 锁定季里第一条还没被占的 TMDB 集（firstAvailable）并照样成链——本仓同样
+    // 成链，但评级随行落库、说明里标「顺序兜底」，用户能看出这一集是猜的。
+    expect(bound[(2, 43)]?.$1, 'book-2', reason: '顺序兜底 → TMDB S2E43');
+    final Map<(int, int), (int?, String?, String?)> xrefs =
+        await episodeXrefs();
+    expect(xrefs[(2, 43)], (303, '03', 'firstAvailable'));
+    expect(xrefs[(2, 41)], (301, '01', 'title'));
     expect(
       report.warnings.any((SourceScrapeIssue issue) =>
           issue.message.contains('AniDB 文件身份 → TMDB 集逐集链接') &&
-          issue.message.contains('2 个文件对上')),
+          issue.message.contains('3 个文件对上') &&
+          issue.message.contains('顺序兜底 1')),
       isTrue,
       reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
     );

@@ -397,7 +397,9 @@ void main() {
         expect(outcome.work.seasons.map((s) => s.seasonNumber), <int>[0, 1]);
       });
 
-      test('first-available never produces a link', () {
+      test(
+          'first-available links the next unclaimed episode of the locked '
+          'season and keeps the rating (Shoko fourth pass)', () {
         final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
           cour(),
           tmdbWork(),
@@ -407,8 +409,13 @@ void main() {
           ],
           slices: slices,
         );
-        expect(outcome.links.containsKey(1), isTrue);
-        expect(outcome.links.containsKey(2), isFalse);
+        expect(outcome.links[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+        final AnidbTmdbEpisodeLink guessed = outcome.links[2]!;
+        expect(guessed.rating, TmdbEpisodeMatchRating.firstAvailable);
+        expect(guessed.tmdbEpisode.seasonNumber, 2);
+        expect(guessed.tmdbEpisode.episodeNumber, 3,
+            reason: 'S2E2 已被第 1 集占，顺序兜底落到锁定季里下一条空位');
+        expect(guessed.cardKey, (1, 2));
       });
     });
   });
