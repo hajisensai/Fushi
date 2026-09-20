@@ -16,7 +16,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
 | `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗/调色板唯一决议点 + 扩展自有界面的默认调色板（见「主题与颜色」） |
-| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板）→ 覆盖层 `--fushi-sub-*` 变量 |
+| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
@@ -147,11 +147,16 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 - **底色**：`subtitleOverlayBackground`（options「字幕底色」，默认开）关掉 → `data-bare`，CSS 去
   底板/投影只剩描边字，像站点原生字幕那样不挡画面。
 - **外观**（options「字幕外观」）：`subtitleStyle` 一个对象存字体 / 大小（基准字号百分比）/ 字重 /
-  字间距 / 行高 / 对齐 / 文字色 / 描边（none·soft·strong）/ 底板颜色·不透明度·圆角·内边距。
+  字间距 / 行高 / 对齐 / 文字色 / 描边（none·soft·strong）/ 底板颜色·不透明度·圆角·内边距·宽·高。
   `subtitle-style.js`（`fushiSubtitleStyle.normalize / toCssVars / applyTo`）把它翻成覆盖层根上的
   `--fushi-sub-*` 变量（默认项 removeProperty 交还 CSS），`content-css-overlay.css` 的
   `#fushi-subtitle-overlay` 每一项外观都读这些变量并带默认值；设置页预览走同一份 `toCssVars`，
   预览节点默认值与覆盖层逐项一致（守卫 `subtitle-style.test.js`）。
+  底板**宽 / 高**（`boxWidth` / `boxHeight`，视频盒的百分比，0 = 随内容）是例外：覆盖层是 fixed
+  定位、CSS 百分比只对视口算，所以不走变量——`boxPx` 按视频盒折 px、`applyBox` 写 `style.width` /
+  `min-height`，`placeOverlay` 每次重摆调一次（宽仍受视口 `max-width` 夹）；预览拿舞台盒当视频盒、
+  同一算法。覆盖层与预览都是 `display:grid; align-content:center; box-sizing:border-box`，底板高于
+  文字时文字垂直居中，文字层 `.fushi-subtitle-overlay-text` 因此是块级网格项。
 - **字体是下拉不是手填**（用户 2026-09-20）：三组——本机字体栈（`FONT_SUGGESTIONS`）/ Fushi 字体库 /
   自定义（只回显旧版手填过的值）。字体真源在 app 的自定义字体目录：background `subtitleFonts` 消息
   `POST /api/extension/fonts` 拿 `{fonts:[{id,name,family,ext}], recommended:[{name,nameJa,description,

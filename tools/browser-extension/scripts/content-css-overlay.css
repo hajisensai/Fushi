@@ -150,6 +150,12 @@
     transform: translate(-50%, -100%);
     /* 触屏拖字幕时不让浏览器把手势抢去滚页面/缩放：覆盖层压在视频上，本就不该从这里滚页。 */
     touch-action: none;
+    /* 底板宽 / 高由 subtitle-panel.js placeOverlay 按视频盒百分比写成 style.width / min-height
+       （subtitle-style.js applyBox；默认不写 = 随内容）。border-box 让写进来的宽高就是底板的外
+       尺寸；grid + align-content 让底板高于文字时文字垂直居中，文字层随之成为块级项。 */
+    box-sizing: border-box;
+    display: grid;
+    align-content: center;
     padding: var(--fushi-sub-padding);
     border-radius: var(--fushi-sub-radius);
     color: var(--fushi-sub-color);
@@ -243,9 +249,10 @@
     line-height: max(2, var(--fushi-sub-line-height));
 }
 
-/* 文字层：只是个行内容器，字号/对齐/描边继承自覆盖层根。 */
+/* 文字层：只是个容器（覆盖层根是 grid，它是唯一的网格项、撑满一行），字号/对齐/描边继承自
+   覆盖层根；text-align 在它内部生效，所以固定宽底板里文字仍按设置对齐。 */
 #fushi-subtitle-overlay .fushi-subtitle-overlay-text {
-    display: inline;
+    display: block;
 }
 
 #fushi-subtitle-overlay rt {
