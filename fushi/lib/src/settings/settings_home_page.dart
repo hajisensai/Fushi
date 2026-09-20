@@ -138,12 +138,15 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return _buildEmbeddedShell(content);
   }
 
-  /// 宽屏导航窗格与窄屏单列都直接画在页面底（`surfaces.page`）上，搜索框统一取
-  /// `surfaces.search` 填充。（导航窗格曾单独铺一层 `surfaces.card` tonal 底、搜索
-  /// 框在那上面再提一档到 `surfaces.overlay`；窗格底已随分隔线一起撤掉，见
-  /// [_buildWideLayout]。）
-  Widget _buildSearchField() {
+  /// [onNavCard] 为 true 时搜索框画在宽屏导航卡（`surfaces.card`，见
+  /// [_buildWideLayout]）里：那里 `surfaces.search` 与卡底只差一档、几乎糊掉，故再
+  /// 提一档到 `surfaces.overlay`，且横向内边距收成卡内的 `gap`；窄屏单列画在页面底
+  /// （`surfaces.page`）上，保持 `surfaces.search` 与 `page` 内边距。
+  Widget _buildSearchField({bool onNavCard = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double horizontal = onNavCard
+        ? tokens.spacing.gap
+        : tokens.spacing.page;
     // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
     // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
     // outlineVariant 深一档，在同一屏里是第三种强度的线。
@@ -159,9 +162,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        horizontal,
         tokens.spacing.gap,
-        tokens.spacing.page,
+        horizontal,
         0,
       ),
       // Material(transparency)：设置主页也会在 Cupertino 皮肤下渲染（隐藏内部
@@ -186,7 +189,11 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
                   ),
             isDense: true,
             filled: !eink,
-            fillColor: eink ? null : tokens.surfaces.search,
+            fillColor: eink
+                ? null
+                : (onNavCard
+                      ? tokens.surfaces.overlay
+                      : tokens.surfaces.search),
             border: eink
                 ? OutlineInputBorder(
                     // MD3 守卫：圆角一律走 design tokens，不自持字面量。
@@ -227,15 +234,20 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       );
     }
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
+    // 宽屏结果列表画在导航卡里：横向收成卡内 `gap`、底部不再叠系统栏内边距
+    // （卡的外边距已经让出），结果分组也不再铺卡（卡中卡）。窄屏落在页面底上，
+    // 保持原样。
+    final double horizontal = wide ? tokens.spacing.gap : tokens.spacing.page;
     return ListView(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        horizontal,
         tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + mediaPadding.bottom,
+        horizontal,
+        wide ? tokens.spacing.gap : tokens.spacing.page + mediaPadding.bottom,
       ),
       children: <Widget>[
         AdaptiveSettingsSection(
+          surfaceColor: wide ? Colors.transparent : null,
           children: <Widget>[
             for (final SettingsSearchEntry entry in results)
               FushiListItem(
@@ -335,35 +347,53 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       (SettingsDestination destination) =>
           destination.id == selectedDestinationId,
     );
-    // 两个窗格都直接落在页面底上，中间不画分隔线、导航窗格也不单独铺 tonal 底：
-    // BUG-2443 曾把窗格提到 `surfaces.card` 并保留 1px 分隔线，让线两侧读出「两个
-    // 窗格」；用户实机反馈（2026-09-20 截图）那条线本身就是多余的——左边一块圆角
-    // 色块、右边一张分组卡、中间再夹一条竖线，接缝反而最扎眼。分层交给导航列表的
-    // pill 选中态与右侧分组卡自己表达，窗格之间只留空白。
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
+    // 窗格之间不画分隔线：BUG-2443 曾把导航窗格整块铺成 `surfaces.card` 底并保留
+    // 1px 分隔线，让线两侧读出「两个窗格」；用户实机反馈（2026-09-20 截图）那条线
+    // 本身多余——左边一整块贴边色块、右边一张分组卡、中间再夹一条竖线，接缝最扎眼。
+    // 改成导航整块（搜索框 + 分类列表）装进一张与右侧分组卡**同款**的 FushiCard
+    // （同色 `surfaces.card`、同圆角 `groupRadius`），外边距与右侧分组卡对齐：顶部
+    // 同取 `gap`、离图标侧栏 `page`、与右侧分组卡之间留一个 `page`（右侧正文自带
+    // 的左内边距，见 MaterialSettingsRenderer.detailHorizontalInsets）。这样左右
+    // 都是「卡片浮在页面底上」，窗格边界由卡片自己表达，不需要线。
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
       showDivider: false,
-      supporting: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _buildSearchField(),
-          Expanded(
-            child: _searchQuery.trim().isEmpty
-                ? renderer.buildDestinationList(
-                    settingsContext: settingsContext,
-                    destinations: destinations,
-                    selectedDestinationId: selectedDestinationId,
-                    onDestinationSelected: _selectDestination,
-                    pushRoutes: false,
-                  )
-                : _buildSearchResults(
-                    settingsContext: settingsContext,
-                    destinations: destinations,
-                    wide: true,
-                  ),
+      supporting: Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          0,
+          tokens.spacing.page + mediaPadding.bottom,
+        ),
+        child: FushiCard(
+          padding: EdgeInsets.zero,
+          borderRadius: tokens.radii.groupRadius,
+          color: tokens.surfaces.card,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildSearchField(onNavCard: true),
+              Expanded(
+                child: _searchQuery.trim().isEmpty
+                    ? renderer.buildDestinationList(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        pushRoutes: false,
+                      )
+                    : _buildSearchResults(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        wide: true,
+                      ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
       // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
       // 切换目标时整棵子树作废重建，避免 Flutter 复用上一目标同位置的 Switch

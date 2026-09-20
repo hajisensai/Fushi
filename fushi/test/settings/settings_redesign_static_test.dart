@@ -551,31 +551,39 @@ void main() {
     );
   });
 
-  test('wide settings list-detail draws no divider and no tonal nav pane', () {
-    final String source = readNormalizedSource(
-      'lib/src/settings/settings_home_page.dart',
-    );
-    // 历史：BUG-2443 把导航窗格提到 `surfaces.card` tonal 底并保留 1px 分隔线，
-    // 让线两侧读出「两个窗格」。用户实机反馈（2026-09-20 截图）那条线本身多余，
-    // 窗格被卡片包住再配一条竖线接缝最扎眼——窗格底与分隔线一并撤掉，两个窗格
-    // 直接落在页面底上。这里钉住：主页不再给窗格铺 `surfaces.card`、不再给
-    // MaterialSupportingPaneLayout 传 dividerColor，且显式关掉分隔线。
-    expect(
-      source,
-      isNot(contains('tokens.surfaces.card')),
-      reason: '宽屏导航窗格不能再铺 surfaces.card tonal 底',
-    );
-    expect(
-      source,
-      isNot(contains('dividerColor:')),
-      reason: '宽屏设置主从不再画窗格分隔线，不该再传 dividerColor',
-    );
-    expect(
-      source,
-      contains('showDivider: false'),
-      reason: '宽屏设置主从必须显式关掉 MaterialSupportingPaneLayout 的分隔线',
-    );
-  });
+  test(
+    'wide settings list-detail draws no divider and wraps the nav block in a '
+    'FushiCard',
+    () {
+      final String source = readNormalizedSource(
+        'lib/src/settings/settings_home_page.dart',
+      );
+      // 历史：BUG-2443 把导航窗格整块铺成 `surfaces.card` tonal 底并保留 1px 分隔
+      // 线。用户实机反馈（2026-09-20）：线多余，但左侧要像右侧分组卡一样有一张卡
+      // 包住。这里钉住：主页不再给 MaterialSupportingPaneLayout 传 dividerColor、
+      // 显式关掉分隔线，导航块装进与分组卡同款的 FushiCard（groupRadius）。
+      expect(
+        source,
+        isNot(contains('dividerColor:')),
+        reason: '宽屏设置主从不再画窗格分隔线，不该再传 dividerColor',
+      );
+      expect(
+        source,
+        contains('showDivider: false'),
+        reason: '宽屏设置主从必须显式关掉 MaterialSupportingPaneLayout 的分隔线',
+      );
+      expect(
+        containsIdentifierCall(source, 'FushiCard'),
+        isTrue,
+        reason: '宽屏导航块必须装在 FushiCard 里（用户要「左边也有卡包住」）',
+      );
+      expect(
+        source,
+        contains('tokens.radii.groupRadius'),
+        reason: '导航卡圆角必须与右侧分组卡同款（groupRadius）',
+      );
+    },
+  );
 
   test('material destination list uses pill selection + gated chevron', () {
     final String source = readNormalizedSource(

@@ -1,14 +1,14 @@
 // 宽屏设置主从布局的「窗格接缝」行为守卫。
 //
-// 历史：BUG-2443 曾把导航窗格提到 `surfaces.card` tonal 底、保留窗格之间那条 1px
-// 分隔线，让线两侧读出「两个窗格」。用户实机反馈（2026-09-20 截图）那条线本身就
-// 是多余的：左边一块圆角色块、右边一张分组卡、中间再夹一条竖线，接缝反而最扎眼。
-// 现在两个窗格都直接落在页面底上，中间不画线、导航窗格不铺 tonal 底，分层交给
-// 导航列表的 pill 选中态与右侧分组卡自己表达。
+// 历史：BUG-2443 曾把导航窗格整块铺成 `surfaces.card` tonal 底、保留窗格之间那条
+// 1px 分隔线，让线两侧读出「两个窗格」。用户实机反馈（2026-09-20 两张截图）：线本
+// 身多余，但左侧也要像右侧分组卡一样**有一张卡包住**——于是导航整块（搜索框 +
+// 分类列表）装进一张与右侧分组卡同款的 FushiCard，窗格之间不画线，边界由卡片
+// 自己表达。
 //
-// 这里钉住三条不变式：宽屏主从不画 VerticalDivider；导航窗格不再被
-// `surfaces.card` 色的 Container 包着；详情正文左右内边距相等（BUG-2443 的另
-// 一半修复，与线无关，保留）。源码层面的对应守卫在
+// 这里钉住三条不变式：宽屏主从不画 VerticalDivider；搜索框与分类列表被同一张
+// `surfaces.card` 色、`groupRadius` 圆角的 FushiCard 包住；详情正文左右内边距相等
+// （BUG-2443 的另一半修复，与线无关，保留）。源码层面的对应守卫在
 // settings_redesign_static_test.dart。
 import 'dart:io';
 
@@ -96,8 +96,8 @@ Widget _wideSettings(AppModel appModel, ThemeNotifier themeNotifier) {
 
 void main() {
   testWidgets(
-    'wide list-detail draws no divider and no tonal nav pane; the detail body '
-    'stays symmetric',
+    'wide list-detail draws no divider; the nav block sits in one FushiCard '
+    'matching the detail sections; the detail body stays symmetric',
     (WidgetTester tester) async {
       final AppModel appModel = await _buildAppModel();
       final ThemeNotifier themeNotifier = appModel.themeNotifier;
@@ -131,22 +131,29 @@ void main() {
       );
       final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
-      // 导航窗格不再单独铺 tonal 底（曾是一个 surfaces.card 色的 Container）。
-      final Iterable<Container> tonalPanes = tester
-          .widgetList<Container>(
-            find.descendant(
-              of: find.byType(MaterialSupportingPaneLayout),
-              matching: find.byType(Container),
-            ),
-          )
-          .where(
-            (Container container) => container.color == tokens.surfaces.card,
-          );
-      expect(
-        tonalPanes,
-        isEmpty,
-        reason: '宽屏导航窗格不能再被 surfaces.card 色的 Container 包成一块色块',
+      // 搜索框与分类列表被同一张导航卡包住，且这张卡与右侧分组卡同款
+      // （surfaces.card + groupRadius）——用户要的是「左边也有一张卡」，不是一整块
+      // 贴边的 tonal 色块。
+      final Finder searchField = find.byType(TextField);
+      expect(searchField, findsOneWidget);
+      final Finder navCard = find.ancestor(
+        of: searchField,
+        matching: find.byType(FushiCard),
       );
+      expect(navCard, findsOneWidget, reason: '搜索框必须装在导航卡（FushiCard）里');
+      final FushiCard card = tester.widget<FushiCard>(navCard);
+      expect(card.color, tokens.surfaces.card);
+      expect(card.borderRadius, tokens.radii.groupRadius);
+      // 分类列表（选中项的 FushiListItem）也在同一张卡里。
+      expect(
+        find.descendant(of: navCard, matching: find.byType(FushiListItem)),
+        findsWidgets,
+        reason: '分类列表必须与搜索框在同一张导航卡里',
+      );
+      // 导航卡不贴边：外面有留白，否则又是一块贴边色块。
+      final Rect cardRect = tester.getRect(navCard);
+      expect(cardRect.left, greaterThan(0));
+      expect(cardRect.top, greaterThan(0));
 
       // 详情正文左右内边距相等：左边曾多出一个 gap（28 对 20），正文在自己的窗格
       // 里左右不等宽。
