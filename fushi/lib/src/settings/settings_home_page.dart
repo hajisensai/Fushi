@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
@@ -139,11 +138,15 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     return _buildEmbeddedShell(content);
   }
 
-  /// [onNavPane] 为 true 时搜索框画在宽屏导航窗格的 tonal 底上（`surfaces.card`），
-  /// 那里 `surfaces.search` 与底色只差一档、几乎糊掉，故再提一档到 `surfaces.overlay`；
-  /// 窄屏单列画在页面底（`surfaces.page`）上，保持原来的 `surfaces.search`。
-  Widget _buildSearchField({bool onNavPane = false}) {
+  /// [onNavCard] 为 true 时搜索框画在宽屏导航卡（`surfaces.card`，见
+  /// [_buildWideLayout]）里：那里 `surfaces.search` 与卡底只差一档、几乎糊掉，故再
+  /// 提一档到 `surfaces.overlay`，且横向内边距收成卡内的 `gap`；窄屏单列画在页面底
+  /// （`surfaces.page`）上，保持 `surfaces.search` 与 `page` 内边距。
+  Widget _buildSearchField({bool onNavCard = false}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double horizontal = onNavCard
+        ? tokens.spacing.gap
+        : tokens.spacing.page;
     // 搜索框与设置分组卡走同一套边界语言：填充分层，不描边。原来它吃全局
     // inputDecorationTheme 的 colorScheme.outline 描边——比分组卡的
     // outlineVariant 深一档，在同一屏里是第三种强度的线。
@@ -159,9 +162,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
     return Padding(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        horizontal,
         tokens.spacing.gap,
-        tokens.spacing.page,
+        horizontal,
         0,
       ),
       // Material(transparency)：设置主页也会在 Cupertino 皮肤下渲染（隐藏内部
@@ -188,7 +191,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
             filled: !eink,
             fillColor: eink
                 ? null
-                : (onNavPane
+                : (onNavCard
                       ? tokens.surfaces.overlay
                       : tokens.surfaces.search),
             border: eink
@@ -231,15 +234,20 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       );
     }
     final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
+    // 宽屏结果列表画在导航卡里：横向收成卡内 `gap`、底部不再叠系统栏内边距
+    // （卡的外边距已经让出），结果分组也不再铺卡（卡中卡）。窄屏落在页面底上，
+    // 保持原样。
+    final double horizontal = wide ? tokens.spacing.gap : tokens.spacing.page;
     return ListView(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        horizontal,
         tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + mediaPadding.bottom,
+        horizontal,
+        wide ? tokens.spacing.gap : tokens.spacing.page + mediaPadding.bottom,
       ),
       children: <Widget>[
         AdaptiveSettingsSection(
+          surfaceColor: wide ? Colors.transparent : null,
           children: <Widget>[
             for (final SettingsSearchEntry entry in results)
               FushiListItem(
@@ -339,41 +347,52 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       (SettingsDestination destination) =>
           destination.id == selectedDestinationId,
     );
-    final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color dividerColor = cupertino
-        ? CupertinoColors.separator.resolveFrom(context)
-        : tokens.surfaces.outline;
-    // MD3 list-detail: the nav pane sits on the tonal container token
-    // (`surfaces.card`) while the detail pane stays on the base page surface.
-    // Material only — Cupertino keeps its system background untouched.
-    final Color? navPaneColor = cupertino ? null : tokens.surfaces.card;
+    final EdgeInsets mediaPadding = MediaQuery.of(context).padding;
+    // 窗格之间不画分隔线：BUG-2443 曾把导航窗格整块铺成 `surfaces.card` 底并保留
+    // 1px 分隔线，让线两侧读出「两个窗格」；用户实机反馈（2026-09-20 截图）那条线
+    // 本身多余——左边一整块贴边色块、右边一张分组卡、中间再夹一条竖线，接缝最扎眼。
+    // 改成导航整块（搜索框 + 分类列表）装进一张与右侧分组卡**同款**的 FushiCard
+    // （同色 `surfaces.card`、同圆角 `groupRadius`），外边距与右侧分组卡对齐：顶部
+    // 同取 `gap`、离图标侧栏 `page`、与右侧分组卡之间留一个 `page`（右侧正文自带
+    // 的左内边距，见 MaterialSettingsRenderer.detailHorizontalInsets）。这样左右
+    // 都是「卡片浮在页面底上」，窗格边界由卡片自己表达，不需要线。
     return MaterialSupportingPaneLayout(
       minSplitWidth: 720,
       supportingSide: SupportingPaneSide.start,
-      dividerColor: dividerColor,
-      supporting: Container(
-        color: navPaneColor,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _buildSearchField(onNavPane: true),
-            Expanded(
-              child: _searchQuery.trim().isEmpty
-                  ? renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
-                    )
-                  : _buildSearchResults(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      wide: true,
-                    ),
-            ),
-          ],
+      showDivider: false,
+      supporting: Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap,
+          0,
+          tokens.spacing.page + mediaPadding.bottom,
+        ),
+        child: FushiCard(
+          padding: EdgeInsets.zero,
+          borderRadius: tokens.radii.groupRadius,
+          color: tokens.surfaces.card,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _buildSearchField(onNavCard: true),
+              Expanded(
+                child: _searchQuery.trim().isEmpty
+                    ? renderer.buildDestinationList(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        pushRoutes: false,
+                      )
+                    : _buildSearchResults(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        wide: true,
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
       // 详情面板的身份就是当前 destination：用 KeyedSubtree 按 id 编码，
