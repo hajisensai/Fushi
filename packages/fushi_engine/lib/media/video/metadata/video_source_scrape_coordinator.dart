@@ -620,9 +620,14 @@ class VideoSourceScrapeCoordinator
         totalWorks: works.length,
       );
 
-      final bool hasProvider = _providerChain(settings.provider).any(
-          (VideoMetadataProviderKind kind) =>
-              _registry.provider(kind)?.isAvailable ?? false);
+      // 批级快速失败门：询问链上一家都不可用才整批停。已确认 / 已落库的身份
+      // 来自任一可选主源都会按那家直取（`acceptsCanonical`），所以链外的可选
+      // 主源可用时也放行，让每条作品自己按 resolver 的结构化状态结账。
+      final bool hasProvider = <VideoMetadataProviderKind>{
+        ..._providerChain(settings.provider),
+        ...kSelectableVideoMetadataProviders,
+      }.any((VideoMetadataProviderKind kind) =>
+          _registry.provider(kind)?.isAvailable ?? false);
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(SourceScrapeIssue(
