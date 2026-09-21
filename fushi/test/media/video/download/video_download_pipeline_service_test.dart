@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -1010,6 +1011,87 @@ void main() {
         (await environment.database.getVideoDownloadJob(jobId))!;
     expect(job.lifecycle, VideoDownloadJobLifecycle.active);
     expect(job.lastError, isNull);
+  });
+
+  group('per-work subtitle language', () {
+    // 与「restart adopts…」用例同一套种子：任务停在 subtitle 阶段、磁盘上有一集
+    // 已 organize 好的视频。不预置 resolving 行，让字幕阶段真的去搜。
+    Future<_PipelineEnvironment> runSubtitleStage({
+      required _FakeSubtitleProvider subtitleProvider,
+      VideoDownloadSubtitleLanguageResolver? resolver,
+    }) async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+        backend: _FakeTorrentBackend(),
+        subtitleProvider: subtitleProvider,
+        subtitleLanguageResolver: resolver,
+        preferredSubtitleLanguages: const <String>['ja'],
+      );
+      addTearDown(environment.close);
+      const String jobId = 'per-work-language-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.subtitle,
+      );
+      await _seedOrganizedEpisode(environment, jobId);
+      environment.service.wake();
+      // bestEffort：候选校验不过也只是记「暂无字幕」，任务照样走到 completed。
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.completed,
+      );
+      return environment;
+    }
+
+    test('resolver language replaces the global filter in the request',
+        () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      VideoDownloadSubtitleLanguageQuery? seen;
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (VideoDownloadSubtitleLanguageQuery query) {
+          seen = query;
+          return 'zh';
+        },
+      );
+      expect(subtitleProvider.lastRequest!.languages, <String>['zh']);
+      // 查询带的是任务行本身的字段，键与导入落库的合集名同源。
+      expect(seen!.jobId, 'per-work-language-job');
+      expect(seen!.title, 'Show');
+      expect(seen!.year, 2026);
+      expect(seen!.seriesKey, 'show (2026)');
+      expect(seen!.metadataProvider, 'anilist');
+      expect(seen!.externalId, '100');
+    });
+
+    test('null from the resolver keeps the global languages', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => null,
+      );
+      expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
+    });
+
+    test('a throwing resolver falls back to the global languages', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      final _PipelineEnvironment environment = await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => throw StateError('preferences unavailable'),
+      );
+      expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
+      final VideoDownloadJobRow job = (await environment.database
+          .getVideoDownloadJob('per-work-language-job'))!;
+      expect(job.lifecycle, VideoDownloadJobLifecycle.completed);
+    });
   });
 
   test(
@@ -2620,6 +2702,8 @@ class _PipelineEnvironment {
     required _FakeTorrentBackend backend,
     VideoDownloadBackendResolver? backendResolver,
     VideoSubtitleProvider? subtitleProvider,
+    VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver,
+    Iterable<String> preferredSubtitleLanguages = const <String>[],
     VideoMetadataProvider? metadataProvider,
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
@@ -2661,6 +2745,8 @@ class _PipelineEnvironment {
       database: database,
       resourceRegistry: resourceRegistry,
       subtitleRegistry: subtitleRegistry,
+      subtitleLanguageResolver: subtitleLanguageResolver,
+      preferredSubtitleLanguages: preferredSubtitleLanguages,
       backendResolver: backendResolver ??
           (_) async => VideoDownloadBackendBinding(
                 backend: backend,
@@ -2823,6 +2909,37 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
         );
 }
 
+/// 在受管来源下放一集已 organize 好的视频并登记文件行（`Show (2026)/Season 01`）。
+Future<void> _seedOrganizedEpisode(
+  _PipelineEnvironment environment,
+  String jobId,
+) async {
+  final Directory season = Directory(
+    p.join(environment.root.path, 'Show (2026)', 'Season 01'),
+  );
+  await season.create(recursive: true);
+  final File video = File(p.join(season.path, 'Show (2026) - S01E02.mkv'));
+  await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await environment.database.upsertVideoDownloadJobFile(
+    VideoDownloadJobFilesCompanion.insert(
+      jobId: jobId,
+      backendFileIndex: const Value<int?>(0),
+      originalRelativePath: p.basename(video.path),
+      currentRelativePath: p.basename(video.path),
+      targetRelativePath: Value<String?>(p.basename(video.path)),
+      finalAbsolutePath: Value<String?>(video.path),
+      kind: const Value<String>('video'),
+      season: const Value<int?>(1),
+      episode: const Value<int?>(2),
+      sizeBytes: Value<int?>(await video.length()),
+      status: const Value<String>(VideoDownloadJobFileStatus.organized),
+      createdAt: now,
+      updatedAt: now,
+    ),
+  );
+}
+
 class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
   _FakeSubtitleCandidate()
       : super(
@@ -2851,6 +2968,9 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
   int searchCalls = 0;
   int downloadCalls = 0;
 
+  /// 最近一次搜索请求（断言语言硬过滤用）。
+  VideoSubtitleSearchRequest? lastRequest;
+
   @override
   String get id => 'opensubtitles';
 
@@ -2862,6 +2982,7 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
     VideoSubtitleSearchRequest request,
   ) async {
     searchCalls += 1;
+    lastRequest = request;
     return ProviderBatchResult<VideoSubtitleCandidate>.success(
       <VideoSubtitleCandidate>[candidate],
     );

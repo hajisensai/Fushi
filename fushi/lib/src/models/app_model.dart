@@ -133,6 +133,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -5066,6 +5067,9 @@ class AppModel with ChangeNotifier {
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
       defaultContentLanguage: prefsRepo.defaultContentLanguage,
+      // 按作品的字幕语言：读字幕工作台 / AI 下载写的每系列记忆，键与导入落库的
+      // 合集名同源；没记过就走上面的全局默认语言链。
+      subtitleLanguageResolver: _resolveVideoDownloadSubtitleLanguage,
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
@@ -5088,6 +5092,22 @@ class AppModel with ChangeNotifier {
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
   }
+
+  /// 每系列字幕语言记忆（`jimaku_pref_langs`）按键查；空串 / 没记过 → null。
+  ///
+  /// 键的两个来源必须同源：刮削后补字幕用合集行的名字，下载管线用
+  /// [VideoDownloadSubtitleLanguageQuery.seriesKey]（= 导入阶段将要落库的合集名）。
+  String? _seriesSubtitleLanguage(String seriesKey) {
+    final String code =
+        prefsRepo.jimakuPreferredLanguages[seriesKey]?.trim() ?? '';
+    return code.isEmpty ? null : code;
+  }
+
+  /// 下载管线字幕阶段的按作品语言解析器（见 [VideoDownloadPipelineService]）。
+  String? _resolveVideoDownloadSubtitleLanguage(
+    VideoDownloadSubtitleLanguageQuery query,
+  ) =>
+      _seriesSubtitleLanguage(query.seriesKey);
 
   /// 刮完一个作品 → 给它仍缺字幕的成员各补一条（BUG-1698）。
   ///
@@ -5113,6 +5133,12 @@ class AppModel with ChangeNotifier {
       members: notice.work.members,
       metadata: notice.metadata,
       hasExistingSubtitle: withSubtitle.contains,
+      // 单文件作品没有合集，也就没有每系列记忆可查。
+      explicitLanguage: notice.work.collection == null
+          ? null
+          : _seriesSubtitleLanguage(
+              notice.work.collection!.name.trim().toLowerCase(),
+            ),
     );
     for (final SubtitleBackfillTarget target in targets) {
       final SubtitleBackfillResult result = await service.backfill(target);

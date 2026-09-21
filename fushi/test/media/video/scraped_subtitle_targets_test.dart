@@ -131,6 +131,30 @@ void main() {
           isTrue);
     });
 
+    test('用户对本作品明确选过的字幕语言原样盖到每个目标', () {
+      final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
+        members: <VideoBookRow>[
+          _book('b1', '/v/Frieren S01E01.mkv'),
+          _book('b2', '/v/Frieren S01E02.mkv'),
+        ],
+        metadata: _work(),
+        hasExistingSubtitle: (_) => false,
+        explicitLanguage: 'zh',
+      );
+      expect(
+        targets.map((SubtitleBackfillTarget t) => t.explicitLanguage),
+        <String>['zh', 'zh'],
+      );
+      expect(
+        scrapedSubtitleTargets(
+          members: <VideoBookRow>[_book('b1', '/v/Frieren S01E01.mkv')],
+          metadata: _work(),
+          hasExistingSubtitle: (_) => false,
+        ).single.explicitLanguage,
+        isNull,
+      );
+    });
+
     test('已有字幕的成员直接标记，不生成新的下载意图', () {
       final List<SubtitleBackfillTarget> targets = scrapedSubtitleTargets(
         members: <VideoBookRow>[

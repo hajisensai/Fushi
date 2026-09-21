@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
@@ -796,6 +797,7 @@ class VideoDownloadPipelineService {
     this.onBackendTaskAdded,
     this.subtitleRegistry,
     this.defaultContentLanguage,
+    this.subtitleLanguageResolver,
     this.discoveryImporter,
     this.manualTorrentDirectory,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
@@ -823,6 +825,12 @@ class VideoDownloadPipelineService {
   /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
   /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
   final String? defaultContentLanguage;
+
+  /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
+  /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
+  /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
+  /// 按 null 处理并记日志——它是锦上添花，不能让字幕阶段炸。
+  final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
   final Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded;
@@ -2679,6 +2687,12 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
+    // 按作品的字幕语言一次性解析：整条任务的所有分集共用同一个答案。
+    final String? perWorkLanguage = await _resolvePerWorkSubtitleLanguage(job);
+    _ensureLeaseHeld();
+    final List<String> searchLanguages = perWorkLanguage == null
+        ? preferredSubtitleLanguages
+        : <String>[perWorkLanguage];
     final List<VideoDownloadJobFileRow> files =
         (await database.getVideoDownloadJobFiles(job.jobId))
             .where(
@@ -2747,7 +2761,7 @@ class VideoDownloadPipelineService {
                 ).copyWithEpisode(season: file.season, episode: file.episode),
                 season: file.season,
                 episode: file.episode,
-                languages: preferredSubtitleLanguages,
+                languages: searchLanguages,
                 fingerprint: LocalVideoFingerprint(
                   fileSize: await video.length(),
                   fileName: p.basename(video.path),
@@ -2802,6 +2816,7 @@ class VideoDownloadPipelineService {
               await _selectVerifiedSubtitle(
                 candidates: result.items,
                 videoPath: video.path,
+                explicitLanguage: perWorkLanguage,
               );
           verified = selection.picked;
           if (verified == null) {
@@ -2928,6 +2943,32 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.import);
   }
 
+  /// 问 [subtitleLanguageResolver] 这部作品要什么字幕语言。null = 没接解析器 /
+  /// 它不表态 / 它抛了异常（记日志，不让字幕阶段跟着倒）。
+  Future<String?> _resolvePerWorkSubtitleLanguage(
+    VideoDownloadJobRow job,
+  ) async {
+    final VideoDownloadSubtitleLanguageResolver? resolver =
+        subtitleLanguageResolver;
+    if (resolver == null) return null;
+    try {
+      final String? code = await resolver(
+        VideoDownloadSubtitleLanguageQuery(
+          jobId: job.jobId,
+          title: job.title,
+          year: job.year,
+          metadataProvider: job.metadataProvider,
+          externalId: job.externalId,
+        ),
+      );
+      final String normalized = code?.trim() ?? '';
+      return normalized.isEmpty ? null : normalized;
+    } catch (error, stack) {
+      engineLog.log('videoDownload.subtitleLanguage', error, stack);
+      return null;
+    }
+  }
+
   /// 依次下载 [candidates] 并做时长/内容校验，返回**第一个通过**的候选及其字节。
   ///
   /// 为什么要真下下来才能判：判据看的是字幕内容本身（最后一句结束在哪），搜索
@@ -2944,6 +2985,7 @@ class VideoDownloadPipelineService {
   _selectVerifiedSubtitle({
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
+    String? explicitLanguage,
   }) async {
     if (candidates.isEmpty) {
       return (picked: null, reason: 'No subtitle candidate was returned');
@@ -2954,10 +2996,12 @@ class VideoDownloadPipelineService {
     final KnownVideoDuration? known = facts.durationMs == null
         ? null
         : KnownVideoDuration.probed(facts.durationMs!);
-    // 默认取**视频自己的语言**：设置里显式选过就用那个，否则用音轨自报的语言。
-    // 这里是**排序**不是过滤——只有英文字幕的日语番仍然配得上，只是排在后面。
+    // 默认取**视频自己的语言**：按作品的解析器 / 设置里显式选过就用那个，否则用
+    // 音轨自报的语言。这里是**排序**不是过滤——只有英文字幕的日语番仍然配得上，
+    // 只是排在后面。
     final String? preferredLanguage = resolveSubtitleDownloadLanguage(
-      explicitSubtitlePreference: preferredSubtitleLanguages.firstOrNull,
+      explicitSubtitlePreference:
+          explicitLanguage ?? preferredSubtitleLanguages.firstOrNull,
       contentMetadataLanguage: facts.primaryAudioLanguage,
       globalDefaultContentLanguage: defaultContentLanguage,
     );
@@ -3369,9 +3413,11 @@ class VideoDownloadPipelineService {
           .toList();
       final SplitPlaylistImportResult result = await _videoRepository
           .importSplitPlaylist(
-            collectionName: legacy || job.year == null
-                ? job.title
-                : '${job.title} (${job.year})',
+            collectionName: videoDownloadCollectionName(
+              title: job.title,
+              year: job.year,
+              legacy: legacy,
+            ),
             entries: entries,
             sourceId: source?.id,
             reuseExistingPaths: true,
