@@ -1,8 +1,12 @@
 // 订阅面板默认值契约：
 // ① 「加入订阅」开关默认打开——进这个页面本来就是为了订阅，提交按钮不该因为一
 //    个没人点的确认开关而一直禁用；
-// ② 集数框默认「1」——release 标题里解析不出集号时也不留空，否则 helper 写着
-//    「从第 1 集开始」而框里空着，用户看不出起点在哪。
+// ② 集数框默认「1」——代表发布的标题里解析不出集号时也不留空，否则 helper 写着
+//    「从第 1 集开始」而框里空着，用户看不出起点在哪；
+// ③ 起始集号框只对追更有意义：整包订阅一次下完，没有起点可言（BUG-2619）。
+//    注意 ② 与 ③ 的交界——`subscriptionReleaseIsBatch` 的定义就是「解析不出集号
+//    即整包」，所以 ② 只在「这条规则覆盖的发布里还有单集」（组 batchOnly=false）
+//    时才可达：代表条恰好是无集号的那个整包。
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -20,16 +24,20 @@ import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 
 class _FakeResource extends VideoResourceCandidate {
   /// 字幕组 + 清晰度必须齐（`deriveStrictVideoSubscriptionFilter` 缺一个就返回
-  /// null，开关行会换成「无法订阅」警告），所以在这里写死而不留参数。
-  _FakeResource({required super.title})
-      : super(
-          remoteId: 'r1',
+  /// null，开关行会换成「无法订阅」警告），所以在这里写死而不留参数——同时这也
+  /// 让同一测试里的多条候选天然落进同一个订阅组（分组键就是这张 filter）。
+  _FakeResource({
+    required super.title,
+    String remoteId = 'r1',
+    int seeders = 30,
+  }) : super(
+          remoteId: remoteId,
           providerId: 'nyaa',
           providerInstanceId: 'nyaa',
           providerPriority: 100,
           releaseGroup: 'SubsPlease',
           resolution: '1080p',
-          seeders: 30,
+          seeders: seeders,
         );
 }
 
@@ -76,11 +84,14 @@ VideoDiscoveryItem _item() => VideoDiscoveryItem(
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  /// 订阅面板 + 单条候选（单条组点卡直选，不必展开）。
+  /// 订阅面板 + 候选。[candidate] 是要点选的那条（做种最多者当组代表，所以它得
+  /// 是 seeders 最大的）；[others] 是同组里的其它发布，用来把组的 batchOnly 压成
+  /// false。
   Future<void> pumpSubscription(
     WidgetTester tester,
-    VideoResourceCandidate candidate,
-  ) async {
+    VideoResourceCandidate candidate, {
+    List<VideoResourceCandidate> others = const <VideoResourceCandidate>[],
+  }) async {
     tester.view.physicalSize = const Size(1100, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -91,7 +102,7 @@ void main() {
           home: VideoDiscoverySubscriptionPage(
             item: _item(),
             registry: VideoResourceRegistry(<VideoResourceProvider>[
-              _SeededProvider(<VideoResourceCandidate>[candidate]),
+              _SeededProvider(<VideoResourceCandidate>[candidate, ...others]),
             ]),
             sources: const <MediaSourceRow>[
               MediaSourceRow(
@@ -121,12 +132,12 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  String startAfterText(WidgetTester tester) => tester
-      .widget<TextField>(
-        find.byKey(const ValueKey<String>('video-subscription-start-after')),
-      )
-      .controller!
-      .text;
+  final Finder startAfterField = find.byKey(
+    const ValueKey<String>('video-subscription-start-after'),
+  );
+
+  String startAfterText(WidgetTester tester) =>
+      tester.widget<TextField>(startAfterField).controller!.text;
 
   bool strictConfirmed(WidgetTester tester) => tester
       .widget<AdaptiveSettingsSwitchRow>(
@@ -162,15 +173,36 @@ void main() {
     expect(startAfterText(tester), '5', reason: '选中的 release 集号优先');
   });
 
-  testWidgets('标题无集号时集数框仍是 1，不留空', (WidgetTester tester) async {
+  testWidgets('代表条无集号但同组里还有单集时，集数框仍是 1，不留空', (
+    WidgetTester tester,
+  ) async {
+    // 代表条 = 做种最多的那条，这里是无集号的整包；组里还有一条单集，于是
+    // batchOnly=false、按追更建订阅，起始集号框照常出现。
     await pumpSubscription(
       tester,
-      _FakeResource(title: '[SubsPlease] Show (1080p)'),
+      _FakeResource(title: '[SubsPlease] Show (1080p)', seeders: 80),
+      others: <VideoResourceCandidate>[
+        _FakeResource(
+          title: '[SubsPlease] Show - 05 (1080p)',
+          remoteId: 'r2',
+          seeders: 10,
+        ),
+      ],
     );
     expect(
       startAfterText(tester),
       '1',
       reason: 'helper 写着「从第 1 集开始」，框里就不该是空的',
     );
+  });
+
+  testWidgets('整包订阅不显示起始集号框（BUG-2619）', (WidgetTester tester) async {
+    // 标题解析不出集号 ⇒ subscriptionReleaseIsBatch ⇒ 这条规则覆盖的全是整包。
+    // 整包一次下完，没有「从第几集开始」可言；框留着只会让用户以为在追更。
+    await pumpSubscription(
+      tester,
+      _FakeResource(title: '[SubsPlease] Show (1080p)'),
+    );
+    expect(startAfterField, findsNothing);
   });
 }

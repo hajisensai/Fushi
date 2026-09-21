@@ -515,7 +515,13 @@ void main() {
           hostPage.sections.expand(
             (SettingsSection s) => s.items.map((SettingsItem i) => i.id),
           ),
-          <String>['sync.server_mode', 'interconnect.profile_transfer_host'],
+          <String>[
+            'sync.server_mode',
+            // 弱网转码开关（host 按对端选的画质档切段转 HLS）也住在主机服务子页：
+            // 它是「本机作为服务器」的能力开关，不是对端侧偏好。
+            'interconnect.transcode_host',
+            'interconnect.profile_transfer_host',
+          ],
         );
       },
     );

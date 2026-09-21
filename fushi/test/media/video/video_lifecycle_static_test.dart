@@ -55,13 +55,19 @@ void main() {
     });
   });
 
-  // 网络缓存调优（TODO-033 #1）：远端 http(s) 直传须在 open 后注入缓存/预读参数，
-  // 缓解 WiFi 抖动卡顿；本地文件不注入（applyNetworkCachePropertiesToPlayer 内按
-  // scheme 门控）。无法纯单测（需真实 libmpv player），故源码层钉死注入位置。
+  // 网络缓存调优（TODO-033 #1）：远端 http(s) 直传须注入缓存/预读参数，缓解 WiFi
+  // 抖动卡顿；本地文件不注入（applyNetworkCachePropertiesToPlayer 内按 scheme
+  // 门控）。无法纯单测（需真实 libmpv player），故源码层钉死注入位置。
+  //
+  // **注入必须在 open 之前**（原断言写的是「之后」，已随实现一起翻转）：media_kit
+  // 建 Player 时就把 `network-timeout` 钉成 5s，而所有网络流都经 Dart 中继取字节，
+  // mpv 眼里的对端是中继、中继要等真上游先回字节。在线源 CDN 首字节常 5~15s，
+  // loadfile 的第一个请求在 5s 就被撕掉 → 媒体打不开、页面报「播放器打不开该视频」。
+  // 属性放到 open 后再设已经太迟：第一个请求早就发出去了。
   group('VideoPlayerController network cache tuning (TODO-033 #1)', () {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
-    test('load() injects network cache tuning after player.open', () {
+    test('load() injects network cache tuning before player.open', () {
       // load() 体很长且含嵌套闭包，非贪婪匹配到 `\n  }` 会停在参数列表收尾；改为
       // 从方法体开头（`}) async {`）截到「关闭 libmpv 画面字幕渲染」这段注释——
       // open + 注入都在此段内，足够断言注入位置。
@@ -74,8 +80,10 @@ void main() {
       final int openAt = b.indexOf('player.open(');
       final int injectAt = b.indexOf('applyNetworkCachePropertiesToPlayer(');
       expect(openAt, greaterThanOrEqualTo(0), reason: 'load 必须 open 媒体');
-      expect(injectAt, greaterThan(openAt),
-          reason: '网络缓存调优必须在 player.open 之后注入（属性作用于已打开的流）');
+      expect(injectAt, greaterThanOrEqualTo(0), reason: 'load 必须注入网络缓存调优');
+      expect(injectAt, lessThan(openAt),
+          reason: '网络缓存调优必须在 player.open 之前下发——`network-timeout` 要在 '
+              'loadfile 的第一个请求发出前就生效，否则首开恒吃 media_kit 钉死的 5s');
       expect(
           b.contains('applyNetworkCachePropertiesToPlayer(player, sourceUri)'),
           isTrue,
@@ -340,9 +348,12 @@ void main() {
       // 每个早期下发语句后，在下一个早期下发语句之前，必须出现一次
       // `_isCurrentLoad(player, loadToken)` 重校验。按出现顺序成对断言。
       const List<String> sends = <String>[
+        // 网络缓存调优排在 open **之前**（见上面 TODO-033 组的说明：
+        // `network-timeout` 必须在 loadfile 的第一个请求发出前生效）。这张表按
+        // 源码里的真实顺序排，顺序错了 `indexOf(next, sendAt + 1)` 会返回 -1。
+        'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
         // BUG-528：open 现随 Media(httpHeaders:) 多行下发，锚点用唯一的 `await player.open(`。
         'await player.open(',
-        'await applyNetworkCachePropertiesToPlayer(player, sourceUri);',
         'await player.setSubtitleTrack(SubtitleTrack.no());',
         // 字幕抑制（多行调用）：用其首行锚定。
         'buildSubtitleSuppressionProperties(),',
