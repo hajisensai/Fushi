@@ -54,6 +54,11 @@ class HostJobManager {
   final Map<String, HostJobCancelToken> _cancels = <String, HostJobCancelToken>{};
   final List<String> _queue = <String>[];
   bool _draining = false;
+
+  /// 终态落盘（`_runOne` 的 finally）在飞的 job：`rec.state` 在 `_persist` 开始前
+  /// 就已可被轮询方看到，看到 done 立刻 DELETE 会把目录连同 `job.json.tmp` 一起
+  /// 删掉，随后 rename 抛 PathNotFound（CI 慢盘上稳定复现）。删除前先等它落完。
+  final Map<String, Future<void>> _persisting = <String, Future<void>>{};
   bool _loaded = false;
 
   Iterable<String> get kinds => _runners.keys;
@@ -193,11 +198,20 @@ class HostJobManager {
   /// 取消 + 删目录。
   Future<void> delete(String id) async {
     await cancel(id);
+    await _persisting[id]?.then<void>((_) {}, onError: (Object _) {});
     _jobs.remove(id);
     _cancels.remove(id);
     final Directory dir = dirFor(id);
     if (await dir.exists()) await dir.delete(recursive: true);
   }
+
+  /// 所有在飞的终态落盘都完成。测试在观察到终态之后、清理作业根目录之前等它；
+  /// 生产里 [delete] 已按 job 逐个等。
+  Future<void> whenIdle() =>
+      Future.wait<void>(<Future<void>>[
+        for (final Future<void> f in _persisting.values)
+          f.then<void>((_) {}, onError: (Object _) {}),
+      ]);
 
   /// 产物文件；[name] 为空取 primaryOutput。
   File? result(String id, [String? name]) {
@@ -289,7 +303,16 @@ class HostJobManager {
     } finally {
       rec.updatedAt = _now();
       _cancels.remove(rec.id);
-      await _persist(rec);
+      // 与上面的状态赋值同一个微任务里登记：观察到终态的一方一定能在 [_persisting]
+      // 里等到这笔落盘。
+      late final Future<void> persisting;
+      persisting = _persist(rec).whenComplete(() {
+        if (identical(_persisting[rec.id], persisting)) {
+          _persisting.remove(rec.id);
+        }
+      });
+      _persisting[rec.id] = persisting;
+      await persisting;
     }
   }
 

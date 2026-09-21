@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import '../../../helpers/source_guard.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 
@@ -28,18 +29,29 @@ void main() {
       <String>{'mal', 'anilist', 'tmdb'},
     );
     expect(providerIds, isNot(contains('bangumi')));
+    // AniDB 自 2026-09-20 起装进生产 registry（默认刮削主源），但它的 search 只是
+    // 本地标题目录，不进发现页；发现与刮削是不同域。
+    expect(providerIds, isNot(contains('anidb')));
     final VideoMetadataProviderRegistry catalog =
         VideoMetadataProviderRegistry.production(
       const VideoSourceScrapeGlobalConfig(tmdbApiKey: 'test-key'),
     );
     addTearDown(catalog.close);
     expect(
+      catalog.providers.map((VideoMetadataProvider p) => p.providerKind),
+      contains(VideoMetadataProviderKind.anidb),
+      reason: '生产 registry 里确有 AniDB，发现页是主动排除而不是恰好没装',
+    );
+    expect(
       service.searchProviderIdsForTesting,
       catalog.providers
+          .where((VideoMetadataProvider p) =>
+              VideoDiscoveryService.isDiscoverySearchKind(p.providerKind))
           .map((VideoMetadataProvider p) => p.providerKind.name)
           .toSet(),
     );
     expect(service.searchProviderIdsForTesting, isNot(contains('anilist')));
+    expect(service.searchProviderIdsForTesting, isNot(contains('anidb')));
   });
 
   test('discovery source selection has no dependency on proxy configuration',
