@@ -859,7 +859,7 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
           ),
           if (expanded && itemsWatcher != null)
             _SubscriptionItemsSection(
-              subscriptionId: subscription.subscriptionId,
+              subscription: subscription,
               itemsWatcher: itemsWatcher!,
             ),
         ],
@@ -873,18 +873,28 @@ class _VideoDownloadSubscriptionCard extends StatelessWidget {
 /// 换发布组重订也不清（窄合并纪律的另一半）。
 class _SubscriptionItemsSection extends StatelessWidget {
   const _SubscriptionItemsSection({
-    required this.subscriptionId,
+    required this.subscription,
     required this.itemsWatcher,
   });
 
-  final String subscriptionId;
+  final VideoDownloadSubscriptionRow subscription;
   final VideoDownloadSubscriptionItemsWatcher itemsWatcher;
+
+  /// 这条追更订阅已经查过、却一条发布都没跟踪到。
+  ///
+  /// 空列表本身有两种完全不同的成因——「番还没更新」和「规则结构上对不上」——
+  /// 而界面原先对两者说同一句话，用户无从分辨（BUG-2619）。查过至少一次仍为空
+  /// 时补一句可操作的解释：追更只认新的单集，完结作品与整包要走一次性下载。
+  bool get _ongoingNeverMatched =>
+      subscription.mode == 'ongoing' &&
+      subscription.lastCheckedAt != null &&
+      subscription.lastMatchedAt == null;
 
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     return StreamBuilder<List<VideoDownloadSubscriptionItemRow>>(
-      stream: itemsWatcher(subscriptionId),
+      stream: itemsWatcher(subscription.subscriptionId),
       builder: (
         BuildContext context,
         AsyncSnapshot<List<VideoDownloadSubscriptionItemRow>> snapshot,
@@ -904,11 +914,28 @@ class _SubscriptionItemsSection extends StatelessWidget {
         if (items.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              t.subscription_items_empty,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.subscription_items_empty,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (_ongoingNeverMatched) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    key: const ValueKey<String>(
+                      'video-subscription-never-matched-hint',
+                    ),
+                    t.subscription_items_empty_ongoing_hint,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           );
         }
