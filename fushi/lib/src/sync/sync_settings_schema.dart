@@ -850,6 +850,24 @@ SettingsDestination _buildInterconnectHostPage() {
           // host 侧「配置文件」读写许可。默认关：入站写没有显式开关就是一条无 UI 的
           // 隐形通道（BUG-988 立过的规矩），出站同理——整份 Profile 比四个内容上传
           // 开关更敏感。端点另有 TLS + 已配对 peer token 两道门，本开关是用户意图那道。
+          // 弱网转码：对端在外面用手机网络播本机的片子时，host 按对端选的画质档
+          // 切段转码成 HLS。默认开——它是纯按需的，对端不报画质档就一个 ffmpeg
+          // 都不会起，行为与从前逐字节相同；关掉它的意愿（「这台机器不想被烤」）
+          // 该由用户显式表达。判据另有 ffmpeg 可用性那道（移动端当 host 时能力位
+          // 恒 false，这个开关开着也不会转）。
+          SettingsSwitchItem(
+            id: 'interconnect.transcode_host',
+            title: t.interconnect_transcode_host_toggle,
+            subtitle: t.interconnect_transcode_host_toggle_desc,
+            icon: Icons.hd_outlined,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.interconnectTranscodeEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setInterconnectTranscodeEnabled(
+                value,
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'interconnect.profile_transfer_host',
             title: t.interconnect_profile_host_toggle,

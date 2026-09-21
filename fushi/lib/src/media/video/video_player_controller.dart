@@ -419,6 +419,16 @@ class VideoPlayerController extends ChangeNotifier
   final ValueNotifier<double?> networkReadBytesPerSecond =
       ValueNotifier<double?>(null);
 
+  /// 网络流已缓冲的时长（秒，mpv `demuxer-cache-duration`）；null = 非网络流 / 尚无
+  /// 采样。
+  ///
+  /// 互联的自适应画质拿它当「带宽富余」的判据，而不是拿
+  /// [networkReadBytesPerSecond]：播放器按需下载，缓冲填满后就不再全速拉流，稳态下
+  /// 的读取速度≈媒体码率，看上去永远「刚好够用」，据此判富余会永远判不出来。缓冲
+  /// **深度**才如实反映「拉得比放得快」。
+  final ValueNotifier<double?> networkCacheSeconds =
+      ValueNotifier<double?>(null);
+
   /// 当前 [load] 的源是不是 http(s) 网络流（含互联中继的 `http://127.0.0.1`）。
   bool get isNetworkSource => _sourceIsNetwork;
   bool _sourceIsNetwork = false;
@@ -1761,6 +1771,18 @@ class VideoPlayerController extends ChangeNotifier
     }
     if (!_isCurrentLoad(player, loadToken)) return;
 
+    // 网络缓存/预读调优（含 `network-timeout`）**必须在 open 之前**下发。media_kit 建
+    // Player 时就把 `network-timeout` 钉成 5（media_kit-1.2.6
+    // `native/player/real.dart:2394`），而这里所有网络流都经上面的 Dart 中继
+    // （`http-proxy`）取字节——mpv 眼里的「对端」是中继，中继要等真上游先回字节才有
+    // 东西转发。在线视频源的 CDN 首字节常在 5~15s（hoster 重定向 / 冷缓存 / 限流），
+    // 于是 loadfile 的第一个请求在 5s 就被 mpv 撕掉：媒体压根打不开，duration/position
+    // 恒 0，页面等满宽限后报「播放器打不开该视频」——用户观感就是「点开必超时」。
+    // 属性放到 open 后再设已经太迟（第一个请求早就发出去了），首次 open 永远吃 5s。
+    // 这几条都是 libmpv 运行时全局属性，open 前设合法且正是 mpv 自己的配置时序。
+    await applyNetworkCachePropertiesToPlayer(player, sourceUri);
+    if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
+
     await player.open(
       Media(
         sourceUri,
@@ -1775,12 +1797,6 @@ class VideoPlayerController extends ChangeNotifier
     // 点播媒体 open 成功即报 duration，这里先取一次快照；直播流（duration 恒 0）与
     // 慢容器由下面 125ms tick 的同一 helper 继续观测。见 [mediaOpened]。
     _markMediaOpenedIfEvident(player);
-
-    // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
-    // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
-    // network-timeout=5 / demuxer-max-bytes=32MiB 对局域网 WiFi 流偏紧。
-    await applyNetworkCachePropertiesToPlayer(player, sourceUri);
-    if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
 
     // 防盗链流（TODO-850 阶段①）：把用户填的 Referer/User-Agent 等注入
     // libmpv `http-header-fields`。仅 [httpHeaderFields] 非空时生效（普通流/本地文件
@@ -2970,8 +2986,12 @@ class VideoPlayerController extends ChangeNotifier
           final String raw = await _getMpvProperty('cache-speed');
           if (!_isCurrentLoad(player, loadToken)) return;
           final double? speed = double.tryParse(raw);
-          if (speed == null) return;
-          networkReadBytesPerSecond.value = speed;
+          if (speed != null) networkReadBytesPerSecond.value = speed;
+          final String cacheRaw =
+              await _getMpvProperty('demuxer-cache-duration');
+          if (!_isCurrentLoad(player, loadToken)) return;
+          final double? cached = double.tryParse(cacheRaw);
+          if (cached != null) networkCacheSeconds.value = cached;
         } finally {
           _cacheSpeedSampleInFlight = false;
         }
@@ -2983,6 +3003,7 @@ class VideoPlayerController extends ChangeNotifier
     _cacheSpeedTimer?.cancel();
     _cacheSpeedTimer = null;
     networkReadBytesPerSecond.value = null;
+    networkCacheSeconds.value = null;
   }
 
   /// 当前视频的内封章节列表（TODO-424）；无章节 / 未 [load] 时为空。章节面板渲染用。
@@ -3773,6 +3794,7 @@ class VideoPlayerController extends ChangeNotifier
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
     networkReadBytesPerSecond.dispose();
+    networkCacheSeconds.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();
