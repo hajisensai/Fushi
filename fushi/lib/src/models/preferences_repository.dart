@@ -1820,6 +1820,30 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 「AI 下视频」的默认画质。三态：`''` 未设置（对话里第一次问、按「以后默认」
+  /// 勾选写回）/ `ask` 每次询问 / 固定档（`2160p` `1080p` `720p` `480p` `any`）。
+  /// 类型化读法见 `ai_video_acquisition_preferences.dart`。
+  String get aiVideoDownloadQuality =>
+      getPref('ai_video_download_quality', defaultValue: '') as String;
+
+  Future<void> setAiVideoDownloadQuality(String value) async {
+    await setPref('ai_video_download_quality', value);
+    notifyListeners();
+  }
+
+  /// 「AI 下视频」的字幕语言。取值：`''` 未设置（第一次问、按勾选写回）/ `ask`
+  /// 每次询问 / `original` 跟随作品语言 / 语言码（`ja` `zh` `en` `ko`）/
+  /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
+  /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
+  String get aiVideoDownloadSubtitleLanguage =>
+      getPref('ai_video_download_subtitle_language', defaultValue: '')
+          as String;
+
+  Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
+    await setPref('ai_video_download_subtitle_language', value);
+    notifyListeners();
+  }
+
   /// 刮削完成后，自动为**仍缺字幕**的视频补一条在线字幕。默认开。
   ///
   /// 为什么默认开：下载流水线的字幕阶段本来就默认 `bestEffort`（自动配字幕一直

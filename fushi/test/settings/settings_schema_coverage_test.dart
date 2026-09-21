@@ -1001,6 +1001,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显示远端条目：与 syncBackup/Show remote entries 是同一份 item 定义、同一个消费点。
   'interconnect/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
+  // 「AI 下视频」两个默认值（下拉，changed=true 写 prefsRepo）：生效点是对话流程
+  // 的 reducer——打开对话时读一次偏好快照决定「问不问 / 勾选框初值」，harness 里
+  // 没有那条对话。由窄测试咬住写穿 + 选项由代码枚举生成 + 类型化封装往返，
+  // reducer 侧的三态行为由 test/media/video/acquisition/ 的 reducer 用例咬住。
+  'ai/Default quality':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/ai/ai_video_acquisition_preferences_test.dart',
+  'ai/Subtitle language':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/ai/ai_video_acquisition_preferences_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /
