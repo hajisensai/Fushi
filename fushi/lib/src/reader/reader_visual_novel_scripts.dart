@@ -923,6 +923,17 @@ window.fushiReader = {
       : [];
     var promises = images.map(function(img) {
       return new Promise(function(resolve) {
+        // VN keeps the source chapter in a detached root while it builds the
+        // screen descriptors. A lazy image in a detached tree is not eligible
+        // for intersection-based loading, so its load/error event never fires
+        // and the chapter ready promise remains pending forever. Make the
+        // loading policy explicit before waiting; eager images still resolve
+        // through the normal load/error path and already-complete images take
+        // the fast path below.
+        if (img && img.getAttribute && img.getAttribute('loading') === 'lazy' &&
+            img.setAttribute) {
+          img.setAttribute('loading', 'eager');
+        }
         if (img.complete) {
           resolve();
           return;

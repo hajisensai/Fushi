@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2418 条。点号进各自文件。
+> 共 2420 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2615](bugs/BUG-2615-ios-reader-native-bounce.md) | ✅ | ✅ | iOS 竖屏连续滚动模式上下滑动触发正文回弹 |
+| [BUG-2614](bugs/BUG-2614-vn-chapter-ready-timeout.md) | ✅ | ✅ | VN 模式切换章节后加载永不就绪 |
 | [BUG-2613](bugs/BUG-2613-gal-overlay-click-sampled-input-passthrough.md) | ✅ | ✅ | galgame 桌面字典卡 / hook 台词浮窗上的左键被采样输入引擎看见而推进台词 |
 | [BUG-2612](bugs/BUG-2612-cast-photos-incomplete.md) | ✅ | ✅ | 视频刮削演员/声优表显示不全、照片缺失 |
 | [BUG-2610](bugs/BUG-2610-ext-utf8-noncharacter-load-failure.md) | ✅ | ✅ | 浏览器扩展 subtitle-style.js 含裸 U+FFFF 非字符，Chrome 判「不是 UTF-8」拒装整个扩展 |
