@@ -286,6 +286,7 @@ void main() {
         'manga_download_jobs',
         'anidb_file_identities',
         'video_episode_binding_overrides',
+        'manga_reader_overrides',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
           'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
@@ -299,7 +300,8 @@ void main() {
           'update_feed_entries（统一更新提醒事件流）与 v103 的 '
           'manga_download_jobs（漫画下载队列）与 v106 的 '
           'anidb_file_identities（AniDB 文件级身份）与 v111 的 '
-          'video_episode_binding_overrides（用户手动钉死的季集绑定）外，'
+          'video_episode_binding_overrides（用户手动钉死的季集绑定）与 v112 的 '
+          'manga_reader_overrides（漫画阅读器每作品稀疏覆盖）外，'
           '升级不得新增任何表',
     );
   });

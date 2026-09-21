@@ -3741,7 +3741,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (source == null || row == null || !await source.exists()) return;
     final String root = await MangaStorage.bookPath(row.bookKey);
     final String chapter = _shelfChapterKey ?? 'chapter';
-    final String book = row.title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final String book = safeWindowsFileName(row.title);
     final String savePath = switch (_saveDirectory) {
       'flat' => p.join(root, 'saved'),
       'book' => p.join(root, 'saved', book),

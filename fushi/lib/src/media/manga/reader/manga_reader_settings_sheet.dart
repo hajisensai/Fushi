@@ -223,60 +223,66 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
     },
     _ => '$value',
   };
-  Widget _choice(MangaReaderPreferenceDescriptor d) => ListTile(
-    title: Text(d.title),
-    subtitle: Text(_label(d.key, _value(d.key))),
-    trailing: const Icon(Icons.chevron_right),
-    onTap: () async {
-      final String? selected = await showDialog<String>(
-        context: context,
-        builder: (BuildContext c) => SimpleDialog(
-          title: Text(d.title),
-          children: <Widget>[
-            for (final String choice in d.choices)
-              RadioListTile<String>(
-                value: choice,
-                groupValue: _value(d.key) as String?,
-                title: Text(_label(d.key, choice)),
-                onChanged: (String? v) => Navigator.pop(c, v),
-              ),
-          ],
-        ),
-      );
-      if (selected != null) {
-        if (d.key == 'mode') {
-          if (selected == 'auto') {
-            await _set('autoMode', true);
+
+  /// 这一行是否来自本作品的稀疏覆盖（`tune`）而不是全局默认（`public`）。
+  IconData _sourceIcon(String key) =>
+      _overrides.containsKey(key) ? Icons.tune : Icons.public;
+
+  Widget _choice(MangaReaderPreferenceDescriptor d) =>
+      AdaptiveSettingsPickerRow<String>(
+        title: d.title,
+        icon: _sourceIcon(d.key),
+        showIcon: true,
+        options: <AdaptiveSettingsPickerOption<String>>[
+          for (final String choice in d.choices)
+            AdaptiveSettingsPickerOption<String>(
+              value: choice,
+              label: _label(d.key, choice),
+            ),
+        ],
+        selected: _value(d.key) as String? ?? d.choices.first,
+        onChanged: (String selected) async {
+          // `auto` 不是一个布局值，而是「跟随作品自动判定」——写 autoMode 而不是
+          // 覆盖 mode，否则退出自动后就没有可回落的布局了。
+          if (d.key == 'mode') {
+            if (selected == 'auto') {
+              await _set('autoMode', true);
+            } else {
+              await _set('autoMode', false);
+              await _set('mode', selected);
+            }
           } else {
-            await _set('autoMode', false);
-            await _set('mode', selected);
+            await _set(d.key, selected);
           }
-        } else {
-          await _set(d.key, selected);
-        }
-      }
-    },
-  );
-  Widget _toggle(MangaReaderPreferenceDescriptor d) => SwitchListTile(
-    title: Text(d.title),
-    value: _value(d.key) == true,
-    onChanged: (bool v) => _set(d.key, v),
-    secondary: _overrides.containsKey(d.key)
-        ? const Icon(Icons.tune)
-        : const Icon(Icons.public),
-  );
+        },
+      );
+  Widget _toggle(MangaReaderPreferenceDescriptor d) =>
+      AdaptiveSettingsSwitchRow(
+        title: d.title,
+        value: _value(d.key) == true,
+        onChanged: (bool v) => _set(d.key, v),
+        icon: _sourceIcon(d.key),
+        showIcon: true,
+      );
   Widget _integer(MangaReaderPreferenceDescriptor d) {
     final int value = (_value(d.key) as num?)?.round() ?? 0;
-    return ListTile(
-      title: Text(d.title),
-      subtitle: Text('$value%'),
-      leading: IconButton(
-        onPressed: value <= d.min! ? null : () => _set(d.key, value - 1),
-        icon: const Icon(Icons.remove),
-      ),
-      trailing: IconButton(
-        onPressed: value >= d.max! ? null : () => _set(d.key, value + 1),
-        icon: const Icon(Icons.add),
+    return AdaptiveSettingsRow(
+      title: d.title,
+      subtitle: '$value%',
+      icon: _sourceIcon(d.key),
+      showIcon: true,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          IconButton(
+            onPressed: value <= d.min! ? null : () => _set(d.key, value - 1),
+            icon: const Icon(Icons.remove),
+          ),
+          IconButton(
+            onPressed: value >= d.max! ? null : () => _set(d.key, value + 1),
+            icon: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
@@ -294,13 +300,11 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
         builder: (BuildContext c, ScrollController controller) => ListView(
           controller: controller,
           children: <Widget>[
-            ListTile(
-              title: Text(t.manga_reader_settings),
-              subtitle: Text(
-                _overrides.isEmpty
-                    ? t.manga_reader_global
-                    : t.manga_reader_override,
-              ),
+            AdaptiveSettingsRow(
+              title: t.manga_reader_settings,
+              subtitle: _overrides.isEmpty
+                  ? t.manga_reader_global
+                  : t.manga_reader_override,
               trailing: TextButton(
                 onPressed: _overrides.isEmpty ? null : _reset,
                 child: Text(t.manga_reader_restore),

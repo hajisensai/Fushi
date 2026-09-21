@@ -17,7 +17,7 @@ void main() {
           chapterCount: 1,
           chaptersJson: '[]',
           importedAt: 1,
-          format: const Value('manga'),
+          format: Value(BookFormat.manga.dbValue),
         ),
       );
 

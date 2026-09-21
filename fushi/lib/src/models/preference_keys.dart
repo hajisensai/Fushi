@@ -153,7 +153,6 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
-  'manga_reader_preferences',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',
@@ -169,6 +168,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，
+  // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
+  'manga_reader_preferences',
   'manga_reading_direction',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
