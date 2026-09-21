@@ -291,6 +291,9 @@ class MalVideoMetadataProvider
         plot: metadataStripHtml(metadataString(item['synopsis'])),
         rating: metadataDouble(item['score']),
         ratingVotes: metadataInt(item['scored_by']),
+        // Jikan `rating`：`G - All Ages` … `Rx - Hentai`。成人向作品补 TMDB 时要
+        // 带 include_adult（见 VideoMetadataSearchRequest.includeAdult）。
+        contentRating: metadataString(item['rating']),
         episodeCount: metadataInt(item['episodes']),
         runtimeMinutes: _minutes(metadataString(item['duration'])),
         genres: _names(item['genres']),

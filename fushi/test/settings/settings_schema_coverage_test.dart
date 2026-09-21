@@ -296,6 +296,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 总闸开=只补无规范身份的作品）。
   'video/Auto-fill missing series info':
       'test/media/video/metadata/video_library_scrape_sweep_test.dart',
+  // 图片保留张数（Shoko MaxAutoPosters / Backdrops / Logos）与演职员头像落地。
+  // 写 prefsRepo（changed=true），生效点在下一批刮削：配置快照读上限
+  // （anidb_hash_config_test 咬住读偏好 / 指纹）、选图端按上限保留
+  // （video_metadata_merge_test 咬住上限 / 0 不限 / 原语槽）、头像落地要联网下载。
+  'video/Covers kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Backdrops kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Logos kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Download cast & staff photos':
+      'test/media/video/metadata/anidb_hash_config_test.dart（读偏好 / 指纹；落盘要联网）',
   // BUG-1698：刮削完成后给仍缺字幕的视频补一条在线字幕。写 prefsRepo
   // （changed=true），生效点在 AppModel._backfillSubtitlesForScrapedWork 的进场门
   // （关=刮削回调直接 return，零字幕网络请求），不是 reader CSS / 主题树，无适用

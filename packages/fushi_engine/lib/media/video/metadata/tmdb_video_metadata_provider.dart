@@ -10,6 +10,13 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:http/http.dart' as http;
 
+/// TMDB changes API 能回看的最大跨度（Shoko `IncrementalChangesWindowDays` 同为
+/// 14 天）；更早的变动只能整部重拉。
+const Duration kTmdbChangesWindow = Duration(days: 14);
+
+/// 单次 `/tv/changes` 请求允许的最大 start/end 跨度（TMDB 限 14 天）。
+const Duration kTmdbChangesRequestWindow = Duration(days: 13);
+
 class TmdbVideoMetadataProvider
     implements
         VideoMetadataProvider,
@@ -82,9 +89,11 @@ class TmdbVideoMetadataProvider
             if (request.year != null) 'year': '${request.year}',
             'page': '1',
             'language': responseLanguage,
+            if (request.includeAdult) 'include_adult': 'true',
           },
           cacheKey: 'tmdb:search:${request.mediaKind.name}:'
-              '${request.title}:${request.year}:$responseLanguage',
+              '${request.title}:${request.year}:$responseLanguage'
+              '${request.includeAdult ? ':adult' : ''}',
         );
       } on Object {
         // 配置语言是主请求；它失败时维持原有失败语义。补充语言只负责别名，
@@ -163,7 +172,32 @@ class TmdbVideoMetadataProvider
       cacheKey: 'tmdb:work:${lookup.mediaKind.name}:${lookup.externalId}',
     );
     if (payload == null) return null;
-    final VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
+    VideoMetadataWork work = _mapDetailedWork(payload, lookup.mediaKind);
+    // Shoko 图片语言序里的 `Main` = 片子原语。请求端按资料语言过滤图片，原语
+    // 不在其中时（zh-CN 用户看日本动画）再按原语补拉一次 images（独立缓存键、
+    // 轻量），否则原语海报根本进不了候选池。
+    final String? original =
+        VideoMetadataLanguages.primarySubtagOf(work.originalLanguage);
+    if (original != null &&
+        !_languages.imageLanguages
+            .any((String tag) => tag.toLowerCase() == original)) {
+      final Map<String, Object?>? images = await _getObjectOrNull(
+        '$path/images',
+        operation: 'TMDB ${lookup.mediaKind.name} images ($original)',
+        query: <String, String>{'include_image_language': original},
+        cacheKey:
+            'tmdb:images:${lookup.mediaKind.name}:${lookup.externalId}:$original',
+      );
+      if (images != null) {
+        final Set<String> known =
+            work.images.map((VideoMetadataImage i) => i.url).toSet();
+        work = work.copyWith(images: <VideoMetadataImage>[
+          ...work.images,
+          for (final VideoMetadataImage image in _mapImageSet(images))
+            if (known.add(image.url)) image,
+        ]);
+      }
+    }
     return lookup.episodeGroupId == null
         ? work
         : work.copyWith(episodeGroupId: lookup.episodeGroupId);
@@ -245,8 +279,7 @@ class TmdbVideoMetadataProvider
     required int seasonNumber,
   }) async {
     _validateLookup(lookup);
-    if (lookup.mediaKind != VideoMetadataMediaKind.tv ||
-        lookup.episodeGroupId != null) {
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
       return const <int, List<String>>{};
     }
     final String own = VideoMetadataLanguages(language).primarySubtag;
@@ -260,13 +293,57 @@ class TmdbVideoMetadataProvider
           original != own)
         original,
     ];
+    if (lookup.episodeGroupId case final String groupId) {
+      // 备选排序下的季是分组：别名仍只能按**默认**季拉（TMDB 的季端点没有
+      // 分组维度），再按分组里每集自带的默认 (季, 集) 换回分组集号。
+      final Map<int, (int, int)> defaultKeys = <int, (int, int)>{};
+      for (final Object? node
+          in metadataList((await _episodeGroupDetails(groupId))?['groups'])) {
+        final Map<String, Object?>? group = metadataObject(node);
+        if (group == null || metadataInt(group['order']) != seasonNumber) {
+          continue;
+        }
+        int index = 0;
+        for (final Object? episodeNode in metadataList(group['episodes'])) {
+          final Map<String, Object?>? episode = metadataObject(episodeNode);
+          final int groupEpisode = (metadataInt(episode?['order']) ?? index) + 1;
+          index++;
+          final int? season = metadataInt(episode?['season_number']);
+          final int? number = metadataInt(episode?['episode_number']);
+          if (season == null || number == null) continue;
+          defaultKeys[groupEpisode] = (season, number);
+        }
+      }
+      final Map<int, Map<int, List<String>>> bySeason =
+          <int, Map<int, List<String>>>{};
+      for (final int season
+          in defaultKeys.values.map(((int, int) key) => key.$1).toSet()) {
+        bySeason[season] =
+            await _seasonTitleAliases(lookup.externalId, season, languages);
+      }
+      return <int, List<String>>{
+        for (final MapEntry<int, (int, int)> entry in defaultKeys.entries)
+          if (bySeason[entry.value.$1]?[entry.value.$2]
+              case final List<String> names)
+            entry.key: names,
+      };
+    }
+    return _seasonTitleAliases(lookup.externalId, seasonNumber, languages);
+  }
+
+  /// 默认季编号下一季各集在 [languages] 里的集名（集号 → 集名列表）。
+  Future<Map<int, List<String>>> _seasonTitleAliases(
+    String showId,
+    int seasonNumber,
+    List<String> languages,
+  ) async {
     final Map<int, List<String>> aliases = <int, List<String>>{};
     for (final String code in languages) {
       final Map<String, Object?>? payload = await _getObjectOrNull(
-        '/tv/${lookup.externalId}/season/$seasonNumber',
+        '/tv/$showId/season/$seasonNumber',
         operation: 'TMDB season titles ($code)',
         query: <String, String>{'language': code},
-        cacheKey: 'tmdb:season:${lookup.externalId}:$seasonNumber:$code',
+        cacheKey: 'tmdb:season:$showId:$seasonNumber:$code',
       );
       if (payload == null) continue;
       for (final Object? node in metadataList(payload['episodes'])) {
@@ -278,6 +355,34 @@ class TmdbVideoMetadataProvider
       }
     }
     return aliases;
+  }
+
+  @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  ) async {
+    _validateLookup(lookup);
+    if (lookup.mediaKind != VideoMetadataMediaKind.tv) {
+      return const <VideoMetadataEpisodeGroupSummary>[];
+    }
+    final Map<String, Object?>? payload = await _getObjectOrNull(
+      '/tv/${lookup.externalId}/episode_groups',
+      operation: 'TMDB episode groups',
+      cacheKey: 'tmdb:episode-groups:${lookup.externalId}',
+    );
+    return <VideoMetadataEpisodeGroupSummary>[
+      for (final Object? node in metadataList(payload?['results']))
+        if (metadataObject(node) case final Map<String, Object?> summary)
+          if (metadataString(summary['id']) case final String id)
+            VideoMetadataEpisodeGroupSummary(
+              id: id,
+              name: metadataString(summary['name']) ?? id,
+              type: metadataInt(summary['type']) ?? 0,
+              description: metadataString(summary['description']),
+              groupCount: metadataInt(summary['group_count']),
+              episodeCount: metadataInt(summary['episode_count']),
+            ),
+    ];
   }
 
   @override
@@ -1059,6 +1164,58 @@ class TmdbVideoMetadataProvider
   double? _positiveDouble(Object? value) {
     final double? parsed = metadataDouble(value);
     return parsed != null && parsed > 0 ? parsed : null;
+  }
+
+  /// TMDB `/tv/changes`：[since] 之后有资料变动的剧 id（Shoko
+  /// `TmdbMetadataService.GetShowChangedItemsAsync` 的增量刷新输入）。TMDB 只给
+  /// 最近 14 天、每次最多 14 天窗口、结果分页；这里按天切窗口逐页拉齐。
+  /// 调用方拿它和本地已识别作品的 TMDB id 求交集，只重刷真变过的剧。
+  Future<Set<int>> changedTvShowIds({
+    required DateTime since,
+    DateTime? until,
+    int maxPages = 50,
+  }) async {
+    final DateTime end = (until ?? DateTime.now()).toUtc();
+    DateTime start = since.toUtc();
+    if (end.difference(start) > kTmdbChangesWindow) {
+      start = end.subtract(kTmdbChangesWindow);
+    }
+    final Set<int> ids = <int>{};
+    int pagesLeft = maxPages;
+    DateTime windowStart = start;
+    while (!windowStart.isAfter(end) && pagesLeft > 0) {
+      final DateTime windowEnd = windowStart.add(kTmdbChangesRequestWindow);
+      final DateTime clampedEnd = windowEnd.isAfter(end) ? end : windowEnd;
+      for (int page = 1; pagesLeft > 0; page++) {
+        pagesLeft--;
+        final Map<String, Object?> payload = await _getObject(
+          '/tv/changes',
+          operation: 'TMDB tv changes',
+          query: <String, String>{
+            'start_date': _dateOnly(windowStart),
+            'end_date': _dateOnly(clampedEnd),
+            'page': '$page',
+          },
+          cacheKey:
+              'tmdb:tv-changes:${_dateOnly(windowStart)}:${_dateOnly(clampedEnd)}:$page',
+        );
+        for (final Object? node in metadataList(payload['results'])) {
+          final int? id = metadataInt(metadataObject(node)?['id']);
+          if (id != null && id > 0) ids.add(id);
+        }
+        final int totalPages = metadataInt(payload['total_pages']) ?? 1;
+        if (page >= totalPages) break;
+      }
+      windowStart = clampedEnd.add(const Duration(days: 1));
+    }
+    return ids;
+  }
+
+  static String _dateOnly(DateTime date) {
+    final DateTime utc = date.toUtc();
+    return '${utc.year.toString().padLeft(4, '0')}-'
+        '${utc.month.toString().padLeft(2, '0')}-'
+        '${utc.day.toString().padLeft(2, '0')}';
   }
 
   Future<Map<String, Object?>> _getObject(

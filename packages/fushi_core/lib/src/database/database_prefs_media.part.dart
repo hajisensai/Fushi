@@ -472,4 +472,14 @@ mixin _FushiDbPrefsMedia
             ..where(($VideoBooksTable t) =>
                 t.bookUid.equals(bookUid) & t.sourceId.isNull()))
           .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
+
+  /// 无条件把视频改归属到 [sourceId]（只写 `source_id`，不动其它列）。
+  ///
+  /// 下载管线把文件放进托管来源根目录后用它收口归属：文件物理上就在这个来源
+  /// 里，哪怕扫描器抢先按别的（重叠的）来源建了行，也该归托管来源，否则按
+  /// `source_id` 过滤的刮削计划看不到刚导入的文件。
+  Future<int> assignVideoBookSource(String bookUid, int sourceId) =>
+      (update(videoBooks)
+            ..where(($VideoBooksTable t) => t.bookUid.equals(bookUid)))
+          .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
 }

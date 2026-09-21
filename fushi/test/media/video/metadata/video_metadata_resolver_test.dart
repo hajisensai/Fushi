@@ -131,8 +131,12 @@ void main() {
       expect(provider.searchCalls, 0);
     });
 
+    // 2026-09-20 起 AniDB 是可选生产主源（且 AniDB → TMDB 成链）：来自任一可选
+    // 主源的已确认 / 显式身份一律按那家直取，不再被主源的标题搜索盖掉——
+    // 「手动指定的 ID 不得静默换源」。
     test(
-      'non-selected confirmed id cannot replace selected AniDB title search',
+      'confirmed id of another selectable provider is honored over the selected '
+      'AniDB title search',
       () async {
         final VideoMetadataWork anidbWork = _work(
           id: '7',
@@ -170,16 +174,17 @@ void main() {
         );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
-        expect(result.method, VideoMetadataResolutionMethod.exactSearch);
-        expect(result.providerKind, VideoMetadataProviderKind.anidb);
-        expect(result.lookup?.externalId, '7');
-        expect(anidb.searchCalls, 1);
+        expect(result.method, VideoMetadataResolutionMethod.confirmed);
+        expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+        expect(result.lookup?.externalId, '42');
+        expect(anidb.searchCalls, 0);
         expect(tmdb.searchCalls, 0);
       },
     );
 
     test(
-      'non-selected explicit id cannot replace selected AniDB title search',
+      'explicit id of another selectable provider is honored over the selected '
+      'AniDB title search',
       () async {
         final VideoMetadataWork anidbWork = _work(
           id: '8',
@@ -213,10 +218,10 @@ void main() {
         );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
-        expect(result.method, VideoMetadataResolutionMethod.exactSearch);
-        expect(result.providerKind, VideoMetadataProviderKind.anidb);
-        expect(result.lookup?.externalId, '8');
-        expect(anidb.searchCalls, 1);
+        expect(result.method, VideoMetadataResolutionMethod.explicitId);
+        expect(result.providerKind, VideoMetadataProviderKind.tmdb);
+        expect(result.lookup?.externalId, '99');
+        expect(anidb.searchCalls, 0);
         expect(tmdb.searchCalls, 0);
       },
     );
@@ -996,6 +1001,11 @@ class _FakeEpisodeGroupProvider extends _FakeProvider
 
   int? requestedSeason;
   int? requestedEpisodeCount;
+
+  @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+          VideoMetadataLookup lookup) async =>
+      const <VideoMetadataEpisodeGroupSummary>[];
 
   @override
   Future<VideoMetadataLookup?> resolveEpisodeGroup(

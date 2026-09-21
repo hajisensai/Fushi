@@ -36,6 +36,10 @@ class SourceScrapeIssue {
   final String workTitle;
   final String message;
   final String? path;
+
+  @override
+  String toString() =>
+      'SourceScrapeIssue($workTitle: $message${path == null ? '' : ' @ $path'})';
 }
 
 class SourceScrapeReport {
@@ -347,6 +351,17 @@ abstract interface class VideoSourceScrapeManualBinding {
   });
 }
 
+/// 「TMDB 备选排序」能力（Shoko `TMDB_AlternateOrdering` +
+/// `PreferredAlternateOrderingID`）：列出一部剧在资料源上的全部备选排序，供用户
+/// 选一个；选定后写作品行并上 `episodeGroup` 字段锁，再经
+/// [VideoSourceScrapeManualBinding.rescrapeWorkWithLookup] 用带分组 id 的
+/// lookup 重刮——季集结构与 AniDB 集级链接随之按分组编排重算，不新开写库路径。
+abstract interface class VideoSourceScrapeEpisodeOrdering {
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  );
+}
+
 /// 一条排队中的「手动指定作品」请求。
 ///
 /// 手动重刮与批次刮削共用同一把互斥门（同样联网、同样受 AniDB 限流、同样写库与
@@ -494,6 +509,22 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
 
   /// 当前 runner 是否支持事后手动指定作品。
   bool get supportsManualBinding => _runner is VideoSourceScrapeManualBinding;
+
+  bool get supportsEpisodeOrdering =>
+      _runner is VideoSourceScrapeEpisodeOrdering;
+
+  /// 只读：[lookup] 那部剧的全部备选排序；实现不支持 / 非剧集 → 空表。
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  ) {
+    if (_disposed || _runner is! VideoSourceScrapeEpisodeOrdering) {
+      return Future<List<VideoMetadataEpisodeGroupSummary>>.value(
+        const <VideoMetadataEpisodeGroupSummary>[],
+      );
+    }
+    return (_runner as VideoSourceScrapeEpisodeOrdering)
+        .listEpisodeGroups(lookup);
+  }
 
   /// 只读的候选搜索：不写库、不抢刮削互斥门，用户可以在批次跑着时先查。
   Future<List<VideoSourceScrapeConfirmationCandidate>> searchManualCandidates({

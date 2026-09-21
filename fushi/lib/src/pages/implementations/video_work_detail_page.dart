@@ -42,6 +42,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.deleteMembersLocalFilesSubtitle,
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
+    this.onChooseTmdbOrdering,
     super.key,
   });
 
@@ -75,6 +76,10 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 由库页注入）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
       onRescrapeCollection;
+
+  /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onChooseTmdbOrdering;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -170,6 +175,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
             deleteMembersStatisticsSubtitle:
                 widget.deleteMembersStatisticsSubtitle,
             onRescrapeCollection: widget.onRescrapeCollection,
+            onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
           );
         },
       );

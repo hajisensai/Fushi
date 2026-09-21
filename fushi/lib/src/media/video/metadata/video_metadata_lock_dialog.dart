@@ -23,6 +23,8 @@ String videoMetadataLockableFieldLabel(VideoMetadataLockableField field) =>
       VideoMetadataLockableField.rating => t.video_work_field_rating,
       VideoMetadataLockableField.cover => t.video_work_field_cover,
       VideoMetadataLockableField.backdrop => t.video_work_field_backdrop,
+      VideoMetadataLockableField.episodeGroup =>
+        t.video_work_field_episode_group,
     };
 
 /// 打开字段锁对话框并在用户确认后写库。返回是否真的写了。

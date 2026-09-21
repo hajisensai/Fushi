@@ -3582,17 +3582,62 @@ class VideoDownloadPipelineService {
       );
       return;
     }
-    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
-      database,
-    ).plan(source);
-    _ensureLeaseHeld();
+    // 「按文件夹」来源只整理不刮削（来源设置里就是这么说的，计划器对它恒空）：
+    // 文件已就位、库里可见，任务按完成收口，而不是报一条看不懂的映射失败。
+    if (source.videoGroupingMode == 'folder') {
+      fushiDebugPrint(
+        '[download-scrape] ${job.jobId}: managed source ${source.id} groups '
+        'by folder, skipping metadata scrape',
+      );
+      await _releaseLeaseWith(
+        () => database.completeVideoDownloadJob(
+          jobId: job.jobId,
+          workerId: workerId,
+          completedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      return;
+    }
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
     final Set<String> importedPaths = rows
+        .where((VideoDownloadJobFileRow row) => row.kind == 'video')
         .map((VideoDownloadJobFileRow row) => row.finalAbsolutePath)
         .whereType<String>()
         .map(normalizeVideoPath)
         .toSet();
+    // 导入的文件物理上就在托管来源根目录里，库里的行必须归这个来源——扫描器
+    // 抢先按别的（重叠的）来源建了行、或旧行挂在已删来源上时，计划器按
+    // `source_id` 过滤会看不到它们，整条任务就落成「映射不回来源」。
+    final List<String> unindexed = <String>[];
+    for (final String importedPath in importedPaths) {
+      final VideoBookRow? book = await _videoRepository.findByVideoPath(
+        importedPath,
+      );
+      if (book == null) {
+        unindexed.add(importedPath);
+        continue;
+      }
+      if (book.sourceId != source.id) {
+        fushiDebugPrint(
+          '[download-scrape] ${job.jobId}: ${book.bookUid} was indexed under '
+          'source ${book.sourceId}, reassigning to managed source '
+          '${source.id}',
+        );
+        await database.assignVideoBookSource(book.bookUid, source.id);
+      }
+    }
+    _ensureLeaseHeld();
+    if (unindexed.isNotEmpty) {
+      throw VideoDownloadPipelineActionRequired(
+        'Imported media is missing from the video library: '
+        '${unindexed.join(', ')}',
+      );
+    }
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      database,
+    ).plan(source);
+    _ensureLeaseHeld();
     final List<VideoSourceScrapeWork> pathMatches = works
         .where(
           (VideoSourceScrapeWork value) => value.members.any(
@@ -3646,8 +3691,19 @@ class VideoDownloadPipelineService {
       }
     }
     if (work == null) {
-      throw const VideoDownloadPipelineActionRequired(
-        'Imported media could not be mapped exactly back to its managed source',
+      // 把「为什么」说出来：是计划器压根没看到这些文件（附件分类 / 归属），还是
+      // 看到了却分在多个作品里且没有一个是本任务的合集。
+      final String detail = pathMatches.isEmpty
+          ? 'none of ${importedPaths.length} imported file(s) belong to a '
+              'scrapable work of source ${source.id} '
+              '(${works.length} work(s) planned)'
+          : '${importedPaths.length} imported file(s) spread over '
+              '${pathMatches.length} works '
+              '(${pathMatches.map((VideoSourceScrapeWork value) => value.stableKey).join(', ')}), '
+              'none is collection ${job.collectionId}';
+      throw VideoDownloadPipelineActionRequired(
+        'Imported media could not be mapped exactly back to its managed '
+        'source: $detail',
       );
     }
     final report = await scrapeCoordinator.scrapeImportedWork(

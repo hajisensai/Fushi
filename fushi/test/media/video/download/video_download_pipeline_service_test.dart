@@ -1249,7 +1249,9 @@ void main() {
           row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
     );
 
-    expect(job.lastError, contains('mapped exactly'));
+    // 导入路径在库里根本没有行：报的是「不在视频库里」而不是笼统的映射失败。
+    expect(job.lastError, contains('missing from the video library'));
+    expect(job.lastError, contains('Missing.mkv'));
   });
 
   for (final bool legacyAniDb in <bool>[false, true]) {
@@ -1470,6 +1472,183 @@ void main() {
       detail['bookUid'] as String,
     );
     expect(book?.coverPath, draft.imagePath);
+  });
+
+  test(
+      'a single confirmed tv episode imported by the pipeline maps back to its '
+      'managed source for scraping', () async {
+    // 用户 2026-09-21：视频发现下载单集番剧，下载完成后报「Imported media could
+    // not be mapped exactly back to its managed source」。import 建的是单成员
+    // 播放列表，scrape 阶段必须仍能按导入路径找回这部作品。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'single-episode-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      '[Group] Show - 07 [WebRip 1080p HEVC-10bit AAC ASSx2].mkv',
+    );
+    await File(videoPath).create(recursive: true);
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: p.basename(videoPath),
+        currentRelativePath: p.basename(videoPath),
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(7),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    // 测试环境没有 MAL/TMDB provider：能走到「主资料源不可用」就证明路径映射
+    // 成功、lookup 进了协调器；「mapped exactly」才是这条 bug。
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+    expect(job.stage, VideoDownloadJobStage.scrape);
+    expect(job.lastError, isNot(contains('mapped exactly')));
+  });
+
+  test(
+      'a confirmed episode indexed first under another source is re-owned by '
+      'the managed source and scraped', () async {
+    // 扫描器（重叠来源 / 竞态）抢先按别的来源建了这一集的行：文件物理上就在
+    // 托管来源根目录里，scrape 阶段按托管来源收口归属，而不是「映射不回来源」。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    final int otherSourceId = await environment.database.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Overlapping library',
+        mediaKind: 'video',
+        rootPath: environment.root.parent.path,
+        createdAt: 1,
+      ),
+    );
+    const String jobId = 'foreign-source-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E07.mkv',
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/show-s01e07'),
+        title: const Value<String>('Show S01E07'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(otherSourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E07.mkv',
+        currentRelativePath: 'Show S01E07.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    // 测试环境没有 MAL/TMDB provider：走到「主资料源不可用」= 映射成功。
+    expect(job.lastError, isNot(contains('mapped exactly')));
+    expect(job.lastError?.toLowerCase(), contains('mal'));
+    final VideoBookRow book = (await environment.database
+        .getVideoBookByBookUid('video/show-s01e07'))!;
+    expect(book.sourceId, environment.sourceId);
+  });
+
+  test(
+      'a confirmed download into a folder-grouped source completes without '
+      'a metadata scrape', () async {
+    // 「按文件夹」来源只整理不刮削：计划器对它恒空，之前会把每条带身份的任务
+    // 都报成「映射不回来源」。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    await (environment.database.update(environment.database.mediaSources)
+          ..where((tbl) => tbl.id.equals(environment.sourceId)))
+        .write(
+      const MediaSourcesCompanion(
+        videoGroupingMode: Value<String>('folder'),
+      ),
+    );
+    const String jobId = 'folder-mode-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final String videoPath = p.join(environment.root.path, 'Show S01E07.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/folder-show'),
+        title: const Value<String>('Show S01E07'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E07.mkv',
+        currentRelativePath: 'Show S01E07.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed ||
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    expect(job.lifecycle, VideoDownloadJobLifecycle.completed,
+        reason: '${job.lastError}');
   });
 
   test('manual (non-subscription) import publishes no episode update',
