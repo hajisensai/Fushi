@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -498,5 +499,74 @@ void main() {
     expect(await provider.fetchWork(lookup), isNull);
     expect(calls, 1);
     provider.close();
+  });
+
+  group('MAL airing status and end date', () {
+    Future<VideoMetadataWork> fetch(Map<String, Object?> extra) async {
+      final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+        requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+        client: MockClient((http.Request request) async {
+          if (request.url.path.endsWith('/full')) {
+            return response(<String, Object?>{
+              'data': <String, Object?>{
+                'mal_id': 1,
+                'title': 'Sousou no Frieren',
+                'type': 'TV',
+                ...extra,
+              }
+            });
+          }
+          return response(<String, Object?>{'data': <Object?>[]});
+        }),
+      );
+      addTearDown(provider.close);
+      return (await provider.fetchWork(lookup))!;
+    }
+
+    test('status keeps the Jikan raw string; endDate comes from aired.to',
+        () async {
+      final VideoMetadataWork work = await fetch(<String, Object?>{
+        'status': 'Currently Airing',
+        'airing': true,
+        'aired': <String, Object?>{
+          'from': '2023-09-29T00:00:00+09:00',
+          'to': '2024-03-22T00:00:00+09:00',
+        },
+      });
+      expect(work.status, 'Currently Airing');
+      expect(work.premiered, '2023-09-29');
+      expect(work.endDate, '2024-03-22');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+    });
+
+    test('missing status falls back to airing: true', () async {
+      final VideoMetadataWork work =
+          await fetch(<String, Object?>{'airing': true});
+      expect(work.status, 'Currently Airing');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+      expect(work.endDate, isNull);
+    });
+
+    test('airing: false without status stays null instead of guessing',
+        () async {
+      final VideoMetadataWork work =
+          await fetch(<String, Object?>{'airing': false});
+      expect(work.status, isNull);
+      expect(work.airingStatus, isNull);
+    });
+
+    test('finished status normalizes and originalLanguage is never filled',
+        () async {
+      final VideoMetadataWork work = await fetch(<String, Object?>{
+        'status': 'Finished Airing',
+        'airing': false,
+        'aired': <String, Object?>{'to': null},
+      });
+      expect(work.status, 'Finished Airing');
+      expect(work.airingStatus, VideoAiringStatus.finished);
+      expect(work.endDate, isNull);
+      expect(work.originalLanguage, isNull,
+          reason: 'Jikan 无语言字段，MAL 收录中 / 韩动画，不能硬填 ja');
+    });
   });
 }
