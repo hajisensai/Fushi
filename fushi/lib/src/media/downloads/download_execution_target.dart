@@ -50,6 +50,21 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
   final SyncRepository repo = SyncRepository(appModel.database);
   final InterconnectDownloadClient resolved =
       client ?? InterconnectDownloadClient(repo: repo);
+  // 「这台设备还在不在配对清单里」要先于「能不能探到」判：偏好里存的是一个 URL，
+  // 用户解绑那台 host / 禁用那条 client URL 之后，设置页的下拉整块不再渲染
+  // （它只在有已配对 host 时出现），偏好就永远停在那个死地址——此后每一次发现页
+  // 下载、番剧对话框磁链都恒返回「执行设备连不上」，而 UI 里没有任何地方能把它
+  // 改回本机。配对关系都没有了就不该再守着它：退回本机。
+  // 「在清单里但此刻探不到」仍按原语义拒绝（不静默改在别的机器上下载）。
+  final List<FushiClientUrl> paired = await repo.getFushiClientUrls();
+  String? deviceName;
+  bool stillPaired = false;
+  for (final FushiClientUrl u in paired) {
+    if (u.url != url) continue;
+    stillPaired = true;
+    deviceName = u.deviceName;
+  }
+  if (!stillPaired) return const DownloadExecutionLocal();
   HostDownloadTarget? target;
   try {
     target = await resolved.probeUrl(url);
@@ -58,10 +73,6 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
   }
   if (target != null) {
     return DownloadExecutionRemote(target: target, client: resolved);
-  }
-  String? deviceName;
-  for (final FushiClientUrl u in await repo.getFushiClientUrls()) {
-    if (u.url == url) deviceName = u.deviceName;
   }
   return DownloadExecutionUnreachable(url: url, deviceName: deviceName);
 }

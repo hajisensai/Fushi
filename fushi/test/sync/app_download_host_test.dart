@@ -9,6 +9,7 @@ library;
 
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -212,6 +213,54 @@ void main() {
       c.addMagnet(forced, magnetUri: _magnet, title: 'x'),
       throwsA(isA<HostDownloadException>()
           .having((HostDownloadException e) => e.code, 'code', 'http_409')),
+    );
+  });
+
+  test('对端删除远端任务：行没了，host 主人的磁盘文件还在', () async {
+    // `listJobs` 返回的是本机**全表**（含 host 主人自己加的任务）。对端在「远端
+    // 任务」卡片上点删除，语义只能是「别再占我的列表」；连磁盘文件一起删掉的是
+    // 用户自己已经下载好的片子。无头 fushi_server 那边整台机器本就为对端服务，
+    // 语义不同，不能照搬。
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final File downloaded = File(p.join(tmp.path, 'Frieren S01E01.mkv'))
+      ..writeAsStringSync('payload');
+    await db.upsertVideoDownloadJob(
+      VideoDownloadJobsCompanion.insert(
+        jobId: 'job-remote-1',
+        resourceProvider: 'nyaa:test',
+        selectedResourceId: 'r1',
+        mediaKind: 'tv',
+        title: 'Frieren',
+        backendKind: 'embedded',
+        fingerprint: 'fp',
+        lifecycle: const Value<String>(VideoDownloadJobLifecycle.completed),
+        stage: const Value<String>(VideoDownloadJobStage.import),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: 'job-remote-1',
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: p.basename(downloaded.path),
+        currentRelativePath: p.basename(downloaded.path),
+        finalAbsolutePath: Value<String?>(downloaded.path),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    await host().deleteJob('job-remote-1');
+
+    expect(await db.getVideoDownloadJob('job-remote-1'), isNull,
+        reason: '行要删掉');
+    expect(
+      downloaded.existsSync(),
+      isTrue,
+      reason: '落盘文件的去留归 host 主人在本机下载中心决定',
     );
   });
 

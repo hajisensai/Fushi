@@ -96,9 +96,16 @@ class _TorrentSettingsSectionState
   }
 
   /// 当前偏好里的执行设备；不在配对清单里（已解绑）时退回本机显示。
+  ///
+  /// 顺手把偏好也清掉：只改显示的话，设置页写着「本机」而实际下载仍按那个死地址
+  /// 报「执行设备连不上」，用户看不出所以然（解析侧另有一层「不在清单就回本机」
+  /// 的兜底，这里是让持久值本身自愈）。
   String _executionHostValue(AppModel appModel) {
     final String url = appModel.prefsRepo.downloadExecutionHostUrl;
-    return _pairedHosts.any((FushiClientUrl u) => u.url == url) ? url : '';
+    if (url.isEmpty) return '';
+    if (_pairedHosts.any((FushiClientUrl u) => u.url == url)) return url;
+    unawaited(appModel.prefsRepo.setDownloadExecutionHostUrl(''));
+    return '';
   }
 
   void _onCategoryFocusChanged() {
