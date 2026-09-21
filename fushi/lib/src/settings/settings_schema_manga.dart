@@ -221,12 +221,12 @@ SettingsDestination buildMangaDestination() {
           ),
           SettingsNavigationItem(
             id: 'manga.panel_model',
-            title: 'AI 分镜模型',
-            subtitle: '下载、校验或删除分镜检测模型',
+            title: t.manga_panel_model,
+            subtitle: t.manga_panel_model_desc,
             icon: Icons.model_training_outlined,
             child: () => SettingsDestination(
               id: SettingsDestinationId.manga,
-              title: 'AI 分镜模型',
+              title: t.manga_panel_model,
               icon: Icons.model_training_outlined,
               sections: const <SettingsSection>[],
               body: (_) => const MangaPanelModelSettings(),

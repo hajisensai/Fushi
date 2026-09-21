@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
+import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/panel_model_manifest.dart';
 
 class MangaPanelModelSettings extends StatefulWidget {
@@ -50,7 +51,11 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
         if (!mounted) return;
         setState(() => _busy = false);
         final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
-        messenger.showSnackBar(SnackBar(content: Text('分镜模型下载失败：$error')));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(t.manga_panel_model_download_failed(error: '$error')),
+          ),
+        );
       },
       onDone: () async {
         if (!mounted) return;
@@ -79,25 +84,34 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        ListTile(
-          title: const Text('AI 分镜模型'),
+        FushiListItem(
+          // 裸 ListTile 会被 MD3 守卫（md3_design_system_static_test）判违规：
+          // 普通页面 chrome 一律走共享组件，本仓把 ListTile 整体收口到了它。
+          title: Text(t.manga_panel_model),
           subtitle: Text(
             _busy
-                ? '下载中 $_received 字节'
-                : status?.error ?? (verified ? '已就绪' : '未下载'),
+                ? t.manga_panel_model_downloading_bytes(bytes: '$_received')
+                : status?.error ??
+                      (verified
+                          ? t.manga_panel_model_ready
+                          : t.manga_panel_model_missing),
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (verified)
                 IconButton(
-                  tooltip: '删除模型',
+                  tooltip: t.manga_panel_model_delete,
                   onPressed: _busy ? null : _deleteModel,
                   icon: const Icon(Icons.delete_outline),
                 ),
               FilledButton(
                 onPressed: _busy || verified ? null : _downloadModel,
-                child: Text(_busy ? '下载中' : '下载'),
+                child: Text(
+                  _busy
+                      ? t.manga_panel_model_downloading
+                      : t.manga_panel_model_download,
+                ),
               ),
             ],
           ),

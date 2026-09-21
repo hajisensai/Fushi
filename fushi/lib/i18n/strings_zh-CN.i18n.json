@@ -5229,5 +5229,18 @@
   "lookup_hover_leave_resume": "离开查词即继续播放",
   "lookup_hover_leave_resume_hint": "悬停查词后，鼠标离开字幕与查词窗即自动关闭查词窗并继续播放，不必再点一下",
   "manga_panel_navigation": "AI 分镜逐格导航",
-  "manga_panel_navigation_subtitle": "翻页前先聚焦检测到的分镜"
+  "manga_panel_navigation_subtitle": "翻页前先聚焦检测到的分镜",
+  "manga_panel_model": "AI 分镜模型",
+  "manga_panel_model_desc": "下载、校验或删除分镜检测模型",
+  "manga_panel_model_download_failed": "分镜模型下载失败：$error",
+  "manga_panel_model_downloading_bytes": "下载中 $bytes 字节",
+  "manga_panel_model_ready": "已就绪",
+  "manga_panel_model_missing": "未下载",
+  "manga_panel_model_delete": "删除模型",
+  "manga_panel_model_downloading": "下载中",
+  "manga_panel_model_download": "下载",
+  "manga_panel_index": "分镜 $index",
+  "manga_panel_none": "未检测到分镜",
+  "manga_panel_model_unavailable": "分镜模型不可用",
+  "manga_panel_detect_failed": "分镜检测失败"
 }

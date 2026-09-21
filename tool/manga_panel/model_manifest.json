@@ -8,6 +8,15 @@
   "sha256": "6a2143c6130c358e390a8d425c51b22589fd43d4647485e2c011a553b73aaaed",
   "bytes": 9779394,
   "license": "Apache-2.0",
+  "trainingData": {
+    "name": "Manga109-s",
+    "url": "http://www.manga109.org/en/download_s.html",
+    "terms": "Models trained on Manga109-s may be used commercially provided that the use of the dataset is clearly indicated.",
+    "citations": [
+      "Matsui et al., \"Sketch-based Manga Retrieval using Manga109 Dataset\", Multimedia Tools and Applications, 2017.",
+      "Aizawa et al., \"Building a Manga Dataset “Manga109” with Annotations for Multimedia Applications\", IEEE MultiMedia, 2020."
+    ]
+  },
   "input": {
     "shape": [
       1,

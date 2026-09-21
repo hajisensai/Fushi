@@ -105,12 +105,69 @@ class PanelDetectionResult {
   bool get usable => status == PanelDetectionStatus.ready && panels.isNotEmpty;
 }
 
+/// 一页已经完成「解码 + letterbox + 归一化」的检测输入。
+///
+/// 这一步是纯 Dart 的同步大循环（整页 JPEG 解码 + 640×640 重采样），一张
+/// 2000×3000 的漫画页在移动端要数百毫秒。它被单独拆出来，就是为了让调用方能
+/// 把它整体丢进后台 isolate：跨 isolate 送回来的是这里的 ~4.9 MB
+/// `Float32List`，而不是解码出来的 24 MB `img.Image`。
+class PreprocessedPanelPage {
+  const PreprocessedPanelPage({required this.input, required this.transform});
+
+  /// RGB/CHW、`[1,3,kDetInputSize,kDetInputSize]` 的模型输入。
+  final Float32List input;
+
+  /// 把模型坐标映射回原页所需的 letterbox 变换。
+  final LetterboxTransform transform;
+}
+
+/// 同步预处理一张已解码的页面。
+PreprocessedPanelPage preprocessPanelImage(img.Image page) {
+  final LetterboxTransform transform = computeLetterbox(
+    page.width,
+    page.height,
+  );
+  return PreprocessedPanelPage(
+    input: rtdetrPreprocess(page, transform),
+    transform: transform,
+  );
+}
+
+/// 顶层纯函数：编码字节 → 检测输入，可直接交给 `compute` / `Isolate.run`。
+///
+/// 解码失败（格式不认、文件截断）返回 null，由调用方转成 failed 结果——这里不
+/// 吞掉异常之外的任何东西，也不做 IO。
+PreprocessedPanelPage? preprocessPanelPageBytes(Uint8List bytes) {
+  try {
+    final img.Image? decoded = img.decodeImage(bytes);
+    if (decoded == null) return null;
+    return preprocessPanelImage(img.bakeOrientation(decoded));
+  } on Object {
+    return null;
+  }
+}
+
 abstract interface class PanelDetector {
+  /// 便利入口：页面已经解码在当前 isolate 里时用。生产路径请用
+  /// [detectPrepared]，否则解码与预处理会落在 UI isolate 上。
   Future<PanelDetectionResult> detect(
     img.Image page, {
     required String pageKey,
     required PanelReadingDirection direction,
   });
+
+  /// 与 [detect] 的唯一区别：预处理由调用方提供，并且**只在缓存未命中时**才会
+  /// 被调用——调用方因此可以把 [prepare] 整个丢进后台 isolate，而缓存命中的翻
+  /// 页一次解码都不做。[prepare] 返回 null 视为解码失败。
+  Future<PanelDetectionResult> detectPrepared({
+    required String pageKey,
+    required PanelReadingDirection direction,
+    required Future<PreprocessedPanelPage?> Function() prepare,
+  });
+
+  /// 释放底层推理 session。宿主页面 dispose 时必须调：ONNX session 每本书新建
+  /// 一个（模型 9 MB 级），不关就是每开一本书泄漏一份。
+  Future<void> close();
 }
 
 /// 先按置信度执行贪心 NMS，再将结果分行。
@@ -320,6 +377,17 @@ class OnnxPanelDetector implements PanelDetector {
     img.Image page, {
     required String pageKey,
     required PanelReadingDirection direction,
+  }) => detectPrepared(
+    pageKey: pageKey,
+    direction: direction,
+    prepare: () async => preprocessPanelImage(page),
+  );
+
+  @override
+  Future<PanelDetectionResult> detectPrepared({
+    required String pageKey,
+    required PanelReadingDirection direction,
+    required Future<PreprocessedPanelPage?> Function() prepare,
   }) {
     final String key =
         '$pageKey|$modelRevision|${direction.name}|$cropParameters|640x640';
@@ -329,7 +397,7 @@ class OnnxPanelDetector implements PanelDetector {
       final PanelDetectionResult? again = _cache.read(key);
       if (again != null) return again;
       final PanelDetectionResult computed = await _detectUnlocked(
-        page,
+        prepare,
         direction,
       );
       _cache.write(key, computed);
@@ -340,18 +408,21 @@ class OnnxPanelDetector implements PanelDetector {
   }
 
   Future<PanelDetectionResult> _detectUnlocked(
-    img.Image page,
+    Future<PreprocessedPanelPage?> Function() prepare,
     PanelReadingDirection direction,
   ) async {
     try {
-      final LetterboxTransform transform = computeLetterbox(
-        page.width,
-        page.height,
-      );
-      final Float32List input = rtdetrPreprocess(page, transform);
+      final PreprocessedPanelPage? prepared = await prepare();
+      if (prepared == null) {
+        return const PanelDetectionResult(
+          status: PanelDetectionStatus.failed,
+          panels: <PanelRect>[],
+          error: 'image decode failed',
+        );
+      }
       final Map<String, OcrTensor> outputs = await _session.run(
         <String, OcrTensor>{
-          inputName: OcrTensor.float32(input, const <int>[
+          inputName: OcrTensor.float32(prepared.input, const <int>[
             1,
             3,
             kDetInputSize,
@@ -359,7 +430,10 @@ class OnnxPanelDetector implements PanelDetector {
           ]),
         },
       );
-      final List<_PanelDetection> detections = _decode(outputs, transform);
+      final List<_PanelDetection> detections = _decode(
+        outputs,
+        prepared.transform,
+      );
       final List<PanelRect> rawPanels = <PanelRect>[];
       final List<PanelTextBox> text = <PanelTextBox>[];
       for (final _PanelDetection detection in detections) {
@@ -435,8 +509,9 @@ class OnnxPanelDetector implements PanelDetector {
               (outputs.isEmpty ? null : outputs.values.first))
         : outputs[outputName!];
     final Float32List? values = tensor?.floatData;
-    if (values == null || tensor == null || !_isNx6Shape(tensor.shape))
+    if (values == null || tensor == null || !_isNx6Shape(tensor.shape)) {
       throw StateError('panel detector output must contain Nx6 float values');
+    }
     return <_PanelDetection>[
       for (int offset = 0; offset < values.length; offset += 6)
         if (values[offset + 4] >= scoreThreshold)
@@ -481,6 +556,7 @@ class OnnxPanelDetector implements PanelDetector {
     ).clamp();
   }
 
+  @override
   Future<void> close() => _session.close();
 }
 
@@ -520,7 +596,9 @@ class PanelDetectionCache {
   void write(String key, PanelDetectionResult value) {
     _entries.remove(key);
     _entries[key] = value;
-    while (_entries.length > capacity) _entries.remove(_entries.keys.first);
+    while (_entries.length > capacity) {
+      _entries.remove(_entries.keys.first);
+    }
   }
 
   void clear() => _entries.clear();

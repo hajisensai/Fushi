@@ -18,6 +18,18 @@ const String kMangaPanelModelFileName =
     'manga_panel_detector_yolo26n_fp32.onnx';
 const String kMangaPanelModelLicense = 'Apache-2.0';
 
+/// 上游模型训练所用的数据集。Manga109-s 的使用条款允许把训练所得模型用于商业
+/// 用途，但**要求明确标明用到了该数据集**——署名因此必须跟着清单走，不能只留在
+/// 上游模型卡里。README 的 On-device models 一节与 `tool/manga_panel/README.md`
+/// 是同一份署名的人类可读出口。
+const String kMangaPanelModelTrainingData = 'Manga109-s';
+const String kMangaPanelModelTrainingDataUrl =
+    'http://www.manga109.org/en/download_s.html';
+const String kMangaPanelModelTrainingDataNotice =
+    'The panel detection model is trained on the Manga109-s dataset '
+    '(Matsui et al. 2017; Aizawa et al. 2020), whose terms require this use '
+    'of the dataset to be clearly indicated.';
+
 /// 由 [verify_onnx_contract.py] 对不可变 release asset 校验后回填。
 const String? kMangaPanelModelSha256 =
     '6a2143c6130c358e390a8d425c51b22589fd43d4647485e2c011a553b73aaaed';
@@ -32,6 +44,9 @@ class MangaPanelModelManifest {
     this.sha256 = kMangaPanelModelSha256,
     this.bytes = kMangaPanelModelBytes,
     this.license = kMangaPanelModelLicense,
+    this.trainingData = kMangaPanelModelTrainingData,
+    this.trainingDataUrl = kMangaPanelModelTrainingDataUrl,
+    this.trainingDataNotice = kMangaPanelModelTrainingDataNotice,
   });
 
   final String revision;
@@ -41,6 +56,9 @@ class MangaPanelModelManifest {
   final String? sha256;
   final int? bytes;
   final String license;
+  final String trainingData;
+  final String trainingDataUrl;
+  final String trainingDataNotice;
 
   bool get isVerified =>
       bytes != null &&

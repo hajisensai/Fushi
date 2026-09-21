@@ -5,14 +5,13 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show compute, kDebugMode;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
-import 'package:image/image.dart' as img;
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/source_review_session.dart';
@@ -1211,6 +1210,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _panelGeneration++;
     _panelCursor.reset();
     _panelResults.clear();
+    // ONNX session 每本书新建一份（模型 9 MB 级），不关就是每开一本书泄漏一份。
+    // dispose 是同步的，这里只能 fire-and-forget，失败不该阻断关书。
+    final PanelDetector? detector = _panelDetector;
+    _panelDetector = null;
+    if (detector != null) {
+      unawaited(
+        detector.close().catchError((Object error, StackTrace stack) {
+          ErrorLogService.instance.log(
+            'MangaFushiPage.panelDetectorClose',
+            error,
+            stack,
+          );
+        }),
+      );
+    }
     _disposedDuringSourceReview = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     if (Platform.isWindows || Platform.isLinux) {
@@ -2311,7 +2325,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   // ── 翻页导航 ─────────────────────────────────────────────────────────
 
   Future<PanelDetector?> _ensurePanelDetector() async {
-    if (!appModel.mangaPanelNavigation || _mode == MangaReadingMode.webtoon) {
+    if (!appModel.mangaPanelNavigation || _mode.isWebtoon) {
       return null;
     }
     final PanelDetector? existing = _panelDetector;
@@ -2323,12 +2337,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     try {
       final PanelDetector? detector = await factory();
-      if (mounted) {
-        _panelDetector = detector;
-        _panelStatus = detector == null
-            ? PanelDetectionStatus.unavailable
-            : PanelDetectionStatus.ready;
+      if (!mounted) {
+        // 页面在建 session 期间被关掉：不能把已创建的 detector 直接丢掉（那就是
+        // 一份永不释放的 ONNX session）。
+        await detector?.close();
+        return null;
       }
+      _panelDetector = detector;
+      _panelStatus = detector == null
+          ? PanelDetectionStatus.unavailable
+          : PanelDetectionStatus.ready;
       return detector;
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -2337,15 +2355,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         stack,
       );
       _panelStatus = PanelDetectionStatus.failed;
-      return null;
-    }
-  }
-
-  static img.Image? _decodePanelImage(Uint8List bytes) {
-    try {
-      final img.Image? decoded = img.decodeImage(bytes);
-      return decoded == null ? null : img.bakeOrientation(decoded);
-    } on Object {
       return null;
     }
   }
@@ -2363,24 +2372,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final int generation = _panelGeneration;
     try {
-      final MangaPageBytes page = await session.page(pageIndex);
-      // `image.Image` carries typed buffers and is not a stable isolate message
-      // contract across Flutter versions; decode in the reader isolate and let
-      // the ONNX session serialization protect the expensive inference path.
-      final img.Image? decoded = _decodePanelImage(page.bytes);
-      if (decoded == null) {
-        return const PanelDetectionResult(
-          status: PanelDetectionStatus.failed,
-          panels: <PanelRect>[],
-          error: 'image decode failed',
-        );
-      }
-      final PanelDetectionResult result = await detector.detect(
-        decoded,
+      // 整页 JPEG 解码 + 640×640 letterbox 都是纯 Dart 的同步大循环：一张
+      // 2000×3000 的页在 UI isolate 上会把翻页卡住数百毫秒（移动端更久）。
+      // 送进后台 isolate 的是编码字节、回来的是 ~4.9 MB 的 Float32List，比把
+      // 解码后 24 MB 的 `img.Image` 搬回来还便宜。detector 缓存命中时
+      // `detectPrepared` 根本不会调这个闭包，翻回读过的页一次解码都不做。
+      final PanelDetectionResult result = await detector.detectPrepared(
         pageKey: session.cacheIdentity(pageIndex),
         direction: _spreadDirection == 'rtl'
             ? PanelReadingDirection.rtl
             : PanelReadingDirection.ltr,
+        prepare: () async {
+          final MangaPageBytes page = await session.page(pageIndex);
+          return compute(preprocessPanelPageBytes, page.bytes);
+        },
       );
       if (mounted && generation == _panelGeneration) {
         _panelResults[pageIndex] = result;
@@ -2418,7 +2423,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<bool> _tryPanelTurn(bool forward) async {
-    if (!appModel.mangaPanelNavigation || _mode == MangaReadingMode.webtoon) {
+    if (!appModel.mangaPanelNavigation || _mode.isWebtoon) {
       return false;
     }
     final int generation = _panelGeneration;
@@ -4494,15 +4499,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       );
     }
-    if (appModel.mangaPanelNavigation && _mode == MangaReadingMode.spread) {
+    // 与 _ensurePanelDetector / _tryPanelTurn 同一判据：pagedVertical 也走分页
+    // 几何、分镜导航对它照常工作，chip 只认 spread 会让那个模式下有导航没状态。
+    if (appModel.mangaPanelNavigation && _mode.isPaged) {
       final PanelDetectionStatus? status = _panelStatus;
       if (status != null) {
         final String label = switch (status) {
           PanelDetectionStatus.ready =>
-            _panelCursor.index >= 0 ? '分镜 ${_panelCursor.index + 1}' : '分镜导航',
-          PanelDetectionStatus.empty => '未检测到分镜',
-          PanelDetectionStatus.unavailable => '分镜模型不可用',
-          PanelDetectionStatus.failed => '分镜检测失败',
+            _panelCursor.index >= 0
+                ? t.manga_panel_index(index: '${_panelCursor.index + 1}')
+                : t.manga_panel_navigation,
+          PanelDetectionStatus.empty => t.manga_panel_none,
+          PanelDetectionStatus.unavailable => t.manga_panel_model_unavailable,
+          PanelDetectionStatus.failed => t.manga_panel_detect_failed,
         };
         chips.add(
           MangaChromeStatusChip(

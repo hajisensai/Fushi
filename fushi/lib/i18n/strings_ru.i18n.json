@@ -5229,5 +5229,18 @@
   "lookup_hover_leave_resume": "Resume when leaving lookup",
   "lookup_hover_leave_resume_hint": "After a hover lookup, moving the pointer away from the subtitle and the lookup window closes it and resumes playback",
   "manga_panel_navigation": "AI panel navigation",
-  "manga_panel_navigation_subtitle": "Focus detected panels before turning the page"
+  "manga_panel_navigation_subtitle": "Focus detected panels before turning the page",
+  "manga_panel_model": "AI panel model",
+  "manga_panel_model_desc": "Download, verify or remove the panel detection model",
+  "manga_panel_model_download_failed": "Panel model download failed: $error",
+  "manga_panel_model_downloading_bytes": "Downloading $bytes bytes",
+  "manga_panel_model_ready": "Ready",
+  "manga_panel_model_missing": "Not downloaded",
+  "manga_panel_model_delete": "Remove model",
+  "manga_panel_model_downloading": "Downloading",
+  "manga_panel_model_download": "Download",
+  "manga_panel_index": "Panel $index",
+  "manga_panel_none": "No panels detected",
+  "manga_panel_model_unavailable": "Panel model unavailable",
+  "manga_panel_detect_failed": "Panel detection failed"
 }
