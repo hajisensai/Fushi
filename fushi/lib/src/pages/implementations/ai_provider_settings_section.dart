@@ -501,6 +501,9 @@ class _AiProviderSettingsSectionState
       // 配置变了，上一次自检结论作废——留着会让用户照着一条针对旧地址的
       // 「连接成功」去排查新地址的问题。
       _probes.remove(next.id);
+      // 模型候选同理，而且更隐蔽：箭头的语义是「没缓存才去拉」，不清的话用户改完
+      // baseUrl / apiKey / 协议再点箭头，拿到的是**旧端点**的清单且永远不会自愈。
+      _models.remove(next.id);
     });
     _saveDebounce?.cancel();
     _saveDebounce = Timer(_kSaveDebounce, () => unawaited(_saveValidDrafts()));

@@ -515,6 +515,21 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // 迁移面：老用户落盘的模型名必须原样回显在字段里（字段仍是自由文本，
+      // 候选只是辅助输入；写不进去就等于升级后把人家的自定义模型名吞了）。
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        'gpt-4o-mini',
+      );
+
       // BUG-2618：「模型」这个值只允许有一个输入控件。候选必须长在字段自己身上，
       // 不能是字段外面另起的一行下拉——那样两处显示会各说各话。
       expect(
