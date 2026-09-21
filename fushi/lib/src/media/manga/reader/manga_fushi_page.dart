@@ -29,6 +29,7 @@ import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_panel_detector.dart';
 import 'package:fushi/src/media/manga/manga_panel_navigation.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
@@ -43,6 +44,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
@@ -77,6 +79,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
+import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
+    show copyImageFileToClipboard, shareImageFile;
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
@@ -306,7 +310,18 @@ Future<String> ensureMangaCoverPng(String sourcePath) async {
   return pngPath;
 }
 
-enum _MangaContextAction { previous, next, jump, direction, zoomIn, zoomOut }
+enum _MangaContextAction {
+  previous,
+  next,
+  jump,
+  direction,
+  zoomIn,
+  zoomOut,
+  copyImage,
+  shareImage,
+  saveImage,
+  setCover,
+}
 
 Future<int?> showMangaPageJumpDialog(
   BuildContext context, {
@@ -454,7 +469,7 @@ class MangaFushiPage extends BaseSourcePage {
     if (pan != null) return pan;
     if (!crossPageStep) {
       if (dictionaryShown) return null;
-      if (mode == MangaReadingMode.webtoon) return null;
+      if (mode.isContinuous) return null;
     }
     return switch (action) {
       ShortcutAction.mangaPageForward => MangaReaderInputAction.next,
@@ -723,21 +738,27 @@ class MangaFushiPage extends BaseSourcePage {
     return m;
   }
 
-  /// 纯函数：页内阅读模式切换。
-  static MangaReadingMode toggleMangaMode(MangaReadingMode mode) {
-    return mode == MangaReadingMode.spread
-        ? MangaReadingMode.webtoon
-        : MangaReadingMode.spread;
-  }
+  /// 纯函数：页内阅读模式切换（分页 ↔ 长条，各自保留用户选的变体）。
+  ///
+  /// 四值枚举下不能再写成二元 `spread ? webtoon : spread`：用户选了
+  /// `pagedVertical` / `webtoonGaps` 之后按一次顶栏切换就会被打回 spread/webtoon，
+  /// 默默丢掉他选的布局。
+  static MangaReadingMode toggleMangaMode(MangaReadingMode mode) =>
+      switch (mode) {
+        MangaReadingMode.spread => MangaReadingMode.webtoon,
+        MangaReadingMode.pagedVertical => MangaReadingMode.webtoonGaps,
+        MangaReadingMode.webtoon => MangaReadingMode.spread,
+        MangaReadingMode.webtoonGaps => MangaReadingMode.pagedVertical,
+      };
 
   /// 纯函数：[MangaReadingMode] → 持久化的 `EpubBooks.mangaReadingMode` 字符串。
   static String modeToDbString(MangaReadingMode mode) {
-    return mode == MangaReadingMode.webtoon ? 'webtoon' : 'spread';
+    return mode.storageKey;
   }
 
   /// 纯函数：持久化字符串 → [MangaReadingMode]（未知取 spread）。
   static MangaReadingMode modeFromDbString(String s) {
-    return s == 'webtoon' ? MangaReadingMode.webtoon : MangaReadingMode.spread;
+    return MangaReadingModeSemantics.fromStorageKey(s);
   }
 
   /// 大书的 manga.json 解析下放 isolate（不卡 UI）。
@@ -880,6 +901,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _tapZonePaging = true;
   MangaTapZoneLayout _tapZoneLayout = MangaTapZoneLayout.leftRight;
   MangaBackground _background = MangaBackground.black;
+  MangaScaleType _scaleType = MangaScaleType.fitScreen;
+  int _longStripSidePadding = 0;
+  bool _disableZoomOut = false;
+  bool _animateDoubleTap = true;
+  bool _invertHorizontal = false;
+  bool _invertVertical = false;
+  bool _invertBoth = false;
+  bool _cropBorders = false;
+  bool _splitWidePages = false;
+  bool _rotateWidePages = false;
+  bool _autoZoomWide = false;
+  bool _panWide = true;
+  String _zoomStartPosition = 'automatic';
+  bool _invertVolumeKeys = false;
+  String _saveDirectory = 'chapter';
 
   /// 双页配对偏移（0/1）与宽页独占；两者都只影响 [_buildSpreadsFor] 的配对。
   int _spreadOffset = 1;
@@ -1015,7 +1051,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 当前可见页的页号半开区间：spread 模式取当前 entry 的页（升序、连续），
   /// webtoon 只有真正成为「当前页」的那页。
   (int, int) _visiblePageRange() {
-    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    final bool isWebtoon = _mode.isContinuous;
     if (!isWebtoon && _currentSpread >= 0 && _currentSpread < _spreads.length) {
       final List<int> pages = _spreads[_currentSpread].pageIndices;
       return (pages.first, pages.last + 1);
@@ -1503,11 +1539,85 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _widePageSolo = appModel.mangaWidePageSolo;
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
+    MangaReaderPreferences readerPreferences = appModel.mangaReaderPreferences;
+    // 这本书的覆盖里是否**显式**定过阅读模式（含「自动」）：定过就压过旧列。
+    bool readerOverrideHasMode = false;
+    if (row.uid.isNotEmpty) {
+      try {
+        final MangaReaderOverrideRow? override = await db
+            .getMangaReaderOverride(row.uid);
+        if (override != null && !override.deleted) {
+          final Object? decoded = jsonDecode(override.overridesJson);
+          if (decoded is Map) {
+            readerOverrideHasMode =
+                decoded.containsKey('mode') || decoded.containsKey('autoMode');
+            readerPreferences = MangaReaderPreferences.resolve(
+              readerPreferences,
+              decoded.cast<String, Object?>(),
+            );
+          }
+        }
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.readerOverride',
+          error,
+          stack,
+        );
+      }
+    }
+    _spreadDirection = readerPreferences.direction == 'ltr' ? 'ltr' : 'rtl';
+    _background = MangaBackgroundKey.fromKey(readerPreferences.background);
+    _zoomPercent = readerPreferences.zoomStart.clamp(
+      kMangaZoomMinPercent,
+      kMangaZoomMaxPercent,
+    );
+    _tapZoneLayout = switch (readerPreferences.tapZones) {
+      MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
+      MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
+      MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
+      MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
+      MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
+      MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
+      MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
+    };
+    _scaleType = readerPreferences.scaleType;
+    _longStripSidePadding = readerPreferences.longStripSidePadding;
+    _disableZoomOut = readerPreferences.disableZoomOut;
+    _animateDoubleTap = readerPreferences.animateDoubleTap;
+    _invertHorizontal = readerPreferences.invertHorizontal;
+    _invertVertical = readerPreferences.invertVertical;
+    _invertBoth = readerPreferences.invertBoth;
+    _cropBorders = readerPreferences.cropBorders;
+    _splitWidePages = readerPreferences.splitWidePages;
+    _rotateWidePages = readerPreferences.rotateWidePages;
+    _autoZoomWide = readerPreferences.autoZoomWide;
+    _panWide = readerPreferences.panWide;
+    _zoomStartPosition = readerPreferences.zoomStartPosition;
+    _invertVolumeKeys = readerPreferences.invertVolumeKeys;
+    _saveDirectory = readerPreferences.saveDirectory;
+    _applyVolumeKeyPaging(
+      readerPreferences.volumeKeys,
+      invertDirection: _invertVolumeKeys,
+    );
+    if (readerPreferences.tapZones == MangaTapZonePreset.disabled) {
+      _tapZonePaging = false;
+    }
 
-    // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
-    final MangaReadingMode mode =
-        MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-        detectReadingMode(payload);
+    // 阅读模式优先级：每作品覆盖 > 旧列 `epub_books.manga_reading_mode` > 全局
+    // （autoMode 时按页图长宽比中位数自动判定）。
+    //
+    // 旧列不能排在覆盖之前：v112 迁移恰恰给「用过旧模式切换按钮」的书写了覆盖行，
+    // 若旧列压制覆盖，用户在新面板里选 pagedVertical / webtoonGaps 会写进覆盖却
+    // 仍按旧列的 spread/webtoon 渲染——设置看起来没生效。旧列保留为回退，降级回
+    // 旧版本照样能读。
+    final MangaReadingMode mode = readerOverrideHasMode
+        ? (readerPreferences.autoMode
+              ? detectReadingMode(payload)
+              : readerPreferences.mode)
+        : MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
+              (readerPreferences.autoMode
+                  ? detectReadingMode(payload)
+                  : readerPreferences.mode);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
@@ -1548,7 +1658,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           saved.sectionIndex >= 0 &&
           saved.sectionIndex < payload.images.length) {
         restoredPage = saved.sectionIndex;
-        if (mode == MangaReadingMode.webtoon) {
+        if (mode.isContinuous) {
           restoredFraction = MangaFushiPage.charOffsetToWebtoonFraction(
             saved.charOffset,
           );
@@ -1862,7 +1972,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 解析当前应生效的页布局：webtoon 恒单页（竖滚流布局与双页互斥）；spread 按
   /// 偏好 + 视口横竖（[resolveMangaPageLayout] 纯函数）。
   MangaPageLayout _resolveLayout(MangaReadingMode mode) {
-    if (mode == MangaReadingMode.webtoon) {
+    if (mode.isContinuous) {
       return MangaPageLayout.single;
     }
     return resolveMangaPageLayout(
@@ -2037,7 +2147,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required int documentGeneration,
   }) {
     final MokuroPayload payload = _payload!;
-    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    final bool isWebtoon = _mode.isContinuous;
 
     final List<int> keptSpreads = MangaFushiPage.mangaWindowRange(
       spreadCount: _spreads.length,
@@ -2095,6 +2205,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       tapZoneLayout: _tapZoneLayout,
       backgroundCss: _backgroundCssValue,
       showOcrBoxes: _showOcrBoxes,
+      scaleType: _scaleType,
+      longStripSidePadding: _longStripSidePadding,
+      disableZoomOut: _disableZoomOut,
+      animateDoubleTap: _animateDoubleTap,
+      invertHorizontal: _invertHorizontal,
+      invertVertical: _invertVertical,
+      invertBoth: _invertBoth,
+      cropBorders: _cropBorders,
+      splitWidePages: _splitWidePages,
+      rotateWidePages: _rotateWidePages,
+      autoZoomWidePages: _autoZoomWide,
+      panWidePages: _panWide,
+      // 这个值是**双击判定窗口**（`isDouble = now - lastTapT <= DBL_MS`），不是动画
+      // 时长——关掉「双击缩放动画」不该把双击手势本身废掉（传 0 会被 clamp 成
+      // 100ms，常人两击根本打不进这个窗口）。动画开关走 animateDoubleTap，JS 侧的
+      // 注释也是这么写的。
+      doubleTapAnimationMs: 300,
+      zoomStartPosition: _zoomStartPosition,
     );
   }
 
@@ -2493,7 +2621,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       bookUid: row.uid,
       chapterKey: chapterKey,
       lastPage: _currentPage,
-      lastFraction: _mode == MangaReadingMode.webtoon
+      lastFraction: _mode.isContinuous
           ? MangaFushiPage.webtoonFractionToCharOffset(_currentFraction)
           : -1,
       pageCount: _payload?.images.length,
@@ -2519,7 +2647,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final Set<int> spreadIndices = MangaFushiPage.mangaWindowRange(
       spreadCount: _spreads.length,
       current: spreadIndex,
-      radius: _mode == MangaReadingMode.webtoon ? 1 : _kWindowRadius,
+      radius: _mode.isContinuous ? 1 : _kWindowRadius,
     ).toSet();
     final Set<int> pageIndices = <int>{
       for (final int index in spreadIndices) ..._spreads[index].pageIndices,
@@ -2611,11 +2739,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// `MainActivity.dispatchKeyEvent` 吞掉，用户调不动系统音量（BUG-196 的老坑）。
   late final MangaVolumeKeyPagingController _volumeKeyPagingController;
 
-  void _applyVolumeKeyPaging(bool enabled) {
+  void _applyVolumeKeyPaging(
+    bool enabled, {
+    bool invertDirection = false,
+  }) {
     // 只有 Android 侧 dispatchKeyEvent 会转发音量键；其它平台连通道都没有。
     _volumeKeyPagingController.apply(
       enabled: enabled,
       platformSupported: Platform.isAndroid,
+      invertDirection: invertDirection,
     );
   }
 
@@ -2700,9 +2832,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
     unawaited(
-      _mode == MangaReadingMode.webtoon
-          ? _jumpToPageAnchor(turn)
-          : _onMangaTurn(turn),
+      _mode.isContinuous ? _jumpToPageAnchor(turn) : _onMangaTurn(turn),
     );
   }
 
@@ -2965,9 +3095,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     clearDictionaryResult();
     final String turn = action == MangaReaderInputAction.next ? 'next' : 'prev';
     unawaited(
-      _mode == MangaReadingMode.webtoon
-          ? _jumpToPageAnchor(turn)
-          : _onMangaTurn(turn),
+      _mode.isContinuous ? _jumpToPageAnchor(turn) : _onMangaTurn(turn),
     );
   }
 
@@ -2975,7 +3103,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 整本单文档，滚动**绝不**重载——只更新进度与制卡卡图。[fraction] 是视口顶
   /// 所在页的**页内**归一化偏移（与 `__mangaScrollToSpread` 恢复口径一致）。
   Future<void> _onMangaScroll(String payloadJson) async {
-    if (_mode != MangaReadingMode.webtoon || _spreads.isEmpty) return;
+    if (!_mode.isContinuous || _spreads.isEmpty) return;
     final Object? decoded = jsonDecode(payloadJson);
     if (decoded is! Map) return;
     final double fraction = (decoded['fraction'] as num?)?.toDouble() ?? 0;
@@ -3440,6 +3568,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           mangaReadingMode: Value<String?>(MangaFushiPage.modeToDbString(next)),
         ),
       );
+      if (_bookRow!.uid.isNotEmpty) {
+        // 局部改动走 patch：整行替换会把该书其余覆盖全抹掉，并经 LWW 同步给对端。
+        await db.patchMangaReaderOverride(_bookRow!.uid, <String, Object?>{
+          'mode': next.storageKey,
+          'autoMode': false,
+        });
+      }
     } catch (e, stack) {
       ErrorLogService.instance.log('MangaFushiPage.toggleMode', e, stack);
     }
@@ -3479,7 +3614,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _spreads,
       _currentSpread,
       webtoonFraction: _currentFraction,
-      isWebtoon: _mode == MangaReadingMode.webtoon,
+      isWebtoon: _mode.isContinuous,
     );
     _currentPage = page;
     _pageNotifier.value = page;
@@ -3549,7 +3684,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _lastSavedPage = page;
     _lastSavedFraction = fraction;
     final FushiDatabase db = appModel.database;
-    final bool isWebtoon = _mode == MangaReadingMode.webtoon;
+    final bool isWebtoon = _mode.isContinuous;
     // v82：uid 缺失 = 库里没有这本书的持久行（内存兜底行不算），位置与「已读完」
     // 都无处可落，整段跳过——不拿 bookKey / 现造 uid 兜底写孤儿行。
     final String? bookUid = _bookUid;
@@ -3609,8 +3744,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _progressDebounce?.cancel();
     if (_bookRow == null || _payload == null) return;
     if (_currentPage != _lastSavedPage ||
-        (_mode == MangaReadingMode.webtoon &&
-            _currentFraction != _lastSavedFraction)) {
+        (_mode.isContinuous && _currentFraction != _lastSavedFraction)) {
       await _persistPosition(_currentPage, _currentFraction);
     }
     await _flushReadingStats();
@@ -3666,7 +3800,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _resetPanelNavigation();
     _currentSpread = target;
     _currentFraction = 0;
-    if (_mode == MangaReadingMode.webtoon) {
+    if (_mode.isContinuous) {
       await _controller?.evaluateJavascript(
         source:
             'window.__mangaScrollToSpread && '
@@ -3726,6 +3860,148 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  Future<void> _showReaderSettings() async {
+    final EpubBookRow? row = _bookRow;
+    if (row == null || row.uid.isEmpty || !mounted) return;
+    Map<String, Object?> override = <String, Object?>{};
+    try {
+      final MangaReaderOverrideRow? saved = await appModel.database
+          .getMangaReaderOverride(row.uid);
+      if (saved != null && !saved.deleted) {
+        final Object? decoded = jsonDecode(saved.overridesJson);
+        if (decoded is Map) override = decoded.cast<String, Object?>();
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.readerSettingsLoad',
+        error,
+        stack,
+      );
+    }
+    if (!mounted) return;
+    await showMangaReaderSettingsSheet(
+      context: context,
+      globalDefaults: appModel.mangaReaderPreferences,
+      overrides: override,
+      onChanged: (Map<String, Object?> value) =>
+          appModel.database.setMangaReaderOverride(row.uid, value),
+      // key 必须与 descriptor 的 key 对齐（门控集合是 fullscreen / keepScreenOn /
+      // invertVolumeKeys）。传 'volumeKeys' 这种不存在的 key 等于把
+      // keepScreenOn 与 invertVolumeKeys 在所有平台都藏掉——而 invertVolumeKeys
+      // 恰恰是这批设备项里唯一真正接线的那个。
+      supportedDeviceKeys: <String>{
+        if (Platform.isAndroid || Platform.isIOS) ...<String>[
+          'fullscreen',
+          'keepScreenOn',
+        ],
+        if (Platform.isAndroid) 'invertVolumeKeys',
+      },
+    );
+    // 关掉面板后把改动应用到**当前这本书**：这些字段的唯一赋值点原本是 `_load()`，
+    // 不在这里重新应用的话，用户拨完开关必须退出重进才看得到效果。
+    await _reapplyReaderPreferences();
+  }
+
+  /// 重新读这本书的每作品覆盖、与全局默认合并后应用到当前会话。
+  ///
+  /// 只动「改完即可见」的视觉/手势字段；阅读模式变化会连带重建单元边界（与顶栏
+  /// 切换同一条路径）。
+  Future<void> _reapplyReaderPreferences() async {
+    final EpubBookRow? row = _bookRow;
+    final MokuroPayload? payload = _payload;
+    if (row == null || payload == null || !mounted) return;
+    MangaReaderPreferences prefs = appModel.mangaReaderPreferences;
+    bool hasModeOverride = false;
+    if (row.uid.isNotEmpty) {
+      try {
+        final MangaReaderOverrideRow? override = await appModel.database
+            .getMangaReaderOverride(row.uid);
+        if (override != null && !override.deleted) {
+          final Object? decoded = jsonDecode(override.overridesJson);
+          if (decoded is Map) {
+            final Map<String, Object?> map = decoded.cast<String, Object?>();
+            hasModeOverride =
+                map.containsKey('mode') || map.containsKey('autoMode');
+            prefs = MangaReaderPreferences.resolve(prefs, map);
+          }
+        }
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.reapplyReaderPreferences',
+          error,
+          stack,
+        );
+      }
+    }
+    if (!mounted) return;
+    final MangaReadingMode nextMode = hasModeOverride
+        ? (prefs.autoMode ? detectReadingMode(payload) : prefs.mode)
+        : _mode;
+    final int currentPage = MangaFushiPage.firstPageOfSpread(
+      _spreads,
+      _currentSpread,
+    );
+    final bool modeChanged = nextMode != _mode;
+    final List<MangaSpreadEntry> spreads = modeChanged
+        ? _buildSpreadsFor(payload, nextMode)
+        : _spreads;
+    if (modeChanged) _readLedger.rebaseOnNextArrive();
+    setState(() {
+      _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
+      _background = MangaBackgroundKey.fromKey(prefs.background);
+      _zoomPercent = prefs.zoomStart.clamp(
+        kMangaZoomMinPercent,
+        kMangaZoomMaxPercent,
+      );
+      _tapZoneLayout = switch (prefs.tapZones) {
+        MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
+        MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
+        MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
+        MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
+        MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
+        MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
+        MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
+      };
+      _tapZonePaging = prefs.tapZones != MangaTapZonePreset.disabled;
+      _scaleType = prefs.scaleType;
+      _longStripSidePadding = prefs.longStripSidePadding;
+      _disableZoomOut = prefs.disableZoomOut;
+      _animateDoubleTap = prefs.animateDoubleTap;
+      _invertHorizontal = prefs.invertHorizontal;
+      _invertVertical = prefs.invertVertical;
+      _invertBoth = prefs.invertBoth;
+      _cropBorders = prefs.cropBorders;
+      _splitWidePages = prefs.splitWidePages;
+      _rotateWidePages = prefs.rotateWidePages;
+      _autoZoomWide = prefs.autoZoomWide;
+      _panWide = prefs.panWide;
+      _zoomStartPosition = prefs.zoomStartPosition;
+      _invertVolumeKeys = prefs.invertVolumeKeys;
+      _saveDirectory = prefs.saveDirectory;
+      if (modeChanged) {
+        _mode = nextMode;
+        _spreads = spreads;
+        _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
+        _currentPage = currentPage;
+        _currentFraction = 0;
+      }
+    });
+    _applyVolumeKeyPaging(
+      prefs.volumeKeys,
+      invertDirection: _invertVolumeKeys,
+    );
+    if (modeChanged) {
+      _pageNotifier.value = _currentPage;
+      _noteVisiblePages();
+      await _loadInitialWindow();
+      _updateCurrentPageImagePath();
+    } else {
+      // 视觉项（缩放模式 / 裁边 / 长条边距 / 反转 / tapZone / 背景）都编进窗口
+      // 文档，重新加载当前窗口即生效。
+      await _loadInitialWindow();
+    }
+  }
+
   Future<void> _showPageJumpDialog() async {
     final int total = _payload?.images.length ?? 0;
     if (total <= 0) return;
@@ -3737,6 +4013,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (page != null) {
       await _jumpToPage(page);
     }
+  }
+
+  Future<File?> _currentMangaPageFile() async {
+    final String? known = _currentPageImagePath;
+    if (known != null && await File(known).exists()) return File(known);
+    final MokuroPayload? payload = _payload;
+    final String? imagesDir = _imagesDir;
+    if (payload == null || imagesDir == null) return null;
+    final int page = _currentPage.clamp(0, payload.images.length - 1);
+    final String? path = MangaFushiPage.resolveMangaPageImage(
+      payload,
+      imagesDir,
+      page,
+    );
+    if (path != null) return File(path);
+    final MangaReaderSession? session = _pageSession;
+    if (session == null || page >= session.pageCount) return null;
+    return session.localFile(page);
+  }
+
+  Future<void> _saveCurrentMangaPage() async {
+    final File? source = await _currentMangaPageFile();
+    final EpubBookRow? row = _bookRow;
+    if (source == null || row == null || !await source.exists()) return;
+    final String root = await MangaStorage.bookPath(row.bookKey);
+    final String chapter = _shelfChapterKey ?? 'chapter';
+    final String book = safeWindowsFileName(row.title);
+    final String savePath = switch (_saveDirectory) {
+      'flat' => p.join(root, 'saved'),
+      'book' => p.join(root, 'saved', book),
+      _ => p.join(root, 'saved', book, chapter),
+    };
+    final Directory destination = Directory(savePath);
+    await destination.create(recursive: true);
+    final String name = p.basename(source.path);
+    await source.copy(p.join(destination.path, name));
+    if (mounted) FushiToast.show(msg: t.manga_page_save);
+  }
+
+  Future<void> _setCurrentMangaPageAsCover() async {
+    final File? source = await _currentMangaPageFile();
+    final EpubBookRow? row = _bookRow;
+    if (source == null || row == null || !await source.exists()) return;
+    final String relative = p
+        .relative(source.path, from: row.extractDir)
+        .replaceAll('\\', '/');
+    await (appModel.database.update(appModel.database.epubBooks)
+          ..where((t) => t.uid.equals(row.uid)))
+        .write(EpubBooksCompanion(coverPath: Value<String?>(relative)));
+    if (mounted) FushiToast.show(msg: t.manga_page_set_cover);
   }
 
   Future<void> _showReaderContextMenu(String payloadJson) async {
@@ -3807,17 +4133,33 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           enabled: _zoomPercent > kMangaZoomMinPercent,
           child: Text('${t.manga_zoom} − ($_zoomPercent%)'),
         ),
+        PopupMenuItem<_MangaContextAction>(
+          value: _MangaContextAction.copyImage,
+          child: Text(t.manga_page_copy),
+        ),
+        PopupMenuItem<_MangaContextAction>(
+          value: _MangaContextAction.shareImage,
+          child: Text(t.manga_page_share),
+        ),
+        PopupMenuItem<_MangaContextAction>(
+          value: _MangaContextAction.saveImage,
+          child: Text(t.manga_page_save),
+        ),
+        PopupMenuItem<_MangaContextAction>(
+          value: _MangaContextAction.setCover,
+          child: Text(t.manga_page_set_cover),
+        ),
       ],
     );
     if (!mounted || action == null) return;
     switch (action) {
       case _MangaContextAction.previous:
-        await (_mode == MangaReadingMode.webtoon
+        await (_mode.isContinuous
             ? _jumpToPageAnchor('prev')
             : _onMangaTurn('prev'));
         return;
       case _MangaContextAction.next:
-        await (_mode == MangaReadingMode.webtoon
+        await (_mode.isContinuous
             ? _jumpToPageAnchor('next')
             : _onMangaTurn('next'));
         return;
@@ -3832,6 +4174,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return;
       case _MangaContextAction.zoomOut:
         await _setZoomPercent(_zoomPercent - 10);
+        return;
+      case _MangaContextAction.copyImage:
+        final File? file = await _currentMangaPageFile();
+        if (file != null) await copyImageFileToClipboard(file);
+        return;
+      case _MangaContextAction.shareImage:
+        final File? file = await _currentMangaPageFile();
+        if (file != null) await shareImageFile(file);
+        return;
+      case _MangaContextAction.saveImage:
+        await _saveCurrentMangaPage();
+        return;
+      case _MangaContextAction.setCover:
+        await _setCurrentMangaPageAsCover();
         return;
     }
   }
@@ -4212,7 +4568,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ),
         MangaChromeAction(
           key: const ValueKey<String>('manga_mode_toggle_button'),
-          icon: _mode == MangaReadingMode.webtoon
+          icon: _mode.isContinuous
               ? Icons.view_day_outlined
               : Icons.auto_stories_outlined,
           label: t.manga_mode_toggle,
@@ -4238,6 +4594,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ),
       ],
       <MangaChromeAction>[
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_settings_button'),
+          icon: Icons.settings_outlined,
+          label: t.manga_reader_settings,
+          pinned: true,
+          onPressed: () => unawaited(_showReaderSettings()),
+        ),
         // BUG-1888：隐藏界面。与快捷键（默认 M / 手柄 Y）同一个执行体。
         MangaChromeAction(
           key: const ValueKey<String>('manga_chrome_hide_button'),
@@ -4710,7 +5073,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         return;
       }
     }
-    if (_mode == MangaReadingMode.webtoon) {
+    if (_mode.isContinuous) {
       await controller.evaluateJavascript(
         source:
             'window.__mangaScrollToSpread && '

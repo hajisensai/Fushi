@@ -31,6 +31,27 @@ String? parseMagnetInfoHash(String magnet) {
   return null;
 }
 
+/// 由 v1 infoHash 拼一条最小磁力链接（`xt=urn:btih:<hash>[&dn=<name>]`）。
+///
+/// 资源索引器（Torznab 一类）常常只给 `.torrent` 下载地址 + infoHash 而没有现成
+/// 磁链；交给互联 host 代下载时对端只收磁链，就用这个从 infoHash 造一条。
+/// [infoHash] 非 40 位十六进制 / 32 位 base32 返回 null（不造无法解析的链接）。
+String? magnetUriFromInfoHash(String infoHash, {String? displayName}) {
+  final String raw = infoHash.trim();
+  final String? hex = raw.length == 40 && _isHex(raw)
+      ? raw.toLowerCase()
+      : raw.length == 32
+          ? _base32ToHex(raw)
+          : null;
+  if (hex == null) return null;
+  final StringBuffer buffer = StringBuffer('magnet:?xt=urn:btih:$hex');
+  final String name = displayName?.trim() ?? '';
+  if (name.isNotEmpty) {
+    buffer.write('&dn=${Uri.encodeQueryComponent(name)}');
+  }
+  return buffer.toString();
+}
+
 /// 解析磁力链接里的显示名 `dn`（做默认标题用）；无则返回 null。
 String? parseMagnetDisplayName(String magnet) {
   final Uri? uri = Uri.tryParse(magnet.trim());

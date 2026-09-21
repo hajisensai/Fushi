@@ -296,8 +296,8 @@ SettingsDestination buildLookupDestination() {
             },
           ),
           // macOS：读取 / 复制其它应用的选区（AX 读选区、合成 ⌘C）都要「辅助功能」
-          // 授权；未授权时热键退化为只查当前剪贴板文本。这里是**唯一**会弹系统
-          // 授权提示的入口——热键路径永远不弹（AppDelegate.swift 的 fail-open 契约）。
+          // 授权；未授权时旧行为会退化为只查当前剪贴板文本。设置页和第一次
+          // 明确触发全局查词时会弹系统授权提示，应用启动时不主动打扰用户。
           SettingsActionItem(
             id: 'lookup.accessibility_permission',
             title: t.lookup_accessibility_permission_request,

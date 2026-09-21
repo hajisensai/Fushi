@@ -740,6 +740,29 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               'ReaderFushiHistoryPage.adoptRemoteMangaReadingMode', e, stack);
         }
       }
+      if (localBookKey != null &&
+          book.format == BookFormat.manga.dbValue &&
+          (book.mangaReaderOverrides.isNotEmpty ||
+              book.mangaReaderOverrideDeleted) &&
+          book.mangaReaderOverrideUpdatedAt >= 0) {
+        try {
+          final EpubBookRow? localBook =
+              await appModel.database.getEpubBook(localBookKey);
+          if (localBook != null && localBook.uid.isNotEmpty) {
+            await appModel.database.mergeMangaReaderOverride(
+              localBook.uid,
+              overrides: book.mangaReaderOverrides,
+              updatedAt: book.mangaReaderOverrideUpdatedAt,
+              deleted: book.mangaReaderOverrideDeleted,
+            );
+          }
+        } catch (e, stack) {
+          ErrorLogService.instance.log(
+              'ReaderFushiHistoryPage.adoptRemoteMangaReaderOverride',
+              e,
+              stack);
+        }
+      }
       // v83：旧「远端书下载后 bookKey 漂移改键迁移」（TODO-616 §0🔴2）已删——
       // epub 域 entryKey 换稳定 uid 后导入时刻定死；且该路径删除前已恒 no-op
       //（能建 downloadId 行的写入方早随 shelf_reorder_page 消亡）。

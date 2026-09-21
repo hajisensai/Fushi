@@ -657,6 +657,7 @@ void _requireOneVideoMetadataOwner({
   StatisticsTombstones,
   BookTagMembershipTombstones,
   BookCustomCss,
+  MangaReaderOverrides,
   SyncDeletionTombstones,
   RevealedImages,
   ActivityEvents,
@@ -736,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 111;
+  int get schemaVersion => 112;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3386,6 +3387,46 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('video_episode_binding_overrides')) {
               await m.createTable(videoEpisodeBindingOverrides);
+            }
+          }
+          if (from < 112) {
+            // v112：manga_reader_overrides——漫画阅读器的每作品稀疏覆盖（Mihon
+            // 对齐的阅读模式/缩放/裁边等），全局默认仍落 preferences。存量的
+            // epub_books.manga_reading_mode 不改写，按书搬成一条稀疏覆盖，旧列
+            // 留给旧版本读。幂等守卫同 v108。
+            if (!await _tableExists('manga_reader_overrides')) {
+              await m.createTable(mangaReaderOverrides);
+            }
+            if (await _tableExists('epub_books') &&
+                await _columnExists('epub_books', 'manga_reading_mode') &&
+                await _columnExists('epub_books', 'uid')) {
+              final List<QueryRow> legacy = await customSelect(
+                "SELECT uid, manga_reading_mode FROM epub_books "
+                "WHERE uid != '' AND format = 'manga'",
+              ).get();
+              for (final QueryRow row in legacy) {
+                final String? mode =
+                    row.readNullable<String>('manga_reading_mode');
+                // `manga_reading_mode` 为 NULL / 空 = 这本书从没被单独设过，语义是
+                // 「跟随全局」。给它写一行 `{'autoMode': true}` 等于把每一本存量漫画
+                // 都钉成自动判定：此后用户改全局阅读模式，对全部存量书永久不再生效。
+                // 而且覆盖表本该是**稀疏**的（PR 说明也这么写），逐本写行会让每本书
+                // 各多一次 sidecar 资产上传与一条互联 wire 条目。
+                if (mode != 'spread' && mode != 'webtoon') continue;
+                await into(mangaReaderOverrides).insert(
+                  MangaReaderOverridesCompanion.insert(
+                    bookUid: row.read<String>('uid'),
+                    overridesJson: Value(
+                      jsonEncode(<String, Object?>{
+                        'autoMode': false,
+                        'mode': mode,
+                      }),
+                    ),
+                    updatedAt: 0,
+                  ),
+                  mode: InsertMode.insertOrIgnore,
+                );
+              }
             }
           }
         },

@@ -1133,6 +1133,9 @@ mixin _FushiDbContentMisc
               .go();
           await (delete(bookCustomCss)..where((t) => t.bookUid.equals(bookUid)))
               .go();
+          await (delete(mangaReaderOverrides)
+                ..where((t) => t.bookUid.equals(bookUid)))
+              .go();
           await (delete(revealedImages)
                 ..where((t) => t.bookUid.equals(bookUid)))
               .go();

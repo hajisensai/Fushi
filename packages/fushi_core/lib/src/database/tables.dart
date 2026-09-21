@@ -3178,3 +3178,16 @@ class AnidbFileIdentities extends Table {
             'AND (anidb_file_id IS NULL) = (anidb_episode_id IS NULL))',
       ];
 }
+
+/// Per-series sparse reader settings. Reset is retained as an LWW tombstone.
+/// The uid is device-local; sync and backup resolve the bookKey before writing.
+@DataClassName('MangaReaderOverrideRow')
+class MangaReaderOverrides extends Table {
+  TextColumn get bookUid => text()();
+  TextColumn get overridesJson => text().withDefault(const Constant('{}'))();
+  IntColumn get updatedAt => integer()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {bookUid};
+}

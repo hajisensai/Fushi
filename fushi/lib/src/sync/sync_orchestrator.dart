@@ -1667,6 +1667,12 @@ Future<bool> importRemoteBookFolder({
     }
     // per-book 自定义 CSS：LWW 合并同文件夹 book_css.json，把较新内容写穿 extractDir。
     await _applyRemoteBookFolderCss(db, backend, children, importedBookKey);
+    await _applyRemoteMangaReaderOverride(
+      db,
+      backend,
+      children,
+      importedBookKey,
+    );
     return true;
   } finally {
     try {
@@ -1801,6 +1807,68 @@ Future<void> _applyRemoteBookFolderCss(
       // best-effort：单个 CSS 写盘失败不影响其余（磁盘/权限异常）。
     }
   }
+}
+
+Future<void> _applyRemoteMangaReaderOverride(
+  FushiDatabase db,
+  SyncBackend backend,
+  List<AssetEntry> children,
+  String bookKey,
+) async {
+  AssetEntry? sidecar;
+  for (final AssetEntry e in children) {
+    if (!e.isFolder && e.name == kSyncMangaReaderAssetName) {
+      sidecar = e;
+      break;
+    }
+  }
+  if (sidecar == null) return;
+  final Object? json = await backend.getJsonAsset(sidecar.id);
+  final ({Map<String, Object?> overrides, int updatedAt, bool deleted}) parsed =
+      parseMangaReaderSidecar(json);
+  if (parsed.updatedAt < 0) return;
+  final EpubBookRow? book = await db.getEpubBook(bookKey);
+  if (book == null ||
+      book.uid.isEmpty ||
+      book.format != BookFormat.manga.dbValue) {
+    return;
+  }
+  await db.mergeMangaReaderOverride(
+    book.uid,
+    overrides: parsed.overrides,
+    updatedAt: parsed.updatedAt,
+    deleted: parsed.deleted,
+  );
+}
+
+@visibleForTesting
+({Map<String, Object?> overrides, int updatedAt, bool deleted})
+    parseMangaReaderSidecar(Object? json) {
+  if (json is! Map) {
+    return (
+      overrides: const <String, Object?>{},
+      updatedAt: -1,
+      deleted: false,
+    );
+  }
+  final Object? rawOverrides = json['overrides'];
+  final Map<String, Object?> overrides = rawOverrides is Map
+      ? <String, Object?>{
+          for (final MapEntry<Object?, Object?> e in rawOverrides.entries)
+            e.key.toString(): e.value,
+        }
+      : <String, Object?>{};
+  final Object? rawAt = json['updatedAt'];
+  final int updatedAt = rawAt is int
+      ? rawAt
+      : rawAt is num
+          ? rawAt.toInt()
+          : int.tryParse(rawAt?.toString() ?? '') ?? -1;
+  return (
+    overrides: overrides,
+    updatedAt: updatedAt,
+    deleted: json['deleted'] == true,
+  );
 }
 
 /// 解析 CSS sidecar JSON 为 LWW 输入：`{files:{relativePath:{content,deleted,updatedAt}}}`。

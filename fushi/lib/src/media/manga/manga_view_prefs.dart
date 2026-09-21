@@ -136,7 +136,15 @@ const bool kMangaPanelNavigationDefault = false;
 /// 旧实现只有一种：左右各占 25% 宽的竖条（[MangaTapZoneLayout.leftRight]），中间
 /// 留白不翻页。单手持握手机时够不到对侧边缘，横屏平板上那条又太窄——Mihon 因此给
 /// 了四种预设，这里对齐同一组语义。
-enum MangaTapZoneLayout { leftRight, lShaped, kindle, topBottom }
+enum MangaTapZoneLayout {
+  leftRight,
+  lShaped,
+  kindle,
+  topBottom,
+  defaultZones,
+  edge,
+  disabled,
+}
 
 extension MangaTapZoneLayoutKey on MangaTapZoneLayout {
   String get key {
@@ -149,6 +157,12 @@ extension MangaTapZoneLayoutKey on MangaTapZoneLayout {
         return 'kindle';
       case MangaTapZoneLayout.topBottom:
         return 'top_bottom';
+      case MangaTapZoneLayout.defaultZones:
+        return 'default';
+      case MangaTapZoneLayout.edge:
+        return 'edge';
+      case MangaTapZoneLayout.disabled:
+        return 'disabled';
     }
   }
 
@@ -161,6 +175,13 @@ extension MangaTapZoneLayoutKey on MangaTapZoneLayout {
         return MangaTapZoneLayout.kindle;
       case 'top_bottom':
         return MangaTapZoneLayout.topBottom;
+      case 'default':
+        return MangaTapZoneLayout.defaultZones;
+      case 'edge':
+        return MangaTapZoneLayout.edge;
+      case 'disabled':
+        return MangaTapZoneLayout.disabled;
+      case 'right_left':
       case 'left_right':
       default:
         return MangaTapZoneLayout.leftRight;
@@ -218,6 +239,9 @@ const double kMangaTapZoneEdge = 0.25;
 List<MangaTapZone> mangaTapZones(
   MangaTapZoneLayout layout, {
   required bool rtl,
+  bool invertHorizontal = false,
+  bool invertVertical = false,
+  bool invertBoth = false,
 }) {
   // 只有 left_right 是「视觉方位」语义（左边那条 / 右边那条），RTL 右开本要
   // 镜像成「左 = 下一页」。其余三种是「阅读顺序」语义——Kindle 的「左窄条后退、
@@ -233,8 +257,8 @@ List<MangaTapZone> mangaTapZones(
     double height,
     bool forward,
   ) => MangaTapZone(
-    left: left,
-    top: top,
+    left: invertHorizontal || invertBoth ? 1 - left - width : left,
+    top: invertVertical || invertBoth ? 1 - top - height : top,
     width: width,
     height: height,
     forward: mirror ? !forward : forward,
@@ -242,6 +266,22 @@ List<MangaTapZone> mangaTapZones(
 
   const double e = kMangaTapZoneEdge;
   switch (layout) {
+    case MangaTapZoneLayout.disabled:
+      return const <MangaTapZone>[];
+    case MangaTapZoneLayout.defaultZones:
+      return <MangaTapZone>[
+        zone(0, 0, 1, 0.25, false),
+        zone(0, 0.25, 0.25, 0.5, false),
+        zone(0.75, 0.25, 0.25, 0.5, true),
+        zone(0, 0.75, 1, 0.25, true),
+      ];
+    case MangaTapZoneLayout.edge:
+      return <MangaTapZone>[
+        zone(0, 0, 1, 0.1, false),
+        zone(0, 0.1, 0.1, 0.8, false),
+        zone(0.9, 0.1, 0.1, 0.8, true),
+        zone(0, 0.9, 1, 0.1, true),
+      ];
     case MangaTapZoneLayout.leftRight:
       return <MangaTapZone>[
         zone(0, 0, e, 1, false),
