@@ -5163,5 +5163,6 @@
   "video_metadata_download_staff_images": "Download cast & staff photos",
   "video_metadata_download_staff_images_hint": "Save cast/staff profile photos locally while scraping (up to 10 per work). Off: photos load from TMDB on demand.",
   "remote_collection_tmdb_ordering_on_host": "TMDB episode ordering on host…",
-  "video_metadata_provider_anidb": "AniDB (hash identity + anime XML)"
+  "video_metadata_provider_anidb": "AniDB (hash identity + anime XML)",
+  "ai_provider_model_pick": "從已獲取的模型裡挑"
 }

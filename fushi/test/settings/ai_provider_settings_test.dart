@@ -471,9 +471,9 @@ void main() {
       );
     });
 
-    testWidgets('拉模型列表：结果进下拉，选中即写进模型字段', (WidgetTester tester) async {
+    testWidgets('候选选择器：没拉过先拉，选中即同时改字段显示与落盘', (WidgetTester tester) async {
       await prefs.setAiProviders(<AiProviderConfig>[
-        _config(id: 'p1', model: ''),
+        _config(id: 'p1', model: 'gpt-4o-mini'),
       ]);
       tester.view.physicalSize = const Size(900, 4000);
       tester.view.devicePixelRatio = 1;
@@ -515,18 +515,40 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tapKey(tester, 'ai-provider-0-fetch-models');
+      // BUG-2618：「模型」这个值只允许有一个输入控件。候选必须长在字段自己身上，
+      // 不能是字段外面另起的一行下拉——那样两处显示会各说各话。
       expect(
-        find.byKey(const ValueKey<String>('ai-provider-0-model-picker')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+          matching: find.byKey(
+            const ValueKey<String>('ai-provider-0-model-picker'),
+          ),
+        ),
         findsOneWidget,
       );
 
+      // 没点过「获取模型列表」也能挑：箭头自己先拉一次。
       await tapKey(tester, 'ai-provider-0-model-picker');
       await tester.tap(find.text('o4-mini').last);
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
 
       expect(prefs.aiProviders.single.model, 'o4-mini');
+      // 回归点（BUG-2618）：选完候选，用户正看着的那个输入框必须当场变成新值。
+      // 此前字段吃 `initialValue`（只认第一次 build），选完纹丝不动，界面上两处
+      // 显示着不同的模型名，而落盘的偏偏是用户没在看的那一个。
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byKey(const ValueKey<String>('ai-provider-0-model')),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        'o4-mini',
+      );
     });
   });
 
