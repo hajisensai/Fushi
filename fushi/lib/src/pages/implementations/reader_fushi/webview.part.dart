@@ -1905,6 +1905,10 @@ updateLive: function(patch) {
         // 纵向溢出（文档 scrollHeight > 视口）就足以让上下滑动把整页拉伸回弹。
         // Android 专属设置，其它平台忽略。
         overScrollMode: OverScrollMode.NEVER,
+        // iOS 需单独关闭 WKWebView 的 UIScrollView.bounces；Android 的
+        // overScrollMode 不会传到这里，CSS 锁轴也不会关闭原生橡皮筋回弹。
+        // 只禁边界回弹，保留连续模式沿书写轴的原生滚动与边界跨章手势。
+        disallowOverScroll: true,
         verticalScrollbarThumbColor: Colors.transparent,
         verticalScrollbarTrackColor: Colors.transparent,
         horizontalScrollbarThumbColor: Colors.transparent,
