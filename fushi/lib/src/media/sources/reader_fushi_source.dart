@@ -1291,6 +1291,21 @@ class ReaderFushiSource extends ReaderMediaSource {
     await setPreference<bool>(key: 'pause_on_lookup', value: value);
   }
 
+  /// 悬停查词时，鼠标离开字幕与查词浮层后是否自动关掉浮层并恢复播放（免去「再点一下
+  /// 空白」那一步）。只作用于**悬停发起**的查词会话——点击查词是显式的「停在这儿看」，
+  /// 鼠标移开不关（判据见 `VideoFushiPage.shouldAutoResumeOnHoverLeave`）。
+  ///
+  /// 悬停是桌面鼠标行为，移动端没有 OS hover、自然不触发（设置项也走
+  /// `DesktopLookupService.isDesktop` 桌面门控）。默认开启：会走到这条路径的前提是
+  /// 用户已经在用悬停查词（`hover_auto_lookup` 或 Shift+悬停），而那时「移开就继续播」
+  /// 正是预期行为。
+  bool get resumeOnLookupLeave =>
+      getPreference<bool>(key: 'resume_on_lookup_leave', defaultValue: true);
+
+  Future<void> setResumeOnLookupLeave({required bool value}) async {
+    await setPreference<bool>(key: 'resume_on_lookup_leave', value: value);
+  }
+
   /// TODO-756b：是否“鼠标悬停即自动查词”。开启时无需按住 Shift，鼠标悬停在
   /// 字幕/正文字符上即触发查词（与 TODO-756a 的 Shift-悬停同链路）；关闭时退回
   /// 756a 的 Shift+悬停行为。悬停是桌面鼠标行为，移动端无 OS hover、自然不触发
