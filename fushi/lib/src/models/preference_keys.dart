@@ -165,11 +165,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
-  // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
-  'manga_panel_navigation',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
+  'manga_panel_navigation',
   // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，
   // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
   'manga_reader_preferences',
