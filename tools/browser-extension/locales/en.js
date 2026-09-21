@@ -72,6 +72,8 @@
   opt_subtitleStyleBoxWidth_desc: 'Percentage of the video width (20–100%); text wraps inside. 0 fits the text.',
   opt_subtitleStyleBoxHeight_title: 'Background height',
   opt_subtitleStyleBoxHeight_desc: 'Percentage of the video height (5–60%), text centered vertically; grows when there is more text. 0 fits the text.',
+  opt_subtitleStyleBoxAutoFit_title: 'Auto-fit',
+  opt_subtitleStyleBoxAutoFit_desc: 'When the background has a fixed height, the text scales so the whole line just fits: a bigger background means bigger text, a smaller one keeps more text on one screen. You can also drag the bottom-right corner of the subtitle on the video (double-click that handle to go back to fitting the text).',
   opt_subtitleStyle_auto: 'Fit text',
   opt_resetSubtitleStyle_title: 'Restore default appearance',
   opt_resetSubtitleStyle_desc: 'Clears every customization in this section (subtitle position and the background switch are kept).',
@@ -313,6 +315,7 @@
 
   // ── subtitle-panel.js (overlay, drop, offset) ──
   overlay_grip_title: 'Drag to move the subtitle',
+  overlay_resize_title: 'Drag to resize · double-click to reset',
   panel_open_hint: 'Browsers do not allow page shortcuts to open the side panel: click the Fushi toolbar icon → “▤ Open subtitle side panel”',
   panel_opened: 'Subtitle list opened',
   subtitle_file_too_large: 'Subtitle file too large (limit 8 MB)',

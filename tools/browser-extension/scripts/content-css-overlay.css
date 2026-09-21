@@ -134,6 +134,9 @@
        subtitle-panel.js（subtitle-style.js toCssVars）逐个 setProperty 到本节点，默认项不写。 */
     --fushi-sub-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
     --fushi-sub-scale: 1;
+    /* 自适应缩放倍率：底板定了高度且「自适应缩放」开着时，由 subtitle-panel.js 按实测内容
+       算出来写进来（subtitle-style.js nextFitScale/applyFit）；1 = 不缩放。 */
+    --fushi-sub-fit: 1;
     --fushi-sub-weight: 600;
     --fushi-sub-spacing: 0.01em;
     --fushi-sub-line-height: 1.45;
@@ -163,7 +166,7 @@
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
     font-family: var(--fushi-sub-family);
     /* 基准随视口响应（小播放器不撑、全屏不缩成蚂蚁），用户的「大小」是倍率而非绝对像素。 */
-    font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale));
+    font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale) * var(--fushi-sub-fit));
     font-weight: var(--fushi-sub-weight);
     /* 原本是 `font:` 简写，会把这三项一起重置；拆成长手后要显式归 normal，
        否则覆盖层挂在播放器容器下（非 shadow root），会继承宿主页的斜体/小型大写。 */
@@ -189,6 +192,11 @@
 /* 拖动中：抓手光标 + 禁选区（否则移动指针会同时拉出一条文字选区）。 */
 #fushi-subtitle-overlay[data-dragging] {
     cursor: grabbing;
+    user-select: none;
+}
+
+/* 缩放中：同样禁选区；光标交给把手自己的 nwse-resize。 */
+#fushi-subtitle-overlay[data-resizing] {
     user-select: none;
 }
 
@@ -231,10 +239,49 @@
     cursor: grabbing;
 }
 
-/* 触屏没有 hover：整块可拖，拖柄不需要露出来。 */
+/* 缩放把手：贴在底板右下角内侧的小三角，与查词弹窗右下角把手同一手势（拖拽改大小、
+   双击恢复随内容）。同样用 ::before 画图形，不带文本节点——content.js 取词兜底会遍历
+   覆盖层下所有文本节点，把手绝不能混进正文。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 18px;
+    height: 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 0 0 var(--fushi-sub-radius) 0;
+    opacity: 0;
+    transition: opacity 120ms ease;
+    cursor: nwse-resize;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+/* 两道斜杠（右下角的通用缩放记号）；用 currentColor 跟着字幕文字色走，深浅底都看得见。 */
+#fushi-subtitle-overlay .fushi-subtitle-overlay-resize::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background-image: linear-gradient(315deg, currentColor 0 1.6px, transparent 1.6px 4.2px, currentColor 4.2px 5.8px, transparent 5.8px);
+    opacity: 0.9;
+}
+
+#fushi-subtitle-overlay:hover .fushi-subtitle-overlay-resize,
+#fushi-subtitle-overlay[data-resizing] .fushi-subtitle-overlay-resize {
+    opacity: 1;
+}
+
+/* 触屏没有 hover：整块可拖，拖柄不需要露出来。但缩放把手是触屏上**唯一**能改大小的入口，
+   不能跟着藏——常显一枚半透明的小角标。 */
 @media (hover: none) {
     #fushi-subtitle-overlay .fushi-subtitle-overlay-grip {
         display: none;
+    }
+
+    #fushi-subtitle-overlay .fushi-subtitle-overlay-resize {
+        opacity: 0.6;
     }
 }
 

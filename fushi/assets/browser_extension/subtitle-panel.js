@@ -31,7 +31,9 @@
     // 覆盖层的两个子节点：文字层（fushiRenderCueText 只往这里写）与拖柄；overlayRenderedCue
     // 记文字层当前画的是哪条 cue——tick 每 200ms 重摆位置，但只有 cue 换了才重建文本节点，
     // 否则用户刚拖出来的原生选区每 200ms 就被新文本节点冲掉一次（用户报「字幕选不了、复制不了」）。
-    overlayTextEl: null, overlayGripEl: null, overlayRenderedCue: null,
+    // overlayResizeEl：右下角缩放把手（与查词弹窗的 #fushi-popup-resize-grip 同一套交互：
+    // 按住拖 = 改底板宽高、松手落盘；双击 = 恢复「随内容」）。
+    overlayTextEl: null, overlayGripEl: null, overlayResizeEl: null, overlayRenderedCue: null,
     // 覆盖层底色（默认有半透明底板；关掉只剩描边文字，像站点原生字幕那样不挡画面）。
     overlayBackground: true,
     // 覆盖层外观（字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 描边 / 底板色与透明度…），
@@ -58,6 +60,9 @@
     // 进行中的拖拽会话（null = 没在拖）；overlayDragMoved 记「刚才那次按下确实拖动了」，
     // 用来吞掉松手后浏览器合成的那一次 click——否则每次拖完都会顺手查一次词。
     overlayDrag: null, overlayDragMoved: false,
+    // 进行中的缩放会话（null = 没在缩放）。拖拽期间的尺寸 / 位置只活在这里，松手才落盘——
+    // 与挪位同构（见 overlayDrag），中途 pointercancel 一律丢弃回原样。
+    overlayResize: null,
   };
   var EXT_PREFIX = '外挂:';
   // 界面文案统一走 i18n.js（fushiT）；测试壳没装 i18n 时退回键名。
@@ -85,6 +90,7 @@
   }
   function teardownAll() {
     endOverlayDrag(false);
+    endOverlayResize(false);
     hideSubtitleOverlay();
     hideDropHint();
     // 面板整体被关掉时替代模式也随之失效（replaceNativeEffective 已含 st.enabled），
@@ -234,6 +240,9 @@
     st.replaceNative = c.subtitleReplaceNative === true;
     st.overlayPos = normalizeOverlayPos(c[OVERLAY_POS_KEY]);
     st.overlayStyle = (c[OVERLAY_STYLE_KEY] && typeof c[OVERLAY_STYLE_KEY] === 'object') ? c[OVERLAY_STYLE_KEY] : null;
+    // 外观变了（字号/行高/底板尺寸/自适应开关…）：下一次重摆必须重算自适应倍率，否则
+    // 用户在设置页调完大小，覆盖层还按上一句算出来的倍率缩着。
+    overlayFitKey = null;
     // 外观变了就允许重新拉一次字体清单（用户可能刚在设置页下载了新字体）；清单没变不会重写 <style>。
     overlayFontFacesRequested = false;
     if (st.overlayEl) { applyOverlayBackground(st.overlayEl); applyOverlayStyle(st.overlayEl); }
@@ -343,12 +352,17 @@
     } catch (_) { return false; }
   }
 
-  function isOverlayGrip(target) {
-    var grip = st.overlayGripEl;
-    if (!grip || !target) return false;
-    if (target === grip) return true;
-    try { return typeof target.closest === 'function' && target.closest('.fushi-subtitle-overlay-grip') === grip; }
+  function isOverlayHandleOf(el, target, cls) {
+    if (!el || !target) return false;
+    if (target === el) return true;
+    try { return typeof target.closest === 'function' && target.closest('.' + cls) === el; }
     catch (_) { return false; }
+  }
+  function isOverlayGrip(target) {
+    return isOverlayHandleOf(st.overlayGripEl, target, 'fushi-subtitle-overlay-grip');
+  }
+  function isOverlayResize(target) {
+    return isOverlayHandleOf(st.overlayResizeEl, target, 'fushi-subtitle-overlay-resize');
   }
 
   function ensureSubtitleOverlay() {
@@ -365,10 +379,24 @@
       grip.className = 'fushi-subtitle-overlay-grip';
       grip.setAttribute('title', tr('overlay_grip_title'));
       grip.setAttribute('aria-hidden', 'true');
+      // 右下角缩放把手：与拖柄同构（::before 画图形、不带文本节点，取词遍历不会碰到它）。
+      var resize = document.createElement('span');
+      resize.className = 'fushi-subtitle-overlay-resize';
+      resize.setAttribute('title', tr('overlay_resize_title'));
+      resize.setAttribute('aria-hidden', 'true');
       el.appendChild(text);
       el.appendChild(grip);
+      el.appendChild(resize);
       st.overlayTextEl = text;
       st.overlayGripEl = grip;
+      st.overlayResizeEl = resize;
+      resize.addEventListener('pointerdown', overlayResizePointerDown);
+      // 双击把手 = 恢复「随内容」（拖歪了的唯一就地出路，不必特地开设置页）。
+      resize.addEventListener('dblclick', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        resetOverlayBox();
+      });
       el.addEventListener('pointerdown', overlayPointerDown);
       // 鼠标在字幕文字上按下 = 开始原生拖选（复制用），这一击不交给站点：Netflix/YouTube 把
       // 播放器上的 mousedown 当「点画面」处理，有的还 preventDefault 把选区扼杀在起点。
@@ -377,8 +405,8 @@
         e.stopPropagation();
         // 刚拖完字幕松手：这次 click 是拖动的尾巴，不是查词。
         if (st.overlayDragMoved) { st.overlayDragMoved = false; return; }
-        // 点在拖柄上 / 刚用鼠标拖出一段选区：都不是查词。
-        if (isOverlayGrip(e.target) || overlayHasNativeSelection()) return;
+        // 点在拖柄 / 缩放把手上、刚用鼠标拖出一段选区：都不是查词。
+        if (isOverlayGrip(e.target) || isOverlayResize(e.target) || overlayHasNativeSelection()) return;
         var cue = st.overlayCue;
         if (cue && typeof window.fushiLookupAtPoint === 'function') {
           window.fushiLookupAtPoint(e.clientX, e.clientY, {
@@ -542,7 +570,15 @@
   // 否则用持久化的用户位置，没拖过走默认。
   function currentOverlayPos() {
     if (st.overlayDrag && st.overlayDrag.pos) return st.overlayDrag.pos;
+    if (st.overlayResize && st.overlayResize.pos) return st.overlayResize.pos;
     return st.overlayPos || OVERLAY_POS_DEFAULT;
+  }
+
+  // 本刻应生效的外观：缩放拖拽中用会话里的实时尺寸（tick 每 200ms 重摆也不会把盒子弹回原大小），
+  // 否则用持久化的设置。
+  function currentOverlayStyle() {
+    if (st.overlayResize && st.overlayResize.style) return st.overlayResize.style;
+    return st.overlayStyle;
   }
 
   // 把分数坐标落成像素。x 是水平中心、y 是底边锚点（CSS transform 是 translate(-50%,-100%)）。
@@ -564,8 +600,39 @@
     // 而非视口的，所以不能交给 CSS 百分比，随每次重摆按当前 rect 折 px；宽仍被上面的 max-width
     // 夹住，永远不出视口。subtitle-style.js 缺席（旧测试壳）时不写，观感同旧版。
     if (window.fushiSubtitleStyle && typeof window.fushiSubtitleStyle.applyBox === 'function') {
-      window.fushiSubtitleStyle.applyBox(el, st.overlayStyle, rect);
+      var style = currentOverlayStyle();
+      window.fushiSubtitleStyle.applyBox(el, style, rect);
+      fitOverlayText(el, style, rect);
     }
+  }
+
+  // 自适应缩放：把整句缩放到「底板里刚好放下」（实现在 subtitle-style.js fitTextInto，与
+  // options 预览共用）。每 200ms 的 tick 都会路过 placeOverlay，所以按「句子 + 底板像素」记忆：
+  // 没变就一轮都不跑——每轮都要读 scrollHeight，那是一次强制同步重排。
+  var overlayFitKey = null;
+  // 节点上当前是否实际写着一个非 1 的倍率。记忆键管「要不要重算」，它管「要不要清」——
+  // 两者不能合并：关掉开关走的是 applySubtitlePreferences，那里刚把记忆键置空，再拿记忆键
+  // 当「没写过」就会把上一句算出的倍率永久留在节点上；反过来每个 tick 都无条件清一次，又违反了
+  // 「同一份设置不重复写 style」。
+  var overlayFitApplied = false;
+  function fitOverlayText(el, style, frame) {
+    var SUB = window.fushiSubtitleStyle;
+    var text = st.overlayTextEl;
+    if (!el || !text || !SUB || typeof SUB.fitTextInto !== 'function') return;
+    if (!SUB.fitEnabled(style)) {
+      // 关掉自适应 / 底板改回随内容：把倍率交还 CSS，字号回到用户设的「大小」。
+      overlayFitKey = null;
+      if (overlayFitApplied) { SUB.applyFit(el, 1); overlayFitApplied = false; }
+      return;
+    }
+    var box = SUB.boxPx(style, frame);
+    if (!(box.minHeight > 0)) return;
+    var cue = st.overlayRenderedCue;
+    var key = (cue ? (cue.text || '') + '|' + (cue.ruby || '') : '') +
+      '|' + box.width + 'x' + box.minHeight;
+    if (key === overlayFitKey) return;
+    overlayFitKey = key;
+    overlayFitApplied = SUB.fitTextInto(el, text, style, frame) !== 1;
   }
 
   // 把拖到的像素点夹回视频盒内再换算成分数：中心至少离视频左右缘 8px；底边锚不低于视频底缘、
@@ -584,6 +651,9 @@
   // 挂 window 全程收得到 move/up；capture 仍尝试一下，多一层保险。
   function overlayPointerDown(e) {
     if (e.button !== undefined && e.button !== null && e.button !== 0) return;
+    // 按在缩放把手上是改尺寸，不是挪位——触屏整块可拖那条路也必须先让开，否则把手在触屏上
+    // 永远只会把字幕拖走（用户看到「右下角拉不动，一碰就整条跑了」）。
+    if (isOverlayResize(e.target)) return;
     // 鼠标：只有按在拖柄上才是挪字幕，按在文字上是原生拖选（复制）——两者都要，不能让挪位
     // 独占整块。触屏/触控笔没有拖选，整块仍可拖（长按选词由系统菜单管）。
     var touchLike = !!e.pointerType && e.pointerType !== 'mouse';
@@ -653,6 +723,155 @@
       try { chrome.storage.local.set(patch); } catch (_) {}
     }
     if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+  }
+
+  // ── 覆盖层缩放：右下角把手拖拽改底板大小（与查词弹窗右下角把手同一手势） ──
+  //
+  // 锚点约定：覆盖层是「水平中心 + 底边」锚定的（transform: translate(-50%,-100%)），而一个
+  // 右下角把手该有的手感是**左上角钉住、右下角跟手**。所以一次拖拽同时改两样东西：尺寸
+  // （subtitleStyle.boxWidth/boxHeight，视频盒百分比）和位置（subtitleOverlayPosition，让左上角
+  // 停在原处）。两者各自落进自己既有的真相源，不新增第三份尺寸存档。
+  //
+  // 尺寸的夹取全部走 subtitle-style.js 的 boxFromPx（= options 两根滑杆的同一处 clampBox），
+  // 拖拽写不出滑杆写不出的值。
+  function overlayResizePointerDown(e) {
+    if (e.button !== undefined && e.button !== null && e.button !== 0) return;
+    var SUB = window.fushiSubtitleStyle;
+    if (!SUB || typeof SUB.boxFromPx !== 'function') return;
+    var el = st.overlayEl;
+    var video = videoEl();
+    if (!el || !video || typeof video.getBoundingClientRect !== 'function') return;
+    var rect = video.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    var box = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+    if (!box || !(box.width > 0) || !(box.height > 0)) return;
+    if (st.overlayDrag) endOverlayDrag(false);
+    if (st.overlayResize) endOverlayResize(false);
+    st.overlayDragMoved = false;
+    st.overlayResize = {
+      id: e.pointerId,
+      // 钉住的左上角（视口坐标）；拖拽全程不动，尺寸与位置都由它 + 指针算出来。
+      left: box.left, top: box.top,
+      style: null, pos: null, moved: false,
+    };
+    window.addEventListener('pointermove', overlayResizePointerMove);
+    window.addEventListener('pointerup', overlayResizePointerUp);
+    window.addEventListener('pointercancel', overlayResizePointerCancel);
+    try { st.overlayResizeEl.setPointerCapture(e.pointerId); } catch (_) {}
+    // 把手上的按下不该冒泡给宿主播放器（Netflix/YouTube 会当「点画面」暂停），也不该让
+    // 浏览器顺手拉选区。
+    try { e.stopPropagation(); e.preventDefault(); } catch (_) {}
+  }
+
+  function overlayResizePointerMove(e) {
+    var d = st.overlayResize;
+    if (!d || e.pointerId !== d.id) return;
+    var SUB = window.fushiSubtitleStyle;
+    var video = videoEl();
+    if (!SUB || !video || typeof video.getBoundingClientRect !== 'function') return;
+    var rect = video.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    if (!d.moved) {
+      d.moved = true;
+      if (st.overlayEl) st.overlayEl.setAttribute('data-resizing', '');
+      try { window.getSelection().removeAllRanges(); } catch (_) {}
+    }
+    // 指针先夹进视频盒：拖到画面外不该换来一个探出画面的底板（宽高自己还有上下限，但那是
+    // 百分比上限，落在靠边的位置上照样能探出去）。
+    var px = Math.min(rect.right, Math.max(rect.left, e.clientX));
+    var py = Math.min(rect.bottom, Math.max(rect.top, e.clientY));
+    var box = SUB.boxFromPx(px - d.left, py - d.top, rect);
+    if (!box) return;
+    var base = st.overlayStyle && typeof st.overlayStyle === 'object' ? st.overlayStyle : {};
+    var next = SUB.normalize(Object.assign({}, base, box));
+    // 夹取后的真实像素（不是指针位置）才是左上角钉住时该有的中心 / 底边——否则一旦撞上下限，
+    // 盒子的实际边缘与用户持续移动的指针就会脱节，松手位置也跟着漂。
+    var pxBox = SUB.boxPx(next, rect);
+    var wpx = pxBox.width > 0 ? pxBox.width : (px - d.left);
+    var hpx = pxBox.minHeight > 0 ? pxBox.minHeight : (py - d.top);
+    d.style = next;
+    d.pos = clampOverlayPos({
+      x: (d.left + wpx / 2 - rect.left) / rect.width,
+      y: (d.top + hpx - rect.top) / rect.height,
+    });
+    if (st.overlayEl && st.overlayCue) placeOverlay(st.overlayEl, rect, d.pos);
+    try { e.preventDefault(); } catch (_) {}
+  }
+
+  function overlayResizePointerUp(e) {
+    var d = st.overlayResize;
+    if (!d || e.pointerId !== d.id) return;
+    endOverlayResize(true);
+  }
+  function overlayResizePointerCancel(e) {
+    var d = st.overlayResize;
+    if (!d || e.pointerId !== d.id) return;
+    endOverlayResize(false);
+  }
+
+  // commit=true：把会话里的尺寸 + 位置写成用户设置并落盘；false（取消/面板关闭）：丢弃回原样。
+  function endOverlayResize(commit) {
+    var d = st.overlayResize;
+    if (!d) return;
+    st.overlayResize = null;
+    window.removeEventListener('pointermove', overlayResizePointerMove);
+    window.removeEventListener('pointerup', overlayResizePointerUp);
+    window.removeEventListener('pointercancel', overlayResizePointerCancel);
+    if (st.overlayEl) {
+      try { st.overlayEl.removeAttribute('data-resizing'); } catch (_) {}
+    }
+    if (!d.moved) return;
+    // 真拖过：吞掉紧随其后的合成 click（否则每次缩放完都顺手查一次词）。
+    st.overlayDragMoved = true;
+    if (commit && d.style) {
+      st.overlayStyle = d.style;
+      writeOverlayStyle(d.style);
+      if (d.pos) {
+        st.overlayPos = d.pos;
+        var patch = {};
+        patch[OVERLAY_POS_KEY] = d.pos;
+        try { chrome.storage.local.set(patch); } catch (_) {}
+      }
+    }
+    overlayFitKey = null; // 尺寸变了（或被撤销）：下一次重摆必须重算自适应倍率
+    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+  }
+
+  // 双击把手：底板宽高回到「随内容」，位置不动。
+  function resetOverlayBox() {
+    var SUB = window.fushiSubtitleStyle;
+    if (!SUB) return;
+    var base = st.overlayStyle && typeof st.overlayStyle === 'object' ? st.overlayStyle : {};
+    if (!(SUB.normalize(base).boxWidth > 0) && !(SUB.normalize(base).boxHeight > 0)) return;
+    var next = SUB.normalize(Object.assign({}, base, { boxWidth: 0, boxHeight: 0 }));
+    st.overlayStyle = next;
+    writeOverlayStyle(next);
+    overlayFitKey = null;
+    if (st.overlayEl) { SUB.applyFit(st.overlayEl, 1); overlayFitApplied = false; }
+    if (st.overlayCue) updateSubtitleOverlay(st.overlayCue);
+  }
+
+  // 落盘外观设置。与 options 页同一约定：整份回到默认就删键（而不是存一份等值副本），
+  // 免得以后改默认值时老用户被旧副本钉住。
+  function writeOverlayStyle(style) {
+    var SUB = window.fushiSubtitleStyle;
+    if (!SUB) return;
+    try {
+      if (SUB.isDefault(style)) chrome.storage.local.remove(OVERLAY_STYLE_KEY);
+      else {
+        var patch = {};
+        patch[OVERLAY_STYLE_KEY] = style;
+        chrome.storage.local.set(patch);
+      }
+    } catch (_) {}
+  }
+
+  // 分数位置的公共夹取（拖拽落点走 overlayPosFromPoint，缩放算出来的锚点走这里）。
+  function clampOverlayPos(pos) {
+    return {
+      x: Math.min(1, Math.max(0, pos.x)),
+      y: Math.min(1, Math.max(0, pos.y)),
+    };
   }
 
   function firstCueAfter(ms) {
