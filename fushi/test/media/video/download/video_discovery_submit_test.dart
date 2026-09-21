@@ -146,7 +146,8 @@ void main() {
 
       await createLocalVideoDownloadSubscription(
         database: database,
-        item: item,
+        reference: item.reference,
+        coverUrl: item.posterUrl,
         selection: _subscription(
           download: _download(
             media: reference,
@@ -211,7 +212,8 @@ void main() {
 
       await createLocalVideoDownloadSubscription(
         database: database,
-        item: item,
+        reference: item.reference,
+        coverUrl: item.posterUrl,
         selection: selection,
         target: _target,
         nowMs: _firstAt,
@@ -226,7 +228,8 @@ void main() {
 
       await createLocalVideoDownloadSubscription(
         database: database,
-        item: item,
+        reference: item.reference,
+        coverUrl: item.posterUrl,
         selection: selection,
         target: _target,
         searchQuery: 'custom query',
@@ -287,7 +290,7 @@ void main() {
 
       final String jobId = await enqueueLocalVideoDownload(
         pipeline: pipeline,
-        item: item,
+        coverUrl: item.posterUrl,
         selection: _download(
           media: reference,
           source: source,

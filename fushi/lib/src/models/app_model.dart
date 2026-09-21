@@ -5104,10 +5104,15 @@ class AppModel with ChangeNotifier {
   }
 
   /// 下载管线字幕阶段的按作品语言解析器（见 [VideoDownloadPipelineService]）。
+  ///
+  /// 记忆键有两套写入方：字幕工作台按**合集名**写（= [VideoDownloadSubtitleLanguageQuery.seriesKey]），
+  /// 播放页单集字幕对话框按**搜索词**写（`subtitle.part.dart`，下载导入的系列
+  /// 通常就是裸标题）。两把钥匙都试，先合集名再裸标题；都没记过才回 null。
   String? _resolveVideoDownloadSubtitleLanguage(
     VideoDownloadSubtitleLanguageQuery query,
   ) =>
-      _seriesSubtitleLanguage(query.seriesKey);
+      _seriesSubtitleLanguage(query.seriesKey) ??
+      _seriesSubtitleLanguage(query.title.trim().toLowerCase());
 
   /// 刮完一个作品 → 给它仍缺字幕的成员各补一条（BUG-1698）。
   ///

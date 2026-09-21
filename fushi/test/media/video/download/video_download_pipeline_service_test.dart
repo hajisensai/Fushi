@@ -1019,6 +1019,7 @@ void main() {
     Future<_PipelineEnvironment> runSubtitleStage({
       required _FakeSubtitleProvider subtitleProvider,
       VideoDownloadSubtitleLanguageResolver? resolver,
+      bool Function(VideoDownloadJobRow row)? until,
     }) async {
       final _PipelineEnvironment environment =
           await _PipelineEnvironment.create(
@@ -1039,8 +1040,9 @@ void main() {
       await _waitForJob(
         environment.database,
         jobId,
-        (VideoDownloadJobRow row) =>
-            row.lifecycle == VideoDownloadJobLifecycle.completed,
+        until ??
+            (VideoDownloadJobRow row) =>
+                row.lifecycle == VideoDownloadJobLifecycle.completed,
       );
       return environment;
     }
@@ -1079,18 +1081,25 @@ void main() {
       expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
     });
 
-    test('a throwing resolver falls back to the global languages', () async {
+    test(
+        'a throwing resolver surfaces as a stage error instead of silently '
+        'falling back', () async {
+      // 解析器读的是本进程内的偏好；它抛了就是偏好层坏了，不能伪装成「没记过
+      // 语言」用全局语言下字幕——按阶段异常走可重试路径，错误落在任务行上。
       final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
         bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
       );
       final _PipelineEnvironment environment = await runSubtitleStage(
         subtitleProvider: subtitleProvider,
         resolver: (_) => throw StateError('preferences unavailable'),
+        until: (VideoDownloadJobRow row) =>
+            (row.lastError ?? '').contains('preferences unavailable'),
       );
-      expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
+      expect(subtitleProvider.searchCalls, 0);
       final VideoDownloadJobRow job = (await environment.database
           .getVideoDownloadJob('per-work-language-job'))!;
-      expect(job.lifecycle, VideoDownloadJobLifecycle.completed);
+      expect(job.lifecycle, isNot(VideoDownloadJobLifecycle.completed));
+      expect(job.stage, VideoDownloadJobStage.subtitle);
     });
   });
 

@@ -829,7 +829,8 @@ class VideoDownloadPipelineService {
   /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
   /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
   /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
-  /// 按 null 处理并记日志——它是锦上添花，不能让字幕阶段炸。
+  /// 与本阶段其它异常同等处理（任务按可重试 / needsAttention 落库），**不吞**：
+  /// 它读的是本进程内的偏好，抛了就是偏好层坏了，不能伪装成「没记过语言」。
   final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
@@ -2944,29 +2945,24 @@ class VideoDownloadPipelineService {
   }
 
   /// 问 [subtitleLanguageResolver] 这部作品要什么字幕语言。null = 没接解析器 /
-  /// 它不表态 / 它抛了异常（记日志，不让字幕阶段跟着倒）。
+  /// 它不表态。异常原样冒泡，由阶段执行器统一按可重试 / needsAttention 处理。
   Future<String?> _resolvePerWorkSubtitleLanguage(
     VideoDownloadJobRow job,
   ) async {
     final VideoDownloadSubtitleLanguageResolver? resolver =
         subtitleLanguageResolver;
     if (resolver == null) return null;
-    try {
-      final String? code = await resolver(
-        VideoDownloadSubtitleLanguageQuery(
-          jobId: job.jobId,
-          title: job.title,
-          year: job.year,
-          metadataProvider: job.metadataProvider,
-          externalId: job.externalId,
-        ),
-      );
-      final String normalized = code?.trim() ?? '';
-      return normalized.isEmpty ? null : normalized;
-    } catch (error, stack) {
-      engineLog.log('videoDownload.subtitleLanguage', error, stack);
-      return null;
-    }
+    final String? code = await resolver(
+      VideoDownloadSubtitleLanguageQuery(
+        jobId: job.jobId,
+        title: job.title,
+        year: job.year,
+        metadataProvider: job.metadataProvider,
+        externalId: job.externalId,
+      ),
+    );
+    final String normalized = code?.trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
   }
 
   /// 依次下载 [candidates] 并做时长/内容校验，返回**第一个通过**的候选及其字节。

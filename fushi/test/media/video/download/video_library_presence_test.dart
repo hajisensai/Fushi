@@ -321,12 +321,12 @@ void main() {
 
     expect(presence.workId, workId);
     expect(presence.collectionId, isNull);
-    expect(presence.inLibrary, isFalse);
+    // 单本作品也是「已刮到」：inLibrary 看作品身份，不看合集归属。
+    expect(presence.inLibrary, isTrue);
     expect(presence.managedEpisodeKeys, isEmpty);
   });
 
-  test('movies resolve to none even when jobs and library rows exist',
-      () async {
+  test('movies keep the work identity but never carry episode keys', () async {
     final FushiDatabase database = await _openDatabase();
     await _insertLibraryWork(
       database,
@@ -344,7 +344,20 @@ void main() {
       mediaKind: VideoMetadataMediaKind.movie,
     );
 
-    expect(presence, same(VideoLibraryPresence.none));
+    // 剧场版没有集可扫，但作品身份照查：AI 下载流程靠 inLibrary 拦重复下载。
+    expect(presence.managedEpisodeKeys, isEmpty);
+    expect(presence.workId, isNotNull);
+    expect(presence.inLibrary, isTrue);
+  });
+
+  test('highestEpisodeOf is per season while highestEpisode spans seasons', () {
+    const VideoLibraryPresence presence = VideoLibraryPresence(
+      managedEpisodeKeys: <String>{'S01E24', 'S02E03', 'S02E11'},
+    );
+    expect(presence.highestEpisode, 24);
+    expect(presence.highestEpisodeOf(1), 24);
+    expect(presence.highestEpisodeOf(2), 11);
+    expect(presence.highestEpisodeOf(3), isNull);
   });
 
   test('blank provider or external id resolves to none', () async {

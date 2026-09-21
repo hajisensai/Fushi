@@ -31,7 +31,7 @@ class VideoLibraryPresence {
     required this.managedEpisodeKeys,
   });
 
-  /// 什么都没有：电影、身份为空、或本地既无任务也无作品。
+  /// 什么都没有：身份为空、或本地既无任务也无作品。
   static const VideoLibraryPresence none = VideoLibraryPresence(
     managedEpisodeKeys: <String>{},
   );
@@ -46,16 +46,25 @@ class VideoLibraryPresence {
   /// 合集里按文件名解析出集号的视频条目。
   final Set<String> managedEpisodeKeys;
 
-  /// 作品是否已经作为合集入库。只看合集归属，不看有没有集。
-  bool get inLibrary => collectionId != null;
+  /// 本地已经刮到这部作品（合集或单本都算）。只看作品身份，不看有没有集。
+  bool get inLibrary => workId != null;
 
-  /// [managedEpisodeKeys] 里最大的集号；一集都没有则为 null。
+  /// [managedEpisodeKeys] 里最大的集号（**跨季**）；一集都没有则为 null。
   ///
-  /// 跨季取最大：键只剥 `E(\d+)`，不区分 `S01E12` 与 `S02E03` 谁在后面——
-  /// 调用方要按季比较请自行过滤。
-  int? get highestEpisode {
+  /// 键只剥 `E(\d+)`，不区分 `S01E12` 与 `S02E03` 谁在后面；要按季比较用
+  /// [highestEpisodeOf]。
+  int? get highestEpisode => _highest(managedEpisodeKeys);
+
+  /// 第 [season] 季里最大的集号；这一季一集都没有则为 null。
+  int? highestEpisodeOf(int season) {
+    final String prefix = 'S${season.toString().padLeft(2, '0')}E';
+    return _highest(
+        managedEpisodeKeys.where((String k) => k.startsWith(prefix)));
+  }
+
+  static int? _highest(Iterable<String> keys) {
     int? highest;
-    for (final String key in managedEpisodeKeys) {
+    for (final String key in keys) {
       final RegExpMatch? match = _episodeKeyEpisodePattern.firstMatch(key);
       if (match == null) continue;
       final int? episode = int.tryParse(match.group(1)!);
@@ -68,8 +77,9 @@ class VideoLibraryPresence {
 
 /// 解析 `metadataProvider` / `externalId` 这一对身份在本地库的存在情况。
 ///
-/// - [mediaKind] 为电影直接返回 [VideoLibraryPresence.none]：电影没有集，
-///   订阅侧用 `movie` 逻辑键、不走这里判重。
+/// - [mediaKind] 为电影时没有集可扫（订阅侧用 `movie` 逻辑键判重），但作品
+///   身份照查：`inLibrary` / `workId` 对已刮到的剧场版必须为真，否则 AI 下载
+///   流程会把库里已有的电影再下一遍。
 /// - provider 归一为 `trim().toLowerCase()`、externalId 归一为 `trim()`；
 ///   归一后任一为空也返回 [VideoLibraryPresence.none]。
 /// - 任务扫描与合集扫描的取舍见函数体内注释。
@@ -79,13 +89,22 @@ Future<VideoLibraryPresence> resolveVideoLibraryPresence(
   required String externalId,
   required VideoMetadataMediaKind mediaKind,
 }) async {
-  if (mediaKind == VideoMetadataMediaKind.movie) {
-    return VideoLibraryPresence.none;
-  }
   final String provider = metadataProvider.trim().toLowerCase();
   final String normalizedExternalId = externalId.trim();
   if (provider.isEmpty || normalizedExternalId.isEmpty) {
     return VideoLibraryPresence.none;
+  }
+  if (mediaKind == VideoMetadataMediaKind.movie) {
+    final VideoMetadataWorkRow? work =
+        await database.getVideoMetadataWorkByProviderIdentity(
+      provider: provider,
+      externalId: normalizedExternalId,
+    );
+    return VideoLibraryPresence(
+      workId: work?.id,
+      collectionId: work?.collectionId,
+      managedEpisodeKeys: const <String>{},
+    );
   }
   final Set<String> result = <String>{};
   bool sameIdentity(VideoDownloadJobRow job) =>

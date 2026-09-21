@@ -6,7 +6,7 @@
 library;
 
 import 'package:drift/drift.dart' show Value;
-import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart'
+import 'package:fushi/src/media/video/download/video_discovery_selection.dart'
     show
         VideoDiscoveryDownloadSelection,
         VideoDiscoverySubscriptionSelection,
@@ -45,7 +45,7 @@ String videoResourceSubscriptionSearchQuery(VideoMediaReference reference) {
 /// [target] 由调用方在提交那一刻取（后端可用性延后到提交时判，PR #1021）。
 Future<String> enqueueLocalVideoDownload({
   required VideoDownloadPipelineService pipeline,
-  required VideoDiscoveryItem item,
+  String? coverUrl,
   required VideoDiscoveryDownloadSelection selection,
   required VideoDownloadBackendTarget target,
 }) {
@@ -58,7 +58,7 @@ Future<String> enqueueLocalVideoDownload({
       backendTarget: target,
       targetSourceId: selection.source.id,
       subtitlePolicy: selection.subtitlePolicy,
-      coverUrl: item.posterUrl,
+      coverUrl: coverUrl,
     ),
   );
 }
@@ -71,7 +71,8 @@ Future<String> enqueueLocalVideoDownload({
 /// （服务未装配时传 null）；[nowMs] 供测试钉时间。
 Future<void> createLocalVideoDownloadSubscription({
   required FushiDatabase database,
-  required VideoDiscoveryItem item,
+  required VideoMediaReference reference,
+  String? coverUrl,
   required VideoDiscoverySubscriptionSelection selection,
   required VideoDownloadBackendTarget target,
   String? searchQuery,
@@ -79,12 +80,11 @@ Future<void> createLocalVideoDownloadSubscription({
   int? nowMs,
 }) async {
   final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-  final String subscriptionId = videoDiscoverySubscriptionId(item.reference);
+  final String subscriptionId = videoDiscoverySubscriptionId(reference);
   final VideoDownloadSubscriptionRow? previous = await database
       .getVideoDownloadSubscription(subscriptionId);
   final VideoResourceCandidate resource = selection.download.resource;
   // 订阅快照保留交叉 ID，每集下载可沿用同一个 MAL / TMDB 身份。
-  final VideoMediaReference reference = item.reference;
   await database.upsertVideoDownloadSubscription(
     VideoDownloadSubscriptionsCompanion.insert(
       subscriptionId: subscriptionId,
@@ -96,13 +96,13 @@ Future<void> createLocalVideoDownloadSubscription({
       title: reference.title,
       year: Value<int?>(reference.year),
       season: Value<int?>(reference.season),
-      coverUrl: Value<String?>(item.posterUrl),
+      coverUrl: Value<String?>(coverUrl),
       identityJson: Value<String?>(encodeVideoMediaReference(reference)),
       searchQuery:
           searchQuery ?? videoResourceSubscriptionSearchQuery(reference),
       filterJson: Value<String>(selection.filter.json),
       mode: Value<String>(
-        item.reference.mediaKind == VideoMetadataMediaKind.movie
+        reference.mediaKind == VideoMetadataMediaKind.movie
             ? 'oneShot'
             : 'ongoing',
       ),

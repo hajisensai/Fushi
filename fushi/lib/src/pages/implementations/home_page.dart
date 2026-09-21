@@ -1819,7 +1819,7 @@ class _HomePageState extends BasePageState<HomePage>
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await enqueueLocalVideoDownload(
               pipeline: pipeline,
-              item: item,
+              coverUrl: item.posterUrl,
               selection: selection,
               target: target,
             );
@@ -1919,7 +1919,8 @@ class _HomePageState extends BasePageState<HomePage>
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await createLocalVideoDownloadSubscription(
               database: appModelNoUpdate.database,
-              item: item,
+              reference: item.reference,
+              coverUrl: item.posterUrl,
               selection: selection,
               target: target,
               checkNow: () async =>
