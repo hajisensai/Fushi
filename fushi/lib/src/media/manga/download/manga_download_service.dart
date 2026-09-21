@@ -37,6 +37,7 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
@@ -44,6 +45,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/media/manga/mokuro_sidecar.dart';
 
 /// mokuro.moe 卷任务的 `runtime` 列值。
 const String kMokuroMoeDownloadRuntime = 'mokuro_moe';
@@ -58,8 +60,8 @@ String mokuroMoeBookKey(String seriesName) =>
 /// 任务表 `book_key` → mokuro.moe 系列名；不是 mokuro 任务返回 null。
 String? mokuroMoeSeriesNameOf(String bookKey) =>
     bookKey.startsWith(kMokuroMoeBookKeyPrefix)
-        ? bookKey.substring(kMokuroMoeBookKeyPrefix.length)
-        : null;
+    ? bookKey.substring(kMokuroMoeBookKeyPrefix.length)
+    : null;
 
 /// 生产用 [MokuroMoeVolumeDownloader] 的构造口（一个下载器只跑一次 run）；
 /// 测试注入假下载器。
@@ -89,9 +91,8 @@ class MangaDownloadedChapter {
 }
 
 /// `auto_ocr` 为真的任务完成后调用；装配方负责解析引擎并起任务。
-typedef MangaDownloadOcrHook = Future<void> Function(
-  MangaDownloadedChapter chapter,
-);
+typedef MangaDownloadOcrHook =
+    Future<void> Function(MangaDownloadedChapter chapter);
 
 /// 三次自动重试之间的退避（与 mokuro 队列既有语义一致）。
 const List<Duration> kMangaDownloadRetryBackoff = <Duration>[
@@ -150,23 +151,26 @@ class MangaDownloadService {
   MangaDownloadService({
     required FushiDatabase database,
     required OnlineMangaLibraryService Function(OnlineMangaRuntimeKind runtime)
-        serviceFor,
+    serviceFor,
     MangaDownloadOcrHook? onChapterDownloaded,
+    MangaDownloadSidecarFetcher? sidecarFetcher,
     MokuroMoeVolumeDownloaderFactory? mokuroDownloader,
     DateTime Function()? clock,
     Future<void> Function(Duration duration)? wait,
     this.pageConcurrency = 4,
-  })  : _database = database,
-        _serviceFor = serviceFor,
-        _onChapterDownloaded = onChapterDownloaded,
-        _mokuroDownloader = mokuroDownloader,
-        _clock = clock ?? DateTime.now,
-        _wait = wait ?? ((Duration duration) => Future<void>.delayed(duration));
+  }) : _database = database,
+       _serviceFor = serviceFor,
+       _onChapterDownloaded = onChapterDownloaded,
+       _sidecarFetcher = sidecarFetcher,
+       _mokuroDownloader = mokuroDownloader,
+       _clock = clock ?? DateTime.now,
+       _wait = wait ?? ((Duration duration) => Future<void>.delayed(duration));
 
   final FushiDatabase _database;
   final OnlineMangaLibraryService Function(OnlineMangaRuntimeKind runtime)
-      _serviceFor;
+  _serviceFor;
   final MangaDownloadOcrHook? _onChapterDownloaded;
+  final MangaDownloadSidecarFetcher? _sidecarFetcher;
   final MokuroMoeVolumeDownloaderFactory? _mokuroDownloader;
   final DateTime Function() _clock;
   final Future<void> Function(Duration duration) _wait;
@@ -225,13 +229,12 @@ class MangaDownloadService {
 
   Future<List<MangaDownloadJobRow>> listJobs({
     Set<String> statuses = const <String>{},
-  }) =>
-      _database.listMangaDownloadJobs(statuses: statuses);
+  }) => _database.listMangaDownloadJobs(statuses: statuses);
 
   /// 一本书的任务，按 chapterKey 索引（作品页 / 章节选择器一次取全量）。
   Future<Map<String, MangaDownloadJobRow>> jobsForBook(String bookKey) async {
-    final List<MangaDownloadJobRow> rows =
-        await _database.listMangaDownloadJobs();
+    final List<MangaDownloadJobRow> rows = await _database
+        .listMangaDownloadJobs();
     return <String, MangaDownloadJobRow>{
       for (final MangaDownloadJobRow row in rows)
         if (row.bookKey == bookKey && row.kind == MangaDownloadJobKind.chapter)
@@ -244,8 +247,8 @@ class MangaDownloadService {
     String seriesName,
   ) async {
     final String bookKey = mokuroMoeBookKey(seriesName);
-    final List<MangaDownloadJobRow> rows =
-        await _database.listMangaDownloadJobs();
+    final List<MangaDownloadJobRow> rows = await _database
+        .listMangaDownloadJobs();
     return <String, MangaDownloadJobRow>{
       for (final MangaDownloadJobRow row in rows)
         if (row.bookKey == bookKey &&
@@ -271,8 +274,9 @@ class MangaDownloadService {
       bookKey: bookKey,
       chapterKey: volumeName,
     );
-    final MangaDownloadJobRow? existing =
-        await _database.getMangaDownloadJob(jobId);
+    final MangaDownloadJobRow? existing = await _database.getMangaDownloadJob(
+      jobId,
+    );
     if (existing != null &&
         (existing.status == MangaDownloadJobStatus.queued ||
             existing.status == MangaDownloadJobStatus.running)) {
@@ -313,10 +317,7 @@ class MangaDownloadService {
     int added = 0;
     for (final String volume in volumeNames) {
       final ({MangaDownloadJobRow row, bool added}) result =
-          await enqueueMokuroVolume(
-        seriesName: seriesName,
-        volumeName: volume,
-      );
+          await enqueueMokuroVolume(seriesName: seriesName, volumeName: volume);
       if (result.added) added += 1;
     }
     return added;
@@ -338,8 +339,9 @@ class MangaDownloadService {
       bookKey: bookKey,
       chapterKey: chapter.key,
     );
-    final MangaDownloadJobRow? existing =
-        await _database.getMangaDownloadJob(jobId);
+    final MangaDownloadJobRow? existing = await _database.getMangaDownloadJob(
+      jobId,
+    );
     if (existing != null) {
       switch (existing.status) {
         case MangaDownloadJobStatus.queued:
@@ -445,13 +447,14 @@ class MangaDownloadService {
 
   /// 删所有已结束（done / failed / cancelled）的任务行（下载中心「清除已完成」）。
   Future<void> clearFinished() async {
-    final List<MangaDownloadJobRow> rows = await _database.listMangaDownloadJobs(
-      statuses: const <String>{
-        MangaDownloadJobStatus.done,
-        MangaDownloadJobStatus.failed,
-        MangaDownloadJobStatus.cancelled,
-      },
-    );
+    final List<MangaDownloadJobRow> rows = await _database
+        .listMangaDownloadJobs(
+          statuses: const <String>{
+            MangaDownloadJobStatus.done,
+            MangaDownloadJobStatus.failed,
+            MangaDownloadJobStatus.cancelled,
+          },
+        );
     for (final MangaDownloadJobRow row in rows) {
       await _database.deleteMangaDownloadJob(row.jobId);
     }
@@ -473,8 +476,8 @@ class MangaDownloadService {
   Future<void> _drain() async {
     try {
       while (!_disposed) {
-        final MangaDownloadJobRow? next =
-            await _database.claimNextQueuedMangaDownloadJob(updatedAt: _now);
+        final MangaDownloadJobRow? next = await _database
+            .claimNextQueuedMangaDownloadJob(updatedAt: _now);
         if (next == null) break;
         final _ActiveJob active = _ActiveJob(next.jobId);
         _active = active;
@@ -552,8 +555,10 @@ class MangaDownloadService {
           attemptCount: attempt,
         );
         await _wait(
-          kMangaDownloadRetryBackoff[
-              (attempt - 1).clamp(0, kMangaDownloadRetryBackoff.length - 1)],
+          kMangaDownloadRetryBackoff[(attempt - 1).clamp(
+            0,
+            kMangaDownloadRetryBackoff.length - 1,
+          )],
         );
         if (token.stopped) return;
         if (token.cancelled) {
@@ -570,8 +575,9 @@ class MangaDownloadService {
   }
 
   Future<void> _download(MangaDownloadJobRow job, _CancelToken token) async {
-    final OnlineMangaRuntimeKind? runtime =
-        OnlineMangaRuntimeKind.fromWire(job.runtime);
+    final OnlineMangaRuntimeKind? runtime = OnlineMangaRuntimeKind.fromWire(
+      job.runtime,
+    );
     if (runtime == null) {
       throw StateError('Unknown manga runtime: ${job.runtime}');
     }
@@ -580,8 +586,9 @@ class MangaDownloadService {
     if (row == null) {
       throw StateError('The manga is no longer in the library: ${job.bookKey}');
     }
-    final OnlineMangaLibraryEntry? entry =
-        OnlineMangaLibraryEntry.tryParse(row.sourceMetadata);
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      row.sourceMetadata,
+    );
     if (entry == null) {
       throw StateError('The library row has no online descriptor');
     }
@@ -680,7 +687,38 @@ class MangaDownloadService {
       );
     }
     _throwIfCancelled(token);
-    final MokuroPayload payload = MokuroPayload(images: payloadImages);
+    MokuroPayload payload = MokuroPayload(images: payloadImages);
+    final List<String> sourceUrls = <String>[
+      for (final OnlineMangaPageRef page in pages) page.sourceUrl ?? '',
+    ];
+    final MangaDownloadSidecarFetcher? sidecarFetcher =
+        _sidecarFetcher ??
+        (service.adapter is MangaOcrSidecarProvider
+            ? (OnlineMangaLibraryEntry e, OnlineMangaChapter c) =>
+                  (service.adapter as MangaOcrSidecarProvider)
+                      .fetchChapterOcrSidecar(entry: e, chapter: c)
+            : null);
+    if (sidecarFetcher != null) {
+      try {
+        final String? sidecar = await sidecarFetcher(entry, chapter);
+        if (sidecar != null && looksLikeMokuroSidecar(sidecar)) {
+          final MokuroSidecarMergeResult merged = mergeMokuroSidecar(
+            downloaded: payload,
+            sidecarJson: sidecar,
+            sourceUrls: sourceUrls,
+          );
+          if (merged.accepted) payload = merged.payload;
+        }
+      } on Object catch (error, stack) {
+        // sidecar 是增强能力，网络或格式问题不得让图片下载失败。
+        ErrorLogService.instance.log(
+          'MangaDownloadService.sidecar ${job.jobId}',
+          error,
+          stack,
+        );
+      }
+    }
+    _throwIfCancelled(token);
     await runExclusiveOnMangaJson<void>(
       mangaJson.path,
       () => writeMangaJsonAtomically(mangaJson.path, payload),
@@ -790,9 +828,27 @@ class MangaDownloadService {
       clearLastError: true,
       completedAt: now,
     );
-    final MangaDownloadJobRow? current =
-        await _database.getMangaDownloadJob(job.jobId);
+    final MangaDownloadJobRow? current = await _database.getMangaDownloadJob(
+      job.jobId,
+    );
     if (current == null || !current.autoOcr) return;
+    try {
+      final MokuroPayload existing = parseMangaJson(
+        await mangaJson.readAsString(),
+      );
+      if (existing.images.isNotEmpty &&
+          existing.images.every(
+            (MokuroImage image) => image.blocks.isNotEmpty,
+          )) {
+        return;
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaDownloadService.sidecarOcrCheck ${job.jobId}',
+        error,
+        stack,
+      );
+    }
     final MangaDownloadOcrHook? hook = _onChapterDownloaded;
     if (hook == null) return;
     try {

@@ -5170,5 +5170,7 @@
   "interconnect_transcode_host_toggle": "Transcode video for peers",
   "interconnect_transcode_host_toggle_desc": "When a paired device plays a video from this host over a slow network, re-encode it to a lower bitrate on the fly. Needs ffmpeg; costs CPU on this device.",
   "lookup_hover_leave_resume": "Resume when leaving lookup",
-  "lookup_hover_leave_resume_hint": "After a hover lookup, moving the pointer away from the subtitle and the lookup window closes it and resumes playback"
+  "lookup_hover_leave_resume_hint": "After a hover lookup, moving the pointer away from the subtitle and the lookup window closes it and resumes playback",
+  "manga_panel_navigation": "AI panel navigation",
+  "manga_panel_navigation_subtitle": "Focus detected panels before turning the page"
 }

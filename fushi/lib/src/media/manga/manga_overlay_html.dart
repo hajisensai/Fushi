@@ -948,6 +948,44 @@ String _mangaGestureJs({
     var top = (page.offsetTop + (fraction || 0) * page.offsetHeight) * ZOOM;
     window.scrollTo(0, top);
   };
+  // 聚焦一个页面内的归一化分镜矩形。Dart 侧只传原图坐标，避免把 WebView
+  // 缩放/双页布局细节泄漏到检测器；这里用页面实际 client rect 计算视口中心。
+  window.__mangaFocusPanel = function(pageIndex, panel){
+    if (!panel) return false;
+    var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
+    if (!page) return false;
+    var r = page.getBoundingClientRect();
+    var left = Math.max(0, Math.min(1, Number(panel.left)));
+    var top = Math.max(0, Math.min(1, Number(panel.top)));
+    var right = Math.max(left, Math.min(1, Number(panel.right)));
+    var bottom = Math.max(top, Math.min(1, Number(panel.bottom)));
+    var pw = Math.max(1, right - left) * r.width;
+    var ph = Math.max(1, bottom - top) * r.height;
+    var cx = r.left + (left + right) * 0.5 * r.width;
+    var cy = r.top + (top + bottom) * 0.5 * r.height;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var fit = Math.min(vw / Math.max(1, pw), vh / Math.max(1, ph));
+    var nextZoom = _clampZoom(Math.max(ZOOM, Math.min(ZOOM_MAX, fit * 0.90)));
+    if (IS_WEBTOON) {
+      var localX = (cx - PAN_X) / ZOOM;
+      var localY = (window.scrollY + cy) / ZOOM;
+      ZOOM = nextZoom;
+      PAN_X = vw * 0.5 - localX * ZOOM;
+      PAN_Y = 0;
+      _applyCanvas();
+      window.scrollTo(0, Math.max(0, localY * ZOOM - vh * 0.5));
+    } else {
+      var localPanelX = (cx - PAN_X) / ZOOM;
+      var localPanelY = (cy - PAN_Y) / ZOOM;
+      ZOOM = nextZoom;
+      PAN_X = vw * 0.5 - localPanelX * ZOOM;
+      PAN_Y = vh * 0.5 - localPanelY * ZOOM;
+      _clampPan();
+      _applyCanvas();
+    }
+    return true;
+  };
   // 后台 OCR 每完成一页就只替换该页透明文字层，不重建 WebView 文档、不打断阅读。
   window.__mangaReplaceOcr = function(pageIndex, html){
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
