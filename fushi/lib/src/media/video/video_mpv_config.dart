@@ -684,7 +684,9 @@ bool isNetworkStreamUri(String uri) {
 /// 足以撑过 WiFi 抖动；桌面维持原值不动。
 ///
 /// 所有属性均为 libmpv 运行时可设属性（经 `mpv_set_property_string`），由
-/// [applyNetworkCachePropertiesToPlayer] 在 `player.open` 后逐条 best-effort 注入。
+/// [applyNetworkCachePropertiesToPlayer] 在 `player.open` **之前**逐条 best-effort
+/// 注入——`network-timeout` 约束的是 loadfile 发出的第一个请求，open 之后再设对本次
+/// 加载已经无效（media_kit 建 Player 时钉的 5s 会原封不动地吃掉首开）。
 /// 下发给 libmpv 的 `network-timeout`（秒）。播放页对网络流的「压根没打开」判定以它
 /// 为基准：mpv 自己的连接超时都到了还没打开，就不再是弱网慢握手。
 const int kMpvNetworkTimeoutSeconds = 30;
@@ -704,6 +706,9 @@ Map<String, String> buildNetworkCacheProperties({bool? isMobile}) {
 
 /// 仅对**网络流** [sourceUri]（http/https）把 [buildNetworkCacheProperties] 注入
 /// media_kit [player]（仅 libmpv 后端/桌面生效）。本地文件 [sourceUri] 直接 no-op。
+///
+/// 调用点必须在 `player.open` 之前（见 [buildNetworkCacheProperties] 文档与守卫
+/// `video_network_timeout_before_open_guard_test.dart`）。
 ///
 /// best-effort：与 [applyMpvConfigToPlayer] 同范式，单条属性失败静默吞掉。
 Future<void> applyNetworkCachePropertiesToPlayer(
@@ -800,8 +805,17 @@ Future<void> applySubtitleMpvPropertiesToPlayer(
 /// libmpv 的 `http-header-fields` 是 `Field: value` 列表属性，给网络流请求附加自定义
 /// HTTP 头（典型用于带 Referer / User-Agent 的防盗链直链）。media_kit 经
 /// `mpv_set_property_string` 逐条设属性，列表项以逗号分隔——故把每个 `key: value`
-/// 拼成 `Key: Value` 并用逗号连接。[headers] 为空时返回空 map（调用方据此不下发，
+/// 拼成 `Key: Value` 再连接。[headers] 为空时返回空 map（调用方据此不下发，
 /// 普通流 / 本地文件零影响）。
+///
+/// **每一项都带 mpv 列表选项的 `%<字节数>%` 长度前缀**（BUG-2617）。裸逗号连接会
+/// 把**值里本来就有的逗号**当成分隔符：在线视频源扩展给的 `User-Agent` 几乎人手一个
+/// `Mozilla/5.0 (…) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/…`，那个
+/// `(KHTML, like Gecko)` 一拆，就变成「半条 UA」+「` like Gecko) Chrome/…` 这种没有
+/// 冒号的垃圾项」一起发给 CDN，防盗链站点直接拒；观感是点开在线源必转圈到超时。
+/// mpv 对列表选项提供的转义就是长度前缀（`--http-header-fields=%11%Hello,World`），
+/// 逐项声明字节长度后，值里的逗号不再参与分隔。长度按 UTF-8 字节数算（mpv 按字节
+/// 截取），不是 Dart 的 UTF-16 码元数。
 ///
 /// **不进 [VideoMpvConfig]/[buildMpvProperties]**：header 是每条流的会话级防盗链
 /// 凭据（per-stream，阶段①只在 session 内有效、不落 DB），不是全局画质/音频偏好；
@@ -813,8 +827,29 @@ Map<String, String> buildHttpHeaderFieldsProperty(Map<String, String> headers) {
       if (e.key.trim().isNotEmpty) '${e.key.trim()}: ${e.value.trim()}',
   ];
   if (fields.isEmpty) return const <String, String>{};
-  return <String, String>{'http-header-fields': fields.join(',')};
+  return <String, String>{
+    'http-header-fields': fields.map(encodeMpvListItem).join(','),
+  };
 }
+
+/// 把一个列表项里的逗号转义成 `\,`，使它不再被当作项分隔符。纯函数（测试直接钉它）。
+///
+/// **不能用 `%<字节数>%` 长度前缀**：那套语法属于 suboption / object settings / path
+/// 解析（`read_subparam`），字符串列表（`OPT_STRINGLIST`，`http-header-fields` 就是）
+/// 的分项只走 `get_nextsep`，只认反斜杠转义。随包 libmpv 实测（`mpv_set_property_string`
+/// 写、`MPV_FORMAT_NODE` 读回真实项数组）：
+///   `%103%User-Agent: …(KHTML, like Gecko)…`
+///     → ['%103%User-Agent: …(KHTML', ' like Gecko)…']  ← 前缀原样留在头名里，逗号照拆
+///   `User-Agent: …(KHTML\, like Gecko)…`
+///     → ['User-Agent: …(KHTML, like Gecko)…']          ← 正确
+/// Aniyomi 在同一位置做的也是这个替换。
+///
+/// 反斜杠本身**不是**通用转义符（实测 `a\b` / `a\\b` 都原样保留，只有 `\,` 这一个
+/// 序列会被吃掉），所以这里只转义逗号、不动其它字符。唯一表达不出的边角是「值以反斜杠
+/// 结尾」——那时尾部的 `\` 会把紧随的分隔逗号吃掉、与下一项并成一条；HTTP 头值以反斜杠
+/// 结尾现实中不存在，Aniyomi 同样不处理。
+@visibleForTesting
+String encodeMpvListItem(String item) => item.replaceAll(',', '\\,');
 
 /// 仅当 [headers] 非空时，把 [buildHttpHeaderFieldsProperty] 注入 media_kit [player]
 /// （仅 libmpv 后端/桌面生效）。空 header 直接 no-op（普通流/本地文件零影响）。

@@ -9,6 +9,7 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
 export 'package:fushi_engine/sync/sync_channel_scope.dart' show SyncChannelScope;
@@ -1371,6 +1372,9 @@ class SyncRepository {
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,
+    // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
+    // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
+    kInterconnectTranscodeEnabledPref,
     // 合集同步因果基线：描述「本设备见过共享清单到什么时刻」，跨设备携带会让
     // 新设备把没见过的墓碑误判成旧闻而复活成员（见 getCollectionsSyncBaselineMs）。
     // 这两条是**解耦前的全局键**：现值仍被 per-channel 读作迁移初值，故照旧不能

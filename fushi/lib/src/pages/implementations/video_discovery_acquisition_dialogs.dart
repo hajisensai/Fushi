@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
@@ -112,11 +113,18 @@ class VideoDiscoverySubscriptionSelection {
     required this.download,
     required this.filter,
     this.startAfterEpisode,
+    this.batchRelease = false,
   });
 
   final VideoDiscoveryDownloadSelection download;
   final StrictVideoSubscriptionFilter filter;
   final int? startAfterEpisode;
+
+  /// 用户选中的是整包（合集 / 全集 / 认不出集号的 BD 打包）。
+  ///
+  /// 宿主据此把订阅建成一次性模式：整包里没有「下一集」可追，按追更建出来的
+  /// 规则结构上永远匹配不到任何发布（BUG-2619）。
+  final bool batchRelease;
 }
 
 /// 订阅交给已配对 host 跑（host 自己搜、自己下到自己的库）。没有本地落地源
@@ -129,6 +137,7 @@ class VideoDiscoveryRemoteSubscriptionSelection {
     required this.filter,
     required this.subtitlePolicy,
     this.startAfterEpisode,
+    this.batchRelease = false,
   });
 
   final HostSubscriptionTarget target;
@@ -137,6 +146,10 @@ class VideoDiscoveryRemoteSubscriptionSelection {
   final StrictVideoSubscriptionFilter filter;
   final VideoDownloadSubtitlePolicy subtitlePolicy;
   final int? startAfterEpisode;
+
+  /// 同 [VideoDiscoverySubscriptionSelection.batchRelease]：host 侧订阅同样要按
+  /// 一次性建，否则远端也只是多一条永不命中的追更订阅。
+  final bool batchRelease;
 }
 
 typedef VideoDiscoveryRemoteSubscriptionSubmit = Future<void> Function(
@@ -295,6 +308,7 @@ class VideoSubscriptionCandidateGroup {
     required this.memberCount,
     required this.episodeNumbers,
     required this.latestPublishedAt,
+    this.batchOnly = false,
   });
 
   /// 用来推出订阅规则、也用来喂下游下载选择的那一条。同组任意一条推出的
@@ -310,6 +324,13 @@ class VideoSubscriptionCandidateGroup {
 
   /// 命中发布里能解析出的集数（升序、去重）；解析不出的不计入。
   final List<int> episodeNumbers;
+
+  /// 这条规则命中的**全部**发布都是整包（合集 / 全集 / 认不出集号的打包）。
+  ///
+  /// 判据落在组上而不是代表条上：同一条规则底下只要还有一个单集发布，这条规则
+  /// 在追更语义下就是活的，代表条恰好是整包不该把它降级成一次性订阅。反过来，
+  /// 整组都是整包时，按追更建出来的订阅结构上永不命中（BUG-2619）。
+  final bool batchOnly;
 
   final DateTime? latestPublishedAt;
 }
@@ -353,6 +374,7 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
           memberCount: 1,
           episodeNumbers: const <int>[],
           latestPublishedAt: candidate.publishedAt,
+          batchOnly: subscriptionReleaseIsBatch(candidate.title),
         ),
       );
       continue;
@@ -388,9 +410,13 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
           });
     final Set<int> episodes = <int>{};
     DateTime? latest;
+    bool batchOnly = true;
     for (final VideoResourceCandidate member in members) {
       final int? episode = episodeNumberFromReleaseTitle(member.title);
       if (episode != null) episodes.add(episode);
+      if (batchOnly && !subscriptionReleaseIsBatch(member.title)) {
+        batchOnly = false;
+      }
       final DateTime? published = member.publishedAt;
       if (published != null && (latest == null || published.isAfter(latest))) {
         latest = published;
@@ -403,6 +429,7 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
         memberCount: members.length,
         episodeNumbers: (episodes.toList()..sort()),
         latestPublishedAt: latest,
+        batchOnly: batchOnly,
       ),
     );
   }
@@ -1166,6 +1193,29 @@ class _VideoResourceSearchSurfaceState
     });
   }
 
+  /// 当前选中的候选是不是整包。判据与订阅检查端同源（引擎
+  /// [subscriptionReleaseIsBatch]），避免两端各判一次又判得不一样——那正是
+  /// BUG-2619 里「UI 按单集建、服务端按整包丢」的成因。
+  ///
+  /// 订阅模式下列表的一行是**一条规则**而不是一个发布，所以要问的是这条规则
+  /// 覆盖的发布里还有没有单集：有就照旧追更，全是整包才建一次性订阅。
+  bool get _selectedIsBatch {
+    final VideoResourceCandidate? candidate = _selected;
+    if (candidate == null) return false;
+    if (widget.subscription) {
+      final ProviderBatchResult<VideoResourceCandidate>? result = _result;
+      if (result != null) {
+        for (final VideoSubscriptionCandidateGroup group
+            in groupVideoSubscriptionCandidates(result.items)) {
+          if (group.representative.identityKey == candidate.identityKey) {
+            return group.batchOnly;
+          }
+        }
+      }
+    }
+    return subscriptionReleaseIsBatch(candidate.title);
+  }
+
   MediaSourceRow? get _source {
     for (final MediaSourceRow source in widget.sources) {
       if (source.id == _sourceId) return source;
@@ -1201,14 +1251,19 @@ class _VideoResourceSearchSurfaceState
         final StrictVideoSubscriptionFilter? filter =
             deriveStrictVideoSubscriptionFilter(resource);
         if (filter == null || !_strictConfirmed) return;
-        final int? startAfter = media.mediaKind == VideoMetadataMediaKind.movie
-            ? null
-            : int.tryParse(_startAfterController.text.trim());
+        // 整包没有「从第几集起追」这一维，起始集号不能带出去：留着它只会让一条
+        // 一次性订阅显示一个毫无意义的起点（BUG-2619）。
+        final bool batch = _selectedIsBatch;
+        final int? startAfter =
+            batch || media.mediaKind == VideoMetadataMediaKind.movie
+                ? null
+                : int.tryParse(_startAfterController.text.trim());
         await widget.onSubscriptionSubmit!(
           VideoDiscoverySubscriptionSelection(
             download: downloadFor(resource),
             filter: filter,
             startAfterEpisode: startAfter,
+            batchRelease: batch,
           ),
         );
       } else {
@@ -1284,15 +1339,18 @@ class _VideoResourceSearchSurfaceState
     }
     setState(() => _submitting = true);
     try {
+      final bool batch = _selectedIsBatch;
       await submit(VideoDiscoveryRemoteSubscriptionSelection(
         target: target,
         media: media,
         resource: resource,
         filter: filter,
         subtitlePolicy: _subtitlePolicy,
-        startAfterEpisode: media.mediaKind == VideoMetadataMediaKind.movie
-            ? null
-            : int.tryParse(_startAfterController.text.trim()),
+        startAfterEpisode:
+            batch || media.mediaKind == VideoMetadataMediaKind.movie
+                ? null
+                : int.tryParse(_startAfterController.text.trim()),
+        batchRelease: batch,
       ));
       if (mounted) widget.onClose?.call();
     } on HostSubscriptionException catch (error) {
@@ -2039,16 +2097,28 @@ class _VideoResourceSearchSurfaceState
           else
             AdaptiveSettingsSwitchRow(
               key: const ValueKey<String>('video-subscription-strict-confirm'),
-              title: t.download_subscription_choice_hint(
-                group: filter.releaseGroup ?? filter.summaryParts.first,
-                resolution: filter.resolution ?? filter.summaryParts.last,
-              ),
+              // 整包与追更是两种订阅，确认行必须说清将要建的是哪一种：用户选了
+              // 一个全集包却看到「新的单集会入队」，建出来的订阅永远不会命中，
+              // 而界面只会说「还没有跟踪到任何发布」（BUG-2619）。
+              title: _selectedIsBatch
+                  ? t.download_subscription_choice_hint_batch(
+                      group: filter.releaseGroup ?? filter.summaryParts.first,
+                      resolution:
+                          filter.resolution ?? filter.summaryParts.last,
+                    )
+                  : t.download_subscription_choice_hint(
+                      group: filter.releaseGroup ?? filter.summaryParts.first,
+                      resolution:
+                          filter.resolution ?? filter.summaryParts.last,
+                    ),
               value: _strictConfirmed,
               onChanged: _submitting
                   ? null
                   : (bool value) => setState(() => _strictConfirmed = value),
             ),
-          if (_media?.mediaKind != VideoMetadataMediaKind.movie) ...<Widget>[
+          // 起始集号只对「追更」有意义：整包一次下完，没有起点可言。
+          if (_media?.mediaKind != VideoMetadataMediaKind.movie &&
+              !_selectedIsBatch) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),
             TextField(
               key: const ValueKey<String>('video-subscription-start-after'),

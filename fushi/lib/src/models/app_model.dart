@@ -622,6 +622,9 @@ class AppModel with ChangeNotifier {
     },
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
+    // 启动时的快照，用户改完设置不必重启互联服务。
+    prefsStore: () => prefsRepo,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,

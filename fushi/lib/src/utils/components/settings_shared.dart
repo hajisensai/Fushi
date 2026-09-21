@@ -1828,6 +1828,7 @@ class SettingsFormField extends StatelessWidget {
     this.errorText,
     this.obscureText = false,
     this.keyboardType,
+    this.suffixIcon,
     this.bottomSpacing = 8,
   }) : assert(
           initialValue == null || controller == null,
@@ -1855,6 +1856,13 @@ class SettingsFormField extends StatelessWidget {
   final bool obscureText;
   final TextInputType? keyboardType;
 
+  /// 贴在输入框尾部的操作按钮（`InputDecoration.suffixIcon`）。
+  ///
+  /// 存在的理由：一个值只能有一个输入控件。字段旁边另起一个下拉去写同一个值，
+  /// 两处必然对不上（BUG-2618），所以「从候选里挑一个填进来」这类操作一律挂在
+  /// 字段自己身上。
+  final Widget? suffixIcon;
+
   /// 字段之间的垂直间距（落在字段下方）。
   final double bottomSpacing;
 
@@ -1880,6 +1888,7 @@ class SettingsFormField extends StatelessWidget {
             helperText: helperText,
             helperMaxLines: 3,
             errorText: errorText,
+            suffixIcon: suffixIcon,
             isDense: true,
             border: const OutlineInputBorder(),
           ),

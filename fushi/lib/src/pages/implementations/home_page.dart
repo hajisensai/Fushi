@@ -1956,7 +1956,10 @@ class _HomePageState extends BasePageState<HomePage>
                 title: reference.title,
                 searchQuery: _videoResourceSearchQuery(reference),
                 mediaKind: reference.mediaKind.name,
-                mode: reference.mediaKind == VideoMetadataMediaKind.movie
+                // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
+                // 结构性地永不命中（BUG-2619）。
+                mode: selection.batchRelease ||
+                        reference.mediaKind == VideoMetadataMediaKind.movie
                     ? 'oneShot'
                     : 'ongoing',
                 resourceProvider:
@@ -2005,7 +2008,10 @@ class _HomePageState extends BasePageState<HomePage>
                 searchQuery: _videoResourceSearchQuery(reference),
                 filterJson: Value<String>(selection.filter.json),
                 mode: Value<String>(
-                  item.reference.mediaKind == VideoMetadataMediaKind.movie
+                  // 同上：用户选中整包时建一次性订阅，整包下完即 fulfil。
+                  selection.batchRelease ||
+                          item.reference.mediaKind ==
+                              VideoMetadataMediaKind.movie
                       ? 'oneShot'
                       : 'ongoing',
                 ),

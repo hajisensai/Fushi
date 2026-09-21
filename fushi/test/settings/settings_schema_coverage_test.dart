@@ -77,6 +77,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // → 本开关）的顺序守卫。
   'interconnect/Allow paired devices to read/write configuration':
       'test/sync/interconnect_profile_transfer_test.dart',
+  // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
+  // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
+  // 实时读它，关着就退回原文件直传、能力位报 false。harness 里没有起 server，探不到。
+  // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
+  'interconnect/Transcode video for peers':
+      'test/sync/fushi_sync_server_transcode_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
@@ -747,6 +753,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
   'lookup/Look up on hover':
       'test/media/video/video_subtitle_hover_lookup_test.dart',
+  // 悬停查词的收尾：离开字幕与浮层即自动关浮层 + 续播。change/persist/restore 经 DB 由
+  // 本测试守；运行时的判据与接线（barrier hover 的离开臂、浮层 MouseRegion、关栈汇聚点
+  // 复位）由专项测试咬住——真效果需要真播放器 + 真 WebView 浮层 + 真 OS hover，widget
+  // 层跑不到。
+  'lookup/Resume when leaving lookup':
+      'test/pages/video_hover_leave_resume_test.dart',
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',

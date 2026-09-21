@@ -5169,5 +5169,14 @@
   "download_execution_remote_queued": "已交给下载执行设备",
   "download_execution_host_unreachable": "下载设置里指定的执行设备连不上，没有开始下载。",
   "download_execution_remote_kind_unsupported": "下载执行设备不支持导入这类内容",
-  "download_execution_remote_magnet_only": "下载执行设备只接受磁力链接"
+  "download_execution_remote_magnet_only": "下载执行设备只接受磁力链接",
+  "download_subscription_choice_hint_batch": "一次性下载 ${group} · ${resolution} 整包。合集没有可追的下一集。",
+  "subscription_items_empty_ongoing_hint": "追更订阅只处理新发布的单集。如果这部作品已完结，或你是从合集资源建的订阅，请改用一次性下载整包。",
+  "ai_provider_model_pick": "从已获取的模型里挑",
+  "video_quality_auto_lowered": "网络较慢，画质已降到 $label",
+  "video_quality_auto_raised": "网络变好，画质已提到 $label",
+  "interconnect_transcode_host_toggle": "为对端转码视频",
+  "interconnect_transcode_host_toggle_desc": "配对设备在弱网下播放本机视频时，实时转码成更低码率。需要 ffmpeg，会占用本机 CPU。",
+  "lookup_hover_leave_resume": "离开查词即继续播放",
+  "lookup_hover_leave_resume_hint": "悬停查词后，鼠标离开字幕与查词窗即自动关闭查词窗并继续播放，不必再点一下"
 }

@@ -123,6 +123,156 @@ test('底板宽 / 高：默认 0 = 随内容；非 0 夹进 [下限, 上限]；b
   assert.doesNotThrow(() => S.applyBox(null, {}, frame));
 });
 
+// 用户 2026-09-21：「浏览器插件右下角可以做成跟查词弹窗一样可以拖动大小，并且支持自适应调整
+// 缩放包括大小和可展示内容多少」。拖拽把手量到的像素要经 boxFromPx 折回百分比（与 options 两根
+// 滑杆同一处夹取），自适应缩放由 nextFitScale / fitTextInto 决定。
+test('boxFromPx：像素折回百分比并按滑杆同一处夹取；frame 坏掉返回 null', () => {
+  const S = loadStyle();
+  const frame = { width: 1000, height: 500 };
+  assert.deepEqual(S.boxFromPx(400, 100, frame), { boxWidth: 40, boxHeight: 20 });
+  // 越界：宽上限 100%、高上限 60%。
+  assert.deepEqual(S.boxFromPx(5000, 5000, frame), { boxWidth: 100, boxHeight: 60 });
+  // 非 0 下限（20% / 5%）——拖到极小也不会变成「随内容」那个 0。
+  assert.deepEqual(S.boxFromPx(10, 2, frame), { boxWidth: 20, boxHeight: 5 });
+  assert.strictEqual(S.boxFromPx(400, 100, { width: 0, height: 500 }), null);
+  assert.strictEqual(S.boxFromPx(NaN, 100, frame), null);
+});
+
+test('boxAutoFit：默认开；显式 false 才关；只有底板有高度时才介入', () => {
+  const S = loadStyle();
+  assert.strictEqual(S.DEFAULTS.boxAutoFit, true);
+  assert.strictEqual(S.normalize(undefined).boxAutoFit, true);
+  assert.strictEqual(S.normalize({ boxAutoFit: false }).boxAutoFit, false);
+  // 开关本身不进 CSS 变量（它决定的是 --fushi-sub-fit 怎么算，不是一个外观值）。
+  assert.ok(!('--fushi-sub-autofit' in S.toCssVars({ boxAutoFit: false })));
+  assert.strictEqual(S.fitEnabled({ boxHeight: 20 }), true);
+  assert.strictEqual(S.fitEnabled({ boxHeight: 20, boxAutoFit: false }), false);
+  // 高 = 0（随内容）时盒子本来就随字长高，没有「放不放得下」可言。
+  assert.strictEqual(S.fitEnabled({ boxWidth: 60 }), false);
+});
+
+test('nextFitScale：放不下就收、有富余就放、刚好就收手；顶到区间边界不再空转', () => {
+  const S = loadStyle();
+  // 内容比可用空间高一倍 → 倍率减半。
+  let step = S.nextFitScale(1, { contentH: 200, availH: 100, contentW: 0, availW: 0 });
+  assert.ok(step.fit < 1 && Math.abs(step.fit - 0.5) < 0.001);
+  assert.strictEqual(step.done, false);
+  // 只占一半 → 放大一倍（「底板越大字越大」）。
+  step = S.nextFitScale(1, { contentH: 50, availH: 100, contentW: 0, availW: 0 });
+  assert.ok(Math.abs(step.fit - 2) < 0.001);
+  // 刚好放下（容差内）→ 收手。
+  assert.strictEqual(S.nextFitScale(1, { contentH: 99, availH: 100 }).done, true);
+  // 横向溢出只许收不许放：高度还有富余也不放大。
+  step = S.nextFitScale(1, { contentH: 50, availH: 100, contentW: 200, availW: 100 });
+  assert.ok(step.fit < 1);
+  // 顶到下限后不再同方向空转。
+  step = S.nextFitScale(S.FIT_RANGE[0], { contentH: 900, availH: 100 });
+  assert.strictEqual(step.fit, S.FIT_RANGE[0]);
+  assert.strictEqual(step.done, true);
+  // 测不到内容（还没排版）时原样收手，不写坏值。
+  assert.deepEqual(S.nextFitScale(1, { contentH: 0, availH: 100 }), { fit: 1, done: true });
+});
+
+// 一个会换行的文字层模型：字号 = 30 × fit，一行装 floor(可用宽 / 字号) 个字，
+// scrollHeight = 行数 × 字号 × 行高。fitTextInto 每轮写 --fushi-sub-fit，读到的尺寸随之变化。
+function makeFitPair(opts) {
+  const o = Object.assign({ chars: 20, base: 30, lineHeight: 1.45, pad: 12, wrap: true }, opts);
+  const props = new Map();
+  const el = {
+    clientWidth: o.clientWidth || 0,
+    style: {
+      setProperty: (k, v) => props.set(k, v),
+      removeProperty: (k) => props.delete(k),
+    },
+    ownerDocument: {
+      defaultView: {
+        getComputedStyle: () => ({
+          paddingTop: o.pad + 'px', paddingBottom: o.pad + 'px',
+          paddingLeft: o.pad + 'px', paddingRight: o.pad + 'px',
+        }),
+      },
+    },
+  };
+  const fit = () => parseFloat(props.get('--fushi-sub-fit') || '1');
+  const font = () => o.base * fit();
+  const textEl = {
+    get scrollWidth() {
+      const w = o.chars * font();
+      return o.wrap ? Math.min(w, o.availW) : w;
+    },
+    get scrollHeight() {
+      const perLine = Math.max(1, Math.floor(o.availW / font()));
+      const lines = o.wrap ? Math.ceil(o.chars / perLine) : 1;
+      return lines * font() * o.lineHeight;
+    },
+  };
+  return { el, textEl, props, fit, font };
+}
+
+test('fitTextInto：长句缩到放得下、短句放大填满盒子；关掉自适应/随内容时交还 CSS', () => {
+  const S = loadStyle();
+  const frame = { width: 1000, height: 600 };
+  // 底板 40% 宽 × 20% 高 = 400 × 120 px，扣掉上下内边距 24 后可用高 96。
+  const style = { boxWidth: 40, boxHeight: 20 };
+  const availW = 400 - 24;
+  const availH = 96;
+
+  // ① 长句（60 字）：默认字号下要折好几行，远超 96px → 必须缩小，且最终真的放得下。
+  const long = makeFitPair({ chars: 60, availW: availW });
+  const fitLong = S.fitTextInto(long.el, long.textEl, style, frame);
+  assert.ok(fitLong < 1, '长句必须缩小，实得 ' + fitLong);
+  assert.ok(long.textEl.scrollHeight <= availH + 0.5, '收手时必须真的放得下');
+
+  // ② 短句（3 字）：一行绰绰有余 → 放大到把盒子填满（「底板越大字越大」）。
+  const short = makeFitPair({ chars: 3, availW: availW });
+  const fitShort = S.fitTextInto(short.el, short.textEl, style, frame);
+  assert.ok(fitShort > 1, '短句应放大，实得 ' + fitShort);
+  assert.ok(short.textEl.scrollHeight <= availH + 0.5, '放大后仍不许溢出');
+  // 同一个盒子里，长句的字比短句小 = 「可展示内容多少」随盒子变。
+  assert.ok(fitLong < fitShort);
+
+  // ③ 关掉自适应：倍率交还 CSS（字号回到用户设的「大小」）。
+  const off = makeFitPair({ chars: 60, availW: availW });
+  assert.strictEqual(S.fitTextInto(off.el, off.textEl, { boxWidth: 40, boxHeight: 20, boxAutoFit: false }, frame), 1);
+  assert.strictEqual(off.props.has('--fushi-sub-fit'), false);
+
+  // ④ 底板回到随内容：同样不写倍率。
+  const auto = makeFitPair({ chars: 60, availW: availW });
+  assert.strictEqual(S.fitTextInto(auto.el, auto.textEl, { boxWidth: 0, boxHeight: 0 }, frame), 1);
+  assert.strictEqual(auto.props.has('--fushi-sub-fit'), false);
+});
+
+test('fitTextInto：压到可读下限仍放不下就停在下限（底板自己长高，不裁字）；横向溢出也收', () => {
+  const S = loadStyle();
+  const frame = { width: 1000, height: 600 };
+  // 400 × 30px 的极扁底板里塞 400 字：压到下限也放不下。
+  const huge = makeFitPair({ chars: 400, availW: 376 });
+  const fit = S.fitTextInto(huge.el, huge.textEl, { boxWidth: 40, boxHeight: 5 }, frame);
+  assert.strictEqual(fit, S.FIT_RANGE[0], '停在可读下限，剩下的交给 min-height 长高');
+
+  // 断不开的长词（wrap:false）：高度方向明明有富余，也不许为了填满而放大到横向溢出。
+  const wide = makeFitPair({ chars: 20, availW: 376, wrap: false });
+  const fitWide = S.fitTextInto(wide.el, wide.textEl, { boxWidth: 40, boxHeight: 30 }, frame);
+  assert.ok(wide.textEl.scrollWidth <= 376 + 0.5, '横向不许溢出，实得 ' + wide.textEl.scrollWidth);
+  assert.ok(fitWide < 1);
+});
+
+test('applyFit：非 1 写 --fushi-sub-fit、回 1 清掉；坏元素不抛', () => {
+  const S = loadStyle();
+  const props = new Map();
+  const el = { style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) } };
+  S.applyFit(el, 1.234);
+  assert.strictEqual(props.get('--fushi-sub-fit'), '1.234');
+  S.applyFit(el, 1);
+  assert.strictEqual(props.has('--fushi-sub-fit'), false);
+  // 区间外的值夹住，坏值当 1。
+  S.applyFit(el, 99);
+  assert.strictEqual(props.get('--fushi-sub-fit'), String(S.FIT_RANGE[1]));
+  S.applyFit(el, NaN);
+  assert.strictEqual(props.has('--fushi-sub-fit'), false);
+  assert.doesNotThrow(() => S.applyFit(null, 2));
+});
+
 // 用户 2026-09-20：「字体不要手填而是下拉框并且可以下载字体」——下拉两组：本机字体栈
 // （FONT_SUGGESTIONS）+ Fushi 字体库（app /api/extension/fonts）；库字体经 @font-face 挂进页面。
 test('字体库辅助：栈标签取前两个 family；库条目值带引号且剥引号反斜杠；命中判据与存值同形', () => {
@@ -175,7 +325,14 @@ test('覆盖层 CSS：每项外观读 --fushi-sub-* 并有默认值；options.cs
   const block = /#fushi-subtitle-overlay \{([\s\S]*?)\n\}/.exec(overlay)[1];
   const defaults = subVarDefaults(block);
   const S = loadStyle();
-  assert.deepEqual(Object.keys(defaults).sort(), Object.keys(S.toCssVars(null)).sort(), 'CSS 默认变量集 = toCssVars 输出集');
+  // --fushi-sub-fit 不经 toCssVars（它不是用户设的值，而是 applyFit 按实测内容算出来的自适应
+  // 倍率），但同样必须在 CSS 里有默认值——没人写它时 font-size 的 calc 不能整条失效。
+  assert.deepEqual(
+    Object.keys(defaults).sort(),
+    Object.keys(S.toCssVars(null)).concat(['--fushi-sub-fit']).sort(),
+    'CSS 默认变量集 = toCssVars 输出集 + 自适应倍率',
+  );
+  assert.strictEqual(defaults['--fushi-sub-fit'], '1', '不写自适应倍率时零影响');
   for (const [prop, v] of [
     ['font-family', 'var(--fushi-sub-family)'], ['font-weight', 'var(--fushi-sub-weight)'],
     ['line-height', 'var(--fushi-sub-line-height)'], ['letter-spacing', 'var(--fushi-sub-spacing)'],
@@ -185,7 +342,7 @@ test('覆盖层 CSS：每项外观读 --fushi-sub-* 并有默认值；options.cs
   ]) {
     assert.ok(block.includes('\n    ' + prop + ': ' + v + ';'), prop + ' 应读 ' + v);
   }
-  assert.match(block, /font-size: calc\(clamp\(18px, 2\.2vw, 32px\) \* var\(--fushi-sub-scale\)\);/);
+  assert.match(block, /font-size: calc\(clamp\(18px, 2\.2vw, 32px\) \* var\(--fushi-sub-scale\) \* var\(--fushi-sub-fit\)\);/);
   assert.match(overlay, /#fushi-subtitle-overlay:has\(ruby\) \{\s*line-height: max\(2, var\(--fushi-sub-line-height\)\);/);
   // 默认值与旧观感一字不差（老用户零变化）。
   assert.strictEqual(defaults['--fushi-sub-family'], '"Hiragino Sans", "Yu Gothic UI", sans-serif');
