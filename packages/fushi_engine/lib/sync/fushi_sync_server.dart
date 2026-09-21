@@ -5,6 +5,10 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show probeVideoDurationMs;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show
         EmbeddedSubtitleTrack,
@@ -23,6 +27,7 @@ import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
+import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_routes.dart';
@@ -35,7 +40,8 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
-import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
+import 'package:fushi_core/fushi_core.dart'
+    show fushiDebugPrint, mimeTypeForFilePath;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
@@ -222,6 +228,7 @@ class FushiSyncServer {
     String? hostFingerprint,
     String? deviceName,
     DateTime Function()? now,
+    PrefStore? prefs,
     Uint8List? Function(String dictionary, String path)?
         dictionaryMediaProvider,
   })  : syncDataDir = p.join(syncDataDir, 'sync-data'),
@@ -240,6 +247,7 @@ class FushiSyncServer {
         _downloads = downloads,
         _subscriptions = subscriptions,
         _dictionaryMediaProvider = dictionaryMediaProvider,
+        _prefs = prefs,
         _now = now ?? DateTime.now;
 
   final String syncDataDir;
@@ -283,6 +291,10 @@ class FushiSyncServer {
   /// stays unit-testable. Returns null -> the media endpoint answers 404.
   final Uint8List? Function(String dictionary, String path)?
       _dictionaryMediaProvider;
+
+  /// 偏好读侧（互联 host 的实时转码开关）。null = 调用方没接线（老调用方、单测），
+  /// 按默认值走，行为与从前一致。
+  final PrefStore? _prefs;
   final DateTime Function() _now;
 
   /// 单词音频 token（TTL 5 分钟 + BUG-908(a) 上限 128）与查词/制卡端点的 handler
@@ -947,6 +959,9 @@ class _VideoStreamToken {
     required this.videoId,
     required this.createdAt,
     this.episodeIndex = 0,
+    this.transcodeProfile,
+    this.transcodeAudioStreamIndex,
+    this.transcodeDurationMs,
   });
 
   /// 绑定的视频 id（即 VideoBooks.bookUid，可含 `/`）。
@@ -955,4 +970,23 @@ class _VideoStreamToken {
 
   /// 远端播放列表集下标（TODO-885）；单视频 / 当前集恒 0。
   final int episodeIndex;
+
+  /// 非 null 时 `/stream` 走实时转码（弱网降码率），null 是原文件 Range 直传。
+  ///
+  /// 档位**绑定在 token 上**而不是由 `/stream` 的 query 决定：`/stream` 是唯一豁免
+  /// Basic 鉴权的视频路径（auth.part.dart），谁拿到 URL 谁就能取流，让它自带 query
+  /// 就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。签发侧
+  /// （`/streamurl`，要 Basic）定档，取流侧只认 token 里的那一份。
+  final VideoTranscodeProfile? transcodeProfile;
+
+  /// 转码流选哪条音轨（多音轨番剧的日配/中配）。null = 源的第一条音轨。转码后的流
+  /// 只能带一条音轨，播放器侧的音轨切换在这条流上是空的——所以选哪条必须在签发时定。
+  final int? transcodeAudioStreamIndex;
+
+  /// 转码流的源时长（毫秒），签发时 ffprobe 一次。
+  ///
+  /// HLS playlist 要按它切段，每个分段请求也要按它算自己的时间范围。存在 token 上
+  /// 而不是每次请求重探：一次播放会打几十上百个分段请求，每个都 ffprobe 一遍纯属
+  /// 白烧 CPU，而同一个 token 指向的文件在其生命周期内不会变。
+  final int? transcodeDurationMs;
 }

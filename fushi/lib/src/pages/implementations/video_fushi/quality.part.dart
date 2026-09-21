@@ -76,13 +76,18 @@ extension _VideoQuality on _VideoFushiPageState {
 
   bool get _isYoutubeStream => _currentYoutubeWatchUrl != null;
 
-  /// 媒体服务器（Jellyfin / Emby）画质档能力：服务器按 DeviceProfile + 码率上限决定
-  /// 直播放还是转码（成熟客户端的「画质」菜单）。非媒体服务器来源为 null。
+  /// 服务端转码画质档能力：媒体服务器（Jellyfin / Emby 按 DeviceProfile + 码率上限
+  /// 决定直播放还是转码）与互联 host（按档切段转码成 HLS）共用这一条。不支持的来源
+  /// 为 null。
   RemoteVideoQualityLimit? get _mediaServerQuality {
     // 能力接口不是 RemoteVideoClient 的子类型，`is` 不能在 RemoteVideoClient 上提升，
     // 先退成 Object（与 _reportRemotePlaybackStopped 同款写法）。
     final Object? client = _effectiveRemoteClient;
-    return client is RemoteVideoQualityLimit ? client : null;
+    if (client is! RemoteVideoQualityLimit) return null;
+    // 实现了接口不等于此刻有档可选：互联 client 恒实现它，但对端跑不了 ffmpeg
+    // （移动端 host）或用户关了转码开关时档位表是空的。空表还显菜单，用户点进去
+    // 只会看到一屏空白。
+    return client.qualityPresets.isEmpty ? null : client;
   }
 
   /// 视频源扩展的「线路」能力：同一集多条候选（hoster × 画质），起播由 client 按
@@ -253,6 +258,125 @@ extension _VideoQuality on _VideoFushiPageState {
 
   /// 切到媒体服务器第 [index] 档（-1 = 自动）：偏好落库、写进 client，先关掉当前
   /// 会话（服务器上的转码任务随之停），再按新档重新协商起播、回到当前位置。
+  // ── 互联「自动」档的自适应 ──────────────────────────────────────────────
+
+  /// 当前远端 client 是不是支持自适应的互联 host（有档可选才谈得上自适应）。
+  InterconnectSyncBackend? get _adaptiveQualityClient {
+    final Object? client = _effectiveRemoteClient;
+    if (client is! InterconnectSyncBackend) return null;
+    return client.qualityPresets.isEmpty ? null : client;
+  }
+
+  /// 起播 / 换集后重新开始观察。
+  ///
+  /// 只在用户选「自动」时跑：显式选了某一档就是选定了，自动改掉它会让设置看起来
+  /// 自己会动。
+  void _restartAdaptiveQuality() {
+    _stopAdaptiveQuality();
+    final InterconnectSyncBackend? client = _adaptiveQualityClient;
+    if (client == null) return;
+    if (client.qualityPresetIndex >= 0) return;
+    // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
+    client.ensureAdaptiveQualityStart();
+    _adaptiveQuality.reset();
+    _adaptiveQualityTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _tickAdaptiveQuality(),
+    );
+  }
+
+  void _stopAdaptiveQuality() {
+    _adaptiveQualityTimer?.cancel();
+    _adaptiveQualityTimer = null;
+  }
+
+  /// 一拍采样：把播放器的缓冲状态喂给决策器，它说换就换。
+  void _tickAdaptiveQuality() {
+    if (!mounted || _adaptiveQualitySwitching) return;
+    final InterconnectSyncBackend? client = _adaptiveQualityClient;
+    final VideoPlayerController? controller = _controller;
+    if (client == null || controller == null) {
+      _stopAdaptiveQuality();
+      return;
+    }
+    // 用户在播放途中显式选了档 → 自动接管结束。
+    if (client.qualityPresetIndex >= 0) {
+      _stopAdaptiveQuality();
+      return;
+    }
+    // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
+    if (!controller.isPlaying) return;
+
+    final AdaptiveQualityDecision? decision = _adaptiveQuality.tick(
+      currentIndex: client.adaptiveQualityIndex ?? -1,
+      buffering: controller.isBuffering,
+      cacheSeconds: controller.networkCacheSeconds.value,
+    );
+    if (decision == null) return;
+    unawaited(_applyAdaptiveQuality(client, decision));
+  }
+
+  /// 执行自适应换档：换的是「自动」策略下的当前取值，**不动用户偏好**。
+  ///
+  /// 重取流的流程与用户手动换档同一条（停旧会话 → 重新协商 → 回到原位置），差别只在
+  /// 不写偏好、OSD 文案说明是自动调整的。
+  Future<void> _applyAdaptiveQuality(
+    InterconnectSyncBackend client,
+    AdaptiveQualityDecision decision,
+  ) async {
+    _adaptiveQualitySwitching = true;
+    try {
+      final int posMs = _controller?.positionMs ?? 0;
+      client.adaptiveQualityIndex = decision.targetIndex;
+      await _reportRemotePlaybackStopped(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        positionMs: posMs,
+        generation: _remotePlaybackGeneration,
+      );
+      if (!mounted) return;
+      await _loadRemoteEpisode(
+        _currentEpisode < 0 ? 0 : _currentEpisode,
+        // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时换档」
+        // 直接归零回片头。
+        startIntent: EpisodeStartIntent.explicitCue,
+        initialPositionMsOverride: posMs,
+      );
+      if (!mounted) return;
+      // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
+      // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
+      // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
+      // 变成未捕获的 zone error。
+      final List<MediaServerQualityPreset> presets = client.qualityPresets;
+      final String label = decision.targetIndex < 0 ||
+              decision.targetIndex >= presets.length
+          ? t.video_quality_auto
+          : presets[decision.targetIndex].label;
+      _showOsd(
+        decision.reason == AdaptiveQualityReason.stall
+            ? t.video_quality_auto_lowered(label: label)
+            : t.video_quality_auto_raised(label: label),
+        icon: Icons.network_check,
+      );
+    } finally {
+      _adaptiveQualitySwitching = false;
+    }
+  }
+
+  /// 画质档偏好的落点按来源分流。
+  ///
+  /// 互联与媒体服务器（Jellyfin/Emby）的档位阶梯**不同**（互联整体更低，它要解决的
+  /// 是人在外面用手机网络），共用一个下标会让同一个数字在两边指向不同画质——用户在
+  /// Emby 上选的 `2` 跑到互联上就成了另一档。
+  int _readQualityPresetIndex(Object client) => client is InterconnectSyncBackend
+      ? appModel.prefsRepo.interconnectQualityPresetIndex
+      : appModel.prefsRepo.mediaServerQualityPresetIndex;
+
+  Future<void> _writeQualityPresetIndex(Object client, int index) =>
+      client is InterconnectSyncBackend
+          ? appModel.prefsRepo.setInterconnectQualityPresetIndex(index)
+          : appModel.prefsRepo.setMediaServerQualityPresetIndex(index);
+
   Future<void> _switchMediaServerQuality(int index) async {
     final RemoteVideoQualityLimit? server = _mediaServerQuality;
     if (server == null || index >= server.qualityPresets.length) return;
@@ -263,9 +387,18 @@ extension _VideoQuality on _VideoFushiPageState {
     }
     final int posMs = _controller?.positionMs ?? 0;
     _hideVideoSidePanel();
-    await appModel.prefsRepo.setMediaServerQualityPresetIndex(target);
+    await _writeQualityPresetIndex(server, target);
     if (!mounted) return;
     _rebuild(() => server.qualityPresetIndex = target);
+    // 用户显式选档 = 自动接管结束；选回「自动」则把自适应的当前取值清掉，让它从
+    // 起点判据重新开始，而不是接着上次自动降到的那一档跑。
+    if (server is InterconnectSyncBackend) {
+      if (target >= 0) {
+        _stopAdaptiveQuality();
+      } else {
+        server.adaptiveQualityIndex = null;
+      }
+    }
     await _reportRemotePlaybackStopped(
       info: _effectiveRemoteInfo,
       client: _effectiveRemoteClient,
@@ -279,8 +412,10 @@ extension _VideoQuality on _VideoFushiPageState {
       initialPositionMsOverride: posMs,
     );
     if (!mounted) return;
-    final String label =
-        target < 0 ? t.video_quality_auto : server.qualityPresets[target].label;
+    final List<MediaServerQualityPreset> presets = server.qualityPresets;
+    final String label = target < 0 || target >= presets.length
+        ? t.video_quality_auto
+        : presets[target].label;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 
