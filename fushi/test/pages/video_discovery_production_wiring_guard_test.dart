@@ -72,7 +72,18 @@ void main() {
     expect(source, contains('Navigator.of(context).push<void>('));
     expect(source, contains('Navigator.of(context).push<String>('));
     expect(source, contains('pipeline.attachSubtitleSelection('));
-    expect(source, contains('VideoDownloadSubscriptionsCompanion.insert('));
+    // 入队 / 订阅落库形状已抽到 video_discovery_submit.dart（发现页与 AI 下载
+    // 流程共用）：组合根只负责接线到这两个函数，落库语句钉在抽出的模块上。
+    expect(source, contains('enqueueLocalVideoDownload('));
+    expect(source, contains('createLocalVideoDownloadSubscription('));
+    final String submitSource = File(
+      'lib/src/media/video/download/video_discovery_submit.dart',
+    ).readAsStringSync();
+    expect(
+      submitSource,
+      contains('VideoDownloadSubscriptionsCompanion.insert('),
+    );
+    expect(submitSource, contains('pipeline.enqueue('));
     expect(source, contains('_videoDiscoveryService?.close()'));
   });
 

@@ -35,14 +35,12 @@ import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/media/collections/collection_continue.dart';
-import 'package:fushi_engine/media/torrent/nyaa_resource_provider.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
@@ -112,7 +110,6 @@ import 'package:fushi_core/fushi_core.dart'
         VideoDownloadJobRow,
         VideoDownloadJobStage,
         VideoDownloadSubscriptionRow,
-        VideoDownloadSubscriptionsCompanion,
         VideoMetadataProviderIdentityRow,
         VideoMetadataWorkRow,
         VideoSourceScrapeRunRow,
@@ -1820,17 +1817,11 @@ class _HomePageState extends BasePageState<HomePage>
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
-            // 保留发现来源提供的 MAL / TMDB 精确身份，导入时优先 MAL。
-            final VideoMediaReference media = selection.media;
-            await pipeline.enqueue(
-              VideoDownloadEnqueueRequest(
-                media: media,
-                resource: selection.resource,
-                backendTarget: target,
-                targetSourceId: selection.source.id,
-                subtitlePolicy: selection.subtitlePolicy,
-                coverUrl: item.posterUrl,
-              ),
+            await enqueueLocalVideoDownload(
+              pipeline: pipeline,
+              item: item,
+              selection: selection,
+              target: target,
             );
           },
         ),
@@ -1902,7 +1893,7 @@ class _HomePageState extends BasePageState<HomePage>
                 // 与本地订阅同一个稳定 id：同一作品在同一台 host 上重复订阅只 upsert。
                 subscriptionId: videoDiscoverySubscriptionId(reference),
                 title: reference.title,
-                searchQuery: _videoResourceSearchQuery(reference),
+                searchQuery: videoResourceSubscriptionSearchQuery(reference),
                 mediaKind: reference.mediaKind.name,
                 mode: reference.mediaKind == VideoMetadataMediaKind.movie
                     ? 'oneShot'
@@ -1926,58 +1917,14 @@ class _HomePageState extends BasePageState<HomePage>
           onSubmit: (VideoDiscoverySubscriptionSelection selection) async {
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
-            final int now = DateTime.now().millisecondsSinceEpoch;
-            final String subscriptionId =
-                videoDiscoverySubscriptionId(item.reference);
-            final VideoDownloadSubscriptionRow? previous =
-                await appModelNoUpdate.database
-                    .getVideoDownloadSubscription(subscriptionId);
-            final VideoResourceCandidate resource = selection.download.resource;
-            // 订阅快照保留交叉 ID，每集下载可沿用同一个 MAL / TMDB 身份。
-            final VideoMediaReference reference = item.reference;
-            await appModelNoUpdate.database.upsertVideoDownloadSubscription(
-              VideoDownloadSubscriptionsCompanion.insert(
-                subscriptionId: subscriptionId,
-                resourceProvider: persistedVideoResourceProviderId(resource),
-                metadataProvider: Value<String?>(reference.providerId),
-                externalId: Value<String?>(reference.mediaId),
-                mediaKind: reference.mediaKind.name,
-                discoveryCategory:
-                    Value<String?>(reference.discoveryCategory.name),
-                title: reference.title,
-                year: Value<int?>(reference.year),
-                season: Value<int?>(reference.season),
-                coverUrl: Value<String?>(item.posterUrl),
-                identityJson:
-                    Value<String?>(encodeVideoMediaReference(reference)),
-                searchQuery: _videoResourceSearchQuery(reference),
-                filterJson: Value<String>(selection.filter.json),
-                mode: Value<String>(
-                  item.reference.mediaKind == VideoMetadataMediaKind.movie
-                      ? 'oneShot'
-                      : 'ongoing',
-                ),
-                startAfterEpisode: Value<int?>(selection.startAfterEpisode),
-                backendKind: target.kind,
-                backendProfileId: Value<String?>(target.profileId),
-                fingerprint: target.fingerprint,
-                category: Value<String?>(target.category),
-                targetSourceId: Value<int?>(selection.download.source.id),
-                organizationPolicy: const Value<String>('library'),
-                subtitlePolicy:
-                    Value<String>(selection.download.subtitlePolicy.name),
-                enabled: const Value<bool>(true),
-                nextCheckAt: Value<int?>(now),
-                claimedBy: const Value<String?>(null),
-                claimExpiresAt: const Value<int?>(null),
-                retryCount: const Value<int>(0),
-                fulfilledAt: const Value<int?>(null),
-                lastError: const Value<String?>(null),
-                createdAt: previous?.createdAt ?? now,
-                updatedAt: now,
-              ),
+            await createLocalVideoDownloadSubscription(
+              database: appModelNoUpdate.database,
+              item: item,
+              selection: selection,
+              target: target,
+              checkNow: () async =>
+                  appModelNoUpdate.videoDownloadSubscriptionService?.checkNow(),
             );
-            await appModelNoUpdate.videoDownloadSubscriptionService?.checkNow();
           },
         ),
       ),
@@ -2068,16 +2015,6 @@ class _HomePageState extends BasePageState<HomePage>
         ),
       ),
     );
-  }
-
-  String _videoResourceSearchQuery(VideoMediaReference reference) {
-    if (reference.discoveryCategory != VideoDiscoveryCategory.anime) {
-      return reference.title;
-    }
-    final List<String> queries = preferredNyaaSearchQueries(
-      VideoResourceSearchRequest(media: reference),
-    );
-    return queries.isEmpty ? reference.title : queries.first;
   }
 
   void _showVideoDiscoveryMessage(BuildContext context, String message) {
