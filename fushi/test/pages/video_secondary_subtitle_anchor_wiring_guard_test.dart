@@ -21,7 +21,9 @@ void main() {
         read('lib/src/pages/implementations/video_fushi_page.dart');
     final int start = page.indexOf('void _handleSubtitleLookupTap(');
     expect(start, greaterThanOrEqualTo(0));
-    final int end = page.indexOf('\n  }', start);
+    // 用 `\n  }\n` 而不是 `\n  }`：后者会提前命中签名收尾的 `  }) {`（方法带可选
+    // 命名参数块时），body 只剩签名、下面的断言全部落空 = 守卫静默失效。
+    final int end = page.indexOf('\n  }\n', start);
     expect(end, greaterThan(start));
     final String body = page.substring(start, end);
 
@@ -36,12 +38,17 @@ void main() {
         read('lib/src/pages/implementations/video_fushi_page.dart');
     final int start = page.indexOf('void _handleSubtitleHoverLookup(');
     expect(start, greaterThanOrEqualTo(0));
-    final int end = page.indexOf('\n  }', start);
+    final int end = page.indexOf('\n  }\n', start);
     final String body = page.substring(start, end);
 
     expect(body.contains('AudioCue? cue'), isTrue);
-    expect(
-        RegExp(r'_handleSubtitleLookupTap\([^;]*cue\)').hasMatch(body), isTrue,
+    // 咬「这次调用把 cue 传下去了」这条语义，而不是「调用正好以 `cue)` 收尾」这个形状：
+    // 多行实参、以及尾随的命名参数（如 `fromHover: true`）都不该让守卫转红。
+    final Match? call = RegExp(
+      r'_handleSubtitleLookupTap\(([^;]*)\);',
+    ).firstMatch(body);
+    expect(call, isNotNull, reason: 'hover 入口必须转调点击查词那条链路');
+    expect(call!.group(1)!.contains('cue'), isTrue,
         reason: 'hover 换词丢掉 cue 会让 Shift-悬停查词制出的卡回到黑帧');
   });
 

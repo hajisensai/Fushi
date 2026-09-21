@@ -597,6 +597,9 @@ class AppModel with ChangeNotifier {
     // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: createMangaOcrService,
+    // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
+    // 启动时的快照，用户改完设置不必重启互联服务。
+    prefsStore: () => prefsRepo,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,

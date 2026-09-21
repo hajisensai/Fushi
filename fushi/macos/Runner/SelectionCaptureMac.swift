@@ -13,8 +13,9 @@ import FlutterMacOS
 //                                 trusted: Bool}
 //   isAccessibilityTrusted    -> Bool   (AXIsProcessTrusted, never prompts)
 //   requestAccessibilityTrust -> Bool   (prompting variant + opens the
-//                                 Privacy > Accessibility pane; settings-page
-//                                 action only, NEVER on the hotkey path)
+//                                 Privacy > Accessibility pane; called by the
+//                                 settings action or the first explicit
+//                                 global-lookup trigger)
 //
 // Why Accessibility trust matters: both reading another app's selection over
 // AX and posting a synthetic Cmd+C (CGEvent) need the app in System Settings
@@ -112,6 +113,21 @@ enum MacSelectionCapture {
     }
     let baseline = pasteboard.changeCount
 
+    func restorePasteboard() {
+      pasteboard.clearContents()
+      let items: [NSPasteboardItem] = saved.compactMap { bag in
+        guard !bag.isEmpty else { return nil }
+        let item = NSPasteboardItem()
+        for (type, data) in bag {
+          item.setData(data, forType: type)
+        }
+        return item
+      }
+      if !items.isEmpty {
+        pasteboard.writeObjects(items)
+      }
+    }
+
     let source = CGEventSource(stateID: .combinedSessionState)
     // The global hotkey fires while the user still physically holds its
     // modifiers; a naive Cmd+C would arrive as Cmd+Option+C. Release them
@@ -124,7 +140,10 @@ enum MacSelectionCapture {
     }
     guard let down = CGEvent(keyboardEventSource: source, virtualKey: kVK_ANSI_C, keyDown: true),
           let up = CGEvent(keyboardEventSource: source, virtualKey: kVK_ANSI_C, keyDown: false)
-    else { return nil }
+    else {
+      restorePasteboard()
+      return nil
+    }
     down.flags = .maskCommand
     up.flags = .maskCommand
     down.post(tap: .cghidEventTap)
@@ -139,21 +158,12 @@ enum MacSelectionCapture {
         break
       }
     }
-    guard changed else { return nil }
+    guard changed else {
+      restorePasteboard()
+      return nil
+    }
     let text = pasteboard.string(forType: .string)
-
-    pasteboard.clearContents()
-    let items: [NSPasteboardItem] = saved.compactMap { bag in
-      guard !bag.isEmpty else { return nil }
-      let item = NSPasteboardItem()
-      for (type, data) in bag {
-        item.setData(data, forType: type)
-      }
-      return item
-    }
-    if !items.isEmpty {
-      pasteboard.writeObjects(items)
-    }
+    restorePasteboard()
     return text
   }
 }

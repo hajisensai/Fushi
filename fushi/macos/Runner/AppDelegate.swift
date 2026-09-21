@@ -439,9 +439,9 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
 //
 // FAIL-OPEN CONTRACT: every failure path returns nil (never throws, never
 // prompts). Without Accessibility trust (AXIsProcessTrusted() == false) we
-// cannot read other apps, so we bail immediately -- no nagging permission
-// dialog on every hotkey, no crash; the caller silently falls back to the
-// clipboard capture. Offsets are UTF-16 code units (NSString length), the unit
+// cannot read other apps, so we bail immediately -- no permission dialog from
+// this context-only probe, no crash; the caller can use the shared selection
+// capture path. Offsets are UTF-16 code units (NSString length), the unit
 // Dart String indexing uses.
 //
 // SANDBOX NOTE (updated 2026-09-14): the app is NOT sandboxed any more (both
@@ -450,7 +450,7 @@ class AppDelegate: FlutterAppDelegate, FlutterStreamHandler {
 // design.md §5), so cross-process AX reads work as soon as the user grants
 // Accessibility trust in System Settings > Privacy & Security. The settings
 // page offers that grant via `requestAccessibilityTrust` (SelectionCaptureMac
-// .swift); this hotkey-path capture itself still never prompts.
+// .swift); this context-only probe itself still never prompts.
 enum ForegroundSelectionCapture {
   // Mirrors kForegroundContextExpand in foreground_selection.h (Windows): the
   // max characters to grab PAST the selection on EACH side. Bounded for privacy
