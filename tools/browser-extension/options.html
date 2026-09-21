@@ -475,6 +475,17 @@
               </span>
               <span class="switch"><input id="studyTrackVideo" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <label class="setting-row" for="studyTrackVideoCondition">
+              <span class="setting-copy">
+                <strong data-i18n="opt_studyTrackVideoCondition_title">什么情况才计入</strong>
+                <small data-i18n="opt_studyTrackVideoCondition_desc">默认只算「看得懂字的那些分钟」：Fushi 认出了整集字幕轨、或你拖了外挂字幕，并且正在用它（侧边栏 / 视频上的字幕框 / 替代原生字幕）才计。字幕中途才加载就从那一刻开始计，中途关掉字幕（含 Shift+H 隐藏）立刻停表。</small>
+              </span>
+              <select class="select-input" id="studyTrackVideoCondition">
+                <option value="fushiSubtitle" data-i18n="opt_studyTrackVideoCondition_option_fushiSubtitle">正在用 Fushi / 外挂字幕</option>
+                <option value="anySubtitle" data-i18n="opt_studyTrackVideoCondition_option_anySubtitle">这个视频有字幕即可</option>
+                <option value="always" data-i18n="opt_studyTrackVideoCondition_option_always">任何视频都计</option>
+              </select>
+            </label>
           </div>
         </section>
 

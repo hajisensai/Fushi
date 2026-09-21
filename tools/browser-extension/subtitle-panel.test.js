@@ -260,3 +260,55 @@ test('drop 提示是右上角小角标，不是整屏覆盖', () => {
   assert.ok(!/bottom:/.test(block) && !/left:/.test(block), '不占左侧与底部');
   assert.ok(/max-width:/.test(block), '限宽，别横贯整行');
 });
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+// 学习统计的字幕门（study-tracker.js）就架在这个出口上：它说 showing=false，
+// 网页视频的沉浸时间就一秒不计。语义弄反直接体现为用户统计里多出 / 少掉几小时。
+test('字幕门状态出口：整集轨在用 = showing；live 伪轨只算 any；无轨两者都假', async () => {
+  const full = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
+  });
+  await settle();
+  const state = full.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(state.showing, true, '整集轨已选中且有 cue');
+  assert.strictEqual(state.any, true);
+  assert.strictEqual(state.lang, 'en');
+  assert.strictEqual(state.external, false);
+
+  const liveOnly = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001',
+    store: { '81001|live': [{ startMs: 0, endMs: 500, text: 'live' }] },
+  });
+  await settle();
+  const liveState = liveOnly.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(liveState.showing, false, 'live 伪轨 = 用户在读站点原生字幕，不算用 Fushi 字幕');
+  assert.strictEqual(liveState.any, true, '但确实“这个视频有字幕”');
+  assert.strictEqual(liveState.lang, null);
+
+  const empty = loadController({ hostname: 'www.netflix.com', pathname: '/watch/81001', store: {} });
+  await settle();
+  const emptyState = empty.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(emptyState.showing, false);
+  assert.strictEqual(emptyState.any, false);
+});
+
+test('字幕门状态出口：外挂字幕算 showing 并标 external；面板没开时 showing 为假', async () => {
+  const ext = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001',
+    store: { '81001|外挂:ep01.srt': [{ startMs: 0, endMs: 900, text: '外挂一句' }] },
+  });
+  await settle();
+  const state = ext.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(state.showing, true);
+  assert.strictEqual(state.external, true, '拖进来的字幕文件与抓到的整集轨同等地算数');
+
+  // netflixSubtitlePanel 没开 = 用户没用 Fushi 字幕：轨就在 store 里也不算在读。
+  const off = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS, stored: {},
+  });
+  await settle();
+  const offState = off.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(offState.showing, false);
+  assert.strictEqual(offState.any, true);
+});
