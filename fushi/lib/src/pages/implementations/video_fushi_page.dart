@@ -696,6 +696,63 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 的 8px 同构：鼠标移动未超此阈值不重复查词，越过阈值 + 命中新字符才换词。
   static const double barrierHoverThresholdPx = 8;
 
+  /// 悬停查词「指针离开 ⇒ 自动关浮层并续播」的意图确认窗口（用户诉求：悬停查完词把
+  /// 鼠标移开就该继续播，不用再点一下空白）。
+  ///
+  /// 为什么要有这个窗口、而不是 hover 一 miss 就立刻关：浮层锚在被查字符**旁边**，指针
+  /// 从字幕移到浮层上的路径几乎必然横穿一段 barrier 空白（两者之间本就有间距），那一路
+  /// 的 hover 事件全是「既没命中字幕、也还没进浮层」。零延迟关栈会让「想去浮层里翻词条」
+  /// 这个最常见的后续动作当场被打断——浮层在指针抵达前就关掉了。故 miss 只起表不动手，
+  /// 指针落到浮层上（[_VideoFushiPageState._pointerOverLookupPopup]）或重新命中字幕即
+  /// 撤表。这是 hover-intent 的意图判读，不是拿延迟去盖状态同步问题：到期后仍要把全部
+  /// 条件（[shouldAutoResumeOnHoverLeave]）重新核一遍才动手。
+  static const Duration hoverLeaveResumeGrace = Duration(milliseconds: 320);
+
+  /// 悬停离开判定自己的移动节流阈值（像素）。与换词那条（[barrierHoverThresholdPx]）分开
+  /// 记账：换词在「未按 Shift 且未开悬停即查词」时会把锚点复位成零以便下次立刻触发（见
+  /// [_VideoFushiPageState._onDismissBarrierHover]），离开判定不吃那条复位，否则松开 Shift
+  /// 后的每一个 hover 事件都要跑两次几何命中反查。
+  static const double hoverLeaveThresholdPx = 4;
+
+  /// 悬停触发的查词会话中，指针离开后是否应自动关掉浮层栈并恢复播放。
+  ///
+  /// 逐条门控，缺一不可：
+  /// - [enabled]：用户偏好 `resume_on_lookup_leave`（默认开；悬停本就是鼠标行为，设置项
+  ///   走桌面门控）。
+  /// - [openedByHover]：本次查词会话确由**悬停**发起。点击查词是「我要停在这儿看」的显式
+  ///   意图，鼠标随手移开不该把它关掉，故点击发起的会话永不自动关，BUG-072 既有行为逐
+  ///   像素不变。
+  /// - [hasVisiblePopup]：还有可见浮层才谈得上关（只剩隐藏热槽 = 会话已结束）。
+  /// - [pointerOverPopup]：指针在浮层上 = 用户正在读词条 / 递归查词，绝不关。
+  /// - [overSubtitle]：指针仍在字幕字符（或字幕列表行）上 = 还在查词区里挪，那是换词不是
+  ///   离开。
+  /// - [caretHoldsPause]：字级选词光标会话激活时暂停由它接管（与
+  ///   [shouldResumeAfterLookupDismiss] 同一条让位），鼠标放哪儿都不该替它决定续播。
+  /// - [hiddenByDialog]：制卡 / 选句上下文 / 打开卡片这类对话框期间，浮层被**停靠到
+  ///   屏外**（BUG-797/1040/1327 同族：`_popupHidingDialogDepth`），它那层 MouseRegion
+  ///   随之离开指针并报 exit，而 `hasVisiblePopup` 看的是 controller 级 visible、仍为
+  ///   true。不挡这条，用户点「制卡」后 320ms 就会被整栈关掉：制卡草稿被清、视频在
+  ///   对话框背后播起来。
+  ///
+  /// 纯函数：与 [_VideoFushiPageState._fireHoverLeaveResume] 共用，供单测直接验证。
+  @visibleForTesting
+  static bool shouldAutoResumeOnHoverLeave({
+    required bool enabled,
+    required bool openedByHover,
+    required bool hasVisiblePopup,
+    required bool pointerOverPopup,
+    required bool overSubtitle,
+    bool caretHoldsPause = false,
+    bool hiddenByDialog = false,
+  }) =>
+      enabled &&
+      openedByHover &&
+      hasVisiblePopup &&
+      !pointerOverPopup &&
+      !overSubtitle &&
+      !caretHoldsPause &&
+      !hiddenByDialog;
+
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
   /// [longPressDragMaxSpeed] 全程而手感不过敏。
@@ -1764,10 +1821,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _lastGlobalPointerPos,
     );
     if (listHit != null) {
+      // 与上面画面字幕那条（走 [_handleSubtitleHoverLookup]）同一性质：按 Shift 在指针
+      // 所在处查词就是悬停查词，只是省掉了「抖一下鼠标」，故同样算悬停会话。
       _handleSubtitleListLookup(
         listHit.cue,
         listHit.graphemeIndex,
         listHit.anchorRect,
+        fromHover: true,
       );
     }
   }
@@ -1847,6 +1907,27 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 滑动·Esc 全部关闭路径。仅当查词前视频确在播放才置位，避免把查词前本就暂停的
   /// 视频自动播起来；递归查词（已暂停，`isPlaying==false`）不会覆写它（BUG-072）。
   bool _pausedForLookup = false;
+
+  /// 本次查词会话是否由**悬停**发起（字幕盒 `onCharHover` / 浮层 barrier 的 hover 换词，
+  /// 两条都汇聚到 [_handleSubtitleHoverLookup]）。只有它为真，指针离开字幕与浮层后才
+  /// 自动关栈续播（[VideoFushiPage.shouldAutoResumeOnHoverLeave]）——点击查词是显式的
+  /// 「停在这儿看」，鼠标随手移开不该把它关掉。
+  ///
+  /// 写入点只有两处：悬停入口置 true、点击入口（[_handleSubtitleLookupTap] 默认参数）
+  /// 置 false；关栈汇聚点（[_popNestedPopupAt] 栈空臂）复位。会话中途点了字幕换词即
+  /// 降级成点击会话，之后不再自动关。
+  bool _lookupOpenedByHover = false;
+
+  /// 指针当前是否停在某层查词浮层上（[_buildNestedPopupLayer] 外包的 [MouseRegion]）。
+  /// 浮层盖在 barrier 之上，指针进浮层后 barrier 收不到 hover，仅靠 barrier 一侧无法
+  /// 区分「移到浮层上」与「停住不动」，故由浮层自己回报。
+  bool _pointerOverLookupPopup = false;
+
+  /// 悬停离开的意图确认表（[VideoFushiPage.hoverLeaveResumeGrace]）。
+  Timer? _hoverLeaveResumeTimer;
+
+  /// 悬停离开判定的移动节流锚（[VideoFushiPage.hoverLeaveThresholdPx]）。
+  Offset _hoverLeaveLastPos = Offset.zero;
 
   /// 字级选词光标状态机（videoEnterCaret）：复用阅读器抽出的
   /// [DictionaryCaretController]（TODO-387 预留的跨页面复用点）。主面 =
@@ -4662,6 +4743,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ExitFlushRegistry.instance.unregister(exitFlush);
       _exitFlushCallback = null;
     }
+    // 悬停离开的意图确认表活得比本页久就会在已 dispose 的 State 上关栈（_popNestedPopupAt
+    // → setState），故与其它 debounce 一起在这里收掉。
+    _cancelHoverLeaveResume();
     _volumePersistDebounce?.cancel();
     unawaited(_flushPersistedVideoVolume());
     _speedPersistDebounce?.cancel();
@@ -5108,6 +5192,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 最后指针位置，让「静止光标 + 按 Shift」在浮层已开时也能立即换词（在 Shift 门控之前，
     // 未按 Shift 也照常记录）。
     _lastGlobalPointerPos = event.position;
+    // 悬停离开判定必须排在下面的 Shift 门控**之前**：Shift-悬停开的会话，用户松开 Shift
+    // 再把鼠标移开是最自然的「我看完了」动作，而那之后的 hover 事件全会被下面的早退吞掉。
+    _evaluateHoverLeave(event.position);
     if (!HardwareKeyboard.instance.isShiftPressed &&
         !ReaderFushiSource.instance.hoverAutoLookup) {
       // 未按 Shift 且未开「悬停即查词」：复位节流锚 + 去重键，使下次按 Shift 进入即触发。
@@ -5161,6 +5248,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         listHit.cue,
         listHit.graphemeIndex,
         listHit.anchorRect,
+        fromHover: true,
       );
     }
   }
@@ -5182,7 +5270,113 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     _barrierHoverLastSentence = sentence;
     _barrierHoverLastGrapheme = graphemeIndex;
-    _handleSubtitleLookupTap(sentence, graphemeIndex, charRect, cue);
+    _handleSubtitleLookupTap(
+      sentence,
+      graphemeIndex,
+      charRect,
+      cue,
+      fromHover: true,
+    );
+  }
+
+  /// 悬停查词会话里，指针「离开字幕与浮层」的判定（barrier 的 hover 是浮层打开后唯一
+  /// 还能感知指针的入口）。命中字幕 / 字幕列表 = 还在查词区里挪（下游会换词），撤表；
+  /// 两处都没命中 = 指针在空白上，起一张意图确认表（[VideoFushiPage.hoverLeaveResumeGrace]），
+  /// 到期后由 [_fireHoverLeaveResume] 复核全部条件再关栈续播。
+  ///
+  /// 表只起一次、不随移动续期：续期会让「一路划过空白」永远等不到到期。指针落到浮层上
+  /// 由浮层自己的 [MouseRegion] 撤表（[_setPointerOverLookupPopup]）。
+  void _evaluateHoverLeave(Offset globalPos) {
+    if (!_lookupOpenedByHover) return;
+    if (!_hasVisiblePopup) return;
+    if (_pointerOverLookupPopup || _videoCaretActive) {
+      _cancelHoverLeaveResume();
+      return;
+    }
+    if (!ReaderFushiSource.instance.resumeOnLookupLeave) return;
+    final double dx = globalPos.dx - _hoverLeaveLastPos.dx;
+    final double dy = globalPos.dy - _hoverLeaveLastPos.dy;
+    if (_hoverLeaveLastPos != Offset.zero &&
+        dx * dx + dy * dy <
+            VideoFushiPage.hoverLeaveThresholdPx *
+                VideoFushiPage.hoverLeaveThresholdPx) {
+      return;
+    }
+    _hoverLeaveLastPos = globalPos;
+    // 命中用**宽**容差（不传 exactOnly）：与悬停换词同一口径。字幕行周围半字宽的裙边仍
+    // 算「在字幕上」，避免指针在字与字之间的缝里划过时反复起表 / 撤表。
+    if (_subtitleHitTester.hitTest(globalPos) != null ||
+        _subtitleListHitTester.hitTest(globalPos) != null) {
+      _cancelHoverLeaveResume();
+      return;
+    }
+    _armHoverLeaveResume();
+  }
+
+  /// 浮层自己的 [MouseRegion] 回报指针进 / 出（[_buildNestedPopupLayer]）。进浮层立即
+  /// 撤表（用户要读词条）；出浮层直接起表——出浮层之后指针可能停在空白上一动不动，
+  /// 那种情况下 barrier 一个 hover 事件都不会再来，只靠 [_evaluateHoverLeave] 会永远
+  /// 等不到判定。
+  void _setPointerOverLookupPopup(bool over) {
+    if (_pointerOverLookupPopup == over) return;
+    _pointerOverLookupPopup = over;
+    if (over) {
+      _cancelHoverLeaveResume();
+      return;
+    }
+    _armHoverLeaveResume();
+  }
+
+  void _cancelHoverLeaveResume() {
+    _hoverLeaveResumeTimer?.cancel();
+    _hoverLeaveResumeTimer = null;
+  }
+
+  /// 指针离开了「字幕 + 浮层」这整片查词面（全屏 barrier 的 [MouseRegion] exit = 指针
+  /// 离开窗口，或浮层的 exit = 指针移出浮层）。起表而不直接关：指针可能只是从浮层挪回
+  /// 字幕上继续查下一个词，到期复核会把那种情况挡掉。
+  void _armHoverLeaveResume() {
+    if (!_lookupOpenedByHover || !_hasVisiblePopup) return;
+    if (!ReaderFushiSource.instance.resumeOnLookupLeave) return;
+    if (_videoCaretActive) return;
+    _hoverLeaveResumeTimer ??= Timer(
+      VideoFushiPage.hoverLeaveResumeGrace,
+      _fireHoverLeaveResume,
+    );
+  }
+
+  /// 全屏 barrier 的 [MouseRegion] exit：指针离开了窗口（barrier 铺满全屏，指针移到浮层
+  /// 上时浮层那层 `opaque: false`，barrier 仍在 hover 中不会 exit）。此后 barrier 不会
+  /// 再来任何 hover 事件，故这里必须自己起表，否则视频卡在暂停等不到人。
+  void _handlePointerLeftLookupSurface() {
+    _pointerOverLookupPopup = false;
+    _hoverLeaveLastPos = Offset.zero;
+    _armHoverLeaveResume();
+  }
+
+  /// 意图确认表到期：把全部门控重新核一遍（表起表之后状态可能已变——指针回到字幕上、
+  /// 进了浮层、用户自己关了浮层、光标会话接管），成立才走关栈汇聚点
+  /// [_popNestedPopupAt]（恢复播放 / 清草稿 / 收回焦点全在那儿，与点空白关闭**同一条**
+  /// 路径，不另起一套恢复逻辑）。
+  void _fireHoverLeaveResume() {
+    _hoverLeaveResumeTimer = null;
+    if (!mounted) return;
+    if (!VideoFushiPage.shouldAutoResumeOnHoverLeave(
+      enabled: ReaderFushiSource.instance.resumeOnLookupLeave,
+      openedByHover: _lookupOpenedByHover,
+      hasVisiblePopup: _hasVisiblePopup,
+      pointerOverPopup: _pointerOverLookupPopup,
+      // 到期这一刻按最后已知指针位置复核：起表后指针可能已挪回字幕上，而中途的
+      // hover 事件若都落在节流阈值内不会撤表。
+      overSubtitle:
+          _subtitleHitTester.hitTest(_lastGlobalPointerPos) != null ||
+              _subtitleListHitTester.hitTest(_lastGlobalPointerPos) != null,
+      caretHoldsPause: _videoCaretActive,
+      hiddenByDialog: lookupPopupHiddenByDialog,
+    )) {
+      return;
+    }
+    _popNestedPopupAt(0);
   }
 
   /// BUG-094: seed one persistent, hidden warm popup slot on open so its
@@ -5270,13 +5464,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// （`overrideCue`）。此前不传，锚点靠 [resolveVideoLookupAnchorCue] 去主字幕流按播放
   /// 位置猜——主字幕关掉只开副字幕时主流为空，锚点恒 null，制卡区间塌成 `0..0`（句子音频
   /// 空 + 封面抽第 0 秒的片头黑帧）；主副同开时点副字幕还会错锚到主字幕那句。
+  ///
+  /// [fromHover]：本次查词是不是悬停发起的（[_handleSubtitleHoverLookup] 传 true）。它
+  /// 决定「指针离开后自动关栈续播」对本次会话是否生效；默认 false 使所有点击入口
+  /// （`onCharTap` / barrier 点字换词）保持既有行为——鼠标移开不关浮层。
   void _handleSubtitleLookupTap(
     String sentence,
     int graphemeIndex,
     Rect charRect,
-    AudioCue? cue,
-  ) {
+    AudioCue? cue, {
+    bool fromHover = false,
+  }) {
     if (!_immersiveAllowsLookup) return;
+    _lookupOpenedByHover = fromHover;
+    if (!fromHover) _cancelHoverLeaveResume();
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
   }
 
@@ -5333,14 +5534,39 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _barrierHoverLastPos = Offset.zero;
       _barrierHoverLastSentence = '';
       _barrierHoverLastGrapheme = -1;
+      // 悬停离开那条会话状态同在此收尾：会话已结束，来源标记与意图确认表都不该跨到下
+      // 一次查词（否则上一轮悬停会话的标记会让下一次**点击**查词也被自动关掉）。
+      _lookupOpenedByHover = false;
+      _pointerOverLookupPopup = false;
+      _hoverLeaveLastPos = Offset.zero;
+      _cancelHoverLeaveResume();
     }
   }
 
-  Widget _buildNestedPopupLayer(int index, Size screen) {
+  Widget _buildNestedPopupLayer(int index, Size screen) =>
+      _buildNestedPopupLayerContent(index, screen);
+
+  /// 指针进 / 出浮层的回报口：浮层盖在 barrier 之上，指针一进浮层 barrier 就收不到
+  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。`opaque: false` 使它
+  /// 只订阅 enter/exit，不改变命中语义（浮层内部的点击 / 选词 / 滚动一概不受影响）。
+  ///
+  /// **必须经 [buildNestedPopupLayer] 的 wrapContent 挂在 [Positioned] 内部**：本层
+  /// 顶层是 `Positioned`（BUG-135 屏外停靠），在它外面套 `MouseRegion` 会让
+  /// ParentData 落不到 Stack 上——debug 抛 `Incorrect use of ParentDataWidget`、浮层
+  /// 画到左上角，release 直接 TypeError。
+  Widget _wrapPopupHoverProbe(Widget child) => MouseRegion(
+        opaque: false,
+        onEnter: (PointerEnterEvent _) => _setPointerOverLookupPopup(true),
+        onExit: (PointerExitEvent _) => _setPointerOverLookupPopup(false),
+        child: child,
+      );
+
+  Widget _buildNestedPopupLayerContent(int index, Size screen) {
     return buildNestedPopupLayer(
       index: index,
       screen: screen,
       controller: _popup,
+      wrapContent: _wrapPopupHoverProbe,
       onPush: (String text, Rect rect) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一
@@ -5444,20 +5670,31 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     //
                     // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
                     // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
-                    child: LookupDismissBarrier(
-                      // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
-                      // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                      onTapDismiss: _onDismissBarrierTap,
-                      // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
-                      onSwipeDismiss: _dismissTopNestedPopup,
-                      swipeEnabled:
-                          ReaderFushiSource.instance.enableSwipeToClose,
-                      sensitivity:
-                          ReaderFushiSource.instance.dismissSwipeSensitivity,
-                      onPointerHover: _onDismissBarrierHover,
-                      // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
-                      // （barrier 命中行为 opaque，页面根 Listener 收不到）。
-                      onNonPrimaryButtonDown: onDismissBarrierNonPrimaryButton,
+                    // 外面这层 [MouseRegion] 只为补「指针移出**整个窗口**」这一路：
+                    // barrier 铺满全屏，它的 exit 只可能是指针离开窗口（移到浮层上时
+                    // 浮层那层 `opaque: false`，barrier 仍在 hover 中，不会 exit）。
+                    // 那种情况下 barrier 一个 hover 事件都不会再来，只靠
+                    // [_evaluateHoverLeave] 会永远等不到判定、视频卡在暂停。
+                    child: MouseRegion(
+                      opaque: false,
+                      onExit: (PointerExitEvent _) =>
+                          _handlePointerLeftLookupSurface(),
+                      child: LookupDismissBarrier(
+                        // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
+                        // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                        onTapDismiss: _onDismissBarrierTap,
+                        // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                        onSwipeDismiss: _dismissTopNestedPopup,
+                        swipeEnabled:
+                            ReaderFushiSource.instance.enableSwipeToClose,
+                        sensitivity:
+                            ReaderFushiSource.instance.dismissSwipeSensitivity,
+                        onPointerHover: _onDismissBarrierHover,
+                        // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
+                        // （barrier 命中行为 opaque，页面根 Listener 收不到）。
+                        onNonPrimaryButtonDown:
+                            onDismissBarrierNonPrimaryButton,
+                      ),
                     ),
                   ),
                 // 搜索期加载占位卡（与书内同观感：就绪才显示真正浮层）。
