@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/subscription_check_schedule.dart';
+import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
@@ -1142,8 +1143,25 @@ _SubscriptionLogicalItem? _logicalItem(
   if (_mediaKind(subscription.mediaKind) == VideoMetadataMediaKind.movie) {
     return const _SubscriptionLogicalItem(key: 'movie');
   }
-  if (_looksLikeBatch(title)) return null;
   final VideoNameInfo parsed = parseVideoFilename(title);
+  if (subscriptionReleaseIsBatch(title)) {
+    // 整包（合集 / 全集 / 认不出集号的 BD 打包）没有逐集身份。
+    //
+    // 追更订阅按定义只处理「新的一集」，整包对它永远不是新集，照旧丢弃——否则
+    // 每出一版合集就会把整季重下一遍。一次性订阅相反：用户选中的**就是**这一
+    // 整包，把它丢掉等于这条订阅永远不可能命中（BUG-2619）。整包落成一个固定
+    // 键的逻辑条目，下载后由流水线逐文件识别每一集，订阅随即 fulfil 并停用。
+    if (subscription.mode != 'oneShot') return null;
+    if (subscription.season != null &&
+        parsed.season != null &&
+        subscription.season != parsed.season) {
+      return null;
+    }
+    return _SubscriptionLogicalItem(
+      key: kBatchSubscriptionItemKey,
+      season: subscription.season ?? parsed.season,
+    );
+  }
   final int? episode = parsed.episode;
   final int season = parsed.season ?? subscription.season ?? 1;
   if (episode == null || season <= 0 || episode <= 0) {
@@ -1174,19 +1192,6 @@ _SubscriptionLogicalItem? _logicalItem(
 String _episodeKey(int season, int episode) =>
     'S${season.toString().padLeft(2, '0')}'
     'E${episode.toString().padLeft(2, '0')}';
-
-bool _looksLikeBatch(String title) {
-  final String normalized = title.toLowerCase();
-  if (normalized.contains('batch') ||
-      normalized.contains('complete season') ||
-      normalized.contains('season pack')) {
-    return true;
-  }
-  return RegExp(
-    r'\b(?:E|EP)?\d{1,4}\s*[-~]\s*(?:E|EP)?\d{1,4}\b',
-    caseSensitive: false,
-  ).hasMatch(title);
-}
 
 _SubscriptionRelease? _bestRelease(List<_SubscriptionRelease> releases) {
   if (releases.isEmpty) return null;

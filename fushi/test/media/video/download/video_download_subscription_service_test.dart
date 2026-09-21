@@ -1229,6 +1229,132 @@ void main() {
     expect(first.claimedBy, isNull);
   });
 
+  // BUG-2619：用户从一条 BD 全集包建订阅。整包没有逐集身份，按追更建出来的规则
+  // 结构上永不命中；一次性订阅的目标恰恰就是这一整包，必须能认领它。
+  test('oneShot subscription claims a batch release as one logical item',
+      () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'batch-oneshot',
+      sourceId: sourceId,
+      resourceProvider: 'nyaa',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      mode: 'oneShot',
+      filters: <String, Object?>{
+        'strict': true,
+        'releaseGroup': 'VCB-Studio',
+        'resolution': '1080p',
+        'trustedOnly': false,
+        'trusted': true,
+        'nyaaCategory': '1_3',
+      },
+    );
+    final List<VideoDownloadEnqueueRequest> enqueued =
+        <VideoDownloadEnqueueRequest>[];
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: _FakeResourceProvider(
+        id: 'nyaa',
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            remoteId: 'revue-starlight-bd',
+            mediaTitle: '[DMG&MakariHoshiyume&VCB-Studio] Shoujo Kageki Revue '
+                'Starlight 10-bit 1080p HEVC BDRip [Fin]',
+            episode: null,
+            group: 'VCB-Studio',
+            category: '1_3',
+          ),
+        ],
+      ),
+      enqueue: (VideoDownloadEnqueueRequest request) async {
+        enqueued.add(request);
+        return _persistFakeJob(database, request, 'batch-job');
+      },
+    );
+
+    await service.checkNow();
+
+    expect(
+      enqueued
+          .map((VideoDownloadEnqueueRequest value) => value.resource.remoteId),
+      <String>['revue-starlight-bd'],
+      reason: '一次性订阅必须把整包入队，否则这条订阅永远不可能命中',
+    );
+    final List<VideoDownloadSubscriptionItemRow> items =
+        await database.getVideoDownloadSubscriptionItems('batch-oneshot');
+    expect(items.single.logicalItemKey, 'batch');
+    expect(items.single.episode, isNull);
+    final VideoDownloadSubscriptionRow row =
+        (await database.getVideoDownloadSubscription('batch-oneshot'))!;
+    expect(row.fulfilledAt, _nowAt, reason: '整包下完即结束，不再周期性检查');
+    expect(row.enabled, isFalse);
+  });
+
+  // 反向护栏：追更订阅绝不能把整包当成「新的一集」下下来，否则每出一版合集就
+  // 会把整季重下一遍。
+  test('ongoing subscription still ignores batch releases', () async {
+    final FushiDatabase database = await _openDatabase();
+    final int sourceId = await _insertVideoSource(database);
+    await _insertSubscription(
+      database,
+      id: 'batch-ongoing',
+      sourceId: sourceId,
+      resourceProvider: 'nyaa',
+      mediaKind: 'tv',
+      discoveryCategory: 'anime',
+      season: 1,
+      startAfterEpisode: 1,
+      filters: <String, Object?>{
+        'strict': true,
+        'releaseGroup': 'VCB-Studio',
+        'resolution': '1080p',
+        'trustedOnly': false,
+        'trusted': true,
+        'nyaaCategory': '1_3',
+      },
+    );
+    final List<VideoDownloadEnqueueRequest> enqueued =
+        <VideoDownloadEnqueueRequest>[];
+    final VideoDownloadSubscriptionService service = _service(
+      database: database,
+      provider: _FakeResourceProvider(
+        id: 'nyaa',
+        candidates: <VideoResourceCandidate>[
+          _candidate(
+            remoteId: 'revue-starlight-bd',
+            mediaTitle: '[VCB-Studio] Example Show 10-bit 1080p HEVC BDRip '
+                '[Fin]',
+            episode: null,
+            group: 'VCB-Studio',
+            category: '1_3',
+          ),
+          _candidate(
+            remoteId: 'batch-range',
+            mediaTitle: '[VCB-Studio] Example Show [01-12] [1080p]',
+            episode: null,
+            group: 'VCB-Studio',
+            category: '1_3',
+          ),
+        ],
+      ),
+      enqueue: (VideoDownloadEnqueueRequest request) async {
+        enqueued.add(request);
+        return _persistFakeJob(database, request, 'unexpected-job');
+      },
+    );
+
+    await service.checkNow();
+
+    expect(enqueued, isEmpty);
+    expect(
+      await database.getVideoDownloadSubscriptionItems('batch-ongoing'),
+      isEmpty,
+    );
+  });
+
   test('start triggers an immediate due check', () async {
     final FushiDatabase database = await _openDatabase();
     final int sourceId = await _insertVideoSource(database);

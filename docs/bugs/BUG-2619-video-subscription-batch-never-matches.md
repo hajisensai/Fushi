@@ -1,0 +1,19 @@
+## BUG-2619 · 从合集资源建的订阅结构上永不命中
+- **报告**：2026-09-22（用户：视频 → 发现搜 Revue Starlight，从 `[DMG&MakariHoshiyume&VCB-Studio] … 10-bit 1080p HEVC BDRip [Fin]`（17.8 GB 全集包）建订阅。订阅已启用、追更模式、nyaa 源；展开永远是「还没有跟踪到任何发布」，手动「立即检查」再跑一次仍为空。）
+- **真实性**：✅ 真 bug。两端各判一次又判得不一样，中间没有人把结论传给对方：
+  - 创建端 `fushi/lib/src/pages/implementations/home_page.dart:1956`（本地）/ `:1908`（host）：订阅 `mode` **只看 mediaKind**——movie 给 `oneShot`，其余一律 `ongoing`。用户选的是 TV 作品，于是整包也被建成追更订阅。
+  - 检查端 `packages/fushi_engine/lib/media/video/download/video_download_subscription_service.dart` 的 `_logicalItem()`：整包判据命中、或 `parseVideoFilename(title).episode == null` 时返回 `null`，候选连一条逻辑条目都产生不出 → `releasesByItem` 为空 → `_check` 走 `matched:false` 早退，**不入队、不落 item、也不报错**，界面只剩一句「还没有跟踪到任何发布」。
+  - 用户这条标题两条都撞上：`[Fin]` 结尾、没有 `01-12` 区间也没有 batch 关键词，旧判据 `_looksLikeBatch` 认不出它，但集号同样解析不出——对追更来说后果完全一样。
+  - 旧 nyaa 对话框 `fushi/lib/src/pages/implementations/anime_download_dialog.dart:2046` 本来有 `!torrent.isBatch` 这道门，新发现页一条都没有。
+- **[x] ① 已修复** — 判据收进引擎一处 `packages/fushi_engine/lib/media/video/download/subscription_release_scope.dart`（`subscriptionReleaseIsBatch`：显式合集形态 **或** 解析不出集号），创建端与检查端共用同一个答案：
+  - 检查端：`oneShot` 订阅把整包落成固定键 `batch` 的逻辑条目（下载后由流水线逐文件识别每一集，订阅随即 fulfil 并停用）；`ongoing` 照旧丢弃整包，避免每出一版合集就把整季重下一遍。
+  - 创建端：选中整包时按 `oneShot` 建订阅、不带起始集号，确认行改说「一次性下载整包」并收起起始集号输入。判据落在**聚合组**上（`VideoSubscriptionCandidateGroup.batchOnly`）——同一条规则底下只要还有单集发布，追更就是活的，不该被代表条拖成一次性。
+  - 存量死订阅：追更订阅「查过、却从未匹配过」时，空列表补一句可操作的解释（`subscription_items_empty_ongoing_hint`），不再让「番没更新」和「规则对不上」共用同一句话。
+  - 服务端旧的私有判据 `_looksLikeBatch` 删除（它的区间正则比共享版宽，`2023-08` 这类日期会被误判成集数区间）；app 侧 `isLikelyBatchVideoRelease` 改为委托共享实现。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/download/subscription_release_scope_test.dart`（判据：认出用户那条 `[Fin]` BD 包与显式合集形态，单集不误判，日期/`10-bit` 不当区间）
+  - `fushi/test/media/video/download/video_download_subscription_service_test.dart`（`oneShot subscription claims a batch release as one logical item` 正向 + `ongoing subscription still ignores batch releases` 反向护栏）
+  - `fushi/test/pages/video_subscription_batch_release_test.dart`（创建端：整包建一次性、不给起始集号、确认行文案；单集仍追更；混合规则不降级）
+  - `fushi/test/pages/video_subscription_never_matched_hint_test.dart`（空态解释只在「追更 + 查过 + 从未匹配」时出现）
+  - 反证：把两处改动临时还原到上游基线后，`oneShot …claims a batch release…` 实测 `enqueued` 为空（`Expected: ['revue-starlight-bd'] Actual: []`），即用户那条订阅确实结构上永不命中。
+- **备注**：与 BUG-2620（发现页搜索框回车不触发搜索）是同一轮用户反馈。存量那条追更订阅不会被自动改写——用户可删掉后从整包重建，新建的即为一次性订阅；在此之前卡片上会显示新的解释文案。整包下载后逐集入库依赖既有流水线的逐文件识别（`video_download_pipeline_service.dart` 按 `file.episodeNumber` 落地），本次未改动该路径，也未在真机上跑过一次完整的整包下载→入库（widget/service 层已覆盖到入队为止）。
