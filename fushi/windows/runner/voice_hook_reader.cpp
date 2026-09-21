@@ -2327,6 +2327,23 @@ uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(
       down ? fushi_voice_hook::kLookupShieldButtonLeft : 0u, false);
 }
 
+bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(
+    HWND game, uint64_t transaction_id) {
+  if (game == nullptr || transaction_id == 0) return true;
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return false;
+  if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
+    return true;
+  }
+  const fushi_voice_hook::LookupShieldRequestSnapshot stable =
+      fushi_voice_hook::ReadLookupShieldRequest(st.header);
+  // 写入中：读不到稳定快照，下次再问。
+  if (!stable.valid) return false;
+  return stable.owner_kind != fushi_voice_hook::kLookupShieldOwnerPopup ||
+         stable.transaction_id != transaction_id;
+}
+
 VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
   VoiceHookLookupShieldStatus out;
   ReaderState& st = State();

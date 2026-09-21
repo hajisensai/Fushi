@@ -340,13 +340,23 @@ uint64_t NextOverlayTransactionId() {
 // 事务保留，由下一次 up / 下一次 down / 宽限期定时器重试——一条 down 请求若永远
 // 没有 release，注入侧会把游戏里之后的每一次左键都藏掉，所以重试路径必须有三条。
 // 返回 true = 已无在飞事务。
+void RequestAttachedGlyphPhysicalReconciliation();
+
 bool EndOverlayClickShieldTransaction() {
   const uint64_t id = g_overlay_transaction_id.load(std::memory_order_relaxed);
   if (id == 0) return true;
   const HWND game = g_overlay_transaction_game.load(std::memory_order_relaxed);
   if (VoiceHookReader::Instance().TryPublishOverlayClickShieldTransaction(
           game, id, false) == 0) {
-    return false;
+    // 只有「写者忙」才值得重试。gate 已关（会话结束、共享内存没了）release 永远
+    // 发不出去；槽位已被别的 owner / 事务接管则我方 release 只会盖掉人家的 down。
+    // 两种孤儿状态都按 attached 的 fail-open 退役口径放弃事务——否则
+    // has_pending_button 恒真，钩子线程每 3s 为它续命，全局 WH_MOUSE_LL 在没有
+    // 任何 galgame 会话时常驻。
+    if (!VoiceHookReader::Instance().OverlayClickShieldTransactionOrphaned(
+            game, id)) {
+      return false;
+    }
   }
   g_overlay_transaction_id.store(0, std::memory_order_relaxed);
   g_overlay_transaction_game.store(nullptr, std::memory_order_relaxed);
@@ -375,6 +385,10 @@ void BeginOverlayClickShieldTransaction(POINT pt) {
   }
   g_overlay_transaction_game.store(game, std::memory_order_relaxed);
   g_overlay_transaction_id.store(id, std::memory_order_relaxed);
+  // 第三条重试路：与 attached 的 down 同款，安排宽限期定时器做物理键态对账。
+  // 不投这条消息定时器在常见配置下根本不存在（Arm 处理器没有挂起按键就把它杀了），
+  // up 的发布一旦撞上写者忙，请求槽会停在 down 直到用户下一次物理左键。
+  RequestAttachedGlyphPhysicalReconciliation();
 }
 
 // 宽限期定时器上的对账：物理左键仍按着就继续等；已松开就补发 release。
@@ -1816,7 +1830,13 @@ void RegisterOverlayClickShield(HWND overlay) {
     count = PublishOverlayClickShieldTable(std::move(next));
   }
   if (count == 0) {
-    // 没有可保护的游戏：不为它装钩子。已装的钩子由既有的 g_target 生命周期管。
+    // 没有可保护的游戏：不为它装钩子。台词浮窗每行重登记，会话结束后解析器返回
+    // nullptr 让计数从 >0 掉到 0——这时与 Unregister 对称地投一次 Disarm，钩子
+    // 才不会等到 Flutter 真的 hide 正文窗才卸；没有钩子线程时纯空操作。
+    if (g_target.load(std::memory_order_acquire) == nullptr) {
+      const DWORD thread_id = g_thread_id.load(std::memory_order_acquire);
+      if (thread_id != 0) PostThreadMessage(thread_id, kThreadDisarm, 0, 0);
+    }
     return;
   }
   const DWORD thread_id = EnsureHookThread();

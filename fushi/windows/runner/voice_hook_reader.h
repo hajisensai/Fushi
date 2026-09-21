@@ -522,6 +522,12 @@ class VoiceHookReader {
   uint32_t TryPublishOverlayClickShieldTransaction(HWND game,
                                                    uint64_t transaction_id,
                                                    bool down);
+  // BUG-2613 — 覆盖窗口事务的 release 发布失败后问：这笔事务是否已成孤儿——
+  // gate 已关（会话结束）或请求槽已被别的 owner / 事务接管。true = 调用方放弃
+  // 事务（fail-open）；false = 只是写者忙（或 try_lock 没拿到），保留待重试。
+  // 同样是回调安全：try_lock + 一次快照读，不做 HWND 查询。
+  bool OverlayClickShieldTransactionOrphaned(HWND game,
+                                             uint64_t transaction_id);
 
   // 同一拍读取 coherent request + hook 状态，供 attached 工作台显示
   // verified/partial/known-uncovered/faulted 与琥珀色 risk 标记。

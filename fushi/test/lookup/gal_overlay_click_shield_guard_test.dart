@@ -245,16 +245,44 @@ void main() {
       );
     });
 
-    test('release 发布失败时事务保留，三条重试路都在', () {
+    test('release 发布失败时事务保留，三条重试路都在；孤儿事务才放弃', () {
       final String end = compactCode(
         methodBody(hookSource, 'bool EndOverlayClickShieldTransaction()'),
       );
       expect(
         end.contains(
-          'TryPublishOverlayClickShieldTransaction(game,id,false)==0){returnfalse;}',
+          'TryPublishOverlayClickShieldTransaction(game,id,false)==0){',
         ),
         isTrue,
-        reason: '发布失败不能把事务清掉，否则请求槽永远停在 down',
+      );
+      // 写者忙 → 事务保留（否则请求槽永远停在 down）；gate 已关 / 槽位已被别的
+      // owner 或事务接管 → release 永远发不出去或只会盖掉别人的 down，按 attached
+      // 的 fail-open 退役口径放弃，钩子线程才不会每 3s 为死事务续命。
+      expect(
+        end.contains(
+          'if(!VoiceHookReader::Instance().OverlayClickShieldTransactionOrphaned(game,id)){returnfalse;}',
+        ),
+        isTrue,
+        reason: '只有「忙」才保留；孤儿事务必须放弃',
+      );
+      expect(
+        end.indexOf('OverlayClickShieldTransactionOrphaned'),
+        lessThan(end.indexOf('g_overlay_transaction_id.store(0')),
+      );
+      // 第三条路的前半：down 发布成功后必须安排宽限期定时器，否则常见配置下
+      // 定时器根本不存在（Arm 处理器没有挂起按键就把它杀了），对账永远不跑。
+      final String begin = compactCode(
+        methodBody(
+          hookSource,
+          'void BeginOverlayClickShieldTransaction(POINT pt)',
+        ),
+      );
+      final int stored = begin.indexOf('g_overlay_transaction_id.store(id');
+      expect(stored, greaterThanOrEqualTo(0));
+      expect(
+        begin.indexOf('RequestAttachedGlyphPhysicalReconciliation();'),
+        greaterThan(stored),
+        reason: 'down 发布成功后安排 3s 物理键态对账',
       );
       final String reconcile = compactCode(
         methodBody(
@@ -307,6 +335,50 @@ void main() {
       expect(
         regular.contains('casefushi_voice_hook::kLookupShieldOwnerPopup:'),
         isTrue,
+      );
+    });
+
+    test('孤儿判定：try_lock、gate 关或槽位易主才算孤儿、写入中不算', () {
+      final String header = compactCode(readerHeader);
+      expect(
+        header.contains(
+          'boolOverlayClickShieldTransactionOrphaned(HWNDgame,uint64_ttransaction_id);',
+        ),
+        isTrue,
+      );
+      final String body = compactCode(
+        methodBody(
+          readerSource,
+          'bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(',
+        ),
+      );
+      expect(body.contains('std::try_to_lock'), isTrue);
+      expect(body.contains('std::lock_guard'), isFalse);
+      expect(
+        body.contains('if(!lock.owns_lock())returnfalse;'),
+        isTrue,
+        reason: '拿不到锁只是忙，不能判孤儿',
+      );
+      expect(body.contains('IsWindow('), isFalse);
+      expect(body.contains('GetWindowThreadProcessId('), isFalse);
+      expect(
+        body.contains(
+          'LookupGateLocked(st.header,false)!=VoiceHookLookupError::kNone){returntrue;}',
+        ),
+        isTrue,
+        reason: '会话结束 release 永远发不出去',
+      );
+      expect(
+        body.contains('if(!stable.valid)returnfalse;'),
+        isTrue,
+        reason: '写入中读不到稳定快照，下次再问',
+      );
+      expect(
+        body.contains(
+          'stable.owner_kind!=fushi_voice_hook::kLookupShieldOwnerPopup||stable.transaction_id!=transaction_id',
+        ),
+        isTrue,
+        reason: '槽位已被别的 owner / 事务接管',
       );
     });
   });
