@@ -1020,13 +1020,14 @@ void main() {
       required _FakeSubtitleProvider subtitleProvider,
       VideoDownloadSubtitleLanguageResolver? resolver,
       bool Function(VideoDownloadJobRow row)? until,
+      List<String> preferredSubtitleLanguages = const <String>['ja'],
     }) async {
       final _PipelineEnvironment environment =
           await _PipelineEnvironment.create(
         backend: _FakeTorrentBackend(),
         subtitleProvider: subtitleProvider,
         subtitleLanguageResolver: resolver,
-        preferredSubtitleLanguages: const <String>['ja'],
+        preferredSubtitleLanguages: preferredSubtitleLanguages,
       );
       addTearDown(environment.close);
       const String jobId = 'per-work-language-job';
@@ -1047,7 +1048,7 @@ void main() {
       return environment;
     }
 
-    test('resolver language replaces the global filter in the request',
+    test('resolver language leads the request but does not narrow it',
         () async {
       final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
         bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
@@ -1060,7 +1061,11 @@ void main() {
           return 'zh';
         },
       );
-      expect(subtitleProvider.lastRequest!.languages, <String>['zh']);
+      // 按作品的语言提到首位（排序首选由 explicitLanguage 负责），但**不收窄**
+      // 搜索面：它来自字幕工作台的筛选记忆，是「列出来给我看」的 UI 筛选器，不是
+      // 「这部番只下这个语言」的下载策略。塞成唯一值会让该语言没字幕的任务一条都
+      // 下不到（policy=required 时直接 needsAttention），而用户无处撤销。
+      expect(subtitleProvider.lastRequest!.languages, <String>['zh', 'ja']);
       // 查询带的是任务行本身的字段，键与导入落库的合集名同源。
       expect(seen!.jobId, 'per-work-language-job');
       expect(seen!.title, 'Show');
@@ -1068,6 +1073,22 @@ void main() {
       expect(seen!.seriesKey, 'show (2026)');
       expect(seen!.metadataProvider, 'anilist');
       expect(seen!.externalId, '100');
+    });
+
+    test('全局「不限」时按作品的语言不把搜索面收成一个语言', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        preferredSubtitleLanguages: const <String>[],
+        resolver: (_) => 'zh',
+      );
+      expect(
+        subtitleProvider.lastRequest!.languages,
+        isEmpty,
+        reason: '全局不限就保持不限，否则该语言没字幕的作品一条都下不到',
+      );
     });
 
     test('null from the resolver keeps the global languages', () async {

@@ -2691,9 +2691,26 @@ class VideoDownloadPipelineService {
     // 按作品的字幕语言一次性解析：整条任务的所有分集共用同一个答案。
     final String? perWorkLanguage = await _resolvePerWorkSubtitleLanguage(job);
     _ensureLeaseHeld();
-    final List<String> searchLanguages = perWorkLanguage == null
-        ? preferredSubtitleLanguages
-        : <String>[perWorkLanguage];
+    // 按作品的语言只提名次、不收窄搜索面：它来自字幕工作台的筛选记忆
+    // （`jimaku_pref_langs`，选择即写），那是「列出来给我看」的 UI 筛选器，不是
+    // 「这部番只下这个语言」的下载策略。塞进 `languages:`（provider 侧是服务端硬
+    // 过滤参数）会让该语言没字幕的任务一条都下不到、policy=required 时直接变
+    // needsAttention，而用户从没表达过这个意思，也没有任何入口能撤销（选「全部」
+    // 刻意不写、偏好层没有 remove）。排序首选由下面的 `explicitLanguage` 负责。
+    final List<String> searchLanguages;
+    if (preferredSubtitleLanguages.isEmpty) {
+      // 全局「不限」：保持不限。
+      searchLanguages = const <String>[];
+    } else if (perWorkLanguage == null) {
+      searchLanguages = preferredSubtitleLanguages;
+    } else {
+      searchLanguages = <String>[
+        perWorkLanguage,
+        ...preferredSubtitleLanguages.where(
+          (String language) => language != perWorkLanguage,
+        ),
+      ];
+    }
     final List<VideoDownloadJobFileRow> files =
         (await database.getVideoDownloadJobFiles(job.jobId))
             .where(
