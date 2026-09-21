@@ -46,7 +46,6 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
-import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
