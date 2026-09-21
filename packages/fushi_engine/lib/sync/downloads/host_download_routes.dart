@@ -2,7 +2,7 @@
 ///
 /// ```
 /// GET    /api/downloads                  {jobs: [...]}
-/// POST   /api/downloads                  {magnet, title, mediaKind?} → {jobId}
+/// POST   /api/downloads                  {magnet, title, mediaKind?, discoveryKind?} → {jobId}
 /// POST   /api/downloads/<id>/cancel
 /// POST   /api/downloads/<id>/retry
 /// DELETE /api/downloads/<id>
@@ -54,10 +54,18 @@ Future<shelf.Response> handleHostDownloadRequest(
         if (mediaKind != 'movie' && mediaKind != 'tv') {
           return shelf.Response(400, body: 'mediaKind must be movie or tv');
         }
+        final String discoveryKind = (decoded['discoveryKind'] ?? '').toString().trim();
+        if (discoveryKind.isNotEmpty && !kHostDownloadDiscoveryKinds.contains(discoveryKind)) {
+          return shelf.Response(
+            400,
+            body: 'discoveryKind must be one of ${kHostDownloadDiscoveryKinds.join(', ')}',
+          );
+        }
         final String jobId = await host.addMagnet(
           magnetUri: magnet,
           title: title,
           mediaKind: mediaKind,
+          discoveryKind: discoveryKind.isEmpty ? null : discoveryKind,
         );
         return _json(<String, Object?>{'jobId': jobId});
       }

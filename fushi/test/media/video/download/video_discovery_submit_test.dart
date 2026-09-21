@@ -103,6 +103,7 @@ VideoDiscoveryDownloadSelection _download({
 VideoDiscoverySubscriptionSelection _subscription({
   required VideoDiscoveryDownloadSelection download,
   int? startAfterEpisode,
+  bool batchRelease = false,
 }) =>
     VideoDiscoverySubscriptionSelection(
       download: download,
@@ -113,6 +114,7 @@ VideoDiscoverySubscriptionSelection _subscription({
         summaryParts: <String>['1080p'],
       ),
       startAfterEpisode: startAfterEpisode,
+      batchRelease: batchRelease,
     );
 
 void main() {
@@ -194,6 +196,39 @@ void main() {
       expect(decoded.mediaId, reference.mediaId);
       expect(decoded.providerId, reference.providerId);
       expect(decoded.tmdbId, 77);
+    });
+
+    test('整包 → oneShot（TV 也一样）：追更语义下整包永远不是「新的一集」', () async {
+      // BUG-2619：判据从 HomePage 搬进这里时曾经只剩 mediaKind==movie，用户从 BD
+      // 全集包建的订阅又变回 ongoing，展开永远是「还没有跟踪到任何发布」。这条漏了
+      // 不会有任何别的测试变红，所以必须单独钉。
+      final FushiDatabase database = await _openDatabase();
+      final MediaSourceRow source = await _insertVideoSource(database);
+      final VideoMediaReference reference = _reference(
+        kind: VideoMetadataMediaKind.tv,
+      );
+      final VideoDiscoveryItem item = _item(reference);
+
+      await createLocalVideoDownloadSubscription(
+        database: database,
+        reference: item.reference,
+        coverUrl: item.posterUrl,
+        selection: _subscription(
+          batchRelease: true,
+          download: _download(
+            media: reference,
+            source: source,
+            resource: _FakeResourceCandidate(),
+            subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+          ),
+        ),
+        target: _target,
+      );
+
+      final List<VideoDownloadSubscriptionRow> rows =
+          await database.getVideoDownloadSubscriptions();
+      expect(rows.single.mode, 'oneShot');
+      await database.close();
     });
 
     test('tv → ongoing；显式 searchQuery 覆盖默认；二次提交保留 createdAt', () async {

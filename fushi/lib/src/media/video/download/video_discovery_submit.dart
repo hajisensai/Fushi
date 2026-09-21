@@ -102,7 +102,10 @@ Future<void> createLocalVideoDownloadSubscription({
           searchQuery ?? videoResourceSubscriptionSearchQuery(reference),
       filterJson: Value<String>(selection.filter.json),
       mode: Value<String>(
-        reference.mediaKind == VideoMetadataMediaKind.movie
+        // 整包（用户选中的就是合集 / 全集）与电影一样只下一次：追更语义下整包
+        // 永远不是「新的一集」，按追更建出来的规则结构上永不命中（BUG-2619）。
+        selection.batchRelease ||
+                reference.mediaKind == VideoMetadataMediaKind.movie
             ? 'oneShot'
             : 'ongoing',
       ),

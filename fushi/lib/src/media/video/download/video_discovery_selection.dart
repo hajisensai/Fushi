@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi_core/fushi_core.dart' show MediaSourceRow;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 
@@ -52,11 +53,18 @@ class VideoDiscoverySubscriptionSelection {
     required this.download,
     required this.filter,
     this.startAfterEpisode,
+    this.batchRelease = false,
   });
 
   final VideoDiscoveryDownloadSelection download;
   final StrictVideoSubscriptionFilter filter;
   final int? startAfterEpisode;
+
+  /// 用户选中的是整包（合集 / 全集 / 认不出集号的 BD 打包）。
+  ///
+  /// 宿主据此把订阅建成一次性模式：整包里没有「下一集」可追，按追更建出来的
+  /// 规则结构上永远匹配不到任何发布（BUG-2619）。
+  final bool batchRelease;
 }
 
 /// 从用户选中的 release 提取严格订阅规则。返回 null 表示该 release 没有足够的
@@ -152,6 +160,7 @@ class VideoSubscriptionCandidateGroup {
     required this.memberCount,
     required this.episodeNumbers,
     required this.latestPublishedAt,
+    this.batchOnly = false,
   });
 
   /// 用来推出订阅规则、也用来喂下游下载选择的那一条。同组任意一条推出的
@@ -167,6 +176,13 @@ class VideoSubscriptionCandidateGroup {
 
   /// 命中发布里能解析出的集数（升序、去重）；解析不出的不计入。
   final List<int> episodeNumbers;
+
+  /// 这条规则命中的**全部**发布都是整包（合集 / 全集 / 认不出集号的打包）。
+  ///
+  /// 判据落在组上而不是代表条上：同一条规则底下只要还有一个单集发布，这条规则
+  /// 在追更语义下就是活的，代表条恰好是整包不该把它降级成一次性订阅。反过来，
+  /// 整组都是整包时，按追更建出来的订阅结构上永不命中（BUG-2619）。
+  final bool batchOnly;
 
   final DateTime? latestPublishedAt;
 }
@@ -210,6 +226,7 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
           memberCount: 1,
           episodeNumbers: const <int>[],
           latestPublishedAt: candidate.publishedAt,
+          batchOnly: subscriptionReleaseIsBatch(candidate.title),
         ),
       );
       continue;
@@ -245,9 +262,13 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
           });
     final Set<int> episodes = <int>{};
     DateTime? latest;
+    bool batchOnly = true;
     for (final VideoResourceCandidate member in members) {
       final int? episode = episodeNumberFromReleaseTitle(member.title);
       if (episode != null) episodes.add(episode);
+      if (batchOnly && !subscriptionReleaseIsBatch(member.title)) {
+        batchOnly = false;
+      }
       final DateTime? published = member.publishedAt;
       if (published != null && (latest == null || published.isAfter(latest))) {
         latest = published;
@@ -260,6 +281,7 @@ List<VideoSubscriptionCandidateGroup> groupVideoSubscriptionCandidates(
         memberCount: members.length,
         episodeNumbers: (episodes.toList()..sort()),
         latestPublishedAt: latest,
+        batchOnly: batchOnly,
       ),
     );
   }

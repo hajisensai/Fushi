@@ -5163,5 +5163,20 @@
   "video_metadata_download_staff_images": "Download cast & staff photos",
   "video_metadata_download_staff_images_hint": "Save cast/staff profile photos locally while scraping (up to 10 per work). Off: photos load from TMDB on demand.",
   "remote_collection_tmdb_ordering_on_host": "TMDB episode ordering on host…",
-  "video_metadata_provider_anidb": "AniDB (hash identity + anime XML)"
+  "video_metadata_provider_anidb": "AniDB (hash identity + anime XML)",
+  "download_execution_host_title": "Download on device",
+  "download_execution_host_hint": "New download tasks are handed to this device and saved into its library. Pair a device under Interconnect first.",
+  "download_execution_remote_queued": "Handed to the download device",
+  "download_execution_host_unreachable": "The download device set in Downloads settings is not reachable. Nothing was started.",
+  "download_execution_remote_kind_unsupported": "The download device does not import this content kind",
+  "download_execution_remote_magnet_only": "The download device only accepts magnet links",
+  "download_subscription_choice_hint_batch": "Download the whole ${group} · ${resolution} batch once. A batch has no next episode to follow.",
+  "subscription_items_empty_ongoing_hint": "Ongoing subscriptions only queue new single-episode releases. If this title has finished airing, or you subscribed from a batch release, download the batch once instead.",
+  "ai_provider_model_pick": "從已獲取的模型裡挑",
+  "video_quality_auto_lowered": "Network is slow — quality lowered to $label",
+  "video_quality_auto_raised": "Network improved — quality raised to $label",
+  "interconnect_transcode_host_toggle": "Transcode video for peers",
+  "interconnect_transcode_host_toggle_desc": "When a paired device plays a video from this host over a slow network, re-encode it to a lower bitrate on the fly. Needs ffmpeg; costs CPU on this device.",
+  "lookup_hover_leave_resume": "Resume when leaving lookup",
+  "lookup_hover_leave_resume_hint": "After a hover lookup, moving the pointer away from the subtitle and the lookup window closes it and resumes playback"
 }

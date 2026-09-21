@@ -1,10 +1,15 @@
-/// 服务端的内容订阅 host：订阅行落在 host 自己的 `video_download_subscriptions`，由
-/// 同进程的 `VideoDownloadSubscriptionService` 抢租约、搜资源、投进 host 的下载管线。
+/// 挂在本进程下载管线上的内容订阅 host：订阅行落在 host 自己的
+/// `video_download_subscriptions`，由同进程的 `VideoDownloadSubscriptionService`
+/// 抢租约、搜资源、投进 host 的下载管线。
+///
+/// 无头服务端（`ServerDownloadHost`）与 app 当 host（`AppDownloadHost`）共用这一份；
+/// 两边只差「registry / service / 后端落点从哪来」，全部经构造参数注入。
 ///
 /// 后端绑定四元组与落地源由 host 覆写（见 `host_subscription_host.dart` 库注释），
 /// 客户端只提供内容身份。
 library;
 
+import 'dart:async' show FutureOr;
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart' show sha256;
@@ -19,8 +24,8 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 
-class ServerSubscriptionHost implements HostSubscriptionHost {
-  ServerSubscriptionHost({
+class PipelineSubscriptionHost implements HostSubscriptionHost {
+  PipelineSubscriptionHost({
     required this.db,
     required this.registry,
     required this.backendTarget,
@@ -33,10 +38,12 @@ class ServerSubscriptionHost implements HostSubscriptionHost {
   final VideoResourceRegistry registry;
 
   /// host 当下的下载后端落点（kind / profileId / fingerprint / category）。
-  final VideoDownloadBackendTarget Function() backendTarget;
+  /// app 侧解析落点要先落一次安装 id，所以允许异步。
+  final FutureOr<VideoDownloadBackendTarget> Function() backendTarget;
 
-  /// host 的受管视频源行 id（`<documents>/downloads`）。
-  final int Function() targetSourceId;
+  /// host 的受管视频源行 id（服务端固定 `<documents>/downloads`；app 是用户选的
+  /// 默认受管来源）。
+  final FutureOr<int> Function() targetSourceId;
 
   /// 能力位里报给客户端看的后端名（`embedded` / `qbittorrent`）。
   final String backendName;
@@ -95,7 +102,8 @@ class ServerSubscriptionHost implements HostSubscriptionHost {
             'available: ${availableProviderIds.join(', ')}',
       );
     }
-    final VideoDownloadBackendTarget target = backendTarget();
+    final VideoDownloadBackendTarget target = await backendTarget();
+    final int sourceId = await targetSourceId();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final String id = request.subscriptionId ?? _deriveSubscriptionId(request);
     final VideoDownloadSubscriptionRow? previous =
@@ -122,7 +130,7 @@ class ServerSubscriptionHost implements HostSubscriptionHost {
         backendProfileId: Value<String?>(target.identity.profileId),
         fingerprint: target.identity.fingerprint,
         category: Value<String?>(target.category),
-        targetSourceId: Value<int?>(targetSourceId()),
+        targetSourceId: Value<int?>(sourceId),
         organizationPolicy: const Value<String>('library'),
         subtitlePolicy: Value<String>(request.subtitlePolicy),
         enabled: const Value<bool>(true),

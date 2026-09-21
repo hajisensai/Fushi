@@ -7,6 +7,7 @@
 library;
 
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 
 /// 从发布标题解析集号（`S01E05` / `Title - 05 [1080p]` 两种主流形态）。
 /// 认不出返回 null。纯函数（原居 acquisition dialogs，聚类需要后下沉到此，
@@ -84,31 +85,13 @@ String? resolutionFromTitle(String title) => RegExp(
   r'\b(2160|1440|1080|720|576|480)[pP]\b',
 ).firstMatch(title)?.group(0)?.toLowerCase();
 
-/// 这条发布是不是整季合集（batch）。判据（保守，全部对应真实发布形态）：
-/// - 显式关键词：batch / complete / 合集 / 全集；
-/// - 带界定符的集数区间：`[01-12]` / `第01-12话` / `(01~24 Fin)` ——要求区间
-///   由 第/括号 引导**或**以 话/集/END/Fin/完 收尾，两端 1..300 且递增，避免
-///   把 `2023-08` 日期、分辨率误判成区间。
-bool isLikelyBatchVideoRelease(String title) {
-  if (RegExp(r'\b(batch|complete)\b', caseSensitive: false).hasMatch(title)) {
-    return true;
-  }
-  if (title.contains('合集') || title.contains('全集')) return true;
-  for (final RegExpMatch match in RegExp(
-    r'(?:(?<lead>第|\[|\(|【|（)\s*)?(\d{1,3})\s*[-~〜]\s*(\d{1,3})\s*'
-    r'(?<tail>话|話|集|END|Fin|完)?',
-    caseSensitive: false,
-  ).allMatches(title)) {
-    if (match.namedGroup('lead') == null && match.namedGroup('tail') == null) {
-      continue;
-    }
-    final int? first = int.tryParse(match.group(2)!);
-    final int? last = int.tryParse(match.group(3)!);
-    if (first == null || last == null) continue;
-    if (first >= 1 && last <= 300 && last > first) return true;
-  }
-  return false;
-}
+/// 这条发布是不是整季合集（batch）。
+///
+/// 判据本身在引擎侧 [looksLikeBatchVideoRelease] 一处：订阅创建端、订阅检查端
+/// 与这里的版本卡必须给出同一个答案，否则就会重演「UI 认它是单集、服务端认它是
+/// 合集」这种两端打架的空订阅（BUG-2619）。这里只保留本层的名字。
+bool isLikelyBatchVideoRelease(String title) =>
+    looksLikeBatchVideoRelease(title);
 
 /// 一张资源「版本卡」：同来源实例、同发布组、同清晰度、同 trusted 的发布集合。
 class VideoResourceVersionGroup {

@@ -10,6 +10,7 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/subscription_check_schedule.dart';
+import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
@@ -358,9 +359,18 @@ class VideoDownloadSubscriptionService {
         await database.getVideoDownloadSubscriptionItems(
       subscription.subscriptionId,
     );
+    // 一次性订阅「已经下过了」的判据只能看**整包那一条**（`batch` / 电影的
+    // `movie`）。订阅 id 按作品稳定、`upsertVideoDownloadSubscription` 整行覆盖
+    // 但**不清 items**：用户追更过某番（items 里已有带 jobId 的 `S01E01…`）、番完结
+    // 后改从 BD 全集包重新订阅，mode 被改写成 oneShot，若这里看「任意 item 有 job」
+    // 就会直接 fulfil——订阅显示「已完成」，整包一个字节都没下（BUG-2619 的同族
+    // 静默失败）。换发布组重订同一个整包同理。
     if (subscription.mode == 'oneShot' &&
         existingItems.any(
-          (VideoDownloadSubscriptionItemRow item) => item.jobId != null,
+          (VideoDownloadSubscriptionItemRow item) =>
+              item.jobId != null &&
+              (item.logicalItemKey == kBatchSubscriptionItemKey ||
+                  item.logicalItemKey == 'movie'),
         )) {
       return const _SubscriptionCheckOutcome(
         matched: true,
@@ -1093,8 +1103,31 @@ _SubscriptionLogicalItem? _logicalItem(
   if (_mediaKind(subscription.mediaKind) == VideoMetadataMediaKind.movie) {
     return const _SubscriptionLogicalItem(key: 'movie');
   }
-  if (_looksLikeBatch(title)) return null;
   final VideoNameInfo parsed = parseVideoFilename(title);
+  if (subscriptionReleaseIsBatch(title)) {
+    // 整包（合集 / 全集 / 认不出集号的 BD 打包）没有逐集身份。
+    //
+    // 追更订阅按定义只处理「新的一集」，整包对它永远不是新集，照旧丢弃——否则
+    // 每出一版合集就会把整季重下一遍。一次性订阅相反：用户选中的**就是**这一
+    // 整包，把它丢掉等于这条订阅永远不可能命中（BUG-2619）。整包落成一个固定
+    // 键的逻辑条目，下载后由流水线逐文件识别每一集，订阅随即 fulfil 并停用。
+    if (subscription.mode != 'oneShot') return null;
+    if (subscription.season != null &&
+        parsed.season != null &&
+        subscription.season != parsed.season) {
+      return null;
+    }
+    return _SubscriptionLogicalItem(
+      key: kBatchSubscriptionItemKey,
+      season: subscription.season ?? parsed.season,
+    );
+  }
+  // 一次性订阅只要那一个整包：创建端靠「整组全是整包」（`batchOnly`）才建 oneShot，
+  // 但那个前提在检查端不成立——创建端只发一次默认分页的搜索，检查端无条件深翻页到
+  // `_subscriptionResourceMaxPages`。同一 filter 组里的单集发布只要出现在 UI 没看到
+  // 的后续页，就会被 oneShot 订阅当成「要下的一集」，于是整包 + 每一集各入队一次，
+  // 一次检查就把整季下两遍。与 ongoing 丢弃整包对称，这里丢弃单集。
+  if (subscription.mode == 'oneShot') return null;
   final int? episode = parsed.episode;
   final int season = parsed.season ?? subscription.season ?? 1;
   if (episode == null || season <= 0 || episode <= 0) {
@@ -1122,18 +1155,6 @@ _SubscriptionLogicalItem? _logicalItem(
   );
 }
 
-bool _looksLikeBatch(String title) {
-  final String normalized = title.toLowerCase();
-  if (normalized.contains('batch') ||
-      normalized.contains('complete season') ||
-      normalized.contains('season pack')) {
-    return true;
-  }
-  return RegExp(
-    r'\b(?:E|EP)?\d{1,4}\s*[-~]\s*(?:E|EP)?\d{1,4}\b',
-    caseSensitive: false,
-  ).hasMatch(title);
-}
 
 _SubscriptionRelease? _bestRelease(List<_SubscriptionRelease> releases) {
   if (releases.isEmpty) return null;

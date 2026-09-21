@@ -502,6 +502,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
               context: context,
               appModel: appModel,
               magnet: payload.magnetUri,
+              discoveryKind: item.kind,
               contentKind: switch (item.kind) {
                 DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
                 DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
@@ -529,9 +530,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           if (!mounted) return;
           FushiToast.show(
             msg: genericPushMessage(outcome),
-            severity: outcome == GenericPushOutcome.ok
-                ? ToastSeverity.success
-                : ToastSeverity.error,
+            severity:
+                outcome.isSuccess ? ToastSeverity.success : ToastSeverity.error,
           );
         } on Object catch (error, stack) {
           ErrorLogService.instance.log(

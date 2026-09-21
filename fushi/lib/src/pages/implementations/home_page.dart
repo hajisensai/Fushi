@@ -36,8 +36,12 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/media/torrent/magnet_utils.dart'
+    show magnetUriFromInfoHash;
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
@@ -1790,17 +1794,31 @@ class _HomePageState extends BasePageState<HomePage>
         appModelNoUpdate.videoResourceRegistry;
     final VideoDownloadPipelineService? pipeline =
         appModelNoUpdate.videoDownloadPipelineService;
-    if (registry == null || pipeline == null) {
+    // 下载可以交给已配对 host（设计 §3.3，手机让电脑下）：先探一遍，有 host 时
+    // 本地下载后端 / 落地源都不是硬前置——手机上常常两个都没有。
+    final InterconnectDownloadClient downloadClient =
+        InterconnectDownloadClient(
+      repo: SyncRepository(appModelNoUpdate.database),
+    );
+    final List<HostDownloadTarget> remoteTargets =
+        await downloadClient.probeAll();
+    if (!context.mounted) return;
+    if (registry == null || (pipeline == null && remoteTargets.isEmpty)) {
       unawaited(_promptDownloadBackendSetup(context));
       return;
     }
-    final List<MediaSourceRow> sources =
-        await _managedVideoDownloadSourcesOrPrompt(context);
+    // 本机没有管线时「本机」这一档根本提交不了：不列本地落地源，下拉只剩 host。
+    final List<MediaSourceRow> sources = pipeline == null
+        ? const <MediaSourceRow>[]
+        : remoteTargets.isEmpty
+            ? await _managedVideoDownloadSourcesOrPrompt(context)
+            : await appModelNoUpdate.getManagedVideoDownloadSources();
     // PR #1021 把「后端 runtime 是否可用」延后到真正提交下载时（target 在
     // onSubmit 里取），后端没配好也能先搜资源。但「有没有受管视频来源」是另一
     // 回事：没有落地文件夹时来源下拉是空的、提交按钮永远灰着，所以 BUG-1872 的
     // 引导必须留在打开页面之前。两个原因本来就是两条分支，别再合成一条。
-    if (!context.mounted || sources.isEmpty) return;
+    // 有 host 可用时例外：落点在 host，没有本地来源也能下。
+    if (!context.mounted || (sources.isEmpty && remoteTargets.isEmpty)) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => VideoDiscoveryResourceSearchPage(
@@ -1814,7 +1832,42 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
           resolveAiProvider: _resolveVideoSearchAiProvider,
+          remoteTargets: remoteTargets,
+          defaultRemoteTargetUrl:
+              appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
+          onRemoteSubmit:
+              (VideoDiscoveryRemoteDownloadSelection selection) async {
+            final VideoResourceCandidate resource = selection.resource;
+            // host 只收磁链：索引器没给现成磁链就用 infoHash 造一条；两者都没有
+            // （Torznab 只给 .torrent 地址）的候选投不了远端，如实报。
+            final String? infoHash = resource.infoHash;
+            final String? magnet = resource.magnetUri ??
+                (infoHash == null
+                    ? null
+                    : magnetUriFromInfoHash(
+                        infoHash,
+                        displayName: resource.title,
+                      ));
+            if (magnet == null) {
+              throw const HostDownloadException('magnet_only');
+            }
+            await downloadClient.addMagnet(
+              selection.target,
+              magnetUri: magnet,
+              title: resource.title,
+              mediaKind: selection.media.mediaKind == VideoMetadataMediaKind.tv
+                  ? 'tv'
+                  : 'movie',
+            );
+          },
           onSubmit: (VideoDiscoveryDownloadSelection selection) async {
+            if (pipeline == null) {
+              // 本机没有管线时 sources 为空、「本机」档不渲染，这里到不了；留
+              // 一道硬门免得日后有人把 sources 接回来。
+              throw const VideoDownloadPipelineActionRequired(
+                'no local download pipeline',
+              );
+            }
             final VideoDownloadBackendTarget target =
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await enqueueLocalVideoDownload(
@@ -1895,7 +1948,10 @@ class _HomePageState extends BasePageState<HomePage>
                 title: reference.title,
                 searchQuery: videoResourceSubscriptionSearchQuery(reference),
                 mediaKind: reference.mediaKind.name,
-                mode: reference.mediaKind == VideoMetadataMediaKind.movie
+                // 整包与电影同属「一次下完就结束」：按追更建出来的规则在整包上
+                // 结构性地永不命中（BUG-2619）。
+                mode: selection.batchRelease ||
+                        reference.mediaKind == VideoMetadataMediaKind.movie
                     ? 'oneShot'
                     : 'ongoing',
                 resourceProvider:
