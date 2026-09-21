@@ -110,7 +110,12 @@ function loadController(options = {}) {
     return event;
   }
 
-  return { body, video, windowObject, sent, posted, message, fire };
+  // storage.onChanged 的触发器：设置页改开关走的就是这条（面板没有别的入口）。
+  function storageChange(changes) {
+    for (const listener of storageListeners) listener(changes, 'local');
+  }
+
+  return { body, video, windowObject, sent, posted, message, fire, storageChange };
 }
 
 const TRACKS = {
@@ -291,6 +296,27 @@ test('字幕门状态出口：整集轨在用 = showing；live 伪轨只算 any�
   const emptyState = empty.windowObject.fushiSubtitleStudyState();
   assert.strictEqual(emptyState.showing, false);
   assert.strictEqual(emptyState.any, false);
+});
+
+test('字幕门状态出口：看片中途关掉面板，门立刻关（不等换视频或刷新）', async () => {
+  // teardownAll() 撤覆盖层、放回原生字幕，但不清 activeLang / cues（重开不用重抓）。
+  // 门只看 activeLang 就会卡在「开」，沉浸统计一直计到换视频或刷新为止。
+  const harness = loadController({
+    hostname: 'www.netflix.com', pathname: '/watch/81001', store: TRACKS,
+  });
+  await settle();
+  assert.strictEqual(harness.windowObject.fushiSubtitleStudyState().showing, true);
+  harness.storageChange({ netflixSubtitlePanel: { newValue: false } });
+  const off = harness.windowObject.fushiSubtitleStudyState();
+  assert.strictEqual(off.showing, false, '面板关掉 = 用户已经看不到 Fushi 字幕');
+  assert.strictEqual(off.lang, null);
+  assert.strictEqual(off.any, true, '轨还在 store 里，放宽档照旧算数');
+  harness.storageChange({ netflixSubtitlePanel: { newValue: true } });
+  assert.strictEqual(
+    harness.windowObject.fushiSubtitleStudyState().showing,
+    true,
+    '重新打开立刻续上，不用重抓轨',
+  );
 });
 
 test('字幕门状态出口：外挂字幕算 showing 并标 external；面板没开时 showing 为假', async () => {

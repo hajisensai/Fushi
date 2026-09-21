@@ -162,7 +162,11 @@
     var v = candidate || tracked;
     if (!v) { stopTimer(); return; }
     if (!v.isConnected) { release(true); candidate = null; stopTimer(); return; }
-    if (!enabled || !looksLikeMainVideo(v) || !gateOpen()) { release(true); return; }
+    // 总开关关掉：停表连定时器一起停（重开是 storage 事件，applySetting 会再跑一次
+    // evaluate，candidate 还在就直接续上）。门关着则**保留**定时器——门重开不发任何
+    // 事件，只能靠每秒 evaluate 发现。
+    if (!enabled) { release(true); stopTimer(); return; }
+    if (!looksLikeMainVideo(v) || !gateOpen()) { release(true); return; }
     adopt(v);
   }
 

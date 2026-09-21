@@ -197,7 +197,10 @@ function loadStudy(opts) {
   const dispatch = (t, target) => { for (const fn of docListeners[t] || []) fn({ target }); };
   const tick = () => { for (const it of intervals) if (it.fn && it.ms === 1000) it.fn(); };
   const setSubtitle = (value) => { subtitle.value = value; };
-  return { sandbox, sent, makeVideo, dispatch, tick, docListeners, setSubtitle, samples: () => sent.filter((m) => m.type === 'studySample').map((m) => m.sample) };
+  // 还活着的 1 Hz 定时器数（壳里 clearInterval 把 fn 置空）。
+  const liveIntervals = () => intervals.filter((it) => it.fn && it.ms === 1000).length;
+  const setSetting = (key, value) => { sandbox.chrome.storage.local.set({ [key]: value }); };
+  return { sandbox, sent, makeVideo, dispatch, tick, docListeners, setSubtitle, liveIntervals, setSetting, samples: () => sent.filter((m) => m.type === 'studySample').map((m) => m.sample) };
 }
 
 test('正片开播：立刻发一个样本，之后每秒一个；mediaKey 带 web: 前缀、身份与字幕轨同一把 key', () => {
@@ -386,6 +389,22 @@ test('总开关关掉时，字幕门再怎么变也不重新开表', () => {
   h.setSubtitle({ showing: true, any: true });
   h.tick();
   assert.strictEqual(h.samples().length, 0);
+});
+
+test('总开关关掉后不再空转每秒定时器；门关着时仍保留（门重开只能靠轮询发现）', () => {
+  const h = loadStudy();
+  h.dispatch('play', h.makeVideo());
+  assert.strictEqual(h.liveIntervals(), 1, '开表时有一个 1 Hz 定时器');
+  h.setSubtitle({ showing: false, any: false });
+  h.tick();
+  assert.strictEqual(h.liveIntervals(), 1, '门关着要留着定时器：门重开不发任何事件');
+  h.setSetting('studyTrackVideo', false);
+  assert.strictEqual(h.liveIntervals(), 0, '总开关关掉后不留空转定时器');
+  const before = h.samples().length;
+  h.setSubtitle({ showing: true, any: true });
+  h.setSetting('studyTrackVideo', true);
+  assert.strictEqual(h.liveIntervals(), 1, '重开靠 storage 事件把表续上（候选还在）');
+  assert.ok(h.samples().length > before, '续上后立刻发样本');
 });
 
 test('同一页换成另一个 <video> 播：追踪跟过去，不锁死在旧元素上', () => {

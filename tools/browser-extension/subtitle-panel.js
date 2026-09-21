@@ -961,7 +961,11 @@
   window.fushiSubtitleStudyState = function () {
     var tracks = [];
     try { tracks = tracksForVideo(); } catch (_) { tracks = []; }
-    var lang = st.activeLang;
+    // st.enabled 必须进判据：applyEnabled(false) → sync() → teardownAll() 会撤掉
+    // 覆盖层、放回站点原生字幕，但**不清** activeLang / cues（tick 在 !enabled 时
+    // 直接 return，留着是为了重开时不用重抓）。不看它，用户看片中途关掉字幕面板后
+    // 门仍报 showing=true，沉浸统计会一直计到换视频或刷新。
+    var lang = st.enabled ? st.activeLang : null;
     var showing = !!(lang && lang !== LIVE_LANG && st.cues && st.cues.length);
     var any = showing;
     for (var i = 0; !any && i < tracks.length; i++) {
