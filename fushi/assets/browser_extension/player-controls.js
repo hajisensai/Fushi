@@ -325,9 +325,21 @@
     btnEl.classList.toggle('is-floating', generic);
     if (generic) {
       var parent = document.fullscreenElement || document.body;
+      // 与 openMenu 同一条护栏：全屏目标是 <video> 时不能往里塞（媒体元素的子节点
+      // 是 fallback 内容，永远不渲染）。很多站点直接 video.requestFullscreen()，
+      // 漏了这条按钮会在全屏下静默消失——而全屏正是最需要它的时候。
+      if (parent && parent.tagName === 'VIDEO') parent = document.body;
       if (parent && btnEl.parentNode !== parent) parent.appendChild(btnEl);
       placeFloatingButton();
-    } else if (btnEl.parentNode !== anchor.parent || (anchor.before && btnEl.nextSibling !== anchor.before)) {
+    } else if (
+      btnEl.parentNode !== anchor.parent ||
+      (anchor.before && anchor.before !== btnEl && btnEl.nextSibling !== anchor.before)
+    ) {
+      // `anchor.before !== btnEl` 不能省：YouTube 的锚点是 `right.firstChild`，
+      // 按钮插进去之后它自己就是 firstChild，下一拍算出的 before 就是按钮本身。
+      // 少了这条判据，每秒都会 insertBefore(btnEl, btnEl)——DOM 对此的语义是
+      // 「先把节点摘下来再插回原位」：站点控制栏每秒挨一次 childList 变更、按钮
+      // 上的焦点每秒被清一次（Tab 过去就用不了）、hover/transition 每秒重置。
       anchor.parent.insertBefore(btnEl, anchor.before);
     }
     paintButton();

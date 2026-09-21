@@ -49,9 +49,15 @@ function makeEl(tag) {
     addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); },
     appendChild(child) { child.parentNode = this; this.children.push(child); return child; },
     insertBefore(child, before) {
+      // 真 DOM 的语义是「移动」：已在树上的同一节点先被摘下来再插回去。壳里必须
+      // 照做，否则「每秒重插同一个节点」这类 bug 在测试里只会表现成节点变多，
+      // 或者干脆看不出来。
+      const had = this.children.indexOf(child);
+      if (had >= 0) this.children.splice(had, 1);
       child.parentNode = this;
       const at = before ? this.children.indexOf(before) : -1;
       if (at < 0) this.children.push(child); else this.children.splice(at, 0, child);
+      child.insertCount = (child.insertCount || 0) + 1;
       return child;
     },
     removeChild(child) {
@@ -250,6 +256,7 @@ function load(options = {}) {
   }
   return {
     api, body, video, rightControls, sets, removes, sent, shortcuts, menu, button, rowFor, changed,
+    doc: documentObject,
     hideToggles: () => hideToggles,
     tick: () => timer && timer(),
     fire(type, ev) { for (const fn of docListeners[type] || []) fn(ev); },
@@ -489,6 +496,33 @@ test('别处改了设置（options 页 / 工具栏）：菜单与按钮跟着变
   assert.strictEqual(t.button().dataset.on, '');
   t.changed({ playerControls: false });
   assert.strictEqual(t.button(), null, '别处关掉总开关即刻卸载');
+});
+
+test('控制栏完好时反复确认不重插按钮（YouTube 的锚点就是按钮自己）', () => {
+  // 回归形状：YouTube 的 anchor.before = right.firstChild，按钮插进去后它自己就是
+  // firstChild，下一拍 before === btnEl。位置判据若不排除这种情况，每秒都会
+  // insertBefore(btnEl, btnEl)——真 DOM 会先摘再插回：站点控制栏每秒挨一次
+  // childList 变更、按钮上的焦点每秒被清掉（Tab 过去就用不了）。
+  const t = load({ hostname: 'www.youtube.com' });
+  const btn = t.button();
+  const inserts = btn.insertCount;
+  t.tick();
+  t.tick();
+  assert.strictEqual(btn.insertCount, inserts, '位置没变就一次都不该再插');
+  assert.strictEqual(t.rightControls.children[0], btn);
+  assert.strictEqual(t.rightControls.children.length, 2, '站点原有按钮一个都不能少');
+});
+
+test('通用站点全屏到 <video> 上：按钮退回 body，不塞进媒体元素（塞进去永不渲染）', () => {
+  const t = load({ hostname: 'example.com', site: 'none' });
+  assert.strictEqual(t.button().parentNode, t.body);
+  // 很多站点直接 video.requestFullscreen()，此时 fullscreenElement 就是 <video>。
+  t.doc.fullscreenElement = t.video;
+  t.tick();
+  const btn = t.button();
+  assert.ok(btn, '全屏下按钮必须还在——这正是最需要它的时候');
+  assert.notStrictEqual(btn.parentNode, t.video, '媒体元素的子节点是 fallback 内容');
+  assert.strictEqual(btn.parentNode, t.body);
 });
 
 test('站点重建控制栏后按钮自己回去（YouTube SPA 导航把它连根端掉）', () => {
