@@ -986,6 +986,11 @@ void GlobalLookupWindow::ReleaseDismissHooks() {
     UnhookWinEvent(foreground_hook_);
     foreground_hook_ = nullptr;
   }
+  // BUG-2613 — 覆盖窗口登记随 dismiss 钩子一起撤（Hide / 死句柄 / 析构三条路都
+  // 经这里）。先撤登记再 Disarm：Disarm 的宽限期卸载会问「还有没有登记」。
+  if (hwnd_ != nullptr) {
+    fushi::UnregisterOverlayClickShield(hwnd_);
+  }
   if (mouse_hook_armed_) {
     fushi::DisarmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = false;
@@ -1269,6 +1274,10 @@ void GlobalLookupWindow::Reveal(int width, int height,
     fushi::ArmLowLevelMouseHook(hwnd_);
     mouse_hook_armed_ = true;
   }
+  // BUG-2613 — 卡片上屏即登记为覆盖窗口：落在卡上的物理左键要向注入侧发布
+  // Popup 护盾请求，采样型引擎（HUNEX/Leaf 的 GetAsyncKeyState、SGRE 的
+  // DirectInput）才不会把点卡当成点游戏。没有 galgame 会话时登记是空操作。
+  fushi::RegisterOverlayClickShield(hwnd_);
   // 投影：上面 SetWindowPos 触发的 WM_WINDOWPOSCHANGED 到达时 revealed_ 还是
   // false（置位在其后），漏斗那次同步判为隐藏——首帧必须在标志置位后显式补一次。
   SyncShadow();
@@ -1394,6 +1403,8 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     fushi::ArmLowLevelMouseHook(hwnd_);
   }
   mouse_hook_armed_ = true;
+  // BUG-2613 — 与 Reveal 同一条登记（级联卡片是同一个 HWND 换区域，幂等）。
+  fushi::RegisterOverlayClickShield(hwnd_);
   // 投影：与 Reveal 同因——上面 SetWindowPos 触发漏斗时 revealed_ 还是 false，
   // 标志置位后显式补一次，首帧才有影。
   SyncShadow();

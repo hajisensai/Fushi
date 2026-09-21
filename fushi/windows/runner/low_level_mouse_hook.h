@@ -148,6 +148,31 @@ inline uint32_t LowLevelAttachedGlyphSnapshotToken(
     uint64_t transaction_id) {
   return static_cast<uint32_t>(transaction_id >> 32u);
 }
+// BUG-2613 — 覆盖窗口左键护盾。
+//
+// 桌面查词卡 / hook 台词浮窗 / 穿透工具条都是 WS_EX_NOACTIVATE 的置顶窗：点它们时
+// 游戏仍是前台窗口。Win32 消息型引擎（KiriKiri 等）看不到这些点击——消息投给了
+// 光标下的我方窗口；但**采样型**引擎不看消息：HUNEX / Leaf 每帧 GetAsyncKeyState、
+// SGRE 读 DirectInput 设备状态、其它引擎走 RawInput，物理左键一按它们就推进台词。
+// 注入侧的输入盾（generic_input_shield.inc + 各 exact adapter）已能对游戏隐藏这类
+// 采样，但它只认共享内存里的 v19 LookupShieldRequest，而这三种窗口从不发布请求。
+//
+// 这里让窗口把自己登记进一张小表；WH_MOUSE_LL 回调里裸左键 down 落在登记窗口
+// （含子窗）上时，同步发布 owner=Popup、target=绑定游戏 HWND 的 down 请求，配对
+// up 时发布 release。事件本身**不吞**——仍照常投给我方窗口，只是游戏的采样面看
+// 不到它。发布走 TryPublish（单次 CAS + try_lock），回调里绝不等待。
+//
+// 游戏 HWND 由 SetOverlayClickShieldGameResolver 装的解析器在**登记时**（窗口线程）
+// 解出：没有 galgame 会话时解析器返回 nullptr，登记就是空操作——有声书歌词条 /
+// 剪贴板文本窗这类不在游戏之上的表面完全不受影响。重复登记同一 HWND 只是刷新
+// 游戏 HWND（会话换局 / 前台窗换了都靠这条刷新），幂等。
+void SetOverlayClickShieldGameResolver(HWND (*resolver)());
+void RegisterOverlayClickShield(HWND overlay);
+void UnregisterOverlayClickShield(HWND overlay);
+// 测试/诊断：当前登记的覆盖窗口数与是否有在飞的覆盖窗口左键事务。
+size_t OverlayClickShieldCountForTest();
+bool OverlayClickShieldTransactionActiveForTest();
+
 // 处理 kLowLevelMouseShieldReleaseMessage。只有 |target| 仍是本次发布的 popup、
 // popup 已 Disarm 且没有按键等待 up 时才撤销；新 Reveal 已经开始时是 no-op。
 void FinalizeLowLevelMouseDirectInputShield(HWND target);

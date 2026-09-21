@@ -28,8 +28,10 @@
 #include "audio_loopback_capture.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
+#include "game_client_extent.h"
 #include "global_mouse_trigger.h"
 #include "ime_space_dispatch.h"
+#include "low_level_mouse_hook.h"
 #include "utils.h"
 #include "window_capture.h"
 #include "window_recorder.h"
@@ -1245,6 +1247,15 @@ struct WindowCapturePending {
   std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> reply;
 };
 
+// BUG-2613 — 覆盖窗口左键护盾要保护的游戏窗口：当前 galgame 会话进程里正在玩的
+// 那个客户区窗（与 direct galCard 用同一条 FindProcessClientWindow）。没有会话 = 0，
+// 登记就退化成空操作。跑在窗口线程（登记点），不在钩子回调里。
+HWND ResolveOverlayClickShieldGame() {
+  const uint32_t pid = fushi::VoiceHookReader::Instance().CurrentPid();
+  return pid == 0 ? nullptr
+                  : fushi::game_client_extent::FindProcessClientWindow(pid);
+}
+
 }  // namespace
 
 void FlutterWindow::RegisterFloatingLyricChannel() {
@@ -1599,6 +1610,9 @@ void FlutterWindow::RegisterLookupImeChannel() {
 }
 
 void FlutterWindow::RegisterGalHookTextChannel() {
+  // BUG-2613 — 在任何覆盖窗口可能上屏之前装好游戏窗口解析器（正文窗 / 工具条 /
+  // 查词卡的登记都问它）。
+  fushi::SetOverlayClickShieldGameResolver(&ResolveOverlayClickShieldGame);
   gal_hook_text_window_ = std::make_unique<FloatingLyricWindow>();
   gal_hook_text_window_->SetHookTextMode(true);
   // BUG-2365 —— 正文窗的置顶守卫必须让位给查词卡：卡片自己也每 800ms 重申置顶
