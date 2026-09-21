@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi: Netflix kartları oluşturuluyor (satır satır yeniden oynatılıp kaydediliyor)",
   "bg_badge_idle": "Fushi: Netflix kart çıkarma kuyruğunu oluşturmak için tıklayın (bölüm bölüm otomatik yeniden oynatma ve kayıt)",
   "bg_generation_cancelled": "Oluşturma iptal edildi",
-  "bg_no_netflix_pending": "Kuyrukta bekleyen Netflix öğesi yok"
+  "bg_no_netflix_pending": "Kuyrukta bekleyen Netflix öğesi yok",
+  "pc_offset_title": "Zaman kaydırma",
+  "pc_style_title": "Altyazı stili",
+  "pc_style_back": "Geri",
+  "pc_style_reset": "Sıfırla",
+  "pc_style_more": "Tüm ayarlar",
+  "pc_hint_site_track": "Bu video sitenin kendi altyazı parçasını oynatıyor, bu yüzden Fushi katmanı gizli kalıyor. Bunun yerine Fushi altyazılarını göstermek için dokunun.",
+  "opt_playerControls_title": "Oynatıcı içindeki altyazı düğmesi",
+  "opt_playerControls_desc": "Oynatıcının kendi kontrol çubuğuna bir Fushi düğmesi ekler (YouTube ve Netflix; diğer sitelerde işaretçi videonun üzerindeyken sağ altta yuvarlak bir düğme belirir). Menüsü bu sayfadaki ayarların aynısını — Fushi altyazıları, sitenin altyazılarını değiştirme, gizleme, zaman kaydırma ve altyazı görünümü — videodan ayrılmadan değiştirir."
 }

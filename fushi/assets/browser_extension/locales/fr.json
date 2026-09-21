@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi : génération des cartes Netflix (relecture et enregistrement ligne par ligne)",
   "bg_badge_idle": "Fushi : cliquez pour générer la file de minage Netflix (relecture et enregistrement automatiques par épisode)",
   "bg_generation_cancelled": "Génération annulée",
-  "bg_no_netflix_pending": "Aucun élément Netflix en attente dans la file"
+  "bg_no_netflix_pending": "Aucun élément Netflix en attente dans la file",
+  "pc_offset_title": "Décalage temporel",
+  "pc_style_title": "Style des sous-titres",
+  "pc_style_back": "Retour",
+  "pc_style_reset": "Réinitialiser",
+  "pc_style_more": "Tous les réglages",
+  "pc_hint_site_track": "Cette vidéo lit la piste de sous-titres du site, la couche Fushi reste donc masquée. Touchez pour afficher les sous-titres Fushi à la place.",
+  "opt_playerControls_title": "Bouton de sous-titres dans le lecteur",
+  "opt_playerControls_desc": "Ajoute un bouton Fushi à la barre de contrôle du lecteur (YouTube et Netflix ; ailleurs, un bouton rond apparaît en bas à droite de la vidéo tant que le pointeur est dessus). Son menu bascule les mêmes réglages que cette page — sous-titres Fushi, remplacement des sous-titres du site, masquage, décalage temporel et apparence — sans quitter la vidéo."
 }

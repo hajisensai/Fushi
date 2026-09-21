@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi：正在產生 Netflix 卡片（逐句重播並錄製中）",
   "bg_badge_idle": "Fushi：按此產生 Netflix 製卡佇列（逐集自動重播並錄製）",
   "bg_generation_cancelled": "已取消產生",
-  "bg_no_netflix_pending": "佇列中沒有待處理的 Netflix 項目"
+  "bg_no_netflix_pending": "佇列中沒有待處理的 Netflix 項目",
+  "pc_offset_title": "時軸偏移",
+  "pc_style_title": "字幕樣式",
+  "pc_style_back": "返回",
+  "pc_style_reset": "回復預設",
+  "pc_style_more": "全部設定",
+  "pc_hint_site_track": "這段影片播放的是網站自帶字幕軌，所以 Fushi 覆蓋層不會顯示。點這裡改用 Fushi 字幕。",
+  "opt_playerControls_title": "播放器內的字幕按鈕",
+  "opt_playerControls_desc": "在播放器自己的控制列裡放一顆 Fushi 按鈕（YouTube 與 Netflix；其它網站在滑鼠停在影片上時於右下角浮出一顆圓鈕）。選單裡翻的是與本頁同一批設定——Fushi 字幕、替代網站字幕、隱藏字幕、時軸偏移與字幕外觀——不用離開畫面。"
 }

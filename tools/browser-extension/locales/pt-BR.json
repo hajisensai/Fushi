@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi: gerando cartões da Netflix (repetindo e gravando linha por linha)",
   "bg_badge_idle": "Fushi: clique para gerar a fila de mineração da Netflix (repetição e gravação automáticas por episódio)",
   "bg_generation_cancelled": "Geração cancelada",
-  "bg_no_netflix_pending": "Nenhum item da Netflix pendente na fila"
+  "bg_no_netflix_pending": "Nenhum item da Netflix pendente na fila",
+  "pc_offset_title": "Ajuste de tempo",
+  "pc_style_title": "Estilo das legendas",
+  "pc_style_back": "Voltar",
+  "pc_style_reset": "Redefinir",
+  "pc_style_more": "Todas as configurações",
+  "pc_hint_site_track": "Este vídeo está reproduzindo a faixa de legendas do próprio site, então a camada do Fushi fica oculta. Toque para mostrar as legendas do Fushi no lugar.",
+  "opt_playerControls_title": "Botão de legendas dentro do player",
+  "opt_playerControls_desc": "Adiciona um botão do Fushi à própria barra de controles do player (YouTube e Netflix; em outros sites aparece um botão redondo no canto inferior direito do vídeo enquanto o ponteiro está sobre ele). O menu muda as mesmas configurações desta página — legendas do Fushi, substituir as do site, ocultá-las, o ajuste de tempo e a aparência — sem sair do vídeo."
 }

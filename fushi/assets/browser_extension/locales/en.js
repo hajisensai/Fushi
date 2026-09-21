@@ -101,6 +101,8 @@
   opt_touchLookupHold_desc: 'Hold on body text for about 0.5 s without moving to look up; lifting does not look up again. Can be combined with tap; the long press fires first. On some pages the system text-selection menu may pop up too — turn this off and keep tap only if that bothers you.',
   opt_mobileSubtitleDrawer_title: 'Subtitle list drawer',
   opt_mobileSubtitleDrawer_desc: 'Android browsers have no native side panel (that API is desktop-only), so the subtitle list had nowhere to show on phones. When on, video pages on touch devices get a ☰ floating button at the screen edge plus an invisible edge gesture strip: tap to toggle, or hold the edge to drag the panel out to any width (docked right in landscape, bottom in portrait; the full list is embedded — track picker, tap-to-seek, timing offset, external subtitles, online subtitle search, mining, tap-to-look-up). Size is remembered. <b>Landscape only appears in fullscreen</b> (non-fullscreen landscape layouts were unstable and are disabled); portrait any time. Never shown on desktop (mouse).',
+  opt_playerControls_title: 'Subtitle button inside the player',
+  opt_playerControls_desc: 'Adds a Fushi button to the player’s own control bar (YouTube and Netflix; on other sites a round button appears at the bottom-right of the video while the pointer is over it). Its menu flips the same settings as this page — Fushi subtitles, replacing the site’s subtitles, hiding them, the timing offset and the subtitle appearance — without leaving the video.',
   opt_subtitle_heading_section_kicker: 'Subtitle workbench',
   opt_subtitle_heading_heading: 'Watching and subtitles',
   opt_subtitle_heading_section_note: 'Applies immediately',
@@ -428,6 +430,14 @@
   theme_preview_sample_title: 'Subtitle side panel',
   theme_preview_sample_body: 'Sample text · current line highlighted',
   theme_preview_button: 'Button',
+  // ── player-controls.js ──
+  pc_offset_title: 'Timing offset',
+  pc_style_title: 'Subtitle style',
+  pc_style_back: 'Back',
+  pc_style_reset: 'Reset',
+  pc_style_more: 'All settings',
+  pc_hint_site_track: 'This video is playing the site’s own subtitle track, so the Fushi overlay stays hidden. Tap to show Fushi subtitles instead.',
+
   // ── background.js ──
   bg_badge_generating: 'Fushi: generating Netflix cards (replaying and recording line by line)',
   bg_badge_idle: 'Fushi: click to generate the Netflix mining queue (auto replay and record per episode)',

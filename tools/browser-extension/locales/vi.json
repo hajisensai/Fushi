@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi: đang tạo thẻ Netflix (phát lại và ghi hình từng dòng)",
   "bg_badge_idle": "Fushi: nhấp để tạo hàng đợi khai thác thẻ Netflix (tự phát lại và ghi hình theo từng tập)",
   "bg_generation_cancelled": "Đã hủy tạo",
-  "bg_no_netflix_pending": "Không có mục Netflix nào đang chờ trong hàng đợi"
+  "bg_no_netflix_pending": "Không có mục Netflix nào đang chờ trong hàng đợi",
+  "pc_offset_title": "Lệch thời gian",
+  "pc_style_title": "Kiểu phụ đề",
+  "pc_style_back": "Quay lại",
+  "pc_style_reset": "Đặt lại",
+  "pc_style_more": "Tất cả cài đặt",
+  "pc_hint_site_track": "Video này đang phát bản phụ đề của chính trang web, nên lớp phụ đề Fushi vẫn ẩn. Chạm để hiển thị phụ đề Fushi thay thế.",
+  "opt_playerControls_title": "Nút phụ đề trong trình phát",
+  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc dưới bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
 }

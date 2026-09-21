@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi: Netflix-kaarten genereren (regel voor regel opnieuw afspelen en opnemen)",
   "bg_badge_idle": "Fushi: klik om de Netflix-kaartenwachtrij te genereren (automatisch opnieuw afspelen en opnemen per aflevering)",
   "bg_generation_cancelled": "Genereren geannuleerd",
-  "bg_no_netflix_pending": "Geen Netflix-items in afwachting in de wachtrij"
+  "bg_no_netflix_pending": "Geen Netflix-items in afwachting in de wachtrij",
+  "pc_offset_title": "Tijdverschuiving",
+  "pc_style_title": "Ondertitelstijl",
+  "pc_style_back": "Terug",
+  "pc_style_reset": "Standaardwaarden",
+  "pc_style_more": "Alle instellingen",
+  "pc_hint_site_track": "Deze video speelt het ondertitelspoor van de site zelf af, dus de Fushi-laag blijft verborgen. Tik om in plaats daarvan Fushi-ondertitels te tonen.",
+  "opt_playerControls_title": "Ondertitelknop in de speler",
+  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsonder in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
 }

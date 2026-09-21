@@ -411,5 +411,13 @@
   "bg_badge_generating": "Fushi: generando tarjetas de Netflix (reproduciendo y grabando línea por línea)",
   "bg_badge_idle": "Fushi: haz clic para generar la cola de minado de Netflix (reproducción y grabación automáticas por episodio)",
   "bg_generation_cancelled": "Generación cancelada",
-  "bg_no_netflix_pending": "No hay elementos de Netflix pendientes en la cola"
+  "bg_no_netflix_pending": "No hay elementos de Netflix pendientes en la cola",
+  "pc_offset_title": "Desfase de tiempo",
+  "pc_style_title": "Estilo de subtítulos",
+  "pc_style_back": "Atrás",
+  "pc_style_reset": "Restablecer",
+  "pc_style_more": "Todos los ajustes",
+  "pc_hint_site_track": "Este vídeo reproduce la pista de subtítulos del propio sitio, así que la capa de Fushi permanece oculta. Toca para mostrar los subtítulos de Fushi en su lugar.",
+  "opt_playerControls_title": "Botón de subtítulos dentro del reproductor",
+  "opt_playerControls_desc": "Añade un botón de Fushi a la propia barra de control del reproductor (YouTube y Netflix; en otros sitios aparece un botón redondo abajo a la derecha del vídeo mientras el puntero está encima). Su menú cambia los mismos ajustes que esta página —subtítulos de Fushi, sustituir los del sitio, ocultarlos, el desfase de tiempo y la apariencia— sin salir del vídeo."
 }
