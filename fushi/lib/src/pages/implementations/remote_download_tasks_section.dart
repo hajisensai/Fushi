@@ -61,7 +61,10 @@ class _RemoteDownloadTasksSectionState
     _client = client;
     HostDownloadTarget? target;
     try {
-      target = await client.probe();
+      // 「下载执行设备」指定的 host 优先展示它的任务；没设 / 连不上再看第一台。
+      final String preferred = appModel.prefsRepo.downloadExecutionHostUrl;
+      target = preferred.isEmpty ? null : await client.probeUrl(preferred);
+      target ??= await client.probe();
     } catch (_) {
       target = null;
     }

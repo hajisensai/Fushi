@@ -288,6 +288,14 @@ class MalVideoMetadataProvider
         ]).where((String alias) => alias != title).toList(),
         year: metadataInt(item['year']) ?? metadataYear(premiered),
         premiered: premiered,
+        endDate: _date(metadataObject(item['aired'])?['to']),
+        // Jikan `status`：`Currently Airing` / `Finished Airing` / `Not yet aired`，
+        // 原串落 status，读取侧用 VideoAiringStatus 归一；老 payload 没有 status
+        // 时退到布尔 `airing`。
+        status: metadataString(item['status']) ??
+            (metadataBool(item['airing']) == true ? 'Currently Airing' : null),
+        // 不填 originalLanguage：Jikan 没有语言字段，MAL 也收录中 / 韩动画，
+        // 硬填 ja 会压过音轨 tag 给出的真实原语言。
         plot: metadataStripHtml(metadataString(item['synopsis'])),
         rating: metadataDouble(item['score']),
         ratingVotes: metadataInt(item['scored_by']),

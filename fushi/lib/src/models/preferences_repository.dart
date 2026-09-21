@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
+import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -97,6 +98,10 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
       return BoxFit.fill;
   }
 }
+
+/// 「新下载任务交给哪台互联 host 执行」的偏好键（空 = 本机）。
+/// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）。
+const String kDownloadExecutionHostPrefKey = 'download_execution_host';
 
 class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
@@ -518,6 +523,31 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMediaServerQualityPresetIndex(int index) async {
     await setPref('video_media_server_quality_preset', index);
+    notifyListeners();
+  }
+
+  /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
+  ///
+  /// 默认值与解码规则收在引擎侧的 [readInterconnectTranscodeEnabled]——无头服务端
+  /// 读的是同一张 `preferences` 表，默认值只能有一份。
+  bool get interconnectTranscodeEnabled =>
+      readInterconnectTranscodeEnabled(this);
+
+  Future<void> setInterconnectTranscodeEnabled(bool enabled) async {
+    await setPref(kInterconnectTranscodeEnabledPref, enabled);
+    notifyListeners();
+  }
+
+  /// 互联远端视频的画质档下标；-1 = 自动（局域网原画、走公网压到中档，判据在
+  /// `interconnect_video_quality.dart`）。
+  ///
+  /// 与媒体服务器那档**分开存**：两边的档位阶梯不同（互联整体更低，因为它要解决的
+  /// 就是人在外面用手机网络），共用一个下标会让同一个数字在两处指向不同画质。
+  int get interconnectQualityPresetIndex =>
+      getPref('video_interconnect_quality_preset', defaultValue: -1) as int;
+
+  Future<void> setInterconnectQualityPresetIndex(int index) async {
+    await setPref('video_interconnect_quality_preset', index);
     notifyListeners();
   }
 
@@ -3285,6 +3315,19 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoResourceDisabledSources(String value) async {
     await setPref('video_resource_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 新下载任务默认交给哪台设备执行：空 = 本机；否则是已配对互联 host 的地址
+  /// （`FushiClientUrl.url`），任务经 `/api/downloads` 投过去、下到 host 自己的
+  /// 库里。手动添加任务 / 发现页 / 资源搜索页共用这一个默认值（各自仍可当次改）。
+  /// 设备本地键：指向的是「这台设备配的 host」，随备份到别的设备只会指错。
+  String get downloadExecutionHostUrl =>
+      (getPref(kDownloadExecutionHostPrefKey, defaultValue: '') as String)
+          .trim();
+
+  Future<void> setDownloadExecutionHostUrl(String value) async {
+    await setPref(kDownloadExecutionHostPrefKey, value.trim());
     notifyListeners();
   }
 

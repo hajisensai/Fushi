@@ -552,9 +552,11 @@ query Discovery(
       id
       idMal
       format
+      status
       title { native romaji english }
       synonyms
       startDate { year month day }
+      endDate { year month day }
       episodes
       duration
       averageScore
@@ -804,6 +806,8 @@ query Discovery(
       ]).where((String value) => value != title).toList(),
       year: metadataYear(premiered),
       premiered: premiered,
+      endDate: _date(item['endDate']),
+      status: metadataString(item['status']),
       plot: metadataStripHtml(metadataString(item['description'])),
       rating: _score(item['averageScore']),
       ratingVotes: metadataInt(item['popularity']),

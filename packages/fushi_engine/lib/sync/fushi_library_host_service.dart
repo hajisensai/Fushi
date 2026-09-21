@@ -2079,6 +2079,10 @@ class RemoteVideoStreamUrls {
     final bool miningVideoHasAudio = json['miningVideoHasAudio'] == true;
     final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks =
         _jsonEmbeddedSubtitleTracks(json['embeddedSubtitleTracks']);
+    // 老 host 不发这个字段 → 缺省 true（整文件直传，与从前一致）；转码 host 会明确
+    // 报 false，让内嵌字幕回落到 host 外挂下发而不是指望 libmpv 自绘（BUG-2590）。
+    final bool streamIsOriginalContainer =
+        json['streamIsOriginalContainer'] != false;
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
       subtitleUrl: subtitleUrl,
@@ -2087,6 +2091,7 @@ class RemoteVideoStreamUrls {
       miningVideoUrl: miningVideoUrl,
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
+      streamIsOriginalContainer: streamIsOriginalContainer,
     );
   }
 }

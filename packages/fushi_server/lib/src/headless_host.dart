@@ -171,6 +171,9 @@ class HeadlessHost {
       securityContext: securityContext,
       hostFingerprint: _hostFingerprint,
       deviceName: config.deviceName,
+      // 无头服务端的 host 偏好读侧（「允许为对端转码视频」等），与 app 侧同一张
+      // `preferences` 表、同一份默认值。
+      prefs: prefs,
     )
       ..onPairRequest = _approvePairing
       ..onPairPinGenerated = _generatePin

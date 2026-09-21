@@ -290,6 +290,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_target_source_id',
   'video_fit_mode',
   'video_immersive_mode',
+  // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
+  // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
+  'video_interconnect_quality_preset',
   'video_library_auto_backfill_scrape',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在

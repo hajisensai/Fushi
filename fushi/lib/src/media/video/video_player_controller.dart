@@ -419,6 +419,16 @@ class VideoPlayerController extends ChangeNotifier
   final ValueNotifier<double?> networkReadBytesPerSecond =
       ValueNotifier<double?>(null);
 
+  /// 网络流已缓冲的时长（秒，mpv `demuxer-cache-duration`）；null = 非网络流 / 尚无
+  /// 采样。
+  ///
+  /// 互联的自适应画质拿它当「带宽富余」的判据，而不是拿
+  /// [networkReadBytesPerSecond]：播放器按需下载，缓冲填满后就不再全速拉流，稳态下
+  /// 的读取速度≈媒体码率，看上去永远「刚好够用」，据此判富余会永远判不出来。缓冲
+  /// **深度**才如实反映「拉得比放得快」。
+  final ValueNotifier<double?> networkCacheSeconds =
+      ValueNotifier<double?>(null);
+
   /// 当前 [load] 的源是不是 http(s) 网络流（含互联中继的 `http://127.0.0.1`）。
   bool get isNetworkSource => _sourceIsNetwork;
   bool _sourceIsNetwork = false;
@@ -2976,8 +2986,12 @@ class VideoPlayerController extends ChangeNotifier
           final String raw = await _getMpvProperty('cache-speed');
           if (!_isCurrentLoad(player, loadToken)) return;
           final double? speed = double.tryParse(raw);
-          if (speed == null) return;
-          networkReadBytesPerSecond.value = speed;
+          if (speed != null) networkReadBytesPerSecond.value = speed;
+          final String cacheRaw =
+              await _getMpvProperty('demuxer-cache-duration');
+          if (!_isCurrentLoad(player, loadToken)) return;
+          final double? cached = double.tryParse(cacheRaw);
+          if (cached != null) networkCacheSeconds.value = cached;
         } finally {
           _cacheSpeedSampleInFlight = false;
         }
@@ -2989,6 +3003,7 @@ class VideoPlayerController extends ChangeNotifier
     _cacheSpeedTimer?.cancel();
     _cacheSpeedTimer = null;
     networkReadBytesPerSecond.value = null;
+    networkCacheSeconds.value = null;
   }
 
   /// 当前视频的内封章节列表（TODO-424）；无章节 / 未 [load] 时为空。章节面板渲染用。
@@ -3779,6 +3794,7 @@ class VideoPlayerController extends ChangeNotifier
     _resetLuaScriptState(); // 与 [_releaseMediaHandles] 一致，防复用残留。
     luaScriptStates.dispose();
     networkReadBytesPerSecond.dispose();
+    networkCacheSeconds.dispose();
     _videoPath = null;
     _chapters = const <VideoChapter>[];
     super.dispose();

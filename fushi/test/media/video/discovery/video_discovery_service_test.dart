@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
@@ -526,6 +527,68 @@ void main() {
       expect(item.reference.mediaKind, VideoMetadataMediaKind.movie);
       expect(item.reference.discoveryCategory, VideoDiscoveryCategory.anime);
       expect(item.score, 8.0);
+    });
+
+    test('requests status and endDate and maps RELEASING to airing', () async {
+      late String query;
+      final AniListVideoDiscoveryProvider provider =
+          AniListVideoDiscoveryProvider(
+        client: MockClient((http.Request request) async {
+          final Map<String, Object?> body =
+              jsonDecode(request.body) as Map<String, Object?>;
+          query = body['query']! as String;
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'pageInfo': <String, Object?>{'hasNextPage': false},
+                  'media': <Object?>[
+                    <String, Object?>{
+                      'id': 9,
+                      'format': 'TV',
+                      'status': 'RELEASING',
+                      'title': <String, Object?>{'native': '放送中テスト'},
+                      'startDate': <String, Object?>{
+                        'year': 2026,
+                        'month': 7,
+                        'day': 4,
+                      },
+                      'endDate': <String, Object?>{
+                        'year': 2026,
+                        'month': 9,
+                        'day': 26,
+                      },
+                    },
+                  ],
+                },
+              },
+            }),
+            200,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        }),
+      );
+      addTearDown(provider.close);
+
+      final ProviderBatchResult<VideoDiscoveryPage> result =
+          await provider.search(
+        const VideoDiscoveryRequest(
+          category: VideoDiscoveryCategory.anime,
+          query: 'テスト',
+        ),
+      );
+
+      expect(query, contains('status'));
+      expect(query, contains('endDate { year month day }'));
+      expect(result.failures, isEmpty, reason: '${result.failures}');
+      final VideoDiscoveryItem item = result.items.single.items.single;
+      final VideoMetadataWork work = item.metadataWork!;
+      expect(work.status, 'RELEASING', reason: '原串不改写');
+      expect(work.airingStatus, VideoAiringStatus.airing);
+      expect(work.premiered, '2026-07-04');
+      expect(work.endDate, '2026-09-26');
     });
 
     test('maps the provider-neutral Science Fiction genre to Sci-Fi', () async {

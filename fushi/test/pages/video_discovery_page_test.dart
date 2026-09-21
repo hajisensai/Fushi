@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey, TextInputAction;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/external_provider.dart';
@@ -153,6 +154,107 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('video-discovery-category-all')),
       findsOneWidget,
+    );
+  });
+
+  // BUG-2620：输入后按回车不搜索——提交动作没有声明，默认 `done` 的收尾又会把
+  // 焦点丢掉，观感是「文字被全选、结果还是默认热门」。回车这一路必须确定性地
+  // 走到搜索，不能只指望平台 text-input 桥。
+  testWidgets('物理回车立即搜索，不必等防抖', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) =>
+          Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+        _result(const <discovery.VideoDiscoveryItem>[]),
+      ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    final Finder editable = find.descendant(
+      of: find.byKey(const ValueKey<String>('video-discovery-search')),
+      matching: find.byType(EditableText),
+    );
+
+    await tester.enterText(editable, 'Revue Starlight');
+    await tester.pump();
+    expect(
+      controller.requests.where(
+        (discovery.VideoDiscoveryRequest request) =>
+            request.query == 'Revue Starlight',
+      ),
+      isEmpty,
+      reason: '防抖还没到期，此时只有回车能触发搜索',
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(
+      controller.requests.where(
+        (discovery.VideoDiscoveryRequest request) =>
+            request.query == 'Revue Starlight',
+      ),
+      hasLength(1),
+      reason: '回车必须立即发起搜索',
+    );
+
+    // 回车吃掉防抖，不能再补发一次同样的请求。
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      controller.requests.where(
+        (discovery.VideoDiscoveryRequest request) =>
+            request.query == 'Revue Starlight',
+      ),
+      hasLength(1),
+    );
+  });
+
+  testWidgets('搜索框保留回车提交语义且不丢焦点', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) =>
+          Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+        _result(const <discovery.VideoDiscoveryItem>[]),
+      ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    final Finder editable = find.descendant(
+      of: find.byKey(const ValueKey<String>('video-discovery-search')),
+      matching: find.byType(EditableText),
+    );
+    final EditableText field = tester.widget<EditableText>(editable);
+    expect(
+      field.textInputAction,
+      TextInputAction.search,
+      reason: '不声明提交动作时平台给的是 done，收尾会 unfocus',
+    );
+
+    await tester.enterText(editable, 'Revue Starlight');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pump();
+
+    expect(
+      controller.requests.where(
+        (discovery.VideoDiscoveryRequest request) =>
+            request.query == 'Revue Starlight',
+      ),
+      hasLength(1),
+    );
+    expect(
+      field.focusNode.hasFocus,
+      isTrue,
+      reason: '提交后焦点要留在框里：掉焦点会被焦点系统以编程方式还回来，'
+          '桌面端随即整段选中文本',
     );
   });
 
