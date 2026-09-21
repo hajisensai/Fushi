@@ -832,10 +832,24 @@ Map<String, String> buildHttpHeaderFieldsProperty(Map<String, String> headers) {
   };
 }
 
-/// 把一个列表项编码成 mpv 列表选项的长度前缀形式 `%<UTF-8 字节数>%<原值>`，使值里的
-/// 逗号不再被当作项分隔符。纯函数（测试直接钉它）。
+/// 把一个列表项里的逗号转义成 `\,`，使它不再被当作项分隔符。纯函数（测试直接钉它）。
+///
+/// **不能用 `%<字节数>%` 长度前缀**：那套语法属于 suboption / object settings / path
+/// 解析（`read_subparam`），字符串列表（`OPT_STRINGLIST`，`http-header-fields` 就是）
+/// 的分项只走 `get_nextsep`，只认反斜杠转义。随包 libmpv 实测（`mpv_set_property_string`
+/// 写、`MPV_FORMAT_NODE` 读回真实项数组）：
+///   `%103%User-Agent: …(KHTML, like Gecko)…`
+///     → ['%103%User-Agent: …(KHTML', ' like Gecko)…']  ← 前缀原样留在头名里，逗号照拆
+///   `User-Agent: …(KHTML\, like Gecko)…`
+///     → ['User-Agent: …(KHTML, like Gecko)…']          ← 正确
+/// Aniyomi 在同一位置做的也是这个替换。
+///
+/// 反斜杠本身**不是**通用转义符（实测 `a\b` / `a\\b` 都原样保留，只有 `\,` 这一个
+/// 序列会被吃掉），所以这里只转义逗号、不动其它字符。唯一表达不出的边角是「值以反斜杠
+/// 结尾」——那时尾部的 `\` 会把紧随的分隔逗号吃掉、与下一项并成一条；HTTP 头值以反斜杠
+/// 结尾现实中不存在，Aniyomi 同样不处理。
 @visibleForTesting
-String encodeMpvListItem(String item) => '%${utf8.encode(item).length}%$item';
+String encodeMpvListItem(String item) => item.replaceAll(',', '\\,');
 
 /// 仅当 [headers] 非空时，把 [buildHttpHeaderFieldsProperty] 注入 media_kit [player]
 /// （仅 libmpv 后端/桌面生效）。空 header 直接 no-op（普通流/本地文件零影响）。

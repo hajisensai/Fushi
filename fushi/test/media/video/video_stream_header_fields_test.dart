@@ -8,11 +8,11 @@ void main() {
       expect(buildHttpHeaderFieldsProperty(const <String, String>{}), isEmpty);
     });
 
-    test('single header -> length-prefixed "Key: Value"', () {
+    test('single header -> "Key: Value"', () {
       final Map<String, String> p = buildHttpHeaderFieldsProperty(
         const <String, String>{'Referer': 'https://a.test/'},
       );
-      expect(p['http-header-fields'], '%24%Referer: https://a.test/');
+      expect(p['http-header-fields'], 'Referer: https://a.test/');
     });
 
     test('multiple headers joined by comma; trims key/value', () {
@@ -24,7 +24,7 @@ void main() {
       );
       expect(
         p['http-header-fields'],
-        '%24%Referer: https://a.test/,%23%User-Agent: Mozilla/5.0',
+        'Referer: https://a.test/,User-Agent: Mozilla/5.0',
       );
     });
 
@@ -37,18 +37,31 @@ void main() {
         <String, String>{'User-Agent': ua, 'Referer': 'https://a.test/'},
       );
       final String value = p['http-header-fields']!;
-      const String item = 'User-Agent: $ua';
-      expect(value, startsWith('%${item.length}%$item'));
-      // 长度前缀之后紧跟的必须是下一项的前缀，不能是 UA 被截断的残段。
-      expect(value, '%${item.length}%$item,%24%Referer: https://a.test/');
+      // 值里的逗号转义成 `\,`：mpv 的 get_nextsep 只认这一种，读回来仍是一整条 UA。
+      expect(
+        value,
+        'User-Agent: ${ua.replaceAll(',', '\\,')},Referer: https://a.test/',
+      );
+      // 分项时未转义的逗号只有一个：项与项之间的那个。
+      expect(
+        RegExp(r'(?<!\\),').allMatches(value).length,
+        1,
+        reason: 'UA 内部的逗号必须全部带转义，否则会被拆成半条 UA + 无冒号垃圾项',
+      );
     });
 
-    test('length prefix counts UTF-8 bytes, not UTF-16 code units', () {
-      // 扩展给的头里出现非 ASCII（日文站点的自定义头 / 带中文的 Cookie）时，按 Dart
-      // 的 String.length 算会短报，mpv 会从值中间截断。
-      const String item = 'X-Note: 日本語';
-      expect(encodeMpvListItem(item), '%17%$item');
-      expect(item.length, 11, reason: 'UTF-16 码元数确实与字节数不同，测试才有意义');
+    test('backslash escaping is what libmpv actually parses (probed)', () {
+      // 随包 libmpv 实测（写字符串、按 MPV_FORMAT_NODE 读回项数组）：
+      //   'a\,b'   -> ['a,b']      转义逗号不分项
+      //   'a\b'    -> ['a\b']      裸反斜杠原样保留（不是通用转义符）
+      //   'a\\b'   -> ['a\\b']     连续反斜杠也原样保留
+      // 长度前缀 `%n%` 在字符串列表上完全不生效（会原样留在头名里且逗号照拆），
+      // 所以只转义逗号、其它字符一律不动。
+      expect(encodeMpvListItem('X-A: a,b'), 'X-A: a\\,b');
+      expect(encodeMpvListItem('X-A: a\\b'), 'X-A: a\\b');
+      expect(encodeMpvListItem('X-Note: 日本語'), 'X-Note: 日本語',
+          reason: '非 ASCII 不需要任何编码：mpv 按字节流原样保留');
+      expect(encodeMpvListItem('X-A: plain'), 'X-A: plain');
     });
 
     test('blank key is dropped; all-blank keys -> empty props', () {
@@ -59,7 +72,7 @@ void main() {
       final Map<String, String> p = buildHttpHeaderFieldsProperty(
         const <String, String>{'   ': 'x', 'Referer': 'r'},
       );
-      expect(p['http-header-fields'], '%10%Referer: r');
+      expect(p['http-header-fields'], 'Referer: r');
     });
 
     test('clear property resets http-header-fields to empty (episode switch)',
