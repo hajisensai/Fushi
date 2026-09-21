@@ -28,7 +28,7 @@
   var APP_MIRROR_KEY = 'appThemeMirror';
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
-  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)';
+  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
   var VALID = { auto: true, light: true, dark: true };
   var pref = 'auto';
   var paletteId = 'fushi';

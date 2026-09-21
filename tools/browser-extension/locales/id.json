@@ -406,5 +406,13 @@
   "bg_badge_generating": "Fushi: membuat kartu Netflix (memutar ulang dan merekam baris demi baris)",
   "bg_badge_idle": "Fushi: klik untuk membuat antrean penambangan Netflix (putar ulang dan rekam otomatis per episode)",
   "bg_generation_cancelled": "Pembuatan dibatalkan",
-  "bg_no_netflix_pending": "Tidak ada item Netflix yang tertunda di antrean"
+  "bg_no_netflix_pending": "Tidak ada item Netflix yang tertunda di antrean",
+  "pc_offset_title": "Selisih waktu",
+  "pc_style_title": "Gaya subtitle",
+  "pc_style_back": "Kembali",
+  "pc_style_reset": "Atur ulang",
+  "pc_style_more": "Semua pengaturan",
+  "pc_hint_site_track": "Video ini memutar trek subtitle milik situs, jadi lapisan Fushi tetap tersembunyi. Ketuk untuk menampilkan subtitle Fushi sebagai gantinya.",
+  "opt_playerControls_title": "Tombol subtitle di dalam pemutar",
+  "opt_playerControls_desc": "Menambahkan tombol Fushi ke bilah kontrol pemutar (YouTube dan Netflix; di situs lain muncul tombol bulat di kanan bawah video selama penunjuk berada di atasnya). Menunya mengubah pengaturan yang sama dengan halaman ini — subtitle Fushi, mengganti subtitle situs, menyembunyikannya, selisih waktu, dan tampilan subtitle — tanpa meninggalkan video."
 }

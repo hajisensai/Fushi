@@ -39,6 +39,8 @@ const settingDefaults = Object.freeze({
   touchLookupHold: false,
   // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
   mobileSubtitleDrawer: true,
+  // 播放器控制栏里的 Fushi 字幕按钮（player-controls.js）。关掉后视频页一个节点都不挂。
+  playerControls: true,
   videoShortcutPrevCue: true,
   videoShortcutNextCue: true,
   videoShortcutReplayCue: true,
@@ -69,6 +71,7 @@ const toggleIds = Object.freeze({
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
   mobileSubtitleDrawer: 'mobileSubtitleDrawer',
+  playerControls: 'playerControls',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
   videoShortcutNextCue: 'videoShortcutNextCue',
   videoShortcutReplayCue: 'videoShortcutReplayCue',

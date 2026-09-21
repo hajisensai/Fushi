@@ -406,5 +406,13 @@
   "bg_badge_generating": "Fushi: Netflix 카드 생성 중(한 줄씩 다시 재생하며 녹화)",
   "bg_badge_idle": "Fushi: 클릭하면 Netflix 마이닝 대기열을 생성합니다(에피소드별 자동 재생 및 녹화)",
   "bg_generation_cancelled": "생성이 취소되었습니다",
-  "bg_no_netflix_pending": "대기열에 Netflix 대기 항목이 없습니다"
+  "bg_no_netflix_pending": "대기열에 Netflix 대기 항목이 없습니다",
+  "pc_offset_title": "싱크 조절",
+  "pc_style_title": "자막 스타일",
+  "pc_style_back": "뒤로",
+  "pc_style_reset": "기본값으로",
+  "pc_style_more": "전체 설정",
+  "pc_hint_site_track": "이 영상은 사이트 자체 자막 트랙을 재생하고 있어 Fushi 자막은 표시되지 않습니다. 눌러서 Fushi 자막으로 바꾸세요.",
+  "opt_playerControls_title": "플레이어 안의 자막 버튼",
+  "opt_playerControls_desc": "플레이어의 컨트롤 바에 Fushi 버튼을 넣습니다(YouTube와 Netflix. 다른 사이트에서는 포인터를 올린 동안 영상 오른쪽 아래에 둥근 버튼이 나타납니다). 메뉴에서 이 페이지와 같은 설정 — Fushi 자막, 사이트 자막 대체, 숨기기, 싱크 조절, 자막 모양 — 을 영상을 벗어나지 않고 바꿀 수 있습니다."
 }

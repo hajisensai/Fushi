@@ -406,5 +406,13 @@
   "bg_badge_generating": "Fushi：Netflix カードを生成中（1 行ずつリプレイして録画）",
   "bg_badge_idle": "Fushi：クリックで Netflix マイニングキューを生成（エピソードごとに自動リプレイと録画）",
   "bg_generation_cancelled": "生成をキャンセルしました",
-  "bg_no_netflix_pending": "キューに Netflix の保留項目はありません"
+  "bg_no_netflix_pending": "キューに Netflix の保留項目はありません",
+  "pc_offset_title": "タイミング調整",
+  "pc_style_title": "字幕スタイル",
+  "pc_style_back": "戻る",
+  "pc_style_reset": "既定に戻す",
+  "pc_style_more": "すべての設定",
+  "pc_hint_site_track": "この動画はサイト自身の字幕トラックを再生しているため、Fushi の字幕は表示されません。タップすると Fushi の字幕に切り替わります。",
+  "opt_playerControls_title": "プレーヤー内の字幕ボタン",
+  "opt_playerControls_desc": "プレーヤー自身のコントロールバーに Fushi ボタンを追加します（YouTube と Netflix。ほかのサイトではポインターを重ねている間だけ動画の右下に丸いボタンが出ます）。メニューからこのページと同じ設定——Fushi 字幕、サイト字幕の置き換え、非表示、タイミング調整、字幕の見た目——を動画から離れずに切り替えられます。"
 }

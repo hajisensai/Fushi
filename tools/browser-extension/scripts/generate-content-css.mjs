@@ -48,7 +48,7 @@ const OVERLAY = join(scriptsDir, 'content-css-overlay.css');
 // 没有走 prefers-color-scheme 块，与扩展页面上的 theme.css 语义完全一致。
 const THEME_CSS = join(repoRoot, 'tools', 'browser-extension', 'theme.css');
 const IN_PAGE_THEME_HOSTS =
-  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)';
+  ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)';
 const OUTPUTS = [
   join(repoRoot, 'tools', 'browser-extension', 'vendor', 'content.css'),
   join(repoRoot, 'fushi', 'assets', 'browser_extension', 'vendor', 'content.css'),

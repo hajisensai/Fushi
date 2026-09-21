@@ -406,5 +406,13 @@
   "bg_badge_generating": "Fushi: Netflix-Karten werden erzeugt (Zeile für Zeile wiedergeben und aufnehmen)",
   "bg_badge_idle": "Fushi: Klicken, um die Netflix-Mining-Warteschlange zu erzeugen (automatische Wiedergabe und Aufnahme pro Folge)",
   "bg_generation_cancelled": "Erzeugung abgebrochen",
-  "bg_no_netflix_pending": "Keine Netflix-Einträge in der Warteschlange ausstehend"
+  "bg_no_netflix_pending": "Keine Netflix-Einträge in der Warteschlange ausstehend",
+  "pc_offset_title": "Zeitversatz",
+  "pc_style_title": "Untertitel-Stil",
+  "pc_style_back": "Zurück",
+  "pc_style_reset": "Zurücksetzen",
+  "pc_style_more": "Alle Einstellungen",
+  "pc_hint_site_track": "Dieses Video spielt den Untertitel-Track der Website ab, daher bleibt die Fushi-Ebene ausgeblendet. Tippen, um stattdessen Fushi-Untertitel anzuzeigen.",
+  "opt_playerControls_title": "Untertitel-Schaltfläche im Player",
+  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche unten rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
 }
