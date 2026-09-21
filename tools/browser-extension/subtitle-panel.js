@@ -752,6 +752,8 @@
       id: e.pointerId,
       // 钉住的左上角（视口坐标）；拖拽全程不动，尺寸与位置都由它 + 指针算出来。
       left: box.left, top: box.top,
+      // 按下点：与挪位拖柄同一条 [OVERLAY_DRAG_THRESHOLD] 位移门用的参照。
+      startX: e.clientX, startY: e.clientY,
       style: null, pos: null, moved: false,
     };
     window.addEventListener('pointermove', overlayResizePointerMove);
@@ -772,6 +774,16 @@
     var rect = video.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
     if (!d.moved) {
+      // 位移门（与挪位拖柄同一条 [OVERLAY_DRAG_THRESHOLD]）：缺了它，「点一下把手」
+      // 或触屏上双击复位的每一次按下，都会在第一个 pointermove 上无条件 commit——
+      // 把 boxWidth/boxHeight 从「随内容」(0) 静默写成当前实测尺寸。之后长句在这个
+      // 固定窄盒里折行，fitTextInto 一路压到下限，用户看到的是「碰了下右下角，字幕
+      // 突然变成小蚂蚁」。触屏上把手是唯一的改大小入口，抖动概率更高。
+      var ddx = e.clientX - d.startX;
+      var ddy = e.clientY - d.startY;
+      if (ddx * ddx + ddy * ddy < OVERLAY_DRAG_THRESHOLD * OVERLAY_DRAG_THRESHOLD) {
+        return;
+      }
       d.moved = true;
       if (st.overlayEl) st.overlayEl.setAttribute('data-resizing', '');
       try { window.getSelection().removeAllRanges(); } catch (_) {}

@@ -302,6 +302,22 @@ function loadWorld(prefs) {
     const down = { pointerId: id, button: 0, clientX: box.right, clientY: box.bottom, target, pointerType: type };
     if (opts && opts.viaRoot) el.dispatch('pointerdown', down);
     target.dispatch('pointerdown', down);
+    // nudge：只在按下点附近挪一点点（阈值门用例），不走到 to。
+    if (opts && opts.nudge) {
+      winDispatch('pointermove', {
+        pointerId: id,
+        clientX: box.right + opts.nudge.dx,
+        clientY: box.bottom + opts.nudge.dy,
+      });
+      winDispatch('pointerup', {
+        pointerId: id,
+        clientX: box.right + opts.nudge.dx,
+        clientY: box.bottom + opts.nudge.dy,
+      });
+      const settled = overlayEl() || el;
+      settled.dispatch('click', { clientX: box.right, clientY: box.bottom, target: settled });
+      return box;
+    }
     winDispatch('pointermove', { pointerId: id, clientX: to.x, clientY: to.y });
     if (opts && opts.cancel) winDispatch('pointercancel', { pointerId: id });
     else winDispatch('pointerup', { pointerId: id, clientX: to.x, clientY: to.y });
@@ -397,6 +413,19 @@ test('拖出画面被夹回视频盒内；顶到百分比上限就停在上限',
   small.resizeDrag({ x: -500, y: -500 });
   assert.strictEqual(small.stored.subtitleStyle.boxWidth, 20, '宽下限 20%');
   assert.strictEqual(small.stored.subtitleStyle.boxHeight, 5, '高下限 5%（不是 0 = 随内容）');
+});
+
+test('按住把手几乎没动就松手：一个键都不写（点一下不该把「随内容」变成固定尺寸）', () => {
+  const w = show();
+  const before = JSON.stringify(w.stored);
+  // 阈值内的微动：鼠标 1px 抖、触屏双击复位时每一次按下都长这样。
+  w.resizeDrag({ x: 0, y: 0 }, { nudge: { dx: 2, dy: 2 } });
+  assert.strictEqual(JSON.stringify(w.stored), before, '既不写 subtitleStyle 也不写位置');
+  assert.strictEqual(
+    w.overlayEl().getAttribute('data-resizing'),
+    null,
+    '没过阈值就不该进入拖拽态',
+  );
 });
 
 test('pointercancel 丢弃整次缩放：不写尺寸、不写位置', () => {
