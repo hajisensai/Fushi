@@ -34,6 +34,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/video_resource_version_group_list.dart';
+import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 
 // 集数解析下沉后的源兼容出口（订阅聚合与既有测试从本文件 import 它）。
@@ -153,6 +154,24 @@ class VideoDiscoveryRemoteSubscriptionSelection {
 
 typedef VideoDiscoveryRemoteSubscriptionSubmit = Future<void> Function(
   VideoDiscoveryRemoteSubscriptionSelection selection,
+);
+
+/// 下载交给已配对 host（设计 §3.3）：host 只收磁链、下到自己的库；没有本地落地
+/// 源这一维，字幕由 host 按自己的规则补（wire 不带字幕策略）。
+class VideoDiscoveryRemoteDownloadSelection {
+  const VideoDiscoveryRemoteDownloadSelection({
+    required this.target,
+    required this.media,
+    required this.resource,
+  });
+
+  final HostDownloadTarget target;
+  final VideoMediaReference media;
+  final VideoResourceCandidate resource;
+}
+
+typedef VideoDiscoveryRemoteDownloadSubmit = Future<void> Function(
+  VideoDiscoveryRemoteDownloadSelection selection,
 );
 
 enum SubtitleInstallTarget { activeTask, existingVideo, directory }
@@ -603,6 +622,9 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
     this.onConfigureBackend,
     this.resolveAiProvider,
     this.aiClientFactory,
+    this.remoteTargets = const <HostDownloadTarget>[],
+    this.defaultRemoteTargetUrl,
+    this.onRemoteSubmit,
     super.key,
   });
 
@@ -615,6 +637,13 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
   final AiProviderResolver? resolveAiProvider;
   final AiClientFactory? aiClientFactory;
 
+  /// 宣告代下载能力的已配对 host；非空时多出「下载到」下拉（见 surface）。
+  final List<HostDownloadTarget> remoteTargets;
+
+  /// 「下载执行设备」偏好（host 地址）：在 [remoteTargets] 里时作为默认选中。
+  final String? defaultRemoteTargetUrl;
+  final VideoDiscoveryRemoteDownloadSubmit? onRemoteSubmit;
+
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(title: Text(t.video_discovery_resource_search)),
@@ -625,6 +654,9 @@ class VideoDiscoveryResourceSearchPage extends StatelessWidget {
             sources: sources,
             defaultSourceId: defaultSourceId,
             onSubmit: onSubmit,
+            remoteDownloadTargets: remoteTargets,
+            defaultRemoteDownloadUrl: defaultRemoteTargetUrl,
+            onRemoteDownloadSubmit: onRemoteSubmit,
             onConfigureBackend: onConfigureBackend,
             resolveAiProvider: resolveAiProvider,
             aiClientFactory: aiClientFactory,
@@ -695,6 +727,9 @@ class VideoResourceSearchSurface extends StatefulWidget {
     this.onSubscriptionSubmit,
     this.remoteTargets = const <HostSubscriptionTarget>[],
     this.onRemoteSubscriptionSubmit,
+    this.remoteDownloadTargets = const <HostDownloadTarget>[],
+    this.defaultRemoteDownloadUrl,
+    this.onRemoteDownloadSubmit,
     this.onConfigureBackend,
     this.resolveAiProvider,
     this.aiClientFactory,
@@ -714,6 +749,13 @@ class VideoResourceSearchSurface extends StatefulWidget {
   /// 下拉：本机 / 某台 host；没有本地落地源时默认落到第一台 host。
   final List<HostSubscriptionTarget> remoteTargets;
   final VideoDiscoveryRemoteSubscriptionSubmit? onRemoteSubscriptionSubmit;
+
+  /// 宣告代下载能力的已配对 host（只在下载模式有意义，设计 §3.3）。非空时多出
+  /// 「下载到」下拉：本机 / 某台 host；[defaultRemoteDownloadUrl]（「下载执行设备」
+  /// 偏好）命中其中一台时默认选它，否则没有本地落地源时默认落到第一台。
+  final List<HostDownloadTarget> remoteDownloadTargets;
+  final String? defaultRemoteDownloadUrl;
+  final VideoDiscoveryRemoteDownloadSubmit? onRemoteDownloadSubmit;
 
   /// 见 [VideoDownloadBackendSetupPrompt]：提交失败在「后端没配好 / 后端运行时缺失」
   /// 时的可执行出口。null = 宿主没接线，失败态只报事实不给按钮。
@@ -787,7 +829,10 @@ class _VideoResourceSearchSurfaceState
 
   /// 订阅运行位置：null = 本机。
   HostSubscriptionTarget? _remoteTarget;
-  bool get _remote => _remoteTarget != null;
+
+  /// 下载落点：null = 本机（下载模式专用，与 [_remoteTarget] 互斥于模式）。
+  HostDownloadTarget? _remoteDownloadTarget;
+  bool get _remote => _remoteTarget != null || _remoteDownloadTarget != null;
   /// AI 调用进行中（补词 / 排序共用一把锁：两者都会改同一份输入或结果）。
   bool _aiBusy = false;
 
@@ -823,6 +868,13 @@ class _VideoResourceSearchSurfaceState
         widget.sources.isEmpty &&
         widget.remoteTargets.isNotEmpty) {
       _remoteTarget = widget.remoteTargets.first;
+    }
+    if (!widget.subscription && widget.remoteDownloadTargets.isNotEmpty) {
+      _remoteDownloadTarget = widget.remoteDownloadTargets.firstWhereOrNull(
+            (HostDownloadTarget t) =>
+                t.baseUrl == widget.defaultRemoteDownloadUrl,
+          ) ??
+          (widget.sources.isEmpty ? widget.remoteDownloadTargets.first : null);
     }
     if (widget.initialItem != null) unawaited(_search());
   }
@@ -1172,7 +1224,8 @@ class _VideoResourceSearchSurfaceState
   }
 
   Future<void> _submit() async {
-    if (_remote) return _submitRemote();
+    if (_remoteTarget != null) return _submitRemote();
+    if (_remoteDownloadTarget != null) return _submitRemoteDownload();
     final VideoMediaReference? media = _media;
     final MediaSourceRow? source = _source;
     // 目标集在任何 await 之前定死：提交期间搜索结果会被刷新重建，跨 await 重读
@@ -1305,6 +1358,59 @@ class _VideoResourceSearchSurfaceState
         'provider_unavailable' =>
           t.subscription_remote_provider_unavailable(provider: providerId),
         'unsupported' => t.subscription_remote_unsupported,
+        _ => error.detail ?? error.code,
+      };
+      _showSubmitFailure(
+        message,
+        SnackBarAction(label: t.retry, onPressed: () => unawaited(_submit())),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  /// 下载交给 host：目标集在 await 前定死、逐条串行、首条失败直接报、后续聚合
+  /// ——与本地批量提交同一套纪律。失败原因来自 host（连不上 / 后端没配 / 只收
+  /// 磁链），按客户端结构化 code 给文案。
+  Future<void> _submitRemoteDownload() async {
+    final HostDownloadTarget? target = _remoteDownloadTarget;
+    final VideoMediaReference? media = _media;
+    final VideoDiscoveryRemoteDownloadSubmit? submit =
+        widget.onRemoteDownloadSubmit;
+    final List<VideoResourceCandidate> resources =
+        List<VideoResourceCandidate>.of(_selectedCandidates);
+    if (target == null ||
+        media == null ||
+        submit == null ||
+        resources.isEmpty ||
+        _submitting) {
+      return;
+    }
+    setState(() => _submitting = true);
+    try {
+      int failed = 0;
+      for (int i = 0; i < resources.length; i++) {
+        try {
+          await submit(VideoDiscoveryRemoteDownloadSelection(
+            target: target,
+            media: media,
+            resource: resources[i],
+          ));
+        } on Object catch (error, stackTrace) {
+          if (i == 0) rethrow;
+          failed++;
+          debugPrint(
+            '[fushi-discovery] remote batch enqueue failed: $error\n$stackTrace',
+          );
+        }
+      }
+      if (failed > 0 && mounted) {
+        _showSubmitFailure(t.download_batch_failed(n: failed), null);
+      }
+      if (mounted) widget.onClose?.call();
+    } on HostDownloadException catch (error) {
+      final String message = switch (error.code) {
+        'magnet_only' => t.download_execution_remote_magnet_only,
         _ => error.detail ?? error.code,
       };
       _showSubmitFailure(
@@ -1832,9 +1938,41 @@ class _VideoResourceSearchSurfaceState
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool showRunLocation =
         widget.subscription && widget.remoteTargets.isNotEmpty;
+    final bool showDownloadLocation =
+        !widget.subscription && widget.remoteDownloadTargets.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (showDownloadLocation) ...<Widget>[
+          DropdownButtonFormField<HostDownloadTarget?>(
+            key: const ValueKey<String>('video-download-run-location'),
+            initialValue: _remoteDownloadTarget,
+            isExpanded: true,
+            decoration: InputDecoration(labelText: t.download_target_label),
+            items: <DropdownMenuItem<HostDownloadTarget?>>[
+              if (widget.sources.isNotEmpty)
+                DropdownMenuItem<HostDownloadTarget?>(
+                  value: null,
+                  child: Text(t.download_target_local),
+                ),
+              for (final HostDownloadTarget target
+                  in widget.remoteDownloadTargets)
+                DropdownMenuItem<HostDownloadTarget?>(
+                  value: target,
+                  child: Text(
+                    t.download_target_remote(device: target.label),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            onChanged: _submitting
+                ? null
+                : (HostDownloadTarget? value) =>
+                    setState(() => _remoteDownloadTarget = value),
+          ),
+          SizedBox(height: tokens.spacing.gap),
+        ],
         if (showRunLocation) ...<Widget>[
           DropdownButtonFormField<HostSubscriptionTarget?>(
             key: const ValueKey<String>('video-subscription-run-location'),

@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataMediaKind;
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -72,12 +73,20 @@ Future<void> showManualDownloadTaskDialog({
   // 下载后端也能打开对话框，把磁链交给 host。探测失败按「没有远端」处理。
   final InterconnectDownloadClient remote = remoteClient ??
       InterconnectDownloadClient(repo: SyncRepository(appModel.database));
-  HostDownloadTarget? remoteTarget;
-  try {
-    remoteTarget = await remote.probe();
-  } catch (_) {
-    remoteTarget = null;
+  // 「下载执行设备」偏好指向的 host 优先（并作为对话框的默认落点）；没设 / 连不上
+  // 时退回「第一台宣告能力的 host」——对话框里有下拉，用户看得见投给了谁。
+  final DownloadExecutionResolution execution =
+      await resolveDownloadExecution(appModel, client: remote);
+  HostDownloadTarget? remoteTarget =
+      execution is DownloadExecutionRemote ? execution.target : null;
+  if (remoteTarget == null) {
+    try {
+      remoteTarget = await remote.probe();
+    } catch (_) {
+      remoteTarget = null;
+    }
   }
+  final bool preferRemote = execution is DownloadExecutionRemote;
   if (!context.mounted) return;
   _ManualDownloadBackend resolved = await _resolveBackend(appModel);
   // 远端只收磁链（`_canSubmit` 的远端分支拒绝 `.torrent`）：带种子进来时不走
@@ -95,6 +104,7 @@ Future<void> showManualDownloadTaskDialog({
         defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
         remoteClient: remote,
         remoteTarget: remoteTarget,
+        initialUseRemote: preferRemote,
         initialDiscoveryKind: initialDiscoveryKind,
       ),
     );
@@ -136,6 +146,7 @@ Future<void> showManualDownloadTaskDialog({
           defaultSourceId: appModel.prefsRepo.videoDownloadTargetSourceId,
           remoteClient: remote,
           remoteTarget: remoteTarget,
+          initialUseRemote: preferRemote,
           initialTorrentPath: torrentPath,
           initialDiscoveryKind: initialDiscoveryKind,
         ),
@@ -165,6 +176,7 @@ class ManualDownloadTaskDialog extends StatefulWidget {
     required this.defaultSourceId,
     this.remoteClient,
     this.remoteTarget,
+    this.initialUseRemote = false,
     this.initialTorrentPath,
     this.initialDiscoveryKind,
     super.key,
@@ -185,6 +197,10 @@ class ManualDownloadTaskDialog extends StatefulWidget {
   /// 互联代下载：有 host 时对话框多一个「下载到」选择。
   final InterconnectDownloadClient? remoteClient;
   final HostDownloadTarget? remoteTarget;
+
+  /// 「下载到」默认选 [remoteTarget]（用户在下载设置里把执行设备指到了它）。
+  /// 本机没有管线时无论此值如何都只能选远端。
+  final bool initialUseRemote;
   final List<MediaSourceRow> sources;
   final int? defaultSourceId;
 
@@ -219,7 +235,8 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
     super.initState();
     _sourceId = widget.defaultSourceId ??
         (widget.sources.isEmpty ? null : widget.sources.first.id);
-    _useRemote = widget.pipeline == null && widget.remoteTarget != null;
+    _useRemote = widget.remoteTarget != null &&
+        (widget.initialUseRemote || widget.pipeline == null);
     _discoveryKind = widget.initialDiscoveryKind;
     final String? torrentPath = widget.initialTorrentPath;
     if (torrentPath != null) unawaited(_loadTorrentFile(torrentPath));
@@ -243,8 +260,11 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
       _hasPayload &&
       _titleController.text.trim().isNotEmpty &&
       (_useRemote
-          // 远端只收磁链 + 视频（.torrent 文件与非视频域不过线）。
-          ? _metainfo == null && _magnetHash != null && _isVideo
+          // 远端只收磁链（.torrent 文件不过线）；非视频域要 host 宣告能按域入库
+          // （app 当 host 收全部四个域，无头 fushi_server 只收视频）。
+          ? _metainfo == null &&
+              _magnetHash != null &&
+              widget.remoteTarget?.supportsKind(_discoveryKind?.name) == true
           : widget.pipeline != null && (!_isVideo || _sourceId != null));
 
   void _prefillTitle(String? candidate) {
@@ -385,6 +405,7 @@ class _ManualDownloadTaskDialogState extends State<ManualDownloadTaskDialog> {
         magnetUri: _magnetController.text.trim(),
         title: _titleController.text.trim(),
         mediaKind: _mediaKind.name,
+        discoveryKind: _discoveryKind?.name,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
