@@ -9,8 +9,11 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
@@ -65,6 +68,9 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    Future<HostJobManager> Function()? hostJobsFactory,
+    HostDownloadHost Function()? downloadsFactory,
+    HostSubscriptionHost Function()? subscriptionsFactory,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
@@ -74,6 +80,9 @@ class FushiSyncServerController extends ChangeNotifier {
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _hostJobsFactory = hostJobsFactory,
+        _downloadsFactory = downloadsFactory,
+        _subscriptionsFactory = subscriptionsFactory,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
         // per-platform service so mobile hosts advertise their model, not
@@ -91,6 +100,17 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// 通用任务（`/api/jobs`，目前 ASR）/ 代下载（`/api/downloads`）/ 内容订阅
+  /// （`/api/subscriptions`）三面的装配工厂。三者此前只在无头 `fushi_server` 接线，
+  /// app 当 host 时对端探到的能力位里没有它们，手机端「下载到 电脑」的选项根本
+  /// 不出现。null（headless/单测）= 不接线，对应端点 404、能力位不带该字段。
+  ///
+  /// 任务管理器要 `load()` 磁盘记录才能用，所以是异步工厂；每次 start 新建，stop
+  /// 时 server 内部 `disposeAll`。
+  final Future<HostJobManager> Function()? _hostJobsFactory;
+  final HostDownloadHost Function()? _downloadsFactory;
+  final HostSubscriptionHost Function()? _subscriptionsFactory;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -354,6 +374,7 @@ class FushiSyncServerController extends ChangeNotifier {
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
+    final HostJobManager? hostJobs = await _hostJobsFactory?.call();
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: _syncDataDir(),
       port: port,
@@ -366,6 +387,11 @@ class FushiSyncServerController extends ChangeNotifier {
       // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
       // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
       mangaOcrJobs: _buildMangaOcrJobManager(),
+      // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
+      // 挂在 app 自己的管线上（见 app_download_host.dart）。
+      hostJobs: hostJobs,
+      downloads: _downloadsFactory?.call(),
+      subscriptions: _subscriptionsFactory?.call(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: deviceName,

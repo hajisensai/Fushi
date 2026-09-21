@@ -96,6 +96,10 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
   }
 }
 
+/// 「新下载任务交给哪台互联 host 执行」的偏好键（空 = 本机）。
+/// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）。
+const String kDownloadExecutionHostPrefKey = 'download_execution_host';
+
 class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
 
@@ -3217,6 +3221,19 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoResourceDisabledSources(String value) async {
     await setPref('video_resource_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 新下载任务默认交给哪台设备执行：空 = 本机；否则是已配对互联 host 的地址
+  /// （`FushiClientUrl.url`），任务经 `/api/downloads` 投过去、下到 host 自己的
+  /// 库里。手动添加任务 / 发现页 / 资源搜索页共用这一个默认值（各自仍可当次改）。
+  /// 设备本地键：指向的是「这台设备配的 host」，随备份到别的设备只会指错。
+  String get downloadExecutionHostUrl =>
+      (getPref(kDownloadExecutionHostPrefKey, defaultValue: '') as String)
+          .trim();
+
+  Future<void> setDownloadExecutionHostUrl(String value) async {
+    await setPref(kDownloadExecutionHostPrefKey, value.trim());
     notifyListeners();
   }
 

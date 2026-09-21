@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:fushi/src/models/preferences_repository.dart'
+    show kDownloadExecutionHostPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
@@ -1332,6 +1334,9 @@ class SyncRepository {
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
     _keyBackendType,
+    // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
+    // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
+    kDownloadExecutionHostPrefKey,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

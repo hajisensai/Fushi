@@ -62,6 +62,7 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
       t.download_settings,
       visible: (SettingsContext c) => c.appModel.supportsEmbeddedTorrent,
     ),
+    _entry('execution_host', t.download_execution_host_title),
     _entry('save_root', t.download_save_root_title, visible: _embedded),
     _entry(
       'video_setting_torrent_download_limit',

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
@@ -58,6 +61,9 @@ class _TorrentSettingsSectionState
   List<String> _trackerPreview = const <String>[];
   String? _trackerFetchError;
 
+  /// 已配对且启用的互联 host（「下载执行设备」下拉的候选）。
+  List<FushiClientUrl> _pairedHosts = const <FushiClientUrl>[];
+
   /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'fushi'，
   /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 fushi」）。
   late final TextEditingController _categoryCtrl;
@@ -75,6 +81,24 @@ class _TorrentSettingsSectionState
     _trackerUrlCtrl = TextEditingController(
       text: config.trackerSubscriptionUrl,
     );
+    unawaited(_loadPairedHosts());
+  }
+
+  Future<void> _loadPairedHosts() async {
+    final AppModel appModel = ref.read(appProvider);
+    // 配对清单在 DB 的 preferences 表里；库没开（测试 seam / 极早期）就是没有 host。
+    if (!appModel.isDatabaseReady) return;
+    final List<FushiClientUrl> hosts =
+        (await SyncRepository(appModel.database).getFushiClientUrls())
+            .where((FushiClientUrl u) => u.enabled)
+            .toList(growable: false);
+    if (mounted) setState(() => _pairedHosts = hosts);
+  }
+
+  /// 当前偏好里的执行设备；不在配对清单里（已解绑）时退回本机显示。
+  String _executionHostValue(AppModel appModel) {
+    final String url = appModel.prefsRepo.downloadExecutionHostUrl;
+    return _pairedHosts.any((FushiClientUrl u) => u.url == url) ? url : '';
   }
 
   void _onCategoryFocusChanged() {
@@ -431,6 +455,45 @@ class _TorrentSettingsSectionState
               ),
             ),
           const SizedBox(height: 12),
+          // 「下载执行设备」：新任务默认投给哪台已配对的互联 host（设计 §3.3，
+          // 手机让电脑下）。这一层在「后端」之上——手机不需要知道电脑用的是内置
+          // 引擎还是外接 qb。没配对任何 host 时不渲染：只剩「本机」一个选项。
+          if (_pairedHosts.isNotEmpty) ...<Widget>[
+            SettingsSearchTarget(
+              id: 'downloads.execution_host',
+              child: DropdownButtonFormField<String>(
+                key: const ValueKey<String>('downloads-execution-host'),
+                initialValue: _executionHostValue(appModel),
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: t.download_execution_host_title,
+                  helperText: t.download_execution_host_hint,
+                  helperMaxLines: 3,
+                ),
+                items: <DropdownMenuItem<String>>[
+                  DropdownMenuItem<String>(
+                    value: '',
+                    child: Text(t.download_target_local),
+                  ),
+                  for (final FushiClientUrl host in _pairedHosts)
+                    DropdownMenuItem<String>(
+                      value: host.url,
+                      child: Text(
+                        t.download_target_remote(
+                          device: host.deviceName ?? host.url,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (String? value) => unawaited(
+                  appModel.prefsRepo.setDownloadExecutionHostUrl(value ?? ''),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
         ],
         // 外接 qb 连接字段。
         if (isQb && connection) ...<Widget>[
