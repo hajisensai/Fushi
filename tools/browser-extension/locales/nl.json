@@ -133,7 +133,12 @@
   "opt_study_heading_heading": "Immersietijd",
   "opt_study_heading_section_note": "Vereist dat Fushi draait",
   "opt_studyTrackVideo_title": "Webvideo’s meetellen als kijktijd",
-  "opt_studyTrackVideo_desc": "Registreert de kijktijd van webvideo’s in het videodomein van de studiestatistieken van Fushi, met dezelfde regels als de videopagina in de app: alleen de eerste keer dat een deel wordt bekeken telt; herhalingen, terugspoelen en opnieuw kijken niet; afspelen in een achtergrondtabblad telt wel. Korte clips zoals zweefvoorbeelden op de startpagina worden genegeerd.",
+  "opt_studyTrackVideo_desc": "Registreert de kijktijd van webvideo’s in het videodomein van de studiestatistieken van Fushi, met dezelfde regels als de videopagina in de app: alleen de eerste keer dat een deel wordt bekeken telt; herhalingen, terugspoelen en opnieuw kijken niet; afspelen in een achtergrondtabblad telt wel. Korte clips zoals zweefvoorbeelden op de startpagina worden genegeerd. Welke video’s meetellen bepaal je met de instelling hieronder.",
+  "opt_studyTrackVideoCondition_title": "Wat meetelt als studietijd",
+  "opt_studyTrackVideoCondition_desc": "Standaard tellen alleen de minuten die je kunt lezen: Fushi heeft een ondertitelspoor voor deze video herkend (of je hebt een extern ondertitelbestand geladen) en je gebruikt het ook echt — in het zijpaneel, in het ondertitelvak over de video of in plaats van de ondertiteling van de site. Ondertiteling die halverwege binnenkomt telt vanaf dat moment; zet je die uit (ook verbergen met Shift+H), dan stopt de klok meteen.",
+  "opt_studyTrackVideoCondition_option_fushiSubtitle": "Fushi- of externe ondertiteling in gebruik",
+  "opt_studyTrackVideoCondition_option_anySubtitle": "Video heeft überhaupt ondertiteling",
+  "opt_studyTrackVideoCondition_option_always": "Elke video telt",
   "opt_shortcut_heading_section_kicker": "Toetsenbordbediening",
   "opt_shortcut_heading_heading": "Videosneltoetsen",
   "opt_videoShortcutPrevCue_title": "Vorige ondertitelregel",
@@ -409,5 +414,13 @@
   "bg_badge_generating": "Fushi: Netflix-kaarten genereren (regel voor regel opnieuw afspelen en opnemen)",
   "bg_badge_idle": "Fushi: klik om de Netflix-kaartenwachtrij te genereren (automatisch opnieuw afspelen en opnemen per aflevering)",
   "bg_generation_cancelled": "Genereren geannuleerd",
-  "bg_no_netflix_pending": "Geen Netflix-items in afwachting in de wachtrij"
+  "bg_no_netflix_pending": "Geen Netflix-items in afwachting in de wachtrij",
+  "pc_offset_title": "Tijdverschuiving",
+  "pc_style_title": "Ondertitelstijl",
+  "pc_style_back": "Terug",
+  "pc_style_reset": "Standaardwaarden",
+  "pc_style_more": "Alle instellingen",
+  "pc_hint_site_track": "Deze video speelt het ondertitelspoor van de site zelf af, dus de Fushi-laag blijft verborgen. Tik om in plaats daarvan Fushi-ondertitels te tonen.",
+  "opt_playerControls_title": "Ondertitelknop in de speler",
+  "opt_playerControls_desc": "Zet een Fushi-knop in de bedieningsbalk van de speler (YouTube en Netflix; op andere sites verschijnt een ronde knop rechtsonder in de video zolang de aanwijzer erboven staat). Het menu schakelt dezelfde instellingen als deze pagina — Fushi-ondertitels, de ondertitels van de site vervangen, verbergen, de tijdverschuiving en het uiterlijk — zonder de video te verlaten."
 }

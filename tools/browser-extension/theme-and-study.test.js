@@ -175,6 +175,11 @@ function loadStudy(opts) {
   };
   sandbox.window = sandbox;
   sandbox.window.fushiVideoKey = () => 'yt-abc';
+  // 字幕门（subtitle-panel.js 的 fushiSubtitleStudyState）：默认档要求 Fushi / 外挂字幕
+  // 正在用，所以壳里默认给「正在用」；验门本身的用例传 opts.subtitle 覆盖，
+  // opts.noSubtitleApi 则完全不装这个出口（面板脚本没注入的页面）。
+  const subtitle = { value: 'subtitle' in opts ? opts.subtitle : { showing: true, any: true } };
+  if (!opts.noSubtitleApi) sandbox.window.fushiSubtitleStudyState = () => subtitle.value;
   vm.createContext(sandbox);
   vm.runInContext(STUDY_SRC, sandbox, { filename: 'study-tracker.js' });
   const makeVideo = (over) => {
@@ -191,7 +196,11 @@ function loadStudy(opts) {
   };
   const dispatch = (t, target) => { for (const fn of docListeners[t] || []) fn({ target }); };
   const tick = () => { for (const it of intervals) if (it.fn && it.ms === 1000) it.fn(); };
-  return { sandbox, sent, makeVideo, dispatch, tick, docListeners, samples: () => sent.filter((m) => m.type === 'studySample').map((m) => m.sample) };
+  const setSubtitle = (value) => { subtitle.value = value; };
+  // 还活着的 1 Hz 定时器数（壳里 clearInterval 把 fn 置空）。
+  const liveIntervals = () => intervals.filter((it) => it.fn && it.ms === 1000).length;
+  const setSetting = (key, value) => { sandbox.chrome.storage.local.set({ [key]: value }); };
+  return { sandbox, sent, makeVideo, dispatch, tick, docListeners, setSubtitle, liveIntervals, setSetting, samples: () => sent.filter((m) => m.type === 'studySample').map((m) => m.sample) };
 }
 
 test('正片开播：立刻发一个样本，之后每秒一个；mediaKey 带 web: 前缀、身份与字幕轨同一把 key', () => {
@@ -270,7 +279,145 @@ test('manifest 装入顺序：locales/en.js → i18n.js → theme.js 在 content
   assert.ok(idx('locales/en.js') >= 0 && idx('locales/en.js') < idx('i18n.js'));
   assert.ok(idx('i18n.js') < idx('theme.js') && idx('theme.js') < idx('content.js'));
   assert.ok(idx('study-tracker.js') > idx('subtitle-providers.js'), 'study-tracker 依赖 fushiVideoKey');
+  assert.ok(idx('study-tracker.js') > idx('subtitle-panel.js'),
+    '字幕门读面板的 fushiSubtitleStudyState，面板必须先装');
   const war = manifest.web_accessible_resources.flatMap((r) => r.resources);
   assert.ok(war.includes('locales/*.json'), '各语言字典要能被 content script fetch');
   assert.ok(war.includes('theme.css') && war.includes('i18n.js'), '侧栏被抽屉 iframe 嵌入时要能取到主题/文案脚本');
+});
+
+// ───────── ③ 字幕门（什么情况才算入统计；用户 2026-09-21） ─────────
+
+test('默认档：没有 Fushi / 外挂字幕的视频一条样本都不发，有就照常计', () => {
+  const none = loadStudy({ subtitle: { showing: false, any: false } });
+  none.dispatch('play', none.makeVideo());
+  none.tick();
+  assert.strictEqual(none.samples().length, 0, '光有视频在播不算沉浸');
+
+  // 面板脚本根本没装（或旧版本没这个出口）：宁可少计，不能默认全计。
+  const missing = loadStudy({ noSubtitleApi: true });
+  missing.dispatch('play', missing.makeVideo());
+  assert.strictEqual(missing.samples().length, 0);
+
+  // 只有站点原生字幕被采样成 live 伪轨（any 真、showing 假）也不算：
+  // 用户读的是站点自己的字幕，没经过 Fushi。
+  const live = loadStudy({ subtitle: { showing: false, any: true } });
+  live.dispatch('play', live.makeVideo());
+  assert.strictEqual(live.samples().length, 0);
+
+  const ok = loadStudy();
+  ok.dispatch('play', ok.makeVideo());
+  assert.strictEqual(ok.samples().length, 1);
+});
+
+test('字幕中途才到：从那一刻开始计，不用等下一次 play', () => {
+  const h = loadStudy({ subtitle: { showing: false, any: false } });
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  h.tick();
+  h.tick();
+  assert.strictEqual(h.samples().length, 0);
+  h.setSubtitle({ showing: true, any: true });   // 整集轨拓到 / 用户拖了外挂字幕
+  h.tick();
+  const s = h.samples();
+  assert.strictEqual(s.length, 1, '门一开就开表');
+  assert.strictEqual(s[0].ended, false);
+  assert.strictEqual(s[0].mediaKey, 'web:yt-abc');
+});
+
+test('中途关掉字幕（含 Shift+H 隐藏）立刻停表，放回来又续上', () => {
+  const h = loadStudy();
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  assert.strictEqual(h.samples().length, 1);
+  h.setSubtitle({ showing: false, any: false });
+  h.tick();
+  assert.strictEqual(h.samples().at(-1).ended, true, '字幕关了 = 给 app 停表信号');
+  const afterStop = h.samples().length;
+  h.tick();
+  assert.strictEqual(h.samples().length, afterStop, '停表后不再刷心跳');
+  h.setSubtitle({ showing: true, any: true });
+  h.tick();
+  assert.strictEqual(h.samples().at(-1).ended, false, '字幕又开了 = 续上');
+
+  // Shift+H 把字幕藏了：Fushi 字幕轨还在，但屏幕上一句也看不到。
+  const hidden = loadStudy();
+  hidden.dispatch('play', hidden.makeVideo());
+  hidden.sandbox.chrome.storage.local.set({ subtitleHidden: true });
+  assert.strictEqual(hidden.samples().at(-1).ended, true);
+  hidden.sandbox.chrome.storage.local.set({ subtitleHidden: false });
+  assert.strictEqual(hidden.samples().at(-1).ended, false, '取消隐藏即续上');
+});
+
+test('档位：anySubtitle 只要这页有轨就计；always 回到旧行为；未知值回落默认档', () => {
+  const any = loadStudy({
+    stored: { studyTrackVideoCondition: 'anySubtitle' },
+    subtitle: { showing: false, any: true },
+  });
+  any.dispatch('play', any.makeVideo());
+  assert.strictEqual(any.samples().length, 1, '有轨即可，不要求用户已在读');
+  assert.strictEqual(any.sandbox.window.fushiStudyTracker.condition, 'anySubtitle');
+
+  const anyNone = loadStudy({
+    stored: { studyTrackVideoCondition: 'anySubtitle' },
+    subtitle: { showing: false, any: false },
+  });
+  anyNone.dispatch('play', anyNone.makeVideo());
+  assert.strictEqual(anyNone.samples().length, 0, '连一条轨都没有就不计');
+
+  const always = loadStudy({ stored: { studyTrackVideoCondition: 'always' }, noSubtitleApi: true });
+  always.dispatch('play', always.makeVideo());
+  assert.strictEqual(always.samples().length, 1, 'always 不问字幕');
+
+  const bogus = loadStudy({ stored: { studyTrackVideoCondition: 'whatever' }, noSubtitleApi: true });
+  bogus.dispatch('play', bogus.makeVideo());
+  assert.strictEqual(bogus.sandbox.window.fushiStudyTracker.condition, 'fushiSubtitle');
+  assert.strictEqual(bogus.samples().length, 0, '写歪的值不得静默变成「全都计」');
+
+  // 改档即时生效：正在计的视频换成严格档马上停表。
+  const live = loadStudy({ stored: { studyTrackVideoCondition: 'always' }, subtitle: { showing: false, any: false } });
+  live.dispatch('play', live.makeVideo());
+  assert.strictEqual(live.samples().length, 1);
+  live.sandbox.chrome.storage.local.set({ studyTrackVideoCondition: 'fushiSubtitle' });
+  assert.strictEqual(live.samples().at(-1).ended, true);
+});
+
+test('总开关关掉时，字幕门再怎么变也不重新开表', () => {
+  const h = loadStudy({ stored: { studyTrackVideo: false } });
+  h.dispatch('play', h.makeVideo());
+  assert.strictEqual(h.samples().length, 0);
+  h.setSubtitle({ showing: true, any: true });
+  h.tick();
+  assert.strictEqual(h.samples().length, 0);
+});
+
+test('总开关关掉后不再空转每秒定时器；门关着时仍保留（门重开只能靠轮询发现）', () => {
+  const h = loadStudy();
+  h.dispatch('play', h.makeVideo());
+  assert.strictEqual(h.liveIntervals(), 1, '开表时有一个 1 Hz 定时器');
+  h.setSubtitle({ showing: false, any: false });
+  h.tick();
+  assert.strictEqual(h.liveIntervals(), 1, '门关着要留着定时器：门重开不发任何事件');
+  h.setSetting('studyTrackVideo', false);
+  assert.strictEqual(h.liveIntervals(), 0, '总开关关掉后不留空转定时器');
+  const before = h.samples().length;
+  h.setSubtitle({ showing: true, any: true });
+  h.setSetting('studyTrackVideo', true);
+  assert.strictEqual(h.liveIntervals(), 1, '重开靠 storage 事件把表续上（候选还在）');
+  assert.ok(h.samples().length > before, '续上后立刻发样本');
+});
+
+test('同一页换成另一个 <video> 播：追踪跟过去，不锁死在旧元素上', () => {
+  const h = loadStudy();
+  const first = h.makeVideo();
+  h.dispatch('play', first);
+  assert.strictEqual(h.samples().length, 1);
+  const second = h.makeVideo({ currentTime: 40 });
+  h.dispatch('play', second);
+  const s = h.samples();
+  assert.strictEqual(s.at(-2).ended, true, '旧的先停表');
+  assert.strictEqual(s.at(-1).positionMs, 40000, '新的从它自己的位置开始');
+  second.currentTime = 41;
+  h.tick();
+  assert.strictEqual(h.samples().at(-1).positionMs, 41000, '心跳认的是新那个');
 });

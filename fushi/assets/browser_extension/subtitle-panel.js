@@ -1169,6 +1169,35 @@
     return { lang: st.activeLang, cues: st.cues };
   };
 
+  // 学习统计的字幕门（study-tracker.js）唯一的状态来源。网页视频的观看时长默认只在
+  // 「Fushi 真的在给用户出字幕」时才计：用户开着站点原生字幕、或者根本没有字幕的视频，
+  // 沉浸时间对学习没有意义，混进统计只会把日语沉浸曲线稀释成刷视频曲线。
+  //   showing = 当前活动轨是整集轨（Fushi 抓到的站点轨）或外挂字幕轨，且真有 cue。
+  //             面板/侧边栏/覆盖层任一在用都会把 activeLang 设上（refreshHeadless），
+  //             没打开过 Fushi 字幕的页面这里恒 false —— 这正是默认档要的语义。
+  //   any     = 这个视频存在任何一条 Fushi 认得出的轨（含 DOM 采样 live 轨与按需加载的
+  //             占位轨），不要求用户已经在读 —— 放宽档用。
+  window.fushiSubtitleStudyState = function () {
+    var tracks = [];
+    try { tracks = tracksForVideo(); } catch (_) { tracks = []; }
+    // st.enabled 必须进判据：applyEnabled(false) → sync() → teardownAll() 会撤掉
+    // 覆盖层、放回站点原生字幕，但**不清** activeLang / cues（tick 在 !enabled 时
+    // 直接 return，留着是为了重开时不用重抓）。不看它，用户看片中途关掉字幕面板后
+    // 门仍报 showing=true，沉浸统计会一直计到换视频或刷新。
+    var lang = st.enabled ? st.activeLang : null;
+    var showing = !!(lang && lang !== LIVE_LANG && st.cues && st.cues.length);
+    var any = showing;
+    for (var i = 0; !any && i < tracks.length; i++) {
+      if ((tracks[i].cues && tracks[i].cues.length) || tracks[i].pending) any = true;
+    }
+    return {
+      showing: showing,
+      any: any,
+      lang: showing ? lang : null,
+      external: showing && isExternalLang(lang),
+    };
+  };
+
   window.fushiSubtitlePanelOnCues = function (_key) {
     if (!st.enabled) return;
     refreshHeadless();

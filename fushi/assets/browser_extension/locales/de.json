@@ -133,7 +133,12 @@
   "opt_study_heading_heading": "Immersionszeit",
   "opt_study_heading_section_note": "Fushi muss laufen",
   "opt_studyTrackVideo_title": "Webvideos als Sehzeit zählen",
-  "opt_studyTrackVideo_desc": "Erfasst die Sehzeit von Webvideos in der Video-Domäne der Fushi-Lernstatistik, nach denselben Regeln wie die Videoseite in der App: Nur das erstmalige Ansehen eines Abschnitts zählt; Wiederholungen, Zurückspulen und erneutes Ansehen nicht; die Wiedergabe in einem Hintergrund-Tab zählt weiterhin. Kurze Clips wie Hover-Vorschauen auf der Startseite werden ignoriert.",
+  "opt_studyTrackVideo_desc": "Erfasst die Sehzeit von Webvideos in der Video-Domäne der Fushi-Lernstatistik, nach denselben Regeln wie die Videoseite in der App: Nur das erstmalige Ansehen eines Abschnitts zählt; Wiederholungen, Zurückspulen und erneutes Ansehen nicht; die Wiedergabe in einem Hintergrund-Tab zählt weiterhin. Kurze Clips wie Hover-Vorschauen auf der Startseite werden ignoriert. Welche Videos zählen, legt die Einstellung darunter fest.",
+  "opt_studyTrackVideoCondition_title": "Was als Lernzeit zählt",
+  "opt_studyTrackVideoCondition_desc": "Standardmäßig zählen nur die Minuten, die du auch lesen kannst: Fushi hat eine Untertitelspur für dieses Video erkannt (oder du hast eine externe Untertiteldatei geladen) und du nutzt sie tatsächlich — in der Seitenleiste, im Untertitelfeld über dem Video oder anstelle der seiteneigenen Untertitel. Untertitel, die mitten im Video eintreffen, zählen ab diesem Moment; schaltest du sie ab (auch das Ausblenden mit Shift+H), stoppt die Uhr sofort.",
+  "opt_studyTrackVideoCondition_option_fushiSubtitle": "Fushi- oder externe Untertitel in Benutzung",
+  "opt_studyTrackVideoCondition_option_anySubtitle": "Video hat überhaupt Untertitel",
+  "opt_studyTrackVideoCondition_option_always": "Jedes Video zählt",
   "opt_shortcut_heading_section_kicker": "Tastatursteuerung",
   "opt_shortcut_heading_heading": "Video-Tastenkürzel",
   "opt_videoShortcutPrevCue_title": "Vorherige Untertitelzeile",
@@ -409,5 +414,13 @@
   "bg_badge_generating": "Fushi: Netflix-Karten werden erzeugt (Zeile für Zeile wiedergeben und aufnehmen)",
   "bg_badge_idle": "Fushi: Klicken, um die Netflix-Mining-Warteschlange zu erzeugen (automatische Wiedergabe und Aufnahme pro Folge)",
   "bg_generation_cancelled": "Erzeugung abgebrochen",
-  "bg_no_netflix_pending": "Keine Netflix-Einträge in der Warteschlange ausstehend"
+  "bg_no_netflix_pending": "Keine Netflix-Einträge in der Warteschlange ausstehend",
+  "pc_offset_title": "Zeitversatz",
+  "pc_style_title": "Untertitel-Stil",
+  "pc_style_back": "Zurück",
+  "pc_style_reset": "Zurücksetzen",
+  "pc_style_more": "Alle Einstellungen",
+  "pc_hint_site_track": "Dieses Video spielt den Untertitel-Track der Website ab, daher bleibt die Fushi-Ebene ausgeblendet. Tippen, um stattdessen Fushi-Untertitel anzuzeigen.",
+  "opt_playerControls_title": "Untertitel-Schaltfläche im Player",
+  "opt_playerControls_desc": "Setzt eine Fushi-Schaltfläche in die Steuerleiste des Players (YouTube und Netflix; auf anderen Seiten erscheint eine runde Schaltfläche unten rechts im Video, solange der Zeiger darüber liegt). Ihr Menü schaltet dieselben Einstellungen wie diese Seite – Fushi-Untertitel, Untertitel der Website ersetzen, ausblenden, Zeitversatz und Untertitel-Aussehen – ohne das Video zu verlassen."
 }

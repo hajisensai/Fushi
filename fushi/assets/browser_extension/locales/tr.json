@@ -133,7 +133,12 @@
   "opt_study_heading_heading": "Daldırma süresi",
   "opt_study_heading_section_note": "Fushi’nin çalışıyor olması gerekir",
   "opt_studyTrackVideo_title": "Web videolarını izleme süresine say",
-  "opt_studyTrackVideo_desc": "Web videolarının izleme süresini uygulama içi video sayfasıyla aynı kurallarla Fushi çalışma istatistiklerinin video alanına kaydeder: bir bölüm yalnızca ilk izlendiğinde sayılır; tekrarlar, geri sarma ve yeniden izleme sayılmaz; arka plandaki sekmede oynatma yine sayılır. Ana sayfadaki üzerine gelme önizlemeleri gibi kısa klipler yok sayılır.",
+  "opt_studyTrackVideo_desc": "Web videolarının izleme süresini uygulama içi video sayfasıyla aynı kurallarla Fushi çalışma istatistiklerinin video alanına kaydeder: bir bölüm yalnızca ilk izlendiğinde sayılır; tekrarlar, geri sarma ve yeniden izleme sayılmaz; arka plandaki sekmede oynatma yine sayılır. Ana sayfadaki üzerine gelme önizlemeleri gibi kısa klipler yok sayılır. Hangi videoların sayılacağı aşağıdaki ayarla belirlenir.",
+  "opt_studyTrackVideoCondition_title": "Çalışma süresine ne sayılsın",
+  "opt_studyTrackVideoCondition_desc": "Varsayılan olarak yalnızca okuyabildiğiniz dakikalar sayılır: Fushi bu video için bir altyazı izi tanımış (ya da dışarıdan bir altyazı dosyası yüklemişsiniz) ve onu gerçekten kullanıyorsunuz — yan panelde, videonun üzerindeki altyazı kutusunda veya sitenin kendi altyazısının yerine. Video ortasında gelen altyazılar o andan itibaren sayılır; altyazıyı kapatmak (Shift+H ile gizlemek dahil) sayacı hemen durdurur.",
+  "opt_studyTrackVideoCondition_option_fushiSubtitle": "Fushi veya dış altyazı kullanılıyorken",
+  "opt_studyTrackVideoCondition_option_anySubtitle": "Videoda altyazı bulunması yeterli",
+  "opt_studyTrackVideoCondition_option_always": "Her video sayılsın",
   "opt_shortcut_heading_section_kicker": "Klavye denetimi",
   "opt_shortcut_heading_heading": "Video kısayolları",
   "opt_videoShortcutPrevCue_title": "Önceki altyazı satırı",
@@ -409,5 +414,13 @@
   "bg_badge_generating": "Fushi: Netflix kartları oluşturuluyor (satır satır yeniden oynatılıp kaydediliyor)",
   "bg_badge_idle": "Fushi: Netflix kart çıkarma kuyruğunu oluşturmak için tıklayın (bölüm bölüm otomatik yeniden oynatma ve kayıt)",
   "bg_generation_cancelled": "Oluşturma iptal edildi",
-  "bg_no_netflix_pending": "Kuyrukta bekleyen Netflix öğesi yok"
+  "bg_no_netflix_pending": "Kuyrukta bekleyen Netflix öğesi yok",
+  "pc_offset_title": "Zaman kaydırma",
+  "pc_style_title": "Altyazı stili",
+  "pc_style_back": "Geri",
+  "pc_style_reset": "Sıfırla",
+  "pc_style_more": "Tüm ayarlar",
+  "pc_hint_site_track": "Bu video sitenin kendi altyazı parçasını oynatıyor, bu yüzden Fushi katmanı gizli kalıyor. Bunun yerine Fushi altyazılarını göstermek için dokunun.",
+  "opt_playerControls_title": "Oynatıcı içindeki altyazı düğmesi",
+  "opt_playerControls_desc": "Oynatıcının kendi kontrol çubuğuna bir Fushi düğmesi ekler (YouTube ve Netflix; diğer sitelerde işaretçi videonun üzerindeyken sağ altta yuvarlak bir düğme belirir). Menüsü bu sayfadaki ayarların aynısını — Fushi altyazıları, sitenin altyazılarını değiştirme, gizleme, zaman kaydırma ve altyazı görünümü — videodan ayrılmadan değiştirir."
 }

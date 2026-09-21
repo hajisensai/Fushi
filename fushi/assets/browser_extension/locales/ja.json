@@ -133,7 +133,12 @@
   "opt_study_heading_heading": "イマージョン時間",
   "opt_study_heading_section_note": "Fushi の起動が必要",
   "opt_studyTrackVideo_title": "Web 動画を視聴時間に計上",
-  "opt_studyTrackVideo_desc": "Web 動画の視聴時間を Fushi の学習統計の動画領域に記録します。ルールはアプリ内の動画ページと同じで、初めて視聴した部分だけを計上し、リプレイ、巻き戻し、再視聴は計上しません。バックグラウンドタブでの再生も計上されます。ホームのホバープレビューなどの短いクリップは無視されます。",
+  "opt_studyTrackVideo_desc": "Web 動画の視聴時間を Fushi の学習統計の動画領域に記録します。ルールはアプリ内の動画ページと同じで、初めて視聴した部分だけを計上し、リプレイ、巻き戻し、再視聴は計上しません。バックグラウンドタブでの再生も計上されます。ホームのホバープレビューなどの短いクリップは無視されます。どの動画を計上するかは下の設定で決まります。",
+  "opt_studyTrackVideoCondition_title": "計上する条件",
+  "opt_studyTrackVideoCondition_desc": "既定では「読める時間」だけを計上します。Fushi がこの動画の字幕トラックを認識している（または外部字幕ファイルを読み込んだ）うえで、実際にそれを使っている場合（サイドパネル、動画上の字幕ボックス、サイト字幕の置き換え）だけです。途中で字幕が届いたらその時点から計上し、途中で字幕を切る（Shift+H の非表示を含む）とすぐに停止します。",
+  "opt_studyTrackVideoCondition_option_fushiSubtitle": "Fushi / 外部字幕を使用中",
+  "opt_studyTrackVideoCondition_option_anySubtitle": "この動画に字幕があればよい",
+  "opt_studyTrackVideoCondition_option_always": "すべての動画を計上",
   "opt_shortcut_heading_section_kicker": "キーボード操作",
   "opt_shortcut_heading_heading": "動画のショートカット",
   "opt_videoShortcutPrevCue_title": "前の字幕行",
@@ -409,5 +414,13 @@
   "bg_badge_generating": "Fushi：Netflix カードを生成中（1 行ずつリプレイして録画）",
   "bg_badge_idle": "Fushi：クリックで Netflix マイニングキューを生成（エピソードごとに自動リプレイと録画）",
   "bg_generation_cancelled": "生成をキャンセルしました",
-  "bg_no_netflix_pending": "キューに Netflix の保留項目はありません"
+  "bg_no_netflix_pending": "キューに Netflix の保留項目はありません",
+  "pc_offset_title": "タイミング調整",
+  "pc_style_title": "字幕スタイル",
+  "pc_style_back": "戻る",
+  "pc_style_reset": "既定に戻す",
+  "pc_style_more": "すべての設定",
+  "pc_hint_site_track": "この動画はサイト自身の字幕トラックを再生しているため、Fushi の字幕は表示されません。タップすると Fushi の字幕に切り替わります。",
+  "opt_playerControls_title": "プレーヤー内の字幕ボタン",
+  "opt_playerControls_desc": "プレーヤー自身のコントロールバーに Fushi ボタンを追加します（YouTube と Netflix。ほかのサイトではポインターを重ねている間だけ動画の右下に丸いボタンが出ます）。メニューからこのページと同じ設定——Fushi 字幕、サイト字幕の置き換え、非表示、タイミング調整、字幕の見た目——を動画から離れずに切り替えられます。"
 }

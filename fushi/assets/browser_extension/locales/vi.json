@@ -133,7 +133,12 @@
   "opt_study_heading_heading": "Thời gian đắm mình",
   "opt_study_heading_section_note": "Yêu cầu Fushi đang chạy",
   "opt_studyTrackVideo_title": "Tính video web vào thời gian xem",
-  "opt_studyTrackVideo_desc": "Ghi thời gian xem video web vào mảng video trong thống kê học tập của Fushi, với cùng quy tắc như trang video trong ứng dụng: chỉ tính lần đầu xem một đoạn; phát lại, tua lùi và xem lại không tính; phát ở thẻ nền vẫn tính. Các clip ngắn như xem trước khi rê chuột ở trang chủ bị bỏ qua.",
+  "opt_studyTrackVideo_desc": "Ghi thời gian xem video web vào mảng video trong thống kê học tập của Fushi, với cùng quy tắc như trang video trong ứng dụng: chỉ tính lần đầu xem một đoạn; phát lại, tua lùi và xem lại không tính; phát ở thẻ nền vẫn tính. Các clip ngắn như xem trước khi rê chuột ở trang chủ bị bỏ qua. Video nào được tính do tùy chọn bên dưới quyết định.",
+  "opt_studyTrackVideoCondition_title": "Trường hợp nào được tính",
+  "opt_studyTrackVideoCondition_desc": "Mặc định chỉ tính những phút bạn thực sự đọc được: Fushi đã nhận ra một track phụ đề cho video này (hoặc bạn đã nạp tệp phụ đề ngoài) và bạn đang thực sự dùng nó — ở bảng bên, khung phụ đề trên video, hoặc thay cho phụ đề của trang. Phụ đề đến giữa chừng thì tính từ lúc đó; tắt phụ đề (kể cả ẩn bằng Shift+H) sẽ dừng đếm ngay.",
+  "opt_studyTrackVideoCondition_option_fushiSubtitle": "Đang dùng phụ đề Fushi hoặc phụ đề ngoài",
+  "opt_studyTrackVideoCondition_option_anySubtitle": "Chỉ cần video có phụ đề",
+  "opt_studyTrackVideoCondition_option_always": "Mọi video đều tính",
   "opt_shortcut_heading_section_kicker": "Điều khiển bằng bàn phím",
   "opt_shortcut_heading_heading": "Phím tắt video",
   "opt_videoShortcutPrevCue_title": "Dòng phụ đề trước",
@@ -409,5 +414,13 @@
   "bg_badge_generating": "Fushi: đang tạo thẻ Netflix (phát lại và ghi hình từng dòng)",
   "bg_badge_idle": "Fushi: nhấp để tạo hàng đợi khai thác thẻ Netflix (tự phát lại và ghi hình theo từng tập)",
   "bg_generation_cancelled": "Đã hủy tạo",
-  "bg_no_netflix_pending": "Không có mục Netflix nào đang chờ trong hàng đợi"
+  "bg_no_netflix_pending": "Không có mục Netflix nào đang chờ trong hàng đợi",
+  "pc_offset_title": "Lệch thời gian",
+  "pc_style_title": "Kiểu phụ đề",
+  "pc_style_back": "Quay lại",
+  "pc_style_reset": "Đặt lại",
+  "pc_style_more": "Tất cả cài đặt",
+  "pc_hint_site_track": "Video này đang phát bản phụ đề của chính trang web, nên lớp phụ đề Fushi vẫn ẩn. Chạm để hiển thị phụ đề Fushi thay thế.",
+  "opt_playerControls_title": "Nút phụ đề trong trình phát",
+  "opt_playerControls_desc": "Thêm một nút Fushi vào thanh điều khiển của chính trình phát (YouTube và Netflix; ở các trang khác, một nút tròn hiện ở góc dưới bên phải video khi con trỏ ở trên video). Menu của nút đổi đúng những cài đặt có trên trang này — phụ đề Fushi, thay phụ đề của trang, ẩn phụ đề, lệch thời gian và giao diện phụ đề — mà không phải rời khỏi video."
 }

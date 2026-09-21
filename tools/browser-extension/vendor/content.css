@@ -2071,7 +2071,7 @@
 }
 
 /* ── theme.css tokens, re-rooted to the in-page hosts (generated; edit theme.css) ── */
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast) {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls) {
   color-scheme: light dark;
   --fushi-bg: oklch(0.965 0.012 145);
   --fushi-surface: oklch(0.99 0.008 145);
@@ -2094,12 +2094,12 @@
   --fushi-on-scrim: #f7f8f2;
 }
 
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)[data-theme="light"] {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="light"] {
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast):not([data-theme="light"]) {
+  :where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls):not([data-theme="light"]) {
     --fushi-bg: oklch(0.18 0.018 145);
     --fushi-surface: oklch(0.225 0.022 145);
     --fushi-surface-muted: oklch(0.27 0.026 145);
@@ -2117,7 +2117,7 @@
   }
 }
 
-:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast)[data-theme="dark"] {
+:where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls)[data-theme="dark"] {
   color-scheme: dark;
   --fushi-bg: oklch(0.18 0.018 145);
   --fushi-surface: oklch(0.225 0.022 145);
@@ -2616,3 +2616,381 @@
 
 /* 视频让位（开抽屉时压 fullscreenElement/<html>）不走这里：mobile-drawer.js 直接对
    目标元素写 inline !important（站点后到样式/内联尺寸都压得住），关抽屉精确还原。 */
+
+/* ───────────────────────── 播放器内嵌字幕控制（player-controls.js） ─────────────────────────
+   #fushi-player-btn 插在站点自己的控制栏里（YouTube .ytp-right-controls / Netflix 控件行），
+   所以它落在**站点的样式作用域**下：站点给 button 设的 font / padding / border / background /
+   transform 都会砸到它身上。因此这里逐项显式归零，而不是指望继承——`all: unset` 不用，
+   那会连焦点轮廓这些可访问性默认一起抹掉。
+   #fushi-player-controls 是 fixed 浮层，挂 fullscreenElement||body，绝不进控制栏（那里
+   overflow 会把菜单裁掉）。两个 id 都在 theme.js IN_PAGE_HOSTS 清单里，故能读 --fushi-* token。 */
+
+#fushi-player-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    box-sizing: border-box;
+    width: 44px;
+    height: 100%;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 2px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-on-scrim);
+    font: inherit;
+    font-size: 9px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    cursor: pointer;
+    opacity: 0.9;
+    transform: none;
+    vertical-align: middle;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+#fushi-player-btn:hover,
+#fushi-player-btn:focus-visible {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#fushi-player-btn .fushi-pc-btn-icon {
+    display: block;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 4px;
+    object-fit: contain;
+    /* 关态去饱和 + 压暗：与站点单色控件并排时，一颗彩色图标常态高亮会喧宾夺主；
+       开态才还原本色，于是「字幕开着没开着」扫一眼就知道，不必读下面那行小字。 */
+    filter: grayscale(1) opacity(0.75);
+}
+
+#fushi-player-btn[data-on="1"] .fushi-pc-btn-icon {
+    filter: none;
+}
+
+#fushi-player-btn .fushi-pc-btn-state {
+    display: block;
+    font-size: 8px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: 0.06em;
+    color: var(--fushi-on-scrim);
+    opacity: 0.7;
+}
+
+#fushi-player-btn[data-on="1"] .fushi-pc-btn-state {
+    color: var(--fushi-primary);
+    opacity: 1;
+}
+
+/* 通用站点（没有已知控制栏锚点）：按钮自己浮在画面右下角，鼠标离开视频即淡出——
+   常驻一颗不透明按钮压在画面上，比没有按钮更烦人。 */
+#fushi-player-btn.is-floating {
+    position: fixed;
+    z-index: 2147483639;
+    width: 44px;
+    height: 44px;
+    min-height: 0;
+    border-radius: 999px;
+    background: var(--fushi-scrim);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+#fushi-player-btn.is-floating[data-visible="1"] {
+    opacity: 0.92;
+    pointer-events: auto;
+}
+
+#fushi-player-controls {
+    position: fixed;
+    z-index: 2147483640;
+    box-sizing: border-box;
+    display: none;
+    width: 288px;
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 12px;
+    background: var(--fushi-surface);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    color: var(--fushi-text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.35;
+    text-align: left;
+    direction: ltr;
+}
+
+#fushi-player-controls[data-open="1"] {
+    display: block;
+}
+
+#fushi-player-controls .fushi-pc-page[hidden] {
+    display: none;
+}
+
+#fushi-player-controls .fushi-pc-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 7px 8px;
+    border-radius: 8px;
+    background: transparent;
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch,
+#fushi-player-controls .fushi-pc-row.is-action,
+#fushi-player-controls .fushi-pc-row.is-submenu {
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-row.is-switch:hover,
+#fushi-player-controls .fushi-pc-row.is-action:hover,
+#fushi-player-controls .fushi-pc-row.is-submenu:hover,
+#fushi-player-controls .fushi-pc-row:focus-visible {
+    background: var(--fushi-surface-muted);
+}
+
+/* 置灰的从属开关仍然可读（不是 display:none）：用户要看得见「还有这么一项，只是现在没意义」。 */
+#fushi-player-controls .fushi-pc-row[data-disabled="1"] {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#fushi-player-controls .fushi-pc-copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+#fushi-player-controls .fushi-pc-copy strong {
+    font-weight: 600;
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-copy small {
+    font-size: 11px;
+    line-height: 1.3;
+    color: var(--fushi-muted);
+}
+
+#fushi-player-controls .fushi-pc-switch {
+    position: relative;
+    flex: 0 0 auto;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--fushi-outline);
+    transition: background 0.15s ease;
+}
+
+#fushi-player-controls .fushi-pc-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--fushi-surface);
+    transition: transform 0.15s ease;
+}
+
+#fushi-player-controls .fushi-pc-switch[data-on="1"] {
+    background: var(--fushi-primary);
+}
+
+#fushi-player-controls .fushi-pc-switch[data-on="1"]::after {
+    transform: translateX(14px);
+}
+
+#fushi-player-controls .fushi-pc-row.is-submenu::after {
+    content: "\203A";
+    flex: 0 0 auto;
+    font-size: 16px;
+    color: var(--fushi-muted);
+}
+
+#fushi-player-controls .fushi-pc-seg {
+    display: inline-flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--fushi-surface-muted);
+}
+
+#fushi-player-controls .fushi-pc-seg button {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 3px 7px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-text);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-seg button:hover {
+    background: var(--fushi-surface-strong);
+}
+
+#fushi-player-controls .fushi-pc-seg button[data-on="1"] {
+    background: var(--fushi-primary);
+    color: var(--fushi-on-primary);
+}
+
+#fushi-player-controls .fushi-pc-hint {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 2px 0 4px;
+    padding: 7px 8px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 8px;
+    background: var(--fushi-surface-muted);
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 11px;
+    line-height: 1.35;
+    text-align: left;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-hint:hover {
+    border-color: var(--fushi-primary);
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-back {
+    box-sizing: border-box;
+    margin: 0 0 4px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-back:hover {
+    background: var(--fushi-surface-muted);
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-style-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 5px 8px;
+}
+
+#fushi-player-controls .fushi-pc-style-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--fushi-text);
+}
+
+#fushi-player-controls .fushi-pc-range {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+#fushi-player-controls .fushi-pc-range input[type="range"] {
+    width: 108px;
+    margin: 0;
+    accent-color: var(--fushi-primary);
+}
+
+#fushi-player-controls .fushi-pc-range output {
+    min-width: 28px;
+    font-size: 11px;
+    color: var(--fushi-muted);
+    text-align: right;
+}
+
+#fushi-player-controls .fushi-pc-color {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+}
+
+#fushi-player-controls .fushi-pc-color input[type="color"] {
+    box-sizing: border-box;
+    width: 30px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-color-auto {
+    margin: 0;
+    padding: 3px 7px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--fushi-muted);
+    font: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-color-auto[data-on="1"] {
+    border-color: var(--fushi-primary);
+    background: var(--fushi-primary);
+    color: var(--fushi-on-primary);
+}
+
+#fushi-player-controls .fushi-pc-foot {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--fushi-outline);
+}
+
+#fushi-player-controls .fushi-pc-foot button {
+    flex: 1 1 0;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--fushi-outline);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--fushi-text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+#fushi-player-controls .fushi-pc-foot button:hover {
+    border-color: var(--fushi-primary);
+    background: var(--fushi-surface-muted);
+}
