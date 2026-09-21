@@ -68,8 +68,13 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerViewMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderViewMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              // Persist the structural mode before asking the live reader to
+              // reload.  The setter is asynchronous; firing the reload first
+              // lets the WebView rebuild with the previous mode (especially
+              // visible on iOS where the old vertical paged shell remains on
+              // screen), and the later persistence callback only reapplies CSS.
+              await c.readerSource.setReaderViewMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -92,8 +97,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerWritingMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderWritingMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderWritingMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -121,8 +126,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerSpreadMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -151,8 +156,8 @@ SettingsDestination buildReadingDestination() {
             ],
             selected: (SettingsContext c) =>
                 c.readerSource.readerSpreadDirection,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadDirection(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadDirection(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -460,8 +465,8 @@ SettingsDestination buildReadingDestination() {
                 c.readerSource.readerPageColumns.toDouble(),
             format: (double v) =>
                 v.round() == 0 ? t.reader_page_columns_auto : '${v.round()}',
-            onChanged: (SettingsContext c, double v) {
-              c.readerSource.setReaderPageColumns(v.round());
+            onChanged: (SettingsContext c, double v) async {
+              await c.readerSource.setReaderPageColumns(v.round());
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -930,8 +935,8 @@ SettingsDestination buildReadingDestination() {
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 18),
             value: (SettingsContext c) =>
                 c.readerSource.readerPrioritizeReaderStyles,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderPrioritizeReaderStyles(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderPrioritizeReaderStyles(value);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -943,8 +948,8 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.blur_on_outlined,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 20),
             value: (SettingsContext c) => c.readerSource.readerBlurImages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderBlurImages(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderBlurImages(value);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -960,8 +965,8 @@ SettingsDestination buildReadingDestination() {
             icon: Icons.collections_bookmark_outlined,
             reader: const ReaderPlacement(group: ReaderGroup.layout, order: 21),
             value: (SettingsContext c) => c.readerSource.readerMergeImagePages,
-            onChanged: (SettingsContext c, bool value) {
-              c.readerSource.setReaderMergeImagePages(value);
+            onChanged: (SettingsContext c, bool value) async {
+              await c.readerSource.setReaderMergeImagePages(value);
               notifyReaderLayoutChanged(c);
             },
           ),
