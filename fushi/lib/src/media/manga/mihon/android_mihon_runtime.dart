@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -240,7 +241,20 @@ class AndroidMihonRuntime extends MihonBridgeRuntime
       }.contains(method)) {
         await (_proxyConfiguration ??= _configureProxyPolicy());
       }
-      return await _channel.invokeMethod<T>(method, arguments);
+      // 宿主自己的 OkHttp 给每次请求 2 分钟（`NetworkHelper.kt` 的 `callTimeout`），
+      // 但宿主线程真卡死（扩展在 `runBlocking` 里等一个永远不来的响应、Cloudflare
+      // WebView 没人关）时 channel 的 Future 永远不 complete：页面就无限转圈，连失败
+      // 页和重试按钮都出不来。给一个比宿主预算更晚的上界放手，语义与桌面同一条
+      // （[kMihonBridgeRequestTimeout]），错误码也对齐桌面的 `BRIDGE_TIMEOUT`。
+      return await _channel
+          .invokeMethod<T>(method, arguments)
+          .timeout(kMihonBridgeRequestTimeout);
+    } on TimeoutException catch (error) {
+      throw MihonRuntimeException(
+        'BRIDGE_TIMEOUT',
+        'Mihon source request timed out',
+        cause: error,
+      );
     } on PlatformException catch (error) {
       if (error.code == 'CLOUDFLARE_CHALLENGE_REQUIRED' &&
           error.details is Map) {
