@@ -505,6 +505,100 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return row?.id;
   }
 
+  /// Sparse per-book reader preferences, including reset tombstones for sync.
+  Future<MangaReaderOverrideRow?> getMangaReaderOverride(String bookUid) =>
+      (select(mangaReaderOverrides)..where((t) => t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  Future<List<MangaReaderOverrideRow>> getAllMangaReaderOverrides() =>
+      select(mangaReaderOverrides).get();
+
+  Stream<MangaReaderOverrideRow?> watchMangaReaderOverride(String bookUid) =>
+      (select(mangaReaderOverrides)..where((t) => t.bookUid.equals(bookUid)))
+          .watchSingleOrNull();
+
+  /// 只改其中**几个键**，其余覆盖原样保留。
+  ///
+  /// [setMangaReaderOverride] 是**整行替换**语义（给设置面板用：它每次传的是合并
+  /// 后的完整 map）。顶栏那种「只切阅读模式」的局部改动必须走这条，否则用户在面板
+  /// 里调好的 scaleType / cropBorders / tapZones / background / zoomStart 等会被一
+  /// 次点击整片抹掉——而且这行带着新的 `updatedAt`，会作为权威全量快照经 sidecar 与
+  /// 互联清单发出，LWW 把**对端**的完整覆盖也一并擦掉。
+  Future<void> patchMangaReaderOverride(
+    String bookUid,
+    Map<String, Object?> patch,
+  ) async {
+    final MangaReaderOverrideRow? previous =
+        await getMangaReaderOverride(bookUid);
+    final Map<String, Object?> merged = <String, Object?>{};
+    if (previous != null && !previous.deleted) {
+      try {
+        final Object? decoded = jsonDecode(previous.overridesJson);
+        if (decoded is Map) merged.addAll(decoded.cast<String, Object?>());
+      } on FormatException {
+        // 坏 JSON 当没有覆盖：补丁照常落地，坏值不再传播。
+      }
+    }
+    merged.addAll(patch);
+    await setMangaReaderOverride(bookUid, merged);
+  }
+
+  Future<void> setMangaReaderOverride(
+    String bookUid,
+    Map<String, Object?> overrides,
+  ) => transaction(() async {
+    if (bookUid.isEmpty ||
+        await (select(epubBooks)..where((t) => t.uid.equals(bookUid)))
+                .getSingleOrNull() ==
+            null) {
+      throw ArgumentError.value(bookUid, 'bookUid', 'Unknown book');
+    }
+    final Map<String, Object?> sparse = Map<String, Object?>.from(overrides)
+      ..removeWhere((String key, Object? value) => value == null);
+    final MangaReaderOverrideRow? previous =
+        await getMangaReaderOverride(bookUid);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await into(mangaReaderOverrides).insertOnConflictUpdate(
+      MangaReaderOverrideRow(
+        bookUid: bookUid,
+        overridesJson: jsonEncode(sparse),
+        updatedAt: previous != null && previous.updatedAt >= now
+            ? previous.updatedAt + 1
+            : now,
+        deleted: sparse.isEmpty,
+      ),
+    );
+  });
+
+  Future<bool> mergeMangaReaderOverride(
+    String bookUid, {
+    required Map<String, Object?> overrides,
+    required int updatedAt,
+    required bool deleted,
+  }) => transaction(() async {
+    if (bookUid.isEmpty ||
+        updatedAt < 0 ||
+        await (select(epubBooks)..where((t) => t.uid.equals(bookUid)))
+                .getSingleOrNull() ==
+            null) {
+      return false;
+    }
+    final MangaReaderOverrideRow? current =
+        await getMangaReaderOverride(bookUid);
+    if (current != null && current.updatedAt >= updatedAt) return false;
+    final Map<String, Object?> sparse = Map<String, Object?>.from(overrides)
+      ..removeWhere((String key, Object? value) => value == null);
+    await into(mangaReaderOverrides).insertOnConflictUpdate(
+      MangaReaderOverrideRow(
+        bookUid: bookUid,
+        overridesJson: jsonEncode(deleted ? <String, Object?>{} : sparse),
+        updatedAt: updatedAt,
+        deleted: deleted || sparse.isEmpty,
+      ),
+    );
+    return true;
+  });
+
   // ── per-book 自定义 CSS 跨端同步（LWW by updatedAt）──────────────────────────
 
   /// 记录/刷新书 [bookUid]（v82 起 = 书稳定 uid）的 CSS 文件 [relativePath] 自定义内容（保存时调，updatedAt=now）。

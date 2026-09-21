@@ -19252,6 +19252,332 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
   }
 }
 
+class $MangaReaderOverridesTable extends MangaReaderOverrides
+    with TableInfo<$MangaReaderOverridesTable, MangaReaderOverrideRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaReaderOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _overridesJsonMeta = const VerificationMeta(
+    'overridesJson',
+  );
+  @override
+  late final GeneratedColumn<String> overridesJson = GeneratedColumn<String>(
+    'overrides_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    overridesJson,
+    updatedAt,
+    deleted,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_reader_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MangaReaderOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('overrides_json')) {
+      context.handle(
+        _overridesJsonMeta,
+        overridesJson.isAcceptableOrUnknown(
+          data['overrides_json']!,
+          _overridesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  MangaReaderOverrideRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaReaderOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      overridesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}overrides_json'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
+    );
+  }
+
+  @override
+  $MangaReaderOverridesTable createAlias(String alias) {
+    return $MangaReaderOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class MangaReaderOverrideRow extends DataClass
+    implements Insertable<MangaReaderOverrideRow> {
+  final String bookUid;
+  final String overridesJson;
+  final int updatedAt;
+  final bool deleted;
+  const MangaReaderOverrideRow({
+    required this.bookUid,
+    required this.overridesJson,
+    required this.updatedAt,
+    required this.deleted,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['overrides_json'] = Variable<String>(overridesJson);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['deleted'] = Variable<bool>(deleted);
+    return map;
+  }
+
+  MangaReaderOverridesCompanion toCompanion(bool nullToAbsent) {
+    return MangaReaderOverridesCompanion(
+      bookUid: Value(bookUid),
+      overridesJson: Value(overridesJson),
+      updatedAt: Value(updatedAt),
+      deleted: Value(deleted),
+    );
+  }
+
+  factory MangaReaderOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaReaderOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      overridesJson: serializer.fromJson<String>(json['overridesJson']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'overridesJson': serializer.toJson<String>(overridesJson),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deleted': serializer.toJson<bool>(deleted),
+    };
+  }
+
+  MangaReaderOverrideRow copyWith({
+    String? bookUid,
+    String? overridesJson,
+    int? updatedAt,
+    bool? deleted,
+  }) => MangaReaderOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    overridesJson: overridesJson ?? this.overridesJson,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deleted: deleted ?? this.deleted,
+  );
+  MangaReaderOverrideRow copyWithCompanion(MangaReaderOverridesCompanion data) {
+    return MangaReaderOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      overridesJson: data.overridesJson.present
+          ? data.overridesJson.value
+          : this.overridesJson,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookUid, overridesJson, updatedAt, deleted);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaReaderOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.overridesJson == this.overridesJson &&
+          other.updatedAt == this.updatedAt &&
+          other.deleted == this.deleted);
+}
+
+class MangaReaderOverridesCompanion
+    extends UpdateCompanion<MangaReaderOverrideRow> {
+  final Value<String> bookUid;
+  final Value<String> overridesJson;
+  final Value<int> updatedAt;
+  final Value<bool> deleted;
+  final Value<int> rowid;
+  const MangaReaderOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.overridesJson = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaReaderOverridesCompanion.insert({
+    required String bookUid,
+    this.overridesJson = const Value.absent(),
+    required int updatedAt,
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       updatedAt = Value(updatedAt);
+  static Insertable<MangaReaderOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? overridesJson,
+    Expression<int>? updatedAt,
+    Expression<bool>? deleted,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (overridesJson != null) 'overrides_json': overridesJson,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deleted != null) 'deleted': deleted,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaReaderOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<String>? overridesJson,
+    Value<int>? updatedAt,
+    Value<bool>? deleted,
+    Value<int>? rowid,
+  }) {
+    return MangaReaderOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      overridesJson: overridesJson ?? this.overridesJson,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (overridesJson.present) {
+      map['overrides_json'] = Variable<String>(overridesJson.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
     with TableInfo<$SyncDeletionTombstonesTable, SyncDeletionTombstoneRow> {
   @override
@@ -54644,6 +54970,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
+  late final $MangaReaderOverridesTable mangaReaderOverrides =
+      $MangaReaderOverridesTable(this);
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
@@ -54780,6 +55108,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     statisticsTombstones,
     bookTagMembershipTombstones,
     bookCustomCss,
+    mangaReaderOverrides,
     syncDeletionTombstones,
     revealedImages,
     activityEvents,
@@ -68902,6 +69231,205 @@ typedef $$BookCustomCssTableProcessedTableManager =
         BaseReferences<_$FushiDatabase, $BookCustomCssTable, BookCustomCssRow>,
       ),
       BookCustomCssRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MangaReaderOverridesTableCreateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      required String bookUid,
+      Value<String> overridesJson,
+      required int updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+typedef $$MangaReaderOverridesTableUpdateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<String> overridesJson,
+      Value<int> updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+
+class $$MangaReaderOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MangaReaderOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MangaReaderOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+}
+
+class $$MangaReaderOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow,
+          $$MangaReaderOverridesTableFilterComposer,
+          $$MangaReaderOverridesTableOrderingComposer,
+          $$MangaReaderOverridesTableAnnotationComposer,
+          $$MangaReaderOverridesTableCreateCompanionBuilder,
+          $$MangaReaderOverridesTableUpdateCompanionBuilder,
+          (
+            MangaReaderOverrideRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MangaReaderOverridesTable,
+              MangaReaderOverrideRow
+            >,
+          ),
+          MangaReaderOverrideRow,
+          PrefetchHooks Function()
+        > {
+  $$MangaReaderOverridesTableTableManager(
+    _$FushiDatabase db,
+    $MangaReaderOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaReaderOverridesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaReaderOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MangaReaderOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<String> overridesJson = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                Value<String> overridesJson = const Value.absent(),
+                required int updatedAt,
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion.insert(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MangaReaderOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MangaReaderOverridesTable,
+      MangaReaderOverrideRow,
+      $$MangaReaderOverridesTableFilterComposer,
+      $$MangaReaderOverridesTableOrderingComposer,
+      $$MangaReaderOverridesTableAnnotationComposer,
+      $$MangaReaderOverridesTableCreateCompanionBuilder,
+      $$MangaReaderOverridesTableUpdateCompanionBuilder,
+      (
+        MangaReaderOverrideRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow
+        >,
+      ),
+      MangaReaderOverrideRow,
       PrefetchHooks Function()
     >;
 typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder =
@@ -94968,6 +95496,8 @@ class $FushiDatabaseManager {
       );
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
+  $$MangaReaderOverridesTableTableManager get mangaReaderOverrides =>
+      $$MangaReaderOverridesTableTableManager(_db, _db.mangaReaderOverrides);
   $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
       $$SyncDeletionTombstonesTableTableManager(
         _db,

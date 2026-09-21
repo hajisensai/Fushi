@@ -33,6 +33,9 @@ const String kSyncBookTagsAssetName = 'tags.json';
 /// LWW 同步用户改写的书内 CSS。
 const String kSyncBookCssAssetName = 'book_css.json';
 
+/// Per-manga reader overrides sidecar (LWW by updatedAt).
+const String kSyncMangaReaderAssetName = 'manga_reader.json';
+
 class SyncBookResult {
   const SyncBookResult({
     required this.direction,
@@ -770,6 +773,21 @@ class SyncManager {
             },
         },
       });
+    }
+
+    final MangaReaderOverrideRow? readerOverride =
+        await _db.getMangaReaderOverride(book.uid);
+    if (readerOverride != null) {
+      await _backend.putJsonAsset(
+        folderId,
+        kSyncMangaReaderAssetName,
+        <String, Object?>{
+          'schemaVersion': 1,
+          'overrides': jsonDecode(readerOverride.overridesJson),
+          'updatedAt': readerOverride.updatedAt,
+          'deleted': readerOverride.deleted,
+        },
+      );
     }
 
     // Export audio files

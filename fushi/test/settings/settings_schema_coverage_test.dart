@@ -106,6 +106,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 可探的渲染输入。由 manga_overlay_html_test 逐项咬住：同一份生成器在不同参数下
   // 必须产出不同的文档（缩放上下限/灵敏度、点击翻页开关与 RTL 镜像、三种翻页动画
   // 各自的过渡声明），阅读方向另有既有的 RTL 几何用例。
+  // v112 漫画阅读器的两项全局默认（阅读模式 / 图片缩放）：写 prefsRepo
+  // （changed=true），生效点是阅读器按 MangaReaderPreferences 铺页面几何——
+  // 布局枚举决定页序与滚动方向、缩放模式决定每页的投影矩形，harness 里没有
+  // 挂漫画阅读器也就没有可探的几何。由偏好模型与几何用例逐项咬住：稀疏覆盖
+  // 的合并/序列化往返，以及六种缩放模式各自的目标矩形。
+  'manga/Reading mode':
+      'test/media/manga/manga_reader_preferences_test.dart + '
+          'test/media/manga/manga_page_geometry_test.dart',
+  'manga/Image scaling':
+      'test/media/manga/manga_reader_preferences_test.dart + '
+          'test/media/manga/manga_page_geometry_test.dart',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',

@@ -168,6 +168,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，
+  // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
+  'manga_reader_preferences',
   'manga_reading_direction',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',

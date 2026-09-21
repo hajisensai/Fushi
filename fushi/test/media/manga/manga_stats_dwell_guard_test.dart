@@ -68,10 +68,20 @@ void main() {
     // 只有这一条装载路径）/ _recordProgress / spread↔webtoon 切换 / 卡片来源
     // 回看转正常阅读（_onSourceReviewChanged：回看态不计统计，用户点「继续阅读」
     // 那一刻才建时钟并把当前页交给账本）。
+    // 第五个入口（2026-09-22）：阅读器设置面板改完阅读模式后的重新应用
+    // （`_reapplyReaderPreferences`）——与顶栏切换同一语义，同样是位置落定。
     expect(
       '_noteVisiblePages();'.allMatches(src).length,
-      4,
-      reason: '四个位置变化入口都必须把当前单元交给账本，少一处就是那条路上的页永远不计',
+      5,
+      reason: '每个位置变化入口都必须把当前单元交给账本，少一处就是那条路上的页永远不计',
+    );
+    expect(
+      _functionSource(
+        src,
+        '  Future<void> _reapplyReaderPreferences() async {',
+        '\n  }\n',
+      ),
+      contains('_noteVisiblePages();'),
     );
     expect(
       _functionSource(src, '  void _onSourceReviewChanged() {', '\n  }\n'),
