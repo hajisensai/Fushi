@@ -27,7 +27,8 @@ const settingDefaults = Object.freeze({
   subtitleOverlayAllTracks: false,
   // 视频上字幕的半透明底板（默认开；关掉只剩描边字）。
   subtitleOverlayBackground: true,
-  // 网页视频观看时长计入 Fushi 学习统计（视频域，首次覆盖口径）。
+  // 网页视频观看时长计入 Fushi 学习统计（视频域，首次覆盖口径）；
+  // 具体什么情况才计由 studyTrackVideoCondition（selectSettings）决定。
   studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
@@ -86,6 +87,10 @@ const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.
 const selectSettings = Object.freeze({
   extensionTheme: { key: 'extensionTheme', fallback: 'auto' },
   extensionLanguage: { key: 'extensionLanguage', fallback: 'app' },
+  // 网页视频计入沉浸时间的条件（study-tracker.js 的字幕门）：
+  // fushiSubtitle = 正在用 Fushi / 外挂字幕（默认）；anySubtitle = 这个视频有字幕轨即可；
+  // always = 旧行为，任何正片都计。
+  studyTrackVideoCondition: { key: 'studyTrackVideoCondition', fallback: 'fushiSubtitle' },
 });
 
 let toastTimer = null;

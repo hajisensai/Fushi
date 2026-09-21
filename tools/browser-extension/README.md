@@ -234,7 +234,26 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 `VideoWatchTracker + StudyClock`（显式记账、只计首次覆盖、覆盖并集按 `videoWatchCoveragePrefKey`
 持久化），口径与 app 内视频页完全一致——回放 / 拖回 / 次日重看不计，切走标签仍在播照常计；`ended`
 或 20s 无样本停表。YouTube 首页悬停预览、卡片预告片也是 `<video>`，尺寸/时长门把它们挡在外面。
-设置 `studyTrackVideo`（默认开）。守卫：`theme-and-study.test.js` 后半段。
+总开关 `studyTrackVideo`（默认开）。
+
+**字幕门**（`studyTrackVideoCondition`，默认 `fushiSubtitle`）：“有个视频在播”不等于沉浸——
+没字幕的视频、或用户读的是站点自带字幕时，把时长计进去只会把沉浸曲线稀释成刷视频曲线。
+三档（options 页下拉）：
+
+| 值 | 什么情况计入 |
+|---|---|
+| `fushiSubtitle`（默认） | Fushi 抓到的整集轨或用户拖的外挂字幕**正在用**，且没被 Shift+H 藏掉 |
+| `anySubtitle` | 这个视频有任何 Fushi 认得出的轨（含 DOM 采样 live 伪轨、按需加载占位轨） |
+| `always` | 旧行为，任何正片都计 |
+
+判据的唯一来源是 `subtitle-panel.js` 的 `window.fushiSubtitleStudyState()`：`showing` = 活动轨是
+整集轨/外挂轨（非 live）且真有 cue；`any` = 这个视频在 store 里有任何一条轨。**不要直接数
+`fushiEpisodeCues`**：Netflix 整集拦截会把几十种语言都拿进 store、`textTracks` 收割还会把 `disabled`
+轨提权成 `hidden`，那个集合非空几乎恒真。门是**持续**判定的（每秒 + 设置/隐藏状态变化即判）：
+字幕中途才到就从那一刻开表，中途关掉字幕立刻发 `ended` 停表（app 侧按 mediaKey 持久化覆盖并
+集，停表再续不会重复计）。
+
+守卫：`theme-and-study.test.js` 后半段（含字幕门四条）与 `subtitle-panel.test.js` 的状态出口契约两条。
 
 ## 字幕里的振假名
 
