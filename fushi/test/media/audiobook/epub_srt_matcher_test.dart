@@ -402,46 +402,76 @@ void main() {
       expect(r.matchRate, greaterThan(0.9));
     });
 
-    test('BUG-2599 恢复扫描：片头登场人物页攒满 miss 后，单条人名精确命中不把游标钉到书中段', () {
-      // 真机复现（『妹さえいればいい。』2 卷，ASR 4719 条）：片头「登場人物」页
-      // 不在 EPUB 里，20 多条 cue 连 miss；其中「大野アシュリー」在正文第一次出现
-      // 是第 18 节，旧恢复扫描（单条 cue 在 [cursor..] indexOf）就把游标钉到那里，
-      // 序章起整段正文全 miss、之后每次恢复只会再往后跳，整本只命中 79/4719。
-      // 现在恢复走聚簇佐证：序章 cue 在第 1 节互相佐证 20 多条，压过孤零零的人名。
-      final List<String> prologue = List<String>.generate(
-        30,
-        (int i) => '序章第$i文は朝起きて洗面所に行くと妹がいたという本文である。',
-      );
-      final String filler = List<String>.generate(
-        200,
-        (int i) => '中盤第$i文は登場人物の名前を一切含まない埋め草である。',
-      ).join();
-      final List<EpubSection> sections = <EpubSection>[
-        mkSection(0, '妹さえいればいい。２'),
-        mkSection(1, prologue.join()),
-        mkSection(2, filler),
-        mkSection(3, '彼女──税理士・大野アシュリーは、サディスティックな笑みを浮かべながら会釈し、'),
-      ];
-      final List<String> intro = <String>[
-        for (int i = 0; i < 22; i++) '登場人物その$i：架空の肩書きが読み上げられる',
-      ];
-      final List<AudioCue> cues = <AudioCue>[
-        for (int i = 0; i < intro.length; i++) mkCue(i, intro[i]),
-        mkCue(intro.length, '大野アシュリー'),
-        for (int i = 0; i < prologue.length; i++)
-          mkCue(intro.length + 1 + i, prologue[i]),
-      ];
+    // 真机复现（『妹さえいればいい。』2 卷，ASR 4719 条）：片头「登場人物」页
+    // 不在 EPUB 里，20 多条 cue 连 miss；其中「大野アシュリー」在正文第一次出现
+    // 是第 18 节，旧恢复扫描（单条 cue 在 [cursor..] indexOf）就把游标钉到那里，
+    // 序章起整段正文全 miss、之后每次恢复只会再往后跳，整本只命中 79/4719。
+    // 现在恢复走聚簇佐证：序章 cue 在第 1 节互相佐证 20 多条，压过孤零零的人名。
+    // 两档 filler：200 句（≈6000 字，人名在簇外）与 60 句（≈1800 字，人名落进
+    // 序章簇的 3000 字内）——后者钉的是收敛规则：簇内乱序的撞中（cue 序最靠前、
+    // 命中却在后）不许成为链首，否则序章前 20 条全落在游标之前。
+    for (final int fillerSentences in <int>[200, 60]) {
+      test(
+          'BUG-2599 恢复扫描：片头登场人物页攒满 miss 后，单条人名精确命中不把游标钉到书中段（filler $fillerSentences 句）',
+          () {
+        final List<String> prologue = List<String>.generate(
+          30,
+          (int i) => '序章第$i文は朝起きて洗面所に行くと妹がいたという本文である。',
+        );
+        final String filler = List<String>.generate(
+          fillerSentences,
+          (int i) => '中盤第$i文は登場人物の名前を一切含まない埋め草である。',
+        ).join();
+        final List<EpubSection> sections = <EpubSection>[
+          mkSection(0, '妹さえいればいい。２'),
+          mkSection(1, prologue.join()),
+          mkSection(2, filler),
+          mkSection(3, '彼女──税理士・大野アシュリーは、サディスティックな笑みを浮かべながら会釈し、'),
+        ];
+        final List<String> intro = <String>[
+          for (int i = 0; i < 22; i++) '登場人物その$i：架空の肩書きが読み上げられる',
+        ];
+        final List<AudioCue> cues = <AudioCue>[
+          for (int i = 0; i < intro.length; i++) mkCue(i, intro[i]),
+          mkCue(intro.length, '大野アシュリー'),
+          for (int i = 0; i < prologue.length; i++)
+            mkCue(intro.length + 1 + i, prologue[i]),
+        ];
 
+        final MatchResult r =
+            EpubSrtMatcher.match(sections: sections, cues: cues);
+
+        // 人名那条不许成为锚点。
+        expect(r.matches[intro.length].matched, isFalse);
+        for (int i = 0; i < prologue.length; i++) {
+          final CueMatch m = r.matches[intro.length + 1 + i];
+          expect(m.matched, isTrue, reason: '序章 cue #$i');
+          expect(m.sectionIndex, 1, reason: '序章 cue #$i');
+        }
+      });
+    }
+
+    test('BUG-2599 恢复扫描：选错卷（全书零命中）时全书模糊扫描有整次总预算，不随 cue 数线性放大', () {
+      // 每 20 条 miss 试一次恢复、每次最多 8 条全书 Dice：4700 条 cue × 8 万字正文
+      // 单遍实测 58 s（旧实现 2.6 s），app 侧还要跑 4 遍。预算用完后恢复只靠精确
+      // 命中；这里用 dice 探针计数验证总次数被 [recoverFuzzyBudgetTotal] 封顶。
+      final String big = List<String>.generate(
+        3000,
+        (int i) => '別巻第$i文はこの音声とは無関係な本文が延々と続いている。',
+      ).join();
+      final List<EpubSection> sections = <EpubSection>[mkSection(0, big)];
+      final List<AudioCue> cues = <AudioCue>[
+        for (int i = 0; i < 1200; i++) mkCue(i, '音声側第$i文はどの本にも存在しない読み上げである。'),
+      ];
+      final Stopwatch clock = Stopwatch()..start();
       final MatchResult r =
           EpubSrtMatcher.match(sections: sections, cues: cues);
-
-      // 人名那条不许成为锚点。
-      expect(r.matches[intro.length].matched, isFalse);
-      for (int i = 0; i < prologue.length; i++) {
-        final CueMatch m = r.matches[intro.length + 1 + i];
-        expect(m.matched, isTrue, reason: '序章 cue #$i');
-        expect(m.sectionIndex, 1, reason: '序章 cue #$i');
-      }
+      clock.stop();
+      expect(r.matchedCues, 0);
+      // 1200/20 = 60 次尝试 × 8 = 480 次全书 Dice 若不封顶；封顶后 ≤ 64 + 起点 24。
+      // 单次全书 Dice 在这本 9 万字的书上约 20~40 ms：不封顶要十几秒。
+      expect(clock.elapsed, lessThan(const Duration(seconds: 8)),
+          reason: '恢复扫描的模糊配额必须有整次总预算');
     });
 
     test('BUG-2599 恢复扫描：音频章节顺序与 spine 不一致时，佐证够多允许游标回退', () {
