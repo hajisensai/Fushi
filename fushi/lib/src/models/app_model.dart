@@ -8609,6 +8609,15 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);
 
+  bool get mangaPanelNavigation =>
+      _prefsRepo?.mangaPanelNavigation ?? kMangaPanelNavigationDefault;
+  Future<void> setMangaPanelNavigation(bool value) =>
+      prefsRepo.setMangaPanelNavigation(value);
+
+  bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
+  Future<void> setMangaPanelNavigationEnabled(bool value) =>
+      setMangaPanelNavigation(value);
+
   // 下面四个在漫画页 build 路径上被读（`_loadLocalPayload`），而弹窗词典与悬浮查词
   // 是不经 `initialise()` 的 entry point，那里 `_prefsRepo` 恒 null——裸 `prefsRepo`
   // （即 `_prefsRepo!`）会让整页 build 抛。与 `moduleEnabled` / `mineToServerEnabled`

@@ -3094,6 +3094,21 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  bool get mangaPanelNavigation => getPref(
+        'manga_panel_navigation',
+        defaultValue: kMangaPanelNavigationDefault,
+      ) as bool;
+
+  Future<void> setMangaPanelNavigation(bool value) async {
+    await setPref('manga_panel_navigation', value);
+    notifyListeners();
+  }
+
+  bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
+
+  Future<void> setMangaPanelNavigationEnabled(bool value) =>
+      setMangaPanelNavigation(value);
+
   /// 点击翻页的热区布局（[MangaTapZoneLayout] 的字符串键）。默认 `left_right`
   /// = 旧行为（左右各一条 25% 竖条）。只在 [mangaTapZonePaging] 开启时有意义。
   String get mangaTapZoneLayout =>

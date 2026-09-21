@@ -1075,6 +1075,54 @@ String _mangaGestureJs({
     var top = (page.offsetTop + (fraction || 0) * page.offsetHeight) * ZOOM;
     window.scrollTo(0, top);
   };
+  // 聚焦一个页面内的归一化分镜矩形。Dart 侧只传原图坐标，避免把 WebView
+  // 缩放/双页布局细节泄漏到检测器；这里用页面实际 client rect 计算视口中心。
+  window.__mangaFocusPanel = function(pageIndex, panel){
+    if (!panel) return false;
+    var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
+    if (!page) return false;
+    var r = page.getBoundingClientRect();
+    var left = Math.max(0, Math.min(1, Number(panel.left)));
+    var top = Math.max(0, Math.min(1, Number(panel.top)));
+    var right = Math.max(left, Math.min(1, Number(panel.right)));
+    var bottom = Math.max(top, Math.min(1, Number(panel.bottom)));
+    // left/top/right/bottom 是**归一化**分数（0..1）。两处几何都容易写错：
+    //  ① `Math.max(1, right - left)` 恒为 1（分数永远 ≤1），pw 就变成整页宽，
+    //     算出来的是「整页适配」而不是「分镜适配」，nextZoom 在默认 fitScreen 下
+    //     恒等于当前 ZOOM——永远不放大到分镜，而 PAN 照样被改写，页面被推出视口；
+    //  ② getBoundingClientRect() 已经含了 canvas 的 scale(ZOOM)，要先除回去才是
+    //     ZOOM=1 下的版面尺寸，否则缩放越大算出的 fit 越小。
+    var baseW = r.width / ZOOM;
+    var baseH = r.height / ZOOM;
+    var pw = Math.max(1, (right - left) * baseW);
+    var ph = Math.max(1, (bottom - top) * baseH);
+    var cx = r.left + (left + right) * 0.5 * r.width;
+    var cy = r.top + (top + bottom) * 0.5 * r.height;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var fit = Math.min(vw / pw, vh / ph);
+    var nextZoom = _clampZoom(Math.max(1, Math.min(ZOOM_MAX, fit * 0.90)));
+    if (IS_WEBTOON) {
+      var localX = (cx - PAN_X) / ZOOM;
+      var localY = (window.scrollY + cy) / ZOOM;
+      ZOOM = nextZoom;
+      PAN_X = vw * 0.5 - localX * ZOOM;
+      PAN_Y = 0;
+      _applyCanvas();
+      window.scrollTo(0, Math.max(0, localY * ZOOM - vh * 0.5));
+    } else {
+      var localPanelX = (cx - PAN_X) / ZOOM;
+      var localPanelY = (cy - PAN_Y) / ZOOM;
+      ZOOM = nextZoom;
+      PAN_X = vw * 0.5 - localPanelX * ZOOM;
+      PAN_Y = vh * 0.5 - localPanelY * ZOOM;
+      // _clampPan() 在 ZOOM <= 1 时直接 return，不夹也不居中——那时 PAN 停在
+      // 分镜中心会把页面推出视口且没有任何东西把它拉回来。
+      if (ZOOM <= 1) { _recenterPan(); } else { _clampPan(); }
+      _applyCanvas();
+    }
+    return true;
+  };
   // 后台 OCR 每完成一页就只替换该页透明文字层，不重建 WebView 文档、不打断阅读。
   window.__mangaReplaceOcr = function(pageIndex, html){
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');

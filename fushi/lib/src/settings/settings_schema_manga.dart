@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_panel_model_settings.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -217,6 +218,29 @@ SettingsDestination buildMangaDestination() {
             value: (SettingsContext c) => c.appModel.mangaWidePageSolo,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMangaWidePageSolo(value),
+          ),
+          SettingsNavigationItem(
+            id: 'manga.panel_model',
+            title: t.manga_panel_model,
+            subtitle: t.manga_panel_model_desc,
+            icon: Icons.model_training_outlined,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.manga,
+              title: t.manga_panel_model,
+              icon: Icons.model_training_outlined,
+              sections: const <SettingsSection>[],
+              body: (_) => const MangaPanelModelSettings(),
+            ),
+          ),
+          SettingsSwitchItem(
+            id: 'manga.panel_navigation',
+            title: t.manga_panel_navigation,
+            subtitle: t.manga_panel_navigation_subtitle,
+            icon: Icons.view_carousel_outlined,
+            value: (SettingsContext c) =>
+                c.appModel.mangaPanelNavigationEnabled,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMangaPanelNavigationEnabled(value),
           ),
           // 底色：此前恒黑，两处硬编码（WebView 文档的 html,body 与页面 Scaffold）。
           SettingsSegmentedItem<String>(

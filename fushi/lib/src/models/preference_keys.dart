@@ -165,6 +165,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_external_mokuro_path',
   'manga_ocr_engine_preference',
   'manga_ocr_lens_language',
+  // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
+  'manga_panel_navigation',
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',

@@ -128,6 +128,9 @@ const String kMangaTapZoneLayoutDefault = 'left_right';
 const int kMangaSpreadOffsetDefault = 1;
 const bool kMangaWidePageSoloDefault = true;
 
+/// AI 分镜逐格导航默认关闭：模型需用户主动下载，且普通翻页行为保持兼容。
+const bool kMangaPanelNavigationDefault = false;
+
 /// 点击翻页的区域布局。
 ///
 /// 旧实现只有一种：左右各占 25% 宽的竖条（[MangaTapZoneLayout.leftRight]），中间
