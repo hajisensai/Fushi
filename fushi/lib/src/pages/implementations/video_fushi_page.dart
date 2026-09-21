@@ -728,6 +728,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   ///   离开。
   /// - [caretHoldsPause]：字级选词光标会话激活时暂停由它接管（与
   ///   [shouldResumeAfterLookupDismiss] 同一条让位），鼠标放哪儿都不该替它决定续播。
+  /// - [hiddenByDialog]：制卡 / 选句上下文 / 打开卡片这类对话框期间，浮层被**停靠到
+  ///   屏外**（BUG-797/1040/1327 同族：`_popupHidingDialogDepth`），它那层 MouseRegion
+  ///   随之离开指针并报 exit，而 `hasVisiblePopup` 看的是 controller 级 visible、仍为
+  ///   true。不挡这条，用户点「制卡」后 320ms 就会被整栈关掉：制卡草稿被清、视频在
+  ///   对话框背后播起来。
   ///
   /// 纯函数：与 [_VideoFushiPageState._fireHoverLeaveResume] 共用，供单测直接验证。
   @visibleForTesting
@@ -738,13 +743,15 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required bool pointerOverPopup,
     required bool overSubtitle,
     bool caretHoldsPause = false,
+    bool hiddenByDialog = false,
   }) =>
       enabled &&
       openedByHover &&
       hasVisiblePopup &&
       !pointerOverPopup &&
       !overSubtitle &&
-      !caretHoldsPause;
+      !caretHoldsPause &&
+      !hiddenByDialog;
 
   /// 长按横向拖动连续调速的映射系数（TODO-338）：每 px 横向位移改变多少倍速。
   /// 200px ≈ 1.0x，故拖半屏（~600px）≈ ±3x，覆盖 [longPressDragMinSpeed]..
@@ -5365,6 +5372,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _subtitleHitTester.hitTest(_lastGlobalPointerPos) != null ||
               _subtitleListHitTester.hitTest(_lastGlobalPointerPos) != null,
       caretHoldsPause: _videoCaretActive,
+      hiddenByDialog: lookupPopupHiddenByDialog,
     )) {
       return;
     }
@@ -5535,23 +5543,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  Widget _buildNestedPopupLayer(int index, Size screen) {
-    // 指针进 / 出浮层的回报口：浮层盖在 barrier 之上，指针一进浮层 barrier 就收不到
-    // hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。`opaque: false` 使它
-    // 只订阅 enter/exit，不改变命中语义（浮层内部的点击 / 选词 / 滚动一概不受影响）。
-    return MouseRegion(
-      opaque: false,
-      onEnter: (PointerEnterEvent _) => _setPointerOverLookupPopup(true),
-      onExit: (PointerExitEvent _) => _setPointerOverLookupPopup(false),
-      child: _buildNestedPopupLayerContent(index, screen),
-    );
-  }
+  Widget _buildNestedPopupLayer(int index, Size screen) =>
+      _buildNestedPopupLayerContent(index, screen);
+
+  /// 指针进 / 出浮层的回报口：浮层盖在 barrier 之上，指针一进浮层 barrier 就收不到
+  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。`opaque: false` 使它
+  /// 只订阅 enter/exit，不改变命中语义（浮层内部的点击 / 选词 / 滚动一概不受影响）。
+  ///
+  /// **必须经 [buildNestedPopupLayer] 的 wrapContent 挂在 [Positioned] 内部**：本层
+  /// 顶层是 `Positioned`（BUG-135 屏外停靠），在它外面套 `MouseRegion` 会让
+  /// ParentData 落不到 Stack 上——debug 抛 `Incorrect use of ParentDataWidget`、浮层
+  /// 画到左上角，release 直接 TypeError。
+  Widget _wrapPopupHoverProbe(Widget child) => MouseRegion(
+        opaque: false,
+        onEnter: (PointerEnterEvent _) => _setPointerOverLookupPopup(true),
+        onExit: (PointerExitEvent _) => _setPointerOverLookupPopup(false),
+        child: child,
+      );
 
   Widget _buildNestedPopupLayerContent(int index, Size screen) {
     return buildNestedPopupLayer(
       index: index,
       screen: screen,
       controller: _popup,
+      wrapContent: _wrapPopupHoverProbe,
       onPush: (String text, Rect rect) {
         // 递归查词不属于某条字幕句：制卡例句仍用最近一次字幕句。
         // [rect] 已是中和后浮层坐标（父浮层 pos + WebView 局部 rect 叠出，均在同一

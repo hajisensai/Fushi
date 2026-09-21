@@ -22,6 +22,7 @@ void main() {
       bool pointerOverPopup = false,
       bool overSubtitle = false,
       bool caretHoldsPause = false,
+      bool hiddenByDialog = false,
     }) =>
         VideoFushiPage.shouldAutoResumeOnHoverLeave(
           enabled: enabled,
@@ -30,6 +31,7 @@ void main() {
           pointerOverPopup: pointerOverPopup,
           overSubtitle: overSubtitle,
           caretHoldsPause: caretHoldsPause,
+          hiddenByDialog: hiddenByDialog,
         );
 
     test('全部条件成立 ⇒ 关栈续播', () {
@@ -58,6 +60,14 @@ void main() {
 
     test('字级选词光标会话激活 ⇒ 暂停由它接管，不替它决定续播', () {
       expect(call(caretHoldsPause: true), isFalse);
+    });
+
+    test('对话框期（制卡 / 选句上下文 / 打开卡片）⇒ 不关栈', () {
+      // BUG-797/1040/1327 同族：这些对话框把浮层**停靠到屏外**，浮层那层 MouseRegion
+      // 随之离开指针并报 exit，而 hasVisiblePopup 看的是 controller 级 visible、仍为
+      // true。不挡这条，用户点「制卡」后 320ms 就会被整栈关掉：草稿清空、视频在对话框
+      // 背后播起来。
+      expect(call(hiddenByDialog: true), isFalse);
     });
 
     test('意图确认窗口是正数且不至于长到让人以为卡住', () {
@@ -179,6 +189,71 @@ void main() {
         disposeBody,
         contains('_cancelHoverLeaveResume()'),
         reason: '表活过本页 ⇒ 在已 dispose 的 State 上 setState',
+      );
+    });
+  });
+
+  group('浮层 hover 探针的挂载层级（release 下会崩的那一类）', () {
+    final String pageSource = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final String mixinSource = File(
+      'lib/src/pages/implementations/dictionary_page_mixin.dart',
+    ).readAsStringSync();
+
+    test('hover 探针经 wrapContent 挂在 Positioned 内部，不套在层外', () {
+      // buildNestedPopupLayer 返回的是 parkedPopupLayer 的 Positioned（BUG-135 屏外
+      // 停靠靠它的 left/top）。Positioned 是 ParentDataWidget<StackParentData>，与
+      // Stack 之间只能隔 Stateless/Stateful widget；在**外面**套 MouseRegion
+      // （SingleChildRenderObjectWidget）会让 ParentData 落不到 Stack 上：debug 抛
+      // `Incorrect use of ParentDataWidget`、浮层退化成非定位子项画到左上角（热槽
+      // 屏外停靠一并失效），release 下 `parentData! as StackParentData` 直接 TypeError。
+      expect(
+        pageSource,
+        contains('wrapContent: _wrapPopupHoverProbe'),
+        reason: 'hover 探针必须经 mixin 的 wrapContent 注入到 Positioned 内部',
+      );
+      final int probeAt = pageSource.indexOf('Widget _wrapPopupHoverProbe(');
+      expect(probeAt, greaterThanOrEqualTo(0));
+      expect(
+        pageSource.substring(probeAt, probeAt + 400),
+        contains('MouseRegion('),
+      );
+      // 反向：层构造函数自己的函数体里不得再套 MouseRegion（那就又回到层外了）。
+      final int buildAt =
+          pageSource.indexOf('Widget _buildNestedPopupLayer(int');
+      expect(buildAt, greaterThanOrEqualTo(0));
+      expect(
+        pageSource.substring(buildAt, pageSource.indexOf(';', buildAt)),
+        isNot(contains('MouseRegion(')),
+      );
+    });
+
+    test('mixin 的 wrapContent 只作用在 parkedPopupLayer 的 child 上', () {
+      expect(
+          mixinSource, contains('Widget Function(Widget child)? wrapContent'));
+      final int parkedAt = mixinSource.indexOf('return parkedPopupLayer(');
+      expect(parkedAt, greaterThanOrEqualTo(0));
+      final String layer = mixinSource.substring(parkedAt, parkedAt + 1200);
+      expect(
+        layer.replaceAll(RegExp(r'\s+'), ''),
+        contains('child:_wrapPopupContent(wrapContent'),
+        reason: '包装落在 child: 上，顶层仍是 Positioned',
+      );
+      expect(
+        mixinSource.substring(0, parkedAt),
+        isNot(contains('wrapContent(parkedPopupLayer')),
+        reason: '绝不能反过来把 Positioned 包进去',
+      );
+    });
+
+    test('到期复核把对话框期一并传进判据', () {
+      final int fireAt = pageSource.indexOf('void _fireHoverLeaveResume()');
+      expect(fireAt, greaterThanOrEqualTo(0));
+      final int end = pageSource.indexOf('\n  }', fireAt);
+      expect(
+        pageSource.substring(fireAt, end),
+        contains('hiddenByDialog: lookupPopupHiddenByDialog'),
       );
     });
   });
