@@ -74,6 +74,7 @@ abstract final class PrefRedactionPolicy {
     // 第三方服务 API key（都被 `api_key` 子串覆盖，显式列出以便审计时一眼看全）。
     'yomitan_api_key',
     'jimaku_api_key',
+    'video_subtitle_subdl_api_key',
     'manga_cloud_ocr_api_key',
     'video_scraper_tmdb_api_key',
     'video_metadata_fanart_api_key',
@@ -96,6 +97,8 @@ abstract final class PrefRedactionPolicy {
     // 同形：JSON 内含 base64 的 OPDS 服务器密码，键名本身没有 credential 形状。
     // 也在 deviceLocalPrefKeys 中，双重声明便于安全审计。
     'discovery_opds_servers',
+    // 同形：AList / OpenList 站点清单里的 base64 密码。
+    'discovery_alist_sites',
   };
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

@@ -1387,6 +1387,44 @@ class InterconnectSyncBackend extends SyncBackend
     return VideoMetadataWriteResult.fromJson(decoded);
   }
 
+  /// TMDB 备选排序：host 上 [key] 那部剧的全部 episode groups + 当前选定。
+  /// host 报合集对应多个作品（409 ambiguousWork）时返回 null 并把 [VideoMetadataWriteResult]
+  /// 交给调用方（走 [requestRemoteVideoMetadataScrape] 同款选作品流程）。
+  Future<
+      ({
+        VideoMetadataEpisodeGroupListing? listing,
+        VideoMetadataWriteResult? conflict
+      })> listRemoteVideoMetadataEpisodeGroups({
+    required VideoMetadataWorkKey key,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/episode-groups',
+      <String, Object?>{'key': key.toJson()},
+    );
+    if (decoded is Map && decoded.containsKey('ok')) {
+      return (
+        listing: null,
+        conflict: VideoMetadataWriteResult.fromJson(decoded),
+      );
+    }
+    return (
+      listing: VideoMetadataEpisodeGroupListing.fromJson(decoded),
+      conflict: null,
+    );
+  }
+
+  /// TMDB 备选排序：让 host 选定 [groupId]（null = 默认排序）并按它重刮。
+  Future<VideoMetadataWriteResult> setRemoteVideoMetadataEpisodeGroup({
+    required VideoMetadataWorkKey key,
+    required String? groupId,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/episode-group',
+      <String, Object?>{'key': key.toJson(), 'groupId': groupId},
+    );
+    return VideoMetadataWriteResult.fromJson(decoded);
+  }
+
   /// 7b：把本机刮好的 [work] 写回 host。409 identity 冲突也解成结果对象由 UI 决定。
   Future<VideoMetadataWriteResult> putRemoteVideoMetadata({
     required VideoMetadataWorkKey key,

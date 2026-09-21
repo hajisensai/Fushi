@@ -64,8 +64,8 @@ void main() {
       expect(body, isNotEmpty, reason: '来源视图必须保留公开的 addSource 入口');
       expect(body, contains('showAppDialog<_AddSourceChoice>'));
       expect(body, contains('await addLocalFolder()'));
-      expect(src, contains("const <String>['webdav']"),
-          reason: '视频网络 transport 必须收窄到仅 WebDAV');
+      expect(src, contains("const <String>['webdav', 'alist']"),
+          reason: '视频网络 transport 必须收窄到 WebDAV/AList');
     });
 
     test('android branch uses native SAF channel, no custom browser', () {

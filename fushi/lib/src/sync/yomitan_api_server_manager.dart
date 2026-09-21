@@ -4,6 +4,7 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
+import 'package:fushi/src/sync/extension_font_api.dart';
 import 'package:fushi/src/sync/yomitan_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
 
@@ -30,6 +31,7 @@ class YomitanApiServerManager {
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
     String Function()? extensionTestPageProvider,
+    ExtensionFontApi? fontApi,
   })  : _lookup = lookupService,
         _mining = miningService,
         _history = historyService,
@@ -47,7 +49,8 @@ class YomitanApiServerManager {
         _onLookupActivity = onLookupActivity,
         _onExtensionReport = onExtensionReport,
         _subtitleRegistryProvider = subtitleRegistryProvider,
-        _extensionTestPageProvider = extensionTestPageProvider;
+        _extensionTestPageProvider = extensionTestPageProvider,
+        _fontApi = fontApi;
 
   final FushiRemoteLookupService _lookup;
   final FushiRemoteMiningService? _mining;
@@ -82,6 +85,9 @@ class YomitanApiServerManager {
   final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
   // 新手引导「试一试」页的 HTML 供给器，透传给 [YomitanApiServer]（GET 路由）。
   final String Function()? _extensionTestPageProvider;
+  // 扩展字幕外观「字体」下拉框的真源（app 字体目录 + 推荐字体下载），透传给
+  // [YomitanApiServer] 的 /api/extension/fonts* 三路。
+  final ExtensionFontApi? _fontApi;
 
   YomitanApiServer? _server;
 
@@ -110,6 +116,7 @@ class YomitanApiServerManager {
       onExtensionReport: _onExtensionReport,
       subtitleRegistryProvider: _subtitleRegistryProvider,
       extensionTestPageProvider: _extensionTestPageProvider,
+      fontApi: _fontApi,
       apiKey: apiKey.isEmpty ? null : apiKey,
       allowLan: true,
     );

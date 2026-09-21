@@ -14,6 +14,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
+import 'package:fushi/src/sync/remote_video_client.dart';
 
 /// 视频源扩展的浏览 → 作品页 → 起播链路（播放页本体被 openPlayer 桩替换：widget
 /// 测试里起不了 libmpv）。
@@ -122,7 +123,8 @@ void main() {
                     int index,
                   ) async {
                     opened.add((info, index));
-                    // 播放页 load 前读到的头就是刚解析那条流的头。
+                    // 取流留给播放页：它取完流、load 前读到的头就是那条流的头。
+                    await client.remoteVideoStreamUrls(info.id);
                     expect(client.httpHeaderFields, <String, String>{
                       'Referer': 'https://site.example/',
                     });
@@ -165,11 +167,13 @@ void main() {
   );
 
   testWidgets(
-    'several candidates ask which stream to play and pin the choice',
+    'several candidates open the player at once with the default line, '
+    'and the player can switch lines afterwards',
     (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      String? playedUrl;
+      AnimeSourceVideoClient? opened;
+      String? openedId;
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
@@ -184,9 +188,8 @@ void main() {
                     RemoteVideoInfo info,
                     int index,
                   ) async {
-                    final RemoteVideoStreamUrls urls = await client
-                        .remoteVideoStreamUrls(info.id);
-                    playedUrl = urls.streamUrl;
+                    opened = client;
+                    openedId = info.id;
                   },
             ),
           ),
@@ -207,20 +210,40 @@ void main() {
       await tester.tap(find.text('Episode 2'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
-      expect(find.text('Choose a stream'), findsOneWidget);
-      await tester.tap(find.text('480p'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-      expect(playedUrl, 'https://cdn.example/480.mp4');
+      // 不再弹「选一条流」拦一道：作品页也不预解析，取流留给播放页。
+      expect(find.text('Choose a stream'), findsNothing);
+      expect(runtime.calls, isNot(contains('getVideoList')));
+      expect(openedId, endsWith(':42:/ep/2'));
+      // 播放页取流：默认线路 = 扩展给的第一条，线路菜单列出两条并标出当前。
+      final AnimeSourceVideoClient client = opened!;
+      final RemoteVideoStreamUrls urls = await client.remoteVideoStreamUrls(
+        openedId!,
+      );
+      expect(urls.streamUrl, 'https://cdn.example/1080.mp4');
+      expect(
+        client.streamVariants
+            .map((RemoteVideoStreamVariant v) => v.label)
+            .toList(),
+        <String>['1080p', '480p'],
+      );
+      expect(client.streamVariantIndex, 0);
+      // 播放器里换线路：钉住后重新取流播那条，不再问扩展。
+      client.streamVariantIndex = 1;
+      final RemoteVideoStreamUrls switched = await client.remoteVideoStreamUrls(
+        openedId!,
+      );
+      expect(switched.streamUrl, 'https://cdn.example/480.mp4');
+      expect(client.streamVariantIndex, 1);
+      expect(runtime.calls.where((String c) => c == 'getVideoList').length, 1);
     },
   );
 
-  testWidgets('an episode without streams reports NO stream and stays', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('an episode without streams still opens the player, '
+      'which reports NO stream on load', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    bool opened = false;
+    AnimeSourceVideoClient? opened;
+    String? openedId;
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
@@ -228,7 +251,16 @@ void main() {
             manager: manager,
             sourceContext: await context(),
             anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
-            openPlayer: (_, __, ___, ____) async => opened = true,
+            openPlayer:
+                (
+                  _,
+                  AnimeSourceVideoClient client,
+                  RemoteVideoInfo info,
+                  int index,
+                ) async {
+                  opened = client;
+                  openedId = info.id;
+                },
           ),
         ),
       ),
@@ -239,14 +271,62 @@ void main() {
     await tester.tap(find.text('Episode 1'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(opened, isFalse);
+    expect(opened, isNotNull);
+    await expectLater(
+      () => opened!.remoteVideoStreamUrls(openedId!),
+      throwsA(
+        isA<MihonRuntimeException>().having(
+          (MihonRuntimeException e) => e.code,
+          'code',
+          'NO_VIDEOS',
+        ),
+      ),
+    );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'open on website asks the extension for the page url and hands it to the browser',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final List<Uri> launched = <Uri>[];
+      runtime.animeUrl = 'https://site.example/watch/fixture-show';
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              openExternal: (Uri url) async => launched.add(url),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anime_source_open_website')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(runtime.calls, contains('getAnimeUrl'));
+      // 详情合并后身份仍是入参的 url，问扩展时带的也是它。
+      expect(runtime.animeUrlRequests, <String>['/anime/1']);
+      expect(launched, <Uri>[
+        Uri.parse('https://site.example/watch/fixture-show'),
+      ]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _AnimeRuntime extends MihonBridgeRuntime {
   final List<String> calls = <String>[];
   Object? videos = <Object?>[];
+  String? animeUrl;
+  final List<String> animeUrlRequests = <String>[];
 
   @override
   Future<Object?> invokeBridge(
@@ -289,6 +369,11 @@ class _AnimeRuntime extends MihonBridgeRuntime {
         ];
       case 'getVideoList':
         return videos;
+      case 'getAnimeUrl':
+        animeUrlRequests.add(
+          (arguments['animeData']! as Map<String, Object?>)['url']! as String,
+        );
+        return animeUrl;
       case 'preferencesAnime':
         return <Object?>[];
     }

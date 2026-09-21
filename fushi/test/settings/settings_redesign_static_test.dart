@@ -440,13 +440,19 @@ void main() {
     ).text;
     expect(itemBody, contains('t.popup_instant_scroll'));
     expect(itemBody, contains('popupInstantScroll'));
+    // 它是跨阅读器 / 视频 / 词典页共享的弹窗行为，所以真值只有全局这一份（上面的
+    // 顺序断言钉住它留在「弹窗窗口」组）；ReaderPlacement 只是把同一份真值**投影**
+    // 进书内快捷面板（与同组的滑动关闭对同法）——墨水屏用户是在书里查词时才发现
+    // 步长不合手，不该为此退出阅读器去翻全局设置。步长滑杆随开关一起投影。
     expect(
       containsIdentifierCall(itemBody, 'ReaderPlacement'),
-      isFalse,
+      isTrue,
       reason:
-          'This controls shared lookup popup behavior across reader, video, '
-          'and dictionary surfaces, so it must not become reader-only.',
+          'The global lookup item must also project into the reader quick '
+          'panel (ReaderGroup.lookup); the placement does not make it '
+          'reader-only.',
     );
+    expect(itemBody, contains('ReaderGroup.lookup'));
   });
 
   test('reader quick settings reuse the shared theme selector', () {
@@ -546,28 +552,35 @@ void main() {
   });
 
   test(
-    'wide settings nav pane gets a tonal container background (material only)',
+    'wide settings list-detail draws no divider and wraps the nav block in a '
+    'FushiCard',
     () {
       final String source = readNormalizedSource(
         'lib/src/settings/settings_home_page.dart',
       );
-      // MD3 list-detail: nav pane on tonal token surface, gated to Material via
-      // the cupertino branch。
-      // 旧锚点 `'cupertino ? null :'` 把三元表达式的**排版**写进了契约（换行一改
-      // 就红）。契约是「取 tonal 底色的那条语句本身被 cupertino 门控」。
-      //
-      // 底色档位从 `surfaces.group`（surfaceContainerLow）提到 `surfaces.card`
-      // （surfaceContainer）：实测浅色主题下 surfaceContainerLow 与 surface 只差
-      // 约 2%（#F0F4F8 vs #F5FAFD），窗格与详情之间那条 1px 分隔线两侧几乎同色，
-      // 线因此读不出「两个窗格」、只读成一条凭空的竖线。提一档后面差约 4.3%，线
-      // 两侧真有两个面，同时左边「图标侧栏 | 导航窗格」那条本就没有分隔线的缝也
-      // 一并变得可辨。
-      expect(source, contains('tokens.surfaces.card'));
-      final String statement = _statementAround(source, 'tokens.surfaces.card');
+      // 历史：BUG-2443 把导航窗格整块铺成 `surfaces.card` tonal 底并保留 1px 分隔
+      // 线。用户实机反馈（2026-09-20）：线多余，但左侧要像右侧分组卡一样有一张卡
+      // 包住。这里钉住：主页不再给 MaterialSupportingPaneLayout 传 dividerColor、
+      // 显式关掉分隔线，导航块装进与分组卡同款的 FushiCard（groupRadius）。
       expect(
-        statement,
-        contains('cupertino'),
-        reason: 'nav pane 的 tonal 底色必须由 cupertino 分支门控，实际语句：$statement',
+        source,
+        isNot(contains('dividerColor:')),
+        reason: '宽屏设置主从不再画窗格分隔线，不该再传 dividerColor',
+      );
+      expect(
+        source,
+        contains('showDivider: false'),
+        reason: '宽屏设置主从必须显式关掉 MaterialSupportingPaneLayout 的分隔线',
+      );
+      expect(
+        containsIdentifierCall(source, 'FushiCard'),
+        isTrue,
+        reason: '宽屏导航块必须装在 FushiCard 里（用户要「左边也有卡包住」）',
+      );
+      expect(
+        source,
+        contains('tokens.radii.groupRadius'),
+        reason: '导航卡圆角必须与右侧分组卡同款（groupRadius）',
       );
     },
   );
@@ -837,27 +850,6 @@ void expectTokenDerivedSpacing(String code, String label) {
       );
     }
   }
-}
-
-/// 取 [needle] 所在的**语句**（上一个 `;` / `{` / `}` 到下一个 `;`）。
-///
-/// 用于「这个取值必须被某个条件门控」这类契约：断言语句里出现门控标识符，与三元
-/// 表达式怎么排版无关。
-String _statementAround(String code, String needle) {
-  final int index = code.indexOf(needle);
-  expect(index, isNonNegative, reason: '源码里找不到：$needle');
-  int start = index;
-  while (start > 0 &&
-      code[start - 1] != ';' &&
-      code[start - 1] != '{' &&
-      code[start - 1] != '}') {
-    start--;
-  }
-  int end = index;
-  while (end < code.length && code[end] != ';') {
-    end++;
-  }
-  return code.substring(start, end);
 }
 
 /// YAML 里是否有一条**未被注释掉**的行含 [key]。

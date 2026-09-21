@@ -58,6 +58,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
 import 'package:fushi/src/models/app_ui_font_chain.dart';
+import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
@@ -113,6 +114,7 @@ import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart'
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
+import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/discovery/sources/alist_discovery_source.dart';
 import 'package:fushi/src/media/discovery/sources/core_audio_discovery_source.dart';
@@ -3662,6 +3664,10 @@ class AppModel with ChangeNotifier {
       // content.js fushiRender 读它设 window.__fushiPopupInstantScroll（与 in-app 注入
       // 同名全局），popup.js 的 wheel 监听据此改走固定步长瞬跳。值 '1'/'0'。
       '--fushi-instant-scroll': popupInstantScroll ? '1' : '0',
+      // 瞬时滚动的滚轮步长（占视口比例）同通道下发；content.js 设
+      // window.__fushiPopupInstantScrollWheelStep。触摸半边扩展侧不挂监听，不下发。
+      '--fushi-instant-scroll-wheel-step':
+          popupInstantScrollWheelStep.toStringAsFixed(3),
       // BUG-2397：「音调去重」下发给扩展 content.js（非 CSS 变量、仅 JS 消费）。扩展弹窗
       // 与 in-app 弹窗跑同一份 popup.js，而它的去重分支读 `window.deduplicatePitchAccents`：
       // in-app 由 popup_settings_injection 注入，扩展侧此前没有任何赋值路径，恒 undefined
@@ -4182,6 +4188,25 @@ class AppModel with ChangeNotifier {
   /// 按开关注册 provider），不重启即生效。
   Future<void> setVideoSubtitleAjattEnabled(bool enabled) async {
     await prefsRepo.setVideoSubtitleAjattEnabled(enabled);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
+  /// SubDL API key，见 [PreferencesRepository.videoSubtitleSubdlApiKey]。
+  String get videoSubtitleSubdlApiKey =>
+      _prefsRepo?.videoSubtitleSubdlApiKey ?? '';
+
+  /// 与 [setJimakuApiKey] 同范式：落 pref 后重建下载流水线运行时。
+  Future<void> setVideoSubtitleSubdlApiKey(String key) async {
+    await prefsRepo.setVideoSubtitleSubdlApiKey(key);
+    await reloadVideoDownloadPipelineRuntime();
+  }
+
+  /// SubDL 开关，见 [PreferencesRepository.videoSubtitleSubdlEnabled]。
+  bool get videoSubtitleSubdlEnabled =>
+      _prefsRepo?.videoSubtitleSubdlEnabled ?? true;
+
+  Future<void> setVideoSubtitleSubdlEnabled(bool enabled) async {
+    await prefsRepo.setVideoSubtitleSubdlEnabled(enabled);
     await reloadVideoDownloadPipelineRuntime();
   }
 
@@ -5329,6 +5354,10 @@ class AppModel with ChangeNotifier {
       if (isPreferencesReady)
         for (final OpdsServerConfig server in prefsRepo.discoveryOpdsServers)
           if (server.enabled) OpdsDiscoverySource(config: server),
+      // 用户自配的 AList / OpenList 站点：同上，一条配置 = 一个源实例。
+      if (isPreferencesReady)
+        for (final AListSiteConfig site in prefsRepo.discoveryAListSites)
+          if (site.enabled) AListDiscoverySource.fromConfig(site),
     ]);
   }
 
@@ -5359,6 +5388,12 @@ class AppModel with ChangeNotifier {
     Iterable<OpdsServerConfig> servers,
   ) async {
     await prefsRepo.setDiscoveryOpdsServers(servers);
+    await reloadDiscoverySources();
+  }
+
+  /// 增删改一个 AList / OpenList 站点后的统一写回口（同 [setDiscoveryOpdsServers]）。
+  Future<void> setDiscoveryAListSites(Iterable<AListSiteConfig> sites) async {
+    await prefsRepo.setDiscoveryAListSites(sites);
     await reloadDiscoverySources();
   }
 
@@ -7018,6 +7053,16 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupInstantScroll(bool value) =>
       prefsRepo.setPopupInstantScroll(value);
 
+  // 瞬时滚动步长（占视口比例，clamp 0.1–1.0）：滚轮一格 / 手指滑满一步各一个旋钮。
+  double get popupInstantScrollWheelStep =>
+      prefsRepo.popupInstantScrollWheelStep;
+  Future<void> setPopupInstantScrollWheelStep(double value) =>
+      prefsRepo.setPopupInstantScrollWheelStep(value);
+  double get popupInstantScrollTouchStep =>
+      prefsRepo.popupInstantScrollTouchStep;
+  Future<void> setPopupInstantScrollTouchStep(double value) =>
+      prefsRepo.setPopupInstantScrollTouchStep(value);
+
   // BUG-1026：查词弹窗滚轮速度倍率（默认 1.0，clamp 0.5–5.0）。
   double get popupWheelSpeed => prefsRepo.popupWheelSpeed;
   Future<void> setPopupWheelSpeed(double value) =>
@@ -7889,6 +7934,10 @@ class AppModel with ChangeNotifier {
       subtitleRegistryProvider: browserExtensionSubtitleRegistry,
       // 新手引导「试一试」页：GET /onboarding/extension-test 到达时才生成 HTML。
       extensionTestPageProvider: buildBrowserExtensionTestPageHtml,
+      // 扩展字幕外观「字体」下拉框：字体真源是 app 字体目录（与「自定义字体」页
+      // 同一份 font_catalog 偏好 + custom_fonts 目录），推荐字体下载也走页面同一套
+      // FontDownloadService，扩展装的字体在 app 里立刻可用。
+      fontApi: BrowserExtensionFontCatalog(this),
       tokenizer: JapaneseLanguage.instance.textToWords,
       readingResolver: (String w) {
         if (!FushiDicts.isInitialized) return '';

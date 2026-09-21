@@ -12,7 +12,9 @@ const AnidbUdpConfig _config = AnidbUdpConfig(
   clientName: 'testclient',
   clientVersion: 1,
 );
-const String _file = '100|200|300|Romaji|日本語|English|S01|Special|Tokubetsu|特別';
+// fid|aid|eid|other eps|deprecated|state|romaji|kanji|english|epno|ep|ep romaji|ep kanji
+const String _file =
+    '100|200|300|||0|TV Series|Romaji|日本語|English|S01|Special|Tokubetsu|特別';
 
 class _Fake implements AnidbUdpTransport {
   _Fake(this.respond);
@@ -85,7 +87,7 @@ void main() {
       expect(
         fake.packets[1],
         contains(
-          'FILE size=123&ed2k=$_hash&fmask=6000000000&amask=00e0f000&s=Ab12',
+          'FILE size=123&ed2k=$_hash&fmask=6700000000&amask=10e0f000&s=Ab12',
         ),
       );
       expect(match?.fileId, 100);
@@ -357,7 +359,7 @@ void main() {
   test('FILE rejects truncated or shifted fields', () async {
     final _Fake fake = _Fake(
       (packet, tag) => packet.startsWith('FILE ')
-          ? '$tag 220 FILE\n100|200|300|Romaji|Japanese|English|invalid|x|y|z'
+          ? '$tag 220 FILE\n100|200|300|||0|Romaji|Japanese|English|invalid|x|y|z'
           : _normal(packet, tag),
     );
     final AnidbUdpFileClient client = AnidbUdpFileClient(
@@ -735,6 +737,177 @@ void main() {
           ),
         ),
       );
+      await client.close();
+    });
+  });
+
+  group('FILE xref columns (Shoko fmask 0x67: other episodes / deprecated / state)',
+      () {
+    test('a single-episode file has no other episodes and state flags decode',
+        () {
+      final AnidbFileIdentity identity = AnidbUdpFileClient.parseFileReply(
+          '100|200|300|||5|TV Series|Romaji|日本語|English|01|Ep|Ep r|Ep k');
+      expect(identity.episodeId, 300);
+      expect(identity.otherEpisodes, isEmpty);
+      expect(identity.isDeprecated, isFalse);
+      expect(identity.crcMatches, isTrue, reason: 'bit 1 = CRCMatch');
+      expect(identity.fileVersion, 2, reason: 'bit 4 = IsV2');
+      expect(identity.animeType, 'TV Series');
+      expect(identity.isMovieType, isFalse);
+    });
+
+    test('eid list with percentages → primary + other episodes', () {
+      final AnidbFileIdentity identity = AnidbUdpFileClient.parseFileReply(
+          "100|200|300,50'301,50|||0|Movie|R|K|E|01|Ep|Ep r|Ep k");
+      expect(identity.episodeId, 300);
+      expect(identity.otherEpisodes,
+          <AnidbEpisodeShare>[const AnidbEpisodeShare(episodeId: 301, percentage: 50)]);
+      expect(identity.isMovieType, isTrue, reason: 'amask byte1 bit4 = anime type');
+    });
+
+    test('other episodes column in both Shoko formats, deduplicated', () {
+      final AnidbFileIdentity format1 = AnidbUdpFileClient.parseFileReply(
+          "100|200|300|301'50'302'50||0|OVA|R|K|E|01|Ep|Ep r|Ep k");
+      expect(format1.otherEpisodes, <AnidbEpisodeShare>[
+        const AnidbEpisodeShare(episodeId: 301, percentage: 50),
+        const AnidbEpisodeShare(episodeId: 302, percentage: 50),
+      ]);
+      final AnidbFileIdentity format2 = AnidbUdpFileClient.parseFileReply(
+          "100|200|300'301|301,50'303,100||0|OVA|R|K|E|01|Ep|Ep r|Ep k");
+      expect(format2.otherEpisodes, <AnidbEpisodeShare>[
+        const AnidbEpisodeShare(episodeId: 301, percentage: 50),
+        const AnidbEpisodeShare(episodeId: 303, percentage: 100),
+      ], reason: 'eid 列表里的 301 均分 50%，other eps 里同一 eid 不重复');
+    });
+
+    test('deprecated flag and CRC error surface, unknown state → null CRC', () {
+      final AnidbFileIdentity deprecated = AnidbUdpFileClient.parseFileReply(
+          '100|200|300||1|2|Web|R|K|E|01|Ep|Ep r|Ep k');
+      expect(deprecated.isDeprecated, isTrue);
+      expect(deprecated.crcMatches, isFalse);
+      final AnidbFileIdentity unknown = AnidbUdpFileClient.parseFileReply(
+          '100|200|300||0|0||R|K|E|01|Ep|Ep r|Ep k');
+      expect(unknown.crcMatches, isNull);
+      expect(unknown.fileVersion, 1);
+    });
+
+    test('an unparseable other-episodes column does not void the identity',
+        () {
+      final AnidbFileIdentity identity = AnidbUdpFileClient.parseFileReply(
+          '100|200|300|garbage||0|Other|R|K|E|01|Ep|Ep r|Ep k');
+      expect(identity.episodeId, 300);
+      expect(identity.otherEpisodes, isEmpty);
+    });
+  });
+
+  group('EPISODE (Shoko `RequestGetEpisode`: air date for episode linking)', () {
+    // wiki: eid|aid|length|rating|votes|epno|eng|romaji|kanji|aired|type
+    const String episode =
+        '313835|19079|24|850|12|04|The Calamity|Kajin|禍進|1777075200|1';
+
+    test('240 parses eid/aid/epno and aired as a UTC day', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n$episode'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info, isNotNull);
+      expect(info!.episodeId, 313835);
+      expect(info.animeId, 19079);
+      expect(info.episodeNumber, '04');
+      expect(info.airedAt, DateTime.utc(2026, 4, 25));
+      // 三语集名也留下（一文件多集里「其余集」的标题只有 EPISODE 能给）。
+      expect(info.englishTitle, 'The Calamity');
+      expect(info.romajiTitle, 'Kajin');
+      expect(info.kanjiTitle, '禍進');
+      final String request =
+          fake.packets.firstWhere((p) => p.startsWith('EPISODE '));
+      expect(request, contains('eid=313835'));
+      expect(request, contains('s=Ab12'));
+      // 同一 eid 第二次不再上网。
+      await client.episode(episodeId: 313835);
+      expect(fake.packets.where((p) => p.startsWith('EPISODE ')).length, 1);
+      await client.close();
+    });
+
+    test('340 NO SUCH EPISODE is null, not an error', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 340 NO SUCH EPISODE'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      expect(await client.episode(episodeId: 1), isNull);
+      await client.close();
+    });
+
+    test('aired = 0 (unknown) yields a null air date', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n313835|19079|24|0|0|04||||0|1'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info?.airedAt, isNull);
+      expect(info?.episodeNumber, '04');
+      await client.close();
+    });
+
+    test('rejects truncated or non-numeric fields', () async {
+      final _Fake fake = _Fake(
+        (packet, tag) => packet.startsWith('EPISODE ')
+            ? '$tag 240 EPISODE\n313835|19079|24|850|12|04|x|y'
+            : _normal(packet, tag),
+      );
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      await expectLater(
+        client.episode(episodeId: 313835),
+        throwsA(
+          isA<AnidbUdpException>().having(
+            (e) => e.reason,
+            'reason',
+            AnidbUdpFailure.malformedResponse,
+          ),
+        ),
+      );
+      await client.close();
+    });
+
+    test('an expired session re-authenticates once and resends EPISODE',
+        () async {
+      int episodeCalls = 0;
+      final _Fake fake = _Fake((packet, tag) {
+        if (packet.startsWith('EPISODE ')) {
+          episodeCalls++;
+          return episodeCalls == 1
+              ? '$tag 506 INVALID SESSION'
+              : '$tag 240 EPISODE\n$episode';
+        }
+        return _normal(packet, tag);
+      });
+      final AnidbUdpFileClient client = AnidbUdpFileClient(
+        config: _config,
+        transportFactory: (_) async => fake,
+      );
+      final AnidbEpisodeInfo? info = await client.episode(episodeId: 313835);
+      expect(info?.airedAt, DateTime.utc(2026, 4, 25));
+      expect(fake.packets.where((p) => p.startsWith('AUTH ')).length, 2);
+      expect(episodeCalls, 2);
       await client.close();
     });
   });

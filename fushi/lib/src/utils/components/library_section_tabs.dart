@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -200,9 +201,14 @@ class _FushiSectionTabBarState<T extends Object>
     return index < 0 ? 0 : index;
   }
 
+  /// 自持 controller 的指示条滑动时长：eink 下归零（滑动 = 一串局部刷新的残影），
+  /// 首帧 initState 里读不到 Theme，先按默认建，didChangeDependencies 再对齐。
+  Duration _animationDuration = kTabScrollDuration;
+
   TabController _createController() => TabController(
     length: widget.tabs.length,
     initialIndex: _selectedIndex,
+    animationDuration: _animationDuration,
     vsync: this,
   );
 
@@ -210,6 +216,17 @@ class _FushiSectionTabBarState<T extends Object>
   void initState() {
     super.initState();
     if (widget.controller == null) _owned = _createController();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Duration duration = einkSafeDuration(context, kTabScrollDuration);
+    if (duration == _animationDuration) return;
+    _animationDuration = duration;
+    if (_owned == null) return;
+    _owned!.dispose();
+    _owned = _createController();
   }
 
   @override
@@ -397,6 +414,8 @@ class _SectionTabOverflowFade extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // eink：渐隐是一条灰阶过渡带 = 抖动噪点；去掉，尾端 tab 直接截断（横向拖滚照常）。
+    if (isEinkTheme(context)) return const SizedBox.shrink();
     final Color background = Theme.of(context).scaffoldBackgroundColor;
     return IgnorePointer(
       child: SizedBox(

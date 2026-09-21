@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/jimaku_subtitle_provider.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/open_subtitles_client.dart';
+import 'package:fushi_engine/media/video/subtitle/subdl_client.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 
@@ -20,8 +21,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 /// 扩展里根本不存在）。抽到这里之后，管线与扩展桥共用同一份判据，加一家新来源
 /// 只需改这一个函数。
 ///
-/// 三家的门控形状**有意不同**，不要往一起合：
-/// - Jimaku / OpenSubtitles：`enabled && key`（有 key 才谈得上启用）；
+/// 四家的门控形状**有意不同**，不要往一起合：
+/// - Jimaku / OpenSubtitles / SubDL：`enabled && key`（有 key 才谈得上启用）；
 /// - AJATT：零配置，只有开关。
 Future<List<VideoSubtitleProvider>> createConfiguredVideoSubtitleProviders({
   required PreferencesRepository prefs,
@@ -51,6 +52,18 @@ Future<List<VideoSubtitleProvider>> createConfiguredVideoSubtitleProviders({
     providers.add(
       OpenSubtitlesClient(
         config: openSubtitles,
+        client: await httpClientFactory(),
+        closesClient: true,
+      ),
+    );
+  }
+  // SubDL：`enabled && key` 双门控（形状同 Jimaku）。搜索必须带 key，没有内置
+  // 应用密钥；下载匿名走 dl.subdl.com。
+  if (prefs.videoSubtitleSubdlEnabled &&
+      prefs.videoSubtitleSubdlApiKey.trim().isNotEmpty) {
+    providers.add(
+      SubdlClient(
+        apiKey: prefs.videoSubtitleSubdlApiKey,
         client: await httpClientFactory(),
         closesClient: true,
       ),

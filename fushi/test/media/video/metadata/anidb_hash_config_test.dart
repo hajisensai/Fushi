@@ -29,6 +29,28 @@ void main() {
     expect(config.anidbUdpConfig.username, 'tester');
     expect(config.anidbUdpConfig.clientName, 'clientname');
     expect(config.anidbUdpConfig.password, ' password & 日本語 ');
+    // 图片上限默认取 Shoko 默认值 10/10/10，人物照片默认不落地。
+    expect(config.maxCovers, kVideoMetadataDefaultMaxImages);
+    expect(config.maxBackdrops, kVideoMetadataDefaultMaxImages);
+    expect(config.maxLogos, kVideoMetadataDefaultMaxImages);
+    expect(config.downloadStaffImages, isFalse);
+    await prefs.setPref(kVideoMetadataMaxCoversPref, 3);
+    await prefs.setPref(kVideoMetadataMaxBackdropsPref, 0);
+    await prefs.setPref(kVideoMetadataMaxLogosPref, -5);
+    await prefs.setPref(kVideoMetadataStaffImagesPref, true);
+    final VideoSourceScrapeGlobalConfig limits =
+        VideoSourceScrapeGlobalConfig.fromPreferences(prefs,
+            resolvedTmdbApiKey: '', uiLocaleTag: 'en-US');
+    expect(limits.maxCovers, 3);
+    expect(limits.maxBackdrops, 0, reason: '0 = 不限');
+    expect(limits.maxLogos, kVideoMetadataDefaultMaxImages,
+        reason: '负数不合法回默认');
+    expect(limits.downloadStaffImages, isTrue);
+    expect(limits.maxImagesPerKind, <VideoMetadataImageKind, int>{
+      VideoMetadataImageKind.cover: 3,
+      VideoMetadataImageKind.backdrop: 0,
+      VideoMetadataImageKind.logo: kVideoMetadataDefaultMaxImages,
+    });
   });
 
   // BUG-2586：设置页状态曾按四个偏好键各自判空，客户端名留空走内置 fushiplayer
@@ -122,6 +144,10 @@ void main() {
       String locale = 'zh-CN',
       VideoMetadataProviderKind primaryProvider = VideoMetadataProviderKind.mal,
       String identifierWords = '',
+      int maxCovers = 10,
+      int maxBackdrops = 10,
+      int maxLogos = 10,
+      bool downloadStaffImages = false,
     }) =>
         VideoSourceScrapeGlobalConfig(
           tmdbApiKey: tmdbApiKey,
@@ -135,6 +161,10 @@ void main() {
           identifierWords: ScrapeIdentifierWords.parse(
             identifierWords,
           ).identifierWords,
+          maxCovers: maxCovers,
+          maxBackdrops: maxBackdrops,
+          maxLogos: maxLogos,
+          downloadStaffImages: downloadStaffImages,
         );
 
     test('every coordinator-baked field changes the fingerprint', () {
@@ -152,6 +182,10 @@ void main() {
           primaryProvider: VideoMetadataProviderKind.tmdb,
         ),
         'identifierWords': make(identifierWords: 'Kusuriya => Frieren'),
+        'maxCovers': make(maxCovers: 3),
+        'maxBackdrops': make(maxBackdrops: 0),
+        'maxLogos': make(maxLogos: 1),
+        'downloadStaffImages': make(downloadStaffImages: true),
       };
       for (final MapEntry<String, VideoSourceScrapeGlobalConfig> entry
           in variants.entries) {

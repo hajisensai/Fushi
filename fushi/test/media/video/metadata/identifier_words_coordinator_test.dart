@@ -42,6 +42,8 @@ void main() {
         await _source(db, directory, localTitle, fileNames);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+      primaryProvider: VideoMetadataProviderKind.mal,
       database: db,
       config: VideoSourceScrapeGlobalConfig(
         identifierWords:

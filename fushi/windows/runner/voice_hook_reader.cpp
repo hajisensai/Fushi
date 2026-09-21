@@ -2308,6 +2308,42 @@ uint32_t VoiceHookReader::PublishLookupShieldTransaction(
       transaction_id, active_buttons, allow_risk);
 }
 
+uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(
+    HWND game, uint64_t transaction_id, bool down) {
+  if (game == nullptr || transaction_id == 0) return 0;
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock() ||
+      LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
+    return 0;
+  }
+  // 与 attached 快路同一纪律：回调里不做任何 HWND 查询。|game| 由登记点在窗口线程
+  // 按会话 pid 解出（FindProcessClientWindow 只会返回该 pid 的窗口）；它若在按住
+  // 期间死掉，注入侧按 invalid target 判 fail-open，这里发了也只是空转一代。
+  return TryPublishLookupShieldRequestOnce(
+      st.header, fushi_voice_hook::kLookupShieldOwnerPopup,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(game)),
+      transaction_id,
+      down ? fushi_voice_hook::kLookupShieldButtonLeft : 0u, false);
+}
+
+bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(
+    HWND game, uint64_t transaction_id) {
+  if (game == nullptr || transaction_id == 0) return true;
+  ReaderState& st = State();
+  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
+  if (!lock.owns_lock()) return false;
+  if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
+    return true;
+  }
+  const fushi_voice_hook::LookupShieldRequestSnapshot stable =
+      fushi_voice_hook::ReadLookupShieldRequest(st.header);
+  // 写入中：读不到稳定快照，下次再问。
+  if (!stable.valid) return false;
+  return stable.owner_kind != fushi_voice_hook::kLookupShieldOwnerPopup ||
+         stable.transaction_id != transaction_id;
+}
+
 VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
   VoiceHookLookupShieldStatus out;
   ReaderState& st = State();

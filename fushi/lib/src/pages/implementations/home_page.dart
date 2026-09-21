@@ -53,8 +53,10 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart'
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
 import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
+import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
@@ -74,7 +76,9 @@ import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinServerConfig;
+    show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
@@ -2423,6 +2427,14 @@ class _HomePageState extends BasePageState<HomePage>
       isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
       // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
       isHashReady: () => config.anidbHashReady,
+      // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
+      tmdbChangedTvIds: ({required DateTime since}) {
+        final VideoMetadataProvider? tmdb =
+            coordinator.registry.provider(VideoMetadataProviderKind.tmdb);
+        return tmdb is TmdbVideoMetadataProvider && tmdb.isAvailable
+            ? tmdb.changedTvShowIds(since: since)
+            : Future<Set<int>>.value(const <int>{});
+      },
     );
     return controller;
   }
@@ -2710,8 +2722,29 @@ class _HomePageState extends BasePageState<HomePage>
         MediaServerEntry(
           browser: config.buildClient(),
           accountName: config.username,
+          routeUrls: config.routeUrls,
+          onSwitchRoute: (String url) => _switchMediaServerRoute(config, url),
         ),
     ];
+  }
+
+  /// 视频页服务器卡片上的「切换线路」：写回配置并失效这台的远端清单缓存槽
+  /// （槽里的封面 / 流 URL 烤着旧线路的 host）。与设置页 `_switchRoute` 同口径；
+  /// 身份锚（[JellyfinServerConfig.serverUrl]）不变，历史 / 封面磁盘缓存照常。
+  Future<void> _switchMediaServerRoute(
+    JellyfinServerConfig config,
+    String url,
+  ) async {
+    final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
+    await syncRepo.upsertJellyfinServer(
+      config.copyWithRoutes(activeServerUrl: url),
+    );
+    ref.read(remoteLibraryCacheProvider).invalidateSource(
+          JellyfinVideoClient.sourceIdFor(
+            serverUrl: config.serverUrl,
+            userId: config.userId,
+          ),
+        );
   }
 
   Widget _buildTabContent(HomeTab tab) {

@@ -327,6 +327,10 @@
       scheme = window.fushiTheme.resolve(scheme);
     }
     if (scheme === 'dark' || scheme === 'light') lookupContainer.setAttribute('data-theme', scheme);
+    // 预设 / 自定义调色板下弹窗颜色项按扩展主题覆盖（见 content.js fushiApplyTheme）。
+    if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+      window.fushiTheme.applyPopupPalette(lookupContainer, scheme);
+    }
     var columns = theme['--dict-columns'];
     if (typeof columns === 'string' && columns) {
       document.documentElement.style.setProperty('--dict-columns', columns);
@@ -336,6 +340,10 @@
     // BUG-2284：墨水屏「瞬时滚动」随主题下发（app popupInstantScroll），popup.js 的 wheel
     // 监听读同名全局改走固定步长瞬跳。缺该 key = 旧 app，保持关闭。
     window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
+    // 瞬时滚动的滚轮步长（占视口比例）同通道下发，popup.js 非法/缺失回退自身常量。
+    var instantStep = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
+    window.__fushiPopupInstantScrollWheelStep =
+      isFinite(instantStep) && instantStep > 0 ? instantStep : undefined;
     // 用户拖过尺寸（lookupUserResized）后，本会话内不再让主题下发的宽高盖掉用户的选择；
     // 拖拽结果经 popupSize 回写 app，下次会话由主题带回来。
     lookupThemeForBox = theme;
@@ -1058,6 +1066,7 @@
   var SUBTITLE_PROVIDER_LABELS = {
     jimaku: 'Jimaku',
     opensubtitles: 'OpenSubtitles',
+    subdl: 'SubDL',
     ajatt: 'AJATT',
   };
   function providerLabel(id) {

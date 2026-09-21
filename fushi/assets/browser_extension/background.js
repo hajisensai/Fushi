@@ -110,6 +110,23 @@ async function cfg() {
   return connectionConfigPromise;
 }
 function authHeader(token) { return 'Basic ' + btoa('fushi:' + token); }
+// /api/extension/fonts 的条目 → 给 options 下拉 / 覆盖层 @font-face 用的形状：只留 id/name/family/ext，
+// 再拼上文件端点 URL（token 在查询串）。坏条目（无 id 或 family）丢掉。
+function decorateSubtitleFonts(fonts, base, token) {
+  if (!Array.isArray(fonts)) return [];
+  const out = [];
+  for (const f of fonts) {
+    if (!f || typeof f.id !== 'string' || !f.id || typeof f.family !== 'string' || !f.family) continue;
+    out.push({
+      id: f.id,
+      name: typeof f.name === 'string' ? f.name : f.family,
+      family: f.family,
+      ext: typeof f.ext === 'string' ? f.ext.toLowerCase() : '',
+      url: base + '/api/extension/fonts/file?id=' + encodeURIComponent(f.id) + '&token=' + encodeURIComponent(token),
+    });
+  }
+  return out;
+}
 
 // BUG-1079：/api/extension/status 请求体统一自报「浏览器中实际加载的版本」
 // （FUSHI_DEFAULTS.build + manifest version）。此前写死 '{}'，app 端对浏览器里实际
@@ -267,6 +284,41 @@ function rememberAppLocale(tag) {
   if (typeof tag !== 'string' || !tag || tag === lastAppLocale) return;
   lastAppLocale = tag;
   try { chrome.storage.local.set({ appLocale: tag }); } catch (_) {}
+}
+
+// app 当前主题配色（查词响应 `theme`，app_model.dart browserExtensionThemeColors 下发的
+// --md-* / --text-color / --background-color）按明暗镜像到 chrome.storage.local.appThemeMirror
+// = { light?: {...}, dark?: {...} }，供扩展调色板「跟随 Fushi」（theme.js extensionPalette
+// = 'app'）给设置页 / 侧边栏 / 抽屉 / 字幕覆盖层上色——那些表面没有查词响应可读。只是镜像、
+// 只取颜色键；同值不重复写。
+const APP_THEME_MIRROR_KEYS = [
+  '--text-color', '--background-color', '--md-primary', '--md-on-primary',
+  '--md-surface-container', '--md-surface-container-high', '--md-on-surface',
+  '--md-on-surface-variant', '--md-outline-variant',
+];
+let appThemeMirror = null;
+let appThemeMirrorLoaded = null;
+function rememberAppTheme(theme) {
+  if (!theme || typeof theme !== 'object') return;
+  const scheme = theme['--fushi-color-scheme'];
+  if (scheme !== 'light' && scheme !== 'dark') return;
+  const colors = {};
+  for (const k of APP_THEME_MIRROR_KEYS) {
+    if (typeof theme[k] === 'string' && theme[k]) colors[k] = theme[k];
+  }
+  if (!colors['--text-color'] || !colors['--background-color'] || !colors['--md-primary']) return;
+  if (!appThemeMirrorLoaded) {
+    appThemeMirrorLoaded = chrome.storage.local.get('appThemeMirror').then((saved) => {
+      const v = saved && saved.appThemeMirror;
+      if (v && typeof v === 'object' && !appThemeMirror) appThemeMirror = v;
+    }).catch(() => {});
+  }
+  appThemeMirrorLoaded.then(() => {
+    const prev = appThemeMirror && appThemeMirror[scheme];
+    if (prev && JSON.stringify(prev) === JSON.stringify(colors)) return;
+    appThemeMirror = Object.assign({}, appThemeMirror || {}, { [scheme]: colors });
+    try { chrome.storage.local.set({ appThemeMirror }); } catch (_) {}
+  });
 }
 
 // 沉浸时间（视频）：content script 的 study-tracker.js 每秒交一个位置样本，这里原样
@@ -870,6 +922,43 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
         sendResponse({ ok: true, base, token });
+      } else if (msg.type === 'subtitleFonts') {
+        // 字幕外观的字体下拉 + 覆盖层 @font-face：字体真源在 app（自定义字体目录）。
+        // 列表经 POST /api/extension/fonts（Basic 鉴权）；每条附上可直接进 @font-face 的
+        // 文件 URL（GET /api/extension/fonts/file?id=&token=，与 dict-media 图片同款「查询串
+        // 带 token」——content script 的 @font-face 请求发不了鉴权头）。app 没开 → ok:false，
+        // 下拉只剩本机字体栈，覆盖层回落 CSS 默认字体。
+        const r = await fetch(base + '/api/extension/fonts', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: '{}',
+        });
+        const data = r.ok ? await r.json() : null;
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          fonts: decorateSubtitleFonts(data && data.fonts, base, token),
+          recommended: data && Array.isArray(data.recommended) ? data.recommended : [],
+          ...(!r.ok ? { connection: await diagnoseConnectionCapped(base) } : {}),
+        });
+      } else if (msg.type === 'subtitleFontDownload') {
+        // 下拉旁「下载」：让 app 走它自己的推荐字体下载（多源回退 + 校验 + 入目录），扩展只等结果。
+        // CJK 字体十几 MB，给足超时；MV3 SW 有在途 fetch 不会被回收。
+        const r = await fetch(base + '/api/extension/fonts/download', {
+          method: 'POST',
+          signal: AbortSignal.timeout(10 * 60 * 1000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ name: String(msg.name || '') }),
+        });
+        let data = null;
+        try { data = await r.json(); } catch (_) {}
+        sendResponse({
+          ok: r.ok && !!(data && data.ok),
+          status: r.status,
+          error: data && data.error ? String(data.error) : (r.ok ? null : 'http_' + r.status),
+          fonts: decorateSubtitleFonts(data && data.fonts, base, token),
+        });
       } else if (msg.type === 'connectionStatus') {
         sendResponse({ ok: true, connection: await diagnoseConnection(msg.force === true) });
       } else if (msg.type === 'popupSize') {
@@ -928,6 +1017,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             data = JSON.parse(raw);
             fushiMergePopupCss(data); // BUG-1718：并进/回填词典 CSS 尾段
             rememberAppLocale(data && data.appLocale);
+            rememberAppTheme(data && data.theme);
           } catch (error) { parseError = String(error && error.message || error); }
         }
         const finishedAt = performance.now();

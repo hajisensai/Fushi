@@ -79,6 +79,11 @@ final class AddContentApiProvider implements AnkiProvider {
     }
 
     @Override
+    public boolean updateNoteTags(long noteId, Set<String> tags) {
+        return api.updateNoteTags(noteId, tags);
+    }
+
+    @Override
     public List<AnkiNote> findDuplicateNotes(long modelId, String key) {
         final List<NoteInfo> found = api.findDuplicateNotes(modelId, key);
         if (found == null) return null;

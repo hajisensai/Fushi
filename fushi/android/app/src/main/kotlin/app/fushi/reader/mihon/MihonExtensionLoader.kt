@@ -104,14 +104,16 @@ internal class MihonExtensionLoader(private val context: Context) {
             ?.toString()
             ?.toDoubleOrNull()
             ?: versionName.substringBeforeLast('.').toDoubleOrNull()
-        // 视频扩展只收 Aniyomi extensions-lib 14：编进宿主的 `animesource` ABI 是
-        // lib 14 形态（`Video(url, quality, videoUrl, …)` + `getVideoList(episode)`），
-        // lib 16 改了 `Video` 构造签名并走 Hoster API，装进来会在第一次取流时炸。
+        // 视频扩展收 Aniyomi extensions-lib 14 / 15 / 16：编进宿主的 `animesource` ABI
+        // （third_party/m_extension_server/overlay）是 lib 14 与 lib 16 的并集——老构造
+        // `Video(url, quality, videoUrl, …)` + `getVideoList(episode)` 与新 data class
+        // `Video(videoUrl, videoTitle, …)` + Hoster API 并存。yuzono / Anikku 的 APK
+        // versionName 写 14、dex 却按 lib 16 面编译，版本标签本身从不决定能不能播。
         val libVersionLabel = supportedLibVersionLabel(kind, libVersion)
             ?: throw MihonHostException(
                 "UNSUPPORTED_LIB",
                 if (kind == KIND_ANIME) {
-                    "Only Aniyomi extension-lib 14 is supported"
+                    "Only Aniyomi extension-lib 14 to 16 is supported"
                 } else {
                     "Only Mihon extension-lib 1.4 and 1.6 are supported"
                 },
@@ -262,7 +264,12 @@ internal class MihonExtensionLoader(private val context: Context) {
         /** 与桌面 sidecar `InspectHandler.supportedLibVersionLabel` 同一张表。 */
         internal fun supportedLibVersionLabel(kind: String, libVersion: Double?): String? =
             when (kind) {
-                KIND_ANIME -> if (libVersion == 14.0) "14" else null
+                KIND_ANIME -> when (libVersion) {
+                    14.0 -> "14"
+                    15.0 -> "15"
+                    16.0 -> "16"
+                    else -> null
+                }
                 else -> when (libVersion) {
                     1.4 -> "1.4"
                     1.6 -> "1.6"

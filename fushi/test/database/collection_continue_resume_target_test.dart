@@ -104,6 +104,53 @@ void main() {
     );
   });
 
+  test('用户实报形状：误点开下一集又退出 → 清除该集进度后续播退回上一集看完后的下一集',
+      () async {
+    final FushiDatabase db = openDb();
+    final List<String> uids = await seedCollection(db, count: 4);
+
+    // 看完第 1 集；随后误点开第 2、3 集各看了一两秒就退出。
+    await db.updateVideoBookPosition(uids[0], 1400000, playedAt: 1000);
+    await db.markVideoCompleted(uids[0], DateTime(2026, 1, 1));
+    await db.updateVideoBookPosition(uids[1], 2000, playedAt: 2000);
+    await db.updateVideoBookPosition(uids[2], 1000, playedAt: 3000);
+    expect(await resumeIndex(db, uids), 2, reason: '最近播放锚点被钉在误点开的第 3 集');
+
+    await db.clearVideoBookWatchProgress(uids[2]);
+    expect(await resumeIndex(db, uids), 1, reason: '清掉第 3 集 → 锚点退到第 2 集');
+
+    await db.clearVideoBookWatchProgress(uids[1]);
+    expect(
+      await resumeIndex(db, uids),
+      1,
+      reason: '第 2 集也清掉 → 锚点是看完的第 1 集，续播推进到第 2 集（从头开始）',
+    );
+
+    final VideoBookRow cleared = (await db.getVideoBookByBookUid(uids[1]))!;
+    expect(cleared.lastPositionMs, 0);
+    expect(cleared.lastPlayedAt, isNull, reason: '时刻本身就是痕迹，只清位置不清时刻锚点照样钉在这一集');
+    expect(cleared.completedAt, isNull);
+    expect(videoBookHasWatchTrace(cleared), isFalse);
+    expect(
+      (await db.getVideoBookByBookUid(uids[0]))!.completedAt,
+      isNotNull,
+      reason: '只清点名的那一行，其它成员的痕迹不动',
+    );
+  });
+
+  test('清除观看进度连完成标记一起清：整季看完的集清掉后不再算已看', () async {
+    final FushiDatabase db = openDb();
+    final List<String> uids = await seedCollection(db, count: 2);
+    await db.updateVideoBookPosition(uids[0], 1400000, playedAt: 1000);
+    await db.markVideoCompleted(uids[0], DateTime(2026, 1, 1));
+    expect(videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!), isTrue);
+
+    await db.clearVideoBookWatchProgress(uids[0]);
+
+    expect(videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!), isFalse);
+    expect(await resumeIndex(db, uids), 0, reason: '全无痕迹 → 从第 0 集开始');
+  });
+
   test('最近一次刚好把某集看完 → 推进下一集（收尾语义不被削掉）', () async {
     final FushiDatabase db = openDb();
     final List<String> uids = await seedCollection(db, count: 5);

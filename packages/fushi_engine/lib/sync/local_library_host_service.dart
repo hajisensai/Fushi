@@ -18,9 +18,9 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
-    show VideoMetadataWork;
+    show VideoMetadataMediaKind, VideoMetadataProviderKind, VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
-    show VideoMetadataLookup;
+    show VideoMetadataEpisodeGroupSummary, VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_work_loader.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
@@ -117,7 +117,8 @@ abstract class _LocalLibraryHostBase
         AudiobookDelayHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
-        VideoMetadataHost {
+        VideoMetadataHost,
+        VideoMetadataOrderingHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;

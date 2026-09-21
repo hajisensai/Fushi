@@ -15,7 +15,8 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
 | `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
-| `theme.js` + `theme.css` | 隔离 + 扩展页 | 明暗唯一决议点 + 扩展自有界面的唯一调色板（见「主题与颜色」） |
+| `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗/调色板唯一决议点 + 扩展自有界面的默认调色板（见「主题与颜色」） |
+| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
@@ -32,7 +33,7 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `connection-diagnostics.js` | SW/options | 连接六态分类 + 文案（纯函数，文案经 i18n 键） |
 | `fushi-defaults.js` | SW/options | 安装助手写入的自动配置（host/port/token/build 指纹） |
 | `offscreen.html/js` | offscreen | tabCapture MediaRecorder（Netflix 逐句回放录制） |
-| `options.html/css/js` | options | 设置页：主题与语言、连接、字幕偏好（含底色）、沉浸时间、查词框大小、逐动作视频快捷键、版本与更新卡片 |
+| `options.html/css/js` | options | 设置页：配色主题（跟随 Fushi / 预设 / 自定义编辑器）与明暗、语言、连接、字幕偏好、字幕外观（实时预览）、沉浸时间、查词框大小、逐动作视频快捷键、版本与更新卡片 |
 | `popup-size.js` | 隔离 + 扩展页 | 查词弹窗尺寸盒的唯一决策器（纯函数）：扩展独立尺寸覆盖 + 视口不足时的收敛；页面弹窗与侧边栏弹窗共用 |
 | `vendor/` | — | `popup.{js,css,html}`+`selection.js` = app 查词弹窗原样拷贝（上游 `fushi/assets/popup/`）；`dict-media.js` 允许扩展分叉；`content.css` 由生成器产出；`action-popup.*` 扩展独有 |
 | `scripts/` | 开发 | `generate-content-css.mjs`（popup.css → 零特异性重根 content.css）、`sync-mirrors.mjs`（镜像同步） |
@@ -145,8 +146,32 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `preventDefault` 把选区扼杀在起点。
 - **底色**：`subtitleOverlayBackground`（options「字幕底色」，默认开）关掉 → `data-bare`，CSS 去
   底板/投影只剩描边字，像站点原生字幕那样不挡画面。
+- **外观**（options「字幕外观」）：`subtitleStyle` 一个对象存字体 / 大小（基准字号百分比）/ 字重 /
+  字间距 / 行高 / 对齐 / 文字色 / 描边（none·soft·strong）/ 底板颜色·不透明度·圆角·内边距·宽·高。
+  `subtitle-style.js`（`fushiSubtitleStyle.normalize / toCssVars / applyTo`）把它翻成覆盖层根上的
+  `--fushi-sub-*` 变量（默认项 removeProperty 交还 CSS），`content-css-overlay.css` 的
+  `#fushi-subtitle-overlay` 每一项外观都读这些变量并带默认值；设置页预览走同一份 `toCssVars`，
+  预览节点默认值与覆盖层逐项一致（守卫 `subtitle-style.test.js`）。
+  底板**宽 / 高**（`boxWidth` / `boxHeight`，视频盒的百分比，0 = 随内容）是例外：覆盖层是 fixed
+  定位、CSS 百分比只对视口算，所以不走变量——`boxPx` 按视频盒折 px、`applyBox` 写 `style.width` /
+  `min-height`，`placeOverlay` 每次重摆调一次（宽仍受视口 `max-width` 夹）；预览拿舞台盒当视频盒、
+  同一算法。覆盖层与预览都是 `display:grid; align-content:center; box-sizing:border-box`，底板高于
+  文字时文字垂直居中，文字层 `.fushi-subtitle-overlay-text` 因此是块级网格项。
+- **字体是下拉不是手填**（用户 2026-09-20）：三组——本机字体栈（`FONT_SUGGESTIONS`）/ Fushi 字体库 /
+  自定义（只回显旧版手填过的值）。字体真源在 app 的自定义字体目录：background `subtitleFonts` 消息
+  `POST /api/extension/fonts` 拿 `{fonts:[{id,name,family,ext}], recommended:[{name,nameJa,description,
+  license,installed}]}`，每条字体拼上 `GET /api/extension/fonts/file?id=&token=`（token 在查询串，同
+  dict-media 图片；端点带 `Access-Control-Allow-Origin: *`，因为 `@font-face` 是跨源加载）。库字体存的值
+  是 `"family"`；覆盖层选了字体时 `subtitle-panel.js` 向 background 要一次清单并把全部库字体以
+  `@font-face`（`fushiSubtitleStyle.fontFaceCss`）挂进 `<head>`——浏览器只为真命中的 family 取字节，
+  全量声明零额外下载；options 预览同样挂一份。「字体库」清单 = app 的推荐字体表，`下载` →
+  `subtitleFontDownload` → `POST /api/extension/fonts/download {name}`，app 自己跑多源回退下载并入目录
+  （与 app 内视频字幕共用），完成后自动选中。app 没开：下拉只剩本机组、清单换成「需要 Fushi 正在运行」。
+- **源码不得含 Unicode 非字符**：`utf8-shippable.test.js` 按 Chrome `IsStringUTF8` 口径扫所有会进包的
+  文本文件（BUG-2610：正则里裸 U+FFFF 让 Chrome 报「不是 UTF-8」拒装整个扩展）。要表示这些码位一律
+  `\uXXXX` 转义。
 
-守卫：`subtitle-overlay-drag.test.js` 后半段。
+守卫：`subtitle-overlay-drag.test.js` 后半段、`subtitle-style.test.js`、`utf8-shippable.test.js`。
 
 ## 主题与颜色
 
@@ -159,13 +184,27 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 - **明暗决议只在 `theme.js`**：设置 `extensionTheme` = `auto`（默认，跟随系统）/ `light` / `dark`。
   扩展自己的页面装入即把显式值写成根 `data-theme`（auto 摘掉属性交给媒体查询）；页内浮层按
   `fushiTheme.resolve(fallback)`；抽屉根写 `data-theme`。
+- **调色板选择与 Fushi 本体同一套模型**（`theme-palette.js` + `theme.js`）：`extensionPalette` =
+  `fushi`（默认，`theme.css` 原样）/ `app`（跟随 Fushi：`background.js` 把查词响应的 app 配色按
+  明暗镜像进 `appThemeMirror`）/ 七款预设（与 app `theme_notifier.dart` 同名同种子：
+  `light-theme` … `black-theme`，自带出厂明暗，选中时一并写 `extensionTheme`）/ `custom:<id>`
+  （`extensionCustomThemes` 列表，每项 `{id, name, seed, surface?, text?, neutral}`，对应 app
+  `CustomThemeEntry` 的 seed / surfaceColor / fontColor / neutralDerived）。一个种子色按 OKLCH 阶梯
+  派生浅色与深色两套 `--fushi-*`（hex），落成一条 `<style id="fushi-theme-palette">`：扩展页面写
+  `:root` 明暗两块，宿主网页里只写 `#fushi-*` 浮层宿主（与 `generate-content-css.mjs` 同一份清单），
+  绝不碰宿主 `:root`。默认 `fushi` 不注入任何 style。
 - **查词弹窗**（`#entries-container`）不吃 `theme.css`：它的 `--md-*` 由 app 按当前主题下发
   （`browserExtensionThemeColors`）。auto 下弹窗跟 app 的 `--fushi-color-scheme`（现状，BUG-688）；
   显式 light/dark 时 `background.js` 把同一个值作为 `colorScheme` 提示带进
   `POST /api/lookup/dictionary`，app 按该明暗 `buildColorScheme` 生成配色返回，`data-theme` 与
-  `--md-*` 永远同一明暗（否则就是 BUG-688 那种分裂）。旧 app 忽略该字段。
+  `--md-*` 永远同一明暗（否则就是 BUG-688 那种分裂）。旧 app 忽略该字段。选了预设 / 自定义调色板
+  时，三处弹窗壳（`content.js` / `side-panel.js` / `nested-popup.js`）再经
+  `fushiTheme.applyPopupPalette` 把 `--md-*` / `--text-color` / `--background-color` /
+  `--fushi-card-bg-rgb` 等颜色项按同一款调色板覆盖，弹窗与设置页 / 侧边栏 / 字幕底板同色；
+  `fushi` / `app` 下不动。
 
-守卫：`theme-and-study.test.js`（决议、根属性、CSS 单一真相源、请求提示）。
+守卫：`theme-and-study.test.js`（决议、根属性、CSS 单一真相源、请求提示）、
+`theme-palette.test.js`（预设/派生/自定义/注入范围/弹窗覆盖）。
 
 ## 多语言（跟随 Fushi）
 

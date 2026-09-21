@@ -58,6 +58,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'design_system',
   'dictionary_entry_font_size',
   'dictionary_update_interval',
+  // 用户自配的 AList / OpenList 站点清单（JSON 数组：id/name/url/kinds/
+  // username/passwordB64/enabled/allowInsecureHttp）。String，读写见
+  // PreferencesRepository。与 discovery_opds_servers 同形、同隔离纪律。
+  'discovery_alist_sites',
   // 发现页「全部源」聚合默认排除的源 id（逗号分隔；默认 sukebei——18+ 源
   // 只在用户显式单选时使用）。String，读写见 PreferencesRepository。
   'discovery_disabled_sources',
@@ -213,6 +217,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_compact_glossaries',
   'popup_dictionary_columns',
   'popup_instant_scroll',
+  // double：瞬时滚动步长（占被滚表面视口高度的比例，0.1–1.0）。触摸 = 手指滑满
+  // 这么多才跳一步，默认 0.25；滚轮 = 一格跳这么多（再乘滚轮速度），默认 0.5。
+  'popup_instant_scroll_touch_step',
+  'popup_instant_scroll_wheel_step',
   'popup_max_height',
   'popup_max_width',
   'popup_wheel_speed',
@@ -321,6 +329,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
   'video_subtitle_style',
+  // string：SubDL（subdl.com）API key（用户在站点 panel 免费生成）。搜索必须带 key。
+  'video_subtitle_subdl_api_key',
+  // bool（默认 true）：SubDL 是否参与字幕搜索。与 api key 组成 `enabled && key`
+  // 双门控（形状对齐 Jimaku）；key 为空即不装配，所以默认开不会产生任何请求。
+  'video_subtitle_subdl_enabled',
   'video_youtube_quality_height',
   'yomitan_api_key',
   'yomitan_api_port',
@@ -375,10 +388,13 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
 const Set<String> kCredentialPreferenceKeys = <String>{
   // 每条 AI 提供商记录里带 base64 的 apiKeyB64。
   'ai_providers',
+  // 每条 AList / OpenList 站点记录里带 base64 的 passwordB64。
+  'discovery_alist_sites',
   // 每条 OPDS 服务器记录里带 base64 的 passwordB64。
   'discovery_opds_servers',
   'jimaku_api_key',
   'network_proxy_password',
   'network_proxy_username',
+  'video_subtitle_subdl_api_key',
   'yomitan_api_key',
 };

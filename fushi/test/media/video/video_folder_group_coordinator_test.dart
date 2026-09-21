@@ -384,6 +384,50 @@ void main() {
     expect(await db.getAllMediaCollections(), hasLength(1));
   });
 
+  // 刮削按 AniDB 作品把同一文件名系列拆成多个播放列表（Shoko 多 series）后，
+  // 重扫不得按 overlap 把它们并回去；已在别的播放列表里的文件不再重新归组。
+  test('已归属别的播放列表的文件重扫时不被并回同名系列合集', () async {
+    final int sourceId = await addSource('/library');
+    for (final ({String uid, String path}) item in <({
+      String uid,
+      String path,
+    })>[
+      (uid: 'show-01', path: '/library/Show S01E01.mkv'),
+      (uid: 'show-02', path: '/library/Show S01E02.mkv'),
+      (uid: 'show-14', path: '/library/Show S01E14.mkv'),
+    ]) {
+      await addVideo(uid: item.uid, path: item.path, sourceId: sourceId);
+    }
+    // 模拟拆分结果：两个按 AniDB 作品命名的播放列表，原「Show」合集已删。
+    final int first =
+        await db.createMediaCollection('Show Part 1', collectionType: 'playlist');
+    await db.addToCollection(first, MediaKind.video, 'show-01');
+    await db.addToCollection(first, MediaKind.video, 'show-02');
+    final int second =
+        await db.createMediaCollection('Show Part 2', collectionType: 'playlist');
+    await db.addToCollection(second, MediaKind.video, 'show-14');
+
+    final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
+      videoPaths: <String>[
+        '/library/Show S01E01.mkv',
+        '/library/Show S01E02.mkv',
+        '/library/Show S01E14.mkv',
+      ],
+      sourceId: sourceId,
+    );
+    expect(rescan.createdCollectionIds, isEmpty, reason: '不重建「Show」');
+    expect(rescan.updatedCollectionIds, isEmpty, reason: '不把 E14 并进 Part 1');
+    expect(
+        (await db.getCollectionItems(first))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['show-01', 'show-02']);
+    expect(
+        (await db.getCollectionItems(second))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['show-14']);
+    expect(await db.getAllMediaCollections(), hasLength(2));
+  });
+
   test('全新单片保持独立，不强制创建合集', () async {
     final int sourceId = await addSource('/movies');
     await addVideo(

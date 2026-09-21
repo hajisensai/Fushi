@@ -1,8 +1,8 @@
 /// 严格视频资料识别器：一个主源 + 至多一个兜底源。
 ///
-/// 主源/兜底源由调用方按用户偏好给出（生产是 MAL ↔ TMDB 互为主备；AniDB
-/// 之类的单源语义就不传兜底）。主源没有**唯一精确命中**时才问兜底源；兜底源
-/// 精确命中即采用；两边都只剩待确认候选时把两边候选合并交人工。
+/// 主源/兜底源由调用方按用户偏好给出（生产默认 AniDB 主 + TMDB 补充，Shoko
+/// 形态；MAL ↔ TMDB 互为主备仍可选）。主源没有**唯一精确命中**时才问兜底源；
+/// 兜底源精确命中即采用；两边都只剩待确认候选时把两边候选合并交人工。
 library;
 
 import 'dart:async';
@@ -13,7 +13,10 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
@@ -36,6 +39,7 @@ class VideoMetadataResolveRequest {
     this.episodeCount,
     this.confirmedLookup,
     this.fallbackProvider,
+    this.includeAdult = false,
     List<String> identityHints = const <String>[],
   })  : assert(fallbackProvider != selectedProvider),
         titleCandidates = List<String>.unmodifiable(titleCandidates),
@@ -63,6 +67,9 @@ class VideoMetadataResolveRequest {
   final int? episodeCount;
   final VideoMetadataLookup? confirmedLookup;
   final List<String> identityHints;
+
+  /// 透传给 [VideoMetadataSearchRequest.includeAdult]。
+  final bool includeAdult;
 }
 
 class VideoMetadataResolution {
@@ -95,8 +102,18 @@ class VideoMetadataProviderRegistry {
     String? locale,
   }) =>
       VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-        // 两个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
+        // 三个 provider 拿同一个资料语言：标题、简介、海报必须同一种语言，
         // 任一处漏传就是「刮削不同语言」。
+        // AniDB HTTP 资料链（Shoko 的主源）：身份是已注册的 `fushiplayer` / 用户
+        // 自定义 client（禁 Shoko 的 animeplugin/ommserver），进程级 2s+ 限流闸按
+        // endpoint 共享，anime XML 落盘 24h（Shoko AnimeDoc_{aid}.xml）。
+        AniDbVideoMetadataProvider(
+          clientName: config.anidbClientName,
+          clientVersion: config.anidbClientVersion,
+          language: locale ?? config.locale,
+          xmlCacheDirectory: () async => Directory(p.join(
+              (await enginePaths.supportRootDirectory()).path, 'anidb_anime')),
+        ),
         MalVideoMetadataProvider(language: locale ?? config.locale),
         TmdbVideoMetadataProvider(
           apiKey: config.tmdbApiKey,
@@ -242,15 +259,15 @@ class VideoMetadataResolver {
 
   /// 已确认/显式身份只在链上的源之间受理。历史 AniDB 绑定在含 MAL 的链上
   /// 仍受理（协调器靠它做 AniDB→MAL 映射与旧身份保护），单源语义不受理外源。
+  /// 已确认 / 显式 id 只要来自**仍可选的生产主源**（AniDB / MAL / TMDB）就按
+  /// 那家直取，不限于本次询问链——用户或上一轮确认过的身份不因主源偏好变化
+  /// 被静默换源、重搜（2026-09-20 默认主源 MAL → AniDB 时存量 MAL 作品照旧）。
   bool _acceptsIdentity(
     VideoMetadataProviderKind provider,
     VideoMetadataResolveRequest request,
-  ) {
-    final List<VideoMetadataProviderKind> chain = request.providerChain;
-    return chain.contains(provider) ||
-        (chain.contains(VideoMetadataProviderKind.mal) &&
-            provider == VideoMetadataProviderKind.anidb);
-  }
+  ) =>
+      request.providerChain.contains(provider) ||
+      kSelectableVideoMetadataProviders.contains(provider);
 
   Future<VideoMetadataResolution> _attempt(
     VideoMetadataProviderKind kind,
@@ -439,6 +456,7 @@ class VideoMetadataResolver {
           mediaKind: request.mediaKind,
           year: year,
           seasonNumber: request.seasonNumber,
+          includeAdult: request.includeAdult,
         ),
       );
       return <VideoMetadataWork>[

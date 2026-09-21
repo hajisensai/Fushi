@@ -289,6 +289,29 @@ mixin _FushiDbVideoDomain
         .write(VideoMetadataWorksCompanion(updatedAt: Value<int>(updatedAt)));
   }
 
+  /// 用户选定的 TMDB 备选排序（`episode_group_id`；`null` = TMDB 默认排序），
+  /// 同时把 `episodeGroup` 加进字段锁——之后刮削不再用自动挑的分组覆盖它
+  /// （Shoko `PreferredAlternateOrderingID`）。锁字段名与
+  /// `VideoMetadataLockableField.episodeGroup.name` 同一 wire 值。
+  Future<void> setVideoMetadataWorkEpisodeGroup(
+    int workId,
+    String? episodeGroupId,
+  ) async {
+    final VideoMetadataWorkRow? row = await getVideoMetadataWorkById(workId);
+    if (row == null) return;
+    final List<String> locked = <String>[
+      for (final String part in (row.lockedFields ?? '').split(','))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+    if (!locked.contains('episodeGroup')) locked.add('episodeGroup');
+    await (update(videoMetadataWorks)
+          ..where(($VideoMetadataWorksTable t) => t.id.equals(workId)))
+        .write(VideoMetadataWorksCompanion(
+      episodeGroupId: Value<String?>(episodeGroupId),
+      lockedFields: Value<String?>(locked.join(',')),
+    ));
+  }
+
   /// 写作品级字段锁（schema v99）。`null` = 清空全部锁。锁是纯用户意图，独立于
   /// 刮削产物，所以是自己的原语而不是 `upsertVideoMetadataWork` 的一个字段。
   Future<void> setVideoMetadataWorkLockedFields(
@@ -504,20 +527,182 @@ mixin _FushiDbVideoDomain
             ]))
           .get();
 
-  Future<VideoMetadataEpisodeRow?> getVideoMetadataEpisodeByBook(
+  // ── video_episode_binding_overrides（v111，Shoko UserVerified）──
+
+  /// 某文件的手动季集指定；没有 → null。
+  Future<VideoEpisodeBindingOverrideRow?> getVideoEpisodeBindingOverride(
+    String bookUid,
+  ) =>
+      (select(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .getSingleOrNull();
+
+  /// 一批文件的手动季集指定（刮削一个作品单元时按成员批量取）。
+  Future<Map<String, VideoEpisodeBindingOverrideRow>>
+      getVideoEpisodeBindingOverrides(Iterable<String> bookUids) async {
+    final List<String> uids = bookUids.toList(growable: false);
+    if (uids.isEmpty) return const <String, VideoEpisodeBindingOverrideRow>{};
+    final List<VideoEpisodeBindingOverrideRow> rows =
+        await (select(videoEpisodeBindingOverrides)
+              ..where(($VideoEpisodeBindingOverridesTable t) =>
+                  t.bookUid.isIn(uids)))
+            .get();
+    return <String, VideoEpisodeBindingOverrideRow>{
+      for (final VideoEpisodeBindingOverrideRow row in rows) row.bookUid: row,
+    };
+  }
+
+  /// 写 / 覆盖某文件的手动季集指定。
+  Future<void> setVideoEpisodeBindingOverride(
+    String bookUid, {
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      into(videoEpisodeBindingOverrides).insertOnConflictUpdate(
+        VideoEpisodeBindingOverridesCompanion.insert(
+          bookUid: bookUid,
+          seasonNumber: seasonNumber,
+          episodeNumber: episodeNumber,
+          updatedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+  /// 清除手动季集指定；下次刮削回到自动链接。
+  Future<void> clearVideoEpisodeBindingOverride(String bookUid) =>
+      (delete(videoEpisodeBindingOverrides)
+            ..where(($VideoEpisodeBindingOverridesTable t) =>
+                t.bookUid.equals(bookUid)))
+          .go();
+
+  /// 把 [bookUid] 立刻改绑到 [workId] 下的 (季, 集) 分集行：原先绑它的行解绑
+  /// （AniDB 身份三列随之清），目标行绑上并继承该文件的 AniDB eid / 原生集号、
+  /// 评级写 `userVerified`。目标行不存在返回 false（UI 只让选已有的集）。
+  Future<bool> rebindVideoEpisodeToBook({
+    required int workId,
+    required String bookUid,
+    required int seasonNumber,
+    required int episodeNumber,
+  }) =>
+      transaction(() async {
+        final VideoMetadataSeasonRow? season =
+            await (select(videoMetadataSeasons)
+                  ..where(($VideoMetadataSeasonsTable t) =>
+                      t.workId.equals(workId) &
+                      t.seasonNumber.equals(seasonNumber)))
+                .getSingleOrNull();
+        if (season == null) return false;
+        final VideoMetadataEpisodeRow? target =
+            await (select(videoMetadataEpisodes)
+                  ..where(($VideoMetadataEpisodesTable t) =>
+                      t.seasonId.equals(season.id) &
+                      t.episodeNumber.equals(episodeNumber)))
+                .getSingleOrNull();
+        if (target == null) return false;
+        final List<VideoMetadataEpisodeRow> bound =
+            await getVideoMetadataEpisodesByBook(bookUid);
+        final VideoMetadataEpisodeRow? primary = bound.firstOrNull;
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        for (final VideoMetadataEpisodeRow row in bound) {
+          if (row.id == target.id) continue;
+          await (update(videoMetadataEpisodes)
+                ..where(($VideoMetadataEpisodesTable t) => t.id.equals(row.id)))
+              .write(VideoMetadataEpisodesCompanion(
+            bookUid: const Value<String?>(null),
+            anidbEpisodeId: const Value<int?>(null),
+            anidbEpisodeNumber: const Value<String?>(null),
+            anidbMatchRating: const Value<String?>(null),
+            updatedAt: Value<int>(now),
+          ));
+        }
+        await (update(videoMetadataEpisodes)
+              ..where(($VideoMetadataEpisodesTable t) => t.id.equals(target.id)))
+            .write(VideoMetadataEpisodesCompanion(
+          bookUid: Value<String?>(bookUid),
+          anidbEpisodeId: Value<int?>(primary?.anidbEpisodeId),
+          anidbEpisodeNumber: Value<String?>(primary?.anidbEpisodeNumber),
+          anidbMatchRating: const Value<String?>('userVerified'),
+          updatedAt: Value<int>(now),
+        ));
+        return true;
+      });
+
+  /// 绑到同一个文件的全部分集行（v110 起一文件可绑多集：AniDB FILE 的 other
+  /// episodes），按季、集排序。
+  Future<List<VideoMetadataEpisodeRow>> getVideoMetadataEpisodesByBook(
     String bookUid,
   ) =>
       (select(videoMetadataEpisodes)
             ..where(
-                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid)))
-          .getSingleOrNull();
+                ($VideoMetadataEpisodesTable t) => t.bookUid.equals(bookUid))
+            ..orderBy(<OrderingTerm Function($VideoMetadataEpisodesTable)>[
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.seasonId),
+              ($VideoMetadataEpisodesTable t) =>
+                  OrderingTerm(expression: t.episodeNumber),
+            ]))
+          .get();
 
+  /// 人物 upsert：名字与时间戳照新值写，描述性字段（照片、简介、生卒、性别、
+  /// 出生地、原名）**只补空不抹掉**——同一人会被多个来源、多次刮削反复写入，
+  /// AniDB 职员没有照片、NFO 回灌没有 id，一次带 null 的写入不该把上一轮拿到的
+  /// 照片抹成空（Shoko 对 creator 同样是 fill-if-empty，BUG-2612）。
   Future<void> upsertVideoMetadataPeople(
     List<VideoMetadataPeopleCompanion> people,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataPeople, people);
+        batch.insertAll(
+          videoMetadataPeople,
+          people,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataPeopleTable old,
+              $VideoMetadataPeopleTable excluded,
+            ) =>
+                VideoMetadataPeopleCompanion.custom(
+              name: excluded.name,
+              originalName: coalesce(<Expression<String>>[
+                excluded.originalName,
+                old.originalName,
+              ]),
+              biography: coalesce(<Expression<String>>[
+                excluded.biography,
+                old.biography,
+              ]),
+              birthday: coalesce(<Expression<String>>[
+                excluded.birthday,
+                old.birthday,
+              ]),
+              deathday: coalesce(<Expression<String>>[
+                excluded.deathday,
+                old.deathday,
+              ]),
+              gender: coalesce(<Expression<int>>[excluded.gender, old.gender]),
+              placeOfBirth: coalesce(<Expression<String>>[
+                excluded.placeOfBirth,
+                old.placeOfBirth,
+              ]),
+              profileUrl: coalesce(<Expression<String>>[
+                excluded.profileUrl,
+                old.profileUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
+
+  /// 人物照片落地后回写本地路径（Shoko `AutoDownloadStaffImages`）；行不存在不写。
+  Future<void> updateVideoMetadataPersonProfilePath(
+    String personKey,
+    String? profilePath,
+  ) =>
+      (update(videoMetadataPeople)
+            ..where(($VideoMetadataPeopleTable t) =>
+                t.personKey.equals(personKey)))
+          .write(VideoMetadataPeopleCompanion(
+        profilePath: Value<String?>(profilePath),
+      ));
 
   Future<VideoMetadataPersonRow?> getVideoMetadataPerson(String personKey) =>
       (select(videoMetadataPeople)
@@ -525,11 +710,33 @@ mixin _FushiDbVideoDomain
                 ($VideoMetadataPeopleTable t) => t.personKey.equals(personKey)))
           .getSingleOrNull();
 
+  /// 角色 upsert：与 [upsertVideoMetadataPeople] 同规则，简介与角色图只补空。
   Future<void> upsertVideoMetadataCharacters(
     List<VideoMetadataCharactersCompanion> characters,
   ) =>
       batch((Batch batch) {
-        batch.insertAllOnConflictUpdate(videoMetadataCharacters, characters);
+        batch.insertAll(
+          videoMetadataCharacters,
+          characters,
+          onConflict: DoUpdate.withExcluded(
+            (
+              $VideoMetadataCharactersTable old,
+              $VideoMetadataCharactersTable excluded,
+            ) =>
+                VideoMetadataCharactersCompanion.custom(
+              name: excluded.name,
+              description: coalesce(<Expression<String>>[
+                excluded.description,
+                old.description,
+              ]),
+              imageUrl: coalesce(<Expression<String>>[
+                excluded.imageUrl,
+                old.imageUrl,
+              ]),
+              updatedAt: excluded.updatedAt,
+            ),
+          ),
+        );
       });
 
   Future<VideoMetadataCharacterRow?> getVideoMetadataCharacter(
@@ -754,11 +961,16 @@ mixin _FushiDbVideoDomain
   }
 
   /// 整体替换 work / season / episode 之一的职员表。人物与角色实体需先 upsert。
+  ///
+  /// [keepExisting] = true 时不删旧行，只追加库里还没有的关系（按唯一键
+  /// `{owner, personKey, creditKind, roleName}` 判重）：来源本轮人物表残缺
+  /// （MAL characters 端点抖动）时用它，免得残缺表覆盖上一轮的完整表。
   Future<void> replaceVideoMetadataCredits({
     int? workId,
     int? seasonId,
     int? episodeId,
     required List<VideoMetadataCreditsCompanion> credits,
+    bool keepExisting = false,
   }) {
     _requireOneVideoMetadataOwner(
       workId: workId,
@@ -766,19 +978,21 @@ mixin _FushiDbVideoDomain
       episodeId: episodeId,
     );
     return transaction(() async {
-      final DeleteStatement<$VideoMetadataCreditsTable, VideoMetadataCreditRow>
-          statement = delete(videoMetadataCredits);
-      if (workId != null) {
-        statement
-            .where(($VideoMetadataCreditsTable t) => t.workId.equals(workId));
-      } else if (seasonId != null) {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
-      } else {
-        statement.where(
-            ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+      if (!keepExisting) {
+        final DeleteStatement<$VideoMetadataCreditsTable,
+            VideoMetadataCreditRow> statement = delete(videoMetadataCredits);
+        if (workId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.workId.equals(workId));
+        } else if (seasonId != null) {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.seasonId.equals(seasonId));
+        } else {
+          statement.where(
+              ($VideoMetadataCreditsTable t) => t.episodeId.equals(episodeId!));
+        }
+        await statement.go();
       }
-      await statement.go();
       for (final VideoMetadataCreditsCompanion credit in credits) {
         await into(videoMetadataCredits).insert(
           credit.copyWith(
@@ -786,6 +1000,7 @@ mixin _FushiDbVideoDomain
             seasonId: Value<int?>(seasonId),
             episodeId: Value<int?>(episodeId),
           ),
+          mode: keepExisting ? InsertMode.insertOrIgnore : InsertMode.insert,
         );
       }
     });
@@ -2344,6 +2559,27 @@ mixin _FushiDbVideoDomain
           .write(VideoBooksCompanion(
         lastPositionMs: Value(positionMs),
         lastPlayedAt: Value<int?>(playedAt > 0 ? playedAt : null),
+      ));
+
+  /// 清除一行视频的观看进度（用户显式操作：卡菜单「清除观看进度」）。
+  ///
+  /// 一条 UPDATE 同时归零 [VideoBooks.lastPositionMs] / [VideoBooks.lastPlayedAt] /
+  /// [VideoBooks.completedAt] / [VideoBooks.currentEpisode]——这四列合起来才是
+  /// 「这一集有没有看过的痕迹」（`CollectionMemberProgress.hasTrace` 三判据 +
+  /// 单行多集形态的集指针）。只清位置不清时刻会留下「位置 0 但有时刻」的痕迹，
+  /// 合集续播锚点照样钉在这一集上（BUG-1542 的时刻口径），用户看到的还是
+  /// 「继续看这一集」而不是回到上一集看完后的下一集。
+  ///
+  /// 不动观看时长统计（`video_watch_statistics` / `study_segments`）：那是
+  /// 「看了多久」的历史事实，不是「看到哪」的进度。互联 LWW 镜像键由仓库层
+  /// `VideoBookRepository.clearWatchProgress` 负责，这里只管行。
+  Future<void> clearVideoBookWatchProgress(String bookUid) =>
+      (update(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+          .write(const VideoBooksCompanion(
+        lastPositionMs: Value(0),
+        lastPlayedAt: Value<int?>(null),
+        completedAt: Value<DateTime?>(null),
+        currentEpisode: Value(0),
       ));
 
   Future<void> updateVideoBookEpisode(String bookUid, int episodeIndex) =>

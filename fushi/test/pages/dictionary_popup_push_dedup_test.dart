@@ -567,6 +567,10 @@ class PushDedupAppModel extends AppModel {
   double get popupWheelSpeed => 1.0;
   @override
   bool get popupInstantScroll => false;
+  @override
+  double get popupInstantScrollWheelStep => 0.5;
+  @override
+  double get popupInstantScrollTouchStep => 0.25;
   // BUG-2284：与 popupInstantScroll 同批新增的注入项；本 fake 的 prefsRepo 为 null，
   // 不覆写就会在 _pushResults 里抛 null check，pushCount 归零。
   @override

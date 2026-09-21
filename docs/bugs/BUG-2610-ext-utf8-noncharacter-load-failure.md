@@ -1,0 +1,6 @@
+## BUG-2610 · 浏览器扩展 subtitle-style.js 含裸 U+FFFF 非字符，Chrome 判「不是 UTF-8」拒装整个扩展
+- **报告**：2026-09-20（用户：「字幕外观这块改完没变化也不会实时变化」+ 截图 Chrome 弹窗「未能成功加载扩展程序：无法为内容脚本加载 "subtitle-style.js" 文件。该文件采用的不是 UTF-8 编码」反复出现）
+- **真实性**：✅ 真 bug。`tools/browser-extension/subtitle-style.js:87` `normalizeFontFamily` 的正则 `[^\w\s,"'\-. -￿]` 把范围上界 U+FFFF 当**裸字符**写进源码（文件本身按 RFC 3629 是合法 UTF-8，`TextDecoder(fatal)` 能解）。Chrome 校验 manifest 引用的每个脚本用的是 `base::IsStringUTF8`，它把 Unicode 非字符（U+FDD0–U+FDEF、各平面 xFFFE/xFFFF）和代理项一律判为非 UTF-8 → manifest 加载失败 → 整个扩展装不上、装了的也更新不了。字幕外观预览「改完没变化」只是表象：用户机器上根本没跑到新版 `options.js`。用 Chrome for Testing 153 `--load-extension` 复现：修前 `chrome.runtime.openOptionsPage()` 报 `Could not create an options page`、`fetch(options.html)` 失败；修后 options 页打开、改字重/对齐/描边/字号预览节点 inline `--fushi-sub-*` 即时写入、computed style 同步变化、刷新后保持。
+- **[x] ① 已修复** — 正则范围改写成 ` -￿` 转义（语义不变）。顺带：底板不透明度滑杆 `step=5` 无法表示默认值 72，任何控件一动就把 72 夹成 70 并写出非默认 `--fushi-sub-bg`，改 `step=1`。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/utf8-shippable.test.js`：对所有会进包的文本文件（与 `scripts/sync-mirrors.mjs` 同一排除规则）按 Chrome 口径校验：严格 UTF-8 可解码、无非字符、无孤立代理项；修前对 `subtitle-style.js:87` 红、修后绿。
+- **备注**：写 JS 源码要表示这些码位一律用 `\uXXXX` 转义。同 PR 顺带：扩展图标换成 Fushi 图标（manifest `icons` / `action.default_icon`）、字体设置改为下拉 + 经 app 下载推荐字体。

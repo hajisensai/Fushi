@@ -65,6 +65,9 @@ ui-*.xml
 # Windows 安装器的 MD3 图像（generate_md3_assets.py 生成）：ISCC 在编译期把它们
 # 打进 setup.exe，不入库就等于 CI 上编译失败，同样不受上面的 *.png 全局忽略影响。
 !windows/installer/assets/*.png
+# 浏览器扩展图标（tools/browser-extension 真源的镜像，sync-mirrors.mjs 同步）：manifest
+# icons 引用，不入库则安装助手解压出的扩展缺图标文件、Chrome 拒装。
+!assets/browser_extension/*.png
 test_screenshots/
 
 # Codex test outputs

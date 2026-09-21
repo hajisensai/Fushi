@@ -9,17 +9,21 @@ import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-/// 视频源扩展的作品页：详情 + 剧集列表 → 选线路 → 内置播放器。
+/// 视频源扩展的作品页：详情 + 剧集列表 → 内置播放器（起播默认选线路）。
 ///
 /// 与漫画的 `MangaSeriesPage` 不同，本页**不入库**（浏览态零入库，收藏是二期）：
-/// 进页拉一次详情与剧集，每集起播时经 [AnimeSourceVideoClient] 解析可播候选，
-/// 多条候选（画质 / hoster）弹选择器，单条直接播。播放页拿到整部作品的集列表当
-/// `remoteCollectionMembers`，看完自动连播下一集。
+/// 进页拉一次详情与剧集，点集**直接进播放器**——取流、默认选线路（扩展标的
+/// `preferred` / 排序第一条）都在播放页的「正在连接视频流」阶段做，多条候选
+/// （画质 / hoster）不再在这里弹选择器拦一道，用户进去后在播放器画质菜单里换线路
+/// （[AnimeSourceVideoClient] 的 `RemoteVideoStreamVariants` 能力）。播放页拿到整部
+/// 作品的集列表当 `remoteCollectionMembers`，看完自动连播下一集。
 class AnimeSourceDetailPage extends ConsumerStatefulWidget {
   const AnimeSourceDetailPage({
     required this.manager,
@@ -28,6 +32,7 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
     super.key,
     this.repositoryOverride,
     this.openPlayer,
+    this.openExternal,
   });
 
   final MihonManager manager;
@@ -46,6 +51,9 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
   )?
   openPlayer;
 
+  /// 测试注入：默认用系统浏览器打开（[launchUrl]）。
+  final Future<void> Function(Uri url)? openExternal;
+
   @override
   ConsumerState<AnimeSourceDetailPage> createState() =>
       _AnimeSourceDetailPageState();
@@ -57,9 +65,6 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   AnimeSourceVideoClient? _client;
   bool _loading = true;
   Object? _error;
-
-  /// 正在解析流的集（按集 id），列表上给这一行转圈。
-  String? _resolvingEpisodeId;
 
   @override
   void initState() {
@@ -117,55 +122,13 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     }
   }
 
+  /// 点集即进播放器：取流与选线路交给播放页（它有「正在连接视频流」阶段与失败态，
+  /// 没可播流也在那里以 `video_online_stream_none` 报出）。
   Future<void> _play(int index) async {
     final AnimeSourceVideoClient? client = _client;
-    if (client == null || _resolvingEpisodeId != null) return;
-    final MihonEpisode episode = _episodes[index];
-    final String episodeId = client.episodeVideoId(episode);
-    setState(() => _resolvingEpisodeId = episodeId);
-    try {
-      final List<MihonVideo> candidates = await client.resolveVideos(episode);
-      if (!mounted) return;
-      if (candidates.isEmpty) {
-        FushiToast.show(
-          msg: t.video_online_stream_none,
-          severity: ToastSeverity.error,
-        );
-        return;
-      }
-      if (candidates.length > 1) {
-        final MihonVideo? chosen = await _chooseStream(candidates);
-        if (chosen == null || !mounted) return;
-        client.pinVideo(episode, chosen);
-      }
-      await _openPlayer(client, index);
-    } on Object catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error);
-      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-    } finally {
-      if (mounted) setState(() => _resolvingEpisodeId = null);
-    }
+    if (client == null) return;
+    await _openPlayer(client, index);
   }
-
-  Future<MihonVideo?> _chooseStream(List<MihonVideo> candidates) =>
-      showAppDialog<MihonVideo>(
-        context: context,
-        builder: (BuildContext dialogContext) => SimpleDialog(
-          title: Text(t.video_online_stream_choose),
-          children: <Widget>[
-            for (final MihonVideo video in candidates)
-              SimpleDialogOption(
-                onPressed: () => Navigator.of(dialogContext).pop(video),
-                child: Text(
-                  video.quality.isNotEmpty ? video.quality : video.resolvedUrl,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-          ],
-        ),
-      );
 
   Future<void> _openPlayer(AnimeSourceVideoClient client, int index) async {
     final List<RemoteVideoInfo> members = client.remoteVideos;
@@ -198,12 +161,46 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     );
   }
 
+  /// 「在网站打开」：源站网页地址（扩展的 `getAnimeUrl`，兜底 baseUrl + url）交给
+  /// 系统浏览器。打不开浏览器不算本页错误，只提示。
+  Future<void> _openWebsite() async {
+    final Uri? url = await resolveMihonAnimeWebUrl(
+      runtime: widget.manager.runtime,
+      context: widget.sourceContext,
+      anime: _anime,
+    );
+    if (!mounted) return;
+    if (url == null) {
+      FushiToast.show(
+        msg: t.mihon_source_website_unavailable,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    try {
+      await (widget.openExternal ?? _launchExternal)(url);
+    } on Object catch (error) {
+      if (!mounted) return;
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    }
+  }
+
+  static Future<void> _launchExternal(Uri url) async {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: _anime.title,
       subtitle: widget.sourceContext.source.name,
       actions: <Widget>[
+        IconButton(
+          key: const ValueKey<String>('anime_source_open_website'),
+          tooltip: t.mihon_source_website_open,
+          onPressed: () => unawaited(_openWebsite()),
+          icon: const Icon(Icons.open_in_new),
+        ),
         IconButton(
           tooltip: t.refresh,
           onPressed: _loading ? null : () => unawaited(_load()),
@@ -313,9 +310,6 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
 
   Widget _buildEpisodeRow(BuildContext context, int index) {
     final MihonEpisode episode = _episodes[index];
-    final AnimeSourceVideoClient? client = _client;
-    final bool resolving =
-        client != null && _resolvingEpisodeId == client.episodeVideoId(episode);
     final String? uploaded = episode.uploadedAt > 0
         ? DateTime.fromMillisecondsSinceEpoch(
             episode.uploadedAt,
@@ -335,14 +329,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     ? uploaded
                     : '$uploaded · ${episode.scanlator}',
               ),
-        trailing: resolving
-            ? SizedBox(
-                width: 24,
-                height: 24,
-                child: adaptiveIndicator(context: context),
-              )
-            : const Icon(Icons.play_arrow),
-        onTap: resolving ? null : () => unawaited(_play(index)),
+        trailing: const Icon(Icons.play_arrow),
+        onTap: () => unawaited(_play(index)),
       ),
     );
   }

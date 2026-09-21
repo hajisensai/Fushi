@@ -79,10 +79,10 @@ void main() {
     );
   });
 
-  test('anime lib gate accepts 14 and refuses 16', () async {
-    runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '16');
+  test('anime lib gate accepts 14 to 16 and refuses 17', () async {
+    runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '17');
     await expectLater(
-      () => install(anime, 'lib16.apk'),
+      () => install(anime, 'lib17.apk'),
       throwsA(
         isA<MihonRuntimeException>().having(
           (MihonRuntimeException e) => e.code,
@@ -94,6 +94,17 @@ void main() {
     runtime.inspection = _inspection(MihonMediaKind.anime, libVersion: '14');
     await install(anime, 'lib14.apk');
     expect(anime.installed.single.libVersion, '14');
+    // 宿主 ABI 是 lib 14 + lib 16 并集（Hoster API、data class Video）：两代都装。
+    runtime.inspection = _inspection(
+      MihonMediaKind.anime,
+      libVersion: '16',
+      packageName: 'eu.kanade.tachiyomi.animeextension.all.fixture16',
+    );
+    await install(anime, 'lib16.apk');
+    expect(
+      anime.installed.map((MangaExtensionRow e) => e.libVersion).toSet(),
+      <String>{'14', '16'},
+    );
   });
 
   test(

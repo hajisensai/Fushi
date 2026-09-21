@@ -18,6 +18,15 @@ import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
+/// [MihonExtensionsPage] 内嵌时可单独渲染的两节。
+enum MihonExtensionsSection {
+  /// 扩展仓库：仓库卡（改地址 / 删除）+ 刷新 / 添加仓库动作。
+  stores,
+
+  /// 扩展目录：筛选 + 按仓库分组的可装扩展 + 只在本机的已装扩展 + 导入 APK。
+  catalog,
+}
+
 /// Mihon 扩展仓库与安装管理。
 ///
 /// **没有自己的顶层 tab**：用户口径是「漫画扩展不就是来源吗」，所以它作为
@@ -35,12 +44,20 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 /// 没有视口裁剪，每一帧都要布局并绘制全部条目，于是「语言下拉一展开就卡死」「改一
 /// 次筛选卡几秒」。外层滚动容器换成 `CustomScrollView` 后，这里用 `SliverList`
 /// 只建可见的那十几行。
+///
+/// [sections] 决定内嵌时渲染哪几节：宿主「导入」视图顶部有分段选择器
+/// （`ImportPageSegmentBar`），「仓库」段只要 [MihonExtensionsSection.stores]、
+/// 「扩展」段只要 [MihonExtensionsSection.catalog]。传空集渲染空 sliver——宿主
+/// 在其它段仍把本 widget 留在树里同一位置，为的是筛选 / 折叠 / 批量安装进度这些
+/// 状态跨段切换不丢（批量安装的进度框还握着本 State 的 notifier，切个段就把
+/// State 拆掉是不行的）。
 class MihonExtensionsPage extends ConsumerStatefulWidget {
   const MihonExtensionsPage({
     super.key,
     this.navigation,
     this.manager,
     this.embedded = false,
+    this.sections = MihonExtensionsSection.values,
   });
 
   final Widget? navigation;
@@ -48,6 +65,12 @@ class MihonExtensionsPage extends ConsumerStatefulWidget {
 
   /// 作为「来源」视图的一节内嵌渲染（无 chrome、不自带滚动）。
   final bool embedded;
+
+  /// 内嵌时渲染的节；独立页形态忽略它、恒渲染全部。
+  final List<MihonExtensionsSection> sections;
+
+  bool get _showStores => sections.contains(MihonExtensionsSection.stores);
+  bool get _showCatalog => sections.contains(MihonExtensionsSection.catalog);
 
   @override
   ConsumerState<MihonExtensionsPage> createState() =>
@@ -530,25 +553,37 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
   }
 
   /// 页头三动作。内嵌时降级成本节顶部的按钮行，能力一个不少。
-  List<Widget> _actions(MihonManager manager) => <Widget>[
-    FushiIconButton(
-      tooltip: t.mihon_store_refresh,
-      label: t.mihon_store_refresh,
-      icon: Icons.refresh,
-      onTap: manager.loading ? null : () => unawaited(manager.refreshStores()),
-    ),
-    FushiIconButton(
-      tooltip: t.mihon_extension_import,
-      label: t.mihon_extension_import,
-      icon: Icons.file_open_outlined,
-      onTap: manager.loading ? null : _importApk,
-    ),
-    FushiIconButton(
-      tooltip: t.mihon_store_add,
-      label: t.mihon_store_add,
-      icon: Icons.add_link,
-      onTap: manager.loading ? null : _addStore,
-    ),
+  ///
+  /// 分段渲染时按节挑：「仓库」段要刷新 + 添加仓库，「扩展」段要刷新 + 导入
+  /// APK（刷新两边都给——在目录里看到过期版本号时就地刷，不必切回仓库段）。
+  List<Widget> _actions(
+    MihonManager manager, {
+    bool stores = true,
+    bool catalog = true,
+  }) => <Widget>[
+    if (stores || catalog)
+      FushiIconButton(
+        tooltip: t.mihon_store_refresh,
+        label: t.mihon_store_refresh,
+        icon: Icons.refresh,
+        onTap: manager.loading
+            ? null
+            : () => unawaited(manager.refreshStores()),
+      ),
+    if (catalog)
+      FushiIconButton(
+        tooltip: t.mihon_extension_import,
+        label: t.mihon_extension_import,
+        icon: Icons.file_open_outlined,
+        onTap: manager.loading ? null : _importApk,
+      ),
+    if (stores)
+      FushiIconButton(
+        tooltip: t.mihon_store_add,
+        label: t.mihon_store_add,
+        icon: Icons.add_link,
+        onTap: manager.loading ? null : _addStore,
+      ),
   ];
 
   @override
@@ -556,10 +591,21 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     final MihonManager manager =
         _manager ?? widget.manager ?? ref.read(appProvider).mihonManager;
     if (widget.embedded) {
+      if (widget.sections.isEmpty) {
+        return const SliverMainAxisGroup(slivers: <Widget>[]);
+      }
       return SliverMainAxisGroup(
         slivers: <Widget>[
           SliverToBoxAdapter(
-            child: Wrap(spacing: 8, runSpacing: 8, children: _actions(manager)),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _actions(
+                manager,
+                stores: widget._showStores,
+                catalog: widget._showCatalog,
+              ),
+            ),
           ),
           if (manager.loading)
             const SliverToBoxAdapter(
@@ -568,7 +614,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
                 child: LinearProgressIndicator(),
               ),
             ),
-          ..._buildContentSlivers(manager),
+          ..._buildContentSlivers(
+            manager,
+            stores: widget._showStores,
+            catalog: widget._showCatalog,
+          ),
         ],
       );
     }
@@ -613,7 +663,11 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
     );
   }
 
-  List<Widget> _buildContentSlivers(MihonManager manager) {
+  List<Widget> _buildContentSlivers(
+    MihonManager manager, {
+    bool stores = true,
+    bool catalog = true,
+  }) {
     final Map<String, MangaExtensionRow> installed =
         <String, MangaExtensionRow>{
           for (final MangaExtensionRow row in manager.installed)
@@ -700,65 +754,63 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
       extensions: visibleAvailable,
       expanded: _storeExpanded,
     );
-    return <Widget>[
-      SliverList.builder(
-        itemCount: manager.stores.length,
-        itemBuilder: (BuildContext context, int index) {
-          final MangaExtensionStoreRow store = manager.stores[index];
-          // 「请求成功但目录为空」以前是一条完全无声的路径：lastError 会在
-          // 刷新成功时被清空，页面上只剩一张干净的卡片配零插件，用户拿不到
-          // 任何线索（BUG-1805）。上游把 legacy 的 index.min.json 掏空成
-          // 「你的 app 太旧」占位哨兵之后，这恰恰是最常见的失败形态。
-          //
-          // 判据必须带上 `!manager.loading`：`available` 是**纯内存**字段（不落
-          // 库），进程重启后恒为空，而 `stores` 一读 DB 就 notify。少这一条，每个
-          // 进程第一次进这页、在整个刷新窗口内（单次预算 30s）都会给每张正常仓库
-          // 卡挂上「返回 0 个扩展，地址可能指向了旧版索引」——正好把用户推去改一个
-          // 完全没问题的地址。误报比无声更糟。
-          final bool returnedNothing =
-              store.enabled &&
-              !manager.loading &&
-              store.lastError == null &&
-              !manager.available.any(
-                (MihonAvailableExtension item) =>
-                    item.storeUrl == store.indexUrl,
-              );
-          final String detail = switch ((store.lastError, returnedNothing)) {
-            (final String error, _) => '${store.indexUrl}\n$error',
-            (null, true) =>
-              '${store.indexUrl}\n${t.mihon_store_zero_extensions}',
-            (null, false) => store.indexUrl,
-          };
-          return FushiCard(
-            // 仓库卡在 SliverList 里逐条相邻，没有外边距时圆角之间只漏出几处
-            // 底色缺口，看着像锯齿而不是分隔（扩展行同因同治）。
-            margin: EdgeInsets.only(
-              bottom: FushiDesignTokens.of(context).spacing.gap,
+    final Widget storesSliver = SliverList.builder(
+      itemCount: manager.stores.length,
+      itemBuilder: (BuildContext context, int index) {
+        final MangaExtensionStoreRow store = manager.stores[index];
+        // 「请求成功但目录为空」以前是一条完全无声的路径：lastError 会在
+        // 刷新成功时被清空，页面上只剩一张干净的卡片配零插件，用户拿不到
+        // 任何线索（BUG-1805）。上游把 legacy 的 index.min.json 掏空成
+        // 「你的 app 太旧」占位哨兵之后，这恰恰是最常见的失败形态。
+        //
+        // 判据必须带上 `!manager.loading`：`available` 是**纯内存**字段（不落
+        // 库），进程重启后恒为空，而 `stores` 一读 DB 就 notify。少这一条，每个
+        // 进程第一次进这页、在整个刷新窗口内（单次预算 30s）都会给每张正常仓库
+        // 卡挂上「返回 0 个扩展，地址可能指向了旧版索引」——正好把用户推去改一个
+        // 完全没问题的地址。误报比无声更糟。
+        final bool returnedNothing =
+            store.enabled &&
+            !manager.loading &&
+            store.lastError == null &&
+            !manager.available.any(
+              (MihonAvailableExtension item) => item.storeUrl == store.indexUrl,
+            );
+        final String detail = switch ((store.lastError, returnedNothing)) {
+          (final String error, _) => '${store.indexUrl}\n$error',
+          (null, true) => '${store.indexUrl}\n${t.mihon_store_zero_extensions}',
+          (null, false) => store.indexUrl,
+        };
+        return FushiCard(
+          // 仓库卡在 SliverList 里逐条相邻，没有外边距时圆角之间只漏出几处
+          // 底色缺口，看着像锯齿而不是分隔（扩展行同因同治）。
+          margin: EdgeInsets.only(
+            bottom: FushiDesignTokens.of(context).spacing.gap,
+          ),
+          padding: EdgeInsets.zero,
+          child: FushiListItem(
+            leading: const Icon(Icons.hub_outlined),
+            title: Text(store.name),
+            subtitle: Text(detail),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                IconButton(
+                  tooltip: t.mihon_store_edit,
+                  onPressed: () => unawaited(_editStore(store)),
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: t.mihon_store_remove,
+                  onPressed: () => unawaited(_removeStore(store)),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
             ),
-            padding: EdgeInsets.zero,
-            child: FushiListItem(
-              leading: const Icon(Icons.hub_outlined),
-              title: Text(store.name),
-              subtitle: Text(detail),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  IconButton(
-                    tooltip: t.mihon_store_edit,
-                    onPressed: () => unawaited(_editStore(store)),
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
-                  IconButton(
-                    tooltip: t.mihon_store_remove,
-                    onPressed: () => unawaited(_removeStore(store)),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+          ),
+        );
+      },
+    );
+    final List<Widget> catalogSlivers = <Widget>[
       if (manager.available.isNotEmpty || manager.installed.isNotEmpty)
         SliverToBoxAdapter(
           child: Padding(
@@ -843,6 +895,7 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
           ),
         ),
     ];
+    return <Widget>[if (stores) storesSliver, if (catalog) ...catalogSlivers];
   }
 
   /// 某个仓库当前是否展开。

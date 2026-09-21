@@ -211,11 +211,24 @@ class VideoFolderGroupCoordinator {
         updatedCollectionIds: List<int>.unmodifiable(updatedCollectionIds),
       );
     }
+    // 已经躺在某个播放列表里的文件不再按文件名重新归组：刮削按 AniDB 作品把
+    // 「同一文件名系列、不同作品」拆成多个合集后（Shoko 多 series），重扫若再按
+    // overlap 最多的候选把它们并回去，拆分就被撤销；用户手动拆的合集同理。
+    final Set<String> alreadyInPlaylist = <String>{
+      for (final MediaCollectionRow collection in collections)
+        if (collection.collectionType == 'playlist')
+          for (final MediaCollectionItemRow item
+              in itemsByCollection[collection.id] ??
+                  const <MediaCollectionItemRow>[])
+            if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
+    };
     for (final VideoGroup group in groupVideosIntoPlaylists(paths)) {
       final List<VideoBookRow> groupRows = <VideoBookRow>[];
       for (final VideoEpisode episode in group.episodes) {
         final VideoBookRow? row = booksByPath[normalizeVideoPath(episode.path)];
-        if (row != null) groupRows.add(row);
+        if (row != null && !alreadyInPlaylist.contains(row.bookUid)) {
+          groupRows.add(row);
+        }
       }
       if (groupRows.isEmpty) continue;
 

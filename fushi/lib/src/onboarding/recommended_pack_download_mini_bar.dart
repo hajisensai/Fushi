@@ -7,6 +7,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/onboarding/recommended_pack_discard.dart';
 import 'package:fushi/src/onboarding/recommended_pack_download_controller.dart';
 import 'package:fushi/src/onboarding/recommended_pack_import.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 推荐包下载的**全局**常驻迷你条，挂在首页 shell 的内容区底部
@@ -83,18 +84,30 @@ class RecommendedPackDownloadMiniBarView extends StatelessWidget {
         final FushiDesignTokens tokens = FushiDesignTokens.of(context);
         final ColorScheme scheme = Theme.of(context).colorScheme;
         final TextTheme textTheme = Theme.of(context).textTheme;
+        // eink：overlay 面层塌成页面底色，这条状态带与上方 tab 正文连成一片；
+        // 顶上描一条线把它切出来。
+        final bool eink = isEinkTheme(context);
         return Material(
           color: tokens.surfaces.overlay,
+          shape: eink
+              ? Border(top: BorderSide(color: tokens.surfaces.outline))
+              : null,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              // 下载中才画进度条：0 = 总大小未知（服务器不报 length），退化成不定态。
+              // 下载中才画进度条：0 = 总大小未知（服务器不报 length），退化成不定态
+              // （eink 下钉成 0：不定态动画在墨水屏上是整条带子持续刷新；默认轨道色
+              // surfaceContainerHighest 也塌成底色，给实色轨道才看得见）。
               if (controller.isDownloading)
                 LinearProgressIndicator(
                   minHeight: 2,
-                  value: controller.progress.value > 0
-                      ? controller.progress.value
-                      : null,
+                  value: einkSafeProgressValue(
+                    context,
+                    controller.progress.value > 0
+                        ? controller.progress.value
+                        : null,
+                  ),
+                  backgroundColor: eink ? scheme.surface : null,
                 ),
               Padding(
                 padding: const EdgeInsets.symmetric(

@@ -721,6 +721,11 @@ class _UnverifiedMinedCardDialogState
 ///     查看·在 Anki 中打开）。
 /// 返回值映射成 popup.js 用的 (ankiConnect, noteId) 元组，由调用方包成 MinePopupResult。
 ///
+/// BUG-2605：[mineNew] 的三条触发路径（「新增为重复卡」/ AnkiMobile「再加一张」/
+/// 反查为空后重制）都发生在用户已被告知「这张卡已有」并选择继续之后，所以调用方
+/// 构造它时必须给请求拍上 [AnkiMiningPayload.withAllowDuplicate]——否则三个后端的
+/// `addNote` 仍按全局「允许重复」偏好（默认关）把这一次判成重复拒掉，按钮等于没有。
+///
 /// BUG-1040：[runHidden] 由宿主页面传入，用来在**对话框可见期间**把查词弹窗停靠屏外
 /// （原生平台视图 airspace 会盖住对话框，见 [LookupPopupHiddenRunner]）。刻意只包住
 /// 对话框那一段、不包 [BaseAnkiRepository.findMatchingNotes]——反查是网络往返，Anki

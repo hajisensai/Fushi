@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 起播 → 两条音轨短暂同响（观感：切集时上一个视频还在播）。
 ///
 /// 修复：本地分支在 `pushReplacement` 前 `await _controller?.pause()`，音轨即刻静音，
-/// 不再依赖延迟 dispose。远端换集复用同一 player + open() 顶替，天然不双开，故只本地
-/// 分支处理。撤掉这个 pause 或把它挪到 pushReplacement 之后即转红。
+/// 不再依赖延迟 dispose。远端分支同样先 pause 再取流（BUG-2609：在线源扩展取流可达
+/// 数十秒，旧集不能响着等）。撤掉任一分支的 pause 或挪到 push / 取流之后即转红。
 void main() {
   final File episodePart =
       File('lib/src/pages/implementations/video_fushi/episode.part.dart');
@@ -39,14 +39,23 @@ void main() {
         reason: 'pause 必须在 pushReplacement 之前，否则过渡期旧音轨仍在放');
   });
 
-  test('pause sits in the local branch, after the remote early return', () {
-    // 远端分支复用同一 player，靠 open() 顶替天然不双开；pause 只属本地分支，必须落在
-    // `_loadRemoteEpisode(... return;` 之后，避免误伤远端换流路径。
+  test(
+      'both branches pause: remote before _loadRemoteEpisode, local after the early return',
+      () {
+    // BUG-2609：远端分支也要先 pause——视频源扩展取流是秒到几十秒级，这段时间旧集
+    // 不能继续响着播（此前「远端靠 open() 顶替天然不双开」的前提只对互联 / 媒体
+    // 服务器的亚秒级建流成立）。本地分支的 pause 仍须落在远端早退之后，两处各一份。
     final int remoteReturnIdx =
         switchBody.indexOf('_loadRemoteEpisode(index, startIntent: intent)');
-    final int pauseIdx = switchBody.indexOf('await _controller?.pause();');
+    final int remotePauseIdx =
+        switchBody.indexOf('await _controller?.pause();');
+    final int localPauseIdx =
+        switchBody.lastIndexOf('await _controller?.pause();');
     expect(remoteReturnIdx, isNonNegative, reason: '远端分支应走 _loadRemoteEpisode');
-    expect(pauseIdx, greaterThan(remoteReturnIdx),
-        reason: 'pause 必须在远端早退之后，只作用于本地换集分支');
+    expect(remotePauseIdx, isNonNegative);
+    expect(remotePauseIdx, lessThan(remoteReturnIdx),
+        reason: '远端换集必须先 pause 旧集再取流（BUG-2609）');
+    expect(localPauseIdx, greaterThan(remoteReturnIdx),
+        reason: '本地分支的 pause 必须在远端早退之后，作用于 pushReplacement 路径');
   });
 }

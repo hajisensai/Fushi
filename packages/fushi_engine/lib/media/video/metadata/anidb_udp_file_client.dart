@@ -63,6 +63,100 @@ class AnidbUdpException implements Exception {
   String toString() => 'AnidbUdpException(${reason.name}, code: $code)';
 }
 
+/// 一个文件覆盖的另一条 AniDB 集（Shoko `CrossRef_File_Episode` 的
+/// `EpisodeID` + `Percentage`）：`01-02` 合集、拆成两半的剧场版都会出现。
+class AnidbEpisodeShare {
+  const AnidbEpisodeShare({
+    required this.episodeId,
+    required this.percentage,
+    this.episodeNumber,
+    this.airedAt,
+    this.englishTitle,
+    this.romajiTitle,
+    this.kanjiTitle,
+  });
+  final int episodeId;
+
+  /// 该集占本文件的百分比（AniDB 给的；没给时按份数均分）。
+  final int percentage;
+
+  /// FILE 应答只给 eid；集号 / 播出日 / 三语集名要再问一次 `EPISODE eid=`
+  /// 才有（[AnidbUdpFileClient.episode]），问到前全为 null。有了这些这一集才能
+  /// 与主集一样进 TMDB 逐集链接、绑成第二条分集行（Shoko `CrossRef_File_Episode`
+  /// 一文件多集）。
+  final String? episodeNumber;
+  final DateTime? airedAt;
+  final String? englishTitle, romajiTitle, kanjiTitle;
+
+  /// 集信息已问到（集号在手；播出日 / 集名可能 AniDB 本就没登记）。
+  bool get isResolved => episodeNumber != null;
+
+  /// `yyyy-MM-dd`，与 [AnidbFileIdentity.episodeAirDate] 同形。
+  String? get airDate => _airDateOf(airedAt);
+
+  /// 三语集名里非空的那几条。
+  List<String> get titles => <String>[
+        for (final String? title in <String?>[
+          englishTitle,
+          romajiTitle,
+          kanjiTitle
+        ])
+          if (title != null && title.trim().isNotEmpty) title,
+      ];
+
+  /// 把 `EPISODE` 应答填进来（eid 不同则原样返回）。
+  AnidbEpisodeShare withInfo(AnidbEpisodeInfo info) => info.episodeId != episodeId
+      ? this
+      : AnidbEpisodeShare(
+          episodeId: episodeId,
+          percentage: percentage,
+          episodeNumber: info.episodeNumber,
+          airedAt: info.airedAt,
+          englishTitle: info.englishTitle,
+          romajiTitle: info.romajiTitle,
+          kanjiTitle: info.kanjiTitle,
+        );
+
+  @override
+  bool operator ==(Object other) =>
+      other is AnidbEpisodeShare &&
+      other.episodeId == episodeId &&
+      other.percentage == percentage &&
+      other.episodeNumber == episodeNumber &&
+      other.airedAt == airedAt &&
+      other.englishTitle == englishTitle &&
+      other.romajiTitle == romajiTitle &&
+      other.kanjiTitle == kanjiTitle;
+
+  @override
+  int get hashCode => Object.hash(episodeId, percentage);
+
+  @override
+  String toString() =>
+      'AnidbEpisodeShare($episodeId, $percentage%${episodeNumber == null ? '' : ', ep $episodeNumber'})';
+}
+
+String? _airDateOf(DateTime? aired) {
+  if (aired == null) return null;
+  final DateTime utc = aired.toUtc();
+  return '${utc.year.toString().padLeft(4, '0')}-'
+      '${utc.month.toString().padLeft(2, '0')}-'
+      '${utc.day.toString().padLeft(2, '0')}';
+}
+
+/// AniDB FILE `state` 位（Shoko `GetFile_State`）。
+abstract final class AnidbFileState {
+  static const int crcMatch = 1;
+  static const int crcError = 2;
+  static const int isV2 = 4;
+  static const int isV3 = 8;
+  static const int isV4 = 16;
+  static const int isV5 = 32;
+  static const int uncensored = 64;
+  static const int censored = 128;
+  static const int chaptered = 4096;
+}
+
 class AnidbFileIdentity {
   const AnidbFileIdentity({
     required this.fileId,
@@ -75,8 +169,21 @@ class AnidbFileIdentity {
     required this.episodeTitle,
     required this.episodeRomajiTitle,
     required this.episodeKanjiTitle,
+    this.animeType = '',
+    this.episodeAiredAt,
+    this.otherEpisodes = const <AnidbEpisodeShare>[],
+    this.isDeprecated = false,
+    this.fileState = 0,
   });
   final int fileId, animeId, episodeId;
+
+  /// AniDB 动画类型原文（FILE amask byte1 bit4：`TV Series` / `OVA` / `Movie` /
+  /// `Web` / `TV Special` / `Music Video` / `Other`）；'' = 未取到（v111 之前
+  /// 落的行）。Shoko 的作品形态由它决定，本仓单文件单元的 kind 也跟它走。
+  final String animeType;
+
+  /// AniDB 说这是电影（Shoko `AnimeType.Movie`）。
+  bool get isMovieType => animeType.trim().toLowerCase() == 'movie';
   final String episodeNumber,
       romajiTitle,
       kanjiTitle,
@@ -84,6 +191,93 @@ class AnidbFileIdentity {
       episodeTitle,
       episodeRomajiTitle,
       episodeKanjiTitle;
+
+  /// 除 [episodeId] 之外本文件还覆盖的集（FILE 的 eid 列表 + `other episodes`
+  /// 列），按 AniDB 给的顺序；单集文件为空。
+  final List<AnidbEpisodeShare> otherEpisodes;
+
+  /// AniDB 已把这份文件标为过时（有更新的版本 / 已从库里撤下）；Shoko
+  /// `ReleaseInfo.IsCorrupted` 的来源之一。
+  final bool isDeprecated;
+
+  /// FILE `state` 位图（[AnidbFileState]）。
+  final int fileState;
+
+  /// CRC 与 AniDB 登记值的比对结果：true 匹配、false 不匹配、null 未知。
+  bool? get crcMatches => (fileState & AnidbFileState.crcMatch) != 0
+      ? true
+      : (fileState & AnidbFileState.crcError) != 0
+          ? false
+          : null;
+
+  /// 文件版本 v1–v5（AniDB 只标 v2 起）。
+  int get fileVersion => (fileState & AnidbFileState.isV5) != 0
+      ? 5
+      : (fileState & AnidbFileState.isV4) != 0
+          ? 4
+          : (fileState & AnidbFileState.isV3) != 0
+              ? 3
+              : (fileState & AnidbFileState.isV2) != 0
+                  ? 2
+                  : 1;
+
+  /// 集播出日（UTC 零点；UDP `EPISODE` 的 `aired`）。FILE 应答里没有这一项，
+  /// 由 [AnidbUdpFileClient.episode] 另问一次补上；null = 尚未取到 / AniDB
+  /// 未登记。Shoko 集级链接的第一评级 DateAndTitle 靠它。
+  final DateTime? episodeAiredAt;
+
+  /// `yyyy-MM-dd`，与 TMDB 集 `airDate` 同形，直接喂逐集匹配器。
+  String? get episodeAirDate => _airDateOf(episodeAiredAt);
+
+  /// 还没问到集信息的其余集（要补 `EPISODE`）。
+  bool get hasUnresolvedOtherEpisodes =>
+      otherEpisodes.any((AnidbEpisodeShare share) => !share.isResolved);
+
+  AnidbFileIdentity copyWith({
+    DateTime? episodeAiredAt,
+    List<AnidbEpisodeShare>? otherEpisodes,
+    String? animeType,
+  }) =>
+      AnidbFileIdentity(
+        fileId: fileId,
+        animeId: animeId,
+        episodeId: episodeId,
+        episodeNumber: episodeNumber,
+        romajiTitle: romajiTitle,
+        kanjiTitle: kanjiTitle,
+        englishTitle: englishTitle,
+        episodeTitle: episodeTitle,
+        episodeRomajiTitle: episodeRomajiTitle,
+        episodeKanjiTitle: episodeKanjiTitle,
+        animeType: animeType ?? this.animeType,
+        episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+        otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+        isDeprecated: isDeprecated,
+        fileState: fileState,
+      );
+}
+
+/// UDP `EPISODE` 应答（wiki UDP_API_Definition：
+/// `eid|aid|length|rating|votes|epno|eng|romaji|kanji|aired|type`）。
+/// 只保留集级链接要用的字段；Shoko `RequestGetEpisode` 同样只取 eid/aid。
+class AnidbEpisodeInfo {
+  const AnidbEpisodeInfo({
+    required this.episodeId,
+    required this.animeId,
+    required this.episodeNumber,
+    required this.airedAt,
+    this.englishTitle = '',
+    this.romajiTitle = '',
+    this.kanjiTitle = '',
+  });
+  final int episodeId, animeId;
+  final String episodeNumber;
+
+  /// 播出日（UTC 零点）；AniDB 未登记（`aired` 为 0）时为 null。
+  final DateTime? airedAt;
+
+  /// 三语集名（`eng|romaji|kanji`）；一文件多集里「其余集」的标题只有这里能拿到。
+  final String englishTitle, romajiTitle, kanjiTitle;
 }
 
 /// Request/response transport; implementations must discard other peers/tags.
@@ -129,6 +323,7 @@ class AnidbUdpFileClient {
   Future<void> _tail = Future<void>.value();
   int _tag = 0;
   final Map<String, AnidbFileIdentity?> _cache = {};
+  final Map<int, AnidbEpisodeInfo?> _episodes = {};
 
   /// 320 未收录只在批次尺度内去重：客户端与协调器同寿命，永久缓存会让 AniDB
   /// 后来收录的文件在本进程里再也查不到；持久层另有 7 天复查期。
@@ -243,38 +438,178 @@ class AnidbUdpFileClient {
           return null;
         }
         if (file.code != 220) _fail(file.code);
-        final List<String> fields = file.data.split('|');
-        if (fields.length < 10) {
-          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
-        }
-        final List<int?> ids = fields.take(3).map(int.tryParse).toList();
-        if (ids.any((int? id) => id == null || id <= 0) ||
-            !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[6])) {
-          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
-        }
-        final AnidbFileIdentity identity = AnidbFileIdentity(
-          fileId: ids[0]!,
-          animeId: ids[1]!,
-          episodeId: ids[2]!,
-          romajiTitle: fields[3],
-          kanjiTitle: fields[4],
-          englishTitle: fields[5],
-          episodeNumber: fields[6],
-          episodeTitle: fields[7],
-          episodeRomajiTitle: fields[8],
-          episodeKanjiTitle: fields[9],
-        );
+        final AnidbFileIdentity identity = parseFileReply(file.data);
         _cache[key] = identity;
         return identity;
       });
 
-  // fmask byte1 bits6/5 = aid/eid. fid is always first.
-  // amask byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
+  /// 220 FILE 数据行 → 身份。列序由 [_requestFile] 的掩码决定：
+  /// `fid|aid|eid|other eps|deprecated|state|type|romaji|kanji|english|epno|ep|ep romaji|ep kanji`
+  /// （Shoko `RequestGetFile.ParseResponse` 同样按掩码固定下标取列）。
+  /// eid 列可能是 `eid'eid,pct` 列表（一文件多集），首项是主集；
+  /// `other eps` 两种写法：`eid'pct'eid'pct` 或 `eid,pct'eid,pct`。
+  @visibleForTesting
+  static AnidbFileIdentity parseFileReply(String data) {
+    final List<String> fields = data.split('|');
+    if (fields.length < 14) {
+      throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+    }
+    final int? fileId = int.tryParse(fields[0].trim());
+    final int? animeId = int.tryParse(fields[1].trim());
+    final List<AnidbEpisodeShare> episodes = _parseEpisodeList(fields[2]);
+    if (fileId == null ||
+        fileId <= 0 ||
+        animeId == null ||
+        animeId <= 0 ||
+        episodes.isEmpty ||
+        !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[10])) {
+      throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+    }
+    // 主集之外的集：eid 列表的其余项 + other episodes 列，按 eid 去重保序。
+    final Set<int> seen = <int>{episodes.first.episodeId};
+    final List<AnidbEpisodeShare> others = <AnidbEpisodeShare>[
+      for (final AnidbEpisodeShare share in <AnidbEpisodeShare>[
+        ...episodes.skip(1),
+        ..._parseOtherEpisodes(fields[3]),
+      ])
+        if (seen.add(share.episodeId)) share,
+    ];
+    return AnidbFileIdentity(
+      fileId: fileId,
+      animeId: animeId,
+      episodeId: episodes.first.episodeId,
+      otherEpisodes: others,
+      isDeprecated: fields[4].trim() == '1',
+      fileState: int.tryParse(fields[5].trim()) ?? 0,
+      animeType: fields[6].trim(),
+      romajiTitle: fields[7],
+      kanjiTitle: fields[8],
+      englishTitle: fields[9],
+      episodeNumber: fields[10],
+      episodeTitle: fields[11],
+      episodeRomajiTitle: fields[12],
+      episodeKanjiTitle: fields[13],
+    );
+  }
+
+  /// eid 列：单个 `eid`，或 `'` 分隔的 `eid[,pct]` 列表（没给百分比按份数均分）。
+  static List<AnidbEpisodeShare> _parseEpisodeList(String raw) {
+    final String text = raw.trim();
+    if (text.isEmpty) return const <AnidbEpisodeShare>[];
+    final int? single = int.tryParse(text);
+    if (single != null) {
+      return single > 0
+          ? <AnidbEpisodeShare>[
+              AnidbEpisodeShare(episodeId: single, percentage: 100)
+            ]
+          : const <AnidbEpisodeShare>[];
+    }
+    final List<String> parts = text.split("'");
+    final int even = (100 / parts.length).round();
+    final List<AnidbEpisodeShare> result = <AnidbEpisodeShare>[];
+    for (final String part in parts) {
+      final List<String> pair = part.split(',');
+      final int? eid = int.tryParse(pair[0].trim());
+      if (eid == null || eid <= 0) continue;
+      final int? pct = pair.length > 1 ? int.tryParse(pair[1].trim()) : null;
+      result.add(AnidbEpisodeShare(episodeId: eid, percentage: pct ?? even));
+    }
+    return result;
+  }
+
+  /// `other episodes` 列（Shoko 两种格式）；认不出的格式当空（不因它废掉身份）。
+  static List<AnidbEpisodeShare> _parseOtherEpisodes(String raw) {
+    final String text = raw.trim();
+    if (text.isEmpty) return const <AnidbEpisodeShare>[];
+    final List<String> parts = text.split("'");
+    final List<AnidbEpisodeShare> result = <AnidbEpisodeShare>[];
+    if (RegExp(r"^(?:\d+'\d+)(?:'\d+'\d+)*$").hasMatch(text)) {
+      for (int i = 0; i + 1 < parts.length; i += 2) {
+        final int? eid = int.tryParse(parts[i]);
+        final int? pct = int.tryParse(parts[i + 1]);
+        if (eid != null && eid > 0 && pct != null) {
+          result.add(AnidbEpisodeShare(episodeId: eid, percentage: pct));
+        }
+      }
+    } else if (RegExp(r"^(?:\d+,\d+)(?:'\d+,\d+)*$").hasMatch(text)) {
+      for (final String part in parts) {
+        final List<String> pair = part.split(',');
+        final int? eid = int.tryParse(pair[0]);
+        final int? pct = int.tryParse(pair[1]);
+        if (eid != null && eid > 0 && pct != null) {
+          result.add(AnidbEpisodeShare(episodeId: eid, percentage: pct));
+        }
+      }
+    }
+    return result;
+  }
+
+  // fmask byte1: bit6 aid, bit5 eid, bit2 other episodes, bit1 deprecated,
+  // bit0 state（Shoko 取 0x77，本仓不要 gid / mylist）。fid 恒为首列。
+  // amask byte1 bit4 = anime type（Shoko 的作品形态来源；本仓 kind 跟它走）；
+  // byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
   Future<_Reply> _requestFile(int size, String ed2k) => _request('FILE', {
         'size': '$size',
         'ed2k': ed2k.toLowerCase(),
-        'fmask': '6000000000',
-        'amask': '00e0f000',
+        'fmask': '6700000000',
+        'amask': '10e0f000',
+        's': _session!,
+      });
+
+  /// 按 eid 取集信息（主要是播出日）。240 → 信息；340 NO SUCH EPISODE → null。
+  /// 与 [lookup] 同一条串行队列、同一套节流 / 退避 / 会话续期；每 eid 在客户端
+  /// 寿命内只问一次。
+  Future<AnidbEpisodeInfo?> episode({required int episodeId}) =>
+      _serialize(() async {
+        if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
+        if (!config.isAvailable) {
+          throw const AnidbUdpException(AnidbUdpFailure.unavailable);
+        }
+        if (_terminalFailure != null) throw _terminalFailure!;
+        if (episodeId <= 0) {
+          throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
+        }
+        if (_episodes.containsKey(episodeId)) return _episodes[episodeId];
+        if (_episodes.length >= 2048) _episodes.remove(_episodes.keys.first);
+        await _ensureSession();
+        _Reply reply = await _requestEpisode(episodeId);
+        if (reply.code == 501 || reply.code == 506 || reply.code == 505) {
+          _session = null;
+          await _ensureSession();
+          reply = await _requestEpisode(episodeId);
+        }
+        if (reply.code == 340) return _episodes[episodeId] = null;
+        if (reply.code != 240) _fail(reply.code);
+        final List<String> fields = reply.data.split('|');
+        if (fields.length < 10) {
+          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+        }
+        final int? eid = int.tryParse(fields[0]);
+        final int? aid = int.tryParse(fields[1]);
+        final int? aired = int.tryParse(fields[9].trim());
+        if (eid == null ||
+            eid <= 0 ||
+            aid == null ||
+            aid <= 0 ||
+            aired == null ||
+            !RegExp(r'^(?:[SCTPO])?\d+$').hasMatch(fields[5])) {
+          throw const AnidbUdpException(AnidbUdpFailure.malformedResponse);
+        }
+        return _episodes[episodeId] = AnidbEpisodeInfo(
+          episodeId: eid,
+          animeId: aid,
+          episodeNumber: fields[5],
+          airedAt: aired <= 0
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(aired * 1000, isUtc: true),
+          englishTitle: fields[6].trim(),
+          romajiTitle: fields[7].trim(),
+          kanjiTitle: fields[8].trim(),
+        );
+      });
+
+  Future<_Reply> _requestEpisode(int episodeId) => _request('EPISODE', {
+        'eid': '$episodeId',
         's': _session!,
       });
 

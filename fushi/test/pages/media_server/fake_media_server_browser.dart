@@ -87,6 +87,10 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
   /// 见类文档；0 = 不偏移（`nextStartIndex` 缺省推导）。
   int nextStartIndexShift = 0;
 
+  /// 设了就整页由它给（按 startIndex），绕过 [searchResults] 切片：用来造
+  /// 「首页 0 条但 hasMore」这类把关后的形状（BUG-2608）。
+  MediaServerPage Function(int startIndex, int limit)? searchPager;
+
   final List<FakePageRequest> requests = <FakePageRequest>[];
   int listLibrariesCalls = 0;
   int listResumeCalls = 0;
@@ -227,6 +231,9 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
     );
     if (query.trim().isEmpty) return const MediaServerPage.empty();
     if (failSearch) throw StateError('search unavailable');
+    final MediaServerPage Function(int startIndex, int limit)? pager =
+        searchPager;
+    if (pager != null) return pager(startIndex, limit);
     return _slice(searchResults, startIndex, limit);
   }
 

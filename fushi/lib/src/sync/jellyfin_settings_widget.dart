@@ -7,6 +7,14 @@
 // 换令牌、不多出一张卡）。配置生效面在视频库页的远端源解析链（home_video_page
 // `_resolveJellyfinVideoClient`），此处只管配置读写。
 //
+// 多线路（同一台服务器的多条访问地址：局域网 / 公网 / 反代 / 内网穿透）：每台
+// 展开后有「线路」面板——登录地址恒在首位、单选切换当前线路、备用线路可删、
+// 底部一行输入框添加。添加线路**不重新登录**：令牌按 DeviceId 归属、与地址无关，
+// 所以只需拿现有令牌经新地址打一个认证请求（`/Users/{uid}/Views`）——通了就同时
+// 证明「地址可达」和「这就是同一台服务器」（别家服务器不认这个令牌，401）。
+// 身份锚（缓存槽 / 封面命名空间）始终是登录地址，切线路不换身份，见
+// [JellyfinServerConfig.serverUrl]。
+//
 // BUG-1891：「自动列出条目」开关与媒体库勾选是给「几十万条目的公共 Emby 服」用的
 // 止血阀。默认值刻意保持旧行为（自动列出=开、库=全部视频库），小库用户一点感觉
 // 不到；大库用户可以把枚举收窄到几个库，或干脆改成下拉刷新时才列。开关是全局
@@ -65,6 +73,11 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   /// 每台服务器当前勾选的库 id；缺项 = 还没从配置里读进来。空集 = 全部视频库。
   final Map<String, Set<String>> _selectedLibraryIds = <String, Set<String>>{};
 
+  /// 每台服务器「添加线路」输入框的控制器（键 = [JellyfinVideoClient.sourceIdFor]），
+  /// 首次展开该行时才建，随 State 一起 dispose。
+  final Map<String, TextEditingController> _routeControllers =
+      <String, TextEditingController>{};
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +89,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     _urlController.dispose();
     _userController.dispose();
     _passwordController.dispose();
+    for (final TextEditingController c in _routeControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -100,12 +116,15 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   /// 登录 / 连接失败的呈现：对话框 + 可选中文本。此前走 [FushiToast]，手机上是
   /// 2 秒、两行截断的原生 toast——`SocketException: Connection refused (OS Error …),
   /// address = …, port = …` 这种真正有用的原因根本看不全，用户只能报「直接连不上」。
-  Future<void> _showSignInError(String message) async {
+  Future<void> _showSignInError(String message) =>
+      _showErrorDialog(t.jellyfin_sign_in_failed, message);
+
+  Future<void> _showErrorDialog(String title, String message) async {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: Text(t.jellyfin_sign_in_failed),
+        title: Text(title),
         content: SingleChildScrollView(child: SelectableText(message)),
         actions: <Widget>[
           TextButton(
@@ -171,12 +190,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       );
       // 同一账号重复登录只是换令牌：保留用户在这台服务器上已点名的媒体库，
       // 否则「令牌过期重登一次」就把库选择静默清回「全部」（BUG-1891 止血阀失效）。
-      final String id = _idOf(fresh);
+      // 「同一台」按线路认（登录地址或任一备用线路命中），不然从公网线路重登会多出
+      // 一条 serverUrl=公网 的记录：两个 sourceId、两套封面 namespace、两张卡。
       final List<JellyfinServerConfig> existing =
           await _syncRepo.getJellyfinServers();
       JellyfinServerConfig? previous;
       for (final JellyfinServerConfig s in existing) {
-        if (_idOf(s) == id) {
+        if (s.userId == auth.userId && s.ownsRoute(serverUrl)) {
           previous = s;
           break;
         }
@@ -184,7 +204,13 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
       await _syncRepo.upsertJellyfinServer(
         previous == null
             ? fresh
-            : fresh.copyWithLibraryIds(previous.libraryIds),
+            : previous.withRefreshedSession(
+                username: username,
+                accessToken: auth.accessToken,
+                deviceId: deviceId,
+                signedInUrl: serverUrl,
+                serverName: auth.serverName,
+              ),
       );
       if (!mounted) return;
       _urlController.clear();
@@ -259,6 +285,125 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
         _selectedLibraryIds.remove(id);
         _reload();
       }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  TextEditingController _routeControllerFor(String id) =>
+      _routeControllers.putIfAbsent(id, TextEditingController.new);
+
+  /// 给一台服务器添加一条备用线路。
+  ///
+  /// 不登录、不要密码：先探 `/System/Info/Public`（可达性，与登录同款分诊），再拿
+  /// **现有令牌**经新地址读 `/Users/{uid}/Views`——令牌是这台服务器签的，别台服务器
+  /// 回 401，所以这一步同时证明「同一台服务器」；令牌过期同样是 401，错误文案把
+  /// 两种可能都说出来。只追加不切换：用户在列表里点单选才换当前线路。
+  Future<void> _addRoute(JellyfinServerConfig config) async {
+    final String id = _idOf(config);
+    final String url =
+        JellyfinApi.normalizeServerUrl(_routeControllerFor(id).text);
+    if (url.isEmpty) {
+      FushiToast.show(
+        msg: t.jellyfin_route_add_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (config.routeUrls.contains(url)) {
+      FushiToast.show(
+        msg: t.jellyfin_route_exists,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    final JellyfinApi api = _api(
+      serverUrl: url,
+      accessToken: config.accessToken,
+      deviceId: config.deviceId,
+    );
+    try {
+      try {
+        await api.publicSystemInfo();
+      } catch (e) {
+        await _showErrorDialog(
+          t.jellyfin_route_add_failed,
+          _describeConnectFailure(url, e),
+        );
+        return;
+      }
+      try {
+        await api.views(config.userId);
+      } catch (e) {
+        await _showErrorDialog(
+          t.jellyfin_route_add_failed,
+          t.jellyfin_route_verify_failed(url: url, reason: '$e'),
+        );
+        return;
+      }
+      await _syncRepo.upsertJellyfinServer(
+        config.copyWithRoutes(
+          alternateUrls: <String>[...config.alternateUrls, url],
+        ),
+      );
+      if (!mounted) return;
+      _routeControllerFor(id).clear();
+      _reload();
+    } finally {
+      api.close();
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 切换当前线路。远端清单缓存槽里的封面 / 流 URL 已把旧线路的 host 烤进去
+  /// （RemoteVideoInfo.coverUrl 是绝对 URL），必须失效，否则 TTL 内视频页还在
+  /// 往旧地址拉图；身份锚不变，封面磁盘缓存（按条目 id 键）照常命中。
+  Future<void> _switchRoute(JellyfinServerConfig config, String url) async {
+    if (url == config.effectiveServerUrl) return;
+    setState(() => _busy = true);
+    try {
+      await _syncRepo.upsertJellyfinServer(
+        config.copyWithRoutes(activeServerUrl: url),
+      );
+      widget.settingsContext.ref
+          .read(remoteLibraryCacheProvider)
+          .invalidateSource(_idOf(config));
+      if (!mounted) return;
+      // 媒体库清单按新线路重取（顺带就是这条线路的一次真实连通验证）。
+      _viewsFutures.remove(_idOf(config));
+      _reload();
+      FushiToast.show(
+        msg: t.jellyfin_route_switched(url: url),
+        severity: ToastSeverity.success,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 删一条备用线路（登录地址不可删——它是身份锚）。删的是正在用的那条时
+  /// [JellyfinServerConfig.copyWithRoutes] 自动回落登录地址，缓存槽同样要失效。
+  Future<void> _removeRoute(JellyfinServerConfig config, String url) async {
+    setState(() => _busy = true);
+    try {
+      final bool wasActive = url == config.effectiveServerUrl;
+      await _syncRepo.upsertJellyfinServer(
+        config.copyWithRoutes(
+          alternateUrls: <String>[
+            for (final String u in config.alternateUrls)
+              if (u != url) u,
+          ],
+        ),
+      );
+      if (wasActive) {
+        widget.settingsContext.ref
+            .read(remoteLibraryCacheProvider)
+            .invalidateSource(_idOf(config));
+      }
+      if (!mounted) return;
+      if (wasActive) _viewsFutures.remove(_idOf(config));
+      _reload();
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -382,9 +527,11 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
   Widget _buildServerRow(JellyfinServerConfig config) {
     final String id = _idOf(config);
     final bool expanded = _expanded.contains(id);
+    // 摘要行显示**当前线路**（用户在外面切到公网地址后，一眼能看出现在走哪条）。
+    final String activeUrl = config.effectiveServerUrl;
     final String serverLabel = (config.serverName?.isNotEmpty ?? false)
-        ? '${config.serverName} · ${config.serverUrl}'
-        : config.serverUrl;
+        ? '${config.serverName} · $activeUrl'
+        : activeUrl;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -416,6 +563,16 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 _buildLibraryPicker(config),
+                const SizedBox(height: 8),
+                Text(
+                  t.jellyfin_routes_title,
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                Text(
+                  t.jellyfin_routes_hint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                _buildRoutesPanel(config),
                 Align(
                   alignment: Alignment.centerRight,
                   child: _busy
@@ -432,6 +589,64 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
               ],
             ),
           ),
+      ],
+    );
+  }
+
+  /// 线路面板：登录地址恒在首位（带「登录地址」副标题、不可删），其后按添加顺序
+  /// 列备用线路；单选 = 当前线路；末行是「添加线路」输入框 + 按钮。
+  Widget _buildRoutesPanel(JellyfinServerConfig config) {
+    final String id = _idOf(config);
+    final String activeUrl = config.effectiveServerUrl;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (final String url in config.routeUrls)
+          FushiListItem(
+            key: ValueKey<String>('jellyfin-route-$id-$url'),
+            leading: Radio<String>(
+              value: url,
+              groupValue: activeUrl,
+              onChanged: _busy
+                  ? null
+                  : (String? v) {
+                      if (v != null) unawaited(_switchRoute(config, v));
+                    },
+            ),
+            title: Text(url),
+            subtitle: url == config.serverUrl
+                ? Text(t.jellyfin_route_primary_label)
+                : (url == activeUrl
+                    ? Text(t.jellyfin_route_active_label)
+                    : null),
+            trailing: url == config.serverUrl
+                ? null
+                : FushiIconButton(
+                    icon: Icons.delete_outline,
+                    tooltip: t.jellyfin_route_remove,
+                    onTap: _busy ? null : () => _removeRoute(config, url),
+                  ),
+            onTap: _busy ? null : () => _switchRoute(config, url),
+          ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: FushiTextField(
+                controller: _routeControllerFor(id),
+                labelText: t.jellyfin_route_url,
+                hintText: 'https://emby.example.com',
+                keyboardType: TextInputType.url,
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.tonal(
+              onPressed: _busy ? null : () => _addRoute(config),
+              child: Text(t.jellyfin_route_add),
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -492,8 +707,9 @@ class _JellyfinConfigWidgetState extends State<JellyfinConfigWidget> {
     JellyfinServerConfig config,
   ) async {
     final JellyfinApi api = _api(
-      serverUrl: config.serverUrl,
+      serverUrl: config.effectiveServerUrl,
       accessToken: config.accessToken,
+      deviceId: config.deviceId,
     );
     try {
       final List<JellyfinLibraryView> views = await api.views(config.userId);

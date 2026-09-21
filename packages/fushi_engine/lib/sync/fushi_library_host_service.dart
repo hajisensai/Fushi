@@ -2423,6 +2423,26 @@ abstract interface class VideoMetadataHost {
   });
 }
 
+/// host 端「TMDB 备选排序」的**可选**能力（Shoko `PreferredAlternateOrderingID` 的
+/// 互联面）：客户端列出 host 上某部剧的 episode groups，选定后由 host 写作品行、
+/// 上 `episodeGroup` 锁并按分组重刮。与 [VideoMetadataHost] 同范式：server 用 `is`
+/// 探测，不实现 → `/api/library/metadata/episode-group*` 404，能力位
+/// `liveLibrary.videoMetadataOrdering=false`。
+abstract interface class VideoMetadataOrderingHost {
+  /// [key] 对应作品的全部备选排序 + 当前选定。作品没有 TMDB 剧集身份 / host 无
+  /// 刮削链 → 空 groups；合集对应多个单元 → null（调用方走 ambiguousWork）。
+  Future<VideoMetadataEpisodeGroupListing?> listVideoMetadataEpisodeGroups({
+    required VideoMetadataWorkKey key,
+  });
+
+  /// 选定 [groupId]（null = TMDB 默认排序）：写作品行 + 锁 → 以既有身份重刮，
+  /// 结果与 [VideoMetadataHost.scrapeVideoMetadata] 同形。
+  Future<VideoMetadataWriteResult> setVideoMetadataEpisodeGroup({
+    required VideoMetadataWorkKey key,
+    required String? groupId,
+  });
+}
+
 /// host 端「视频播放偏好跨设备同步」的**可选**能力（BUG-1620 调轴起步，播放偏好
 /// 同步泛化批扩展为统一带戳字段模型：调轴 / 音轨 / 副字幕源 / 副字幕调轴）。
 ///

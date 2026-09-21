@@ -27,6 +27,8 @@ class _FakeStore implements VideoExternalSettingsStore {
   final List<String> languageWrites = <String>[];
   final List<String> jimakuKeyWrites = <String>[];
   final List<bool> jimakuEnabledWrites = <bool>[];
+  final List<String> subdlKeyWrites = <String>[];
+  final List<bool> subdlEnabledWrites = <bool>[];
   final List<bool> ajattEnabledWrites = <bool>[];
   final List<(String, bool)> builtinSourceWrites = <(String, bool)>[];
 
@@ -51,6 +53,16 @@ class _FakeStore implements VideoExternalSettingsStore {
   @override
   Future<void> saveJimakuEnabled(bool enabled) async {
     jimakuEnabledWrites.add(enabled);
+  }
+
+  @override
+  Future<void> saveSubdlApiKey(String apiKey) async {
+    subdlKeyWrites.add(apiKey);
+  }
+
+  @override
+  Future<void> saveSubdlEnabled(bool enabled) async {
+    subdlEnabledWrites.add(enabled);
   }
 
   @override
@@ -181,6 +193,52 @@ void main() {
       expect(store.jimakuKeyWrites.last, 'saved-key');
       expect(store.openSubtitlesWrites, isEmpty);
       expect(store.torznabWrites, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'SubDL subpage saves key and switch to their own store targets',
+    (WidgetTester tester) async {
+      final _FakeStore store = _FakeStore(
+        const VideoExternalSettingsSnapshot(subdlApiKey: 'old-key'),
+      );
+      await tester.pumpWidget(
+        _harness(
+          store,
+          scopes: const <VideoExternalProviderScope>[
+            VideoExternalProviderScope.subdl,
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('video-jimaku-api-key')),
+        findsNothing,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is SettingsSearchTarget && w.id == 'services.subdl.api_key',
+        ),
+        findsOneWidget,
+      );
+      final Finder keyField = _textField(
+        const ValueKey<String>('video-subdl-api-key'),
+      );
+      expect(tester.widget<TextField>(keyField).obscureText, isTrue);
+      await tester.enterText(keyField, 'subdl-key');
+      await _settleAutosave(tester);
+      expect(store.subdlKeyWrites.last, 'subdl-key');
+      expect(store.jimakuKeyWrites, isEmpty);
+      final Finder toggle = find.byKey(
+        const ValueKey<String>('video-subdl-enabled'),
+      );
+      expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(store.subdlEnabledWrites, <bool>[false]);
+      expect(store.jimakuEnabledWrites, isEmpty);
+      expect(store.ajattEnabledWrites, isEmpty);
     },
   );
 

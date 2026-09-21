@@ -5,7 +5,7 @@
 library;
 
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
-    show VideoMetadataLookup;
+    show VideoMetadataEpisodeGroupSummary, VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
@@ -224,6 +224,56 @@ class VideoMetadataWriteResult {
         if (json['works'] case final List<Object?> list)
           for (final Object? v in list) VideoMetadataWorkKey.fromJson(v),
       ],
+    );
+  }
+}
+
+/// host 一部剧的 TMDB 备选排序清单（`POST /api/library/metadata/episode-groups`）：
+/// 全部分组 + 当前选定的分组 id（null = TMDB 默认排序）。
+class VideoMetadataEpisodeGroupListing {
+  const VideoMetadataEpisodeGroupListing({
+    required this.groups,
+    required this.current,
+  });
+
+  final List<VideoMetadataEpisodeGroupSummary> groups;
+  final String? current;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+        'groups': <Object?>[
+          for (final VideoMetadataEpisodeGroupSummary g in groups)
+            <String, Object?>{
+              'id': g.id,
+              'name': g.name,
+              'type': g.type,
+              if (g.description != null) 'description': g.description,
+              if (g.groupCount != null) 'groupCount': g.groupCount,
+              if (g.episodeCount != null) 'episodeCount': g.episodeCount,
+            },
+        ],
+        'current': current,
+      };
+
+  static VideoMetadataEpisodeGroupListing fromJson(Object? raw) {
+    if (raw is! Map) throw const FormatException('episode group listing');
+    final Object? groups = raw['groups'];
+    if (groups is! List) throw const FormatException('groups');
+    return VideoMetadataEpisodeGroupListing(
+      groups: <VideoMetadataEpisodeGroupSummary>[
+        for (final Object? node in groups)
+          if (node is Map && node['id'] is String)
+            VideoMetadataEpisodeGroupSummary(
+              id: node['id'] as String,
+              name: node['name'] is String ? node['name'] as String : node['id'] as String,
+              type: node['type'] is int ? node['type'] as int : 0,
+              description:
+                  node['description'] is String ? node['description'] as String : null,
+              groupCount: node['groupCount'] is int ? node['groupCount'] as int : null,
+              episodeCount:
+                  node['episodeCount'] is int ? node['episodeCount'] as int : null,
+            ),
+      ],
+      current: raw['current'] is String ? raw['current'] as String : null,
     );
   }
 }

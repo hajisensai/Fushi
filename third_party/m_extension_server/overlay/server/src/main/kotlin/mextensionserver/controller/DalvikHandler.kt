@@ -1,14 +1,18 @@
 package mextensionserver.controller
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import eu.kanade.tachiyomi.animesource.AnimeSource
+import eu.kanade.tachiyomi.animesource.host.AnimeVideoLoader
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
+import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.interceptor.CloudflareChallengeRequiredException
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import fi.iki.elonen.NanoHTTPD
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.runBlocking
 import mextensionserver.impl.MExtensionServerLoader
 import mextensionserver.impl.MihonInvoker
 import mextensionserver.model.DataBody
@@ -51,7 +55,15 @@ class DalvikHandler {
                     SourceCookieInjection.injectRequestCookies(session, selectedSource)
                     SourceCookieInjection.applyRequestUserAgent(session, selectedSource)
                     try {
-                        MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                        if (dataBody.method == "getVideoList") {
+                            // Upstream's invokeGetVideoList returns the raw lib-14
+                            // `getVideoList(episode)`: no hoster expansion, no
+                            // `resolveVideo` / `getVideoUrl`. Both generations of
+                            // extensions go through the shared host loader instead.
+                            loadEpisodeVideos(selectedSource, dataBody)
+                        } else {
+                            MihonInvoker.invokeMethod(loadedExtension, dataBody)
+                        }
                     } finally {
                         pendingJarCookies =
                             SourceCookieInjection.encodeJarCookies(
@@ -165,17 +177,54 @@ internal fun filterResponseForBridge(result: Any?): Any? =
         else -> result
     }
 
+/**
+ * `getVideoList` across both extension generations; see [AnimeVideoLoader].
+ * `EpisodeData` is upstream's wire model; the `SEpisode` is rebuilt here because
+ * upstream keeps its converter private.
+ */
+internal fun loadEpisodeVideos(
+    source: Any,
+    dataBody: DataBody,
+): List<Video> {
+    val episodeData = dataBody.episodeData ?: throw IllegalArgumentException("episodeData is required for getVideoList")
+    if (source !is AnimeSource) {
+        throw IllegalArgumentException("Source must be an AnimeSource for getVideoList")
+    }
+    val episode =
+        SEpisode.create().also { episode ->
+            episode.url = episodeData.url ?: ""
+            episode.name = episodeData.name ?: ""
+            episode.date_upload = episodeData.date_upload ?: 0L
+            episode.episode_number = episodeData.episode_number ?: 0f
+            episode.scanlator = episodeData.scanlator
+        }
+    return runBlocking { AnimeVideoLoader.loadVideos(source, episode) }
+}
+
+/**
+ * The wire shape of one playable candidate. `quality` / `url` are the lib-14 names
+ * the host already decodes; `videoTitle` / `resolution` / `bitrate` / `preferred`
+ * are the lib-16 fields the player's candidate picker uses. Android's
+ * `MihonModelBridge.Video.toBridgeMap` must stay identical.
+ */
 internal fun Video.toBridgeMap(): Map<String, Any?> =
     mapOf(
         "url" to url,
         "quality" to quality,
-        "videoUrl" to videoUrl,
+        // The lib-16 deprecated constructor stores a null url as the string
+        // "null"; the wire keeps the lib-14 meaning (null = unresolved).
+        "videoUrl" to videoUrl.takeUnless { isVideoUrlUnresolved },
+        "videoTitle" to videoTitle,
+        "resolution" to resolution,
+        "bitrate" to bitrate,
+        "preferred" to preferred,
         "headers" to
             headers?.let { headers ->
                 (0 until headers.size).associate { index -> headers.name(index) to headers.value(index) }
             },
         "subtitleTracks" to subtitleTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
         "audioTracks" to audioTracks.map { track -> mapOf("url" to track.url, "lang" to track.lang) },
+        "mpvArgs" to mpvArgs.map { (key, value) -> mapOf("key" to key, "value" to value) },
     )
 
 private fun AnimeFilter<*>.toBridgeMap(): Map<String, Any?> {

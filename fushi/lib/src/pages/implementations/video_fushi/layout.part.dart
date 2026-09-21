@@ -578,6 +578,8 @@ extension _VideoLayout on _VideoFushiPageState {
                         // TODO-1154：长按倍速徽章跟随指针（在 OSD 之后、其余 chrome 之前挂）。
                         _buildLongPressSpeedBadgeOverlay(),
                         _buildAutoAdvanceOverlay(),
+                        // 远端换集在途 OSD（纯展示，IgnorePointer；非换集态零尺寸）。
+                        _buildRemoteSwitchOverlay(),
                         // TODO-1119：Windows 黑闪运行时提示条（可点按钮，非
                         // IgnorePointer；隐藏态零尺寸）。挂在 auto-advance 之后、
                         // level HUD 之前，与其它 chrome overlay 同源。

@@ -1395,6 +1395,8 @@ class SyncRepository {
     // 局域网 IP（`http://192.168.x.x:8080`），跨设备恢复既泄凭据又指向一台
     // 新机根本连不到的主机。
     'discovery_opds_servers',
+    // 同形：AList / OpenList 站点清单，条目里带 base64 密码。
+    'discovery_alist_sites',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',

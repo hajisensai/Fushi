@@ -2559,6 +2559,11 @@ function fushiApplyTheme(c, theme, applyBox) {
   const cs = theme['--fushi-color-scheme'];
   const effective = fushiResolveTheme(cs);
   if (effective === 'dark' || effective === 'light') c.setAttribute('data-theme', effective);
+  // 扩展选了预设 / 自定义调色板（theme.js extensionPalette 非 fushi/app）时，弹窗的 --md-* 等
+  // 颜色项按同一款调色板覆盖，与设置页 / 侧边栏 / 字幕覆盖层同色；跟随 Fushi 时照旧吃 app 的。
+  if (window.fushiTheme && typeof window.fushiTheme.applyPopupPalette === 'function') {
+    window.fushiTheme.applyPopupPalette(c, effective);
+  }
   // 多列词典（masonry）根因修：popup.js 的 dictColumns() 与 updateEffectiveDictColumns()
   // 都从 document.documentElement 读 --dict-columns（in-app 时 documentElement 就是弹窗自身
   // 文档，注入在那里）。扩展里弹窗挂在宿主页的 shadow root，上面把 --dict-columns 连同其它
@@ -2586,6 +2591,12 @@ function fushiApplyTheme(c, theme, applyBox) {
   // BUG-2284：墨水屏「瞬时滚动」随 theme 下发（app popupInstantScroll）→ 设同名全局供
   // popup.js 的 wheel 监听器读（滚轮改成每次跳固定距离）。缺该 key = 旧 app，保持关闭。
   window.__fushiPopupInstantScroll = theme['--fushi-instant-scroll'] === '1';
+  // 瞬时滚动的滚轮步长（占视口比例）随 theme 下发（app popupInstantScrollWheelStep）→
+  // 设同名全局；popup.js 侧非法/缺失回退到自己的常量（缺该 key = 旧 app，行为不变）。
+  {
+    const step = parseFloat(theme['--fushi-instant-scroll-wheel-step']);
+    window.__fushiPopupInstantScrollWheelStep = (isFinite(step) && step > 0) ? step : undefined;
+  }
   // BUG-2397：「音调去重」随 theme 下发（app deduplicatePitchAccents）→ 设同名全局供
   // popup.js 的 createPitchSection 去重分支读（content/popup 同隔离世界共享 window）。
   // 扩展侧此前**从未有人给它赋值**，恒 undefined = falsy，于是无论用户在 app 里怎么设，

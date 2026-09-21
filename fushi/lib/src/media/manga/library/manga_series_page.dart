@@ -41,6 +41,7 @@ import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:path/path.dart' as p;
+import 'package:url_launcher/url_launcher.dart';
 
 /// 作品页要显示**哪一部**作品。
 ///
@@ -122,9 +123,13 @@ class MangaSeriesPage extends ConsumerStatefulWidget {
     super.key,
     this.ocrEnginesOverride,
     this.lensDisclosureOverride,
+    this.openExternal,
   });
 
   final MangaSeriesTarget target;
+
+  /// 测试缝：「在网站打开」默认用系统浏览器（[launchUrl]）。
+  final Future<void> Function(Uri url)? openExternal;
 
   /// 测试缝：「识别本章 / 识别全部已下载」的引擎集合（null = 生产装配
   /// `MangaOcrWizardEngines.resolve`）。
@@ -631,6 +636,33 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         ),
       ),
     );
+  }
+
+  /// 「在网站打开」：作品在源站的网页（扩展的 `getMangaUrl`，兜底 baseUrl + url）
+  /// 交给系统浏览器。打不开浏览器不算本页错误，只提示。
+  Future<void> _openWebsite(
+    OnlineMangaWebUrlCapable adapter,
+    OnlineMangaLibraryEntry entry,
+  ) async {
+    final Uri? url = await adapter.webUrl(entry);
+    if (!mounted) return;
+    if (url == null) {
+      FushiToast.show(
+        msg: t.mihon_source_website_unavailable,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    try {
+      await (widget.openExternal ?? _launchExternal)(url);
+    } on Object catch (error) {
+      if (!mounted) return;
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    }
+  }
+
+  static Future<void> _launchExternal(Uri url) async {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _loginToSource(OnlineMangaLoginTarget target) async {
@@ -1364,10 +1396,19 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     final String title = entry?.series.title ?? _row?.title ?? t.manga_library;
     final bool canSubscribe = entry != null && _row != null && _service != null;
     final OnlineMangaLoginTarget? login = _loginTarget;
+    final Object? adapter = _adapter;
     return FushiPageScaffold(
       title: title,
       subtitle: _subtitle(),
       actions: <Widget>[
+        // 源站网页入口：只有在线源（Mihon）有网页可去，本地卷 / 互联对端没有。
+        if (entry != null && adapter is OnlineMangaWebUrlCapable)
+          IconButton(
+            key: const ValueKey<String>('manga_series_open_website'),
+            tooltip: t.mihon_source_website_open,
+            onPressed: () => unawaited(_openWebsite(adapter, entry)),
+            icon: const Icon(Icons.open_in_new),
+          ),
         // 源站要登录才给锁章（BUG-2497）：入口放在用户看到「锁」的这一页，
         // 不必先点一条锁章再从弹窗里找。
         if (login != null)

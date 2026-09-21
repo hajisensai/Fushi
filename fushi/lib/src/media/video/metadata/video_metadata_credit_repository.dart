@@ -2,6 +2,8 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show isMalPlaceholderImageUrl;
 
 class VideoMetadataIdentitySummary {
   const VideoMetadataIdentitySummary({
@@ -180,7 +182,7 @@ class VideoMetadataCreditRepository {
       name: row.name,
       originalName: row.originalName,
       biography: row.biography,
-      profileUrl: row.profileUrl,
+      profileUrl: _dropPlaceholder(row.profileUrl),
       profilePath: row.profilePath,
       identities: _identities(
         await _database.getVideoMetadataProviderIdentities(
@@ -189,6 +191,12 @@ class VideoMetadataCreditRepository {
       ),
     );
   }
+
+  /// 存量库里已落的 Jikan 问号占位图（BUG-2612 ⑤ 之前原样入库）：写侧 upsert 现在
+  /// 只补空，旧占位 URL 不会被 null 覆盖、重刮也清不掉，读侧归 null 才能让 UI 走
+  /// 角色图 / 占位回退。
+  static String? _dropPlaceholder(String? url) =>
+      url == null || isMalPlaceholderImageUrl(url) ? null : url;
 
   Future<VideoMetadataCharacterSummary?> _readCharacter(
     String characterKey,
@@ -200,7 +208,7 @@ class VideoMetadataCreditRepository {
       characterKey: row.characterKey,
       name: row.name,
       description: row.description,
-      imageUrl: row.imageUrl,
+      imageUrl: _dropPlaceholder(row.imageUrl),
       imagePath: row.imagePath,
       identities: _identities(
         await _database.getVideoMetadataProviderIdentities(
