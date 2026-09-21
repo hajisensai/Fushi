@@ -68,8 +68,13 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerViewMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderViewMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              // Persist the structural mode before asking the live reader to
+              // reload.  The setter is asynchronous; firing the reload first
+              // lets the WebView rebuild with the previous mode (especially
+              // visible on iOS where the old vertical paged shell remains on
+              // screen), and the later persistence callback only reapplies CSS.
+              await c.readerSource.setReaderViewMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -92,8 +97,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerWritingMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderWritingMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderWritingMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -121,8 +126,8 @@ SettingsDestination buildReadingDestination() {
               ),
             ],
             selected: (SettingsContext c) => c.readerSource.readerSpreadMode,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadMode(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadMode(v);
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -151,8 +156,8 @@ SettingsDestination buildReadingDestination() {
             ],
             selected: (SettingsContext c) =>
                 c.readerSource.readerSpreadDirection,
-            onChanged: (SettingsContext c, String v) {
-              c.readerSource.setReaderSpreadDirection(v);
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setReaderSpreadDirection(v);
               notifyReaderLayoutChanged(c);
             },
           ),
