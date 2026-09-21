@@ -203,8 +203,19 @@ mixin _LocalLibraryHostVideoMetadata on _LocalLibraryHostBase {
         VideoMetadataConflict.notPlanned,
       );
     }
+    // 先把「能不能重刮」判完再落库：控制器没接 / 作品没有身份时回 409，此时
+    // 分组锁不能已经写进去——否则对端看到失败、库里却换了 episode_group_id，
+    // 下一次任何重刮都按新分组走。
+    final VideoSourceScrapeTaskController? controller =
+        await _scrapeController?.call();
+    if (controller == null || await lookupOfWork(_db, row.id) == null) {
+      return const VideoMetadataWriteResult.conflict(
+        VideoMetadataConflict.notPlanned,
+      );
+    }
     await _runExclusive(
         () => _db.setVideoMetadataWorkEpisodeGroup(row.id, groupId));
+    // lookup 自带行上的 episodeGroupId：写完再读，重刮才按新分组走。
     final VideoMetadataLookup? lookup = await lookupOfWork(_db, row.id);
     if (lookup == null) {
       return const VideoMetadataWriteResult.conflict(

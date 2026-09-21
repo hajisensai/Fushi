@@ -300,7 +300,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 写 prefsRepo（changed=true），生效点在下一批刮削：配置快照读上限
   // （anidb_hash_config_test 咬住读偏好 / 指纹）、选图端按上限保留
   // （video_metadata_merge_test 咬住上限 / 0 不限 / 原语槽）、头像落地要联网下载。
-  'video/Posters kept per work':
+  'video/Covers kept per work':
       'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
   'video/Backdrops kept per work':
       'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',

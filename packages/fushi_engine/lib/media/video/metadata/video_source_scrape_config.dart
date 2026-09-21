@@ -27,7 +27,7 @@ const String kVideoAniDbHashEnabledPref = 'video_anidb_hash_enabled';
 
 /// 每部作品每类图保留张数上限（Shoko `TMDB.MaxAutoPosters` / `MaxAutoBackdrops`
 /// / `MaxAutoLogos`，默认都是 10；0 = 不限）。分集剧照恒 1（`MaxAutoThumbnails`）。
-const String kVideoMetadataMaxPostersPref = 'video_metadata_max_posters';
+const String kVideoMetadataMaxCoversPref = 'video_metadata_max_covers';
 const String kVideoMetadataMaxBackdropsPref = 'video_metadata_max_backdrops';
 const String kVideoMetadataMaxLogosPref = 'video_metadata_max_logos';
 const int kVideoMetadataDefaultMaxImages = 10;
@@ -107,14 +107,14 @@ class VideoSourceScrapeGlobalConfig {
     this.locale = kFallbackVideoMetadataLocale,
     this.primaryProvider = kDefaultVideoMetadataPrimaryProvider,
     this.identifierWords = ScrapeIdentifierWords.empty,
-    this.maxPosters = kVideoMetadataDefaultMaxImages,
+    this.maxCovers = kVideoMetadataDefaultMaxImages,
     this.maxBackdrops = kVideoMetadataDefaultMaxImages,
     this.maxLogos = kVideoMetadataDefaultMaxImages,
     this.downloadStaffImages = false,
   });
 
-  /// 每类图保留张数（0 = 不限），见 [kVideoMetadataMaxPostersPref] 等。
-  final int maxPosters, maxBackdrops, maxLogos;
+  /// 每类图保留张数（0 = 不限），见 [kVideoMetadataMaxCoversPref] 等。
+  final int maxCovers, maxBackdrops, maxLogos;
 
   /// 见 [kVideoMetadataStaffImagesPref]。
   final bool downloadStaffImages;
@@ -122,7 +122,7 @@ class VideoSourceScrapeGlobalConfig {
   /// 图种 → 上限，喂 `selectVideoMetadataImages(maxPerKind:)`。
   Map<VideoMetadataImageKind, int> get maxImagesPerKind =>
       <VideoMetadataImageKind, int>{
-        VideoMetadataImageKind.cover: maxPosters,
+        VideoMetadataImageKind.cover: maxCovers,
         VideoMetadataImageKind.backdrop: maxBackdrops,
         VideoMetadataImageKind.logo: maxLogos,
       };
@@ -167,7 +167,7 @@ class VideoSourceScrapeGlobalConfig {
         locale,
         primaryProvider.name,
         identifierWords.source,
-        maxPosters,
+        maxCovers,
         maxBackdrops,
         maxLogos,
         downloadStaffImages,
@@ -244,7 +244,7 @@ class VideoSourceScrapeGlobalConfig {
         preferences.getPref(kVideoMetadataIdentifierWordsPref, defaultValue: '')
             as String,
       ).identifierWords,
-      maxPosters: readLimit(kVideoMetadataMaxPostersPref),
+      maxCovers: readLimit(kVideoMetadataMaxCoversPref),
       maxBackdrops: readLimit(kVideoMetadataMaxBackdropsPref),
       maxLogos: readLimit(kVideoMetadataMaxLogosPref),
       downloadStaffImages: preferences.getPref(kVideoMetadataStaffImagesPref,

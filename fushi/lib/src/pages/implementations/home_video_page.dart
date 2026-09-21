@@ -6896,10 +6896,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       );
       return;
     }
-    final VideoPendingScrapeWork? chosen = planned.length == 1
-        ? planned.single
-        : await _pickCollectionScrapeWork(planned);
-    if (chosen == null || !mounted) return;
+    // 备选排序（episode group）是**合集级剧集单元**的事：计划器把合集拆成 N 个
+    // `book:<uid>` 成员单元时（BUG-2433），每个成员各是一部作品，没有「这部剧
+    // 的季集划分」可选——这时拿合集级 work.id 去写分组锁、再按成员 stableKey
+    // 重刮，会把合集的 TMDB 身份静默写到成员单元上。
+    final VideoPendingScrapeWork? chosen = planned
+        .where((VideoPendingScrapeWork u) => u.work.collection != null)
+        .firstOrNull;
+    if (!mounted) return;
+    if (chosen == null) {
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_unavailable,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
     bool changed = false;
     try {
       changed = await chooseVideoTmdbOrdering(

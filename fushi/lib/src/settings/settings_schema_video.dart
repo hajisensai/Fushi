@@ -921,8 +921,8 @@ SettingsDestination buildVideoDestination() {
           for (final (String key, String title, IconData icon) limit
               in <(String, String, IconData)>[
             (
-              kVideoMetadataMaxPostersPref,
-              t.video_metadata_max_posters,
+              kVideoMetadataMaxCoversPref,
+              t.video_metadata_max_covers,
               Icons.image_outlined
             ),
             (
