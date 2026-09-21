@@ -466,6 +466,51 @@ void main() {
     );
   });
 
+  // Shoko 对 UserVerified：钉死成员的 AniDB 集退出来源池、钉到的 TMDB 集退出
+  // 候选池——否则同单元里更靠前的自动链接成员照样链到用户钉死的那一格，落库
+  // 先到先得时钉死静默丢失（警告里却写着「本轮不改」）。
+  test('a user-pinned binding is not stolen by an earlier auto-linked member',
+      () async {
+    final _MalProvider mal = _MalProvider();
+    final _TmdbProvider tmdb = _TmdbProvider();
+    DateTime aired(int tmdbEpisode) =>
+        DateTime.parse('${_TmdbProvider.tybwAirDate(tmdbEpisode)}T00:00:00Z');
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      // 成员顺序在前，身份说是第 1 集 → 自动链接会落到 S2E41 → 卡片 (5, 1)。
+      'Bleach S17E41.mkv':
+          _identity(1, 'The Calamity', 'Kashin', '禍進', airedAt: aired(41)),
+      // 用户把这个文件钉死为第 5 季第 1 集——正是上面那一格。
+      'Bleach S17E42.mkv':
+          _identity(2, 'Ashes of the Quincy', '', '', airedAt: aired(42)),
+    });
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('book-1'),
+      title: const Value<String>('Bleach'),
+      videoPath: Value<String>(p.join(directory.path, 'Bleach S17E42.mkv')),
+    ));
+    await db.setVideoEpisodeBindingOverride('book-1',
+        seasonNumber: 5, episodeNumber: 1);
+    final SourceScrapeReport report = await scrape(
+      mal,
+      tmdb,
+      fileNames: <String>['Bleach S17E41.mkv', 'Bleach S17E42.mkv'],
+      hash: hash,
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    final Map<(int, int), (String?, String?)> bound = await boundEpisodes();
+    expect(bound[(5, 1)]?.$1, 'book-1', reason: '钉死的格归钉死的文件');
+    expect(
+        bound.entries
+            .where((MapEntry<(int, int), (String?, String?)> e) =>
+                e.value.$1 == 'book-0')
+            .map((MapEntry<(int, int), (String?, String?)> e) => e.key),
+        isNot(contains((5, 1))),
+        reason: '自动链接成员不得抢钉死的格');
+    final Map<(int, int), (int?, String?, String?)> xrefs =
+        await episodeXrefs();
+    expect(xrefs[(5, 1)], (302, '02', 'userVerified'));
+  });
+
   // Shoko 按 AniDB 作品建多个 series：同一播放列表里两部不同的电视剧（这里是
   // TYBW 第 1、2 cour，各自是独立 AniDB 作品）→ 拆成两个合集各自刮，原合集删除。
   test(

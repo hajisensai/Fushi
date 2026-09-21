@@ -536,6 +536,51 @@ void main() {
     });
 
     test(
+      'title catalog outage surfaces as a network exception (TMDB fallback)',
+      () async {
+        // 空缓存目录 + 下载失败：目录抛 AniDbTitleCatalogException。它不是
+        // VideoMetadataNetworkException，resolver 不会折成 providerUnavailable
+        // ——AniDB 成默认主源后整批作品会直接 failed、永远问不到 TMDB 兜底。
+        final Directory directory = await Directory.systemTemp.createTemp(
+          'fushi-anidb-catalog-outage-',
+        );
+        addTearDown(() => directory.delete(recursive: true));
+        final AniDbTitleCatalog catalog = AniDbTitleCatalog(
+          cacheDirectory: directory,
+          client: MockClient((http.Request request) async {
+            throw const SocketException('offline');
+          }),
+        );
+        addTearDown(catalog.close);
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: 'fushitest',
+          clientVersion: 7,
+          titleCatalog: catalog,
+          client: MockClient(
+            (http.Request request) async => http.Response('', 500),
+          ),
+        );
+        addTearDown(provider.close);
+
+        await expectLater(
+          provider.search(
+            const VideoMetadataSearchRequest(
+              title: 'Violet Evergarden',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ),
+          throwsA(
+            isA<VideoMetadataNetworkException>().having(
+              (VideoMetadataNetworkException e) => e.message,
+              'message',
+              contains('AniDB 标题目录不可用'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
       'serializes provider instances across client identities by endpoint',
       () async {
         final _CatalogFixture fixture = await _catalogFixture();

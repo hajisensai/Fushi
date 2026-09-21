@@ -603,6 +603,7 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   Map<(int, int), List<String>> candidateAliases =
       const <(int, int), List<String>>{},
   String? preferredLanguage,
+  Set<(int, int)> reservedCardKeys = const <(int, int)>{},
 }) {
   final Map<int, AnidbTmdbEpisodeLink> links = <int, AnidbTmdbEpisodeLink>{};
   final Map<int, AnidbTmdbEpisodeLink> specialLinks =
@@ -614,8 +615,33 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
   if (show == null || (sources.isEmpty && specialSources.isEmpty)) {
     return none();
   }
+  final bool tmdbPrimary = identical(show, primary);
+  // 卡片里已带 TMDB 分集 id 的集：`tmdb:<id>` → (季, 集)。
+  final Map<String, (int, int)> cardKeyByTmdbId = <String, (int, int)>{
+    for (final VideoMetadataSeason season in primary.seasons)
+      for (final VideoMetadataEpisode episode in season.episodes)
+        for (final String key in _tmdbEpisodeKeys(episode))
+          key: (season.seasonNumber, episode.episodeNumber),
+  };
+  // 一条 TMDB 集会落到卡片的哪个 (季, 集)（与下面成链时的换算同一口径）；
+  // 用户钉死（UserVerified）的键从候选池里移除——Shoko 同样把已 UserVerified
+  // 的 TMDB 集从候选里剔掉，自动链接不得抢用户钉的格。
+  (int, int)? cardKeyOf(VideoMetadataEpisode tmdbEpisode) {
+    if (tmdbPrimary) {
+      return (tmdbEpisode.seasonNumber, tmdbEpisode.episodeNumber);
+    }
+    for (final String key in _tmdbEpisodeKeys(tmdbEpisode)) {
+      if (cardKeyByTmdbId[key] case final (int, int) cardKey) return cardKey;
+    }
+    return _cardKeyFromSlices(primary, tmdbEpisode, slices);
+  }
+
   final List<VideoMetadataEpisode> pool = <VideoMetadataEpisode>[
-    for (final VideoMetadataSeason season in show.seasons) ...season.episodes,
+    for (final VideoMetadataSeason season in show.seasons)
+      for (final VideoMetadataEpisode episode in season.episodes)
+        if (reservedCardKeys.isEmpty ||
+            !reservedCardKeys.contains(cardKeyOf(episode)))
+          episode,
   ];
   if (pool.isEmpty) return none();
   final Map<int, TmdbEpisodeMatch> matches = sources.isEmpty
@@ -627,19 +653,11 @@ AnidbEpisodeLinkOutcome linkAnidbEpisodesToTmdb(
           candidateAliases: candidateAliases);
   if (matches.isEmpty && specialMatches.isEmpty) return none();
 
-  final bool tmdbPrimary = identical(show, primary);
   final bool preferSupplementTitle = _preferSupplementTitle(
     primary.provider,
     show.provider,
     preferredLanguage,
   );
-  // 卡片里已带 TMDB 分集 id 的集：`tmdb:<id>` → (季, 集)。
-  final Map<String, (int, int)> cardKeyByTmdbId = <String, (int, int)>{
-    for (final VideoMetadataSeason season in primary.seasons)
-      for (final VideoMetadataEpisode episode in season.episodes)
-        for (final String key in _tmdbEpisodeKeys(episode))
-          key: (season.seasonNumber, episode.episodeNumber),
-  };
   // 待补进卡片季的 TMDB 集（已重编成卡片 (季, 集)）。
   final Map<int, List<VideoMetadataEpisode>> inserts =
       <int, List<VideoMetadataEpisode>>{};

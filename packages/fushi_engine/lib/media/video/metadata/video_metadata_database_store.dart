@@ -191,6 +191,7 @@ class VideoMetadataDatabaseStore {
         const <String, AnidbEpisodeXref>{},
     AnidbAdditionalEpisodeBindings additionalEpisodeBindings =
         const <String, Map<(int, int), AnidbEpisodeXref>>{},
+    Set<String> userVerifiedBooks = const <String>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -394,7 +395,8 @@ class VideoMetadataDatabaseStore {
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
           _localEpisodeBooks(
-              localWork.members, episodeOverrides, additionalEpisodeBindings);
+              localWork.members, episodeOverrides, additionalEpisodeBindings,
+              userVerifiedBooks: userVerifiedBooks);
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -1082,15 +1084,23 @@ class VideoMetadataDatabaseStore {
     }
   }
 
-  /// 卡片 (季, 集) → 成员文件。主键先占位（一集只能有一本书、先到先得），再把
+  /// 卡片 (季, 集) → 成员文件。用户钉死（UserVerified，[userVerifiedBooks]）
+  /// 的成员最先占位，其余主键按成员顺序先到先得（一集只能有一本书），再把
   /// 一文件多集的额外键补进去（同样先到先得，不抢别的文件的主集）。
   static Map<(int, int), VideoBookRow> _localEpisodeBooks(
     Iterable<VideoBookRow> books,
     Map<String, (int, int)> episodeOverrides,
-    AnidbAdditionalEpisodeBindings additionalEpisodeBindings,
-  ) {
+    AnidbAdditionalEpisodeBindings additionalEpisodeBindings, {
+    Set<String> userVerifiedBooks = const <String>{},
+  }) {
     final Map<(int, int), VideoBookRow> result = <(int, int), VideoBookRow>{};
-    for (final VideoBookRow book in books) {
+    final List<VideoBookRow> ordered = <VideoBookRow>[
+      for (final VideoBookRow book in books)
+        if (userVerifiedBooks.contains(book.bookUid)) book,
+      for (final VideoBookRow book in books)
+        if (!userVerifiedBooks.contains(book.bookUid)) book,
+    ];
+    for (final VideoBookRow book in ordered) {
       final (int, int)? key = localEpisodeKeyFor(book, episodeOverrides);
       if (key == null) continue;
       result.putIfAbsent(key, () => book);

@@ -70,12 +70,16 @@ Map<int, TmdbEpisodeMatch> matchEpisodesToTmdb(
     _matchAgainstPool(
       sources,
       _pool(tmdbEpisodes, candidateAliases, specials: false),
+      specials: false,
     );
 
 /// 特典版：AniDB `S` 型集只在 TMDB 第 0 季池里找（Shoko `GetEpisodeList`：
-/// `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`），评分链与
-/// 正片完全相同；来源集号是特典自己的序号（`S3` → 3）。C/T/P/O 型不进任何池
-///（Shoko 同样只匹配 Episode + Special）。
+/// `IsSpecialEpisode ? tmdbSpecialEpisodes : tmdbNormalEpisodes`），评分链到
+/// `titleKinda` 为止——Shoko 对 special 关掉最近播出日（`!isSpecial &&
+/// TryNearestAirDateMatch`）与顺序兜底（`!isSpecial && … FirstAvailable`）：
+/// S0 是 OVA / 总集篇 / 短篇混排，与 AniDB `S` 序号无关，按序填进去只会错绑。
+/// 来源集号是特典自己的序号（`S3` → 3）。C/T/P/O 型不进任何池（Shoko 同样只
+/// 匹配 Episode + Special）。
 Map<int, TmdbEpisodeMatch> matchSpecialsToTmdb(
   List<TmdbEpisodeMatchSource> sources,
   Iterable<VideoMetadataEpisode> tmdbEpisodes, {
@@ -85,6 +89,7 @@ Map<int, TmdbEpisodeMatch> matchSpecialsToTmdb(
     _matchAgainstPool(
       sources,
       _pool(tmdbEpisodes, candidateAliases, specials: true),
+      specials: true,
     );
 
 List<_Candidate> _pool(
@@ -110,8 +115,9 @@ List<_Candidate> _pool(
 
 Map<int, TmdbEpisodeMatch> _matchAgainstPool(
   List<TmdbEpisodeMatchSource> sources,
-  List<_Candidate> pool,
-) {
+  List<_Candidate> pool, {
+  required bool specials,
+}) {
   final List<_Source> ordered = <_Source>[
     for (final TmdbEpisodeMatchSource source in sources) _Source(source),
   ]..sort((_Source a, _Source b) => a.source.number.compareTo(b.source.number));
@@ -145,7 +151,8 @@ Map<int, TmdbEpisodeMatch> _matchAgainstPool(
         source,
         candidates,
         anchor: _anchor(source, ordered, links),
-        allowFirstAvailable: lockedSeasons.isNotEmpty,
+        allowNearestAirDate: !specials,
+        allowFirstAvailable: !specials && lockedSeasons.isNotEmpty,
       );
       if (link == null || !accepts(pass, link.rating)) continue;
       links[source.source.number] = link;
@@ -257,6 +264,7 @@ _Link? _bestMatch(
   _Source source,
   List<_Candidate> candidates, {
   required _Anchor anchor,
+  required bool allowNearestAirDate,
   required bool allowFirstAvailable,
 }) {
   final int? anchorSeason = anchor.season;
@@ -327,8 +335,8 @@ _Link? _bestMatch(
     return _Link(dated.first.$1, TmdbEpisodeMatchRating.date);
   }
   if (kinda != null) return _Link(kinda, TmdbEpisodeMatchRating.titleKinda);
-  // 最近播出日兜底：≤120 天，且限锚定季内（不跨季）。
-  if (source.airDate != null) {
+  // 最近播出日兜底：≤120 天，且限锚定季内（不跨季）；特典池关掉。
+  if (allowNearestAirDate && source.airDate != null) {
     _Candidate? nearest;
     int nearestDiff = kTmdbEpisodeMatchMaxFallbackDays + 1;
     for (final _Candidate candidate in candidates) {

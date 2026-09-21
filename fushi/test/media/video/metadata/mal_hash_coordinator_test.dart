@@ -477,6 +477,58 @@ void main() {
         <String>['book-1']);
   });
 
+  // 身份优先级：已确认 / 已落库 / NFO / 路径显式 id 在哈希之前。成员分属多个
+  // AniDB 作品时只有「哈希决定身份」才拆；用户手动指定了作品（物语系列 / 多
+  // cour 番天然多 aid）就保持该身份、不删合集、不拆分，只报一条说明。
+  test(
+      'hash different anime keeps a confirmed identity and never splits the playlist',
+      () async {
+    final SourceLibraryRow source = await _source(db, directory, count: 2);
+    final int collectionId = (await db.getAllMediaCollections()).single.id;
+    final _HashService hash = _HashService(results: <AnidbHashIdentityResult>[
+      _matched(malIds: <int>{42}),
+      _matched(aid: 101),
+    ]);
+    final _Provider mal = _Provider(VideoMetadataProviderKind.mal);
+    final _Provider tmdb = _Provider(VideoMetadataProviderKind.tmdb);
+    final SourceScrapeReport report =
+        await coordinator(mal, tmdb, hash).rescrapeWorkWithLookup(
+      source: source,
+      workTitle: 'Show',
+      workStableKey: 'collection:$collectionId',
+      lookup: const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.tv),
+      cancellationToken: VideoSourceScrapeCancellationToken(),
+      onProgress: (_) {},
+    );
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(report.pendingConfirmations, 0);
+    expect(mal.fetchedIds, <String>['42'], reason: '手动指定的身份不得被哈希换掉');
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections.map((MediaCollectionRow c) => c.name), <String>['Show'],
+        reason: '不拆分、不删用户的合集');
+    expect(
+        (await db.getCollectionItems(collectionId))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-0', 'book-1']);
+    final VideoMetadataWorkRow work =
+        (await db.getVideoMetadataWorkByCollection(collectionId))!;
+    final Map<String, String> ids = <String, String>{
+      for (final VideoMetadataProviderIdentityRow id
+          in await db.getVideoMetadataProviderIdentities(workId: work.id))
+        id.provider: id.externalId,
+    };
+    expect(ids['mal'], '42');
+    expect(ids.containsKey('anidb'), isFalse, reason: '冲突时不写 AniDB 交叉引用');
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message),
+        anyElement(allOf(contains('分属多部 AniDB 作品'), contains('未拆分'))));
+    expect(report.warnings.map((SourceScrapeIssue w) => w.message),
+        isNot(anyElement(contains('拆开各自刮削'))));
+  });
+
   // 对齐 Shoko（BUG-2586）：anime-lists 一对多不是「作品悬空」——AniDB 身份已
   // 成立，只是 MAL 要选。候选按 id 拉出来交人工，没有确认回调就留待确认。
   test('hash mapping ambiguity offers the mapped MAL entries as candidates',

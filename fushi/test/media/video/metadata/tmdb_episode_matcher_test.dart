@@ -136,6 +136,42 @@ void main() {
     );
   });
 
+  test(
+      'specials never take the nearest-air-date or first-available fallbacks '
+      '(Shoko: !isSpecial gates both)', () {
+    final List<VideoMetadataEpisode> show = <VideoMetadataEpisode>[
+      ..._show,
+      _tmdb(0, 2, 'Making Of', '2024-06-15'),
+      _tmdb(0, 3, 'Cast Talk', '2024-06-22'),
+    ];
+    final Map<int, TmdbEpisodeMatch> matches = matchSpecialsToTmdb(
+      <TmdbEpisodeMatchSource>[
+        // S1 标题 + 播出日都对上 → 锁定第 0 季。
+        _src(1, <String>['Recap Special'], '2024-06-01'),
+        // S2 什么都没对上、播出日离 S0E2 只差 5 天：正片池会 dateKinda，特典池
+        // 不许——S0 是 OVA / 总集篇混排，与 AniDB S 序号无关。
+        _src(2, <String>['???'], '2024-06-10'),
+        // S3 无播出日：正片池锁季后会顺序兜底到下一集，特典池不许。
+        _src(3, <String>['!!!']),
+      ],
+      show,
+    );
+    expect(matches[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+    expect(matches.containsKey(2), isFalse, reason: '特典不吃最近播出日兜底');
+    expect(matches.containsKey(3), isFalse, reason: '特典不吃顺序兜底');
+    // 对照：同样的来源放进正片池（S2 剧集）确实会走这两级兜底。
+    final Map<int, TmdbEpisodeMatch> regular = matchEpisodesToTmdb(
+      <TmdbEpisodeMatchSource>[
+        _src(1, <String>['Return'], '2025-07-06'),
+        _src(2, <String>['???'], '2025-07-17'),
+        _src(3, <String>['!!!']),
+      ],
+      _show,
+    );
+    expect(regular[2]?.rating, TmdbEpisodeMatchRating.dateKinda);
+    expect(regular[3]?.rating, TmdbEpisodeMatchRating.firstAvailable);
+  });
+
   group('merge helpers', () {
     VideoMetadataWork tmdbWork() => VideoMetadataWork(
           provider: VideoMetadataProviderKind.tmdb,
@@ -331,6 +367,30 @@ void main() {
         );
         expect(outcome.links[4]?.cardKey, (2, 4));
         expect(outcome.links[4]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+      });
+
+      // Shoko 对 UserVerified：用户钉死的 TMDB 集从候选池移除，自动链接不得
+      // 抢用户钉的格。
+      test('reserved (user-verified) card keys leave the candidate pool', () {
+        final AnidbEpisodeLinkOutcome direct = linkAnidbEpisodesToTmdb(
+          tmdbWork(),
+          null,
+          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
+          reservedCardKeys: <(int, int)>{(2, 4)},
+        );
+        expect(direct.links[4]?.cardKey, isNot((2, 4)),
+            reason: 'S2E4 已被用户钉给别的文件');
+        // 切片形态（卡片键经映射表换算）同样按卡片键剔除：S2E2 → cour (1, 1)。
+        final AnidbEpisodeLinkOutcome sliced = linkAnidbEpisodesToTmdb(
+          cour(),
+          tmdbWork(),
+          <TmdbEpisodeMatchSource>[
+            _src(1, <String>['The Calamity', '禍進譚'], '2025-07-13'),
+          ],
+          slices: slices,
+          reservedCardKeys: <(int, int)>{(1, 1)},
+        );
+        expect(sliced.links[1]?.cardKey, isNot((1, 1)));
       });
 
       test('no slice for the matched TMDB season → link without a card key',

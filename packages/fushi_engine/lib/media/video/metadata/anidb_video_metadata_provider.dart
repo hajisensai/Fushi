@@ -149,10 +149,18 @@ class AniDbVideoMetadataProvider
     VideoMetadataSearchRequest request,
   ) async {
     _ensureOpen();
-    final List<AniDbTitleSearchResult> matches = await _titleCatalog.search(
-      request.title,
-      limit: request.limit,
-    );
+    final List<AniDbTitleSearchResult> matches;
+    try {
+      matches = await _titleCatalog.search(request.title, limit: request.limit);
+    } on AniDbTitleCatalogException catch (error) {
+      // 目录拿不到（首次下载失败 / 24h 冷却 / anidb.net 不可达）是传输层故障，
+      // 不是「没搜到」：折成网络异常，resolver 才会记 providerUnavailable 并
+      // 继续问链上的 TMDB 兜底，而不是整批作品 failed（AniDB 成默认主源后这条
+      // 是升级即触发的退化）。
+      throw VideoMetadataNetworkException(
+        'AniDB 标题目录不可用：${error.message}',
+      );
+    }
     return <VideoMetadataWork>[
       for (final AniDbTitleSearchResult match in matches)
         _catalogWork(
