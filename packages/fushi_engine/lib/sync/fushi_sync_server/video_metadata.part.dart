@@ -8,6 +8,8 @@ part of '../fushi_sync_server.dart';
 /// | POST | `/api/library/metadata/candidates` | 7a：`{key, query}` → 候选列表 |
 /// | POST | `/api/library/metadata/scrape` | 7a：`{key, lookup}` → host 重刮 |
 /// | PUT  | `/api/library/metadata` | 7b：`{key, lookup, work, replaceIdentity}` → host 落库 |
+/// | POST | `/api/library/metadata/episode-groups` | `{key}` → TMDB 备选排序清单 + 当前选定 |
+/// | POST | `/api/library/metadata/episode-group` | `{key, groupId?}` → host 选定排序并重刮 |
 ///
 /// 鉴权走中间件（无豁免）。host 不实现 [VideoMetadataHost] → 404（老 host 天然如此，
 /// client 静默跳过）。可解释拒绝回 409 + [VideoMetadataWriteResult] JSON；坏 JSON /
@@ -107,6 +109,44 @@ extension _FushiSyncServerVideoMetadata on FushiSyncServer {
       final VideoMetadataWriteResult result =
           await host.scrapeVideoMetadata(key: key, lookup: lookup);
       return _writeResultResponse(result);
+    }
+
+    // TMDB 备选排序（Shoko PreferredAlternateOrderingID）：host 不实现该可选能力
+    // → 404，客户端归一成「对端不支持」。
+    if (reqPath == '/api/library/metadata/episode-groups' ||
+        reqPath == '/api/library/metadata/episode-group') {
+      if (method != 'POST') return shelf.Response(405);
+      final Object? orderingService = _libraryService;
+      if (orderingService is! VideoMetadataOrderingHost) {
+        return shelf.Response.notFound('Video metadata ordering host off');
+      }
+      final VideoMetadataOrderingHost ordering = orderingService;
+      final Map<String, dynamic>? json = await readJsonObjectBody(request);
+      if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+      final VideoMetadataWorkKey key;
+      try {
+        key = VideoMetadataWorkKey.fromJson(json['key']);
+      } on FormatException catch (e) {
+        return shelf.Response(400, body: 'Invalid body: $e');
+      }
+      if (reqPath.endsWith('/episode-groups')) {
+        final VideoMetadataEpisodeGroupListing? listing =
+            await ordering.listVideoMetadataEpisodeGroups(key: key);
+        if (listing == null) {
+          return _writeResultResponse(const VideoMetadataWriteResult.conflict(
+            VideoMetadataConflict.ambiguousWork,
+          ));
+        }
+        return jsonResponse(listing.toJson());
+      }
+      final Object? groupId = json['groupId'];
+      if (groupId != null && groupId is! String) {
+        return shelf.Response(400, body: 'Invalid body: groupId');
+      }
+      return _writeResultResponse(await ordering.setVideoMetadataEpisodeGroup(
+        key: key,
+        groupId: groupId as String?,
+      ));
     }
 
     return shelf.Response.notFound('Not found');

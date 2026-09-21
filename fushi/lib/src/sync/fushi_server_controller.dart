@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -65,6 +66,7 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
         _database = database,
@@ -74,6 +76,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _historyServiceFactory = historyServiceFactory,
         _libraryServiceFactory = libraryServiceFactory,
         _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
         // per-platform service so mobile hosts advertise their model, not
@@ -91,6 +94,10 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
+  /// 走，行为与接线前一致。
+  final PrefStore Function()? _prefsStore;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -369,6 +376,9 @@ class FushiSyncServerController extends ChangeNotifier {
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: deviceName,
+      // 引擎按请求实时读的 host 偏好（目前只有「允许为对端转码视频」）：传仓库本体
+      // 而不是启动时的快照，用户在设置里改完不必重启互联服务。
+      prefs: _prefsStore?.call(),
       // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
       // FFI engine so the browser extension's rewritten <img> GET can fetch
       // them. Null-safe: before the engine is initialised it yields null and

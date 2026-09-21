@@ -7,14 +7,18 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart'
+    show AnidbEpisodeInfo;
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 /// AniDB 明确下发的封禁（HTTP 200 + `<error>banned</error>`）。
@@ -28,7 +32,15 @@ class AniDbBannedException extends VideoMetadataNetworkException {
 typedef AniDbProviderNow = DateTime Function();
 typedef AniDbProviderSleep = Future<void> Function(Duration duration);
 
-class AniDbVideoMetadataProvider implements VideoMetadataProvider {
+/// anime XML 的磁盘缓存目录（Shoko `AnimeDoc_{aid}.xml` + `MinimumHoursToRedownloadAnimeInfo`
+/// 24h）：进程重启不重拉、封禁期间还能读旧 XML。
+typedef AniDbXmlCacheDirectory = Future<Directory> Function();
+
+class AniDbVideoMetadataProvider
+    implements
+        VideoMetadataProvider,
+        VideoMetadataEpisodeAliasProvider,
+        VideoMetadataRelationsProvider {
   AniDbVideoMetadataProvider({
     String clientName = '',
     int? clientVersion,
@@ -42,7 +54,9 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     AniDbProviderSleep? sleep,
     Duration apiRequestInterval = const Duration(seconds: 3),
     bool? shareRequestGate,
+    AniDbXmlCacheDirectory? xmlCacheDirectory,
   })  : assert(client == null || transport == null),
+        _xmlCacheDirectory = xmlCacheDirectory,
         _clientName = clientName.trim().toLowerCase(),
         _clientVersion = clientVersion,
         // AniDB forbids rapid retries. Every real retry must re-enter this
@@ -98,6 +112,7 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
   final AniDbProviderSleep _sleep;
   final _AniDbRequestGate _requestGate;
   final Duration apiRequestInterval;
+  final AniDbXmlCacheDirectory? _xmlCacheDirectory;
   final Map<int, _AniDbAnimeCacheEntry> _animeCache =
       <int, _AniDbAnimeCacheEntry>{};
   bool _closed = false;
@@ -134,10 +149,18 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     VideoMetadataSearchRequest request,
   ) async {
     _ensureOpen();
-    final List<AniDbTitleSearchResult> matches = await _titleCatalog.search(
-      request.title,
-      limit: request.limit,
-    );
+    final List<AniDbTitleSearchResult> matches;
+    try {
+      matches = await _titleCatalog.search(request.title, limit: request.limit);
+    } on AniDbTitleCatalogException catch (error) {
+      // 目录拿不到（首次下载失败 / 24h 冷却 / anidb.net 不可达）是传输层故障，
+      // 不是「没搜到」：折成网络异常，resolver 才会记 providerUnavailable 并
+      // 继续问链上的 TMDB 兜底，而不是整批作品 failed（AniDB 成默认主源后这条
+      // 是升级即触发的退化）。
+      throw VideoMetadataNetworkException(
+        'AniDB 标题目录不可用：${error.message}',
+      );
+    }
     return <VideoMetadataWork>[
       for (final AniDbTitleSearchResult match in matches)
         _catalogWork(
@@ -200,6 +223,7 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
         anime,
         _mergedTitles(anime.titles, catalogRecord, animeId: anime.animeId),
       ),
+      if (anime.specials.isNotEmpty) _mapSpecials(anime),
     ];
   }
 
@@ -209,7 +233,8 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     required int seasonNumber,
   }) async {
     final int animeId = _validateLookup(lookup);
-    if (lookup.mediaKind == VideoMetadataMediaKind.movie || seasonNumber != 1) {
+    if (lookup.mediaKind == VideoMetadataMediaKind.movie ||
+        (seasonNumber != 1 && seasonNumber != 0)) {
       return const <VideoMetadataEpisode>[];
     }
     if (isBanned) {
@@ -229,19 +254,20 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
         'AniDB episode metadata is unavailable',
       );
     }
-    return List<VideoMetadataEpisode>.unmodifiable(anime.episodes);
+    return List<VideoMetadataEpisode>.unmodifiable(
+        seasonNumber == 0 ? anime.specials : anime.episodes);
   }
 
   Future<_AniDbAnime?> _anime(int animeId) async {
     _ensureOpen();
-    if (!isHttpApiAvailable) return null;
+    if (!isHttpApiAvailable && _xmlCacheDirectory == null) return null;
     final DateTime now = _now();
     final _AniDbAnimeCacheEntry? cached = _animeCache[animeId];
     if (cached != null && now.isBefore(cached.expiresAt)) {
       return cached.value;
     }
     _animeCache.remove(animeId);
-    final Future<_AniDbAnime?> loading = _downloadAnime(animeId);
+    final Future<_AniDbAnime?> loading = _loadAnime(animeId);
     final _AniDbAnimeCacheEntry entry = _AniDbAnimeCacheEntry(
       value: loading,
       expiresAt: now.add(_animeCacheTtl),
@@ -257,7 +283,62 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     }
   }
 
-  Future<_AniDbAnime?> _downloadAnime(int animeId) async {
+  /// Shoko `AnidbService.GetAnime` 的取数顺序：磁盘 XML 未过 24h 直接用；过期
+  /// 才远程；远程失败（含封禁）回旧 XML；都没有才空。
+  Future<_AniDbAnime?> _loadAnime(int animeId) async {
+    final File? cacheFile = await _xmlCacheFile(animeId);
+    _AniDbAnime? stale;
+    if (cacheFile != null && await cacheFile.exists()) {
+      try {
+        final bool fresh =
+            _now().difference((await cacheFile.stat()).modified) <
+                _animeCacheTtl;
+        final _AniDbAnime? parsed =
+            _parseAnime(animeId, await cacheFile.readAsString());
+        if (parsed != null && (fresh || !isHttpApiAvailable)) return parsed;
+        stale = parsed;
+      } on Object {
+        // 坏缓存当没有：下面照常远程。
+      }
+    }
+    if (!isHttpApiAvailable) return stale;
+    final String? xml;
+    try {
+      xml = await _downloadAnimeXml(animeId);
+    } on VideoMetadataNetworkException {
+      if (stale != null) return stale;
+      rethrow;
+    }
+    if (xml == null) return null;
+    final _AniDbAnime? anime;
+    try {
+      anime = _parseAnime(animeId, xml);
+    } on AniDbBannedException {
+      if (stale != null) return stale;
+      rethrow;
+    }
+    if (anime != null && cacheFile != null) {
+      try {
+        await cacheFile.parent.create(recursive: true);
+        await cacheFile.writeAsString(xml, flush: true);
+      } on FileSystemException {
+        // 缓存写不进去不影响本次结果。
+      }
+    }
+    return anime;
+  }
+
+  Future<File?> _xmlCacheFile(int animeId) async {
+    final AniDbXmlCacheDirectory? directory = _xmlCacheDirectory;
+    if (directory == null) return null;
+    try {
+      return File(p.join((await directory()).path, 'AnimeDoc_$animeId.xml'));
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<String?> _downloadAnimeXml(int animeId) async {
     // Keep this check adjacent to the request as a fail-closed guard. Neither
     // an empty/incomplete identity nor Shoko's identities may reach httpapi.
     final int? clientVersion = _clientVersion;
@@ -287,7 +368,104 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       if (error.statusCode == 404) return null;
       rethrow;
     }
-    return _parseAnime(animeId, response.body);
+    return response.body;
+  }
+
+  // ── Shoko 式补充能力：集名别名 / 前传关系 / 按 eid 的集信息 ─────────────
+
+  /// 每集的全部语言标题（en / x-jat / ja / 资料语言…），喂 TMDB 逐集链接的来源
+  /// 集与候选别名。季 0 = `S` 型特典。
+  @override
+  Future<Map<int, List<String>>> fetchEpisodeTitleAliases(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async {
+    final int animeId = _validateLookup(lookup);
+    if (seasonNumber != 0 && seasonNumber != 1) {
+      return const <int, List<String>>{};
+    }
+    final _AniDbAnime? anime = await _anime(animeId);
+    if (anime == null) return const <int, List<String>>{};
+    final List<VideoMetadataEpisode> episodes =
+        seasonNumber == 0 ? anime.specials : anime.episodes;
+    return <int, List<String>>{
+      for (final VideoMetadataEpisode episode in episodes)
+        if (_episodeIdOf(episode) case final int eid)
+          if (anime.episodeTitles[eid] case final List<AniDbTitle> titles
+              when titles.isNotEmpty)
+            episode.episodeNumber: metadataUniqueStrings(<String?>[
+              for (final AniDbTitle title in titles) title.value,
+            ]),
+    };
+  }
+
+  /// `<relatedanime type="Prequel">`（Shoko `TmdbSearchService` 沿前传链回溯到
+  /// 根作品再搜 TMDB 剧）。
+  @override
+  Future<List<VideoMetadataLookup>> fetchPrequels(
+    VideoMetadataLookup lookup,
+  ) async {
+    final int animeId = _validateLookup(lookup);
+    final _AniDbAnime? anime = await _anime(animeId);
+    if (anime == null) return const <VideoMetadataLookup>[];
+    return <VideoMetadataLookup>[
+      for (final int prequel in anime.prequelIds)
+        VideoMetadataLookup(
+          provider: providerKind,
+          externalId: '$prequel',
+          mediaKind: lookup.mediaKind,
+        ),
+    ];
+  }
+
+  /// anime XML 里某一集（Episode / Special）的信息：集号、播出日、三语集名——与
+  /// UDP `EPISODE` 同形，供哈希身份服务优先从 XML 取、拿不到再走 UDP。
+  /// 集不在这部作品里 / XML 拿不到 → null。
+  Future<AnidbEpisodeInfo?> episodeInfo({
+    required int animeId,
+    required int episodeId,
+  }) async {
+    if (animeId <= 0 || episodeId <= 0) return null;
+    final _AniDbAnime? anime;
+    try {
+      anime = await _anime(animeId);
+    } on VideoMetadataNetworkException {
+      return null;
+    }
+    if (anime == null) return null;
+    for (final VideoMetadataEpisode episode in <VideoMetadataEpisode>[
+      ...anime.episodes,
+      ...anime.specials,
+    ]) {
+      if (_episodeIdOf(episode) != episodeId) continue;
+      final List<AniDbTitle> titles =
+          anime.episodeTitles[episodeId] ?? const <AniDbTitle>[];
+      String pick(String language) => titles
+          .where((AniDbTitle t) => t.language.toLowerCase() == language)
+          .map((AniDbTitle t) => t.value)
+          .firstWhere((String v) => v.trim().isNotEmpty, orElse: () => '');
+      return AnidbEpisodeInfo(
+        episodeId: episodeId,
+        animeId: animeId,
+        episodeNumber: episode.seasonNumber == 0
+            ? 'S${episode.episodeNumber}'
+            : '${episode.episodeNumber}',
+        airedAt: episode.airDate == null
+            ? null
+            : DateTime.tryParse('${episode.airDate}T00:00:00Z'),
+        englishTitle: pick('en'),
+        romajiTitle: pick('x-jat'),
+        kanjiTitle: pick('ja'),
+      );
+    }
+    return null;
+  }
+
+  static int? _episodeIdOf(VideoMetadataEpisode episode) {
+    for (final VideoMetadataId id in episode.ids) {
+      if (id.type == 'anidb') return int.tryParse(id.value);
+    }
+    return null;
   }
 
   /// Serializes all AniDB HTTP calls and spaces their actual start times.
@@ -370,9 +548,40 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       _text(root.getElement('episodecount')),
     );
     final _AniDbRating rating = _parseRating(root.getElement('ratings'));
+    final Map<int, List<AniDbTitle>> episodeTitles = <int, List<AniDbTitle>>{};
     final List<VideoMetadataEpisode> episodes = _parseEpisodes(
       root.getElement('episodes'),
+      episodeTitles: episodeTitles,
     );
+    final List<VideoMetadataEpisode> specials = _parseEpisodes(
+      root.getElement('episodes'),
+      specials: true,
+      episodeTitles: episodeTitles,
+    );
+    // Shoko `CrossRef_AniDB_MAL`：AniDB 自己登记的 MAL 条目（resources type 2）。
+    final List<int> malIds = <int>[
+      for (final XmlElement resource
+          in root.getElement('resources')?.findElements('resource') ??
+              const <XmlElement>[])
+        if ((resource.getAttribute('type') ?? '').trim() == '2')
+          for (final XmlElement entity
+              in resource.findElements('externalentity'))
+            for (final XmlElement identifier
+                in entity.findElements('identifier'))
+              if (int.tryParse(identifier.innerText.trim()) case final int id
+                  when id > 0)
+                id,
+    ];
+    final List<int> prequelIds = <int>[
+      for (final XmlElement related
+          in root.getElement('relatedanime')?.findElements('anime') ??
+              const <XmlElement>[])
+        if ((related.getAttribute('type') ?? '').trim().toLowerCase() ==
+            'prequel')
+          if (int.tryParse((related.getAttribute('id') ?? '').trim())
+              case final int id when id > 0)
+            id,
+    ];
     final List<_AniDbCreator> creators = _parseCreators(
       root.getElement('creators'),
     );
@@ -408,6 +617,10 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       ]),
       credits: credits,
       episodes: episodes,
+      specials: specials,
+      malIds: malIds.toSet().toList(growable: false),
+      prequelIds: prequelIds.toSet().toList(growable: false),
+      episodeTitles: episodeTitles,
     );
   }
 
@@ -427,7 +640,10 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
     );
     final _SelectedTitles selected = _selectTitles(titles);
     final List<VideoMetadataSeason> seasons = kind == VideoMetadataMediaKind.tv
-        ? <VideoMetadataSeason>[_mapSeason(anime, titles)]
+        ? <VideoMetadataSeason>[
+            _mapSeason(anime, titles),
+            if (anime.specials.isNotEmpty) _mapSpecials(anime),
+          ]
         : const <VideoMetadataSeason>[];
     return VideoMetadataWork(
       provider: providerKind,
@@ -460,6 +676,9 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
           value: '${anime.animeId}',
           isDefault: true,
         ),
+        // MAL 只作交叉引用（Shoko CrossRef_AniDB_MAL），不是资料源。
+        for (final int malId in anime.malIds)
+          VideoMetadataId(type: 'mal', value: '$malId'),
       ],
       credits: anime.credits,
       images: <VideoMetadataImage>[
@@ -504,6 +723,17 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       episodes: anime.episodes,
     );
   }
+
+  /// AniDB `S` 型特典 → 第 0 季（TMDB 的 Specials 同一位置）。
+  VideoMetadataSeason _mapSpecials(_AniDbAnime anime) => VideoMetadataSeason(
+        seasonNumber: 0,
+        title: 'Specials',
+        episodeCount: anime.specials.length,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '${anime.animeId}'),
+        ],
+        episodes: anime.specials,
+      );
 
   VideoMetadataWork _catalogWork(
     AniDbTitleRecord record,
@@ -557,14 +787,24 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
           )
           .toList();
 
-  List<VideoMetadataEpisode> _parseEpisodes(XmlElement? parent) {
+  /// [specials] = false：正片（epno 纯数字）；true：`S` 型特典（Shoko
+  /// `EpisodeType.Special`），落第 0 季、集号取 `S` 后的序号。C/T/P/O（片头
+  /// 片尾 / 预告 / 恶搞 / 其它）两边都不取——Shoko 也只把 Episode + Special
+  /// 拿去和 TMDB 对。
+  List<VideoMetadataEpisode> _parseEpisodes(
+    XmlElement? parent, {
+    bool specials = false,
+    Map<int, List<AniDbTitle>>? episodeTitles,
+  }) {
     final Map<int, VideoMetadataEpisode> episodes =
         <int, VideoMetadataEpisode>{};
+    final RegExp shape = specials ? RegExp(r'^S(\d+)$') : RegExp(r'^(\d+)$');
+    final int seasonNumber = specials ? 0 : 1;
     for (final XmlElement element
         in parent?.findElements('episode') ?? const <XmlElement>[]) {
-      final String epno = _text(element.getElement('epno')) ?? '';
-      final RegExpMatch? numberMatch = RegExp(r'^(\d+)').firstMatch(epno);
-      if (numberMatch == null) continue; // specials use S/C/T/P/O prefixes
+      final String epno = (_text(element.getElement('epno')) ?? '').trim();
+      final RegExpMatch? numberMatch = shape.firstMatch(epno);
+      if (numberMatch == null) continue;
       final int? episodeNumber = int.tryParse(numberMatch.group(1)!);
       if (episodeNumber == null || episodeNumber <= 0) continue;
       final int? episodeId = int.tryParse(
@@ -597,16 +837,19 @@ class AniDbVideoMetadataProvider implements VideoMetadataProvider {
       );
       final String? airDate = _date(_text(element.getElement('airdate')));
       final XmlElement? ratingElement = element.getElement('rating');
+      if (episodeId != null && episodeTitles != null) {
+        episodeTitles.putIfAbsent(episodeId, () => titles);
+      }
       episodes.putIfAbsent(
         episodeNumber,
         () => VideoMetadataEpisode(
-          seasonNumber: 1,
+          seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
           title: _selectTitles(record).title,
           plot: _text(element.getElement('summary')),
           airDate: airDate,
           year: metadataYear(airDate),
-          absoluteNumber: episodeNumber,
+          absoluteNumber: specials ? null : episodeNumber,
           rating: _positiveDouble(_text(ratingElement)),
           ratingVotes: _positiveInt(ratingElement?.getAttribute('votes')),
           runtimeMinutes: _positiveInt(_text(element.getElement('length'))),
@@ -1007,7 +1250,20 @@ class _AniDbAnime {
     required this.studios,
     required this.credits,
     required this.episodes,
+    this.specials = const <VideoMetadataEpisode>[],
+    this.malIds = const <int>[],
+    this.prequelIds = const <int>[],
+    this.episodeTitles = const <int, List<AniDbTitle>>{},
   });
+
+  /// AniDB `<resources type="2">` 登记的 MAL 条目（交叉引用）。
+  final List<int> malIds;
+
+  /// `<relatedanime type="Prequel">` 的 aid。
+  final List<int> prequelIds;
+
+  /// eid → 该集全部语言标题（逐集链接与 UDP 兜底用）。
+  final Map<int, List<AniDbTitle>> episodeTitles;
 
   final int animeId;
   final String animeType;
@@ -1025,6 +1281,9 @@ class _AniDbAnime {
   final List<String> studios;
   final List<VideoMetadataCredit> credits;
   final List<VideoMetadataEpisode> episodes;
+
+  /// `S` 型特典（第 0 季）。
+  final List<VideoMetadataEpisode> specials;
 }
 
 class _AniDbAnimeCacheEntry {

@@ -346,6 +346,218 @@ void main() {
       expect(store.records.single.missAttempts, 0);
     });
   });
+
+  test('other_episodes column round-trips and tolerates garbage', () {
+    const List<AnidbEpisodeShare> shares = <AnidbEpisodeShare>[
+      AnidbEpisodeShare(episodeId: 301, percentage: 50),
+      AnidbEpisodeShare(episodeId: 302, percentage: 50),
+    ];
+    expect(encodeOtherEpisodes(const <AnidbEpisodeShare>[]), '');
+    expect(encodeOtherEpisodes(shares), '[[301,50],[302,50]]');
+    expect(decodeOtherEpisodes('[[301,50],[302,50]]'), shares);
+    expect(decodeOtherEpisodes(''), isEmpty);
+    expect(decodeOtherEpisodes('not json'), isEmpty);
+    expect(decodeOtherEpisodes('[[0,50],["x",1],[303]]'), isEmpty);
+    // 问到集信息的份额多带 epno / 播出日 / 三语集名；两种长度同列并存。
+    final List<AnidbEpisodeShare> resolved = <AnidbEpisodeShare>[
+      AnidbEpisodeShare(
+          episodeId: 301,
+          percentage: 50,
+          episodeNumber: '02',
+          airedAt: DateTime.utc(2026, 4, 25),
+          englishTitle: 'Ashes',
+          romajiTitle: 'Hai',
+          kanjiTitle: '灰'),
+      const AnidbEpisodeShare(episodeId: 302, percentage: 50),
+    ];
+    final String encoded = encodeOtherEpisodes(resolved);
+    expect(encoded,
+        '[[301,50,"02",${DateTime.utc(2026, 4, 25).millisecondsSinceEpoch},"Ashes","Hai","灰"],[302,50]]');
+    expect(decodeOtherEpisodes(encoded), resolved);
+    expect(decodeOtherEpisodes(encoded).first.isResolved, isTrue);
+    expect(decodeOtherEpisodes(encoded).first.airDate, '2026-04-25');
+    expect(decodeOtherEpisodes(encoded).first.titles,
+        <String>['Ashes', 'Hai', '灰']);
+    expect(decodeOtherEpisodes(encoded).last.isResolved, isFalse);
+  });
+
+  group('episode air date (Shoko DateAndTitle input via UDP EPISODE)', () {
+    final DateTime aired = DateTime.utc(2026, 4, 25);
+    AnimeIdentityMapping mapping() => AnimeIdentityMapping(
+        httpClient: VideoMetadataHttpClient(
+            client: MockClient((_) async =>
+                http.Response('[{"anidb_id":2,"mal_id":9}]', 200))));
+
+    AnidbHashIdentityService service(_MemoryStore store,
+        {required AnidbEpisodeLookup? episodeLookup}) {
+      final AnidbHashIdentityService s = AnidbHashIdentityService(
+        enabled: true,
+        config: config,
+        mapping: mapping(),
+        store: store,
+        hasher: (String path, {isCancelled, onProgress}) async {
+          final FileStat stat = await File(path).stat();
+          return AnidbEd2kHash(
+              ed2k: 'a',
+              size: stat.size,
+              modifiedAt: stat.modified,
+              changedAt: stat.changed);
+        },
+        lookup: ({required int size, required String ed2k}) async => identity,
+        episodeLookup: episodeLookup,
+      );
+      addTearDown(s.close);
+      return s;
+    }
+
+    test('a fresh FILE match asks EPISODE once and persists the air date',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      final List<int> asked = <int>[];
+      final AnidbHashIdentityResult result = await service(store,
+          episodeLookup: ({required int episodeId}) async {
+        asked.add(episodeId);
+        return AnidbEpisodeInfo(
+            episodeId: episodeId,
+            animeId: 2,
+            episodeNumber: 'S1',
+            airedAt: aired);
+      }).identifyFile(file.path);
+      expect(result.status, AnidbHashIdentityStatus.matched);
+      expect(asked, <int>[3], reason: '按 FILE 给的 eid 问');
+      expect(result.identity?.episodeAiredAt, aired);
+      expect(result.identity?.episodeAirDate, '2026-04-25');
+      expect(result.episodeInfoError, isNull);
+      expect(store.records.single.identity?.episodeAiredAt, aired,
+          reason: '落库的身份带播出日，下次不再问');
+    });
+
+    test('a stored identity without an air date is backfilled once', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      // v109 之前落的行：有身份、无播出日。
+      await service(store, episodeLookup: null).identifyFile(file.path);
+      expect(store.records.single.identity?.episodeAiredAt, isNull);
+      int asked = 0;
+      final AnidbHashIdentityService backfilling = service(store,
+          episodeLookup: ({required int episodeId}) async {
+        asked++;
+        return AnidbEpisodeInfo(
+            episodeId: episodeId,
+            animeId: 2,
+            episodeNumber: 'S1',
+            airedAt: aired);
+      });
+      final AnidbHashIdentityResult first =
+          await backfilling.identifyFile(file.path);
+      expect(first.fromStore, isTrue);
+      expect(first.identity?.episodeAiredAt, aired);
+      expect(store.records.single.identity?.episodeAiredAt, aired);
+      await backfilling.identifyFile(file.path);
+      expect(asked, 1, reason: '回填后持久层已有播出日，不再问');
+    });
+
+    test('EPISODE failure keeps the identity and reports episodeInfoError',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      final AnidbHashIdentityResult result = await service(store,
+              episodeLookup: ({required int episodeId}) async =>
+                  throw const AnidbUdpException(AnidbUdpFailure.timeout))
+          .identifyFile(file.path);
+      expect(result.status, AnidbHashIdentityStatus.matched,
+          reason: '身份来自 FILE，EPISODE 失败不影响身份');
+      expect(result.identity?.fileId, 1);
+      expect(result.identity?.episodeAiredAt, isNull);
+      expect(result.episodeInfoError, isA<AnidbUdpException>());
+      expect(store.records.single.identity?.episodeAiredAt, isNull,
+          reason: '留 null 让下次 sweep 再补');
+    });
+
+    test(
+        'other episodes of a multi-episode file get their number / titles / '
+        'air date from EPISODE and are persisted (one file, many episodes)',
+        () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      final List<int> asked = <int>[];
+      AnidbEpisodeInfo info(int eid) => AnidbEpisodeInfo(
+          episodeId: eid,
+          animeId: 2,
+          episodeNumber: eid == 3 ? '01' : '0${eid - 2}',
+          airedAt: aired.add(Duration(days: 7 * (eid - 3))),
+          englishTitle: 'Ep $eid',
+          romajiTitle: 'Rom $eid',
+          kanjiTitle: '');
+      final AnidbHashIdentityService s = AnidbHashIdentityService(
+        enabled: true,
+        config: config,
+        mapping: mapping(),
+        store: store,
+        hasher: (String path, {isCancelled, onProgress}) async {
+          final FileStat stat = await File(path).stat();
+          return AnidbEd2kHash(
+              ed2k: 'a',
+              size: stat.size,
+              modifiedAt: stat.modified,
+              changedAt: stat.changed);
+        },
+        lookup: ({required int size, required String ed2k}) async =>
+            identity.copyWith(otherEpisodes: const <AnidbEpisodeShare>[
+          AnidbEpisodeShare(episodeId: 4, percentage: 50),
+          AnidbEpisodeShare(episodeId: 5, percentage: 50),
+        ]),
+        episodeLookup: ({required int episodeId}) async {
+          asked.add(episodeId);
+          return episodeId == 5 ? null : info(episodeId);
+        },
+      );
+      addTearDown(s.close);
+      final AnidbHashIdentityResult result = await s.identifyFile(file.path);
+      expect(result.status, AnidbHashIdentityStatus.matched);
+      expect(asked, <int>[3, 4, 5], reason: '主集 + 其余每集各问一次');
+      final List<AnidbEpisodeShare> shares = result.identity!.otherEpisodes;
+      expect(shares.length, 2);
+      expect(shares[0].isResolved, isTrue);
+      expect(shares[0].episodeNumber, '02');
+      expect(shares[0].airDate, '2026-05-02');
+      expect(shares[0].titles, <String>['Ep 4', 'Rom 4']);
+      expect(shares[1].isResolved, isFalse, reason: '340 → 留待下次再问');
+      expect(result.identity!.hasUnresolvedOtherEpisodes, isTrue);
+      // 落库的就是补全后的份额；再看一次只补没解出的那一集。
+      expect(store.records.single.identity?.otherEpisodes, shares);
+      asked.clear();
+      await s.identifyFile(file.path);
+      expect(asked, <int>[5]);
+    });
+
+    test('340 / unknown air date leaves the identity untouched', () async {
+      final Directory dir =
+          await Directory.systemTemp.createTemp('anidb-aired-');
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      final AnidbHashIdentityResult result = await service(store,
+              episodeLookup: ({required int episodeId}) async => null)
+          .identifyFile(file.path);
+      expect(result.status, AnidbHashIdentityStatus.matched);
+      expect(result.identity?.episodeAiredAt, isNull);
+      expect(result.episodeInfoError, isNull);
+    });
+  });
 }
 
 class _MemoryStore implements AnidbFileIdentityStore {

@@ -63,6 +63,14 @@ class _AiProviderSettingsSectionState
   /// 每家拉回来的模型名（key = draft.id）。
   final Map<String, List<String>> _models = <String, List<String>>{};
 
+  /// 「模型」字段的 controller（key = draft.id）。
+  ///
+  /// 这个字段必须能被**程序**改值（从拉回来的候选里挑一个），而 `initialValue`
+  /// 只在第一次 build 生效——BUG-2618 的直接表现就是：选完候选，上面的输入框
+  /// 纹丝不动，界面上两处显示着不同的模型名，而落盘的是用户看不见的那一个。
+  final Map<String, TextEditingController> _modelControllers =
+      <String, TextEditingController>{};
+
   /// 功能 → 提供商映射的当前值（草稿与落盘同步推进，不存在中间态）。
   AiFeatureAssignments _assignments = const AiFeatureAssignments();
 
@@ -72,6 +80,9 @@ class _AiProviderSettingsSectionState
     _saveDebounce?.cancel();
     // 用户在防抖窗口内切走页面时不能把这次编辑吞掉。
     if (pending) unawaited(_saveValidDrafts());
+    for (final TextEditingController controller in _modelControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -142,7 +153,6 @@ class _AiProviderSettingsSectionState
     final _AiProviderDraft draft = _drafts[index];
     final AiProviderConfig? config = draft.toConfig();
     final _ProbeState? probe = _probes[draft.id];
-    final List<String> fetched = _models[draft.id] ?? const <String>[];
     // 内置预设的协议是厂商事实，锁死；只有「自定义」才让用户自己选。
     final bool protocolLocked = draft.presetId != kAiCustomPresetId;
     final ThemeData theme = Theme.of(context);
@@ -209,40 +219,13 @@ class _AiProviderSettingsSectionState
           SettingsFormField(
             key: ValueKey<String>('ai-provider-$index-model'),
             label: t.ai_provider_model,
-            initialValue: draft.model,
+            controller: _modelController(draft),
             hintText: t.ai_provider_model_hint,
+            // 候选长在字段自己身上，不另起一行下拉（见 [_modelPickerButton]）。
+            suffixIcon: _modelPickerButton(index, draft),
             onChanged: (String value) =>
                 _update(index, draft.copyWith(model: value)),
           ),
-          if (fetched.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: DropdownButtonFormField<String>(
-                key: ValueKey<String>('ai-provider-$index-model-picker'),
-                // 不给 isExpanded 的话下拉按最宽那条模型名撑宽，长模型名（含
-                // 组织前缀的 OpenRouter 名字）会直接把行撑出容器。
-                isExpanded: true,
-                initialValue: fetched.contains(draft.model)
-                    ? draft.model
-                    : null,
-                decoration: InputDecoration(
-                  labelText: t.ai_provider_models_fetch,
-                  isDense: true,
-                  border: const OutlineInputBorder(),
-                ),
-                items: <DropdownMenuItem<String>>[
-                  for (final String model in fetched)
-                    DropdownMenuItem<String>(
-                      value: model,
-                      child: Text(model, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
-                onChanged: (String? value) {
-                  if (value == null) return;
-                  _update(index, draft.copyWith(model: value));
-                },
-              ),
-            ),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: DropdownButtonFormField<AiWireProtocol>(
@@ -357,6 +340,95 @@ class _AiProviderSettingsSectionState
     );
   }
 
+  /// 「模型」字段的 controller（key = draft.id），随条目删除一起销毁。
+  TextEditingController _modelController(_AiProviderDraft draft) =>
+      _modelControllers.putIfAbsent(
+        draft.id,
+        () => TextEditingController(text: draft.model),
+      );
+
+  /// 贴在「模型」字段尾部的候选选择器。
+  ///
+  /// BUG-2618：此前候选是字段**外面**另起的一行下拉，于是同一个值有了两个输入
+  /// 控件——选完下拉，上面的输入框不跟着变（它吃 `initialValue`，只认第一次
+  /// build），界面当场自相矛盾，而真正落盘的偏偏是用户没在看的那一个；那行下拉
+  /// 还只在拉过一次之后才凭空出现，把字段间距顶开，标签又和下方按钮同名
+  /// （「获取模型列表」）。一个值只留一个输入控件，候选从字段自己身上出。
+  Widget _modelPickerButton(int index, _AiProviderDraft draft) {
+    final bool busy = _probes[draft.id]?.running ?? false;
+    // 地址还没填成合法 URL 时拉不了候选，直接置灰，而不是点了再报通用错误。
+    final bool ready = draft.toConfig() != null;
+    return Builder(
+      builder: (BuildContext anchor) => IconButton(
+        key: ValueKey<String>('ai-provider-$index-model-picker'),
+        tooltip: t.ai_provider_model_pick,
+        icon: busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.arrow_drop_down),
+        onPressed: ready && !busy
+            ? () => unawaited(_pickModel(anchor, draft.id))
+            : null,
+      ),
+    );
+  }
+
+  /// 弹出候选，把选中的模型写回「模型」字段。
+  ///
+  /// 还没拉过就先拉一次：用户点这个箭头的意思就是「给我看有哪些模型」，再要求他
+  /// 先去点一次下面的按钮没有任何信息增量。
+  Future<void> _pickModel(BuildContext anchor, String draftId) async {
+    int at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
+    if (at < 0) return;
+    if ((_models[draftId] ?? const <String>[]).isEmpty) {
+      await _fetchModels(_drafts[at]);
+      if (!mounted) return;
+    }
+    final List<String> fetched = _models[draftId] ?? const <String>[];
+    // 拉失败或一条都没有：原因已经在探测结果那行文案里，不再弹一个空菜单。
+    if (fetched.isEmpty || !anchor.mounted) return;
+    final RenderBox? button = anchor.findRenderObject() as RenderBox?;
+    final RenderBox? overlay =
+        Navigator.of(anchor).overlay?.context.findRenderObject() as RenderBox?;
+    if (button == null || overlay == null) return;
+    at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
+    if (at < 0) return;
+    final String current = _drafts[at].model;
+    final String? picked = await showMenu<String>(
+      context: anchor,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(
+          button.localToGlobal(Offset.zero, ancestor: overlay),
+          button.localToGlobal(
+            button.size.bottomRight(Offset.zero),
+            ancestor: overlay,
+          ),
+        ),
+        Offset.zero & overlay.size,
+      ),
+      // 按钮只有一个图标宽，菜单不跟着缩成一条——模型名普遍很长（OpenRouter 的
+      // 还带组织前缀）。
+      constraints: const BoxConstraints(minWidth: 240),
+      initialValue: fetched.contains(current) ? current : null,
+      items: <PopupMenuEntry<String>>[
+        for (final String model in fetched)
+          PopupMenuItem<String>(
+            value: model,
+            child: Text(model, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    final int now = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
+    if (now < 0) return;
+    // 字段吃的就是这只 controller，写它即所见；草稿同步推进，两者不存在中间态。
+    _modelController(_drafts[now]).text = picked;
+    _update(now, _drafts[now].copyWith(model: picked));
+  }
+
   // ---------------------------------------------------------------------------
   // 功能 → 提供商
   // ---------------------------------------------------------------------------
@@ -429,6 +501,9 @@ class _AiProviderSettingsSectionState
       // 配置变了，上一次自检结论作废——留着会让用户照着一条针对旧地址的
       // 「连接成功」去排查新地址的问题。
       _probes.remove(next.id);
+      // 模型候选同理，而且更隐蔽：箭头的语义是「没缓存才去拉」，不清的话用户改完
+      // baseUrl / apiKey / 协议再点箭头，拿到的是**旧端点**的清单且永远不会自愈。
+      _models.remove(next.id);
     });
     _saveDebounce?.cancel();
     _saveDebounce = Timer(_kSaveDebounce, () => unawaited(_saveValidDrafts()));
@@ -439,6 +514,7 @@ class _AiProviderSettingsSectionState
     setState(() {
       _probes.remove(id);
       _models.remove(id);
+      _modelControllers.remove(id)?.dispose();
       _drafts.removeAt(index);
       // 删一家提供商必须同步清理指向它的功能映射，否则映射悬空。
       _assignments = _assignments.withoutProvider(id);

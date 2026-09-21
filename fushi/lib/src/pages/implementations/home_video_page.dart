@@ -125,6 +125,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_di
     show
         showVideoMetadataCandidateSearchDialog,
         showVideoSourceScrapeManualBindingDialog;
+import 'package:fushi/src/media/video/metadata/video_tmdb_ordering_dialog.dart';
 
 /// 顶层 helper：打开本地视频播放页的**共享路由入口**（本页 hero/卡片与首页
 /// dashboard 继续卡/活动条同一条路径），统一经 [VideoFushiPage.neutralized]
@@ -957,11 +958,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         (metadataImagesByWork[workId] ??= <VideoMetadataImageRow>[]).add(image);
       }
     }
+    // 一文件多集（v110）时同一文件有多条分集行：时长按集累加。
     final Map<String, int> runtimeMinutesByBookUid = <String, int>{};
     for (final VideoMetadataEpisodeRow episode in await metadataEpisodesF) {
       if (episode.bookUid case final String uid) {
         if (episode.runtimeMinutes case final int minutes) {
-          runtimeMinutesByBookUid[uid] = minutes;
+          runtimeMinutesByBookUid[uid] =
+              (runtimeMinutesByBookUid[uid] ?? 0) + minutes;
         }
       }
     }
@@ -6864,6 +6867,73 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _refresh();
   }
 
+  /// 合集详情页「TMDB 集编排」：选一套 TMDB 备选排序（或选回默认）决定这部剧的
+  /// 季集划分（Shoko `PreferredAlternateOrderingID`）。三样事实同样问计划器要，
+  /// 写排序 + 重刮都在 [chooseVideoTmdbOrdering] 里，与 [_rescrapeCollection]
+  /// 共用同一条 `rescrapeWorkWithLookup` 管线。
+  Future<void> _chooseTmdbOrdering(MediaCollectionRow collection) async {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) return;
+    final FushiDatabase db = ref.read(appProvider).database;
+    final VideoMetadataWorkRow? work =
+        await db.getVideoMetadataWorkByCollection(collection.id);
+    if (!mounted) return;
+    if (work == null) {
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_unavailable,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final List<VideoPendingScrapeWork> planned =
+        await planScrapeWorksForCollection(db, collection.id);
+    if (!mounted) return;
+    if (planned.isEmpty) {
+      FushiToast.show(
+        msg: t.collection_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    // 备选排序（episode group）是**合集级剧集单元**的事：计划器把合集拆成 N 个
+    // `book:<uid>` 成员单元时（BUG-2433），每个成员各是一部作品，没有「这部剧
+    // 的季集划分」可选——这时拿合集级 work.id 去写分组锁、再按成员 stableKey
+    // 重刮，会把合集的 TMDB 身份静默写到成员单元上。
+    final VideoPendingScrapeWork? chosen = planned
+        .where((VideoPendingScrapeWork u) => u.work.collection != null)
+        .firstOrNull;
+    if (!mounted) return;
+    if (chosen == null) {
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_unavailable,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    bool changed = false;
+    try {
+      changed = await chooseVideoTmdbOrdering(
+        context: context,
+        database: db,
+        controller: controller,
+        source: chosen.source,
+        workTitle: chosen.work.title,
+        workStableKey: chosen.work.stableKey,
+        workId: work.id,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.chooseTmdbOrdering', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (changed && mounted) _refresh();
+  }
+
   /// 合集在刮削计划里对应多个独立作品时，让用户选一个重刮（BUG-2433）。
   ///
   /// 取消返回 null。列表项标题就是计划器给出的作品标题，与待确认队列、批次刮削
@@ -6955,7 +7025,70 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               widget.scrapeTaskController == null
           ? null
           : _scrapeCollectionForHost,
+      chooseTmdbOrderingOnHost:
+          _metadataBackend == null ? null : _chooseTmdbOrderingOnHost,
     );
+  }
+
+  /// TMDB 备选排序在 host 上选：列表从 host 拿（host 的 TMDB 配置 / 网络），选定
+  /// 后 host 写行 + 锁 + 重刮，回传 entry 落本地镜像（与 7a 同一收尾）。
+  Future<void> _chooseTmdbOrderingOnHost(MediaCollectionRow collection) async {
+    final InterconnectSyncBackend? backend = _metadataBackend;
+    if (backend == null) return;
+    VideoMetadataWorkKey key = _metadataKeyOf(collection);
+    try {
+      var listed = await backend.listRemoteVideoMetadataEpisodeGroups(key: key);
+      if (listed.conflict?.conflict == VideoMetadataConflict.ambiguousWork) {
+        if (!mounted) return;
+        final VideoMetadataWorkKey? picked =
+            await _pickRemoteWorkKey(listed.conflict!.ambiguousWorks);
+        if (picked == null) return;
+        key = picked;
+        listed = await backend.listRemoteVideoMetadataEpisodeGroups(key: key);
+      }
+      final VideoMetadataEpisodeGroupListing? listing = listed.listing;
+      if (!mounted) return;
+      if (listing == null) {
+        await _finishRemoteMetadataWrite(listed.conflict!);
+        return;
+      }
+      if (listing.groups.isEmpty && listing.current == null) {
+        FushiToast.show(
+          msg: t.collection_tmdb_ordering_none,
+          severity: ToastSeverity.info,
+        );
+        return;
+      }
+      final VideoTmdbOrderingChoice? choice = await showVideoTmdbOrderingPicker(
+        context: context,
+        groups: listing.groups,
+        initial: listing.current,
+      );
+      if (choice == null || !mounted) return;
+      FushiToast.show(
+        msg: t.collection_tmdb_ordering_saved,
+        severity: ToastSeverity.info,
+      );
+      await _finishRemoteMetadataWrite(
+        await backend.setRemoteVideoMetadataEpisodeGroup(
+          key: key,
+          groupId: choice.groupId,
+        ),
+      );
+    } on RemoteVideoMetadataUnsupported {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.remote_collection_scrape_unavailable,
+        severity: ToastSeverity.warning,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.chooseTmdbOrderingOnHost', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   // ── 互联刮削元数据（7a / 7b）────────────────────────────────────────────
@@ -7223,6 +7356,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
           // 条实现，合集语境下的重刮不再是断头路（BUG-1662 入口的 canonical 复位）。
           onRescrapeCollection:
               widget.scrapeTaskController == null ? null : _rescrapeCollection,
+          onChooseTmdbOrdering:
+              widget.scrapeTaskController == null ? null : _chooseTmdbOrdering,
         ),
       ),
     );

@@ -219,6 +219,27 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 悬停查词的收尾动作：鼠标离开字幕与查词浮层即自动关浮层 + 恢复播放，免去
+          // 「再点一下空白」。只作用于悬停发起的查词会话（点击查词不受影响），故与上面
+          // 的悬停开关同组、同走桌面门控（移动端无 OS hover，这条永远不会触发）。
+          SettingsSwitchItem(
+            id: 'lookup.resume_on_lookup_leave',
+            title: t.lookup_hover_leave_resume,
+            subtitle: t.lookup_hover_leave_resume_hint,
+            icon: Icons.play_circle_outline,
+            visible: (SettingsContext settingsContext) =>
+                DesktopLookupService.isDesktop,
+            // 不投影进阅读器快捷设置（无 ReaderPlacement）：这条只管视频页悬停查词的
+            // 收尾，阅读器正文没有「继续播放」可言。
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.resumeOnLookupLeave,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setResumeOnLookupLeave(
+                value: value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // 一等数字项：负值经 min:0 夹取（旧散装字段把负值回退成默认值——语义
           // 收敛为「非负」，正常正值写穿完全一致）。解析失败不写（新数字项契约）。
           SettingsNumberItem(

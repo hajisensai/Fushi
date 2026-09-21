@@ -27,7 +27,8 @@ const settingDefaults = Object.freeze({
   subtitleOverlayAllTracks: false,
   // 视频上字幕的半透明底板（默认开；关掉只剩描边字）。
   subtitleOverlayBackground: true,
-  // 网页视频观看时长计入 Fushi 学习统计（视频域，首次覆盖口径）。
+  // 网页视频观看时长计入 Fushi 学习统计（视频域，首次覆盖口径）；
+  // 具体什么情况才计由 studyTrackVideoCondition（selectSettings）决定。
   studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
@@ -39,6 +40,8 @@ const settingDefaults = Object.freeze({
   touchLookupHold: false,
   // 安卓没有 chrome.sidePanel：触屏设备视频页边缘的「字幕列表」抽屉（mobile-drawer.js）。
   mobileSubtitleDrawer: true,
+  // 播放器控制栏里的 Fushi 字幕按钮（player-controls.js）。关掉后视频页一个节点都不挂。
+  playerControls: true,
   videoShortcutPrevCue: true,
   videoShortcutNextCue: true,
   videoShortcutReplayCue: true,
@@ -69,6 +72,7 @@ const toggleIds = Object.freeze({
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
   mobileSubtitleDrawer: 'mobileSubtitleDrawer',
+  playerControls: 'playerControls',
   videoShortcutPrevCue: 'videoShortcutPrevCue',
   videoShortcutNextCue: 'videoShortcutNextCue',
   videoShortcutReplayCue: 'videoShortcutReplayCue',
@@ -86,6 +90,10 @@ const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.
 const selectSettings = Object.freeze({
   extensionTheme: { key: 'extensionTheme', fallback: 'auto' },
   extensionLanguage: { key: 'extensionLanguage', fallback: 'app' },
+  // 网页视频计入沉浸时间的条件（study-tracker.js 的字幕门）：
+  // fushiSubtitle = 正在用 Fushi / 外挂字幕（默认）；anySubtitle = 这个视频有字幕轨即可；
+  // always = 旧行为，任何正片都计。
+  studyTrackVideoCondition: { key: 'studyTrackVideoCondition', fallback: 'fushiSubtitle' },
 });
 
 let toastTimer = null;
@@ -633,6 +641,7 @@ const subtitleStyleFields = Object.freeze({
   subtitleStylePadding: { field: 'padding', kind: 'range' },
   subtitleStyleBoxWidth: { field: 'boxWidth', kind: 'range' },
   subtitleStyleBoxHeight: { field: 'boxHeight', kind: 'range' },
+  subtitleStyleBoxAutoFit: { field: 'boxAutoFit', kind: 'check' },
 });
 // 颜色控件的「跟随主题」态：<input type=color> 没有空值，这里用 data-auto 记住并显示主题默认色。
 const subtitleColorDefaults = SUB ? {
@@ -660,6 +669,11 @@ function applySubtitlePreviewBox() {
   if (!preview || !stage) return;
   const frame = typeof stage.getBoundingClientRect === 'function' ? stage.getBoundingClientRect() : null;
   SUB.applyBox(preview, subtitleStyleCurrent, frame);
+  // 自适应缩放也进预览：预览与网页覆盖层共用 fitTextInto，所见即所得（否则用户在这里调好
+  // 的底板大小，到了视频上字号又是另一回事）。
+  if (typeof SUB.fitTextInto === 'function') {
+    SUB.fitTextInto(preview, preview.firstElementChild || preview, subtitleStyleCurrent, frame);
+  }
 }
 
 function fillSubtitleStyleInputs(style) {
@@ -681,6 +695,7 @@ function fillSubtitleStyleInputs(style) {
     }
     // 字体下拉的选项集随字体库变化，回显交给 fillFontFamilySelect（当前值不在任何组里会挂到「自定义」组）。
     if (spec.kind === 'font') { fillFontFamilySelect(); continue; }
+    if (spec.kind === 'check') { el.checked = !!v; continue; }
     if (el !== focused) el.value = String(v);
     if (spec.kind === 'range') formatRangeOutput(id, v);
   }
@@ -700,6 +715,7 @@ function readSubtitleStyleInputs() {
     const el = $(id);
     if (!el) continue;
     if (spec.kind === 'color') { out[spec.field] = el.dataset.auto === '1' ? '' : el.value; continue; }
+    if (spec.kind === 'check') { out[spec.field] = !!el.checked; continue; }
     out[spec.field] = el.value;
   }
   return SUB.normalize(out);

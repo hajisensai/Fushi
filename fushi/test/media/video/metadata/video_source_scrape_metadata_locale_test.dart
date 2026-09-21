@@ -54,6 +54,8 @@ void main() {
     final List<_FakeRegistry> built = <_FakeRegistry>[];
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
+      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+      primaryProvider: VideoMetadataProviderKind.mal,
       database: db,
       config: VideoSourceScrapeGlobalConfig(locale: globalLocale),
       registry: VideoMetadataProviderRegistry(const <VideoMetadataProvider>[]),

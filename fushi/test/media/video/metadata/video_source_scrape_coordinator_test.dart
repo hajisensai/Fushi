@@ -165,10 +165,11 @@ void main() {
       expect(results.single.lookup.externalId, '42');
       expect(provider.searchCount, 0);
     }
+    // `tmdb=42` / `mal=42` 都是可选生产主源的身份，AniDB 主源下也直取（不换源
+    // 不重搜），不再报格式错误；这里只留真正非法的写法。
     for (final String query in <String>[
       'anidb=0',
       'anidb=bad',
-      'tmdb=42',
       'https://fakeanidb.net/anime/42'
     ]) {
       await expectLater(
@@ -325,7 +326,10 @@ void main() {
     expect(stored?.title, '主源电影');
   });
 
-  test('registry 缺少 AniDB 时即使 TMDB 可用也 fail closed', () async {
+  test('AniDB 主源缺席时 TMDB 按兜底源识别（Shoko 形态：AniDB 主 + TMDB 补充）',
+      () async {
+    // 2026-09-20 起 AniDB 是可选主源且有兜底（AniDB → TMDB），不再是「单源、
+    // 缺席即 fail closed」的退役语义：主源不可用时按双源策略问兜底源。
     final SourceLibraryRow source = await _createMovieSource(
       db,
       root,
@@ -346,11 +350,17 @@ void main() {
       onProgress: (_) {},
     );
 
-    expect(report.succeededWorks, 0);
-    expect(report.failedWorks, 1);
-    expect(tmdb.searchCount, 0);
-    expect(tmdb.fetchCount, 0);
-    expect(await db.getVideoMetadataWorkByBook('movie-book'), isNull);
+    expect(report.succeededWorks, 1, reason: '${report.errors}');
+    expect(report.failedWorks, 0);
+    expect(tmdb.searchCount, greaterThan(0));
+    final VideoMetadataWorkRow stored =
+        (await db.getVideoMetadataWorkByBook('movie-book'))!;
+    expect(
+      (await db.getVideoMetadataProviderIdentities(workId: stored.id))
+          .map((VideoMetadataProviderIdentityRow row) =>
+              '${row.provider}:${row.externalId}:${row.isPrimary}'),
+      contains('tmdb:700:true'),
+    );
   });
 
   test('movie NFO TMDB hint cannot enter the TV namespace', () async {

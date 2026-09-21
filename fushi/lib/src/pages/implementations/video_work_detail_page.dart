@@ -8,6 +8,7 @@ import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/cover_ui/landscape_cover_image.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
@@ -41,6 +42,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.deleteMembersLocalFilesSubtitle,
     this.deleteMembersStatisticsSubtitle,
     this.onRescrapeCollection,
+    this.onChooseTmdbOrdering,
     super.key,
   });
 
@@ -74,6 +76,10 @@ class VideoWorkDetailPage extends StatefulWidget {
   /// 由库页注入）。null = 不渲染该菜单项。
   final Future<void> Function(MediaCollectionRow collection)?
       onRescrapeCollection;
+
+  /// 透传给合集详情页的「TMDB 集编排」（备选排序）。null = 不渲染该菜单项。
+  final Future<void> Function(MediaCollectionRow collection)?
+      onChooseTmdbOrdering;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -169,6 +175,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
             deleteMembersStatisticsSubtitle:
                 widget.deleteMembersStatisticsSubtitle,
             onRescrapeCollection: widget.onRescrapeCollection,
+            onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
           );
         },
       );
@@ -457,39 +464,39 @@ class _StandaloneVideoWorkDetailState
     );
   }
 
+  /// 与合集详情页同一份照片轨道：配音 / 演职人员分两条。此前这里只画文字
+  /// Chip，照片无论刮到没刮到都不显示（BUG-2612）。
   Widget _buildCredits(FushiDesignTokens tokens) {
-    final List<VideoMetadataCreditSummary> credits =
+    final List<VideoMetadataCreditSummary> all =
         _credits?.credits ?? const <VideoMetadataCreditSummary>[];
-    if (credits.isEmpty) return const SizedBox.shrink();
+    final List<VideoMetadataCreditSummary> voice = all
+        .where((VideoMetadataCreditSummary credit) =>
+            credit.creditKind == 'voice_actor')
+        .toList(growable: false);
+    final List<VideoMetadataCreditSummary> crew = all
+        .where((VideoMetadataCreditSummary credit) =>
+            credit.creditKind != 'voice_actor')
+        .toList(growable: false);
+    if (voice.isEmpty && crew.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
-        tokens.spacing.section,
-        tokens.spacing.page,
-        0,
-      ),
+      padding: EdgeInsets.only(top: tokens.spacing.section),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(t.video_work_cast_crew,
-              style: Theme.of(context).textTheme.titleLarge),
-          SizedBox(height: tokens.spacing.card),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              for (final VideoMetadataCreditSummary credit in credits)
-                Chip(
-                  avatar: Icon(
-                    credit.creditKind == 'voice_actor'
-                        ? Icons.record_voice_over_outlined
-                        : Icons.person_outline,
-                    size: 18,
-                  ),
-                  label: Text(credit.displayName),
-                ),
-            ],
-          ),
+          if (voice.isNotEmpty)
+            VideoCreditRail(
+              title: t.video_work_voice_roles,
+              credits: voice,
+              tokens: tokens,
+            ),
+          if (voice.isNotEmpty && crew.isNotEmpty)
+            SizedBox(height: tokens.spacing.section),
+          if (crew.isNotEmpty)
+            VideoCreditRail(
+              title: t.video_work_cast_crew,
+              credits: crew,
+              tokens: tokens,
+            ),
         ],
       ),
     );

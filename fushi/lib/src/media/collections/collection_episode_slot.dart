@@ -123,6 +123,7 @@ class CollectionRemoteContext {
     this.downloadMembers,
     this.scrapeOnHost,
     this.scrapeForHost,
+    this.chooseTmdbOrderingOnHost,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -153,4 +154,9 @@ class CollectionRemoteContext {
 
   /// 7b：本机刮削后把完整资料回写 host。null = 本机无刮削链或对端不支持。
   final Future<void> Function(MediaCollectionRow collection)? scrapeForHost;
+
+  /// TMDB 备选排序（Shoko `PreferredAlternateOrderingID`）在 host 上选定并重刮。
+  /// null = 对端不是互联 host。
+  final Future<void> Function(MediaCollectionRow collection)?
+      chooseTmdbOrderingOnHost;
 }

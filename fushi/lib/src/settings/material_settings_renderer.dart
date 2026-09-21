@@ -90,12 +90,20 @@ class MaterialSettingsRenderer implements SettingsRenderer {
 
     // The category list is small and bounded. Keep every group mounted so Tab
     // can wrap to categories above the viewport after scrolling to a later one.
+    // 宽屏主从（pushRoutes:false）的列表画在导航卡里（settings_home_page.
+    // _buildWideLayout 的 FushiCard）：横向收成卡内 `gap`、底部不再叠系统栏内边距
+    // （卡的外边距已经让出）。窄屏 push 列表落在页面底上，保持 `page`。
+    final double horizontal = pushRoutes
+        ? tokens.spacing.page
+        : tokens.spacing.gap;
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
-        tokens.spacing.page,
+        horizontal,
         tokens.spacing.gap,
-        tokens.spacing.page,
-        tokens.spacing.page + mediaPadding.bottom,
+        horizontal,
+        pushRoutes
+            ? tokens.spacing.page + mediaPadding.bottom
+            : tokens.spacing.gap,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -106,11 +114,11 @@ class MaterialSettingsRenderer implements SettingsRenderer {
             AdaptiveSettingsSection(
               key: ValueKey<SettingsNavigationGroupId>(group.id),
               title: group.id.title(context),
-              // 宽屏主从（pushRoutes:false）下导航窗格自己已经是一块 tonal 面
-              // （`surfaces.card`），分组再铺一层同色卡片就是卡中卡：卡片边界看不见，
-              // 窗格却因此少了一整块可辨的实色面。那里分组只做分段与标题，填充交给
-              // 窗格本身。窄屏 push 列表没有窗格底、直接铺在 `surfaces.page` 上，
-              // 分组卡仍是它唯一的容器，保持不变。
+              // 宽屏主从（pushRoutes:false）下整个导航块已经装在一张 FushiCard 里
+              // （settings_home_page._buildWideLayout），分组再铺一层同色卡片就是
+              // 卡中卡：卡片边界看不见，只剩多余的内边距。那里分组只做分段与标题，
+              // 填充交给外层导航卡。窄屏 push 列表没有外层卡、直接铺在
+              // `surfaces.page` 上，分组卡仍是它唯一的容器，保持不变。
               surfaceColor: pushRoutes ? null : Colors.transparent,
               children: group.destinations
                   .map(destinationRow)

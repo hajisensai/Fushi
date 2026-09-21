@@ -703,6 +703,7 @@ void _requireOneVideoMetadataOwner({
   UpdateFeedEntries,
   MangaDownloadJobs,
   AnidbFileIdentities,
+  VideoEpisodeBindingOverrides,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -735,7 +736,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 108;
+  int get schemaVersion => 111;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3270,6 +3271,121 @@ class FushiDatabase extends _$FushiDatabase
                 anidbFileIdentities,
                 anidbFileIdentities.missAttempts,
               );
+            }
+          }
+          if (from < 109) {
+            // v109（AniDB 对齐 Shoko，集级）：anidb_file_identities 加
+            // episode_aired_at（UDP EPISODE 的集播出日，供 AniDB 集 → TMDB 集按
+            // 「播出日 + 标题」逐集链接；存量行 null，sweep 时补问一次回填），
+            // 以及 FILE 掩码扩展后多出的 other_episodes（一文件多集）/
+            // is_deprecated / file_state（CRC 正误、文件版本）。存量行取默认值即
+            // 「未知」，下次识别时随 FILE 应答一起落。幂等守卫同 v108。
+            if (await _tableExists('anidb_file_identities')) {
+              if (!await _columnExists(
+                  'anidb_file_identities', 'episode_aired_at')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.episodeAiredAt,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'other_episodes')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.otherEpisodes,
+                );
+              }
+              if (!await _columnExists(
+                  'anidb_file_identities', 'is_deprecated')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.isDeprecated,
+                );
+              }
+              if (!await _columnExists('anidb_file_identities', 'file_state')) {
+                await m.addColumn(
+                  anidbFileIdentities,
+                  anidbFileIdentities.fileState,
+                );
+              }
+            }
+            // 分集行带上绑定文件的 AniDB 集身份（eid / 原生集号 / TMDB 链接评级），
+            // Shoko 的 CrossRef_AniDB_TMDB_Episode 在本仓的落点；存量行 null，
+            // 下次刮削时随绑定一起写。
+            if (await _tableExists('video_metadata_episodes')) {
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_id')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeId,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_episode_number')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbEpisodeNumber,
+                );
+              }
+              if (!await _columnExists(
+                  'video_metadata_episodes', 'anidb_match_rating')) {
+                await m.addColumn(
+                  videoMetadataEpisodes,
+                  videoMetadataEpisodes.anidbMatchRating,
+                );
+              }
+            }
+          }
+          if (from < 110) {
+            // v110：video_metadata_episodes.book_uid 去掉列级 UNIQUE——AniDB
+            // FILE 给出的「一文件多集」（`01-02` 合集文件）要绑到两条分集行，
+            // Shoko `CrossRef_File_Episode` 一文件多集。列级 UNIQUE 是内联约束、
+            // SQLite 不能单独 DROP，走 alterTable 按当前 Dart 定义重建 + 按列名拷
+            // 贝（v67 先例），`id` 原值保留所以四张以 id 引用的子表（identities /
+            // credits / images CASCADE、sidecar SET NULL）不悬空；FK OFF/ON 夹住
+            // 重建（v57 先例），否则 DROP 旧表会级联清空子表。幂等守卫：只在
+            // 自动唯一索引仍只覆盖 book_uid 时才重建，mid-ladder 由 createTable
+            // fresh 建出的表已是新 shape 直接短路。
+            if (await _tableExists('video_metadata_episodes') &&
+                await _hasUniqueIndexOnColumn(
+                    'video_metadata_episodes', 'book_uid')) {
+              final bool foreignKeysWereOn = await _foreignKeysEnabled();
+              await customStatement('PRAGMA foreign_keys = OFF');
+              try {
+                await m.alterTable(TableMigration(videoMetadataEpisodes));
+                if (await _tableExists('video_metadata_seasons') &&
+                    await _tableExists('video_books')) {
+                  final List<QueryRow> violations = await customSelect(
+                          'PRAGMA foreign_key_check(video_metadata_episodes)')
+                      .get();
+                  if (violations.isNotEmpty) {
+                    throw StateError(
+                        'v110 migration left ${violations.length} FK '
+                        'violations in video_metadata_episodes');
+                  }
+                }
+              } finally {
+                if (foreignKeysWereOn) {
+                  await customStatement('PRAGMA foreign_keys = ON');
+                }
+              }
+            }
+            await _ensureIndexes();
+          }
+          if (from < 111) {
+            // v111：① anidb_file_identities.anime_type——FILE amask 取回的 AniDB
+            // 动画类型，Shoko 的作品形态来源（存量行 ''，下次 FILE 命中时补）；
+            // ② video_episode_binding_overrides——用户手动钉死的文件 → 季集绑定
+            // （Shoko UserVerified），刮削时最高优先级、每次重刮都保留。
+            if (await _tableExists('anidb_file_identities') &&
+                !await _columnExists('anidb_file_identities', 'anime_type')) {
+              await m.addColumn(
+                anidbFileIdentities,
+                anidbFileIdentities.animeType,
+              );
+            }
+            if (!await _tableExists('video_episode_binding_overrides')) {
+              await m.createTable(videoEpisodeBindingOverrides);
             }
           }
         },

@@ -17,6 +17,7 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/interconnect_video_quality.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -165,6 +166,7 @@ class InterconnectSyncBackend extends SyncBackend
         RemoteBookClient,
         RemoteVideoClient,
         RemoteVideoPlaybackSync,
+        RemoteVideoQualityLimit,
         RemoteCoverFetcher {
   InterconnectSyncBackend._({FushiProbe? probe})
       : _probe = probe ?? _defaultFushiProbe;
@@ -1387,6 +1389,44 @@ class InterconnectSyncBackend extends SyncBackend
     return VideoMetadataWriteResult.fromJson(decoded);
   }
 
+  /// TMDB 备选排序：host 上 [key] 那部剧的全部 episode groups + 当前选定。
+  /// host 报合集对应多个作品（409 ambiguousWork）时返回 null 并把 [VideoMetadataWriteResult]
+  /// 交给调用方（走 [requestRemoteVideoMetadataScrape] 同款选作品流程）。
+  Future<
+      ({
+        VideoMetadataEpisodeGroupListing? listing,
+        VideoMetadataWriteResult? conflict
+      })> listRemoteVideoMetadataEpisodeGroups({
+    required VideoMetadataWorkKey key,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/episode-groups',
+      <String, Object?>{'key': key.toJson()},
+    );
+    if (decoded is Map && decoded.containsKey('ok')) {
+      return (
+        listing: null,
+        conflict: VideoMetadataWriteResult.fromJson(decoded),
+      );
+    }
+    return (
+      listing: VideoMetadataEpisodeGroupListing.fromJson(decoded),
+      conflict: null,
+    );
+  }
+
+  /// TMDB 备选排序：让 host 选定 [groupId]（null = 默认排序）并按它重刮。
+  Future<VideoMetadataWriteResult> setRemoteVideoMetadataEpisodeGroup({
+    required VideoMetadataWorkKey key,
+    required String? groupId,
+  }) async {
+    final Object? decoded = await _postMetadataJson(
+      '/api/library/metadata/episode-group',
+      <String, Object?>{'key': key.toJson(), 'groupId': groupId},
+    );
+    return VideoMetadataWriteResult.fromJson(decoded);
+  }
+
   /// 7b：把本机刮好的 [work] 写回 host。409 identity 冲突也解成结果对象由 UI 决定。
   Future<VideoMetadataWriteResult> putRemoteVideoMetadata({
     required VideoMetadataWorkKey key,
@@ -1810,11 +1850,101 @@ class InterconnectSyncBackend extends SyncBackend
     return true;
   }
 
+  // ── 画质档（弱网可用）────────────────────────────────────────────────────
+  //
+  // host 侧按档把视频转码成 HLS（不转码时仍是原文件 Range 直传，逐字节不变）。
+  // 档位表与「自动」档判据在 `interconnect_video_quality.dart`。
+
+  /// host 自报的「本机能不能转码」，由上一次 `/streamurl` 的响应带回。
+  ///
+  /// 老 host 没有这个字段 → 恒 false → 画质档不出现，行为与从前一致。移动端当 host
+  /// 时它也是 false（那边没法 exec ffmpeg 子进程）。
+  bool _hostTranscodeAvailable = false;
+
+  /// host 是否自报支持转码（由上一次取流带回）。档位菜单据此显示/隐藏。
+  bool get hostTranscodeAvailable => _hostTranscodeAvailable;
+
+  @visibleForTesting
+  set hostTranscodeAvailableForTesting(bool value) =>
+      _hostTranscodeAvailable = value;
+
+  int _qualityPresetIndex = -1;
+
+  /// 「自动」档下当前实际在用的那一档（null = 还没定，按起点判据走；-1 = 原画直传）。
+  ///
+  /// 与 [_qualityPresetIndex] 分开：用户选的是「自动」这个**策略**，自适应换的是
+  /// 策略下的**当前取值**。混成一个字段的话，自动降档会把用户的设置改成一个具体
+  /// 档位——设置看起来自己会动，而且再也回不到自动。
+  /// 仅在用户选「自动」（[qualityPresetIndex] < 0）时有意义。
+  int? adaptiveQualityIndex;
+
+  /// [adaptiveQualityIndex] 当前对应的 host 基址。
+  ///
+  /// 这个后端是**进程级单例**，而自适应档是「这条链路当前能跑多少」的观测结果，不是
+  /// 用户设置：在外面用移动网络降到 360p 后回家连局域网，若不按 host / 链路重算，
+  /// `??=` 会短路掉起点判据，继续 360p 转码播（而「局域网就原画直传」是明确承诺的
+  /// 行为），且升档要 90 拍 × 4 级、上界 `kAdaptiveMaxIndex` 还永远回不到原画。
+  String? adaptiveQualityScope;
+
+  /// 自适应档的起点：scope（host 基址）变了就按新链路重算，否则沿用已观测到的档。
+  void ensureAdaptiveQualityStart() {
+    final String scope = _apiBaseOrNull ?? '';
+    if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
+      adaptiveQualityIndex = resolveAutoStartIndex();
+      adaptiveQualityScope = scope;
+    }
+  }
+
+  @override
+  List<MediaServerQualityPreset> get qualityPresets => _hostTranscodeAvailable
+      ? kInterconnectQualityPresets
+      : const <MediaServerQualityPreset>[];
+
+  @override
+  int get qualityPresetIndex => _qualityPresetIndex;
+
+  @override
+  set qualityPresetIndex(int index) => _qualityPresetIndex = index;
+
+  /// 当次取流要向 host 报的档。
+  ///
+  /// 三级：用户显式选的档 > 自适应定下的档 > 起点判据
+  /// （[resolveInterconnectAutoPreset]：局域网原画、走公网先压到中档）。
+  @visibleForTesting
+  MediaServerQualityPreset? effectiveQualityPreset({String? hostUrl}) {
+    if (_qualityPresetIndex >= 0 &&
+        _qualityPresetIndex < kInterconnectQualityPresets.length) {
+      return kInterconnectQualityPresets[_qualityPresetIndex];
+    }
+    final int? adaptive = adaptiveQualityIndex;
+    if (adaptive != null) {
+      if (adaptive < 0) return null; // 自适应判定原画直传。
+      if (adaptive < kInterconnectQualityPresets.length) {
+        return kInterconnectQualityPresets[adaptive];
+      }
+    }
+    return resolveInterconnectAutoPreset(hostUrl);
+  }
+
+  /// 「自动」档的起点下标（-1 = 原画）。自适应控制器从这里起步。
+  int resolveAutoStartIndex({String? hostUrl}) {
+    final MediaServerQualityPreset? preset =
+        resolveInterconnectAutoPreset(hostUrl ?? _apiBaseOrNull);
+    if (preset == null) return -1;
+    return kInterconnectQualityPresets.indexOf(preset);
+  }
+
+  /// 已解析的 host 基址（未连上时为 null，起点判据据此退回「当成公网」）。
+  String? get _apiBaseOrNull => _ops?.baseUrl;
+
   /// 向 host 换取可直接播放的视频 stream URL。
   ///
   /// 返回的 [RemoteVideoStreamUrls.streamUrl] 已携带短时 token；播放器不需要
   /// Authorization 头。字幕 URL（若存在）仍是普通受 Basic 鉴权的 API URL，UI
   /// 可先用 [getRemoteVideoSubtitle] 下载到本地后交给现有字幕加载逻辑。
+  ///
+  /// 画质档以 `maxWidth` / `maxBitrate` 两个 query 参数上报；host 不认（老版本）
+  /// 或不肯转（用户关了开关 / 跑不了 ffmpeg）时会照旧回直传 URL，client 无需分支。
   @override
   Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
     String id, {
@@ -1822,7 +1952,18 @@ class InterconnectSyncBackend extends SyncBackend
   }) async {
     await _ensureResolved();
     final String encodedId = _encodeVideoId(id);
-    final String query = episodeIndex > 0 ? '?episode=$episodeIndex' : '';
+    final MediaServerQualityPreset? preset =
+        effectiveQualityPreset(hostUrl: _apiBase);
+    final Map<String, String> params = <String, String>{
+      if (episodeIndex > 0) 'episode': '$episodeIndex',
+      if (preset != null) ...<String, String>{
+        'maxWidth': '${preset.maxWidth}',
+        'maxBitrate': '${preset.maxBitrate}',
+      },
+    };
+    final String query = params.isEmpty
+        ? ''
+        : '?${params.entries.map((MapEntry<String, String> e) => '${e.key}=${e.value}').join('&')}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase/api/library/videos/$encodedId/streamurl$query',
@@ -1831,6 +1972,7 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'GET /api/library/videos/$id/streamurl');
     final String body = await _readBodyBounded(res);
     final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+    _hostTranscodeAvailable = json['transcodeAvailable'] == true;
     return RemoteVideoStreamUrls.fromJson(json);
   }
 

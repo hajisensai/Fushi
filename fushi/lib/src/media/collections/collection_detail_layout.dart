@@ -758,6 +758,7 @@ class CollectionEpisodeCard extends StatelessWidget {
     this.isContinue = false,
     this.isRemote = false,
     this.trailingStatus,
+    this.identityLabel,
     super.key,
   });
 
@@ -770,6 +771,10 @@ class CollectionEpisodeCard extends StatelessWidget {
   final String title;
   final String? summary;
   final bool completed;
+
+  /// 文件身份给出的**另一套**编号（`AniDB 第 04 集`）：Shoko 同时暴露 AniDB
+  /// 原生编号与 TMDB 季集，这里作为序号行下的小字并存，不改 [number]。
+  final String? identityLabel;
 
   /// 看到的位置（ms）；>0 且未看完时显示「看到 mm:ss」。
   final int positionMs;
@@ -825,6 +830,18 @@ class CollectionEpisodeCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
+                        if (identityLabel case final String label
+                            when label.isNotEmpty)
+                          Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              height: 1.3,
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
                         if (summary != null && summary.isNotEmpty) ...<Widget>[
                           SizedBox(height: tokens.spacing.gap / 2),
                           Text(

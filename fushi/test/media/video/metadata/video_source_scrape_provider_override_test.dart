@@ -130,14 +130,18 @@ void main() {
     );
     expect(byMal.single.lookup.provider, VideoMetadataProviderKind.mal);
     expect(byMal.single.lookup.externalId, '52991');
-    await expectLater(
-      coordinator.searchManualCandidates(
+    // AniDB 自 2026-09-20 起也是可选生产主源：其身份 URL 不再是格式错误，按
+    // AniDB provider 直取；本 registry 没注册 AniDB → 空候选（不落到标题搜索）。
+    expect(
+      await coordinator.searchManualCandidates(
         source: source,
         workTitle: 'Show',
         query: 'https://anidb.net/anime/1',
       ),
-      throwsA(isA<FormatException>()),
+      isEmpty,
     );
+    expect(mal.searchCalls, 0);
+    expect(tmdb.searchCalls, 0);
   });
 
   test('config parses the primary provider preference safely', () {
@@ -147,15 +151,25 @@ void main() {
     );
     expect(parseSelectableVideoMetadataProvider(' mal '),
         VideoMetadataProviderKind.mal);
-    expect(parseSelectableVideoMetadataProvider('anidb'), isNull);
+    // 2026-09-20 起 AniDB 是可选主源（且为默认）；退役源仍不可选。
+    expect(parseSelectableVideoMetadataProvider('anidb'),
+        VideoMetadataProviderKind.anidb);
+    expect(parseSelectableVideoMetadataProvider('bangumi'), isNull);
     expect(parseSelectableVideoMetadataProvider(''), isNull);
     expect(parseSelectableVideoMetadataProvider(null), isNull);
+    expect(
+        kDefaultVideoMetadataPrimaryProvider, VideoMetadataProviderKind.anidb);
+    expect(const VideoSourceScrapeGlobalConfig().primaryProvider,
+        VideoMetadataProviderKind.anidb);
     expect(videoMetadataFallbackProvider(VideoMetadataProviderKind.mal),
         VideoMetadataProviderKind.tmdb);
     expect(videoMetadataFallbackProvider(VideoMetadataProviderKind.tmdb),
         VideoMetadataProviderKind.mal);
-    expect(
-        videoMetadataFallbackProvider(VideoMetadataProviderKind.anidb), isNull);
+    // Shoko 形态：TMDB 恒为 AniDB 的补充 / 兜底；AniDB 主源下 MAL 只是交叉引用。
+    expect(videoMetadataFallbackProvider(VideoMetadataProviderKind.anidb),
+        VideoMetadataProviderKind.tmdb);
+    expect(videoMetadataFallbackProvider(VideoMetadataProviderKind.bangumi),
+        isNull);
   });
 }
 

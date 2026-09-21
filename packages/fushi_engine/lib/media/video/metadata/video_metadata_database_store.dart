@@ -4,6 +4,8 @@ library;
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -27,6 +29,31 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.d
   if (episode == null) return null;
   return (parsed.season ?? 1, episode);
 }
+
+/// 分集行 `anidb_match_rating` 的「用户手动钉死」值（Shoko `MatchRating.UserVerified`）；
+/// 其余值是 `TmdbEpisodeMatchRating.name`。
+const String kUserVerifiedMatchRating = 'userVerified';
+
+/// 一个文件的 AniDB 集身份 + 它与 TMDB 集链接的评级（Shoko
+/// `CrossRef_AniDB_TMDB_Episode`），随绑定写到分集行。[matchRating] 为 null =
+/// 没经 TMDB 逐集链接（无 TMDB 剧 / 没对上），只记 AniDB 原生身份。
+class AnidbEpisodeXref {
+  const AnidbEpisodeXref({
+    required this.episodeId,
+    required this.episodeNumber,
+    this.matchRating,
+  });
+  final int episodeId;
+  final String episodeNumber;
+  final String? matchRating;
+}
+
+/// 一个文件覆盖的**额外**分集（AniDB FILE other episodes，Shoko
+/// `CrossRef_File_Episode` 一文件多集）：成员 `bookUid` → 额外卡片 (季, 集) →
+/// 那一集的 AniDB 身份。主集仍由 [localEpisodeKeyFor] 决定；这里的键只多绑、
+/// 不改主键，sidecar / 旧投影只跟主集。
+typedef AnidbAdditionalEpisodeBindings
+    = Map<String, Map<(int, int), AnidbEpisodeXref>>;
 
 class PersistedVideoMetadata {
   const PersistedVideoMetadata({
@@ -56,7 +83,22 @@ class VideoMetadataDatabaseStore {
   /// identity must never be promoted merely because the old primary retired.
   Future<List<VideoMetadataLookup>> lookupsForWork(
     VideoSourceScrapeWork localWork,
-  ) async {
+  ) =>
+      _lookupsForWork(localWork, primaryOnly: false);
+
+  /// 仅返回被标为 `isPrimary` 的作品身份；没有主身份（例如只由本地 NFO 索引
+  /// 出交叉引用、尚未被任何主源识别过的作品）返回 null。调用方据此区分「旧主源
+  /// 已退役，需要重识别」与「从来没有主身份，交叉引用只是提示」——后者不该被
+  /// 当成退役主源而把提示一起丢掉。
+  Future<VideoMetadataLookup?> primaryLookupForWork(
+    VideoSourceScrapeWork localWork,
+  ) async =>
+      (await _lookupsForWork(localWork, primaryOnly: true)).firstOrNull;
+
+  Future<List<VideoMetadataLookup>> _lookupsForWork(
+    VideoSourceScrapeWork localWork, {
+    required bool primaryOnly,
+  }) async {
     final VideoMetadataWorkRow? row = localWork.collection == null
         ? await database.getVideoMetadataWorkByBook(
             localWork.members.single.bookUid,
@@ -75,9 +117,10 @@ class VideoMetadataDatabaseStore {
       ...identities.where(
         (VideoMetadataProviderIdentityRow value) => value.isPrimary,
       ),
-      ...identities.where(
-        (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
-      ),
+      if (!primaryOnly)
+        ...identities.where(
+          (VideoMetadataProviderIdentityRow value) => !value.isPrimary,
+        ),
     ];
     final List<VideoMetadataLookup> result = <VideoMetadataLookup>[];
     for (final VideoMetadataProviderIdentityRow identity in ordered) {
@@ -135,11 +178,20 @@ class VideoMetadataDatabaseStore {
 
   /// [episodeOverrides]：成员 `bookUid` → 本地 (季, 集)。多季合集 / 绝对集号
   /// 重定向后由协调器给出，覆盖单纯按文件名解析的键；没有条目的成员照旧解析。
+  ///
+  /// [additionalEpisodeBindings]：一文件多集的额外绑定（见
+  /// [AnidbAdditionalEpisodeBindings]）；同一文件因此出现在多条分集行上，
+  /// v110 起 `book_uid` 不再唯一。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
     bool seasonEpisodesAuthoritative = true,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
+    Map<String, AnidbEpisodeXref> anidbEpisodeXrefs =
+        const <String, AnidbEpisodeXref>{},
+    AnidbAdditionalEpisodeBindings additionalEpisodeBindings =
+        const <String, Map<(int, int), AnidbEpisodeXref>>{},
+    Set<String> userVerifiedBooks = const <String>{},
   }) async {
     final int now = DateTime.now().millisecondsSinceEpoch;
     late int workId;
@@ -204,7 +256,11 @@ class VideoMetadataDatabaseStore {
           status: Value<String?>(metadata.status),
           originalLanguage: Value<String?>(metadata.originalLanguage),
           homepage: Value<String?>(metadata.homepage),
-          episodeGroupId: Value<String?>(metadata.episodeGroupId),
+          episodeGroupId: Value<String?>(
+            isLocked(VideoMetadataLockableField.episodeGroup)
+                ? existingWork!.episodeGroupId
+                : metadata.episodeGroupId,
+          ),
           updatedAt: now,
         ),
       );
@@ -232,8 +288,16 @@ class VideoMetadataDatabaseStore {
             ? (lockedTerms['studio'] ?? const <String>[])
             : metadata.studios,
       );
+      // 来源本轮人物表残缺（MAL characters / staff 端点抖动）而库里已有上一轮
+      // 的表：只补不覆盖，否则一次 504 就把整张声优表清空（BUG-2612）。
+      final bool keepExistingCredits = hasIncompleteMalCredits(metadata) &&
+          (await database.getVideoMetadataCredits(workId: workId)).isNotEmpty;
       await _replaceCredits(
-          workId: workId, credits: metadata.credits, now: now);
+        workId: workId,
+        credits: metadata.credits,
+        now: now,
+        keepExisting: keepExistingCredits,
+      );
       await _replaceImages(
         workId: workId,
         images: metadata.images,
@@ -330,7 +394,9 @@ class VideoMetadataDatabaseStore {
       }
 
       final Map<(int, int), VideoBookRow> localEpisodeBooks =
-          _localEpisodeBooks(localWork.members, episodeOverrides);
+          _localEpisodeBooks(
+              localWork.members, episodeOverrides, additionalEpisodeBindings,
+              userVerifiedBooks: userVerifiedBooks);
       await _clearReassignedEpisodeBooks(
         localEpisodeBooks: localEpisodeBooks,
         seasons: metadata.seasons,
@@ -362,16 +428,38 @@ class VideoMetadataDatabaseStore {
         final List<VideoMetadataEpisodesCompanion> episodeRows =
             <VideoMetadataEpisodesCompanion>[
           for (final VideoMetadataEpisode episode in season.episodes)
-            VideoMetadataEpisodesCompanion.insert(
+            () {
+              final String? bookUid = localEpisodeBooks[(
+                    episode.seasonNumber,
+                    episode.episodeNumber,
+                  )]
+                      ?.bookUid ??
+                  existingEpisodes[episode.episodeNumber]?.bookUid;
+              // AniDB 集身份跟着绑定的文件走：这一轮有身份就写，没有身份但书还
+              // 是原来那本就保留旧值，换了书 / 解绑就清掉。一文件多集时，额外
+              // 绑定的那一集用它自己的 AniDB 身份，不是主集的。
+              final AnidbEpisodeXref? xref = bookUid == null
+                  ? null
+                  : additionalEpisodeBindings[bookUid]?[(
+                        episode.seasonNumber,
+                        episode.episodeNumber,
+                      )] ??
+                      anidbEpisodeXrefs[bookUid];
+              final VideoMetadataEpisodeRow? existing =
+                  existingEpisodes[episode.episodeNumber];
+              final bool keepExisting = xref == null &&
+                  existing != null &&
+                  existing.bookUid != null &&
+                  existing.bookUid == bookUid;
+              return VideoMetadataEpisodesCompanion.insert(
               seasonId: seasonId,
-              bookUid: Value<String?>(
-                localEpisodeBooks[(
-                      episode.seasonNumber,
-                      episode.episodeNumber,
-                    )]
-                        ?.bookUid ??
-                    existingEpisodes[episode.episodeNumber]?.bookUid,
-              ),
+              bookUid: Value<String?>(bookUid),
+              anidbEpisodeId: Value<int?>(
+                  xref?.episodeId ?? (keepExisting ? existing.anidbEpisodeId : null)),
+              anidbEpisodeNumber: Value<String?>(xref?.episodeNumber ??
+                  (keepExisting ? existing.anidbEpisodeNumber : null)),
+              anidbMatchRating: Value<String?>(xref?.matchRating ??
+                  (keepExisting ? existing.anidbMatchRating : null)),
               episodeNumber: episode.episodeNumber,
               absoluteNumber: Value<int?>(
                 episode.absoluteNumber ??
@@ -419,7 +507,8 @@ class VideoMetadataDatabaseStore {
                         : null),
               ),
               updatedAt: now,
-            ),
+            );
+            }(),
         ];
         if (seasonEpisodesAuthoritative) {
           await database.replaceVideoMetadataEpisodes(seasonId, episodeRows);
@@ -460,7 +549,15 @@ class VideoMetadataDatabaseStore {
           }
           final VideoBookRow? book =
               localEpisodeBooks[(episode.seasonNumber, episode.episodeNumber)];
-          if (book != null) episodesByBookUid[book.bookUid] = episode;
+          // 旧投影 / 改书名只跟主集：一文件多集的额外绑定不进 bookUid → 集表。
+          if (book != null &&
+              additionalEpisodeBindings[book.bookUid]?.containsKey((
+                    episode.seasonNumber,
+                    episode.episodeNumber,
+                  )) !=
+                  true) {
+            episodesByBookUid[book.bookUid] = episode;
+          }
         }
       }
       await _writeLegacyProjection(localWork, metadata, episodesByBookUid);
@@ -473,6 +570,15 @@ class VideoMetadataDatabaseStore {
       episodesByBookUid:
           Map<String, VideoMetadataEpisode>.unmodifiable(episodesByBookUid),
     );
+  }
+
+  /// 删掉合集自己拥有的作品行（成员按 AniDB 作品拆成各自的电影作品后，合集级
+  /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
+  /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
+  Future<void> removeCollectionOwnedWork(int collectionId) async {
+    await (database.delete(database.videoMetadataWorks)
+          ..where((table) => table.collectionId.equals(collectionId)))
+        .go();
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
@@ -676,6 +782,7 @@ class VideoMetadataDatabaseStore {
     int? episodeId,
     required List<VideoMetadataCredit> credits,
     required int now,
+    bool keepExisting = false,
   }) async {
     final List<VideoMetadataPeopleCompanion> people =
         <VideoMetadataPeopleCompanion>[];
@@ -738,6 +845,7 @@ class VideoMetadataDatabaseStore {
       seasonId: seasonId,
       episodeId: episodeId,
       credits: rows,
+      keepExisting: keepExisting,
     );
     for (final VideoMetadataCredit credit in credits) {
       await _mergeEntityIdentities(
@@ -976,15 +1084,34 @@ class VideoMetadataDatabaseStore {
     }
   }
 
+  /// 卡片 (季, 集) → 成员文件。用户钉死（UserVerified，[userVerifiedBooks]）
+  /// 的成员最先占位，其余主键按成员顺序先到先得（一集只能有一本书），再把
+  /// 一文件多集的额外键补进去（同样先到先得，不抢别的文件的主集）。
   static Map<(int, int), VideoBookRow> _localEpisodeBooks(
     Iterable<VideoBookRow> books,
     Map<String, (int, int)> episodeOverrides,
-  ) {
+    AnidbAdditionalEpisodeBindings additionalEpisodeBindings, {
+    Set<String> userVerifiedBooks = const <String>{},
+  }) {
     final Map<(int, int), VideoBookRow> result = <(int, int), VideoBookRow>{};
-    for (final VideoBookRow book in books) {
+    final List<VideoBookRow> ordered = <VideoBookRow>[
+      for (final VideoBookRow book in books)
+        if (userVerifiedBooks.contains(book.bookUid)) book,
+      for (final VideoBookRow book in books)
+        if (!userVerifiedBooks.contains(book.bookUid)) book,
+    ];
+    for (final VideoBookRow book in ordered) {
       final (int, int)? key = localEpisodeKeyFor(book, episodeOverrides);
       if (key == null) continue;
       result.putIfAbsent(key, () => book);
+    }
+    for (final VideoBookRow book in books) {
+      final Map<(int, int), AnidbEpisodeXref>? extra =
+          additionalEpisodeBindings[book.bookUid];
+      if (extra == null) continue;
+      for (final (int, int) key in extra.keys) {
+        result.putIfAbsent(key, () => book);
+      }
     }
     return result;
   }
@@ -1011,6 +1138,10 @@ class VideoMetadataDatabaseStore {
         VideoMetadataCreditKind.voiceActor => 'voice_actor',
         _ => kind.name,
       };
+
+  /// 人物行主键（`person:<provider>:<id>` / 按名字摘要），与 apply 写
+  /// `video_metadata_people` 时用的同一把键——人物照片落地要按它回写 `profilePath`。
+  static String personKeyFor(VideoMetadataPerson person) => _personKey(person);
 
   static String _personKey(VideoMetadataPerson person) {
     final VideoMetadataId? id = _primaryIdFrom(person.ids);

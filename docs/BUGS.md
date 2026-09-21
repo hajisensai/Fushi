@@ -29,13 +29,17 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2418 条。点号进各自文件。
+> 共 2423 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2618](bugs/BUG-2618-ai-model-picker-split.md) | ✅ | ✅ | AI 提供商：模型候选是字段外的第二个下拉，选完「模型」输入框不跟着变 |
+| [BUG-2617](bugs/BUG-2617-anime-ext-playback-timeout.md) | ✅ | ✅ | Aniyomi 在线源播放必超时 |
 | [BUG-2616](bugs/BUG-2616-ios-scroll-mode-setting-race.md) | ✅ | ✅ | iOS 滚动模式设置未落地导致阅读器布局不更新 |
 | [BUG-2615](bugs/BUG-2615-ios-reader-native-bounce.md) | ✅ | ✅ | iOS 竖屏连续滚动模式上下滑动触发正文回弹 |
 | [BUG-2614](bugs/BUG-2614-vn-chapter-ready-timeout.md) | ✅ | ✅ | VN 模式切换章节后加载永不就绪 |
+| [BUG-2613](bugs/BUG-2613-gal-overlay-click-sampled-input-passthrough.md) | ✅ | ✅ | galgame 桌面字典卡 / hook 台词浮窗上的左键被采样输入引擎看见而推进台词 |
+| [BUG-2612](bugs/BUG-2612-cast-photos-incomplete.md) | ✅ | ✅ | 视频刮削演员/声优表显示不全、照片缺失 |
 | [BUG-2610](bugs/BUG-2610-ext-utf8-noncharacter-load-failure.md) | ✅ | ✅ | 浏览器扩展 subtitle-style.js 含裸 U+FFFF 非字符，Chrome 判「不是 UTF-8」拒装整个扩展 |
 | [BUG-2609](bugs/BUG-2609-anime-ext-disguised-hls-segments.md) | ✅ | ✅ | 动画扩展播放进度条一进去就拉满、换集无反馈 |
 | [BUG-2608](bugs/BUG-2608-media-server-search-relevance.md) | ✅ | ✅ | 媒体服务器搜索把服务器的模糊命中原样铺出来，精确命中被埋 |
@@ -47,6 +51,7 @@
 | [BUG-2602](bugs/BUG-2602-emby-library-cover-404-fallback.md) | ✅ | ✅ | 媒体服务器库封面 404 时整格只剩占位图标 |
 | [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
 | [BUG-2600](bugs/BUG-2600-video-ext-lib16-abi.md) | ✅ | ✅ | 视频源扩展在 lib 14 宿主 ABI 上进不去剧集或播不了 |
+| [BUG-2599](bugs/BUG-2599-asr-match-recover-cluster.md) | ✅ | ✅ | 有声书 ASR 字幕匹配：恢复扫描单条精确命中把游标钉到书中段、整本只命中 1.7% |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
 | [BUG-2597](bugs/BUG-2597-lyrics-mode-study-chars-not-credited.md) | ✅ | ✅ | 歌词模式听书字数不入账、自动恢复歌词时可能零时长 |
 | [BUG-2596](bugs/BUG-2596-lyrics-mode-chapter-navigation-missing.md) | ✅ | ✅ | 歌词模式顶栏没有章节导航键，无法跳章 |

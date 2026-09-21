@@ -7,7 +7,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 
 void main() {
-  test('production work catalog contains MAL and TMDB', () {
+  test('production work catalog contains AniDB, MAL and TMDB', () {
+    // 2026-09-20 用户拍板对齐 Shoko：AniDB HTTP 资料链装配进生产 registry 且为
+    // 默认主源，TMDB 补充；MAL 保留可选。顺序即 kSelectableVideoMetadataProviders。
     final VideoMetadataProviderRegistry registry =
         VideoMetadataProviderRegistry.production(
           const VideoSourceScrapeGlobalConfig(),
@@ -15,10 +17,20 @@ void main() {
     addTearDown(registry.close);
     expect(
       registry.providers.map((VideoMetadataProvider p) => p.providerKind),
+      kSelectableVideoMetadataProviders,
+    );
+    expect(
+      registry.providers.map((VideoMetadataProvider p) => p.providerKind),
       <VideoMetadataProviderKind>[
+        VideoMetadataProviderKind.anidb,
         VideoMetadataProviderKind.mal,
         VideoMetadataProviderKind.tmdb,
       ],
+    );
+    // 随包 client `fushiplayer` 已登记，AniDB HTTP 链默认可用（不冒用 Shoko 标识）。
+    expect(
+      registry.provider(VideoMetadataProviderKind.anidb)!.isAvailable,
+      isTrue,
     );
     expect(
       registry.provider(VideoMetadataProviderKind.mal)!.isAvailable,

@@ -80,14 +80,20 @@ void main() {
         sourceId: Value<int?>(sourceId),
       ));
 
-  /// 给某本书种上规范作品行 + 一条作品级 anidb 身份（= 已刮削）。
-  Future<void> seedIdentityForBook(String bookUid) async {
+  /// 给某本书种上规范作品行 + 一条作品级身份（= 已刮削）。[tmdbId] 给了就再种
+  /// 一条 TMDB 身份并把作品记成电视剧（刷新探针只看 tv + tmdb）。
+  Future<void> seedIdentityForBook(
+    String bookUid, {
+    int? tmdbId,
+    int? updatedAt,
+  }) async {
     final int workId = await db.into(db.videoMetadataWorks).insert(
           VideoMetadataWorksCompanion.insert(
             bookUid: Value<String?>(bookUid),
-            mediaType: 'movie',
+            mediaType: tmdbId == null ? 'movie' : 'tv',
             title: 'seeded',
-            updatedAt: 1,
+            // 刚刮过：不落进「过期重刷」（那是下面刷新组专门测的）。
+            updatedAt: updatedAt ?? DateTime.now().millisecondsSinceEpoch,
           ),
         );
     await db.into(db.videoMetadataProviderIdentities).insert(
@@ -99,6 +105,18 @@ void main() {
             updatedAt: 1,
           ),
         );
+    if (tmdbId != null) {
+      await db.into(db.videoMetadataProviderIdentities).insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$workId:tmdb',
+              workId: Value<int?>(workId),
+              provider: 'tmdb',
+              externalId: '$tmdbId',
+              isPrimary: const Value<bool>(true),
+              updatedAt: 1,
+            ),
+          );
+    }
   }
 
   VideoLibraryScrapeSweep sweep(
@@ -188,6 +206,31 @@ void main() {
     runner.plannedTitles.clear();
     await hashOn.sweepOnce();
     expect(runner.sourceIds, isEmpty, reason: '同一进程只排一次');
+  });
+
+  // 按 AniDB 作品拆成多部电影的目录：合集级作品行不存在，但每个成员都有自己带
+  // 身份的电影作品行 → 已识别，不进待确认、不反复自动补刮。
+  test('成员各自拥有带身份的电影作品行的合集单元算已识别（电影拆分后不再悬着）',
+      () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('m1', 'D:/A/Bleach Movie 01.mkv', sourceId,
+        title: 'Bleach Movie 01');
+    await addVideo('m2', 'D:/A/Bleach Movie 02.mkv', sourceId,
+        title: 'Bleach Movie 02');
+    final int collectionId =
+        await db.createMediaCollection('Bleach Movies', collectionType: 'playlist');
+    await db.addToCollection(collectionId, MediaKind.video, 'm1');
+    await db.addToCollection(collectionId, MediaKind.video, 'm2');
+    await seedIdentityForBook('m1');
+    expect(await sweep().sweepAndListPending(), hasLength(1),
+        reason: '只有一个成员有作品行时仍是待确认');
+    expect(runner.sourceIds, <int>[sourceId]);
+    runner.sourceIds.clear();
+
+    await seedIdentityForBook('m2');
+    expect(await sweep().sweepAndListPending(), isEmpty,
+        reason: '两个成员都各自拥有带身份的作品行 = 已识别');
+    expect(runner.sourceIds, isEmpty, reason: '不再自动补刮');
   });
 
   test('来源刮削开关关闭时既不进队列也不补刮', () async {
@@ -313,6 +356,89 @@ void main() {
     expect(runner.sourceIds, hasLength(2));
     // 第二轮只带新作品：老作品已经自动试过，不重复打 AniDB。
     expect(runner.plannedTitles.last, <String>['Fresh Download']);
+  });
+
+  group('资料刷新（Shoko UpdateShow + /tv/changes 增量）', () {
+    final DateTime now = DateTime(2026, 9, 20, 12);
+
+    test('探针命中的已识别剧重刷，没变的不动，探针在间隔内只问一次', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('show-a', 'D:/A/Changed Show (2020).mkv', sourceId,
+          title: 'Changed Show');
+      await addVideo('show-b', 'D:/A/Quiet Show (2021).mkv', sourceId,
+          title: 'Quiet Show');
+      final int scrapedAt =
+          now.subtract(const Duration(days: 3)).millisecondsSinceEpoch;
+      await seedIdentityForBook('show-a', tmdbId: 30984, updatedAt: scrapedAt);
+      await seedIdentityForBook('show-b', tmdbId: 777, updatedAt: scrapedAt);
+      final List<DateTime> probed = <DateTime>[];
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        controller: controller,
+        now: () => now,
+        tmdbChangedTvIds: ({required DateTime since}) async {
+          probed.add(since);
+          return <int>{30984, 42};
+        },
+      );
+      await service.sweepOnce();
+      expect(probed, hasLength(1));
+      expect(probed.single, DateTime.fromMillisecondsSinceEpoch(scrapedAt),
+          reason: 'since = 最早一次刮削');
+      expect(runner.plannedTitles.single, <String>['Changed Show']);
+      expect(runner.runScopes.single, 'sweep');
+
+      // 间隔内再 sweep：不再问 TMDB，也不重复刷同一部。
+      await service.sweepOnce();
+      expect(probed, hasLength(1));
+      expect(runner.sourceIds, hasLength(1));
+    });
+
+    test('上次刮削超过 staleAfter 的作品不问探针直接重刷，每轮有上限', () async {
+      final int sourceId = await addSource('D:/A');
+      final int old =
+          now.subtract(const Duration(days: 40)).millisecondsSinceEpoch;
+      for (int i = 0; i < 3; i++) {
+        await addVideo('old-$i', 'D:/A/Old Show $i (2019).mkv', sourceId,
+            title: 'Old Show $i');
+        await seedIdentityForBook('old-$i', tmdbId: 100 + i, updatedAt: old);
+      }
+      int probes = 0;
+      final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+        database: db,
+        controller: controller,
+        now: () => now,
+        maxRefreshPerSweep: 2,
+        tmdbChangedTvIds: ({required DateTime since}) async {
+          probes++;
+          return const <int>{};
+        },
+      );
+      await service.sweepOnce();
+      expect(probes, 0, reason: '全是过期作品，没有需要问 changes 的');
+      expect(runner.plannedTitles.single, hasLength(2), reason: '每轮最多 2 部');
+    });
+
+    test('没有探针时只刷过期作品；探针抛错这一轮不刷、不炸', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('show-a', 'D:/A/Recent Show (2020).mkv', sourceId,
+          title: 'Recent Show');
+      await seedIdentityForBook('show-a',
+          tmdbId: 30984,
+          updatedAt: now.subtract(const Duration(days: 1)).millisecondsSinceEpoch);
+      await VideoLibraryScrapeSweep(
+              database: db, controller: controller, now: () => now)
+          .sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+      await VideoLibraryScrapeSweep(
+        database: db,
+        controller: controller,
+        now: () => now,
+        tmdbChangedTvIds: ({required DateTime since}) async =>
+            throw StateError('tmdb down'),
+      ).sweepOnce();
+      expect(runner.sourceIds, isEmpty);
+    });
   });
 
   test('sweepAndListPending 回传待确认清单，总闸关时也照常回传', () async {

@@ -291,9 +291,12 @@ void main() {
 
   test('optional credit failure retains MAL work and successful staff',
       () async {
+    int characterCalls = 0;
     final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
-      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+      requestGate: MalVideoMetadataRequestGate(
+          interval: Duration.zero, sleep: (Duration _) async {}),
       client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/characters')) characterCalls++;
         if (request.url.path.endsWith('/full')) {
           return response(<String, Object?>{
             'data': <String, Object?>{
@@ -322,6 +325,162 @@ void main() {
     expect(work.credits.single.person.name, 'Director');
     expect(work.rawPayload?[malIncompleteCreditEndpointsKey],
         <String>['characters']);
+    expect(hasIncompleteMalCredits(work), isTrue);
+    expect(characterCalls, 3, reason: '5xx 首发 + 2 次有界重试后才放弃');
+    provider.close();
+  });
+
+  test(
+      'transient 5xx on a credits endpoint is retried in place and the voice '
+      'cast survives (BUG-2612)', () async {
+    DateTime now = DateTime.utc(2026);
+    final List<Duration> sleeps = <Duration>[];
+    final MalVideoMetadataRequestGate gate = MalVideoMetadataRequestGate(
+        interval: Duration.zero,
+        now: () => now,
+        sleep: (Duration duration) async {
+          sleeps.add(duration);
+          now = now.add(duration);
+        });
+    int characterCalls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: gate,
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          // Jikan 上游连不上时的真实形态：整批 504。
+          if (++characterCalls == 1) {
+            return http.Response(
+                '{"status":504,"type":"BadResponseException"}', 504);
+          }
+          return response(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'character': <String, Object?>{'mal_id': 7, 'name': 'Spike'},
+                'voice_actors': <Object?>[
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{'mal_id': 8, 'name': 'Koichi'},
+                  },
+                ],
+              },
+            ],
+          });
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(characterCalls, 2);
+    expect(sleeps, <Duration>[const Duration(seconds: 2)]);
+    expect(work.credits.single.person.name, 'Koichi');
+    expect(hasIncompleteMalCredits(work), isFalse);
+    provider.close();
+  });
+
+  test('4xx on a credits endpoint is not retried', () async {
+    int characterCalls = 0;
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: MalVideoMetadataRequestGate(
+          interval: Duration.zero, sleep: (Duration _) async {}),
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          characterCalls++;
+          return http.Response('Not Found', 404);
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(characterCalls, 1);
+    expect(hasIncompleteMalCredits(work), isTrue);
+    provider.close();
+  });
+
+  test('MAL placeholder images are treated as no image (BUG-2612)', () async {
+    final MalVideoMetadataProvider provider = MalVideoMetadataProvider(
+      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+      client: MockClient((http.Request request) async {
+        if (request.url.path.endsWith('/full')) {
+          return response(<String, Object?>{
+            'data': <String, Object?>{'mal_id': 1, 'title': 'T', 'type': 'TV'},
+          });
+        }
+        if (request.url.path.endsWith('/characters')) {
+          return response(<String, Object?>{
+            'data': <Object?>[
+              <String, Object?>{
+                'character': <String, Object?>{
+                  'mal_id': 7,
+                  'name': 'Nameless',
+                  'images': <String, Object?>{
+                    'jpg': <String, Object?>{
+                      'image_url':
+                          'https://cdn.myanimelist.net/img/sp/icon/apple-touch-icon-256.png',
+                    },
+                  },
+                },
+                'voice_actors': <Object?>[
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{
+                      'mal_id': 8,
+                      'name': 'Newcomer',
+                      'images': <String, Object?>{
+                        'jpg': <String, Object?>{
+                          'image_url':
+                              'https://cdn.myanimelist.net/images/questionmark_23.gif',
+                        },
+                      },
+                    },
+                  },
+                  <String, Object?>{
+                    'language': 'Japanese',
+                    'person': <String, Object?>{
+                      'mal_id': 9,
+                      'name': 'Veteran',
+                      'images': <String, Object?>{
+                        'jpg': <String, Object?>{
+                          'image_url':
+                              'https://cdn.myanimelist.net/images/voiceactors/1/2.jpg',
+                          'large_image_url':
+                              'https://cdn.myanimelist.net/images/voiceactors/1/2l.jpg',
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          });
+        }
+        return response(<String, Object?>{'data': <Object?>[]});
+      }),
+    );
+    final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+    expect(work.credits, hasLength(2));
+    expect(work.credits[0].person.profileUrl, isNull,
+        reason: 'questionmark 占位不是照片，留空让合并层用别的源补');
+    expect(work.credits[0].character?.imageUrl, isNull);
+    expect(work.credits[1].person.profileUrl,
+        'https://cdn.myanimelist.net/images/voiceactors/1/2l.jpg');
+    expect(
+        isMalPlaceholderImageUrl(
+            'https://cdn.myanimelist.net/images/questionmark_50.gif'),
+        isTrue);
+    expect(
+        isMalPlaceholderImageUrl(
+            'https://cdn.myanimelist.net/images/characters/9/310307.jpg'),
+        isFalse);
     provider.close();
   });
 

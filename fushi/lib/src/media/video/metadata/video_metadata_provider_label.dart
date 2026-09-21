@@ -7,6 +7,7 @@ import 'package:fushi/utils.dart';
 
 String videoMetadataProviderLabel(VideoMetadataProviderKind kind) =>
     switch (kind) {
+      VideoMetadataProviderKind.anidb => t.video_metadata_provider_anidb,
       VideoMetadataProviderKind.mal => t.video_metadata_provider_mal,
       VideoMetadataProviderKind.tmdb => t.video_metadata_provider_tmdb,
       _ => kind.name.toUpperCase(),
