@@ -5163,5 +5163,9 @@
   "video_metadata_download_staff_images": "下载演职员头像",
   "video_metadata_download_staff_images_hint": "刮削时把演职员头像存到本地（每部作品最多 10 张）；关闭时按需从 TMDB 加载。",
   "remote_collection_tmdb_ordering_on_host": "在 host 上选择 TMDB 集编排…",
-  "video_metadata_provider_anidb": "AniDB（哈希身份 + 作品 XML）"
+  "video_metadata_provider_anidb": "AniDB（哈希身份 + 作品 XML）",
+  "video_quality_auto_lowered": "网络较慢，画质已降到 $label",
+  "video_quality_auto_raised": "网络变好，画质已提到 $label",
+  "interconnect_transcode_host_toggle": "为对端转码视频",
+  "interconnect_transcode_host_toggle_desc": "配对设备在弱网下播放本机视频时，实时转码成更低码率。需要 ffmpeg，会占用本机 CPU。"
 }

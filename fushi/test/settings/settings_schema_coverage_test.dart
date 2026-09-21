@@ -77,6 +77,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // → 本开关）的顺序守卫。
   'interconnect/Allow paired devices to read/write configuration':
       'test/sync/interconnect_profile_transfer_test.dart',
+  // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
+  // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
+  // 实时读它，关着就退回原文件直传、能力位报 false。harness 里没有起 server，探不到。
+  // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
+  'interconnect/Transcode video for peers':
+      'test/sync/fushi_sync_server_transcode_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',

@@ -1,0 +1,472 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/live_transcode.dart';
+import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
+
+/// 视频方法真实、其余存根的库服务（对照 `fushi_sync_server_video_test.dart`）。
+class _FakeLibraryService implements FushiLibraryHostService {
+  _FakeLibraryService() {
+    final Directory tmp = Directory.systemTemp.createTempSync('hbk_tc_test');
+    videoFile = File('${tmp.path}/sample.mp4')
+      ..writeAsBytesSync(<int>[1, 2, 3, 4, 5, 6, 7, 8]);
+  }
+
+  late final File videoFile;
+
+  @override
+  Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[
+    RemoteVideoInfo(id: 'v1', title: 'Sample', sizeBytes: 8),
+  ];
+
+  @override
+  Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
+      id == 'v1' ? videoFile : null;
+
+  @override
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = '',
+    int episodeIndex = 0,
+  }) async => null;
+
+  @override
+  Future<AggregateSnapshot> getAggregateSnapshot() async =>
+      const AggregateSnapshot();
+
+  @override
+  Future<CollectionManifest> getCollectionManifest() async =>
+      CollectionManifest.empty;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} 不该被转码用例触达');
+}
+
+/// ffprobe 替身：只回一个固定时长，让 playlist 的段数可预期。
+class _FixedDurationBackend implements FfmpegBackend {
+  _FixedDurationBackend(this.durationSeconds);
+
+  final double? durationSeconds;
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async =>
+      FfmpegRunResult(returnCode: 0, output: '');
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    final double? d = durationSeconds;
+    if (d == null) return FfmpegRunResult(returnCode: 1, output: '');
+    return FfmpegRunResult(
+      returnCode: 0,
+      output: jsonEncode(<String, Object?>{
+        'format': <String, Object?>{'duration': '$d'},
+        'streams': <Object?>[],
+      }),
+    );
+  }
+}
+
+class _MemoryPrefs implements PrefStore {
+  _MemoryPrefs([Map<String, Object?>? seed])
+    : _values = <String, Object?>{...?seed};
+
+  final Map<String, Object?> _values;
+
+  @override
+  dynamic getPref(String key, {dynamic defaultValue}) =>
+      _values.containsKey(key) ? _values[key] : defaultValue;
+
+  @override
+  Future<void> setPref(String key, dynamic value) async => _values[key] = value;
+}
+
+// ── 合成 fMP4（假 ffmpeg 的产物）────────────────────────────────────────────
+
+Uint8List _box(String type, List<int> payload) {
+  final int size = 8 + payload.length;
+  return Uint8List.fromList(<int>[
+    (size >> 24) & 0xff,
+    (size >> 16) & 0xff,
+    (size >> 8) & 0xff,
+    size & 0xff,
+    ...type.codeUnits,
+    ...payload,
+  ]);
+}
+
+List<int> _u32(int v) => <int>[
+  (v >> 24) & 0xff,
+  (v >> 16) & 0xff,
+  (v >> 8) & 0xff,
+  v & 0xff,
+];
+
+Uint8List _syntheticSegment() {
+  final List<int> trak = <int>[
+    ..._box('trak', <int>[
+      ..._box('tkhd', <int>[
+        0,
+        0,
+        0,
+        0,
+        ..._u32(0),
+        ..._u32(0),
+        ..._u32(1),
+        ..._u32(0),
+      ]),
+      ..._box('mdia', <int>[
+        ..._box('mdhd', <int>[
+          0,
+          0,
+          0,
+          0,
+          ..._u32(0),
+          ..._u32(0),
+          ..._u32(1000),
+          ..._u32(0),
+        ]),
+      ]),
+    ]),
+  ];
+  return Uint8List.fromList(<int>[
+    ..._box('ftyp', <int>[9, 9, 9, 9]),
+    ..._box('moov', trak),
+    ..._box('moof', <int>[
+      ..._box('traf', <int>[
+        ..._box('tfhd', <int>[0, 0, 0, 0, ..._u32(1)]),
+        ..._box('tfdt', <int>[0, 0, 0, 0, ..._u32(0)]),
+      ]),
+    ]),
+    ..._box('mdat', <int>[42, 42, 42, 42]),
+  ]);
+}
+
+int _readFirstTfdt(List<int> data) {
+  for (int i = 0; i + 12 <= data.length; i++) {
+    if (data[i] == 0x74 &&
+        data[i + 1] == 0x66 &&
+        data[i + 2] == 0x64 &&
+        data[i + 3] == 0x74) {
+      return ByteData.sublistView(Uint8List.fromList(data)).getUint32(i + 8);
+    }
+  }
+  return -1;
+}
+
+void main() {
+  late FushiSyncServer server;
+  late _FakeLibraryService lib;
+  late String base;
+  late List<List<String>> runnerCalls;
+  const String token = 'test-token-transcode';
+
+  String authHeader() => 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}';
+
+  Future<void> startServer({
+    PrefStore? prefs,
+    double? durationSeconds = 15.5,
+    bool transcodeAvailable = true,
+  }) async {
+    setFfmpegBackendForTesting(_FixedDurationBackend(durationSeconds));
+    runnerCalls = <List<String>>[];
+    if (transcodeAvailable) {
+      setTranscodeSegmentRunnerForTesting((List<String> args) async {
+        runnerCalls.add(args);
+        return _syntheticSegment();
+      });
+    } else {
+      setTranscodeSegmentRunnerForTesting(null);
+      setTranscodeAvailableForTesting(false);
+    }
+    lib = _FakeLibraryService();
+    server = FushiSyncServer(
+      syncDataDir: Directory.systemTemp.createTempSync('hbk_tc_srv').path,
+      port: 0,
+      token: token,
+      allowLan: false,
+      libraryService: lib,
+      prefs: prefs,
+    );
+    await server.start();
+    base = 'http://127.0.0.1:${server.port}';
+  }
+
+  tearDown(() async {
+    setFfmpegBackendForTesting(null);
+    setTranscodeSegmentRunnerForTesting(null);
+    setTranscodeAvailableForTesting(null);
+    await server.stop();
+  });
+
+  final HttpClient client = HttpClient();
+
+  Future<HttpClientResponse> get(String path, {bool withAuth = true}) async {
+    final HttpClientRequest req = await client.getUrl(Uri.parse('$base$path'));
+    if (withAuth) req.headers.set('authorization', authHeader());
+    return req.close();
+  }
+
+  Future<Map<String, dynamic>> getJson(String path) async {
+    final HttpClientResponse res = await get(path);
+    return jsonDecode(await res.transform(utf8.decoder).join())
+        as Map<String, dynamic>;
+  }
+
+  Future<List<int>> getBytes(String path, {bool withAuth = false}) async {
+    final HttpClientResponse res = await get(path, withAuth: withAuth);
+    return <int>[for (final List<int> chunk in await res.toList()) ...chunk];
+  }
+
+  group('能力协商', () {
+    test('能转码的 host 报 videoTranscode: true', () async {
+      await startServer();
+      final Map<String, dynamic> caps = await getJson('/api/capabilities');
+      expect(
+        (caps['liveLibrary'] as Map<String, dynamic>)['videoTranscode'],
+        isTrue,
+      );
+    });
+
+    test('跑不了 ffmpeg 子进程的 host（移动端）如实报 false', () async {
+      await startServer(transcodeAvailable: false);
+      final Map<String, dynamic> caps = await getJson('/api/capabilities');
+      expect(
+        (caps['liveLibrary'] as Map<String, dynamic>)['videoTranscode'],
+        isFalse,
+      );
+    });
+
+    test('用户关掉开关后报 false（实时读偏好，不必重启互联服务）', () async {
+      final _MemoryPrefs prefs = _MemoryPrefs(<String, Object?>{
+        kInterconnectTranscodeEnabledPref: false,
+      });
+      await startServer(prefs: prefs);
+      expect(
+        ((await getJson('/api/capabilities'))['liveLibrary']
+            as Map<String, dynamic>)['videoTranscode'],
+        isFalse,
+      );
+      await prefs.setPref(kInterconnectTranscodeEnabledPref, true);
+      expect(
+        ((await getJson('/api/capabilities'))['liveLibrary']
+            as Map<String, dynamic>)['videoTranscode'],
+        isTrue,
+      );
+    });
+  });
+
+  group('streamurl 画质协商', () {
+    test('不报画质档 → 老行为逐字不变（整文件直传）', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl',
+      );
+      expect(json['transcoded'], isFalse);
+      expect(json['streamIsOriginalContainer'], isTrue);
+      expect(json['url'], contains('/stream?'));
+      expect(runnerCalls, isEmpty);
+    });
+
+    test('报了画质档 → 指向 HLS playlist，并如实说容器已换', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      expect(json['transcoded'], isTrue);
+      // BUG-2590 的既有语义：转码把容器整个换掉，内嵌字幕不能再指望播放器自绘。
+      expect(json['streamIsOriginalContainer'], isFalse);
+      expect(json['url'], contains('/hls.m3u8?token='));
+    });
+
+    test('host 关了开关 → 静默退回直传（不是报错）', () async {
+      await startServer(
+        prefs: _MemoryPrefs(<String, Object?>{
+          kInterconnectTranscodeEnabledPref: false,
+        }),
+      );
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      expect(json['transcoded'], isFalse);
+      expect(json['url'], contains('/stream?'));
+    });
+
+    test('探不出时长 → 退回直传（HLS 要按时长切段，没时长就没法生成）', () async {
+      await startServer(durationSeconds: null);
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      expect(json['transcoded'], isFalse);
+      expect(json['url'], contains('/stream?'));
+    });
+  });
+
+  group('HLS 端点', () {
+    late String tokenQuery;
+
+    Future<void> issue() async {
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      tokenQuery = Uri.parse(json['url'] as String).query;
+    }
+
+    test('playlist：VOD + MAP + 按时长切段，且相对 URI', () async {
+      await startServer();
+      await issue();
+      final HttpClientResponse res = await get(
+        '/api/library/videos/v1/hls.m3u8?$tokenQuery',
+        withAuth: false,
+      );
+      expect(res.statusCode, 200);
+      expect(
+        res.headers.contentType?.mimeType,
+        'application/vnd.apple.mpegurl',
+      );
+      final String text = await res.transform(utf8.decoder).join();
+      expect(text, contains('#EXT-X-PLAYLIST-TYPE:VOD'));
+      expect(text, contains('#EXT-X-MAP:URI="hlsinit.mp4?token='));
+      // 15.5 秒 → 6+6+3.5
+      expect(RegExp('hlsseg\\?').allMatches(text).length, 3);
+      expect(text, contains('#EXTINF:3.500000,'));
+      // 相对 URI：不重建 host/端口，反代与多网卡后面才不会拼出连不上的地址。
+      expect(text, isNot(contains('http://')));
+    });
+
+    test('初始化段只含 ftyp+moov', () async {
+      await startServer();
+      await issue();
+      final List<int> init = await getBytes(
+        '/api/library/videos/v1/hlsinit.mp4?$tokenQuery',
+      );
+      expect(String.fromCharCodes(init.sublist(4, 8)), 'ftyp');
+      expect(init.length, lessThan(_syntheticSegment().length));
+      expect(String.fromCharCodes(init), isNot(contains('mdat')));
+    });
+
+    test('分段剥掉 ftyp/moov，且 tfdt 平移到该段的绝对位置', () async {
+      await startServer();
+      await issue();
+      final List<int> seg0 = await getBytes(
+        '/api/library/videos/v1/hlsseg?$tokenQuery&n=0',
+      );
+      expect(String.fromCharCodes(seg0.sublist(4, 8)), 'moof');
+      expect(_readFirstTfdt(seg0), 0);
+
+      final List<int> seg2 = await getBytes(
+        '/api/library/videos/v1/hlsseg?$tokenQuery&n=2',
+      );
+      // 第 2 段起点 12 秒，timescale 1000 → 12000。不平移的话三段时间戳全落在
+      // 0..段长 上互相重叠，播放器只认得第一段。
+      expect(_readFirstTfdt(seg2), 12000);
+    });
+
+    test('每段按自己的时间范围调 ffmpeg（输入 seek，不从头解码）', () async {
+      await startServer();
+      await issue();
+      runnerCalls.clear();
+      await getBytes('/api/library/videos/v1/hlsseg?$tokenQuery&n=2');
+      expect(runnerCalls, hasLength(1));
+      final List<String> args = runnerCalls.single;
+      expect(args[args.indexOf('-ss') + 1], '12.000');
+      // 末段按真实时长收尾，不越过片尾。
+      expect(args[args.indexOf('-to') + 1], '15.500');
+      expect(args.indexOf('-ss'), lessThan(args.indexOf('-i')));
+    });
+
+    test('段下标越界 → 404', () async {
+      await startServer();
+      await issue();
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsseg?$tokenQuery&n=3',
+          withAuth: false,
+        )).statusCode,
+        404,
+      );
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsseg?$tokenQuery&n=-1',
+          withAuth: false,
+        )).statusCode,
+        404,
+      );
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsseg?$tokenQuery',
+          withAuth: false,
+        )).statusCode,
+        404,
+      );
+    });
+  });
+
+  group('鉴权', () {
+    test('缺 token → 401；错 token → 403', () async {
+      await startServer();
+      expect(
+        (await get(
+          '/api/library/videos/v1/hls.m3u8',
+          withAuth: false,
+        )).statusCode,
+        401,
+      );
+      expect(
+        (await get(
+          '/api/library/videos/v1/hls.m3u8?token=bogus',
+          withAuth: false,
+        )).statusCode,
+        403,
+      );
+    });
+
+    test('直传 token 点不动转码端点（画质档绑在 token 上，不从 query 取）', () async {
+      await startServer();
+      // 不带画质档签发 → token 上没有 profile。
+      final Map<String, dynamic> plain = await getJson(
+        '/api/library/videos/v1/streamurl',
+      );
+      final String q = Uri.parse(plain['url'] as String).query;
+      expect(
+        (await get(
+          '/api/library/videos/v1/hls.m3u8?$q',
+          withAuth: false,
+        )).statusCode,
+        404,
+      );
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsseg?$q&n=0',
+          withAuth: false,
+        )).statusCode,
+        404,
+      );
+      // 一次 ffmpeg 都不该被点起来。
+      expect(runnerCalls, isEmpty);
+    });
+
+    test('token 只对签发它的那个视频有效', () async {
+      await startServer();
+      final Map<String, dynamic> json = await getJson(
+        '/api/library/videos/v1/streamurl?maxWidth=854&maxBitrate=800000',
+      );
+      final String q = Uri.parse(json['url'] as String).query;
+      expect(
+        (await get(
+          '/api/library/videos/other/hls.m3u8?$q',
+          withAuth: false,
+        )).statusCode,
+        403,
+      );
+    });
+  });
+}

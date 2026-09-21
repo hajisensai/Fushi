@@ -183,6 +183,7 @@ import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult, DictionaryPopupWebViewState;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -2040,6 +2041,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _hlsMasterUri;
   List<HlsVariant> _hlsVariants = const <HlsVariant>[];
   int _selectedHlsVariantIndex = -1;
+
+  /// 互联「自动」画质档的自适应：每秒喂一拍播放器状态，卡了就降档、一直富余就升档。
+  /// 判据全在 [AdaptiveQualityController]（纯逻辑、可单测），这里只负责采样与执行。
+  final AdaptiveQualityController _adaptiveQuality = AdaptiveQualityController();
+  Timer? _adaptiveQualityTimer;
+
+  /// 自适应正在换档（重取流是异步的，期间不再喂采样，免得一次卡顿被连算两次）。
+  bool _adaptiveQualitySwitching = false;
   int _hlsDetectSeq = 0;
 
   /// YouTube 画质档（用户报「YouTube 没法调画质」）：与 HLS 画质并行的一套状态，**懒解析**
@@ -2945,11 +2954,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     _secondaryDelayMs = _resolveRemoteInitialSecondaryDelayMs(secInfo, secUid);
     final RemoteVideoClient client = _effectiveRemoteClient!;
-    // 媒体服务器画质档：起播协商前把用户偏好写进 client（client 本身不读偏好）。
+    // 远端画质档（媒体服务器 / 互联）：起播协商前把用户偏好写进 client（client 本身
+    // 不读偏好）。两边的偏好键分开，见 [_readQualityPresetIndex]。
     final Object qualityClient = client;
     if (qualityClient is RemoteVideoQualityLimit) {
-      qualityClient.qualityPresetIndex =
-          appModel.prefsRepo.mediaServerQualityPresetIndex;
+      qualityClient.qualityPresetIndex = _readQualityPresetIndex(qualityClient);
     }
     // 新一次起播：暂停上报的基线随会话重置（起播上报本身带 IsPaused=false）。
     _lastReportedRemotePlaying = null;
@@ -3156,6 +3165,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       );
       if (seq == _episodeLoadSeq && mounted && !_failed) {
         _startRemotePlaybackSession(client, info, initialPositionMs);
+        // 互联「自动」画质档：新的一条流，重新开始观察网况（换集与换档都经这里）。
+        _restartAdaptiveQuality();
       }
       if (restoredPrimarySource != null && mounted) {
         // 内嵌轨重放：把选择态改回 `embedded:<n>` 编码（见 restoredPrimarySource doc）。
@@ -4677,6 +4688,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _volumeDisplay.dispose();
     _watchTracker?.dispose();
     _watchTracker = null;
+    _stopAdaptiveQuality();
     // TODO-1276：撤销首帧就绪监听 + 兜底定时器（回调读 _controller，须在 dispose 前摘）。
     _networkOpenDiagnoseTimer?.cancel();
     _networkOpenDiagnoseTimer = null;
