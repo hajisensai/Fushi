@@ -377,37 +377,27 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     );
   }
 
+  /// 气泡走共享 [FushiCard]（圆角 / 表面色由设计令牌决定，页面不自定 MD3 决策）。
   Widget _userBubble(BuildContext context, String text) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.centerRight,
-      child: Container(
+      child: FushiCard(
         margin: const EdgeInsets.only(top: 8, left: 48),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: scheme.primaryContainer,
-          borderRadius: BorderRadius.circular(16),
-        ),
+        color: scheme.primaryContainer,
         child: Text(text, style: TextStyle(color: scheme.onPrimaryContainer)),
       ),
     );
   }
 
   Widget _assistantBubble(BuildContext context, Widget child) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
+      child: FushiCard(
         margin: const EdgeInsets.only(top: 8, right: 48),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerHigh,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: DefaultTextStyle.merge(
-          style: TextStyle(color: scheme.onSurface),
-          child: child,
-        ),
+        child: child,
       ),
     );
   }
