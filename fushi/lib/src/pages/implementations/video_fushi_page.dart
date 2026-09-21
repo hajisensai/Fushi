@@ -8563,6 +8563,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {
       return t.video_online_stream_none;
     }
+    // 桥超时有自己的类型化证据，不该掉进下面的裸子串阶梯——它的消息里带「timed out」，
+    // 会被网络判据先吃掉报成「网络错误，请检查网络连接」，把用户指向自己的网线。
+    if (error is MihonRuntimeException && error.code == 'BRIDGE_TIMEOUT') {
+      return t.video_load_failed_timeout;
+    }
     final String s = error?.toString().toLowerCase() ?? '';
     // 网络判据先行（BUG-1693 顺带修）：旧序里 'age'/'unavailable' 排在前面且
     // 'age' 是裸子串——'message'/'package'/'storage' 这类传输错误文本都含 'age'，
