@@ -3407,14 +3407,21 @@ class FushiDatabase extends _$FushiDatabase
               for (final QueryRow row in legacy) {
                 final String? mode =
                     row.readNullable<String>('manga_reading_mode');
-                final Map<String, Object?> sparse = <String, Object?>{
-                  'autoMode': mode == null || mode.isEmpty,
-                  if (mode == 'spread' || mode == 'webtoon') 'mode': mode,
-                };
+                // `manga_reading_mode` 为 NULL / 空 = 这本书从没被单独设过，语义是
+                // 「跟随全局」。给它写一行 `{'autoMode': true}` 等于把每一本存量漫画
+                // 都钉成自动判定：此后用户改全局阅读模式，对全部存量书永久不再生效。
+                // 而且覆盖表本该是**稀疏**的（PR 说明也这么写），逐本写行会让每本书
+                // 各多一次 sidecar 资产上传与一条互联 wire 条目。
+                if (mode != 'spread' && mode != 'webtoon') continue;
                 await into(mangaReaderOverrides).insert(
                   MangaReaderOverridesCompanion.insert(
                     bookUid: row.read<String>('uid'),
-                    overridesJson: Value(jsonEncode(sparse)),
+                    overridesJson: Value(
+                      jsonEncode(<String, Object?>{
+                        'autoMode': false,
+                        'mode': mode,
+                      }),
+                    ),
                     updatedAt: 0,
                   ),
                   mode: InsertMode.insertOrIgnore,

@@ -734,12 +734,18 @@ class MangaFushiPage extends BaseSourcePage {
     return m;
   }
 
-  /// 纯函数：页内阅读模式切换。
-  static MangaReadingMode toggleMangaMode(MangaReadingMode mode) {
-    return mode == MangaReadingMode.spread
-        ? MangaReadingMode.webtoon
-        : MangaReadingMode.spread;
-  }
+  /// 纯函数：页内阅读模式切换（分页 ↔ 长条，各自保留用户选的变体）。
+  ///
+  /// 四值枚举下不能再写成二元 `spread ? webtoon : spread`：用户选了
+  /// `pagedVertical` / `webtoonGaps` 之后按一次顶栏切换就会被打回 spread/webtoon，
+  /// 默默丢掉他选的布局。
+  static MangaReadingMode toggleMangaMode(MangaReadingMode mode) =>
+      switch (mode) {
+        MangaReadingMode.spread => MangaReadingMode.webtoon,
+        MangaReadingMode.pagedVertical => MangaReadingMode.webtoonGaps,
+        MangaReadingMode.webtoon => MangaReadingMode.spread,
+        MangaReadingMode.webtoonGaps => MangaReadingMode.pagedVertical,
+      };
 
   /// 纯函数：[MangaReadingMode] → 持久化的 `EpubBooks.mangaReadingMode` 字符串。
   static String modeToDbString(MangaReadingMode mode) {
@@ -1518,6 +1524,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _chromeFloating = appModel.mangaChromeFloating;
     _applyVolumeKeyPaging(appModel.mangaVolumeKeyPaging);
     MangaReaderPreferences readerPreferences = appModel.mangaReaderPreferences;
+    // 这本书的覆盖里是否**显式**定过阅读模式（含「自动」）：定过就压过旧列。
+    bool readerOverrideHasMode = false;
     if (row.uid.isNotEmpty) {
       try {
         final MangaReaderOverrideRow? override = await db
@@ -1525,6 +1533,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         if (override != null && !override.deleted) {
           final Object? decoded = jsonDecode(override.overridesJson);
           if (decoded is Map) {
+            readerOverrideHasMode =
+                decoded.containsKey('mode') || decoded.containsKey('autoMode');
             readerPreferences = MangaReaderPreferences.resolve(
               readerPreferences,
               decoded.cast<String, Object?>(),
@@ -1577,12 +1587,21 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _tapZonePaging = false;
     }
 
-    // 阅读模式：用户覆盖优先，null 走自动判定（页图长宽比中位数）。
-    final MangaReadingMode mode =
-        MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-        (readerPreferences.autoMode
-            ? detectReadingMode(payload)
-            : readerPreferences.mode);
+    // 阅读模式优先级：每作品覆盖 > 旧列 `epub_books.manga_reading_mode` > 全局
+    // （autoMode 时按页图长宽比中位数自动判定）。
+    //
+    // 旧列不能排在覆盖之前：v112 迁移恰恰给「用过旧模式切换按钮」的书写了覆盖行，
+    // 若旧列压制覆盖，用户在新面板里选 pagedVertical / webtoonGaps 会写进覆盖却
+    // 仍按旧列的 spread/webtoon 渲染——设置看起来没生效。旧列保留为回退，降级回
+    // 旧版本照样能读。
+    final MangaReadingMode mode = readerOverrideHasMode
+        ? (readerPreferences.autoMode
+              ? detectReadingMode(payload)
+              : readerPreferences.mode)
+        : MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
+              (readerPreferences.autoMode
+                  ? detectReadingMode(payload)
+                  : readerPreferences.mode);
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
@@ -2181,7 +2200,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       rotateWidePages: _rotateWidePages,
       autoZoomWidePages: _autoZoomWide,
       panWidePages: _panWide,
-      doubleTapAnimationMs: _animateDoubleTap ? 300 : 0,
+      // 这个值是**双击判定窗口**（`isDouble = now - lastTapT <= DBL_MS`），不是动画
+      // 时长——关掉「双击缩放动画」不该把双击手势本身废掉（传 0 会被 clamp 成
+      // 100ms，常人两击根本打不进这个窗口）。动画开关走 animateDoubleTap，JS 侧的
+      // 注释也是这么写的。
+      doubleTapAnimationMs: 300,
       zoomStartPosition: _zoomStartPosition,
     );
   }
@@ -3385,7 +3408,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
       );
       if (_bookRow!.uid.isNotEmpty) {
-        await db.setMangaReaderOverride(_bookRow!.uid, <String, Object?>{
+        // 局部改动走 patch：整行替换会把该书其余覆盖全抹掉，并经 LWW 同步给对端。
+        await db.patchMangaReaderOverride(_bookRow!.uid, <String, Object?>{
           'mode': next.storageKey,
           'autoMode': false,
         });
@@ -3697,11 +3721,121 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       overrides: override,
       onChanged: (Map<String, Object?> value) =>
           appModel.database.setMangaReaderOverride(row.uid, value),
+      // key 必须与 descriptor 的 key 对齐（门控集合是 fullscreen / keepScreenOn /
+      // invertVolumeKeys）。传 'volumeKeys' 这种不存在的 key 等于把
+      // keepScreenOn 与 invertVolumeKeys 在所有平台都藏掉——而 invertVolumeKeys
+      // 恰恰是这批设备项里唯一真正接线的那个。
       supportedDeviceKeys: <String>{
-        if (Platform.isAndroid || Platform.isIOS) 'fullscreen',
-        if (Platform.isAndroid) 'volumeKeys',
+        if (Platform.isAndroid || Platform.isIOS) ...<String>[
+          'fullscreen',
+          'keepScreenOn',
+        ],
+        if (Platform.isAndroid) 'invertVolumeKeys',
       },
     );
+    // 关掉面板后把改动应用到**当前这本书**：这些字段的唯一赋值点原本是 `_load()`，
+    // 不在这里重新应用的话，用户拨完开关必须退出重进才看得到效果。
+    await _reapplyReaderPreferences();
+  }
+
+  /// 重新读这本书的每作品覆盖、与全局默认合并后应用到当前会话。
+  ///
+  /// 只动「改完即可见」的视觉/手势字段；阅读模式变化会连带重建单元边界（与顶栏
+  /// 切换同一条路径）。
+  Future<void> _reapplyReaderPreferences() async {
+    final EpubBookRow? row = _bookRow;
+    final MokuroPayload? payload = _payload;
+    if (row == null || payload == null || !mounted) return;
+    MangaReaderPreferences prefs = appModel.mangaReaderPreferences;
+    bool hasModeOverride = false;
+    if (row.uid.isNotEmpty) {
+      try {
+        final MangaReaderOverrideRow? override = await appModel.database
+            .getMangaReaderOverride(row.uid);
+        if (override != null && !override.deleted) {
+          final Object? decoded = jsonDecode(override.overridesJson);
+          if (decoded is Map) {
+            final Map<String, Object?> map = decoded.cast<String, Object?>();
+            hasModeOverride =
+                map.containsKey('mode') || map.containsKey('autoMode');
+            prefs = MangaReaderPreferences.resolve(prefs, map);
+          }
+        }
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'MangaFushiPage.reapplyReaderPreferences',
+          error,
+          stack,
+        );
+      }
+    }
+    if (!mounted) return;
+    final MangaReadingMode nextMode = hasModeOverride
+        ? (prefs.autoMode ? detectReadingMode(payload) : prefs.mode)
+        : _mode;
+    final int currentPage = MangaFushiPage.firstPageOfSpread(
+      _spreads,
+      _currentSpread,
+    );
+    final bool modeChanged = nextMode != _mode;
+    final List<MangaSpreadEntry> spreads = modeChanged
+        ? _buildSpreadsFor(payload, nextMode)
+        : _spreads;
+    if (modeChanged) _readLedger.rebaseOnNextArrive();
+    setState(() {
+      _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
+      _background = MangaBackgroundKey.fromKey(prefs.background);
+      _zoomPercent = prefs.zoomStart.clamp(
+        kMangaZoomMinPercent,
+        kMangaZoomMaxPercent,
+      );
+      _tapZoneLayout = switch (prefs.tapZones) {
+        MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
+        MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,
+        MangaTapZonePreset.kindle => MangaTapZoneLayout.kindle,
+        MangaTapZonePreset.edge => MangaTapZoneLayout.edge,
+        MangaTapZonePreset.rightAndLeft => MangaTapZoneLayout.leftRight,
+        MangaTapZonePreset.disabled => MangaTapZoneLayout.disabled,
+        MangaTapZonePreset.topBottom => MangaTapZoneLayout.topBottom,
+      };
+      _tapZonePaging = prefs.tapZones != MangaTapZonePreset.disabled;
+      _scaleType = prefs.scaleType;
+      _longStripSidePadding = prefs.longStripSidePadding;
+      _disableZoomOut = prefs.disableZoomOut;
+      _animateDoubleTap = prefs.animateDoubleTap;
+      _invertHorizontal = prefs.invertHorizontal;
+      _invertVertical = prefs.invertVertical;
+      _invertBoth = prefs.invertBoth;
+      _cropBorders = prefs.cropBorders;
+      _splitWidePages = prefs.splitWidePages;
+      _rotateWidePages = prefs.rotateWidePages;
+      _autoZoomWide = prefs.autoZoomWide;
+      _panWide = prefs.panWide;
+      _zoomStartPosition = prefs.zoomStartPosition;
+      _invertVolumeKeys = prefs.invertVolumeKeys;
+      _saveDirectory = prefs.saveDirectory;
+      if (modeChanged) {
+        _mode = nextMode;
+        _spreads = spreads;
+        _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
+        _currentPage = currentPage;
+        _currentFraction = 0;
+      }
+    });
+    _applyVolumeKeyPaging(
+      prefs.volumeKeys,
+      invertDirection: _invertVolumeKeys,
+    );
+    if (modeChanged) {
+      _pageNotifier.value = _currentPage;
+      _noteVisiblePages();
+      await _loadInitialWindow();
+      _updateCurrentPageImagePath();
+    } else {
+      // 视觉项（缩放模式 / 裁边 / 长条边距 / 反转 / tapZone / 背景）都编进窗口
+      // 文档，重新加载当前窗口即生效。
+      await _loadInitialWindow();
+    }
   }
 
   Future<void> _showPageJumpDialog() async {
