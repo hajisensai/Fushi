@@ -1878,6 +1878,23 @@ class InterconnectSyncBackend extends SyncBackend
   /// 仅在用户选「自动」（[qualityPresetIndex] < 0）时有意义。
   int? adaptiveQualityIndex;
 
+  /// [adaptiveQualityIndex] 当前对应的 host 基址。
+  ///
+  /// 这个后端是**进程级单例**，而自适应档是「这条链路当前能跑多少」的观测结果，不是
+  /// 用户设置：在外面用移动网络降到 360p 后回家连局域网，若不按 host / 链路重算，
+  /// `??=` 会短路掉起点判据，继续 360p 转码播（而「局域网就原画直传」是明确承诺的
+  /// 行为），且升档要 90 拍 × 4 级、上界 `kAdaptiveMaxIndex` 还永远回不到原画。
+  String? adaptiveQualityScope;
+
+  /// 自适应档的起点：scope（host 基址）变了就按新链路重算，否则沿用已观测到的档。
+  void ensureAdaptiveQualityStart() {
+    final String scope = _apiBaseOrNull ?? '';
+    if (adaptiveQualityIndex == null || adaptiveQualityScope != scope) {
+      adaptiveQualityIndex = resolveAutoStartIndex();
+      adaptiveQualityScope = scope;
+    }
+  }
+
   @override
   List<MediaServerQualityPreset> get qualityPresets => _hostTranscodeAvailable
       ? kInterconnectQualityPresets

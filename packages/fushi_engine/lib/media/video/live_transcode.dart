@@ -269,7 +269,26 @@ bool transcodeAvailable() {
   final bool? override = _availabilityOverride;
   if (override != null) return override;
   if (_runnerOverride != null) return true;
+  // 移动端当 host：判据是「能不能 exec 一个 ffmpeg 子进程」。那边装的是进程内
+  // ffmpeg-kit（没有可接管的 stdout 管道），iOS 更是从根上禁子进程。而
+  // `_selectBackend()` 本身没有任何平台判断——装配点没装、或在装配前就被缓存过
+  // 一次时，移动端照样拿到 CliFfmpegBackend，于是能力位报 true、HLS URL 照发、
+  // 每一段都失败。这里兜一条硬的。
+  if (Platform.isAndroid || Platform.isIOS) return false;
   return resolveFfmpegBackend() is CliFfmpegBackend;
+}
+
+/// 在并发闸门内跑一段任意工作（**仅测试用**）：`_runSegment` 的 runner override 在
+/// 取名额**之前**就返回，所以闸门本身（队列交棒、排空回零）在产品路径外没有别的
+/// 入口可验。
+@visibleForTesting
+Future<T> runGuardedTranscodeForTesting<T>(Future<T> Function() body) async {
+  await _acquireTranscodeSlot();
+  try {
+    return await body();
+  } finally {
+    _releaseTranscodeSlot();
+  }
 }
 
 int _liveTranscodes = 0;
@@ -369,6 +388,61 @@ Future<Uint8List> _transcodeRawSegment({
   ),
 );
 
+/// 单段转码的墙钟上界。一段只有 [kTranscodeSegmentSeconds] 秒内容，正常几百毫秒到
+/// 几秒；挂死的 ffmpeg（网络盘掉线、解码器卡住）若不设上界会**永久**占住三个并发
+/// 名额之一，占满之后这台 host 的转码彻底哑掉且不会自愈——`_transcodeQueue` 里的
+/// Completer 永不 complete，后续每个分段请求连同 shelf handler 一起永久挂起。
+const Duration kTranscodeSegmentTimeout = Duration(seconds: 90);
+
+/// 跑一次分段转码进程，返回 (退出码, stdout 字节, stderr 摘要)。超时 SIGKILL 并抛
+/// [TranscodeFailure]（与既有 [runFfmpegProcess] 的处置同口径）。
+Future<({int code, List<int> bytes, String stderr})> _spawnSegment(
+  String executable,
+  List<String> args,
+) async {
+  final Process process = await HelperProcessRegistry.instance.start(
+    executable,
+    args,
+  );
+  // stdout / stderr 必须同时 drain：任一管道写满 64 KB 都会把 ffmpeg 堵死，表现为
+  // 「转码莫名其妙停住」。与既有 runFfmpegProcess 的防死锁处理同因。
+  final Future<List<int>> stdoutFuture = process.stdout
+      .expand<int>((List<int> c) => c)
+      .toList();
+  final StringBuffer stderrBuffer = StringBuffer();
+  final Future<void> stderrFuture = process.stderr.forEach((List<int> chunk) {
+    if (stderrBuffer.length < 4096) {
+      stderrBuffer.write(String.fromCharCodes(chunk));
+    }
+  });
+  try {
+    final List<int> collected = await stdoutFuture.timeout(
+      kTranscodeSegmentTimeout,
+    );
+    await stderrFuture.timeout(kTranscodeSegmentTimeout);
+    final int code = await process.exitCode.timeout(kTranscodeSegmentTimeout);
+    return (
+      code: code,
+      bytes: collected,
+      stderr: stderrBuffer.toString().trim(),
+    );
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    fushiDebugPrint(
+      'transcode segment timed out after ${kTranscodeSegmentTimeout.inSeconds}s: '
+      '$executable',
+    );
+    throw TranscodeFailure(-1, 'segment timed out');
+  }
+}
+
+/// 随包 ffmpeg 被杀软隔离 / 缺 DLL / 架构不匹配时的判据（BUG-275 / BUG-283 同款）：
+/// 非 0 退出且一个字节的视频数据都没产出。这时回退 PATH 上的 ffmpeg 再试一次——
+/// 全应用其它路径（`_runCliFfmpeg`）早就这么做了，只有转码这条新路径没有，结果是
+/// 「能力位报 true、HLS URL 照发、每一段都 503」。
+bool _bundledSegmentUnusable(int code, List<int> bytes) =>
+    code != 0 && bytes.isEmpty;
+
 Future<Uint8List> _runSegment(List<String> args) async {
   final TranscodeSegmentRunner? override = _runnerOverride;
   if (override != null) return override(args);
@@ -376,31 +450,29 @@ Future<Uint8List> _runSegment(List<String> args) async {
   await _acquireTranscodeSlot();
   try {
     final String executable = resolveFfmpegExecutable();
-    final Process process = await HelperProcessRegistry.instance.start(
-      executable,
-      args,
-    );
-    // stdout / stderr 必须同时 drain：任一管道写满 64 KB 都会把 ffmpeg 堵死，表现为
-    // 「转码莫名其妙停住」。与既有 runFfmpegProcess 的防死锁处理同因。
-    final Future<List<int>> stdoutFuture = process.stdout
-        .expand<int>((List<int> c) => c)
-        .toList();
-    final StringBuffer stderrBuffer = StringBuffer();
-    final Future<void> stderrFuture = process.stderr.forEach((List<int> chunk) {
-      if (stderrBuffer.length < 4096) {
-        stderrBuffer.write(String.fromCharCodes(chunk));
-      }
-    });
-    final List<int> collected = await stdoutFuture;
-    await stderrFuture;
-    final int code = await process.exitCode;
-    if (code != 0) {
-      fushiDebugPrint(
-        'transcode segment exited $code: ${stderrBuffer.toString().trim()}',
-      );
-      throw TranscodeFailure(code, stderrBuffer.toString().trim());
+    ({int code, List<int> bytes, String stderr}) r;
+    try {
+      r = await _spawnSegment(executable, args);
+    } on ProcessException {
+      // 随包路径存在于磁盘却起不来（损坏 / 架构不匹配 / 无执行权限）。
+      if (executable == 'ffmpeg' || ffmpegExplicitOverride() != null) rethrow;
+      fushiDebugPrint('bundled ffmpeg failed to start, retrying PATH ffmpeg');
+      r = await _spawnSegment('ffmpeg', args);
     }
-    return Uint8List.fromList(collected);
+    if (_bundledSegmentUnusable(r.code, r.bytes) &&
+        executable != 'ffmpeg' &&
+        ffmpegExplicitOverride() == null) {
+      fushiDebugPrint(
+        'bundled ffmpeg produced no output (code=${r.code}); '
+        'retrying PATH ffmpeg',
+      );
+      r = await _spawnSegment('ffmpeg', args);
+    }
+    if (r.code != 0) {
+      fushiDebugPrint('transcode segment exited ${r.code}: ${r.stderr}');
+      throw TranscodeFailure(r.code, r.stderr);
+    }
+    return Uint8List.fromList(r.bytes);
   } finally {
     _releaseTranscodeSlot();
   }

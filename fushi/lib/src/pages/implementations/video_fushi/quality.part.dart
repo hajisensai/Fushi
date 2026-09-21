@@ -276,7 +276,8 @@ extension _VideoQuality on _VideoFushiPageState {
     final InterconnectSyncBackend? client = _adaptiveQualityClient;
     if (client == null) return;
     if (client.qualityPresetIndex >= 0) return;
-    client.adaptiveQualityIndex ??= client.resolveAutoStartIndex();
+    // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
+    client.ensureAdaptiveQualityStart();
     _adaptiveQuality.reset();
     _adaptiveQualityTimer = Timer.periodic(
       const Duration(seconds: 1),
@@ -342,9 +343,15 @@ extension _VideoQuality on _VideoFushiPageState {
         initialPositionMsOverride: posMs,
       );
       if (!mounted) return;
-      final String label = decision.targetIndex < 0
+      // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
+      // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
+      // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
+      // 变成未捕获的 zone error。
+      final List<MediaServerQualityPreset> presets = client.qualityPresets;
+      final String label = decision.targetIndex < 0 ||
+              decision.targetIndex >= presets.length
           ? t.video_quality_auto
-          : client.qualityPresets[decision.targetIndex].label;
+          : presets[decision.targetIndex].label;
       _showOsd(
         decision.reason == AdaptiveQualityReason.stall
             ? t.video_quality_auto_lowered(label: label)
@@ -405,8 +412,10 @@ extension _VideoQuality on _VideoFushiPageState {
       initialPositionMsOverride: posMs,
     );
     if (!mounted) return;
-    final String label =
-        target < 0 ? t.video_quality_auto : server.qualityPresets[target].label;
+    final List<MediaServerQualityPreset> presets = server.qualityPresets;
+    final String label = target < 0 || target >= presets.length
+        ? t.video_quality_auto
+        : presets[target].label;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 

@@ -44,7 +44,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
-      // 弱网转码：client 报画质档（`?maxHeight=720&maxBitrate=3000000`），host 决定
+      // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
       // 认不认。四个闸门缺一不可——档位有效、用户没关开关、本机真能 exec ffmpeg
       // （移动端 host 的进程内 ffmpeg-kit 没有可接管的 stdout，见
       // [transcodeAvailable]）、以及探得出时长（HLS playlist 要按时长切段，探不出就

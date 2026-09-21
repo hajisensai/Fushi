@@ -76,7 +76,7 @@ track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。
 | `GET …/<id>/hlsinit.mp4?token=` | 初始化段（取第 0 段产物的 `ftyp`+`moov`） |
 | `GET …/<id>/hlsseg?token=&n=` | 第 n 段（剥头 + `tfdt` 平移） |
 
-- **档位绑在 token 上，不从 query 取**：这四条路径豁免 Basic 鉴权（播放器取 playlist /
+- **档位绑在 token 上，不从 query 取**：后三条路径（playlist / init / 分段）豁免 Basic 鉴权（播放器取 playlist /
   init / 分段都是裸 GET），让 `hlsseg` 自带编码参数就等于把「在 host 上起一个任意参数
   的 ffmpeg」敞开给 URL 持有者。签发侧（`/streamurl`，要 Basic）定档。
 - **一段一个短命进程**：没有会话表、没有临时文件、没有长跑进程要清理；seek 到哪就转哪。

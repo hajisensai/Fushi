@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -381,6 +382,76 @@ void main() {
       // 末段按真实时长收尾，不越过片尾。
       expect(args[args.indexOf('-to') + 1], '15.500');
       expect(args.indexOf('-ss'), lessThan(args.indexOf('-i')));
+    });
+
+    test('query 改不动已签发 token 上的画质档（不是「在 host 上起任意 ffmpeg」）', () async {
+      await startServer();
+      await issue(); // 854 / 800 kbps
+      runnerCalls.clear();
+      // 拿着合法 token 追加一组更高的档位参数：实际 ffmpeg 参数必须仍是签发时那一档。
+      // 这几条路径按设计豁免 Basic，档位若能从 query 取，就等于把「在 host 上起一个
+      // 任意参数的 ffmpeg」敞开给 URL 持有者。
+      await getBytes(
+        '/api/library/videos/v1/hlsseg?$tokenQuery&n=0'
+        '&maxWidth=7680&maxBitrate=99999999',
+      );
+      expect(runnerCalls, hasLength(1));
+      final List<String> args = runnerCalls.single;
+      expect(args.join(' '), contains('854'), reason: '档位来自 token，不是 query');
+      expect(args.join(' '), isNot(contains('7680')));
+      expect(args.join(' '), isNot(contains('99999999')));
+    });
+
+    test('ffmpeg 失败 → 503（不装作成功返回空段：空段在播放器那头是黑屏转圈）', () async {
+      await startServer();
+      await issue();
+      setTranscodeSegmentRunnerForTesting((List<String> args) async {
+        throw TranscodeFailure(1, 'boom');
+      });
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsseg?$tokenQuery&n=0',
+          withAuth: false,
+        )).statusCode,
+        503,
+      );
+      expect(
+        (await get(
+          '/api/library/videos/v1/hlsinit.mp4?$tokenQuery',
+          withAuth: false,
+        )).statusCode,
+        503,
+      );
+    });
+
+    test('并发闸门：同时在跑的转码不超过上限，排空后名额不泄漏', () async {
+      // runner override 在取名额**之前**就 return，所以闸门本身（队列交棒、排空
+      // 回零）只能由 runGuardedTranscodeForTesting 直接验。
+      int live = 0;
+      int peak = 0;
+      final List<Completer<void>> gates = <Completer<void>>[];
+      final List<Future<void>> runs = <Future<void>>[];
+      for (int i = 0; i < kMaxConcurrentTranscodes + 2; i++) {
+        final Completer<void> gate = Completer<void>();
+        gates.add(gate);
+        runs.add(
+          runGuardedTranscodeForTesting(() async {
+            live++;
+            if (live > peak) peak = live;
+            await gate.future;
+            live--;
+          }),
+        );
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(peak, kMaxConcurrentTranscodes, reason: '多出来的必须排队');
+      expect(liveTranscodeCount, kMaxConcurrentTranscodes);
+      for (final Completer<void> gate in gates) {
+        gate.complete();
+        await Future<void>.delayed(Duration.zero);
+      }
+      await Future.wait(runs);
+      expect(liveTranscodeCount, 0, reason: '排空后计数回零，名额不泄漏');
     });
 
     test('段下标越界 → 404', () async {
