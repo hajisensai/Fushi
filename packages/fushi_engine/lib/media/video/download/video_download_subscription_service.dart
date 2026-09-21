@@ -358,9 +358,18 @@ class VideoDownloadSubscriptionService {
         await database.getVideoDownloadSubscriptionItems(
       subscription.subscriptionId,
     );
+    // 一次性订阅「已经下过了」的判据只能看**整包那一条**（`batch` / 电影的
+    // `movie`）。订阅 id 按作品稳定、`upsertVideoDownloadSubscription` 整行覆盖
+    // 但**不清 items**：用户追更过某番（items 里已有带 jobId 的 `S01E01…`）、番完结
+    // 后改从 BD 全集包重新订阅，mode 被改写成 oneShot，若这里看「任意 item 有 job」
+    // 就会直接 fulfil——订阅显示「已完成」，整包一个字节都没下（BUG-2619 的同族
+    // 静默失败）。换发布组重订同一个整包同理。
     if (subscription.mode == 'oneShot' &&
         existingItems.any(
-          (VideoDownloadSubscriptionItemRow item) => item.jobId != null,
+          (VideoDownloadSubscriptionItemRow item) =>
+              item.jobId != null &&
+              (item.logicalItemKey == kBatchSubscriptionItemKey ||
+                  item.logicalItemKey == 'movie'),
         )) {
       return const _SubscriptionCheckOutcome(
         matched: true,
@@ -1162,6 +1171,12 @@ _SubscriptionLogicalItem? _logicalItem(
       season: subscription.season ?? parsed.season,
     );
   }
+  // 一次性订阅只要那一个整包：创建端靠「整组全是整包」（`batchOnly`）才建 oneShot，
+  // 但那个前提在检查端不成立——创建端只发一次默认分页的搜索，检查端无条件深翻页到
+  // `_subscriptionResourceMaxPages`。同一 filter 组里的单集发布只要出现在 UI 没看到
+  // 的后续页，就会被 oneShot 订阅当成「要下的一集」，于是整包 + 每一集各入队一次，
+  // 一次检查就把整季下两遍。与 ongoing 丢弃整包对称，这里丢弃单集。
+  if (subscription.mode == 'oneShot') return null;
   final int? episode = parsed.episode;
   final int season = parsed.season ?? subscription.season ?? 1;
   if (episode == null || season <= 0 || episode <= 0) {

@@ -22,9 +22,9 @@ const String kBatchSubscriptionItemKey = 'batch';
 ///
 /// 判据保守，全部对应真实发布形态：
 /// - 显式关键词：batch / complete / season pack / 合集 / 全集；
-/// - 带界定符的集数区间：`[01-12]` / `第01-12话` / `(01~24 Fin)` ——要求区间由
-///   第/括号 引导**或**以 话/集/END/Fin/完 收尾，两端 1..300 且递增，避免把
-///   `2023-08` 日期、分辨率误判成区间。
+/// - 带界定符的集数区间：`[01-12]` / `第01-12话` / `(01~24 Fin)` / `E01-E12` ——
+///   要求区间由 第/括号/`E`/`EP` 引导**或**以 话/集/END/Fin/完 收尾，两端 1..300
+///   且递增，避免把 `2023-08` 日期、分辨率误判成区间。
 ///
 /// 注意它**认不出**只带 `[Fin]`、`BDRip` 这类没有区间也没有关键词的整季包——那种
 /// 形态只能靠「解析不出集号」兜住，见 [subscriptionReleaseIsBatch]。
@@ -38,7 +38,12 @@ bool looksLikeBatchVideoRelease(String title) {
   if (RegExp('season pack', caseSensitive: false).hasMatch(title)) return true;
   if (title.contains('合集') || title.contains('全集')) return true;
   for (final RegExpMatch match in RegExp(
-    r'(?:(?<lead>第|\[|\(|【|（)\s*)?(\d{1,3})\s*[-~〜]\s*(\d{1,3})\s*'
+    // `E01-E12` / `EP01-EP24`：整季包的常见英文写法，两端都没有中文界定符也没有
+    // 收尾词。删掉服务端私有判据后若不认这一形态，它会被 `parseVideoFilename`
+    // 解析成「第 1 集」，追更订阅把 12/24 集的包当成一集入队并占掉 S01E01。
+    // `\b` 前导避免吃到 `HEVC 10-bit` / `x264` 里的字母。
+    r'(?:(?<lead>第|\[|\(|【|（|\b[Ee][Pp]?)\s*)?(\d{1,3})\s*[-~〜]\s*'
+    r'(?:[Ee][Pp]?)?(\d{1,3})\s*'
     r'(?<tail>话|話|集|END|Fin|完)?',
     caseSensitive: false,
   ).allMatches(title)) {

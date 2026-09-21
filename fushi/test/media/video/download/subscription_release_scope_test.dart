@@ -46,6 +46,24 @@ void main() {
       );
     });
 
+    test('E01-E12 / EP01-EP24 形态的整季包认得出（删旧私有判据引入的回归）', () {
+      // 被删掉的服务端私有 `_looksLikeBatch` 认得这一形态，共享版原本不认：
+      // 两端都没有中文界定符、也没有收尾词，`parseVideoFilename` 会把它解析成
+      // 「第 1 集」，追更订阅于是把 12/24 集的包当一集入队并占掉 S01E01。
+      expect(
+        subscriptionReleaseIsBatch('[Group] Example Show E01-E12 [1080p]'),
+        isTrue,
+      );
+      expect(
+        subscriptionReleaseIsBatch('[Group] Example Show EP01-EP24 [1080p]'),
+        isTrue,
+      );
+      expect(
+        looksLikeBatchVideoRelease('[Group] Example Show e01-e12 [1080p]'),
+        isTrue,
+      );
+    });
+
     test('日期与技术标记不被误判成集数区间', () {
       expect(
         looksLikeBatchVideoRelease('[Group] Example Show - 05 [2023-08]'),
@@ -53,6 +71,15 @@ void main() {
       );
       expect(
         looksLikeBatchVideoRelease('[Group] Example Show - 05 [10-bit]'),
+        isFalse,
+      );
+      // `E` 前导要求词边界，别吃到 HEVC 的尾字母 / x264 这类技术标记。
+      expect(
+        looksLikeBatchVideoRelease('[Group] Example Show - 05 HEVC 10-bit'),
+        isFalse,
+      );
+      expect(
+        looksLikeBatchVideoRelease('[Group] Example Show - 05 [x264 8-10bit]'),
         isFalse,
       );
     });
