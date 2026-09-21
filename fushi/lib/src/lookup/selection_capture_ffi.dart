@@ -264,8 +264,9 @@ abstract final class SelectionCapture {
 
   /// macOS only: shows the system Accessibility prompt / opens the privacy
   /// pane and returns the CURRENT trust state (a grant takes effect once the
-  /// user flips the switch; re-query with [isAccessibilityTrusted]). Settings
-  /// page action only — never call this on the hotkey path.
+  /// user flips the switch; re-query with [isAccessibilityTrusted]). Called
+  /// from the settings action and from the first explicit global-lookup
+  /// trigger, never during app startup.
   static Future<bool> requestAccessibilityTrust() async {
     if (!Platform.isMacOS) return true;
     try {

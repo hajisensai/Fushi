@@ -90,6 +90,11 @@ class GlobalLookupController {
   // the OS hotkey immediately, instead of the key being a compile-time const.
   FushiShortcutRegistry? _registry;
   bool _started = false;
+  // macOS cannot read another app's selection until the user grants
+  // Accessibility access. The first explicit global-lookup trigger opens the
+  // system permission pane; do that once per process and let the user return
+  // to the source app before we try to capture its selection.
+  bool _macAccessibilityPrompted = false;
   // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
   // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
   // hang a resume-on-dismiss. The video subtitle lookup (path A) would use this
@@ -677,6 +682,16 @@ class GlobalLookupController {
         glog('hotkey: appModel null — abort');
         return;
       }
+      if (Platform.isMacOS &&
+          !await _ensureMacAccessibilityForSelection()) {
+        // Showing the permission pane changes the foreground application, so
+        // capturing now would read the wrong app. The user can press the same
+        // hotkey again after granting access.
+        if (_isCurrentRoute) {
+          glog('hotkey: macOS Accessibility permission required — abort');
+        }
+        return;
+      }
       // TODO-1079 (D) — collapse native + Dart reveal state to known-hidden
       // BEFORE the (possibly slow) selection capture, so a re-press makes the
       // previous card vanish immediately. _lookupExternal hides again right
@@ -730,6 +745,19 @@ class GlobalLookupController {
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
+  }
+
+  /// Returns whether macOS can read/capture the foreground app's selection.
+  /// The permission request is only made after an explicit global-lookup
+  /// trigger, never during app startup or silently in the capture fallback.
+  Future<bool> _ensureMacAccessibilityForSelection() async {
+    if (!Platform.isMacOS) return true;
+    if (await SelectionCapture.isAccessibilityTrusted()) return true;
+    if (_macAccessibilityPrompted) return false;
+    _macAccessibilityPrompted = true;
+    final bool granted = await SelectionCapture.requestAccessibilityTrust();
+    glog('hotkey: macOS Accessibility request granted=$granted');
+    return granted && await SelectionCapture.isAccessibilityTrusted();
   }
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word

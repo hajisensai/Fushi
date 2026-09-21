@@ -29,7 +29,7 @@ Dart 说的是**物理 px、左上原点**（Win32）；AppKit 是**点、左下
 
 顺序：`captureContext`（既有 AX 上下文捕获，用户开了「读取整句」时）→ `captureSelection`：AX `kAXSelectedText` → 释放所有修饰键后合成 ⌘C（`CGEvent`，`.cghidEventTap`）+ `changeCount` 轮询 600 ms + **整份**剪贴板还原（所有 type，不只文本）→ 未授权辅助功能时退化为「当前剪贴板文本」并回 `trusted:false`。三步都在 Dart 的剪贴板串行闸门内。
 
-AX 与合成按键都要 **辅助功能（TCC）** 授权：设置页「查词」分类新增 macOS-only 动作项 `lookup.accessibility_permission`（`AXIsProcessTrustedWithOptions` 带 prompt + 打开隐私面板）。热键路径**永远不弹**授权（AppDelegate 的 fail-open 契约不变）。
+AX 与合成按键都要 **辅助功能（TCC）** 授权：设置页「查词」分类新增 macOS-only 动作项 `lookup.accessibility_permission`（`AXIsProcessTrustedWithOptions` 带 prompt + 打开隐私面板）。用户第一次明确触发全局查词且尚未授权时也会打开该面板，并停止本次捕获，避免把系统设置窗口误当成前台来源；应用启动时不主动弹窗，授权后再次触发即可按 Windows 语义读取选中文字。
 
 ## 4. 默认热键
 
