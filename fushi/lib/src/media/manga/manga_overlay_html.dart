@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 
 /// 把一页所有 mokuro block 渲染成绝对定位的透明 `<p class="ocr-box">` 层。
@@ -516,6 +517,10 @@ String mangaPageDivHtml(
   bool isWebtoon = false,
   bool eager = false,
   bool ocrLoaded = true,
+  MangaScaleType scaleType = MangaScaleType.fitScreen,
+  bool cropBorders = false,
+  bool splitWidePages = false,
+  bool rotateWidePages = false,
 }) {
   // div 内联声明：
   // - position:relative —— OCR 框绝对定位的包含块。
@@ -534,20 +539,36 @@ String mangaPageDivHtml(
   final double slotVw = 100.0 / slots;
   final String sizingCss = isWebtoon
       ? ''
-      : 'width:min(${_num(slotVw)}vw,${_num(100 * w / h)}vh);'
-            'height:min(100vh,${_num(slotVw * h / w)}vw);';
+      : switch (scaleType) {
+          MangaScaleType.fitWidth =>
+            'width:${_num(slotVw)}vw;height:auto;max-height:100vh;',
+          MangaScaleType.fitHeight =>
+            'width:auto;height:100vh;max-width:${_num(slotVw)}vw;',
+          MangaScaleType.original => 'width:${_num(w)}px;height:${_num(h)}px;',
+          MangaScaleType.stretch => 'width:${_num(slotVw)}vw;height:100vh;',
+          MangaScaleType.fitScreen || MangaScaleType.smart =>
+            'width:min(${_num(slotVw)}vw,${_num(100 * w / h)}vh);'
+                'height:min(100vh,${_num(slotVw * h / w)}vw);',
+        };
   final String loading = eager && !isWebtoon ? 'eager' : 'lazy';
   final String fetchPriority = eager && !isWebtoon ? 'high' : 'auto';
   return '<div class="manga-page" data-spread="$spreadIndex" '
       'data-spread-pages="$pagesInSpread" '
       'data-page="$pageIndex" data-pw="${_num(w)}" data-ph="${_num(h)}" '
       'data-ocr-loaded="${ocrLoaded ? '1' : '0'}" '
+      'data-crop-borders="${cropBorders ? '1' : '0'}" '
+      'data-split-wide="${splitWidePages ? '1' : '0'}" '
+      'data-rotate-wide="${rotateWidePages ? '1' : '0'}" '
       'style="position:relative;container-type:inline-size;'
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
       '<img src="${_escapeAttr(imgSrc)}" loading="$loading" '
       'fetchpriority="$fetchPriority" decoding="async" '
-      'style="pointer-events:none;">'
+      'style="pointer-events:none;object-fit:${cropBorders
+          ? 'cover'
+          : scaleType == MangaScaleType.stretch
+          ? 'fill'
+          : 'contain'};">'
       '${mangaOcrBoxesHtml(page)}'
       '</div>';
 }
@@ -599,8 +620,27 @@ String mangaWindowDocument(
   MangaTapZoneLayout tapZoneLayout = MangaTapZoneLayout.leftRight,
   String backgroundCss = '#000',
   bool showOcrBoxes = false,
+  MangaScaleType scaleType = MangaScaleType.fitScreen,
+  int longStripSidePadding = 0,
+  bool disableZoomOut = false,
+  bool animateDoubleTap = true,
+  bool invertHorizontal = false,
+  bool invertVertical = false,
+  bool invertBoth = false,
+  bool cropBorders = false,
+  bool splitWidePages = false,
+  bool rotateWidePages = false,
+  bool autoZoomWidePages = false,
+  bool panWidePages = true,
+  int doubleTapAnimationMs = 300,
+  String zoomStartPosition = 'automatic',
 }) {
-  final bool isWebtoon = mode == MangaReadingMode.webtoon;
+  // Vertical paging shares the scroll bridge with long-strip mode, but each
+  // page snaps to a viewport. Keeping this distinction here lets old callers
+  // that only know spread/webtoon continue to work.
+  final bool isVerticalPaged = mode == MangaReadingMode.pagedVertical;
+  final bool isWebtoon = mode.isWebtoon || isVerticalPaged;
+  final bool hasGaps = mode.hasGaps;
   // spread 容器本身始终按 LTR 的几何顺序排列，保证 offsetLeft 是稳定的
   // 0/100vw/200vw；RTL 只施加到每个 spread 内部，让双页视觉页序反转。
   // 若把 direction:rtl 放在根 strip 上，Chromium 会把 wrapper 的 RTL 起点偏移
@@ -645,6 +685,10 @@ String mangaWindowDocument(
       pagesInSpread: slotPages,
       pageIndex: pageNumber,
       isWebtoon: isWebtoon,
+      scaleType: scaleType,
+      cropBorders: cropBorders,
+      splitWidePages: splitWidePages,
+      rotateWidePages: rotateWidePages,
       // 当前 spread 与前后相邻 spread 立即解码；窗口里更远的页继续 lazy，
       // 兼顾无白屏翻页与超清页图内存。
       eager: !isWebtoon && (spreadIndex - currentSpread).abs() <= 1,
@@ -694,7 +738,11 @@ String mangaWindowDocument(
   final String rootSizing = isWebtoon
       ? '#manga-root{display:flex;flex-direction:column;direction:ltr;'
             'width:100vw;align-items:flex-start;}'
-            '.manga-page{width:100vw;}'
+            '.manga-page{width:100vw;padding-left:${_num(longStripSidePadding.toDouble())}%;'
+            'padding-right:${_num(longStripSidePadding.toDouble())}%;'
+            'box-sizing:border-box;${hasGaps ? 'margin-bottom:12px;' : ''}'
+            '${isVerticalPaged ? 'scroll-snap-align:start;min-height:100vh;' : ''}}'
+            '${isVerticalPaged ? '#manga-root{scroll-snap-type:y mandatory;}' : ''}'
       : '#manga-viewport{overflow:hidden;width:100vw;height:100vh;}'
             '#manga-root{display:flex;flex-direction:row;direction:ltr;'
             'height:100vh;align-items:center;'
@@ -765,7 +813,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition)}'
       '</script>'
       '</body></html>';
 }
@@ -810,13 +858,30 @@ String _mangaGestureJs({
   required MangaPageAnimation pageAnimation,
   required bool tapZonePaging,
   required MangaTapZoneLayout tapZoneLayout,
+  bool disableZoomOut = false,
+  bool animateDoubleTap = true,
+  bool invertHorizontal = false,
+  bool invertVertical = false,
+  bool invertBoth = false,
+  int doubleTapAnimationMs = 300,
+  bool splitWidePages = false,
+  bool rotateWidePages = false,
+  bool autoZoomWidePages = false,
+  bool panWidePages = true,
+  String zoomStartPosition = 'automatic',
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
   // 只负责遍历命中。webtoon 的 rtl 恒 false（长条漫没有开本方向），热区的
   // prev/next 在 JS 里换成滚动方向。
   final String tapZonesJs = <String>[
-    for (final MangaTapZone z in mangaTapZones(tapZoneLayout, rtl: rtl))
+    for (final MangaTapZone z in mangaTapZones(
+      tapZoneLayout,
+      rtl: rtl,
+      invertHorizontal: invertHorizontal,
+      invertVertical: invertVertical,
+      invertBoth: invertBoth,
+    ))
       '[${_num(z.left)},${_num(z.top)},${_num(z.width)},${_num(z.height)},'
           '${z.forward}]',
   ].join(',');
@@ -826,11 +891,16 @@ String _mangaGestureJs({
 (function(){
   function _bridge(){ return window.flutter_inappwebview; }
   // ── canvas zoom/pan ──
-  var ZOOM_MIN = ${zoomMinPercent / 100.0};
+  var ZOOM_MIN = ${disableZoomOut ? 1.0 : zoomMinPercent / 100.0};
   var ZOOM_MAX = ${zoomMaxPercent / 100.0};
   // 灵敏度倍率（设置项，100% = 基准）。
   var ZOOM_SENS = ${zoomSensitivity / 100.0};
   var ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${zoomPercent / 100.0}));
+  var SPLIT_WIDE = $splitWidePages;
+  var ROTATE_WIDE = $rotateWidePages;
+  var AUTO_ZOOM_WIDE = $autoZoomWidePages;
+  var PAN_WIDE = $panWidePages;
+  var PAGE_HALF = 0;
   // 纵向位置的唯一拥有者（BUG-1701）：webtoon 是竖滚文档，纵向归 window.scrollY，
   // PAN_Y 恒 0；spread 是 100vh 定高、overflow:hidden 的视口，不滚动，纵向归 PAN_Y。
   // 此前两模式共用 PAN_Y 公式，于是 webtoon 每次缩放都额外把整条长图平移
@@ -843,7 +913,24 @@ String _mangaGestureJs({
     PAN_X = window.innerWidth * (1 - ZOOM) / 2;
     PAN_Y = IS_WEBTOON ? 0 : window.innerHeight * (1 - ZOOM) / 2;
   }
+  function _currentPageIsWide(){
+    var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
+    if (!page) return false;
+    var pw = Number(page.getAttribute('data-pw') || 0);
+    var ph = Number(page.getAttribute('data-ph') || 1);
+    return pw > ph * 1.15;
+  }
+  function _applyWidePolicy(){
+    if (!AUTO_ZOOM_WIDE || ! _currentPageIsWide()) return;
+    var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
+    if (!page || !(page.offsetWidth > 0)) return;
+    ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM, window.innerWidth / page.offsetWidth));
+    _clampPan();
+    _applyCanvas();
+  }
   _recenterPan();
+  if (!IS_WEBTOON && '$zoomStartPosition' === 'left') PAN_X = 0;
+  if (!IS_WEBTOON && '$zoomStartPosition' === 'right') PAN_X = window.innerWidth * (1 - ZOOM);
   var rightDrag = null;
   // ── 临时合成层提升（BUG-1759）──
   // will-change:transform 一旦常驻，Chromium 就把该层的栅格化尺度钉成只升不降：
@@ -899,6 +986,43 @@ String _mangaGestureJs({
     _applyCanvas();
     if (IS_WEBTOON) window.scrollTo(0, anchorLayout * ZOOM);
   };
+  // Wide-page paging is a view transform, so OCR and selection remain in the
+  // same page DOM.  Dart may ask this function before a turn; true means that
+  // the request was consumed by the second half of the current page.
+  window.__mangaTurnWithinPage = function(forward){
+    if (!SPLIT_WIDE) return false;
+    var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
+    if (!page) return false;
+    var pw = Number(page.getAttribute('data-pw') || 0);
+    var ph = Number(page.getAttribute('data-ph') || 0);
+    if (!(pw > ph * 1.15)) return false;
+    var next = PAGE_HALF + (forward ? 1 : -1);
+    if (next < 0 || next > 1) return false;
+    PAGE_HALF = next;
+    var root = document.getElementById('manga-root');
+    if (root) root.style.transform = 'translateX(' +
+      (-page.offsetLeft + (next ? -window.innerWidth / 2 : 0)) + 'px)';
+    return true;
+  };
+  // Bridge helper for OCR/capture callers. It reports coordinates in the
+  // source image, after CSS crop and optional wide-page rotation. The helper
+  // deliberately uses getBoundingClientRect instead of guessed viewport math.
+  window.__mangaViewportToPageRect = function(pageIndex, x, y, width, height){
+    var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
+    if (!page) return null;
+    var r = page.getBoundingClientRect();
+    var pw = Number(page.getAttribute('data-pw') || 1);
+    var ph = Number(page.getAttribute('data-ph') || 1);
+    var px = (x - r.left) / Math.max(1, r.width) * pw;
+    var py = (y - r.top) / Math.max(1, r.height) * ph;
+    var sx = width / Math.max(1, r.width) * pw;
+    var sy = height / Math.max(1, r.height) * ph;
+    if (ROTATE_WIDE && pw > ph * 1.15) {
+      var ox = px; px = py; py = ph - ox - sy;
+      var swap = sx; sx = sy; sy = swap;
+    }
+    return {x:px, y:py, width:sx, height:sy};
+  };
   _applyCanvas();
   // ── spread translateX：把固定 100vw 的 spread 容器平移到视口左边缘 ──
   // 动画样式由设置决定：slide/none 直接改 transform（过渡与否交给 CSS）；fade 先
@@ -912,14 +1036,17 @@ String _mangaGestureJs({
   // fade 的「先淡出再位移」只属于翻页，不会在 resize 风暴里连环闪烁。
   function _translateToSpread(target){
     CURRENT = target;
+    PAGE_HALF = 0;
     var root = document.getElementById('manga-root');
     if (!root) return;
     var spread = root.querySelector('.manga-spread[data-spread="'+target+'"]');
     root.style.transform =
       'translateX(' + (spread ? -spread.offsetLeft : 0) + 'px)';
+    _applyWidePolicy();
   }
   window.__mangaApplyTranslate = function(target){
     CURRENT = target;
+    PAGE_HALF = 0;
     var root = document.getElementById('manga-root');
     if (root) _hintWillChange(root, PAGE_ANIM_MS + 120);
     if (PAGE_ANIM !== 'fade') {
@@ -1131,6 +1258,7 @@ String _mangaGestureJs({
   }
   function _panBy(dx, dy){
     var canvasMoved = false;
+    if (!PAN_WIDE && _currentPageIsWide() && ZOOM <= 1) return;
     if (IS_WEBTOON) {
       if (dy) window.scrollBy(0, -dy);
       if (ZOOM > 1 && dx) { PAN_X += dx; canvasMoved = true; }
@@ -1298,7 +1426,10 @@ String _mangaGestureJs({
   // 缩回时收起）。所以空白单击先挂 DBL_MS 定时器，第二击到达就取消它只做缩放；
   // 没有第二击才把 onTapEmpty 补发出去。代价是 kindle 布局下中央也是翻页热区，
   // 双击缩放在该布局下只剩边角，属于该布局自身的取舍。
-  var DBL_MS = 300, DBL_SLOP = 30;
+  // The window stays enabled when animation is disabled: Mihon separates the
+  // double-tap gesture from its visual zoom animation.  A zero timeout would
+  // make every double tap two independent empty taps.
+  var DBL_MS = ${doubleTapAnimationMs.clamp(100, 600)}, DBL_SLOP = 30;
   var lastTapT = 0, lastTapX = 0, lastTapY = 0;
   var pendingEmptyTap = null;
   function _consumeDoubleTap(x, y){

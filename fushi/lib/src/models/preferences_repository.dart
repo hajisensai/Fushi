@@ -56,6 +56,8 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
@@ -3095,6 +3097,72 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMangaSpreadOffset(int value) async {
     await setPref('manga_spread_offset', value);
+    notifyListeners();
+  }
+
+  /// Existing individual keys stay authoritative for shared legacy controls.
+  /// This prevents an older settings surface from being shadowed by JSON.
+  MangaReaderPreferences get mangaReaderPreferences {
+    Map<String, Object?> values = <String, Object?>{};
+    final Object? raw = getPref('manga_reader_preferences');
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) values = decoded;
+      } on FormatException {
+        // A malformed optional value is equivalent to absent defaults.
+      }
+    }
+    if (!values.containsKey('mode') && !values.containsKey('autoMode')) {
+      final String legacyMode = mangaSpreadPreference;
+      values = <String, Object?>{
+        ...values,
+        'autoMode': legacyMode == 'auto',
+        if (legacyMode == 'spread' || legacyMode == 'webtoon')
+          'mode': legacyMode,
+      };
+    }
+    return MangaReaderPreferences.fromJson(<String, Object?>{
+      ...values,
+      'direction': mangaReadingDirection,
+      'background': mangaBackground,
+      'zoomStart': mangaZoomPercent,
+      'animateTransitions': mangaPageAnimation != 'none',
+      'tapZones': !mangaTapZonePaging
+          ? 'disabled'
+          : mangaTapZoneLayout == 'left_right'
+          ? 'right_left'
+          : mangaTapZoneLayout,
+      'volumeKeys': mangaVolumeKeyPaging,
+    });
+  }
+
+  Future<void> setMangaReaderPreferences(MangaReaderPreferences value) async {
+    await setPref('manga_reader_preferences', jsonEncode(value.toJson()));
+    await setPref(
+      'manga_spread_preference',
+      value.autoMode ? 'auto' : value.mode.storageKey,
+    );
+    await setPref('manga_reading_direction', value.direction);
+    await setPref('manga_background', value.background);
+    await setPref('manga_zoom_percent', value.zoomStart);
+    await setPref(
+      'manga_tap_zone_paging',
+      value.tapZones != MangaTapZonePreset.disabled,
+    );
+    await setPref(
+      'manga_tap_zone_layout',
+      value.tapZones == MangaTapZonePreset.rightAndLeft
+          ? 'left_right'
+          : value.tapZones.key,
+    );
+    await setPref('manga_volume_key_paging', value.volumeKeys);
+    await setPref(
+      'manga_page_animation',
+      value.animateTransitions
+          ? (mangaPageAnimation == 'none' ? 'slide' : mangaPageAnimation)
+          : 'none',
+    );
     notifyListeners();
   }
 

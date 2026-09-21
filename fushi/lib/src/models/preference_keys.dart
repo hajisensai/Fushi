@@ -153,6 +153,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
+  'manga_reader_preferences',
   // bool（默认 true）：漫画阅读器顶栏悬浮（不占布局、点页面中央/顶边悬停唤出）
   // 还是常驻钉在页图上方。
   'manga_chrome_floating',

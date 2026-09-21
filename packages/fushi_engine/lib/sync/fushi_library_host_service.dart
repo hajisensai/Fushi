@@ -338,6 +338,9 @@ class RemoteBookInfo {
     this.hasMangaContent = false,
     this.hasMangaChapters = false,
     this.mangaReadingMode,
+    this.mangaReaderOverrides = const <String, Object?>{},
+    this.mangaReaderOverrideUpdatedAt = 0,
+    this.mangaReaderOverrideDeleted = false,
   });
 
   /// 书身份格式（`EpubBooks.format` 值域：'epub'/'pdf'/'manga'，见 [BookFormat]）。
@@ -364,6 +367,9 @@ class RemoteBookInfo {
   /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
   /// 后续调整各端各自记忆）。
   final String? mangaReadingMode;
+  final Map<String, Object?> mangaReaderOverrides;
+  final int mangaReaderOverrideUpdatedAt;
+  final bool mangaReaderOverrideDeleted;
 
   /// 该书的媒体种类（BUG-1119）。additive wire 字段 `'kind'`：epub 缺省**不写键**
   /// （旧书清单 wire 字节完全不变），缺失/未知一律回落 [MediaKind.epub]（旧 host
@@ -474,6 +480,11 @@ class RemoteBookInfo {
         if (hasMangaContent) 'hasMangaContent': true,
         if (hasMangaChapters) 'hasMangaChapters': true,
         if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
+        if (mangaReaderOverrides.isNotEmpty || mangaReaderOverrideDeleted)
+          'mangaReaderOverrides': mangaReaderOverrides,
+        if (mangaReaderOverrideUpdatedAt > 0)
+          'mangaReaderOverrideUpdatedAt': mangaReaderOverrideUpdatedAt,
+        if (mangaReaderOverrideDeleted) 'mangaReaderOverrideDeleted': true,
       };
 
   RemoteBookInfo copyWith({
@@ -496,6 +507,9 @@ class RemoteBookInfo {
     bool? hasMangaContent,
     bool? hasMangaChapters,
     String? mangaReadingMode,
+    Map<String, Object?>? mangaReaderOverrides,
+    int? mangaReaderOverrideUpdatedAt,
+    bool? mangaReaderOverrideDeleted,
   }) =>
       RemoteBookInfo(
         title: title,
@@ -519,6 +533,11 @@ class RemoteBookInfo {
         hasMangaContent: hasMangaContent ?? this.hasMangaContent,
         hasMangaChapters: hasMangaChapters ?? this.hasMangaChapters,
         mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
+        mangaReaderOverrides: mangaReaderOverrides ?? this.mangaReaderOverrides,
+        mangaReaderOverrideUpdatedAt: mangaReaderOverrideUpdatedAt ??
+            this.mangaReaderOverrideUpdatedAt,
+        mangaReaderOverrideDeleted: mangaReaderOverrideDeleted ??
+            this.mangaReaderOverrideDeleted,
       );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -556,6 +575,10 @@ class RemoteBookInfo {
       hasMangaContent: json['hasMangaContent'] == true,
       hasMangaChapters: json['hasMangaChapters'] == true,
       mangaReadingMode: _jsonString(json['mangaReadingMode']),
+      mangaReaderOverrides: _jsonObjectMap(json['mangaReaderOverrides']),
+      mangaReaderOverrideUpdatedAt:
+          _jsonNonNegativeInt(json['mangaReaderOverrideUpdatedAt']),
+      mangaReaderOverrideDeleted: json['mangaReaderOverrideDeleted'] == true,
     );
   }
 }
@@ -623,6 +646,14 @@ class RemoteActivityEvent {
 int _jsonNonNegativeInt(Object? raw) {
   if (raw is int && raw >= 0) return raw;
   return 0;
+}
+
+Map<String, Object?> _jsonObjectMap(Object? raw) {
+  if (raw is! Map) return const <String, Object?>{};
+  return <String, Object?>{
+    for (final MapEntry<Object?, Object?> e in raw.entries)
+      e.key.toString(): e.value,
+  };
 }
 
 /// 按 `sanitizeTtuFilename(title)` union 的书籍同步 diff 结果。

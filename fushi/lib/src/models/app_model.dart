@@ -78,6 +78,7 @@ import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -8520,6 +8521,12 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.mangaWidePageSolo ?? kMangaWidePageSoloDefault;
   Future<void> setMangaWidePageSolo(bool value) =>
       prefsRepo.setMangaWidePageSolo(value);
+
+  MangaReaderPreferences get mangaReaderPreferences =>
+      _prefsRepo?.mangaReaderPreferences ?? const MangaReaderPreferences();
+
+  Future<void> setMangaReaderPreferences(MangaReaderPreferences value) =>
+      prefsRepo.setMangaReaderPreferences(value);
 
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;

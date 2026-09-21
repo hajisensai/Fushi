@@ -213,6 +213,7 @@ class BackupMergeEngine {
       // v82：书自定义 CSS / 图片揭开状态（uid 键 LWW）。无 dialog toggle——
       // 存在性 guard 让「书没随备份来」时自然 no-op（与 collections/tags 同规）。
       await _mergeBookCustomCss();
+      await _mergeMangaReaderOverrides();
       await _mergeRevealedImages();
       // BUG-1488：用户给书改的名字（override_title pref）是内容，跟着书走。
       await _mergeOverrideTitlePrefs();
@@ -1472,6 +1473,33 @@ class BackupMergeEngine {
       'WHERE $_srcBookUidRekey = book_custom_css.book_uid '
       'AND s.relative_path = book_custom_css.relative_path '
       'AND s.updated_at > book_custom_css.updated_at)',
+    );
+  }
+
+  /// v109：漫画按作品覆盖设置 LWW 合并（按稳定 uid 换键）。
+  Future<void> _mergeMangaReaderOverrides() async {
+    if (!await _srcTableExists('manga_reader_overrides')) return;
+    await _db.customStatement(
+      'INSERT INTO manga_reader_overrides '
+      '(book_uid, overrides_json, updated_at, deleted) '
+      'SELECT $_srcBookUidRekey, s.overrides_json, s.updated_at, s.deleted '
+      'FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE EXISTS (SELECT 1 FROM epub_books AS b WHERE b.uid = $_srcBookUidRekey) '
+      'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
+      'WHERE t.book_uid = $_srcBookUidRekey)',
+    );
+    await _db.customStatement(
+      'UPDATE manga_reader_overrides SET '
+      'overrides_json = (SELECT s.overrides_json FROM '
+      '$_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
+      'deleted = (SELECT s.deleted FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid), '
+      'updated_at = (SELECT s.updated_at FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid) '
+      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.manga_reader_overrides AS s '
+      'WHERE $_srcBookUidRekey = manga_reader_overrides.book_uid '
+      'AND s.updated_at > manga_reader_overrides.updated_at)',
     );
   }
 

@@ -71,6 +71,13 @@ class InterconnectMangaCatalog {
           if (book.collection != null) 'collection': book.collection!.toJson(),
           if (book.mangaReadingMode != null)
             'readingMode': book.mangaReadingMode,
+          if (book.mangaReaderOverrides.isNotEmpty ||
+              book.mangaReaderOverrideDeleted)
+            'readerOverrides': <String, Object?>{
+              'values': book.mangaReaderOverrides,
+              'updatedAt': book.mangaReaderOverrideUpdatedAt,
+              'deleted': book.mangaReaderOverrideDeleted,
+            },
           if (book.hasMangaChapters) 'chaptered': true,
         },
       ),

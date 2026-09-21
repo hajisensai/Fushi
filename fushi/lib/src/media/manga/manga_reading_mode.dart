@@ -7,6 +7,55 @@ enum MangaReadingMode {
 
   /// Vertically scrolling webtoon strips.
   webtoon,
+
+  /// A paged reader that advances vertically.  It shares the paged geometry
+  /// with [spread], but keeps a distinct value so preferences can round-trip
+  /// the Mihon mode without losing the user's choice.
+  pagedVertical,
+
+  /// Continuous long-strip reading with a small gap between pages.
+  webtoonGaps,
+}
+
+extension MangaReadingModeSemantics on MangaReadingMode {
+  /// Whether the mode uses a continuous vertical document.
+  bool get isWebtoon =>
+      this == MangaReadingMode.webtoon || this == MangaReadingMode.webtoonGaps;
+
+  bool get isContinuous => isWebtoon || this == MangaReadingMode.pagedVertical;
+
+  /// Whether pages are laid out as discrete viewport-sized units.
+  bool get isPaged => !isWebtoon;
+
+  /// Whether a continuous reader should paint a gap between pages.
+  bool get hasGaps => this == MangaReadingMode.webtoonGaps;
+
+  String get storageKey {
+    switch (this) {
+      case MangaReadingMode.spread:
+        return 'spread';
+      case MangaReadingMode.webtoon:
+        return 'webtoon';
+      case MangaReadingMode.pagedVertical:
+        return 'paged_vertical';
+      case MangaReadingMode.webtoonGaps:
+        return 'webtoon_gaps';
+    }
+  }
+
+  static MangaReadingMode fromStorageKey(String value) {
+    switch (value) {
+      case 'webtoon':
+        return MangaReadingMode.webtoon;
+      case 'paged_vertical':
+        return MangaReadingMode.pagedVertical;
+      case 'webtoon_gaps':
+        return MangaReadingMode.webtoonGaps;
+      case 'spread':
+      default:
+        return MangaReadingMode.spread;
+    }
+  }
 }
 
 /// Pages whose median `height / width` aspect ratio exceeds this threshold are

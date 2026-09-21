@@ -24,18 +24,24 @@ class MangaVolumeKeyPagingController {
   final VolumeKeyChannel _channel;
 
   bool _owned = false;
+  bool _inverted = false;
   DateTime? _lastAcceptedAt;
 
   bool get owned => _owned;
 
-  void apply({required bool enabled, required bool platformSupported}) {
+  void apply({
+    required bool enabled,
+    required bool platformSupported,
+    bool invertDirection = false,
+  }) {
     final bool want = enabled && platformSupported;
-    if (want == _owned) return;
+    if (want == _owned && invertDirection == _inverted) return;
     _owned = want;
+    _inverted = invertDirection;
     if (want) {
       _channel.setHandlers(
-        onVolumeUp: () => _accept(onPrevious),
-        onVolumeDown: () => _accept(onNext),
+        onVolumeUp: () => _accept(_inverted ? onNext : onPrevious),
+        onVolumeDown: () => _accept(_inverted ? onPrevious : onNext),
       );
       unawaited(_channel.setInterceptEnabled(true));
     } else {

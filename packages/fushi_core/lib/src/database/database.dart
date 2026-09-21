@@ -657,6 +657,7 @@ void _requireOneVideoMetadataOwner({
   StatisticsTombstones,
   BookTagMembershipTombstones,
   BookCustomCss,
+  MangaReaderOverrides,
   SyncDeletionTombstones,
   RevealedImages,
   ActivityEvents,
@@ -736,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 111;
+  int get schemaVersion => 112;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3386,6 +3387,39 @@ class FushiDatabase extends _$FushiDatabase
             }
             if (!await _tableExists('video_episode_binding_overrides')) {
               await m.createTable(videoEpisodeBindingOverrides);
+            }
+          }
+          if (from < 112) {
+            // v112：manga_reader_overrides——漫画阅读器的每作品稀疏覆盖（Mihon
+            // 对齐的阅读模式/缩放/裁边等），全局默认仍落 preferences。存量的
+            // epub_books.manga_reading_mode 不改写，按书搬成一条稀疏覆盖，旧列
+            // 留给旧版本读。幂等守卫同 v108。
+            if (!await _tableExists('manga_reader_overrides')) {
+              await m.createTable(mangaReaderOverrides);
+            }
+            if (await _tableExists('epub_books') &&
+                await _columnExists('epub_books', 'manga_reading_mode') &&
+                await _columnExists('epub_books', 'uid')) {
+              final List<QueryRow> legacy = await customSelect(
+                "SELECT uid, manga_reading_mode FROM epub_books "
+                "WHERE uid != '' AND format = 'manga'",
+              ).get();
+              for (final QueryRow row in legacy) {
+                final String? mode =
+                    row.readNullable<String>('manga_reading_mode');
+                final Map<String, Object?> sparse = <String, Object?>{
+                  'autoMode': mode == null || mode.isEmpty,
+                  if (mode == 'spread' || mode == 'webtoon') 'mode': mode,
+                };
+                await into(mangaReaderOverrides).insert(
+                  MangaReaderOverridesCompanion.insert(
+                    bookUid: row.read<String>('uid'),
+                    overridesJson: Value(jsonEncode(sparse)),
+                    updatedAt: 0,
+                  ),
+                  mode: InsertMode.insertOrIgnore,
+                );
+              }
             }
           }
         },
