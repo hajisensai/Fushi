@@ -1,5 +1,7 @@
 #include "floating_lyric_window.h"
 
+#include "low_level_mouse_hook.h"
+
 #include <d2d1helper.h>
 #include <dwrite_3.h>
 #include <dwmapi.h>
@@ -518,6 +520,10 @@ bool FloatingLyricWindow::Show(HWND owner) {
     return false;
   }
   visible_ = true;
+  // BUG-2613 — 正文窗压在游戏上：落在它上面的物理左键（点字查词 / 拖动 / 滚动条）
+  // 要向注入侧发布 Popup 护盾请求，采样型引擎才不会把这一下当成点游戏推进台词。
+  // 没有 galgame 会话时（有声书歌词条 / 剪贴板文本窗）登记是空操作。
+  fushi::RegisterOverlayClickShield(hwnd_);
   // BUG-951: a re-show while pass-through is still on must re-create the
   // escape-hatch toolbar and re-arm the body's click-through in one place.
   ApplyPassThroughExStyle();
@@ -560,6 +566,7 @@ void FloatingLyricWindow::Hide() {
   // click-through even if pass-through was switched off while hidden.
   ApplyPassThroughExStyle();
   if (hwnd_ != nullptr) {
+    fushi::UnregisterOverlayClickShield(hwnd_);
     ShowWindow(hwnd_, SW_HIDE);
   }
 }
@@ -602,6 +609,11 @@ void FloatingLyricWindow::UpdateText(const std::wstring& text,
   // 换了台词，去重锚指的那个下标已经是另一个字了：不清就会出现「新句子里鼠标下
   // 的字正好同号 → 悬停不查」。
   ResetHoverLookupAnchor();
+  // BUG-2613 — 每行台词顺手刷新一次覆盖窗口登记：绑定的游戏 HWND 是登记时解出
+  // 的，会话换局 / 游戏重建主窗（全屏切换）之后只有这条路能把它换成活的。
+  if (visible_ && OwnsLiveWindow()) {
+    fushi::RegisterOverlayClickShield(hwnd_);
+  }
   RequestRender();
 }
 
@@ -1262,6 +1274,9 @@ LRESULT FloatingLyricWindow::HandleMessage(HWND hwnd, UINT message,
       // back-pointer 就是把活着的新窗口拆掉、还顺手把 hwnd_ 清成 null。
       const HWND destroyed = hwnd;
       SetWindowLongPtr(destroyed, GWLP_USERDATA, 0);
+      // BUG-2613 — 登记表里存的是 HWND 值；系统回收句柄给别的窗口之前必须撤掉，
+      // 否则将来某个无关窗口拿到同一个值就会被当成覆盖窗口。
+      fushi::UnregisterOverlayClickShield(destroyed);
       // 成员句柄与复位表只在「死的正是我方当前这一个」时才动。走的是与
       // Show() 死句柄分支同一张复位表；这里不能用 ForgetDeadWindow()：
       // WM_NCDESTROY 期间窗口尚未真正消失，OwnsLiveWindow() 仍为真，会被它
