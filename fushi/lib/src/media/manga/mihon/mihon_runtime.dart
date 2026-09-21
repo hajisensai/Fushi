@@ -3,6 +3,23 @@ import 'dart:typed_data';
 import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
+/// 一次扩展调用（桌面 `/dalvik` POST / Android method channel）在 Dart 侧放手的上界。
+///
+/// **必须大于宿主自己的 OkHttp `callTimeout`**（两端都是 2 分钟：桌面
+/// `third_party/m_extension_server/overlay/server/src/main/kotlin/eu/kanade/tachiyomi/
+/// network/NetworkHelper.kt`，Android `fushi/android/app/src/main/kotlin/eu/kanade/
+/// tachiyomi/network/NetworkHelper.kt`）。此前桌面钉的是 45 秒——比宿主自己的预算还
+/// 短，于是慢站点必然先撞 Dart 这一层：JVM 里那次请求还在跑，Dart 已经把它报成
+/// `BRIDGE_TIMEOUT`，真正的失败原因（HTTP 状态码 / 解析异常 / 哪个 hoster 死了）永远
+/// 到不了用户面前。取流是这条链路上最重的一步（展开 hoster、逐条解析候选，每次都是
+/// 一轮真实 HTTP），45 秒对在线视频源等于「点开必失败」（BUG-2617）。
+///
+/// 参照物一概没有这层闸：Aniyomi 的 `EpisodeLoader` / `HosterLoader` 对扩展调用是裸
+/// `await`，Mangayomi 到同一个 sidecar 的 POST 也没有 `.timeout()`——两家都只靠 OkHttp
+/// 的 per-call 预算收口。本仓保留一个上界只为兜住「桥真卡死」（JVM 僵死 / 管道断了但
+/// 连接没关），所以取值是「宿主上界 + 余量」而不是一个更激进的产品化超时。
+const Duration kMihonBridgeRequestTimeout = Duration(seconds: 150);
+
 abstract interface class MihonRuntime {
   Future<MihonCapabilities> getCapabilities();
 

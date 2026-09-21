@@ -1761,6 +1761,18 @@ class VideoPlayerController extends ChangeNotifier
     }
     if (!_isCurrentLoad(player, loadToken)) return;
 
+    // 网络缓存/预读调优（含 `network-timeout`）**必须在 open 之前**下发。media_kit 建
+    // Player 时就把 `network-timeout` 钉成 5（media_kit-1.2.6
+    // `native/player/real.dart:2394`），而这里所有网络流都经上面的 Dart 中继
+    // （`http-proxy`）取字节——mpv 眼里的「对端」是中继，中继要等真上游先回字节才有
+    // 东西转发。在线视频源的 CDN 首字节常在 5~15s（hoster 重定向 / 冷缓存 / 限流），
+    // 于是 loadfile 的第一个请求在 5s 就被 mpv 撕掉：媒体压根打不开，duration/position
+    // 恒 0，页面等满宽限后报「播放器打不开该视频」——用户观感就是「点开必超时」。
+    // 属性放到 open 后再设已经太迟（第一个请求早就发出去了），首次 open 永远吃 5s。
+    // 这几条都是 libmpv 运行时全局属性，open 前设合法且正是 mpv 自己的配置时序。
+    await applyNetworkCachePropertiesToPlayer(player, sourceUri);
+    if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
+
     await player.open(
       Media(
         sourceUri,
@@ -1775,12 +1787,6 @@ class VideoPlayerController extends ChangeNotifier
     // 点播媒体 open 成功即报 duration，这里先取一次快照；直播流（duration 恒 0）与
     // 慢容器由下面 125ms tick 的同一 helper 继续观测。见 [mediaOpened]。
     _markMediaOpenedIfEvident(player);
-
-    // 远端 http(s) 直传：注入网络缓存/预读调优（缓解 WiFi 抖动卡顿）。仅网络流生效，
-    // 本地文件 no-op（见 [applyNetworkCachePropertiesToPlayer]）。media_kit 默认
-    // network-timeout=5 / demuxer-max-bytes=32MiB 对局域网 WiFi 流偏紧。
-    await applyNetworkCachePropertiesToPlayer(player, sourceUri);
-    if (!_isCurrentLoad(player, loadToken)) return; // 网络缓存调优后换片/销毁。
 
     // 防盗链流（TODO-850 阶段①）：把用户填的 Referer/User-Agent 等注入
     // libmpv `http-header-fields`。仅 [httpHeaderFields] 非空时生效（普通流/本地文件
