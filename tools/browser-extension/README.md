@@ -13,10 +13,10 @@ Anki 能力——一切经本机 Fushi 桌面 App 内置的 yomitan API server�
 | `content.js` | 隔离 | Shift 悬停查词、查词暂停、弹窗渲染/定位、高亮、挖词队列、字幕轨 provider（textTracks 收割 / DOM 采样兜底 / 整集拦截接收端）、Netflix/YouTube 批量制卡驱动 |
 | `nested-popup-host.js` | 隔离 | 嵌套父子栈、子 iframe 定位、按层桥接、异步结果归属；只关闭根层时恢复视频 |
 | `nested-popup.html/js` | 扩展 iframe | 每层独立的共享词典 renderer、选区、制卡和滚动状态；经专用 MessageChannel 与宿主通信 |
-| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
+| `subtitle-panel.js` | 隔离 | 字幕轨状态控制器 + 视频覆盖层（鼠标经左侧拖柄 / 触屏按住整块挪位，位置按视频分数坐标存 `subtitleOverlayPosition`；右下角把手拖拽改底板大小、双击回随内容；点文字查词、鼠标在文字上拖是原生选区可复制；`subtitleOverlayBackground` 关掉只剩描边字）+ 外挂字幕安装 + 全轨时轴偏移 + 快捷键执行端；不渲染网页列表 |
 | `i18n.js` + `locales/` | 隔离 + 扩展页 + SW | 界面多语言：`locales/en.js` 是源字典（同步装入），其余 16 种 `locales/<tag>.json` 按需 fetch；语言默认跟随 Fushi（见「多语言」） |
 | `theme-palette.js` + `theme.js` + `theme.css` | 隔离 + 扩展页 | 调色板引擎（种子色 → 明暗两套 token、预设、自定义条目）+ 明暗/调色板唯一决议点 + 扩展自有界面的默认调色板（见「主题与颜色」） |
-| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 |
+| `subtitle-style.js` | 隔离 + options | 视频上字幕外观设置（字体/大小/字重/间距/行高/对齐/颜色/描边/底板含宽高）→ 覆盖层 `--fushi-sub-*` 变量 + `applyBox` 宽高 + `fitTextInto` 自适应缩放（`--fushi-sub-fit`） |
 | `study-tracker.js` | 隔离 | 网页视频沉浸时间：正片 `<video>` 播放时每秒把位置样本经 background 交给 app 记学习统计（见「沉浸时间」） |
 | `side-panel.html/js/css` | 扩展页 | 浏览器原生 Side Panel 字幕列表；侧边栏内取词，默认把词交给宿主页用页面弹窗渲染（见「侧边栏查词跨出面板」），经 tabs 消息读取轨道并执行跳转/制卡/偏移，不把字幕列表注入网页 |
 | `video-shortcuts.js` | 隔离 | 视频页快捷键判定（纯函数）+ 绑定；每个动作独立开关，动作交 subtitle-panel 执行 |
@@ -132,17 +132,24 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
 行为守卫：`side-panel-lookup-on-page.test.js`（两侧各一组，含落点跟随、锚点、回落、Esc、
 关窗吞击、去重复位、点空白跳转）。
 
-## 覆盖层：挪位、选区、底色
+## 覆盖层：挪位、缩放、选区、底色
 
-视频上的自绘字幕（`#fushi-subtitle-overlay`）是「文字层 `.fushi-subtitle-overlay-text` + 拖柄
-`.fushi-subtitle-overlay-grip`」两个子节点。用户报「字幕无法选取复制」的根因有两处：拖动挪位曾
+视频上的自绘字幕（`#fushi-subtitle-overlay`）是「文字层 `.fushi-subtitle-overlay-text` + 挪位拖柄
+`.fushi-subtitle-overlay-grip` + 右下角缩放把手 `.fushi-subtitle-overlay-resize`」三个子节点。用户报「字幕无法选取复制」的根因有两处：拖动挪位曾
 独占整块（鼠标在文字上一拖就 `removeAllRanges` 进入挪位），以及 tick 每 200ms 无条件
 `fushiRenderCueText` 重建文本节点，刚拉出的选区立刻塌掉。现在：
 
 - **鼠标**：文字上按下/拖动 = 浏览器原生选区（Ctrl+C 可复制），只有按在左侧拖柄（悬停时出现）
   才挪位；**触屏**没有拖选，整块仍可拖。
 - **同一条 cue 不重建文本节点**（`st.overlayRenderedCue`），tick 只重摆位置。
-- 拖选完松手的合成 `click` 不查词（`overlayHasNativeSelection()`），点拖柄也不查词。
+- 拖选完松手的合成 `click` 不查词（`overlayHasNativeSelection()`），点两枚把手也不查词。
+- **右下角拖拽改大小**（用户 2026-09-21，与查词弹窗右下角把手同一手势）：拖把手写的是
+  `subtitleStyle.boxWidth/boxHeight`（与 options 两根滑杆**同一份真相源**，夹取都走 `boxFromPx` →
+  同一组上下限）。覆盖层是「水平中心 + 底边」锚定的，而右下角把手该有的手感是「左上角钉住、
+  右下角跟手」，所以一次拖拽同时改尺寸和位置（`subtitleOverlayPosition`），两者各自落进自己既有的
+  真相源，不新增第三份尺寸存档。指针先夹进视频盒、百分比向下取整，底板永远不探出画面；
+  拖得再小也只落到下限（宽 20% / 高 5%），绝不翻成「随内容」那个 0——**双击把手**才是回随内容。
+  触屏没有 hover，挪位拖柄隐起来但缩放把手常显半透明（它是触屏上唯一的改大小入口）。
 - `mousedown` 在覆盖层上 `stopPropagation`：站点把播放器上的 mousedown 当「点画面」，有的还
   `preventDefault` 把选区扼杀在起点。
 - **底色**：`subtitleOverlayBackground`（options「字幕底色」，默认开）关掉 → `data-bare`，CSS 去
@@ -158,6 +165,15 @@ CSS/JS 能突破。所以「侧边栏里的查词弹窗被那 ~400px 夹住」�
   `min-height`，`placeOverlay` 每次重摆调一次（宽仍受视口 `max-width` 夹）；预览拿舞台盒当视频盒、
   同一算法。覆盖层与预览都是 `display:grid; align-content:center; box-sizing:border-box`，底板高于
   文字时文字垂直居中，文字层 `.fushi-subtitle-overlay-text` 因此是块级网格项。
+- **自适应缩放**（`boxAutoFit`，options「自适应缩放」，默认开）：底板**有高度**时，`fitTextInto`
+  按实测内容把整句缩放到盒里刚好放下，倍率写成 `--fushi-sub-fit`（font-size 的 calc 里乘在
+  `--fushi-sub-scale` 之后）。盒子越大字越大、越小一屏装下的内容越多，所以拖右下角调的是「大小 +
+  可展示内容多少」一件事。几个关键点：可用高取**设置里的底板高**而不是实测高（applyBox 写的是
+  `min-height`，内容一溢出盒子自己就长高了，拿实测高当分母永远判不出「放不下」）；换行是非线性的，
+  所以迭代 + 已知区间二分而不是一次外推，收手后再验一次；压到可读下限（`FIT_RANGE[0]`）仍放不下的
+  超长句**停在下限**，剩下的交给 `min-height` 长高，字一个都不裁；量不到内容（节点未排版）时
+  什么都不改。每 200ms 的 tick 按「句子 + 底板像素」记忆，没变就一轮不跑（每轮都要读 `scrollHeight`，
+  那是强制同步重排）；设置页预览调的是同一个 `fitTextInto`，所见即所得。
 - **字体是下拉不是手填**（用户 2026-09-20）：三组——本机字体栈（`FONT_SUGGESTIONS`）/ Fushi 字体库 /
   自定义（只回显旧版手填过的值）。字体真源在 app 的自定义字体目录：background `subtitleFonts` 消息
   `POST /api/extension/fonts` 拿 `{fonts:[{id,name,family,ext}], recommended:[{name,nameJa,description,

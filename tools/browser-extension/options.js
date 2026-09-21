@@ -641,6 +641,7 @@ const subtitleStyleFields = Object.freeze({
   subtitleStylePadding: { field: 'padding', kind: 'range' },
   subtitleStyleBoxWidth: { field: 'boxWidth', kind: 'range' },
   subtitleStyleBoxHeight: { field: 'boxHeight', kind: 'range' },
+  subtitleStyleBoxAutoFit: { field: 'boxAutoFit', kind: 'check' },
 });
 // 颜色控件的「跟随主题」态：<input type=color> 没有空值，这里用 data-auto 记住并显示主题默认色。
 const subtitleColorDefaults = SUB ? {
@@ -668,6 +669,11 @@ function applySubtitlePreviewBox() {
   if (!preview || !stage) return;
   const frame = typeof stage.getBoundingClientRect === 'function' ? stage.getBoundingClientRect() : null;
   SUB.applyBox(preview, subtitleStyleCurrent, frame);
+  // 自适应缩放也进预览：预览与网页覆盖层共用 fitTextInto，所见即所得（否则用户在这里调好
+  // 的底板大小，到了视频上字号又是另一回事）。
+  if (typeof SUB.fitTextInto === 'function') {
+    SUB.fitTextInto(preview, preview.firstElementChild || preview, subtitleStyleCurrent, frame);
+  }
 }
 
 function fillSubtitleStyleInputs(style) {
@@ -689,6 +695,7 @@ function fillSubtitleStyleInputs(style) {
     }
     // 字体下拉的选项集随字体库变化，回显交给 fillFontFamilySelect（当前值不在任何组里会挂到「自定义」组）。
     if (spec.kind === 'font') { fillFontFamilySelect(); continue; }
+    if (spec.kind === 'check') { el.checked = !!v; continue; }
     if (el !== focused) el.value = String(v);
     if (spec.kind === 'range') formatRangeOutput(id, v);
   }
@@ -708,6 +715,7 @@ function readSubtitleStyleInputs() {
     const el = $(id);
     if (!el) continue;
     if (spec.kind === 'color') { out[spec.field] = el.dataset.auto === '1' ? '' : el.value; continue; }
+    if (spec.kind === 'check') { out[spec.field] = !!el.checked; continue; }
     out[spec.field] = el.value;
   }
   return SUB.normalize(out);
