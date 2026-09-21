@@ -64,6 +64,27 @@ void main() {
     );
   });
 
+  test('VN eagerly loads lazy images before waiting for chapter readiness', () {
+    final String shell = ReaderVisualNovelScripts.vnShellScript();
+    final int start = shell.indexOf('waitForImages: function()');
+    final int end = shell.indexOf('\n  },', start);
+    expect(start, greaterThanOrEqualTo(0));
+    expect(end, greaterThan(start));
+    final String waitForImages = shell.substring(start, end);
+    final int eager = waitForImages.indexOf(
+      "img.setAttribute('loading', 'eager')",
+    );
+    final int promise = waitForImages.indexOf('return new Promise');
+    expect(eager, greaterThanOrEqualTo(0),
+        reason: 'detached VN chapters must make lazy images loadable');
+    expect(eager, greaterThan(promise),
+        reason: 'the eager policy must run inside the registered wait');
+    expect(eager, lessThan(waitForImages.indexOf('if (img.complete)')),
+        reason: 'the eager policy must run before the completion fast path');
+    expect(waitForImages, contains('if (img.complete)'));
+    expect(waitForImages, contains('img.onerror = function() { resolve(); };'));
+  });
+
   test('chrome consumes reveal completion without treating it as a scroll', () {
     final String chrome = File(
       'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
