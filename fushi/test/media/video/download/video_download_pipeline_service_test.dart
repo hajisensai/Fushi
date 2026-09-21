@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -1010,6 +1011,117 @@ void main() {
         (await environment.database.getVideoDownloadJob(jobId))!;
     expect(job.lifecycle, VideoDownloadJobLifecycle.active);
     expect(job.lastError, isNull);
+  });
+
+  group('per-work subtitle language', () {
+    // 与「restart adopts…」用例同一套种子：任务停在 subtitle 阶段、磁盘上有一集
+    // 已 organize 好的视频。不预置 resolving 行，让字幕阶段真的去搜。
+    Future<_PipelineEnvironment> runSubtitleStage({
+      required _FakeSubtitleProvider subtitleProvider,
+      VideoDownloadSubtitleLanguageResolver? resolver,
+      bool Function(VideoDownloadJobRow row)? until,
+      List<String> preferredSubtitleLanguages = const <String>['ja'],
+    }) async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+        backend: _FakeTorrentBackend(),
+        subtitleProvider: subtitleProvider,
+        subtitleLanguageResolver: resolver,
+        preferredSubtitleLanguages: preferredSubtitleLanguages,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'per-work-language-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.subtitle,
+      );
+      await _seedOrganizedEpisode(environment, jobId);
+      environment.service.wake();
+      // bestEffort：候选校验不过也只是记「暂无字幕」，任务照样走到 completed。
+      await _waitForJob(
+        environment.database,
+        jobId,
+        until ??
+            (VideoDownloadJobRow row) =>
+                row.lifecycle == VideoDownloadJobLifecycle.completed,
+      );
+      return environment;
+    }
+
+    test('resolver language leads the request but does not narrow it',
+        () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      VideoDownloadSubtitleLanguageQuery? seen;
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (VideoDownloadSubtitleLanguageQuery query) {
+          seen = query;
+          return 'zh';
+        },
+      );
+      // 按作品的语言提到首位（排序首选由 explicitLanguage 负责），但**不收窄**
+      // 搜索面：它来自字幕工作台的筛选记忆，是「列出来给我看」的 UI 筛选器，不是
+      // 「这部番只下这个语言」的下载策略。塞成唯一值会让该语言没字幕的任务一条都
+      // 下不到（policy=required 时直接 needsAttention），而用户无处撤销。
+      expect(subtitleProvider.lastRequest!.languages, <String>['zh', 'ja']);
+      // 查询带的是任务行本身的字段，键与导入落库的合集名同源。
+      expect(seen!.jobId, 'per-work-language-job');
+      expect(seen!.title, 'Show');
+      expect(seen!.year, 2026);
+      expect(seen!.seriesKey, 'show (2026)');
+      expect(seen!.metadataProvider, 'anilist');
+      expect(seen!.externalId, '100');
+    });
+
+    test('全局「不限」时按作品的语言不把搜索面收成一个语言', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        preferredSubtitleLanguages: const <String>[],
+        resolver: (_) => 'zh',
+      );
+      expect(
+        subtitleProvider.lastRequest!.languages,
+        isEmpty,
+        reason: '全局不限就保持不限，否则该语言没字幕的作品一条都下不到',
+      );
+    });
+
+    test('null from the resolver keeps the global languages', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => null,
+      );
+      expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
+    });
+
+    test(
+        'a throwing resolver surfaces as a stage error instead of silently '
+        'falling back', () async {
+      // 解析器读的是本进程内的偏好；它抛了就是偏好层坏了，不能伪装成「没记过
+      // 语言」用全局语言下字幕——按阶段异常走可重试路径，错误落在任务行上。
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      final _PipelineEnvironment environment = await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => throw StateError('preferences unavailable'),
+        until: (VideoDownloadJobRow row) =>
+            (row.lastError ?? '').contains('preferences unavailable'),
+      );
+      expect(subtitleProvider.searchCalls, 0);
+      final VideoDownloadJobRow job = (await environment.database
+          .getVideoDownloadJob('per-work-language-job'))!;
+      expect(job.lifecycle, isNot(VideoDownloadJobLifecycle.completed));
+      expect(job.stage, VideoDownloadJobStage.subtitle);
+    });
   });
 
   test(
@@ -2620,6 +2732,8 @@ class _PipelineEnvironment {
     required _FakeTorrentBackend backend,
     VideoDownloadBackendResolver? backendResolver,
     VideoSubtitleProvider? subtitleProvider,
+    VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver,
+    Iterable<String> preferredSubtitleLanguages = const <String>[],
     VideoMetadataProvider? metadataProvider,
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
@@ -2661,6 +2775,8 @@ class _PipelineEnvironment {
       database: database,
       resourceRegistry: resourceRegistry,
       subtitleRegistry: subtitleRegistry,
+      subtitleLanguageResolver: subtitleLanguageResolver,
+      preferredSubtitleLanguages: preferredSubtitleLanguages,
       backendResolver: backendResolver ??
           (_) async => VideoDownloadBackendBinding(
                 backend: backend,
@@ -2823,6 +2939,37 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
         );
 }
 
+/// 在受管来源下放一集已 organize 好的视频并登记文件行（`Show (2026)/Season 01`）。
+Future<void> _seedOrganizedEpisode(
+  _PipelineEnvironment environment,
+  String jobId,
+) async {
+  final Directory season = Directory(
+    p.join(environment.root.path, 'Show (2026)', 'Season 01'),
+  );
+  await season.create(recursive: true);
+  final File video = File(p.join(season.path, 'Show (2026) - S01E02.mkv'));
+  await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await environment.database.upsertVideoDownloadJobFile(
+    VideoDownloadJobFilesCompanion.insert(
+      jobId: jobId,
+      backendFileIndex: const Value<int?>(0),
+      originalRelativePath: p.basename(video.path),
+      currentRelativePath: p.basename(video.path),
+      targetRelativePath: Value<String?>(p.basename(video.path)),
+      finalAbsolutePath: Value<String?>(video.path),
+      kind: const Value<String>('video'),
+      season: const Value<int?>(1),
+      episode: const Value<int?>(2),
+      sizeBytes: Value<int?>(await video.length()),
+      status: const Value<String>(VideoDownloadJobFileStatus.organized),
+      createdAt: now,
+      updatedAt: now,
+    ),
+  );
+}
+
 class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
   _FakeSubtitleCandidate()
       : super(
@@ -2851,6 +2998,9 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
   int searchCalls = 0;
   int downloadCalls = 0;
 
+  /// 最近一次搜索请求（断言语言硬过滤用）。
+  VideoSubtitleSearchRequest? lastRequest;
+
   @override
   String get id => 'opensubtitles';
 
@@ -2862,6 +3012,7 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
     VideoSubtitleSearchRequest request,
   ) async {
     searchCalls += 1;
+    lastRequest = request;
     return ProviderBatchResult<VideoSubtitleCandidate>.success(
       <VideoSubtitleCandidate>[candidate],
     );

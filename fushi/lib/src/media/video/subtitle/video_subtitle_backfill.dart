@@ -40,6 +40,7 @@ class SubtitleBackfillTarget {
     this.scrapedRuntimeMinutes,
     this.contentLanguage,
     this.originalLanguage,
+    this.explicitLanguage,
   });
 
   /// 视频稳定身份（`VideoBooks.bookUid`），只用于日志与调用方对账。
@@ -64,6 +65,11 @@ class SubtitleBackfillTarget {
   /// 刮削出的作品原语言（TMDB `original_language` 等）。[contentLanguage] 没设时
   /// 的第二档；比 mkv 音轨 tag 可靠（打包者常写错或不写）。
   final String? originalLanguage;
+
+  /// 用户对**这部作品**明确选过的字幕语言（每系列记忆 `jimaku_pref_langs`，AI 下载
+  /// 与字幕工作台都写它）。非空即硬过滤 + 排序首选，压过全局默认字幕语言；
+  /// 与 [contentLanguage] 不同：那是「视频说什么语言」，这是「要什么语言的字幕」。
+  final String? explicitLanguage;
 }
 
 /// 单个目标的补字幕结果。
@@ -168,7 +174,9 @@ class VideoSubtitleBackfillService {
           media: target.media,
           season: target.media.season,
           episode: target.media.episode,
-          languages: preferredLanguages,
+          languages: target.explicitLanguage == null
+              ? preferredLanguages
+              : <String>[target.explicitLanguage!],
           fingerprint: LocalVideoFingerprint(
             fileSize: await video.length(),
             fileName: p.basename(video.path),
@@ -196,7 +204,8 @@ class VideoSubtitleBackfillService {
     // 默认取**视频自己的语言**。这里是排序不是过滤：只有英文字幕的日语番仍然
     // 配得上，只是排在后面。硬过滤只属于用户显式选的语言（已进 request.languages）。
     final String? preferred = resolveSubtitleDownloadLanguage(
-      explicitSubtitlePreference: preferredLanguages.firstOrNull,
+      explicitSubtitlePreference:
+          target.explicitLanguage ?? preferredLanguages.firstOrNull,
       videoContentLanguage: target.contentLanguage,
       contentMetadataLanguage:
           target.originalLanguage ?? facts.primaryAudioLanguage,

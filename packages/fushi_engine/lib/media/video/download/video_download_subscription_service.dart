@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
 import 'package:fushi_engine/media/video/download/subscription_check_schedule.dart';
 import 'package:fushi_engine/media/video/download/subscription_release_scope.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -482,68 +483,18 @@ class VideoDownloadSubscriptionService {
     );
   }
 
+  /// 「这一集已经有人管了，订阅不用再派」的判据；实现与 AI 下载流程共用，
+  /// 在 [resolveVideoLibraryPresence]（含 needsAttention 为何不算数的说明）。
   Future<Set<String>> _managedEpisodeKeys(
     VideoDownloadSubscriptionRow subscription,
   ) async {
-    if (_mediaKind(subscription.mediaKind) == VideoMetadataMediaKind.movie) {
-      return const <String>{};
-    }
-    final Set<String> result = <String>{};
-    final String provider =
-        subscription.metadataProvider?.trim().toLowerCase() ?? '';
-    final String externalId = subscription.externalId?.trim() ?? '';
-    if (provider.isEmpty || externalId.isEmpty) return result;
-    bool sameIdentity(VideoDownloadJobRow job) =>
-        job.metadataProvider?.trim().toLowerCase() == provider &&
-        job.externalId?.trim() == externalId;
-    for (final VideoDownloadJobRow job
-        in await database.getVideoDownloadJobs()) {
-      // 只有 active / completed 的任务才算「这一集的文件已经有人管」。
-      //
-      // 这份判据与 [subscriptionItemStillClaimed] **不同**且有意不同：那边按
-      // 「是谁决定不下的」划，cancelled 算数；这边按「文件到底有没有人在弄」
-      // 划，cancelled 不算数。needsAttention 归到不算数一侧：它正是订阅这一轮
-      // 要恢复的对象（见 [_enqueueItem]），留着它，同一条卡住的任务会在文件级
-      // 把自己的订阅条目判成「已经有人管」而走 [_markItemSkipped] —— 那是个终态
-      // 写入，此后 [subscriptionItemStillClaimed] 永远返回 true，这一集被静默判
-      // 了永久跳过。真正已经入库的集数由下面的 collection items 那一段兜住，不
-      // 依赖这里的任务扫描。
-      final bool jobOwnsEpisodeFiles =
-          job.lifecycle == VideoDownloadJobLifecycle.active ||
-              job.lifecycle == VideoDownloadJobLifecycle.completed;
-      if (!sameIdentity(job) || !jobOwnsEpisodeFiles) continue;
-      for (final VideoDownloadJobFileRow file
-          in await database.getVideoDownloadJobFiles(job.jobId)) {
-        final int? season = file.season;
-        final int? episode = file.episode;
-        if (season == null || episode == null || episode <= 0) continue;
-        if (file.status == VideoDownloadJobFileStatus.failed ||
-            file.status == VideoDownloadJobFileStatus.skipped) {
-          continue;
-        }
-        result.add(_episodeKey(season, episode));
-      }
-    }
-
-    final VideoMetadataWorkRow? work =
-        await database.getVideoMetadataWorkByProviderIdentity(
-      provider: provider,
-      externalId: externalId,
+    final VideoLibraryPresence presence = await resolveVideoLibraryPresence(
+      database,
+      metadataProvider: subscription.metadataProvider ?? '',
+      externalId: subscription.externalId ?? '',
+      mediaKind: _mediaKind(subscription.mediaKind),
     );
-    final int? collectionId = work?.collectionId;
-    if (collectionId == null) return result;
-    for (final MediaCollectionItemRow item
-        in await database.getCollectionItems(collectionId)) {
-      if (item.mediaType != MediaKind.video.dbValue) continue;
-      final VideoBookRow? book =
-          await database.getVideoBookByBookUid(item.entryKey);
-      if (book == null) continue;
-      final VideoNameInfo parsed = parseVideoFilename(book.videoPath);
-      final int? episode = parsed.episode;
-      if (episode == null || episode <= 0) continue;
-      result.add(_episodeKey(parsed.season ?? 1, episode));
-    }
-    return result;
+    return presence.managedEpisodeKeys;
   }
 
   Future<List<VideoResourceCandidate>> _searchSubscriptionCandidates({
@@ -1198,15 +1149,12 @@ _SubscriptionLogicalItem? _logicalItem(
     if (beforeWindow) return null;
   }
   return _SubscriptionLogicalItem(
-    key: _episodeKey(season, episode),
+    key: videoEpisodeKey(season, episode),
     season: season,
     episode: episode,
   );
 }
 
-String _episodeKey(int season, int episode) =>
-    'S${season.toString().padLeft(2, '0')}'
-    'E${episode.toString().padLeft(2, '0')}';
 
 _SubscriptionRelease? _bestRelease(List<_SubscriptionRelease> releases) {
   if (releases.isEmpty) return null;
