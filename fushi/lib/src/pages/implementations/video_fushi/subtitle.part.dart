@@ -154,14 +154,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 推与阅读器 / 词典页同款查词浮层），[graphemeIndex] 为列表项点击位置命中的 grapheme
   /// 下标（与底部字幕逐字查词同语义），[charRect] 为被点字符的屏幕矩形供浮层定位。
   /// 沉浸锁不允许查词时早返回（与字幕字符点击 [_handleSubtitleLookupTap] 同门控）。
+  ///
+  /// [fromHover]：本次查词是不是悬停发起的（浮层 barrier 的列表 hover 换词那条传 true）。
+  /// 它决定「指针离开后自动关栈续播」对本次会话是否生效，语义与
+  /// [_handleSubtitleLookupTap] 的同名参数一致。
   void _handleSubtitleListLookup(
     AudioCue cue,
     int graphemeIndex,
-    Rect charRect,
-  ) {
+    Rect charRect, {
+    bool fromHover = false,
+  }) {
     if (!_immersiveAllowsLookup) return;
     final String sentence = cue.text;
     if (sentence.trim().isEmpty) return;
+    _lookupOpenedByHover = fromHover;
+    if (!fromHover) _cancelHoverLeaveResume();
     // BUG-966：把被点的列表 cue 透传给查词，作为制卡音频锚点——列表里的句可能远离播放头
     // （点列表只暂停不 seek），不透传会回落到播放位置那句、截出别的句子的声音。
     unawaited(_lookupAt(sentence, graphemeIndex, charRect, overrideCue: cue));
