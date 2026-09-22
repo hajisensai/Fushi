@@ -1,0 +1,13 @@
+## BUG-2630 · 互联转码 HLS 分段 URL 无扩展名被 FFmpeg 6.1 白名单拒开
+- **报告**：2026-09-22（用户：「iOS 的 Fushi 互联又没办法播放远端 Fushi 的视频了」；追问后补充「其他平台切换画质就会直接播放不了」）
+- **真实性**：✅ 真 bug（iOS 模拟器 + Mac 真 host 复现，非推断）
+  - 先排除直传：iOS 模拟器进程内起自签 `FushiSyncServer` 播互联视频（`fushi/integration_test/interconnect_remote_video_ios_itest.dart`），交给 native 的是降级中继形态 `http://127.0.0.1:<port>/…/stream?token=`，libmpv 起播到 1.7 s、时长 6046 ms、中继零错误——**LAN 直传没坏**。
+  - 再打转码：Mac 上用 `packages/fushi_engine/tool/interconnect_video_host_probe.dart`（真 ffmpeg）起 host，同一条 itest 以 `FUSHI_REMOTE_QUALITY=2` 强制画质档 → host 回 `hls.m3u8`，libmpv 位置/时长恒 0；中继日志里每个 `hlsseg?n=1..4` 只写了 40–57 KB 就被播放器掐断（`Content size below specified contentLength`）。
+  - 绕开中继与播放器：curl 直取 host 的 playlist / init / 分段，`init+seg0` 拼起来 ffprobe 能解、解码零错误——**产物合法**；但 `ffprobe -tls_verify 0 <playlist url>` 报
+    `URL https://…/hlsseg?token=…&n=0 is not in allowed_segment_extensions … Invalid data found when processing input`。
+  - 根因：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门） 的 `libavformat/hls.c` `test_segment()`（`extension_picky` 默认开）对 playlist 里每个分段 URL 先查 `allowed_segment_extensions` 白名单，扩展名取 **query 之前**的路径尾（`format.c` `ff_match_url_ext`），不在名单上直接 `AVERROR_INVALIDDATA`，分段一个都不去取。host 首版把分段 URI 拼成裸 `hlsseg?token=&n=`（`packages/fushi_engine/lib/sync/fushi_sync_server/video.part.dart:626`，随 09-21 的 `96d7a5be096` 引入），没有扩展名；Android / iOS / macOS 随包 libmpv 是 FFmpeg 6.1.6、Windows 随包是 2026-08 的 master 构建（Linux 走系统库，发行版 6.1.1 / 7.0.x 不复现），所以**随包四端一选画质档（或「自动」档在非局域网地址下起播）就黑屏**。首版验证只拼过分段用 ffprobe 看产物，没经 HLS demuxer 整条播过。
+- **[x] ① 已修复** — `8aeb6934b3c`：分段端点改成 `hlsseg.m4s?token=&n=`（`kTranscodeSegmentPathSuffix`，`packages/fushi_engine/lib/media/video/live_transcode.dart`；路由 / 鉴权豁免 / playlist 三处同一常量）。`.m4s` 同时在白名单里、又在「探得 mp4 格式时额外放行」的特例里；`hlsinit.mp4` / `hls.m3u8` 本就带扩展名。修后 iOS 模拟器同一条 itest（画质档 2，Mac 真 host 转码）真实起播；macOS / Android 见备注。
+- **[x] ② 已加自动化测试** — `8aeb6934b3c` `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`：把 hls.c `test_segment` + `ff_match_url_ext` + `av_match_name` 与 6.1 白名单逐字移植成 Dart，用真 `FushiSyncServer` 签发 playlist、按 hls.c 的方式先解析成绝对 URL 再验 init 与每个分段（含裸 `hlsseg?token=` 必拒的负向自检、分段路由在新路径上真能到达 handler）；`fushi_sync_server_transcode_test.dart` 同步改到新路径。真机门：`fushi/integration_test/interconnect_remote_video_ios_itest.dart`（进程内直传 + 外部 host 画质档模式）。
+- **备注**：
+  - 不改 client：mpv 虽可用 `demuxer-lavf-o=allowed_segment_extensions=ALL` 放宽，但那是把 FFmpeg 专门加的探测面保护整个关掉，且老 host 也得靠 client 兜——协议错在 host，就在 host 修。
+  - 新老组合：老 client + 新 host 无影响（client 从不自己拼 hls 子路径，只跟 playlist 走）；新 client + 老 host 仍是老 playlist、仍坏——host 升级才好，这是 host 侧协议 bug 的必然。

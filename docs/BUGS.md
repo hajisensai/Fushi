@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2434 条。点号进各自文件。
+> 共 2436 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2631](bugs/BUG-2631-webdav-html-error-page.md) | ✅ | ✅ | WebDAV 测试连接：403 网页响应体（Cloudflare 挑战）整页标记裸灌进提示 |
+| [BUG-2630](bugs/BUG-2630-interconnect-hls-segment-ext-rejected.md) | ✅ | ✅ | 互联转码 HLS 分段 URL 无扩展名被 FFmpeg 6.1 白名单拒开 |
 | [BUG-2629](bugs/BUG-2629-youtube-rolling-cue-audio-overlap.md) | ✅ | ✅ | 浏览器扩展 YouTube 制卡音频多录下一行——自动字幕滚动双行的 cue 时长跨到下下行 |
 | [BUG-2628](bugs/BUG-2628-video-stutter-lookup-latency-diagnostics.md) | 🚧 | ✅ | 视频卡顿与查词慢：小内存模式可规避卡顿但查词变慢会闪（待诊断） |
 | [BUG-2627](bugs/BUG-2627-video-context-mine-confirm-silent.md) | ✅ | ✅ | 视频「调整上下文」确认制卡没反应 |

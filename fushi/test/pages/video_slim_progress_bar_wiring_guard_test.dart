@@ -91,4 +91,55 @@ void main() {
           '浅色 / eink 主题下它是深色，压在深色 scrim 上看不见',
     );
   });
+
+  group('点击跳转', () {
+    test('细线接上跳转回调，且被四个遮挡门控管着', () {
+      final int start = src.indexOf('Widget _buildVideoSlimProgressBar(');
+      final int end = src.indexOf('Widget _miniWindowIconButton(', start);
+      final String body = src.substring(start, end);
+      expect(
+        containsCodeLine(body, 'onSeekFraction:'),
+        isTrue,
+        reason: '小窗里它是唯一的进度控件、常规档它是控制条淡出后唯一还在的那条，'
+            '不可点等于没有进度控制',
+      );
+      for (final String gate in <String>[
+        '_immersiveLocked',
+        '_videoSidePanel',
+        '_episodeListVisible',
+        '_videoControlEditMode',
+      ]) {
+        expect(
+          body.contains(gate),
+          isTrue,
+          reason: '细线挂在 media_kit 控制条那层 IgnorePointer **之外**：不自己订阅 '
+              '$gate，它就是这四个门控唯一漏掉的可点区（沉浸锁住了还能被点着跳转）',
+        );
+      }
+    });
+
+    test('跳转走 controller.seekMs，不绕到 player.seek', () {
+      final String body = methodBody(
+        src,
+        'Future<void> _seekToProgressFraction(double fraction)',
+      );
+      expect(
+        body.contains('controller.seekMs('),
+        isTrue,
+        reason: 'seekMs 内部才有 seek 在途保护 + 字幕权威同步',
+      );
+      expect(
+        containsCodeLine(body, 'player.seek('),
+        isFalse,
+        reason: 'media_kit 那条路绕过本仓 controller，要在 onSeekEnd 里补 '
+            'notifyExternalSeek 才补得回来（BUG-796）',
+      );
+      expect(
+        containsCodeLine(body, '_pokeControlsVisible()'),
+        isFalse,
+        reason: '这条线存在的意义就是「控制条不在时也能操作」；点一下就把整条控制条'
+            '唤起来，等于每次跳转都重新糊一次画面',
+      );
+    });
+  });
 }

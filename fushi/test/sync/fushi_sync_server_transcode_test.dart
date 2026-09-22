@@ -337,7 +337,7 @@ void main() {
       expect(text, contains('#EXT-X-PLAYLIST-TYPE:VOD'));
       expect(text, contains('#EXT-X-MAP:URI="hlsinit.mp4?token='));
       // 15.5 秒 → 6+6+3.5
-      expect(RegExp('hlsseg\\?').allMatches(text).length, 3);
+      expect(RegExp('hlsseg\\.m4s\\?').allMatches(text).length, 3);
       expect(text, contains('#EXTINF:3.500000,'));
       // 相对 URI：不重建 host/端口，反代与多网卡后面才不会拼出连不上的地址。
       expect(text, isNot(contains('http://')));
@@ -358,13 +358,13 @@ void main() {
       await startServer();
       await issue();
       final List<int> seg0 = await getBytes(
-        '/api/library/videos/v1/hlsseg?$tokenQuery&n=0',
+        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0',
       );
       expect(String.fromCharCodes(seg0.sublist(4, 8)), 'moof');
       expect(_readFirstTfdt(seg0), 0);
 
       final List<int> seg2 = await getBytes(
-        '/api/library/videos/v1/hlsseg?$tokenQuery&n=2',
+        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=2',
       );
       // 第 2 段起点 12 秒，timescale 1000 → 12000。不平移的话三段时间戳全落在
       // 0..段长 上互相重叠，播放器只认得第一段。
@@ -375,7 +375,7 @@ void main() {
       await startServer();
       await issue();
       runnerCalls.clear();
-      await getBytes('/api/library/videos/v1/hlsseg?$tokenQuery&n=2');
+      await getBytes('/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=2');
       expect(runnerCalls, hasLength(1));
       final List<String> args = runnerCalls.single;
       expect(args[args.indexOf('-ss') + 1], '12.000');
@@ -392,7 +392,7 @@ void main() {
       // 这几条路径按设计豁免 Basic，档位若能从 query 取，就等于把「在 host 上起一个
       // 任意参数的 ffmpeg」敞开给 URL 持有者。
       await getBytes(
-        '/api/library/videos/v1/hlsseg?$tokenQuery&n=0'
+        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0'
         '&maxWidth=7680&maxBitrate=99999999',
       );
       expect(runnerCalls, hasLength(1));
@@ -410,7 +410,7 @@ void main() {
       });
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg?$tokenQuery&n=0',
+          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0',
           withAuth: false,
         )).statusCode,
         503,
@@ -459,21 +459,21 @@ void main() {
       await issue();
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg?$tokenQuery&n=3',
+          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=3',
           withAuth: false,
         )).statusCode,
         404,
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg?$tokenQuery&n=-1',
+          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=-1',
           withAuth: false,
         )).statusCode,
         404,
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg?$tokenQuery',
+          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery',
           withAuth: false,
         )).statusCode,
         404,
@@ -516,7 +516,7 @@ void main() {
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg?$q&n=0',
+          '/api/library/videos/v1/hlsseg.m4s?$q&n=0',
           withAuth: false,
         )).statusCode,
         404,
