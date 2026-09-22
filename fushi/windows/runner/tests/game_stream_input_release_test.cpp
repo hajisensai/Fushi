@@ -12,7 +12,48 @@
 // Include dependencies first so this access shim only affects the test target.
 #define private public
 #include "game_stream_input.h"
+#include "voice_hook_reader.h"
+#include "../../../native/galgame_hook/include/voice_hook_ipc.h"
 #undef private
+
+namespace fushi {
+namespace {
+VoiceHookOpenError g_open_error = VoiceHookOpenError::kMappingNotFound;
+uint32_t g_publish_seq = 0;
+VoiceHookGameStreamInputStatus g_status;
+}
+VoiceHookReader& VoiceHookReader::Instance() {
+  static VoiceHookReader reader;
+  return reader;
+}
+VoiceHookReader::~VoiceHookReader() = default;
+VoiceHookOpenResult VoiceHookReader::Open(uint32_t) {
+  VoiceHookOpenResult result;
+  result.error = g_open_error;
+  return result;
+}
+uint32_t VoiceHookReader::PublishGameStreamInput(
+    HWND target, uint64_t transaction_id, uint32_t active_buttons,
+    uint64_t deadline_tick_ms) {
+  if (g_open_error != VoiceHookOpenError::kNone || target == nullptr ||
+      transaction_id == 0 || deadline_tick_ms == 0) {
+    return 0;
+  }
+  ++g_publish_seq;
+  g_status.request_seq = g_publish_seq;
+  g_status.applied_seq = g_publish_seq;
+  g_status.target_hwnd = reinterpret_cast<uint64_t>(target);
+  g_status.transaction_id = transaction_id;
+  g_status.deadline_tick_ms = deadline_tick_ms;
+  g_status.active_buttons = active_buttons;
+  g_status.status = fushi_voice_hook::kGameStreamInputStatusApplied;
+  g_status.observed_buttons = active_buttons;
+  return g_publish_seq;
+}
+VoiceHookGameStreamInputStatus VoiceHookReader::GameStreamInputStatus() {
+  return g_status;
+}
+}  // namespace fushi
 
 namespace {
 int checks = 0;
@@ -105,6 +146,57 @@ void CheckKeyMessageBits() {
   DestroyWindow(hwnd);
 }
 
+void CheckNativeConfirmRequiresMapping() {
+  HWND hwnd = NewWindow();
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind native fixture");
+  flutter::EncodableMap event;
+  event[flutter::EncodableValue("kind")] = flutter::EncodableValue("gamepad");
+  event[flutter::EncodableValue("button")] = flutter::EncodableValue("confirm");
+  event[flutter::EncodableValue("action")] = flutter::EncodableValue("down");
+  reason.clear();
+  Expect(!input.Send(event, &reason) && reason == "window_not_foreground",
+         "native confirm still requires foreground target");
+  input.hwnd_ = hwnd;
+  fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
+  Expect(!input.PublishNativeLeftButton(true, true, &reason) &&
+             reason == "native_input_unavailable",
+         "native confirm without hook mapping is a NACK");
+  fushi::g_open_error = fushi::VoiceHookOpenError::kNone;
+  reason.clear();
+  Expect(input.PublishNativeLeftButton(true, true, &reason),
+         "native confirm ACK requires injected sampled state");
+  Expect(input.native_left_down_, "native confirm tracks held state after ACK");
+  reason.clear();
+  Expect(input.PublishNativeLeftButton(false, true, &reason),
+         "native release ACK clears sampled state");
+  Expect(!input.native_left_down_, "native release clears held state");
+  Expect(input.PublishNativeLeftButton(true, true, &reason),
+         "seed native held confirm before focus loss");
+  event[flutter::EncodableValue("action")] = flutter::EncodableValue("up");
+  Expect(GetForegroundWindow() != hwnd, "native release fixture stays background");
+  Expect(input.Send(event, &reason),
+         "held native confirm releases through Send while background");
+  Expect(!input.native_left_down_ && fushi::g_status.active_buttons == 0,
+         "background confirm up publishes zero mask immediately");
+  Expect(Count(hwnd, WM_KEYUP) == 0 && Count(hwnd, WM_LBUTTONUP) == 0,
+         "native background release never posts desktop or pointer input");
+  Expect(input.PublishNativeLeftButton(true, true, &reason),
+         "seed native held confirm before identity mismatch");
+  const uint32_t published = fushi::g_publish_seq;
+  input.pid_ ^= 0x40000000;
+  Expect(!input.Send(event, &reason) && reason == "process_changed" &&
+             fushi::g_publish_seq == published,
+         "background native up still rejects another process identity");
+  input.pid_ ^= 0x40000000;
+  fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
+
 void CheckPointerDpiCoordinates() {
   const HMODULE user32 = GetModuleHandleW(L"user32.dll");
   const auto set_context = reinterpret_cast<DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT)>(
@@ -191,6 +283,7 @@ int main() {
   CheckRejected("changed process creation time receives no release", 1);
   CheckRejected("destroyed HWND receives no release", 2);
   CheckKeyMessageBits();
+  CheckNativeConfirmRequiresMapping();
   CheckPointerDpiCoordinates();
   std::cout << "CHECKS " << checks << " FAILURES " << failures << "\n";
   return failures == 0 ? 0 : 1;

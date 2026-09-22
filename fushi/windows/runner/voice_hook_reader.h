@@ -299,6 +299,26 @@ struct VoiceHookLookupShieldStatus {
   }
 };
 
+// v25 game-stream target-process sampled input status. This is independent from
+// lookup_shield and is used by runner GameStreamInput to fail closed unless the
+// injected target process has sampled the exact request generation.
+struct VoiceHookGameStreamInputStatus {
+  VoiceHookLookupError error = VoiceHookLookupError::kNone;
+  uint32_t request_seq = 0;
+  uint32_t applied_seq = 0;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint64_t deadline_tick_ms = 0;
+  uint32_t active_buttons = 0;
+  uint32_t status = 0;
+  uint32_t observed_buttons = 0;
+
+  bool ok() const { return error == VoiceHookLookupError::kNone; }
+  bool acknowledged() const {
+    return ok() && request_seq != 0 && request_seq == applied_seq;
+  }
+};
+
 // Coherent geometry-registry snapshot used by host-side auto arbitration.
 // lookup_diag is advisory and is not part of provider identity/lifecycle.
 struct VoiceHookLookupGeometryStatus {
@@ -519,6 +539,14 @@ class VoiceHookReader {
   // verified/partial/known-uncovered/faulted 与琥珀色 risk 标记。
   VoiceHookLookupShieldStatus LookupShieldStatus();
   VoiceHookLookupGeometryStatus LookupGeometryStatus();
+  // Publish a bounded remote held-button mask for target-process sampled input.
+  // |target| must belong to the currently opened mapping PID. The injected side
+  // may apply it only while the same HWND is foreground and alive. Returns 0
+  // when no compatible mapping is open or the HWND is not session-bound.
+  uint32_t PublishGameStreamInput(HWND target, uint64_t transaction_id,
+                                  uint32_t active_buttons,
+                                  uint64_t deadline_tick_ms);
+  VoiceHookGameStreamInputStatus GameStreamInputStatus();
   // 本会话是否有一段协议匹配的共享内存（查词区可以没有）。准入上报只需要这个，
   // 不需要查词区——「本引擎没做查词传感器」正是必须能报出来的那一类会话。
   bool HasSession();

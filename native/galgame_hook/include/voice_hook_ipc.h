@@ -137,7 +137,10 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 //     region 基址，新旧混装会整体错位而版本门本会放行）。
 // v24 appends the injected Siglus text ownership decision. DLL Ready is not
 // permission for the injector to race native text installation with Luna.
-constexpr uint32_t kSharedVersion = 24;
+// v25 appends the game-stream native input request/status plane. It is
+// deliberately independent from lookup_shield: remote confirm input targets the
+// game itself, not the lookup popup suppression contract.
+constexpr uint32_t kSharedVersion = 25;
 
 enum class SiglusTextOwner : uint32_t {
   kPending = 0,
@@ -246,6 +249,21 @@ inline constexpr uint32_t kLeafAquaplusSampledInputLeftButton = 0x1u;
 inline constexpr uint32_t kLeafAquaplusSampledInputRightButton = 0x2u;
 inline constexpr uint32_t kLeafAquaplusSampledInputMiddleButton = 0x4u;
 inline constexpr uint32_t kLeafAquaplusSampledInputButtonMask = 0x7u;
+
+// v25 game-stream native input backend. The host publishes a bounded held-button
+// mask for one exact game HWND; injected adapters may reflect that state only
+// inside their target process sampled-input return values. This plane must never
+// call global SendInput/SetCursorPos and must not reuse lookup_shield ownership.
+inline constexpr uint32_t kGameStreamInputRequestWriteInProgress = 0x80000000u;
+inline constexpr uint32_t kGameStreamInputRequestSequenceMask = 0x7fffffffu;
+inline constexpr uint32_t kGameStreamInputButtonLeft = 0x1u;
+inline constexpr uint32_t kGameStreamInputButtonMask = kGameStreamInputButtonLeft;
+inline constexpr uint32_t kGameStreamInputStatusUnknown = 0u;
+inline constexpr uint32_t kGameStreamInputStatusApplied = 1u;
+inline constexpr uint32_t kGameStreamInputStatusRejectedTarget = 2u;
+inline constexpr uint32_t kGameStreamInputStatusExpired = 3u;
+inline constexpr uint32_t kGameStreamInputStatusUnsupported = 4u;
+inline constexpr uint64_t kGameStreamInputDefaultLeaseMs = 750u;
 // Cross-process completion notification sent by the injected Leaf detour after
 // every requested GetAsyncKeyState low bit has been observed and a later raw-0
 // sample proves the transaction tail is drained. WM_APP is fixed at 0x8000.
@@ -1329,6 +1347,19 @@ struct SharedHeader {
   // v24, hook worker -> injector, single writer. Initialize before Ready;
   // Pending may become one terminal value and never return to Pending.
   volatile uint32_t siglus_text_owner;
+  // ── v25 game-stream native input（host→hook request；hook→host ack）───────
+  // request_seq 的最高位是写令牌。payload 只描述目标 HWND 和当前 held button mask，
+  // 不携带屏幕坐标，也不允许注入侧改变桌面全局输入状态。deadline_tick_ms 使用
+  // GetTickCount64 同一台机器的单调毫秒，失联/失焦时 hook fail-closed 不再 OR synthetic state。
+  volatile uint32_t game_stream_input_request_seq;
+  volatile uint32_t game_stream_input_status_seq;
+  volatile uint64_t game_stream_input_target_hwnd;
+  volatile uint64_t game_stream_input_transaction_id;
+  volatile uint64_t game_stream_input_deadline_tick_ms;
+  volatile uint32_t game_stream_input_active_buttons;
+  volatile uint32_t game_stream_input_status;
+  volatile uint32_t game_stream_input_observed_buttons;
+  volatile uint32_t game_stream_input_applied_seq;
 };
 #pragma pack(pop)
 
@@ -1373,6 +1404,15 @@ struct LookupShieldStatusPublication {
   uint32_t observed_mask = 0;
   uint32_t fault_mask = 0;
   uint32_t status_flags = 0;
+};
+
+struct GameStreamInputRequestSnapshot {
+  uint32_t seq = 0;
+  uint64_t target_hwnd = 0;
+  uint64_t transaction_id = 0;
+  uint64_t deadline_tick_ms = 0;
+  uint32_t active_buttons = 0;
+  bool valid = false;
 };
 
 struct NativeLoopbackRequestSnapshot {
@@ -1697,6 +1737,141 @@ inline bool PublishLookupShieldStatus(
   if (!LookupShieldRequestMatches(header, request)) return false;
   AtomicStoreShared32(&header->lookup_shield_applied_seq, request.seq);
   return LookupShieldRequestMatches(header, request);
+}
+
+inline GameStreamInputRequestSnapshot ReadGameStreamInputRequest(
+    const SharedHeader* header) {
+  GameStreamInputRequestSnapshot result;
+  if (header == nullptr) return result;
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const uint32_t before =
+        AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if (before == 0 ||
+        (before & kGameStreamInputRequestWriteInProgress) != 0) {
+      continue;
+    }
+    result.target_hwnd =
+        AtomicLoadPreview64(&header->game_stream_input_target_hwnd);
+    result.transaction_id =
+        AtomicLoadPreview64(&header->game_stream_input_transaction_id);
+    result.deadline_tick_ms =
+        AtomicLoadPreview64(&header->game_stream_input_deadline_tick_ms);
+    result.active_buttons =
+        AtomicLoadShared32(&header->game_stream_input_active_buttons) &
+        kGameStreamInputButtonMask;
+    MemoryBarrier();
+    const uint32_t after =
+        AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if (before == after &&
+        (after & kGameStreamInputRequestWriteInProgress) == 0) {
+      result.seq = after;
+      result.valid = true;
+      return result;
+    }
+  }
+  return GameStreamInputRequestSnapshot{};
+}
+
+inline bool GameStreamInputRequestMatches(
+    const SharedHeader* header,
+    const GameStreamInputRequestSnapshot& expected) {
+  const GameStreamInputRequestSnapshot current =
+      ReadGameStreamInputRequest(header);
+  return expected.valid && current.valid && current.seq == expected.seq &&
+         current.target_hwnd == expected.target_hwnd &&
+         current.transaction_id == expected.transaction_id &&
+         current.deadline_tick_ms == expected.deadline_tick_ms &&
+         current.active_buttons == expected.active_buttons;
+}
+
+inline uint32_t PublishGameStreamInputRequest(
+    SharedHeader* header, uint64_t target_hwnd, uint64_t transaction_id,
+    uint32_t active_buttons, uint64_t deadline_tick_ms) {
+  if (header == nullptr || target_hwnd == 0 || deadline_tick_ms == 0) {
+    return 0;
+  }
+  const uint32_t normalized_buttons =
+      active_buttons & kGameStreamInputButtonMask;
+  const GameStreamInputRequestSnapshot stable =
+      ReadGameStreamInputRequest(header);
+  if (stable.valid && stable.target_hwnd == target_hwnd &&
+      stable.transaction_id == transaction_id &&
+      stable.deadline_tick_ms == deadline_tick_ms &&
+      stable.active_buttons == normalized_buttons) {
+    return stable.seq;
+  }
+
+  auto* seq = reinterpret_cast<volatile LONG*>(
+      &header->game_stream_input_request_seq);
+  uint32_t current = 0;
+  bool claimed = false;
+  const ULONGLONG claim_deadline = GetTickCount64() + 1000;
+  do {
+    current = AtomicLoadShared32(&header->game_stream_input_request_seq);
+    if ((current & kGameStreamInputRequestWriteInProgress) != 0) {
+      SwitchToThread();
+      continue;
+    }
+    const uint32_t token = current | kGameStreamInputRequestWriteInProgress;
+    const LONG observed = InterlockedCompareExchange(
+        seq, static_cast<LONG>(token), static_cast<LONG>(current));
+    if (static_cast<uint32_t>(observed) == current) {
+      claimed = true;
+      break;
+    }
+  } while (GetTickCount64() < claim_deadline);
+  if (!claimed) return 0;
+
+  AtomicStorePreview64(&header->game_stream_input_target_hwnd, target_hwnd);
+  AtomicStorePreview64(&header->game_stream_input_transaction_id,
+                       transaction_id);
+  AtomicStorePreview64(&header->game_stream_input_deadline_tick_ms,
+                       deadline_tick_ms);
+  AtomicStoreShared32(&header->game_stream_input_active_buttons,
+                      normalized_buttons);
+  uint32_t published =
+      (current & kGameStreamInputRequestSequenceMask) + 1u;
+  published &= kGameStreamInputRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->game_stream_input_request_seq, published);
+  return published;
+}
+
+inline bool PublishGameStreamInputStatus(
+    SharedHeader* header, const GameStreamInputRequestSnapshot& request,
+    uint32_t status, uint32_t observed_buttons) {
+  if (header == nullptr || !GameStreamInputRequestMatches(header, request)) {
+    return false;
+  }
+  auto* status_seq = reinterpret_cast<volatile LONG*>(
+      &header->game_stream_input_status_seq);
+  const uint32_t current =
+      AtomicLoadShared32(&header->game_stream_input_status_seq);
+  if ((current & kGameStreamInputRequestWriteInProgress) != 0) {
+    return false;
+  }
+  const uint32_t token = current | kGameStreamInputRequestWriteInProgress;
+  const LONG observed_token = InterlockedCompareExchange(
+      status_seq, static_cast<LONG>(token), static_cast<LONG>(current));
+  if (static_cast<uint32_t>(observed_token) != current) {
+    return false;
+  }
+  if (!GameStreamInputRequestMatches(header, request)) {
+    AtomicStoreShared32(&header->game_stream_input_status_seq, current);
+    return false;
+  }
+  AtomicStoreShared32(&header->game_stream_input_status, status);
+  AtomicStoreShared32(&header->game_stream_input_observed_buttons,
+                      observed_buttons & kGameStreamInputButtonMask);
+  // Once payload changes, always publish a new status generation, even if a
+  // newer request arrived during these writes. Its reader rejects this older
+  // applied_seq; restoring the old generation would expose a torn old ACK.
+  AtomicStoreShared32(&header->game_stream_input_applied_seq, request.seq);
+  uint32_t published = (current & kGameStreamInputRequestSequenceMask) + 1u;
+  published &= kGameStreamInputRequestSequenceMask;
+  if (published == 0) published = 1;
+  AtomicStoreShared32(&header->game_stream_input_status_seq, published);
+  return GameStreamInputRequestMatches(header, request);
 }
 
 // v19 查词准入：hook 侧发布。payload 先落，seq 最后发布——读侧看到新 seq 就保证
@@ -2529,6 +2704,8 @@ inline bool IsLookupFrameSane(const SharedHeader* header,
 static_assert(sizeof(SharedHeader) % 8 == 0, "SharedHeader must stay 8-aligned");
 static_assert(offsetof(SharedHeader, siglus_text_owner) % 4 == 0,
               "Siglus ownership must support aligned Interlocked access");
+static_assert(offsetof(SharedHeader, game_stream_input_request_seq) % 4 == 0,
+              "Game-stream input seq must support aligned Interlocked access");
 static_assert(sizeof(LookupHitSlot) % 8 == 0, "LookupHitSlot must stay 8-aligned");
 static_assert(sizeof(LookupFrame) % 8 == 0, "LookupFrame must stay 8-aligned");
 static_assert(sizeof(LookupInputSlot) % 8 == 0,

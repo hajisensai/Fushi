@@ -706,6 +706,20 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   const bool direct_shield =
       direct_popup != nullptr && IsSgreDirectInputShieldReadyPublished(game);
   const bool shield_active = direct_shield || bitmap_popup_visible;
+  const auto game_stream_request =
+      fushi_voice_hook::ReadGameStreamInputRequest(g_header);
+  const uint64_t now_tick = GetTickCount64();
+  DWORD game_pid = 0;
+  if (game != nullptr && IsWindow(game)) {
+    GetWindowThreadProcessId(game, &game_pid);
+  }
+  const bool game_stream_target_ok =
+      game_stream_request.valid &&
+      game_stream_request.target_hwnd ==
+          reinterpret_cast<uint64_t>(game) &&
+      game != nullptr && IsWindow(game) &&
+      game_pid == GetCurrentProcessId() && GetForegroundWindow() == game &&
+      now_tick <= game_stream_request.deadline_tick_ms;
   const bool lookup_allowed =
       g_sgre_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
       fushi_voice_hook::g_geometry_provider_registry.OwnsReadyProvider(
@@ -761,6 +775,21 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   } else if (click_action ==
              fushi_voice_hook::SgreLookupClickAction::kCancel) {
     g_sgre_lookup_pending_click_valid = false;
+  }
+
+  const uint32_t game_stream_observed =
+      fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+          game_stream_target_ok && !shield_active,
+          game_stream_request.active_buttons, bytes, state_bytes);
+  if (game_stream_request.valid) {
+    const uint32_t status =
+        now_tick > game_stream_request.deadline_tick_ms
+            ? fushi_voice_hook::kGameStreamInputStatusExpired
+            : (game_stream_target_ok
+                   ? fushi_voice_hook::kGameStreamInputStatusApplied
+                   : fushi_voice_hook::kGameStreamInputStatusRejectedTarget);
+    fushi_voice_hook::PublishGameStreamInputStatus(
+        g_header, game_stream_request, status, game_stream_observed);
   }
 
   const uint8_t initial_latch =

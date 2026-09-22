@@ -2359,6 +2359,83 @@ VoiceHookLookupShieldStatus VoiceHookReader::LookupShieldStatus() {
   return out;
 }
 
+
+uint32_t VoiceHookReader::PublishGameStreamInput(
+    HWND target, uint64_t transaction_id, uint32_t active_buttons,
+    uint64_t deadline_tick_ms) {
+  if (target == nullptr || transaction_id == 0 || deadline_tick_ms == 0 ||
+      (active_buttons & ~fushi_voice_hook::kGameStreamInputButtonMask) != 0) {
+    return 0;
+  }
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  SharedHeader* h = st.header;
+  if (!ProtocolMatches(h)) return 0;
+  DWORD target_pid = 0;
+  const bool live_target =
+      IsWindow(target) &&
+      GetWindowThreadProcessId(target, &target_pid) != 0 &&
+      target_pid != 0 && target_pid == st.pid;
+  if (!live_target) {
+    const fushi_voice_hook::GameStreamInputRequestSnapshot current =
+        fushi_voice_hook::ReadGameStreamInputRequest(h);
+    const uint64_t raw_target =
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target));
+    if (active_buttons != 0 || !current.valid ||
+        current.target_hwnd != raw_target ||
+        current.transaction_id != transaction_id) {
+      return 0;
+    }
+  }
+  return fushi_voice_hook::PublishGameStreamInputRequest(
+      h, static_cast<uint64_t>(reinterpret_cast<uintptr_t>(target)),
+      transaction_id, active_buttons, deadline_tick_ms);
+}
+
+VoiceHookGameStreamInputStatus VoiceHookReader::GameStreamInputStatus() {
+  VoiceHookGameStreamInputStatus out;
+  ReaderState& st = State();
+  std::lock_guard<std::mutex> lock(st.mutex);
+  const SharedHeader* h = st.header;
+  if (!ProtocolMatches(h)) {
+    out.error = VoiceHookLookupError::kNotOpen;
+    return out;
+  }
+  const fushi_voice_hook::GameStreamInputRequestSnapshot request =
+      fushi_voice_hook::ReadGameStreamInputRequest(h);
+  if (!request.valid) return out;
+  out.request_seq = request.seq;
+  out.target_hwnd = request.target_hwnd;
+  out.transaction_id = request.transaction_id;
+  out.deadline_tick_ms = request.deadline_tick_ms;
+  out.active_buttons = request.active_buttons;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const uint32_t before = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status_seq);
+    if ((before & fushi_voice_hook::kGameStreamInputRequestWriteInProgress) !=
+        0) {
+      continue;
+    }
+    const uint32_t applied = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_applied_seq);
+    const uint32_t status = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status);
+    const uint32_t observed = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_observed_buttons);
+    MemoryBarrier();
+    const uint32_t after = fushi_voice_hook::AtomicLoadShared32(
+        &h->game_stream_input_status_seq);
+    if (before == 0 || before != after || applied != request.seq) {
+      continue;
+    }
+    out.applied_seq = applied;
+    out.status = status;
+    out.observed_buttons = observed;
+    break;
+  }
+  return out;
+}
+
 VoiceHookLookupGeometryStatus VoiceHookReader::LookupGeometryStatus() {
   VoiceHookLookupGeometryStatus out;
   ReaderState& st = State();

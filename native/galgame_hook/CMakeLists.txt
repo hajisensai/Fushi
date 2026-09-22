@@ -672,6 +672,15 @@ target_compile_definitions(fushi_lookup_ipc_contract_test
 add_test(NAME fushi_lookup_ipc_contract_test
   COMMAND fushi_lookup_ipc_contract_test)
 
+add_executable(fushi_game_stream_input_ipc_concurrency_test
+  tests/game_stream_input_ipc_concurrency_test.cpp)
+target_include_directories(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE include)
+target_compile_definitions(fushi_game_stream_input_ipc_concurrency_test
+  PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_game_stream_input_ipc_concurrency_test
+  COMMAND fushi_game_stream_input_ipc_concurrency_test)
+
 add_executable(fushi_geometry_provider_registry_test
   tests/geometry_provider_registry_test.cpp)
 target_include_directories(fushi_geometry_provider_registry_test PRIVATE

@@ -22,9 +22,9 @@ struct GameStreamWindowInfo {
   uint32_t pid = 0;
 };
 
-// Delivers only explicitly authorised, foreground-window input to one game
-// HWND.  This class intentionally uses PostMessage and never SendInput: a
-// remote client must not be able to affect the desktop or another window.
+// Delivers authorised input to one foreground game HWND, with identity-checked
+// cleanup also allowed in the background. Uses target-window messages or the
+// SGRE process-local confirm adapter, never global SendInput.
 class GameStreamInput {
  public:
   GameStreamInput() = default;
@@ -52,6 +52,11 @@ class GameStreamInput {
   void SetReason(std::string* reason, const char* value) const;
   bool PostKey(UINT vk, bool down);
   bool PostPointer(UINT message, WPARAM flags, double x, double y);
+  bool SendNativeLeftButton(bool down, bool require_foreground,
+                            bool wait_for_ack, std::string* reason);
+  bool PublishNativeLeftButton(bool down, bool wait_for_ack,
+                               std::string* reason);
+  bool HasSgreNativeConfirmCapability() const;
 
   HWND hwnd_ = nullptr;
   HANDLE process_ = nullptr;
@@ -59,6 +64,9 @@ class GameStreamInput {
   uint32_t pid_ = 0;
   std::set<UINT> pressed_keys_;
   bool pointer_down_ = false;
+  bool native_left_down_ = false;
+  uint64_t native_left_transaction_id_ = 0;
+  uint64_t next_native_transaction_id_ = 1;
   std::string last_reason_;
 };
 

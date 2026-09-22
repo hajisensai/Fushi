@@ -278,6 +278,25 @@ int main() {
       false, mouse_state, sizeof(mouse_state), latched);
   assert(latched == 0);
 
+
+  memset(mouse_state, 0, sizeof(mouse_state));
+  mouse_state[0] = 0x44;
+  uint32_t remote_observed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      true, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(remote_observed == fushi_voice_hook::kGameStreamInputButtonLeft);
+  assert(mouse_state[0] == 0x44);
+  assert(mouse_state[12] == 0x80);
+  mouse_state[12] = 0;
+  remote_observed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      false, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(remote_observed == 0 && mouse_state[12] == 0);
+  uint8_t short_state[16] = {};
+  assert(fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+             true, fushi_voice_hook::kGameStreamInputButtonLeft, short_state,
+             sizeof(short_state)) == 0);
+
   // Once inactive and drained, unrelated real input must pass untouched. An
   // unknown state layout is also a strict no-op.
   mouse_state[13] = 0x80;

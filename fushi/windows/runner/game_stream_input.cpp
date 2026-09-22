@@ -1,5 +1,8 @@
 #include "game_stream_input.h"
 
+#include "voice_hook_reader.h"
+#include "../../../native/galgame_hook/include/voice_hook_ipc.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -206,7 +209,15 @@ void GameStreamInput::Release() {
   if (!target.alive || !target.process_matches) {
     pressed_keys_.clear();
     pointer_down_ = false;
+    native_left_down_ = false;
+    native_left_transaction_id_ = 0;
     return;
+  }
+  if (native_left_down_) {
+    std::string ignored;
+    SendNativeLeftButton(false, false, false, &ignored);
+    native_left_down_ = false;
+    native_left_transaction_id_ = 0;
   }
   for (const UINT key : pressed_keys_) {
     PostKey(key, false);
@@ -269,6 +280,104 @@ UINT GameStreamInput::ResolveVirtualKey(const std::string& key) {
   return 0;
 }
 
+bool GameStreamInput::HasSgreNativeConfirmCapability() const {
+  if (hwnd_ == nullptr || !IsWindow(hwnd_)) return false;
+  return reinterpret_cast<uintptr_t>(GetPropW(
+             hwnd_, fushi_voice_hook::kSgreDirectInputShieldReadyProperty)) ==
+         fushi_voice_hook::kSgreDirectInputShieldReadyValue;
+}
+
+bool GameStreamInput::PublishNativeLeftButton(bool down, bool wait_for_ack,
+                                              std::string* reason) {
+  VoiceHookOpenResult opened = VoiceHookReader::Instance().Open(pid_);
+  if (!opened.ok()) {
+    SetReason(reason, "native_input_unavailable");
+    return false;
+  }
+  if (down) {
+    if (!native_left_down_) {
+      native_left_transaction_id_ = next_native_transaction_id_++;
+      if (next_native_transaction_id_ == 0) next_native_transaction_id_ = 1;
+    }
+  } else if (native_left_transaction_id_ == 0) {
+    native_left_transaction_id_ = next_native_transaction_id_++;
+    if (next_native_transaction_id_ == 0) next_native_transaction_id_ = 1;
+  }
+  const uint64_t deadline =
+      GetTickCount64() + fushi_voice_hook::kGameStreamInputDefaultLeaseMs;
+  const uint32_t active =
+      down ? fushi_voice_hook::kGameStreamInputButtonLeft : 0u;
+  const uint32_t seq = VoiceHookReader::Instance().PublishGameStreamInput(
+      hwnd_, native_left_transaction_id_, active, deadline);
+  if (seq == 0) {
+    SetReason(reason, "native_input_unavailable");
+    return false;
+  }
+  if (!wait_for_ack) {
+    native_left_down_ = down;
+    if (!down) native_left_transaction_id_ = 0;
+    return true;
+  }
+
+  const uint64_t wait_deadline = GetTickCount64() + 250;
+  while (GetTickCount64() <= wait_deadline) {
+    const VoiceHookGameStreamInputStatus status =
+        VoiceHookReader::Instance().GameStreamInputStatus();
+    if (status.ok() && status.request_seq == seq &&
+        status.transaction_id == native_left_transaction_id_ &&
+        status.applied_seq == seq) {
+      if (status.status == fushi_voice_hook::kGameStreamInputStatusApplied) {
+        if (down && (status.observed_buttons &
+                     fushi_voice_hook::kGameStreamInputButtonLeft) == 0) {
+          SetReason(reason, "native_input_not_observed");
+          PublishNativeLeftButton(false, false, nullptr);
+          native_left_down_ = false;
+          native_left_transaction_id_ = 0;
+          return false;
+        }
+        native_left_down_ = down;
+        if (!down) native_left_transaction_id_ = 0;
+        return true;
+      }
+      SetReason(reason, status.status ==
+                                fushi_voice_hook::kGameStreamInputStatusExpired
+                            ? "native_input_timeout"
+                            : "native_input_rejected");
+      if (down) {
+        PublishNativeLeftButton(false, false, nullptr);
+      }
+      native_left_down_ = false;
+      native_left_transaction_id_ = 0;
+      return false;
+    }
+    Sleep(4);
+  }
+  SetReason(reason, "native_input_timeout");
+  if (down) {
+    PublishNativeLeftButton(false, false, nullptr);
+  }
+  native_left_down_ = false;
+  native_left_transaction_id_ = 0;
+  return false;
+}
+
+bool GameStreamInput::SendNativeLeftButton(bool down, bool require_foreground,
+                                           bool wait_for_ack,
+                                           std::string* reason) {
+  if (require_foreground) {
+    if (!ValidateTarget(true, reason)) return false;
+  } else {
+    const GameStreamWindowInfo target = InspectBound();
+    if (!target.alive || !target.process_matches) {
+      SetReason(reason, "process_changed");
+      native_left_down_ = false;
+      native_left_transaction_id_ = 0;
+      return false;
+    }
+  }
+  return PublishNativeLeftButton(down, wait_for_ack, reason);
+}
+
 bool GameStreamInput::PostKey(UINT vk, bool down) {
   if (hwnd_ == nullptr) return false;
   // Games that handle window messages may inspect the documented keyboard
@@ -305,6 +414,14 @@ bool GameStreamInput::PostPointer(UINT message, WPARAM flags, double x,
 
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
                            std::string* reason) {
+  // A release removes already-authorised state. Do not require foreground
+  // ownership: a brief focus change must not leave a synthetic button held
+  // when the game resumes polling. Identity is still checked before publishing.
+  if (native_left_down_ && ReadString(event, "kind") == "gamepad" &&
+      ReadString(event, "action") == "up" &&
+      _stricmp(ReadString(event, "button").c_str(), "confirm") == 0) {
+    return SendNativeLeftButton(false, false, false, reason);
+  }
   if (!ValidateTarget(true, reason)) return false;
   const std::string kind_value = ReadString(event, "kind");
   const std::string action_value = ReadString(event, "action");
@@ -338,6 +455,19 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
       return false;
     }
     const bool down = IsDown(action_value);
+    const bool sgre_native_ready = HasSgreNativeConfirmCapability();
+    const bool gamepad_confirm =
+        kind_value == "gamepad" &&
+        _stricmp(ReadString(event, "button").c_str(), "confirm") == 0;
+    if (sgre_native_ready && gamepad_confirm) {
+      return SendNativeLeftButton(down, true, true, reason);
+    }
+    if (sgre_native_ready) {
+      SetReason(reason, kind_value == "gamepad"
+                            ? "unsupported_native_gamepad_button"
+                            : "unsupported_native_key");
+      return false;
+    }
     if (!PostKey(vk, down)) {
       SetReason(reason, "post_failed");
       return false;
@@ -350,6 +480,10 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
     return true;
   }
   if (kind_value == "pointer") {
+    if (HasSgreNativeConfirmCapability()) {
+      SetReason(reason, "unsupported_native_pointer");
+      return false;
+    }
     UINT message = WM_MOUSEMOVE;
     WPARAM flags = pointer_down_ ? MK_LBUTTON : 0;
     if (action_value == "down") {
