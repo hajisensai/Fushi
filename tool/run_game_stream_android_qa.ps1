@@ -109,7 +109,9 @@ if (-not $CredentialsPath -or -not (Test-Path -LiteralPath $CredentialsPath)) {
 }
 $credentialFile = [IO.Path]::GetFullPath($CredentialsPath)
 try {
-    $credential = Get-Content -LiteralPath $credentialFile -Raw | ConvertFrom-Json
+    # Dart writes UTF-8 without a BOM. Windows PowerShell 5.1 otherwise uses
+    # the system ANSI code page and can corrupt the Japanese fixture terms.
+    $credential = Get-Content -LiteralPath $credentialFile -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($credential.version -ne 1 -or $credential.hostUrl -notmatch '^https://' -or -not $credential.token -or -not $credential.tlsFingerprint) { throw 'invalid' }
 } catch { throw 'Invalid private credential file (contents suppressed)' }
 $credential = $null
@@ -138,7 +140,10 @@ Push-Location $app
 $runExit = 1
 try {
     $ErrorActionPreference = 'Continue'
-    & $flutter drive --no-pub -d $Serial --driver=test_driver/integration_test.dart --target=integration_test/game_stream_lan_client_test.dart "--use-application-binary=$ApkPath" 2>&1 | Tee-Object -FilePath (Join-Path $output 'drive.log')
+    # drive otherwise uninstalls its APK on completion, deleting the private
+    # evidence before this script can export it. The fixture itself disconnects
+    # and removes its credential in finally; keep only this isolated QA app.
+    & $flutter drive --no-pub --keep-app-running -d $Serial --driver=test_driver/integration_test.dart --target=integration_test/game_stream_lan_client_test.dart "--use-application-binary=$ApkPath" 2>&1 | Tee-Object -FilePath (Join-Path $output 'drive.log')
     $runExit = $LASTEXITCODE
     $ErrorActionPreference = 'Stop'
 } finally {
