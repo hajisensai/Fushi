@@ -240,22 +240,28 @@ class GameStreamEvidenceMiningAdapter extends FushiGameStreamMiningAdapter {
     GameStreamMineRequest request,
     GameStreamTextEvent line,
   ) async {
-    final Set<int> before = await evidence.findRunNotes();
-    final GameStreamMineResult result = await super.mine(request, line);
+    final Set<int> before = await evidence.observeMiningStage(
+      stage: GameStreamMiningStage.preflight,
+      line: line,
+      action: evidence.findRunNotes,
+    );
+    final GameStreamMineResult result = await evidence.observeMiningStage(
+      stage: GameStreamMiningStage.hostMine,
+      line: line,
+      action: () => super.mine(request, line),
+    );
     if (result.ok) {
-      try {
-        await evidence.verifyMine(line, before);
-      } catch (error) {
-        evidence.failures.add('Mining readback: $error');
-        await evidence.writeJson('verification-failure.json', <String, Object?>{
-          'lineId': line.lineId,
-          'error': '$error',
-        });
-      }
+      await evidence.observeMiningStage<void>(
+        stage: GameStreamMiningStage.verify,
+        line: line,
+        action: () => evidence.verifyMine(line, before),
+      );
     }
     return result;
   }
 }
+
+enum GameStreamMiningStage { preflight, hostMine, verify }
 
 class GameStreamLanEvidence {
   GameStreamLanEvidence({required this.directory, required this.runTag});
@@ -268,6 +274,46 @@ class GameStreamLanEvidence {
       <String, ({String text, String pngSha256})>{};
   final Map<String, ({String sentence, String sha256, int bytes})> _audio =
       <String, ({String sentence, String sha256, int bytes})>{};
+
+  /// Never log an exception's message: network errors can contain credentials,
+  /// and Anki errors can contain card text. Preserve the original exception even
+  /// when writing its diagnostic fails, so neither mining nor readback can pass.
+  Future<T> observeMiningStage<T>({
+    required GameStreamMiningStage stage,
+    required GameStreamTextEvent line,
+    required Future<T> Function() action,
+  }) async {
+    final Map<String, Object?> context = <String, Object?>{
+      'stage': stage.name,
+      'lineId': line.lineId,
+      'sentenceSha256': sha256.convert(utf8.encode(line.text)).toString(),
+    };
+    try {
+      await writeJson('mining-progress.json', <String, Object?>{
+        ...context,
+        'status': 'started',
+      });
+      final T result = await action();
+      await writeJson('mining-progress.json', <String, Object?>{
+        ...context,
+        'status': 'completed',
+        if (result is GameStreamMineResult) 'mineOk': result.ok,
+      });
+      return result;
+    } catch (error) {
+      final String type = error.runtimeType.toString();
+      failures.add('${stage.name}:$type');
+      try {
+        await writeJson('mining-failure.json', <String, Object?>{
+          ...context,
+          'failureType': type,
+        });
+      } catch (evidenceError) {
+        failures.add('${stage.name}:evidence:${evidenceError.runtimeType}');
+      }
+      rethrow;
+    }
+  }
 
   /// Observe the exact production line-specific resource/cache bytes consumed
   /// by the miner. This does not certify the original archive or voice purity.
@@ -436,7 +482,6 @@ class GameStreamLanEvidence {
         capturedAudio.sha256 != audioHash) {
       throw StateError('Anki audio differs from the production line capture');
     }
-    verifiedNotes.add(noteId);
     await writeJson('note-$noteId.json', <String, Object?>{
       'noteId': noteId,
       'lineId': line.lineId,
@@ -459,5 +504,6 @@ class GameStreamLanEvidence {
       'audioResourceByteComparison': 'not_run',
       'pureVoiceClassification': 'not_run',
     });
+    verifiedNotes.add(noteId);
   }
 }
