@@ -8,7 +8,7 @@
 - Android：在「Fushi 互联」设置的客户端区域进入游戏串流，选择已配对且启用的 Windows 主机，加入其已开启的会话。
 - 首版仅 LAN、单客户端，WebRTC 不配置 STUN/TURN。SDP/ICE、加入、停止和制卡复用互联 HTTP、配对令牌以及 HTTPS 指纹校验。共享 WebDAV 密码不能授权串流控制。
 - Android 只接收视频/音频、发送输入、显示 Hook 台词和查词。Hook、helper、窗口采集和 Anki 写入全部留在 Windows；iOS/macOS/Linux 无接收或游戏 Hook 入口。
-- 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置。Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时会拒绝输入并回传 ACK 原因。
+- 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置，也支持焦点导航及 Enter/Space 按下和松开，失焦会释放按键。Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时会拒绝输入并回传 ACK 原因。
 - 查词面板复用 `FushiRemoteLookupClient` 和 `DictionaryPopupLayer`；查词固定到串流主机。分词复用现有日语模块，无本地词典时按字回退。查词面板可收起，未新增系统级悬浮窗。
 
 ## 实现
@@ -26,8 +26,9 @@
 - Windows Debug 构建通过，包含新原生输入通道和 WebRTC 插件。
 - Android Debug APK 构建通过。
 - 引擎协议/会话测试 18 项通过；app 串流、词典传输、制卡与引擎纯净性回归 82 项通过；页面及设置回归首轮 24 项通过。
-- 追加的主机启动取消、渐进文本截图、分词和键位配置回归 12 项通过（其中 5 项与前述批次重叠）；合计 131 项不同的定向单元/组件测试通过。改动文件定向静态检查通过。
-- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`，使用自建 WinForms 窗口和生产 host，严格检查真实帧，不能以 track 创建成功作为通过。初次运行已到达远端视频流阶段，但尚无解码帧证据。
+- 追加的主机启动取消、渐进文本截图、分词和键位配置回归 12 项通过（其中 5 项与前述批次重叠）；后续 SDP 答复失败保留 offer 游标、手柄焦点释放两项也通过，合计 133 项不同的定向单元/组件测试。改动文件定向静态检查通过。
+- `powershell -ExecutionPolicy Bypass -File tool/run_game_stream_input_test.ps1` 编译真实原生输入实现，28 项断言通过，覆盖隐藏/最小化后的释放、进程身份失效拒绝、键盘扫描码和松开标志。测试只向自建离屏窗口发消息。
+- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`，使用自建 WinForms 窗口和生产 host，严格检查渲染首帧或解码帧，不能以 track 创建成功作为通过。2026-09-22 的初始诊断已确认 ICE 与双向音频 RTP，但主机 `media-source.frames`、`framesEncoded` 均为 0，尚不能证明视频捕获可用。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 
