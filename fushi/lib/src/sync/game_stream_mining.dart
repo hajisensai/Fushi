@@ -254,11 +254,17 @@ class FushiGameStreamMiningAdapter {
     return GameStreamMineResult(
       ok: result.success,
       message: result.success
-          ? '制卡完成'
+          ? result.sentenceAudioMissing
+                ? '制卡完成，但该台词没有可用的对应语音'
+                : '制卡完成'
           : result.duplicate
           ? 'Anki 中已有对应卡片'
           : result.failureReason ?? '主机制卡失败',
-      detail: result.duplicate ? 'duplicate' : null,
+      detail: result.duplicate
+          ? 'duplicate'
+          : result.sentenceAudioMissing
+          ? 'sentence_audio_missing'
+          : null,
     );
   }
 }

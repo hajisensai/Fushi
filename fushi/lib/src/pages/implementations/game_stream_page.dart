@@ -163,7 +163,9 @@ class _GameStreamPageState extends State<GameStreamPage> {
         setState(() {
           _mineFailed = result?.ok != true;
           _mineMessage = result?.ok == true
-              ? t.game_stream_mine_success
+              ? result?.detail == 'sentence_audio_missing'
+                    ? t.game_card_sentence_audio_missing
+                    : t.game_stream_mine_success
               : '${t.game_stream_mine_failed}: ${result?.message ?? ''}';
         });
       }
