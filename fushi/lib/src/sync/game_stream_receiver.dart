@@ -33,8 +33,9 @@ class FushiGameStreamReceiver extends ChangeNotifier
        _peerFactory = peerFactory ?? _createPeer {
     WidgetsBinding.instance.addObserver(this);
     renderer.onFirstFrameRendered = () {
-      if (_disposed || _connection == null || renderer.srcObject == null)
+      if (_disposed || _connection == null || renderer.srcObject == null) {
         return;
+      }
       _ready = true;
       _notify();
     };
