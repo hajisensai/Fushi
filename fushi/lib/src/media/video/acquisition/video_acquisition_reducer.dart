@@ -180,6 +180,18 @@ VideoAcquisitionReduction _onAiChoose(
 bool? _rememberDefaultOf(VideoAcquisitionQuestion question) =>
     question.rememberToggle ? question.rememberDefault : null;
 
+/// 正在回答 [slot] 的问题时，AI 补丁没带 `*Remember` 就沿用问题的勾选默认——与
+/// 点 chip / AI `choose` 同口径。否则「只问一次」在打字回答这条路上不成立：偏好
+/// `''` 时问题带 `rememberDefault: true`，用户打「日语字幕」被判成 `provide` 却不
+/// 写偏好，下次会话再问一遍。不在回答该槽位（无挂起问题 / 问的是别的槽位）时
+/// 补丁仍是单次覆盖，不碰偏好。
+bool? _rememberDefaultForSlot(
+  VideoAcquisitionQuestion? question,
+  VideoAcquisitionSlot slot,
+) => question != null && question.slot == slot
+    ? _rememberDefaultOf(question)
+    : null;
+
 /// `provide` = 把补丁里非空字段并进槽位，然后从当前阶段继续。
 VideoAcquisitionReduction _onAiProvide(
   VideoAcquisitionState state,
@@ -254,9 +266,13 @@ VideoAcquisitionReduction _applyPatch(
   if (episodes != null) {
     slots = slots.copyWith(episodes: episodes);
   }
+  final VideoAcquisitionQuestion? pending = state.question;
   final VideoAcquisitionQuality? quality = patch.quality;
   if (quality != null) {
-    final bool remember = patch.qualityRemember ?? false;
+    final bool remember =
+        patch.qualityRemember ??
+        _rememberDefaultForSlot(pending, VideoAcquisitionSlot.quality) ??
+        false;
     slots = slots.copyWith(quality: quality, qualityRemember: remember);
     if (remember) {
       effects.add(
@@ -269,7 +285,13 @@ VideoAcquisitionReduction _applyPatch(
   }
   final String? subtitleLanguage = patch.subtitleLanguage?.trim();
   if (subtitleLanguage != null && subtitleLanguage.isNotEmpty) {
-    final bool remember = patch.subtitleLanguageRemember ?? false;
+    final bool remember =
+        patch.subtitleLanguageRemember ??
+        _rememberDefaultForSlot(
+          pending,
+          VideoAcquisitionSlot.subtitleLanguage,
+        ) ??
+        false;
     slots = slots.copyWith(
       subtitleLanguage: subtitleLanguage,
       subtitleLanguageRemember: remember,

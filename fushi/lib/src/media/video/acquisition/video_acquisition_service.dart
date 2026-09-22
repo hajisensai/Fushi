@@ -17,6 +17,7 @@ import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -171,7 +172,12 @@ class VideoAcquisitionService {
         _states.add(nextState);
         for (final VideoAcquisitionEffect effect in effects) {
           if (_disposed) return;
-          await _run(effect);
+          // 一批效果是一个事务：前一个失败，后面的不再跑。`_submit` 产出的是
+          // `[SetSeriesSubtitleLanguage, SubmitDownload]`——记忆写失败若照旧入队，
+          // 队列里就是 [Failed, Submitted]：Failed 先把会话拉回「就这个」确认态，
+          // 随后 Submitted 因阶段不符被丢弃——UI 报失败、下载其实已入队，用户再点
+          // 一次就是重复入队。
+          if (!await _run(effect)) break;
         }
       }
     } finally {
@@ -185,7 +191,9 @@ class VideoAcquisitionService {
     _states.close();
   }
 
-  Future<void> _run(VideoAcquisitionEffect effect) async {
+  /// 返回 false 表示这个效果失败（已回灌 failed 事件），同批后续效果不再执行。
+  /// 搜索类效果自己把失败变成事件、不中断批次；写入类效果经 [_guard]。
+  Future<bool> _run(VideoAcquisitionEffect effect) async {
     switch (effect) {
       case VideoAcquisitionParseIntentEffect():
         await _parseIntent(effect.utterance);
@@ -198,38 +206,42 @@ class VideoAcquisitionService {
       case VideoAcquisitionSearchResourcesEffect():
         await _searchResources(effect);
       case VideoAcquisitionPersistPreferenceEffect():
-        await _guard(
+        return _guard(
           () => _ports.persistPreference(effect.preference, effect.value),
         );
       case VideoAcquisitionSetSeriesSubtitleLanguageEffect():
-        await _guard(
+        return _guard(
           () => _ports.setSeriesSubtitleLanguage(
             effect.reference,
             effect.languageCode,
           ),
         );
       case VideoAcquisitionSubmitDownloadEffect():
-        await _guard(() async {
+        return _guard(() async {
           final int count = await _ports.submitDownload(effect);
           _queue.add(VideoAcquisitionSubmittedEvent(count: count));
         });
       case VideoAcquisitionSubmitSubscriptionEffect():
-        await _guard(() async {
+        return _guard(() async {
           await _ports.submitSubscription(effect);
           _queue.add(const VideoAcquisitionSubmittedEvent(count: 1));
         });
       case VideoAcquisitionCloseEffect():
         break;
     }
+    return true;
   }
 
-  /// 效果失败 → 记住原始异常、回灌 failed 事件；绝不让异常冲出 dispatch。
-  Future<void> _guard(Future<void> Function() body) async {
+  /// 效果失败 → 记住原始异常、回灌 failed 事件、返回 false；绝不让异常冲出
+  /// dispatch。
+  Future<bool> _guard(Future<void> Function() body) async {
     try {
       await body();
+      return true;
     } catch (error) {
       lastError = error;
       _queue.add(VideoAcquisitionFailedEvent(_describe(error)));
+      return false;
     }
   }
 
@@ -338,10 +350,15 @@ class VideoAcquisitionService {
     AiVideoIdentityDecision? decision;
     try {
       decision = await _ports.decideIdentity(query);
-    } catch (error) {
-      // AI 判定失败 = 不确定：候选照旧交给用户点选。
+    } catch (error, stack) {
+      // AI 判定失败 = 不确定：候选照旧交给用户点选。降级是对的，但不能静默——
+      // `lastError` 只在 failed 那句出现时才被页面读，这里不产生 failed。
       lastError = error;
       decision = null;
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.decideIdentity',
+        '$error\n$stack',
+      );
     }
     _queue.add(VideoAcquisitionIdentityDecidedEvent(decision));
   }
@@ -352,15 +369,26 @@ class VideoAcquisitionService {
     bool subscribed = false;
     try {
       work = await _ports.loadDetails(item);
-    } catch (error) {
+    } catch (error, stack) {
       // 详情拉不到就用搜索项自带的资料；放送状态未知时对话层会照样问模式。
+      // Jikan 整站 504 就落在这里，必须留痕。
       lastError = error;
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.loadDetails',
+        '${item.reference.title}: $error\n$stack',
+      );
     }
     try {
       presence = await _ports.queryPresence(item.reference);
       subscribed = await _ports.isSubscribed(item.reference);
-    } catch (error) {
+    } catch (error, stack) {
+      // 「已在库 / 已订阅」查不到时按未知继续——后果是可能重复建订阅，所以这条
+      // 至少要进诊断日志，不能当 null 静默吞掉。
       lastError = error;
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.presence',
+        '${item.reference.title}: $error\n$stack',
+      );
     }
     _queue.add(
       VideoAcquisitionDetailsLoadedEvent(

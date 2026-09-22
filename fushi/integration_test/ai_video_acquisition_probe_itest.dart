@@ -163,7 +163,8 @@ void main() {
           break;
         }
       }
-      await captureFlutterFrame(tester, '0${3 + round}-after-${question.slot.name}');
+      await captureFlutterFrame(
+          tester, '0${3 + round}-after-${question.slot.name}');
     }
     final VideoAcquisitionState finalState = page.service.state;
     debugPrint(
@@ -176,8 +177,8 @@ void main() {
     await captureFlutterFrame(tester, '09-final');
     expect(
       finalState.transcript.whereType<VideoAcquisitionAssistantMessage>().map(
-        (VideoAcquisitionAssistantMessage m) => m.say.kind,
-      ),
+            (VideoAcquisitionAssistantMessage m) => m.say.kind,
+          ),
       contains(VideoAcquisitionSayKind.aiUnavailable),
       reason: 'AI 连不上时必须走退化路径而不是卡住',
     );

@@ -404,25 +404,24 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
 
   Widget _questionChips(BuildContext context, VideoAcquisitionQuestion q) {
     final List<Widget> chips = <Widget>[
+      // hint 已经拼进 label，不再另套 Tooltip：hint 为空时那是一个悬停出空气泡的
+      // 提示框，有 hint 时又是同一句话说两遍。
       for (int i = 0; i < q.options.length; i++)
-        Tooltip(
-          message: q.options[i].hint ?? '',
-          child: ActionChip(
-            key: ValueKey<String>(
-              'ai-video-acquire-option-${q.slot.name}-${q.options[i].id}',
-            ),
-            avatar: q.preselectedIndex == i
-                ? const Icon(Icons.star_outline, size: 16)
-                : null,
-            label: Text(
-              q.options[i].hint == null
-                  ? _optionLabel(q.slot, q.options[i])
-                  : '${_optionLabel(q.slot, q.options[i])} · ${q.options[i].hint}',
-            ),
-            onPressed: _state.busy
-                ? null
-                : () => unawaited(_choose(q, q.options[i].id)),
+        ActionChip(
+          key: ValueKey<String>(
+            'ai-video-acquire-option-${q.slot.name}-${q.options[i].id}',
           ),
+          avatar: q.preselectedIndex == i
+              ? const Icon(Icons.star_outline, size: 16)
+              : null,
+          label: Text(
+            q.options[i].hint == null
+                ? _optionLabel(q.slot, q.options[i])
+                : '${_optionLabel(q.slot, q.options[i])} · ${q.options[i].hint}',
+          ),
+          onPressed: _state.busy
+              ? null
+              : () => unawaited(_choose(q, q.options[i].id)),
         ),
     ];
     return Padding(

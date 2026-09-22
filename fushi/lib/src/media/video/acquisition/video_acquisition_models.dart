@@ -506,7 +506,12 @@ enum VideoAcquisitionStage {
 }
 
 /// 「跟随作品语言」的解析结论：码 + 证据（摘要里要说得出依据）。
-enum VideoWorkLanguageEvidence { originalLanguage, countries, titleScript, none }
+enum VideoWorkLanguageEvidence {
+  originalLanguage,
+  countries,
+  titleScript,
+  none,
+}
 
 class VideoWorkContentLanguage {
   const VideoWorkContentLanguage({required this.code, required this.evidence});

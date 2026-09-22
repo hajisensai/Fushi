@@ -365,6 +365,63 @@ void main() {
     });
   });
 
+  group('回答挂起问题的 AI 补丁与 chip 同口径（只问一次）', () {
+    test('问字幕时打字回答 → 沿用勾选默认写偏好', () {
+      final _Session s = _Session(_defaults(subtitleLanguagePref: ''));
+      _reachDetails(s, _item(status: 'Finished Airing'));
+      expect(s.state.question!.slot, VideoAcquisitionSlot.subtitleLanguage);
+      expect(s.state.question!.rememberDefault, isTrue);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        _provide(
+          const VideoAcquisitionIntentPatch(subtitleLanguage: 'en'),
+          utterance: '英文字幕',
+        ),
+      );
+      final VideoAcquisitionPersistPreferenceEffect persist = effects
+          .whereType<VideoAcquisitionPersistPreferenceEffect>()
+          .single;
+      expect(persist.preference, VideoAcquisitionPreference.subtitleLanguage);
+      expect(persist.value, 'en');
+      expect(s.state.slots.subtitleLanguageRemember, isTrue);
+    });
+
+    test('问画质时打字回答 → 沿用勾选默认写偏好', () {
+      final _Session s = _Session(_defaults(qualityPref: ''));
+      _reachDetails(s, _item(status: 'Finished Airing'));
+      expect(s.state.question!.slot, VideoAcquisitionSlot.quality);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        _provide(
+          const VideoAcquisitionIntentPatch(
+            quality: VideoAcquisitionQuality.p1080,
+          ),
+          utterance: '1080p',
+        ),
+      );
+      final VideoAcquisitionPersistPreferenceEffect persist = effects
+          .whereType<VideoAcquisitionPersistPreferenceEffect>()
+          .single;
+      expect(persist.preference, VideoAcquisitionPreference.quality);
+      expect(s.state.slots.qualityRemember, isTrue);
+    });
+
+    test("偏好 'ask' 时打字回答 → 勾选默认不勾，不写偏好", () {
+      final _Session s = _Session(_defaults(subtitleLanguagePref: 'ask'));
+      _reachDetails(s, _item(status: 'Finished Airing'));
+      expect(s.state.question!.slot, VideoAcquisitionSlot.subtitleLanguage);
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        _provide(
+          const VideoAcquisitionIntentPatch(subtitleLanguage: 'en'),
+          utterance: '英文字幕',
+        ),
+      );
+      expect(
+        effects.whereType<VideoAcquisitionPersistPreferenceEffect>(),
+        isEmpty,
+      );
+      expect(s.state.slots.subtitleLanguageRemember, isFalse);
+    });
+  });
+
   group('模式槽位', () {
     test('Currently Airing 的 tv → 问，选项恰为 [download, subscribe]', () {
       final _Session s = _Session(_oneSource);

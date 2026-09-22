@@ -99,6 +99,35 @@ void main() {
     },
   );
 
+  test('a failing effect aborts the rest of its batch: nothing is enqueued '
+      'after the series subtitle write throws', () async {
+    final _Ports ports = _Ports(
+      setSeriesError: const FormatException('prefs locked'),
+    );
+    final VideoAcquisitionService service = VideoAcquisitionService(
+      ports: ports.build(),
+      defaults: _defaults(),
+    );
+    addTearDown(service.dispose);
+
+    await service.submitText('下 Show');
+    await service.confirm();
+
+    expect(
+      ports.calls,
+      isEmpty,
+      reason:
+          '记忆写失败后入队不得执行——否则 UI 报失败、下载其实已入队，'
+          '用户再点「就这个」就是重复入队',
+    );
+    expect(
+      service.state.stage,
+      VideoAcquisitionStage.awaitingResourceConfirm,
+      reason: '回到确认态，用户可以重试',
+    );
+    expect(service.lastError, isA<FormatException>());
+  });
+
   test('cancel closes the session from any stage', () async {
     final _Ports ports = _Ports();
     final VideoAcquisitionService service = VideoAcquisitionService(
@@ -170,10 +199,12 @@ class _Ports {
       VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
     ),
     this.submitError,
+    this.setSeriesError,
   });
 
   final VideoAcquisitionIntent? intent;
   final Exception? submitError;
+  final Exception? setSeriesError;
   final List<String> searchQueries = <String>[];
   final List<String> calls = <String>[];
   bool? submittedInstallSubtitles;
@@ -202,8 +233,10 @@ class _Ports {
     decideIdentity: (_) async => null,
     persistPreference: (VideoAcquisitionPreference p, String v) async =>
         calls.add('persist:${p.name}=$v'),
-    setSeriesSubtitleLanguage: (_, String code) async =>
-        calls.add('setSeriesSubtitleLanguage:$code'),
+    setSeriesSubtitleLanguage: (_, String code) async {
+      if (setSeriesError != null) throw setSeriesError!;
+      calls.add('setSeriesSubtitleLanguage:$code');
+    },
     submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
       if (submitError != null) throw submitError!;
       submittedInstallSubtitles = effect.installSubtitles;

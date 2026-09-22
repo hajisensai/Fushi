@@ -17,11 +17,11 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
   Widget harness(VideoAcquisitionService service) => TranslationProvider(
-    child: MaterialApp(
-      locale: const Locale('zh', 'CN'),
-      home: AiVideoAcquisitionPage(service: service),
-    ),
-  );
+        child: MaterialApp(
+          locale: const Locale('zh', 'CN'),
+          home: AiVideoAcquisitionPage(service: service),
+        ),
+      );
 
   testWidgets('typing sends the text through the AI port; chips bypass it', (
     WidgetTester tester,
@@ -45,7 +45,8 @@ void main() {
       find.byKey(const ValueKey<String>('ai-video-acquire-input')),
       'Show',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('ai-video-acquire-send')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('ai-video-acquire-send')));
     await tester.pumpAndSettle();
 
     expect(ports.parseCalls, 1);
@@ -57,7 +58,8 @@ void main() {
     expect(remember.value, isTrue);
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-quality-1080p')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-quality-1080p')),
     );
     await tester.pumpAndSettle();
 
@@ -66,27 +68,32 @@ void main() {
     expect(ports.persisted, <String>['quality=1080p']);
     expect(service.state.stage, VideoAcquisitionStage.awaitingResourceConfirm);
     expect(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-resource-confirm')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-resource-confirm')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-resource-next')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-resource-next')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-resource-cancel')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-resource-cancel')),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-resource-confirm')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-resource-confirm')),
     );
     await tester.pumpAndSettle();
     expect(ports.submitted, 3);
     expect(service.state.stage, VideoAcquisitionStage.done);
   });
 
-  testWidgets('unchecking "use as default" keeps the choice for this request only', (
+  testWidgets(
+      'unchecking "use as default" keeps the choice for this request only', (
     WidgetTester tester,
   ) async {
     final _Ports ports = _Ports();
@@ -107,13 +114,16 @@ void main() {
       find.byKey(const ValueKey<String>('ai-video-acquire-input')),
       'Show',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('ai-video-acquire-send')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('ai-video-acquire-send')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey<String>('ai-video-acquire-remember')));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('ai-video-acquire-remember')));
     await tester.pump();
     await tester.tap(
-      find.byKey(const ValueKey<String>('ai-video-acquire-option-quality-720p')),
+      find.byKey(
+          const ValueKey<String>('ai-video-acquire-option-quality-720p')),
     );
     await tester.pumpAndSettle();
 
@@ -123,39 +133,39 @@ void main() {
 }
 
 VideoDiscoveryItem _finishedShow() => VideoDiscoveryItem(
-  reference: VideoMediaReference(
-    providerId: 'mal',
-    mediaId: '1',
-    mediaKind: VideoMetadataMediaKind.tv,
-    discoveryCategory: VideoDiscoveryCategory.anime,
-    title: 'Show',
-    year: 2026,
-  ),
-  metadataWork: VideoMetadataWork(
-    provider: VideoMetadataProviderKind.mal,
-    kind: VideoMetadataMediaKind.tv,
-    title: 'Show',
-    status: 'Finished Airing',
-    ids: const <VideoMetadataId>[
-      VideoMetadataId(type: 'mal', value: '1', isDefault: true),
-    ],
-  ),
-);
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '1',
+        mediaKind: VideoMetadataMediaKind.tv,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: 'Show',
+        year: 2026,
+      ),
+      metadataWork: VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Show',
+        status: 'Finished Airing',
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'mal', value: '1', isDefault: true),
+        ],
+      ),
+    );
 
 class _Candidate extends VideoResourceCandidate {
   _Candidate(int episode, String resolution)
-    : super(
-        providerId: 'nyaa',
-        providerInstanceId: 'nyaa',
-        remoteId: 'r$episode-$resolution',
-        title:
-            '[Group] Show - ${episode.toString().padLeft(2, '0')} ($resolution)',
-        providerPriority: 100,
-        releaseGroup: 'Group',
-        resolution: resolution,
-        trusted: true,
-        seeders: 10,
-      );
+      : super(
+          providerId: 'nyaa',
+          providerInstanceId: 'nyaa',
+          remoteId: 'r$episode-$resolution',
+          title:
+              '[Group] Show - ${episode.toString().padLeft(2, '0')} ($resolution)',
+          providerPriority: 100,
+          releaseGroup: 'Group',
+          resolution: resolution,
+          trusted: true,
+          seeders: 10,
+        );
 }
 
 class _Ports {
@@ -164,41 +174,42 @@ class _Ports {
   final List<String> persisted = <String>[];
 
   VideoAcquisitionPorts build() => VideoAcquisitionPorts(
-    searchWorks: (_) async => ProviderBatchResult<VideoDiscoveryPage>.success(
-      <VideoDiscoveryPage>[
-        VideoDiscoveryPage(
-          items: <VideoDiscoveryItem>[_finishedShow()],
-          page: 1,
-          hasMore: false,
+        searchWorks: (_) async =>
+            ProviderBatchResult<VideoDiscoveryPage>.success(
+          <VideoDiscoveryPage>[
+            VideoDiscoveryPage(
+              items: <VideoDiscoveryItem>[_finishedShow()],
+              page: 1,
+              hasMore: false,
+            ),
+          ],
         ),
-      ],
-    ),
-    loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
-    queryPresence: (_) async => VideoLibraryPresence.none,
-    isSubscribed: (_) async => false,
-    searchResources: (_) async =>
-        ProviderBatchResult<VideoResourceCandidate>.success(
+        loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
+        queryPresence: (_) async => VideoLibraryPresence.none,
+        isSubscribed: (_) async => false,
+        searchResources: (_) async =>
+            ProviderBatchResult<VideoResourceCandidate>.success(
           <VideoResourceCandidate>[
             for (final String resolution in <String>['1080p', '720p'])
               for (int episode = 1; episode <= 3; episode++)
                 _Candidate(episode, resolution),
           ],
         ),
-    parseIntent: (VideoAcquisitionIntentQuery query) async {
-      parseCalls++;
-      return const VideoAcquisitionIntent(
-        VideoAcquisitionIntentKind.provide,
-        VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
+        parseIntent: (VideoAcquisitionIntentQuery query) async {
+          parseCalls++;
+          return const VideoAcquisitionIntent(
+            VideoAcquisitionIntentKind.provide,
+            VideoAcquisitionIntentPatch(workQueries: <String>['Show']),
+          );
+        },
+        decideIdentity: (_) async => null,
+        persistPreference: (VideoAcquisitionPreference p, String v) async =>
+            persisted.add('${p.name}=$v'),
+        setSeriesSubtitleLanguage: (_, _) async {},
+        submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
+          submitted = effect.plan.picks.length;
+          return submitted;
+        },
+        submitSubscription: (_) async {},
       );
-    },
-    decideIdentity: (_) async => null,
-    persistPreference: (VideoAcquisitionPreference p, String v) async =>
-        persisted.add('${p.name}=$v'),
-    setSeriesSubtitleLanguage: (_, _) async {},
-    submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
-      submitted = effect.plan.picks.length;
-      return submitted;
-    },
-    submitSubscription: (_) async {},
-  );
 }
