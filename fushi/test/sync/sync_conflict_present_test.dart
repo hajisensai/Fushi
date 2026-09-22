@@ -357,6 +357,117 @@ void main() {
     await dismissDialog(tester, navKey);
   });
 
+  // 用户报告 2026-09-22：一次手动同步跑两条通道（云备份 + 互联），同一本书在两条
+  // 通道上都分叉时逐通道各弹一次同样的弹窗——用户点完「立即同步」它紧接着又弹。
+  // 现在两条通道共用一本裁决簿：第一条通道里用户裁决过的书，第二条通道直接按同一
+  // 裁决应用并关闭，不再问。
+  testWidgets(
+      'resolving through the dialog records the decision on the '
+      'shared ledger', (WidgetTester tester) async {
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
+    addTearDown(db.close);
+    final SyncConflictPrompter prompter = SyncConflictPrompter();
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final Map<String, SyncChoice> decisions = <String, SyncChoice>{};
+
+    await pumpAndPresent(
+      tester,
+      prompter: prompter,
+      navKey: navKey,
+      body: () => prompter.present(
+        navigatorKey: navKey,
+        db: db,
+        backend: fake,
+        conflicts: _oneConflict(),
+        source: ConflictSource.manual,
+        inBook: false,
+        decisions: decisions,
+      ),
+    );
+    expect(find.byType(SyncCompareDialog), findsOneWidget);
+    expect(decisions, isEmpty, reason: '裁决簿只在用户真的裁决后才写');
+
+    await tester.tap(find.text(t.sync_compare_use_local).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SyncCompareDialog), findsNothing);
+    expect(fake.exportedByFolder['folderA']?.lastBookmarkModified, 120);
+    expect(decisions, <String, SyncChoice>{
+      sanitizeTtuFilename('BookA'): SyncChoice.useLocal,
+    });
+  });
+
+  testWidgets(
+      'a book already decided on the ledger is applied on the next '
+      'channel without prompting again', (WidgetTester tester) async {
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
+    addTearDown(db.close);
+    final SyncConflictPrompter prompter = SyncConflictPrompter();
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    // 第一条通道已裁决「用本地」；这里模拟第二条通道的 present。
+    final Map<String, SyncChoice> decisions = <String, SyncChoice>{
+      sanitizeTtuFilename('BookA'): SyncChoice.useLocal,
+    };
+    bool presented = false;
+
+    await pumpAndPresent(
+      tester,
+      prompter: prompter,
+      navKey: navKey,
+      body: () => prompter
+          .present(
+            navigatorKey: navKey,
+            db: db,
+            backend: fake,
+            conflicts: _oneConflict(),
+            source: ConflictSource.manual,
+            inBook: false,
+            decisions: decisions,
+          )
+          .then((_) => presented = true),
+    );
+
+    // 没等用户：弹窗已自行应用并关闭，present 也已经返回。
+    expect(find.byType(SyncCompareDialog), findsNothing,
+        reason: '同一本书用户只裁决一次，第二条通道不再弹');
+    expect(presented, isTrue);
+    expect(fake.exportedByFolder['folderA']?.lastBookmarkModified, 120,
+        reason: '第二条通道按同一裁决真的应用了（本机推过去）');
+    expect(await db.getSyncBaseline(sanitizeTtuFilename('BookA'), 'progress'),
+        120);
+  });
+
+  testWidgets('a book skipped on the ledger is not prompted again either',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
+    addTearDown(db.close);
+    final SyncConflictPrompter prompter = SyncConflictPrompter();
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final Map<String, SyncChoice> decisions = <String, SyncChoice>{
+      sanitizeTtuFilename('BookA'): SyncChoice.skip,
+    };
+
+    await pumpAndPresent(
+      tester,
+      prompter: prompter,
+      navKey: navKey,
+      body: () => prompter.present(
+        navigatorKey: navKey,
+        db: db,
+        backend: fake,
+        conflicts: _oneConflict(),
+        source: ConflictSource.manual,
+        inBook: false,
+        decisions: decisions,
+      ),
+    );
+
+    expect(find.byType(SyncCompareDialog), findsNothing);
+    expect(fake.exportedByFolder, isEmpty, reason: '跳过 = 两端都不动');
+  });
+
   testWidgets('auto source while in-book does NOT present',
       (WidgetTester tester) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();

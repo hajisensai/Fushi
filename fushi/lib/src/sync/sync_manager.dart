@@ -16,8 +16,31 @@ import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/sync/epub_repackage.dart';
+
 export 'package:fushi_engine/sync/epub_repackage.dart'
     show repackageExtractedEpub, resolveExtractedEpubRoot;
+
+/// 文件箱（`progress_*.json`）进度基线在 `sync_baselines` 表里的 dimension，
+/// **按通道分槽**（用户报告 2026-09-22：同步冲突弹窗「立即同步」后反复再弹）。
+///
+/// 这条基线描述的是「本机 ↔ 某一个远端文件箱」的共同祖先。云备份与互联是两条
+/// 并存的 client 通道、各有各的文件箱（互联的在 host 的 WebDAV 面上），此前两条
+/// 通道对同一本书读写同一行 `(assetKey, 'progress')`：云通道导出后把基线抬到本机
+/// 时间戳，互联通道再来看它的文件箱时 `local == base` → 判成「只远端动了」，把
+/// 自己上一轮导出的旧进度**倒灌回本机**；用户再读一段，两条通道的远端与基线全都
+/// 对不上 → 每轮 sweep 都报同一本书冲突、每次「立即同步」之后还会再弹。
+///
+/// 云通道沿用历史行 `'progress'`（同一时刻只有一条云通道在跑，切换云后端与此前
+/// 一样共用一行，存量基线不迁移）；互联通道另开一行（[SyncChannelScope.key]
+/// 后缀，与 folder 缓存 / 删除水位的分槽同一套命名，BUG-1576 族）。与互联 host
+/// DB 进度的**位置**基线（`kInterconnectBookProgressDimension`）仍是不同的行：
+/// 那条描述的是本机 ↔ host DB，这条描述的是本机 ↔ host 上的文件箱。
+String progressBaselineDimensionOf(SyncBackend backend) {
+  final SyncChannelScope scope = syncChannelScopeOf(backend);
+  return scope == SyncChannelScope.forBackendType(SyncBackendType.fushiServer)
+      ? scope.key('progress')
+      : 'progress';
+}
 
 /// 云盘书文件夹里承载「书标签名列表」的 sidecar 资产名（TODO-1165）。
 ///
@@ -95,7 +118,8 @@ class SyncManager {
   })  : _db = db,
         _repo = SyncRepository(db),
         _backend = backend,
-        _scope = syncChannelScopeOf(backend);
+        _scope = syncChannelScopeOf(backend),
+        _progressDimension = progressBaselineDimensionOf(backend);
 
   final FushiDatabase _db;
   final SyncRepository _repo;
@@ -105,6 +129,9 @@ class SyncManager {
   /// 远端**的目录布局，绝不能与另一条通道共用一份键——互联/WebDAV 的 folderId 是
   /// 绝对 URL，串槽后会让本通道把书籍 JSON 连同自己的凭据 PUT 到对端主机。
   final SyncChannelScope _scope;
+
+  /// 本通道文件箱进度基线的 dimension（见 [progressBaselineDimensionOf]）。
+  final String _progressDimension;
 
   /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1.
   /// Only fires when content sync is enabled and a file is being transferred.
@@ -302,7 +329,7 @@ class SyncManager {
       // Auto path: gate on the common-ancestor baseline. A genuine fork
       // (both sides moved off base) must surface as a conflict instead of
       // silently last-write-wins clobbering one side.
-      final int? base = await _db.getSyncBaseline(assetKey, 'progress');
+      final int? base = await _db.getSyncBaseline(assetKey, _progressDimension);
       final ProgressResolution res = resolveProgressSync(
         local: localPosition?.updatedAt,
         remote: remoteTimestamp,
@@ -313,7 +340,7 @@ class SyncManager {
           direction: SyncResult.conflict,
           title: book.title,
           conflictAssetKey: assetKey,
-          conflictDimension: 'progress',
+          conflictDimension: _progressDimension,
           conflictLocalVersion: localPosition?.updatedAt,
           conflictRemoteVersion: remoteTimestamp,
         );
@@ -341,7 +368,7 @@ class SyncManager {
       // common ancestor is this timestamp regardless of who decided it.
       if (localPosition?.updatedAt != null) {
         await _db.setSyncBaseline(
-            assetKey, 'progress', localPosition!.updatedAt);
+            assetKey, _progressDimension, localPosition!.updatedAt);
       }
       return SyncBookResult(direction: SyncResult.synced, title: book.title);
     }
@@ -555,7 +582,7 @@ class SyncManager {
     // the auto path and the manual (compare useRemote→import) path so a
     // user-resolved conflict's new ancestor is also persisted here.
     await _db.setSyncBaseline(
-        assetKey, 'progress', remoteProgress.lastBookmarkModified);
+        assetKey, _progressDimension, remoteProgress.lastBookmarkModified);
 
     // Import statistics
     if (syncStats && statsFileId != null) {
@@ -636,7 +663,7 @@ class SyncManager {
       // not the whole tail of remote calls. Written on both the auto path and
       // the manual (compare useLocal→export) path so a user-resolved conflict's
       // new ancestor is also recorded.
-      await _db.setSyncBaseline(assetKey, 'progress', timestampMs);
+      await _db.setSyncBaseline(assetKey, _progressDimension, timestampMs);
 
       // Export statistics
       if (syncStats) {

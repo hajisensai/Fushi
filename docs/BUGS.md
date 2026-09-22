@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2425 条。点号进各自文件。
+> 共 2427 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2622](bugs/BUG-2622-interconnect-collection-download-progress.md) | ✅ | ✅ | 互联下载远端视频合集时合集卡与详情页集卡都不显示进度 |
+| [BUG-2621](bugs/BUG-2621-sync-compare-repop-across-channels.md) | ✅ | ✅ | 同步冲突弹窗「立即同步」后同一本书反复再弹 |
 | [BUG-2620](bugs/BUG-2620-video-discovery-search-enter-noop.md) | ✅ | ✅ | 发现页搜索框按回车不触发搜索 |
 | [BUG-2619](bugs/BUG-2619-video-subscription-batch-never-matches.md) | ✅ | ✅ | 从合集资源建的订阅结构上永不命中 |
 | [BUG-2618](bugs/BUG-2618-ai-model-picker-split.md) | ✅ | ✅ | AI 提供商：模型候选是字段外的第二个下拉，选完「模型」输入框不跟着变 |
