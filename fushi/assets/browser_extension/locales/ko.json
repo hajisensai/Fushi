@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "사이트 자막과 확장 오버레이를 모두 완전히 숨깁니다(흐림 없음, 호버해도 표시 안 됨). 순수 듣기 연습용입니다. <kbd>Shift</kbd>+<kbd>H</kbd>로 언제든 전환할 수 있습니다.",
   "opt_subtitlePauseOnLookup_title": "검색 시 일시정지",
   "opt_subtitlePauseOnLookup_desc": "페이지, 자막 목록 또는 오버레이에서 검색을 시작하면 재생 중인 영상을 일시정지합니다. 팝업을 닫으면 자동으로 재생을 재개합니다(직접 일시정지한 영상은 재개하지 않음).",
+  "opt_subtitleResumeOnLookupLeave_title": "검색에서 벗어나면 재생 재개",
+  "opt_subtitleResumeOnLookupLeave_desc": "Shift 호버나 오버레이 자동 검색으로 동영상이 일시정지된 뒤, 포인터를 자막과 검색 팝업 밖으로 옮기면 팝업이 닫히고 추가 클릭 없이 재생이 재개됩니다. 클릭으로 시작한 검색에는 영향이 없습니다.",
   "opt_subtitleLookupOnPage_title": "검색 결과를 페이지에 표시",
   "opt_subtitleLookupOnPage_desc": "사이드 패널에서 단어를 클릭하면 팝업이 패널 안에 끼워지지 않고 페이지 위에 열립니다. 브라우저는 패널 내용이 패널 밖으로 그려지는 것을 허용하지 않습니다. 끄면 패널 안의 좁은 팝업으로 돌아갑니다.",
   "opt_subtitleOverlayAutoLookup_title": "오버레이 자막 호버 검색",

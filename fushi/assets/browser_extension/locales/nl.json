@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Verbergt zowel de ondertitels van de site als de extensie-overlay volledig (geen vervaging, niets bij zweven) — voor pure luisteroefening. Schakel op elk moment met <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Pauzeren bij opzoeken",
   "opt_subtitlePauseOnLookup_desc": "Pauzeert een spelende video wanneer een opzoeking start vanuit de pagina, de ondertitellijst of de overlay; het afspelen gaat automatisch verder zodra het venster sluit (een video die u zelf hebt gepauzeerd, wordt nooit hervat).",
+  "opt_subtitleResumeOnLookupLeave_title": "Hervatten bij verlaten van opzoeken",
+  "opt_subtitleResumeOnLookupLeave_desc": "Als Shift-zweven of automatisch opzoeken in de overlay de video pauzeert, sluit de pop-up en gaat het afspelen verder zodra je de aanwijzer van de ondertitel en de pop-up haalt, zonder extra klik. Opzoeken dat met een klik is gestart, blijft ongewijzigd.",
   "opt_subtitleLookupOnPage_title": "Opzoekresultaten op de pagina tonen",
   "opt_subtitleLookupOnPage_desc": "Klikt u op een woord in het zijpaneel, dan opent het venster op de pagina in plaats van in het paneel te worden geperst — browsers laten paneelinhoud niet buiten het paneel tekenen. Uit keert terug naar het smalle venster in het paneel.",
   "opt_subtitleOverlayAutoLookup_title": "Opzoeken bij zweven over overlay-ondertitels",
