@@ -78,6 +78,7 @@ void main() {
       int audioChannels = 1,
       String audioBitrate = '64k',
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       if (!audioStarted.isCompleted) audioStarted.complete();
       await audioRelease.future;
@@ -96,6 +97,7 @@ void main() {
       bool diagnosticOnly = false,
       dynamic onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       if (!gifStarted.isCompleted) gifStarted.complete();
       await gifRelease.future;
@@ -144,6 +146,7 @@ void main() {
       bool diagnosticOnly = false,
       dynamic onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       (onFailure as void Function(String)?)?.call('gif boom');
       return null;
@@ -155,6 +158,7 @@ void main() {
       double atSeconds = 0,
       dynamic onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
       bool diagnosticOnly = false,
     }) async {
       (onFailure as void Function(String)?)?.call('frame boom');
@@ -172,6 +176,7 @@ void main() {
       int audioChannels = 1,
       String audioBitrate = '64k',
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       (onFailure as void Function(String)?)?.call('audio boom');
       return null;

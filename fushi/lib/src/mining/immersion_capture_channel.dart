@@ -316,6 +316,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
               bool diagnosticOnly = false,
               FfmpegFailureReporter? onFailure,
               String? tlsPinSha256,
+              Map<String, String> httpHeaders = const {},
             }) =>
               extractClipGifViaFfmpeg(
                 inputPath: inputPath,
@@ -328,6 +329,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
                 diagnosticOnly: diagnosticOnly,
                 onFailure: onFailure,
                 tlsPinSha256: tlsPinSha256,
+                httpHeaders: httpHeaders,
                 cropFilter: cropFilter,
               );
   final ClipFrameExtractor frames =

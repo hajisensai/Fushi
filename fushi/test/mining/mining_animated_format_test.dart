@@ -350,7 +350,8 @@ void main() {
             FfmpegFailureReporter? onFailure,
             int audioChannels = 1,
             String audioBitrate = '64k',
-            String? tlsPinSha256}) async =>
+            String? tlsPinSha256,
+            Map<String, String> httpHeaders = const {}}) async =>
         outputPath;
 
     /// 只让 GIF 成功的抽取器 + 调用流水账。模拟「旧包捆绑的 ffmpeg 没有 libsvtav1」。
@@ -367,6 +368,7 @@ void main() {
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
       }) async {
         calls.add((
           format: format,
@@ -493,6 +495,7 @@ void main() {
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
       }) async {
         calls.add((
           format: format,

@@ -452,6 +452,11 @@ extension _VideoLookupMining on _VideoFushiPageState {
         mediaSource: mediaSource,
         audioSource: audioSource,
         mediaSourceTlsPinSha256: mediaSourceTlsPin,
+        // BUG-2625：制卡源是远端流时，把**播放器取到这条流用的同一组防盗链请求头**
+        // 一起交给引擎。在线视频源（Aniyomi 扩展）的 hoster 直链几乎都校验
+        // Referer/UA，ffmpeg 裸请求会被 403（`required audio missing`）。本地文件与
+        // 无防盗链源这里是空 map，抽取器据此 no-op，既有路径零影响。
+        mediaSourceHttpHeaders: _streamHttpHeaderFields,
         // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,

@@ -1,0 +1,13 @@
+## BUG-2625 · 在线视频源制卡 ffmpeg 抽音频 403：防盗链 header 只喂了播放器
+- **报告**：2026-09-22（用户：截图报「导出卡片失败： required audio missing (ffmpeg exit -858797304; … stderr=Error opening input files: Server returned 403 Forbidden (access denied))」，播放的是 Aniyomi 在线视频源的 Episode 1；追加要求：侧边查词 / 上下文查词的制卡入口一并覆盖）
+- **真实性**：✅ 真 bug。**制卡与播放用的不是同一组请求头**。
+  - 播放侧带头：`fushi/lib/src/pages/implementations/video_fushi_page.dart:4089`（`_streamHttpHeaderFields` 读 `RemoteVideoStreamHeaders.httpHeaderFields`）→ `:4218` `controller.load(httpHeaderFields: …)` → `fushi/lib/src/media/video/video_player_controller.dart:1789` `Media(httpHeaders:)` + `:1811` libmpv `http-header-fields`。
+  - 制卡侧不带头：`video_fushi_page.dart:4245` `setMiningSourceOverride(videoPath == null ? mediaUri : null)` 把**扩展 hoster 的裸直链**当制卡源；`fushi/lib/src/pages/implementations/video_fushi/lookup_mining.part.dart:324` 取 `controller.miningSource` 塞进 `ImmersionMiningRequest`，而该值对象只有 `mediaSourceTlsPinSha256`，**没有任何请求头字段**（`packages/fushi_engine/lib/mining/immersion_mining_request.dart`）。
+  - 头的唯一收口点也不收头：`packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart:104` `buildFfmpegRemoteInputArgs` 只会**无条件**输出一个 `-user_agent kYoutubeStreamReplayUserAgent`，外加仅按 host 命中的 B 站 `-referer`（BUG-2574）；扩展的头既推不出来也传不进来 → ffmpeg 裸请求 → 站点防盗链 403 → `extractAudioSegmentViaFfmpeg` 返 null → `fushi/lib/src/mining/immersion_mining_engine.dart:639` 以 `required audio missing` 中止整张卡。
+  - 三条抽取链（句子音频 / 封面动图 / 静态帧）共用那一个收口点，所以封面同样 403，只是它有静态帧降级、症状被掩住了。
+  - 用户追加的两个入口（侧边查词 / 上下文查词）**与播放器里的制卡按钮是同一条链**：都落在 `lookup_mining.part.dart` 的 `_mineVideoCard` → 唯一一处 `ImmersionMiningRequest(` 构造点，因此在共享层修一次即全覆盖，无需分入口处理。
+- **[x] ① 已修复** — `ImmersionMiningRequest` 新增 `mediaSourceHttpHeaders`（入队时随 `frozen()` 冻成不可变副本，换集不污染队列里的旧卡），引擎经三个抽取器 typedef 透传，最终由 `buildFfmpegRemoteInputArgs` 下发：调用方给的 `User-Agent` / `Referer` 覆盖内置默认并各走专用选项，其余头合成一个 `-headers` 块；ffmpeg 自己管的头（Range / Accept-Encoding / Host / Connection / Content-Length / Transfer-Encoding）与值里带 CR/LF 的头一律剔掉。视频页填的是 `_streamHttpHeaderFields`（与播放器取流用的是同一份）。顺带把 `synchronized_video_exporter.dart` 里那份自己拼的 `-headers` 收敛到同一个收口点——它原先会与恒定输出的 `-user_agent` 撞成同名头出现两次，以哪个为准取决于 ffmpeg 的选项解析顺序。空 map（本地文件 / 无防盗链源）逐字节等于改动前。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/media/video/ffmpeg_stream_http_headers_args_test.dart`（9 条，参数层纯函数不变量：`-headers` CRLF 块 / UA·Referer 覆盖且不重复下发 / B 站 host 推断不回退 / 剔除 ffmpeg 自管头 / 头注入防护 / 空 map 与本地输入逐字节等价）
+  - `fushi/test/mining/remote_mining_stream_headers_test.dart`（5 条，接线层：真跑引擎断言三条抽取链都收到头、`frozen()` 保留且不可变，外加源码扫描守卫钉死视频页填的是 `_streamHttpHeaderFields`；已反向验证——拆掉那处接线该守卫立刻红）
+- **备注**：`fushi analyze` 全绿（lib + test）。**未真机 E2E**：需要一个活的扩展源才能证明 403 真的消失，本机没有可用源，故只到「参数与接线均已验证」这一层。另：`packages/fushi_engine/lib/media/video/video_cover_extractor.dart` 是库封面回填链路（导入的本地/远端库视频），不在制卡链上，未改。

@@ -84,6 +84,68 @@ String? ffmpegRefererForRemoteInput(String inputPath) {
   }
 }
 
+/// ffmpeg 不认的 / 由 ffmpeg 自己管的请求头：让调用方的头覆盖这些会直接打坏传输
+/// （`Range` 与 `-ss` 的分段读冲突、`Accept-Encoding: gzip` 让 ffmpeg 拿到压缩流解不开、
+/// `Host`/`Connection`/`Content-Length` 由协议层自己算）。播放器侧 libmpv 同样忽略它们，
+/// 所以剔掉不会让 ffmpeg 与播放器的请求出现语义差异。
+const Set<String> _kFfmpegIgnoredHttpHeaders = <String>{
+  'host',
+  'range',
+  'accept-encoding',
+  'connection',
+  'content-length',
+  'transfer-encoding',
+  'user-agent', // 走 `-user_agent`
+  'referer', // 走 `-referer`
+};
+
+/// 把调用方给的请求头拆成 ffmpeg 的三种下发形态（专用 UA 选项 / 专用 Referer 选项 /
+/// 其余头的 `-headers` 块）。header 名大小写不敏感（HTTP 规范如此，扩展写 `referer`
+/// 还是 `Referer` 都得认）。
+class _FfmpegHttpHeaderArgs {
+  const _FfmpegHttpHeaderArgs({
+    required this.userAgent,
+    required this.referer,
+    required this.extraHeaderBlock,
+  });
+
+  factory _FfmpegHttpHeaderArgs.from(
+      Map<String, String> headers, String inputPath) {
+    String? userAgent;
+    String? referer;
+    final List<String> extra = <String>[];
+    for (final MapEntry<String, String> e in headers.entries) {
+      final String name = e.key.trim();
+      final String value = e.value.trim();
+      if (name.isEmpty || value.isEmpty) continue;
+      final String lower = name.toLowerCase();
+      if (lower == 'user-agent') {
+        userAgent = value;
+        continue;
+      }
+      if (lower == 'referer') {
+        referer = value;
+        continue;
+      }
+      if (_kFfmpegIgnoredHttpHeaders.contains(lower)) continue;
+      // 值里的 CR/LF 会把 `-headers` 块拆出额外的一行头（HTTP 头注入）；按行首尾裁掉。
+      if (value.contains('\r') || value.contains('\n')) continue;
+      extra.add('$name: $value');
+    }
+    return _FfmpegHttpHeaderArgs(
+      userAgent: userAgent,
+      // 调用方没给 Referer 时回落按 host 推出的那条（B 站，BUG-2574）。
+      referer: referer ?? ffmpegRefererForRemoteInput(inputPath),
+      // ffmpeg 的 `-headers` 要求整块以 CRLF 分隔且末尾也带一个 CRLF。
+      extraHeaderBlock: extra.isEmpty ? null : '${extra.join('\r\n')}\r\n',
+    );
+  }
+
+  final String? userAgent;
+  final String? referer;
+  final String? extraHeaderBlock;
+}
+
 /// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
 /// 网络韧性开关，**必须放在 `-i` 之前**（这些是 http 协议的输入选项）。googlevideo 在打开
 /// 输入时会间歇性丢连（实测 `Error number -138` opening input——多帧 GIF/音频段读取更易撞上），
@@ -101,11 +163,21 @@ String? ffmpegRefererForRemoteInput(String inputPath) {
 /// 该选项 ffmpeg ≥4.3 即有，捆绑的 n7.1.5 已带；网络支持早在 ffmpeg-min recipe 编入
 /// （`--enable-network` + http/https/tcp/tls），**无需重编二进制**。remote-only、对本地
 /// 输入零影响。
+/// BUG-2625：[httpHeaders] 是**调用方在运行时拿到的**防盗链请求头（在线视频源扩展
+/// 声明的 Referer/User-Agent/Origin/Cookie、粘贴 URL 流用户自填的头）。它与
+/// [ffmpegRefererForRemoteInput] 那条按 host 判定的 B 站 Referer 是**两类不同的东西**，
+/// 故必须多一个参数而不是并进 host 判据：B 站的防盗链值是常量、可由 URL 宿主推出来；
+/// 而扩展的头**不可能从 URL 推出**（Referer 是站点页面地址、UA 常是扩展自定值、还可能
+/// 带 Cookie），只有当前播放会话知道，所以得由 [ImmersionMiningRequest] 一路传进来。
+/// 传入的 `User-Agent` / `Referer` 分别覆盖默认 UA 与 host 推出的 Referer（调用方比
+/// 推断更权威），其余头经 `-headers` 下发。空 map = 既有行为逐字节不变。
 List<String> buildFfmpegRemoteInputArgs(String inputPath,
-    {String? tlsPinSha256}) {
+    {String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
   final String? pin = tlsPinSha256?.trim();
-  final String? referer = ffmpegRefererForRemoteInput(inputPath);
+  final _FfmpegHttpHeaderArgs headers =
+      _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
+  final String? referer = headers.referer;
   return <String>[
     // BUG-891：远端自签 Hibiki 主机（自编 ffmpeg-kit `--enable-gnutls` + tls pin 补丁，
     // 见 third_party/ffmpeg_kit_flutter/patches/）——把 host 的 TOFU 钉扎指纹下发给
@@ -114,11 +186,19 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     if (pin != null && pin.isNotEmpty) ...<String>['-tls_pin_sha256', pin],
     // TODO-1365（BUG-669）：`-user_agent` 与 libmpv 侧回放 UA 同源（[kYoutubeStreamReplayUserAgent]
     // ＝youtube_explode 铸流 UA），规避 googlevideo svpuc 对残缺 UA 的 tarpit 超时。含常量故非 const。
+    // BUG-2625：调用方显式给了 UA（在线源扩展声明的）就用它——播放器用哪个 UA 取到流，
+    // ffmpeg 就得用同一个，否则站点按 UA 判定拒发（实测 403）。
     '-user_agent',
-    kYoutubeStreamReplayUserAgent,
+    headers.userAgent ?? kYoutubeStreamReplayUserAgent,
     // BUG-2574：防盗链 —— B 站直链不带 Referer 会被 CDN 直接 403（ffmpeg 连输入都打不开），
     // 见 [kBilibiliCdnReferer] 的实测。仅 B 站 host 命中，YouTube 等完全不受影响。
+    // BUG-2625：调用方显式给的 Referer 优先于按 host 推出的那条。
     if (referer != null) ...<String>['-referer', referer],
+    // BUG-2625：UA/Referer 之外的头（Origin、Cookie、X-* …）一次性经 `-headers` 下发。
+    if (headers.extraHeaderBlock != null) ...<String>[
+      '-headers',
+      headers.extraHeaderBlock!
+    ],
     '-reconnect',
     '1',
     '-reconnect_streamed',
@@ -555,6 +635,7 @@ List<String> buildFfmpegClipArgs({
   String audioBitrate = '64k',
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo=…`）。null / 1.0 不加滤镜。
   double? tempo,
 }) {
@@ -567,7 +648,8 @@ List<String> buildFfmpegClipArgs({
   final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
+    ...buildFfmpegRemoteInputArgs(inputPath,
+        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -828,6 +910,7 @@ List<String> buildFfmpegFrameArgs({
   bool decodeFromStart = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // TODO-1082：目标宽度（高按原比例，`-2` 保证偶数以满足 yuv420 约束）。进度条
   // 缩略图只显示几百像素宽，让 ffmpeg 在编码前就缩好，省掉全尺寸 JPEG 的编码、
   // 落盘、读回、解码四段开销。null / <=0 表示不缩放（封面等既有调用方的行为不变）。
@@ -843,7 +926,8 @@ List<String> buildFfmpegFrameArgs({
   ].join(',');
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
+    ...buildFfmpegRemoteInputArgs(inputPath,
+        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
     if (!decodeFromStart) ...<String>['-ss', seek.toStringAsFixed(3)],
     '-i',
     inputPath,
@@ -876,6 +960,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
   FfmpegFailureReporter? onFailure,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // BUG-1867：调用方是 best-effort 后台产线（书架封面回填）——「这文件给不出帧」是
   // 预期内的正常结果（无视频流的 BDMV 音轨 m2ts、seek 落在空洞区…），与上游
   // [extractEmbeddedVideoCoverViaFfmpeg] 把「容器没有内嵌封面」判为正常同层。置 true
@@ -903,6 +988,7 @@ Future<String?> extractVideoFrameViaFfmpeg({
         atSeconds: atSeconds,
         decodeFromStart: decodeFromStart,
         tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
         scaleWidth: scaleWidth,
         cropFilter: cropFilter,
       ),
@@ -984,6 +1070,7 @@ List<String> buildFfmpegClipGifArgs({
   int maxDurationMs = 10000,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) =>
     buildFfmpegClipAnimatedArgs(
       format: MiningAnimatedFormat.gif,
@@ -995,6 +1082,7 @@ List<String> buildFfmpegClipGifArgs({
       width: width,
       maxDurationMs: maxDurationMs,
       tlsPinSha256: tlsPinSha256,
+      httpHeaders: httpHeaders,
     );
 
 /// 纯函数：构建「cue 时间窗 → 循环动图」的 ffmpeg 参数表，按 [format] 分派编码器。
@@ -1029,6 +1117,7 @@ List<String> buildFfmpegClipAnimatedArgs({
   int width = 320,
   int maxDurationMs = 10000,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // BUG-2192：crop 段排在 fps/scale 之前（先裁后缩）。null / 空 = 不裁。
   String? cropFilter,
 }) {
@@ -1062,7 +1151,8 @@ List<String> buildFfmpegClipAnimatedArgs({
 
   return <String>[
     '-y',
-    ...buildFfmpegRemoteInputArgs(inputPath, tlsPinSha256: tlsPinSha256),
+    ...buildFfmpegRemoteInputArgs(inputPath,
+        tlsPinSha256: tlsPinSha256, httpHeaders: httpHeaders),
     '-ss',
     startSeconds.toStringAsFixed(3),
     '-t',
@@ -1147,6 +1237,7 @@ Future<String?> extractClipGifViaFfmpeg({
   bool diagnosticOnly = false,
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // BUG-2192：先裁再缩的 crop 滤镜段，null = 不裁。
   String? cropFilter,
 }) async {
@@ -1168,6 +1259,7 @@ Future<String?> extractClipGifViaFfmpeg({
         fps: fps,
         width: width,
         tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
         cropFilter: cropFilter,
       ),
       const Duration(seconds: 120),
@@ -1460,6 +1552,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   String audioBitrate = '64k',
   // BUG-891：远端自签主机的 TLS 证书 SHA-256 钉扎指纹（透传给 ffmpeg），非远端/公网源为 null。
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调；null / 1.0 = 原速（现状）。
   double? tempo,
 }) async {
@@ -1502,6 +1595,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         audioChannels: audioChannels,
         audioBitrate: audioBitrate,
         tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
         tempo: tempo,
       ),
       const Duration(seconds: 120),
