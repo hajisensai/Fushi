@@ -360,6 +360,29 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/clip.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
 
+echo "[ffmpeg-min-smoke] verifying mpegts muxer for interconnect HLS transcode segments (BUG-2630)"
+# 互联 host 按档转码：一段一个短命 ffmpeg，输入侧 -ss/-to 切段、libx264 + aac 编码、
+# 以 MPEG-TS 写到 stdout，-output_ts_offset 把段内时间轴平移到片中绝对位置（这正是
+# live_transcode.dart buildTranscodeSegmentArgs 的形状）。TS 的 h264 要 Annex B，靠
+# 已编入的 h264_mp4toannexb bsf 自动插入。
+if ! grep -qw mpegts "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need mpegts for interconnect HLS transcode segments, BUG-2630):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
+  -ss 0.500 -to 1.500 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map '0:a:0?' -sn \
+  -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
+  -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 \
+  -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 6 \
+  -f mpegts "$WORK/seg.ts"
+assert_nonempty "$WORK/seg.ts"
+# 产物必须能被完整 ffmpeg 解出、且首包时间戳落在偏移后的位置（≈6 s）。
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
+"$FFPROBE_MIN" -v error -show_entries format=start_time -of csv=p=0 "$WORK/seg.ts" > "$WORK/seg-start.txt"
+assert_log_contains "$WORK/seg-start.txt" '^(5\.|6\.|6$)'
+
 echo "[ffmpeg-min-smoke] verifying movtext encoder + soft-subtitle clip mux"
 # Clip export muxes the subtitle the user is actually watching into the exported
 # .mp4 as a soft subtitle stream. The cues live in Dart memory (Fushi renders

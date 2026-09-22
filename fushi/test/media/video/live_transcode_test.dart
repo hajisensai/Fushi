@@ -1,118 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi_engine/media/video/fmp4_rewriter.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
-
-/// 拼一个 MP4 box：`size(4) + type(4) + payload`。
-Uint8List _box(String type, List<int> payload) {
-  final int size = 8 + payload.length;
-  final BytesBuilder builder = BytesBuilder()
-    ..add(<int>[
-      (size >> 24) & 0xff,
-      (size >> 16) & 0xff,
-      (size >> 8) & 0xff,
-      size & 0xff,
-    ])
-    ..add(type.codeUnits)
-    ..add(payload);
-  return builder.toBytes();
-}
-
-List<int> _u32(int v) => <int>[
-  (v >> 24) & 0xff,
-  (v >> 16) & 0xff,
-  (v >> 8) & 0xff,
-  v & 0xff,
-];
-
-/// `tkhd` v0：version(1)+flags(3)+creation(4)+modification(4)+track_ID(4)+...
-List<int> _tkhd(int trackId) => <int>[
-  0, 0, 0, 0, // version 0 + flags
-  ..._u32(0), // creation
-  ..._u32(0), // modification
-  ..._u32(trackId),
-  ..._u32(0), // reserved
-];
-
-/// `mdhd` v0：version(1)+flags(3)+creation(4)+modification(4)+timescale(4)+duration(4)
-List<int> _mdhd(int timescale) => <int>[
-  0,
-  0,
-  0,
-  0,
-  ..._u32(0),
-  ..._u32(0),
-  ..._u32(timescale),
-  ..._u32(0),
-];
-
-/// `tfdt` v0：version(1)+flags(3)+baseMediaDecodeTime(4)
-List<int> _tfdt0(int base) => <int>[0, 0, 0, 0, ..._u32(base)];
-
-/// `tfhd`：version(1)+flags(3)+track_ID(4)
-List<int> _tfhd(int trackId) => <int>[0, 0, 0, 0, ..._u32(trackId)];
-
-Uint8List _concat(List<Uint8List> parts) {
-  final BytesBuilder builder = BytesBuilder();
-  for (final Uint8List part in parts) {
-    builder.add(part);
-  }
-  return builder.toBytes();
-}
-
-/// 一个够用的 init 段：ftyp + moov(trak(tkhd,mdia(mdhd)) ×2)。
-Uint8List _init({int videoTimescale = 15360, int audioTimescale = 44100}) {
-  final Uint8List trak1 = _box('trak', <int>[
-    ..._box('tkhd', _tkhd(1)),
-    ..._box('mdia', <int>[..._box('mdhd', _mdhd(videoTimescale))]),
-  ]);
-  final Uint8List trak2 = _box('trak', <int>[
-    ..._box('tkhd', _tkhd(2)),
-    ..._box('mdia', <int>[..._box('mdhd', _mdhd(audioTimescale))]),
-  ]);
-  return _concat(<Uint8List>[
-    _box('ftyp', <int>[1, 2, 3, 4]),
-    _box('moov', <int>[...trak1, ...trak2]),
-  ]);
-}
-
-/// init + 两个 fragment 的完整段（ffmpeg 的原始产物形状）。
-Uint8List _fullSegment({int tfdt1 = 0, int tfdt2 = 0}) {
-  final Uint8List moof = _box('moof', <int>[
-    ..._box('traf', <int>[
-      ..._box('tfhd', _tfhd(1)),
-      ..._box('tfdt', _tfdt0(tfdt1)),
-    ]),
-    ..._box('traf', <int>[
-      ..._box('tfhd', _tfhd(2)),
-      ..._box('tfdt', _tfdt0(tfdt2)),
-    ]),
-  ]);
-  return _concat(<Uint8List>[
-    _init(),
-    moof,
-    _box('mdat', List<int>.filled(16, 7)),
-  ]);
-}
-
-int _readTfdt(Uint8List data, int occurrence) {
-  // 简易扫描：找第 occurrence 个 'tfdt'，读其后 4 字节 flags 再 4 字节值。
-  int found = 0;
-  for (int i = 0; i + 12 <= data.length; i++) {
-    if (data[i] == 0x74 &&
-        data[i + 1] == 0x66 &&
-        data[i + 2] == 0x64 &&
-        data[i + 3] == 0x74) {
-      if (found == occurrence) {
-        final ByteData view = ByteData.sublistView(data);
-        return view.getUint32(i + 8);
-      }
-      found++;
-    }
-  }
-  return -1;
-}
 
 void main() {
   group('VideoTranscodeProfile', () {
@@ -178,10 +65,9 @@ void main() {
   });
 
   group('HLS playlist', () {
-    test('VOD 头 + EXT-X-MAP + 每段 EXTINF + ENDLIST', () {
+    test('VOD 头 + 每段 EXTINF + ENDLIST，TS 分段没有 EXT-X-MAP', () {
       final String playlist = buildTranscodeHlsPlaylist(
         durationMs: 15500,
-        initUri: 'hlsinit.mp4?token=T',
         segmentUri: (int i) => '$kTranscodeSegmentPathSuffix?token=T&n=$i',
       );
       final List<String> lines = playlist
@@ -191,7 +77,9 @@ void main() {
           .toList();
       expect(lines.first, '#EXTM3U');
       expect(lines, contains('#EXT-X-PLAYLIST-TYPE:VOD'));
-      expect(lines, contains('#EXT-X-MAP:URI="hlsinit.mp4?token=T"'));
+      // BUG-2630：分段是自描述的 MPEG-TS，没有初始化段——有 MAP 就说明又回到了
+      // fMP4（FFmpeg 6.1 客户端 seek 必坏，见 live_transcode.dart 文件头）。
+      expect(lines.where((String l) => l.startsWith('#EXT-X-MAP')), isEmpty);
       expect(lines.last, '#EXT-X-ENDLIST');
       expect(
         lines
@@ -206,7 +94,6 @@ void main() {
     test('时长为 0 → 一个分段都不列（host 侧据此拒绝转码）', () {
       final String playlist = buildTranscodeHlsPlaylist(
         durationMs: 0,
-        initUri: 'i',
         segmentUri: (int i) => 's$i',
       );
       expect(playlist, isNot(contains('#EXTINF')));
@@ -286,85 +173,19 @@ void main() {
       expect(picked, contains('0:a:2?'));
     });
 
-    test('输出是 fragmented MP4 到 stdout（随包 ffmpeg 没有 mpegts/hls muxer）', () {
+    test('输出是 MPEG-TS 到 stdout，段内时间轴按 -output_ts_offset 平移（BUG-2630）', () {
       final List<String> args = buildTranscodeSegmentArgs(
         inputPath: '/v.mkv',
         profile: const VideoTranscodeProfile(maxWidth: 1280, maxBitrate: 0),
-        start: Duration.zero,
-        end: const Duration(seconds: 6),
+        start: const Duration(seconds: 12),
+        end: const Duration(seconds: 18),
       );
-      expect(
-        args[args.indexOf('-movflags') + 1],
-        'frag_keyframe+empty_moov+default_base_moof',
-      );
-      expect(args[args.indexOf('-f') + 1], 'mp4');
+      // fMP4（mp4 muxer 的 fragmented 模式）在 FFmpeg 6.1 客户端上 seek 必坏，
+      // 见 live_transcode.dart 文件头；这里钉死不再出 mp4。
+      expect(args[args.indexOf('-f') + 1], 'mpegts');
+      expect(args, isNot(contains('-movflags')));
+      expect(args[args.indexOf('-output_ts_offset') + 1], '12.000');
       expect(args.last, 'pipe:1');
-    });
-  });
-
-  group('fMP4 改写', () {
-    test('初始化段切到 moov 结束', () {
-      final Uint8List full = _fullSegment();
-      final Uint8List? init = extractInitSegment(full);
-      expect(init, isNotNull);
-      expect(init!.length, _init().length);
-      expect(String.fromCharCodes(init.sublist(4, 8)), 'ftyp');
-    });
-
-    test('分段剥掉 ftyp+moov，只留 moof/mdat', () {
-      final Uint8List body = stripInitSegment(_fullSegment());
-      expect(String.fromCharCodes(body.sublist(4, 8)), 'moof');
-      expect(body.length, _fullSegment().length - _init().length);
-    });
-
-    test('没有 moov 的输入原样返回（进程被 kill 的截断产物）', () {
-      final Uint8List partial = _box('ftyp', <int>[1, 2, 3, 4]);
-      expect(stripInitSegment(partial), partial);
-      expect(extractInitSegment(partial), isNull);
-    });
-
-    test('按 track 各自的 timescale 读取', () {
-      expect(
-        parseTrackTimescales(
-          _init(videoTimescale: 15360, audioTimescale: 48000),
-        ),
-        <int, int>{1: 15360, 2: 48000},
-      );
-    });
-
-    test('tfdt 按各自 timescale 平移到片中绝对位置', () {
-      // 这是整条链路的命门：ffmpeg 的 fMP4 muxer 必然把每段的 tfdt 写成 0，不平移
-      // 的话所有分段的时间戳都落在 0..段长 上互相重叠，播放器只认得第一段。
-      final Uint8List body = stripInitSegment(_fullSegment());
-      final Uint8List shifted = shiftFragmentDecodeTimes(
-        body,
-        timescales: const <int, int>{1: 15360, 2: 44100},
-        offset: const Duration(seconds: 12),
-      );
-      expect(_readTfdt(shifted, 0), 12 * 15360);
-      expect(_readTfdt(shifted, 1), 12 * 44100);
-    });
-
-    test('零偏移不动字节（第 0 段）', () {
-      final Uint8List body = stripInitSegment(_fullSegment(tfdt1: 5, tfdt2: 7));
-      final Uint8List same = shiftFragmentDecodeTimes(
-        body,
-        timescales: const <int, int>{1: 15360, 2: 44100},
-        offset: Duration.zero,
-      );
-      expect(same, body);
-    });
-
-    test('未知 track 的 traf 原样放过，不写出大小对不上的 box', () {
-      final Uint8List body = stripInitSegment(_fullSegment());
-      final Uint8List shifted = shiftFragmentDecodeTimes(
-        body,
-        timescales: const <int, int>{1: 15360}, // 故意漏掉 track 2
-        offset: const Duration(seconds: 6),
-      );
-      expect(shifted.length, body.length);
-      expect(_readTfdt(shifted, 0), 6 * 15360);
-      expect(_readTfdt(shifted, 1), 0);
     });
   });
 }

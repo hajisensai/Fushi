@@ -271,7 +271,13 @@ ENCODERS="gif,aac,mjpeg,png,libx264,libsvtav1,libwebp,libwebp_anim,ass,ssa,subri
 # 通用、任意播放器/浏览器直接打开）；mp4 muxer 与 mov 同一 movenc，体积增量近零。
 # avif / webp：动图封面的两个新容器（ffmpeg 按输出扩展名选 muxer）。avif muxer 自
 # FFmpeg 6.1 进主线，本 build 钉的 n7.1.5 已有；它与 mov/mp4 同属 movenc，体积增量近零。
-MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null"
+# mpegts：互联 host 按档转码的 HLS 分段（live_transcode.dart，BUG-2630 第二段）。
+# 之前用 fMP4 分段，但 Apple / Android 随包 libmpv 的 FFmpeg 6.1 hls demuxer 一 seek
+# 就把 fMP4 流解成垃圾（mov demuxer 沿用 seek 前的绝对偏移，master 才补的
+# `pb->pos == 0` 重置 6.1 没有）；MPEG-TS 是 hls.c 那次 `pos = 0` 重置本来就为之
+# 设计的形态，也是 Jellyfin / Emby 给 mpv 客户端的标准形态。h264 进 TS 由已编入的
+# h264_mp4toannexb bsf 转 Annex B（见 BSFS）。
+MUXERS="gif,adts,image2,mjpeg,mov,mp4,avif,webp,srt,ass,webvtt,null,mpegts"
 # pad：有声书片段导出（buildFfmpegImageAudioToVideoArgs）用
 #   `scale=W:H:force_original_aspect_ratio=decrease,pad=W:H:(ow-iw)/2:(oh-ih)/2:color=black`
 #   把文本图缩进框内再黑边填充到精确 WxH；漏 pad → "No option name near '...'" +

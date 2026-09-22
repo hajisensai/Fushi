@@ -18,14 +18,15 @@
 
 ## 2. 决定设计的硬事实（实测，非推理）
 
-### 2.1 随包 ffmpeg 没有 HLS/TS muxer
+### 2.1 随包 ffmpeg 没有 HLS muxer
 
-`third_party/ffmpeg-min/windows/ffmpeg.exe -muxers` 实测只有 `mov` 与 `mp4`（视频类），
+`third_party/ffmpeg-min/windows/ffmpeg.exe -muxers` 首版实测只有 `mov` 与 `mp4`（视频类），
 **没有 `mpegts`、`hls`、`dash`、`segment`**；编码器侧 `libx264` 与 `aac` 都在，滤镜有
 `scale`，协议有 `pipe`。
 
 → 走不了 ffmpeg 自带的 HLS 输出。但 playlist 不过是一段文本：**playlist 由 Dart 生成，
-分段用 `mp4` muxer 的 fragmented 模式出**，零二进制改动。
+分段一段一个短命 ffmpeg 出**。首版分段用 `mp4` muxer 的 fragmented 模式（零二进制改动）；
+2026-09-22（BUG-2630 第二段，见 2.6）改成 MPEG-TS，ffmpeg-min 配方补编 `mpegts` muxer。
 
 ### 2.2 为什么不是「一条不可 Range 的渐进流」
 
@@ -38,9 +39,9 @@
 HLS 则让 libmpv 原生接管：进度条、总时长、seek 全部照常工作，播放页几乎零改动。
 同样的用户价值，代价差一个数量级。
 
-### 2.3 ffmpeg 的 fMP4 muxer 必然把 `tfdt` 归零
+### 2.3 （首版 fMP4）ffmpeg 的 fMP4 muxer 必然把 `tfdt` 归零
 
-每段一个独立 ffmpeg（`-ss n*6 -to (n+1)*6`）转出来的分段，`moof/traf/tfdt` 的
+每段一个独立 ffmpeg（`-ss n*6 -to (n+1)*6`）转出来的 fMP4 分段，`moof/traf/tfdt` 的
 baseMediaDecodeTime **恒为 0**。`-copyts`、`-output_ts_offset`、
 `-avoid_negative_ts disabled` 三种组合逐一实测，都改不了它。
 
@@ -50,14 +51,45 @@ baseMediaDecodeTime **恒为 0**。`-copyts`、`-output_ts_offset`、
 - 串成 playlist 后只有 **300 帧**进得了解码器（应为 540），后面的段因时间戳回退被整片丢掉；
 - demuxer 会打 `timestamp discontinuity ... new offset=` 自行补偿，但那是容错不是契约。
 
-→ 分段发出去之前，按各 track 自己的 timescale 给 `tfdt` 加上该段的绝对偏移
-（`packages/fushi_engine/lib/media/video/fmp4_rewriter.dart`）。
+首版的解法是分段发出去之前按各 track 自己的 timescale 给 `tfdt` 加上该段的绝对偏移
+（`fmp4_rewriter.dart`，已随 2.6 整个删除）。**mpegts muxer 认 `-output_ts_offset`**，
+TS 分段不需要任何字节层改写。
 
-### 2.4 分段不能自带 `moov`
+### 2.4 （首版 fMP4）分段不能自带 `moov`
 
-分段若保留 `ftyp`+`moov`，播放器会报 `Found duplicated MOOV Atom`，并把后续分段拆成
-**另一组流**（ffprobe 实测列出两套 h264+aac）。所以分段剥成纯 `moof`+`mdat`，
-track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。
+fMP4 分段若保留 `ftyp`+`moov`，播放器会报 `Found duplicated MOOV Atom`，并把后续分段拆成
+**另一组流**（ffprobe 实测列出两套 h264+aac）。所以首版把分段剥成纯 `moof`+`mdat`，
+track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。TS 分段自描述，没有这层结构。
+
+### 2.6 FFmpeg 6.1 客户端上 fMP4 HLS 一 seek 就坏（BUG-2630 第二段，2026-09-22）
+
+用户报「切画质档就播不了」。分段端点补上扩展名（3.1）后，从 0 起播五端都好了，但
+**只要 seek（含恢复上次位置）**，iOS 模拟器 / macOS / Android 立刻黑屏、位置跳到片尾。
+Windows 客户端没事。取证链（全部真机 / 真 libmpv，非推理）：
+
+- Android / macOS 的 mpv 日志：seek 后 hls demuxer 重新拉了 init + 目标段，但 mov
+  demuxer **没有**报「duplicated MOOV」（没把重新喂进来的 init 当 init 解析），随后
+  `[ffmpeg] NULL: Invalid NAL unit size (…) / missing picture in access unit` 成串。
+- 同一批产物抓成静态文件、A/B 交替两份不同编码、活 host 明文直连、活 host 经中继——
+  用 Windows 随包 libmpv（python-mpv 加载 `libmpv-2.dll`）做「打开 → seek 到 15 s」，
+  **全部正常**（seek 后 mov 报「duplicated MOOV，skipped」并继续）。所以分段格式、
+  host 的动态出段、中继都无罪。
+- 差异只剩 FFmpeg 版本：Windows 随包 libmpv 是 2026-08 master 构建，Apple / Android
+  是 6.1.6。对比源码：master 的 `mov_read_packet` 开头有一段「`s->pb->pos == 0` 就丢弃
+  fragment index / 样本游标 / index entries 并重新 `mov_switch_root`」，专门配合
+  `hls_read_seek` 里的 `pb->pos = 0`（源码注释原话：「to let the mpegts demuxer know
+  we've seeked」）；**6.1 的 mov.c 没有这段**，`mov_switch_root` 沿 seek 前记下的绝对
+  `next_root_atom` 向前跳过新数据再当 moof 解析，整条流从第一个样本起就错位。6.1 的
+  hls.c 连 `EXT-X-DISCONTINUITY` 都不处理（子 demuxer 只在 `hls_read_header` 建一次），
+  fMP4 在 6.1 客户端上无路可走。
+
+→ 分段改成 **MPEG-TS**：mpegts demuxer 本就是那次 `pos = 0` 重置的设计对象，也是
+Jellyfin / Emby 给 mpv 客户端的标准分段形态；`-output_ts_offset` 直接给出绝对时间轴，
+`fmp4_rewriter.dart` 与 `hlsinit.mp4` 端点整个删除。ffmpeg-min 配方（`tool/ffmpeg-min/
+build-ffmpeg-min.sh`）`MUXERS` 补 `mpegts`（h264 进 TS 的 Annex B 转换靠已编入的
+`h264_mp4toannexb` bsf），fork 上 `ffmpeg-min.yml` 重编后 vendor 到
+`third_party/ffmpeg-min/{windows,macos}`；smoke-test 加了与 `buildTranscodeSegmentArgs`
+同形状的 TS 探针。
 
 ### 2.5 「下载速度」不能当带宽富余的判据
 
@@ -72,22 +104,21 @@ track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。
 | 端点 | 作用 |
 |---|---|
 | `GET …/<id>/streamurl?maxWidth=&maxBitrate=` | 协商：认档就回 HLS playlist URL，不认就回老的直传 URL |
-| `GET …/<id>/hls.m3u8?token=` | VOD playlist（`EXT-X-MAP` + 每段 `EXTINF`，段 URI 用相对形式） |
-| `GET …/<id>/hlsinit.mp4?token=` | 初始化段（取第 0 段产物的 `ftyp`+`moov`） |
-| `GET …/<id>/hlsseg.m4s?token=&n=` | 第 n 段（剥头 + `tfdt` 平移） |
+| `GET …/<id>/hls.m3u8?token=` | VOD playlist（每段 `EXTINF`，段 URI 用相对形式；无 `EXT-X-MAP`） |
+| `GET …/<id>/hlsseg.ts?token=&n=` | 第 n 段（MPEG-TS，ffmpeg 产物原样，`-output_ts_offset` 已平移时间轴） |
 
-- **档位绑在 token 上，不从 query 取**：后三条路径（playlist / init / 分段）豁免 Basic 鉴权（播放器取 playlist /
-  init / 分段都是裸 GET），让分段端点自带编码参数就等于把「在 host 上起一个任意参数
+- **档位绑在 token 上，不从 query 取**：后两条路径（playlist / 分段）豁免 Basic 鉴权（播放器取 playlist /
+  分段都是裸 GET），让分段端点自带编码参数就等于把「在 host 上起一个任意参数
   的 ffmpeg」敞开给 URL 持有者。签发侧（`/streamurl`，要 Basic）定档。
-- **三条路径的扩展名是协议的一部分**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）
+- **两条路径的扩展名是协议的一部分**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）
   的 hls demuxer 对 playlist 里每个分段 URL 先查 `allowed_segment_extensions` 白名单
   （扩展名取 query 之前的路径尾，`ff_match_url_ext`），不在名单上直接 `Invalid data found`。
   首版分段端点是裸 `hlsseg?token=`，随包 libmpv 四端（Android / iOS / macOS 6.1.6，
   Windows master 构建；Linux 走系统库、发行版 6.1.1 / 7.0.x 不复现）一个都不肯取分段，
   「切画质档就黑屏」。现在分段是
-  `hlsseg.m4s`（同时在白名单与 mp4 分段特例里），守卫
+  `hlsseg.ts`（同时在白名单与 mpegts 分段表里），守卫
   `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart` 把 hls.c 的判据移植成
-  Dart 钉住 host 签发的每个 URI。
+  Dart 钉住 host 签发的每个 URI。分段为什么是 TS 不是 fMP4 见 2.6。
 - **一段一个短命进程**：没有会话表、没有临时文件、没有长跑进程要清理；seek 到哪就转哪。
   并发上限 3（`kMaxConcurrentTranscodes`）——不设闸门的话一次 seek 能同时点起七八个
   ffmpeg，CPU 被瓜分之后每一段都变慢。
@@ -153,8 +184,9 @@ ffmpeg-kit，只能跑完一条命令再交结果，**没有可接管的 stdout 
 
 ### 4.2 自动化测试（66 条新增）
 
-- `fushi/test/media/video/live_transcode_test.dart`（20）：档位往返、分段划分、playlist
-  生成、ffmpeg 参数、fMP4 剥头与 `tfdt` 平移。
+- `fushi/test/media/video/live_transcode_test.dart`：档位往返、分段划分、playlist
+  生成（无 `EXT-X-MAP`）、ffmpeg 参数（`-f mpegts` + `-output_ts_offset`，不再有
+  `-movflags`）。首版的 fMP4 剥头与 `tfdt` 平移用例随 `fmp4_rewriter.dart` 一起删除（2.6）。
 - `fushi/test/sync/fushi_sync_server_transcode_test.dart`（15）：能力位随开关实时翻转、
   协商四道闸门、三条 HLS 端点、鉴权（缺/错 token、直传 token 点不动转码端点、跨视频
   token）。
