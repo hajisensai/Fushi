@@ -1,0 +1,12 @@
+## BUG-2621 · 同步冲突弹窗「立即同步」后同一本书反复再弹
+- **报告**：2026-09-22（用户：视频页顶栏点同步弹出「本地 vs 远端」冲突弹窗（`安達としまむら3` 本地 27.4% 09-17 / 远端 20.2% 09-15），选「本地」点「立即同步」之后还会继续弹）
+- **真实性**：✅ 真 bug，三处结构性缺陷叠加（沿 `home_video_page.dart` 顶栏刷新 → `runManualSyncWithFeedback` → `runManualFullSync` 全量 sweep → `manual_sync_ui.dart` 逐通道 `syncConflictPrompter.present` → `SyncCompareDialog._load` / `_applyChoices` 真实路径验证；本机无第二台设备，未真机复现用户现场，三条缺陷各自用进程内真弹窗 / 真 `SyncManager` 复现）
+  1. **文件箱进度基线不分通道**：`sync_manager.dart` 四处读写 `sync_baselines (assetKey, 'progress')`，`sync_compare_dialog.dart` `_fetchCompareData` 同一行；而 `sync_orchestrator.dart` 对云备份与互联**两条并存通道**各跑一次 `SyncManager.syncAllBooks`（互联的文件箱在 host 的 WebDAV 面上）。云通道导出后把基线抬到本机时间戳，互联通道看自己的文件箱时 `local == base` → `resolveProgressSync` 判成「只远端动了」，把 client 上一轮导出的旧进度倒灌回本机；用户再读一段，两条通道的远端与基线全对不上 → 每轮 sweep 都报同一本书冲突。folder 缓存 / 删除水位早已按 `SyncChannelScope` 分槽（BUG-1576 族），唯独这条基线没有。
+  2. **弹窗把互联 live 行静默降级成文件箱行**：`sync_compare_dialog.dart` `_fetchLiveProgress` 一次 host GET 失败就返回 null → `liveAction == null`，而 `_applyChoices` 的 live 落地门槛是 `entry.liveAction != null`——用户选「本地」只写进 host 上谁都不读的文件箱，host DB 原样不动；下一轮 sweep 的 `_syncBookProgressLive` 三方判定照旧报同一条冲突。
+  3. **多通道逐通道各弹一次**：`manual_sync_ui.dart` `_runWithSyncFeedback` 对每条有冲突的通道各 `present` 一次，而弹窗 `_load` 无视传入的冲突清单、自己重算全量 compare。同一本书在云 + 互联两条通道上都分叉时，用户点完第一条通道的「立即同步」，第二条通道的同一本书紧接着又弹（PC 既是互联 host 又往云盘导出时两次弹窗数字一模一样）。
+- **[x] ① 已修复** — 分支 `pr/sync-repop-collection-progress`，提交 `8a0542da31c`：
+  - `sync_manager.dart` 新增 `progressBaselineDimensionOf(backend)`：云通道沿用历史行 `'progress'`（存量不迁移），互联通道另开 `'progress__fushiServer'`；`SyncManager` 四处读写与弹窗的基线读取全部改经它。
+  - `sync_compare_dialog.dart` `_applyChoices` 的 live 落地门槛改成「backend 是互联 ∧ host 有这本书（`remoteLiveTitle != null`）或 live 探测成功」，推不动才算真失败。
+  - 跨通道裁决簿：`SyncCompareDialog.decisions`（bookKey → `SyncChoice`）；加载时已裁决的书直接采用，`conflictsOnly` 下参与集合全已裁决则立即应用并关闭；应用时把每本书记成「用本地」（用户选定的那一侧应用完已在本机）、跳过记 `skip`。`SyncConflictPrompter.present(decisions:)` 透传，`manual_sync_ui.dart` 一轮手动同步的各通道共用同一本簿。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/sync_compare_interconnect_live_progress_test.dart`（互联通道 `SyncManager` 导出把基线记在自己的行、云行原样不动；加载期 live GET 失败降级成文件箱行后 Apply「本地」仍推到 host DB）、`fushi/test/sync/sync_conflict_present_test.dart`（弹窗应用后写入裁决簿；簿上已裁决的书在下一条通道不弹、直接应用；簿上 `skip` 的书也不再弹）。
+- **备注**：自动同步路径（`AppModel.presentSyncPrompts` 逐通道 `onReport`）没有接裁决簿——它受 in-book / snooze 门控、用户不在现场，本轮只改手动同步；若自动同步双通道也重复弹再补。未真机验证用户现场（本机只一台设备）。

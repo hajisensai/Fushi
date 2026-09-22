@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -16,6 +17,7 @@ import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -83,12 +85,15 @@ void main() {
   Widget buildApp(
     RemoteVideoClient client, {
     VideoLibrarySection section = VideoLibrarySection.allVideos,
+    InterconnectDownloadManager? downloads,
   }) =>
       ProviderScope(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(platformServices),
           ankiRepositoryProvider.overrideWithValue(ankiRepository),
           appProvider.overrideWith((ref) => appModel),
+          if (downloads != null)
+            interconnectDownloadManagerProvider.overrideWith((ref) => downloads),
         ],
         child: TranslationProvider(
           child: MaterialApp(
@@ -186,6 +191,90 @@ void main() {
       find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
       findsOneWidget,
       reason: '合集含远端成员就该画云角标，与全部视频同口径',
+    );
+  });
+
+  // 用户报告 2026-09-22：互联下载远端合集时合集卡上没有任何进度。各集任务本来就
+  // 在 app 级 InterconnectDownloadManager 里（键 = 远端集 id），合集卡此前没去查。
+  // 现在成员任务聚合成一枚进度环画在云角标位；下载中云角标让位，完成后回来。
+  testWidgets('合集含远端成员正在下载 → 合集卡云角标位换成聚合进度环；完成后撤掉',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int cid =
+        await db.createMediaCollection('MyShow', collectionType: 'collection');
+    await db.upsertVideoBook(const VideoBooksCompanion(
+      bookUid: Value('video/local-ep1'),
+      title: Value('Local Ep1'),
+      videoPath: Value('/abs/ep1.mp4'),
+    ));
+    await db.addToCollection(cid, MediaKind.video, 'video/local-ep1');
+    await seedAniDbSeriesIdentity(db, cid, title: 'MyShow');
+
+    final InterconnectDownloadManager manager = InterconnectDownloadManager();
+    final Completer<void> gate = Completer<void>();
+    void Function(double)? report;
+    final Future<InterconnectDownloadTask> task = manager.startVideoDownload(
+      id: 'video/remote-ep2',
+      title: 'Remote Ep2',
+      dest: File('${pathProviderDir.path}/remote-ep2.mp4'),
+      run: (File target, {void Function(double progress)? onProgress}) async {
+        report = onProgress;
+        await gate.future;
+      },
+    );
+
+    await tester.pumpWidget(buildApp(
+      _ListFakeRemoteVideoClient(
+        <RemoteVideoInfo>[
+          const RemoteVideoInfo(
+            id: 'video/remote-ep2',
+            title: 'Remote Ep2',
+            collection: RemoteCollectionMembership(
+              collectionName: 'MyShow',
+              collectionType: 'collection',
+              sortIndex: 1,
+            ),
+          ),
+        ],
+      ),
+      section: VideoLibrarySection.series,
+      downloads: manager,
+    ));
+    await tester.pumpAndSettle();
+
+    final Finder badge =
+        find.byKey(ValueKey<String>('home_video_collection_downloading_$cid'));
+    expect(badge, findsOneWidget, reason: '合集卡必须显示成员下载进度');
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
+      findsNothing,
+      reason: '下载中云角标让位给进度环（同一个角不叠两枚）',
+    );
+    report!(0.5);
+    await tester.pump();
+    expect(
+      tester
+          .widget<CircularProgressIndicator>(find.descendant(
+            of: badge,
+            matching: find.byType(CircularProgressIndicator),
+          ))
+          .value,
+      0.5,
+      reason: '唯一有任务的成员 50% → 聚合进度 50%',
+    );
+
+    gate.complete();
+    await task;
+    await tester.pump();
+    expect(badge, findsNothing, reason: '全部完成 → 进度环撤掉');
+    expect(
+      find.byKey(ValueKey<String>('home_video_collection_cloud_$cid')),
+      findsOneWidget,
+      reason: '云角标回来（成员仍标记为远端，直到清单重解析）',
     );
   });
 
