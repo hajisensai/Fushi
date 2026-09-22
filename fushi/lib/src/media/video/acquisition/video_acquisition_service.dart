@@ -317,6 +317,14 @@ class VideoAcquisitionService {
       final List<VideoDiscoveryItem> items = <VideoDiscoveryItem>[
         for (final VideoDiscoveryPage page in result.items) ...page.items,
       ];
+      // 一个来源都没成功（网络 / 限流 / 未配置）时不是「没找到」，是「搜不了」：
+      // 把脱敏后的来源失败说出来，否则用户只会一遍遍换名字。
+      if (items.isEmpty &&
+          result.successfulProviderCount == 0 &&
+          result.failures.isNotEmpty) {
+        _queue.add(VideoAcquisitionFailedEvent(result.failures.first.message));
+        return;
+      }
       _queue.add(
         VideoAcquisitionWorksLoadedEvent(query: effect.query, items: items),
       );
