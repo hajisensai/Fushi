@@ -10,6 +10,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
@@ -67,6 +68,11 @@ mixin DictionaryPageMixin {
   /// 收藏/制卡计入统计时的来源标识。默认 [kStatSourceBook]（书内阅读、独立查词页
   /// 都归书籍统计）；视频页覆写为 [kStatSourceVideo]，使收藏/制卡落各自统计。
   String get dictionarySourceType => kStatSourceBook;
+
+  /// 诊断流水里标记查词来源的宿主名（2026-09-22）。默认取 [dictionarySourceType]——
+  /// 它已经区分了书 / 视频，而这正是排查「视频页查词卡」时唯一要分的两类。宿主想更
+  /// 细分（首页词典 tab、悬浮歌词）可覆写；纯标签，不参与任何判决。
+  String get lookupDiagHost => dictionarySourceType;
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
   ///
@@ -1032,6 +1038,15 @@ mixin DictionaryPageMixin {
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return 0;
+    // 诊断（2026-09-22，用户：查词为什么卡）：一次查词从这里开始计时，直到弹窗真翻
+    // 可见（或被兜底强制翻可见）为止。各阶段的毫秒数是区分「FFI 慢 / WebView 冷建慢
+    // / 注入慢 / JS 渲染慢」的唯一依据——此前整条链路一个时间戳都没有。诊断关闭时
+    // [LookupPerfTrace.begin] 返回 null，全链路一路 `?.`，零开销。
+    final LookupPerfTrace? trace = LookupPerfTrace.begin(
+      term: trimmed,
+      host: lookupDiagHost,
+      lowMemory: controller.lowMemory,
+    );
     final int maxTerms = mixinAppModel.maximumTerms;
     final Rect rect = fallbackSelectionRect(selectionRect);
     final DictionaryPopupEntry entry = controller.beginTop(
@@ -1069,6 +1084,13 @@ mixin DictionaryPageMixin {
         searchWithWildcards: true,
         overrideMaximumTerms: maxTerms,
       );
+      // 词典查询（三级缓存 → FFI）到此为止。小内存模式把 popupJson 缓存砍到 2MB、
+      // ffiLookup 砍到 8MB，重复查词的命中率随之下降、这一段会更常真跑 FFI——所以条目
+      // 数与耗时都要记。
+      trace?.mark('search',
+          detail: 'entries=${result.entries.length} '
+              'kanji=${result.kanjiResults.length} '
+              'truncated=${result.truncated}');
       if (mounted && controller.entries.contains(entry)) {
         setState(() {
           controller.fillResult(
@@ -1081,8 +1103,12 @@ mixin DictionaryPageMixin {
           // warm slot 可能漏掉当前结果注入，直显会露出空白 WebView 壳。
           final bool needsWebViewRender =
               result.entries.isNotEmpty || result.kanjiResults.isNotEmpty;
+          trace?.mark('fill', detail: 'webview-render=$needsWebViewRender');
           if (!needsWebViewRender) {
+            // 空结果走 Flutter 占位直显，链路到此结束（不经 WebView，故没有 rendered
+            // / reveal 两段）——这条也要收尾，否则游标会挂着不放。
             controller.show(entry);
+            trace?.finish('empty');
           } else {
             // TODO-058 fail-safe：mixin 宿主（视频/首页）不监听 controller，靠
             // setState 重建；超时强制翻可见后也要 setState（守 mounted，Timer 后触发）。
@@ -1123,7 +1149,12 @@ mixin DictionaryPageMixin {
         });
       }
     }
-    if (!mounted || !controller.entries.contains(entry)) return 0;
+    if (!mounted || !controller.entries.contains(entry)) {
+      // 页面已卸载 / 该层已被裁掉：这次查词没有结局，如实收尾成 abandoned，不要让游标
+      // 悬着把后续查词的阶段记到这一条上。
+      trace?.finish('abandoned');
+      return 0;
+    }
     if (result.entries.isNotEmpty) {
       mixinAppModel.addToSearchHistory(
         historyKey: DictionaryMediaType.instance.uniqueKey,
