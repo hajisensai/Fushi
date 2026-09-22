@@ -148,7 +148,12 @@ class FushiGameStreamReceiver extends ChangeNotifier
             'candidate': candidate.candidate,
             'sdpMid': candidate.sdpMid,
             'sdpMLineIndex': candidate.sdpMLineIndex,
-          }, generation),
+          }, generation).catchError((Object error) {
+            if (_isCurrent(generation)) {
+              _error = '$error';
+              _notify();
+            }
+          }),
         );
       };
       await _pollSignals();
@@ -327,13 +332,11 @@ class FushiGameStreamReceiver extends ChangeNotifier
       // polling path advances the host cursor after successfully applying them.
       await _client.sendSignal(signal, after: _hostSignalSequence);
     });
-    _signals = operation.catchError((Object error) {
-      if (_isCurrent(generation)) {
-        _error = '$error';
-        _notify();
-      }
-    });
-    return _signals;
+    // Keep the serialization tail usable, but return the actual delivery to
+    // the caller. In particular, a failed answer must not acknowledge the
+    // host offer in the polling cursor, or negotiation can never complete.
+    _signals = operation.catchError((Object _) {});
+    return operation;
   }
 
   void _bindDataChannel(RTCDataChannel channel, int generation) {

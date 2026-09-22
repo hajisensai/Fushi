@@ -389,9 +389,24 @@ class _GameStreamPageState extends State<GameStreamPage> {
                       color: Colors.white70,
                     ),
                   ))
-            : RTCVideoView(
-                widget.receiver!.renderer,
-                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+            : Stack(
+                fit: StackFit.expand,
+                children: <Widget>[
+                  RTCVideoView(
+                    widget.receiver!.renderer,
+                    objectFit:
+                        RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
+                  ),
+                  if (!widget.receiver!.ready)
+                    Center(
+                      child: Text(
+                        t.game_stream_video_waiting,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: Colors.white70,
+                        ),
+                      ),
+                    ),
+                ],
               ),
       ),
     );

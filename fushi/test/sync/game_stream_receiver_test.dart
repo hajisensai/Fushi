@@ -327,6 +327,38 @@ void main() {
     await Future<void>.delayed(Duration.zero);
   });
 
+  test('failed SDP answer does not consume the host offer cursor', () async {
+    final List<int> polledAfter = <int>[];
+    int answers = 0;
+    transport.handler = (Map<String, dynamic> body) async {
+      if (body['signal'] != null) {
+        answers++;
+        if (answers == 1) {
+          throw const GameStreamUnreachableError('answer delivery failed');
+        }
+        return const GameStreamPostResult(
+          json: <String, dynamic>{'signals': <Object>[]},
+        );
+      }
+      final int after = body['after'] as int;
+      polledAfter.add(after);
+      return GameStreamPostResult(
+        json: <String, dynamic>{
+          'signals': <Object>[
+            if (after < 0) _hostSignal(0, GameStreamSignalType.offer).toJson(),
+          ],
+        },
+      );
+    };
+    await receiver.connect(sessionId: 'session', clientId: 'phone');
+    expect(receiver.error, contains('answer delivery failed'));
+    receiver.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await Future<void>.delayed(Duration.zero);
+    expect(polledAfter, <int>[-1, -1]);
+    expect(answers, 2);
+    expect(receiver.error, isNull);
+  });
+
   test(
     'sendInput resolves host ACK, preserves timeout sequence and cancels on disconnect',
     () async {
