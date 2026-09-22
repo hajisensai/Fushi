@@ -163,6 +163,58 @@ void main() {
     expect(sent.last.button, 'cancel');
   });
 
+  testWidgets('old transcript cannot look up after same-line text changes', (
+    WidgetTester tester,
+  ) async {
+    final _Lookup lookup = _Lookup();
+    final GameStreamLookupController controller = GameStreamLookupController(
+      lookupClient: lookup,
+      streamClient: FushiGameStreamClient(transport: _Transport()),
+      clientId: 'c1',
+    );
+    addTearDown(controller.dispose);
+    void apply(String text) => controller.applyTextEvent(
+      GameStreamTextEvent(
+        sessionId: 's1',
+        lineId: 'progressive-line',
+        text: text,
+        timestampMs: 1,
+      ),
+    );
+    apply('日本');
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (_) async => null,
+    );
+    addTearDown(composer.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameStreamPage(
+          sessionId: 's1',
+          clientId: 'c1',
+          inputComposer: composer,
+          lookupController: controller,
+          videoPlaceholder: const Text('frame'),
+        ),
+      ),
+    );
+    final Finder paragraph = find.byKey(GameStreamPage.transcriptTextKey);
+    Focus.of(tester.element(paragraph)).requestFocus();
+    await tester.pump();
+    apply('日本語');
+    // No frame has rebuilt the paragraph: a real key event still reaches its
+    // old callback while the controller already owns the progressive update.
+    expect(tester.widget<RichText>(paragraph).text.toPlainText(), '日本');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(lookup.terms, isEmpty);
+    expect(controller.selectedTerm, isNull);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(lookup.terms, <String>['日本語']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final Size viewport in <Size>[
     const Size(800, 600),
     const Size(400, 800),

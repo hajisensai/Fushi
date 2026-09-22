@@ -605,7 +605,8 @@ class _GameStreamPageState extends State<GameStreamPage>
                                 subtitleTranscriptLookupSpan(line.text, index);
                             if (span.start < 0 ||
                                 controller?.currentLine?.lineId !=
-                                    line.lineId) {
+                                    line.lineId ||
+                                controller?.currentLine?.text != line.text) {
                               return;
                             }
                             unawaited(
