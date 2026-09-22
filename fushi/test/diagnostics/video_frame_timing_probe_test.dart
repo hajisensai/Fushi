@@ -42,8 +42,14 @@ void main() {
     probe.start();
     probe.stop();
     final List<String> lines = VideoDiagLog.instance.lines;
-    expect(lines.any((String l) => l.contains('probe start label=unit')), isTrue);
-    expect(lines.any((String l) => l.contains('probe stop label=unit')), isTrue);
+    expect(
+      lines.any((String l) => l.contains('probe start label=unit')),
+      isTrue,
+    );
+    expect(
+      lines.any((String l) => l.contains('probe stop label=unit')),
+      isTrue,
+    );
   });
 
   test('frame 类别被过滤串压到 v 以下时同样不注册', () {

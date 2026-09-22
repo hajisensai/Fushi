@@ -505,6 +505,10 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 清空整个栈（宿主重置/销毁用；不保留热槽，也不保留停驻 realm）。
   void clear() {
     if (_entries.isEmpty && _parkedRealms.isEmpty) return;
+    // 在途的查词计时随栈一起收尾：不收，游标悬着，下一次别的宿主（阅读器家族
+    // 不 begin）的 revealRendered 会把它当自己的收尾——打出一行「视频页旧词
+    // total=几分钟」甚至假 warn，会撒谎的诊断比没有诊断更糟。
+    LookupPerfTrace.current?.finish('dismissed');
     _cancelRevealTimers(_entries);
     _entries.clear();
     _parkedRealms.clear();
@@ -720,6 +724,9 @@ class DictionaryPopupController extends ChangeNotifier {
   /// index>0：裁掉该层及之上，保留下层。
   void dismissAt(int index) {
     if (index < 0 || index >= _entries.length) return;
+    // 同 [clear]：fill 之后、popupRendered 之前被关掉（Esc / 点 barrier，冷建路径
+    // 下这窗口有上百 ms ~ 1.8 s），既走不到 abandoned 也走不到 revealed。
+    LookupPerfTrace.current?.finish('dismissed');
     if (index == 0) {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {

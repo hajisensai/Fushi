@@ -166,14 +166,47 @@ void main() {
   });
 
   group('VideoFrameTimingAggregator', () {
-    List<VideoFrameSample> framesOf(List<int> totalMicros) {
-      return totalMicros
-          .map(
-            (int t) =>
-                VideoFrameSample(buildMicros: t ~/ 2, rasterMicros: t - t ~/ 2),
-          )
+    // 一个数 = 关键路径耗时（全放 build、raster 为 0）。判据是 max(build, raster)：
+    // 之前按 t/2 均分成 build/raster 构造，正好掩盖了「求和判据」的误报。
+    List<VideoFrameSample> framesOf(List<int> criticalMicros) {
+      return criticalMicros
+          .map((int t) => VideoFrameSample(buildMicros: t, rasterMicros: 0))
           .toList();
     }
+
+    test('build 与 raster 流水线并行：各自在预算内就不是 jank（不求和）', () {
+      // 9ms + 9ms 求和 18ms 会误判成超预算，实际每条线都赶得上。
+      const VideoFrameSample smooth = VideoFrameSample(
+        buildMicros: 9000,
+        rasterMicros: 9000,
+      );
+      expect(smooth.criticalMicros, 9000);
+      final VideoFrameTimingAggregator agg = VideoFrameTimingAggregator()
+        ..addAll(List<VideoFrameSample>.filled(4, smooth));
+      expect(
+        agg.isJankyWindow(),
+        isFalse,
+        reason: 'DevTools 口径：build / raster 各自 ≤ 16.7ms 即流畅',
+      );
+      final String line = VideoFrameTimingAggregator.summarise(
+        List<VideoFrameSample>.filled(4, smooth),
+        1000,
+      );
+      expect(line, contains('jank=0'));
+      expect(line, contains('severe=0'));
+      // 反例：单条线超预算才算。
+      const VideoFrameSample slowRaster = VideoFrameSample(
+        buildMicros: 2000,
+        rasterMicros: 20000,
+      );
+      expect(slowRaster.criticalMicros, 20000);
+      expect(
+        VideoFrameTimingAggregator.summarise(<VideoFrameSample>[
+          slowRaster,
+        ], 1000),
+        contains('jank=1'),
+      );
+    });
 
     test('percentile 用最近秩，空表为 0', () {
       expect(VideoFrameTimingAggregator.percentile(<int>[], 0.5), 0);

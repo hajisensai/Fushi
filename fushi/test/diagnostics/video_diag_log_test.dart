@@ -165,6 +165,35 @@ void main() {
     });
   });
 
+  group('redactVideoDiagSecrets（导出前脱敏）', () {
+    test('URL 查询参数里的令牌只抹值，host + path 保留', () {
+      const String line =
+          '[cplayer] Playing: https://emby.example.com/Videos/42/stream.mkv'
+          '?api_key=0123456789abcdef&static=true&MediaSourceId=x';
+      final String out = redactVideoDiagSecrets(line);
+      expect(out, contains('https://emby.example.com/Videos/42/stream.mkv'));
+      expect(out, contains('api_key=[redacted]'));
+      expect(out, isNot(contains('0123456789abcdef')));
+      expect(out, contains('static=true'), reason: '非敏感参数原样');
+    });
+
+    test('Authorization / X-Emby-Token 头与 Token="…" 属性都抹掉', () {
+      const String text =
+          'X-Emby-Token: deadbeef\n'
+          'Authorization: MediaBrowser Client="Fushi", Token="cafebabe"\n'
+          'http-proxy: http://user:pw@127.0.0.1:1/ token=abc';
+      final String out = redactVideoDiagSecrets(text);
+      expect(out, isNot(contains('deadbeef')));
+      expect(out, isNot(contains('cafebabe')));
+      expect(out, contains('X-Emby-Token: [redacted]'));
+    });
+
+    test('没有敏感字段的行逐字节不变', () {
+      const String line = '[vo/gpu] using d3d11 1920x1080 hwdec=d3d11va';
+      expect(redactVideoDiagSecrets(line), line);
+    });
+  });
+
   group('trimTail', () {
     test('未超限原样返回', () {
       final List<int> bytes = 'a\nb\n'.codeUnits;

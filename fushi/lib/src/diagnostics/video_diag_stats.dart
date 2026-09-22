@@ -256,8 +256,15 @@ class VideoFrameSample {
   final int rasterMicros;
   final int vsyncOverheadMicros;
 
-  /// UI + GPU 的总耗时——超过一个刷新周期就意味着这一帧没赶上。
+  /// UI + GPU 相加的总耗时。**不是**掉帧判据：Flutter 的 build（UI 线程）与
+  /// raster（raster 线程）是流水线并行的，各自 ≤ 预算这一帧就赶得上；求和会把
+  /// 「build 9ms + raster 9ms」这种完全流畅的窗口记成 jank——视频页带纹理合成与
+  /// 字幕阴影时 raster 常在 8~12ms，误报会是常态，把归因引向 Dart 侧。只用于展示。
   int get totalMicros => buildMicros + rasterMicros;
+
+  /// 掉帧判据用的关键路径：两条流水线里较慢的那条（Flutter DevTools 同口径）。
+  int get criticalMicros =>
+      buildMicros > rasterMicros ? buildMicros : rasterMicros;
 }
 
 /// 帧耗时聚合：攒一个窗口（默认 1 秒）的帧，输出一行 mpv stats 风格的汇总。
@@ -308,8 +315,8 @@ class VideoFrameTimingAggregator {
     final int severeCut = jankBudgetMicros * severeMultiplier;
     int janky = 0;
     for (final VideoFrameSample s in _window) {
-      if (s.totalMicros >= severeCut) return true;
-      if (s.totalMicros > jankBudgetMicros) janky++;
+      if (s.criticalMicros >= severeCut) return true;
+      if (s.criticalMicros > jankBudgetMicros) janky++;
     }
     return janky / _window.length >= jankRatioThreshold;
   }
@@ -327,13 +334,14 @@ class VideoFrameTimingAggregator {
     if (frames.isEmpty) return 'frames=0';
     final List<int> build = frames.map((f) => f.buildMicros).toList()..sort();
     final List<int> raster = frames.map((f) => f.rasterMicros).toList()..sort();
-    final List<int> total = frames.map((f) => f.totalMicros).toList()..sort();
     final int severeCut = jankBudgetMicros * severeMultiplier;
     int janky = 0;
     int severe = 0;
-    for (final int t in total) {
-      if (t > jankBudgetMicros) janky++;
-      if (t >= severeCut) severe++;
+    // jank / severe 按关键路径（max(build, raster)）计，见 [VideoFrameSample
+    // .criticalMicros]；分位仍按 build / raster 各自给。
+    for (final VideoFrameSample f in frames) {
+      if (f.criticalMicros > jankBudgetMicros) janky++;
+      if (f.criticalMicros >= severeCut) severe++;
     }
     final String fps = windowMs > 0
         ? (frames.length * 1000.0 / windowMs).toStringAsFixed(1)

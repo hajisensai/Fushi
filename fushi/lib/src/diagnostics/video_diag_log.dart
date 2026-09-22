@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/utils/net/app_native_proxy.dart'
+    show redactAppNativeProxySecrets;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -333,18 +335,21 @@ class VideoDiagLog {
   /// 等在途落盘写完（导出 / 退出前）。
   Future<void> flush() => _chain;
 
-  /// Dart 侧时间轴全文（含此前运行）；没文件就退回内存环。
+  /// Dart 侧时间轴全文（含此前运行）；没文件就退回内存环。导出前过一遍
+  /// [redactVideoDiagSecrets]。
   Future<String> readPersisted() async {
     await flush();
     final File? file = _file;
     try {
       if (file != null && await file.exists()) {
-        return utf8.decode(await file.readAsBytes(), allowMalformed: true);
+        return redactVideoDiagSecrets(
+          utf8.decode(await file.readAsBytes(), allowMalformed: true),
+        );
       }
     } catch (e) {
       debugPrint('[VideoDiagLog] read failed: $e');
     }
-    return _lines.join('\n');
+    return redactVideoDiagSecrets(_lines.join('\n'));
   }
 
   /// libmpv 自己那份日志的尾部（导出用）。没开诊断 / libmpv 没写过就是空串。
@@ -354,7 +359,13 @@ class VideoDiagLog {
     try {
       final File file = File(path);
       if (!await file.exists()) return '';
-      return trimTail(await file.readAsBytes(), maxBytes: maxBytes);
+      // libmpv 自己写的日志**原样**含流 URL：`[cplayer] Playing: <完整 URL>`，
+      // `all=v` 下 `[stream]` / `[ffmpeg]` 还会再印几次。Jellyfin / Emby / 飞牛
+      // 的流 URL 自带 `&api_key=<token>`、中间没有本地中继；native 代理口令也在
+      // `http-proxy` 选项值里。这份日志是给用户导出发给开发者的，必须脱敏。
+      return redactVideoDiagSecrets(
+        trimTail(await file.readAsBytes(), maxBytes: maxBytes),
+      );
     } catch (e) {
       debugPrint('[VideoDiagLog] mpv log read failed: $e');
       return '';
@@ -435,3 +446,40 @@ void videoDiag(String category, VideoDiagLevel level, String message) =>
 /// 高频探针的短路判据：拼字符串之前先问一句。
 bool videoDiagEnabledFor(String category, VideoDiagLevel level) =>
     VideoDiagLog.instance.isLoggable(category, level);
+
+/// 导出前的脱敏（纯函数）：native 代理口令、URL 查询参数里的令牌 / 密码、
+/// `Authorization` / `X-Emby-Token` 这类头、以及 `MediaBrowser … Token="…"` 属性。
+/// 只抹值不抹键，host + path 原样保留——排障要看得出是哪台服务器的哪条流。
+String redactVideoDiagSecrets(String text) {
+  String out = redactAppNativeProxySecrets(text);
+  out = out.replaceAllMapped(
+    _kSecretQueryParam,
+    (Match m) => '${m.group(1)}[redacted]',
+  );
+  out = out.replaceAllMapped(
+    _kSecretHeader,
+    (Match m) => '${m.group(1)}[redacted]',
+  );
+  out = out.replaceAllMapped(
+    _kSecretTokenAttr,
+    (Match m) => '${m.group(1)}[redacted]${m.group(2)}',
+  );
+  return out;
+}
+
+final RegExp _kSecretQueryParam = RegExp(
+  r'([?&](?:api_key|apikey|token|access_token|auth|authorization|password|'
+  r'passwd|pwd|x-emby-token|x-mediabrowser-token)=)[^&\s"<>]+',
+  caseSensitive: false,
+);
+
+final RegExp _kSecretHeader = RegExp(
+  r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization)'
+  r'\s*[:=]\s*)[^\r\n]+',
+  caseSensitive: false,
+);
+
+final RegExp _kSecretTokenAttr = RegExp(
+  r'(\bToken=")[^"]*(")',
+  caseSensitive: false,
+);
