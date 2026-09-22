@@ -1,21 +1,12 @@
 {
   "schemaVersion": 1,
-  "version": "2.8.0-debug.15386",
-  "tag": "v2.8.0-debug.15386+7ccd890",
+  "version": "2.8.0-debug.15390",
+  "tag": "v2.8.0-debug.15390+4c9f017",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 15386,
-  "notes": "Automated desktop debug-channel build from develop @ 7ccd890. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 15390,
+  "notes": "Automated release-signed debug-channel build from develop @ 4c9f017. Push releases are always prerelease and never Latest.",
   "assets": [
-    {
-      "name": "fushi-2.8.0-debug.15386-7ccd890-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15386-7ccd890-debug.apk",
-      "releaseSequence": 15386,
-      "tag": "v2.8.0-debug.15386+7ccd890",
-      "version": "2.8.0-debug.15386",
-      "size": 274547378,
-      "sha256": "fb627721c1d45ed7677e435dd3ea582383b63ad5edd40a57fc708944d64ba9b8"
-    },
     {
       "name": "fushi-2.8.0-debug.15386-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15386-ios.ipa",
@@ -42,6 +33,15 @@
       "version": "2.8.0-debug.15386",
       "size": 267476400,
       "sha256": "6d89bbfcfda7d5a5c5bd6f4181b764c3616f0a649ae09d4edfcdd4618d974cfa"
+    },
+    {
+      "name": "fushi-2.8.0-debug.15390-4c9f017-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15390-4c9f017-debug.apk",
+      "releaseSequence": 15390,
+      "tag": "v2.8.0-debug.15390+4c9f017",
+      "version": "2.8.0-debug.15390",
+      "size": 274548126,
+      "sha256": "cab0f0cf7281ae055884ca9446c2a4ad07493fcf942e17c38943862b7ed66bb7"
     }
   ]
 }
