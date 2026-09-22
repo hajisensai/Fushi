@@ -27,6 +27,7 @@ class SubtitleEpisodeSearchSpec {
     required this.seriesKey,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.episode,
   });
 
   /// 预填搜索词（文件名解析出的番名 / 刮削名）。
@@ -40,6 +41,10 @@ class SubtitleEpisodeSearchSpec {
 
   /// 本地视频路径（OSDb 指纹用；远端流 null）。
   final String? videoPath;
+
+  /// BUG-2626：预填的集号；null = 输入框留空（列出全部版本，旧行为）。调用方算不出
+  /// 可靠集号时必须传 null，不要拿播放序凑——填错的集号会把用户引到另一集的字幕上。
+  final int? episode;
 }
 
 /// 「整个合集」作用域的输入。
@@ -192,6 +197,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       seed: spec.seed,
       videoPath: spec.videoPath,
       initialQuery: spec.initialQuery,
+      initialEpisode: spec.episode,
       initialApiKey: host.jimakuApiKey,
       onApiKeyChanged: host.setJimakuApiKey,
       subtitleRegistry: () => host.subtitleRegistry,

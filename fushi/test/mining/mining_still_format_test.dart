@@ -63,6 +63,7 @@ class _FakeFrameExtractor {
     bool decodeFromStart = false,
     FfmpegFailureReporter? onFailure,
     String? tlsPinSha256,
+    Map<String, String> httpHeaders = const {},
     bool diagnosticOnly = false,
   }) async {
     outputs.add(outputPath);
@@ -87,6 +88,7 @@ Future<String?> _okAudio({
   int audioChannels = 1,
   String audioBitrate = '64k',
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) async =>
     outputPath;
 
@@ -102,6 +104,7 @@ Future<String?> _okAudioOnDisk({
   int audioChannels = 1,
   String audioBitrate = '64k',
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) async {
   final File out = File(outputPath);
   out.parent.createSync(recursive: true);
@@ -120,6 +123,7 @@ Future<String?> _nullGif({
   bool diagnosticOnly = false,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) async =>
     null;
 

@@ -86,6 +86,28 @@ abstract interface class RemoteVideoStreamHeaders {
   Map<String, String> get httpHeaderFields;
 }
 
+/// 「知道某一集的集号」的可选能力（BUG-2626）。
+///
+/// [RemoteVideoInfo] 只有 `title` 与合集内的 `sortIndex`：前者是分集标题（在线视频源
+/// 扩展给的常是 `Episode 1`），后者是**播放序**，含特别篇/OVA 或不从第 1 集开始的季度
+/// 时与集号并不相等。而字幕检索要的是集号本身。
+///
+/// 只有真正持有集号的来源才实现（在线视频源扩展的 `MihonEpisode.number`）；拿不到
+/// 集号的来源不实现，调用方回落到按文件名/标题解析，行为与本能力引入前一致。
+abstract interface class RemoteVideoEpisodeNumber {
+  /// 远端视频 [id] 的集号；不知道则 null（调用方据此回落，不要返回 0 或序号冒充）。
+  int? remoteVideoEpisodeNumber(String id);
+}
+
+/// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。
+///
+/// 字幕检索预填番名时，只有合集语义 = 作品的来源才能拿合集名当番名：在线视频源
+/// 扩展的合集是 `anime.title`、媒体服务器的合集是 `seriesName`。互联 host 的
+/// `RemoteCollectionMembership.collectionName` 是 host 库里的 `MediaCollectionRow.name`
+/// ——用户自建的「待看」「2024 春番」也在其中，拿它当番名搜必然空手；host 那边
+/// `VideoBook.title` 本身就是番名，仍走标题路径。不实现本标记 = 合集名不参与选词。
+abstract interface class RemoteVideoCollectionIsWork {}
+
 /// 「播放真正结束」的可选能力。
 ///
 /// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由

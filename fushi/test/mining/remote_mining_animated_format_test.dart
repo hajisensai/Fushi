@@ -45,6 +45,7 @@ class _FakeGifExtractor {
     bool diagnosticOnly = false,
     FfmpegFailureReporter? onFailure,
     String? tlsPinSha256,
+    Map<String, String> httpHeaders = const {},
   }) async {
     calls.add((
       outputPath: outputPath,
@@ -233,6 +234,7 @@ void main() {
       int audioChannels = 1,
       String audioBitrate = '64k',
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async =>
         null;
 

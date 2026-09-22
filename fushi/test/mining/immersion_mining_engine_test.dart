@@ -64,7 +64,7 @@ void main() {
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       outputPath;
   Future<String?> nullGif(
           {required String inputPath,
@@ -76,7 +76,7 @@ void main() {
           MiningAnimatedFormat format = MiningAnimatedFormat.gif,
           bool diagnosticOnly = false,
           FfmpegFailureReporter? onFailure,
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       null;
   Future<String?> okAudio(
           {required String inputPath,
@@ -88,7 +88,7 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       outputPath;
   Future<String?> nullAudio(
           {required String inputPath,
@@ -100,7 +100,7 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async =>
+          String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async =>
       null;
   Future<String?> okFrame(
           {required String inputPath,
@@ -108,6 +108,7 @@ void main() {
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {},
           bool diagnosticOnly = false}) async =>
       outputPath;
   Future<String?> nullFrame(
@@ -116,6 +117,7 @@ void main() {
           double atSeconds = 10.0,
           FfmpegFailureReporter? onFailure,
           String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {},
           bool diagnosticOnly = false}) async =>
       null;
 
@@ -224,7 +226,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioCalled = true;
       return outputPath;
     }
@@ -274,7 +276,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioCalled = true;
       return outputPath;
     }
@@ -357,6 +359,7 @@ void main() {
       bool diagnosticOnly = false,
       FfmpegFailureReporter? onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       calls.add((fps: fps, width: width));
       await File(outputPath).writeAsBytes(List<int>.filled(5 * 1024 * 1024, 0));
@@ -447,7 +450,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifInput = inputPath;
       return outputPath;
     }
@@ -462,7 +465,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioInput = inputPath;
       return outputPath;
     }
@@ -521,7 +524,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       audioInput = inputPath;
       return outputPath;
     }
@@ -666,7 +669,7 @@ void main() {
       FfmpegFailureReporter? onFailure,
       int audioChannels = 1,
       String audioBitrate = '64k',
-      String? tlsPinSha256}) async {
+      String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
     onFailure?.call('ffmpeg launch failed: executable=ffmpeg; '
         'errorCode=2; message=No such file or directory');
     return null;
@@ -735,7 +738,7 @@ void main() {
         FfmpegFailureReporter? onFailure,
         int audioChannels = 1,
         String audioBitrate = '64k',
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       onFailure?.call(longCause);
       return null;
     }
@@ -779,7 +782,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifCalled = true;
       return outputPath;
     }
@@ -818,7 +821,7 @@ void main() {
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async {
+        String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) async {
       gifCalled = true;
       return outputPath;
     }

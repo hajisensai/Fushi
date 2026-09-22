@@ -70,6 +70,7 @@ typedef GifExtractor = Future<String?> Function({
   bool diagnosticOnly,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders,
 });
 typedef AudioExtractor = Future<String?> Function({
   required String inputPath,
@@ -82,6 +83,7 @@ typedef AudioExtractor = Future<String?> Function({
   int audioChannels,
   String audioBitrate,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders,
 });
 
 /// 音频已经按选定音轨/时间窗裁好；视频只裁同一个窗，不能再次 seek 音频。
@@ -92,6 +94,7 @@ typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
   required int endMs,
   required String outputPath,
   required String? tlsPinSha256,
+  required Map<String, String> httpHeaders,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
@@ -99,6 +102,7 @@ typedef FrameExtractor = Future<String?> Function({
   double atSeconds,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders,
   // BUG-2366：静图降级链与动图链同义——「首选格式失败」是预期内的编码器能力探测，
   // 不是 app 出错。真身 [extractVideoFrameViaFfmpeg] 早有这个参数，只是本 typedef
   // 以前没把它接出来，于是 [extractStillWithFallback] 无法告诉抽取层「这次失败别
@@ -155,6 +159,7 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
   GifExtractor extractor = extractClipGifViaFfmpeg,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) async {
   final List<MiningAnimatedFormat> attempts = format.encodeAttempts;
   for (final MiningAnimatedFormat attempt in attempts) {
@@ -176,6 +181,7 @@ Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback({
       // `firstCoverFailure`，再变成降级 toast 的理由或中止根因。
       onFailure: diagnostic ? null : onFailure,
       tlsPinSha256: tlsPinSha256,
+      httpHeaders: httpHeaders,
     );
     if (out != null) return (path: out, format: attempt);
   }
@@ -302,6 +308,7 @@ class ImmersionMiningEngine {
     required int endMs,
     required String outputPath,
     required String? tlsPinSha256,
+    required Map<String, String> httpHeaders,
   }) =>
       exportSynchronizedVideoClip(
         videoPath: videoPath,
@@ -311,6 +318,10 @@ class ImmersionMiningEngine {
         endMs: endMs,
         outputPath: outputPath,
         tlsPinSha256: tlsPinSha256,
+        // BUG-2625：同步视频片段的两路输入（画面 = 远端流、声音 = 已裁好的本地文件）
+        // 共用同一组防盗链头；本地那路由 `_isRemoteFfmpegInput` 自动忽略。
+        headers: httpHeaders,
+        audioHeaders: httpHeaders,
       );
 
   /// 所有沉浸制卡共享同一条事务队列。抽媒体会写固定的临时文件名，AnkiConnect 也只有
@@ -469,6 +480,7 @@ class ImmersionMiningEngine {
         extractor: _gif,
         onFailure: reportCover,
         tlsPinSha256: req.mediaSourceTlsPinSha256,
+        httpHeaders: req.mediaSourceHttpHeaders,
       );
       return animated?.path;
     }
@@ -496,6 +508,7 @@ class ImmersionMiningEngine {
           // 由收口原语决定这次尝试要不要报告（能力探测那次是 null）。
           onFailure: onFailure,
           tlsPinSha256: req.mediaSourceTlsPinSha256,
+          httpHeaders: req.mediaSourceHttpHeaders,
           diagnosticOnly: diagnosticOnly,
         ),
       );
@@ -602,6 +615,7 @@ class ImmersionMiningEngine {
           endMs: req.clipEndMs,
           outputPath: '${exportedVideoDir.path}/immersion_video.mp4',
           tlsPinSha256: req.mediaSourceTlsPinSha256,
+          httpHeaders: req.mediaSourceHttpHeaders,
         );
       } catch (_) {
         await _cleanupSynchronizedVideo(exportedVideoDir);
@@ -767,6 +781,7 @@ class ImmersionMiningEngine {
       // BUG-891：cutInput 若是物化后的本地文件（YouTube）pin 被 buildFfmpegRemoteInputArgs
       // 的远端判定忽略；Hibiki muxed 时 cutInput 是远端 https host，pin 生效。
       tlsPinSha256: req.mediaSourceTlsPinSha256,
+      httpHeaders: req.mediaSourceHttpHeaders,
     );
     // 物化的整段音频临时文件用完即删（裁好的 immersion_audio.* 才是产物）。
     if (materialized != null) {

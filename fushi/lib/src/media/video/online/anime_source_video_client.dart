@@ -34,7 +34,9 @@ class AnimeSourceVideoClient
         RemoteVideoClient,
         RemoteCoverFetcher,
         RemoteVideoStreamHeaders,
-        RemoteVideoStreamVariants {
+        RemoteVideoStreamVariants,
+        RemoteVideoEpisodeNumber,
+        RemoteVideoCollectionIsWork {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -139,6 +141,19 @@ class AnimeSourceVideoClient
   MihonEpisode? episodeForVideoId(String id) {
     final int index = _episodeIds.indexOf(id);
     return index >= 0 ? episodes[index] : null;
+  }
+
+  /// BUG-2626：扩展给的集号（`episode_number`）。字幕检索按集号筛版本，而
+  /// [RemoteVideoInfo.title]（= 分集标题，常是 `Episode 1`）与合集内 `sortIndex`
+  /// （= 播放序）都不是集号。
+  ///
+  /// 只认**整集**：`1.5` 这类小数号是特别篇/总集篇，字幕站的 episode 字段放不下，
+  /// 四舍五入会指到隔壁那一集去——宁可返回 null 让调用方按标题回落。
+  @override
+  int? remoteVideoEpisodeNumber(String id) {
+    final double? number = episodeForVideoId(id)?.number;
+    if (number == null || number <= 0) return null;
+    return number == number.roundToDouble() ? number.round() : null;
   }
 
   /// 本作品全部集的播放页 DTO，与 [episodes] 同序；播放页拿它当

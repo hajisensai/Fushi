@@ -284,6 +284,7 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.onCancel,
     this.showTitle = true,
     required this.initialQuery,
+    this.initialEpisode,
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
@@ -322,6 +323,13 @@ class SubtitleSearchPanel extends StatefulWidget {
 
   /// 预填的搜索词（由视频文件名解析出的番名）。
   final String initialQuery;
+
+  /// BUG-2626：预填的集号；null = 留空（列出全部版本）。
+  ///
+  /// 这处改了一条既有决策：集数框原先**恒空**（「用户决策：默认空」），代价是用户每次
+  /// 都得自己数当前是第几集再手填，而这个数字调用方本来就知道。现在只在调用方能给出
+  /// **可靠**集号时预填；给不出仍留空，那条旧行为在没有集号的来源上原样保留。
+  final int? initialEpisode;
 
   /// 该视频**已知的身份**（刮削存下的 AniList / TMDB id 与备选搜索词），BUG-1842。
   ///
@@ -379,8 +387,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   late final TextEditingController _queryCtrl = TextEditingController(
     text: widget.initialQuery,
   );
-  // 集数输入框：初值空（用户决策「默认空」）。空 → 不传 episode（= 现状列全部）。
-  final TextEditingController _episodeCtrl = TextEditingController();
+  // 集数输入框：BUG-2626 起预填调用方给的集号（[SubtitleSearchPanel.initialEpisode]）；
+  // 调用方给不出可靠集号时仍为空 → 不传 episode（= 列出全部版本）。
+  late final TextEditingController _episodeCtrl = TextEditingController(
+    text: widget.initialEpisode?.toString() ?? '',
+  );
 
   bool _searching = false;
   bool _searched = false;

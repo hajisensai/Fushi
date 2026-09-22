@@ -39,13 +39,16 @@ List<String> buildSynchronizedVideoClipArgs({
     String? pin,
   ) {
     return <String>[
-      ...buildFfmpegRemoteInputArgs(path, tlsPinSha256: pin),
-      if (_isRemote(path) && requestHeaders.isNotEmpty) ...<String>[
-        '-headers',
-        requestHeaders.entries
-            .map((MapEntry<String, String> e) => '${e.key}: ${e.value}\r\n')
-            .join(),
-      ],
+      // BUG-2625：请求头交给 [buildFfmpegRemoteInputArgs] 统一下发，不在这里自己拼
+      // 第二个 `-headers`。本地这份旧实现把 `User-Agent`/`Referer` 也塞进 `-headers`，
+      // 而那个函数**无条件**输出一个 `-user_agent`，同名头出现两次时以哪个为准取决于
+      // ffmpeg 的选项解析顺序——把三者收在一处后，调用方给的 UA/Referer 走各自的专用
+      // 选项并明确覆盖默认值，其余头才进 `-headers`。
+      ...buildFfmpegRemoteInputArgs(
+        path,
+        tlsPinSha256: pin,
+        httpHeaders: requestHeaders,
+      ),
       if (!(decodeFromStart && offset == 0)) ...<String>[
         '-ss',
         (offset / 1000).toStringAsFixed(3),

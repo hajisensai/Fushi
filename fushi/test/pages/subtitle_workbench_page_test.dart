@@ -280,4 +280,52 @@ void main() {
       expect(title.right, lessThanOrEqualTo(scope.left));
     });
   }
+
+  /// BUG-2626：集数框此前**恒空**（旧决策「默认空」），而调用方本来就知道当前是第几集
+  /// ——用户每次都得自己数再手填。现在由 [SubtitleEpisodeSearchSpec.episode] 预填；
+  /// 调用方给不出可靠集号时仍留空（= 列出全部版本，旧行为原样保留）。
+  Finder episodeField() => find.ancestor(
+    of: find.text(t.video_jimaku_episode),
+    matching: find.byType(TextField),
+  );
+
+  testWidgets('spec 带集号 → 集数框预填该集号', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        SubtitleWorkbenchPage(
+          host: _Host(db),
+          saveDirectory: tempDir.path,
+          episode: const SubtitleEpisodeSearchSpec(
+            initialQuery: 'Fixture Show',
+            seriesKey: 'fixture show',
+            episode: 7,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 番名与集数分别落在两个框里：番名不该再是分集标题（`Episode 7`）。
+    expect(tester.widget<TextField>(episodeField()).controller?.text, '7');
+    expect(
+      find.ancestor(
+        of: find.text(t.video_jimaku_query),
+        matching: find.byType(TextField),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('spec 无集号 → 集数框留空（列出全部版本）', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        SubtitleWorkbenchPage(
+          host: _Host(db),
+          saveDirectory: tempDir.path,
+          episode: episode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(episodeField()).controller?.text, '');
+  });
 }
