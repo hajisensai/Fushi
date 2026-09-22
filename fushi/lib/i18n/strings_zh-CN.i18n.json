@@ -5307,5 +5307,7 @@
   "settings_video_diag_export": "导出视频诊断日志",
   "settings_video_diag_export_hint": "统一时间轴 + libmpv 自身的详细日志",
   "video_diag_share_subject": "Fushi 视频诊断日志",
-  "popup_ctx_confirm_failed": "制卡没能开始——回点制卡按钮时查词弹窗已经关掉了。请重试。"
+  "popup_ctx_confirm_failed": "制卡没能开始——回点制卡按钮时查词弹窗已经关掉了。请重试。",
+  "sync_err_html_page": "服务器返回的是网页而不是同步响应。请确认地址指向的是 WebDAV 或 Fushi 互联端点，而不是网站。",
+  "sync_err_html_page_detail": "服务器返回的是网页（「$title」）而不是同步响应。请确认地址指向的是 WebDAV 或 Fushi 互联端点，而不是网站。"
 }
