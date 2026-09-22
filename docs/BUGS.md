@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2439 条。点号进各自文件。
+> 共 2440 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2635](bugs/BUG-2635-manga-reader-settings-live.md) | ✅ | ✅ | 漫画阅读设置缺失入口且关闭后才生效 |
 | [BUG-2634](bugs/BUG-2634-video-context-mine-confirm-popup-gone.md) | ✅ | ✅ | 视频「调整上下文」确认制卡报「查词弹窗已经关掉了」 |
 | [BUG-2633](bugs/BUG-2633-video-popup-wheel-volume-leak.md) | ✅ | ✅ | 视频页查词弹窗内滚轮穿透到画面——词典翻页时音量跟着变 |
 | [BUG-2632](bugs/BUG-2632-vn-lookup-audio-position.md) | ✅ | ✅ | VN 查词弹窗从此句播放误用屏内及学习单位坐标导致跳错位置 |

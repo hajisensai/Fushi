@@ -35,6 +35,42 @@ abstract class MangaOcrService {
   });
 }
 
+/// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
+/// 发布成 manga.json。
+///
+/// 页级请求走**常驻会话**：检测/识别 ORT 会话（几百 MB 模型）每个会话只建一次，
+/// 之后逐页复用；不再像整卷任务那样每次调用都新起 isolate、重建会话。
+abstract interface class MangaOcrPageService {
+  /// [imageDirPath] 下逐页缓存所在目录的绝对路径
+  /// （`<imageDirPath>/manga_ocr_out/_pages/<引擎签名>`）。
+  ///
+  /// 签名与 [openPageSession] 建出的会话**同源**（同一次按已安装模型解析的
+  /// 签名），调用方可以在打开会话前先按它查缓存命中，不会与会话写入的目录
+  /// 不一致。
+  Future<String> resolvePageCacheDirPath({required String imageDirPath});
+
+  /// 打开一个页级 OCR 会话。平台不支持 / 模型不齐时以错误完成，不建会话。
+  ///
+  /// [onAcceleration] 在会话建成后回报一次实际生效的执行后端与降级原因
+  /// （BUG-1163）。
+  Future<MangaOcrPageSession> openPageSession({
+    required String imageDirPath,
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+  });
+}
+
+/// 常驻的页级 OCR 会话：请求串行处理，推理会话在 [close] 前一直复用。
+abstract interface class MangaOcrPageSession {
+  /// 识别 [relativeUrl]（相对会话图片目录的正斜杠路径）并写入逐页缓存，
+  /// 返回缓存目录绝对路径（与 [MangaOcrPageService.resolvePageCacheDirPath]
+  /// 相同）。已有有效缓存时直接命中、不跑推理。会话关闭后以 [StateError] 失败。
+  Future<String> ocrPage(String relativeUrl);
+
+  /// 关闭会话（幂等）：取消在跑页、让挂起请求失败，并释放 isolate 与 ORT 会话。
+  /// 返回的 Future 在资源真正释放后完成。
+  Future<void> close();
+}
+
 /// 模型就绪状态。
 class MangaOcrModelStatus {
   const MangaOcrModelStatus({

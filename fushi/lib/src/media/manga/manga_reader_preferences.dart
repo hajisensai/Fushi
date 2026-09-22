@@ -96,6 +96,25 @@ class MangaReaderPreferences {
     this.alwaysShowChapterTransition = true,
     this.volumeKeys = true,
     this.invertVolumeKeys = false,
+    this.automaticBackground = false,
+    this.webtoonDoubleTapZoom = true,
+    this.showPageGaps = true,
+    this.autoScroll = false,
+    this.autoScrollSpeed = 40,
+    this.readerHideThreshold = 13,
+    this.einkMode = false,
+    this.lookupOnHover = false,
+    this.showOcrBoxes = false,
+    this.invertColors = false,
+    this.grayscale = false,
+    this.brightness = 0,
+    this.contrast = 100,
+    this.saturation = 100,
+    this.customColorFilter = false,
+    this.colorFilterColor = '#F4ECD8',
+    this.colorFilterOpacity = 20,
+    this.ocrTrigger = 'automatic',
+    this.parallelOcrTasks = 1,
   });
 
   final MangaReadingMode mode;
@@ -133,6 +152,29 @@ class MangaReaderPreferences {
   final bool alwaysShowChapterTransition;
   final bool volumeKeys;
   final bool invertVolumeKeys;
+  final bool automaticBackground;
+  final bool webtoonDoubleTapZoom;
+  final bool showPageGaps;
+  final bool autoScroll;
+
+  /// Continuous scrolling speed in CSS pixels per second.
+  final int autoScrollSpeed;
+  final int readerHideThreshold;
+  final bool einkMode;
+  final bool lookupOnHover;
+  final bool showOcrBoxes;
+  final bool invertColors;
+  final bool grayscale;
+
+  /// Percentage adjustment, with zero preserving the source brightness.
+  final int brightness;
+  final int contrast;
+  final int saturation;
+  final bool customColorFilter;
+  final String colorFilterColor;
+  final int colorFilterOpacity;
+  final String ocrTrigger;
+  final int parallelOcrTasks;
 
   Map<String, Object> toJson() => <String, Object>{
     'mode': mode.storageKey,
@@ -170,6 +212,25 @@ class MangaReaderPreferences {
     'alwaysShowChapterTransition': alwaysShowChapterTransition,
     'volumeKeys': volumeKeys,
     'invertVolumeKeys': invertVolumeKeys,
+    'automaticBackground': automaticBackground,
+    'webtoonDoubleTapZoom': webtoonDoubleTapZoom,
+    'showPageGaps': showPageGaps,
+    'autoScroll': autoScroll,
+    'autoScrollSpeed': autoScrollSpeed,
+    'readerHideThreshold': readerHideThreshold,
+    'einkMode': einkMode,
+    'lookupOnHover': lookupOnHover,
+    'showOcrBoxes': showOcrBoxes,
+    'invertColors': invertColors,
+    'grayscale': grayscale,
+    'brightness': brightness,
+    'contrast': contrast,
+    'saturation': saturation,
+    'customColorFilter': customColorFilter,
+    'colorFilterColor': colorFilterColor,
+    'colorFilterOpacity': colorFilterOpacity,
+    'ocrTrigger': ocrTrigger,
+    'parallelOcrTasks': parallelOcrTasks,
   };
 
   factory MangaReaderPreferences.fromJson(Map<String, Object?> json) {
@@ -249,6 +310,34 @@ class MangaReaderPreferences {
       alwaysShowChapterTransition: flag('alwaysShowChapterTransition', true),
       volumeKeys: flag('volumeKeys', true),
       invertVolumeKeys: flag('invertVolumeKeys', false),
+      automaticBackground: flag('automaticBackground', false),
+      webtoonDoubleTapZoom: flag('webtoonDoubleTapZoom', true),
+      showPageGaps: flag('showPageGaps', true),
+      autoScroll: flag('autoScroll', false),
+      autoScrollSpeed: number('autoScrollSpeed', 40, 5, 200),
+      readerHideThreshold: number('readerHideThreshold', 13, 0, 100),
+      einkMode: flag('einkMode', false),
+      lookupOnHover: flag('lookupOnHover', false),
+      showOcrBoxes: flag('showOcrBoxes', false),
+      invertColors: flag('invertColors', false),
+      grayscale: flag('grayscale', false),
+      brightness: number('brightness', 0, -100, 100),
+      contrast: number('contrast', 100, 0, 200),
+      saturation: number('saturation', 100, 0, 200),
+      customColorFilter: flag('customColorFilter', false),
+      colorFilterColor:
+          json['colorFilterColor'] is String &&
+              RegExp(
+                r'^#[0-9a-fA-F]{6}$',
+              ).hasMatch(json['colorFilterColor']! as String)
+          ? json['colorFilterColor']! as String
+          : '#F4ECD8',
+      colorFilterOpacity: number('colorFilterOpacity', 20, 0, 100),
+      ocrTrigger: text('ocrTrigger', 'automatic', <String>{
+        'automatic',
+        'manual',
+      }),
+      parallelOcrTasks: number('parallelOcrTasks', 1, 1, 3),
     );
   }
 

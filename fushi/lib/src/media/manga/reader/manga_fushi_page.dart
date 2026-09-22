@@ -19,8 +19,11 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
@@ -40,6 +43,10 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/reader/manga_visible_ocr_backend.dart';
+import 'package:fushi/src/media/manga/reader/manga_visible_ocr_controller.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
     show mangaChapterDisplayName;
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
@@ -776,6 +783,23 @@ class MangaFushiPage extends BaseSourcePage {
     return modeFromDbString(s);
   }
 
+  /// Restore and live settings use the same precedence, including after the
+  /// user removes the current book's override with Reset to defaults.
+  static MangaReadingMode resolveReaderMode({
+    required MangaReaderPreferences preferences,
+    required MokuroPayload payload,
+    required bool hasModeOverride,
+    String? legacyMode,
+  }) {
+    if (!hasModeOverride) {
+      final MangaReadingMode? legacy = modeOverrideFromDb(legacyMode);
+      if (legacy != null) return legacy;
+    }
+    return preferences.autoMode
+        ? detectReadingMode(payload)
+        : preferences.mode;
+  }
+
   /// 纯函数：webtoon 页内 fraction（0..1）→ `ReaderPositions.charOffset` 千分比
   /// 整数（0..1000）。漫画无章内字符偏移，charOffset 被复用为滚动位置存储。
   static int webtoonFractionToCharOffset(double fraction) {
@@ -891,6 +915,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 双页布局偏好：页内菜单运行时切换，不持久化，默认自动（横屏双页/竖屏单页）。
   MangaSpreadPreference _spreadPreference = MangaSpreadPreference.auto;
   String _spreadDirection = 'rtl';
+  MangaReaderPreferences _readerPreferences = const MangaReaderPreferences();
+  bool _readerSettingsOpen = false;
+  bool _readerLookupOpen = false;
   int _zoomPercent = 100;
 
   /// 观看偏好快照（打开书时从 [AppModel] 读一次，随文档注入 WebView）。
@@ -992,6 +1019,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 整卷 OCR 只能在阅读器外触发（作品页 / 书架），任务归 app 级注册表所有；
   /// 阅读器只观察它：HUD 进度、逐页热替换、取消。
+  MangaVisibleOcrController? _visibleOcrController;
+  MangaVisibleOcrBackend? _visibleOcrBackend;
+  String? _visibleOcrConfiguration;
+  int _visibleOcrGeneration = 0;
+  List<int>? _viewportOcrPages;
+  bool _visibleOcrRunning = false;
+  bool _visibleOcrPaused = false;
+  int? _visibleOcrPage;
+  String? _visibleOcrError;
+
+  /// 本卷是否已经被整卷流程识别过（mokuro 导入 / 整卷 OCR / 下载自动 OCR）。
+  ///
+  /// 只有整卷流程会把带文字块的结果写进 manga.json；边看边识别只写逐页缓存。所以
+  /// 开书时磁盘上的 payload 带 OCR 元数据或任何非空文字块 = 整卷识别过，其中剩下
+  /// 的空页是真空白（扉页、纯图页），自动模式不再把它们重送引擎——引擎是 Google
+  /// Lens 时那等于把整本书的空白页上传一遍。手动「识别当前页」不受此限。
+  bool _volumeOcrSettled = false;
+
+  /// 裁白边读像素失败已记过日志（见 `onMangaImageTransformUnavailable`）。
+  bool _imageTransformFailureLogged = false;
+
   bool _wholeVolumeOcrRunning = false;
   int _wholeVolumeOcrDone = 0;
   int _wholeVolumeOcrTotal = 0;
@@ -1045,6 +1093,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _studyClock?.touch();
     final (int start, int end) = _visiblePageRange();
     _readLedger.arrive(start, end);
+    unawaited(_refreshVisibleOcr());
   }
 
   /// 当前可见页的页号半开区间：spread 模式取当前 entry 的页（升序、连续），
@@ -1078,6 +1127,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 「漫画正文此刻应当持有键盘」的统一判据。
   bool _canOwnMangaFocus(FocusReclaimCause cause) {
     if (!mounted) return false;
+    // 任何原因都不能夺走压在本页上面的路由（设置侧边弹窗 / 章节列表 / 看图）的
+    // 焦点：设置面板每改一项都会整窗重载 → contentReady，早先只有 appResumed
+    // 查这一条，于是焦点被收回正文、面板里的 Esc 与方向键全部失效。词典弹窗是
+    // 原生 WebView 而非路由，不受此限。
+    final ModalRoute<Object?>? owner = ModalRoute.of(context);
+    if (owner != null && !owner.isCurrent) return false;
     switch (cause) {
       // 与阅读器**相反**：阅读器在词典弹窗可见时让位（弹窗自持焦点，BUG-136），
       // 漫画不能让——[MangaFushiPage.keyInputAction] 规定弹窗可见时左右键仍要
@@ -1098,8 +1153,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // 回前台是全局生命周期回调，本页上方可能压着全屏看图路由 / 对话框；
       // 此时抢焦点会夺走它们的键盘（Never break userspace）。
       case FocusReclaimCause.appResumed:
-        final ModalRoute<Object?>? owner = ModalRoute.of(context);
-        return owner == null || owner.isCurrent;
+        return true;
     }
   }
 
@@ -1207,6 +1261,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    _stopVisibleOcr();
     _panelGeneration++;
     _panelCursor.reset();
     _panelResults.clear();
@@ -1402,6 +1457,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _visibleOcrPaused = true;
+      _visibleOcrController?.showPages(const <int>[]);
+    } else if (state == AppLifecycleState.resumed) {
+      _visibleOcrPaused = false;
+      unawaited(_refreshVisibleOcr());
+    }
+    if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算部分窗口再封段落库。
       unawaited(_studyClock?.stop());
@@ -1416,6 +1479,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   Future<void> onSourcePagePop() async {
+    _visibleOcrPaused = true;
+    _stopVisibleOcr();
     if (_ownsWindowFullscreen) {
       await _setMangaFullscreen(false);
     }
@@ -1556,6 +1621,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     MangaReaderPreferences readerPreferences = appModel.mangaReaderPreferences;
     // 这本书的覆盖里是否**显式**定过阅读模式（含「自动」）：定过就压过旧列。
     bool readerOverrideHasMode = false;
+    bool hasFullscreenOverride = false;
+    bool hasKeepScreenOnOverride = false;
     if (row.uid.isNotEmpty) {
       try {
         final MangaReaderOverrideRow? override = await db
@@ -1563,6 +1630,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         if (override != null && !override.deleted) {
           final Object? decoded = jsonDecode(override.overridesJson);
           if (decoded is Map) {
+            hasFullscreenOverride = decoded['fullscreen'] is bool;
+            hasKeepScreenOnOverride = decoded['keepScreenOn'] is bool;
             readerOverrideHasMode =
                 decoded.containsKey('mode') || decoded.containsKey('autoMode');
             readerPreferences = MangaReaderPreferences.resolve(
@@ -1578,6 +1647,28 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           stack,
         );
       }
+    }
+    _readerPreferences = readerPreferences;
+    try {
+      // 没有本书覆盖时不碰 wakelock：openMedia 已按全局「保持屏幕常亮」设好，漫画
+      // 默认值（true）不能把用户全局关掉的常亮再打开。
+      if (hasKeepScreenOnOverride) {
+        await WakelockPlus.toggle(enable: readerPreferences.keepScreenOn);
+      }
+      if (hasFullscreenOverride && desktopWindowFullscreenSupported) {
+        await _setMangaFullscreen(readerPreferences.fullscreen);
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.restoreDevicePreferences',
+        error,
+        stack,
+      );
+    }
+    if (!mounted) return;
+    _showOcrBoxes = readerPreferences.showOcrBoxes;
+    if (!readerPreferences.animateTransitions) {
+      _pageAnimation = MangaPageAnimation.none;
     }
     _spreadDirection = readerPreferences.direction == 'ltr' ? 'ltr' : 'rtl';
     _background = MangaBackgroundKey.fromKey(readerPreferences.background);
@@ -1624,14 +1715,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 若旧列压制覆盖，用户在新面板里选 pagedVertical / webtoonGaps 会写进覆盖却
     // 仍按旧列的 spread/webtoon 渲染——设置看起来没生效。旧列保留为回退，降级回
     // 旧版本照样能读。
-    final MangaReadingMode mode = readerOverrideHasMode
-        ? (readerPreferences.autoMode
-              ? detectReadingMode(payload)
-              : readerPreferences.mode)
-        : MangaFushiPage.modeOverrideFromDb(row.mangaReadingMode) ??
-              (readerPreferences.autoMode
-                  ? detectReadingMode(payload)
-                  : readerPreferences.mode);
+    final MangaReadingMode mode = MangaFushiPage.resolveReaderMode(
+      preferences: readerPreferences,
+      payload: payload,
+      hasModeOverride: readerOverrideHasMode,
+      legacyMode: row.mangaReadingMode,
+    );
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, mode);
     final List<String> relativePagePaths = payload.images
         .map(
@@ -1702,6 +1791,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       restoredPage,
     );
     final MangaReaderSession? previousLocalPageSession = _pageSession;
+    _stopVisibleOcr();
     _pageSession = localPageSession;
     _localPageIndices = <String, int>{
       for (int index = 0; index < relativePagePaths.length; index++)
@@ -1717,6 +1807,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _bookRow = row;
       _imagesDir = imagesDir;
       _payload = payload;
+      _volumeOcrSettled =
+          payload.ocr != null ||
+          payload.images.any((MokuroImage image) => image.blocks.isNotEmpty);
       _mode = mode;
       _spreads = spreads;
       _currentSpread = restoredSpread;
@@ -1822,6 +1915,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!await isChapterDownloaded(row.extractDir, chapter.key)) {
       if (!mounted) return;
       _detachWholeVolumeOcrObserver();
+      // 旧章的页会话 / payload 还挂着，而 _bookRow 马上换成系列行：不停掉的话
+      // 下一次刷新会拿系列根目录去识别旧章的页。
+      _stopVisibleOcr();
       setState(() {
         _bookRow = row;
         _chapterNotDownloaded = true;
@@ -1943,6 +2039,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       for (final int pageIndex in recovery.recoveredPageIndices) {
         final MokuroImage recovered = recovery.payload.images[pageIndex];
         final MokuroImage existing = merged[pageIndex];
+        if (existing.blocks.isNotEmpty) continue;
         merged[pageIndex] = MokuroImage(
           url: existing.url,
           size: recovered.size,
@@ -2203,6 +2300,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pages,
       imgSrcs,
       mode: _mode,
+      readerPreferences: _readerPreferences,
+      readingModeLabel: switch (_mode) {
+        MangaReadingMode.spread => t.manga_reading_mode_spread,
+        MangaReadingMode.pagedVertical => t.manga_reading_mode_vertical,
+        MangaReadingMode.webtoon => t.manga_reading_mode_webtoon,
+        MangaReadingMode.webtoonGaps => t.manga_reading_mode_gaps,
+      },
       spreadDirection: _spreadDirection,
       zoomPercent: _zoomPercent,
       inlineSelectionJs: inlineSelectionJs,
@@ -2245,6 +2349,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// `theme` 档取 `colorScheme.surface` 而不是 `scaffoldBackgroundColor`：后者在
   /// 部分主题下是纯白/纯黑的极值，与「跟随主题」想要的中性面色不是一回事。
   Color get _backgroundColor {
+    if (_readerPreferences.einkMode) return Colors.white;
     final String? fixed = _background.fixedCss;
     switch (fixed) {
       case '#000':
@@ -2263,6 +2368,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 底色透过 WebView 之外的区域（顶栏让位的条、底栏）露出——两者不一致会在正文
   /// 边界切出一条色差带。
   String get _backgroundCssValue {
+    if (_readerPreferences.einkMode) return '#fff';
     final String? fixed = _background.fixedCss;
     if (fixed != null) return fixed;
     final Color c = Theme.of(context).colorScheme.surface;
@@ -2473,6 +2579,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
+    if (_splitWidePages && !_mode.isContinuous) {
+      final InAppWebViewController? controller = _controller;
+      final MangaReaderSession? session = _pageSession;
+      final int spread = _currentSpread;
+      final Object? consumed = await controller?.evaluateJavascript(
+        source:
+            '(window.__mangaTurnWithinPage && '
+            'window.__mangaTurnWithinPage(${delta > 0})) ? 1 : 0;',
+      );
+      // This runs inside the existing serialized turn queue. A half-page turn
+      // consumes the step once; a replaced session must not receive its tail.
+      if (!mounted ||
+          !identical(controller, _controller) ||
+          !identical(session, _pageSession) ||
+          spread != _currentSpread ||
+          _navigating ||
+          _switchingChapter) {
+        return;
+      }
+      if (MangaWindowGeneration.parse(consumed) == 1) return;
+    }
     if (await _tryPanelTurn(delta > 0)) {
       return;
     }
@@ -2678,7 +2805,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     if (page.getAttribute('data-ocr-loaded') === '1') return;
-    page.insertAdjacentHTML('beforeend', htmlByPage[String(index)] || '');
+    (page.querySelector('.manga-source') || page).insertAdjacentHTML('beforeend', htmlByPage[String(index)] || '');
     page.setAttribute('data-ocr-loaded', '1');
   });
 })();
@@ -2744,10 +2871,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// `MainActivity.dispatchKeyEvent` 吞掉，用户调不动系统音量（BUG-196 的老坑）。
   late final MangaVolumeKeyPagingController _volumeKeyPagingController;
 
-  void _applyVolumeKeyPaging(
-    bool enabled, {
-    bool invertDirection = false,
-  }) {
+  void _applyVolumeKeyPaging(bool enabled, {bool invertDirection = false}) {
     // 只有 Android 侧 dispatchKeyEvent 会转发音量键；其它平台连通道都没有。
     _volumeKeyPagingController.apply(
       enabled: enabled,
@@ -2878,6 +3002,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void onDictionaryPopupRendered(int index) {
     super.onDictionaryPopupRendered(index);
+    _readerLookupOpen = true;
+    unawaited(_syncAutoScrollPause());
     _focusOwnership.reclaim(FocusReclaimCause.popupRendered);
   }
 
@@ -2887,6 +3013,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   @override
   void onAllPopupsDismissed() {
     super.onAllPopupsDismissed();
+    _readerLookupOpen = false;
+    unawaited(_syncAutoScrollPause());
     _focusOwnership.reclaim(FocusReclaimCause.popupDismissed);
     unawaited(_clearMangaSelectionHighlight());
   }
@@ -3111,6 +3239,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (!_mode.isContinuous || _spreads.isEmpty) return;
     final Object? decoded = jsonDecode(payloadJson);
     if (decoded is! Map) return;
+    final Object? visible = decoded['visiblePages'];
+    _viewportOcrPages = visible is List
+        ? visible.whereType<num>().map((num page) => page.toInt()).toList()
+        : null;
     final double fraction = (decoded['fraction'] as num?)?.toDouble() ?? 0;
     final int topSpread =
         ((decoded['topPage'] as num?)?.toInt() ?? _currentSpread)
@@ -3145,6 +3277,200 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       imagesDir,
       MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
     );
+  }
+
+  void _stopVisibleOcr() {
+    _visibleOcrGeneration++;
+    _visibleOcrController?.close();
+    _visibleOcrController = null;
+    _visibleOcrBackend?.close();
+    _visibleOcrBackend = null;
+    _visibleOcrConfiguration = null;
+    _viewportOcrPages = null;
+    _visibleOcrRunning = false;
+    _visibleOcrPage = null;
+    _visibleOcrError = null;
+  }
+
+  List<int> _visibleOcrPages({bool missingOnly = true, bool manual = false}) {
+    final MokuroPayload? payload = _payload;
+    if (payload == null) return <int>[];
+    if (missingOnly && _volumeOcrSettled && !manual) return <int>[];
+    final (int start, int end) = _visiblePageRange();
+    final Iterable<int> pages = _mode.isContinuous && _viewportOcrPages != null
+        ? _viewportOcrPages!
+        : <int>[for (int page = start; page < end; page++) page];
+    return pages
+        .where(
+          (int page) =>
+              page >= 0 &&
+              page < payload.images.length &&
+              (!missingOnly || payload.images[page].blocks.isEmpty),
+        )
+        .toList();
+  }
+
+  /// Called by viewport changes and settings reapplication. Only the explicit
+  /// manual button bypasses manual trigger mode; neither path starts a volume.
+  Future<void> _refreshVisibleOcr({bool manual = false}) async {
+    if (!mounted ||
+        _visibleOcrPaused ||
+        _chapterNotDownloaded ||
+        _loadFailed ||
+        _pageSession == null ||
+        _bookRow == null ||
+        _payload == null ||
+        _sourceReviewActive) {
+      return;
+    }
+    final String configuration =
+        '${_bookRow!.extractDir}|'
+        '${appModel.mangaOcrEnginePreference}|${appModel.mangaOcrLensLanguage}|'
+        '${_readerPreferences.ocrTrigger}|${_readerPreferences.parallelOcrTasks}';
+    if (_visibleOcrConfiguration != configuration) {
+      final List<int>? viewport = _viewportOcrPages;
+      _stopVisibleOcr();
+      _viewportOcrPages = viewport;
+      _visibleOcrConfiguration = configuration;
+    }
+    if (_readerPreferences.ocrTrigger == 'manual' && !manual) {
+      // 手动模式下挂起的页都是用户点过的：按 manual 口径保留，整卷已识别的书
+      // 也不能把它们清掉。
+      _visibleOcrController?.retainPendingPages(
+        _visibleOcrPages(manual: true),
+      );
+      return;
+    }
+    if (_wholeVolumeOcrRunning) {
+      _visibleOcrController?.showPages(const <int>[]);
+      return;
+    }
+    final List<int> pages = _visibleOcrPages(manual: manual);
+    if (pages.isEmpty) {
+      _visibleOcrController?.showPages(const <int>[]);
+      return;
+    }
+    final MangaVisibleOcrController? existing = _visibleOcrController;
+    if (existing != null) {
+      if (manual) setState(() => _visibleOcrError = null);
+      existing.showPages(pages, retry: manual);
+      return;
+    }
+    // A setup failure waits for an explicit retry or a configuration change.
+    if (_visibleOcrRunning || (_visibleOcrError != null && !manual)) return;
+    final int generation = _visibleOcrGeneration;
+    final MangaReaderSession session = _pageSession!;
+    setState(() {
+      _visibleOcrRunning = true;
+      _visibleOcrError = null;
+    });
+    bool current() =>
+        mounted &&
+        generation == _visibleOcrGeneration &&
+        identical(session, _pageSession);
+    try {
+      final MangaOcrService service = ref.read(mangaOcrServiceProvider);
+      final MangaOcrEngineId engine =
+          await MangaVisibleOcrBackend.resolveEngine(
+            MangaOcrEnginePreferenceKey.fromKey(
+              appModel.mangaOcrEnginePreference,
+            ),
+            service,
+          );
+      if (!current() || !mounted) return;
+      if (engine == MangaOcrEngineId.googleLens &&
+          !await ensureGoogleLensDisclosure(context)) {
+        if (current()) {
+          setState(
+            () => _visibleOcrError = t.manga_google_lens_disclosure_decline,
+          );
+        }
+        return;
+      }
+      if (!current()) return;
+      // The book may have reattached an explicit batch job while the engine
+      // probe or Lens disclosure was awaiting. It owns these caches now.
+      if (_wholeVolumeOcrRunning || _visibleOcrPaused) return;
+      final MangaVisibleOcrBackend backend = MangaVisibleOcrBackend(
+        directory: _bookRow!.extractDir,
+        session: session,
+        service: service,
+        engine: engine,
+        language: appModel.mangaOcrLensLanguage,
+        onAcceleration: (MangaOcrAcceleration acceleration) {
+          if (current()) _observeWholeVolumeOcrAcceleration(acceleration);
+        },
+      );
+      _visibleOcrBackend = backend;
+      final MangaVisibleOcrController controller = MangaVisibleOcrController(
+        concurrency: engine == MangaOcrEngineId.localOnnx
+            ? 1
+            : _readerPreferences.parallelOcrTasks,
+        recognize: backend.recognize,
+        onActivity: (Set<int> active) {
+          if (!current()) return;
+          setState(() {
+            _visibleOcrRunning = active.isNotEmpty;
+            _visibleOcrPage = active.isEmpty ? null : active.first;
+          });
+        },
+        onError: (int page, Object error, StackTrace stack) {
+          if (!current()) return;
+          ErrorLogService.instance.log(
+            'MangaFushiPage.visibleOcr',
+            error,
+            stack,
+          );
+          setState(() => _visibleOcrError = '$error');
+        },
+        onPage: (int pageIndex, MokuroImage page) {
+          if (!current() || _payload == null) return;
+          final MokuroPayload payload = _payload!;
+          final MokuroImage previous = payload.images[pageIndex];
+          final MokuroImage recognized = MokuroImage(
+            url: previous.url,
+            size: page.size,
+            blocks: page.blocks,
+          );
+          final List<MokuroImage> images = List<MokuroImage>.of(payload.images);
+          images[pageIndex] = recognized;
+          setState(() {
+            _payload = MokuroPayload(images: images, ocr: payload.ocr);
+            // 后面的页识别成功说明引擎已恢复，别让旧错误胶囊一直挂着。
+            _visibleOcrError = null;
+          });
+          if (_visibleOcrPages(missingOnly: false).contains(pageIndex)) {
+            unawaited(_replacePageOcrOverlay(pageIndex, recognized));
+          }
+        },
+      );
+      _visibleOcrController = controller;
+      controller.showPages(
+        _visibleOcrPaused ? const <int>[] : _visibleOcrPages(manual: manual),
+        retry: manual,
+      );
+    } on MangaVisibleOcrEngineUnavailable {
+      if (!current()) return;
+      // 自动模式是默认值：没下模型、系统 OCR 也不可用（Linux、没装语言包的
+      // Windows）的用户不该每开一本书就挂一个「失败」胶囊。自动路径静默停在本
+      // 配置上（换引擎 / 下完模型会改配置串、自然重试）；只有用户手动点识别时才
+      // 告诉他缺什么。
+      if (manual) {
+        setState(() => _visibleOcrError = t.manga_reader_ocr_unavailable);
+      }
+    } catch (error, stack) {
+      if (!current()) return;
+      ErrorLogService.instance.log(
+        'MangaFushiPage.visibleOcrSetup',
+        error,
+        stack,
+      );
+      setState(() => _visibleOcrError = '$error');
+    } finally {
+      if (current() && _visibleOcrController == null) {
+        setState(() => _visibleOcrRunning = false);
+      }
+    }
   }
 
   /// 重进一本正在跑整卷 OCR 的书 / 章：接回注册表里的任务，HUD 从当前进度接着显示。
@@ -3271,6 +3597,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (payload == null || !mounted) return;
     setState(() {
       _payload = payload;
+      _volumeOcrSettled = true;
       _wholeVolumeOcrDone = event.pagesTotal;
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrRunning = false;
@@ -3545,7 +3872,19 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// [_buildWindowDocument] 按状态带上 class。
   Future<void> _toggleOcrBoxes() async {
     final bool next = !_showOcrBoxes;
-    setState(() => _showOcrBoxes = next);
+    setState(() {
+      _showOcrBoxes = next;
+      _readerPreferences = _readerPreferences.copyWithJson(<String, Object?>{
+        'showOcrBoxes': next,
+      });
+    });
+    final EpubBookRow? row = _bookRow;
+    if (row != null && row.uid.isNotEmpty) {
+      await _patchReaderOverride(row.uid, <String, Object?>{
+        'showOcrBoxes': next,
+      });
+    }
+    if (!mounted) return;
     try {
       await _controller?.evaluateJavascript(
         source:
@@ -3767,11 +4106,50 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _setSpreadDirection(String direction) async {
     final String normalized = direction == 'ltr' ? 'ltr' : 'rtl';
     if (_spreadDirection == normalized) return;
-    setState(() => _spreadDirection = normalized);
+    final EpubBookRow? row = _bookRow;
+    if (row == null || row.uid.isEmpty) return;
+    if (!await _patchReaderOverride(row.uid, <String, Object?>{
+      'direction': normalized,
+    })) {
+      return;
+    }
+    if (!mounted) return;
     _resetPanelNavigation();
-    await appModel.setMangaReadingDirection(normalized);
-    if (_mode == MangaReadingMode.spread) {
-      await _loadInitialWindow();
+    await _reapplyReaderPreferences();
+  }
+
+  /// 读出本书现有覆盖、并入 [patch] 后写回。覆盖行损坏（非对象 JSON）按空覆盖
+  /// 处理而不是抛——顶栏按钮走 `unawaited`，抛出去就是未处理的异步异常。
+  /// 写库失败记日志并提示，返回 false 让调用方别再按新值重排。
+  Future<bool> _patchReaderOverride(
+    String uid,
+    Map<String, Object?> patch,
+  ) async {
+    try {
+      final MangaReaderOverrideRow? saved = await appModel.database
+          .getMangaReaderOverride(uid);
+      Map<String, Object?> values = <String, Object?>{};
+      if (saved != null && !saved.deleted) {
+        final Object? decoded = jsonDecode(saved.overridesJson);
+        if (decoded is Map) values = decoded.cast<String, Object?>();
+      }
+      await appModel.database.setMangaReaderOverride(uid, <String, Object?>{
+        ...values,
+        ...patch,
+      });
+      return true;
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.patchReaderOverride',
+        error,
+        stack,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+      }
+      return false;
     }
   }
 
@@ -3865,6 +4243,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  @visibleForTesting
+  Future<Object?> debugReaderDomSnapshot() async =>
+      _controller?.evaluateJavascript(
+        source: """
+    JSON.stringify({
+      filter: document.querySelector('.manga-source img') ? getComputedStyle(document.querySelector('.manga-source img')).filter : null,
+      direction: document.querySelector('.manga-spread') ? getComputedStyle(document.querySelector('.manga-spread')).direction : null,
+      page: document.querySelector('.manga-page')?.getAttribute('data-page'),
+      source: document.querySelector('.manga-source')?.style.transform
+    })
+  """,
+      );
+
+  Future<void> _syncAutoScrollPause() async {
+    if (!mounted) return;
+    await _controller?.evaluateJavascript(
+      source:
+          'window.__mangaPauseAutoScroll && window.__mangaPauseAutoScroll(${_readerSettingsOpen || _readerLookupOpen});',
+    );
+  }
+
   Future<void> _showReaderSettings() async {
     final EpubBookRow? row = _bookRow;
     if (row == null || row.uid.isEmpty || !mounted) return;
@@ -3884,27 +4283,58 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     }
     if (!mounted) return;
-    await showMangaReaderSettingsSheet(
-      context: context,
-      globalDefaults: appModel.mangaReaderPreferences,
-      overrides: override,
-      onChanged: (Map<String, Object?> value) =>
-          appModel.database.setMangaReaderOverride(row.uid, value),
-      // key 必须与 descriptor 的 key 对齐（门控集合是 fullscreen / keepScreenOn /
-      // invertVolumeKeys）。传 'volumeKeys' 这种不存在的 key 等于把
-      // keepScreenOn 与 invertVolumeKeys 在所有平台都藏掉——而 invertVolumeKeys
-      // 恰恰是这批设备项里唯一真正接线的那个。
-      supportedDeviceKeys: <String>{
-        if (Platform.isAndroid || Platform.isIOS) ...<String>[
-          'fullscreen',
+    _readerSettingsOpen = true;
+    await _syncAutoScrollPause();
+    try {
+      if (!mounted) return;
+      await showMangaReaderSettingsSheet(
+        context: context,
+        preferences: appModel.prefsRepo,
+        globalDefaults: appModel.mangaReaderPreferences
+            .copyWithJson(<String, Object?>{
+              if (desktopWindowFullscreenSupported)
+                'fullscreen': _isWindowFullscreen,
+              'keepScreenOn': ReaderFushiSource.instance.keepScreenAwake,
+            }),
+        overrides: override,
+        onChanged: (Map<String, Object?> value) async {
+          // 只有落库失败才抛给面板（面板据此回滚）。落库已成功时重应用出错
+          // 不能再抛：面板会回滚成旧值，而库里已是新值，下次开书两边对不上。
+          await appModel.database.setMangaReaderOverride(row.uid, value);
+          try {
+            await _reapplyReaderPreferences();
+          } on Object catch (error, stack) {
+            ErrorLogService.instance.log(
+              'MangaFushiPage.readerSettingsApply',
+              error,
+              stack,
+            );
+          }
+        },
+        ocrSettings: MangaOcrSettingsSection(
+          service: ref.read(mangaOcrServiceProvider),
+          enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
+          enginePreferenceSetter: (String value) async {
+            await appModel.setMangaOcrEnginePreference(value);
+            _refreshVisibleOcr();
+          },
+          lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
+          lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+        ),
+        supportedDeviceKeys: <String>{
+          if (Platform.isAndroid ||
+              Platform.isIOS ||
+              desktopWindowFullscreenSupported)
+            'fullscreen',
           'keepScreenOn',
-        ],
-        if (Platform.isAndroid) 'invertVolumeKeys',
-      },
-    );
-    // 关掉面板后把改动应用到**当前这本书**：这些字段的唯一赋值点原本是 `_load()`，
-    // 不在这里重新应用的话，用户拨完开关必须退出重进才看得到效果。
-    await _reapplyReaderPreferences();
+          if (Platform.isAndroid) 'invertVolumeKeys',
+        },
+      );
+    } finally {
+      _readerSettingsOpen = false;
+      await _syncAutoScrollPause();
+    }
+    if (mounted) _refreshVisibleOcr();
   }
 
   /// 重新读这本书的每作品覆盖、与全局默认合并后应用到当前会话。
@@ -3917,6 +4347,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     if (row == null || payload == null || !mounted) return;
     MangaReaderPreferences prefs = appModel.mangaReaderPreferences;
     bool hasModeOverride = false;
+    bool hasFullscreenOverride = false;
+    bool hasKeepScreenOnOverride = false;
     if (row.uid.isNotEmpty) {
       try {
         final MangaReaderOverrideRow? override = await appModel.database
@@ -3925,6 +4357,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           final Object? decoded = jsonDecode(override.overridesJson);
           if (decoded is Map) {
             final Map<String, Object?> map = decoded.cast<String, Object?>();
+            hasFullscreenOverride = map['fullscreen'] is bool;
+            hasKeepScreenOnOverride = map['keepScreenOn'] is bool;
             hasModeOverride =
                 map.containsKey('mode') || map.containsKey('autoMode');
             prefs = MangaReaderPreferences.resolve(prefs, map);
@@ -3939,19 +4373,32 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     }
     if (!mounted) return;
-    final MangaReadingMode nextMode = hasModeOverride
-        ? (prefs.autoMode ? detectReadingMode(payload) : prefs.mode)
-        : _mode;
+    final MangaReadingMode nextMode = MangaFushiPage.resolveReaderMode(
+      preferences: prefs,
+      payload: payload,
+      hasModeOverride: hasModeOverride,
+      legacyMode: row.mangaReadingMode,
+    );
     final int currentPage = MangaFushiPage.firstPageOfSpread(
       _spreads,
       _currentSpread,
     );
+    // 与开书（[_loadLocalPayload]）同一口径：桌面窗口全屏只听本书显式覆盖；没有
+    // 覆盖（含「恢复默认」清掉覆盖）时窗口保持现状，不拿全局默认去强切全屏。
+    final bool fullscreenChanged = desktopWindowFullscreenSupported
+        ? hasFullscreenOverride && prefs.fullscreen != _isWindowFullscreen
+        : prefs.fullscreen != _readerPreferences.fullscreen;
     final bool modeChanged = nextMode != _mode;
     final List<MangaSpreadEntry> spreads = modeChanged
         ? _buildSpreadsFor(payload, nextMode)
         : _spreads;
     if (modeChanged) _readLedger.rebaseOnNextArrive();
     setState(() {
+      _readerPreferences = prefs;
+      _showOcrBoxes = prefs.showOcrBoxes;
+      _pageAnimation = prefs.animateTransitions
+          ? MangaPageAnimationKey.fromKey(appModel.mangaPageAnimation)
+          : MangaPageAnimation.none;
       _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
       _background = MangaBackgroundKey.fromKey(prefs.background);
       _zoomPercent = prefs.zoomStart.clamp(
@@ -3986,25 +4433,64 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       if (modeChanged) {
         _mode = nextMode;
         _spreads = spreads;
-        _currentSpread = MangaFushiPage.spreadIndexForPage(spreads, currentPage);
+        _currentSpread = MangaFushiPage.spreadIndexForPage(
+          spreads,
+          currentPage,
+        );
         _currentPage = currentPage;
         _currentFraction = 0;
       }
     });
-    _applyVolumeKeyPaging(
-      prefs.volumeKeys,
-      invertDirection: _invertVolumeKeys,
-    );
+    _applyVolumeKeyPaging(prefs.volumeKeys, invertDirection: _invertVolumeKeys);
+    try {
+      // 保持亮屏同理：没有本书覆盖时回到全局「保持屏幕常亮」（openMedia 的口径）。
+      await WakelockPlus.toggle(
+        enable: hasKeepScreenOnOverride
+            ? prefs.keepScreenOn
+            : ReaderFushiSource.instance.keepScreenAwake,
+      );
+      if (fullscreenChanged) {
+        if (desktopWindowFullscreenSupported) {
+          await _setMangaFullscreen(prefs.fullscreen);
+        } else if (Platform.isAndroid || Platform.isIOS) {
+          await SystemChrome.setEnabledSystemUIMode(
+            prefs.fullscreen
+                ? SystemUiMode.immersiveSticky
+                : SystemUiMode.edgeToEdge,
+          );
+        }
+      }
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.devicePreferences',
+        error,
+        stack,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(t.manga_reader_save_failed)));
+      }
+    }
+
+    // 上面每个 await 期间页面都可能已被关掉（顶栏方向按钮是 unawaited 调进来的）。
+    if (!mounted) return;
     if (modeChanged) {
       _pageNotifier.value = _currentPage;
       _noteVisiblePages();
       await _loadInitialWindow();
+      if (!mounted) return;
       _updateCurrentPageImagePath();
     } else {
       // 视觉项（缩放模式 / 裁边 / 长条边距 / 反转 / tapZone / 背景）都编进窗口
       // 文档，重新加载当前窗口即生效。
       await _loadInitialWindow();
+      if (!mounted) return;
     }
+    // 不 await：首次起边看边识别可能要弹 Google Lens 告知框，那不该挂在设置面板
+    // 的保存链上（保存期间面板锁输入）。
+    unawaited(_refreshVisibleOcr());
+    await _syncAutoScrollPause();
   }
 
   Future<void> _showPageJumpDialog() async {
@@ -4361,7 +4847,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   // 隐藏界面时角落常驻页码：全出血阅读下唯一的进度可见性。
-                  if (!_chromeVisible && _chromeContentReady)
+                  if (!_chromeVisible &&
+                      _chromeContentReady &&
+                      _readerPreferences.showPageNumber)
                     Positioned(
                       bottom: 8,
                       left: 8,
@@ -4458,7 +4946,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       floating: _chromeFloating,
       backTooltip: MaterialLocalizations.of(context).backButtonTooltip,
       onBack: () => Navigator.of(context).maybePop(),
-      pageLabel: ready ? _pageLabel : null,
+      pageLabel: ready && _readerPreferences.showPageNumber ? _pageLabel : null,
       pageListenable: _pageNotifier,
       onPageTap: () => unawaited(_showPageJumpDialog()),
       status: ready ? _buildChromeStatus() : null,
@@ -4486,6 +4974,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 生效的推理后端常驻显示，降级时琥珀色）；debug 下再挂一颗命中信息胶囊。
   Widget? _buildChromeStatus() {
     final List<Widget> chips = <Widget>[];
+    if (_visibleOcrRunning || _visibleOcrError != null) {
+      chips.add(
+        Tooltip(
+          message: _visibleOcrError ?? t.manga_reader_ocr_automatic,
+          child: MangaChromeStatusChip(
+            key: const ValueKey<String>('manga_visible_ocr_status'),
+            text: _visibleOcrError == null
+                ? 'OCR · ${_visibleOcrPage == null ? t.manga_ocr_wizard_running : _visibleOcrPage! + 1}'
+                : t.manga_ocr_wizard_failed,
+            warning: _visibleOcrError != null,
+          ),
+        ),
+      );
+    }
     if (_wholeVolumeOcrRunning) {
       final MangaOcrAcceleration? accel = _wholeVolumeOcrAcceleration;
       final String progress = _wholeVolumeOcrTotal > 0
@@ -4567,6 +5069,36 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ),
       ],
       <MangaChromeAction>[
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_direction_button'),
+          icon: _spreadDirection == 'rtl'
+              ? Icons.arrow_back
+              : Icons.arrow_forward,
+          label: _spreadDirection == 'rtl'
+              ? t.manga_direction_rtl
+              : t.manga_direction_ltr,
+          pinned: true,
+          onPressed: () => unawaited(
+            _setSpreadDirection(_spreadDirection == 'rtl' ? 'ltr' : 'rtl'),
+          ),
+        ),
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_start_button'),
+          icon: _mode.isContinuous || _mode == MangaReadingMode.pagedVertical
+              ? Icons.vertical_align_top
+              : (_spreadDirection == 'rtl'
+                    ? Icons.last_page
+                    : Icons.first_page),
+          label: t.manga_reader_back_to_start,
+          pinned: true,
+          onPressed: () => unawaited(_jumpToPage(1)),
+        ),
+        MangaChromeAction(
+          key: const ValueKey<String>('manga_reader_ocr_current_button'),
+          icon: Icons.document_scanner_outlined,
+          label: t.manga_reader_ocr_current,
+          onPressed: () => _refreshVisibleOcr(manual: true),
+        ),
         // 布局偏好（自动/单页/双页）循环切换：只对 spread 模式有意义，webtoon 恒单页。
         if (_mode == MangaReadingMode.spread)
           MangaChromeAction(
@@ -4741,7 +5273,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 都 eval 一次。悬停路径命中同一个字由 JS 短路（不重复 fire）。
   @override
   void onDismissBarrierHover(PointerHoverEvent event) {
-    if (!HardwareKeyboard.instance.isShiftPressed) {
+    if (!_readerPreferences.lookupOnHover &&
+        !HardwareKeyboard.instance.isShiftPressed) {
       _barrierHoverLastDx = -1;
       _barrierHoverLastDy = -1;
       return;
@@ -4889,6 +5422,36 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
         );
         controller.addJavaScriptHandler(
+          handlerName: 'onMangaReaderHide',
+          callback: (List<dynamic> args) {
+            if (!mounted ||
+                _readerSettingsOpen ||
+                args.isEmpty ||
+                args.first is! bool) {
+              return;
+            }
+            final bool hide = args.first as bool;
+            if (_chromeVisible == hide) _toggleMangaChrome();
+          },
+        );
+        // 裁白边要读像素；跨域无 CORS 的页图读不了，JS 侧保持原尺寸显示（安全
+        // 降级），这里只负责留痕，否则「开了裁边却没裁」无从排查。每本书记一次。
+        controller.addJavaScriptHandler(
+          handlerName: 'onMangaImageTransformUnavailable',
+          callback: (List<dynamic> args) {
+            if (_imageTransformFailureLogged) return;
+            _imageTransformFailureLogged = true;
+            ErrorLogService.instance.log(
+              'MangaFushiPage.imageTransformUnavailable',
+              StateError(
+                'crop borders unavailable: '
+                '${args.isEmpty ? 'unknown' : args.first}',
+              ),
+              StackTrace.current,
+            );
+          },
+        );
+        controller.addJavaScriptHandler(
           handlerName: 'onMangaOcrHitDebug',
           callback: (List<dynamic> args) {
             if (!kDebugMode || args.isEmpty || args[0] is! String) return;
@@ -5015,6 +5578,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await _markWindowReady(controller);
+        await _syncAutoScrollPause();
       },
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
       onRenderProcessGone:
@@ -5097,6 +5661,24 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     if (!mounted || !_windowGate.owns(ticket)) {
       return;
+    }
+    // OCR may have completed after loadData captured the payload but before
+    // this generation became ready. Reconcile only the current viewport so
+    // those results cannot disappear until the next page turn.
+    final Object? visiblePages = await controller.evaluateJavascript(
+      source: 'window.__mangaVisiblePages && window.__mangaVisiblePages();',
+    );
+    if (!mounted || !_windowGate.owns(ticket)) return;
+    if (_mode.isContinuous && visiblePages is List) {
+      _viewportOcrPages = visiblePages
+          .whereType<num>()
+          .map((num page) => page.toInt())
+          .toList();
+    }
+    for (final int pageIndex in _visibleOcrPages(missingOnly: false)) {
+      final MokuroImage page = _payload!.images[pageIndex];
+      if (page.blocks.isNotEmpty) await _replacePageOcrOverlay(pageIndex, page);
+      if (!mounted || !_windowGate.owns(ticket)) return;
     }
     _windowGate.complete(ticket, MangaWindowLoadOutcome.ready);
     _recordProgress();

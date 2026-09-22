@@ -323,6 +323,7 @@ Future<String> runMangaOcrFolderJob({
   required OcrDetector detector,
   required OcrRecognizer recognizer,
   required String engineSignature,
+  List<String>? relativeUrls,
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
@@ -331,7 +332,20 @@ Future<String> runMangaOcrFolderJob({
   if (!root.existsSync()) {
     throw ArgumentError('image directory does not exist: $imageDirPath');
   }
-  final List<MangaOcrPageFile> pages = enumerateMangaPages(root);
+  final List<MangaOcrPageFile> allPages = enumerateMangaPages(root);
+  final Set<String>? requested = relativeUrls?.map(normalizeMangaUrl).toSet();
+  final List<MangaOcrPageFile> pages = requested == null
+      ? allPages
+      : allPages
+          .where(
+            (MangaOcrPageFile page) => requested.contains(page.relativeUrl),
+          )
+          .toList();
+  if (requested != null && pages.length != requested.length) {
+    throw ArgumentError(
+      'Requested OCR page is outside the managed image directory',
+    );
+  }
   if (pages.isEmpty) {
     throw StateError('no images found in $imageDirPath');
   }
@@ -367,6 +381,9 @@ Future<String> runMangaOcrFolderJob({
     cancelToken: cancelToken,
     onProgress: onProgress,
   );
+
+  // Reader requests own page caches, never the complete volume output.
+  if (requested != null) return cacheDir.path;
 
   final MokuroPayload generated = buildMangaPayloadFromResults(pages, results);
   final MokuroPayload payload = MokuroPayload(
