@@ -78,7 +78,10 @@ function loadBridge(options) {
     getAudioTrack() {
       return {
         captionTracks: [{
-          languageCode: 'en', kind: 'asr', name: { simpleText: 'English (auto)' },
+          languageCode: 'en',
+          // 默认自动字幕；传 kind: '' 模拟人工上传轨（YouTube 对人工轨不带 kind）。
+          kind: options.kind === undefined ? 'asr' : options.kind,
+          name: { simpleText: 'English (auto)' },
           baseUrl: 'https://www.youtube.com/api/timedtext?v=vid1&lang=en&kind=asr',
         }],
         defaultCaptionTrackIndex: 0,
@@ -170,6 +173,20 @@ test('BUG-2629：srv3 没有 \\n 追加行（正文行背靠背重叠）——�
   const line = cues.find((c) => c.text === 'love. You know the rules and so do');
   assert.strictEqual(line.startMs, 21800);
   assert.strictEqual(line.endMs, 25960);
+});
+
+test('BUG-2629：人工轨（非 asr）的有意重叠 cue 不截断——滚动双行是自动字幕独有的形态', async () => {
+  // 双人同说 / 歌词 + 对白：两条 cue 时间上重叠是作者的本意。截断只是 ASR 的逆运算。
+  const events = [
+    { tStartMs: 0, dDurationMs: 4000, segs: [{ utf8: 'A（旁白）' }] },
+    { tStartMs: 1000, dDurationMs: 2000, segs: [{ utf8: 'B（对白）' }] },
+  ];
+  const h = loadBridge({ kind: '', json3: { events } });
+  await h.flush();
+  const cues = publishedCues(h);
+  assert.deepStrictEqual(cues.map((c) => [c.text, c.startMs, c.endMs]), [
+    ['A（旁白）', 0, 4000], ['B（对白）', 1000, 3000],
+  ], '人工轨的 A 不得被砍到 B 开头（1000）');
 });
 
 test('BUG-2629：不重叠的手工轨原样不动，乱序输入按开始时间排好', async () => {

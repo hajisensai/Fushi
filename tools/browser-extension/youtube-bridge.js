@@ -186,9 +186,21 @@
   // 音频，裁出来的是两行的声音，卡上却只有第一行的字（BUG-2629）。统一在解析之后收口：按起
   // 始时间排好序后，任何一条的结束不得越过下一条的开始。手工轨极少真正重叠，两人同时说话那种
   // 也只会少录被盖住的尾巴，不会多录下一句。
+  function sortCuesByStart(cues) {
+    if (!Array.isArray(cues) || cues.length < 2) return cues;
+    return cues.slice().sort(function (a, b) { return a.startMs - b.startMs; });
+  }
+
+  // 只对自动字幕（`track.kind === 'asr'`）做：截断是「滚动双行」这一显示形态的逆运算，
+  // 人工轨没有这回事——srv3 支持 `wp`/`ws` 多窗定位，双人同说 / 歌词 + 对白 / 注释窗
+  // 都是有意重叠的 cue，套上去会把前一条的制卡音频砍到后一条开头（PR #1599 审查）。
+  function finishTrackCues(track, cues) {
+    return track && track.kind === 'asr' ? clampRollingCues(cues) : sortCuesByStart(cues);
+  }
+
   function clampRollingCues(cues) {
     if (!Array.isArray(cues) || cues.length < 2) return cues;
-    var sorted = cues.slice().sort(function (a, b) { return a.startMs - b.startMs; });
+    var sorted = sortCuesByStart(cues);
     for (var i = 0; i < sorted.length - 1; i++) {
       var cue = sorted[i];
       var nextStart = sorted[i + 1].startMs;
@@ -212,14 +224,14 @@
       if (response.ok) {
         var text = await response.text();
         var cues = parseSrv3(text);
-        if (cues.length) return clampRollingCues(cues);
+        if (cues.length) return finishTrackCues(track, cues);
       }
     } catch (_) {}
     try {
       url.searchParams.set('fmt', 'json3');
       var jsonResponse = await fetch(url.toString(), { credentials: 'include' });
       if (!jsonResponse.ok) return [];
-      return clampRollingCues(parseJson3(await jsonResponse.json()));
+      return finishTrackCues(track, parseJson3(await jsonResponse.json()));
     } catch (_) { return []; }
   }
 
