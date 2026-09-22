@@ -327,6 +327,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
+  // bool（默认 true）：控制条淡出后，在视频最下方留一条主题色细进度条
+  // （B 站 / YouTube 同款）。小窗档不受它管——那里完整进度条已被收起，细线是
+  // 唯一的进度指示，见 videoSlimProgressBarVisible。
+  'video_slim_progress_bar',
   'video_sort_mode',
   // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
   // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的

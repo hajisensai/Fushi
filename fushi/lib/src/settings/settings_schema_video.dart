@@ -65,6 +65,21 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
           ),
+          // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
+          // 同款）。纯 pref、默认开——它只在控制条**已经不在**时出现，不遮挡任何东西。
+          // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
+          // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.playback.slim_progress_bar',
+            title: t.video_setting_slim_progress_bar,
+            subtitle: t.video_setting_slim_progress_bar_hint,
+            icon: Icons.linear_scale_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSlimProgressBar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoSlimProgressBar(value);
+            },
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。

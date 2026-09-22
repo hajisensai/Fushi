@@ -68,6 +68,7 @@ class VideoPlayerShortcutActions {
     required this.screenshot,
     required this.screenshotSubtitled,
     required this.toggleFullscreen,
+    required this.toggleMiniWindow,
     required this.toggleSubtitleList,
     required this.searchSubtitleList,
     required this.toggleImmersiveLock,
@@ -119,6 +120,11 @@ class VideoPlayerShortcutActions {
   /// 合成回画面（字幕是 Flutter overlay 画的，不在解码帧里）。
   final VoidCallback screenshotSubtitled;
   final VoidCallback toggleFullscreen;
+
+  /// 进/出小窗模式（默认裸 W 键）：桌面把主窗缩成无边框置顶小窗，Android 进系统
+  /// 画中画。iOS 不支持（libmpv 走 Flutter texture，拿不到 AVPlayerLayer），
+  /// 那里按下去是 no-op，入口按钮也不会出现。
+  final VoidCallback toggleMiniWindow;
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
@@ -237,6 +243,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   ShortcutAction.videoToggleMute,
   // 画面 / 杂项
   ShortcutAction.videoToggleFullscreen,
+  ShortcutAction.videoToggleMiniWindow,
   ShortcutAction.videoScreenshot,
   ShortcutAction.videoScreenshotSubtitled,
   ShortcutAction.videoToggleShaderCompare,
@@ -276,6 +283,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoScreenshot: actions.screenshot,
     ShortcutAction.videoScreenshotSubtitled: actions.screenshotSubtitled,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
+    ShortcutAction.videoToggleMiniWindow: actions.toggleMiniWindow,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoSearchSubtitleList: actions.searchSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,

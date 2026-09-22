@@ -42,6 +42,12 @@ abstract final class FushiChannels {
   // Windows galgame Hook 台词浮窗：独立的 FloatingLyricWindow 实例。
   static const MethodChannel galHookText =
       MethodChannel('$_prefix/gal_hook_text');
+
+  /// 系统画中画（PiP）：把视频页缩成系统小窗。只有 Android 有原生侧
+  /// （`PictureInPictureChannelHandler.java`），其余平台上 Dart 门面
+  /// `AndroidPictureInPicture` 恒答「不支持」且不发调用。
+  static const MethodChannel pictureInPicture =
+      MethodChannel('$_prefix/picture_in_picture');
   // TODO-1232 A3: render-backend experiment toggle (persist "disable Impeller"
   // so MainActivity can force Skia at the next launch; Android-only).
   static const MethodChannel render = MethodChannel('$_prefix/render');

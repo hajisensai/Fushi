@@ -1,0 +1,170 @@
+import 'package:flutter/widgets.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/video_controls_density.dart';
+
+/// 「小窗模式 / 按窗口大小缩控件」的判据真相源。页面只读本文件的结论，
+/// 所以阈值与取舍在这里钉死一次即可，不必去 widget 树里翻。
+void main() {
+  VideoControlsDensitySpec resolve(
+    double width, {
+    VideoMiniSurface surface = VideoMiniSurface.none,
+    double height = 720,
+  }) => resolveVideoControlsDensity(
+    playerSize: Size(width, height),
+    surface: surface,
+  );
+
+  group('resolveVideoControlsDensity', () {
+    test('宽敞窗口用 full 档且完全不缩放（零回归基线）', () {
+      final VideoControlsDensitySpec spec = resolve(1280);
+      expect(spec.density, VideoControlsDensity.full);
+      expect(spec.scale, 1.0);
+      expect(spec.showSeekBar, isTrue);
+      expect(spec.showTopBar, isTrue);
+      expect(spec.showBottomButtonBar, isTrue);
+      expect(spec.showCenterTransport, isFalse);
+    });
+
+    test('阈值边界：800 仍是 full，799 进 compact', () {
+      expect(
+        resolve(kVideoControlsCompactWidth).density,
+        VideoControlsDensity.full,
+      );
+      expect(
+        resolve(kVideoControlsCompactWidth - 1).density,
+        VideoControlsDensity.compact,
+      );
+    });
+
+    test('阈值边界：480 仍是 compact，479 进 mini', () {
+      expect(
+        resolve(kVideoControlsMiniWidth).density,
+        VideoControlsDensity.compact,
+      );
+      expect(
+        resolve(kVideoControlsMiniWidth - 1).density,
+        VideoControlsDensity.mini,
+      );
+    });
+
+    test('compact 只缩尺寸，chrome 一件不少', () {
+      final VideoControlsDensitySpec spec = resolve(600);
+      expect(spec.density, VideoControlsDensity.compact);
+      expect(spec.scale, lessThan(1.0));
+      expect(spec.showSeekBar, isTrue);
+      expect(spec.showTopBar, isTrue);
+      expect(spec.showBottomButtonBar, isTrue);
+    });
+
+    test('mini 收掉进度条/顶栏/底栏，改出居中三键', () {
+      final VideoControlsDensitySpec spec = resolve(360);
+      expect(spec.isMini, isTrue);
+      expect(spec.showSeekBar, isFalse);
+      expect(spec.showTopBar, isFalse);
+      expect(spec.showBottomButtonBar, isFalse);
+      expect(spec.showCenterTransport, isTrue);
+      expect(spec.showSeekLabels, isFalse);
+    });
+
+    test('手机横屏不因为「矮」被误判成小窗（宽度判据的存在理由）', () {
+      // 844x390 典型横屏手机、568x320 最窄的 iPhone SE 横屏：都不许进 mini，
+      // 否则正常手机播放的控件会凭空缩一圈 —— 纯回归。
+      expect(resolve(844, height: 390).density, VideoControlsDensity.full);
+      expect(resolve(568, height: 320).density, VideoControlsDensity.compact);
+      expect(resolve(568, height: 320).isMini, isFalse);
+    });
+
+    test('桌面小窗表面直接进 mini，与尺寸无关', () {
+      final VideoControlsDensitySpec spec = resolve(
+        1920,
+        surface: VideoMiniSurface.desktopMiniWindow,
+      );
+      expect(spec.isMini, isTrue);
+      expect(spec.showCenterTransport, isTrue);
+    });
+
+    test('系统画中画进 mini 但一个 chrome 都不画（系统自己画）', () {
+      final VideoControlsDensitySpec spec = resolve(
+        320,
+        surface: VideoMiniSurface.pictureInPicture,
+      );
+      expect(spec.isMini, isTrue);
+      expect(
+        spec.showCenterTransport,
+        isFalse,
+        reason: 'PiP 里系统自带播放控件，app 再画一套就是两层按钮重影',
+      );
+      expect(spec.showTopBar, isFalse);
+      expect(spec.showBottomButtonBar, isFalse);
+      expect(VideoMiniSurface.pictureInPicture.systemOwnsChrome, isTrue);
+      expect(VideoMiniSurface.desktopMiniWindow.systemOwnsChrome, isFalse);
+      expect(VideoMiniSurface.none.systemOwnsChrome, isFalse);
+    });
+
+    test('尺寸未就绪（0 / 非有限）退回 full，不许首帧闪一下小窗形态', () {
+      expect(resolve(0).density, VideoControlsDensity.full);
+      expect(resolve(-1).density, VideoControlsDensity.full);
+      expect(resolve(double.infinity).density, VideoControlsDensity.full);
+      expect(resolve(double.nan).density, VideoControlsDensity.full);
+    });
+  });
+
+  group('videoSlimProgressBarVisible', () {
+    const VideoControlsDensitySpec full = VideoControlsDensitySpec(
+      density: VideoControlsDensity.full,
+      scale: 1,
+      showSeekBar: true,
+      showSeekLabels: true,
+      showTopBar: true,
+      showBottomButtonBar: true,
+      showCenterTransport: false,
+    );
+    const VideoControlsDensitySpec mini = VideoControlsDensitySpec(
+      density: VideoControlsDensity.mini,
+      scale: 0.72,
+      showSeekBar: false,
+      showSeekLabels: false,
+      showTopBar: false,
+      showBottomButtonBar: false,
+      showCenterTransport: true,
+    );
+
+    bool visible({
+      VideoControlsDensitySpec spec = full,
+      VideoMiniSurface surface = VideoMiniSurface.none,
+      bool preferenceEnabled = true,
+      bool controlsVisible = false,
+    }) => videoSlimProgressBarVisible(
+      spec: spec,
+      surface: surface,
+      preferenceEnabled: preferenceEnabled,
+      controlsVisible: controlsVisible,
+    );
+
+    test('常规档：开关开 + 控制条已淡出才显', () {
+      expect(visible(), isTrue);
+      expect(
+        visible(controlsVisible: true),
+        isFalse,
+        reason: '控制条在场时它自带完整进度条，两条并存是重影',
+      );
+      expect(visible(preferenceEnabled: false), isFalse);
+    });
+
+    test('mini 档恒显，不受开关管（它是唯一的进度指示）', () {
+      expect(visible(spec: mini, preferenceEnabled: false), isTrue);
+      expect(
+        visible(spec: mini, preferenceEnabled: false, controlsVisible: true),
+        isTrue,
+      );
+    });
+
+    test('系统画中画恒不显，优先级最高', () {
+      expect(
+        visible(spec: mini, surface: VideoMiniSurface.pictureInPicture),
+        isFalse,
+      );
+      expect(visible(surface: VideoMiniSurface.pictureInPicture), isFalse);
+    });
+  });
+}

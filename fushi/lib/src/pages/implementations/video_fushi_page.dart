@@ -97,8 +97,12 @@ import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
 import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
+import 'package:fushi/src/media/video/video_controls_density.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
 import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
+import 'package:fushi/src/media/video/video_slim_progress_bar.dart';
+import 'package:fushi/src/platform/desktop/desktop_mini_window_mode.dart';
+import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
@@ -231,6 +235,7 @@ part 'video_fushi/lookup_favorite.part.dart';
 part 'video_fushi/lookup_mining.part.dart';
 part 'video_fushi/subtitle_caret.part.dart';
 part 'video_fushi/fullscreen.part.dart';
+part 'video_fushi/mini_window.part.dart';
 part 'video_fushi/layout.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
@@ -2216,6 +2221,45 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _lockWindowAspectRatio = false;
   double? _appliedWindowAspectRatio;
 
+  /// 当前视频被摆在什么形态的窗口里（常规 / 桌面小窗 / 系统画中画）。
+  ///
+  /// 是 [ValueNotifier] 而不是裸字段：控制条 theme、自绘 mini chrome、底部细进度条
+  /// 三处都要在它翻转时立刻重建，而它们分别挂在 controls builder 的不同层级上；
+  /// 走 notifier 才能被 [_buildVideoControlsInner] 的 `Listenable.merge` 并进去
+  /// （这正是 BUG-391 r5 / BUG-1798 反复踩过的「值改了、theme 不重建」那条坑）。
+  final ValueNotifier<VideoMiniSurface> _miniSurface =
+      ValueNotifier<VideoMiniSurface>(VideoMiniSurface.none);
+
+  /// 本机是否支持 Android 系统画中画（非 Android 恒 false）。异步问原生，初值保守取
+  /// false，问到结果才放出入口——问不到时按「不支持」处理，宁可少一个按钮也不给一个
+  /// 按下去什么都不发生的按钮。
+  bool _pictureInPictureSupported = false;
+
+  /// 系统画中画进出的订阅。系统可以在 app 完全没参与的情况下把 PiP 关掉（用户点
+  /// 关闭、或系统回收），所以 [_miniSurface] 的 PiP 分支**必须**由这条回程驱动，
+  /// 不能只在自己调 enter 时自说自话地置位。
+  StreamSubscription<bool>? _pictureInPictureSub;
+
+  /// 本帧控制条该用的密度档。**在 [_buildVideoControls] 的 `LayoutBuilder` 里赋值**，
+  /// 因为它依赖的是**播放区实际尺寸**（字幕跳转侧栏是 push-aside 真 `Row` 子列，开着
+  /// 它画面会被挤窄，控件该跟着画面缩而不是跟着屏幕不动），而尺寸只有到布局期才知道。
+  /// 该 `LayoutBuilder` 的 builder 把整棵 controls 子树都建在自己回调里，所以 theme、
+  /// 字幕避让 reserve、细进度条读到的都是**同一帧同一个值**，不存在跨帧漂移。
+  VideoControlsDensitySpec _activeControlsDensity = resolveVideoControlsDensity(
+    playerSize: Size.zero,
+    surface: VideoMiniSurface.none,
+  );
+
+  /// 本帧控制条密度档（见 [_activeControlsDensity]）。
+  VideoControlsDensitySpec get _controlsDensity => _activeControlsDensity;
+
+  /// 控制条几何的密度缩放系数，**叠在** [_videoUiScale]（界面大小）之上。
+  ///
+  /// 刻意不折进 [_videoUiScale] 本身：那个 getter 的语义是「用户设置的界面大小」，
+  /// 被设置面板 / popover / 剧集面板等一并消费，把「窗口有多小」混进去会让设置面板
+  /// 也跟着窗口缩。故密度只在**控制条 theme 与字幕避让**这两处显式相乘。
+  double get _controlsDensityScale => _controlsDensity.scale;
+
   /// 画面缩放/比例模式（窗口 + 全屏 [Video] fit 共用；TODO-152 子B）。新安装默认
   /// contain/适应；init 时读全局偏好快照，已有用户偏好 cover/fill 会按原值恢复，
   /// 设置面板改动经 [_setVideoFitMode] 落盘 + setState 重建 Video。
@@ -2309,6 +2353,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
     attachLookupCounter(_popup);
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
+    // 小窗能力探测 + 系统画中画进出回程（见 mini_window.part.dart）。放 initState
+    // 是因为入口按钮的显隐必须在首帧就定下来，不能在用户眼皮底下冒出来。
+    _initMiniWindowSupport();
     // BUG-2043：从全屏页换集而来 → 认领旧页留下的原生全屏（见 fullscreen.part.dart）。
     _claimHandedOverNativeFullscreen();
     // TODO-364 单一真相源：字幕避让可见性恒由 media_kit 真实可见性
@@ -4749,6 +4796,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
     _releaseVideoDisplayClaim();
+    // 小窗必须在退页时还原：页面没了、窗口却还是个无边框置顶小窗，用户就只剩
+    // 任务管理器可用了（见 mini_window.part.dart 的 [_disposeMiniWindow]）。
+    // 画中画订阅在这里取消（写进 part 的 extension 里 `cancel_subscriptions`
+    // lint 看不见，会对字段报假的「未取消」）。
+    unawaited(_pictureInPictureSub?.cancel());
+    _pictureInPictureSub = null;
+    _disposeMiniWindow();
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
@@ -6086,6 +6140,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           unawaited(_toggleVideoFullscreen(ctx));
         }
       }),
+      // 'W' = 进/出小窗模式（桌面无边框置顶小窗 / Android 系统画中画）。沉浸锁下
+      // 与其它视频键同待遇（锁着就不响应），见 [_runWhenImmersiveAllowsShortcuts]。
+      toggleMiniWindow: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_toggleVideoMiniWindow()),
+      ),
       // 'L' = 开/关字幕跳转列表（TODO-069）。
       toggleSubtitleList: () =>
           _runWhenImmersiveAllowsShortcuts(_toggleSubtitleJumpList),
@@ -7712,18 +7771,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 进度条整体被 [_mobileControlsTheme] 抬到按钮行上方 → 让出其**触摸热区上缘**（含轨道
   /// 上方那段透明可点区），字幕命中区整体清出 seek 命中区、不再挨太近误触（BUG-901）。
   double _subtitleControlsBottomReserve() {
+    // 密度档（小窗 / 窄窗）把控制条整体缩小时，字幕避让必须按**缩小后**的几何算，
+    // 否则字幕会停在一条已经不存在那么高的控制条上方、凭空浮起一截。控制条 theme
+    // 与本处乘的是同一个 [_controlsDensityScale]，两边永远同一口径。
+    final double densityScale = _controlsDensityScale;
     return videoSubtitleControlsReserve(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight,
-      seekBarButtonGap: _videoSeekBarButtonGap,
+      buttonBarHeight: _videoButtonBarHeight * densityScale,
+      seekBarButtonGap: _videoSeekBarButtonGap * densityScale,
       // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
       // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
       // 只让可见轨道高（旧 TODO-568）会让字幕落进那段透明热区、两命中区在同一竞技场误触。
       // BUG-1224：必须取**当前平台 theme 真实生效**的热区高（桌面 36 不随缩放 / 移动
       // 40×缩放），并减去桌面把进度条下压骑按钮行上沿的重叠量，才是真的热区上缘。
-      seekBarContainerHeight: _activeSeekBarContainerHeight,
-      seekBarBottomButtonBarOverlap: _activeSeekBarButtonBarOverlap,
-      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
+      // mini 档整条进度条被 theme 关掉（`displaySeekBar: false`，进度改由视频最下方
+      // 那条细线承担），此时热区高必须按 0 算——否则字幕会为一条根本没画出来的
+      // 进度条让出三四十像素，小窗里那是画面高度的一大截。
+      seekBarContainerHeight: _controlsDensity.showSeekBar
+          ? _activeSeekBarContainerHeight * densityScale
+          : 0,
+      seekBarBottomButtonBarOverlap: _controlsDensity.showSeekBar
+          ? _activeSeekBarButtonBarOverlap * densityScale
+          : 0,
+      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap * densityScale,
       bottomChromeBaseline: _videoBottomChromeBaseline,
       bottomSystemInset: _videoBottomSystemInset(),
     );
@@ -7735,10 +7805,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_subtitleControlsBottomReserve] 对称：顶栏下缘 = 顶部系统 inset（`_videoTopBarMargin`，
   /// 桌面为 0；移动端抬离状态栏/刘海）+ 一个（已缩放）按钮行高 + 字幕呼吸间距。
   double _subtitleControlsTopReserve() {
+    final double densityScale = _controlsDensityScale;
     return videoSubtitleControlsTopReserve(
-      buttonBarHeight: _videoButtonBarHeight,
+      // mini 档没有顶栏（theme 传空 `topButtonBar`），顶部锚字幕不该为它让位。
+      buttonBarHeight: _controlsDensity.showTopBar
+          ? _videoButtonBarHeight * densityScale
+          : 0,
       topSystemInset: _videoTopBarMargin().top,
-      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap,
+      subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap * densityScale,
     );
   }
 
@@ -8039,6 +8113,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Future<void> _syncWindowAspectRatioLock() async {
     if (!isDesktopPlatform) return;
+    // 小窗的比例锁与窗口尺寸由小窗服务自己管（换集 / 换源后画面比例变了要连外框
+    // 一起重算），且**不看**用户那个「窗口跟随视频比例」偏好——小窗本来就是按比例
+    // 摆的。排在下面的早退之前，否则偏好关着时小窗永远拿不到新比例。
+    await _syncMiniWindowAspectRatio();
     final VideoPlayerController? controller = _controller;
     if (!_lockWindowAspectRatio || controller == null) {
       await _clearWindowAspectRatioLock();

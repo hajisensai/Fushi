@@ -1,0 +1,335 @@
+// GENERATED-NOTE: video mini-window / picture-in-picture domain part.
+part of '../video_fushi_page.dart';
+
+/// 小窗域：桌面「无边框小窗」+ Android 系统画中画，以及 mini 档下本仓自绘的那套
+/// 极简 chrome（顶部拖动带 + 退出钮、居中大三键、视频最下方的细进度条）。
+///
+/// 两种小窗**共用同一个密度档**（[VideoControlsDensity.mini]）却**不共用 chrome
+/// 归属**：桌面小窗里窗口是空的、chrome 得本仓自己画；系统画中画里 Android 会在
+/// 窗口上叠自己的播放控件，本仓再画一套就是两层按钮重影。判据收敛在
+/// [VideoMiniSurface.systemOwnsChrome] 一处，本文件只消费结论。
+///
+/// iOS **不提供**系统画中画：本仓的画面是 libmpv 渲染进 Flutter texture 的，
+/// iOS 的 `AVPictureInPictureController` 只能挂 `AVPlayerLayer` /
+/// `AVSampleBufferDisplayLayer`，拿不到这条纹理；桌面那套「把主窗变小」在 iOS 也
+/// 没有对应物。故 iOS 上入口整个不出现（[_miniWindowAvailable] 恒 false），而不是
+/// 给一个按下去没反应的按钮。
+extension _VideoMiniWindow on _VideoFushiPageState {
+  /// 当前小窗表面。
+  VideoMiniSurface get _miniWindowSurface => _miniSurface.value;
+
+  /// 是否已经在小窗里（桌面小窗或系统画中画）。
+  bool get _inMiniWindow => _miniWindowSurface != VideoMiniSurface.none;
+
+  /// 本机有没有小窗可用：桌面恒有（主窗自己变形）；移动端取决于系统画中画，
+  /// 只有 Android 有、且要 API 26+（见 [AndroidPictureInPicture.isSupported]）。
+  bool get _miniWindowAvailable =>
+      isDesktopPlatform || _pictureInPictureSupported;
+
+  /// 当前画面宽高比；尺寸还没解析出来时退回 16:9（两个平台的小窗几何都要它，
+  /// 且都不接受 0 / NaN）。
+  double _miniWindowAspectRatio() {
+    final VideoPlayerController? controller = _controller;
+    final int? width = controller?.videoWidth;
+    final int? height = controller?.videoHeight;
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return 16 / 9;
+    }
+    return width / height;
+  }
+
+  /// 起播 / 换集后问一次系统画中画可用性，并挂上进出回程。
+  ///
+  /// 放在 [State.initState] 而不是起播路径上：入口按钮的显隐要在首帧就定下来，
+  /// 否则按钮会在用户眼皮底下冒出来。回程订阅同理——系统可以在 app 没参与的情况下
+  /// 结束 PiP（用户点小窗上的关闭、或系统回收），漏订阅就会让 [_miniSurface] 永远
+  /// 卡在 PiP 态、chrome 再也不回来。
+  void _initMiniWindowSupport() {
+    if (!isMobilePlatform) return;
+    _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen(
+      _handlePictureInPictureChanged,
+    );
+    unawaited(
+      AndroidPictureInPicture.isSupported().then((bool supported) {
+        if (!mounted || supported == _pictureInPictureSupported) return;
+        setState(() => _pictureInPictureSupported = supported);
+      }),
+    );
+  }
+
+  /// 退页清理。桌面小窗必须在这里**同步发起**退出：页面没了、窗口却还是个无边框
+  /// 置顶小窗，用户就只能去任务管理器了。
+  ///
+  /// 画中画订阅的 `cancel()` 刻意留在页面 [State.dispose] 里而不是搬进来：
+  /// `cancel_subscriptions` lint 只认**类体内**的取消，写在 part 的 extension 上
+  /// 它看不见，会对字段声明报一条假的「未取消」。
+  void _disposeMiniWindow() {
+    if (DesktopMiniWindowMode.isActive) {
+      unawaited(
+        DesktopMiniWindowMode.exit(
+          owner: this,
+          restoreAspectRatioLock: _lockWindowAspectRatio,
+        ),
+      );
+    }
+    _miniSurface.dispose();
+  }
+
+  /// 系统画中画进出的唯一写入点。
+  void _handlePictureInPictureChanged(bool active) {
+    if (!mounted) return;
+    final VideoMiniSurface next =
+        active ? VideoMiniSurface.pictureInPicture : VideoMiniSurface.none;
+    if (_miniSurface.value == next) return;
+    _miniSurface.value = next;
+    // 密度档随表面变，控制条 theme / 字幕避让都要按新几何重算一帧。
+    _rebuild(() {});
+  }
+
+  /// 切换小窗（快捷键与控制条按钮共用）。
+  Future<void> _toggleVideoMiniWindow() async {
+    if (_inMiniWindow) {
+      await _exitVideoMiniWindow();
+      return;
+    }
+    await _enterVideoMiniWindow();
+  }
+
+  /// 进小窗。桌面走主窗变形，移动端走系统画中画。
+  Future<void> _enterVideoMiniWindow() async {
+    if (_inMiniWindow || !_miniWindowAvailable) return;
+    final double aspectRatio = _miniWindowAspectRatio();
+    if (isDesktopPlatform) {
+      // 小窗与全屏互斥：[DesktopMiniWindowMode.enter] 内部会先退全屏（它持有那条
+      // 原语），这里只要保证本页自己的全屏路由也退掉，否则窗口缩成小窗了、栈上却
+      // 还压着一张全屏路由，画面会是「小窗里一张全屏页」。
+      final BuildContext? fullscreenContext = _videoControlsContext;
+      if (_isVideoFullscreenRoute &&
+          fullscreenContext != null &&
+          fullscreenContext.mounted) {
+        await _exitVideoFullscreen(fullscreenContext);
+        if (!mounted) return;
+      }
+      await DesktopMiniWindowMode.enter(owner: this, aspectRatio: aspectRatio);
+      if (!mounted) return;
+      if (!DesktopMiniWindowMode.isActive) return;
+      _miniSurface.value = VideoMiniSurface.desktopMiniWindow;
+      _rebuild(() {});
+      return;
+    }
+    // 移动端：只发请求，**不在这里置位**——真正进没进 PiP 由系统说了算，
+    // 状态统一由 [_handlePictureInPictureChanged] 的回程写入。
+    await AndroidPictureInPicture.enter(aspectRatio: aspectRatio);
+  }
+
+  /// 退小窗。系统画中画没有「从 app 内退出」的 API（只能由用户或系统结束），
+  /// 故移动端这里只是 no-op，不假装做得到。
+  Future<void> _exitVideoMiniWindow() async {
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) return;
+    await DesktopMiniWindowMode.exit(
+      owner: this,
+      restoreAspectRatioLock: _lockWindowAspectRatio,
+    );
+    if (!mounted) return;
+    _miniSurface.value = VideoMiniSurface.none;
+    _rebuild(() {});
+  }
+
+  /// 换集 / 换源后把小窗几何更新到新画面比例（非小窗态 no-op）。
+  Future<void> _syncMiniWindowAspectRatio() async {
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) return;
+    await DesktopMiniWindowMode.updateAspectRatio(_miniWindowAspectRatio());
+  }
+
+  // ── mini 档自绘 chrome ──────────────────────────────────────────────────
+
+  /// mini 档顶部那条带：整条可拖动窗口 + 右端一个「退出小窗」钮。
+  ///
+  /// 拖动带只占顶部一条，不是整个画面：整面拖动会把「点画面暂停」「点字幕查词」
+  /// 一起吃掉——而字幕悬停制卡正是小窗要保住的能力（[VideoSubtitleOverlay] 就在
+  /// 本层之下的同一棵 Stack 里，零改动继续工作）。
+  Widget _buildMiniWindowTopChrome() {
+    final VideoControlsDensitySpec density = _controlsDensity;
+    if (!density.showCenterTransport) return const SizedBox.shrink();
+    final double height = 32 * _videoUiScale;
+    final Widget bar = SizedBox(
+      height: height,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[Color(0x73000000), Color(0x00000000)],
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            const Spacer(),
+            _miniWindowIconButton(
+              icon: Icons.close_fullscreen_rounded,
+              tooltip: t.video_mini_window_exit,
+              onPressed: () => unawaited(_exitVideoMiniWindow()),
+            ),
+          ],
+        ),
+      ),
+    );
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _videoControlsVisible,
+        builder: (BuildContext context, bool visible, _) => FadingChromeGate(
+          visible: visible,
+          duration: _videoControlsTransitionDuration,
+          // 桌面小窗是无边框的，系统不再提供标题栏抓手，这条带就是唯一的拖动入口。
+          // 移动端（系统画中画）永远走不到这里：那边 showCenterTransport 恒 false。
+          child: isDesktopPlatform ? DragToMoveArea(child: bar) : bar,
+        ),
+      ),
+    );
+  }
+
+  /// mini 档居中大三键（回退 N 秒 / 播放暂停 / 前进 N 秒），即系统画中画那种观感。
+  ///
+  /// 不复用底部那条 [_centeredBottomControlBar]：mini 档整行底栏已被 theme 收掉
+  /// （小窗里一条 56px 的按钮行能吃掉画面的三分之一），这三个键改用居中大圆钮，
+  /// 触达面积反而比底栏更大。
+  Widget _buildMiniWindowCenterControls(VideoPlayerController controller) {
+    final VideoControlsDensitySpec density = _controlsDensity;
+    if (!density.showCenterTransport) return const SizedBox.shrink();
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    // 与底栏那两个 ±10s 键同一个常量（见 [_buildBottomSlotButton] 的
+    // seekBackward / seekForward 分支）：小窗里换个位置，语义必须还是同一个键。
+    const int seekMs = 10000;
+    return Positioned.fill(
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _videoControlsVisible,
+        builder: (BuildContext context, bool visible, _) => FadingChromeGate(
+          visible: visible,
+          duration: _videoControlsTransitionDuration,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _miniWindowRoundButton(
+                  icon: Icons.fast_rewind_rounded,
+                  tooltip: t.video_bottom_seek_back,
+                  colorScheme: cs,
+                  onPressed: () => unawaited(_seekRelative(-seekMs)),
+                ),
+                SizedBox(width: 16 * _videoUiScale),
+                ListenableBuilder(
+                  listenable: controller,
+                  builder: (BuildContext context, _) => _miniWindowRoundButton(
+                    icon: controller.isPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                    tooltip: t.video_bottom_play_pause,
+                    colorScheme: cs,
+                    primary: true,
+                    onPressed: () {
+                      _pokeControlsVisible();
+                      unawaited(controller.playOrPause());
+                    },
+                  ),
+                ),
+                SizedBox(width: 16 * _videoUiScale),
+                _miniWindowRoundButton(
+                  icon: Icons.fast_forward_rounded,
+                  tooltip: t.video_bottom_seek_forward,
+                  colorScheme: cs,
+                  onPressed: () => unawaited(_seekRelative(seekMs)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 视频最下方那条主题色细进度条（开关 + mini 档的进度指示，见
+  /// [videoSlimProgressBarVisible]）。
+  ///
+  /// 挂在 controls Stack 里而不是 Video 外层：全屏路由复用同一个 controls builder，
+  /// 挂这里全屏时也跟着走；且它与控制条读同一个 [_videoControlsVisible]，不会出现
+  /// 「控制条已经回来了、细线还挂着」的重影。
+  Widget _buildVideoSlimProgressBar(VideoPlayerController controller) {
+    final VideoControlsDensitySpec density = _controlsDensity;
+    final bool enabled = appModel.videoSlimProgressBar;
+    final ColorScheme cs = _videoChromeColorScheme(context);
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _videoControlsVisible,
+        builder: (BuildContext context, bool controlsVisible, _) {
+          final bool visible = videoSlimProgressBarVisible(
+            spec: density,
+            surface: _miniWindowSurface,
+            preferenceEnabled: enabled,
+            controlsVisible: controlsVisible,
+          );
+          if (!visible) return const SizedBox.shrink();
+          return VideoSlimProgressBar(
+            positionMs: () => controller.positionMs,
+            durationMs: () => controller.durationMs,
+            // 播放器 chrome 的「主题色」口径：裸压固定深色 scrim 的前景必须取亮 tone
+            // primary，直接用 cs.primary 在浅色 / eink 主题下是深色、黑压黑不可见。
+            color: _videoChromeAccent(cs),
+            height: 3 * _videoUiScale,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _miniWindowIconButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return IconButton(
+      icon: Icon(icon),
+      iconSize: 18 * _videoUiScale,
+      color: videoChromeNeutralForeground,
+      tooltip: tooltip,
+      onPressed: onPressed,
+      padding: EdgeInsets.all(4 * _videoUiScale),
+      constraints: const BoxConstraints(),
+    );
+  }
+
+  Widget _miniWindowRoundButton({
+    required IconData icon,
+    required String tooltip,
+    required ColorScheme colorScheme,
+    required VoidCallback onPressed,
+    bool primary = false,
+  }) {
+    final double size = (primary ? 56 : 40) * _videoUiScale;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: _osdSurfaceColor(colorScheme),
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: SizedBox(
+            width: size,
+            height: size,
+            child: Icon(
+              icon,
+              size: size * 0.5,
+              color: videoChromeNeutralForeground,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
