@@ -349,7 +349,7 @@ $imageRevealSemantics
     this.root = root;
     this.options = options || {};
     this.textEntries = [];
-    this.totalMatchableChars = 0;
+    this.totalStudyChars = 0;
     this.totalRawChars = 0;
     this.sourceTextOffsets = new WeakMap();
     this.sourceTextRawOffsets = new WeakMap();
@@ -383,6 +383,7 @@ $imageRevealSemantics
 
       var count = 0;
       var rawCount = 0;
+      var matchableCount = 0;
       this.walkTextNodes(this.root, (function(node) {
         this.sourceTextOffsets.set(node, count);
         this.sourceTextRawOffsets.set(node, rawCount);
@@ -393,19 +394,45 @@ $imageRevealSemantics
           rubyRoot: this.rubyRootForTextNode(node),
           startChar: count,
           startRaw: rawCount,
+          startMatchable: matchableCount,
           text: node.textContent || ''
         };
         count += countChars(entry.text);
         rawCount += countRawChars(entry.text);
+        matchableCount += normalizeText(entry.text).length;
         entry.endChar = count;
         entry.endRaw = rawCount;
         this.textEntries.push(entry);
         this.updateSourceNodeStats(node, entry);
       }).bind(this));
 
-      this.totalMatchableChars = count;
+      this.totalStudyChars = count;
       this.totalRawChars = rawCount;
       this.mediaNodeEntries = this.collectMediaNodeEntries();
+    },
+
+    // Audio uses normalized UTF-16 offsets in the complete source chapter.
+    // Raw clone/screen offsets count code points, while startChar counts study
+    // units; neither can be passed directly to the audiobook cue index.
+    matchableOffsetForRawOffset: function(rawOffset) {
+      var target = Number(rawOffset);
+      var entries = this.textEntries;
+      if (!Number.isFinite(target) || target < 0 || !entries.length) return null;
+      var low = 0;
+      var high = entries.length - 1;
+      while (low < high) {
+        var mid = Math.ceil((low + high) / 2);
+        if (entries[mid].startRaw <= target) low = mid;
+        else high = mid - 1;
+      }
+      var entry = entries[low];
+      var remaining = Math.max(0, target - entry.startRaw);
+      var end = 0;
+      while (remaining > 0 && end < entry.text.length) {
+        end += String.fromCodePoint(entry.text.codePointAt(end)).length;
+        remaining--;
+      }
+      return entry.startMatchable + normalizeText(entry.text.slice(0, end)).length;
     },
 
     indexSourcePreorder: function() {
@@ -742,8 +769,8 @@ $imageRevealSemantics
       var walker = this.reader.createWalker();
       var node;
       while (node = walker.nextNode()) {
-        var nodeStart = this.reader.nodeStartOffsets.get(node);
-        if (nodeStart === undefined) continue;
+        var nodeStart = this.reader.getMatchableOffset(node, 0);
+        if (nodeStart === null) continue;
         var text = node.textContent || '';
         var cursor = nodeStart;
         var offset = 0;
@@ -766,7 +793,7 @@ $imageRevealSemantics
             } else {
               flushSegment();
             }
-            cursor += 1;
+            cursor += char.length;
             if (cursor === end) flushSegment();
           } else if (segment) {
             segment.end = next;
@@ -916,6 +943,13 @@ window.fushiReader = {
     }
     this.nodeStartOffsets = offsets;
     this.nodeStartRawOffsets = rawOffsets;
+  },
+  getMatchableOffset: function(node, offset) {
+    var rawStart = this.nodeStartRawOffsets.get(node);
+    if (rawStart === undefined || !this.contentStream) return null;
+    var prefix = (node.textContent || '').slice(0, offset);
+    return this.contentStream.matchableOffsetForRawOffset(
+      rawStart + this.countRawChars(prefix));
   },
   waitForImages: function() {
     var images = this.sourceRoot && this.sourceRoot.querySelectorAll
@@ -1072,7 +1106,7 @@ $sharedInitViewport
     }
     this.contentStream = contentStreamFactory(this.sourceRoot);
     this.rangeMap = rangeMapFactory(this);
-    this.totalChapterChars = this.contentStream.totalMatchableChars;
+    this.totalChapterChars = this.contentStream.totalStudyChars;
   },
   buildScreens: function() {
     var mode = String(this.screenMode || '').toLowerCase();
@@ -1210,12 +1244,6 @@ $sharedInitViewport
     var end = this.screenEndCharCount(screen);
     return offset >= start && offset < end;
   },
-  screenIntersectsCharRange: function(screen, start, end) {
-    var screenStart = this.screenStartCharCount(screen);
-    var screenEnd = this.screenEndCharCount(screen);
-    if (end <= start) return start >= screenStart && start <= screenEnd;
-    return end > screenStart && start < screenEnd;
-  },
   assignScreenProgressAnchors: function() {
     if (!this.screens || !this.screens.length) return;
     if (!this.totalChapterChars) {
@@ -1318,18 +1346,18 @@ $sharedInitViewport
       var cueEnd = this.sentenceAudioCueEnd(cue);
       var zeroLengthCue = cueEnd <= cueStart;
       while (searchStart < screens.length) {
-        var screenEnd = this.screenEndCharCount(screens[searchStart]);
+        var screenEnd = this.screenMatchableOffset(screens[searchStart], true);
         if (zeroLengthCue) {
           if (cueStart <= screenEnd) break;
-        } else if (cueEnd > this.screenStartCharCount(screens[searchStart])) {
+        } else if (cueEnd > this.screenMatchableOffset(screens[searchStart], false)) {
           if (cueStart < screenEnd) break;
         }
         searchStart += 1;
       }
       for (var screenIndex = searchStart; screenIndex < screens.length; screenIndex++) {
         var screen = screens[screenIndex];
-        var screenStart = this.screenStartCharCount(screen);
-        var screenEnd = this.screenEndCharCount(screen);
+        var screenStart = this.screenMatchableOffset(screen, false);
+        var screenEnd = this.screenMatchableOffset(screen, true);
         if (!this.sentenceAudioCueIntersectsScreen(cue, screen)) {
           if (zeroLengthCue ? cueStart < screenStart : cueEnd <= screenStart) break;
           continue;
@@ -2829,17 +2857,27 @@ $sharedInitViewport
     var start = this.sentenceAudioCueStart(cue);
     return start + Math.max(0, Number(cue && cue.length) || 0);
   },
+  screenMatchableOffset: function(screen, end) {
+    if (!this.contentStream) return null;
+    var rawOffset = end ? this.screenEndRawCount(screen) : this.screenStartRawCount(screen);
+    return this.contentStream.matchableOffsetForRawOffset(rawOffset);
+  },
   sentenceAudioCueIntersectsScreen: function(cue, screen) {
     if (!cue || !screen) return false;
     var start = this.sentenceAudioCueStart(cue);
     var end = this.sentenceAudioCueEnd(cue);
-    return this.screenIntersectsCharRange(screen, start, end);
+    var screenStart = this.screenMatchableOffset(screen, false);
+    var screenEnd = this.screenMatchableOffset(screen, true);
+    return end > start ? start < screenEnd && end > screenStart
+      : start >= screenStart && start <= screenEnd;
   },
   screenIndexForSentenceAudioCue: function(cue) {
     if (!cue || !this.screens || !this.screens.length) return -1;
     var start = this.sentenceAudioCueStart(cue);
     for (var i = 0; i < this.screens.length; i++) {
-      if (this.screenContainsCharOffset(this.screens[i], start)) return i;
+      var screen = this.screens[i];
+      if (start >= this.screenMatchableOffset(screen, false) &&
+          start < this.screenMatchableOffset(screen, true)) return i;
     }
     for (var j = 0; j < this.screens.length; j++) {
       if (this.sentenceAudioCueIntersectsScreen(cue, this.screens[j])) return j;
