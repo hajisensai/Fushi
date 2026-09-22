@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "完全隱藏網站字幕和擴充功能疊加層（不是模糊，懸停亦不顯示）——供純聽力練習用。隨時可按 <kbd>Shift</kbd>+<kbd>H</kbd> 切換。",
   "opt_subtitlePauseOnLookup_title": "查詞時暫停",
   "opt_subtitlePauseOnLookup_desc": "從網頁、字幕清單或疊加層發起查詞時暫停正在播放的影片；關閉彈出視窗後自動恢復播放（你自己暫停的影片不會被恢復）。",
+  "opt_subtitleResumeOnLookupLeave_title": "離開查詞即繼續播放",
+  "opt_subtitleResumeOnLookupLeave_desc": "Shift 懸停或懸浮字幕自動查詞把影片停住後，滑鼠離開字幕與查詞彈窗即自動關窗並繼續播放，不必再點一下空白。點擊發起的查詞不受影響。",
   "opt_subtitleLookupOnPage_title": "在網頁上顯示查詞結果",
   "opt_subtitleLookupOnPage_desc": "在側邊欄按一下字詞時，彈出視窗會開在網頁上，而不是擠在側邊欄內——瀏覽器不允許側邊欄的內容繪製到面板之外。關閉後回復側邊欄內的窄彈出視窗。",
   "opt_subtitleOverlayAutoLookup_title": "疊加層字幕懸停查詞",

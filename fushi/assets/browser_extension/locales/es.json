@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Oculta por completo tanto los subtítulos del sitio como la superposición de la extensión (sin desenfoque, nada al pasar el ratón), para practicar solo la escucha. Alterna en cualquier momento con <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Pausar al buscar",
   "opt_subtitlePauseOnLookup_desc": "Pausa el vídeo en reproducción cuando se inicia una búsqueda desde la página, la lista de subtítulos o la superposición; la reproducción se reanuda automáticamente al cerrar la ventana (un vídeo que pausaste tú nunca se reanuda).",
+  "opt_subtitleResumeOnLookupLeave_title": "Reanudar al salir de la consulta",
+  "opt_subtitleResumeOnLookupLeave_desc": "Cuando una consulta por Shift+cursor o la consulta automática de la superposición pausa el vídeo, al alejar el puntero del subtítulo y de la ventana de consulta esta se cierra y la reproducción continúa, sin clic adicional. Las consultas iniciadas con clic no se ven afectadas.",
   "opt_subtitleLookupOnPage_title": "Mostrar los resultados de búsqueda en la página",
   "opt_subtitleLookupOnPage_desc": "Al hacer clic en una palabra del panel lateral, la ventana se abre en la página en lugar de apretarse dentro del panel: los navegadores no permiten que el contenido del panel se dibuje fuera de él. Desactivado vuelve a la ventana estrecha dentro del panel.",
   "opt_subtitleOverlayAutoLookup_title": "Búsqueda al pasar el ratón sobre los subtítulos superpuestos",
