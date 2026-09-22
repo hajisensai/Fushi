@@ -60,6 +60,7 @@ class _NativeHost {
     }
     switch (call.method) {
       case 'bind':
+      case 'activate':
       case 'release':
       case 'unbind':
         return null;
@@ -88,7 +89,11 @@ class _NativeHost {
     'label': kind,
     'kind': kind,
     'enabled': true,
-    'settings': <String, int>{'width': 1920, 'height': 1080},
+    'settings': <String, Object>{
+      'width': 1920,
+      'height': 1080,
+      'fushiClientArea': true,
+    },
   };
 }
 
@@ -105,8 +110,68 @@ Future<void> _flushUntil(WidgetTester tester, bool Function() complete) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets('rejects an unpatched whole-window capture backend', (
+    WidgetTester tester,
+  ) async {
+    final _NativeHost native = _NativeHost('never-delayed');
+    final TestDefaultBinaryMessenger messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const MethodChannel rtc = MethodChannel('FlutterWebRTC.Method');
+    const MethodChannel input = MethodChannel('app.fushi/game_stream_input');
+    const MethodChannel events = MethodChannel('FlutterWebRTC.Event');
+    messenger.setMockMethodCallHandler(rtc, (MethodCall call) async {
+      if (call.method != 'getDisplayMedia') return native.rtc(call);
+      final Map<String, Object?> capture = _NativeHost.capture;
+      final Map<String, Object?> track =
+          (capture['videoTracks']! as List<Object?>).single!
+              as Map<String, Object?>;
+      (track['settings']! as Map<String, Object>).remove('fushiClientArea');
+      return capture;
+    });
+    messenger.setMockMethodCallHandler(input, native.input);
+    messenger.setMockMethodCallHandler(events, (_) async => null);
+    final FushiRemoteGameStreamService service = FushiRemoteGameStreamService();
+    final FushiGameStreamHost host = FushiGameStreamHost(service: service);
+    try {
+      Object? failure;
+      bool completed = false;
+      final Future<void> starting = host
+          .start(hwnd: _hwnd)
+          .then<void>(
+            (_) => completed = true,
+            onError: (Object error) {
+              failure = error;
+              completed = true;
+            },
+          );
+      await _flushUntil(tester, () => completed);
+      await starting;
+      expect(failure.toString(), contains('capture adapter is unavailable'));
+      expect(host.started, isFalse);
+      expect(service.session?.state.isTerminal, isTrue);
+      expect(
+        native.rtcCalls.where((MethodCall c) => c.method == 'trackDispose'),
+        hasLength(2),
+      );
+      expect(
+        native.rtcCalls.where(
+          (MethodCall c) => c.method == 'createPeerConnection',
+        ),
+        isEmpty,
+      );
+    } finally {
+      host.dispose();
+      service.dispose();
+      await tester.pump(const Duration(milliseconds: 1));
+      for (final MethodChannel channel in <MethodChannel>[rtc, input, events]) {
+        messenger.setMockMethodCallHandler(channel, null);
+      }
+    }
+  }, skip: !Platform.isWindows);
+
   for (final String delayedMethod in <String>[
     'bind',
+    'activate',
     'getDisplayMedia',
     'createPeerConnection',
   ]) {
@@ -186,7 +251,8 @@ void main() {
             hasLength(1),
           );
 
-          if (delayedMethod != 'bind') {
+          if (delayedMethod == 'getDisplayMedia' ||
+              delayedMethod == 'createPeerConnection') {
             expect(
               native.rtcCalls
                   .where((MethodCall c) => c.method == 'trackDispose')

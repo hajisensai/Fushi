@@ -35,6 +35,33 @@ bool IsDown(const std::string& action) {
   return action == "down" || action == "button";
 }
 
+class ScopedWindowDpiContext {
+ public:
+  explicit ScopedWindowDpiContext(HWND hwnd) {
+    static const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    static const auto get_window_context = reinterpret_cast<GetWindowContext>(
+        GetProcAddress(user32, "GetWindowDpiAwarenessContext"));
+    static const auto set_thread_context = reinterpret_cast<SetThreadContext>(
+        GetProcAddress(user32, "SetThreadDpiAwarenessContext"));
+    set_thread_context_ = set_thread_context;
+    if (get_window_context == nullptr || set_thread_context_ == nullptr) return;
+    const DPI_AWARENESS_CONTEXT target = get_window_context(hwnd);
+    if (target != nullptr) previous_ = set_thread_context_(target);
+  }
+  ~ScopedWindowDpiContext() {
+    if (previous_ != nullptr) set_thread_context_(previous_);
+  }
+  ScopedWindowDpiContext(const ScopedWindowDpiContext&) = delete;
+  ScopedWindowDpiContext& operator=(const ScopedWindowDpiContext&) = delete;
+  bool valid() const { return previous_ != nullptr; }
+
+ private:
+  using GetWindowContext = DPI_AWARENESS_CONTEXT(WINAPI*)(HWND);
+  using SetThreadContext = DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
+  SetThreadContext set_thread_context_ = nullptr;
+  DPI_AWARENESS_CONTEXT previous_ = nullptr;
+};
+
 }  // namespace
 
 GameStreamInput::~GameStreamInput() {
@@ -148,6 +175,15 @@ bool GameStreamInput::Bind(uintptr_t value, std::string* reason) {
   return true;
 }
 
+bool GameStreamInput::Activate(std::string* reason) {
+  if (!ValidateTarget(false, reason)) return false;
+  if (GetForegroundWindow() != hwnd_ && !SetForegroundWindow(hwnd_)) {
+    SetReason(reason, "window_not_foreground");
+    return false;
+  }
+  return ValidateTarget(true, reason);
+}
+
 void GameStreamInput::Release() {
   if (hwnd_ == nullptr) return;
   // Releasing held input is required after hiding/minimizing the target too.
@@ -236,6 +272,24 @@ bool GameStreamInput::PostKey(UINT vk, bool down) {
   return PostMessageW(hwnd_, message, vk, static_cast<LPARAM>(bits)) != FALSE;
 }
 
+bool GameStreamInput::PostPointer(UINT message, WPARAM flags, double x,
+                                  double y) {
+  if (hwnd_ == nullptr) return false;
+  // PostMessage scales mouse coordinates between DPI contexts. Keep both the
+  // client extent and the post in the target's context: rounding physical
+  // coordinates can otherwise map the final pixel one past the logical edge.
+  // Restoring before PostMessage would instead scale logical coordinates twice.
+  const ScopedWindowDpiContext dpi(hwnd_);
+  if (!dpi.valid()) return false;
+  RECT rect{};
+  if (!GetClientRect(hwnd_, &rect)) return false;
+  const int width = rect.right - rect.left;
+  const int height = rect.bottom - rect.top;
+  if (width <= 0 || height <= 0) return false;
+  return PostMessageW(hwnd_, message, flags,
+                      PointerLParam(x, y, width, height)) != FALSE;
+}
+
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
                            std::string* reason) {
   if (!ValidateTarget(true, reason)) return false;
@@ -283,10 +337,6 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
     return true;
   }
   if (kind_value == "pointer") {
-    const GameStreamWindowInfo info = Inspect(reinterpret_cast<uintptr_t>(hwnd_));
-    const LPARAM point = PointerLParam(ReadDouble(event, "x", 0.0),
-                                       ReadDouble(event, "y", 0.0), info.width,
-                                       info.height);
     UINT message = WM_MOUSEMOVE;
     WPARAM flags = pointer_down_ ? MK_LBUTTON : 0;
     if (action_value == "down") {
@@ -301,7 +351,8 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
       SetReason(reason, "invalid_pointer_action");
       return false;
     }
-    if (!PostMessageW(hwnd_, message, flags, point)) {
+    if (!PostPointer(message, flags, ReadDouble(event, "x", 0.0),
+                      ReadDouble(event, "y", 0.0))) {
       SetReason(reason, "post_failed");
       return false;
     }

@@ -67,6 +67,13 @@ class FushiGameStreamHost extends ChangeNotifier {
   String? get error => _error;
   GameStreamSession? get session => service.session;
 
+  @visibleForTesting
+  Future<List<StatsReport>> debugStats() async =>
+      await _connection?.getStats() ?? <StatsReport>[];
+
+  @visibleForTesting
+  MediaStream? get debugCaptureStream => _capture;
+
   @override
   void notifyListeners() {
     if (!_disposed) super.notifyListeners();
@@ -99,6 +106,8 @@ class FushiGameStreamHost extends ChangeNotifier {
         throw StateError('Capture cancelled');
       }
       _boundHwnd = hwnd;
+      await GameStreamInputChannel.activate();
+      _requireGeneration(generation);
       final List<DesktopCapturerSource> sources = await desktopCapturer
           .getSources(
             types: <SourceType>[SourceType.Window],
@@ -129,6 +138,9 @@ class FushiGameStreamHost extends ChangeNotifier {
             'deviceId': <String, String>{'exact': matches.single.id},
             'mandatory': <String, double>{'frameRate': 60.0},
             'cursor': 'never',
+            // App-owned WGC adapter crops to the exact client area before
+            // feeding WebRTC; pointer coordinates use that same client area.
+            'fushiClientArea': true,
           },
           'audio': true,
         },
@@ -161,6 +173,9 @@ class FushiGameStreamHost extends ChangeNotifier {
           .getVideoTracks()
           .single
           .getSettings();
+      if (settings['fushiClientArea'] != true) {
+        throw StateError('Client-area window capture adapter is unavailable');
+      }
       final num? captureWidth = settings['width'] as num?;
       final num? captureHeight = settings['height'] as num?;
       if (captureWidth != null && captureHeight != null) {

@@ -15,7 +15,7 @@
 
 `packages/fushi_engine/lib/sync/game_stream/` 保存 v1 wire 类型与会话服务；app 的 `game_stream_host.dart`、`game_stream_receiver.dart`、`game_stream_client.dart` 装配 WebRTC、原生窗口输入和配对传输。服务端提供 `/api/game-stream/sessions` 以及 `/join`、`/signal`、`/stop`、`/mine`，后四者也支持 `/sessions/{id}/...` 路径。
 
-主机显式调用 `flutter_webrtc` 的 Windows 窗口桌面捕获，精确匹配十进制 HWND source id，要求视频和应用回环音频轨道同时存在，不回退到整桌面。视频上限目标为 1080p/60fps、8 Mbps，根据 WebRTC 可用带宽与 RTT 降低码率、帧率与分辨率。实时视频后端由 WebRTC 插件提供；逐行截图使用现有 WGC 通道。
+主机显式调用 `flutter_webrtc` 的 Windows 窗口捕获入口，精确匹配十进制 HWND source id，要求视频和应用回环音频轨道同时存在，不回退到整桌面。仓库的版本化插件补丁将 `fushiClientArea` 请求接到 WGC → WebRTC custom source 适配：复用已有 D3D/客户区裁剪，以纹理实际 RowPitch 转 I420，输出限制在 1920×1080 内，首个真实帧转换成功后才完成启动。补丁缺失或无法定位客户区时明确失败。视频上限目标为 60fps、8 Mbps，根据 WebRTC 可用带宽与 RTT 降低编码码率、帧率与分辨率；逐行截图仍使用现有 WGC 通道。
 
 可靠有序数据通道携带输入、ACK 与台词。两端信令序号独立，远端 SDP 之前到达的 ICE 先缓存。重复输入不会重新注入。Android 进入后台时发送按键释放消息、暂停输入与 HTTP 轮询，恢复时保留同一连接；短断线允许原连接恢复，失败的连接要求主机重新开启。窗口销毁、隐藏、最小化、Hook 会话结束、显式停止或 10 分钟无客户端活动会停止采集并释放按键。
 
@@ -26,9 +26,11 @@
 - Windows Debug 构建通过，包含新原生输入通道和 WebRTC 插件。
 - Android Debug APK 构建通过。
 - 引擎协议/会话测试 18 项通过；app 串流、词典传输、制卡与引擎纯净性回归 82 项通过；页面及设置回归首轮 24 项通过。
-- 追加的主机启动取消、渐进文本截图、分词和键位配置回归 12 项通过（其中 5 项与前述批次重叠）；后续 SDP 答复失败保留 offer 游标、手柄焦点释放两项也通过，合计 133 项不同的定向单元/组件测试。改动文件定向静态检查通过。
-- `powershell -ExecutionPolicy Bypass -File tool/run_game_stream_input_test.ps1` 编译真实原生输入实现，28 项断言通过，覆盖隐藏/最小化后的释放、进程身份失效拒绝、键盘扫描码和松开标志。测试只向自建离屏窗口发消息。
-- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`，使用自建 WinForms 窗口和生产 host，严格检查渲染首帧或解码帧，不能以 track 创建成功作为通过。2026-09-22 的初始诊断已确认 ICE、主机音频 RTP 发送和客户端接收，但主机 `media-source.frames`、`framesEncoded` 均为 0，尚不能证明视频捕获可用。
+- 追加的主机启动取消、渐进文本截图、分词和键位配置回归 12 项通过（其中 5 项与前述批次重叠）；后续 SDP 答复失败保留 offer 游标、手柄焦点释放两项也通过，首轮合计 133 项不同的定向单元/组件测试。又追加触摸取消/布局变化 4 项、后台/ICE 旧输入队列失效 2 项、前台切换取消/缺失采集补丁拒绝 2 项，合计 141 项。改动文件定向静态检查通过。
+- `powershell -ExecutionPolicy Bypass -File tool/run_game_stream_input_test.ps1` 编译真实原生输入实现，55 项断言通过，覆盖隐藏/最小化后的释放、进程身份、键盘扫描码及目标 DPI 坐标/边界。测试只向自建窗口发消息、不激活窗口；移除目标 DPI scope 的临时变体失败 5 项，确认新增测试能检出回归。
+- `tool/run_game_stream_capture_test.ps1` 的 18 项断言通过，验证 BT.601 固定颜色、纹理行距、裁剪原点、奇数尺寸和 1080p 上限。
+- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`。初始默认桌面路径在 PMv2/200% DPI 下启动成功但零帧；同类独立 probe 在 DPI-unaware 模式出帧、PMv2 模式零帧。接入 WGC 后，运行 `win-itest-20260922-204734-8bc39160` 通过：生产 host 本地首帧、WebRTC 接收解码/渲染首帧、非零应用音频能量、窗口最小化后的自动停止。输入客户区为 1248×642；该证据使用自建 WinForms 窗口，尚不代表游戏与 Android 联合验收。
+- 隔离 Android QA APK `app.fushi.reader.streamqa` 已构建并安装到 SM-X716B，不覆盖正式应用或其数据。LAN fixture 使用隔离主机库、预置测试配对和独立测试牌组；配对批准 UI 不属于此夹具的验证范围。输入 ACK、观察到的台词变化和可归因的游戏输入实效分别记录。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 

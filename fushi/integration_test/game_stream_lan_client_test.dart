@@ -221,7 +221,7 @@ void main() {
             () => lines.any(
               (GameStreamTextEvent line) =>
                   line.lineId == lookup!.currentLine?.lineId &&
-                  line.text == lookup!.currentLine?.text &&
+                  line.text == lookup.currentLine?.text &&
                   line.audioResourceId != null,
             ),
             'voice resource for the current Hook line',

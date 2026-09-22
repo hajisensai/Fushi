@@ -1,6 +1,6 @@
 // Run with tool/run_game_stream_input_test.ps1. The assertions remain active
 // with NDEBUG: this fixture intentionally uses no standard assert() calls.
-// Windows-only, isolated offscreen HWNDs; never activates a window or uses
+// Windows-only, isolated non-activating HWNDs; never activates a window or uses
 // global SendInput. Production Release() is compiled into this executable.
 #include <windows.h>
 #include <cstdint>
@@ -104,6 +104,84 @@ void CheckKeyMessageBits() {
   input.Unbind();
   DestroyWindow(hwnd);
 }
+
+void CheckPointerDpiCoordinates() {
+  const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+  const auto set_context = reinterpret_cast<DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT)>(
+      GetProcAddress(user32, "SetThreadDpiAwarenessContext"));
+  const auto get_context = reinterpret_cast<DPI_AWARENESS_CONTEXT(WINAPI*)()>(
+      GetProcAddress(user32, "GetThreadDpiAwarenessContext"));
+  const auto get_window_context = reinterpret_cast<DPI_AWARENESS_CONTEXT(WINAPI*)(HWND)>(
+      GetProcAddress(user32, "GetWindowDpiAwarenessContext"));
+  const auto contexts_equal = reinterpret_cast<BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT)>(
+      GetProcAddress(user32, "AreDpiAwarenessContextsEqual"));
+  Expect(set_context && get_context && get_window_context && contexts_equal,
+         "DPI thread APIs available");
+  if (!set_context || !get_context || !get_window_context || !contexts_equal) return;
+  const DPI_AWARENESS_CONTEXT original =
+      set_context(DPI_AWARENESS_CONTEXT_UNAWARE);
+  Expect(original != nullptr, "enter target unaware DPI context");
+  if (original == nullptr) return;
+  HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      L"STATIC", L"Fushi DPI pointer regression fixture", WS_POPUP,
+      // A tiny on-monitor window exercises that monitor's scaling. Parking at
+      // -32000 can use a 96-DPI virtual area and hide the rounding regression.
+      80, 80, 17, 11, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+  Expect(hwnd != nullptr, "create unaware target HWND");
+  if (hwnd == nullptr) {
+    set_context(original);
+    return;
+  }
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  RECT logical{};
+  Expect(GetClientRect(hwnd, &logical), "read target logical client extent");
+  const DPI_AWARENESS_CONTEXT target = get_window_context(hwnd);
+  Expect(set_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+             != nullptr, "enter sender PMv2 DPI context");
+  const DPI_AWARENESS_CONTEXT sender = get_context();
+  fushi::GameStreamInput input;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd)), "bind unaware pointer target");
+  const auto sender_extent = input.InspectBound();
+  std::cout << "DPI logical " << logical.right << "x" << logical.bottom
+            << " sender " << sender_extent.width << "x" << sender_extent.height << "\n";
+  const double points[][2] = {{0.0, 0.0}, {0.5, 0.5}, {1.0, 1.0}, {-1.0, 2.0}};
+  for (const auto& point : points) {
+    Expect(input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, point[0], point[1]),
+           "post pointer in target DPI context");
+    Expect(contexts_equal(get_context(), sender),
+           "pointer post restores sender DPI context");
+    set_context(target);
+    MSG message{};
+    const bool received = PeekMessageW(&message, hwnd, WM_LBUTTONDOWN,
+                                       WM_LBUTTONDOWN, PM_REMOVE) != FALSE;
+    const int x = static_cast<short>(LOWORD(message.lParam));
+    const int y = static_cast<short>(HIWORD(message.lParam));
+    Expect(received && x >= 0 && y >= 0 && x < logical.right && y < logical.bottom,
+           "received pointer stays inside logical client bounds");
+    Expect(received &&
+               x == fushi::GameStreamInput::NormalizedCoordinate(point[0], logical.right) &&
+               y == fushi::GameStreamInput::NormalizedCoordinate(point[1], logical.bottom),
+           "received pointer matches target logical coordinates");
+    set_context(sender);
+  }
+  set_context(target);
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  set_context(sender);
+  Expect(!input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
+         "empty client pointer post rejected");
+  Expect(contexts_equal(get_context(), sender),
+         "early return restores sender DPI context");
+  input.Unbind();
+  Expect(!input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
+         "unbound pointer post rejected");
+  Expect(contexts_equal(get_context(), sender),
+         "failed pointer post preserves sender DPI context");
+  DestroyWindow(hwnd);
+  set_context(original);
+  Expect(contexts_equal(get_context(), original),
+         "DPI fixture restores original thread context");
+}
 }
 int main() {
   CheckAllowed("hidden target receives keyup", SW_HIDE);
@@ -113,6 +191,7 @@ int main() {
   CheckRejected("changed process creation time receives no release", 1);
   CheckRejected("destroyed HWND receives no release", 2);
   CheckKeyMessageBits();
+  CheckPointerDpiCoordinates();
   std::cout << "CHECKS " << checks << " FAILURES " << failures << "\n";
   return failures == 0 ? 0 : 1;
 }

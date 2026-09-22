@@ -3435,6 +3435,15 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           result->Success();
           return;
         }
+        if (call.method_name() == "activate") {
+          std::string reason;
+          if (!game_stream_input_->Activate(&reason)) {
+            result->Error(reason, "Game window could not receive input");
+          } else {
+            result->Success();
+          }
+          return;
+        }
         if (call.method_name() == "unbind") {
           game_stream_input_->Unbind();
           result->Success();

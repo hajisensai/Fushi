@@ -20,6 +20,11 @@ abstract final class GameStreamInputChannel {
     await _channel.invokeMethod<void>('send', event);
   }
 
+  /// Transfers focus to the bound game during an explicit local start only.
+  static Future<void> activate() async {
+    await _channel.invokeMethod<void>('activate');
+  }
+
   static Future<Map<String, Object?>> inspect([int? hwnd]) async {
     final Map<Object?, Object?>? value = await _channel
         .invokeMethod<Map<Object?, Object?>>(

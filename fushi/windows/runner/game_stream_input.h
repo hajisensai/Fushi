@@ -33,6 +33,8 @@ class GameStreamInput {
   GameStreamInput& operator=(const GameStreamInput&) = delete;
 
   bool Bind(uintptr_t hwnd, std::string* reason = nullptr);
+  // Invoked only by the local start button, never by remote input messages.
+  bool Activate(std::string* reason = nullptr);
   bool Send(const flutter::EncodableMap& event, std::string* reason = nullptr);
   void Release();
   void Unbind();
@@ -49,6 +51,7 @@ class GameStreamInput {
   bool ProcessIdentityStillValid() const;
   void SetReason(std::string* reason, const char* value) const;
   bool PostKey(UINT vk, bool down);
+  bool PostPointer(UINT message, WPARAM flags, double x, double y);
 
   HWND hwnd_ = nullptr;
   HANDLE process_ = nullptr;
