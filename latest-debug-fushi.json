@@ -8,24 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 7ccd890. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.8.0-debug.15385-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15385-ios.ipa",
-      "releaseSequence": 15385,
-      "tag": "v2.8.0-debug.15385+fb11a48",
-      "version": "2.8.0-debug.15385",
-      "size": 60988635,
-      "sha256": "18d6148fbf334b7941ecb73427a04525088acb8fafb8d2553548199b2de3fdba"
-    },
-    {
-      "name": "fushi-2.8.0-debug.15385-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15385-macos.zip",
-      "releaseSequence": 15385,
-      "tag": "v2.8.0-debug.15385+fb11a48",
-      "version": "2.8.0-debug.15385",
-      "size": 327274466,
-      "sha256": "f2a2ad5752e394e3851c85a088eaa24f9b2a26641e35e0425b238ebb5b73766e"
-    },
-    {
       "name": "fushi-2.8.0-debug.15386-7ccd890-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15386-7ccd890-debug.apk",
       "releaseSequence": 15386,
@@ -33,6 +15,24 @@
       "version": "2.8.0-debug.15386",
       "size": 274547378,
       "sha256": "fb627721c1d45ed7677e435dd3ea582383b63ad5edd40a57fc708944d64ba9b8"
+    },
+    {
+      "name": "fushi-2.8.0-debug.15386-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15386-ios.ipa",
+      "releaseSequence": 15386,
+      "tag": "v2.8.0-debug.15386+7ccd890",
+      "version": "2.8.0-debug.15386",
+      "size": 60988793,
+      "sha256": "e7e8cdb0a8a6ed9ed3c55fe9f34a7b093a7bb4347c071c0f8e2dca149a0b14e1"
+    },
+    {
+      "name": "fushi-2.8.0-debug.15386-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15386-macos.zip",
+      "releaseSequence": 15386,
+      "tag": "v2.8.0-debug.15386+7ccd890",
+      "version": "2.8.0-debug.15386",
+      "size": 327274534,
+      "sha256": "dad59d3666320c05cb08669ebeb1213470c432932846cab0a5cfde9fce014e43"
     },
     {
       "name": "fushi-2.8.0-debug.15386-windows-setup.exe",
