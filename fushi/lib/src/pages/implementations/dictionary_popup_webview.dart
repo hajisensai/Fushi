@@ -13,6 +13,8 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -1338,6 +1340,16 @@ JSON.stringify((function(){
       $beforeRenderJs
       ${needsScrollCheck ? _scrollCheckJs : ""}
     ''');
+    // 诊断（2026-09-22）：注入量是「查词为什么卡」的直接证据。冷建 WebView 时
+    // staticChanged 恒为真 ⇒ 数十 KB 的静态设置段要跟着每次查词一起发；命中热槽时它
+    // 是 0，只发 entries。两种模式的 static= 一栏一眼可辨。
+    LookupPerfTrace.current?.mark(
+      'push',
+      detail: 'static=${staticSettingsJs.length}B '
+          'extras=${inAppExtrasJs.length}B '
+          'entries=${entriesJs.length}B '
+          'load-more=$isLoadMore token=$renderToken',
+    );
   }
 
   /// BUG-717 ③：in-app 专属的固定注入块。内容与拆分前逐字节一致，只是不再每次
@@ -2018,8 +2030,18 @@ JSON.stringify((function(){
                     ? rawToken.toInt()
                     : int.tryParse(rawToken?.toString() ?? '');
                 if (token != null && token != _renderToken) {
+                  // 作废的渲染信号（这一批结果已被更新的一次推送取代）。记一行：
+                  // 「渲染了两遍」本身就是一种可感知的慢，且会让第一遍的 reveal 空等。
+                  videoDiag(
+                    VideoDiagCategory.popup,
+                    VideoDiagLevel.v,
+                    'popupRendered stale token=$token current=$_renderToken',
+                  );
                   return null;
                 }
+                // 诊断（2026-09-22）：JS 侧 renderPopup() 画完的时刻。push → rendered
+                // 这一段是 WebView 内部的真实渲染耗时，与 Dart 侧注入耗时分开计。
+                LookupPerfTrace.current?.mark('rendered');
                 final double? contentHeight = (args.isNotEmpty ? args[0] : null)
                         is num
                     ? (args[0] as num).toDouble()
@@ -2529,6 +2551,15 @@ JSON.stringify((function(){
         _lastSentStaticRevision = null;
         _lastSentInAppExtrasKey = null;
         debugPrint('[popup-perf] webview loadStop $url');
+        // 诊断（2026-09-22）：这一段只在**冷建**路径上出现——复用热槽 / 停驻 realm 的
+        // 查词根本不会重新 loadStop。它在流水里现身本身就说明这次查词付了整页（约
+        // 300KB 内联 HTML/CSS/JS）的解析成本。
+        LookupPerfTrace.current?.mark('loadStop');
+        videoDiag(
+          VideoDiagCategory.popup,
+          VideoDiagLevel.info,
+          'webview loadStop (cold page parse completed)',
+        );
         // Inject the same char caret as the reader (selection.js, a head script,
         // has already defined window.fushiSelection by load-stop). It stays
         // dormant until the reader hands it the cursor on lookup.

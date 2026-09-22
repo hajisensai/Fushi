@@ -536,6 +536,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
+  // BUG-2628 视频 / 查词性能诊断日志开关：与上面的调试日志同族，落裸
+  // SharedPreferences 而不是 prefsRepo（诊断开关不进 Profile 快照，也要能在
+  // AppModel 起来前读到），故 harness 的 DB 往返探针看不到它的写入。生效点是
+  // 「此后每一条埋点记不记」——由 video_diag_log_test 的门控用例（关着时 add
+  // 一行都不进内存环、不建文件；开着时落盘并受 msg-level 过滤）直接咬住。
+  'system/Video & lookup diagnostics log':
+      'test/diagnostics/video_diag_log_test.dart',
   // BUG-1980 代理模式三态（自动/直连/手动）：写 prefsRepo（changed=true），生效点是
   // app_proxy.dart 的出口裁决与 HttpClient.findProxy / authenticateProxy 装配——
   // harness 里没有真实公网出站可探。三态语义（direct 忽略 env 与已填地址、manual

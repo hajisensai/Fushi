@@ -5301,5 +5301,10 @@
   "video_mini_window_exit": "退出小窗",
   "video_setting_slim_progress_bar": "底部细进度条",
   "video_setting_slim_progress_bar_hint": "控制条淡出后，在视频最下方保留一条主题色细进度条。小窗模式下它恒常显示——那里完整进度条已被收起。",
-  "shortcut_action_video_toggle_mini_window": "切换小窗"
+  "shortcut_action_video_toggle_mini_window": "切换小窗",
+  "settings_video_diag_toggle": "视频 / 查词诊断日志",
+  "settings_video_diag_toggle_hint": "记录帧耗时、libmpv 播放统计与查词各阶段耗时。默认关闭；打开后复现卡顿或查词慢，再导出。",
+  "settings_video_diag_export": "导出视频诊断日志",
+  "settings_video_diag_export_hint": "统一时间轴 + libmpv 自身的详细日志",
+  "video_diag_share_subject": "Fushi 视频诊断日志"
 }

@@ -176,6 +176,8 @@ import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
+import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -1781,6 +1783,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 否则首次访问可能落在 dispose/deactivate 的 postframe（element 树不稳定）→ ref.read 抛错。
   late final DictionaryPopupController _popup;
 
+  /// 诊断用 Flutter 帧耗时探针（2026-09-22）。与 libmpv 每秒属性采样同节奏、同一把
+  /// uptime 尺，好把「GPU/解码掉帧」和「UI 线程被字幕层重建占住」两类卡顿分开。随
+  /// 页面生命周期起停；诊断关闭时 [VideoFrameTimingProbe.start] 直接返回。
+  final VideoFrameTimingProbe _frameProbe =
+      VideoFrameTimingProbe(label: 'video-page');
+
   /// 字幕字符命中句柄：查词浮层的 dismiss barrier 用它反查「点到的是不是另一个字幕
   /// 字符」，是则切换查词、保持暂停（见 [_onDismissBarrierTap] / [VideoSubtitleHitTester]）。
   final VideoSubtitleHitTester _subtitleHitTester = VideoSubtitleHitTester();
@@ -2339,6 +2347,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void initState() {
     super.initState();
+    // 诊断时间轴（2026-09-22，用户：分析视频为什么卡顿 / 查词为什么卡）。探针自己判
+    // 开关，关着时 start() 立即返回、连回调都不注册——默认路径零开销。
+    _frameProbe.start();
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      'page open platform=${Platform.operatingSystem}',
+    );
     _registerExternalNavigation();
     if (Platform.isWindows) {
       WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown);
@@ -4779,6 +4795,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
+    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
+    _frameProbe.stop();
+    videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -5456,6 +5476,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _popup.lowMemory = appModel.lowMemoryMode;
     setState(() => _popup.seedWarmSlot());
     _syncPopupOverlay();
+    // 诊断时间轴（2026-09-22）：这一行是「小内存模式为什么查词变慢」的分叉点——低内存
+    // 下 seedWarmSlot 早退、热槽不存在，之后每次查词都要冷建 WebView。把分叉的**事实**
+    // 记下来，排查时不必再去猜用户开没开那个开关。
+    videoDiag(
+      VideoDiagCategory.warmSlot,
+      VideoDiagLevel.info,
+      'seed host=video low-memory=${_popup.lowMemory} '
+      'seeded=${_popup.entries.isNotEmpty}',
+    );
   }
 
   /// 查词浮层打开时，点根 Overlay 全屏 dismiss barrier 的处理：**非嵌套**（只有顶层可见）

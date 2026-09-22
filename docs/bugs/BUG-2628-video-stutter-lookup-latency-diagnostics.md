@@ -1,0 +1,15 @@
+## BUG-2628 · 视频卡顿与查词慢：小内存模式可规避卡顿但查词变慢会闪（待诊断）
+- **报告**：2026-09-22（用户：「视频为什么卡顿、查词为什么卡；小内存模式可以解决，但是小内存会查词很慢、会闪」）
+- **真实性**：⏳ **待诊断**——症状可信但**尚未复现**，本轮交付的是取证手段而不是修复。此前这两条链路**一个时间戳都没有**：`ErrorLogService` 只收错误（成功路径不可观测）、`DebugLogService` 无级别无落盘且 500 条就滚没、`StudyDiagLog` 是每次翻页几行的统计流水，都撑不住每秒上百行的性能采样。没有数据之前的任何归因都是猜测，故本条不填根因。
+- **[ ] ① 未修复** — 等用户按下方步骤导出日志后再定位。当前只在代码里钉死了**两条已确认的结构事实**（读代码可证，非推测）：
+  - 小内存模式对播放管线**零影响**，它只关掉查词侧的三样东西——常驻热槽（`dictionary_popup_controller.dart` `seedWarmSlot` 早退）、嵌套 realm 停驻（`_retireEntries` 低内存直接丢弃键）、三级词典缓存预算（`dictionary_repository.dart` 32MB→8MB / 8MB / 2MB），外加跳过启动 headless 预热（`webview_prewarm.dart`）。所以「小内存能治卡顿」若属实，机理只能是**少了一个常驻 WebView2 在和视频渲染抢 GPU/显存**，而不是播放代码走了另一条路。
+  - 「查词会闪」最可疑的机制是 `markPendingReveal` 的 1800ms 兜底定时器：冷建 WebView 太慢时 `popupRendered` 没能及时到达，弹窗被**强制**翻可见、内容随后才画上，于是先露一下空壳再重画。新日志把这条路提级到 `warn` 并记 `outcome=forced-reveal`，命中与否一眼可辨。
+- **[x] ② 已加自动化测试** — 诊断设施本身的纯函数与接线守卫（73 条）：`fushi/test/diagnostics/video_diag_log_test.dart`（mpv `--msg-level` 过滤语义、行格式、关着时一行不记）、`video_diag_stats_test.dart`（丢帧增量/速率、换片回绕按 0、帧耗时分位与 jank 判据）、`lookup_perf_trace_test.dart`（阶段增量、幂等、收尾唯一）、`video_diag_export_test.dart`（导出三段）、`video_diag_wiring_guard_test.dart`（每个埋点仍在——**埋点缺失是静默的**，日志照样生成、照样导出，只是永远答不出那一段为什么慢）。
+- **备注**：
+  - **怎么取证**：设置 › 诊断 › 打开「视频 / 查词诊断日志」→ 复现卡顿与查词各一次 → 设置 › 诊断 › 「导出视频诊断日志」。导出正文三段：头信息（版本 / 平台 / **小内存模式是否开着** / 热槽状态）、统一时间轴、libmpv 自己那份 verbose 日志的尾部。
+  - **怎么读**：全部行共用同一把 uptime 尺（`[  12.345]`，与 mpv log-file 第一列同形），所以三类证据可按时刻对齐——
+    - `[mpv/stats]` 每秒一行：`late` / `vo-drop` / `dec-drop` 三个丢帧计数器分开给增量与每秒速率，外加 `avsync` / `cache` / `vf-fps`。**解码丢帧与 VO 丢帧是两种不同的卡顿**，合成一个数就分不清是 GPU 画不动还是 CPU 解不动。
+    - `[frame]` 每秒一行：Flutter 的 build / raster 各自 p50/p95/max 与 jank 计数。**build 高 = Dart 侧重建太贵**（字幕层每次 controller 通知都清空重建逐字符登记表、`\fad` 动画期逐帧空 setState、控制条 7 个 notifier 的 merge），**raster 高 = GPU 侧画不动**。这一半 libmpv 完全看不见，此前也无从观测。
+    - `[lookup]` 每次查词一行汇总：`warm=hit|cold-create|parked-realm`、各阶段相对上一阶段的 Δms（`search` / `fill` / `loadStop` / `push` / `rendered` / `reveal`）、`outcome=revealed|forced-reveal|empty|abandoned`。冷建路径才会出现 `loadStop`（整页约 300KB 内联 HTML/CSS/JS 的解析成本），`push` 那行的 `static=` 字节数在冷建时恒为数十 KB、命中热槽时为 0。
+  - **代价**：默认**关闭**（与 mpv 要显式给 `--log-file` 同一套约定）。关着时 `VideoDiagLog.add` 第一行即返回、帧探针不注册回调、周期采样一个 mpv 属性都不读——默认路径与改动前等价。
+  - **与 BUG-2572 的关系**：那条（Windows 看番时导航条消失后键鼠全失灵、开小内存模式即消失）2026-09-16 调查未复现，只留在本地分支未进上游。两者共用「小内存模式唯一差异是热槽 WebView2」这条事实；本条的日志同样能给那条提供现场。

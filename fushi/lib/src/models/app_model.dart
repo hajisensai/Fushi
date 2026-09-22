@@ -62,6 +62,7 @@ import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
@@ -8693,6 +8694,19 @@ class AppModel with ChangeNotifier {
       imageCache.maximumSize = 1000;
       imageCache.maximumSizeBytes = 100 << 20; // 100 MB
     }
+    // 诊断（2026-09-22）：小内存模式是用户用来换取视频不卡的那个开关，代价落在查词
+    // 上。把它当前的**实际**预算记进时间轴，排查时不必再反推用户开了什么——三级词典
+    // 缓存的预算由 [DictionaryRepository] 按同一个 isLowMemory 闭包决定，热槽与停驻
+    // realm 则由 [DictionaryPopupController] 按同一个标志决定。
+    final String slots = lowMemoryMode ? 'disabled' : 'enabled';
+    videoDiag(
+      VideoDiagCategory.memory,
+      VideoDiagLevel.info,
+      'policy low-memory=$lowMemoryMode '
+      'imageCache=${imageCache.maximumSize}/'
+      '${imageCache.maximumSizeBytes >> 20}MB '
+      'warm-slot=$slots parked-realms=$slots',
+    );
   }
 }
 
