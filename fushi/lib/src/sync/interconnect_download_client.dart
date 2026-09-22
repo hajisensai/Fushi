@@ -14,6 +14,7 @@ class HostDownloadTarget {
     required this.baseUrl,
     required this.deviceName,
     required this.backend,
+    this.kinds = const <String>['video'],
     this.fingerprintSha256,
   });
 
@@ -22,9 +23,17 @@ class HostDownloadTarget {
 
   /// `qbittorrent` / `embedded`。
   final String backend;
+
+  /// host 宣告能收的内容域：`video` 加上它能按域入库的发现页域（`novel` /
+  /// `manga` / `audiobook` / `game`）。老 host 不带这个字段 = 只收视频。
+  final List<String> kinds;
   final String? fingerprintSha256;
 
   String get label => deviceName ?? baseUrl;
+
+  /// [discoveryKind] = `DiscoveryMediaKind.name`；null 表示视频。
+  bool supportsKind(String? discoveryKind) =>
+      discoveryKind == null || kinds.contains(discoveryKind);
 }
 
 /// host 上的一条下载任务（`videoDownloadJobToWire` 的镜像）。
@@ -92,47 +101,81 @@ class InterconnectDownloadClient {
 
   /// 第一台宣告 `downloads.supported` 的已配对 host。
   Future<HostDownloadTarget?> probe() async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) continue;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
-      );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) continue;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) continue;
-        final Object? downloads = decoded['downloads'];
-        if (downloads is! Map || downloads['supported'] != true) continue;
-        return HostDownloadTarget(
-          baseUrl: candidate.url,
-          deviceName: candidate.deviceName,
-          backend: (downloads['backend'] ?? '').toString(),
-          fingerprintSha256: candidate.fingerprintSha256,
-        );
-      } catch (_) {
-        continue;
-      } finally {
-        if (closeAfter) client.close();
-      }
+    for (final FushiClientUrl candidate in await _enabledCandidates()) {
+      final HostDownloadTarget? target = await _probeCandidate(candidate);
+      if (target != null) return target;
     }
     return null;
   }
 
+  /// 只探这一台（用户在「下载执行设备」里选定的那台）；不在配对清单里 / 没宣告
+  /// 能力 / 探不到 → null，**不**退而求其次换别的 host——用户点名的设备连不上要
+  /// 如实告诉他，而不是悄悄下到另一台机器上。
+  Future<HostDownloadTarget?> probeUrl(String baseUrl) async {
+    for (final FushiClientUrl candidate in await _enabledCandidates()) {
+      if (candidate.url == baseUrl) return _probeCandidate(candidate);
+    }
+    return null;
+  }
+
+  /// 全部宣告能力的已配对 host（资源搜索页的「下载到」下拉要列出来让用户挑）。
+  Future<List<HostDownloadTarget>> probeAll() async {
+    final List<HostDownloadTarget> targets = <HostDownloadTarget>[];
+    for (final FushiClientUrl candidate in await _enabledCandidates()) {
+      final HostDownloadTarget? target = await _probeCandidate(candidate);
+      if (target != null) targets.add(target);
+    }
+    return targets;
+  }
+
+  Future<List<FushiClientUrl>> _enabledCandidates() async =>
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false);
+
+  Future<HostDownloadTarget?> _probeCandidate(FushiClientUrl candidate) async {
+    final Uri? uri = _uri(candidate.url, '/api/capabilities');
+    final String? token =
+        interconnectTokenFor(candidate, await _repo.getFushiClientToken());
+    if (uri == null || token == null) return null;
+    final (http.Client client, bool closeAfter) = _clientFor(
+      candidate.url,
+      fingerprint: candidate.fingerprintSha256,
+    );
+    try {
+      final http.Response response = await client
+          .get(uri, headers: _headers(token))
+          .timeout(_probeTimeout);
+      if (response.statusCode != 200) return null;
+      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return null;
+      final Object? downloads = decoded['downloads'];
+      if (downloads is! Map || downloads['supported'] != true) return null;
+      final Object? kinds = downloads['kinds'];
+      return HostDownloadTarget(
+        baseUrl: candidate.url,
+        deviceName: candidate.deviceName,
+        backend: (downloads['backend'] ?? '').toString(),
+        kinds: kinds is List
+            ? kinds.map((Object? k) => k.toString()).toList(growable: false)
+            : const <String>['video'],
+        fingerprintSha256: candidate.fingerprintSha256,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      if (closeAfter) client.close();
+    }
+  }
+
+  /// [discoveryKind] = `DiscoveryMediaKind.name`（非视频域，host 按域入库）；
+  /// null = 视频，此时 [mediaKind] 才有意义。
   Future<String> addMagnet(
     HostDownloadTarget target, {
     required String magnetUri,
     required String title,
     String mediaKind = 'movie',
+    String? discoveryKind,
   }) async {
     final Map<String, dynamic> body = await _call(
       target,
@@ -142,6 +185,7 @@ class InterconnectDownloadClient {
         'magnet': magnetUri,
         'title': title,
         'mediaKind': mediaKind,
+        if (discoveryKind != null) 'discoveryKind': discoveryKind,
       },
     );
     return body['jobId'].toString();

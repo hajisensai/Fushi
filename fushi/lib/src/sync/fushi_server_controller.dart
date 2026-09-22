@@ -4,19 +4,23 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
-import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
-import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
-import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
@@ -71,20 +75,28 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiRemoteHistoryService Function()? historyServiceFactory,
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
+    Future<HostJobManager> Function()? hostJobsFactory,
+    HostDownloadHost Function()? downloadsFactory,
+    HostSubscriptionHost Function()? subscriptionsFactory,
+    PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
-  }) : _navigatorKey = navigatorKey,
-       _database = database,
-       _syncDataDir = syncDataDir,
-       _remoteLookupServiceFactory = remoteLookupServiceFactory,
-       _miningServiceFactory = miningServiceFactory,
-       _historyServiceFactory = historyServiceFactory,
-       _libraryServiceFactory = libraryServiceFactory,
-       _mangaOcrServiceFactory = mangaOcrServiceFactory,
-       // Headless/test construction without an injected service falls back to
-       // the desktop (machine-hostname) source; production wires the real
-       // per-platform service so mobile hosts advertise their model, not
-       // Android's "localhost" (TODO-1356).
-       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
+  })  : _navigatorKey = navigatorKey,
+        _database = database,
+        _syncDataDir = syncDataDir,
+        _remoteLookupServiceFactory = remoteLookupServiceFactory,
+        _miningServiceFactory = miningServiceFactory,
+        _historyServiceFactory = historyServiceFactory,
+        _libraryServiceFactory = libraryServiceFactory,
+        _mangaOcrServiceFactory = mangaOcrServiceFactory,
+        _hostJobsFactory = hostJobsFactory,
+        _downloadsFactory = downloadsFactory,
+        _subscriptionsFactory = subscriptionsFactory,
+        _prefsStore = prefsStore,
+        // Headless/test construction without an injected service falls back to
+        // the desktop (machine-hostname) source; production wires the real
+        // per-platform service so mobile hosts advertise their model, not
+        // Android's "localhost" (TODO-1356).
+        _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final FushiDatabase Function() _database;
@@ -97,6 +109,20 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 漫画 P3：互联 host 代跑 OCR 的服务工厂。null（headless/单测）= 不接线，
   /// server 的 `/api/ocr/*` 端点 404、capabilities 不带 `mangaOcr` 字段。
   final MangaOcrService Function()? _mangaOcrServiceFactory;
+
+  /// 通用任务（`/api/jobs`，目前 ASR）/ 代下载（`/api/downloads`）/ 内容订阅
+  /// （`/api/subscriptions`）三面的装配工厂。三者此前只在无头 `fushi_server` 接线，
+  /// app 当 host 时对端探到的能力位里没有它们，手机端「下载到 电脑」的选项根本
+  /// 不出现。null（headless/单测）= 不接线，对应端点 404、能力位不带该字段。
+  ///
+  /// 任务管理器要 `load()` 磁盘记录才能用，所以是异步工厂；每次 start 新建，stop
+  /// 时 server 内部 `disposeAll`。
+  final Future<HostJobManager> Function()? _hostJobsFactory;
+  final HostDownloadHost Function()? _downloadsFactory;
+  final HostSubscriptionHost Function()? _subscriptionsFactory;
+  /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
+  /// 走，行为与接线前一致。
+  final PrefStore Function()? _prefsStore;
   final PlatformDeviceInfoService _deviceInfo;
 
   FushiSyncServer? _server;
@@ -532,42 +558,52 @@ class FushiSyncServerController extends ChangeNotifier {
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
-    final FushiSyncServer server =
-        FushiSyncServer(
-            syncDataDir: _syncDataDir(),
-            port: port,
-            token: token,
-            allowLan: true,
-            remoteLookupService: _remoteLookupServiceFactory(),
-            miningService: _miningServiceFactory?.call(),
-            historyService: _historyServiceFactory?.call(),
-            libraryService: _libraryServiceFactory?.call(),
-            // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
-            // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
-            mangaOcrJobs: _buildMangaOcrJobManager(),
-            securityContext: securityContext,
-            hostFingerprint: hostFingerprint,
-            deviceName: deviceName,
-            // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
-            // FFI engine so the browser extension's rewritten <img> GET can fetch
-            // them. Null-safe: before the engine is initialised it yields null and
-            // the endpoint answers 404.
-            dictionaryMediaProvider: (String dict, String mediaPath) =>
-                FushiDicts.isInitialized
-                ? FushiDicts.instance.getMediaFile(dict, mediaPath)
-                : null,
-            gameStreamService: gameStreamService,
-          )
-          ..onPairRequest = _promptPairApproval
-          // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
-          ..onPairPinGenerated = _generatePairPin
-          // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
-          ..onPairSessionResolved = _dismissPendingPairPinDialog
-          ..lanRequiresPinProvider = _repo.getLanRequiresPin
-          // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
-          // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
-          ..onPeerPaired = _persistPairedPeer
-          ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+    final HostJobManager? hostJobs = await _hostJobsFactory?.call();
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: _syncDataDir(),
+      port: port,
+      token: token,
+      allowLan: true,
+      remoteLookupService: _remoteLookupServiceFactory(),
+      miningService: _miningServiceFactory?.call(),
+      historyService: _historyServiceFactory?.call(),
+      libraryService: _libraryServiceFactory?.call(),
+      // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
+      // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
+      mangaOcrJobs: _buildMangaOcrJobManager(),
+      // 通用任务 / 代下载 / 订阅：与无头 fushi_server 同一份引擎路由，只是实现
+      // 挂在 app 自己的管线上（见 app_download_host.dart）。
+      hostJobs: hostJobs,
+      downloads: _downloadsFactory?.call(),
+      subscriptions: _subscriptionsFactory?.call(),
+      securityContext: securityContext,
+      hostFingerprint: hostFingerprint,
+      deviceName: deviceName,
+      // 引擎按请求实时读的 host 偏好（目前只有「允许为对端转码视频」）：传仓库本体
+      // 而不是启动时的快照，用户在设置里改完不必重启互联服务。
+      prefs: _prefsStore?.call(),
+      // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
+      // FFI engine so the browser extension's rewritten <img> GET can fetch
+      // them. Null-safe: before the engine is initialised it yields null and
+      // the endpoint answers 404.
+      // 游戏串流（本 PR）：仅当主机本地点了「开始串流」才非空；null = 串流端点
+      // 全部 404，行为与从前一致。
+      gameStreamService: gameStreamService,
+      dictionaryMediaProvider: (String dict, String mediaPath) =>
+          FushiDicts.isInitialized
+              ? FushiDicts.instance.getMediaFile(dict, mediaPath)
+              : null,
+    )
+      ..onPairRequest = _promptPairApproval
+      // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
+      ..onPairPinGenerated = _generatePairPin
+      // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
+      ..onPairSessionResolved = _dismissPendingPairPinDialog
+      ..lanRequiresPinProvider = _repo.getLanRequiresPin
+      // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
+      // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
+      ..onPeerPaired = _persistPairedPeer
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

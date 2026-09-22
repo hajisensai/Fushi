@@ -65,6 +65,22 @@ SettingsDestination buildVideoDestination() {
               await settingsContext.appModel.setVideoAutoPlayNext(value);
             },
           ),
+          // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
+          // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
+          // 细线会把这个意图撤回一半；要的人在这里开。
+          // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
+          // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.playback.slim_progress_bar',
+            title: t.video_setting_slim_progress_bar,
+            subtitle: t.video_setting_slim_progress_bar_hint,
+            icon: Icons.linear_scale_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSlimProgressBar,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoSlimProgressBar(value);
+            },
+          ),
           // 「单文件循环」从「画质」分区移到「播放」分区（语义归属播放行为，紧随自动
           // 连播）。VideoPlacement（mpv/playback order 200）不变——面板投影位置照旧，
           // 仅调全局设置页所属 SettingsSection。
@@ -870,11 +886,11 @@ SettingsDestination buildVideoDestination() {
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoMetadataPrimaryProviderPref,
                                 defaultValue:
-                                    VideoMetadataProviderKind.mal.name,
+                                    kDefaultVideoMetadataPrimaryProvider.name,
                               )
                               as String,
                         ) ??
-                        VideoMetadataProviderKind.mal)
+                        kDefaultVideoMetadataPrimaryProvider)
                     .name,
             onChanged: (SettingsContext settingsContext, String value) async {
               await commitVideoMetadataRuntimePreference(
@@ -913,6 +929,71 @@ SettingsDestination buildVideoDestination() {
                 kVideoMetadataLocalePref,
                 value,
               );
+            },
+          ),
+          // 图片保留张数（Shoko TMDB.MaxAutoPosters / Backdrops / Logos，默认 10，
+          // 0 = 不限）与演职员头像落地（AutoDownloadStaffImages）。改后经
+          // commitVideoMetadataRuntimePreference 同款路径重建刮削快照。
+          for (final (String key, String title, IconData icon) limit
+              in <(String, String, IconData)>[
+            (
+              kVideoMetadataMaxCoversPref,
+              t.video_metadata_max_covers,
+              Icons.image_outlined
+            ),
+            (
+              kVideoMetadataMaxBackdropsPref,
+              t.video_metadata_max_backdrops,
+              Icons.panorama_outlined
+            ),
+            (
+              kVideoMetadataMaxLogosPref,
+              t.video_metadata_max_logos,
+              Icons.title_outlined
+            ),
+          ])
+            SettingsStepperItem(
+              id: 'video.library.${limit.$1}',
+              title: limit.$2,
+              subtitle: t.video_metadata_image_limit_hint,
+              icon: limit.$3,
+              value: (SettingsContext settingsContext) {
+                final Object? raw = settingsContext.appModel.prefsRepo.getPref(
+                  limit.$1,
+                  defaultValue: kVideoMetadataDefaultMaxImages,
+                );
+                return (raw is int
+                        ? raw
+                        : int.tryParse('$raw') ??
+                            kVideoMetadataDefaultMaxImages)
+                    .toDouble();
+              },
+              step: 1,
+              min: 0,
+              max: 30,
+              format: (double v) => '${v.round()}',
+              onChanged: (SettingsContext settingsContext, double v) async {
+                await settingsContext.appModel.prefsRepo
+                    .setPref(limit.$1, v.round());
+                await settingsContext.appModel
+                    .reloadVideoDownloadPipelineRuntime();
+              },
+            ),
+          SettingsSwitchItem(
+            id: 'video.library.metadata_download_staff_images',
+            title: t.video_metadata_download_staff_images,
+            subtitle: t.video_metadata_download_staff_images_hint,
+            icon: Icons.people_outline,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.getPref(
+                  kVideoMetadataStaffImagesPref,
+                  defaultValue: false,
+                ) as bool,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.prefsRepo
+                  .setPref(kVideoMetadataStaffImagesPref, value);
+              await settingsContext.appModel
+                  .reloadVideoDownloadPipelineRuntime();
             },
           ),
           // 识别词（设计稿 C 二期，对标 MoviePilot WordsMatcher）：用户词表在

@@ -85,7 +85,9 @@ void main() {
       expect(src.contains('widget.onOpenSentenceContextModal'), isTrue);
       expect(src.contains('onOpenSentenceContextModal'), isTrue);
       // 确认制卡回点：Dart 精确点第 idx 个词条（复用 mineEntry 全逻辑）。
-      expect(src.contains('Future<void> mineEntryByIndex('), isTrue);
+      // BUG-2627：必须回传「有没有真的点到」，否则 popup.js 的三条 return false
+      // 与「控制器已没了」一样被整个吞掉，任何关栈竞态都长成「点了没反应」。
+      expect(src.contains('Future<bool> mineEntryByIndex('), isTrue);
       expect(src.contains('fushiPopupMineEntryByIndex'), isTrue);
       // 预览/增减 handler 仍在（对话框仍复用后端）。
       expect(src.contains("handlerName: 'sentenceContextPreview'"), isTrue);

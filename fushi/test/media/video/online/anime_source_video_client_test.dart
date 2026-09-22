@@ -124,10 +124,11 @@ void main() {
       expect(c.httpHeaderFields, <String, String>{
         'Referer': 'https://site.example/1080',
       });
-      // 候选缓存：同一集再取不打扩展。
+      // 再次起播同一集要重新问扩展：hoster 给的是一次性 / 短 TTL 地址，重放旧的
+      // 等于「重试多少次都失败」（BUG-2617）。
       runtime.videoListCalls = 0;
       await c.remoteVideoStreamUrls(id);
-      expect(runtime.videoListCalls, 0);
+      expect(runtime.videoListCalls, 1);
     },
   );
 
@@ -207,10 +208,53 @@ void main() {
         <String>['C'],
       );
       expect(c.streamVariantIndex, 0);
-      // 越界下标不改变钉住的选择。
+      // 越界下标不改变钉住的选择。回到第一集会重新问扩展（一次性地址不重放），
+      // 钉住的那条按菜单标签在新一批候选里重新认出来——哪怕它这次排在别的位置。
       c.streamVariantIndex = 5;
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://b.example/720.mp4',
+          'quality': '',
+          'headers': <Object?, Object?>{'Referer': 'https://b.example/'},
+        },
+        <Object?, Object?>{
+          'url': 'https://a.example/1080.m3u8',
+          'quality': 'A · 1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://a.example/'},
+        },
+      ];
       final RemoteVideoStreamUrls back = await c.remoteVideoStreamUrls(id);
       expect(back.streamUrl, 'https://b.example/720.mp4');
+    },
+  );
+
+  test(
+    'switching lines reuses the menu, everything else re-resolves (BUG-2617)',
+    () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': 'https://a.example/1.m3u8', 'quality': 'A'},
+        <Object?, Object?>{'url': 'https://b.example/1.m3u8', 'quality': 'B'},
+      ];
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+
+      // 换线路：用户刚看过这批候选，不该再等一轮扩展取流。
+      runtime.videoListCalls = 0;
+      c.streamVariantIndex = 1;
+      final RemoteVideoStreamUrls switched = await c.remoteVideoStreamUrls(id);
+      expect(runtime.videoListCalls, 0);
+      expect(switched.streamUrl, 'https://b.example/1.m3u8');
+
+      // 复用只放行一次：紧接着的重试（同一集、没再换线路）必须重新解析。
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': 'https://a.example/2.m3u8', 'quality': 'A'},
+        <Object?, Object?>{'url': 'https://b.example/2.m3u8', 'quality': 'B'},
+      ];
+      final RemoteVideoStreamUrls retried = await c.remoteVideoStreamUrls(id);
+      expect(runtime.videoListCalls, 1);
+      // 新地址，且仍是用户钉住的那条线路。
+      expect(retried.streamUrl, 'https://b.example/2.m3u8');
     },
   );
 
@@ -392,6 +436,37 @@ void main() {
       ]).url,
       'y',
     );
+  });
+
+  /// BUG-2626：字幕检索要按集号筛版本，而 `RemoteVideoInfo` 能给的两个数字都不是集号
+  /// ——`title` 是分集标题（`Episode 1`）、`collection.sortIndex` 是播放序。集号只有
+  /// 扩展自己知道（`episode_number`），所以 client 实现 [RemoteVideoEpisodeNumber]。
+  test('remoteVideoEpisodeNumber 报扩展给的集号，不是播放序', () {
+    final AnimeSourceVideoClient c = client();
+    expect(c, isA<RemoteVideoEpisodeNumber>());
+    final List<RemoteVideoInfo> videos = c.remoteVideos;
+    expect(c.remoteVideoEpisodeNumber(videos[0].id), 1);
+    expect(c.remoteVideoEpisodeNumber(videos[1].id), 2);
+    // 认不出的 id 一律 null（调用方据此回落，不许拿 0 或序号冒充集号）。
+    expect(c.remoteVideoEpisodeNumber('anime-source:nope'), isNull);
+  });
+
+  test('集号缺失/小数 → null（宁可留空，不填到隔壁那一集）', () {
+    final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+      manager: manager,
+      context: _context,
+      anime: anime,
+      episodes: const <MihonEpisode>[
+        // 扩展没给 episode_number（`MihonEpisode.number` 解析时回落 0）。
+        MihonEpisode(url: '/ep/x', name: 'Special', uploadedAt: 1, number: 0),
+        // 总集篇/特别篇的小数号：字幕站的 episode 字段放不下，四舍五入会指错集。
+        MihonEpisode(url: '/ep/y', name: 'Recap', uploadedAt: 2, number: 1.5),
+      ],
+      httpClient: MockClient((_) async => http.Response('', 404)),
+    );
+    for (final RemoteVideoInfo v in c.remoteVideos) {
+      expect(c.remoteVideoEpisodeNumber(v.id), isNull);
+    }
   });
 }
 

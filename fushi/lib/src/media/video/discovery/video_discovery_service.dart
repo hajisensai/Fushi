@@ -53,10 +53,18 @@ class VideoDiscoveryService {
     // 两者共用本类只是因为它们查的是同一批 API。
     final bool discoveryAvailable =
         StoreRestrictedCapability.externalDiscovery.isAvailable;
+    // 发现页的搜索源只收「能当目录浏览」的资料源：AniDB（2026-09-20 起装进生产
+    // registry 作默认刮削主源）的 `search` 是本地标题目录，没有封面 / 简介 / 评分，
+    // 摆进发现页只是一列裸标题；它在这里的用途仅限 [metadataProviders]——发现结果
+    // 的 AniDB 身份解析（`discovery_anidb_identity.dart`）。发现与刮削是不同域。
+    final List<VideoMetadataProvider> searchable = <VideoMetadataProvider>[
+      for (final VideoMetadataProvider provider in catalog.providers)
+        if (isDiscoverySearchKind(provider.providerKind)) provider,
+    ];
     return VideoDiscoveryService(
       providers: <VideoDiscoveryProvider>[
         if (discoveryAvailable)
-          for (final VideoMetadataProvider provider in catalog.providers)
+          for (final VideoMetadataProvider provider in searchable)
             if (provider.providerKind == VideoMetadataProviderKind.tmdb)
               // Preserve TMDB's discovery paging and filter capabilities.
               TmdbVideoDiscoveryProvider(
@@ -78,12 +86,18 @@ class VideoDiscoveryService {
         anilist,
       ],
       searchProviderIds: <String>{
-        for (final VideoMetadataProvider provider in catalog.providers)
+        for (final VideoMetadataProvider provider in searchable)
           provider.providerKind.name,
       },
       closesProviders: true,
     );
   }
+
+  /// 生产 registry 里哪些刮削 provider 可作发现页搜索源：AniDB 不算（见
+  /// [VideoDiscoveryService.production]）。守卫
+  /// `video_discovery_aggregated_sources_guard_test` 钉住。
+  static bool isDiscoverySearchKind(VideoMetadataProviderKind kind) =>
+      kind != VideoMetadataProviderKind.anidb;
 
   final List<VideoDiscoveryProvider> _providers;
   final Map<VideoMetadataProviderKind, VideoMetadataProvider>

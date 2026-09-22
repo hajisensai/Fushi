@@ -197,7 +197,21 @@ extension _VideoLayout on _VideoFushiPageState {
     return VideoControlsFocusGate(
       fullscreenRouteActive: _videoFullscreenActive,
       child: _wrapVideoControlsBackKey(
-        _buildVideoControlsInner(state, controller),
+        // 控制条密度档（小窗 / 窄窗按档缩控件，见 video_controls_density.dart）依赖
+        // **播放区实际尺寸**，而尺寸只有到布局期才知道。用 [LayoutBuilder] 把整棵
+        // controls 子树都建在它的回调里：theme、字幕避让 reserve、底部细进度条读到
+        // 的都是**同一帧同一个值**，不会出现「theme 已经缩了、字幕还按旧几何让位」
+        // 的跨帧错位。约束恒有界（本 builder 由 media_kit 铺在 Video 上），非有限 /
+        // 0 的退化情形由 [resolveVideoControlsDensity] 兜回 full 档。
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            _activeControlsDensity = resolveVideoControlsDensity(
+              playerSize: constraints.biggest,
+              surface: _miniSurface.value,
+            );
+            return _buildVideoControlsInner(state, controller);
+          },
+        ),
       ),
     );
   }
@@ -337,6 +351,10 @@ extension _VideoLayout on _VideoFushiPageState {
           // 「从未绑定变成已绑定」还决定它显不显示（见 `_shouldRenderControlItem`）。
           // 不并进来就是「设置里改了、播放器上纹丝不动」。
           _customActionBindingsNotifier,
+          // 小窗表面（桌面小窗 / 系统画中画）决定密度档，而密度档决定 theme 的
+          // 按钮行高、进度条显隐、顶/底栏是否渲染。同 r5 / BUG-1798 那条教训：
+          // 不并进来就是「进了小窗、控制条还是老样子」。
+          _miniSurface,
         ],
       ),
       builder: (BuildContext context, _) {
@@ -443,6 +461,14 @@ extension _VideoLayout on _VideoFushiPageState {
                         // 上方弹缩略图 + 时间戳。纯视觉 IgnorePointer（不拦 seek bar 拖动），
                         // hover 位置经 fork onHoverPosition → [_onSeekBarHover] 取得。
                         _buildThumbnailPreviewOverlay(controller),
+                        // 视频最下方那条主题色细进度条（开关 + 小窗档的唯一进度
+                        // 指示）。排在控制条之后 = 画在 scrim 之上；纯装饰、
+                        // IgnorePointer，不抢 seek bar 的命中区。
+                        _buildVideoSlimProgressBar(controller),
+                        // mini 档自绘 chrome：顶部拖动带 + 退出钮、居中大三键。
+                        // 非 mini 档两者都返回 SizedBox.shrink()，零开销。
+                        _buildMiniWindowTopChrome(),
+                        _buildMiniWindowCenterControls(controller),
                         Positioned.fill(
                           child: VideoDanmakuOverlay(
                             // TODO-1376：送屏蔽过滤后的可见弹幕 + 当前样式（字号/透明度/速度/区域）。

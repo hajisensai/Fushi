@@ -68,7 +68,8 @@ void main() {
           required int startMs,
           required int endMs,
           required String outputPath,
-          required String? tlsPinSha256}) async {
+          required String? tlsPinSha256,
+          required Map<String, String> httpHeaders}) async {
         expect(videoPath, 'https://video.example/video');
         expect(File(audioPath).readAsBytesSync(), <int>[1, 2, 3]);
         expect(startMs, 850);
@@ -102,7 +103,8 @@ void main() {
               required int startMs,
               required int endMs,
               required String outputPath,
-              required String? tlsPinSha256}) async =>
+              required String? tlsPinSha256,
+              required Map<String, String> httpHeaders}) async =>
           const VideoClipExportResult.failure(
               VideoClipExportFailure.ffmpegFailed,
               detail: 'H264 encoder unavailable'),

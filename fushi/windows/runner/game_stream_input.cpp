@@ -422,13 +422,23 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
       _stricmp(ReadString(event, "button").c_str(), "confirm") == 0) {
     return SendNativeLeftButton(false, false, false, reason);
   }
-  if (!ValidateTarget(true, reason)) return false;
   const std::string kind_value = ReadString(event, "kind");
   const std::string action_value = ReadString(event, "action");
   if (kind_value.empty() || action_value.empty()) {
     SetReason(reason, "invalid_event");
     return false;
   }
+  // The comment above applies to **every** release, not just the SGRE confirm
+  // bypass: if the host user alt-tabs while the remote holds dpad_up, the
+  // matching WM_KEYUP would be refused with `window_not_foreground` and the key
+  // stays down inside the game forever (`pressed_keys_` keeps it, and nothing
+  // else releases it -- the disconnect path only fires when the peer connection
+  // drops, not when the window merely loses focus). Identity (HWND + PID +
+  // process creation time), liveness, minimised and hidden checks all still
+  // apply; only the foreground requirement is dropped, and only for releases,
+  // which can never *start* an unwanted interaction.
+  const bool is_release = action_value == "up";
+  if (!ValidateTarget(!is_release, reason)) return false;
   if (kind_value == "key" || kind_value == "gamepad") {
     std::string key =
         kind_value == "key" ? ReadString(event, "key")

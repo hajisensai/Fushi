@@ -5,7 +5,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 // SelectedContent 住在 rendering 层（selection.dart），material 不转出它。
 import 'package:flutter/rendering.dart' show SelectedContent;
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart'
+    show
+        Clipboard,
+        ClipboardData,
+        HardwareKeyboard,
+        KeyDownEvent,
+        KeyEvent,
+        LogicalKeyboardKey,
+        TextInputAction;
 import 'package:macos_ui/macos_ui.dart'
     show MacosTextField, MacosIcon, OverlayVisibilityMode;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -460,6 +468,15 @@ class FushiSearchField extends StatelessWidget {
                   minHeight: 32,
                 ),
               ),
+              // 搜索框的提交动作必须显式声明：不声明时软键盘/IME 给的是
+              // 「完成」，而 `TextInputAction.done` 的默认收尾是 unfocus——焦点
+              // 一掉，[FushiFocusRoot] 的修复链又会把它以编程方式还回来，桌面端
+              // 的 EditableText 对非点击获得的焦点整段选中，于是按下回车的观感
+              // 就是「文字被全选、什么也没搜」（BUG-2620）。
+              textInputAction: TextInputAction.search,
+              // 给了 onEditingComplete 就不会走默认的 unfocus 收尾，焦点留在
+              // 框里；onSubmitted 仍照常触发。composing 要自己清。
+              onEditingComplete: controller.clearComposing,
               onChanged: onChanged,
               onSubmitted: onSubmitted,
             ),
@@ -467,12 +484,41 @@ class FushiSearchField extends StatelessWidget {
         },
       );
     }
-    if (focusId == null) return searchBar;
-    if (FushiFocusRoot.maybeControllerOf(context) == null) return searchBar;
+    // 物理回车的兜底：提交动作本该由平台 text-input 桥转成 onSubmitted，但那条
+    // 路要穿过 engine 的输入插件，桌面端一旦没走到，按回车就是「什么也没发生」，
+    // 用户只能靠改动输入再等防抖才搜得出来（BUG-2620）。键事件这一层是确定性的，
+    // 直接在这里认领裸回车并调 onSubmitted，handled 同时挡住重复提交。
+    //
+    // 两种情况必须放行：带修饰键的回车（不是提交语义），以及 IME 组字期间的回车
+    // ——那一下是确认候选词，抢走它等于日文/中文输入法在搜索框里没法选词。
+    final Widget submittable = Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        if (event.logicalKey != LogicalKeyboardKey.enter &&
+            event.logicalKey != LogicalKeyboardKey.numpadEnter) {
+          return KeyEventResult.ignored;
+        }
+        if (HardwareKeyboard.instance.isControlPressed ||
+            HardwareKeyboard.instance.isShiftPressed ||
+            HardwareKeyboard.instance.isAltPressed ||
+            HardwareKeyboard.instance.isMetaPressed) {
+          return KeyEventResult.ignored;
+        }
+        if (!focusNode.hasFocus) return KeyEventResult.ignored;
+        if (controller.value.composing.isValid) return KeyEventResult.ignored;
+        onSubmitted(controller.text);
+        return KeyEventResult.handled;
+      },
+      child: searchBar,
+    );
+    if (focusId == null) return submittable;
+    if (FushiFocusRoot.maybeControllerOf(context) == null) return submittable;
     return FushiFocusRegistration(
       id: focusId!,
       focusNode: focusNode,
-      child: searchBar,
+      child: submittable,
     );
   }
 }

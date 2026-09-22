@@ -19,6 +19,9 @@ import 'package:fushi_engine/media/video/video_filename_parser.dart';
 /// [hasExistingSubtitle] 由调用方按 bookUid 提供（DB 里的 `subtitleSource`）；
 /// 磁盘上的 sidecar 由 [VideoSubtitleBackfillService] 自己再查一道。
 ///
+/// [explicitLanguage] 是用户对这部作品明确选过的字幕语言（每系列记忆），原样
+/// 盖到每个目标上；null = 没记过，由服务按全局链决定。
+///
 /// 季集号取**本地文件名解析**的结果而不是刮削的顺序：文件名是用户磁盘上的事实，
 /// 而合集里可能缺集、含特典、被拖拽重排过（`sortIndex` 不可信，见批量字幕那边同
 /// 样的教训）。解析不出集号的成员只在「整个作品就一个文件」（电影/剧场版）时才
@@ -27,6 +30,7 @@ List<SubtitleBackfillTarget> scrapedSubtitleTargets({
   required List<VideoBookRow> members,
   required VideoMetadataWork metadata,
   required bool Function(String bookUid) hasExistingSubtitle,
+  String? explicitLanguage,
 }) {
   if (members.isEmpty) return const <SubtitleBackfillTarget>[];
   final bool single = members.length == 1;
@@ -52,6 +56,8 @@ List<SubtitleBackfillTarget> scrapedSubtitleTargets({
       // 音轨 tag 兜底，再没有就不表态——不猜。
       contentLanguage: book.language,
       originalLanguage: metadata.originalLanguage,
+      // 用户对这部作品明确选过的字幕语言（每系列记忆）：整个作品一个答案。
+      explicitLanguage: explicitLanguage,
     ));
   }
   return out;

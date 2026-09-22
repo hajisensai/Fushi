@@ -46,6 +46,27 @@ class DesktopWindowPlacement {
   static Rect? _lastSavedBounds;
   static bool? _lastSavedMaximized;
 
+  /// 「几何记忆暂停」闸门：置真期间 [rememberCurrentBounds] /
+  /// [saveCurrentBoundsNow] / [rememberMaximized] 全部早退，一个字节都不写盘。
+  ///
+  /// 唯一使用者是桌面「小窗模式」（`DesktopMiniWindowMode`）：它把主窗缩成角落里的
+  /// 一块 240x135 级别的画中画，这个几何**不得污染主窗记忆**——否则用户退出小窗后
+  /// 下次冷启动拿到的就是那块小方块，而不是他真正在用的窗口尺寸。与下面
+  /// `saveCurrentBoundsNow` 里既有的「全屏态不存几何」豁免是同一条纪律：**临时态的
+  /// 窗口矩形不是用户的窗口偏好**，临时态期间保持上一次的记忆原样不动。
+  ///
+  /// 闸门必须同时守住「排去抖」和「去抖到点真写」两处：小窗进入之前可能已经有一个
+  /// 在途的 500ms 定时器（用户刚拖完窗口就点了小窗），它到点时调的是
+  /// [saveCurrentBoundsNow]，只在 [rememberCurrentBounds] 早退挡不住它。
+  static bool _geometryMemorySuspended = false;
+
+  /// 见 [_geometryMemorySuspended]。进入小窗前置真、退出小窗后置假。
+  static void setGeometryMemorySuspended(bool value) {
+    _geometryMemorySuspended = value;
+  }
+
+  static bool get geometryMemorySuspended => _geometryMemorySuspended;
+
   static bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
@@ -83,6 +104,9 @@ class DesktopWindowPlacement {
     Duration debounce = const Duration(milliseconds: 500),
   }) {
     if (!_isDesktop) return;
+    // 小窗几何不得污染主窗记忆：暂停期间连去抖定时器都不排，免得闸门抬起的那一刻
+    // 正好有个定时器到点、把刚还原到一半的中间态几何写进盘里。
+    if (_geometryMemorySuspended) return;
 
     _saveTimer?.cancel();
     _saveTimer = Timer(debounce, () {
@@ -92,6 +116,10 @@ class DesktopWindowPlacement {
 
   static Future<void> saveCurrentBoundsNow() async {
     if (!_isDesktop) return;
+    // 小窗几何不得污染主窗记忆。这里挡的是「进入小窗之前就已排好、在小窗态里到点」
+    // 的在途去抖定时器——它不经过 [rememberCurrentBounds]，只有这条早退能拦住。
+    // 注意**不**取消 _saveTimer：取消等于替小窗吞掉一次本属于主窗的保存意图。
+    if (_geometryMemorySuspended) return;
 
     _saveTimer?.cancel();
     _saveTimer = null;
@@ -146,6 +174,11 @@ class DesktopWindowPlacement {
   /// 只靠 resize 去抖会漏记这个状态。
   static Future<void> rememberMaximized(bool maximized) async {
     if (!_isDesktop) return;
+    // 小窗几何不得污染主窗记忆：进入小窗要先取消最大化（小窗是个几百像素的浮窗），
+    // 那次 unmaximize 会派发 onWindowUnmaximize → 这里。若照单全收，用户「最大化着
+    // 开小窗」再退出，下次冷启动就不再最大化了——最大化 flag 与四个 restore 键一样
+    // 属于主窗记忆，临时态不得改写。
+    if (_geometryMemorySuspended) return;
     try {
       await _writeMaximized(maximized);
     } catch (e) {
@@ -162,6 +195,9 @@ class DesktopWindowPlacement {
     _saveTimer = null;
     _lastSavedBounds = null;
     _lastSavedMaximized = null;
+    // 闸门也是进程内静态状态：上一个用例开着它退出，下一个用例的写盘断言会莫名其妙
+    // 全部落空（且症状是「什么都没写」，最难定位）。
+    _geometryMemorySuspended = false;
   }
 
   static Future<void> _writeMaximized(bool maximized) async {
@@ -242,8 +278,9 @@ class DesktopWindowPlacement {
     required List<Rect> workAreas,
     Rect? currentBounds,
   }) {
-    final List<Rect> usableAreas =
-        workAreas.where((Rect area) => _isUsableRect(area)).toList();
+    final List<Rect> usableAreas = workAreas
+        .where((Rect area) => _isUsableRect(area))
+        .toList();
     if (usableAreas.isEmpty) {
       return const Rect.fromLTWH(0, 0, 1280, 720);
     }
@@ -308,8 +345,10 @@ class DesktopWindowPlacement {
   static Future<List<Rect>> _loadWorkAreas(Rect? fallbackBounds) async {
     try {
       final List<Display> displays = await screenRetriever.getAllDisplays();
-      final List<Rect> workAreas =
-          displays.map(_workAreaFromDisplay).whereType<Rect>().toList();
+      final List<Rect> workAreas = displays
+          .map(_workAreaFromDisplay)
+          .whereType<Rect>()
+          .toList();
       if (workAreas.isNotEmpty) return workAreas;
     } catch (e) {
       debugPrint('[Fushi] screen work areas unavailable: $e');

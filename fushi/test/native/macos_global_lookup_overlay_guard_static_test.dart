@@ -224,18 +224,17 @@ void main() {
       expect(swift, contains('pasteboard.writeObjects(items)'));
     });
 
-    test(
-      'hotkey path never prompts; prompting lives behind the settings action',
-      () {
-        // The prompting variant only in requestAccessibilityTrust.
-        final int prompts = 'AXIsProcessTrustedWithOptions'
-            .allMatches(swift)
-            .length;
-        expect(prompts, 1);
-        expect(swift, contains('case "requestAccessibilityTrust"'));
-        expect(dart, contains('Settings\n  /// page action only'));
-      },
-    );
+    test('prompting is isolated to the explicit permission request path', () {
+      // The prompting variant only in requestAccessibilityTrust. Dart calls
+      // it from settings and the first explicit global-lookup trigger; it is
+      // never part of app startup.
+      final int prompts = 'AXIsProcessTrustedWithOptions'
+          .allMatches(swift)
+          .length;
+      expect(prompts, 1);
+      expect(swift, contains('case "requestAccessibilityTrust"'));
+      expect(dart, contains('first explicit global-lookup'));
+    });
 
     test('Dart macOS capture runs inside the clipboard gate', () {
       expect(dart, contains('if (Platform.isMacOS) {'));

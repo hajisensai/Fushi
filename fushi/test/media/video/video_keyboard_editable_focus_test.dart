@@ -336,7 +336,7 @@ void main() {
       );
     });
 
-    test('kVideoPressEdgeOnlyActions 的成员就是这 6 个（直测，不经 resolver）', () {
+    test('kVideoPressEdgeOnlyActions 的成员就是这 8 个（直测，不经 resolver）', () {
       // 只经 resolver 间接覆盖时，「集合里少一个动作」会退化成「那个动作的重复沿
       // 照常连发」——而连发本身是别的动作的正确行为，间接用例分不出来。
       expect(
@@ -349,10 +349,15 @@ void main() {
           ShortcutAction.popupMineEntry,
           // BUG-2462：F11 视频全屏只认按下沿（app 根那条路本就如此）。
           ShortcutAction.globalToggleFullscreen,
+          // 小窗切换：进 / 退各是一条多次 platform 往返的链，按住不能连发（PR #1596）。
+          ShortcutAction.videoToggleMiniWindow,
+          // 小窗 chrome 显隐：翻转型动作，按住连发 = 一片闪烁的按钮。
+          ShortcutAction.videoToggleMiniChrome,
         },
         reason:
-            '按一下翻一次的动作（模糊 / 遮蔽循环 / 隐藏 / 进选词光标 / 制卡 / F11 全屏）'
-            '——长按不该连发查词、更不该连发制卡、也不该来回翻全屏',
+            '按一下翻一次的动作（模糊 / 遮蔽循环 / 隐藏 / 进选词光标 / 制卡 / F11 全屏 / '
+            '小窗 / 小窗控件）——长按不该连发查词、更不该连发制卡、也不该来回翻全屏 / '
+            '来回进出小窗 / 让小窗控件闪烁',
       );
       // 连续型动作绝不能混进来：混进去 = 长按方向键不能连续快进 / 长按不能持续调音量。
       for (final ShortcutAction continuous in <ShortcutAction>[

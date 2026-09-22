@@ -24,6 +24,35 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return row.read<int>('foreign_keys') == 1;
   }
 
+  /// 表上是否还有一条**只**覆盖 [columnName] 的唯一索引（列级 `.unique()` 生成
+  /// 的 `sqlite_autoindex_*` 也算）。迁移里去掉列级 UNIQUE 要重建表，用它做幂等
+  /// 守卫：fresh 建出的新 shape 没有这条索引就短路。
+  Future<bool> _hasUniqueIndexOnColumn(
+      String tableName, String columnName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
+    }
+    if (!_identifierRe.hasMatch(columnName)) {
+      throw ArgumentError.value(
+          columnName, 'columnName', 'not a valid identifier');
+    }
+    final List<QueryRow> indexes =
+        await customSelect('PRAGMA index_list($tableName)').get();
+    for (final QueryRow index in indexes) {
+      if (index.read<int>('unique') != 1) continue;
+      final String name = index.read<String>('name');
+      if (!_identifierRe.hasMatch(name)) continue;
+      final List<QueryRow> columns =
+          await customSelect('PRAGMA index_info($name)').get();
+      if (columns.length == 1 &&
+          columns.single.read<String>('name') == columnName) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   Future<bool> _tableExists(String tableName) async {
     if (!_identifierRe.hasMatch(tableName)) {
       throw ArgumentError.value(
@@ -136,6 +165,12 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'video_source_scrape_runs',
         'CREATE INDEX IF NOT EXISTS idx_video_scrape_runs_source_started '
             'ON video_source_scrape_runs (source_id, started_at DESC)'
+      ],
+      // v110：分集行按绑定文件反查（一文件多集后不再是唯一索引）。
+      [
+        'video_metadata_episodes',
+        'CREATE INDEX IF NOT EXISTS idx_video_metadata_episodes_book '
+            'ON video_metadata_episodes (book_uid)'
       ],
       // v106：文件级 AniDB 身份按「路径 + 大小」免哈希命中、按作品反查。
       [

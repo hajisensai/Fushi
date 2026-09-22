@@ -106,6 +106,12 @@ void main() {
     );
     final VideoMetadataCreditSummary voice = result.credits.last;
     expect(voice.person.name, 'Voice Actor');
+    expect(voice.person.profileUrl, 'https://image.example/voice.jpg');
+    expect(voice.character?.imageUrl, 'https://image.example/hero.jpg');
+    final VideoMetadataCreditSummary actor = result.credits[1];
+    expect(actor.person.name, 'Actor');
+    expect(actor.person.profileUrl, isNull,
+        reason: '存量 Jikan 问号占位图读侧归 null（BUG-2612 ⑤ 对老库才生效）');
     expect(voice.person.originalName, '声優');
     expect(voice.person.identities, hasLength(2));
     expect(voice.person.identities.first.provider, 'bangumi');
@@ -171,6 +177,11 @@ Future<void> _insertPeopleAndCharacters(FushiDatabase database) async {
     VideoMetadataPeopleCompanion.insert(
       personKey: 'person:actor',
       name: 'Actor',
+      // 存量库里 BUG-2612 之前原样落的 Jikan 问号占位图：写侧 upsert 只补空、
+      // 重刮也清不掉，读侧必须归 null。
+      profileUrl: const Value<String?>(
+        'https://cdn.myanimelist.net/images/questionmark_23.gif',
+      ),
       updatedAt: 1,
     ),
     VideoMetadataPeopleCompanion.insert(

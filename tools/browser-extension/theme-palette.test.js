@@ -230,7 +230,7 @@ test('宿主网页：只写 #fushi-* 浮层宿主，绝不写 :root，也不动�
   const h = loadTheme({ protocol: 'https:', stored: { extensionPalette: 'water-theme', extensionTheme: 'dark' } });
   const style = h.doc.getElementById('fushi-theme-palette');
   assert.ok(style);
-  assert.match(style.textContent, /:where\(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast\)\[data-theme="dark"\]/);
+  assert.match(style.textContent, /:where\(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls\)\[data-theme="dark"\]/);
   assert.doesNotMatch(style.textContent, /(^|[^-\w]):root/m, '宿主页 :root 一个变量都不能碰');
   assert.deepStrictEqual(h.doc.documentElement.attrs, {}, '宿主 <html> 不改');
 });

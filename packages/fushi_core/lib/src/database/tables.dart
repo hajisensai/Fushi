@@ -1654,9 +1654,11 @@ class VideoMetadataEpisodes extends Table {
       .references(VideoMetadataSeasons, #id, onDelete: KeyAction.cascade)();
 
   /// 可选的本地分集绑定。删视频只解绑，源侧季集骨架继续保留供重链。
+  /// v110 起**不再唯一**：一个文件可以绑多条分集行（AniDB FILE 的 other
+  /// episodes——`01-02` 合集文件覆盖两集；Shoko `CrossRef_File_Episode` 一文件
+  /// 多集）。播放进度仍按文件（`video_books`）记，看完一个文件两集都算完成。
   TextColumn get bookUid => text()
       .nullable()
-      .unique()
       .references(VideoBooks, #bookUid, onDelete: KeyAction.setNull)();
   IntColumn get episodeNumber => integer()();
   IntColumn get absoluteNumber => integer().nullable()();
@@ -1667,12 +1669,37 @@ class VideoMetadataEpisodes extends Table {
   RealColumn get rating => real().nullable()();
   IntColumn get ratingCount => integer().nullable()();
   IntColumn get runtimeMinutes => integer().nullable()();
+
+  /// v109：绑到这一集的文件的 AniDB 集身份（Shoko `CrossRef_AniDB_TMDB_Episode`
+  /// 在本仓的落点）：AniDB eid、原生集号（`04` / `S1`）、与 TMDB 集对上的评级
+  /// （`dateAndTitle` … `dateKinda`；null = 没经 TMDB 链接、按文件名落的）。
+  /// AniDB 原生编号与 TMDB (季, 集) 两套并存，UI 可同时呈现。
+  IntColumn get anidbEpisodeId => integer().nullable()();
+  TextColumn get anidbEpisodeNumber => text().nullable()();
+  TextColumn get anidbMatchRating => text().nullable()();
   IntColumn get updatedAt => integer()();
 
   @override
   List<Set<Column>> get uniqueKeys => <Set<Column>>[
         <Column>{seasonId, episodeNumber},
       ];
+}
+
+// ── video_episode_binding_overrides ─────────────────────────────────
+/// v111：用户手动钉死的「文件 → 卡片 (季, 集)」绑定（Shoko
+/// `CrossRef_AniDB_TMDB_Episode.MatchRating = UserVerified`）。刮削时协调器把它
+/// 当作最高优先级的分集键：AniDB 集级链接、文件名解析都不再改这一集；分集行的
+/// `anidb_match_rating` 写 `userVerified`。删视频随 FK 一起清；清除手动指定即删行。
+@DataClassName('VideoEpisodeBindingOverrideRow')
+class VideoEpisodeBindingOverrides extends Table {
+  TextColumn get bookUid =>
+      text().references(VideoBooks, #bookUid, onDelete: KeyAction.cascade)();
+  IntColumn get seasonNumber => integer()();
+  IntColumn get episodeNumber => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{bookUid};
 }
 
 // ── video_metadata_people / characters ──────────────────────────────
@@ -3117,6 +3144,26 @@ class AnidbFileIdentities extends Table {
   /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
   /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
   IntColumn get missAttempts => integer().withDefault(const Constant(0))();
+  /// v109：AniDB 集播出日（UDP `EPISODE` 的 `aired`，UTC 零点毫秒）。Shoko
+  /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
+  /// （存量行 / EPISODE 未答），下次 sweep 补问。
+  IntColumn get episodeAiredAt => integer().nullable()();
+
+  /// v109：主集之外本文件还覆盖的 AniDB 集，JSON `[[eid, 百分比], …]`（Shoko
+  /// `CrossRef_File_Episode` 的 Percentage）；单集文件为 `''`。
+  TextColumn get otherEpisodes => text().withDefault(const Constant(''))();
+
+  /// v109：AniDB FILE `deprecated` 位——该文件已被标为过时版本。
+  BoolColumn get isDeprecated =>
+      boolean().withDefault(const Constant(false))();
+
+  /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
+  IntColumn get fileState => integer().withDefault(const Constant(0))();
+
+  /// v111：AniDB 动画类型原文（FILE amask 的 anime type：`TV Series` / `Movie` /
+  /// `OVA` / `Web` / `TV Special` / `Music Video` / `Other`）；'' = 旧行未取到。
+  /// Shoko 的作品形态（剧集 / 电影）由它决定，本仓单文件作品的 kind 跟它走。
+  TextColumn get animeType => text().withDefault(const Constant(''))();
   IntColumn get resolvedAt => integer()();
   IntColumn get updatedAt => integer()();
 
@@ -3130,4 +3177,17 @@ class AnidbFileIdentities extends Table {
         'CHECK ((anidb_file_id IS NULL) = (anidb_anime_id IS NULL) '
             'AND (anidb_file_id IS NULL) = (anidb_episode_id IS NULL))',
       ];
+}
+
+/// Per-series sparse reader settings. Reset is retained as an LWW tombstone.
+/// The uid is device-local; sync and backup resolve the bookKey before writing.
+@DataClassName('MangaReaderOverrideRow')
+class MangaReaderOverrides extends Table {
+  TextColumn get bookUid => text()();
+  TextColumn get overridesJson => text().withDefault(const Constant('{}'))();
+  IntColumn get updatedAt => integer()();
+  BoolColumn get deleted => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {bookUid};
 }

@@ -12,6 +12,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 class GameStreamPage extends StatefulWidget {
@@ -319,7 +320,7 @@ class _GameStreamPageState extends State<GameStreamPage>
                   for (final GameStreamVirtualButton button
                       in GameStreamVirtualButton.values)
                     if (button != GameStreamVirtualButton.menu)
-                      ListTile(
+                      FushiListItem(
                         title: Text(_buttonLabel(button)),
                         trailing: DropdownButton<String>(
                           key: ValueKey<String>(

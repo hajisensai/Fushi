@@ -34,7 +34,9 @@ class AnimeSourceVideoClient
         RemoteVideoClient,
         RemoteCoverFetcher,
         RemoteVideoStreamHeaders,
-        RemoteVideoStreamVariants {
+        RemoteVideoStreamVariants,
+        RemoteVideoEpisodeNumber,
+        RemoteVideoCollectionIsWork {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -57,8 +59,19 @@ class AnimeSourceVideoClient
   final http.Client _httpClient;
   final MihonVideo Function(List<MihonVideo> candidates) _chooseVideo;
 
-  /// 用户在作品页手动指定的候选（按集 id），优先于 [_chooseVideo]。
-  final Map<String, MihonVideo> _pinnedVideos = <String, MihonVideo>{};
+  /// 用户手动指定的线路（按集 id），优先于 [_chooseVideo]。
+  ///
+  /// 记的是**标签 + 下标**而不是候选对象：候选会被重新解析（见 [resolveVideos]），
+  /// 重取后是一批新对象，按对象认的话要么认不出、要么认出的是上一轮那条已经过期的
+  /// URL。标签是用户在菜单里看到的那个字面（画质 / 线路名），跨重取最稳。
+  final Map<String, _PinnedVariant> _pinnedVideos = <String, _PinnedVariant>{};
+
+  /// 下一次取流是否允许复用上一轮候选。
+  ///
+  /// 只有「同一集换线路」置真：那一刻候选是用户几秒前刚看到的菜单，重取既浪费一轮
+  /// 网络往返，也可能把用户选中的那条洗没。其余入口（首开、连播下一集、失败后重试）
+  /// 一律重新解析——见 [resolveVideos] 为什么不能留旧结果。
+  bool _reuseCandidatesOnce = false;
 
   /// 每集最近一次解析出的全部候选，供作品页的「线路 / 画质」选择器复用而不重取。
   final Map<String, List<MihonVideo>> _resolvedCandidates =
@@ -130,6 +143,19 @@ class AnimeSourceVideoClient
     return index >= 0 ? episodes[index] : null;
   }
 
+  /// BUG-2626：扩展给的集号（`episode_number`）。字幕检索按集号筛版本，而
+  /// [RemoteVideoInfo.title]（= 分集标题，常是 `Episode 1`）与合集内 `sortIndex`
+  /// （= 播放序）都不是集号。
+  ///
+  /// 只认**整集**：`1.5` 这类小数号是特别篇/总集篇，字幕站的 episode 字段放不下，
+  /// 四舍五入会指到隔壁那一集去——宁可返回 null 让调用方按标题回落。
+  @override
+  int? remoteVideoEpisodeNumber(String id) {
+    final double? number = episodeForVideoId(id)?.number;
+    if (number == null || number <= 0) return null;
+    return number == number.roundToDouble() ? number.round() : null;
+  }
+
   /// 本作品全部集的播放页 DTO，与 [episodes] 同序；播放页拿它当
   /// `remoteCollectionMembers`。
   List<RemoteVideoInfo> get remoteVideos => <RemoteVideoInfo>[
@@ -153,6 +179,12 @@ class AnimeSourceVideoClient
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => remoteVideos;
 
   /// 解析一集的全部候选（缓存一份供选择器复用）。
+  ///
+  /// [refresh] 为真时无条件重问扩展。**起播路径一律传真**：hoster 给的地址普遍是
+  /// 一次性 / 短 TTL 的签名链接（AnimeKai、MegaPlay 这类几分钟就作废），留着旧结果
+  /// 会让「失败后点重试」重放同一条已经死掉的 URL——用户看到的是「重试多少次都超时」，
+  /// 而扩展其实随时能给出一条新的（BUG-2617）。Aniyomi 同样不跨一次播放缓存取流结果。
+  /// 缓存因此只服务于「同一集的线路菜单」（[streamVariants] / [_currentCandidates]）。
   Future<List<MihonVideo>> resolveVideos(
     MihonEpisode episode, {
     bool refresh = false,
@@ -172,7 +204,33 @@ class AnimeSourceVideoClient
 
   /// 为某集钉住一条候选（线路 / 画质）：下一次取该集的流用它，不再走默认策略。
   void pinVideo(MihonEpisode episode, MihonVideo video) {
-    _pinnedVideos[episodeVideoId(episode)] = video;
+    final String id = episodeVideoId(episode);
+    final List<MihonVideo> candidates =
+        _resolvedCandidates[id] ?? const <MihonVideo>[];
+    _pinnedVideos[id] = _PinnedVariant(
+      label: streamVariantLabel(video),
+      index: candidates.indexOf(video),
+    );
+  }
+
+  /// 把钉住的线路对到这一轮候选上：先认下标（同一轮菜单、或重取后位置没变），再认
+  /// 标签（重取后位置变了，但用户选的那条「A · 1080p」还在）。都对不上就返回 null，
+  /// 由默认策略接手——线路没了还硬播上一轮的地址，就是在播一条已经作废的 URL。
+  MihonVideo? _matchPinned(
+    _PinnedVariant? pinned,
+    List<MihonVideo> candidates,
+  ) {
+    if (pinned == null || candidates.isEmpty) return null;
+    final int index = pinned.index;
+    if (index >= 0 &&
+        index < candidates.length &&
+        streamVariantLabel(candidates[index]) == pinned.label) {
+      return candidates[index];
+    }
+    for (final MihonVideo video in candidates) {
+      if (streamVariantLabel(video) == pinned.label) return video;
+    }
+    return null;
   }
 
   /// 当前集已解析的候选；尚未取流为空。
@@ -200,12 +258,19 @@ class AnimeSourceVideoClient
   }
 
   /// 用户在播放页换线路：钉到当前集，播放页随后重新取流即播这一条。
+  ///
+  /// 同时放行一次候选复用（[_reuseCandidatesOnce]）：用户刚在菜单里看到的就是这批
+  /// 候选，换一条线路不该再等一轮扩展取流，也不该让重取把他选中的那条洗掉。
   @override
   set streamVariantIndex(int index) {
     final String? id = _currentEpisodeId;
     final List<MihonVideo> candidates = _currentCandidates;
     if (id == null || index < 0 || index >= candidates.length) return;
-    _pinnedVideos[id] = candidates[index];
+    _pinnedVideos[id] = _PinnedVariant(
+      label: streamVariantLabel(candidates[index]),
+      index: index,
+    );
+    _reuseCandidatesOnce = true;
   }
 
   /// 候选在菜单里的文案：扩展给的画质 / 线路名，没给就退到流的主机名（同一集多家
@@ -225,14 +290,22 @@ class AnimeSourceVideoClient
     if (episode == null) {
       throw ArgumentError.value(id, 'id', 'not an episode of this anime');
     }
-    final List<MihonVideo> candidates = await resolveVideos(episode);
+    // 换线路复用刚才那批候选，其余入口（首开 / 连播 / 重试）都重新解析：hoster 的
+    // 地址是一次性的，重放旧的等于必然再失败一次（见 [resolveVideos]）。
+    final bool reuse = _reuseCandidatesOnce && _currentEpisodeId == id;
+    _reuseCandidatesOnce = false;
+    final List<MihonVideo> candidates = await resolveVideos(
+      episode,
+      refresh: !reuse,
+    );
     if (candidates.isEmpty) {
       throw const MihonRuntimeException(
         'NO_VIDEOS',
         'Source did not return any playable video for this episode',
       );
     }
-    final MihonVideo chosen = _pinnedVideos[id] ?? _chooseVideo(candidates);
+    final MihonVideo chosen =
+        _matchPinned(_pinnedVideos[id], candidates) ?? _chooseVideo(candidates);
     _currentVideo = chosen;
     _currentEpisodeId = id;
     final MihonVideoTrack? subtitle = chosen.subtitleTracks.firstOrNull;
@@ -353,6 +426,14 @@ class AnimeSourceVideoClient
   void dispose() {
     _httpClient.close();
   }
+}
+
+/// 用户钉住的线路：菜单上的标签 + 当时的下标。见 [AnimeSourceVideoClient._matchPinned]。
+class _PinnedVariant {
+  const _PinnedVariant({required this.label, required this.index});
+
+  final String label;
+  final int index;
 }
 
 /// 默认选流策略，与 Aniyomi 播放器的 `HosterLoader.selectBestVideo` 同口径：

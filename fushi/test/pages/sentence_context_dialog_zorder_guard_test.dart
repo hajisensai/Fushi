@@ -85,6 +85,69 @@ void main() {
     );
   });
 
+  // BUG-2627：对话框期间浮层被**停靠屏外却仍然挂载**——这是有意的（webview 活着，
+  // 确认制卡才回点得到它）。代价是它的 DOM 还可能拿着系统键盘焦点，而
+  // `onHostInputToken` 落地的是 `_dismissTopVisiblePopup` / `clearDictionaryResult`
+  // 这类**关栈**动作：不挡这条，用户在对话框里敲一个被绑的键，对话框**背后**的整条
+  // 浮层栈就没了（连带清空制卡草稿），而屏幕上什么都看不出来——随后「确认制卡」
+  // 回点必然扑空，长成「点了没反应」。这条通道必须与 barrier
+  // （[shouldShowLookupDismissBarrier]）和浮层 `visible:` 共用同一道门。
+  void assertInputTokenGated(String src, String gate, String label) {
+    final int at = src.indexOf('onHostInputToken:');
+    expect(at, greaterThan(0), reason: '$label 必须接 onHostInputToken');
+    // 取接线点之后的一小段：门必须就写在这条接线里，而不是散落在别处。
+    final String wiring = src.substring(at, at + 420);
+    expect(wiring.contains(gate), isTrue,
+        reason: '$label 的 onHostInputToken 必须在对话框期间短路（门：$gate）');
+  }
+
+  test('BUG-2627 reader 车道：对话框期间弹窗输入 token 不得关栈', () {
+    assertInputTokenGated(
+      read('lib/src/pages/base_source_page.dart'),
+      '_popupHidingDialogDepth != 0',
+      'base_source_page',
+    );
+  });
+
+  test('BUG-2627 video/首页车道：对话框期间弹窗输入 token 不得关栈', () {
+    assertInputTokenGated(
+      read('lib/src/pages/implementations/dictionary_page_mixin.dart'),
+      'lookupPopupHiddenByDialog',
+      'dictionary_page_mixin',
+    );
+  });
+
+  // BUG-2627：「确认制卡」是一次跨 WebView 的往返，两条车道都必须把「有没有真的点到
+  // 那颗按钮」原样回传给对话框——吞掉返回值，任何关栈竞态都退化成同一个无声症状。
+  test('BUG-2627 两条车道的 onConfirm 都回传回点结果', () {
+    for (final (String path, String label) in <(String, String)>[
+      ('lib/src/pages/base_source_page.dart', 'base_source_page'),
+      (
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+        'dictionary_page_mixin',
+      ),
+    ]) {
+      final String src = read(path);
+      // 按语义匹配而不是钉死一行字面量：BUG-2634 第二轮给它加了必填的
+      // releaseWhenPayloadConsumed，调用点换行了。要的仍是「await + 原样回传」。
+      final RegExp call = RegExp(
+        r'await\s+webViewKey\.currentState\?\.mineEntryByIndex\(\s*'
+        r'entryIndex,[\s\S]{0,900}?\)\s*\?\?',
+      );
+      expect(call.hasMatch(src), isTrue,
+          reason: '$label 的 onConfirm 必须 await 并回传 mineEntryByIndex 的结果');
+      // BUG-2634 第二轮：能不能提前关窗是**宿主的担保**，每条车道必须显式表态
+      // （参数是 required，漏了编译就过不去；这里再钉一道，防止有人图省事全填 true）。
+      expect(call.stringMatch(src), contains('releaseWhenPayloadConsumed:'),
+          reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿');
+    }
+    expect(
+        read('lib/src/pages/implementations/sentence_context_dialog.dart')
+            .contains('final Future<bool> Function() onConfirm;'),
+        isTrue,
+        reason: 'onConfirm 的契约必须是「回传有没有点到」，不是 VoidCallback');
+  });
+
   // BUG-1040：对话框本体必须是**居中对话框**而非底部 sheet——这是「必须当场决定」的模态
   // 选择，贴屏幕下沿在视频页会被播放器控件/窗口边缘裁掉半截（用户附图里进度条已被切）。
   test('已制卡动作走居中对话框，不再是 bottom sheet', () {

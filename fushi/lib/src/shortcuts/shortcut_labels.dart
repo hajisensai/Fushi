@@ -143,6 +143,10 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_screenshot_subtitled;
       case ShortcutAction.videoToggleFullscreen:
         return t.shortcut_action_video_toggle_fullscreen;
+      case ShortcutAction.videoToggleMiniWindow:
+        return t.shortcut_action_video_toggle_mini_window;
+      case ShortcutAction.videoToggleMiniChrome:
+        return t.shortcut_action_video_toggle_mini_chrome;
       case ShortcutAction.videoToggleSubtitleList:
         return t.shortcut_action_video_toggle_subtitle_list;
       case ShortcutAction.videoSearchSubtitleList:
@@ -378,6 +382,10 @@ extension ShortcutActionIcon on ShortcutAction {
       // 画面 / 杂项
       case ShortcutAction.videoToggleFullscreen:
         return Icons.fullscreen;
+      case ShortcutAction.videoToggleMiniWindow:
+        return Icons.picture_in_picture_alt_outlined;
+      case ShortcutAction.videoToggleMiniChrome:
+        return Icons.tune_rounded;
       case ShortcutAction.videoScreenshot:
         return Icons.photo_camera_outlined;
       case ShortcutAction.videoScreenshotSubtitled:

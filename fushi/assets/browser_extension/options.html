@@ -198,6 +198,15 @@
               </span>
               <span class="switch"><input id="mobileSubtitleDrawer" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <label class="setting-row" for="playerControls">
+              <span class="setting-copy">
+                <strong data-i18n="opt_playerControls_title">播放器内的字幕按钮</strong>
+                <small data-i18n="opt_playerControls_desc">在播放器自己的控制栏里放一颗 Fushi 按钮（YouTube 与 Netflix；其它站点在鼠标停在
+                  视频上时于右下角浮出一颗圆钮）。菜单里翻的是与本页同一批设置——Fushi 字幕、替代站点
+                  字幕、隐藏字幕、时轴偏移与字幕外观——不用离开画面。</small>
+              </span>
+              <span class="switch"><input id="playerControls" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
           </div>
         </section>
 
@@ -283,6 +292,13 @@
                 <small data-i18n="opt_subtitlePauseOnLookup_desc">从网页、字幕列表或悬浮字幕发起查词时暂停正在播放的视频；关闭查词弹窗后自动恢复播放（你自己暂停的视频不会被播放）。</small>
               </span>
               <span class="switch"><input id="subtitlePauseOnLookup" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="subtitleResumeOnLookupLeave">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleResumeOnLookupLeave_title">离开查词即继续播放</strong>
+                <small data-i18n="opt_subtitleResumeOnLookupLeave_desc">Shift 悬停或悬浮字幕自动查词把视频停住后，鼠标离开字幕与查词弹窗即自动关窗并继续播放，不必再点一下空白。点击发起的查词不受影响。</small>
+              </span>
+              <span class="switch"><input id="subtitleResumeOnLookupLeave" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row" for="subtitleLookupOnPage">
               <span class="setting-copy">
@@ -449,6 +465,13 @@
               </span>
               <span class="range-wrap"><input class="range-input" id="subtitleStyleBoxHeight" type="range" min="0" max="60" step="1"><output for="subtitleStyleBoxHeight" data-unit="%" data-zero="opt_subtitleStyle_auto"></output></span>
             </label>
+            <label class="setting-row" for="subtitleStyleBoxAutoFit">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleBoxAutoFit_title">自适应缩放</strong>
+                <small data-i18n="opt_subtitleStyleBoxAutoFit_desc">底板设了高度时，字号自动缩放到整句刚好放下：底板越大字越大，底板越小一屏能装下的内容越多。也可以直接拖视频上字幕的右下角改大小（双击把手恢复随内容）。</small>
+              </span>
+              <span class="switch"><input id="subtitleStyleBoxAutoFit" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
             <div class="setting-row setting-row-static">
               <span class="setting-copy">
                 <strong data-i18n="opt_resetSubtitleStyle_title">恢复默认外观</strong>
@@ -474,6 +497,17 @@
                 <small data-i18n="opt_studyTrackVideo_desc">网页视频播放时把观看时长记入 Fushi 学习统计的视频域，与 app 内视频页同一口径：只计首次看过的部分，回放、拖回、重看不计；切到别的标签页仍在播照常计。首页的悬停预览等短视频不计。</small>
               </span>
               <span class="switch"><input id="studyTrackVideo" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="studyTrackVideoCondition">
+              <span class="setting-copy">
+                <strong data-i18n="opt_studyTrackVideoCondition_title">什么情况才计入</strong>
+                <small data-i18n="opt_studyTrackVideoCondition_desc">默认只算「看得懂字的那些分钟」：Fushi 认出了整集字幕轨、或你拖了外挂字幕，并且正在用它（侧边栏 / 视频上的字幕框 / 替代原生字幕）才计。字幕中途才加载就从那一刻开始计，中途关掉字幕（含 Shift+H 隐藏）立刻停表。</small>
+              </span>
+              <select class="select-input" id="studyTrackVideoCondition">
+                <option value="fushiSubtitle" data-i18n="opt_studyTrackVideoCondition_option_fushiSubtitle">正在用 Fushi / 外挂字幕</option>
+                <option value="anySubtitle" data-i18n="opt_studyTrackVideoCondition_option_anySubtitle">这个视频有字幕即可</option>
+                <option value="always" data-i18n="opt_studyTrackVideoCondition_option_always">任何视频都计</option>
+              </select>
             </label>
           </div>
         </section>

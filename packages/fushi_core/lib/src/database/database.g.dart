@@ -19252,6 +19252,332 @@ class BookCustomCssCompanion extends UpdateCompanion<BookCustomCssRow> {
   }
 }
 
+class $MangaReaderOverridesTable extends MangaReaderOverrides
+    with TableInfo<$MangaReaderOverridesTable, MangaReaderOverrideRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MangaReaderOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _overridesJsonMeta = const VerificationMeta(
+    'overridesJson',
+  );
+  @override
+  late final GeneratedColumn<String> overridesJson = GeneratedColumn<String>(
+    'overrides_json',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('{}'),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedMeta = const VerificationMeta(
+    'deleted',
+  );
+  @override
+  late final GeneratedColumn<bool> deleted = GeneratedColumn<bool>(
+    'deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    overridesJson,
+    updatedAt,
+    deleted,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'manga_reader_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MangaReaderOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('overrides_json')) {
+      context.handle(
+        _overridesJsonMeta,
+        overridesJson.isAcceptableOrUnknown(
+          data['overrides_json']!,
+          _overridesJsonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted')) {
+      context.handle(
+        _deletedMeta,
+        deleted.isAcceptableOrUnknown(data['deleted']!, _deletedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  MangaReaderOverrideRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MangaReaderOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      overridesJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}overrides_json'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}deleted'],
+      )!,
+    );
+  }
+
+  @override
+  $MangaReaderOverridesTable createAlias(String alias) {
+    return $MangaReaderOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class MangaReaderOverrideRow extends DataClass
+    implements Insertable<MangaReaderOverrideRow> {
+  final String bookUid;
+  final String overridesJson;
+  final int updatedAt;
+  final bool deleted;
+  const MangaReaderOverrideRow({
+    required this.bookUid,
+    required this.overridesJson,
+    required this.updatedAt,
+    required this.deleted,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['overrides_json'] = Variable<String>(overridesJson);
+    map['updated_at'] = Variable<int>(updatedAt);
+    map['deleted'] = Variable<bool>(deleted);
+    return map;
+  }
+
+  MangaReaderOverridesCompanion toCompanion(bool nullToAbsent) {
+    return MangaReaderOverridesCompanion(
+      bookUid: Value(bookUid),
+      overridesJson: Value(overridesJson),
+      updatedAt: Value(updatedAt),
+      deleted: Value(deleted),
+    );
+  }
+
+  factory MangaReaderOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MangaReaderOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      overridesJson: serializer.fromJson<String>(json['overridesJson']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+      deleted: serializer.fromJson<bool>(json['deleted']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'overridesJson': serializer.toJson<String>(overridesJson),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+      'deleted': serializer.toJson<bool>(deleted),
+    };
+  }
+
+  MangaReaderOverrideRow copyWith({
+    String? bookUid,
+    String? overridesJson,
+    int? updatedAt,
+    bool? deleted,
+  }) => MangaReaderOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    overridesJson: overridesJson ?? this.overridesJson,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deleted: deleted ?? this.deleted,
+  );
+  MangaReaderOverrideRow copyWithCompanion(MangaReaderOverridesCompanion data) {
+    return MangaReaderOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      overridesJson: data.overridesJson.present
+          ? data.overridesJson.value
+          : this.overridesJson,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deleted: data.deleted.present ? data.deleted.value : this.deleted,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(bookUid, overridesJson, updatedAt, deleted);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MangaReaderOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.overridesJson == this.overridesJson &&
+          other.updatedAt == this.updatedAt &&
+          other.deleted == this.deleted);
+}
+
+class MangaReaderOverridesCompanion
+    extends UpdateCompanion<MangaReaderOverrideRow> {
+  final Value<String> bookUid;
+  final Value<String> overridesJson;
+  final Value<int> updatedAt;
+  final Value<bool> deleted;
+  final Value<int> rowid;
+  const MangaReaderOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.overridesJson = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MangaReaderOverridesCompanion.insert({
+    required String bookUid,
+    this.overridesJson = const Value.absent(),
+    required int updatedAt,
+    this.deleted = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       updatedAt = Value(updatedAt);
+  static Insertable<MangaReaderOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<String>? overridesJson,
+    Expression<int>? updatedAt,
+    Expression<bool>? deleted,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (overridesJson != null) 'overrides_json': overridesJson,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deleted != null) 'deleted': deleted,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MangaReaderOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<String>? overridesJson,
+    Value<int>? updatedAt,
+    Value<bool>? deleted,
+    Value<int>? rowid,
+  }) {
+    return MangaReaderOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      overridesJson: overridesJson ?? this.overridesJson,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deleted: deleted ?? this.deleted,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (overridesJson.present) {
+      map['overrides_json'] = Variable<String>(overridesJson.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (deleted.present) {
+      map['deleted'] = Variable<bool>(deleted.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MangaReaderOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('overridesJson: $overridesJson, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deleted: $deleted, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $SyncDeletionTombstonesTable extends SyncDeletionTombstones
     with TableInfo<$SyncDeletionTombstonesTable, SyncDeletionTombstoneRow> {
   @override
@@ -31733,7 +32059,7 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     type: DriftSqlType.string,
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'UNIQUE REFERENCES video_books (book_uid) ON DELETE SET NULL',
+      'REFERENCES video_books (book_uid) ON DELETE SET NULL',
     ),
   );
   static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
@@ -31829,6 +32155,39 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _anidbEpisodeIdMeta = const VerificationMeta(
+    'anidbEpisodeId',
+  );
+  @override
+  late final GeneratedColumn<int> anidbEpisodeId = GeneratedColumn<int>(
+    'anidb_episode_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _anidbEpisodeNumberMeta =
+      const VerificationMeta('anidbEpisodeNumber');
+  @override
+  late final GeneratedColumn<String> anidbEpisodeNumber =
+      GeneratedColumn<String>(
+        'anidb_episode_number',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _anidbMatchRatingMeta = const VerificationMeta(
+    'anidbMatchRating',
+  );
+  @override
+  late final GeneratedColumn<String> anidbMatchRating = GeneratedColumn<String>(
+    'anidb_match_rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -31854,6 +32213,9 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   ];
   @override
@@ -31953,6 +32315,33 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         ),
       );
     }
+    if (data.containsKey('anidb_episode_id')) {
+      context.handle(
+        _anidbEpisodeIdMeta,
+        anidbEpisodeId.isAcceptableOrUnknown(
+          data['anidb_episode_id']!,
+          _anidbEpisodeIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_episode_number')) {
+      context.handle(
+        _anidbEpisodeNumberMeta,
+        anidbEpisodeNumber.isAcceptableOrUnknown(
+          data['anidb_episode_number']!,
+          _anidbEpisodeNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('anidb_match_rating')) {
+      context.handle(
+        _anidbMatchRatingMeta,
+        anidbMatchRating.isAcceptableOrUnknown(
+          data['anidb_match_rating']!,
+          _anidbMatchRatingMeta,
+        ),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -32025,6 +32414,18 @@ class $VideoMetadataEpisodesTable extends VideoMetadataEpisodes
         DriftSqlType.int,
         data['${effectivePrefix}runtime_minutes'],
       ),
+      anidbEpisodeId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}anidb_episode_id'],
+      ),
+      anidbEpisodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_episode_number'],
+      ),
+      anidbMatchRating: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anidb_match_rating'],
+      ),
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
@@ -32044,6 +32445,9 @@ class VideoMetadataEpisodeRow extends DataClass
   final int seasonId;
 
   /// 可选的本地分集绑定。删视频只解绑，源侧季集骨架继续保留供重链。
+  /// v110 起**不再唯一**：一个文件可以绑多条分集行（AniDB FILE 的 other
+  /// episodes——`01-02` 合集文件覆盖两集；Shoko `CrossRef_File_Episode` 一文件
+  /// 多集）。播放进度仍按文件（`video_books`）记，看完一个文件两集都算完成。
   final String? bookUid;
   final int episodeNumber;
   final int? absoluteNumber;
@@ -32054,6 +32458,14 @@ class VideoMetadataEpisodeRow extends DataClass
   final double? rating;
   final int? ratingCount;
   final int? runtimeMinutes;
+
+  /// v109：绑到这一集的文件的 AniDB 集身份（Shoko `CrossRef_AniDB_TMDB_Episode`
+  /// 在本仓的落点）：AniDB eid、原生集号（`04` / `S1`）、与 TMDB 集对上的评级
+  /// （`dateAndTitle` … `dateKinda`；null = 没经 TMDB 链接、按文件名落的）。
+  /// AniDB 原生编号与 TMDB (季, 集) 两套并存，UI 可同时呈现。
+  final int? anidbEpisodeId;
+  final String? anidbEpisodeNumber;
+  final String? anidbMatchRating;
   final int updatedAt;
   const VideoMetadataEpisodeRow({
     required this.id,
@@ -32068,6 +32480,9 @@ class VideoMetadataEpisodeRow extends DataClass
     this.rating,
     this.ratingCount,
     this.runtimeMinutes,
+    this.anidbEpisodeId,
+    this.anidbEpisodeNumber,
+    this.anidbMatchRating,
     required this.updatedAt,
   });
   @override
@@ -32103,6 +32518,15 @@ class VideoMetadataEpisodeRow extends DataClass
     if (!nullToAbsent || runtimeMinutes != null) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes);
     }
+    if (!nullToAbsent || anidbEpisodeId != null) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId);
+    }
+    if (!nullToAbsent || anidbEpisodeNumber != null) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber);
+    }
+    if (!nullToAbsent || anidbMatchRating != null) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating);
+    }
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
   }
@@ -32137,6 +32561,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: runtimeMinutes == null && nullToAbsent
           ? const Value.absent()
           : Value(runtimeMinutes),
+      anidbEpisodeId: anidbEpisodeId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeId),
+      anidbEpisodeNumber: anidbEpisodeNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbEpisodeNumber),
+      anidbMatchRating: anidbMatchRating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(anidbMatchRating),
       updatedAt: Value(updatedAt),
     );
   }
@@ -32159,6 +32592,11 @@ class VideoMetadataEpisodeRow extends DataClass
       rating: serializer.fromJson<double?>(json['rating']),
       ratingCount: serializer.fromJson<int?>(json['ratingCount']),
       runtimeMinutes: serializer.fromJson<int?>(json['runtimeMinutes']),
+      anidbEpisodeId: serializer.fromJson<int?>(json['anidbEpisodeId']),
+      anidbEpisodeNumber: serializer.fromJson<String?>(
+        json['anidbEpisodeNumber'],
+      ),
+      anidbMatchRating: serializer.fromJson<String?>(json['anidbMatchRating']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
   }
@@ -32178,6 +32616,9 @@ class VideoMetadataEpisodeRow extends DataClass
       'rating': serializer.toJson<double?>(rating),
       'ratingCount': serializer.toJson<int?>(ratingCount),
       'runtimeMinutes': serializer.toJson<int?>(runtimeMinutes),
+      'anidbEpisodeId': serializer.toJson<int?>(anidbEpisodeId),
+      'anidbEpisodeNumber': serializer.toJson<String?>(anidbEpisodeNumber),
+      'anidbMatchRating': serializer.toJson<String?>(anidbMatchRating),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
   }
@@ -32195,6 +32636,9 @@ class VideoMetadataEpisodeRow extends DataClass
     Value<double?> rating = const Value.absent(),
     Value<int?> ratingCount = const Value.absent(),
     Value<int?> runtimeMinutes = const Value.absent(),
+    Value<int?> anidbEpisodeId = const Value.absent(),
+    Value<String?> anidbEpisodeNumber = const Value.absent(),
+    Value<String?> anidbMatchRating = const Value.absent(),
     int? updatedAt,
   }) => VideoMetadataEpisodeRow(
     id: id ?? this.id,
@@ -32213,6 +32657,15 @@ class VideoMetadataEpisodeRow extends DataClass
     runtimeMinutes: runtimeMinutes.present
         ? runtimeMinutes.value
         : this.runtimeMinutes,
+    anidbEpisodeId: anidbEpisodeId.present
+        ? anidbEpisodeId.value
+        : this.anidbEpisodeId,
+    anidbEpisodeNumber: anidbEpisodeNumber.present
+        ? anidbEpisodeNumber.value
+        : this.anidbEpisodeNumber,
+    anidbMatchRating: anidbMatchRating.present
+        ? anidbMatchRating.value
+        : this.anidbMatchRating,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   VideoMetadataEpisodeRow copyWithCompanion(
@@ -32239,6 +32692,15 @@ class VideoMetadataEpisodeRow extends DataClass
       runtimeMinutes: data.runtimeMinutes.present
           ? data.runtimeMinutes.value
           : this.runtimeMinutes,
+      anidbEpisodeId: data.anidbEpisodeId.present
+          ? data.anidbEpisodeId.value
+          : this.anidbEpisodeId,
+      anidbEpisodeNumber: data.anidbEpisodeNumber.present
+          ? data.anidbEpisodeNumber.value
+          : this.anidbEpisodeNumber,
+      anidbMatchRating: data.anidbMatchRating.present
+          ? data.anidbMatchRating.value
+          : this.anidbMatchRating,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -32258,6 +32720,9 @@ class VideoMetadataEpisodeRow extends DataClass
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -32277,6 +32742,9 @@ class VideoMetadataEpisodeRow extends DataClass
     rating,
     ratingCount,
     runtimeMinutes,
+    anidbEpisodeId,
+    anidbEpisodeNumber,
+    anidbMatchRating,
     updatedAt,
   );
   @override
@@ -32295,6 +32763,9 @@ class VideoMetadataEpisodeRow extends DataClass
           other.rating == this.rating &&
           other.ratingCount == this.ratingCount &&
           other.runtimeMinutes == this.runtimeMinutes &&
+          other.anidbEpisodeId == this.anidbEpisodeId &&
+          other.anidbEpisodeNumber == this.anidbEpisodeNumber &&
+          other.anidbMatchRating == this.anidbMatchRating &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -32312,6 +32783,9 @@ class VideoMetadataEpisodesCompanion
   final Value<double?> rating;
   final Value<int?> ratingCount;
   final Value<int?> runtimeMinutes;
+  final Value<int?> anidbEpisodeId;
+  final Value<String?> anidbEpisodeNumber;
+  final Value<String?> anidbMatchRating;
   final Value<int> updatedAt;
   const VideoMetadataEpisodesCompanion({
     this.id = const Value.absent(),
@@ -32326,6 +32800,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   VideoMetadataEpisodesCompanion.insert({
@@ -32341,6 +32818,9 @@ class VideoMetadataEpisodesCompanion
     this.rating = const Value.absent(),
     this.ratingCount = const Value.absent(),
     this.runtimeMinutes = const Value.absent(),
+    this.anidbEpisodeId = const Value.absent(),
+    this.anidbEpisodeNumber = const Value.absent(),
+    this.anidbMatchRating = const Value.absent(),
     required int updatedAt,
   }) : seasonId = Value(seasonId),
        episodeNumber = Value(episodeNumber),
@@ -32358,6 +32838,9 @@ class VideoMetadataEpisodesCompanion
     Expression<double>? rating,
     Expression<int>? ratingCount,
     Expression<int>? runtimeMinutes,
+    Expression<int>? anidbEpisodeId,
+    Expression<String>? anidbEpisodeNumber,
+    Expression<String>? anidbMatchRating,
     Expression<int>? updatedAt,
   }) {
     return RawValuesInsertable({
@@ -32373,6 +32856,10 @@ class VideoMetadataEpisodesCompanion
       if (rating != null) 'rating': rating,
       if (ratingCount != null) 'rating_count': ratingCount,
       if (runtimeMinutes != null) 'runtime_minutes': runtimeMinutes,
+      if (anidbEpisodeId != null) 'anidb_episode_id': anidbEpisodeId,
+      if (anidbEpisodeNumber != null)
+        'anidb_episode_number': anidbEpisodeNumber,
+      if (anidbMatchRating != null) 'anidb_match_rating': anidbMatchRating,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
@@ -32390,6 +32877,9 @@ class VideoMetadataEpisodesCompanion
     Value<double?>? rating,
     Value<int?>? ratingCount,
     Value<int?>? runtimeMinutes,
+    Value<int?>? anidbEpisodeId,
+    Value<String?>? anidbEpisodeNumber,
+    Value<String?>? anidbMatchRating,
     Value<int>? updatedAt,
   }) {
     return VideoMetadataEpisodesCompanion(
@@ -32405,6 +32895,9 @@ class VideoMetadataEpisodesCompanion
       rating: rating ?? this.rating,
       ratingCount: ratingCount ?? this.ratingCount,
       runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+      anidbEpisodeId: anidbEpisodeId ?? this.anidbEpisodeId,
+      anidbEpisodeNumber: anidbEpisodeNumber ?? this.anidbEpisodeNumber,
+      anidbMatchRating: anidbMatchRating ?? this.anidbMatchRating,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -32448,6 +32941,15 @@ class VideoMetadataEpisodesCompanion
     if (runtimeMinutes.present) {
       map['runtime_minutes'] = Variable<int>(runtimeMinutes.value);
     }
+    if (anidbEpisodeId.present) {
+      map['anidb_episode_id'] = Variable<int>(anidbEpisodeId.value);
+    }
+    if (anidbEpisodeNumber.present) {
+      map['anidb_episode_number'] = Variable<String>(anidbEpisodeNumber.value);
+    }
+    if (anidbMatchRating.present) {
+      map['anidb_match_rating'] = Variable<String>(anidbMatchRating.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -32469,6 +32971,9 @@ class VideoMetadataEpisodesCompanion
           ..write('rating: $rating, ')
           ..write('ratingCount: $ratingCount, ')
           ..write('runtimeMinutes: $runtimeMinutes, ')
+          ..write('anidbEpisodeId: $anidbEpisodeId, ')
+          ..write('anidbEpisodeNumber: $anidbEpisodeNumber, ')
+          ..write('anidbMatchRating: $anidbMatchRating, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -52949,6 +53454,68 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _episodeAiredAtMeta = const VerificationMeta(
+    'episodeAiredAt',
+  );
+  @override
+  late final GeneratedColumn<int> episodeAiredAt = GeneratedColumn<int>(
+    'episode_aired_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _otherEpisodesMeta = const VerificationMeta(
+    'otherEpisodes',
+  );
+  @override
+  late final GeneratedColumn<String> otherEpisodes = GeneratedColumn<String>(
+    'other_episodes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _isDeprecatedMeta = const VerificationMeta(
+    'isDeprecated',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeprecated = GeneratedColumn<bool>(
+    'is_deprecated',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deprecated" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _fileStateMeta = const VerificationMeta(
+    'fileState',
+  );
+  @override
+  late final GeneratedColumn<int> fileState = GeneratedColumn<int>(
+    'file_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _animeTypeMeta = const VerificationMeta(
+    'animeType',
+  );
+  @override
+  late final GeneratedColumn<String> animeType = GeneratedColumn<String>(
+    'anime_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _resolvedAtMeta = const VerificationMeta(
     'resolvedAt',
   );
@@ -52988,6 +53555,11 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
     filePath,
     fileModifiedAt,
     missAttempts,
+    episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
+    animeType,
     resolvedAt,
     updatedAt,
   ];
@@ -53130,6 +53702,45 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         ),
       );
     }
+    if (data.containsKey('episode_aired_at')) {
+      context.handle(
+        _episodeAiredAtMeta,
+        episodeAiredAt.isAcceptableOrUnknown(
+          data['episode_aired_at']!,
+          _episodeAiredAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('other_episodes')) {
+      context.handle(
+        _otherEpisodesMeta,
+        otherEpisodes.isAcceptableOrUnknown(
+          data['other_episodes']!,
+          _otherEpisodesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_deprecated')) {
+      context.handle(
+        _isDeprecatedMeta,
+        isDeprecated.isAcceptableOrUnknown(
+          data['is_deprecated']!,
+          _isDeprecatedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('file_state')) {
+      context.handle(
+        _fileStateMeta,
+        fileState.isAcceptableOrUnknown(data['file_state']!, _fileStateMeta),
+      );
+    }
+    if (data.containsKey('anime_type')) {
+      context.handle(
+        _animeTypeMeta,
+        animeType.isAcceptableOrUnknown(data['anime_type']!, _animeTypeMeta),
+      );
+    }
     if (data.containsKey('resolved_at')) {
       context.handle(
         _resolvedAtMeta,
@@ -53215,6 +53826,26 @@ class $AnidbFileIdentitiesTable extends AnidbFileIdentities
         DriftSqlType.int,
         data['${effectivePrefix}miss_attempts'],
       )!,
+      episodeAiredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_aired_at'],
+      ),
+      otherEpisodes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}other_episodes'],
+      )!,
+      isDeprecated: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deprecated'],
+      )!,
+      fileState: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_state'],
+      )!,
+      animeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}anime_type'],
+      )!,
       resolvedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}resolved_at'],
@@ -53252,6 +53883,26 @@ class AnidbFileIdentityRow extends DataClass
   /// v108：AniDB FILE 回 320「未收录」的连续复查次数，对齐 Shoko
   /// `MaxAutoScanAttemptsPerFile`；识别成功时归零。
   final int missAttempts;
+
+  /// v109：AniDB 集播出日（UDP `EPISODE` 的 `aired`，UTC 零点毫秒）。Shoko
+  /// `MatchAnidbToTmdbEpisodes` 第一评级 DateAndTitle 的输入；null = 尚未取到
+  /// （存量行 / EPISODE 未答），下次 sweep 补问。
+  final int? episodeAiredAt;
+
+  /// v109：主集之外本文件还覆盖的 AniDB 集，JSON `[[eid, 百分比], …]`（Shoko
+  /// `CrossRef_File_Episode` 的 Percentage）；单集文件为 `''`。
+  final String otherEpisodes;
+
+  /// v109：AniDB FILE `deprecated` 位——该文件已被标为过时版本。
+  final bool isDeprecated;
+
+  /// v109：AniDB FILE `state` 位图（CRC 正误 / 文件版本 / 有无审查 / 章节）。
+  final int fileState;
+
+  /// v111：AniDB 动画类型原文（FILE amask 的 anime type：`TV Series` / `Movie` /
+  /// `OVA` / `Web` / `TV Special` / `Music Video` / `Other`）；'' = 旧行未取到。
+  /// Shoko 的作品形态（剧集 / 电影）由它决定，本仓单文件作品的 kind 跟它走。
+  final String animeType;
   final int resolvedAt;
   final int updatedAt;
   const AnidbFileIdentityRow({
@@ -53270,6 +53921,11 @@ class AnidbFileIdentityRow extends DataClass
     this.filePath,
     this.fileModifiedAt,
     required this.missAttempts,
+    this.episodeAiredAt,
+    required this.otherEpisodes,
+    required this.isDeprecated,
+    required this.fileState,
+    required this.animeType,
     required this.resolvedAt,
     required this.updatedAt,
   });
@@ -53301,6 +53957,13 @@ class AnidbFileIdentityRow extends DataClass
       map['file_modified_at'] = Variable<int>(fileModifiedAt);
     }
     map['miss_attempts'] = Variable<int>(missAttempts);
+    if (!nullToAbsent || episodeAiredAt != null) {
+      map['episode_aired_at'] = Variable<int>(episodeAiredAt);
+    }
+    map['other_episodes'] = Variable<String>(otherEpisodes);
+    map['is_deprecated'] = Variable<bool>(isDeprecated);
+    map['file_state'] = Variable<int>(fileState);
+    map['anime_type'] = Variable<String>(animeType);
     map['resolved_at'] = Variable<int>(resolvedAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -53333,6 +53996,13 @@ class AnidbFileIdentityRow extends DataClass
           ? const Value.absent()
           : Value(fileModifiedAt),
       missAttempts: Value(missAttempts),
+      episodeAiredAt: episodeAiredAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(episodeAiredAt),
+      otherEpisodes: Value(otherEpisodes),
+      isDeprecated: Value(isDeprecated),
+      fileState: Value(fileState),
+      animeType: Value(animeType),
       resolvedAt: Value(resolvedAt),
       updatedAt: Value(updatedAt),
     );
@@ -53361,6 +54031,11 @@ class AnidbFileIdentityRow extends DataClass
       filePath: serializer.fromJson<String?>(json['filePath']),
       fileModifiedAt: serializer.fromJson<int?>(json['fileModifiedAt']),
       missAttempts: serializer.fromJson<int>(json['missAttempts']),
+      episodeAiredAt: serializer.fromJson<int?>(json['episodeAiredAt']),
+      otherEpisodes: serializer.fromJson<String>(json['otherEpisodes']),
+      isDeprecated: serializer.fromJson<bool>(json['isDeprecated']),
+      fileState: serializer.fromJson<int>(json['fileState']),
+      animeType: serializer.fromJson<String>(json['animeType']),
       resolvedAt: serializer.fromJson<int>(json['resolvedAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -53384,6 +54059,11 @@ class AnidbFileIdentityRow extends DataClass
       'filePath': serializer.toJson<String?>(filePath),
       'fileModifiedAt': serializer.toJson<int?>(fileModifiedAt),
       'missAttempts': serializer.toJson<int>(missAttempts),
+      'episodeAiredAt': serializer.toJson<int?>(episodeAiredAt),
+      'otherEpisodes': serializer.toJson<String>(otherEpisodes),
+      'isDeprecated': serializer.toJson<bool>(isDeprecated),
+      'fileState': serializer.toJson<int>(fileState),
+      'animeType': serializer.toJson<String>(animeType),
       'resolvedAt': serializer.toJson<int>(resolvedAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -53405,6 +54085,11 @@ class AnidbFileIdentityRow extends DataClass
     Value<String?> filePath = const Value.absent(),
     Value<int?> fileModifiedAt = const Value.absent(),
     int? missAttempts,
+    Value<int?> episodeAiredAt = const Value.absent(),
+    String? otherEpisodes,
+    bool? isDeprecated,
+    int? fileState,
+    String? animeType,
     int? resolvedAt,
     int? updatedAt,
   }) => AnidbFileIdentityRow(
@@ -53427,6 +54112,13 @@ class AnidbFileIdentityRow extends DataClass
         ? fileModifiedAt.value
         : this.fileModifiedAt,
     missAttempts: missAttempts ?? this.missAttempts,
+    episodeAiredAt: episodeAiredAt.present
+        ? episodeAiredAt.value
+        : this.episodeAiredAt,
+    otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+    isDeprecated: isDeprecated ?? this.isDeprecated,
+    fileState: fileState ?? this.fileState,
+    animeType: animeType ?? this.animeType,
     resolvedAt: resolvedAt ?? this.resolvedAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -53471,6 +54163,17 @@ class AnidbFileIdentityRow extends DataClass
       missAttempts: data.missAttempts.present
           ? data.missAttempts.value
           : this.missAttempts,
+      episodeAiredAt: data.episodeAiredAt.present
+          ? data.episodeAiredAt.value
+          : this.episodeAiredAt,
+      otherEpisodes: data.otherEpisodes.present
+          ? data.otherEpisodes.value
+          : this.otherEpisodes,
+      isDeprecated: data.isDeprecated.present
+          ? data.isDeprecated.value
+          : this.isDeprecated,
+      fileState: data.fileState.present ? data.fileState.value : this.fileState,
+      animeType: data.animeType.present ? data.animeType.value : this.animeType,
       resolvedAt: data.resolvedAt.present
           ? data.resolvedAt.value
           : this.resolvedAt,
@@ -53496,6 +54199,11 @@ class AnidbFileIdentityRow extends DataClass
           ..write('filePath: $filePath, ')
           ..write('fileModifiedAt: $fileModifiedAt, ')
           ..write('missAttempts: $missAttempts, ')
+          ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
+          ..write('animeType: $animeType, ')
           ..write('resolvedAt: $resolvedAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -53503,7 +54211,7 @@ class AnidbFileIdentityRow extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     ed2k,
     fileSize,
     anidbFileId,
@@ -53519,9 +54227,14 @@ class AnidbFileIdentityRow extends DataClass
     filePath,
     fileModifiedAt,
     missAttempts,
+    episodeAiredAt,
+    otherEpisodes,
+    isDeprecated,
+    fileState,
+    animeType,
     resolvedAt,
     updatedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -53541,6 +54254,11 @@ class AnidbFileIdentityRow extends DataClass
           other.filePath == this.filePath &&
           other.fileModifiedAt == this.fileModifiedAt &&
           other.missAttempts == this.missAttempts &&
+          other.episodeAiredAt == this.episodeAiredAt &&
+          other.otherEpisodes == this.otherEpisodes &&
+          other.isDeprecated == this.isDeprecated &&
+          other.fileState == this.fileState &&
+          other.animeType == this.animeType &&
           other.resolvedAt == this.resolvedAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -53562,6 +54280,11 @@ class AnidbFileIdentitiesCompanion
   final Value<String?> filePath;
   final Value<int?> fileModifiedAt;
   final Value<int> missAttempts;
+  final Value<int?> episodeAiredAt;
+  final Value<String> otherEpisodes;
+  final Value<bool> isDeprecated;
+  final Value<int> fileState;
+  final Value<String> animeType;
   final Value<int> resolvedAt;
   final Value<int> updatedAt;
   final Value<int> rowid;
@@ -53581,6 +54304,11 @@ class AnidbFileIdentitiesCompanion
     this.filePath = const Value.absent(),
     this.fileModifiedAt = const Value.absent(),
     this.missAttempts = const Value.absent(),
+    this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
+    this.animeType = const Value.absent(),
     this.resolvedAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -53601,6 +54329,11 @@ class AnidbFileIdentitiesCompanion
     this.filePath = const Value.absent(),
     this.fileModifiedAt = const Value.absent(),
     this.missAttempts = const Value.absent(),
+    this.episodeAiredAt = const Value.absent(),
+    this.otherEpisodes = const Value.absent(),
+    this.isDeprecated = const Value.absent(),
+    this.fileState = const Value.absent(),
+    this.animeType = const Value.absent(),
     required int resolvedAt,
     required int updatedAt,
     this.rowid = const Value.absent(),
@@ -53624,6 +54357,11 @@ class AnidbFileIdentitiesCompanion
     Expression<String>? filePath,
     Expression<int>? fileModifiedAt,
     Expression<int>? missAttempts,
+    Expression<int>? episodeAiredAt,
+    Expression<String>? otherEpisodes,
+    Expression<bool>? isDeprecated,
+    Expression<int>? fileState,
+    Expression<String>? animeType,
     Expression<int>? resolvedAt,
     Expression<int>? updatedAt,
     Expression<int>? rowid,
@@ -53645,6 +54383,11 @@ class AnidbFileIdentitiesCompanion
       if (filePath != null) 'file_path': filePath,
       if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
       if (missAttempts != null) 'miss_attempts': missAttempts,
+      if (episodeAiredAt != null) 'episode_aired_at': episodeAiredAt,
+      if (otherEpisodes != null) 'other_episodes': otherEpisodes,
+      if (isDeprecated != null) 'is_deprecated': isDeprecated,
+      if (fileState != null) 'file_state': fileState,
+      if (animeType != null) 'anime_type': animeType,
       if (resolvedAt != null) 'resolved_at': resolvedAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -53667,6 +54410,11 @@ class AnidbFileIdentitiesCompanion
     Value<String?>? filePath,
     Value<int?>? fileModifiedAt,
     Value<int>? missAttempts,
+    Value<int?>? episodeAiredAt,
+    Value<String>? otherEpisodes,
+    Value<bool>? isDeprecated,
+    Value<int>? fileState,
+    Value<String>? animeType,
     Value<int>? resolvedAt,
     Value<int>? updatedAt,
     Value<int>? rowid,
@@ -53687,6 +54435,11 @@ class AnidbFileIdentitiesCompanion
       filePath: filePath ?? this.filePath,
       fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
       missAttempts: missAttempts ?? this.missAttempts,
+      episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+      otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+      isDeprecated: isDeprecated ?? this.isDeprecated,
+      fileState: fileState ?? this.fileState,
+      animeType: animeType ?? this.animeType,
       resolvedAt: resolvedAt ?? this.resolvedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -53741,6 +54494,21 @@ class AnidbFileIdentitiesCompanion
     if (missAttempts.present) {
       map['miss_attempts'] = Variable<int>(missAttempts.value);
     }
+    if (episodeAiredAt.present) {
+      map['episode_aired_at'] = Variable<int>(episodeAiredAt.value);
+    }
+    if (otherEpisodes.present) {
+      map['other_episodes'] = Variable<String>(otherEpisodes.value);
+    }
+    if (isDeprecated.present) {
+      map['is_deprecated'] = Variable<bool>(isDeprecated.value);
+    }
+    if (fileState.present) {
+      map['file_state'] = Variable<int>(fileState.value);
+    }
+    if (animeType.present) {
+      map['anime_type'] = Variable<String>(animeType.value);
+    }
     if (resolvedAt.present) {
       map['resolved_at'] = Variable<int>(resolvedAt.value);
     }
@@ -53771,7 +54539,357 @@ class AnidbFileIdentitiesCompanion
           ..write('filePath: $filePath, ')
           ..write('fileModifiedAt: $fileModifiedAt, ')
           ..write('missAttempts: $missAttempts, ')
+          ..write('episodeAiredAt: $episodeAiredAt, ')
+          ..write('otherEpisodes: $otherEpisodes, ')
+          ..write('isDeprecated: $isDeprecated, ')
+          ..write('fileState: $fileState, ')
+          ..write('animeType: $animeType, ')
           ..write('resolvedAt: $resolvedAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $VideoEpisodeBindingOverridesTable extends VideoEpisodeBindingOverrides
+    with
+        TableInfo<
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoEpisodeBindingOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _bookUidMeta = const VerificationMeta(
+    'bookUid',
+  );
+  @override
+  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+    'book_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES video_books (book_uid) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _seasonNumberMeta = const VerificationMeta(
+    'seasonNumber',
+  );
+  @override
+  late final GeneratedColumn<int> seasonNumber = GeneratedColumn<int>(
+    'season_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _episodeNumberMeta = const VerificationMeta(
+    'episodeNumber',
+  );
+  @override
+  late final GeneratedColumn<int> episodeNumber = GeneratedColumn<int>(
+    'episode_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    bookUid,
+    seasonNumber,
+    episodeNumber,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_episode_binding_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoEpisodeBindingOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('book_uid')) {
+      context.handle(
+        _bookUidMeta,
+        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bookUidMeta);
+    }
+    if (data.containsKey('season_number')) {
+      context.handle(
+        _seasonNumberMeta,
+        seasonNumber.isAcceptableOrUnknown(
+          data['season_number']!,
+          _seasonNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_seasonNumberMeta);
+    }
+    if (data.containsKey('episode_number')) {
+      context.handle(
+        _episodeNumberMeta,
+        episodeNumber.isAcceptableOrUnknown(
+          data['episode_number']!,
+          _episodeNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_episodeNumberMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {bookUid};
+  @override
+  VideoEpisodeBindingOverrideRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}book_uid'],
+      )!,
+      seasonNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}season_number'],
+      )!,
+      episodeNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}episode_number'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoEpisodeBindingOverridesTable createAlias(String alias) {
+    return $VideoEpisodeBindingOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoEpisodeBindingOverrideRow extends DataClass
+    implements Insertable<VideoEpisodeBindingOverrideRow> {
+  final String bookUid;
+  final int seasonNumber;
+  final int episodeNumber;
+  final int updatedAt;
+  const VideoEpisodeBindingOverrideRow({
+    required this.bookUid,
+    required this.seasonNumber,
+    required this.episodeNumber,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['book_uid'] = Variable<String>(bookUid);
+    map['season_number'] = Variable<int>(seasonNumber);
+    map['episode_number'] = Variable<int>(episodeNumber);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoEpisodeBindingOverridesCompanion toCompanion(bool nullToAbsent) {
+    return VideoEpisodeBindingOverridesCompanion(
+      bookUid: Value(bookUid),
+      seasonNumber: Value(seasonNumber),
+      episodeNumber: Value(episodeNumber),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoEpisodeBindingOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: serializer.fromJson<String>(json['bookUid']),
+      seasonNumber: serializer.fromJson<int>(json['seasonNumber']),
+      episodeNumber: serializer.fromJson<int>(json['episodeNumber']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'bookUid': serializer.toJson<String>(bookUid),
+      'seasonNumber': serializer.toJson<int>(seasonNumber),
+      'episodeNumber': serializer.toJson<int>(episodeNumber),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoEpisodeBindingOverrideRow copyWith({
+    String? bookUid,
+    int? seasonNumber,
+    int? episodeNumber,
+    int? updatedAt,
+  }) => VideoEpisodeBindingOverrideRow(
+    bookUid: bookUid ?? this.bookUid,
+    seasonNumber: seasonNumber ?? this.seasonNumber,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoEpisodeBindingOverrideRow copyWithCompanion(
+    VideoEpisodeBindingOverridesCompanion data,
+  ) {
+    return VideoEpisodeBindingOverrideRow(
+      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      seasonNumber: data.seasonNumber.present
+          ? data.seasonNumber.value
+          : this.seasonNumber,
+      episodeNumber: data.episodeNumber.present
+          ? data.episodeNumber.value
+          : this.episodeNumber,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoEpisodeBindingOverrideRow(')
+          ..write('bookUid: $bookUid, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(bookUid, seasonNumber, episodeNumber, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoEpisodeBindingOverrideRow &&
+          other.bookUid == this.bookUid &&
+          other.seasonNumber == this.seasonNumber &&
+          other.episodeNumber == this.episodeNumber &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoEpisodeBindingOverridesCompanion
+    extends UpdateCompanion<VideoEpisodeBindingOverrideRow> {
+  final Value<String> bookUid;
+  final Value<int> seasonNumber;
+  final Value<int> episodeNumber;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoEpisodeBindingOverridesCompanion({
+    this.bookUid = const Value.absent(),
+    this.seasonNumber = const Value.absent(),
+    this.episodeNumber = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoEpisodeBindingOverridesCompanion.insert({
+    required String bookUid,
+    required int seasonNumber,
+    required int episodeNumber,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : bookUid = Value(bookUid),
+       seasonNumber = Value(seasonNumber),
+       episodeNumber = Value(episodeNumber),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoEpisodeBindingOverrideRow> custom({
+    Expression<String>? bookUid,
+    Expression<int>? seasonNumber,
+    Expression<int>? episodeNumber,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (bookUid != null) 'book_uid': bookUid,
+      if (seasonNumber != null) 'season_number': seasonNumber,
+      if (episodeNumber != null) 'episode_number': episodeNumber,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoEpisodeBindingOverridesCompanion copyWith({
+    Value<String>? bookUid,
+    Value<int>? seasonNumber,
+    Value<int>? episodeNumber,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoEpisodeBindingOverridesCompanion(
+      bookUid: bookUid ?? this.bookUid,
+      seasonNumber: seasonNumber ?? this.seasonNumber,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (bookUid.present) {
+      map['book_uid'] = Variable<String>(bookUid.value);
+    }
+    if (seasonNumber.present) {
+      map['season_number'] = Variable<int>(seasonNumber.value);
+    }
+    if (episodeNumber.present) {
+      map['episode_number'] = Variable<int>(episodeNumber.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoEpisodeBindingOverridesCompanion(')
+          ..write('bookUid: $bookUid, ')
+          ..write('seasonNumber: $seasonNumber, ')
+          ..write('episodeNumber: $episodeNumber, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -53852,6 +54970,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   late final $BookTagMembershipTombstonesTable bookTagMembershipTombstones =
       $BookTagMembershipTombstonesTable(this);
   late final $BookCustomCssTable bookCustomCss = $BookCustomCssTable(this);
+  late final $MangaReaderOverridesTable mangaReaderOverrides =
+      $MangaReaderOverridesTable(this);
   late final $SyncDeletionTombstonesTable syncDeletionTombstones =
       $SyncDeletionTombstonesTable(this);
   late final $RevealedImagesTable revealedImages = $RevealedImagesTable(this);
@@ -53940,6 +55060,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $MangaDownloadJobsTable(this);
   late final $AnidbFileIdentitiesTable anidbFileIdentities =
       $AnidbFileIdentitiesTable(this);
+  late final $VideoEpisodeBindingOverridesTable videoEpisodeBindingOverrides =
+      $VideoEpisodeBindingOverridesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -53986,6 +55108,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     statisticsTombstones,
     bookTagMembershipTombstones,
     bookCustomCss,
+    mangaReaderOverrides,
     syncDeletionTombstones,
     revealedImages,
     activityEvents,
@@ -54032,6 +55155,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     updateFeedEntries,
     mangaDownloadJobs,
     anidbFileIdentities,
+    videoEpisodeBindingOverrides,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -54501,6 +55625,15 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
           'video_download_subscription_items',
           kind: UpdateKind.update,
         ),
+      ],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'video_books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [
+        TableUpdate('video_episode_binding_overrides', kind: UpdateKind.delete),
       ],
     ),
   ]);
@@ -62161,6 +63294,35 @@ final class $$VideoBooksTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
+
+  static MultiTypedResultKey<
+    $VideoEpisodeBindingOverridesTable,
+    List<VideoEpisodeBindingOverrideRow>
+  >
+  _videoEpisodeBindingOverridesRefsTable(_$FushiDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.videoEpisodeBindingOverrides,
+        aliasName:
+            'video_books__book_uid__video_episode_binding_overrides__book_uid',
+      );
+
+  $$VideoEpisodeBindingOverridesTableProcessedTableManager
+  get videoEpisodeBindingOverridesRefs {
+    final manager =
+        $$VideoEpisodeBindingOverridesTableTableManager(
+          $_db,
+          $_db.videoEpisodeBindingOverrides,
+        ).filter(
+          (f) => f.bookUid.bookUid.sqlEquals($_itemColumn<String>('book_uid')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(
+      _videoEpisodeBindingOverridesRefsTable($_db),
+    );
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
 }
 
 class $$VideoBooksTableFilterComposer
@@ -62418,6 +63580,35 @@ class $$VideoBooksTableFilterComposer
                 $removeJoinBuilderFromRootComposer,
           ),
     );
+    return f(composer);
+  }
+
+  Expression<bool> videoEpisodeBindingOverridesRefs(
+    Expression<bool> Function(
+      $$VideoEpisodeBindingOverridesTableFilterComposer f,
+    )
+    f,
+  ) {
+    final $$VideoEpisodeBindingOverridesTableFilterComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoEpisodeBindingOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoEpisodeBindingOverridesTableFilterComposer(
+                $db: $db,
+                $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
     return f(composer);
   }
 }
@@ -62802,6 +63993,35 @@ class $$VideoBooksTableAnnotationComposer
         );
     return f(composer);
   }
+
+  Expression<T> videoEpisodeBindingOverridesRefs<T extends Object>(
+    Expression<T> Function(
+      $$VideoEpisodeBindingOverridesTableAnnotationComposer a,
+    )
+    f,
+  ) {
+    final $$VideoEpisodeBindingOverridesTableAnnotationComposer composer =
+        $composerBuilder(
+          composer: this,
+          getCurrentColumn: (t) => t.bookUid,
+          referencedTable: $db.videoEpisodeBindingOverrides,
+          getReferencedColumn: (t) => t.bookUid,
+          builder:
+              (
+                joinBuilder, {
+                $addJoinBuilderToRootComposer,
+                $removeJoinBuilderFromRootComposer,
+              }) => $$VideoEpisodeBindingOverridesTableAnnotationComposer(
+                $db: $db,
+                $table: $db.videoEpisodeBindingOverrides,
+                $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+                joinBuilder: joinBuilder,
+                $removeJoinBuilderFromRootComposer:
+                    $removeJoinBuilderFromRootComposer,
+              ),
+        );
+    return f(composer);
+  }
 }
 
 class $$VideoBooksTableTableManager
@@ -62824,6 +64044,7 @@ class $$VideoBooksTableTableManager
             bool videoMetadataWorksRefs,
             bool videoMetadataEpisodesRefs,
             bool videoMetadataExtrasRefs,
+            bool videoEpisodeBindingOverridesRefs,
           })
         > {
   $$VideoBooksTableTableManager(_$FushiDatabase db, $VideoBooksTable table)
@@ -62949,6 +64170,7 @@ class $$VideoBooksTableTableManager
                 videoMetadataWorksRefs = false,
                 videoMetadataEpisodesRefs = false,
                 videoMetadataExtrasRefs = false,
+                videoEpisodeBindingOverridesRefs = false,
               }) {
                 return PrefetchHooks(
                   db: db,
@@ -62958,6 +64180,8 @@ class $$VideoBooksTableTableManager
                     if (videoMetadataWorksRefs) db.videoMetadataWorks,
                     if (videoMetadataEpisodesRefs) db.videoMetadataEpisodes,
                     if (videoMetadataExtrasRefs) db.videoMetadataExtras,
+                    if (videoEpisodeBindingOverridesRefs)
+                      db.videoEpisodeBindingOverrides,
                   ],
                   addJoins:
                       <
@@ -63099,6 +64323,27 @@ class $$VideoBooksTableTableManager
                               ),
                           typedResults: items,
                         ),
+                      if (videoEpisodeBindingOverridesRefs)
+                        await $_getPrefetchedData<
+                          VideoBookRow,
+                          $VideoBooksTable,
+                          VideoEpisodeBindingOverrideRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$VideoBooksTableReferences
+                              ._videoEpisodeBindingOverridesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$VideoBooksTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).videoEpisodeBindingOverridesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.bookUid == item.bookUid,
+                              ),
+                          typedResults: items,
+                        ),
                     ];
                   },
                 );
@@ -63126,6 +64371,7 @@ typedef $$VideoBooksTableProcessedTableManager =
         bool videoMetadataWorksRefs,
         bool videoMetadataEpisodesRefs,
         bool videoMetadataExtrasRefs,
+        bool videoEpisodeBindingOverridesRefs,
       })
     >;
 typedef $$VideoWatchStatisticsTableCreateCompanionBuilder =
@@ -67985,6 +69231,205 @@ typedef $$BookCustomCssTableProcessedTableManager =
         BaseReferences<_$FushiDatabase, $BookCustomCssTable, BookCustomCssRow>,
       ),
       BookCustomCssRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MangaReaderOverridesTableCreateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      required String bookUid,
+      Value<String> overridesJson,
+      required int updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+typedef $$MangaReaderOverridesTableUpdateCompanionBuilder =
+    MangaReaderOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<String> overridesJson,
+      Value<int> updatedAt,
+      Value<bool> deleted,
+      Value<int> rowid,
+    });
+
+class $$MangaReaderOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MangaReaderOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get bookUid => $composableBuilder(
+    column: $table.bookUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get deleted => $composableBuilder(
+    column: $table.deleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MangaReaderOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MangaReaderOverridesTable> {
+  $$MangaReaderOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get bookUid =>
+      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+
+  GeneratedColumn<String> get overridesJson => $composableBuilder(
+    column: $table.overridesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get deleted =>
+      $composableBuilder(column: $table.deleted, builder: (column) => column);
+}
+
+class $$MangaReaderOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow,
+          $$MangaReaderOverridesTableFilterComposer,
+          $$MangaReaderOverridesTableOrderingComposer,
+          $$MangaReaderOverridesTableAnnotationComposer,
+          $$MangaReaderOverridesTableCreateCompanionBuilder,
+          $$MangaReaderOverridesTableUpdateCompanionBuilder,
+          (
+            MangaReaderOverrideRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MangaReaderOverridesTable,
+              MangaReaderOverrideRow
+            >,
+          ),
+          MangaReaderOverrideRow,
+          PrefetchHooks Function()
+        > {
+  $$MangaReaderOverridesTableTableManager(
+    _$FushiDatabase db,
+    $MangaReaderOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MangaReaderOverridesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MangaReaderOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MangaReaderOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<String> overridesJson = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                Value<String> overridesJson = const Value.absent(),
+                required int updatedAt,
+                Value<bool> deleted = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MangaReaderOverridesCompanion.insert(
+                bookUid: bookUid,
+                overridesJson: overridesJson,
+                updatedAt: updatedAt,
+                deleted: deleted,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MangaReaderOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MangaReaderOverridesTable,
+      MangaReaderOverrideRow,
+      $$MangaReaderOverridesTableFilterComposer,
+      $$MangaReaderOverridesTableOrderingComposer,
+      $$MangaReaderOverridesTableAnnotationComposer,
+      $$MangaReaderOverridesTableCreateCompanionBuilder,
+      $$MangaReaderOverridesTableUpdateCompanionBuilder,
+      (
+        MangaReaderOverrideRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MangaReaderOverridesTable,
+          MangaReaderOverrideRow
+        >,
+      ),
+      MangaReaderOverrideRow,
       PrefetchHooks Function()
     >;
 typedef $$SyncDeletionTombstonesTableCreateCompanionBuilder =
@@ -77025,6 +78470,9 @@ typedef $$VideoMetadataEpisodesTableCreateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       required int updatedAt,
     });
 typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
@@ -77041,6 +78489,9 @@ typedef $$VideoMetadataEpisodesTableUpdateCompanionBuilder =
       Value<double?> rating,
       Value<int?> ratingCount,
       Value<int?> runtimeMinutes,
+      Value<int?> anidbEpisodeId,
+      Value<String?> anidbEpisodeNumber,
+      Value<String?> anidbMatchRating,
       Value<int> updatedAt,
     });
 
@@ -77254,6 +78705,21 @@ class $$VideoMetadataEpisodesTableFilterComposer
 
   ColumnFilters<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -77473,6 +78939,21 @@ class $$VideoMetadataEpisodesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -77570,6 +79051,21 @@ class $$VideoMetadataEpisodesTableAnnotationComposer
 
   GeneratedColumn<int> get runtimeMinutes => $composableBuilder(
     column: $table.runtimeMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get anidbEpisodeId => $composableBuilder(
+    column: $table.anidbEpisodeId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbEpisodeNumber => $composableBuilder(
+    column: $table.anidbEpisodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get anidbMatchRating => $composableBuilder(
+    column: $table.anidbMatchRating,
     builder: (column) => column,
   );
 
@@ -77789,6 +79285,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
               }) => VideoMetadataEpisodesCompanion(
                 id: id,
@@ -77803,6 +79302,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           createCompanionCallback:
@@ -77819,6 +79321,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 Value<double?> rating = const Value.absent(),
                 Value<int?> ratingCount = const Value.absent(),
                 Value<int?> runtimeMinutes = const Value.absent(),
+                Value<int?> anidbEpisodeId = const Value.absent(),
+                Value<String?> anidbEpisodeNumber = const Value.absent(),
+                Value<String?> anidbMatchRating = const Value.absent(),
                 required int updatedAt,
               }) => VideoMetadataEpisodesCompanion.insert(
                 id: id,
@@ -77833,6 +79338,9 @@ class $$VideoMetadataEpisodesTableTableManager
                 rating: rating,
                 ratingCount: ratingCount,
                 runtimeMinutes: runtimeMinutes,
+                anidbEpisodeId: anidbEpisodeId,
+                anidbEpisodeNumber: anidbEpisodeNumber,
+                anidbMatchRating: anidbMatchRating,
                 updatedAt: updatedAt,
               ),
           withReferenceMapper: (p0) => p0
@@ -93008,6 +94516,11 @@ typedef $$AnidbFileIdentitiesTableCreateCompanionBuilder =
       Value<String?> filePath,
       Value<int?> fileModifiedAt,
       Value<int> missAttempts,
+      Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
+      Value<String> animeType,
       required int resolvedAt,
       required int updatedAt,
       Value<int> rowid,
@@ -93029,6 +94542,11 @@ typedef $$AnidbFileIdentitiesTableUpdateCompanionBuilder =
       Value<String?> filePath,
       Value<int?> fileModifiedAt,
       Value<int> missAttempts,
+      Value<int?> episodeAiredAt,
+      Value<String> otherEpisodes,
+      Value<bool> isDeprecated,
+      Value<int> fileState,
+      Value<String> animeType,
       Value<int> resolvedAt,
       Value<int> updatedAt,
       Value<int> rowid,
@@ -93115,6 +94633,31 @@ class $$AnidbFileIdentitiesTableFilterComposer
 
   ColumnFilters<int> get missAttempts => $composableBuilder(
     column: $table.missAttempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileState => $composableBuilder(
+    column: $table.fileState,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get animeType => $composableBuilder(
+    column: $table.animeType,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -93213,6 +94756,31 @@ class $$AnidbFileIdentitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileState => $composableBuilder(
+    column: $table.fileState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get animeType => $composableBuilder(
+    column: $table.animeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => ColumnOrderings(column),
@@ -93302,6 +94870,27 @@ class $$AnidbFileIdentitiesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get episodeAiredAt => $composableBuilder(
+    column: $table.episodeAiredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get otherEpisodes => $composableBuilder(
+    column: $table.otherEpisodes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDeprecated => $composableBuilder(
+    column: $table.isDeprecated,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileState =>
+      $composableBuilder(column: $table.fileState, builder: (column) => column);
+
+  GeneratedColumn<String> get animeType =>
+      $composableBuilder(column: $table.animeType, builder: (column) => column);
+
   GeneratedColumn<int> get resolvedAt => $composableBuilder(
     column: $table.resolvedAt,
     builder: (column) => column,
@@ -93369,6 +94958,11 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<String?> filePath = const Value.absent(),
                 Value<int?> fileModifiedAt = const Value.absent(),
                 Value<int> missAttempts = const Value.absent(),
+                Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
+                Value<String> animeType = const Value.absent(),
                 Value<int> resolvedAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -93388,6 +94982,11 @@ class $$AnidbFileIdentitiesTableTableManager
                 filePath: filePath,
                 fileModifiedAt: fileModifiedAt,
                 missAttempts: missAttempts,
+                episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
+                animeType: animeType,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -93409,6 +95008,11 @@ class $$AnidbFileIdentitiesTableTableManager
                 Value<String?> filePath = const Value.absent(),
                 Value<int?> fileModifiedAt = const Value.absent(),
                 Value<int> missAttempts = const Value.absent(),
+                Value<int?> episodeAiredAt = const Value.absent(),
+                Value<String> otherEpisodes = const Value.absent(),
+                Value<bool> isDeprecated = const Value.absent(),
+                Value<int> fileState = const Value.absent(),
+                Value<String> animeType = const Value.absent(),
                 required int resolvedAt,
                 required int updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -93428,6 +95032,11 @@ class $$AnidbFileIdentitiesTableTableManager
                 filePath: filePath,
                 fileModifiedAt: fileModifiedAt,
                 missAttempts: missAttempts,
+                episodeAiredAt: episodeAiredAt,
+                otherEpisodes: otherEpisodes,
+                isDeprecated: isDeprecated,
+                fileState: fileState,
+                animeType: animeType,
                 resolvedAt: resolvedAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -93460,6 +95069,338 @@ typedef $$AnidbFileIdentitiesTableProcessedTableManager =
       ),
       AnidbFileIdentityRow,
       PrefetchHooks Function()
+    >;
+typedef $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder =
+    VideoEpisodeBindingOverridesCompanion Function({
+      required String bookUid,
+      required int seasonNumber,
+      required int episodeNumber,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder =
+    VideoEpisodeBindingOverridesCompanion Function({
+      Value<String> bookUid,
+      Value<int> seasonNumber,
+      Value<int> episodeNumber,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+final class $$VideoEpisodeBindingOverridesTableReferences
+    extends
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow
+        > {
+  $$VideoEpisodeBindingOverridesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $VideoBooksTable _bookUidTable(_$FushiDatabase db) =>
+      db.videoBooks.createAlias(
+        'video_episode_binding_overrides__book_uid__video_books__book_uid',
+      );
+
+  $$VideoBooksTableProcessedTableManager get bookUid {
+    final $_column = $_itemColumn<String>('book_uid')!;
+
+    final manager = $$VideoBooksTableTableManager(
+      $_db,
+      $_db.videoBooks,
+    ).filter((f) => f.bookUid.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_bookUidTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$VideoBooksTableFilterComposer get bookUid {
+    final $$VideoBooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableFilterComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$VideoBooksTableOrderingComposer get bookUid {
+    final $$VideoBooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoEpisodeBindingOverridesTable> {
+  $$VideoEpisodeBindingOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get seasonNumber => $composableBuilder(
+    column: $table.seasonNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get episodeNumber => $composableBuilder(
+    column: $table.episodeNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  $$VideoBooksTableAnnotationComposer get bookUid {
+    final $$VideoBooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.bookUid,
+      referencedTable: $db.videoBooks,
+      getReferencedColumn: (t) => t.bookUid,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$VideoBooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.videoBooks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$VideoEpisodeBindingOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoEpisodeBindingOverridesTable,
+          VideoEpisodeBindingOverrideRow,
+          $$VideoEpisodeBindingOverridesTableFilterComposer,
+          $$VideoEpisodeBindingOverridesTableOrderingComposer,
+          $$VideoEpisodeBindingOverridesTableAnnotationComposer,
+          $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder,
+          $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder,
+          (
+            VideoEpisodeBindingOverrideRow,
+            $$VideoEpisodeBindingOverridesTableReferences,
+          ),
+          VideoEpisodeBindingOverrideRow,
+          PrefetchHooks Function({bool bookUid})
+        > {
+  $$VideoEpisodeBindingOverridesTableTableManager(
+    _$FushiDatabase db,
+    $VideoEpisodeBindingOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoEpisodeBindingOverridesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoEpisodeBindingOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoEpisodeBindingOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> bookUid = const Value.absent(),
+                Value<int> seasonNumber = const Value.absent(),
+                Value<int> episodeNumber = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoEpisodeBindingOverridesCompanion(
+                bookUid: bookUid,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String bookUid,
+                required int seasonNumber,
+                required int episodeNumber,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoEpisodeBindingOverridesCompanion.insert(
+                bookUid: bookUid,
+                seasonNumber: seasonNumber,
+                episodeNumber: episodeNumber,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$VideoEpisodeBindingOverridesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({bookUid = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (bookUid) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.bookUid,
+                                referencedTable:
+                                    $$VideoEpisodeBindingOverridesTableReferences
+                                        ._bookUidTable(db),
+                                referencedColumn:
+                                    $$VideoEpisodeBindingOverridesTableReferences
+                                        ._bookUidTable(db)
+                                        .bookUid,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$VideoEpisodeBindingOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoEpisodeBindingOverridesTable,
+      VideoEpisodeBindingOverrideRow,
+      $$VideoEpisodeBindingOverridesTableFilterComposer,
+      $$VideoEpisodeBindingOverridesTableOrderingComposer,
+      $$VideoEpisodeBindingOverridesTableAnnotationComposer,
+      $$VideoEpisodeBindingOverridesTableCreateCompanionBuilder,
+      $$VideoEpisodeBindingOverridesTableUpdateCompanionBuilder,
+      (
+        VideoEpisodeBindingOverrideRow,
+        $$VideoEpisodeBindingOverridesTableReferences,
+      ),
+      VideoEpisodeBindingOverrideRow,
+      PrefetchHooks Function({bool bookUid})
     >;
 
 class $FushiDatabaseManager {
@@ -93555,6 +95496,8 @@ class $FushiDatabaseManager {
       );
   $$BookCustomCssTableTableManager get bookCustomCss =>
       $$BookCustomCssTableTableManager(_db, _db.bookCustomCss);
+  $$MangaReaderOverridesTableTableManager get mangaReaderOverrides =>
+      $$MangaReaderOverridesTableTableManager(_db, _db.mangaReaderOverrides);
   $$SyncDeletionTombstonesTableTableManager get syncDeletionTombstones =>
       $$SyncDeletionTombstonesTableTableManager(
         _db,
@@ -93683,4 +95626,10 @@ class $FushiDatabaseManager {
       $$MangaDownloadJobsTableTableManager(_db, _db.mangaDownloadJobs);
   $$AnidbFileIdentitiesTableTableManager get anidbFileIdentities =>
       $$AnidbFileIdentitiesTableTableManager(_db, _db.anidbFileIdentities);
+  $$VideoEpisodeBindingOverridesTableTableManager
+  get videoEpisodeBindingOverrides =>
+      $$VideoEpisodeBindingOverridesTableTableManager(
+        _db,
+        _db.videoEpisodeBindingOverrides,
+      );
 }

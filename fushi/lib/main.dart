@@ -50,6 +50,7 @@ import 'package:fushi/src/lookup/lookup_deep_link.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
@@ -484,6 +485,9 @@ void main([List<String> args = const <String>[]]) {
     // 并发跑；串行 await 四段小 IO 是启动到 LoadingPage 之前的纯等待。
     await Future.wait<void>(<Future<void>>[
       DebugLogService.instance.init(),
+      // 用户 2026-09-22：视频卡顿 / 查词卡的分析日志。默认关闭（开关在设置 › 诊断），
+      // init 只读一次偏好 + 解析日志文件位置，关着时后续全链路零开销。
+      VideoDiagLog.instance.init(),
       // TODO-1232 A3：读一次 native 持久化的渲染后端选择（关 Impeller 实验开关），
       // 供设置项同步渲染。非 Android 静默降级为不支持。
       RenderBackendService.instance.init(),

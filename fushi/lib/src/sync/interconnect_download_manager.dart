@@ -87,6 +87,39 @@ class InterconnectDownloadBatch {
   }
 }
 
+/// 一组成员任务（合集的各集）聚成的**整体**下载态，给合集卡画一枚角标用。
+///
+/// 只聚合[InterconnectDownloadManager.tasks] 里**有任务**的成员：用户只下了
+/// 12 集里的 3 集时，分母就是 3，显示的是这 3 集的真实进度而不是稀释后的假数。
+/// 批快照（[InterconnectDownloadBatch]）不能当这个数据源：它只在成员整集结束时
+/// +1，长片下载全程停在 0/N；逐集手动下载又根本没有批。
+@immutable
+class InterconnectDownloadAggregate {
+  const InterconnectDownloadAggregate({
+    required this.progress,
+    required this.running,
+    required this.failed,
+    required this.total,
+  });
+
+  /// 0..1；已完成计 1、进行中计其进度（首个回报前计 0）、失败计 0。
+  final double progress;
+
+  /// 有任务的成员里还在跑的个数。
+  final int running;
+
+  /// 有任务的成员里已失败的个数。
+  final int failed;
+
+  /// 有任务的成员总数（≥ 1）。
+  final int total;
+
+  bool get isRunning => running > 0;
+
+  /// 全部结束且至少一集失败（UI 画失败角标）。
+  bool get isFailed => running == 0 && failed > 0;
+}
+
 /// 执行一次实际下载到 [dest] 的原语（注入，便于测试与解耦具体 client）。
 /// [onProgress] 上报 0..1 进度。
 typedef InterconnectDownloadRunner = Future<void> Function(
@@ -198,6 +231,36 @@ class InterconnectDownloadManager extends ChangeNotifier {
 
   /// 某任务进度（0..1 或 null=不确定）。
   double? progressFor(String id) => _tasks[id]?.progress;
+
+  /// 把 [ids]（合集各成员的任务键）聚成一条整体下载态；没有任一成员有任务时
+  /// 返回 null（调用方不画角标）。见 [InterconnectDownloadAggregate]。
+  InterconnectDownloadAggregate? aggregateFor(Iterable<String> ids) {
+    int total = 0;
+    int running = 0;
+    int failed = 0;
+    double sum = 0;
+    for (final String id in ids) {
+      final InterconnectDownloadTask? task = _tasks[id];
+      if (task == null) continue;
+      total += 1;
+      switch (task.status) {
+        case InterconnectDownloadStatus.running:
+          running += 1;
+          sum += (task.progress ?? 0).clamp(0, 1);
+        case InterconnectDownloadStatus.completed:
+          sum += 1;
+        case InterconnectDownloadStatus.failed:
+          failed += 1;
+      }
+    }
+    if (total == 0) return null;
+    return InterconnectDownloadAggregate(
+      progress: sum / total,
+      running: running,
+      failed: failed,
+      total: total,
+    );
+  }
 
   /// 启动一个视频下载任务（键 = 裸 `RemoteVideoInfo.id`，历史键域冻结不加前缀）。
   /// 已在跑（同 [id]）则忽略重复调用，返回当前任务。

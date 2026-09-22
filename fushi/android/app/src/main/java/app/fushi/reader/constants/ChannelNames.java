@@ -30,6 +30,9 @@ public final class ChannelNames {
     // Skia" experiment flag; applied at next launch via MainActivity's
     // getFlutterShellArgs override).
     public static final String RENDER = PREFIX + "/render";
+    // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
+    // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
+    public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
     // Hibiki→Fushi 跨包名迁移（改名迁移计划 P1-3/P1-4）：探测/拉起新包、
     // 发起卸载、注销 PROCESS_TEXT 系统入口。
     public static final String MIGRATION = PREFIX + "/migration";

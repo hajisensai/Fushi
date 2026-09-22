@@ -227,7 +227,11 @@ void main() {
   });
 
   group('装饰器只在真的制出新卡时才通知调度器', () {
-    ({_FakeRepo repo, AutoRepositionAnkiRepository decorated}) wrap({
+    ({
+      _FakeRepo repo,
+      AnkiAutoRepositionScheduler scheduler,
+      AutoRepositionAnkiRepository decorated,
+    }) wrap({
       bool supported = true,
     }) {
       final r = build(supported: supported);
@@ -239,18 +243,24 @@ void main() {
         inner: r.repo,
         scheduler: r.scheduler,
       );
-      return (repo: r.repo, decorated: decorated);
+      return (repo: r.repo, scheduler: r.scheduler, decorated: decorated);
     }
 
     Future<int> minesThenFlush(
-      ({_FakeRepo repo, AutoRepositionAnkiRepository decorated}) w,
+      ({
+        _FakeRepo repo,
+        AnkiAutoRepositionScheduler scheduler,
+        AutoRepositionAnkiRepository decorated,
+      }) w,
     ) async {
       await w.decorated.mineEntry(
         rawPayloadJson: '{}',
         context: const AnkiMiningContext(sentence: ''),
       );
       // 装饰器是否通知了调度器，只能由「有没有真的跑出一轮写回」体现。
-      await Future<void>.delayed(const Duration(milliseconds: 40));
+      // flushNow 跳过防抖立刻处理待办：没被通知就没有待办、写回 0——确定性，
+      // 不靠墙钟（固定 40 ms 在 CI 慢机上等不到那一轮，曾红）。
+      await w.scheduler.flushNow();
       return w.repo.writes.length;
     }
 

@@ -49,4 +49,30 @@ void main() {
       expect(parseMagnetDisplayName('magnet:?xt=urn:btih:abc'), isNull);
     });
   });
+
+  group('magnetUriFromInfoHash', () {
+    test('40-hex → 最小磁链，往返能被 parseMagnetInfoHash 解回', () {
+      final String? m = magnetUriFromInfoHash(
+        'C12FE1C06BBA254A9DC9F519B335AA7C1367A88A',
+        displayName: 'Frieren 01',
+      );
+      expect(
+          m,
+          'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a'
+          '&dn=Frieren+01');
+      expect(
+          parseMagnetInfoHash(m!), 'c12fe1c06bba254a9dc9f519b335aa7c1367a88a');
+      expect(parseMagnetDisplayName(m), 'Frieren 01');
+    });
+
+    test('32-char base32 → 十六进制；空 dn 不带参数', () {
+      expect(magnetUriFromInfoHash('77777777777777777777777777777777'),
+          'magnet:?xt=urn:btih:ffffffffffffffffffffffffffffffffffffffff');
+    });
+
+    test('长度不对 / 非十六进制 → null', () {
+      expect(magnetUriFromInfoHash('abc'), isNull);
+      expect(magnetUriFromInfoHash('z' * 40), isNull);
+    });
+  });
 }

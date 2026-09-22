@@ -15,315 +15,318 @@ import 'package:shelf/shelf.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('captures a real Windows HWND through local WebRTC', (
-    WidgetTester tester,
-  ) async {
-    if (!Platform.isWindows) {
-      return;
-    }
-
-    Process? target;
-    FushiRemoteGameStreamService? service;
-    FushiGameStreamHost? host;
-    RTCPeerConnection? client;
-    final RTCVideoRenderer renderer = RTCVideoRenderer();
-    final RTCVideoRenderer localRenderer = RTCVideoRenderer();
-    bool localRendererInitialized = false;
-    final Completer<void> firstFrame = Completer<void>();
-    final Completer<MediaStream> remoteStream = Completer<MediaStream>();
-    int hostSignalAfter = -1;
-    bool remoteDescriptionSet = false;
-    bool rendererInitialized = false;
-    Future<void> clientSignals = Future<void>.value();
-    final List<RTCIceCandidate> pendingHostCandidates = <RTCIceCandidate>[];
-    final List<String> diagnostics = <String>[];
-    void log(String message) {
-      diagnostics.add(message);
-      // ignore: avoid_print
-      print('[game-stream-capture-spike] $message');
-    }
-
-    try {
-      _clientSignalSequence = 0;
-      target = await _startCaptureTarget(
-        runnerPid: pid,
-        runnerExePath: Platform.resolvedExecutable,
-      );
-      unawaited(
-        target.stderr
-            .transform(const Utf8Decoder(allowMalformed: true))
-            .transform(const LineSplitter())
-            .forEach((String line) => log('target stderr: $line')),
-      );
-      unawaited(
-        target.exitCode.then(
-          (int code) => log('target process exited code=$code'),
-        ),
-      );
-      final int hwnd = await _readHwnd(
-        target,
-      ).timeout(const Duration(seconds: 10));
-      log('target hwnd=$hwnd');
-      final List<DesktopCapturerSource> preSources = await desktopCapturer
-          .getSources(
-            types: <SourceType>[SourceType.Window],
-            thumbnailSize: ThumbnailSize(1, 1),
-          );
-      log('desktopCapturer window source count=${preSources.length}');
-      for (final DesktopCapturerSource source in preSources) {
-        final bool isTarget = int.tryParse(source.id) == hwnd;
-        log(
-          'desktop source target=$isTarget id=${source.id} '
-          'name=${source.name} type=${source.type}',
-        );
+  testWidgets(
+    'captures a real Windows HWND through local WebRTC',
+    (WidgetTester tester) async {
+      Process? target;
+      FushiRemoteGameStreamService? service;
+      FushiGameStreamHost? host;
+      RTCPeerConnection? client;
+      final RTCVideoRenderer renderer = RTCVideoRenderer();
+      final RTCVideoRenderer localRenderer = RTCVideoRenderer();
+      bool localRendererInitialized = false;
+      final Completer<void> firstFrame = Completer<void>();
+      final Completer<MediaStream> remoteStream = Completer<MediaStream>();
+      int hostSignalAfter = -1;
+      bool remoteDescriptionSet = false;
+      bool rendererInitialized = false;
+      Future<void> clientSignals = Future<void>.value();
+      final List<RTCIceCandidate> pendingHostCandidates = <RTCIceCandidate>[];
+      final List<String> diagnostics = <String>[];
+      void log(String message) {
+        diagnostics.add(message);
+        // ignore: avoid_print
+        print('[game-stream-capture-spike] $message');
       }
-      final Map<String, Object?> preInspect =
-          await GameStreamInputChannel.inspect(hwnd);
-      log('native inspect before start=$preInspect');
 
-      await _awaitManualStartIfRequested(tester, log);
-
-      service = FushiRemoteGameStreamService(
-        sessionIdGenerator: () => 'capture-spike',
-      );
-      host = FushiGameStreamHost(service: service, onInput: (_) async {});
-      host.addListener(() {
-        log(
-          'host started=${host!.started} starting=${host.starting} '
-          'error=${host.error} state=${service!.session?.state.name} '
-          'reason=${service.session?.reason}',
+      try {
+        _clientSignalSequence = 0;
+        target = await _startCaptureTarget(
+          runnerPid: pid,
+          runnerExePath: Platform.resolvedExecutable,
         );
-      });
-      final GameStreamSession session = await host.start(hwnd: hwnd);
-      log(
-        'host.start returned session=${session.sessionId} '
-        'state=${session.state.name} window=${session.windowId}',
-      );
-      expect(host.started, isTrue);
-      expect(session.windowId, 'hwnd:$hwnd');
-      await localRenderer.initialize();
-      localRendererInitialized = true;
-      localRenderer.onFirstFrameRendered = () =>
-          log('local capture first frame');
-      localRenderer.srcObject = host.debugCaptureStream;
-      log(
-        'capture track settings=${host.debugCaptureStream?.getVideoTracks().first.getSettings()}',
-      );
-
-      final Response join = await _post(
-        service,
-        '/api/game-stream/join',
-        <String, Object?>{
-          'sessionId': session.sessionId,
-          'clientId': 'local-client',
-        },
-      );
-      expect(join.statusCode, 200);
-
-      await renderer.initialize();
-      rendererInitialized = true;
-      renderer.onFirstFrameRendered = () {
-        log('renderer first frame callback');
-        if (!firstFrame.isCompleted) firstFrame.complete();
-      };
-      await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: SizedBox(
-            width: 320,
-            height: 180,
-            child: RTCVideoView(renderer),
+        unawaited(
+          target.stderr
+              .transform(const Utf8Decoder(allowMalformed: true))
+              .transform(const LineSplitter())
+              .forEach((String line) => log('target stderr: $line')),
+        );
+        unawaited(
+          target.exitCode.then(
+            (int code) => log('target process exited code=$code'),
           ),
-        ),
-      );
-
-      final Map<String, dynamic> config = <String, dynamic>{
-        'iceServers': <Object>[],
-        'sdpSemantics': 'unified-plan',
-      };
-      client = await createPeerConnection(config);
-      client.onConnectionState = (RTCPeerConnectionState state) {
-        log('client connectionState=$state');
-      };
-      client.onIceConnectionState = (RTCIceConnectionState state) {
-        log('client iceConnectionState=$state');
-      };
-      client.onIceGatheringState = (RTCIceGatheringState state) {
-        log('client iceGatheringState=$state');
-      };
-      client.onSignalingState = (RTCSignalingState state) {
-        log('client signalingState=$state');
-      };
-
-      client.onIceCandidate = (RTCIceCandidate candidate) {
-        if (candidate.candidate?.isNotEmpty == true) {
-          log(
-            'client ice candidate mid=${candidate.sdpMid} '
-            'mLine=${candidate.sdpMLineIndex}',
-          );
-          clientSignals = clientSignals.then(
-            (_) => _sendClientSignal(
-              service!,
-              session.sessionId,
-              GameStreamSignalType.iceCandidate,
-              <String, Object?>{
-                'candidate': candidate.candidate,
-                'sdpMid': candidate.sdpMid,
-                'sdpMLineIndex': candidate.sdpMLineIndex,
-              },
-            ),
-            onError: (_) => _sendClientSignal(
-              service!,
-              session.sessionId,
-              GameStreamSignalType.iceCandidate,
-              <String, Object?>{
-                'candidate': candidate.candidate,
-                'sdpMid': candidate.sdpMid,
-                'sdpMLineIndex': candidate.sdpMLineIndex,
-              },
-            ),
-          );
-        }
-      };
-      client.onTrack = (RTCTrackEvent event) {
-        log(
-          'client onTrack kind=${event.track.kind} streams=${event.streams.length}',
         );
-        if (event.track.kind != 'video' || event.streams.isEmpty) return;
-        renderer.srcObject = event.streams.first;
-        log(
-          'remote stream tracks video=${event.streams.first.getVideoTracks().length} '
-          'audio=${event.streams.first.getAudioTracks().length}',
-        );
-        if (!remoteStream.isCompleted) {
-          remoteStream.complete(event.streams.first);
-        }
-      };
-
-      Future<void> pollHostSignals() async {
-        final List<GameStreamSignal> signals = await _pollHostSignals(
-          service!,
-          session.sessionId,
-          after: hostSignalAfter,
-        );
-        if (signals.isNotEmpty) {
-          log(
-            'polled host signals after=$hostSignalAfter '
-            'types=${signals.map((GameStreamSignal s) => '${s.sequence}:${s.type.name}').join(',')}',
-          );
-        }
-        for (final GameStreamSignal signal in signals) {
-          hostSignalAfter = signal.sequence;
-          if (signal.type == GameStreamSignalType.offer) {
-            log('applying host offer seq=${signal.sequence}');
-            await client!.setRemoteDescription(
-              RTCSessionDescription(signal.payload['sdp'] as String?, 'offer'),
+        final int hwnd = await _readHwnd(
+          target,
+        ).timeout(const Duration(seconds: 10));
+        log('target hwnd=$hwnd');
+        final List<DesktopCapturerSource> preSources = await desktopCapturer
+            .getSources(
+              types: <SourceType>[SourceType.Window],
+              thumbnailSize: ThumbnailSize(1, 1),
             );
-            remoteDescriptionSet = true;
+        log('desktopCapturer window source count=${preSources.length}');
+        for (final DesktopCapturerSource source in preSources) {
+          final bool isTarget = int.tryParse(source.id) == hwnd;
+          log(
+            'desktop source target=$isTarget id=${source.id} '
+            'name=${source.name} type=${source.type}',
+          );
+        }
+        final Map<String, Object?> preInspect =
+            await GameStreamInputChannel.inspect(hwnd);
+        log('native inspect before start=$preInspect');
+
+        await _awaitManualStartIfRequested(tester, log);
+
+        service = FushiRemoteGameStreamService(
+          sessionIdGenerator: () => 'capture-spike',
+        );
+        host = FushiGameStreamHost(service: service, onInput: (_) async {});
+        host.addListener(() {
+          log(
+            'host started=${host!.started} starting=${host.starting} '
+            'error=${host.error} state=${service!.session?.state.name} '
+            'reason=${service.session?.reason}',
+          );
+        });
+        final GameStreamSession session = await host.start(hwnd: hwnd);
+        log(
+          'host.start returned session=${session.sessionId} '
+          'state=${session.state.name} window=${session.windowId}',
+        );
+        expect(host.started, isTrue);
+        expect(session.windowId, 'hwnd:$hwnd');
+        await localRenderer.initialize();
+        localRendererInitialized = true;
+        localRenderer.onFirstFrameRendered = () =>
+            log('local capture first frame');
+        localRenderer.srcObject = host.debugCaptureStream;
+        log(
+          'capture track settings=${host.debugCaptureStream?.getVideoTracks().first.getSettings()}',
+        );
+
+        final Response join = await _post(
+          service,
+          '/api/game-stream/join',
+          <String, Object?>{
+            'sessionId': session.sessionId,
+            'clientId': 'local-client',
+          },
+        );
+        expect(join.statusCode, 200);
+
+        await renderer.initialize();
+        rendererInitialized = true;
+        renderer.onFirstFrameRendered = () {
+          log('renderer first frame callback');
+          if (!firstFrame.isCompleted) firstFrame.complete();
+        };
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: SizedBox(
+              width: 320,
+              height: 180,
+              child: RTCVideoView(renderer),
+            ),
+          ),
+        );
+
+        final Map<String, dynamic> config = <String, dynamic>{
+          'iceServers': <Object>[],
+          'sdpSemantics': 'unified-plan',
+        };
+        client = await createPeerConnection(config);
+        client.onConnectionState = (RTCPeerConnectionState state) {
+          log('client connectionState=$state');
+        };
+        client.onIceConnectionState = (RTCIceConnectionState state) {
+          log('client iceConnectionState=$state');
+        };
+        client.onIceGatheringState = (RTCIceGatheringState state) {
+          log('client iceGatheringState=$state');
+        };
+        client.onSignalingState = (RTCSignalingState state) {
+          log('client signalingState=$state');
+        };
+
+        client.onIceCandidate = (RTCIceCandidate candidate) {
+          if (candidate.candidate?.isNotEmpty == true) {
             log(
-              'remote description set; flushing ${pendingHostCandidates.length} pending host ICE',
+              'client ice candidate mid=${candidate.sdpMid} '
+              'mLine=${candidate.sdpMLineIndex}',
             );
-            for (final RTCIceCandidate candidate in pendingHostCandidates) {
-              await client.addCandidate(candidate);
-            }
-            pendingHostCandidates.clear();
-            final RTCSessionDescription answer = await client.createAnswer();
-            await client.setLocalDescription(answer);
-            log('created local answer');
             clientSignals = clientSignals.then(
               (_) => _sendClientSignal(
                 service!,
                 session.sessionId,
-                GameStreamSignalType.answer,
-                <String, Object?>{'sdp': answer.sdp, 'type': 'answer'},
+                GameStreamSignalType.iceCandidate,
+                <String, Object?>{
+                  'candidate': candidate.candidate,
+                  'sdpMid': candidate.sdpMid,
+                  'sdpMLineIndex': candidate.sdpMLineIndex,
+                },
+              ),
+              onError: (_) => _sendClientSignal(
+                service!,
+                session.sessionId,
+                GameStreamSignalType.iceCandidate,
+                <String, Object?>{
+                  'candidate': candidate.candidate,
+                  'sdpMid': candidate.sdpMid,
+                  'sdpMLineIndex': candidate.sdpMLineIndex,
+                },
               ),
             );
-            await clientSignals;
-          } else if (signal.type == GameStreamSignalType.iceCandidate) {
-            final RTCIceCandidate candidate = RTCIceCandidate(
-              signal.payload['candidate'] as String?,
-              signal.payload['sdpMid'] as String?,
-              (signal.payload['sdpMLineIndex'] as num?)?.toInt(),
+          }
+        };
+        client.onTrack = (RTCTrackEvent event) {
+          log(
+            'client onTrack kind=${event.track.kind} streams=${event.streams.length}',
+          );
+          if (event.track.kind != 'video' || event.streams.isEmpty) return;
+          renderer.srcObject = event.streams.first;
+          log(
+            'remote stream tracks video=${event.streams.first.getVideoTracks().length} '
+            'audio=${event.streams.first.getAudioTracks().length}',
+          );
+          if (!remoteStream.isCompleted) {
+            remoteStream.complete(event.streams.first);
+          }
+        };
+
+        Future<void> pollHostSignals() async {
+          final List<GameStreamSignal> signals = await _pollHostSignals(
+            service!,
+            session.sessionId,
+            after: hostSignalAfter,
+          );
+          if (signals.isNotEmpty) {
+            log(
+              'polled host signals after=$hostSignalAfter '
+              'types=${signals.map((GameStreamSignal s) => '${s.sequence}:${s.type.name}').join(',')}',
             );
-            if (remoteDescriptionSet) {
-              log('adding host ICE seq=${signal.sequence}');
-              await client!.addCandidate(candidate);
-            } else {
-              log('buffering host ICE before offer seq=${signal.sequence}');
-              pendingHostCandidates.add(candidate);
+          }
+          for (final GameStreamSignal signal in signals) {
+            hostSignalAfter = signal.sequence;
+            if (signal.type == GameStreamSignalType.offer) {
+              log('applying host offer seq=${signal.sequence}');
+              await client!.setRemoteDescription(
+                RTCSessionDescription(
+                  signal.payload['sdp'] as String?,
+                  'offer',
+                ),
+              );
+              remoteDescriptionSet = true;
+              log(
+                'remote description set; flushing ${pendingHostCandidates.length} pending host ICE',
+              );
+              for (final RTCIceCandidate candidate in pendingHostCandidates) {
+                await client.addCandidate(candidate);
+              }
+              pendingHostCandidates.clear();
+              final RTCSessionDescription answer = await client.createAnswer();
+              await client.setLocalDescription(answer);
+              log('created local answer');
+              clientSignals = clientSignals.then(
+                (_) => _sendClientSignal(
+                  service!,
+                  session.sessionId,
+                  GameStreamSignalType.answer,
+                  <String, Object?>{'sdp': answer.sdp, 'type': 'answer'},
+                ),
+              );
+              await clientSignals;
+            } else if (signal.type == GameStreamSignalType.iceCandidate) {
+              final RTCIceCandidate candidate = RTCIceCandidate(
+                signal.payload['candidate'] as String?,
+                signal.payload['sdpMid'] as String?,
+                (signal.payload['sdpMLineIndex'] as num?)?.toInt(),
+              );
+              if (remoteDescriptionSet) {
+                log('adding host ICE seq=${signal.sequence}');
+                await client!.addCandidate(candidate);
+              } else {
+                log('buffering host ICE before offer seq=${signal.sequence}');
+                pendingHostCandidates.add(candidate);
+              }
             }
           }
         }
-      }
 
-      await pollHostSignals();
-      for (int i = 0; i < 40 && !firstFrame.isCompleted; i++) {
         await pollHostSignals();
-        await tester.pump(const Duration(milliseconds: 250));
-        await Future<void>.delayed(const Duration(milliseconds: 250));
-      }
-
-      await remoteStream.future.timeout(const Duration(seconds: 15));
-      log('remote stream future completed');
-      await tester.pump();
-      final bool hasInboundVideo = await _waitForInboundVideoFrames(
-        client: client,
-        host: host,
-        log: log,
-      );
-      log(
-        'frame evidence result=$hasInboundVideo '
-        'rendererFirstFrame=${firstFrame.isCompleted} '
-        'rendererSize=${renderer.videoWidth}x${renderer.videoHeight} '
-        'hostStarted=${host.started} hostError=${host.error} '
-        'sessionState=${service.session?.state.name} reason=${service.session?.reason}',
-      );
-      expect(
-        hasInboundVideo,
-        isTrue,
-        reason: 'diagnostics:\n${diagnostics.join('\n')}',
-      );
-      bool hasAudioEnergy = false;
-      for (int attempt = 0; attempt < 20 && !hasAudioEnergy; attempt++) {
-        for (final StatsReport report in await client.getStats()) {
-          if (report.type == 'inbound-rtp' &&
-              report.values['kind'] == 'audio' &&
-              ((report.values['totalAudioEnergy'] as num?) ?? 0) > 0) {
-            log('received application tone: ${report.values}');
-            hasAudioEnergy = true;
-          }
-        }
-        if (!hasAudioEnergy) {
+        for (int i = 0; i < 40 && !firstFrame.isCompleted; i++) {
+          await pollHostSignals();
+          await tester.pump(const Duration(milliseconds: 250));
           await Future<void>.delayed(const Duration(milliseconds: 250));
         }
-      }
-      expect(
-        hasAudioEnergy,
-        isTrue,
-        reason: 'Application audio must be non-silent',
-      );
 
-      await _minimizeWindow(hwnd);
-      await Future<void>.delayed(const Duration(milliseconds: 800));
-      expect(host.started, isFalse);
-      expect(service.session?.reason, 'window_unavailable');
-    } finally {
-      try {
-        renderer.onFirstFrameRendered = null;
-        localRenderer.onFirstFrameRendered = null;
-        if (rendererInitialized) renderer.srcObject = null;
-        if (localRendererInitialized) localRenderer.srcObject = null;
-        await host?.stop(reason: 'test_cleanup');
-        service?.dispose();
-        await client?.close();
-        await client?.dispose();
-        if (rendererInitialized) await renderer.dispose();
-        if (localRendererInitialized) await localRenderer.dispose();
+        await remoteStream.future.timeout(const Duration(seconds: 15));
+        log('remote stream future completed');
+        await tester.pump();
+        final bool hasInboundVideo = await _waitForInboundVideoFrames(
+          client: client,
+          host: host,
+          log: log,
+        );
+        log(
+          'frame evidence result=$hasInboundVideo '
+          'rendererFirstFrame=${firstFrame.isCompleted} '
+          'rendererSize=${renderer.videoWidth}x${renderer.videoHeight} '
+          'hostStarted=${host.started} hostError=${host.error} '
+          'sessionState=${service.session?.state.name} reason=${service.session?.reason}',
+        );
+        expect(
+          hasInboundVideo,
+          isTrue,
+          reason: 'diagnostics:\n${diagnostics.join('\n')}',
+        );
+        bool hasAudioEnergy = false;
+        for (int attempt = 0; attempt < 20 && !hasAudioEnergy; attempt++) {
+          for (final StatsReport report in await client.getStats()) {
+            if (report.type == 'inbound-rtp' &&
+                report.values['kind'] == 'audio' &&
+                ((report.values['totalAudioEnergy'] as num?) ?? 0) > 0) {
+              log('received application tone: ${report.values}');
+              hasAudioEnergy = true;
+            }
+          }
+          if (!hasAudioEnergy) {
+            await Future<void>.delayed(const Duration(milliseconds: 250));
+          }
+        }
+        expect(
+          hasAudioEnergy,
+          isTrue,
+          reason: 'Application audio must be non-silent',
+        );
+
+        await _minimizeWindow(hwnd);
+        await Future<void>.delayed(const Duration(milliseconds: 800));
+        expect(host.started, isFalse);
+        expect(service.session?.reason, 'window_unavailable');
       } finally {
-        await _stopProcess(target, log);
+        try {
+          renderer.onFirstFrameRendered = null;
+          localRenderer.onFirstFrameRendered = null;
+          if (rendererInitialized) renderer.srcObject = null;
+          if (localRendererInitialized) localRenderer.srcObject = null;
+          await host?.stop(reason: 'test_cleanup');
+          service?.dispose();
+          await client?.close();
+          await client?.dispose();
+          if (rendererInitialized) await renderer.dispose();
+          if (localRendererInitialized) await localRenderer.dispose();
+        } finally {
+          await _stopProcess(target, log);
+        }
       }
-    }
-  });
+    },
+    // 裸 `return` 会被报成「通过 +1」而不是 skipped——非 Windows 上那是假绿
+    // （BUG-1157 同类形态）。与同 PR 的 game_stream_lan_host_test 同口径。
+    skip: !Platform.isWindows,
+  );
 }
 
 Future<void> _stopProcess(

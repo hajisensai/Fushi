@@ -153,6 +153,12 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '仓储层只解析封面路径供读取/展示，不落盘。',
   ),
+  '../packages/fushi_engine/lib/media/video/metadata/video_source_scrape_coordinator.dart': (
+    CoverDeriverRole.writesViaService,
+    '演职员头像落地（Shoko AutoDownloadStaffImages）：派生 <video_covers>/people/ '
+        '目的地后经引擎 writeCoverBytesAtomically 收口写盘；作品图片 sidecar 走 '
+        'SidecarWriter，本文件自己一个字节都不裸写。',
+  ),
   '../packages/fushi_engine/lib/media/video/video_cover_extractor.dart': (
     CoverDeriverRole.writesViaService,
     'ffmpeg 子进程直写目标路径（Dart 侧无字节）；下载路已走 applyCoverBytes。'

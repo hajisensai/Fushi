@@ -2,6 +2,7 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -251,6 +252,18 @@ class FushiGameStreamMiningAdapter {
             stillFormat: stillFormat,
             providedLineScreenshot: screenshot,
           );
+    // 失败原文**不出主机**：`GalHookMiningResult.failureReason` 有一条路是
+    // `error.toString()`（gal_hook_mining_coordinator.dart 的 buildFailure），里面会带
+    // 本机绝对路径（FileSystemException）、AnkiConnect 的主机名/端口（SocketException）
+    // 之类。这条结果随后原样回给手机，等于把主机内情推到局域网对端。原文只进本机
+    // 日志，远端拿到的是通用文案 + 枚举化 detail。
+    if (!result.success && !result.duplicate && result.failureReason != null) {
+      ErrorLogService.instance.log(
+        'GameStream.mine',
+        'host mining failed: ${result.failureReason}',
+        StackTrace.current,
+      );
+    }
     return GameStreamMineResult(
       ok: result.success,
       message: result.success
@@ -259,12 +272,14 @@ class FushiGameStreamMiningAdapter {
                 : '制卡完成'
           : result.duplicate
           ? 'Anki 中已有对应卡片'
-          : result.failureReason ?? '主机制卡失败',
+          : '主机制卡失败',
       detail: result.duplicate
           ? 'duplicate'
           : result.sentenceAudioMissing
           ? 'sentence_audio_missing'
-          : null,
+          : result.failureReason == null
+          ? null
+          : 'host_error',
     );
   }
 }

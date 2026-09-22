@@ -18,6 +18,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -1012,6 +1013,117 @@ void main() {
     expect(job.lastError, isNull);
   });
 
+  group('per-work subtitle language', () {
+    // 与「restart adopts…」用例同一套种子：任务停在 subtitle 阶段、磁盘上有一集
+    // 已 organize 好的视频。不预置 resolving 行，让字幕阶段真的去搜。
+    Future<_PipelineEnvironment> runSubtitleStage({
+      required _FakeSubtitleProvider subtitleProvider,
+      VideoDownloadSubtitleLanguageResolver? resolver,
+      bool Function(VideoDownloadJobRow row)? until,
+      List<String> preferredSubtitleLanguages = const <String>['ja'],
+    }) async {
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+        backend: _FakeTorrentBackend(),
+        subtitleProvider: subtitleProvider,
+        subtitleLanguageResolver: resolver,
+        preferredSubtitleLanguages: preferredSubtitleLanguages,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'per-work-language-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.subtitle,
+      );
+      await _seedOrganizedEpisode(environment, jobId);
+      environment.service.wake();
+      // bestEffort：候选校验不过也只是记「暂无字幕」，任务照样走到 completed。
+      await _waitForJob(
+        environment.database,
+        jobId,
+        until ??
+            (VideoDownloadJobRow row) =>
+                row.lifecycle == VideoDownloadJobLifecycle.completed,
+      );
+      return environment;
+    }
+
+    test('resolver language leads the request but does not narrow it',
+        () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      VideoDownloadSubtitleLanguageQuery? seen;
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (VideoDownloadSubtitleLanguageQuery query) {
+          seen = query;
+          return 'zh';
+        },
+      );
+      // 按作品的语言提到首位（排序首选由 explicitLanguage 负责），但**不收窄**
+      // 搜索面：它来自字幕工作台的筛选记忆，是「列出来给我看」的 UI 筛选器，不是
+      // 「这部番只下这个语言」的下载策略。塞成唯一值会让该语言没字幕的任务一条都
+      // 下不到（policy=required 时直接 needsAttention），而用户无处撤销。
+      expect(subtitleProvider.lastRequest!.languages, <String>['zh', 'ja']);
+      // 查询带的是任务行本身的字段，键与导入落库的合集名同源。
+      expect(seen!.jobId, 'per-work-language-job');
+      expect(seen!.title, 'Show');
+      expect(seen!.year, 2026);
+      expect(seen!.seriesKey, 'show (2026)');
+      expect(seen!.metadataProvider, 'anilist');
+      expect(seen!.externalId, '100');
+    });
+
+    test('全局「不限」时按作品的语言不把搜索面收成一个语言', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        preferredSubtitleLanguages: const <String>[],
+        resolver: (_) => 'zh',
+      );
+      expect(
+        subtitleProvider.lastRequest!.languages,
+        isEmpty,
+        reason: '全局不限就保持不限，否则该语言没字幕的作品一条都下不到',
+      );
+    });
+
+    test('null from the resolver keeps the global languages', () async {
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => null,
+      );
+      expect(subtitleProvider.lastRequest!.languages, <String>['ja']);
+    });
+
+    test(
+        'a throwing resolver surfaces as a stage error instead of silently '
+        'falling back', () async {
+      // 解析器读的是本进程内的偏好；它抛了就是偏好层坏了，不能伪装成「没记过
+      // 语言」用全局语言下字幕——按阶段异常走可重试路径，错误落在任务行上。
+      final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+        bytes: Uint8List.fromList(<int>[49, 10, 50, 10]),
+      );
+      final _PipelineEnvironment environment = await runSubtitleStage(
+        subtitleProvider: subtitleProvider,
+        resolver: (_) => throw StateError('preferences unavailable'),
+        until: (VideoDownloadJobRow row) =>
+            (row.lastError ?? '').contains('preferences unavailable'),
+      );
+      expect(subtitleProvider.searchCalls, 0);
+      final VideoDownloadJobRow job = (await environment.database
+          .getVideoDownloadJob('per-work-language-job'))!;
+      expect(job.lifecycle, isNot(VideoDownloadJobLifecycle.completed));
+      expect(job.stage, VideoDownloadJobStage.subtitle);
+    });
+  });
+
   test(
       'restart adopts an already-written resolving subtitle without duplicating it',
       () async {
@@ -1249,7 +1361,9 @@ void main() {
           row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
     );
 
-    expect(job.lastError, contains('mapped exactly'));
+    // 导入路径在库里根本没有行：报的是「不在视频库里」而不是笼统的映射失败。
+    expect(job.lastError, contains('missing from the video library'));
+    expect(job.lastError, contains('Missing.mkv'));
   });
 
   for (final bool legacyAniDb in <bool>[false, true]) {
@@ -1470,6 +1584,183 @@ void main() {
       detail['bookUid'] as String,
     );
     expect(book?.coverPath, draft.imagePath);
+  });
+
+  test(
+      'a single confirmed tv episode imported by the pipeline maps back to its '
+      'managed source for scraping', () async {
+    // 用户 2026-09-21：视频发现下载单集番剧，下载完成后报「Imported media could
+    // not be mapped exactly back to its managed source」。import 建的是单成员
+    // 播放列表，scrape 阶段必须仍能按导入路径找回这部作品。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'single-episode-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.import,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      '[Group] Show - 07 [WebRip 1080p HEVC-10bit AAC ASSx2].mkv',
+    );
+    await File(videoPath).create(recursive: true);
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: p.basename(videoPath),
+        currentRelativePath: p.basename(videoPath),
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(7),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    // 测试环境没有 MAL/TMDB provider：能走到「主资料源不可用」就证明路径映射
+    // 成功、lookup 进了协调器；「mapped exactly」才是这条 bug。
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+    expect(job.stage, VideoDownloadJobStage.scrape);
+    expect(job.lastError, isNot(contains('mapped exactly')));
+  });
+
+  test(
+      'a confirmed episode indexed first under another source is re-owned by '
+      'the managed source and scraped', () async {
+    // 扫描器（重叠来源 / 竞态）抢先按别的来源建了这一集的行：文件物理上就在
+    // 托管来源根目录里，scrape 阶段按托管来源收口归属，而不是「映射不回来源」。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    final int otherSourceId = await environment.database.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Overlapping library',
+        mediaKind: 'video',
+        rootPath: environment.root.parent.path,
+        createdAt: 1,
+      ),
+    );
+    const String jobId = 'foreign-source-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E07.mkv',
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/show-s01e07'),
+        title: const Value<String>('Show S01E07'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(otherSourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E07.mkv',
+        currentRelativePath: 'Show S01E07.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    // 测试环境没有 MAL/TMDB provider：走到「主资料源不可用」= 映射成功。
+    expect(job.lastError, isNot(contains('mapped exactly')));
+    expect(job.lastError?.toLowerCase(), contains('mal'));
+    final VideoBookRow book = (await environment.database
+        .getVideoBookByBookUid('video/show-s01e07'))!;
+    expect(book.sourceId, environment.sourceId);
+  });
+
+  test(
+      'a confirmed download into a folder-grouped source completes without '
+      'a metadata scrape', () async {
+    // 「按文件夹」来源只整理不刮削：计划器对它恒空，之前会把每条带身份的任务
+    // 都报成「映射不回来源」。
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+    );
+    addTearDown(environment.close);
+    await (environment.database.update(environment.database.mediaSources)
+          ..where((tbl) => tbl.id.equals(environment.sourceId)))
+        .write(
+      const MediaSourcesCompanion(
+        videoGroupingMode: Value<String>('folder'),
+      ),
+    );
+    const String jobId = 'folder-mode-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final String videoPath = p.join(environment.root.path, 'Show S01E07.mkv');
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/folder-show'),
+        title: const Value<String>('Show S01E07'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E07.mkv',
+        currentRelativePath: 'Show S01E07.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed ||
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+    );
+    expect(job.lifecycle, VideoDownloadJobLifecycle.completed,
+        reason: '${job.lastError}');
   });
 
   test('manual (non-subscription) import publishes no episode update',
@@ -2441,6 +2732,8 @@ class _PipelineEnvironment {
     required _FakeTorrentBackend backend,
     VideoDownloadBackendResolver? backendResolver,
     VideoSubtitleProvider? subtitleProvider,
+    VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver,
+    Iterable<String> preferredSubtitleLanguages = const <String>[],
     VideoMetadataProvider? metadataProvider,
     Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded,
     Duration leaseDuration = const Duration(minutes: 1),
@@ -2482,6 +2775,8 @@ class _PipelineEnvironment {
       database: database,
       resourceRegistry: resourceRegistry,
       subtitleRegistry: subtitleRegistry,
+      subtitleLanguageResolver: subtitleLanguageResolver,
+      preferredSubtitleLanguages: preferredSubtitleLanguages,
       backendResolver: backendResolver ??
           (_) async => VideoDownloadBackendBinding(
                 backend: backend,
@@ -2644,6 +2939,37 @@ class _FakeResourceCandidate extends VideoResourceCandidate {
         );
 }
 
+/// 在受管来源下放一集已 organize 好的视频并登记文件行（`Show (2026)/Season 01`）。
+Future<void> _seedOrganizedEpisode(
+  _PipelineEnvironment environment,
+  String jobId,
+) async {
+  final Directory season = Directory(
+    p.join(environment.root.path, 'Show (2026)', 'Season 01'),
+  );
+  await season.create(recursive: true);
+  final File video = File(p.join(season.path, 'Show (2026) - S01E02.mkv'));
+  await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await environment.database.upsertVideoDownloadJobFile(
+    VideoDownloadJobFilesCompanion.insert(
+      jobId: jobId,
+      backendFileIndex: const Value<int?>(0),
+      originalRelativePath: p.basename(video.path),
+      currentRelativePath: p.basename(video.path),
+      targetRelativePath: Value<String?>(p.basename(video.path)),
+      finalAbsolutePath: Value<String?>(video.path),
+      kind: const Value<String>('video'),
+      season: const Value<int?>(1),
+      episode: const Value<int?>(2),
+      sizeBytes: Value<int?>(await video.length()),
+      status: const Value<String>(VideoDownloadJobFileStatus.organized),
+      createdAt: now,
+      updatedAt: now,
+    ),
+  );
+}
+
 class _FakeSubtitleCandidate extends VideoSubtitleCandidate {
   _FakeSubtitleCandidate()
       : super(
@@ -2672,6 +2998,9 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
   int searchCalls = 0;
   int downloadCalls = 0;
 
+  /// 最近一次搜索请求（断言语言硬过滤用）。
+  VideoSubtitleSearchRequest? lastRequest;
+
   @override
   String get id => 'opensubtitles';
 
@@ -2683,6 +3012,7 @@ class _FakeSubtitleProvider implements VideoSubtitleProvider {
     VideoSubtitleSearchRequest request,
   ) async {
     searchCalls += 1;
+    lastRequest = request;
     return ProviderBatchResult<VideoSubtitleCandidate>.success(
       <VideoSubtitleCandidate>[candidate],
     );

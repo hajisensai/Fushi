@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:meta/meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/media/video/metadata/anidb_file_identity_store.dart';
@@ -37,7 +38,12 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anime_episode_relations.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
+import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart'
+    show metadataUniqueStrings;
 import 'package:fushi_engine/media/video/metadata/anime_offline_identity_resolver.dart';
 import 'package:fushi_engine/media/video/scraper/scrape_identifier_words.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
@@ -46,7 +52,8 @@ class VideoSourceScrapeCoordinator
     implements
         VideoSourceScrapeRunner,
         VideoSourceScrapeInterruptible,
-        VideoSourceScrapeManualBinding {
+        VideoSourceScrapeManualBinding,
+        VideoSourceScrapeEpisodeOrdering {
   /// 默认装配：哈希服务与离线 id 接力**共用同一份** Fribb 映射表（以前各自
   /// 下载、各解一份 16 MB JSON），并接上 `anidb_file_identities` 持久层（v106）。
   factory VideoSourceScrapeCoordinator({
@@ -67,10 +74,20 @@ class VideoSourceScrapeCoordinator
   }) {
     final AnimeIdentityMapping? sharedMapping = identityMapping ??
         (enableOfflineTitleIndex ? AnimeIdentityMapping() : null);
+    final VideoMetadataProviderRegistry effectiveRegistry =
+        registry ?? _createRegistry(config);
+    // 集信息首选 AniDB HTTP anime XML（Shoko：一次拿全集播出日），UDP EPISODE 兜底。
+    Future<AnidbEpisodeInfo?> episodeInfoFromXml(
+        {required int animeId, required int episodeId}) async {
+      final VideoMetadataProvider? provider =
+          effectiveRegistry.provider(VideoMetadataProviderKind.anidb);
+      if (provider is! AniDbVideoMetadataProvider) return null;
+      return provider.episodeInfo(animeId: animeId, episodeId: episodeId);
+    }
     return VideoSourceScrapeCoordinator._(
       database: database,
       config: config,
-      registry: registry,
+      registry: effectiveRegistry,
       primaryProvider: primaryProvider,
       hashIdentityService: hashIdentityService,
       resolvedHashIdentityService: hashIdentityService ??
@@ -78,6 +95,7 @@ class VideoSourceScrapeCoordinator
               enabled: config.hashEnabled,
               config: config.anidbUdpConfig,
               mapping: sharedMapping,
+              episodeInfoSource: episodeInfoFromXml,
               store: AnidbFileIdentityDatabaseStore(database)),
       assetDownloader: assetDownloader,
       identityMapping: identityMapping,
@@ -158,6 +176,15 @@ class VideoSourceScrapeCoordinator
   final bool _ownsEpisodeRelations;
 
   /// 每个作品最近一次解析出的成员 (季, 集) 覆盖，与 resolvedWorkCache 同键。
+  final Map<String, AnidbAdditionalEpisodeBindings> _anidbAdditionalCache =
+      <String, AnidbAdditionalEpisodeBindings>{};
+  final Map<String, Map<String, AnidbEpisodeXref>> _anidbXrefCache =
+      <String, Map<String, AnidbEpisodeXref>>{};
+  final Map<String, Set<String>> _userVerifiedCache = <String, Set<String>>{};
+
+  /// 合并预处理已识别过的文件（视频路径 → 结果），主循环按文件消费一次即删。
+  final Map<String, AnidbHashIdentityResult> _preIdentified =
+      <String, AnidbHashIdentityResult>{};
   final Map<String, Map<String, (int, int)>> _episodeOverridesCache =
       <String, Map<String, (int, int)>>{};
   final bool _ownsRegistry;
@@ -284,8 +311,10 @@ class VideoSourceScrapeCoordinator
     if (identityInput) {
       final VideoMetadataLookup? lookup =
           explicit.length == 1 ? explicit.single : null;
+      // 手动给的 id 只要是可选生产主源（AniDB / MAL / TMDB）的就直取——与
+      // resolver `_acceptsIdentity`、协调器 `acceptsCanonical` 同一判据。
       if (lookup == null ||
-          !chain.contains(lookup.provider) ||
+          !kSelectableVideoMetadataProviders.contains(lookup.provider) ||
           !RegExp(r'^[0-9]+$').hasMatch(lookup.externalId) ||
           (int.tryParse(lookup.externalId) ?? 0) <= 0) {
         throw const FormatException('Invalid video metadata work ID');
@@ -303,7 +332,8 @@ class VideoSourceScrapeCoordinator
       return <VideoSourceScrapeConfirmationCandidate>[
         if (result != null)
           VideoSourceScrapeConfirmationCandidate(
-              lookup: lookup.provider == VideoMetadataProviderKind.mal
+              lookup: lookup.provider == VideoMetadataProviderKind.mal ||
+                      lookup.provider == VideoMetadataProviderKind.anidb
                   ? VideoMetadataLookup(
                       provider: lookup.provider,
                       externalId: lookup.externalId,
@@ -358,6 +388,21 @@ class VideoSourceScrapeCoordinator
         _manualSearchProvider(lookup.provider);
     if (provider == null) return Future<VideoMetadataWork?>.value(null);
     return provider.fetchWork(lookup);
+  }
+
+  @override
+  Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
+    VideoMetadataLookup lookup,
+  ) {
+    final VideoMetadataProvider? provider =
+        _manualSearchProvider(lookup.provider);
+    if (provider == null || provider is! VideoMetadataEpisodeGroupProvider) {
+      return Future<List<VideoMetadataEpisodeGroupSummary>>.value(
+        const <VideoMetadataEpisodeGroupSummary>[],
+      );
+    }
+    return (provider as VideoMetadataEpisodeGroupProvider)
+        .listEpisodeGroups(lookup);
   }
 
   @override
@@ -557,6 +602,9 @@ class VideoSourceScrapeCoordinator
     int protectedArtifacts = 0;
     int unchangedArtifacts = 0;
     List<VideoSourceScrapeWork> works = const <VideoSourceScrapeWork>[];
+    // 本趟的已确认身份：调用方给的 + 途中按 AniDB 作品拆出来的电影子单元。
+    final Map<String, VideoMetadataLookup> lookups =
+        <String, VideoMetadataLookup>{...confirmedLookups};
     try {
       cancellationToken.throwIfCancelled();
       works =
@@ -577,9 +625,14 @@ class VideoSourceScrapeCoordinator
         totalWorks: works.length,
       );
 
-      final bool hasProvider = _providerChain(settings.provider).any(
-          (VideoMetadataProviderKind kind) =>
-              _registry.provider(kind)?.isAvailable ?? false);
+      // 批级快速失败门：询问链上一家都不可用才整批停。已确认 / 已落库的身份
+      // 来自任一可选主源都会按那家直取（`acceptsCanonical`），所以链外的可选
+      // 主源可用时也放行，让每条作品自己按 resolver 的结构化状态结账。
+      final bool hasProvider = <VideoMetadataProviderKind>{
+        ..._providerChain(settings.provider),
+        ...kSelectableVideoMetadataProviders,
+      }.any((VideoMetadataProviderKind kind) =>
+          _registry.provider(kind)?.isAvailable ?? false);
       if (!hasProvider && works.isNotEmpty) {
         failed = works.length;
         errors.add(SourceScrapeIssue(
@@ -602,6 +655,46 @@ class VideoSourceScrapeCoordinator
         _ => null,
       };
       int startedWorks = 0;
+
+      if (hasProvider && anidb?.isBanned != true) {
+        // Shoko：文件身份决定作品归属。散在合集外、哈希指向同一部剧的单文件
+        // 单元先合成一个剧集单元再进主循环（BUG-2624）。
+        final List<VideoSourceScrapeWork> merged =
+            await _mergeStandaloneByAnidbWork(
+          works,
+          source,
+          lookups: lookups,
+          warnings: warnings,
+          token: cancellationToken,
+          onHashProgress: (String path, int bytes, int totalBytes) =>
+              onProgress(
+            VideoSourceScrapeProgress(
+              phase: VideoSourceScrapePhase.recognizing,
+              sourceId: source.id,
+              sourceLabel: source.label,
+              currentWorkTitle: p.basename(path),
+              current: 0,
+              total: works.length,
+              message: 'AniDB ED2K ${p.basename(path)}：$bytes / $totalBytes 字节',
+            ),
+          ),
+          primaryProvider: settings.provider,
+        );
+        if (!identical(merged, works)) {
+          works = merged;
+          await _publish(
+            runId,
+            onProgress,
+            VideoSourceScrapeProgress(
+              phase: VideoSourceScrapePhase.planning,
+              sourceId: source.id,
+              sourceLabel: source.label,
+              total: works.length,
+            ),
+            totalWorks: works.length,
+          );
+        }
+      }
 
       for (int index = 0;
           hasProvider && anidb?.isBanned != true && index < works.length;
@@ -631,7 +724,7 @@ class VideoSourceScrapeCoordinator
             localWork,
             settings.provider,
             warnings,
-            confirmedLookup: confirmedLookups[localWork.stableKey],
+            confirmedLookup: lookups[localWork.stableKey],
             cancellationToken: cancellationToken,
             onHashProgress: (String path, int bytes, int totalBytes) =>
                 onProgress(
@@ -653,6 +746,43 @@ class VideoSourceScrapeCoordinator
             onConfirmation: onConfirmation,
           );
           if (resolved.pending) {
+            // Shoko：文件身份决定作品归属——一个目录里几部剧场版各自是各自的
+            // AniDB 作品，就拆成几部电影各自刮（`CrossRef_AniDB_TMDB_Movie`），
+            // 不再作为一个「待拆分合集」悬着。子单元插在本单元之后按序处理，
+            // 身份由 Fribb 映射给出；合集级残留作品行一并清掉。
+            final List<_SplitWork> split = resolved.splitInto;
+            if (split.isNotEmpty) {
+              works = <VideoSourceScrapeWork>[
+                ...works.take(index + 1),
+                for (final _SplitWork piece in split) piece.work,
+                ...works.skip(index + 1),
+              ];
+              for (final _SplitWork piece in split) {
+                if (piece.lookup case final VideoMetadataLookup lookup) {
+                  lookups[piece.work.stableKey] = lookup;
+                }
+              }
+              // 总数变了：run 行与进度条按新的作品数走。
+              await _publish(
+                runId,
+                onProgress,
+                VideoSourceScrapeProgress(
+                  phase: VideoSourceScrapePhase.recognizing,
+                  sourceId: source.id,
+                  sourceLabel: source.label,
+                  currentWorkTitle: localWork.title,
+                  current: index,
+                  total: works.length,
+                ),
+                totalWorks: works.length,
+              );
+              warnings.add(SourceScrapeIssue(
+                workTitle: localWork.title,
+                message: resolved.reason ??
+                    '成员分属不同 AniDB 作品，已拆成 ${split.length} 个作品各自刮削。',
+              ));
+              continue;
+            }
             pending++;
             warnings.add(SourceScrapeIssue(
               workTitle: localWork.title,
@@ -694,6 +824,9 @@ class VideoSourceScrapeCoordinator
             metadata,
             seasonEpisodesAuthoritative: resolved.seasonEpisodesAuthoritative,
             episodeOverrides: resolved.episodeOverrides,
+            anidbEpisodeXrefs: resolved.anidbEpisodeXrefs,
+            additionalEpisodeBindings: resolved.anidbAdditionalBindings,
+            userVerifiedBooks: resolved.userVerifiedBooks,
           );
 
           cancellationToken.throwIfCancelled();
@@ -726,6 +859,8 @@ class VideoSourceScrapeCoordinator
           unchangedArtifacts += sidecars.unchangedArtifacts;
           warnings.addAll(sidecars.warnings);
           errors.addAll(sidecars.errors);
+          await _downloadStaffImages(
+            localWork, metadata, warnings, cancellationToken);
           succeeded++;
           // 播「这个作品刮完了」。放在 succeeded++ 之后：只有真正刮成功的作品
           // 才值得去补字幕，失败的连身份都不可信。
@@ -866,14 +1001,22 @@ class VideoSourceScrapeCoordinator
             authoritativeSeasonEpisodesCache[cacheKey] ?? false,
         episodeOverrides:
             _episodeOverridesCache[cacheKey] ?? const <String, (int, int)>{},
+        anidbEpisodeXrefs:
+            _anidbXrefCache[cacheKey] ?? const <String, AnidbEpisodeXref>{},
+        anidbAdditionalBindings: _anidbAdditionalCache[cacheKey] ??
+            const <String, Map<(int, int), AnidbEpisodeXref>>{},
+        userVerifiedBooks: _userVerifiedCache[cacheKey] ?? const <String>{},
       );
     }
 
     final VideoNameInfo parsed =
         parseVideoFilename(p.basename(localWork.members.first.videoPath));
     final int? seasonNumber = _parsedSeason(localWork, parsed);
-    final VideoMetadataMediaKind kind =
-        localWork.isEpisodic || parsed.episode != null
+    // 单文件单元带着已确认身份时，形态跟身份走（`Movie 01.mkv` 这种带序号的
+    // 剧场版文件名会被误判成剧集；按 AniDB 作品拆出来的电影子单元就是这样）。
+    VideoMetadataMediaKind kind = !localWork.isEpisodic && confirmedLookup != null
+        ? confirmedLookup.mediaKind
+        : localWork.isEpisodic || parsed.episode != null
             ? VideoMetadataMediaKind.tv
             : VideoMetadataMediaKind.movie;
     VideoMetadataWork? nfo = await VideoNfoReader(
@@ -891,15 +1034,23 @@ class VideoSourceScrapeCoordinator
     final List<VideoMetadataProviderKind> chain =
         _providerChain(selectedProvider);
     final bool twoSourcePolicy = _isTwoSourcePolicy(selectedProvider);
+    // 已确认 / 已落库 / NFO 默认身份只要来自**仍可选的生产主源**（AniDB / MAL /
+    // TMDB）就是有效的规范绑定，不因用户切换默认主源而被静默换源重识别（对齐
+    // 2026-09-20 默认从 MAL 切到 AniDB：存量 MAL 作品保持身份，由仍注册的 MAL
+    // provider 续刮）。只有退役 provider（bangumi / douban / anilist …）才算旧身份。
     bool acceptsCanonical(VideoMetadataLookup lookup) =>
-        chain.contains(lookup.provider);
+        chain.contains(lookup.provider) ||
+        kSelectableVideoMetadataProviders.contains(lookup.provider);
     final VideoMetadataLookup? confirmedCanonical =
         confirmedLookup != null && acceptsCanonical(confirmedLookup)
             ? confirmedLookup
             : null;
-    // The first persisted identity is the primary. A retired primary's TMDB
-    // cross-reference must not silently become a new canonical binding.
-    final VideoMetadataLookup? storedPrimary = storedLookups.firstOrNull;
+    // Only an identity flagged primary counts as "the" primary. A retired
+    // primary's TMDB cross-reference must not silently become a new canonical
+    // binding; a work that never had a primary (NFO-indexed cross references
+    // only) has nothing retired and keeps its hints.
+    final VideoMetadataLookup? storedPrimary =
+        await _store.primaryLookupForWork(localWork);
     final bool retiredStoredIdentity = twoSourcePolicy &&
         storedPrimary != null &&
         !acceptsCanonical(storedPrimary);
@@ -922,11 +1073,23 @@ class VideoSourceScrapeCoordinator
     final bool retiredNfoIdentity = twoSourcePolicy &&
         nfoIdentityOwner != null &&
         !acceptsCanonical(nfoIdentityOwner);
+    // TMDB 的 /movie 与 /tv 是两个 id 空间：`<movie>` NFO 里的 TMDB id 不能成为
+    // 剧集单元的规范身份（反之亦然），否则一份放错的 NFO 会把整个合集刮成电影。
+    // MAL / AniDB 同一 id 空间不分形态，不受此限（与 `_tmdbSupplement` 的
+    // incompatibleHint、`mergeNfoAuthority` 的 TMDB 形态门同一判据）。
+    bool sameTmdbNamespace(VideoMetadataLookup lookup) =>
+        lookup.provider != VideoMetadataProviderKind.tmdb ||
+        lookup.mediaKind == kind;
     final VideoMetadataLookup? nfoCanonical = twoSourcePolicy
-        ? (nfoPrimary != null && acceptsCanonical(nfoPrimary)
+        ? (nfoPrimary != null &&
+                acceptsCanonical(nfoPrimary) &&
+                sameTmdbNamespace(nfoPrimary)
             ? nfoPrimary
             : null)
-        : nfoLookups.where(acceptsCanonical).firstOrNull;
+        : nfoLookups
+            .where(acceptsCanonical)
+            .where(sameTmdbNamespace)
+            .firstOrNull;
     final VideoMetadataLookup? storedSameSource = confirmedCanonical == null
         ? null
         : _lookupForProvider(storedLookups, confirmedCanonical.provider);
@@ -997,44 +1160,105 @@ class VideoSourceScrapeCoordinator
     final _HashWorkEvidence hashEvidence = await _identifyWork(
         localWork, warnings, cancellationToken, onHashProgress);
     cancellationToken.throwIfCancelled();
-    if (hashEvidence.conflicting) {
+    final bool hashDecidesIdentity = canonicalLookup == null && !hasExplicitId;
+    // 成员哈希分属多部作品 → 拆分**只在哈希决定身份时**。已确认 / 已落库 / NFO /
+    // 路径显式 id 在前（上面的注释就是这条优先级），手动指定的身份不得被哈希
+    // 静默换掉——更不能把用户的合集删了拆成 N 个（物语系列 / Fate / 多 cour 番
+    // 天然多 aid，用户手动指定一个作品正是想让它们留在一起）。这种情况下保留
+    // 身份、不按哈希做集级链接，下面按「哈希与已确认身份打架」报一条说明。
+    if (hashEvidence.conflicting && hashDecidesIdentity) {
+      final List<_SplitWork> split =
+          await _splitByAnidbWork(localWork, hashEvidence, source,
+              primaryProvider: selectedProvider);
+      if (split.isNotEmpty) {
+        final int movies = split
+            .where((_SplitWork s) => s.kind == VideoMetadataMediaKind.movie)
+            .length;
+        final int shows = split.length - movies;
+        return _ResolvedWork(
+            pending: true,
+            status: VideoMetadataResolutionStatus.ambiguous,
+            reason:
+                'AniDB 文件哈希识别出 ${split.map((_SplitWork s) => s.animeId).toSet().length} 部不同作品（${split.map((_SplitWork s) => 'aid ${s.animeId}').toSet().join('、')}），'
+                '已按 Shoko 方式拆开各自刮削：${movies > 0 ? '$movies 部电影' : ''}${movies > 0 && shows > 0 ? '、' : ''}${shows > 0 ? '$shows 个剧集合集' : ''}。',
+            splitInto: split);
+      }
       return const _ResolvedWork(
           pending: true,
           status: VideoMetadataResolutionStatus.ambiguous,
           reason: 'AniDB 文件哈希识别结果属于不同作品；请拆分合集或手动确认作品。');
     }
-    final bool hashDecidesIdentity = canonicalLookup == null && !hasExplicitId;
+    // Shoko 的作品形态由 AniDB 动画类型决定：单文件单元、哈希决定身份时，`Movie`
+    // 就是电影、其它就是剧集——文件名有没有序号不再作数。
+    if (hashDecidesIdentity && !localWork.isEpisodic) {
+      final AnidbFileIdentity? identity =
+          hashEvidence.identities[localWork.members.single.bookUid];
+      if (identity != null && identity.animeType.isNotEmpty) {
+        kind = identity.isMovieType
+            ? VideoMetadataMediaKind.movie
+            : VideoMetadataMediaKind.tv;
+      }
+    }
+    // 主源是 AniDB（Shoko 形态）时哈希给出的 aid 直接就是作品身份，不经 Fribb；
+    // 主源是 MAL 时才有「AniDB → MAL 一对多」这层。
+    final bool anidbPrimary =
+        selectedProvider == VideoMetadataProviderKind.anidb;
     // 跨站映射一对多（Fribb 把一个 AniDB 作品映到多个 MAL 条目）：AniDB 身份本身
     // 已经成立，只是 MAL 那边要选——把各候选拉出来交 AI / 人工，不再让作品悬空。
-    final bool hashMappingAmbiguous = hashDecidesIdentity &&
+    final bool hashMappingAmbiguous = !anidbPrimary &&
+        hashDecidesIdentity &&
         hashEvidence.animeId != null &&
         hashEvidence.mappedMalIds.length > 1;
     final int? canonicalMalId =
         canonicalLookup?.provider == VideoMetadataProviderKind.mal
             ? int.tryParse(canonicalLookup!.externalId)
             : null;
-    // 哈希与已确认身份打架：文件确定属于 AniDB X，X 映到的 MAL 里没有当前这个
-    // 已确认的 MAL id。保留已确认身份（手动指定不得静默换源），只报出来。
+    final int? canonicalAnidbId =
+        canonicalLookup?.provider == VideoMetadataProviderKind.anidb
+            ? int.tryParse(canonicalLookup!.externalId)
+            : null;
+    // 哈希与已确认身份打架：文件确定属于 AniDB X，而当前已确认的是别的 AniDB
+    // 作品 / X 映到的 MAL 里没有当前这个 MAL id。保留已确认身份（手动指定不得
+    // 静默换源），只报出来。
     final bool hashContradictsCanonical = !hashDecidesIdentity &&
-        hashEvidence.animeId != null &&
-        canonicalMalId != null &&
-        hashEvidence.mappedMalIds.isNotEmpty &&
-        !hashEvidence.mappedMalIds.contains(canonicalMalId);
+        (hashEvidence.conflicting ||
+            (hashEvidence.animeId != null &&
+                ((canonicalAnidbId != null &&
+                        canonicalAnidbId != hashEvidence.animeId) ||
+                    (canonicalMalId != null &&
+                        hashEvidence.mappedMalIds.isNotEmpty &&
+                        !hashEvidence.mappedMalIds.contains(canonicalMalId)))));
     if (hashContradictsCanonical) {
+      final String current = canonicalAnidbId != null
+          ? 'AniDB $canonicalAnidbId'
+          : canonicalMalId != null
+              ? 'MAL $canonicalMalId'
+              : canonicalLookup != null
+                  ? '${canonicalLookup.provider.name} ${canonicalLookup.externalId}'
+                  : '路径显式 id';
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
-          message:
-              '文件哈希指向 AniDB ${hashEvidence.animeId}（anime-lists 映射 MAL ${hashEvidence.mappedMalIds.join('/')}），'
-              '与当前已确认身份 MAL $canonicalMalId 不一致；已保留当前身份，未改写。'));
+          message: hashEvidence.conflicting
+              ? '文件哈希分属多部 AniDB 作品（${hashEvidence.identities.values.map((AnidbFileIdentity i) => i.animeId).whereType<int>().toSet().map((int aid) => 'aid $aid').join('、')}），'
+                  '而作品已有身份 $current；已保留该身份、未拆分，本轮不按文件哈希做集级链接。'
+              : '文件哈希指向 AniDB ${hashEvidence.animeId}（anime-lists 映射 MAL ${hashEvidence.mappedMalIds.join('/')}），'
+                  '与当前已确认身份 $current 不一致；已保留当前身份，未改写。'));
     }
-    final VideoMetadataLookup? hashLookup =
-        !hashDecidesIdentity || hashEvidence.malId == null
-            ? null
-            : VideoMetadataLookup(
-                provider: VideoMetadataProviderKind.mal,
-                externalId: '${hashEvidence.malId}',
+    final VideoMetadataLookup? hashLookup = !hashDecidesIdentity
+        ? null
+        : anidbPrimary && hashEvidence.animeId != null
+            ? VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.anidb,
+                externalId: '${hashEvidence.animeId}',
                 mediaKind: kind,
-              );
+              )
+            : hashEvidence.malId == null
+                ? null
+                : VideoMetadataLookup(
+                    provider: VideoMetadataProviderKind.mal,
+                    externalId: '${hashEvidence.malId}',
+                    mediaKind: kind,
+                  );
     final List<String> searchTitles = <String>[
       if (hashDecidesIdentity && hashEvidence.animeId != null)
         ...hashEvidence.titles
@@ -1045,7 +1269,8 @@ class VideoSourceScrapeCoordinator
     // 唯一精确命中，再经 Fribb 换成链上两家的 id。命中后按 id 直拉，不发搜索。
     final AnimeOfflineIdentity? offline =
         hashDecidesIdentity && hashLookup == null && !hashMappingAmbiguous
-            ? await _identifyOffline(searchTitles, kind, warnings, localWork)
+            ? await _identifyOffline(searchTitles, kind, warnings, localWork,
+                primaryProvider: selectedProvider)
             : null;
     final List<VideoMetadataLookup> offlineLookups = <VideoMetadataLookup>[
       if (offline != null)
@@ -1230,7 +1455,7 @@ class VideoSourceScrapeCoordinator
     );
     VideoMetadataWork metadata = primaryHydration.metadata;
     if (metadata.provider == VideoMetadataProviderKind.mal &&
-        _hasIncompleteMalCredits(metadata)) {
+        hasIncompleteMalCredits(metadata)) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
           message: 'MAL 演职员资料抓取不完整，已保留作品身份和现有资料；将尝试严格匹配 TMDB 补充缺项。'));
@@ -1252,9 +1477,10 @@ class VideoSourceScrapeCoordinator
     // 绝对集号）时，用 Fribb 同一 TMDB 剧的季条目序列把各季映射到各自 MAL id
     // 逐季抓分集，绝对集号经 anime-relations 重定向；卡片仍是这一个合集。
     _SeasonExpansion? expansion;
-    if (metadata.provider == VideoMetadataProviderKind.mal &&
+    if ((metadata.provider == VideoMetadataProviderKind.mal ||
+            metadata.provider == VideoMetadataProviderKind.anidb) &&
         metadata.kind == VideoMetadataMediaKind.tv &&
-        resolvedLookup.provider == VideoMetadataProviderKind.mal) {
+        resolvedLookup.provider == metadata.provider) {
       expansion = await _expandMalSeasons(
         localWork: localWork,
         primary: metadata,
@@ -1269,6 +1495,10 @@ class VideoSourceScrapeCoordinator
       };
       if (!expansion.complete) seasonEpisodesAuthoritative = false;
     }
+    // Shoko 式 AniDB 集 → TMDB 集链接要用的 TMDB 剧骨架与 en-US / 原语集名：
+    // 主源不是 TMDB 时来自补充源，主源就是 TMDB 时就是它自己。
+    VideoMetadataWork? tmdbShow;
+    Map<(int, int), List<String>>? tmdbEpisodeAliases;
     if (metadata.provider != VideoMetadataProviderKind.tmdb) {
       metadata = _preserveTmdbIdentity(metadata, tmdbLookupHint);
       metadata = remapStandaloneVideoMetadataSeason(
@@ -1283,6 +1513,16 @@ class VideoSourceScrapeCoordinator
         ]..sort((VideoMetadataSeason a, VideoMetadataSeason b) =>
                 a.seasonNumber.compareTo(b.seasonNumber)));
       }
+      if (expansion != null && expansion.extraCredits.isNotEmpty) {
+        metadata = metadata.copyWith(
+          credits: mergeVideoMetadataCredits(
+            metadata.credits,
+            expansion.extraCredits,
+          ),
+        );
+      }
+      // Shoko：TMDB 恒为 AniDB 的补充（描述 / 图片 / 集标题源序）；MAL 主源仍按
+      // 缺项才补。
       final _TmdbSupplementResult tmdb =
           metadata.provider == VideoMetadataProviderKind.mal &&
                   !_needsTmdbSupplement(metadata, seasonEpisodesAuthoritative)
@@ -1297,6 +1537,7 @@ class VideoSourceScrapeCoordinator
                   localWork.title,
                   lookupHint: tmdbLookupHint,
                 );
+      tmdbShow = tmdb.metadata;
       // 有序合并：主源标量独占、补充只填空、集合并集；简介按刮削语言感知
       // （MAL 简介恒英文，zh-CN 用户拿到 TMDB 中文简介时以后者为准）。
       metadata = supplementVideoMetadata(
@@ -1318,7 +1559,7 @@ class VideoSourceScrapeCoordinator
       // 播出日在 TMDB 里找对应——① MAL 有分集的季用 TMDB 集补空；② MAL 一集
       // 都没有的季用本地文件 AniDB 身份里的集标题核对后按 AniDB 集号落集。
       if (tmdb.metadata != null &&
-          metadata.provider == VideoMetadataProviderKind.mal &&
+          metadata.provider != VideoMetadataProviderKind.tmdb &&
           metadata.kind == VideoMetadataMediaKind.tv) {
         final Set<int> sliced = expansion?.tmdbSlices.keys.toSet() ?? <int>{};
         final Map<int, List<TmdbEpisodeMatchSource>> anidbSources =
@@ -1330,6 +1571,7 @@ class VideoSourceScrapeCoordinator
                 ? await _tmdbEpisodeAliases(
                     tmdb.metadata!, warnings, localWork.title)
                 : const <(int, int), List<String>>{};
+        if (aliases.isNotEmpty) tmdbEpisodeAliases = aliases;
         final TmdbEpisodeMatchOutcome enriched =
             enrichSeasonsByTmdbEpisodeMatch(
           metadata,
@@ -1367,6 +1609,103 @@ class VideoSourceScrapeCoordinator
         }
       }
     }
+    // 用户手动钉死的季集（Shoko `MatchRating.UserVerified`）：最高优先级，
+    // AniDB 集级链接与文件名解析都不再动这些成员。
+    final Map<String, VideoEpisodeBindingOverrideRow> userVerified =
+        await database.getVideoEpisodeBindingOverrides(<String>[
+      for (final VideoBookRow member in localWork.members) member.bookUid,
+    ]);
+    // Shoko 主路径（`MatchAnidbToTmdbEpisodes`）：有 AniDB 文件身份的成员，
+    // 它落到哪一集由 AniDB 集（播出日 + 三语集标题）在 TMDB 剧全部季里逐集
+    // 对出来决定，文件名解析的季集只是没有身份时的退路。Shoko 里文件名从不
+    // 参与识别；这里同理——身份与文件名不符时按身份、记一条说明。
+    // 每个有身份的成员都先落一条只带 AniDB 原生身份的交叉引用（无 TMDB 剧也
+    // 呈现 AniDB 编号），链接成功的再补评级。
+    Map<String, AnidbEpisodeXref> anidbXrefs = <String, AnidbEpisodeXref>{
+      for (final MapEntry<String, AnidbFileIdentity> entry
+          in hashEvidence.identities.entries)
+        if (!hashContradictsCanonical)
+          entry.key: AnidbEpisodeXref(
+            episodeId: entry.value.episodeId,
+            episodeNumber: entry.value.episodeNumber,
+          ),
+    };
+    AnidbAdditionalEpisodeBindings anidbAdditional =
+        const <String, Map<(int, int), AnidbEpisodeXref>>{};
+    if (metadata.provider == VideoMetadataProviderKind.tmdb) {
+      tmdbShow = metadata;
+    }
+    if (tmdbShow != null &&
+        !hashContradictsCanonical &&
+        metadata.kind == VideoMetadataMediaKind.tv) {
+      // AniDB 主源：来源池 = anime XML 全集（Shoko 用本地 AniDB_Episode 表，
+      // 即整部作品的集），文件身份只决定文件绑到哪个 eid；其它主源仍只有有身份
+      // 的文件那几集。
+      final _AnidbLinkSources allSources =
+          metadata.provider == VideoMetadataProviderKind.anidb
+              ? await _anidbWorkLinkSources(primaryHydration.metadata,
+                  resolvedLookup, localWork, hashEvidence, warnings)
+              : _anidbLinkSources(localWork, hashEvidence);
+      // Shoko 对 UserVerified：该 AniDB 集不再参与匹配，它钉到的 TMDB 集也从
+      // 候选池移除——否则同单元里更靠前的自动链接成员照样能被链到用户钉死的
+      // 那一格，落库先到先得时钉死静默丢失。
+      final _AnidbLinkSources sources =
+          _withoutUserVerified(allSources, localWork, hashEvidence, userVerified);
+      final Set<(int, int)> reservedCardKeys = <(int, int)>{
+        for (final VideoEpisodeBindingOverrideRow row in userVerified.values)
+          (row.seasonNumber, row.episodeNumber),
+      };
+      if (sources.isNotEmpty) {
+        tmdbEpisodeAliases ??=
+            await _tmdbEpisodeAliases(tmdbShow, warnings, localWork.title);
+        final AnidbEpisodeLinkOutcome linked = linkAnidbEpisodesToTmdb(
+          metadata,
+          tmdbShow,
+          sources.regular,
+          specialSources: sources.specials,
+          slices: await _cardSlices(metadata, expansion, resolvedLookup),
+          candidateAliases: tmdbEpisodeAliases,
+          preferredLanguage: _locale,
+          reservedCardKeys: reservedCardKeys,
+        );
+        metadata = linked.work;
+        final _AppliedAnidbLinks applied = _applyAnidbEpisodeLinks(
+          localWork,
+          hashEvidence,
+          linked.links,
+          linked.specialLinks,
+          episodeOverrides,
+          warnings,
+          skipMembers: userVerified.keys.toSet(),
+        );
+        episodeOverrides = applied.overrides;
+        anidbXrefs = <String, AnidbEpisodeXref>{...anidbXrefs, ...applied.xrefs};
+        anidbAdditional = applied.additional;
+      }
+    }
+    if (userVerified.isNotEmpty) {
+      episodeOverrides = <String, (int, int)>{
+        ...episodeOverrides,
+        for (final VideoEpisodeBindingOverrideRow row in userVerified.values)
+          row.bookUid: (row.seasonNumber, row.episodeNumber),
+      };
+      anidbXrefs = <String, AnidbEpisodeXref>{
+        ...anidbXrefs,
+        for (final MapEntry<String, AnidbFileIdentity> entry
+            in hashEvidence.identities.entries)
+          if (userVerified.containsKey(entry.key))
+            entry.key: AnidbEpisodeXref(
+              episodeId: entry.value.episodeId,
+              episodeNumber: entry.value.episodeNumber,
+              matchRating: kUserVerifiedMatchRating,
+            ),
+      };
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          message:
+              '${userVerified.length} 个文件按用户手动指定的季集绑定（UserVerified），本轮不改：'
+              '${userVerified.values.map((VideoEpisodeBindingOverrideRow r) => '${p.basename(localWork.members.firstWhere((VideoBookRow m) => m.bookUid == r.bookUid).videoPath)} → 第 ${r.seasonNumber} 季第 ${r.episodeNumber} 集').join('、')}。'));
+    }
     // AniDB 作品 id 由文件哈希直接确立（全部成员都指向同一 anime），不以
     // MAL 映射唯一为前提——那是 MAL 那边的事。唯一不写的情况是它与已确认的
     // MAL 身份明确冲突（上面已报警告）。
@@ -1388,10 +1727,390 @@ class VideoSourceScrapeCoordinator
     resolvedWorkCache[cacheKey] = metadata;
     authoritativeSeasonEpisodesCache[cacheKey] = seasonEpisodesAuthoritative;
     _episodeOverridesCache[cacheKey] = episodeOverrides;
+    _anidbXrefCache[cacheKey] = anidbXrefs;
+    _anidbAdditionalCache[cacheKey] = anidbAdditional;
+    _userVerifiedCache[cacheKey] = userVerified.keys.toSet();
     return _ResolvedWork(
       metadata: metadata,
       seasonEpisodesAuthoritative: seasonEpisodesAuthoritative,
       episodeOverrides: episodeOverrides,
+      anidbEpisodeXrefs: anidbXrefs,
+      anidbAdditionalBindings: anidbAdditional,
+      userVerifiedBooks: userVerified.keys.toSet(),
+    );
+  }
+
+  /// 来源池剔除用户钉死成员（UserVerified）的 AniDB 集：主集与一文件多集的
+  /// 其余集都不再参与自动匹配（Shoko `TmdbLinkingService` 对 UserVerified 的
+  /// 集直接跳过）。
+  static _AnidbLinkSources _withoutUserVerified(
+    _AnidbLinkSources sources,
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    Map<String, VideoEpisodeBindingOverrideRow> userVerified,
+  ) {
+    if (userVerified.isEmpty || !sources.isNotEmpty) return sources;
+    final Set<int> regular = <int>{};
+    final Set<int> specials = <int>{};
+    void collect(String epnoText) {
+      if (_regularEpisodeNumber(epnoText) case final int epno) {
+        regular.add(epno);
+      } else if (_specialEpisodeNumber(epnoText) case final int special) {
+        specials.add(special);
+      }
+    }
+
+    for (final VideoBookRow member in localWork.members) {
+      if (!userVerified.containsKey(member.bookUid)) continue;
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      if (identity == null) continue;
+      collect(identity.episodeNumber);
+      for (final AnidbEpisodeShare share in identity.otherEpisodes) {
+        if (share.episodeNumber case final String epnoText) collect(epnoText);
+      }
+    }
+    if (regular.isEmpty && specials.isEmpty) return sources;
+    return _AnidbLinkSources(
+      regular: <TmdbEpisodeMatchSource>[
+        for (final TmdbEpisodeMatchSource source in sources.regular)
+          if (!regular.contains(source.number)) source,
+      ],
+      specials: <TmdbEpisodeMatchSource>[
+        for (final TmdbEpisodeMatchSource source in sources.specials)
+          if (!specials.contains(source.number)) source,
+      ],
+    );
+  }
+
+  /// 成员哈希分属不同 AniDB 作品（Shoko：文件身份决定作品归属，一个目录里几部
+  /// 作品就是几个 series）→ 按 AniDB 作品拆开各自刮：
+  ///  - 电影型（AniDB 动画类型 `Movie`，FILE amask 取得；旧行没类型时看 Fribb
+  ///    `isMovie`）→ 每个成员各自一个单文件电影单元（Shoko
+  ///    `CrossRef_AniDB_TMDB_Movie`）；
+  ///  - 其余（电视剧 / OVA / Web…）→ 每个 AniDB 作品**新建一个播放列表合集**
+  ///    收下该组成员，作为 `collection:` 剧集单元刮——剧集作品以合集为锚、一合集
+  ///    一部，所以对齐 Shoko 多 series 的方式就是把合集拆成多个。
+  /// 原合集：视频成员全被拆走时整个删除（`deleteMediaCollectionWithAssets`，
+  /// 写合集级墓碑，按文件名归组的重扫不再把它按原名重建）；否则只移走已拆成员
+  /// 并清掉合集级作品残留。任一成员没有 AniDB 身份 → 空表（不能猜归属，保持
+  /// 原「请拆分合集」待确认）；目录合集不在此路径（计划器不把它当剧集单元）。
+  /// 身份按主源顺序给：有唯一 MAL id 用 MAL（TMDB 经映射兜底），否则 TMDB id，
+  /// 都没有就让子单元自己按哈希 / 标题走常规识别。
+  Future<List<_SplitWork>> _splitByAnidbWork(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    SourceLibraryRow? source, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
+    final MediaCollectionRow? collection = localWork.collection;
+    if (collection == null || collection.sourceFolderPath != null) {
+      return const <_SplitWork>[];
+    }
+    // 按 AniDB 作品分组（保持成员顺序）。
+    final Map<int, List<VideoBookRow>> groups = <int, List<VideoBookRow>>{};
+    final Map<int, AnidbFileIdentity> identityByAnime =
+        <int, AnidbFileIdentity>{};
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      if (identity == null) return const <_SplitWork>[];
+      (groups[identity.animeId] ??= <VideoBookRow>[]).add(member);
+      identityByAnime.putIfAbsent(identity.animeId, () => identity);
+    }
+    if (groups.length < 2) return const <_SplitWork>[];
+
+    // 先决定每组形态与身份（不动库）。
+    final List<_PlannedSplitGroup> planned = <_PlannedSplitGroup>[
+      for (final MapEntry<int, List<VideoBookRow>> group in groups.entries)
+        await _planAnidbGroup(
+          animeId: group.key,
+          members: group.value,
+          identity: identityByAnime[group.key]!,
+          primaryProvider: primaryProvider,
+        ),
+    ];
+
+    // 原合集去留：视频成员全部被拆走 → 整删（带墓碑）；否则只移走已拆成员。
+    final List<MediaCollectionItemRow> items =
+        await database.getCollectionItems(collection.id);
+    final Set<String> splitUids = <String>{
+      for (final VideoBookRow member in localWork.members) member.bookUid,
+    };
+    final bool wholeCollection = items.every((MediaCollectionItemRow item) =>
+        item.mediaType == MediaKind.video.dbValue &&
+        splitUids.contains(item.entryKey));
+    if (wholeCollection) {
+      await deleteMediaCollectionWithAssets(database, collection.id);
+    } else {
+      for (final String uid in splitUids) {
+        await database.removeFromCollection(collection.id, MediaKind.video, uid);
+      }
+      await _store.removeCollectionOwnedWork(collection.id);
+      await database.deleteCollectionScrapeMeta(collection.id);
+    }
+
+    final List<_SplitWork> result = <_SplitWork>[];
+    for (final _PlannedSplitGroup group in planned) {
+      if (group.kind == VideoMetadataMediaKind.movie) {
+        for (final VideoBookRow member in group.members) {
+          result.add(_SplitWork(
+            work: VideoSourceScrapeWork(
+              source: source,
+              title: group.title,
+              members: <VideoBookRow>[member],
+            ),
+            lookup: group.lookup,
+            animeId: group.animeId,
+            kind: group.kind,
+          ));
+        }
+        continue;
+      }
+      result.add(await _createAnidbEpisodicUnit(
+        group,
+        source,
+        replacingCollectionId: collection.id,
+      ));
+    }
+    return result;
+  }
+
+  /// Shoko：AnimeSeries 只按 AniDB anime id 建一次、多文件复用
+  /// （`AnimeSeriesRepository.GetByAnimeID`），文件在哪个目录、叫什么名字与归属
+  /// 无关。计划器只按合集成员关系出单元，于是散在合集外的单文件 `book:` 单元哪怕
+  /// 哈希全指向同一部剧，也各自成「一集的电视剧」：作品行一集一份、tvshow / season
+  /// sidecar 永远写不出（单成员单元证明不了专属根目录）、日志一集四条（BUG-2624）。
+  /// 这里在主循环前把它们按 AniDB 作品合成 playlist 合集剧集单元，与
+  /// [_splitByAnidbWork] 互为镜像：拆分建合集怎么建，合并就怎么建。
+  ///
+  /// 只动 **单文件、非电影、没有已确认身份** 的单元：电影一文件一作品是 Shoko 的
+  /// `CrossRef_AniDB_TMDB_Movie` 形态，不合；带已确认身份的单元是用户或上一轮
+  /// 定过的，不静默改键。哈希识别不了 / 关闭 / 未配置的文件原样留给主循环按既有
+  /// 路径处理（那边会打出具体原因）。
+  Future<List<VideoSourceScrapeWork>> _mergeStandaloneByAnidbWork(
+    List<VideoSourceScrapeWork> works,
+    SourceLibraryRow source, {
+    required Map<String, VideoMetadataLookup> lookups,
+    required List<SourceScrapeIssue> warnings,
+    required VideoSourceScrapeCancellationToken token,
+    required void Function(String path, int bytes, int totalBytes)
+        onHashProgress,
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
+    _preIdentified.clear();
+    if (!hashIdentityService.enabled || !hashIdentityService.isConfigured) {
+      return works;
+    }
+    final Map<int, List<VideoSourceScrapeWork>> byAnime =
+        <int, List<VideoSourceScrapeWork>>{};
+    final Map<int, AnidbFileIdentity> identityByAnime =
+        <int, AnidbFileIdentity>{};
+    for (final VideoSourceScrapeWork work in works) {
+      if (work.isEpisodic || lookups.containsKey(work.stableKey)) continue;
+      // 与主循环同一优先级：已落库 / NFO / 路径显式 id 在哈希之前。这些单元留给
+      // 主循环按既有路径处理（哈希照做、但不决定身份、更不改合集归属）。
+      if (await _hasAuthoritativeIdentity(work, source)) continue;
+      final VideoBookRow member = work.members.single;
+      token.throwIfCancelled();
+      final AnidbHashIdentityResult result =
+          await hashIdentityService.identifyFile(
+        member.videoPath,
+        isCancelled: () => token.isCancelled,
+        onProgress: (int bytes, int total) =>
+            onHashProgress(member.videoPath, bytes, total),
+      );
+      token.throwIfCancelled();
+      if (result.status == AnidbHashIdentityStatus.cancelled) {
+        throw const VideoSourceScrapeCancelled();
+      }
+      // 结果（含未命中 / 失败）留给主循环的 [_identifyWork] 复用：那边负责打
+      // 每个文件的识别日志，这里不重复识别、不重复记账。
+      _preIdentified[member.videoPath] = result;
+      final AnidbFileIdentity? identity = result.identity;
+      if (result.status != AnidbHashIdentityStatus.matched ||
+          identity == null) {
+        continue;
+      }
+      (byAnime[identity.animeId] ??= <VideoSourceScrapeWork>[]).add(work);
+      identityByAnime.putIfAbsent(identity.animeId, () => identity);
+    }
+
+    final Map<String, _SplitWork> mergedByFirstKey = <String, _SplitWork>{};
+    final Set<String> absorbedKeys = <String>{};
+    for (final MapEntry<int, List<VideoSourceScrapeWork>> entry
+        in byAnime.entries) {
+      if (entry.value.length < 2) continue;
+      final List<VideoBookRow> members = <VideoBookRow>[
+        for (final VideoSourceScrapeWork work in entry.value)
+          work.members.single,
+      ]..sort((VideoBookRow a, VideoBookRow b) =>
+          a.videoPath.toLowerCase().compareTo(b.videoPath.toLowerCase()));
+      final _PlannedSplitGroup group = await _planAnidbGroup(
+        animeId: entry.key,
+        members: members,
+        identity: identityByAnime[entry.key]!,
+        primaryProvider: primaryProvider,
+      );
+      if (group.kind == VideoMetadataMediaKind.movie) continue;
+      // 用户删过同名播放列表就不自动重建（BUG-1739 的规矩：非用户显式的合集创建
+      // 路径都要问墓碑）。[createMediaCollection] 本身会清墓碑——它是给用户显式
+      // 重建用的入口；合并预处理每趟刮削都跑，不问墓碑就是「删除合集（保留条目）
+      // → 下一趟又按 AniDB 标题建回来」的死循环，用户视角＝合集删不掉。
+      if (await database.hasCollectionDeletionTombstone(
+        group.title,
+        'playlist',
+      )) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: group.title,
+          message:
+              'AniDB 文件哈希把 ${members.length} 个独立文件识别为同一部作品（aid ${entry.key}，${group.title}），'
+              '但同名播放列表合集已被删除过，不自动重建；文件保持独立。要合并请手动新建合集。',
+        ));
+        continue;
+      }
+      token.throwIfCancelled();
+      final _SplitWork merged = await _createAnidbEpisodicUnit(group, source);
+      mergedByFirstKey[entry.value.first.stableKey] = merged;
+      for (final VideoSourceScrapeWork work in entry.value) {
+        absorbedKeys.add(work.stableKey);
+      }
+      if (merged.lookup case final VideoMetadataLookup lookup) {
+        lookups[merged.work.stableKey] = lookup;
+      }
+      warnings.add(SourceScrapeIssue(
+        workTitle: merged.work.title,
+        message:
+            'AniDB 文件哈希把 ${members.length} 个独立文件识别为同一部作品（aid ${entry.key}，${group.title}），'
+            '已按 Shoko 方式合成剧集合集「${merged.work.title}」再刮削。',
+      ));
+    }
+    if (mergedByFirstKey.isEmpty) return works;
+    // 合并单元顶替其第一个成员原来的位置，其余被吸收的单元移除；顺序不变。
+    return List<VideoSourceScrapeWork>.unmodifiable(<VideoSourceScrapeWork>[
+      for (final VideoSourceScrapeWork work in works)
+        if (mergedByFirstKey[work.stableKey] case final _SplitWork merged)
+          merged.work
+        else if (!absorbedKeys.contains(work.stableKey))
+          work,
+    ]);
+  }
+
+  /// 主循环让哈希决定作品身份的前提是「已确认 / 已落库 / NFO / 路径显式 id 都
+  /// 没有」（[_resolveWork] 的 `hashDecidesIdentity`）。合并预处理跑在主循环之前，
+  /// 必须按同一优先级放行：用户手动确认过的散文件（身份持久在 book 级作品行）若被
+  /// 按哈希合进新合集，落库时 `_removeBookOwnedWorksForCollection` 会把那一行连同
+  /// 用户的确认一起删掉——哈希静默换掉了手动指定的身份，正是拆分路径明文禁止的
+  /// 事，合并路径没有理由例外。
+  Future<bool> _hasAuthoritativeIdentity(
+    VideoSourceScrapeWork work,
+    SourceLibraryRow source,
+  ) async {
+    final VideoBookRow member = work.members.single;
+    if (parseExplicitVideoMetadataIds(
+      <String>[member.videoPath],
+      fallbackMediaKind: VideoMetadataMediaKind.tv,
+    ).isNotEmpty) {
+      return true;
+    }
+    final List<VideoMetadataLookup> stored = await _store.lookupsForWork(work);
+    if (stored.any((VideoMetadataLookup lookup) =>
+        kSelectableVideoMetadataProviders.contains(lookup.provider))) {
+      return true;
+    }
+    final VideoMetadataWork? nfo = await VideoNfoReader(
+      generatedArtifactChecker:
+          DatabaseSidecarGeneratedArtifactChecker(database),
+    ).readForPaths(
+      sourceRoot: source.rootPath,
+      fallbackTitle: work.title,
+      videoPaths: <String>[member.videoPath],
+    );
+    return _lookupsForNfo(nfo).isNotEmpty;
+  }
+
+  /// 一组哈希同属一部 AniDB 作品的成员 → 形态（电影 / 剧集）+ 身份。
+  /// 形态由 AniDB 动画类型决定（FILE amask 取得），旧行没类型时看 Fribb `isMovie`；
+  /// 身份按主源顺序给：AniDB 主源直接用 aid；否则有唯一 MAL id 用 MAL，再否则
+  /// TMDB id；都没有就让单元自己按哈希 / 标题走常规识别。
+  Future<_PlannedSplitGroup> _planAnidbGroup({
+    required int animeId,
+    required List<VideoBookRow> members,
+    required AnidbFileIdentity identity,
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
+    final AnimeIdentityMapping? mapping = identityMapping;
+    final AnimeIdentityEntry? entry =
+        mapping == null ? null : await mapping.entryForAnidb(animeId);
+    final bool isMovie = identity.animeType.isNotEmpty
+        ? identity.isMovieType
+        : (entry?.isMovie ?? false);
+    final VideoMetadataMediaKind kind =
+        isMovie ? VideoMetadataMediaKind.movie : VideoMetadataMediaKind.tv;
+    VideoMetadataLookup? lookup;
+    if (primaryProvider == VideoMetadataProviderKind.anidb) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: '$animeId',
+          mediaKind: kind);
+    } else if (entry != null && entry.malIds.length == 1) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '${entry.malIds.single}',
+          mediaKind: kind);
+    } else if (entry != null &&
+        entry.tmdbId != null &&
+        entry.isMovie == (kind == VideoMetadataMediaKind.movie)) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '${entry.tmdbId}',
+          mediaKind: kind);
+    }
+    final String title = <String>[
+      identity.englishTitle,
+      identity.romajiTitle,
+      identity.kanjiTitle,
+      members.first.title,
+    ].map((String t) => t.trim()).firstWhere((String t) => t.isNotEmpty,
+        orElse: () => members.first.title);
+    return _PlannedSplitGroup(
+      animeId: animeId,
+      members: members,
+      title: title,
+      kind: kind,
+      lookup: lookup,
+    );
+  }
+
+  /// 剧集组 → 新建（撞名时加 AniDB 后缀）播放列表合集收下成员，作为
+  /// `collection:` 剧集单元。[replacingCollectionId] 是拆分时正被拆掉的原合集：
+  /// 与它同名不算撞名。
+  Future<_SplitWork> _createAnidbEpisodicUnit(
+    _PlannedSplitGroup group,
+    SourceLibraryRow? source, {
+    int? replacingCollectionId,
+  }) async {
+    String name = group.title;
+    final MediaCollectionRow? clash =
+        await database.getMediaCollectionByNaturalKey(name, 'playlist');
+    if (clash != null && clash.id != replacingCollectionId) {
+      name = '$name（AniDB ${group.animeId}）';
+    }
+    final int newId =
+        await database.createMediaCollection(name, collectionType: 'playlist');
+    for (final VideoBookRow member in group.members) {
+      await database.addToCollection(newId, MediaKind.video, member.bookUid);
+    }
+    final MediaCollectionRow row =
+        (await database.getMediaCollectionById(newId))!;
+    return _SplitWork(
+      work: VideoSourceScrapeWork(
+        source: source,
+        title: row.name,
+        members: group.members,
+        collection: row,
+      ),
+      lookup: group.lookup,
+      animeId: group.animeId,
+      kind: group.kind,
     );
   }
 
@@ -1427,13 +2146,16 @@ class VideoSourceScrapeCoordinator
         <String, AnidbFileIdentity>{};
     for (final VideoBookRow member in work.members) {
       token.throwIfCancelled();
+      // 合并预处理（[_mergeStandaloneByAnidbWork]）已经识别过的文件直接复用，
+      // 一个文件一批只识别一次；没经过预处理的（合集单元成员）照常现场识别。
       final AnidbHashIdentityResult result =
-          await hashIdentityService.identifyFile(
-        member.videoPath,
-        isCancelled: () => token.isCancelled,
-        onProgress: (int bytes, int total) =>
-            onProgress(member.videoPath, bytes, total),
-      );
+          _preIdentified.remove(member.videoPath) ??
+              await hashIdentityService.identifyFile(
+                member.videoPath,
+                isCancelled: () => token.isCancelled,
+                onProgress: (int bytes, int total) =>
+                    onProgress(member.videoPath, bytes, total),
+              );
       token.throwIfCancelled();
       if (result.status == AnidbHashIdentityStatus.cancelled) {
         throw const VideoSourceScrapeCancelled();
@@ -1457,14 +2179,30 @@ class VideoSourceScrapeCoordinator
           1 => 'MAL 作品映射=${malIds.single}。',
           _ => 'MAL 映射候选=${malIds.join('/')}（anime-lists 一对多，待确认）。',
         };
+        // Shoko `CrossRef_File_Episode` / `ReleaseInfo.IsCorrupted` 对应的三条
+        // 文件级事实：一文件多集、AniDB 标过时、CRC 不符。多集文件的其余集与
+        // 主集一样进 TMDB 逐集链接、绑成额外的分集行（v110 一文件多绑定）；
+        // 集信息还没问到的只能先记 eid。
+        final String fileNotes = <String>[
+          if (identity.otherEpisodes.isNotEmpty)
+            '本文件还覆盖 AniDB 集 ${identity.otherEpisodes.map((AnidbEpisodeShare s) => '${s.episodeNumber == null ? '' : '${s.episodeNumber} / '}eid ${s.episodeId}（${s.percentage}%）').join('、')}'
+                '${identity.hasUnresolvedOtherEpisodes ? '；其余集集信息尚未取到，本轮只绑主集' : '；与主集一并链接 TMDB、同一文件绑多集'}。',
+          if (identity.isDeprecated) 'AniDB 已把这份文件标为过时版本（有更新版本或已撤下）。',
+          if (identity.crcMatches == false)
+            'AniDB 登记的 CRC 与这份文件不符（可能损坏或非官方版本）。',
+          if (identity.fileVersion > 1) '文件版本 v${identity.fileVersion}。',
+        ].join();
         warnings.add(SourceScrapeIssue(
             workTitle: work.title,
             message:
                 'AniDB ED2K 文件识别${result.fromStore ? '（已记录，未重算）' : '成功'}：${p.basename(member.videoPath)}; '
                 'hash=${result.matchedEd2k ?? result.hash?.ed2k}; fileId=${identity.fileId}; animeId=${identity.animeId}; '
-                'episodeId=${identity.episodeId}; episodeNumber=${identity.episodeNumber}。'
+                'episodeId=${identity.episodeId}; episodeNumber=${identity.episodeNumber}'
+                '${identity.episodeAirDate == null ? '' : '; aired=${identity.episodeAirDate}'}。'
                 '$mappingNote'
-                'AniDB 原生集号仅记录，不推断 MAL 季集对应。'));
+                '季集由 AniDB 集在 TMDB 逐集链接决定（Shoko 式），不推断 MAL 集号。'
+                '$fileNotes'
+                '${result.episodeInfoError == null ? '' : '集播出日补问失败（${result.episodeInfoError}），本轮只按集标题链接。'}'));
       } else if (result.status != AnidbHashIdentityStatus.disabled) {
         warnings.add(SourceScrapeIssue(
             workTitle: work.title,
@@ -1521,8 +2259,9 @@ class VideoSourceScrapeCoordinator
     List<String> titles,
     VideoMetadataMediaKind kind,
     List<SourceScrapeIssue> warnings,
-    VideoSourceScrapeWork work,
-  ) async {
+    VideoSourceScrapeWork work, {
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
     final AnimeOfflineIdentityResolver? resolver = offlineIdentityResolver;
     if (resolver == null) return null;
     final AnimeOfflineIdentityResolution resolution = await resolver.resolve(
@@ -1532,7 +2271,10 @@ class VideoSourceScrapeCoordinator
     switch (resolution.status) {
       case AnimeOfflineIdentityStatus.matched:
         final AnimeOfflineIdentity identity = resolution.identity!;
-        if (!identity.hasOnlineIdentity) {
+        // AniDB 主源：离线索引命中的 aid 本身就是主源身份，不要求映射表有 MAL/TMDB。
+        if (!identity.hasOnlineIdentity &&
+            !_providerChain(primaryProvider)
+                .contains(VideoMetadataProviderKind.anidb)) {
           warnings.add(SourceScrapeIssue(
               workTitle: work.title,
               message:
@@ -1572,10 +2314,22 @@ class VideoSourceScrapeCoordinator
   }) async {
     const _SeasonExpansion none = _SeasonExpansion();
     final AnimeIdentityMapping? mapping = identityMapping;
-    final VideoMetadataProvider? provider =
-        _registry.provider(VideoMetadataProviderKind.mal);
-    final int? malId = int.tryParse(primaryLookup.externalId);
-    if (mapping == null || provider == null || malId == null) return none;
+    final VideoMetadataProviderKind namespace = primaryLookup.provider;
+    if (namespace != VideoMetadataProviderKind.mal &&
+        namespace != VideoMetadataProviderKind.anidb) {
+      return none;
+    }
+    final VideoMetadataProvider? provider = _registry.provider(namespace);
+    final int? primaryId = int.tryParse(primaryLookup.externalId);
+    if (mapping == null || provider == null || primaryId == null) return none;
+    // 同一函数服务两套主源命名空间：条目在 MAL 侧要 malIds 唯一，在 AniDB 侧就是
+    // anidbId。
+    int? idOf(AnimeIdentityEntry entry) =>
+        namespace == VideoMetadataProviderKind.mal
+            ? (entry.malIds.length == 1 ? entry.malIds.single : null)
+            : entry.anidbId;
+    final String label =
+        namespace == VideoMetadataProviderKind.mal ? 'MAL' : 'AniDB';
 
     // 识别词的集偏移已经先于本步生效：这里看到的集号是纠正后的编号，跨季
     // 折算才不会拿错编号去累加。
@@ -1602,10 +2356,18 @@ class VideoSourceScrapeCoordinator
     if (!anySeasonHint && !anyBeyond) return none;
 
     final List<AnimeIdentityEntry> seasonEntries;
+    int? relationsMalId;
     try {
+      final List<AnimeIdentityEntry> own =
+          namespace == VideoMetadataProviderKind.mal
+              ? await mapping.entriesForMal(primaryId)
+              : <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ];
       final Set<int> tmdbIds = <int>{
-        for (final AnimeIdentityEntry entry
-            in await mapping.entriesForMal(malId))
+        for (final AnimeIdentityEntry entry in own)
           if (entry.tmdbId case final int id)
             if (!entry.isMovie) id,
       };
@@ -1613,14 +2375,20 @@ class VideoSourceScrapeCoordinator
         warnings.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message:
-                '多季映射：MAL $malId 在跨站映射表里没有唯一的 TMDB 剧 id，各季无法自动对齐；只保留当前季的分集资料。'));
+                '多季映射：$label $primaryId 在跨站映射表里没有唯一的 TMDB 剧 id，各季无法自动对齐；只保留当前季的分集资料。'));
         return none;
       }
       seasonEntries = <AnimeIdentityEntry>[
         for (final AnimeIdentityEntry entry
             in await mapping.entriesForTmdbTv(tmdbIds.single))
-          if (entry.tmdbSeason != 0 && entry.malIds.length == 1) entry,
+          if (entry.tmdbSeason != 0 && idOf(entry) != null) entry,
       ];
+      // anime-relations 显式表按 MAL id 记规则：AniDB 主源时用本条目映到的唯一 MAL。
+      relationsMalId = namespace == VideoMetadataProviderKind.mal
+          ? primaryId
+          : (own.singleOrNull?.malIds.length == 1
+              ? own.single.malIds.single
+              : null);
     } on Object catch (error) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
@@ -1628,11 +2396,11 @@ class VideoSourceScrapeCoordinator
       return none;
     }
     final int primaryIndex = seasonEntries
-        .indexWhere((AnimeIdentityEntry entry) => entry.malIds.contains(malId));
+        .indexWhere((AnimeIdentityEntry entry) => idOf(entry) == primaryId);
     if (primaryIndex < 0) {
       warnings.add(SourceScrapeIssue(
           workTitle: localWork.title,
-          message: '多季映射：MAL $malId 不在其 TMDB 剧的季条目序列里，各季无法自动对齐。'));
+          message: '多季映射：$label $primaryId 不在其 TMDB 剧的季条目序列里，各季无法自动对齐。'));
       return none;
     }
     final int primarySeasonNumber = primaryIndex + 1;
@@ -1641,8 +2409,8 @@ class VideoSourceScrapeCoordinator
       primaryIndex: primary,
     };
     VideoMetadataLookup lookupAt(int index) => VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '${seasonEntries[index].malIds.single}',
+          provider: namespace,
+          externalId: '${idOf(seasonEntries[index])}',
           mediaKind: VideoMetadataMediaKind.tv,
         );
     Future<VideoMetadataWork?> workAt(int index) async {
@@ -1716,7 +2484,8 @@ class VideoSourceScrapeCoordinator
       // 绝对集号越过当前季：先查显式表，再按各季集数累加。
       (int, int)? target;
       final AnimeEpisodeRelationsCatalog? relations = episodeRelations;
-      if (relations != null) {
+      final int? malId = relationsMalId;
+      if (relations != null && malId != null) {
         try {
           final AnimeEpisodeRedirection? redirect =
               await relations.redirect(malId: malId, episode: episode);
@@ -1758,6 +2527,7 @@ class VideoSourceScrapeCoordinator
     }
 
     final List<VideoMetadataSeason> extra = <VideoMetadataSeason>[];
+    final List<VideoMetadataCredit> extraCredits = <VideoMetadataCredit>[];
     for (final int index in neededIndexes.toList()..sort()) {
       if (index == primaryIndex) continue;
       final VideoMetadataWork? work = await workAt(index);
@@ -1766,9 +2536,12 @@ class VideoSourceScrapeCoordinator
         warnings.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message:
-                '第 ${index + 1} 季（MAL ${seasonEntries[index].malIds.single}）资料拉取失败，该季分集暂缺。'));
+                '第 ${index + 1} 季（$label ${idOf(seasonEntries[index])}）资料拉取失败，该季分集暂缺。'));
         continue;
       }
+      // MAL 一个 cour 一个条目，各自只列本 cour 的声优 / 职员；卡片是整部作品，
+      // 后续 cour 新登场角色的声优也要进作品级人物表（BUG-2612）。
+      extraCredits.addAll(work.credits);
       final VideoMetadataLookup lookup = lookupAt(index);
       List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[];
       List<VideoMetadataEpisode> episodes = const <VideoMetadataEpisode>[];
@@ -1803,6 +2576,7 @@ class VideoSourceScrapeCoordinator
     return _SeasonExpansion(
       primarySeasonNumber: primarySeasonNumber,
       extraSeasons: extra,
+      extraCredits: extraCredits,
       episodeOverrides: overrides,
       complete: complete,
       // 全部条目都带上（不只本地出现的季）：MAL 没给集数时，切片终点要靠同一
@@ -1904,15 +2678,23 @@ class VideoSourceScrapeCoordinator
     final AnimeIdentityMapping? mapping = identityMapping;
     if (mapping == null ||
         resolved == null ||
-        resolved.provider != VideoMetadataProviderKind.mal) {
+        (resolved.provider != VideoMetadataProviderKind.mal &&
+            resolved.provider != VideoMetadataProviderKind.anidb)) {
       return null;
     }
-    final int? malId = int.tryParse(resolved.externalId);
-    if (malId == null) return null;
+    final int? primaryId = int.tryParse(resolved.externalId);
+    if (primaryId == null) return null;
     try {
+      final List<AnimeIdentityEntry> entries =
+          resolved.provider == VideoMetadataProviderKind.anidb
+              ? <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ]
+              : await mapping.entriesForMal(primaryId);
       final Set<int> tmdbIds = <int>{
-        for (final AnimeIdentityEntry entry
-            in await mapping.entriesForMal(malId))
+        for (final AnimeIdentityEntry entry in entries)
           if (entry.tmdbId case final int id)
             if (entry.isMovie == (kind == VideoMetadataMediaKind.movie)) id,
       };
@@ -1936,8 +2718,11 @@ class VideoSourceScrapeCoordinator
         _lookupForCandidate(work, VideoMetadataProviderKind.mal)?.externalId;
     final String? tmdbId =
         _lookupForCandidate(work, VideoMetadataProviderKind.tmdb)?.externalId;
+    final String? anidbId =
+        _lookupForCandidate(work, VideoMetadataProviderKind.anidb)?.externalId;
     return (offline.malId != null && malId == '${offline.malId}') ||
-        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}');
+        (offline.tmdbId != null && tmdbId == '${offline.tmdbId}') ||
+        anidbId == '${offline.anidbId}';
   }
 
   /// Shoko `TmdbSearchService.GetAnimePrequelChainRoot`：沿 MAL Prequel 关系回溯到
@@ -2084,10 +2869,28 @@ class VideoSourceScrapeCoordinator
     return aliases;
   }
 
+  /// 主源分级是否成人向：MAL / Jikan `Rx - Hentai`，AniDB `restricted` 映射的
+  /// `R18+`，以及 TMDB 自己的 `adult` 折成的 `R18+`。`R+ - Mild Nudity` 不算。
+  @visibleForTesting
+  static bool isAdultContentRating(String? contentRating) {
+    final String rating = (contentRating ?? '').trim().toUpperCase();
+    return rating.startsWith('RX') || rating.startsWith('R18');
+  }
+
   /// AniDB epno 的正片集号（`S1` / `C2` / `T1` 等特典前缀 → null）。
   static int? _anidbEpisodeNumber(AnidbFileIdentity? identity) {
     if (identity == null) return null;
     final int? number = int.tryParse(identity.episodeNumber.trim());
+    return number == null || number <= 0 ? null : number;
+  }
+
+  /// AniDB epno 的 `S` 型特典序号（`S3` → 3）；正片与 C/T/P/O → null。Shoko
+  /// 只把 Episode + Special 拿去和 TMDB 对，C/T/P/O 不进池。
+  static int? _anidbSpecialNumber(AnidbFileIdentity? identity) {
+    if (identity == null) return null;
+    final RegExpMatch? match =
+        RegExp(r'^S(\d+)$').firstMatch(identity.episodeNumber.trim());
+    final int? number = match == null ? null : int.tryParse(match.group(1)!);
     return number == null || number <= 0 ? null : number;
   }
 
@@ -2119,20 +2922,321 @@ class VideoSourceScrapeCoordinator
       if (identity == null || epno == null || key == null) continue;
       if (!emptySeasons.contains(key.$1)) continue;
       (result[key.$1] ??= <int, TmdbEpisodeMatchSource>{})[epno] =
-          TmdbEpisodeMatchSource(
-        number: epno,
-        titles: <String>[
-          identity.episodeTitle,
-          identity.episodeRomajiTitle,
-          identity.episodeKanjiTitle,
-        ].where((String title) => title.trim().isNotEmpty).toList(),
-      );
+          _anidbMatchSource(identity, epno);
     }
     return <int, List<TmdbEpisodeMatchSource>>{
       for (final MapEntry<int, Map<int, TmdbEpisodeMatchSource>> entry
           in result.entries)
         entry.key: entry.value.values.toList(growable: false),
     };
+  }
+
+  /// 一条 AniDB 文件身份 → 逐集匹配器的来源集（集号 + 三语集标题 + 播出日）。
+  static TmdbEpisodeMatchSource _anidbMatchSource(
+          AnidbFileIdentity identity, int epno) =>
+      TmdbEpisodeMatchSource(
+        number: epno,
+        titles: <String>[
+          identity.episodeTitle,
+          identity.episodeRomajiTitle,
+          identity.episodeKanjiTitle,
+        ].where((String title) => title.trim().isNotEmpty).toList(),
+        airDate: identity.episodeAirDate,
+      );
+
+  /// 一文件多集里「其余集」（EPISODE 已答）→ 来源集。
+  static TmdbEpisodeMatchSource _shareMatchSource(
+          AnidbEpisodeShare share, int epno) =>
+      TmdbEpisodeMatchSource(
+        number: epno,
+        titles: share.titles,
+        airDate: share.airDate,
+      );
+
+  /// AniDB epno 文本 → 正片集号（`04` → 4）；特典 / 非法 → null。
+  static int? _regularEpisodeNumber(String epno) {
+    final int? number = int.tryParse(epno.trim());
+    return number == null || number <= 0 ? null : number;
+  }
+
+  /// AniDB epno 文本 → `S` 型特典序号（`S3` → 3）；其它 → null。
+  static int? _specialEpisodeNumber(String epno) {
+    final RegExpMatch? match = RegExp(r'^S(\d+)$').firstMatch(epno.trim());
+    final int? number = match == null ? null : int.tryParse(match.group(1)!);
+    return number == null || number <= 0 ? null : number;
+  }
+
+  /// Shoko 主路径的来源集：全部带 AniDB 身份的成员，正片按集号、`S` 型特典按
+  /// 特典序号各自去重（同一集的 v1/v2 两个文件是同一来源集），**不看文件名**。
+  /// C/T/P/O 型不进任何池（Shoko 同）。
+  static _AnidbLinkSources _anidbLinkSources(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+  ) {
+    final Map<int, TmdbEpisodeMatchSource> regular =
+        <int, TmdbEpisodeMatchSource>{};
+    final Map<int, TmdbEpisodeMatchSource> specials =
+        <int, TmdbEpisodeMatchSource>{};
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      if (identity == null) continue;
+      if (_anidbEpisodeNumber(identity) case final int epno) {
+        regular.putIfAbsent(epno, () => _anidbMatchSource(identity, epno));
+      } else if (_anidbSpecialNumber(identity) case final int special) {
+        specials.putIfAbsent(
+            special, () => _anidbMatchSource(identity, special));
+      }
+      // 一文件多集：其余集（集信息已问到的）与主集同池、同一条评分链。
+      for (final AnidbEpisodeShare share in identity.otherEpisodes) {
+        final String? epnoText = share.episodeNumber;
+        if (epnoText == null) continue;
+        if (_regularEpisodeNumber(epnoText) case final int epno) {
+          regular.putIfAbsent(epno, () => _shareMatchSource(share, epno));
+        } else if (_specialEpisodeNumber(epnoText) case final int special) {
+          specials.putIfAbsent(
+              special, () => _shareMatchSource(share, special));
+        }
+      }
+    }
+    return _AnidbLinkSources(
+      regular: regular.values.toList(growable: false),
+      specials: specials.values.toList(growable: false),
+    );
+  }
+
+  /// AniDB 主源的 Shoko 式来源池：anime XML 里整部作品的正片（季 1）与 `S` 型
+  /// 特典（季 0），每集带播出日 + 全部语言集名（provider 的别名能力）；再并上
+  /// 文件身份给的集（同集号不重复）。XML 拉不到就退回只用文件身份。
+  Future<_AnidbLinkSources> _anidbWorkLinkSources(
+    VideoMetadataWork anidbWork,
+    VideoMetadataLookup lookup,
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    List<SourceScrapeIssue> warnings,
+  ) async {
+    final _AnidbLinkSources fromFiles =
+        _anidbLinkSources(localWork, evidence);
+    if (lookup.provider != VideoMetadataProviderKind.anidb) return fromFiles;
+    final VideoMetadataProvider? provider =
+        _registry.provider(VideoMetadataProviderKind.anidb);
+    Future<Map<int, List<String>>> aliasesOf(int seasonNumber) async {
+      if (provider is! VideoMetadataEpisodeAliasProvider) {
+        return const <int, List<String>>{};
+      }
+      try {
+        return await (provider as VideoMetadataEpisodeAliasProvider)
+            .fetchEpisodeTitleAliases(lookup, seasonNumber: seasonNumber);
+      } on Object catch (error) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            message: 'AniDB 集名别名拉取失败（$error），逐集链接只用资料语言集名。'));
+        return const <int, List<String>>{};
+      }
+    }
+    final Map<int, TmdbEpisodeMatchSource> regular =
+        <int, TmdbEpisodeMatchSource>{
+      for (final TmdbEpisodeMatchSource source in fromFiles.regular)
+        source.number: source,
+    };
+    final Map<int, TmdbEpisodeMatchSource> specials =
+        <int, TmdbEpisodeMatchSource>{
+      for (final TmdbEpisodeMatchSource source in fromFiles.specials)
+        source.number: source,
+    };
+    for (final VideoMetadataSeason season in anidbWork.seasons) {
+      if (season.seasonNumber != 0 && season.seasonNumber != 1) continue;
+      final Map<int, TmdbEpisodeMatchSource> pool =
+          season.seasonNumber == 0 ? specials : regular;
+      final Map<int, List<String>> aliases = await aliasesOf(season.seasonNumber);
+      for (final VideoMetadataEpisode episode in season.episodes) {
+        // 文件身份里的那几集也并上 XML 的集名 / 播出日：FILE 只给三语集名、
+        // 播出日常缺，XML 是同一集更全的一份，合并而不是二选一。
+        final TmdbEpisodeMatchSource? fromFile = pool[episode.episodeNumber];
+        pool[episode.episodeNumber] = TmdbEpisodeMatchSource(
+          number: episode.episodeNumber,
+          titles: metadataUniqueStrings(<String?>[
+            ...?fromFile?.titles,
+            episode.title,
+            ...?aliases[episode.episodeNumber],
+          ]),
+          airDate: fromFile?.airDate ?? episode.airDate,
+        );
+      }
+    }
+    return _AnidbLinkSources(
+      regular: regular.values.toList(growable: false),
+      specials: specials.values.toList(growable: false),
+    );
+  }
+
+  /// 卡片季 → TMDB 切片：多季扩展给的整套；单季卡片时用主 MAL 条目在映射表里
+  /// 的 `season.tmdb` / `episode_offset.tmdb` 钉到卡片唯一的正片季上。没有
+  /// 映射信息就空表（链接只能靠已带 TMDB id 的卡片集或 TMDB 主源换算）。
+  Future<Map<int, TmdbSeasonSlice>> _cardSlices(
+    VideoMetadataWork metadata,
+    _SeasonExpansion? expansion,
+    VideoMetadataLookup lookup,
+  ) async {
+    // 备选排序下 TMDB 剧的 (季, 集) 是分组编排，Fribb 切片说的是默认编排——两套
+    // 编号对不上，切片一律不用（TMDB 主源直用分组 (季, 集)；MAL 主源只能靠已
+    // 带 TMDB id 的卡片集换算）。
+    if (metadata.episodeGroupId != null) {
+      return const <int, TmdbSeasonSlice>{};
+    }
+    if (expansion != null && expansion.tmdbSlices.isNotEmpty) {
+      return expansion.tmdbSlices;
+    }
+    final AnimeIdentityMapping? mapping = identityMapping;
+    final int? primaryId = lookup.provider == VideoMetadataProviderKind.mal ||
+            lookup.provider == VideoMetadataProviderKind.anidb
+        ? int.tryParse(lookup.externalId)
+        : null;
+    if (mapping == null || primaryId == null) {
+      return const <int, TmdbSeasonSlice>{};
+    }
+    final List<VideoMetadataSeason> regular = <VideoMetadataSeason>[
+      for (final VideoMetadataSeason season in metadata.seasons)
+        if (season.seasonNumber != 0) season,
+    ];
+    if (regular.length != 1) return const <int, TmdbSeasonSlice>{};
+    final List<AnimeIdentityEntry> entries;
+    try {
+      final List<AnimeIdentityEntry> own =
+          lookup.provider == VideoMetadataProviderKind.anidb
+              ? <AnimeIdentityEntry>[
+                  if (await mapping.entryForAnidb(primaryId)
+                      case final AnimeIdentityEntry entry)
+                    entry,
+                ]
+              : await mapping.entriesForMal(primaryId);
+      entries = <AnimeIdentityEntry>[
+        for (final AnimeIdentityEntry entry in own)
+          if (!entry.isMovie && entry.tmdbSeason != null) entry,
+      ];
+    } on Object {
+      // 映射表拉不到：本步只是换算辅助，链接仍可经卡片已有 TMDB id 落地。
+      return const <int, TmdbSeasonSlice>{};
+    }
+    if (entries.length != 1) return const <int, TmdbSeasonSlice>{};
+    return <int, TmdbSeasonSlice>{
+      regular.single.seasonNumber: (
+        tmdbSeason: entries.single.tmdbSeason!,
+        offset: entries.single.tmdbEpisodeOffset ?? 0,
+      ),
+    };
+  }
+
+  /// 把链接落成成员覆盖：有 AniDB 正片身份的成员，卡片 (季, 集) 以链接为准；
+  /// 与文件名解出的键不同时记一条说明（Shoko：文件名不参与识别）。落不下来
+  /// （`cardKey == null`）的链接只记说明、保留原键。
+  static _AppliedAnidbLinks _applyAnidbEpisodeLinks(
+    VideoSourceScrapeWork localWork,
+    _HashWorkEvidence evidence,
+    Map<int, AnidbTmdbEpisodeLink> links,
+    Map<int, AnidbTmdbEpisodeLink> specialLinks,
+    Map<String, (int, int)> episodeOverrides,
+    List<SourceScrapeIssue> warnings, {
+    Set<String> skipMembers = const <String>{},
+  }) {
+    final Map<String, AnidbEpisodeXref> xrefs = <String, AnidbEpisodeXref>{};
+    final Map<String, Map<(int, int), AnidbEpisodeXref>> additional =
+        <String, Map<(int, int), AnidbEpisodeXref>>{};
+    if (links.isEmpty && specialLinks.isEmpty) {
+      return _AppliedAnidbLinks(episodeOverrides, xrefs, additional);
+    }
+    Map<String, (int, int)> result = episodeOverrides;
+    int linkedCount = 0, corrected = 0, extraBindings = 0;
+    final Map<TmdbEpisodeMatchRating, int> ratings =
+        <TmdbEpisodeMatchRating, int>{};
+    AnidbTmdbEpisodeLink? linkFor(String epnoText) {
+      if (_regularEpisodeNumber(epnoText) case final int epno) {
+        return links[epno];
+      }
+      if (_specialEpisodeNumber(epnoText) case final int special) {
+        return specialLinks[special];
+      }
+      return null;
+    }
+    for (final VideoBookRow member in localWork.members) {
+      final AnidbFileIdentity? identity = evidence.identities[member.bookUid];
+      if (identity == null) continue;
+      // 用户手动钉死的成员（UserVerified）：主集与其余集都不由自动链接决定。
+      if (skipMembers.contains(member.bookUid)) continue;
+      // 一文件多集：其余集各自成链、各自落成同一文件的额外绑定（Shoko
+      // `CrossRef_File_Episode` 一文件多条）。主集没链上不影响其余集。
+      for (final AnidbEpisodeShare share in identity.otherEpisodes) {
+        final String? epnoText = share.episodeNumber;
+        if (epnoText == null) continue;
+        final AnidbTmdbEpisodeLink? extra = linkFor(epnoText);
+        final (int, int)? extraKey = extra?.cardKey;
+        if (extra == null || extraKey == null) continue;
+        final (int, int)? primaryKey = linkFor(identity.episodeNumber)?.cardKey ??
+            localEpisodeKeyFor(member, result);
+        if (extraKey == primaryKey) continue;
+        (additional[member.bookUid] ??= <(int, int), AnidbEpisodeXref>{})[
+            extraKey] = AnidbEpisodeXref(
+          episodeId: share.episodeId,
+          episodeNumber: epnoText,
+          matchRating: extra.rating.name,
+        );
+        extraBindings++;
+        ratings[extra.rating] = (ratings[extra.rating] ?? 0) + 1;
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            path: member.videoPath,
+            message:
+                '${p.basename(member.videoPath)}：本文件还覆盖 AniDB 集 $epnoText（eid ${share.episodeId}），'
+                '经 TMDB S${extra.tmdbEpisode.seasonNumber}E${extra.tmdbEpisode.episodeNumber} 对应到第 ${extraKey.$1} 季第 ${extraKey.$2} 集'
+                '（${_ratingLabel(extra.rating)}），同一文件再绑一集。'));
+      }
+      final AnidbTmdbEpisodeLink? link = linkFor(identity.episodeNumber);
+      if (link == null) continue;
+      final VideoMetadataEpisode tmdb = link.tmdbEpisode;
+      final (int, int)? cardKey = link.cardKey;
+      if (cardKey == null) {
+        warnings.add(SourceScrapeIssue(
+            workTitle: localWork.title,
+            path: member.videoPath,
+            message:
+                'AniDB 集 ${identity.episodeNumber}（eid ${identity.episodeId}）已对上 TMDB '
+                'S${tmdb.seasonNumber}E${tmdb.episodeNumber}（${_ratingLabel(link.rating)}），'
+                '但本卡片没有对应季（映射表无该季切片），保留文件名解析的季集。'));
+        continue;
+      }
+      linkedCount++;
+      ratings[link.rating] = (ratings[link.rating] ?? 0) + 1;
+      xrefs[member.bookUid] = AnidbEpisodeXref(
+        episodeId: identity.episodeId,
+        episodeNumber: identity.episodeNumber,
+        matchRating: link.rating.name,
+      );
+      final (int, int)? current = localEpisodeKeyFor(member, result);
+      if (current == cardKey) continue;
+      corrected++;
+      result = <String, (int, int)>{...result, member.bookUid: cardKey};
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: member.videoPath,
+          message:
+              '${p.basename(member.videoPath)}：文件名解析为 ${current == null ? '无季集' : '第 ${current.$1} 季第 ${current.$2} 集'}，'
+              'AniDB 文件身份（集 ${identity.episodeNumber}${identity.episodeAirDate == null ? '' : '，播出 ${identity.episodeAirDate}'}）'
+              '经 TMDB S${tmdb.seasonNumber}E${tmdb.episodeNumber} 对应到第 ${cardKey.$1} 季第 ${cardKey.$2} 集'
+              '（${_ratingLabel(link.rating)}），按身份归位。'));
+    }
+    if (linkedCount > 0) {
+      final String detail = <String>[
+        for (final TmdbEpisodeMatchRating rating
+            in TmdbEpisodeMatchRating.values)
+          if (ratings[rating] case final int n) '${_ratingLabel(rating)} $n',
+      ].join('、');
+      warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          message:
+              'AniDB 文件身份 → TMDB 集逐集链接（Shoko 式）：$linkedCount 个文件对上（$detail）'
+              '${corrected == 0 ? '，与文件名一致' : '，其中 $corrected 个与文件名不符、已按身份归位'}'
+              '${extraBindings == 0 ? '' : '；一文件多集额外绑定 $extraBindings 条'}。'));
+    }
+    return _AppliedAnidbLinks(result, xrefs, additional);
   }
 
   /// 逐集核对结果的一条说明（按季汇总评级），零命中不记。
@@ -2239,16 +3343,11 @@ class VideoSourceScrapeCoordinator
       error is TlsException ||
       error is http.ClientException;
 
-  static bool _hasIncompleteMalCredits(VideoMetadataWork work) {
-    final Object? endpoints = work.rawPayload?[malIncompleteCreditEndpointsKey];
-    return endpoints is List && endpoints.isNotEmpty;
-  }
-
   static bool _needsTmdbSupplement(
           VideoMetadataWork work, bool episodesComplete) =>
       (work.plot?.trim().isEmpty ?? true) ||
       work.credits.isEmpty ||
-      _hasIncompleteMalCredits(work) ||
+      hasIncompleteMalCredits(work) ||
       !work.images.any((VideoMetadataImage image) =>
           image.kind == VideoMetadataImageKind.cover) ||
       !work.images.any((VideoMetadataImage image) =>
@@ -2356,9 +3455,14 @@ class VideoSourceScrapeCoordinator
     if (provider.providerKind == VideoMetadataProviderKind.anidb &&
         work.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
             true) {
+      // 把「为什么」说出来（BUG-2623）：302 身份被拒 / 封禁 / 没配身份 / 传输
+      // 失败在用户眼里是四种不同的下一步，吞成一句固定文案谁也查不下去。
+      final String reason = provider is AniDbVideoMetadataProvider
+          ? provider.httpDetailUnavailableReason
+          : 'anime XML 未取到';
       warnings.add(SourceScrapeIssue(
         workTitle: localTitle,
-        message: 'AniDB HTTP 详情不可用，已保留标题目录摘要且不会把分集标记为完整。',
+        message: 'AniDB HTTP 详情不可用（$reason），已保留标题目录摘要且不会把分集标记为完整。',
       ));
       return _HydratedWork(metadata: work, complete: false);
     }
@@ -2513,6 +3617,9 @@ class VideoSourceScrapeCoordinator
           titleCandidates: candidates,
           year: rootTitles.isEmpty ? primary.year : null,
           seasonNumber: seasonNumber,
+          // Shoko `includeRestricted: anime.IsRestricted`：主源已知成人向才
+          // 让 TMDB 搜索放开 include_adult，其它作品维持 TMDB 默认过滤。
+          includeAdult: isAdultContentRating(primary.contentRating),
         ));
         if (resolution.status == VideoMetadataResolutionStatus.matched) {
           work = resolution.work;
@@ -2570,8 +3677,12 @@ class VideoSourceScrapeCoordinator
       primary: primary,
       // 本趟的有效资料语言（来源级覆盖 > 全局），与 TMDB 请求端的
       // include_image_language 同源——两端必须一致，否则请求回来的图会在选择
-      // 阶段被另一套语言序重新排一遍。
+      // 阶段被另一套语言序重新排一遍。原语（Shoko `Main` 槽）由 provider 另拉一
+      // 次补进候选池，这里同样插进语言序。
       languageOrder: VideoMetadataLanguages(_locale).imageLanguages,
+      mainLanguage: VideoMetadataLanguages.primarySubtagOf(
+          metadata.originalLanguage),
+      maxPerKind: config.maxImagesPerKind,
     );
     final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[
       for (final VideoMetadataSeason season in metadata.seasons)
@@ -2600,6 +3711,73 @@ class VideoSourceScrapeCoordinator
           .toList(),
       seasons: seasons,
     );
+  }
+
+  /// 演职员头像落地（Shoko `AutoDownloadStaffImages` / `MaxAutoStaffImages`）：
+  /// 开关开着时把作品级演职员的 TMDB 头像下到 `<video_covers>/people/`，回写
+  /// `video_metadata_people.profile_path`；已落地的跳过，每部作品最多
+  /// [kVideoMetadataMaxStaffImages] 张，失败只记说明不影响刮削结论。
+  Future<void> _downloadStaffImages(
+    VideoSourceScrapeWork localWork,
+    VideoMetadataWork metadata,
+    List<SourceScrapeIssue> warnings,
+    VideoSourceScrapeCancellationToken cancellationToken,
+  ) async {
+    if (!config.downloadStaffImages || metadata.credits.isEmpty) return;
+    Directory? directory;
+    int downloaded = 0;
+    final Set<String> seen = <String>{};
+    for (final VideoMetadataCredit credit in metadata.credits) {
+      if (downloaded >= kVideoMetadataMaxStaffImages) break;
+      final String? url = credit.person.profileUrl?.trim();
+      if (url == null || url.isEmpty) continue;
+      final String personKey =
+          VideoMetadataDatabaseStore.personKeyFor(credit.person);
+      if (!seen.add(personKey)) continue;
+      final VideoMetadataPersonRow? row =
+          await database.getVideoMetadataPerson(personKey);
+      if (row == null) continue;
+      if (row.profilePath case final String existing
+          when existing.isNotEmpty && File(existing).existsSync()) {
+        downloaded++;
+        continue;
+      }
+      cancellationToken.throwIfCancelled();
+      final VideoMetadataDownloadedAsset asset;
+      try {
+        asset = await assetDownloader.download(url);
+      } on VideoSourceScrapeCancelled {
+        rethrow;
+      } catch (error) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: url,
+          message: '人物照片下载失败（${credit.person.name}）：$error',
+        ));
+        continue;
+      }
+      directory ??= Directory(p.join(
+          (await enginePaths.videoCoversDirectory()).path, 'people'));
+      await directory.create(recursive: true);
+      final String safeName =
+          personKey.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+      // 与所有封面类落盘同一收口（写盘 + 解码缓存驱逐在 writer 里，守卫
+      // media_cover_write_guard 不放行裸写）。
+      final String destPath =
+          p.join(directory.path, '$safeName.${asset.extension}');
+      try {
+        await writeCoverBytesAtomically(bytes: asset.bytes, destPath: destPath);
+      } on CoverImageInvalidException catch (error) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: localWork.title,
+          path: url,
+          message: '人物照片不是完整图片，未落地（${credit.person.name}）：$error',
+        ));
+        continue;
+      }
+      await database.updateVideoMetadataPersonProfilePath(personKey, destPath);
+      downloaded++;
+    }
   }
 
   Future<_SidecarOutcome> _writeSidecars({
@@ -3461,12 +4639,13 @@ class _EffectiveSourceSettings {
     VideoSourceScrapeSettingRow? row,
     VideoSourceScrapeGlobalConfig config, {
     required bool allowProtectedOverwrite,
-    VideoMetadataProviderKind primaryProvider = VideoMetadataProviderKind.mal,
+    VideoMetadataProviderKind primaryProvider =
+        kDefaultVideoMetadataPrimaryProvider,
   }) {
     return _EffectiveSourceSettings(
       enabled: row?.enabled ?? true,
-      // 来源级 provider_override：mal / tmdb 覆盖全局主源；NULL 或历史值
-      // （bangumi / douban / anilist / anidb）回落全局默认。
+      // 来源级 provider_override：anidb / mal / tmdb 覆盖全局主源；NULL 或历史值
+      // （bangumi / douban / anilist）回落全局默认。
       provider: parseSelectableVideoMetadataProvider(row?.providerOverride) ??
           primaryProvider,
       // 来源级 metadata_locale：NULL / 全空白 = 跟随全局。
@@ -3504,6 +4683,7 @@ class _SeasonExpansion {
   const _SeasonExpansion({
     this.primarySeasonNumber,
     this.extraSeasons = const <VideoMetadataSeason>[],
+    this.extraCredits = const <VideoMetadataCredit>[],
     this.episodeOverrides = const <String, (int, int)>{},
     this.complete = true,
     this.tmdbSlices = const <int, TmdbSeasonSlice>{},
@@ -3511,6 +4691,9 @@ class _SeasonExpansion {
 
   final int? primarySeasonNumber;
   final List<VideoMetadataSeason> extraSeasons;
+
+  /// 其它 cour 条目的人物关系，按主条目的表合并（同人同角色去重、只补空）。
+  final List<VideoMetadataCredit> extraCredits;
   final Map<String, (int, int)> episodeOverrides;
 
   /// false = 有季 / 集没能对齐或拉取失败，季集记录不能当权威删除依据。
@@ -3519,6 +4702,57 @@ class _SeasonExpansion {
   /// 卡片季号 → 该 MAL cour 在 TMDB 剧里的位置（映射表显式给的 `season.tmdb` /
   /// `episode_offset.tmdb`），供 MAL 缺集时按切片从 TMDB 补分集。
   final Map<int, TmdbSeasonSlice> tmdbSlices;
+}
+
+/// [_applyAnidbEpisodeLinks] 的结果：成员 (季, 集) 覆盖 + 链接成功成员的交叉引用
+/// （带评级）。
+/// 按 AniDB 作品拆出来的一个子单元：单文件电影 `book:` 单元或新建合集的剧集
+/// 单元，外加映射表给出的已确认身份（没有就让它自己识别）。
+class _SplitWork {
+  const _SplitWork({
+    required this.work,
+    required this.lookup,
+    required this.animeId,
+    required this.kind,
+  });
+  final VideoSourceScrapeWork work;
+  final VideoMetadataLookup? lookup;
+  final int animeId;
+  final VideoMetadataMediaKind kind;
+}
+
+/// [_splitByAnidbWork] 决定形态后、动库前的一组成员。
+class _PlannedSplitGroup {
+  const _PlannedSplitGroup({
+    required this.animeId,
+    required this.members,
+    required this.title,
+    required this.kind,
+    required this.lookup,
+  });
+  final int animeId;
+  final List<VideoBookRow> members;
+  final String title;
+  final VideoMetadataMediaKind kind;
+  final VideoMetadataLookup? lookup;
+}
+
+class _AppliedAnidbLinks {
+  const _AppliedAnidbLinks(this.overrides, this.xrefs, this.additional);
+  final Map<String, (int, int)> overrides;
+  final Map<String, AnidbEpisodeXref> xrefs;
+
+  /// 一文件多集的额外绑定（bookUid → 额外卡片键 → 该集身份）。
+  final AnidbAdditionalEpisodeBindings additional;
+}
+
+/// [_anidbLinkSources] 的结果：正片来源集（键 = AniDB 集号）与 `S` 型特典来源集
+/// （键 = 特典序号）。
+class _AnidbLinkSources {
+  const _AnidbLinkSources({required this.regular, required this.specials});
+  final List<TmdbEpisodeMatchSource> regular;
+  final List<TmdbEpisodeMatchSource> specials;
+  bool get isNotEmpty => regular.isNotEmpty || specials.isNotEmpty;
 }
 
 /// [_resolveMappedSeasonHit] 的结果：[index] 为 null 表示映射表认识这一季但
@@ -3537,13 +4771,32 @@ class _ResolvedWork {
     this.status,
     this.seasonEpisodesAuthoritative = false,
     this.episodeOverrides = const <String, (int, int)>{},
+    this.anidbEpisodeXrefs = const <String, AnidbEpisodeXref>{},
+    this.anidbAdditionalBindings =
+        const <String, Map<(int, int), AnidbEpisodeXref>>{},
+    this.splitInto = const <_SplitWork>[],
+    this.userVerifiedBooks = const <String>{},
   });
 
   final VideoMetadataWork? metadata;
 
+  /// 用户手动钉死季集（UserVerified）的成员 `bookUid`：落库时先占位，同键的
+  /// 自动链接 / 文件名解析成员让位。
+  final Set<String> userVerifiedBooks;
+
+  /// `pending` 的一种特殊形态：成员分属不同 AniDB 作品，已拆成这些子单元
+  /// （电影 / 新合集的剧集），调用方把它们接着刮而不是记一条待确认。
+  final List<_SplitWork> splitInto;
+
+  /// 一文件多集：成员 `bookUid` → 额外卡片 (季, 集) → 该集 AniDB 身份。
+  final AnidbAdditionalEpisodeBindings anidbAdditionalBindings;
+
   /// 成员 `bookUid` → 本地 (季, 集)：多季合集逐季映射 / 绝对集号重定向的结果，
   /// 入库、sidecar、旧投影三处共用。
   final Map<String, (int, int)> episodeOverrides;
+
+  /// 成员 `bookUid` → AniDB 集身份（+ TMDB 链接评级），随绑定写到分集行。
+  final Map<String, AnidbEpisodeXref> anidbEpisodeXrefs;
   final bool pending;
   final String? reason;
 

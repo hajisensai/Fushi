@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show malIncompleteCreditEndpointsKey;
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -615,6 +617,151 @@ void main() {
     final VideoMetadataCharacterRow character =
         (await database.getVideoMetadataCharacter(credit.characterKey!))!;
     expect(character.description, 'Character description');
+  });
+
+  test('人物 / 角色重复写入只补空不抹掉已有照片与简介（BUG-2612）', () async {
+    VideoMetadataWork work(List<VideoMetadataCredit> credits) =>
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.mal,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Show',
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'mal', value: '1', isDefault: true),
+          ],
+          credits: credits,
+        );
+    VideoMetadataCredit credit({String? photo, String? characterImage}) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.voiceActor,
+          person: VideoMetadataPerson(
+            name: 'Seiyuu',
+            profileUrl: photo,
+            biography: photo == null ? null : 'Bio',
+            ids: const <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: 'p1'),
+            ],
+          ),
+          character: VideoMetadataCharacter(
+            name: 'Hero',
+            imageUrl: characterImage,
+            ids: const <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: 'c1'),
+            ],
+          ),
+          roleName: 'Hero',
+        );
+
+    await store.apply(
+      localWork,
+      work(<VideoMetadataCredit>[
+        credit(
+            photo: 'https://img/p1.jpg', characterImage: 'https://img/c1.jpg'),
+      ]),
+    );
+    // 第二轮同一人同一角色但没带图（AniDB 职员 / NFO 回灌 / 占位归 null）。
+    await store.apply(localWork, work(<VideoMetadataCredit>[credit()]));
+
+    final VideoMetadataWorkRow row =
+        (await database.getVideoMetadataWorkByBook('movie-1'))!;
+    final VideoMetadataCreditRow creditRow =
+        (await database.getVideoMetadataCredits(workId: row.id)).single;
+    final VideoMetadataPersonRow person =
+        (await database.getVideoMetadataPerson(creditRow.personKey))!;
+    expect(person.profileUrl, 'https://img/p1.jpg');
+    expect(person.biography, 'Bio');
+    final VideoMetadataCharacterRow character =
+        (await database.getVideoMetadataCharacter(creditRow.characterKey!))!;
+    expect(character.imageUrl, 'https://img/c1.jpg');
+
+    // 带了新图则照常更新。
+    await store.apply(
+      localWork,
+      work(<VideoMetadataCredit>[credit(photo: 'https://img/p1-new.jpg')]),
+    );
+    expect(
+      (await database.getVideoMetadataPerson(creditRow.personKey))!.profileUrl,
+      'https://img/p1-new.jpg',
+    );
+  });
+
+  test('MAL 人物表残缺时不覆盖库里已有的完整表，只追加（BUG-2612）', () async {
+    VideoMetadataCredit voice(String person, String role) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.voiceActor,
+          person: VideoMetadataPerson(
+            name: person,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: person),
+            ],
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+        );
+    VideoMetadataCredit director(String person) => VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.director,
+          person: VideoMetadataPerson(
+            name: person,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: person),
+            ],
+          ),
+          job: 'Director',
+        );
+    VideoMetadataWork work(
+      List<VideoMetadataCredit> credits, {
+      List<String> incomplete = const <String>[],
+    }) =>
+        VideoMetadataWork(
+          provider: VideoMetadataProviderKind.mal,
+          kind: VideoMetadataMediaKind.tv,
+          title: 'Show',
+          ids: const <VideoMetadataId>[
+            VideoMetadataId(type: 'mal', value: '1', isDefault: true),
+          ],
+          credits: credits,
+          rawPayload: <String, Object?>{
+            if (incomplete.isNotEmpty)
+              malIncompleteCreditEndpointsKey: incomplete,
+          },
+        );
+
+    await store.apply(
+      localWork,
+      work(<VideoMetadataCredit>[
+        voice('A', 'Hero'),
+        voice('B', 'Rival'),
+        director('D'),
+      ]),
+    );
+    final VideoMetadataWorkRow row =
+        (await database.getVideoMetadataWorkByBook('movie-1'))!;
+    expect(
+        await database.getVideoMetadataCredits(workId: row.id), hasLength(3));
+
+    // 这一轮 characters 端点 504：只剩 staff，外加 TMDB 补的一条新人。
+    await store.apply(
+      localWork,
+      work(
+        <VideoMetadataCredit>[director('D'), voice('C', 'Newcomer')],
+        incomplete: <String>['characters'],
+      ),
+    );
+    final List<VideoMetadataCreditRow> kept =
+        await database.getVideoMetadataCredits(workId: row.id);
+    expect(
+      kept.map((VideoMetadataCreditRow c) => c.roleName).toSet(),
+      <String>{'Hero', 'Rival', '', 'Newcomer'},
+      reason: '旧声优保留、新条目追加、同一导演不重复',
+    );
+
+    // 端点恢复后的完整表照常整体替换。
+    await store.apply(
+        localWork, work(<VideoMetadataCredit>[voice('A', 'Hero')]));
+    expect(
+      (await database.getVideoMetadataCredits(workId: row.id))
+          .map((VideoMetadataCreditRow c) => c.roleName),
+      <String>['Hero'],
+    );
   });
 
   test('TMDB 的 IMDb default 仅影响 NFO 默认 ID，不污染数据库主绑定', () async {

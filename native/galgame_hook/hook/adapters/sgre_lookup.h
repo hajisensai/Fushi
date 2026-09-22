@@ -135,11 +135,19 @@ inline uint32_t ApplySgreGameStreamRemoteButtons(bool allowed,
     return 0;
   }
   const uint32_t normalized = active_buttons & kGameStreamInputButtonMask;
-  if ((normalized & kGameStreamInputButtonLeft) != 0) {
-    state[kSgreDirectInputMouseButtonsOffset + kSgreLookupPrimaryButtonIndex] |=
-        0x80u;
+  uint8_t* const primary =
+      state + kSgreDirectInputMouseButtonsOffset + kSgreLookupPrimaryButtonIndex;
+  if ((normalized & kGameStreamInputButtonLeft) != 0) *primary |= 0x80u;
+  // Report what the game will actually sample, not what we were asked to do.
+  // Returning `normalized` made the ACK a tautology: the host's
+  // `native_input_not_observed` gate could never fire, so a suppressed click
+  // still came back as "Applied, observed=left" (SOP: a capability stage must
+  // not be inferred from the previous one).
+  uint32_t observed = 0;
+  if ((normalized & kGameStreamInputButtonLeft) != 0 && (*primary & 0x80u) != 0) {
+    observed |= kGameStreamInputButtonLeft;
   }
-  return normalized;
+  return observed;
 }
 
 enum class SgreLookupClickAction : uint8_t {

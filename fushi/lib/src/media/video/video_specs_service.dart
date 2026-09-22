@@ -20,6 +20,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/video/bluray/bluray_probe.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 
@@ -370,7 +372,13 @@ class VideoSpecsService extends ChangeNotifier {
         _cache[path] = null;
         return null;
       }
-      facts = await probe(path);
+      // 蓝光标题的规格直接从它自己的 MPLS 读：ffprobe 不认 `.mpls`，退而去探
+      // `STREAM/*.m2ts` 既慢（BD 的 m2ts 实测一条 18~75 秒）又给不出多段正片的真实
+      // 总时长。走注入的 [probe] 之外的一条路，所以单测注入的假探测器对 BD 无效——
+      // BD 分支本来就不需要 ffmpeg 后端。
+      facts = isBlurayPlaylistPath(path)
+          ? await probeBlurayPlaylistFacts(path)
+          : await probe(path);
     } catch (e) {
       debugPrint('[VideoSpecsService] probe failed for "$path": $e');
       _cache[path] = null;

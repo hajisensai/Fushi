@@ -326,9 +326,13 @@ void main() {
     });
 
     test('mixin 车道 onTextSelected 取回 bbox 并重锚子层', () {
-      final String src = mixin.readAsStringSync();
+      // 跨 token 的调用串先去空白再比：tall 格式会把
+      // `entry.webViewKey.currentState?.highlightSelection(count)` 拆成两行，
+      // 逐字面匹配会在「代码没动、只是被格式化」时假红（CI 2026-09-21 实红一次）。
+      final String src = _withoutWhitespace(mixin.readAsStringSync());
       expect(
         'await entry.webViewKey.currentState?.highlightSelection(count)'
+            .replaceAll(' ', '')
             .allMatches(src)
             .length,
         greaterThanOrEqualTo(1),
@@ -348,9 +352,10 @@ void main() {
     });
 
     test('阅读器车道 onTextSelected 取回 bbox 并重锚子层', () {
-      final String src = base.readAsStringSync();
+      final String src = _withoutWhitespace(base.readAsStringSync());
       expect(
         'await item.webViewKey.currentState?.highlightSelection(count)'
+            .replaceAll(' ', '')
             .allMatches(src)
             .length,
         greaterThanOrEqualTo(1),
@@ -368,10 +373,17 @@ void main() {
         reason: 'base 重锚未带词形门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
       );
       expect(
-        'generation == activeLookupGeneration'.allMatches(src).length,
+        'generation==activeLookupGeneration'.allMatches(src).length,
         greaterThanOrEqualTo(1),
         reason: 'base 重锚未带代次门（BUG-717② 已有的现成守卫）',
       );
     });
   });
 }
+
+/// 源码扫描的比对基准：去掉全部空白。
+///
+/// 这些守卫盯的是「这条调用还在不在」，不是「它排成几行」。仓库用 tall 格式，
+/// 一次无关的重排就会把跨 token 的调用串拆行，逐字面匹配随即假红。
+String _withoutWhitespace(String source) =>
+    source.replaceAll(RegExp(r'\s+'), '');

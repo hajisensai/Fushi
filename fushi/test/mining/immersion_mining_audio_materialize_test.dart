@@ -31,6 +31,7 @@ Future<String?> _okFrame(
         double atSeconds = 10.0,
         FfmpegFailureReporter? onFailure,
         String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {},
         bool diagnosticOnly = false}) async =>
     outputPath;
 Future<String?> _okGif(
@@ -43,7 +44,8 @@ Future<String?> _okGif(
         MiningAnimatedFormat format = MiningAnimatedFormat.gif,
         bool diagnosticOnly = false,
         FfmpegFailureReporter? onFailure,
-        String? tlsPinSha256}) async =>
+        String? tlsPinSha256,
+        Map<String, String> httpHeaders = const {}}) async =>
     outputPath;
 
 void main() {
@@ -172,7 +174,8 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async {
+          String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {}}) async {
         audioInput = inputPath;
         return outputPath;
       }
@@ -217,7 +220,8 @@ void main() {
           FfmpegFailureReporter? onFailure,
           int audioChannels = 1,
           String audioBitrate = '64k',
-          String? tlsPinSha256}) async {
+          String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {}}) async {
         audioInput = inputPath;
         return outputPath;
       }

@@ -88,6 +88,7 @@ void main() {
       bool diagnosticOnly = false,
       FfmpegFailureReporter? onFailure,
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async {
       startedSources.add(inputPath);
       if (inputPath == '/episode-1.mp4') {
@@ -108,6 +109,7 @@ void main() {
       int audioChannels = 1,
       String audioBitrate = '64k',
       String? tlsPinSha256,
+      Map<String, String> httpHeaders = const {},
     }) async =>
         outputPath;
 

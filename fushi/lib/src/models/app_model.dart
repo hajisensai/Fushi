@@ -62,6 +62,7 @@ import 'package:fushi/src/models/browser_extension_font_catalog.dart';
 import 'package:fushi/src/models/builtin_tags.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/dictionary/dict_resource_materializer.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/dictionary/transform_description_locale.dart';
@@ -78,6 +79,7 @@ import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -133,6 +135,7 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -154,8 +157,14 @@ import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi/src/asr_host/asr_host.dart'
+    show createAsrTranscriptionService;
+import 'package:fushi/src/sync/app_download_host.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
+import 'package:fushi_engine/asr/asr_host_job_runner.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -597,6 +606,28 @@ class AppModel with ChangeNotifier {
     // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
     mangaOcrServiceFactory: createMangaOcrService,
+    // 通用任务（ASR 转录）/ 代下载 / 内容订阅：此前只有无头 fushi_server 接线，
+    // app 当 host 时这三条端点 404，对端「下载到 <电脑>」的选项因此不出现。
+    // 全部挂在本机既有的服务上（ASR 服务工厂与转录弹层同一份；下载管线 / 订阅
+    // 服务 / registry 经 [appDownloadHost] 每次现取）。
+    hostJobsFactory: () async {
+      final HostJobManager jobs = HostJobManager(
+        jobRoot: Directory(path.join(databaseDirectory.path, 'host_jobs')),
+        runners: <HostJobRunner>[
+          AsrHostJobRunner(
+            serviceFactory: createAsrTranscriptionService,
+            resolveVideoPath: _resolveHostVideoPath,
+          ),
+        ],
+      );
+      await jobs.load();
+      return jobs;
+    },
+    downloadsFactory: () => appDownloadHost,
+    subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
+    // 启动时的快照，用户改完设置不必重启互联服务。
+    prefsStore: () => prefsRepo,
     libraryServiceFactory: () => LocalLibraryHostService(
       db: database,
       dictionaryResourceRoot: dictionaryResourceDirectory,
@@ -3989,6 +4020,13 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
+  /// 底部细进度条开关（落 Drift preferences，默认关）：控制条淡出后在视频最下方
+  /// 留一条主题色细线。小窗档恒显、不受它管，见 `videoSlimProgressBarVisible`。
+  bool get videoSlimProgressBar => prefsRepo.videoSlimProgressBar;
+
+  Future<void> setVideoSlimProgressBar(bool value) =>
+      prefsRepo.setVideoSlimProgressBar(value);
+
   /// 视频条目自动刮削开关（落 Drift preferences，默认开）。
   bool get videoAutoScrape => prefsRepo.videoAutoScrape;
 
@@ -4952,6 +4990,58 @@ class AppModel with ChangeNotifier {
     );
   }
 
+  /// 就绪的下载后端名（`embedded` / `qbittorrent`），null = 本机没配好。
+  ///
+  /// 下载页「添加任务」、发现页推送与互联 host 的代下载能力位共用这一个判据
+  /// （`torrentBackendReady` 只是它的 bool 视图）。「地址非空」不够：
+  /// [buildVideoDownloadBackendIdentity] 用 [normalizeQbBackendAddress] 解析身份，
+  /// 它要求 http/https scheme + 非空 host，而 qb 用户最常见的手输形式恰恰是
+  /// `127.0.0.1:8080`；两套判据一松一严时「非空」会放行 → 落库 → 身份解析抛
+  /// ArgumentError → 调用方当「未配置」再弹一次配置引导，用户出不去。
+  String? get readyVideoDownloadBackend {
+    final QbConnectionConfig config = effectiveTorrentConfig(qbConnectionConfig);
+    if (isEmbeddedTorrentReady &&
+        config.backend != QbConnectionConfig.backendQbittorrent) {
+      return QbConnectionConfig.backendEmbedded;
+    }
+    return normalizeQbBackendAddress(config.baseUrl).isNotEmpty
+        ? QbConnectionConfig.backendQbittorrent
+        : null;
+  }
+
+  /// 互联 host 的代下载 / 订阅面（设计 §3.3）：对端交来的任务投进本机管线。
+  /// 全部按闭包现取——管线是 fire-and-forget 起来的，host 可能先绑上端口。
+  late final AppDownloadHost appDownloadHost = AppDownloadHost(
+    database: () => database,
+    pipeline: () => _videoDownloadPipelineService,
+    backendTarget: currentVideoDownloadBackendTarget,
+    readyBackend: () => readyVideoDownloadBackend,
+    targetSourceId: _defaultVideoDownloadSourceId,
+    resourceRegistry: () => _videoResourceRegistry,
+    subscriptionService: () => _videoDownloadSubscriptionService,
+  );
+
+  /// 对端代下载的视频落地来源：用户选的默认受管来源，没选就取第一个可用的
+  /// （与手动添加任务对话框的默认值同一规则）；一个都没有 → null。
+  Future<int?> _defaultVideoDownloadSourceId() async {
+    final List<MediaSourceRow> sources = await getManagedVideoDownloadSources();
+    final int? preferred = prefsRepo.videoDownloadTargetSourceId;
+    if (preferred != null &&
+        sources.any((MediaSourceRow s) => s.id == preferred)) {
+      return preferred;
+    }
+    return sources.firstOrNull?.id;
+  }
+
+  /// `/api/jobs` ASR 任务的 `videoId` → 本机视频文件（host 库）。
+  Future<String?> _resolveHostVideoPath(String videoId) async {
+    final VideoBookRow? row =
+        await VideoBookRepository(database).getByBookUid(videoId);
+    if (row == null) return null;
+    final File file = File(row.videoPath);
+    return await file.exists() ? file.path : null;
+  }
+
   /// 只暴露当前设备可访问的本地受管视频来源，供发现页新任务/订阅选择。
   Future<List<MediaSourceRow>> getManagedVideoDownloadSources() async {
     final List<MediaSourceRow> sources =
@@ -5066,6 +5156,9 @@ class AppModel with ChangeNotifier {
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
       defaultContentLanguage: prefsRepo.defaultContentLanguage,
+      // 按作品的字幕语言：读字幕工作台 / AI 下载写的每系列记忆，键与导入落库的
+      // 合集名同源；没记过就走上面的全局默认语言链。
+      subtitleLanguageResolver: _resolveVideoDownloadSubtitleLanguage,
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
@@ -5088,6 +5181,27 @@ class AppModel with ChangeNotifier {
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
   }
+
+  /// 每系列字幕语言记忆（`jimaku_pref_langs`）按键查；空串 / 没记过 → null。
+  ///
+  /// 键的两个来源必须同源：刮削后补字幕用合集行的名字，下载管线用
+  /// [VideoDownloadSubtitleLanguageQuery.seriesKey]（= 导入阶段将要落库的合集名）。
+  String? _seriesSubtitleLanguage(String seriesKey) {
+    final String code =
+        prefsRepo.jimakuPreferredLanguages[seriesKey]?.trim() ?? '';
+    return code.isEmpty ? null : code;
+  }
+
+  /// 下载管线字幕阶段的按作品语言解析器（见 [VideoDownloadPipelineService]）。
+  ///
+  /// 记忆键有两套写入方：字幕工作台按**合集名**写（= [VideoDownloadSubtitleLanguageQuery.seriesKey]），
+  /// 播放页单集字幕对话框按**搜索词**写（`subtitle.part.dart`，下载导入的系列
+  /// 通常就是裸标题）。两把钥匙都试，先合集名再裸标题；都没记过才回 null。
+  String? _resolveVideoDownloadSubtitleLanguage(
+    VideoDownloadSubtitleLanguageQuery query,
+  ) =>
+      _seriesSubtitleLanguage(query.seriesKey) ??
+      _seriesSubtitleLanguage(query.title.trim().toLowerCase());
 
   /// 刮完一个作品 → 给它仍缺字幕的成员各补一条（BUG-1698）。
   ///
@@ -5113,6 +5227,12 @@ class AppModel with ChangeNotifier {
       members: notice.work.members,
       metadata: notice.metadata,
       hasExistingSubtitle: withSubtitle.contains,
+      // 单文件作品没有合集，也就没有每系列记忆可查。
+      explicitLanguage: notice.work.collection == null
+          ? null
+          : _seriesSubtitleLanguage(
+              notice.work.collection!.name.trim().toLowerCase(),
+            ),
     );
     for (final SubtitleBackfillTarget target in targets) {
       final SubtitleBackfillResult result = await service.backfill(target);
@@ -8497,6 +8617,15 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaTapZonePaging(bool value) =>
       prefsRepo.setMangaTapZonePaging(value);
 
+  bool get mangaPanelNavigation =>
+      _prefsRepo?.mangaPanelNavigation ?? kMangaPanelNavigationDefault;
+  Future<void> setMangaPanelNavigation(bool value) =>
+      prefsRepo.setMangaPanelNavigation(value);
+
+  bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
+  Future<void> setMangaPanelNavigationEnabled(bool value) =>
+      setMangaPanelNavigation(value);
+
   // 下面四个在漫画页 build 路径上被读（`_loadLocalPayload`），而弹窗词典与悬浮查词
   // 是不经 `initialise()` 的 entry point，那里 `_prefsRepo` 恒 null——裸 `prefsRepo`
   // （即 `_prefsRepo!`）会让整页 build 抛。与 `moduleEnabled` / `mineToServerEnabled`
@@ -8520,6 +8649,12 @@ class AppModel with ChangeNotifier {
       _prefsRepo?.mangaWidePageSolo ?? kMangaWidePageSoloDefault;
   Future<void> setMangaWidePageSolo(bool value) =>
       prefsRepo.setMangaWidePageSolo(value);
+
+  MangaReaderPreferences get mangaReaderPreferences =>
+      _prefsRepo?.mangaReaderPreferences ?? const MangaReaderPreferences();
+
+  Future<void> setMangaReaderPreferences(MangaReaderPreferences value) =>
+      prefsRepo.setMangaReaderPreferences(value);
 
   /// 漫画「在线目录」站点根 URL（O1 mokuro.moe 目录源；空值由 client 归一回默认）。
   String get mangaOnlineCatalogBaseUrl => prefsRepo.mangaOnlineCatalogBaseUrl;
@@ -8559,6 +8694,19 @@ class AppModel with ChangeNotifier {
       imageCache.maximumSize = 1000;
       imageCache.maximumSizeBytes = 100 << 20; // 100 MB
     }
+    // 诊断（2026-09-22）：小内存模式是用户用来换取视频不卡的那个开关，代价落在查词
+    // 上。把它当前的**实际**预算记进时间轴，排查时不必再反推用户开了什么——三级词典
+    // 缓存的预算由 [DictionaryRepository] 按同一个 isLowMemory 闭包决定，热槽与停驻
+    // realm 则由 [DictionaryPopupController] 按同一个标志决定。
+    final String slots = lowMemoryMode ? 'disabled' : 'enabled';
+    videoDiag(
+      VideoDiagCategory.memory,
+      VideoDiagLevel.info,
+      'policy low-memory=$lowMemoryMode '
+      'imageCache=${imageCache.maximumSize}/'
+      '${imageCache.maximumSizeBytes >> 20}MB '
+      'warm-slot=$slots parked-realms=$slots',
+    );
   }
 }
 

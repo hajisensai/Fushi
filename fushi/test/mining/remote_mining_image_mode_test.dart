@@ -56,6 +56,7 @@ class _CountingGifExtractor {
     bool diagnosticOnly = false,
     FfmpegFailureReporter? onFailure,
     String? tlsPinSha256,
+    Map<String, String> httpHeaders = const {},
   }) async {
     calls += 1;
     return outputPath;
@@ -73,6 +74,7 @@ Future<String?> _okAudio({
   int audioChannels = 1,
   String audioBitrate = '64k',
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
 }) async =>
     outputPath;
 
@@ -91,6 +93,7 @@ Future<String?> _okFrame({
   double atSeconds = 10.0,
   FfmpegFailureReporter? onFailure,
   String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
   bool diagnosticOnly = false,
 }) async =>
     outputPath;

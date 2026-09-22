@@ -362,6 +362,18 @@ class ShortcutDefaults {
     ], [
       _gRT
     ]),
+    // 小窗模式：W = window，video co-active 组内 W 此前完全空闲（全组唯一未占的
+    // 助记字母）。手柄留空——小窗是桌面/手机的窗口概念，手柄场景（电视/掌机）
+    // 用不上，用户要的话可以自绑。
+    ShortcutAction.videoToggleMiniWindow: _kb([
+      _key(LogicalKeyboardKey.keyW),
+    ]),
+    // 小窗控件显隐：Shift+M。裸 M 是静音（video 组内已占），而阅读器 / 漫画的
+    // 「切换界面」正是裸 M（readerToggleChrome / mangaToggleChrome）——Shift+M 既
+    // 避开冲突，又留住跨页面的肌肉记忆。手柄留空，理由同 videoToggleMiniWindow。
+    ShortcutAction.videoToggleMiniChrome: _kb([
+      _key(LogicalKeyboardKey.keyM, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),
     ], [

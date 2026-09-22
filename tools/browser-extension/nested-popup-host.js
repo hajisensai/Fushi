@@ -155,6 +155,8 @@
     open: (query, anchor, highlight) => open(query, anchor, null, highlight),
     dismissChildren: () => dismissAfter(null),
     clear: () => { requests.clear(); dismissAfter(null); },
+    // 有子层在场：子层是独立 iframe，指针进去后顶层文档收不到事件，content.js 的悬停离开判定据此不关栈。
+    active: () => layers.length > 0,
     pop: () => {
       if (!layers.length) return false;
       dismissAfter(layers.length > 1 ? layers[layers.length - 2] : null);

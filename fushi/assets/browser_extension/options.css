@@ -695,6 +695,7 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
 .subtitle-preview-cue {
   --fushi-sub-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
   --fushi-sub-scale: 1;
+  --fushi-sub-fit: 1;
   --fushi-sub-weight: 600;
   --fushi-sub-spacing: 0.01em;
   --fushi-sub-line-height: 1.45;
@@ -714,7 +715,7 @@ input[type="color"]:disabled { opacity: 0.45; cursor: default; }
   background: var(--fushi-sub-bg);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
   font-family: var(--fushi-sub-family);
-  font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale));
+  font-size: calc(clamp(18px, 2.2vw, 32px) * var(--fushi-sub-scale) * var(--fushi-sub-fit));
   font-weight: var(--fushi-sub-weight);
   font-style: normal;
   font-variant: normal;

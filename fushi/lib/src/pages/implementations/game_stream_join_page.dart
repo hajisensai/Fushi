@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
@@ -220,7 +221,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         for (final _GameStreamHost host in _hosts)
           for (final GameStreamSession session in host.sessions)
             Card(
-              child: ListTile(
+              child: FushiListItem(
                 leading: const Icon(Icons.cast),
                 title: Text(host.peer.deviceName ?? host.peer.url),
                 subtitle: Text(t.game_stream_available),

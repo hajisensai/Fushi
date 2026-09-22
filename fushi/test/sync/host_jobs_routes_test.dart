@@ -101,6 +101,8 @@ void main() {
       if (status['state'] == 'done') break;
     }
     expect(status['state'], 'done');
+    // 终态可见 ≠ 已落盘：DELETE 自己会等这笔落盘，这里显式等一次把契约钉住。
+    await jobs.whenIdle();
     expect(status['progress'], 1);
     expect(status['message'], 'echoed');
     expect(status['outputs'], <String>['out.txt']);
@@ -146,6 +148,8 @@ void main() {
     for (int i = 0; i < 400 && jobs.get(id).state != HostJobState.done; i++) {
       await Future<void>.delayed(const Duration(milliseconds: 25));
     }
+    // 终态落盘还在飞时 tearDown 删作业根目录会让 rename 抛 PathNotFound。
+    await jobs.whenIdle();
     final shelf.Response late =
         await _call(jobs, 'PUT', '/api/jobs/$id/input/more.txt', bytes: utf8.encode('y'));
     expect(late.statusCode, 409);
@@ -165,6 +169,7 @@ void main() {
       if (status['state'] == 'error') break;
     }
     expect(status['state'], 'error');
+    await jobs.whenIdle();
     expect(status['error'], contains('boom'));
 
     // 伪造一条「进程死在 running」的记录，再起一个管理器读回来。

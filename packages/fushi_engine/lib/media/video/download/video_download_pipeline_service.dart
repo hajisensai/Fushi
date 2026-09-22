@@ -33,6 +33,7 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
 import 'package:fushi_engine/media/video/download/video_download_organizer.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/external_video.dart'
@@ -796,6 +797,7 @@ class VideoDownloadPipelineService {
     this.onBackendTaskAdded,
     this.subtitleRegistry,
     this.defaultContentLanguage,
+    this.subtitleLanguageResolver,
     this.discoveryImporter,
     this.manualTorrentDirectory,
     Iterable<String> preferredSubtitleLanguages = const <String>[],
@@ -823,6 +825,13 @@ class VideoDownloadPipelineService {
   /// 设置·外观·排版里的默认内容语言。没有显式字幕语言、视频也没有可读语言时的
   /// 最后一档；空/null = 不表态（**不猜**，见 subtitle_language_preference.dart）。
   final String? defaultContentLanguage;
+
+  /// 按作品的字幕语言（见 video_download_subtitle_language.dart）。字幕阶段先问它：
+  /// 拿到语言码就当作用户对**这部作品**的显式选择（硬过滤 + 排序首选），压过
+  /// [preferredSubtitleLanguages]；null = 不表态，走原来的全局链。解析器抛异常
+  /// 与本阶段其它异常同等处理（任务按可重试 / needsAttention 落库），**不吞**：
+  /// 它读的是本进程内的偏好，抛了就是偏好层坏了，不能伪装成「没记过语言」。
+  final VideoDownloadSubtitleLanguageResolver? subtitleLanguageResolver;
   final VideoDownloadBackendResolver backendResolver;
   final VideoSourceScrapeCoordinator scrapeCoordinator;
   final Future<void> Function(VideoDownloadJobRow job)? onBackendTaskAdded;
@@ -2679,6 +2688,29 @@ class VideoDownloadPipelineService {
       await _advance(job, VideoDownloadJobStage.import);
       return;
     }
+    // 按作品的字幕语言一次性解析：整条任务的所有分集共用同一个答案。
+    final String? perWorkLanguage = await _resolvePerWorkSubtitleLanguage(job);
+    _ensureLeaseHeld();
+    // 按作品的语言只提名次、不收窄搜索面：它来自字幕工作台的筛选记忆
+    // （`jimaku_pref_langs`，选择即写），那是「列出来给我看」的 UI 筛选器，不是
+    // 「这部番只下这个语言」的下载策略。塞进 `languages:`（provider 侧是服务端硬
+    // 过滤参数）会让该语言没字幕的任务一条都下不到、policy=required 时直接变
+    // needsAttention，而用户从没表达过这个意思，也没有任何入口能撤销（选「全部」
+    // 刻意不写、偏好层没有 remove）。排序首选由下面的 `explicitLanguage` 负责。
+    final List<String> searchLanguages;
+    if (preferredSubtitleLanguages.isEmpty) {
+      // 全局「不限」：保持不限。
+      searchLanguages = const <String>[];
+    } else if (perWorkLanguage == null) {
+      searchLanguages = preferredSubtitleLanguages;
+    } else {
+      searchLanguages = <String>[
+        perWorkLanguage,
+        ...preferredSubtitleLanguages.where(
+          (String language) => language != perWorkLanguage,
+        ),
+      ];
+    }
     final List<VideoDownloadJobFileRow> files =
         (await database.getVideoDownloadJobFiles(job.jobId))
             .where(
@@ -2747,7 +2779,7 @@ class VideoDownloadPipelineService {
                 ).copyWithEpisode(season: file.season, episode: file.episode),
                 season: file.season,
                 episode: file.episode,
-                languages: preferredSubtitleLanguages,
+                languages: searchLanguages,
                 fingerprint: LocalVideoFingerprint(
                   fileSize: await video.length(),
                   fileName: p.basename(video.path),
@@ -2802,6 +2834,7 @@ class VideoDownloadPipelineService {
               await _selectVerifiedSubtitle(
                 candidates: result.items,
                 videoPath: video.path,
+                explicitLanguage: perWorkLanguage,
               );
           verified = selection.picked;
           if (verified == null) {
@@ -2928,6 +2961,27 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.import);
   }
 
+  /// 问 [subtitleLanguageResolver] 这部作品要什么字幕语言。null = 没接解析器 /
+  /// 它不表态。异常原样冒泡，由阶段执行器统一按可重试 / needsAttention 处理。
+  Future<String?> _resolvePerWorkSubtitleLanguage(
+    VideoDownloadJobRow job,
+  ) async {
+    final VideoDownloadSubtitleLanguageResolver? resolver =
+        subtitleLanguageResolver;
+    if (resolver == null) return null;
+    final String? code = await resolver(
+      VideoDownloadSubtitleLanguageQuery(
+        jobId: job.jobId,
+        title: job.title,
+        year: job.year,
+        metadataProvider: job.metadataProvider,
+        externalId: job.externalId,
+      ),
+    );
+    final String normalized = code?.trim() ?? '';
+    return normalized.isEmpty ? null : normalized;
+  }
+
   /// 依次下载 [candidates] 并做时长/内容校验，返回**第一个通过**的候选及其字节。
   ///
   /// 为什么要真下下来才能判：判据看的是字幕内容本身（最后一句结束在哪），搜索
@@ -2944,6 +2998,7 @@ class VideoDownloadPipelineService {
   _selectVerifiedSubtitle({
     required List<VideoSubtitleCandidate> candidates,
     required String videoPath,
+    String? explicitLanguage,
   }) async {
     if (candidates.isEmpty) {
       return (picked: null, reason: 'No subtitle candidate was returned');
@@ -2954,10 +3009,12 @@ class VideoDownloadPipelineService {
     final KnownVideoDuration? known = facts.durationMs == null
         ? null
         : KnownVideoDuration.probed(facts.durationMs!);
-    // 默认取**视频自己的语言**：设置里显式选过就用那个，否则用音轨自报的语言。
-    // 这里是**排序**不是过滤——只有英文字幕的日语番仍然配得上，只是排在后面。
+    // 默认取**视频自己的语言**：按作品的解析器 / 设置里显式选过就用那个，否则用
+    // 音轨自报的语言。这里是**排序**不是过滤——只有英文字幕的日语番仍然配得上，
+    // 只是排在后面。
     final String? preferredLanguage = resolveSubtitleDownloadLanguage(
-      explicitSubtitlePreference: preferredSubtitleLanguages.firstOrNull,
+      explicitSubtitlePreference:
+          explicitLanguage ?? preferredSubtitleLanguages.firstOrNull,
       contentMetadataLanguage: facts.primaryAudioLanguage,
       globalDefaultContentLanguage: defaultContentLanguage,
     );
@@ -3369,9 +3426,11 @@ class VideoDownloadPipelineService {
           .toList();
       final SplitPlaylistImportResult result = await _videoRepository
           .importSplitPlaylist(
-            collectionName: legacy || job.year == null
-                ? job.title
-                : '${job.title} (${job.year})',
+            collectionName: videoDownloadCollectionName(
+              title: job.title,
+              year: job.year,
+              legacy: legacy,
+            ),
             entries: entries,
             sourceId: source?.id,
             reuseExistingPaths: true,
@@ -3582,17 +3641,62 @@ class VideoDownloadPipelineService {
       );
       return;
     }
-    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
-      database,
-    ).plan(source);
-    _ensureLeaseHeld();
+    // 「按文件夹」来源只整理不刮削（来源设置里就是这么说的，计划器对它恒空）：
+    // 文件已就位、库里可见，任务按完成收口，而不是报一条看不懂的映射失败。
+    if (source.videoGroupingMode == 'folder') {
+      fushiDebugPrint(
+        '[download-scrape] ${job.jobId}: managed source ${source.id} groups '
+        'by folder, skipping metadata scrape',
+      );
+      await _releaseLeaseWith(
+        () => database.completeVideoDownloadJob(
+          jobId: job.jobId,
+          workerId: workerId,
+          completedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      return;
+    }
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
     final Set<String> importedPaths = rows
+        .where((VideoDownloadJobFileRow row) => row.kind == 'video')
         .map((VideoDownloadJobFileRow row) => row.finalAbsolutePath)
         .whereType<String>()
         .map(normalizeVideoPath)
         .toSet();
+    // 导入的文件物理上就在托管来源根目录里，库里的行必须归这个来源——扫描器
+    // 抢先按别的（重叠的）来源建了行、或旧行挂在已删来源上时，计划器按
+    // `source_id` 过滤会看不到它们，整条任务就落成「映射不回来源」。
+    final List<String> unindexed = <String>[];
+    for (final String importedPath in importedPaths) {
+      final VideoBookRow? book = await _videoRepository.findByVideoPath(
+        importedPath,
+      );
+      if (book == null) {
+        unindexed.add(importedPath);
+        continue;
+      }
+      if (book.sourceId != source.id) {
+        fushiDebugPrint(
+          '[download-scrape] ${job.jobId}: ${book.bookUid} was indexed under '
+          'source ${book.sourceId}, reassigning to managed source '
+          '${source.id}',
+        );
+        await database.assignVideoBookSource(book.bookUid, source.id);
+      }
+    }
+    _ensureLeaseHeld();
+    if (unindexed.isNotEmpty) {
+      throw VideoDownloadPipelineActionRequired(
+        'Imported media is missing from the video library: '
+        '${unindexed.join(', ')}',
+      );
+    }
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      database,
+    ).plan(source);
+    _ensureLeaseHeld();
     final List<VideoSourceScrapeWork> pathMatches = works
         .where(
           (VideoSourceScrapeWork value) => value.members.any(
@@ -3646,8 +3750,19 @@ class VideoDownloadPipelineService {
       }
     }
     if (work == null) {
-      throw const VideoDownloadPipelineActionRequired(
-        'Imported media could not be mapped exactly back to its managed source',
+      // 把「为什么」说出来：是计划器压根没看到这些文件（附件分类 / 归属），还是
+      // 看到了却分在多个作品里且没有一个是本任务的合集。
+      final String detail = pathMatches.isEmpty
+          ? 'none of ${importedPaths.length} imported file(s) belong to a '
+              'scrapable work of source ${source.id} '
+              '(${works.length} work(s) planned)'
+          : '${importedPaths.length} imported file(s) spread over '
+              '${pathMatches.length} works '
+              '(${pathMatches.map((VideoSourceScrapeWork value) => value.stableKey).join(', ')}), '
+              'none is collection ${job.collectionId}';
+      throw VideoDownloadPipelineActionRequired(
+        'Imported media could not be mapped exactly back to its managed '
+        'source: $detail',
       );
     }
     final report = await scrapeCoordinator.scrapeImportedWork(

@@ -1758,6 +1758,7 @@ class JellyfinVideoClient
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackSession,
         RemoteVideoQualityLimit,
+        RemoteVideoCollectionIsWork,
         MediaServerBrowser {
   JellyfinVideoClient({
     required this.api,

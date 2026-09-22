@@ -44,6 +44,42 @@ class SubtitleSearchSeed {
   bool get hasStrongIdentity => anilistId != null || tmdbId != null;
 }
 
+/// 远端视频（无本地文件名可解析）用哪个字符串当字幕检索的**番名**。纯函数。
+///
+/// BUG-2626：远端**合集**里的一集，`RemoteVideoInfo.title` 是**分集**标题——在线视频源
+/// 扩展（Aniyomi）给的就是 `Episode 1`（`AnimeSourceVideoClient._infoFor` 直接用
+/// `MihonEpisode.name`），而番名在合集名里。此前一律拿标题去 `parseVideoFilename` 想把
+/// 集号剥掉，但它的裸集号规则只认两位数字（`filename_parser.dart` 的
+/// `_bareTrailingEpisode`）：`Episode 1` 原样留下，被整串当番名搜，Jimaku 必然空手；
+/// `Episode 12` 更糟——番名会变成 `Episode`。
+///
+/// [collectionIsWork] 为真且 [collectionName] 非空即胜出，且**不再过一遍
+/// `parseVideoFilename`**：它已经是番名，而那条规则会把结尾带数字的作品削掉
+/// （`86`、`Gundam 00`）。
+///
+/// [collectionIsWork] 由来源声明（`RemoteVideoCollectionIsWork`）：在线源的合集是
+/// `anime.title`、媒体服务器的是 `seriesName`；互联 host 的合集是用户库里的任意合集
+/// （「待看」「2024 春番」），拿它当番名搜必然空手，所以 host 不声明、合集名不参与。
+///
+/// 其余情况回落 [title] —— 那种来源的标题本身就是番名（互联 host 的
+/// `VideoBook.title`），交给 [parseFallbackSeries] 按原规则收敛，与本函数引入前
+/// 逐字节一致。
+String? remoteSubtitleSeriesQuery({
+  required String? collectionName,
+  required bool collectionIsWork,
+  required String? title,
+  required String Function(String title) parseFallbackSeries,
+}) {
+  final String collection = collectionIsWork
+      ? (collectionName?.trim() ?? '')
+      : '';
+  if (collection.isNotEmpty) return collection;
+  final String raw = title?.trim() ?? '';
+  if (raw.isEmpty) return null;
+  final String series = parseFallbackSeries(raw).trim();
+  return series.isEmpty ? raw : series;
+}
+
 /// 组装 [SubtitleSearchSeed]。纯函数，不碰数据库，便于单测。
 ///
 /// [externalIds] 是 `provider → externalId`（provider 名小写，见

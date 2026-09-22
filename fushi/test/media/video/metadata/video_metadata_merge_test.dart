@@ -195,9 +195,121 @@ void main() {
         ),
       ],
       languageOrder: const VideoMetadataLanguages('ja').imageLanguages,
-      maxBackdrops: 1,
+      maxPerKind: const <VideoMetadataImageKind, int>{
+        VideoMetadataImageKind.backdrop: 1,
+      },
     );
     expect(selected.single.url, 'high-neutral-backdrop');
+  });
+
+  // Shoko TMDB.MaxAutoPosters / Backdrops / Logos：每类保留张数可配，0 = 不限；
+  // 分集剧照恒 1（MaxAutoThumbnails）；同一 URL 只算一张。
+  test('每类图按上限保留，0 不限，剧照恒 1，同 URL 去重', () {
+    VideoMetadataImage cover(String url, double score) => VideoMetadataImage(
+          kind: VideoMetadataImageKind.cover,
+          url: url,
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'ja',
+          voteAverage: score,
+          voteCount: 10,
+        );
+    final List<VideoMetadataImage> covers = <VideoMetadataImage>[
+      for (int i = 1; i <= 12; i++) cover('c$i', i.toDouble()),
+      // TMDB 详情的 poster_path 与 images.posters 会重复：同一 URL 不算两张。
+      const VideoMetadataImage(
+        kind: VideoMetadataImageKind.cover,
+        url: 'c12',
+        provider: VideoMetadataProviderKind.tmdb,
+      ),
+      for (int i = 1; i <= 3; i++)
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.thumb,
+          url: 't$i',
+          provider: VideoMetadataProviderKind.tmdb,
+          seasonNumber: 1,
+          episodeNumber: 1,
+          voteAverage: i.toDouble(),
+        ),
+    ];
+    final List<String> order = const VideoMetadataLanguages('ja').imageLanguages;
+    final List<VideoMetadataImage> ten = selectVideoMetadataImages(
+      primary: covers,
+      languageOrder: order,
+      maxPerKind: const <VideoMetadataImageKind, int>{
+        VideoMetadataImageKind.cover: 10,
+        VideoMetadataImageKind.thumb: 5,
+      },
+    );
+    expect(
+        ten
+            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover)
+            .map((VideoMetadataImage i) => i.url)
+            .toList(),
+        <String>['c12', 'c11', 'c10', 'c9', 'c8', 'c7', 'c6', 'c5', 'c4', 'c3'],
+        reason: '评分高的 10 张，c12 只出现一次');
+    expect(
+        ten
+            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.thumb)
+            .map((VideoMetadataImage i) => i.url),
+        <String>['t3'],
+        reason: '剧照上限传 5 也只留 1（Shoko MaxAutoThumbnails = 1）');
+    expect(
+        selectVideoMetadataImages(
+          primary: covers,
+          languageOrder: order,
+          maxPerKind: const <VideoMetadataImageKind, int>{
+            VideoMetadataImageKind.cover: 0,
+          },
+        ).where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
+        hasLength(12),
+        reason: '0 = 不限');
+    expect(
+        selectVideoMetadataImages(primary: covers, languageOrder: order)
+            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
+        hasLength(1),
+        reason: '没给上限的图种默认 1');
+  });
+
+  // Shoko 图片语言序的 Main 槽：作品原语插在资料语言之后、英文之前。
+  test('原语（Main 槽）插在资料语言之后：zh 用户的日本动画先 zh 再 ja 再 en', () {
+    expect(
+        imageLanguageOrderWithMain(
+            const VideoMetadataLanguages('zh-CN').imageLanguages,
+            mainLanguage: 'ja'),
+        <String>['zh', 'ja', 'en', '']);
+    expect(
+        imageLanguageOrderWithMain(
+            const VideoMetadataLanguages('ja').imageLanguages,
+            mainLanguage: 'ja'),
+        <String>['ja', 'en', ''],
+        reason: '已在序里不重复');
+    expect(
+        imageLanguageOrderWithMain(
+            const VideoMetadataLanguages('de-DE').imageLanguages,
+            mainLanguage: null),
+        <String>['de', 'en', '']);
+    final List<VideoMetadataImage> selected = selectVideoMetadataImages(
+      primary: const <VideoMetadataImage>[
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.cover,
+          url: 'en-cover',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'en',
+          voteAverage: 9,
+        ),
+        VideoMetadataImage(
+          kind: VideoMetadataImageKind.cover,
+          url: 'ja-cover',
+          provider: VideoMetadataProviderKind.tmdb,
+          language: 'ja',
+          voteAverage: 5,
+        ),
+      ],
+      languageOrder: const VideoMetadataLanguages('zh-CN').imageLanguages,
+      mainLanguage: 'ja',
+    );
+    expect(selected.single.url, 'ja-cover',
+        reason: '没有 zh 海报时原语海报压过英文海报（Shoko Main 在 English 前）');
   });
 
   test('续季单主源先重映射到本地季号再与 TMDB 全剧骨架合并', () {
@@ -847,5 +959,115 @@ void main() {
     expect(merged.seasons.single.plot, 'TMDB season plot');
     expect(merged.seasons.single.episodes.single.title, 'Primary episode');
     expect(merged.seasons.single.episodes.single.plot, 'TMDB episode plot');
+  });
+
+  group('mergeVideoMetadataCredits 跨源同一关系（BUG-2612）', () {
+    VideoMetadataCredit mal(String name, String role, {String? photo}) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.voiceActor,
+          person: VideoMetadataPerson(
+            name: name,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'mal', value: name.hashCode.toString()),
+            ],
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+          language: 'ja',
+        );
+    VideoMetadataCredit tmdb(String name, String role, {String? photo}) =>
+        VideoMetadataCredit(
+          kind: VideoMetadataCreditKind.actor,
+          person: VideoMetadataPerson(
+            name: name,
+            profileUrl: photo,
+            ids: <VideoMetadataId>[
+              VideoMetadataId(type: 'tmdb', value: name.hashCode.toString()),
+            ],
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+        );
+
+    test('追加的补充条目 order 接在主表之后，不与主表从 0 起交错', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 0),
+          mal('Ichinose, Kana', 'Fern').copyWith(order: 1),
+        ],
+        <VideoMetadataCredit>[
+          // 第二 cour / TMDB 汇总各自从 0 起。
+          mal('Kobayashi, Chiaki', 'Stark').copyWith(order: 0),
+          mal('Tanezaki, Atsumi', 'Frieren').copyWith(order: 1),
+          mal('Toyosaki, Aki', 'Ubel').copyWith(order: 2),
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>[
+          'Tanezaki, Atsumi',
+          'Ichinose, Kana',
+          'Kobayashi, Chiaki',
+          'Toyosaki, Aki',
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.order).toList(),
+        <int>[0, 1, 2, 3],
+        reason: '落库后 ORDER BY sortOrder 才不会让第二季配角插进第一季主角中间',
+      );
+    });
+
+    test('MAL「姓, 名」声优与 TMDB「名 姓」演员 + (voice) 角色认成同一条', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[mal('Tanezaki, Atsumi', 'Frieren')],
+        <VideoMetadataCredit>[
+          tmdb('Atsumi Tanezaki', 'Frieren (voice)', photo: 'tmdb-photo'),
+        ],
+      );
+      expect(merged, hasLength(1));
+      final VideoMetadataCredit credit = merged.single;
+      expect(credit.kind, VideoMetadataCreditKind.voiceActor,
+          reason: '主源的 kind 与名字保留');
+      expect(credit.person.name, 'Tanezaki, Atsumi');
+      expect(credit.person.profileUrl, 'tmdb-photo',
+          reason: 'MAL 没照片（占位已归 null）时用 TMDB 的补');
+      expect(
+        credit.person.ids.map((VideoMetadataId id) => id.type),
+        containsAll(<String>['mal', 'tmdb']),
+      );
+    });
+
+    test('同人不同角色、同角色不同人都不并', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[mal('Ichinose, Kana', 'Ubel')],
+        <VideoMetadataCredit>[
+          tmdb('Kana Ichinose', 'Young Ubel (voice)'),
+          tmdb('Someone Else', 'Ubel (voice)'),
+        ],
+      );
+      expect(merged, hasLength(3));
+    });
+
+    test('导演与同名演员不会因为人名相同而并掉', () {
+      final VideoMetadataCredit director = VideoMetadataCredit(
+        kind: VideoMetadataCreditKind.director,
+        person: VideoMetadataPerson(name: 'Saito Keiichiro'),
+        job: 'Director',
+      );
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[director],
+        <VideoMetadataCredit>[tmdb('Keiichiro Saito', 'Cameo')],
+      );
+      expect(merged, hasLength(2));
+    });
+
+    test('stripVoiceRoleSuffix 只剥尾部 (voice)', () {
+      expect(stripVoiceRoleSuffix('Frieren (voice)'), 'Frieren');
+      expect(stripVoiceRoleSuffix('Frieren (Voice) '), 'Frieren');
+      expect(stripVoiceRoleSuffix('Voice of Reason'), 'Voice of Reason');
+      expect(stripVoiceRoleSuffix('Himmel (young)'), 'Himmel (young)');
+    });
   });
 }

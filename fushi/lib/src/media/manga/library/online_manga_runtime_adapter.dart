@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart'
     show aidokuChapterDisplayTitle;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -101,6 +102,9 @@ sealed class OnlineMangaPageRef {
 
   /// 0-based 页序（落盘名 `page-000001` 由它 +1 得出）。
   final int index;
+
+  /// Original provider URL, used only to match optional OCR sidecars.
+  String? get sourceUrl => null;
 }
 
 /// Mihon：取图必须经扩展自己的 OkHttp 客户端（拦截器、cookie、按请求头）。
@@ -113,6 +117,9 @@ class MihonMangaPageRef extends OnlineMangaPageRef {
 
   final MihonSourceContext context;
   final MihonPage page;
+
+  @override
+  String? get sourceUrl => page.resolvedUrl;
 }
 
 /// Aidoku：普通 https + UA / Referer / cookie jar。
@@ -127,6 +134,9 @@ class AidokuMangaPageRef extends OnlineMangaPageRef {
 
   /// 作品页 URL（https 才带），作为取图的 Referer。
   final String? referer;
+
+  @override
+  String? get sourceUrl => page.url;
 }
 
 /// 源补丁（quirk）产出的裸 https 页：URL 自带签名，只需 Referer（BUG-2514）。
@@ -144,6 +154,9 @@ class HttpMangaPageRef extends OnlineMangaPageRef {
 
   /// 源站 baseUrl（不带尾斜杠），作为 Referer。
   final String referer;
+
+  @override
+  String? get sourceUrl => url;
 }
 
 /// 互联对端：`bookKey` + 页序即是端点路径段。
@@ -197,6 +210,15 @@ abstract interface class OnlineMangaRuntimeAdapter {
 
   /// 取封面字节（入库时落盘一份，之后书架离线可见）。
   Future<List<int>> fetchCover(OnlineMangaLibraryEntry entry, String url);
+}
+
+/// Optional OCR sidecar capability. Sources that do not implement this are
+/// never queried for sidecars.
+abstract interface class MangaOcrSidecarProvider {
+  Future<String?> fetchChapterOcrSidecar({
+    required OnlineMangaLibraryEntry entry,
+    required OnlineMangaChapter chapter,
+  });
 }
 
 /// 在 app 内登录源站所需的一切（[runtime] 交给 `mihonLoginTarget` 判能力）。
@@ -283,6 +305,7 @@ abstract interface class OnlineMangaLanguageScoped {
 class MihonLibraryAdapter
     implements
         OnlineMangaRuntimeAdapter,
+        MangaOcrSidecarProvider,
         OnlineMangaLoginCapable,
         OnlineMangaWebUrlCapable,
         OnlineMangaLanguageScoped {
@@ -293,6 +316,20 @@ class MihonLibraryAdapter
   });
 
   final MihonManager manager;
+
+  @override
+  Future<String?> fetchChapterOcrSidecar({
+    required OnlineMangaLibraryEntry entry,
+    required OnlineMangaChapter chapter,
+  }) async {
+    final MihonSourceContext context = await _context(entry);
+    return fetchMokuroSidecar(
+      entry,
+      chapter,
+      sourceName: context.source.name,
+      sourceBaseUrl: context.source.baseUrl,
+    );
+  }
 
   /// 测试缝：null = 生产装配（走应用代理出口的 http 客户端）。
   final ComicoMagazineComicQuirk? comicoQuirk;

@@ -18,6 +18,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
+import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -56,6 +57,8 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
 /// 视频画面缩放/比例模式（作用于 Flutter 层 [Video] widget 的 [BoxFit]，TODO-152 子B）。
@@ -95,6 +98,10 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
       return BoxFit.fill;
   }
 }
+
+/// 「新下载任务交给哪台互联 host 执行」的偏好键（空 = 本机）。
+/// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）。
+const String kDownloadExecutionHostPrefKey = 'download_execution_host';
 
 class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
@@ -516,6 +523,31 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMediaServerQualityPresetIndex(int index) async {
     await setPref('video_media_server_quality_preset', index);
+    notifyListeners();
+  }
+
+  /// 本机当 host 时是否允许为对端实时转码（弱网降码率播放）。默认开。
+  ///
+  /// 默认值与解码规则收在引擎侧的 [readInterconnectTranscodeEnabled]——无头服务端
+  /// 读的是同一张 `preferences` 表，默认值只能有一份。
+  bool get interconnectTranscodeEnabled =>
+      readInterconnectTranscodeEnabled(this);
+
+  Future<void> setInterconnectTranscodeEnabled(bool enabled) async {
+    await setPref(kInterconnectTranscodeEnabledPref, enabled);
+    notifyListeners();
+  }
+
+  /// 互联远端视频的画质档下标；-1 = 自动（局域网原画、走公网压到中档，判据在
+  /// `interconnect_video_quality.dart`）。
+  ///
+  /// 与媒体服务器那档**分开存**：两边的档位阶梯不同（互联整体更低，因为它要解决的
+  /// 就是人在外面用手机网络），共用一个下标会让同一个数字在两处指向不同画质。
+  int get interconnectQualityPresetIndex =>
+      getPref('video_interconnect_quality_preset', defaultValue: -1) as int;
+
+  Future<void> setInterconnectQualityPresetIndex(int index) async {
+    await setPref('video_interconnect_quality_preset', index);
     notifyListeners();
   }
 
@@ -1187,6 +1219,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 底部细进度条开关：控制条淡出后，在视频最下方留一条主题色细线
+  /// （B 站 / YouTube 同款）。**默认关**——控制条淡出本身就是「把画面让干净」，
+  /// 再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。getPref 仅在
+  /// 该 key 从未写过时返回默认值，已切过的用户保留存值（首版默认开期间手动
+  /// 关掉的人不会因为这次改默认被重新打开）。
+  ///
+  /// 小窗档不受它管：那里完整进度条已被 theme 收起，细线是唯一的进度指示，
+  /// 判据统一在 `videoSlimProgressBarVisible`（video_controls_density.dart）。
+  bool get videoSlimProgressBar =>
+      getPref('video_slim_progress_bar', defaultValue: false) as bool;
+
+  Future<void> setVideoSlimProgressBar(bool value) async {
+    await setPref('video_slim_progress_bar', value);
+    notifyListeners();
+  }
+
   /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
   /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
   /// `VideoSourceScrapeCoordinator` 管理。
@@ -1785,6 +1833,30 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setJimakuDefaultLanguage(String langCode) async {
     await setPref('jimaku_default_language', langCode);
+    notifyListeners();
+  }
+
+  /// 「AI 下视频」的默认画质。三态：`''` 未设置（对话里第一次问、按「以后默认」
+  /// 勾选写回）/ `ask` 每次询问 / 固定档（`2160p` `1080p` `720p` `480p` `any`）。
+  /// 类型化读法见 `ai_video_acquisition_preferences.dart`。
+  String get aiVideoDownloadQuality =>
+      getPref('ai_video_download_quality', defaultValue: '') as String;
+
+  Future<void> setAiVideoDownloadQuality(String value) async {
+    await setPref('ai_video_download_quality', value);
+    notifyListeners();
+  }
+
+  /// 「AI 下视频」的字幕语言。取值：`''` 未设置（第一次问、按勾选写回）/ `ask`
+  /// 每次询问 / `original` 跟随作品语言 / 语言码（`ja` `zh` `en` `ko`）/
+  /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
+  /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
+  String get aiVideoDownloadSubtitleLanguage =>
+      getPref('ai_video_download_subtitle_language', defaultValue: '')
+          as String;
+
+  Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
+    await setPref('ai_video_download_subtitle_language', value);
     notifyListeners();
   }
 
@@ -3062,6 +3134,21 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  bool get mangaPanelNavigation => getPref(
+        'manga_panel_navigation',
+        defaultValue: kMangaPanelNavigationDefault,
+      ) as bool;
+
+  Future<void> setMangaPanelNavigation(bool value) async {
+    await setPref('manga_panel_navigation', value);
+    notifyListeners();
+  }
+
+  bool get mangaPanelNavigationEnabled => mangaPanelNavigation;
+
+  Future<void> setMangaPanelNavigationEnabled(bool value) =>
+      setMangaPanelNavigation(value);
+
   /// 点击翻页的热区布局（[MangaTapZoneLayout] 的字符串键）。默认 `left_right`
   /// = 旧行为（左右各一条 25% 竖条）。只在 [mangaTapZonePaging] 开启时有意义。
   String get mangaTapZoneLayout =>
@@ -3095,6 +3182,72 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setMangaSpreadOffset(int value) async {
     await setPref('manga_spread_offset', value);
+    notifyListeners();
+  }
+
+  /// Existing individual keys stay authoritative for shared legacy controls.
+  /// This prevents an older settings surface from being shadowed by JSON.
+  MangaReaderPreferences get mangaReaderPreferences {
+    Map<String, Object?> values = <String, Object?>{};
+    final Object? raw = getPref('manga_reader_preferences');
+    if (raw is String && raw.isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) values = decoded;
+      } on FormatException {
+        // A malformed optional value is equivalent to absent defaults.
+      }
+    }
+    if (!values.containsKey('mode') && !values.containsKey('autoMode')) {
+      final String legacyMode = mangaSpreadPreference;
+      values = <String, Object?>{
+        ...values,
+        'autoMode': legacyMode == 'auto',
+        if (legacyMode == 'spread' || legacyMode == 'webtoon')
+          'mode': legacyMode,
+      };
+    }
+    return MangaReaderPreferences.fromJson(<String, Object?>{
+      ...values,
+      'direction': mangaReadingDirection,
+      'background': mangaBackground,
+      'zoomStart': mangaZoomPercent,
+      'animateTransitions': mangaPageAnimation != 'none',
+      'tapZones': !mangaTapZonePaging
+          ? 'disabled'
+          : mangaTapZoneLayout == 'left_right'
+          ? 'right_left'
+          : mangaTapZoneLayout,
+      'volumeKeys': mangaVolumeKeyPaging,
+    });
+  }
+
+  Future<void> setMangaReaderPreferences(MangaReaderPreferences value) async {
+    await setPref('manga_reader_preferences', jsonEncode(value.toJson()));
+    await setPref(
+      'manga_spread_preference',
+      value.autoMode ? 'auto' : value.mode.storageKey,
+    );
+    await setPref('manga_reading_direction', value.direction);
+    await setPref('manga_background', value.background);
+    await setPref('manga_zoom_percent', value.zoomStart);
+    await setPref(
+      'manga_tap_zone_paging',
+      value.tapZones != MangaTapZonePreset.disabled,
+    );
+    await setPref(
+      'manga_tap_zone_layout',
+      value.tapZones == MangaTapZonePreset.rightAndLeft
+          ? 'left_right'
+          : value.tapZones.key,
+    );
+    await setPref('manga_volume_key_paging', value.volumeKeys);
+    await setPref(
+      'manga_page_animation',
+      value.animateTransitions
+          ? (mangaPageAnimation == 'none' ? 'slide' : mangaPageAnimation)
+          : 'none',
+    );
     notifyListeners();
   }
 
@@ -3217,6 +3370,19 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setVideoResourceDisabledSources(String value) async {
     await setPref('video_resource_disabled_sources', value);
+    notifyListeners();
+  }
+
+  /// 新下载任务默认交给哪台设备执行：空 = 本机；否则是已配对互联 host 的地址
+  /// （`FushiClientUrl.url`），任务经 `/api/downloads` 投过去、下到 host 自己的
+  /// 库里。手动添加任务 / 发现页 / 资源搜索页共用这一个默认值（各自仍可当次改）。
+  /// 设备本地键：指向的是「这台设备配的 host」，随备份到别的设备只会指错。
+  String get downloadExecutionHostUrl =>
+      (getPref(kDownloadExecutionHostPrefKey, defaultValue: '') as String)
+          .trim();
+
+  Future<void> setDownloadExecutionHostUrl(String value) async {
+    await setPref(kDownloadExecutionHostPrefKey, value.trim());
     notifyListeners();
   }
 

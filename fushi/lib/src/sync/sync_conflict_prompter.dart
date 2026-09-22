@@ -76,6 +76,10 @@ class SyncConflictPrompter with PromptQueue {
   /// 直接渲染 [SyncCompareDialog]（注入已解析的 [backend]），而非走
   /// [showSyncCompareDialog] —— 后者从 db 自行解析 backend 且不回传 applied
   /// 计数，无法满足「用注入 backend + 观察是否已解决以决定 snooze」这两点。
+  ///
+  /// [decisions] 是同一轮 sweep 内跨通道共享的裁决簿（见
+  /// [SyncCompareDialog.decisions]）：调用方按通道逐个 present 时传同一个 map，
+  /// 前一条通道里用户裁决过的书在后一条通道不再弹。null = 单通道 / 不共享。
   Future<void> present({
     required GlobalKey<NavigatorState> navigatorKey,
     required FushiDatabase db,
@@ -83,6 +87,7 @@ class SyncConflictPrompter with PromptQueue {
     required List<SyncConflict> conflicts,
     required ConflictSource source,
     required bool inBook,
+    Map<String, SyncChoice>? decisions,
   }) =>
       enqueuePrompt(() => _presentNow(
             navigatorKey: navigatorKey,
@@ -91,6 +96,7 @@ class SyncConflictPrompter with PromptQueue {
             conflicts: conflicts,
             source: source,
             inBook: inBook,
+            decisions: decisions,
           ));
 
   Future<void> _presentNow({
@@ -100,6 +106,7 @@ class SyncConflictPrompter with PromptQueue {
     required List<SyncConflict> conflicts,
     required ConflictSource source,
     required bool inBook,
+    Map<String, SyncChoice>? decisions,
   }) async {
     if (!shouldPrompt(conflicts: conflicts, source: source, inBook: inBook)) {
       return;
@@ -115,6 +122,7 @@ class SyncConflictPrompter with PromptQueue {
           db: db,
           backend: backend,
           conflictsOnly: true,
+          decisions: decisions,
         ),
       );
       // applied>0 表示用户至少解决了一项；否则视为取消，本会话静默这组冲突。

@@ -29,13 +29,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2418 条。点号进各自文件。
+> 共 2439 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2634](bugs/BUG-2634-video-context-mine-confirm-popup-gone.md) | ✅ | ✅ | 视频「调整上下文」确认制卡报「查词弹窗已经关掉了」 |
+| [BUG-2633](bugs/BUG-2633-video-popup-wheel-volume-leak.md) | ✅ | ✅ | 视频页查词弹窗内滚轮穿透到画面——词典翻页时音量跟着变 |
+| [BUG-2632](bugs/BUG-2632-vn-lookup-audio-position.md) | ✅ | ✅ | VN 查词弹窗从此句播放误用屏内及学习单位坐标导致跳错位置 |
+| [BUG-2631](bugs/BUG-2631-webdav-html-error-page.md) | ✅ | ✅ | WebDAV 测试连接：403 网页响应体（Cloudflare 挑战）整页标记裸灌进提示 |
+| [BUG-2630](bugs/BUG-2630-interconnect-hls-segment-ext-rejected.md) | ✅ | ✅ | 互联转码 HLS 分段 URL 无扩展名被 FFmpeg 6.1 白名单拒开 |
+| [BUG-2629](bugs/BUG-2629-youtube-rolling-cue-audio-overlap.md) | ✅ | ✅ | 浏览器扩展 YouTube 制卡音频多录下一行——自动字幕滚动双行的 cue 时长跨到下下行 |
+| [BUG-2628](bugs/BUG-2628-video-stutter-lookup-latency-diagnostics.md) | 🚧 | ✅ | 视频卡顿与查词慢：小内存模式可规避卡顿但查词变慢会闪（待诊断） |
+| [BUG-2627](bugs/BUG-2627-video-context-mine-confirm-silent.md) | ✅ | ✅ | 视频「调整上下文」确认制卡没反应 |
+| [BUG-2626](bugs/BUG-2626-subtitle-search-prefill-episode-title.md) | ✅ | ✅ | 字幕搜索预填：远端合集把分集标题当番剧名、集数从来没被预填 |
+| [BUG-2625](bugs/BUG-2625-aniyomi-mining-ffmpeg-403.md) | ✅ | ✅ | 在线视频源制卡 ffmpeg 抽音频 403：防盗链 header 只喂了播放器 |
+| [BUG-2624](bugs/BUG-2624-anidb-identity-merge-standalone-episodes.md) | ✅ | ✅ | 哈希指向同一部 AniDB 剧的散文件不合并成剧集单元，只出逐集 sidecar |
+| [BUG-2623](bugs/BUG-2623-anidb-http-identity-rejected-swallowed.md) | ✅ | ✅ | AniDB HTTP API 拒绝内置客户端身份（302）被吞成「详情不可用」且每作品重试 |
+| [BUG-2622](bugs/BUG-2622-interconnect-collection-download-progress.md) | ✅ | ✅ | 互联下载远端视频合集时合集卡与详情页集卡都不显示进度 |
+| [BUG-2621](bugs/BUG-2621-sync-compare-repop-across-channels.md) | ✅ | ✅ | 同步冲突弹窗「立即同步」后同一本书反复再弹 |
+| [BUG-2620](bugs/BUG-2620-video-discovery-search-enter-noop.md) | ✅ | ✅ | 发现页搜索框按回车不触发搜索 |
+| [BUG-2619](bugs/BUG-2619-video-subscription-batch-never-matches.md) | ✅ | ✅ | 从合集资源建的订阅结构上永不命中 |
+| [BUG-2618](bugs/BUG-2618-ai-model-picker-split.md) | ✅ | ✅ | AI 提供商：模型候选是字段外的第二个下拉，选完「模型」输入框不跟着变 |
+| [BUG-2617](bugs/BUG-2617-anime-ext-playback-timeout.md) | ✅ | ✅ | Aniyomi 在线源播放必超时 |
 | [BUG-2616](bugs/BUG-2616-ios-scroll-mode-setting-race.md) | ✅ | ✅ | iOS 滚动模式设置未落地导致阅读器布局不更新 |
 | [BUG-2615](bugs/BUG-2615-ios-reader-native-bounce.md) | ✅ | ✅ | iOS 竖屏连续滚动模式上下滑动触发正文回弹 |
 | [BUG-2614](bugs/BUG-2614-vn-chapter-ready-timeout.md) | ✅ | ✅ | VN 模式切换章节后加载永不就绪 |
+| [BUG-2613](bugs/BUG-2613-gal-overlay-click-sampled-input-passthrough.md) | ✅ | ✅ | galgame 桌面字典卡 / hook 台词浮窗上的左键被采样输入引擎看见而推进台词 |
+| [BUG-2612](bugs/BUG-2612-cast-photos-incomplete.md) | ✅ | ✅ | 视频刮削演员/声优表显示不全、照片缺失 |
 | [BUG-2610](bugs/BUG-2610-ext-utf8-noncharacter-load-failure.md) | ✅ | ✅ | 浏览器扩展 subtitle-style.js 含裸 U+FFFF 非字符，Chrome 判「不是 UTF-8」拒装整个扩展 |
 | [BUG-2609](bugs/BUG-2609-anime-ext-disguised-hls-segments.md) | ✅ | ✅ | 动画扩展播放进度条一进去就拉满、换集无反馈 |
 | [BUG-2608](bugs/BUG-2608-media-server-search-relevance.md) | ✅ | ✅ | 媒体服务器搜索把服务器的模糊命中原样铺出来，精确命中被埋 |
@@ -47,6 +67,7 @@
 | [BUG-2602](bugs/BUG-2602-emby-library-cover-404-fallback.md) | ✅ | ✅ | 媒体服务器库封面 404 时整格只剩占位图标 |
 | [BUG-2601](bugs/BUG-2601-animekai-suspend-get.md) | ✅ | ✅ | 视频源扩展调 suspend OkHttpClient.get 在两端宿主都缺定义，AnimeKai 剧集列表 BRIDGE_HTTP_500 |
 | [BUG-2600](bugs/BUG-2600-video-ext-lib16-abi.md) | ✅ | ✅ | 视频源扩展在 lib 14 宿主 ABI 上进不去剧集或播不了 |
+| [BUG-2599](bugs/BUG-2599-asr-match-recover-cluster.md) | ✅ | ✅ | 有声书 ASR 字幕匹配：恢复扫描单条精确命中把游标钉到书中段、整本只命中 1.7% |
 | [BUG-2598](bugs/BUG-2598-lyrics-mode-settings-stepper-unverified.md) | 🚧 | ✅ | 歌词模式「阅读设置调节按钮不生效」——Windows 真机未复现 |
 | [BUG-2597](bugs/BUG-2597-lyrics-mode-study-chars-not-credited.md) | ✅ | ✅ | 歌词模式听书字数不入账、自动恢复歌词时可能零时长 |
 | [BUG-2596](bugs/BUG-2596-lyrics-mode-chapter-navigation-missing.md) | ✅ | ✅ | 歌词模式顶栏没有章节导航键，无法跳章 |

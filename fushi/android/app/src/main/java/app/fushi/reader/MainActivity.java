@@ -85,6 +85,9 @@ public class MainActivity extends AudioServiceActivity {
     private AnkiChannelHandler ankiChannelHandler;
     private TtsChannelHandler ttsChannelHandler;
     private MihonChannelHandler mihonChannelHandler;
+    // 系统画中画。持有 Activity，所以是实例而不是静态注册：onDestroy 要断开它，
+    // onPictureInPictureModeChanged 要把系统的进出事件转发给它。
+    private PictureInPictureChannelHandler pictureInPictureChannelHandler;
     private MethodChannel.Result pendingSafResult;
     private String pendingSafDestPath;
     // BUG-427/TODO-852: when API 26+ has no install permission we route the
@@ -142,6 +145,7 @@ public class MainActivity extends AudioServiceActivity {
         context = MainActivity.this;
         ankiChannelHandler = new AnkiChannelHandler(context);
         ttsChannelHandler = new TtsChannelHandler(context);
+        pictureInPictureChannelHandler = new PictureInPictureChannelHandler(context);
         // Manga extensions are an optional subsystem. Its constructor wires up
         // Injekt, whose reified type resolution is only as sound as the R8 keep
         // rules (a stale keep rule once made this throw on every launch and
@@ -200,6 +204,21 @@ public class MainActivity extends AudioServiceActivity {
         disableSystemFocusHighlight();
     }
 
+    // 系统画中画的**唯一**回程。用户从小窗的关闭 / 还原按钮退出时不经过我们的
+    // enter()，Dart 侧只有收到这条才知道自己已经不在 PiP 里。
+    //
+    // 进出 PiP 同时是一次配置变更：本 Activity 的 android:configChanges 已声明
+    // orientation|screenSize|smallestScreenSize|screenLayout，因此 Activity 不会被
+    // 重建、播放不会断；少任何一项都会变成 recreate，表现为切小窗时视频从头开始。
+    @Override
+    public void onPictureInPictureModeChanged(
+            boolean isInPictureInPictureMode, @NonNull Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.notifyModeChanged(isInPictureInPictureMode);
+        }
+    }
+
     @Override
     protected void onDestroy() {
         if (ttsChannelHandler != null) {
@@ -208,6 +227,12 @@ public class MainActivity extends AudioServiceActivity {
         if (mihonChannelHandler != null) {
             mihonChannelHandler.destroy();
             mihonChannelHandler = null;
+        }
+        // Activity 销毁后再往 Dart 侧 invoke 是对死引擎说话；置空后
+        // notifyModeChanged 退化成安全 no-op。
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.destroy();
+            pictureInPictureChannelHandler = null;
         }
         // HBK-AUDIT-057: the static floating-service channels are bound to this
         // engine's messenger; clear their handlers and null them so stale
@@ -596,6 +621,9 @@ public class MainActivity extends AudioServiceActivity {
 
         ankiChannelHandler.register(flutterEngine);
         ttsChannelHandler.register(flutterEngine);
+        if (pictureInPictureChannelHandler != null) {
+            pictureInPictureChannelHandler.register(flutterEngine);
+        }
         if (mihonChannelHandler != null) {
             mihonChannelHandler.register(flutterEngine);
         }

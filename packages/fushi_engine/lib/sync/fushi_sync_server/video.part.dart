@@ -44,6 +44,27 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamUrlId, episodeIndex: episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
+      // 弱网转码：client 报画质档（`?maxWidth=1280&maxBitrate=3000000`），host 决定
+      // 认不认。四个闸门缺一不可——档位有效、用户没关开关、本机真能 exec ffmpeg
+      // （移动端 host 的进程内 ffmpeg-kit 没有可接管的 stdout，见
+      // [transcodeAvailable]）、以及探得出时长（HLS playlist 要按时长切段，探不出就
+      // 没法生成）。任一不成立就静默退回原文件直传：client 收到的 `transcoded: false`
+      // 会让它把画质档收起来，而不是播一个永远出不来的流。
+      final VideoTranscodeProfile? requestedProfile =
+          VideoTranscodeProfile.fromQuery(request.url.queryParameters);
+      int? transcodeDurationMs;
+      if (requestedProfile != null && _videoTranscodeEnabled) {
+        transcodeDurationMs = await probeVideoDurationMs(file.path);
+      }
+      final VideoTranscodeProfile? transcodeProfile =
+          transcodeDurationMs != null && transcodeDurationMs > 0
+              ? requestedProfile
+              : null;
+      final int? transcodeAudioStreamIndex = transcodeProfile == null
+          ? null
+          : int.tryParse(
+              request.url.queryParameters['audioStreamIndex'] ?? '',
+            );
       // BUG-1568：签发前先按 TTL 清过期，再把数量收束到 [_maxVideoStreamTokens] 内
       // （淘汰最旧者）。对照 audio token 的 BUG-908(a) 修法：消费侧（GET /stream）的
       // prune 等不到「只签发不取流」的调用者，上限必须在签发侧强制。
@@ -54,6 +75,9 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         videoId: streamUrlId,
         createdAt: _now(),
         episodeIndex: episodeIndex,
+        transcodeProfile: transcodeProfile,
+        transcodeAudioStreamIndex: transcodeAudioStreamIndex,
+        transcodeDurationMs: transcodeProfile == null ? null : transcodeDurationMs,
       );
       final String encodedId = Uri.encodeFull(streamUrlId);
       // stream / subtitle URL 都带 episode=N，让 client 取流 / 下字幕命中同一集。
@@ -61,8 +85,11 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         'token': tokenValue,
         if (episodeIndex > 0) 'episode': '$episodeIndex',
       };
+      // 转码时 client 拿到的是一张 HLS playlist（播放器自己再去取 init 段与各分段，
+      // 那些 URL 由 playlist 内部用相对路径给出）；不转码时还是老的整文件流。
       final Uri streamUri = request.requestedUri.replace(
-        path: '/api/library/videos/$encodedId/stream',
+        path: '/api/library/videos/$encodedId/'
+            '${transcodeProfile == null ? 'stream' : 'hls.m3u8'}',
         queryParameters: streamQuery,
       );
       // subtitle URL 不含 token（走 Basic 鉴权），但带 episode=N。
@@ -86,6 +113,17 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return jsonResponse(<String, dynamic>{
         'url': streamUri.toString(),
         'subtitleUrl': subtitleUri?.toString(),
+        // 这条流是不是**转码流**（HLS）。client 据此显示画质档当前值，并知道内嵌
+        // 字幕不在流里、要走 /subtitle 外挂下发。seek 不需要特殊处理——HLS 的进度条
+        // 与定位由播放器原生支持。
+        'transcoded': transcodeProfile != null,
+        // 「这台 host 支不支持转码」——与当次有没有转码分开报。client 起播时默认走
+        // 自动档（局域网里就是不转码），若只回 `transcoded: false`，它就永远无从得知
+        // 画质档可不可选，画质菜单会一直不出现。
+        'transcodeAvailable': _videoTranscodeEnabled,
+        // 既有字段语义（BUG-2590）：false = 流不是源容器原样，内嵌字幕不能指望
+        // libmpv 自绘。转码把容器整个换掉了，必须如实报 false。
+        'streamIsOriginalContainer': transcodeProfile == null,
         if (sub != null) 'subtitleFileName': p.basename(sub.path),
         if (embeddedTracks.isNotEmpty)
           'embeddedSubtitleTracks': <Map<String, Object?>>[
@@ -118,6 +156,29 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           await svc.resolveVideoFile(streamId, episodeIndex: tok.episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
       return serveFileWithRange(file, request);
+    }
+
+    // GET /api/library/videos/<id>/hls.m3u8         — 转码播放列表
+    // GET /api/library/videos/<id>/hlsseg.ts?n=<i>  — 第 i 个分段（MPEG-TS）
+    // 两条都豁免 Basic（播放器取 playlist / 分段都是裸 GET），门是 URL 里的短时
+    // token；画质档绑在 token 上，不从 query 取——分段谁拿到 URL 谁能取，让它自带
+    // 编码参数就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。
+    //
+    // 两条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0
+    // （2025 年安全加固回移）的 hls demuxer 对每个分段 URL 先查
+    // `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
+    // `ff_match_url_ext`），不在名单上直接 `Invalid data found`——随包 libmpv 四端
+    // （Android / iOS / macOS 6.1.6，Windows master 构建）都在门内，裸 `hlsseg?token=`
+    // 让转码流一开就死。分段为什么是 TS 不是 fMP4 见 `live_transcode.dart` 文件头。
+    // 守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
+    for (final String suffix in const <String>[
+      'hls.m3u8',
+      kTranscodeSegmentPathSuffix,
+    ]) {
+      final String? hlsId = _extractVideoId(reqPath, suffix);
+      if (hlsId == null) continue;
+      if (method != 'GET') return shelf.Response(405);
+      return _handleTranscodeHls(svc, request, hlsId, suffix);
     }
 
     // GET /api/library/videos/<id>/subtitle — 字幕（需 Basic 鉴权，中间件已处理）
@@ -519,6 +580,115 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       _videoStreamTokens.remove(oldestKey);
     }
   }
+
+  /// 本 host 此刻认不认转码请求：用户开关 ∧ 本机能 exec ffmpeg 子进程。
+  ///
+  /// 每次请求实时读偏好（而不是启动时快照一次）——用户在设置里关掉之后不该还要重启
+  /// 互联服务才生效。
+  bool get _videoTranscodeEnabled =>
+      readInterconnectTranscodeEnabled(_prefs) && transcodeAvailable();
+
+  /// 转码 HLS 的三条子路径：playlist / 初始化段 / 分段。
+  ///
+  /// 共用一次 token 校验与文件反查。token 里没有画质档 = 这条流当初就没按转码签发，
+  /// 一律 404——不给「拿一个直传 token 去点转码」的路径。
+  Future<shelf.Response> _handleTranscodeHls(
+    FushiLibraryHostService svc,
+    shelf.Request request,
+    String videoId,
+    String suffix,
+  ) async {
+    _pruneVideoTokens();
+    final String? tokenValue = request.url.queryParameters['token'];
+    if (tokenValue == null || tokenValue.isEmpty) {
+      return shelf.Response(401,
+          body: 'Missing token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final _VideoStreamToken? tok = _videoStreamTokens[tokenValue];
+    if (tok == null || tok.videoId != videoId) {
+      return shelf.Response(403,
+          body: 'Invalid or expired token',
+          headers: <String, String>{'Content-Type': 'text/plain'});
+    }
+    final VideoTranscodeProfile? profile = tok.transcodeProfile;
+    final int durationMs = tok.transcodeDurationMs ?? 0;
+    if (profile == null || durationMs <= 0) {
+      return shelf.Response.notFound('Not a transcoded stream');
+    }
+    final File? file =
+        await svc.resolveVideoFile(videoId, episodeIndex: tok.episodeIndex);
+    if (file == null) return shelf.Response.notFound('Video not found');
+
+    if (suffix == 'hls.m3u8') {
+      // 分段 URI 用相对形式：playlist 自己的路径是
+      // `/api/library/videos/<id>/hls.m3u8`，于是 `hlsseg.ts?...` 会被播放器解析成
+      // `/api/library/videos/<id>/hlsseg.ts?...`——不必在这里重建 host/端口/协议，
+      // 也就不会在反代或多网卡后面拼出一个对端连不上的绝对地址。扩展名不可省
+      // （见上面路由处的 BUG-2630 说明）。
+      final String tokenQuery = 'token=${Uri.encodeQueryComponent(tokenValue)}';
+      final String playlist = buildTranscodeHlsPlaylist(
+        durationMs: durationMs,
+        segmentUri: (int index) =>
+            '$kTranscodeSegmentPathSuffix?$tokenQuery&n=$index',
+      );
+      return shelf.Response.ok(
+        playlist,
+        headers: <String, String>{
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Cache-Control': 'no-store',
+        },
+      );
+    }
+
+    final int? index = int.tryParse(request.url.queryParameters['n'] ?? '');
+    final int count = transcodeSegmentCount(durationMs);
+    if (index == null || index < 0 || index >= count) {
+      return shelf.Response.notFound('Segment out of range');
+    }
+    final Uint8List? segment = await _runTranscode(
+      () => transcodeSegment(
+        inputPath: file.path,
+        profile: profile,
+        index: index,
+        durationMs: durationMs,
+        audioStreamIndex: tok.transcodeAudioStreamIndex,
+      ),
+    );
+    if (segment == null) {
+      return shelf.Response(503, body: 'Transcoder unavailable');
+    }
+    return _transcodedBytesResponse(segment);
+  }
+
+  /// 跑一次转码，把「转码器自身出问题」收敛成 null（由调用方回 503）。
+  ///
+  /// 分成两类如实处理：[ProcessException] 是 ffmpeg 根本起不来（被删了 / 覆盖路径指
+  /// 错），[TranscodeFailure] 是它起来了但退出码非 0（源文件装不进解码器之类）。两者
+  /// 都不该把整个 host 请求处理拖垮，但也都不能装作成功返回空字节——空段在播放器那头
+  /// 表现为黑屏转圈，没人能从中看出 host 缺 ffmpeg。
+  Future<Uint8List?> _runTranscode(Future<Uint8List?> Function() body) async {
+    try {
+      return await body();
+    } on ProcessException catch (e) {
+      fushiDebugPrint('transcode: ffmpeg not launchable: ${e.message}');
+      return null;
+    } on TranscodeFailure catch (e) {
+      fushiDebugPrint('transcode: $e');
+      return null;
+    }
+  }
+
+  shelf.Response _transcodedBytesResponse(Uint8List bytes) => shelf.Response.ok(
+        bytes,
+        headers: <String, String>{
+          'Content-Type': 'video/mp2t',
+          'Content-Length': '${bytes.length}',
+          // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
+          // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。
+          'Cache-Control': 'no-store',
+        },
+      );
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到

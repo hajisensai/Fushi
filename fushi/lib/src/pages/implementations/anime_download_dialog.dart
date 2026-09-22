@@ -26,6 +26,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
 import 'package:fushi/src/pages/implementations/jimaku_entry_picker.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart'
+    show DiscoveryMediaKind;
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/pages/implementations/downloads_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -406,6 +408,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
   /// 下载后端是否就绪（推送按钮禁用条件；浏览选种不禁）。默认（auto）在桌面
   /// 走内置引擎、开箱即用；只有显式外接 qb 且没填地址才算未就绪。
   bool get _backendReady => torrentBackendReady(ref.read(appProvider));
+
+  /// 通用磁链一栏在「下载执行设备」指到互联 host 时不需要本机后端
+  /// （`pushGenericMagnet` 会整条交给 host）；番剧计划推送仍只走本机——它的
+  /// 字幕意图 / 暂停 / 计划追踪都绑在本机后端上。
+  bool get _genericPushEnabled =>
+      _backendReady ||
+      ref.read(appProvider).prefsRepo.downloadExecutionHostUrl.isNotEmpty;
 
   /// 后端未就绪（推送禁用 + 提示横幅）。
   bool get _qbMissing => !_backendReady;
@@ -1488,7 +1497,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       style: const ButtonStyle(visualDensity: VisualDensity.compact),
     );
     final Widget button = FilledButton.icon(
-      onPressed: (!_backendReady || _pushingGeneric) ? null : _pushGeneric,
+      onPressed:
+          (!_genericPushEnabled || _pushingGeneric) ? null : _pushGeneric,
       icon: const Icon(Icons.download, size: 18),
       label: Text(t.anime_download_generic_download),
     );
@@ -1545,11 +1555,15 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       appModel: appModel,
       magnet: _magnetCtrl.text,
       contentKind: _genericKind,
+      // 远端按域入库只认发现页四域；「自动 / 视频」在 host 上都是视频任务。
+      discoveryKind: _genericKind == AnimeDownloadPlan.kindBook
+          ? DiscoveryMediaKind.novel
+          : null,
     );
     if (!mounted) return;
     setState(() => _pushingGeneric = false);
     _snack(genericPushMessage(outcome));
-    if (outcome == GenericPushOutcome.ok) {
+    if (outcome.isSuccess) {
       _magnetCtrl.clear();
       await _reloadPlans();
     }

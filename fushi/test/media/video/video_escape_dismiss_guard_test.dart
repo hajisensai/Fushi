@@ -141,7 +141,11 @@ void main() {
     final String src = read(layout);
     final int at = src.indexOf('return VideoControlsFocusGate(');
     expect(at, greaterThan(0), reason: '找不到 VideoControlsFocusGate 挂载点');
-    final String body = src.substring(at, at + 300);
+    // 截到方法结尾而不是固定字符数：PR #1596 在兜底层里又包了一层密度 LayoutBuilder
+    // 并带了几行注释，固定 300 字符窗会把 _buildVideoControlsInner 挤出去（假红）。
+    final int end = src.indexOf('\n  }', at);
+    expect(end, greaterThan(at), reason: '找不到 controls builder 的方法结尾');
+    final String body = src.substring(at, end);
     expect(
       body.contains('_wrapVideoControlsBackKey('),
       isTrue,
@@ -153,6 +157,11 @@ void main() {
       body.contains('_buildVideoControlsInner('),
       isTrue,
       reason: '兜底层必须真的包住 controls 内容',
+    );
+    expect(
+      body.indexOf('_wrapVideoControlsBackKey('),
+      lessThan(body.indexOf('_buildVideoControlsInner(')),
+      reason: '兜底层在外、controls 内容在内',
     );
   });
 

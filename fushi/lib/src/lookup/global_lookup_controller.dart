@@ -90,6 +90,11 @@ class GlobalLookupController {
   // the OS hotkey immediately, instead of the key being a compile-time const.
   FushiShortcutRegistry? _registry;
   bool _started = false;
+  // macOS cannot read another app's selection until the user grants
+  // Accessibility access. The first explicit global-lookup trigger opens the
+  // system permission pane; do that once per process and let the user return
+  // to the source app before we try to capture its selection.
+  bool _macAccessibilityPrompted = false;
   // TODO-1233 -- optional consumer notified when the overlay is GENUINELY
   // dismissed (foreground hook / click-outside / JS dismiss), so a caller can
   // hang a resume-on-dismiss. The video subtitle lookup (path A) would use this
@@ -677,6 +682,16 @@ class GlobalLookupController {
         glog('hotkey: appModel null — abort');
         return;
       }
+      if (Platform.isMacOS &&
+          !await _ensureMacAccessibilityForSelection()) {
+        // Showing the permission pane changes the foreground application, so
+        // capturing now would read the wrong app. The user can press the same
+        // hotkey again after granting access.
+        if (_isCurrentRoute) {
+          glog('hotkey: macOS Accessibility permission required — abort');
+        }
+        return;
+      }
       // TODO-1079 (D) — collapse native + Dart reveal state to known-hidden
       // BEFORE the (possibly slow) selection capture, so a re-press makes the
       // previous card vanish immediately. _lookupExternal hides again right
@@ -730,6 +745,36 @@ class GlobalLookupController {
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
     }
+  }
+
+  /// Returns whether macOS can read/capture the foreground app's selection.
+  /// The permission request is only made after an explicit global-lookup
+  /// trigger, never during app startup or silently in the capture fallback.
+  ///
+  /// 未授权时**每次**触发都要留下用户看得见的痕迹：授权面板只开一次（再开一次
+  /// 也只是把同一个系统设置页翻到前台，徒增骚扰），但之后每一次热键 / 手柄 /
+  /// 鼠标侧键触发都往 [ErrorLogService] 记一条——这条链路的失败形态是「按了键
+  /// 什么都没发生」，只写 glog 临时诊断文件等于静默吞掉（TODO-1086 已为热键注册
+  /// 失败立过同一条规矩）。
+  Future<bool> _ensureMacAccessibilityForSelection() async {
+    if (!Platform.isMacOS) return true;
+    if (await SelectionCapture.isAccessibilityTrusted()) return true;
+    if (!_macAccessibilityPrompted) {
+      _macAccessibilityPrompted = true;
+      final bool granted = await SelectionCapture.requestAccessibilityTrust();
+      glog('hotkey: macOS Accessibility request granted=$granted');
+      if (granted && await SelectionCapture.isAccessibilityTrusted()) {
+        return true;
+      }
+    }
+    glog('hotkey: macOS Accessibility not granted, selection capture skipped');
+    ErrorLogService.instance.log(
+      'GlobalLookupController.macAccessibility',
+      'Global lookup could not read the foreground selection: Fushi is not '
+          'trusted for Accessibility. Grant it in System Settings > Privacy & '
+          'Security > Accessibility, then trigger the lookup again.',
+    );
+    return false;
   }
 
   /// TODO-872 — programmatic app-external lookup (desktop floating-lyric word

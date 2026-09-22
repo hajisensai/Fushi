@@ -77,6 +77,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // → 本开关）的顺序守卫。
   'interconnect/Allow paired devices to read/write configuration':
       'test/sync/interconnect_profile_transfer_test.dart',
+  // 互联「为对端转码视频」（host 侧许可，默认开）。写 prefsRepo（changed=true），
+  // 生效点同样在 **HTTP 端点**里：host 每次处理 /streamurl 与 /api/capabilities 时
+  // 实时读它，关着就退回原文件直传、能力位报 false。harness 里没有起 server，探不到。
+  // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
+  'interconnect/Transcode video for peers':
+      'test/sync/fushi_sync_server_transcode_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
@@ -100,6 +106,25 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 可探的渲染输入。由 manga_overlay_html_test 逐项咬住：同一份生成器在不同参数下
   // 必须产出不同的文档（缩放上下限/灵敏度、点击翻页开关与 RTL 镜像、三种翻页动画
   // 各自的过渡声明），阅读方向另有既有的 RTL 几何用例。
+  // v112 漫画阅读器的两项全局默认（阅读模式 / 图片缩放）：写 prefsRepo
+  // （changed=true），生效点是阅读器按 MangaReaderPreferences 铺页面几何——
+  // 布局枚举决定页序与滚动方向、缩放模式决定每页的投影矩形，harness 里没有
+  // 挂漫画阅读器也就没有可探的几何。由偏好模型与几何用例逐项咬住：稀疏覆盖
+  // 的合并/序列化往返，以及六种缩放模式各自的目标矩形。
+  'manga/Reading mode':
+      'test/media/manga/manga_reader_preferences_test.dart + '
+          'test/media/manga/manga_page_geometry_test.dart',
+  'manga/Image scaling':
+      'test/media/manga/manga_reader_preferences_test.dart + '
+          'test/media/manga/manga_page_geometry_test.dart',
+  // AI 分镜逐格导航：写 appModel（changed=true），生效点全在阅读器里——开关关着
+  // 时既不建 ONNX detector 也不接管翻页，harness 里没有挂漫画阅读器。由源码守卫
+  // 咬住两个消费点确实都按这个开关收口（并且用的是四值枚举语义而不是裸比
+  // spread/webtoon），以及检测本身的预处理/释放契约。
+  'manga/AI panel navigation':
+      'test/media/manga/manga_panel_detection_offload_guard_test.dart'
+          '（两个消费点都按开关 + isWebtoon 收口）'
+          ' + packages/fushi_engine/test/panel_detection_test.dart（检测契约）',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
@@ -296,6 +321,18 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 总闸开=只补无规范身份的作品）。
   'video/Auto-fill missing series info':
       'test/media/video/metadata/video_library_scrape_sweep_test.dart',
+  // 图片保留张数（Shoko MaxAutoPosters / Backdrops / Logos）与演职员头像落地。
+  // 写 prefsRepo（changed=true），生效点在下一批刮削：配置快照读上限
+  // （anidb_hash_config_test 咬住读偏好 / 指纹）、选图端按上限保留
+  // （video_metadata_merge_test 咬住上限 / 0 不限 / 原语槽）、头像落地要联网下载。
+  'video/Covers kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Backdrops kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Logos kept per work':
+      'test/media/video/metadata/anidb_hash_config_test.dart + video_metadata_merge_test.dart',
+  'video/Download cast & staff photos':
+      'test/media/video/metadata/anidb_hash_config_test.dart（读偏好 / 指纹；落盘要联网）',
   // BUG-1698：刮削完成后给仍缺字幕的视频补一条在线字幕。写 prefsRepo
   // （changed=true），生效点在 AppModel._backfillSubtitlesForScrapedWork 的进场门
   // （关=刮削回调直接 return，零字幕网络请求），不是 reader CSS / 主题树，无适用
@@ -499,6 +536,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'lookup/Capture selection context':
       'test/lookup/sentence_extraction_test.dart',
   'system/Enable debug log': 'test/utils/misc/debug_log_service_test.dart',
+  // BUG-2628 视频 / 查词性能诊断日志开关：与上面的调试日志同族，落裸
+  // SharedPreferences 而不是 prefsRepo（诊断开关不进 Profile 快照，也要能在
+  // AppModel 起来前读到），故 harness 的 DB 往返探针看不到它的写入。生效点是
+  // 「此后每一条埋点记不记」——由 video_diag_log_test 的门控用例（关着时 add
+  // 一行都不进内存环、不建文件；开着时落盘并受 msg-level 过滤）直接咬住。
+  'system/Video & lookup diagnostics log':
+      'test/diagnostics/video_diag_log_test.dart',
   // BUG-1980 代理模式三态（自动/直连/手动）：写 prefsRepo（changed=true），生效点是
   // app_proxy.dart 的出口裁决与 HttpClient.findProxy / authenticateProxy 装配——
   // harness 里没有真实公网出站可探。三态语义（direct 忽略 env 与已填地址、manual
@@ -527,6 +571,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // wiring guards below.
   'video/Auto-play next episode':
       'test/media/video/video_episode_start_policy_test.dart + test/pages/video_playlist_auto_advance_guard_static_test.dart',
+  // 底部细进度条：纯渲染开关，生效点在 media_kit controls 子树里，而那棵树在
+  // headless 宿主渲染不出来（无 libmpv）——harness 的探针够不到，故登记 backlog。
+  // 判据是纯函数（逐条单测）、组件是纯 widget（widget 测试），页面那段接线由源码
+  // 守卫钉死，三者合起来覆盖整条链。
+  'video/Slim progress bar at the bottom':
+      'test/media/video/video_controls_density_test.dart + test/media/video/video_slim_progress_bar_test.dart + test/pages/video_slim_progress_bar_wiring_guard_test.dart',
   'video/Immersive mode':
       'test/pages/video_immersive_mode_levels_guard_test.dart + test/pages/video_statusbar_immersive_guard_test.dart',
   'video/Picture scaling':
@@ -735,6 +785,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 行为测试 test/media/video/video_subtitle_hover_lookup_test.dart 覆盖。
   'lookup/Look up on hover':
       'test/media/video/video_subtitle_hover_lookup_test.dart',
+  // 悬停查词的收尾：离开字幕与浮层即自动关浮层 + 续播。change/persist/restore 经 DB 由
+  // 本测试守；运行时的判据与接线（barrier hover 的离开臂、浮层 MouseRegion、关栈汇聚点
+  // 复位）由专项测试咬住——真效果需要真播放器 + 真 WebView 浮层 + 真 OS hover，widget
+  // 层跑不到。
+  'lookup/Resume when leaving lookup':
+      'test/pages/video_hover_leave_resume_test.dart',
   'lookup/Aggregate word frequencies': 'DEVICE: popup.js frequency aggregation',
   'lookup/Auto search': 'WIDGET-TODO: HomeDictionaryPage debounce gate',
   'lookup/Remote dictionary lookup': 'INTEGRATION: remote host lookup',
@@ -958,6 +1014,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 显示远端条目：与 syncBackup/Show remote entries 是同一份 item 定义、同一个消费点。
   'interconnect/Show remote entries':
       'test/pages/home_video_remote_mixed_grid_test.dart + test/pages/reader_remote_mixed_grid_test.dart',
+  // 「AI 下视频」两个默认值（下拉，changed=true 写 prefsRepo）：生效点是对话流程
+  // 的 reducer——打开对话时读一次偏好快照决定「问不问 / 勾选框初值」，harness 里
+  // 没有那条对话。由窄测试咬住写穿 + 选项由代码枚举生成 + 类型化封装往返，
+  // reducer 侧的三态行为由 test/media/video/acquisition/ 的 reducer 用例咬住。
+  'ai/Default quality':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/ai/ai_video_acquisition_preferences_test.dart',
+  'ai/Subtitle language':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/ai/ai_video_acquisition_preferences_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /

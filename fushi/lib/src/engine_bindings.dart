@@ -29,6 +29,7 @@ import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
+import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
 
 /// `AppPaths` 静态便捷层 → 引擎 [EnginePaths]。三个根逐一委派，子目录派生规则
 /// 在引擎基类里与 `AppPaths.documentsSubdirectory` 同构。
@@ -36,7 +37,8 @@ class AppPathsEngineBridge extends EnginePaths {
   const AppPathsEngineBridge();
 
   @override
-  Future<Directory> documentsRootDirectory() => AppPaths.documentsRootDirectory();
+  Future<Directory> documentsRootDirectory() =>
+      AppPaths.documentsRootDirectory();
 
   @override
   Future<Directory> supportRootDirectory() => AppPaths.supportRootDirectory();
@@ -48,7 +50,8 @@ class AppPathsEngineBridge extends EnginePaths {
 /// 写后驱逐：与 `MediaCoverService` 历来的收口同一份双键 evict（裸 FileImage +
 /// resizedFileImage），只动这一条路径的条目，不清整表——刮削几百张封面时整表
 /// clear 会把书架滚动变成重解码风暴。
-Future<void> _evictImageCacheForFile(File file) => evictLocalCoverCache(file.path);
+Future<void> _evictImageCacheForFile(File file) =>
+    evictLocalCoverCache(file.path);
 
 /// 删前释放：与 develop 上 `VideoStorage._evictImageCacheForFile` 逐字同义——
 /// 整表 clear 是「锁释放提示」（Windows 上解码器持有的句柄让 delete 失败），
@@ -86,4 +89,5 @@ void installEngineHostBindings() {
   ocrSessionFactoryBuilder = buildOrtOcrFactory;
   ocrIsolateBootstrap = fushiOcrIsolateBootstrap;
   ocrIsolateBootstrapArg = RootIsolateToken.instance;
+  installMangaPanelDetectorFactory();
 }

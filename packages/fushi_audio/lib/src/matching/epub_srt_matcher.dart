@@ -103,9 +103,10 @@ class MatchResult {
 /// 2. 规范化用**白名单**：只保留 假名 / 汉字 / CJK 扩展 A / ASCII & 全角字母
 ///    数字 / 半角假名。其它（句读、引号、`＊` 叙述标记、空白、ruby 注音
 ///    剥完后的残留空格等）一律扔掉。
-/// 3. **起点检测**：取前 15 条 cue，跳过以 `＊` 开头的旁白 / 标题 cue，
-///    跳过规范化后 < 6 字的短 cue，在全书做精确 `indexOf`（+ 模糊兜底），
-///    取最小命中位置作为 cursor 起点。
+/// 3. **起点检测**：取前 [defaultProbeCount] 条探测 cue（跳过以 `＊` 开头的
+///    旁白 / 标题 cue 与规范化后 < [defaultProbeMinLen] 字的短 cue），在全书做精确
+///    `indexOf`（+ 模糊兜底），选被最多条探测 cue 佐证的簇（BUG-2147），再收敛到
+///    簇内按 cue 序单调递增的那条命中链的首处（见 [_clusterAnchor]）。
 /// 4. **主循环**（移植自 ttu-whispersync Match.svelte）：
 ///    a. 快速通道：精确 `indexOf` 命中 → score=1.0，cursor 推进。
 ///    b. 模糊兜底：在 `[cursor, cursor+searchWindow]` 内单次 Dice 滑窗扫描，
@@ -113,12 +114,37 @@ class MatchResult {
 ///       （规范化后 >= [defaultProbeMinLen]）走模糊**；更短的 cue 只接受
 ///       精确子串命中，避免高频短虚词（うん/はい）的 unigram Dice 误判
 ///       抬高匹配率（TODO-906）。
-///    c. 恢复机制：连续 miss 达 [maxConsecutiveMisses] 时，用精确 `indexOf`
-///       在全书 `[cursor..]` 范围做一次恢复扫描。cursor 不做逐字偏移重试
-///       （O(attempts×window) 太慢），只靠恢复扫描跳过不匹配的段落。
+///    c. 恢复机制：连续 miss 达 [maxConsecutiveMisses] 时做一次恢复扫描——与起点
+///       检测同一套「聚簇佐证」：从当前 cue 起收集 [defaultProbeCount] 条探测 cue
+///       在全书找候选，取被最多条 cue 佐证的位置，至少 [recoverMinSupport] 条才
+///       搬游标（同分优先游标之后最近处；佐证更多时允许回退）。cursor 不做逐字
+///       偏移重试（O(attempts×window) 太慢），只靠恢复扫描跳过不匹配的段落。
+///       旧实现是「单条 cue 在 `[cursor..]` 做一次 `indexOf`」：ASR 片头的登场人物
+///       页（不在正文里）攒满 20 次 miss 后，「大野アシュリー」在正文里第一次出现
+///       是第 18 节，游标就被钉到那里；之后每次恢复都只会再往后跳、永不回头，
+///       整本 4719 条 cue 只命中 79 条（『妹さえいればいい。』第 2 卷）。
 class EpubSrtMatcher {
   static const int defaultSearchWindow = 200;
   static const int defaultProbeCount = 24;
+
+  /// 恢复扫描搬动游标所需的最少佐证 cue 数：单条精确命中在 8 万字里随处可撞，
+  /// 三条 ≥6 字的 cue 落在同一 [startClusterSpan] 内才算找到了正文。
+  static const int recoverMinSupport = 3;
+
+  /// 恢复扫描从当前 cue 起最多往后扫这么多条来凑探测 cue（短 cue / `＊` 不算）。
+  static const int recoverScanLimit = defaultProbeCount * 3;
+
+  /// 恢复扫描里精确失败后允许做全书模糊扫描的探测 cue 上限（每条 O(全书)，
+  /// 起点检测只跑一次不设限，恢复每 [defaultMaxConsecutiveMisses] 次 miss 就可能
+  /// 跑一次，得封顶）。
+  static const int recoverMaxFuzzyProbes = 8;
+
+  /// 整次匹配里恢复扫描累计允许的全书模糊扫描次数。每次尝试封顶
+  /// [recoverMaxFuzzyProbes] 只兜住单次；选错卷 EPUB（全书零命中）时每 20 条 cue
+  /// 就尝试一次、每次 8 条全书 Dice，4700 条 cue 的书单遍实测 58 s（旧实现 2.6 s），
+  /// app 侧三档窗口 + isolate 复跑共 4 遍。配对正确的书只在音频独有段落触发恢复，
+  /// 64 次足够；用完后恢复只靠精确命中。
+  static const int recoverFuzzyBudgetTotal = recoverMaxFuzzyProbes * 8;
 
   /// 起点候选的「同伙半径」：两条探测 cue 的命中相距不超过这么多归一化字符就算
   /// 互相佐证（前 24 条 cue 的正文通常几百到两千字）。
@@ -295,6 +321,9 @@ class EpubSrtMatcher {
     int cursor = start;
     int matched = 0;
     int consecutiveMisses = 0;
+    final _FuzzyBudget recoverFuzzyBudget = _FuzzyBudget(
+      recoverFuzzyBudgetTotal,
+    );
     // 最近一次命中：results 下标与全书绝对起点（尾巴回吃 / 裁剪用，BUG-2204）。
     int lastHitResult = -1;
     int lastHitAbsStart = -1;
@@ -326,17 +355,46 @@ class EpubSrtMatcher {
         continue;
       }
 
-      // --- 恢复机制：连续 miss 过多时在全书剩余文本做 indexOf 重锚 ---
-      if (consecutiveMisses >= maxConsecutiveMisses &&
-          nc.length >= defaultProbeMinLen) {
-        final int recovered = big.indexOf(nc, cursor);
-        if (recovered >= 0) {
-          cursor = recovered;
-          consecutiveMisses = 0;
+      // --- 恢复机制：连续 miss 过多时用聚簇佐证在全书重锚 ---
+      // 找不到够佐证的位置就原地不动，再攒 [maxConsecutiveMisses] 次 miss 才
+      // 试下一回（每次尝试最多 O(探测数 × 全书)，不能每条 miss 都跑）。
+      if (consecutiveMisses >= maxConsecutiveMisses) {
+        consecutiveMisses = 0;
+        final _ClusterAnchor? anchor = _clusterAnchor(
+          big: big,
+          cues: cues,
+          preNormCueTexts: preNormCueTexts,
+          fromCue: ci,
+          scanLimit: recoverScanLimit,
+          maxFuzzyProbes: recoverMaxFuzzyProbes,
+          fuzzyBudget: recoverFuzzyBudget,
+          similarityThreshold: similarityThreshold,
+          // 不做余量检查：剩余音频里可能整段都不在书里（片尾花絮），书尾最后
+          // 几句会被「装不下」误杀；恢复靠佐证条数守门。
+          minRemainingRatio: 0,
+          preferFrom: cursor,
+        );
+        // 往前搬：够 [recoverMinSupport] 条佐证，或（至少两条且）所有有候选的
+        // 探测 cue 都落在这一簇**且每条在全书都只精确出现一次**——书尾只剩两三条
+        // 正文 cue 时凑不满三条，但它们彼此一致、没有反证；候选只收前 8 处出现，
+        // 两条泛用短语在全书某处 3000 字内共现几乎必然，不要求唯一就会在长段人物
+        // 卡 / 广告后前跳到那个假簇。单条撞中一律不搬（泛用短语 / 版权页出版社
+        // 名）；往回搬只认前者。
+        if (anchor != null &&
+            (anchor.support >= recoverMinSupport ||
+                (anchor.pos >= cursor &&
+                    anchor.hittingProbes >= 2 &&
+                    anchor.support == anchor.hittingProbes &&
+                    anchor.allExactUnique))) {
           fushiDebugPrint(
-            '[sentenceAudioHighlight] matcher.recover cursor=$cursor '
+            '[sentenceAudioHighlight] matcher.recover cursor=$cursor -> '
+            '${anchor.pos} support=${anchor.support} '
             'cue="${_clip(cue.text, 24)}"',
           );
+          cursor = anchor.pos;
+          // 游标可能回退到上一条命中之前：尾巴回吃 / 裁剪的参照作废。
+          lastHitResult = -1;
+          lastHitAbsStart = -1;
         }
       }
 
@@ -685,25 +743,72 @@ class EpubSrtMatcher {
     double similarityThreshold, [
     List<String>? preNormCueTexts,
   ]) {
-    final int limit = cues.length < defaultProbeCount
-        ? cues.length
-        : defaultProbeCount;
-    // 每条 cue 的候选起点（去重）。
+    final _ClusterAnchor? anchor = _clusterAnchor(
+      big: big,
+      cues: cues,
+      preNormCueTexts: preNormCueTexts,
+      fromCue: 0,
+      scanLimit: defaultProbeCount,
+      maxFuzzyProbes: defaultProbeCount,
+      fuzzyBudget: _FuzzyBudget(defaultProbeCount),
+      similarityThreshold: similarityThreshold,
+      minRemainingRatio: startMinRemainingRatio,
+      preferFrom: null,
+    );
+    return anchor?.pos ?? 0;
+  }
+
+  /// 起点检测与恢复扫描共用的「聚簇佐证」：从 [fromCue] 起最多扫 [scanLimit] 条
+  /// cue，凑 [defaultProbeCount] 条探测 cue（跳过 `＊` 开头与短于
+  /// [defaultProbeMinLen] 的），每条在全书找候选（精确取全部出现、上限 8 处；精确
+  /// 失败且模糊配额 [maxFuzzyProbes] 未用完则做一次全书滚动 Dice，≥
+  /// [similarityThreshold] 才算）。候选 p 的支持数 = 有候选落在
+  /// `[p, p + startClusterSpan]` 内的探测 cue 条数；余量不足（其后正文装不下
+  /// [fromCue] 起的 cue 总长 × [startMinRemainingRatio]）的候选淘汰。
+  ///
+  /// 选法：支持数最大者；同分时 [preferFrom] 为 null（起点）取最早，否则优先
+  /// `p >= preferFrom` 且离 [preferFrom] 最近——恢复时只有佐证**更多**的簇才会把
+  /// 游标往回搬。返回的位置再收敛：簇内每条探测 cue 的命中按 cue 序排成
+  /// (cue 序, 位置) 对，取**最长递增子序列**的首处——正文 cue 的命中天然按 cue 序
+  /// 单调递增，簇内乱序的那条（cue 序靠前却命中在后：片头人名 / 泛用短语在正文
+  /// 里的偶然出现）进不了链；「cue 序最靠前的探测 cue」会被这种撞中拽走，把簇里
+  /// 其余二十几条真正文甩到游标之前。
+  ///
+  /// 一条探测 cue 都没有候选返回 null。[fuzzyBudget] 是调用方整次匹配级的全书
+  /// 模糊扫描总预算（每次调用另受 [maxFuzzyProbes] 封顶）。
+  static _ClusterAnchor? _clusterAnchor({
+    required String big,
+    required List<AudioCue> cues,
+    required List<String>? preNormCueTexts,
+    required int fromCue,
+    required int scanLimit,
+    required int maxFuzzyProbes,
+    required _FuzzyBudget fuzzyBudget,
+    required double similarityThreshold,
+    required double minRemainingRatio,
+    required int? preferFrom,
+  }) {
+    String norm(int i) => preNormCueTexts != null
+        ? preNormCueTexts[i]
+        : AudioTextNormalizer.normalize(cues[i].text);
+
+    // 每条探测 cue 的候选位置（cue 序保持）；[perCueExactUnique] 同序，标记该
+    // 条是否在全书恰好精确出现一次（模糊命中不算）。
     final List<List<int>> perCue = <List<int>>[];
-    int totalCueLen = 0;
-    for (int i = 0; i < cues.length; i++) {
-      totalCueLen += preNormCueTexts != null
-          ? preNormCueTexts[i].length
-          : AudioTextNormalizer.normalize(cues[i].text).length;
-    }
-    for (int i = 0; i < limit; i++) {
+    final List<bool> perCueExactUnique = <bool>[];
+    int fuzzyUsed = 0;
+    for (
+      int i = fromCue;
+      i < cues.length &&
+          i - fromCue < scanLimit &&
+          perCue.length < defaultProbeCount;
+      i++
+    ) {
       final String raw = cues[i].text;
       if (raw.startsWith('＊') || raw.startsWith('*')) {
         continue;
       }
-      final String nc = preNormCueTexts != null
-          ? preNormCueTexts[i]
-          : AudioTextNormalizer.normalize(raw);
+      final String nc = norm(i);
       if (nc.length < defaultProbeMinLen) {
         continue;
       }
@@ -715,7 +820,12 @@ class EpubSrtMatcher {
         found.add(at);
         from = at + 1;
       }
-      if (found.isEmpty) {
+      final bool exactUnique = found.length == 1;
+      if (found.isEmpty &&
+          fuzzyUsed < maxFuzzyProbes &&
+          fuzzyBudget.remaining > 0) {
+        fuzzyUsed++;
+        fuzzyBudget.remaining--;
         final _SlidingDiceResult r = _slidingDice(
           needle: nc,
           haystack: big,
@@ -724,32 +834,115 @@ class EpubSrtMatcher {
         );
         if (r.pos >= 0 && r.score >= similarityThreshold) found.add(r.pos);
       }
-      if (found.isNotEmpty) perCue.add(found);
+      if (found.isNotEmpty) {
+        perCue.add(found);
+        perCueExactUnique.add(exactUnique);
+      }
     }
-    if (perCue.isEmpty) return 0;
+    if (perCue.isEmpty) return null;
 
-    // 余量检查：起点之后剩下的正文得装得下音频。
-    final int minRemaining = (totalCueLen * startMinRemainingRatio).ceil();
-    final List<int> candidates = <int>[
-      for (final List<int> f in perCue)
-        for (final int p in f)
+    // 余量检查：锚点之后剩下的正文得装得下剩余音频（[minRemainingRatio] 为 0
+    // 时不查）。
+    int minRemaining = 0;
+    if (minRemainingRatio > 0) {
+      int remainingCueLen = 0;
+      for (int i = fromCue; i < cues.length; i++) {
+        remainingCueLen += norm(i).length;
+      }
+      minRemaining = (remainingCueLen * minRemainingRatio).ceil();
+    }
+    // 淘汰后按探测 cue 分组保留（佐证计数与收敛都只看幸存候选：版权页那条精确
+    // 命中不能再以「簇内 cue 序最靠前」的身份把收敛后的位置拖到书尾）。
+    final List<List<int>> kept = <List<int>>[];
+    final List<bool> keptExactUnique = <bool>[];
+    for (int k = 0; k < perCue.length; k++) {
+      final List<int> f = <int>[
+        for (final int p in perCue[k])
           if (big.length - p >= minRemaining) p,
-    ]..sort();
-    if (candidates.isEmpty) return 0;
+      ];
+      if (f.isEmpty) continue;
+      kept.add(f);
+      keptExactUnique.add(perCueExactUnique[k]);
+    }
+    final List<int> candidates = <int>[for (final List<int> f in kept) ...f]
+      ..sort();
+    if (candidates.isEmpty) return null;
 
     int bestPos = candidates.first;
     int bestSupport = -1;
     for (final int p in candidates) {
       int support = 0;
-      for (final List<int> f in perCue) {
+      for (final List<int> f in kept) {
         if (f.any((int q) => q >= p && q <= p + startClusterSpan)) support++;
       }
       if (support > bestSupport) {
         bestSupport = support;
         bestPos = p;
+      } else if (support == bestSupport &&
+          preferFrom != null &&
+          _closerAhead(preferFrom, p, bestPos)) {
+        bestPos = p;
       }
     }
-    return bestPos;
+
+    // 收敛：簇内命中按 (cue 序, 位置) 取最长递增子序列，锚到链首。
+    final int refined = _monotoneChainStart(
+      kept,
+      bestPos,
+      bestPos + startClusterSpan,
+    );
+    if (refined >= 0) bestPos = refined;
+    return _ClusterAnchor(
+      bestPos,
+      bestSupport,
+      kept.length,
+      allExactUnique: keptExactUnique.every((bool u) => u),
+    );
+  }
+
+  /// 簇 `[from, to]` 内各探测 cue（[kept] 按 cue 序）的命中位置，按 cue 序与位置
+  /// **同时**严格递增取最长子序列，返回链首位置；簇内没有命中返回 -1。
+  /// 每条探测 cue 的多处命中都参与（同一条只能入链一次），探测 ≤ 24 条 × ≤ 8 处，
+  /// O(n²) 足够。同长链取先枚举到的（位置更靠前）。
+  static int _monotoneChainStart(List<List<int>> kept, int from, int to) {
+    final List<(int, int)> items =
+        <(int, int)>[
+          for (int k = 0; k < kept.length; k++)
+            for (final int q in kept[k])
+              if (q >= from && q <= to) (k, q),
+        ]..sort(((int, int) a, (int, int) b) {
+          final int byCue = a.$1.compareTo(b.$1);
+          return byCue != 0 ? byCue : a.$2.compareTo(b.$2);
+        });
+    if (items.isEmpty) return -1;
+    final List<int> length = List<int>.filled(items.length, 1);
+    final List<int> previous = List<int>.filled(items.length, -1);
+    int bestEnd = 0;
+    for (int j = 0; j < items.length; j++) {
+      for (int i = 0; i < j; i++) {
+        if (items[i].$1 < items[j].$1 &&
+            items[i].$2 < items[j].$2 &&
+            length[i] + 1 > length[j]) {
+          length[j] = length[i] + 1;
+          previous[j] = i;
+        }
+      }
+      if (length[j] > length[bestEnd]) bestEnd = j;
+    }
+    int head = bestEnd;
+    while (previous[head] >= 0) {
+      head = previous[head];
+    }
+    return items[head].$2;
+  }
+
+  /// 同分候选取舍：[p] 是否比当前 [best] 更该选——先看是否在 [from] 之后，都在
+  /// （或都不在）则取离 [from] 更近者。
+  static bool _closerAhead(int from, int p, int best) {
+    final bool pAhead = p >= from;
+    final bool bestAhead = best >= from;
+    if (pAhead != bestAhead) return pAhead;
+    return (p - from).abs() < (best - from).abs();
   }
 
   static String _clip(String s, int n) {
@@ -790,6 +983,36 @@ class EpubSrtMatcher {
     }
     return ans;
   }
+}
+
+/// [EpubSrtMatcher._clusterAnchor] 的结果：锚点在全书归一化串里的位置与佐证条数。
+class _ClusterAnchor {
+  const _ClusterAnchor(
+    this.pos,
+    this.support,
+    this.hittingProbes, {
+    required this.allExactUnique,
+  });
+
+  /// 收敛后的锚点（≥ 选出的簇起点）。
+  final int pos;
+
+  /// 落在选出的簇（收敛前的 `[簇起点, +startClusterSpan]`）内的探测 cue 条数。
+  final int support;
+
+  /// 在全书至少有一处候选（余量检查后）的探测 cue 条数；`support ==
+  /// hittingProbes` 即没有任何探测 cue 指向别处。
+  final int hittingProbes;
+
+  /// 有候选的探测 cue 是否每条都在全书恰好精确出现一次（模糊命中不算）。
+  final bool allExactUnique;
+}
+
+/// 整次匹配级的全书模糊扫描总预算（见 [EpubSrtMatcher.recoverFuzzyBudgetTotal]）。
+class _FuzzyBudget {
+  _FuzzyBudget(this.remaining);
+
+  int remaining;
 }
 
 class _SlidingDiceResult {

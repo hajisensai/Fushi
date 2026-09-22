@@ -198,6 +198,55 @@ void main() {
     },
   );
 
+  // 这道门是「别把另一条台词的画面贴到这张卡上」的唯一判据，而串流车道正是把
+  // 截图从手机那头带进来的路径（game_stream_mining 只接受主机自己缓存的那张）。
+  // 合并 #1611 前它零测试覆盖。
+  test('提供的截图与目标台词对不上时必须拒绝，且不退回抓当前画面', () async {
+    service.foldProgressiveLines = false;
+    final TexthookerLineEntry old = service.appendLine('old scene')!;
+    final TexthookerLineEntry other = service.appendLine('other scene')!;
+    final _RecordingRepo repo = _RecordingRepo();
+
+    Future<GalHookMiningResult> mineWith(GalHookLineScreenshot shot) =>
+        coordinator(
+          validator: (_) => true,
+          still: (_) => throw StateError('拒绝路径不得回退去抓当前窗口'),
+          gif:
+              ({
+                required int hwnd,
+                MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+              }) => throw StateError('拒绝路径不得回退去抓 GIF'),
+        ).mineLine(
+          lineId: old.id,
+          fields: <String, String>{'expression': 'scene'},
+          compression: MiningMediaCompression.compressed,
+          repo: repo,
+          providedLineScreenshot: shot,
+        );
+
+    // ① 截图挂在另一条台词上：不能张冠李戴。
+    final GalHookMiningResult mismatched = await mineWith(
+      GalHookLineScreenshot(
+        lineId: other.id,
+        pngBytes: Uint8List.fromList(
+          img.encodePng(img.Image(width: 2, height: 2)),
+        ),
+      ),
+    );
+    expect(mismatched.success, isFalse);
+    expect(mismatched.failureReason, 'screenshot does not match captured line');
+
+    // ② 空字节同样拒绝：空 PNG 会变成一张没有画面的卡。
+    final GalHookMiningResult empty = await mineWith(
+      GalHookLineScreenshot(lineId: old.id, pngBytes: Uint8List(0)),
+    );
+    expect(empty.success, isFalse);
+    expect(empty.failureReason, 'screenshot does not match captured line');
+
+    // 两次都不许落库。
+    expect(repo.contexts, isEmpty);
+  });
+
   test(
     'Windows popup keeps host occurrence through real whitespace fold and mining',
     () async {

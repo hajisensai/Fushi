@@ -336,9 +336,12 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
-    // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。
-    final int? base =
-        await db.getSyncBaseline(sanitizeTtuFilename(title), 'progress');
+    // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。基线行按通道分槽
+    // （[progressBaselineDimensionOf]），与 SyncManager 读写的是同一行。
+    final int? base = await db.getSyncBaseline(
+      sanitizeTtuFilename(title),
+      progressBaselineDimensionOf(backend),
+    );
 
     // 互联 live 行：远端进度 / 时间戳换成 host DB 的（BUG-2506）；host 无记录时
     // 远端显示「无数据」而不是文件箱里 client 自己上次导出的旧值。
@@ -652,6 +655,7 @@ class SyncCompareDialog extends StatefulWidget {
     this.conflictsOnly = false,
     this.tempDir,
     this.audioDatabaseRoot,
+    this.decisions,
     super.key,
   });
   final FushiDatabase db;
@@ -659,6 +663,18 @@ class SyncCompareDialog extends StatefulWidget {
 
   /// 只显示真分叉冲突项（隐藏自动可解的书与词典分组）。冲突解决弹窗用。
   final bool conflictsOnly;
+
+  /// 跨通道共享的裁决簿（bookKey → 选择；用户报告 2026-09-22）。
+  ///
+  /// 一次手动同步跑云备份 + 互联两条通道，同一本书在两条通道上都分叉时此前会
+  /// **逐通道各弹一次**同样的弹窗：第一次点「立即同步」后，第二条通道的弹窗紧跟着
+  /// 又弹出来，用户看到的就是「点了同步还继续弹」。同一本书用户只裁决一次：
+  /// - 加载时若簿上已有这本书的裁决，直接采用（不再让用户重选）；[conflictsOnly]
+  ///   下参与集合**全部**已裁决时不等用户，立即应用并关闭；
+  /// - 应用时把每本参与书的裁决写回簿上。「用本地 / 用远端」都记成 **用本地**：
+  ///   用户选定的那一侧应用完就已经在本机了，对后续通道要做的事就是把本机推过去。
+  /// null = 单次独立弹窗（设置页入口、测试），行为与此前逐字节相同。
+  final Map<String, SyncChoice>? decisions;
 
   /// 下载远端独有书时的临时目录；为 null 时落回系统临时目录。
   final Directory? tempDir;
@@ -728,12 +744,51 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           choices[e.title] = SyncChoice.skip;
         }
       }
+      // 跨通道裁决簿：前一条通道已裁决过的书直接沿用（见 [SyncCompareDialog
+      // .decisions]）。
+      final Map<String, SyncChoice>? decided = widget.decisions;
+      bool allDecided = decided != null;
+      if (decided != null) {
+        for (final e in entries) {
+          final SyncChoice? prior =
+              e.bookKey == null ? null : decided[e.bookKey!];
+          if (prior == null) {
+            if (e.hasConflict) allDecided = false;
+            continue;
+          }
+          switch (prior) {
+            case SyncChoice.skip:
+            case SyncChoice.useLocal:
+              // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
+              // 都成立——推过去就是。
+              choices[e.title] = prior;
+            case SyncChoice.useRemote:
+              // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
+              // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
+              // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
+              // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
+              // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
+              // 旧弹给用户看。
+              final bool remoteMoved = e.hasConflict ||
+                  e.autoDirection == SyncDirection.importFromTtu;
+              if (!remoteMoved) {
+                choices[e.title] = SyncChoice.useLocal;
+              } else if (e.hasConflict) {
+                allDecided = false;
+              }
+          }
+        }
+      }
       if (mounted) {
         setState(() {
           _entries = entries;
           _dicts = dicts;
           _choices = choices;
         });
+        // 冲突解决弹窗里参与集合全是已裁决的书 → 不再问一遍，直接应用并关闭。
+        if (widget.conflictsOnly && allDecided && _entriesInPlay.isNotEmpty) {
+          await _applyChoices();
+        }
       }
     } catch (e) {
       if (mounted) setState(() => _error = friendlySyncError(e));
@@ -763,6 +818,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   Future<void> _applyChoices() async {
     if (_entries == null) return;
     final entries = _entriesInPlay;
+    // 用户明确「跳过」的书也记进跨通道裁决簿：这一轮同步里后续通道不再为它弹
+    // （非 skip 的在下面逐本应用时记）。
+    final Map<String, SyncChoice>? decisions = widget.decisions;
+    if (decisions != null) {
+      for (final entry in entries) {
+        if (entry.bookKey != null && _choices[entry.title] == SyncChoice.skip) {
+          decisions[entry.bookKey!] = SyncChoice.skip;
+        }
+      }
+    }
 
     // Only the books the user chose to sync count toward progress.
     final actionable = entries.where(_isActionable).toList();
@@ -857,6 +922,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           final direction = choice == SyncChoice.useLocal
               ? SyncDirection.exportToTtu
               : SyncDirection.importFromTtu;
+          // 记到跨通道裁决簿的是用户的**真实选择**（见 [SyncCompareDialog
+          // .decisions]）：「用本地」对后续通道一律推本机；「用远端」只是采纳了
+          // 这一条通道的远端，后续通道的远端若自己动过仍要问用户。
+          widget.decisions?[entry.bookKey!] = choice;
 
           SyncApplyOutcome outcome;
           try {
@@ -882,8 +951,15 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           // SyncManager 之后——它对互联仍会把文件箱里 client 自己的旧进度导回
           // 本机，这里最后一步用用户选的那一侧把它盖正；也不依赖它成败——文件箱
           // 那步对互联是 dead weight，它失败不该把用户刚做的选择判成失败。
-          if (entry.liveAction != null &&
-              widget.backend is InterconnectSyncBackend) {
+          //
+          // 门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
+          // 「加载期那次 live 探测成功」（[liveAction]）：`_fetchLiveProgress`
+          // 一次 GET 失败会把这一行静默降级成文件箱行，若只按 liveAction 放行，
+          // 用户选的「本地」就只写进 host 上谁都不读的文件箱、host DB 原样不动，
+          // 下一轮 sweep 的 live 三方判定照旧报同一条冲突——弹窗解决不掉、反复弹
+          // （用户报告 2026-09-22）。这里改成只要 host 有书就推，推不动才是真失败。
+          if (widget.backend is InterconnectSyncBackend &&
+              (entry.liveAction != null || entry.remoteLiveTitle != null)) {
             try {
               if (await _applyLiveProgressChoice(
                 book: book,

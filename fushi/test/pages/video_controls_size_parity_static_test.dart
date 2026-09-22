@@ -120,19 +120,27 @@ void main() {
         reason:
             'lopsided forward_10 replaced by parallel fast_forward (TODO-067)');
     // BUG-257：桌面 + 移动底栏合并为单一 _centeredBottomControlBar(desktop:)，故并行
-    // fast_rewind/forward 各只出现一次（不再 per-theme 重复）。守卫意图（用对称图标、
+    // fast_rewind/forward 在底栏只出现一次（不再 per-theme 重复）。守卫意图（用对称图标、
     // 不用显歪的 replay_10/forward_10）仍由上面的 isNot(replay_10/forward_10) + 此处存在性守住。
+    //
+    // 计数 1 → 2：小窗档（mini_window.part.dart 的 _buildMiniWindowCenterControls）
+    // 是**第二个** ±10 秒表面——mini 档整行底栏已被 theme 收掉（小窗里 56px 的按钮行
+    // 吃掉三分之一画面），三键改成居中大圆钮。它与底栏是互斥的两套渲染、不是
+    // per-theme 重复，且用的正是本守卫要求的那对对称图标。**上限仍钉死**：再冒出
+    // 第三处就说明有人又在按 theme 复制底栏了（BUG-257 的原病），照样转红。
     expect(
       'Icons.fast_rewind_rounded'.allMatches(source).length,
-      1,
+      2,
       reason:
-          'shared bottom bar uses parallel fast_rewind once (BUG-257/TODO-067)',
+          'bottom bar + mini-window transport each use parallel fast_rewind once '
+          '(BUG-257/TODO-067)',
     );
     expect(
       'Icons.fast_forward_rounded'.allMatches(source).length,
-      1,
+      2,
       reason:
-          'shared bottom bar uses parallel fast_forward once (BUG-257/TODO-067)',
+          'bottom bar + mini-window transport each use parallel fast_forward once '
+          '(BUG-257/TODO-067)',
     );
   });
 

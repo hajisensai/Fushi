@@ -34,8 +34,11 @@ void main() {
       // 位置那句而非被点条目（撤掉 overrideCue: cue 会让此断言转红 = 守卫成立）。
       expect(
         RegExp(
+          // 尾部允许一段可选命名参数块（如 `{bool fromHover = false}`：标记本次查词
+          // 是否悬停发起，供「离开即续播」判据用）。本守卫钉的是**位置参数**契约与
+          // overrideCue 透传，加可选参数不动那两条，故放行而不是逐个列举。
           r'void _handleSubtitleListLookup\(\s*AudioCue cue,\s*'
-          r'int graphemeIndex,\s*Rect charRect,?\s*\)'
+          r'int graphemeIndex,\s*Rect charRect,?\s*(?:\{[^{}]*\}\s*)?\)'
           r'[\s\S]*?_lookupAt\(\s*sentence,\s*graphemeIndex,\s*charRect,\s*'
           r'overrideCue: cue,?\s*\)',
         ).hasMatch(src),

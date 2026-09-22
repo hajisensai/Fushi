@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show kPlaylistManifestExtensions;
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
@@ -348,6 +349,21 @@ Future<String?> _extractVideoCoverUnlocked({
   required String? tlsPinSha256,
   required bool diagnosticOnly,
 }) async {
+  // 蓝光标题的 `videoPath` 是 `BDMV/PLAYLIST/*.mpls`——同样是「描述怎么播」的文件而
+  // 不是码流，ffmpeg 对它必然 `Invalid data found`。与下面 m3u8 在同一层收口，区别
+  // 是这里有真码流可用：换成它引用的第一段 `STREAM/*.m2ts` 再走原路。盘读不出来才
+  // 放弃（和清单拒收一样，返回 null 让书架显示占位）。
+  if (isBlurayPlaylistPath(videoPath)) {
+    final BluraySource? bluray = await resolveBluraySource(videoPath);
+    if (bluray == null) return null;
+    return _extractVideoCoverUnlocked(
+      videoPath: bluray.primaryStreamPath,
+      bookUid: bookUid,
+      atSeconds: atSeconds,
+      tlsPinSha256: tlsPinSha256,
+      diagnosticOnly: diagnosticOnly,
+    );
+  }
   // BUG-1564：**本地**播放列表清单（.m3u8/.m3u）是文本列表不是媒体流，两条 ffmpeg
   // 路（内嵌封面 / 抽帧）对它都必然失败（`Invalid data found`）——在抽取器层直接
   // 拒收，所有调用方（回填 / 拆集导入遍历嵌套清单条目 / 外部打开 / host 服务）一并

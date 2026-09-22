@@ -27,6 +27,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
   'ai_providers',
+  // String：「AI 下视频」的默认画质。`''` 未设置（首次使用时问并按勾选写回）/
+  // `ask` 每次询问 / `2160p` `1080p` `720p` `480p` `any` 固定档。非凭据、跨设备。
+  'ai_video_download_quality',
+  // String：「AI 下视频」的字幕语言。`''` 未设置 / `ask` 每次询问 / `original`
+  // 跟随作品语言 / `ja` 等语言码 / `none` 不配字幕。非凭据、跨设备。
+  'ai_video_download_subtitle_language',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
@@ -168,6 +174,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_online_catalog_base_url',
   'manga_online_catalog_enabled',
   'manga_page_animation',
+  // bool（默认 false）：启用本地 AI 分镜检测与逐分镜导航。
+  'manga_panel_navigation',
+  // String（JSON）：漫画阅读器的全局默认偏好（布局/缩放/裁边/点击区等，
+  // MangaReaderPreferences 序列化）。每作品覆盖落 manga_reader_overrides 表。
+  'manga_reader_preferences',
   'manga_reading_direction',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
@@ -287,6 +298,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_download_target_source_id',
   'video_fit_mode',
   'video_immersive_mode',
+  // int（默认 -1 = 自动）：互联远端视频画质档在 kInterconnectQualityPresets 里的
+  // 下标。自动 = 局域网原画直传、走公网压到中档（interconnect_video_quality.dart）。
+  'video_interconnect_quality_preset',
   'video_library_auto_backfill_scrape',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
@@ -313,6 +327,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   'video_shaders_enabled',
+  // bool（默认 false）：控制条淡出后，在视频最下方留一条主题色细进度条
+  // （B 站 / YouTube 同款）。默认关——控制条淡出就是要把画面让干净。小窗档不受
+  // 它管——那里完整进度条已被收起，细线是唯一的进度指示，见
+  // videoSlimProgressBarVisible。
+  'video_slim_progress_bar',
   'video_sort_mode',
   // bool（默认 true）：AJATT 日语字幕库（kitsunekko 镜像）是否参与字幕搜索。
   // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的

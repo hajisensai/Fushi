@@ -37,6 +37,8 @@ VideoPlayerShortcutActions _dummyActions() {
     screenshot: noop,
     screenshotSubtitled: noop,
     toggleFullscreen: noop,
+    toggleMiniWindow: noop,
+    toggleMiniChrome: noop,
     toggleSubtitleList: noop,
     searchSubtitleList: noop,
     toggleImmersiveLock: noop,

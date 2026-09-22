@@ -314,6 +314,7 @@ class ImmersionMiningRequest {
     this.animatedFormat = MiningAnimatedFormat.gif,
     this.stillFormat = MiningStillFormat.jpg,
     this.mediaSourceTlsPinSha256,
+    this.mediaSourceHttpHeaders = const {},
     this.remoteAudioClipper,
   });
 
@@ -400,6 +401,20 @@ class ImmersionMiningRequest {
   /// 而非无条件放行。null = 本地源 / 公网有效证书源（YouTube 等），不钉扎、走 ffmpeg 默认。
   final String? mediaSourceTlsPinSha256;
 
+  /// BUG-2625：[mediaSource]/[audioSource] 是远端 http(s) 流时，**播放器取到这条流时用的
+  /// 请求头**（在线视频源扩展声明的 Referer / User-Agent / Origin / Cookie，粘贴 URL 流
+  /// 用户自填的头）。引擎透传给 ffmpeg 抽取器 → `-user_agent` / `-referer` / `-headers`。
+  ///
+  /// 为什么必须是请求字段、不能像 B 站那条 Referer 一样按 URL 宿主推
+  /// （[ffmpegRefererForRemoteInput]）：扩展的头**不是 host 的属性**——Referer 常是站点的
+  /// 播放页地址、UA 是扩展自定值、还可能带一次性 Cookie，只有**当前播放会话**知道。
+  /// 播放器早就在带它们（`Media(httpHeaders:)` + libmpv `http-header-fields`），而制卡的
+  /// ffmpeg 一直在裸请求同一条 URL，于是站点按防盗链直接 403（`Server returned 403
+  /// Forbidden`），句子音频抽不出来、制卡整条中止（`required audio missing`）。
+  ///
+  /// 空 map = 本地文件 / 无防盗链的公网源（YouTube 走自己的 UA 常量），行为零变化。
+  final Map<String, String> mediaSourceHttpHeaders;
+
   /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
   /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
   /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
@@ -472,6 +487,10 @@ class ImmersionMiningRequest {
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
         mediaSourceTlsPinSha256: mediaSourceTlsPinSha256,
+        // 与 [fields] 同理：入队前把头也冻成不可变副本，换集/关窗后队列里的卡仍用点击
+        // 那一刻的头（换集会让 client 的 httpHeaderFields 指向新一集的 hoster）。
+        mediaSourceHttpHeaders:
+            Map<String, String>.unmodifiable(mediaSourceHttpHeaders),
         remoteAudioClipper: remoteAudioClipper,
       );
 }

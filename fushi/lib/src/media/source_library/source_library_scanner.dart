@@ -46,6 +46,8 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
@@ -247,6 +249,23 @@ class ScanMangaFolderItem {
   int get hashCode => folderPath.hashCode;
 }
 
+/// One pending Blu-ray disc (`BDMV` tree) scanned from a local video source.
+@immutable
+class ScanBlurayDiscItem {
+  const ScanBlurayDiscItem({required this.discRootPath});
+
+  /// 含 `BDMV` 的那一层目录。盘内各条播放列表在导入时才解析——规划层只认路径形状，
+  /// 不读盘（一次扫描会走过上万个路径）。
+  final String discRootPath;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ScanBlurayDiscItem && other.discRootPath == discRootPath;
+
+  @override
+  int get hashCode => discRootPath.hashCode;
+}
+
 /// Classification result of one scan (pure data).
 @immutable
 class ScanPlan {
@@ -257,6 +276,7 @@ class ScanPlan {
     this.mangas = const <ScanMangaItem>[],
     this.mangaArchives = const <ScanMangaArchiveItem>[],
     this.mangaFolders = const <ScanMangaFolderItem>[],
+    this.blurayDiscs = const <ScanBlurayDiscItem>[],
   });
 
   /// Pending book items (EPUB + optional same-stem subtitle/audio sidecar).
@@ -276,6 +296,9 @@ class ScanPlan {
 
   /// Pending local pure-image manga folders.
   final List<ScanMangaFolderItem> mangaFolders;
+
+  /// Pending Blu-ray discs (local video sources only).
+  final List<ScanBlurayDiscItem> blurayDiscs;
 }
 
 /// 一次来源扫描的可核对摘要。
@@ -327,7 +350,23 @@ String _extOf(String name) =>
 ScanPlan planScanFromFileList(
   List<SourceFileEntry> files, {
   String? mangaRootPath,
+  bool detectBlurayDiscs = false,
 }) {
+  // 蓝光盘先认：认出来之后，盘的 `BDMV` 树整个从散装视频里摘掉。不摘的话用户会同时
+  // 拿到「正片」和一屏叫 `00001`~`00042` 的 m2ts 碎片（正片常被切成好几段，另有菜
+  // 单/预告/警告片）。与 `.mokuro` 让位规则同一取舍：manifest 认领了的文件不再被更
+  // 低层的分类器重复消费。
+  //
+  // 只在本地来源开：盘内播放列表要随机读 `PLAYLIST`/`CLIPINF`，播放要拿到 `STREAM`
+  // 下的本地路径，网络来源两样都给不了。
+  final List<String> blurayRoots = detectBlurayDiscs
+      ? planBlurayDiscRoots(<String>[
+          for (final SourceFileEntry entry in files)
+            if (!entry.isDirectory) entry.path,
+        ])
+      : const <String>[];
+  final Set<String> blurayRootSet = blurayRoots.toSet();
+
   // parent dir -> all file basenames under it (for sidecar matching).
   final Map<String, List<String>> namesByDir = <String, List<String>>{};
   // parent dir -> {basename: original full path} (for sidecar path lookup).
@@ -351,6 +390,7 @@ ScanPlan planScanFromFileList(
 
   for (final SourceFileEntry e in files) {
     if (e.isDirectory) continue;
+    if (isInsideBlurayDisc(e.path, blurayRootSet)) continue;
     final String ext = _extOf(e.name);
     // TODO-1237: m3u8/m3u playlist manifest, reusing the drag-drop path's own
     // [kDragPlaylistExtensions] whitelist. Checked before the video branch
@@ -416,6 +456,10 @@ ScanPlan planScanFromFileList(
     mangaFolders: mangaRootPath == null
         ? const <ScanMangaFolderItem>[]
         : _planLocalMangaImageFolders(files: files, rootPath: mangaRootPath),
+    blurayDiscs: <ScanBlurayDiscItem>[
+      for (final String root in blurayRoots)
+        ScanBlurayDiscItem(discRootPath: root),
+    ],
   );
 }
 
@@ -584,6 +628,7 @@ class SourceLibraryScanner {
         mangaRootPath: files.isLocal && kind == SourceLibraryKind.manga
             ? source.rootPath
             : null,
+        detectBlurayDiscs: files.isLocal && kind == SourceLibraryKind.video,
       );
       discoveredPaths = <String>[
         for (final ScanBookItem item in plan.books) item.bookPath,
@@ -594,6 +639,8 @@ class SourceLibraryScanner {
           item.archivePath,
         for (final ScanMangaFolderItem item in plan.mangaFolders)
           item.folderPath,
+        for (final ScanBlurayDiscItem item in plan.blurayDiscs)
+          item.discRootPath,
       ];
 
       switch (kind) {
@@ -640,6 +687,7 @@ class SourceLibraryScanner {
             sourceRoot: source.rootPath,
           );
           mediaCount += await _importPlaylists(plan, source.id, files);
+          mediaCount += await _importBlurayDiscs(plan, source.id);
           if (source.videoGroupingMode != 'folder') {
             await VideoSourceMetadataIndexer(_db).index(source);
           }
@@ -1334,5 +1382,99 @@ class SourceLibraryScanner {
         } catch (_) {}
       }
     }
+  }
+
+  /// 把扫描根里认出的蓝光盘导入成合集。
+  ///
+  /// 形状与 m3u8 清单完全同构（一张盘 = 一个 `playlist` 合集，一条标题 = 一行
+  /// `VideoBooks`），所以幂等性、墓碑守卫、重扫对齐直接复用 [_importPlaylists] 那套：
+  /// 合集名取盘名，重扫时按合集名找到既有合集并把成员对齐到当前标题表。
+  ///
+  /// 每条标题的 `videoPath` 是它自己的 `.mpls` 绝对路径——一个真实存在的文件，于是
+  /// 「文件还在不在」「这路径被谁引用着」这些既有判据原样可用，不需要为 BD 另开一套。
+  Future<int> _importBlurayDiscs(ScanPlan plan, int sourceId) async {
+    if (plan.blurayDiscs.isEmpty) return 0;
+
+    final Map<String, int> existingCollectionIds = <String, int>{
+      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+        if (c.collectionType == 'playlist') c.name: c.id,
+    };
+
+    int count = 0;
+    for (final ScanBlurayDiscItem item in plan.blurayDiscs) {
+      final BlurayDisc? disc = await readBlurayDisc(item.discRootPath);
+      // 半张盘 / 一条标题都选不出来：跳过而不是记错。盘里的文件已经在规划层被摘出
+      // 散装视频，这里再报错只会把整次扫描标红。
+      if (disc == null) continue;
+
+      final List<PlaylistEntry> entries = <PlaylistEntry>[
+        for (final BlurayTitle title in disc.titles)
+          PlaylistEntry(title: title.name, path: title.playlistPath),
+      ];
+
+      // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
+      // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的
+      // 清单的合集就换下一个候选名，直到找到本盘的或一个空位。
+      String collectionName = disc.name;
+      int? existingId;
+      for (final String candidate
+          in blurayCollectionNameCandidates(disc.name, disc.rootPath)) {
+        collectionName = candidate;
+        existingId = existingCollectionIds[candidate];
+        if (existingId == null) break;
+        if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
+        existingId = null;
+      }
+      if (existingId != null) {
+        await _videoRepo.reconcileSplitPlaylist(
+          collectionId: existingId,
+          entries: entries,
+          sourceId: sourceId,
+        );
+        continue;
+      }
+
+      // BUG-1739 同款守卫：用户删过同名合集，重扫不复活。
+      if (await _db.hasCollectionDeletionTombstone(
+        collectionName,
+        'playlist',
+      )) {
+        continue;
+      }
+
+      final SplitPlaylistImportResult result =
+          await _videoRepo.importSplitPlaylist(
+        collectionName: collectionName,
+        entries: entries,
+        sourceId: sourceId,
+        reuseExistingPaths: true,
+      );
+      existingCollectionIds[collectionName] = result.collectionId;
+      await _videoRepo.recordVideoImportActivity(
+        bookUid: result.episodeUids.first,
+        title: collectionName,
+      );
+      count++;
+    }
+    return count;
+  }
+
+  /// 既有合集 [collectionId] 是不是 [discRootPath] 这张盘的：成员全是本盘
+  /// `BDMV/PLAYLIST/` 下的 `.mpls`（或还没有任何视频成员）才算；有任何一条来自别的
+  /// 盘、或根本不是蓝光标题（同名 m3u8 清单合集），都不算。
+  Future<bool> _collectionBelongsToDisc(
+    int collectionId,
+    String discRootPath,
+  ) async {
+    final String root = p.normalize(discRootPath);
+    for (final MediaCollectionItemRow item
+        in await _videoRepo.getCollectionItems(collectionId)) {
+      final VideoBookRow? row = await _videoRepo.getByBookUid(item.entryKey);
+      if (row == null) continue;
+      if (!isBlurayPlaylistPath(row.videoPath)) return false;
+      final String? owner = blurayDiscRootForPlaylistPath(row.videoPath);
+      if (owner == null || p.normalize(owner) != root) return false;
+    }
+    return true;
   }
 }

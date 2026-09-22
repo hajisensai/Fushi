@@ -63,7 +63,8 @@ void main() {
       SyncAuthError? caught;
       try {
         ops.checkStatus(403, 'GET /svc',
-            serverReason: 'HTTPS required for service config');
+            serverReason:
+                const SyncErrorBody.text('HTTPS required for service config'));
       } on SyncAuthError catch (e) {
         caught = e;
       }
@@ -166,6 +167,159 @@ void main() {
       expect(caught!.serverReason, isNotNull);
       expect(caught.serverReason!.length, lessThan(400));
       expect(caught.serverReason, endsWith('...'));
+    });
+  });
+
+  group('BUG-2631 403 的响应体是网页：只取标题，换一套文案', () {
+    const String cloudflare = '<!DOCTYPE html><html lang="en-US"><head>'
+        '<title>Just a moment...</title>'
+        '<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">'
+        '<meta name="robots" content="noindex,nofollow"></head>'
+        '<body><div id="challenge">Verifying you are human</div></body></html>';
+
+    late HttpServer server;
+    late String base;
+    late String body;
+    late String contentType;
+
+    setUp(() async {
+      body = cloudflare;
+      contentType = 'text/html; charset=UTF-8';
+      server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      base = 'http://127.0.0.1:${server.port}/anime';
+      server.listen((HttpRequest req) async {
+        req.response.statusCode = 403;
+        req.response.headers.set('content-type', contentType);
+        req.response.write(body);
+        await req.response.close();
+      });
+    });
+
+    tearDown(() async => server.close(force: true));
+
+    WebDavOps opsFor() =>
+        WebDavOps(baseUrl: base, username: 'u', password: 'p');
+
+    Future<SyncAuthError> probe() async {
+      try {
+        await opsFor().testConnection();
+      } on SyncAuthError catch (e) {
+        return e;
+      }
+      fail('403 必须抛 SyncAuthError');
+    }
+
+    test('Cloudflare 挑战页：kind=htmlPage，serverReason 只剩 <title>', () async {
+      final SyncAuthError e = await probe();
+      expect(e.kind, SyncAuthFailureKind.htmlPage);
+      expect(e.serverReason, 'Just a moment...');
+      expect(e.message, 'Server refused (403): PROPFIND $base');
+    });
+
+    test('用户看到的文案：说「回的是网页、核对地址」，一个尖括号都没有', () async {
+      final SyncAuthError e = await probe();
+      final String shown = friendlySyncError(e);
+      expect(shown, t.sync_err_html_page_detail(title: 'Just a moment...'));
+      expect(shown, isNot(contains('<')));
+      expect(shown, isNot(equals(t.sync_err_auth_expired)));
+      expect(shown, isNot(contains(t.sync_err_forbidden)));
+      expect(friendlySyncErrorDetail(e), shown);
+    });
+
+    test('没有 Content-Type 也凭正文形状识别；没有 <title> 就用无标题文案', () async {
+      contentType = 'text/plain';
+      body = '<html><body><h1>403 Forbidden</h1></body></html>';
+      final SyncAuthError e = await probe();
+      expect(e.kind, SyncAuthFailureKind.htmlPage);
+      expect(e.serverReason, isNull);
+      expect(friendlySyncError(e), t.sync_err_html_page);
+    });
+
+    test('纯文本 403 一字不变：仍是 forbidden + 原文', () async {
+      contentType = 'text/plain';
+      body = 'HTTPS required for service config';
+      final SyncAuthError e = await probe();
+      expect(e.kind, SyncAuthFailureKind.forbidden);
+      expect(e.serverReason, 'HTTPS required for service config');
+    });
+
+    test('网页型 403 不登出：凭据根本没被评估过', () async {
+      final SyncAuthError e = await probe();
+      expect(shouldSignOutOnAuthError(e), isFalse);
+    });
+
+    test('parseSyncErrorBody：标题折叠空白、解实体、长标题截断；XML 不算网页', () {
+      final SyncErrorBody? multi = parseSyncErrorBody(
+          '<html><head><title>\n  Access &amp; Denied  \n</title></head></html>');
+      expect(multi!.isHtmlPage, isTrue);
+      expect(multi.reason, 'Access & Denied');
+
+      final SyncErrorBody? long =
+          parseSyncErrorBody('<!doctype html><title>${'t' * 500}</title>');
+      expect(long!.reason!.length, lessThan(130));
+      expect(long.reason, endsWith('...'));
+
+      final SyncErrorBody? xml = parseSyncErrorBody(
+          '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"></D:multistatus>');
+      expect(xml!.isHtmlPage, isFalse);
+      expect(xml.reason, startsWith('<?xml'));
+
+      expect(parseSyncErrorBody('   '), isNull);
+      expect(parseSyncErrorBody('', declaredHtml: true)!.isHtmlPage, isTrue);
+    });
+
+    test('nginx / Apache 默认 403 页：标题是「NNN 状态语」→ 仍是 forbidden，原因取标题',
+        () {
+      // 这是真 WebDAV 服务端经反代给出的拒绝（ACL / 目录无 DAV 权限），不是「地址
+      // 填成了网站」；归成网页会让用户去核对一个本来就对的地址。
+      const String nginx = '<html><head><title>403 Forbidden</title></head>'
+          '<body><center><h1>403 Forbidden</h1></center><hr>'
+          '<center>nginx</center></body></html>';
+      final SyncErrorBody? body = parseSyncErrorBody(nginx, declaredHtml: true);
+      expect(body!.isHtmlPage, isFalse);
+      expect(body.reason, '403 Forbidden');
+      expect(body.forbiddenKind, SyncAuthFailureKind.forbidden);
+
+      const String apache =
+          '<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head>\n'
+          '<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n'
+          "<p>You don't have permission to access this resource.</p>\n"
+          '</body></html>';
+      expect(parseSyncErrorBody(apache)!.isHtmlPage, isFalse);
+      expect(parseSyncErrorBody(apache)!.reason, '403 Forbidden');
+
+      // Cloudflare 挑战页与网站首页的标题不是这个形状，仍归网页。
+      expect(parseSyncErrorBody(cloudflare)!.isHtmlPage, isTrue);
+      expect(
+          parseSyncErrorBody('<!doctype html><title>4033 ways</title>')!
+              .isHtmlPage,
+          isTrue,
+          reason: '只认「三位数 + 空白 / 结尾」，四位数开头的标题不是状态语');
+    });
+
+    test('checkStatus 拿到网页体：kind 随体走，纯文本仍是 forbidden', () {
+      final WebDavOps ops = opsFor();
+      SyncAuthError? caught;
+      try {
+        ops.checkStatus(403, 'GET /svc',
+            serverReason: parseSyncErrorBody(cloudflare));
+      } on SyncAuthError catch (e) {
+        caught = e;
+      }
+      expect(caught!.kind, SyncAuthFailureKind.htmlPage);
+      expect(caught.serverReason, 'Just a moment...');
+    });
+
+    test('源码守卫：网络源弹窗的「测试连接」走友好文案，不再把异常 toString 裸上屏', () {
+      // 用户截图里的那条 toast 就是这里拼出来的：`'${t.sync_connection_failed}: $e'`
+      // 把 `SyncAuthError: Server refused (403): PROPFIND https://…(<!DOCTYPE html>…`
+      // 整个灌进去。同步设置页早就走 friendlySyncErrorDetail，两处必须同源。
+      final String src = maskComments(
+        File('lib/src/pages/implementations/media_sources_view.dart')
+            .readAsStringSync(),
+      );
+      expect(src, contains('friendlySyncErrorDetail(e)'));
+      expect(src, isNot(contains(r"sync_connection_failed}: $e'")));
     });
   });
 
@@ -314,7 +468,8 @@ void main() {
       );
       SyncAuthError? caught;
       try {
-        peer.checkStatus(403, 'GET /svc', serverReason: 'HTTPS required');
+        peer.checkStatus(403, 'GET /svc',
+            serverReason: const SyncErrorBody.text('HTTPS required'));
       } on SyncAuthError catch (e) {
         caught = e;
       }

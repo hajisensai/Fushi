@@ -122,6 +122,8 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `home_video_page.dart`（3080 行）-- 视频首页（书架/合集/继续观看）。
 - `lib/src/media/video/` -- 视频导入与管理（含 `video_import_dialog.dart`）。
 - 播放栈 media_kit（`third_party/` vendored，Windows 构建需下载 mpv/ANGLE，见 `CLAUDE.local.md` 代理说明）。
+- **小窗 / 控件密度（2026-09-22）**：控制条按**播放区宽度**分 full / compact / mini 三档（判据是纯函数 `lib/src/media/video/video_controls_density.dart`，页面只消费结论；密度只在控制条 theme 与字幕避让两处乘 `_controlsDensityScale`，**不折进** `_videoUiScale`）。小窗有两种且 chrome 归属相反：桌面把主窗变无边框置顶小窗（`lib/src/platform/desktop/desktop_mini_window_mode.dart`，chrome 本仓自绘，见 `video_fushi/mini_window.part.dart`）、Android 走系统画中画（`lib/src/platform/mobile/android_picture_in_picture.dart`，chrome 全部让位给系统）；**iOS 不提供**——libmpv 渲染进 Flutter texture，拿不到 `AVPlayerLayer`，入口整个不出现（技术限制，与 `StoreRestrictedCapability` 无关）。底部细进度条是独立开关 `video_slim_progress_bar`（默认关），颜色走 `videoChromeAccentColor` 而非裸 `colorScheme.primary`，并**可直接点击 / 横拖跳转**（纯函数 `videoSlimProgressSeekFraction` 换算、走 `controller.seekMs`、四个遮挡门控下退回纯装饰）。桌面小窗的自绘 chrome **hover 不再唤起**：常态只剩画面 + 字幕 + 细线（字幕悬停制卡照常），顶部拖动带 / 退出钮 / 居中三键由 `ShortcutAction.videoToggleMiniChrome`（默认 Shift+M）显式唤出，判据是纯函数 `videoMiniChromeVisible`，进小窗时引导性亮 3 秒。设计见 `docs/specs/2026-09-22-video-mini-window.md`。
+- **视频 / 查词性能诊断日志（2026-09-22，BUG-2628）**：`lib/src/diagnostics/`——`VideoDiagLog`（行格式 / 级别名 / `--msg-level` 过滤三样对齐 libmpv，默认**关闭**，开关与导出在 设置 › 诊断）、`video_diag_stats.dart`（mpv 属性周期快照 + Flutter 帧耗时聚合，纯函数）、`video_frame_timing_probe.dart`（`addTimingsCallback`，随视频页起停）、`lookup_perf_trace.dart`（查词分阶段计时）、`video_diag_export.dart`（导出三段）。诊断开启时**还会给 libmpv 下发它自己的 `log-file` + `msg-level=all=v`**（`video_player_controller.dart`，沿用 `FUSHI_TEST_MPV_LOG_FILE` 那条路），产出的是货真价实的 mpv 日志。周期采样与黑闪判据共用同一次属性读取；关闭时全链路零开销。埋点缺失是静默的，接线由 `test/diagnostics/video_diag_wiring_guard_test.dart` 咬住。
 
 ### 10. 互联/同步 (`lib/src/sync/`)
 
@@ -145,8 +147,9 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 ### 13. AI 功能 (`lib/src/ai/`)
 
 - `ai_provider_config.dart` / `ai_chat_client.dart` -- 多提供商 LLM 调用层（OpenAI 兼容 / Anthropic / Gemini 三种 wire 协议，17 家预设含 Ollama、LM Studio 本地）；不做流式；错误一律脱敏成短码。
-- `ai_feature.dart` -- 「功能 → 提供商」指派表 `AiFeature`（galgame 文本清洗 / 词典弹窗样式 / Lapis 卡片样式 / 视频识别 / 视频搜索辅助 / 自定义主题配色）。新增 AI 功能 = 加枚举值 + 一个 `ai_*_assistant.dart`（提示词 + 解析 + 本地校验）+ 入口按钮；设置页功能行自动列出。
+- `ai_feature.dart` -- 「功能 → 提供商」指派表 `AiFeature`（galgame 文本清洗 / 词典弹窗样式 / Lapis 卡片样式 / 视频识别 / 视频搜索辅助（仅后台补字幕重排）/ 自定义主题配色 / AI 下视频）。新增 AI 功能 = 加枚举值 + 一个 `ai_*_assistant.dart`（提示词 + 解析 + 本地校验）+ 入口按钮；设置页功能行自动列出。
 - `ai_reply_json.dart` -- 共享的「从回复里抠 JSON」工具，所有助手共用。
+- `ai_video_acquisition_assistant.dart` + `lib/src/media/video/acquisition/` -- 「AI 下视频」（2026-09-22）：对话页里说作品名，纯函数状态机 `reduceVideoAcquisition` 决定缺什么 / 问什么 / 何时提交，AI 只做一句话 → 结构化意图补丁与多义作品选择；资源选择 / 入队 / 建订阅全是确定性代码。旧「AI 排序 / 补词」页面按钮已移除。设计见 `docs/specs/2026-09-22-ai-video-acquisition.md`。
 - 硬边界：**AI 只产出配置或在已取回的候选里做排序/选择，热路径永远是本地确定性代码**；未指派提供商时行为与没有 AI 完全一致；AI 产物必须经本地校验（正则可编译、CSS 选择器白名单、候选 key 在集合内）才落地，且先进草稿/待确认而不是直接保存。AI 配置是设备本地的，不进备份/同步/Profile。设计见 `docs/specs/2026-09-15-ai-feature-expansion.md`。
 
 ### 14. 浏览器扩展 (仓库根 `tools/browser-extension/`)

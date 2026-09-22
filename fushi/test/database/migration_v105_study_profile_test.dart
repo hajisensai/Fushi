@@ -103,7 +103,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 108);
+    expect(upgraded.schemaVersion, 112);
 
     // 激活 Profile 认领全部旧历史（Never break userspace：升级前后它看到的一样）。
     expect(await upgraded.resolveActiveProfileId(), seed.activeId);

@@ -608,6 +608,10 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
       PathRebaseKind.notAPath,
       '最近一次失败的错误文案（可能夹带异常里的路径片段，但那是诊断文本，'
           '不会被任何代码当路径解析）。'),
+
+  // ── manga_reader_overrides（v112 漫画阅读器每作品覆盖）──────────────
+  PathRebaseColumn('MangaReaderOverrides', 'overridesJson',
+      PathRebaseKind.notAPath, '稀疏阅读器设置 JSON（枚举值与数值），无路径。'),
 ];
 
 /// Drift preferences（以及它在 profile_settings 里的每 Profile 快照副本）中承载路径的

@@ -78,6 +78,15 @@ class VideoMetadataLanguages {
   /// 纯图排在最后而不是被丢弃：没有本语言海报时，一张无文字的图仍比一张外语
   /// 文字的图更可用。英语用户派生出 `['en','']`（去重后只有两项），不会因为
   /// 「本语言恰好是英语」而少一档兜底。
+  /// 任意 BCP-47 / ISO 639-1 标签的主语言子标签（`ja-JP` → `ja`）；空 / null →
+  /// null。给 TMDB `original_language` 这种可能带地区码的值用。
+  static String? primarySubtagOf(String? tag) {
+    final String trimmed = tag?.trim().toLowerCase() ?? '';
+    if (trimmed.isEmpty) return null;
+    final String primary = trimmed.split(RegExp(r'[-_]')).first;
+    return primary.isEmpty ? null : primary;
+  }
+
   List<String> get imageLanguages {
     final List<String> order = <String>[];
     for (final String tag in <String>[
