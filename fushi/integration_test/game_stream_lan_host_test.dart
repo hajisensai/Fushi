@@ -4,6 +4,8 @@
 /// FUSHI_GS_RUN_LIVE=true, FUSHI_GS_GAME_EXE=<original exe>,
 /// FUSHI_GS_HOST_IP=<LAN IPv4>, FUSHI_GS_EVIDENCE_DIR=<.codex-test/run>,
 /// FUSHI_GS_RUN_SECONDS=1200 (optional).
+/// FUSHI_GS_ATTACH_HWND and FUSHI_GS_ATTACH_PID (optional, required together)
+/// attach to a verified existing game instead of launching another instance.
 ///
 /// No game is launched unless RUN_LIVE is explicitly set. The private credentials
 /// file must be transferred into the Android fixture's app-private directory.
@@ -25,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/game_stream_input_channel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -33,6 +36,7 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
 import 'package:integration_test/integration_test.dart';
@@ -46,6 +50,11 @@ const bool _runLive = bool.fromEnvironment('FUSHI_GS_RUN_LIVE');
 const String _gameExe = String.fromEnvironment('FUSHI_GS_GAME_EXE');
 const String _hostIp = String.fromEnvironment('FUSHI_GS_HOST_IP');
 const String _evidencePath = String.fromEnvironment('FUSHI_GS_EVIDENCE_DIR');
+const int _attachHwnd = int.fromEnvironment('FUSHI_GS_ATTACH_HWND');
+const int _attachPid = int.fromEnvironment('FUSHI_GS_ATTACH_PID');
+const bool _attachRequested =
+    bool.hasEnvironment('FUSHI_GS_ATTACH_HWND') ||
+    bool.hasEnvironment('FUSHI_GS_ATTACH_PID');
 const int _runSeconds = int.fromEnvironment(
   'FUSHI_GS_RUN_SECONDS',
   defaultValue: 1200,
@@ -65,6 +74,12 @@ void main() {
           GameStreamFlutterErrorRecorder();
       addTearDown(flutterErrors.restore);
       final String isolatedRoot = requireGameStreamIsolatedRoot();
+      expect(
+        !_attachRequested || (_attachHwnd > 0 && _attachPid > 0),
+        isTrue,
+        reason: 'Attach mode requires both a positive HWND and PID',
+      );
+      const bool attachExisting = _attachRequested;
       expect(
         File(_gameExe).existsSync(),
         isTrue,
@@ -216,7 +231,8 @@ void main() {
         await evidence.writeJson('setup.json', <String, Object?>{
           'exePath': _gameExe,
           'exeSha256': exeHash,
-          'localeMode': 'off',
+          'entryMode': attachExisting ? 'attach_existing' : 'launch',
+          'localeMode': attachExisting ? 'unchanged' : 'off',
           'testRoot': isolatedRoot,
           'dictionary': gameStreamTestDictionary,
           'dictionaryContent':
@@ -225,13 +241,62 @@ void main() {
           'runTag': runTag,
           'pairingMode': 'preseeded_test_peer',
         });
-        final GalHookLaunchResult launched = await hook.launchGame(
-          _gameExe,
-          workdir: p.dirname(_gameExe),
-          gameTitle: 'STEINS;GATE RE:BOOT',
-          japaneseLocaleMode: GalJapaneseLocaleMode.off,
-        );
-        expect(launched.launched, isTrue);
+        if (attachExisting) {
+          final List<ExternalWindowInfo> matches =
+              (await WindowCaptureChannel.listWindows())
+                  .where(
+                    (ExternalWindowInfo window) => window.hwnd == _attachHwnd,
+                  )
+                  .toList();
+          expect(
+            matches,
+            hasLength(1),
+            reason: 'Expected one exact existing HWND',
+          );
+          final ExternalWindowInfo existing = matches.single;
+          expect(
+            existing.pid,
+            _attachPid,
+            reason: 'The HWND owner PID changed',
+          );
+          final String? imagePath = windowsProcessImagePath(_attachPid);
+          expect(
+            imagePath,
+            isNotNull,
+            reason: 'Cannot verify existing game image',
+          );
+          final String expectedPath = await File(
+            _gameExe,
+          ).resolveSymbolicLinks();
+          final String actualPath = await File(
+            imagePath!,
+          ).resolveSymbolicLinks();
+          expect(
+            p.normalize(actualPath).toLowerCase(),
+            p.normalize(expectedPath).toLowerCase(),
+            reason:
+                'Existing process must run the exact SHA-verified game image',
+          );
+          await evidence.writeJson('attachment.json', <String, Object?>{
+            'hwnd': existing.hwnd,
+            'pid': existing.pid,
+            'nativeImagePath': imagePath,
+            'canonicalImagePath': actualPath,
+            'exeSha256': exeHash,
+            'pathMatches': true,
+          });
+          await hook.startAttachedCapture(existing);
+          expect(hook.state.gamePid, _attachPid);
+          expect(hook.state.boundWindow?.hwnd, _attachHwnd);
+        } else {
+          final GalHookLaunchResult launched = await hook.launchGame(
+            _gameExe,
+            workdir: p.dirname(_gameExe),
+            gameTitle: 'STEINS;GATE RE:BOOT',
+            japaneseLocaleMode: GalJapaneseLocaleMode.off,
+          );
+          expect(launched.launched, isTrue);
+        }
         final DateTime windowDeadline = DateTime.now().add(
           const Duration(seconds: 45),
         );
