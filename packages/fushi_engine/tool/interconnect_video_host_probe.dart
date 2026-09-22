@@ -22,14 +22,18 @@ Future<void> main(List<String> args) async {
   String? video;
   int port = 45777;
   int minutes = 30;
-  for (int i = 0; i + 1 < args.length; i += 2) {
+  // `--plain`：明文 http、不建 TLS 身份（用来把 TLS / 中继从取证链里摘掉）。
+  bool plain = false;
+  for (int i = 0; i < args.length; i++) {
     switch (args[i]) {
+      case '--plain':
+        plain = true;
       case '--video':
-        video = args[i + 1];
+        video = args[++i];
       case '--port':
-        port = int.parse(args[i + 1]);
+        port = int.parse(args[++i]);
       case '--minutes':
-        minutes = int.parse(args[i + 1]);
+        minutes = int.parse(args[++i]);
     }
   }
   if (video == null || !File(video).existsSync()) {
@@ -39,12 +43,14 @@ Future<void> main(List<String> args) async {
   final Directory dataDir = Directory.systemTemp.createTempSync(
     'fushi_video_host_probe_',
   );
-  final FushiTlsIdentity identity = await FushiTlsIdentityStore(
-    dataDir: dataDir.path,
-  ).loadOrCreate();
-  final SecurityContext context = SecurityContext()
-    ..useCertificateChainBytes(utf8.encode(identity.certificatePem))
-    ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
+  final FushiTlsIdentity? identity = plain
+      ? null
+      : await FushiTlsIdentityStore(dataDir: dataDir.path).loadOrCreate();
+  final SecurityContext? context = identity == null
+      ? null
+      : (SecurityContext()
+          ..useCertificateChainBytes(utf8.encode(identity.certificatePem))
+          ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem)));
   final FushiSyncServer server = FushiSyncServer(
     syncDataDir: dataDir.path,
     port: port,
@@ -52,13 +58,13 @@ Future<void> main(List<String> args) async {
     allowLan: true,
     libraryService: _SingleClipLibraryService(File(video)),
     securityContext: context,
-    hostFingerprint: identity.fingerprintSha256,
+    hostFingerprint: identity?.fingerprintSha256,
   );
   await server.start();
   stdout.writeln(
     jsonEncode(<String, Object?>{
-      'url': 'https://127.0.0.1:${server.port}',
-      'fingerprint': identity.fingerprintSha256,
+      'url': '${plain ? 'http' : 'https'}://127.0.0.1:${server.port}',
+      'fingerprint': identity?.fingerprintSha256,
       'token': kToken,
       'videoId': kVideoId,
       'transcodeAvailable': transcodeAvailable(),
