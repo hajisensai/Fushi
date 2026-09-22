@@ -4020,7 +4020,7 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoAutoPlayNext(bool value) =>
       prefsRepo.setVideoAutoPlayNext(value);
 
-  /// 底部细进度条开关（落 Drift preferences，默认开）：控制条淡出后在视频最下方
+  /// 底部细进度条开关（落 Drift preferences，默认关）：控制条淡出后在视频最下方
   /// 留一条主题色细线。小窗档恒显、不受它管，见 `videoSlimProgressBarVisible`。
   bool get videoSlimProgressBar => prefsRepo.videoSlimProgressBar;
 

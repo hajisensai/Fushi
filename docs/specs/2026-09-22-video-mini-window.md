@@ -11,7 +11,7 @@
 
 1. **控件密度**：控制条按**播放区宽度**分三档（full / compact / mini），越窄越紧凑。
 2. **小窗模式**：桌面把主窗变成无边框置顶小窗；Android 进系统画中画；iOS 不提供。
-3. **底部细进度条**：独立开关，控制条淡出后在视频最下方留一条主题色细线。
+3. **底部细进度条**：独立开关（默认关），控制条淡出后在视频最下方留一条主题色细线。
 
 ## 判据真相源：`lib/src/media/video/video_controls_density.dart`
 
@@ -165,7 +165,9 @@ bool videoMiniChromeVisible({
 ## 底部细进度条（对上参考图三）
 
 `lib/src/media/video/video_slim_progress_bar.dart`，偏好 `video_slim_progress_bar`，
-**默认开**——它只在控制条**已经不在**时出现，不遮挡任何东西。
+**默认关**（首版默认开，2026-09-22 改判）——控制条淡出本身就是「把画面让干净」，
+再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。已手动切过开关的用户
+不受影响：`getPref` 只在该 key 从未写过时才返回默认值。
 
 - 颜色走播放器 chrome 的既定口径 `videoChromeAccentColor(cs)`（恒取亮 tone primary），
   **不是**裸 `colorScheme.primary`：浅色 / eink 主题下 primary 是深色，压在 fork 的固定
