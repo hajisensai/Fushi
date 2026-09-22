@@ -461,6 +461,99 @@ void main() {
       },
     );
 
+    test(
+      'HTTP mine short alias accepts non-ASCII sentence and empty fields',
+      () async {
+        GameStreamMineRequest? observedRequest;
+        GameStreamTextEvent? observedLine;
+        service.onMine = (request, line) async {
+          observedRequest = request;
+          observedLine = line;
+          return GameStreamMineResult(
+            ok: true,
+            message: '${request.fields['expression']}:${line.lineId}',
+          );
+        };
+        service.createSession();
+        await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/join'),
+            body: jsonEncode(<String, Object?>{
+              'sessionId': 's1',
+              'clientId': 'android-lan-qa',
+              'clientName': 'Android QA',
+            }),
+          ),
+          'POST',
+          '/api/game-stream/join',
+          peerIdentity: 'paired-peer',
+        );
+        service.markConnected(sessionId: 's1', clientId: 'android-lan-qa');
+        const String sentence = 'ただ……私のこと忘れないでって……';
+        service.publishText(
+          GameStreamTextEvent(
+            sessionId: 's1',
+            lineId: 'line-nonascii',
+            text: sentence,
+            timestampMs: 1,
+            audioResourceId: 'voice.xwma',
+          ),
+        );
+        final String prettyBody = const JsonEncoder.withIndent('  ').convert(
+          <String, Object?>{
+            'version': kGameStreamWireVersion,
+            'sessionId': 's1',
+            'clientId': 'android-lan-qa',
+            'lineId': 'line-nonascii',
+            'fields': <String, String>{
+              'expression': '私',
+              'reading': '',
+              'glossary': 'synthetic definition',
+            },
+            'sentence': sentence,
+          },
+        );
+        final Response response = await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/mine'),
+            headers: <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+              // The alias path reparses and re-encodes the body before
+              // dispatching to the canonical route. Preserve an original
+              // Content-Length shape here so the test covers that rewrite.
+              'content-length': utf8.encode(prettyBody).length.toString(),
+            },
+            body: prettyBody,
+          ),
+          'POST',
+          '/api/game-stream/mine',
+          peerIdentity: 'paired-peer',
+        );
+        final Map<String, dynamic> body =
+            jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+
+        expect(response.statusCode, 200);
+        expect(body['result'], <String, Object?>{
+          'version': kGameStreamWireVersion,
+          'ok': true,
+          'message': '私:line-nonascii',
+        });
+        expect(observedRequest, isNotNull);
+        expect(observedRequest!.sessionId, 's1');
+        expect(observedRequest!.clientId, 'android-lan-qa');
+        expect(observedRequest!.lineId, 'line-nonascii');
+        expect(observedRequest!.sentence, sentence);
+        expect(observedRequest!.fields, <String, String>{
+          'expression': '私',
+          'reading': '',
+          'glossary': 'synthetic definition',
+        });
+        expect(observedLine?.text, sentence);
+      },
+    );
+
     test('expires idle sessions', () {
       service = FushiRemoteGameStreamService(
         now: () => now,
