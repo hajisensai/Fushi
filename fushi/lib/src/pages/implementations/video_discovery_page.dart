@@ -446,10 +446,30 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 onSubmitted: _submitSearch,
                 onClear: _clearSearch,
               );
+              // 「AI 下视频」入口跟搜索框同一行：embedded 于下载页时页头不渲染，
+              // 搜索行是三种宽度下唯一都可见的位置。null = 宿主没接线（未指派 AI
+              // 提供商 / 平台合规不可用），整颗按钮不渲染。
+              final VoidCallback? onAiAcquire = widget.actions.onAiAcquire;
+              final Widget? aiEntry = onAiAcquire == null
+                  ? null
+                  : IconButton.filledTonal(
+                      constraints: const BoxConstraints(
+                        minWidth: kFushiSearchFieldHeight,
+                        minHeight: kFushiSearchFieldHeight,
+                      ),
+                      key: const ValueKey<String>('video-discovery-ai-acquire'),
+                      tooltip: t.ai_video_acquire_entry,
+                      onPressed: onAiAcquire,
+                      icon: const Icon(Icons.auto_awesome_outlined),
+                    );
               if (compact) {
                 return Row(
                   children: <Widget>[
                     Expanded(child: search),
+                    if (aiEntry != null) ...<Widget>[
+                      SizedBox(width: tokens.spacing.gap),
+                      aiEntry,
+                    ],
                     SizedBox(width: tokens.spacing.gap),
                     IconButton.filledTonal(
                       // 与同一行的搜索框等高：搜索框已统一为
@@ -476,7 +496,16 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   ],
                 );
               }
-              if (width < 900) return search;
+              if (width < 900) {
+                if (aiEntry == null) return search;
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: search),
+                    SizedBox(width: tokens.spacing.gap),
+                    aiEntry,
+                  ],
+                );
+              }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -489,6 +518,10 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   _buildGenreMenu(),
                   SizedBox(width: tokens.spacing.gap),
                   _buildSortMenu(),
+                  if (aiEntry != null) ...<Widget>[
+                    SizedBox(width: tokens.spacing.gap),
+                    aiEntry,
+                  ],
                 ],
               );
             },

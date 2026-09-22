@@ -29,12 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2427 条。点号进各自文件。
+> 共 2429 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2624](bugs/BUG-2624-anidb-identity-merge-standalone-episodes.md) | ✅ | ✅ | 哈希指向同一部 AniDB 剧的散文件不合并成剧集单元，只出逐集 sidecar |
 | [BUG-2623](bugs/BUG-2623-anidb-http-identity-rejected-swallowed.md) | ✅ | ✅ | AniDB HTTP API 拒绝内置客户端身份（302）被吞成「详情不可用」且每作品重试 |
+| [BUG-2622](bugs/BUG-2622-interconnect-collection-download-progress.md) | ✅ | ✅ | 互联下载远端视频合集时合集卡与详情页集卡都不显示进度 |
+| [BUG-2621](bugs/BUG-2621-sync-compare-repop-across-channels.md) | ✅ | ✅ | 同步冲突弹窗「立即同步」后同一本书反复再弹 |
 | [BUG-2620](bugs/BUG-2620-video-discovery-search-enter-noop.md) | ✅ | ✅ | 发现页搜索框按回车不触发搜索 |
 | [BUG-2619](bugs/BUG-2619-video-subscription-batch-never-matches.md) | ✅ | ✅ | 从合集资源建的订阅结构上永不命中 |
 | [BUG-2618](bugs/BUG-2618-ai-model-picker-split.md) | ✅ | ✅ | AI 提供商：模型候选是字段外的第二个下拉，选完「模型」输入框不跟着变 |

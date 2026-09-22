@@ -8,8 +8,10 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_compare_dialog.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
+import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -37,6 +39,12 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
   /// 文件箱写入（SyncManager 手动导出仍会走到这里；对互联是 dead weight）。
   final Map<String, TtuProgress> exportedByFolder = <String, TtuProgress>{};
 
+  /// 让接下来 N 次 live 进度 GET 抛错（模拟加载期一次网络失败）。
+  int failRemoteProgressReads = 0;
+
+  /// host 文件箱里 client 自己上次导出的 `progress_*.json`（按书名）；null = 空箱。
+  final Map<String, TtuProgress> fileBoxProgress = <String, TtuProgress>{};
+
   // ── live 端点（本测试的主角）──────────────────────────────────────
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
@@ -45,8 +53,13 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
       ];
 
   @override
-  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async =>
-      hostProgress[bookKey] ?? RemoteBookProgress.empty;
+  Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
+    if (failRemoteProgressReads > 0) {
+      failRemoteProgressReads -= 1;
+      throw StateError('host unreachable');
+    }
+    return hostProgress[bookKey] ?? RemoteBookProgress.empty;
+  }
 
   @override
   Future<void> putRemoteBookProgress(
@@ -74,14 +87,30 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
   Future<String> findOrCreateRootFolder() async => 'root';
   @override
   Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
-      const <SyncFileRef>[];
+      <SyncFileRef>[
+        for (final String title in fileBoxProgress.keys)
+          SyncFileRef(id: 'folder-$title', name: title),
+      ];
   @override
   void cacheBookFolderIds(List<SyncFileRef> folders) {}
   @override
   void evictFolderId(String folderId) {}
   @override
-  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
-      const SyncFileTrio();
+  Future<SyncFileTrio> listSyncFiles(String folderId) async {
+    final String title = folderId.replaceFirst('folder-', '');
+    final TtuProgress? boxed = fileBoxProgress[title];
+    if (boxed == null) return const SyncFileTrio();
+    return SyncFileTrio(
+      progress: SyncFileRef(
+        id: 'boxed-$title',
+        name: progressFileName(boxed.lastBookmarkModified, boxed.progress),
+      ),
+    );
+  }
+
+  @override
+  Future<Object?> readJsonById(String fileId) async =>
+      fileBoxProgress[fileId.replaceFirst('boxed-', '')]!.toJson();
   @override
   Future<String> ensureBookFolder({
     required String bookTitle,
@@ -314,6 +343,124 @@ void main() {
       ),
       isA<BookProgressBaseline>().having((b) => b.normCharOffset, 'norm', 3000),
     );
+  });
+
+  // 用户报告 2026-09-22：互联通道跑的 SyncManager（host 上的 WebDAV 文件箱）此前
+  // 与云通道共用同一行 `(assetKey, 'progress')` 基线；两条通道并存时互相把对方的
+  // 基线抬走，文件箱旧进度倒灌回本机、同一本书每轮都报冲突。现在互联通道的文件箱
+  // 基线是自己的一行。
+  test('interconnect channel keeps its file-box baseline in its own row',
+      () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{},
+    );
+    expect(progressBaselineDimensionOf(fake), 'progress__fushiServer');
+    // 云通道那一行已有值：互联通道的导出不得碰它。
+    await db.setSyncBaseline('BookA', 'progress', 42);
+
+    final SyncBookResult result =
+        await SyncManager(db: db, backend: fake).syncBook(
+      book: book,
+      direction: SyncDirection.exportToTtu,
+      syncStats: false,
+      statsSyncMode: StatisticsSyncMode.merge,
+      syncAudioBook: false,
+    );
+
+    expect(result.direction, SyncResult.exported);
+    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), 1000,
+        reason: '互联文件箱基线记在自己的行');
+    expect(await db.getSyncBaseline('BookA', 'progress'), 42,
+        reason: '云通道的基线行原样不动');
+  });
+
+  // 升级路径：互联通道换了新基线行之后，存量用户只有旧行 `'progress'`、新行为空。
+  // 文件箱里躺着本 client 升级前最后一次导出（ts 500），之后本机又读过（ts 1000）
+  // ——两边不等、无基线。云盘口径这是「真分叉」；但互联文件箱只有本 client 写、
+  // host 从不读回，这里的「远端」就是自己上次的导出，只能按导出处理并落下第一条
+  // 基线。判成冲突的后果是永久幻象（冲突弹窗对互联行只看 live、不显示这一行；
+  // 自动 sweep 遇冲突早退不写基线 → 每轮都报、每次「立即同步」后都弹空弹窗）。
+  test(
+      'legacy baseline row + empty new row: interconnect auto sweep exports '
+      'and seeds the new row instead of reporting a phantom conflict',
+      () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{},
+    );
+    fake.fileBoxProgress['BookA'] = TtuProgress(
+      dataId: 0,
+      exploredCharCount: 500,
+      progress: 0.5,
+      lastBookmarkModified: 500,
+    );
+    // 升级前两条通道共用的旧行；新行 `progress__fushiServer` 不存在。
+    await db.setSyncBaseline('BookA', 'progress', 500);
+    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), isNull);
+
+    // direction 不传 = 自动 sweep 的三方判定路径。
+    final SyncBookResult result =
+        await SyncManager(db: db, backend: fake).syncBook(
+      book: book,
+      syncStats: false,
+      statsSyncMode: StatisticsSyncMode.merge,
+      syncAudioBook: false,
+    );
+
+    expect(result.direction, SyncResult.exported,
+        reason: '文件箱是本 client 自己写的，无基线不等只能是本机又读了');
+    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), 1000,
+        reason: '第一条新维度基线落下，下一轮才有 base 可比');
+    expect(await db.getSyncBaseline('BookA', 'progress'), 500,
+        reason: '云通道那一行原样不动');
+  });
+
+  testWidgets(
+      'live GET failing at load degrades the row to the file box, but Apply '
+      '"use local" still pushes to host DB', (WidgetTester tester) async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+    );
+    // 文件箱里 client 自己上次导出的旧进度（ts 500）；文件箱基线 100 → 与本机
+    // (1000) 两边都偏离 → 文件箱口径也是冲突，这一行才会在 conflictsOnly 下出现。
+    fake.fileBoxProgress['BookA'] = TtuProgress(
+      dataId: 0,
+      exploredCharCount: 900,
+      progress: 0.9,
+      lastBookmarkModified: 500,
+    );
+    await db.setSyncBaseline('BookA', 'progress__fushiServer', 100);
+    // 加载期那一次 live GET 失败 → 这一行被静默降级成文件箱行（liveAction null）。
+    fake.failRemoteProgressReads = 1;
+    await pumpDialog(tester, db, fake, conflictsOnly: true);
+    expect(find.text(t.sync_compare_conflicts), findsOneWidget);
+    expect(find.text('BookA'), findsOneWidget);
+
+    await tester.tap(find.text(t.sync_compare_use_local).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+    await tester.pumpAndSettle();
+
+    // 此前这里只写了 host 上谁都不读的文件箱，host DB 原样不动 → 下一轮 sweep 的
+    // live 三方判定照旧报同一条冲突。现在 host 有这本书就推。
+    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+    final RemoteBookProgress? pushed = fake.putProgress['BookA'];
+    expect(pushed, isNotNull, reason: '选本机必须推到 host DB，不能只写文件箱');
+    expect(pushed!.normCharOffset, 3000);
+    expect(fake.hostProgress['BookA']!.normCharOffset, 3000);
   });
 
   testWidgets(

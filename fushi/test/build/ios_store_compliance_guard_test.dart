@@ -181,6 +181,56 @@ void main() {
       );
     });
 
+    test('「AI 下视频」入口 / 设置分类 / 功能指派行三处都过 downloads + '
+        'externalDiscovery 两道门', () {
+      // 对话页里说作品名 → 识别 → 下载或订阅：既是在线发现又是下载中心。三处消费
+      // 点必须问同一对判据；其中功能指派行最容易漏——它不是入口也不是分类，只是
+      // 设置页里一行文案，但那行写着「然后下载或订阅」，iOS 上留着等于把被拆掉
+      // 的能力写在审核员眼前（PR #1592 审查补的就是这一处）。
+      const String gates =
+          'StoreRestrictedCapability.downloads.isAvailable&&'
+          'StoreRestrictedCapability.externalDiscovery.isAvailable';
+
+      // 首页入口：AI 已指派 + 两道门 + 运行时就绪。
+      expect(
+        compactCode(read('lib/src/pages/implementations/home_page.dart')),
+        contains(
+          'boolget_canAiAcquire=>appModelNoUpdate.isPreferencesReady&&'
+          'resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo)!=null&&'
+          '$gates&&',
+        ),
+      );
+
+      // 设置分类：section 级 visible，正文 / 主从详情 / 搜索索引三条路径共用。
+      expect(
+        compactCode(read('lib/src/settings/settings_schema_ai.dart')),
+        contains(
+          "id:'ai.video_download',title:t.ai_video_download_section,"
+          'visible:(SettingsContextc)=>$gates&&'
+          'c.appModel.moduleVisibility.isEnabled(ModuleId.downloads),',
+        ),
+      );
+
+      // 功能指派行：AiFeature.values 逐行渲染前过滤。
+      final String section = compactCode(
+        read('lib/src/pages/implementations/ai_provider_settings_section.dart'),
+      );
+      expect(
+        section,
+        contains(
+          'for(finalAiFeaturefeatureinAiFeature.values)'
+          'if(_featureAvailableOnThisStore(feature))_featureRow(feature),',
+        ),
+      );
+      expect(
+        section,
+        contains(
+          'staticbool_featureAvailableOnThisStore(AiFeaturefeature)=>'
+          'feature!=AiFeature.videoAcquire||($gates);',
+        ),
+      );
+    });
+
     test('设置里的资源索引器分区在 iOS 上整节不渲染', () {
       expect(
         compactCode(read('lib/src/settings/settings_schema_services.dart')),

@@ -5471,6 +5471,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final int memberCount = group.items.length;
     final bool hasRemoteMember = group.items.any(
         (CollectionOrderingItem<_VideoSlot> it) => it.payload.remote != null);
+    // 远端成员整体下载态（各集任务键 = 远端 id，聚合见 aggregateFor）：合集卡在
+    // 云角标位画进度环 / 失败角标，与散卡远端占位卡同一出口。此前合集下载只有
+    // 详情页菜单一个入口、没有任何进度出口，用户点完「下载远端集」什么都看不到。
+    final Widget? downloadBadge = hasRemoteMember
+        ? _collectionDownloadBadge(
+            collection.id,
+            <String>[
+              for (final CollectionOrderingItem<_VideoSlot> it in group.items)
+                if (it.payload.remote case final RemoteVideoInfo remote)
+                  remote.id,
+            ],
+          )
+        : null;
     final bool selected =
         _selectionMode && _selectedCollectionIds.contains(collection.id);
     final FushiCard card = FushiCard(
@@ -5520,8 +5533,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                     child: _buildTagLabels(tags),
                   ),
                 // 含远端占位成员 → 右下云角标（与散卡云角标同位；右上让位给
-                // 集数角标，TODO-2486 设计稿拍板）。
-                if (hasRemoteMember)
+                // 集数角标，TODO-2486 设计稿拍板）。成员在下载 / 刚失败时该位
+                // 换成下载态角标（下载本身蕴含「有远端成员」，不叠两枚）。
+                if (downloadBadge != null)
+                  Positioned(bottom: 6, right: 6, child: downloadBadge)
+                else if (hasRemoteMember)
                   Positioned(
                     bottom: 6,
                     right: 6,
@@ -5759,6 +5775,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       case InterconnectDownloadStatus.completed:
         return null;
     }
+  }
+
+  /// 合集卡的整体下载态角标：成员任务聚合（[InterconnectDownloadManager.aggregateFor]）
+  /// 有任务在跑 → 进度环（各成员进度均值，已完成计满）；全部结束且有失败 → 失败
+  /// 角标；没有成员有任务 / 全部完成 → null（画回云角标）。
+  Widget? _collectionDownloadBadge(int collectionId, List<String> memberIds) {
+    final InterconnectDownloadAggregate? agg =
+        ref.watch(interconnectDownloadManagerProvider).aggregateFor(memberIds);
+    if (agg == null) return null;
+    if (agg.isRunning) {
+      return RemoteDownloadProgressBadge(
+        key: ValueKey<String>('home_video_collection_downloading_$collectionId'),
+        progress: agg.progress,
+        tooltip: t.remote_video_downloading,
+      );
+    }
+    if (agg.isFailed) {
+      return RemoteDownloadFailedBadge(
+        key: ValueKey<String>(
+            'home_video_collection_download_failed_$collectionId'),
+        tooltip: t.remote_video_download_failed,
+      );
+    }
+    return null;
   }
 
   /// 多端库联合视图占位卡（spec 2026-07-12 §2.1，撤独立远端分区）：本地视频卡尺寸 +
@@ -7019,6 +7059,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       )),
       coverFetcher: remoteCoverFetcherFor(_remoteVideoClient),
       downloadMembers: _downloadRemoteMembers,
+      // 详情页每集的下载进度 / 失败角标从这里取任务快照（页内不取 provider）。
+      downloads: ref.read(interconnectDownloadManagerProvider),
       scrapeOnHost:
           _metadataBackend == null ? null : _scrapeCollectionOnHost,
       scrapeForHost: _metadataBackend == null ||

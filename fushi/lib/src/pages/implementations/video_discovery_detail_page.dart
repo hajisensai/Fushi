@@ -37,6 +37,7 @@ class VideoDiscoveryActions {
     this.onOpenDownloads,
     this.onOpenSubscriptions,
     this.onCancelDownloads,
+    this.onAiAcquire,
   });
 
   final VideoDiscoveryDetailLoader? loadDetails;
@@ -54,6 +55,10 @@ class VideoDiscoveryActions {
   /// 「查看下载」都只在发现**列表**页渲染。用户「感觉下的源不对劲，想再下一个，
   /// 但是下不了，只能取消或者等下载结束」——连取消都得先自己找到下载页。
   final Future<void> Function(List<String> jobIds)? onCancelDownloads;
+
+  /// 打开「AI 下视频」对话页（发现页搜索行的入口）。null = 不渲染入口：AI 提供商
+  /// 未指派、下载中心 / 外部发现在本平台不可用（iOS 合规）、或后端 runtime 没起。
+  final VoidCallback? onAiAcquire;
 }
 
 class VideoDiscoveryAcquisitionState {

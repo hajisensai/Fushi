@@ -28,12 +28,17 @@ enum AiFeature {
   /// 「待确认」。
   videoIdentify,
 
-  /// 视频搜索辅助：生成备选查询词（日文原名 / 罗马音 / 英文名），以及在已取回的
-  /// 字幕 / 资源候选里做语义重排。
+  /// 视频搜索辅助：后台补字幕重排（`aiSubtitleBackfillReorder`）；页面上的排序 /
+  /// 补词按钮已于 2026-09-22 移除。
   videoSearch,
 
   /// 自定义主题：按自然语言描述生成一组角色配色（进编辑页草稿，不直接应用）。
-  customTheme;
+  customTheme,
+
+  /// AI 下视频：把用户一句话解析成结构化意图 + 多义作品选择 + 版本 tie-break，
+  /// 三处共用这一个指派。热路径（搜作品 / 搜资源 / 选版本 / 入队 / 建订阅）仍是
+  /// 本地确定性代码，AI 输出里没有自由文本字段。
+  videoAcquire;
 
   String get storageKey => name;
 
