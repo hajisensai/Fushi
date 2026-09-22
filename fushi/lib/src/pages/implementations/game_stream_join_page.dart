@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
@@ -23,6 +24,7 @@ class GameStreamJoinPage extends StatefulWidget {
 class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   final List<_GameStreamHost> _hosts = <_GameStreamHost>[];
   bool _loading = true;
+  bool _joining = false;
   String? _error;
   late final String _clientId =
       'android-${Platform.localHostname}-${DateTime.now().microsecondsSinceEpoch}';
@@ -38,7 +40,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
       if (mounted) {
         setState(() {
           _loading = false;
-          _error = '游戏串流接收端仅支持 Android。';
+          _error = t.game_stream_android_only;
         });
       }
       return;
@@ -76,69 +78,100 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             ),
           );
         } on Object catch (error) {
-          _error ??= '无法连接 ${peer.deviceName ?? peer.url}：$error';
+          _error ??=
+              '${t.game_stream_unreachable}: ${peer.deviceName ?? peer.url} ($error)';
         }
       }
+    } catch (error) {
+      _error = '${t.game_stream_unreachable}: $error';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _join(_GameStreamHost host, GameStreamSession session) async {
-    final GameStreamSession? joined = await host.client.join(
-      sessionId: session.sessionId,
-      clientId: _clientId,
-      clientName: Platform.localHostname,
-    );
-    if (joined == null || !mounted) return;
+    if (_joining || !Platform.isAndroid) return;
     final NavigatorState navigator = Navigator.of(context);
-    final String activeClientId = host.client.effectiveClientId(_clientId);
-    final GameStreamLookupController lookup = GameStreamLookupController(
-      lookupClient: InterconnectGameStreamDictionaryLookup(
-        repo: widget.repository,
-        peer: host.peer,
-      ),
-      streamClient: host.client,
-      clientId: activeClientId,
-    );
-    late final FushiGameStreamReceiver receiver;
-    late final GameStreamInputComposer input;
-    receiver = FushiGameStreamReceiver(
-      client: host.client,
-      onTextEvent: lookup.applyTextEvent,
-      onInputAck: (GameStreamInputAck ack) => input.applyAck(ack),
-    );
-    await receiver.connect(
-      sessionId: session.sessionId,
-      clientId: activeClientId,
-    );
-    input = GameStreamInputComposer(
-      sessionId: session.sessionId,
-      clientId: activeClientId,
-      sender: receiver.sendInput,
-    );
+    setState(() {
+      _joining = true;
+      _error = null;
+    });
+    GameStreamLookupController? lookup;
+    FushiGameStreamReceiver? receiver;
+    GameStreamInputComposer? input;
+    String? joinedClientId;
     try {
+      final GameStreamSession? joined = await host.client.join(
+        sessionId: session.sessionId,
+        clientId: _clientId,
+        clientName: Platform.localHostname,
+      );
+      if (joined == null) throw StateError(t.game_stream_join_failed);
+      final String activeClientId = host.client.effectiveClientId(_clientId);
+      joinedClientId = activeClientId;
+      if (!mounted) return;
+      final GameStreamLookupController activeLookup =
+          GameStreamLookupController(
+            lookupClient: InterconnectGameStreamDictionaryLookup(
+              repo: widget.repository,
+              peer: host.peer,
+            ),
+            streamClient: host.client,
+            clientId: activeClientId,
+          );
+      lookup = activeLookup;
+      final FushiGameStreamReceiver activeReceiver = FushiGameStreamReceiver(
+        client: host.client,
+        onTextEvent: activeLookup.applyTextEvent,
+        onInputAck: (GameStreamInputAck ack) => input?.applyAck(ack),
+      );
+      receiver = activeReceiver;
+      final GameStreamInputComposer activeInput = GameStreamInputComposer(
+        sessionId: session.sessionId,
+        clientId: activeClientId,
+        sender: activeReceiver.sendInput,
+      );
+      input = activeInput;
+      await activeReceiver.connect(
+        sessionId: session.sessionId,
+        clientId: activeClientId,
+      );
+      if (!mounted) return;
       await navigator.push<void>(
         MaterialPageRoute<void>(
           builder: (BuildContext context) => GameStreamPage(
             sessionId: session.sessionId,
             clientId: activeClientId,
-            inputComposer: input,
-            lookupController: lookup,
-            receiver: receiver,
+            inputComposer: activeInput,
+            lookupController: activeLookup,
+            receiver: activeReceiver,
           ),
         ),
       );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = '${t.game_stream_join_failed}: $error');
+      }
     } finally {
-      await receiver.disconnect();
-      await host.client.stop(
-        sessionId: session.sessionId,
-        clientId: activeClientId,
-        reason: 'receiver_left',
-      );
-      input.dispose();
-      lookup.dispose();
-      receiver.dispose();
+      try {
+        await receiver?.disconnect();
+        if (joinedClientId != null) {
+          await host.client.stop(
+            sessionId: session.sessionId,
+            clientId: joinedClientId,
+            reason: 'receiver_left',
+          );
+        }
+      } catch (error) {
+        if (mounted) {
+          setState(() => _error = '${t.game_stream_leave_failed}: $error');
+        }
+      } finally {
+        input?.dispose();
+        lookup?.dispose();
+        receiver?.dispose();
+        if (mounted) setState(() => _joining = false);
+      }
     }
   }
 
@@ -146,11 +179,11 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('加入游戏串流'),
+        title: Text(t.game_stream_join),
         actions: <Widget>[
           IconButton(
-            tooltip: '刷新',
-            onPressed: _loading ? null : _loadHosts,
+            tooltip: t.refresh,
+            onPressed: _loading || _joining ? null : _loadHosts,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -167,7 +200,7 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            _error ?? '没有已开启串流的已配对主机。请先在 Windows 游戏页开始串流。',
+            _error ?? t.game_stream_none,
             textAlign: TextAlign.center,
           ),
         ),
@@ -190,10 +223,14 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
               child: ListTile(
                 leading: const Icon(Icons.cast),
                 title: Text(host.peer.deviceName ?? host.peer.url),
-                subtitle: Text('窗口：${session.windowId ?? '游戏'}'),
+                subtitle: Text(t.game_stream_available),
                 trailing: FilledButton(
-                  onPressed: () => unawaited(_join(host, session)),
-                  child: const Text('加入'),
+                  onPressed: _joining
+                      ? null
+                      : () => unawaited(_join(host, session)),
+                  child: Text(
+                    _joining ? t.game_stream_busy : t.game_stream_join_action,
+                  ),
                 ),
               ),
             ),

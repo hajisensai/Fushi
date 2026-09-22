@@ -23,10 +23,8 @@ import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
-import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
-import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/utils.dart';
@@ -114,7 +112,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   FushiGameStreamHost? _streamHost;
 
   bool get _gameStreamStarted => _streamHost?.started ?? false;
-  String? get _gameStreamDevice => _streamHost?.session?.clientId;
+  String? get _gameStreamDevice =>
+      _streamHost?.session?.clientName ?? _streamHost?.session?.clientId;
 
   void _onStreamChanged() {
     if (mounted) setState(() {});
@@ -482,17 +481,6 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
                                 : '${t.game_stream_stop} · ${t.game_stream_connected}: $_gameStreamDevice')
                             : t.game_stream_start,
                   ),
-                ),
-              if (Platform.isAndroid)
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          GameStreamJoinPage(repository: SyncRepository(_db)),
-                    ),
-                  ),
-                  icon: const Icon(Icons.cast),
-                  label: Text(t.game_stream_join),
                 ),
             ],
           ),

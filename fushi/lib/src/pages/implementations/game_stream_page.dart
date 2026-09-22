@@ -6,6 +6,10 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 class GameStreamPage extends StatefulWidget {
@@ -38,6 +42,10 @@ class _GameStreamPageState extends State<GameStreamPage> {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
   bool _controlsVisible = true;
+  bool _lookupVisible = true;
+  bool _mineFailed = false;
+  final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
+      GlobalKey<DictionaryPopupWebViewState>();
   String? _mineMessage;
 
   @override
@@ -46,11 +54,16 @@ class _GameStreamPageState extends State<GameStreamPage> {
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
     widget.receiver?.addListener(_onReceiverChanged);
+    widget.inputComposer.addListener(_onReceiverChanged);
   }
 
   @override
   void didUpdateWidget(GameStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.inputComposer != widget.inputComposer) {
+      oldWidget.inputComposer.removeListener(_onReceiverChanged);
+      widget.inputComposer.addListener(_onReceiverChanged);
+    }
     if (oldWidget.lookupController != widget.lookupController) {
       oldWidget.lookupController?.removeListener(_onLookupChanged);
       _lookupController = widget.lookupController;
@@ -66,6 +79,7 @@ class _GameStreamPageState extends State<GameStreamPage> {
   void dispose() {
     _lookupController?.removeListener(_onLookupChanged);
     widget.receiver?.removeListener(_onReceiverChanged);
+    widget.inputComposer.removeListener(_onReceiverChanged);
     super.dispose();
   }
 
@@ -109,28 +123,32 @@ class _GameStreamPageState extends State<GameStreamPage> {
     return Size(width * scale, height * scale);
   }
 
-  Future<void> _mine(DictionaryEntry entry) async {
+  Future<MinePopupResult> _mine(Map<String, String> fields) async {
     final GameStreamLookupController? controller = _lookupController;
-    final GameStreamTextEvent? line = controller?.currentLine;
-    if (controller == null || line == null) return;
+    if (controller == null || controller.currentLine == null) {
+      return MinePopupResult.failed(const MineOutcome(MineResult.error));
+    }
     try {
-      final GameStreamMineResult? result = await controller
-          .mine(<String, String>{
-            'expression': entry.word,
-            'term': entry.word,
-            'reading': entry.reading,
-            'glossary': entry.plainMeaning,
-            'meaning': entry.plainMeaning,
-            'sentence': line.text,
-          });
-      if (!mounted) return;
-      setState(
-        () => _mineMessage = result?.ok == true
-            ? '已请求主机制作卡片'
-            : (result?.message ?? '主机制卡失败'),
-      );
+      final GameStreamMineResult? result = await controller.mine(fields);
+      if (mounted) {
+        setState(() {
+          _mineFailed = result?.ok != true;
+          _mineMessage = result?.ok == true
+              ? t.game_stream_mine_success
+              : '${t.game_stream_mine_failed}: ${result?.message ?? ''}';
+        });
+      }
+      return result?.ok == true
+          ? const MinePopupResult(ankiConnect: true)
+          : MinePopupResult.failed(const MineOutcome(MineResult.error));
     } catch (error) {
-      if (mounted) setState(() => _mineMessage = '主机制卡失败：$error');
+      if (mounted) {
+        setState(() {
+          _mineFailed = true;
+          _mineMessage = '${t.game_stream_mine_failed}: $error';
+        });
+      }
+      return MinePopupResult.failed(const MineOutcome(MineResult.error));
     }
   }
 
@@ -155,47 +173,65 @@ class _GameStreamPageState extends State<GameStreamPage> {
                 fit: StackFit.expand,
                 children: <Widget>[
                   _buildVideoSurface(theme),
-                  if (widget.receiver?.error != null)
+                  if (widget.receiver?.error != null ||
+                      widget.inputComposer.lastRejectionReason != null)
                     Align(
                       alignment: Alignment.topCenter,
-                      child: Material(
-                        color: Colors.red.withValues(alpha: 0.85),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            '串流连接中断：${widget.receiver!.error}',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ),
-                  if (widget.receiver?.error != null)
-                    Align(
-                      alignment: Alignment.topCenter,
-                      child: Material(
-                        color: Colors.red.withValues(alpha: 0.85),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            '串流连接中断：${widget.receiver!.error}',
-                            style: const TextStyle(color: Colors.white),
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 52),
+                        child: Material(
+                          color: theme.colorScheme.errorContainer,
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(
+                              widget.receiver?.error != null
+                                  ? '${t.game_stream_disconnected}: ${widget.receiver!.error}'
+                                  : t.game_stream_input_rejected,
+                              style: TextStyle(
+                                color: theme.colorScheme.onErrorContainer,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
                   if (_controlsVisible) _buildGamepadOverlay(theme),
                   Align(
-                    alignment: Alignment.topRight,
-                    child: IconButton(
-                      tooltip: _controlsVisible ? 'Hide controls' : 'Controls',
+                    alignment: Alignment.topLeft,
+                    child: BackButton(
                       color: Colors.white,
-                      icon: Icon(
-                        _controlsVisible
-                            ? Icons.gamepad
-                            : Icons.gamepad_outlined,
-                      ),
-                      onPressed: () =>
-                          setState(() => _controlsVisible = !_controlsVisible),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        IconButton(
+                          tooltip: t.game_stream_lookup_toggle,
+                          color: Colors.white,
+                          icon: Icon(
+                            _lookupVisible
+                                ? Icons.menu_book
+                                : Icons.menu_book_outlined,
+                          ),
+                          onPressed: () =>
+                              setState(() => _lookupVisible = !_lookupVisible),
+                        ),
+                        IconButton(
+                          tooltip: t.game_stream_controls_toggle,
+                          color: Colors.white,
+                          icon: Icon(
+                            _controlsVisible
+                                ? Icons.gamepad
+                                : Icons.gamepad_outlined,
+                          ),
+                          onPressed: () => setState(
+                            () => _controlsVisible = !_controlsVisible,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -203,13 +239,13 @@ class _GameStreamPageState extends State<GameStreamPage> {
             );
             final Widget lookup = compact
                 ? SizedBox(
-                    height: 280,
+                    height: math.min(360, constraints.maxHeight * 0.5),
                     child: _buildLookupRail(theme, compact: true),
                   )
                 : _buildLookupRail(theme);
             return compact
-                ? Column(children: <Widget>[video, lookup])
-                : Row(children: <Widget>[video, lookup]);
+                ? Column(children: <Widget>[video, if (_lookupVisible) lookup])
+                : Row(children: <Widget>[video, if (_lookupVisible) lookup]);
           },
         ),
       ),
@@ -232,7 +268,7 @@ class _GameStreamPageState extends State<GameStreamPage> {
         child: widget.receiver == null
             ? (widget.videoPlaceholder ??
                   Text(
-                    'Waiting for game video',
+                    t.game_stream_video_waiting,
                     style: theme.textTheme.titleMedium?.copyWith(
                       color: Colors.white70,
                     ),
@@ -251,6 +287,22 @@ class _GameStreamPageState extends State<GameStreamPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: <Widget>[
+              _PadButton(
+                label: 'L',
+                button: GameStreamVirtualButton.shoulderLeft,
+                onButton: _sendButton,
+              ),
+              _PadButton(
+                label: 'R',
+                button: GameStreamVirtualButton.shoulderRight,
+                onButton: _sendButton,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -289,53 +341,74 @@ class _GameStreamPageState extends State<GameStreamPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            Padding(
-              key: GameStreamPage.transcriptKey,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('Current line', style: theme.textTheme.labelLarge),
-                  const SizedBox(height: 8),
-                  SelectableText(
-                    line?.text ?? 'No hook text yet',
-                    style: theme.textTheme.bodyLarge,
-                    onSelectionChanged: (TextSelection selection, _) {
-                      final String? text = line?.text;
-                      if (text == null || selection.isCollapsed) return;
-                      final String selected = selection.textInside(text).trim();
-                      if (selected.isNotEmpty) {
-                        unawaited(controller?.lookup(selected));
-                      }
-                    },
-                  ),
-                  if (line?.thread != null) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      line!.thread!,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: compact ? 150 : 240),
+              child: SingleChildScrollView(
+                child: Padding(
+                  key: GameStreamPage.transcriptKey,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        t.game_stream_line,
+                        style: theme.textTheme.labelLarge,
                       ),
-                    ),
-                  ],
-                ],
+                      const SizedBox(height: 8),
+                      SelectableText(
+                        line?.text ?? t.game_stream_line_empty,
+                        style: theme.textTheme.bodyLarge,
+                        onSelectionChanged: (TextSelection selection, _) {
+                          final String? text = line?.text;
+                          if (text == null || selection.isCollapsed) return;
+                          final String selected = selection
+                              .textInside(text)
+                              .trim();
+                          if (selected.isNotEmpty) {
+                            unawaited(controller?.lookup(selected));
+                          }
+                        },
+                      ),
+                      if (line?.thread != null) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          line!.thread!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
             const Divider(height: 1),
             Expanded(
               key: GameStreamPage.dictionaryKey,
-              child: _DictionaryPane(
-                searching: controller?.searching ?? false,
-                selectedTerm: controller?.selectedTerm,
-                result: result,
-                error: controller?.error,
-                onMine: result == null || controller == null
-                    ? null
-                    : (DictionaryEntry entry) => _mine(entry),
-                onLookup: controller == null
-                    ? null
-                    : (String term) => controller.lookup(term),
-              ),
+              child: controller == null || result == null
+                  ? Center(
+                      child: controller?.searching == true
+                          ? const CircularProgressIndicator()
+                          : Text(
+                              controller?.error ?? t.game_stream_lookup_hint,
+                            ),
+                    )
+                  : DictionaryPopupLayer(
+                      result: result,
+                      webViewKey: _dictionaryKey,
+                      isSearching: controller.searching,
+                      isDark: theme.brightness == Brightness.dark,
+                      showBorder: false,
+                      swipeDismissible: false,
+                      enableSwipeToClose: false,
+                      onDismiss: () => setState(() => _lookupVisible = false),
+                      onTextSelected: (String text, Rect rect) =>
+                          unawaited(controller.lookup(text)),
+                      onLinkClick: (String text, Rect rect) =>
+                          unawaited(controller.lookup(text)),
+                      onMineEntry: _mine,
+                    ),
             ),
             if (_mineMessage != null)
               Padding(
@@ -343,7 +416,7 @@ class _GameStreamPageState extends State<GameStreamPage> {
                 child: Text(
                   _mineMessage!,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: _mineMessage!.contains('失败')
+                    color: _mineFailed
                         ? theme.colorScheme.error
                         : theme.colorScheme.primary,
                   ),
@@ -492,106 +565,6 @@ class _PadShell extends StatelessWidget {
         ),
         child: SizedBox(width: 58, height: 58, child: Center(child: child)),
       ),
-    );
-  }
-}
-
-class _DictionaryPane extends StatelessWidget {
-  const _DictionaryPane({
-    required this.searching,
-    required this.selectedTerm,
-    required this.result,
-    required this.error,
-    required this.onMine,
-    required this.onLookup,
-  });
-
-  final bool searching;
-  final String? selectedTerm;
-  final DictionarySearchResult? result;
-  final String? error;
-  final Future<void> Function(DictionaryEntry entry)? onMine;
-  final Future<void> Function(String term)? onLookup;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    if (searching) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(error!, style: TextStyle(color: theme.colorScheme.error)),
-        ),
-      );
-    }
-    final DictionarySearchResult? current = result;
-    if (current == null) {
-      return Center(
-        child: Text(
-          selectedTerm == null ? 'Select text to look up' : 'No result',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: current.entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (BuildContext context, int index) {
-        final DictionaryEntry entry = current.entries[index];
-        return Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        entry.reading.isEmpty
-                            ? entry.word
-                            : '${entry.word}  ${entry.reading}',
-                        style: theme.textTheme.titleMedium,
-                      ),
-                    ),
-                    if (onMine != null)
-                      IconButton(
-                        tooltip: 'Mine on host',
-                        icon: const Icon(Icons.add_card_outlined),
-                        onPressed: () => unawaited(onMine!(entry)),
-                      ),
-                  ],
-                ),
-                if (entry.dictionaryName.isNotEmpty)
-                  Text(
-                    entry.dictionaryName,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                SelectableText(
-                  entry.plainMeaning,
-                  onSelectionChanged: (TextSelection selection, _) {
-                    if (selection.isCollapsed || onLookup == null) return;
-                    final String term = selection
-                        .textInside(entry.plainMeaning)
-                        .trim();
-                    if (term.isNotEmpty) unawaited(onLookup!(term));
-                  },
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

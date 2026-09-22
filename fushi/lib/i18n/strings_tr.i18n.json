@@ -5146,5 +5146,22 @@
   "game_stream_waiting": "Streaming is enabled. Waiting for a paired device.",
   "game_stream_hook_required": "Start a game with an active Hook session first.",
   "game_stream_failed": "Could not update the stream",
-  "game_stream_connected": "Connected device"
+  "game_stream_connected": "Connected device",
+  "game_stream_mine_success": "Card created on the host",
+  "game_stream_mine_failed": "Host card creation failed",
+  "game_stream_disconnected": "Stream disconnected",
+  "game_stream_input_rejected": "Input was rejected. Bring the game window to the foreground on the host.",
+  "game_stream_lookup_toggle": "Show or hide dictionary",
+  "game_stream_controls_toggle": "Show or hide controls",
+  "game_stream_video_waiting": "Waiting for game video",
+  "game_stream_line": "Current line",
+  "game_stream_line_empty": "No Hook text yet",
+  "game_stream_lookup_hint": "Select text to look up",
+  "game_stream_android_only": "Game stream receiving is available on Android only.",
+  "game_stream_unreachable": "Could not connect to host",
+  "game_stream_none": "No paired host is streaming. Start streaming from the Windows game page first.",
+  "game_stream_join_failed": "Could not join the stream",
+  "game_stream_leave_failed": "Could not notify the host that streaming has ended",
+  "game_stream_available": "Game stream available",
+  "game_stream_join_action": "Join"
 }

@@ -10,6 +10,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
 import 'package:fushi/src/settings/settings_search.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -77,6 +78,19 @@ void main() {
 
   SettingsNavigationItem navTo(SettingsDestination Function() child) =>
       SettingsNavigationItem(id: 'p.sub', title: '进入子页', child: child);
+
+  testWidgets('Android game receiver belongs to interconnect settings',
+      (WidgetTester tester) async {
+    await pumpContext(tester);
+    final SettingsDestination destination = buildInterconnectDestination();
+    final List<SettingsItem> entries = destination.sections
+        .expand((SettingsSection section) => section.items)
+        .where((SettingsItem item) => item.id == 'interconnect.game_stream')
+        .toList();
+    expect(entries, hasLength(1));
+    expect(entries.single, isA<SettingsActionItem>());
+    expect(entries.single.isVisible(sctx), Platform.isAndroid);
+  });
 
   SettingsDestination parentPage(SettingsNavigationItem nav) =>
       SettingsDestination(
