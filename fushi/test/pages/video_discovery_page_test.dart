@@ -10,6 +10,8 @@ import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     as discovery;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart'
+    show VideoDiscoveryActions;
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 
@@ -86,6 +88,7 @@ Widget _harness(
   VideoDiscoveryController controller, {
   ValueChanged<discovery.VideoDiscoveryItem>? onOpenItem,
   double scale = 1,
+  VideoDiscoveryActions actions = const VideoDiscoveryActions(),
 }) {
   return TranslationProvider(
     child: MaterialApp(
@@ -98,6 +101,7 @@ Widget _harness(
         body: VideoDiscoveryPage(
           navigation: const Text('video navigation'),
           controller: controller,
+          actions: actions,
           onOpenItem: onOpenItem,
         ),
       ),
@@ -107,6 +111,36 @@ Widget _harness(
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
+
+  testWidgets('「AI 下视频」入口只在宿主接线时渲染，点击直接调端口', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-discovery-ai-acquire')),
+      findsNothing,
+    );
+
+    int opened = 0;
+    await tester.pumpWidget(_harness(
+      controller,
+      actions: VideoDiscoveryActions(onAiAcquire: () => opened++),
+    ));
+    await tester.pumpAndSettle();
+    final Finder entry =
+        find.byKey(const ValueKey<String>('video-discovery-ai-acquire'));
+    expect(entry, findsOneWidget);
+    await tester.tap(entry);
+    await tester.pump();
+    expect(opened, 1);
+  });
 
   testWidgets('默认同时加载热门、本季动漫和全部作品', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1000);

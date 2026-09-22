@@ -27,6 +27,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
   'ai_providers',
+  // String：「AI 下视频」的默认画质。`''` 未设置（首次使用时问并按勾选写回）/
+  // `ask` 每次询问 / `2160p` `1080p` `720p` `480p` `any` 固定档。非凭据、跨设备。
+  'ai_video_download_quality',
+  // String：「AI 下视频」的字幕语言。`''` 未设置 / `ask` 每次询问 / `original`
+  // 跟随作品语言 / `ja` 等语言码 / `none` 不配字幕。非凭据、跨设备。
+  'ai_video_download_subtitle_language',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',
