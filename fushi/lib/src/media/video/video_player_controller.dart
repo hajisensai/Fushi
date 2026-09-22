@@ -15,6 +15,7 @@ import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
     show redactCredentialsInText;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
@@ -493,6 +494,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 当前视频的内封章节列表（TODO-424）；[load] 成功后由 [refreshChapters] 从 libmpv
   /// `chapter-list` 读取填充，无章节 / 非 libmpv 后端时为空。章节面板 / 跳转读它。
   List<VideoChapter> _chapters = const <VideoChapter>[];
+
+  /// 本次载入若是蓝光播放列表，这里是它的章节起点表（来自 MPLS）；否则 null。
+  List<Duration>? _blurayChapters;
 
   /// 上次持久化时的整秒位置；用于 [_maybeSavePosition] 节流到每秒至多一次。
   int _lastSavedSec = -1;
@@ -1549,13 +1553,31 @@ class VideoPlayerController extends ChangeNotifier
     // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
     _mediaOpened = false;
     _bookUid = bookUid;
-    _videoPath = videoFile?.path;
+    // 蓝光播放列表：`videoPath` 指向 `BDMV/PLAYLIST/*.mpls` 时，先把它解析成内核吃
+    // 得下的东西——单段完整覆盖给 `STREAM/*.m2ts` 真实路径，多段/需截取给 `edl://`
+    // 拼接。放在 load 里而不是页面里，是为了让外部打开、画质重载这些别的入口一起覆
+    // 盖到。解析不出来（盘坏了/被删了一半）时原样透传，让 libmpv 的真实错误经
+    // `onPlaybackError` 浮上来，而不是在这里编一个更像样但不真的理由。
+    final BluraySource? bluray =
+        videoFile != null && isBlurayPlaylistPath(videoFile.path)
+        ? await resolveBluraySource(videoFile.path)
+        : null;
+    // 下游吃 `_videoPath` 的是内嵌字幕抽取、制卡裁剪这些 ffmpeg 链路，它们要的是一
+    // 段真实码流，不是播放列表。
+    _videoPath = bluray?.primaryStreamPath ?? videoFile?.path;
+    _blurayChapters = bluray?.chapters;
     // BUG-2455：交给 native 的 URL 统一过 [nativePlaybackUri]——互联 host 的自签
     // https 流降成明文 http 交给中继，由中继按配对指纹钉扎升回 https；本地文件 /
     // 公网流原样。native 侧从此不碰互联 host 的 TLS（随包 libmpv 换成 libcurl 后默认
     // 校验证书，自签 host 直连必失败）。
     final String sourceUri = nativePlaybackUri(
-      mediaUri ?? mediaUriForVideoPath(videoFile!.path),
+      mediaUri ??
+          (bluray == null
+              ? mediaUriForVideoPath(videoFile!.path)
+              // EDL 串不是文件路径，不能再过 `mediaUriForVideoPath` 包成 file://。
+              : bluray.isPlainFile
+              ? mediaUriForVideoPath(bluray.uri)
+              : bluray.uri),
     );
     _sourceIsNetwork = isNetworkStreamUri(sourceUri);
     // 远端流 URL 带 api_key / PlaySessionId；调试日志可一键上传，先脱敏。
@@ -3039,6 +3061,18 @@ class VideoPlayerController extends ChangeNotifier
 
   Future<void> _refreshChaptersForLoad(Player player, int loadToken) async {
     if (!_isCurrentLoad(player, loadToken)) return;
+    // 蓝光：章节来自 MPLS 的 PlayListMark，不问 libmpv。EDL 拼接时 libmpv 会把每个
+    // 分段的边界当成一章（分段是授权切割，不是章节），单段时它又只看得到 m2ts 里没
+    // 有的容器章节——两种情况下 `chapter-list` 给的都不是这张盘的章节表。
+    final List<Duration>? blurayChapters = _blurayChapters;
+    if (blurayChapters != null) {
+      _chapters = <VideoChapter>[
+        for (int i = 0; i < blurayChapters.length; i++)
+          VideoChapter(index: i, title: '', start: blurayChapters[i]),
+      ];
+      notifyListeners();
+      return;
+    }
     final String countRaw = await _getMpvProperty('chapter-list/count');
     if (!_isCurrentLoad(player, loadToken)) return; // 读取期间换片 / 销毁：丢弃。
     final int total = int.tryParse(countRaw.trim()) ?? 0;
