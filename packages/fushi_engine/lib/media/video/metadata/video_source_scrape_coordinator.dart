@@ -181,6 +181,10 @@ class VideoSourceScrapeCoordinator
   final Map<String, Map<String, AnidbEpisodeXref>> _anidbXrefCache =
       <String, Map<String, AnidbEpisodeXref>>{};
   final Map<String, Set<String>> _userVerifiedCache = <String, Set<String>>{};
+
+  /// 合并预处理已识别过的文件（视频路径 → 结果），主循环按文件消费一次即删。
+  final Map<String, AnidbHashIdentityResult> _preIdentified =
+      <String, AnidbHashIdentityResult>{};
   final Map<String, Map<String, (int, int)>> _episodeOverridesCache =
       <String, Map<String, (int, int)>>{};
   final bool _ownsRegistry;
@@ -651,6 +655,46 @@ class VideoSourceScrapeCoordinator
         _ => null,
       };
       int startedWorks = 0;
+
+      if (hasProvider && anidb?.isBanned != true) {
+        // Shoko：文件身份决定作品归属。散在合集外、哈希指向同一部剧的单文件
+        // 单元先合成一个剧集单元再进主循环（BUG-2624）。
+        final List<VideoSourceScrapeWork> merged =
+            await _mergeStandaloneByAnidbWork(
+          works,
+          source,
+          lookups: lookups,
+          warnings: warnings,
+          token: cancellationToken,
+          onHashProgress: (String path, int bytes, int totalBytes) =>
+              onProgress(
+            VideoSourceScrapeProgress(
+              phase: VideoSourceScrapePhase.recognizing,
+              sourceId: source.id,
+              sourceLabel: source.label,
+              currentWorkTitle: p.basename(path),
+              current: 0,
+              total: works.length,
+              message: 'AniDB ED2K ${p.basename(path)}：$bytes / $totalBytes 字节',
+            ),
+          ),
+          primaryProvider: settings.provider,
+        );
+        if (!identical(merged, works)) {
+          works = merged;
+          await _publish(
+            runId,
+            onProgress,
+            VideoSourceScrapeProgress(
+              phase: VideoSourceScrapePhase.planning,
+              sourceId: source.id,
+              sourceLabel: source.label,
+              total: works.length,
+            ),
+            totalWorks: works.length,
+          );
+        }
+      }
 
       for (int index = 0;
           hasProvider && anidb?.isBanned != true && index < works.length;
@@ -1762,7 +1806,6 @@ class VideoSourceScrapeCoordinator
     if (collection == null || collection.sourceFolderPath != null) {
       return const <_SplitWork>[];
     }
-    final AnimeIdentityMapping? mapping = identityMapping;
     // 按 AniDB 作品分组（保持成员顺序）。
     final Map<int, List<VideoBookRow>> groups = <int, List<VideoBookRow>>{};
     final Map<int, AnidbFileIdentity> identityByAnime =
@@ -1775,57 +1818,16 @@ class VideoSourceScrapeCoordinator
     }
     if (groups.length < 2) return const <_SplitWork>[];
 
-    String titleOf(AnidbFileIdentity identity, String fallback) => <String>[
-          identity.englishTitle,
-          identity.romajiTitle,
-          identity.kanjiTitle,
-          fallback,
-        ].map((String t) => t.trim()).firstWhere((String t) => t.isNotEmpty,
-            orElse: () => fallback);
-    VideoMetadataLookup? lookupFor(
-        AnimeIdentityEntry? entry, VideoMetadataMediaKind kind,
-        {required int animeId}) {
-      if (primaryProvider == VideoMetadataProviderKind.anidb) {
-        return VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.anidb,
-            externalId: '$animeId',
-            mediaKind: kind);
-      }
-      if (entry == null) return null;
-      if (entry.malIds.length == 1) {
-        return VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.mal,
-            externalId: '${entry.malIds.single}',
-            mediaKind: kind);
-      }
-      if (entry.tmdbId != null && entry.isMovie == (kind == VideoMetadataMediaKind.movie)) {
-        return VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.tmdb,
-            externalId: '${entry.tmdbId}',
-            mediaKind: kind);
-      }
-      return null;
-    }
-
     // 先决定每组形态与身份（不动库）。
-    final List<_PlannedSplitGroup> planned = <_PlannedSplitGroup>[];
-    for (final MapEntry<int, List<VideoBookRow>> group in groups.entries) {
-      final AnidbFileIdentity identity = identityByAnime[group.key]!;
-      final AnimeIdentityEntry? entry =
-          mapping == null ? null : await mapping.entryForAnidb(group.key);
-      final bool isMovie = identity.animeType.isNotEmpty
-          ? identity.isMovieType
-          : (entry?.isMovie ?? false);
-      final VideoMetadataMediaKind kind =
-          isMovie ? VideoMetadataMediaKind.movie : VideoMetadataMediaKind.tv;
-      planned.add(_PlannedSplitGroup(
-        animeId: group.key,
-        members: group.value,
-        title: titleOf(identity, group.value.first.title),
-        kind: kind,
-        lookup: lookupFor(entry, kind, animeId: group.key),
-      ));
-    }
+    final List<_PlannedSplitGroup> planned = <_PlannedSplitGroup>[
+      for (final MapEntry<int, List<VideoBookRow>> group in groups.entries)
+        await _planAnidbGroup(
+          animeId: group.key,
+          members: group.value,
+          identity: identityByAnime[group.key]!,
+          primaryProvider: primaryProvider,
+        ),
+    ];
 
     // 原合集去留：视频成员全部被拆走 → 整删（带墓碑）；否则只移走已拆成员。
     final List<MediaCollectionItemRow> items =
@@ -1863,33 +1865,253 @@ class VideoSourceScrapeCoordinator
         }
         continue;
       }
-      // 剧集：新建（或撞名时加 AniDB 后缀）播放列表合集，收下该组成员。
-      String name = group.title;
-      final MediaCollectionRow? clash =
-          await database.getMediaCollectionByNaturalKey(name, 'playlist');
-      if (clash != null && clash.id != collection.id) {
-        name = '$name（AniDB ${group.animeId}）';
-      }
-      final int newId =
-          await database.createMediaCollection(name, collectionType: 'playlist');
-      for (final VideoBookRow member in group.members) {
-        await database.addToCollection(newId, MediaKind.video, member.bookUid);
-      }
-      final MediaCollectionRow row =
-          (await database.getMediaCollectionById(newId))!;
-      result.add(_SplitWork(
-        work: VideoSourceScrapeWork(
-          source: source,
-          title: row.name,
-          members: group.members,
-          collection: row,
-        ),
-        lookup: group.lookup,
-        animeId: group.animeId,
-        kind: group.kind,
+      result.add(await _createAnidbEpisodicUnit(
+        group,
+        source,
+        replacingCollectionId: collection.id,
       ));
     }
     return result;
+  }
+
+  /// Shoko：AnimeSeries 只按 AniDB anime id 建一次、多文件复用
+  /// （`AnimeSeriesRepository.GetByAnimeID`），文件在哪个目录、叫什么名字与归属
+  /// 无关。计划器只按合集成员关系出单元，于是散在合集外的单文件 `book:` 单元哪怕
+  /// 哈希全指向同一部剧，也各自成「一集的电视剧」：作品行一集一份、tvshow / season
+  /// sidecar 永远写不出（单成员单元证明不了专属根目录）、日志一集四条（BUG-2624）。
+  /// 这里在主循环前把它们按 AniDB 作品合成 playlist 合集剧集单元，与
+  /// [_splitByAnidbWork] 互为镜像：拆分建合集怎么建，合并就怎么建。
+  ///
+  /// 只动 **单文件、非电影、没有已确认身份** 的单元：电影一文件一作品是 Shoko 的
+  /// `CrossRef_AniDB_TMDB_Movie` 形态，不合；带已确认身份的单元是用户或上一轮
+  /// 定过的，不静默改键。哈希识别不了 / 关闭 / 未配置的文件原样留给主循环按既有
+  /// 路径处理（那边会打出具体原因）。
+  Future<List<VideoSourceScrapeWork>> _mergeStandaloneByAnidbWork(
+    List<VideoSourceScrapeWork> works,
+    SourceLibraryRow source, {
+    required Map<String, VideoMetadataLookup> lookups,
+    required List<SourceScrapeIssue> warnings,
+    required VideoSourceScrapeCancellationToken token,
+    required void Function(String path, int bytes, int totalBytes)
+        onHashProgress,
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
+    _preIdentified.clear();
+    if (!hashIdentityService.enabled || !hashIdentityService.isConfigured) {
+      return works;
+    }
+    final Map<int, List<VideoSourceScrapeWork>> byAnime =
+        <int, List<VideoSourceScrapeWork>>{};
+    final Map<int, AnidbFileIdentity> identityByAnime =
+        <int, AnidbFileIdentity>{};
+    for (final VideoSourceScrapeWork work in works) {
+      if (work.isEpisodic || lookups.containsKey(work.stableKey)) continue;
+      // 与主循环同一优先级：已落库 / NFO / 路径显式 id 在哈希之前。这些单元留给
+      // 主循环按既有路径处理（哈希照做、但不决定身份、更不改合集归属）。
+      if (await _hasAuthoritativeIdentity(work, source)) continue;
+      final VideoBookRow member = work.members.single;
+      token.throwIfCancelled();
+      final AnidbHashIdentityResult result =
+          await hashIdentityService.identifyFile(
+        member.videoPath,
+        isCancelled: () => token.isCancelled,
+        onProgress: (int bytes, int total) =>
+            onHashProgress(member.videoPath, bytes, total),
+      );
+      token.throwIfCancelled();
+      if (result.status == AnidbHashIdentityStatus.cancelled) {
+        throw const VideoSourceScrapeCancelled();
+      }
+      // 结果（含未命中 / 失败）留给主循环的 [_identifyWork] 复用：那边负责打
+      // 每个文件的识别日志，这里不重复识别、不重复记账。
+      _preIdentified[member.videoPath] = result;
+      final AnidbFileIdentity? identity = result.identity;
+      if (result.status != AnidbHashIdentityStatus.matched ||
+          identity == null) {
+        continue;
+      }
+      (byAnime[identity.animeId] ??= <VideoSourceScrapeWork>[]).add(work);
+      identityByAnime.putIfAbsent(identity.animeId, () => identity);
+    }
+
+    final Map<String, _SplitWork> mergedByFirstKey = <String, _SplitWork>{};
+    final Set<String> absorbedKeys = <String>{};
+    for (final MapEntry<int, List<VideoSourceScrapeWork>> entry
+        in byAnime.entries) {
+      if (entry.value.length < 2) continue;
+      final List<VideoBookRow> members = <VideoBookRow>[
+        for (final VideoSourceScrapeWork work in entry.value)
+          work.members.single,
+      ]..sort((VideoBookRow a, VideoBookRow b) =>
+          a.videoPath.toLowerCase().compareTo(b.videoPath.toLowerCase()));
+      final _PlannedSplitGroup group = await _planAnidbGroup(
+        animeId: entry.key,
+        members: members,
+        identity: identityByAnime[entry.key]!,
+        primaryProvider: primaryProvider,
+      );
+      if (group.kind == VideoMetadataMediaKind.movie) continue;
+      // 用户删过同名播放列表就不自动重建（BUG-1739 的规矩：非用户显式的合集创建
+      // 路径都要问墓碑）。[createMediaCollection] 本身会清墓碑——它是给用户显式
+      // 重建用的入口；合并预处理每趟刮削都跑，不问墓碑就是「删除合集（保留条目）
+      // → 下一趟又按 AniDB 标题建回来」的死循环，用户视角＝合集删不掉。
+      if (await database.hasCollectionDeletionTombstone(
+        group.title,
+        'playlist',
+      )) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: group.title,
+          message:
+              'AniDB 文件哈希把 ${members.length} 个独立文件识别为同一部作品（aid ${entry.key}，${group.title}），'
+              '但同名播放列表合集已被删除过，不自动重建；文件保持独立。要合并请手动新建合集。',
+        ));
+        continue;
+      }
+      token.throwIfCancelled();
+      final _SplitWork merged = await _createAnidbEpisodicUnit(group, source);
+      mergedByFirstKey[entry.value.first.stableKey] = merged;
+      for (final VideoSourceScrapeWork work in entry.value) {
+        absorbedKeys.add(work.stableKey);
+      }
+      if (merged.lookup case final VideoMetadataLookup lookup) {
+        lookups[merged.work.stableKey] = lookup;
+      }
+      warnings.add(SourceScrapeIssue(
+        workTitle: merged.work.title,
+        message:
+            'AniDB 文件哈希把 ${members.length} 个独立文件识别为同一部作品（aid ${entry.key}，${group.title}），'
+            '已按 Shoko 方式合成剧集合集「${merged.work.title}」再刮削。',
+      ));
+    }
+    if (mergedByFirstKey.isEmpty) return works;
+    // 合并单元顶替其第一个成员原来的位置，其余被吸收的单元移除；顺序不变。
+    return List<VideoSourceScrapeWork>.unmodifiable(<VideoSourceScrapeWork>[
+      for (final VideoSourceScrapeWork work in works)
+        if (mergedByFirstKey[work.stableKey] case final _SplitWork merged)
+          merged.work
+        else if (!absorbedKeys.contains(work.stableKey))
+          work,
+    ]);
+  }
+
+  /// 主循环让哈希决定作品身份的前提是「已确认 / 已落库 / NFO / 路径显式 id 都
+  /// 没有」（[_resolveWork] 的 `hashDecidesIdentity`）。合并预处理跑在主循环之前，
+  /// 必须按同一优先级放行：用户手动确认过的散文件（身份持久在 book 级作品行）若被
+  /// 按哈希合进新合集，落库时 `_removeBookOwnedWorksForCollection` 会把那一行连同
+  /// 用户的确认一起删掉——哈希静默换掉了手动指定的身份，正是拆分路径明文禁止的
+  /// 事，合并路径没有理由例外。
+  Future<bool> _hasAuthoritativeIdentity(
+    VideoSourceScrapeWork work,
+    SourceLibraryRow source,
+  ) async {
+    final VideoBookRow member = work.members.single;
+    if (parseExplicitVideoMetadataIds(
+      <String>[member.videoPath],
+      fallbackMediaKind: VideoMetadataMediaKind.tv,
+    ).isNotEmpty) {
+      return true;
+    }
+    final List<VideoMetadataLookup> stored = await _store.lookupsForWork(work);
+    if (stored.any((VideoMetadataLookup lookup) =>
+        kSelectableVideoMetadataProviders.contains(lookup.provider))) {
+      return true;
+    }
+    final VideoMetadataWork? nfo = await VideoNfoReader(
+      generatedArtifactChecker:
+          DatabaseSidecarGeneratedArtifactChecker(database),
+    ).readForPaths(
+      sourceRoot: source.rootPath,
+      fallbackTitle: work.title,
+      videoPaths: <String>[member.videoPath],
+    );
+    return _lookupsForNfo(nfo).isNotEmpty;
+  }
+
+  /// 一组哈希同属一部 AniDB 作品的成员 → 形态（电影 / 剧集）+ 身份。
+  /// 形态由 AniDB 动画类型决定（FILE amask 取得），旧行没类型时看 Fribb `isMovie`；
+  /// 身份按主源顺序给：AniDB 主源直接用 aid；否则有唯一 MAL id 用 MAL，再否则
+  /// TMDB id；都没有就让单元自己按哈希 / 标题走常规识别。
+  Future<_PlannedSplitGroup> _planAnidbGroup({
+    required int animeId,
+    required List<VideoBookRow> members,
+    required AnidbFileIdentity identity,
+    required VideoMetadataProviderKind primaryProvider,
+  }) async {
+    final AnimeIdentityMapping? mapping = identityMapping;
+    final AnimeIdentityEntry? entry =
+        mapping == null ? null : await mapping.entryForAnidb(animeId);
+    final bool isMovie = identity.animeType.isNotEmpty
+        ? identity.isMovieType
+        : (entry?.isMovie ?? false);
+    final VideoMetadataMediaKind kind =
+        isMovie ? VideoMetadataMediaKind.movie : VideoMetadataMediaKind.tv;
+    VideoMetadataLookup? lookup;
+    if (primaryProvider == VideoMetadataProviderKind.anidb) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: '$animeId',
+          mediaKind: kind);
+    } else if (entry != null && entry.malIds.length == 1) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.mal,
+          externalId: '${entry.malIds.single}',
+          mediaKind: kind);
+    } else if (entry != null &&
+        entry.tmdbId != null &&
+        entry.isMovie == (kind == VideoMetadataMediaKind.movie)) {
+      lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.tmdb,
+          externalId: '${entry.tmdbId}',
+          mediaKind: kind);
+    }
+    final String title = <String>[
+      identity.englishTitle,
+      identity.romajiTitle,
+      identity.kanjiTitle,
+      members.first.title,
+    ].map((String t) => t.trim()).firstWhere((String t) => t.isNotEmpty,
+        orElse: () => members.first.title);
+    return _PlannedSplitGroup(
+      animeId: animeId,
+      members: members,
+      title: title,
+      kind: kind,
+      lookup: lookup,
+    );
+  }
+
+  /// 剧集组 → 新建（撞名时加 AniDB 后缀）播放列表合集收下成员，作为
+  /// `collection:` 剧集单元。[replacingCollectionId] 是拆分时正被拆掉的原合集：
+  /// 与它同名不算撞名。
+  Future<_SplitWork> _createAnidbEpisodicUnit(
+    _PlannedSplitGroup group,
+    SourceLibraryRow? source, {
+    int? replacingCollectionId,
+  }) async {
+    String name = group.title;
+    final MediaCollectionRow? clash =
+        await database.getMediaCollectionByNaturalKey(name, 'playlist');
+    if (clash != null && clash.id != replacingCollectionId) {
+      name = '$name（AniDB ${group.animeId}）';
+    }
+    final int newId =
+        await database.createMediaCollection(name, collectionType: 'playlist');
+    for (final VideoBookRow member in group.members) {
+      await database.addToCollection(newId, MediaKind.video, member.bookUid);
+    }
+    final MediaCollectionRow row =
+        (await database.getMediaCollectionById(newId))!;
+    return _SplitWork(
+      work: VideoSourceScrapeWork(
+        source: source,
+        title: row.name,
+        members: group.members,
+        collection: row,
+      ),
+      lookup: group.lookup,
+      animeId: group.animeId,
+      kind: group.kind,
+    );
   }
 
   static const String _hashDisabledNotice =
@@ -1924,13 +2146,16 @@ class VideoSourceScrapeCoordinator
         <String, AnidbFileIdentity>{};
     for (final VideoBookRow member in work.members) {
       token.throwIfCancelled();
+      // 合并预处理（[_mergeStandaloneByAnidbWork]）已经识别过的文件直接复用，
+      // 一个文件一批只识别一次；没经过预处理的（合集单元成员）照常现场识别。
       final AnidbHashIdentityResult result =
-          await hashIdentityService.identifyFile(
-        member.videoPath,
-        isCancelled: () => token.isCancelled,
-        onProgress: (int bytes, int total) =>
-            onProgress(member.videoPath, bytes, total),
-      );
+          _preIdentified.remove(member.videoPath) ??
+              await hashIdentityService.identifyFile(
+                member.videoPath,
+                isCancelled: () => token.isCancelled,
+                onProgress: (int bytes, int total) =>
+                    onProgress(member.videoPath, bytes, total),
+              );
       token.throwIfCancelled();
       if (result.status == AnidbHashIdentityStatus.cancelled) {
         throw const VideoSourceScrapeCancelled();
@@ -3230,9 +3455,14 @@ class VideoSourceScrapeCoordinator
     if (provider.providerKind == VideoMetadataProviderKind.anidb &&
         work.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey] ==
             true) {
+      // 把「为什么」说出来（BUG-2623）：302 身份被拒 / 封禁 / 没配身份 / 传输
+      // 失败在用户眼里是四种不同的下一步，吞成一句固定文案谁也查不下去。
+      final String reason = provider is AniDbVideoMetadataProvider
+          ? provider.httpDetailUnavailableReason
+          : 'anime XML 未取到';
       warnings.add(SourceScrapeIssue(
         workTitle: localTitle,
-        message: 'AniDB HTTP 详情不可用，已保留标题目录摘要且不会把分集标记为完整。',
+        message: 'AniDB HTTP 详情不可用（$reason），已保留标题目录摘要且不会把分集标记为完整。',
       ));
       return _HydratedWork(metadata: work, complete: false);
     }
