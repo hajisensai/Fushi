@@ -5463,9 +5463,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// 全屏 barrier 的 [MouseRegion] exit：指针离开了窗口（barrier 铺满全屏，指针移到浮层
-  /// 上时浮层那层 `opaque: false`，barrier 仍在 hover 中不会 exit）。此后 barrier 不会
-  /// 再来任何 hover 事件，故这里必须自己起表，否则视频卡在暂停等不到人。
+  /// 全屏 barrier 的 [MouseRegion] exit。两种来路，处理相同：
+  ///
+  /// ① 指针离开了**整个窗口**——此后 barrier 一个 hover 事件都不会再来，必须自己起表，
+  ///    否则视频卡在暂停等不到人。这是本回调存在的理由。
+  /// ② 指针移到**浮层上**——BUG-2633 给浮层补了 [lookupOverlayHitClaim] 之后，浮层会
+  ///    认领命中、barrier 不再被 hitTest，于是也会收到 exit（补壳之前不会，旧注释按
+  ///    那个前提写的，现已失效）。这一路**无害且不可观测**：MouseTracker 在同一次
+  ///    同步派发里先发 exit 再发 enter，紧随其后的浮层探针 enter 会
+  ///    `_setPointerOverLookupPopup(true)` → `_cancelHoverLeaveResume()` 把表撤掉，
+  ///    [VideoFushiPage.hoverLeaveResumeGrace] 的计时器活不过这一次派发。
+  ///
+  /// 这条不变式依赖两件事：MouseTracker 的「exit 先于 enter」派发顺序，以及 arm /
+  /// cancel 都是同步的。**别把它们改成异步**，否则指针从画面移进浮层会误触发续播。
   void _handlePointerLeftLookupSurface() {
     _pointerOverLookupPopup = false;
     _hoverLeaveLastPos = Offset.zero;
@@ -5674,9 +5684,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _buildNestedPopupLayerContent(index, screen);
 
   /// 指针进 / 出浮层的回报口：浮层盖在 barrier 之上，指针一进浮层 barrier 就收不到
-  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。`opaque: false` 使它
-  /// 只订阅 enter/exit、不挡住 barrier 的 hover 归属（指针在浮层上时 barrier 仍算
-  /// hover 中，不误报 exit）。
+  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。探针本身保持
+  /// `opaque: false`，只订阅 enter/exit。
+  ///
+  /// 注意**不要**再写成「这样 barrier 就不会 exit」——补了 [lookupOverlayHitClaim]
+  /// 之后浮层会认领命中，barrier 照样收 exit；无害的原因写在
+  /// [_handlePointerLeftLookupSurface] 的文档里（同一次派发内 enter 立刻撤表）。
   ///
   /// BUG-2633：但 `opaque: false` 的 `MouseRegion` **会把整棵子树的命中结果翻成
   /// false**（`RenderMouseRegion.hitTest` = `super.hitTest && opaque`）——浮层矩形的
@@ -5806,10 +5819,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
                     // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
                     // 外面这层 [MouseRegion] 只为补「指针移出**整个窗口**」这一路：
-                    // barrier 铺满全屏，它的 exit 只可能是指针离开窗口（移到浮层上时
-                    // 浮层那层 `opaque: false`，barrier 仍在 hover 中，不会 exit）。
                     // 那种情况下 barrier 一个 hover 事件都不会再来，只靠
                     // [_evaluateHoverLeave] 会永远等不到判定、视频卡在暂停。
+                    // （移到浮层上也会 exit，为什么无害见
+                    // [_handlePointerLeftLookupSurface]。）
                     //
                     // BUG-2633：`opaque: false` 的 MouseRegion 会把 barrier 认领的
                     // 命中翻成 false（见 [lookupOverlayHitClaim]），滚轮 / 指针就穿到
