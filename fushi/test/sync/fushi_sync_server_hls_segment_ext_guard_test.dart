@@ -34,6 +34,14 @@ const String kFfmpeg61Mp4DemuxerExtensions =
 const String kFfmpeg61Mp4SegmentExtraExtensions =
     'ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts,cmfv,cmfa';
 
+/// `test_segment()` 对探得 mpegts 格式的分段认的扩展名（mpegts demuxer 自己没有
+/// `extensions` 表，hls.c 用这张硬编码表）。
+const String kFfmpeg61MpegtsSegmentExtensions =
+    'ts,m2t,m2ts,mts,mpg,m4s,mpeg,mpegts,html';
+
+/// 分段探出来是什么格式（决定 `test_segment()` 走哪张 matchF 表）。
+enum ProbedFormat { mp4, mpegts, none }
+
 /// `av_match_name`：逗号分隔逐项整词比对，`ALL` 通配，大小写不敏感。
 bool avMatchName(String name, String names) {
   for (final String candidate in names.split(',')) {
@@ -60,20 +68,32 @@ bool ffMatchUrlExt(String url, String extensions) {
   return avMatchName(path.substring(dot + 1), extensions);
 }
 
-/// `test_segment()` 的判定：分段 URL 能不能过 FFmpeg 6.1 的门（[probedMp4] =
-/// 分段探出来是 mp4 家族，本仓的 fMP4 分段恒为此）。
-bool ffmpegHlsAcceptsSegmentUrl(String url, {bool probedMp4 = true}) {
+/// `test_segment()` 的判定：分段 URL 能不能过 FFmpeg 6.1 的门（[probed] = 分段
+/// 探出来的格式；本仓的 TS 分段恒为 [ProbedFormat.mpegts]）。
+bool ffmpegHlsAcceptsSegmentUrl(
+  String url, {
+  ProbedFormat probed = ProbedFormat.mpegts,
+}) {
   final int matchA =
       (avMatchExt(url, kFfmpeg61AllowedSegmentExtensions) ? 1 : 0) +
       (ffMatchUrlExt(url, kFfmpeg61AllowedSegmentExtensions) ? 2 : 0);
   if (matchA == 0) return false;
-  if (!probedMp4) return true;
-  int matchF =
-      (avMatchExt(url, kFfmpeg61Mp4DemuxerExtensions) ? 1 : 0) +
-      (ffMatchUrlExt(url, kFfmpeg61Mp4DemuxerExtensions) ? 2 : 0);
-  matchF |=
-      (avMatchExt(url, kFfmpeg61Mp4SegmentExtraExtensions) ? 1 : 0) +
-      (ffMatchUrlExt(url, kFfmpeg61Mp4SegmentExtraExtensions) ? 2 : 0);
+  int matchF;
+  switch (probed) {
+    case ProbedFormat.none:
+      return true;
+    case ProbedFormat.mp4:
+      matchF =
+          (avMatchExt(url, kFfmpeg61Mp4DemuxerExtensions) ? 1 : 0) +
+          (ffMatchUrlExt(url, kFfmpeg61Mp4DemuxerExtensions) ? 2 : 0);
+      matchF |=
+          (avMatchExt(url, kFfmpeg61Mp4SegmentExtraExtensions) ? 1 : 0) +
+          (ffMatchUrlExt(url, kFfmpeg61Mp4SegmentExtraExtensions) ? 2 : 0);
+    case ProbedFormat.mpegts:
+      matchF =
+          (avMatchExt(url, kFfmpeg61MpegtsSegmentExtensions) ? 1 : 0) +
+          (ffMatchUrlExt(url, kFfmpeg61MpegtsSegmentExtensions) ? 2 : 0);
+  }
   return (matchA & matchF) != 0;
 }
 
@@ -199,7 +219,7 @@ void main() {
       return res.transform(utf8.decoder).join();
     }
 
-    test('playlist 的 init 与每个分段 URI 都能过 FFmpeg 6.1 的扩展名门', () async {
+    test('playlist 的每个分段 URI 都能过 FFmpeg 6.1 的扩展名门', () async {
       final Map<String, dynamic> issued =
           jsonDecode(
                 await fetch(
@@ -218,28 +238,20 @@ void main() {
       final String text = await fetch(playlistUrl.toString(), withAuth: false);
 
       final List<String> segmentUris = <String>[];
-      String? initUri;
       for (final String line in const LineSplitter().convert(text)) {
         if (line.startsWith('#EXT-X-MAP:')) {
-          initUri = RegExp(r'URI="([^"]+)"').firstMatch(line)!.group(1);
+          fail('TS 分段不该有初始化段（fMP4 在 FFmpeg 6.1 客户端 seek 必坏）：$line');
         } else if (line.isNotEmpty && !line.startsWith('#')) {
           segmentUris.add(line);
         }
       }
-      expect(initUri, isNotNull);
       expect(segmentUris, hasLength(3));
 
       // hls.c 先把相对 URI 解析成绝对 URL（ff_make_absolute_url）再验扩展名。
-      final String absoluteInit = playlistUrl.resolve(initUri!).toString();
-      expect(
-        ffmpegHlsAcceptsSegmentUrl(absoluteInit),
-        isTrue,
-        reason: 'init 段 $absoluteInit',
-      );
       for (final String uri in segmentUris) {
         final String absolute = playlistUrl.resolve(uri).toString();
         expect(
-          ffmpegHlsAcceptsSegmentUrl(absolute),
+          ffmpegHlsAcceptsSegmentUrl(absolute, probed: ProbedFormat.mpegts),
           isTrue,
           reason: '分段 $absolute 会被 FFmpeg 6.1 hls demuxer 拒开',
         );

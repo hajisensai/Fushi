@@ -90,78 +90,14 @@ class _MemoryPrefs implements PrefStore {
   Future<void> setPref(String key, dynamic value) async => _values[key] = value;
 }
 
-// ── 合成 fMP4（假 ffmpeg 的产物）────────────────────────────────────────────
-
-Uint8List _box(String type, List<int> payload) {
-  final int size = 8 + payload.length;
-  return Uint8List.fromList(<int>[
-    (size >> 24) & 0xff,
-    (size >> 16) & 0xff,
-    (size >> 8) & 0xff,
-    size & 0xff,
-    ...type.codeUnits,
-    ...payload,
-  ]);
-}
-
-List<int> _u32(int v) => <int>[
-  (v >> 24) & 0xff,
-  (v >> 16) & 0xff,
-  (v >> 8) & 0xff,
-  v & 0xff,
-];
-
-Uint8List _syntheticSegment() {
-  final List<int> trak = <int>[
-    ..._box('trak', <int>[
-      ..._box('tkhd', <int>[
-        0,
-        0,
-        0,
-        0,
-        ..._u32(0),
-        ..._u32(0),
-        ..._u32(1),
-        ..._u32(0),
-      ]),
-      ..._box('mdia', <int>[
-        ..._box('mdhd', <int>[
-          0,
-          0,
-          0,
-          0,
-          ..._u32(0),
-          ..._u32(0),
-          ..._u32(1000),
-          ..._u32(0),
-        ]),
-      ]),
-    ]),
-  ];
-  return Uint8List.fromList(<int>[
-    ..._box('ftyp', <int>[9, 9, 9, 9]),
-    ..._box('moov', trak),
-    ..._box('moof', <int>[
-      ..._box('traf', <int>[
-        ..._box('tfhd', <int>[0, 0, 0, 0, ..._u32(1)]),
-        ..._box('tfdt', <int>[0, 0, 0, 0, ..._u32(0)]),
-      ]),
-    ]),
-    ..._box('mdat', <int>[42, 42, 42, 42]),
-  ]);
-}
-
-int _readFirstTfdt(List<int> data) {
-  for (int i = 0; i + 12 <= data.length; i++) {
-    if (data[i] == 0x74 &&
-        data[i + 1] == 0x66 &&
-        data[i + 2] == 0x64 &&
-        data[i + 3] == 0x74) {
-      return ByteData.sublistView(Uint8List.fromList(data)).getUint32(i + 8);
-    }
-  }
-  return -1;
-}
+// ── 合成分段（假 ffmpeg 的产物）─────────────────────────────────────────────
+//
+// TS 分段是自描述的，host 对 ffmpeg 产物**零改写**（BUG-2630：时间轴由
+// `-output_ts_offset` 平移，不再有 fMP4 时代的剥 ftyp/moov + 改 tfdt）。所以假
+// 产物只要能被逐字节认出来：三个 188 字节的 TS 包，同步字节 0x47 起头。
+Uint8List _syntheticSegment() => Uint8List.fromList(
+  List<int>.generate(188 * 3, (int i) => i % 188 == 0 ? 0x47 : i & 0xff),
+);
 
 void main() {
   late FushiSyncServer server;
@@ -321,7 +257,7 @@ void main() {
       tokenQuery = Uri.parse(json['url'] as String).query;
     }
 
-    test('playlist：VOD + MAP + 按时长切段，且相对 URI', () async {
+    test('playlist：VOD + 无 MAP + 按时长切段，且相对 URI', () async {
       await startServer();
       await issue();
       final HttpClientResponse res = await get(
@@ -335,47 +271,43 @@ void main() {
       );
       final String text = await res.transform(utf8.decoder).join();
       expect(text, contains('#EXT-X-PLAYLIST-TYPE:VOD'));
-      expect(text, contains('#EXT-X-MAP:URI="hlsinit.mp4?token='));
+      // BUG-2630：TS 分段没有初始化段；有 MAP 就是又回到了 FFmpeg 6.1 客户端
+      // seek 必坏的 fMP4 形态。
+      expect(text, isNot(contains('#EXT-X-MAP')));
       // 15.5 秒 → 6+6+3.5
-      expect(RegExp('hlsseg\\.m4s\\?').allMatches(text).length, 3);
+      expect(RegExp('hlsseg\\.ts\\?').allMatches(text).length, 3);
       expect(text, contains('#EXTINF:3.500000,'));
       // 相对 URI：不重建 host/端口，反代与多网卡后面才不会拼出连不上的地址。
       expect(text, isNot(contains('http://')));
     });
 
-    test('初始化段只含 ftyp+moov', () async {
+    test('分段原样透传 ffmpeg 的 TS 产物，时间轴平移交给 -output_ts_offset', () async {
       await startServer();
       await issue();
-      final List<int> init = await getBytes(
-        '/api/library/videos/v1/hlsinit.mp4?$tokenQuery',
+      runnerCalls.clear();
+      final HttpClientResponse res = await get(
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2',
+        withAuth: false,
       );
-      expect(String.fromCharCodes(init.sublist(4, 8)), 'ftyp');
-      expect(init.length, lessThan(_syntheticSegment().length));
-      expect(String.fromCharCodes(init), isNot(contains('mdat')));
-    });
-
-    test('分段剥掉 ftyp/moov，且 tfdt 平移到该段的绝对位置', () async {
-      await startServer();
-      await issue();
-      final List<int> seg0 = await getBytes(
-        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0',
+      expect(res.statusCode, 200);
+      expect(res.headers.contentType?.mimeType, 'video/mp2t');
+      final List<int> seg2 = await res.fold<List<int>>(
+        <int>[],
+        (List<int> acc, List<int> chunk) => acc..addAll(chunk),
       );
-      expect(String.fromCharCodes(seg0.sublist(4, 8)), 'moof');
-      expect(_readFirstTfdt(seg0), 0);
-
-      final List<int> seg2 = await getBytes(
-        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=2',
-      );
-      // 第 2 段起点 12 秒，timescale 1000 → 12000。不平移的话三段时间戳全落在
-      // 0..段长 上互相重叠，播放器只认得第一段。
-      expect(_readFirstTfdt(seg2), 12000);
+      expect(seg2, _syntheticSegment(), reason: 'host 不改写 TS 分段的一个字节');
+      // 第 2 段起点 12 秒：不平移的话三段时间戳全落在 0..段长 上互相重叠，播放器
+      // 只认得第一段（首版 fMP4 是在字节层改 tfdt，TS 交给 muxer 自己平移）。
+      final List<String> args = runnerCalls.single;
+      expect(args[args.indexOf('-output_ts_offset') + 1], '12.000');
+      expect(args[args.indexOf('-f') + 1], 'mpegts');
     });
 
     test('每段按自己的时间范围调 ffmpeg（输入 seek，不从头解码）', () async {
       await startServer();
       await issue();
       runnerCalls.clear();
-      await getBytes('/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=2');
+      await getBytes('/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=2');
       expect(runnerCalls, hasLength(1));
       final List<String> args = runnerCalls.single;
       expect(args[args.indexOf('-ss') + 1], '12.000');
@@ -392,7 +324,7 @@ void main() {
       // 这几条路径按设计豁免 Basic，档位若能从 query 取，就等于把「在 host 上起一个
       // 任意参数的 ffmpeg」敞开给 URL 持有者。
       await getBytes(
-        '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0'
+        '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0'
         '&maxWidth=7680&maxBitrate=99999999',
       );
       expect(runnerCalls, hasLength(1));
@@ -410,14 +342,7 @@ void main() {
       });
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=0',
-          withAuth: false,
-        )).statusCode,
-        503,
-      );
-      expect(
-        (await get(
-          '/api/library/videos/v1/hlsinit.mp4?$tokenQuery',
+          '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=0',
           withAuth: false,
         )).statusCode,
         503,
@@ -459,21 +384,21 @@ void main() {
       await issue();
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=3',
+          '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=3',
           withAuth: false,
         )).statusCode,
         404,
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery&n=-1',
+          '/api/library/videos/v1/hlsseg.ts?$tokenQuery&n=-1',
           withAuth: false,
         )).statusCode,
         404,
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg.m4s?$tokenQuery',
+          '/api/library/videos/v1/hlsseg.ts?$tokenQuery',
           withAuth: false,
         )).statusCode,
         404,
@@ -516,7 +441,7 @@ void main() {
       );
       expect(
         (await get(
-          '/api/library/videos/v1/hlsseg.m4s?$q&n=0',
+          '/api/library/videos/v1/hlsseg.ts?$q&n=0',
           withAuth: false,
         )).statusCode,
         404,

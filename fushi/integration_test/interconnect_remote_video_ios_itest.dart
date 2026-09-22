@@ -28,6 +28,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
+import 'package:fushi_engine/media/video/live_transcode.dart'
+    show kTranscodeSegmentSeconds;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -214,10 +216,15 @@ void main() {
               isTrue,
               reason: '远端流控制器应就绪（load 后 debugPositionMs 非 null）',
             );
+            // 降级形态：同 host、显式端口、scheme 换成 http（中继按 (host, port)
+            // 查指纹升回 https）。外部 host 模式下 host 是局域网地址而非回环。
+            final Uri hostUri = Uri.parse(baseUrl);
+            final String downgraded =
+                'uri=http://${hostUri.host}:${hostUri.port}/';
             expect(
-              loadLog.any((String l) => l.contains('http://127.0.0.1:')),
+              loadLog.any((String l) => l.contains(downgraded)),
               isTrue,
-              reason: '交给 native 的必须是降级后的明文中继形态：$loadLog',
+              reason: '交给 native 的必须是降级后的明文中继形态 $downgraded：$loadLog',
             );
 
             final VideoFushiTestHooks hooks = readHooks()!;
@@ -249,12 +256,66 @@ void main() {
               greaterThan(5000),
               reason: '6 秒样片的时长应被 libmpv 识别',
             );
+            // seek 阶段（样片 ≥ 20 s 时，即外部 host 的转码流）：seek 会掐断正在下的
+            // 分段、让 HLS demuxer 重新取 init 与后续分段——Android 上首轮复现的
+            // 「seek 后分段字节错位、Invalid NAL unit size、瞬间 EOF」就在这条路上。
+            final int durationMs = hooks.debugDurationMs ?? 0;
+            if (durationMs >= 20000) {
+              final int target = durationMs ~/ 2;
+              await hooks.debugSeekMs(target);
+              int afterSeek = 0;
+              for (int i = 0; i < 80 && guard.elapsed.inSeconds < 150; i++) {
+                await tester.pump(const Duration(milliseconds: 250));
+                afterSeek = hooks.debugPositionMs ?? 0;
+                if (i % 8 == 0) {
+                  debugPrint(
+                    '[remote-video-itest] seek t=${i * 250}ms posMs=$afterSeek',
+                  );
+                }
+                if (afterSeek > target + 1500 && afterSeek < durationMs - 500) {
+                  break;
+                }
+              }
+              debugPrint(
+                '[remote-video-itest] SEEK target=$target posMs=$afterSeek '
+                'relay=$relayLog',
+              );
+              // 上界不能只排除「跳到片尾」：分段的 DTS 域一旦与 playlist 的
+              // EXTINF 累计对不上，hls demuxer 会把目标那一段整段丢掉、落到下一段
+              // （BUG-2630 第三段），落点只多一段、旧断言稳过。这里按段长收紧：
+              // 允许目标段内继续播到段尾再多缓冲一点，但多出整整一段就是坏了。
+              const int seekSlackMs = kTranscodeSegmentSeconds * 1000;
+              expect(
+                afterSeek,
+                allOf(
+                  greaterThan(target + 1500),
+                  lessThan(durationMs - 500),
+                  lessThan(target + seekSlackMs + 2000),
+                ),
+                reason:
+                    'seek 到 $target 后应继续真实播放（实测=$afterSeek；跳到片尾 = '
+                    '分段坏了直接 EOF；多跳整整一段 = 段首关键帧 DTS 比名义位置早，'
+                    '目标段被整段丢掉）',
+              );
+            }
+            // seek 掐断正在下的分段时，中继对已声明 Content-Length 的响应提前收口会记
+            // 一条「Content size below specified contentLength」——那是 native 主动断开，
+            // 不是上游失败，不计。
             expect(
-              relayLog.where((String l) => l.contains('->')),
+              relayLog.where(
+                (String l) =>
+                    l.contains('->') &&
+                    !l.contains('Content size below specified contentLength'),
+              ),
               isEmpty,
               reason: '中继不应报任何上游失败：$relayLog',
             );
           } finally {
+            // 真机取证：`--dart-define=FUSHI_TEST_MPV_LOG_FILE=<app 沙盒内路径>` 时
+            // libmpv 的 verbose 日志落在那里，而 `flutter drive` 收尾会把 app 连沙盒
+            // 一起卸掉（Android 上 run-as 还常受限），所以由测试自己读回来、只打
+            // 与 demuxer / 网络 / 解码有关的行。
+            await _dumpMpvLog();
             await navigator.maybePop();
             for (int i = 0; i < 40; i++) {
               await tester.pump(const Duration(milliseconds: 100));
@@ -276,6 +337,33 @@ void main() {
       );
     },
   );
+}
+
+const String _mpvLogFile = String.fromEnvironment('FUSHI_TEST_MPV_LOG_FILE');
+
+/// 把 libmpv 日志里与 hls / 网络 / demuxer / 解码 / 出错有关的行打到测试输出。
+Future<void> _dumpMpvLog() async {
+  if (_mpvLogFile.isEmpty) return;
+  final File log = File(_mpvLogFile);
+  if (!await log.exists()) {
+    debugPrint('[remote-video-itest] mpv log missing at $_mpvLogFile');
+    return;
+  }
+  final RegExp interesting = RegExp(
+    r'hls|ffmpeg|demux|error|Error|EOF|eof|network|http|Playback|Video|Audio|'
+    r'vd:|ad:|ao:|vo:|Stream|stream|Track|Opening|seek',
+  );
+  final List<String> lines = await log.readAsLines();
+  debugPrint('[remote-video-itest] mpv log lines=${lines.length}');
+  int printed = 0;
+  for (final String line in lines) {
+    if (!interesting.hasMatch(line)) continue;
+    debugPrint('[mpv] $line');
+    if (++printed >= 400) {
+      debugPrint('[remote-video-itest] mpv log truncated at 400 lines');
+      break;
+    }
+  }
 }
 
 /// 最小 host 库服务：只有一条视频，其余能力一律 [noSuchMethod]（本测试不会碰）。

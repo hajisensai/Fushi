@@ -4,16 +4,27 @@
 // 在家（局域网）没问题，人在外面用手机网络看一部 8 Mbps 的片子就只能卡着等缓冲。本
 // 模块让 host 按对端选的画质档把视频切段转码，用 HLS 下发。
 //
-// ## 为什么是「自己拼 playlist + fMP4 分段」
+// ## 为什么是「自己拼 playlist + MPEG-TS 分段」
 //
-// 随包的精简 ffmpeg（`tool/ffmpeg-min`）**没有编入 `mpegts` / `hls` muxer**（实测
-// muxer 只有 `mov,mp4,gif,adts,image2,mjpeg,avif,webp,srt,ass,webvtt,null`），所以
-// 走不了 ffmpeg 自带的 HLS 输出。但 playlist 不过是一段文本，分段用 `mp4` muxer 的
-// fragmented 模式照样出得来——于是 playlist 由 Dart 生成，分段一段一个短命 ffmpeg。
+// 随包的精简 ffmpeg（`tool/ffmpeg-min`）没有编入 `hls` muxer，但 playlist 不过是一段
+// 文本，分段一段一个短命 ffmpeg 出 `mpegts` 就够——于是 playlist 由 Dart 生成。
 //
 // 这条路换来的是**播放器侧零特殊处理**：libmpv 原生吃 HLS，进度条、总时长、seek 全
 // 部照常工作。相对的另一条路（一条不可 Range 的渐进流）要在播放器里拦截 seek、伪造
 // 时长，还得改 vendored 的 media_kit fork——同样的用户价值，代价差一个数量级。
+//
+// ## 为什么分段是 MPEG-TS 而不是 fMP4（BUG-2630 第二段）
+//
+// 首版分段是 fMP4（`mp4` muxer 的 fragmented 模式 + Dart 侧剥 `ftyp/moov`、平移
+// `tfdt`）。它在 Windows 随包 libmpv（FFmpeg master 构建）上一切正常，但 Apple /
+// Android 随包 libmpv 是 **FFmpeg 6.1.6**：6.1 的 hls demuxer seek 时只把子 AVIO 的
+// `pos` 清零并重新喂 init+分段，而 6.1 的 mov demuxer 没有 master 那段
+// 「`pb->pos == 0` 就丢弃 fragment index / 样本游标并重新 `mov_switch_root`」，会沿
+// seek 前的绝对偏移向前跳、把新数据当 moof 解——`Invalid NAL unit size` → 解码器吐
+// 不出帧 → 瞬间 EOF。真机复现：iOS 模拟器 / macOS / Android 只要 seek（含恢复上次
+// 位置）就黑屏。hls.c 那次 `pos = 0` 重置本来就是为 mpegts demuxer 设计的（源码注释
+// 原话），MPEG-TS 也是 Jellyfin / Emby 给 mpv 客户端的标准分段形态；mpegts muxer 认
+// `-output_ts_offset`，段内时间轴直接平移到片中绝对位置，不再需要任何字节层改写。
 //
 // ## 一段一个进程
 //
@@ -28,7 +39,6 @@ import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
-import 'package:fushi_engine/media/video/fmp4_rewriter.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:meta/meta.dart';
 
@@ -87,18 +97,18 @@ class VideoTranscodeProfile {
 /// 的常见取值，480p veryfast 在桌面 CPU 上转 6 秒内容通常不到 1 秒。
 const int kTranscodeSegmentSeconds = 6;
 
-/// 转码分段端点的路径尾（`/api/library/videos/<id>/hlsseg.m4s?token=&n=`）。
+/// 转码分段端点的路径尾（`/api/library/videos/<id>/hlsseg.ts?token=&n=`）。
 ///
-/// **扩展名是协议的一部分，不是装饰**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）
-/// 的 hls demuxer（`extension_picky` 默认开）对 playlist 里每个分段 URL 先查
+/// **扩展名是协议的一部分，不是装饰**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025
+/// 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）的 hls demuxer
+/// （`extension_picky` 默认开）对 playlist 里每个分段 URL 先查
 /// `allowed_segment_extensions` 白名单，扩展名取 **query 之前**的路径尾
 /// （`ff_match_url_ext`）；不在名单上就 `Invalid data found`，播放器压根不去取分段。
 /// Android / iOS / macOS 随包 libmpv 是 FFmpeg 6.1.6、Windows 随包是 2026-08 的
 /// master 构建，都在这道门内（Linux 走系统库，发行版 6.1.1 / 7.0.x 不复现），所以裸
-/// `hlsseg?token=` 让随包四端的转码流一开就死。
-/// `.m4s` 同时在白名单里、又在「探得 mp4 格式时额外放行」的特例里；init 段
-/// （`hlsinit.mp4`）与 playlist（`hls.m3u8`）本就带扩展名。
-const String kTranscodeSegmentPathSuffix = 'hlsseg.m4s';
+/// `hlsseg?token=` 让随包四端的转码流一开就死。`.ts` 同时在白名单里、又在「探得
+/// mpegts 格式时放行」的表里；playlist（`hls.m3u8`）本就带扩展名。
+const String kTranscodeSegmentPathSuffix = 'hlsseg.ts';
 
 /// 音频目标码率（bps）：AAC 立体声 128 kbps，够用且在弱网里只占总带宽的零头。
 const int kTranscodeAudioBitrate = 128000;
@@ -161,14 +171,37 @@ List<String> buildTranscodeSegmentArgs({
     '-g', '600',
     '-keyint_min', '600',
     '-sc_threshold', '0',
+    // **不能开 B 帧**（BUG-2630 第三段）：`-output_ts_offset` 平移的是 PTS 和 DTS
+    // 两者，而有 B 帧时段首关键帧的 `DTS = PTS - 重排延迟`，于是段 n 的首个关键帧
+    // 落在 `n*6 - 延迟`；偏偏第 0 段还会被 `avoid_negative_ts`（mpegts muxer 没有
+    // `AVFMT_TS_NEGATIVE`，默认 MAKE_NON_NEGATIVE）整体抬成非负。hls demuxer 判
+    // seek 落点用的是 **DTS**：`first_timestamp`（第 0 段首包 DTS，被抬成 0）加上
+    // playlist 里 `EXTINF` 的累计，凡 DTS 比它小的包全部 `av_packet_unref` 丢掉
+    // （`hls.c` 的 `find_timestamp_in_playlist` 与 seek 后的丢包循环）。段 n 唯一
+    // 的关键帧比门槛早那个重排延迟 → **整段被丢、落到段 n+1**；目标落在最后一段时
+    // 直接 EOF。实测（本仓随包 ffmpeg，854p/1.5 Mbps，6 秒段）重排延迟 83.422 ms，
+    // 段 1/2 的关键帧 DTS 5.916578 / 11.916578 对名义位置 6.000000 / 12.000000，
+    // seek 7 s 落到 11.94 s、seek 13 s 什么都播不出来；关掉 B 帧后三段关键帧
+    // DTS 与 PTS 重合、与名义位置精确相等，落点恢复正常。
+    //
+    // 这不是「调参绕过」：每段是**独立编码**、起点由 `-output_ts_offset` 钉死在
+    // PTS 域，而 HLS 的分段索引是 DTS 域的——两域必须重合，段边界才自洽。代价是
+    // 少了 B 帧的压缩收益，但弱网上「seek 能用」比那几个百分点重要得多，何况
+    // `-g 600` 本来就是一段一个关键帧。守卫见
+    // `fushi/test/media/video/live_transcode_test.dart` 与 `tool/ffmpeg-min/smoke-test.sh`。
+    '-bf', '0',
     '-c:a', 'aac',
     '-b:a', '$audioBitrate',
     '-ac', '2',
     // 默认 0.7s 的 muxer 预读窗口会让首包晚到，起播观感差一截。
     '-muxdelay', '0',
     '-muxpreload', '0',
-    '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-    '-f', 'mp4',
+    // 段内时间轴平移到片中绝对位置：`-ss` 输入 seek 后输出从 0 起计，mpegts muxer
+    // 认这个偏移（mp4 muxer 的 fragmented 模式不认，首版才要在字节层改 tfdt）。
+    // 各段首尾相接后覆盖全片。注意 hls demuxer 判 seek 落点用的是 **DTS** 而不是
+    // PTS（见上面 `-bf 0` 处），两者只有在关掉 B 帧后才重合。
+    '-output_ts_offset', _ffmpegSeconds(start),
+    '-f', 'mpegts',
     'pipe:1',
   ];
 }
@@ -210,14 +243,13 @@ int transcodeSegmentCount(
 
 /// 纯函数：生成 HLS 媒体 playlist。
 ///
-/// [segmentUri] 把段下标映射成 URI（host 侧带上 token）。`EXT-X-MAP` 指向初始化段，
-/// 所有分段共用它——分段自己**不带** `ftyp`/`moov`（见 `fmp4_rewriter.dart`）。
+/// [segmentUri] 把段下标映射成 URI（host 侧带上 token）。分段是自描述的 MPEG-TS，
+/// 没有初始化段（`EXT-X-MAP`）。
 ///
 /// `PLAYLIST-TYPE:VOD` + `ENDLIST` 让播放器知道这是完整的点播内容：时长可算、进度条
 /// 可拖，而不是当成没有尽头的直播。
 String buildTranscodeHlsPlaylist({
   required int durationMs,
-  required String initUri,
   required String Function(int index) segmentUri,
   int segmentSeconds = kTranscodeSegmentSeconds,
 }) {
@@ -227,12 +259,11 @@ String buildTranscodeHlsPlaylist({
   );
   final StringBuffer buffer = StringBuffer()
     ..writeln('#EXTM3U')
-    // fMP4 分段（`EXT-X-MAP`）要求 version >= 6；7 是带 MAP 的常用声明。
-    ..writeln('#EXT-X-VERSION:7')
+    // TS 分段的 VOD playlist 只用到 version 3 的特性（小数 EXTINF）。
+    ..writeln('#EXT-X-VERSION:3')
     ..writeln('#EXT-X-TARGETDURATION:$segmentSeconds')
     ..writeln('#EXT-X-MEDIA-SEQUENCE:0')
-    ..writeln('#EXT-X-PLAYLIST-TYPE:VOD')
-    ..writeln('#EXT-X-MAP:URI="$initUri"');
+    ..writeln('#EXT-X-PLAYLIST-TYPE:VOD');
   for (int i = 0; i < count; i++) {
     final ({Duration start, Duration end}) range = transcodeSegmentRange(
       i,
@@ -329,12 +360,9 @@ void _releaseTranscodeSlot() {
 @visibleForTesting
 int get liveTranscodeCount => _liveTranscodes;
 
-/// 转出一段，返回**已经可以直接发给播放器**的分段字节（剥掉 `ftyp`+`moov`，`tfdt`
-/// 平移到片中的绝对位置，见 `fmp4_rewriter.dart` 的文件头）。
-///
-/// timescale 从这一段**自己**的原始产物里读，而不是从初始化段传进来：两者出自同一套
-/// 编码参数，值必然相同，而就地解析省掉了「段请求必须等 init 先到」的顺序依赖——
-/// 播放器确实总是先取 `EXT-X-MAP`，但让正确性依赖别人的请求顺序不是好主意。
+/// 转出一段，返回**已经可以直接发给播放器**的 MPEG-TS 分段字节：ffmpeg 的产物
+/// 就是最终产物（时间轴已由 `-output_ts_offset` 平移到片中绝对位置，TS 自描述、
+/// 没有初始化段），不做任何字节层改写。
 Future<Uint8List> transcodeSegment({
   required String inputPath,
   required VideoTranscodeProfile profile,
@@ -342,64 +370,22 @@ Future<Uint8List> transcodeSegment({
   required int durationMs,
   int? audioStreamIndex,
   int segmentSeconds = kTranscodeSegmentSeconds,
-}) async {
+}) {
   final ({Duration start, Duration end}) range = transcodeSegmentRange(
     index,
     durationMs,
     segmentSeconds: segmentSeconds,
   );
-  final Uint8List raw = await _transcodeRawSegment(
-    inputPath: inputPath,
-    profile: profile,
-    range: range,
-    audioStreamIndex: audioStreamIndex,
-  );
-  final Uint8List body = stripInitSegment(raw);
-  final Uint8List? init = extractInitSegment(raw);
-  if (init == null) return body;
-  return shiftFragmentDecodeTimes(
-    body,
-    timescales: parseTrackTimescales(init),
-    offset: range.start,
+  return _runSegment(
+    buildTranscodeSegmentArgs(
+      inputPath: inputPath,
+      profile: profile,
+      start: range.start,
+      end: range.end,
+      audioStreamIndex: audioStreamIndex,
+    ),
   );
 }
-
-/// 转出初始化段（`ftyp` + `moov`）。
-///
-/// 拿第 0 段的产物来切，而不是另跑一条参数不同的命令：初始化段里的 track 定义
-/// （timescale / avcC 里的 SPS-PPS）必须与后面每一段严丝合缝，**同一套参数**是唯一
-/// 稳妥的保证方式。第 0 段本来也要转，这一次不算白跑。
-Future<Uint8List?> transcodeInitSegment({
-  required String inputPath,
-  required VideoTranscodeProfile profile,
-  required int durationMs,
-  int? audioStreamIndex,
-  int segmentSeconds = kTranscodeSegmentSeconds,
-}) async {
-  final Uint8List raw = await _transcodeRawSegment(
-    inputPath: inputPath,
-    profile: profile,
-    range: transcodeSegmentRange(0, durationMs, segmentSeconds: segmentSeconds),
-    audioStreamIndex: audioStreamIndex,
-  );
-  return extractInitSegment(raw);
-}
-
-/// 跑一段转码，返回 ffmpeg 的**原始**产物（含 `ftyp`+`moov`）。
-Future<Uint8List> _transcodeRawSegment({
-  required String inputPath,
-  required VideoTranscodeProfile profile,
-  required ({Duration start, Duration end}) range,
-  int? audioStreamIndex,
-}) => _runSegment(
-  buildTranscodeSegmentArgs(
-    inputPath: inputPath,
-    profile: profile,
-    start: range.start,
-    end: range.end,
-    audioStreamIndex: audioStreamIndex,
-  ),
-);
 
 /// 单段转码的墙钟上界。一段只有 [kTranscodeSegmentSeconds] 秒内容，正常几百毫秒到
 /// 几秒；挂死的 ffmpeg（网络盘掉线、解码器卡住）若不设上界会**永久**占住三个并发
