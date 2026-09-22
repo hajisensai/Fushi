@@ -1077,11 +1077,65 @@ JSON.stringify((function(){
   /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
   /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
   /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
-  Future<void> mineEntryByIndex(int idx) async {
-    await _controller?.evaluateJavascript(
-      source: 'window.fushiPopupMineEntryByIndex'
-          ' ? window.fushiPopupMineEntryByIndex($idx) : false',
-    );
+  ///
+  /// 返回**这次是否真的点到了那颗按钮**。BUG-2627：此前返回值（JS 侧三条
+  /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
+  /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
+  /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 提示用户。
+  /// 制卡往返的上限：查重 + 取音是网络往返，给足；超过它只可能是通道半死。
+  static const Duration _kMineRoundTripTimeout = Duration(seconds: 45);
+
+  Future<bool> mineEntryByIndex(int idx) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.mineEntryByIndex',
+        'no webview controller (popup layer gone before the confirm round-trip)',
+        StackTrace.current,
+      );
+      return false;
+    }
+    try {
+      // 等 popup.js 那头的 promise：它在 mine 按钮的 onclick（查重 → 取音 →
+      // mineEntry 回执）跑完后才 resolve。对话框据此关窗、撤弹窗保护——必须等到
+      // 落地，否则落地前的裸窗里悬停离开自动关栈会把弹窗连制卡草稿一起撤掉。
+      // 超时只保护「通道半死不回」：真超时按没点到回，卡若之后仍落地，用户会看到
+      // 一条「没点到」的提示与一张真卡并存，好过对话框永远锁死。
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            functionBody: 'return await (window.fushiPopupMineEntryByIndex'
+                ' ? window.fushiPopupMineEntryByIndex($idx) : false);',
+          )
+          .timeout(_kMineRoundTripTimeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup.js threw during the confirm round-trip: ${result!.error}',
+          StackTrace.current,
+        );
+        return false;
+      }
+      final Object? raw = result?.value;
+      // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
+      final bool clicked =
+          raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';
+      if (!clicked) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup.js refused to click entry #$idx (entry or mine button gone)',
+          StackTrace.current,
+        );
+      }
+      return clicked;
+    } catch (e, stack) {
+      // 与 currentScrollTop 同理：半销毁的 WebView 通道已摘，evaluateJavascript 抛
+      // MissingPluginException。吞掉记日志，按「没点到」回。
+      ErrorLogService.instance
+          .log('DictPopupWebview.mineEntryByIndex', e, stack);
+      return false;
+    }
   }
 
   Future<void> caretRefresh() async {

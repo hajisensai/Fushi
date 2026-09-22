@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2431 条。点号进各自文件。
+> 共 2432 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2627](bugs/BUG-2627-video-context-mine-confirm-silent.md) | ✅ | ✅ | 视频「调整上下文」确认制卡没反应 |
 | [BUG-2626](bugs/BUG-2626-subtitle-search-prefill-episode-title.md) | ✅ | ✅ | 字幕搜索预填：远端合集把分集标题当番剧名、集数从来没被预填 |
 | [BUG-2625](bugs/BUG-2625-aniyomi-mining-ffmpeg-403.md) | ✅ | ✅ | 在线视频源制卡 ffmpeg 抽音频 403：防盗链 header 只喂了播放器 |
 | [BUG-2624](bugs/BUG-2624-anidb-identity-merge-standalone-episodes.md) | ✅ | ✅ | 哈希指向同一部 AniDB 剧的散文件不合并成剧集单元，只出逐集 sidecar |
