@@ -1906,6 +1906,9 @@ class VideoSourceScrapeCoordinator
         <int, AnidbFileIdentity>{};
     for (final VideoSourceScrapeWork work in works) {
       if (work.isEpisodic || lookups.containsKey(work.stableKey)) continue;
+      // 与主循环同一优先级：已落库 / NFO / 路径显式 id 在哈希之前。这些单元留给
+      // 主循环按既有路径处理（哈希照做、但不决定身份、更不改合集归属）。
+      if (await _hasAuthoritativeIdentity(work, source)) continue;
       final VideoBookRow member = work.members.single;
       token.throwIfCancelled();
       final AnidbHashIdentityResult result =
@@ -1948,6 +1951,22 @@ class VideoSourceScrapeCoordinator
         primaryProvider: primaryProvider,
       );
       if (group.kind == VideoMetadataMediaKind.movie) continue;
+      // 用户删过同名播放列表就不自动重建（BUG-1739 的规矩：非用户显式的合集创建
+      // 路径都要问墓碑）。[createMediaCollection] 本身会清墓碑——它是给用户显式
+      // 重建用的入口；合并预处理每趟刮削都跑，不问墓碑就是「删除合集（保留条目）
+      // → 下一趟又按 AniDB 标题建回来」的死循环，用户视角＝合集删不掉。
+      if (await database.hasCollectionDeletionTombstone(
+        group.title,
+        'playlist',
+      )) {
+        warnings.add(SourceScrapeIssue(
+          workTitle: group.title,
+          message:
+              'AniDB 文件哈希把 ${members.length} 个独立文件识别为同一部作品（aid ${entry.key}，${group.title}），'
+              '但同名播放列表合集已被删除过，不自动重建；文件保持独立。要合并请手动新建合集。',
+        ));
+        continue;
+      }
       token.throwIfCancelled();
       final _SplitWork merged = await _createAnidbEpisodicUnit(group, source);
       mergedByFirstKey[entry.value.first.stableKey] = merged;
@@ -1973,6 +1992,39 @@ class VideoSourceScrapeCoordinator
         else if (!absorbedKeys.contains(work.stableKey))
           work,
     ]);
+  }
+
+  /// 主循环让哈希决定作品身份的前提是「已确认 / 已落库 / NFO / 路径显式 id 都
+  /// 没有」（[_resolveWork] 的 `hashDecidesIdentity`）。合并预处理跑在主循环之前，
+  /// 必须按同一优先级放行：用户手动确认过的散文件（身份持久在 book 级作品行）若被
+  /// 按哈希合进新合集，落库时 `_removeBookOwnedWorksForCollection` 会把那一行连同
+  /// 用户的确认一起删掉——哈希静默换掉了手动指定的身份，正是拆分路径明文禁止的
+  /// 事，合并路径没有理由例外。
+  Future<bool> _hasAuthoritativeIdentity(
+    VideoSourceScrapeWork work,
+    SourceLibraryRow source,
+  ) async {
+    final VideoBookRow member = work.members.single;
+    if (parseExplicitVideoMetadataIds(
+      <String>[member.videoPath],
+      fallbackMediaKind: VideoMetadataMediaKind.tv,
+    ).isNotEmpty) {
+      return true;
+    }
+    final List<VideoMetadataLookup> stored = await _store.lookupsForWork(work);
+    if (stored.any((VideoMetadataLookup lookup) =>
+        kSelectableVideoMetadataProviders.contains(lookup.provider))) {
+      return true;
+    }
+    final VideoMetadataWork? nfo = await VideoNfoReader(
+      generatedArtifactChecker:
+          DatabaseSidecarGeneratedArtifactChecker(database),
+    ).readForPaths(
+      sourceRoot: source.rootPath,
+      fallbackTitle: work.title,
+      videoPaths: <String>[member.videoPath],
+    );
+    return _lookupsForNfo(nfo).isNotEmpty;
   }
 
   /// 一组哈希同属一部 AniDB 作品的成员 → 形态（电影 / 剧集）+ 身份。

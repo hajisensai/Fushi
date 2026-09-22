@@ -689,6 +689,204 @@ void main() {
     );
   });
 
+  // 合并预处理与主循环同一优先级：已落库 / NFO / 路径显式 id 在哈希之前。用户手动
+  // 确认过的散文件若被按哈希合进新合集，落库时 book 级作品行连同确认一起被删——
+  // 哈希静默换掉手动指定的身份（PR #1594 审查）。
+  test('a standalone file carrying an explicit path id is left out of the merge',
+      () async {
+    AnidbHashIdentityResult show(int epno) => AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.matched,
+          hash: AnidbEd2kHash(
+              ed2k: 'abcdef0123456789abcdef0123456789',
+              size: 154490 + epno,
+              modifiedAt: DateTime(2026),
+              changedAt: DateTime(2026)),
+          identity: AnidbFileIdentity(
+              fileId: 154490 + epno,
+              animeId: 15449,
+              episodeId: 1544900 + epno,
+              episodeNumber: '0$epno',
+              romajiTitle: 'Bleach TYBW 1',
+              kanjiTitle: '',
+              englishTitle: 'Bleach TYBW 1',
+              animeType: 'TV Series',
+              episodeTitle: '',
+              episodeRomajiTitle: '',
+              episodeKanjiTitle: ''),
+          mapping: AnimeIdentityMappingResult(
+              anidbId: 15449, malIds: <int>{41467}),
+        );
+    // 第二个文件名里用户写死了另一部作品的 id（`[anidb-99999]`）。
+    const String pinned = '[Group] Bleach TYBW [02][1080p] [anidb-99999].mkv';
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      '[Group] Bleach TYBW [01][1080p].mkv': show(1),
+      pinned: show(2),
+      '[Group] Bleach TYBW [03][1080p].mkv': show(3),
+    });
+    await scrape(
+      _MalProvider(),
+      _TmdbProvider(),
+      fileNames: <String>[
+        '[Group] Bleach TYBW [01][1080p].mkv',
+        pinned,
+        '[Group] Bleach TYBW [03][1080p].mkv',
+      ],
+      hash: hash,
+      grouped: false,
+    );
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections.map((MediaCollectionRow c) => c.name),
+        <String>['Bleach TYBW 1'],
+        reason: '其余两个仍按哈希合并');
+    expect(
+        (await db.getCollectionItems(collections.single.id))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-0', 'book-2'],
+        reason: '带显式 id 的文件不得被哈希拖进合集');
+  });
+
+  test('a standalone file with a stored primary identity is left out of the '
+      'merge and keeps its work row', () async {
+    AnidbHashIdentityResult show(int epno) => AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.matched,
+          hash: AnidbEd2kHash(
+              ed2k: 'abcdef0123456789abcdef0123456789',
+              size: 154490 + epno,
+              modifiedAt: DateTime(2026),
+              changedAt: DateTime(2026)),
+          identity: AnidbFileIdentity(
+              fileId: 154490 + epno,
+              animeId: 15449,
+              episodeId: 1544900 + epno,
+              episodeNumber: '0$epno',
+              romajiTitle: 'Bleach TYBW 1',
+              kanjiTitle: '',
+              englishTitle: 'Bleach TYBW 1',
+              animeType: 'TV Series',
+              episodeTitle: '',
+              episodeRomajiTitle: '',
+              episodeKanjiTitle: ''),
+          mapping: AnimeIdentityMappingResult(
+              anidbId: 15449, malIds: <int>{41467}),
+        );
+    // book-1 此前被用户手动确认成另一部作品（MAL 999，isPrimary）。
+    final int seededWorkId = await db.into(db.videoMetadataWorks).insert(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: const Value<String?>('book-1'),
+            mediaType: 'tv',
+            title: 'User confirmed show',
+            updatedAt: 1,
+          ),
+        );
+    await db.into(db.videoMetadataProviderIdentities).insert(
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$seededWorkId:mal',
+            workId: Value<int?>(seededWorkId),
+            provider: 'mal',
+            externalId: '999',
+            isPrimary: const Value<bool>(true),
+            updatedAt: 1,
+          ),
+        );
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      '[Group] Bleach TYBW [01][1080p].mkv': show(1),
+      '[Group] Bleach TYBW [02][1080p].mkv': show(2),
+      '[Group] Bleach TYBW [03][1080p].mkv': show(3),
+    });
+    await scrape(
+      _MalProvider(),
+      _TmdbProvider(),
+      fileNames: <String>[
+        '[Group] Bleach TYBW [01][1080p].mkv',
+        '[Group] Bleach TYBW [02][1080p].mkv',
+        '[Group] Bleach TYBW [03][1080p].mkv',
+      ],
+      hash: hash,
+      grouped: false,
+    );
+    final List<MediaCollectionRow> collections =
+        await db.getAllMediaCollections();
+    expect(collections.map((MediaCollectionRow c) => c.name),
+        <String>['Bleach TYBW 1']);
+    expect(
+        (await db.getCollectionItems(collections.single.id))
+            .map((MediaCollectionItemRow i) => i.entryKey),
+        <String>['book-0', 'book-2'],
+        reason: '已有主身份的文件不得被哈希拖进合集');
+    final VideoMetadataWorkRow? kept =
+        await db.getVideoMetadataWorkByBook('book-1');
+    expect(kept, isNotNull,
+        reason: '用户确认过的 book 级作品行不得随合并被删');
+    final Map<String, String> identities = <String, String>{
+      for (final VideoMetadataProviderIdentityRow row
+          in await db.getVideoMetadataProviderIdentities(workId: kept!.id))
+        row.provider: row.externalId,
+    };
+    expect(identities, containsPair('mal', '999'));
+  });
+
+  // BUG-1739 的规矩：非用户显式的合集创建路径都要问删除墓碑。合并预处理每趟刮削
+  // 都跑，不问墓碑就是「删除合集（保留条目）→ 下一趟又建回来」的死循环。
+  test('a deleted (tombstoned) playlist of the same name is not rebuilt by '
+      'the merge', () async {
+    AnidbHashIdentityResult show(int epno) => AnidbHashIdentityResult(
+          status: AnidbHashIdentityStatus.matched,
+          hash: AnidbEd2kHash(
+              ed2k: 'abcdef0123456789abcdef0123456789',
+              size: 154490 + epno,
+              modifiedAt: DateTime(2026),
+              changedAt: DateTime(2026)),
+          identity: AnidbFileIdentity(
+              fileId: 154490 + epno,
+              animeId: 15449,
+              episodeId: 1544900 + epno,
+              episodeNumber: '0$epno',
+              romajiTitle: 'Bleach TYBW 1',
+              kanjiTitle: '',
+              englishTitle: 'Bleach TYBW 1',
+              animeType: 'TV Series',
+              episodeTitle: '',
+              episodeRomajiTitle: '',
+              episodeKanjiTitle: ''),
+          mapping: AnimeIdentityMappingResult(
+              anidbId: 15449, malIds: <int>{41467}),
+        );
+    await db.upsertCollectionMemberTombstone(
+      collectionName: 'Bleach TYBW 1',
+      collectionType: 'playlist',
+      mediaType: FushiDatabase.collectionTombstoneSentinel,
+      entryKey: FushiDatabase.collectionTombstoneSentinel,
+      deletedAt: 1,
+    );
+    final _HashService hash = _HashService(<String, AnidbHashIdentityResult>{
+      '[Group] Bleach TYBW [01][1080p].mkv': show(1),
+      '[Group] Bleach TYBW [02][1080p].mkv': show(2),
+      '[Group] Bleach TYBW [03][1080p].mkv': show(3),
+    });
+    final SourceScrapeReport report = await scrape(
+      _MalProvider(),
+      _TmdbProvider(),
+      fileNames: <String>[
+        '[Group] Bleach TYBW [01][1080p].mkv',
+        '[Group] Bleach TYBW [02][1080p].mkv',
+        '[Group] Bleach TYBW [03][1080p].mkv',
+      ],
+      hash: hash,
+      grouped: false,
+    );
+    expect(await db.getAllMediaCollections(), isEmpty,
+        reason: '用户删过的合集不得被自动重建');
+    expect(await db.hasCollectionDeletionTombstone('Bleach TYBW 1', 'playlist'),
+        isTrue, reason: '墓碑不得被合并路径清掉');
+    expect(
+      report.warnings.any((SourceScrapeIssue i) =>
+          i.message.contains('已被删除过') && i.message.contains('aid 15449')),
+      isTrue,
+      reason: '${report.warnings.map((i) => i.message)}',
+    );
+  });
+
   // 镜像的边界：电影一文件一作品（Shoko `CrossRef_AniDB_TMDB_Movie`），哪怕两个
   // 文件哈希同属一部 AniDB 电影（两个版本 / 重复文件）也不合成合集。
   test('standalone files hashed to the same AniDB movie work stay separate',
