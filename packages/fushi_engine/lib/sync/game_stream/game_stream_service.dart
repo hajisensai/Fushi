@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:shelf/shelf.dart';
 
@@ -145,9 +146,11 @@ class FushiRemoteGameStreamService {
     final GameStreamSession current = _requireSession(event.sessionId);
     if (current.state.isTerminal) return;
     _lines[event.lineId] = event;
+    while (_lines.length > 128) {
+      _lines.remove(_lines.keys.first);
+    }
     textEvents.add(event);
     if (textEvents.length > 128) textEvents.removeAt(0);
-    _touch(current);
     unawaited(onText?.call(event));
   }
 
@@ -179,6 +182,7 @@ class FushiRemoteGameStreamService {
             : 'out_of_order',
       );
       _inputAcks[event.sequence] = ack;
+      _trimInputAcks();
       return ack;
     }
     _lastInputSequence = event.sequence;
@@ -190,11 +194,13 @@ class FushiRemoteGameStreamService {
     _trimInputAcks();
     try {
       await onInput?.call(event, current);
-    } catch (_) {
+    } catch (error) {
       ack = GameStreamInputAck(
         sequence: event.sequence,
         accepted: false,
-        reason: 'input_handler_failed',
+        reason: error is GameStreamInputRejected
+            ? error.code
+            : 'input_handler_failed',
       );
       _inputAcks[event.sequence] = ack;
       _trimInputAcks();
@@ -302,11 +308,13 @@ class FushiRemoteGameStreamService {
       );
     }
     const String prefix = '/api/game-stream/sessions/';
-    if (!path.startsWith(prefix))
+    if (!path.startsWith(prefix)) {
       return Response.notFound('Game stream route not found');
+    }
     final List<String> parts = path.substring(prefix.length).split('/');
-    if (parts.length != 2 || parts[0].isEmpty)
+    if (parts.length != 2 || parts[0].isEmpty) {
       return Response.notFound('Game stream session not found');
+    }
     final GameStreamSession current;
     try {
       current = _requireSession(parts[0]);
@@ -325,16 +333,25 @@ class FushiRemoteGameStreamService {
       case 'join':
         if (method != 'POST') return Response(405);
         final String? clientId = _optionalString(body['clientId'], 'clientId');
-        if (clientId == null || clientId.isEmpty)
+        if (clientId == null || clientId.isEmpty) {
           return _error(400, 'clientId is required');
-        if (_peerIdentity != null && _peerIdentity != peerIdentity)
+        }
+        if (_peerIdentity != null && _peerIdentity != peerIdentity) {
           return _error(409, 'A different peer is connected');
+        }
         try {
           joinSession(sessionId: current.sessionId, clientId: clientId);
         } on StateError catch (error) {
           return _error(409, error.message);
         }
         _peerIdentity = peerIdentity;
+        final String? clientName = _optionalString(
+          body['clientName'],
+          'clientName',
+        );
+        if (clientName != null && clientName.length <= 256) {
+          current.clientName = clientName;
+        }
         return _json(<String, Object?>{'session': current.toJson()});
       case 'signal':
         if (method != 'POST') return Response(405);
@@ -342,8 +359,10 @@ class FushiRemoteGameStreamService {
           body['clientId'],
           'clientId',
         );
-        if (!_isPeer(peerIdentity, signalClientId))
+        if (!_isPeer(peerIdentity, signalClientId)) {
           return _error(403, 'Unknown game-stream peer');
+        }
+        _touch(current);
         final Object? rawSignal = body['signal'];
         if (rawSignal != null) {
           try {
@@ -351,8 +370,9 @@ class FushiRemoteGameStreamService {
               rawSignal,
             );
             if (signal.senderRole != GameStreamPeerRole.client ||
-                signal.senderId != _clientId)
+                signal.senderId != _clientId) {
               return _error(403, 'Invalid signal sender');
+            }
             if (signal.sessionId != current.sessionId) {
               return _error(400, 'Signal session does not match route');
             }
@@ -385,8 +405,9 @@ class FushiRemoteGameStreamService {
           body['clientId'],
           'clientId',
         );
-        if (!_isPeer(peerIdentity, stopClientId))
+        if (!_isPeer(peerIdentity, stopClientId)) {
           return _error(403, 'Unknown game-stream peer');
+        }
         stop(
           sessionId: current.sessionId,
           reason: _optionalString(body['reason'], 'reason'),
@@ -398,12 +419,16 @@ class FushiRemoteGameStreamService {
           body['clientId'],
           'clientId',
         );
-        if (!_isPeer(peerIdentity, mineClientId))
+        if (!_isPeer(peerIdentity, mineClientId)) {
           return _error(403, 'Unknown game-stream peer');
+        }
         try {
-          final GameStreamMineResult result = await mine(
-            GameStreamMineRequest.fromJson(body),
-          );
+          final GameStreamMineRequest mineRequest =
+              GameStreamMineRequest.fromJson(body);
+          if (mineRequest.sessionId != current.sessionId) {
+            return _error(400, 'Mine session does not match route');
+          }
+          final GameStreamMineResult result = await mine(mineRequest);
           return _json(<String, Object?>{'result': result.toJson()});
         } on FormatException catch (error) {
           return _error(409, error.message);
@@ -436,19 +461,30 @@ class FushiRemoteGameStreamService {
 
   GameStreamSession _requireSession(String sessionId) {
     final GameStreamSession? current = session;
-    if (current == null || current.sessionId != sessionId)
+    if (current == null || current.sessionId != sessionId) {
       throw StateError('Unknown game-stream session');
+    }
     return current;
   }
 }
 
-String _defaultSessionId() =>
-    '${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}-${DateTime.now().millisecond}';
+String _defaultSessionId() {
+  final Random random = Random.secure();
+  return base64Url.encode(List<int>.generate(24, (_) => random.nextInt(256)));
+}
 
 Future<Map<String, dynamic>> _readObject(Request request) async {
-  final Object? value = jsonDecode(await request.readAsString());
-  if (value is! Map)
+  final List<int> bytes = <int>[];
+  await for (final List<int> chunk in request.read()) {
+    if (bytes.length + chunk.length > 512 * 1024) {
+      throw const FormatException('Game-stream request is too large');
+    }
+    bytes.addAll(chunk);
+  }
+  final Object? value = jsonDecode(utf8.decode(bytes));
+  if (value is! Map) {
     throw const FormatException('Game-stream body must be an object');
+  }
   return Map<String, dynamic>.from(value);
 }
 
@@ -462,10 +498,17 @@ Response _json(Object body, {int status = 200}) => Response(
 
 Response _error(int status, String message) => _json(<String, Object?>{
   'version': kGameStreamWireVersion,
+  'code': switch (status) {
+    400 => 'invalid_request',
+    403 => 'unauthorized_peer',
+    404 => 'session_not_found',
+    409 => 'session_conflict',
+    _ => 'stream_error',
+  },
   'error': message,
 }, status: status);
 
 String? _optionalString(Object? value, String _) =>
-    value is String && value.isNotEmpty ? value : null;
+    value is String && value.isNotEmpty && value.length <= 4096 ? value : null;
 
 int? _optionalInt(Object? value) => value is int ? value : null;

@@ -1,9 +1,72 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 void main() {
+  test('lookup completion cannot attach an old result to a new line', () async {
+    final _DeferredLookup lookup = _DeferredLookup();
+    final _FakeTransport transport = _FakeTransport();
+    final GameStreamLookupController controller = GameStreamLookupController(
+      lookupClient: lookup,
+      streamClient: FushiGameStreamClient(transport: transport),
+      clientId: 'android-a',
+    );
+    addTearDown(controller.dispose);
+    controller.applyTextEvent(
+      GameStreamTextEvent(
+        sessionId: 's1',
+        lineId: 'line1',
+        text: '古い文章',
+        timestampMs: 1000,
+      ),
+    );
+    final Future<void> pending = controller.lookup('文章');
+    controller.applyTextEvent(
+      GameStreamTextEvent(
+        sessionId: 's1',
+        lineId: 'line2',
+        text: '新しい文章',
+        timestampMs: 2000,
+      ),
+    );
+    lookup.pending.complete(
+      DictionarySearchResult(
+        searchTerm: '文章',
+        bestLength: 2,
+        scrollPosition: 0,
+        entries: <DictionaryEntry>[],
+      ),
+    );
+    await pending;
+    expect(controller.result, isNull);
+    expect(controller.searching, isFalse);
+    expect(
+      () => controller.mine(<String, String>{'term': '文章'}),
+      throwsStateError,
+    );
+    expect(transport.calls, isEmpty);
+  });
+
+  test('late input acknowledgement after dispose is harmless', () async {
+    final Completer<GameStreamInputAck?> pending =
+        Completer<GameStreamInputAck?>();
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (_) => pending.future,
+    );
+    final Future<GameStreamInputAck?> sending = composer.key(
+      key: 'Enter',
+      action: GameStreamInputAction.down,
+    );
+    composer.dispose();
+    pending.complete(const GameStreamInputAck(sequence: 1, accepted: true));
+    expect((await sending)?.accepted, isTrue);
+  });
   test(
     'client posts game-stream endpoints and decodes session responses',
     () async {
@@ -86,6 +149,18 @@ void main() {
   });
 }
 
+class _DeferredLookup implements GameStreamDictionaryLookup {
+  final Completer<DictionarySearchResult?> pending =
+      Completer<DictionarySearchResult?>();
+
+  @override
+  Future<DictionarySearchResult?> searchDictionary({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+  }) => pending.future;
+}
+
 class _FakeTransport implements GameStreamTransport {
   final Map<String, Map<String, dynamic>?> responses =
       <String, Map<String, dynamic>?>{};
@@ -93,12 +168,12 @@ class _FakeTransport implements GameStreamTransport {
       <({String path, Map<String, dynamic> body})>[];
 
   @override
-  Future<Map<String, dynamic>?> post({
+  Future<GameStreamPostResult> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
   }) async {
     calls.add((path: path, body: body));
-    return responses[path];
+    return GameStreamPostResult(json: responses[path]);
   }
 }

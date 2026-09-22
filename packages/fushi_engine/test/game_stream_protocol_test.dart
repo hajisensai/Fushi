@@ -154,6 +154,55 @@ void main() {
 
     tearDown(() async => service.dispose());
 
+    test('host text does not keep an abandoned session alive', () {
+      service.createSession();
+      service.joinSession(sessionId: 's1', clientId: 'phone');
+      service.markConnected(sessionId: 's1');
+      now = now.add(const Duration(minutes: 9));
+      service.publishText(
+        GameStreamTextEvent(
+          sessionId: 's1',
+          lineId: 'line',
+          text: '続き',
+          timestampMs: 1,
+        ),
+      );
+      now = now.add(const Duration(minutes: 2));
+      service.pruneExpired();
+      expect(service.session?.reason, 'expired');
+    });
+
+    test('target rejection preserves actionable platform reason', () async {
+      service.createSession();
+      service.joinSession(sessionId: 's1', clientId: 'phone');
+      service.markConnected(sessionId: 's1');
+      service.onInput = (_, __) async {
+        throw const GameStreamInputRejected('window_not_foreground');
+      };
+      final GameStreamInputAck ack = await service.handleInput(input(1));
+      expect(ack.accepted, isFalse);
+      expect(ack.reason, 'window_not_foreground');
+    });
+
+    test('oversized signaling body is rejected before decoding', () async {
+      service.createSession();
+      final Response response = await service.handleRequest(
+        Request(
+          'POST',
+          Uri.parse('http://host/api/game-stream/join'),
+          body: jsonEncode(<String, Object?>{
+            'sessionId': 's1',
+            'clientId': List<String>.filled(600000, 'a').join(),
+          }),
+        ),
+        'POST',
+        '/api/game-stream/join',
+        peerIdentity: 'peer',
+      );
+      expect(response.statusCode, 400);
+      expect(service.session?.state, GameStreamSessionState.waiting);
+    });
+
     test('enforces one client and explicit lifecycle', () async {
       final GameStreamSession created = service.createSession(windowId: 'w');
       expect(created.state, GameStreamSessionState.waiting);

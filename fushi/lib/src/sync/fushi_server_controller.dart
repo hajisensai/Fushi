@@ -9,6 +9,12 @@ import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:fushi/src/sync/game_stream_host.dart';
+import 'package:fushi/src/sync/game_stream_mining.dart';
+import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
@@ -66,19 +72,19 @@ class FushiSyncServerController extends ChangeNotifier {
     FushiLibraryHostService Function()? libraryServiceFactory,
     MangaOcrService Function()? mangaOcrServiceFactory,
     PlatformDeviceInfoService? deviceInfo,
-  })  : _navigatorKey = navigatorKey,
-        _database = database,
-        _syncDataDir = syncDataDir,
-        _remoteLookupServiceFactory = remoteLookupServiceFactory,
-        _miningServiceFactory = miningServiceFactory,
-        _historyServiceFactory = historyServiceFactory,
-        _libraryServiceFactory = libraryServiceFactory,
-        _mangaOcrServiceFactory = mangaOcrServiceFactory,
-        // Headless/test construction without an injected service falls back to
-        // the desktop (machine-hostname) source; production wires the real
-        // per-platform service so mobile hosts advertise their model, not
-        // Android's "localhost" (TODO-1356).
-        _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
+  }) : _navigatorKey = navigatorKey,
+       _database = database,
+       _syncDataDir = syncDataDir,
+       _remoteLookupServiceFactory = remoteLookupServiceFactory,
+       _miningServiceFactory = miningServiceFactory,
+       _historyServiceFactory = historyServiceFactory,
+       _libraryServiceFactory = libraryServiceFactory,
+       _mangaOcrServiceFactory = mangaOcrServiceFactory,
+       // Headless/test construction without an injected service falls back to
+       // the desktop (machine-hostname) source; production wires the real
+       // per-platform service so mobile hosts advertise their model, not
+       // Android's "localhost" (TODO-1356).
+       _deviceInfo = deviceInfo ?? DesktopDeviceInfoService();
 
   final GlobalKey<NavigatorState> _navigatorKey;
   final FushiDatabase Function() _database;
@@ -95,6 +101,167 @@ class FushiSyncServerController extends ChangeNotifier {
 
   FushiSyncServer? _server;
   LanBroadcastService? _broadcast;
+  FushiRemoteGameStreamService? _gameStreamService;
+  FushiGameStreamHost? _gameStreamHost;
+  bool _gameStreamTexthookerAttached = false;
+  TexthookerLineEntry? _lastPublishedGameLine;
+  int? _gameStreamHwnd;
+  DateTime? _gameStreamHookStartedAt;
+  FushiGameStreamMiningAdapter? _gameStreamMining;
+  FushiGameStreamHost? get activeGameStreamHost => _gameStreamHost;
+
+  /// Host-side game-stream session registry. The game page creates a session
+  /// only after the user explicitly starts streaming; merely enabling LAN sync
+  /// never exposes a game window.
+  FushiRemoteGameStreamService get gameStreamService =>
+      _gameStreamService ??= FushiRemoteGameStreamService();
+
+  FushiGameStreamHost get gameStreamHost {
+    _gameStreamHost ??= FushiGameStreamHost(service: gameStreamService)
+      ..addListener(_onGameStreamHostChanged);
+    return _gameStreamHost!;
+  }
+
+  void _onGameStreamHostChanged() {
+    if (_gameStreamService?.session?.state.isTerminal == true) {
+      _detachGameStreamTexthooker();
+    }
+    notifyListeners();
+  }
+
+  Future<GameStreamSession> startGameStream({required int hwnd}) async {
+    final GalHookSessionState hook = GalHookSessionController.instance.state;
+    if (!Platform.isWindows ||
+        hook.boundWindow?.hwnd != hwnd ||
+        !hook.isActive) {
+      throw StateError('需要当前运行中的 Windows 游戏会话');
+    }
+    if (!isRunning) {
+      final FushiServerStartOutcome outcome = await start();
+      if (outcome is! FushiServerStarted) {
+        throw StateError('无法启动 Fushi 互联服务');
+      }
+    }
+    final GalHookSessionState currentHook =
+        GalHookSessionController.instance.state;
+    if (!currentHook.isActive ||
+        currentHook.boundWindow?.hwnd != hwnd ||
+        currentHook.sessionStartedAt != hook.sessionStartedAt) {
+      _detachGameStreamTexthooker();
+      throw StateError('游戏会话已变化，请重新开启串流');
+    }
+    _gameStreamHwnd = hwnd;
+    _gameStreamHookStartedAt = hook.sessionStartedAt;
+    _attachGameStreamTexthooker();
+    try {
+      final GameStreamSession session = await gameStreamHost.start(hwnd: hwnd);
+      final GalHookSessionState liveHook =
+          GalHookSessionController.instance.state;
+      if (!liveHook.isActive ||
+          liveHook.boundWindow?.hwnd != hwnd ||
+          liveHook.sessionStartedAt != hook.sessionStartedAt ||
+          _gameStreamHwnd != hwnd) {
+        await stopGameStream(reason: 'game_session_ended');
+        throw StateError('游戏会话已结束');
+      }
+      _publishLatestGameLine();
+      return session;
+    } catch (_) {
+      _detachGameStreamTexthooker();
+      rethrow;
+    }
+  }
+
+  void publishGameStreamText(GameStreamTextEvent event) =>
+      gameStreamService.publishText(event);
+
+  /// Installs the app-owned galgame/Anki adapter without making the shared
+  /// engine depend on Flutter repositories. Callers should set this before
+  /// enabling the host session and clear it when the app-owned adapter is
+  /// disposed.
+  void configureGameStreamMining(FushiGameStreamMiningAdapter? adapter) {
+    if (!identical(_gameStreamMining, adapter)) _gameStreamMining?.clear();
+    _gameStreamMining = adapter;
+    gameStreamService.onMine = adapter?.handler;
+  }
+
+  Future<void> stopGameStream({String reason = 'stopped'}) async {
+    await _gameStreamHost?.stop(reason: reason);
+    _detachGameStreamTexthooker();
+  }
+
+  void _attachGameStreamTexthooker() {
+    if (_gameStreamTexthookerAttached) return;
+    _gameStreamTexthookerAttached = true;
+    TexthookerService.instance.addListener(_publishLatestGameLine);
+    GalHookSessionController.instance.addListener(_onGameHookChanged);
+  }
+
+  void _onGameHookChanged() {
+    final GalHookSessionState hook = GalHookSessionController.instance.state;
+    if (hook.boundWindow?.hwnd != _gameStreamHwnd ||
+        !hook.isActive ||
+        hook.sessionStartedAt != _gameStreamHookStartedAt) {
+      unawaited(stopGameStream(reason: 'game_session_ended'));
+    }
+  }
+
+  void _detachGameStreamTexthooker() {
+    if (_gameStreamTexthookerAttached) {
+      _gameStreamTexthookerAttached = false;
+      TexthookerService.instance.removeListener(_publishLatestGameLine);
+      GalHookSessionController.instance.removeListener(_onGameHookChanged);
+    }
+    _gameStreamHwnd = null;
+    _gameStreamHookStartedAt = null;
+    _lastPublishedGameLine = null;
+    _gameStreamMining?.clear();
+    _gameStreamMining = null;
+    if (_gameStreamService != null) _gameStreamService!.onMine = null;
+  }
+
+  void _publishLatestGameLine() {
+    final GameStreamSession? session = _gameStreamService?.session;
+    final TexthookerLineEntry? entry = TexthookerService.instance.lastEntry;
+    if (session == null ||
+        entry == null ||
+        session.state.isTerminal ||
+        !GalHookSessionController.instance.isLineInCurrentSession(entry) ||
+        (entry.id == _lastPublishedGameLine?.id &&
+            entry.text == _lastPublishedGameLine?.text &&
+            entry.audioResourceId == _lastPublishedGameLine?.audioResourceId)) {
+      return;
+    }
+    _lastPublishedGameLine = entry;
+    final GameStreamTextEvent event = GameStreamTextEvent(
+      sessionId: session.sessionId,
+      lineId: entry.id,
+      text: entry.text,
+      timestampMs:
+          entry.hookTimestampMs ?? entry.receivedAt.millisecondsSinceEpoch,
+      thread: entry.textThreadKey ?? entry.textThreadLabel,
+      audioResourceId: entry.audioResourceId,
+    );
+    publishGameStreamText(event);
+    final FushiGameStreamMiningAdapter? mining = _gameStreamMining;
+    final int? hwnd = _gameStreamHwnd;
+    if (mining != null && hwnd != null) {
+      unawaited(
+        mining
+            .captureLine(event, hwnd: hwnd)
+            .then<void>(
+              (bool captured) {},
+              onError: (Object error, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'GameStream.captureLine',
+                  error,
+                  stack,
+                );
+              },
+            ),
+      );
+    }
+  }
 
   /// BUG-1551：**在飞**的一次 [start]。`isRunning` 只看 [_server]，而 [_server]
   /// 直到 `server.start()` 真绑上端口才赋值——在那之前还隔着读端口/口令、（首次）
@@ -180,8 +347,9 @@ class FushiSyncServerController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    final List<LanDiscoveryService> discoveries =
-        _activeDiscoveries.toList(growable: false);
+    final List<LanDiscoveryService> discoveries = _activeDiscoveries.toList(
+      growable: false,
+    );
     _activeDiscoveries.clear();
     for (final LanDiscoveryService discovery in discoveries) {
       unawaited(discovery.dispose());
@@ -213,8 +381,9 @@ class FushiSyncServerController extends ChangeNotifier {
   Future<void> shutdownForExit() async {
     // Snapshot first: dispose() mutates the owner's state, and unregister calls
     // can land mid-iteration.
-    final List<LanDiscoveryService> discoveries =
-        _activeDiscoveries.toList(growable: false);
+    final List<LanDiscoveryService> discoveries = _activeDiscoveries.toList(
+      growable: false,
+    );
     _activeDiscoveries.clear();
     for (final LanDiscoveryService discovery in discoveries) {
       await discovery.dispose();
@@ -228,8 +397,9 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 那样 await 可能不归的原生 stop（根因B：Bonsoir 原生 stop 吃满 3 秒）。
   /// 随后的 exit(0) 进程级终止会回收原生线程，无需等其完成。broadcast 同理。
   Future<void> shutdownForExitFast() async {
-    final List<LanDiscoveryService> discoveries =
-        _activeDiscoveries.toList(growable: false);
+    final List<LanDiscoveryService> discoveries = _activeDiscoveries.toList(
+      growable: false,
+    );
     _activeDiscoveries.clear();
     for (final LanDiscoveryService discovery in discoveries) {
       await discovery.cutEventSourceForExit();
@@ -240,6 +410,13 @@ class FushiSyncServerController extends ChangeNotifier {
     // 同样 fire-and-forget，exit(0) 兜底回收 socket。
     unawaited(_server?.stop());
     _server = null;
+    unawaited(_gameStreamHost?.stop(reason: 'host_shutdown'));
+    _detachGameStreamTexthooker();
+    _gameStreamService?.dispose();
+    _gameStreamService = null;
+    _gameStreamHost?.removeListener(_onGameStreamHostChanged);
+    _gameStreamHost?.dispose();
+    _gameStreamHost = null;
     notifyListeners();
   }
 
@@ -346,48 +523,51 @@ class FushiSyncServerController extends ChangeNotifier {
     SecurityContext? securityContext;
     String? hostFingerprint;
     if (await repo.getServerTlsEnabled()) {
-      final FushiTlsIdentity identity =
-          await FushiTlsIdentityStore(dataDir: _syncDataDir()).loadOrCreate();
+      final FushiTlsIdentity identity = await FushiTlsIdentityStore(
+        dataDir: _syncDataDir(),
+      ).loadOrCreate();
       securityContext = SecurityContext()
         ..useCertificateChainBytes(utf8.encode(identity.certificatePem))
         ..usePrivateKeyBytes(utf8.encode(identity.privateKeyPem));
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: _syncDataDir(),
-      port: port,
-      token: token,
-      allowLan: true,
-      remoteLookupService: _remoteLookupServiceFactory(),
-      miningService: _miningServiceFactory?.call(),
-      historyService: _historyServiceFactory?.call(),
-      libraryService: _libraryServiceFactory?.call(),
-      // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
-      // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
-      mangaOcrJobs: _buildMangaOcrJobManager(),
-      securityContext: securityContext,
-      hostFingerprint: hostFingerprint,
-      deviceName: deviceName,
-      // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
-      // FFI engine so the browser extension's rewritten <img> GET can fetch
-      // them. Null-safe: before the engine is initialised it yields null and
-      // the endpoint answers 404.
-      dictionaryMediaProvider: (String dict, String mediaPath) =>
-          FushiDicts.isInitialized
-              ? FushiDicts.instance.getMediaFile(dict, mediaPath)
-              : null,
-    )
-      ..onPairRequest = _promptPairApproval
-      // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
-      ..onPairPinGenerated = _generatePairPin
-      // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
-      ..onPairSessionResolved = _dismissPendingPairPinDialog
-      ..lanRequiresPinProvider = _repo.getLanRequiresPin
-      // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
-      // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
-      ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+    final FushiSyncServer server =
+        FushiSyncServer(
+            syncDataDir: _syncDataDir(),
+            port: port,
+            token: token,
+            allowLan: true,
+            remoteLookupService: _remoteLookupServiceFactory(),
+            miningService: _miningServiceFactory?.call(),
+            historyService: _historyServiceFactory?.call(),
+            libraryService: _libraryServiceFactory?.call(),
+            // 漫画 P3：远程 OCR 任务管理器。上传页图落 <syncDataDir>/manga_ocr_jobs
+            // （TTL 自清理）。每次 start 新建管理器，stop 时 server 内部 disposeAll。
+            mangaOcrJobs: _buildMangaOcrJobManager(),
+            securityContext: securityContext,
+            hostFingerprint: hostFingerprint,
+            deviceName: deviceName,
+            // TODO-1215: bridge dictionary media bytes (gaiji/accent SVG) to the
+            // FFI engine so the browser extension's rewritten <img> GET can fetch
+            // them. Null-safe: before the engine is initialised it yields null and
+            // the endpoint answers 404.
+            dictionaryMediaProvider: (String dict, String mediaPath) =>
+                FushiDicts.isInitialized
+                ? FushiDicts.instance.getMediaFile(dict, mediaPath)
+                : null,
+            gameStreamService: gameStreamService,
+          )
+          ..onPairRequest = _promptPairApproval
+          // TODO-961 M1: host 生成并暂存本会话 PIN，供 confirm 阶段审批弹窗显示。
+          ..onPairPinGenerated = _generatePairPin
+          // TODO-1330 / BUG：client 提交 confirm（已读到 PIN）后收起 host 常驻 PIN 弹窗。
+          ..onPairSessionResolved = _dismissPendingPairPinDialog
+          ..lanRequiresPinProvider = _repo.getLanRequiresPin
+          // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
+          // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
+          ..onPeerPaired = _persistPairedPeer
+          ..pairedPeerTokensProvider = _loadPairedPeerTokens;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
@@ -395,8 +575,11 @@ class FushiSyncServerController extends ChangeNotifier {
     // 降级（client 会新建空新根，下次 host 启动重试），绝不挡 server 启动。
     await migrateLegacySyncRootDirectory(
       syncDataDir: server.syncDataDir,
-      onError: (Object e, StackTrace st) => ErrorLogService.instance
-          .log('FushiServerController.migrateLegacySyncRoot', e, st),
+      onError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+        'FushiServerController.migrateLegacySyncRoot',
+        e,
+        st,
+      ),
     );
     await server.start();
     // BUG-1573：dispose 已经发生时，这台刚绑上的 host 已经没有拥有者了——继续往下
@@ -454,6 +637,13 @@ class FushiSyncServerController extends ChangeNotifier {
     _server = null;
     await broadcast?.stop();
     await server?.stop();
+    await _gameStreamHost?.stop(reason: 'host_shutdown');
+    _detachGameStreamTexthooker();
+    _gameStreamService?.dispose();
+    _gameStreamService = null;
+    _gameStreamHost?.removeListener(_onGameStreamHostChanged);
+    _gameStreamHost?.dispose();
+    _gameStreamHost = null;
     if (persistDisabled) await _repo.setServerEnabled(false);
     notifyListeners();
   }
@@ -498,14 +688,17 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 进 `fushi_paired_peers`（peerId UNIQUE，重复配对同一设备只轮换其 token）。
   /// token 是敏感凭据，绝不写日志。
   Future<void> _persistPairedPeer(
-      FushiPairedPeerRegistration registration) async {
-    await _database().upsertPairedPeer(FushiPairedPeersCompanion.insert(
-      peerId: registration.peerId,
-      token: registration.token,
-      pairedAtMs: DateTime.now().millisecondsSinceEpoch,
-      deviceName: Value<String?>(registration.deviceName),
-      lastSeenIp: Value<String?>(registration.remoteAddress),
-    ));
+    FushiPairedPeerRegistration registration,
+  ) async {
+    await _database().upsertPairedPeer(
+      FushiPairedPeersCompanion.insert(
+        peerId: registration.peerId,
+        token: registration.token,
+        pairedAtMs: DateTime.now().millisecondsSinceEpoch,
+        deviceName: Value<String?>(registration.deviceName),
+        lastSeenIp: Value<String?>(registration.remoteAddress),
+      ),
+    );
     // BUG-1558：已配对设备表变了就得告诉视图。新设备的审批发生在 server 线程上，
     // 设置页只在 initState / 吊销后重拉列表；不通知就是「刚配对成功、host 屏上
     // 已配对设备列表里压根没这台」，用户以为没配上又配一遍。
@@ -541,8 +734,7 @@ class FushiSyncServerController extends ChangeNotifier {
   @visibleForTesting
   Future<void> debugPersistPairedPeer(
     FushiPairedPeerRegistration registration,
-  ) =>
-      _persistPairedPeer(registration);
+  ) => _persistPairedPeer(registration);
 
   /// TODO-1330 / BUG：client 提交 confirm 后收起 host 那个常驻显示 PIN 的审批弹窗
   /// （见 [_promptPairApproval]）。作为 server 的 [FushiSyncServer.onPairSessionResolved]
@@ -586,7 +778,8 @@ class FushiSyncServerController extends ChangeNotifier {
     //       client「重新刷新」重发的配对都被 _pairDialogOpen 挡成 declined、看不到新申请框。
     //       同源取代它即可让重试重新弹框；不同来源的未决框保留（防恶意 peer 顶掉别人正在
     //       审批的框），仍由 _showPairApprovalDialog 的 _pairDialogOpen 拒绝。
-    final bool supersedeStale = _pairDialogOpen &&
+    final bool supersedeStale =
+        _pairDialogOpen &&
         (_pairDialogLingering || _isSamePairSource(request.remoteAddress));
     if (supersedeStale) {
       final String? incomingPin = _pendingPairPin;
@@ -681,129 +874,134 @@ class FushiSyncServerController extends ChangeNotifier {
       }
     }
 
-    unawaited(showAppDialog<void>(
-      context: ctx,
-      // 审批 / 常驻 PIN 阶段都统一走按钮，禁止点遮罩误关（PIN 要一直看得见）。
-      barrierDismissible: false,
-      builder: (BuildContext dCtx) {
-        dialogCtx = dCtx;
-        // Auto-refuse after 60s so a forgotten prompt never leaks the token and
-        // the waiting client gets a deterministic answer. 进入常驻 PIN 阶段
-        // （已允许）后失效——那时结果已交回，只等对方输入。
-        autoDeny ??= Timer(const Duration(seconds: 60), () {
-          if (!approvedPhase) onDeny();
-        });
-        return StatefulBuilder(
-          builder: (BuildContext c, StateSetter setLocal) {
-            setDialogState = setLocal;
-            final FushiDesignTokens tokens = FushiDesignTokens.of(c);
-            final bool waiting = approvedPhase;
-            // PIN 只在 host 屏幕显示，绝不过线（client 只回传 HMAC proof）。仅当本会话
-            // 真要求 PIN（request.pinRequired）才显示，免 PIN 会话不显示「幽灵 PIN」。
-            final bool showPin = request.pinRequired && _pendingPairPin != null;
-            return FushiDialogFrame(
-              maxWidth: 420,
-              insetPadding: EdgeInsets.symmetric(
-                horizontal: tokens.spacing.card,
-                vertical: tokens.spacing.card,
-              ),
-              scrollable: false,
-              child: FushiModalSheetFrame(
-                title: t.sync_pair_request_title,
-                scrollable: true,
-                bodyPadding: EdgeInsets.fromLTRB(
-                  tokens.spacing.card,
-                  0,
-                  tokens.spacing.card,
-                  tokens.spacing.gap,
+    unawaited(
+      showAppDialog<void>(
+        context: ctx,
+        // 审批 / 常驻 PIN 阶段都统一走按钮，禁止点遮罩误关（PIN 要一直看得见）。
+        barrierDismissible: false,
+        builder: (BuildContext dCtx) {
+          dialogCtx = dCtx;
+          // Auto-refuse after 60s so a forgotten prompt never leaks the token and
+          // the waiting client gets a deterministic answer. 进入常驻 PIN 阶段
+          // （已允许）后失效——那时结果已交回，只等对方输入。
+          autoDeny ??= Timer(const Duration(seconds: 60), () {
+            if (!approvedPhase) onDeny();
+          });
+          return StatefulBuilder(
+            builder: (BuildContext c, StateSetter setLocal) {
+              setDialogState = setLocal;
+              final FushiDesignTokens tokens = FushiDesignTokens.of(c);
+              final bool waiting = approvedPhase;
+              // PIN 只在 host 屏幕显示，绝不过线（client 只回传 HMAC proof）。仅当本会话
+              // 真要求 PIN（request.pinRequired）才显示，免 PIN 会话不显示「幽灵 PIN」。
+              final bool showPin =
+                  request.pinRequired && _pendingPairPin != null;
+              return FushiDialogFrame(
+                maxWidth: 420,
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.card,
+                  vertical: tokens.spacing.card,
                 ),
-                footerPadding: EdgeInsets.fromLTRB(
-                  tokens.spacing.card,
-                  tokens.spacing.gap,
-                  tokens.spacing.card,
-                  tokens.spacing.card,
-                ),
-                body: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    // 已允许 → 提示「等对方输入此 PIN」；未决 → 原「设备请求配对」文案。
-                    Text(waiting
-                        ? t.sync_pair_pin_waiting
-                        : t.sync_pair_request_body),
-                    SizedBox(height: tokens.spacing.gap),
-                    Text(
-                      _pairRequesterLabel(request),
-                      style: Theme.of(c).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    if (showPin) ...<Widget>[
-                      SizedBox(height: tokens.spacing.gap),
-                      Text(t.sync_pair_pin_label),
+                scrollable: false,
+                child: FushiModalSheetFrame(
+                  title: t.sync_pair_request_title,
+                  scrollable: true,
+                  bodyPadding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    0,
+                    tokens.spacing.card,
+                    tokens.spacing.gap,
+                  ),
+                  footerPadding: EdgeInsets.fromLTRB(
+                    tokens.spacing.card,
+                    tokens.spacing.gap,
+                    tokens.spacing.card,
+                    tokens.spacing.card,
+                  ),
+                  body: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      // 已允许 → 提示「等对方输入此 PIN」；未决 → 原「设备请求配对」文案。
+                      Text(
+                        waiting
+                            ? t.sync_pair_pin_waiting
+                            : t.sync_pair_request_body,
+                      ),
                       SizedBox(height: tokens.spacing.gap),
                       Text(
-                        _pendingPairPin!,
-                        style: Theme.of(c).textTheme.headlineMedium?.copyWith(
-                          fontFeatures: const <FontFeature>[
-                            FontFeature.tabularFigures(),
-                          ],
-                          letterSpacing: 4,
-                          fontWeight: FontWeight.w700,
+                        _pairRequesterLabel(request),
+                        style: Theme.of(c).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
+                      if (showPin) ...<Widget>[
+                        SizedBox(height: tokens.spacing.gap),
+                        Text(t.sync_pair_pin_label),
+                        SizedBox(height: tokens.spacing.gap),
+                        Text(
+                          _pendingPairPin!,
+                          style: Theme.of(c).textTheme.headlineMedium?.copyWith(
+                            fontFeatures: const <FontFeature>[
+                              FontFeature.tabularFigures(),
+                            ],
+                            letterSpacing: 4,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
+                  footer: Wrap(
+                    alignment: WrapAlignment.end,
+                    spacing: tokens.spacing.gap,
+                    children: waiting
+                        // 常驻 PIN 阶段：只留「关闭」（结果已交回，用户输完后手动收起）。
+                        ? <Widget>[
+                            adaptiveDialogAction(
+                              context: c,
+                              isDefaultAction: true,
+                              onPressed: popDialog,
+                              child: Text(t.dialog_close),
+                            ),
+                          ]
+                        : <Widget>[
+                            adaptiveDialogAction(
+                              context: c,
+                              isDestructiveAction: true,
+                              onPressed: onDeny,
+                              child: Text(t.sync_pair_deny),
+                            ),
+                            adaptiveDialogAction(
+                              context: c,
+                              isDefaultAction: true,
+                              onPressed: onAllow,
+                              child: Text(t.sync_pair_allow),
+                            ),
+                          ],
+                  ),
                 ),
-                footer: Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: tokens.spacing.gap,
-                  children: waiting
-                      // 常驻 PIN 阶段：只留「关闭」（结果已交回，用户输完后手动收起）。
-                      ? <Widget>[
-                          adaptiveDialogAction(
-                            context: c,
-                            isDefaultAction: true,
-                            onPressed: popDialog,
-                            child: Text(t.dialog_close),
-                          ),
-                        ]
-                      : <Widget>[
-                          adaptiveDialogAction(
-                            context: c,
-                            isDestructiveAction: true,
-                            onPressed: onDeny,
-                            child: Text(t.sync_pair_deny),
-                          ),
-                          adaptiveDialogAction(
-                            context: c,
-                            isDefaultAction: true,
-                            onPressed: onAllow,
-                            child: Text(t.sync_pair_allow),
-                          ),
-                        ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() {
-      autoDeny?.cancel();
-      lingerTimeout?.cancel();
-      _pairDialogOpen = false;
-      _pairDialogLingering = false;
-      _pairDialogRemoteAddress = null;
-      _pendingPairPin = null;
-      _pendingPairPinDismiss = null;
-      // 若有新配对正等本（常驻）弹窗收起，放行它继续（BUG-708）。
-      if (_pairDialogClosed?.isCompleted == false) {
-        _pairDialogClosed?.complete();
-      }
-      _pairDialogClosed = null;
-      // 弹窗被系统/其它路径关掉而用户没点过按钮时，兜底判为拒绝。
-      if (!approval.isCompleted) approval.complete(false);
-    }));
+              );
+            },
+          );
+        },
+      ).whenComplete(() {
+        autoDeny?.cancel();
+        lingerTimeout?.cancel();
+        _pairDialogOpen = false;
+        _pairDialogLingering = false;
+        _pairDialogRemoteAddress = null;
+        _pendingPairPin = null;
+        _pendingPairPinDismiss = null;
+        // 若有新配对正等本（常驻）弹窗收起，放行它继续（BUG-708）。
+        if (_pairDialogClosed?.isCompleted == false) {
+          _pairDialogClosed?.complete();
+        }
+        _pairDialogClosed = null;
+        // 弹窗被系统/其它路径关掉而用户没点过按钮时，兜底判为拒绝。
+        if (!approval.isCompleted) approval.complete(false);
+      }),
+    );
 
     return approval.future;
   }
