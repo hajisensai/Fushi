@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Oculta completamente tanto as legendas do site quanto a sobreposição da extensão (sem desfoque, nada ao passar o mouse) — para prática de escuta pura. Alterne a qualquer momento com <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Pausar ao consultar",
   "opt_subtitlePauseOnLookup_desc": "Pausa um vídeo em reprodução quando uma consulta começa na página, na lista de legendas ou na sobreposição; a reprodução retoma automaticamente quando o popup fecha (um vídeo que você mesmo pausou nunca é retomado).",
+  "opt_subtitleResumeOnLookupLeave_title": "Retomar ao sair da consulta",
+  "opt_subtitleResumeOnLookupLeave_desc": "Quando uma consulta por Shift+passar o mouse ou a consulta automática da sobreposição pausa o vídeo, afastar o ponteiro da legenda e da janela de consulta fecha a janela e retoma a reprodução, sem clique extra. Consultas iniciadas por clique não são afetadas.",
   "opt_subtitleLookupOnPage_title": "Mostrar resultados da consulta na página",
   "opt_subtitleLookupOnPage_desc": "Ao clicar em uma palavra no painel lateral, o popup abre na página em vez de ficar espremido no painel — os navegadores não deixam o conteúdo do painel desenhar fora dele. Desativado volta ao popup estreito dentro do painel.",
   "opt_subtitleOverlayAutoLookup_title": "Consulta ao passar o mouse nas legendas sobrepostas",

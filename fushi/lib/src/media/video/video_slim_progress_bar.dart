@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
@@ -14,6 +15,23 @@ double videoSlimProgressFraction({
 }) {
   if (positionMs == null || durationMs == null || durationMs <= 0) return 0;
   return (positionMs / durationMs).clamp(0.0, 1.0);
+}
+
+/// 细进度条上一次点击 / 拖动落在哪个进度比例（`0..1`）。纯函数，组件与测试同源。
+///
+/// 与 media_kit fork 那条常规进度条同口径（`material_desktop.dart` 的
+/// `e.localPosition.dx / constraints.maxWidth`）：细线**没有**横向 margin
+/// （挂载点是 `Positioned(left: 0, right: 0)`），所以分母直接就是自身宽度，
+/// 不需要像章节刻度层那样再减 `seekBarMargin`。
+///
+/// 宽度非有限或 <= 0（首帧前 constraints 还没落定）返回 null =「这次交互不产生
+/// seek」，而不是返回 0 —— 后者会把首帧的一次误触变成「跳回片头」。
+double? videoSlimProgressSeekFraction({
+  required double dx,
+  required double width,
+}) {
+  if (!width.isFinite || width <= 0 || !dx.isFinite) return null;
+  return (dx / width).clamp(0.0, 1.0);
 }
 
 /// 视频最下方那条主题色细进度条（B 站 / YouTube 在控制条淡出后留下的那条线）。
@@ -33,6 +51,8 @@ class VideoSlimProgressBar extends StatefulWidget {
     this.height = 3,
     this.trackColor,
     this.refreshInterval = const Duration(milliseconds: 200),
+    this.onSeekFraction,
+    this.hitTestHeight = 12,
     super.key,
   });
 
@@ -56,6 +76,22 @@ class VideoSlimProgressBar extends StatefulWidget {
   /// 轮询间隔。
   final Duration refreshInterval;
 
+  /// 点击 / 横拖这条线时的跳转回调，参数是落点的进度比例（`0..1`）。
+  ///
+  /// null = 纯装饰（组件退回 [IgnorePointer] 形态，逐像素与加手势前一致）。调用方
+  /// 按「此刻该不该让它吃指针」决定传不传：沉浸锁 / 侧面板 / 控件编辑态下必须传
+  /// null，否则细线会成为那几个门控唯一漏掉的可点区（它挂在 media_kit 控制条那层
+  /// [IgnorePointer] 之外）。
+  final ValueChanged<double>? onSeekFraction;
+
+  /// 命中带高度（逻辑像素），仅 [onSeekFraction] 非 null 时生效。
+  ///
+  /// 与可见线高 [height] 分离：3 像素的线鼠标都难瞄准、触屏更不可能，所以向上
+  /// 补一段**透明**命中带。不取更高是因为这条带压在画面最底边，越高越容易把本该
+  /// 落到画面的单击（点画面暂停）吃掉；12 逻辑像素约等于一根手指的一半，实测
+  /// 既能瞄准又不至于误触。
+  final double hitTestHeight;
+
   @override
   State<VideoSlimProgressBar> createState() => _VideoSlimProgressBarState();
 }
@@ -67,6 +103,20 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
   /// 比例变化小于这个量不重建：一条最宽也就一千多像素的线，千分之一的变化
   /// 连一个物理像素都不到，重建纯属浪费。
   static const double _minVisibleDelta = 0.001;
+
+  /// 自己发起 seek 后的「静默窗」：这段时间内轮询读回的位置不许覆盖乐观值。
+  ///
+  /// 播放器的 position 要等 seek 真落地才更新（网络流上尤其慢），不静默的话
+  /// 用户松手后那条线会先弹回原处、再跳到目标，看着像点歪了。
+  static const Duration _seekSettleWindow = Duration(milliseconds: 500);
+
+  /// 横拖过程中 seek 的最小间隔：每帧都提交会让播放器被 seek 请求淹没
+  /// （每次 `seekMs` 还要重建字幕权威），拖完的终值另由 drag end 补发。
+  static const Duration _dragSeekThrottle = Duration(milliseconds: 100);
+
+  DateTime? _seekSettleUntil;
+  DateTime? _lastSeekSentAt;
+  double? _pendingDragFraction;
 
   @override
   void initState() {
@@ -99,18 +149,56 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
 
   void _tick() {
     if (!mounted) return;
+    final DateTime? settleUntil = _seekSettleUntil;
+    if (settleUntil != null) {
+      if (DateTime.now().isBefore(settleUntil)) return;
+      _seekSettleUntil = null;
+    }
     final double next = _readFraction();
     if ((next - _fraction).abs() < _minVisibleDelta) return;
     setState(() => _fraction = next);
+  }
+
+  /// 把一次落点变成「线立即到位 + 回调发出」。[throttled] 为真时（横拖途中）
+  /// 只保证线跟手，回调按 [_dragSeekThrottle] 限频。
+  void _seekAt(double dx, double width, {bool throttled = false}) {
+    final ValueChanged<double>? onSeek = widget.onSeekFraction;
+    if (onSeek == null) return;
+    final double? fraction = videoSlimProgressSeekFraction(
+      dx: dx,
+      width: width,
+    );
+    if (fraction == null) return;
+    _seekSettleUntil = DateTime.now().add(_seekSettleWindow);
+    if (fraction != _fraction) setState(() => _fraction = fraction);
+    if (throttled) {
+      _pendingDragFraction = fraction;
+      final DateTime? last = _lastSeekSentAt;
+      if (last != null && DateTime.now().difference(last) < _dragSeekThrottle) {
+        return;
+      }
+    }
+    _lastSeekSentAt = DateTime.now();
+    onSeek(fraction);
+  }
+
+  /// 松手：限频可能把最后一次落点吞掉，终值必须无条件补发一次，否则线停在
+  /// 手指处、播放位置却停在上一次被放行的采样点。
+  void _commitDragSeek() {
+    final double? pending = _pendingDragFraction;
+    _pendingDragFraction = null;
+    _lastSeekSentAt = null;
+    if (pending == null) return;
+    widget.onSeekFraction?.call(pending);
   }
 
   @override
   Widget build(BuildContext context) {
     final Color track =
         widget.trackColor ?? widget.color.withValues(alpha: 0.22);
-    // 纯装饰层：不参与语义树，也不吃指针（挂载点另外包了 IgnorePointer，
+    // 纯装饰层：不参与语义树，也不吃指针（下面那层命中带是唯一吃指针的地方；
     // 这里再声明一次是为了组件单独被复用时也不会挡住底下的控制条命中区）。
-    return ExcludeSemantics(
+    final Widget line = ExcludeSemantics(
       child: IgnorePointer(
         child: SizedBox(
           height: widget.height,
@@ -120,7 +208,10 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
             children: <Widget>[
               ColoredBox(color: track),
               Align(
-                alignment: AlignmentDirectional.centerStart,
+                // 物理左端，不随 TextDirection 镜像：点击换算 `dx / width` 是从左算
+                // 的，media_kit 的进度条也是硬 ltr——RTL 界面下填充从右长、点击却
+                // 从左算，点在可见填充端点处会跳到镜像位置（PR #1600 审查）。
+                alignment: Alignment.centerLeft,
                 child: FractionallySizedBox(
                   widthFactor: _fraction,
                   heightFactor: 1,
@@ -131,6 +222,43 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
           ),
         ),
       ),
+    );
+    if (widget.onSeekFraction == null) return line;
+    // 可交互形态：可见线贴底、上方补一段透明命中带。命中带用 `opaque` 吃掉这次
+    // 指针，media_kit 控制条那层的「点画面暂停」因此收不到——正是想要的：点这条
+    // 线只跳转，不顺手把播放态也翻了。页面最外层那条 translucent Listener 仍会
+    // 收到 pointer-up，但它的 [_isVideoChromePointer] 早把底部整条带判为 chrome、
+    // 不会触发双击全屏。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        return SizedBox(
+          height: math.max(widget.hitTestHeight, widget.height),
+          width: double.infinity,
+          child: Stack(
+            children: <Widget>[
+              Positioned(left: 0, right: 0, bottom: 0, child: line),
+              Positioned.fill(
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (TapDownDetails d) =>
+                        _seekAt(d.localPosition.dx, width),
+                    onHorizontalDragStart: (DragStartDetails d) =>
+                        _seekAt(d.localPosition.dx, width, throttled: true),
+                    onHorizontalDragUpdate: (DragUpdateDetails d) =>
+                        _seekAt(d.localPosition.dx, width, throttled: true),
+                    onHorizontalDragEnd: (DragEndDetails _) =>
+                        _commitDragSeek(),
+                    onHorizontalDragCancel: _commitDragSeek,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

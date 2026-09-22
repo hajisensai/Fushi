@@ -187,6 +187,7 @@ void main() {
         screenshotSubtitled: noop,
         toggleFullscreen: noop,
         toggleMiniWindow: noop,
+        toggleMiniChrome: noop,
         toggleSubtitleList: noop,
         searchSubtitleList: noop,
         toggleImmersiveLock: noop,

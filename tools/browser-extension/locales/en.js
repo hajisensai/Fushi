@@ -131,6 +131,8 @@
   opt_subtitleHidden_desc: 'Completely hides both the site’s subtitles and the extension overlay (no blur, nothing on hover) — for pure listening practice. Toggle any time with <kbd>Shift</kbd>+<kbd>H</kbd>.',
   opt_subtitlePauseOnLookup_title: 'Pause on lookup',
   opt_subtitlePauseOnLookup_desc: 'Pauses a playing video when a lookup starts from the page, the subtitle list or the overlay; playback resumes automatically when the popup closes (a video you paused yourself is never resumed).',
+  opt_subtitleResumeOnLookupLeave_title: 'Resume when leaving lookup',
+  opt_subtitleResumeOnLookupLeave_desc: 'After a Shift-hover or overlay auto lookup pauses the video, moving the pointer away from the subtitle and the lookup popup closes the popup and resumes playback, with no extra click. Lookups started by clicking are not affected.',
   opt_subtitleLookupOnPage_title: 'Show lookup results on the page',
   opt_subtitleLookupOnPage_desc: 'When you click a word in the side panel, the popup opens on the page instead of being squeezed into the panel — browsers do not let panel content draw outside the panel. Off returns to the narrow in-panel popup.',
   opt_subtitleOverlayAutoLookup_title: 'Hover lookup on overlay subtitles',

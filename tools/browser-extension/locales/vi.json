@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Ẩn hoàn toàn cả phụ đề của trang lẫn lớp phủ của tiện ích (không làm mờ, rê chuột cũng không hiện) — để luyện nghe thuần túy. Bật/tắt bất cứ lúc nào bằng <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Tạm dừng khi tra từ",
   "opt_subtitlePauseOnLookup_desc": "Tạm dừng video đang phát khi bắt đầu tra từ từ trang, danh sách phụ đề hoặc lớp phủ; tự động phát tiếp khi đóng cửa sổ tra từ (video bạn tự tạm dừng sẽ không bị phát lại).",
+  "opt_subtitleResumeOnLookupLeave_title": "Phát tiếp khi rời khỏi tra từ",
+  "opt_subtitleResumeOnLookupLeave_desc": "Sau khi tra từ bằng Shift+di chuột hoặc tra tự động trên lớp phủ làm video tạm dừng, đưa con trỏ ra khỏi phụ đề và cửa sổ tra từ sẽ đóng cửa sổ và phát tiếp mà không cần nhấp thêm. Tra từ bắt đầu bằng nhấp chuột không bị ảnh hưởng.",
   "opt_subtitleLookupOnPage_title": "Hiện kết quả tra từ trên trang",
   "opt_subtitleLookupOnPage_desc": "Khi bạn nhấp một từ trong bảng bên, cửa sổ tra từ mở trên trang thay vì bị chèn ép trong bảng — trình duyệt không cho nội dung của bảng vẽ ra ngoài bảng. Tắt sẽ quay về cửa sổ hẹp trong bảng.",
   "opt_subtitleOverlayAutoLookup_title": "Rê chuột để tra từ trên phụ đề lớp phủ",

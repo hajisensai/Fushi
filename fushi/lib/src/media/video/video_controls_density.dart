@@ -145,6 +145,37 @@ VideoControlsDensitySpec resolveVideoControlsDensity({
   return _fullSpec;
 }
 
+/// mini 档那套本仓自绘 chrome（顶部拖动带 + 退出钮、居中大三键）此刻该不该显形。
+/// 纯函数，页面与测试同源。
+///
+/// **[revealed] 是唯一的动态输入，hover 不是**——这正是本函数存在的全部意义。
+/// 小窗是「挂在屏幕角落一直开着」的形态：鼠标从它上面扫过去（甚至只是路过）就
+/// 弹出一层按钮，在 300×170 的窗口里等于把画面盖掉一半，用户报「太乱」。故小窗
+/// 常态只剩画面 + 字幕（字幕悬停制卡照常工作）+ 底部那条细线，整套 chrome 改由
+/// [ShortcutAction.videoToggleMiniChrome] 显式唤出，且唤出后**不自动淡出**
+/// （淡出会让「拖动窗口」变成和计时器赛跑）。
+///
+/// [spec] 那条门保证它只在**本仓负责画 chrome** 的那一档生效：常规档 chrome 归
+/// media_kit（hover 唤起是那边的既有语义，不受本函数管），系统画中画下 chrome 归
+/// 系统（[VideoControlsDensitySpec.showCenterTransport] 恒假，本仓一个像素都不画）。
+///
+/// [surface] 是第二道门：「只认显式唤出」只对**桌面小窗**成立。常规窗口被挤窄到
+/// mini 档（字幕列表 push-aside、用户把窗口拉小）时 surface 仍是 none，media_kit
+/// 那层顶栏 / 底栏 / seek bar 已整套关掉，本仓的三键是画面上**唯一**的控件——那时
+/// 若也只认快捷键，鼠标悬停一个按钮都不出现（#1596 时 hover 还能唤出），Shift+M
+/// 唤出后右上角「退出小窗」钮又是死的。故 none 表面保留 hover（[controlsVisible]）
+/// 语义（PR #1600 审查）。
+bool videoMiniChromeVisible({
+  required VideoControlsDensitySpec spec,
+  required VideoMiniSurface surface,
+  required bool revealed,
+  required bool controlsVisible,
+}) {
+  if (!spec.showCenterTransport) return false;
+  if (surface == VideoMiniSurface.desktopMiniWindow) return revealed;
+  return controlsVisible;
+}
+
 /// 视频最下方那条细进度条此刻该不该显形。纯函数，页面与测试同源。
 ///
 /// 三条规则，按优先级：

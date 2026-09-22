@@ -120,8 +120,14 @@ function fushiReportVisibleAfterPaint(ctx, container) {
 // 查词即暂停、关窗即恢复（恢复侧见 fushiRemoveContainer）。
 let fushiPauseOnLookup = true;
 let fushiHasPauseOnLookupPref = false;
+// 「离开查词即继续播放」（对齐 app 侧 resume_on_lookup_leave 默认开）：悬停发起的查词会话里
+// 指针离开字幕与弹窗即自动关窗续播，见下方 fushiShouldAutoResumeOnHoverLeave。
+let fushiResumeOnLookupLeave = true;
 function fushiApplyPauseOnLookupPrefs(saved) {
   saved = saved || {};
+  fushiResumeOnLookupLeave = typeof saved.subtitleResumeOnLookupLeave === 'boolean'
+    ? saved.subtitleResumeOnLookupLeave
+    : true;
   fushiHasPauseOnLookupPref = typeof saved.subtitlePauseOnLookup === 'boolean';
   fushiPauseOnLookup = fushiHasPauseOnLookupPref
     ? saved.subtitlePauseOnLookup
@@ -213,6 +219,140 @@ function fushiResumePausedForLookup() {
     }
   } catch (_) { /* autoplay 拦截等：保持暂停即可 */ }
 }
+
+// 悬停查词离开即续播（对齐 app PR #1582 VideoFushiPage.shouldAutoResumeOnHoverLeave）。
+// 「查词时暂停」把视频停住后，恢复播放的唯一出口是关弹窗（fushiRemoveContainer），而悬停发起的
+// 查词（Shift 悬停 / 悬浮字幕自动查词）本身不会关窗——用户每查一个词都得再点一下空白才能继续
+// 看片。改为：悬停会话里指针离开「查词区」（命中的字幕容器）与弹窗即自动关窗，关窗汇聚点顺带
+// 续播，不另起一套恢复逻辑。点击发起的查词（面板行 / 覆盖层点击 / 侧栏交回）是显式的「停在
+// 这儿看」，鼠标随手移开不关，既有行为不变。
+//
+// 离开判定不能零延迟：弹窗锚在被查词旁边，指针从字幕移向弹窗必然横穿一段空白，立刻关窗会打断
+// 「去弹窗翻词条」。先记 320ms 意图确认，到期后按当时的全部门控复核一遍才动手。
+const FUSHI_HOVER_LEAVE_GRACE_MS = 320;
+const FUSHI_HOVER_LEAVE_THRESHOLD_PX = 4;
+let fushiLookupOpenedByHover = false; // 本次查词会话由悬停发起（写入点只有 fushiBeginLookupSession）
+let fushiHoverLeaveSourceEl = null; // 悬停命中的字幕容器：指针还在它上面 = 换词，不是离开
+let fushiPointerOverPopup = false; // host mouseenter/mouseleave 回报（host 截住 mousemove，document 侧看不到）
+let fushiHoverLeaveTimer = 0;
+let fushiHoverPointerX = -1;
+let fushiHoverPointerY = -1;
+let fushiHoverLeaveCheckedX = -1;
+let fushiHoverLeaveCheckedY = -1;
+// 指针已移出整个文档（documentElement mouseleave）：最后已知坐标可能还落在贴着窗口边缘的
+// 字幕框 / 弹窗框里，几何判定要让位给这条事实。任何 mousemove / 进弹窗都把它清回 false。
+let fushiPointerOutsideDocument = false;
+function fushiRectContains(rect, x, y) {
+  return !!rect && rect.width > 0 && rect.height > 0 &&
+    x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+function fushiNodeWithin(container, target) {
+  if (!container || !target) return false;
+  if (container === target) return true;
+  try { return typeof container.contains === 'function' && container.contains(target); } catch (_) { return false; }
+}
+// 「查词区」= 命中字符所在的字幕容器（扩展覆盖层 / 站点字幕容器），都不是就退回命中字符的
+// 父元素——普通网页正文里 Shift 悬停时那就是所在段落，指针在段落里挪动不算离开。
+function fushiHoverSourceFor(hit) {
+  const node = hit && hit.node;
+  const el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
+  if (!el) return null;
+  try {
+    const sub = typeof el.closest === 'function'
+      ? el.closest(['#fushi-subtitle-overlay'].concat(FUSHI_SUBTITLE_SELECTORS).join(','))
+      : null;
+    if (sub) return sub;
+  } catch (_) { /* 选择器在个别宿主上不合法：退回父元素 */ }
+  return el;
+}
+function fushiPointerOverHoverSource(x, y) {
+  const el = fushiHoverLeaveSourceEl;
+  if (!el || el.isConnected === false) return false;
+  try { return fushiRectContains(el.getBoundingClientRect(), x, y); } catch (_) { return false; }
+}
+// 纯函数判据，逐条门控缺一不可（挂 window 供 node 测试逐条否决）：
+// - enabled：偏好 subtitleResumeOnLookupLeave；
+// - openedByHover：点击会话永不自动关；
+// - hasVisiblePopup：没有弹窗在场就没有可关的；
+// - pausedForLookup：只有确实由查词暂停、且仍停着的视频才谈得上「续播」——纯文本页 / 用户
+//   自己暂停的视频上，悬停弹窗仍保持既有的「点空白才关」；
+// - pointerOverPopup：指针在弹窗（含缩放把手、拖拽中）上 = 正在读词条；
+// - overSubtitle：指针仍在查词区里 = 换词不是离开；
+// - nestedPopupOpen：递归查词的子层是独立 iframe，指针进去后顶层文档收不到任何事件，不能当离开；
+// - modalOpen：「调整上下文」等对话框期间不关栈（否则清掉草稿还偷偷续播）。
+window.fushiShouldAutoResumeOnHoverLeave = function (s) {
+  return !!(s && s.enabled && s.openedByHover && s.hasVisiblePopup && s.pausedForLookup &&
+    !s.pointerOverPopup && !s.overSubtitle && !s.nestedPopupOpen && !s.modalOpen);
+};
+function fushiHoverLeaveState() {
+  const x = fushiHoverPointerX;
+  const y = fushiHoverPointerY;
+  const outside = fushiPointerOutsideDocument;
+  let overPopup = !outside && (fushiPointerOverPopup || !!fushiResizeDrag);
+  if (!overPopup && !outside && fushiHost) {
+    // 弹窗刚渲染在静止的指针底下时 host 还没收到 mouseenter：几何兜底。
+    try { overPopup = fushiRectContains(fushiHost.getBoundingClientRect(), x, y); } catch (_) {}
+  }
+  if (!overPopup && !outside && fushiResizeGrip) {
+    try { overPopup = fushiRectContains(fushiResizeGrip.getBoundingClientRect(), x, y); } catch (_) {}
+  }
+  let nested = false;
+  try {
+    nested = !!(window.fushiNestedPopups && typeof window.fushiNestedPopups.active === 'function' &&
+      window.fushiNestedPopups.active());
+  } catch (_) {}
+  return {
+    enabled: fushiResumeOnLookupLeave,
+    openedByHover: fushiLookupOpenedByHover,
+    hasVisiblePopup: !!fushiHost,
+    pausedForLookup: !!(fushiPausedForLookup && fushiPausedForLookup.paused),
+    pointerOverPopup: overPopup,
+    overSubtitle: !outside && fushiPointerOverHoverSource(x, y),
+    nestedPopupOpen: nested,
+    modalOpen: !!fushiCtxModalHost,
+  };
+}
+function fushiCancelHoverLeave() {
+  if (!fushiHoverLeaveTimer) return;
+  try { clearTimeout(fushiHoverLeaveTimer); } catch (_) {}
+  fushiHoverLeaveTimer = 0;
+}
+function fushiScheduleHoverLeave() {
+  if (fushiHoverLeaveTimer) return;
+  if (!fushiLookupOpenedByHover || !fushiHost) return;
+  try {
+    fushiHoverLeaveTimer = setTimeout(function () {
+      fushiHoverLeaveTimer = 0;
+      if (!window.fushiShouldAutoResumeOnHoverLeave(fushiHoverLeaveState())) return;
+      try { fushiRemoveContainer(); } catch (_) {}
+    }, FUSHI_HOVER_LEAVE_GRACE_MS);
+  } catch (_) { fushiHoverLeaveTimer = 0; }
+}
+// 每次真正发出查词时登记会话来源；关窗汇聚点复位。
+function fushiBeginLookupSession(openedByHover, hit) {
+  fushiCancelHoverLeave();
+  fushiLookupOpenedByHover = openedByHover === true;
+  fushiHoverLeaveSourceEl = fushiLookupOpenedByHover ? fushiHoverSourceFor(hit) : null;
+}
+// 会话中途显式点了词 = 「停在这儿看」：降级成点击会话，之后不再自动关。
+function fushiHoldLookupSession() {
+  fushiCancelHoverLeave();
+  fushiLookupOpenedByHover = false;
+  fushiHoverLeaveSourceEl = null;
+}
+function fushiResetHoverLeaveSession() {
+  fushiCancelHoverLeave();
+  fushiLookupOpenedByHover = false;
+  fushiHoverLeaveSourceEl = null;
+  fushiPointerOverPopup = false;
+}
+// 弹窗渲染完成时指针可能早已离开查词区（响应回来前就移开了）：此时不会再有 mousemove 触发
+// 判定，补一次调度；到期复核会用几何兜底识别「弹窗正好画在指针底下」。
+function fushiArmHoverLeaveAfterRender() {
+  if (!fushiLookupOpenedByHover || fushiHoverPointerX < 0) return;
+  if (fushiPointerOverHoverSource(fushiHoverPointerX, fushiHoverPointerY)) return;
+  fushiScheduleHoverLeave();
+}
 // 找「正在播放」的视频：没有在播的就没有可暂停的（也就无需恢复）。顶层文档快路径优先
 // （高频 Shift 悬停查词不能每次全树扫描）；顶层没有才穿透 open shadow root 与**同源**
 // iframe 深搜（跨域 iframe 拿不到 contentDocument，静默跳过——嵌入式第三方播放器暂不覆盖）。
@@ -255,7 +395,7 @@ function fushiFindPlayingVideo() {
 }
 try {
   const fushiPausePrefsPromise = chrome.storage.local.get(
-    ['subtitlePauseOnLookup', 'subtitleHoverPause'],
+    ['subtitlePauseOnLookup', 'subtitleHoverPause', 'subtitleResumeOnLookupLeave'],
     fushiApplyPauseOnLookupPrefs,
   );
   if (fushiPausePrefsPromise &&
@@ -264,6 +404,9 @@ try {
   }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes) return;
+    if (changes.subtitleResumeOnLookupLeave) {
+      fushiResumeOnLookupLeave = changes.subtitleResumeOnLookupLeave.newValue === true;
+    }
     if (changes.subtitlePauseOnLookup) {
       fushiHasPauseOnLookupPref = true;
       fushiPauseOnLookup = changes.subtitlePauseOnLookup.newValue === true;
@@ -1644,6 +1787,17 @@ function fushiEnsureContainer() {
     fushiHost.style.cssText =
         'position:fixed;top:0;left:0;z-index:2147483647;overflow-x:hidden;overflow-y:auto;';
     fushiInstallSwipeClose(fushiHost); // 水平拖关手势（是否生效由 fushiSwipeCloseEnabled 门控）
+    // 悬停查词离开即续播：指针在弹窗上 = 正在读词条，绝不关。host 会把 mousemove 截在自己这里
+    // （见下方 stopPropagation 列表），document 侧收不到「进了弹窗」，只能由 host 自己回报。
+    fushiHost.addEventListener('mouseenter', function () {
+      fushiPointerOverPopup = true;
+      fushiPointerOutsideDocument = false;
+      fushiCancelHoverLeave();
+    });
+    fushiHost.addEventListener('mouseleave', function () {
+      fushiPointerOverPopup = false;
+      fushiScheduleHoverLeave();
+    });
     const shadow = fushiHost.attachShadow({ mode: 'open' });
     // 中和 content.css 里 #entries-container 自带的尺寸盒/zoom（那套是给「容器自身即 fixed 元素」
     // 的旧模型用的）；现在 host 才是尺寸/缩放/定位主体，容器只做 100% 透传。
@@ -1879,6 +2033,7 @@ function fushiRemoveContainer() {
   if (typeof window.fushiCancelAutoRead === 'function') window.fushiCancelAutoRead();
   // 「查词时暂停」的恢复侧：关窗即恢复（实现与不变式见 fushiResumePausedForLookup）。
   // 子层退出只裁子栈，不经此处；只有根层关掉才恢复播放。
+  fushiResetHoverLeaveSession(); // 悬停会话随窗结束：在途的离开判定作废
   fushiResumePausedForLookup();
   // TODO-1150（yomitan 式）：关窗即撤 selection 状态与任何 DOM 包裹高亮（嵌套查词用）。fushiSelection 未加载/无选区时是 no-op。
   // 例外：当前原生选区/caret 落在宿主可编辑区时不清——那是用户点进输入框准备输入/粘贴放的
@@ -2017,8 +2172,42 @@ document.addEventListener('mousemove', (e) => {
   if (!term || !term.trim()) return;
   if (term === fushiLastTerm) return; // 同词去重：还在同一个词上就不重复查/重渲染
   fushiLastTerm = term;
-  fushiSendLookup(term, fushiAnchorRect, null, false, hit);
+  fushiSendLookup(term, fushiAnchorRect, null, false, hit, true);
 });
+
+// 悬停查词离开判定的驱动：记指针位置；悬停会话在场时按 4px 阈值判「还在查词区 / 已离开」。
+// 指针在弹窗上时 host 截住 mousemove、这里收不到，进出弹窗由 host 的 mouseenter/mouseleave 回报。
+// 非悬停会话时只剩两次赋值 + 一次早退，对页面无感。
+document.addEventListener('mousemove', (e) => {
+  fushiHoverPointerX = e.clientX;
+  fushiHoverPointerY = e.clientY;
+  fushiPointerOutsideDocument = false;
+  if (!fushiLookupOpenedByHover || !fushiHost) return;
+  if (Math.abs(e.clientX - fushiHoverLeaveCheckedX) < FUSHI_HOVER_LEAVE_THRESHOLD_PX &&
+      Math.abs(e.clientY - fushiHoverLeaveCheckedY) < FUSHI_HOVER_LEAVE_THRESHOLD_PX) return;
+  fushiHoverLeaveCheckedX = e.clientX;
+  fushiHoverLeaveCheckedY = e.clientY;
+  // 「调整上下文」对话框 / 缩放把手是 host 之外的兄弟节点，指针在它们上面同样算在弹窗上。
+  if (fushiNodeWithin(fushiCtxModalHost, e.target) || fushiNodeWithin(fushiResizeGrip, e.target)) {
+    fushiCancelHoverLeave();
+    return;
+  }
+  if (fushiPointerOverHoverSource(e.clientX, e.clientY)) {
+    fushiCancelHoverLeave();
+    return;
+  }
+  fushiScheduleHoverLeave();
+}, { passive: true });
+// 指针移出整个窗口：documentElement 的 mouseleave 只在离开文档根时触发（进递归查词的 iframe
+// 仍在根之内，不会误报）。
+try {
+  document.documentElement.addEventListener('mouseleave', () => {
+    fushiPointerOutsideDocument = true;
+    if (!fushiLookupOpenedByHover || !fushiHost) return;
+    fushiPointerOverPopup = false;
+    fushiScheduleHoverLeave();
+  });
+} catch (_) { /* 极简宿主没有 documentElement 监听能力：少这一路兜底而已 */ }
 
 let fushiLastConnectionHintAt = 0;
 function fushiShowConnectionFailure(resp) {
@@ -2046,7 +2235,7 @@ function fushiShowConnectionFailure(resp) {
 // 用户开启「查词时暂停」后，仅在确实发起了非空查词请求时暂停正在播放的视频，并记下
 // fushiPausedForLookup；关闭查词弹窗时自动恢复（fushiRemoveContainer）。关闭该设置时
 // 任何站点都不因查词被暂停。
-function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor) {
+function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAnchor, openedByHover) {
   if (window.fushiNestedPopups) window.fushiNestedPopups.clear();
   // TODO-1219 P3：每次查词刷新精确窗——面板行查词传 cueWindow（该行精确 [startMs,endMs]），
   // mousemove 划词不传则清空，使后续制卡回落 DOM 采样窗（live 视频 hover 取当前句）。
@@ -2059,6 +2248,8 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
   fushiLookupFromSidePanel = fromSidePanel === true; // 关窗回执只发给真正的侧栏路径
   if (!term || !term.trim()) return;
   if (!fushiExtAlive()) return; // 扩展已重载/失效：静默停手（重载页面恢复）
+  // 会话来源记账：悬停入口（Shift 悬停 / 悬浮字幕自动查词）置 true，其余入口默认 false。
+  fushiBeginLookupSession(openedByHover, lookupAnchor);
   // 已因查词暂停且视频仍停着：重复查词不必再扫（fushiFindPlayingVideo 也不会命中）。
   if (fushiPauseOnLookup && !(fushiPausedForLookup && fushiPausedForLookup.paused)) {
     try { const _v = fushiFindPlayingVideo(); if (_v) { _v.pause(); fushiMarkPausedForLookup(_v); } } catch (_) {}
@@ -2163,6 +2354,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
       applyFushiPopupCss(resp.data);
       fushiRender(resp.data.popupJson, termLen, resp.data.theme, anchorRect);
       fushiShownTerm = term;
+      fushiArmHoverLeaveAfterRender();
       // 查词后自动朗读：开关是 app 的全局偏好（随响应下发），解析与播放都走点 ♪ 的同一条
       // 路径。扩展曾是唯一没接这条线的表面（app 内弹窗 / app 外浮窗 / 剪贴板面板都有）。
       if (typeof window.fushiAutoReadFirstEntry === 'function') {
@@ -2206,7 +2398,11 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
   // 悬浮字幕自动查词后点、面板行连点）不该重发请求重渲染：弹窗闪一下、「查词时暂停」再
   // 走一轮、词典服务白跑一趟。同词且弹窗在场 = no-op；同词还在途也不再发第二笔。弹窗关了
   // 或换了词照常查。
-  if (term && fushiHost && term === fushiShownTerm) return;
+  if (term && fushiHost && term === fushiShownTerm) {
+    // 悬停会话里显式点了同一个词 = 「停在这儿看」：降级成点击会话，之后不再自动关窗续播。
+    if (!autoLookup) fushiHoldLookupSession();
+    return;
+  }
   if (term && fushiPending && term === fushiLastTerm &&
       Date.now() - fushiPendingSince < FUSHI_PENDING_TIMEOUT_MS) return;
   if (autoLookup) {
@@ -2218,7 +2414,7 @@ window.fushiLookupAtPoint = function (clientX, clientY, cueWindow, options) {
     fushiLastAutoLookupKey = lookupKey;
   }
   fushiLastTerm = term || ''; // 与 mousemove 去重状态对齐，避免点后立刻 hover 同词重查
-  fushiSendLookup(term, anchorRect, cueWindow, false, hit); // TODO-1219 P3：面板行传入精确窗
+  fushiSendLookup(term, anchorRect, cueWindow, false, hit, autoLookup); // TODO-1219 P3：面板行传入精确窗；auto=悬浮字幕自动查词=悬停会话
 };
 // 原生 Side Panel 自己请求并渲染词典，视频页只保留精确 cue 窗（制卡媒体）以及可选的
 // “查词时暂停”。这里不创建弹窗、不读/写宿主 Selection，也不修改任何宿主文本节点。

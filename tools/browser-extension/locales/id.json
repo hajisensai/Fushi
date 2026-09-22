@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Menyembunyikan sepenuhnya subtitel situs maupun lapisan ekstensi (tanpa buram, tidak ada yang muncul saat kursor diarahkan) — untuk latihan mendengarkan murni. Alihkan kapan saja dengan <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Jeda saat mencari",
   "opt_subtitlePauseOnLookup_desc": "Menjeda video yang sedang diputar saat pencarian dimulai dari halaman, daftar subtitel, atau lapisan; pemutaran dilanjutkan otomatis saat popup ditutup (video yang Anda jeda sendiri tidak pernah dilanjutkan).",
+  "opt_subtitleResumeOnLookupLeave_title": "Lanjutkan saat meninggalkan pencarian",
+  "opt_subtitleResumeOnLookupLeave_desc": "Setelah pencarian dengan Shift+arahkan kursor atau pencarian otomatis overlay menjeda video, menjauhkan kursor dari subtitle dan jendela pencarian akan menutup jendela itu dan melanjutkan pemutaran tanpa klik tambahan. Pencarian yang dimulai dengan klik tidak terpengaruh.",
   "opt_subtitleLookupOnPage_title": "Tampilkan hasil pencarian di halaman",
   "opt_subtitleLookupOnPage_desc": "Saat Anda mengeklik kata di panel samping, popup dibuka di halaman alih-alih dijejalkan ke dalam panel — peramban tidak mengizinkan konten panel digambar di luar panel. Nonaktif berarti kembali ke popup sempit di dalam panel.",
   "opt_subtitleOverlayAutoLookup_title": "Pencarian arahkan kursor pada subtitel lapisan",
