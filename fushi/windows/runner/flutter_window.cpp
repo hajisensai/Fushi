@@ -28,6 +28,7 @@
 #include "audio_loopback_capture.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
+#include "game_stream_input.h"
 #include "global_mouse_trigger.h"
 #include "ime_space_dispatch.h"
 #include "utils.h"
@@ -682,6 +683,7 @@ bool FlutterWindow::OnCreate() {
   RegisterAudioLoopbackChannel();
   RegisterVoiceHookChannel();
   RegisterMagpieChannel();
+  RegisterGameStreamInputChannel();
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   return true;
@@ -3351,6 +3353,63 @@ void FlutterWindow::RegisterMagpieChannel() {
   }
 }
 
+void FlutterWindow::RegisterGameStreamInputChannel() {
+  game_stream_input_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "app.fushi/game_stream_input",
+          &flutter::StandardMethodCodec::GetInstance());
+  game_stream_input_ = std::make_unique<fushi::GameStreamInput>();
+  game_stream_input_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        const auto* args =
+            std::get_if<flutter::EncodableMap>(call.arguments());
+        if (call.method_name() == "bind") {
+          if (args == nullptr) {
+            result->Error("bad_args", "Missing window handle");
+            return;
+          }
+          const auto it = args->find(flutter::EncodableValue("hwnd"));
+          const int64_t value =
+              it == args->end() ? 0 : it->second.TryGetLongValue().value_or(0);
+          std::string reason;
+          if (!game_stream_input_->Bind(static_cast<uintptr_t>(value),
+                                        &reason)) {
+            result->Error("bind_rejected", reason);
+            return;
+          }
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "send") {
+          if (args == nullptr) {
+            result->Error("bad_args", "Missing input event");
+            return;
+          }
+          std::string reason;
+          if (!game_stream_input_->Send(*args, &reason)) {
+            result->Error("input_rejected", reason);
+            return;
+          }
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "release") {
+          game_stream_input_->Release();
+          result->Success();
+          return;
+        }
+        if (call.method_name() == "unbind") {
+          game_stream_input_->Unbind();
+          result->Success();
+          return;
+        }
+        result->NotImplemented();
+      });
+}
+
 void FlutterWindow::NotifyMagpieScalingChanged(WPARAM wparam, LPARAM lparam) {
   // WndProc 跑在 platform 线程，InvokeMethod 可直接调用。channel 在 OnCreate 建好
   // 前（极早期消息）可能为空；**退出期**则是引擎先被拆掉、窗口还在收广播消息，此时
@@ -3450,6 +3509,9 @@ void FlutterWindow::OnDestroy() {
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
   fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
+  if (game_stream_input_) {
+    game_stream_input_->Unbind();
+  }
   // Attached surface callbacks invoke gal_hook_text_channel_; tear the HWND and
   // its follow timer down while the Flutter messenger is still alive.
   attached_text_surface_window_.reset();
