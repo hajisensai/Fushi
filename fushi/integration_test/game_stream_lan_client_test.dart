@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -67,6 +68,34 @@ void main() {
       FushiGameStreamClient? client;
       SyncRepository? repository;
       RTCPeerConnection? peerConnection;
+      bool surfaceConverted = false;
+      Future<void> captureVideoScreenshot(String stage) async {
+        if (receiver?.ready != true) return;
+        try {
+          if (!surfaceConverted) {
+            await binding.convertFlutterSurfaceToImage();
+            surfaceConverted = true;
+          }
+          await tester.pump(const Duration(milliseconds: 300));
+          final List<int> screenshot = await binding.takeScreenshot(
+            'game-stream-$stage',
+          );
+          await File(
+            '${support.path}/game_stream_lan.png',
+          ).writeAsBytes(screenshot, flush: true);
+          evidence['screenshotStage'] = stage;
+          evidence['screenshotSavedAt'] = DateTime.now()
+              .toUtc()
+              .toIso8601String();
+        } catch (error) {
+          // Visual evidence is best effort and must preserve a lookup/mine error.
+          evidence['screenshotErrorType'] = error.runtimeType.toString();
+        } finally {
+          // Keep image bytes in the private file, never in JSON or test logs.
+          evidence.remove('screenshots');
+        }
+      }
+
       Future<void> recordRtpEvidence() async {
         final RTCPeerConnection? connection = peerConnection;
         if (connection == null) return;
@@ -187,6 +216,8 @@ void main() {
         evidence['videoWidth'] = receiver.renderer.videoWidth;
         evidence['videoHeight'] = receiver.renderer.videoHeight;
         evidence['firstFrameRendered'] = true;
+        await captureVideoScreenshot('first-frame');
+        await save();
         await _until(
           tester,
           () =>
@@ -207,12 +238,36 @@ void main() {
         };
         await save();
         final int downSequence = composer.nextSequence;
-        await focus.activate();
+        final Map<String, Object?> inputTiming = <String, Object?>{
+          'holdAfterDownAckMs': 200,
+          'keyDownSequence': downSequence,
+          'keyUpSequence': downSequence + 1,
+        };
+        evidence['inputTiming'] = inputTiming;
+        final Stopwatch press = Stopwatch()..start();
+        inputTiming['downSentAt'] = DateTime.now().toUtc().toIso8601String();
+        try {
+          // Model a human press on the real focused A control. The production
+          // input path keeps its normal timing; only this fixture holds the key.
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+          await _until(
+            tester,
+            () => composer!.lastAcceptedSequence >= downSequence,
+            'target-window key down acknowledgement',
+          );
+          inputTiming['downAckAt'] = DateTime.now().toUtc().toIso8601String();
+          await tester.pump(const Duration(milliseconds: 200));
+        } finally {
+          inputTiming['upSentAt'] = DateTime.now().toUtc().toIso8601String();
+          inputTiming['actualPressMs'] = press.elapsedMilliseconds;
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+        }
         await _until(
           tester,
           () => composer!.lastAcceptedSequence >= downSequence + 1,
-          'target-window key down/up acknowledgement',
+          'target-window key up acknowledgement',
         );
+        inputTiming['upAckAt'] = DateTime.now().toUtc().toIso8601String();
         expect(composer.lastRejectedSequence, 0);
         evidence['inputAcks'] = acknowledgements;
         // ACK means the host accepted window-targeted messages. It does not
@@ -364,16 +419,7 @@ void main() {
               },
             )
             .toList();
-        await binding.convertFlutterSurfaceToImage();
-        await tester.pump(const Duration(milliseconds: 300));
-        final List<int> screenshot = await binding.takeScreenshot(
-          'game-stream-lan',
-        );
-        await File(
-          '${support.path}/game_stream_lan.png',
-        ).writeAsBytes(screenshot, flush: true);
-        // Screenshot bytes are a private file, not a huge JSON/log attachment.
-        evidence.remove('screenshots');
+        await captureVideoScreenshot('passed');
         evidence['status'] = 'passed';
         evidence['endedAt'] = DateTime.now().toUtc().toIso8601String();
         await save();
@@ -383,6 +429,7 @@ void main() {
         evidence['status'] = 'failed';
         // Exception text may contain transport information; keep only its type/code.
         evidence.addAll(gameStreamFailureSummary(error));
+        await captureVideoScreenshot('failed');
         await save();
         rethrow;
       } finally {
