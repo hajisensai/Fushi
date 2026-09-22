@@ -41,6 +41,7 @@ void main() {
           reason: '${result.stdout}\n${result.stderr}',
         );
         expect(result.stdout, contains('PASS 5 VN lookup/audio targets'));
+        expect(result.stdout, contains('PASS 1 VN cross-screen merge'));
       } finally {
         temp.deleteSync(recursive: true);
       }

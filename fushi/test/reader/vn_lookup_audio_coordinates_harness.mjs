@@ -48,7 +48,7 @@ function pageFor(fixture) {
     vnScreenMode: fixture.mode,
     vnSentencesPerScreen: 1,
     vnPreserveDialogue: false,
-    vnMergeCrossScreenSentenceAudioCues: false,
+    vnMergeCrossScreenSentenceAudioCues: !!fixture.merge,
     sentenceAudioCues: [],
     initialProgress: 0,
     initialFragment: null,
@@ -163,7 +163,43 @@ try {
     assert.equal(result, fixture.targets.length);
     count += result;
   }
+  // 跨屏合并（`vnMergeCrossScreenSentenceAudioCues`）走的是
+  // mergeSentenceAudioCrossScreenScreens，屏界换算与上面三处同源但代码另在一处；
+  // 上面的 fixture 一律 merge=false，改错那几行不会被它们发现。
+  const mergeFixture = {
+    name: 'cue spanning two sentence screens merges them',
+    mode: 'sentence',
+    merge: true,
+    // 学习单位与音频 UTF-16 必须在这里分岔，否则换错坐标也能蒙对：
+    // `Eighty Six部隊` 归一化后是 11 个 UTF-16 单元，学习单位只算 4 个。
+    html: '<p>Eighty Six部隊。𠀀猫がいる。犬もいる。</p>',
+  };
+  const merged = await driver.evalOnPage(pageFor(mergeFixture), `(() => {
+    const reader = window.fushiReader;
+    function check(condition, label, details) {
+      if (!condition) throw Error('merge: ' + label +
+        (details === undefined ? '' : ' ' + JSON.stringify(details)));
+    }
+    check(reader.screens.length === 3, 'fixture starts as three sentence screens',
+      reader.screens.length);
+    // 「𠀀猫がいる」 自 11 起 6 个 UTF-16 单元，「犬もいる」 再 4 个——一条 11..21 的 cue
+    // 正好横跨第 2、3 屏。按学习单位算屏界会得到完全不同的一对下标。
+    reader.applySentenceAudioCues([
+      { id: 'span', text: '𠀀猫がいる。犬もいる', start: 11, length: 10 }
+    ]);
+    check(reader.screens.length === 2, 'the two straddled screens merge into one',
+      reader.screens.length);
+    reader.highlightSentenceAudioCue('span', true);
+    check(reader.currentScreenIndex === 1, 'follow lands on the merged screen',
+      reader.currentScreenIndex);
+    const text = reader.screen.textContent;
+    check(text.indexOf('猫がいる') >= 0 && text.indexOf('犬もいる') >= 0,
+      'the merged screen shows both straddled sentences', text);
+    return reader.screens.length;
+  })()`);
+  assert.equal(merged, 2);
   console.log('PASS ' + count + ' VN lookup/audio targets');
+  console.log('PASS 1 VN cross-screen merge');
 } finally {
   driver.close();
 }

@@ -349,7 +349,7 @@ $imageRevealSemantics
     this.root = root;
     this.options = options || {};
     this.textEntries = [];
-    this.totalMatchableChars = 0;
+    this.totalStudyChars = 0;
     this.totalRawChars = 0;
     this.sourceTextOffsets = new WeakMap();
     this.sourceTextRawOffsets = new WeakMap();
@@ -406,7 +406,7 @@ $imageRevealSemantics
         this.updateSourceNodeStats(node, entry);
       }).bind(this));
 
-      this.totalMatchableChars = count;
+      this.totalStudyChars = count;
       this.totalRawChars = rawCount;
       this.mediaNodeEntries = this.collectMediaNodeEntries();
     },
@@ -1106,7 +1106,7 @@ $sharedInitViewport
     }
     this.contentStream = contentStreamFactory(this.sourceRoot);
     this.rangeMap = rangeMapFactory(this);
-    this.totalChapterChars = this.contentStream.totalMatchableChars;
+    this.totalChapterChars = this.contentStream.totalStudyChars;
   },
   buildScreens: function() {
     var mode = String(this.screenMode || '').toLowerCase();
@@ -1243,12 +1243,6 @@ $sharedInitViewport
     var start = this.screenStartCharCount(screen);
     var end = this.screenEndCharCount(screen);
     return offset >= start && offset < end;
-  },
-  screenIntersectsCharRange: function(screen, start, end) {
-    var screenStart = this.screenStartCharCount(screen);
-    var screenEnd = this.screenEndCharCount(screen);
-    if (end <= start) return start >= screenStart && start <= screenEnd;
-    return end > screenStart && start < screenEnd;
   },
   assignScreenProgressAnchors: function() {
     if (!this.screens || !this.screens.length) return;
@@ -2864,6 +2858,7 @@ $sharedInitViewport
     return start + Math.max(0, Number(cue && cue.length) || 0);
   },
   screenMatchableOffset: function(screen, end) {
+    if (!this.contentStream) return null;
     var rawOffset = end ? this.screenEndRawCount(screen) : this.screenStartRawCount(screen);
     return this.contentStream.matchableOffsetForRawOffset(rawOffset);
   },
