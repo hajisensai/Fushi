@@ -133,6 +133,11 @@ class SyncManager {
   /// 本通道文件箱进度基线的 dimension（见 [progressBaselineDimensionOf]）。
   final String _progressDimension;
 
+  /// 文件箱里的进度是否只有本 client 在写（互联 host 从不读回文件箱，见
+  /// [SyncCompareEntry.liveAction]）。云盘文件箱是多设备共写的，不算。
+  bool get _fileBoxIsClientOwned =>
+      _scope == SyncChannelScope.forBackendType(SyncBackendType.fushiServer);
+
   /// Reports content-file (EPUB/audio) transfer progress as a fraction 0..1.
   /// Only fires when content sync is enabled and a file is being transferred.
   final void Function(double fraction)? onContentProgress;
@@ -330,11 +335,21 @@ class SyncManager {
       // (both sides moved off base) must surface as a conflict instead of
       // silently last-write-wins clobbering one side.
       final int? base = await _db.getSyncBaseline(assetKey, _progressDimension);
-      final ProgressResolution res = resolveProgressSync(
+      ProgressResolution res = resolveProgressSync(
         local: localPosition?.updatedAt,
         remote: remoteTimestamp,
         base: base,
       );
+      if (res.isConflict && base == null && _fileBoxIsClientOwned) {
+        // 互联通道的文件箱 `progress_*.json` 只有 client 自己写、host 从不读回
+        // （[SyncCompareEntry.liveAction]）：这里的「远端」永远是本 client 上一次
+        // 的导出，无基线而两边不等只可能是本机之后又读了——按导出处理并落下第一
+        // 条基线。判成冲突的后果是**永久幻象**：冲突弹窗对互联行只看 live 判定、
+        // 根本不显示文件箱冲突，而本函数遇冲突早退不写基线，于是升级前只有旧维度
+        // 行（`'progress'`）、新维度行为空的存量用户每轮 sweep 都报同一本书、每次
+        // 「立即同步」后都弹一个空弹窗，且没有任何路径能自愈。
+        res = ProgressResolution.auto(SyncDirection.exportToTtu);
+      }
       if (res.isConflict) {
         return SyncBookResult(
           direction: SyncResult.conflict,

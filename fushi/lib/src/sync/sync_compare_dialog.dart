@@ -752,10 +752,30 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         for (final e in entries) {
           final SyncChoice? prior =
               e.bookKey == null ? null : decided[e.bookKey!];
-          if (prior != null) {
-            choices[e.title] = prior;
-          } else if (e.hasConflict) {
-            allDecided = false;
+          if (prior == null) {
+            if (e.hasConflict) allDecided = false;
+            continue;
+          }
+          switch (prior) {
+            case SyncChoice.skip:
+            case SyncChoice.useLocal:
+              // 「跳过」两端都不动；「用本地」是用户点名要本机这份，对哪条通道
+              // 都成立——推过去就是。
+              choices[e.title] = prior;
+            case SyncChoice.useRemote:
+              // 用户采纳的是**前一条通道**的远端，本机现在就是那个值。本通道
+              // 的远端若自己也动过（只远端动 / 双方都动），那是用户从没见过的第
+              // 三个值——按簿把本机推过去等于把它盖掉，正是本轮要消灭的倒灌
+              // （PC 既是互联 host 又往云盘导出：选了云盘的旧值，host 自己更新
+              // 的进度就这么没了）。只有本通道判「远端没动」时才沿用；真分叉照
+              // 旧弹给用户看。
+              final bool remoteMoved = e.hasConflict ||
+                  e.autoDirection == SyncDirection.importFromTtu;
+              if (!remoteMoved) {
+                choices[e.title] = SyncChoice.useLocal;
+              } else if (e.hasConflict) {
+                allDecided = false;
+              }
           }
         }
       }
@@ -902,9 +922,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
           final direction = choice == SyncChoice.useLocal
               ? SyncDirection.exportToTtu
               : SyncDirection.importFromTtu;
-          // 记到跨通道裁决簿：用户选定的那一侧应用完就在本机了，后续通道一律
-          // 「把本机推过去」（见 [SyncCompareDialog.decisions]）。
-          widget.decisions?[entry.bookKey!] = SyncChoice.useLocal;
+          // 记到跨通道裁决簿的是用户的**真实选择**（见 [SyncCompareDialog
+          // .decisions]）：「用本地」对后续通道一律推本机；「用远端」只是采纳了
+          // 这一条通道的远端，后续通道的远端若自己动过仍要问用户。
+          widget.decisions?[entry.bookKey!] = choice;
 
           SyncApplyOutcome outcome;
           try {

@@ -379,6 +379,51 @@ void main() {
         reason: '云通道的基线行原样不动');
   });
 
+  // 升级路径：互联通道换了新基线行之后，存量用户只有旧行 `'progress'`、新行为空。
+  // 文件箱里躺着本 client 升级前最后一次导出（ts 500），之后本机又读过（ts 1000）
+  // ——两边不等、无基线。云盘口径这是「真分叉」；但互联文件箱只有本 client 写、
+  // host 从不读回，这里的「远端」就是自己上次的导出，只能按导出处理并落下第一条
+  // 基线。判成冲突的后果是永久幻象（冲突弹窗对互联行只看 live、不显示这一行；
+  // 自动 sweep 遇冲突早退不写基线 → 每轮都报、每次「立即同步」后都弹空弹窗）。
+  test(
+      'legacy baseline row + empty new row: interconnect auto sweep exports '
+      'and seeds the new row instead of reporting a phantom conflict',
+      () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final EpubBookRow book = await _seedBook(db, 'BookA');
+    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{},
+    );
+    fake.fileBoxProgress['BookA'] = TtuProgress(
+      dataId: 0,
+      exploredCharCount: 500,
+      progress: 0.5,
+      lastBookmarkModified: 500,
+    );
+    // 升级前两条通道共用的旧行；新行 `progress__fushiServer` 不存在。
+    await db.setSyncBaseline('BookA', 'progress', 500);
+    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), isNull);
+
+    // direction 不传 = 自动 sweep 的三方判定路径。
+    final SyncBookResult result =
+        await SyncManager(db: db, backend: fake).syncBook(
+      book: book,
+      syncStats: false,
+      statsSyncMode: StatisticsSyncMode.merge,
+      syncAudioBook: false,
+    );
+
+    expect(result.direction, SyncResult.exported,
+        reason: '文件箱是本 client 自己写的，无基线不等只能是本机又读了');
+    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), 1000,
+        reason: '第一条新维度基线落下，下一轮才有 base 可比');
+    expect(await db.getSyncBaseline('BookA', 'progress'), 500,
+        reason: '云通道那一行原样不动');
+  });
+
   testWidgets(
       'live GET failing at load degrades the row to the file box, but Apply '
       '"use local" still pushes to host DB', (WidgetTester tester) async {

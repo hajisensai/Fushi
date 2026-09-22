@@ -439,6 +439,49 @@ void main() {
         120);
   });
 
+  // 簿上记的是用户的真实选择。第一条通道用户选了「用远端」——本机被写成云盘那
+  // 份；第二条通道（互联 host）的远端若自己也动过，那是用户从没见过的第三个值，
+  // 按簿自动「把本机推过去」就是把 host 更新的进度盖掉——PC 既是互联 host 又往云
+  // 盘导出的用户会在这里丢进度。真分叉必须照旧弹给用户看。
+  testWidgets(
+      'a book decided "use remote" on the ledger still prompts on the next '
+      'channel when that channel has its own fork',
+      (WidgetTester tester) async {
+    final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
+    addTearDown(db.close);
+    final SyncConflictPrompter prompter = SyncConflictPrompter();
+    final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+    final Map<String, SyncChoice> decisions = <String, SyncChoice>{
+      sanitizeTtuFilename('BookA'): SyncChoice.useRemote,
+    };
+
+    await pumpAndPresent(
+      tester,
+      prompter: prompter,
+      navKey: navKey,
+      body: () => prompter.present(
+        navigatorKey: navKey,
+        db: db,
+        backend: fake,
+        conflicts: _oneConflict(),
+        source: ConflictSource.manual,
+        inBook: false,
+        decisions: decisions,
+      ),
+    );
+
+    expect(find.byType(SyncCompareDialog), findsOneWidget,
+        reason: '本通道远端自己动过，用户没裁决过这个值，必须弹');
+    expect(fake.exportedByFolder, isEmpty, reason: '不得按簿自动把本机推给这条通道');
+    // 用户在这里真的裁决后，簿上记的也是这一次的真实选择。
+    await tester.tap(find.text(t.sync_compare_use_remote).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+    await tester.pumpAndSettle();
+    expect(find.byType(SyncCompareDialog), findsNothing);
+    expect(decisions[sanitizeTtuFilename('BookA')], SyncChoice.useRemote);
+  });
+
   testWidgets('a book skipped on the ledger is not prompted again either',
       (WidgetTester tester) async {
     final (FushiDatabase db, _FakeSyncBackend fake) = await seedForkedLibrary();
