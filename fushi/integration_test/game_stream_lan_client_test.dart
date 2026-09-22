@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -46,6 +47,7 @@ void main() {
         'pairingMode': credentials.fixture['pairingMode'],
         'status': 'running',
         'uiInputCoverage': 'focus gamepad confirm, drawer and token',
+        'inputEffectVerified': false,
         'mineCoverage': 'production controller and authenticated HTTP',
       };
       final File report = File('${support.path}/game_stream_lan_result.json');
@@ -165,6 +167,15 @@ void main() {
 
         final FocusDriver focus = FocusDriver(tester);
         expect(await focus.focusWidget(find.text('A')), isTrue);
+        final GameStreamTextEvent? lineBeforeInput = lookup.currentLine;
+        final int eventsBeforeInput = lines.length;
+        final Map<String, Object?> beforeInput = _lineEvidence(lineBeforeInput);
+        evidence['inputResponse'] = <String, Object?>{
+          'status': 'pending',
+          'before': beforeInput,
+          'causalProof': 'unverified',
+        };
+        await save();
         final int downSequence = composer.nextSequence;
         await focus.activate();
         await _until(
@@ -174,6 +185,31 @@ void main() {
         );
         expect(composer.lastRejectedSequence, 0);
         evidence['inputAcks'] = acknowledgements;
+        // ACK means the host accepted window-targeted messages. It does not
+        // demonstrate that a DirectInput game consumed them. Observe a bounded
+        // period without sending more keys, and preserve the actual text delta.
+        final DateTime responseDeadline = DateTime.now().add(
+          const Duration(seconds: 3),
+        );
+        bool textChanged() =>
+            lookup!.currentLine?.text != lineBeforeInput?.text;
+        while (!textChanged() && DateTime.now().isBefore(responseDeadline)) {
+          await tester.pump(const Duration(milliseconds: 250));
+        }
+        evidence['inputResponse'] = <String, Object?>{
+          'status': textChanged() ? 'observed_text_change' : 'unverified',
+          'before': beforeInput,
+          'after': _lineEvidence(lookup.currentLine),
+          'textChanged': textChanged(),
+          'newTextEvents': lines.length - eventsBeforeInput,
+          'keyDownSequence': downSequence,
+          'keyUpSequence': downSequence + 1,
+          // Auto-advance and a user's local actions can also change text. Even
+          // a delta is observational evidence, not proof of input causality.
+          'causalProof': 'unverified',
+          'observationLimitSeconds': 3,
+        };
+        await save();
         await _until(
           tester,
           () => lookup!.currentLine != null,
@@ -352,6 +388,16 @@ void main() {
     timeout: const Timeout(Duration(minutes: 6)),
   );
 }
+
+Map<String, Object?> _lineEvidence(GameStreamTextEvent? line) =>
+    <String, Object?>{
+      'observedAt': DateTime.now().toUtc().toIso8601String(),
+      'lineId': line?.lineId,
+      'textSha256': line == null
+          ? null
+          : sha256.convert(utf8.encode(line.text)).toString(),
+      'textLength': line?.text.length,
+    };
 
 Future<void> _until(
   WidgetTester tester,

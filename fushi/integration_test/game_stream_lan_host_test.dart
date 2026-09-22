@@ -23,6 +23,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/platform/game_stream_input_channel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -246,6 +247,14 @@ void main() {
         } finally {
           await foreground.restore();
         }
+        final Map<String, Object?> gameTarget =
+            await GameStreamInputChannel.inspect();
+        await evidence.writeJson('game-target-before-join.json', gameTarget);
+        expect(
+          gameTarget['foreground'],
+          isTrue,
+          reason: 'The bound game must be foreground before Android joins',
+        );
         final GameStreamSession session = sync.gameStreamService.session!;
         final FushiTlsIdentity identity = await FushiTlsIdentityStore(
           dataDir: app.databaseDirectory.path,
