@@ -124,15 +124,52 @@ class AniDbVideoMetadataProvider
   @override
   bool get isAvailable => !_closed;
 
-  bool get isHttpApiAvailable {
+  bool get isHttpApiAvailable => _hasHttpClientIdentity && !isBanned;
+
+  /// 本地配置层面是否有一对可用的 HTTP 客户端身份（名 + 正版本号、非 Shoko 保留名、
+  /// 且没被 AniDB 明确拒绝过）。不看封禁——封禁是另一种「暂时不可用」。
+  bool get _hasHttpClientIdentity {
     final int? version = _clientVersion;
     return !_closed &&
         _clientName.isNotEmpty &&
         version != null &&
         version > 0 &&
         !_reservedShokoClientNames.contains(_clientName.toLowerCase()) &&
-        !isBanned;
+        httpIdentityRejection == null;
   }
+
+  String get _httpIdentityKey => '$_clientName/${_clientVersion ?? ''}';
+
+  /// AniDB HTTP API 明确拒绝过当前客户端身份时的服务端原话（`<error code="302">
+  /// client version missing or invalid</error>`）；没拒绝过为 null。
+  ///
+  /// 闩按「身份」记在 endpoint 级请求闸上（BUG-2623）：同一进程里换 provider 实例
+  /// 不重发注定失败的请求（一批 60 个作品就是 60 次 × 3s 限流），用户改成别的
+  /// 自定义 client 后键不同、自然解闩。
+  String? get httpIdentityRejection =>
+      _requestGate.identityRejection(_httpIdentityKey);
+
+  /// 为什么 HTTP anime XML 详情拿不到——给刮削日志用的一句人话。调用方在
+  /// 拿到 catalog-only 作品时问这里，而不是把每条网络异常都吞成同一句固定文案。
+  String get httpDetailUnavailableReason {
+    final String? rejection = httpIdentityRejection;
+    if (rejection != null) {
+      return 'AniDB 拒绝了客户端身份 $_httpIdentityKey：$rejection'
+          '（HTTP API 客户端未登记或版本无效，与 UDP 客户端是两条登记）';
+    }
+    final Duration? ban = banRemaining;
+    if (ban != null) {
+      return 'AniDB 已封禁本客户端，约 ${ban.inMinutes} 分钟后解除';
+    }
+    if (!_hasHttpClientIdentity) {
+      return '未配置已登记的 AniDB HTTP 客户端身份';
+    }
+    final String? lastError = _lastAnimeXmlError;
+    return lastError == null ? 'anime XML 未取到' : 'anime XML 请求失败：$lastError';
+  }
+
+  /// 最近一次 anime XML 远程请求失败的原因（传输 / 服务端错误），成功后清空。
+  String? _lastAnimeXmlError;
 
   /// AniDB 是否正处在它自己下发的封禁窗口内。
   ///
@@ -305,7 +342,8 @@ class AniDbVideoMetadataProvider
     final String? xml;
     try {
       xml = await _downloadAnimeXml(animeId);
-    } on VideoMetadataNetworkException {
+    } on VideoMetadataNetworkException catch (error) {
+      _lastAnimeXmlError = error.message;
       if (stale != null) return stale;
       rethrow;
     }
@@ -313,10 +351,15 @@ class AniDbVideoMetadataProvider
     final _AniDbAnime? anime;
     try {
       anime = _parseAnime(animeId, xml);
-    } on AniDbBannedException {
+    } on AniDbBannedException catch (error) {
+      _lastAnimeXmlError = error.message;
       if (stale != null) return stale;
       rethrow;
+    } on VideoMetadataNetworkException catch (error) {
+      _lastAnimeXmlError = error.message;
+      rethrow;
     }
+    _lastAnimeXmlError = null;
     if (anime != null && cacheFile != null) {
       try {
         await cacheFile.parent.create(recursive: true);
@@ -515,6 +558,19 @@ class AniDbVideoMetadataProvider
         _requestGate.latchBan(_now().add(_banCooldown));
         throw AniDbBannedException(
           message.isEmpty ? 'AniDB has banned this client' : message,
+        );
+      }
+      // `<error code="302">client version missing or invalid</error>`：这对
+      // 身份在 AniDB 那边不是 HTTP API 客户端。换 aid 再问一万次答案也一样，闩住
+      // 这对身份，本进程后续都走 catalog-only + UDP，别再占限流闸（BUG-2623）。
+      final String code = (root.getAttribute('code') ?? '').trim();
+      if (code == '302' || normalized.contains('client version')) {
+        final String detail = message.isEmpty
+            ? 'client version missing or invalid'
+            : '$message${code.isEmpty ? '' : '（code $code）'}';
+        _requestGate.latchIdentityRejection(_httpIdentityKey, detail);
+        throw VideoMetadataNetworkException(
+          'AniDB rejected client identity $_httpIdentityKey: $detail',
         );
       }
       throw VideoMetadataNetworkException(
@@ -1115,10 +1171,20 @@ class _AniDbRequestGate {
   DateTime? _lastStartedAt;
   DateTime? _bannedUntil;
 
+  /// 被 AniDB 明确拒绝的客户端身份（`name/version` → 服务端原话）。按身份而不是
+  /// 按闸整体记：闸按 endpoint 共享，用户换一对自定义 client 后不该继承旧拒绝。
+  final Map<String, String> _rejectedIdentities = <String, String>{};
+
   void latchBan(DateTime until) {
     final DateTime? current = _bannedUntil;
     if (current == null || until.isAfter(current)) _bannedUntil = until;
   }
+
+  void latchIdentityRejection(String identity, String reason) {
+    _rejectedIdentities[identity] = reason;
+  }
+
+  String? identityRejection(String identity) => _rejectedIdentities[identity];
 
   bool isBannedAt(DateTime now) => banRemainingAt(now) != null;
 

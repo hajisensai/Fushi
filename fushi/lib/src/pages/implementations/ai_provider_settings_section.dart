@@ -23,6 +23,7 @@ import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/source_toggle_section.dart';
 import 'package:fushi/utils.dart';
 
@@ -139,11 +140,20 @@ class _AiProviderSettingsSectionState
             icon: Icons.auto_fix_high_outlined,
           ),
           for (final AiFeature feature in AiFeature.values)
-            _featureRow(feature),
+            if (_featureAvailableOnThisStore(feature)) _featureRow(feature),
         ],
       ),
     );
   }
+
+  /// 「AI 下视频」属于下载中心 + 在线发现两类 App Store 合规受限能力：入口与
+  /// 设置分类都已按 [StoreRestrictedCapability] 门控，指派行也不能漏——它的文案
+  /// 写着「然后下载或订阅」，iOS 上留这一行等于把被拆掉的能力写在审核员眼前。
+  /// 判据只在 store_compliance.dart 写一次，这里只是消费。
+  static bool _featureAvailableOnThisStore(AiFeature feature) =>
+      feature != AiFeature.videoAcquire ||
+      (StoreRestrictedCapability.downloads.isAvailable &&
+          StoreRestrictedCapability.externalDiscovery.isAvailable);
 
   // ---------------------------------------------------------------------------
   // 提供商卡片
@@ -663,6 +673,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoIdentify => t.ai_feature_video_identify,
     AiFeature.videoSearch => t.ai_feature_video_search,
     AiFeature.customTheme => t.ai_feature_custom_theme,
+    AiFeature.videoAcquire => t.ai_feature_video_acquire,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -672,6 +683,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoIdentify => t.ai_feature_video_identify_summary,
     AiFeature.videoSearch => t.ai_feature_video_search_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
+    AiFeature.videoAcquire => t.ai_feature_video_acquire_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。
