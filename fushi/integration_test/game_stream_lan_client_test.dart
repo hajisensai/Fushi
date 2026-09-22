@@ -321,23 +321,31 @@ void main() {
         await focus.activate();
         expect(find.byKey(GameStreamPage.transcriptKey), findsOneWidget);
 
-        // Select a real displayed token by focus, without pixel-coordinate input.
+        // Navigate the visible transcript caret through the production keyboard
+        // path; no coordinate injection or direct lookup invocation selects it.
         final List<String> terms =
             (credentials.fixture['lookupTerms'] as List<dynamic>)
                 .cast<String>();
-        Finder chip = find.byWidgetPredicate(
-          (Widget widget) =>
-              widget is ActionChip &&
-              widget.label is Text &&
-              terms.contains((widget.label as Text).data),
-        );
-        await _until(
-          tester,
-          () => chip.evaluate().isNotEmpty,
-          'a dictionary fixture token in the live Hook line',
-        );
-        chip = chip.first;
-        expect(await focus.focusWidget(chip), isTrue);
+        int sourceOffset = -1;
+        await _until(tester, () {
+          final String sentence = lookup!.currentLine?.text ?? '';
+          for (final String term in terms) {
+            sourceOffset = sentence.indexOf(term);
+            if (sourceOffset >= 0) return true;
+          }
+          return false;
+        }, 'a dictionary fixture term in the live Hook line');
+        final String sourceSentence = lookup.currentLine!.text;
+        final int caretIndex = sourceSentence
+            .substring(0, sourceOffset)
+            .characters
+            .length;
+        final Finder paragraph = find.byKey(GameStreamPage.transcriptTextKey);
+        expect(await focus.focusWidget(paragraph), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.home);
+        for (int i = 0; i < caretIndex; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        }
         await focus.activate();
         await _until(
           tester,

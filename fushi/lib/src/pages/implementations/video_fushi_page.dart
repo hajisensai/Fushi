@@ -365,80 +365,14 @@ int resolveMiningCueIndexForPosition({
 int miningClipTimeMs(int subtitleTimeMs, int delayMs) =>
     (subtitleTimeMs + delayMs).clamp(0, 1 << 30);
 
-/// 判定一个**字位簇**（grapheme cluster）是否属于「拉丁单词字符」：拉丁字母
-/// （含 café 的 é、连字号外的重音字母）或 ASCII 数字。用字位簇的首个码点的
-/// Unicode `Script=Latin` 属性判定，故 NFC/NFD 的重音字母都按基字母（拉丁）归类。
-/// CJK（汉字 / 假名 / 谚文）不是拉丁脚本，恒返回 false → 逐字查词行为不变。
-bool _isLatinWordGrapheme(String grapheme) {
-  if (grapheme.isEmpty) return false;
-  return _kLatinWordCharRegExp.hasMatch(grapheme);
-}
-
-final RegExp _kLatinWordCharRegExp = RegExp(
-  r'^[\p{Script=Latin}0-9]',
-  unicode: true,
-);
-
-/// 点字幕第 [graphemeIndex] 个字位起的查询串。
-///
-/// 查询串只由**起点**决定，终点恒为句尾——引擎按查询串做最长匹配并回报
-/// `bestLength`（弹窗 / 字幕据此高亮整词跨度），多喂的后文超出 `scanLength`
-/// （`FushiDicts.defaultScanLength` = 16 码点）自然丢弃。
-///
-/// 起点按脚本分：
-/// - CJK / 标点 / 空白：就是被点字位本身（逐字查词，点「永」命中「永遠」、
-///   点「遠」能单独查「遠」）。
-/// - 拉丁单词字符：回退到该单词的**词首**，这样点 "hello" 的任意字母（含
-///   'e' / 'o'）都从 "hello" 起查，而不是旧 `skip(index)` 的 "ello" 查不到
-///   （TODO-916 症状③）。空格 / 标点 / 连字号 / CJK 都是词首边界。
-///
-/// BUG-1773：拉丁分支此前**同时**把终点钉死在词尾，于是查询串被截成单个单词，
-/// `listen to` / `look forward to` 这类空格分词短语的词条永远匹配不到——点空格
-/// 反而能查出短语（走了 CJK 的「到句尾」分支）就是这个特例的照妖镜。终点从来
-/// 不该由脚本决定：C++ `scan_candidates` 明确禁止在空格分词语言的单词中间切
-/// （native/fushidicts/fushidicts_src/scan/word_scan.cpp），候选恒是
-/// `listen to music` / `listen to` / `listen`，单词自己仍在候选里，不会被短语挤掉。
-/// 网页播放器页（web_video_fushi_page.dart）与本页共用同一取词规则，故为公开顶层函数。
+/// Shared subtitle transcript suffix lookup, retained for existing callers.
 String subtitleLookupTerm(String sentence, int graphemeIndex) =>
-    subtitleLookupSpan(sentence, graphemeIndex).term;
+    subtitleTranscriptLookupTerm(sentence, graphemeIndex);
 
-/// [subtitleLookupTerm] 的结构化形态：查询串 + 它在句中的 grapheme **起点**。
-///
-/// 起点是字幕高亮（BUG-2091）的锚：拉丁词回退到词首后，高亮必须从词首起算而不是
-/// 从被点字母起算，否则点 "hello" 的 'o' 只会亮出 "o"。越界返回 `(start: -1, term: '')`。
 ({int start, String term}) subtitleLookupSpan(
   String sentence,
   int graphemeIndex,
-) {
-  final List<String> graphemes = sentence.characters.toList();
-  if (graphemeIndex < 0 || graphemeIndex >= graphemes.length) {
-    return (start: -1, term: '');
-  }
-  int start = graphemeIndex;
-  // 拉丁单词字符：只把起点回退到词首。其余脚本起点即命中字位。
-  if (_isLatinWordGrapheme(graphemes[graphemeIndex])) {
-    while (start > 0 && _isLatinWordGrapheme(graphemes[start - 1])) {
-      start--;
-    }
-  }
-  // **起点必须跳过前导空白**：查询串在 `pushNestedPopup` 里先 `trim()` 再送引擎，
-  // 而引擎回报的匹配长度（matchedRunes）是相对 **trim 后**那个串数的。起点若停在
-  // 空白上，[lookupHighlightGraphemeCount] 就把这个长度套回带前导空白的串——高亮
-  // 整体左移一格、尾部少一个字符。
-  //
-  // 点中空格是常态而非边角：英文字幕逐字命中、`hoverAutoLookup` 扫过词间空隙都会
-  // 落在空格上（`_isLatinWordGrapheme(' ')` 为假，起点不回退）。日文同理，
-  // `String.trim()` 连 U+3000 全角空格一起吃。
-  //
-  // 弹窗查的词一字不变（引擎拿到的本来就是 trim 后的串），变的只有高亮锚点。
-  while (start < graphemes.length && graphemes[start].trim().isEmpty) {
-    start++;
-  }
-  // 整段都是空白：没有可查的词。此前会带着一串空格去查（引擎 trim 成空、返回 0），
-  // 副作用是白暂停一次视频、弹一个空浮层。
-  if (start >= graphemes.length) return (start: -1, term: '');
-  return (start: start, term: graphemes.skip(start).join());
-}
+) => subtitleTranscriptLookupSpan(sentence, graphemeIndex);
 
 /// 引擎回报的匹配长度是**码点**数（`bestLength` / [lookupHighlightCharCount]），
 /// 字幕逐字登记按 **grapheme**；把查询串 [term] 的前 [matchedRunes] 个码点折算成

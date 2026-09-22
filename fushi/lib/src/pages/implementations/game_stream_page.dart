@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
-import 'package:fushi/src/sync/texthooker_word_cache.dart';
+import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -34,6 +34,9 @@ class GameStreamPage extends StatefulWidget {
 
   static const Key videoKey = ValueKey<String>('game-stream-video');
   static const Key transcriptKey = ValueKey<String>('game-stream-transcript');
+  static const Key transcriptTextKey = ValueKey<String>(
+    'game-stream-transcript-text',
+  );
   static const Key dictionaryKey = ValueKey<String>('game-stream-dictionary');
 
   @override
@@ -50,7 +53,6 @@ class _GameStreamPageState extends State<GameStreamPage>
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
       GlobalKey<DictionaryPopupWebViewState>();
   String? _mineMessage;
-  TexthookerWordCache? _wordCache;
   final Map<GameStreamVirtualButton, String> _keyBindings =
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
@@ -80,20 +82,6 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.addListener(_onReceiverChanged);
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
-    unawaited(_prepareTokenizer());
-  }
-
-  Future<void> _prepareTokenizer() async {
-    await JapaneseLanguage.instance.initialise();
-    if (!mounted) return;
-    setState(() {
-      _wordCache = TexthookerWordCache(
-        tokenize: (String text) => FushiDicts.isInitialized
-            ? JapaneseLanguage.instance.textToWords(text)
-            : text.characters.toList(),
-        maxEntries: 128,
-      );
-    });
   }
 
   @override
@@ -569,9 +557,6 @@ class _GameStreamPageState extends State<GameStreamPage>
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
-    final List<String> words = line == null
-        ? const <String>[]
-        : (_wordCache?.wordsFor(line.lineId, line.text) ?? const <String>[]);
     return Material(
       color: theme.colorScheme.surface,
       child: SizedBox(
@@ -582,64 +567,68 @@ class _GameStreamPageState extends State<GameStreamPage>
             ConstrainedBox(
               constraints: BoxConstraints(maxHeight: compact ? 150 : 240),
               child: SingleChildScrollView(
-                child: Padding(
+                child: Column(
                   key: GameStreamPage.transcriptKey,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
                         t.game_stream_line,
                         style: theme.textTheme.labelLarge,
                       ),
-                      const SizedBox(height: 8),
-                      SelectableText(
-                        line?.text ?? t.game_stream_line_empty,
-                        style: theme.textTheme.bodyLarge,
-                        onSelectionChanged: (TextSelection selection, _) {
-                          final String? text = line?.text;
-                          if (text == null || selection.isCollapsed) return;
-                          final String selected = selection
-                              .textInside(text)
-                              .trim();
-                          if (selected.isNotEmpty) {
-                            unawaited(controller?.lookup(selected));
-                          }
-                        },
-                      ),
-                      if (words.isNotEmpty) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          key: const ValueKey<String>('game-stream-segments'),
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: <Widget>[
-                            for (final (int offset, String word)
-                                in _indexedWords(words))
-                              if (word.trim().isNotEmpty)
-                                ActionChip(
-                                  label: Text(word),
-                                  onPressed: () => unawaited(
-                                    controller?.lookup(
-                                      line!.text.substring(offset),
-                                      displayTerm: word,
-                                    ),
-                                  ),
+                    ),
+                    if (line == null)
+                      Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Text(t.game_stream_line_empty),
+                      )
+                    else
+                      SubtitleTranscriptRow(
+                        colorScheme: theme.colorScheme,
+                        selected: true,
+                        text: SubtitleTranscriptText(
+                          key: ValueKey<String>(
+                            'game-stream-line-${line.lineId}',
+                          ),
+                          textKey: GameStreamPage.transcriptTextKey,
+                          text: line.text,
+                          style: subtitleTranscriptTextStyle(
+                            fontSize: 14,
+                            selected: true,
+                            fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+                            color: theme.colorScheme.onPrimaryContainer,
+                          ),
+                          keyboardLookup: true,
+                          onLookup: (int index, Rect anchor) {
+                            final ({int start, String term}) span =
+                                subtitleTranscriptLookupSpan(line.text, index);
+                            if (span.start < 0 ||
+                                controller?.currentLine?.lineId !=
+                                    line.lineId) {
+                              return;
+                            }
+                            unawaited(
+                              controller?.lookup(
+                                span.term,
+                                displayTerm: line.text.characters.elementAt(
+                                  span.start,
                                 ),
-                          ],
+                              ),
+                            );
+                          },
                         ),
-                      ],
-                      if (line?.thread != null) ...<Widget>[
-                        const SizedBox(height: 8),
-                        Text(
-                          line!.thread!,
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
+                        trailing: SubtitleTranscriptAction(
+                          icon: Icons.content_copy_outlined,
+                          tooltip: t.copy,
+                          color: theme.colorScheme.onPrimaryContainer,
+                          size: 16,
+                          onPressed: () => unawaited(
+                            Clipboard.setData(ClipboardData(text: line.text)),
                           ),
                         ),
-                      ],
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -686,16 +675,6 @@ class _GameStreamPageState extends State<GameStreamPage>
         ),
       ),
     );
-  }
-}
-
-/// The tokenizer only splits the original text. Sum UTF-16 lengths, including
-/// whitespace, so repeated words keep their own position in the source line.
-Iterable<(int, String)> _indexedWords(List<String> words) sync* {
-  int offset = 0;
-  for (final String word in words) {
-    yield (offset, word);
-    offset += word.length;
   }
 }
 

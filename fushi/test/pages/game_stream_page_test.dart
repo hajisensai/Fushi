@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -162,64 +163,81 @@ void main() {
     expect(sent.last.button, 'cancel');
   });
 
-  testWidgets(
-    'without a local dictionary chips query suffixes at their UTF-16 positions',
-    (WidgetTester tester) async {
-      final _Lookup lookup = _Lookup();
-      expect(FushiDicts.isInitialized, isFalse);
-      final GameStreamLookupController controller =
-          GameStreamLookupController(
-            lookupClient: lookup,
-            streamClient: FushiGameStreamClient(transport: _Transport()),
-            clientId: 'c1',
-          )..applyTextEvent(
-            GameStreamTextEvent(
+  for (final Size viewport in <Size>[
+    const Size(800, 600),
+    const Size(400, 800),
+  ]) {
+    testWidgets(
+      'shared transcript caret queries suffixes without a local dictionary at $viewport',
+      (WidgetTester tester) async {
+        tester.view.physicalSize = viewport;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final _Lookup lookup = _Lookup();
+        expect(FushiDicts.isInitialized, isFalse);
+        final GameStreamLookupController controller =
+            GameStreamLookupController(
+              lookupClient: lookup,
+              streamClient: FushiGameStreamClient(transport: _Transport()),
+              clientId: 'c1',
+            )..applyTextEvent(
+              GameStreamTextEvent(
+                sessionId: 's1',
+                lineId: 'line-1',
+                text: '😀 日本語と日本語',
+                timestampMs: 1,
+              ),
+            );
+        final GameStreamInputComposer composer = GameStreamInputComposer(
+          sessionId: 's1',
+          clientId: 'c1',
+          sender: (_) async => null,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GameStreamPage(
               sessionId: 's1',
-              lineId: 'line-1',
-              text: '😀 日本語と日本語',
-              timestampMs: 1,
+              clientId: 'c1',
+              inputComposer: composer,
+              lookupController: controller,
+              videoPlaceholder: const Text('frame'),
             ),
-          );
-      final GameStreamInputComposer composer = GameStreamInputComposer(
-        sessionId: 's1',
-        clientId: 'c1',
-        sender: (_) async => null,
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: GameStreamPage(
-            sessionId: 's1',
-            clientId: 'c1',
-            inputComposer: composer,
-            lookupController: controller,
-            videoPlaceholder: const Text('frame'),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expect(find.text('😀 日本語と日本語'), findsOneWidget);
-      expect(
-        find.byKey(const ValueKey<String>('game-stream-segments')),
-        findsOneWidget,
-      );
-      expect(find.widgetWithText(ActionChip, '😀'), findsOneWidget);
-      final Finder repeated = find.widgetWithText(ActionChip, '日');
-      expect(repeated, findsNWidgets(2));
-      await tester.tap(repeated.first);
-      await tester.pumpAndSettle();
-      expect(controller.selectedTerm, '日');
-      await tester.tap(repeated.last);
-      await tester.pumpAndSettle();
-      expect(
-        lookup.terms,
-        <String>['日本語と日本語', '日本語'],
-        reason:
-            'The emoji occupies two UTF-16 units; repeated words must not '
-            'resolve through indexOf to the first occurrence.',
-      );
-    },
-  );
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.byType(ActionChip), findsNothing);
+        expect(find.byType(SubtitleTranscriptRow), findsOneWidget);
+        final Finder paragraph = find.byKey(GameStreamPage.transcriptTextKey);
+        expect(
+          tester.widget<RichText>(paragraph).text.toPlainText(),
+          '😀 日本語と日本語',
+        );
+        Focus.of(tester.element(paragraph)).requestFocus();
+        await tester.pump();
+        // Grapheme caret skips the two-unit emoji and the space independently.
+        for (int i = 0; i < 2; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(controller.selectedTerm, '日');
+        for (int i = 0; i < 4; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        }
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(
+          lookup.terms,
+          <String>['日本語と日本語', '日本語'],
+          reason:
+              'The emoji occupies two UTF-16 units; repeated words must not '
+              'resolve through indexOf to the first occurrence.',
+        );
+      },
+    );
+  }
 
   testWidgets('session key mapping sends matching key down and up', (
     WidgetTester tester,
