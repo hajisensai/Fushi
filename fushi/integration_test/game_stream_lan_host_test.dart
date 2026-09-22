@@ -114,6 +114,9 @@ void main() {
         directory: evidenceDir,
         runTag: runTag,
       );
+      final GameStreamFlutterErrorRecorder flutterErrors =
+          GameStreamFlutterErrorRecorder();
+      Map<String, Object?>? failure;
 
       await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue);
@@ -171,6 +174,7 @@ void main() {
         );
       }
 
+      flutterErrors.install();
       try {
         await importGameStreamTestDictionary(app, evidenceDir);
         final anki = await configureGameStreamTestAnki(app, runTag);
@@ -302,7 +306,12 @@ void main() {
           isNotEmpty,
           reason: 'No remote true-card readback passed',
         );
+      } catch (error) {
+        failure = gameStreamFailureSummary(error);
+        rethrow;
       } finally {
+        flutterErrors.restore();
+        failure ??= flutterErrors.lastFailure;
         if (listenersInstalled) {
           sync.removeListener(recordState);
           hook.removeListener(recordState);
@@ -320,6 +329,7 @@ void main() {
           'verifiedNoteIds': evidence.verifiedNotes,
           'verificationFailures': evidence.failures,
           'credentialRevoked': true,
+          if (failure != null) ...failure,
         });
       }
     },

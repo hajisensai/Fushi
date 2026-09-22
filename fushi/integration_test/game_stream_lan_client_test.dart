@@ -20,6 +20,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'helpers/focus_driver.dart';
+import 'helpers/game_stream_lan_fixture.dart';
 import 'support/test_app_launcher.dart';
 
 /// Run only with tool/run_game_stream_android_qa.ps1. The separate package is
@@ -64,6 +65,8 @@ void main() {
       RTCPeerConnection? peerConnection;
       final List<Map<String, Object?>> acknowledgements =
           <Map<String, Object?>>[];
+      final GameStreamFlutterErrorRecorder flutterErrors =
+          GameStreamFlutterErrorRecorder()..install();
       try {
         await save();
         await launchFushiTestApp();
@@ -358,11 +361,13 @@ void main() {
         await tester.pump(const Duration(milliseconds: 300));
       } catch (error) {
         evidence['status'] = 'failed';
-        // Exception text may contain transport information; keep only its type.
-        evidence['failureType'] = error.runtimeType.toString();
+        // Exception text may contain transport information; keep only its type/code.
+        evidence.addAll(gameStreamFailureSummary(error));
         await save();
         rethrow;
       } finally {
+        final Map<String, Object?>? flutterFailure = flutterErrors.lastFailure;
+        flutterErrors.restore();
         await receiver?.disconnect();
         if (client != null) {
           try {
@@ -382,6 +387,12 @@ void main() {
         final File credentialsFile = File(
           '${support.path}/game_stream_lan_credentials.private.json',
         );
+        if (evidence['status'] != 'passed' &&
+            !evidence.containsKey('failureType') &&
+            flutterFailure != null) {
+          evidence.addAll(flutterFailure);
+          await save();
+        }
         if (await credentialsFile.exists()) await credentialsFile.delete();
       }
     },

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -53,6 +54,47 @@ const List<String> gameStreamTestTerms = <String>[
   'of',
   'a',
 ];
+
+
+Map<String, Object?> gameStreamFailureSummary(Object error) {
+  final Map<String, Object?> summary = <String, Object?>{
+    'failureType': error.runtimeType.toString(),
+  };
+  if (error is PlatformException) {
+    summary['failureCode'] = error.code;
+  } else if (error is FlutterErrorDetails) {
+    summary['failureType'] = error.exception.runtimeType.toString();
+    if (error.exception is PlatformException) {
+      summary['failureCode'] = (error.exception as PlatformException).code;
+    }
+  }
+  return summary;
+}
+
+class GameStreamFlutterErrorRecorder {
+  FlutterExceptionHandler? _previous;
+  FlutterExceptionHandler? _installed;
+  Map<String, Object?>? _lastFailure;
+
+  Map<String, Object?>? get lastFailure => _lastFailure;
+
+  void install() {
+    _previous = FlutterError.onError;
+    _installed = (FlutterErrorDetails details) {
+      _lastFailure ??= gameStreamFailureSummary(details);
+      _previous?.call(details);
+    };
+    FlutterError.onError = _installed;
+  }
+
+  void restore() {
+    if (_installed != null && identical(FlutterError.onError, _installed)) {
+      FlutterError.onError = _previous;
+    }
+    _installed = null;
+    _previous = null;
+  }
+}
 
 /// SharedPreferences (Anki settings) must be isolated as well as Drift/AppPaths.
 String requireGameStreamIsolatedRoot() {
