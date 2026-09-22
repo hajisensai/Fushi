@@ -57,7 +57,6 @@ const String _externalHostFingerprint = String.fromEnvironment(
 );
 const String _externalHostToken = String.fromEnvironment(
   'FUSHI_REMOTE_HOST_TOKEN',
-  defaultValue: _token,
 );
 const String _externalVideoId = String.fromEnvironment(
   'FUSHI_REMOTE_VIDEO_ID',
@@ -78,12 +77,30 @@ void main() {
       await runFushiItest(
         label: 'interconnect-remote-video-ios',
         body: () async {
+          // 外部 host 模式的三个参数缺一不可：缺指纹会走到空指纹分支注销钉扎、自签
+          // https 握手失败；缺 token 是 401——两者最终都只在「远端流控制器应就绪」
+          // 上以与根因无关的理由红。前置直接说清缺什么。
+          if (_useExternalHost) {
+            if (_externalHostFingerprint.isEmpty) {
+              fail('给了 FUSHI_REMOTE_HOST_URL 但缺 FUSHI_REMOTE_HOST_FP');
+            }
+            if (_externalHostToken.isEmpty) {
+              fail('给了 FUSHI_REMOTE_HOST_URL 但缺 FUSHI_REMOTE_HOST_TOKEN');
+            }
+          }
           await launchFushiTestApp();
           expect(await waitForHome(tester), isTrue);
           final AppModel appModel = await readyAppModel(tester);
           final SyncRepository repo = SyncRepository(appModel.database);
           final List<FushiClientUrl> oldUrls = await repo.getFushiClientUrls();
           final String? oldToken = await repo.getFushiClientToken();
+          // 可能抛的查找都放在建临时目录 / 覆写全局 sink 之前：否则 finally 还没
+          // 接管，临时目录与两个覆写就泄漏了。
+          final NavigatorState navigator = tester.state<NavigatorState>(
+            find.byType(Navigator).first,
+          );
+          final int oldQuality =
+              appModel.prefsRepo.interconnectQualityPresetIndex;
           final Directory hostRoot = await Directory.systemTemp.createTemp(
             'fushi_itest_remote_video_',
           );
@@ -102,11 +119,6 @@ void main() {
             oldDebugPrint(message, wrapWidth: wrapWidth);
           };
           FushiSyncServer? server;
-          final NavigatorState navigator = tester.state<NavigatorState>(
-            find.byType(Navigator).first,
-          );
-          final int oldQuality =
-              appModel.prefsRepo.interconnectQualityPresetIndex;
           try {
             final String baseUrl;
             final String fingerprint;

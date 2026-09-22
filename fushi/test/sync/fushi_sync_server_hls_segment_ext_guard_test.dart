@@ -1,7 +1,10 @@
 // BUG-2630 守卫：互联转码 HLS playlist 里的每个 URI 都必须过 FFmpeg hls demuxer 的
-// 扩展名白名单，否则五端随包 libmpv（FFmpeg 6.1+）连分段都不会去取。
+// 扩展名白名单，否则随包 libmpv（Android / iOS / macOS 是 FFmpeg 6.1.6，Windows 是
+// master 构建）连分段都不会去取。这道门是 2025 年安全加固回移到维护分支的：
+// 6.1.3+ / 7.1.1+ / 8.0 有，6.1.0～6.1.2 与 7.0.x / 7.1.0 没有——下面常量名里的
+// 「61」指对照的 6.1.6 源码。
 //
-// FFmpeg 6.1 `libavformat/hls.c` `test_segment()`（`extension_picky` 默认开）：
+// FFmpeg 6.1.6 `libavformat/hls.c` `test_segment()`（`extension_picky` 默认开）：
 //   matchA = av_match_ext(url, allowed) + 2 * (ff_match_url_ext(url, allowed) > 0)
 //   !matchA → "URL … is not in allowed_segment_extensions" → AVERROR_INVALIDDATA
 // 探得分段是 mp4 格式时还要 matchF：url 扩展名在 mp4 demuxer 的扩展名表里，或在
@@ -18,7 +21,7 @@ import 'package:fushi_engine/media/video/live_transcode.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 
-/// FFmpeg 6.1 `hls.c` 的 `allowed_segment_extensions` 默认值（逐字）。
+/// FFmpeg 6.1.6 `hls.c` 的 `allowed_segment_extensions` 默认值（逐字；8.0 相同）。
 const String kFfmpeg61AllowedSegmentExtensions =
     '3gp,aac,avi,ac3,eac3,flac,mkv,m3u8,m4a,m4s,m4v,mpg,mov,mp2,mp3,mp4,mpeg,'
     'mpegts,ogg,ogv,oga,ts,vob,vtt,wav,webvtt,cmfv,cmfa,ec3,fmp4,html';
@@ -143,10 +146,7 @@ void main() {
       );
       // 反过来 av_match_ext 也会把 query 尾巴上的 .m4s 认成扩展名——真 FFmpeg 就是
       // 这样，所以本仓不靠这种巧合，扩展名一律放在路径上。
-      expect(
-        ffmpegHlsAcceptsSegmentUrl('https://h/x/seg?token=a.m4s'),
-        isTrue,
-      );
+      expect(ffmpegHlsAcceptsSegmentUrl('https://h/x/seg?token=a.m4s'), isTrue);
     });
 
     test('相对 URI 不过 ff_match_url_ext（hls.c 会先 ff_make_absolute_url）', () {

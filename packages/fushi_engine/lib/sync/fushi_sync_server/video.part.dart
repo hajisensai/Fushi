@@ -165,11 +165,12 @@ extension _FushiSyncServerVideo on FushiSyncServer {
     // 短时 token；画质档绑在 token 上，不从 query 取——分段谁拿到 URL 谁能取，
     // 让它自带编码参数就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。
     //
-    // 三条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1 起 hls demuxer 对每个
-    // 分段 URL 先查 `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
-    // `ff_match_url_ext`），不在名单上直接 `Invalid data found`——五端随包 libmpv 都是
-    // 6.1+，裸 `hlsseg?token=` 让所有转码流一开就死；`.m4s` 同时在白名单里、又是 mp4
-    // 格式的分段特例。守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
+    // 三条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0
+    // （2025 年安全加固回移）的 hls demuxer 对每个分段 URL 先查
+    // `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
+    // `ff_match_url_ext`），不在名单上直接 `Invalid data found`——随包 libmpv 四端
+    // （Android / iOS / macOS 6.1.6，Windows master 构建）都在门内，裸 `hlsseg?token=`
+    // 让转码流一开就死；`.m4s` 同时在白名单里、又是 mp4 格式的分段特例。守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
     for (final String suffix in const <String>[
       'hls.m3u8',
       'hlsinit.mp4',

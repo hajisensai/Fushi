@@ -89,11 +89,13 @@ const int kTranscodeSegmentSeconds = 6;
 
 /// 转码分段端点的路径尾（`/api/library/videos/<id>/hlsseg.m4s?token=&n=`）。
 ///
-/// **扩展名是协议的一部分，不是装饰**（BUG-2630）：FFmpeg 6.1 起 hls demuxer
-/// （`extension_picky` 默认开）对 playlist 里每个分段 URL 先查
+/// **扩展名是协议的一部分，不是装饰**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）
+/// 的 hls demuxer（`extension_picky` 默认开）对 playlist 里每个分段 URL 先查
 /// `allowed_segment_extensions` 白名单，扩展名取 **query 之前**的路径尾
 /// （`ff_match_url_ext`）；不在名单上就 `Invalid data found`，播放器压根不去取分段。
-/// 五端随包 libmpv 都是 FFmpeg 6.1+，所以裸 `hlsseg?token=` 让所有转码流一开就死。
+/// Android / iOS / macOS 随包 libmpv 是 FFmpeg 6.1.6、Windows 随包是 2026-08 的
+/// master 构建，都在这道门内（Linux 走系统库，发行版 6.1.1 / 7.0.x 不复现），所以裸
+/// `hlsseg?token=` 让随包四端的转码流一开就死。
 /// `.m4s` 同时在白名单里、又在「探得 mp4 格式时额外放行」的特例里；init 段
 /// （`hlsinit.mp4`）与 playlist（`hls.m3u8`）本就带扩展名。
 const String kTranscodeSegmentPathSuffix = 'hlsseg.m4s';

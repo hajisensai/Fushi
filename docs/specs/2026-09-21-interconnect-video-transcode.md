@@ -79,10 +79,12 @@ track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。
 - **档位绑在 token 上，不从 query 取**：后三条路径（playlist / init / 分段）豁免 Basic 鉴权（播放器取 playlist /
   init / 分段都是裸 GET），让分段端点自带编码参数就等于把「在 host 上起一个任意参数
   的 ffmpeg」敞开给 URL 持有者。签发侧（`/streamurl`，要 Basic）定档。
-- **三条路径的扩展名是协议的一部分**（BUG-2630）：FFmpeg 6.1 起 hls demuxer 对 playlist 里
-  每个分段 URL 先查 `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
-  `ff_match_url_ext`），不在名单上直接 `Invalid data found`。首版分段端点是裸 `hlsseg?token=`，
-  五端随包 libmpv（都是 FFmpeg 6.1+）一个都不肯取分段，「切画质档就黑屏」。现在分段是
+- **三条路径的扩展名是协议的一部分**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0（2025 年安全加固回移到维护分支；6.1.0～6.1.2 与 7.0.x / 7.1.0 没有这道门）
+  的 hls demuxer 对 playlist 里每个分段 URL 先查 `allowed_segment_extensions` 白名单
+  （扩展名取 query 之前的路径尾，`ff_match_url_ext`），不在名单上直接 `Invalid data found`。
+  首版分段端点是裸 `hlsseg?token=`，随包 libmpv 四端（Android / iOS / macOS 6.1.6，
+  Windows master 构建；Linux 走系统库、发行版 6.1.1 / 7.0.x 不复现）一个都不肯取分段，
+  「切画质档就黑屏」。现在分段是
   `hlsseg.m4s`（同时在白名单与 mp4 分段特例里），守卫
   `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart` 把 hls.c 的判据移植成
   Dart 钉住 host 签发的每个 URI。
