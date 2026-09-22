@@ -757,6 +757,7 @@ class CollectionEpisodeCard extends StatelessWidget {
     this.positionMs = 0,
     this.isContinue = false,
     this.isRemote = false,
+    this.downloadBadge,
     this.trailingStatus,
     this.identityLabel,
     super.key,
@@ -785,6 +786,11 @@ class CollectionEpisodeCard extends StatelessWidget {
   /// 只在对端 / 远端（缩略图右下角云角标）。
   final bool isRemote;
 
+  /// 这一集正在 / 刚刚从对端下载到本机时盖在云角标位上的下载态角标（进度环 /
+  /// 失败角标，由调用方按下载管理器的任务快照造）。非 null 时替换云角标：
+  /// 「在下载」本身就蕴含「在对端」，同一个角不叠两枚。
+  final Widget? downloadBadge;
+
   /// 状态行右端（本地页放规格摘要 `1080p · HEVC`）。
   final Widget? trailingStatus;
 
@@ -811,7 +817,9 @@ class CollectionEpisodeCard extends StatelessWidget {
                   Stack(
                     children: <Widget>[
                       thumb,
-                      if (isRemote)
+                      if (downloadBadge case final Widget badge)
+                        Positioned(right: 4, bottom: 4, child: badge)
+                      else if (isRemote)
                         const Positioned(
                           right: 4,
                           bottom: 4,
