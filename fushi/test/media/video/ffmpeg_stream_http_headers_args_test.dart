@@ -118,6 +118,21 @@ void main() {
       expect(block.contains('X-Injected'), isFalse);
     });
 
+    test('名字里带 CR/LF / 冒号 / 空白的头被整条剔掉（不许借名字注入）', () {
+      final List<String> args = buildFfmpegRemoteInputArgs(
+        remote,
+        httpHeaders: const <String, String>{
+          'X-A\r\nHost: evil.example': 'v',
+          'X B': 'v',
+          'X-C:': 'v',
+          'X-D': 'fine',
+        },
+      );
+      final String block = args[args.indexOf('-headers') + 1];
+      expect(block, 'X-D: fine\r\n');
+      expect(block.contains('evil.example'), isFalse);
+    });
+
     test('空值/空名的头被跳过', () {
       final List<String> args = buildFfmpegRemoteInputArgs(
         remote,

@@ -116,6 +116,7 @@ void main() {
       bool parsed = false;
       expect(
         remoteSubtitleSeriesQuery(
+          collectionIsWork: true,
           collectionName: 'Fixture Show',
           title: 'Episode 1',
           parseFallbackSeries: (String t) {
@@ -132,9 +133,24 @@ void main() {
       );
     });
 
+    // 互联 host 的合集是用户库里的任意合集（「待看」「2024 春番」），不是作品；host 的
+    // `VideoBook.title` 本身就是番名。来源没声明「合集 = 作品」时合集名不得参与。
+    test('来源未声明合集即作品（互联 host）→ 忽略合集名，走标题路径', () {
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionIsWork: false,
+          collectionName: '待看',
+          title: 'Fixture Show 03',
+          parseFallbackSeries: fakeParse,
+        ),
+        'Fixture Show',
+      );
+    });
+
     test('番名结尾是数字也原样保留', () {
       expect(
         remoteSubtitleSeriesQuery(
+          collectionIsWork: true,
           collectionName: 'Mobile Suit Gundam 00',
           title: 'Episode 1',
           parseFallbackSeries: fakeParse,
@@ -146,6 +162,7 @@ void main() {
     test('无合集名（单条远端视频）→ 回落标题并按原规则收敛', () {
       expect(
         remoteSubtitleSeriesQuery(
+          collectionIsWork: true,
           collectionName: null,
           title: 'Fixture Show 01',
           parseFallbackSeries: fakeParse,
@@ -157,6 +174,7 @@ void main() {
     test('解析结果为空时回落整串标题（旧行为）', () {
       expect(
         remoteSubtitleSeriesQuery(
+          collectionIsWork: true,
           collectionName: '   ',
           title: 'Episode 1',
           parseFallbackSeries: (_) => '',
@@ -168,6 +186,7 @@ void main() {
     test('两者都空 → null（= 不显示自动获取字幕入口）', () {
       expect(
         remoteSubtitleSeriesQuery(
+          collectionIsWork: true,
           collectionName: '',
           title: '  ',
           parseFallbackSeries: fakeParse,

@@ -99,6 +99,15 @@ abstract interface class RemoteVideoEpisodeNumber {
   int? remoteVideoEpisodeNumber(String id);
 }
 
+/// 「远端合集就是一部作品」的标记能力（BUG-2626 审查补）。
+///
+/// 字幕检索预填番名时，只有合集语义 = 作品的来源才能拿合集名当番名：在线视频源
+/// 扩展的合集是 `anime.title`、媒体服务器的合集是 `seriesName`。互联 host 的
+/// `RemoteCollectionMembership.collectionName` 是 host 库里的 `MediaCollectionRow.name`
+/// ——用户自建的「待看」「2024 春番」也在其中，拿它当番名搜必然空手；host 那边
+/// `VideoBook.title` 本身就是番名，仍走标题路径。不实现本标记 = 合集名不参与选词。
+abstract interface class RemoteVideoCollectionIsWork {}
+
 /// 「播放真正结束」的可选能力。
 ///
 /// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由

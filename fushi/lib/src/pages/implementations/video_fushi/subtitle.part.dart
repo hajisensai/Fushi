@@ -1076,13 +1076,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // `Episode 1` 收敛不掉就被整串当成番名搜，Jimaku 必然空手；`Episode 12` 更糟，
       // 会变成番名 `Episode`。
       //
-      // 合集名是所有远端合集来源（在线源 / 互联 host / 媒体服务器）共有的字段，不需要
-      // 按来源分支。选词规则本身是纯函数 [remoteSubtitleSeriesQuery]（可单测）。
+      // 合集名只在来源声明「合集 = 作品」（[RemoteVideoCollectionIsWork]：在线源 /
+      // 媒体服务器）时参与；互联 host 的合集是用户库里的任意合集（「待看」），host
+      // 那边 `VideoBook.title` 本身就是番名，仍走标题路径。选词规则本身是纯函数
+      // [remoteSubtitleSeriesQuery]（可单测）。
       //
       // 标题用 [_effectiveRemoteInfo] 而非 `widget.remoteInfo`——后者是首播那一集，
       // 换集后已陈旧。
       return remoteSubtitleSeriesQuery(
         collectionName: _effectiveRemoteInfo?.collection?.collectionName,
+        collectionIsWork: _effectiveRemoteClient is RemoteVideoCollectionIsWork,
         title: _title ?? _effectiveRemoteInfo?.title,
         parseFallbackSeries: (String title) => parseVideoFilename(title).series,
       );

@@ -102,6 +102,9 @@ const Set<String> _kFfmpegIgnoredHttpHeaders = <String>{
 /// 把调用方给的请求头拆成 ffmpeg 的三种下发形态（专用 UA 选项 / 专用 Referer 选项 /
 /// 其余头的 `-headers` 块）。header 名大小写不敏感（HTTP 规范如此，扩展写 `referer`
 /// 还是 `Referer` 都得认）。
+/// RFC 7230 token：header 名只许这些字符（不含 `:`、空白、CR/LF）。
+final RegExp _kHttpHeaderName = RegExp(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
+
 class _FfmpegHttpHeaderArgs {
   const _FfmpegHttpHeaderArgs({
     required this.userAgent,
@@ -128,8 +131,12 @@ class _FfmpegHttpHeaderArgs {
         continue;
       }
       if (_kFfmpegIgnoredHttpHeaders.contains(lower)) continue;
-      // 值里的 CR/LF 会把 `-headers` 块拆出额外的一行头（HTTP 头注入）；按行首尾裁掉。
+      // 值里的 CR/LF 会把 `-headers` 块拆出额外的一行头（HTTP 头注入）；名字同理，
+      // 且名字里的 `:` / 空白会让 `X-A\r\nHost: evil` 这种整条伪装成合法行。
+      // 两者任一不干净就整条剔掉，不做「清洗后照发」——发出去的头必须是调用方
+      // 给的原样。
       if (value.contains('\r') || value.contains('\n')) continue;
+      if (!_kHttpHeaderName.hasMatch(name)) continue;
       extra.add('$name: $value');
     }
     return _FfmpegHttpHeaderArgs(

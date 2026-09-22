@@ -53,18 +53,26 @@ class SubtitleSearchSeed {
 /// `_bareTrailingEpisode`）：`Episode 1` 原样留下，被整串当番名搜，Jimaku 必然空手；
 /// `Episode 12` 更糟——番名会变成 `Episode`。
 ///
-/// [collectionName] 非空即胜出，且**不再过一遍 `parseVideoFilename`**：它已经是番名，
-/// 而那条规则会把结尾带数字的作品削掉（`86`、`Gundam 00`）。
+/// [collectionIsWork] 为真且 [collectionName] 非空即胜出，且**不再过一遍
+/// `parseVideoFilename`**：它已经是番名，而那条规则会把结尾带数字的作品削掉
+/// （`86`、`Gundam 00`）。
 ///
-/// [collectionName] 为空（非合集的单条远端视频）时回落 [title] —— 那种来源的标题本身
-/// 就是番名（互联 host 的 `VideoBook.title`），交给 [parseFallbackSeries] 按原规则收敛，
-/// 与本函数引入前逐字节一致。
+/// [collectionIsWork] 由来源声明（`RemoteVideoCollectionIsWork`）：在线源的合集是
+/// `anime.title`、媒体服务器的是 `seriesName`；互联 host 的合集是用户库里的任意合集
+/// （「待看」「2024 春番」），拿它当番名搜必然空手，所以 host 不声明、合集名不参与。
+///
+/// 其余情况回落 [title] —— 那种来源的标题本身就是番名（互联 host 的
+/// `VideoBook.title`），交给 [parseFallbackSeries] 按原规则收敛，与本函数引入前
+/// 逐字节一致。
 String? remoteSubtitleSeriesQuery({
   required String? collectionName,
+  required bool collectionIsWork,
   required String? title,
   required String Function(String title) parseFallbackSeries,
 }) {
-  final String collection = collectionName?.trim() ?? '';
+  final String collection = collectionIsWork
+      ? (collectionName?.trim() ?? '')
+      : '';
   if (collection.isNotEmpty) return collection;
   final String raw = title?.trim() ?? '';
   if (raw.isEmpty) return null;

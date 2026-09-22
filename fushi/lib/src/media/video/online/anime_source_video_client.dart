@@ -35,7 +35,8 @@ class AnimeSourceVideoClient
         RemoteCoverFetcher,
         RemoteVideoStreamHeaders,
         RemoteVideoStreamVariants,
-        RemoteVideoEpisodeNumber {
+        RemoteVideoEpisodeNumber,
+        RemoteVideoCollectionIsWork {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,

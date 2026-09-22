@@ -35,6 +35,14 @@ void main() {
         contains('collectionName: _effectiveRemoteInfo?.collection'),
         reason: '番名取**当前**条目的合集名。用 widget.remoteInfo 会在换集后拿到陈旧值。',
       );
+      expect(
+        body,
+        contains(
+          'collectionIsWork: _effectiveRemoteClient is RemoteVideoCollectionIsWork',
+        ),
+        reason: '合集名只在来源声明「合集 = 作品」时参与——互联 host 的合集是用户库里'
+            '的任意合集（「待看」），拿它当番名搜必然空手。',
+      );
     });
 
     test('_openSubtitleWorkbench 把集号填进 SubtitleEpisodeSearchSpec', () {
