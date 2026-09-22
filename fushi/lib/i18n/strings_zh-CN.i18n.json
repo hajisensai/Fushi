@@ -5138,5 +5138,13 @@
   "jellyfin_route_verify_failed": "$url 上的服务器不接受当前登录，可能不是同一台服务器，或登录已过期：$reason",
   "jellyfin_route_remove": "删除线路",
   "jellyfin_route_switched": "已切换到 $url",
-  "media_server_route_switch": "切换线路"
+  "media_server_route_switch": "切换线路",
+  "game_stream_start": "开始串流",
+  "game_stream_stop": "停止串流",
+  "game_stream_join": "加入游戏串流",
+  "game_stream_busy": "正在更新串流…",
+  "game_stream_waiting": "串流已开启，等待已配对设备加入",
+  "game_stream_hook_required": "请先启动一个已连接 Hook 的游戏",
+  "game_stream_failed": "串流操作失败",
+  "game_stream_connected": "当前连接设备"
 }

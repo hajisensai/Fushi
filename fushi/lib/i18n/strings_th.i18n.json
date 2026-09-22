@@ -5138,5 +5138,13 @@
   "jellyfin_route_verify_failed": "The server at $url did not accept the current sign-in. It may be a different server, or the sign-in has expired: $reason",
   "jellyfin_route_remove": "Remove route",
   "jellyfin_route_switched": "Switched to $url",
-  "media_server_route_switch": "Switch route"
+  "media_server_route_switch": "Switch route",
+  "game_stream_start": "Start streaming",
+  "game_stream_stop": "Stop streaming",
+  "game_stream_join": "Join game stream",
+  "game_stream_busy": "Updating stream…",
+  "game_stream_waiting": "Streaming is enabled. Waiting for a paired device.",
+  "game_stream_hook_required": "Start a game with an active Hook session first.",
+  "game_stream_failed": "Could not update the stream",
+  "game_stream_connected": "Connected device"
 }
