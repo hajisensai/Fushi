@@ -158,22 +158,21 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       return serveFileWithRange(file, request);
     }
 
-    // GET /api/library/videos/<id>/hls.m3u8          — 转码播放列表
-    // GET /api/library/videos/<id>/hlsinit.mp4       — 初始化段（EXT-X-MAP）
-    // GET /api/library/videos/<id>/hlsseg.m4s?n=<i>  — 第 i 个分段
-    // 三条都豁免 Basic（播放器取 playlist / init / 分段都是裸 GET），门是 URL 里的
-    // 短时 token；画质档绑在 token 上，不从 query 取——分段谁拿到 URL 谁能取，
-    // 让它自带编码参数就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。
+    // GET /api/library/videos/<id>/hls.m3u8         — 转码播放列表
+    // GET /api/library/videos/<id>/hlsseg.ts?n=<i>  — 第 i 个分段（MPEG-TS）
+    // 两条都豁免 Basic（播放器取 playlist / 分段都是裸 GET），门是 URL 里的短时
+    // token；画质档绑在 token 上，不从 query 取——分段谁拿到 URL 谁能取，让它自带
+    // 编码参数就等于把「在 host 上起一个任意参数的 ffmpeg」敞开给 URL 持有者。
     //
-    // 三条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0
+    // 两条路径**必须带 FFmpeg 认的扩展名**（BUG-2630）：FFmpeg 6.1.3+ / 7.1.1+ / 8.0
     // （2025 年安全加固回移）的 hls demuxer 对每个分段 URL 先查
     // `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
     // `ff_match_url_ext`），不在名单上直接 `Invalid data found`——随包 libmpv 四端
     // （Android / iOS / macOS 6.1.6，Windows master 构建）都在门内，裸 `hlsseg?token=`
-    // 让转码流一开就死；`.m4s` 同时在白名单里、又是 mp4 格式的分段特例。守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
+    // 让转码流一开就死。分段为什么是 TS 不是 fMP4 见 `live_transcode.dart` 文件头。
+    // 守卫 `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart`。
     for (final String suffix in const <String>[
       'hls.m3u8',
-      'hlsinit.mp4',
       kTranscodeSegmentPathSuffix,
     ]) {
       final String? hlsId = _extractVideoId(reqPath, suffix);
@@ -623,14 +622,13 @@ extension _FushiSyncServerVideo on FushiSyncServer {
 
     if (suffix == 'hls.m3u8') {
       // 分段 URI 用相对形式：playlist 自己的路径是
-      // `/api/library/videos/<id>/hls.m3u8`，于是 `hlsseg.m4s?...` 会被播放器解析成
-      // `/api/library/videos/<id>/hlsseg.m4s?...`——不必在这里重建 host/端口/协议，
+      // `/api/library/videos/<id>/hls.m3u8`，于是 `hlsseg.ts?...` 会被播放器解析成
+      // `/api/library/videos/<id>/hlsseg.ts?...`——不必在这里重建 host/端口/协议，
       // 也就不会在反代或多网卡后面拼出一个对端连不上的绝对地址。扩展名不可省
       // （见上面路由处的 BUG-2630 说明）。
       final String tokenQuery = 'token=${Uri.encodeQueryComponent(tokenValue)}';
       final String playlist = buildTranscodeHlsPlaylist(
         durationMs: durationMs,
-        initUri: 'hlsinit.mp4?$tokenQuery',
         segmentUri: (int index) =>
             '$kTranscodeSegmentPathSuffix?$tokenQuery&n=$index',
       );
@@ -641,21 +639,6 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           'Cache-Control': 'no-store',
         },
       );
-    }
-
-    if (suffix == 'hlsinit.mp4') {
-      final Uint8List? init = await _runTranscode(
-        () => transcodeInitSegment(
-          inputPath: file.path,
-          profile: profile,
-          durationMs: durationMs,
-          audioStreamIndex: tok.transcodeAudioStreamIndex,
-        ),
-      );
-      if (init == null) {
-        return shelf.Response(503, body: 'Transcoder unavailable');
-      }
-      return _transcodedBytesResponse(init);
     }
 
     final int? index = int.tryParse(request.url.queryParameters['n'] ?? '');
@@ -699,7 +682,7 @@ extension _FushiSyncServerVideo on FushiSyncServer {
   shelf.Response _transcodedBytesResponse(Uint8List bytes) => shelf.Response.ok(
         bytes,
         headers: <String, String>{
-          'Content-Type': 'video/mp4',
+          'Content-Type': 'video/mp2t',
           'Content-Length': '${bytes.length}',
           // 转码产物不落盘也不复用：同一段再请求一次就再转一次。给 no-store 是为了
           // 别让中间层缓存下一份「按某个画质档转出来的字节」再回给另一个档。

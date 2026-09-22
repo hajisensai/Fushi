@@ -360,6 +360,62 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/clip.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
 
+echo "[ffmpeg-min-smoke] verifying mpegts muxer for interconnect HLS transcode segments (BUG-2630)"
+# 互联 host 按档转码：一段一个短命 ffmpeg，输入侧 -ss/-to 切段、libx264 + aac 编码、
+# 以 MPEG-TS 写到 stdout，-output_ts_offset 把段内时间轴平移到片中绝对位置（这正是
+# live_transcode.dart buildTranscodeSegmentArgs 的形状）。TS 的 h264 要 Annex B，靠
+# 已编入的 h264_mp4toannexb bsf 自动插入。
+if ! grep -qw mpegts "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need mpegts for interconnect HLS transcode segments, BUG-2630):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
+  -ss 0.500 -to 1.500 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map '0:a:0?' -sn \
+  -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
+  -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 6 \
+  -f mpegts "$WORK/seg.ts"
+assert_nonempty "$WORK/seg.ts"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
+
+# 第二段：只换 -ss/-to 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
+run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
+  -ss 1.500 -to 2.500 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map '0:a:0?' -sn \
+  -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
+  -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
+  -c:a aac -b:a 64k -ac 2 -muxdelay 0 -muxpreload 0 -output_ts_offset 7 \
+  -f mpegts "$WORK/seg2.ts"
+assert_nonempty "$WORK/seg2.ts"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg2.ts" -f null -
+
+# BUG-2630 第三段：只验单段 start_time 不够——`-output_ts_offset` 平移 PTS 与 DTS
+# 两者，有 B 帧时段首关键帧的 DTS 比 PTS 早一个重排延迟，start_time 看上去仍
+# 「≈ 偏移」，而 hls demuxer 判 seek 落点比的是 DTS，会把整段丢掉、落到下一段。
+# 这里直接验**段首视频关键帧的 DTS** 精确等于该段的名义起点（关 B 帧后 DTS == PTS）。
+seg_key_dts() {
+  "$FFPROBE_MIN" -v error -select_streams v:0 -show_packets \
+    -show_entries packet=dts_time,flags -of csv=p=0 -read_intervals '%+#40' "$1" \
+    | awk -F, '$2 ~ /K/ { print $1; exit }'
+}
+for probe in "seg.ts 6" "seg2.ts 7"; do
+  set -- $probe
+  actual="$(seg_key_dts "$WORK/$1")"
+  if [ -z "$actual" ]; then
+    echo "NO VIDEO KEYFRAME in $1 (BUG-2630)"
+    exit 1
+  fi
+  # 容差 1 ms：DTS 以 90 kHz 计，换算回秒有约 11 µs 的量化。
+  if ! awk -v a="$actual" -v n="$2" 'BEGIN { exit !(a - n < 0.001 && n - a < 0.001) }'; then
+    echo "SEGMENT DTS OFF (BUG-2630): $1 first video keyframe dts=$actual, nominal=$2"
+    echo "  -> hls.c compares DTS against first_timestamp + sum(EXTINF); an early"
+    echo "     keyframe makes the demuxer discard the whole segment on seek."
+    exit 1
+  fi
+done
+
 echo "[ffmpeg-min-smoke] verifying movtext encoder + soft-subtitle clip mux"
 # Clip export muxes the subtitle the user is actually watching into the exported
 # .mp4 as a soft subtitle stream. The cues live in Dart memory (Fushi renders

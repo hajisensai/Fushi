@@ -57,7 +57,7 @@ void main() {
 
   test('ffmpeg-min build whitelist enables the mp4 muxer for video clips', () {
     // BUG-917: video clip export writes .mp4 (was: the source container). The
-    // bundled ffmpeg-min has NO matroska/webm/avi/mpegts muxer, so following the
+    // bundled ffmpeg-min has NO matroska/webm/avi muxer, so following the
     // source extension (mkv/webm/…) auto-selected an absent muxer → exit -22.
     final String script = workspaceFile('tool/ffmpeg-min/build-ffmpeg-min.sh');
     final RegExp muxers = RegExp(r'^MUXERS="([^"]*)"', multiLine: true);
@@ -94,7 +94,7 @@ void main() {
             'BUG-917.');
     expect(clip.contains('p.extension(inputPath)'), isFalse,
         reason: 'clip output extension must NOT follow the source container — '
-            'mkv/webm/avi/ts have no muxer in ffmpeg-min → exit -22. BUG-917.');
+            'mkv/webm/avi have no muxer in ffmpeg-min → exit -22. BUG-917.');
   });
 
   test('audiobook clip pipeline emits .aac audio, never .m4a/.mp4', () {

@@ -1724,12 +1724,19 @@ class VideoPlayerController extends ChangeNotifier
       // **同一条路**，只是路径改成用户可导出的 [VideoDiagLog.mpvLogFilePath]。产出的
       // 不是「模仿 mpv 格式的自研日志」，而是 libmpv 自己写的那一份——解码器选择、
       // hwdec 协商、VO 交换链、demuxer 缓存、逐帧 framedrop 全在里面，这是任何 Dart
-      // 侧埋点都复刻不出来的。环境变量优先（真机取证时不被用户开关干扰）。
-      final String? mpvLogFile =
-          Platform.environment['FUSHI_TEST_MPV_LOG_FILE'] ??
-              (VideoDiagLog.instance.enabled
-                  ? VideoDiagLog.instance.mpvLogFilePath
-                  : null);
+      // 侧埋点都复刻不出来的。取证入口优先于用户开关（真机取证时不被它干扰）：同名
+      // `--dart-define` 最先（Android / iOS 真机的进程环境从外面投不进来，编译期定义
+      // 是唯一入口，Android 写进 `/data/user/0/<applicationId>/files/…` 由测试自己
+      // 回读），其次环境变量，最后才是诊断开关。
+      const String mpvLogFileDefine = String.fromEnvironment(
+        'FUSHI_TEST_MPV_LOG_FILE',
+      );
+      final String? mpvLogFile = mpvLogFileDefine.isNotEmpty
+          ? mpvLogFileDefine
+          : Platform.environment['FUSHI_TEST_MPV_LOG_FILE'] ??
+                (VideoDiagLog.instance.enabled
+                    ? VideoDiagLog.instance.mpvLogFilePath
+                    : null);
       if (mpvLogFile != null && mpvLogFile.isNotEmpty) {
         unawaited(_setMpvProperties(<String, String>{
           'log-file': mpvLogFile,
