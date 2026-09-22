@@ -147,6 +147,66 @@ void main() {
     expect(calls, 1, reason: '整部作品一次请求，集信息都从同一份 XML 取');
   });
 
+  // BUG-2623：`<error code="302">client version missing or invalid</error>` 是
+  // AniDB 在说「这对身份不是 HTTP API 客户端」。换 aid 再问答案也一样——闩住这对
+  // 身份、不再发请求，并把服务端原话交给调用方，而不是每部作品都吞成一句
+  // 「HTTP 详情不可用」再撞一次 3s 限流闸。
+  test('a 302 client identity rejection latches the identity and is reported',
+      () async {
+    int calls = 0;
+    final AniDbVideoMetadataProvider anidb = provider(handler: (_) async {
+      calls++;
+      return xml('<error code="302">client version missing or invalid</error>');
+    });
+    expect(anidb.isHttpApiAvailable, isTrue);
+    expect(anidb.httpIdentityRejection, isNull);
+
+    final VideoMetadataWork work = (await anidb.fetchWork(lookup))!;
+    expect(
+      work.rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+      isTrue,
+      reason: '作品层回落标题目录',
+    );
+    expect(calls, 1);
+    expect(anidb.httpIdentityRejection,
+        contains('client version missing or invalid'));
+    expect(anidb.isHttpApiAvailable, isFalse);
+    expect(
+      anidb.httpDetailUnavailableReason,
+      allOf(contains('fushitest/1'), contains('302'),
+          contains('client version missing or invalid')),
+    );
+
+    // 同一部 / 集层 / 季层再问：一次请求都不再发。
+    expect(
+      (await anidb.fetchWork(lookup))!
+          .rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+      isTrue,
+    );
+    expect(await anidb.fetchSeasons(lookup), hasLength(1),
+        reason: '标题目录兜底出一季摘要');
+    await expectLater(
+      anidb.fetchEpisodes(lookup, seasonNumber: 1),
+      throwsA(isA<VideoMetadataNetworkException>()),
+    );
+    expect(await anidb.episodeInfo(animeId: 42, episodeId: 4201), isNull);
+    expect(calls, 1, reason: '身份被拒后不再撞 httpapi');
+  });
+
+  test('a transport failure is reported as the detail-unavailable reason',
+      () async {
+    final AniDbVideoMetadataProvider anidb =
+        provider(handler: (_) async => throw const SocketException('offline'));
+    expect(
+      (await anidb.fetchWork(lookup))!
+          .rawPayload?[AniDbVideoMetadataProvider.catalogOnlyPayloadKey],
+      isTrue,
+    );
+    expect(anidb.isHttpApiAvailable, isTrue, reason: '网络故障不是身份问题');
+    expect(anidb.httpIdentityRejection, isNull);
+    expect(anidb.httpDetailUnavailableReason, contains('anime XML 请求失败'));
+  });
+
   group('AnimeDoc_{aid}.xml disk cache', () {
     late Directory dir;
     setUp(() async {
