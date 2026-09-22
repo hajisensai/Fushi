@@ -50,6 +50,8 @@ class LookupDismissBarrier extends StatefulWidget {
     this.onPointerHover,
     this.onPointerSignal,
     this.onNonPrimaryButtonDown,
+    this.scrollDismissAxis,
+    this.onScrollDismiss,
     super.key,
   });
 
@@ -103,6 +105,27 @@ class LookupDismissBarrier extends StatefulWidget {
   /// 认领的判据是 [PointerDownEvent.pointer]，光有 `buttons` 表达不了。
   final void Function(PointerDownEvent event)? onNonPrimaryButtonDown;
 
+  /// 「继续滚动即关闭弹窗」的滚动轴（阅读器滚动模式：横排 = 纵向、竖排 = 横向）。
+  /// null = 不启用，barrier 行为与本参数出现之前逐字一致。
+  ///
+  /// 启用后，触摸 / 触控笔拖动（鼠标拖动不算：桌面鼠标在正文上拖是框选，不是滚动）
+  /// 或触控板双指平移在本轴上越过 touch slop 且本轴主导时，回调一次
+  /// [onScrollDismiss] 并放弃本轮横拖关层判定。
+  ///
+  /// **竖排时这是替换，不是叠加。** 竖排的滚动轴就是横向，与「横滑关一层」同形；而
+  /// 滚动认领的阈值是 `kTouchSlop`(18)，滑关最早要到 `30 + (1 - 灵敏度) * 160`（值域
+  /// [30, 190]）才可能在抬手时触发，且本类**先**喂滚动追踪器、认领后立刻
+  /// `_swipe.abort()`。所以竖排 + 滚动模式下，barrier 空白区的横拖**永远**走滚动这条，
+  /// 「逐层退回」在这块区域不再可达（弹窗本体上的滑关不受影响）——写作模式默认就是
+  /// 竖排、本开关也默认开，所以这是默认行为变更而不是边角。要保住逐层退回，宿主可以
+  /// 在栈深 > 1 时传 null 关掉本通道。
+  final Axis? scrollDismissAxis;
+
+  /// [scrollDismissAxis] 上的拖动越过 slop：参数是指针 id 与至今累积的位移（逻辑
+  /// 像素，手指移动方向）。宿主据此关弹窗并把位移转给正文；barrier 随弹窗关闭而卸载，
+  /// 同一根指针后续的移动由宿主按指针 id 自行接管（`GestureBinding.pointerRouter`）。
+  final void Function(int pointer, Offset delta)? onScrollDismiss;
+
   @override
   State<LookupDismissBarrier> createState() => _LookupDismissBarrierState();
 }
@@ -117,6 +140,37 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
 
   bool get _swipeActive => widget.swipeEnabled;
 
+  final BarrierScrollDismissTracker _scroll = BarrierScrollDismissTracker();
+
+  /// 滚动关窗跟踪的指针（与 [_tracked] 独立：滑关开关关闭时滚动关窗照样生效）。
+  int? _scrollTracked;
+
+  bool get _scrollActive =>
+      widget.scrollDismissAxis != null && widget.onScrollDismiss != null;
+
+  void _beginScrollTracking(int pointer) {
+    _scrollTracked = pointer;
+    _scroll.begin(widget.scrollDismissAxis!);
+  }
+
+  void _updateScrollTracking(int pointer, Offset delta) {
+    if (pointer != _scrollTracked || !_scrollActive) return;
+    if (!_scroll.update(delta)) return;
+    _scrollTracked = null;
+    // 滚动已认领本轮：横拖关层不再参与（避免松手时再关一层）。
+    if (_tracked == pointer) {
+      _tracked = null;
+      _swipe.abort();
+    }
+    widget.onScrollDismiss!(pointer, _scroll.accumulated);
+  }
+
+  void _endScrollTracking(int pointer) {
+    if (pointer != _scrollTracked) return;
+    _scrollTracked = null;
+    _scroll.abort();
+  }
+
   void _onPointerDown(PointerDownEvent event) {
     // BUG-1995：非主键先交给宿主按绑定分发。**纯附加**——不 return、不改下面任何一
     // 行滑关状态机，所以没接 [LookupDismissBarrier.onNonPrimaryButtonDown] 的表面
@@ -124,6 +178,14 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
     if (widget.onNonPrimaryButtonDown != null &&
         domMouseButtonFromPointerButtons(event.buttons) != null) {
       widget.onNonPrimaryButtonDown!(event);
+    }
+    if (_scrollActive) {
+      if (event.kind == PointerDeviceKind.mouse || _scrollTracked != null) {
+        // 鼠标拖是框选不是滚动；第二根指针按下 = 缩放，放弃本轮。
+        _endScrollTracking(_scrollTracked ?? event.pointer);
+      } else {
+        _beginScrollTracking(event.pointer);
+      }
     }
     if (!_swipeActive) return;
     // 不按设备类型过滤：TODO-716 的整个目的就是「桌面对齐手机」——桌面开了滑关
@@ -141,11 +203,13 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
   }
 
   void _onPointerMove(PointerMoveEvent event) {
+    _updateScrollTracking(event.pointer, event.delta);
     if (event.pointer != _tracked) return;
     _swipe.update(event.delta);
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    _endScrollTracking(event.pointer);
     _active.remove(event.pointer);
     if (event.pointer != _tracked) return;
     _tracked = null;
@@ -153,6 +217,7 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
   }
 
   void _onPointerCancel(PointerCancelEvent event) {
+    _endScrollTracking(event.pointer);
     _active.remove(event.pointer);
     if (event.pointer != _tracked) return;
     _tracked = null;
@@ -170,6 +235,14 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
+      // 触控板双指平移（桌面）走 pan-zoom 事件而不是 move：同样算「继续滚动」。
+      onPointerPanZoomStart: (PointerPanZoomStartEvent event) {
+        if (_scrollActive) _beginScrollTracking(event.pointer);
+      },
+      onPointerPanZoomUpdate: (PointerPanZoomUpdateEvent event) =>
+          _updateScrollTracking(event.pointer, event.panDelta),
+      onPointerPanZoomEnd: (PointerPanZoomEndEvent event) =>
+          _endScrollTracking(event.pointer),
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         // onTapUp（带坐标）而非 onTap：宿主要按落点分流（阅读器命中词换查词、
@@ -178,6 +251,44 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
         child: const ColoredBox(color: Colors.transparent),
       ),
     );
+  }
+}
+
+/// barrier「沿滚动轴继续滚动即关窗」的纯状态追踪器（阅读器滚动模式）。
+///
+/// 累积位移，本轴位移越过 [kTouchSlop] 且本轴主导（|本轴| > |交叉轴|）时判定为
+/// 滚动、[update] 返回 true（每轮最多一次）；交叉轴先越过 slop 则永久放弃本轮——
+/// 横排滚动模式里横拖仍留给「滑动关闭」，不被滚动抢走。
+class BarrierScrollDismissTracker {
+  Axis _axis = Axis.vertical;
+  Offset _accumulated = Offset.zero;
+  bool _tracking = false;
+
+  /// 至今累积的位移（手指移动方向）。
+  Offset get accumulated => _accumulated;
+
+  void begin(Axis axis) {
+    _axis = axis;
+    _accumulated = Offset.zero;
+    _tracking = true;
+  }
+
+  void abort() {
+    _tracking = false;
+    _accumulated = Offset.zero;
+  }
+
+  /// 喂入一段位移；本轮首次判定为沿轴滚动时返回 true，此后本轮失效。
+  bool update(Offset delta) {
+    if (!_tracking) return false;
+    _accumulated += delta;
+    final double along =
+        (_axis == Axis.vertical ? _accumulated.dy : _accumulated.dx).abs();
+    final double cross =
+        (_axis == Axis.vertical ? _accumulated.dx : _accumulated.dy).abs();
+    if (along <= kTouchSlop && cross <= kTouchSlop) return false;
+    _tracking = false;
+    return along > cross;
   }
 }
 

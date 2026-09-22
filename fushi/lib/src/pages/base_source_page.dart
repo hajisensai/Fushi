@@ -164,6 +164,18 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   void onDismissBarrierPointerSignal(PointerSignalEvent event) {}
 
+  /// 弹窗开着时「沿此轴继续滚动正文 = 关弹窗」（barrier 上的触摸/触控板拖动）。
+  /// null = 不启用（默认；只有阅读器滚动模式开了对应偏好才返回轴）。
+  @protected
+  Axis? get dismissBarrierScrollAxis => null;
+
+  /// [dismissBarrierScrollAxis] 上的拖动越过 slop 时回调（见
+  /// [LookupDismissBarrier.onScrollDismiss]）。默认直接清整栈。
+  @protected
+  void onDismissBarrierScrollDrag(int pointer, Offset delta) {
+    clearDictionaryResult();
+  }
+
   /// 本页面的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥
   /// （[dictionaryPopupForwardedActions] 决定交回哪些）。
   ///
@@ -787,6 +799,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         // opaque，页面根 Listener 收不到）——见该钩子的文档。
                         onNonPrimaryButtonDown:
                             onDismissBarrierNonPrimaryButton,
+                        scrollDismissAxis: dismissBarrierScrollAxis,
+                        onScrollDismiss: onDismissBarrierScrollDrag,
                       ),
                     ),
                   if (showLoadingPlaceholder) _buildLoadingPlaceholder(screen),

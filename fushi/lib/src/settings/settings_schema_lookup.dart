@@ -860,6 +860,26 @@ SettingsDestination buildLookupDestination() {
               notifyReaderSettingsChanged(settingsContext);
             },
           ),
+          // 用户诉求（2026-09-23）：滚动模式下查词后继续滚动正文（横排/竖排都算）
+          // 即关闭弹窗，并做成开关。只在滚动（连续）模式生效，故仅该模式可见
+          // （与 page_columns 只在翻页模式可见同理）。默认开启。
+          SettingsSwitchItem(
+            id: 'reading_controls.dismiss_popup_on_scroll',
+            title: t.reader_popup_scroll_dismiss,
+            subtitle: t.reader_popup_scroll_dismiss_hint,
+            icon: Icons.swap_vert_outlined,
+            visible: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.readerViewMode == 'continuous',
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 10),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.readerSource.dismissPopupOnScroll,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.readerSource.setDismissPopupOnScroll(
+                value,
+              );
+              notifyReaderSettingsChanged(settingsContext);
+            },
+          ),
           // 防截屏（用户诉求）：桌面查词浮窗经 native
           // SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 从截图/录屏/串流中
           // 排除。默认关（用户要求，2026-07）。仅 Windows——display affinity 是 Win32 能力。

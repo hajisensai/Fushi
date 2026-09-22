@@ -8,6 +8,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -2970,6 +2971,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
+    _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
     // 控制器是会话对象、可能比页面活得久：解绑前把播放态监听摘掉。
@@ -4411,6 +4413,130 @@ $liveConfigJs
     // 「悬停即查词」偏好只作用于正文 MouseRegion 入口（JS 腿在 barrier 盖住时同样
     // 收不到 mousemove，语义一致）。
     _hostHoverLookupAt(local, hoverAutoLookup: false);
+  }
+
+  /// 用户诉求（2026-09-23）：滚动（连续）模式下查词后，继续滚动正文即关闭弹窗
+  /// （横排纵向滚、竖排横向滚都算），由偏好 `dismiss_popup_on_scroll` 开关。
+  ///
+  /// 弹窗开着时正文被 [LookupDismissBarrier] 实心遮住（既有设计），滚轮与拖动都到不
+  /// 了 WebView，所以「继续滚动」只能在 barrier 上接：滚轮走
+  /// [onDismissBarrierPointerSignal]，触摸 / 触控板拖动走 barrier 的沿轴拖动通道
+  /// （[dismissBarrierScrollAxis] → [onDismissBarrierScrollDrag]）。两路都是关整栈
+  /// 并把这次滚动原样交给正文，滚动不会因为关窗而「断一下」。
+  bool get _dismissPopupOnScrollActive =>
+      _settings?.isContinuousMode == true &&
+      ReaderFushiSource.instance.dismissPopupOnScroll;
+
+  /// 竖排滚动轴是横向、横排是纵向（与 JS 连续模式滚轮投影同口径）。
+  @override
+  Axis? get dismissBarrierScrollAxis {
+    if (!_dismissPopupOnScrollActive) return null;
+    return (_settings?.writingMode.startsWith('vertical') ?? false)
+        ? Axis.horizontal
+        : Axis.vertical;
+  }
+
+  @override
+  void onDismissBarrierPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !_dismissPopupOnScrollActive) return;
+    final Offset d = event.scrollDelta;
+    final double delta = d.dy.abs() >= d.dx.abs() ? d.dy : d.dx;
+    if (delta == 0) return;
+    clearDictionaryResult();
+    // 与 webview.part.dart 连续模式 wheel 处理同款投影：竖排把主 delta 投到横向，
+    // vertical-rl 前进 = scrollLeft 减小。竖排与否以 JS 运行时为准。
+    final String px = delta.toStringAsFixed(2);
+    // 这一拍**不跨章**：到了章边界 scrollBy 滚不动，弹窗关掉、页面不动，用户再滚一次
+    // 才走文档内那条带「真试滚 → 读回位移 → 跨章」的 handler。代价是一拍，换来的是
+    // 不必在这里复刻整套边界与手势判定（那套没有任何自动化覆盖）。
+    // 但**必须**把这一拍记进 JS 侧的手势时间线：否则紧随其后的触控板惯性 tick 会被
+    // 判成新手势，章末一次带惯性的滑动就会直接跨章（BUG-2015 防的正是这个）。
+    unawaited(
+      _evaluateScrollForward(
+        '(function(){var r=window.fushiReader;'
+        'if(window.__fushiArmWheelGesture)window.__fushiArmWheelGesture();'
+        'var v=r&&r.isVertical&&r.isVertical();'
+        'if(v){var s=window.getComputedStyle(document.body).writingMode'
+        "==='vertical-rl'?-1:1;"
+        "window.scrollBy({left:$px*s,top:0,behavior:'auto'});}"
+        "else{window.scrollBy({left:0,top:$px,behavior:'auto'});}})();",
+      ),
+    );
+  }
+
+  /// 拖动认领后正在跟随的指针：barrier 随弹窗关闭而卸载，同一根手指剩余的移动由
+  /// 这里经 [PointerRouter] 继续转给正文，直到抬起 / 取消。
+  int? _scrollDismissFollowPointer;
+  Offset _scrollDismissPending = Offset.zero;
+  bool _scrollDismissFlushing = false;
+
+  @override
+  void onDismissBarrierScrollDrag(int pointer, Offset delta) {
+    clearDictionaryResult();
+    _stopFollowingScrollDismissPointer();
+    _scrollDismissFollowPointer = pointer;
+    GestureBinding.instance.pointerRouter.addRoute(
+      pointer,
+      _onScrollDismissFollowEvent,
+    );
+    _queueScrollDismissForward(delta);
+  }
+
+  void _onScrollDismissFollowEvent(PointerEvent event) {
+    if (event is PointerMoveEvent) {
+      _queueScrollDismissForward(event.delta);
+    } else if (event is PointerPanZoomUpdateEvent) {
+      _queueScrollDismissForward(event.panDelta);
+    } else if (event is PointerUpEvent ||
+        event is PointerCancelEvent ||
+        event is PointerPanZoomEndEvent) {
+      _stopFollowingScrollDismissPointer();
+    }
+  }
+
+  void _stopFollowingScrollDismissPointer() {
+    final int? pointer = _scrollDismissFollowPointer;
+    if (pointer == null) return;
+    _scrollDismissFollowPointer = null;
+    GestureBinding.instance.pointerRouter.removeRoute(
+      pointer,
+      _onScrollDismissFollowEvent,
+    );
+  }
+
+  /// 手指位移 → 正文反向滚动（内容跟手，与原生触摸滚动同向）。上一段 JS 未返回前
+  /// 的位移合并成一次，避免每个指针事件各发一次 evaluateJavascript。
+  void _queueScrollDismissForward(Offset fingerDelta) {
+    _scrollDismissPending += fingerDelta;
+    if (_scrollDismissFlushing) return;
+    unawaited(_flushScrollDismissForward());
+  }
+
+  Future<void> _flushScrollDismissForward() async {
+    _scrollDismissFlushing = true;
+    try {
+      while (mounted && _scrollDismissPending != Offset.zero) {
+        final Offset d = _scrollDismissPending;
+        _scrollDismissPending = Offset.zero;
+        await _evaluateScrollForward(
+          'window.scrollBy({left:${(-d.dx).toStringAsFixed(2)},'
+          "top:${(-d.dy).toStringAsFixed(2)},behavior:'auto'});",
+        );
+      }
+    } finally {
+      _scrollDismissFlushing = false;
+      _scrollDismissPending = Offset.zero;
+    }
+  }
+
+  Future<void> _evaluateScrollForward(String js) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    try {
+      await controller.evaluateJavascript(source: js);
+    } catch (e, s) {
+      ErrorLogService.instance.log('ReaderFushi.scrollDismissForward', e, s);
+    }
   }
 
   /// 宿主腿的落点入口（barrier / 正文 MouseRegion 共用）：门开且越过节流阈值才
