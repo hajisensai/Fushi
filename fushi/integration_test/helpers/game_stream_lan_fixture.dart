@@ -252,16 +252,22 @@ class GameStreamEvidenceMiningAdapter extends FushiGameStreamMiningAdapter {
       line: line,
       action: evidence.findRunNotes,
     );
+    // The production adapter also fixes its screenshot before awaiting mining.
+    // A progressive update may replace this lineId's current frame meanwhile.
+    GameStreamFrozenFrame? frame;
     final GameStreamMineResult result = await evidence.observeMiningStage(
       stage: GameStreamMiningStage.hostMine,
       line: line,
-      action: () => super.mine(request, line),
+      action: () {
+        frame = evidence.freezeFrame(line);
+        return super.mine(request, line);
+      },
     );
     if (result.ok) {
       await evidence.observeMiningStage<void>(
         stage: GameStreamMiningStage.verify,
         line: line,
-        action: () => evidence.verifyMine(line, before),
+        action: () => evidence.verifyMine(line, before, frame: frame),
       );
     }
     return result;
@@ -270,20 +276,42 @@ class GameStreamEvidenceMiningAdapter extends FushiGameStreamMiningAdapter {
 
 enum GameStreamMiningStage { preflight, hostMine, verify }
 
+class GameStreamFrozenFrame {
+  const GameStreamFrozenFrame._({
+    required this.lineId,
+    required this.text,
+    required this.pngSha256,
+  });
+
+  final String lineId;
+  final String text;
+  final String pngSha256;
+}
+
 class GameStreamLanEvidence {
   GameStreamLanEvidence({
     required this.directory,
     required this.runTag,
     Uri? ankiEndpoint,
-  }) : _ankiEndpoint = ankiEndpoint ?? Uri.parse('http://127.0.0.1:8765');
+    GalHookStillCapture? captureWindow,
+    TexthookerLineEntry? Function()? currentLine,
+    GalHookAudioCapture? captureAudio,
+  }) : _ankiEndpoint = ankiEndpoint ?? Uri.parse('http://127.0.0.1:8765'),
+       _captureWindow = captureWindow ?? WindowCaptureChannel.captureWindow,
+       _currentLine =
+           currentLine ?? (() => TexthookerService.instance.lastEntry),
+       _captureAudio = captureAudio;
 
   final Directory directory;
   final String runTag;
   final Uri _ankiEndpoint;
+  final GalHookStillCapture _captureWindow;
+  final TexthookerLineEntry? Function() _currentLine;
+  final GalHookAudioCapture? _captureAudio;
   final List<String> failures = <String>[];
   final List<int> verifiedNotes = <int>[];
-  final Map<String, ({String text, String pngSha256})> _frames =
-      <String, ({String text, String pngSha256})>{};
+  final Map<String, GameStreamFrozenFrame> _frames =
+      <String, GameStreamFrozenFrame>{};
   final Map<String, ({String sentence, String sha256, int bytes})> _audio =
       <String, ({String sentence, String sha256, int bytes})>{};
 
@@ -334,8 +362,9 @@ class GameStreamLanEvidence {
     required String sentence,
     required String outputExtension,
   }) async {
-    final Uint8List? bytes = await GalHookSessionController.instance
-        .captureAudioBytes(
+    final Uint8List? bytes =
+        await (_captureAudio ??
+            GalHookSessionController.instance.captureAudioBytes)(
           lineId: lineId,
           sentence: sentence,
           outputExtension: outputExtension,
@@ -358,29 +387,32 @@ class GameStreamLanEvidence {
   }
 
   Future<WindowCaptureResult> capture(int hwnd) async {
-    final List<TexthookerLineEntry> lines = TexthookerService.instance.entries;
-    final TexthookerLineEntry? before = lines.isEmpty ? null : lines.last;
-    final WindowCaptureResult result = await WindowCaptureChannel.captureWindow(
-      hwnd,
-    );
-    final List<TexthookerLineEntry> current =
-        TexthookerService.instance.entries;
-    final TexthookerLineEntry? after = current.isEmpty ? null : current.last;
+    final TexthookerLineEntry? before = _currentLine();
+    final WindowCaptureResult result = await _captureWindow(hwnd);
+    final TexthookerLineEntry? after = _currentLine();
     if (result.ok &&
         before != null &&
         before.id == after?.id &&
         before.text == after?.text) {
       final Uint8List bytes = result.pngBytes!;
-      final String name = sha256.convert(utf8.encode(before.id)).toString();
-      _frames[before.id] = (
+      final GameStreamFrozenFrame frame = GameStreamFrozenFrame._(
+        lineId: before.id,
         text: before.text,
         pngSha256: sha256.convert(bytes).toString(),
       );
       await File(
-        p.join(directory.path, 'frame-$name.png'),
+        p.join(directory.path, 'frame-${frame.pngSha256}.png'),
       ).writeAsBytes(bytes, flush: true);
+      _frames[before.id] = frame;
     }
     return result;
+  }
+
+  /// Retain the exact text version and content-addressed PNG for this mine.
+  /// Later captures must not replace the evidence while Anki is writing it.
+  GameStreamFrozenFrame? freezeFrame(GameStreamTextEvent line) {
+    final GameStreamFrozenFrame? frame = _frames[line.lineId];
+    return frame?.text == line.text ? frame : null;
   }
 
   Future<Object?> _anki(String action, Map<String, Object?> params) async {
@@ -432,7 +464,11 @@ class GameStreamLanEvidence {
     return base64Decode(value);
   }
 
-  Future<void> verifyMine(GameStreamTextEvent line, Set<int> before) async {
+  Future<void> verifyMine(
+    GameStreamTextEvent line,
+    Set<int> before, {
+    required GameStreamFrozenFrame? frame,
+  }) async {
     final Set<int> added = (await findRunNotes()).difference(before);
     if (added.length != 1) {
       throw StateError(
@@ -465,17 +501,18 @@ class GameStreamLanEvidence {
     }
     final Uint8List audio = await _media(audioName);
     final Uint8List picture = await _media(pictureName);
-    final ({String text, String pngSha256})? frame = _frames[line.lineId];
     final String pictureHash = sha256.convert(picture).toString();
-    if (frame == null || frame.text != line.text) {
+    if (frame == null ||
+        frame.lineId != line.lineId ||
+        frame.text != line.text) {
       throw StateError('Missing frozen PNG for the mined lineId');
     }
-    final String frameName = sha256
-        .convert(utf8.encode(line.lineId))
-        .toString();
     final Uint8List frozenBytes = await File(
-      p.join(directory.path, 'frame-$frameName.png'),
+      p.join(directory.path, 'frame-${frame.pngSha256}.png'),
     ).readAsBytes();
+    if (sha256.convert(frozenBytes).toString() != frame.pngSha256) {
+      throw StateError('Frozen PNG differs from captured evidence');
+    }
     final MiningMediaCompression compression = gameStreamFixtureCompression();
     final Uint8List expectedPicture = await downsampleCardScreenshotAsync(
       frozenBytes,
