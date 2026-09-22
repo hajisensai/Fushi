@@ -55,7 +55,6 @@ const List<String> gameStreamTestTerms = <String>[
   'a',
 ];
 
-
 Map<String, Object?> gameStreamFailureSummary(Object error) {
   final Map<String, Object?> summary = <String, Object?>{
     'failureType': error.runtimeType.toString(),
@@ -72,27 +71,26 @@ Map<String, Object?> gameStreamFailureSummary(Object error) {
 }
 
 class GameStreamFlutterErrorRecorder {
-  FlutterExceptionHandler? _previous;
+  GameStreamFlutterErrorRecorder({FlutterExceptionHandler? bindingHandler})
+    : _bindingHandler = bindingHandler ?? FlutterError.onError;
+
+  final FlutterExceptionHandler? _bindingHandler;
   FlutterExceptionHandler? _installed;
   Map<String, Object?>? _lastFailure;
 
   Map<String, Object?>? get lastFailure => _lastFailure;
 
   void install() {
-    _previous = FlutterError.onError;
     _installed = (FlutterErrorDetails details) {
       _lastFailure ??= gameStreamFailureSummary(details);
-      _previous?.call(details);
+      _bindingHandler?.call(details);
     };
     FlutterError.onError = _installed;
   }
 
   void restore() {
-    if (_installed != null && identical(FlutterError.onError, _installed)) {
-      FlutterError.onError = _previous;
-    }
+    FlutterError.onError = _bindingHandler;
     _installed = null;
-    _previous = null;
   }
 }
 
@@ -129,147 +127,6 @@ Future<void> restrictGameStreamFixtureDirectory(Directory directory) async {
 }
 
 /// Only an opt-in live fixture may temporarily activate its own exact runner.
-/// The normal integration runner deliberately sets WS_EX_NOACTIVATE. Capture
-/// starts locally with verified foreground ownership, then restores that style.
-class GameStreamFixtureForeground {
-  GameStreamFixtureForeground._(this.script, this.window, this.originalStyle);
-
-  final File script;
-  final int window;
-  final int originalStyle;
-
-  static Future<GameStreamFixtureForeground> acquire(Directory evidence) async {
-    final File script = File(p.join(evidence.path, 'runner-foreground.ps1'));
-    await script.writeAsString(_foregroundScript, flush: true);
-    final Map<String, dynamic> result = await _run(script, 'acquire');
-    if (result['foregroundPid'] != pid) {
-      throw StateError('The local test runner did not receive foreground');
-    }
-    return GameStreamFixtureForeground._(
-      script,
-      result['hwnd'] as int,
-      result['originalStyle'] as int,
-    );
-  }
-
-  Future<void> restore() async {
-    await _run(script, 'restore', <String>[
-      '-WindowHandle',
-      '$window',
-      '-OriginalStyle',
-      '$originalStyle',
-    ]);
-  }
-
-  static Future<Map<String, dynamic>> _run(
-    File script,
-    String mode, [
-    List<String> extra = const <String>[],
-  ]) async {
-    final ProcessResult result = await Process.run('powershell.exe', <String>[
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      script.path,
-      '-RunnerPid',
-      '$pid',
-      '-RunnerExePath',
-      Platform.resolvedExecutable,
-      '-Mode',
-      mode,
-      ...extra,
-    ]);
-    if (result.exitCode != 0) {
-      throw StateError('Fixture foreground $mode failed: ${result.stderr}');
-    }
-    return jsonDecode('${result.stdout}'.trim()) as Map<String, dynamic>;
-  }
-}
-
-const String _foregroundScript = r'''
-param([int]$RunnerPid, [string]$RunnerExePath,
-  [ValidateSet('acquire','restore')][string]$Mode,
-  [long]$WindowHandle=0, [long]$OriginalStyle=0)
-$ErrorActionPreference = 'Stop'
-$runner = Get-Process -Id $RunnerPid -ErrorAction Stop
-if (-not [String]::Equals([IO.Path]::GetFullPath($runner.Path),
-    [IO.Path]::GetFullPath($RunnerExePath), [StringComparison]::OrdinalIgnoreCase)) {
-  throw 'Runner executable identity mismatch'
-}
-Add-Type @"
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class FixtureForeground {
-  public delegate bool WindowVisitor(IntPtr window, IntPtr data);
-  [DllImport("user32.dll")] public static extern bool EnumWindows(WindowVisitor visitor, IntPtr data);
-  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr window, StringBuilder text, int count);
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
-  [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW", ExactSpelling=true)] public static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
-  [DllImport("user32.dll", EntryPoint="SetWindowLongPtrW", ExactSpelling=true)] public static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
-  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int cx, int cy, uint flags);
-  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint source, uint target, bool attach);
-  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
-  public static IntPtr FindRunner(uint process) {
-    IntPtr found = IntPtr.Zero;
-    EnumWindows((window, data) => {
-      uint owner; GetWindowThreadProcessId(window, out owner);
-      if (owner != process) return true;
-      var name = new StringBuilder(256); GetClassName(window, name, 256);
-      if (name.ToString() != "FLUTTER_RUNNER_WIN32_WINDOW") return true;
-      found = window; return false;
-    }, IntPtr.Zero);
-    return found;
-  }
-}
-"@
-$window = [FixtureForeground]::FindRunner([uint32]$RunnerPid)
-if ($window -eq [IntPtr]::Zero) { throw 'Exact runner window not found' }
-if ($Mode -eq 'restore') {
-  if ($window.ToInt64() -ne $WindowHandle) { throw 'Runner HWND changed before style restore' }
-  [FixtureForeground]::SetWindowLongPtr($window, -20, [IntPtr]$OriginalStyle) | Out-Null
-  [FixtureForeground]::SetWindowPos($window, [IntPtr]::Zero, 0, 0, 0, 0, 0x37) | Out-Null
-  @{ restored=$true; hwnd=$window.ToInt64() } | ConvertTo-Json -Compress
-  exit 0
-}
-$style = [FixtureForeground]::GetWindowLongPtr($window, -20).ToInt64()
-$currentThread = [FixtureForeground]::GetCurrentThreadId()
-$owner = [uint32]0
-$runnerThread = [FixtureForeground]::GetWindowThreadProcessId($window, [ref]$owner)
-$foregroundThread = [FixtureForeground]::GetWindowThreadProcessId([FixtureForeground]::GetForegroundWindow(), [ref]$owner)
-$attachedRunner = $false
-$attachedForeground = $false
-$acquired = $false
-try {
-  [FixtureForeground]::SetWindowLongPtr($window, -20, [IntPtr]($style -band (-bnot 0x08000000))) | Out-Null
-  [FixtureForeground]::SetWindowPos($window, [IntPtr]::Zero, 0, 0, 0, 0, 0x37) | Out-Null
-  if ($runnerThread -ne 0 -and $runnerThread -ne $currentThread) {
-    $attachedRunner = [FixtureForeground]::AttachThreadInput($currentThread, $runnerThread, $true)
-  }
-  if ($foregroundThread -ne 0 -and $foregroundThread -ne $currentThread -and $foregroundThread -ne $runnerThread) {
-    $attachedForeground = [FixtureForeground]::AttachThreadInput($currentThread, $foregroundThread, $true)
-  }
-  [FixtureForeground]::ShowWindow($window, 9) | Out-Null
-  [FixtureForeground]::SetForegroundWindow($window) | Out-Null
-  [FixtureForeground]::GetWindowThreadProcessId([FixtureForeground]::GetForegroundWindow(), [ref]$owner) | Out-Null
-  if ($owner -ne $RunnerPid) { throw 'Local runner failed to become foreground' }
-  $acquired = $true
-  @{ hwnd=$window.ToInt64(); originalStyle=$style; foregroundPid=[int64]$owner } | ConvertTo-Json -Compress
-} finally {
-  if ($attachedForeground) { [FixtureForeground]::AttachThreadInput($currentThread, $foregroundThread, $false) | Out-Null }
-  if ($attachedRunner) { [FixtureForeground]::AttachThreadInput($currentThread, $runnerThread, $false) | Out-Null }
-  if (-not $acquired) {
-    [FixtureForeground]::SetWindowLongPtr($window, -20, [IntPtr]$style) | Out-Null
-    [FixtureForeground]::SetWindowPos($window, [IntPtr]::Zero, 0, 0, 0, 0, 0x37) | Out-Null
-  }
-}
-''';
-
 Future<void> importGameStreamTestDictionary(
   AppModel app,
   Directory evidence,

@@ -8,6 +8,9 @@
 /// No game is launched unless RUN_LIVE is explicitly set. The private credentials
 /// file must be transferred into the Android fixture's app-private directory.
 /// Pairing is preseeded in the isolated DB; this does not test pairing approval.
+/// After awaiting-local-start.json, prepare voiced dialogue locally, create
+/// local-start.request, and leave the game foreground. Capture cannot start
+/// until all three prerequisites are met.
 /// Create stop.request in the evidence directory to finish the host fixture.
 library;
 
@@ -58,6 +61,9 @@ void main() {
   testWidgets(
     'SGRE production host streams to the paired Android LAN fixture',
     (WidgetTester tester) async {
+      final GameStreamFlutterErrorRecorder flutterErrors =
+          GameStreamFlutterErrorRecorder();
+      addTearDown(flutterErrors.restore);
       final String isolatedRoot = requireGameStreamIsolatedRoot();
       expect(
         File(_gameExe).existsSync(),
@@ -114,12 +120,15 @@ void main() {
         directory: evidenceDir,
         runTag: runTag,
       );
-      final GameStreamFlutterErrorRecorder flutterErrors =
-          GameStreamFlutterErrorRecorder();
       Map<String, Object?>? failure;
 
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue);
+      flutterErrors.install();
+      try {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue);
+      } finally {
+        flutterErrors.install();
+      }
       final ProviderContainer container = ProviderScope.containerOf(
         tester.element(find.byType(MaterialApp).first),
       );
@@ -174,7 +183,6 @@ void main() {
         );
       }
 
-      flutterErrors.install();
       try {
         await importGameStreamTestDictionary(app, evidenceDir);
         final anki = await configureGameStreamTestAnki(app, runTag);
@@ -238,19 +246,56 @@ void main() {
         hook.addListener(recordState);
         text.addListener(recordLines);
         listenersInstalled = true;
-        final GameStreamFixtureForeground foreground =
-            await GameStreamFixtureForeground.acquire(evidenceDir);
-        try {
-          await evidence.writeJson('local-start.json', <String, Object?>{
-            'runnerPid': pid,
-            'runnerExe': Platform.resolvedExecutable,
-            'runnerHwnd': foreground.window,
-            'foregroundVerified': true,
-          });
-          await sync.startGameStream(hwnd: hook.state.boundWindow!.hwnd);
-        } finally {
-          await foreground.restore();
+        final int gameHwnd = hook.state.boundWindow!.hwnd;
+        final File localStart = File(
+          p.join(evidencePath, 'local-start.request'),
+        );
+        await evidence.writeJson('awaiting-local-start.json', <String, Object?>{
+          'gamePid': hook.state.gamePid,
+          'gameHwnd': gameHwnd,
+          'requestFile': localStart.path,
+          'requires': 'local game foreground and voiced dialogue',
+        });
+        recordState();
+        recordLines();
+        // The live operator prepares voiced dialogue and explicitly releases
+        // this fixture gate. Never attach to another app's input queue or steal
+        // focus to simulate a local user's click.
+        final DateTime localDeadline = DateTime.now().add(
+          const Duration(minutes: 10),
+        );
+        bool localReady = false;
+        while (DateTime.now().isBefore(localDeadline)) {
+          final Map<String, Object?> target =
+              await GameStreamInputChannel.inspect(gameHwnd);
+          if (target['alive'] != true ||
+              target['pid'] != hook.state.gamePid ||
+              hook.state.boundWindow?.hwnd != gameHwnd ||
+              !hook.state.isActive) {
+            throw StateError('Game session changed before local stream start');
+          }
+          if (localStart.existsSync() &&
+              target['foreground'] == true &&
+              target['visible'] == true &&
+              target['minimized'] != true) {
+            localReady = true;
+            break;
+          }
+          await tester.pump(const Duration(milliseconds: 250));
         }
+        expect(
+          localReady,
+          isTrue,
+          reason: 'Waiting for local game preparation',
+        );
+        await evidence.writeJson('local-start.json', <String, Object?>{
+          'runnerPid': pid,
+          'runnerExe': Platform.resolvedExecutable,
+          'gameHwnd': gameHwnd,
+          'foregroundVerified': true,
+          'mode': 'operator_prepared_game',
+        });
+        await sync.startGameStream(hwnd: gameHwnd);
         final Map<String, Object?> gameTarget =
             await GameStreamInputChannel.inspect();
         await evidence.writeJson('game-target-before-join.json', gameTarget);

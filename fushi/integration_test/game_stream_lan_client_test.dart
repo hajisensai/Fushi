@@ -33,6 +33,9 @@ void main() {
   testWidgets(
     'Android receives a locally started Windows game session',
     (WidgetTester tester) async {
+      final GameStreamFlutterErrorRecorder flutterErrors =
+          GameStreamFlutterErrorRecorder();
+      addTearDown(flutterErrors.restore);
       expect(Platform.isAndroid, isTrue);
       final PackageInfo package = await PackageInfo.fromPlatform();
       expect(package.packageName, 'app.fushi.reader.streamqa');
@@ -65,11 +68,11 @@ void main() {
       RTCPeerConnection? peerConnection;
       final List<Map<String, Object?>> acknowledgements =
           <Map<String, Object?>>[];
-      final GameStreamFlutterErrorRecorder flutterErrors =
-          GameStreamFlutterErrorRecorder()..install();
       try {
         await save();
+        flutterErrors.install();
         await launchFushiTestApp();
+        flutterErrors.install();
         final AppModel model = await enableFocusNavigation(tester);
         expect(model.isInitialised, isTrue);
         repository = SyncRepository(model.database);
