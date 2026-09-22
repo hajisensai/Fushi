@@ -60,6 +60,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   int _hostSignalSequence = -1;
   int _clientSignalSequence = -1;
   int _generation = 0;
+  int _inputEpoch = 0;
   bool _disposed = false;
   bool _rendererInitialized = false;
   bool _rendererDisposed = false;
@@ -183,17 +184,18 @@ class FushiGameStreamReceiver extends ChangeNotifier
         // Leave the existing ICE transport intact for short network outages.
         _state = GameStreamReceiverState.reconnecting;
         _error = 'connection_disconnected';
-        _completePendingAcks('connection_disconnected');
+        _invalidatePendingInputs('connection_disconnected');
+        _releaseInputs();
       case RTCPeerConnectionState.RTCPeerConnectionStateFailed:
         _state = GameStreamReceiverState.failed;
         _error = 'connection_failed_host_restart_required';
         _ready = false;
-        _completePendingAcks('connection_failed');
+        _invalidatePendingInputs('connection_failed');
       case RTCPeerConnectionState.RTCPeerConnectionStateClosed:
         _state = GameStreamReceiverState.closed;
         _ready = false;
         _error = 'connection_closed';
-        _completePendingAcks('connection_closed');
+        _invalidatePendingInputs('connection_closed');
       case RTCPeerConnectionState.RTCPeerConnectionStateConnecting:
         _state = GameStreamReceiverState.connecting;
       case RTCPeerConnectionState.RTCPeerConnectionStateNew:
@@ -348,7 +350,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
     channel.onDataChannelState = (RTCDataChannelState state) {
       if (!_isCurrent(generation)) return;
       if (state == RTCDataChannelState.RTCDataChannelClosed) {
-        _completePendingAcks('control_channel_closed');
+        _invalidatePendingInputs('control_channel_closed');
         _error = 'control_channel_closed';
         _notify();
       }
@@ -390,6 +392,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   Future<GameStreamInputAck> sendInput(GameStreamInputEvent event) async {
     final RTCDataChannel? channel = _control;
     final int generation = _generation;
+    final int inputEpoch = _inputEpoch;
     if (_disposed ||
         _backgrounded ||
         _state != GameStreamReceiverState.connected ||
@@ -406,7 +409,17 @@ class FushiGameStreamReceiver extends ChangeNotifier
     final Completer<GameStreamInputAck> ack = Completer<GameStreamInputAck>();
     _pendingAcks[event.sequence] = ack;
     final Future<void> send = _inputs.then((_) async {
-      if (!_isCurrent(generation) || _backgrounded) return;
+      if (!_isCurrent(generation) ||
+          inputEpoch != _inputEpoch ||
+          _backgrounded ||
+          _state != GameStreamReceiverState.connected ||
+          !identical(channel, _control) ||
+          channel.state != RTCDataChannelState.RTCDataChannelOpen) {
+        if (!ack.isCompleted) {
+          ack.complete(_reject(event.sequence, 'control_channel_unavailable'));
+        }
+        return;
+      }
       await channel.send(
         RTCDataChannelMessage(
           jsonEncode(<String, Object?>{
@@ -436,10 +449,16 @@ class FushiGameStreamReceiver extends ChangeNotifier
   GameStreamInputAck _reject(int sequence, String reason) =>
       GameStreamInputAck(sequence: sequence, accepted: false, reason: reason);
 
-  void _completePendingAcks(String reason) {
+  void _invalidatePendingInputs(String reason) {
+    // Connection generation stays stable through pause/resume and ICE recovery.
+    // Invalidate queued controls independently so a late native send cannot
+    // revive input that has already been rejected to the page.
+    ++_inputEpoch;
     for (final MapEntry<int, Completer<GameStreamInputAck>> pending
         in _pendingAcks.entries) {
-      pending.value.complete(_reject(pending.key, reason));
+      if (!pending.value.isCompleted) {
+        pending.value.complete(_reject(pending.key, reason));
+      }
     }
     _pendingAcks.clear();
   }
@@ -455,7 +474,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
       if (!wasBackgrounded) _releaseInputs();
       _pollTimer?.cancel();
       _pollTimer = null;
-      _completePendingAcks('app_backgrounded');
+      _invalidatePendingInputs('app_backgrounded');
     } else if (_connection != null) {
       _startPolling();
       unawaited(_pollSignals());
@@ -468,7 +487,9 @@ class FushiGameStreamReceiver extends ChangeNotifier
     final int generation = _generation;
     if (channel?.state != RTCDataChannelState.RTCDataChannelOpen) return;
     // The same reliable queue places release after any input already in flight.
-    // Inputs still queued locally see _backgrounded and are discarded.
+    // This release is intentionally scoped to the connection, not inputEpoch:
+    // it must survive resume and precede any newly accepted controls. Queued
+    // inputs from before the interruption are rejected by their input epoch.
     _inputs = _inputs
         .then((_) async {
           if (!_isCurrent(generation)) return;
@@ -506,7 +527,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
     _pendingCandidates.clear();
     _ready = false;
     _state = GameStreamReceiverState.idle;
-    _completePendingAcks('disconnected');
+    _invalidatePendingInputs('disconnected');
     if (_rendererInitialized && !_rendererDisposed) renderer.srcObject = null;
     _notify();
     _cleanup = _cleanup.then((_) async {

@@ -96,6 +96,7 @@ class _Peer extends RTCPeerConnection {
 
 class _Channel extends RTCDataChannel {
   final List<Map<String, dynamic>> sent = <Map<String, dynamic>>[];
+  Completer<void>? sendGate;
 
   @override
   String get label => 'fushi-game-control';
@@ -106,6 +107,8 @@ class _Channel extends RTCDataChannel {
   @override
   Future<void> send(RTCDataChannelMessage message) async {
     sent.add(jsonDecode(message.text) as Map<String, dynamic>);
+    final Completer<void>? gate = sendGate;
+    if (gate != null) await gate.future;
   }
 
   void ack(int sequence, {bool accepted = true, String? reason}) {
@@ -450,6 +453,65 @@ void main() {
       expect((await receiver.sendInput(_input(2))).accepted, isFalse);
     },
   );
+
+  for (final bool background in <bool>[true, false]) {
+    test(
+      'resuming ${background ? 'Android' : 'ICE'} drops queued old input and preserves ordered release',
+      () async {
+        await receiver.connect(sessionId: 'session', clientId: 'phone');
+        peer.onConnectionState?.call(
+          RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+        );
+        final Completer<void> sendGate = Completer<void>();
+        final _Channel channel = _Channel()..sendGate = sendGate;
+        peer.onDataChannel?.call(channel);
+        final Future<GameStreamInputAck> first = receiver.sendInput(_input(1));
+        await Future<void>.value();
+        expect(channel.sent, hasLength(1));
+        final Future<GameStreamInputAck> queued = receiver.sendInput(_input(2));
+        if (background) {
+          receiver.didChangeAppLifecycleState(AppLifecycleState.paused);
+          receiver.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        } else {
+          peer.onConnectionState?.call(
+            RTCPeerConnectionState.RTCPeerConnectionStateDisconnected,
+          );
+          peer.onConnectionState?.call(
+            RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+          );
+        }
+        final Future<GameStreamInputAck> fresh = receiver.sendInput(_input(3));
+        final String rejection = background
+            ? 'app_backgrounded'
+            : 'connection_disconnected';
+        expect((await first).reason, rejection);
+        expect((await queued).reason, rejection);
+        sendGate.complete();
+        await Future<void>.delayed(Duration.zero);
+        channel.ack(3);
+        expect((await fresh).accepted, isTrue);
+        expect(
+          channel.sent.map((Map<String, dynamic> message) => message['kind']),
+          <String>['input', 'releaseAll', 'input'],
+        );
+        expect(
+          channel.sent
+              .where(
+                (Map<String, dynamic> message) => message['kind'] == 'input',
+              )
+              .map(
+                (Map<String, dynamic> message) =>
+                    (message['event'] as Map<String, dynamic>)['sequence'],
+              ),
+          <int>[1, 3],
+          reason:
+              'Input already rejected on pause must not reach the game later',
+        );
+        expect(channel.sent[1]['sessionId'], 'session');
+        expect(channel.sent[1]['clientId'], 'phone');
+      },
+    );
+  }
 
   test(
     'renderer initializes once across reconnect and no stale callbacks notify after dispose',
