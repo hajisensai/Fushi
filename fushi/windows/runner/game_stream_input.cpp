@@ -150,8 +150,11 @@ bool GameStreamInput::Bind(uintptr_t value, std::string* reason) {
 
 void GameStreamInput::Release() {
   if (hwnd_ == nullptr) return;
-  std::string ignored;
-  if (!ValidateTarget(false, &ignored)) {
+  // Releasing held input is required after hiding/minimizing the target too.
+  // Keep the HWND/PID/process-creation identity check, but do not reuse the
+  // visibility restrictions that apply when accepting new remote input.
+  const GameStreamWindowInfo target = InspectBound();
+  if (!target.alive || !target.process_matches) {
     pressed_keys_.clear();
     pointer_down_ = false;
     return;
