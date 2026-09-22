@@ -23,6 +23,8 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
+    show isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
@@ -86,6 +88,12 @@ List<String> localVideoFileCandidates({
     ...playlistEntryPaths(playlistJson),
   ]) {
     if (!isLocalVideoFilePath(raw)) continue;
+    // 蓝光标题的 `videoPath` 是盘里的 `BDMV/PLAYLIST/*.mpls`。它是真实文件，但不是
+    // 「这一条的原始文件」——它是盘结构的一部分，删掉它等于把盘拆坏（码流还在
+    // `STREAM/` 下，盘却再也说不出该怎么播）。一张盘上多条标题还共用同一批码流，
+    // 「删这条的文件」在 BD 上根本没有对应物，所以一条候选都不给：删除确认框据此
+    // 连「同时删除本地文件」的勾选框都不会摆出来。
+    if (isBlurayPlaylistPath(raw)) continue;
     if (seen.add(platformPathKey(raw))) out.add(raw.trim());
   }
   return out;
