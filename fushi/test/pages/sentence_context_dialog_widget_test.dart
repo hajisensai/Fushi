@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
@@ -188,6 +189,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(confirmCalls, 1, reason: '一次确认只回点一次');
     expect(find.text(t.popup_ctx_modal_title), findsNothing);
+  });
+
+  testWidgets('BUG-2627：往返未回时 Esc 不关窗（保护不能被提前撤掉，回点结果也不能没人接）',
+      (WidgetTester tester) async {
+    confirmGate = Completer<bool>();
+    await open(tester);
+    await tester.tap(find.text(t.popup_ctx_confirm));
+    await tester.pump();
+    expect(confirmCalls, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.text(t.popup_ctx_modal_title), findsOneWidget,
+        reason: '忙时 pop 掉对话框 = 弹窗保护提前撤 + 回点结果无论真假都不弹提示');
+    confirmGate!.complete(true);
+    await tester.pumpAndSettle();
+    expect(find.text(t.popup_ctx_modal_title), findsNothing,
+        reason: '往返回来后照常关窗');
   });
 
   testWidgets('BUG-2627：没点到制卡按钮时关窗并如实提示，不再静默',

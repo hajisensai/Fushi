@@ -1084,6 +1084,9 @@ JSON.stringify((function(){
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
   /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
   /// 提示用户。
+  /// 制卡往返的上限：查重 + 取音是网络往返，给足；超过它只可能是通道半死。
+  static const Duration _kMineRoundTripTimeout = Duration(seconds: 45);
+
   Future<bool> mineEntryByIndex(int idx) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) {
@@ -1095,10 +1098,26 @@ JSON.stringify((function(){
       return false;
     }
     try {
-      final Object? raw = await controller.evaluateJavascript(
-        source: 'window.fushiPopupMineEntryByIndex'
-            ' ? window.fushiPopupMineEntryByIndex($idx) : false',
-      );
+      // 等 popup.js 那头的 promise：它在 mine 按钮的 onclick（查重 → 取音 →
+      // mineEntry 回执）跑完后才 resolve。对话框据此关窗、撤弹窗保护——必须等到
+      // 落地，否则落地前的裸窗里悬停离开自动关栈会把弹窗连制卡草稿一起撤掉。
+      // 超时只保护「通道半死不回」：真超时按没点到回，卡若之后仍落地，用户会看到
+      // 一条「没点到」的提示与一张真卡并存，好过对话框永远锁死。
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            functionBody: 'return await (window.fushiPopupMineEntryByIndex'
+                ' ? window.fushiPopupMineEntryByIndex($idx) : false);',
+          )
+          .timeout(_kMineRoundTripTimeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup.js threw during the confirm round-trip: ${result!.error}',
+          StackTrace.current,
+        );
+        return false;
+      }
+      final Object? raw = result?.value;
       // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
       final bool clicked =
           raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';

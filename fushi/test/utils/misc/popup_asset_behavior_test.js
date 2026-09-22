@@ -3367,8 +3367,13 @@ async function testConfirmMiningClicksTheRequestedEntry() {
   await flush();
 
   // 第 2 个词条（idx=1）——用户在哪个词条上点的「调整上下文」，确认就必须回点哪个。
-  assert.equal(context.window.fushiPopupMineEntryByIndex(1), true,
+  assert.equal(await context.window.fushiPopupMineEntryByIndex(1), true,
     'clicking an existing entry must report success');
+  // 回点返回的 promise 只在 mineEntry **落地后**才 resolve——Dart 侧据它关对话框、
+  // 撤弹窗保护；若它在 onclick 跑完之前就回 true，保护撤了往返还在路上（BUG-2627
+  // 审查）。这里不 flush 就断言，钉的正是这个时序。
+  assert.equal(mined.length, 1,
+    'the promise must not resolve before mineEntry landed');
   await flush();
 
   assert.equal(mined.length, 1, 'exactly one card is mined');

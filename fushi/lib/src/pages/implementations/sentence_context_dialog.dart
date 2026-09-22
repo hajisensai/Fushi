@@ -194,7 +194,7 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   /// 往返，而那层弹窗**只在本对话框开着的时候才被保护住**：宿主的
   /// `runWithLookupPopupHidden` 期间整屏 dismiss barrier 不渲染、悬停离开自动关栈被
   /// `hiddenByDialog` 挡住、浮层虽停靠屏外但保持挂载。`pop()` 一执行这层保护就开始撤
-  /// （`showAppDialog` 的 future 在退场动画结束时完成），往返却才刚出发——期间只要有
+  /// （`showAppDialog` 的 future 在 didPop 即完成，不等退场动画），往返却才刚出发——期间只要有
   /// 任何一条关栈路径跑了，`fushiPopupMineEntryByIndex` 就找不到那个词条，
   /// `return false` 一路静默回来：对话框关了、卡没制出来、连一句提示都没有（用户报
   /// 「视频调整上下文制卡不行」）。
@@ -560,143 +560,148 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
       spacedCards.add(cards[i]);
     }
 
-    return AlertDialog(
-      // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
-      // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
-      // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
-      // （`scrollable: true` + 正文直接铺卡，不再嵌 Flexible），任何朝向/尺寸下句子预览
-      // 都保有真实高度、按需滚动，不再塌陷也不溢出。
-      scrollable: true,
-      // 标题区对齐 Niratan header：小 eyebrow 在上、大标题在下，右侧一个关闭 X（=取消）。
-      // BUG-2033：与 [FushiPageHeader] 同一判据——控件（48 高的 IconButton）与
-      // 标题块按各自实际高度垂直居中，不顶对齐。顶对齐时关闭键的图标中心（距顶
-      // 24）与 eyebrow 行中心（距顶约 9）差一大截，X 会挂在标题行而不是标题块正中。
-      title: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  t.popup_ctx_modal_eyebrow,
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: scheme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 3),
-                Text(t.popup_ctx_modal_title),
-              ],
+    // 往返在路上（[_busy]）时 Esc / Android 返回 / 点遮罩都不许把对话框 pop 掉：
+    // 一 pop 保护就撤、回点结果也没人接（不弹提示），又是一条静默路。
+    return PopScope(
+      canPop: !_busy,
+      child: AlertDialog(
+        // BUG-922：横屏矮窗里正文竖向空间不足时，旧的 `Flexible(SingleChildScrollView)`
+        // 会把整块滚动区让给固定的计数/按钮区、塌成 0 高——句子预览整段消失，只剩选项
+        // （用户报「手机上看不见句子，只有选项」）。改为让整个对话框正文可滚动
+        // （`scrollable: true` + 正文直接铺卡，不再嵌 Flexible），任何朝向/尺寸下句子预览
+        // 都保有真实高度、按需滚动，不再塌陷也不溢出。
+        scrollable: true,
+        // 标题区对齐 Niratan header：小 eyebrow 在上、大标题在下，右侧一个关闭 X（=取消）。
+        // BUG-2033：与 [FushiPageHeader] 同一判据——控件（48 高的 IconButton）与
+        // 标题块按各自实际高度垂直居中，不顶对齐。顶对齐时关闭键的图标中心（距顶
+        // 24）与 eyebrow 行中心（距顶约 9）差一大截，X 会挂在标题行而不是标题块正中。
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    t.popup_ctx_modal_eyebrow,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(t.popup_ctx_modal_title),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            tooltip: t.popup_ctx_cancel,
+            IconButton(
+              tooltip: t.popup_ctx_cancel,
+              onPressed: _locked ? null : _cancel,
+              icon: const Icon(Icons.close, size: 20),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 460,
+          child: _loading
+              ? SizedBox(height: 80, child: buildLoading())
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        t.popup_ctx_modal_count.replaceAll('%d', '$_total'),
+                        style: theme.textTheme.labelLarge
+                            ?.copyWith(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
+                    // 正文已由 AlertDialog(scrollable: true) 统一滚动，这里直接铺卡，
+                    // 不再嵌 Flexible/SingleChildScrollView（那在矮窗会塌成 0 高）。
+                    ...spacedCards,
+                    const SizedBox(height: 12),
+                    // ±上下文：前一组靠左、后一组靠右（对齐 Niratan rangeControls 的
+                    // 「Remove/Add Previous … Remove/Add Next」分组）。各半区内用 Wrap
+                    // 兜底换行，窄屏不会溢出。
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: <Widget>[
+                              _adjustButton(
+                                icon: Icons.remove,
+                                label: t.popup_ctx_prev_minus,
+                                onPressed: _locked || _prev.isEmpty
+                                    ? null
+                                    : () => _adjust(prevDir: true, plus: false),
+                              ),
+                              _adjustButton(
+                                icon: Icons.add,
+                                label: t.popup_ctx_prev_plus,
+                                onPressed: _locked || _prevAtMax
+                                    ? null
+                                    : () => _adjust(prevDir: true, plus: true),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.end,
+                            children: <Widget>[
+                              _adjustButton(
+                                icon: Icons.remove,
+                                label: t.popup_ctx_next_minus,
+                                onPressed: _locked || _next.isEmpty
+                                    ? null
+                                    : () => _adjust(prevDir: false, plus: false),
+                              ),
+                              _adjustButton(
+                                icon: Icons.add,
+                                label: t.popup_ctx_next_plus,
+                                onPressed: _locked || _nextAtMax
+                                    ? null
+                                    : () => _adjust(prevDir: false, plus: true),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+        ),
+        // 底部动作对齐 Niratan footer：右下角 Cancel + Confirm Mining（主按钮）。
+        actions: <Widget>[
+          // BUG-2196 ②：试听放最左，与「取消 / 确认制卡」同一行。只有宿主真的能出声
+          // 的表面才有这个按钮（previewAudio == null 时整颗不渲染）。
+          if (widget.previewAudio != null)
+            TextButton.icon(
+              onPressed: _locked ? null : _togglePreview,
+              icon: Icon(
+                _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
+              ),
+              label: Text(
+                _previewing ? t.popup_ctx_preview_stop : t.popup_ctx_preview_audio,
+              ),
+            ),
+          TextButton(
             onPressed: _locked ? null : _cancel,
-            icon: const Icon(Icons.close, size: 20),
+            child: Text(t.popup_ctx_cancel),
+          ),
+          FilledButton(
+            autofocus: true,
+            onPressed: _locked ? null : _confirm,
+            child: Text(t.popup_ctx_confirm),
           ),
         ],
       ),
-      content: SizedBox(
-        width: 460,
-        child: _loading
-            ? SizedBox(height: 80, child: buildLoading())
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Text(
-                      t.popup_ctx_modal_count.replaceAll('%d', '$_total'),
-                      style: theme.textTheme.labelLarge
-                          ?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                  // 正文已由 AlertDialog(scrollable: true) 统一滚动，这里直接铺卡，
-                  // 不再嵌 Flexible/SingleChildScrollView（那在矮窗会塌成 0 高）。
-                  ...spacedCards,
-                  const SizedBox(height: 12),
-                  // ±上下文：前一组靠左、后一组靠右（对齐 Niratan rangeControls 的
-                  // 「Remove/Add Previous … Remove/Add Next」分组）。各半区内用 Wrap
-                  // 兜底换行，窄屏不会溢出。
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: <Widget>[
-                            _adjustButton(
-                              icon: Icons.remove,
-                              label: t.popup_ctx_prev_minus,
-                              onPressed: _locked || _prev.isEmpty
-                                  ? null
-                                  : () => _adjust(prevDir: true, plus: false),
-                            ),
-                            _adjustButton(
-                              icon: Icons.add,
-                              label: t.popup_ctx_prev_plus,
-                              onPressed: _locked || _prevAtMax
-                                  ? null
-                                  : () => _adjust(prevDir: true, plus: true),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.end,
-                          children: <Widget>[
-                            _adjustButton(
-                              icon: Icons.remove,
-                              label: t.popup_ctx_next_minus,
-                              onPressed: _locked || _next.isEmpty
-                                  ? null
-                                  : () => _adjust(prevDir: false, plus: false),
-                            ),
-                            _adjustButton(
-                              icon: Icons.add,
-                              label: t.popup_ctx_next_plus,
-                              onPressed: _locked || _nextAtMax
-                                  ? null
-                                  : () => _adjust(prevDir: false, plus: true),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-      ),
-      // 底部动作对齐 Niratan footer：右下角 Cancel + Confirm Mining（主按钮）。
-      actions: <Widget>[
-        // BUG-2196 ②：试听放最左，与「取消 / 确认制卡」同一行。只有宿主真的能出声
-        // 的表面才有这个按钮（previewAudio == null 时整颗不渲染）。
-        if (widget.previewAudio != null)
-          TextButton.icon(
-            onPressed: _locked ? null : _togglePreview,
-            icon: Icon(
-              _previewing ? Icons.stop_rounded : Icons.play_arrow_rounded,
-            ),
-            label: Text(
-              _previewing ? t.popup_ctx_preview_stop : t.popup_ctx_preview_audio,
-            ),
-          ),
-        TextButton(
-          onPressed: _locked ? null : _cancel,
-          child: Text(t.popup_ctx_cancel),
-        ),
-        FilledButton(
-          autofocus: true,
-          onPressed: _locked ? null : _confirm,
-          child: Text(t.popup_ctx_confirm),
-        ),
-      ],
     );
   }
 }
