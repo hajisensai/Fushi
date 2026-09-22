@@ -156,7 +156,36 @@ class DesktopMiniWindowMode {
   /// 中途任一步失败都不会把状态机留在半途：真正决定「这是不是一个小窗」的是摆位
   /// （[WindowManager.setBounds]），它失败就把已经做过的几何改动全部回滚、闸门抬起、
   /// 状态保持 false；装饰性步骤（置顶 / 比例锁）失败只记日志继续。
+  /// 进入 / 退出 / 改比例三条链各有七八次 platform 往返，`_active` 到最后才置位。
+  /// 不串行的话，按住快捷键（OS key-repeat 连发）或按钮双击会让第二次 `enter` 在
+  /// 第一次的 `setBounds` 之后 `_readBounds()`——读到的已是小窗框，随即**覆盖
+  /// `_restoreBounds`**：退出小窗后主窗被还原成小窗尺寸，闸门抬起时那个尺寸还写进
+  /// 主窗记忆，正是闸门要防的事。一条链没跑完，后来的一律排队。
+  static Future<void> _transition = Future<void>.value();
+
+  static Future<T> _serialize<T>(Future<T> Function() body) {
+    final Future<T> run = _transition.then((_) => body());
+    _transition = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  /// 接管所有权（BUG-2043 同构）：本地换集走 `pushReplacement`，旧页 dispose 晚于新页
+  /// initState——新页在 initState 认领，旧页随后的 `exit(owner: 旧页)` 因 owner 不符
+  /// 成为 no-op，小窗跨集保持；否则每换一集（含自动连播）小窗都弹回主窗。
+  /// 未在小窗中返回 false。
+  static bool claim({required Object owner}) {
+    if (!_isDesktop || !_active.value) return false;
+    _owner = owner;
+    return true;
+  }
+
   static Future<void> enter({
+    required Object owner,
+    required double aspectRatio,
+  }) =>
+      _serialize(() => _enterUnlocked(owner: owner, aspectRatio: aspectRatio));
+
+  static Future<void> _enterUnlocked({
     required Object owner,
     required double aspectRatio,
   }) async {
@@ -165,7 +194,9 @@ class DesktopMiniWindowMode {
     final double ratio = sanitizeMiniWindowAspectRatio(aspectRatio);
     if (_active.value) {
       if (identical(_owner, owner)) {
-        await updateAspectRatio(ratio);
+        // 已在串行链内：调 unlocked 版本。走公开的 updateAspectRatio 会排到自己
+        // 后面等自己，直接死锁（并发 enter 的第二条链就是这么进来的）。
+        await _updateAspectRatioUnlocked(ratio);
       }
       return;
     }
@@ -267,6 +298,16 @@ class DesktopMiniWindowMode {
   static Future<bool> exit({
     required Object owner,
     required bool restoreAspectRatioLock,
+  }) => _serialize(
+    () => _exitUnlocked(
+      owner: owner,
+      restoreAspectRatioLock: restoreAspectRatioLock,
+    ),
+  );
+
+  static Future<bool> _exitUnlocked({
+    required Object owner,
+    required bool restoreAspectRatioLock,
   }) async {
     if (!_isDesktop) return false;
     if (!_active.value) return false;
@@ -331,7 +372,10 @@ class DesktopMiniWindowMode {
   /// 用户拖动窗口边框时（WM_SIZING）约束比例，不会矫正当前尺寸（同一条平台限制在
   /// `video_fushi/layout.part.dart` 里也记过）。只下发比例的话，从 16:9 换到 4:3 的
   /// 下一集会一直挂在上一集的框里两侧留黑。
-  static Future<void> updateAspectRatio(double aspectRatio) async {
+  static Future<void> updateAspectRatio(double aspectRatio) =>
+      _serialize(() => _updateAspectRatioUnlocked(aspectRatio));
+
+  static Future<void> _updateAspectRatioUnlocked(double aspectRatio) async {
     if (!_isDesktop || !_active.value) return;
 
     final double ratio = sanitizeMiniWindowAspectRatio(aspectRatio);
@@ -360,6 +404,7 @@ class DesktopMiniWindowMode {
     _restoreMaximized = false;
     _restoreAlwaysOnTop = false;
     _aspectRatio = 16 / 9;
+    _transition = Future<void>.value();
     debugDesktopOverride = null;
     FushiDesktopTitleBar.setContentFullscreen(
       owner: _titleBarOwner,

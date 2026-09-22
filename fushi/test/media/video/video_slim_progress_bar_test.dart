@@ -7,11 +7,17 @@ void main() {
     test('正常换算', () {
       expect(videoSlimProgressFraction(positionMs: 0, durationMs: 1000), 0.0);
       expect(videoSlimProgressFraction(positionMs: 500, durationMs: 1000), 0.5);
-      expect(videoSlimProgressFraction(positionMs: 1000, durationMs: 1000), 1.0);
+      expect(
+        videoSlimProgressFraction(positionMs: 1000, durationMs: 1000),
+        1.0,
+      );
     });
 
     test('未 load / 时长不可知一律 0', () {
-      expect(videoSlimProgressFraction(positionMs: null, durationMs: 1000), 0.0);
+      expect(
+        videoSlimProgressFraction(positionMs: null, durationMs: 1000),
+        0.0,
+      );
       expect(videoSlimProgressFraction(positionMs: 500, durationMs: null), 0.0);
       // 直播流 duration 恒 0：不能除，也不能画成满格。
       expect(videoSlimProgressFraction(positionMs: 500, durationMs: 0), 0.0);
@@ -19,7 +25,10 @@ void main() {
     });
 
     test('seek 在途越界被钳制（否则会画出超出轨道的线）', () {
-      expect(videoSlimProgressFraction(positionMs: 1500, durationMs: 1000), 1.0);
+      expect(
+        videoSlimProgressFraction(positionMs: 1500, durationMs: 1000),
+        1.0,
+      );
       expect(videoSlimProgressFraction(positionMs: -20, durationMs: 1000), 0.0);
     });
   });

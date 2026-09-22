@@ -45,6 +45,15 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 结束 PiP（用户点小窗上的关闭、或系统回收），漏订阅就会让 [_miniSurface] 永远
   /// 卡在 PiP 态、chrome 再也不回来。
   void _initMiniWindowSupport() {
+    if (isDesktopPlatform) {
+      // 本地换集 `pushReplacement`：旧页 dispose 晚于本页 initState。上一集在小窗里
+      // 就把所有权接过来，旧页的 exit 因 owner 不符 no-op，小窗跨集保持（否则每换
+      // 一集——含自动连播——小窗都弹回主窗，而挂角落看番正是小窗的核心场景）。
+      if (DesktopMiniWindowMode.claim(owner: this)) {
+        _miniSurface.value = VideoMiniSurface.desktopMiniWindow;
+      }
+      return;
+    }
     if (!isMobilePlatform) return;
     _pictureInPictureSub = AndroidPictureInPicture.modeChanges.listen(
       _handlePictureInPictureChanged,
@@ -185,7 +194,16 @@ extension _VideoMiniWindow on _VideoFushiPageState {
           duration: _videoControlsTransitionDuration,
           // 桌面小窗是无边框的，系统不再提供标题栏抓手，这条带就是唯一的拖动入口。
           // 移动端（系统画中画）永远走不到这里：那边 showCenterTransport 恒 false。
-          child: isDesktopPlatform ? DragToMoveArea(child: bar) : bar,
+          // 不用 window_manager 的 DragToMoveArea：它自带 onDoubleTap → maximize()，
+          // 双击拖动带会把置顶无边框的小窗直接最大化成铺满整屏的 mini chrome，退出
+          // 时再对一个最大化态窗口 setBounds 得到畸形态。只要拖动。
+          child: isDesktopPlatform
+              ? GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onPanStart: (_) => unawaited(windowManager.startDragging()),
+                  child: bar,
+                )
+              : bar,
         ),
       ),
     );

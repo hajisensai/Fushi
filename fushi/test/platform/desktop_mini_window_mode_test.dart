@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -260,6 +259,119 @@ void main() {
         DesktopMiniWindowMode.activeListenable.value,
         DesktopMiniWindowMode.isActive,
       );
+    });
+  });
+
+  // 真正的桌面 enter / exit 主路径：mock 掉 window_manager 通道，记账每一次调用。
+  // screen_retriever / 标题栏 / 全屏读写这些通道不 mock——它们在 `_step` / 各自的
+  // try 里失败即回落，正好也验了「非致命通道失败不阻断小窗」。
+  group('DesktopMiniWindowMode（mock window_manager 通道）', () {
+    const MethodChannel channel = MethodChannel('window_manager');
+    const Map<String, double> originalBounds = <String, double>{
+      'x': 100,
+      'y': 100,
+      'width': 1280,
+      'height': 720,
+    };
+    late Map<String, double> currentBounds;
+    late List<MethodCall> calls;
+
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      DesktopMiniWindowMode.resetForTesting();
+      DesktopMiniWindowMode.debugDesktopOverride = true;
+      currentBounds = Map<String, double>.of(originalBounds);
+      calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+            calls.add(call);
+            switch (call.method) {
+              case 'getBounds':
+                return Map<String, double>.of(currentBounds);
+              case 'setBounds':
+                // 与真宿主同语义：摆位之后再读外框读到的就是新框——并发 enter 的第二条
+                // 链正是在这里读到小窗框并把它当成「原框」记下来。
+                final Map<Object?, Object?> args =
+                    call.arguments as Map<Object?, Object?>;
+                currentBounds = <String, double>{
+                  'x': (args['x'] as num).toDouble(),
+                  'y': (args['y'] as num).toDouble(),
+                  'width': (args['width'] as num).toDouble(),
+                  'height': (args['height'] as num).toDouble(),
+                };
+                return null;
+              case 'isMaximized':
+              case 'isAlwaysOnTop':
+              case 'isFullScreen':
+                return false;
+              default:
+                return null;
+            }
+          });
+    });
+
+    tearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      DesktopMiniWindowMode.resetForTesting();
+    });
+
+    List<MethodCall> boundsWrites() =>
+        calls.where((MethodCall c) => c.method == 'setBounds').toList();
+
+    test('并发 enter 串行化：只摆位一次，退出时还原的是进入前的原框', () async {
+      final Object owner = Object();
+      // 不 await 第一条就发第二条 = 按住 W 的 key-repeat / 按钮双击。
+      await Future.wait(<Future<void>>[
+        DesktopMiniWindowMode.enter(owner: owner, aspectRatio: 16 / 9),
+        DesktopMiniWindowMode.enter(owner: owner, aspectRatio: 16 / 9),
+      ]);
+      expect(DesktopMiniWindowMode.isActive, isTrue);
+      expect(
+        boundsWrites(),
+        hasLength(1),
+        reason: '第二条链必须排在第一条之后，看到已进入即 no-op，不再摆位',
+      );
+
+      final bool exited = await DesktopMiniWindowMode.exit(
+        owner: owner,
+        restoreAspectRatioLock: false,
+      );
+      expect(exited, isTrue);
+      final Map<Object?, Object?> restored =
+          boundsWrites().last.arguments as Map<Object?, Object?>;
+      expect(restored['width'], 1280.0, reason: '还原框必须是进入前的主窗框，不是第二条链读到的小窗框');
+      expect(restored['height'], 720.0);
+      expect(restored['x'], 100.0);
+      expect(DesktopWindowPlacement.geometryMemorySuspended, isFalse);
+    });
+
+    test('claim 接管所有权：旧 owner 的 exit 是 no-op，新 owner 才能退出', () async {
+      final Object oldPage = Object();
+      final Object newPage = Object();
+      await DesktopMiniWindowMode.enter(owner: oldPage, aspectRatio: 16 / 9);
+      expect(DesktopMiniWindowMode.isActive, isTrue);
+
+      // 换集：新页 initState 认领，旧页 dispose 随后 exit。
+      expect(DesktopMiniWindowMode.claim(owner: newPage), isTrue);
+      final bool oldExit = await DesktopMiniWindowMode.exit(
+        owner: oldPage,
+        restoreAspectRatioLock: false,
+      );
+      expect(oldExit, isFalse, reason: '旧页已不是 owner，不得把小窗退掉');
+      expect(DesktopMiniWindowMode.isActive, isTrue, reason: '换集后小窗保持');
+
+      final bool newExit = await DesktopMiniWindowMode.exit(
+        owner: newPage,
+        restoreAspectRatioLock: false,
+      );
+      expect(newExit, isTrue);
+      expect(DesktopMiniWindowMode.isActive, isFalse);
+    });
+
+    test('未进入小窗时 claim 返回 false（新页照常按普通窗口起）', () {
+      expect(DesktopMiniWindowMode.claim(owner: Object()), isFalse);
+      expect(DesktopMiniWindowMode.isActive, isFalse);
     });
   });
 }
