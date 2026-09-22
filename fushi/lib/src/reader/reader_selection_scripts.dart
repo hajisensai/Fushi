@@ -1824,6 +1824,11 @@ window.fushiSelection = {
   // counts. Do not read nodeStartOffsets: that index belongs to navigation.
   getMatchableOffset: function(targetNode, offset) {
     if (!window.fushiReader || !targetNode) return null;
+    // VN renders a clone of one screen. Its source map retains the chapter
+    // position; walking document.body here would restart audio offsets at zero.
+    if (typeof window.fushiReader.getMatchableOffset === 'function') {
+      return window.fushiReader.getMatchableOffset(targetNode, offset);
+    }
     var walker = this.createWalker(document.body);
     var count = 0;
     var node;
