@@ -128,11 +128,18 @@ void main() {
       ),
     ]) {
       final String src = read(path);
-      expect(
-          src.contains(
-              'await webViewKey.currentState?.mineEntryByIndex(entryIndex) ??'),
-          isTrue,
+      // 按语义匹配而不是钉死一行字面量：BUG-2634 第二轮给它加了必填的
+      // releaseWhenPayloadConsumed，调用点换行了。要的仍是「await + 原样回传」。
+      final RegExp call = RegExp(
+        r'await\s+webViewKey\.currentState\?\.mineEntryByIndex\(\s*'
+        r'entryIndex,[\s\S]{0,900}?\)\s*\?\?',
+      );
+      expect(call.hasMatch(src), isTrue,
           reason: '$label 的 onConfirm 必须 await 并回传 mineEntryByIndex 的结果');
+      // BUG-2634 第二轮：能不能提前关窗是**宿主的担保**，每条车道必须显式表态
+      // （参数是 required，漏了编译就过不去；这里再钉一道，防止有人图省事全填 true）。
+      expect(call.stringMatch(src), contains('releaseWhenPayloadConsumed:'),
+          reason: '$label 必须显式声明宿主是否在首个 await 之前读走草稿');
     }
     expect(
         read('lib/src/pages/implementations/sentence_context_dialog.dart')

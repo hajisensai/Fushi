@@ -201,6 +201,12 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
   ///
   /// 改成在保护窗口**内**完成往返：期间进 [_busy]（禁用 ±上下文 / 试听 / 取消 / 关闭，
   /// 与编辑态同一把锁），落地与否都有确定结局；没点到就如实提示，不再无声。
+  ///
+  /// BUG-2634：「往返」的终点是**宿主接受了制卡任务**（`mineEntry` / `updateEntry` /
+  /// `minedCardAction` 桥把 payload 交给宿主的那一刻，草稿已被读走），不是 ffmpeg /
+  /// Anki 落地——落地要几秒到几十秒还要排队，等它会把对话框锁死、一过超时就误报
+  /// 「弹窗已关」。接受之后本窗关闭，制卡在宿主侧照常跑完并自己出 toast，与直接点
+  /// 弹窗里的 + 一致。
   Future<void> _confirm() async {
     if (_locked) return;
     // 同上：制卡走了，试听不该继续响。不 await——制卡不等它。

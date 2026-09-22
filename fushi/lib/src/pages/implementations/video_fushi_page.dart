@@ -877,6 +877,14 @@ abstract class VideoFushiTestHooks {
   Future<void> debugPause();
   Future<void> debugSeekMs(int positionMs);
 
+  /// 在字幕句 [sentence] 的第 [graphemeIndex] 个字上发起查词——与字幕 overlay 点字
+  /// 走同一条 `_lookupAt`（暂停、清草稿、锚 cue、推弹窗），供「调整上下文 → 确认
+  /// 制卡」这类要真弹窗的取证测试用（禁坐标点击）。
+  Future<void> debugLookupAt(String sentence, int graphemeIndex);
+
+  /// 播放器当前音量真值（0..100），滚轮门控取证用（不经 HUD 推断）。
+  double? get debugVolume;
+
   /// BUG-2590 远端内嵌轨回落取证：按服务器流号选内嵌轨（走产品同一条
   /// `_applyRemoteEmbeddedSubtitle`），再读当前字幕源 / cue 数 / libmpv 选中轨。
   Future<void> debugSelectRemoteEmbeddedSubtitle(int streamIndex);
@@ -1210,6 +1218,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   Future<void> debugSeekMs(int positionMs) async =>
       _controller?.seekMs(positionMs);
+
+  @override
+  Future<void> debugLookupAt(String sentence, int graphemeIndex) =>
+      _lookupAt(sentence, graphemeIndex, const Rect.fromLTWH(240, 200, 24, 24));
+
+  @override
+  double? get debugVolume => _controller?.volume;
 
   VideoPlayerController? _controller;
 
@@ -5448,9 +5463,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
-  /// 全屏 barrier 的 [MouseRegion] exit：指针离开了窗口（barrier 铺满全屏，指针移到浮层
-  /// 上时浮层那层 `opaque: false`，barrier 仍在 hover 中不会 exit）。此后 barrier 不会
-  /// 再来任何 hover 事件，故这里必须自己起表，否则视频卡在暂停等不到人。
+  /// 全屏 barrier 的 [MouseRegion] exit。两种来路，处理相同：
+  ///
+  /// ① 指针离开了**整个窗口**——此后 barrier 一个 hover 事件都不会再来，必须自己起表，
+  ///    否则视频卡在暂停等不到人。这是本回调存在的理由。
+  /// ② 指针移到**浮层上**——BUG-2633 给浮层补了 [lookupOverlayHitClaim] 之后，浮层会
+  ///    认领命中、barrier 不再被 hitTest，于是也会收到 exit（补壳之前不会，旧注释按
+  ///    那个前提写的，现已失效）。这一路**无害且不可观测**：MouseTracker 在同一次
+  ///    同步派发里先发 exit 再发 enter，紧随其后的浮层探针 enter 会
+  ///    `_setPointerOverLookupPopup(true)` → `_cancelHoverLeaveResume()` 把表撤掉，
+  ///    [VideoFushiPage.hoverLeaveResumeGrace] 的计时器活不过这一次派发。
+  ///
+  /// 这条不变式依赖两件事：MouseTracker 的「exit 先于 enter」派发顺序，以及 arm /
+  /// cancel 都是同步的。**别把它们改成异步**，否则指针从画面移进浮层会误触发续播。
   void _handlePointerLeftLookupSurface() {
     _pointerOverLookupPopup = false;
     _hoverLeaveLastPos = Offset.zero;
@@ -5659,18 +5684,29 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _buildNestedPopupLayerContent(index, screen);
 
   /// 指针进 / 出浮层的回报口：浮层盖在 barrier 之上，指针一进浮层 barrier 就收不到
-  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。`opaque: false` 使它
-  /// 只订阅 enter/exit，不改变命中语义（浮层内部的点击 / 选词 / 滚动一概不受影响）。
+  /// hover，单靠 barrier 分不清「移到浮层上」和「停在空白不动」。探针本身保持
+  /// `opaque: false`，只订阅 enter/exit。
+  ///
+  /// 注意**不要**再写成「这样 barrier 就不会 exit」——补了 [lookupOverlayHitClaim]
+  /// 之后浮层会认领命中，barrier 照样收 exit；无害的原因写在
+  /// [_handlePointerLeftLookupSurface] 的文档里（同一次派发内 enter 立刻撤表）。
+  ///
+  /// BUG-2633：但 `opaque: false` 的 `MouseRegion` **会把整棵子树的命中结果翻成
+  /// false**（`RenderMouseRegion.hitTest` = `super.hitTest && opaque`）——浮层矩形的
+  /// 吸收层认领了命中也白认，根 Overlay 继续往下测到视频页，弹窗上滚滚轮就同时改
+  /// 音量。故命中认领由外面这层 [lookupOverlayHitClaim] 承担，探针只管 hover。
   ///
   /// **必须经 [buildNestedPopupLayer] 的 wrapContent 挂在 [Positioned] 内部**：本层
   /// 顶层是 `Positioned`（BUG-135 屏外停靠），在它外面套 `MouseRegion` 会让
   /// ParentData 落不到 Stack 上——debug 抛 `Incorrect use of ParentDataWidget`、浮层
   /// 画到左上角，release 直接 TypeError。
-  Widget _wrapPopupHoverProbe(Widget child) => MouseRegion(
-        opaque: false,
-        onEnter: (PointerEnterEvent _) => _setPointerOverLookupPopup(true),
-        onExit: (PointerExitEvent _) => _setPointerOverLookupPopup(false),
-        child: child,
+  Widget _wrapPopupHoverProbe(Widget child) => lookupOverlayHitClaim(
+        child: MouseRegion(
+          opaque: false,
+          onEnter: (PointerEnterEvent _) => _setPointerOverLookupPopup(true),
+          onExit: (PointerExitEvent _) => _setPointerOverLookupPopup(false),
+          child: child,
+        ),
       );
 
   Widget _buildNestedPopupLayerContent(int index, Size screen) {
@@ -5783,29 +5819,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     // BUG-1757：barrier 收口成唯一原语 [LookupDismissBarrier]，
                     // 横拖走它内部不入竞技场的 Listener 旁路 + 可单测的判轴。
                     // 外面这层 [MouseRegion] 只为补「指针移出**整个窗口**」这一路：
-                    // barrier 铺满全屏，它的 exit 只可能是指针离开窗口（移到浮层上时
-                    // 浮层那层 `opaque: false`，barrier 仍在 hover 中，不会 exit）。
                     // 那种情况下 barrier 一个 hover 事件都不会再来，只靠
                     // [_evaluateHoverLeave] 会永远等不到判定、视频卡在暂停。
-                    child: MouseRegion(
-                      opaque: false,
-                      onExit: (PointerExitEvent _) =>
-                          _handlePointerLeftLookupSurface(),
-                      child: LookupDismissBarrier(
-                        // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并保持
-                        // 暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
-                        onTapDismiss: _onDismissBarrierTap,
-                        // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
-                        onSwipeDismiss: _dismissTopNestedPopup,
-                        swipeEnabled:
-                            ReaderFushiSource.instance.enableSwipeToClose,
-                        sensitivity:
-                            ReaderFushiSource.instance.dismissSwipeSensitivity,
-                        onPointerHover: _onDismissBarrierHover,
-                        // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的地方
-                        // （barrier 命中行为 opaque，页面根 Listener 收不到）。
-                        onNonPrimaryButtonDown:
-                            onDismissBarrierNonPrimaryButton,
+                    // （移到浮层上也会 exit，为什么无害见
+                    // [_handlePointerLeftLookupSurface]。）
+                    //
+                    // BUG-2633：`opaque: false` 的 MouseRegion 会把 barrier 认领的
+                    // 命中翻成 false（见 [lookupOverlayHitClaim]），滚轮 / 指针就穿到
+                    // 视频页——外面必须再包一层认领命中的壳，barrier 才真的是 barrier。
+                    child: lookupOverlayHitClaim(
+                      child: MouseRegion(
+                        opaque: false,
+                        onExit: (PointerExitEvent _) =>
+                            _handlePointerLeftLookupSurface(),
+                        child: LookupDismissBarrier(
+                          // onTapDismiss 带坐标：点到同句另一个字幕字符时切换查词并
+                          // 保持暂停，点其它区域才 dismiss + 恢复（见 _onDismissBarrierTap）。
+                          onTapDismiss: _onDismissBarrierTap,
+                          // TODO-1052：水平拖过阈关一层（_popNestedPopupAt，逐层关）。
+                          onSwipeDismiss: _dismissTopNestedPopup,
+                          swipeEnabled:
+                              ReaderFushiSource.instance.enableSwipeToClose,
+                          sensitivity:
+                              ReaderFushiSource.instance.dismissSwipeSensitivity,
+                          onPointerHover: _onDismissBarrierHover,
+                          // BUG-1995：指针在**浮窗之外**按侧键时唯一还能接到事件的
+                          // 地方（barrier 命中行为 opaque，页面根 Listener 收不到）。
+                          onNonPrimaryButtonDown:
+                              onDismissBarrierNonPrimaryButton,
+                        ),
                       ),
                     ),
                   ),
