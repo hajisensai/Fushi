@@ -240,8 +240,11 @@ mixin DictionaryPageMixin {
           // 手改某一句文本：只改这次会写进卡片的**文本**，cue 的时间窗（音频/画面
           // 身份）原样保留。宿主没接就传 null，对话框不渲染编辑入口。
           editSentence: onEditSentenceContextText,
-          onConfirm: () =>
-              webViewKey.currentState?.mineEntryByIndex(entryIndex),
+          // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
+          // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
+          onConfirm: () async =>
+              await webViewKey.currentState?.mineEntryByIndex(entryIndex) ??
+              false,
         ),
       ),
     );
@@ -787,9 +790,18 @@ mixin DictionaryPageMixin {
             // BUG-1269：弹窗是原生 WebView，指针落上去后宿主收不到键盘/鼠标——把宿主
             // 声明的那些输入交回来（表由注册表当前绑定实时导出，改键立即跟随）。
             inputSpec: dictionaryPopupInputSpec,
+            // BUG-2627：对话框期间（选择句子上下文 / 已制卡动作 / 打开卡片）弹窗
+            // 虽被停靠屏外却仍然挂载，DOM 还可能拿着系统键盘焦点——一个被绑的键就
+            // 能把对话框**背后**的整条浮层栈关掉（连带清空制卡草稿），而用户在对话
+            // 框里什么都看不见。与 barrier（[shouldShowLookupDismissBarrier]）和浮层
+            // 可见性（[parkedPopupLayer] 的 `visible`）共用同一道门：对话框期间这条
+            // 通道也不许落地。
             onHostInputToken: dictionaryPopupInputScope == null
                 ? null
-                : onDictionaryPopupInputToken,
+                : (String token) {
+                    if (lookupPopupHiddenByDialog) return;
+                    onDictionaryPopupInputToken(token);
+                  },
             // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
             enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
             // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)

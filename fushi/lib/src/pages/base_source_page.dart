@@ -933,9 +933,16 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 也显示，不卡死「点查词什么都不出」）。
         onRenderError: () => _onPopupLayerRendered(index, item),
         inputSpec: dictionaryPopupInputSpec,
+        // BUG-2627：与 [DictionaryPageMixin] 同一道门——对话框期间（选择句子上下文 /
+        // 已制卡动作 / 打开卡片）弹窗停靠屏外但仍挂载，它的 DOM 还可能拿着系统键盘
+        // 焦点，一个被绑的键就能把对话框背后的整条浮层栈关掉。与 `visible:` 的
+        // `_popupHidingDialogDepth == 0` 共用判据。
         onHostInputToken: dictionaryPopupInputScope == null
             ? null
-            : onDictionaryPopupInputToken,
+            : (String token) {
+                if (_popupHidingDialogDepth != 0) return;
+                onDictionaryPopupInputToken(token);
+              },
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         overlayWidget: isTop ? buildDictionaryLoading() : null,
         onTextSelected: (text, localRect) async {
@@ -1113,8 +1120,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           previewAudio: supportsSentenceAudioPreview ? onPreviewSentenceAudio : null,
           stopAudioPreview:
               supportsSentenceAudioPreview ? onStopSentenceAudioPreview : null,
-          onConfirm: () =>
-              webViewKey.currentState?.mineEntryByIndex(entryIndex),
+          // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
+          onConfirm: () async =>
+              await webViewKey.currentState?.mineEntryByIndex(entryIndex) ??
+                  false,
         ),
       ),
     );

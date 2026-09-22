@@ -28,7 +28,7 @@ void main() {
                     matched: '対する',
                     fetchPreview: () async => preview(),
                     setContext: (int p, int n) async => p + n,
-                    onConfirm: () {},
+                    onConfirm: () async => true,
                   ),
                 ),
                 child: const Text('open'),

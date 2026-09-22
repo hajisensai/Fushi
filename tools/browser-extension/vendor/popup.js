@@ -4105,8 +4105,14 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     if (!entry) return false;
     const b = entry.querySelector('.mine-button');
     if (!b || b.disabled) return false;
-    b.click();
-    return true;
+    // 回点后**等它落地**再回给 Dart（BUG-2627 审查）：mine 按钮的 onclick 是 async
+    // （查重 → 取音 → mineEntry 桥调用），同步 `return true` 只代表「点下去
+    // 了」。Dart 拿到 true 就关对话框、撤掉弹窗保护，落地前那几百毫秒到几秒里悬停离开
+    // 自动关栈 / 低内存 dismiss 会把弹窗连制卡草稿一起撤掉——卡制成了但上下文全丢，
+    // 或 WebView 半路销毁回到「无卡无提示」。所以直接调 onclick 取回它的 promise，让
+    // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
+    const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
+    return Promise.resolve(result).then(() => true);
 };
 
 // TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条

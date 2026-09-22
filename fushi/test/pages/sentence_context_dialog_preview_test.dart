@@ -39,7 +39,10 @@ void main() {
                   matched: 'abiding',
                   fetchPreview: () async => preview(),
                   setContext: (int p, int n) async => p + n,
-                  onConfirm: () => confirmCalls++,
+                  onConfirm: () async {
+                    confirmCalls++;
+                    return true;
+                  },
                   previewAudio: withPreview
                       ? () async {
                           previewCalls++;
