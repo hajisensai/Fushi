@@ -227,6 +227,129 @@ void main() {
         );
 
         final FocusDriver focus = FocusDriver(tester);
+        await _until(
+          tester,
+          () => lookup!.currentLine != null,
+          'Hook text over the data channel',
+        );
+        if (credentials.fixture['expectAudio'] == true) {
+          await _until(
+            tester,
+            () => lines.any(
+              (GameStreamTextEvent line) =>
+                  line.lineId == lookup!.currentLine?.lineId &&
+                  line.text == lookup.currentLine?.text &&
+                  line.audioResourceId != null,
+            ),
+            'voice resource for the current Hook line',
+          );
+        }
+        // Bind lookup and mining to the voiced line the operator prepared.
+        // Input is tested only after this line's host-side card is verified.
+        final GameStreamTextEvent preparedLine = lookup.currentLine!;
+        bool preparedLineIsCurrent() =>
+            lookup!.currentLine?.lineId == preparedLine.lineId &&
+            lookup.currentLine?.text == preparedLine.text;
+        evidence['preparedLine'] = _lineEvidence(preparedLine);
+        await save();
+        expect(
+          await focus.focusWidget(find.byTooltip(t.game_stream_lookup_toggle)),
+          isTrue,
+        );
+        await focus.activate();
+        expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+        await focus.activate();
+        expect(find.byKey(GameStreamPage.transcriptKey), findsOneWidget);
+
+        // Navigate the visible transcript caret through the production keyboard
+        // path; no coordinate injection or direct lookup invocation selects it.
+        final List<String> terms =
+            (credentials.fixture['lookupTerms'] as List<dynamic>)
+                .cast<String>();
+        int sourceOffset = -1;
+        await _until(tester, () {
+          final String sentence = lookup!.currentLine?.text ?? '';
+          for (final String term in terms) {
+            sourceOffset = sentence.indexOf(term);
+            if (sourceOffset >= 0) return true;
+          }
+          return false;
+        }, 'a dictionary fixture term in the live Hook line');
+        expect(
+          preparedLineIsCurrent(),
+          isTrue,
+          reason: 'The prepared voiced line changed before lookup',
+        );
+        final String sourceSentence = preparedLine.text;
+        final int caretIndex = sourceSentence
+            .substring(0, sourceOffset)
+            .characters
+            .length;
+        final Finder paragraph = find.byKey(GameStreamPage.transcriptTextKey);
+        expect(await focus.focusWidget(paragraph), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.home);
+        for (int i = 0; i < caretIndex; i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        }
+        await focus.activate();
+        await _until(
+          tester,
+          () => lookup!.result?.entries.isNotEmpty == true,
+          'remote dictionary result',
+        );
+        expect(find.byType(DictionaryPopupLayer), findsOneWidget);
+        final DictionaryEntry entry = lookup.result!.entries.firstWhere(
+          (DictionaryEntry e) =>
+              e.dictionaryName == credentials.fixture['dictionaryName'],
+        );
+        expect(
+          preparedLineIsCurrent(),
+          isTrue,
+          reason: 'The prepared voiced line changed during lookup',
+        );
+        final GameStreamTextEvent selectedLine = preparedLine;
+        evidence['lookup'] = <String, Object?>{
+          'lineId': selectedLine.lineId,
+          'sentence': selectedLine.text,
+          'expression': entry.word,
+          'dictionaryName': entry.dictionaryName,
+        };
+        await save();
+
+        // A second query exercises the same recursive-lookup controller path;
+        // this does not claim native WebView text-selection gestures were tested.
+        await lookup.lookup(entry.word);
+        expect(lookup.result?.entries, isNotEmpty);
+        expect(
+          preparedLineIsCurrent(),
+          isTrue,
+          reason: 'The prepared voiced line changed before mining',
+        );
+        final GameStreamMineResult? mined = await lookup.mine(<String, String>{
+          'expression': entry.word,
+          'reading': entry.reading,
+          'glossary': entry.meaning,
+        });
+        evidence['mine'] = mined?.toJson();
+        expect(
+          mined?.ok,
+          isTrue,
+          reason: 'Windows must execute its existing mining chain',
+        );
+        if (credentials.fixture['expectAudio'] == true) {
+          expect(mined?.detail, isNot('sentence_audio_missing'));
+        }
+
+        // Preserve the prepared sentence's completed mining evidence before
+        // advancing the game. The next line may legitimately have no voice.
+        await save();
+        expect(
+          await focus.focusWidget(find.byTooltip(t.game_stream_lookup_toggle)),
+          isTrue,
+        );
+        await focus.activate();
+        expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+
         expect(await focus.focusWidget(find.text('A')), isTrue);
         final GameStreamTextEvent? lineBeforeInput = lookup.currentLine;
         final int eventsBeforeInput = lines.length;
@@ -295,98 +418,12 @@ void main() {
           'observationLimitSeconds': 3,
         };
         await save();
-        await _until(
-          tester,
-          () => lookup!.currentLine != null,
-          'Hook text over the data channel',
-        );
-        if (credentials.fixture['expectAudio'] == true) {
-          await _until(
-            tester,
-            () => lines.any(
-              (GameStreamTextEvent line) =>
-                  line.lineId == lookup!.currentLine?.lineId &&
-                  line.text == lookup.currentLine?.text &&
-                  line.audioResourceId != null,
-            ),
-            'voice resource for the current Hook line',
-          );
-        }
         expect(
           await focus.focusWidget(find.byTooltip(t.game_stream_lookup_toggle)),
           isTrue,
         );
         await focus.activate();
-        expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
-        await focus.activate();
         expect(find.byKey(GameStreamPage.transcriptKey), findsOneWidget);
-
-        // Navigate the visible transcript caret through the production keyboard
-        // path; no coordinate injection or direct lookup invocation selects it.
-        final List<String> terms =
-            (credentials.fixture['lookupTerms'] as List<dynamic>)
-                .cast<String>();
-        int sourceOffset = -1;
-        await _until(tester, () {
-          final String sentence = lookup!.currentLine?.text ?? '';
-          for (final String term in terms) {
-            sourceOffset = sentence.indexOf(term);
-            if (sourceOffset >= 0) return true;
-          }
-          return false;
-        }, 'a dictionary fixture term in the live Hook line');
-        final String sourceSentence = lookup.currentLine!.text;
-        final int caretIndex = sourceSentence
-            .substring(0, sourceOffset)
-            .characters
-            .length;
-        final Finder paragraph = find.byKey(GameStreamPage.transcriptTextKey);
-        expect(await focus.focusWidget(paragraph), isTrue);
-        await tester.sendKeyEvent(LogicalKeyboardKey.home);
-        for (int i = 0; i < caretIndex; i++) {
-          await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-        }
-        await focus.activate();
-        await _until(
-          tester,
-          () => lookup!.result?.entries.isNotEmpty == true,
-          'remote dictionary result',
-        );
-        expect(find.byType(DictionaryPopupLayer), findsOneWidget);
-        final DictionaryEntry entry = lookup.result!.entries.firstWhere(
-          (DictionaryEntry e) =>
-              e.dictionaryName == credentials.fixture['dictionaryName'],
-        );
-        final GameStreamTextEvent selectedLine = lookup.currentLine!;
-        evidence['lookup'] = <String, Object?>{
-          'lineId': selectedLine.lineId,
-          'sentence': selectedLine.text,
-          'expression': entry.word,
-          'dictionaryName': entry.dictionaryName,
-        };
-        await save();
-
-        // A second query exercises the same recursive-lookup controller path;
-        // this does not claim native WebView text-selection gestures were tested.
-        await lookup.lookup(entry.word);
-        expect(lookup.result?.entries, isNotEmpty);
-        expect(lookup.currentLine?.lineId, selectedLine.lineId);
-        expect(lookup.currentLine?.text, selectedLine.text);
-        final GameStreamMineResult? mined = await lookup.mine(<String, String>{
-          'expression': entry.word,
-          'reading': entry.reading,
-          'glossary': entry.meaning,
-        });
-        evidence['mine'] = mined?.toJson();
-        expect(
-          mined?.ok,
-          isTrue,
-          reason: 'Windows must execute its existing mining chain',
-        );
-        if (credentials.fixture['expectAudio'] == true) {
-          expect(mined?.detail, isNot('sentence_audio_missing'));
-        }
-
         await recordRtpEvidence();
         await save();
         final List<Map<String, Object?>> inbound =

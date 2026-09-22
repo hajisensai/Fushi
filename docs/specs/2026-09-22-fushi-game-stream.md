@@ -9,7 +9,7 @@
 - 首版仅 LAN、单客户端，WebRTC 不配置 STUN/TURN。SDP/ICE、加入、停止和制卡复用互联 HTTP、配对令牌以及 HTTPS 指纹校验。共享 WebDAV 密码不能授权串流控制。
 - Android 只接收视频/音频、发送输入、显示 Hook 台词和查词。Hook、helper、窗口采集和 Anki 写入全部留在 Windows；iOS/macOS/Linux 无接收或游戏 Hook 入口。
 - 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置，也支持焦点导航及 Enter/Space 按下和松开，失焦会释放按键。普通 Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时拒绝新增输入并回传 ACK 原因。
-- SGRE 实测不消费确认键的窗口消息，现增加由其已验证 DirectInput 能力门选择的进程内确认适配，待新游戏进程实测。该适配当前仅接受默认手柄「确认」，其余手柄键、原始键和坐标触控明确返回不支持；不得把全套控制视作 SGRE 已验证能力。DOWN 在游戏采样后确认，750ms 租约到期失效；UP 和清理允许在后台按同一进程身份发布零掩码，失败 DOWN 立即清理。内部 Hook IPC 升为 v25，已驻留 v24 DLL 的游戏需保存后重启，不能靠重新附着替换。
+- SGRE 实测不消费确认键的窗口消息，现增加由其已验证 DirectInput 能力门选择的进程内确认适配；LAN6 首次观察到确认之后的新台词。该适配当前仅接受默认手柄「确认」，其余手柄键、原始键和坐标触控明确返回不支持；不得把全套控制视作 SGRE 已验证能力。DOWN 在游戏采样后确认，750ms 租约到期失效；UP 和清理允许在后台按同一进程身份发布零掩码，失败 DOWN 立即清理。内部 Hook IPC 升为 v25，已驻留 v24 DLL 的游戏需保存后重启，不能靠重新附着替换。
 - 台词面板与视频侧栏共用 `SubtitleTranscriptRow` / `SubtitleTranscriptText`：整句展示、当前行底色、字体间距、复制按钮和文字命中逻辑一致；横屏显示侧栏，窄屏显示底部面板。点词从选中位置发送句子后缀，由主机词典进行最长匹配，不要求 Android 安装本地形态词典；键盘可移动台词光标并按 Enter 查词。查词结果复用 `FushiRemoteLookupClient` 和 `DictionaryPopupLayer`，固定到串流主机。面板可收起，未新增系统级悬浮窗。
 
 ## 实现
@@ -46,6 +46,9 @@
 - 最终 v25 helper 双架构构建及完整原生 CTest 通过：x64 113/113、x86 117/117。manifest / profile 生成检查通过；manifest 23、adapter 结构 52、workflow/replay 6 项 Python 测试通过。归档 SHA-256：x64 `cb1445c5178dfa69b70cf7f478ac7f4781e7ca2ba5e4341aa053e4dae633aee7`，x86 `ea0939fa4297ca2c67f705436cf7b5b8b612075f712f0ddbef0eb5fefccf6f62`。尚未加载到用户当前旧游戏进程。
 - Android QA build8 增量纳入渐进文本守卫，源码 `6f149102f9e`，APK SHA-256 `b26f2d598974cf1e4d461eef88edd8a4dbaf310591d50695dddb474c79f73862`，构建并安装成功。已检查共享台词组件存在且无 Windows helper 载荷。原生 SGRE 确认适配落在 `66f73774e39`，仅影响 Windows 及其 helper。
 - Windows 最终 Debug 构建通过（237.4s），未运行测试游戏。随包 x64/x86 Hook DLL 与本轮原生构建哈希相同，分别为 `a6900ddff897329b5eaa6b52e2adf1cdb2f6c285cda4330f94f0f67ba69f8fd6` / `855b93a789c0b01904576d757a299b4dd2cfbbc40da0ffdf15e60aa06a5a155d`。等待操作者保存并退出旧 SGRE，再由测试会话早注入启动新进程；不能把构建通过写成 LAN6 通过。
+
+- `gs-lan-host-20260922-6` / Android `lan6` 使用早注入的新 SGRE 进程，运行时读取已加载 x64 Hook DLL 的 SHA-256，与 v25 构建一致。首帧渲染成功，解码 1668 帧、接收视频 10,875,751 字节和音频 222,567 字节，音频能量非零。真实 Android 截图确认整句侧栏、当前行高亮及复制入口生效。
+- LAN6 确认键保持 588ms，DOWN/UP ACK 接受，随后观察到 4 次新文本事件和不同的当前句文本哈希；比仅 ACK 多了一层游戏画面/台词变化证据。夹具仍把独立输入因果证明标为未验证。最新句没有 `audioResourceId`，客户端在句音前置断言处停止，未执行查词或发送制卡请求；主机确认零张验证通过的卡，正常撤销凭据并清理会话。不能用前面行的已匹配资源补齐最后一行，也不能从该断言推出 Anki 修复失败。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 

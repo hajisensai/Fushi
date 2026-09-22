@@ -34,6 +34,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/sync/texthooker_line_fold.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/platform/desktop/windows_process_query.dart';
@@ -170,6 +171,13 @@ void main() {
             'hookPhase': hook.state.phase.name,
             'gamePid': hook.state.gamePid,
             'hwnd': hook.state.boundWindow?.hwnd,
+            'foldProgressiveLines': text.foldProgressiveLines,
+            'audioFallbackPolicy': hook.state.audioFallbackPolicy.storageKey,
+            'selectedThreadSha256': hook.selectedTextThreadKey == null
+                ? null
+                : sha256
+                      .convert(utf8.encode(hook.selectedTextThreadKey!))
+                      .toString(),
             'stream': current?.toJson(),
             'error': sync.activeGameStreamHost?.error,
           }),
@@ -179,20 +187,59 @@ void main() {
 
       void recordLines() {
         final List<TexthookerLineEntry> lines = hook.selectedSessionLines;
+        String? hashIdentity(String? value) => value == null
+            ? null
+            : sha256.convert(utf8.encode(value)).toString();
+        Map<String, Object?> lineMetadata(int index) {
+          final TexthookerLineEntry line = lines[index];
+          final TexthookerLineEntry? previous = index > 0
+              ? lines[index - 1]
+              : null;
+          final String normalized = normalizeForFold(line.text);
+          final String? prior = previous == null
+              ? null
+              : normalizeForFold(previous.text);
+          return <String, Object?>{
+            'lineId': line.id,
+            'textSha256': hashIdentity(line.text),
+            'textLength': line.text.length,
+            'normalizedLength': normalized.length,
+            'receivedAt': line.receivedAt.toUtc().toIso8601String(),
+            'hookTimestampMs': line.hookTimestampMs,
+            'source': line.source.name,
+            'sourceLabelSha256': hashIdentity(line.sourceLabel),
+            'threadSha256': hashIdentity(line.textThreadKey),
+            'eventOwnedVoice': line.eventOwnedVoice,
+            'sourceSequence': line.sourceSequence,
+            'audioResourceId': line.audioResourceId,
+            'audioBackend': line.audioBackend,
+            'audioStatus': line.audioStatus.name,
+            'audioDurationMs': line.audioDurationMs,
+            if (previous != null) ...<String, Object?>{
+              'sameEndpointAsPrevious':
+                  previous.source == line.source &&
+                  previous.sourceLabel == line.sourceLabel &&
+                  previous.textThreadKey == line.textThreadKey,
+              'prefixRelatedToPrevious':
+                  normalized.startsWith(prior!) || prior.startsWith(normalized),
+              'suffixRelatedToPrevious':
+                  normalized.endsWith(prior) || prior.endsWith(normalized),
+              'progressiveWithPrevious': isProgressiveTextUpdate(
+                previous.text,
+                line.text,
+              ),
+            },
+          };
+        }
+
         File(p.join(evidencePath, 'host-lines.json')).writeAsStringSync(
           jsonEncode(<Map<String, Object?>>[
-            for (final TexthookerLineEntry line in lines.skip(
-              lines.length > 128 ? lines.length - 128 : 0,
-            ))
-              <String, Object?>{
-                'lineId': line.id,
-                'textSha256': sha256.convert(utf8.encode(line.text)).toString(),
-                'sourceSequence': line.sourceSequence,
-                'audioResourceId': line.audioResourceId,
-                'audioBackend': line.audioBackend,
-                'audioStatus': line.audioStatus.name,
-                'audioDurationMs': line.audioDurationMs,
-              },
+            for (
+              int i = lines.length > 128 ? lines.length - 128 : 0;
+              i < lines.length;
+              i++
+            )
+              lineMetadata(i),
           ]),
           flush: true,
         );
