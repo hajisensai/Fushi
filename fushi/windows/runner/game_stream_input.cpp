@@ -177,9 +177,22 @@ bool GameStreamInput::Bind(uintptr_t value, std::string* reason) {
 
 bool GameStreamInput::Activate(std::string* reason) {
   if (!ValidateTarget(false, reason)) return false;
-  if (GetForegroundWindow() != hwnd_ && !SetForegroundWindow(hwnd_)) {
-    SetReason(reason, "window_not_foreground");
-    return false;
+  if (GetForegroundWindow() != hwnd_) {
+    if (!SetForegroundWindow(hwnd_)) {
+      SetReason(reason, "window_not_foreground");
+      return false;
+    }
+    // Across input queues SetForegroundWindow schedules activation; a success
+    // return does not mean the target has processed it yet. WM_NULL synchronizes
+    // with that queue without input injection, focus retries, or queue attachment.
+    // https://devblogs.microsoft.com/oldnewthing/20161118-00/?p=94745
+    DWORD_PTR ignored = 0;
+    if (!SendMessageTimeoutW(hwnd_, WM_NULL, 0, 0,
+                             SMTO_ABORTIFHUNG | SMTO_ERRORONEXIT, 5000,
+                             &ignored)) {
+      SetReason(reason, "window_activation_timeout");
+      return false;
+    }
   }
   return ValidateTarget(true, reason);
 }
