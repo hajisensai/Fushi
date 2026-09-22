@@ -233,7 +233,19 @@ void main() {
         hook.addListener(recordState);
         text.addListener(recordLines);
         listenersInstalled = true;
-        await sync.startGameStream(hwnd: hook.state.boundWindow!.hwnd);
+        final GameStreamFixtureForeground foreground =
+            await GameStreamFixtureForeground.acquire(evidenceDir);
+        try {
+          await evidence.writeJson('local-start.json', <String, Object?>{
+            'runnerPid': pid,
+            'runnerExe': Platform.resolvedExecutable,
+            'runnerHwnd': foreground.window,
+            'foregroundVerified': true,
+          });
+          await sync.startGameStream(hwnd: hook.state.boundWindow!.hwnd);
+        } finally {
+          await foreground.restore();
+        }
         final GameStreamSession session = sync.gameStreamService.session!;
         final FushiTlsIdentity identity = await FushiTlsIdentityStore(
           dataDir: app.databaseDirectory.path,
