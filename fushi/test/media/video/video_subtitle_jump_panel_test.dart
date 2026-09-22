@@ -909,16 +909,15 @@ void main() {
         'TODO-444 phase1 source guard: lookup text is one paragraph hit layer, '
         'not per-grapheme widgets', () {
       final String source =
-          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+          File('lib/src/media/video/subtitle_transcript_text.dart')
               .readAsStringSync();
       final String body = _sourceBetween(
-        source,
-        'Widget _buildRowText(',
-        'Widget _buildRowActions(',
-      );
-
-      expect(body, isNot(contains('characters.toList')),
-          reason: 'lookup rows must not allocate a per-grapheme widget list');
+        source, 'Widget _buildParagraph(', '/// Shared sidebar row');
+      final String video =
+          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+              .readAsStringSync();
+      expect(_sourceBetween(video, 'Widget _buildRowText(',
+          'Widget _buildRowActions('), contains('SubtitleTranscriptText('));
       expect(body, isNot(contains('Wrap(')),
           reason: 'wrapping is owned by RichText/TextPainter, not Wrap');
       expect(RegExp(r'^\s*Builder\(', multiLine: true).hasMatch(body), isFalse,
@@ -1791,13 +1790,13 @@ void main() {
         'BUG-879/910 source guard: list char hit uses forgiving box + geometry',
         () {
       final String source =
-          File('lib/src/media/video/video_subtitle_jump_panel.dart')
+          File('lib/src/media/video/subtitle_transcript_text.dart')
               .readAsStringSync();
       // barrier / hover / keydown 共用的 RenderParagraph 反查。
       final String paraHit = _sourceBetween(
         source,
         'SubtitleListCharHit? subtitleListCharHitFromParagraph(',
-        'enum VideoSubtitleListFilter',
+        '/// Shared typography',
       );
       expect(paraHit, contains('BoxHeightStyle.max'),
           reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading');

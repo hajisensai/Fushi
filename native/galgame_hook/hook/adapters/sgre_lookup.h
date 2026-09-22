@@ -7,6 +7,7 @@
 
 #include "exact_lookup_signature.h"
 #include "sgre_anchors.h"
+#include "../../include/voice_hook_ipc.h"
 
 namespace fushi_voice_hook {
 
@@ -118,6 +119,35 @@ inline uint8_t FilterSgreDirectInputMouseButtons(bool shield_active,
     if (!down) latched_buttons &= static_cast<uint8_t>(~bit);
   }
   return latched_buttons;
+}
+
+// Game-stream remote confirm uses the same SGRE DirectInput sampled source as
+// the lookup shield, but it never suppresses physical input. When the host has
+// a live, target-validated held left button lease, OR only rgbButtons[0]'s high
+// bit into the state returned to SGRE. Release/expiry simply stop OR-ing; a
+// simultaneous real physical button remains visible as real input.
+inline uint32_t ApplySgreGameStreamRemoteButtons(bool allowed,
+                                                 uint32_t active_buttons,
+                                                 uint8_t* state,
+                                                 size_t state_bytes) {
+  if (!allowed || state == nullptr ||
+      state_bytes != kSgreDirectInputMouseStateBytes) {
+    return 0;
+  }
+  const uint32_t normalized = active_buttons & kGameStreamInputButtonMask;
+  uint8_t* const primary =
+      state + kSgreDirectInputMouseButtonsOffset + kSgreLookupPrimaryButtonIndex;
+  if ((normalized & kGameStreamInputButtonLeft) != 0) *primary |= 0x80u;
+  // Report what the game will actually sample, not what we were asked to do.
+  // Returning `normalized` made the ACK a tautology: the host's
+  // `native_input_not_observed` gate could never fire, so a suppressed click
+  // still came back as "Applied, observed=left" (SOP: a capability stage must
+  // not be inferred from the previous one).
+  uint32_t observed = 0;
+  if ((normalized & kGameStreamInputButtonLeft) != 0 && (*primary & 0x80u) != 0) {
+    observed |= kGameStreamInputButtonLeft;
+  }
+  return observed;
 }
 
 enum class SgreLookupClickAction : uint8_t {

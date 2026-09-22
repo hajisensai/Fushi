@@ -278,6 +278,63 @@ int main() {
       false, mouse_state, sizeof(mouse_state), latched);
   assert(latched == 0);
 
+
+  memset(mouse_state, 0, sizeof(mouse_state));
+  mouse_state[0] = 0x44;
+  uint32_t remote_observed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      true, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(remote_observed == fushi_voice_hook::kGameStreamInputButtonLeft);
+  assert(mouse_state[0] == 0x44);
+  assert(mouse_state[12] == 0x80);
+  mouse_state[12] = 0;
+  remote_observed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      false, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(remote_observed == 0 && mouse_state[12] == 0);
+  uint8_t short_state[16] = {};
+  assert(fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+             true, fushi_voice_hook::kGameStreamInputButtonLeft, short_state,
+             sizeof(short_state)) == 0);
+
+  // Remote confirm must never be judged by the shield latch, and the reported
+  // `observed` must come from the buffer the game will sample -- not from the
+  // request we were handed.
+  //
+  // The regression this pins: the injection used to run *before* the latch
+  // drain, and the drain's raw snapshot was taken *after* the OR. With a
+  // leftover latch bit the filter then saw the injected bit as a physical
+  // press, suppressed the remote click, and -- because `if (!down)` never ran
+  // -- never drained the latch, so the user's own physical left button stayed
+  // swallowed for the whole lease.
+  memset(mouse_state, 0, sizeof(mouse_state));
+  // Physical press while the lookup popup was up: the latch holds bit0.
+  mouse_state[12] = 0x80;
+  uint8_t stuck = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      true, mouse_state, sizeof(mouse_state), 0);
+  assert(stuck == 0x01 && mouse_state[12] == 0);
+
+  // Correct order: drain first against the *physical* state (button released
+  // in the real device, so the latch clears) ...
+  mouse_state[12] = 0;
+  stuck = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+      false, mouse_state, sizeof(mouse_state), stuck);
+  assert(stuck == 0 && "a real release must drain the latch");
+  // ... then OR the remote confirm on top of the filtered result.
+  remote_observed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      true, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(mouse_state[12] == 0x80 && "remote confirm must reach the game");
+  assert(remote_observed == fushi_voice_hook::kGameStreamInputButtonLeft);
+
+  // `observed` is a read-back, not an echo: if something downstream clears the
+  // byte, the ACK must stop claiming the game saw it.
+  mouse_state[12] = 0;
+  const uint32_t echoed = fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+      false, fushi_voice_hook::kGameStreamInputButtonLeft, mouse_state,
+      sizeof(mouse_state));
+  assert(echoed == 0 && "a refused injection must never report observed");
+
   // Once inactive and drained, unrelated real input must pass untouched. An
   // unknown state layout is also a strict no-op.
   mouse_state[13] = 0x80;

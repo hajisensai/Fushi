@@ -12,6 +12,7 @@
 #include "attached_text_surface_window.h"
 #include "floating_lyric_window.h"
 #include "global_lookup_window.h"
+#include "game_stream_input.h"
 #include "hdr_video_host_window.h"
 #include "ime_association_guard.h"
 #include "ime_language_switch.h"
@@ -159,6 +160,12 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       magpie_channel_;
   void RegisterMagpieChannel();
+
+  // Delivers game-stream input only to the explicitly bound foreground HWND.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
+      game_stream_input_channel_;
+  std::unique_ptr<fushi::GameStreamInput> game_stream_input_;
+  void RegisterGameStreamInputChannel();
 
   // RegisterWindowMessageW(L"MagpieScalingChanged") 拿到的运行时消息号。
   // 0 = 尚未注册 / 注册失败，MessageHandler 据此永不误匹配。

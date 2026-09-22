@@ -11,6 +11,7 @@ import 'package:flutter_exit_app/flutter_exit_app.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
@@ -537,6 +538,18 @@ SettingsDestination buildInterconnectDestination() {
             },
             icon: Icons.devices_outlined,
             child: _buildInterconnectDevicesPage,
+          ),
+          SettingsActionItem(
+            id: 'interconnect.game_stream',
+            title: t.game_stream_join,
+            icon: Icons.cast,
+            visible: (SettingsContext ctx) => !kIsWeb && Platform.isAndroid,
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (BuildContext context) => GameStreamJoinPage(
+                repository: SyncRepository(ctx.appModel.database),
+              ),
+            ),
           ),
         ],
       ),
