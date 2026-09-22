@@ -271,10 +271,15 @@ class GameStreamEvidenceMiningAdapter extends FushiGameStreamMiningAdapter {
 enum GameStreamMiningStage { preflight, hostMine, verify }
 
 class GameStreamLanEvidence {
-  GameStreamLanEvidence({required this.directory, required this.runTag});
+  GameStreamLanEvidence({
+    required this.directory,
+    required this.runTag,
+    Uri? ankiEndpoint,
+  }) : _ankiEndpoint = ankiEndpoint ?? Uri.parse('http://127.0.0.1:8765');
 
   final Directory directory;
   final String runTag;
+  final Uri _ankiEndpoint;
   final List<String> failures = <String>[];
   final List<int> verifiedNotes = <int>[];
   final Map<String, ({String text, String pngSha256})> _frames =
@@ -382,17 +387,19 @@ class GameStreamLanEvidence {
     final HttpClient client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 5);
     try {
-      final HttpClientRequest request = await client.postUrl(
-        Uri.parse('http://127.0.0.1:8765'),
-      );
-      request.headers.contentType = ContentType.json;
-      request.write(
+      final List<int> bytes = utf8.encode(
         jsonEncode(<String, Object?>{
           'action': action,
           'version': 6,
           'params': params,
         }),
       );
+      final HttpClientRequest request = await client.postUrl(_ankiEndpoint);
+      request.headers.contentType = ContentType.json;
+      // AnkiConnect reads Content-Length, not chunked request bodies. Dart POST
+      // defaults to chunked; explicitly count encoded bytes (not UTF-16 units).
+      request.contentLength = bytes.length;
+      request.add(bytes);
       final HttpClientResponse response = await request.close().timeout(
         const Duration(seconds: 10),
       );

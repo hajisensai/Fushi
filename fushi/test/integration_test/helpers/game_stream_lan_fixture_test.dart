@@ -9,6 +9,58 @@ import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import '../../../integration_test/helpers/game_stream_lan_fixture.dart';
 
 void main() {
+  test(
+    'Anki preflight sends UTF-8 byte length without chunked encoding',
+    () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => server.close(force: true));
+      const String runTag = '検証😀';
+      int? contentLength;
+      bool? chunked;
+      late List<int> bodyBytes;
+      final Future<void> served = server.first.then((
+        HttpRequest request,
+      ) async {
+        contentLength = request.headers.contentLength;
+        chunked = request.headers.chunkedTransferEncoding;
+        bodyBytes = await request.fold<List<int>>(
+          <int>[],
+          (List<int> bytes, List<int> chunk) => bytes..addAll(chunk),
+        );
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          jsonEncode(<String, Object?>{
+            'result': <int>[123],
+            'error': null,
+          }),
+        );
+        await request.response.close();
+      });
+      final GameStreamLanEvidence evidence = GameStreamLanEvidence(
+        // findRunNotes performs no filesystem writes.
+        directory: Directory.systemTemp,
+        runTag: runTag,
+        ankiEndpoint: Uri.parse('http://127.0.0.1:${server.port}'),
+      );
+      expect(await evidence.findRunNotes(), <int>{123});
+      await served;
+      final String bodyText = utf8.decode(bodyBytes);
+      expect(chunked, isFalse);
+      expect(contentLength, bodyBytes.length);
+      expect(contentLength, greaterThan(bodyText.length));
+      expect(jsonDecode(bodyText), <String, Object?>{
+        'action': 'findNotes',
+        'version': 6,
+        'params': <String, Object?>{
+          'query': 'deck:"$gameStreamTestDeck" tag:$runTag',
+        },
+      });
+    },
+  );
+
   final GameStreamTextEvent line = GameStreamTextEvent(
     sessionId: 'fixture-session',
     lineId: 'fixture-line',
