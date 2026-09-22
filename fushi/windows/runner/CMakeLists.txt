@@ -30,6 +30,7 @@ add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
   "floating_lyric_window.cpp"
   "foreground_selection.cpp"
+  "game_stream_input.cpp"
   "global_lookup_shadow.cpp"
   "global_lookup_window.cpp"
   "global_mouse_trigger.cpp"

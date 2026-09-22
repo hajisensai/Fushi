@@ -82,6 +82,9 @@ void main() {
         'lib/src/pages/implementations/reader_fushi/audiobook.part.dart': 1,
         // 判断是否「逐字 cue」（per-character cue），不是计数。
         'lib/src/media/video/video_subtitle_jump_panel.dart': 1,
+        // 从上面那个面板抽出来的共享整句渲染器：字素数是**键盘光标在句内左右移动
+        // 的边界**（_handleKey 里 count == 0 就不接键），是导航不是记账。
+        'lib/src/media/video/subtitle_transcript_text.dart': 1,
         // BUG-442：词典查询输入长度上限保护，是校验不是记账。
         'lib/src/models/app_model.dart': 1,
         // BUG-2091 字幕查词高亮：把引擎回报的匹配长度（**码点**数）折算成 grapheme

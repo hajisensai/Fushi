@@ -29,8 +29,8 @@ void Check(bool condition, const char* message) {
 
 void TestV16AndV17TailAbiAndDefaultDeny() {
   SharedHeader header{};
-  Check(fushi_voice_hook::kSharedVersion == 24,
-        "shared ABI must be v24（BUG-2339 Siglus text ownership 尾追加）");
+  Check(fushi_voice_hook::kSharedVersion == 25,
+        "shared ABI must be v25（game-stream native input 尾追加）");
   Check(offsetof(SharedHeader, native_loopback_request_seq) ==
             offsetof(SharedHeader, native_loopback_requested) + 4,
         "request_seq must follow requested");
@@ -73,11 +73,28 @@ void TestV16AndV17TailAbiAndDefaultDeny() {
   Check(offsetof(SharedHeader, siglus_text_owner) ==
             offsetof(SharedHeader, adapter_report_seq) + sizeof(uint32_t),
         "v24 ownership must follow the v23 reports without changing old fields");
+  Check(offsetof(SharedHeader, game_stream_input_request_seq) ==
+            offsetof(SharedHeader, siglus_text_owner) + sizeof(uint32_t),
+        "v25 game-stream input must append after v24 ownership");
+  Check(offsetof(SharedHeader, game_stream_input_status_seq) ==
+            offsetof(SharedHeader, game_stream_input_request_seq) + 4u &&
+            offsetof(SharedHeader, game_stream_input_target_hwnd) ==
+                offsetof(SharedHeader, game_stream_input_request_seq) + 8u &&
+            offsetof(SharedHeader, game_stream_input_transaction_id) ==
+                offsetof(SharedHeader, game_stream_input_target_hwnd) + 8u &&
+            offsetof(SharedHeader, game_stream_input_deadline_tick_ms) ==
+                offsetof(SharedHeader, game_stream_input_transaction_id) + 8u &&
+            offsetof(SharedHeader, game_stream_input_active_buttons) ==
+                offsetof(SharedHeader, game_stream_input_deadline_tick_ms) + 8u &&
+            offsetof(SharedHeader, game_stream_input_applied_seq) ==
+                offsetof(SharedHeader, game_stream_input_observed_buttons) +
+                    sizeof(uint32_t),
+        "v25 game-stream input request/status words must remain contiguous");
   Check(sizeof(SharedHeader) ==
-            ((offsetof(SharedHeader, siglus_text_owner) +
+            ((offsetof(SharedHeader, game_stream_input_applied_seq) +
               sizeof(uint32_t) + 7u) /
              8u) * 8u,
-        "v24 ownership must be the exact SharedHeader tail (only 8-align padding)");
+        "v25 game-stream input must be the exact SharedHeader tail");
   Check(fushi_voice_hook::AtomicLoadShared32(
             &header.native_loopback_requested) ==
             fushi_voice_hook::kNativeLoopbackDeny,
@@ -235,6 +252,61 @@ void TestSequenceWrapUsesIdentityNotOrdering() {
         "wrapped generation is compared by identity, not greater-than");
 }
 
+void TestGameStreamInputPublication() {
+  SharedHeader header{};
+  const uint32_t first = fushi_voice_hook::PublishGameStreamInputRequest(
+      &header, 0x1234u, 7u, fushi_voice_hook::kGameStreamInputButtonLeft,
+      9000u);
+  Check(first == 1, "fresh game-stream request must publish seq=1");
+  const auto request = fushi_voice_hook::ReadGameStreamInputRequest(&header);
+  Check(request.valid && request.seq == 1 && request.target_hwnd == 0x1234u &&
+            request.transaction_id == 7u && request.deadline_tick_ms == 9000u &&
+            request.active_buttons == fushi_voice_hook::kGameStreamInputButtonLeft,
+        "game-stream request must round-trip coherently");
+  fushi_voice_hook::AtomicStoreShared32(
+      &header.game_stream_input_request_seq,
+      fushi_voice_hook::kGameStreamInputRequestWriteInProgress | first);
+  Check(!fushi_voice_hook::ReadGameStreamInputRequest(&header).valid,
+        "writer-held game-stream request must be unreadable");
+  fushi_voice_hook::AtomicStoreShared32(&header.game_stream_input_request_seq,
+                                        first);
+  Check(fushi_voice_hook::PublishGameStreamInputStatus(
+            &header, request, fushi_voice_hook::kGameStreamInputStatusApplied,
+            fushi_voice_hook::kGameStreamInputButtonLeft),
+        "current game-stream request must accept applied status");
+  const uint32_t first_status_seq = header.game_stream_input_status_seq;
+  Check(header.game_stream_input_applied_seq == first &&
+            first_status_seq != 0 &&
+            header.game_stream_input_status ==
+                fushi_voice_hook::kGameStreamInputStatusApplied &&
+            header.game_stream_input_observed_buttons ==
+                fushi_voice_hook::kGameStreamInputButtonLeft,
+        "game-stream status payload must precede applied seq");
+  Check(fushi_voice_hook::PublishGameStreamInputStatus(
+            &header, request, fushi_voice_hook::kGameStreamInputStatusExpired,
+            0u),
+        "same game-stream request may publish a later terminal status");
+  Check(header.game_stream_input_status_seq != first_status_seq &&
+            header.game_stream_input_applied_seq == first &&
+            header.game_stream_input_status ==
+                fushi_voice_hook::kGameStreamInputStatusExpired &&
+            header.game_stream_input_observed_buttons == 0,
+        "game-stream status publication generation must advance");
+  const uint32_t second = fushi_voice_hook::PublishGameStreamInputRequest(
+      &header, 0x1234u, 7u, 0u, 9100u);
+  Check(second == 2, "release must be its own game-stream generation");
+  const uint32_t status_before_old_ack = header.game_stream_input_status_seq;
+  Check(!fushi_voice_hook::PublishGameStreamInputStatus(
+            &header, request, fushi_voice_hook::kGameStreamInputStatusApplied,
+            fushi_voice_hook::kGameStreamInputButtonLeft),
+        "old game-stream generation must not acknowledge after release");
+  Check(header.game_stream_input_status_seq == status_before_old_ack &&
+            header.game_stream_input_status ==
+                fushi_voice_hook::kGameStreamInputStatusExpired &&
+            header.game_stream_input_observed_buttons == 0,
+        "old game-stream ACK must not pollute current status payload");
+}
+
 }  // namespace
 
 int main() {
@@ -244,5 +316,6 @@ int main() {
   TestRapidDenyAllowForcesGenerationBarrier();
   TestOldGenerationCannotAcknowledgeNewRequest();
   TestSequenceWrapUsesIdentityNotOrdering();
+  TestGameStreamInputPublication();
   return 0;
 }

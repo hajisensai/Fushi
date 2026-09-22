@@ -706,6 +706,20 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   const bool direct_shield =
       direct_popup != nullptr && IsSgreDirectInputShieldReadyPublished(game);
   const bool shield_active = direct_shield || bitmap_popup_visible;
+  const auto game_stream_request =
+      fushi_voice_hook::ReadGameStreamInputRequest(g_header);
+  const uint64_t now_tick = GetTickCount64();
+  DWORD game_pid = 0;
+  if (game != nullptr && IsWindow(game)) {
+    GetWindowThreadProcessId(game, &game_pid);
+  }
+  const bool game_stream_target_ok =
+      game_stream_request.valid &&
+      game_stream_request.target_hwnd ==
+          reinterpret_cast<uint64_t>(game) &&
+      game != nullptr && IsWindow(game) &&
+      game_pid == GetCurrentProcessId() && GetForegroundWindow() == game &&
+      now_tick <= game_stream_request.deadline_tick_ms;
   const bool lookup_allowed =
       g_sgre_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
       fushi_voice_hook::g_geometry_provider_registry.OwnsReadyProvider(
@@ -763,33 +777,54 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
     g_sgre_lookup_pending_click_valid = false;
   }
 
+  // Order matters. The lookup shield's latch must see **physical** button state
+  // only, so it runs first; the remote confirm is OR-ed on top of the filtered
+  // result afterwards. Doing it the other way round made the injected bit look
+  // like a physical press: with a leftover latch bit the filter suppressed the
+  // remote click *and* `if (!down)` never ran, so the latch never drained and
+  // the user's own physical left button stayed swallowed for the whole lease.
   const uint8_t initial_latch =
       g_sgre_direct_input_latched_buttons.load(std::memory_order_acquire);
-  if (!shield_active && initial_latch == 0) return result;
-
-  uint8_t raw_buttons[fushi_voice_hook::kSgreDirectInputMouseButtonCount] = {};
-  for (size_t index = 0;
-       index < fushi_voice_hook::kSgreDirectInputMouseButtonCount; ++index) {
-    raw_buttons[index] =
-        bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index];
-  }
-  // The admitted callsite is single-threaded, but make the latch linearizable
-  // anyway: a future second poller must not lose another button's bit through a
-  // load -> filter -> store last-writer-wins race.
-  uint8_t observed = initial_latch;
-  for (;;) {
+  if (shield_active || initial_latch != 0) {
+    uint8_t raw_buttons[fushi_voice_hook::kSgreDirectInputMouseButtonCount] = {};
     for (size_t index = 0;
          index < fushi_voice_hook::kSgreDirectInputMouseButtonCount; ++index) {
-      bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index] =
-          raw_buttons[index];
+      raw_buttons[index] =
+          bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index];
     }
-    const uint8_t next = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
-        shield_active, bytes, state_bytes, observed);
-    if (g_sgre_direct_input_latched_buttons.compare_exchange_weak(
-            observed, next, std::memory_order_acq_rel,
-            std::memory_order_acquire)) {
-      break;
+    // The admitted callsite is single-threaded, but make the latch linearizable
+    // anyway: a future second poller must not lose another button's bit through
+    // a load -> filter -> store last-writer-wins race.
+    uint8_t observed = initial_latch;
+    for (;;) {
+      for (size_t index = 0;
+           index < fushi_voice_hook::kSgreDirectInputMouseButtonCount; ++index) {
+        bytes[fushi_voice_hook::kSgreDirectInputMouseButtonsOffset + index] =
+            raw_buttons[index];
+      }
+      const uint8_t next = fushi_voice_hook::FilterSgreDirectInputMouseButtons(
+          shield_active, bytes, state_bytes, observed);
+      if (g_sgre_direct_input_latched_buttons.compare_exchange_weak(
+              observed, next, std::memory_order_acq_rel,
+              std::memory_order_acquire)) {
+        break;
+      }
     }
+  }
+
+  const uint32_t game_stream_observed =
+      fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
+          game_stream_target_ok && !shield_active,
+          game_stream_request.active_buttons, bytes, state_bytes);
+  if (game_stream_request.valid) {
+    const uint32_t status =
+        now_tick > game_stream_request.deadline_tick_ms
+            ? fushi_voice_hook::kGameStreamInputStatusExpired
+            : (game_stream_target_ok
+                   ? fushi_voice_hook::kGameStreamInputStatusApplied
+                   : fushi_voice_hook::kGameStreamInputStatusRejectedTarget);
+    fushi_voice_hook::PublishGameStreamInputStatus(
+        g_header, game_stream_request, status, game_stream_observed);
   }
   return result;
 }

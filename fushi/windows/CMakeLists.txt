@@ -66,6 +66,18 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# The pinned libwebrtc desktop converter uses GetWindowRect rather than the
+# captured buffer's row pitch; PMv2 Windows processes can silently lose every
+# frame. Feed our existing WGC client-area capture into its custom video source.
+# Only Fushi's explicit window-stream constraint selects this adapter.
+target_sources(flutter_webrtc_plugin PRIVATE
+  "runner/game_stream_webrtc_capture.cpp"
+  "runner/window_capture.cpp")
+target_include_directories(flutter_webrtc_plugin PRIVATE "runner")
+target_compile_definitions(flutter_webrtc_plugin PRIVATE FUSHI_GAME_STREAM_WGC)
+target_link_libraries(flutter_webrtc_plugin PRIVATE
+  d3d11 dxgi dwmapi windowsapp windowscodecs shlwapi)
+
 # === fushidicts native dictionary engine ===
 set(FUSHIDICTS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushidicts")
 add_subdirectory("${FUSHIDICTS_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/fushidicts")

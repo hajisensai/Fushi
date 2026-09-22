@@ -852,6 +852,23 @@ void main() {
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
           'size (content), defaults mirror the allowlisted overlay caption.',
+      'lib/src/media/video/subtitle_transcript_text.dart':
+          'Shared sentence/transcript renderer extracted out of the subtitle '
+          'jump panel: fontSize: is the cue text itself scaled with '
+          'appUiScale, never page chrome -- it carries over the reviewed '
+          'content exception already granted to video_subtitle_jump_panel, '
+          'which now delegates to this file.',
+      'lib/src/pages/implementations/game_stream_page.dart':
+          'Game-stream receiver: fontSize: sizes the streamed Hook line text '
+          'in the collapsible transcript rail -- the same subtitle-content '
+          'class as the allowlisted subtitle overlay, not ordinary chrome. '
+          'The page chrome itself (device rows, key-binding rows) goes '
+          'through FushiListItem.',
+      'lib/src/pages/implementations/game_stream_join_page.dart':
+          'Game-stream join page: the discovered-host rows are FushiListItem '
+          'inside a Card used purely as the MD3 elevated container for one '
+          'reachable host -- the tile, its typography and its focus ring all '
+          'come from the shared component.',
       'lib/src/media/video/subtitle_waveform_align_panel.dart':
           'TODO-1051/1207 subtitle-sync waveform panel: the audio-energy '
           'waveform is a CustomPaint chart, so the chart-canvas frame '
@@ -1231,6 +1248,15 @@ void main() {
         'fontSize:',
       },
       'lib/src/media/video/video_subtitle_style.dart': <String>{'fontSize:'},
+      'lib/src/media/video/subtitle_transcript_text.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/game_stream_page.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/game_stream_join_page.dart': <String>{
+        'Card(',
+      },
       'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',

@@ -41,6 +41,7 @@ const int kRemoteAudioMaterializedCacheMaxBytes = 64 * 1024 * 1024;
 class FushiRemoteLookupClient {
   FushiRemoteLookupClient({
     required SyncRepository repo,
+    FushiClientUrl? onlyCandidate,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Future<Directory> Function()? pinnedAudioCacheDirectoryProvider,
@@ -51,6 +52,7 @@ class FushiRemoteLookupClient {
           httpClient: httpClient,
           pinnedClientFactory: pinnedClientFactory,
         ),
+        _onlyCandidate = onlyCandidate,
         _timeout = timeout,
         _audioTransferTimeout = audioTransferTimeout,
         _pinnedAudioCacheDirectoryProvider =
@@ -60,6 +62,7 @@ class FushiRemoteLookupClient {
   /// 候选轮询 / 鉴权 / 指纹钉扎 / socket 回收统一由 [InterconnectPostTransport]
   /// 承担——本类只管端点、超时与响应体的语义解析。
   final InterconnectPostTransport _transport;
+  final FushiClientUrl? _onlyCandidate;
 
   /// RPC 往返预算：量的是「对端还活着吗」。
   final Duration _timeout;
@@ -226,6 +229,7 @@ class FushiRemoteLookupClient {
       body: body,
       timeout: _timeout,
       authErrorMessage: 'Fushi server rejected remote lookup token',
+      onlyCandidate: _onlyCandidate,
     );
   }
 }

@@ -70,6 +70,13 @@ void main() {
     '../packages/fushi_engine/lib/sync/fushi_remote_lookup_service.dart':
         '上一条的抽象接口声明（FushiRemoteLookupService），只有方法签名没有实现体，'
             '不产生任何结果也不呈现 UI，谈不上朗读。',
+    'lib/src/sync/game_stream_client.dart':
+        '游戏串流接收端（Android）向主机查词的传输层封装，只是把 '
+            'FushiRemoteLookupClient 约束到当前串流对端。**有意静音**：这台手机同时'
+            '正在放主机串过来的游戏声，查词再朗读会直接盖在台词语音上——与悬浮词典'
+            '那条豁免同一理由（会打扰正在发声的前景内容）。结果由 '
+            'game_stream_page 的 DictionaryPopupLayer 呈现，那层也不接朗读；'
+            '哪天要接，就把它挪进 wiredSurfaces 并在页面侧按偏好调 autoReadWord。',
   };
 
   /// 收集 lib/ 下所有 `searchDictionary(` 的**调用**点（排除声明/重写本身）。
