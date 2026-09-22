@@ -523,6 +523,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （非 reader CSS / 主题树）。
   'lookup/Swipe to close popup':
       'test/pages/dictionary_popup_swipe_close_test.dart',
+  // 2026-09-23：滚动模式「继续滚动即关闭查词弹窗」开关（仅连续模式可见）。生效点是
+  // LookupDismissBarrier 的沿轴拖动通道 + 阅读器页的滚轮/拖动转发，非 reader CSS /
+  // 主题树；barrier 契约由专项 widget 测试覆盖，页面接线由源码守卫覆盖。
+  'lookup/Close popup when scrolling':
+      'test/pages/lookup_dismiss_barrier_test.dart + '
+          'test/reader/reader_popup_scroll_dismiss_wiring_test.dart',
   // TODO-861②：「扫描非日文文字」查词开关（PreferencesRepository.scanNonJapaneseText，
   // 默认 true）。焦点遍历能切到并写穿 DB（changed=true），但生效点在注入 JS 的
   // window.scanNonJapaneseText + reader_selection_scripts 的 `scanNonJapaneseText

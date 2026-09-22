@@ -2732,7 +2732,7 @@
   "reader_font_size": "字体大小",
   "reader_font_vpal": "VPAL 纵排替代",
   "reader_font_weight": "字体粗细",
-  "reader_furigana_mode": "振假名",
+  "reader_furigana_mode": "隐藏振假名",
   "reader_furigana_mode_hint": "",
   "reader_gallery_empty": "本书没有插图",
   "reader_gallery_jump": "跳转到此插图",
@@ -5310,5 +5310,7 @@
   "settings_video_diag_export_hint": "统一时间轴 + libmpv 自身的详细日志",
   "video_diag_share_subject": "Fushi 视频诊断日志",
   "sync_err_html_page": "服务器返回的是网页而不是同步响应。请确认地址指向的是 WebDAV 或 Fushi 互联端点，而不是网站。",
-  "sync_err_html_page_detail": "服务器返回的是网页（「$title」）而不是同步响应。请确认地址指向的是 WebDAV 或 Fushi 互联端点，而不是网站。"
+  "sync_err_html_page_detail": "服务器返回的是网页（「$title」）而不是同步响应。请确认地址指向的是 WebDAV 或 Fushi 互联端点，而不是网站。",
+  "reader_popup_scroll_dismiss": "滚动时关闭查词弹窗",
+  "reader_popup_scroll_dismiss_hint": "滚动模式下，查词后继续滚动正文（横排竖排均可）即关闭查词弹窗"
 }

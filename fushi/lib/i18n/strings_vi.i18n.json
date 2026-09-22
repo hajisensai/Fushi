@@ -2732,7 +2732,7 @@
   "reader_font_size": "Cỡ chữ",
   "reader_font_vpal": "VPAL (thay thế dọc)",
   "reader_font_weight": "Độ đậm phông chữ",
-  "reader_furigana_mode": "Furigana",
+  "reader_furigana_mode": "Ẩn furigana",
   "reader_furigana_mode_hint": "",
   "reader_gallery_empty": "Không có hình minh họa trong sách này",
   "reader_gallery_jump": "Nhảy đến hình minh họa này",
@@ -5310,5 +5310,7 @@
   "settings_video_diag_export_hint": "Timeline plus libmpv's own verbose log",
   "video_diag_share_subject": "Fushi video diagnostics log",
   "sync_err_html_page": "The server answered with a web page instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website.",
-  "sync_err_html_page_detail": "The server answered with a web page (\"$title\") instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website."
+  "sync_err_html_page_detail": "The server answered with a web page (\"$title\") instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website.",
+  "reader_popup_scroll_dismiss": "Close popup when scrolling",
+  "reader_popup_scroll_dismiss_hint": "In scroll mode, keep scrolling the page (horizontal or vertical text) to close the lookup popup"
 }

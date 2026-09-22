@@ -1411,6 +1411,20 @@ class ReaderFushiSource extends ReaderMediaSource {
     );
   }
 
+  /// 滚动（连续）模式下，查词弹窗开着时继续滚动正文（横排纵向滚、竖排横向滚）
+  /// 即关闭弹窗，并把这次滚动交给正文。默认开启；只在滚动模式生效。
+  bool get dismissPopupOnScroll => getPreference<bool>(
+        key: 'dismiss_popup_on_scroll',
+        defaultValue: true,
+      );
+
+  Future<void> setDismissPopupOnScroll(bool value) async {
+    await setPreference<bool>(
+      key: 'dismiss_popup_on_scroll',
+      value: value,
+    );
+  }
+
   /// 鼠标滚轮翻页节流间隔（毫秒），越大翻页越慢。默认 450ms。
   int get wheelPageTurnInterval =>
       readerSettings?.wheelPageTurnInterval ??

@@ -2732,7 +2732,7 @@
   "reader_font_size": "字型大小",
   "reader_font_vpal": "VPAL 直排替代",
   "reader_font_weight": "字型粗細",
-  "reader_furigana_mode": "振假名",
+  "reader_furigana_mode": "隱藏振假名",
   "reader_furigana_mode_hint": "",
   "reader_gallery_empty": "本書沒有插圖",
   "reader_gallery_jump": "跳轉到此插圖",
@@ -5310,5 +5310,7 @@
   "settings_video_diag_export_hint": "Timeline plus libmpv's own verbose log",
   "video_diag_share_subject": "Fushi video diagnostics log",
   "sync_err_html_page": "The server answered with a web page instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website.",
-  "sync_err_html_page_detail": "The server answered with a web page (\"$title\") instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website."
+  "sync_err_html_page_detail": "The server answered with a web page (\"$title\") instead of a sync response. Check that the URL points at a WebDAV or Fushi Interconnect endpoint, not a website.",
+  "reader_popup_scroll_dismiss": "捲動時關閉查詞彈窗",
+  "reader_popup_scroll_dismiss_hint": "捲動模式下，查詞後繼續捲動正文（橫排直排均可）即關閉查詞彈窗"
 }
