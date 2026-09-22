@@ -246,12 +246,14 @@ void main() {
 
       expect(source.isPlainFile, isFalse);
       expect(source.uri, startsWith('edl://'));
-      // 两段都整段用满，所以都不带起止参数。
+      // 两段都整段用满，起止仍显式写出：段长不交给 lavf 估计。
       expect(
         source.uri,
         'edl://'
-        '${encodeEdlField(p.join(discRoot, 'BDMV', 'STREAM', '00011.m2ts'))};'
-        '${encodeEdlField(p.join(discRoot, 'BDMV', 'STREAM', '00012.m2ts'))};',
+        '${encodeEdlField(p.join(discRoot, 'BDMV', 'STREAM', '00011.m2ts'))}'
+        ',4.000000,2400.000000;'
+        '${encodeEdlField(p.join(discRoot, 'BDMV', 'STREAM', '00012.m2ts'))}'
+        ',4.000000,2400.000000;',
       );
       expect(source.duration, const Duration(minutes: 80));
       // 抽封面/探容器指向真实的第一段。

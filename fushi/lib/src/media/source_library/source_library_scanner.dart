@@ -47,6 +47,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/import/sidecar_finder.dart';
 import 'package:fushi_engine/media/media_extensions.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi/src/media/manga/import/manga_archive_importer.dart';
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
@@ -1411,7 +1412,19 @@ class SourceLibraryScanner {
           PlaylistEntry(title: title.name, path: title.playlistPath),
       ];
 
-      final int? existingId = existingCollectionIds[disc.name];
+      // 合集名不能只按盘名全局对号：`S1/DISC1` 与 `S2/DISC1` 同名不同盘，对到一起
+      // 会互相吞成员（见 [blurayCollectionNameCandidates]）。撞上别的盘 / 别的
+      // 清单的合集就换下一个候选名，直到找到本盘的或一个空位。
+      String collectionName = disc.name;
+      int? existingId;
+      for (final String candidate
+          in blurayCollectionNameCandidates(disc.name, disc.rootPath)) {
+        collectionName = candidate;
+        existingId = existingCollectionIds[candidate];
+        if (existingId == null) break;
+        if (await _collectionBelongsToDisc(existingId, disc.rootPath)) break;
+        existingId = null;
+      }
       if (existingId != null) {
         await _videoRepo.reconcileSplitPlaylist(
           collectionId: existingId,
@@ -1422,24 +1435,46 @@ class SourceLibraryScanner {
       }
 
       // BUG-1739 同款守卫：用户删过同名合集，重扫不复活。
-      if (await _db.hasCollectionDeletionTombstone(disc.name, 'playlist')) {
+      if (await _db.hasCollectionDeletionTombstone(
+        collectionName,
+        'playlist',
+      )) {
         continue;
       }
 
-      final SplitPlaylistImportResult result = await _videoRepo
-          .importSplitPlaylist(
-            collectionName: disc.name,
-            entries: entries,
-            sourceId: sourceId,
-            reuseExistingPaths: true,
-          );
-      existingCollectionIds[disc.name] = result.collectionId;
+      final SplitPlaylistImportResult result =
+          await _videoRepo.importSplitPlaylist(
+        collectionName: collectionName,
+        entries: entries,
+        sourceId: sourceId,
+        reuseExistingPaths: true,
+      );
+      existingCollectionIds[collectionName] = result.collectionId;
       await _videoRepo.recordVideoImportActivity(
         bookUid: result.episodeUids.first,
-        title: disc.name,
+        title: collectionName,
       );
       count++;
     }
     return count;
+  }
+
+  /// 既有合集 [collectionId] 是不是 [discRootPath] 这张盘的：成员全是本盘
+  /// `BDMV/PLAYLIST/` 下的 `.mpls`（或还没有任何视频成员）才算；有任何一条来自别的
+  /// 盘、或根本不是蓝光标题（同名 m3u8 清单合集），都不算。
+  Future<bool> _collectionBelongsToDisc(
+    int collectionId,
+    String discRootPath,
+  ) async {
+    final String root = p.normalize(discRootPath);
+    for (final MediaCollectionItemRow item
+        in await _videoRepo.getCollectionItems(collectionId)) {
+      final VideoBookRow? row = await _videoRepo.getByBookUid(item.entryKey);
+      if (row == null) continue;
+      if (!isBlurayPlaylistPath(row.videoPath)) return false;
+      final String? owner = blurayDiscRootForPlaylistPath(row.videoPath);
+      if (owner == null || p.normalize(owner) != root) return false;
+    }
+    return true;
   }
 }

@@ -88,14 +88,14 @@ void main() {
       // 部落到段尾之外被丢掉，表现是瞬间 EOF。
       expect(
         source.uri,
-        'edl://${encodeEdlField(stream('00001'))},70.000,60.000;',
+        'edl://${encodeEdlField(stream('00001'))},70.000000,60.000000;',
       );
       expect(source.duration, const Duration(minutes: 1));
       // 拼起来播，但抽封面/探容器仍指向真实的第一段。
       expect(source.primaryStreamPath, stream('00001'));
     });
 
-    test('多段拼接：整段用满的段不写起止，被截的段写', () {
+    test('多段拼接：整段用满的段也显式写起止，段长不交给 lavf 估计', () {
       final BlurayPlaylist playlist = _playlist(const <FixturePlayItem>[
         FixturePlayItem(
           clipId: '00001',
@@ -124,13 +124,13 @@ void main() {
       expect(
         source.uri,
         'edl://'
-        '${encodeEdlField(stream('00001'))};'
-        '${encodeEdlField(stream('00002'))},25.000,300.000;',
+        '${encodeEdlField(stream('00001'))},10.000000,600.000000;'
+        '${encodeEdlField(stream('00002'))},25.000000,300.000000;',
       );
       expect(source.duration, const Duration(minutes: 15));
     });
 
-    test('多段但零点全未知 → 每段整段拼接', () {
+    test('多段但零点全未知 → 仍按 MPLS 的 IN / 长度拼接（IN 本就是原始 PTS）', () {
       final BlurayPlaylist playlist = _playlist(const <FixturePlayItem>[
         FixturePlayItem(
           clipId: '00001',
@@ -153,8 +153,8 @@ void main() {
       expect(
         source.uri,
         'edl://'
-        '${encodeEdlField(stream('00001'))};'
-        '${encodeEdlField(stream('00002'))};',
+        '${encodeEdlField(stream('00001'))},10.000000,60.000000;'
+        '${encodeEdlField(stream('00002'))},10.000000,60.000000;',
       );
     });
 

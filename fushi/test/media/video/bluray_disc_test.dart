@@ -106,6 +106,43 @@ void main() {
       ]);
     });
 
+    test('play-all 多含一段各集里没有的过场时 ⑤ 漏网：⑥ 不能拿它当锚砍掉各集', () {
+      // 8 集 × 24 min，play-all 把 8 集 + 一段 90 s 的 NCOP 串起来；NCOP 没有自己的
+      // 播放列表。⑤ 的「恰好等于并集」放过 play-all；若 ⑥ 以它（3.2 h）为锚，
+      // 0.15 × 3.2 h = 29 min > 24 min，8 集全部出局、库里只剩 play-all。
+      final List<BlurayPlaylist> playlists = <BlurayPlaylist>[
+        _make('00001', <(String, int)>[
+          for (int i = 11; i < 19; i++) ('000$i', 1440),
+          ('00030', 90),
+        ]),
+        for (int i = 11; i < 19; i++)
+          _make('000${i + 40}', <(String, int)>[('000$i', 1440)]),
+      ];
+
+      final List<BlurayTitle> titles = select(playlists);
+
+      final List<String> ids = titles
+          .map((BlurayTitle t) => t.playlist.id)
+          .toList(growable: false);
+      expect(
+        ids,
+        containsAll(<String>[for (int i = 51; i < 59; i++) '000$i']),
+        reason: '各集必须保住',
+      );
+      expect(
+        titles
+            .where((BlurayTitle t) => t.isMainFeature)
+            .map((BlurayTitle t) => t.playlist.id),
+        isNot(contains('00001')),
+        reason: '锚是单集，不是 play-all',
+      );
+      expect(
+        ids.contains('00001'),
+        isTrue,
+        reason: '漏网的 play-all 本身照旧按下限判，不额外删',
+      );
+    });
+
     test('多段正片不会被误判成「全部播放」', () {
       // 正片被切成三段，但盘上没有对应的单段播放列表。
       final List<BlurayTitle> titles = select(<BlurayPlaylist>[
@@ -238,15 +275,38 @@ void main() {
       expect(blurayDiscRootForFile('00001.m2ts'), isNull);
     });
 
-    test('大小写不敏感（部分盘用小写目录名）', () {
+    test('目录名按精确大小写认：小写 bdmv/ 不是盘（与 IO 层同一口径）', () {
+      // 规划层若宽松认了，IO 层却开不出 `BDMV/`：m2ts 被摘、盘又读不出，整张盘一条
+      // 都不剩。不认它至少还能当散装 m2ts 播。
+      expect(blurayDiscRootForFile('/a/Movie/bdmv/stream/00001.m2ts'), isNull);
+      expect(blurayDiscRootForFile('/a/Movie/BDMV/stream/00001.m2ts'), isNull);
       expect(
-        blurayDiscRootForFile('/a/Movie/bdmv/stream/00001.m2ts'),
+        isInsideBlurayDisc('/a/Movie/bdmv/STREAM/00001.m2ts', <String>{
+          p.normalize('/a/Movie'),
+        }),
+        isFalse,
+      );
+      // 文件名照旧不分大小写。
+      expect(
+        blurayDiscRootForFile('/a/Movie/BDMV/Index.BDMV'),
         p.normalize('/a/Movie'),
       );
     });
   });
 
   group('parseBlurayMetaTitle', () {
+    test('合集名候选序列：盘名 → 带上级目录名 → 再加序号', () {
+      expect(
+        blurayCollectionNameCandidates('DISC1', '/lib/S2/DISC1').take(4),
+        <String>['DISC1', 'DISC1 (S2)', 'DISC1 (S2) (2)', 'DISC1 (S2) (3)'],
+      );
+      // 上级目录名与盘名相同（`Movie/Movie/BDMV`）时不重复带。
+      expect(
+        blurayCollectionNameCandidates('Movie', '/lib/Movie/Movie').take(3),
+        <String>['Movie', 'Movie (2)', 'Movie (3)'],
+      );
+    });
+
     test('取出盘内标题并反转义', () {
       expect(
         parseBlurayMetaTitle(

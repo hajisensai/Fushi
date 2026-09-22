@@ -1595,9 +1595,15 @@ class VideoPlayerController extends ChangeNotifier
         videoFile != null && isBlurayPlaylistPath(videoFile.path)
         ? await resolveBluraySource(videoFile.path)
         : null;
-    // 下游吃 `_videoPath` 的是内嵌字幕抽取、制卡裁剪这些 ffmpeg 链路，它们要的是一
-    // 段真实码流，不是播放列表。
-    _videoPath = bluray?.primaryStreamPath ?? videoFile?.path;
+    // 下游吃 `_videoPath` 的是内嵌字幕抽取、制卡裁剪、字幕自动对轴这些 ffmpeg 链路，
+    // 它们要的是一段真实码流，不是播放列表——但**只有形态 1（单段整段用满）**时第一
+    // 段 m2ts 的时间轴才等于播放时间轴。`edl://` 拼接形态下播放位置在拼接后的虚拟轴
+    // 上，拿它去第一段码流上按同一毫秒裁，制出来的卡音频是别的句子、截图是别的画面，
+    // 而且是静默错。那时把 `.mpls` 原样交出去：ffmpeg 开不了它，制卡 / 对轴会以看得
+    // 见的失败收场，而不是给出错的结果（PR #1604 审查；按段映射回片段内偏移留作跟进）。
+    _videoPath = bluray != null && bluray.isPlainFile
+        ? bluray.primaryStreamPath
+        : videoFile?.path;
     _blurayChapters = bluray?.chapters;
     // BUG-2455：交给 native 的 URL 统一过 [nativePlaybackUri]——互联 host 的自签
     // https 流降成明文 http 交给中继，由中继按配对指纹钉扎升回 https；本地文件 /

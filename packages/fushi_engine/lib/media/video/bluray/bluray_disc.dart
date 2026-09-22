@@ -18,6 +18,10 @@
 //      并集，它就是把各集串起来的 play-all，丢它保各集（TV 盘的典型形态）。
 //   6. 相对时长下限——正片 120 分钟时 3 分钟的花絮出局；MV 盘各曲时长相近，整批留下。
 //      这一条让「电影盘只进正片」和「MV 盘全进」用同一个判据表达，不需要先猜盘的类型。
+//      锚点（最长者）不取「片段集合包住另外 ≥2 条」的 play-all 形状——⑤ 漏网的
+//      play-all 若当锚，7 集以上的剧集盘各集会被它整批砍掉。
+//
+// 另有一条前置判据：没有视频轨的播放列表（纯音轨）不是标题。
 //
 // 被筛掉的播放列表仍完整保留在 [BlurayDisc.playlists] 里，将来要做「显示全部标题」
 // 不必回头改筛选链。
@@ -102,14 +106,37 @@ class BlurayDisc {
   }
 }
 
+/// 一张盘入库时合集名的候选序列：盘名 → 「盘名 (上级目录名)」→ 再加 `(2)`、`(3)`…
+///
+/// 盘名在无 `META` 时就是目录名，而压制 / 抓取出来的盘目录名极常见是 `DISC1` /
+/// `BDROM` / `Vol.1`——一个系列多卷就是 `S1/DISC1/BDMV` 与 `S2/DISC1/BDMV`。合集若
+/// 只按盘名全局对号，第二张盘会被对到第一张的合集上：两张盘的 `00001.mpls` 基身份
+/// 相同被判「已是成员」、第一张独有的 `00003.mpls` 被移出，每次重扫按盘顺序把成员
+/// 翻一遍。调用方按这个序列逐个试，撞上属于**别的盘**的合集就换下一个名字
+/// （PR #1604 审查）。
+Iterable<String> blurayCollectionNameCandidates(
+  String discName,
+  String discRootPath,
+) sync* {
+  yield discName;
+  final String parent = p.basename(p.dirname(p.normalize(discRootPath)));
+  final String qualified = parent.isEmpty || parent == discName
+      ? discName
+      : '$discName ($parent)';
+  if (qualified != discName) yield qualified;
+  for (int n = 2; ; n++) {
+    yield '$qualified ($n)';
+  }
+}
+
 /// [path] 指向一张盘时返回含 `BDMV` 的那层目录，否则返回 null。
 ///
 /// 同时接受「盘根」与「`BDMV` 目录本身」两种指法——用户拖进来的可能是任意一种。
 String? blurayDiscRootForDirectory(String path) {
   final String normalized = p.normalize(path);
   if (_looksLikeBlurayRoot(normalized)) return normalized;
-  // 指的是 BDMV 目录本身：上跳一层。
-  if (p.basename(normalized).toUpperCase() == 'BDMV') {
+  // 指的是 BDMV 目录本身：上跳一层（精确大小写，见 [blurayDiscRootForFile]）。
+  if (p.basename(normalized) == 'BDMV') {
     final String parent = p.dirname(normalized);
     if (_looksLikeBlurayRoot(parent)) return parent;
   }
@@ -128,19 +155,26 @@ bool _looksLikeBlurayRoot(String dirPath) {
 /// 下只回 `File`），所以规划层只能靠这个纯函数从路径形状认盘。这里刻意只认
 /// `BDMV/<PLAYLIST|STREAM|CLIPINF>/<文件>` 与 `BDMV/index.bdmv` 两种形状，不碰文件
 /// 系统——同一条扫描里会对上万个路径调用它。
+///
+/// **目录名按精确大小写认**（BD 规范强制大写），与 IO 层（[readBlurayDisc] /
+/// `resolveBluraySource` 按 `BDMV` / `PLAYLIST` / `STREAM` / `CLIPINF` 字面开文件）
+/// 同一口径。若这里宽松到不分大小写，Android / Linux 上一张小写 `bdmv/` 的盘会被规划
+/// 层认出来、把它的 `stream/*.m2ts` 全部从散装视频里摘掉，IO 层却开不出 `BDMV/`、
+/// `readBlurayDisc` 返回 null 被静默跳过——整张盘一条都不剩。不认的盘退回散装 m2ts，
+/// 至少还能播（PR #1604 审查）。文件名（`index.bdmv` / 扩展名）照旧不分大小写。
 String? blurayDiscRootForFile(String filePath) {
   final List<String> parts = p.split(p.normalize(filePath));
   if (parts.length < 3) return null;
   // .../BDMV/index.bdmv 或 .../BDMV/MovieObject.bdmv
   final String fileName = parts.last.toUpperCase();
-  if (parts[parts.length - 2].toUpperCase() == 'BDMV' &&
+  if (parts[parts.length - 2] == 'BDMV' &&
       (fileName == 'INDEX.BDMV' || fileName == 'MOVIEOBJECT.BDMV')) {
     return p.joinAll(parts.sublist(0, parts.length - 2));
   }
   if (parts.length < 4) return null;
   const Set<String> contentDirs = <String>{'PLAYLIST', 'STREAM', 'CLIPINF'};
-  if (!contentDirs.contains(parts[parts.length - 2].toUpperCase())) return null;
-  if (parts[parts.length - 3].toUpperCase() != 'BDMV') return null;
+  if (!contentDirs.contains(parts[parts.length - 2])) return null;
+  if (parts[parts.length - 3] != 'BDMV') return null;
   // `BDMV/BACKUP/PLAYLIST/...` 会在这里被挡下：它的上上层是 BACKUP 不是 BDMV。
   return p.joinAll(parts.sublist(0, parts.length - 3));
 }
@@ -169,10 +203,10 @@ bool isInsideBlurayDisc(String filePath, Set<String> discRoots) {
   if (discRoots.isEmpty) return false;
   final String normalized = p.normalize(filePath);
   for (final String root in discRoots) {
+    // 精确大小写，与 [blurayDiscRootForFile] 同一口径。
     final String prefix = p.join(root, 'BDMV') + p.separator;
     if (normalized.length > prefix.length &&
-        normalized.substring(0, prefix.length).toUpperCase() ==
-            prefix.toUpperCase()) {
+        normalized.substring(0, prefix.length) == prefix) {
       return true;
     }
   }
@@ -203,7 +237,7 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
   playlists.sort((BlurayPlaylist a, BlurayPlaylist b) => a.id.compareTo(b.id));
 
   final Directory streamDir = Directory(p.join(root, 'BDMV', 'STREAM'));
-  final Set<String> presentClips = <String>{};
+  Set<String>? presentClips = <String>{};
   try {
     for (final FileSystemEntity entity in streamDir.listSync(
       followLinks: false,
@@ -215,7 +249,10 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
       }
     }
   } on FileSystemException {
-    // STREAM 读不动就不按「片段是否存在」筛，其余判据照常。
+    // STREAM 读不动（不存在 / 无权限）就不按「片段是否存在」筛，其余判据照常。
+    // 读得动但一个 m2ts 都没有（只拷了 PLAYLIST 的半张盘）是另一回事：那时每条
+    // 标题都引用着不存在的片段，照筛——否则整盘进库、一播就失败。
+    presentClips = null;
   }
 
   final String name = await readBlurayDiscName(root);
@@ -223,7 +260,7 @@ Future<BlurayDisc?> readBlurayDisc(String rootPath) async {
     playlists,
     discRootPath: root,
     discName: name,
-    presentClipIds: presentClips.isEmpty ? null : presentClips,
+    presentClipIds: presentClips,
   );
   if (titles.isEmpty) return null;
 
@@ -343,10 +380,20 @@ List<BlurayTitle> selectBlurayTitles(
       .toList(growable: false);
   if (unique.isEmpty) return const <BlurayTitle>[];
 
-  // 6：相对时长下限。
+  // 6：相对时长下限。锚点（最长者）**排除 play-all 形状**——片段集合包住另外 ≥2 条
+  // 的那种：⑤ 只丢「恰好等于并集」的 play-all，剧集盘的 play-all 多含一段各集里没有
+  // 的 NCOP / 预告 / 过场就漏网存活；若再拿它当锚，7 集以上的盘 0.15 × 总长就超过
+  // 单集，各集全部出局、库里只剩一条几小时的 play-all。锚点退到「不是别人超集」的
+  // 最长者，play-all 本身照旧按下限判（PR #1604 审查）。
   int longest = 0;
   for (final BlurayPlaylist playlist in unique) {
+    if (_supersetOfOthers(playlist, unique) >= 2) continue;
     if (playlist.durationTicks > longest) longest = playlist.durationTicks;
+  }
+  if (longest == 0) {
+    for (final BlurayPlaylist playlist in unique) {
+      if (playlist.durationTicks > longest) longest = playlist.durationTicks;
+    }
   }
   final int relativeFloor = (longest * relativeDurationFloor).round();
   final List<BlurayPlaylist> kept =
@@ -389,6 +436,19 @@ bool _prefersOver(BlurayPlaylist candidate, BlurayPlaylist incumbent) {
     return candidate.chapters.length > incumbent.chapters.length;
   }
   return candidate.id.compareTo(incumbent.id) < 0;
+}
+
+/// [pool] 里有几条别的播放列表的片段集合被 [playlist] 严格包住（集合比较）。
+int _supersetOfOthers(BlurayPlaylist playlist, List<BlurayPlaylist> pool) {
+  final Set<String> own = playlist.clipIds.toSet();
+  int count = 0;
+  for (final BlurayPlaylist other in pool) {
+    if (identical(other, playlist)) continue;
+    final Set<String> ids = other.clipIds.toSet();
+    if (ids.isEmpty || ids.length >= own.length) continue;
+    if (own.containsAll(ids)) count++;
+  }
+  return count;
 }
 
 /// [playlist] 是否只是把 [pool] 里另外两条及以上播放列表串起来的「全部播放」。
