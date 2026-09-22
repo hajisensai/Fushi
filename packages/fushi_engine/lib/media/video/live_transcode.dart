@@ -87,6 +87,17 @@ class VideoTranscodeProfile {
 /// 的常见取值，480p veryfast 在桌面 CPU 上转 6 秒内容通常不到 1 秒。
 const int kTranscodeSegmentSeconds = 6;
 
+/// 转码分段端点的路径尾（`/api/library/videos/<id>/hlsseg.m4s?token=&n=`）。
+///
+/// **扩展名是协议的一部分，不是装饰**（BUG-2630）：FFmpeg 6.1 起 hls demuxer
+/// （`extension_picky` 默认开）对 playlist 里每个分段 URL 先查
+/// `allowed_segment_extensions` 白名单，扩展名取 **query 之前**的路径尾
+/// （`ff_match_url_ext`）；不在名单上就 `Invalid data found`，播放器压根不去取分段。
+/// 五端随包 libmpv 都是 FFmpeg 6.1+，所以裸 `hlsseg?token=` 让所有转码流一开就死。
+/// `.m4s` 同时在白名单里、又在「探得 mp4 格式时额外放行」的特例里；init 段
+/// （`hlsinit.mp4`）与 playlist（`hls.m3u8`）本就带扩展名。
+const String kTranscodeSegmentPathSuffix = 'hlsseg.m4s';
+
 /// 音频目标码率（bps）：AAC 立体声 128 kbps，够用且在弱网里只占总带宽的零头。
 const int kTranscodeAudioBitrate = 128000;
 

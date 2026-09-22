@@ -74,11 +74,18 @@ track 定义由一个共用的 `EXT-X-MAP` 初始化段给出。
 | `GET …/<id>/streamurl?maxWidth=&maxBitrate=` | 协商：认档就回 HLS playlist URL，不认就回老的直传 URL |
 | `GET …/<id>/hls.m3u8?token=` | VOD playlist（`EXT-X-MAP` + 每段 `EXTINF`，段 URI 用相对形式） |
 | `GET …/<id>/hlsinit.mp4?token=` | 初始化段（取第 0 段产物的 `ftyp`+`moov`） |
-| `GET …/<id>/hlsseg?token=&n=` | 第 n 段（剥头 + `tfdt` 平移） |
+| `GET …/<id>/hlsseg.m4s?token=&n=` | 第 n 段（剥头 + `tfdt` 平移） |
 
 - **档位绑在 token 上，不从 query 取**：后三条路径（playlist / init / 分段）豁免 Basic 鉴权（播放器取 playlist /
-  init / 分段都是裸 GET），让 `hlsseg` 自带编码参数就等于把「在 host 上起一个任意参数
+  init / 分段都是裸 GET），让分段端点自带编码参数就等于把「在 host 上起一个任意参数
   的 ffmpeg」敞开给 URL 持有者。签发侧（`/streamurl`，要 Basic）定档。
+- **三条路径的扩展名是协议的一部分**（BUG-2630）：FFmpeg 6.1 起 hls demuxer 对 playlist 里
+  每个分段 URL 先查 `allowed_segment_extensions` 白名单（扩展名取 query 之前的路径尾，
+  `ff_match_url_ext`），不在名单上直接 `Invalid data found`。首版分段端点是裸 `hlsseg?token=`，
+  五端随包 libmpv（都是 FFmpeg 6.1+）一个都不肯取分段，「切画质档就黑屏」。现在分段是
+  `hlsseg.m4s`（同时在白名单与 mp4 分段特例里），守卫
+  `fushi/test/sync/fushi_sync_server_hls_segment_ext_guard_test.dart` 把 hls.c 的判据移植成
+  Dart 钉住 host 签发的每个 URI。
 - **一段一个短命进程**：没有会话表、没有临时文件、没有长跑进程要清理；seek 到哪就转哪。
   并发上限 3（`kMaxConcurrentTranscodes`）——不设闸门的话一次 seek 能同时点起七八个
   ffmpeg，CPU 被瓜分之后每一段都变慢。
