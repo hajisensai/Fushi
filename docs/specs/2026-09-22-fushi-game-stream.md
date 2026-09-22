@@ -1,6 +1,6 @@
 # Fushi 局域网游戏串流与远程查词
 
-状态：`implemented_unverified`。代码和定向回归已落地；真实游戏、Android LAN 音视频和 Anki 真卡尚未完成联合验收，不能据此升级任何游戏引擎的支持状态。
+状态：`implemented_unverified`。代码和定向回归已落地；真实 SGRE → Android LAN 音视频、Hook 台词和查词已取得证据，输入实效和 Anki 真卡尚未完成联合验收，不能据此升级任何游戏引擎的支持状态。
 
 ## 使用入口和边界
 
@@ -31,7 +31,13 @@
 - `tool/run_game_stream_capture_test.ps1` 的 18 项断言通过，验证 BT.601 固定颜色、纹理行距、裁剪原点、奇数尺寸和 1080p 上限。
 - 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`。初始默认桌面路径在 PMv2/200% DPI 下启动成功但零帧；同类独立 probe 在 DPI-unaware 模式出帧、PMv2 模式零帧。接入 WGC 后，运行 `win-itest-20260922-204734-8bc39160` 通过：生产 host 本地首帧、WebRTC 接收解码/渲染首帧、非零应用音频能量、窗口最小化后的自动停止。输入客户区为 1248×642；该证据使用自建 WinForms 窗口，尚不代表游戏与 Android 联合验收。
 - 隔离 Android QA APK `app.fushi.reader.streamqa` 已构建并安装到 SM-X716B，不覆盖正式应用或其数据。LAN fixture 使用隔离主机库、预置测试配对和独立测试牌组；配对批准 UI 不属于此夹具的验证范围。输入 ACK、观察到的台词变化和可归因的游戏输入实效分别记录。
+- 首轮 SGRE 实测发现跨线程窗口激活完成前过早校验；本地启动改为在 `SetForegroundWindow` 成功后通过有界 `WM_NULL` 同步目标队列，再检查窗口身份及前台状态。激活请求被系统拒绝时仍返回错误，不重试抢焦点。后续 LAN fixture 等待操作者准备有声剧情、写入本地 `local-start.request` 并保留游戏前台后才调用生产启动路径，不再通过输入队列附着模拟本地点击。
+- 真实 SGRE 主机运行 `gs-lan-host-20260922-3` 已得到当前游戏画面及关联语音资源事件；等待客户端超过 10 分钟后按 `expired` 停止，撤销测试凭据并正常退出。Android 这轮未加入：先修复 PowerShell 5.1 的 UTF-8 凭据读取，再修复测试页初始化前访问焦点的问题。不能把此轮写成 Android LAN 验收通过。追加测试错误 handler 恢复回归 1 项，连同主机 5 项重新执行，6/6 通过；不同定向单元/组件测试合计 142 项。
+- `gs-lan-host-20260922-4` / Android `lan4` 使用已运行的 SGRE 游戏（校验 HWND、PID、镜像路径及 SHA-256）完成真实 LAN 连接。安卓首帧 640×360，统计解码 731 帧、接收视频 2,622,588 字节、音频 134,422 字节且 `totalAudioEnergy` 非零；后续解码日志记录 1280×720。同步台词与主机 `lineId` / 文本 SHA-256 一致，主机词典查询及递归查询返回结果。两次输入 ACK 接受，但三秒内未观察到台词变化，不能据此称为游戏控制通过。
+- 同轮远程制卡被 HTTP 路径拒绝，没有验证通过的卡；旧传输丢弃非 2xx 错误体，不能从原日志确定具体拒绝点。已补结构化 HTTP 错误分类、主机 mine 异常边界和 preflight/hostMine/verify 阶段证据，待复测确定根因。Android 夹具追加真实按住确认键及首帧即时截图；测试脚本保留隔离 QA 包以导出失败证据，测试结束仍清除本轮配对凭据。
+- `gs-lan-host-20260922-5` / Android `lan5` 在 `a38b6c19092` 的构建上再次取得首帧、2371 帧解码和非零音频能量，保存了真实游戏与台词抽屉的安卓截图。确认键实际保持 762ms，DOWN/UP ACK 都接受，但没有新台词事件，SGRE 的消息输入实效仍未通过。该轮在查词前失败：隔离接收器无形态词典，按单字显示，而新台词没有旧的稀疏词表单字；夹具词表已补全假名，避免要求操作者反复寻找特定台词。此轮未发送制卡请求，不能据此判断上轮制卡拒绝已修复。
+- 追加 HTTP 拒绝分类与鉴权/fallback 回归 7 项、mine handler 异常与非 ASCII short alias 回归 3 项、制卡阶段诊断回归 5 项、排队输入超时与控制通道关闭回归 3 项。新增生命周期用例先复现缺陷，修复后 receiver 15/15、host 6/6 通过；传输层 28/28、阶段诊断 6/6、协议 21/21 通过。不同定向单元/组件测试合计 160 项；改动文件静态检查通过。生命周期修复晚于 LAN5 构建，不能把 LAN5 作为这项修复的实机证据。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 
-尚需完成：真实 HWND 视频帧与应用音频、最小化/销毁清理、输入目标隔离，以及 Windows 游戏 → Android LAN 首帧/音频/旋转/后台恢复 → 递归查词 → 主机 Anki 真卡（按 `lineId` 核对截图与句音）的端到端证据。
+尚需完成：SGRE 输入实际响应、真实游戏最小化/销毁清理、Android 旋转/后台恢复，以及主机 Anki 真卡（按 `lineId` 核对截图与句音）的端到端证据。目标窗口隔离、销毁与生命周期已有单元/原生自建窗口测试；其证据范围不等于真实游戏验收。

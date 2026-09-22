@@ -28,7 +28,14 @@ const String gameStreamTestDictionary = 'FushiGameStreamE2E';
 MiningMediaCompression gameStreamFixtureCompression() =>
     MiningMediaCompression.resolve(imageTier: 3, audioTier: 2);
 
-const List<String> gameStreamTestTerms = <String>[
+// The isolated receiver has no morphology dictionary and displays individual
+// characters. Cover kana so a different voiced sentence does not require the
+// operator to hunt for a line containing one of a few canned fixture words.
+final List<String> gameStreamTestTerms = <String>{
+  for (int codePoint = 0x3041; codePoint <= 0x3096; codePoint++)
+    String.fromCharCode(codePoint),
+  for (int codePoint = 0x30a1; codePoint <= 0x30fa; codePoint++)
+    String.fromCharCode(codePoint),
   'サイ',
   '俺',
   '私',
@@ -53,7 +60,7 @@ const List<String> gameStreamTestTerms = <String>[
   'to',
   'of',
   'a',
-];
+}.toList(growable: false);
 
 Map<String, Object?> gameStreamFailureSummary(Object error) {
   final Map<String, Object?> summary = <String, Object?>{
