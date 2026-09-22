@@ -1,6 +1,7 @@
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi_core/fushi_core.dart'
     show MediaCollectionItemRow, MediaCollectionRow, MediaKind, VideoBookRow;
@@ -124,6 +125,7 @@ class CollectionRemoteContext {
     this.scrapeOnHost,
     this.scrapeForHost,
     this.chooseTmdbOrderingOnHost,
+    this.downloads,
   });
 
   /// 拉对端视频清单（调用方走共享的 [RemoteLibraryCache]，TTL 内不打网络）。
@@ -159,4 +161,10 @@ class CollectionRemoteContext {
   /// null = 对端不是互联 host。
   final Future<void> Function(MediaCollectionRow collection)?
       chooseTmdbOrderingOnHost;
+
+  /// app 级互联下载管理器：详情页据它给**每一集**画下载进度 / 失败角标（任务键
+  /// = 远端集 id = [CollectionEpisodeSlot.entryKey]，与库页远端占位卡同一张表）。
+  /// 详情页是普通 StatefulWidget、既有测试不挂 `ProviderScope`，所以由库页注入
+  /// 而不是页内取 provider；null = 集卡不画下载态（与注入前逐像素相同）。
+  final InterconnectDownloadManager? downloads;
 }

@@ -49,7 +49,9 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1705,25 +1707,39 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     CollectionEpisodeSlot episode,
     int index,
   ) {
-    final Widget card = CollectionEpisodeCard(
-      thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
-      // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
-      // 解析不出时回退顺位号。
-      number: '${_episodeDisplayNumber(episode, index)}',
-      title: _episodeDisplayTitle(episode),
-      identityLabel: _episodeIdentityLabel(episode),
-      summary: _episodeSummary(episode),
-      completed: episode.completed,
-      positionMs: episode.positionMs,
-      isContinue: episode.entryKey == _continueKey,
-      // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
-      isRemote: episode.isRemote,
-      // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
-      trailingStatus: VideoSpecsInlineLine(
-        service: widget.videoSpecs,
-        filePath: episode.local?.videoPath,
-      ),
-    );
+    Widget buildCard(Widget? downloadBadge) => CollectionEpisodeCard(
+          thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
+          // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
+          // 解析不出时回退顺位号。
+          number: '${_episodeDisplayNumber(episode, index)}',
+          title: _episodeDisplayTitle(episode),
+          identityLabel: _episodeIdentityLabel(episode),
+          summary: _episodeSummary(episode),
+          completed: episode.completed,
+          positionMs: episode.positionMs,
+          isContinue: episode.entryKey == _continueKey,
+          // 云角标 = 这一集只在对端（与库页远端占位卡同一枚角标）。
+          isRemote: episode.isRemote,
+          downloadBadge: downloadBadge,
+          // v95：该集的规格摘要（`1080p · HDR10 · HEVC`），挤在状态行右端。
+          trailingStatus: VideoSpecsInlineLine(
+            service: widget.videoSpecs,
+            filePath: episode.local?.videoPath,
+          ),
+        );
+    // 远端集 + 库页注入了下载管理器 → 集卡跟着该集任务快照重绘（进度环 / 失败
+    // 角标）。任务键 = 远端集 id = entryKey，与库页远端占位卡同一张表；管理器是
+    // ChangeNotifier，用 ListenableBuilder 订阅而不是把本页改成 Consumer（既有
+    // 测试不挂 ProviderScope）。
+    final InterconnectDownloadManager? downloads = widget.remote?.downloads;
+    final Widget card = downloads == null || !episode.isRemote
+        ? buildCard(null)
+        : ListenableBuilder(
+            listenable: downloads,
+            builder: (BuildContext context, Widget? _) => buildCard(
+              _episodeDownloadBadge(downloads.taskFor(episode.entryKey)),
+            ),
+          );
     if (FushiFocusRoot.maybeControllerOf(context) == null) return card;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -1739,6 +1755,30 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         child: card,
       ),
     );
+  }
+
+  /// 某远端集的下载态角标：进行中 → 进度环；失败 → 失败角标（tooltip 带真实错误
+  /// 文本）；无任务 / 已完成 → null（集卡照旧画云角标）。与库页远端占位卡
+  /// `_remoteDownloadBadge` 同一套徽章、同一套 key 前缀，测试同一把 finder。
+  Widget? _episodeDownloadBadge(InterconnectDownloadTask? task) {
+    if (task == null) return null;
+    switch (task.status) {
+      case InterconnectDownloadStatus.running:
+        return RemoteDownloadProgressBadge(
+          key: ValueKey<String>('collection_episode_downloading_${task.id}'),
+          progress: task.progress,
+          tooltip: t.remote_video_downloading,
+        );
+      case InterconnectDownloadStatus.failed:
+        return RemoteDownloadFailedBadge(
+          key: ValueKey<String>('collection_episode_download_failed_${task.id}'),
+          tooltip: task.error == null || task.error!.isEmpty
+              ? t.remote_video_download_failed
+              : '${t.remote_video_download_failed}: ${task.error}',
+        );
+      case InterconnectDownloadStatus.completed:
+        return null;
+    }
   }
 
   /// 集卡上下文菜单（右键 / 触摸长按原地松手）。坐标经 Overlay `globalToLocal`
