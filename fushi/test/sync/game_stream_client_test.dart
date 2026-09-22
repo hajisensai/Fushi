@@ -176,6 +176,54 @@ void main() {
     });
   });
 
+  test(
+    'suffix lookup shows the host matched word and mines its source line',
+    () async {
+      final _DeferredLookup lookup = _DeferredLookup();
+      final _FakeTransport transport = _FakeTransport();
+      final GameStreamLookupController controller = GameStreamLookupController(
+        lookupClient: lookup,
+        streamClient: FushiGameStreamClient(transport: transport),
+        clientId: 'android-a',
+      );
+      addTearDown(controller.dispose);
+      controller.applyTextEvent(
+        GameStreamTextEvent(
+          sessionId: 's1',
+          lineId: 'line-with-suffix',
+          text: '😀 日本語と日本語',
+          timestampMs: 1000,
+        ),
+      );
+      final Future<void> pending = controller.lookup(
+        '日本語と日本語',
+        displayTerm: '日',
+      );
+      expect(lookup.terms, <String>['日本語と日本語']);
+      expect(controller.selectedTerm, '日');
+      final DictionarySearchResult matched = DictionarySearchResult(
+        searchTerm: '日本語と日本語',
+        bestLength: 3,
+        entries: <DictionaryEntry>[
+          DictionaryEntry(
+            dictionaryName: 'Host dictionary',
+            word: '日本語',
+            reading: 'にほんご',
+            meaning: 'Japanese language',
+          ),
+        ],
+      );
+      lookup.pending.complete(matched);
+      await pending;
+      expect(controller.result, same(matched));
+      expect(controller.selectedTerm, '日本語');
+      await controller.mine(<String, String>{'expression': '日本語'});
+      expect(transport.calls.single.path, '/api/game-stream/mine');
+      expect(transport.calls.single.body['lineId'], 'line-with-suffix');
+      expect(transport.calls.single.body['sentence'], '😀 日本語と日本語');
+    },
+  );
+
   test('lookup completion cannot attach an old result to a new line', () async {
     final _DeferredLookup lookup = _DeferredLookup();
     final _FakeTransport transport = _FakeTransport();
@@ -212,6 +260,7 @@ void main() {
     );
     await pending;
     expect(controller.result, isNull);
+    expect(controller.selectedTerm, isNull);
     expect(controller.searching, isFalse);
     expect(
       () => controller.mine(<String, String>{'term': '文章'}),
@@ -327,6 +376,7 @@ Future<GameStreamPostResult> _postStream(
 );
 
 class _DeferredLookup implements GameStreamDictionaryLookup {
+  final List<String> terms = <String>[];
   final Completer<DictionarySearchResult?> pending =
       Completer<DictionarySearchResult?>();
 
@@ -335,7 +385,10 @@ class _DeferredLookup implements GameStreamDictionaryLookup {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) => pending.future;
+  }) {
+    terms.add(term);
+    return pending.future;
+  }
 }
 
 class _FakeTransport implements GameStreamTransport {

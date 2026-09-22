@@ -498,13 +498,13 @@ class GameStreamLookupController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> lookup(String term) async {
+  Future<void> lookup(String term, {String? displayTerm}) async {
     final String query = term.trim();
     if (query.isEmpty) return;
     final int generation = ++_lookupGeneration;
     final GameStreamTextEvent? lookupLine = _currentLine;
     _searching = true;
-    _selectedTerm = query;
+    _selectedTerm = displayTerm ?? query;
     _error = null;
     notifyListeners();
     try {
@@ -516,6 +516,14 @@ class GameStreamLookupController extends ChangeNotifier {
       if (generation != _lookupGeneration) return;
       _result = next;
       _resultLine = lookupLine;
+      if (next != null && next.bestLength > 0) {
+        // The host scans prefixes of the sentence suffix and returns the
+        // normalized source span in UTF-16 units (including inflected forms).
+        _selectedTerm = next.searchTerm.substring(
+          0,
+          next.bestLength.clamp(0, next.searchTerm.length),
+        );
+      }
     } catch (error) {
       if (generation != _lookupGeneration) return;
       _error = error.toString();

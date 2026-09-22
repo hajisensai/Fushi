@@ -163,9 +163,10 @@ void main() {
   });
 
   testWidgets(
-    'uninitialised local dictionary still exposes tappable segments',
+    'without a local dictionary chips query suffixes at their UTF-16 positions',
     (WidgetTester tester) async {
       final _Lookup lookup = _Lookup();
+      expect(FushiDicts.isInitialized, isFalse);
       final GameStreamLookupController controller =
           GameStreamLookupController(
             lookupClient: lookup,
@@ -175,7 +176,7 @@ void main() {
             GameStreamTextEvent(
               sessionId: 's1',
               lineId: 'line-1',
-              text: '日本語',
+              text: '😀 日本語と日本語',
               timestampMs: 1,
             ),
           );
@@ -197,18 +198,26 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('日本語'), findsOneWidget);
+      expect(find.text('😀 日本語と日本語'), findsOneWidget);
       expect(
         find.byKey(const ValueKey<String>('game-stream-segments')),
         findsOneWidget,
       );
-      final ActionChip chip = tester.widget<ActionChip>(
-        find.byType(ActionChip).first,
-      );
-      final String selected = (chip.label as Text).data!;
-      await tester.tap(find.byType(ActionChip).first);
+      expect(find.widgetWithText(ActionChip, '😀'), findsOneWidget);
+      final Finder repeated = find.widgetWithText(ActionChip, '日');
+      expect(repeated, findsNWidgets(2));
+      await tester.tap(repeated.first);
       await tester.pumpAndSettle();
-      expect(lookup.terms, <String>[selected]);
+      expect(controller.selectedTerm, '日');
+      await tester.tap(repeated.last);
+      await tester.pumpAndSettle();
+      expect(
+        lookup.terms,
+        <String>['日本語と日本語', '日本語'],
+        reason:
+            'The emoji occupies two UTF-16 units; repeated words must not '
+            'resolve through indexOf to the first occurrence.',
+      );
     },
   );
 

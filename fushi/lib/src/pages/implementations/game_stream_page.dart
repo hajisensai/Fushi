@@ -88,7 +88,9 @@ class _GameStreamPageState extends State<GameStreamPage>
     if (!mounted) return;
     setState(() {
       _wordCache = TexthookerWordCache(
-        tokenize: JapaneseLanguage.instance.textToWords,
+        tokenize: (String text) => FushiDicts.isInitialized
+            ? JapaneseLanguage.instance.textToWords(text)
+            : text.characters.toList(),
         maxEntries: 128,
       );
     });
@@ -612,12 +614,17 @@ class _GameStreamPageState extends State<GameStreamPage>
                           spacing: 4,
                           runSpacing: 4,
                           children: <Widget>[
-                            for (final String word in words)
+                            for (final (int offset, String word)
+                                in _indexedWords(words))
                               if (word.trim().isNotEmpty)
                                 ActionChip(
                                   label: Text(word),
-                                  onPressed: () =>
-                                      unawaited(controller?.lookup(word)),
+                                  onPressed: () => unawaited(
+                                    controller?.lookup(
+                                      line!.text.substring(offset),
+                                      displayTerm: word,
+                                    ),
+                                  ),
                                 ),
                           ],
                         ),
@@ -679,6 +686,16 @@ class _GameStreamPageState extends State<GameStreamPage>
         ),
       ),
     );
+  }
+}
+
+/// The tokenizer only splits the original text. Sum UTF-16 lengths, including
+/// whitespace, so repeated words keep their own position in the source line.
+Iterable<(int, String)> _indexedWords(List<String> words) sync* {
+  int offset = 0;
+  for (final String word in words) {
+    yield (offset, word);
+    offset += word.length;
   }
 }
 
