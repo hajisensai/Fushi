@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2436 条。点号进各自文件。
+> 共 2437 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2632](bugs/BUG-2632-vn-lookup-audio-position.md) | ✅ | ✅ | VN 查词弹窗从此句播放误用屏内及学习单位坐标导致跳错位置 |
 | [BUG-2631](bugs/BUG-2631-webdav-html-error-page.md) | ✅ | ✅ | WebDAV 测试连接：403 网页响应体（Cloudflare 挑战）整页标记裸灌进提示 |
 | [BUG-2630](bugs/BUG-2630-interconnect-hls-segment-ext-rejected.md) | ✅ | ✅ | 互联转码 HLS 分段 URL 无扩展名被 FFmpeg 6.1 白名单拒开 |
 | [BUG-2629](bugs/BUG-2629-youtube-rolling-cue-audio-overlap.md) | ✅ | ✅ | 浏览器扩展 YouTube 制卡音频多录下一行——自动字幕滚动双行的 cue 时长跨到下下行 |
