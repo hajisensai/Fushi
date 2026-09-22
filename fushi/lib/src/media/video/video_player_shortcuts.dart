@@ -69,6 +69,7 @@ class VideoPlayerShortcutActions {
     required this.screenshotSubtitled,
     required this.toggleFullscreen,
     required this.toggleMiniWindow,
+    required this.toggleMiniChrome,
     required this.toggleSubtitleList,
     required this.searchSubtitleList,
     required this.toggleImmersiveLock,
@@ -125,6 +126,11 @@ class VideoPlayerShortcutActions {
   /// 画中画。iOS 不支持（libmpv 走 Flutter texture，拿不到 AVPlayerLayer），
   /// 那里按下去是 no-op，入口按钮也不会出现。
   final VoidCallback toggleMiniWindow;
+
+  /// 切换小窗控件显隐（默认 Shift+M）：小窗常态只剩画面 + 字幕 + 底部细线，本动作
+  /// 显式唤出 / 收起顶部拖动带 + 退出钮与居中三键。只在桌面小窗那一档有效（常规窗口
+  /// chrome 归 media_kit 的 hover 语义、系统画中画归系统），其余情形按下去是 no-op。
+  final VoidCallback toggleMiniChrome;
 
   /// 打开/关闭字幕跳转列表面板（TODO-069，默认裸 L 键；asbplayer 式 transcript 列表）。
   final VoidCallback toggleSubtitleList;
@@ -244,6 +250,7 @@ const List<ShortcutAction> kVideoAssignableActions = <ShortcutAction>[
   // 画面 / 杂项
   ShortcutAction.videoToggleFullscreen,
   ShortcutAction.videoToggleMiniWindow,
+  ShortcutAction.videoToggleMiniChrome,
   ShortcutAction.videoScreenshot,
   ShortcutAction.videoScreenshotSubtitled,
   ShortcutAction.videoToggleShaderCompare,
@@ -284,6 +291,7 @@ Map<ShortcutAction, VoidCallback> videoActionCallbacks(
     ShortcutAction.videoScreenshotSubtitled: actions.screenshotSubtitled,
     ShortcutAction.videoToggleFullscreen: actions.toggleFullscreen,
     ShortcutAction.videoToggleMiniWindow: actions.toggleMiniWindow,
+    ShortcutAction.videoToggleMiniChrome: actions.toggleMiniChrome,
     ShortcutAction.videoToggleSubtitleList: actions.toggleSubtitleList,
     ShortcutAction.videoSearchSubtitleList: actions.searchSubtitleList,
     ShortcutAction.videoToggleImmersiveLock: actions.toggleImmersiveLock,
@@ -342,6 +350,9 @@ const Set<ShortcutAction> kVideoPressEdgeOnlyActions = <ShortcutAction>{
   // 小窗切换同理：进 / 退各是七八次 platform 往返的一条链，按住 W 让 OS key-repeat
   // 以重复率连发 `enter`，后到者在首个 setBounds 之后读到的已是小窗框并覆盖还原框。
   ShortcutAction.videoToggleMiniWindow,
+  // chrome 显隐是翻转型动作：按住让它以 key-repeat 的频率来回翻，小窗里就是一片
+  // 疯狂闪烁的按钮。
+  ShortcutAction.videoToggleMiniChrome,
 };
 
 /// 把注册表里的视频键盘绑定冻结成一张 `Map<ShortcutActivator, VoidCallback>`

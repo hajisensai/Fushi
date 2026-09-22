@@ -73,6 +73,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// `cancel_subscriptions` lint 只认**类体内**的取消，写在 part 的 extension 上
   /// 它看不见，会对字段声明报一条假的「未取消」。
   void _disposeMiniWindow() {
+    _miniChromeIntroTimer?.cancel();
+    _miniChromeIntroTimer = null;
+    _miniChromeRevealed.dispose();
     if (DesktopMiniWindowMode.isActive) {
       unawaited(
         DesktopMiniWindowMode.exit(
@@ -123,6 +126,12 @@ extension _VideoMiniWindow on _VideoFushiPageState {
       if (!mounted) return;
       if (!DesktopMiniWindowMode.isActive) return;
       _miniSurface.value = VideoMiniSurface.desktopMiniWindow;
+      // 小窗 chrome 常态不显（hover 不再唤起，见 [videoMiniChromeVisible]），但无边框
+      // 小窗**没有系统标题栏**——第一次进来时若一个 chrome 都不出现，用户看不到退出钮、
+      // 也找不到拖动带，只剩「记不记得快捷键」。故进小窗时引导性地亮一次再自行淡出：
+      // 常态清爽与「有退路」两件事不冲突。换集认领（[_initMiniWindowSupport]）不走这里，
+      // 免得每集都闪一下。
+      _revealMiniChromeBriefly();
       _rebuild(() {});
       return;
     }
@@ -141,6 +150,7 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     );
     if (!mounted) return;
     _miniSurface.value = VideoMiniSurface.none;
+    _resetMiniChrome();
     _rebuild(() {});
   }
 
@@ -152,6 +162,41 @@ extension _VideoMiniWindow on _VideoFushiPageState {
 
   // ── mini 档自绘 chrome ──────────────────────────────────────────────────
 
+  /// 切换 mini chrome 显隐（快捷键 [ShortcutAction.videoToggleMiniChrome] 的执行体）。
+  ///
+  /// 只在**本仓负责画 chrome** 的那一档有意义：常规窗口里 chrome 归 media_kit（hover
+  /// 唤起是那边的语义），系统画中画里归系统。两种情形一律早退，而不是翻一个没人读的
+  /// 标志位——否则从小窗退回主窗后再进小窗，chrome 会带着上一次在主窗里按出来的状态。
+  void _toggleMiniChrome() {
+    // 只对桌面小窗表面：常规窄窗口的 mini 档 chrome 跟 hover 走（见
+    // [videoMiniChromeVisible]），翻这个标志位在那里没人读。
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) return;
+    _miniChromeIntroTimer?.cancel();
+    _miniChromeIntroTimer = null;
+    _miniChromeRevealed.value = !_miniChromeRevealed.value;
+  }
+
+  /// 进小窗时把 chrome 亮出来一小会儿再自行收起（唯一的自动显隐路径）。
+  void _revealMiniChromeBriefly() {
+    _miniChromeIntroTimer?.cancel();
+    _miniChromeRevealed.value = true;
+    _miniChromeIntroTimer = Timer(
+      _VideoFushiPageState._miniChromeIntroDuration,
+      () {
+        _miniChromeIntroTimer = null;
+        if (!mounted) return;
+        _miniChromeRevealed.value = false;
+      },
+    );
+  }
+
+  /// 退小窗复位：下次进小窗从「常态清爽」开始，不继承上一次按出来的显隐状态。
+  void _resetMiniChrome() {
+    _miniChromeIntroTimer?.cancel();
+    _miniChromeIntroTimer = null;
+    _miniChromeRevealed.value = false;
+  }
+
   /// mini 档顶部那条带：整条可拖动窗口 + 右端一个「退出小窗」钮。
   ///
   /// 拖动带只占顶部一条，不是整个画面：整面拖动会把「点画面暂停」「点字幕查词」
@@ -160,6 +205,12 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   Widget _buildMiniWindowTopChrome() {
     final VideoControlsDensitySpec density = _controlsDensity;
     if (!density.showCenterTransport) return const SizedBox.shrink();
+    // 这条带（拖动入口 + 退出钮）是桌面小窗专属：常规窗口被挤窄到 mini 档时自己有
+    // 标题栏可拖、也没有小窗可退——画出来只剩一条没用的渐变，退出钮还是死的
+    // （_exitVideoMiniWindow 因 surface≠desktopMiniWindow 早退）。
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) {
+      return const SizedBox.shrink();
+    }
     final double height = 32 * _videoUiScale;
     final Widget bar = SizedBox(
       height: height,
@@ -187,10 +238,22 @@ extension _VideoMiniWindow on _VideoFushiPageState {
       top: 0,
       left: 0,
       right: 0,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _videoControlsVisible,
-        builder: (BuildContext context, bool visible, _) => FadingChromeGate(
-          visible: visible,
+      child: ListenableBuilder(
+        // 桌面小窗里显隐只认显式唤出（快捷键 / 进小窗那次引导），**不认 hover**——
+        // 否则鼠标从角落里的小窗上扫过就弹一层按钮，正是用户报的「太乱」。常规窗口
+        // 被挤窄到 mini 档（surface none）则跟 hover 走——见 [videoMiniChromeVisible]
+        // 的第二道门。判据是纯函数，页面与测试同源。
+        listenable: Listenable.merge(<Listenable>[
+          _miniChromeRevealed,
+          _videoControlsVisible,
+        ]),
+        builder: (BuildContext context, _) => FadingChromeGate(
+          visible: videoMiniChromeVisible(
+            spec: density,
+            surface: _miniWindowSurface,
+            revealed: _miniChromeRevealed.value,
+            controlsVisible: _videoControlsVisible.value,
+          ),
           duration: _videoControlsTransitionDuration,
           // 桌面小窗是无边框的，系统不再提供标题栏抓手，这条带就是唯一的拖动入口。
           // 移动端（系统画中画）永远走不到这里：那边 showCenterTransport 恒 false。
@@ -222,10 +285,20 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     // seekBackward / seekForward 分支）：小窗里换个位置，语义必须还是同一个键。
     const int seekMs = 10000;
     return Positioned.fill(
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _videoControlsVisible,
-        builder: (BuildContext context, bool visible, _) => FadingChromeGate(
-          visible: visible,
+      child: ListenableBuilder(
+        // 与顶部那条带同源：桌面小窗只认显式唤出、常规窄窗口跟 hover（见
+        // [videoMiniChromeVisible]）。
+        listenable: Listenable.merge(<Listenable>[
+          _miniChromeRevealed,
+          _videoControlsVisible,
+        ]),
+        builder: (BuildContext context, _) => FadingChromeGate(
+          visible: videoMiniChromeVisible(
+            spec: density,
+            surface: _miniWindowSurface,
+            revealed: _miniChromeRevealed.value,
+            controlsVisible: _videoControlsVisible.value,
+          ),
           duration: _videoControlsTransitionDuration,
           child: Center(
             child: Row(
@@ -247,10 +320,10 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                     tooltip: t.video_bottom_play_pause,
                     colorScheme: cs,
                     primary: true,
-                    onPressed: () {
-                      _pokeControlsVisible();
-                      unawaited(controller.playOrPause());
-                    },
+                    // 不再 [_pokeControlsVisible]：mini chrome 的显隐已与 media_kit
+                    // 控制条解绑（[videoMiniChromeVisible]），续命那条控制条在小窗里
+                    // 既画不出东西、又会让字幕为它避让一格。
+                    onPressed: () => unawaited(controller.playOrPause()),
                   ),
                 ),
                 SizedBox(width: 16 * _videoUiScale),
@@ -282,23 +355,48 @@ extension _VideoMiniWindow on _VideoFushiPageState {
       left: 0,
       right: 0,
       bottom: 0,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _videoControlsVisible,
-        builder: (BuildContext context, bool controlsVisible, _) {
-          final bool visible = videoSlimProgressBarVisible(
-            spec: density,
-            surface: _miniWindowSurface,
-            preferenceEnabled: enabled,
-            controlsVisible: controlsVisible,
-          );
-          if (!visible) return const SizedBox.shrink();
-          return VideoSlimProgressBar(
-            positionMs: () => controller.positionMs,
-            durationMs: () => controller.durationMs,
-            // 播放器 chrome 的「主题色」口径：裸压固定深色 scrim 的前景必须取亮 tone
-            // primary，直接用 cs.primary 在浅色 / eink 主题下是深色、黑压黑不可见。
-            color: _videoChromeAccent(cs),
-            height: 3 * _videoUiScale,
+      // 细线吃不吃指针要跟着四个遮挡门控走，而它们**不改** [_videoControlsVisible]
+      // 之外的任何东西 → 只订阅可见性会漏：控制条本就隐着时开沉浸锁，可见性没变、
+      // 细线却该立刻停止接受 seek。细线挂在 media_kit 控制条那层 [IgnorePointer]
+      // **之外**，不在这里订阅就是这四个门控唯一漏掉的可点区。
+      child: ListenableBuilder(
+        listenable: Listenable.merge(<Listenable>[
+          _immersiveLocked,
+          _videoSidePanel,
+          _episodeListVisible,
+          _videoControlEditMode,
+        ]),
+        builder: (BuildContext context, _) {
+          final bool interactive = !_immersiveLocked.value &&
+              _videoSidePanel.value == null &&
+              !_episodeListVisible.value &&
+              !_videoControlEditMode.value;
+          return ValueListenableBuilder<bool>(
+            valueListenable: _videoControlsVisible,
+            builder: (BuildContext context, bool controlsVisible, _) {
+              final bool visible = videoSlimProgressBarVisible(
+                spec: density,
+                surface: _miniWindowSurface,
+                preferenceEnabled: enabled,
+                controlsVisible: controlsVisible,
+              );
+              if (!visible) return const SizedBox.shrink();
+              return VideoSlimProgressBar(
+                positionMs: () => controller.positionMs,
+                durationMs: () => controller.durationMs,
+                // 播放器 chrome 的「主题色」口径：裸压固定深色 scrim 的前景必须取亮 tone
+                // primary，直接用 cs.primary 在浅色 / eink 主题下是深色、黑压黑不可见。
+                color: _videoChromeAccent(cs),
+                height: 3 * _videoUiScale,
+                // 点 / 横拖这条线直接跳转（小窗里它是唯一的进度控件，常规档它是控制条
+                // 淡出后唯一还在的那条）。命中带随「界面大小」一起缩放，与线本身同源。
+                hitTestHeight: 12 * _videoUiScale,
+                onSeekFraction: interactive
+                    ? (double fraction) =>
+                        unawaited(_seekToProgressFraction(fraction))
+                    : null,
+              );
+            },
           );
         },
       ),

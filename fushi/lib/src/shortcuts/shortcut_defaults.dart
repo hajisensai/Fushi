@@ -368,6 +368,12 @@ class ShortcutDefaults {
     ShortcutAction.videoToggleMiniWindow: _kb([
       _key(LogicalKeyboardKey.keyW),
     ]),
+    // 小窗控件显隐：Shift+M。裸 M 是静音（video 组内已占），而阅读器 / 漫画的
+    // 「切换界面」正是裸 M（readerToggleChrome / mangaToggleChrome）——Shift+M 既
+    // 避开冲突，又留住跨页面的肌肉记忆。手柄留空，理由同 videoToggleMiniWindow。
+    ShortcutAction.videoToggleMiniChrome: _kb([
+      _key(LogicalKeyboardKey.keyM, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),
     ], [
