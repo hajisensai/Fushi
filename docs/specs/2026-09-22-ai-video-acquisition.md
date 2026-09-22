@@ -27,7 +27,7 @@
 | 能力 | 落点 |
 |---|---|
 | 放送状态归一 | `packages/fushi_engine/lib/media/video/metadata/video_airing_status.dart`：`VideoAiringStatus{airing, finished, upcoming, cancelled, hiatus}` + `normalizeVideoAiringStatus`（认不出 → null）；MAL / AniList 补填 `status` / `endDate`；`VideoMetadataWork.status` 保持原串 |
-| 按作品字幕语言 | `video_download_subtitle_language.dart`：管线 `subtitleLanguageResolver` 注入点（字幕阶段每任务问一次，拿到码即显式语言：硬过滤 + 排序首选；null 走全局链；异常记日志按 null）；`videoDownloadCollectionName` / `videoDownloadSeriesKey` 是合集名与每系列记忆键的唯一算法；backfill 同样吃 `SubtitleBackfillTarget.explicitLanguage`；app 接既有 `jimaku_pref_langs`。零 schema |
+| 按作品字幕语言 | `video_download_subtitle_language.dart`：管线 `subtitleLanguageResolver` 注入点（字幕阶段每任务问一次，拿到码即**排序首选**；所有者合入 #1588 时改成「只提名次、不收窄搜索面」——它来自字幕工作台的筛选记忆，当硬过滤会让该语言没字幕的任务一条都下不到；只有全局默认字幕语言非空时才把它排到过滤列表最前；null 走全局链；异常按阶段错误冒泡）；`videoDownloadCollectionName` / `videoDownloadSeriesKey` 是合集名与每系列记忆键的唯一算法；backfill 同样吃 `SubtitleBackfillTarget.explicitLanguage`；app 接既有 `jimaku_pref_langs`。零 schema |
 | 提交逻辑 | `video_discovery_submit.dart`：`enqueueLocalVideoDownload` / `createLocalVideoDownloadSubscription` / `videoResourceSubscriptionSearchQuery` 从 HomePage 抽出 |
 | 库内存在性 | `video_library_presence.dart`：`resolveVideoLibraryPresence`（从订阅服务 `_managedEpisodeKeys` 抽出，单身份语义） |
 
