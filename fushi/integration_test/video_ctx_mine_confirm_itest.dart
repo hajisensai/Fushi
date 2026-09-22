@@ -296,14 +296,45 @@ void main() {
           'canAdd=${anki.requestsFor('canAddNotesWithErrorDetail').length}');
       debugPrint('[ctx-mine] probe after confirm: '
           '${await popup.debugEval(_kPopupProbe)}');
-      // 直接再回点一次（此刻弹窗已重新可见），把返回值原样打印。
-      final bool again = await popup.mineEntryByIndex(0);
+      expect(failedToast, isFalse,
+          reason: '回点链路不该报「查词弹窗已经关掉了」：${newLogs.map((e) => e.error)}');
+
+      // BUG-2634 的核心承诺有三条，都得由机器看着，不能只留在 debugPrint 里：
+      //   ① 对话框真的关了（不是锁死到超时）；
+      expect(_dialogMounted(), isFalse,
+          reason: '确认后对话框必须关窗（实测 ${sw.elapsedMilliseconds} ms）');
+      //   ② 提前关窗之后制卡**照样跑完并落地**；
+      for (int i = 0; i < 120 && anki.requestsFor('addNote').isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(anki.notes, isNotEmpty,
+          reason: '提前关窗不等于放弃制卡：假 AnkiConnect 应真的收到 addNote');
+      //   ③ 落地的那张卡真的带着句子上下文，不是空草稿。
+      //      （空草稿丢失正是 BUG-2627 第二轮的症状：卡制出来了、toast 报成功、
+      //      用户刚调的上下文全丢，比原 bug 更隐蔽，只有这条断言看得见。）
+      final List<String> landedValues = <String>[
+        for (final Map<String, Object?> note in anki.notes)
+          ...?(note['fields'] as Map<String, Object?>?)
+              ?.values
+              .map((Object? v) => '$v'),
+      ];
+      debugPrint('[ctx-mine] landed field values=$landedValues');
+      expect(
+        landedValues.any((String v) => v.contains(_kSentence)),
+        isTrue,
+        reason: '落地的卡必须带上句子上下文；一条都不含 = 关窗后草稿被清掉了。'
+            '实测字段值=$landedValues',
+      );
+
+      // 直接再回点一次（此刻弹窗已重新可见），把返回值原样打印。留在断言之后，
+      // 免得它制的第二张卡污染上面那三条。
+      final bool again = await popup.mineEntryByIndex(
+        0,
+        releaseWhenPayloadConsumed: true,
+      );
       debugPrint('[ctx-mine] direct mineEntryByIndex(0) again => $again');
       await tester.pump(const Duration(seconds: 2));
       await captureFlutterFrame(tester, '05-direct-mine');
-
-      expect(failedToast, isFalse,
-          reason: '回点链路不该报「查词弹窗已经关掉了」：${newLogs.map((e) => e.error)}');
     } finally {
       FlutterError.onError = oldHandler;
       await anki?.close();

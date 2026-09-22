@@ -1122,7 +1122,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               supportsSentenceAudioPreview ? onStopSentenceAudioPreview : null,
           // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
           onConfirm: () async =>
-              await webViewKey.currentState?.mineEntryByIndex(entryIndex) ??
+              await webViewKey.currentState?.mineEntryByIndex(
+                    entryIndex,
+                    // BUG-2634 第二轮：阅读器的 onMineFromPopup 经制卡串行队列
+                    // 入队（TODO-644 / BUG-357），草稿要等前一次制卡整段跑完才被
+                    // 读走——提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿
+                    // 合成。这条车道退回「等落地」，只是不会再因为宿主慢而误报。
+                    releaseWhenPayloadConsumed: false,
+                  ) ??
                   false,
         ),
       ),

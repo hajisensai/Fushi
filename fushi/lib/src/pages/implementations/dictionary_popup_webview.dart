@@ -16,6 +16,7 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -1086,33 +1087,52 @@ JSON.stringify((function(){
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
   /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
   /// 提示用户。
-  /// 「回点前」这一段（查重 → 取音 → 组 payload）的上限。BUG-2634：这个超时**不再**
-  /// 盖住制卡本身——制卡任务一被宿主接受（见 [_confirmMineAccepted]）往返就算成功；
-  /// 真超时只可能是弹窗桥半死，按「没点到」回。
+  /// 「回点前」这一段（下发 JS → 查重 → 取音 → 组 payload）的上限。BUG-2634：这个
+  /// 超时**只盖到宿主接手为止**——宿主的 Dart 代码一旦在跑（可能在等用户从「已有卡」
+  /// 操作单里选），桥就已经回过话了，再计时只会制造假失败。判据见
+  /// [ConfirmMineRoundTrip]。
   static const Duration _kMineRoundTripTimeout = Duration(seconds: 45);
 
-  /// BUG-2634：一次「确认制卡」往返的**接受**信号。
-  ///
-  /// BUG-2627 的第二轮把 [mineEntryByIndex] 改成 await popup.js 那头的 promise 到
-  /// mineEntry 回执**落地**（否则 pop 之后的裸窗里悬停离开自动关栈会把草稿清掉）。但
-  /// 「落地」包含了整个制卡任务——ffmpeg 抽 GIF/音频 + Anki 往返，几秒到几十秒、还要
-  /// 排共享制卡队列——全程对话框锁死、弹窗停靠屏外；一过 45s 就被判成「弹窗已关」
-  /// 报失败（卡随后照样制出来），弹窗半路被关 / WebView 重建时 promise 更是直接死掉。
-  ///
-  /// 草稿真正需要保护的窗口其实只到「宿主开始消费 payload」：视频 `_onMineEntryImpl` /
-  /// reader `_prepareMiningContext` 都在首个 await 之前就把草稿合成读走了。所以三个制卡
-  /// 桥 handler（`mineEntry` / `updateEntry` / `minedCardAction`）在把 payload 交给宿主的
-  /// 那一刻完成本 completer；[mineEntryByIndex] 以「JS 落地」与「已接受」两者先到者为准，
-  /// 对话框随即关窗，制卡在 Dart 侧照常跑完（成功/失败 toast 由宿主自己出，与直接点
-  /// 弹窗里的 + 完全一样）。没有确认往返在路上时它为 null，桥 handler 的信号是 no-op。
-  Completer<bool>? _confirmMineAccepted;
+  /// BUG-2634：当前在路上的那次「确认制卡」往返。没有时为 null，桥 handler 的信号
+  /// 全是 no-op。策略（两个信号各管什么、超时盖哪一段）在 [ConfirmMineRoundTrip]。
+  ConfirmMineRoundTrip? _confirmMineRoundTrip;
 
-  void _markConfirmMineAccepted() {
-    final Completer<bool>? accepted = _confirmMineAccepted;
-    if (accepted != null && !accepted.isCompleted) accepted.complete(true);
+  /// 本次往返的宿主是否保证「在首个 await 之前同步读走草稿 / 制卡上下文」。
+  /// 见 [mineEntryByIndex] 的 `releaseWhenPayloadConsumed`。
+  bool _confirmMineReleaseWhenConsumed = false;
+
+  /// 宿主已接手 payload：**只解除超时**，不关窗。三个制卡桥 handler 都在把 payload
+  /// 交出去的那一刻调。
+  void _markConfirmMineHostEntered() =>
+      _confirmMineRoundTrip?.markHostEntered();
+
+  /// 宿主已读走草稿 / 制卡上下文：允许提前关窗的宿主才走到这一步，否则退化成上面那条
+  /// 「只解除超时」。调用点必须在宿主的首个 await **之前**，否则就是在猜。
+  void _markConfirmMinePayloadConsumed() {
+    final ConfirmMineRoundTrip? trip = _confirmMineRoundTrip;
+    if (trip == null) return;
+    if (_confirmMineReleaseWhenConsumed) {
+      trip.markPayloadConsumed();
+    } else {
+      trip.markHostEntered();
+    }
   }
 
-  Future<bool> mineEntryByIndex(int idx) async {
+  /// [releaseWhenPayloadConsumed]：本次往返的宿主是否保证**在首个 `await` 之前**把
+  /// 草稿 / 制卡上下文同步读完。
+  ///
+  /// * 视频车道（`_openSentenceContextDialogForVideo`）传 true：`_onMineEntryImpl`
+  ///   在 `await _mineVideoCard(...)` 之前就把草稿、cue、历史快照读完，连当前帧截图
+  ///   的 Future 都在点击当下同步启动，所以提前关窗不会截到别的帧。
+  /// * 阅读器车道（`base_source_page` 的 `_openSentenceContextDialog`）传 false：它的
+  ///   `onMineFromPopup` 经制卡串行队列入队（TODO-644 / BUG-357），草稿要等前一次制卡
+  ///   整段跑完才被读走；提前关窗会让弹窗关栈把草稿清掉，排到的任务用空草稿合成——
+  ///   卡制出来、toast 报成功、用户刚调的上下文全丢（BUG-2627 第二轮正是修的这个）。
+  ///   它退回「等落地」这条老路，只是不会再因为宿主慢而误报失败。
+  Future<bool> mineEntryByIndex(
+    int idx, {
+    required bool releaseWhenPayloadConsumed,
+  }) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) {
       ErrorLogService.instance.log(
@@ -1122,12 +1142,13 @@ JSON.stringify((function(){
       );
       return false;
     }
-    final Completer<bool> accepted = Completer<bool>();
-    _confirmMineAccepted = accepted;
+    final ConfirmMineRoundTrip trip =
+        ConfirmMineRoundTrip(preHostTimeout: _kMineRoundTripTimeout);
+    _confirmMineRoundTrip = trip;
+    _confirmMineReleaseWhenConsumed = releaseWhenPayloadConsumed;
     try {
       // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
-      // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。它与
-      // [_confirmMineAccepted] 赛跑：宿主一接受制卡任务就返回，不等落地。
+      // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。
       final Future<bool> landed = controller
           .callAsyncJavaScript(
         functionBody: 'return await (window.fushiPopupMineEntryByIndex'
@@ -1162,19 +1183,21 @@ JSON.stringify((function(){
             .log('DictPopupWebview.mineEntryByIndex', e, stack);
         return false;
       });
-      return await Future.any<bool>(<Future<bool>>[landed, accepted.future])
-          .timeout(_kMineRoundTripTimeout);
-    } on TimeoutException catch (e, stack) {
-      ErrorLogService.instance.log(
-        'DictPopupWebview.mineEntryByIndex',
-        'confirm round-trip neither accepted nor settled within '
-            '${_kMineRoundTripTimeout.inSeconds}s (popup bridge unresponsive): $e',
-        stack,
-      );
-      return false;
+      final ConfirmMineOutcome outcome = await trip.run(landed);
+      if (outcome == ConfirmMineOutcome.bridgeTimedOut) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup bridge did not even reach the host within '
+              '${_kMineRoundTripTimeout.inSeconds}s (half-dead WebView channel); '
+              'this is NOT "the host is slow" — once the host is in there is no deadline',
+          StackTrace.current,
+        );
+      }
+      return outcome.clickedOrAccepted;
     } finally {
-      if (identical(_confirmMineAccepted, accepted)) {
-        _confirmMineAccepted = null;
+      if (identical(_confirmMineRoundTrip, trip)) {
+        _confirmMineRoundTrip = null;
+        _confirmMineReleaseWhenConsumed = false;
       }
     }
   }
@@ -2195,12 +2218,13 @@ JSON.stringify((function(){
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                // BUG-2634：宿主的 onMineEntry 在首个 await 之前就消费了草稿 / 制卡
-                // 上下文（Dart async 函数同步执行到首个 await），任务至此已被接受——
-                // 「确认制卡」往返据此返回，不等 ffmpeg / Anki 落地。
+                // BUG-2634：Dart 的 async 函数同步执行到首个 await，所以这一行返回
+                // 时宿主已经跑完它的同步前缀。**只有担保「草稿在首个 await 之前读完」
+                // 的宿主**（`releaseWhenPayloadConsumed`）才据此提前关窗；不担保的
+                // （阅读器经制卡串行队列入队）在内部降级成「只解除超时」。
                 final Future<MinePopupResult> pending =
                     widget.onMineEntry!(fields);
-                _markConfirmMineAccepted();
+                _markConfirmMinePayloadConsumed();
                 final MinePopupResult result = await pending;
                 // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
                 // 让它把刚制的这张标记为「最新可改」第三态。
@@ -2232,11 +2256,18 @@ JSON.stringify((function(){
                 );
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
+                // BUG-2634 第二轮：这条路（这个词以前制过卡）会弹「覆写 / 新增重复
+                // / 取消」的模态操作单，**无限等用户做选择**，选完还要等整张卡落地。
+                // 所以这里只解除超时、**不**提前关窗：
+                //   * 不解除 → 45 秒计时盖住「等人」，超时后报的正是用户原话那句
+                //     「查词弹窗已经关掉了」，还会把用户正在用的操作单 pop 掉；
+                //   * 提前关窗 → 草稿是用户选完之后、在 mineNew / overwrite 里才被
+                //     读走的，关早了就会被弹窗关栈清掉（= 另一头的静默丢草稿）。
+                // 对话框在整条链路落地时关，这正是这条路该有的样子：用户本来就在
+                // 上面那张模态单里忙着。
+                _markConfirmMineHostEntered();
                 final MinePopupResult result =
                     await widget.onMinedCardAction!(fields);
-                // BUG-2634：已有卡的处置单（覆写 / 新增重复 / 取消）由宿主对话框收
-                // 尾，用户选完这一刻就是「任务已接受」，确认往返不必再等 popup.js 收尾。
-                _markConfirmMineAccepted();
                 return result.toJson();
               }
             } catch (e, stack) {
@@ -2301,11 +2332,11 @@ JSON.stringify((function(){
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                // BUG-2634：与 mineEntry 同一条接受纪律（覆写路径同样在首个 await
-                // 之前读走草稿）。
+                // BUG-2634：与 mineEntry 同一条纪律（覆写路径同样在首个 await 之前
+                // 读走草稿），同样按宿主的担保决定是提前关窗还是只解除超时。
                 final Future<MinePopupResult> pending =
                     widget.onUpdateEntry!(noteId, fields);
-                _markConfirmMineAccepted();
+                _markConfirmMinePayloadConsumed();
                 final MinePopupResult result = await pending;
                 return result.toJson();
               }

@@ -243,7 +243,13 @@ mixin DictionaryPageMixin {
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
           onConfirm: () async =>
-              await webViewKey.currentState?.mineEntryByIndex(entryIndex) ??
+              await webViewKey.currentState?.mineEntryByIndex(
+                entryIndex,
+                // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
+                // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
+                // 在点击当下同步启动，所以提前关窗不会截到别的帧。
+                releaseWhenPayloadConsumed: true,
+              ) ??
               false,
         ),
       ),
