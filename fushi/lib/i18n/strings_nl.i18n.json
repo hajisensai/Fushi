@@ -5163,5 +5163,8 @@
   "game_stream_join_failed": "Could not join the stream",
   "game_stream_leave_failed": "Could not notify the host that streaming has ended",
   "game_stream_available": "Game stream available",
-  "game_stream_join_action": "Join"
+  "game_stream_join_action": "Join",
+  "game_stream_keys": "Configure controls",
+  "game_stream_keys_hint": "These key mappings apply only to this streaming session.",
+  "game_stream_key_default": "Default"
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
+import 'package:fushi/src/sync/texthooker_word_cache.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -47,6 +48,22 @@ class _GameStreamPageState extends State<GameStreamPage> {
   final GlobalKey<DictionaryPopupWebViewState> _dictionaryKey =
       GlobalKey<DictionaryPopupWebViewState>();
   String? _mineMessage;
+  TexthookerWordCache? _wordCache;
+  final Map<GameStreamVirtualButton, String> _keyBindings =
+      <GameStreamVirtualButton, String>{};
+  final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
+
+  static final List<String> _allowedKeys = <String>[
+    'Enter',
+    'Escape',
+    'Space',
+    'Up',
+    'Down',
+    'Left',
+    'Right',
+    for (int code = 65; code <= 90; code++) String.fromCharCode(code),
+    for (int number = 1; number <= 12; number++) 'F$number',
+  ];
 
   @override
   void initState() {
@@ -55,6 +72,18 @@ class _GameStreamPageState extends State<GameStreamPage> {
     _lookupController?.addListener(_onLookupChanged);
     widget.receiver?.addListener(_onReceiverChanged);
     widget.inputComposer.addListener(_onReceiverChanged);
+    unawaited(_prepareTokenizer());
+  }
+
+  Future<void> _prepareTokenizer() async {
+    await JapaneseLanguage.instance.initialise();
+    if (!mounted) return;
+    setState(() {
+      _wordCache = TexthookerWordCache(
+        tokenize: JapaneseLanguage.instance.textToWords,
+        maxEntries: 128,
+      );
+    });
   }
 
   @override
@@ -156,7 +185,86 @@ class _GameStreamPageState extends State<GameStreamPage> {
     GameStreamVirtualButton button,
     GameStreamInputAction action,
   ) {
+    if (action == GameStreamInputAction.down) _heldButtons.add(button);
+    if (action == GameStreamInputAction.up) _heldButtons.remove(button);
+    final String? key = _keyBindings[button];
+    if (key != null) return widget.inputComposer.key(key: key, action: action);
     return widget.inputComposer.gamepad(button: button, action: action);
+  }
+
+  String _buttonLabel(GameStreamVirtualButton button) => switch (button) {
+    GameStreamVirtualButton.up => '↑',
+    GameStreamVirtualButton.down => '↓',
+    GameStreamVirtualButton.left => '←',
+    GameStreamVirtualButton.right => '→',
+    GameStreamVirtualButton.confirm => 'A',
+    GameStreamVirtualButton.cancel => 'B',
+    GameStreamVirtualButton.shoulderLeft => 'L',
+    GameStreamVirtualButton.shoulderRight => 'R',
+    GameStreamVirtualButton.menu => 'Menu',
+  };
+
+  Future<void> _configureKeys() async {
+    // A held control must retain its down/up mapping until it is released.
+    if (_heldButtons.isNotEmpty) return;
+    final bool restoreLookup = _lookupVisible;
+    setState(() => _lookupVisible = false);
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        builder: (BuildContext context) => StatefulBuilder(
+          builder: (BuildContext context, StateSetter updateSheet) => SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(context).height * 0.7,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: <Widget>[
+                  Text(
+                    t.game_stream_keys,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(t.game_stream_keys_hint),
+                  for (final GameStreamVirtualButton button
+                      in GameStreamVirtualButton.values)
+                    if (button != GameStreamVirtualButton.menu)
+                      ListTile(
+                        title: Text(_buttonLabel(button)),
+                        trailing: DropdownButton<String>(
+                          key: ValueKey<String>(
+                            'game-stream-binding-${button.name}',
+                          ),
+                          value: _keyBindings[button] ?? '',
+                          items: <DropdownMenuItem<String>>[
+                            DropdownMenuItem<String>(
+                              value: '',
+                              child: Text(t.game_stream_key_default),
+                            ),
+                            for (final String key in _allowedKeys)
+                              DropdownMenuItem<String>(
+                                value: key,
+                                child: Text(key),
+                              ),
+                          ],
+                          onChanged: (String? key) => updateSheet(() {
+                            if (key == null || key.isEmpty) {
+                              _keyBindings.remove(button);
+                            } else {
+                              _keyBindings[button] = key;
+                            }
+                          }),
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _lookupVisible = restoreLookup);
+    }
   }
 
   @override
@@ -208,6 +316,12 @@ class _GameStreamPageState extends State<GameStreamPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: <Widget>[
+                        IconButton(
+                          tooltip: t.game_stream_keys,
+                          color: Colors.white,
+                          icon: const Icon(Icons.tune),
+                          onPressed: _configureKeys,
+                        ),
                         IconButton(
                           tooltip: t.game_stream_lookup_toggle,
                           color: Colors.white,
@@ -334,6 +448,9 @@ class _GameStreamPageState extends State<GameStreamPage> {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
+    final List<String> words = line == null
+        ? const <String>[]
+        : (_wordCache?.wordsFor(line.lineId, line.text) ?? const <String>[]);
     return Material(
       color: theme.colorScheme.surface,
       child: SizedBox(
@@ -369,6 +486,23 @@ class _GameStreamPageState extends State<GameStreamPage> {
                           }
                         },
                       ),
+                      if (words.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          key: const ValueKey<String>('game-stream-segments'),
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: <Widget>[
+                            for (final String word in words)
+                              if (word.trim().isNotEmpty)
+                                ActionChip(
+                                  label: Text(word),
+                                  onPressed: () =>
+                                      unawaited(controller?.lookup(word)),
+                                ),
+                          ],
+                        ),
+                      ],
                       if (line?.thread != null) ...<Widget>[
                         const SizedBox(height: 8),
                         Text(

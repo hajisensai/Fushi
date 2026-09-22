@@ -5163,5 +5163,8 @@
   "game_stream_join_failed": "无法加入串流",
   "game_stream_leave_failed": "未能通知主机结束串流",
   "game_stream_available": "可加入游戏串流",
-  "game_stream_join_action": "加入"
+  "game_stream_join_action": "加入",
+  "game_stream_keys": "配置手柄按键",
+  "game_stream_keys_hint": "按键映射仅用于本次串流会话。",
+  "game_stream_key_default": "默认"
 }
