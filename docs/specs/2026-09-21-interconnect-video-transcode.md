@@ -91,6 +91,24 @@ build-ffmpeg-min.sh`）`MUXERS` 补 `mpegts`（h264 进 TS 的 Annex B 转换靠
 `third_party/ffmpeg-min/{windows,macos}`；smoke-test 加了与 `buildTranscodeSegmentArgs`
 同形状的 TS 探针。
 
+**但 TS 分段还有一条硬约束：段编码不能开 B 帧（`-bf 0`）。** `-output_ts_offset` 平移
+的是 PTS 和 **DTS** 两者，而有 B 帧时段首关键帧的 `DTS = PTS − 重排延迟`；第 0 段又会
+被 `avoid_negative_ts`（mpegts muxer 没有 `AVFMT_TS_NEGATIVE`，默认 MAKE_NON_NEGATIVE）
+整体抬成非负，其余段偏移够大不触发。hls demuxer 判 seek 落点用的**正是 DTS**——
+`first_timestamp`（第 0 段首包 DTS）加 playlist 里 `EXTINF` 的累计，凡 DTS 比它小的包
+全部丢弃——于是段 n 唯一的关键帧恰好早了一个重排延迟，**整段被丢、落到段 n+1**，目标
+落在最后一段时直接 EOF。实测（随包 ffmpeg，854p / 1.5 Mbps / 6 秒段）重排延迟
+83.422 ms，段 1 / 2 的关键帧 DTS 5.916578 / 11.916578 对名义 6.000000 / 12.000000；
+真 mpv 上 seek 7 s 落到 11.94 s、seek 13 s 播不出来。关掉 B 帧后 DTS == PTS == 名义
+起点，落点恢复精确。
+
+这不是调参绕过：每段是**独立编码**、起点由 `-output_ts_offset` 钉死在 PTS 域，而 HLS
+的分段索引是 DTS 域的，两域必须重合段边界才自洽。代价是少了 B 帧的压缩收益，但
+`-g 600` 本来就是一段一个关键帧，而弱网上「seek 能用」比那几个百分点重要得多。
+验这条要看**段首视频关键帧的 DTS**，不是 `start_time`、更不是 PTS——单段 `start_time`
+在坏的形态下看上去仍「≈ 偏移」。守卫：`live_transcode_test.dart` 钉 `-bf 0`，
+`tool/ffmpeg-min/smoke-test.sh` 出两段真 TS 验 DTS 落点，itest 的 seek 断言带上界。
+
 ### 2.5 「下载速度」不能当带宽富余的判据
 
 播放器按需下载：缓冲填满后就不再全速拉流，稳态下 `cache-speed` ≈ 媒体码率，看上去

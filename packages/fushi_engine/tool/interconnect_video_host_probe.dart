@@ -24,20 +24,31 @@ Future<void> main(List<String> args) async {
   int minutes = 30;
   // `--plain`：明文 http、不建 TLS 身份（用来把 TLS / 中继从取证链里摘掉）。
   bool plain = false;
+  // 带值的开关落在最后一个参数位时（`--video` 打完就回车），`args[++i]` 会抛
+  // RangeError 而不是报用法，所以先取值再判。
+  String? valueFor(int i, String flag) {
+    if (i + 1 < args.length) return args[i + 1];
+    stderr.writeln('$flag 需要一个值');
+    exit(2);
+  }
+
   for (int i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--plain':
         plain = true;
       case '--video':
-        video = args[++i];
+        video = valueFor(i, '--video');
+        i++;
       case '--port':
-        port = int.parse(args[++i]);
+        port = int.parse(valueFor(i, '--port')!);
+        i++;
       case '--minutes':
-        minutes = int.parse(args[++i]);
+        minutes = int.parse(valueFor(i, '--minutes')!);
+        i++;
     }
   }
   if (video == null || !File(video).existsSync()) {
-    stderr.writeln('usage: --video <mp4> [--port N] [--minutes N]');
+    stderr.writeln('usage: --video <mp4> [--port N] [--minutes N] [--plain]');
     exit(2);
   }
   final Directory dataDir = Directory.systemTemp.createTempSync(

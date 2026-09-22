@@ -187,5 +187,29 @@ void main() {
       expect(args[args.indexOf('-output_ts_offset') + 1], '12.000');
       expect(args.last, 'pipe:1');
     });
+
+    test('段内不许有 B 帧：HLS 的分段索引是 DTS 域的（BUG-2630 第三段）', () {
+      final List<String> args = buildTranscodeSegmentArgs(
+        inputPath: '/v.mkv',
+        profile: const VideoTranscodeProfile(
+          maxWidth: 854,
+          maxBitrate: 1500000,
+        ),
+        start: const Duration(seconds: 6),
+        end: const Duration(seconds: 12),
+      );
+      // `-output_ts_offset` 平移 PTS 和 DTS 两者，段首关键帧的 PTS 因此精确落在
+      // 段起点；但有 B 帧时它的 DTS 比 PTS 早一个重排延迟，而 hls demuxer 判 seek
+      // 落点比的正是 DTS 与「第 0 段首包 DTS + EXTINF 累计」。差这一点点，段 n 的
+      // 唯一关键帧就被整段丢掉、落到段 n+1，目标在最后一段时直接 EOF。
+      // 实测重排延迟 83.422 ms：段 1 关键帧 DTS 5.916578 对名义 6.000000。
+      expect(
+        args[args.indexOf('-bf') + 1],
+        '0',
+        reason: '开 B 帧会让每次 seek 多跳一整段、片尾一段永远到不了',
+      );
+      // 段起点仍必须钉在名义位置上（关 B 帧后 DTS == PTS == 段起点）。
+      expect(args[args.indexOf('-output_ts_offset') + 1], '6.000');
+    });
   });
 }

@@ -257,7 +257,7 @@ void main() {
       tokenQuery = Uri.parse(json['url'] as String).query;
     }
 
-    test('playlist：VOD + MAP + 按时长切段，且相对 URI', () async {
+    test('playlist：VOD + 无 MAP + 按时长切段，且相对 URI', () async {
       await startServer();
       await issue();
       final HttpClientResponse res = await get(

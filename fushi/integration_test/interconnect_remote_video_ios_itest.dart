@@ -28,6 +28,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart';
+import 'package:fushi_engine/media/video/live_transcode.dart'
+    show kTranscodeSegmentSeconds;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -278,12 +280,22 @@ void main() {
                 '[remote-video-itest] SEEK target=$target posMs=$afterSeek '
                 'relay=$relayLog',
               );
+              // 上界不能只排除「跳到片尾」：分段的 DTS 域一旦与 playlist 的
+              // EXTINF 累计对不上，hls demuxer 会把目标那一段整段丢掉、落到下一段
+              // （BUG-2630 第三段），落点只多一段、旧断言稳过。这里按段长收紧：
+              // 允许目标段内继续播到段尾再多缓冲一点，但多出整整一段就是坏了。
+              const int seekSlackMs = kTranscodeSegmentSeconds * 1000;
               expect(
                 afterSeek,
-                allOf(greaterThan(target + 1500), lessThan(durationMs - 500)),
+                allOf(
+                  greaterThan(target + 1500),
+                  lessThan(durationMs - 500),
+                  lessThan(target + seekSlackMs + 2000),
+                ),
                 reason:
                     'seek 到 $target 后应继续真实播放（实测=$afterSeek；跳到片尾 = '
-                    '分段坏了直接 EOF）',
+                    '分段坏了直接 EOF；多跳整整一段 = 段首关键帧 DTS 比名义位置早，'
+                    '目标段被整段丢掉）',
               );
             }
             // seek 掐断正在下的分段时，中继对已声明 Content-Length 的响应提前收口会记

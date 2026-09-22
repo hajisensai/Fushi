@@ -219,7 +219,7 @@ void main() {
       return res.transform(utf8.decoder).join();
     }
 
-    test('playlist 的 init 与每个分段 URI 都能过 FFmpeg 6.1 的扩展名门', () async {
+    test('playlist 的每个分段 URI 都能过 FFmpeg 6.1 的扩展名门', () async {
       final Map<String, dynamic> issued =
           jsonDecode(
                 await fetch(

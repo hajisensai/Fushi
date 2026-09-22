@@ -171,6 +171,25 @@ List<String> buildTranscodeSegmentArgs({
     '-g', '600',
     '-keyint_min', '600',
     '-sc_threshold', '0',
+    // **不能开 B 帧**（BUG-2630 第三段）：`-output_ts_offset` 平移的是 PTS 和 DTS
+    // 两者，而有 B 帧时段首关键帧的 `DTS = PTS - 重排延迟`，于是段 n 的首个关键帧
+    // 落在 `n*6 - 延迟`；偏偏第 0 段还会被 `avoid_negative_ts`（mpegts muxer 没有
+    // `AVFMT_TS_NEGATIVE`，默认 MAKE_NON_NEGATIVE）整体抬成非负。hls demuxer 判
+    // seek 落点用的是 **DTS**：`first_timestamp`（第 0 段首包 DTS，被抬成 0）加上
+    // playlist 里 `EXTINF` 的累计，凡 DTS 比它小的包全部 `av_packet_unref` 丢掉
+    // （`hls.c` 的 `find_timestamp_in_playlist` 与 seek 后的丢包循环）。段 n 唯一
+    // 的关键帧比门槛早那个重排延迟 → **整段被丢、落到段 n+1**；目标落在最后一段时
+    // 直接 EOF。实测（本仓随包 ffmpeg，854p/1.5 Mbps，6 秒段）重排延迟 83.422 ms，
+    // 段 1/2 的关键帧 DTS 5.916578 / 11.916578 对名义位置 6.000000 / 12.000000，
+    // seek 7 s 落到 11.94 s、seek 13 s 什么都播不出来；关掉 B 帧后三段关键帧
+    // DTS 与 PTS 重合、与名义位置精确相等，落点恢复正常。
+    //
+    // 这不是「调参绕过」：每段是**独立编码**、起点由 `-output_ts_offset` 钉死在
+    // PTS 域，而 HLS 的分段索引是 DTS 域的——两域必须重合，段边界才自洽。代价是
+    // 少了 B 帧的压缩收益，但弱网上「seek 能用」比那几个百分点重要得多，何况
+    // `-g 600` 本来就是一段一个关键帧。守卫见
+    // `fushi/test/media/video/live_transcode_test.dart` 与 `tool/ffmpeg-min/smoke-test.sh`。
+    '-bf', '0',
     '-c:a', 'aac',
     '-b:a', '$audioBitrate',
     '-ac', '2',
@@ -179,7 +198,8 @@ List<String> buildTranscodeSegmentArgs({
     '-muxpreload', '0',
     // 段内时间轴平移到片中绝对位置：`-ss` 输入 seek 后输出从 0 起计，mpegts muxer
     // 认这个偏移（mp4 muxer 的 fragmented 模式不认，首版才要在字节层改 tfdt）。
-    // 各段首尾相接后 pts 连续覆盖全片，播放器据此算进度、seek 落点。
+    // 各段首尾相接后覆盖全片。注意 hls demuxer 判 seek 落点用的是 **DTS** 而不是
+    // PTS（见上面 `-bf 0` 处），两者只有在关掉 B 帧后才重合。
     '-output_ts_offset', _ffmpegSeconds(start),
     '-f', 'mpegts',
     'pipe:1',
