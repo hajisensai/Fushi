@@ -33,7 +33,10 @@ class FushiGameStreamReceiver extends ChangeNotifier
        _peerFactory = peerFactory ?? _createPeer {
     WidgetsBinding.instance.addObserver(this);
     renderer.onFirstFrameRendered = () {
-      if (_disposed || _connection == null || renderer.srcObject == null) {
+      if (_disposed ||
+          _hasTerminated ||
+          _connection == null ||
+          renderer.srcObject == null) {
         return;
       }
       _ready = true;
@@ -86,6 +89,10 @@ class FushiGameStreamReceiver extends ChangeNotifier
   bool get reconnectRequired => _state == GameStreamReceiverState.failed;
   RTCDataChannel? get controlChannel => _control;
 
+  bool get _hasTerminated =>
+      _state == GameStreamReceiverState.failed ||
+      _state == GameStreamReceiverState.closed;
+
   bool _isCurrent(int generation) => !_disposed && generation == _generation;
 
   void _notify() {
@@ -129,7 +136,11 @@ class FushiGameStreamReceiver extends ChangeNotifier
       }
       _connection = connection;
       connection.onTrack = (RTCTrackEvent event) {
-        if (!_isCurrent(generation) || event.streams.isEmpty) return;
+        if (!_isCurrent(generation) ||
+            _hasTerminated ||
+            event.streams.isEmpty) {
+          return;
+        }
         renderer.srcObject = event.streams.first;
         _notify();
       };
@@ -141,6 +152,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
       };
       connection.onIceCandidate = (RTCIceCandidate candidate) {
         if (!_isCurrent(generation) ||
+            _hasTerminated ||
             candidate.candidate?.isNotEmpty != true) {
           return;
         }
@@ -176,6 +188,9 @@ class FushiGameStreamReceiver extends ChangeNotifier
   }
 
   void _handleConnectionState(RTCPeerConnectionState state) {
+    // A closed control channel cannot be renegotiated by this single-offer
+    // host. Late media/ICE callbacks must not restore an unusable session.
+    if (_hasTerminated) return;
     switch (state) {
       case RTCPeerConnectionState.RTCPeerConnectionStateConnected:
         _state = GameStreamReceiverState.connected;
@@ -205,14 +220,18 @@ class FushiGameStreamReceiver extends ChangeNotifier
   }
 
   void _startPolling() {
-    if (_pollTimer != null || _backgrounded || _disposed) return;
+    if (_pollTimer != null || _backgrounded || _disposed || _hasTerminated) {
+      return;
+    }
     _pollTimer = Timer.periodic(const Duration(milliseconds: 350), (_) {
       unawaited(_pollSignals());
     });
   }
 
   Future<void> _pollSignals() {
-    if (_disposed || _backgrounded) return Future<void>.value();
+    if (_disposed || _backgrounded || _hasTerminated) {
+      return Future<void>.value();
+    }
     return _poll ??= _runPoll(_generation).whenComplete(() => _poll = null);
   }
 
@@ -227,13 +246,13 @@ class FushiGameStreamReceiver extends ChangeNotifier
         clientId: clientId,
         after: _hostSignalSequence,
       );
-      if (!_isCurrent(generation)) return;
+      if (!_isCurrent(generation) || _hasTerminated) return;
       signals.sort(
         (GameStreamSignal a, GameStreamSignal b) =>
             a.sequence.compareTo(b.sequence),
       );
       for (final GameStreamSignal signal in signals) {
-        if (!_isCurrent(generation)) return;
+        if (!_isCurrent(generation) || _hasTerminated) return;
         if (signal.sessionId != sessionId ||
             signal.senderRole != GameStreamPeerRole.host ||
             signal.sequence <= _hostSignalSequence) {
@@ -321,7 +340,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
     int generation,
   ) {
     final Future<void> operation = _signals.then((_) async {
-      if (!_isCurrent(generation)) return;
+      if (!_isCurrent(generation) || _hasTerminated) return;
       final GameStreamSignal signal = GameStreamSignal(
         sessionId: _sessionId!,
         senderId: _clientId!,
@@ -350,13 +369,18 @@ class FushiGameStreamReceiver extends ChangeNotifier
     channel.onDataChannelState = (RTCDataChannelState state) {
       if (!_isCurrent(generation)) return;
       if (state == RTCDataChannelState.RTCDataChannelClosed) {
+        _pollTimer?.cancel();
+        _pollTimer = null;
+        _state = GameStreamReceiverState.failed;
+        _ready = false;
         _invalidatePendingInputs('control_channel_closed');
-        _error = 'control_channel_closed';
+        _error = 'control_channel_closed_host_restart_required';
         _notify();
       }
     };
     channel.onMessage = (RTCDataChannelMessage message) {
       if (!_isCurrent(generation) ||
+          _hasTerminated ||
           message.isBinary ||
           message.text.length > 1024 * 1024) {
         return;
@@ -411,6 +435,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
     final Future<void> send = _inputs.then((_) async {
       if (!_isCurrent(generation) ||
           inputEpoch != _inputEpoch ||
+          ack.isCompleted ||
           _backgrounded ||
           _state != GameStreamReceiverState.connected ||
           !identical(channel, _control) ||
@@ -437,7 +462,17 @@ class FushiGameStreamReceiver extends ChangeNotifier
     try {
       return await ack.future.timeout(
         const Duration(seconds: 3),
-        onTimeout: () => _reject(event.sequence, 'ack_timeout'),
+        onTimeout: () {
+          if (_isCurrent(generation) &&
+              inputEpoch == _inputEpoch &&
+              identical(_pendingAcks[event.sequence], ack)) {
+            // Timeout means delivery is uncertain: discard all queued input
+            // from this epoch and release any DOWN already sent to the host.
+            _invalidatePendingInputs('ack_timeout');
+            _releaseInputs();
+          }
+          return _reject(event.sequence, 'ack_timeout');
+        },
       );
     } finally {
       if (identical(_pendingAcks[event.sequence], ack)) {
@@ -505,7 +540,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
         })
         .catchError((Object error) {
           // The host also releases every key when the native peer disconnects.
-          if (_isCurrent(generation)) {
+          if (_isCurrent(generation) && !_hasTerminated) {
             _error = 'control_channel_unavailable';
             _notify();
           }

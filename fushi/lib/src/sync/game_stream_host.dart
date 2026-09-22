@@ -74,6 +74,9 @@ class FushiGameStreamHost extends ChangeNotifier {
   @visibleForTesting
   MediaStream? get debugCaptureStream => _capture;
 
+  @visibleForTesting
+  RTCDataChannel? get debugControlChannel => _control;
+
   @override
   void notifyListeners() {
     if (!_disposed) super.notifyListeners();
@@ -216,8 +219,16 @@ class FushiGameStreamHost extends ChangeNotifier {
         _inputs = _inputs.then((_) => _receiveControl(message.text));
       };
       _control!.onDataChannelState = (RTCDataChannelState state) {
+        if (generation != _generation ||
+            !identical(_control, control) ||
+            service.session?.sessionId != current.sessionId ||
+            current.state.isTerminal) {
+          return;
+        }
         if (state == RTCDataChannelState.RTCDataChannelOpen) {
           unawaited(_sendPendingTexts());
+        } else if (state == RTCDataChannelState.RTCDataChannelClosed) {
+          unawaited(stop(reason: 'control_channel_closed'));
         }
       };
       connection.onConnectionState = (RTCPeerConnectionState state) {

@@ -97,12 +97,18 @@ class _Peer extends RTCPeerConnection {
 class _Channel extends RTCDataChannel {
   final List<Map<String, dynamic>> sent = <Map<String, dynamic>>[];
   Completer<void>? sendGate;
+  RTCDataChannelState channelState = RTCDataChannelState.RTCDataChannelOpen;
 
   @override
   String get label => 'fushi-game-control';
 
   @override
-  RTCDataChannelState get state => RTCDataChannelState.RTCDataChannelOpen;
+  RTCDataChannelState get state => channelState;
+
+  void changeState(RTCDataChannelState value) {
+    channelState = value;
+    onDataChannelState?.call(value);
+  }
 
   @override
   Future<void> send(RTCDataChannelMessage message) async {
@@ -391,6 +397,96 @@ void main() {
       expect(disconnected.reason, 'disconnected');
       receiver.dispose();
       await Future<void>.delayed(Duration.zero);
+    },
+  );
+
+  test(
+    'ACK timeout drops queued input and releases before fresh controls',
+    () async {
+      await receiver.connect(sessionId: 'session', clientId: 'phone');
+      peer.onConnectionState?.call(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      final Completer<void> sendGate = Completer<void>();
+      final _Channel channel = _Channel()..sendGate = sendGate;
+      peer.onDataChannel?.call(channel);
+      final Future<GameStreamInputAck> first = receiver.sendInput(_input(1));
+      await Future<void>.value();
+      final Future<GameStreamInputAck> queued = receiver.sendInput(_input(2));
+
+      expect((await first).reason, 'ack_timeout');
+      expect((await queued).reason, 'ack_timeout');
+      final Future<GameStreamInputAck> fresh = receiver.sendInput(_input(3));
+      sendGate.complete();
+      await Future<void>.delayed(Duration.zero);
+      channel.ack(1); // Late ACK cannot revive the expired input epoch.
+      channel.ack(3);
+      expect((await fresh).accepted, isTrue);
+      expect(
+        channel.sent.map((Map<String, dynamic> message) => message['kind']),
+        <String>['input', 'releaseAll', 'input'],
+      );
+      expect(
+        channel.sent
+            .where((Map<String, dynamic> message) => message['kind'] == 'input')
+            .map(
+              (Map<String, dynamic> message) =>
+                  (message['event'] as Map<String, dynamic>)['sequence'],
+            ),
+        <int>[1, 3],
+        reason: 'A DOWN rejected by timeout must never reach the game later',
+      );
+      expect(channel.sent[1]['sessionId'], 'session');
+      expect(channel.sent[1]['clientId'], 'phone');
+    },
+  );
+
+  test(
+    'closed control channel requires host restart even while media connects',
+    () async {
+      int polls = 0;
+      transport.handler = (Map<String, dynamic> body) async {
+        polls++;
+        return const GameStreamPostResult(
+          json: <String, dynamic>{'signals': <Object>[]},
+        );
+      };
+      await receiver.connect(sessionId: 'session', clientId: 'phone');
+      peer.onConnectionState?.call(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      peer.onTrack?.call(
+        RTCTrackEvent(streams: <MediaStream>[_Stream()], track: _Track()),
+      );
+      renderer.onFirstFrameRendered?.call();
+      final _Channel channel = _Channel();
+      peer.onDataChannel?.call(channel);
+      final Future<GameStreamInputAck> pending = receiver.sendInput(_input(1));
+      await Future<void>.value();
+      channel.changeState(RTCDataChannelState.RTCDataChannelClosed);
+      expect((await pending).reason, 'control_channel_closed');
+      expect(receiver.state, GameStreamReceiverState.failed);
+      expect(receiver.ready, isFalse);
+      expect(receiver.reconnectRequired, isTrue);
+      expect(receiver.error, 'control_channel_closed_host_restart_required');
+
+      // Android resume and a late media callback cannot revive this session.
+      receiver.didChangeAppLifecycleState(AppLifecycleState.paused);
+      receiver.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      peer.onConnectionState?.call(
+        RTCPeerConnectionState.RTCPeerConnectionStateConnected,
+      );
+      renderer.onFirstFrameRendered?.call();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      expect(polls, 1);
+      expect(receiver.ready, isFalse);
+      expect(receiver.reconnectRequired, isTrue);
+      expect(receiver.error, 'control_channel_closed_host_restart_required');
+      expect((await receiver.sendInput(_input(2))).accepted, isFalse);
+      await expectLater(
+        receiver.connect(sessionId: 'session', clientId: 'phone'),
+        throwsStateError,
+      );
     },
   );
 

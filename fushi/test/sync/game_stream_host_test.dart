@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -20,6 +22,7 @@ class _NativeHost {
   final List<MethodCall> rtcCalls = <MethodCall>[];
   final List<MethodCall> inputCalls = <MethodCall>[];
   bool allocationPending = false;
+  int controlCount = 0;
 
   Future<Object?> rtc(MethodCall call) async {
     rtcCalls.add(call);
@@ -33,6 +36,9 @@ class _NativeHost {
       case 'streamDispose':
       case 'peerConnectionClose':
       case 'peerConnectionDispose':
+      case 'setLocalDescription':
+      case 'dataChannelClose':
+      case 'dataChannelSend':
         return null;
       case 'getDesktopSources':
         return <String, Object?>{
@@ -47,6 +53,31 @@ class _NativeHost {
         };
       case 'getDisplayMedia':
         return capture;
+      case 'createPeerConnection':
+        return <String, Object?>{'peerConnectionId': _peerId};
+      case 'addTrack':
+        return <String, Object?>{
+          'senderId': (call.arguments as Map)['trackId'],
+          'track': <String, Object?>{},
+          'ownsTrack': false,
+          'rtpParameters': <String, Object?>{
+            'encodings': <Object?>[],
+            'headerExtensions': <Object?>[],
+            'codecs': <Object?>[],
+            'rtcp': <String, Object?>{'reducedSize': false},
+          },
+        };
+      case 'createDataChannel':
+        return <String, Object?>{
+          'id': 1,
+          'flutterId': 'control-${++controlCount}',
+        };
+      case 'createOffer':
+        return <String, Object?>{'sdp': 'test-offer', 'type': 'offer'};
+      case 'getSenders':
+        return <String, Object?>{'senders': <Object?>[]};
+      case 'getStats':
+        return <String, Object?>{'stats': <Object?>[]};
       default:
         throw StateError('Unexpected WebRTC call after cancellation: $call');
     }
@@ -61,6 +92,7 @@ class _NativeHost {
     switch (call.method) {
       case 'bind':
       case 'activate':
+      case 'send':
       case 'release':
       case 'unbind':
         return null;
@@ -109,6 +141,190 @@ Future<void> _flushUntil(WidgetTester tester, bool Function() complete) async {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets(
+    'control-only close releases acknowledged input and old close cannot stop restart',
+    (WidgetTester tester) async {
+      final _NativeHost native = _NativeHost('never-delayed');
+      final TestDefaultBinaryMessenger messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const MethodChannel rtc = MethodChannel('FlutterWebRTC.Method');
+      const MethodChannel input = MethodChannel('app.fushi/game_stream_input');
+      const MethodChannel events = MethodChannel('FlutterWebRTC.Event');
+      const MethodChannel peerEvents = MethodChannel(
+        'FlutterWebRTC/peerConnectionEvent$_peerId',
+      );
+      const String controlOne =
+          'FlutterWebRTC/dataChannelEvent${_peerId}control-1';
+      const String controlTwo =
+          'FlutterWebRTC/dataChannelEvent${_peerId}control-2';
+      final List<MethodChannel> channels = <MethodChannel>[
+        rtc,
+        input,
+        events,
+        peerEvents,
+        const MethodChannel(controlOne),
+        const MethodChannel(controlTwo),
+      ];
+      messenger.setMockMethodCallHandler(rtc, native.rtc);
+      messenger.setMockMethodCallHandler(input, native.input);
+      for (final MethodChannel channel in channels.skip(2)) {
+        messenger.setMockMethodCallHandler(channel, (_) async => null);
+      }
+      final FushiRemoteGameStreamService service =
+          FushiRemoteGameStreamService();
+      final FushiGameStreamHost host = FushiGameStreamHost(service: service);
+      Future<void> emit(String channel, Map<String, Object?> event) async {
+        await messenger.handlePlatformMessage(
+          channel,
+          const StandardMethodCodec().encodeSuccessEnvelope(event),
+          (_) {},
+        );
+        await tester.pump();
+      }
+
+      Future<GameStreamSession> start() async {
+        GameStreamSession? session;
+        Object? failure;
+        StackTrace? failureStack;
+        final Future<void> starting = host
+            .start(hwnd: _hwnd)
+            .then<void>(
+              (GameStreamSession value) => session = value,
+              onError: (Object error, StackTrace stack) {
+                failure = error;
+                failureStack = stack;
+              },
+            );
+        await _flushUntil(tester, () => session != null || failure != null);
+        expect(failure, isNull, reason: failureStack?.toString());
+        await starting;
+        return session!;
+      }
+
+      Future<void> stop() async {
+        bool complete = false;
+        final Future<void> stopping = host.stop().then<void>(
+          (_) => complete = true,
+        );
+        await _flushUntil(tester, () => complete);
+        await stopping;
+      }
+
+      try {
+        final GameStreamSession first = await start();
+        final void Function(RTCDataChannelState)? oldStateCallback =
+            host.debugControlChannel!.onDataChannelState;
+        service.joinSession(sessionId: first.sessionId, clientId: 'client');
+        await emit(peerEvents.name, <String, Object?>{
+          'event': 'peerConnectionState',
+          'state': 'connected',
+        });
+        await emit(controlOne, <String, Object?>{
+          'event': 'dataChannelStateChanged',
+          'id': 1,
+          'state': 'open',
+        });
+        expect(host.started, isTrue);
+        expect(service.session?.state, GameStreamSessionState.connected);
+        expect(
+          native.inputCalls.where((MethodCall c) => c.method == 'unbind'),
+          isEmpty,
+        );
+        await emit(controlOne, <String, Object?>{
+          'event': 'dataChannelReceiveMessage',
+          'id': 1,
+          'type': 'text',
+          'data': jsonEncode(<String, Object?>{
+            'kind': 'input',
+            'event': <String, Object?>{
+              'version': 1,
+              'sessionId': first.sessionId,
+              'clientId': 'client',
+              'sequence': 1,
+              'timestampMs': DateTime.now().millisecondsSinceEpoch,
+              'kind': 'key',
+              'action': 'down',
+              'key': 'Enter',
+            },
+          }),
+        });
+        await _flushUntil(
+          tester,
+          () => native.rtcCalls.any(
+            (MethodCall c) => c.method == 'dataChannelSend',
+          ),
+        );
+        final Map<String, dynamic> ack =
+            jsonDecode(
+                  (native.rtcCalls
+                              .lastWhere(
+                                (MethodCall c) => c.method == 'dataChannelSend',
+                              )
+                              .arguments
+                          as Map)['data']
+                      as String,
+                )
+                as Map<String, dynamic>;
+        expect((ack['ack'] as Map)['accepted'], isTrue);
+        expect(
+          native.inputCalls.where((MethodCall c) => c.method == 'send'),
+          hasLength(1),
+        );
+
+        // No peerConnectionState disconnected/failed event is delivered.
+        await emit(controlOne, <String, Object?>{
+          'event': 'dataChannelStateChanged',
+          'id': 1,
+          'state': 'closed',
+        });
+        await _flushUntil(
+          tester,
+          () =>
+              !host.started &&
+              native.inputCalls.any((MethodCall c) => c.method == 'unbind'),
+        );
+        await stop();
+        expect(first.state, GameStreamSessionState.stopped);
+        expect(first.reason, 'control_channel_closed');
+        expect(
+          native.inputCalls.where((MethodCall c) => c.method == 'unbind'),
+          hasLength(1),
+        );
+        expect(
+          native.rtcCalls.where((MethodCall c) => c.method == 'trackDispose'),
+          hasLength(2),
+        );
+        expect(
+          native.rtcCalls.where(
+            (MethodCall c) => c.method == 'peerConnectionDispose',
+          ),
+          hasLength(1),
+        );
+
+        final GameStreamSession second = await start();
+        expect(second.sessionId, isNot(first.sessionId));
+        oldStateCallback!(RTCDataChannelState.RTCDataChannelClosed);
+        await tester.pump(const Duration(milliseconds: 1));
+        expect(host.started, isTrue);
+        expect(second.state.isTerminal, isFalse);
+        expect(
+          native.inputCalls.where((MethodCall c) => c.method == 'unbind'),
+          hasLength(1),
+        );
+        await stop();
+      } finally {
+        await stop();
+        host.dispose();
+        service.dispose();
+        await tester.pump(const Duration(milliseconds: 1));
+        for (final MethodChannel channel in channels) {
+          messenger.setMockMethodCallHandler(channel, null);
+        }
+      }
+    },
+    skip: !Platform.isWindows,
+  );
 
   testWidgets('rejects an unpatched whole-window capture backend', (
     WidgetTester tester,
