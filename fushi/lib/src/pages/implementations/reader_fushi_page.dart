@@ -4446,9 +4446,15 @@ $liveConfigJs
     // 与 webview.part.dart 连续模式 wheel 处理同款投影：竖排把主 delta 投到横向，
     // vertical-rl 前进 = scrollLeft 减小。竖排与否以 JS 运行时为准。
     final String px = delta.toStringAsFixed(2);
+    // 这一拍**不跨章**：到了章边界 scrollBy 滚不动，弹窗关掉、页面不动，用户再滚一次
+    // 才走文档内那条带「真试滚 → 读回位移 → 跨章」的 handler。代价是一拍，换来的是
+    // 不必在这里复刻整套边界与手势判定（那套没有任何自动化覆盖）。
+    // 但**必须**把这一拍记进 JS 侧的手势时间线：否则紧随其后的触控板惯性 tick 会被
+    // 判成新手势，章末一次带惯性的滑动就会直接跨章（BUG-2015 防的正是这个）。
     unawaited(
       _evaluateScrollForward(
         '(function(){var r=window.fushiReader;'
+        'if(window.__fushiArmWheelGesture)window.__fushiArmWheelGesture();'
         'var v=r&&r.isVertical&&r.isVertical();'
         'if(v){var s=window.getComputedStyle(document.body).writingMode'
         "==='vertical-rl'?-1:1;"

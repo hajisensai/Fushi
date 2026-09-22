@@ -73,6 +73,29 @@ void main() {
     expect(wheel, contains('!_dismissPopupOnScrollActive'));
     expect(wheel, contains('clearDictionaryResult();'));
     expect(wheel, contains('window.scrollBy'));
+    // 这一拍必须记进 JS 侧的 wheel 手势时间线。barrier 在 Flutter 侧，滚轮根本到不了
+    // 正文 document，那一拍若不补进去，紧随其后的触控板惯性 tick 会被
+    // startsNewWheelGesture 判成**新手势** —— 章末一次带惯性的滑动直接跨章，而
+    // BUG-2015 那段 arm-then-fire 存在的理由正是防这个。
+    expect(
+      wheel,
+      contains('__fushiArmWheelGesture'),
+      reason: '断开 = 章末带惯性滑动会误跨章，且单测与 analyze 全绿（静默）',
+    );
+  });
+
+  test('注入脚本真的暴露了那个补时间戳的口子', () {
+    // 时间戳是 __fushiEngine.install 的函数局部变量，宿主从外部 evaluateJavascript
+    // 够不着；少了这个口子，上面那条接线就是调了个 undefined、静默 no-op。
+    final String webview = File(
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    expect(webview, contains('window.__fushiArmWheelGesture = function()'));
+    expect(
+      webview,
+      contains('_continuousWheelLastTickAt = Date.now();'),
+      reason: '口子必须真的写那个时间戳，不能只是个空函数',
+    );
   });
 
   test('drag claim follows the rest of the pointer and cleans up', () {

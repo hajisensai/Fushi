@@ -1414,6 +1414,13 @@ $kPagedWheelGestureHelperJs
   // 只有静默后、起点已经在边界的新手势才表达跨章意图。真正跨 document 的残余惯性
   // 仍由 Dart 的 chapter-turn cooldown 承接。
   var _continuousWheelLastTickAt = 0;
+  // 查词弹窗的 barrier 会吃掉「弹窗开着时的第一拍滚轮」（它在 Flutter 侧，滚轮根本
+  // 到不了本 document）。那一拍如果不记进手势时间线，紧随其后的惯性 tick 就会被上面
+  // 的 startsNewWheelGesture 判成**新手势** —— 章末一次带惯性的滑动会直接跨章，正是
+  // BUG-2015 那段 arm-then-fire 要防的。宿主关窗后调这个口子把时间戳补上。
+  window.__fushiArmWheelGesture = function() {
+    _continuousWheelLastTickAt = Date.now();
+  };
   // TODO-656: 横排连续模式放行原生滚动时，记上一拍 scrollTop，下一拍无变化（原生卡
   // 在边界滚不动）才算到边界——替代瞬时 scrollTop<=2 几何。-1 = 尚无基线（首拍不卡）。
   var _wheelLastScrollPos = -1;
