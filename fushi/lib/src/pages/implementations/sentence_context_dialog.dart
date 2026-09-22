@@ -44,7 +44,12 @@ class SentenceContextDialog extends StatefulWidget {
   final Future<int> Function(int prev, int next) setContext;
 
   /// 确认制卡（回该词条 WebView 制卡按钮）。
-  final VoidCallback onConfirm;
+  ///
+  /// 返回**这一次是否真的点到了那颗制卡按钮**：弹窗层已被关栈、该词条不在了、按钮
+  /// 不可点时为 false。调用方据此如实报一声，而不是让对话框静悄悄关掉——这条链上
+  /// 从 `fushiPopupMineEntryByIndex` 到 `mineEntryByIndex` 原本每一级失败都是无声的
+  /// （BUG-2627）。
+  final Future<bool> Function() onConfirm;
 
   /// 把某一句手改后的文本写回宿主草稿（`MiningSentenceDraft.editSentence`）。
   ///
@@ -182,11 +187,41 @@ class _SentenceContextDialogState extends State<SentenceContextDialog>
     if (mounted) Navigator.of(context).pop();
   }
 
-  void _confirm() {
+  /// 「确认制卡」：**先把制卡点下去、确认它落地了，再关窗**。
+  ///
+  /// BUG-2627：原来是 `pop()` 之后才调 [SentenceContextDialog.onConfirm]。制卡不是
+  /// 一句本地调用，而是「Dart → 查词弹窗 WebView 的 DOM → 回点那颗制卡按钮」的一次
+  /// 往返，而那层弹窗**只在本对话框开着的时候才被保护住**：宿主的
+  /// `runWithLookupPopupHidden` 期间整屏 dismiss barrier 不渲染、悬停离开自动关栈被
+  /// `hiddenByDialog` 挡住、浮层虽停靠屏外但保持挂载。`pop()` 一执行这层保护就开始撤
+  /// （`showAppDialog` 的 future 在退场动画结束时完成），往返却才刚出发——期间只要有
+  /// 任何一条关栈路径跑了，`fushiPopupMineEntryByIndex` 就找不到那个词条，
+  /// `return false` 一路静默回来：对话框关了、卡没制出来、连一句提示都没有（用户报
+  /// 「视频调整上下文制卡不行」）。
+  ///
+  /// 改成在保护窗口**内**完成往返：期间进 [_busy]（禁用 ±上下文 / 试听 / 取消 / 关闭，
+  /// 与编辑态同一把锁），落地与否都有确定结局；没点到就如实提示，不再无声。
+  Future<void> _confirm() async {
+    if (_locked) return;
     // 同上：制卡走了，试听不该继续响。不 await——制卡不等它。
     unawaited(_stopPreview());
+    setState(() => _busy = true);
+    bool mined = false;
+    try {
+      mined = await widget.onConfirm();
+    } catch (_) {
+      // 宿主抛错与「没点到」对用户是同一件事：卡没制出来。照常关窗 + 提示。
+      mined = false;
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
     Navigator.of(context).pop();
-    widget.onConfirm();
+    if (!mined) {
+      FushiToast.show(
+        msg: t.popup_ctx_confirm_failed,
+        severity: ToastSeverity.warning,
+      );
+    }
   }
 
   /// BUG-2196 ②：试听/停止的开关。

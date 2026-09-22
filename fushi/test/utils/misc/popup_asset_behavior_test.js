@@ -173,6 +173,16 @@ class FakeElement {
     delete this.attributes[name];
   }
 
+  // BUG-2627：`fushiPopupMineEntryByIndex` 用的是真 DOM 的 `el.click()`（而不是直接
+  // 调 onclick）——生产代码借它复用按钮自己的全部制卡/查重/覆写逻辑。真 DOM 上
+  // disabled 的按钮点了不派发 activation，照此实现。
+  click() {
+    if (this.disabled) {
+      return undefined;
+    }
+    return typeof this.onclick === 'function' ? this.onclick() : undefined;
+  }
+
   addEventListener(type, handler) {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
@@ -237,6 +247,23 @@ class FakeElement {
   // 因为 rewriteExportedGlossaryAnchors 用的是 'a[href]'。真 DOM 返回 NodeList，
   // 生产代码只对它 .forEach，所以这里返回数组即可。
   querySelectorAll(selector) {
+    // BUG-2627：`fushiPopupMineEntryByIndex` 按 `:scope > .entry` 取**直接子节点**的
+    // DOM 序——那正是「调整上下文」按钮记下 entryIndex 时用的同一套索引。深度遍历
+    // 会把嵌套节点也算进来，索引就和生产不同源了，故单独一条直接子节点分支。
+    const scoped = selector.match(/^:scope\s*>\s*(.+)$/);
+    if (scoped) {
+      const inner = scoped[1].trim();
+      const p = inner.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?$/);
+      if (!p || (!p[1] && !p[2])) {
+        return [];
+      }
+      const tag = p[1] ? p[1].toUpperCase() : null;
+      const cls = p[2] || null;
+      return (this.children ?? []).filter(
+        (el) =>
+          (tag === null || el.tagName === tag) &&
+          (cls === null || (!!el.classList && el.classList.contains(cls))));
+    }
     const parsed = selector.match(/^([a-zA-Z]+)?(?:\.([\w-]+))?(?:\[([\w-]+)\])?$/);
     if (!parsed || (!parsed[1] && !parsed[2] && !parsed[3])) {
       return [];
@@ -3263,4 +3290,137 @@ Promise.all([
   testHostRefreshPaintsMinedStateAfterLateLedgerWrite(),
   testHostRefreshWithoutTargetOnlyRepaintsProbedButtons(),
   testHostRefreshKeepsMinedStateWhenBridgeThrows(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+
+// -- BUG-2627: "confirm mining" round-trip from the sentence-context dialog ----
+//
+// 「确认制卡」不是一句本地调用：宿主 Dart 侧没有「制卡指定词条」的直接入口
+// （mineEntry 契约要求 JS 先构造 payload），所以它是一次「Dart →
+// `window.fushiPopupMineEntryByIndex(idx)` → 点第 idx 个词条的 .mine-button」的往返。
+// 这个函数此前**全仓没有任何一条断言它真的点到了按钮**：三条 `return false`
+// （容器里一个 .entry 都没有 / entries[idx] 越界 / 该词条没有 .mine-button 或按钮
+// disabled）在 Dart 侧又被整个丢弃，于是「弹窗栈在回点之前被关掉」这类竞态长成同一个
+// 无声症状——对话框关了、卡没制出来、一句提示都没有（用户报「视频调整上下文制卡不行」）。
+//
+// 索引必须与「调整上下文」按钮记 entryIndex 时同源（`:scope > .entry` 的直接子节点
+// DOM 序），否则用户在第 2+ 个词条上确认会去点第一个词条（BUG-1326 的形态）。
+function mountEntriesWith(context, expressions) {
+  const root = context.document.createElement('div');
+  context.window.__fushiRoot = root;
+  const container = context.document.createElement('div');
+  root.appendChild(container);
+  const mineButtons = [];
+  const hasClass = (node, name) =>
+    (node.className || '').split(/\s+/).includes(name) ||
+    (node.classList && node.classList.contains(name));
+  const findMine = (node) => {
+    if (hasClass(node, 'mine-button')) return node;
+    for (const child of node.children ?? []) {
+      const found = findMine(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  expressions.forEach((expression, index) => {
+    const entry = context.document.createElement('div');
+    entry.className = 'entry';
+    entry.classList.add('entry');
+    const header = context.createEntryHeader(
+      {
+        expression,
+        reading: expression,
+        matched: expression,
+        frequencies: [],
+        pitches: [],
+        rules: [],
+      },
+      index,
+    );
+    entry.appendChild(header);
+    container.appendChild(entry);
+    const mineButton = findMine(entry);
+    assert.ok(mineButton, `mine button missing for ${expression}`);
+    mineButtons.push(mineButton);
+  });
+  return mineButtons;
+}
+
+function stubMineBridge(context, mined) {
+  context.window.allowDupes = true;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ ankiConnect: true, noteId: 7 });
+    }
+    return Promise.resolve(null);
+  };
+}
+
+async function testConfirmMiningClicksTheRequestedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+
+  // 第 2 个词条（idx=1）——用户在哪个词条上点的「调整上下文」，确认就必须回点哪个。
+  assert.equal(context.window.fushiPopupMineEntryByIndex(1), true,
+    'clicking an existing entry must report success');
+  await flush();
+
+  assert.equal(mined.length, 1, 'exactly one card is mined');
+  assert.equal(mined[0].expression, '事典',
+    'confirm must mine the entry the dialog was opened from, not the first one');
+}
+
+async function testConfirmMiningReportsMissingEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書']);
+  await flush();
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(3), false,
+    'an out-of-range entry index must report failure, not silently do nothing');
+  await flush();
+  assert.equal(mined.length, 0, 'nothing is mined when the entry is not there');
+}
+
+async function testConfirmMiningReportsEmptyPopup() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  // 弹窗栈在回点之前被关掉 → 热槽被还原成空种子，容器里一个 .entry 都没有。
+  // 这就是 BUG-2627 用户看到的那一幕，它必须回 false 让宿主说得出话。
+  context.window.__fushiRoot = context.document.createElement('div');
+  await flush();
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(0), false,
+    'a dismissed popup must report failure so the host can tell the user');
+  assert.equal(mined.length, 0);
+}
+
+async function testConfirmMiningReportsDisabledButton() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const buttons = mountEntriesWith(context, ['辞書']);
+  await flush();
+  // 上一次点击还在飞（单飞守卫把按钮 disable 住）。
+  buttons[0].disabled = true;
+
+  assert.equal(context.window.fushiPopupMineEntryByIndex(0), false,
+    'a disabled mine button must report failure instead of a no-op click');
+  await flush();
+  assert.equal(mined.length, 0);
+}
+
+Promise.all([
+  testConfirmMiningClicksTheRequestedEntry(),
+  testConfirmMiningReportsMissingEntry(),
+  testConfirmMiningReportsEmptyPopup(),
+  testConfirmMiningReportsDisabledButton(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });

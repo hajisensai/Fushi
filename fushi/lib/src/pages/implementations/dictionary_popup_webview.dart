@@ -1077,11 +1077,46 @@ JSON.stringify((function(){
   /// BUG-763/766：确认「制卡前调整」原生对话框时，回 WebView 精确点中第 [idx] 个词条
   /// （`:scope > .entry` DOM 序）的制卡按钮，复用其全部制卡/查重/覆写逻辑（Dart 侧无
   /// 「制卡指定词条」直接入口——mineEntry 契约要求 JS 先构造 payload）。
-  Future<void> mineEntryByIndex(int idx) async {
-    await _controller?.evaluateJavascript(
-      source: 'window.fushiPopupMineEntryByIndex'
-          ' ? window.fushiPopupMineEntryByIndex($idx) : false',
-    );
+  ///
+  /// 返回**这次是否真的点到了那颗按钮**。BUG-2627：此前返回值（JS 侧三条
+  /// `return false`：容器里一个 `.entry` 都没有 / `entries[idx]` 越界 / 该词条没有
+  /// `.mine-button` 或按钮 disabled）与 `_controller == null` 一样被整个丢掉，于是
+  /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
+  /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
+  /// 提示用户。
+  Future<bool> mineEntryByIndex(int idx) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.mineEntryByIndex',
+        'no webview controller (popup layer gone before the confirm round-trip)',
+        StackTrace.current,
+      );
+      return false;
+    }
+    try {
+      final Object? raw = await controller.evaluateJavascript(
+        source: 'window.fushiPopupMineEntryByIndex'
+            ' ? window.fushiPopupMineEntryByIndex($idx) : false',
+      );
+      // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
+      final bool clicked =
+          raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';
+      if (!clicked) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.mineEntryByIndex',
+          'popup.js refused to click entry #$idx (entry or mine button gone)',
+          StackTrace.current,
+        );
+      }
+      return clicked;
+    } catch (e, stack) {
+      // 与 currentScrollTop 同理：半销毁的 WebView 通道已摘，evaluateJavascript 抛
+      // MissingPluginException。吞掉记日志，按「没点到」回。
+      ErrorLogService.instance
+          .log('DictPopupWebview.mineEntryByIndex', e, stack);
+      return false;
+    }
   }
 
   Future<void> caretRefresh() async {
