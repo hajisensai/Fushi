@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "サイトの字幕と拡張機能のオーバーレイの両方を完全に隠します（ぼかしではなく、ホバーしても表示されません）。純粋なリスニング練習向けです。<kbd>Shift</kbd>+<kbd>H</kbd> でいつでも切り替えられます。",
   "opt_subtitlePauseOnLookup_title": "検索時に一時停止",
   "opt_subtitlePauseOnLookup_desc": "ページ、字幕リスト、オーバーレイから検索を始めると再生中の動画を一時停止します。ポップアップを閉じると自動的に再生を再開します（自分で一時停止した動画は再開しません）。",
+  "opt_subtitleResumeOnLookupLeave_title": "検索から離れたら再生を再開",
+  "opt_subtitleResumeOnLookupLeave_desc": "Shift ホバーやオーバーレイの自動検索で動画が一時停止したあと、ポインターを字幕と検索ポップアップから離すとポップアップが閉じて再生が再開します。クリックで始めた検索には影響しません。",
   "opt_subtitleLookupOnPage_title": "検索結果をページ上に表示",
   "opt_subtitleLookupOnPage_desc": "サイドパネル内の単語をクリックしたとき、パネル内に押し込まれる代わりにページ上にポップアップを開きます。ブラウザはパネルの内容をパネル外に描画できないためです。オフにするとパネル内の狭いポップアップに戻ります。",
   "opt_subtitleOverlayAutoLookup_title": "オーバーレイ字幕のホバー検索",

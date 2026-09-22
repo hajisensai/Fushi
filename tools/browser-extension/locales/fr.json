@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Masque complètement les sous-titres du site et la superposition de l’extension (pas de flou, rien au survol) — pour un entraînement d’écoute pure. Basculez à tout moment avec <kbd>Shift</kbd>+<kbd>H</kbd>.",
   "opt_subtitlePauseOnLookup_title": "Pause pendant la recherche",
   "opt_subtitlePauseOnLookup_desc": "Met en pause une vidéo en lecture quand une recherche démarre depuis la page, la liste des sous-titres ou la superposition ; la lecture reprend automatiquement à la fermeture de la fenêtre (une vidéo que vous avez mise en pause vous-même ne reprend jamais).",
+  "opt_subtitleResumeOnLookupLeave_title": "Reprendre en quittant la recherche",
+  "opt_subtitleResumeOnLookupLeave_desc": "Quand une recherche par survol avec Maj ou la recherche automatique de la superposition met la vidéo en pause, éloigner le pointeur du sous-titre et de la fenêtre de recherche ferme celle-ci et reprend la lecture, sans clic supplémentaire. Les recherches lancées par clic ne sont pas concernées.",
   "opt_subtitleLookupOnPage_title": "Afficher les résultats de recherche sur la page",
   "opt_subtitleLookupOnPage_desc": "Quand vous cliquez sur un mot dans le panneau latéral, la fenêtre s’ouvre sur la page au lieu d’être comprimée dans le panneau — les navigateurs n’autorisent pas le contenu du panneau à dessiner en dehors de celui-ci. Désactivé, on revient à la fenêtre étroite dans le panneau.",
   "opt_subtitleOverlayAutoLookup_title": "Recherche au survol des sous-titres superposés",

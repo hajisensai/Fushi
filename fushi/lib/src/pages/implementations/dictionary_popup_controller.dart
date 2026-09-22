@@ -3,6 +3,8 @@ import 'dart:collection';
 
 import 'package:flutter/widgets.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 
@@ -235,7 +237,19 @@ class DictionaryPopupController extends ChangeNotifier {
   void _retireEntries(Iterable<DictionaryPopupEntry> removed) {
     _cancelRevealTimers(removed);
     for (final DictionaryPopupEntry e in removed) {
-      if (e.isWarmSlot || lowMemory) continue;
+      if (e.isWarmSlot || lowMemory) {
+        if (lowMemory && !e.isWarmSlot) {
+          // 诊断（2026-09-22）：低内存下嵌套层的 WebView 键直接丢弃，不停驻。下一次
+          // 嵌套查词必然冷建——这是小内存模式「查词很慢」的第二条来源（第一条是没有
+          // 热槽），两者独立，日志里要分得开。
+          videoDiag(
+            VideoDiagCategory.warmSlot,
+            VideoDiagLevel.v,
+            'realm discarded (low-memory) parked=${_parkedRealms.length}',
+          );
+        }
+        continue;
+      }
       _parkedRealms.remove(e.webViewKey);
       _parkedRealms.add(e.webViewKey);
       if (_parkedRealms.length > kMaxParkedRealms) {
@@ -321,7 +335,18 @@ class DictionaryPopupController extends ChangeNotifier {
   /// [seedResult] 让宿主放一个占位结果；缺省即 [kPopupSearchingPlaceholderResult]
   /// canonical 单例（与搜索期占位同一对象，seed→查词的 result 身份不变、不触发重推）。
   void seedWarmSlot({DictionarySearchResult? seedResult}) {
-    if (lowMemory || _entries.isNotEmpty) return;
+    if (lowMemory || _entries.isNotEmpty) {
+      // 诊断（2026-09-22）：不 seed 的两种原因后果完全不同——`low-memory` 是「此后每次
+      // 查词都冷建 WebView」，`already-seeded` 只是重复调用的幂等返回。把原因记下来，
+      // 别让排查时把两者混为一谈。
+      final String reason = lowMemory ? 'low-memory' : 'already-seeded';
+      videoDiag(
+        VideoDiagCategory.warmSlot,
+        VideoDiagLevel.v,
+        'seed skipped reason=$reason',
+      );
+      return;
+    }
     _entries.add(DictionaryPopupEntry(
       searchTerm: '',
       selectionRect: Rect.zero,
@@ -366,8 +391,22 @@ class DictionaryPopupController extends ChangeNotifier {
     DictionarySearchResult? initialResult,
   }) {
     onLookupStarted?.call();
+    final bool warmHit =
+        reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot;
+    final int stackBefore = _entries.length;
+    // 诊断（2026-09-22）：**这一分叉就是「查词为什么卡」的答案所在**。命中热槽 ⇒
+    // 复用已冷加载完的 WebView，只剩注入 + renderPopup；未命中 ⇒ 要么接管一个停驻
+    // realm，要么彻底冷建（解析约 300KB 内联 HTML/CSS/JS + 等 onLoadStop + 全量静态段
+    // 重注入）。后两者的毫秒差是两个数量级，必须能在日志里直接读出来。
+    //
+    // 三态**只能在 [_takeRealmKey] 调用前的那一刻**判定：`replaceStack` 路径会先
+    // [_retireEntries] 把当前这层的键停驻进池，随后 `_takeRealmKey()` 又把它接管回来。
+    // 在方法开头按池空与否判会把这种「先存后取」误报成 cold-create——会撒谎的诊断比
+    // 没有诊断更糟。
+    final String warmMode;
     final DictionaryPopupEntry e;
-    if (reuseWarmSlot && _entries.isNotEmpty && _entries.first.isWarmSlot) {
+    if (warmHit) {
+      warmMode = 'hit';
       if (_entries.length > 1) {
         _retireEntries(_entries.sublist(1));
         _entries.removeRange(1, _entries.length);
@@ -388,6 +427,7 @@ class DictionaryPopupController extends ChangeNotifier {
         _retireEntries(_entries);
         _entries.clear();
       }
+      warmMode = _parkedRealms.isEmpty ? 'cold-create' : 'parked-realm';
       e = DictionaryPopupEntry(
         searchTerm: term,
         selectionRect: rect,
@@ -397,6 +437,14 @@ class DictionaryPopupController extends ChangeNotifier {
       )..isSearching = true;
       _entries.add(e);
     }
+    videoDiag(
+      VideoDiagCategory.warmSlot,
+      warmHit ? VideoDiagLevel.v : VideoDiagLevel.info,
+      'beginTop warm=$warmMode low-memory=$lowMemory '
+      'stack=$stackBefore parked=${_parkedRealms.length} '
+      'reuse-requested=$reuseWarmSlot',
+    );
+    LookupPerfTrace.current?.mark('warm', detail: 'mode=$warmMode');
     notifyListeners();
     _notifyLookupStackDepth();
     return e;
@@ -457,6 +505,10 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 清空整个栈（宿主重置/销毁用；不保留热槽，也不保留停驻 realm）。
   void clear() {
     if (_entries.isEmpty && _parkedRealms.isEmpty) return;
+    // 在途的查词计时随栈一起收尾：不收，游标悬着，下一次别的宿主（阅读器家族
+    // 不 begin）的 revealRendered 会把它当自己的收尾——打出一行「视频页旧词
+    // total=几分钟」甚至假 warn，会撒谎的诊断比没有诊断更糟。
+    LookupPerfTrace.current?.finish('dismissed');
     _cancelRevealTimers(_entries);
     _entries.clear();
     _parkedRealms.clear();
@@ -620,6 +672,18 @@ class DictionaryPopupController extends ChangeNotifier {
       if (!e.revealOnRender || !_entries.contains(e)) return;
       e.visible = true;
       e.revealOnRender = false;
+      // 诊断（2026-09-22）：走到这里就是用户说的那个「闪」——渲染信号没在兜底超时内
+      // 到达，弹窗被强制翻可见，内容随后才画上去，于是先露一下空壳再重画。冷建
+      // WebView（小内存模式的必经之路）正是最容易撞上这个兜底的情形。提级到 warn，
+      // grep 一眼可见。
+      videoDiag(
+        VideoDiagCategory.popup,
+        VideoDiagLevel.warn,
+        'forced reveal after ${timeout.inMilliseconds}ms '
+        '(popupRendered never arrived) '
+        'term=${LookupPerfTrace.redactTerm(e.searchTerm)}',
+      );
+      LookupPerfTrace.current?.finish('forced-reveal');
       notifyListeners();
       _notifyLookupStackDepth();
       onForcedReveal?.call();
@@ -649,6 +713,8 @@ class DictionaryPopupController extends ChangeNotifier {
     _cancelRevealTimer(e);
     e.visible = true;
     e.revealOnRender = false;
+    LookupPerfTrace.current?.mark('reveal');
+    LookupPerfTrace.current?.finish('revealed');
     notifyListeners();
     _notifyLookupStackDepth();
     return true;
@@ -658,6 +724,9 @@ class DictionaryPopupController extends ChangeNotifier {
   /// index>0：裁掉该层及之上，保留下层。
   void dismissAt(int index) {
     if (index < 0 || index >= _entries.length) return;
+    // 同 [clear]：fill 之后、popupRendered 之前被关掉（Esc / 点 barrier，冷建路径
+    // 下这窗口有上百 ms ~ 1.8 s），既走不到 abandoned 也走不到 revealed。
+    LookupPerfTrace.current?.finish('dismissed');
     if (index == 0) {
       final DictionaryPopupEntry first = _entries.first;
       if (first.isWarmSlot && !lowMemory) {

@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Blendet sowohl die Untertitel der Website als auch das Overlay der Erweiterung vollständig aus (keine Unschärfe, nichts beim Hover) — für reines Hörtraining. Jederzeit mit <kbd>Shift</kbd>+<kbd>H</kbd> umschaltbar.",
   "opt_subtitlePauseOnLookup_title": "Beim Nachschlagen pausieren",
   "opt_subtitlePauseOnLookup_desc": "Pausiert ein laufendes Video, wenn ein Nachschlagen von der Seite, der Untertitelliste oder dem Overlay ausgeht; die Wiedergabe läuft automatisch weiter, sobald sich das Popup schließt (ein von dir selbst pausiertes Video wird nie fortgesetzt).",
+  "opt_subtitleResumeOnLookupLeave_title": "Beim Verlassen des Nachschlagens fortsetzen",
+  "opt_subtitleResumeOnLookupLeave_desc": "Hat ein Shift-Hover oder das automatische Overlay-Nachschlagen das Video pausiert, schließt sich das Popup und die Wiedergabe läuft weiter, sobald der Zeiger Untertitel und Popup verlässt – ohne zusätzlichen Klick. Per Klick gestartetes Nachschlagen ist nicht betroffen.",
   "opt_subtitleLookupOnPage_title": "Nachschlageergebnisse auf der Seite anzeigen",
   "opt_subtitleLookupOnPage_desc": "Wenn du in der Seitenleiste auf ein Wort klickst, öffnet sich das Popup auf der Seite, statt in die Leiste gequetscht zu werden — Browser lassen Panel-Inhalte nicht außerhalb des Panels zeichnen. Aus kehrt zum schmalen Popup in der Leiste zurück.",
   "opt_subtitleOverlayAutoLookup_title": "Hover-Nachschlagen bei Overlay-Untertiteln",

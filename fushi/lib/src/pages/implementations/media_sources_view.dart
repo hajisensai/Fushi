@@ -42,6 +42,7 @@ import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart'
 import 'package:fushi/src/media/video/scraper/video_scrape_diagnostic_exporter.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/sftp_sync_backend.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_sync_backend.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
@@ -1768,9 +1769,12 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
         );
       }
     } catch (e) {
+      // BUG-2631：走同步层统一的友好文案，而不是 `$e`——后者把
+      // `SyncAuthError: Server refused (403): PROPFIND https://…` 连类型名带原文
+      // 一起裸灌进 toast；同步设置页的「测试连接」早就是这么做的。
       if (mounted) {
         FushiToast.show(
-          msg: '${t.sync_connection_failed}: $e',
+          msg: '${t.sync_connection_failed}: ${friendlySyncErrorDetail(e)}',
           severity: ToastSeverity.error,
         );
       }

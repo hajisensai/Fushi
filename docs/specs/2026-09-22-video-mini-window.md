@@ -11,7 +11,7 @@
 
 1. **控件密度**：控制条按**播放区宽度**分三档（full / compact / mini），越窄越紧凑。
 2. **小窗模式**：桌面把主窗变成无边框置顶小窗；Android 进系统画中画；iOS 不提供。
-3. **底部细进度条**：独立开关，控制条淡出后在视频最下方留一条主题色细线。
+3. **底部细进度条**：独立开关（默认关），控制条淡出后在视频最下方留一条主题色细线。
 
 ## 判据真相源：`lib/src/media/video/video_controls_density.dart`
 
@@ -128,13 +128,46 @@ orientation` 四项，无需改动。本次补上 `PictureInPictureChannelHandle
   正是小窗要保住的能力**（`VideoSubtitleOverlay` 就在同一棵 Stack 里，零改动继续工作）。
 - **居中大三键**：±10 秒 + 播放/暂停，圆形大钮。用的是与底栏同一个 10 秒常量、同一组
   对称图标。
-- 两者都挂在共享的 `FadingChromeGate` 上，与控制条同一个 `_videoControlsVisible`、
-  同速淡入淡出。
+- 两者都挂在共享的 `FadingChromeGate` 上（不可见时 `IgnorePointer` + `ExcludeFocus`，
+  所以收起后一个指针都不吃，整幅画面继续交给字幕制卡）。
+
+### 追加（同日用户反馈）：chrome 只认显式唤出，hover 不再唤起
+
+> 「快捷键控制是控制里面那些图标进度条等的显示的，常态鼠标移到视频就显示一个字幕
+> 可以来制卡就好，不然感觉太乱了。」
+
+小窗是「挂在屏幕角落一直开着」的形态：鼠标从它上面**路过**就弹一层按钮，在 300×170 的
+窗口里等于把画面盖掉一半。所以 chrome 的显隐从 `_videoControlsVisible`（media_kit 的
+hover 语义）改挂一个独立的 `_miniChromeRevealed`，判据同样收进纯函数：
+
+```dart
+bool videoMiniChromeVisible({
+  required VideoControlsDensitySpec spec,
+  required bool revealed,
+});
+```
+
+- **hover 不是它的输入**——这是本函数存在的全部意义。小窗常态 = 画面 + 字幕 + 底部细线。
+- 唤出后**不自动淡出**：拖动带是无边框小窗唯一的窗口抓手，让它跟计时器赛跑等于拖不动。
+- 唯一的自动显隐路径是**进小窗那次引导性亮相**（3 秒后自行收起）。不给这一下的话，第一次
+  进小窗的用户看不到退出钮、也找不到拖动带，而无边框窗口没有系统标题栏可退。
+- 退小窗**复位**，下次进小窗从「常态清爽」开始，不继承上一次按出来的状态。
+- 同时把字幕底部避让里的按钮行一项在 mini 档按 0 算（那一档 `bottomButtonBar` 传空）：
+  否则 media_kit 因 hover 翻 `visible`（尽管它在这一档一个像素都画不出来）时，字幕会为
+  一条根本不存在的按钮行凭空上移一格。
+
+新动作 `ShortcutAction.videoToggleMiniChrome`，默认 **Shift+M**（裸 M 在 video 组是静音，
+而阅读器 / 漫画的「切换界面」正是裸 M，Shift+M 既避冲突又留住肌肉记忆），并进
+`kVideoPressEdgeOnlyActions`——翻转型动作按住连发就是一片闪烁的按钮。常规窗口 / 系统
+画中画下按它是 no-op（那两处 chrome 分别归 media_kit 与系统），执行体自己早退，不留一个
+没人读的标志位。
 
 ## 底部细进度条（对上参考图三）
 
 `lib/src/media/video/video_slim_progress_bar.dart`，偏好 `video_slim_progress_bar`，
-**默认开**——它只在控制条**已经不在**时出现，不遮挡任何东西。
+**默认关**（首版默认开，2026-09-22 改判）——控制条淡出本身就是「把画面让干净」，
+再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。已手动切过开关的用户
+不受影响：`getPref` 只在该 key 从未写过时才返回默认值。
 
 - 颜色走播放器 chrome 的既定口径 `videoChromeAccentColor(cs)`（恒取亮 tone primary），
   **不是**裸 `colorScheme.primary`：浅色 / eink 主题下 primary 是深色，压在 fork 的固定
@@ -146,6 +179,30 @@ orientation` 四项，无需改动。本次补上 `PictureInPictureChannelHandle
 - 显隐三条规则（优先级从高到低）：系统画中画恒不显（与系统控件重影）→ mini 档恒显
   （那里完整进度条已被收起，细线是唯一进度指示，不受开关管）→ 常规档「开关开 + 控制条
   已淡出」。
+
+### 追加（同日用户反馈）：细线可直接点击 / 横拖跳转
+
+> 「下面那个细进度条也顺手增加可以直接点击跳转控制吧，应该也很难误触。」
+
+小窗里它已经是**唯一**的进度控件（chrome 收起后更是唯一还在的控件），常规档它是控制条
+淡出后唯一还在的那条，所以「只能看不能点」是个明显缺口。
+
+- 换算走纯函数 `videoSlimProgressSeekFraction({dx, width})`，与 media_kit fork 那条常规
+  进度条同口径（细线没有横向 margin，分母就是自身宽度）；宽度未就绪返回 **null**（不是 0）
+  ——返回 0 会把首帧的一次误触变成「跳回片头」。
+- 可见线仍是 3 像素，**向上补一段 12 像素的透明命中带**：3 像素鼠标瞄不准、触屏更不可能；
+  再高就容易把本该落到画面的单击吃掉。
+- 命中带用 `HitTestBehavior.opaque`：media_kit 的「点画面暂停」收不到这次 tap（点线只跳转，
+  不顺手翻播放态）；页面最外层那条 translucent `Listener` 仍收到 pointer-up，但它的
+  `_isVideoChromePointer` 早把底部整条带判为 chrome，不会触发双击全屏。
+- 跳转走 `controller.seekMs`，**不是** media_kit 的 `player.seek`——后者绕过本仓 controller，
+  seek 在途保护与字幕权威同步都不跟着走（BUG-796 就是这么来的）。也刻意**不**唤起控制条：
+  这条线存在的意义就是「控制条不在时也能操作」。
+- 横拖按 100ms 限频（每帧提交会让播放器被 seek 淹没），**松手的终值无条件补发一次**；落点
+  乐观立即到位并在 500ms 内不被回读覆盖（否则松手后线会先弹回原处再跳过去，看着像点歪了）。
+- 沉浸锁 / 侧面板 / 剧集轨 / 控件编辑态下回调传 **null**（组件退回纯装饰形态）：细线挂在
+  media_kit 控制条那层 `IgnorePointer` **之外**，不自己订阅这四个门控，它就是它们唯一漏掉的
+  可点区。
 
 ## 入口
 
@@ -160,6 +217,7 @@ orientation` 四项，无需改动。本次补上 `PictureInPictureChannelHandle
 | 密度判据 + 细进度条显隐（纯函数） | `test/media/video/video_controls_density_test.dart` |
 | 细进度条渲染（widget） | `test/media/video/video_slim_progress_bar_test.dart` |
 | 页面接线（源码守卫） | `test/pages/video_slim_progress_bar_wiring_guard_test.dart` |
+| 小窗接线 + chrome 只认显式唤出（源码守卫） | `test/pages/video_mini_window_wiring_guard_test.dart` |
 | 桌面小窗几何 + 几何记忆闸门 | `test/platform/desktop_mini_window_mode_test.dart` |
 | PiP 比例钳制 + 通道行为 | `test/platform/android_picture_in_picture_test.dart` |
 
@@ -173,4 +231,10 @@ media_kit 的控制条在 headless 宿主渲染不出来（无 libmpv），所�
 - **Android 系统画中画**：Java 侧 `:app:compileDebugJavaWithJavac` 真编过，Dart 侧通道
   行为有打桩测试，但**没有在模拟器/真机上实际进过一次 PiP**。
 - mini 档下的字幕悬停制卡链路是「结构上零改动继续可用」的推断（overlay 与判据都没动），
-  未在真机复测。
+  未在真机复测。chrome 改成默认收起后这条推断更强了一点（收起态 `FadingChromeGate` 直接
+  `IgnorePointer`，画面上再没有别的层抢指针），但仍未真机复测。
+- **细线点击跳转**只有 widget 测试（命中带几何、落点换算、限频与终值补发）。真机上「12 像素
+  命中带会不会误触」「小窗里拇指/鼠标能不能瞄准」没有验证过，用户接受这个风险（原话
+  「应该也很难误触」）。
+- **Shift+M 唤出 chrome** 走的是与其它视频快捷键同一条 press-time 通道（有分发测试），但
+  没有在真机小窗里按过。

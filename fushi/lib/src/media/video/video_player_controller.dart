@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/diagnostics/video_diag_log.dart';
+import 'package:fushi/src/diagnostics/video_diag_stats.dart';
 import 'package:fushi/src/media/video/video_black_flicker_detector.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/startup/media_handle_registry.dart';
@@ -576,6 +578,10 @@ class VideoPlayerController extends ChangeNotifier
 
   /// hwdec 是否活跃的缓存（黑闪判据前置条件）：null=未查；查不到时 fail-open 视为活跃。
   bool? _flickerHwdecActive;
+
+  /// 上一次诊断快照（算丢帧增量与判断静态部分是否变化的基线）。只在诊断开着时推进；
+  /// 关掉再打开会从 null 重新起基线，第一行只有瞬时量、没有速率。
+  VideoMpvStatsSnapshot? _lastDiagStats;
 
   @override
   AudioCue? get currentCue => _currentCue;
@@ -1409,6 +1415,12 @@ class VideoPlayerController extends ChangeNotifier
   /// （[matchLuaLogToScripts]）。随 Player 生命周期挂一次、Player 释放时取消。
   StreamSubscription<PlayerLog>? _luaLogSub;
 
+  /// 诊断时间轴的 mpv 日志订阅（2026-09-22）。与 [_luaLogSub] 订阅同一条广播流但
+  /// 职责正交：那条只挑 Lua 相关行做脚本归因，这条把行转写进 [VideoDiagLog] 供
+  /// 「卡顿 / 查词慢」排查时与帧耗时、查词阶段对齐。同样是 Player 作用域，随
+  /// [_resetLuaScriptState] 一起摘。
+  StreamSubscription<PlayerLog>? _diagLogSub;
+
   /// 播放器层错误订阅（`player.stream.error`）。随 Player 生命周期挂一次。
   ///
   /// 在此之前**全仓库没有任何一处订阅它**：libmpv 打不开媒体时既不抛异常、也不置
@@ -1481,6 +1493,27 @@ class VideoPlayerController extends ChangeNotifier
     luaScriptStates.value = const <String, String?>{};
     unawaited(_luaLogSub?.cancel());
     _luaLogSub = null;
+    // 诊断订阅与 Lua 订阅同作用域（同一个 Player 的同一条日志流），一起摘——否则
+    // 旧 Player 的迟到日志行会挂在新 Player 的时间轴上，正是这类流水最忌讳的串台。
+    unawaited(_diagLogSub?.cancel());
+    _diagLogSub = null;
+  }
+
+  /// 把 libmpv 经客户端 API 推来的一行日志转写进诊断时间轴（2026-09-22）。
+  ///
+  /// 类别是 `mpv/<mpv 自己的模块前缀>`，于是 [VideoDiagLog] 的 mpv 风格过滤串能按
+  /// 模块调级（`mpv/vo=debug` 只放 VO 那一路）。级别按 mpv 的档名直接映射，映射不上
+  /// 的当 info。与错误流一样经 [redactAppNativeProxySecrets] 脱敏——诊断日志是给用户
+  /// 导出/上传的，代理口令不能随 URL 一起流出去。
+  void _onMpvLogForDiagnostics(PlayerLog log) {
+    final String prefix = log.prefix.trim();
+    final String category =
+        '${VideoDiagCategory.mpv}/${prefix.isEmpty ? 'mpv' : prefix}';
+    final VideoDiagLevel level =
+        VideoDiagLog.levelByName(log.level.trim().toLowerCase()) ??
+            VideoDiagLevel.info;
+    if (!videoDiagEnabledFor(category, level)) return;
+    videoDiag(category, level, redactAppNativeProxySecrets(log.text.trim()));
   }
 
   /// 着色器「对比原画」旁路态：true 时临时清空 libmpv 着色器（看原画），但**保留**
@@ -1680,13 +1713,27 @@ class VideoPlayerController extends ChangeNotifier
       // 测试 / 取证钩子（与 runner 的 FUSHI_TEST_* 同类）：FUSHI_TEST_MPV_LOG_FILE 指定
       // 路径时让 libmpv 把 verbose 日志写到该文件（VO / 交换链 / hwdec 协商全在里面，
       // HDR 直通真机取证靠它）。不设即零行为。
+      //
+      // 用户 2026-09-22 的「日志尽量全一点跟 mpv 一样」在这里落地：诊断开关打开后走
+      // **同一条路**，只是路径改成用户可导出的 [VideoDiagLog.mpvLogFilePath]。产出的
+      // 不是「模仿 mpv 格式的自研日志」，而是 libmpv 自己写的那一份——解码器选择、
+      // hwdec 协商、VO 交换链、demuxer 缓存、逐帧 framedrop 全在里面，这是任何 Dart
+      // 侧埋点都复刻不出来的。环境变量优先（真机取证时不被用户开关干扰）。
       final String? mpvLogFile =
-          Platform.environment['FUSHI_TEST_MPV_LOG_FILE'];
+          Platform.environment['FUSHI_TEST_MPV_LOG_FILE'] ??
+              (VideoDiagLog.instance.enabled
+                  ? VideoDiagLog.instance.mpvLogFilePath
+                  : null);
       if (mpvLogFile != null && mpvLogFile.isNotEmpty) {
         unawaited(_setMpvProperties(<String, String>{
           'log-file': mpvLogFile,
           'msg-level': 'all=v',
         }));
+        videoDiag(
+          VideoDiagCategory.video,
+          VideoDiagLevel.info,
+          'libmpv log-file=$mpvLogFile msg-level=all=v',
+        );
       }
       // TODO-1212：登记文件句柄释放（幂等，只在首次建 Player 时登记一次）。
       // mediaPath 每次现算：换集后这个 Player 握的是另一个文件，登记时快照会让
@@ -1704,6 +1751,12 @@ class VideoPlayerController extends ChangeNotifier
       });
       // BUG-2032：脚本报错归因。同样随 Player 生命周期挂一次，换集复用不重挂。
       _luaLogSub = player.stream.log.listen(_onMpvLogForLuaScripts);
+      // 诊断时间轴（2026-09-22）：把 libmpv 经客户端 API 推上来的日志行也转写进
+      // [VideoDiagLog]，好让 mpv 的报错与 Flutter 帧耗时 / 查词阶段在**同一条**时间
+      // 轴上按同一把 uptime 尺对齐。全量 verbose 仍只进 libmpv 自己的 log-file（上面
+      // 下发的那份），这里默认只留 info 及以上（过滤串 `mpv=info`），避免把统一时间轴
+      // 淹掉。独立订阅、不动上面那行——它被接线守卫逐字钉住。
+      _diagLogSub = player.stream.log.listen(_onMpvLogForDiagnostics);
       // BUG-2441：给 libmpv 层错误一个归宿。同样随 Player 生命周期挂一次。
       //
       // 这里**只校验 player identity、不校验 loadToken**，是因为消费端
@@ -2050,11 +2103,20 @@ class VideoPlayerController extends ChangeNotifier
     }
   }
 
-  /// TODO-1119：黑闪采样节流入口（每 125ms tick 调一次，内部自节流到 >=1s）。仅当页面
-  /// 挂了 [onSuspectedBlackFlicker]（页面只在 Windows 挂）且尚未触发、且无在途读时才采样。
+  /// TODO-1119 / 2026-09-22：libmpv 属性周期采样入口（每 125ms tick 调一次，内部
+  /// 自节流到 >=1s）。两个消费者**共用同一次读取**，避免各起一套定时器把 FFI 往返
+  /// 放大一倍：
+  ///
+  ///  * 黑闪判据（[onSuspectedBlackFlicker]，页面只在 Windows 挂，触发一次即止）；
+  ///  * 诊断时间轴（[VideoDiagLog] 开着时，每秒一行 mpv `stats.lua` 风格的快照）。
+  ///
+  /// 两者都不需要时一个属性都不读——诊断关闭的默认路径与本次改动前完全等价。
   void _maybeSampleBlackFlicker(Player player, int loadToken) {
-    if (onSuspectedBlackFlicker == null) return;
-    if (_blackFlickerDetector.hasFired) return;
+    final bool wantFlicker =
+        onSuspectedBlackFlicker != null && !_blackFlickerDetector.hasFired;
+    final bool wantDiag =
+        videoDiagEnabledFor(VideoDiagCategory.mpvStats, VideoDiagLevel.v);
+    if (!wantFlicker && !wantDiag) return;
     if (_flickerSampleInFlight) return;
     final DateTime now = DateTime.now();
     final DateTime? last = _lastFlickerSampleAt;
@@ -2063,25 +2125,38 @@ class VideoPlayerController extends ChangeNotifier
         last == null ? 1000 : now.difference(last).inMilliseconds;
     _lastFlickerSampleAt = now;
     _flickerSampleInFlight = true;
-    unawaited(_sampleBlackFlicker(player, loadToken, windowMs));
+    unawaited(_sampleBlackFlicker(
+      player,
+      loadToken,
+      windowMs,
+      wantFlicker: wantFlicker,
+      wantDiag: wantDiag,
+    ));
   }
 
-  /// TODO-1119：读一次 libmpv 迟帧/丢帧计数器喂判据。经 `player.platform`（NativePlayer）
-  /// 的 `getProperty`——仅 libmpv 后端有效，属性读取**独立于 msg-level 日志级别**（故
-  /// TODO-1232 诊断探针 log 级别卡 error 不影响本采样）。每个 await 后用 [_isCurrentLoad]
-  /// 双判据重校验，过期立即放弃（防向已释放 NativePlayer 读属性 = 原生 UAF，与本文件其它
-  /// 异步 mpv 路径一致）。任何属性不可读时静默按 0，绝不抛、不影响播放。
+  /// TODO-1119：读一轮 libmpv 属性喂判据 / 喂诊断时间轴。经 `player.platform`
+  /// （NativePlayer）的 `getProperty`——仅 libmpv 后端有效，属性读取**独立于
+  /// msg-level 日志级别**（故 TODO-1232 诊断探针 log 级别卡 error 不影响本采样）。
+  /// 每个 await 后用 [_isCurrentLoad] 双判据重校验，过期立即放弃（防向已释放
+  /// NativePlayer 读属性 = 原生 UAF，与本文件其它异步 mpv 路径一致）。任何属性不可读
+  /// 时**按缺失处理**（诊断行里写 `-`），绝不抛、不影响播放；黑闪判据那两个计数器读
+  /// 不到才退化按 0——「读不到」与「真是 0」在排查丢帧时是相反的结论，只有旧判据的
+  /// 容错语义保持原样。
   Future<void> _sampleBlackFlicker(
     Player player,
     int loadToken,
-    int windowMs,
-  ) async {
+    int windowMs, {
+    required bool wantFlicker,
+    required bool wantDiag,
+  }) async {
     try {
       final dynamic native = player.platform;
       if (native == null) return; // 非 libmpv 后端：无属性可读。
-      // hwdec 前置条件：黑闪与 GPU 硬解/共享纹理路径相关，只在硬解活跃时检测。只查一次并
-      // 缓存；查不到时 fail-open（视为活跃，仍受 Windows-gate + 可关闭提示兜底）。
-      if (_flickerHwdecActive == null) {
+      // hwdec 前置条件只约束**黑闪判据**：黑闪与 GPU 硬解/共享纹理路径相关，软解路径
+      // 不判。诊断采样不受它限制——软解跑不动同样是卡顿，而且「当前是软解」本身就是要
+      // 落进日志的结论。只查一次并缓存；查不到时 fail-open（视为活跃，仍受 Windows-gate
+      // + 可关闭提示兜底）。
+      if (wantFlicker && _flickerHwdecActive == null) {
         try {
           final String hwdec =
               (await native.getProperty('hwdec-current')).toString();
@@ -2089,38 +2164,66 @@ class VideoPlayerController extends ChangeNotifier
           final String v = hwdec.trim().toLowerCase();
           _flickerHwdecActive = v.isNotEmpty && v != 'no' && v != 'null';
         } catch (_) {
-          _flickerHwdecActive = true; // fail-open：读不到 hwdec 也允许检测。
+          _flickerHwdecActive = true; // 读不到 hwdec 也允许检测。
         }
       }
-      if (_flickerHwdecActive == false) return; // 软解路径：不检测。
+      final bool flickerAllowed = wantFlicker && _flickerHwdecActive != false;
+      if (!flickerAllowed && !wantDiag) return; // 软解 + 未开诊断：无事可做。
 
-      int readCounter(Object? raw) {
-        final int? n = int.tryParse(raw?.toString().trim() ?? '');
-        return (n == null || n < 0) ? 0 : n;
+      // 诊断开着时读全量快照，否则只读判据要的两个计数器——别让诊断的啰嗦程度渗进
+      // 默认路径。
+      final List<String> wanted = wantDiag
+          ? VideoMpvStatsSnapshot.properties
+          : const <String>['vo-delayed-frame-count', 'frame-drop-count'];
+      final Map<String, Object?> raw = <String, Object?>{};
+      for (final String name in wanted) {
+        Object? value;
+        try {
+          value = await native.getProperty(name);
+        } catch (_) {
+          value = null; // 该属性不可读（mpv 版本 / 当前状态），按缺失。
+        }
+        if (!_isCurrentLoad(player, loadToken)) return;
+        if (value != null) raw[name] = value;
+      }
+      final VideoMpvStatsSnapshot snapshot =
+          VideoMpvStatsSnapshot.fromProperties(raw);
+
+      if (wantDiag) {
+        // 静态部分（vo / hwdec / 分辨率 / 像素格式 / 容器帧率）只在变化时打一行：它
+        // 一变就意味着解码链重新协商过，本身是事件；每秒重复只会淹没日志。
+        if (snapshot.staticDiffersFrom(_lastDiagStats)) {
+          videoDiag(
+            VideoDiagCategory.mpvStats,
+            VideoDiagLevel.info,
+            'params ${snapshot.describeStatic()}',
+          );
+        }
+        final bool degraded =
+            snapshot.isDegradedSince(_lastDiagStats, windowMs);
+        videoDiag(
+          VideoDiagCategory.mpvStats,
+          degraded ? VideoDiagLevel.warn : VideoDiagLevel.v,
+          'playing=$isPlaying window=${windowMs}ms '
+          '${snapshot.describeSince(_lastDiagStats, windowMs)}',
+        );
+        _lastDiagStats = snapshot;
       }
 
-      int delayed = 0;
-      int dropped = 0;
-      try {
-        delayed =
-            readCounter(await native.getProperty('vo-delayed-frame-count'));
-      } catch (_) {
-        // 属性不可读：按 0（不致命）。
-      }
-      if (!_isCurrentLoad(player, loadToken)) return;
-      try {
-        dropped = readCounter(await native.getProperty('frame-drop-count'));
-      } catch (_) {
-        // 属性不可读：按 0（不致命）。
-      }
-      if (!_isCurrentLoad(player, loadToken)) return;
-
+      if (!flickerAllowed) return;
       final bool fired = _blackFlickerDetector.addSample(VideoFlickerSample(
-        cumulativeLateFrames: delayed + dropped,
+        cumulativeLateFrames:
+            (snapshot.voDelayedFrames ?? 0) + (snapshot.voDroppedFrames ?? 0),
         windowMs: windowMs,
         playing: isPlaying,
       ));
       if (fired) {
+        videoDiag(
+          VideoDiagCategory.video,
+          VideoDiagLevel.warn,
+          'suspected black flicker: sustained late frames over '
+          '${_blackFlickerDetector.sustainedBadWindows} windows',
+        );
         onSuspectedBlackFlicker?.call();
       }
     } finally {

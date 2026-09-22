@@ -182,7 +182,7 @@ void main() {
       final String playlist = buildTranscodeHlsPlaylist(
         durationMs: 15500,
         initUri: 'hlsinit.mp4?token=T',
-        segmentUri: (int i) => 'hlsseg?token=T&n=$i',
+        segmentUri: (int i) => '$kTranscodeSegmentPathSuffix?token=T&n=$i',
       );
       final List<String> lines = playlist
           .trim()
@@ -193,7 +193,12 @@ void main() {
       expect(lines, contains('#EXT-X-PLAYLIST-TYPE:VOD'));
       expect(lines, contains('#EXT-X-MAP:URI="hlsinit.mp4?token=T"'));
       expect(lines.last, '#EXT-X-ENDLIST');
-      expect(lines.where((String l) => l.startsWith('hlsseg?')).length, 3);
+      expect(
+        lines
+            .where((String l) => l.startsWith('$kTranscodeSegmentPathSuffix?'))
+            .length,
+        3,
+      );
       // 末段 3.5 秒：EXTINF 必须是真实段长，播放器据此算总时长与 seek 落点。
       expect(lines, contains('#EXTINF:3.500000,'));
     });

@@ -205,6 +205,8 @@ void main() {
         SyncAuthFailureKind.pairingRejected: false,
         // 压根没配对过（BUG-2377）：没有凭据可丢，登出无事可做。
         SyncAuthFailureKind.pairingNotConfigured: false,
+        // 服务端回的是网页（BUG-2631）：凭据没被评估过，要改的是地址不是会话。
+        SyncAuthFailureKind.htmlPage: false,
       };
       expect(
         signOutByKind.keys.toSet(),

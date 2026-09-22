@@ -8,32 +8,119 @@ import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-/// 服务端在错误响应体里给出的拒绝原因（截断后的），读不出来就返回 null。
+/// 服务端错误响应体里读出来的拒绝原因（BUG-1323 / BUG-2631）。
+///
+/// [reason] 是要给用户看的那句话：纯文本响应就是截断后的原文；HTML 网页只取
+/// `<title>`（读不出就为 null），整页标记永远不会出现在这里。[isHtmlPage] 标记
+/// 「服务端回的是网页而不是协议响应」——这决定 403 落成哪一种
+/// [SyncAuthFailureKind]（见 [WebDavOps.checkStatus]）。
+class SyncErrorBody {
+  const SyncErrorBody({required this.reason, required this.isHtmlPage});
+
+  /// 纯文本原因（既有调用面：测试与「服务端就说了一句话」的场景）。
+  const SyncErrorBody.text(String this.reason) : isHtmlPage = false;
+
+  final String? reason;
+  final bool isHtmlPage;
+
+  /// 403 应落成的种类：网页 → [SyncAuthFailureKind.htmlPage]；否则按策略拒绝算。
+  SyncAuthFailureKind get forbiddenKind =>
+      isHtmlPage ? SyncAuthFailureKind.htmlPage : SyncAuthFailureKind.forbidden;
+}
+
+/// 服务端在错误响应体里给出的拒绝原因，读不出来就返回 null。
 ///
 /// BUG-1323：以前所有 4xx 响应体都被 `drain()` 丢掉，403 的「HTTPS required for
 /// service config」这种**唯一可操作的信息**从来没到过用户面前。
 ///
+/// BUG-2631：响应体是一份 HTML 文档（Cloudflare 挑战页 / 反代错误页 / URL 压根是个
+/// 网站）时，「截 300 字」截出来的是 `<!DOCTYPE html><html lang="en-US"><head>...`
+/// 一串标记——对用户零信息，还把 SnackBar 撑成半屏。这种体只取 `<title>` 当原因，
+/// 并标记 [SyncErrorBody.isHtmlPage] 让上层换一套可操作文案。
+///
 /// 三条纪律：
 /// - **永不抛**。读原因失败绝不能盖掉原本要报的那个错——那才是用户要看的。
-/// - **有上限**。错误体可能是一整页 HTML；截到 [_kMaxServerReasonChars] 字符，
-///   免得把 SnackBar / 日志行撑爆。
+/// - **有上限**。纯文本原因截到 [_kMaxServerReasonChars] 字符，免得把 SnackBar /
+///   日志行撑爆。
 /// - **有超时**。挂死的响应流不能把同步整轮拖住。
-Future<String?> readSyncErrorBody(HttpClientResponse response) async {
+Future<SyncErrorBody?> readSyncErrorBody(HttpClientResponse response) async {
   try {
+    final bool declaredHtml =
+        response.headers.contentType?.mimeType.toLowerCase() == 'text/html';
     final String body = await response
         .transform(utf8.decoder)
         .join()
         .timeout(const Duration(seconds: 5));
-    final String trimmed = body.trim();
-    if (trimmed.isEmpty) return null;
-    if (trimmed.length <= _kMaxServerReasonChars) return trimmed;
-    return '${trimmed.substring(0, _kMaxServerReasonChars)}...';
+    return parseSyncErrorBody(body, declaredHtml: declaredHtml);
   } catch (_) {
     return null;
   }
 }
 
+/// [readSyncErrorBody] 的纯函数部分：把响应体文本归成 [SyncErrorBody]。
+/// [declaredHtml] = 响应头 `Content-Type: text/html`；没有它也能凭正文形状识别
+/// （Cloudflare 的挑战页两者都有，反代错误页有时只有正文）。
+SyncErrorBody? parseSyncErrorBody(String body, {bool declaredHtml = false}) {
+  final String trimmed = body.trim();
+  if (declaredHtml || looksLikeHtmlDocument(trimmed)) {
+    final String? title = htmlDocumentTitle(trimmed);
+    // nginx / Apache 默认错误页的标题恒为「NNN 状态语」（`403 Forbidden`）：那是真
+    // WebDAV 服务端经反代给出的拒绝（ACL / 目录无 DAV 权限），不是「地址填成了网站」
+    // ——归成网页会让用户去核对一个本来就对的地址。这种按拒绝算、原因取标题；
+    // Cloudflare 的「Just a moment...」与网站首页标题都不是这个形状（PR #1602 审查）。
+    if (title != null && _kHttpStatusTitle.hasMatch(title)) {
+      return SyncErrorBody.text(title);
+    }
+    return SyncErrorBody(reason: title, isHtmlPage: true);
+  }
+  if (trimmed.isEmpty) return null;
+  if (trimmed.length <= _kMaxServerReasonChars) {
+    return SyncErrorBody.text(trimmed);
+  }
+  return SyncErrorBody.text(
+    '${trimmed.substring(0, _kMaxServerReasonChars)}...',
+  );
+}
+
+/// 正文开头是不是一份 HTML 文档（`<!DOCTYPE html` / 前 512 字内出现 `<html`）。
+/// 只看开头：WebDAV 的 207 multistatus 是 XML，`<D:multistatus` 不会命中。
+bool looksLikeHtmlDocument(String trimmed) {
+  final String head = trimmed.length > 512
+      ? trimmed.substring(0, 512)
+      : trimmed;
+  final String lower = head.toLowerCase();
+  return lower.startsWith('<!doctype html') || lower.contains('<html');
+}
+
+/// HTML 文档的 `<title>` 文本（空白折叠、基本实体解码、截到 120 字）；没有就 null。
+String? htmlDocumentTitle(String html) {
+  final RegExpMatch? match = RegExp(
+    r'<title[^>]*>(.*?)</title>',
+    caseSensitive: false,
+    dotAll: true,
+  ).firstMatch(html);
+  if (match == null) return null;
+  final String title = _decodeBasicHtmlEntities(
+    match.group(1)!,
+  ).replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (title.isEmpty) return null;
+  if (title.length <= _kMaxHtmlTitleChars) return title;
+  return '${title.substring(0, _kMaxHtmlTitleChars)}...';
+}
+
+String _decodeBasicHtmlEntities(String s) => s
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&nbsp;', ' ')
+    .replaceAll('&amp;', '&');
+
 const int _kMaxServerReasonChars = 300;
+const int _kMaxHtmlTitleChars = 120;
+
+/// HTTP 服务器默认错误页的标题形状：三位状态码开头（`403 Forbidden`、`404 Not Found`）。
+final RegExp _kHttpStatusTitle = RegExp(r'^\d{3}(?:\s|$)');
 
 class DavEntry {
   const DavEntry({
@@ -170,11 +257,12 @@ class WebDavOps {
       }
       // BUG-1323：403 是服务端的策略拒绝，用户要看到的是**服务端说了什么**，而不是
       // 「登录已过期，请重新登录」。「测试连接」正是最该把原文摆出来的地方，故这条
-      // 分支不 drain，先把响应体读成拒绝原因。
+      // 分支不 drain，先把响应体读成拒绝原因；体是网页时由 [checkStatus] 落成
+      // [SyncAuthFailureKind.htmlPage]（BUG-2631）。
       if (response.statusCode == 403) {
-        throw SyncAuthError(
-          'Server refused (403): PROPFIND $_baseUrl',
-          kind: SyncAuthFailureKind.forbidden,
+        checkStatus(
+          403,
+          'PROPFIND $_baseUrl',
           serverReason: await readSyncErrorBody(response),
         );
       }
@@ -249,9 +337,9 @@ class WebDavOps {
     // 401 的判定必须先于任何可能抛异常的流读取，否则一个畸形错误体就能把鉴权
     // 失败盖成 FormatException。
     if (response.statusCode == 403) {
-      throw SyncAuthError(
-        'Server refused (403): PROPFIND $path',
-        kind: SyncAuthFailureKind.forbidden,
+      checkStatus(
+        403,
+        'PROPFIND $path',
         serverReason: await readSyncErrorBody(response),
       );
     }
@@ -398,8 +486,13 @@ class WebDavOps {
   ///
   /// [serverReason] 是服务端在响应体里给出的拒绝原因（调用方读得到就传，读不到就
   /// 不传）。本方法是同步的、拿不到响应流，故不能自己读；已有的三十余处调用点
-  /// 一行都不用改。
-  void checkStatus(int statusCode, String context, {String? serverReason}) {
+  /// 一行都不用改。体是 HTML 网页时（BUG-2631）403 落成
+  /// [SyncAuthFailureKind.htmlPage]，原因只带网页标题。
+  void checkStatus(
+    int statusCode,
+    String context, {
+    SyncErrorBody? serverReason,
+  }) {
     if (statusCode == 401) {
       throw SyncAuthError('Authentication failed', kind: _unauthorizedKind);
     }
@@ -411,8 +504,8 @@ class WebDavOps {
     if (statusCode == 403) {
       throw SyncAuthError(
         'Server refused (403): $context',
-        kind: SyncAuthFailureKind.forbidden,
-        serverReason: serverReason,
+        kind: serverReason?.forbiddenKind ?? SyncAuthFailureKind.forbidden,
+        serverReason: serverReason?.reason,
       );
     }
     if (statusCode == 404) {

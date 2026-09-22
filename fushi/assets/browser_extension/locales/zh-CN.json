@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "彻底藏起站点自带字幕和扩展覆盖层（不是模糊，悬停也不显示）——纯听力练习用。随时按 <kbd>Shift</kbd>+<kbd>H</kbd> 开关。",
   "opt_subtitlePauseOnLookup_title": "查词时暂停",
   "opt_subtitlePauseOnLookup_desc": "从网页、字幕列表或悬浮字幕发起查词时暂停正在播放的视频；关闭查词弹窗后自动恢复播放（你自己暂停的视频不会被播放）。",
+  "opt_subtitleResumeOnLookupLeave_title": "离开查词即继续播放",
+  "opt_subtitleResumeOnLookupLeave_desc": "Shift 悬停或悬浮字幕自动查词把视频停住后，鼠标离开字幕与查词弹窗即自动关窗并继续播放，不必再点一下空白。点击发起的查词不受影响。",
   "opt_subtitleLookupOnPage_title": "查词结果显示在网页上",
   "opt_subtitleLookupOnPage_desc": "侧边栏里点词时，弹窗开在网页上而不是挤在侧边栏内——浏览器不允许侧边栏里的内容画到面板外面。关掉则回到侧边栏内的窄弹窗。",
   "opt_subtitleOverlayAutoLookup_title": "悬浮字幕自动查词",

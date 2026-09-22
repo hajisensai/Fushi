@@ -78,6 +78,8 @@ bool shouldSignOutOnAuthError(SyncAuthError error) => switch (error.kind) {
       SyncAuthFailureKind.pairingRejected => false,
       // 压根没有凭据可丢，登出无事可做。
       SyncAuthFailureKind.pairingNotConfigured => false,
+      // BUG-2631：服务端回的是网页，凭据根本没被评估过；要改的是地址，不是会话。
+      SyncAuthFailureKind.htmlPage => false,
     };
 
 /// 一条**具名通道**的鉴权失败之后，该不该对这条通道执行登出（BUG-1578）。

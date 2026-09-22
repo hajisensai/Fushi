@@ -1220,13 +1220,15 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 底部细进度条开关：控制条淡出后，在视频最下方留一条主题色细线
-  /// （B 站 / YouTube 同款）。默认开——它只在控制条**已经不在**时出现，不遮任何
-  /// 东西，纯增益；getPref 仅在该 key 从未写过时返回默认值，已切过的用户保留存值。
+  /// （B 站 / YouTube 同款）。**默认关**——控制条淡出本身就是「把画面让干净」，
+  /// 再留一条常亮的线等于把这个意图撤回一半；想要的人去设置里开。getPref 仅在
+  /// 该 key 从未写过时返回默认值，已切过的用户保留存值（首版默认开期间手动
+  /// 关掉的人不会因为这次改默认被重新打开）。
   ///
   /// 小窗档不受它管：那里完整进度条已被 theme 收起，细线是唯一的进度指示，
   /// 判据统一在 `videoSlimProgressBarVisible`（video_controls_density.dart）。
   bool get videoSlimProgressBar =>
-      getPref('video_slim_progress_bar', defaultValue: true) as bool;
+      getPref('video_slim_progress_bar', defaultValue: false) as bool;
 
   Future<void> setVideoSlimProgressBar(bool value) async {
     await setPref('video_slim_progress_bar', value);
