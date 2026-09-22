@@ -22,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 import 'helpers/focus_driver.dart';
 import 'helpers/game_stream_lan_fixture.dart';
 import 'support/test_app_launcher.dart';
+import 'test_helpers.dart';
 
 /// Run only with tool/run_game_stream_android_qa.ps1. The separate package is
 /// mandatory: this fixture must never provision or clear the user's app data.
@@ -66,6 +67,28 @@ void main() {
       FushiGameStreamClient? client;
       SyncRepository? repository;
       RTCPeerConnection? peerConnection;
+      Future<void> recordRtpEvidence() async {
+        final RTCPeerConnection? connection = peerConnection;
+        if (connection == null) return;
+        final List<Map<String, Object?>> inbound = await _inboundRtpStats(
+          connection,
+        );
+        evidence['inboundRtp'] = inbound;
+        final List<num> audioEnergy = inbound
+            .where(
+              (Map<String, Object?> item) =>
+                  item['kind'] == 'audio' || item['mediaType'] == 'audio',
+            )
+            .map((Map<String, Object?> item) => item['totalAudioEnergy'])
+            .whereType<num>()
+            .toList();
+        evidence['audioEnergyStatus'] = audioEnergy.isEmpty
+            ? 'unavailable'
+            : audioEnergy.any((num energy) => energy > 0)
+            ? 'nonzero'
+            : 'silent';
+      }
+
       final List<Map<String, Object?>> acknowledgements =
           <Map<String, Object?>>[];
       try {
@@ -73,6 +96,7 @@ void main() {
         flutterErrors.install();
         await launchFushiTestApp();
         flutterErrors.install();
+        expect(await waitForHome(tester), isTrue, reason: 'Home must render');
         final AppModel model = await enableFocusNavigation(tester);
         expect(model.isInitialised, isTrue);
         repository = SyncRepository(model.database);
@@ -300,24 +324,10 @@ void main() {
           expect(mined?.detail, isNot('sentence_audio_missing'));
         }
 
-        final List<Map<String, Object?>> inbound = <Map<String, Object?>>[];
-        for (final StatsReport stat in await peerConnection!.getStats()) {
-          if (stat.type != 'inbound-rtp') continue;
-          final Map<dynamic, dynamic> values = stat.values;
-          inbound.add(<String, Object?>{
-            for (final String key in <String>[
-              'kind',
-              'mediaType',
-              'bytesReceived',
-              'packetsReceived',
-              'framesDecoded',
-              'totalSamplesReceived',
-              'totalAudioEnergy',
-            ])
-              if (values.containsKey(key)) key: values[key],
-          });
-        }
-        evidence['inboundRtp'] = inbound;
+        await recordRtpEvidence();
+        await save();
+        final List<Map<String, Object?>> inbound =
+            evidence['inboundRtp']! as List<Map<String, Object?>>;
         final List<Map<String, Object?>> audio = inbound
             .where(
               (Map<String, Object?> item) =>
@@ -337,6 +347,13 @@ void main() {
             ),
             isTrue,
           );
+          if (evidence['audioEnergyStatus'] != 'unavailable') {
+            expect(
+              evidence['audioEnergyStatus'],
+              'nonzero',
+              reason: 'Received audio must contain nonzero energy',
+            );
+          }
         }
         evidence['receivedLines'] = lines
             .map(
@@ -371,6 +388,14 @@ void main() {
       } finally {
         final Map<String, Object?>? flutterFailure = flutterErrors.lastFailure;
         flutterErrors.restore();
+        // Preserve receive-side evidence even when text, lookup, or mining fails.
+        // A stats failure must not hide the original stage's exception.
+        try {
+          await recordRtpEvidence();
+        } catch (error) {
+          evidence['inboundRtpErrorType'] = error.runtimeType.toString();
+        }
+        await save();
         await receiver?.disconnect();
         if (client != null) {
           try {
@@ -401,6 +426,32 @@ void main() {
     },
     timeout: const Timeout(Duration(minutes: 6)),
   );
+}
+
+Future<List<Map<String, Object?>>> _inboundRtpStats(
+  RTCPeerConnection connection,
+) async {
+  final List<Map<String, Object?>> inbound = <Map<String, Object?>>[];
+  final List<StatsReport> reports = await connection.getStats().timeout(
+    const Duration(seconds: 5),
+  );
+  for (final StatsReport stat in reports) {
+    if (stat.type != 'inbound-rtp') continue;
+    final Map<dynamic, dynamic> values = stat.values;
+    inbound.add(<String, Object?>{
+      for (final String key in <String>[
+        'kind',
+        'mediaType',
+        'bytesReceived',
+        'packetsReceived',
+        'framesDecoded',
+        'totalSamplesReceived',
+        'totalAudioEnergy',
+      ])
+        if (values.containsKey(key)) key: values[key],
+    });
+  }
+  return inbound;
 }
 
 Map<String, Object?> _lineEvidence(GameStreamTextEvent? line) =>
