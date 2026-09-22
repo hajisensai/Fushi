@@ -8,8 +8,9 @@
 - Android：在「Fushi 互联」设置的客户端区域进入游戏串流，选择已配对且启用的 Windows 主机，加入其已开启的会话。
 - 首版仅 LAN、单客户端，WebRTC 不配置 STUN/TURN。SDP/ICE、加入、停止和制卡复用互联 HTTP、配对令牌以及 HTTPS 指纹校验。共享 WebDAV 密码不能授权串流控制。
 - Android 只接收视频/音频、发送输入、显示 Hook 台词和查词。Hook、helper、窗口采集和 Anki 写入全部留在 Windows；iOS/macOS/Linux 无接收或游戏 Hook 入口。
-- 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置，也支持焦点导航及 Enter/Space 按下和松开，失焦会释放按键。Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时会拒绝输入并回传 ACK 原因。
-- 查词面板复用 `FushiRemoteLookupClient` 和 `DictionaryPopupLayer`；查词固定到串流主机。分词复用现有日语模块，无本地词典时按字回退。查词面板可收起，未新增系统级悬浮窗。
+- 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置，也支持焦点导航及 Enter/Space 按下和松开，失焦会释放按键。普通 Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时拒绝新增输入并回传 ACK 原因。
+- SGRE 实测不消费确认键的窗口消息，现增加由其已验证 DirectInput 能力门选择的进程内确认适配，待新游戏进程实测。该适配当前仅接受默认手柄「确认」，其余手柄键、原始键和坐标触控明确返回不支持；不得把全套控制视作 SGRE 已验证能力。DOWN 在游戏采样后确认，750ms 租约到期失效；UP 和清理允许在后台按同一进程身份发布零掩码，失败 DOWN 立即清理。内部 Hook IPC 升为 v25，已驻留 v24 DLL 的游戏需保存后重启，不能靠重新附着替换。
+- 台词面板与视频侧栏共用 `SubtitleTranscriptRow` / `SubtitleTranscriptText`：整句展示、当前行底色、字体间距、复制按钮和文字命中逻辑一致；横屏显示侧栏，窄屏显示底部面板。点词从选中位置发送句子后缀，由主机词典进行最长匹配，不要求 Android 安装本地形态词典；键盘可移动台词光标并按 Enter 查词。查词结果复用 `FushiRemoteLookupClient` 和 `DictionaryPopupLayer`，固定到串流主机。面板可收起，未新增系统级悬浮窗。
 
 ## 实现
 
@@ -37,6 +38,14 @@
 - 同轮远程制卡被 HTTP 路径拒绝，没有验证通过的卡；旧传输丢弃非 2xx 错误体，不能从原日志确定具体拒绝点。已补结构化 HTTP 错误分类、主机 mine 异常边界和 preflight/hostMine/verify 阶段证据，待复测确定根因。Android 夹具追加真实按住确认键及首帧即时截图；测试脚本保留隔离 QA 包以导出失败证据，测试结束仍清除本轮配对凭据。
 - `gs-lan-host-20260922-5` / Android `lan5` 在 `a38b6c19092` 的构建上再次取得首帧、2371 帧解码和非零音频能量，保存了真实游戏与台词抽屉的安卓截图。确认键实际保持 762ms，DOWN/UP ACK 都接受，但没有新台词事件，SGRE 的消息输入实效仍未通过。该轮在查词前失败：隔离接收器无形态词典，按单字显示，而新台词没有旧的稀疏词表单字；夹具词表已补全假名，避免要求操作者反复寻找特定台词。此轮未发送制卡请求，不能据此判断上轮制卡拒绝已修复。
 - 追加 HTTP 拒绝分类与鉴权/fallback 回归 7 项、mine handler 异常与非 ASCII short alias 回归 3 项、制卡阶段诊断回归 5 项、排队输入超时与控制通道关闭回归 3 项。新增生命周期用例先复现缺陷，修复后 receiver 15/15、host 6/6 通过；传输层 28/28、阶段诊断 6/6、协议 21/21 通过。不同定向单元/组件测试合计 160 项；改动文件静态检查通过。生命周期修复晚于 LAN5 构建，不能把 LAN5 作为这项修复的实机证据。
+- LAN5 截图暴露了按字按钮展示和单字查询的问题。`7e70c117d49` 修正源文本位置与后缀查询，覆盖空白、重复词和 UTF-16 边界，页面/客户端 22/22 通过。按用户要求，`292834691f1` 进一步提取并复用视频字幕栏的整句组件；视频侧栏、文本命中、串流横竖屏和键盘事件隔离共 81/81 通过，8 文件静态检查通过。这些测试批次有重叠，不计入上述不同用例总数；新版侧栏仍待 Android 真机截图复核。
+- `a849b2dc766` 修正真实 AnkiConnect 请求契约：夹具的 `HttpClientRequest.write` 默认使用 chunked，同机只读 `version` / `findNotes` 均返回 HTTP 200 但 `result:null`；相同固定长度 JSON 分别返回版本 6 / 空列表。这会使夹具在 preflight 的非空断言处失败，尚未进入生产制卡链，足以解释 LAN4 的失败路径，但历史日志不能证明没有其他问题。夹具现按 UTF-8 字节设置 `Content-Length`；真实 loopback HTTP 测试覆盖日文与 emoji 字节长度和非 chunked 请求，7/7 通过，2 文件静态检查通过。修复不改 Anki 设置；真卡及对应媒体仍待复测。
+- 包含共享台词栏的 Android QA build7 已构建并安装到指定设备，源码 `292834691f1`，APK SHA-256 `d5d18100bf1db2227a2a7a293e43cc56c31368482982b912316a75c3fe1eb677`。已检查 APK 内确有共享台词组件且无 Windows Hook/helper 载荷；安装成功不等于新侧栏的设备端交互验收。
+- SGRE 输入新增独立状态发布代际，避免旧回调覆盖新请求 ACK，以及请求在状态写入中被替换时暴露旧代际的混合载荷。`d195abade9d` / `30787f17295` 的确定性交错回归在 x64、x86 均通过 4 场景 / 25 检查；还原各错误分支的私有变异均失败，无生产测试钩子。普通原生输入回归增加后台 UP 身份与零掩码检查，修前 69 检查中 2 项失败，修后 69/69 通过。以上均为合成窗口/IPC 证据，不等于真实游戏已消费输入。
+- `6f149102f9e` 拒绝同 `lineId` 渐进文本更新后、界面尚未重建时来自旧段落的查词操作。真实键盘 widget 回归先复现旧后缀错误发出，修后整页 11/11 通过，2 文件静态检查通过；新段落渲染后可以正常查词。
+- 最终 v25 helper 双架构构建及完整原生 CTest 通过：x64 113/113、x86 117/117。manifest / profile 生成检查通过；manifest 23、adapter 结构 52、workflow/replay 6 项 Python 测试通过。归档 SHA-256：x64 `cb1445c5178dfa69b70cf7f478ac7f4781e7ca2ba5e4341aa053e4dae633aee7`，x86 `ea0939fa4297ca2c67f705436cf7b5b8b612075f712f0ddbef0eb5fefccf6f62`。尚未加载到用户当前旧游戏进程。
+- Android QA build8 增量纳入渐进文本守卫，源码 `6f149102f9e`，APK SHA-256 `b26f2d598974cf1e4d461eef88edd8a4dbaf310591d50695dddb474c79f73862`，构建并安装成功。已检查共享台词组件存在且无 Windows helper 载荷。原生 SGRE 确认适配落在 `66f73774e39`，仅影响 Windows 及其 helper。
+- Windows 最终 Debug 构建通过（237.4s），未运行测试游戏。随包 x64/x86 Hook DLL 与本轮原生构建哈希相同，分别为 `a6900ddff897329b5eaa6b52e2adf1cdb2f6c285cda4330f94f0f67ba69f8fd6` / `855b93a789c0b01904576d757a299b4dd2cfbbc40da0ffdf15e60aa06a5a155d`。等待操作者保存并退出旧 SGRE，再由测试会话早注入启动新进程；不能把构建通过写成 LAN6 通过。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 
