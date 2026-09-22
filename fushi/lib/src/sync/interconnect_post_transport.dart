@@ -34,11 +34,7 @@ class InterconnectAssetUnreachableError implements Exception {
 /// 个 3s 去卡整包下载，会把「活着但网慢的 peer」判成「设备死了」。
 const Duration kInterconnectAssetTransferTimeout = Duration(seconds: 30);
 
-Never _throwAssetUnreachable(
-  Uri uri,
-  Object error,
-  StackTrace stack,
-) {
+Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
   debugPrint('[Fushi] interconnect audio asset unreachable: $uri ($error)');
   Error.throwWithStackTrace(
     InterconnectAssetUnreachableError(uri: uri, cause: error),
@@ -65,9 +61,9 @@ class InterconnectPostTransport {
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
 
   final SyncRepository _repo;
 
@@ -100,12 +96,17 @@ class InterconnectPostTransport {
   /// [onlyCandidate] limits a source-edit continuation to the exact URL, pin and
   /// effective credential used for the original read. Revocation/re-pairing
   /// invalidates the session; it never permits fallback to a different library.
+  /// [onRejectedResponse] observes reachable but unusable responses without
+  /// changing fallback or 401 semantics. Callers may surface the last rejection
+  /// if no later candidate succeeds. Response text is never passed through.
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
     required String authErrorMessage,
     FushiClientUrl? onlyCandidate,
+    void Function(int statusCode, Map<String, dynamic>? json)?
+    onRejectedResponse,
   }) async {
     final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
@@ -140,8 +141,9 @@ class InterconnectPostTransport {
       final String? fp = candidate.fingerprintSha256;
       final bool usePinned =
           uri.isScheme('https') && fp != null && fp.isNotEmpty;
-      final http.Client client =
-          usePinned ? _pinnedClientFactory(fp) : _httpClient;
+      final http.Client client = usePinned
+          ? _pinnedClientFactory(fp)
+          : _httpClient;
       attempted = true;
       try {
         final http.Response response = await client
@@ -169,27 +171,22 @@ class InterconnectPostTransport {
           );
           continue;
         }
-        if (response.statusCode == 404 || response.statusCode == 405) {
-          continue;
-        }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          onRejectedResponse?.call(
+            response.statusCode,
+            _responseObject(response),
+          );
           continue;
         }
-        final dynamic decoded = jsonDecode(response.body);
-        if (decoded is Map<String, dynamic>) {
+        final Map<String, dynamic>? decoded = _responseObject(response);
+        if (decoded != null) {
           return (
             json: decoded,
             allUnreachable: false,
             candidate: candidate.copyWith(token: token),
           );
         }
-        if (decoded is Map) {
-          return (
-            json: Map<String, dynamic>.from(decoded),
-            allUnreachable: false,
-            candidate: candidate.copyWith(token: token),
-          );
-        }
+        onRejectedResponse?.call(response.statusCode, null);
       } catch (_) {
         continue;
       } finally {
@@ -242,8 +239,9 @@ class InterconnectPostTransport {
 
     final String? fp = candidate.fingerprintSha256;
     final bool usePinned = uri.isScheme('https') && fp != null && fp.isNotEmpty;
-    final http.Client client =
-        usePinned ? _pinnedClientFactory(fp) : _httpClient;
+    final http.Client client = usePinned
+        ? _pinnedClientFactory(fp)
+        : _httpClient;
     try {
       // 连接阶段：只到响应头。这一段超时才是「设备死了」。
       // followRedirects 必须关掉——上面的 origin + path 白名单只校验了初始 URI，
@@ -254,14 +252,18 @@ class InterconnectPostTransport {
           .timeout(timeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await response.stream.drain<void>();
-        debugPrint('[Fushi] interconnect audio asset returned HTTP '
-            '${response.statusCode}: $uri');
+        debugPrint(
+          '[Fushi] interconnect audio asset returned HTTP '
+          '${response.statusCode}: $uri',
+        );
         return null;
       }
       final int? declaredLength = response.contentLength;
       if (declaredLength != null && declaredLength > maxBytes) {
-        debugPrint('[Fushi] interconnect audio asset rejected: declared '
-            'length $declaredLength exceeds $maxBytes bytes ($uri)');
+        debugPrint(
+          '[Fushi] interconnect audio asset rejected: declared '
+          'length $declaredLength exceeds $maxBytes bytes ($uri)',
+        );
         return null;
       }
       // 传输阶段：独立预算，超时 = 「可达但慢」= 无音频，不是不可达。
@@ -273,8 +275,10 @@ class InterconnectPostTransport {
           maxBytes: maxBytes,
         ).timeout(transferTimeout);
       } on TimeoutException {
-        debugPrint('[Fushi] interconnect audio asset transfer exceeded '
-            '${transferTimeout.inSeconds}s (peer reachable, link slow): $uri');
+        debugPrint(
+          '[Fushi] interconnect audio asset transfer exceeded '
+          '${transferTimeout.inSeconds}s (peer reachable, link slow): $uri',
+        );
         return null;
       }
       if (body == null) return null;
@@ -282,10 +286,7 @@ class InterconnectPostTransport {
         debugPrint('[Fushi] interconnect audio asset was empty: $uri');
         return null;
       }
-      return (
-        bytes: body,
-        contentType: response.headers['content-type'],
-      );
+      return (bytes: body, contentType: response.headers['content-type']);
     } on TimeoutException catch (error, stack) {
       _throwAssetUnreachable(uri, error, stack);
     } on HandshakeException catch (error, stack) {
@@ -310,13 +311,24 @@ class InterconnectPostTransport {
     final BytesBuilder bytes = BytesBuilder(copy: false);
     await for (final List<int> chunk in stream) {
       if (bytes.length + chunk.length > maxBytes) {
-        debugPrint('[Fushi] interconnect audio asset rejected: streamed '
-            'body exceeds $maxBytes bytes ($uri)');
+        debugPrint(
+          '[Fushi] interconnect audio asset rejected: streamed '
+          'body exceeds $maxBytes bytes ($uri)',
+        );
         return null;
       }
       bytes.add(chunk);
     }
     return bytes.takeBytes();
+  }
+}
+
+Map<String, dynamic>? _responseObject(http.Response response) {
+  try {
+    final Object? decoded = jsonDecode(response.body);
+    return decoded is Map<String, dynamic> ? decoded : null;
+  } on FormatException {
+    return null;
   }
 }
 
@@ -328,10 +340,7 @@ typedef InterconnectPostOutcome = ({
   FushiClientUrl? candidate,
 });
 
-typedef InterconnectBytesOutcome = ({
-  Uint8List bytes,
-  String? contentType,
-});
+typedef InterconnectBytesOutcome = ({Uint8List bytes, String? contentType});
 
 bool _sameOrigin(Uri a, Uri b) =>
     a.scheme.toLowerCase() == b.scheme.toLowerCase() &&

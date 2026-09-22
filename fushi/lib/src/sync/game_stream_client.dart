@@ -37,6 +37,18 @@ class GameStreamUnreachableError implements Exception {
   String toString() => 'GameStreamUnreachableError: $message';
 }
 
+/// A reachable host rejected an operation or returned an invalid response.
+/// Only protocol codes are exposed; raw response bodies may contain host data.
+class GameStreamRequestError implements Exception {
+  const GameStreamRequestError({required this.statusCode, required this.code});
+
+  final int? statusCode;
+  final String code;
+
+  @override
+  String toString() => 'GameStreamRequestError: $code (HTTP $statusCode)';
+}
+
 class InterconnectGameStreamTransport implements GameStreamTransport {
   InterconnectGameStreamTransport({
     required SyncRepository repo,
@@ -63,12 +75,34 @@ class InterconnectGameStreamTransport implements GameStreamTransport {
     required Map<String, dynamic> body,
     required Duration timeout,
   }) async {
+    GameStreamRequestError? rejection;
     final InterconnectPostOutcome outcome = await _transport.post(
       path: path,
       body: body,
       timeout: timeout,
       authErrorMessage: 'Fushi server rejected game-stream token',
       onlyCandidate: _boundPeer,
+      onRejectedResponse: (int status, Map<String, dynamic>? json) {
+        const Set<String> codes = <String>{
+          'invalid_request',
+          'unauthorized_peer',
+          'session_not_found',
+          'session_conflict',
+          'stream_error',
+        };
+        final Object? code = json?['code'];
+        rejection = GameStreamRequestError(
+          statusCode: status,
+          code:
+              json?['version'] == kGameStreamWireVersion &&
+                  code is String &&
+                  codes.contains(code)
+              ? code
+              : (status >= 200 && status < 300
+                    ? 'invalid_response'
+                    : 'http_rejected'),
+        );
+      },
     );
     if (outcome.allUnreachable) {
       throw GameStreamUnreachableError(
@@ -76,9 +110,11 @@ class InterconnectGameStreamTransport implements GameStreamTransport {
       );
     }
     if (outcome.json == null) {
-      throw const GameStreamUnreachableError(
-        'The paired host rejected the game-stream request',
-      );
+      throw rejection ??
+          const GameStreamRequestError(
+            statusCode: null,
+            code: 'peer_unavailable',
+          );
     }
     return GameStreamPostResult(json: outcome.json, peer: outcome.candidate);
   }

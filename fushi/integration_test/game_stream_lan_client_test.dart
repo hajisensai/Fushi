@@ -429,6 +429,10 @@ void main() {
         evidence['status'] = 'failed';
         // Exception text may contain transport information; keep only its type/code.
         evidence.addAll(gameStreamFailureSummary(error));
+        if (error is GameStreamRequestError) {
+          evidence['failureCode'] = error.code;
+          evidence['failureHttpStatus'] = error.statusCode;
+        }
         await captureVideoScreenshot('failed');
         await save();
         rethrow;

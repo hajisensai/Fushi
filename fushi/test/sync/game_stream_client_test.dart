@@ -1,12 +1,181 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:drift/drift.dart' hide isNotNull, isNull;
+import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 void main() {
+  group('paired HTTP game-stream transport', () {
+    const FushiClientUrl primary = FushiClientUrl(
+      url: 'http://primary:8765',
+      token: 'test-primary-token',
+    );
+    const FushiClientUrl secondary = FushiClientUrl(
+      url: 'http://secondary:8765',
+      token: 'test-secondary-token',
+    );
+    late FushiDatabase db;
+    late SyncRepository repository;
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      repository = SyncRepository(db);
+      await repository.setFushiClientUrls(<FushiClientUrl>[primary, secondary]);
+    });
+    tearDown(() => db.close());
+
+    for (final ({int status, String body, String code}) failure
+        in <({int status, String body, String code})>[
+          (
+            status: 409,
+            body: jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'session_conflict',
+              'error': 'The session is no longer active',
+            }),
+            code: 'session_conflict',
+          ),
+          (
+            status: 500,
+            body: '<html>Server failed</html>',
+            code: 'http_rejected',
+          ),
+          (status: 200, body: 'not JSON', code: 'invalid_response'),
+        ]) {
+      test('HTTP ${failure.status} preserves ${failure.code}', () async {
+        final MockClient httpClient = MockClient(
+          (http.Request request) async =>
+              http.Response(failure.body, failure.status),
+        );
+        addTearDown(httpClient.close);
+        final InterconnectGameStreamTransport transport =
+            InterconnectGameStreamTransport(
+              repo: repository,
+              httpClient: httpClient,
+            )..bindPeer(primary);
+
+        await expectLater(
+          _postStream(transport),
+          throwsA(
+            isA<GameStreamRequestError>()
+                .having(
+                  (GameStreamRequestError error) => error.statusCode,
+                  'statusCode',
+                  failure.status,
+                )
+                .having(
+                  (GameStreamRequestError error) => error.code,
+                  'code',
+                  failure.code,
+                ),
+          ),
+        );
+      });
+    }
+
+    test('HTTP 401 retains SyncAuthError', () async {
+      final MockClient httpClient = MockClient(
+        (http.Request request) async => http.Response('rejected', 401),
+      );
+      addTearDown(httpClient.close);
+      final InterconnectGameStreamTransport transport =
+          InterconnectGameStreamTransport(
+            repo: repository,
+            httpClient: httpClient,
+          )..bindPeer(primary);
+
+      await expectLater(_postStream(transport), throwsA(isA<SyncAuthError>()));
+    });
+
+    test('a bound host rejection never falls back to another peer', () async {
+      final List<String> hosts = <String>[];
+      final MockClient httpClient = MockClient((http.Request request) async {
+        hosts.add(request.url.host);
+        if (request.url.host == 'primary') {
+          return http.Response(
+            jsonEncode(<String, Object?>{
+              'version': 1,
+              'code': 'session_conflict',
+              'error': 'stopped',
+            }),
+            409,
+          );
+        }
+        return http.Response('{"version":1,"sessions":[]}', 200);
+      });
+      addTearDown(httpClient.close);
+      final InterconnectGameStreamTransport transport =
+          InterconnectGameStreamTransport(
+            repo: repository,
+            httpClient: httpClient,
+          )..bindPeer(primary);
+
+      await expectLater(
+        _postStream(transport),
+        throwsA(isA<GameStreamRequestError>()),
+      );
+      expect(hosts, <String>['primary']);
+      expect(transport.boundPeer?.url, primary.url);
+    });
+
+    test('unbound discovery can recover from 409 at the next peer', () async {
+      final List<String> hosts = <String>[];
+      final MockClient httpClient = MockClient((http.Request request) async {
+        hosts.add(request.url.host);
+        if (request.url.host == 'primary') {
+          return http.Response(
+            '{"version":1,"code":"session_conflict","error":"stopped"}',
+            409,
+          );
+        }
+        return http.Response('{"version":1,"sessions":[]}', 200);
+      });
+      addTearDown(httpClient.close);
+      final InterconnectGameStreamTransport transport =
+          InterconnectGameStreamTransport(
+            repo: repository,
+            httpClient: httpClient,
+          );
+
+      final GameStreamPostResult response = await _postStream(transport);
+      expect(hosts, <String>['primary', 'secondary']);
+      expect(response.json, <String, Object?>{
+        'version': 1,
+        'sessions': <Object?>[],
+      });
+      expect(response.peer?.url, secondary.url);
+    });
+
+    test('network failure still differs from a host HTTP rejection', () async {
+      final MockClient httpClient = MockClient((http.Request request) async {
+        throw http.ClientException('unreachable', request.url);
+      });
+      addTearDown(httpClient.close);
+      final InterconnectGameStreamTransport transport =
+          InterconnectGameStreamTransport(
+            repo: repository,
+            httpClient: httpClient,
+          )..bindPeer(primary);
+
+      await expectLater(
+        _postStream(transport),
+        throwsA(isA<GameStreamUnreachableError>()),
+      );
+    });
+  });
+
   test('lookup completion cannot attach an old result to a new line', () async {
     final _DeferredLookup lookup = _DeferredLookup();
     final _FakeTransport transport = _FakeTransport();
@@ -148,6 +317,14 @@ void main() {
     expect(composer.lastRejectedSequence, 0);
   });
 }
+
+Future<GameStreamPostResult> _postStream(
+  InterconnectGameStreamTransport transport,
+) => transport.post(
+  path: '/api/game-stream/sessions',
+  body: const <String, dynamic>{'clientId': 'test-android'},
+  timeout: const Duration(seconds: 3),
+);
 
 class _DeferredLookup implements GameStreamDictionaryLookup {
   final Completer<DictionarySearchResult?> pending =
