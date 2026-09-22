@@ -95,6 +95,16 @@ enum SyncAuthFailureKind {
   /// `sync_error_messages` 的 `contains('not configured')` 分支 → 返回 null →
   /// **裸英文原文直接上屏**。判据改成类型（同 [SyncPeerUnreachableError] 的教训）。
   pairingNotConfigured,
+
+  /// 服务端对这次请求回的是一份 **HTML 网页**，而不是同步协议的响应（BUG-2631）。
+  /// 三种成因长得一样：Cloudflare 一类 CDN 的人机挑战页（`Just a moment...`）、
+  /// 反向代理自己的错误页、或者用户填的 URL 压根就是个网站（`https://anidb.net/anime`
+  /// 当 WebDAV 地址填）。共同点是**凭据根本没被评估过**——服务端还没走到鉴权那一步，
+  /// 所以既不是 [credentials]，也不该像 [forbidden] 那样说「你的登录没问题」。
+  ///
+  /// 单立枚举值的理由：只有它的可操作项是「换个地址 / 这不是 WebDAV 端点」；而
+  /// `serverReason` 在这条上只放网页 `<title>`（读不出就为空），整页标记绝不上屏。
+  htmlPage,
 }
 
 class SyncAuthError implements Exception {
