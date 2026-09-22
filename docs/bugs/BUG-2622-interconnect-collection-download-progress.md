@@ -1,7 +1,7 @@
 ## BUG-2622 · 互联下载远端视频合集时合集卡与详情页集卡都不显示进度
 - **报告**：2026-09-22（用户：fushi 互联下载远端视频合集没显示进度，合集外面和里面都应该显示）
 - **真实性**：✅ 真 bug（沿 `home_video_page.dart` `_downloadRemoteCollection` → `_downloadRemoteMembers` → `InterconnectDownloadManager.startBatch` 真实路径验证）。合集下载不是一个打包任务，而是 N 个普通单集任务（键 = 远端 `RemoteVideoInfo.id`，与 `CollectionEpisodeSlot.entryKey` 同域同值）+ 一个只记「排了几个 / 完成几个」的批快照；每集的进度一直躺在 app 级 `InterconnectDownloadManager` 里，但 ① 合集封面卡 `_buildCollectionCoverCard`（`home_video_page.dart`）从不查它，只画一枚静态云角标；② 合集详情页 `media_collection_detail_page.dart` `_buildEpisodeCard` → `CollectionEpisodeCard`（`collection_detail_layout.dart`）根本没有下载相关字段。批快照也不能当进度源：它只在整集结束时 +1，长片下载全程 0/N，逐集手动下载又没有批。
-- **[x] ① 已修复** — 分支 `pr/sync-repop-collection-progress`：
+- **[x] ① 已修复** — 分支 `pr/sync-repop-collection-progress`，提交 `ba7a135dec0`：
   - `interconnect_download_manager.dart` 新增 `InterconnectDownloadAggregate` + `aggregateFor(ids)`：只聚合有任务的成员（已完成计 1、进行中计其进度、失败计 0），全无任务返回 null。
   - 合集卡：`_collectionDownloadBadge` 按成员远端 id 聚合，进行中在云角标位换成 `RemoteDownloadProgressBadge`（key `home_video_collection_downloading_<id>`），全部结束且有失败换 `RemoteDownloadFailedBadge`。
   - 详情页：`CollectionRemoteContext.downloads` 注入管理器（页面是普通 StatefulWidget、既有测试不挂 ProviderScope，故由库页注入），远端集卡包 `ListenableBuilder` 按 `taskFor(entryKey)` 画进度环 / 失败角标（key `collection_episode_downloading_<id>`）；`CollectionEpisodeCard.downloadBadge` 非 null 时替换云角标。
