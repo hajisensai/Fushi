@@ -2240,6 +2240,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 不能只在自己调 enter 时自说自话地置位。
   StreamSubscription<bool>? _pictureInPictureSub;
 
+  /// mini 档自绘 chrome 当前是否被唤出（顶部拖动带 + 退出钮、居中大三键）。
+  ///
+  /// **与 [_videoControlsVisible] 解绑**：小窗常态只剩画面 + 字幕 + 底部细线，
+  /// hover 不再唤起任何按钮（用户 2026-09-22：「常态鼠标移到视频就显示一个字幕
+  /// 可以来制卡就好，不然感觉太乱了」）。翻它的只有两条路——快捷键
+  /// [ShortcutAction.videoToggleMiniChrome]，以及进小窗那次引导性亮相
+  /// （[_revealMiniChromeBriefly]）。唤出后不自动淡出：小窗的拖动带是唯一的窗口
+  /// 抓手，让它跟计时器赛跑等于拖不动。
+  final ValueNotifier<bool> _miniChromeRevealed = ValueNotifier<bool>(false);
+
+  /// 进小窗那次引导性亮相的收起计时器（唯一会自动翻 [_miniChromeRevealed] 的东西）。
+  Timer? _miniChromeIntroTimer;
+
+  /// 引导性亮相停留多久。取 3 秒而不是控制条那 2 秒：这一下是**给第一次进小窗的
+  /// 用户看「退出钮在右上、拖动带在顶边」**的，比「鼠标刚划过」需要更长的注视时间。
+  static const Duration _miniChromeIntroDuration = Duration(seconds: 3);
+
   /// 本帧控制条该用的密度档。**在 [_buildVideoControls] 的 `LayoutBuilder` 里赋值**，
   /// 因为它依赖的是**播放区实际尺寸**（字幕跳转侧栏是 push-aside 真 `Row` 子列，开着
   /// 它画面会被挤窄，控件该跟着画面缩而不是跟着屏幕不动），而尺寸只有到布局期才知道。
@@ -6145,6 +6162,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       toggleMiniWindow: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_toggleVideoMiniWindow()),
       ),
+      // 'Shift+M' = 小窗里唤出 / 收起那套自绘 chrome（顶部拖动带 + 退出钮、居中三键）。
+      // 非小窗档 [_toggleMiniChrome] 自己早退，不需要在这里再判一次。
+      toggleMiniChrome: () => _runWhenImmersiveAllowsShortcuts(_toggleMiniChrome),
       // 'L' = 开/关字幕跳转列表（TODO-069）。
       toggleSubtitleList: () =>
           _runWhenImmersiveAllowsShortcuts(_toggleSubtitleJumpList),
@@ -7777,7 +7797,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final double densityScale = _controlsDensityScale;
     return videoSubtitleControlsReserve(
       isDesktop: _isDesktopVideoControls,
-      buttonBarHeight: _videoButtonBarHeight * densityScale,
+      // mini 档整行底部按钮被 theme 收掉（`bottomButtonBar` 传空，那档改用居中大三键），
+      // 与下面 seek bar 两项同理必须按 0 算：否则小窗里控制条一「可见」（media_kit 仍
+      // 会因 hover 翻 visible，尽管它在这一档一个像素都画不出来），字幕就为一条根本
+      // 不存在的按钮行凭空上移一格——画面越小这一格越扎眼。
+      buttonBarHeight: _controlsDensity.showBottomButtonBar
+          ? _videoButtonBarHeight * densityScale
+          : 0,
       seekBarButtonGap: _videoSeekBarButtonGap * densityScale,
       // BUG-901：用**触摸热区全高**（进度条真正可点目标，含可见轨道上方那段透明 seek
       // 命中区）+ 呼吸间距，让字幕命中区整体骑在进度条整段可点区上方，与 seek 不重叠。
@@ -8267,6 +8293,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _seekRelative(int deltaMs) async {
     _pokeControlsVisible();
     await _controller?.seekRelative(deltaMs);
+  }
+
+  /// 细进度条落点（`0..1`）→ 绝对 seek（[VideoSlimProgressBar.onSeekFraction]）。
+  ///
+  /// 走 `controller.seekMs` 而**不是** media_kit 的 `player.seek`：后者绕过本仓
+  /// controller，seek 在途保护与字幕权威同步都不会跟着走（BUG-796 就是这么来的，
+  /// 常规进度条那条路是在 `onSeekEnd` 里补 [VideoPlayerController.notifyExternalSeek]
+  /// 才补回来的；`seekMs` 内部两件事都做了，不需要再补）。
+  ///
+  /// 刻意**不** [_pokeControlsVisible]：这条线存在的意义就是「控制条不在时也能操作」，
+  /// 点一下就把整条控制条唤起来，等于每次跳转都重新糊一次画面。
+  Future<void> _seekToProgressFraction(double fraction) async {
+    final VideoPlayerController? controller = _controller;
+    final int? durationMs = controller?.durationMs;
+    if (controller == null || durationMs == null || durationMs <= 0) return;
+    await controller.seekMs((durationMs * fraction.clamp(0.0, 1.0)).round());
   }
 
   /// 跳上/下一句并唤醒控制条（底部胶囊条「上/下一句」按钮，BUG-175 ②）。

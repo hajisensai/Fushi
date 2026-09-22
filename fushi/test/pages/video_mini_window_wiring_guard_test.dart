@@ -42,4 +42,41 @@ void main() {
         reason: '本地换集 pushReplacement 旧页 dispose 晚于新页 initState；不认领，旧页'
             '的 exit 会把小窗退掉——每换一集（含自动连播）小窗都弹回主窗');
   });
+
+  group('小窗 chrome 只认显式唤出（用户 2026-09-22：常态只留字幕，别太乱）', () {
+    const Map<String, String> builders = <String, String>{
+      '顶部拖动带': 'Widget _buildMiniWindowTopChrome()',
+      '居中三键':
+          'Widget _buildMiniWindowCenterControls(VideoPlayerController controller)',
+    };
+    builders.forEach((String what, String signature) {
+      test('$what 订阅 _miniChromeRevealed、不订阅控制条可见性', () {
+        final String body = methodBody(miniPart, signature);
+        expect(body, contains('valueListenable: _miniChromeRevealed'),
+            reason: '显隐的唯一驱动是显式唤出（快捷键 / 进小窗那次引导）');
+        expect(body, isNot(contains('_videoControlsVisible')),
+            reason: '一旦订阅回控制条可见性，鼠标扫过小窗就又会弹出一层按钮——'
+                '那正是本次要去掉的「太乱」');
+        expect(body, contains('videoMiniChromeVisible('),
+            reason: '判据走共享纯函数（页面与测试同源），不许在页面里另写一套 if');
+      });
+    });
+
+    test('非自绘档按下去是 no-op（不留一个没人读的标志位）', () {
+      final String body = methodBody(miniPart, 'void _toggleMiniChrome()');
+      expect(body, contains('if (!_controlsDensity.showCenterTransport) return'),
+          reason: '常规窗口 chrome 归 media_kit、系统画中画归系统；在那里翻标志位'
+              '会让下次进小窗带着上一次在主窗按出来的状态');
+    });
+
+    test('进小窗引导性亮一次、退小窗复位', () {
+      expect(methodBody(miniPart, 'Future<void> _enterVideoMiniWindow()'),
+          contains('_revealMiniChromeBriefly()'),
+          reason: '无边框小窗没有系统标题栏：第一次进来一个 chrome 都不出现，用户'
+              '看不到退出钮也找不到拖动带');
+      expect(methodBody(miniPart, 'Future<void> _exitVideoMiniWindow()'),
+          contains('_resetMiniChrome()'),
+          reason: '不复位的话下次进小窗直接带着 chrome，常态清爽就没了');
+    });
+  });
 }

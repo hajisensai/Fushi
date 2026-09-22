@@ -167,4 +167,38 @@ void main() {
       expect(visible(surface: VideoMiniSurface.pictureInPicture), isFalse);
     });
   });
+
+  group('videoMiniChromeVisible', () {
+    final VideoControlsDensitySpec mini = resolveVideoControlsDensity(
+      playerSize: const Size(320, 180),
+      surface: VideoMiniSurface.desktopMiniWindow,
+    );
+    final VideoControlsDensitySpec full = resolveVideoControlsDensity(
+      playerSize: const Size(1280, 720),
+      surface: VideoMiniSurface.none,
+    );
+    final VideoControlsDensitySpec pip = resolveVideoControlsDensity(
+      playerSize: const Size(320, 180),
+      surface: VideoMiniSurface.pictureInPicture,
+    );
+
+    test('mini 档：只认显式唤出', () {
+      expect(videoMiniChromeVisible(spec: mini, revealed: true), isTrue);
+      expect(
+        videoMiniChromeVisible(spec: mini, revealed: false),
+        isFalse,
+        reason: '小窗常态只剩画面 + 字幕 + 底部细线；hover 不是本函数的输入，'
+            '鼠标扫过不该弹出一层按钮',
+      );
+    });
+
+    test('常规档恒不画：那一档的 chrome 归 media_kit（hover 唤起是它的语义）', () {
+      expect(videoMiniChromeVisible(spec: full, revealed: true), isFalse);
+      expect(videoMiniChromeVisible(spec: full, revealed: false), isFalse);
+    });
+
+    test('系统画中画恒不画：chrome 归系统，本仓再画一套就是两层按钮重影', () {
+      expect(videoMiniChromeVisible(spec: pip, revealed: true), isFalse);
+    });
+  });
 }

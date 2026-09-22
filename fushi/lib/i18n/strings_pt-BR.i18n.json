@@ -5302,5 +5302,6 @@
   "video_setting_slim_progress_bar": "Slim progress bar at the bottom",
   "video_setting_slim_progress_bar_hint": "When the controls fade out, keep a thin accent-coloured progress line along the very bottom of the video. In the mini window it is always shown, since the full seek bar is hidden there.",
   "shortcut_action_video_toggle_mini_window": "Toggle mini window",
-  "popup_ctx_confirm_failed": "Mining did not start - the lookup popup closed before the card could be created. Try again."
+  "popup_ctx_confirm_failed": "Mining did not start - the lookup popup closed before the card could be created. Try again.",
+  "shortcut_action_video_toggle_mini_chrome": "Toggle mini window controls"
 }

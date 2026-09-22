@@ -5302,5 +5302,6 @@
   "video_setting_slim_progress_bar": "底部细进度条",
   "video_setting_slim_progress_bar_hint": "控制条淡出后，在视频最下方保留一条主题色细进度条。小窗模式下它恒常显示——那里完整进度条已被收起。",
   "shortcut_action_video_toggle_mini_window": "切换小窗",
-  "popup_ctx_confirm_failed": "制卡没能开始——回点制卡按钮时查词弹窗已经关掉了。请重试。"
+  "popup_ctx_confirm_failed": "制卡没能开始——回点制卡按钮时查词弹窗已经关掉了。请重试。",
+  "shortcut_action_video_toggle_mini_chrome": "切换小窗控件"
 }
