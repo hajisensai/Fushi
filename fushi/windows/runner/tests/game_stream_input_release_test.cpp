@@ -73,6 +73,37 @@ void CheckRejected(const char* label, int mismatch) {
   input.Unbind();
   if (mismatch != 2) DestroyWindow(hwnd);
 }
+void CheckKeyMessageBits() {
+  HWND hwnd = NewWindow();
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd)), "bind keyboard fixture");
+  MSG message{};
+  input.PostKey(VK_RETURN, true);
+  const bool down = PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
+  const auto down_bits = static_cast<uint32_t>(message.lParam);
+  Expect(down && (down_bits & 0xffff) == 1 && ((down_bits >> 16) & 0xff) != 0,
+         "keydown carries repeat count and scan code");
+  Expect((down_bits & 0xc0000000u) == 0, "first keydown has no prior or release bit");
+  input.pressed_keys_.insert(VK_RETURN);
+  input.PostKey(VK_RETURN, true);
+  PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
+  Expect((static_cast<uint32_t>(message.lParam) & 0xc0000000u) == 0x40000000u,
+         "held keydown marks previous state");
+  input.PostKey(VK_RETURN, false);
+  const bool up = PeekMessageW(&message, hwnd, WM_KEYUP, WM_KEYUP, PM_REMOVE);
+  const auto up_bits = static_cast<uint32_t>(message.lParam);
+  Expect(up && (up_bits & 0xc0000000u) == 0xc0000000u,
+         "keyup carries prior and release bits");
+  Expect((up_bits & 0x00ffffffu) == (down_bits & 0x00ffffffu),
+         "keyup preserves scan code and repeat count");
+  input.PostKey(VK_RIGHT, true);
+  const bool arrow = PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
+  Expect(arrow && (static_cast<uint32_t>(message.lParam) & 0x01000000u) != 0,
+         "direction key carries extended scan-code bit");
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
 }
 int main() {
   CheckAllowed("hidden target receives keyup", SW_HIDE);
@@ -81,6 +112,7 @@ int main() {
   CheckRejected("changed PID receives no release", 0);
   CheckRejected("changed process creation time receives no release", 1);
   CheckRejected("destroyed HWND receives no release", 2);
+  CheckKeyMessageBits();
   std::cout << "CHECKS " << checks << " FAILURES " << failures << "\n";
   return failures == 0 ? 0 : 1;
 }

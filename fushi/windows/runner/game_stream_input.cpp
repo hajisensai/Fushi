@@ -222,8 +222,18 @@ UINT GameStreamInput::ResolveVirtualKey(const std::string& key) {
 
 bool GameStreamInput::PostKey(UINT vk, bool down) {
   if (hwnd_ == nullptr) return false;
+  // Games that handle window messages may inspect the documented keyboard
+  // lParam, including scan code, repeat count and key-up transition bits.
+  const UINT scan = MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX);
+  uint32_t bits = 1u | ((scan & 0xffu) << 16);
+  // Some IME layouts map arrow VKs to the shared keypad scan code without E0.
+  // Our allowlist names the navigation cluster, not the numeric keypad keys.
+  const bool navigation = vk >= VK_LEFT && vk <= VK_DOWN;
+  if (navigation || (scan & 0xff00u) == 0xe000u) bits |= 1u << 24;
+  if (!down || pressed_keys_.count(vk) != 0) bits |= 1u << 30;
+  if (!down) bits |= 1u << 31;
   const UINT message = down ? WM_KEYDOWN : WM_KEYUP;
-  return PostMessageW(hwnd_, message, vk, 0) != FALSE;
+  return PostMessageW(hwnd_, message, vk, static_cast<LPARAM>(bits)) != FALSE;
 }
 
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
