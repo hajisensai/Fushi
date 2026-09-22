@@ -5,16 +5,16 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <string>
 
 namespace fushi {
 namespace {
 
-const char* ReadString(const flutter::EncodableMap& map, const char* key) {
+std::string ReadString(const flutter::EncodableMap& map, const char* key) {
   const auto it = map.find(flutter::EncodableValue(key));
-  if (it == map.end()) return nullptr;
-  return std::get_if<std::string>(&it->second)
-             ? std::get<std::string>(&it->second)->c_str()
-             : nullptr;
+  if (it == map.end()) return std::string();
+  const auto* value = std::get_if<std::string>(&it->second);
+  return value == nullptr ? std::string() : *value;
 }
 
 double ReadDouble(const flutter::EncodableMap& map, const char* key,
@@ -22,8 +22,12 @@ double ReadDouble(const flutter::EncodableMap& map, const char* key,
   const auto it = map.find(flutter::EncodableValue(key));
   if (it == map.end()) return fallback;
   if (const auto* value = std::get_if<double>(&it->second)) return *value;
-  if (const auto* value = std::get_if<int32_t>(&it->second)) return *value;
-  if (const auto* value = std::get_if<int64_t>(&it->second)) return *value;
+  if (const auto* value = std::get_if<int32_t>(&it->second)) {
+    return static_cast<double>(*value);
+  }
+  if (const auto* value = std::get_if<int64_t>(&it->second)) {
+    return static_cast<double>(*value);
+  }
   return fallback;
 }
 
@@ -41,23 +45,30 @@ void GameStreamInput::SetReason(std::string* reason, const char* value) const {
   if (reason != nullptr) *reason = value;
 }
 
-bool GameStreamInput::CaptureProcessIdentity(uint32_t pid) {
+bool GameStreamInput::CaptureProcessIdentity(DWORD pid) {
   process_ = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
   if (process_ == nullptr) return false;
-  if (!GetProcessTimes(process_, &process_creation_time_, nullptr, nullptr,
-                       nullptr)) {
+  FILETIME exit_time{};
+  FILETIME kernel_time{};
+  FILETIME user_time{};
+  if (!GetProcessTimes(process_, &process_creation_time_, &exit_time,
+                       &kernel_time, &user_time)) {
     CloseHandle(process_);
     process_ = nullptr;
     return false;
   }
-  pid_ = pid;
+  pid_ = static_cast<uint32_t>(pid);
   return true;
 }
 
 bool GameStreamInput::ProcessIdentityStillValid() const {
   if (process_ == nullptr || GetProcessId(process_) != pid_) return false;
   FILETIME created{};
-  return GetProcessTimes(process_, &created, nullptr, nullptr, nullptr) &&
+  FILETIME exit_time{};
+  FILETIME kernel_time{};
+  FILETIME user_time{};
+  return GetProcessTimes(process_, &created, &exit_time, &kernel_time,
+                         &user_time) &&
          std::memcmp(&created, &process_creation_time_, sizeof(created)) == 0;
 }
 
@@ -67,13 +78,23 @@ GameStreamWindowInfo GameStreamInput::Inspect(uintptr_t value) const {
   if (hwnd == nullptr || !IsWindow(hwnd)) return info;
   info.alive = true;
   info.minimized = IsIconic(hwnd) != FALSE;
+  info.visible = IsWindowVisible(hwnd) != FALSE;
+  info.foreground = GetForegroundWindow() == hwnd;
   RECT rect{};
   if (GetClientRect(hwnd, &rect)) {
     info.width = std::max(0L, rect.right - rect.left);
     info.height = std::max(0L, rect.bottom - rect.top);
   }
-  GetWindowThreadProcessId(hwnd, &info.pid);
+  DWORD pid = 0;
+  GetWindowThreadProcessId(hwnd, &pid);
+  info.pid = static_cast<uint32_t>(pid);
+  info.process_matches = hwnd == hwnd_ && pid_ != 0 && pid == pid_ &&
+                         ProcessIdentityStillValid();
   return info;
+}
+
+GameStreamWindowInfo GameStreamInput::InspectBound() const {
+  return Inspect(reinterpret_cast<uintptr_t>(hwnd_));
 }
 
 bool GameStreamInput::ValidateTarget(bool require_foreground,
@@ -120,7 +141,7 @@ bool GameStreamInput::Bind(uintptr_t value, std::string* reason) {
     return false;
   }
   hwnd_ = hwnd;
-  if (!ValidateTarget(true, reason)) {
+  if (!ValidateTarget(false, reason)) {
     Unbind();
     return false;
   }
@@ -205,19 +226,16 @@ bool GameStreamInput::PostKey(UINT vk, bool down) {
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
                            std::string* reason) {
   if (!ValidateTarget(true, reason)) return false;
-  const char* kind = ReadString(event, "kind");
-  const char* action = ReadString(event, "action");
-  if (kind == nullptr || action == nullptr) {
+  const std::string kind_value = ReadString(event, "kind");
+  const std::string action_value = ReadString(event, "action");
+  if (kind_value.empty() || action_value.empty()) {
     SetReason(reason, "invalid_event");
     return false;
   }
-  const std::string kind_value(kind);
-  const std::string action_value(action);
   if (kind_value == "key" || kind_value == "gamepad") {
-    const char* raw_key =
+    std::string key =
         kind_value == "key" ? ReadString(event, "key")
                             : ReadString(event, "button");
-    std::string key = raw_key == nullptr ? std::string() : raw_key;
     static const struct {
       const char* name;
       const char* key;

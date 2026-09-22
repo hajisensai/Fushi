@@ -14,6 +14,9 @@ namespace fushi {
 struct GameStreamWindowInfo {
   bool alive = false;
   bool minimized = false;
+  bool visible = false;
+  bool foreground = false;
+  bool process_matches = false;
   int width = 0;
   int height = 0;
   uint32_t pid = 0;
@@ -34,6 +37,7 @@ class GameStreamInput {
   void Release();
   void Unbind();
   GameStreamWindowInfo Inspect(uintptr_t hwnd) const;
+  GameStreamWindowInfo InspectBound() const;
 
   static int NormalizedCoordinate(double value, int extent);
   static UINT ResolveVirtualKey(const std::string& key);
@@ -41,7 +45,7 @@ class GameStreamInput {
 
  private:
   bool ValidateTarget(bool require_foreground, std::string* reason);
-  bool CaptureProcessIdentity(uint32_t pid);
+  bool CaptureProcessIdentity(DWORD pid);
   bool ProcessIdentityStillValid() const;
   void SetReason(std::string* reason, const char* value) const;
   bool PostKey(UINT vk, bool down);

@@ -3396,6 +3396,40 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           result->Success();
           return;
         }
+        if (call.method_name() == "inspect") {
+          const uintptr_t value =
+              args == nullptr
+                  ? 0
+                  : static_cast<uintptr_t>(
+                        args->find(flutter::EncodableValue("hwnd")) ==
+                                args->end()
+                            ? 0
+                            : args->at(flutter::EncodableValue("hwnd"))
+                                  .TryGetLongValue()
+                                  .value_or(0));
+          const fushi::GameStreamWindowInfo info =
+              value == 0 ? game_stream_input_->InspectBound()
+                         : game_stream_input_->Inspect(value);
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("alive"),
+               flutter::EncodableValue(info.alive)},
+              {flutter::EncodableValue("minimized"),
+               flutter::EncodableValue(info.minimized)},
+              {flutter::EncodableValue("visible"),
+               flutter::EncodableValue(info.visible)},
+              {flutter::EncodableValue("foreground"),
+               flutter::EncodableValue(info.foreground)},
+              {flutter::EncodableValue("processMatches"),
+               flutter::EncodableValue(info.process_matches)},
+              {flutter::EncodableValue("width"),
+               flutter::EncodableValue(info.width)},
+              {flutter::EncodableValue("height"),
+               flutter::EncodableValue(info.height)},
+              {flutter::EncodableValue("pid"),
+               flutter::EncodableValue(static_cast<int64_t>(info.pid))},
+          }));
+          return;
+        }
         if (call.method_name() == "release") {
           game_stream_input_->Release();
           result->Success();

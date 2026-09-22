@@ -20,6 +20,19 @@ abstract final class GameStreamInputChannel {
     await _channel.invokeMethod<void>('send', event);
   }
 
+  static Future<Map<String, Object?>> inspect([int? hwnd]) async {
+    final Map<Object?, Object?>? value = await _channel
+        .invokeMethod<Map<Object?, Object?>>(
+          'inspect',
+          hwnd == null ? null : <String, Object?>{'hwnd': hwnd},
+        );
+    final Map<String, Object?> result = <String, Object?>{};
+    value?.forEach((Object? key, Object? item) {
+      if (key is String) result[key] = item;
+    });
+    return result;
+  }
+
   static Future<void> release() async {
     await _channel.invokeMethod<void>('release');
   }
