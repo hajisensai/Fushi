@@ -157,6 +157,7 @@ VideoPlayerShortcutActions _actions(List<String> log) {
     screenshot: () => record('screenshot'),
     screenshotSubtitled: () => record('screenshotSubtitled'),
     toggleFullscreen: () => record('toggleFullscreen'),
+    toggleMiniWindow: () => record('toggleMiniWindow'),
     toggleSubtitleList: () => record('toggleSubtitleList'),
     searchSubtitleList: () => record('searchSubtitleList'),
     toggleImmersiveLock: () => record('toggleImmersiveLock'),

@@ -31,6 +31,7 @@ VideoPlayerShortcutActions _recordingActions(List<String> log) {
     screenshot: () => log.add('screenshot'),
     screenshotSubtitled: () => log.add('screenshotSubtitled'),
     toggleFullscreen: () => log.add('toggleFullscreen'),
+    toggleMiniWindow: () => log.add('toggleMiniWindow'),
     toggleSubtitleList: () => log.add('toggleSubtitleList'),
     searchSubtitleList: () => log.add('searchSubtitleList'),
     toggleImmersiveLock: () => log.add('toggleImmersiveLock'),

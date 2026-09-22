@@ -564,6 +564,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // wiring guards below.
   'video/Auto-play next episode':
       'test/media/video/video_episode_start_policy_test.dart + test/pages/video_playlist_auto_advance_guard_static_test.dart',
+  // 底部细进度条：纯渲染开关，生效点在 media_kit controls 子树里，而那棵树在
+  // headless 宿主渲染不出来（无 libmpv）——harness 的探针够不到，故登记 backlog。
+  // 判据是纯函数（逐条单测）、组件是纯 widget（widget 测试），页面那段接线由源码
+  // 守卫钉死，三者合起来覆盖整条链。
+  'video/Slim progress bar at the bottom':
+      'test/media/video/video_controls_density_test.dart + test/media/video/video_slim_progress_bar_test.dart + test/pages/video_slim_progress_bar_wiring_guard_test.dart',
   'video/Immersive mode':
       'test/pages/video_immersive_mode_levels_guard_test.dart + test/pages/video_statusbar_immersive_guard_test.dart',
   'video/Picture scaling':

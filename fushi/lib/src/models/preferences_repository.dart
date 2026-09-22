@@ -1219,6 +1219,20 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 底部细进度条开关：控制条淡出后，在视频最下方留一条主题色细线
+  /// （B 站 / YouTube 同款）。默认开——它只在控制条**已经不在**时出现，不遮任何
+  /// 东西，纯增益；getPref 仅在该 key 从未写过时返回默认值，已切过的用户保留存值。
+  ///
+  /// 小窗档不受它管：那里完整进度条已被 theme 收起，细线是唯一的进度指示，
+  /// 判据统一在 `videoSlimProgressBarVisible`（video_controls_density.dart）。
+  bool get videoSlimProgressBar =>
+      getPref('video_slim_progress_bar', defaultValue: true) as bool;
+
+  Future<void> setVideoSlimProgressBar(bool value) async {
+    await setPref('video_slim_progress_bar', value);
+    notifyListeners();
+  }
+
   /// 旧本地封面补齐开关。现只控制 sidecar / 本地封面 sweep，不会发起元数据
   /// 网络请求；保留该偏好用于兼容已有设备设置。在线刮削统一由
   /// `VideoSourceScrapeCoordinator` 管理。

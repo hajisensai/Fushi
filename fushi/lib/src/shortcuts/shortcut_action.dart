@@ -496,6 +496,10 @@ enum ShortcutAction {
 
   // 画面/杂项
   videoToggleFullscreen(ShortcutScope.video, 'video_toggle_fullscreen'),
+  // 小窗模式：桌面把主窗缩成无边框置顶小窗，Android 进系统画中画（iOS 不支持，
+  // 见 mini_window.part.dart 的类文档）。与 videoToggleFullscreen 正交、互斥——
+  // 进小窗前会先退全屏。执行体在 video_player_shortcuts。
+  videoToggleMiniWindow(ShortcutScope.video, 'video_toggle_mini_window'),
   videoToggleImmersiveLock(ShortcutScope.video, 'video_toggle_immersive_lock'),
   // 截图分两个独立动作而不是一个动作 + 一个「含字幕」开关：两种图的用途不同
   // （纯画面用来做壁纸/封面，带字幕的用来发截图/记台词），要的是两只手都能直接按到，

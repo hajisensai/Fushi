@@ -56,12 +56,20 @@ extension _VideoFullscreen on _VideoFushiPageState {
         systemPadding: MediaQuery.of(context).padding,
       );
 
-  Future<void> _toggleVideoFullscreen(BuildContext context) {
+  Future<void> _toggleVideoFullscreen(BuildContext context) async {
     // BUG-221: 移动端永不进 media_kit 全屏路由（横屏沉浸态即唯一形态）。统一在此单一收口
     // no-op，杜绝任何入口（双击 / 全屏按钮 / 快捷键 / 右键菜单）把移动端推进全屏路由——
     // 全屏路由会带来「退全屏弹回竖屏」与「全屏 PopScope 吞第一次返回的两段式退出」。桌面
     // 不受影响（窗口全屏走 native window，返回行为本就合理）。
-    if (isMobilePlatform) return Future<void>.value();
+    if (isMobilePlatform) return;
+    // 全屏与小窗互斥，两个方向都要收口：`DesktopMiniWindowMode.enter` 做了「进小窗先退
+    // 全屏」，这里做另一个方向——小窗里按 F11 / 双击画面，先退小窗再进全屏。否则 runner
+    // 全屏（巨窗 + TOPMOST）叠在小窗态之上，密度判据对小窗表面恒回 mini：整屏只有居中
+    // 三键、无进度条无顶栏、顶部一条 32px 拖动带。
+    if (_miniWindowSurface == VideoMiniSurface.desktopMiniWindow) {
+      await _exitVideoMiniWindow();
+      if (!mounted || !context.mounted) return;
+    }
     return isFullscreen(context)
         ? _exitVideoFullscreen(context)
         : _pushNeutralizedVideoFullscreen(context);

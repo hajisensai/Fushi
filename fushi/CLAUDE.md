@@ -122,6 +122,7 @@ Hibiki 的 Flutter 多平台主应用：日语 EPUB 阅读器，集成划词查�
 - `home_video_page.dart`（3080 行）-- 视频首页（书架/合集/继续观看）。
 - `lib/src/media/video/` -- 视频导入与管理（含 `video_import_dialog.dart`）。
 - 播放栈 media_kit（`third_party/` vendored，Windows 构建需下载 mpv/ANGLE，见 `CLAUDE.local.md` 代理说明）。
+- **小窗 / 控件密度（2026-09-22）**：控制条按**播放区宽度**分 full / compact / mini 三档（判据是纯函数 `lib/src/media/video/video_controls_density.dart`，页面只消费结论；密度只在控制条 theme 与字幕避让两处乘 `_controlsDensityScale`，**不折进** `_videoUiScale`）。小窗有两种且 chrome 归属相反：桌面把主窗变无边框置顶小窗（`lib/src/platform/desktop/desktop_mini_window_mode.dart`，chrome 本仓自绘，见 `video_fushi/mini_window.part.dart`）、Android 走系统画中画（`lib/src/platform/mobile/android_picture_in_picture.dart`，chrome 全部让位给系统）；**iOS 不提供**——libmpv 渲染进 Flutter texture，拿不到 `AVPlayerLayer`，入口整个不出现（技术限制，与 `StoreRestrictedCapability` 无关）。底部细进度条是独立开关 `video_slim_progress_bar`（默认开），颜色走 `videoChromeAccentColor` 而非裸 `colorScheme.primary`。设计见 `docs/specs/2026-09-22-video-mini-window.md`。
 
 ### 10. 互联/同步 (`lib/src/sync/`)
 

@@ -362,6 +362,12 @@ class ShortcutDefaults {
     ], [
       _gRT
     ]),
+    // 小窗模式：W = window，video co-active 组内 W 此前完全空闲（全组唯一未占的
+    // 助记字母）。手柄留空——小窗是桌面/手机的窗口概念，手柄场景（电视/掌机）
+    // 用不上，用户要的话可以自绑。
+    ShortcutAction.videoToggleMiniWindow: _kb([
+      _key(LogicalKeyboardKey.keyW),
+    ]),
     ShortcutAction.videoToggleSubtitleList: _kb([
       _key(LogicalKeyboardKey.keyL),
     ], [

@@ -5297,5 +5297,9 @@
   "ai_video_acquire_remember_default": "以后默认",
   "ai_video_acquire_evidence_original_language": "作品原语言",
   "ai_video_acquire_evidence_countries": "制作国",
-  "ai_video_acquire_evidence_title_script": "标题文字"
+  "ai_video_acquire_evidence_title_script": "标题文字",
+  "video_mini_window_exit": "退出小窗",
+  "video_setting_slim_progress_bar": "底部细进度条",
+  "video_setting_slim_progress_bar_hint": "控制条淡出后，在视频最下方保留一条主题色细进度条。小窗模式下它恒常显示——那里完整进度条已被收起。",
+  "shortcut_action_video_toggle_mini_window": "切换小窗"
 }
