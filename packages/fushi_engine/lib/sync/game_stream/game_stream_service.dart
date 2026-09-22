@@ -7,6 +7,7 @@ import 'dart:math';
 
 import 'package:shelf/shelf.dart';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 typedef GameStreamInputHandler =
@@ -432,6 +433,9 @@ class FushiRemoteGameStreamService {
           return _json(<String, Object?>{'result': result.toJson()});
         } on FormatException catch (error) {
           return _error(409, error.message);
+        } catch (error, stack) {
+          engineLog.log('GameStream.mine', error, stack);
+          return _error(500, 'Game stream mine handler failed');
         }
       default:
         return Response.notFound('Game stream route not found');

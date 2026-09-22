@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:shelf/shelf.dart';
 import 'package:test/test.dart';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 
@@ -357,6 +358,109 @@ void main() {
       );
     });
 
+    test(
+      'HTTP mine keeps stale-line FormatException as structured 409',
+      () async {
+        service.createSession();
+        await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/sessions/s1/join'),
+            body: jsonEncode(<String, Object?>{'clientId': 'phone'}),
+          ),
+          'POST',
+          '/api/game-stream/sessions/s1/join',
+        );
+        service.markConnected(sessionId: 's1', clientId: 'phone');
+        final Response response = await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/sessions/s1/mine'),
+            body: jsonEncode(<String, Object?>{
+              'version': kGameStreamWireVersion,
+              'sessionId': 's1',
+              'clientId': 'phone',
+              'lineId': 'missing-line',
+              'fields': <String, String>{'expression': 'line'},
+              'sentence': 'line text',
+            }),
+          ),
+          'POST',
+          '/api/game-stream/sessions/s1/mine',
+        );
+        final Map<String, dynamic> body =
+            jsonDecode(await response.readAsString()) as Map<String, dynamic>;
+        expect(response.statusCode, 409);
+        expect(body['code'], 'session_conflict');
+        expect(body['error'], 'Unknown or stale game-stream line');
+      },
+    );
+
+    test(
+      'HTTP mine logs handler exceptions and returns sanitized 500',
+      () async {
+        final _RecordingEngineLogSink logs = _RecordingEngineLogSink();
+        final EngineLogSink previousLog = engineLog;
+        engineLog = logs;
+        addTearDown(() => engineLog = previousLog);
+        service.onMine = (_, __) async {
+          throw StateError('anki secret failure detail');
+        };
+        service.createSession();
+        await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/sessions/s1/join'),
+            body: jsonEncode(<String, Object?>{'clientId': 'phone'}),
+          ),
+          'POST',
+          '/api/game-stream/sessions/s1/join',
+        );
+        service.markConnected(sessionId: 's1', clientId: 'phone');
+        service.publishText(
+          GameStreamTextEvent(
+            sessionId: 's1',
+            lineId: 'line-1',
+            text: 'line text',
+            timestampMs: 1,
+          ),
+        );
+
+        final Response response = await service.handleRequest(
+          Request(
+            'POST',
+            Uri.parse('http://host/api/game-stream/sessions/s1/mine'),
+            body: jsonEncode(<String, Object?>{
+              'version': kGameStreamWireVersion,
+              'sessionId': 's1',
+              'clientId': 'phone',
+              'lineId': 'line-1',
+              'fields': <String, String>{'expression': 'line'},
+              'sentence': 'line text',
+            }),
+          ),
+          'POST',
+          '/api/game-stream/sessions/s1/mine',
+        );
+        final String rawBody = await response.readAsString();
+        final Map<String, dynamic> body =
+            jsonDecode(rawBody) as Map<String, dynamic>;
+
+        expect(response.statusCode, 500);
+        expect(body['version'], kGameStreamWireVersion);
+        expect(body['code'], 'stream_error');
+        expect(body['error'], 'Game stream mine handler failed');
+        expect(rawBody, isNot(contains('anki secret failure detail')));
+        expect(logs.entries, hasLength(1));
+        expect(logs.entries.single.source, 'GameStream.mine');
+        expect(
+          logs.entries.single.error.toString(),
+          contains('anki secret failure detail'),
+        );
+        expect(logs.entries.single.stack, isNotNull);
+      },
+    );
+
     test('expires idle sessions', () {
       service = FushiRemoteGameStreamService(
         now: () => now,
@@ -506,4 +610,22 @@ void main() {
       expect(await listed.readAsString(), contains('"sessions":[]'));
     });
   });
+}
+
+class _RecordingEngineLogSink implements EngineLogSink {
+  final List<({String source, Object error, StackTrace? stack})> entries =
+      <({String source, Object error, StackTrace? stack})>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) {
+    entries.add((source: source, error: error, stack: stack));
+  }
+
+  @override
+  void logDiagnostic(String source, Object info) {}
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) {
+    log(source, error, stack);
+  }
 }
