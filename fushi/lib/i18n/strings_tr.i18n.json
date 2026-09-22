@@ -5302,5 +5302,10 @@
   "video_setting_slim_progress_bar": "Slim progress bar at the bottom",
   "video_setting_slim_progress_bar_hint": "When the controls fade out, keep a thin accent-coloured progress line along the very bottom of the video. In the mini window it is always shown, since the full seek bar is hidden there.",
   "shortcut_action_video_toggle_mini_window": "Toggle mini window",
+  "settings_video_diag_toggle": "Video & lookup diagnostics log",
+  "settings_video_diag_toggle_hint": "Records frame timings, libmpv playback stats and per-stage lookup timings. Off by default; turn it on, reproduce the stutter or slow lookup, then export.",
+  "settings_video_diag_export": "Export video diagnostics log",
+  "settings_video_diag_export_hint": "Timeline plus libmpv's own verbose log",
+  "video_diag_share_subject": "Fushi video diagnostics log",
   "popup_ctx_confirm_failed": "Mining did not start - the lookup popup closed before the card could be created. Try again."
 }
