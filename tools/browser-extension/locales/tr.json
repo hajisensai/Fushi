@@ -125,6 +125,8 @@
   "opt_subtitleHidden_desc": "Hem sitenin altyazılarını hem uzantı bindirmesini tamamen gizler (bulanıklık yok, üzerine gelince de hiçbir şey görünmez) — salt dinleme alıştırması için. <kbd>Shift</kbd>+<kbd>H</kbd> ile istediğiniz an açıp kapatın.",
   "opt_subtitlePauseOnLookup_title": "Aramada duraklat",
   "opt_subtitlePauseOnLookup_desc": "Sayfadan, altyazı listesinden veya bindirmeden bir arama başladığında oynayan videoyu duraklatır; açılır pencere kapanınca oynatma otomatik sürer (kendiniz duraklattığınız video asla sürdürülmez).",
+  "opt_subtitleResumeOnLookupLeave_title": "Aramadan ayrılınca devam ettir",
+  "opt_subtitleResumeOnLookupLeave_desc": "Shift ile üzerine gelme veya katman otomatik araması videoyu duraklattığında, işaretçiyi altyazıdan ve arama penceresinden uzaklaştırmak pencereyi kapatır ve ek tıklama olmadan oynatmayı sürdürür. Tıklamayla başlatılan aramalar etkilenmez.",
   "opt_subtitleLookupOnPage_title": "Arama sonuçlarını sayfada göster",
   "opt_subtitleLookupOnPage_desc": "Yan panelde bir sözcüğe tıkladığınızda açılır pencere panele sıkıştırılmak yerine sayfada açılır — tarayıcılar panel içeriğinin panel dışına çizilmesine izin vermez. Kapalıyken dar panel içi açılır pencereye dönülür.",
   "opt_subtitleOverlayAutoLookup_title": "Bindirme altyazılarında üzerine gelerek arama",
