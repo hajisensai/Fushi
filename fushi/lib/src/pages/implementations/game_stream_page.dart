@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
@@ -11,6 +14,7 @@ class GameStreamPage extends StatefulWidget {
     required this.clientId,
     required this.inputComposer,
     this.lookupController,
+    this.receiver,
     this.videoPlaceholder,
     super.key,
   });
@@ -19,6 +23,7 @@ class GameStreamPage extends StatefulWidget {
   final String clientId;
   final GameStreamInputComposer inputComposer;
   final GameStreamLookupController? lookupController;
+  final FushiGameStreamReceiver? receiver;
   final Widget? videoPlaceholder;
 
   static const Key videoKey = ValueKey<String>('game-stream-video');
@@ -33,12 +38,14 @@ class _GameStreamPageState extends State<GameStreamPage> {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
   bool _controlsVisible = true;
+  String? _mineMessage;
 
   @override
   void initState() {
     super.initState();
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
+    widget.receiver?.addListener(_onReceiverChanged);
   }
 
   @override
@@ -49,15 +56,24 @@ class _GameStreamPageState extends State<GameStreamPage> {
       _lookupController = widget.lookupController;
       _lookupController?.addListener(_onLookupChanged);
     }
+    if (oldWidget.receiver != widget.receiver) {
+      oldWidget.receiver?.removeListener(_onReceiverChanged);
+      widget.receiver?.addListener(_onReceiverChanged);
+    }
   }
 
   @override
   void dispose() {
     _lookupController?.removeListener(_onLookupChanged);
+    widget.receiver?.removeListener(_onReceiverChanged);
     super.dispose();
   }
 
   void _onLookupChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onReceiverChanged() {
     if (mounted) setState(() {});
   }
 
@@ -69,10 +85,53 @@ class _GameStreamPageState extends State<GameStreamPage> {
         _videoKey.currentContext?.findRenderObject() as RenderBox?;
     if (box == null || !box.hasSize) return;
     final Offset local = box.globalToLocal(event.position);
+    final Size contentSize = _videoContentSize(box.size);
+    final Rect contentRect = Rect.fromCenter(
+      center: box.size.center(Offset.zero),
+      width: contentSize.width,
+      height: contentSize.height,
+    );
     final Offset normalized = GameStreamPointerMapper(
-      box.size,
-    ).normalize(local);
+      contentRect.size,
+    ).normalize(local - contentRect.topLeft);
     await widget.inputComposer.pointer(action: action, normalized: normalized);
+  }
+
+  Size _videoContentSize(Size boxSize) {
+    final RTCVideoRenderer? renderer = widget.receiver?.renderer;
+    final int width = renderer?.videoWidth ?? 0;
+    final int height = renderer?.videoHeight ?? 0;
+    if (width <= 0 || height <= 0) return boxSize;
+    final double scale = math.min(
+      boxSize.width / width,
+      boxSize.height / height,
+    );
+    return Size(width * scale, height * scale);
+  }
+
+  Future<void> _mine(DictionaryEntry entry) async {
+    final GameStreamLookupController? controller = _lookupController;
+    final GameStreamTextEvent? line = controller?.currentLine;
+    if (controller == null || line == null) return;
+    try {
+      final GameStreamMineResult? result = await controller
+          .mine(<String, String>{
+            'expression': entry.word,
+            'term': entry.word,
+            'reading': entry.reading,
+            'glossary': entry.plainMeaning,
+            'meaning': entry.plainMeaning,
+            'sentence': line.text,
+          });
+      if (!mounted) return;
+      setState(
+        () => _mineMessage = result?.ok == true
+            ? '已请求主机制作卡片'
+            : (result?.message ?? '主机制卡失败'),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _mineMessage = '主机制卡失败：$error');
+    }
   }
 
   Future<void> _sendButton(
@@ -88,13 +147,42 @@ class _GameStreamPageState extends State<GameStreamPage> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
-        child: Row(
-          children: <Widget>[
-            Expanded(
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compact = constraints.maxWidth < 700;
+            final Widget video = Expanded(
               child: Stack(
                 fit: StackFit.expand,
                 children: <Widget>[
                   _buildVideoSurface(theme),
+                  if (widget.receiver?.error != null)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Material(
+                        color: Colors.red.withValues(alpha: 0.85),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text(
+                            '串流连接中断：${widget.receiver!.error}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (widget.receiver?.error != null)
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: Material(
+                        color: Colors.red.withValues(alpha: 0.85),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Text(
+                            '串流连接中断：${widget.receiver!.error}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (_controlsVisible) _buildGamepadOverlay(theme),
                   Align(
                     alignment: Alignment.topRight,
@@ -112,9 +200,17 @@ class _GameStreamPageState extends State<GameStreamPage> {
                   ),
                 ],
               ),
-            ),
-            _buildLookupRail(theme),
-          ],
+            );
+            final Widget lookup = compact
+                ? SizedBox(
+                    height: 280,
+                    child: _buildLookupRail(theme, compact: true),
+                  )
+                : _buildLookupRail(theme);
+            return compact
+                ? Column(children: <Widget>[video, lookup])
+                : Row(children: <Widget>[video, lookup]);
+          },
         ),
       ),
     );
@@ -133,14 +229,18 @@ class _GameStreamPageState extends State<GameStreamPage> {
         key: GameStreamPage.videoKey,
         color: Colors.black,
         alignment: Alignment.center,
-        child:
-            widget.videoPlaceholder ??
-            Text(
-              'Waiting for game video',
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white70,
+        child: widget.receiver == null
+            ? (widget.videoPlaceholder ??
+                  Text(
+                    'Waiting for game video',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ))
+            : RTCVideoView(
+                widget.receiver!.renderer,
+                objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitContain,
               ),
-            ),
       ),
     );
   }
@@ -178,14 +278,14 @@ class _GameStreamPageState extends State<GameStreamPage> {
     );
   }
 
-  Widget _buildLookupRail(ThemeData theme) {
+  Widget _buildLookupRail(ThemeData theme, {bool compact = false}) {
     final GameStreamLookupController? controller = _lookupController;
     final GameStreamTextEvent? line = controller?.currentLine;
     final DictionarySearchResult? result = controller?.result;
     return Material(
       color: theme.colorScheme.surface,
       child: SizedBox(
-        width: 360,
+        width: compact ? double.infinity : 360,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -231,15 +331,24 @@ class _GameStreamPageState extends State<GameStreamPage> {
                 error: controller?.error,
                 onMine: result == null || controller == null
                     ? null
-                    : (DictionaryEntry entry) async {
-                        await controller.mine(<String, String>{
-                          'term': entry.word,
-                          'reading': entry.reading,
-                          'meaning': entry.plainMeaning,
-                        });
-                      },
+                    : (DictionaryEntry entry) => _mine(entry),
+                onLookup: controller == null
+                    ? null
+                    : (String term) => controller.lookup(term),
               ),
             ),
+            if (_mineMessage != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(
+                  _mineMessage!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: _mineMessage!.contains('失败')
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.primary,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -394,6 +503,7 @@ class _DictionaryPane extends StatelessWidget {
     required this.result,
     required this.error,
     required this.onMine,
+    required this.onLookup,
   });
 
   final bool searching;
@@ -401,6 +511,7 @@ class _DictionaryPane extends StatelessWidget {
   final DictionarySearchResult? result;
   final String? error;
   final Future<void> Function(DictionaryEntry entry)? onMine;
+  final Future<void> Function(String term)? onLookup;
 
   @override
   Widget build(BuildContext context) {
@@ -466,7 +577,16 @@ class _DictionaryPane extends StatelessWidget {
                     ),
                   ),
                 const SizedBox(height: 8),
-                Text(entry.plainMeaning),
+                SelectableText(
+                  entry.plainMeaning,
+                  onSelectionChanged: (TextSelection selection, _) {
+                    if (selection.isCollapsed || onLookup == null) return;
+                    final String term = selection
+                        .textInside(entry.plainMeaning)
+                        .trim();
+                    if (term.isNotEmpty) unawaited(onLookup!(term));
+                  },
+                ),
               ],
             ),
           ),
