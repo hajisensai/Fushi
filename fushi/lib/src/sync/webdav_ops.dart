@@ -63,7 +63,15 @@ Future<SyncErrorBody?> readSyncErrorBody(HttpClientResponse response) async {
 SyncErrorBody? parseSyncErrorBody(String body, {bool declaredHtml = false}) {
   final String trimmed = body.trim();
   if (declaredHtml || looksLikeHtmlDocument(trimmed)) {
-    return SyncErrorBody(reason: htmlDocumentTitle(trimmed), isHtmlPage: true);
+    final String? title = htmlDocumentTitle(trimmed);
+    // nginx / Apache 默认错误页的标题恒为「NNN 状态语」（`403 Forbidden`）：那是真
+    // WebDAV 服务端经反代给出的拒绝（ACL / 目录无 DAV 权限），不是「地址填成了网站」
+    // ——归成网页会让用户去核对一个本来就对的地址。这种按拒绝算、原因取标题；
+    // Cloudflare 的「Just a moment...」与网站首页标题都不是这个形状（PR #1602 审查）。
+    if (title != null && _kHttpStatusTitle.hasMatch(title)) {
+      return SyncErrorBody.text(title);
+    }
+    return SyncErrorBody(reason: title, isHtmlPage: true);
   }
   if (trimmed.isEmpty) return null;
   if (trimmed.length <= _kMaxServerReasonChars) {
@@ -110,6 +118,9 @@ String _decodeBasicHtmlEntities(String s) => s
 
 const int _kMaxServerReasonChars = 300;
 const int _kMaxHtmlTitleChars = 120;
+
+/// HTTP 服务器默认错误页的标题形状：三位状态码开头（`403 Forbidden`、`404 Not Found`）。
+final RegExp _kHttpStatusTitle = RegExp(r'^\d{3}(?:\s|$)');
 
 class DavEntry {
   const DavEntry({

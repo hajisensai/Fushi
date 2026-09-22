@@ -268,6 +268,35 @@ void main() {
       expect(parseSyncErrorBody('', declaredHtml: true)!.isHtmlPage, isTrue);
     });
 
+    test('nginx / Apache 默认 403 页：标题是「NNN 状态语」→ 仍是 forbidden，原因取标题',
+        () {
+      // 这是真 WebDAV 服务端经反代给出的拒绝（ACL / 目录无 DAV 权限），不是「地址
+      // 填成了网站」；归成网页会让用户去核对一个本来就对的地址。
+      const String nginx = '<html><head><title>403 Forbidden</title></head>'
+          '<body><center><h1>403 Forbidden</h1></center><hr>'
+          '<center>nginx</center></body></html>';
+      final SyncErrorBody? body = parseSyncErrorBody(nginx, declaredHtml: true);
+      expect(body!.isHtmlPage, isFalse);
+      expect(body.reason, '403 Forbidden');
+      expect(body.forbiddenKind, SyncAuthFailureKind.forbidden);
+
+      const String apache =
+          '<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">\n<html><head>\n'
+          '<title>403 Forbidden</title>\n</head><body>\n<h1>Forbidden</h1>\n'
+          "<p>You don't have permission to access this resource.</p>\n"
+          '</body></html>';
+      expect(parseSyncErrorBody(apache)!.isHtmlPage, isFalse);
+      expect(parseSyncErrorBody(apache)!.reason, '403 Forbidden');
+
+      // Cloudflare 挑战页与网站首页的标题不是这个形状，仍归网页。
+      expect(parseSyncErrorBody(cloudflare)!.isHtmlPage, isTrue);
+      expect(
+          parseSyncErrorBody('<!doctype html><title>4033 ways</title>')!
+              .isHtmlPage,
+          isTrue,
+          reason: '只认「三位数 + 空白 / 结尾」，四位数开头的标题不是状态语');
+    });
+
     test('checkStatus 拿到网页体：kind 随体走，纯文本仍是 forbidden', () {
       final WebDavOps ops = opsFor();
       SyncAuthError? caught;
