@@ -8,6 +8,107 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 void main() {
+  testWidgets('video cancel releases the active pointer at its last position', (
+    WidgetTester tester,
+  ) async {
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    await _pumpPointerPage(tester, sent);
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final Offset start = video.topLeft + Offset(video.width / 2, 100);
+    final TestGesture primary = await tester.startGesture(start, pointer: 1);
+    final TestGesture secondary = await tester.startGesture(
+      start + const Offset(30, 10),
+      pointer: 2,
+    );
+    await secondary.moveBy(const Offset(10, 10));
+    await secondary.up();
+    await primary.moveBy(const Offset(15, 10));
+    await primary.cancel();
+    await tester.pump();
+    expect(
+      sent.map((GameStreamInputEvent event) => event.action),
+      <GameStreamInputAction>[
+        GameStreamInputAction.down,
+        GameStreamInputAction.move,
+        GameStreamInputAction.up,
+      ],
+    );
+    expect(sent.last.x, sent[1].x);
+    expect(sent.last.y, sent[1].y);
+  });
+
+  testWidgets('removing the video releases a held pointer once', (
+    WidgetTester tester,
+  ) async {
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    await _pumpPointerPage(tester, sent);
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final TestGesture pointer = await tester.startGesture(
+      video.topLeft + Offset(video.width / 2, 100),
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await pointer.cancel();
+    await tester.pump();
+    expect(
+      sent.map((GameStreamInputEvent event) => event.action),
+      <GameStreamInputAction>[
+        GameStreamInputAction.down,
+        GameStreamInputAction.up,
+      ],
+    );
+    expect(sent.last.x, sent.first.x);
+    expect(sent.last.y, sent.first.y);
+  });
+
+  testWidgets('lookup layout changes release an active drag before remapping', (
+    WidgetTester tester,
+  ) async {
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    await _pumpPointerPage(tester, sent);
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final TestGesture pointer = await tester.startGesture(
+      video.topLeft + Offset(video.width / 2, 100),
+    );
+    await tester.tap(find.byTooltip(t.game_stream_lookup_toggle));
+    await tester.pumpAndSettle();
+    expect(find.byKey(GameStreamPage.transcriptKey), findsNothing);
+    expect(sent.last.action, GameStreamInputAction.up);
+    expect(sent.last.x, sent.first.x);
+    expect(sent.last.y, sent.first.y);
+    await pointer.moveBy(const Offset(20, 0));
+    await pointer.up();
+    await tester.pump();
+    expect(sent.length, 2, reason: 'The abandoned gesture cannot inject again');
+  });
+
+  testWidgets('rotation metrics release a pointer without an app pause', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    await _pumpPointerPage(tester, sent);
+    final Rect video = tester.getRect(find.byKey(GameStreamPage.videoKey));
+    final TestGesture pointer = await tester.startGesture(
+      video.topLeft + Offset(video.width / 2, 100),
+    );
+    tester.view.physicalSize = const Size(400, 800);
+    await tester.pumpAndSettle();
+    await pointer.cancel();
+    await tester.pump();
+    expect(
+      sent.map((GameStreamInputEvent event) => event.action),
+      <GameStreamInputAction>[
+        GameStreamInputAction.down,
+        GameStreamInputAction.up,
+      ],
+    );
+    expect(sent.last.x, sent.first.x);
+    expect(sent.last.y, sent.first.y);
+  });
+
   testWidgets('focused gamepad holds input and releases on focus loss', (
     WidgetTester tester,
   ) async {
@@ -247,6 +348,31 @@ void main() {
     expect(sent.first.x, inInclusiveRange(0, 1));
     expect(sent.first.y, inInclusiveRange(0, 1));
   });
+}
+
+Future<void> _pumpPointerPage(
+  WidgetTester tester,
+  List<GameStreamInputEvent> sent,
+) async {
+  final GameStreamInputComposer composer = GameStreamInputComposer(
+    sessionId: 's1',
+    clientId: 'c1',
+    sender: (GameStreamInputEvent event) async {
+      sent.add(event);
+      return GameStreamInputAck(sequence: event.sequence, accepted: true);
+    },
+  );
+  await tester.pumpWidget(
+    MaterialApp(
+      home: GameStreamPage(
+        sessionId: 's1',
+        clientId: 'c1',
+        inputComposer: composer,
+        videoPlaceholder: const Text('remote frame'),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
 }
 
 class _Lookup implements GameStreamDictionaryLookup {

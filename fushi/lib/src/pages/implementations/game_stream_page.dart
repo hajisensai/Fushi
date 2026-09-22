@@ -40,7 +40,8 @@ class GameStreamPage extends StatefulWidget {
   State<GameStreamPage> createState() => _GameStreamPageState();
 }
 
-class _GameStreamPageState extends State<GameStreamPage> {
+class _GameStreamPageState extends State<GameStreamPage>
+    with WidgetsBindingObserver {
   final GlobalKey _videoKey = GlobalKey();
   GameStreamLookupController? _lookupController;
   bool _controlsVisible = true;
@@ -53,6 +54,10 @@ class _GameStreamPageState extends State<GameStreamPage> {
   final Map<GameStreamVirtualButton, String> _keyBindings =
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
+  int? _activePointer;
+  Offset _lastPointerPosition = Offset.zero;
+  ({Rect bounds, Rect content})? _pointerGeometry;
+  GameStreamInputComposer? _pointerComposer;
 
   static final List<String> _allowedKeys = <String>[
     'Enter',
@@ -69,9 +74,11 @@ class _GameStreamPageState extends State<GameStreamPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
     widget.receiver?.addListener(_onReceiverChanged);
+    widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
     unawaited(_prepareTokenizer());
   }
@@ -91,6 +98,7 @@ class _GameStreamPageState extends State<GameStreamPage> {
   void didUpdateWidget(GameStreamPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.inputComposer != widget.inputComposer) {
+      unawaited(_releasePointer());
       oldWidget.inputComposer.removeListener(_onReceiverChanged);
       widget.inputComposer.addListener(_onReceiverChanged);
     }
@@ -100,15 +108,23 @@ class _GameStreamPageState extends State<GameStreamPage> {
       _lookupController?.addListener(_onLookupChanged);
     }
     if (oldWidget.receiver != widget.receiver) {
+      unawaited(_releasePointer());
       oldWidget.receiver?.removeListener(_onReceiverChanged);
+      oldWidget.receiver?.renderer.removeListener(
+        _schedulePointerGeometryCheck,
+      );
       widget.receiver?.addListener(_onReceiverChanged);
+      widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_releasePointer());
     _lookupController?.removeListener(_onLookupChanged);
     widget.receiver?.removeListener(_onReceiverChanged);
+    widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
     super.dispose();
   }
@@ -118,27 +134,108 @@ class _GameStreamPageState extends State<GameStreamPage> {
   }
 
   void _onReceiverChanged() {
+    final FushiGameStreamReceiver? receiver = widget.receiver;
+    if (receiver != null &&
+        (receiver.backgrounded ||
+            receiver.state != GameStreamReceiverState.connected)) {
+      unawaited(_releasePointer());
+    }
     if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeMetrics() {
+    // Android handles rotation in the existing Activity. It need not pause the
+    // receiver, so releasing only on an app lifecycle transition is insufficient.
+    unawaited(_releasePointer());
+  }
+
+  ({Rect bounds, Rect content})? _currentPointerGeometry() {
+    final RenderBox? box =
+        _videoKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    final Size contentSize = _videoContentSize(box.size);
+    return (
+      bounds: Rect.fromPoints(
+        box.localToGlobal(Offset.zero),
+        box.localToGlobal(box.size.bottomRight(Offset.zero)),
+      ),
+      content: Rect.fromCenter(
+        center: box.size.center(Offset.zero),
+        width: contentSize.width,
+        height: contentSize.height,
+      ),
+    );
+  }
+
+  void _releasePointerIfLayoutChanged(Duration _) {
+    if (!mounted || _activePointer == null) return;
+    if (_pointerGeometry != _currentPointerGeometry()) {
+      unawaited(_releasePointer());
+    }
+  }
+
+  void _schedulePointerGeometryCheck() {
+    if (_activePointer != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        _releasePointerIfLayoutChanged,
+      );
+    }
+  }
+
+  Future<void> _releasePointer() async {
+    final GameStreamInputComposer? composer = _pointerComposer;
+    if (_activePointer == null || composer == null) return;
+    final Offset position = _lastPointerPosition;
+    // Clear synchronously: cancellation, metrics and disposal can arrive in the
+    // same frame and must emit exactly one release to the original session.
+    _activePointer = null;
+    _pointerComposer = null;
+    _pointerGeometry = null;
+    await composer.pointer(
+      action: GameStreamInputAction.up,
+      normalized: position,
+    );
   }
 
   Future<void> _sendPointer(
     PointerEvent event,
     GameStreamInputAction action,
   ) async {
+    if (action == GameStreamInputAction.down) {
+      if (_activePointer != null) return;
+    } else if (event.pointer != _activePointer) {
+      return;
+    }
+    final ({Rect bounds, Rect content})? geometry = _currentPointerGeometry();
+    if (geometry == null) {
+      await _releasePointer();
+      return;
+    }
+    if (action != GameStreamInputAction.down && geometry != _pointerGeometry) {
+      await _releasePointer();
+      return;
+    }
     final RenderBox? box =
         _videoKey.currentContext?.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
+    if (box == null) return;
     final Offset local = box.globalToLocal(event.position);
-    final Size contentSize = _videoContentSize(box.size);
-    final Rect contentRect = Rect.fromCenter(
-      center: box.size.center(Offset.zero),
-      width: contentSize.width,
-      height: contentSize.height,
-    );
-    final Offset normalized = GameStreamPointerMapper(
-      contentRect.size,
-    ).normalize(local - contentRect.topLeft);
-    await widget.inputComposer.pointer(action: action, normalized: normalized);
+    _lastPointerPosition = GameStreamPointerMapper(
+      geometry.content.size,
+    ).normalize(local - geometry.content.topLeft);
+    if (action == GameStreamInputAction.down) {
+      _activePointer = event.pointer;
+      _pointerComposer = widget.inputComposer;
+      _pointerGeometry = geometry;
+    }
+    if (action == GameStreamInputAction.up) {
+      await _releasePointer();
+    } else {
+      await _pointerComposer!.pointer(
+        action: action,
+        normalized: _lastPointerPosition,
+      );
+    }
   }
 
   Size _videoContentSize(Size boxSize) {
@@ -278,6 +375,7 @@ class _GameStreamPageState extends State<GameStreamPage> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (BuildContext context, BoxConstraints constraints) {
+            _schedulePointerGeometryCheck();
             final bool compact = constraints.maxWidth < 700;
             final Widget video = Expanded(
               child: Stack(
@@ -378,6 +476,9 @@ class _GameStreamPageState extends State<GameStreamPage> {
           unawaited(_sendPointer(event, GameStreamInputAction.move)),
       onPointerUp: (PointerUpEvent event) =>
           unawaited(_sendPointer(event, GameStreamInputAction.up)),
+      onPointerCancel: (PointerCancelEvent event) {
+        if (event.pointer == _activePointer) unawaited(_releasePointer());
+      },
       child: Container(
         key: GameStreamPage.videoKey,
         color: Colors.black,
