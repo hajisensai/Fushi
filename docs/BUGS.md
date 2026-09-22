@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2425 条。点号进各自文件。
+> 共 2427 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2626](bugs/BUG-2626-subtitle-search-prefill-episode-title.md) | ✅ | ✅ | 字幕搜索预填：远端合集把分集标题当番剧名、集数从来没被预填 |
+| [BUG-2625](bugs/BUG-2625-aniyomi-mining-ffmpeg-403.md) | ✅ | ✅ | 在线视频源制卡 ffmpeg 抽音频 403：防盗链 header 只喂了播放器 |
 | [BUG-2620](bugs/BUG-2620-video-discovery-search-enter-noop.md) | ✅ | ✅ | 发现页搜索框按回车不触发搜索 |
 | [BUG-2619](bugs/BUG-2619-video-subscription-batch-never-matches.md) | ✅ | ✅ | 从合集资源建的订阅结构上永不命中 |
 | [BUG-2618](bugs/BUG-2618-ai-model-picker-split.md) | ✅ | ✅ | AI 提供商：模型候选是字段外的第二个下拉，选完「模型」输入框不跟着变 |

@@ -437,6 +437,37 @@ void main() {
       'y',
     );
   });
+
+  /// BUG-2626：字幕检索要按集号筛版本，而 `RemoteVideoInfo` 能给的两个数字都不是集号
+  /// ——`title` 是分集标题（`Episode 1`）、`collection.sortIndex` 是播放序。集号只有
+  /// 扩展自己知道（`episode_number`），所以 client 实现 [RemoteVideoEpisodeNumber]。
+  test('remoteVideoEpisodeNumber 报扩展给的集号，不是播放序', () {
+    final AnimeSourceVideoClient c = client();
+    expect(c, isA<RemoteVideoEpisodeNumber>());
+    final List<RemoteVideoInfo> videos = c.remoteVideos;
+    expect(c.remoteVideoEpisodeNumber(videos[0].id), 1);
+    expect(c.remoteVideoEpisodeNumber(videos[1].id), 2);
+    // 认不出的 id 一律 null（调用方据此回落，不许拿 0 或序号冒充集号）。
+    expect(c.remoteVideoEpisodeNumber('anime-source:nope'), isNull);
+  });
+
+  test('集号缺失/小数 → null（宁可留空，不填到隔壁那一集）', () {
+    final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+      manager: manager,
+      context: _context,
+      anime: anime,
+      episodes: const <MihonEpisode>[
+        // 扩展没给 episode_number（`MihonEpisode.number` 解析时回落 0）。
+        MihonEpisode(url: '/ep/x', name: 'Special', uploadedAt: 1, number: 0),
+        // 总集篇/特别篇的小数号：字幕站的 episode 字段放不下，四舍五入会指错集。
+        MihonEpisode(url: '/ep/y', name: 'Recap', uploadedAt: 2, number: 1.5),
+      ],
+      httpClient: MockClient((_) async => http.Response('', 404)),
+    );
+    for (final RemoteVideoInfo v in c.remoteVideos) {
+      expect(c.remoteVideoEpisodeNumber(v.id), isNull);
+    }
+  });
 }
 
 const MihonSourceContext _context = MihonSourceContext(

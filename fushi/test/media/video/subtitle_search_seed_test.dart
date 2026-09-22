@@ -101,4 +101,79 @@ void main() {
       expect(seed.hasStrongIdentity, isFalse);
     });
   });
+
+  /// BUG-2626：远端合集里的一集，标题是**分集**标题——在线视频源扩展给的就是
+  /// `Episode 1`，番名在合集名里。此前一律拿标题去 `parseVideoFilename` 想剥掉集号，
+  /// 但它的裸集号规则只认两位数字，`Episode 1` 原样留下被整串当番名搜（Jimaku 必然
+  /// 空手），`Episode 12` 更糟——番名会变成 `Episode`。
+  group('remoteSubtitleSeriesQuery（远端番名选词）', () {
+    // 真身是 `parseVideoFilename(title).series`；这里只需一个「会把裸集号剥掉」的
+    // 替身，用来证明合集名胜出时它压根没被调用。
+    String fakeParse(String title) =>
+        title.replaceAll(RegExp(r'\s+\d{2}$'), '');
+
+    test('有合集名 → 用合集名，且不过文件名解析', () {
+      bool parsed = false;
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionName: 'Fixture Show',
+          title: 'Episode 1',
+          parseFallbackSeries: (String t) {
+            parsed = true;
+            return fakeParse(t);
+          },
+        ),
+        'Fixture Show',
+      );
+      expect(
+        parsed,
+        isFalse,
+        reason: '合集名已是番名；再过一遍解析会削掉结尾带数字的作品名（86 / Gundam 00）',
+      );
+    });
+
+    test('番名结尾是数字也原样保留', () {
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionName: 'Mobile Suit Gundam 00',
+          title: 'Episode 1',
+          parseFallbackSeries: fakeParse,
+        ),
+        'Mobile Suit Gundam 00',
+      );
+    });
+
+    test('无合集名（单条远端视频）→ 回落标题并按原规则收敛', () {
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionName: null,
+          title: 'Fixture Show 01',
+          parseFallbackSeries: fakeParse,
+        ),
+        'Fixture Show',
+      );
+    });
+
+    test('解析结果为空时回落整串标题（旧行为）', () {
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionName: '   ',
+          title: 'Episode 1',
+          parseFallbackSeries: (_) => '',
+        ),
+        'Episode 1',
+      );
+    });
+
+    test('两者都空 → null（= 不显示自动获取字幕入口）', () {
+      expect(
+        remoteSubtitleSeriesQuery(
+          collectionName: '',
+          title: '  ',
+          parseFallbackSeries: fakeParse,
+        ),
+        isNull,
+      );
+    });
+  });
 }

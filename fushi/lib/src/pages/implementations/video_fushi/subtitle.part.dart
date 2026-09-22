@@ -1070,12 +1070,53 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return series.isEmpty ? null : series;
     }
     if (_isRemote) {
-      final String title = (_title ?? widget.remoteInfo?.title ?? '').trim();
-      if (title.isEmpty) return null;
-      final String series = parseVideoFilename(title).series.trim();
-      return series.isEmpty ? title : series;
+      // BUG-2626：远端**合集**里的一集，标题是**分集**标题——在线视频源扩展给的就是
+      // `Episode 1`（`AnimeSourceVideoClient._infoFor` 用 `episode.name`），番名在合集
+      // 名里。之前一律拿标题去 [parseVideoFilename]，而它的裸集号规则只认两位数字，
+      // `Episode 1` 收敛不掉就被整串当成番名搜，Jimaku 必然空手；`Episode 12` 更糟，
+      // 会变成番名 `Episode`。
+      //
+      // 合集名是所有远端合集来源（在线源 / 互联 host / 媒体服务器）共有的字段，不需要
+      // 按来源分支。选词规则本身是纯函数 [remoteSubtitleSeriesQuery]（可单测）。
+      //
+      // 标题用 [_effectiveRemoteInfo] 而非 `widget.remoteInfo`——后者是首播那一集，
+      // 换集后已陈旧。
+      return remoteSubtitleSeriesQuery(
+        collectionName: _effectiveRemoteInfo?.collection?.collectionName,
+        title: _title ?? _effectiveRemoteInfo?.title,
+        parseFallbackSeries: (String title) => parseVideoFilename(title).series,
+      );
     }
     return null;
+  }
+
+  /// 字幕检索要预填的集号；算不出来返回 null（= 输入框留空 = 列出全部版本，旧行为）。
+  ///
+  /// BUG-2626：这个值此前**没有任何注入口**，两条来路都恒空——本地视频的集号被
+  /// [_jimakuQuery] 解析出来后整个丢掉，远端则连集号字段都没往下传。用户每次都得自己
+  /// 数到第几集再手填。
+  ///
+  /// 取值按可靠度降序：
+  /// 1. 远端来源自己报的集号（[RemoteVideoEpisodeNumber]，在线视频源扩展的
+  ///    `episode_number`）——来源权威，不猜。
+  /// 2. 本地文件名解析（[parseVideoFilename]，与剧集面板角标同一套规则）。
+  ///
+  /// 刻意**不**拿合集内的播放序（`sortIndex` / `_currentEpisode`）兜底：有特别篇/OVA
+  /// 或不从第 1 集开始的季度时它与集号不等，填错的集号比留空更坏——留空只是多几条
+  /// 候选，填错会把用户引到另一集的字幕上去。
+  int? _jimakuEpisodeNumber() {
+    if (_isRemote) {
+      final Object? client = _effectiveRemoteClient;
+      final String? id = _effectiveRemoteInfo?.id;
+      if (client is RemoteVideoEpisodeNumber && id != null) {
+        return client.remoteVideoEpisodeNumber(id);
+      }
+      return null;
+    }
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || videoPath.trim().isEmpty) return null;
+    final int? episode = parseVideoFilename(p.basename(videoPath)).episode;
+    return episode != null && episode > 0 ? episode : null;
   }
 
   /// 组装在线字幕检索的**身份种子**：优先用刮削早就存下的外部 ID 与日文原名，而不是
@@ -1183,6 +1224,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         initialQuery: seed.primaryQuery.isEmpty ? query : seed.primaryQuery,
         seriesKey: query.trim().toLowerCase(),
         seed: seed,
+        // BUG-2626：预填当前集号（算不出就留空 = 列出全部，旧行为）。
+        episode: _jimakuEpisodeNumber(),
         // 本地视频才有指纹可算（远端流恒 null），OpenSubtitles 据此按文件哈希精确匹配。
         videoPath: _isRemote ? null : _currentVideoPath,
       ),
