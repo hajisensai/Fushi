@@ -284,8 +284,13 @@ void main() {
         reason: '本地视频仍用 _currentVideoPath 的文件名解析 series');
     expect(query.contains('parseVideoFilename('), isTrue,
         reason: 'query 经 parseVideoFilename 收敛成番名 series');
-    expect(query.contains('widget.remoteInfo?.title'), isTrue,
-        reason: '远端无本地文件名，query 必须能回退到 host 下发的 remoteInfo.title');
+    // BUG-2626（PR #1595）起远端分支经 remoteSubtitleSeriesQuery 选词，标题取
+    // **当前**条目的 _effectiveRemoteInfo——widget.remoteInfo 是首播那一集，换集后
+    // 已陈旧。回退到 host 标题这条语义不变，只是来源换成了不会过期的那份。
+    expect(query.contains('_effectiveRemoteInfo?.title'), isTrue,
+        reason: '远端无本地文件名，query 必须能回退到 host 下发的当前条目标题');
+    expect(query.contains('widget.remoteInfo?.title'), isFalse,
+        reason: 'widget.remoteInfo 是首播那一集，换集后陈旧，不得再当 query 来源');
     expect(query.contains('_isRemote'), isTrue,
         reason: '远端分支按 _isRemote 取标题作为 query 来源');
 
