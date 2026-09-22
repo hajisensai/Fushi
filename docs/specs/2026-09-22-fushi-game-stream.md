@@ -28,7 +28,7 @@
 - 引擎协议/会话测试 18 项通过；app 串流、词典传输、制卡与引擎纯净性回归 82 项通过；页面及设置回归首轮 24 项通过。
 - 追加的主机启动取消、渐进文本截图、分词和键位配置回归 12 项通过（其中 5 项与前述批次重叠）；后续 SDP 答复失败保留 offer 游标、手柄焦点释放两项也通过，合计 133 项不同的定向单元/组件测试。改动文件定向静态检查通过。
 - `powershell -ExecutionPolicy Bypass -File tool/run_game_stream_input_test.ps1` 编译真实原生输入实现，28 项断言通过，覆盖隐藏/最小化后的释放、进程身份失效拒绝、键盘扫描码和松开标志。测试只向自建离屏窗口发消息。
-- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`，使用自建 WinForms 窗口和生产 host，严格检查渲染首帧或解码帧，不能以 track 创建成功作为通过。2026-09-22 的初始诊断已确认 ICE 与双向音频 RTP，但主机 `media-source.frames`、`framesEncoded` 均为 0，尚不能证明视频捕获可用。
+- 真实窗口 spike 位于 `fushi/integration_test/game_stream_capture_spike_test.dart`，使用自建 WinForms 窗口和生产 host，严格检查渲染首帧或解码帧，不能以 track 创建成功作为通过。2026-09-22 的初始诊断已确认 ICE、主机音频 RTP 发送和客户端接收，但主机 `media-source.frames`、`framesEncoded` 均为 0，尚不能证明视频捕获可用。
 
 捕获启动时的前台条件需按本地主机按钮流程验证。上游仍记录着 Windows 后台启动返回无帧轨道的问题：[flutter-webrtc #2137](https://github.com/flutter-webrtc/flutter-webrtc/issues/2137)。依赖版本和 Windows 应用音频能力参见 [flutter_webrtc changelog](https://pub.dev/packages/flutter_webrtc/changelog)。
 
