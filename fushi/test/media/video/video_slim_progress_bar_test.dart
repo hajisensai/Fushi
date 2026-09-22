@@ -174,6 +174,43 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
+    testWidgets('RTL 界面：填充仍从物理左端长，与点击换算同基准', (WidgetTester tester) async {
+      final List<double> seeks = <double>[];
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.rtl,
+          child: Center(
+            child: SizedBox(
+              width: 200,
+              child: VideoSlimProgressBar(
+                positionMs: () => 0,
+                durationMs: () => 1000,
+                color: const Color(0xFF00FF00),
+                onSeekFraction: seeks.add,
+              ),
+            ),
+          ),
+        ),
+      );
+      final Offset topLeft = tester.getTopLeft(
+        find.byType(VideoSlimProgressBar),
+      );
+      await tester.tapAt(topLeft + const Offset(150, 6));
+      await tester.pump();
+      expect(seeks, <double>[0.75]);
+      final Finder fill = find.descendant(
+        of: find.byType(FractionallySizedBox),
+        matching: find.byType(ColoredBox),
+      );
+      expect(tester.getSize(fill).width, 150);
+      expect(
+        tester.getTopLeft(fill).dx,
+        topLeft.dx,
+        reason: 'RTL 下若填充从右边长，点在可见端点处会跳到镜像位置',
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
     testWidgets('点击落点 → 对应比例，且线立即到位不等回读', (WidgetTester tester) async {
       final List<double> seeks = <double>[];
       await tester.pumpWidget(host(onSeekFraction: seeks.add));

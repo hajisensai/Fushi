@@ -158,11 +158,22 @@ VideoControlsDensitySpec resolveVideoControlsDensity({
 /// [spec] 那条门保证它只在**本仓负责画 chrome** 的那一档生效：常规档 chrome 归
 /// media_kit（hover 唤起是那边的既有语义，不受本函数管），系统画中画下 chrome 归
 /// 系统（[VideoControlsDensitySpec.showCenterTransport] 恒假，本仓一个像素都不画）。
+///
+/// [surface] 是第二道门：「只认显式唤出」只对**桌面小窗**成立。常规窗口被挤窄到
+/// mini 档（字幕列表 push-aside、用户把窗口拉小）时 surface 仍是 none，media_kit
+/// 那层顶栏 / 底栏 / seek bar 已整套关掉，本仓的三键是画面上**唯一**的控件——那时
+/// 若也只认快捷键，鼠标悬停一个按钮都不出现（#1596 时 hover 还能唤出），Shift+M
+/// 唤出后右上角「退出小窗」钮又是死的。故 none 表面保留 hover（[controlsVisible]）
+/// 语义（PR #1600 审查）。
 bool videoMiniChromeVisible({
   required VideoControlsDensitySpec spec,
+  required VideoMiniSurface surface,
   required bool revealed,
+  required bool controlsVisible,
 }) {
-  return spec.showCenterTransport && revealed;
+  if (!spec.showCenterTransport) return false;
+  if (surface == VideoMiniSurface.desktopMiniWindow) return revealed;
+  return controlsVisible;
 }
 
 /// 视频最下方那条细进度条此刻该不该显形。纯函数，页面与测试同源。

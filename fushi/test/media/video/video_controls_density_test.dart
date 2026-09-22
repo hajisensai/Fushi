@@ -182,23 +182,58 @@ void main() {
       surface: VideoMiniSurface.pictureInPicture,
     );
 
+    // 桌面小窗表面；hover（controlsVisible）在这条路径上不是输入。
+    bool inMiniWindow(
+      VideoControlsDensitySpec spec, {
+      required bool revealed,
+    }) => videoMiniChromeVisible(
+      spec: spec,
+      surface: VideoMiniSurface.desktopMiniWindow,
+      revealed: revealed,
+      controlsVisible: true,
+    );
+
     test('mini 档：只认显式唤出', () {
-      expect(videoMiniChromeVisible(spec: mini, revealed: true), isTrue);
+      expect(inMiniWindow(mini, revealed: true), isTrue);
       expect(
-        videoMiniChromeVisible(spec: mini, revealed: false),
+        inMiniWindow(mini, revealed: false),
         isFalse,
         reason: '小窗常态只剩画面 + 字幕 + 底部细线；hover 不是本函数的输入，'
             '鼠标扫过不该弹出一层按钮',
       );
     });
 
+    test('常规窗口被挤窄到 mini 档（surface none）：chrome 跟 hover 走，不认唤出位', () {
+      // media_kit 那层已整套关掉，三键是画面上唯一的控件；只认快捷键会让鼠标用户
+      // 悬停一个按钮都不出现（#1596 时 hover 还能唤出）。
+      expect(
+        videoMiniChromeVisible(
+          spec: mini,
+          surface: VideoMiniSurface.none,
+          revealed: false,
+          controlsVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        videoMiniChromeVisible(
+          spec: mini,
+          surface: VideoMiniSurface.none,
+          revealed: true,
+          controlsVisible: false,
+        ),
+        isFalse,
+        reason: '常规窗口里唤出位没人该读',
+      );
+    });
+
     test('常规档恒不画：那一档的 chrome 归 media_kit（hover 唤起是它的语义）', () {
-      expect(videoMiniChromeVisible(spec: full, revealed: true), isFalse);
-      expect(videoMiniChromeVisible(spec: full, revealed: false), isFalse);
+      expect(inMiniWindow(full, revealed: true), isFalse);
+      expect(inMiniWindow(full, revealed: false), isFalse);
     });
 
     test('系统画中画恒不画：chrome 归系统，本仓再画一套就是两层按钮重影', () {
-      expect(videoMiniChromeVisible(spec: pip, revealed: true), isFalse);
+      expect(inMiniWindow(pip, revealed: true), isFalse);
     });
   });
 }

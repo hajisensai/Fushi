@@ -208,7 +208,10 @@ class _VideoSlimProgressBarState extends State<VideoSlimProgressBar> {
             children: <Widget>[
               ColoredBox(color: track),
               Align(
-                alignment: AlignmentDirectional.centerStart,
+                // 物理左端，不随 TextDirection 镜像：点击换算 `dx / width` 是从左算
+                // 的，media_kit 的进度条也是硬 ltr——RTL 界面下填充从右长、点击却
+                // 从左算，点在可见填充端点处会跳到镜像位置（PR #1600 审查）。
+                alignment: Alignment.centerLeft,
                 child: FractionallySizedBox(
                   widthFactor: _fraction,
                   heightFactor: 1,

@@ -168,7 +168,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   /// 唤起是那边的语义），系统画中画里归系统。两种情形一律早退，而不是翻一个没人读的
   /// 标志位——否则从小窗退回主窗后再进小窗，chrome 会带着上一次在主窗里按出来的状态。
   void _toggleMiniChrome() {
-    if (!_controlsDensity.showCenterTransport) return;
+    // 只对桌面小窗表面：常规窄窗口的 mini 档 chrome 跟 hover 走（见
+    // [videoMiniChromeVisible]），翻这个标志位在那里没人读。
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) return;
     _miniChromeIntroTimer?.cancel();
     _miniChromeIntroTimer = null;
     _miniChromeRevealed.value = !_miniChromeRevealed.value;
@@ -203,6 +205,12 @@ extension _VideoMiniWindow on _VideoFushiPageState {
   Widget _buildMiniWindowTopChrome() {
     final VideoControlsDensitySpec density = _controlsDensity;
     if (!density.showCenterTransport) return const SizedBox.shrink();
+    // 这条带（拖动入口 + 退出钮）是桌面小窗专属：常规窗口被挤窄到 mini 档时自己有
+    // 标题栏可拖、也没有小窗可退——画出来只剩一条没用的渐变，退出钮还是死的
+    // （_exitVideoMiniWindow 因 surface≠desktopMiniWindow 早退）。
+    if (_miniWindowSurface != VideoMiniSurface.desktopMiniWindow) {
+      return const SizedBox.shrink();
+    }
     final double height = 32 * _videoUiScale;
     final Widget bar = SizedBox(
       height: height,
@@ -230,13 +238,22 @@ extension _VideoMiniWindow on _VideoFushiPageState {
       top: 0,
       left: 0,
       right: 0,
-      child: ValueListenableBuilder<bool>(
-        // 显隐只认显式唤出（快捷键 / 进小窗那次引导），**不认 hover**——否则鼠标从
-        // 角落里的小窗上扫过就弹一层按钮，正是用户报的「太乱」。判据是纯函数，
-        // 页面与测试同源。
-        valueListenable: _miniChromeRevealed,
-        builder: (BuildContext context, bool revealed, _) => FadingChromeGate(
-          visible: videoMiniChromeVisible(spec: density, revealed: revealed),
+      child: ListenableBuilder(
+        // 桌面小窗里显隐只认显式唤出（快捷键 / 进小窗那次引导），**不认 hover**——
+        // 否则鼠标从角落里的小窗上扫过就弹一层按钮，正是用户报的「太乱」。常规窗口
+        // 被挤窄到 mini 档（surface none）则跟 hover 走——见 [videoMiniChromeVisible]
+        // 的第二道门。判据是纯函数，页面与测试同源。
+        listenable: Listenable.merge(<Listenable>[
+          _miniChromeRevealed,
+          _videoControlsVisible,
+        ]),
+        builder: (BuildContext context, _) => FadingChromeGate(
+          visible: videoMiniChromeVisible(
+            spec: density,
+            surface: _miniWindowSurface,
+            revealed: _miniChromeRevealed.value,
+            controlsVisible: _videoControlsVisible.value,
+          ),
           duration: _videoControlsTransitionDuration,
           // 桌面小窗是无边框的，系统不再提供标题栏抓手，这条带就是唯一的拖动入口。
           // 移动端（系统画中画）永远走不到这里：那边 showCenterTransport 恒 false。
@@ -268,11 +285,20 @@ extension _VideoMiniWindow on _VideoFushiPageState {
     // seekBackward / seekForward 分支）：小窗里换个位置，语义必须还是同一个键。
     const int seekMs = 10000;
     return Positioned.fill(
-      child: ValueListenableBuilder<bool>(
-        // 与顶部那条带同源：只认显式唤出，不认 hover（见 [videoMiniChromeVisible]）。
-        valueListenable: _miniChromeRevealed,
-        builder: (BuildContext context, bool revealed, _) => FadingChromeGate(
-          visible: videoMiniChromeVisible(spec: density, revealed: revealed),
+      child: ListenableBuilder(
+        // 与顶部那条带同源：桌面小窗只认显式唤出、常规窄窗口跟 hover（见
+        // [videoMiniChromeVisible]）。
+        listenable: Listenable.merge(<Listenable>[
+          _miniChromeRevealed,
+          _videoControlsVisible,
+        ]),
+        builder: (BuildContext context, _) => FadingChromeGate(
+          visible: videoMiniChromeVisible(
+            spec: density,
+            surface: _miniWindowSurface,
+            revealed: _miniChromeRevealed.value,
+            controlsVisible: _videoControlsVisible.value,
+          ),
           duration: _videoControlsTransitionDuration,
           child: Center(
             child: Row(
