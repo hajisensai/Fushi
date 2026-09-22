@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
@@ -7,6 +8,59 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 void main() {
+  testWidgets('focused gamepad holds input and releases on focus loss', (
+    WidgetTester tester,
+  ) async {
+    final List<GameStreamInputEvent> sent = <GameStreamInputEvent>[];
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (GameStreamInputEvent event) async {
+        sent.add(event);
+        return GameStreamInputAck(sequence: event.sequence, accepted: true);
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameStreamPage(
+          sessionId: 's1',
+          clientId: 'c1',
+          inputComposer: composer,
+          videoPlaceholder: const Text('frame'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Focus.of(tester.element(find.text('A'))).requestFocus();
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(
+      sent.map((GameStreamInputEvent event) => event.action),
+      <GameStreamInputAction>[GameStreamInputAction.down],
+    );
+    expect(sent.single.button, 'confirm');
+    Focus.of(tester.element(find.text('B'))).requestFocus();
+    await tester.pump();
+    expect(sent.last.action, GameStreamInputAction.up);
+    expect(sent.last.button, 'confirm');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(sent.length, 2);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    expect(
+      sent.skip(2).map((GameStreamInputEvent event) => event.action),
+      <GameStreamInputAction>[
+        GameStreamInputAction.down,
+        GameStreamInputAction.up,
+      ],
+    );
+    expect(sent.last.button, 'cancel');
+  });
+
   testWidgets(
     'uninitialised local dictionary still exposes tappable segments',
     (WidgetTester tester) async {

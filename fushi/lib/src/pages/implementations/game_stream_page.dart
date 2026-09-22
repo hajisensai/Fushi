@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
@@ -691,7 +692,7 @@ class _PadButton extends StatelessWidget {
   }
 }
 
-class _PadShell extends StatelessWidget {
+class _PadShell extends StatefulWidget {
   const _PadShell({
     required this.child,
     required this.onDown,
@@ -703,18 +704,91 @@ class _PadShell extends StatelessWidget {
   final Future<void> Function() onUp;
 
   @override
+  State<_PadShell> createState() => _PadShellState();
+}
+
+class _PadShellState extends State<_PadShell> {
+  final Set<int> _pointers = <int>{};
+  final Set<LogicalKeyboardKey> _keys = <LogicalKeyboardKey>{};
+  bool _pressed = false;
+  bool _focused = false;
+
+  void _syncPressed() {
+    final bool pressed = _pointers.isNotEmpty || _keys.isNotEmpty;
+    if (pressed == _pressed) return;
+    _pressed = pressed;
+    unawaited(pressed ? widget.onDown() : widget.onUp());
+  }
+
+  void _release() {
+    _keys.clear();
+    _pointers.clear();
+    _syncPressed();
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event.logicalKey != LogicalKeyboardKey.enter &&
+        event.logicalKey != LogicalKeyboardKey.space) {
+      return KeyEventResult.ignored;
+    }
+    if (event is KeyDownEvent) _keys.add(event.logicalKey);
+    if (event is KeyUpEvent) _keys.remove(event.logicalKey);
+    _syncPressed();
+    return KeyEventResult.handled;
+  }
+
+  Future<void> _activate() async {
+    if (_pressed) return;
+    await widget.onDown();
+    await widget.onUp();
+  }
+
+  @override
+  void dispose() {
+    _release();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Listener(
-      onPointerDown: (_) => unawaited(onDown()),
-      onPointerUp: (_) => unawaited(onUp()),
-      onPointerCancel: (_) => unawaited(onUp()),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.45),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white54),
+    return Focus(
+      onKeyEvent: _onKey,
+      onFocusChange: (bool focused) {
+        if (!focused) _release();
+        setState(() => _focused = focused);
+      },
+      child: Semantics(
+        button: true,
+        onTap: () => unawaited(_activate()),
+        child: Listener(
+          onPointerDown: (PointerDownEvent event) {
+            _pointers.add(event.pointer);
+            _syncPressed();
+          },
+          onPointerUp: (PointerUpEvent event) {
+            _pointers.remove(event.pointer);
+            _syncPressed();
+          },
+          onPointerCancel: (PointerCancelEvent event) {
+            _pointers.remove(event.pointer);
+            _syncPressed();
+          },
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: _focused ? Colors.white : Colors.white54,
+                width: _focused ? 2 : 1,
+              ),
+            ),
+            child: SizedBox(
+              width: 58,
+              height: 58,
+              child: Center(child: widget.child),
+            ),
+          ),
         ),
-        child: SizedBox(width: 58, height: 58, child: Center(child: child)),
       ),
     );
   }
