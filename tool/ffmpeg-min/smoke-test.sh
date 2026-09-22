@@ -371,7 +371,7 @@ if ! grep -qw mpegts "$WORK/muxers2.txt"; then
   exit 1
 fi
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 0.500 -to 1.500 -i "$MP4_FIXTURE" \
+  -ss 0.100 -to 0.700 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
@@ -382,7 +382,7 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg.ts" -f null -
 
 # 第二段：只换 -ss/-to 与 -output_ts_offset，与 host 逐段起一个 ffmpeg 同形。
 run "$FFMPEG_MIN" -hide_banner -nostdin -loglevel error -y \
-  -ss 1.500 -to 2.500 -i "$MP4_FIXTURE" \
+  -ss 0.700 -to 1.300 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map '0:a:0?' -sn \
   -c:v libx264 -preset veryfast -b:v 400k -maxrate 400k -bufsize 800k \
   -profile:v high -pix_fmt yuv420p -g 600 -keyint_min 600 -sc_threshold 0 -bf 0 \
@@ -394,7 +394,9 @@ run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/seg2.ts" -f null -
 # BUG-2630 第三段：只验单段 start_time 不够——`-output_ts_offset` 平移 PTS 与 DTS
 # 两者，有 B 帧时段首关键帧的 DTS 比 PTS 早一个重排延迟，start_time 看上去仍
 # 「≈ 偏移」，而 hls demuxer 判 seek 落点比的是 DTS，会把整段丢掉、落到下一段。
-# 这里直接验**段首视频关键帧的 DTS** 精确等于该段的名义起点（关 B 帧后 DTS == PTS）。
+# 这里直接验**段首视频关键帧的 DTS** 不早于该段的名义起点（关 B 帧后 DTS == PTS）。
+# 两段的取材区间都必须落在夹具内：sub.srt 止于 00:00:01,400 且夹具用 -shortest，
+# 整个 MP4 夹具只有约 1.4 s —— 越界的那一段 ffmpeg 会退出 0 却写出 0 字节。
 seg_key_dts() {
   "$FFPROBE_MIN" -v error -select_streams v:0 -show_packets \
     -show_entries packet=dts_time,flags -of csv=p=0 -read_intervals '%+#40' "$1" \
@@ -407,8 +409,10 @@ for probe in "seg.ts 6" "seg2.ts 7"; do
     echo "NO VIDEO KEYFRAME in $1 (BUG-2630)"
     exit 1
   fi
-  # 容差 1 ms：DTS 以 90 kHz 计，换算回秒有约 11 µs 的量化。
-  if ! awk -v a="$actual" -v n="$2" 'BEGIN { exit !(a - n < 0.001 && n - a < 0.001) }'; then
+  # 判据是「不得**早**于名义位置」：seek 点不落在帧边界时首帧会晚一点（无害，hls
+  # 照收），早一点点才是 BUG-2630 第三段（整段被丢）。容差 1 ms 吃掉 90 kHz 量化；
+  # 上界 0.5 s 兜住「偏移整个写错」。
+  if ! awk -v a="$actual" -v n="$2" 'BEGIN { exit !(a >= n - 0.001 && a < n + 0.5) }'; then
     echo "SEGMENT DTS OFF (BUG-2630): $1 first video keyframe dts=$actual, nominal=$2"
     echo "  -> hls.c compares DTS against first_timestamp + sum(EXTINF); an early"
     echo "     keyframe makes the demuxer discard the whole segment on seek."
