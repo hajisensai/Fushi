@@ -66,7 +66,8 @@ SettingsDestination buildVideoDestination() {
             },
           ),
           // 底部细进度条：控制条淡出后在视频最下方留一条主题色细线（B 站 / YouTube
-          // 同款）。纯 pref、默认开——它只在控制条**已经不在**时出现，不遮挡任何东西。
+          // 同款）。纯 pref、**默认关**——控制条淡出本身就是「把画面让干净」，常亮的
+          // 细线会把这个意图撤回一半；要的人在这里开。
           // 小窗档不受它管（那里完整进度条已被收起，细线是唯一进度指示），判据统一在
           // `videoSlimProgressBarVisible`。播放页面板不单列（无 VideoPlacement）。
           SettingsSwitchItem(
