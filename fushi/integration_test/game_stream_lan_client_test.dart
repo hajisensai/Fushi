@@ -244,7 +244,7 @@ void main() {
         expect(lookup.currentLine?.lineId, selectedLine.lineId);
         expect(lookup.currentLine?.text, selectedLine.text);
         final GameStreamMineResult? mined = await lookup.mine(<String, String>{
-          'word': entry.word,
+          'expression': entry.word,
           'reading': entry.reading,
           'glossary': entry.meaning,
         });
