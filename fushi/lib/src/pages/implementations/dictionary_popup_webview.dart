@@ -1086,8 +1086,31 @@ JSON.stringify((function(){
   /// 「弹窗栈在回点前被关掉」这类竞态长成同一个无声症状——对话框关了、卡没制、
   /// 零提示零日志。现在如实回传并落一条日志，调用方（`SentenceContextDialog`）据此
   /// 提示用户。
-  /// 制卡往返的上限：查重 + 取音是网络往返，给足；超过它只可能是通道半死。
+  /// 「回点前」这一段（查重 → 取音 → 组 payload）的上限。BUG-2634：这个超时**不再**
+  /// 盖住制卡本身——制卡任务一被宿主接受（见 [_confirmMineAccepted]）往返就算成功；
+  /// 真超时只可能是弹窗桥半死，按「没点到」回。
   static const Duration _kMineRoundTripTimeout = Duration(seconds: 45);
+
+  /// BUG-2634：一次「确认制卡」往返的**接受**信号。
+  ///
+  /// BUG-2627 的第二轮把 [mineEntryByIndex] 改成 await popup.js 那头的 promise 到
+  /// mineEntry 回执**落地**（否则 pop 之后的裸窗里悬停离开自动关栈会把草稿清掉）。但
+  /// 「落地」包含了整个制卡任务——ffmpeg 抽 GIF/音频 + Anki 往返，几秒到几十秒、还要
+  /// 排共享制卡队列——全程对话框锁死、弹窗停靠屏外；一过 45s 就被判成「弹窗已关」
+  /// 报失败（卡随后照样制出来），弹窗半路被关 / WebView 重建时 promise 更是直接死掉。
+  ///
+  /// 草稿真正需要保护的窗口其实只到「宿主开始消费 payload」：视频 `_onMineEntryImpl` /
+  /// reader `_prepareMiningContext` 都在首个 await 之前就把草稿合成读走了。所以三个制卡
+  /// 桥 handler（`mineEntry` / `updateEntry` / `minedCardAction`）在把 payload 交给宿主的
+  /// 那一刻完成本 completer；[mineEntryByIndex] 以「JS 落地」与「已接受」两者先到者为准，
+  /// 对话框随即关窗，制卡在 Dart 侧照常跑完（成功/失败 toast 由宿主自己出，与直接点
+  /// 弹窗里的 + 完全一样）。没有确认往返在路上时它为 null，桥 handler 的信号是 no-op。
+  Completer<bool>? _confirmMineAccepted;
+
+  void _markConfirmMineAccepted() {
+    final Completer<bool>? accepted = _confirmMineAccepted;
+    if (accepted != null && !accepted.isCompleted) accepted.complete(true);
+  }
 
   Future<bool> mineEntryByIndex(int idx) async {
     final InAppWebViewController? controller = _controller;
@@ -1099,44 +1122,60 @@ JSON.stringify((function(){
       );
       return false;
     }
+    final Completer<bool> accepted = Completer<bool>();
+    _confirmMineAccepted = accepted;
     try {
-      // 等 popup.js 那头的 promise：它在 mine 按钮的 onclick（查重 → 取音 →
-      // mineEntry 回执）跑完后才 resolve。对话框据此关窗、撤弹窗保护——必须等到
-      // 落地，否则落地前的裸窗里悬停离开自动关栈会把弹窗连制卡草稿一起撤掉。
-      // 超时只保护「通道半死不回」：真超时按没点到回，卡若之后仍落地，用户会看到
-      // 一条「没点到」的提示与一张真卡并存，好过对话框永远锁死。
-      final CallAsyncJavaScriptResult? result = await controller
+      // popup.js 那头的 promise 在 mine 按钮的 onclick（查重 → 取音 → mineEntry
+      // 回执）跑完后才 resolve；三条「没点到」的 return false 是同步的。它与
+      // [_confirmMineAccepted] 赛跑：宿主一接受制卡任务就返回，不等落地。
+      final Future<bool> landed = controller
           .callAsyncJavaScript(
-            functionBody: 'return await (window.fushiPopupMineEntryByIndex'
-                ' ? window.fushiPopupMineEntryByIndex($idx) : false);',
-          )
-          .timeout(_kMineRoundTripTimeout);
-      if (result?.error != null) {
-        ErrorLogService.instance.log(
-          'DictPopupWebview.mineEntryByIndex',
-          'popup.js threw during the confirm round-trip: ${result!.error}',
-          StackTrace.current,
-        );
+        functionBody: 'return await (window.fushiPopupMineEntryByIndex'
+            ' ? window.fushiPopupMineEntryByIndex($idx) : false);',
+      )
+          .then<bool>((CallAsyncJavaScriptResult? result) {
+        if (result?.error != null) {
+          ErrorLogService.instance.log(
+            'DictPopupWebview.mineEntryByIndex',
+            'popup.js threw during the confirm round-trip: ${result!.error}',
+            StackTrace.current,
+          );
+          return false;
+        }
+        final Object? raw = result?.value;
+        // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
+        final bool clicked =
+            raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';
+        if (!clicked) {
+          ErrorLogService.instance.log(
+            'DictPopupWebview.mineEntryByIndex',
+            'popup.js refused to click entry #$idx (entry or mine button gone)',
+            StackTrace.current,
+          );
+        }
+        return clicked;
+      }, onError: (Object e, StackTrace stack) {
+        // 半销毁的 WebView 通道已摘（MissingPluginException）或对话框关窗后弹窗被
+        // 关栈 / 重建让 promise 死在半路：记日志，按「没点到」回——若此时任务已被
+        // 接受，下面的赛跑早已返回 true，这里只剩一条日志。
+        ErrorLogService.instance
+            .log('DictPopupWebview.mineEntryByIndex', e, stack);
         return false;
-      }
-      final Object? raw = result?.value;
-      // WebView 桥按平台可能回 bool / 'true' / 1，统一折成一个判据。
-      final bool clicked =
-          raw == true || raw == 1 || raw.toString().toLowerCase() == 'true';
-      if (!clicked) {
-        ErrorLogService.instance.log(
-          'DictPopupWebview.mineEntryByIndex',
-          'popup.js refused to click entry #$idx (entry or mine button gone)',
-          StackTrace.current,
-        );
-      }
-      return clicked;
-    } catch (e, stack) {
-      // 与 currentScrollTop 同理：半销毁的 WebView 通道已摘，evaluateJavascript 抛
-      // MissingPluginException。吞掉记日志，按「没点到」回。
-      ErrorLogService.instance
-          .log('DictPopupWebview.mineEntryByIndex', e, stack);
+      });
+      return await Future.any<bool>(<Future<bool>>[landed, accepted.future])
+          .timeout(_kMineRoundTripTimeout);
+    } on TimeoutException catch (e, stack) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.mineEntryByIndex',
+        'confirm round-trip neither accepted nor settled within '
+            '${_kMineRoundTripTimeout.inSeconds}s (popup bridge unresponsive): $e',
+        stack,
+      );
       return false;
+    } finally {
+      if (identical(_confirmMineAccepted, accepted)) {
+        _confirmMineAccepted = null;
+      }
     }
   }
 
@@ -2156,8 +2195,13 @@ JSON.stringify((function(){
                 // （->repo.mineEntry 读缓存）之前完成。空/无媒体时内部直接返回。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                final MinePopupResult result =
-                    await widget.onMineEntry!(fields);
+                // BUG-2634：宿主的 onMineEntry 在首个 await 之前就消费了草稿 / 制卡
+                // 上下文（Dart async 函数同步执行到首个 await），任务至此已被接受——
+                // 「确认制卡」往返据此返回，不等 ffmpeg / Anki 落地。
+                final Future<MinePopupResult> pending =
+                    widget.onMineEntry!(fields);
+                _markConfirmMineAccepted();
+                final MinePopupResult result = await pending;
                 // TODO-270 D：回传结构化结果（ankiConnect + noteId）给 popup.js，
                 // 让它把刚制的这张标记为「最新可改」第三态。
                 return result.toJson();
@@ -2190,6 +2234,9 @@ JSON.stringify((function(){
                     fields['dictionaryMedia'] ?? '');
                 final MinePopupResult result =
                     await widget.onMinedCardAction!(fields);
+                // BUG-2634：已有卡的处置单（覆写 / 新增重复 / 取消）由宿主对话框收
+                // 尾，用户选完这一刻就是「任务已接受」，确认往返不必再等 popup.js 收尾。
+                _markConfirmMineAccepted();
                 return result.toJson();
               }
             } catch (e, stack) {
@@ -2254,8 +2301,12 @@ JSON.stringify((function(){
                 // 与制卡同链路：先落盘词典媒体字节，再覆盖卡片（repo 从缓存读外字）。
                 await writeDictionaryMediaCache(
                     fields['dictionaryMedia'] ?? '');
-                final MinePopupResult result =
-                    await widget.onUpdateEntry!(noteId, fields);
+                // BUG-2634：与 mineEntry 同一条接受纪律（覆写路径同样在首个 await
+                // 之前读走草稿）。
+                final Future<MinePopupResult> pending =
+                    widget.onUpdateEntry!(noteId, fields);
+                _markConfirmMineAccepted();
+                final MinePopupResult result = await pending;
                 return result.toJson();
               }
             } catch (e, stack) {
