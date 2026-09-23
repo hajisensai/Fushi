@@ -203,6 +203,95 @@ void main() {
     const OcrRect boxA = OcrRect(left: 0, top: 0, right: 100, bottom: 100);
     const OcrRect boxB = OcrRect(left: 5, top: 5, right: 105, bottom: 105);
 
+    test('目录整段保留，完全包含的低分行不再重复识别', () {
+      const RawDetection paragraph = RawDetection(
+        rect: OcrRect(left: 585, top: 766, right: 1149, bottom: 1166),
+        score: 0.67,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 601, top: 863, right: 1022, bottom: 911),
+        score: 0.33,
+        classId: kDetClassTextBubble,
+      );
+      expect(paragraph.rect.iou(line.rect), lessThan(0.1));
+      expect(applyClassAwareNms(<RawDetection>[line, paragraph]),
+          <RawDetection>[paragraph]);
+      expect(applyClassAwareNms(<RawDetection>[paragraph, line]),
+          <RawDetection>[paragraph]);
+    });
+
+    test('低分大框不能被其中一条高分行代替，避免丢其它行', () {
+      const RawDetection paragraph = RawDetection(
+        rect: OcrRect(left: 0, top: 0, right: 100, bottom: 100),
+        score: 0.6,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 10, top: 10, right: 90, bottom: 20),
+        score: 0.9,
+        classId: kDetClassTextFree,
+      );
+      expect(applyClassAwareNms(<RawDetection>[paragraph, line]),
+          <RawDetection>[line, paragraph]);
+    });
+
+    test('同分嵌套文字不受输入顺序影响，竖排整块保留内部小字', () {
+      const RawDetection paragraph = RawDetection(
+        rect: boxA,
+        score: 0.8,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection line = RawDetection(
+        rect: OcrRect(left: 10, top: 10, right: 90, bottom: 20),
+        score: 0.8,
+        classId: kDetClassTextFree,
+      );
+      expect(applyClassAwareNms(<RawDetection>[paragraph, line]), hasLength(2));
+      expect(applyClassAwareNms(<RawDetection>[line, paragraph]), hasLength(2));
+      expect(
+          applyClassAwareNms(<RawDetection>[
+            const RawDetection(
+              rect: OcrRect(left: 0, top: 0, right: 100, bottom: 300),
+              score: 0.9,
+              classId: kDetClassTextFree,
+            ),
+            line,
+          ]),
+          hasLength(2));
+    });
+
+    test('部分相交的相邻行和嵌套气泡不会按包含规则删除', () {
+      const RawDetection paragraph = RawDetection(
+        rect: boxA,
+        score: 0.9,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection adjacent = RawDetection(
+        rect: OcrRect(left: 90, top: 20, right: 160, bottom: 40),
+        score: 0.7,
+        classId: kDetClassTextFree,
+      );
+      const RawDetection bubble = RawDetection(
+        rect: boxA,
+        score: 0.8,
+        classId: kDetClassBubble,
+      );
+      const RawDetection innerBubble = RawDetection(
+        rect: OcrRect(left: 20, top: 20, right: 40, bottom: 40),
+        score: 0.6,
+        classId: kDetClassBubble,
+      );
+      expect(
+          applyClassAwareNms(<RawDetection>[
+            paragraph,
+            adjacent,
+            bubble,
+            innerBubble,
+          ]),
+          hasLength(4));
+    });
+
     test('同类高重叠只留高分', () {
       final List<RawDetection> kept = applyClassAwareNms(<RawDetection>[
         const RawDetection(rect: boxA, score: 0.8, classId: 1),

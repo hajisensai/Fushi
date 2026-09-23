@@ -34,6 +34,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
+import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 
 /// 合成页上的气泡：位置、尺寸与竖排文本（= ground truth）。
 class _Bubble {
@@ -143,6 +145,11 @@ void main() {
   late Directory pagesDir;
 
   setUpAll(() async {
+    // This test does not launch main(), so install the same native OCR bindings
+    // explicitly before starting the production background isolate.
+    ocrSessionFactoryBuilder = buildOrtOcrFactory;
+    ocrIsolateBootstrap = fushiOcrIsolateBootstrap;
+    ocrIsolateBootstrapArg = ui.RootIsolateToken.instance;
     workDir = await Directory.systemTemp.createTemp('fushi_manga_e2e_');
     pagesDir = Directory(p.join(workDir.path, 'vol1'))..createSync();
     final Uint8List png = await _renderPage();
@@ -174,14 +181,16 @@ void main() {
                 role: m.role,
               ),
           ];
-    final MangaOcrServiceImpl service = MangaOcrServiceImpl(manifest: manifest);
+    final Directory modelsDir = Directory(p.join(workDir.path, 'models'));
+    final MangaOcrServiceImpl service = MangaOcrServiceImpl(
+      manifest: manifest,
+      modelsDirProvider: () async => modelsDir,
+    );
 
     expect(service.isSupportedPlatform, isTrue,
         reason: '${Platform.operatingSystem} 上整卷本地 OCR 闸门应为真');
 
     // ---- 模型就位 -------------------------------------------------------
-    final Directory modelsDir =
-        await MangaOcrServiceImpl.defaultMangaOcrModelsDir();
     const String seed = String.fromEnvironment('OCR_MODEL_SEED');
     if (seed.isNotEmpty && Directory(seed).existsSync()) {
       modelsDir.createSync(recursive: true);

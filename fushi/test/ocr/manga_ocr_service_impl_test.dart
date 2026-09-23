@@ -11,6 +11,8 @@ import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 /// 与真实清单同名同形（detector + encoder/decoder/vocab + PP-OCRv6 det/rec/yml），尺寸缩成几字节，
 /// 让 modelStatus/_resolveModelPaths 的路径逻辑全程走真实分支。
 const List<MangaOcrModelFile> _tinyManifest = <MangaOcrModelFile>[
@@ -142,6 +144,61 @@ class _FakePageSessionRunner implements MangaOcrPageSessionRunner {
 /// 必须是顶层函数（跨 isolate 发送）。
 OcrSessionFactory _throwingFactoryBuilder() =>
     throw StateError('no ORT in unit test');
+
+typedef _SessionCreation = ({
+  String modelPath,
+  List<OcrExecutionProvider> providers,
+  int? threads,
+  void Function(OcrProviderResolution resolution)? onResolved,
+});
+
+class _UnusedSession implements OcrSession {
+  @override
+  Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async =>
+      throw StateError('session creation test must not run inference');
+
+  @override
+  Future<void> close() async {}
+}
+
+/// 记录真正交给后端的配置，并模拟一次有原因的 CPU 回退。
+class _RecordingSessionFactory implements OcrSessionFactory {
+  final OcrSession session = _UnusedSession();
+  final List<_SessionCreation> creations = <_SessionCreation>[];
+  final List<OcrProviderResolution> resolutions = <OcrProviderResolution>[];
+
+  @override
+  Future<OcrSession> createSession(
+    String modelPath, {
+    required List<OcrExecutionProvider> providers,
+    void Function(OcrProviderResolution resolution)? onProviderResolved,
+    int? intraOpNumThreads,
+    Map<String, int>? freeDimensionOverrides,
+  }) async {
+    creations.add((
+      modelPath: modelPath,
+      providers: List<OcrExecutionProvider>.of(providers),
+      threads: intraOpNumThreads,
+      onResolved: onProviderResolved,
+    ));
+    final OcrProviderResolution resolution = OcrProviderResolution(
+      requested: providers,
+      effective: OcrExecutionProvider.cpu,
+      fallbackReason:
+          providers.first == OcrExecutionProvider.cpu ? null : 'test fallback',
+    );
+    resolutions.add(resolution);
+    onProviderResolved?.call(resolution);
+    return session;
+  }
+
+  @override
+  Future<Set<OcrExecutionProvider>> availableAcceleratedProviders() async =>
+      const <OcrExecutionProvider>{};
+
+  @override
+  Future<int?> deviceMemoryBudgetBytes() async => null;
+}
 
 void main() {
   late Directory modelsDir;
@@ -839,6 +896,102 @@ void main() {
     // ORT，单测够不到。现在决策与说明装进同一个 [OcrAccelerationPlan]，isolate
     // 拿了 provider 列表就必然带着说明，丢它只能改这里被测到的代码。
 
+    test('Windows 单核不超配，多核会话最多用两个线程', () async {
+      final _RecordingSessionFactory factory = _RecordingSessionFactory();
+      for (final MapEntry<int, int> limit in <int, int>{
+        0: 1,
+        1: 1,
+        2: 2,
+        64: 2,
+      }.entries) {
+        final OcrAccelerationPlan plan = planOcrAcceleration(
+          platform: OcrPlatform.windows,
+          availableProviders: const <OcrExecutionProvider>{},
+          processorCount: limit.key,
+        );
+        await plan.createSession(
+          factory,
+          'detector-${limit.key}.onnx',
+          providers: plan.detectionProviders,
+        );
+        expect(factory.creations.last.threads, limit.value,
+            reason: '${limit.key} 个处理器时必须把线程限制传到后端');
+        expect(factory.creations.last.onResolved, isNull);
+      }
+      expect(factory.creations, hasLength(4));
+    });
+
+    test('其它平台保留后端默认线程数，不套用 Windows 限制', () async {
+      final _RecordingSessionFactory factory = _RecordingSessionFactory();
+      for (final OcrPlatform platform in <OcrPlatform>[
+        OcrPlatform.macos,
+        OcrPlatform.ios,
+        OcrPlatform.linux,
+        OcrPlatform.android,
+      ]) {
+        for (final int processors in <int>[1, 64]) {
+          final OcrAccelerationPlan plan = planOcrAcceleration(
+            platform: platform,
+            availableProviders: const <OcrExecutionProvider>{},
+            processorCount: processors,
+          );
+          await plan.createSession(
+            factory,
+            'encoder-${platform.name}-$processors.onnx',
+            providers: plan.recognitionProviders,
+          );
+          expect(factory.creations.last.threads, isNull,
+              reason: '$platform / $processors 核应使用后端默认线程策略');
+        }
+      }
+      expect(factory.creations, hasLength(8));
+    });
+
+    test('建会话完整传递路径、provider 顺序和降级回调，返回原会话', () async {
+      const OcrAccelerationPlan plan = OcrAccelerationPlan(
+        detectionProviders: <OcrExecutionProvider>[
+          OcrExecutionProvider.directml,
+          OcrExecutionProvider.cpu,
+        ],
+        recognitionProviders: <OcrExecutionProvider>[
+          OcrExecutionProvider.cuda,
+          OcrExecutionProvider.cpu,
+        ],
+        degradeReasons: <String>[],
+        intraOpNumThreads: 2,
+      );
+      final _RecordingSessionFactory factory = _RecordingSessionFactory();
+      final List<OcrProviderResolution> observed = <OcrProviderResolution>[];
+      void onResolved(OcrProviderResolution resolution) {
+        observed.add(resolution);
+      }
+
+      for (final MapEntry<String, List<OcrExecutionProvider>> model
+          in <String, List<OcrExecutionProvider>>{
+        'models/detector.onnx': plan.detectionProviders,
+        'models/encoder.onnx': plan.recognitionProviders,
+      }.entries) {
+        final OcrSession result = await plan.createSession(
+          factory,
+          model.key,
+          providers: model.value,
+          onProviderResolved: onResolved,
+        );
+        expect(result, same(factory.session));
+        final _SessionCreation request = factory.creations.last;
+        expect(request.modelPath, model.key);
+        expect(request.providers, model.value);
+        expect(request.threads, 2);
+        expect(request.onResolved, same(onResolved));
+        expect(observed.last, same(factory.resolutions.last));
+        expect(observed.last.requested, model.value);
+        expect(observed.last.effective, OcrExecutionProvider.cpu);
+        expect(observed.last.fallbackReason, 'test fallback');
+      }
+      expect(factory.creations, hasLength(2));
+      expect(observed, hasLength(2), reason: '每次建会话的降级都必须可观测');
+    });
+
     test('五端偏好表全空 ⇒ 一条降级说明都不产生（不许弹用户消不掉的假告警）', () {
       // 这条同时是「偏好表被重新填非空」的绊线。Windows 曾经写 [cuda]，而我们出
       // 的包是 DirectML 版 NuGet，`onnxruntime_providers_cuda.dll` 根本不随包
@@ -938,20 +1091,34 @@ void main() {
       // `_openIsolateOcrEngine` 建会话，而它不许自己手搓
       // `MangaOcrAcceleration(...)`，只能走 [OcrAccelerationPlan.toAcceleration]，
       // 而那个出口是上面几条测出来的。
-      final String source =
-          File('../packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart').readAsStringSync();
-      String topLevelBody(String signature) {
-        final int start = source.indexOf(signature);
-        expect(start, isNonNegative, reason: '找不到 $signature；改了签名要同步改本守卫');
-        // 顶层函数的收尾大括号是唯一顶格的 `}`（Dart 里嵌套块一律缩进）。
-        final int end = source.indexOf('\n}\n', start);
-        expect(end, isNonNegative, reason: '找不到 $signature 的收尾大括号');
-        return source.substring(start, end);
-      }
+      final String source = maskComments(
+        File('../packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart')
+            .readAsStringSync(),
+      );
+      String topLevelBody(String signature) => methodBody(source, signature);
 
       const String helperSignature = 'Future<void> _openIsolateOcrEngine(';
+      final String helper = topLevelBody(helperSignature);
+      for (final String modelPath in <String>[
+        'detectorPath',
+        'encoderPath',
+        'decoderPath',
+        'ppDetPath',
+        'ppRecPath',
+      ]) {
+        expect(
+          RegExp('plan\\.createSession\\(\\s*factory,\\s*modelPaths\\.$modelPath,')
+              .allMatches(helper),
+          hasLength(1),
+          reason: '$modelPath 必须使用统一线程策略创建会话',
+        );
+      }
+      expect(helper, isNot(contains('factory.createSession(')),
+          reason: '任何直连 factory 都会绕过 Windows 线程限制');
+      expect(helper, contains('processorCount: Platform.numberOfProcessors'),
+          reason: '单核设备的策略必须使用真实处理器数');
       expect(
-        topLevelBody(helperSignature).contains('plan.toAcceleration('),
+        helper.contains('plan.toAcceleration('),
         isTrue,
         reason: 'isolate 不再经 plan.toAcceleration 上报加速状态 —— '
             '请求前的降级说明（探测失败等）会被静默丢掉，而这条路径没有单测能抓。',

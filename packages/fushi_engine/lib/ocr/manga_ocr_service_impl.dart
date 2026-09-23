@@ -220,7 +220,25 @@ class OcrAccelerationPlan {
     required this.detectionProviders,
     required this.recognitionProviders,
     required this.degradeReasons,
+    this.intraOpNumThreads,
   });
+
+  /// Windows runs five serial CPU sessions. Giving every session a full-core
+  /// pool oversubscribes the machine while the other sessions spin idle.
+  final int? intraOpNumThreads;
+
+  Future<OcrSession> createSession(
+    OcrSessionFactory factory,
+    String modelPath, {
+    required List<OcrExecutionProvider> providers,
+    void Function(OcrProviderResolution resolution)? onProviderResolved,
+  }) =>
+      factory.createSession(
+        modelPath,
+        providers: providers,
+        onProviderResolved: onProviderResolved,
+        intraOpNumThreads: intraOpNumThreads,
+      );
 
   /// 检测会话要提交给 ORT 的 provider 列表（末位永远是 CPU）。
   final List<OcrExecutionProvider> detectionProviders;
@@ -267,6 +285,7 @@ OcrAccelerationPlan planOcrAcceleration({
   required OcrPlatform platform,
   required Set<OcrExecutionProvider> availableProviders,
   Object? probeError,
+  int processorCount = 2,
 }) {
   final List<String> reasons = <String>[];
   if (probeError != null) {
@@ -299,6 +318,8 @@ OcrAccelerationPlan planOcrAcceleration({
     detectionProviders: chosen[OcrModelKind.detection]!,
     recognitionProviders: chosen[OcrModelKind.recognition]!,
     degradeReasons: List<String>.unmodifiable(reasons),
+    intraOpNumThreads:
+        platform == OcrPlatform.windows ? processorCount.clamp(1, 2) : null,
   );
 }
 
@@ -395,6 +416,7 @@ Future<void> _openIsolateOcrEngine(
     platform: platform,
     availableProviders: availableProviders,
     probeError: probeError,
+    processorCount: Platform.numberOfProcessors,
   );
   final List<OcrExecutionProvider> detectionProviders = plan.detectionProviders;
   final List<OcrExecutionProvider> recognitionProviders =
@@ -411,7 +433,8 @@ Future<void> _openIsolateOcrEngine(
         '${resolution.effective.name} (${resolution.fallbackReason})');
   }
 
-  engine.detector = TextDetector(await factory.createSession(
+  engine.detector = TextDetector(await plan.createSession(
+    factory,
     modelPaths.detectorPath,
     providers: detectionProviders,
     onProviderResolved: (OcrProviderResolution resolution) {
@@ -419,7 +442,8 @@ Future<void> _openIsolateOcrEngine(
       record('detector', resolution);
     },
   ));
-  final OcrSession encoder = engine.encoder = await factory.createSession(
+  final OcrSession encoder = engine.encoder = await plan.createSession(
+    factory,
     modelPaths.encoderPath,
     providers: recognitionProviders,
     onProviderResolved: (OcrProviderResolution resolution) {
@@ -427,7 +451,8 @@ Future<void> _openIsolateOcrEngine(
       record('recognition encoder', resolution);
     },
   );
-  final OcrSession decoder = engine.decoder = await factory.createSession(
+  final OcrSession decoder = engine.decoder = await plan.createSession(
+    factory,
     modelPaths.decoderPath,
     providers: recognitionProviders,
     onProviderResolved: (OcrProviderResolution resolution) {
@@ -456,7 +481,8 @@ Future<void> _openIsolateOcrEngine(
   // 横排行路径：PP-OCRv6 small det/rec 与 manga-ocr 同一组 provider（都是识别侧、
   // 都是纯 CPU 档）；建会话时的降级同样经 record 留痕。
   final PpOcrLineDetector lineDetector =
-      engine.lineDetector = PpOcrLineDetector(await factory.createSession(
+      engine.lineDetector = PpOcrLineDetector(await plan.createSession(
+    factory,
     modelPaths.ppDetPath,
     providers: recognitionProviders,
     onProviderResolved: (OcrProviderResolution resolution) =>
@@ -464,7 +490,8 @@ Future<void> _openIsolateOcrEngine(
   ));
   final PpOcrLineRecognizer lineRecognizer =
       engine.lineRecognizer = PpOcrLineRecognizer(
-    await factory.createSession(
+    await plan.createSession(
+      factory,
       modelPaths.ppRecPath,
       providers: recognitionProviders,
       onProviderResolved: (OcrProviderResolution resolution) =>
