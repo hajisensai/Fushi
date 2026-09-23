@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "識別本卷",
   "manga_reader_ocr_queued": "排隊中",
-  "manga_reader_ocr_unavailable_short": "OCR 不可用"
+  "manga_reader_ocr_unavailable_short": "沒有可用的 OCR 引擎 · 請在 OCR 設定中下載模型或更換引擎",
+  "manga_reader_ocr_rerun": "重新識別本卷…"
 }

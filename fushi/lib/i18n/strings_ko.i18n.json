@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "이 권 인식",
   "manga_reader_ocr_queued": "대기 중",
-  "manga_reader_ocr_unavailable_short": "OCR 사용 불가"
+  "manga_reader_ocr_unavailable_short": "사용 가능한 OCR 엔진 없음 · OCR 설정에서 모델을 다운로드하거나 엔진을 바꾸세요",
+  "manga_reader_ocr_rerun": "이 권 OCR 다시 실행…"
 }

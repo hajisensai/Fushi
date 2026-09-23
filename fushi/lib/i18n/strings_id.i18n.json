@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Kenali volume ini",
   "manga_reader_ocr_queued": "Dalam antrean",
-  "manga_reader_ocr_unavailable_short": "OCR tidak tersedia"
+  "manga_reader_ocr_unavailable_short": "Tidak ada mesin OCR · unduh model atau ganti mesin di pengaturan OCR",
+  "manga_reader_ocr_rerun": "Jalankan ulang OCR untuk volume ini…"
 }

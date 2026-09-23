@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Nhận dạng tập này",
   "manga_reader_ocr_queued": "Đang chờ",
-  "manga_reader_ocr_unavailable_short": "OCR không khả dụng"
+  "manga_reader_ocr_unavailable_short": "Không có công cụ OCR · hãy tải mô hình hoặc đổi công cụ trong cài đặt OCR",
+  "manga_reader_ocr_rerun": "Chạy lại OCR cho tập này…"
 }

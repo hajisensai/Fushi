@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
@@ -3329,6 +3330,36 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       !_wholeVolumeOcrRunning &&
       !_volumeOcrQueued;
 
+  /// 顶栏「重新识别本卷」：本卷已识别过、也没有任务在跑 / 排队时出现。自动路径对
+  /// 已识别的卷永不重排（不重送 Lens），换引擎重跑 / 识别质量不满意只能从这里来。
+  bool get _showRerunVolumeOcrAction =>
+      _volumeOcrSettled && !_wholeVolumeOcrRunning && !_volumeOcrQueued;
+
+  /// 打开整卷 OCR 向导（可选引擎，含外部 mokuro / 已配对主机），整卷重跑本卷 / 本章
+  /// 并把任务交给注册表；完成后由既有的观察链（[_syncVolumeOcrJob]）热替换正文。
+  Future<void> _rerunVolumeOcr() async {
+    final EpubBookRow? row = _bookRow;
+    if (!mounted || row == null || _payload == null || _chapterNotDownloaded) {
+      return;
+    }
+    final String directory = row.extractDir;
+    final MangaOcrBackgroundJob? job = await MangaModule.openBookOcr(
+      context: context,
+      db: appModel.database,
+      book: row,
+      startPage: _currentPage,
+      onlyMissing: false,
+    );
+    if (job == null || !mounted) return;
+    unawaited(
+      _ocrRegistry.enqueue(
+        job: job,
+        mangaJsonPath: p.join(directory, row.epubPath),
+      ),
+    );
+    _syncVolumeOcrJob();
+  }
+
   /// 注册表任务集合变化（起了 / 结束了 / 入队了 / 轮到了）：刷新「排队中」胶囊，
   /// 并在本卷的任务开跑时接上观察——排在同书上一章之后的任务、作品页或下载钩子
   /// 排的任务都从这里接回，不依赖是谁排的。
@@ -4798,8 +4829,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                           MediaQuery.paddingOf(context).top +
                           kMangaChromeBarHeight +
                           8,
+                      left: 12,
                       right: 12,
-                      child: badge,
+                      child: Align(
+                        alignment: Alignment.topRight,
+                        child: badge,
+                      ),
                     ),
                   // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
                   // WebView 持焦后会吞掉翻页键。
@@ -5136,6 +5171,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             label: t.manga_reader_ocr_volume,
             onPressed: () =>
                 unawaited(_maybeStartVolumeOcr(userInitiated: true)),
+          ),
+        if (_showRerunVolumeOcrAction)
+          MangaChromeAction(
+            key: const ValueKey<String>('manga_reader_ocr_rerun_button'),
+            icon: Icons.document_scanner_outlined,
+            label: t.manga_reader_ocr_rerun,
+            onPressed: () => unawaited(_rerunVolumeOcr()),
           ),
         // 布局偏好（自动/单页/双页）循环切换：只对 spread 模式有意义，webtoon 恒单页。
         if (_mode == MangaReadingMode.spread)

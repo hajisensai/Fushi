@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "已配对的安卓设备可从本机游戏库启动游戏并直接串流",
   "manga_reader_ocr_volume": "识别本卷",
   "manga_reader_ocr_queued": "排队中",
-  "manga_reader_ocr_unavailable_short": "OCR 不可用"
+  "manga_reader_ocr_unavailable_short": "没有可用的 OCR 引擎 · 请在 OCR 设置中下载模型或换引擎",
+  "manga_reader_ocr_rerun": "重新识别本卷…"
 }
