@@ -339,13 +339,16 @@ class MihonManager extends ChangeNotifier {
         // BUG-2641：入口地址可能被解析到另一个身份（legacy `index.min.json` 跟到同目录
         // `repo.json`，默认视频仓库 yuzono 就是这样）。过去这里按解析后的地址落库、
         // 却不删种子行，于是主键不同的两行指向同一仓库，之后每次刷新各拉一遍，
-        // 扩展列表整份翻倍。解析后的身份已有自己的行：这行只是别名，删掉即可，
-        // 目录由那一行自己拉；否则把这一行原子地迁到解析后的地址（同 [editStoreUrl]）。
+        // 扩展列表整份翻倍。解析后的身份已有自己的**启用**行：这行只是别名，删掉
+        // 即可，目录由那一行自己拉；否则把这一行原子地迁到解析后的地址（同
+        // [editStoreUrl]）——包括解析后那行被停用的情况：用户在翻倍期间很可能停用了
+        // 其中一行来去重，若停的恰是 repo.json 那行，只删别名会让整个默认仓库从列表
+        // 消失；迁移则用本行（启用中）的启用位与排序覆盖它。
         final bool aliased = store.indexUrl != row.indexUrl;
         if (aliased &&
             rows.any(
               (MangaExtensionStoreRow other) =>
-                  other.indexUrl == store.indexUrl,
+                  other.indexUrl == store.indexUrl && other.enabled,
             )) {
           await database.deleteMangaExtensionStore(row.indexUrl);
           continue;

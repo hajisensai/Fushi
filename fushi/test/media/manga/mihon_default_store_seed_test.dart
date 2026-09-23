@@ -189,6 +189,41 @@ void main() {
       );
       expect(manager.available, hasLength(1));
     });
+
+    test('翻倍期间用户停用了 repo.json 那行：收敛后仓库仍在且启用，不会整个消失', () async {
+      // 用户看到每个扩展两条，停用其中一行来去重——停的恰是解析后的那行。
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: kMihonDefaultAnimeStoreIndexUrl,
+          mediaKind: const Value('anime'),
+          name: kMihonDefaultAnimeStoreName,
+          format: MihonStoreFormat.legacy.name,
+          sortOrder: const Value(0),
+        ),
+      );
+      await database.upsertMangaExtensionStore(
+        MangaExtensionStoresCompanion.insert(
+          indexUrl: _kResolvedAnimeRepo,
+          mediaKind: const Value('anime'),
+          name: kMihonDefaultAnimeStoreName,
+          format: MihonStoreFormat.legacy.name,
+          enabled: const Value(false),
+          sortOrder: const Value(1),
+        ),
+      );
+      await database.setPrefTyped<bool>(kMihonDefaultAnimeStoreSeededPref, true);
+      final MihonManager manager = buildAnime(_HoppingStoreClient());
+      addTearDown(manager.dispose);
+
+      await manager.initialise();
+
+      expect(
+        manager.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
+        <String>[_kResolvedAnimeRepo],
+      );
+      expect(manager.stores.single.enabled, isTrue);
+      expect(manager.available, hasLength(1), reason: '仓库仍在、扩展仍可见');
+    });
   });
 
   // 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义。挂成 manager
