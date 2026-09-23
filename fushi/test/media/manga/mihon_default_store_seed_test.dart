@@ -12,10 +12,12 @@
 //    都写不出来，扩展页永远空着，而「下次启动重试」永远也重试不成。
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -126,6 +128,69 @@ void main() {
     );
   });
 
+  // BUG-2641：默认视频仓库的入口是 legacy `index.min.json`，解析器会跟到同目录
+  // `repo.json` 并以后者为身份。旧 _refreshStores 按解析后的地址落库却不删种子行，
+  // 于是两行指向同一仓库，之后每次刷新各拉一遍——扩展页每个扩展出现两次（512 = 2×256）。
+  group('BUG-2641 入口被解析到另一地址时仓库行收敛为一行', () {
+    MihonManager buildAnime(MihonExtensionStoreClient client) => MihonManager(
+          database: database,
+          rootDirectory: root,
+          runtime: _SeedRuntime(),
+          storeClient: client,
+          kind: MihonMediaKind.anime,
+          seedDefaultStore: true,
+        );
+
+    test('首启 + 再刷新：只剩解析后的一行，扩展不重复', () async {
+      final _HoppingStoreClient client = _HoppingStoreClient();
+      final MihonManager manager = buildAnime(client);
+      addTearDown(manager.dispose);
+
+      await manager.initialise();
+      await manager.refreshStores();
+      await manager.refreshStores();
+
+      expect(
+        manager.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
+        <String>[_kResolvedAnimeRepo],
+      );
+      expect(manager.stores.single.mediaKind, 'anime');
+      expect(
+        manager.available.map((MihonAvailableExtension e) => e.packageName),
+        <String>['org.example.anidb'],
+      );
+    });
+
+    test('已被旧版本写出两行的库：刷新一次即删掉别名行、列表不再翻倍', () async {
+      int order = 0;
+      for (final String url in <String>[
+        kMihonDefaultAnimeStoreIndexUrl,
+        _kResolvedAnimeRepo,
+      ]) {
+        await database.upsertMangaExtensionStore(
+          MangaExtensionStoresCompanion.insert(
+            indexUrl: url,
+            mediaKind: const Value('anime'),
+            name: kMihonDefaultAnimeStoreName,
+            format: MihonStoreFormat.legacy.name,
+            sortOrder: Value(order++),
+          ),
+        );
+      }
+      await database.setPrefTyped<bool>(kMihonDefaultAnimeStoreSeededPref, true);
+      final MihonManager manager = buildAnime(_HoppingStoreClient());
+      addTearDown(manager.dispose);
+
+      await manager.initialise();
+
+      expect(
+        manager.stores.map((MangaExtensionStoreRow row) => row.indexUrl),
+        <String>[_kResolvedAnimeRepo],
+      );
+      expect(manager.available, hasLength(1));
+    });
+  });
+
   // 装默认仓库是**应用启动策略**，不是「构造一个 manager」的语义。挂成 manager
   // 的默认行为，等于让每个构造 manager 的单测都去拉 keiyoushi 的真实索引
   // （1900+ 条）——本轮就是这样把 `mihon_manager_install_test` 那条 cold-start
@@ -201,6 +266,58 @@ class _FakeStoreClient extends Fake implements MihonExtensionStoreClient {
     bool allowInsecure = false,
   }) async =>
       store.embeddedExtensions;
+
+  @override
+  void close() {}
+}
+
+const String _kResolvedAnimeRepo =
+    'https://raw.githubusercontent.com/yuzono/anime-repo/repo/repo.json';
+
+/// 模拟 legacy 仓库：请求 `index.min.json` 时解析器跟到 `repo.json` 并以它为身份。
+class _HoppingStoreClient extends Fake implements MihonExtensionStoreClient {
+  @override
+  Future<MihonStoreFetchResult> fetchStore(
+    String rawUrl, {
+    String? etag,
+    String? lastModified,
+    bool allowInsecure = false,
+  }) async =>
+      MihonStoreFetchResult(
+        store: MihonStore(
+          indexUrl: _kResolvedAnimeRepo,
+          name: kMihonDefaultAnimeStoreName,
+          badgeLabel: '',
+          signingKey: 'aabb',
+          contact: const <String, String?>{},
+          format: MihonStoreFormat.legacy,
+          extensionListUrl: null,
+          embeddedExtensions: const <MihonAvailableExtension>[],
+        ),
+        etag: null,
+        lastModified: null,
+      );
+
+  @override
+  Future<List<MihonAvailableExtension>> fetchExtensions(
+    MihonStore store, {
+    bool allowInsecure = false,
+  }) async =>
+      <MihonAvailableExtension>[
+        MihonAvailableExtension(
+          storeUrl: store.indexUrl,
+          name: 'AniDB',
+          packageName: 'org.example.anidb',
+          apkUrl: '${store.indexUrl}/anidb.apk',
+          iconUrl: '',
+          libVersion: '14',
+          extensionVersionCode: 1,
+          versionName: '14.5',
+          language: 'en',
+          contentWarning: 1,
+          sources: const <MihonAvailableSource>[],
+        ),
+      ];
 
   @override
   void close() {}
