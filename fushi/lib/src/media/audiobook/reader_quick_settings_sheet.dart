@@ -17,6 +17,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/reader/reader_audiobook_panel.dart';
+import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSectionLabel;
 import 'package:fushi/src/reader/ttu_toc_flatten.dart'
@@ -519,6 +520,7 @@ class _ReaderQuickSettingsSheetState extends State<ReaderQuickSettingsSheet>
     }
     return ReaderSideSheet(
       title: t.reader_settings_section,
+      headerActions: const <Widget>[ReaderSettingsSideButton()],
       onClose: _sideSheetClose(context),
       child: Column(
         mainAxisSize: MainAxisSize.min,

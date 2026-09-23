@@ -562,14 +562,12 @@ String mangaPageDivHtml(
       'style="position:relative;container-type:inline-size;'
       '$sizingCss'
       'aspect-ratio:${_num(w)}/${_num(h)};">'
+      '<div class="manga-source" style="position:absolute;inset:0;container-type:inline-size;">'
       '<img src="${_escapeAttr(imgSrc)}" loading="$loading" '
       'fetchpriority="$fetchPriority" decoding="async" '
-      'style="pointer-events:none;object-fit:${cropBorders
-          ? 'cover'
-          : scaleType == MangaScaleType.stretch
-          ? 'fill'
-          : 'contain'};">'
+      'style="pointer-events:none;object-fit:${scaleType == MangaScaleType.stretch ? 'fill' : 'contain'};">'
       '${mangaOcrBoxesHtml(page)}'
+      '</div>'
       '</div>';
 }
 
@@ -634,13 +632,39 @@ String mangaWindowDocument(
   bool panWidePages = true,
   int doubleTapAnimationMs = 300,
   String zoomStartPosition = 'automatic',
+  MangaReaderPreferences? readerPreferences,
+  String? readingModeLabel,
 }) {
+  final MangaReaderPreferences preferences =
+      readerPreferences ?? const MangaReaderPreferences();
+  if (readerPreferences != null) {
+    scaleType = preferences.scaleType;
+    longStripSidePadding = preferences.longStripSidePadding;
+    disableZoomOut = preferences.disableZoomOut;
+    animateDoubleTap = preferences.animateDoubleTap;
+    invertHorizontal = preferences.invertHorizontal;
+    invertVertical = preferences.invertVertical;
+    invertBoth = preferences.invertBoth;
+    cropBorders = preferences.cropBorders;
+    splitWidePages = preferences.splitWidePages;
+    rotateWidePages = preferences.rotateWidePages;
+    autoZoomWidePages = preferences.autoZoomWide;
+    panWidePages = preferences.panWide;
+    zoomStartPosition = preferences.zoomStartPosition;
+    showOcrBoxes = preferences.showOcrBoxes;
+    if (!preferences.animateTransitions || preferences.einkMode) {
+      pageAnimation = MangaPageAnimation.none;
+    }
+  }
+  if (preferences.einkMode) backgroundCss = '#fff';
   // Vertical paging shares the scroll bridge with long-strip mode, but each
   // page snaps to a viewport. Keeping this distinction here lets old callers
   // that only know spread/webtoon continue to work.
   final bool isVerticalPaged = mode == MangaReadingMode.pagedVertical;
   final bool isWebtoon = mode.isWebtoon || isVerticalPaged;
-  final bool hasGaps = mode.hasGaps;
+  final bool hasGaps = readerPreferences == null
+      ? mode.hasGaps
+      : preferences.showPageGaps;
   // spread 容器本身始终按 LTR 的几何顺序排列，保证 offsetLeft 是稳定的
   // 0/100vw/200vw；RTL 只施加到每个 spread 内部，让双页视觉页序反转。
   // 若把 direction:rtl 放在根 strip 上，Chromium 会把 wrapper 的 RTL 起点偏移
@@ -737,11 +761,10 @@ String mangaWindowDocument(
   // 为 0。
   final String rootSizing = isWebtoon
       ? '#manga-root{display:flex;flex-direction:column;direction:ltr;'
-            'width:100vw;align-items:flex-start;}'
-            '.manga-page{width:100vw;padding-left:${_num(longStripSidePadding.toDouble())}%;'
-            'padding-right:${_num(longStripSidePadding.toDouble())}%;'
+            'width:100vw;align-items:center;}'
+            '.manga-page{width:${100 - longStripSidePadding.clamp(0, 24) * 2}vw;'
             'box-sizing:border-box;${hasGaps ? 'margin-bottom:12px;' : ''}'
-            '${isVerticalPaged ? 'scroll-snap-align:start;min-height:100vh;' : ''}}'
+            '${isVerticalPaged ? 'scroll-snap-align:start;' : ''}}'
             '${isVerticalPaged ? '#manga-root{scroll-snap-type:y mandatory;}' : ''}'
       : '#manga-viewport{overflow:hidden;width:100vw;height:100vh;}'
             '#manga-root{display:flex;flex-direction:row;direction:ltr;'
@@ -786,9 +809,20 @@ String mangaWindowDocument(
       // _hintWillChange 在手势/动画期间临时挂、静止后摘除。
       '#manga-canvas{transform-origin:0 0;}'
       '.manga-page{position:relative;flex:0 0 auto;'
-      'container-type:inline-size;}'
+      'container-type:inline-size;overflow:hidden;}'
       '.manga-page img{display:block;width:100%;height:100%;'
       'object-fit:contain;-webkit-user-drag:none;user-drag:none;}'
+      '.manga-source img{filter:${mangaImageFilterCss(preferences)};}'
+      '.manga-source::after{content:"";position:absolute;inset:0;pointer-events:none;'
+      'background:${_escapeAttr(preferences.colorFilterColor)};'
+      'opacity:${preferences.customColorFilter ? preferences.colorFilterOpacity.clamp(0, 100) / 100 : 0};}'
+      '#manga-flash{position:fixed;inset:0;background:#fff;pointer-events:none;z-index:999;opacity:0;}'
+      '#manga-mode-hint{position:fixed;left:16px;top:16px;padding:8px 12px;'
+      'border-radius:8px;background:#fff;color:#111;z-index:8;pointer-events:none;font:14px sans-serif;}'
+      '#manga-navigation-hint{position:fixed;inset:0;pointer-events:none;z-index:7;}'
+      '#manga-navigation-hint span{position:absolute;box-sizing:border-box;border:1px solid #4673aa;'
+      'background:rgba(80,140,220,.15);display:flex;align-items:center;justify-content:center;'
+      'color:#4673aa;font:32px sans-serif;}'
       '.ocr-box{margin:0;padding:0;pointer-events:auto;}'
       // BUG-2481「显示识别范围」：body 挂 ocr-boxes-visible 时把每个 OCR 块的框
       // 画出来（外描边 + 淡底），字符级命中区用虚线，一眼能看出识别漏了哪块、
@@ -810,13 +844,23 @@ String mangaWindowDocument(
       '</style></head>'
       '<body${showOcrBoxes ? ' class="ocr-boxes-visible"' : ''}>'
       '$body'
+      '<div id="manga-flash"></div>'
+      '${preferences.showReadingMode && readingModeLabel != null ? '<div id="manga-mode-hint">${_escapeHtml(readingModeLabel)}</div>' : ''}'
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged)}'
       '</script>'
       '</body></html>';
 }
+
+/// CSS filters affect the bitmap only; OCR hit boxes retain their source geometry.
+String mangaImageFilterCss(MangaReaderPreferences preferences) =>
+    'invert(${preferences.invertColors ? 1 : 0}) '
+    'grayscale(${preferences.grayscale || preferences.einkMode ? 1 : 0}) '
+    'brightness(${(100 + preferences.brightness.clamp(-100, 100)) / 100}) '
+    'contrast(${preferences.contrast.clamp(0, 200) / 100}) '
+    'saturate(${preferences.saturation.clamp(0, 200) / 100})';
 
 /// 内联手势机 + 翻页/滚动几何。一个 pointerdown/pointerup 对（消歧 tap vs swipe）+
 /// webtoon 滚动监听 + spread 鼠标滚轮翻页（BUG-051）。tap 命中 `.ocr-box` → 选词
@@ -869,6 +913,11 @@ String _mangaGestureJs({
   bool autoZoomWidePages = false,
   bool panWidePages = true,
   String zoomStartPosition = 'automatic',
+  MangaReaderPreferences preferences = const MangaReaderPreferences(),
+  bool cropBorders = false,
+  MangaScaleType scaleType = MangaScaleType.fitScreen,
+  int longStripSidePadding = 0,
+  bool isVerticalPaged = false,
 }) {
   // 点击翻页热区表 → JS 字面量 `[l,t,w,h,forward]` 的逗号串（外层中括号在模板里
   // 补）。几何与阅读方向镜像都在 Dart 侧算完（[mangaTapZones] 有单测），注入的脚本
@@ -901,6 +950,7 @@ String _mangaGestureJs({
   var AUTO_ZOOM_WIDE = $autoZoomWidePages;
   var PAN_WIDE = $panWidePages;
   var PAGE_HALF = 0;
+  var SPLIT_ACTIVE = false;
   // 纵向位置的唯一拥有者（BUG-1701）：webtoon 是竖滚文档，纵向归 window.scrollY，
   // PAN_Y 恒 0；spread 是 100vh 定高、overflow:hidden 的视口，不滚动，纵向归 PAN_Y。
   // 此前两模式共用 PAN_Y 公式，于是 webtoon 每次缩放都额外把整条长图平移
@@ -909,6 +959,103 @@ String _mangaGestureJs({
   var IS_WEBTOON = $isWebtoon;
   var PAN_X = 0;
   var PAN_Y = 0;
+  // One source transform owns image and OCR geometry. Crop bounds stay in
+  // original pixels, so selection, background OCR and captures share a frame.
+  function _layoutSource(page){
+    var pw = Number(page.dataset.pw), ph = Number(page.dataset.ph);
+    var crop = page.__crop || {x:0,y:0,width:pw,height:ph};
+    var rotated = ROTATE_WIDE && crop.width > crop.height * 1.15;
+    page.__rotated = rotated;
+    var vw = rotated ? crop.height : crop.width;
+    var vh = rotated ? crop.width : crop.height;
+    var slots = Number(page.dataset.spreadPages) || 1;
+    var maxW = window.innerWidth / slots;
+    var maxH = window.innerHeight;
+    var sx = maxW / vw, sy = maxH / vh;
+    var fit = Math.min(sx, sy);
+    if (IS_WEBTOON) fit = window.innerWidth * ${1 - longStripSidePadding.clamp(0, 24) * 2 / 100} / vw;
+    else if ('${scaleType.key}' === 'fit_width') fit = sx;
+    else if ('${scaleType.key}' === 'fit_height') fit = sy;
+    else if ('${scaleType.key}' === 'original') fit = 1;
+    var scaleX = fit, scaleY = fit;
+    if (!IS_WEBTOON && '${scaleType.key}' === 'stretch') { scaleX = sx; scaleY = sy; }
+    page.style.width = (vw * scaleX) + 'px';
+    page.style.height = (vh * scaleY) + 'px';
+    // A short vertical page keeps its true hit-test frame. Empty space between
+    // pages supplies the viewport-sized paging step without stretching OCR.
+    if($isVerticalPaged) page.style.marginBottom=Math.max(${preferences.showPageGaps ? 12 : 0},maxH-vh*scaleY)+'px';
+    page.style.maxWidth = 'none'; page.style.maxHeight = 'none';
+    var source = page.querySelector('.manga-source');
+    if (!source) return;
+    source.style.inset = 'auto'; source.style.left = '0'; source.style.top = '0';
+    // Source layout stays proportional to original pixels; cqi text sizing and
+    // normalized OCR boxes use this container rather than the cropped frame.
+    source.style.width = pw + 'px'; source.style.height = ph + 'px';
+    source.style.transformOrigin = '0 0';
+    source.style.transform = rotated
+      ? 'matrix(0,'+scaleY+','+(-scaleX)+',0,'+
+          ((crop.y+crop.height)*scaleX)+','+(-crop.x*scaleY)+')'
+      : 'matrix('+scaleX+',0,0,'+scaleY+','+(-crop.x*scaleX)+','+(-crop.y*scaleY)+')';
+  }
+  function _inspectSource(page){
+    var img = page.querySelector('img');
+    if (!img || !img.complete || !img.naturalWidth) return;
+    if ($cropBorders || ${preferences.automaticBackground && !preferences.einkMode}) {
+      try {
+        var canvas = document.createElement('canvas');
+        var ratio = Math.min(1, 512 / Math.max(img.naturalWidth,img.naturalHeight));
+        canvas.width = Math.max(1,Math.round(img.naturalWidth*ratio));
+        canvas.height = Math.max(1,Math.round(img.naturalHeight*ratio));
+        var ctx = canvas.getContext('2d', {willReadFrequently:true});
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        var pixels = ctx.getImageData(0,0,canvas.width,canvas.height).data;
+        // Median corner luminance tolerates page numbers or art in one corner.
+        var corners = [0,(canvas.width-1)*4,(canvas.height-1)*canvas.width*4,(canvas.width*canvas.height-1)*4];
+        var luminance = corners.map(function(i){return (pixels[i]+pixels[i+1]+pixels[i+2])/3;}).sort(function(a,b){return a-b;});
+        var background = (luminance[1]+luminance[2])/2;
+        page.__background = background > 128 ? '#fff' : '#000';
+        if ($cropBorders) {
+          var minX=canvas.width,minY=canvas.height,maxX=-1,maxY=-1;
+          for(var y=0;y<canvas.height;y++) for(var x=0;x<canvas.width;x++) {
+            var i=(y*canvas.width+x)*4;
+            if (Math.abs((pixels[i]+pixels[i+1]+pixels[i+2])/3-background)>35) {
+              minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);
+            }
+          }
+          // Keep a pixel margin and reject uniform images: blank pages must
+          // remain full size, rather than collapsing to an empty rectangle.
+          if(maxX>minX && maxY>minY) {
+            minX=Math.max(0,minX-1);minY=Math.max(0,minY-1);
+            maxX=Math.min(canvas.width,maxX+2);maxY=Math.min(canvas.height,maxY+2);
+            page.__crop={x:minX/canvas.width*Number(page.dataset.pw),y:minY/canvas.height*Number(page.dataset.ph),
+              width:(maxX-minX)/canvas.width*Number(page.dataset.pw),height:(maxY-minY)/canvas.height*Number(page.dataset.ph)};
+          }
+        }
+      } catch(error) {
+        // Cross-origin images without CORS remain readable at their full size.
+        // Report the unsupported pixel operation; never hide an unreadable page.
+        var bridge=_bridge();
+        if(bridge) bridge.callHandler('onMangaImageTransformUnavailable', String(error.name || 'pixel_read_failed'));
+      }
+    }
+    _layoutSource(page);
+    _updateAutomaticBackground();
+  }
+  function _updateAutomaticBackground(){
+    if (!${preferences.automaticBackground && !preferences.einkMode}) return;
+    var page=document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
+    if(page && page.__background) {
+      document.body.style.background=page.__background;
+      document.documentElement.style.background=page.__background;
+    }
+  }
+  document.querySelectorAll('.manga-page').forEach(function(page){
+    _layoutSource(page);
+  });
+  window.addEventListener('resize',function(){
+    document.querySelectorAll('.manga-page').forEach(_layoutSource);
+    _applyWidePolicy();
+  });
   function _recenterPan(){
     PAN_X = window.innerWidth * (1 - ZOOM) / 2;
     PAN_Y = IS_WEBTOON ? 0 : window.innerHeight * (1 - ZOOM) / 2;
@@ -921,11 +1068,36 @@ String _mangaGestureJs({
     return pw > ph * 1.15;
   }
   function _applyWidePolicy(){
+    if (SPLIT_WIDE && !ROTATE_WIDE && !IS_WEBTOON && _currentPageIsWide()) {
+      _applyPageHalf(); return;
+    }
+    if(SPLIT_ACTIVE){
+      SPLIT_ACTIVE=false;
+      ZOOM=_clampZoom(${zoomPercent / 100.0});
+      _recenterPan();_applyCanvas();
+    }
     if (!AUTO_ZOOM_WIDE || ! _currentPageIsWide()) return;
     var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
     if (!page || !(page.offsetWidth > 0)) return;
     ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM, window.innerWidth / page.offsetWidth));
     _clampPan();
+    _applyCanvas();
+  }
+  function _applyPageHalf(){
+    var page=document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
+    var spread=page && page.closest('.manga-spread');
+    if(!page || !spread) return;
+    SPLIT_ACTIVE=true;
+    var physicalHalf=$rtl ? 1-PAGE_HALF : PAGE_HALF;
+    // Height-constrained landscape windows leave side gutters after fitting a
+    // half page. Clip the other half instead of letting it show in that space.
+    // The full source frame remains intact for OCR/capture coordinate mapping.
+    page.style.clipPath=physicalHalf===0 ? 'inset(0 50% 0 0)' : 'inset(0 0 0 50%)';
+    var halfWidth=page.offsetWidth/2;
+    ZOOM=_clampZoom(Math.min(window.innerWidth/halfWidth,window.innerHeight/page.offsetHeight));
+    var pageLeft=page.offsetLeft-spread.offsetLeft;
+    PAN_X=(window.innerWidth-halfWidth*ZOOM)/2-(pageLeft+physicalHalf*halfWidth)*ZOOM;
+    PAN_Y=(window.innerHeight-page.offsetHeight*ZOOM)/2-page.offsetTop*ZOOM;
     _applyCanvas();
   }
   _recenterPan();
@@ -958,7 +1130,7 @@ String _mangaGestureJs({
   }
   // 以 (ax, ay) 屏幕点为锚缩放到 next：锚点下的图像内容保持不动。缩到 <=1 时回中，
   // 因为此时整页已完全放得下，任何残留平移都只是把页面推出视口。
-  function _zoomAbout(next, ax, ay){
+  function _zoomAbout(next, ax, ay, silent){
     next = _clampZoom(next);
     if (Math.abs(next - ZOOM) < 0.0005) return false;
     // localX/localY 是锚点所指内容的**布局坐标**（未经 scale）。webtoon 的纵向屏幕
@@ -974,9 +1146,29 @@ String _mangaGestureJs({
     _applyCanvas();
     if (IS_WEBTOON) window.scrollTo(0, Math.max(0, localY * ZOOM - ay));
     var b = _bridge();
-    if (b) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
+    if (b && !silent) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
     return true;
   }
+  var doubleTapZoomFrame=null;
+  function _cancelDoubleTapZoom(){
+    if(doubleTapZoomFrame!==null){cancelAnimationFrame(doubleTapZoomFrame);doubleTapZoomFrame=null;}
+  }
+  function _doubleTapZoom(x,y){
+    _cancelDoubleTapZoom();
+    var target=ZOOM>1.01 ? 1 : 2;
+    if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y);return;}
+    var startZoom=ZOOM,startTime=null;
+    function frame(time){
+      if(startTime===null)startTime=time;
+      var t=Math.min(1,(time-startTime)/${doubleTapAnimationMs.clamp(100, 600)});
+      var eased=1-Math.pow(1-t,3);
+      _zoomAbout(startZoom+(target-startZoom)*eased,x,y,true);
+      if(t<1)doubleTapZoomFrame=requestAnimationFrame(frame);
+      else {doubleTapZoomFrame=null;var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));}
+    }
+    doubleTapZoomFrame=requestAnimationFrame(frame);
+  }
+  document.addEventListener('pointerdown',_cancelDoubleTapZoom,{passive:true});
   window.__mangaSetZoom = function(percent){
     // 以视口顶部为锚：scrollY 是视觉坐标（随 ZOOM 线性伸缩），换算过之后
     // 「设置里改缩放」不再把 webtoon 跳到别的页。
@@ -990,7 +1182,7 @@ String _mangaGestureJs({
   // same page DOM.  Dart may ask this function before a turn; true means that
   // the request was consumed by the second half of the current page.
   window.__mangaTurnWithinPage = function(forward){
-    if (!SPLIT_WIDE) return false;
+    if (!SPLIT_WIDE || ROTATE_WIDE || IS_WEBTOON) return false;
     var page = document.querySelector('.manga-page[data-spread="'+CURRENT+'"]');
     if (!page) return false;
     var pw = Number(page.getAttribute('data-pw') || 0);
@@ -999,9 +1191,7 @@ String _mangaGestureJs({
     var next = PAGE_HALF + (forward ? 1 : -1);
     if (next < 0 || next > 1) return false;
     PAGE_HALF = next;
-    var root = document.getElementById('manga-root');
-    if (root) root.style.transform = 'translateX(' +
-      (-page.offsetLeft + (next ? -window.innerWidth / 2 : 0)) + 'px)';
+    _applyPageHalf();
     return true;
   };
   // Bridge helper for OCR/capture callers. It reports coordinates in the
@@ -1011,17 +1201,12 @@ String _mangaGestureJs({
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
     if (!page) return null;
     var r = page.getBoundingClientRect();
-    var pw = Number(page.getAttribute('data-pw') || 1);
-    var ph = Number(page.getAttribute('data-ph') || 1);
-    var px = (x - r.left) / Math.max(1, r.width) * pw;
-    var py = (y - r.top) / Math.max(1, r.height) * ph;
-    var sx = width / Math.max(1, r.width) * pw;
-    var sy = height / Math.max(1, r.height) * ph;
-    if (ROTATE_WIDE && pw > ph * 1.15) {
-      var ox = px; px = py; py = ph - ox - sy;
-      var swap = sx; sx = sy; sy = swap;
-    }
-    return {x:px, y:py, width:sx, height:sy};
+    var crop=page.__crop || {x:0,y:0,width:Number(page.dataset.pw),height:Number(page.dataset.ph)};
+    var nx=(x-r.left)/r.width,ny=(y-r.top)/r.height;
+    var nw=width/r.width,nh=height/r.height;
+    return page.__rotated
+      ? {x:crop.x+ny*crop.width,y:crop.y+(1-nx-nw)*crop.height,width:nh*crop.width,height:nw*crop.height}
+      : {x:crop.x+nx*crop.width,y:crop.y+ny*crop.height,width:nw*crop.width,height:nh*crop.height};
   };
   _applyCanvas();
   // ── spread translateX：把固定 100vw 的 spread 容器平移到视口左边缘 ──
@@ -1036,17 +1221,18 @@ String _mangaGestureJs({
   // fade 的「先淡出再位移」只属于翻页，不会在 resize 风暴里连环闪烁。
   function _translateToSpread(target){
     CURRENT = target;
-    PAGE_HALF = 0;
     var root = document.getElementById('manga-root');
     if (!root) return;
     var spread = root.querySelector('.manga-spread[data-spread="'+target+'"]');
     root.style.transform =
       'translateX(' + (spread ? -spread.offsetLeft : 0) + 'px)';
     _applyWidePolicy();
+    _updateAutomaticBackground();
   }
   window.__mangaApplyTranslate = function(target){
+    if(target !== CURRENT) _flashPageChange();
+    if(target!==CURRENT) PAGE_HALF=target<CURRENT ? 1 : 0;
     CURRENT = target;
-    PAGE_HALF = 0;
     var root = document.getElementById('manga-root');
     if (root) _hintWillChange(root, PAGE_ANIM_MS + 120);
     if (PAGE_ANIM !== 'fade') {
@@ -1082,10 +1268,17 @@ String _mangaGestureJs({
     var page = document.querySelector('.manga-page[data-page="'+pageIndex+'"]');
     if (!page) return false;
     var r = page.getBoundingClientRect();
-    var left = Math.max(0, Math.min(1, Number(panel.left)));
-    var top = Math.max(0, Math.min(1, Number(panel.top)));
-    var right = Math.max(left, Math.min(1, Number(panel.right)));
-    var bottom = Math.max(top, Math.min(1, Number(panel.bottom)));
+    var crop=page.__crop || {x:0,y:0,width:Number(page.dataset.pw),height:Number(page.dataset.ph)};
+    var left = (Number(panel.left)*Number(page.dataset.pw)-crop.x)/crop.width;
+    var top = (Number(panel.top)*Number(page.dataset.ph)-crop.y)/crop.height;
+    var right = (Number(panel.right)*Number(page.dataset.pw)-crop.x)/crop.width;
+    var bottom = (Number(panel.bottom)*Number(page.dataset.ph)-crop.y)/crop.height;
+    if(page.__rotated){
+      var oldLeft=left,oldRight=right;
+      left=1-bottom;right=1-top;top=oldLeft;bottom=oldRight;
+    }
+    left=Math.max(0,Math.min(1,left));top=Math.max(0,Math.min(1,top));
+    right=Math.max(left,Math.min(1,right));bottom=Math.max(top,Math.min(1,bottom));
     // left/top/right/bottom 是**归一化**分数（0..1）。两处几何都容易写错：
     //  ① `Math.max(1, right - left)` 恒为 1（分数永远 ≤1），pw 就变成整页宽，
     //     算出来的是「整页适配」而不是「分镜适配」，nextZoom 在默认 fitScreen 下
@@ -1129,7 +1322,8 @@ String _mangaGestureJs({
     if (!page) return;
     var boxes = page.querySelectorAll('.ocr-box');
     for (var i = 0; i < boxes.length; i++) boxes[i].remove();
-    if (html) page.insertAdjacentHTML('beforeend', html);
+    var source = page.querySelector('.manga-source') || page;
+    if (html) source.insertAdjacentHTML('beforeend', html);
   };
   document.addEventListener('pointermove', function(e){
     if (rightDrag) {
@@ -1184,15 +1378,8 @@ String _mangaGestureJs({
     page.setAttribute('data-pw', String(width));
     page.setAttribute('data-ph', String(height));
     page.style.aspectRatio = width + ' / ' + height;
-    if (!IS_WEBTOON) {
-      var slots = Number(page.getAttribute('data-spread-pages')) || 1;
-      slots = slots <= 1 ? 1 : slots;
-      var slotVw = 100 / slots;
-      page.style.width =
-        'min(' + slotVw + 'vw,' + (100 * width / height) + 'vh)';
-      page.style.height =
-        'min(100vh,' + (slotVw * height / width) + 'vw)';
-    }
+    _inspectSource(page);
+    _applyWidePolicy();
   };
   document.querySelectorAll('.manga-page').forEach(function(page){
     var image = page.querySelector('img');
@@ -1431,7 +1618,7 @@ String _mangaGestureJs({
   // pointer distance so a stationary cursor does not repeat the same lookup.
   var shiftHoverX = -1, shiftHoverY = -1;
   document.addEventListener('mousemove', function(e){
-    if (!e.shiftKey) { shiftHoverX = -1; shiftHoverY = -1; return; }
+    if (!e.shiftKey && !${preferences.lookupOnHover}) { shiftHoverX = -1; shiftHoverY = -1; return; }
     var dx = e.clientX - shiftHoverX, dy = e.clientY - shiftHoverY;
     if (shiftHoverX >= 0 && dx * dx + dy * dy < 16) return;
     shiftHoverX = e.clientX; shiftHoverY = e.clientY;
@@ -1448,6 +1635,20 @@ String _mangaGestureJs({
   var TAP_ZONE_PAGING = $tapZonePaging;
   var IS_RTL = $rtl;
   var TAP_ZONES = [$tapZonesJs];
+  if (${preferences.showTapZonesOverlay} && TAP_ZONE_PAGING) {
+    var navigationHint=document.createElement('div');navigationHint.id='manga-navigation-hint';
+    TAP_ZONES.forEach(function(zone){
+      var tile=document.createElement('span');
+      tile.style.cssText='left:'+zone[0]*100+'%;top:'+zone[1]*100+'%;width:'+zone[2]*100+'%;height:'+zone[3]*100+'%;';
+      tile.textContent=IS_WEBTOON ? (zone[4]?'↓':'↑') : ((zone[4]!==IS_RTL)?'→':'←');
+      navigationHint.appendChild(tile);
+    });document.body.appendChild(navigationHint);
+  }
+  function _dismissStartupHints(){
+    ['manga-navigation-hint','manga-mode-hint'].forEach(function(id){var node=document.getElementById(id);if(node)node.remove();});
+  }
+  document.addEventListener('pointerdown',_dismissStartupHints,{once:true,passive:true});
+  setTimeout(_dismissStartupHints,3000);
   function _tapZoneTurn(x, y){
     if (!TAP_ZONE_PAGING) return null;
     var w = window.innerWidth || 1, h = window.innerHeight || 1;
@@ -1512,9 +1713,12 @@ String _mangaGestureJs({
     }
     // 第二击落在同一块空白上 → 取消第一击挂起的 onTapEmpty（否则悬浮栏会跟着
     // 闪一次），在该点缩放；等比在「贴合」与 2× 之间切换。
+    if (IS_WEBTOON && !${preferences.webtoonDoubleTapZoom}) {
+      b.callHandler('onTapEmpty'); return;
+    }
     if (_consumeDoubleTap(x, y)) {
       _cancelPendingEmptyTap();
-      _zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y);
+      _doubleTapZoom(x,y);
       return;
     }
     // 裸图 / 尚未完成 OCR 的区域不打开大图，继续留在阅读器。空白点是 no-op，
@@ -1757,6 +1961,66 @@ String _mangaGestureJs({
   }, {passive: false});
 
   // ── webtoon 滚动报告（节流）──
+  var flashTimer = null;
+  function _flashPageChange(){
+    if (!${preferences.flashOnPageChange}) return;
+    var flash=document.getElementById('manga-flash');
+    if(!flash) return;
+    flash.style.opacity='1';
+    if(flashTimer) clearTimeout(flashTimer);
+    flashTimer=setTimeout(function(){flash.style.opacity='0';flashTimer=null;},80);
+  }
+  var lastReaderScroll = window.scrollY;
+  var readerScrollDistance = 0;
+  // 只有用户自己滚才收起工具栏：恢复位置、换窗、跳页、自动滚动都是程序滚动，
+  // 不能每次开书 / 改设置就把顶栏收掉。滚轮、触摸、按键之后的一小段时间内的
+  // scroll 事件（含惯性）才算用户滚动。
+  var lastReaderUserInput = 0;
+  function _noteReaderUserInput(){ lastReaderUserInput = Date.now(); }
+  ['wheel','touchmove','keydown','pointerdown'].forEach(function(type){
+    window.addEventListener(type,_noteReaderUserInput,{passive:true,capture:true});
+  });
+  window.addEventListener('scroll',function(){
+    var delta = window.scrollY-lastReaderScroll;
+    lastReaderScroll=window.scrollY;
+    if(Date.now()-lastReaderUserInput>1200){ readerScrollDistance=0; return; }
+    if(Math.sign(delta)!==Math.sign(readerScrollDistance)) readerScrollDistance=0;
+    readerScrollDistance+=delta;
+    if(Math.abs(readerScrollDistance)>=${preferences.readerHideThreshold.clamp(0, 100)} && delta!==0){
+      var b=_bridge();if(b)b.callHandler('onMangaReaderHide',delta>0);
+      readerScrollDistance=0;
+    }
+  },{passive:true});
+  // Visibility is reported as original data-page indices, not spread indices.
+  window.__mangaVisiblePages = function(){
+    return Array.prototype.filter.call(document.querySelectorAll('.manga-page'),function(page){
+      var r=page.getBoundingClientRect();
+      return r.bottom>0 && r.top<window.innerHeight && r.right>0 && r.left<window.innerWidth;
+    }).map(function(page){return Number(page.dataset.page);});
+  };
+  var autoScrollRunning=${preferences.autoScroll};
+  var autoScrollPaused=false,autoFrame=null,lastAutoTime=null,autoPageTime=0;
+  window.__mangaPauseAutoScroll=function(paused){autoScrollPaused=!!paused;lastAutoTime=null;};
+  function _autoScrollFrame(time){
+    autoFrame=null;
+    if(!autoScrollRunning) return;
+    if(!document.hidden && !autoScrollPaused && !has && !pinch && !rightDrag){
+      if(lastAutoTime!==null){
+        var dt=Math.min(100,time-lastAutoTime);
+        if(IS_WEBTOON) window.scrollBy(0,${preferences.autoScrollSpeed.clamp(5, 200)}*dt/1000);
+        else {
+          autoPageTime+=dt;
+          if(autoPageTime>=window.innerHeight/${preferences.autoScrollSpeed.clamp(5, 200)}*1000){
+            autoPageTime=0;var b=_bridge();if(b)b.callHandler('onMangaTurn','next');
+          }
+        }
+      }
+      lastAutoTime=time;
+    } else lastAutoTime=null;
+    autoFrame=requestAnimationFrame(_autoScrollFrame);
+  }
+  if(autoScrollRunning) autoFrame=requestAnimationFrame(_autoScrollFrame);
+  window.addEventListener('pagehide',function(){autoScrollRunning=false;if(autoFrame)cancelAnimationFrame(autoFrame);});
   // HIGH-1：报**页内** fraction（视口顶部所在页内的归一化偏移 0..1），与
   // __mangaScrollToSpread 的口径统一——绝不报文档全局 fraction（那会被当页内
   // offset 用，恢复/定位错一整页）。topPage = 视口顶部所在页的 data-spread，
@@ -1792,9 +2056,11 @@ String _mangaGestureJs({
         }
         // 语义真值跟随用户滚动：resize 重投影（_reanchor）要回到「现在看的位置」，
         // 不是文档加载那一刻的恢复位置。
+        if(CURRENT!==topPage) _flashPageChange();
         CURRENT = topPage;
+        _updateAutomaticBackground();
         RESTORE_FRACTION = fraction;
-        b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage }));
+        b.callHandler('onMangaScroll', JSON.stringify({ fraction: fraction, topPage: topPage, visiblePages: window.__mangaVisiblePages() }));
       }, 120);
     }, {passive: true});
   }

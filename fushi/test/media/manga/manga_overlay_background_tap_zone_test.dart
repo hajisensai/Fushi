@@ -163,13 +163,13 @@ void main() {
         reason: 'onTapEmpty 只能从延后的定时器里发出',
       );
       expect(
-        doc.contains("    b.callHandler('onTapEmpty');"),
-        isFalse,
-        reason: '_onTap 里不得再同步上报 onTapEmpty',
+        doc.contains('if (IS_WEBTOON && !true)'),
+        isTrue,
+        reason: '只有显式关闭长条漫双击后才同步上报空白点击，默认仍延后',
       );
       final int dblAt = doc.indexOf('if (_consumeDoubleTap(x, y)) {');
       final int cancelAt = doc.indexOf('_cancelPendingEmptyTap();', dblAt);
-      final int zoomAt = doc.indexOf('_zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y)');
+      final int zoomAt = doc.indexOf('_doubleTapZoom(x,y);', dblAt);
       expect(dblAt, greaterThanOrEqualTo(0));
       expect(cancelAt, greaterThan(dblAt));
       expect(zoomAt, greaterThan(cancelAt), reason: '第二击先取消挂起的 onTapEmpty 再缩放');
@@ -188,7 +188,7 @@ void main() {
     });
 
     test('在贴合与 2× 之间切换', () {
-      expect(_doc().contains('_zoomAbout(ZOOM > 1.01 ? 1 : 2, x, y)'), isTrue);
+      expect(_doc().contains('var target=ZOOM>1.01 ? 1 : 2;'), isTrue);
     });
   });
 }

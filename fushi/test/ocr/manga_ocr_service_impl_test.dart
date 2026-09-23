@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
+import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:path/path.dart' as p;
 
@@ -92,6 +94,55 @@ class _FakeRunner implements MangaOcrVolumeJobRunner {
   }
 }
 
+/// 进程内 fake 页会话：记录处理过的页；close 后请求以 StateError 失败
+/// （与生产会话同契约）。
+class _FakePageSession implements MangaOcrPageSession {
+  _FakePageSession(this.request);
+
+  final MangaOcrPageSessionRequest request;
+  final List<String> pages = <String>[];
+  int closeCalls = 0;
+
+  bool get closed => closeCalls > 0;
+
+  @override
+  Future<String> ocrPage(String relativeUrl) async {
+    if (closed) {
+      throw StateError('manga OCR page session is closed');
+    }
+    pages.add(relativeUrl);
+    return p.join(request.imageDirPath, kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName, request.engineSignature);
+  }
+
+  @override
+  Future<void> close() async {
+    closeCalls++;
+  }
+}
+
+/// 每次 [open] 即一次「建推理会话」。
+class _FakePageSessionRunner implements MangaOcrPageSessionRunner {
+  final List<_FakePageSession> sessions = <_FakePageSession>[];
+  void Function(MangaOcrAcceleration)? lastOnAcceleration;
+
+  @override
+  MangaOcrPageSession open(
+    MangaOcrPageSessionRequest request, {
+    void Function(MangaOcrAcceleration acceleration)? onAcceleration,
+  }) {
+    lastOnAcceleration = onAcceleration;
+    final _FakePageSession session = _FakePageSession(request);
+    sessions.add(session);
+    return session;
+  }
+}
+
+/// 真 isolate 会话用的工厂构造器：在后台 isolate 里直接抛，模拟 ORT 建会话失败。
+/// 必须是顶层函数（跨 isolate 发送）。
+OcrSessionFactory _throwingFactoryBuilder() =>
+    throw StateError('no ORT in unit test');
+
 void main() {
   late Directory modelsDir;
 
@@ -113,11 +164,13 @@ void main() {
   MangaOcrServiceImpl service(
     _FakeRunner runner, {
     bool platformSupported = true,
+    MangaOcrPageSessionRunner? pageSessionRunner,
   }) =>
       MangaOcrServiceImpl(
         modelsDirProvider: () async => modelsDir,
         manifest: _tinyManifest,
         jobRunner: runner,
+        pageSessionRunner: pageSessionRunner,
         platformSupport: () => platformSupported,
       );
 
@@ -238,6 +291,164 @@ void main() {
     test('目录不存在：删除返回 0 而不是抛错', () async {
       modelsDir.deleteSync(recursive: true);
       expect(await service(_FakeRunner()).deleteModels(), 0);
+    });
+  });
+
+  group('页级常驻会话', () {
+    test('一个会话处理多页只建一次推理会话，close 后请求失败', () async {
+      writeAllModels();
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final _FakeRunner volume = _FakeRunner();
+      final MangaOcrServiceImpl impl =
+          service(volume, pageSessionRunner: pages);
+
+      final MangaOcrPageSession session =
+          await impl.openPageSession(imageDirPath: 'D:/vol1');
+      final String first = await session.ocrPage('images/p1.png');
+      final String second = await session.ocrPage('images/p2.png');
+      await session.ocrPage('images/p3.png');
+
+      expect(pages.sessions, hasLength(1),
+          reason: '逐页请求必须复用同一个会话，不能每页重建 ORT 会话');
+      expect(pages.sessions.single.pages,
+          <String>['images/p1.png', 'images/p2.png', 'images/p3.png']);
+      expect(volume.requests, isEmpty, reason: '页级请求不得再走整卷任务 runner');
+      expect(first, second);
+
+      await session.close();
+      await session.close();
+      await expectLater(
+          session.ocrPage('images/p4.png'), throwsA(isA<StateError>()));
+      expect(pages.sessions, hasLength(1));
+    });
+
+    test('会话签名与 resolvePageCacheDirPath 同源（自定义模型目录也一致）', () async {
+      writeAllModels();
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl impl =
+          service(_FakeRunner(), pageSessionRunner: pages);
+
+      final String resolved =
+          await impl.resolvePageCacheDirPath(imageDirPath: 'D:/vol1');
+      final MangaOcrPageSession session =
+          await impl.openPageSession(imageDirPath: 'D:/vol1');
+      final String written = await session.ocrPage('images/p1.png');
+
+      expect(written, resolved,
+          reason: '读缓存与写缓存必须是同一个目录，否则报「OCR produced no page cache」');
+      expect(pages.sessions.single.request.modelPaths.detectorPath,
+          startsWith(modelsDir.path));
+      expect(pages.sessions.single.request.engineSignature,
+          startsWith('$kLocalMangaOcrEngineSignature-'),
+          reason: '模型齐全时签名要带已安装模型指纹（BUG-1173）');
+    });
+
+    test('onAcceleration 透传给会话 runner', () async {
+      writeAllModels();
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl impl =
+          service(_FakeRunner(), pageSessionRunner: pages);
+      final List<MangaOcrAcceleration> seen = <MangaOcrAcceleration>[];
+
+      await impl.openPageSession(
+          imageDirPath: 'D:/vol1', onAcceleration: seen.add);
+      const MangaOcrAcceleration acceleration = MangaOcrAcceleration(
+        detection: OcrExecutionProvider.cpu,
+        recognition: OcrExecutionProvider.cpu,
+      );
+      pages.lastOnAcceleration!(acceleration);
+
+      expect(seen, <MangaOcrAcceleration>[acceleration]);
+    });
+
+    test('模型未就绪：openPageSession 失败，不建会话', () async {
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl impl =
+          service(_FakeRunner(), pageSessionRunner: pages);
+      await expectLater(
+        impl.openPageSession(imageDirPath: 'D:/vol1'),
+        throwsA(isA<StateError>().having(
+            (StateError e) => e.message, 'message', contains('not downloaded'))),
+      );
+      expect(pages.sessions, isEmpty);
+    });
+
+    test('平台不支持：openPageSession 失败，不建会话', () async {
+      writeAllModels();
+      final _FakePageSessionRunner pages = _FakePageSessionRunner();
+      final MangaOcrServiceImpl impl = service(_FakeRunner(),
+          platformSupported: false, pageSessionRunner: pages);
+      await expectLater(
+        impl.openPageSession(imageDirPath: 'D:/vol1'),
+        throwsA(isA<StateError>().having((StateError e) => e.message,
+            'message', contains('manga OCR is not supported on'))),
+      );
+      expect(pages.sessions, isEmpty);
+    });
+
+    group('生产 isolate 会话', () {
+      OcrSessionFactory Function()? savedBuilder;
+      OcrIsolateBootstrap? savedBootstrap;
+
+      setUp(() {
+        savedBuilder = ocrSessionFactoryBuilder;
+        savedBootstrap = ocrIsolateBootstrap;
+        ocrSessionFactoryBuilder = _throwingFactoryBuilder;
+        ocrIsolateBootstrap = null;
+      });
+
+      tearDown(() {
+        ocrSessionFactoryBuilder = savedBuilder;
+        ocrIsolateBootstrap = savedBootstrap;
+      });
+
+      const MangaOcrPageSessionRequest request = MangaOcrPageSessionRequest(
+        imageDirPath: 'D:/vol1',
+        modelPaths: MangaOcrModelPaths(
+          detectorPath: 'd.onnx',
+          encoderPath: 'e.onnx',
+          decoderPath: 'dec.onnx',
+          vocabPath: 'v.txt',
+          ppDetPath: 'pd.onnx',
+          ppRecPath: 'pr.onnx',
+          ppRecDictPath: 'pr.yml',
+        ),
+        engineSignature: kLocalMangaOcrEngineSignature,
+      );
+
+      test('建会话失败：挂起与后续请求都以该错误失败，close 仍能完成', () async {
+        final MangaOcrPageSession session =
+            const IsolateMangaOcrPageSessionRunner().open(request);
+        await expectLater(
+          session.ocrPage('p1.png'),
+          throwsA(isA<StateError>().having((StateError e) => e.message,
+              'message', contains('no ORT in unit test'))),
+        );
+        await expectLater(
+            session.ocrPage('p2.png'), throwsA(isA<StateError>()));
+        await session.close().timeout(const Duration(seconds: 20));
+      });
+
+      test('close 让挂起请求失败、isolate 退出，之后请求以 StateError 失败', () async {
+        final MangaOcrPageSession session =
+            const IsolateMangaOcrPageSessionRunner().open(request);
+        final Future<String> pending = session.ocrPage('p1.png');
+        final Future<void> closing = session.close();
+        await expectLater(pending, throwsA(isA<StateError>()));
+        await closing.timeout(const Duration(seconds: 20));
+        await session.close().timeout(const Duration(seconds: 20));
+        await expectLater(
+          session.ocrPage('p2.png'),
+          throwsA(isA<StateError>().having(
+              (StateError e) => e.message, 'message', contains('closed'))),
+        );
+      });
+
+      test('宿主没装会话工厂：open 直接抛，不起 isolate', () {
+        ocrSessionFactoryBuilder = null;
+        expect(() => const IsolateMangaOcrPageSessionRunner().open(request),
+            throwsA(isA<StateError>()));
+      });
     });
   });
 
@@ -722,31 +933,46 @@ void main() {
     });
 
     test('isolate 只能经 plan.toAcceleration 产出加速状态（源码守卫）', () {
-      // `_volumeJobIsolateMain` 跑在 `Isolate.spawn` 里、直连真 ORT，单测够不到
-      // 它——M5 能活下来正是因为这条缝。守法：不许它自己手搓
+      // 建 ORT 会话的 isolate 代码跑在 `Isolate.spawn` 里、直连真 ORT，单测够不到
+      // 它——M5 能活下来正是因为这条缝。守法：整卷任务与页级会话都只能经共用的
+      // `_openIsolateOcrEngine` 建会话，而它不许自己手搓
       // `MangaOcrAcceleration(...)`，只能走 [OcrAccelerationPlan.toAcceleration]，
       // 而那个出口是上面几条测出来的。
       final String source =
           File('../packages/fushi_engine/lib/ocr/manga_ocr_service_impl.dart').readAsStringSync();
-      final int start = source.indexOf('Future<void> _volumeJobIsolateMain(');
-      expect(start, isNonNegative,
-          reason: '找不到 _volumeJobIsolateMain；改了签名要同步改本守卫');
-      // 顶层函数的收尾大括号是唯一顶格的 `}`（Dart 里嵌套块一律缩进）。
-      final int end = source.indexOf('\n}\n', start);
-      expect(end, isNonNegative, reason: '找不到 _volumeJobIsolateMain 的收尾大括号');
-      final String body = source.substring(start, end);
+      String topLevelBody(String signature) {
+        final int start = source.indexOf(signature);
+        expect(start, isNonNegative, reason: '找不到 $signature；改了签名要同步改本守卫');
+        // 顶层函数的收尾大括号是唯一顶格的 `}`（Dart 里嵌套块一律缩进）。
+        final int end = source.indexOf('\n}\n', start);
+        expect(end, isNonNegative, reason: '找不到 $signature 的收尾大括号');
+        return source.substring(start, end);
+      }
+
+      const String helperSignature = 'Future<void> _openIsolateOcrEngine(';
       expect(
-        body.contains('plan.toAcceleration('),
+        topLevelBody(helperSignature).contains('plan.toAcceleration('),
         isTrue,
         reason: 'isolate 不再经 plan.toAcceleration 上报加速状态 —— '
             '请求前的降级说明（探测失败等）会被静默丢掉，而这条路径没有单测能抓。',
       );
-      expect(
-        body.contains('MangaOcrAcceleration('),
-        isFalse,
-        reason: 'isolate 里又手搓了 MangaOcrAcceleration —— '
-            '绕过 plan.toAcceleration 就等于绕过降级说明的唯一出口。',
-      );
+      for (final String entry in <String>[
+        'Future<void> _volumeJobIsolateMain(',
+        'Future<void> _pageSessionIsolateMain(',
+        helperSignature,
+      ]) {
+        final String body = topLevelBody(entry);
+        expect(
+          body.contains('MangaOcrAcceleration('),
+          isFalse,
+          reason: '$entry 里又手搓了 MangaOcrAcceleration —— '
+              '绕过 plan.toAcceleration 就等于绕过降级说明的唯一出口。',
+        );
+        if (entry != helperSignature) {
+          expect(body.contains('_openIsolateOcrEngine('), isTrue,
+              reason: '$entry 必须经共用的 _openIsolateOcrEngine 建会话');
+        }
+      }
     });
   });
 }

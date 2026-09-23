@@ -221,6 +221,54 @@ void main() {
       expect(decoded.exif.imageIfd.hasOrientation, isFalse);
     });
 
+    test(
+      'visible page fills only its cache and preserves volume output',
+      () async {
+        final File output = File(
+          p.join(root.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+        );
+        output.parent.createSync(recursive: true);
+        output.writeAsStringSync('existing volume');
+        final _FakeDetector detector = _FakeDetector();
+        await runMangaOcrFolderJob(
+          imageDirPath: root.path,
+          engineSignature: kLocalMangaOcrEngineSignature,
+          detector: detector,
+          recognizer: _FakeRecognizer(),
+          relativeUrls: <String>['p2.png'],
+        );
+        expect(detector.detectedSizes, <String>['50x80']);
+        expect(output.readAsStringSync(), 'existing volume');
+        final _FakeDetector next = _FakeDetector();
+        await runMangaOcrFolderJob(
+          imageDirPath: root.path,
+          engineSignature: kLocalMangaOcrEngineSignature,
+          detector: next,
+          recognizer: _FakeRecognizer(),
+        );
+        expect(next.detectedSizes, <String>['40x80', '60x80']);
+        expect(parseMangaJson(output.readAsStringSync()).images, hasLength(3));
+      },
+    );
+
+    test(
+      'visible page request rejects paths absent from managed manifest',
+      () async {
+        final _FakeDetector detector = _FakeDetector();
+        await expectLater(
+          runMangaOcrFolderJob(
+            imageDirPath: root.path,
+            engineSignature: kLocalMangaOcrEngineSignature,
+            detector: detector,
+            recognizer: _FakeRecognizer(),
+            relativeUrls: <String>['../outside.png'],
+          ),
+          throwsArgumentError,
+        );
+        expect(detector.detectedSizes, isEmpty);
+      },
+    );
+
     test('全卷：逐页进度、manga.json 内容（url/尺寸/块）、缓存落盘', () async {
       final _FakeDetector detector = _FakeDetector();
       final _FakeRecognizer recognizer = _FakeRecognizer();
