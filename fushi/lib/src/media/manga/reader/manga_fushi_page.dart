@@ -10,6 +10,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show Consumer, WidgetRef;
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
 
@@ -806,9 +807,7 @@ class MangaFushiPage extends BaseSourcePage {
       final MangaReadingMode? legacy = modeOverrideFromDb(legacyMode);
       if (legacy != null) return legacy;
     }
-    return preferences.autoMode
-        ? detectReadingMode(payload)
-        : preferences.mode;
+    return preferences.autoMode ? detectReadingMode(payload) : preferences.mode;
   }
 
   /// 纯函数：webtoon 页内 fraction（0..1）→ `ReaderPositions.charOffset` 千分比
@@ -2053,9 +2052,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     MokuroPayload loadedPayload,
   ) async {
     try {
+      final MangaOcrService localService = ref.read(mangaOcrServiceProvider);
+      final String? localCachePath = localService is MangaOcrPageService
+          ? await (localService as MangaOcrPageService).resolvePageCacheDirPath(
+              imageDirPath: managedDirectory,
+            )
+          : null;
       final MangaOcrCacheRecovery recovery = await recoverCachedMangaOcr(
         managedDirectory: managedDirectory,
         basePayload: loadedPayload,
+        localEngineSignature: localCachePath == null
+            ? null
+            : p.basename(localCachePath),
       );
       final MokuroPayload? current = _payload;
       if (!mounted ||
@@ -4351,15 +4359,22 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             );
           }
         },
-        ocrSettings: MangaOcrSettingsSection(
-          service: ref.read(mangaOcrServiceProvider),
-          enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
-          enginePreferenceSetter: (String value) async {
-            await appModel.setMangaOcrEnginePreference(value);
-            unawaited(_maybeStartVolumeOcr());
-          },
-          lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
-          lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+        ocrSettings: Consumer(
+          builder: (BuildContext context, WidgetRef ocrRef, Widget? child) =>
+              MangaOcrSettingsSection(
+                service: ocrRef.watch(mangaOcrServiceProvider),
+                enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
+                enginePreferenceSetter: (String value) async {
+                  await appModel.setMangaOcrEnginePreference(value);
+                  unawaited(_maybeStartVolumeOcr());
+                },
+                parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
+                parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+                localModelGetter: () => appModel.mangaOcrLocalModel,
+                localModelSetter: appModel.setMangaOcrLocalModel,
+                lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
+                lensLanguageSetter: appModel.setMangaOcrLensLanguage,
+              ),
         ),
         supportedDeviceKeys: <String>{
           if (Platform.isAndroid ||
@@ -4831,10 +4846,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                           8,
                       left: 12,
                       right: 12,
-                      child: Align(
-                        alignment: Alignment.topRight,
-                        child: badge,
-                      ),
+                      child: Align(alignment: Alignment.topRight, child: badge),
                     ),
                   // 查词弹窗层：必须在同一个键盘 Focus 子树里，否则原生词典
                   // WebView 持焦后会吞掉翻页键。

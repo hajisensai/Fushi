@@ -35,6 +35,12 @@ abstract class MangaOcrService {
   });
 }
 
+/// Local engines with an installation step after downloading or importing files.
+abstract interface class MangaOcrModelPreparationService {
+  /// Cancellation must stop installation before publishing a ready marker.
+  Stream<MangaOcrDownloadEvent> prepareModels();
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///
@@ -125,6 +131,7 @@ class MangaOcrDownloadEvent {
     required this.receivedBytes,
     required this.totalBytes,
     this.done = false,
+    this.installing = false,
   });
 
   final String fileName;
@@ -133,6 +140,7 @@ class MangaOcrDownloadEvent {
 
   /// 全部文件完成时最后发一次 done=true。
   final bool done;
+  final bool installing;
 }
 
 /// 一次本地整卷 OCR 实际生效的推理加速状态。
@@ -147,6 +155,7 @@ class MangaOcrAcceleration {
   const MangaOcrAcceleration({
     required this.detection,
     required this.recognition,
+    this.recognitionDecoder,
     this.degradeReasons = const <String>[],
   });
 
@@ -156,15 +165,24 @@ class MangaOcrAcceleration {
   /// 识别模型（encoder/decoder）实际生效的执行后端。
   final OcrExecutionProvider recognition;
 
+  /// Separate decoder backend for hybrid recognizers; null means the same
+  /// backend as [recognition].
+  final OcrExecutionProvider? recognitionDecoder;
+
   /// 非空表示发生过非预期降级，逐条给出原因（EP 拒绝码 / 探测异常）。
   final List<String> degradeReasons;
 
   bool get degraded => degradeReasons.isNotEmpty;
 
   /// 展示用短标签：两个模型同后端时只显示一个。
-  String get label => detection == recognition
-      ? detection.name.toUpperCase()
-      : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
+  String get label {
+    final String base = detection == recognition
+        ? detection.name.toUpperCase()
+        : '${detection.name.toUpperCase()}/${recognition.name.toUpperCase()}';
+    return recognitionDecoder == null || recognitionDecoder == recognition
+        ? base
+        : '$base+${recognitionDecoder!.name.toUpperCase()}';
+  }
 
   @override
   String toString() => degraded
@@ -178,15 +196,15 @@ class MangaOcrVolumeEvent {
     required this.pagesDone,
     required this.pagesTotal,
     this.acceleration,
-  })  : mangaJsonPath = null,
-        finished = false;
+  }) : mangaJsonPath = null,
+       finished = false;
 
   const MangaOcrVolumeEvent.finished({
     required this.pagesTotal,
     required String this.mangaJsonPath,
     this.acceleration,
-  })  : pagesDone = pagesTotal,
-        finished = true;
+  }) : pagesDone = pagesTotal,
+       finished = true;
 
   final int pagesDone;
   final int pagesTotal;

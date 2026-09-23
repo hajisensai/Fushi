@@ -33,9 +33,13 @@ class MangaOcrSettingsPage extends ConsumerWidget {
       body: SingleChildScrollView(
         key: const ValueKey<String>('manga_ocr_settings_page'),
         child: MangaOcrSettingsSection(
-          service: ref.read(mangaOcrServiceProvider),
+          service: ref.watch(mangaOcrServiceProvider),
           enginePreferenceGetter: () => appModel.mangaOcrEnginePreference,
           enginePreferenceSetter: appModel.setMangaOcrEnginePreference,
+          parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
+          parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+          localModelGetter: () => appModel.mangaOcrLocalModel,
+          localModelSetter: appModel.setMangaOcrLocalModel,
           lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
           lensLanguageSetter: appModel.setMangaOcrLensLanguage,
         ),

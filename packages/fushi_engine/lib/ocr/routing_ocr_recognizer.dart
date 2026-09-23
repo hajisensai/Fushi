@@ -35,7 +35,28 @@ const int kRoutingLinePadding = 4;
 bool routesToHorizontalPath(OcrRect box) => box.width >= box.height;
 
 class RoutingOcrRecognizer implements OcrRecognizer {
-  RoutingOcrRecognizer({
+  factory RoutingOcrRecognizer({
+    required OcrRecognizer mangaOcr,
+    required PpOcrLineDetector lineDetector,
+    required PpOcrLineRecognizer lineRecognizer,
+  }) {
+    // 只向 pipeline 暴露真实可用的批处理能力。原版 ONNX / Baberu 不因此
+    // 被合成一个假 batch，仍保留逐框调用和取消检查。
+    if (mangaOcr is BatchOcrRecognizer) {
+      return _BatchRoutingOcrRecognizer(
+        mangaOcr: mangaOcr,
+        lineDetector: lineDetector,
+        lineRecognizer: lineRecognizer,
+      );
+    }
+    return RoutingOcrRecognizer._(
+      mangaOcr: mangaOcr,
+      lineDetector: lineDetector,
+      lineRecognizer: lineRecognizer,
+    );
+  }
+
+  RoutingOcrRecognizer._({
     required OcrRecognizer mangaOcr,
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
@@ -108,5 +129,54 @@ class RoutingOcrRecognizer implements OcrRecognizer {
       out.write(await _lineRecognizer.recognizeLine(lineCrop));
     }
     return out.toString();
+  }
+}
+
+/// 横排 PP 路径保留单块切行，竖框与横排空结果的整框后备合并成一批。
+/// 索引表同时保留 PP 结果和空串位置，不让分流改变框与文字的对应关系。
+class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
+    implements BatchOcrRecognizer {
+  _BatchRoutingOcrRecognizer({
+    required BatchOcrRecognizer mangaOcr,
+    required super.lineDetector,
+    required super.lineRecognizer,
+  }) : _batchMangaOcr = mangaOcr,
+       super._(mangaOcr: mangaOcr);
+
+  final BatchOcrRecognizer _batchMangaOcr;
+
+  @override
+  Future<List<String>> recognizeBatch(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async {
+    final List<String> results = List<String>.filled(boxes.length, '');
+    final List<int> mangaIndices = <int>[];
+    for (int index = 0; index < boxes.length; index++) {
+      final OcrRect box = boxes[index];
+      if (routesToHorizontalPath(box)) {
+        final String routed = await _recognizeHorizontalBlock(page, box);
+        if (routed.isNotEmpty) {
+          results[index] = routed;
+          continue;
+        }
+      }
+      mangaIndices.add(index);
+    }
+    if (mangaIndices.isEmpty) return results;
+    final List<String> mangaResults = await _batchMangaOcr.recognizeBatch(
+      page,
+      <OcrRect>[for (final int index in mangaIndices) boxes[index]],
+    );
+    if (mangaResults.length != mangaIndices.length) {
+      throw StateError(
+        'Routed OCR batch returned ${mangaResults.length} results '
+        'for ${mangaIndices.length} regions',
+      );
+    }
+    for (int index = 0; index < mangaIndices.length; index++) {
+      results[mangaIndices[index]] = mangaResults[index];
+    }
+    return results;
   }
 }

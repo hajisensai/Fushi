@@ -1,4 +1,4 @@
-/// 漫画整卷 OCR 流水线：逐页 检测 → 排序 → 逐框识别，带逐页断点缓存、
+/// 漫画整卷 OCR 流水线：逐页 检测 → 排序 → 单框/批识别，带逐页断点缓存、
 /// 进度回调与取消令牌。
 ///
 /// 缓存语义对齐 mokuro 的 `_ocr/` 目录：**一页一条结果**，页子任务完成即
@@ -17,7 +17,7 @@ abstract interface class OcrPageCache {
   Future<void> write(String bookId, OcrPageResult result);
 }
 
-/// 取消令牌：置位后流水线在下一个安全点（页间/块间）抛
+/// 取消令牌：置位后流水线在下一个安全点（页间/块间/批次间）抛
 /// [OcrCancelledException]；已完成页的缓存不回滚，重跑续传。
 class OcrCancelToken {
   bool _cancelled = false;
@@ -55,8 +55,36 @@ typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
 /// 覆盖这类倾斜竖排。
 const double kVerticalAspectThreshold = 1.25;
 
+/// 控制单次调用的工作量，在密集页的批次之间仍可响应取消。
+/// 识别后端可以把本批进一步拆小；这里不并发处理页面或识别批次。
+const int _recognitionBatchSize = 8;
+
 bool isVerticalBlock(OcrRect box) =>
     box.height > box.width * kVerticalAspectThreshold;
+
+/// 全页识别完成后才判包含重复，允许子框补回父块漏读的小字号正文。
+/// 必须逐字包含完整子文本，不折叠空白或标点。横排按识别路由的宽 >= 高
+/// 判断，不用展示方向的 1.25 阈值。筛选只删除结果，不改变阅读顺序；父子框
+/// 即使分属不同批次或子框先识别，也按同样规则处理。
+List<OcrBlock> _suppressRecognizedContainedBlocks(List<OcrBlock> blocks) {
+  return blocks.where((OcrBlock child) {
+    final OcrRect inner = child.box;
+    final String text = child.lines.single;
+    if (text.isEmpty || inner.area <= 0 || inner.width < inner.height) {
+      return true;
+    }
+    return !blocks.any((OcrBlock parent) {
+      final OcrRect outer = parent.box;
+      return parent.score > child.score &&
+          outer.width >= outer.height &&
+          outer.left <= inner.left &&
+          outer.top <= inner.top &&
+          outer.right >= inner.right &&
+          outer.bottom >= inner.bottom &&
+          parent.lines.single.contains(text);
+    });
+  }).toList();
+}
 
 /// 整卷编排器。检测器/识别器经窄接口注入（模型路径、EP 选择在其构造侧）。
 class MangaOcrPipeline {
@@ -111,13 +139,15 @@ class MangaOcrPipeline {
     return results;
   }
 
-  /// 处理单页：检测 → 阅读顺序 → 逐框识别。
+  /// 处理单页：检测 → 阅读顺序 → 按识别器能力单框或有界批识别。
   Future<OcrPageResult> processPage({
     required int pageIndex,
     required img.Image image,
     OcrCancelToken? cancelToken,
   }) async {
+    cancelToken?.throwIfCancelled();
     final PageDetections detections = await _detector.detect(image);
+    cancelToken?.throwIfCancelled();
     final List<OcrRect> boxes = <OcrRect>[
       for (final DetectedTextRegion region in detections.textRegions)
         region.rect,
@@ -126,26 +156,46 @@ class MangaOcrPipeline {
         computeReadingOrder(boxes, rightToLeft: rightToLeft);
 
     final List<OcrBlock> blocks = <OcrBlock>[];
-    for (final int index in order) {
+    final OcrRecognizer recognizer = _recognizer;
+    final int batchSize =
+        recognizer is BatchOcrRecognizer ? _recognitionBatchSize : 1;
+    for (int start = 0; start < order.length; start += batchSize) {
       cancelToken?.throwIfCancelled();
-      final DetectedTextRegion region = detections.textRegions[index];
-      final String text = await _recognizer.recognize(image, region.rect);
-      if (text.isEmpty) {
-        continue;
+      final int end = (start + batchSize).clamp(0, order.length);
+      final List<DetectedTextRegion> regions = <DetectedTextRegion>[
+        for (int index = start; index < end; index++)
+          detections.textRegions[order[index]],
+      ];
+      final List<String> texts = recognizer is BatchOcrRecognizer
+          ? await recognizer.recognizeBatch(image, <OcrRect>[
+              for (final DetectedTextRegion region in regions) region.rect,
+            ])
+          : <String>[await recognizer.recognize(image, regions.single.rect)];
+      cancelToken?.throwIfCancelled();
+      if (texts.length != regions.length) {
+        throw StateError('OCR batch returned ${texts.length} results '
+            'for ${regions.length} regions');
       }
-      blocks.add(OcrBlock(
-        box: region.rect,
-        vertical: isVerticalBlock(region.rect),
-        lines: <String>[text],
-        score: region.score,
-        insideBubble: region.insideBubble,
-      ));
+      for (int i = 0; i < regions.length; i++) {
+        final String text = texts[i];
+        if (text.isEmpty) {
+          continue;
+        }
+        final DetectedTextRegion region = regions[i];
+        blocks.add(OcrBlock(
+          box: region.rect,
+          vertical: isVerticalBlock(region.rect),
+          lines: <String>[text],
+          score: region.score,
+          insideBubble: region.insideBubble,
+        ));
+      }
     }
     return OcrPageResult(
       pageIndex: pageIndex,
       imageWidth: image.width,
       imageHeight: image.height,
-      blocks: blocks,
+      blocks: _suppressRecognizedContainedBlocks(blocks),
     );
   }
 }

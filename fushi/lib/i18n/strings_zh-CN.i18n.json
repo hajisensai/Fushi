@@ -2089,7 +2089,6 @@
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_ocr_engine_google_lens_desc": "需要联网，会把页面图片上传给 Google。速度快、不用下模型，但质量不如本地模型。",
   "manga_ocr_engine_local_onnx": "本地 ONNX",
-  "manga_ocr_engine_local_onnx_desc": "完全离线，质量最好。需要一次性下载模型，老设备上较慢。",
   "manga_ocr_engine_none": "没有可用的 OCR 引擎。请在设置中下载内置模型或配置 mokuro 命令行路径。",
   "manga_ocr_engine_paired_host_desc": "交给已配对的 Fushi 互联服务端来跑，本机不下任何模型。",
   "manga_ocr_engine_system": "设备自带",
@@ -5452,5 +5451,17 @@
   "manga_reader_ocr_volume": "识别本卷",
   "manga_reader_ocr_queued": "排队中",
   "manga_reader_ocr_unavailable_short": "没有可用的 OCR 引擎 · 请在 OCR 设置中下载模型或换引擎",
-  "manga_reader_ocr_rerun": "重新识别本卷…"
+  "manga_reader_ocr_rerun": "重新识别本卷…",
+  "manga_ocr_parallel_tasks": "并行 OCR 任务",
+  "manga_ocr_parallel_auto": "自动（1–2 个任务）",
+  "manga_ocr_parallel_tasks_desc": "同时识别不同书籍，同一本书的章节按顺序处理。数量越大占用内存越多；低内存模式下最多运行一个任务。",
+  "manga_ocr_local_model": "本机 OCR 模型",
+  "manga_ocr_manga_model": "manga-ocr（经典）",
+  "manga_ocr_baberu_model": "Baberu（快速，可用时使用 GPU）",
+  "manga_ocr_manga_model_desc": "日文漫画模型，配合横排文字识别。在 Windows 上使用 CPU。",
+  "manga_ocr_engine_local_onnx_desc": "完全离线。首次使用需下载所选模型，速度和准确度取决于模型与硬件。",
+  "manga_ocr_baberu_desc": "含横排文字模型约 284 MB。在 Windows 上自动使用 GPU 图像编码与 CPU 文字解码，不可用时使用 CPU。部分名字和手写文字可能更不准确。对新启动的 OCR 任务生效。",
+  "manga_ocr_cuda_model": "manga-ocr（NVIDIA GPU 加速）",
+  "manga_ocr_cuda_desc": "原版 manga-ocr，使用 GPU 批量识别。需要 NVIDIA 显卡；首次下载约 4 GB，应用自动安装独立的 Python 和 CUDA 运行库。",
+  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…"
 }

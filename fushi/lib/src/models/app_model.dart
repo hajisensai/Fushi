@@ -607,7 +607,8 @@ class AppModel with ChangeNotifier {
     // 漫画 P3：互联 host 代跑 OCR（/api/ocr/* + capabilities.mangaOcr）。工厂来自
     // manga_ocr_provider（唯一引用 MangaOcrServiceImpl 的文件）；不支持内置 OCR 的
     // 平台（移动端）也接线——capability 会如实报 supported=false，client 据此隐藏。
-    mangaOcrServiceFactory: createMangaOcrService,
+    mangaOcrServiceFactory: () =>
+        createSelectedMangaOcrService(() => mangaOcrLocalModel),
     // 通用任务（ASR 转录）/ 代下载 / 内容订阅：此前只有无头 fushi_server 接线，
     // app 当 host 时这三条端点 404，对端「下载到 <电脑>」的选项因此不出现。
     // 全部挂在本机既有的服务上（ASR 服务工厂与转录弹层同一份；下载管线 / 订阅
@@ -8586,6 +8587,14 @@ class AppModel with ChangeNotifier {
   String get mangaExternalMokuroPath => prefsRepo.mangaExternalMokuroPath;
   Future<void> setMangaExternalMokuroPath(String value) =>
       prefsRepo.setMangaExternalMokuroPath(value);
+
+  int get mangaOcrParallelTasks => prefsRepo.mangaOcrParallelTasks;
+  Future<void> setMangaOcrParallelTasks(int value) =>
+      prefsRepo.setMangaOcrParallelTasks(value);
+
+  String get mangaOcrLocalModel => prefsRepo.mangaOcrLocalModel;
+  Future<void> setMangaOcrLocalModel(String value) =>
+      prefsRepo.setMangaOcrLocalModel(value);
 
   String get mangaOcrEnginePreference => prefsRepo.mangaOcrEnginePreference;
   Future<void> setMangaOcrEnginePreference(String value) =>

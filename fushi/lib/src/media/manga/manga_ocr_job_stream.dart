@@ -86,9 +86,7 @@ Future<void> discardMangaOcrPageCache(Directory cacheDir) async {
 }
 
 /// 按引擎分发，产出统一的后台事件流。
-Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(
-  MangaOcrJobSpec spec,
-) {
+Stream<MangaOcrBackgroundEvent> mangaOcrBackgroundEvents(MangaOcrJobSpec spec) {
   switch (spec.engine) {
     case MangaOcrEngineId.localOnnx:
       return mangaOcrLocalEvents(spec);
@@ -110,21 +108,31 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
   final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
   // 「整卷已缓存 → 直接产出、跳过 OCR」的探测必须与真实任务用同一个签名，
   // 否则换模型后会拿旧模型的缓存冒充新结果（BUG-1173）。
-  final String engineSignature =
-      await resolveInstalledLocalMangaOcrEngineSignature();
-  final Directory cacheDir = Directory(p.join(
-    dir,
-    kMangaOcrOutDirName,
-    kMangaOcrPagesCacheDirName,
-    engineSignature,
-  ));
+  final MangaOcrService service = spec.engines.service;
+  final String? serviceCachePath = service is MangaOcrPageService
+      ? await (service as MangaOcrPageService).resolvePageCacheDirPath(
+          imageDirPath: dir,
+        )
+      : null;
+  final String engineSignature = serviceCachePath == null
+      ? await resolveInstalledLocalMangaOcrEngineSignature()
+      : p.basename(serviceCachePath);
+  final Directory cacheDir = Directory(
+    serviceCachePath ??
+        p.join(
+          dir,
+          kMangaOcrOutDirName,
+          kMangaOcrPagesCacheDirName,
+          engineSignature,
+        ),
+  );
   if (!spec.onlyMissing) {
     await discardMangaOcrPageCache(cacheDir);
   }
   final MangaOcrFilePageCache cache = MangaOcrFilePageCache(
     cacheDir: cacheDir,
     pageNames: <String>[
-      for (final MangaOcrPageFile page in pages) page.relativeUrl
+      for (final MangaOcrPageFile page in pages) page.relativeUrl,
     ],
     pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
   );
@@ -138,8 +146,10 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
     cachedResults.add(cached);
   }
   if (cachedResults.length == pages.length && pages.isNotEmpty) {
-    final MokuroPayload generated =
-        buildMangaPayloadFromResults(pages, cachedResults);
+    final MokuroPayload generated = buildMangaPayloadFromResults(
+      pages,
+      cachedResults,
+    );
     final MokuroPayload payload = MokuroPayload(
       images: generated.images,
       ocr: MangaOcrMetadata(
@@ -164,8 +174,10 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
     );
     return;
   }
-  await for (final MangaOcrVolumeEvent event in spec.engines.service
-      .ocrFolder(imageDirPath: dir, volumeTitle: spec.volumeTitle)) {
+  await for (final MangaOcrVolumeEvent event in spec.engines.service.ocrFolder(
+    imageDirPath: dir,
+    volumeTitle: spec.volumeTitle,
+  )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
@@ -201,18 +213,21 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
 ) async* {
   final String dir = spec.imageDirPath;
   final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
-  final int start =
-      pages.isEmpty ? 0 : spec.startPage.clamp(0, pages.length - 1);
+  final int start = pages.isEmpty
+      ? 0
+      : spec.startPage.clamp(0, pages.length - 1);
   final List<int> order = <int>[
     for (int index = start; index < pages.length; index++) index,
     for (int index = 0; index < start; index++) index,
   ];
-  final Directory lensCacheDir = Directory(p.join(
-    dir,
-    kMangaOcrOutDirName,
-    kMangaOcrPagesCacheDirName,
-    googleLensEngineSignature(spec.lensLanguage),
-  ));
+  final Directory lensCacheDir = Directory(
+    p.join(
+      dir,
+      kMangaOcrOutDirName,
+      kMangaOcrPagesCacheDirName,
+      googleLensEngineSignature(spec.lensLanguage),
+    ),
+  );
   if (!spec.onlyMissing) {
     await discardMangaOcrPageCache(lensCacheDir);
   }
@@ -254,12 +269,12 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
   }
   await for (final MangaOcrVolumeEvent event
       in spec.engines.lensRunner!.ocrFolder(
-    imageDirPath: dir,
-    volumeTitle: spec.volumeTitle,
-    startPage: spec.startPage,
-    onlyMissing: spec.onlyMissing,
-    language: spec.lensLanguage,
-  )) {
+        imageDirPath: dir,
+        volumeTitle: spec.volumeTitle,
+        startPage: spec.startPage,
+        onlyMissing: spec.onlyMissing,
+        language: spec.lensLanguage,
+      )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
@@ -269,8 +284,9 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
       continue;
     }
     final int orderIndex = event.pagesDone - 1;
-    final int? pageIndex =
-        orderIndex >= 0 && orderIndex < order.length ? order[orderIndex] : null;
+    final int? pageIndex = orderIndex >= 0 && orderIndex < order.length
+        ? order[orderIndex]
+        : null;
     final MokuroImage? page = pageIndex == null
         ? null
         : await cache.read(pageIndex, pages[pageIndex]);
@@ -290,28 +306,31 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
 ) async* {
   final String dir = spec.imageDirPath;
   final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
-  final int start =
-      pages.isEmpty ? 0 : spec.startPage.clamp(0, pages.length - 1);
+  final int start = pages.isEmpty
+      ? 0
+      : spec.startPage.clamp(0, pages.length - 1);
   final List<int> order = <int>[
     for (int index = start; index < pages.length; index++) index,
     for (int index = 0; index < start; index++) index,
   ];
   final GoogleLensPageCache cache = GoogleLensPageCache(
-    Directory(p.join(
-      dir,
-      kMangaOcrOutDirName,
-      kMangaOcrPagesCacheDirName,
-      systemOcrEngineSignature(spec.lensLanguage),
-    )),
+    Directory(
+      p.join(
+        dir,
+        kMangaOcrOutDirName,
+        kMangaOcrPagesCacheDirName,
+        systemOcrEngineSignature(spec.lensLanguage),
+      ),
+    ),
   );
   await for (final MangaOcrVolumeEvent event
       in spec.engines.systemOcrRunner!.ocrFolder(
-    imageDirPath: dir,
-    volumeTitle: spec.volumeTitle,
-    startPage: spec.startPage,
-    onlyMissing: spec.onlyMissing,
-    language: spec.lensLanguage,
-  )) {
+        imageDirPath: dir,
+        volumeTitle: spec.volumeTitle,
+        startPage: spec.startPage,
+        onlyMissing: spec.onlyMissing,
+        language: spec.lensLanguage,
+      )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
@@ -321,8 +340,9 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
       continue;
     }
     final int orderIndex = event.pagesDone - 1;
-    final int? pageIndex =
-        orderIndex >= 0 && orderIndex < order.length ? order[orderIndex] : null;
+    final int? pageIndex = orderIndex >= 0 && orderIndex < order.length
+        ? order[orderIndex]
+        : null;
     final MokuroImage? page = pageIndex == null
         ? null
         : await cache.read(pageIndex, pages[pageIndex]);
@@ -338,8 +358,9 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
 Stream<MangaOcrBackgroundEvent> mangaOcrExternalEvents(
   MangaOcrJobSpec spec,
 ) async* {
-  await for (final MokuroRunEvent event
-      in spec.engines.externalRunner!.run(spec.imageDirPath)) {
+  await for (final MokuroRunEvent event in spec.engines.externalRunner!.run(
+    spec.imageDirPath,
+  )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
         pagesTotal: event.total,
@@ -387,11 +408,9 @@ Future<String> writeMangaOcrCachedOutput(
   String dir,
   MokuroPayload payload,
 ) async {
-  final File output = File(p.join(
-    dir,
-    kMangaOcrOutDirName,
-    kMangaOcrOutputFileName,
-  ));
+  final File output = File(
+    p.join(dir, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+  );
   await output.parent.create(recursive: true);
   final File temporary = File('${output.path}.tmp');
   await temporary.writeAsString(

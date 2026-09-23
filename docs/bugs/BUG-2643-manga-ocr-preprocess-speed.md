@@ -1,0 +1,10 @@
+## BUG-2643 · Windows 本地漫画 OCR 识别慢且缩图丢失细笔画
+- **报告**：2026-09-23（用户：Windows、本地 ONNX，《君が一等星に光るまで》慢且不准）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/ocr/manga_ocr_recognizer.dart:64` 原先先用 `image.copyResize(linear)` 缩图再做浮点灰度化；点采样缩小丢细笔画，palette PNG 还被 image 包强制改成 nearest，与模型训练的 PIL 灰度化和抗混叠双线性契约不符。`floor(left)+ceil(width)` 还会漏右/下边像素。`manga_ocr_service_impl.dart:419` 的五个串行 CPU session 原先都使用全核默认线程池；Windows 空闲池自旋争用，逐字解码更慢。
+- **[x] ① 已修复** — `6b333442ac8`：灰度化、像素中心、缩小时滤波核扩宽、两遍 8 位取整对齐 PIL；裁框包含完整边界；Windows 五会话统一最多两个线程（单核为一），其它平台策略不变；beam 搜索融合扫描、移除整词表临时分数数组，保持四 beam 与解码规则；缓存基线升 v3。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/manga_ocr_recognizer_test.dart`：6 组独立 Pillow SHA256 oracle、索引色细笔画、8-bit 灰度 PNG 亮度、小数裁框；`beam_search_test.dart`：同分顺序、逐 beam 归一化、ngram 概率质量与输入不变；`manga_ocr_service_impl_test.dart`：线程预算、完整后端参数传递、五模型生产装配。
+- **实测**：本机 i5-12600KF、ORT 1.22.0、同一真实 crop、五会话同时存活，三次稳态中位数：默认线程→2线程，encoder 1628→766ms，decoder 长度 1/16/40 分别 161/280/550→64/95/165ms。有并发编译，这些是阶段样本，不能等同整页加速率。独立 beam 基准 30.18→22.40ms/轮；2000 组 token、score、完整 beam 轨迹与旧实现精确一致。
+- **准确度边界**：ORT 1.22.0 对拍 16 个真实裁框，旧实现逐字复现生产缓存；新实现 12 框文字不变，标准正文未退化。4 个变化框仍有手写斜字/90°英文误识，不能宣称这类困难内容已修好；不通过降低 beam 数或提高检测阈值换速度。
+- **整页复核**：原生编译结束后，用随包 ORT 1.22 DLL、Dart FFI 真管线，对 page_000005 按旧/新/旧/新交错跑四轮，69.516/23.626/46.978/22.774 秒，旧/新中位数 58.247/23.200 秒（耗时下降 60.2%）。12 框坐标一致，native 推理累计耗时是主要差异。每轮均新建会话后处理第一页，计时不含初始化/图像解码；保留用户正在运行的应用及逐轮 CPU 干扰记录。仅为本机单页样本，不是全卷/跨设备加速承诺；见 `.codex-test/ocr-real/full_pipeline_interleaved_summary.json`。
+- **上游契约**：[manga-ocr](https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/ocr.py)、[模型预处理配置](https://huggingface.co/mayocream/manga-ocr-onnx/raw/main/preprocessor_config.json)、[Pillow resampling](https://github.com/python-pillow/Pillow/blob/main/src/libImaging/Resample.c)。真实页/张量与计时保留在本地 `.codex-test/ocr-real/`，不入库用户漫画。
+- **验证**：OCR 及相邻缓存/目录流程 236 项测试通过；全量 `flutter analyze --no-pub` 通过。Windows `manga_ocr_volume_e2e_itest.dart` 在独立数据根中用真实模型通过（1 页、4 句日文全对、7401ms）；同步补齐该测试在引擎拆包后的后台 isolate 工厂/binding 装配，模型从只读 seed 复制到测试根。低位深/16-bit 非索引 PNG 的全管线归一化属于既有未覆盖边界，本轮证据限于 8-bit 与索引色输入。

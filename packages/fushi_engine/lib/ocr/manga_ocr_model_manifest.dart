@@ -23,8 +23,9 @@ library;
 import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart';
+
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
-enum MangaOcrModelRole { detector, recognizer }
+enum MangaOcrModelRole { detector, recognizer, runtime }
 
 /// 清单里的一个模型文件（实现共享下载器的 [DownloadableModelFile]）。
 class MangaOcrModelFile implements DownloadableModelFile {
@@ -33,6 +34,7 @@ class MangaOcrModelFile implements DownloadableModelFile {
     required this.url,
     required this.expectedBytes,
     required this.role,
+    this.sha256,
   });
 
   /// 落盘文件名（与远端 basename 一致，Range 续传直接复用同 URL）。
@@ -48,55 +50,70 @@ class MangaOcrModelFile implements DownloadableModelFile {
   final int expectedBytes;
 
   final MangaOcrModelRole role;
+
+  /// Pinned digest checked before installing executable runtime artifacts.
+  final String? sha256;
 }
 
 /// 全套模型清单（检测器 int8 + 识别 encoder/decoder + vocab）。
 const List<MangaOcrModelFile> kMangaOcrModelManifest = <MangaOcrModelFile>[
   MangaOcrModelFile(
     fileName: 'detector-v4-s_int8.onnx',
-    url: 'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
+    url:
+        'https://huggingface.co/ogkalu/comic-text-and-bubble-detector/'
         'resolve/main/detector-v4-s_int8.onnx',
     expectedBytes: 11120765,
     role: MangaOcrModelRole.detector,
   ),
   MangaOcrModelFile(
     fileName: 'encoder_model.onnx',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
+    url:
+        'https://huggingface.co/mayocream/manga-ocr-onnx/'
         'resolve/main/encoder_model.onnx',
     expectedBytes: 343454249,
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
     fileName: 'decoder_model.onnx',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
+    url:
+        'https://huggingface.co/mayocream/manga-ocr-onnx/'
         'resolve/main/decoder_model.onnx',
     expectedBytes: 117480262,
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
     fileName: 'vocab.txt',
-    url: 'https://huggingface.co/mayocream/manga-ocr-onnx/'
+    url:
+        'https://huggingface.co/mayocream/manga-ocr-onnx/'
         'resolve/main/vocab.txt',
     expectedBytes: 30216,
     role: MangaOcrModelRole.recognizer,
   ),
+  ...kPpOcrLineModelManifest,
+];
+
+/// Shared original-resolution horizontal-line path for every crop recognizer.
+const List<MangaOcrModelFile> kPpOcrLineModelManifest = <MangaOcrModelFile>[
   MangaOcrModelFile(
     fileName: kPpOcrDetFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
+    url:
+        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx/'
         'resolve/$kPpOcrDetRevision/inference.onnx',
     expectedBytes: 9880512,
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
     fileName: kPpOcrRecFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
+    url:
+        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
         'resolve/$kPpOcrRecRevision/inference.onnx',
     expectedBytes: 21159378,
     role: MangaOcrModelRole.recognizer,
   ),
   MangaOcrModelFile(
     fileName: kPpOcrRecDictFileName,
-    url: 'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
+    url:
+        'https://huggingface.co/PaddlePaddle/PP-OCRv6_small_rec_onnx/'
         'resolve/$kPpOcrRecRevision/inference.yml',
     expectedBytes: 150579,
     role: MangaOcrModelRole.recognizer,

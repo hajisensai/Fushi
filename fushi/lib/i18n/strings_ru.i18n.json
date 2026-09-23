@@ -2089,7 +2089,6 @@
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_ocr_engine_google_lens_desc": "Требуется интернет, изображения страниц отправляются в Google. Быстро и без загрузки, но качество ниже локальной модели.",
   "manga_ocr_engine_local_onnx": "Локальный ONNX",
-  "manga_ocr_engine_local_onnx_desc": "Полностью офлайн, лучшее качество. Требуется однократная загрузка модели, на старом оборудовании работает медленно.",
   "manga_ocr_engine_none": "Нет доступного движка OCR. Скачайте встроенные модели или укажите путь к mokuro CLI в настройках.",
   "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR устройства",
@@ -5452,5 +5451,17 @@
   "manga_reader_ocr_volume": "Распознать том",
   "manga_reader_ocr_queued": "В очереди",
   "manga_reader_ocr_unavailable_short": "Нет движка OCR · загрузите модель или смените движок в настройках OCR",
-  "manga_reader_ocr_rerun": "Повторно распознать этот том…"
+  "manga_reader_ocr_rerun": "Повторно распознать этот том…",
+  "manga_ocr_parallel_tasks": "Parallel OCR tasks",
+  "manga_ocr_parallel_auto": "Automatic (1-2 tasks)",
+  "manga_ocr_parallel_tasks_desc": "Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.",
+  "manga_ocr_local_model": "Local OCR model",
+  "manga_ocr_manga_model": "manga-ocr (classic)",
+  "manga_ocr_baberu_model": "Baberu (fast, GPU when available)",
+  "manga_ocr_manga_model_desc": "Japanese manga model with horizontal-line recognition. Runs on CPU on Windows.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline. Download the selected model once; speed and accuracy depend on the model and hardware.",
+  "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks.",
+  "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
+  "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
+  "manga_ocr_runtime_installing": "Installing the local OCR engine…"
 }
