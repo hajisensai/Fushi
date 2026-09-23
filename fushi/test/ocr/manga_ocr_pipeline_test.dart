@@ -59,8 +59,195 @@ class MemoryCache implements OcrPageCache {
   }
 }
 
+class _BatchRecognizer implements BatchOcrRecognizer {
+  final List<List<OcrRect>> batches = <List<OcrRect>>[];
+  final List<img.Image> pages = <img.Image>[];
+  double? emptyLeft;
+  int? returnedCount;
+  void Function()? onBatch;
+  int active = 0;
+  int maxActive = 0;
+
+  @override
+  Future<String> recognize(img.Image page, OcrRect box) =>
+      throw StateError('Batch-capable pipeline must not fall back to singles');
+
+  @override
+  Future<List<String>> recognizeBatch(
+      img.Image page, List<OcrRect> boxes) async {
+    pages.add(page);
+    batches.add(List<OcrRect>.of(boxes));
+    active++;
+    if (active > maxActive) maxActive = active;
+    await Future<void>.value();
+    onBatch?.call();
+    active--;
+    if (returnedCount != null) {
+      return List<String>.filled(returnedCount!, 'wrong shape');
+    }
+    return <String>[
+      for (final OcrRect box in boxes)
+        box.left == emptyLeft ? '' : 'p${pageOf(page)}@${box.left.toInt()}',
+    ];
+  }
+}
+
+class _FixedDetector implements OcrDetector {
+  _FixedDetector(this.regions);
+
+  final List<DetectedTextRegion> regions;
+  int calls = 0;
+  void Function()? onDetect;
+
+  @override
+  Future<PageDetections> detect(img.Image page) async {
+    calls++;
+    onDetect?.call();
+    return PageDetections(textRegions: regions, bubbles: const <OcrRect>[]);
+  }
+}
+
+List<DetectedTextRegion> _columns(int count) => <DetectedTextRegion>[
+      for (int index = 0; index < count; index++)
+        DetectedTextRegion(
+          rect: OcrRect(
+              left: (index * 20).toDouble(),
+              top: 0,
+              right: (index * 20 + 10).toDouble(),
+              bottom: 100),
+          score: index / count,
+          classId: index.isEven ? 1 : 2,
+          insideBubble: index.isEven,
+        ),
+    ];
+
 void main() {
   group('MangaOcrPipeline', () {
+    test('批识别按阅读顺序提交，空结果不让后续框、分数和气泡标记错位', () async {
+      final List<DetectedTextRegion> regions = _columns(3);
+      final _BatchRecognizer recognizer = _BatchRecognizer()..emptyLeft = 20;
+      final img.Image image = pageImage(0);
+      final OcrPageResult result = await MangaOcrPipeline(
+        detector: _FixedDetector(regions),
+        recognizer: recognizer,
+      ).processPage(pageIndex: 0, image: image);
+      expect(recognizer.batches.single.map((OcrRect box) => box.left),
+          <double>[40, 20, 0]);
+      expect(recognizer.pages.single, same(image));
+      expect(result.blocks, hasLength(2));
+      for (final (int output, int source) in <(int, int)>[(0, 2), (1, 0)]) {
+        expect(result.blocks[output].box, same(regions[source].rect));
+        expect(result.blocks[output].lines.single, 'p0@${source * 20}');
+        expect(result.blocks[output].score, regions[source].score);
+        expect(
+            result.blocks[output].insideBubble, regions[source].insideBubble);
+        expect(result.blocks[output].vertical, isTrue);
+      }
+    });
+
+    test('密集页分为最多 8 框的有界批次，批次和页面都不并发', () async {
+      final _BatchRecognizer recognizer = _BatchRecognizer();
+      final List<OcrPageResult> results = await MangaOcrPipeline(
+        detector: _FixedDetector(_columns(19)),
+        recognizer: recognizer,
+      ).processBook(
+        bookId: 'batch',
+        pageCount: 2,
+        loadPage: (int index) async => pageImage(index),
+      );
+      expect(recognizer.batches.map((List<OcrRect> boxes) => boxes.length),
+          <int>[8, 8, 3, 8, 8, 3]);
+      expect(recognizer.maxActive, 1);
+      expect(recognizer.pages.map(pageOf), <int>[0, 0, 0, 1, 1, 1]);
+      for (int page = 0; page < 2; page++) {
+        expect(
+          results[page].blocks.map((OcrBlock block) => block.lines.single),
+          <String>[
+            for (int column = 18; column >= 0; column--) 'p$page@${column * 20}'
+          ],
+        );
+      }
+    });
+
+    test('批识别也服从 LTR 阅读顺序，空页不启动识别后端', () async {
+      final _BatchRecognizer recognizer = _BatchRecognizer();
+      await MangaOcrPipeline(
+        detector: _FixedDetector(_columns(3)),
+        recognizer: recognizer,
+        rightToLeft: false,
+      ).processPage(pageIndex: 0, image: pageImage(0));
+      expect(recognizer.batches.single.map((OcrRect box) => box.left),
+          <double>[0, 20, 40]);
+      final OcrPageResult empty = await MangaOcrPipeline(
+        detector: _FixedDetector(<DetectedTextRegion>[]),
+        recognizer: recognizer,
+      ).processPage(pageIndex: 1, image: pageImage(1));
+      expect(empty.blocks, isEmpty);
+      expect(recognizer.batches, hasLength(1));
+    });
+
+    test('批结果个数错误必须报错，不能静默截断或写入页缓存', () async {
+      for (final int count in <int>[1, 3]) {
+        final MemoryCache cache = MemoryCache();
+        final _BatchRecognizer recognizer = _BatchRecognizer()
+          ..returnedCount = count;
+        await expectLater(
+          MangaOcrPipeline(
+            detector: FakeDetector(),
+            recognizer: recognizer,
+            cache: cache,
+          ).processBook(
+              bookId: 'bad',
+              pageCount: 1,
+              loadPage: (int index) async => pageImage(index)),
+          throwsA(isA<StateError>()),
+        );
+        expect(cache.writes, isEmpty);
+      }
+    });
+
+    test('首批结束时取消：不启动第二批，不缓存未完成页', () async {
+      final OcrCancelToken token = OcrCancelToken();
+      final MemoryCache cache = MemoryCache();
+      final _BatchRecognizer recognizer = _BatchRecognizer()
+        ..onBatch = token.cancel;
+      await expectLater(
+        MangaOcrPipeline(
+          detector: _FixedDetector(_columns(9)),
+          recognizer: recognizer,
+          cache: cache,
+        ).processBook(
+            bookId: 'cancel',
+            pageCount: 1,
+            loadPage: (int index) async => pageImage(index),
+            cancelToken: token),
+        throwsA(isA<OcrCancelledException>()),
+      );
+      expect(recognizer.batches, hasLength(1));
+      expect(cache.writes, isEmpty);
+    });
+
+    test('检测之前或检测期间取消，都不启动批识别', () async {
+      for (final bool beforeDetection in <bool>[true, false]) {
+        final OcrCancelToken token = OcrCancelToken();
+        final _FixedDetector detector = _FixedDetector(_columns(2));
+        final _BatchRecognizer recognizer = _BatchRecognizer();
+        if (beforeDetection) {
+          token.cancel();
+        } else {
+          detector.onDetect = token.cancel;
+        }
+        await expectLater(
+          MangaOcrPipeline(detector: detector, recognizer: recognizer)
+              .processPage(
+                  pageIndex: 0, image: pageImage(0), cancelToken: token),
+          throwsA(isA<OcrCancelledException>()),
+        );
+        expect(detector.calls, beforeDetection ? 0 : 1);
+        expect(recognizer.batches, isEmpty);
+      }
+    });
+
     test('整卷处理：阅读顺序（RTL 右块在前）、竖排判定、进度回调', () async {
       final FakeDetector detector = FakeDetector();
       final FakeRecognizer recognizer = FakeRecognizer();

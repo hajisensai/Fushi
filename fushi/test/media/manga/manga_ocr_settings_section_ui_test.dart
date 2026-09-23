@@ -273,6 +273,100 @@ void main() {
     expect(find.text(t.manga_ocr_baberu_desc), findsOneWidget);
   }, skip: !Platform.isWindows);
 
+  testWidgets(
+    'original CUDA model choice persists across reopening on Windows',
+    (WidgetTester tester) async {
+      String stored = 'manga_ocr';
+      Widget settings() => wrap(
+        MangaOcrSettingsSection(
+          service: _FakeOcrService(ready: true),
+          mokuroPathGetter: () => '',
+          mokuroPathSetter: (String _) async {},
+          probeExternal: (String _) async => null,
+          localModelGetter: () => stored,
+          localModelSetter: (String value) async => stored = value,
+        ),
+      );
+      final Finder field = find.byKey(
+        const ValueKey<String>('manga_ocr_local_model'),
+      );
+      final Finder dropdown = find.descendant(
+        of: field,
+        matching: find.byType(DropdownButton<MangaOcrLocalModel>),
+      );
+      await tester.pumpWidget(settings());
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).value,
+        MangaOcrLocalModel.mangaOcr,
+      );
+      await tester.ensureVisible(field);
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.manga_ocr_cuda_model).last);
+      await tester.pumpAndSettle();
+      expect(stored, 'manga_ocr_cuda');
+      expect(find.text(t.manga_ocr_cuda_desc), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(settings());
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).value,
+        MangaOcrLocalModel.mangaOcrCuda,
+      );
+      expect(find.text(t.manga_ocr_cuda_desc), findsOneWidget);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
+    'runtime installation errors stop download without reporting ready',
+    (WidgetTester tester) async {
+      final StreamController<MangaOcrDownloadEvent> events =
+          StreamController<MangaOcrDownloadEvent>();
+      final _FakeOcrService service = _FakeOcrService(downloadEvents: events);
+      await tester.pumpWidget(
+        wrap(
+          MangaOcrSettingsSection(
+            service: service,
+            mokuroPathGetter: () => '',
+            mokuroPathSetter: (String _) async {},
+            probeExternal: (String _) async => null,
+            enginePreferenceGetter: () => 'auto',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder download = find.widgetWithText(
+        FilledButton,
+        t.manga_ocr_download,
+      );
+      await tester.ensureVisible(download);
+      await tester.tap(download);
+      await tester.pump();
+      events.add(
+        const MangaOcrDownloadEvent(
+          fileName: 'runtime',
+          receivedBytes: 0,
+          totalBytes: 0,
+          installing: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
+      events.addError(StateError('installation failed'));
+      final Future<void> closed = events.close();
+      await tester.pumpAndSettle();
+      await closed;
+      await tester.pumpAndSettle();
+      expect(service.ready, isFalse);
+      expect(find.text(t.manga_ocr_model_status_missing), findsOneWidget);
+      expect(find.text(t.manga_ocr_model_status_ready), findsNothing);
+      expect(download, findsOneWidget);
+    },
+  );
+
   testWidgets('local model cannot change during an active model download',
       (WidgetTester tester) async {
     final StreamController<MangaOcrDownloadEvent> events =

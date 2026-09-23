@@ -248,6 +248,49 @@ void main() {
   }
 
   group('modelStatus / deleteModels', () {
+    test('CUDA files without an installed runtime do not start OCR', () async {
+      writeAllModels();
+      final _FakeRunner runner = _FakeRunner();
+      final MangaOcrServiceImpl cuda = MangaOcrServiceImpl(
+        modelsDirProvider: () async => modelsDir,
+        manifest: _tinyManifest,
+        localModel: MangaOcrLocalModel.mangaOcrCuda,
+        platformSupport: () => true,
+        jobRunner: runner,
+      );
+      final MangaOcrModelStatus status = await cuda.modelStatus();
+      expect(status.detectorReady, isTrue);
+      expect(status.recognizerReady, isFalse);
+      expect(status.hasResumableDownload, isTrue);
+      await expectLater(
+        cuda.openPageSession(imageDirPath: modelsDir.path),
+        throwsStateError,
+      );
+      expect(runner.requests, isEmpty);
+    });
+
+    test('CUDA wheel files do not enter the page model fingerprint', () async {
+      writeAllModels();
+      const MangaOcrModelFile runtimeFile = MangaOcrModelFile(
+        fileName: 'torch.whl',
+        url: 'https://example.invalid/torch.whl',
+        expectedBytes: 3,
+        role: MangaOcrModelRole.runtime,
+      );
+      final File wheel = File(p.join(modelsDir.path, runtimeFile.fileName));
+      wheel.writeAsBytesSync(<int>[1, 2, 3]);
+      final MangaOcrServiceImpl cuda = MangaOcrServiceImpl(
+        modelsDirProvider: () async => modelsDir,
+        manifest: <MangaOcrModelFile>[..._tinyManifest, runtimeFile],
+        localModel: MangaOcrLocalModel.mangaOcrCuda,
+      );
+      final String first = await cuda.resolvePageCacheDirPath(
+        imageDirPath: '/book',
+      );
+      wheel.writeAsBytesSync(<int>[3, 2, 1, 0]);
+      expect(await cuda.resolvePageCacheDirPath(imageDirPath: '/book'), first);
+      expect(first, contains('local-manga-cuda-v1-beam4-cache'));
+    });
     test(
       'Baberu resolves its eight files and shares one cache identity across runners',
       () async {

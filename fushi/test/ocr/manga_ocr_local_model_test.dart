@@ -11,6 +11,13 @@ void main() {
     'Windows supports both models and unknown values retain the default',
     () {
       expect(
+        MangaOcrLocalModel.forPlatform(
+          'manga_ocr_cuda',
+          operatingSystem: 'windows',
+        ),
+        MangaOcrLocalModel.mangaOcrCuda,
+      );
+      expect(
         MangaOcrLocalModel.forPlatform('baberu', operatingSystem: 'windows'),
         MangaOcrLocalModel.baberu,
       );
@@ -41,6 +48,10 @@ void main() {
           operatingSystem: os,
         );
         expect(model, MangaOcrLocalModel.mangaOcr);
+        expect(
+          MangaOcrLocalModel.forPlatform('manga_ocr_cuda', operatingSystem: os),
+          MangaOcrLocalModel.mangaOcr,
+        );
         expect(model.manifest, same(kMangaOcrModelManifest));
         expect(
           (await model.modelsDirectory()).path,

@@ -190,7 +190,9 @@ void main() {
   // Optional private fixture benchmark through the real Flutter plugin. No
   // manga images or generated OCR are bundled with the test/repository.
   const String cropManifest = String.fromEnvironment('OCR_CROP_MANIFEST');
-  if (cropManifest.isNotEmpty) {
+  if (cropManifest.isNotEmpty &&
+      const String.fromEnvironment('OCR_LOCAL_MODEL', defaultValue: 'baberu') ==
+          'baberu') {
     test(
       'Baberu native bridge real crop benchmark',
       () async {
@@ -270,9 +272,18 @@ void main() {
   const String realPageSeed = String.fromEnvironment('OCR_REAL_PAGE_DIR');
   if (realPageSeed.isNotEmpty) {
     test(
-      'Baberu native full-page private fixture smoke',
+      'selected local model full-page private fixture smoke',
       () async {
         const String seed = String.fromEnvironment('OCR_MODEL_SEED');
+        final MangaOcrLocalModel selected = MangaOcrLocalModel.fromKey(
+          const String.fromEnvironment(
+            'OCR_LOCAL_MODEL',
+            defaultValue: 'baberu',
+          ),
+        );
+        const bool preparedSeed = bool.fromEnvironment(
+          'OCR_USE_PREPARED_MODEL_SEED',
+        );
         const String reportPath = String.fromEnvironment(
           'OCR_REAL_PAGE_REPORT',
         );
@@ -288,16 +299,19 @@ void main() {
         final Directory realPages = Directory(
           p.join(workDir.path, 'real-pages'),
         )..createSync();
-        final Directory models = Directory(p.join(workDir.path, 'real-models'))
-          ..createSync();
-        for (final MangaOcrModelFile model in kBaberuOcrModelManifest) {
+        final Directory models = Directory(
+          preparedSeed ? seed : p.join(workDir.path, 'real-models'),
+        )..createSync();
+        for (final MangaOcrModelFile model in selected.manifest) {
           final File source = File(p.join(seed, model.fileName));
           expect(
             source.existsSync(),
             isTrue,
             reason: 'Missing seeded ${model.fileName}',
           );
-          source.copySync(p.join(models.path, model.fileName));
+          if (!preparedSeed) {
+            source.copySync(p.join(models.path, model.fileName));
+          }
         }
         for (final dynamic raw in expectedPages) {
           final Map<String, dynamic> expected = raw as Map<String, dynamic>;
@@ -313,17 +327,19 @@ void main() {
           source.copySync(p.join(realPages.path, name));
         }
         final MangaOcrServiceImpl service = MangaOcrServiceImpl(
-          localModel: MangaOcrLocalModel.baberu,
+          localModel: selected,
           modelsDirProvider: () async => models,
         );
         expect((await service.modelStatus()).allReady, isTrue);
         final Stopwatch timer = Stopwatch()..start();
         final List<Map<String, Object?>> progress = <Map<String, Object?>>[];
         MangaOcrVolumeEvent? finished;
+        MangaOcrAcceleration? acceleration;
         await for (final MangaOcrVolumeEvent event in service.ocrFolder(
           imageDirPath: realPages.path,
           volumeTitle: 'private full-page native smoke',
         )) {
+          acceleration = event.acceleration ?? acceleration;
           progress.add(<String, Object?>{
             'done': event.pagesDone,
             'total': event.pagesTotal,
@@ -335,6 +351,9 @@ void main() {
         timer.stop();
         expect(finished, isNotNull);
         expect(finished!.pagesTotal, expectedPages.length);
+        if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
+          expect(acceleration?.recognition, OcrExecutionProvider.cuda);
+        }
         final File result = File(finished.mangaJsonPath!);
         expect(result.existsSync(), isTrue);
         final Map<String, dynamic> payload =
@@ -342,7 +361,7 @@ void main() {
         final List<dynamic> actualPages = payload['pages'] as List<dynamic>;
         // Preserve the complete evidence before content assertions, including failures.
         final Map<String, Object?> report = <String, Object?>{
-          'model': 'baberu',
+          'model': selected.key,
           'platform': Platform.operatingSystem,
           'total_ms': timer.elapsedMilliseconds,
           'timing_note':
@@ -457,9 +476,16 @@ void main() {
                     : '$baseUrl/${m.fileName}',
                 expectedBytes: m.expectedBytes,
                 role: m.role,
+                sha256: m.sha256,
               ),
           ];
-    final Directory modelsDir = Directory(p.join(workDir.path, 'models'));
+    const String seed = String.fromEnvironment('OCR_MODEL_SEED');
+    const bool preparedSeed = bool.fromEnvironment(
+      'OCR_USE_PREPARED_MODEL_SEED',
+    );
+    final Directory modelsDir = Directory(
+      preparedSeed ? seed : p.join(workDir.path, 'models'),
+    );
     final MangaOcrServiceImpl service = MangaOcrServiceImpl(
       localModel: localModel,
       manifest: manifest,
@@ -473,8 +499,7 @@ void main() {
     );
 
     // ---- 模型就位 -------------------------------------------------------
-    const String seed = String.fromEnvironment('OCR_MODEL_SEED');
-    if (seed.isNotEmpty && Directory(seed).existsSync()) {
+    if (!preparedSeed && seed.isNotEmpty && Directory(seed).existsSync()) {
       modelsDir.createSync(recursive: true);
       for (final MangaOcrModelFile m in localModel.manifest) {
         final File src = File(p.join(seed, m.fileName));
@@ -518,6 +543,9 @@ void main() {
 
     expect(finished, isNotNull, reason: 'ocrFolder 未产出 finished 事件');
     expect(finished!.pagesTotal, 1);
+    if (const bool.fromEnvironment('OCR_REQUIRE_CUDA')) {
+      expect(acceleration?.recognition, OcrExecutionProvider.cuda);
+    }
 
     // ignore: avoid_print
     print(

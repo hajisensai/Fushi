@@ -35,6 +35,12 @@ abstract class MangaOcrService {
   });
 }
 
+/// Local engines with an installation step after downloading or importing files.
+abstract interface class MangaOcrModelPreparationService {
+  /// Cancellation must stop installation before publishing a ready marker.
+  Stream<MangaOcrDownloadEvent> prepareModels();
+}
+
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
 /// 发布成 manga.json。
 ///
@@ -125,6 +131,7 @@ class MangaOcrDownloadEvent {
     required this.receivedBytes,
     required this.totalBytes,
     this.done = false,
+    this.installing = false,
   });
 
   final String fileName;
@@ -133,6 +140,7 @@ class MangaOcrDownloadEvent {
 
   /// 全部文件完成时最后发一次 done=true。
   final bool done;
+  final bool installing;
 }
 
 /// 一次本地整卷 OCR 实际生效的推理加速状态。

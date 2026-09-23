@@ -105,7 +105,44 @@ class _Service extends MangaOcrService {
   }
 }
 
+class _PreparedService extends _Service
+    implements MangaOcrModelPreparationService {
+  _PreparedService() : super(supported: true, status: _mangaStatus);
+  final StreamController<MangaOcrDownloadEvent> preparation =
+      StreamController<MangaOcrDownloadEvent>();
+
+  @override
+  Stream<MangaOcrDownloadEvent> prepareModels() => preparation.stream;
+}
+
 void main() {
+  test(
+    'preparation captures the selected engine before preference changes',
+    () async {
+      final _PreparedService first = _PreparedService();
+      final _PreparedService second = _PreparedService();
+      MangaOcrService current = first;
+      final SelectedMangaOcrService selected = SelectedMangaOcrService(
+        () => current,
+      );
+      final Stream<MangaOcrDownloadEvent> operation = selected.prepareModels();
+      current = second;
+      final Future<List<MangaOcrDownloadEvent>> results = operation.toList();
+      const MangaOcrDownloadEvent event = MangaOcrDownloadEvent(
+        fileName: 'runtime',
+        receivedBytes: 0,
+        totalBytes: 0,
+        installing: true,
+      );
+      first.preparation.add(event);
+      await first.preparation.close();
+      expect(await results, <MangaOcrDownloadEvent>[event]);
+      final Future<void> unusedClosed = second.preparation.close();
+      await second.preparation.stream.drain<void>();
+      await unusedClosed;
+    },
+  );
+
   late _Service manga;
   late _Service baberu;
   late MangaOcrService selected;

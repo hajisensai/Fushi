@@ -190,3 +190,11 @@ abstract interface class OcrDetector {
 abstract interface class OcrRecognizer {
   Future<String> recognize(img.Image page, OcrRect box);
 }
+
+/// 可选的同页批识别能力；没有实现此接口的识别器仍按单框调用。
+///
+/// 输出必须与 [boxes] 严格同长、同序；未认出文字也用空串占住原位置，
+/// 不得在后端过滤或重排。空输入返回空列表。模型内部可再按显存限制分批。
+abstract interface class BatchOcrRecognizer implements OcrRecognizer {
+  Future<List<String>> recognizeBatch(img.Image page, List<OcrRect> boxes);
+}

@@ -25,7 +25,7 @@ import 'dart:io';
 import 'package:fushi_asr_core/asr_core.dart';
 
 /// 模型文件归属：检测 / 识别（[MangaOcrModelStatus] 的两个就绪位分别聚合）。
-enum MangaOcrModelRole { detector, recognizer }
+enum MangaOcrModelRole { detector, recognizer, runtime }
 
 /// 清单里的一个模型文件（实现共享下载器的 [DownloadableModelFile]）。
 class MangaOcrModelFile implements DownloadableModelFile {
@@ -34,6 +34,7 @@ class MangaOcrModelFile implements DownloadableModelFile {
     required this.url,
     required this.expectedBytes,
     required this.role,
+    this.sha256,
   });
 
   /// 落盘文件名（与远端 basename 一致，Range 续传直接复用同 URL）。
@@ -49,6 +50,9 @@ class MangaOcrModelFile implements DownloadableModelFile {
   final int expectedBytes;
 
   final MangaOcrModelRole role;
+
+  /// Pinned digest checked before installing executable runtime artifacts.
+  final String? sha256;
 }
 
 /// 全套模型清单（检测器 int8 + 识别 encoder/decoder + vocab）。

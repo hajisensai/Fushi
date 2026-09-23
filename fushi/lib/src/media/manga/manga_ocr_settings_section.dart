@@ -111,6 +111,7 @@ class _MangaOcrSettingsSectionState
   // 下载态。
   bool _downloading = false;
   String? _downloadingFile;
+  bool _installing = false;
 
   /// 逐文件已收字节（文件名 → 字节）。
   ///
@@ -251,23 +252,35 @@ class _MangaOcrSettingsSectionState
   int get _downloadReceivedBytes =>
       _receivedByFile.values.fold<int>(0, (int a, int b) => a + b);
 
-  void _startDownload() {
+  void _startDownload({bool prepareOnly = false}) {
     if (_importing) return;
     setState(() {
       _downloading = true;
       _downloadingFile = null;
+      _installing = false;
       _receivedByFile.clear();
     });
-    _downloadSub = widget.service.downloadModels().listen(
+    final MangaOcrService service = widget.service;
+    final Stream<MangaOcrDownloadEvent> events =
+        prepareOnly && service is MangaOcrModelPreparationService
+        ? (service as MangaOcrModelPreparationService).prepareModels()
+        : service.downloadModels();
+    bool failed = false;
+    _downloadSub = events.listen(
       (MangaOcrDownloadEvent event) {
         if (!mounted) return;
         setState(() {
           _downloadingFile = event.fileName;
+          _installing = event.installing;
           // 同名文件取最新值而不是累加：同一文件会连发多条递增进度事件。
-          _receivedByFile[event.fileName] = event.receivedBytes;
+          if (!event.installing) {
+            _receivedByFile[event.fileName] = event.receivedBytes;
+          }
         });
       },
       onError: (Object e) {
+        failed = true;
+        unawaited(_downloadSub?.cancel());
         if (!mounted) return;
         setState(() {
           _downloading = false;
@@ -277,10 +290,11 @@ class _MangaOcrSettingsSectionState
           msg: t.manga_ocr_download_failed,
           severity: ToastSeverity.error,
         );
+        unawaited(_loadStatus());
       },
       onDone: () async {
         _downloadSub = null;
-        if (!mounted) return;
+        if (!mounted || failed) return;
         setState(() => _downloading = false);
         FushiToast.show(
           msg: t.manga_ocr_download_done,
@@ -461,6 +475,12 @@ class _MangaOcrSettingsSectionState
     }
     _reportImport(result);
     await _loadStatus();
+    if (mounted &&
+        result.allReady &&
+        _localModel == MangaOcrLocalModel.mangaOcrCuda &&
+        widget.service is MangaOcrModelPreparationService) {
+      _startDownload(prepareOnly: true);
+    }
   }
 
   Future<List<String>?> _pickImportPaths(bool folderMode) async {
@@ -738,9 +758,11 @@ class _MangaOcrSettingsSectionState
       isExpanded: true,
       decoration: InputDecoration(
         labelText: t.manga_ocr_local_model,
-        helperText: _localModel == MangaOcrLocalModel.baberu
-            ? t.manga_ocr_baberu_desc
-            : t.manga_ocr_manga_model_desc,
+        helperText: switch (_localModel) {
+          MangaOcrLocalModel.baberu => t.manga_ocr_baberu_desc,
+          MangaOcrLocalModel.mangaOcrCuda => t.manga_ocr_cuda_desc,
+          MangaOcrLocalModel.mangaOcr => t.manga_ocr_manga_model_desc,
+        },
         helperMaxLines: 4,
         isDense: true,
         border: const OutlineInputBorder(),
@@ -749,6 +771,10 @@ class _MangaOcrSettingsSectionState
         DropdownMenuItem<MangaOcrLocalModel>(
           value: MangaOcrLocalModel.mangaOcr,
           child: Text(t.manga_ocr_manga_model),
+        ),
+        DropdownMenuItem<MangaOcrLocalModel>(
+          value: MangaOcrLocalModel.mangaOcrCuda,
+          child: Text(t.manga_ocr_cuda_model),
         ),
         DropdownMenuItem<MangaOcrLocalModel>(
           value: MangaOcrLocalModel.baberu,
@@ -979,16 +1005,22 @@ class _MangaOcrSettingsSectionState
         ),
         if (_downloading) ...<Widget>[
           const SizedBox(height: 8),
-          _inset(LinearProgressIndicator(value: _downloadProgressValue)),
+          _inset(
+            LinearProgressIndicator(
+              value: _installing ? null : _downloadProgressValue,
+            ),
+          ),
           const SizedBox(height: 4),
           if (_downloadingFile != null)
             _inset(
               Text(
-                t.manga_ocr_downloading_file(file: _downloadingFile!),
+                _installing
+                    ? t.manga_ocr_runtime_installing
+                    : t.manga_ocr_downloading_file(file: _downloadingFile!),
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          if (_downloadTotalBytes > 0)
+          if (!_installing && _downloadTotalBytes > 0)
             _inset(
               Text(
                 t.manga_ocr_download_total_progress(

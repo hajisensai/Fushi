@@ -2,22 +2,29 @@
 library;
 
 import 'dart:io';
+import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
+import 'package:fushi_engine/ocr/manga_ocr_cuda_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart' as model_fp;
 
 enum MangaOcrLocalModel {
   mangaOcr('manga_ocr'),
+  mangaOcrCuda('manga_ocr_cuda'),
   baberu('baberu');
 
   const MangaOcrLocalModel(this.key);
   final String key;
 
-  static MangaOcrLocalModel fromKey(String key) =>
-      key == 'baberu' ? baberu : mangaOcr;
+  static MangaOcrLocalModel fromKey(String key) => switch (key) {
+    'baberu' => baberu,
+    'manga_ocr_cuda' => mangaOcrCuda,
+    _ => mangaOcr,
+  };
 
   /// A preference restored from Windows must not select unsupported models on
   /// another device. Settings, imports and inference share this resolution.
@@ -28,23 +35,43 @@ enum MangaOcrLocalModel {
       ? fromKey(key)
       : mangaOcr;
 
-  List<MangaOcrModelFile> get manifest =>
-      this == baberu ? kBaberuOcrModelManifest : kMangaOcrModelManifest;
+  List<MangaOcrModelFile> get manifest => switch (this) {
+    baberu => kBaberuOcrModelManifest,
+    mangaOcrCuda => kMangaOcrCudaModelManifest,
+    mangaOcr => kMangaOcrModelManifest,
+  };
 
-  String get cacheSignature => this == baberu
-      ? 'local-onnx-baberu-v1-bicubic'
-      : kLocalMangaOcrEngineSignature;
+  String get cacheSignature => switch (this) {
+    baberu => 'local-onnx-baberu-v1-bicubic',
+    mangaOcrCuda => 'local-manga-cuda-v1-beam4-cache-$_cudaRuntimeIdentity',
+    mangaOcr => kLocalMangaOcrEngineSignature,
+  };
 
   /// Sibling directories keep deleting either model from affecting the other.
   Future<Directory> modelsDirectory() async {
     final Directory legacy = await model_fp.defaultMangaOcrModelsDir();
     return this == mangaOcr
         ? legacy
-        : Directory(p.join(legacy.parent.path, 'manga-baberu'));
+        : Directory(
+            p.join(
+              legacy.parent.path,
+              this == baberu ? 'manga-baberu' : 'manga-cuda',
+            ),
+          );
   }
 }
 
 const String kBaberuOcrRevision = 'd9cc13153e9a1cd8fdfa3b7b1cc329da2020aeae';
+
+// Runtime upgrades can change decoding even when model weights stay identical.
+// Hash the pinned lock metadata, without reading multi-GB wheel contents on OCR.
+final String _cudaRuntimeIdentity = sha256
+    .convert(
+      utf8.encode('$kMangaOcrCudaRuntimeVersion\n$kMangaOcrCudaRequirements'),
+    )
+    .toString()
+    .substring(0, 8);
+
 const String _baberuBase =
     'https://huggingface.co/genshiai-daichi/baberu-ocr/resolve/$kBaberuOcrRevision';
 
