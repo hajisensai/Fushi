@@ -12,6 +12,7 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -104,6 +105,19 @@ class _MangaTestAppModel extends AppModel {
   bool get mangaChromeFloating => false;
   @override
   bool get mangaVolumeKeyPaging => false;
+
+  // 边看边 OCR（PR #1614）在 _refreshVisibleOcr 里读这三项：测试里 prefsRepo 是
+  // null，不覆写就在开书后抛 _TypeError。与 manga_fushi_page_test 同口径显式走
+  // manual，免得 widget 测试去碰原生 OCR 后端。
+  @override
+  MangaReaderPreferences get mangaReaderPreferences =>
+      const MangaReaderPreferences(ocrTrigger: 'manual');
+
+  @override
+  String get mangaOcrEnginePreference => 'local_onnx';
+
+  @override
+  String get mangaOcrLensLanguage => 'ja';
 }
 
 Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
