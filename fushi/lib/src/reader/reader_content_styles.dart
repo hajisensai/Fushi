@@ -1133,7 +1133,14 @@ body {
   $vpalCss
 }
 .fushi-vn-stage {
-  position: fixed !important;
+  /* BUG-2638: absolute, NOT fixed. macOS WebKit composites a fixed stage as
+     its own layer, and when a vertical-rl screen swap changes the content
+     box size it only invalidates the OLD content rect — the new screen's
+     columns outside it stay unpainted (glyphs sliced) until some unrelated
+     repaint. The VN document never scrolls (html/body are 100vw x 100vh with
+     overflow hidden and the chapter lives in a detached sourceRoot), so the
+     initial containing block is the viewport and the geometry is identical. */
+  position: absolute !important;
   inset: 0 !important;
   box-sizing: border-box !important;
   /* Reserve the reader chrome (top/bottom bars) + the user's vertical margins
