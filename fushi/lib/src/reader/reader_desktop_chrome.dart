@@ -18,6 +18,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show kFushiSettingsWideMinHeight, kFushiSettingsWideThreshold;
@@ -407,12 +408,14 @@ class ReaderSideSheet extends StatelessWidget {
     required this.child,
     required this.onClose,
     this.padding = const EdgeInsets.fromLTRB(20, 4, 20, 24),
+    this.headerActions = const <Widget>[],
   });
 
   final String title;
   final Widget child;
   final VoidCallback onClose;
   final EdgeInsets padding;
+  final List<Widget> headerActions;
 
   @override
   Widget build(BuildContext context) {
@@ -433,6 +436,7 @@ class ReaderSideSheet extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              ...headerActions,
               Semantics(
                 identifier: 'hibiki.reader.side_sheet.close',
                 child: IconButton(
@@ -512,6 +516,7 @@ Future<T?> showReaderSideSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   ReaderSideSheetSide side = ReaderSideSheetSide.right,
+  ValueListenable<ReaderSideSheetSide>? sideController,
 }) {
   final bool left = side == ReaderSideSheetSide.left;
   return showGeneralDialog<T>(
@@ -522,22 +527,41 @@ Future<T?> showReaderSideSheet<T>({
     transitionDuration: const Duration(milliseconds: 180),
     pageBuilder: (BuildContext ctx, Animation<double> a, Animation<double> b) {
       final double width = readerSideSheetWidth(MediaQuery.sizeOf(ctx).width);
-      return Align(
-        alignment: left ? Alignment.centerLeft : Alignment.centerRight,
-        child: SizedBox(
-          width: width,
-          height: double.infinity,
-          child: Material(
-            key: const ValueKey<String>('fushi_reader_side_sheet'),
-            color: Theme.of(ctx).colorScheme.surface,
-            elevation: 8,
-            child: Padding(
-              padding:
-                  EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
-              child: SafeArea(child: Builder(builder: builder)),
+      final Widget panel = SizedBox(
+        width: width,
+        height: double.infinity,
+        child: Material(
+          key: const ValueKey<String>('fushi_reader_side_sheet'),
+          color: Theme.of(ctx).colorScheme.surface,
+          elevation: 8,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(ctx).bottom,
             ),
+            child: SafeArea(child: Builder(builder: builder)),
           ),
         ),
+      );
+      if (sideController == null) {
+        return Align(
+          alignment: left ? Alignment.centerLeft : Alignment.centerRight,
+          child: panel,
+        );
+      }
+      return ValueListenableBuilder<ReaderSideSheetSide>(
+        valueListenable: sideController,
+        child: panel,
+        builder:
+            (BuildContext context, ReaderSideSheetSide side, Widget? child) {
+          return AnimatedAlign(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: side == ReaderSideSheetSide.left
+                ? Alignment.centerLeft
+                : Alignment.centerRight,
+            child: child,
+          );
+        },
       );
     },
     transitionBuilder: (
@@ -547,7 +571,10 @@ Future<T?> showReaderSideSheet<T>({
       Widget child,
     ) {
       final Animation<Offset> slide = Tween<Offset>(
-        begin: Offset(left ? -1 : 1, 0),
+        begin: Offset(
+          (sideController?.value ?? side) == ReaderSideSheetSide.left ? -1 : 1,
+          0,
+        ),
         end: Offset.zero,
       ).animate(
         CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),

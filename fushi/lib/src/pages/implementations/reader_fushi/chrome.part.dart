@@ -2062,6 +2062,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
           ? ReaderSideSheetSide.left
           : ReaderSideSheetSide.right,
       builder: (_) => sheetContent,
+      movableSettings:
+          presentation == ReaderQuickSettingsPresentation.sideSheetAppearance,
     );
   }
 
@@ -2073,12 +2075,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
   Future<void> _presentSideSheet({
     required ReaderSideSheetSide side,
     required WidgetBuilder builder,
+    bool movableSettings = false,
   }) async {
     _cancelChromeAutoHide();
     // BUG-2276：透明遮罩形态开始 / 结束的唯一两点。旗只在这里翻，
     // [_closeSideSheetForWebViewPointer] 只读，不存在第二个所有者。
     _sideSheetOpen = true;
     try {
+      if (movableSettings) {
+        await showReaderSettingsSideDialog<void>(
+          context: context,
+          preferences: appModel.prefsRepo,
+          builder: builder,
+        );
+        return;
+      }
       await showReaderSideSheet<void>(
         context: context,
         side: side,

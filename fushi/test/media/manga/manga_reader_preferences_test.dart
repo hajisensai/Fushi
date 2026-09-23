@@ -3,6 +3,48 @@ import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 
 void main() {
+  test('Mangatan controls round-trip and clamp untrusted persisted values', () {
+    final MangaReaderPreferences value =
+        MangaReaderPreferences.fromJson(<String, Object?>{
+      'automaticBackground': true,
+      'webtoonDoubleTapZoom': false,
+      'showPageGaps': false,
+      'autoScroll': true,
+      'autoScrollSpeed': 999,
+      'readerHideThreshold': -5,
+      'einkMode': true,
+      'lookupOnHover': true,
+      'showOcrBoxes': true,
+      'brightness': -500,
+      'contrast': 900,
+      'saturation': double.nan,
+      'customColorFilter': true,
+      'colorFilterColor': '#a0F15b',
+      'colorFilterOpacity': 200,
+      'ocrTrigger': 'manual',
+      'parallelOcrTasks': 9,
+    });
+    expect(value.autoScrollSpeed, 200);
+    expect(value.readerHideThreshold, 0);
+    expect(value.brightness, -100);
+    expect(value.contrast, 200);
+    expect(value.saturation, 100);
+    expect(value.colorFilterOpacity, 100);
+    expect(value.parallelOcrTasks, 3);
+    expect(
+      MangaReaderPreferences.fromJson(value.toJson()).toJson(),
+      value.toJson(),
+    );
+    final MangaReaderPreferences resolved =
+        value.copyWithJson(<String, Object?>{
+      'colorFilterColor': '#fff;display:none',
+      'ocrTrigger': 'eager',
+      'autoScrollSpeed': double.infinity,
+    });
+    expect(resolved.colorFilterColor, '#a0F15b');
+    expect(resolved.ocrTrigger, 'manual');
+    expect(resolved.autoScrollSpeed, 200);
+  });
   test('sparse overrides inherit global values and reject bad wire types', () {
     const MangaReaderPreferences global = MangaReaderPreferences(
       mode: MangaReadingMode.webtoonGaps,
@@ -10,15 +52,13 @@ void main() {
       direction: 'ltr',
       showPageNumber: false,
     );
-    final MangaReaderPreferences resolved = MangaReaderPreferences.resolve(
-      global,
-      <String, Object?>{
-        'longStripSidePadding': 12,
-        'showPageNumber': true,
-        'scaleType': 'unknown',
-        'direction': 42,
-      },
-    );
+    final MangaReaderPreferences resolved =
+        MangaReaderPreferences.resolve(global, <String, Object?>{
+      'longStripSidePadding': 12,
+      'showPageNumber': true,
+      'scaleType': 'unknown',
+      'direction': 42,
+    });
     expect(resolved.mode, MangaReadingMode.webtoonGaps);
     expect(resolved.scaleType, MangaScaleType.fitWidth);
     expect(resolved.direction, 'ltr');
@@ -32,8 +72,9 @@ void main() {
         scaleType: scale,
         mode: MangaReadingMode.pagedVertical,
       );
-      final MangaReaderPreferences decoded =
-          MangaReaderPreferences.fromJson(value.toJson());
+      final MangaReaderPreferences decoded = MangaReaderPreferences.fromJson(
+        value.toJson(),
+      );
       expect(decoded.scaleType, scale);
       expect(decoded.mode, MangaReadingMode.pagedVertical);
     }

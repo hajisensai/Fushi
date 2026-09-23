@@ -16,9 +16,10 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
-    show kMangaChromeBarHeight;
+    show kMangaChromeBarHeight, MangaChromeAction;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -83,6 +84,18 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaVolumeKeyPaging => false;
+
+  // Widget tests exercise reader UI without a native OCR backend. Opt into
+  // manual mode explicitly and provide the same preference contract as AppModel.
+  @override
+  MangaReaderPreferences get mangaReaderPreferences =>
+      const MangaReaderPreferences(ocrTrigger: 'manual');
+
+  @override
+  String get mangaOcrEnginePreference => 'local_onnx';
+
+  @override
+  String get mangaOcrLensLanguage => 'ja';
 }
 
 /// 悬浮顶栏偏好开的 fake。
@@ -98,6 +111,7 @@ class _FakeMangaOcrService implements MangaOcrService {
   _FakeMangaOcrService({required this.ready});
 
   final bool ready;
+  int folderRequests = 0;
 
   @override
   bool get isSupportedPlatform => false;
@@ -121,8 +135,10 @@ class _FakeMangaOcrService implements MangaOcrService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
-  }) =>
-      const Stream<MangaOcrVolumeEvent>.empty();
+  }) {
+    folderRequests++;
+    return const Stream<MangaOcrVolumeEvent>.empty();
+  }
 }
 
 Widget _harness(AppModel appModel, MediaItem item, String bookKey,
@@ -371,7 +387,7 @@ void main() {
     },
   );
 
-  testWidgets('阅读器内无 OCR 入口：书加载成功后 chrome 没有整卷/框选按钮，返回按钮仍在',
+  testWidgets('阅读器允许当前页 OCR：手动模式不预跑整卷，保留返回与查词键盘宿主',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -379,6 +395,7 @@ void main() {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final _MangaTestAppModel appModel = _MangaTestAppModel(db);
+    final _FakeMangaOcrService ocrService = _FakeMangaOcrService(ready: true);
 
     final Directory bookDir =
         Directory.systemTemp.createTempSync('manga_full_ocr_entry_');
@@ -408,7 +425,7 @@ void main() {
         bookKey,
         extraOverrides: <Override>[
           mangaOcrServiceProvider
-              .overrideWithValue(_FakeMangaOcrService(ready: true)),
+              .overrideWithValue(ocrService),
         ],
       ));
       for (int i = 0; i < 50; i++) {
@@ -424,11 +441,41 @@ void main() {
     });
     await tester.pump();
 
-    // 书加载成功 → chrome 在树；但 OCR 只能在阅读器外触发（2026-09-12 产品决策），
-    // 阅读器内不得再有整卷 / 框选入口；没有任务在跑时也没有取消按钮。
+    // Current-page OCR is available inside the reader. Explicit volume jobs
+    // remain outside it, and mounting in manual mode must not start any work.
+    expect(ocrService.folderRequests, 0);
+    expect(find.byKey(const ValueKey<String>('manga_visible_ocr_status')),
+        findsNothing);
     expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
         findsOneWidget,
         reason: '漫画阅读器必须常显左上返回按钮');
+    final Finder overflow = find.byKey(const ValueKey<String>('manga_chrome_overflow'));
+    await tester.tap(overflow);
+    await tester.pumpAndSettle();
+    final Iterable<PopupMenuItem<MangaChromeAction>> menuItems = tester.widgetList<PopupMenuItem<MangaChromeAction>>(
+      find.byType(PopupMenuItem<MangaChromeAction>));
+    final PopupMenuItem<MangaChromeAction> currentOcr = menuItems.singleWhere(
+      (PopupMenuItem<MangaChromeAction> item) => item.value?.key ==
+          const ValueKey<String>('manga_reader_ocr_current_button'));
+    expect(currentOcr.enabled, isTrue);
+    expect(currentOcr.value!.onPressed, isNotNull,
+        reason: '当前页识别必须有可调用回调，不能只有配置文案');
+    expect(menuItems.any((PopupMenuItem<MangaChromeAction> item) =>
+        item.value?.key == const ValueKey<String>('manga_full_ocr_button')), isFalse);
+    // Dismiss the overflow through its route, as Escape/back would do. Reader
+    // keyboard handling must remain attached after closing this temporary menu.
+    Navigator.of(tester.element(find.byType(PopupMenuItem<MangaChromeAction>).first)).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(PopupMenuItem<MangaChromeAction>), findsNothing);
+    final Iterable<Focus> keyboardAncestors = tester.widgetList<Focus>(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('manga_dictionary_host')),
+        matching: find.byType(Focus),
+      ),
+    );
+    expect(keyboardAncestors.any((Focus focus) => focus.onKeyEvent != null), isTrue);
+    expect(ocrService.folderRequests, 0,
+        reason: '查看或关闭阅读器操作菜单都不能启动整卷识别');
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
         findsNothing,
         reason: '阅读器内不得再有整卷 OCR 入口');

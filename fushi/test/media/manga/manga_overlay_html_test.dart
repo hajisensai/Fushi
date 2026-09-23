@@ -504,7 +504,8 @@ void main() {
           reason: '必须从精确命中的字符节点发起现有查词管线');
       expect(doc.contains('_selectOcrChar(e.clientX, e.clientY, true)'), isTrue,
           reason: 'Shift 悬停必须复用同一精确字符命中路径');
-      expect(doc.contains('if (!e.shiftKey)'), isTrue);
+      expect(doc.contains('if (!e.shiftKey && !false)'), isTrue,
+          reason: '默认仍需 Shift，显式开启 hover 后才省略修饰键');
       // 收敛不变式：恰好一个 pointerup 监听。
       expect("addEventListener('pointerup'".allMatches(doc).length, 1,
           reason: '全文档恰好一个 pointerup 监听（C1 收敛不变式）');
@@ -853,7 +854,8 @@ void main() {
       expect(doc.contains('image.naturalHeight'), isTrue);
       expect(doc.contains("page.style.aspectRatio = width + ' / ' + height"),
           isTrue);
-      expect(doc.contains("page.style.width =\n        'min('"), isTrue);
+      expect(doc.contains('_inspectSource(page);'), isTrue);
+      expect(doc.contains('var fit = Math.min(sx, sy);'), isTrue);
     });
 
     test('desktop zoom and right-button drag/menu contract is embedded', () {

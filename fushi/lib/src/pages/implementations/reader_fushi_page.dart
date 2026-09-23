@@ -88,6 +88,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
@@ -4198,11 +4199,10 @@ $liveConfigJs
         if (isDictionaryShown) return false; // 弹窗 WebView 持焦点期间不抢
         // resumed 是全局生命周期回调，阅读器上方可能压着设置 / 查词大对话框；
         // 直接抢会夺走对话框焦点（Never break userspace 红线）。那些覆盖层关闭
-        // 时各自的返回点会归还焦点。
-        if (cause == FocusReclaimCause.appResumed) {
-          final ModalRoute<Object?>? owner = ModalRoute.of(context);
-          if (owner != null && !owner.isCurrent) return false;
-        }
+        // 时各自的返回点会归还焦点。contentReady / surfaceRemounted 同理：在设置
+        // 侧边弹窗里改排版会触发重排就绪，不能借机把弹窗的键盘焦点收回正文。
+        final ModalRoute<Object?>? owner = ModalRoute.of(context);
+        if (owner != null && !owner.isCurrent) return false;
         return true;
     }
   }
