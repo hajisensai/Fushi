@@ -506,6 +506,20 @@ class GalgameHelperInstaller {
     return false;
   }
 
+  /// [ensureInjector] 的无界面版本：串流接收端远程启动游戏时，主机前面没人看
+  /// toast，失败原因由发起启动的设备显示。校验与换入逻辑与 [ensureInjector] 同一条。
+  Future<bool> ensureInjectorHeadless({required bool is32Bit}) async {
+    if (!Platform.isWindows) return false;
+    final String arch = galgameHelperArch(is32Bit: is32Bit);
+    await _extractionGate;
+    try {
+      return await _ensureBundledVersion(arch);
+    } catch (e) {
+      _log('bundled install rejected ($arch): $e');
+      return false;
+    }
+  }
+
   /// 从主包内的归档安装。返回 false 只表示当前构建没有随附该架构归档（开发/旧包），调用方
   /// 可继续使用完整旧安装；只要 zip 或侧车任一存在，就必须完整校验，残缺/摘要不符会抛
   /// 校验失败。

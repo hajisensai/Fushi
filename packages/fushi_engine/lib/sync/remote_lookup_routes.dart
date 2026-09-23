@@ -210,7 +210,7 @@ class RemoteLookupRoutes {
       return jsonResponse(await buildRemoteMineResponse(
         body,
         mining: svc,
-        wordAudio: _resolveMineWordAudio,
+        wordAudio: resolveMineWordAudio,
       ));
     } on FormatException {
       return shelf.Response(400, body: 'Missing fields');
@@ -221,7 +221,7 @@ class RemoteLookupRoutes {
   /// （见 [resolveRemoteMineWordAudio]）。token 仍活 → 直接取字节；已被 prune（批量
   /// 队列几十分钟后才生成）→ 按 expression/reading 重走同一条 [lookupAudio]。
   /// 音频库没这个词 → null，调用方保留原引用让既有 404 诊断浮出。
-  Future<String?> _resolveMineWordAudio(
+  Future<String?> resolveMineWordAudio(
     String tokenId, {
     required String expression,
     required String reading,

@@ -18,6 +18,123 @@ enum GameStreamReceiverState {
 
 typedef GameStreamPeerFactory = Future<RTCPeerConnection> Function();
 
+/// Codec list with [codec]'s entries first, the rest in their original order
+/// (so RTX/RED/FEC stay available). Null when the device cannot decode it.
+List<RTCRtpCodecCapability>? gameStreamPreferredCodecs(
+  List<RTCRtpCodecCapability> available,
+  GameStreamCodec codec,
+) {
+  final String? subtype = codec.mimeSubtype;
+  if (subtype == null) return null;
+  bool matches(RTCRtpCodecCapability c) =>
+      c.mimeType.toLowerCase() == 'video/${subtype.toLowerCase()}';
+  final List<RTCRtpCodecCapability> preferred = available
+      .where(matches)
+      .toList();
+  if (preferred.isEmpty) return null;
+  return <RTCRtpCodecCapability>[
+    ...preferred,
+    ...available.where((RTCRtpCodecCapability c) => !matches(c)),
+  ];
+}
+
+/// Moonlight-style performance numbers derived from one `getStats` sample.
+@immutable
+class GameStreamStatsSample {
+  const GameStreamStatsSample({
+    required this.timestampMs,
+    required this.bytesReceived,
+    this.width,
+    this.height,
+    this.framesPerSecond,
+    this.bitrateKbps,
+    this.roundTripMs,
+    this.jitterMs,
+    this.packetsLost,
+    this.packetsReceived,
+    this.framesDropped,
+    this.codec,
+    this.decoder,
+  });
+
+  factory GameStreamStatsSample.fromReports(
+    List<StatsReport> reports, {
+    GameStreamStatsSample? previous,
+  }) {
+    Map<dynamic, dynamic>? video;
+    double? rtt;
+    final Map<String, String> codecs = <String, String>{};
+    for (final StatsReport report in reports) {
+      final Map<dynamic, dynamic> values = report.values;
+      if (report.type == 'inbound-rtp' &&
+          (values['kind'] ?? values['mediaType']) == 'video') {
+        video = values;
+      } else if (report.type == 'candidate-pair' &&
+          values['state'] == 'succeeded' &&
+          values['nominated'] == true) {
+        rtt = (values['currentRoundTripTime'] as num?)?.toDouble();
+      } else if (report.type == 'codec') {
+        final Object? mime = values['mimeType'];
+        if (mime is String) codecs[report.id] = mime.split('/').last;
+      }
+    }
+    num? number(String key) => video?[key] is num ? video![key] as num : null;
+    final int timestampMs = DateTime.now().millisecondsSinceEpoch;
+    final int bytes = number('bytesReceived')?.toInt() ?? 0;
+    int? bitrate;
+    if (previous != null &&
+        timestampMs > previous.timestampMs &&
+        bytes >= previous.bytesReceived) {
+      bitrate =
+          ((bytes - previous.bytesReceived) *
+                  8 /
+                  (timestampMs - previous.timestampMs))
+              .round();
+    }
+    final Object? codecId = video?['codecId'];
+    final Object? decoder = video?['decoderImplementation'];
+    return GameStreamStatsSample(
+      timestampMs: timestampMs,
+      bytesReceived: bytes,
+      width: number('frameWidth')?.toInt(),
+      height: number('frameHeight')?.toInt(),
+      framesPerSecond: number('framesPerSecond')?.toDouble(),
+      bitrateKbps: bitrate,
+      roundTripMs: rtt == null ? null : (rtt * 1000).round(),
+      jitterMs: number('jitter') == null
+          ? null
+          : (number('jitter')! * 1000).round(),
+      packetsLost: number('packetsLost')?.toInt(),
+      packetsReceived: number('packetsReceived')?.toInt(),
+      framesDropped: number('framesDropped')?.toInt(),
+      codec: codecId is String ? codecs[codecId] : null,
+      decoder: decoder is String && decoder.isNotEmpty ? decoder : null,
+    );
+  }
+
+  final int timestampMs;
+  final int bytesReceived;
+  final int? width;
+  final int? height;
+  final double? framesPerSecond;
+  final int? bitrateKbps;
+  final int? roundTripMs;
+  final int? jitterMs;
+  final int? packetsLost;
+  final int? packetsReceived;
+  final int? framesDropped;
+  final String? codec;
+  final String? decoder;
+
+  /// Lost packets as a share of all expected packets, 0..100.
+  double? get lossPercent {
+    final int? lost = packetsLost;
+    final int? received = packetsReceived;
+    if (lost == null || received == null || lost + received <= 0) return null;
+    return lost * 100 / (lost + received);
+  }
+}
+
 /// Android receiver for an already joined Fushi session. The host owns SDP
 /// negotiation and creates the reliable, ordered `fushi-game-control` channel.
 class FushiGameStreamReceiver extends ChangeNotifier
@@ -28,9 +145,12 @@ class FushiGameStreamReceiver extends ChangeNotifier
     this.onInputAck,
     RTCVideoRenderer? videoRenderer,
     GameStreamPeerFactory? peerFactory,
+    Future<RTCRtpCapabilities> Function()? codecCapabilities,
   }) : _client = client,
        renderer = videoRenderer ?? RTCVideoRenderer(),
-       _peerFactory = peerFactory ?? _createPeer {
+       _peerFactory = peerFactory ?? _createPeer,
+       _codecCapabilities =
+           codecCapabilities ?? (() => getRtpReceiverCapabilities('video')) {
     WidgetsBinding.instance.addObserver(this);
     renderer.onFirstFrameRendered = () {
       if (_disposed ||
@@ -52,6 +172,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
 
   final FushiGameStreamClient _client;
   final GameStreamPeerFactory _peerFactory;
+  final Future<RTCRtpCapabilities> Function() _codecCapabilities;
   final ValueChanged<GameStreamTextEvent>? onTextEvent;
   final ValueChanged<GameStreamInputAck>? onInputAck;
   final RTCVideoRenderer renderer;
@@ -81,6 +202,14 @@ class FushiGameStreamReceiver extends ChangeNotifier
   GameStreamReceiverState _state = GameStreamReceiverState.idle;
   String? _error;
   String? _pollError;
+  GameStreamVideoSettings _settings = const GameStreamVideoSettings();
+  GameStreamStatsSample? _lastStats;
+  String? _codecNote;
+
+  GameStreamVideoSettings get settings => _settings;
+
+  /// Why the requested codec was not applied (shown in the stats overlay).
+  String? get codecNote => _codecNote;
 
   bool get ready => _ready;
   String? get error => _error;
@@ -99,11 +228,17 @@ class FushiGameStreamReceiver extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
+  /// [settings] picks the preferred codec for the answer and whether the
+  /// loopback audio plays; bitrate/fps/resolution are applied by the host.
   Future<void> connect({
     required String sessionId,
     required String clientId,
+    GameStreamVideoSettings settings = const GameStreamVideoSettings(),
   }) async {
     if (_disposed) throw StateError('Game-stream receiver is disposed');
+    _settings = settings;
+    _lastStats = null;
+    _codecNote = null;
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) {
       throw UnsupportedError('Game streaming receiver is Android-only');
     }
@@ -142,6 +277,8 @@ class FushiGameStreamReceiver extends ChangeNotifier
           return;
         }
         renderer.srcObject = event.streams.first;
+        // Remote tracks arrive enabled; only a muted receiver has to touch them.
+        if (!_settings.audio) _applyAudioEnabled();
         _notify();
       };
       connection.onDataChannel = (RTCDataChannel channel) {
@@ -300,6 +437,10 @@ class FushiGameStreamReceiver extends ChangeNotifier
           if (!_isCurrent(generation)) return;
           _pendingCandidates.removeAt(0);
         }
+        // The sender encodes with the first codec listed in the answer, so the
+        // receiver alone decides the codec — older hosts need no support.
+        await _applyCodecPreference(connection);
+        if (!_isCurrent(generation)) return;
         final RTCSessionDescription answer = await connection.createAnswer();
         if (!_isCurrent(generation)) return;
         await connection.setLocalDescription(answer);
@@ -332,6 +473,80 @@ class FushiGameStreamReceiver extends ChangeNotifier
       case GameStreamSignalType.answer:
         break;
     }
+  }
+
+  Future<void> _applyCodecPreference(RTCPeerConnection connection) async {
+    if (_settings.codec == GameStreamCodec.auto) return;
+    try {
+      final RTCRtpCapabilities capabilities = await _codecCapabilities();
+      final List<RTCRtpCodecCapability>? ordered = gameStreamPreferredCodecs(
+        capabilities.codecs ?? const <RTCRtpCodecCapability>[],
+        _settings.codec,
+      );
+      if (ordered == null) {
+        _codecNote = 'codec_unavailable';
+        return;
+      }
+      for (final RTCRtpTransceiver transceiver
+          in await connection.getTransceivers()) {
+        if (transceiver.receiver.track?.kind == 'video') {
+          await transceiver.setCodecPreferences(ordered);
+        }
+      }
+    } catch (error) {
+      // A decoder the device lacks must not cost the whole stream; libwebrtc
+      // then negotiates its default order.
+      _codecNote = 'codec_preference_failed';
+    }
+  }
+
+  /// Applies bitrate / fps / a lower resolution cap to the running stream by
+  /// repeating the join (the host treats a join from the already connected
+  /// client as a parameter update). Returns what the host put into effect.
+  /// A codec change is kept for the next connection: it needs a new offer.
+  Future<GameStreamVideoSettings?> updateSettings(
+    GameStreamVideoSettings next,
+  ) async {
+    final String? sessionId = _sessionId;
+    final String? clientId = _clientId;
+    _settings = next;
+    _applyAudioEnabled();
+    _notify();
+    if (sessionId == null || clientId == null || _hasTerminated) return null;
+    final GameStreamSession? session = await _client.join(
+      sessionId: sessionId,
+      clientId: clientId,
+      settings: next,
+    );
+    return session?.settings;
+  }
+
+  /// Unmutes/mutes the host's loopback audio locally.
+  void setAudioEnabled(bool enabled) {
+    _settings = _settings.copyWith(audio: enabled);
+    _applyAudioEnabled();
+    _notify();
+  }
+
+  void _applyAudioEnabled() {
+    final MediaStream? stream = renderer.srcObject;
+    if (stream == null) return;
+    for (final MediaStreamTrack track in stream.getAudioTracks()) {
+      track.enabled = _settings.audio;
+    }
+  }
+
+  /// One stats sample for the performance overlay; null when not connected.
+  Future<GameStreamStatsSample?> sampleStats() async {
+    final RTCPeerConnection? connection = _connection;
+    if (connection == null) return null;
+    final List<StatsReport> reports = await connection.getStats();
+    final GameStreamStatsSample sample = GameStreamStatsSample.fromReports(
+      reports,
+      previous: _lastStats,
+    );
+    _lastStats = sample;
+    return sample;
   }
 
   Future<void> _queueSignal(

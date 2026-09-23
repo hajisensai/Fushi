@@ -67,6 +67,12 @@ class PlatformServices {
   /// Android 同为移动端却不受任何一条商店限制约束。
   final bool isIOS;
 
+  /// 本进程跑在 Android 上吗。同上，默认取真实平台。
+  ///
+  /// 只服务于 games 模块的串流形态（`GamesModuleForm.streamClient`）：串流接收端
+  /// 只在 Android 上有入口。
+  final bool isAndroid;
+
   PlatformServices({
     required this.directory,
     required this.lifecycle,
@@ -80,10 +86,12 @@ class PlatformServices {
     bool? isWindows,
     bool? isDesktop,
     bool? isIOS,
+    bool? isAndroid,
   })  : isWindows = isWindows ?? Platform.isWindows,
         isDesktop = isDesktop ??
             (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
         isIOS = isIOS ?? Platform.isIOS,
+        isAndroid = isAndroid ?? Platform.isAndroid,
         _createDefaultAnkiRepository = createAnkiRepository,
         _createMobileAnkiConnectRepository = createMobileAnkiConnectRepository,
         _isMobile = isMobile,

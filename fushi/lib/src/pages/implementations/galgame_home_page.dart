@@ -399,17 +399,8 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
         );
         return;
       }
-      final FushiGameStreamMiningAdapter mining = FushiGameStreamMiningAdapter(
-        repository: () => _appModel.platformServices.createAnkiRepository(),
-        compression: () => MiningMediaCompression.resolve(
-          imageTier: _appModel.miningImageQuality,
-          audioTier: _appModel.miningAudioQuality,
-          format: _appModel.galMiningAnimatedFormat,
-        ),
-        imageMode: _appModel.galMiningImageMode,
-        animatedFormat: _appModel.galMiningAnimatedFormat,
-        stillFormat: _appModel.galMiningStillFormat,
-      );
+      final FushiGameStreamMiningAdapter mining = _appModel
+          .createGameStreamMiningAdapter();
       sync.configureGameStreamMining(mining);
       final Future<void> starting = sync.startGameStream(hwnd: window.hwnd);
       _onSyncChanged();

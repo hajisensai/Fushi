@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preferences_repository.dart'
-    show kDownloadExecutionHostPrefKey;
+    show kDownloadExecutionHostPrefKey, kGameStreamRemoteLaunchPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
@@ -1338,6 +1338,9 @@ class SyncRepository {
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
     kDownloadExecutionHostPrefKey,
+    // 「允许配对设备远程启动游戏」是本机安全开关：从另一台电脑恢复备份不得替
+    // 这台电脑打开远程起进程的门。
+    kGameStreamRemoteLaunchPrefKey,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

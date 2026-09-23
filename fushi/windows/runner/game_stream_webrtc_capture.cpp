@@ -49,15 +49,16 @@ using libwebrtc::RTCVideoFrame;
 using libwebrtc::RTCVideoSource;
 using libwebrtc::scoped_refptr;
 
-constexpr int kMaxFps = 60;
-constexpr uint32_t kMaxOutputWidth = 1920;
-constexpr uint32_t kMaxOutputHeight = 1080;
 
 class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
  public:
   FushiGameStreamCaptureImpl(HWND hwnd, scoped_refptr<RTCVideoSource> source,
-                             int fps)
-      : hwnd_(hwnd), source_(std::move(source)), fps_(std::clamp(fps, 1, kMaxFps)) {}
+                             int fps, int max_width, int max_height)
+      : hwnd_(hwnd),
+        source_(std::move(source)),
+        fps_(ClampCaptureFps(fps)),
+        max_width_(ClampCaptureMaxWidth(max_width)),
+        max_height_(ClampCaptureMaxHeight(max_height)) {}
 
   ~FushiGameStreamCaptureImpl() override { Stop(); }
 
@@ -430,7 +431,8 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     }
     const uint32_t crop_w = static_cast<uint32_t>(crop.right - crop.left);
     const uint32_t crop_h = static_cast<uint32_t>(crop.bottom - crop.top);
-    const OutputSize out = FitInsideEven(crop_w, crop_h);
+    const OutputSize out =
+        FitInsideEven(crop_w, crop_h, max_width_, max_height_);
     std::vector<uint8_t> y;
     std::vector<uint8_t> u;
     std::vector<uint8_t> v;
@@ -514,6 +516,8 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   HWND hwnd_ = nullptr;
   scoped_refptr<RTCVideoSource> source_;
   int fps_ = 60;
+  uint32_t max_width_ = kCaptureDefaultMaxWidth;
+  uint32_t max_height_ = kCaptureDefaultMaxHeight;
   HANDLE stop_event_ = nullptr;
   std::thread thread_;
   std::atomic<bool> running_{false};
@@ -551,9 +555,10 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
 }  // namespace
 
 std::shared_ptr<FushiGameStreamCapture> StartFushiGameStreamCapture(
-    HWND hwnd, scoped_refptr<RTCVideoSource> source, int fps,
-    std::string* error) {
-  auto capture = std::make_shared<FushiGameStreamCaptureImpl>(hwnd, source, fps);
+    HWND hwnd, scoped_refptr<RTCVideoSource> source, int fps, int max_width,
+    int max_height, std::string* error) {
+  auto capture = std::make_shared<FushiGameStreamCaptureImpl>(
+      hwnd, source, fps, max_width, max_height);
   if (!capture->Start(error)) {
     return nullptr;
   }

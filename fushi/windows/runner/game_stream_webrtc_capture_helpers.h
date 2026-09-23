@@ -37,20 +37,58 @@ inline uint32_t MakeEvenAtLeastTwo(uint32_t value) {
   return value < 2 ? 0 : value;
 }
 
-inline OutputSize FitInsideEven(uint32_t width, uint32_t height) {
-  constexpr uint32_t kMaxOutputWidth = 1920;
-  constexpr uint32_t kMaxOutputHeight = 1080;
+// Capture limits negotiated through getDisplayMedia video.mandatory
+// (frameRate / maxWidth / maxHeight). Absent values use the defaults; supplied
+// values are clamped so a remote-chosen profile can never ask the host for an
+// unbounded frame rate or output size.
+constexpr int kCaptureMinFps = 1;
+constexpr int kCaptureMaxFps = 120;
+constexpr uint32_t kCaptureDefaultMaxWidth = 1920;
+constexpr uint32_t kCaptureDefaultMaxHeight = 1080;
+constexpr uint32_t kCaptureMinMaxWidth = 320;
+constexpr uint32_t kCaptureMinMaxHeight = 180;
+constexpr uint32_t kCaptureMaxMaxWidth = 3840;
+constexpr uint32_t kCaptureMaxMaxHeight = 2160;
+
+inline int ClampCaptureFps(int fps) {
+  return std::clamp(fps, kCaptureMinFps, kCaptureMaxFps);
+}
+
+// value <= 0 means "not supplied" and selects [fallback].
+inline uint32_t ClampCaptureExtent(long long value, uint32_t fallback,
+                                   uint32_t min_value, uint32_t max_value) {
+  if (value <= 0) return fallback;
+  if (value < static_cast<long long>(min_value)) return min_value;
+  if (value > static_cast<long long>(max_value)) return max_value;
+  return static_cast<uint32_t>(value);
+}
+
+inline uint32_t ClampCaptureMaxWidth(long long value) {
+  return ClampCaptureExtent(value, kCaptureDefaultMaxWidth,
+                            kCaptureMinMaxWidth, kCaptureMaxMaxWidth);
+}
+
+inline uint32_t ClampCaptureMaxHeight(long long value) {
+  return ClampCaptureExtent(value, kCaptureDefaultMaxHeight,
+                            kCaptureMinMaxHeight, kCaptureMaxMaxHeight);
+}
+
+// Scales [width]x[height] to fit inside [max_width]x[max_height] preserving the
+// aspect ratio (never upscales), then rounds both sides down to even values.
+inline OutputSize FitInsideEven(uint32_t width, uint32_t height,
+                                uint32_t max_width = kCaptureDefaultMaxWidth,
+                                uint32_t max_height = kCaptureDefaultMaxHeight) {
   OutputSize out;
-  if (width < 2 || height < 2) return out;
+  if (width < 2 || height < 2 || max_width < 2 || max_height < 2) return out;
   uint64_t dst_w = width;
   uint64_t dst_h = height;
-  if (dst_w > kMaxOutputWidth) {
-    dst_h = std::max<uint64_t>(1, dst_h * kMaxOutputWidth / dst_w);
-    dst_w = kMaxOutputWidth;
+  if (dst_w > max_width) {
+    dst_h = std::max<uint64_t>(1, dst_h * max_width / dst_w);
+    dst_w = max_width;
   }
-  if (dst_h > kMaxOutputHeight) {
-    dst_w = std::max<uint64_t>(1, dst_w * kMaxOutputHeight / dst_h);
-    dst_h = kMaxOutputHeight;
+  if (dst_h > max_height) {
+    dst_w = std::max<uint64_t>(1, dst_w * max_height / dst_h);
+    dst_h = max_height;
   }
   out.width = MakeEvenAtLeastTwo(static_cast<uint32_t>(dst_w));
   out.height = MakeEvenAtLeastTwo(static_cast<uint32_t>(dst_h));

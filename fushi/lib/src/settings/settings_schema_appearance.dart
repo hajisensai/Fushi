@@ -87,6 +87,7 @@ SettingsSwitchItem _moduleSwitch(ModuleId module) {
       isWindows: Platform.isWindows,
       isDesktop: DesktopLookupService.isDesktop,
       isIOS: Platform.isIOS,
+      isAndroid: Platform.isAndroid,
     ),
     value: (SettingsContext settingsContext) =>
         settingsContext.appModel.moduleEnabled(module),

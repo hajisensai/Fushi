@@ -45,7 +45,243 @@ enum GameStreamPeerRole { host, client }
 
 enum GameStreamInputKind { pointer, key, gamepad }
 
-enum GameStreamInputAction { down, move, up, button }
+/// [wheel] is only sent to hosts advertising [GameStreamFeature.wheel]; an
+/// older host rejects the unknown action instead of misreading it.
+enum GameStreamInputAction { down, move, up, button, wheel }
+
+/// Optional host capabilities advertised on [GameStreamSession.features].
+/// Clients gate every newer input kind and request field on these strings so a
+/// newer phone never sends something an older host would mis-handle.
+abstract final class GameStreamFeature {
+  /// Join/launch bodies may carry a [GameStreamVideoSettings] object.
+  static const String videoSettings = 'videoSettings';
+
+  /// Pointer events may name `right` / `middle` in [GameStreamInputEvent.button].
+  static const String pointerButtons = 'pointerButtons';
+
+  /// Pointer [GameStreamInputAction.wheel] with [GameStreamInputEvent.dx]/`dy`.
+  static const String wheel = 'wheel';
+
+  /// Input reaches the window while it stays in the background.
+  static const String backgroundInput = 'backgroundInput';
+
+  /// `/api/game-stream/library` and `/api/game-stream/launch` are served.
+  static const String remoteLaunch = 'remoteLaunch';
+
+  static const List<String> all = <String>[
+    videoSettings,
+    pointerButtons,
+    wheel,
+    backgroundInput,
+    remoteLaunch,
+  ];
+}
+
+/// Pointer buttons accepted with [GameStreamFeature.pointerButtons].
+const Set<String> kGameStreamPointerButtons = <String>{
+  'left',
+  'right',
+  'middle',
+};
+
+/// How the host encoder trades quality when bandwidth drops. Wire names match
+/// WebRTC's `RTCDegradationPreference`.
+enum GameStreamDegradation {
+  balanced('balanced'),
+  maintainFramerate('maintain-framerate'),
+  maintainResolution('maintain-resolution');
+
+  const GameStreamDegradation(this.wireName);
+  final String wireName;
+
+  static GameStreamDegradation parse(Object? value) {
+    for (final GameStreamDegradation candidate in values) {
+      if (candidate.wireName == value || candidate.name == value) {
+        return candidate;
+      }
+    }
+    return balanced;
+  }
+}
+
+/// Whether input may reach a background window ([background], window
+/// messages only) or the host first brings the game to the front
+/// ([foreground]) for engines that ignore input while unfocused.
+enum GameStreamInputFocus {
+  background,
+  foreground;
+
+  static GameStreamInputFocus parse(Object? value) =>
+      value == foreground.name ? foreground : background;
+}
+
+/// Preferred video codec. Applied by the receiving side through
+/// `setCodecPreferences` before it answers, so hosts need no support for it.
+enum GameStreamCodec {
+  auto,
+  h264,
+  vp8,
+  vp9,
+  av1;
+
+  /// SDP `mimeType` subtype (`video/<subtype>`), or null for [auto].
+  String? get mimeSubtype => switch (this) {
+    auto => null,
+    h264 => 'H264',
+    vp8 => 'VP8',
+    vp9 => 'VP9',
+    av1 => 'AV1',
+  };
+
+  static GameStreamCodec parse(Object? value) {
+    for (final GameStreamCodec candidate in values) {
+      if (candidate.name == value) return candidate;
+    }
+    return auto;
+  }
+}
+
+/// Moonlight-style stream parameters chosen on the receiver. Every field is
+/// clamped into a safe range when decoded: a hostile or buggy peer can ask for
+/// less, never for an unbounded encoder.
+class GameStreamVideoSettings {
+  const GameStreamVideoSettings({
+    this.maxHeight = 1080,
+    this.maxFps = 60,
+    this.bitrateKbps = 20000,
+    this.adaptiveBitrate = true,
+    this.degradation = GameStreamDegradation.balanced,
+    this.codec = GameStreamCodec.auto,
+    this.inputFocus = GameStreamInputFocus.background,
+    this.audio = true,
+  });
+
+  factory GameStreamVideoSettings.fromJson(Object? raw) {
+    if (raw is! Map) return const GameStreamVideoSettings();
+    int integer(Object? value, int fallback) =>
+        value is num && value.isFinite ? value.round() : fallback;
+    return GameStreamVideoSettings(
+      maxHeight: integer(raw['maxHeight'], 1080),
+      maxFps: integer(raw['maxFps'], 60),
+      bitrateKbps: integer(raw['bitrateKbps'], 20000),
+      adaptiveBitrate: raw['adaptiveBitrate'] != false,
+      degradation: GameStreamDegradation.parse(raw['degradation']),
+      codec: GameStreamCodec.parse(raw['codec']),
+      inputFocus: GameStreamInputFocus.parse(raw['inputFocus']),
+      audio: raw['audio'] != false,
+    ).clamped();
+  }
+
+  static const List<int> heightChoices = <int>[360, 480, 720, 1080, 1440, 2160];
+  static const List<int> fpsChoices = <int>[30, 60, 90, 120];
+  static const int minBitrateKbps = 500;
+  static const int maxBitrateKbps = 150000;
+  static const int minFps = 15;
+  static const int maxFpsLimit = 120;
+  static const int minHeight = 360;
+  static const int maxHeightLimit = 2160;
+
+  /// Height cap of the encoded picture; width follows the window aspect.
+  final int maxHeight;
+  final int maxFps;
+  final int bitrateKbps;
+
+  /// When false the host holds [bitrateKbps] instead of following estimates.
+  final bool adaptiveBitrate;
+  final GameStreamDegradation degradation;
+  final GameStreamCodec codec;
+  final GameStreamInputFocus inputFocus;
+
+  /// Receiver-side playback of the loopback audio track.
+  final bool audio;
+
+  /// Width cap matching [maxHeight] at 16:9, rounded to even pixels.
+  int get maxWidth => ((maxHeight * 16 / 9) / 2).round() * 2;
+
+  GameStreamVideoSettings clamped() => GameStreamVideoSettings(
+    maxHeight: maxHeight.clamp(minHeight, maxHeightLimit),
+    maxFps: maxFps.clamp(minFps, maxFpsLimit),
+    bitrateKbps: bitrateKbps.clamp(minBitrateKbps, maxBitrateKbps),
+    adaptiveBitrate: adaptiveBitrate,
+    degradation: degradation,
+    codec: codec,
+    inputFocus: inputFocus,
+    audio: audio,
+  );
+
+  GameStreamVideoSettings copyWith({
+    int? maxHeight,
+    int? maxFps,
+    int? bitrateKbps,
+    bool? adaptiveBitrate,
+    GameStreamDegradation? degradation,
+    GameStreamCodec? codec,
+    GameStreamInputFocus? inputFocus,
+    bool? audio,
+  }) => GameStreamVideoSettings(
+    maxHeight: maxHeight ?? this.maxHeight,
+    maxFps: maxFps ?? this.maxFps,
+    bitrateKbps: bitrateKbps ?? this.bitrateKbps,
+    adaptiveBitrate: adaptiveBitrate ?? this.adaptiveBitrate,
+    degradation: degradation ?? this.degradation,
+    codec: codec ?? this.codec,
+    inputFocus: inputFocus ?? this.inputFocus,
+    audio: audio ?? this.audio,
+  ).clamped();
+
+  /// Moonlight-like default bitrate for [maxHeight] × [maxFps].
+  static int recommendedBitrateKbps({
+    required int maxHeight,
+    required int maxFps,
+  }) {
+    final int base = switch (maxHeight) {
+      <= 480 => 2000,
+      <= 720 => 5000,
+      <= 1080 => 10000,
+      <= 1440 => 20000,
+      _ => 40000,
+    };
+    return (base * (maxFps / 30).clamp(1, 4)).round().clamp(
+      minBitrateKbps,
+      maxBitrateKbps,
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'maxHeight': maxHeight,
+    'maxFps': maxFps,
+    'bitrateKbps': bitrateKbps,
+    'adaptiveBitrate': adaptiveBitrate,
+    'degradation': degradation.wireName,
+    'codec': codec.name,
+    'inputFocus': inputFocus.name,
+    'audio': audio,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is GameStreamVideoSettings &&
+      other.maxHeight == maxHeight &&
+      other.maxFps == maxFps &&
+      other.bitrateKbps == bitrateKbps &&
+      other.adaptiveBitrate == adaptiveBitrate &&
+      other.degradation == degradation &&
+      other.codec == codec &&
+      other.inputFocus == inputFocus &&
+      other.audio == audio;
+
+  @override
+  int get hashCode => Object.hash(
+    maxHeight,
+    maxFps,
+    bitrateKbps,
+    adaptiveBitrate,
+    degradation,
+    codec,
+    inputFocus,
+    audio,
+  );
+}
 
 /// A platform adapter can reject a target without exposing Flutter exceptions
 /// to the shared session service.
@@ -66,13 +302,21 @@ class GameStreamSession {
     this.clientName,
     this.reason,
     this.expiresAt,
-  });
+    this.gameId,
+    this.gameTitle,
+    List<String> features = const <String>[],
+    this.settings,
+  }) : features = List<String>.unmodifiable(features);
 
   factory GameStreamSession.create({
     required String sessionId,
     required DateTime now,
     String? windowId,
     DateTime? expiresAt,
+    String? gameId,
+    String? gameTitle,
+    List<String> features = const <String>[],
+    GameStreamVideoSettings? settings,
   }) {
     _nonEmpty(sessionId, 'sessionId');
     return GameStreamSession(
@@ -82,6 +326,10 @@ class GameStreamSession {
       state: GameStreamSessionState.waiting,
       windowId: _optionalNonEmpty(windowId, 'windowId'),
       expiresAt: expiresAt,
+      gameId: _optionalNonEmpty(gameId, 'gameId'),
+      gameTitle: _optionalNonEmpty(gameTitle, 'gameTitle'),
+      features: features,
+      settings: settings,
     );
   }
 
@@ -105,6 +353,17 @@ class GameStreamSession {
       clientName: _optionalNonEmpty(json['clientName'], 'clientName'),
       reason: _optionalString(json['reason'], 'reason'),
       expiresAt: _optionalDate(json, 'expiresAt'),
+      gameId: _optionalNonEmpty(json['gameId'], 'gameId'),
+      gameTitle: _optionalNonEmpty(json['gameTitle'], 'gameTitle'),
+      // Unknown feature strings are kept; callers only test for known ones.
+      features: <String>[
+        if (json['features'] is List)
+          for (final Object? feature in json['features'] as List)
+            if (feature is String && feature.length <= 64) feature,
+      ],
+      settings: json['settings'] is Map
+          ? GameStreamVideoSettings.fromJson(json['settings'])
+          : null,
     );
   }
 
@@ -118,6 +377,18 @@ class GameStreamSession {
   String? reason;
   DateTime? expiresAt;
 
+  /// Host library id when the session was started for a library game.
+  String? gameId;
+  String? gameTitle;
+
+  /// Capabilities of the host that created this session ([GameStreamFeature]).
+  final List<String> features;
+
+  /// Effective stream parameters after the host applied a client request.
+  GameStreamVideoSettings? settings;
+
+  bool supports(String feature) => features.contains(feature);
+
   Map<String, Object?> toJson() => <String, Object?>{
     'version': kGameStreamWireVersion,
     'sessionId': sessionId,
@@ -129,6 +400,10 @@ class GameStreamSession {
     if (clientName != null) 'clientName': clientName,
     if (reason != null) 'reason': reason,
     if (expiresAt != null) 'expiresAt': expiresAt!.toUtc().toIso8601String(),
+    if (gameId != null) 'gameId': gameId,
+    if (gameTitle != null) 'gameTitle': gameTitle,
+    if (features.isNotEmpty) 'features': features,
+    if (settings != null) 'settings': settings!.toJson(),
   };
 }
 
@@ -195,6 +470,8 @@ class GameStreamInputEvent {
     this.y,
     this.key,
     this.button,
+    this.dx,
+    this.dy,
   }) {
     _validateInputFields();
   }
@@ -217,6 +494,8 @@ class GameStreamInputEvent {
       y: _optionalNumber(json['y'], 'y')?.toDouble(),
       key: _optionalString(json['key'], 'key'),
       button: _optionalString(json['button'], 'button'),
+      dx: _optionalNumber(json['dx'], 'dx')?.toDouble(),
+      dy: _optionalNumber(json['dy'], 'dy')?.toDouble(),
     );
     return event;
   }
@@ -232,6 +511,10 @@ class GameStreamInputEvent {
   final String? key;
   final String? button;
 
+  /// Wheel deltas in notches (positive = right / down).
+  final double? dx;
+  final double? dy;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'version': kGameStreamWireVersion,
     'sessionId': sessionId,
@@ -244,6 +527,8 @@ class GameStreamInputEvent {
     if (y != null) 'y': y,
     if (key != null) 'key': key,
     if (button != null) 'button': button,
+    if (dx != null) 'dx': dx,
+    if (dy != null) 'dy': dy,
   };
 
   void _validateInputFields() {
@@ -257,6 +542,20 @@ class GameStreamInputEvent {
       if (action == GameStreamInputAction.button) {
         throw const FormatException('Invalid pointer action');
       }
+      if (button != null && !kGameStreamPointerButtons.contains(button)) {
+        throw const FormatException('Invalid pointer button');
+      }
+      if (action == GameStreamInputAction.wheel) {
+        final double h = dx ?? 0;
+        final double v = dy ?? 0;
+        if (h.abs() > 20 || v.abs() > 20) {
+          throw const FormatException('Invalid wheel delta');
+        }
+      } else if (dx != null || dy != null) {
+        throw const FormatException('Only wheel input carries deltas');
+      }
+    } else if (dx != null || dy != null) {
+      throw const FormatException('Only wheel input carries deltas');
     } else if (kind == GameStreamInputKind.key) {
       if (_optionalNonEmpty(key, 'key') == null ||
           (action != GameStreamInputAction.down &&

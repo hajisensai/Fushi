@@ -95,12 +95,55 @@ bool TestOddScalingAndBounds() {
   return ok;
 }
 
+bool TestConfigurableCapsAndFps() {
+  namespace p = flutter_webrtc_plugin;
+  bool ok = true;
+  p::OutputSize s = p::FitInsideEven(3840, 2160, 1280, 720);
+  ok &= Expect(s.width == 1280 && s.height == 720, "4k fits 720p cap");
+  s = p::FitInsideEven(3840, 2160, 3840, 2160);
+  ok &= Expect(s.width == 3840 && s.height == 2160, "4k cap keeps 4k");
+  s = p::FitInsideEven(800, 600, 1920, 1080);
+  ok &= Expect(s.width == 800 && s.height == 600, "caps never upscale");
+  s = p::FitInsideEven(1600, 1200, 1280, 720);
+  ok &= Expect(s.width == 960 && s.height == 720,
+               "4:3 frame bounded by height cap");
+  s = p::FitInsideEven(2560, 1080, 854, 480);
+  ok &= Expect(s.width == 854 && s.height == 360,
+               "ultrawide bounded by width cap with even height");
+  s = p::FitInsideEven(1920, 1080);
+  ok &= Expect(s.width == 1920 && s.height == 1080, "default caps are 1080p");
+
+  ok &= Expect(p::ClampCaptureMaxWidth(0) == 1920 &&
+                   p::ClampCaptureMaxHeight(0) == 1080,
+               "absent caps select 1920x1080");
+  ok &= Expect(p::ClampCaptureMaxWidth(-5) == 1920 &&
+                   p::ClampCaptureMaxHeight(-5) == 1080,
+               "negative caps select defaults");
+  ok &= Expect(p::ClampCaptureMaxWidth(100) == 320 &&
+                   p::ClampCaptureMaxHeight(100) == 180,
+               "tiny caps clamp to 320x180");
+  ok &= Expect(p::ClampCaptureMaxWidth(10000) == 3840 &&
+                   p::ClampCaptureMaxHeight(10000) == 2160,
+               "huge caps clamp to 3840x2160");
+  ok &= Expect(p::ClampCaptureMaxWidth(1280) == 1280 &&
+                   p::ClampCaptureMaxHeight(720) == 720,
+               "in-range caps pass through");
+
+  ok &= Expect(p::ClampCaptureFps(120) == 120, "120 fps allowed");
+  ok &= Expect(p::ClampCaptureFps(144) == 120, "fps clamps to 120");
+  ok &= Expect(p::ClampCaptureFps(60) == 60, "60 fps passes through");
+  ok &= Expect(p::ClampCaptureFps(0) == 1 && p::ClampCaptureFps(-3) == 1,
+               "fps clamps to at least 1");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
   bool ok = true;
   ok &= TestKnownColorsPaddedCrop();
   ok &= TestOddScalingAndBounds();
+  ok &= TestConfigurableCapsAndFps();
   if (!ok) return 1;
   std::cout << "game_stream_webrtc_capture_helper_test passed assertions="
             << g_assertions << "\n";

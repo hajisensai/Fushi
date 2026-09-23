@@ -864,11 +864,6 @@ void main() {
           'class as the allowlisted subtitle overlay, not ordinary chrome. '
           'The page chrome itself (device rows, key-binding rows) goes '
           'through FushiListItem.',
-      'lib/src/pages/implementations/game_stream_join_page.dart':
-          'Game-stream join page: the discovered-host rows are FushiListItem '
-          'inside a Card used purely as the MD3 elevated container for one '
-          'reachable host -- the tile, its typography and its focus ring all '
-          'come from the shared component.',
       'lib/src/media/video/subtitle_waveform_align_panel.dart':
           'TODO-1051/1207 subtitle-sync waveform panel: the audio-energy '
           'waveform is a CustomPaint chart, so the chart-canvas frame '
@@ -1253,9 +1248,6 @@ void main() {
       },
       'lib/src/pages/implementations/game_stream_page.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/pages/implementations/game_stream_join_page.dart': <String>{
-        'Card(',
       },
       'lib/src/media/video/video_thumbnail_preview_overlay.dart': <String>{
         'BorderRadius.circular(',

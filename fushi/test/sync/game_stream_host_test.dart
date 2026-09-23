@@ -416,7 +416,16 @@ void main() {
           Object? startError;
           bool startCompleted = false;
           final Future<void> starting = host
-              .start(hwnd: _hwnd)
+              .start(
+                hwnd: _hwnd,
+                // Window-only streaming never activates; only the foreground
+                // input mode reaches the activate phase.
+                settings: delayedMethod == 'activate'
+                    ? const GameStreamVideoSettings(
+                        inputFocus: GameStreamInputFocus.foreground,
+                      )
+                    : const GameStreamVideoSettings(),
+              )
               .then<void>(
                 (_) => startCompleted = true,
                 onError: (Object error, StackTrace stack) {
@@ -466,6 +475,14 @@ void main() {
             native.inputCalls.where((MethodCall c) => c.method == 'unbind'),
             hasLength(1),
           );
+          if (delayedMethod == 'getDisplayMedia' ||
+              delayedMethod == 'createPeerConnection') {
+            expect(
+              native.inputCalls.any((MethodCall c) => c.method == 'activate'),
+              isFalse,
+              reason: 'Window-only streaming must not pull the game forward',
+            );
+          }
 
           if (delayedMethod == 'getDisplayMedia' ||
               delayedMethod == 'createPeerConnection') {

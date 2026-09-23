@@ -4,10 +4,12 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart';
 
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 typedef GameStreamInputHandler =
@@ -24,6 +26,8 @@ typedef GameStreamSignalHandler =
     Future<void> Function(GameStreamSignal signal);
 typedef GameStreamTextHandler =
     Future<void> Function(GameStreamTextEvent event);
+typedef GameStreamSettingsHandler =
+    Future<GameStreamVideoSettings> Function(GameStreamVideoSettings settings);
 
 class FushiRemoteGameStreamService {
   FushiRemoteGameStreamService({
@@ -32,12 +36,22 @@ class FushiRemoteGameStreamService {
     this.onSignal,
     this.onText,
     this.onStop,
+    this.onSettings,
+    this.library,
+    List<String>? baseFeatures,
     DateTime Function()? now,
     this.sessionTtl = const Duration(minutes: 10),
     Duration sweepInterval = const Duration(seconds: 30),
     String Function()? sessionIdGenerator,
   }) : _now = now ?? DateTime.now,
-       _sessionIdGenerator = sessionIdGenerator ?? _defaultSessionId {
+       _sessionIdGenerator = sessionIdGenerator ?? _defaultSessionId,
+       _baseFeatures = List<String>.unmodifiable(
+         baseFeatures ??
+             <String>[
+               for (final String feature in GameStreamFeature.all)
+                 if (feature != GameStreamFeature.remoteLaunch) feature,
+             ],
+       ) {
     _sweepTimer = Timer.periodic(sweepInterval, (_) => pruneExpired());
   }
 
@@ -46,6 +60,24 @@ class FushiRemoteGameStreamService {
   GameStreamSignalHandler? onSignal;
   GameStreamTextHandler? onText;
   Future<void> Function()? onStop;
+
+  /// Called when a joining receiver asks for new stream parameters.
+  GameStreamSettingsHandler? onSettings;
+
+  /// App-owned host library; null keeps the library/launch routes off.
+  GameStreamLibraryHost? library;
+  final List<String> _baseFeatures;
+  GameStreamLaunchStatus? _launch;
+  String? _launchPeerIdentity;
+  String? _launchClientId;
+
+  /// Capabilities advertised on newly created sessions.
+  List<String> get features => <String>[
+    ..._baseFeatures,
+    if (library != null) GameStreamFeature.remoteLaunch,
+  ];
+
+  GameStreamLaunchStatus? get launch => _launch;
   final DateTime Function() _now;
   final Duration sessionTtl;
   final String Function() _sessionIdGenerator;
@@ -77,7 +109,16 @@ class FushiRemoteGameStreamService {
             signal,
       ];
 
-  GameStreamSession createSession({String windowId = 'unknown'}) {
+  /// [launchId] names the remote launch this session serves; the session is
+  /// then reserved for the peer that asked for the launch, so another paired
+  /// device cannot take over the game the requester just started.
+  GameStreamSession createSession({
+    String windowId = 'unknown',
+    String? gameId,
+    String? gameTitle,
+    GameStreamVideoSettings? settings,
+    String? launchId,
+  }) {
     final GameStreamSession? previous = session;
     if (previous != null && !previous.state.isTerminal) {
       stop(sessionId: previous.sessionId, reason: 'replaced');
@@ -88,9 +129,17 @@ class FushiRemoteGameStreamService {
       now: now,
       windowId: windowId,
       expiresAt: now.add(sessionTtl),
+      gameId: gameId,
+      gameTitle: gameTitle,
+      features: features,
+      settings: settings,
     );
     session = created;
-    _peerIdentity = null;
+    final bool reserved =
+        launchId != null &&
+        _launch?.launchId == launchId &&
+        _launchPeerIdentity != null;
+    _peerIdentity = reserved ? _launchPeerIdentity : null;
     _clientId = null;
     _lastInputSequence = -1;
     _inputAcks.clear();
@@ -246,6 +295,151 @@ class FushiRemoteGameStreamService {
     unawaited(onStop?.call());
   }
 
+  /// App-side launch progress. Updates for a superseded [launchId] are ignored
+  /// so a slow old launch can never overwrite the current one.
+  void updateLaunch(
+    String launchId, {
+    required GameStreamLaunchState state,
+    String? sessionId,
+    String? reason,
+  }) {
+    final GameStreamLaunchStatus? current = _launch;
+    if (current == null ||
+        current.launchId != launchId ||
+        current.state.isTerminal) {
+      return;
+    }
+    _launch = current.copyWith(
+      state: state,
+      updatedAt: _now().millisecondsSinceEpoch,
+      sessionId: sessionId,
+      reason: reason,
+    );
+  }
+
+  Future<Response> _handleLibrary(
+    Request request,
+    String method,
+    String path,
+    String peerIdentity,
+  ) async {
+    final GameStreamLibraryHost? host = library;
+    if (host == null) return Response.notFound('Game library off');
+    if (path == '/api/game-stream/library') {
+      if (method != 'GET' && method != 'POST') return Response(405);
+      final List<GameStreamLibraryGame> games = await host.listGames();
+      return _json(<String, Object?>{
+        'version': kGameStreamWireVersion,
+        'launchEnabled': host.launchEnabled,
+        'games': <Map<String, Object?>>[
+          for (final GameStreamLibraryGame game in games) game.toJson(),
+        ],
+      });
+    }
+    if (method != 'POST') return Response(405);
+    final Map<String, dynamic> body;
+    try {
+      body = await _readObject(request);
+    } on FormatException catch (error) {
+      return _error(400, error.message);
+    }
+    switch (path) {
+      case '/api/game-stream/library/cover':
+        final String? gameId = _optionalString(body['gameId'], 'gameId');
+        if (gameId == null) return _error(400, 'gameId is required');
+        final GameStreamLibraryCover? cover = await host.cover(gameId);
+        if (cover == null) return _error(404, 'Cover not found');
+        return _json(<String, Object?>{
+          'version': kGameStreamWireVersion,
+          'contentType': cover.contentType,
+          'data': base64Encode(cover.bytes),
+        });
+      case '/api/game-stream/launch':
+        final String? clientId = _optionalString(body['clientId'], 'clientId');
+        final String? gameId = _optionalString(body['gameId'], 'gameId');
+        if (clientId == null || gameId == null) {
+          return _error(400, 'clientId and gameId are required');
+        }
+        if (!host.launchEnabled) {
+          return _error(
+            403,
+            'Remote launch is disabled on this host',
+            code: GameStreamLaunchFailure.disabled,
+          );
+        }
+        final GameStreamSession? live = session;
+        if (live != null &&
+            !live.state.isTerminal &&
+            _peerIdentity != null &&
+            _peerIdentity != peerIdentity) {
+          return _error(
+            409,
+            'Another device is streaming from this host',
+            code: GameStreamLaunchFailure.busy,
+          );
+        }
+        final GameStreamLaunchStatus? pending = _launch;
+        if (pending != null && !pending.state.isTerminal) {
+          if (_launchPeerIdentity == peerIdentity &&
+              _launchClientId == clientId &&
+              pending.gameId == gameId) {
+            return _json(<String, Object?>{'launch': pending.toJson()});
+          }
+          return _error(
+            409,
+            'Another launch is in progress',
+            code: GameStreamLaunchFailure.busy,
+          );
+        }
+        final GameStreamLaunchStatus started = GameStreamLaunchStatus(
+          launchId: _sessionIdGenerator(),
+          gameId: gameId,
+          state: GameStreamLaunchState.starting,
+          updatedAt: _now().millisecondsSinceEpoch,
+        );
+        _launch = started;
+        _launchPeerIdentity = peerIdentity;
+        _launchClientId = clientId;
+        final GameStreamVideoSettings settings =
+            GameStreamVideoSettings.fromJson(body['settings']);
+        unawaited(
+          Future<void>(
+            () => host.launch(
+              launchId: started.launchId,
+              gameId: gameId,
+              settings: settings,
+            ),
+          ).catchError((Object error, StackTrace stack) {
+            if (error is! GameStreamLaunchRejected) {
+              engineLog.log('GameStream.launch', error, stack);
+            }
+            updateLaunch(
+              started.launchId,
+              state: GameStreamLaunchState.failed,
+              reason: error is GameStreamLaunchRejected
+                  ? error.code
+                  : GameStreamLaunchFailure.launchFailed,
+            );
+          }),
+        );
+        return _json(<String, Object?>{
+          'launch': started.toJson(),
+        }, status: 202);
+      case '/api/game-stream/launch/status':
+        final String? launchId = _optionalString(body['launchId'], 'launchId');
+        final GameStreamLaunchStatus? status = _launch;
+        if (launchId == null || status == null || status.launchId != launchId) {
+          return _error(404, 'Unknown launch');
+        }
+        if (_launchPeerIdentity != peerIdentity) {
+          return _error(403, 'Unknown launch peer');
+        }
+        return _json(<String, Object?>{'launch': status.toJson()});
+      default:
+        return Response.notFound('Game stream route not found');
+    }
+  }
+
   void pruneExpired() {
     final GameStreamSession? current = session;
     if (current == null || current.state.isTerminal) return;
@@ -266,6 +460,12 @@ class FushiRemoteGameStreamService {
     String peerIdentity = 'authenticated-peer',
   }) async {
     pruneExpired();
+    if (path == '/api/game-stream/library' ||
+        path == '/api/game-stream/library/cover' ||
+        path == '/api/game-stream/launch' ||
+        path == '/api/game-stream/launch/status') {
+      return _handleLibrary(request, method, path, peerIdentity);
+    }
     if (path == '/api/game-stream/sessions' &&
         (method == 'GET' || method == 'POST')) {
       return _json(<String, Object?>{
@@ -283,7 +483,12 @@ class FushiRemoteGameStreamService {
         path == '/api/game-stream/mine') {
       final Map<String, dynamic> aliasBody;
       try {
-        aliasBody = await _readObject(request);
+        aliasBody = await _readObject(
+          request,
+          maxBytes: path == '/api/game-stream/mine'
+              ? _maxMineBodyBytes
+              : _maxControlBodyBytes,
+        );
       } on FormatException catch (error) {
         return _error(400, error.message);
       }
@@ -325,7 +530,12 @@ class FushiRemoteGameStreamService {
     Map<String, dynamic> body = <String, dynamic>{};
     if (method == 'POST') {
       try {
-        body = await _readObject(request);
+        body = await _readObject(
+          request,
+          maxBytes: parts[1] == 'mine'
+              ? _maxMineBodyBytes
+              : _maxControlBodyBytes,
+        );
       } on FormatException catch (error) {
         return _error(400, error.message);
       }
@@ -352,6 +562,19 @@ class FushiRemoteGameStreamService {
         );
         if (clientName != null && clientName.length <= 256) {
           current.clientName = clientName;
+        }
+        final Object? rawSettings = body['settings'];
+        final GameStreamSettingsHandler? applySettings = onSettings;
+        if (rawSettings is Map && applySettings != null) {
+          final GameStreamVideoSettings requested =
+              GameStreamVideoSettings.fromJson(rawSettings);
+          try {
+            current.settings = await applySettings(requested);
+          } catch (error, stack) {
+            // The stream still works with the previous parameters; the
+            // returned session shows which ones are in effect.
+            engineLog.log('GameStream.settings', error, stack);
+          }
         }
         return _json(<String, Object?>{'session': current.toJson()});
       case 'signal':
@@ -477,15 +700,24 @@ String _defaultSessionId() {
   return base64Url.encode(List<int>.generate(24, (_) => random.nextInt(256)));
 }
 
-Future<Map<String, dynamic>> _readObject(Request request) async {
-  final List<int> bytes = <int>[];
+/// Control bodies are tiny; a mine body carries the popup's rendered glossary
+/// HTML for every dictionary (plus `singleGlossaries` and dictionary media
+/// descriptors), which routinely exceeds 512 KiB with several dictionaries.
+const int _maxControlBodyBytes = 512 * 1024;
+const int _maxMineBodyBytes = 8 * 1024 * 1024;
+
+Future<Map<String, dynamic>> _readObject(
+  Request request, {
+  int maxBytes = _maxControlBodyBytes,
+}) async {
+  final BytesBuilder bytes = BytesBuilder(copy: false);
   await for (final List<int> chunk in request.read()) {
-    if (bytes.length + chunk.length > 512 * 1024) {
+    if (bytes.length + chunk.length > maxBytes) {
       throw const FormatException('Game-stream request is too large');
     }
-    bytes.addAll(chunk);
+    bytes.add(chunk);
   }
-  final Object? value = jsonDecode(utf8.decode(bytes));
+  final Object? value = jsonDecode(utf8.decode(bytes.takeBytes()));
   if (value is! Map) {
     throw const FormatException('Game-stream body must be an object');
   }
@@ -500,17 +732,20 @@ Response _json(Object body, {int status = 200}) => Response(
   body: jsonEncode(body),
 );
 
-Response _error(int status, String message) => _json(<String, Object?>{
-  'version': kGameStreamWireVersion,
-  'code': switch (status) {
-    400 => 'invalid_request',
-    403 => 'unauthorized_peer',
-    404 => 'session_not_found',
-    409 => 'session_conflict',
-    _ => 'stream_error',
-  },
-  'error': message,
-}, status: status);
+Response _error(int status, String message, {String? code}) =>
+    _json(<String, Object?>{
+      'version': kGameStreamWireVersion,
+      'code':
+          code ??
+          switch (status) {
+            400 => 'invalid_request',
+            403 => 'unauthorized_peer',
+            404 => 'session_not_found',
+            409 => 'session_conflict',
+            _ => 'stream_error',
+          },
+      'error': message,
+    }, status: status);
 
 String? _optionalString(Object? value, String _) =>
     value is String && value.isNotEmpty && value.length <= 4096 ? value : null;

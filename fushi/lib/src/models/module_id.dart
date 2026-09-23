@@ -34,7 +34,9 @@ enum ModuleId {
   /// 视频库（播放器 + 番剧刮削 + 发现）。
   video('module_video_enabled'),
 
-  /// galgame 库与文本/语音捕获。**仅 Windows**（galgame hook 平台边界）。
+  /// 游戏。Windows 上是本机 galgame 库与文本/语音捕获（galgame hook 平台边界）；
+  /// Android 上是串流接收端的远端游戏库（从已配对 Windows 主机启动并串流）。
+  /// 两种形态见 [GamesModuleForm]。
   games('module_games_enabled'),
 
   /// 统一下载中心（torrent / 磁力 / 在线目录卷队列）。
@@ -81,13 +83,19 @@ enum ModuleId {
   /// 做不做得到」，而是 App Store 的合规边界（见 [StoreRestrictedCapability]），
   /// 两者会在同一个平台上给出相反的答案——下载中心在 iOS 上技术可行（外接
   /// qBittorrent 是纯 HTTP），但不允许上架。
+  ///
+  /// [isAndroid] 只服务于 [games] 的串流形态（[GamesModuleForm]）：串流接收端
+  /// 只在 Android 上有 WebRTC 接收入口——这是技术边界，不是商店合规边界。
   bool availableOn({
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
+    required bool isAndroid,
   }) => switch (this) {
-    // galgame hook 只做 Windows 端（见 CLAUDE.md「Galgame Hook 硬规则」）。
-    ModuleId.games => isWindows,
+    // galgame hook 只做 Windows 端（见 CLAUDE.md「Galgame Hook 硬规则」）；
+    // Android 上同一个模块换成串流接收端的远端游戏库。
+    ModuleId.games =>
+      GamesModuleForm.on(isWindows: isWindows, isAndroid: isAndroid) != null,
     // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
     ModuleId.browserExtension => isDesktop,
     // 通用 torrent / 磁力下载器不能进 App Store。判据不在这里写死，委托给
@@ -120,6 +128,33 @@ enum ModuleId {
       ModuleId.values.map((ModuleId id) => id.prefKey).toSet();
 }
 
+/// [ModuleId.games] 在当前平台上的形态。
+///
+/// 同一个模块开关、同一个底栏 tab，两种截然不同的页面：Windows 是本机 galgame
+/// 库（hook 注入、捕获工作台、兼容性诊断），Android 是串流接收端（列出已配对
+/// Windows 主机的游戏库，远程启动后直接串流）。平台判据只在 [on] 写一次，消费端
+/// 问 [AppModel.gamesModuleForm]，不各自判 `Platform.isAndroid`。
+enum GamesModuleForm {
+  /// Windows：本机 galgame 库 + 文本/语音捕获。
+  localLibrary,
+
+  /// Android：远端主机游戏库 + 远程启动 + 串流接收。
+  streamClient;
+
+  /// 本平台上 games 模块的形态；`null` = 本平台没有 games 模块。
+  ///
+  /// iOS 没有串流接收入口（WebRTC 接收端只接了 Android），macOS / Linux 没有
+  /// galgame hook，故只有两个平台有形态。
+  static GamesModuleForm? on({
+    required bool isWindows,
+    required bool isAndroid,
+  }) {
+    if (isWindows) return GamesModuleForm.localLibrary;
+    if (isAndroid) return GamesModuleForm.streamClient;
+    return null;
+  }
+}
+
 /// 「此刻哪些模块可见」的不可变快照：用户意愿（pref）与平台可用性的**唯一合成**。
 ///
 /// 全 app 的门控一律读它，不再各自组合 pref + 平台。
@@ -135,11 +170,13 @@ class ModuleVisibility {
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
+    required bool isAndroid,
   }) => ModuleVisibility.resolve(
     prefOf: (ModuleId _) => true,
     isWindows: isWindows,
     isDesktop: isDesktop,
     isIOS: isIOS,
+    isAndroid: isAndroid,
   );
 
   /// 把「每个模块的 pref 真值」与平台判据合成为可见集合。
@@ -153,6 +190,7 @@ class ModuleVisibility {
     required bool isWindows,
     required bool isDesktop,
     required bool isIOS,
+    required bool isAndroid,
   }) {
     final Set<ModuleId> enabled = <ModuleId>{};
     for (final ModuleId id in ModuleId.values) {
@@ -160,6 +198,7 @@ class ModuleVisibility {
         isWindows: isWindows,
         isDesktop: isDesktop,
         isIOS: isIOS,
+        isAndroid: isAndroid,
       )) {
         continue;
       }

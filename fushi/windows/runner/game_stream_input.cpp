@@ -38,6 +38,37 @@ bool IsDown(const std::string& action) {
   return action == "down" || action == "button";
 }
 
+struct PointerButton {
+  WPARAM mask;
+  UINT down;
+  UINT up;
+};
+
+constexpr PointerButton kPointerButtons[] = {
+    {MK_LBUTTON, WM_LBUTTONDOWN, WM_LBUTTONUP},
+    {MK_RBUTTON, WM_RBUTTONDOWN, WM_RBUTTONUP},
+    {MK_MBUTTON, WM_MBUTTONDOWN, WM_MBUTTONUP},
+};
+
+// Returns false for an unknown button name. Absent/empty means left.
+bool ResolvePointerButton(const std::string& name, PointerButton* out) {
+  if (name.empty() || _stricmp(name.c_str(), "left") == 0) {
+    *out = kPointerButtons[0];
+    return true;
+  }
+  if (_stricmp(name.c_str(), "right") == 0) {
+    *out = kPointerButtons[1];
+    return true;
+  }
+  if (_stricmp(name.c_str(), "middle") == 0) {
+    *out = kPointerButtons[2];
+    return true;
+  }
+  return false;
+}
+
+constexpr double kMaxWheelNotches = 20.0;
+
 class ScopedWindowDpiContext {
  public:
   explicit ScopedWindowDpiContext(HWND hwnd) {
@@ -208,7 +239,7 @@ void GameStreamInput::Release() {
   const GameStreamWindowInfo target = InspectBound();
   if (!target.alive || !target.process_matches) {
     pressed_keys_.clear();
-    pointer_down_ = false;
+    pointer_buttons_ = 0;
     native_left_down_ = false;
     native_left_transaction_id_ = 0;
     return;
@@ -223,10 +254,14 @@ void GameStreamInput::Release() {
     PostKey(key, false);
   }
   pressed_keys_.clear();
-  if (pointer_down_) {
-    PostMessageW(hwnd_, WM_LBUTTONUP, 0, 0);
-    pointer_down_ = false;
+  // Release every held pointer button; each up carries the buttons that are
+  // still held after it, matching what a real mouse would report.
+  for (const PointerButton& button : kPointerButtons) {
+    if ((pointer_buttons_ & button.mask) == 0) continue;
+    pointer_buttons_ &= ~button.mask;
+    PostMessageW(hwnd_, button.up, pointer_buttons_, 0);
   }
+  pointer_buttons_ = 0;
 }
 
 void GameStreamInput::Unbind() {
@@ -251,6 +286,14 @@ LPARAM GameStreamInput::PointerLParam(double x, double y, int width,
   const int px = NormalizedCoordinate(x, width);
   const int py = NormalizedCoordinate(y, height);
   return MAKELPARAM(static_cast<short>(px), static_cast<short>(py));
+}
+
+int GameStreamInput::WheelDelta(double notches, bool vertical) {
+  if (!std::isfinite(notches)) return 0;
+  const double clamped =
+      std::clamp(notches, -kMaxWheelNotches, kMaxWheelNotches);
+  const long magnitude = std::lround(clamped * WHEEL_DELTA);
+  return static_cast<int>(vertical ? -magnitude : magnitude);
 }
 
 UINT GameStreamInput::ResolveVirtualKey(const std::string& key) {
@@ -412,6 +455,107 @@ bool GameStreamInput::PostPointer(UINT message, WPARAM flags, double x,
                       PointerLParam(x, y, width, height)) != FALSE;
 }
 
+bool GameStreamInput::PostWheel(UINT message, int delta, double x, double y) {
+  if (hwnd_ == nullptr) return false;
+  // Wheel messages carry screen coordinates. Map in the target's DPI context
+  // for the same reason as PostPointer: client extent, ClientToScreen and the
+  // post must agree on one coordinate space.
+  const ScopedWindowDpiContext dpi(hwnd_);
+  if (!dpi.valid()) return false;
+  RECT rect{};
+  if (!GetClientRect(hwnd_, &rect)) return false;
+  const int width = rect.right - rect.left;
+  const int height = rect.bottom - rect.top;
+  if (width <= 0 || height <= 0) return false;
+  POINT point{NormalizedCoordinate(x, width), NormalizedCoordinate(y, height)};
+  if (!ClientToScreen(hwnd_, &point)) return false;
+  const WPARAM wparam =
+      MAKEWPARAM(static_cast<WORD>(pointer_buttons_ & 0xffffu),
+                 static_cast<WORD>(static_cast<short>(delta)));
+  const LPARAM lparam =
+      MAKELPARAM(static_cast<short>(point.x), static_cast<short>(point.y));
+  return PostMessageW(hwnd_, message, wparam, lparam) != FALSE;
+}
+
+bool GameStreamInput::PreparePress(bool foreground_mode, bool press,
+                                   std::string* reason) {
+  if (!press || !foreground_mode || GetForegroundWindow() == hwnd_) {
+    return true;
+  }
+  if (activate_for_test_ != nullptr) return activate_for_test_(this, reason);
+  return Activate(reason);
+}
+
+bool GameStreamInput::SendPointer(const flutter::EncodableMap& event,
+                                  const std::string& action,
+                                  bool foreground_mode, std::string* reason) {
+  if (HasSgreNativeConfirmCapability()) {
+    SetReason(reason, "unsupported_native_pointer");
+    return false;
+  }
+  if (action == "wheel") {
+    const double dx = ReadDouble(event, "dx", 0.0);
+    const double dy = ReadDouble(event, "dy", 0.0);
+    if (!std::isfinite(dx) || !std::isfinite(dy) ||
+        std::fabs(dx) > kMaxWheelNotches || std::fabs(dy) > kMaxWheelNotches) {
+      SetReason(reason, "invalid_wheel_delta");
+      return false;
+    }
+    const double x = ReadDouble(event, "x", 0.5);
+    const double y = ReadDouble(event, "y", 0.5);
+    const int vertical = WheelDelta(dy, true);
+    const int horizontal = WheelDelta(dx, false);
+    if (vertical != 0 && !PostWheel(WM_MOUSEWHEEL, vertical, x, y)) {
+      SetReason(reason, "post_failed");
+      return false;
+    }
+    if (horizontal != 0 && !PostWheel(WM_MOUSEHWHEEL, horizontal, x, y)) {
+      SetReason(reason, "post_failed");
+      return false;
+    }
+    return true;
+  }
+  const double x = ReadDouble(event, "x", 0.0);
+  const double y = ReadDouble(event, "y", 0.0);
+  if (action == "move") {
+    if (!PostPointer(WM_MOUSEMOVE, pointer_buttons_, x, y)) {
+      SetReason(reason, "post_failed");
+      return false;
+    }
+    return true;
+  }
+  if (action != "down" && action != "up") {
+    SetReason(reason, "invalid_pointer_action");
+    return false;
+  }
+  PointerButton button{};
+  if (!ResolvePointerButton(ReadString(event, "button"), &button)) {
+    SetReason(reason, "invalid_pointer_button");
+    return false;
+  }
+  if (action == "down") {
+    if (!PreparePress(foreground_mode, true, reason)) return false;
+    // Hover-dependent UI (menus, buttons that highlight first) needs the
+    // cursor at the press point before the button message arrives.
+    if (!PostPointer(WM_MOUSEMOVE, pointer_buttons_, x, y) ||
+        !PostPointer(button.down, pointer_buttons_ | button.mask, x, y)) {
+      SetReason(reason, "post_failed");
+      return false;
+    }
+    // Track the press only once the target queue accepted it.
+    pointer_buttons_ |= button.mask;
+    return true;
+  }
+  const WPARAM remaining = pointer_buttons_ & ~button.mask;
+  if (!PostPointer(button.up, remaining, x, y)) {
+    // Keep the bit so Release() still sends the matching up later.
+    SetReason(reason, "post_failed");
+    return false;
+  }
+  pointer_buttons_ = remaining;
+  return true;
+}
+
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
                            std::string* reason) {
   // A release removes already-authorised state. Do not require foreground
@@ -428,17 +572,21 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
     SetReason(reason, "invalid_event");
     return false;
   }
-  // The comment above applies to **every** release, not just the SGRE confirm
-  // bypass: if the host user alt-tabs while the remote holds dpad_up, the
-  // matching WM_KEYUP would be refused with `window_not_foreground` and the key
-  // stays down inside the game forever (`pressed_keys_` keeps it, and nothing
-  // else releases it -- the disconnect path only fires when the peer connection
-  // drops, not when the window merely loses focus). Identity (HWND + PID +
-  // process creation time), liveness, minimised and hidden checks all still
-  // apply; only the foreground requirement is dropped, and only for releases,
-  // which can never *start* an unwanted interaction.
-  const bool is_release = action_value == "up";
-  if (!ValidateTarget(!is_release, reason)) return false;
+  const std::string focus_value = ReadString(event, "inputFocus");
+  if (!focus_value.empty() && focus_value != "background" &&
+      focus_value != "foreground") {
+    SetReason(reason, "invalid_input_focus");
+    return false;
+  }
+  const bool foreground_mode = focus_value == "foreground";
+  // Every accepted event is a PostMessage to the bound HWND (or the SGRE
+  // process-local adapter), so it cannot be misdirected to whatever window
+  // happens to be foreground. Requiring foreground here only blocked the
+  // legitimate "game behind other windows" use and left releases stuck after
+  // an alt-tab. Identity (HWND + PID + process creation time), liveness,
+  // minimised and hidden checks still apply to every event; foreground mode
+  // activates the window before a press instead (PreparePress).
+  if (!ValidateTarget(false, reason)) return false;
   if (kind_value == "key" || kind_value == "gamepad") {
     std::string key =
         kind_value == "key" ? ReadString(event, "key")
@@ -470,6 +618,11 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
         kind_value == "gamepad" &&
         _stricmp(ReadString(event, "button").c_str(), "confirm") == 0;
     if (sgre_native_ready && gamepad_confirm) {
+      // The SGRE adapter samples the foreground window, so its confirm keeps
+      // the foreground requirement (SendNativeLeftButton validates it).
+      // Foreground mode activates the window before a DOWN; background mode
+      // rejects with window_not_foreground as before.
+      if (!PreparePress(foreground_mode, down, reason)) return false;
       return SendNativeLeftButton(down, true, true, reason);
     }
     if (sgre_native_ready) {
@@ -478,6 +631,7 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
                             : "unsupported_native_key");
       return false;
     }
+    if (!PreparePress(foreground_mode, down, reason)) return false;
     if (!PostKey(vk, down)) {
       SetReason(reason, "post_failed");
       return false;
@@ -490,30 +644,7 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
     return true;
   }
   if (kind_value == "pointer") {
-    if (HasSgreNativeConfirmCapability()) {
-      SetReason(reason, "unsupported_native_pointer");
-      return false;
-    }
-    UINT message = WM_MOUSEMOVE;
-    WPARAM flags = pointer_down_ ? MK_LBUTTON : 0;
-    if (action_value == "down") {
-      message = WM_LBUTTONDOWN;
-      flags = MK_LBUTTON;
-      pointer_down_ = true;
-    } else if (action_value == "up") {
-      message = WM_LBUTTONUP;
-      flags = 0;
-      pointer_down_ = false;
-    } else if (action_value != "move") {
-      SetReason(reason, "invalid_pointer_action");
-      return false;
-    }
-    if (!PostPointer(message, flags, ReadDouble(event, "x", 0.0),
-                      ReadDouble(event, "y", 0.0))) {
-      SetReason(reason, "post_failed");
-      return false;
-    }
-    return true;
+    return SendPointer(event, action_value, foreground_mode, reason);
   }
   SetReason(reason, "unsupported_input_kind");
   return false;
