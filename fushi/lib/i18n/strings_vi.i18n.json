@@ -2089,7 +2089,6 @@
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_ocr_engine_google_lens_desc": "Cần internet và tải ảnh trang lên Google. Nhanh, không cần tải xuống, nhưng chất lượng kém hơn mô hình cục bộ.",
   "manga_ocr_engine_local_onnx": "ONNX cục bộ",
-  "manga_ocr_engine_local_onnx_desc": "Hoàn toàn ngoại tuyến, chất lượng tốt nhất. Cần tải mô hình một lần và chạy chậm trên phần cứng cũ.",
   "manga_ocr_engine_none": "Không có công cụ OCR. Tải xuống mô hình tích hợp hoặc đặt đường dẫn CLI mokuro trong cài đặt.",
   "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR của thiết bị",
@@ -5452,5 +5451,14 @@
   "manga_reader_ocr_volume": "Nhận dạng tập này",
   "manga_reader_ocr_queued": "Đang chờ",
   "manga_reader_ocr_unavailable_short": "Không có công cụ OCR · hãy tải mô hình hoặc đổi công cụ trong cài đặt OCR",
-  "manga_reader_ocr_rerun": "Chạy lại OCR cho tập này…"
+  "manga_reader_ocr_rerun": "Chạy lại OCR cho tập này…",
+  "manga_ocr_parallel_tasks": "Parallel OCR tasks",
+  "manga_ocr_parallel_auto": "Automatic (1-2 tasks)",
+  "manga_ocr_parallel_tasks_desc": "Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.",
+  "manga_ocr_local_model": "Local OCR model",
+  "manga_ocr_manga_model": "manga-ocr (classic)",
+  "manga_ocr_baberu_model": "Baberu (fast, GPU when available)",
+  "manga_ocr_manga_model_desc": "Japanese manga model with horizontal-line recognition. Runs on CPU on Windows.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline. Download the selected model once; speed and accuracy depend on the model and hardware.",
+  "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks."
 }

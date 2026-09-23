@@ -8,6 +8,7 @@ import 'package:fushi/src/media/manga/manga_ocr_settings_section.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
+import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -192,6 +193,127 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(t.manga_ocr_lens_language_label), findsNothing);
   });
+
+  testWidgets('parallel tasks persists four and automatic across reopening',
+      (WidgetTester tester) async {
+    final _FakeOcrService service = _FakeOcrService(ready: true);
+    int stored = 0;
+    Widget settings() => wrap(MangaOcrSettingsSection(
+          service: service,
+          mokuroPathGetter: () => '',
+          mokuroPathSetter: (String _) async {},
+          probeExternal: (String _) async => null,
+          parallelTasksGetter: () => stored,
+          parallelTasksSetter: (int value) async => stored = value,
+        ));
+    final Finder field =
+        find.byKey(const ValueKey<String>('manga_ocr_parallel_tasks'));
+    final Finder dropdown =
+        find.descendant(of: field, matching: find.byType(DropdownButton<int>));
+
+    await tester.pumpWidget(settings());
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('4').last);
+    await tester.pumpAndSettle();
+    expect(stored, 4);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(settings());
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<int>>(dropdown).value, 4);
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.manga_ocr_parallel_auto).last);
+    await tester.pumpAndSettle();
+    expect(stored, 0);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(settings());
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<int>>(dropdown).value, 0);
+  });
+
+  testWidgets('Baberu local model choice persists across reopening on Windows',
+      (WidgetTester tester) async {
+    String stored = 'manga_ocr';
+    Widget settings() => wrap(MangaOcrSettingsSection(
+          service: _FakeOcrService(ready: true),
+          mokuroPathGetter: () => '',
+          mokuroPathSetter: (String _) async {},
+          probeExternal: (String _) async => null,
+          localModelGetter: () => stored,
+          localModelSetter: (String value) async => stored = value,
+        ));
+    final Finder field =
+        find.byKey(const ValueKey<String>('manga_ocr_local_model'));
+    final Finder dropdown = find.descendant(
+        of: field, matching: find.byType(DropdownButton<MangaOcrLocalModel>));
+    await tester.pumpWidget(settings());
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).value,
+        MangaOcrLocalModel.mangaOcr);
+    await tester.ensureVisible(field);
+    await tester.tap(field);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.manga_ocr_baberu_model).last);
+    await tester.pumpAndSettle();
+    expect(stored, 'baberu');
+    expect(find.text(t.manga_ocr_baberu_desc), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(settings());
+    await tester.pumpAndSettle();
+    expect(tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).value,
+        MangaOcrLocalModel.baberu);
+    expect(find.text(t.manga_ocr_baberu_desc), findsOneWidget);
+  }, skip: !Platform.isWindows);
+
+  testWidgets('local model cannot change during an active model download',
+      (WidgetTester tester) async {
+    final StreamController<MangaOcrDownloadEvent> events =
+        StreamController<MangaOcrDownloadEvent>();
+    addTearDown(() {
+      if (!events.isClosed) unawaited(events.close());
+    });
+    int changes = 0;
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(downloadEvents: events),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      localModelGetter: () => 'manga_ocr',
+      localModelSetter: (String _) async => changes++,
+    )));
+    await tester.pumpAndSettle();
+    final Finder dropdown = find.descendant(
+      of: find.byKey(const ValueKey<String>('manga_ocr_local_model')),
+      matching: find.byType(DropdownButton<MangaOcrLocalModel>),
+    );
+    expect(
+        tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).onChanged,
+        isNotNull);
+    final Finder download =
+        find.widgetWithText(FilledButton, t.manga_ocr_download);
+    await tester.ensureVisible(download);
+    await tester.tap(download);
+    await tester.pump();
+    expect(
+        tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).onChanged,
+        isNull);
+    expect(changes, 0);
+    final Future<void> closed = events.close();
+    await tester.pumpAndSettle();
+    await closed;
+    expect(
+        tester.widget<DropdownButton<MangaOcrLocalModel>>(dropdown).onChanged,
+        isNotNull);
+  }, skip: !Platform.isWindows);
 
   testWidgets('detect external shows probed version',
       (WidgetTester tester) async {
@@ -565,6 +687,45 @@ void main() {
       <String>['/picked/file']
     ]);
   });
+
+  testWidgets('Baberu import dialog includes its recognizer and PP line models',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(MangaOcrSettingsSection(
+      service: _FakeOcrService(),
+      mokuroPathGetter: () => '',
+      mokuroPathSetter: (String _) async {},
+      probeExternal: (String _) async => null,
+      enginePreferenceGetter: () => 'auto',
+      localModelGetter: () => 'baberu',
+      localModelSetter: (String _) async {},
+    )));
+    await tester.pumpAndSettle();
+    final Finder importButton =
+        find.byKey(const ValueKey<String>('manga_ocr_import_button'));
+    await tester.ensureVisible(importButton);
+    await tester.tap(importButton);
+    await tester.pumpAndSettle();
+    expect(find.text(t.manga_ocr_import_title), findsOneWidget);
+    for (final String name in <String>[
+      'detector-v4-s_int8.onnx',
+      'vision_fp16.onnx',
+      'decoder_prefill_int8.onnx',
+      'decoder_step_int8.onnx',
+      'vocab.json',
+      'ppocrv6_small_det.onnx',
+      'ppocrv6_small_rec.onnx',
+      'ppocrv6_small_rec.yml',
+    ]) {
+      expect(find.textContaining(name), findsOneWidget);
+    }
+    for (final String obsolete in <String>[
+      'encoder_model.onnx',
+      'decoder_model.onnx',
+      'vocab.txt',
+    ]) {
+      expect(find.textContaining(obsolete), findsNothing);
+    }
+  }, skip: !Platform.isWindows);
 
   testWidgets('设备自带 OCR：可用时下拉里那项可选', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(MangaOcrSettingsSection(

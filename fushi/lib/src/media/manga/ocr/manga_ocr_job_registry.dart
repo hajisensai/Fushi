@@ -116,12 +116,15 @@ class MangaOcrRunningJob {
 /// 进入阅读器即整卷识别之后，连着点开 N 本本地卷就是 N 个任务：本地 ONNX 每个任务
 /// 一个 isolate + 一整套 ORT 会话，Lens 则是 N 路并发上传。手机与开了低内存模式的
 /// 设备只跑 1 卷；桌面按核数给 1～2 卷（ONNX 自己就吃多核，再多只是互相抢）。
+/// [requestedTasks] 为 0 时自动选择，桌面用户可显式选择 1～4 个任务。
 int resolveMangaOcrJobConcurrency({
   required bool isMobile,
   required bool lowMemoryMode,
   required int processors,
+  int requestedTasks = 0,
 }) {
   if (isMobile || lowMemoryMode) return 1;
+  if (requestedTasks > 0) return requestedTasks.clamp(1, 4);
   return (processors ~/ 4).clamp(1, 2);
 }
 
@@ -152,6 +155,11 @@ class MangaOcrJobRegistry {
 
   void _releaseSlot() {
     _activeSlots -= 1;
+    refreshConcurrencyLimit();
+  }
+
+  /// 设置提高并发后立即唤醒排队任务；调低时让已有任务完成，不中断识别。
+  void refreshConcurrencyLimit() {
     final int? limit = _maxConcurrentJobs?.call();
     while (_slotWaiters.isNotEmpty && (limit == null || _activeSlots < limit)) {
       _activeSlots += 1;

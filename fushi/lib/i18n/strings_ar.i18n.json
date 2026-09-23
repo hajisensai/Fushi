@@ -2089,7 +2089,6 @@
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_ocr_engine_google_lens_desc": "يحتاج اتصال بالإنترنت ويرفع صور الصفحات إلى Google. سريع بدون تحميل، لكن الجودة أقل من النموذج المحلي.",
   "manga_ocr_engine_local_onnx": "ONNX محلي",
-  "manga_ocr_engine_local_onnx_desc": "غير متصل بالكامل، أفضل جودة. يحتاج تحميل نموذج لمرة واحدة وبطيء على الأجهزة القديمة.",
   "manga_ocr_engine_none": "لا يوجد محرك OCR متاح. حمّل النماذج المدمجة أو عيّن مسار Mokuro CLI في الإعدادات.",
   "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR الجهاز",
@@ -5452,5 +5451,14 @@
   "manga_reader_ocr_volume": "التعرّف على هذا المجلد",
   "manga_reader_ocr_queued": "في قائمة الانتظار",
   "manga_reader_ocr_unavailable_short": "لا يوجد محرك OCR · نزّل نموذجًا أو غيّر المحرك في إعدادات OCR",
-  "manga_reader_ocr_rerun": "إعادة تشغيل OCR لهذا المجلد…"
+  "manga_reader_ocr_rerun": "إعادة تشغيل OCR لهذا المجلد…",
+  "manga_ocr_parallel_tasks": "Parallel OCR tasks",
+  "manga_ocr_parallel_auto": "Automatic (1-2 tasks)",
+  "manga_ocr_parallel_tasks_desc": "Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.",
+  "manga_ocr_local_model": "Local OCR model",
+  "manga_ocr_manga_model": "manga-ocr (classic)",
+  "manga_ocr_baberu_model": "Baberu (fast, GPU when available)",
+  "manga_ocr_manga_model_desc": "Japanese manga model with horizontal-line recognition. Runs on CPU on Windows.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline. Download the selected model once; speed and accuracy depend on the model and hardware.",
+  "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks."
 }

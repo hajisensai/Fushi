@@ -76,6 +76,8 @@ void main() {
       // 路径（正斜杠、相对本测试的扫描根）→ 允许出现的**次数**。数量也钉住：同一文件
       // 里多冒出一处同样要表态，这正是「漏改一个」的形状。
       const Map<String, int> allowed = <String, int>{
+        // OCR 字符词表校验：只对单个 Unicode 字母/数字施加重复生成上限，非学习计数。
+        'packages/fushi_engine/lib/ocr/baberu_ocr_recognizer.dart': 1,
         // 超时兜底日志里报文本长度，不进统计。
         'lib/src/media/audiobook/audiobook_clip_text_render.dart': 1,
         // 有声书片段排版：决定字号/换行的文本长度，不进统计。

@@ -3011,6 +3011,23 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 0 自动；桌面可手动选择 1～4 个跨书 OCR 任务。
+  int get mangaOcrParallelTasks =>
+      (getPref('manga_ocr_parallel_tasks', defaultValue: 0) as int).clamp(0, 4);
+
+  Future<void> setMangaOcrParallelTasks(int value) async {
+    await setPref('manga_ocr_parallel_tasks', value.clamp(0, 4));
+    notifyListeners();
+  }
+
+  String get mangaOcrLocalModel =>
+      getPref('manga_ocr_local_model', defaultValue: 'manga_ocr') as String;
+
+  Future<void> setMangaOcrLocalModel(String value) async {
+    await setPref('manga_ocr_local_model', value);
+    notifyListeners();
+  }
+
   /// PC 漫画整卷 OCR 默认引擎。稳定字符串而非 enum index，避免重排枚举破坏偏好。
   /// `auto` 的解析顺序由漫画模块统一控制，且永不自动跨到 Google Lens。
   ///

@@ -2089,7 +2089,6 @@
   "manga_ocr_engine_google_lens": "Google Lens",
   "manga_ocr_engine_google_lens_desc": "Necesita internet y sube imágenes de página a Google. Rápido sin descarga, pero la calidad está por debajo del modelo local.",
   "manga_ocr_engine_local_onnx": "ONNX local",
-  "manga_ocr_engine_local_onnx_desc": "Completamente offline, mejor calidad. Necesita una descarga de modelo única y es lento en hardware antiguo.",
   "manga_ocr_engine_none": "No hay motor de OCR disponible. Descargue los modelos integrados o establezca la ruta del CLI de mokuro en los ajustes.",
   "manga_ocr_engine_paired_host_desc": "Hands the work to the paired Fushi interconnect server. Nothing is downloaded here.",
   "manga_ocr_engine_system": "OCR del dispositivo",
@@ -5452,5 +5451,14 @@
   "manga_reader_ocr_volume": "Reconocer este volumen",
   "manga_reader_ocr_queued": "En cola",
   "manga_reader_ocr_unavailable_short": "Sin motor de OCR · descarga un modelo o cambia de motor en los ajustes de OCR",
-  "manga_reader_ocr_rerun": "Volver a ejecutar el OCR de este volumen…"
+  "manga_reader_ocr_rerun": "Volver a ejecutar el OCR de este volumen…",
+  "manga_ocr_parallel_tasks": "Parallel OCR tasks",
+  "manga_ocr_parallel_auto": "Automatic (1-2 tasks)",
+  "manga_ocr_parallel_tasks_desc": "Recognize different books at once. Chapters of the same book stay in order. Higher values use more memory; low-memory mode limits this to one.",
+  "manga_ocr_local_model": "Local OCR model",
+  "manga_ocr_manga_model": "manga-ocr (classic)",
+  "manga_ocr_baberu_model": "Baberu (fast, GPU when available)",
+  "manga_ocr_manga_model_desc": "Japanese manga model with horizontal-line recognition. Runs on CPU on Windows.",
+  "manga_ocr_engine_local_onnx_desc": "Fully offline. Download the selected model once; speed and accuracy depend on the model and hardware.",
+  "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks."
 }

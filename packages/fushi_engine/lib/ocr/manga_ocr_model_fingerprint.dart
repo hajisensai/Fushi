@@ -54,8 +54,9 @@ Future<String?> resolveMangaOcrModelFingerprint(
   Directory modelsDir, {
   List<MangaOcrModelFile> manifest = kMangaOcrModelManifest,
 }) async {
-  final File sidecar =
-      File(p.join(modelsDir.path, kMangaOcrModelFingerprintFileName));
+  final File sidecar = File(
+    p.join(modelsDir.path, kMangaOcrModelFingerprintFileName),
+  );
   final Map<String, Object?> memo = await _readSidecar(sidecar);
   final Map<String, Object?> nextMemo = <String, Object?>{};
   final List<String> parts = <String>[];
@@ -106,13 +107,16 @@ Future<String?> resolveMangaOcrModelFingerprint(
 Future<String> resolveLocalMangaOcrEngineSignature(
   Directory modelsDir, {
   List<MangaOcrModelFile> manifest = kMangaOcrModelManifest,
+  String baseSignature = kLocalMangaOcrEngineSignature,
 }) async {
-  final String? fingerprint =
-      await resolveMangaOcrModelFingerprint(modelsDir, manifest: manifest);
+  final String? fingerprint = await resolveMangaOcrModelFingerprint(
+    modelsDir,
+    manifest: manifest,
+  );
   if (fingerprint == null) {
-    return kLocalMangaOcrEngineSignature;
+    return baseSignature;
   }
-  return '$kLocalMangaOcrEngineSignature-$fingerprint';
+  return '$baseSignature-$fingerprint';
 }
 
 /// 用默认模型目录解析签名（只读缓存的消费方：向导探测 / 重开恢复）。
