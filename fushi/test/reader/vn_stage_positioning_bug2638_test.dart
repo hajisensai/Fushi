@@ -5,6 +5,8 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/source_guard.dart';
+
 /// BUG-2638 守卫 —— VN 舞台 `.fushi-vn-stage` 不能是 `position: fixed`。
 ///
 /// macOS WebKit 把 fixed 舞台单独合成成一层；竖排切屏让内容盒尺寸变化时，它只
@@ -51,9 +53,8 @@ void main() {
         debugDefaultTargetPlatformOverride = platform;
         final ReaderSettings settings = await _vnSettings(writingMode);
         final String css = ReaderContentStyles.css(settings: settings);
-        // 去掉注释再查，免得解释性注释里的 "fixed" 字样误伤。
-        final String stage = _ruleBody(css, '.fushi-vn-stage')
-            .replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+        // 掩掉注释再查，免得解释性注释里的 "fixed" 字样误伤。
+        final String stage = maskCssComments(_ruleBody(css, '.fushi-vn-stage'));
         expect(stage, contains('position: absolute !important'),
             reason: 'the VN stage must be absolutely positioned (BUG-2638)');
         expect(stage.contains('position: fixed'), isFalse,
