@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "تحريك انتقالات الصفحات",
   "manga_reader_lookup_on_hover": "البحث عن نص OCR عند التمرير فوقه",
   "manga_reader_ocr_trigger": "تشغيل OCR",
-  "manga_reader_ocr_automatic": "أثناء القراءة",
+  "manga_reader_ocr_automatic": "عند الفتح",
   "manga_reader_ocr_manual": "يدوي",
-  "manga_reader_parallel_ocr_tasks": "مهام OCR المتوازية",
-  "manga_reader_ocr_current": "التعرف على الصفحات المرئية",
   "manga_reader_back_to_start": "العودة إلى البداية",
   "reader_settings_panel_move_left": "نقل الإعدادات إلى اليسار",
   "reader_settings_panel_move_right": "نقل الإعدادات إلى اليمين",
-  "manga_reader_ocr_engine_note": "يدعم وضع «أثناء القراءة» نموذج ONNX المحلي وGoogle Lens وOCR النظام. ينفّذ ONNX المحلي مهمة واحدة في كل مرة؛ ويستخدم Mokuro الخارجي والمضيفون المقترنون OCR على دفعات يدويًا.",
+  "manga_reader_ocr_engine_note": "عند اختيار «عند الفتح»، يؤدي فتح مجلد أو فصل إلى التعرّف على المجلد كاملًا في الخلفية بدءًا من الصفحة الحالية، ويظهر التقدم في الزاوية العلوية اليمنى. يُستخدم المحرك المختار أدناه. أما «يدوي» فيعرض زر «التعرّف على هذا المجلد» في شريط الأدوات.",
   "manga_reader_ocr_unavailable": "لا يوجد محرك OCR جاهز. نزّل النموذج المحلي أو اختر محركًا آخر في إعدادات OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,8 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "التعرّف على هذا المجلد",
+  "manga_reader_ocr_queued": "في قائمة الانتظار",
+  "manga_reader_ocr_unavailable_short": "OCR غير متاح"
 }

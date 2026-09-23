@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Animate page transitions",
   "manga_reader_lookup_on_hover": "Lookup OCR text on hover",
   "manga_reader_ocr_trigger": "OCR trigger",
-  "manga_reader_ocr_automatic": "While reading",
+  "manga_reader_ocr_automatic": "On open",
   "manga_reader_ocr_manual": "Manual",
-  "manga_reader_parallel_ocr_tasks": "Parallel OCR tasks",
-  "manga_reader_ocr_current": "Recognize visible pages",
   "manga_reader_back_to_start": "Back to the beginning",
   "reader_settings_panel_move_left": "Move settings to the left",
   "reader_settings_panel_move_right": "Move settings to the right",
-  "manga_reader_ocr_engine_note": "While reading supports local ONNX, Google Lens and system OCR. Local ONNX runs one task at a time; external Mokuro and paired hosts use explicit batch OCR.",
+  "manga_reader_ocr_engine_note": "With \"On open\", opening a volume or chapter recognizes the whole volume in the background, starting from the current page; progress shows in the top-right corner. It uses the engine chosen below. \"Manual\" adds a \"Recognize this volume\" button to the toolbar instead.",
   "manga_reader_ocr_unavailable": "No OCR engine is ready. Download the local model or pick another engine in OCR settings.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,8 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Recognize this volume",
+  "manga_reader_ocr_queued": "Queued",
+  "manga_reader_ocr_unavailable_short": "OCR unavailable"
 }

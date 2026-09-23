@@ -30,7 +30,8 @@ void main() {
     expect(value.contrast, 200);
     expect(value.saturation, 100);
     expect(value.colorFilterOpacity, 100);
-    expect(value.parallelOcrTasks, 3);
+    // 页级并发已随「边看边识别」移除：旧覆盖里残留的键只是死数据，读入即丢。
+    expect(value.toJson().containsKey('parallelOcrTasks'), isFalse);
     expect(
       MangaReaderPreferences.fromJson(value.toJson()).toJson(),
       value.toJson(),
