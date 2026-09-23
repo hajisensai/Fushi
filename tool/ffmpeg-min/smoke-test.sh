@@ -230,6 +230,15 @@ for input in \
   assert_nonempty "$WORK/$stem.aac"
 done
 
+echo "[ffmpeg-min-smoke] exporting sentence audio from an HLS playlist"
+# BUG-2642: online video sources (Aniyomi extensions) hand mining an `.m3u8`.
+# Without the hls demuxer the bundled ffmpeg rejects the playlist with
+# AVERROR_INVALIDDATA and the card aborts with `required audio missing`.
+mkdir -p "$WORK/hls"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE"   -map 0:v:0 -map 0:a:0 -c:v copy -c:a copy -f hls -hls_time 1   -hls_playlist_type vod -hls_segment_filename "$WORK/hls/seg%03d.ts"   "$WORK/hls/index.m3u8"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y   -ss 0.100 -t 0.800 -i "$WORK/hls/index.m3u8" -vn -map_chapters -1   -c:a aac -ac 1 -b:a 64k "$WORK/hls.aac"
+assert_nonempty "$WORK/hls.aac"
+
 echo "[ffmpeg-min-smoke] exporting sentence audio at playback tempo (atempo)"
 # Audiobook mining at playback speed (buildFfmpegClipArgs tempo=...) cuts the
 # sentence clip through `-af atempo=R`. A minimal build without the atempo
