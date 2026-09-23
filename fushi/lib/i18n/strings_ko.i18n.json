@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "페이지 전환 애니메이션",
   "manga_reader_lookup_on_hover": "마우스를 올려 OCR 텍스트 검색",
   "manga_reader_ocr_trigger": "OCR 실행 방식",
-  "manga_reader_ocr_automatic": "읽는 중 자동",
+  "manga_reader_ocr_automatic": "열면 자동",
   "manga_reader_ocr_manual": "수동",
-  "manga_reader_parallel_ocr_tasks": "병렬 OCR 작업 수",
-  "manga_reader_ocr_current": "보이는 페이지 인식",
   "manga_reader_back_to_start": "처음으로 돌아가기",
   "reader_settings_panel_move_left": "설정을 왼쪽으로 이동",
   "reader_settings_panel_move_right": "설정을 오른쪽으로 이동",
-  "manga_reader_ocr_engine_note": "'읽는 중 자동'은 로컬 ONNX, Google Lens, 시스템 OCR을 지원합니다. 로컬 ONNX는 한 번에 하나씩 처리하며, 외부 Mokuro와 페어링된 호스트는 수동 일괄 OCR을 사용합니다.",
+  "manga_reader_ocr_engine_note": "「열면 자동」이면 권이나 챕터를 열 때 현재 페이지부터 권 전체를 백그라운드에서 인식하고 오른쪽 위에 진행률을 표시합니다. 아래에서 고른 엔진을 사용합니다. 「수동」이면 도구 모음에 「이 권 인식」 버튼이 표시됩니다.",
   "manga_reader_ocr_unavailable": "사용 가능한 OCR 엔진이 없습니다. OCR 설정에서 로컬 모델을 다운로드하거나 다른 엔진을 선택하세요.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,8 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "이 권 인식",
+  "manga_reader_ocr_queued": "대기 중",
+  "manga_reader_ocr_unavailable_short": "OCR 사용 불가"
 }

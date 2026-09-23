@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "翻页动画",
   "manga_reader_lookup_on_hover": "悬停查词",
   "manga_reader_ocr_trigger": "OCR 触发方式",
-  "manga_reader_ocr_automatic": "边看边识别",
+  "manga_reader_ocr_automatic": "打开即识别",
   "manga_reader_ocr_manual": "手动",
-  "manga_reader_parallel_ocr_tasks": "并行 OCR 任务数",
-  "manga_reader_ocr_current": "识别当前可见页",
   "manga_reader_back_to_start": "回到开头",
   "reader_settings_panel_move_left": "将设置移到左侧",
   "reader_settings_panel_move_right": "将设置移到右侧",
-  "manga_reader_ocr_engine_note": "边看边识别支持本地 ONNX、Google Lens 和系统 OCR。本地 ONNX 串行执行；外部 Mokuro 和配对主机使用手动批量识别。",
+  "manga_reader_ocr_engine_note": "设为「打开即识别」时，打开卷或章节会在后台从当前页开始识别整卷，右上角显示进度，使用下方选择的引擎。设为「手动」则在工具栏提供「识别本卷」按钮。",
   "manga_reader_ocr_unavailable": "没有可用的 OCR 引擎：请在 OCR 设置中下载本地模型或换用其他引擎。",
   "game_stream_library_subtitle": "在电脑上启动游戏并串流到这里",
   "game_stream_module_hint": "从 Windows 电脑启动并串流游戏",
@@ -5450,5 +5448,8 @@
   "game_stream_touch_direct": "切换为直接点击",
   "game_stream_touch_trackpad": "切换为触控板",
   "game_stream_remote_launch_title": "允许远程启动",
-  "game_stream_remote_launch_hint": "已配对的安卓设备可从本机游戏库启动游戏并直接串流"
+  "game_stream_remote_launch_hint": "已配对的安卓设备可从本机游戏库启动游戏并直接串流",
+  "manga_reader_ocr_volume": "识别本卷",
+  "manga_reader_ocr_queued": "排队中",
+  "manga_reader_ocr_unavailable_short": "OCR 不可用"
 }

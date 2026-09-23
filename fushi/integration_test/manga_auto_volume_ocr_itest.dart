@@ -1,4 +1,10 @@
-/// Real Windows system OCR must process viewed pages without scanning ahead.
+/// 进入即整卷识别的真机 E2E：打开一本没识别过的漫画，阅读器自动排整卷任务，
+/// 用真实引擎从当前页起识别**全部**页，右上角浮标显示进度，跑完后 manga.json
+/// 落盘带 OCR 元数据与真实识别出的文字。
+///
+/// 引擎：本机有 Windows 系统 OCR（英文语言包）就用它；没有就用 Google Lens
+/// 识别合成的「HELLO WORLD / PAGE n」页（隔离数据根里预置上传同意，不涉及任何
+/// 用户数据）。
 library;
 
 import 'dart:async';
@@ -13,11 +19,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
+import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
+    show MangaOcrProgressBadge;
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'helpers/focus_driver.dart';
 import 'helpers/library_fixture.dart';
@@ -52,9 +62,12 @@ Future<Uint8List> _textPage(String text) async {
   return bytes!.buffer.asUint8List();
 }
 
+/// 页数够多，任务跑的途中才截得到进度浮标的真实像素（4 页时 Lens 在截图前就跑完）。
+const int _pageCount = 24;
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets('real system OCR caches viewed pages only', (
+  testWidgets('opening a volume recognizes every page with a real engine', (
     WidgetTester tester,
   ) async {
     final FlutterExceptionHandler? testErrorHandler = FlutterError.onError;
@@ -65,24 +78,31 @@ void main() {
     final AppModel appModel = await readyAppModel(tester);
     final bool focusBefore = appModel.experimentalFocusNavigationEnabled;
     await enableFocusNavigation(tester);
-    final bool available = await const MethodChannelSystemOcr().isAvailable();
-    debugPrint('[visible-ocr] systemAvailable=$available language=en');
-    expect(
-      available,
-      isTrue,
-      reason: 'Windows system OCR unavailable: live OCR is not verified',
+    final bool systemAvailable = await const MethodChannelSystemOcr()
+        .isAvailable();
+    final String engine = systemAvailable ? 'system_ocr' : 'google_lens';
+    debugPrint(
+      '[auto-volume-ocr] systemAvailable=$systemAvailable engine=$engine',
     );
+    if (!systemAvailable) {
+      // 隔离数据根：预置 Lens 上传同意，等价于用户在告知框点了「同意」。
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(
+        kGoogleLensDisclosurePreferenceKey,
+        kGoogleLensDisclosureVersion,
+      );
+    }
     final String engineBefore = appModel.mangaOcrEnginePreference;
     final String languageBefore = appModel.mangaOcrLensLanguage;
     final String spreadBefore = appModel.mangaSpreadPreference;
     final bool floatingBefore = appModel.mangaChromeFloating;
     final Directory bookDir = Directory.systemTemp.createTempSync(
-      'manga_visible_ocr_',
+      'manga_auto_volume_ocr_',
     );
     final Directory images = Directory(p.join(bookDir.path, 'images'))
       ..createSync();
     final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
-    for (int index = 0; index < 4; index++) {
+    for (int index = 0; index < _pageCount; index++) {
       final String filename = 'p$index.png';
       File(
         p.join(images.path, filename),
@@ -97,14 +117,15 @@ void main() {
     File(
       p.join(bookDir.path, 'manga.json'),
     ).writeAsStringSync(jsonEncode(<String, Object?>{'pages': pages}));
-    final String key = 'visible-ocr-${DateTime.now().microsecondsSinceEpoch}';
+    final String key =
+        'auto-volume-ocr-${DateTime.now().microsecondsSinceEpoch}';
     await appModel.database.insertEpubBook(
       EpubBooksCompanion.insert(
         bookKey: key,
-        title: 'Visible OCR fixture',
+        title: 'Auto volume OCR fixture',
         epubPath: 'manga.json',
         extractDir: bookDir.path,
-        chapterCount: 4,
+        chapterCount: _pageCount,
         chaptersJson: '[]',
         importedAt: DateTime.now().millisecondsSinceEpoch,
         format: const Value<String>('manga'),
@@ -118,31 +139,19 @@ void main() {
       'autoMode': false,
       'direction': 'ltr',
       'ocrTrigger': 'automatic',
-      'parallelOcrTasks': 1,
     });
-    final Directory cacheDir = Directory(
-      p.join(bookDir.path, 'manga_ocr_out', '_pages', 'system_ocr_en'),
-    );
-    File cache(int index) =>
-        File(p.join(cacheDir.path, '${index.toString().padLeft(6, '0')}.json'));
-    Future<void> waitForCache(int index) async {
-      for (
-        int attempt = 0;
-        attempt < 120 && !cache(index).existsSync();
-        attempt++
-      ) {
-        await tester.pump(const Duration(milliseconds: 500));
+    final File mangaJson = File(p.join(bookDir.path, 'manga.json'));
+    Future<Map<String, Object?>?> finishedPayload() async {
+      final Object? decoded = jsonDecode(await mangaJson.readAsString());
+      if (decoded is! Map<String, Object?> || decoded['ocr'] == null) {
+        return null;
       }
-      expect(
-        cache(index).existsSync(),
-        isTrue,
-        reason: 'Page $index must be recognized by real system OCR',
-      );
+      return decoded;
     }
 
     final NavigatorState navigator = appModel.navigatorKey.currentState!;
     try {
-      await appModel.setMangaOcrEnginePreference('system_ocr');
+      await appModel.setMangaOcrEnginePreference(engine);
       await appModel.setMangaOcrLensLanguage('en');
       await appModel.setMangaSpreadPreference('single');
       await appModel.setMangaChromeFloating(false);
@@ -158,26 +167,58 @@ void main() {
           ),
         ),
       );
-      await waitForCache(0);
-      expect(cache(1).existsSync(), isFalse);
-      expect(cache(2).existsSync(), isFalse);
-      expect(cache(3).existsSync(), isFalse);
-      expect(await cache(0).readAsString(), contains('HELLO'));
-      expect(
-        (await captureFlutterFrame(tester, 'manga-visible-ocr-page-one')).saved,
-        isTrue,
+      // 没有任何用户动作：进入阅读器本身就要排上整卷任务并显示进度浮标。
+      final Finder badge = find.byKey(
+        const ValueKey<String>('manga_ocr_acceleration_label'),
       );
-      await tester.sendKeyEvent(LogicalKeyboardKey.pageDown);
-      await waitForCache(1);
-      expect(cache(2).existsSync(), isFalse);
-      expect(cache(3).existsSync(), isFalse);
-      expect(await cache(1).readAsString(), contains('HELLO'));
+      bool badgeSeen = false;
+      Map<String, Object?>? payload;
+      for (int attempt = 0; attempt < 360 && payload == null; attempt++) {
+        await tester.pump(const Duration(milliseconds: 500));
+        if (!badgeSeen && badge.evaluate().isNotEmpty) {
+          badgeSeen = true;
+          final String text =
+              (tester.widget(badge) as MangaOcrProgressBadge).text;
+          debugPrint('[auto-volume-ocr] badge="$text"');
+          expect(
+            (await captureFlutterFrame(
+              tester,
+              'manga-auto-volume-ocr-running',
+            )).saved,
+            isTrue,
+          );
+        }
+        payload = await finishedPayload();
+      }
+      expect(badgeSeen, isTrue, reason: 'Progress badge must be shown');
+      expect(payload, isNotNull, reason: 'Whole volume must finish');
+      final List<Object?> images = payload!['pages']! as List<Object?>;
+      expect(images, hasLength(_pageCount));
+      for (int index = 0; index < images.length; index++) {
+        final String blocks = jsonEncode(
+          (images[index]! as Map<String, Object?>)['blocks'],
+        );
+        expect(
+          blocks,
+          contains('PAGE ${index + 1}'),
+          reason: 'Page $index must be recognized by real $engine',
+        );
+      }
+      for (
+        int attempt = 0;
+        attempt < 20 && badge.evaluate().isNotEmpty;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 250));
+      }
+      expect(badge, findsNothing, reason: 'Badge must clear once finished');
       expect(
-        (await captureFlutterFrame(tester, 'manga-visible-ocr-page-two')).saved,
+        (await captureFlutterFrame(tester, 'manga-auto-volume-ocr-done')).saved,
         isTrue,
       );
       debugPrint(
-        '[visible-ocr] cached=0,1 unseen=2,3 absent; real HELLO text recognized',
+        '[auto-volume-ocr] engine=$engine all $_pageCount pages recognized, '
+        'manga.json final',
       );
     } finally {
       navigator.popUntil((Route<dynamic> route) => route.isFirst);

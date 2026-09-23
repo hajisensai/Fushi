@@ -12,6 +12,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
@@ -98,6 +102,46 @@ class _MangaTestAppModel extends AppModel {
   String get mangaOcrLensLanguage => 'ja';
 }
 
+/// 进入即整卷识别（自动模式）用的 fake：触发方式默认 automatic，引擎偏好可选。
+class _AutoOcrAppModel extends _MangaTestAppModel {
+  _AutoOcrAppModel(super.db, {required this.engine});
+
+  final String engine;
+
+  @override
+  MangaReaderPreferences get mangaReaderPreferences =>
+      const MangaReaderPreferences();
+
+  @override
+  String get mangaOcrEnginePreference => engine;
+}
+
+/// 系统 OCR / Lens 两个整卷 runner 的 fake：记下每次整卷请求，事件由测试推。
+class _FakeVolumeRunner
+    implements SystemOcrMangaRunner, GoogleLensMangaOcrRunner {
+  final List<(String, int)> requests = <(String, int)>[];
+  final StreamController<MangaOcrVolumeEvent> events =
+      StreamController<MangaOcrVolumeEvent>.broadcast();
+
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+    bool onlyMissing = true,
+    required String language,
+  }) {
+    requests.add((imageDirPath, startPage));
+    return events.stream;
+  }
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<void> clearCache(String imageDirPath) async {}
+}
+
 /// 悬浮顶栏偏好开的 fake。
 class _FloatingChromeAppModel extends _MangaTestAppModel {
   _FloatingChromeAppModel(super.db);
@@ -143,7 +187,9 @@ class _FakeMangaOcrService implements MangaOcrService {
 
 Widget _harness(AppModel appModel, MediaItem item, String bookKey,
     {List<Override> extraOverrides = const <Override>[],
-    CardSourceLink? sourceReview}) {
+    CardSourceLink? sourceReview,
+    MangaOcrWizardEngines? ocrEngines,
+    GoogleLensDisclosureGate? lensGate}) {
   return ProviderScope(
     overrides: <Override>[
       // TODO-2936 起页面 initState 会读 profileViewModelProvider（媒体类型绑定），
@@ -160,6 +206,8 @@ Widget _harness(AppModel appModel, MediaItem item, String bookKey,
           item: item,
           bookKey: bookKey,
           sourceReview: sourceReview,
+          ocrEnginesOverride: ocrEngines,
+          lensDisclosureOverride: lensGate,
         ),
       ),
     ),
@@ -387,7 +435,7 @@ void main() {
     },
   );
 
-  testWidgets('阅读器允许当前页 OCR：手动模式不预跑整卷，保留返回与查词键盘宿主',
+  testWidgets('手动模式：进入不排整卷任务，⋮ 里给「识别本卷」；无「识别当前页」，保留返回与查词键盘宿主',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -441,10 +489,11 @@ void main() {
     });
     await tester.pump();
 
-    // Current-page OCR is available inside the reader. Explicit volume jobs
-    // remain outside it, and mounting in manual mode must not start any work.
+    // 手动模式：进入阅读器不排任务、不挂进度浮标，只在顶栏给「识别本卷」。
     expect(ocrService.folderRequests, 0);
-    expect(find.byKey(const ValueKey<String>('manga_visible_ocr_status')),
+    expect(find.byKey(const ValueKey<String>('manga_ocr_acceleration_label')),
+        findsNothing);
+    expect(find.byKey(const ValueKey<String>('manga_ocr_no_engine_badge')),
         findsNothing);
     expect(find.byKey(const ValueKey<String>('manga_reader_back_button')),
         findsOneWidget,
@@ -454,12 +503,16 @@ void main() {
     await tester.pumpAndSettle();
     final Iterable<PopupMenuItem<MangaChromeAction>> menuItems = tester.widgetList<PopupMenuItem<MangaChromeAction>>(
       find.byType(PopupMenuItem<MangaChromeAction>));
-    final PopupMenuItem<MangaChromeAction> currentOcr = menuItems.singleWhere(
+    final PopupMenuItem<MangaChromeAction> volumeOcr = menuItems.singleWhere(
       (PopupMenuItem<MangaChromeAction> item) => item.value?.key ==
-          const ValueKey<String>('manga_reader_ocr_current_button'));
-    expect(currentOcr.enabled, isTrue);
-    expect(currentOcr.value!.onPressed, isNotNull,
-        reason: '当前页识别必须有可调用回调，不能只有配置文案');
+          const ValueKey<String>('manga_reader_ocr_volume_button'));
+    expect(volumeOcr.enabled, isTrue);
+    expect(volumeOcr.value!.onPressed, isNotNull,
+        reason: '「识别本卷」必须有可调用回调，不能只有配置文案');
+    expect(menuItems.any((PopupMenuItem<MangaChromeAction> item) =>
+        item.value?.key ==
+            const ValueKey<String>('manga_reader_ocr_current_button')), isFalse,
+        reason: '「识别当前可见页」已砍掉');
     expect(menuItems.any((PopupMenuItem<MangaChromeAction> item) =>
         item.value?.key == const ValueKey<String>('manga_full_ocr_button')), isFalse);
     // Dismiss the overflow through its route, as Escape/back would do. Reader
@@ -485,6 +538,199 @@ void main() {
     expect(find.byKey(const ValueKey<String>('manga_ocr_cancel_button')),
         findsNothing,
         reason: '没有外部任务在跑时不显示取消按钮');
+  });
+
+  // 进入即整卷识别：没有任何用户动作，打开一本没识别过的卷就排上整卷任务，
+  // 从当前页开始跑，右上角浮标显示进度（对齐 Mangatan / Chimahon）。
+  testWidgets('自动模式：进入阅读器即排整卷任务，右上角浮标显示进度',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _AutoOcrAppModel appModel =
+        _AutoOcrAppModel(db, engine: 'system_ocr');
+    final _FakeVolumeRunner runner = _FakeVolumeRunner();
+    addTearDown(runner.events.close);
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_auto_volume_ocr_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+    const String bookKey = 'auto volume ocr book';
+
+    await tester.runAsync(() async {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ));
+      await tester.pumpWidget(_harness(
+        appModel,
+        _item(bookKey),
+        bookKey,
+        extraOverrides: <Override>[
+          mangaOcrJobRegistryProvider.overrideWithValue(registry),
+          mangaOcrServiceProvider
+              .overrideWithValue(_FakeMangaOcrService(ready: false)),
+        ],
+        ocrEngines: MangaOcrWizardEngines(
+          service: _FakeMangaOcrService(ready: false),
+          systemOcrRunner: runner,
+        ),
+      ));
+      for (int i = 0; i < 60 && runner.requests.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
+      runner.events.add(
+          const MangaOcrVolumeEvent.page(pagesDone: 1, pagesTotal: 2));
+      for (int i = 0; i < 10; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await tester.pump();
+      }
+    });
+    await tester.pump();
+
+    expect(runner.requests, hasLength(1),
+        reason: '进入阅读器必须自动排且只排一次整卷任务');
+    expect(p.equals(runner.requests.single.$1, bookDir.path), isTrue);
+    expect(runner.requests.single.$2, 0, reason: '从当前页（首页）开始识别');
+    expect(registry.running(bookKey), isNotNull);
+    expect(find.text('OCR 1/2'), findsOneWidget,
+        reason: '右上角浮标显示整卷进度');
+    // 浮标不挂在顶栏里：悬浮顶栏收起 / 隐藏界面时进度仍看得见。
+    expect(
+      find.ancestor(
+        of: find.text('OCR 1/2'),
+        matching: find.byKey(const ValueKey<String>('manga_reader_top_bar')),
+      ),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey<String>('manga_ocr_cancel_button')),
+        findsOneWidget);
+
+    // 执行器是 async* 生成器，取消要等它走到下一个 yield：关掉 fake runner 的
+    // 事件流让它收尾（真 runner 会继续出事件或结束）。
+    await tester.runAsync(() async {
+      final Future<void> cancelling = registry.cancel(bookKey);
+      await runner.events.close();
+      await cancelling;
+    });
+  });
+
+  testWidgets('自动模式 + Google Lens：先过上传同意闸门，拒绝则不排任务、本次不再追问',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _FakeVolumeRunner runner = _FakeVolumeRunner();
+    addTearDown(runner.events.close);
+    final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+    int gateCalls = 0;
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_auto_volume_ocr_lens_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(_mangaJson());
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+    const String bookKey = 'auto volume ocr lens book';
+
+    Future<void> openReader({String engine = 'google_lens'}) async {
+      await tester.runAsync(() async {
+        // ProviderScope 卸载时会 dispose 它的 AppModel：每次开书用新实例。
+        await tester.pumpWidget(_harness(
+          _AutoOcrAppModel(db, engine: engine),
+          _item(bookKey),
+          bookKey,
+          extraOverrides: <Override>[
+            mangaOcrJobRegistryProvider.overrideWithValue(registry),
+            mangaOcrServiceProvider
+                .overrideWithValue(_FakeMangaOcrService(ready: false)),
+          ],
+          ocrEngines: MangaOcrWizardEngines(
+            service: _FakeMangaOcrService(ready: false),
+            lensRunner: runner,
+          ),
+          lensGate: (BuildContext _) async {
+            gateCalls++;
+            return false;
+          },
+        ));
+        for (int i = 0; i < 40; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          await tester.pump();
+        }
+      });
+      await tester.pump();
+    }
+
+    await tester.runAsync(() => db.insertEpubBook(EpubBooksCompanion.insert(
+          bookKey: bookKey,
+          title: bookKey,
+          epubPath: 'manga.json',
+          extractDir: bookDir.path,
+          chapterCount: 2,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          format: const Value<String>('manga'),
+        )));
+    await openReader();
+    expect(gateCalls, 1, reason: '云端引擎必须先征得上传同意');
+    expect(runner.requests, isEmpty, reason: '拒绝上传就一页都不能发出去');
+    expect(registry.running(bookKey), isNull);
+    expect(registry.queuedDirectories(bookKey), isEmpty);
+
+    // 同一次运行里重开这卷：不再每开一次就弹一次同意框。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await openReader();
+    expect(gateCalls, 1);
+    expect(runner.requests, isEmpty);
+
+    // 拒绝期间自动模式也给「识别本卷」入口：否则只能重启 app 才能再识别。
+    await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widgetList<PopupMenuItem<MangaChromeAction>>(
+              find.byType(PopupMenuItem<MangaChromeAction>))
+          .any((PopupMenuItem<MangaChromeAction> item) =>
+              item.value?.key ==
+              const ValueKey<String>('manga_reader_ocr_volume_button')),
+      isTrue,
+      reason: '拒绝 Lens 后自动模式不排任务，必须留一个主动识别的入口',
+    );
+    Navigator.of(tester
+            .element(find.byType(PopupMenuItem<MangaChromeAction>).first))
+        .pop();
+    await tester.pumpAndSettle();
+
+    // 换走引擎再换回 Lens：重新征求同意（拒绝只对当时那个引擎偏好有效）。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await openReader(engine: 'local_onnx');
+    expect(gateCalls, 1, reason: '本机引擎不需要上传同意');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await openReader();
+    expect(gateCalls, 2, reason: '换回 Lens 必须重新问');
+    expect(runner.requests, isEmpty);
   });
 
   testWidgets('悬浮顶栏：偏好开 → 书就绪后栏默认收起、正文全出血；固定 → 栏常驻且正文让位',
@@ -666,7 +912,7 @@ void main() {
     await tester.pump();
 
     // 重进接回：书装好后 HUD 直接从注册表的快照显示进度。
-    expect(find.text('1/2'), findsOneWidget,
+    expect(find.text('OCR 1/2'), findsOneWidget,
         reason: '重进正在跑 OCR 的书，HUD 必须接回进度');
 
     // 退出阅读页：只是不再观察，底层任务不得被取消。
@@ -761,7 +1007,7 @@ void main() {
 
     final Finder cancelButton =
         find.byKey(const ValueKey<String>('manga_ocr_cancel_button'));
-    expect(find.text('1/2'), findsOneWidget);
+    expect(find.text('OCR 1/2'), findsOneWidget);
     expect(cancelButton, findsOneWidget,
         reason: '外部任务运行时 HUD 旁必须有取消入口');
     expect(find.byKey(const ValueKey<String>('manga_full_ocr_button')),
@@ -779,7 +1025,7 @@ void main() {
     expect(sourceCancelled, isTrue, reason: '取消按钮必须真停底层任务');
     expect(registry.running(bookKey), isNull);
     expect(cancelButton, findsNothing, reason: '任务停了取消按钮随之消失');
-    expect(find.text('1/2'), findsNothing, reason: 'HUD 进度随任务结束消失');
+    expect(find.text('OCR 1/2'), findsNothing, reason: 'HUD 进度随任务结束消失');
   });
 
   testWidgets('页码弹窗关闭动画期间不使用已 dispose 的输入控制器', (WidgetTester tester) async {

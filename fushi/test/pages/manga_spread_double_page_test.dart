@@ -75,7 +75,7 @@ class _MangaTestAppModel extends AppModel {
   @override
   bool get mangaVolumeKeyPaging => false;
 
-  // 边看边 OCR（PR #1614）在 _refreshVisibleOcr 里读这三项：测试里 prefsRepo 是
+  // 进入即整卷 OCR（_maybeStartVolumeOcr）开书就读这三项：测试里 prefsRepo 是
   // null，不覆写就在开书后抛 _TypeError。与 manga_fushi_page_test 同口径显式走
   // manual，免得 widget 测试去碰原生 OCR 后端。
   @override

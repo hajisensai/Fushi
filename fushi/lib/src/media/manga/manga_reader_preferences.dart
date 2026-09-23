@@ -114,7 +114,6 @@ class MangaReaderPreferences {
     this.colorFilterColor = '#F4ECD8',
     this.colorFilterOpacity = 20,
     this.ocrTrigger = 'automatic',
-    this.parallelOcrTasks = 1,
   });
 
   final MangaReadingMode mode;
@@ -174,7 +173,6 @@ class MangaReaderPreferences {
   final String colorFilterColor;
   final int colorFilterOpacity;
   final String ocrTrigger;
-  final int parallelOcrTasks;
 
   Map<String, Object> toJson() => <String, Object>{
     'mode': mode.storageKey,
@@ -230,7 +228,6 @@ class MangaReaderPreferences {
     'colorFilterColor': colorFilterColor,
     'colorFilterOpacity': colorFilterOpacity,
     'ocrTrigger': ocrTrigger,
-    'parallelOcrTasks': parallelOcrTasks,
   };
 
   factory MangaReaderPreferences.fromJson(Map<String, Object?> json) {
@@ -337,7 +334,6 @@ class MangaReaderPreferences {
         'automatic',
         'manual',
       }),
-      parallelOcrTasks: number('parallelOcrTasks', 1, 1, 3),
     );
   }
 

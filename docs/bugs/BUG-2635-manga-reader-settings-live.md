@@ -10,3 +10,4 @@
 - **[x] ① 已修复** — 分组设置、复用左右侧边弹窗，每次成功写入后立即重应用当前作品；阅读方向顶栏按钮与本书覆盖共用持久化；宽页拆分先消费另一半再进普通翻页队列；以及上面五条根因。
 - **[x] ② 已加自动化测试** — `fushi/test/media/manga/manga_reader_settings_sheet_test.dart`（即时持久化、重置失败恢复、保存中改动不丢、越界滑条值夹取）；`fushi/test/reader/reader_settings_side_dialog_test.dart`（换边与状态保持）；`fushi/test/ocr/manga_ocr_service_impl_test.dart`（一个页会话只建一次 ORT 会话、close 后失败、签名目录同源、建会话失败传播）；`fushi/integration_test/manga_settings_side_dialog_itest.dart`（真实阅读器焦点路径：打开即 Esc、改设置后 Esc、换边、方向按钮、回到开头）。
 - **备注**：`manga_visible_ocr_itest.dart` 需要 Windows 系统 OCR（日语 OCR 语言包），本机不可用，未跑通；本地 ONNX 常驻会话未在真 ORT 上验证第二页起省掉初始化。
+- **后续（2026-09-23，产品方向变更）**：「边看边识别」（页级 `MangaVisibleOcrController` / `MangaVisibleOcrBackend`、顶栏「识别当前可见页」、`parallelOcrTasks`）整体由「进入即整卷识别」取代；`manga_visible_ocr_itest.dart` 改写为 `manga_auto_volume_ocr_itest.dart`。漫画设置面板改为固定右侧（去掉换边按钮与行首图标），小说设置面板的换边能力不变。
