@@ -234,7 +234,12 @@ cd "$SRC"
 # 文件走 image2；若改走管道则用 image2pipe——两者都加，零体积成本、LGPL。漏 image2 会让
 # ffmpeg 找不到 PNG 的 demuxer → AVERROR_INVALIDDATA（exit -1094995529，"Invalid data found
 # when processing input"），片段导出全挂（AudiobookClipSynthFailure.ffmpegFailed）。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe"
+# hls：在线视频源（Aniyomi 扩展）的 hoster 几乎都给 `.m3u8`。播放走 libmpv 自带的完整
+# FFmpeg 所以能播，但制卡的句子音频 / 封面走本捆绑 ffmpeg，缺 hls demuxer 时整条 m3u8
+# 被当成未知格式 → AVERROR_INVALIDDATA（exit -1094995529），制卡中止在
+# `required audio missing`（BUG-2642）。依赖的 mpegts/mov/aac/ac3/eac3/webvtt demuxer
+# 与 http/https/crypto（AES-128）协议上面已全开。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源

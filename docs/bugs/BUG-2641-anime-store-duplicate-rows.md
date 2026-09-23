@@ -1,0 +1,6 @@
+## BUG-2641 · 视频扩展仓库每个扩展重复出现（默认仓库入口被解析到 repo.json 后落成第二行）
+- **报告**：2026-09-23（用户：「扩展这好像会重复」——视频 → 导入 → 扩展，Yūzōnō 分组显示 512 个扩展，123Anime / Anichi / AniDB 等每条出现两次）
+- **真实性**：✅ 真 bug。默认视频仓库 `kMihonDefaultAnimeStoreIndexUrl`（`fushi/lib/src/media/manga/mihon/mihon_manager.dart:36`）是 legacy `…/index.min.json`，`_seedDefaultStore` 以它为主键落一行；`MihonExtensionStoreClient._parseStoreDocument` 对数组形索引跳到同目录 `repo.json`，`_parseLegacyStore` 以 `…/repo.json` 为 `indexUrl`（BUG-1707 引入的跳转）。`_refreshStores` 按 `store.indexUrl`（解析后）upsert、却不删 `row.indexUrl`（种子）——`MangaExtensionStores` 主键只有 `indexUrl`，于是插出第二行。此后每次刷新两行各拉一遍同一份 256 条目录、全部标 `storeUrl=…/repo.json`，`next.addAll` 叠成 512，`buildMihonGroupedRows` 按 storeUrl 分到同一组 → 每个扩展两条。漫画默认仓库是 `index.pb` 不跳转、`addStore` / `editStoreUrl` 一开始就按解析后地址落库，故只有视频种子行中招。
+- **[x] ① 已修复** — `MihonManager._refreshStores`：解析后的身份与行主键不同即视为别名——若解析后的地址已有自己的行，删掉别名行、不再重复拉目录；否则在一个事务里把该行迁到解析后的地址（同 `editStoreUrl`，保留启用位与排序）。已被旧版本写出两行的库在下一次刷新时自愈。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/mihon_default_store_seed_test.dart` 「BUG-2641 …」两条：首启 + 两次刷新后只剩 `repo.json` 一行、扩展不重复；预置旧版本留下的两行，初始化后收敛为一行、`available` 不翻倍。两条在未修复代码上均失败。
+- **备注**：`MangaExtensionStores` 主键不含 `media_kind`，漫画与视频若用同一仓库地址会互相覆盖——本次不涉及，未改。

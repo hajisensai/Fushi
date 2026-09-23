@@ -1,0 +1,8 @@
+## BUG-2642 · Aniyomi 在线视频制卡失败：捆绑 ffmpeg 缺 hls demuxer（required audio missing / Invalid data）
+- **报告**：2026-09-23（用户：「aniyomi 制卡有问题」，Windows 截图：`导出卡片失败：required audio missing (ffmpeg exit -1094995529; executable=…\ffmpeg.exe; stderr=Error opening input files: Invalid data found when processing input)`）
+- **真实性**：✅ 真 bug，已用入库二进制复现。在线视频源（Aniyomi 扩展）的 hoster 几乎都给 `.m3u8`；制卡时 `lookup_mining.part.dart` 把 `controller.miningSource`（`AnimeSourceVideoClient.remoteVideoStreamUrls` 的原始流地址）交给 `ImmersionMiningEngine`，句子音频 / 封面走捆绑 ffmpeg-min。配方 `tool/ffmpeg-min/build-ffmpeg-min.sh` 的 `DEMUXERS` 没有 `hls`（`--disable-everything` 之下即不编），`third_party/ffmpeg-min/windows/ffmpeg.exe -h demuxer=hls` → `Unknown format 'hls'`，对任意本地 m3u8 抽音频 → `Error opening input files: Invalid data found when processing input`（AVERROR_INVALIDDATA = -1094995529），与用户报错逐字一致。播放不受影响是因为 libmpv 自带完整 FFmpeg。不是 BUG-2625 的防盗链头问题（缺头是 403，不是 Invalid data）。
+- **[x] ① 已修复** — 配方 `DEMUXERS` 补 `hls`（依赖的 mpegts/mov/aac/ac3/eac3/webvtt demuxer 与 http/https/crypto 协议早已开启）；在 fork 上跑 `ffmpeg-min.yml` 重编后替换 `third_party/ffmpeg-min/{windows,macos}` 入库二进制。
+- **[x] ② 已加自动化测试** — `tool/ffmpeg-min/smoke-test.sh` 新增「从 HLS playlist 抽句子音频」：fixture ffmpeg 把样片切成 TS HLS，再用 ffmpeg-min 照制卡参数对 `index.m3u8` 裁音频，缺 hls demuxer 即 CI 红；入库二进制与配方的一致性由既有 `fushi/test/tools/ffmpeg_min_vendored_recipe_guard_test.dart` 守住（改配方不重新 vendor 会打红）。
+- **备注**：
+  - 未覆盖的已知残余：分片伪装成图片的 hoster（AnimeKai / MegaPlay，BUG-2609）在播放侧靠本机中继剥 PNG 前缀，制卡 ffmpeg 直连原始地址、不经中继，补上 demuxer 后这类源仍可能抽不出音频。根治需把远端 HLS 制卡输入也走 `nativePlaybackUri` + `-http_proxy <中继>`（要在 fushi_engine 的 8 处 ffmpeg 参数构造与 `ImmersionMiningRequest` 上加一条参数），留作后续。
+  - Android 走 ffmpeg-kit，不受此配方影响。
