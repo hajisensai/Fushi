@@ -29,7 +29,7 @@ import 'test_helpers.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('漫画设置左右换边、方向按钮与返回开头真实路径', (WidgetTester tester) async {
+  testWidgets('漫画设置固定右侧、方向按钮与返回开头真实路径', (WidgetTester tester) async {
     final FlutterExceptionHandler? testErrorHandler = FlutterError.onError;
     await launchFushiTestApp();
     final bool homeReady = await waitForHome(tester);
@@ -168,7 +168,8 @@ void main() {
 
     try {
       await appModel.setMangaChromeFloating(false);
-      await appModel.prefsRepo.setPref(kReaderSettingsPanelSidePref, 'right');
+      // 小说阅读器把共用的换边偏好设成了左侧：漫画设置面板不认它，固定右侧。
+      await appModel.prefsRepo.setPref(kReaderSettingsPanelSidePref, 'left');
       final BuildContext navContext = navigator.context;
       if (!navContext.mounted) fail('navigator context unmounted');
       unawaited(
@@ -214,26 +215,11 @@ void main() {
         isTrue,
       );
 
-      await activateKey('reader_settings_side_toggle');
-      final Rect leftBounds = tester.getRect(panel);
-      expect(leftBounds.left, closeTo(contentBounds.left, 1));
+      // 面板里没有换边按钮。
       expect(
-        await appModel.database.getPrefTyped<String>(
-          kReaderSettingsPanelSidePref,
-          '',
-        ),
-        'left',
+        find.byKey(const ValueKey<String>('reader_settings_side_toggle')),
+        findsNothing,
       );
-      expect(
-        (await captureFlutterFrame(tester, 'manga-settings-left')).saved,
-        isTrue,
-      );
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await waitForPanelGone(panel);
-      expect(panel, findsNothing);
-      await activateKey('manga_reader_settings_button');
-      await waitForPanel(panel);
-      expect(tester.getRect(panel).left, closeTo(contentBounds.left, 1));
       expect(
         await focusControl(
           find
@@ -315,7 +301,7 @@ void main() {
       );
       debugPrint(
         '[manga-settings] content=$contentBounds right=$rightBounds '
-        'left=$leftBounds advancedPage=$advancedPage restoredPage=${currentPage()}',
+        'advancedPage=$advancedPage restoredPage=${currentPage()}',
       );
     } finally {
       if (readerOpen) {

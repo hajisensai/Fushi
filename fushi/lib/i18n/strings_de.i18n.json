@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Seitenübergänge animieren",
   "manga_reader_lookup_on_hover": "OCR-Text beim Überfahren nachschlagen",
   "manga_reader_ocr_trigger": "OCR-Auslöser",
-  "manga_reader_ocr_automatic": "Beim Lesen",
+  "manga_reader_ocr_automatic": "Beim Öffnen",
   "manga_reader_ocr_manual": "Manuell",
-  "manga_reader_parallel_ocr_tasks": "Parallele OCR-Aufgaben",
-  "manga_reader_ocr_current": "Sichtbare Seiten erkennen",
   "manga_reader_back_to_start": "Zurück zum Anfang",
   "reader_settings_panel_move_left": "Einstellungen nach links verschieben",
   "reader_settings_panel_move_right": "Einstellungen nach rechts verschieben",
-  "manga_reader_ocr_engine_note": "„Beim Lesen“ unterstützt lokales ONNX, Google Lens und System-OCR. Lokales ONNX verarbeitet jeweils eine Aufgabe; externes Mokuro und gekoppelte Hosts verwenden explizite Stapel-OCR.",
+  "manga_reader_ocr_engine_note": "Bei „Beim Öffnen“ wird beim Öffnen eines Bands oder Kapitels der ganze Band im Hintergrund ab der aktuellen Seite erkannt; der Fortschritt erscheint oben rechts. Verwendet wird die unten gewählte Engine. „Manuell“ zeigt stattdessen die Schaltfläche „Diesen Band erkennen“ in der Symbolleiste.",
   "manga_reader_ocr_unavailable": "Keine OCR-Engine bereit. Laden Sie das lokale Modell herunter oder wählen Sie in den OCR-Einstellungen eine andere Engine.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Diesen Band erkennen",
+  "manga_reader_ocr_queued": "In Warteschlange",
+  "manga_reader_ocr_unavailable_short": "Keine OCR-Engine · Modell in den OCR-Einstellungen laden oder Engine wechseln",
+  "manga_reader_ocr_rerun": "OCR für diesen Band neu ausführen…"
 }

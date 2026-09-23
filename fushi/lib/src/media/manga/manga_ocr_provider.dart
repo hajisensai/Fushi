@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi/models.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 // 真实现由并行 agent（生产者 B）编写；本 provider 是 UI 层拿服务单例的唯一入口。
 // 本文件是整棵 UI 依赖图中**唯一**直接引用 [MangaOcrServiceImpl] 的地方——设置区 /
@@ -25,5 +29,19 @@ final Provider<MangaOcrService> mangaOcrServiceProvider =
 /// 任务所有权在这里而不在阅读页 State：页面订阅的是注册表转发的广播流，退出页面
 /// 只是不再观察，任务照跑；重进同书按 `bookKey` 接回进度。测试用
 /// `mangaOcrJobRegistryProvider.overrideWithValue(registry)` 注入预置任务。
+///
+/// 跨书并发上限按设备自适应（[resolveMangaOcrJobConcurrency]），每次排到时现读，
+/// 低内存模式开关即时生效；AppModel 初始化前按未开低内存模式算。
 final Provider<MangaOcrJobRegistry> mangaOcrJobRegistryProvider =
-    Provider<MangaOcrJobRegistry>((Ref ref) => MangaOcrJobRegistry());
+    Provider<MangaOcrJobRegistry>(
+      (Ref ref) => MangaOcrJobRegistry(
+        maxConcurrentJobs: () {
+          final AppModel appModel = ref.read(appProvider);
+          return resolveMangaOcrJobConcurrency(
+            isMobile: isMobilePlatform,
+            lowMemoryMode: appModel.isInitialised && appModel.lowMemoryMode,
+            processors: Platform.numberOfProcessors,
+          );
+        },
+      ),
+    );

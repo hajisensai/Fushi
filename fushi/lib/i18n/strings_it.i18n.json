@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Anima le transizioni di pagina",
   "manga_reader_lookup_on_hover": "Cerca il testo OCR al passaggio del mouse",
   "manga_reader_ocr_trigger": "Attivazione OCR",
-  "manga_reader_ocr_automatic": "Durante la lettura",
+  "manga_reader_ocr_automatic": "All'apertura",
   "manga_reader_ocr_manual": "Manuale",
-  "manga_reader_parallel_ocr_tasks": "Attività OCR parallele",
-  "manga_reader_ocr_current": "Riconosci le pagine visibili",
   "manga_reader_back_to_start": "Torna all'inizio",
   "reader_settings_panel_move_left": "Sposta le impostazioni a sinistra",
   "reader_settings_panel_move_right": "Sposta le impostazioni a destra",
-  "manga_reader_ocr_engine_note": "«Durante la lettura» supporta ONNX locale, Google Lens e l'OCR di sistema. ONNX locale esegue un'attività alla volta; Mokuro esterno e gli host associati usano l'OCR in batch esplicito.",
+  "manga_reader_ocr_engine_note": "Con «All'apertura», aprendo un volume o un capitolo l'intero volume viene riconosciuto in background a partire dalla pagina corrente; l'avanzamento compare in alto a destra. Usa il motore scelto sotto. «Manuale» mostra invece il pulsante «Riconosci questo volume» nella barra degli strumenti.",
   "manga_reader_ocr_unavailable": "Nessun motore OCR disponibile. Scarica il modello locale o scegli un altro motore nelle impostazioni OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Riconosci questo volume",
+  "manga_reader_ocr_queued": "In coda",
+  "manga_reader_ocr_unavailable_short": "Nessun motore OCR · scarica un modello o cambia motore nelle impostazioni OCR",
+  "manga_reader_ocr_rerun": "Riesegui l’OCR di questo volume…"
 }

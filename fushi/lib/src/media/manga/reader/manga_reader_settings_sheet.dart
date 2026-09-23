@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/foundation/pref_store.dart';
-import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show ReaderSideSheetSide, showReaderSideSheet;
 
 enum MangaReaderPreferenceKind { choice, toggle, integer }
 
@@ -232,13 +232,6 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     max: 100,
   ),
   MangaReaderPreferenceDescriptor(
-    key: 'parallelOcrTasks',
-    kind: MangaReaderPreferenceKind.integer,
-    title: t.manga_reader_parallel_ocr_tasks,
-    min: 1,
-    max: 3,
-  ),
-  MangaReaderPreferenceDescriptor(
     key: 'background',
     kind: MangaReaderPreferenceKind.choice,
     title: t.manga_background,
@@ -271,17 +264,17 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
   ),
 ];
 
+/// 漫画阅读设置面板：固定在右侧（章节目录占左侧），不提供左右换边。
 Future<void> showMangaReaderSettingsSheet({
   required BuildContext context,
   required MangaReaderPreferences globalDefaults,
-  required PrefStore preferences,
   Widget? ocrSettings,
   Map<String, Object?> overrides = const <String, Object?>{},
   required Future<void> Function(Map<String, Object?>) onChanged,
   Set<String> supportedDeviceKeys = const <String>{},
-}) async => showReaderSettingsSideDialog<void>(
+}) async => showReaderSideSheet<void>(
   context: context,
-  preferences: preferences,
+  side: ReaderSideSheetSide.right,
   builder: (BuildContext context) => MangaReaderSettingsSheet(
     ocrSettings: ocrSettings,
     globalDefaults: globalDefaults,
@@ -437,10 +430,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
     unawaited(_set(key, normalized));
   }
 
-  /// 这一行是否来自本作品的稀疏覆盖（`tune`）而不是全局默认（`public`）。
-  IconData _sourceIcon(String key) =>
-      _overrides.containsKey(key) ? Icons.tune : Icons.public;
-
   Widget _choice(MangaReaderPreferenceDescriptor d) =>
       d.key == 'colorFilterColor'
       ? Padding(
@@ -473,8 +462,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
         )
       : AdaptiveSettingsPickerRow<String>(
           title: d.title,
-          icon: _sourceIcon(d.key),
-          showIcon: true,
           options: <AdaptiveSettingsPickerOption<String>>[
             for (final String choice in d.choices)
               AdaptiveSettingsPickerOption<String>(
@@ -506,8 +493,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
         title: d.title,
         value: _value(d.key) == true,
         onChanged: (bool v) => _set(d.key, v),
-        icon: _sourceIcon(d.key),
-        showIcon: true,
       );
   Widget _integer(MangaReaderPreferenceDescriptor d) {
     // 覆盖值可能来自同步或旧版本、落在滑条区间外（偏好解析允许的范围比滑条宽，
@@ -546,7 +531,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
     }
     if (const <String>{
       'ocrTrigger',
-      'parallelOcrTasks',
       'showOcrBoxes',
       'lookupOnHover',
     }.contains(key)) {
@@ -588,7 +572,6 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                const ReaderSettingsSideButton(),
                 IconButton(
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                   onPressed: () => Navigator.of(context).pop(),

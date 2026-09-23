@@ -113,12 +113,16 @@ class MangaReaderTopBar extends StatelessWidget {
     this.pageListenable,
     this.onPageTap,
     this.status,
+    this.leading = const <MangaChromeAction>[],
   });
 
   /// 书名 / 章节名；空串时只画页码。
   final String title;
   final VoidCallback onBack;
   final String backTooltip;
+
+  /// 紧跟返回键的动作（章节目录）：窄窗也常驻，不折进 ⋮。
+  final List<MangaChromeAction> leading;
 
   /// 动作分组（按顺序从左到右），组与组之间画分隔线。空组自动跳过。
   final List<List<MangaChromeAction>> groups;
@@ -184,6 +188,7 @@ class MangaReaderTopBar extends StatelessWidget {
                       icon: const Icon(Icons.arrow_back),
                       onPressed: onBack,
                     ),
+                    for (final MangaChromeAction a in leading) _button(a),
                     Expanded(child: _buildTitleArea(context, compact)),
                     for (int i = 0; i < visibleGroups.length; i++) ...<Widget>[
                       if (i > 0 && !compact) _divider(),
@@ -349,6 +354,66 @@ class MangaChromeStatusChip extends StatelessWidget {
         style: Theme.of(context).textTheme.labelSmall?.copyWith(
           color: fg,
           fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+}
+
+/// 整卷 OCR 进度浮标（`OCR 19/182 · DirectML`），挂在页面右上角、顶栏下沿。
+///
+/// 不放进顶栏：悬浮顶栏默认收起、用户也会隐藏界面，进度却要一直看得见（对齐
+/// Mangatan / Chimahon）。[busy] 画转圈；[warning] 用琥珀色（加速降级 / 没有可用
+/// 引擎，BUG-1163：降级必须看得见）。浮标只是读数，不吃指针事件。
+class MangaOcrProgressBadge extends StatelessWidget {
+  const MangaOcrProgressBadge({
+    super.key,
+    required this.text,
+    this.busy = true,
+    this.warning = false,
+  });
+
+  final String text;
+  final bool busy;
+  final bool warning;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fg = warning ? MangaReaderTopBar._accent : Colors.white;
+    return IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xB3000000),
+          borderRadius: FushiBorderRadius.chip,
+          border: warning ? Border.all(color: fg.withValues(alpha: 0.6)) : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (busy) ...<Widget>[
+              SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: fg),
+              ),
+              const SizedBox(width: 8),
+            ],
+            // 警告（没有可用引擎）要把原因和解决办法说全，窄屏上折成两行；进度读数
+            // 恒一行。Flexible 让 maxLines / 省略号在有界宽度里真正生效。
+            Flexible(
+              child: Text(
+                text,
+                maxLines: warning ? 2 : 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: fg,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

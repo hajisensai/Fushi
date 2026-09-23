@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Animasikan transisi halaman",
   "manga_reader_lookup_on_hover": "Cari teks OCR saat diarahkan",
   "manga_reader_ocr_trigger": "Pemicu OCR",
-  "manga_reader_ocr_automatic": "Saat membaca",
+  "manga_reader_ocr_automatic": "Saat dibuka",
   "manga_reader_ocr_manual": "Manual",
-  "manga_reader_parallel_ocr_tasks": "Tugas OCR paralel",
-  "manga_reader_ocr_current": "Kenali halaman yang terlihat",
   "manga_reader_back_to_start": "Kembali ke awal",
   "reader_settings_panel_move_left": "Pindahkan pengaturan ke kiri",
   "reader_settings_panel_move_right": "Pindahkan pengaturan ke kanan",
-  "manga_reader_ocr_engine_note": "Mode “Saat membaca” mendukung ONNX lokal, Google Lens, dan OCR sistem. ONNX lokal menjalankan satu tugas dalam satu waktu; Mokuro eksternal dan host yang dipasangkan menggunakan OCR batch eksplisit.",
+  "manga_reader_ocr_engine_note": "Dengan \"Saat dibuka\", membuka volume atau bab akan mengenali seluruh volume di latar belakang mulai dari halaman saat ini; progres tampil di kanan atas. Menggunakan mesin yang dipilih di bawah. \"Manual\" menampilkan tombol \"Kenali volume ini\" di bilah alat.",
   "manga_reader_ocr_unavailable": "Tidak ada mesin OCR yang siap. Unduh model lokal atau pilih mesin lain di pengaturan OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Kenali volume ini",
+  "manga_reader_ocr_queued": "Dalam antrean",
+  "manga_reader_ocr_unavailable_short": "Tidak ada mesin OCR · unduh model atau ganti mesin di pengaturan OCR",
+  "manga_reader_ocr_rerun": "Jalankan ulang OCR untuk volume ini…"
 }

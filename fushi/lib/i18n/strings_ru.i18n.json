@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Анимация перелистывания",
   "manga_reader_lookup_on_hover": "Поиск текста OCR при наведении",
   "manga_reader_ocr_trigger": "Запуск OCR",
-  "manga_reader_ocr_automatic": "Во время чтения",
+  "manga_reader_ocr_automatic": "При открытии",
   "manga_reader_ocr_manual": "Вручную",
-  "manga_reader_parallel_ocr_tasks": "Параллельных задач OCR",
-  "manga_reader_ocr_current": "Распознать видимые страницы",
   "manga_reader_back_to_start": "Вернуться в начало",
   "reader_settings_panel_move_left": "Переместить настройки влево",
   "reader_settings_panel_move_right": "Переместить настройки вправо",
-  "manga_reader_ocr_engine_note": "Режим «Во время чтения» поддерживает локальный ONNX, Google Lens и системный OCR. Локальный ONNX выполняет задачи по одной; внешний Mokuro и сопряжённые хосты используют явное пакетное распознавание.",
+  "manga_reader_ocr_engine_note": "В режиме «При открытии» при открытии тома или главы весь том распознаётся в фоне, начиная с текущей страницы; прогресс показан в правом верхнем углу. Используется движок, выбранный ниже. В режиме «Вручную» на панели инструментов появляется кнопка «Распознать том».",
   "manga_reader_ocr_unavailable": "Нет готового движка OCR. Скачайте локальную модель или выберите другой движок в настройках OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Распознать том",
+  "manga_reader_ocr_queued": "В очереди",
+  "manga_reader_ocr_unavailable_short": "Нет движка OCR · загрузите модель или смените движок в настройках OCR",
+  "manga_reader_ocr_rerun": "Повторно распознать этот том…"
 }

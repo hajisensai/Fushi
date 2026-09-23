@@ -15,7 +15,6 @@ import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
-import 'package:fushi/src/media/manga/manga_module.dart';
 import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
@@ -1294,37 +1293,6 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
-  /// 本地卷的整卷 OCR：阅读器内已不再触发 OCR（BUG-2461），作品页是本地漫画唯一的
-  /// 入口。向导只负责选参数并交回冷任务，真正的所有权在 app 级注册表
-  /// （BUG-2449）——从这里离开、进阅读器、再返回，任务照跑，阅读器按 bookKey 接回。
-  Future<void> _runLocalBookOcr() async {
-    final EpubBookRow? row = _row;
-    if (row == null || _busy) return;
-    final MangaOcrJobRegistry registry = ref.read(mangaOcrJobRegistryProvider);
-    if (registry.running(row.bookKey) != null) {
-      FushiToast.show(
-        msg: t.manga_ocr_wizard_running,
-        severity: ToastSeverity.info,
-      );
-      return;
-    }
-    final MangaOcrBackgroundJob? job = await MangaModule.openBookOcr(
-      context: context,
-      db: _appModel.database,
-      book: row,
-      startPage: 0,
-    );
-    if (!mounted || job == null) return;
-    registry.start(
-      job: job,
-      mangaJsonPath: p.join(row.extractDir, row.epubPath),
-    );
-    FushiToast.show(
-      msg: t.manga_ocr_wizard_running,
-      severity: ToastSeverity.info,
-    );
-  }
-
   Future<void> _reloadAfterReading() async {
     final String? bookKey = _bookKey;
     if (bookKey == null || !mounted) return;
@@ -1822,12 +1790,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             icon: const Icon(Icons.play_arrow),
             label: Text(t.book_continue_reading),
           ),
-          OutlinedButton.icon(
-            key: const ValueKey<String>('manga_series_run_ocr'),
-            onPressed: _busy ? null : () => unawaited(_runLocalBookOcr()),
-            icon: const Icon(Icons.document_scanner_outlined),
-            label: Text(t.manga_ocr_wizard_run),
-          ),
+          // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
           _ocrSettingsButton(),
         ],
       );

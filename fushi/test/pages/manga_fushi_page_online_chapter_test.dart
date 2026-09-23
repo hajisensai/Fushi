@@ -106,7 +106,7 @@ class _MangaTestAppModel extends AppModel {
   @override
   bool get mangaVolumeKeyPaging => false;
 
-  // 边看边 OCR（PR #1614）在 _refreshVisibleOcr 里读这三项：测试里 prefsRepo 是
+  // 进入即整卷 OCR（_maybeStartVolumeOcr）开书就读这三项：测试里 prefsRepo 是
   // null，不覆写就在开书后抛 _TypeError。与 manga_fushi_page_test 同口径显式走
   // manual，免得 widget 测试去碰原生 OCR 后端。
   @override
@@ -260,8 +260,34 @@ void main() {
     );
     expect(adapter.resolveCalls, 0, reason: '阅读器不许在线取页表');
     // 章节选择器入口只有书架在线条目才有。
-    expect(find.byKey(const ValueKey<String>('manga_reader_chapters')),
+    final Finder chapters =
+        find.byKey(const ValueKey<String>('manga_reader_chapters'));
+    expect(chapters, findsOneWidget);
+    // 章节按钮在左上，紧跟返回键（不在右侧动作组里；窄窗也不折进 ⋮）。
+    final Rect back = tester
+        .getRect(find.byKey(const ValueKey<String>('manga_reader_back_button')));
+    expect(tester.getRect(chapters).left, closeTo(back.right, 1));
+    // 点开是左侧侧栏，不是底部弹层。
+    await tester.runAsync(() async {
+      await tester.tap(chapters);
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      await tester.pump();
+    });
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey<String>('manga_reader_chapter_drawer')),
         findsOneWidget);
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_reader_side_sheet')))
+          .left,
+      0,
+      reason: '章节目录从左侧打开',
+    );
+    expect(find.byType(BottomSheet), findsNothing);
     // 打开即记「选了这一章」。
     final EpubBookRow after = (await db.getEpubBook(bookKey))!;
     expect(

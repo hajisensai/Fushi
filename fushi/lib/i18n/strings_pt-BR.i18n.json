@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Animar transições de página",
   "manga_reader_lookup_on_hover": "Consultar texto OCR ao passar o mouse",
   "manga_reader_ocr_trigger": "Acionamento do OCR",
-  "manga_reader_ocr_automatic": "Durante a leitura",
+  "manga_reader_ocr_automatic": "Ao abrir",
   "manga_reader_ocr_manual": "Manual",
-  "manga_reader_parallel_ocr_tasks": "Tarefas de OCR em paralelo",
-  "manga_reader_ocr_current": "Reconhecer páginas visíveis",
   "manga_reader_back_to_start": "Voltar ao início",
   "reader_settings_panel_move_left": "Mover configurações para a esquerda",
   "reader_settings_panel_move_right": "Mover configurações para a direita",
-  "manga_reader_ocr_engine_note": "“Durante a leitura” oferece suporte a ONNX local, Google Lens e OCR do sistema. O ONNX local executa uma tarefa por vez; o Mokuro externo e os hosts pareados usam OCR em lote explícito.",
+  "manga_reader_ocr_engine_note": "Com \"Ao abrir\", abrir um volume ou capítulo reconhece o volume inteiro em segundo plano a partir da página atual; o progresso aparece no canto superior direito. Usa o mecanismo escolhido abaixo. \"Manual\" mostra o botão \"Reconhecer este volume\" na barra de ferramentas.",
   "manga_reader_ocr_unavailable": "Nenhum mecanismo de OCR está pronto. Baixe o modelo local ou escolha outro mecanismo nas configurações de OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Reconhecer este volume",
+  "manga_reader_ocr_queued": "Na fila",
+  "manga_reader_ocr_unavailable_short": "Nenhum mecanismo de OCR · baixe um modelo ou troque de mecanismo nas configurações de OCR",
+  "manga_reader_ocr_rerun": "Refazer o OCR deste volume…"
 }

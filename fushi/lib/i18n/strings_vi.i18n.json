@@ -5370,14 +5370,12 @@
   "manga_reader_animate_transitions": "Hiệu ứng chuyển trang",
   "manga_reader_lookup_on_hover": "Tra văn bản OCR khi di chuột",
   "manga_reader_ocr_trigger": "Cách kích hoạt OCR",
-  "manga_reader_ocr_automatic": "Trong khi đọc",
+  "manga_reader_ocr_automatic": "Khi mở",
   "manga_reader_ocr_manual": "Thủ công",
-  "manga_reader_parallel_ocr_tasks": "Số tác vụ OCR song song",
-  "manga_reader_ocr_current": "Nhận dạng các trang đang hiển thị",
   "manga_reader_back_to_start": "Quay lại đầu",
   "reader_settings_panel_move_left": "Chuyển cài đặt sang trái",
   "reader_settings_panel_move_right": "Chuyển cài đặt sang phải",
-  "manga_reader_ocr_engine_note": "Chế độ “Trong khi đọc” hỗ trợ ONNX cục bộ, Google Lens và OCR hệ thống. ONNX cục bộ chạy từng tác vụ một; Mokuro bên ngoài và máy chủ đã ghép nối dùng OCR hàng loạt thủ công.",
+  "manga_reader_ocr_engine_note": "Khi chọn \"Khi mở\", mở một tập hoặc chương sẽ nhận dạng cả tập ở nền, bắt đầu từ trang hiện tại; tiến độ hiện ở góc trên bên phải. Dùng công cụ được chọn bên dưới. \"Thủ công\" sẽ hiện nút \"Nhận dạng tập này\" trên thanh công cụ.",
   "manga_reader_ocr_unavailable": "Không có công cụ OCR nào sẵn sàng. Hãy tải mô hình cục bộ hoặc chọn công cụ khác trong cài đặt OCR.",
   "game_stream_library_subtitle": "Launch games on your PC and stream them here",
   "game_stream_module_hint": "Launch and stream games from your Windows PC",
@@ -5450,5 +5448,9 @@
   "game_stream_touch_direct": "Switch to direct touch",
   "game_stream_touch_trackpad": "Switch to trackpad",
   "game_stream_remote_launch_title": "Allow remote launch",
-  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them"
+  "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
+  "manga_reader_ocr_volume": "Nhận dạng tập này",
+  "manga_reader_ocr_queued": "Đang chờ",
+  "manga_reader_ocr_unavailable_short": "Không có công cụ OCR · hãy tải mô hình hoặc đổi công cụ trong cài đặt OCR",
+  "manga_reader_ocr_rerun": "Chạy lại OCR cho tập này…"
 }
