@@ -5,6 +5,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/video/live_transcode.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart'
@@ -496,7 +497,11 @@ class FushiSyncServer {
         reqPath == '/api/game-stream/join' ||
         reqPath == '/api/game-stream/signal' ||
         reqPath == '/api/game-stream/stop' ||
-        reqPath == '/api/game-stream/mine') {
+        reqPath == '/api/game-stream/mine' ||
+        reqPath == '/api/game-stream/library' ||
+        reqPath == '/api/game-stream/library/cover' ||
+        reqPath == '/api/game-stream/launch' ||
+        reqPath == '/api/game-stream/launch/status') {
       return _handleGameStream(request, method, reqPath);
     }
     if (reqPath.startsWith('/api/lookup/')) {

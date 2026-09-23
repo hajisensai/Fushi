@@ -12,6 +12,46 @@ import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 
 typedef GameStreamHostInput = Future<void> Function(GameStreamInputEvent event);
 
+/// Specific rejection reason from the Windows runner: it reports
+/// `input_rejected` as the code and the reason (window_not_foreground,
+/// unsupported_native_pointer, …) as the message.
+String gameStreamInputRejectionReason(PlatformException error) {
+  final String? message = error.message;
+  return message != null &&
+          message.isNotEmpty &&
+          message.length <= 64 &&
+          RegExp(r'^[a-z0-9_]+$').hasMatch(message)
+      ? message
+      : error.code;
+}
+
+/// `scaleResolutionDownBy` that brings [captureHeight] under [maxHeight].
+double gameStreamResolutionScale({
+  required int captureHeight,
+  required int maxHeight,
+}) => captureHeight <= maxHeight || maxHeight <= 0
+    ? 1
+    : captureHeight / maxHeight;
+
+/// One adaptive step. A congested path (RTT > 100 ms) backs off by 30 %;
+/// otherwise the encoder follows 75 % of the estimated outgoing bandwidth,
+/// always within [minimum]..[target].
+int gameStreamAdaptedBitrate({
+  required int current,
+  required int target,
+  required int minimum,
+  double? availableOutgoing,
+  double? roundTripSeconds,
+}) {
+  if (roundTripSeconds != null && roundTripSeconds > .1) {
+    return (current * .7).round().clamp(minimum, target);
+  }
+  if (availableOutgoing != null) {
+    return (availableOutgoing * .75).round().clamp(minimum, target);
+  }
+  return current.clamp(minimum, target);
+}
+
 /// Local-only Windows capture owner. Paired HTTP requests can join an existing
 /// session but cannot instantiate this class or select another capture source.
 class FushiGameStreamHost extends ChangeNotifier {
@@ -21,12 +61,18 @@ class FushiGameStreamHost extends ChangeNotifier {
         await onInput!(event);
       } else {
         try {
-          await GameStreamInputChannel.send(event.toJson());
+          await GameStreamInputChannel.send(<String, Object?>{
+            ...event.toJson(),
+            'inputFocus': _settings.inputFocus.name,
+          });
         } on PlatformException catch (error) {
-          throw GameStreamInputRejected(error.code);
+          // The runner reports the specific reason (e.g. unsupported pointer,
+          // window hidden) as the message; `code` is always input_rejected.
+          throw GameStreamInputRejected(gameStreamInputRejectionReason(error));
         }
       }
     };
+    service.onSettings = applySettings;
     service.onText = (GameStreamTextEvent event) async {
       _pendingTexts.add(event);
       if (_pendingTexts.length > 128) _pendingTexts.removeAt(0);
@@ -58,9 +104,19 @@ class FushiGameStreamHost extends ChangeNotifier {
   final List<GameStreamTextEvent> _pendingTexts = <GameStreamTextEvent>[];
   final List<RTCIceCandidate> _pendingCandidates = <RTCIceCandidate>[];
   Future<void> _inputs = Future<void>.value();
-  double _minimumScale = 1;
+  GameStreamVideoSettings _settings = const GameStreamVideoSettings();
+  int _captureHeight = 1080;
   int _bitrate = 8000000;
   String? _error;
+
+  /// Parameters in effect for the current session.
+  GameStreamVideoSettings get settings => _settings;
+
+  /// Encoder target from the receiver's request, in bits per second.
+  int get _targetBitrate => _settings.bitrateKbps * 1000;
+
+  /// Adaptive floor: never below 1 Mbps, never above the target itself.
+  int get _minimumBitrate => math.min(1000000, _targetBitrate);
 
   bool get started => _started;
   bool get starting => _starting;
@@ -82,7 +138,16 @@ class FushiGameStreamHost extends ChangeNotifier {
     if (!_disposed) super.notifyListeners();
   }
 
-  Future<GameStreamSession> start({required int hwnd}) async {
+  /// Starts capturing [hwnd]. [settings] fixes the capture ceiling (a later
+  /// join can lower resolution/fps/bitrate, never raise them above it).
+  /// [launchId] reserves the session for the peer that launched the game.
+  Future<GameStreamSession> start({
+    required int hwnd,
+    GameStreamVideoSettings settings = const GameStreamVideoSettings(),
+    String? gameId,
+    String? gameTitle,
+    String? launchId,
+  }) async {
     if (!Platform.isWindows) {
       throw UnsupportedError('Game streaming host is Windows-only');
     }
@@ -97,9 +162,15 @@ class FushiGameStreamHost extends ChangeNotifier {
     _remoteDescriptionSet = false;
     _pendingCandidates.clear();
     _pendingTexts.clear();
-    _bitrate = 8000000;
+    _settings = settings;
+    _captureHeight = settings.maxHeight;
+    _bitrate = _targetBitrate;
     final GameStreamSession current = service.createSession(
       windowId: 'hwnd:$hwnd',
+      gameId: gameId,
+      gameTitle: gameTitle,
+      settings: settings,
+      launchId: launchId,
     );
     notifyListeners();
     try {
@@ -109,7 +180,17 @@ class FushiGameStreamHost extends ChangeNotifier {
         throw StateError('Capture cancelled');
       }
       _boundHwnd = hwnd;
-      await GameStreamInputChannel.activate();
+      // Window-only streaming: WGC captures an occluded window and input is
+      // posted to this HWND, so the game may stay behind other windows. Only
+      // the foreground input mode brings it forward, and a refused activation
+      // there is not fatal — input activates again on the next press.
+      if (settings.inputFocus == GameStreamInputFocus.foreground) {
+        try {
+          await GameStreamInputChannel.activate();
+        } on PlatformException catch (error) {
+          _error = 'Activation: ${gameStreamInputRejectionReason(error)}';
+        }
+      }
       _requireGeneration(generation);
       final List<DesktopCapturerSource> sources = await desktopCapturer
           .getSources(
@@ -132,14 +213,17 @@ class FushiGameStreamHost extends ChangeNotifier {
           info['minimized'] == true) {
         throw StateError('Game window unavailable for capture');
       }
-      final int width = (info['width'] as num?)?.toInt() ?? 1920;
-      final int height = (info['height'] as num?)?.toInt() ?? 1080;
-      _minimumScale = math.max(1, math.max(width / 1920, height / 1080));
       final MediaStream capture = await navigator.mediaDevices.getDisplayMedia(
         <String, dynamic>{
           'video': <String, dynamic>{
             'deviceId': <String, String>{'exact': matches.single.id},
-            'mandatory': <String, double>{'frameRate': 60.0},
+            // The runner's WGC adapter scales the client area to fit inside
+            // maxWidth × maxHeight and paces frames to frameRate.
+            'mandatory': <String, Object>{
+              'frameRate': settings.maxFps.toDouble(),
+              'maxWidth': settings.maxWidth,
+              'maxHeight': settings.maxHeight,
+            },
             'cursor': 'never',
             // App-owned WGC adapter crops to the exact client area before
             // feeding WebRTC; pointer coordinates use that same client area.
@@ -172,20 +256,16 @@ class FushiGameStreamHost extends ChangeNotifier {
           capturedTarget['visible'] != true) {
         throw StateError('Game window changed while capture was starting');
       }
-      final Map<String, dynamic> settings = capture
+      final Map<String, dynamic> trackSettings = capture
           .getVideoTracks()
           .single
           .getSettings();
-      if (settings['fushiClientArea'] != true) {
+      if (trackSettings['fushiClientArea'] != true) {
         throw StateError('Client-area window capture adapter is unavailable');
       }
-      final num? captureWidth = settings['width'] as num?;
-      final num? captureHeight = settings['height'] as num?;
-      if (captureWidth != null && captureHeight != null) {
-        _minimumScale = math.max(
-          1,
-          math.max(captureWidth / 1920, captureHeight / 1080),
-        );
+      final num? captureHeight = trackSettings['height'] as num?;
+      if (captureHeight != null && captureHeight > 0) {
+        _captureHeight = captureHeight.round();
       }
       final RTCPeerConnection connection = await createPeerConnection(
         <String, dynamic>{
@@ -373,19 +453,49 @@ class FushiGameStreamHost extends ChangeNotifier {
     }
   }
 
+  /// Applies a receiver's request to the running encoder. Resolution and fps
+  /// can only go down from the capture ceiling chosen at [start]; the
+  /// returned settings are what is actually in effect.
+  @visibleForTesting
+  Future<GameStreamVideoSettings> applySettings(
+    GameStreamVideoSettings requested,
+  ) async {
+    final GameStreamVideoSettings ceiling =
+        service.session?.settings ?? _settings;
+    final GameStreamVideoSettings effective = requested.copyWith(
+      maxHeight: math.min(requested.maxHeight, _captureHeight),
+      maxFps: math.min(requested.maxFps, ceiling.maxFps),
+    );
+    _settings = effective;
+    _bitrate = _targetBitrate;
+    if (_started) await _setVideoParameters();
+    notifyListeners();
+    return effective;
+  }
+
   Future<void> _setVideoParameters() async {
     final RTCPeerConnection? connection = _connection;
     if (connection == null) return;
+    final GameStreamVideoSettings settings = _settings;
     for (final RTCRtpSender sender in await connection.getSenders()) {
       if (sender.track?.kind != 'video') continue;
       final RTCRtpParameters parameters = sender.parameters;
       for (final RTCRtpEncoding encoding
           in parameters.encodings ?? <RTCRtpEncoding>[]) {
         encoding.maxBitrate = _bitrate;
-        encoding.maxFramerate = _bitrate < 4000000 ? 30 : 60;
-        encoding.scaleResolutionDownBy =
-            _minimumScale * (_bitrate < 3000000 ? 2 : 1);
+        encoding.maxFramerate = settings.maxFps;
+        encoding.scaleResolutionDownBy = gameStreamResolutionScale(
+          captureHeight: _captureHeight,
+          maxHeight: settings.maxHeight,
+        );
       }
+      parameters.degradationPreference = switch (settings.degradation) {
+        GameStreamDegradation.balanced => RTCDegradationPreference.BALANCED,
+        GameStreamDegradation.maintainFramerate =>
+          RTCDegradationPreference.MAINTAIN_FRAMERATE,
+        GameStreamDegradation.maintainResolution =>
+          RTCDegradationPreference.MAINTAIN_RESOLUTION,
+      };
       if (!await sender.setParameters(parameters)) {
         throw StateError('Video encoding limits were rejected');
       }
@@ -394,6 +504,8 @@ class FushiGameStreamHost extends ChangeNotifier {
 
   Future<void> _adaptVideoSender() async {
     if (_adapting || !_started || _connection == null) return;
+    // Fixed bitrate (Moonlight's default behaviour) holds the requested rate.
+    if (!_settings.adaptiveBitrate) return;
     _adapting = true;
     try {
       double? available;
@@ -408,11 +520,13 @@ class FushiGameStreamHost extends ChangeNotifier {
         }
       }
       final int previous = _bitrate;
-      if (rtt != null && rtt > .1) {
-        _bitrate = (_bitrate * .7).round().clamp(1000000, 8000000);
-      } else if (available != null) {
-        _bitrate = (available * .75).round().clamp(1000000, 8000000);
-      }
+      _bitrate = gameStreamAdaptedBitrate(
+        current: _bitrate,
+        target: _targetBitrate,
+        minimum: _minimumBitrate,
+        availableOutgoing: available,
+        roundTripSeconds: rtt,
+      );
       if (_started && previous != _bitrate) await _setVideoParameters();
     } catch (error) {
       _error = 'Video adaptation: $error';

@@ -79,8 +79,10 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     // 已被过滤掉的域上（分段条选中值不在选项里 → 分段控件直接 assert，发现页也
     // 会挂在一个用户已关掉的模块上）。四个域全关时保持字段原值，此时
     // [_buildResourceHub] 整块不渲染，字段不参与任何渲染判据。
+    final AppModel initialAppModel = ref.read(appProvider);
     final List<_DownloadsResourceDomain> domains = _visibleResourceDomains(
-      ref.read(appProvider).moduleVisibility,
+      initialAppModel.moduleVisibility,
+      gamesForm: initialAppModel.gamesModuleForm,
     );
     if (domains.isNotEmpty) _resourceDomain = domains.first;
     _visitedResourceDomains.add(_resourceDomain);
@@ -195,8 +197,10 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 模块门控：四个域分属 books / manga / games / video，关掉的模块不出段，
     // 它的发现页也一并从保活 Stack 里剪掉（隐藏域不该继续挂在树上跑网络）。
+    final AppModel appModel = ref.watch(appProvider);
     final List<_DownloadsResourceDomain> domains = _visibleResourceDomains(
-      ref.watch(appProvider).moduleVisibility,
+      appModel.moduleVisibility,
+      gamesForm: appModel.gamesModuleForm,
     );
     // 四个域全关：整块资源分区不渲染——空的分段条 + 空 Stack 是「渲染出来但点不
     // 出任何东西」，正是要消灭的形态。
@@ -579,9 +583,16 @@ ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
     };
 
 /// 此刻可见的资源域，顺序即分段条顺序（枚举声明序）。
+///
+/// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；Android 的
+/// games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。
 List<_DownloadsResourceDomain> _visibleResourceDomains(
-  ModuleVisibility visibility,
-) => <_DownloadsResourceDomain>[
+  ModuleVisibility visibility, {
+  required GamesModuleForm? gamesForm,
+}) => <_DownloadsResourceDomain>[
   for (final _DownloadsResourceDomain domain in _DownloadsResourceDomain.values)
-    if (visibility.isEnabled(_moduleOfResourceDomain(domain))) domain,
+    if (visibility.isEnabled(_moduleOfResourceDomain(domain)) &&
+        (domain != _DownloadsResourceDomain.games ||
+            gamesForm == GamesModuleForm.localLibrary))
+      domain,
 ];

@@ -190,21 +190,21 @@ class FushiGameStreamMiningAdapter {
     if (!_isWindows()) {
       return const GameStreamMineResult(
         ok: false,
-        detail: 'windows_only',
+        detail: GameStreamMineDetail.windowsOnly,
         message: '远程游戏制卡仅由 Windows 主机执行',
       );
     }
     if (request.lineId != line.lineId || !_matches(line)) {
       return const GameStreamMineResult(
         ok: false,
-        detail: 'line_expired',
+        detail: GameStreamMineDetail.lineExpired,
         message: '该台词已经过期，未执行制卡',
       );
     }
     if (request.sentence != line.text) {
       return const GameStreamMineResult(
         ok: false,
-        detail: 'sentence_mismatch',
+        detail: GameStreamMineDetail.sentenceMismatch,
         message: '台词内容已变化，未执行制卡',
       );
     }
@@ -212,26 +212,11 @@ class FushiGameStreamMiningAdapter {
     if (screenshot == null || _snapshotTexts[line.lineId] != line.text) {
       return const GameStreamMineResult(
         ok: false,
-        detail: 'line_snapshot_missing',
+        detail: GameStreamMineDetail.snapshotMissing,
         message: '该台词的对应画面未保存或已过期，未执行制卡',
       );
     }
-    // Remote fields are dictionary text only. Never allow remote media, paths,
-    // deck settings, or note ids to replace the host's capture/configuration.
-    const Set<String> allowedFields = <String>{
-      'term',
-      'expression',
-      'reading',
-      'meaning',
-      'glossary',
-      'definitions',
-      'pitch',
-      'frequency',
-    };
-    final Map<String, String> fields = <String, String>{
-      for (final MapEntry<String, String> entry in request.fields.entries)
-        if (allowedFields.contains(entry.key)) entry.key: entry.value,
-    };
+    final Map<String, String> fields = gameStreamHostMineFields(request.fields);
     final GameStreamMineRequest safeRequest = GameStreamMineRequest(
       sessionId: request.sessionId,
       clientId: request.clientId,
@@ -274,14 +259,89 @@ class FushiGameStreamMiningAdapter {
           ? 'Anki 中已有对应卡片'
           : '主机制卡失败',
       detail: result.duplicate
-          ? 'duplicate'
-          : result.sentenceAudioMissing
-          ? 'sentence_audio_missing'
-          : result.failureReason == null
+          ? GameStreamMineDetail.duplicate
+          : result.success && result.sentenceAudioMissing
+          ? GameStreamMineDetail.sentenceAudioMissing
+          : result.success
           ? null
-          : 'host_error',
+          : result.audioFallbackDisabled
+          ? GameStreamMineDetail.audioFallbackDisabled
+          : result.aborted
+          ? GameStreamMineDetail.captureFailed
+          : GameStreamMineDetail.hostError,
     );
   }
+}
+
+/// Machine codes in [GameStreamMineResult.detail]; the receiver localizes
+/// them. The host's raw failure text never leaves the host.
+abstract final class GameStreamMineDetail {
+  static const String duplicate = 'duplicate';
+  static const String sentenceAudioMissing = 'sentence_audio_missing';
+  static const String audioFallbackDisabled = 'audio_fallback_disabled';
+  static const String captureFailed = 'capture_failed';
+  static const String lineExpired = 'line_expired';
+  static const String sentenceMismatch = 'sentence_mismatch';
+  static const String snapshotMissing = 'line_snapshot_missing';
+  static const String hostError = 'host_error';
+  static const String windowsOnly = 'windows_only';
+}
+
+/// Popup text fields the host accepts from a receiver. These are exactly the
+/// keys `assets/popup/popup.js` sends for a term (plus the legacy short names
+/// early receivers used), so a remote card carries the same reading, pitch,
+/// frequency and glossary fields as one mined on the host itself.
+///
+/// Media is constrained: `dictionaryMedia` only names entries inside the
+/// host's own dictionaries (read through FushiDicts, never a filesystem path),
+/// and `audio` must be an http(s) URL or an inline `data:audio/` URI — the
+/// server route has already re-resolved phone-local and host-token refs. The
+/// sentence, deck, note ids and screenshots always come from the host.
+const Set<String> kGameStreamHostMineFieldKeys = <String>{
+  'expression',
+  'reading',
+  'matched',
+  'furiganaPlain',
+  'frequenciesHtml',
+  'freqHarmonicRank',
+  'glossary',
+  'glossaryFirst',
+  'singleGlossaries',
+  'pitchPositions',
+  'pitchCategories',
+  'phoneticTranscriptions',
+  'popupSelectionText',
+  'glossarySelectionHighlighted',
+  'selectedDictionary',
+  'dictionaryMedia',
+  'audio',
+  // Legacy receiver names.
+  'term',
+  'meaning',
+  'definitions',
+  'pitch',
+  'frequency',
+};
+
+Map<String, String> gameStreamHostMineFields(Map<String, String> remote) {
+  final Map<String, String> fields = <String, String>{
+    for (final MapEntry<String, String> entry in remote.entries)
+      if (kGameStreamHostMineFieldKeys.contains(entry.key))
+        entry.key: entry.value,
+  };
+  final String? audio = fields['audio'];
+  if (audio != null &&
+      !audio.startsWith('https://') &&
+      !audio.startsWith('http://') &&
+      !audio.startsWith('data:audio/')) {
+    fields.remove('audio');
+  }
+  // Early receivers sent `term`; the Anki field mapping reads `expression`.
+  if ((fields['expression'] ?? '').isEmpty &&
+      (fields['term'] ?? '').isNotEmpty) {
+    fields['expression'] = fields['term']!;
+  }
+  return fields;
 }
 
 class _LineCaptureRequest {

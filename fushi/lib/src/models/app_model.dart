@@ -168,6 +168,8 @@ import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
+import 'package:fushi/src/sync/game_stream_library_host.dart';
+import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -3181,6 +3183,7 @@ class AppModel with ChangeNotifier {
       // 起发现广播，监听器要挂 DB 订阅并按写入推同步。关掉 sync 模块后不再自启，
       // 代价是本机不再作为互联 host 被别的设备发现/连接，合集增删也不再自动推送。
       if (modules.isEnabled(ModuleId.sync)) {
+        if (modules.isEnabled(ModuleId.games)) _configureGameStreamLibrary();
         unawaited(syncServerController.startIfEnabled().then((
           FushiServerStartOutcome outcome,
         ) {
@@ -7231,6 +7234,14 @@ class AppModel with ChangeNotifier {
         isWindows: platformServices.isWindows,
         isDesktop: platformServices.isDesktop,
         isIOS: platformServices.isIOS,
+        isAndroid: platformServices.isAndroid,
+      );
+
+  /// games 模块在本平台上的形态（本机 galgame 库 / 串流接收端），`null` = 本平台
+  /// 没有 games 模块。平台判据同样取自 [PlatformServices]，理由同上。
+  GamesModuleForm? get gamesModuleForm => GamesModuleForm.on(
+        isWindows: platformServices.isWindows,
+        isAndroid: platformServices.isAndroid,
       );
 
   /// 是否已展示过「上传/做种」首用提示（下载对话框首次推送时弹一次性提醒）。
@@ -7937,6 +7948,39 @@ class AppModel with ChangeNotifier {
 
   FushiRemoteMiningService createRemoteMiningService() {
     return _AppModelRemoteLookupService(this);
+  }
+
+  /// 游戏串流主机侧制卡适配器：游戏工作台「开始串流」与接收端远程启动共用这一份，
+  /// 两个入口读同一组 gal 制卡偏好。
+  FushiGameStreamMiningAdapter createGameStreamMiningAdapter() {
+    return FushiGameStreamMiningAdapter(
+      repository: () => platformServices.createAnkiRepository(),
+      compression: () => MiningMediaCompression.resolve(
+        imageTier: miningImageQuality,
+        audioTier: miningAudioQuality,
+        format: galMiningAnimatedFormat,
+      ),
+      imageMode: galMiningImageMode,
+      animatedFormat: galMiningAnimatedFormat,
+      stillFormat: galMiningStillFormat,
+      addTitleTag: () => autoAddBookNameToTags,
+    );
+  }
+
+  /// Windows 主机：把游戏库挂到互联串流服务上，已配对的接收端才能「从库里启动并串流」。
+  /// 是否真的允许远程启动由 [PreferencesRepository.gameStreamRemoteLaunchEnabled]
+  /// 每次请求实时判定（默认关）。
+  void _configureGameStreamLibrary() {
+    if (!Platform.isWindows) return;
+    syncServerController.configureGameStreamLibrary(
+      FushiGameStreamLibraryHost(
+        loadGames: () => galgameRepo.load(),
+        isLaunchEnabled: () => prefsRepo.gameStreamRemoteLaunchEnabled,
+        service: syncServerController.gameStreamService,
+        startStream: syncServerController.startLaunchedGameStream,
+      ),
+      miningFactory: createGameStreamMiningAdapter,
+    );
   }
 
   FushiRemoteHistoryService createRemoteHistoryService() {

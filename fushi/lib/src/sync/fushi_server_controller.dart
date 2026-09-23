@@ -15,6 +15,7 @@ import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -155,7 +156,52 @@ class FushiSyncServerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<GameStreamSession> startGameStream({required int hwnd}) async {
+  FushiGameStreamMiningAdapter Function()? _gameStreamMiningFactory;
+
+  /// Windows host library for receivers ("launch from library, then stream").
+  /// [miningFactory] builds the same Anki adapter the workbench button uses,
+  /// so a remotely launched stream mines exactly like a local one.
+  void configureGameStreamLibrary(
+    GameStreamLibraryHost? library, {
+    FushiGameStreamMiningAdapter Function()? miningFactory,
+  }) {
+    gameStreamService.library = library;
+    _gameStreamMiningFactory = miningFactory;
+  }
+
+  /// [GameStreamSessionStarter] for remote launches: installs the mining
+  /// adapter, then opens the capture session reserved for the requester.
+  Future<GameStreamSession> startLaunchedGameStream({
+    required int hwnd,
+    required GameStreamVideoSettings settings,
+    required String gameId,
+    required String gameTitle,
+    required String launchId,
+  }) async {
+    final FushiGameStreamMiningAdapter? mining = _gameStreamMiningFactory
+        ?.call();
+    if (mining != null) configureGameStreamMining(mining);
+    try {
+      return await startGameStream(
+        hwnd: hwnd,
+        settings: settings,
+        gameId: gameId,
+        gameTitle: gameTitle,
+        launchId: launchId,
+      );
+    } catch (_) {
+      configureGameStreamMining(null);
+      rethrow;
+    }
+  }
+
+  Future<GameStreamSession> startGameStream({
+    required int hwnd,
+    GameStreamVideoSettings settings = const GameStreamVideoSettings(),
+    String? gameId,
+    String? gameTitle,
+    String? launchId,
+  }) async {
     final GalHookSessionState hook = GalHookSessionController.instance.state;
     if (!Platform.isWindows ||
         hook.boundWindow?.hwnd != hwnd ||
@@ -180,7 +226,13 @@ class FushiSyncServerController extends ChangeNotifier {
     _gameStreamHookStartedAt = hook.sessionStartedAt;
     _attachGameStreamTexthooker();
     try {
-      final GameStreamSession session = await gameStreamHost.start(hwnd: hwnd);
+      final GameStreamSession session = await gameStreamHost.start(
+        hwnd: hwnd,
+        settings: settings,
+        gameId: gameId,
+        gameTitle: gameTitle,
+        launchId: launchId,
+      );
       final GalHookSessionState liveHook =
           GalHookSessionController.instance.state;
       if (!liveHook.isActive ||

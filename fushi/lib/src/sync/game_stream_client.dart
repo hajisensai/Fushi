@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
@@ -6,8 +7,17 @@ import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:http/http.dart' as http;
+
+export 'package:fushi_engine/sync/game_stream/game_stream_library.dart'
+    show
+        GameStreamLaunchFailure,
+        GameStreamLaunchState,
+        GameStreamLaunchStatus,
+        GameStreamLibraryCover,
+        GameStreamLibraryGame;
 
 /// Thin transport seam for the game-stream HTTP endpoints.
 ///
@@ -89,6 +99,8 @@ class InterconnectGameStreamTransport implements GameStreamTransport {
           'session_not_found',
           'session_conflict',
           'stream_error',
+          GameStreamLaunchFailure.disabled,
+          GameStreamLaunchFailure.busy,
         };
         final Object? code = json?['code'];
         rejection = GameStreamRequestError(
@@ -156,10 +168,14 @@ class FushiGameStreamClient {
     ];
   }
 
+  /// [settings] is sent only when the host advertises
+  /// [GameStreamFeature.videoSettings]; the returned session carries the
+  /// parameters the host actually applied.
   Future<GameStreamSession?> join({
     required String sessionId,
     required String clientId,
     String? clientName,
+    GameStreamVideoSettings? settings,
   }) async {
     final GameStreamPostResult result =
         await _post('/api/game-stream/join', <String, dynamic>{
@@ -167,6 +183,7 @@ class FushiGameStreamClient {
           'clientId': clientId,
           if (clientName != null && clientName.isNotEmpty)
             'clientName': clientName,
+          if (settings != null) 'settings': settings.toJson(),
         });
     if (result.peer != null) bindPeer(result.peer!);
     final Map<String, dynamic>? json = result.json;
@@ -244,6 +261,97 @@ class FushiGameStreamClient {
     return GameStreamMineResult.fromJson(resultJson);
   }
 
+  /// Duplicate check against the host's Anki, which is where stream cards are
+  /// written — the phone's own AnkiDroid is the wrong collection to ask.
+  /// Fails soft to false so a flaky host never blocks the popup.
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
+    try {
+      final GameStreamPostResult result = await _post(
+        '/api/duplicate',
+        <String, dynamic>{'expression': expression, 'reading': reading},
+      );
+      return result.json?['duplicate'] == true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Host library for remote launch. A host without the library routes answers
+  /// 404, surfaced as [GameStreamRequestError] with `http_rejected`.
+  Future<GameStreamLibrary> listLibrary() async {
+    final GameStreamPostResult result = await _post(
+      '/api/game-stream/library',
+      const <String, dynamic>{},
+      timeout: const Duration(seconds: 10),
+    );
+    final Map<String, dynamic>? json = result.json;
+    final Object? games = json?['games'];
+    return GameStreamLibrary(
+      launchEnabled: json?['launchEnabled'] == true,
+      games: <GameStreamLibraryGame>[
+        if (games is List)
+          for (final Object? raw in games)
+            if (_tryLibraryGame(raw) case final GameStreamLibraryGame game)
+              game,
+      ],
+    );
+  }
+
+  Future<GameStreamLibraryCover?> libraryCover(String gameId) async {
+    final GameStreamPostResult result = await _post(
+      '/api/game-stream/library/cover',
+      <String, dynamic>{'gameId': gameId},
+      timeout: const Duration(seconds: 15),
+    );
+    final Object? data = result.json?['data'];
+    final Object? contentType = result.json?['contentType'];
+    if (data is! String || contentType is! String) return null;
+    try {
+      return GameStreamLibraryCover(
+        bytes: base64Decode(data),
+        contentType: contentType,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<GameStreamLaunchStatus> launch({
+    required String gameId,
+    required String clientId,
+    required GameStreamVideoSettings settings,
+  }) async {
+    final GameStreamPostResult result = await _post(
+      '/api/game-stream/launch',
+      <String, dynamic>{
+        'gameId': gameId,
+        'clientId': clientId,
+        'settings': settings.toJson(),
+      },
+      timeout: const Duration(seconds: 10),
+    );
+    return GameStreamLaunchStatus.fromJson(result.json?['launch']);
+  }
+
+  Future<GameStreamLaunchStatus> launchStatus(String launchId) async {
+    final GameStreamPostResult result = await _post(
+      '/api/game-stream/launch/status',
+      <String, dynamic>{'launchId': launchId},
+    );
+    return GameStreamLaunchStatus.fromJson(result.json?['launch']);
+  }
+
+  static GameStreamLibraryGame? _tryLibraryGame(Object? raw) {
+    try {
+      return GameStreamLibraryGame.fromJson(raw);
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<GameStreamPostResult> _post(
     String path,
     Map<String, dynamic> body, {
@@ -265,6 +373,13 @@ class FushiGameStreamClient {
     if (session == null) return null;
     return GameStreamSession.fromJson(session);
   }
+}
+
+class GameStreamLibrary {
+  const GameStreamLibrary({required this.launchEnabled, required this.games});
+
+  final bool launchEnabled;
+  final List<GameStreamLibraryGame> games;
 }
 
 abstract class GameStreamDictionaryLookup {
@@ -377,15 +492,37 @@ class GameStreamInputComposer extends ChangeNotifier {
   int get lastRejectedSequence => _lastRejectedSequence;
   String? get lastRejectionReason => _lastRejectionReason;
 
+  /// [button] other than left is only valid for hosts advertising
+  /// [GameStreamFeature.pointerButtons]; left stays implicit on the wire so
+  /// older hosts keep accepting ordinary taps.
   Future<GameStreamInputAck?> pointer({
     required GameStreamInputAction action,
     required Offset normalized,
+    String button = 'left',
   }) {
     return _send(
       kind: GameStreamInputKind.pointer,
       action: action,
       x: normalized.dx.clamp(0.0, 1.0),
       y: normalized.dy.clamp(0.0, 1.0),
+      button: button == 'left' ? null : button,
+    );
+  }
+
+  /// Wheel notches at [normalized] (host must advertise
+  /// [GameStreamFeature.wheel]).
+  Future<GameStreamInputAck?> wheel({
+    required Offset normalized,
+    double? dx,
+    double? dy,
+  }) {
+    return _send(
+      kind: GameStreamInputKind.pointer,
+      action: GameStreamInputAction.wheel,
+      x: normalized.dx.clamp(0.0, 1.0),
+      y: normalized.dy.clamp(0.0, 1.0),
+      dx: dx,
+      dy: dy,
     );
   }
 
@@ -431,6 +568,8 @@ class GameStreamInputComposer extends ChangeNotifier {
     double? y,
     String? key,
     String? button,
+    double? dx,
+    double? dy,
   }) async {
     final GameStreamInputEvent event = GameStreamInputEvent(
       sessionId: sessionId,
@@ -443,6 +582,8 @@ class GameStreamInputComposer extends ChangeNotifier {
       y: y,
       key: key,
       button: button,
+      dx: dx,
+      dy: dy,
     );
     final GameStreamInputAck? ack = await _sender(event);
     if (ack != null) applyAck(ack);
@@ -535,6 +676,13 @@ class GameStreamLookupController extends ChangeNotifier {
       }
     }
   }
+
+  /// Line the current dictionary result was looked up from; mining always
+  /// targets this line, never a newer one that arrived meanwhile.
+  GameStreamTextEvent? get resultLine => _resultLine;
+
+  Future<bool> isDuplicate(String expression, String reading) =>
+      _streamClient.isDuplicate(expression: expression, reading: reading);
 
   Future<GameStreamMineResult?> mine(Map<String, String> fields) {
     final GameStreamTextEvent? line = _resultLine;

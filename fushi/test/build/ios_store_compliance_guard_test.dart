@@ -54,6 +54,7 @@ void main() {
           isWindows: false,
           isDesktop: false,
           isIOS: true,
+          isAndroid: false,
         ),
         isFalse,
       );
@@ -62,6 +63,7 @@ void main() {
           isWindows: false,
           isDesktop: false,
           isIOS: false,
+          isAndroid: true,
         ),
         isTrue,
         reason:
@@ -70,15 +72,49 @@ void main() {
       );
     });
 
-    test('iOS 这个维度只动下载中心，不误伤其它模块', () {
+    test('iOS 与 Android 的模块集合只差下载中心（外加 games 这一条技术例外）', () {
       for (final ModuleId module in ModuleId.values) {
         if (module == ModuleId.downloads) continue;
+        // games 是**技术**例外，不是合规边界：Android 的 games 模块是串流接收端
+        // （WebRTC 接收入口只接了 Android），iOS 没有这个接收端，所以两端结论
+        // 不同。它不属于 StoreRestrictedCapability，别据此把它登记进合规边界。
+        if (module == ModuleId.games) continue;
         expect(
-          module.availableOn(isWindows: false, isDesktop: false, isIOS: true),
-          module.availableOn(isWindows: false, isDesktop: false, isIOS: false),
+          module.availableOn(
+            isWindows: false,
+            isDesktop: false,
+            isIOS: true,
+            isAndroid: false,
+          ),
+          module.availableOn(
+            isWindows: false,
+            isDesktop: false,
+            isIOS: false,
+            isAndroid: true,
+          ),
           reason: '${module.name} 的可用性不该随 iOS 与否改变。',
         );
       }
+      expect(
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: true,
+          isAndroid: false,
+        ),
+        isFalse,
+        reason: 'iOS 没有串流接收端，也没有 galgame hook。',
+      );
+      expect(
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: false,
+          isAndroid: true,
+        ),
+        isTrue,
+        reason: 'Android 的 games 是串流接收端的远端游戏库。',
+      );
     });
 
     test('可见集合在 iOS 上滤掉下载中心（用户把开关打开也一样）', () {
@@ -86,6 +122,7 @@ void main() {
         isWindows: false,
         isDesktop: false,
         isIOS: true,
+        isAndroid: false,
       );
       expect(ios.isEnabled(ModuleId.downloads), isFalse);
       expect(
@@ -98,6 +135,7 @@ void main() {
         isWindows: false,
         isDesktop: false,
         isIOS: false,
+        isAndroid: true,
       );
       expect(android.isEnabled(ModuleId.downloads), isTrue);
     });

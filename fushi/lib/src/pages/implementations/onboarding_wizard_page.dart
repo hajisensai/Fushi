@@ -189,6 +189,7 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
     isWindows: Platform.isWindows,
     isDesktop: DesktopLookupService.isDesktop,
     isIOS: Platform.isIOS,
+    isAndroid: Platform.isAndroid,
   );
 
   @override
@@ -1549,7 +1550,14 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.video:
         return t.onboarding_feature_video_hint;
       case OnboardingFeature.games:
-        return t.onboarding_feature_games_hint;
+        // Android 的 games 模块是串流接收端，旧提示「仅 Windows 的文本 hook」不适用。
+        return GamesModuleForm.on(
+                  isWindows: Platform.isWindows,
+                  isAndroid: Platform.isAndroid,
+                ) ==
+                GamesModuleForm.streamClient
+            ? t.game_stream_module_hint
+            : t.onboarding_feature_games_hint;
       // 同上：一句话说明直接复用各自设置分类的 summary，不新增 key。
       case OnboardingFeature.downloads:
         return t.download_settings;

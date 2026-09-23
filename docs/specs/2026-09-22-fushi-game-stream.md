@@ -4,13 +4,23 @@
 
 ## 使用入口和边界
 
-- Windows：先启动已有的 Galgame Hook 会话，再在游戏工作台点击「开始串流」。绑定的是这一次 Hook 会话的 HWND 和开始时间；HTTP 不能创建串流、选择窗口或启动游戏。
-- Android：在「Fushi 互联」设置的客户端区域进入游戏串流，选择已配对且启用的 Windows 主机，加入其已开启的会话。
+- Windows：先启动已有的 Galgame Hook 会话，再在游戏工作台点击「开始串流」。绑定的是这一次 Hook 会话的 HWND 和开始时间。HTTP 不能选择窗口或任意进程；唯一的例外是下文「从游戏库启动并串流」，它只接受库里的游戏 id，且默认关闭。
+- Android：底栏「游戏」模块（2026-09-23 起 Android 也开，形态是串流客户端）按主机列出游戏库与正在进行的串流；「Fushi 互联」客户端区域的「加入游戏串流」入口保留。
 - 首版仅 LAN、单客户端，WebRTC 不配置 STUN/TURN。SDP/ICE、加入、停止和制卡复用互联 HTTP、配对令牌以及 HTTPS 指纹校验。共享 WebDAV 密码不能授权串流控制。
 - Android 只接收视频/音频、发送输入、显示 Hook 台词和查词。Hook、helper、窗口采集和 Anki 写入全部留在 Windows；iOS/macOS/Linux 无接收或游戏 Hook 入口。
 - 触控按视频实际显示区域映射到客户区；肩键、方向键和确认/取消键可在本次会话中配置，也支持焦点导航及 Enter/Space 按下和松开，失焦会释放按键。普通 Windows 输入使用目标 HWND 的消息投递，检查进程身份和前台窗口，不使用全局键盘注入。目标不在前台时拒绝新增输入并回传 ACK 原因。
 - SGRE 实测不消费确认键的窗口消息，现增加由其已验证 DirectInput 能力门选择的进程内确认适配；LAN6 首次观察到确认之后的新台词。该适配当前仅接受默认手柄「确认」，其余手柄键、原始键和坐标触控明确返回不支持；不得把全套控制视作 SGRE 已验证能力。DOWN 在游戏采样后确认，750ms 租约到期失效；UP 和清理允许在后台按同一进程身份发布零掩码，失败 DOWN 立即清理。内部 Hook IPC 升为 v25，已驻留 v24 DLL 的游戏需保存后重启，不能靠重新附着替换。
 - 台词面板与视频侧栏共用 `SubtitleTranscriptRow` / `SubtitleTranscriptText`：整句展示、当前行底色、字体间距、复制按钮和文字命中逻辑一致；横屏显示侧栏，窄屏显示底部面板。点词从选中位置发送句子后缀，由主机词典进行最长匹配，不要求 Android 安装本地形态词典；键盘可移动台词光标并按 Enter 查词。查词结果复用 `FushiRemoteLookupClient` 和 `DictionaryPopupLayer`，固定到串流主机。面板可收起，未新增系统级悬浮窗。
+
+## 2026-09-23：安卓游戏模块、仅窗口串流、Moonlight 式参数
+
+- **游戏模块两种形态**：`GamesModuleForm`（`module_id.dart`）是唯一的平台判据——Windows = `localLibrary`（原游戏库 + Hook 工作台），Android = `streamClient`（`game_stream_library_page.dart`），iOS / macOS / Linux 不开。iOS 不开是技术原因（没有 WebRTC 接收入口），与 `StoreRestrictedCapability` 无关，`ios_store_compliance_guard_test` 以显式例外登记。Android 上 Windows 专属入口（游戏设置分类、下载中心游戏域、Hook 浮窗）按形态隐藏。
+- **从游戏库启动并串流**：新端点 `/api/game-stream/library`、`/library/cover`（封面以 base64 回 JSON，走已钉扎的 POST 传输）、`/launch`、`/launch/status`，门槛与串流一致（HTTPS + 已配对 peer），另要主机开关「允许远程启动」（`game_stream_remote_launch`，默认关、设备本地、不随备份）。主机侧 `FushiGameStreamLibraryHost` 走与库页同一条 Hook 启动路径（无界面版 `ensureInjectorHeadless`），等窗口绑定（90 s）后以请求方的参数开流；该会话**预留给发起启动的 peer**，其他已配对设备 join 得 409。进度状态 `starting → waitingWindow → streaming | failed`，失败码见 `GameStreamLaunchFailure`。游戏已在跑、或已有等待中的同游戏串流时不重复启动。
+- **仅窗口串流**：开播不再强制 `SetForegroundWindow`（WGC 本就能采被遮挡的窗口，最小化仍停播）。输入新增 `inputFocus`：默认 `background` —— `PostMessage` 定向投递到绑定 HWND，不再要求前台（身份 / 存活 / 最小化 / 隐藏校验保留）；`foreground` —— 按下前按需激活，给只在前台采样输入的引擎用。SGRE 原生确认键仍要求前台。runner 的具体拒绝原因（`PlatformException.message`）回传手机并本地化。
+- **触控**：新增右键 / 中键与滚轮（能力位 `pointerButtons` / `wheel`，旧主机不发）；按下前先 move；两种触控方式（纯函数 `GameStreamTouchInterpreter`）——直接点击（双指点按 = 右键、双指拖 = 滚轮）与触控板（相对移动光标、点按 = 左键、按住再拖 = 拖拽）。旧主机下多指仍按旧语义忽略。另有实体手柄按键映射、硬件键盘（视频获焦时）与软键盘。
+- **参数**：`GameStreamVideoSettings`（分辨率上限 360p–4K、帧率 15–120、码率 0.5–150 Mbps、自适应开关、带宽不足时的降级偏好、编码 auto/H.264/VP8/VP9/AV1、窗口输入模式、声音），解码时一律钳制。启动 / join 时带上；主机开流时按它设采集上限（runner WGC 适配从 `maxWidth/maxHeight/frameRate` 约束读取，上限 3840×2160 / 120 fps），join 时经 `setParameters` 调 `maxBitrate / maxFramerate / scaleResolutionDownBy / degradationPreference`，分辨率与帧率只能在采集上限内下调，会话回报实际生效值。编码由接收端在 answer 前 `setCodecPreferences` 决定（无需主机支持，设备不能解码则回退）。串流中改参数经「同一 client 重复 join」热更新，编码下次连接生效。性能浮层（分辨率 / fps / 码率 / 编码与解码器 / RTT / 抖动 / 丢包 / 丢帧 / 目标）来自接收端 `getStats`。
+- **制卡修复（BUG-2636）**：见 `docs/bugs/BUG-2636-game-stream-lookup-mining.md`。
+- 以上均为代码与单测层证据；安卓真机 ↔ Windows 真游戏的端到端（远程启动、后台输入实效、各档参数、真卡）尚未执行。
 
 ## 实现
 

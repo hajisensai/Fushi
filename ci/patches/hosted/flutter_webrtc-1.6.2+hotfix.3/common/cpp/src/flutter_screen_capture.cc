@@ -11,7 +11,12 @@
 #include <cstdarg>
 #include <cstdlib>
 #ifdef FUSHI_GAME_STREAM_WGC
+#include <algorithm>
+#include <cmath>
+#include <variant>
+
 #include "game_stream_webrtc_capture.h"
+#include "game_stream_webrtc_capture_helpers.h"
 #endif
 
 namespace flutter_webrtc_plugin {
@@ -39,6 +44,21 @@ class FushiWindowCaptureOwner : public RTCVideoCapturer {
   std::shared_ptr<FushiGameStreamCapture> capture_;
   std::unique_ptr<LoopbackCapturer> audio_;
 };
+
+// Dart ints arrive as int32/int64 and doubles as double; upstream findDouble /
+// findInt each accept only one of them. Returns [fallback] when absent or not
+// numeric so optional constraints keep their defaults.
+double FushiFindNumber(const EncodableMap& map, const char* key,
+                       double fallback) {
+  auto it = map.find(EncodableValue(key));
+  if (it == map.end()) return fallback;
+  if (const auto* d = std::get_if<double>(&it->second)) return *d;
+  if (const auto* i = std::get_if<int32_t>(&it->second)) return *i;
+  if (const auto* l = std::get_if<int64_t>(&it->second)) {
+    return static_cast<double>(*l);
+  }
+  return fallback;
+}
 #endif
 // Opt-in local diagnostics: GUI runners have no stderr console. Never records
 // media or signaling; the caller controls a private evidence path.
@@ -442,10 +462,28 @@ void FlutterScreenCapture::GetDisplayMedia(
       result->Error("WindowCaptureFailed", "Video source unavailable");
       return;
     }
+    // video.mandatory {frameRate, maxWidth, maxHeight}: frameRate is clamped
+    // to 1..120 and the output caps to 320x180..3840x2160 (absent caps select
+    // 1920x1080) inside the adapter. Read numbers of either Dart int or double
+    // shape here; upstream's findDouble drops an int frameRate silently.
+    const EncodableMap fushi_mandatory = findMap(video, "mandatory");
+    const double fushi_fps_value =
+        FushiFindNumber(fushi_mandatory, "frameRate", fps);
+    const int fushi_fps = ClampCaptureFps(static_cast<int>(
+        std::isfinite(fushi_fps_value) ? std::lround(fushi_fps_value) : 30));
+    const double fushi_max_w =
+        FushiFindNumber(fushi_mandatory, "maxWidth", 0.0);
+    const double fushi_max_h =
+        FushiFindNumber(fushi_mandatory, "maxHeight", 0.0);
+    auto to_extent = [](double value) -> int {
+      if (!std::isfinite(value) || value <= 0.0) return 0;
+      return static_cast<int>((std::min)(value, 100000.0));
+    };
     std::string error;
     auto capture = StartFushiGameStreamCapture(
         reinterpret_cast<HWND>(static_cast<uintptr_t>(window_id)),
-        custom_source, static_cast<int>(fps), &error);
+        custom_source, fushi_fps, to_extent(fushi_max_w),
+        to_extent(fushi_max_h), &error);
     if (!capture) {
       discard_audio();
       result->Error("WindowCaptureFailed", error);
@@ -458,7 +496,8 @@ void FlutterScreenCapture::GetDisplayMedia(
     EncodableMap settings{
         {EncodableValue("width"), EncodableValue(capture->width())},
         {EncodableValue("height"), EncodableValue(capture->height())},
-        {EncodableValue("frameRate"), EncodableValue(fps)},
+        {EncodableValue("frameRate"),
+         EncodableValue(static_cast<double>(fushi_fps))},
         {EncodableValue("fushiClientArea"), EncodableValue(true)}};
     EncodableMap info{
         {EncodableValue("id"), EncodableValue(track->id().std_string())},

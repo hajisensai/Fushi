@@ -548,6 +548,10 @@ SettingsDestination buildInterconnectDestination() {
               ctx,
               (BuildContext context) => GameStreamJoinPage(
                 repository: SyncRepository(ctx.appModel.database),
+                readSettings: () =>
+                    ctx.appModel.prefsRepo.gameStreamVideoSettings,
+                writeSettings:
+                    ctx.appModel.prefsRepo.setGameStreamVideoSettings,
               ),
             ),
           ),
@@ -874,6 +878,23 @@ SettingsDestination _buildInterconnectHostPage() {
                 ctx.appModel.prefsRepo.interconnectTranscodeEnabled,
             onChanged: (SettingsContext ctx, bool value) async {
               await ctx.appModel.prefsRepo.setInterconnectTranscodeEnabled(
+                value,
+              );
+            },
+          ),
+          // 游戏串流「从库里启动」许可。默认关：开了就等于允许已配对设备在本机起
+          // 游戏进程，必须是主机主人的显式意愿；端点另有 HTTPS + 已配对 peer token
+          // 两道门。只在有本地游戏库的 Windows 上出现。
+          SettingsSwitchItem(
+            id: 'interconnect.game_stream_remote_launch',
+            title: t.game_stream_remote_launch_title,
+            subtitle: t.game_stream_remote_launch_hint,
+            icon: Icons.sports_esports_outlined,
+            visible: (SettingsContext ctx) => Platform.isWindows,
+            value: (SettingsContext ctx) =>
+                ctx.appModel.prefsRepo.gameStreamRemoteLaunchEnabled,
+            onChanged: (SettingsContext ctx, bool value) async {
+              await ctx.appModel.prefsRepo.setGameStreamRemoteLaunchEnabled(
                 value,
               );
             },

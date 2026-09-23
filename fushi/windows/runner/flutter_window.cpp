@@ -3404,7 +3404,10 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           }
           std::string reason;
           if (!game_stream_input_->Send(*args, &reason)) {
-            result->Error("input_rejected", reason);
+            // Dart reads the specific reason from PlatformException.message
+            // (window_not_foreground, unsupported_native_pointer, ...).
+            result->Error("input_rejected",
+                          reason.empty() ? "input_rejected" : reason);
             return;
           }
           result->Success();

@@ -50,6 +50,7 @@ import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
+import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
@@ -389,6 +390,10 @@ class _HomePageState extends BasePageState<HomePage>
       resolveCurrentAppVersion(appModel.packageInfo.version);
 
   HomeTab _currentTab = HomeTab.home;
+
+  /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
+  late final GameStreamLibraryServices _gameStreamLibraryServices =
+      GameStreamLibraryServices.interconnect(appModel: appModelNoUpdate);
 
   /// 进入「设置」标签前的来源 tab，供设置全屏左上返回箭头切回。
   HomeTab _previousTab = HomeTab.home;
@@ -2954,7 +2959,12 @@ class _HomePageState extends BasePageState<HomePage>
       HomeTab.dictionaries => HomeDictionaryPage(
           focusSignal: _dictFocusSignal,
         ),
-      HomeTab.games => const HomeGamePage(),
+      // Android 的 games 模块是串流接收端：远端主机游戏库 + 远程启动串流；
+      // Windows 仍是本机 galgame 库。形态判据只在 [GamesModuleForm.on]。
+      HomeTab.games => appModelNoUpdate.gamesModuleForm ==
+              GamesModuleForm.streamClient
+          ? GameStreamLibraryPage(services: _gameStreamLibraryServices)
+          : const HomeGamePage(),
       HomeTab.browserExtension => const BrowserExtensionPage(),
       HomeTab.settings =>
         // 设置 tab 走侧栏/底栏切回，不显示页头返回箭头；但仍需 PopScope 拦截系统

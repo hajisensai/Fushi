@@ -19,6 +19,8 @@ import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
+import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
+    show GameStreamVideoSettings;
 import 'package:fushi/src/media/video/dandanplay_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
@@ -102,6 +104,14 @@ BoxFit videoFitModeToBoxFit(VideoFitMode mode) {
 /// 「新下载任务交给哪台互联 host 执行」的偏好键（空 = 本机）。
 /// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）。
 const String kDownloadExecutionHostPrefKey = 'download_execution_host';
+
+/// 主机侧「允许已配对设备从游戏库远程启动游戏并串流」。默认关：开启即允许配对
+/// 设备在本机起进程。设备本地（见 `SyncRepository.deviceLocalPrefKeys`），不能随
+/// 备份把这扇门带到另一台电脑上。
+const String kGameStreamRemoteLaunchPrefKey = 'game_stream_remote_launch';
+
+/// 接收端的串流参数（分辨率 / 帧率 / 码率 / 编码等，JSON）。
+const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_settings';
 
 class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
@@ -3383,6 +3393,32 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setDownloadExecutionHostUrl(String value) async {
     await setPref(kDownloadExecutionHostPrefKey, value.trim());
+    notifyListeners();
+  }
+
+  bool get gameStreamRemoteLaunchEnabled =>
+      getPref(kGameStreamRemoteLaunchPrefKey, defaultValue: false) as bool;
+
+  Future<void> setGameStreamRemoteLaunchEnabled(bool value) async {
+    await setPref(kGameStreamRemoteLaunchPrefKey, value);
+    notifyListeners();
+  }
+
+  GameStreamVideoSettings get gameStreamVideoSettings {
+    final String raw =
+        getPref(kGameStreamVideoSettingsPrefKey, defaultValue: '') as String;
+    if (raw.isEmpty) return const GameStreamVideoSettings();
+    try {
+      return GameStreamVideoSettings.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const GameStreamVideoSettings();
+    }
+  }
+
+  Future<void> setGameStreamVideoSettings(
+    GameStreamVideoSettings value,
+  ) async {
+    await setPref(kGameStreamVideoSettingsPrefKey, jsonEncode(value.toJson()));
     notifyListeners();
   }
 

@@ -53,6 +53,7 @@ void main() {
           isWindows: true,
           isDesktop: true,
           isIOS: false,
+          isAndroid: false,
         );
         // 判 Android 而不是笼统的「移动端」：downloads 的判据是 iOS 本身
         // （App Store 合规），两个移动平台在这条上结论相反。
@@ -60,20 +61,36 @@ void main() {
           isWindows: false,
           isDesktop: false,
           isIOS: false,
+          isAndroid: true,
         );
         expect(onWindowsDesktop, isTrue, reason: 'Windows 桌面上全部模块都可用');
-        if (id == ModuleId.games || id == ModuleId.browserExtension) {
-          expect(onAndroid, isFalse, reason: '$id 是桌面/Windows 限定');
+        if (id == ModuleId.browserExtension) {
+          expect(onAndroid, isFalse, reason: '$id 是桌面限定');
         } else {
-          expect(onAndroid, isTrue, reason: '$id 不该有平台限制');
+          expect(
+            onAndroid,
+            isTrue,
+            reason: '$id 在 Android 上可用（games 是串流接收端形态）',
+          );
         }
       }
-      // galgame hook 只做 Windows：非 Windows 桌面（macOS/Linux）也不能有。
+      // galgame hook 只做 Windows、串流接收端只做 Android：macOS/Linux 与 iOS
+      // 都没有 games。
       expect(
         ModuleId.games.availableOn(
           isWindows: false,
           isDesktop: true,
           isIOS: false,
+          isAndroid: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ModuleId.games.availableOn(
+          isWindows: false,
+          isDesktop: false,
+          isIOS: true,
+          isAndroid: false,
         ),
         isFalse,
       );
@@ -83,6 +100,7 @@ void main() {
           isWindows: false,
           isDesktop: true,
           isIOS: false,
+          isAndroid: false,
         ),
         isTrue,
       );
@@ -93,23 +111,47 @@ void main() {
           isWindows: false,
           isDesktop: false,
           isIOS: true,
+          isAndroid: false,
         ),
         isFalse,
       );
+    });
+
+    test('games 的两种形态：Windows 本机库、Android 串流接收端，其余平台没有', () {
+      expect(
+        GamesModuleForm.on(isWindows: true, isAndroid: false),
+        GamesModuleForm.localLibrary,
+      );
+      expect(
+        GamesModuleForm.on(isWindows: false, isAndroid: true),
+        GamesModuleForm.streamClient,
+      );
+      expect(GamesModuleForm.on(isWindows: false, isAndroid: false), isNull);
     });
   });
 
   group('ModuleVisibility', () {
     test('resolve 把平台不可用的模块直接剔除，与 pref 真值无关', () {
-      final ModuleVisibility mobile = ModuleVisibility.resolve(
+      final ModuleVisibility ios = ModuleVisibility.resolve(
+        prefOf: (ModuleId _) => true,
+        isWindows: false,
+        isDesktop: false,
+        isIOS: true,
+        isAndroid: false,
+      );
+      expect(ios.isEnabled(ModuleId.games), isFalse);
+      expect(ios.isEnabled(ModuleId.browserExtension), isFalse);
+      expect(ios.isEnabled(ModuleId.books), isTrue);
+
+      final ModuleVisibility android = ModuleVisibility.resolve(
         prefOf: (ModuleId _) => true,
         isWindows: false,
         isDesktop: false,
         isIOS: false,
+        isAndroid: true,
       );
-      expect(mobile.isEnabled(ModuleId.games), isFalse);
-      expect(mobile.isEnabled(ModuleId.browserExtension), isFalse);
-      expect(mobile.isEnabled(ModuleId.books), isTrue);
+      expect(android.isEnabled(ModuleId.games), isTrue);
+      expect(android.isEnabled(ModuleId.browserExtension), isFalse);
     });
 
     test('resolve 尊重 pref：平台可用但用户关掉的不出现', () {
@@ -118,6 +160,7 @@ void main() {
         isWindows: true,
         isDesktop: true,
         isIOS: false,
+        isAndroid: false,
       );
       expect(only.enabled, <ModuleId>{ModuleId.books});
     });

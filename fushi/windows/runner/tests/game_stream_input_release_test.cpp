@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <iostream>
+#include <vector>
 #include <flutter/encodable_value.h>
 // Seed the tracked held-input state without needing foreground ownership.
 // Include dependencies first so this access shim only affects the test target.
@@ -74,13 +75,51 @@ int Count(HWND hwnd, UINT msg) {
   while (PeekMessageW(&message, hwnd, msg, msg, PM_REMOVE)) ++count;
   return count;
 }
+int g_activate_calls = 0;
+bool g_activate_result = false;
+bool FakeActivate(fushi::GameStreamInput*, std::string* reason) {
+  ++g_activate_calls;
+  if (!g_activate_result && reason != nullptr) *reason = "window_not_foreground";
+  return g_activate_result;
+}
+HWND NewSizedWindow(int x, int y, int width, int height) {
+  return CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+      L"STATIC", L"Fushi game-stream input fixture", WS_POPUP,
+      x, y, width, height, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+}
+struct Posted {
+  UINT message;
+  WPARAM wparam;
+  LPARAM lparam;
+};
+// Drains queued mouse messages (WM_MOUSEMOVE..WM_MOUSEHWHEEL) in post order.
+std::vector<Posted> DrainMouse(HWND hwnd) {
+  std::vector<Posted> out;
+  MSG message{};
+  while (PeekMessageW(&message, hwnd, WM_MOUSEMOVE, 0x020E, PM_REMOVE)) {
+    out.push_back({message.message, message.wParam, message.lParam});
+  }
+  return out;
+}
+flutter::EncodableMap Event(const char* kind, const char* action) {
+  flutter::EncodableMap event;
+  event[flutter::EncodableValue("kind")] = flutter::EncodableValue(kind);
+  event[flutter::EncodableValue("action")] = flutter::EncodableValue(action);
+  return event;
+}
+void Set(flutter::EncodableMap& event, const char* key, const char* value) {
+  event[flutter::EncodableValue(key)] = flutter::EncodableValue(value);
+}
+void Set(flutter::EncodableMap& event, const char* key, double value) {
+  event[flutter::EncodableValue(key)] = flutter::EncodableValue(value);
+}
 void SeedHeldInput(fushi::GameStreamInput& input, HWND hwnd) {
   // Deliver only window-targeted messages to this isolated fixture. Seed the
   // bookkeeping directly so no foreground activation/global input is needed.
   input.PostKey(VK_RETURN, true);
   input.pressed_keys_.insert(VK_RETURN);
   PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, 0);
-  input.pointer_down_ = true;
+  input.pointer_buttons_ = MK_LBUTTON;
   Count(hwnd, WM_KEYDOWN);
   Count(hwnd, WM_LBUTTONDOWN);
 }
@@ -95,7 +134,7 @@ void CheckAllowed(const char* label, int show) {
   input.Release();
   Expect(Count(hwnd, WM_KEYUP) == 1, label);
   Expect(Count(hwnd, WM_LBUTTONUP) == 1, "pointer released");
-  Expect(input.pressed_keys_.empty() && !input.pointer_down_, "tracked state cleared");
+  Expect(input.pressed_keys_.empty() && input.pointer_buttons_ == 0, "tracked state cleared");
   input.Unbind();
   DestroyWindow(hwnd);
 }
@@ -110,7 +149,7 @@ void CheckRejected(const char* label, int mismatch) {
   if (mismatch == 2) DestroyWindow(hwnd);
   input.Release();
   Expect(Count(hwnd, WM_KEYUP) == 0 && Count(hwnd, WM_LBUTTONUP) == 0, label);
-  Expect(input.pressed_keys_.empty() && !input.pointer_down_, "invalid identity state cleared");
+  Expect(input.pressed_keys_.empty() && input.pointer_buttons_ == 0, "invalid identity state cleared");
   input.Unbind();
   if (mismatch != 2) DestroyWindow(hwnd);
 }
@@ -153,6 +192,11 @@ void CheckNativeConfirmRequiresMapping() {
   std::string reason;
   Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
          "bind native fixture");
+  SetPropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
+           reinterpret_cast<HANDLE>(static_cast<uintptr_t>(
+               fushi_voice_hook::kSgreDirectInputShieldReadyValue)));
+  Expect(input.HasSgreNativeConfirmCapability(),
+         "native fixture advertises SGRE confirm capability");
   flutter::EncodableMap event;
   event[flutter::EncodableValue("kind")] = flutter::EncodableValue("gamepad");
   event[flutter::EncodableValue("button")] = flutter::EncodableValue("confirm");
@@ -160,6 +204,23 @@ void CheckNativeConfirmRequiresMapping() {
   reason.clear();
   Expect(!input.Send(event, &reason) && reason == "window_not_foreground",
          "native confirm still requires foreground target");
+  Expect(Count(hwnd, WM_KEYDOWN) == 0,
+         "rejected native confirm posts no key fallback");
+  {
+    // Foreground mode activates first; a failed activation keeps the reason.
+    g_activate_calls = 0;
+    g_activate_result = false;
+    input.activate_for_test_ = &FakeActivate;
+    flutter::EncodableMap fg = event;
+    fg[flutter::EncodableValue("inputFocus")] =
+        flutter::EncodableValue("foreground");
+    const uint32_t published = fushi::g_publish_seq;
+    reason.clear();
+    Expect(!input.Send(fg, &reason) && reason == "window_not_foreground" &&
+               g_activate_calls == 1 && fushi::g_publish_seq == published,
+           "foreground-mode native confirm activates before the DOWN");
+    input.activate_for_test_ = nullptr;
+  }
   input.hwnd_ = hwnd;
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
   Expect(!input.PublishNativeLeftButton(true, true, &reason) &&
@@ -192,7 +253,17 @@ void CheckNativeConfirmRequiresMapping() {
              fushi::g_publish_seq == published,
          "background native up still rejects another process identity");
   input.pid_ ^= 0x40000000;
+  {
+    flutter::EncodableMap pointer;
+    pointer[flutter::EncodableValue("kind")] = flutter::EncodableValue("pointer");
+    pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("down");
+    reason.clear();
+    Expect(!input.Send(pointer, &reason) &&
+               reason == "unsupported_native_pointer",
+           "SGRE target still rejects pointer input with a specific reason");
+  }
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
+  RemovePropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty);
   input.Unbind();
   DestroyWindow(hwnd);
 }
@@ -275,6 +346,247 @@ void CheckPointerDpiCoordinates() {
          "DPI fixture restores original thread context");
 }
 }
+
+void CheckBackgroundInputAccepted() {
+  HWND hwnd = NewSizedWindow(-32000, -32000, 64, 32);
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind background fixture");
+  Expect(GetForegroundWindow() != hwnd, "background fixture is not foreground");
+  auto key = Event("key", "down");
+  Set(key, "key", "enter");
+  reason.clear();
+  Expect(input.Send(key, &reason) && Count(hwnd, WM_KEYDOWN) == 1,
+         "default (background) key down posts while not foreground");
+  Expect(input.pressed_keys_.count(VK_RETURN) == 1, "background key tracked");
+  Set(key, "action", "up");
+  Expect(input.Send(key, &reason) && Count(hwnd, WM_KEYUP) == 1 &&
+             input.pressed_keys_.empty(),
+         "background key up posts and clears");
+  auto pad = Event("gamepad", "button");
+  Set(pad, "button", "confirm");
+  Set(pad, "inputFocus", "background");
+  Expect(input.Send(pad, &reason) && Count(hwnd, WM_KEYDOWN) == 1,
+         "explicit background gamepad confirm maps to a posted key");
+  Set(pad, "action", "up");
+  Expect(input.Send(pad, &reason) && Count(hwnd, WM_KEYUP) == 1,
+         "background gamepad up posts");
+  auto tap = Event("pointer", "down");
+  Set(tap, "x", 0.5);
+  Set(tap, "y", 0.5);
+  Expect(input.Send(tap, &reason), "background pointer down accepted");
+  Set(tap, "action", "up");
+  Expect(input.Send(tap, &reason), "background pointer up accepted");
+  const auto posted = DrainMouse(hwnd);
+  Expect(posted.size() == 3 && posted[0].message == WM_MOUSEMOVE &&
+             posted[1].message == WM_LBUTTONDOWN &&
+             posted[2].message == WM_LBUTTONUP,
+         "background tap posts move, down, up in order");
+  auto bad = Event("key", "down");
+  Set(bad, "key", "enter");
+  Set(bad, "inputFocus", "sideways");
+  reason.clear();
+  Expect(!input.Send(bad, &reason) && reason == "invalid_input_focus" &&
+             Count(hwnd, WM_KEYDOWN) == 0,
+         "unknown inputFocus rejected without posting");
+  // Identity checks still apply in background mode.
+  ShowWindow(hwnd, SW_HIDE);
+  Set(key, "action", "down");
+  reason.clear();
+  Expect(!input.Send(key, &reason) && reason == "window_hidden",
+         "background mode still rejects a hidden window");
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  input.pid_ ^= 0x40000000;
+  reason.clear();
+  Expect(!input.Send(key, &reason) && reason == "process_changed",
+         "background mode still rejects another process identity");
+  input.pid_ ^= 0x40000000;
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
+
+void CheckForegroundMode() {
+  HWND hwnd = NewSizedWindow(-32000, -32000, 64, 32);
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind foreground-mode fixture");
+  input.activate_for_test_ = &FakeActivate;
+  g_activate_calls = 0;
+  g_activate_result = false;
+  auto key = Event("key", "down");
+  Set(key, "key", "enter");
+  Set(key, "inputFocus", "foreground");
+  reason.clear();
+  Expect(!input.Send(key, &reason) && reason == "window_not_foreground" &&
+             g_activate_calls == 1,
+         "foreground-mode key down activates and reports failure reason");
+  Expect(Count(hwnd, WM_KEYDOWN) == 0 && input.pressed_keys_.empty(),
+         "failed activation posts nothing and tracks nothing");
+  auto tap = Event("pointer", "down");
+  Set(tap, "inputFocus", "foreground");
+  reason.clear();
+  Expect(!input.Send(tap, &reason) && reason == "window_not_foreground" &&
+             g_activate_calls == 2 && DrainMouse(hwnd).empty() &&
+             input.pointer_buttons_ == 0,
+         "foreground-mode pointer down rejected before any post");
+  Set(tap, "action", "move");
+  Expect(input.Send(tap, &reason) && g_activate_calls == 2 &&
+             DrainMouse(hwnd).size() == 1,
+         "foreground-mode move never activates");
+  Set(key, "action", "up");
+  Expect(input.Send(key, &reason) && g_activate_calls == 2 &&
+             Count(hwnd, WM_KEYUP) == 1,
+         "foreground-mode release never activates");
+  g_activate_result = true;
+  Set(key, "action", "down");
+  Expect(input.Send(key, &reason) && g_activate_calls == 3 &&
+             Count(hwnd, WM_KEYDOWN) == 1,
+         "foreground-mode key down posts after successful activation");
+  input.activate_for_test_ = nullptr;
+  input.Release();
+  Count(hwnd, WM_KEYUP);
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
+
+void CheckPointerButtons() {
+  HWND hwnd = NewSizedWindow(-32000, -32000, 101, 51);
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind pointer-button fixture");
+  const LPARAM mid = fushi::GameStreamInput::PointerLParam(0.5, 0.5, 101, 51);
+  auto right = Event("pointer", "down");
+  Set(right, "button", "right");
+  Set(right, "x", 0.5);
+  Set(right, "y", 0.5);
+  Expect(input.Send(right, &reason), "right down accepted");
+  auto posted = DrainMouse(hwnd);
+  Expect(posted.size() == 2 && posted[0].message == WM_MOUSEMOVE &&
+             posted[0].wparam == 0 && posted[0].lparam == mid &&
+             posted[1].message == WM_RBUTTONDOWN &&
+             posted[1].wparam == MK_RBUTTON && posted[1].lparam == mid,
+         "right down posts hover move then WM_RBUTTONDOWN at same point");
+  Expect(input.pointer_buttons_ == MK_RBUTTON, "right button tracked");
+  auto move = Event("pointer", "move");
+  Set(move, "x", 1.0);
+  Set(move, "y", 1.0);
+  Expect(input.Send(move, &reason), "move while right held");
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 1 && posted[0].message == WM_MOUSEMOVE &&
+             posted[0].wparam == MK_RBUTTON,
+         "move carries MK_RBUTTON while held");
+  auto left = Event("pointer", "down");
+  Set(left, "button", "left");
+  Expect(input.Send(left, &reason), "left down while right held");
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 2 && posted[1].message == WM_LBUTTONDOWN &&
+             posted[1].wparam == (MK_LBUTTON | MK_RBUTTON) &&
+             posted[0].wparam == MK_RBUTTON,
+         "left down carries both held buttons");
+  auto middle = Event("pointer", "down");
+  Set(middle, "button", "middle");
+  Expect(input.Send(middle, &reason), "middle down accepted");
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 2 && posted[1].message == WM_MBUTTONDOWN &&
+             posted[1].wparam == (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON),
+         "middle down posts WM_MBUTTONDOWN with all flags");
+  auto right_up = Event("pointer", "up");
+  Set(right_up, "button", "right");
+  Expect(input.Send(right_up, &reason), "right up accepted");
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 1 && posted[0].message == WM_RBUTTONUP &&
+             posted[0].wparam == (MK_LBUTTON | MK_MBUTTON) &&
+             input.pointer_buttons_ == (MK_LBUTTON | MK_MBUTTON),
+         "right up leaves remaining flags");
+  Expect(input.Send(right, &reason), "right pressed again before release");
+  DrainMouse(hwnd);
+  input.Release();
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 3 && posted[0].message == WM_LBUTTONUP &&
+             posted[0].wparam == (MK_RBUTTON | MK_MBUTTON) &&
+             posted[1].message == WM_RBUTTONUP &&
+             posted[1].wparam == MK_MBUTTON &&
+             posted[2].message == WM_MBUTTONUP && posted[2].wparam == 0,
+         "Release releases every held button");
+  Expect(input.pointer_buttons_ == 0, "Release clears pointer state");
+  auto bogus = Event("pointer", "down");
+  Set(bogus, "button", "x1");
+  reason.clear();
+  Expect(!input.Send(bogus, &reason) && reason == "invalid_pointer_button" &&
+             DrainMouse(hwnd).empty(),
+         "unknown pointer button rejected");
+  // Down flag only after PostMessage succeeds: an empty client area makes
+  // the post fail, so nothing may be tracked as held.
+  SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  reason.clear();
+  Expect(!input.Send(right, &reason) && reason == "post_failed" &&
+             input.pointer_buttons_ == 0,
+         "failed down post does not mark the button held");
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
+
+void CheckWheel() {
+  HWND hwnd = NewSizedWindow(-32000, -32000, 201, 101);
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind wheel fixture");
+  POINT expected{fushi::GameStreamInput::NormalizedCoordinate(0.25, 201),
+                 fushi::GameStreamInput::NormalizedCoordinate(0.75, 101)};
+  ClientToScreen(hwnd, &expected);
+  auto wheel = Event("pointer", "wheel");
+  Set(wheel, "x", 0.25);
+  Set(wheel, "y", 0.75);
+  Set(wheel, "dy", 1.0);
+  Expect(input.Send(wheel, &reason), "wheel down accepted");
+  auto posted = DrainMouse(hwnd);
+  Expect(posted.size() == 1 && posted[0].message == WM_MOUSEWHEEL &&
+             GET_WHEEL_DELTA_WPARAM(posted[0].wparam) == -WHEEL_DELTA &&
+             LOWORD(posted[0].wparam) == 0,
+         "positive dy scrolls down with negative WHEEL_DELTA");
+  Expect(posted.size() == 1 &&
+             static_cast<short>(LOWORD(posted[0].lparam)) == expected.x &&
+             static_cast<short>(HIWORD(posted[0].lparam)) == expected.y,
+         "wheel lParam carries screen coordinates of the mapped point");
+  std::cout << "wheel screen point " << expected.x << "," << expected.y << "\n";
+  Set(wheel, "dy", -2.0);
+  Set(wheel, "dx", 0.5);
+  auto right = Event("pointer", "down");
+  Set(right, "button", "right");
+  Expect(input.Send(right, &reason), "hold right before wheel");
+  DrainMouse(hwnd);
+  Expect(input.Send(wheel, &reason), "two-axis wheel accepted");
+  posted = DrainMouse(hwnd);
+  Expect(posted.size() == 2 && posted[0].message == WM_MOUSEWHEEL &&
+             GET_WHEEL_DELTA_WPARAM(posted[0].wparam) == 2 * WHEEL_DELTA &&
+             LOWORD(posted[0].wparam) == MK_RBUTTON &&
+             posted[1].message == WM_MOUSEHWHEEL &&
+             GET_WHEEL_DELTA_WPARAM(posted[1].wparam) == WHEEL_DELTA / 2 &&
+             LOWORD(posted[1].wparam) == MK_RBUTTON,
+         "negative dy scrolls up, positive dx scrolls right, flags carried");
+  Expect(fushi::GameStreamInput::WheelDelta(1.0, true) == -120 &&
+             fushi::GameStreamInput::WheelDelta(-1.0, false) == -120 &&
+             fushi::GameStreamInput::WheelDelta(0.004, true) == 0,
+         "WheelDelta sign and rounding");
+  Set(wheel, "dy", 21.0);
+  reason.clear();
+  Expect(!input.Send(wheel, &reason) && reason == "invalid_wheel_delta" &&
+             DrainMouse(hwnd).empty(),
+         "wheel beyond 20 notches rejected");
+  input.Release();
+  DrainMouse(hwnd);
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
 int main() {
   CheckAllowed("hidden target receives keyup", SW_HIDE);
   CheckAllowed("minimized target receives keyup", SW_SHOWMINNOACTIVE);
@@ -285,6 +597,10 @@ int main() {
   CheckKeyMessageBits();
   CheckNativeConfirmRequiresMapping();
   CheckPointerDpiCoordinates();
+  CheckBackgroundInputAccepted();
+  CheckForegroundMode();
+  CheckPointerButtons();
+  CheckWheel();
   std::cout << "CHECKS " << checks << " FAILURES " << failures << "\n";
   return failures == 0 ? 0 : 1;
 }
