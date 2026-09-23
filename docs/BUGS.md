@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2444 条。点号进各自文件。
+> 共 2445 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2640](bugs/BUG-2640-popup-autofit-dpi-loop.md) | ✅ | ✅ | 125% 缩放下视频查词热槽弹窗尺寸 1px 振荡致 WGC 帧池持续重建 |
 | [BUG-2639](bugs/BUG-2639-ios-continuous-viewport-980.md) | ✅ | ✅ | iOS 竖排滚动模式卡在 980px 布局：正文缩到四成、压到状态栏下 |
 | [BUG-2638](bugs/BUG-2638-vn-macos-fixed-stage-repaint.md) | ✅ | ✅ | macOS VN 切屏后新屏文字只画在旧屏文字框内（竖排 fixed stage 重绘区域错误） |
 | [BUG-2637](bugs/BUG-2637-game-stream-touch-foreground.md) | ✅ | ✅ | 游戏串流触屏无效且必须游戏在前台 |

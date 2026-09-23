@@ -127,18 +127,26 @@ enum _PopupContextMenuAction { search, copy }
 
 /// BUG-1651：选择可信的 WebView 视口高度。
 ///
-/// 正常窗口优先用 JS `window.innerHeight`；macOS 离屏 runner / 原生视图尚未挂到
-/// CGWindow 时 JS 会报 0，但 Flutter platform-view widget 已有真实布局高度，此时回退
-/// [layoutHeight]。两边都无效才返回 null，让宿主保持当前尺寸。
+/// BUG-2640：**优先用 Flutter 布局高度** [layoutHeight]。宿主的自适应公式
+/// `当前外壳高 + 内容高 − 视口高` 里，「当前外壳高」是 Flutter 布局值，视口高必须与它
+/// 同源，结果才是幂等的 `顶栏高 + 内容高`。JS `window.innerHeight` 是量化后的整数：
+/// Windows fork 先把逻辑尺寸截断成整数（`custom_platform_view.cc` 的 setSize），125%
+/// 缩放下物理像素再截一次（165×1.25=206.25→206 → 164.8 CSS px），盒高的小数部分被整体
+/// 抹掉。拿它去减带小数的外壳高，每轮都恰好差 ±1 px、越过宿主 `<1` 去抖门，热槽弹窗
+/// 就在 164.967/165.967 两个高度间永久振荡：每次都触发 native setSize → WGC 帧池重建，
+/// 视频窗口模式卡顿、切全屏整个 UI 卡死。100% 缩放下量化恰好对齐，所以看不出来。
+///
+/// JS 值只在布局尚不可用时兜底；macOS 离屏 runner / 原生视图尚未挂到 CGWindow 时 JS
+/// 会报 0。两边都无效才返回 null，让宿主保持当前尺寸。
 double? resolvePopupViewportHeight({
   required double? reportedHeight,
   required double? layoutHeight,
 }) {
-  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
-    return reportedHeight;
-  }
   if (layoutHeight != null && layoutHeight.isFinite && layoutHeight > 0) {
     return layoutHeight;
+  }
+  if (reportedHeight != null && reportedHeight.isFinite && reportedHeight > 0) {
+    return reportedHeight;
   }
   return null;
 }
