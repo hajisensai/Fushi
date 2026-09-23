@@ -368,6 +368,9 @@ class ImmersionMiningEngine {
     return _sharedMiningQueue.enqueueRethrowing<ImmersionMiningResult>(
       () async {
         final String resolvedTempDir = await tempDir;
+        // 远端输入的连接方式（经中继 / 放开 HLS 扩展名）在入队时才开始登记，构造
+        // ffmpeg 参数前必须已经就位。
+        await frozenRequest.mediaSourceRouteReady;
         return _mineNow(
           frozenRequest,
           compression: compression,

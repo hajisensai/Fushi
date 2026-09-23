@@ -315,6 +315,7 @@ class ImmersionMiningRequest {
     this.stillFormat = MiningStillFormat.jpg,
     this.mediaSourceTlsPinSha256,
     this.mediaSourceHttpHeaders = const {},
+    this.mediaSourceRouteReady,
     this.remoteAudioClipper,
   });
 
@@ -415,6 +416,15 @@ class ImmersionMiningRequest {
   /// 空 map = 本地文件 / 无防盗链的公网源（YouTube 走自己的 UA 常量），行为零变化。
   final Map<String, String> mediaSourceHttpHeaders;
 
+  /// [mediaSource] 的连接方式（经宿主本机中继 / 放开 HLS 分片扩展名，见
+  /// `FfmpegRemoteInputRoute`）已登记完成的信号；null = 直连，无需等待。
+  ///
+  /// 登记要读播放器识别出的容器、确认中继端点、问一次 ffmpeg 能力，全是异步的；
+  /// 而制卡请求必须在点击当下**同步**入队（连续点击按序、换集前冻结输入）。所以
+  /// 调用方当场把 [mediaSource] 改写成中继形式、把登记作为 Future 挂在这里，引擎
+  /// 在队列里轮到本任务、构造 ffmpeg 参数之前先等它。它从不失败（宿主自己兜错）。
+  final Future<void>? mediaSourceRouteReady;
+
   /// BUG-1004：互联 host（LAN Hibiki 库）远端流的句子音频改由 **host 端**裁好再下载——host
   /// 用本地文件裁、不经网络/TLS，从根上绕开「client ffmpeg 抓 host 自签 https / token 流」的
   /// 整类失败（移动端自编 ffmpeg-kit 的 TLS pin 仍有残余缺口、URL 编码/网络脆弱等，见
@@ -491,6 +501,7 @@ class ImmersionMiningRequest {
         // 那一刻的头（换集会让 client 的 httpHeaderFields 指向新一集的 hoster）。
         mediaSourceHttpHeaders:
             Map<String, String>.unmodifiable(mediaSourceHttpHeaders),
+        mediaSourceRouteReady: mediaSourceRouteReady,
         remoteAudioClipper: remoteAudioClipper,
       );
 }

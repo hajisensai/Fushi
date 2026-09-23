@@ -3098,6 +3098,12 @@ class VideoPlayerController extends ChangeNotifier
   /// `getProperty`）/ 属性不存在 / 抛异常时返回 `''`。与 [_mpvCommand]（写命令）/
   /// [applyMpvConfigToPlayer]（写属性）同范式，只是方向相反——读 `chapter-list/*`、
   /// `chapter` 等章节属性（TODO-424）。
+  /// 播放器实际识别出的容器是不是 HLS（mpv `file-format`，lavf 的 demuxer 名；老版本
+  /// 报 `hls,applehttp`）。制卡据此决定要不要给 ffmpeg 放开 HLS 分片扩展名检查——
+  /// 在线源的播放列表常不带 `.m3u8` 后缀，看 URL 猜不准，播放器已经打开过它了。
+  Future<bool> isHlsStream() async =>
+      (await _getMpvProperty('file-format')).split(',').contains('hls');
+
   Future<String> _getMpvProperty(String property) async {
     final dynamic native = _player?.platform;
     if (native == null) return '';
