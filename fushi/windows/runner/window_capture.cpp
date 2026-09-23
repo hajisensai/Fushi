@@ -878,8 +878,8 @@ bool TryCapturePrintWindow(HWND hwnd, WindowCaptureResult* out) {
   if (!CaptureSizeWithinBudget(
           static_cast<uint64_t>(initial_client.client_width_px),
           static_cast<uint64_t>(initial_client.client_height_px)) ||
-      initial_client.client_width_px > std::numeric_limits<LONG>::max() ||
-      initial_client.client_height_px > std::numeric_limits<LONG>::max()) {
+      initial_client.client_width_px > (std::numeric_limits<LONG>::max)() ||
+      initial_client.client_height_px > (std::numeric_limits<LONG>::max)()) {
     AppendDiagnostic(out, "PrintWindow rejected: client size exceeds budget",
                      S_OK);
     return false;
@@ -1246,8 +1246,8 @@ bool ReadWindowPropertyInt32(HWND hwnd, const wchar_t* name, LONG* value) {
     return false;
   }
   const INT_PTR raw = reinterpret_cast<INT_PTR>(lookup.value);
-  if (raw < static_cast<INT_PTR>(std::numeric_limits<LONG>::min()) ||
-      raw > static_cast<INT_PTR>(std::numeric_limits<LONG>::max())) {
+  if (raw < static_cast<INT_PTR>((std::numeric_limits<LONG>::min)()) ||
+      raw > static_cast<INT_PTR>((std::numeric_limits<LONG>::max)())) {
     return false;
   }
   *value = static_cast<LONG>(raw);
