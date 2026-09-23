@@ -374,21 +374,16 @@ extension _ReaderWebView on _ReaderFushiPageState {
         '<style id="fushi-cloak">body{visibility:hidden!important}</style>';
     // Cloak goes early (right after <head>) to hide FOUC. Reader style goes last
     // (before </head>) so it wins over EPUB CSS in !important specificity ties.
-    final RegExp headOpenPattern = RegExp('<head[^>]*>', caseSensitive: false);
-    final RegExp headClosePattern = RegExp(r'</head\s*>', caseSensitive: false);
-    final RegExpMatch? headOpen = headOpenPattern.firstMatch(html);
-    final RegExpMatch? headClose = headClosePattern.firstMatch(html);
-    if (headOpen != null && headClose != null) {
-      html =
-          '${html.substring(0, headOpen.end)}\n$hideUntilReady'
-          '${html.substring(headOpen.end, headClose.start)}\n$styleTag\n'
-          '${html.substring(headClose.start)}';
-    } else if (headOpen != null) {
-      html =
-          '${html.substring(0, headOpen.end)}\n$hideUntilReady\n$styleTag${html.substring(headOpen.end)}';
-    } else {
-      html = '$hideUntilReady\n$styleTag\n$html';
-    }
+    // BUG-2639: the viewport meta is served with the document instead of only
+    // being added later by the shell's initialize(). Without it WKWebView lays
+    // the chapter out at the default 980 CSS px (scale 402/980 ≈ 0.41) until
+    // that JS runs; on a real iPhone the vertical scroll mode stayed stuck in
+    // that layout (text at 4/10 size, columns only 4/10 of the screen tall).
+    html = ReaderResourceSanitizer.injectReaderHead(
+      html,
+      headStart: hideUntilReady,
+      headEnd: '${ReaderPaginationScripts.readerViewportMetaTag}\n$styleTag',
+    );
     return Uint8List.fromList(utf8.encode(html));
   }
 

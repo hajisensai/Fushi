@@ -1,0 +1,8 @@
+## BUG-2639 · iOS 竖排滚动模式卡在 980px 布局：正文缩到四成、压到状态栏下
+- **报告**：2026-09-23（用户：录屏「ios滚动模式有问题」——iPhone 上从视觉小说切到「滚动」后，竖排正文字号 42 只显示约 17pt、每列只占屏幕上部约四成、列顶的字被状态栏/工具栏压住）
+- **真实性**：✅ 真 bug（形态已定量对上，真机上的触发时序在模拟器未复现）。录屏量出来的缩放 ≈0.43；iOS 26.5 模拟器（iPhone 17 Pro，402×874）在竖排连续页面上把 viewport 置成 WKWebView 的默认 980 CSS px，实测 `innerWidth=980 / innerHeight=2131 / visualViewport.scale=0.4102`、body 高 874 CSS px → 屏上列长 874×0.41≈358pt、42px 字≈17pt，与录屏一致。
+  根因：章节文档交付时**不带** viewport meta——`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart` `_buildSanitizedChapterHtmlBytes`（修复前 372-391 行）只注入 cloak 与阅读器样式；CSS 像素空间全靠三个 shell 的 `initialize()` 事后用 JS 补（`fushi/lib/src/reader/reader_pagination_scripts.dart` `_sharedInitViewport`）。那段 JS 跑到之前文档必然按 980 px 布局；用户真机上页面停在了这个布局里。模拟器上 JS 总能及时生效：直接以竖排滚动开书、VN→滚动现切两条路径都是 scale=1，复现不出「卡住」本身，所以没法说清真机上具体是哪个时序让 JS 没生效——修法是去掉这层时序依赖，而不是去追某一种时序。
+  排除项：WKWebView 的 shrink-to-fit / 缩放下限不是原因——同一探针里 980 → 旧 meta（不带 `minimum-scale`/`shrink-to-fit=no`）scale 立即回到 1，所以没有改这两项。
+- **[x] ① 已修复** — 章节 HTML 交付时就在 `</head>` 前带上阅读器 viewport meta（排在书自带 meta 之后，WebKit 取最后一个），文档从第一次布局起就是 device-width。head 注入抽成纯函数 `ReaderResourceSanitizer.injectReaderHead`；viewport 串唯一真相源 `ReaderPaginationScripts.readerViewportContent`，交付的 `readerViewportMetaTag` 与 shell 的 JS 重写共用。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_served_viewport_meta_test.dart`（head 注入三分支 + 顺序、meta 与 JS 重写同源、`_buildSanitizedChapterHtmlBytes` 接线源码守卫）；iOS 真 WKWebView：`fushi/integration_test/reader_ios_continuous_viewport_scale_itest.dart`（在页面里 `fetch(location.href)` 断言实际交付的字节带 meta；VN→滚动现切后 `visualViewport.scale=1`、`innerWidth`=设备宽）。
+- **备注**：用户原始失败形态（真机卡在 980 布局）未在真机上复测；模拟器只能证明交付字节与现切后的几何正确。
