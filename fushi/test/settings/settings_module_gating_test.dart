@@ -70,6 +70,20 @@ void main() {
     }
   });
 
+  testWidgets('游戏设置分类只属于本机游戏库形态：串流接收端模块开着也不出现', (
+    WidgetTester tester,
+  ) async {
+    // Android 的 games 模块是串流接收端（PR #1616）；游戏分类里的 hook / 捕获工作台 /
+    // 兼容性诊断全是本机 galgame 库的东西，一条都用不上。
+    await pumpContext(tester);
+    appModel.enabled = ModuleId.values.toSet();
+    expect(visibleIds(), contains(SettingsDestinationId.game));
+    appModel.gamesForm = GamesModuleForm.streamClient;
+    expect(visibleIds(), isNot(contains(SettingsDestinationId.game)));
+    appModel.gamesForm = null;
+    expect(visibleIds(), isNot(contains(SettingsDestinationId.game)));
+  });
+
   testWidgets('逐个关模块：只有它名下的分类消失，别的一条都不少', (WidgetTester tester) async {
     await pumpContext(tester);
     appModel.enabled = ModuleId.values.toSet();
@@ -207,6 +221,13 @@ class _ModuleGatingAppModel extends AppModel {
   /// 按可见性收缩」，pref 读取与平台剔除各有自己的用例（`module_registry_test`）。
   Set<ModuleId> enabled = ModuleId.values.toSet();
 
+  /// 与上面「绕开平台判据」同一前提：games 模块按本机游戏库形态参与门控。不覆写就
+  /// 取宿主平台（CI 的 Linux 上是 null），游戏设置分类在「全部模块开着」时也不可见。
+  GamesModuleForm? gamesForm = GamesModuleForm.localLibrary;
+
   @override
   ModuleVisibility get moduleVisibility => ModuleVisibility(enabled);
+
+  @override
+  GamesModuleForm? get gamesModuleForm => gamesForm;
 }
