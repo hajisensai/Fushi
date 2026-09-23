@@ -3,7 +3,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 
-/// Shared by novel and manga settings, independently of page reading direction.
+/// Which edge the novel reader's settings panel docks to, independently of page
+/// reading direction (the manga reader's panel is pinned to the right).
 const String kReaderSettingsPanelSidePref = 'reader_settings_panel_side';
 
 /// A full-height settings dialog whose header can move it to either screen edge.

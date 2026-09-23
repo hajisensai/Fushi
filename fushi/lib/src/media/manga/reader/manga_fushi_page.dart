@@ -1052,9 +1052,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 自动排任务时没有可用引擎：顶栏挂一颗琥珀色胶囊说明原因。
   bool _volumeOcrNoEngine = false;
 
-  /// 本进程内用户已拒绝过 Google Lens 上传：不再每开一卷都弹同意框。换引擎或
-  /// 重启 app 后再问。
-  static bool _lensAutoOcrDeclined = false;
+  /// 本进程内用户在哪个引擎偏好下拒绝过 Google Lens 自动上传：同一偏好下不再每开
+  /// 一卷都弹同意框。[_maybeStartVolumeOcr] 一旦看到偏好变了（设置面板换走引擎）就
+  /// 清掉，换回 Lens 时重新问；重启 app 也重新问。拒绝期间顶栏给「识别本卷」，用户
+  /// 不必重启就能主动识别。
+  static String? _lensAutoOcrDeclinedFor;
+
+  bool get _lensAutoOcrDeclined =>
+      _lensAutoOcrDeclinedFor != null &&
+      _lensAutoOcrDeclinedFor == appModel.mangaOcrEnginePreference;
 
   /// 本卷是否已经被整卷流程识别过（mokuro 导入 / 整卷 OCR / 下载自动 OCR）。
   ///
@@ -3318,7 +3324,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 顶栏「识别本卷」：只在手动模式、本卷还没识别过、也没有任务在跑 / 排队时出现。
   bool get _showManualVolumeOcrAction =>
-      _readerPreferences.ocrTrigger == 'manual' &&
+      (_readerPreferences.ocrTrigger == 'manual' || _lensAutoOcrDeclined) &&
       !_volumeOcrSettled &&
       !_wholeVolumeOcrRunning &&
       !_volumeOcrQueued;
@@ -3356,6 +3362,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       return;
     }
     final String directory = row.extractDir;
+    final String enginePreference = appModel.mangaOcrEnginePreference;
+    if (_lensAutoOcrDeclinedFor != null &&
+        _lensAutoOcrDeclinedFor != enginePreference) {
+      _lensAutoOcrDeclinedFor = null;
+    }
     if (!userInitiated &&
         (_readerPreferences.ocrTrigger == 'manual' ||
             _volumeOcrScheduledDirs.contains(directory))) {
@@ -3377,9 +3388,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                   db: appModel.database,
                 ),
             registry: _ocrRegistry,
-            preference: MangaOcrEnginePreferenceKey.fromKey(
-              appModel.mangaOcrEnginePreference,
-            ),
+            preference: MangaOcrEnginePreferenceKey.fromKey(enginePreference),
             lensLanguage: appModel.mangaOcrLensLanguage,
             confirmLensUpload: () async {
               if (!userInitiated && _lensAutoOcrDeclined) return false;
@@ -3387,7 +3396,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               final bool accepted =
                   await (widget.lensDisclosureOverride ??
                       ensureGoogleLensDisclosure)(context);
-              if (!accepted && !userInitiated) _lensAutoOcrDeclined = true;
+              if (!accepted && !userInitiated) {
+                _lensAutoOcrDeclinedFor = enginePreference;
+              }
               return accepted;
             },
           );
@@ -3412,7 +3423,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           }
           setState(() => _volumeOcrNoEngine = true);
         case MangaReaderVolumeOcrLensDeclined():
-          break;
+          // 刷新顶栏：拒绝后「识别本卷」要出现。
+          setState(() {});
       }
     } catch (error, stack) {
       ErrorLogService.instance.log(
@@ -3422,6 +3434,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
     } finally {
       _volumeOcrStarting = false;
+      // 探测引擎 / 等授权期间换了章：上面因目录不符直接返回，而新章那次调用又被
+      // _volumeOcrStarting 挡掉了——这里替新章补排一次（按目录去重，不会循环）。
+      final EpubBookRow? now = _bookRow;
+      if (mounted && now != null && !p.equals(now.extractDir, directory)) {
+        unawaited(_maybeStartVolumeOcr());
+      }
     }
   }
 

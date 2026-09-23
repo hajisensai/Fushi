@@ -654,11 +654,11 @@ void main() {
     File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
     const String bookKey = 'auto volume ocr lens book';
 
-    Future<void> openReader() async {
+    Future<void> openReader({String engine = 'google_lens'}) async {
       await tester.runAsync(() async {
         // ProviderScope 卸载时会 dispose 它的 AppModel：每次开书用新实例。
         await tester.pumpWidget(_harness(
-          _AutoOcrAppModel(db, engine: 'google_lens'),
+          _AutoOcrAppModel(db, engine: engine),
           _item(bookKey),
           bookKey,
           extraOverrides: <Override>[
@@ -703,6 +703,33 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await openReader();
     expect(gateCalls, 1);
+    expect(runner.requests, isEmpty);
+
+    // 拒绝期间自动模式也给「识别本卷」入口：否则只能重启 app 才能再识别。
+    await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widgetList<PopupMenuItem<MangaChromeAction>>(
+              find.byType(PopupMenuItem<MangaChromeAction>))
+          .any((PopupMenuItem<MangaChromeAction> item) =>
+              item.value?.key ==
+              const ValueKey<String>('manga_reader_ocr_volume_button')),
+      isTrue,
+      reason: '拒绝 Lens 后自动模式不排任务，必须留一个主动识别的入口',
+    );
+    Navigator.of(tester
+            .element(find.byType(PopupMenuItem<MangaChromeAction>).first))
+        .pop();
+    await tester.pumpAndSettle();
+
+    // 换走引擎再换回 Lens：重新征求同意（拒绝只对当时那个引擎偏好有效）。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await openReader(engine: 'local_onnx');
+    expect(gateCalls, 1, reason: '本机引擎不需要上传同意');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await openReader();
+    expect(gateCalls, 2, reason: '换回 Lens 必须重新问');
     expect(runner.requests, isEmpty);
   });
 
