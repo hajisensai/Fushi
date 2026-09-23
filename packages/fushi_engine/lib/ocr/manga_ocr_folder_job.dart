@@ -29,12 +29,15 @@ const String kMangaOcrPagesCacheDirName = '_pages';
 // against the encoded pixel matrix while Chromium displayed the oriented page,
 // so portrait pages with orientation metadata had a shifted lookup layer.
 //
-// v3 matches manga-ocr's antialiased grayscale resize and suppresses contained
-// horizontal line duplicates. Old page results must not bypass these changes.
+// v3 matches manga-ocr's antialiased grayscale resize.
+// v4 retains nested regions through recognition and only removes text-confirmed
+// horizontal duplicates. Invalidate v3 caches that may have lost small body text.
 // 这只是**算法/坐标口径基线**，不代表模型身份：实际落盘的目录名要再接一段已安装模型
 // 的内容指纹（`manga_ocr_model_fingerprint.dart`），否则上游换模型后旧缓存被静默
 // 复用（BUG-1173）。
-const String kLocalMangaOcrEngineSignature = 'local-onnx-v3-antialias';
+const String kMangaOcrPipelineRevision = 'v4-antialias-text-dedup';
+const String kLocalMangaOcrEngineSignature =
+    'local-onnx-$kMangaOcrPipelineRevision';
 
 /// 产物文件名（`manga_ocr_out/manga.json`）。
 const String kMangaOcrOutputFileName = 'manga.json';

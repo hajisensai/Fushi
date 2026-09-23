@@ -42,8 +42,8 @@ enum MangaOcrLocalModel {
   };
 
   String get cacheSignature => switch (this) {
-    baberu => 'local-onnx-baberu-v1-bicubic',
-    mangaOcrCuda => 'local-manga-cuda-v1-beam4-cache-$_cudaRuntimeIdentity',
+    baberu => 'local-onnx-baberu-v1-bicubic-$kMangaOcrPipelineRevision',
+    mangaOcrCuda => 'local-manga-cuda-v1-beam4-cache-$_cudaRuntimeIdentity-$kMangaOcrPipelineRevision',
     mangaOcr => kLocalMangaOcrEngineSignature,
   };
 

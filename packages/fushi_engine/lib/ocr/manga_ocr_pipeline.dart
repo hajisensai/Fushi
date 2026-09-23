@@ -62,6 +62,30 @@ const int _recognitionBatchSize = 8;
 bool isVerticalBlock(OcrRect box) =>
     box.height > box.width * kVerticalAspectThreshold;
 
+/// 全页识别完成后才判包含重复，允许子框补回父块漏读的小字号正文。
+/// 必须逐字包含完整子文本，不折叠空白或标点。横排按识别路由的宽 >= 高
+/// 判断，不用展示方向的 1.25 阈值。筛选只删除结果，不改变阅读顺序；父子框
+/// 即使分属不同批次或子框先识别，也按同样规则处理。
+List<OcrBlock> _suppressRecognizedContainedBlocks(List<OcrBlock> blocks) {
+  return blocks.where((OcrBlock child) {
+    final OcrRect inner = child.box;
+    final String text = child.lines.single;
+    if (text.isEmpty || inner.area <= 0 || inner.width < inner.height) {
+      return true;
+    }
+    return !blocks.any((OcrBlock parent) {
+      final OcrRect outer = parent.box;
+      return parent.score > child.score &&
+          outer.width >= outer.height &&
+          outer.left <= inner.left &&
+          outer.top <= inner.top &&
+          outer.right >= inner.right &&
+          outer.bottom >= inner.bottom &&
+          parent.lines.single.contains(text);
+    });
+  }).toList();
+}
+
 /// 整卷编排器。检测器/识别器经窄接口注入（模型路径、EP 选择在其构造侧）。
 class MangaOcrPipeline {
   MangaOcrPipeline({
@@ -171,7 +195,7 @@ class MangaOcrPipeline {
       pageIndex: pageIndex,
       imageWidth: image.width,
       imageHeight: image.height,
-      blocks: blocks,
+      blocks: _suppressRecognizedContainedBlocks(blocks),
     );
   }
 }

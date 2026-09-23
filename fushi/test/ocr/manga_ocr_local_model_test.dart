@@ -2,11 +2,27 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  test('all model caches include the shared pipeline revision', () {
+    final List<String> signatures = <String>[
+      for (final MangaOcrLocalModel model in MangaOcrLocalModel.values)
+        model.cacheSignature,
+    ];
+    expect(signatures.toSet(), hasLength(MangaOcrLocalModel.values.length));
+    for (final String signature in signatures) {
+      expect(signature, endsWith('-$kMangaOcrPipelineRevision'));
+    }
+    expect(
+      MangaOcrLocalModel.baberu.cacheSignature,
+      isNot('local-onnx-baberu-v1-bicubic'),
+    );
+  });
+
   test(
     'Windows supports both models and unknown values retain the default',
     () {

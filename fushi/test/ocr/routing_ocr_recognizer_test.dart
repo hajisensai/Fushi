@@ -1,9 +1,13 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
 import 'package:fushi_engine/ocr/routing_ocr_recognizer.dart';
+import 'package:fushi_engine/ocr/text_detector.dart';
 import 'package:image/image.dart' as img;
 
 class _DeadSession implements OcrSession {
@@ -79,12 +83,74 @@ class _FakeLineRecognizer extends PpOcrLineRecognizer {
 }
 
 PpTextLine _line(double l, double t, double r, double b) => PpTextLine(
-  rect: OcrRect(left: l, top: t, right: r, bottom: b),
-  score: 1,
-);
+      rect: OcrRect(left: l, top: t, right: r, bottom: b),
+      score: 1,
+    );
+
+/// 与纯 Dart 复现同一组输出：父框 400x200、正文框 200x10，IoU=0.025。
+class _NestedDetectionSession extends _DeadSession {
+  @override
+  Future<Map<String, OcrTensor>> run(Map<String, OcrTensor> inputs) async =>
+      <String, OcrTensor>{
+        'scores': OcrTensor.float32(Float32List.fromList([0.9, 0.8]), [2]),
+        'labels': OcrTensor.int64(Int64List.fromList([2, 2]), [2]),
+        'boxes': OcrTensor.float32(
+          Float32List.fromList([20, 20, 420, 220, 40, 140, 240, 150]),
+          [2, 4],
+        ),
+      };
+}
+
+class _NestedLineDetector extends PpOcrLineDetector {
+  _NestedLineDetector() : super(_DeadSession());
+  final List<String> crops = <String>[];
+
+  @override
+  Future<List<PpTextLine>> detect(img.Image crop) async {
+    crops.add('${crop.width}x${crop.height}');
+    if (crop.width == 400 && crop.height == 200) {
+      return <PpTextLine>[_line(20, 20, 380, 70), _line(20, 120, 220, 130)];
+    }
+    expect([crop.width, crop.height], [200, 10]);
+    return <PpTextLine>[_line(0, 0, 200, 10)];
+  }
+}
+
+class _NestedLineRecognizer extends PpOcrLineRecognizer {
+  _NestedLineRecognizer() : super(_DeadSession(), vocab: const <String>['']);
+  final List<int> heights = <int>[];
+
+  @override
+  Future<String> recognizeLine(img.Image crop) async {
+    heights.add(crop.height);
+    return crop.height == 10 ? 'BODY' : 'TITLE';
+  }
+}
 
 void main() {
   final img.Image page = img.Image(width: 400, height: 300);
+
+  test('父块过滤小字号 BODY 后独立内框仍能补正文，保留振假名过滤规则', () async {
+    final _FakeMangaOcr manga = _FakeMangaOcr();
+    final _NestedLineDetector detector = _NestedLineDetector();
+    final _NestedLineRecognizer rec = _NestedLineRecognizer();
+    final OcrPageResult result = await MangaOcrPipeline(
+      detector: TextDetector(_NestedDetectionSession()),
+      recognizer: RoutingOcrRecognizer(
+        mangaOcr: manga,
+        lineDetector: detector,
+        lineRecognizer: rec,
+      ),
+    ).processPage(pageIndex: 0, image: img.Image(width: 640, height: 640));
+    expect(result.blocks.map((OcrBlock b) => b.lines.single), [
+      'TITLE',
+      'BODY',
+    ]);
+    expect(detector.crops, ['400x200', '200x10']);
+    // 父块仍过滤掉厚 10 的行；正文只能由自己的独立框补回。
+    expect(rec.heights, [50, 10]);
+    expect(manga.calls, isEmpty);
+  });
 
   test('只有主识别器具备 batch 能力时才向 pipeline 暴露批接口', () {
     for (final OcrRecognizer main in <OcrRecognizer>[
@@ -108,13 +174,11 @@ void main() {
         <PpTextLine>[],
       ];
     final _FakeLineRecognizer lineRecognizer = _FakeLineRecognizer();
-    final BatchOcrRecognizer routed =
-        RoutingOcrRecognizer(
-              mangaOcr: manga,
-              lineDetector: detector,
-              lineRecognizer: lineRecognizer,
-            )
-            as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: detector,
+      lineRecognizer: lineRecognizer,
+    ) as BatchOcrRecognizer;
     const List<OcrRect> boxes = <OcrRect>[
       OcrRect(left: 310, top: 0, right: 350, bottom: 150),
       OcrRect(left: 20, top: 160, right: 220, bottom: 210),
@@ -137,15 +201,13 @@ void main() {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr();
     final _FakeLineRecognizer lineRecognizer = _FakeLineRecognizer()
       ..reply = '';
-    final BatchOcrRecognizer routed =
-        RoutingOcrRecognizer(
-              mangaOcr: manga,
-              lineDetector: _FakeLineDetector(<PpTextLine>[
-                _line(0, 0, 150, 40),
-              ]),
-              lineRecognizer: lineRecognizer,
-            )
-            as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: _FakeLineDetector(<PpTextLine>[
+        _line(0, 0, 150, 40),
+      ]),
+      lineRecognizer: lineRecognizer,
+    ) as BatchOcrRecognizer;
     const OcrRect box = OcrRect(left: 20, top: 0, right: 220, bottom: 50);
     expect(await routed.recognizeBatch(page, <OcrRect>[box]), <String>[
       'GPU@20',
@@ -160,13 +222,11 @@ void main() {
     final _FakeLineDetector detector = _FakeLineDetector(<PpTextLine>[
       _line(0, 0, 150, 40),
     ]);
-    final BatchOcrRecognizer routed =
-        RoutingOcrRecognizer(
-              mangaOcr: manga,
-              lineDetector: detector,
-              lineRecognizer: _FakeLineRecognizer(),
-            )
-            as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: detector,
+      lineRecognizer: _FakeLineRecognizer(),
+    ) as BatchOcrRecognizer;
     expect(
       await routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 0, top: 0, right: 200, bottom: 50),
@@ -183,17 +243,15 @@ void main() {
   test('GPU 路由批次中的横排块仍保留竖行坐标变换、边距和拼接顺序', () async {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr()..reply = 'v';
     final _FakeLineRecognizer rec = _FakeLineRecognizer()..reply = 'h';
-    final BatchOcrRecognizer routed =
-        RoutingOcrRecognizer(
-              mangaOcr: manga,
-              lineDetector: _FakeLineDetector(<PpTextLine>[
-                _line(10, 40, 290, 70),
-                _line(10, 30, 290, 36),
-                _line(200, 5, 220, 95),
-              ]),
-              lineRecognizer: rec,
-            )
-            as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: _FakeLineDetector(<PpTextLine>[
+        _line(10, 40, 290, 70),
+        _line(10, 30, 290, 36),
+        _line(200, 5, 220, 95),
+      ]),
+      lineRecognizer: rec,
+    ) as BatchOcrRecognizer;
     expect(
       await routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 50, top: 100, right: 350, bottom: 200),
@@ -212,13 +270,11 @@ void main() {
 
   test('GPU 后端结果不等长时抛错，不能把文本拼到另一框', () async {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr()..returnedCount = 1;
-    final BatchOcrRecognizer routed =
-        RoutingOcrRecognizer(
-              mangaOcr: manga,
-              lineDetector: _FakeLineDetector(<PpTextLine>[]),
-              lineRecognizer: _FakeLineRecognizer(),
-            )
-            as BatchOcrRecognizer;
+    final BatchOcrRecognizer routed = RoutingOcrRecognizer(
+      mangaOcr: manga,
+      lineDetector: _FakeLineDetector(<PpTextLine>[]),
+      lineRecognizer: _FakeLineRecognizer(),
+    ) as BatchOcrRecognizer;
     await expectLater(
       routed.recognizeBatch(page, const <OcrRect>[
         OcrRect(left: 0, top: 0, right: 40, bottom: 150),

@@ -894,6 +894,10 @@ class _MangaOcrSettingsSectionState
   ///   这正是「应该支持删除 ocr 模型」的落点：换了引擎之后那几百 MB 得能清掉。
   /// - 引擎用不到且磁盘干净 → **次级入口**（不劝，但也不藏）。
   Widget _buildLocalModelArea(ThemeData theme) {
+    // 下载/安装期间始终保留进度与取消入口，不受引擎偏好或磁盘状态影响。
+    if (_downloading) {
+      return _buildModelBlock(theme);
+    }
     if (_loadingStatus) {
       return _inset(
         const Padding(
@@ -923,10 +927,6 @@ class _MangaOcrSettingsSectionState
   /// 次级形态的分寸：用普通 [TextButton] 而不是主按钮，状态行也不喊「模型未
   /// 下载」（当前引擎本来就不需要它，那不是缺陷状态）——不劝，但也不藏。
   Widget _buildDormantModelEntry(ThemeData theme) {
-    // 在这个形态下点了下载就切回完整块：否则进度条、取消按钮全都无处可见。
-    if (_downloading) {
-      return _buildModelBlock(theme);
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1125,7 +1125,9 @@ class _MangaOcrSettingsSectionState
 
   Widget _deleteButton() {
     return OutlinedButton.icon(
-      onPressed: _deleting ? null : _confirmDelete,
+      onPressed: (_deleting || _downloading || _importing)
+          ? null
+          : _confirmDelete,
       icon: _deleting
           ? const SizedBox(
               width: 16,

@@ -274,9 +274,8 @@ List<RawDetection> decodeProcessedRtdetrOutputs({
 int nmsGroupOf(int classId) => classId == kDetClassBubble ? 0 : 1;
 
 /// 分组贪心 NMS：按分数降序，同组内 IoU >= [iouThreshold] 的低分框剔除。
-/// 横排段落还会抑制完全包含的低分横行：两者 IoU 很低，但横排识别器已在
-/// 原分辨率的段落内切行，再识别子框会重复。竖排整块缩至 224，不能据此保证
-/// 小字都能读出；竖排与气泡仍只按 IoU 去重。同分也不按包含关系猜测。
+/// 低 IoU 的内框留到识别后判重：几何包含不能保证父块读全小字号正文，
+/// 横排切行的振假名过滤也可能删掉正文，因此这里不按包含关系删除。
 List<RawDetection> applyClassAwareNms(
   List<RawDetection> detections, {
   double iouThreshold = 0.7,
@@ -290,16 +289,7 @@ List<RawDetection> applyClassAwareNms(
       if (nmsGroupOf(keep.classId) != nmsGroupOf(candidate.classId)) {
         continue;
       }
-      final bool containedText = keep.classId != kDetClassBubble &&
-          keep.score > candidate.score &&
-          keep.rect.width >= keep.rect.height &&
-          candidate.rect.width >= candidate.rect.height &&
-          candidate.rect.area > 0 &&
-          keep.rect.left <= candidate.rect.left &&
-          keep.rect.top <= candidate.rect.top &&
-          keep.rect.right >= candidate.rect.right &&
-          keep.rect.bottom >= candidate.rect.bottom;
-      if (keep.rect.iou(candidate.rect) >= iouThreshold || containedText) {
+      if (keep.rect.iou(candidate.rect) >= iouThreshold) {
         suppressed = true;
         break;
       }

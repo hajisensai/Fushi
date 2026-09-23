@@ -9,6 +9,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/ocr/manga_ocr_model_import.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
+import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi/utils.dart';
 
@@ -93,9 +94,10 @@ class _FakeOcrService implements MangaOcrService {
 /// 记录调用的导入器：UI 测试只关心「入口接线对不对」，真实拷贝/解压逻辑由
 /// `test/ocr/manga_ocr_model_import_test.dart` 单独盯。
 class _FakeImporter extends MangaOcrModelImporter {
-  _FakeImporter(this.result);
+  _FakeImporter(this.result, {this.beforeReturn});
 
   final MangaOcrModelImportResult result;
+  final Future<void> Function()? beforeReturn;
   final List<List<String>> calls = <List<String>>[];
 
   @override
@@ -104,7 +106,46 @@ class _FakeImporter extends MangaOcrModelImporter {
     required Directory targetDir,
   }) async {
     calls.add(sourcePaths);
+    await beforeReturn?.call();
     return result;
+  }
+}
+
+class _PreparingOcrService extends _FakeOcrService
+    implements MangaOcrModelPreparationService {
+  bool filesImported = false;
+  int prepareCalls = 0;
+  bool prepareCancelled = false;
+  final Completer<void> cancellationFinished = Completer<void>();
+  late final StreamController<MangaOcrDownloadEvent> preparation =
+      StreamController<MangaOcrDownloadEvent>(
+    onCancel: () {
+      prepareCancelled = true;
+      return cancellationFinished.future;
+    },
+  );
+
+  @override
+  Future<MangaOcrModelStatus> modelStatus() async => MangaOcrModelStatus(
+        detectorReady: filesImported,
+        recognizerReady: false,
+        diskBytes: filesImported ? 4096 : 0,
+        totalBytes: 4096,
+        obtainedBytes: filesImported ? 4096 : 0,
+      );
+
+  @override
+  Stream<MangaOcrDownloadEvent> prepareModels() {
+    prepareCalls++;
+    preparation.add(
+      const MangaOcrDownloadEvent(
+        fileName: 'runtime',
+        receivedBytes: 0,
+        totalBytes: 0,
+        installing: true,
+      ),
+    );
+    return preparation.stream;
   }
 }
 
@@ -366,6 +407,179 @@ void main() {
       expect(download, findsOneWidget);
     },
   );
+
+  testWidgets(
+    'default Lens keeps imported CUDA installation visible and cancellable',
+    (WidgetTester tester) async {
+      final _PreparingOcrService service = _PreparingOcrService();
+      addTearDown(() {
+        if (!service.cancellationFinished.isCompleted) {
+          service.cancellationFinished.complete();
+        }
+        unawaited(service.preparation.close());
+      });
+      final _FakeImporter importer = _FakeImporter(
+        MangaOcrModelImportResult(
+          imported: <String>[
+            for (final MangaOcrModelFile file
+                in MangaOcrLocalModel.mangaOcrCuda.manifest)
+              file.fileName,
+          ],
+          skipped: <String>[],
+          rejected: <MangaOcrModelImportRejection>[],
+          stillMissing: <String>[],
+        ),
+        beforeReturn: () async => service.filesImported = true,
+      );
+      await tester.pumpWidget(
+        wrap(
+          MangaOcrSettingsSection(
+            service: service,
+            mokuroPathGetter: () => '',
+            mokuroPathSetter: (String _) async {},
+            probeExternal: (String _) async => null,
+            systemOcrRunner: _FakeSystemOcr(false),
+            enginePreferenceGetter: () => kDefaultMangaOcrEnginePreference.key,
+            localModelGetter: () => 'manga_ocr_cuda',
+            localModelSetter: (String _) async {},
+            modelsDirProvider: () async => Directory.systemTemp,
+            modelImporter: importer,
+            pickImportPaths: (bool _) async => <String>['/picked/cuda-models'],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        kDefaultMangaOcrEnginePreference,
+        MangaOcrEnginePreference.googleLens,
+      );
+      final Finder importButton = find.byKey(
+        const ValueKey<String>('manga_ocr_import_button'),
+      );
+      await tester.ensureVisible(importButton);
+      await tester.tap(importButton);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_ocr_import_pick_folder')),
+      );
+      // The preparation stream deliberately stays open. Do not settle an
+      // indeterminate progress indicator while checking this intermediate state.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      // Wait for the closing import route, rather than settling the active
+      // indeterminate installer animation or matching the dialog's CANCEL.
+      for (int frame = 0;
+          frame < 60 && find.byType(AlertDialog).evaluate().isNotEmpty;
+          frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(importer.calls, <List<String>>[
+        <String>['/picked/cuda-models'],
+      ]);
+      expect(service.prepareCalls, 1);
+      expect(service.preparation.isClosed, isFalse);
+      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.text(t.manga_ocr_model_unused_by_engine), findsNothing);
+      final Finder deleteButton = find.widgetWithText(
+        OutlinedButton,
+        t.manga_ocr_delete,
+      );
+      expect(
+        tester
+            .widgetList<OutlinedButton>(deleteButton)
+            .where((OutlinedButton button) => button.onPressed != null),
+        isEmpty,
+      );
+      final Finder cancel = find.descendant(
+        of: find.byType(MangaOcrSettingsSection),
+        matching: find.widgetWithText(TextButton, t.dialog_cancel),
+      );
+      expect(cancel, findsOneWidget);
+      await tester.ensureVisible(cancel);
+      await tester.tap(cancel);
+      await tester.pump();
+      expect(service.prepareCancelled, isTrue);
+      expect(service.deleteCalls, 0);
+      // Installation owns its files until cancellation cleanup acknowledges.
+      expect(find.text(t.manga_ocr_runtime_installing), findsOneWidget);
+      expect(
+        tester.widgetList<OutlinedButton>(deleteButton).where(
+              (OutlinedButton button) => button.onPressed != null,
+            ),
+        isEmpty,
+      );
+      service.cancellationFinished.complete();
+      await tester.pumpAndSettle();
+      expect(find.text(t.manga_ocr_runtime_installing), findsNothing);
+      expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets('default Lens disables deletion while model import is pending', (
+    WidgetTester tester,
+  ) async {
+    final Completer<void> imported = Completer<void>();
+    addTearDown(() {
+      if (!imported.isCompleted) imported.complete();
+    });
+    final _FakeOcrService service = _FakeOcrService(diskBytesOverride: 4096);
+    final _FakeImporter importer = _FakeImporter(
+      const MangaOcrModelImportResult(
+        imported: <String>[],
+        skipped: <String>[],
+        rejected: <MangaOcrModelImportRejection>[],
+        stillMissing: <String>['vocab.txt'],
+      ),
+      beforeReturn: () => imported.future,
+    );
+    await tester.pumpWidget(
+      wrap(
+        MangaOcrSettingsSection(
+          service: service,
+          mokuroPathGetter: () => '',
+          mokuroPathSetter: (String _) async {},
+          probeExternal: (String _) async => null,
+          systemOcrRunner: _FakeSystemOcr(false),
+          enginePreferenceGetter: () => kDefaultMangaOcrEnginePreference.key,
+          modelsDirProvider: () async => Directory.systemTemp,
+          modelImporter: importer,
+          pickImportPaths: (bool _) async => <String>['/picked/models'],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder deleteButton = find.widgetWithText(
+      OutlinedButton,
+      t.manga_ocr_delete,
+    );
+    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+    final Finder importButton = find.byKey(
+      const ValueKey<String>('manga_ocr_import_button'),
+    );
+    await tester.ensureVisible(importButton);
+    await tester.tap(importButton);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_ocr_import_pick_folder')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(importer.calls, hasLength(1));
+    expect(imported.isCompleted, isFalse);
+    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNull);
+    await tester.ensureVisible(deleteButton);
+    await tester.tap(deleteButton);
+    await tester.pump();
+    expect(find.text(t.manga_ocr_delete_confirm_title), findsNothing);
+    expect(service.deleteCalls, 0);
+    imported.complete();
+    await tester.pumpAndSettle();
+    expect(tester.widget<OutlinedButton>(deleteButton).onPressed, isNotNull);
+  });
 
   testWidgets('local model cannot change during an active model download',
       (WidgetTester tester) async {
