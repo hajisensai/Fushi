@@ -2017,12 +2017,23 @@ window.__fushiInstallShell = function(C) {
   /// 这个缺口**只在 iOS 上显形**。VN 必须与分页/连续 shell 用同一份，故此常量公开。
   static const String sharedInitViewportJs = _sharedInitViewport;
 
-  static const String _sharedInitViewport = '''
+  /// 阅读器正文的 viewport 声明，唯一真相源。章节 HTML 交付时就带上
+  /// [readerViewportMetaTag]（BUG-2639：否则 WKWebView 在 initialize 跑到之前按
+  /// 980 CSS px 布局，iPhone 真机上竖排滚动模式停在那个 0.41 倍的布局里），
+  /// [sharedInitViewportJs] 再用同一串覆盖书自带的 viewport meta。
+  static const String readerViewportContent =
+      'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+
+  static const String readerViewportMetaTag =
+      '<meta name="viewport" content="$readerViewportContent"/>';
+
+  static const String _sharedInitViewport =
+      '''
   var viewport = document.querySelector('meta[name="viewport"]');
   if (viewport) { viewport.remove(); }
   var newViewport = document.createElement('meta');
   newViewport.name = 'viewport';
-  newViewport.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  newViewport.content = '$readerViewportContent';
   document.head.appendChild(newViewport);
 ''';
 
