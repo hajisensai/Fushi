@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:shelf/shelf.dart';
 
@@ -709,14 +710,14 @@ Future<Map<String, dynamic>> _readObject(
   Request request, {
   int maxBytes = _maxControlBodyBytes,
 }) async {
-  final List<int> bytes = <int>[];
+  final BytesBuilder bytes = BytesBuilder(copy: false);
   await for (final List<int> chunk in request.read()) {
     if (bytes.length + chunk.length > maxBytes) {
       throw const FormatException('Game-stream request is too large');
     }
-    bytes.addAll(chunk);
+    bytes.add(chunk);
   }
-  final Object? value = jsonDecode(utf8.decode(bytes));
+  final Object? value = jsonDecode(utf8.decode(bytes.takeBytes()));
   if (value is! Map) {
     throw const FormatException('Game-stream body must be an object');
   }

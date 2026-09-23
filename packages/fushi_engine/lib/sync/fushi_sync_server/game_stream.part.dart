@@ -64,12 +64,14 @@ extension _FushiSyncServerGameStream on FushiSyncServer {
     shelf.Request request,
   ) async {
     const int maxBytes = 8 * 1024 * 1024;
-    final List<int> bytes = <int>[];
+    // BytesBuilder 按字节存；List<int>.addAll 每字节占一个 8 字节槽，8 MiB 的体
+    // 会吃掉 64 MiB。
+    final BytesBuilder bytes = BytesBuilder(copy: false);
     await for (final List<int> chunk in request.read()) {
       if (bytes.length + chunk.length > maxBytes) return null;
-      bytes.addAll(chunk);
+      bytes.add(chunk);
     }
-    final String raw = utf8.decode(bytes, allowMalformed: true);
+    final String raw = utf8.decode(bytes.takeBytes(), allowMalformed: true);
     Object? decoded;
     try {
       decoded = jsonDecode(raw);

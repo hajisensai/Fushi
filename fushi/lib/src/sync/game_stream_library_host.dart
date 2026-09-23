@@ -124,6 +124,12 @@ class FushiGameStreamLibraryHost implements GameStreamLibraryHost {
       );
       return;
     }
+    // 主机主人正在本地玩另一款游戏：launchGame 会先 _stopSources /
+    // _stopPlayTracker，把他的文本 Hook、制卡与学习计时整个拆掉。远端只能等他关掉
+    // 或加入那款游戏的串流，不能替他换游戏。
+    if (_readHookState().isActive && !_isRunning(game)) {
+      throw const GameStreamLaunchRejected(GameStreamLaunchFailure.busy);
+    }
     if (!_isRunning(game) || _readHookState().boundWindow == null) {
       await (_launchGameOverride ?? launchGalgameForStream)(game);
     }

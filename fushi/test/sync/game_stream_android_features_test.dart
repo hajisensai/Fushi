@@ -348,6 +348,38 @@ void main() {
       skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false,
     );
 
+    test(
+      'a local session on another game is busy, never torn down remotely',
+      () async {
+        // 主机主人正在本地玩 b：远端点 a 若照常启动，launchGame 会先拆掉 b 的
+        // 文本 Hook、制卡与学习计时。
+        hook.value = GalHookSessionState(
+          phase: GalHookSessionPhase.running,
+          launchExe: game('b').exePath,
+          boundWindow: const ExternalWindowInfo(hwnd: 7, title: 'B'),
+        );
+        final FushiGameStreamLibraryHost library = host(
+          games: <GalgameEntry>[game('a'), game('b')],
+          launch: (GalgameEntry g) => fail('must not launch over a session'),
+        );
+        await expectLater(
+          library.launch(
+            launchId: 'L1',
+            gameId: 'a',
+            settings: const GameStreamVideoSettings(),
+          ),
+          throwsA(
+            isA<GameStreamLaunchRejected>().having(
+              (GameStreamLaunchRejected e) => e.code,
+              'code',
+              GameStreamLaunchFailure.busy,
+            ),
+          ),
+        );
+      },
+      skip: !Platform.isWindows ? 'Remote launch is Windows-only' : false,
+    );
+
     test('an unknown game id is rejected before anything starts', () async {
       final FushiGameStreamLibraryHost library = host(
         games: <GalgameEntry>[game('a')],
