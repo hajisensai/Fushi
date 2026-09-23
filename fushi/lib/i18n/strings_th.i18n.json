@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "จดจำเล่มนี้",
   "manga_reader_ocr_queued": "อยู่ในคิว",
-  "manga_reader_ocr_unavailable_short": "OCR ใช้ไม่ได้"
+  "manga_reader_ocr_unavailable_short": "ไม่มีเอนจิน OCR · ดาวน์โหลดโมเดลหรือเปลี่ยนเอนจินในการตั้งค่า OCR",
+  "manga_reader_ocr_rerun": "รัน OCR เล่มนี้ใหม่…"
 }

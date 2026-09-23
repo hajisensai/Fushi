@@ -228,14 +228,24 @@ MediaItem _item(String bookKey) {
 }
 
 /// 两页最小 manga.json（页图 100x150，无 OCR 框——渲染链路无需框）。
-String _mangaJson() {
+String _mangaJson({bool recognized = false}) {
   return jsonEncode(<String, Object?>{
     'pages': <Map<String, Object?>>[
       <String, Object?>{
         'url': 'p001.jpg',
         'width': 100,
         'height': 150,
-        'blocks': <Object?>[],
+        // recognized：首页带一个文字块 = 整卷流程识别过（_volumeOcrSettled）。
+        'blocks': <Object?>[
+          if (recognized)
+            <String, Object?>{
+              'box': <int>[10, 20, 60, 120],
+              'vertical': true,
+              'font_size': 20,
+              'z_index': 0,
+              'lines': <String>['一行目'],
+            },
+        ],
       },
       <String, Object?>{
         'url': 'p002.jpg',
@@ -542,6 +552,83 @@ void main() {
 
   // 进入即整卷识别：没有任何用户动作，打开一本没识别过的卷就排上整卷任务，
   // 从当前页开始跑，右上角浮标显示进度（对齐 Mangatan / Chimahon）。
+  testWidgets('已识别的卷：⋮ 里给「重新识别本卷」（换引擎重跑的唯一入口），不给「识别本卷」',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final _FakeMangaOcrService ocrService = _FakeMangaOcrService(ready: true);
+
+    final Directory bookDir =
+        Directory.systemTemp.createTempSync('manga_rerun_ocr_entry_');
+    addTearDown(() {
+      if (bookDir.existsSync()) bookDir.deleteSync(recursive: true);
+    });
+    File(p.join(bookDir.path, 'manga.json'))
+        .writeAsStringSync(_mangaJson(recognized: true));
+    Directory(p.join(bookDir.path, 'images')).createSync();
+    File(p.join(bookDir.path, 'images', 'p001.jpg')).writeAsBytesSync(<int>[1]);
+    File(p.join(bookDir.path, 'images', 'p002.jpg')).writeAsBytesSync(<int>[2]);
+
+    const String bookKey = '重新识别テスト';
+    await tester.runAsync(() async {
+      await db.insertEpubBook(EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: bookKey,
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ));
+      // 自动模式：已识别的卷不会被自动重排（不重送 Lens），入口是唯一的重跑途径。
+      await tester.pumpWidget(_harness(
+        _AutoOcrAppModel(db, engine: 'local_onnx'),
+        _item(bookKey),
+        bookKey,
+        extraOverrides: <Override>[
+          mangaOcrServiceProvider.overrideWithValue(ocrService),
+        ],
+      ));
+      for (int i = 0; i < 50; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        if (find
+            .byKey(const ValueKey<String>('manga_content_ready'))
+            .evaluate()
+            .isNotEmpty) {
+          break;
+        }
+      }
+    });
+    await tester.pump();
+    expect(ocrService.folderRequests, 0, reason: '已识别的卷不自动重排');
+
+    await tester.tap(find.byKey(const ValueKey<String>('manga_chrome_overflow')));
+    await tester.pumpAndSettle();
+    final Iterable<PopupMenuItem<MangaChromeAction>> menuItems =
+        tester.widgetList<PopupMenuItem<MangaChromeAction>>(
+            find.byType(PopupMenuItem<MangaChromeAction>));
+    final PopupMenuItem<MangaChromeAction> rerun = menuItems.singleWhere(
+        (PopupMenuItem<MangaChromeAction> item) =>
+            item.value?.key ==
+            const ValueKey<String>('manga_reader_ocr_rerun_button'));
+    expect(rerun.value!.onPressed, isNotNull);
+    expect(
+        menuItems.any((PopupMenuItem<MangaChromeAction> item) =>
+            item.value?.key ==
+            const ValueKey<String>('manga_reader_ocr_volume_button')),
+        isFalse,
+        reason: '识别过的卷不该再给「识别本卷」');
+    Navigator.of(tester
+            .element(find.byType(PopupMenuItem<MangaChromeAction>).first))
+        .pop();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('自动模式：进入阅读器即排整卷任务，右上角浮标显示进度',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(600, 1000);

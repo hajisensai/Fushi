@@ -398,13 +398,19 @@ class MangaOcrProgressBadge extends StatelessWidget {
               ),
               const SizedBox(width: 8),
             ],
-            Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: fg,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            // 警告（没有可用引擎）要把原因和解决办法说全，窄屏上折成两行；进度读数
+            // 恒一行。Flexible 让 maxLines / 省略号在有界宽度里真正生效。
+            Flexible(
+              child: Text(
+                text,
+                maxLines: warning ? 2 : 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: fg,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
               ),
             ),
           ],

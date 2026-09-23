@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Reconnaître ce volume",
   "manga_reader_ocr_queued": "En attente",
-  "manga_reader_ocr_unavailable_short": "OCR indisponible"
+  "manga_reader_ocr_unavailable_short": "Aucun moteur OCR · téléchargez un modèle ou changez de moteur dans les réglages OCR",
+  "manga_reader_ocr_rerun": "Relancer l’OCR de ce volume…"
 }

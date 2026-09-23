@@ -326,5 +326,115 @@ void main() {
       expect(c, isNotNull);
       await registry.cancelAll();
     });
+
+    test('跨书全局名额：上限 1 时第二本书等第一本结束才启动，等名额期间算排队中', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => 1,
+      );
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final String dirA = p.join(tmp.path, 'a');
+      final String dirB = p.join(tmp.path, 'b');
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book-a', dirA),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book-b', dirB),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.running('book-b'), isNull, reason: '名额被 A 占着');
+      expect(second.controller.hasListener, isFalse, reason: '订阅即启动');
+      expect(registry.queuedDirectories('book-b'), <String>[dirB]);
+
+      await first.controller.close();
+      expect(await startedB, isNotNull);
+      expect(registry.running('book-b')!.job.managedDirectory, dirB);
+      await registry.cancelAll();
+    });
+
+    test('等名额期间被 cancel 的书不启动，名额顺延给下一本', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry(
+        maxConcurrentJobs: () => 1,
+      );
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      final _FakeSource third = _FakeSource();
+      final Future<MangaOcrRunningJob?> startedA = registry.enqueue(
+        job: first.job('book-a', p.join(tmp.path, 'a')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedB = registry.enqueue(
+        job: second.job('book-b', p.join(tmp.path, 'b')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<MangaOcrRunningJob?> startedC = registry.enqueue(
+        job: third.job('book-c', p.join(tmp.path, 'c')),
+        mangaJsonPath: mangaJsonPath,
+      );
+      expect(await startedA, isNotNull);
+      await registry.cancel('book-b');
+      await first.controller.close();
+      expect(await startedB, isNull);
+      expect(second.controller.hasListener, isFalse);
+      expect(await startedC, isNotNull, reason: 'B 放弃后名额必须顺延，不能卡死');
+      await registry.cancelAll();
+    });
+
+    test('不给上限（默认）：两本书同时跑', () async {
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource first = _FakeSource();
+      final _FakeSource second = _FakeSource();
+      expect(
+        await registry.enqueue(
+          job: first.job('book-a', p.join(tmp.path, 'a')),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      expect(
+        await registry.enqueue(
+          job: second.job('book-b', p.join(tmp.path, 'b')),
+          mangaJsonPath: mangaJsonPath,
+        ),
+        isNotNull,
+      );
+      await registry.cancelAll();
+    });
+  });
+
+  group('resolveMangaOcrJobConcurrency（按设备自适应）', () {
+    test('手机与低内存模式只跑 1 卷', () {
+      expect(
+        resolveMangaOcrJobConcurrency(
+          isMobile: true,
+          lowMemoryMode: false,
+          processors: 8,
+        ),
+        1,
+      );
+      expect(
+        resolveMangaOcrJobConcurrency(
+          isMobile: false,
+          lowMemoryMode: true,
+          processors: 16,
+        ),
+        1,
+      );
+    });
+
+    test('桌面按核数给 1～2 卷', () {
+      int desktop(int processors) => resolveMangaOcrJobConcurrency(
+        isMobile: false,
+        lowMemoryMode: false,
+        processors: processors,
+      );
+      expect(desktop(2), 1);
+      expect(desktop(4), 1);
+      expect(desktop(8), 2);
+      expect(desktop(32), 2);
+    });
   });
 }

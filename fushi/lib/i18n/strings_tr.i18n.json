@@ -5451,5 +5451,6 @@
   "game_stream_remote_launch_hint": "Paired Android devices can start games from this PC's library and stream them",
   "manga_reader_ocr_volume": "Bu cildi tanı",
   "manga_reader_ocr_queued": "Sırada",
-  "manga_reader_ocr_unavailable_short": "OCR kullanılamıyor"
+  "manga_reader_ocr_unavailable_short": "OCR motoru yok · OCR ayarlarından model indirin veya motoru değiştirin",
+  "manga_reader_ocr_rerun": "Bu cilt için OCR’ı yeniden çalıştır…"
 }
