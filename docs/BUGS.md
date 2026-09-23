@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2447 条。点号进各自文件。
+> 共 2449 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2644](bugs/BUG-2644-manga-ocr-nested-regions.md) | ✅ | ✅ | 漫画目录段落与内嵌行框重复识别和显示 |
+| [BUG-2643](bugs/BUG-2643-manga-ocr-preprocess-speed.md) | ✅ | ✅ | Windows 本地漫画 OCR 识别慢且缩图丢失细笔画 |
 | [BUG-2642](bugs/BUG-2642-aniyomi-mining-hls-demuxer.md) | ✅ | ✅ | Aniyomi 在线视频制卡失败：捆绑 ffmpeg 缺 hls demuxer（required audio missing / Invalid data） |
 | [BUG-2641](bugs/BUG-2641-anime-store-duplicate-rows.md) | ✅ | ✅ | 视频扩展仓库每个扩展重复出现（默认仓库入口被解析到 repo.json 后落成第二行） |
 | [BUG-2640](bugs/BUG-2640-popup-autofit-dpi-loop.md) | ✅ | ✅ | 125% 缩放下视频查词热槽弹窗尺寸 1px 振荡致 WGC 帧池持续重建 |
