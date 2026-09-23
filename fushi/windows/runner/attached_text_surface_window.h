@@ -13,7 +13,9 @@
 
 #include "attached_capture_token.h"
 #include "attached_hover_tracker.h"
+#include "attached_magpie_surface_geometry.h"
 #include "attached_overlayability.h"
+#include "attached_text_layout.h"
 
 // Transparent, no-activate Win32 surface attached to a foreign game client.
 //
@@ -35,28 +37,10 @@ public:
     uint64_t surface = 0;
   };
 
-  struct NormalizedRect {
-    double left = 0.0;
-    double top = 0.0;
-    double width = 0.0;
-    double height = 0.0;
-  };
-
-  struct ReferenceClient {
-    int width_px = 0;
-    int height_px = 0;
-    int dpi = 96;
-  };
-
-  struct Layout {
-    std::wstring font_family = L"Yu Gothic";
-    double font_size_per_client_height = 0.045;
-    double letter_spacing_per_client_height = 0.0;
-    double line_height = 1.0;
-    std::string text_align = "left";
-    std::string vertical_align = "top";
-    double padding_per_client_height = 0.0;
-  };
+  using NormalizedRect = fushi::attached_text_layout::NormalizedRect;
+  using ReferenceClient = fushi::attached_text_layout::ReferenceClient;
+  using Layout = fushi::attached_text_layout::Layout;
+  using SurfaceGeometry = fushi::attached_magpie_surface_geometry::Mapping;
 
   struct TargetInfo {
     uint32_t pid = 0;
@@ -121,6 +105,8 @@ public:
     uint32_t char_index = 0;
     uint32_t source_length = 0;
     RECT screen_rect_px{};
+    // Presentation viewport, in the same physical screen-pixel space as the hit.
+    RECT destination_viewport_screen_px{};
     int dpi = 96;
     // True when emitted by the Shift+hover timer instead of a completed
     // shielded click transaction. Hover never consumes any input.
@@ -193,6 +179,11 @@ public:
   }
   void OnGeometryProviderStatusChanged();
 
+  // Magpie can recreate its presentation HWND while the source game keeps
+  // the foreground handle. Re-run the normal target/presentation resolution
+  // immediately instead of waiting for the 500 ms health timer.
+  void OnExternalWindowLifecycle(HWND output_window, bool scaling);
+
   // Resolves and fingerprints the target. |requested_hwnd| may be null; in that
   // case the largest visible top-level window for |target_pid| is selected.
   RequestResult InspectTarget(const Epoch &epoch, uint32_t target_pid,
@@ -261,11 +252,7 @@ public:
   Snapshot GetSnapshot() const;
 
 private:
-  struct ClusterBox {
-    uint32_t text_position = 0;
-    uint32_t text_length = 0;
-    RECT client_rect{};
-  };
+  using ClusterBox = fushi::attached_text_layout::ClusterBox;
 
   enum class Mode {
     kDetached,
@@ -329,7 +316,7 @@ private:
                            uint64_t external_transaction_id);
   void UpdatePointerGesture(POINT client_point);
   void EndPointerGesture(POINT client_point,
-                         uint64_t external_transaction_id = 0);
+                         uint64_t external_transaction_id);
   void CancelPointerGesture();
   // Builds the LookupEvent for |cluster_index| (index into clusters_) and
   // invokes on_lookup_. Shared by the click transaction and the Shift+hover
@@ -383,6 +370,11 @@ private:
   NormalizedRect calibration_rect_;
   NormalizedRect pre_calibration_rect_;
   bool pre_calibration_configured_ = false;
+  SurfaceGeometry surface_geometry_;
+  bool magpie_mapping_active_ = false;
+  RECT source_body_screen_rect_{};
+  RECT mapped_body_screen_rect_{};
+  int presentation_dpi_ = 96;
   ReferenceClient configured_reference_client_;
   ReferenceClient live_reference_client_;
   Layout layout_;
@@ -405,6 +397,9 @@ private:
   uint32_t hit_snapshot_token_ = 0;
   HWND published_snapshot_game_ = nullptr;
   bool published_snapshot_allow_risk_ = false;
+  bool published_snapshot_has_cursor_mapping_ = false;
+  HWND published_snapshot_cursor_presentation_ = nullptr;
+  SurfaceGeometry published_snapshot_cursor_mapping_;
   std::vector<RECT> published_screen_rects_;
 
   bool pointer_down_ = false;
@@ -416,6 +411,10 @@ private:
   ShieldTransaction shield_transaction_;
   bool shield_transaction_active_ = false;
   fushi::AttachedHoverTracker hover_tracker_;
+  // Calibration-only visual feedback.  This is deliberately separate from
+  // hover_tracker_: moving the pointer must never submit a lookup or acquire
+  // an input-shield transaction.
+  int hover_cluster_ = -1;
   ShieldStatus shield_status_;
   Epoch shield_handshake_epoch_;
   HWND shield_handshake_target_ = nullptr;
@@ -425,9 +424,6 @@ private:
   GeometryProviderStatus provider_status_;
   bool native_provider_retire_pending_ = false;
 
-  bool calibration_dragging_ = false;
-  bool calibration_drag_moved_ = false;
-  POINT calibration_drag_start_{};
   int64_t probe_start_index_ = -1;
   int64_t probe_middle_index_ = -1;
   int64_t probe_end_index_ = -1;

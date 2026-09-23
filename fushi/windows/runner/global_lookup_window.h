@@ -333,7 +333,9 @@ class GlobalLookupWindow {
   // request is stale and must not move the live HWND or acknowledge the host.
   bool BeginGeometryRequest(int64_t geometry_epoch);
   bool CommitPendingShellGeometry(int64_t geometry_epoch);
-  void FinalizePendingShellGeometry(int64_t geometry_epoch);
+  void FinalizePendingShellGeometry(int64_t geometry_epoch,
+                                    double clamp_dx_css = 0.0,
+                                    double clamp_dy_css = 0.0);
   void ClearPendingShellGeometry();
 
   // Tear down the dismissal hooks (foreground WinEvent + low-level mouse) and

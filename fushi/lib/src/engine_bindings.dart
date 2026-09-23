@@ -17,6 +17,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show RootIsolateToken;
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/media/video/ffmpeg_kit_backend.dart';
+import 'package:fushi/src/ocr/gal_lookup_calibration_ocr.dart';
 import 'package:fushi/src/ocr/ocr_inference_ort.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -96,4 +97,8 @@ void installEngineHostBindings() {
   ocrIsolateBootstrap = fushiOcrIsolateBootstrap;
   ocrIsolateBootstrapArg = RootIsolateToken.instance;
   installMangaPanelDetectorFactory();
+  // Calibration OCR is an offline assist.  Installing the callback does not
+  // download models or create an ONNX session; both happen only when the user
+  // invokes screenshot alignment and the small pack is already present.
+  installGalCalibrationOcrAssist();
 }

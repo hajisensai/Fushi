@@ -49,15 +49,16 @@ void main() {
   // siglus_lookup_input.inc），读死文件名的守卫当场报「找不到方法签名」——而屏蔽
   // 逻辑一行没动。这里要钉的不变式是「Siglus 查词这组翻译单元里屏蔽逻辑长这样」，
   // 与它住在哪个文件无关；枚举读法让后续再拆文件也不会假红。
-  final String siglusLookupSource = (Directory(
-    '../native/galgame_hook/hook/adapters',
-  ).listSync().whereType<File>().where((File f) {
-    final String name = f.uri.pathSegments.last;
-    return name.startsWith('siglus_lookup') && name.endsWith('.inc');
-  }).toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
-      .map((File f) => f.readAsStringSync())
-      .join('\n');
+  final String siglusLookupSource =
+      (Directory(
+              '../native/galgame_hook/hook/adapters',
+            ).listSync().whereType<File>().where((File f) {
+              final String name = f.uri.pathSegments.last;
+              return name.startsWith('siglus_lookup') && name.endsWith('.inc');
+            }).toList()
+            ..sort((File a, File b) => a.path.compareTo(b.path)))
+          .map((File f) => f.readAsStringSync())
+          .join('\n');
   final String leafAquaplusSource = File(
     '../native/galgame_hook/hook/adapters/leaf_aquaplus_adapter.inc',
   ).readAsStringSync();
@@ -79,7 +80,8 @@ void main() {
     expect(
       directCode.contains('Reveal(screen_width,screen_height,false,game);'),
       isTrue,
-      reason: '游戏 HWND 必须随首次 Reveal 一起 Arm；先按桌面模式 Arm、显示后再补绑'
+      reason:
+          '游戏 HWND 必须随首次 Reveal 一起 Arm；先按桌面模式 Arm、显示后再补绑'
           '会留下首帧点击穿透窗口',
     );
     final int coldArm = revealCode.indexOf(
@@ -349,7 +351,12 @@ void main() {
       'g_swallowed_buttons.fetch_and(~bit',
       upGate + 1,
     );
-    final int targetGate = hookProc.indexOf('g_target.load(');
+    // Re-arm handoff may read g_target earlier to swallow a down. Only the
+    // normal null-target early return can accidentally pass a paired up.
+    final int targetGate = hookProc.indexOf(
+      'constHWNDtarget=g_target.load(std::memory_order_acquire);'
+      'if(target==nullptr){returnCallNextHookEx(nullptr,code,wparam,lparam);}',
+    );
     expect(upGate, greaterThanOrEqualTo(0));
     expect(
       targetGate,
@@ -379,27 +386,41 @@ void main() {
     //   ④ 命中附着字形矩形、BeginAttachedGlyphTransaction 成功之后吞掉 down。
     // 不变式与 ①② 一样：吞 down 的 return 1 之前必须先置同键事务位，否则配对的 up
     // 漏给游戏，引擎收到一个永远不抬起的按键。
-    final int repeatedDownSwallow =
-        hookProc.indexOf('HasActiveAttachedGlyphTransactionFast()');
+    final int repeatedDownSwallow = hookProc.indexOf(
+      'HasActiveAttachedGlyphTransactionFast()',
+    );
     final int repeatedDownMark = hookProc.indexOf(
       'g_swallowed_buttons.fetch_or(kSwallowedLeftButton',
       repeatedDownSwallow,
     );
-    expect(repeatedDownSwallow, greaterThanOrEqualTo(0),
-        reason: '③ 重复/注入 down 的吞噬路径必须还在');
-    expect(repeatedDownMark, greaterThan(repeatedDownSwallow),
-        reason: '③ 吞 down 前必须先置同键事务位');
+    expect(
+      repeatedDownSwallow,
+      greaterThanOrEqualTo(0),
+      reason: '③ 重复/注入 down 的吞噬路径必须还在',
+    );
+    expect(
+      repeatedDownMark,
+      greaterThan(repeatedDownSwallow),
+      reason: '③ 吞 down 前必须先置同键事务位',
+    );
 
-    final int attachedBegin =
-        hookProc.indexOf('BeginAttachedGlyphTransaction(');
+    final int attachedBegin = hookProc.indexOf(
+      'BeginAttachedGlyphTransaction(',
+    );
     final int attachedMark = hookProc.indexOf(
       'g_swallowed_buttons.fetch_or(kSwallowedLeftButton',
       attachedBegin,
     );
-    expect(attachedBegin, greaterThanOrEqualTo(0),
-        reason: '④ 附着字形命中后开事务的路径必须还在');
-    expect(attachedMark, greaterThan(attachedBegin),
-        reason: '④ 只有事务真的开起来了才吞 down，且吞之前先置位');
+    expect(
+      attachedBegin,
+      greaterThanOrEqualTo(0),
+      reason: '④ 附着字形命中后开事务的路径必须还在',
+    );
+    expect(
+      attachedMark,
+      greaterThan(attachedBegin),
+      reason: '④ 只有事务真的开起来了才吞 down，且吞之前先置位',
+    );
 
     expect(
       'g_swallowed_buttons.fetch_or('.allMatches(hookProc).length,
@@ -562,7 +583,8 @@ void main() {
           nativeHeader.contains('kSgreDirectInputMouseStateBytes=20u') &&
           nativeHeader.contains('kSgreDirectInputMouseButtonsOffset=12u'),
       isTrue,
-      reason: '已量构建的 mouse slot 只能出现在 kSgreKnownBuilds 行里；'
+      reason:
+          '已量构建的 mouse slot 只能出现在 kSgreKnownBuilds 行里；'
           'DIMOUSESTATE2 ABI 是 DirectInput 契约，不随构建变',
     );
     // 地址只能来自解析结果（已量哈希行或唯一签名命中）；装钩点不许再读裸常量，
@@ -647,7 +669,8 @@ void main() {
         'constboolshield_active=direct_shield||bitmap_popup_visible;',
       ),
       isTrue,
-      reason: 'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
+      reason:
+          'bitmap route 是注入侧自绘卡，进程内可见性即全部真相；'
           '两条 route 的语义不同，不得折成「有没有卡」一问',
     );
     expect(
@@ -677,10 +700,7 @@ void main() {
         ),
       );
       final String messageDetour = compactCode(
-        methodBody(
-          siglusLookupSource,
-          'bool ConsumeSiglusLookupInputMessage(',
-        ),
+        methodBody(siglusLookupSource, 'bool ConsumeSiglusLookupInputMessage('),
       );
       final String readyPublish = compactCode(
         methodBody(
@@ -818,7 +838,8 @@ void main() {
               'g_siglus_lookup_left_button_filter_latched.store(true',
             ),
         isTrue,
-        reason: '只允许主 HWND 的 exact caller 吞正文/弹窗事务；'
+        reason:
+            '只允许主 HWND 的 exact caller 吞正文/弹窗事务；'
             '命中后 DOWN 到 matching UP 都不能写入游戏的剧情推进状态',
       );
       // 「未被吞的消息必须原样转发」现在住在 ABI transport 那一侧：策略函数返回
@@ -828,12 +849,17 @@ void main() {
         'void __stdcall Detour_SiglusInputMessage(',
         'void __fastcall Detour_SiglusLegacyInputMessage(',
       ]) {
-        final String transport =
-            compactCode(methodBody(siglusLookupSource, sig));
+        final String transport = compactCode(
+          methodBody(siglusLookupSource, sig),
+        );
         expect(
           transport,
-          matches(RegExp(r'!ConsumeSiglusLookupInputMessage\([\s\S]*?'
-              r'\s*original\(')),
+          matches(
+            RegExp(
+              r'!ConsumeSiglusLookupInputMessage\([\s\S]*?'
+              r'\s*original\(',
+            ),
+          ),
           reason: '$sig：Consume 说没吞就必须把消息原样转发给 original',
         );
       }
@@ -850,8 +876,10 @@ void main() {
 
   test('Fushi 只在 helper ready 后发布 popup HWND，Hide/down-up 生命周期不 ABA', () {
     final String directPublish = compactCode(
-      methodBody(hookSource,
-          'SampledShieldPublishResult PublishDirectInputShieldIfReady('),
+      methodBody(
+        hookSource,
+        'SampledShieldPublishResult PublishDirectInputShieldIfReady(',
+      ),
     );
     final String directArm = compactCode(
       // 序列搬进了 ArmLowLevelMouseHookWithSampledShield；ArmLowLevelMouseHookAndWait
@@ -925,7 +953,8 @@ void main() {
             'returnSampledShieldPublishResult::kUnavailable;',
           ),
       isTrue,
-      reason: 'SGRE/Siglus/Leaf 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
+      reason:
+          'SGRE/Siglus/Leaf 任一声明的 sampled-input 契约不完整或 SetProp 失败时，'
           '必须在 popup 上屏前 fail closed',
     );
     expect(
@@ -937,7 +966,8 @@ void main() {
           ) &&
           !leafContract.contains('nullptr'),
       isTrue,
-      reason: 'Leaf sampled-input 契约必须声明非空 TailRequest/TailAck；退化成 '
+      reason:
+          'Leaf sampled-input 契约必须声明非空 TailRequest/TailAck；退化成 '
           'SGRE/Siglus 的无 tail 初始化会重新暴露两次轮询之间的完整快点',
     );
     expect(
@@ -955,7 +985,8 @@ void main() {
           ) &&
           !refreshTail.contains('RemovePropW'),
       isTrue,
-      reason: 'Leaf tail token 必须合并未确认按钮、先跨进程发布再取得本地所有权，且只由'
+      reason:
+          'Leaf tail token 必须合并未确认按钮、先跨进程发布再取得本地所有权，且只由'
           '精确 generation Ack 清零；陈旧 Ack 或回调并发不能提前撤销新事务',
     );
     expect(
@@ -968,7 +999,8 @@ void main() {
             'g_direct_input_shield_tail_token.load(std::memory_order_acquire)!=0',
           ),
       isTrue,
-      reason: '未收到精确 Ack 的 Leaf tail 必须跨 Hide 保留，并阻止另一 popup 复用 publication；'
+      reason:
+          '未收到精确 Ack 的 Leaf tail 必须跨 Hide 保留，并阻止另一 popup 复用 publication；'
           '只有 pending_tail 已清零才可清理跨进程属性',
     );
     final int publish = directArm.indexOf(
@@ -1007,7 +1039,8 @@ void main() {
         'bit,std::memory_order_relaxed);return1;}',
       ),
       isTrue,
-      reason: 'Leaf TailRequest 发布失败时不得把 down 交给 WebView 或 dismiss：必须吞掉'
+      reason:
+          'Leaf TailRequest 发布失败时不得把 down 交给 WebView 或 dismiss：必须吞掉'
           '整次事务并保留 popup，避免完整快点落在两次游戏轮询之间后穿透',
     );
     expect(
@@ -1017,7 +1050,8 @@ void main() {
         '~bit,std::memory_order_relaxed);',
       ),
       isTrue,
-      reason: '同一物理键的新 down 必须同时丢掉两套位集合里的陈旧位。只清 '
+      reason:
+          '同一物理键的新 down 必须同时丢掉两套位集合里的陈旧位。只清 '
           'g_swallowed_buttons 时，丢失的 up 会把 shield 位一直卡着，下一个浮窗的 '
           'PublishDirectInputShieldIfReady 因 pending!=0 且 popup 变了而 '
           'fail-closed，游戏内查词要等 3s 物理状态对账才恢复',
@@ -1038,7 +1072,8 @@ void main() {
           barrier.contains('returnHookThreadBarrierResult::kCrossed;') &&
           disarm.contains('barrier!=HookThreadBarrierResult::kQueuedPending'),
       isTrue,
-      reason: '「屏障消息压根没投出去」与「投了但同步等待超时」是两件事：只有后者最终'
+      reason:
+          '「屏障消息压根没投出去」与「投了但同步等待超时」是两件事：只有后者最终'
           '会被处理并自己投递延迟收尾。折成同一个 false 时，前者会让游戏窗口上的'
           'kSgreDirectInputShieldWindowProperty 永久留着，游戏的 DirectInput '
           '立即状态被一直压制',
@@ -1064,7 +1099,8 @@ void main() {
             '{AbortInvalidDirectInputShieldAfterBarrier();',
           ),
       isTrue,
-      reason: 'helper/game/window 失效后，只有跨过 callback barrier 才能取消永远不会再获真 Ack '
+      reason:
+          'helper/game/window 失效后，只有跨过 callback barrier 才能取消永远不会再获真 Ack '
           '的 Leaf tail；跨进程属性必须按本地 token 精确删除，不能误删新事务',
     );
     final int leafReadyRevoke = leafRevoke.indexOf(

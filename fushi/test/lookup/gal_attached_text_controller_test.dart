@@ -25,11 +25,13 @@ const GalAttachedCalibrationProbes _probes = GalAttachedCalibrationProbes(
 
 GalLookupSurfaceVariantV1 _variant({
   GalLookupReferenceClientV1 client = _client,
+  GalLookupCalibrationSlotV1? slot,
 }) => GalLookupSurfaceVariantV1(
   aspectRatio: client.aspectRatio,
   referenceClient: client,
   bodyRect: GalAttachedTextController.defaultBodyRect,
   layout: const GalLookupTextLayoutV1(),
+  slot: slot,
 );
 
 GalLookupSurfaceProfileV1 _profile({
@@ -60,7 +62,18 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     providerId: 11,
     providerStatus: 1,
   );
+  final List<Completer<GalAttachedCallResult>> configureCompleters =
+      <Completer<GalAttachedCallResult>>[];
+  final List<GalLookupCalibrationSlotV1?> configuredSlots =
+      <GalLookupCalibrationSlotV1?>[];
   int nativeProbeMask = 0;
+  bool calibrationActive = false;
+  GalAttachedCallResult calibrationResult = const GalAttachedCallResult(
+    status: 'calibrating',
+    surfaceVisible: true,
+  );
+  Future<void> Function()? beforeCalibrationCommitReply;
+  Completer<GalAttachedCallResult>? calibrationUpdateCompleter;
   bool textSurfaceVisible = true;
   String? lastInspectLaunchExePath;
   Completer<GalAttachedCallResult>? suspendCompleter;
@@ -101,7 +114,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   }) async {
     calls.add('calibrationStart:$riskAccepted');
     nativeProbeMask = 0;
-    return const GalAttachedCallResult(status: 'calibrating');
+    calibrationActive = calibrationResult.ok;
+    return calibrationResult;
   }
 
   @override
@@ -111,9 +125,13 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     required GalAttachedCalibrationProbes probes,
   }) async {
     calls.add('calibrationUpdate:${probes.confirmationMask}');
+    if (calibrationUpdateCompleter != null) {
+      return calibrationUpdateCompleter!.future;
+    }
     nativeProbeMask = probes.confirmationMask;
     return GalAttachedCallResult(
-      status: 'calibrating',
+      status: calibrationResult.status,
+      surfaceVisible: calibrationResult.surfaceVisible,
       calibrationProbeMask: nativeProbeMask,
       probeStartObservedIndex: probes.startIndex,
       probeMiddleObservedIndex: probes.middleIndex,
@@ -128,6 +146,8 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     required GalAttachedCalibrationProbes probes,
   }) async {
     calls.add('calibrationCommit:${probes.confirmationMask}');
+    calibrationActive = false;
+    await beforeCalibrationCommitReply?.call();
     return const GalAttachedCallResult(
       status: 'calibrating',
       calibrationProbeMask: 7,
@@ -139,6 +159,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     GalAttachedSurfaceTarget target,
   ) async {
     calls.add('calibrationCancel');
+    calibrationActive = false;
     return const GalAttachedCallResult(status: 'cancelled');
   }
 
@@ -150,6 +171,10 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     required bool riskAccepted,
   }) async {
     calls.add('configure:${mode.wireName}:$riskAccepted');
+    configuredSlots.add(variant.slot);
+    if (configureCompleters.isNotEmpty) {
+      return configureCompleters.removeAt(0).future;
+    }
     return configureResult;
   }
 
@@ -161,6 +186,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   }) async {
     calls.add('updateText');
     texts.add((text: sourceText, generation: textGeneration));
+    if (calibrationActive) return calibrationResult;
     return GalAttachedCallResult(
       status: textSurfaceVisible ? 'visible' : 'noGlyphClusters',
       surfaceVisible: textSurfaceVisible,
@@ -173,6 +199,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
     required GalLookupTextLayoutV1 layout,
   }) async {
     calls.add('updateStyle');
+    if (calibrationActive) return calibrationResult;
     return const GalAttachedCallResult(status: 'ready');
   }
 
@@ -205,6 +232,7 @@ class _FakeSurfacePort implements GalAttachedTextSurfacePort {
   @override
   Future<GalAttachedCallResult> detach(GalAttachedSurfaceTarget target) async {
     calls.add('detach');
+    calibrationActive = false;
     final Completer<GalAttachedCallResult>? completer = detachCompleter;
     if (completer != null) return completer.future;
     return detachResult;
@@ -217,6 +245,7 @@ void main() {
   late GalAttachedTextController controller;
   late List<GalAttachedLookupHitV19> lookups;
   late int providerClaims;
+  late List<String> calibrationLogs;
   Completer<void>? preferenceWriteGate;
   Object? preferenceWriteError;
   Completer<void>? providerClaimGate;
@@ -226,6 +255,7 @@ void main() {
     port = _FakeSurfacePort();
     lookups = <GalAttachedLookupHitV19>[];
     providerClaims = 0;
+    calibrationLogs = <String>[];
     preferenceWriteGate = null;
     preferenceWriteError = null;
     providerClaimGate = null;
@@ -248,6 +278,7 @@ void main() {
             if (gate != null) await gate.future;
           },
       onLookup: lookups.add,
+      calibrationLog: calibrationLogs.add,
     );
   });
 
@@ -259,6 +290,7 @@ void main() {
   Future<void> sync({
     String text = 'これは本文テストです',
     String? launchExePath,
+    bool inspectOnly = false,
     int sessionEpoch = 9001,
   }) => controller.syncSession(
     active: true,
@@ -267,9 +299,211 @@ void main() {
     targetHwnd: 77,
     sourceText: text,
     launchExePath: launchExePath,
+    inspectOnly: inspectOnly,
   );
 
   String key() => GalLookupSurfaceProfileV1.preferenceKeyForExePath(_exePath);
+
+  GalLookupSurfaceVariantV1 measuredVariant({
+    GalLookupReferenceClientV1 client = _client,
+  }) => GalLookupSurfaceVariantV1(
+    aspectRatio: client.aspectRatio,
+    referenceClient: client,
+    bodyRect: GalAttachedTextController.defaultBodyRect,
+    layout: const GalLookupTextLayoutV1(
+      cellGrid: GalLookupCellGridV1(
+        advancePerClientHeight: 0.03,
+        lineAdvancePerClientHeight: 0.04,
+        cellHeightPerClientHeight: 0.035,
+        columns: 24,
+        continuationIndent: 0,
+        quotedContinuationIndent: 0,
+      ),
+    ),
+  );
+
+  test('measured calibration activates without manufacturing probes', () async {
+    await sync();
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    port.calls.clear();
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isTrue,
+    );
+    expect(controller.profile!.variants.single.layout.cellGrid, isNotNull);
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+    expect(controller.calibrationActive, isFalse);
+    expect(port.nativeProbeMask, 0);
+    expect(
+      port.calls.any((String call) => call.startsWith('calibration')),
+      isFalse,
+    );
+    expect(port.calls, contains('configure:attachedOnly:true'));
+    expect(jsonDecode(preferences[key()]! as String)['variants'], hasLength(1));
+  });
+
+  test(
+    'measured calibration rejects legacy layout and incompatible aspect',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      final Object? previous = preferences[key()];
+      for (final GalLookupSurfaceVariantV1 variant
+          in <GalLookupSurfaceVariantV1>[
+            _variant(),
+            measuredVariant(
+              client: const GalLookupReferenceClientV1(
+                widthPx: 800,
+                heightPx: 600,
+                dpi: 96,
+              ),
+            ),
+          ]) {
+        expect(
+          await controller.applyMeasuredCalibration(
+            expectedTarget: controller.target!,
+            expectedExeSha256: _sha,
+            variant: variant,
+          ),
+          isFalse,
+        );
+      }
+      expect(preferences[key()], previous);
+    },
+  );
+
+  test('measured calibration waits for a transient Magpie mapping', () async {
+    await sync();
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    port.configureResult = const GalAttachedCallResult(
+      status: 'targetMappingUnavailable',
+      providerKind: 4,
+      providerId: 11,
+      providerStatus: 1,
+    );
+    port.textSurfaceVisible = false;
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isTrue,
+    );
+    expect(controller.profile!.variants, hasLength(1));
+    expect(controller.status, GalAttachedTextStatus.suspended);
+    expect(controller.statusReason, 'targetMappingUnavailable');
+    expect(controller.surfaceVisible, isFalse);
+    final int claims = providerClaims;
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'targetMappingUnavailable',
+      ),
+    );
+    expect(providerClaims, claims);
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'active',
+        status: 'visible',
+        surfaceVisible: true,
+        providerKind: 4,
+        providerId: 11,
+        providerStatus: 2,
+      ),
+    );
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+    expect(controller.surfaceVisible, isTrue);
+  });
+
+  test('measured calibration cannot cross a session change', () async {
+    await sync();
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    final GalAttachedSurfaceTarget previous = controller.target!;
+    await sync(sessionEpoch: 9002);
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: previous,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isFalse,
+    );
+    expect(controller.profile!.variants, isEmpty);
+  });
+
+  test(
+    'mode change during measured profile save prevents late activation',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      preferenceWriteGate = Completer<void>();
+      final Future<bool> applying = controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final Future<void> disabling = controller.setMode(
+        GalLookupSurfaceMode.off,
+      );
+      preferenceWriteGate!.complete();
+      expect(await applying, isFalse);
+      await disabling;
+      expect(controller.profile!.mode, GalLookupSurfaceMode.off);
+      expect(controller.status, GalAttachedTextStatus.disabled);
+      expect(jsonDecode(preferences[key()]! as String)['mode'], 'off');
+    },
+  );
+
+  test('failed measured profile save does not activate it', () async {
+    await sync();
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    final GalLookupSurfaceProfileV1? previous = controller.profile;
+    preferenceWriteError = StateError('disk failed');
+    port.calls.clear();
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isFalse,
+    );
+    expect(controller.profile, same(previous));
+    expect(
+      port.calls.any((String call) => call.startsWith('configure:')),
+      isFalse,
+    );
+  });
+
+  void calibrationState(
+    String status, {
+    bool visible = false,
+    String? reason,
+    bool observed = false,
+    GalAttachedShieldStatus shield = const GalAttachedShieldStatus(),
+  }) {
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: visible ? 'calibrating' : 'suspended',
+        status: status,
+        reason: reason,
+        surfaceVisible: visible,
+        probeStartObservedIndex: observed ? 0 : null,
+        probeMiddleObservedIndex: observed ? 3 : null,
+        probeEndObservedIndex: observed ? 6 : null,
+        shield: shield,
+      ),
+    );
+  }
 
   test(
     'launch identity is explicit while attach identity is PID-derived',
@@ -323,171 +557,161 @@ void main() {
     },
   );
 
-  test(
-    'BUG-2137 一字未推时的 noGlyphClusters 回到等正文而不是终态 fallback',
-    () async {
-      preferences[key()] = jsonEncode(
-        _profile(mode: GalLookupSurfaceMode.auto).toJson(),
-      );
-      // 子面还没拿到任何正文就回 noGlyphClusters：这是必然，不是失败。
-      await sync(text: '');
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'ready',
-          status: 'noGlyphClusters',
-        ),
-      );
-      await pumpEventQueue();
+  test('BUG-2137 一字未推时的 noGlyphClusters 回到等正文而不是终态 fallback', () async {
+    preferences[key()] = jsonEncode(
+      _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+    );
+    // 子面还没拿到任何正文就回 noGlyphClusters：这是必然，不是失败。
+    await sync(text: '');
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'ready',
+        status: 'noGlyphClusters',
+      ),
+    );
+    await pumpEventQueue();
 
-      expect(
-        controller.status,
-        GalAttachedTextStatus.waitingForBodyThread,
-        reason: '降级成 fallback 就再也回不来：syncSession 只在 waitingForBodyThread 上'
-            '因新正文重新评估，后面每一行都会停在 fallback/noGlyphClusters',
-      );
-      expect(
-        controller.statusReason,
-        'state_event_no_glyph_clusters_before_text',
-      );
-      expect(controller.surfaceVisible, isFalse);
+    expect(
+      controller.status,
+      GalAttachedTextStatus.waitingForBodyThread,
+      reason:
+          '降级成 fallback 就再也回不来：syncSession 只在 waitingForBodyThread 上'
+          '因新正文重新评估，后面每一行都会停在 fallback/noGlyphClusters',
+    );
+    expect(
+      controller.statusReason,
+      'state_event_no_glyph_clusters_before_text',
+    );
+    expect(controller.surfaceVisible, isFalse);
 
-      // 正文到了就能正常继续，不需要重启会话。
-      await sync();
-      expect(controller.status, GalAttachedTextStatus.activeAttached);
-    },
-  );
+    // 正文到了就能正常继续，不需要重启会话。
+    await sync();
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+  });
 
-  test(
-    'BUG-2139 已在等正文且正文一直都在时，同一句也要能把状态救回来',
-    () async {
-      preferences[key()] = jsonEncode(_profile().toJson());
-      await sync();
-      expect(controller.status, GalAttachedTextStatus.activeAttached);
+  test('BUG-2139 已在等正文且正文一直都在时，同一句也要能把状态救回来', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    await sync();
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
 
-      // 子面回 emptyText，把状态推回「等正文」——此时 `_latestSourceText` 早已非空。
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'ready',
-          status: 'emptyText',
-        ),
-      );
-      await pumpEventQueue();
-      expect(controller.status, GalAttachedTextStatus.waitingForBodyThread);
+    // 子面回 emptyText，把状态推回「等正文」——此时 `_latestSourceText` 早已非空。
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'ready',
+        status: 'emptyText',
+      ),
+    );
+    await pumpEventQueue();
+    expect(controller.status, GalAttachedTextStatus.waitingForBodyThread);
 
-      // 同一句再同步一轮：「正文从无到有」的边沿不会再出现，旧判据在这里永远不
-      // 重新评估，状态就永久停在等正文（真机 WoH 上正是如此）。
-      await sync();
-      expect(
-        controller.status,
-        GalAttachedTextStatus.activeAttached,
-        reason: 'BUG-2139：恢复不能只挂在 bodyArrived 这个一次性边沿上',
-      );
-    },
-  );
+    // 同一句再同步一轮：「正文从无到有」的边沿不会再出现，旧判据在这里永远不
+    // 重新评估，状态就永久停在等正文（真机 WoH 上正是如此）。
+    await sync();
+    expect(
+      controller.status,
+      GalAttachedTextStatus.activeAttached,
+      reason: 'BUG-2139：恢复不能只挂在 bodyArrived 这个一次性边沿上',
+    );
+  });
 
-  test(
-    'BUG-2137 registry 交接期间的 noGlyphClusters 不降级成 fallback',
-    () async {
-      preferences[key()] = jsonEncode(_profile().toJson());
-      port.configureResult = const GalAttachedCallResult(
-        status: 'geometryProviderPending',
-        providerKind: 2,
-        providerId: 3,
-        providerStatus: 2,
-      );
-      await sync();
-      expect(controller.status, GalAttachedTextStatus.suspended);
-      expect(controller.statusReason, 'geometryProviderPending');
-      expect(controller.attachedProviderClaimed, isTrue);
+  test('BUG-2137 registry 交接期间的 noGlyphClusters 不降级成 fallback', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    port.configureResult = const GalAttachedCallResult(
+      status: 'geometryProviderPending',
+      providerKind: 2,
+      providerId: 3,
+      providerStatus: 2,
+    );
+    await sync();
+    expect(controller.status, GalAttachedTextStatus.suspended);
+    expect(controller.statusReason, 'geometryProviderPending');
+    expect(controller.attachedProviderClaimed, isTrue);
 
-      // 交接未完成时正文只是被 staged，子面还没渲染，这条是预期而非失败。
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'ready',
-          status: 'noGlyphClusters',
-        ),
-      );
-      await pumpEventQueue();
+    // 交接未完成时正文只是被 staged，子面还没渲染，这条是预期而非失败。
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'ready',
+        status: 'noGlyphClusters',
+      ),
+    );
+    await pumpEventQueue();
 
-      expect(
-        controller.status,
-        GalAttachedTextStatus.suspended,
-        reason: '降级成 fallback 会把子面藏掉，registry 交接从此完不成',
-      );
-      expect(controller.statusReason, 'geometryProviderPending');
-      expect(controller.attachedProviderClaimed, isTrue);
+    expect(
+      controller.status,
+      GalAttachedTextStatus.suspended,
+      reason: '降级成 fallback 会把子面藏掉，registry 交接从此完不成',
+    );
+    expect(controller.statusReason, 'geometryProviderPending');
+    expect(controller.attachedProviderClaimed, isTrue);
 
-      // 交接完成后照常收敛。
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'visible',
-          status: 'visible',
-          surfaceVisible: true,
-          providerKind: 4,
-          providerId: 11,
-          providerStatus: 1,
-        ),
-      );
-      await pumpEventQueue();
-      expect(controller.status, GalAttachedTextStatus.activeAttached);
-    },
-  );
+    // 交接完成后照常收敛。
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'visible',
+        status: 'visible',
+        surfaceVisible: true,
+        providerKind: 4,
+        providerId: 11,
+        providerStatus: 1,
+      ),
+    );
+    await pumpEventQueue();
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+  });
 
-  test(
-    'BUG-2137 正文推送前的 noGlyphClusters 不得撤回共享认领',
-    () async {
-      preferences[key()] = jsonEncode(_profile().toJson());
-      port.configureResult = const GalAttachedCallResult(
-        status: 'geometryProviderPending',
-        providerKind: 2,
-        providerId: 3,
-        providerStatus: 2,
-      );
+  test('BUG-2137 正文推送前的 noGlyphClusters 不得撤回共享认领', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    port.configureResult = const GalAttachedCallResult(
+      status: 'geometryProviderPending',
+      providerKind: 2,
+      providerId: 3,
+      providerStatus: 2,
+    );
 
-      await sync();
-      expect(controller.attachedProviderClaimed, isTrue);
-      expect(port.texts, isNotEmpty);
+    await sync();
+    expect(controller.attachedProviderClaimed, isTrue);
+    expect(port.texts, isNotEmpty);
 
-      // 子面回一条 noGlyphClusters：本轮渲染不出内容，但 attached 通路没坏。
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'ready',
-          status: 'noGlyphClusters',
-        ),
-      );
-      await pumpEventQueue();
+    // 子面回一条 noGlyphClusters：本轮渲染不出内容，但 attached 通路没坏。
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'ready',
+        status: 'noGlyphClusters',
+      ),
+    );
+    await pumpEventQueue();
 
-      expect(
-        controller.attachedProviderClaimed,
-        isTrue,
-        reason: 'BUG-2137：撤回共享认领会让注入侧 registry 永远不给 kind=4/id=11，'
-            '与 BUG-2142 是同一个活锁',
-      );
-      // fail-closed 的部分保持不变：面藏起来、状态降级。
-      expect(controller.surfaceVisible, isFalse);
-      expect(controller.status, GalAttachedTextStatus.suspended);
+    expect(
+      controller.attachedProviderClaimed,
+      isTrue,
+      reason:
+          'BUG-2137：撤回共享认领会让注入侧 registry 永远不给 kind=4/id=11，'
+          '与 BUG-2142 是同一个活锁',
+    );
+    // fail-closed 的部分保持不变：面藏起来、状态降级。
+    expect(controller.surfaceVisible, isFalse);
+    expect(controller.status, GalAttachedTextStatus.suspended);
 
-      // 认领还在，注入侧一旦把 attached 判成 ready 就能正常收敛。
-      controller.handleSurfaceStateChanged(
-        GalAttachedSurfaceStateEvent(
-          target: controller.target!,
-          state: 'visible',
-          status: 'visible',
-          surfaceVisible: true,
-          providerKind: 4,
-          providerId: 11,
-          providerStatus: 1,
-        ),
-      );
-      await pumpEventQueue();
-      expect(controller.status, GalAttachedTextStatus.activeAttached);
-    },
-  );
+    // 认领还在，注入侧一旦把 attached 判成 ready 就能正常收敛。
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'visible',
+        status: 'visible',
+        surfaceVisible: true,
+        providerKind: 4,
+        providerId: 11,
+        providerStatus: 1,
+      ),
+    );
+    await pumpEventQueue();
+    expect(controller.status, GalAttachedTextStatus.activeAttached);
+  });
 
   test(
     'registry handoff pending stores text but cannot activate before kind 4/id 11',
@@ -525,7 +749,6 @@ void main() {
       expect(port.texts, hasLength(1));
     },
   );
-
 
   test(
     'successful configure cannot activate without attached registry ownership',
@@ -616,6 +839,205 @@ void main() {
     },
   );
 
+  test(
+    'pending and background calibration keep the editable session',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      port.calibrationResult = const GalAttachedCallResult(
+        status: 'shieldHandshakePending',
+        reason: 'input_shield_rehandshake_pending',
+      );
+      expect(
+        await controller.beginCalibration(acceptUnsafeLeftClick: true),
+        isTrue,
+      );
+      expect(controller.calibrationActive, isTrue);
+      expect(
+        controller.calibrationStatus,
+        GalAttachedCalibrationStatus.preparing,
+      );
+      expect(controller.status, GalAttachedTextStatus.suspended);
+      expect(controller.surfaceVisible, isFalse);
+      expect(controller.canCaptureCalibrationSample, isFalse);
+      expect(controller.canCalibrate, isFalse);
+
+      calibrationState('targetBackground');
+      expect(controller.calibrationStatus, GalAttachedCalibrationStatus.paused);
+      const GalLookupTextLayoutV1 layout = GalLookupTextLayoutV1(
+        lineHeight: 1.5,
+      );
+      expect(await controller.updateCalibrationStyle(layout), isTrue);
+      expect(controller.draftLayout, layout);
+      expect(
+        await controller.updateCalibration(
+          bodyRect: GalAttachedTextController.defaultBodyRect,
+          probes: _probes,
+        ),
+        isTrue,
+      );
+      expect(controller.attachedProviderClaimed, isTrue);
+
+      calibrationState('calibrating', visible: true);
+      expect(controller.calibrationStatus, GalAttachedCalibrationStatus.ready);
+      expect(controller.status, GalAttachedTextStatus.calibrating);
+      calibrationState('targetBackground');
+      await controller.cancelCalibration();
+      expect(
+        port.calls.where((String call) => call == 'calibrationCancel'),
+        hasLength(1),
+      );
+      expect(controller.calibrationActive, isFalse);
+      expect(controller.calibrationStatus, GalAttachedCalibrationStatus.idle);
+      expect(controller.draftBodyRect, isNull);
+    },
+  );
+
+  test(
+    'hidden calibrating token is not proof of a ready input surface',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      calibrationState('calibrating');
+      expect(
+        controller.calibrationStatus,
+        GalAttachedCalibrationStatus.preparing,
+      );
+      expect(controller.surfaceVisible, isFalse);
+      calibrationState('shieldFaulted', reason: 'input_shield_faulted');
+      expect(controller.calibrationStatus, GalAttachedCalibrationStatus.failed);
+      expect(controller.calibrationActive, isTrue);
+      expect(controller.attachedProviderClaimed, isTrue);
+      await controller.cancelCalibration();
+      expect(port.calls, contains('calibrationCancel'));
+    },
+  );
+
+  test(
+    'confirmed probes can commit after returning to the background panel',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      calibrationState('calibrating', visible: true, observed: true);
+      calibrationState('targetBackground', observed: true);
+      expect(await controller.commitCalibration(probes: _probes), isTrue);
+      expect(port.calls, contains('calibrationCommit:7'));
+    },
+  );
+
+  test(
+    'committed event before the method reply completes the same calibration',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      calibrationState('targetBackground', observed: true);
+      port.beforeCalibrationCommitReply = () =>
+          controller.handleCalibrationCommitted(
+            GalAttachedCalibrationEvent(
+              target: controller.target!,
+              bodyRect: GalAttachedTextController.defaultBodyRect,
+              referenceClient: _client,
+              riskAccepted: true,
+              calibrationProbeMask: 7,
+            ),
+          );
+      expect(await controller.commitCalibration(probes: _probes), isTrue);
+      expect(controller.calibrationActive, isFalse);
+      expect(controller.profile!.variants, hasLength(1));
+    },
+  );
+
+  test(
+    'cancelled or replaced session cannot masquerade as a successful commit',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      calibrationState('targetBackground', observed: true);
+      port.beforeCalibrationCommitReply = () => controller.cancelCalibration();
+      expect(await controller.commitCalibration(probes: _probes), isFalse);
+      expect(controller.profile!.variants, isEmpty);
+
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      calibrationState('targetBackground', observed: true);
+      port.beforeCalibrationCommitReply = () => sync(sessionEpoch: 9002);
+      expect(await controller.commitCalibration(probes: _probes), isFalse);
+    },
+  );
+
+  test('late draft reply cannot reopen a cancelled calibration', () async {
+    await sync();
+    await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+    await controller.beginCalibration(acceptUnsafeLeftClick: true);
+    port.calibrationUpdateCompleter = Completer<GalAttachedCallResult>();
+    final Future<bool> update = controller.updateCalibration(
+      bodyRect: GalAttachedTextController.defaultBodyRect,
+      probes: _probes,
+    );
+    await controller.cancelCalibration();
+    port.calibrationUpdateCompleter!.complete(
+      const GalAttachedCallResult(status: 'calibrating', surfaceVisible: true),
+    );
+    expect(await update, isFalse);
+    expect(controller.calibrationActive, isFalse);
+    expect(controller.draftBodyRect, isNull);
+  });
+
+  test(
+    'calibration logs scalar changes once with a per-session limit',
+    () async {
+      await sync();
+      await controller.setMode(GalLookupSurfaceMode.attachedOnly);
+      expect(calibrationLogs, isEmpty);
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      const GalAttachedShieldStatus shield = GalAttachedShieldStatus(
+        available: true,
+        requestSeq: 12,
+        appliedSeq: 11,
+        ownerKind: 4,
+        targetHwnd: 77,
+        transactionId: 4294967297,
+        activeButtons: 1,
+        allowRisk: true,
+        requiredMask: 127,
+        readyMask: 3,
+        observedMask: 1,
+        statusFlags: 2,
+      );
+      calibrationState(
+        'calibrating',
+        visible: true,
+        observed: true,
+        shield: shield,
+      );
+      final int count = calibrationLogs.length;
+      calibrationState(
+        'calibrating',
+        visible: true,
+        observed: true,
+        shield: shield,
+      );
+      expect(calibrationLogs, hasLength(count));
+      expect(calibrationLogs.last, contains('probeIndices=0,3,6'));
+      expect(calibrationLogs.last, contains('transaction=4294967297'));
+      expect(calibrationLogs.last, contains('request=12 applied=11 owner=4'));
+      for (int index = 0; index < 100; index++) {
+        calibrationState('shieldHandshakePending', reason: 'pending_$index');
+      }
+      expect(calibrationLogs, hasLength(64));
+      expect(
+        calibrationLogs.join(),
+        isNot(contains(controller.latestSourceText)),
+      );
+      await controller.cancelCalibration();
+      calibrationState('targetBackground');
+      expect(calibrationLogs, hasLength(64));
+    },
+  );
+
   test('incomplete or invalid probe positions cannot commit', () async {
     await sync();
     await controller.setMode(GalLookupSurfaceMode.attachedOnly);
@@ -682,7 +1104,6 @@ void main() {
       isFalse,
     );
   });
-
 
   test('one-percent miss needs a new calibration variant', () async {
     preferences[key()] = jsonEncode(_profile().toJson());
@@ -883,32 +1304,37 @@ void main() {
     GalLookupSurfaceMode.nativeOnly,
     GalLookupSurfaceMode.off,
   ]) {
-    test('BUG-2154 auto joins pending ${firstMode.name} detach before inspect', () async {
-      port.inspection = const GalAttachedCallResult(
-        status: 'ready',
-        exePath: _exePath,
-        exeSha256: _sha,
-        referenceClient: _client,
-        providerKind: 2,
-        providerId: 3,
-        providerStatus: 1,
-        shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
-      );
-      await sync();
-      port.calls.clear();
-      port.detachCompleter = Completer<GalAttachedCallResult>();
-      final Future<void> first = controller.setMode(firstMode);
-      final Future<void> latest = controller.setMode(GalLookupSurfaceMode.auto);
-      await pumpEventQueue();
-      expect(controller.status, GalAttachedTextStatus.suspended);
-      expect(port.calls, <String>['detach']);
-      port.detachCompleter!.complete(port.detachResult);
-      await Future.wait<void>(<Future<void>>[first, latest]);
-      expect(port.calls, <String>['detach', 'inspect']);
-      expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
-      expect(controller.status, GalAttachedTextStatus.activeNative);
-      expect(port.texts, isEmpty);
-    });
+    test(
+      'BUG-2154 auto joins pending ${firstMode.name} detach before inspect',
+      () async {
+        port.inspection = const GalAttachedCallResult(
+          status: 'ready',
+          exePath: _exePath,
+          exeSha256: _sha,
+          referenceClient: _client,
+          providerKind: 2,
+          providerId: 3,
+          providerStatus: 1,
+          shield: GalAttachedShieldStatus(available: true, statusFlags: 0x02),
+        );
+        await sync();
+        port.calls.clear();
+        port.detachCompleter = Completer<GalAttachedCallResult>();
+        final Future<void> first = controller.setMode(firstMode);
+        final Future<void> latest = controller.setMode(
+          GalLookupSurfaceMode.auto,
+        );
+        await pumpEventQueue();
+        expect(controller.status, GalAttachedTextStatus.suspended);
+        expect(port.calls, <String>['detach']);
+        port.detachCompleter!.complete(port.detachResult);
+        await Future.wait<void>(<Future<void>>[first, latest]);
+        expect(port.calls, <String>['detach', 'inspect']);
+        expect(controller.profile?.mode, GalLookupSurfaceMode.auto);
+        expect(controller.status, GalAttachedTextStatus.activeNative);
+        expect(port.texts, isEmpty);
+      },
+    );
   }
 
   test('mismatched native provider kind/id pair cannot win auto', () async {
@@ -932,11 +1358,6 @@ void main() {
     expect(port.calls, <String>['inspect']);
     expect(port.texts, isEmpty);
   });
-
-
-
-
-
 
   test('clear cancels an older attached activation before configure', () async {
     preferences[key()] = jsonEncode(_profile().toJson());
@@ -963,9 +1384,228 @@ void main() {
     );
   });
 
+  test(
+    'two-phase sync installs the selected slot before publishing text',
+    () async {
+      preferences[key()] = jsonEncode(
+        GalLookupSurfaceProfileV1(
+          exePath: _exePath,
+          exeSha256: _sha,
+          mode: GalLookupSurfaceMode.attachedOnly,
+          unsafeLeftClickAccepted: true,
+          variants: <GalLookupSurfaceVariantV1>[
+            _variant(slot: GalLookupCalibrationSlotV1.dialogue),
+            _variant(slot: GalLookupCalibrationSlotV1.narration),
+          ],
+        ).toJson(),
+      );
+      const String dialogue = '「会話」';
+      const String narration = '地の文です';
+      await sync(text: dialogue);
+      expect(port.texts.last.text, dialogue);
 
+      // Central sync inspects first, then admits/configures the chosen layout.
+      await sync(text: narration, inspectOnly: true);
+      expect(controller.latestSourceText, narration);
+      expect(port.texts.last.text, dialogue);
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
 
+      // A visibility event from the old native layout cannot claim that the
+      // new slot has already been installed.
+      void reportVisible() => controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'active',
+          status: 'visible',
+          surfaceVisible: true,
+          providerKind: 4,
+          providerId: 11,
+          providerStatus: 2,
+        ),
+      );
+      reportVisible();
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+      expect(controller.status, GalAttachedTextStatus.suspended);
 
+      final Completer<GalAttachedCallResult> configuring =
+          Completer<GalAttachedCallResult>();
+      port.configureCompleters.add(configuring);
+      final Future<void> secondPhase = sync(text: narration);
+      await pumpEventQueue();
+      expect(port.configuredSlots, <GalLookupCalibrationSlotV1?>[
+        GalLookupCalibrationSlotV1.dialogue,
+        GalLookupCalibrationSlotV1.narration,
+      ]);
+      expect(port.texts.last.text, dialogue);
+      reportVisible();
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+      configuring.complete(port.configureResult);
+      await secondPhase;
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.narration,
+      );
+      expect(port.texts.last.text, narration);
+
+      const String nextDialogue = '「次の会話」';
+      await sync(text: nextDialogue, inspectOnly: true);
+      expect(port.texts.last.text, narration);
+      await sync(text: nextDialogue);
+      expect(port.configuredSlots.last, GalLookupCalibrationSlotV1.dialogue);
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+      expect(port.texts.last.text, nextDialogue);
+    },
+  );
+
+  test(
+    'inspection racing Configure never publishes text under the old slot',
+    () async {
+      preferences[key()] = jsonEncode(
+        GalLookupSurfaceProfileV1(
+          exePath: _exePath,
+          exeSha256: _sha,
+          mode: GalLookupSurfaceMode.attachedOnly,
+          unsafeLeftClickAccepted: true,
+          variants: <GalLookupSurfaceVariantV1>[
+            _variant(slot: GalLookupCalibrationSlotV1.dialogue),
+            _variant(slot: GalLookupCalibrationSlotV1.narration),
+          ],
+        ).toJson(),
+      );
+      const String firstDialogue = '「会話」';
+      const String narration = '地の文です';
+      const String nextDialogue = '「次の会話」';
+      await sync(text: firstDialogue);
+      final Completer<GalAttachedCallResult> configuring =
+          Completer<GalAttachedCallResult>();
+      port.configureCompleters.add(configuring);
+      final Future<void> narrationPhase = sync(text: narration);
+      await pumpEventQueue();
+      expect(port.configuredSlots.last, GalLookupCalibrationSlotV1.narration);
+
+      await sync(text: nextDialogue, inspectOnly: true);
+      configuring.complete(port.configureResult);
+      await narrationPhase;
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.narration,
+      );
+      expect(port.texts.last.text, firstDialogue);
+
+      await sync(text: nextDialogue);
+      expect(port.configuredSlots.last, GalLookupCalibrationSlotV1.dialogue);
+      expect(port.texts.last.text, nextDialogue);
+    },
+  );
+
+  test(
+    'slot changes keep the latest activation and reject stale text hits',
+    () async {
+      final GalLookupSurfaceProfileV1 profile = GalLookupSurfaceProfileV1(
+        exePath: _exePath,
+        exeSha256: _sha,
+        mode: GalLookupSurfaceMode.attachedOnly,
+        unsafeLeftClickAccepted: true,
+        variants: <GalLookupSurfaceVariantV1>[
+          _variant(slot: GalLookupCalibrationSlotV1.dialogue),
+          _variant(slot: GalLookupCalibrationSlotV1.narration),
+        ],
+      );
+      preferences[key()] = jsonEncode(profile.toJson());
+
+      final Completer<GalAttachedCallResult> firstConfigure =
+          Completer<GalAttachedCallResult>();
+      port.configureCompleters.add(firstConfigure);
+      const String firstDialogue = '「最初の台詞」';
+      final Future<void> first = sync(text: firstDialogue);
+      await pumpEventQueue();
+      expect(port.configuredSlots, <GalLookupCalibrationSlotV1?>[
+        GalLookupCalibrationSlotV1.dialogue,
+      ]);
+
+      firstConfigure.complete(port.configureResult);
+      await first;
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+
+      final Completer<GalAttachedCallResult> narrationConfigure =
+          Completer<GalAttachedCallResult>();
+      final Completer<GalAttachedCallResult> finalDialogueConfigure =
+          Completer<GalAttachedCallResult>();
+      port.configureCompleters.addAll(<Completer<GalAttachedCallResult>>[
+        narrationConfigure,
+        finalDialogueConfigure,
+      ]);
+      const String narration = 'これは地の文です';
+      const String finalDialogue = '「戻った台詞」';
+      final Future<void> second = sync(text: narration);
+      await pumpEventQueue();
+      await sync(text: '更新された地の文です');
+      expect(
+        port.texts.map((({String text, int generation}) value) => value.text),
+        <String>[firstDialogue],
+        reason: '同类的新句必须等对应排版生效，不能先推入旧对话字格',
+      );
+      final Future<void> third = sync(text: finalDialogue);
+      await pumpEventQueue();
+
+      expect(port.configuredSlots, <GalLookupCalibrationSlotV1?>[
+        GalLookupCalibrationSlotV1.dialogue,
+        GalLookupCalibrationSlotV1.narration,
+        GalLookupCalibrationSlotV1.dialogue,
+      ]);
+
+      final GalAttachedSurfaceTarget target = controller.target!;
+      await controller.handleLookupText(
+        GalAttachedLookupHitV19(
+          target: target,
+          sourceText: firstDialogue,
+          textGeneration: controller.textGeneration,
+          charIndex: 0,
+          sourceLength: 1,
+        ),
+      );
+      expect(lookups, isEmpty, reason: '配置等待期间，旧正文不能绕过 latest source 校验触发查词');
+
+      // The narration reply arrives after the third operation has taken over.
+      // It must not replace the selected dialogue slot or push narration text.
+      narrationConfigure.complete(port.configureResult);
+      await second;
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+      expect(
+        port.texts.map((({String text, int generation}) value) => value.text),
+        isNot(contains(narration)),
+      );
+
+      finalDialogueConfigure.complete(port.configureResult);
+      await third;
+      expect(controller.status, GalAttachedTextStatus.activeAttached);
+      expect(
+        controller.activeVariant?.slot,
+        GalLookupCalibrationSlotV1.dialogue,
+      );
+      expect(port.texts.last.text, finalDialogue);
+      expect(controller.latestSourceText, finalDialogue);
+    },
+  );
 
   test('faulted shield cannot be bypassed by persisted risk', () async {
     preferences[key()] = jsonEncode(
@@ -1264,6 +1904,157 @@ void main() {
   });
 
   test(
+    'dictionary hook ownership does not block the screenshot fence',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'mouseHookBusy',
+          reason: 'low_level_mouse_arm_failed:singleton_owned_by_other_hwnd',
+        ),
+      );
+      final GalAttachedMiningCaptureLease? lease = await controller
+          .acquireMiningCaptureLease();
+      expect(lease, isNotNull);
+      expect(port.calls, contains('suspendForCapture:1:1'));
+      expect(await controller.acquireMiningCaptureLease(), isNull);
+      port.restoreResult = const GalAttachedCallResult(
+        status: 'mouseHookBusy',
+        reason: 'low_level_mouse_arm_failed:singleton_owned_by_other_hwnd',
+        surfaceVisible: false,
+      );
+      await controller.releaseMiningCaptureLease(lease!);
+      expect(controller.surfaceVisible, isFalse);
+      expect(port.calls, contains('restoreAfterCapture:1:1'));
+    },
+  );
+
+  test(
+    'other hook failures and a changed line cannot use the card fence',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'mouseHookBusy',
+          reason: 'low_level_mouse_arm_failed:worker_unavailable',
+        ),
+      );
+      expect(await controller.acquireMiningCaptureLease(), isNull);
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'mouseHookBusy',
+          reason: 'low_level_mouse_arm_failed:singleton_owned_by_other_hwnd',
+        ),
+      );
+      await sync(text: 'new occurrence while the input owner is busy');
+      expect(await controller.acquireMiningCaptureLease(), isNull);
+      expect(
+        port.calls.where(
+          (String call) => call.startsWith('suspendForCapture:'),
+        ),
+        isEmpty,
+      );
+    },
+  );
+
+  test('background sample capture leases configured hidden surface', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    await sync();
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'targetBackground',
+      ),
+    );
+    expect(controller.canCaptureCalibrationSample, isTrue);
+    expect(controller.calibrationCaptureNeedsAttachedLease, isTrue);
+    expect(
+      await controller.acquireMiningCaptureLease(),
+      isNull,
+      reason: 'ordinary mining keeps its existing active-only contract',
+    );
+    final GalAttachedMiningCaptureLease? lease = await controller
+        .acquireMiningCaptureLease(allowBackgroundCalibrationCapture: true);
+    expect(lease, isNotNull);
+    port.restoreResult = const GalAttachedCallResult(
+      status: 'targetBackground',
+      reason: 'targetBackground',
+      surfaceVisible: false,
+    );
+    await controller.releaseMiningCaptureLease(lease!);
+    expect(
+      controller.surfaceVisible,
+      isFalse,
+      reason: 'release never restores a background glyph window',
+    );
+  });
+
+  test('background fresh profile sample does not need a glyph lease', () async {
+    preferences[key()] = jsonEncode(
+      _profile()
+          .copyWith(variants: const <GalLookupSurfaceVariantV1>[])
+          .toJson(),
+    );
+    await sync();
+    expect(controller.status, GalAttachedTextStatus.needsCalibration);
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'targetBackground',
+      ),
+    );
+    expect(controller.canCaptureCalibrationSample, isTrue);
+    expect(controller.calibrationCaptureNeedsAttachedLease, isFalse);
+  });
+
+  test(
+    'sample capture rejects every other suspended reason and live draft',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      for (final String status in <String>[
+        'targetMinimized',
+        'hitSnapshotUnavailable',
+        'captureSuppressed',
+        'detached',
+        'geometryProviderPending',
+      ]) {
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.target!,
+            state: 'suspended',
+            status: status,
+          ),
+        );
+        expect(controller.canCaptureCalibrationSample, isFalse, reason: status);
+      }
+      await controller.beginCalibration(acceptUnsafeLeftClick: true);
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetBackground',
+        ),
+      );
+      expect(
+        controller.canCaptureCalibrationSample,
+        isFalse,
+        reason: 'losing focus during live probe calibration is not sample mode',
+      );
+    },
+  );
+
+  test(
     'capture token releases against current text but not a newer epoch',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());
@@ -1350,6 +2141,101 @@ void main() {
         beforeOldEpochRelease,
         reason: '旧 epoch/token 必须丢弃，不能触碰新 surface',
       );
+    },
+  );
+
+  test(
+    'background calibration stages a changed occurrence before acquiring lease',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetBackground',
+        ),
+      );
+      port.textSurfaceVisible = false;
+
+      await sync(text: '后台期间的新正文');
+
+      expect(port.texts.last.text, '后台期间的新正文');
+      expect(port.texts.last.generation, 2);
+      expect(controller.canCaptureCalibrationSample, isTrue);
+      final GalAttachedMiningCaptureLease? lease = await controller
+          .acquireMiningCaptureLease(allowBackgroundCalibrationCapture: true);
+      expect(lease, isNotNull);
+      expect(
+        port.calls,
+        contains('suspendForCapture:2:${lease!.captureGeneration}'),
+      );
+    },
+  );
+
+  test(
+    'target background state stages text retained after no-glyph suspension',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'noGlyphClusters',
+        ),
+      );
+
+      await sync(text: 'no-glyph 期间到达的三行长正文');
+      expect(port.texts, hasLength(1));
+
+      port.textSurfaceVisible = false;
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetBackground',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(port.texts.last.text, 'no-glyph 期间到达的三行长正文');
+      expect(port.texts.last.generation, 2);
+      final GalAttachedMiningCaptureLease? lease = await controller
+          .acquireMiningCaptureLease(allowBackgroundCalibrationCapture: true);
+      expect(lease, isNotNull);
+      expect(
+        port.calls,
+        contains('suspendForCapture:2:${lease!.captureGeneration}'),
+      );
+    },
+  );
+
+  test(
+    'non-background suspension does not stage retained calibration text',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'ready',
+          status: 'noGlyphClusters',
+        ),
+      );
+
+      await sync(text: '最小化期间到达的正文');
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'targetMinimized',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(port.texts, hasLength(1));
+      expect(controller.canCaptureCalibrationSample, isFalse);
     },
   );
 

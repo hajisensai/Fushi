@@ -30,6 +30,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "attached_magpie_surface_geometry.h"
+
 namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
@@ -70,6 +72,10 @@ constexpr UINT kLowLevelMouseAttachedGlyphCancelMessage = WM_APP + 0x56;
 // matching generation so another down cannot overwrite a best-effort neutral
 // tail before the injected side observes it.
 constexpr UINT kLowLevelMouseAttachedGlyphAbortMessage = WM_APP + 0x57;
+// A popup that temporarily owned the singleton hook has completed its close
+// path. The attached surface uses this only to re-run its ordinary admission
+// path after the full down/up and sampled-input tail are neutral.
+constexpr UINT kLowLevelMouseAttachedGlyphRearmMessage = WM_APP + 0x58;
 
 // 打包/解包屏幕坐标（x64 下 WPARAM 为 64 位；坐标可为负，故按 uint32 位模式搬运）。
 WPARAM PackMouseHookPoint(int x, int y);
@@ -135,7 +141,15 @@ bool LowLevelAttachedGlyphUsesRiskFallback(HWND target);
 // and copying happen here on the window thread, never in WH_MOUSE_LL.
 uint32_t UpdateLowLevelAttachedGlyphHitRegions(
     HWND surface, HWND game_owner, const RECT* screen_rects,
-    size_t screen_rect_count, bool allow_risk);
+    size_t screen_rect_count, bool allow_risk,
+    const attached_magpie_surface_geometry::Mapping* cursor_mapping,
+    HWND cursor_presentation_hwnd);
+
+// True while the exact immutable snapshot for |surface| and |token| is still
+// published.  A callback can revoke a Magpie snapshot immediately after its
+// bound presentation HWND leaves cursor-capture mode; the surface thread uses
+// this bit to force a fresh publication on its next health sync.
+bool LowLevelAttachedGlyphHitSnapshotIsCurrent(HWND surface, uint32_t token);
 
 // Revoke one surface's immutable snapshot and fail-open any owned transaction.
 // Safe to call repeatedly during sentence replacement, hide, detach or target
@@ -143,6 +157,16 @@ uint32_t UpdateLowLevelAttachedGlyphHitRegions(
 // non-blocking callback records its paired up and the acknowledgement worker
 // publishes/drains the v19 release asynchronously.
 void ClearLowLevelAttachedGlyphHitRegions(HWND surface);
+
+// The passive re-arm candidate intentionally outlives a transient snapshot
+// clear while a popup owns the singleton. The surface retires it at WM_NCDESTROY
+// so a recycled HWND can never receive a late notification.
+void RetireLowLevelAttachedGlyphRearmCandidate(HWND surface);
+
+// Finish one queued re-arm attempt.  A failed admission must not leave the
+// global hook suppressing game clicks forever; the next health tick may retry
+// from a clean pending state.
+void CompleteLowLevelAttachedGlyphRearm(HWND surface);
 
 inline uint32_t LowLevelAttachedGlyphSnapshotToken(
     uint64_t transaction_id) {

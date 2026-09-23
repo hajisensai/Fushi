@@ -3,7 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_calibration_draft.dart';
+import 'package:fushi/src/lookup/gal_lookup_calibration_projection.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -38,14 +42,15 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
         final GalAttachedUnsafeRiskAcceptanceRequest? riskRequest =
             controller.unsafeRiskAcceptanceRequest;
         final bool riskPending = controller.needsUnsafeRiskAcceptance;
-        // 手动校准只在用户显式选了「仅贴附层」之后才露面：自动模式下工具条上
-        // 不再出现校准按钮，也不再挂「未选正文线程」这类只为校准服务的提示。
+        // 自动模式也保留校准入口。模式决定运行时如何使用结果，不能阻断
+        // 用户为当前游戏准备或修正校准样本。
         final bool calibrationExposed =
+            mode == GalLookupSurfaceMode.auto ||
             mode == GalLookupSurfaceMode.attachedOnly;
         final bool canOpenCalibration =
             hasSelectedBodyThread && controller.canCalibrate;
         final bool showThreadRequiredPill =
-            calibrationExposed && !hasSelectedBodyThread;
+            mode == GalLookupSurfaceMode.attachedOnly && !hasSelectedBodyThread;
 
         return Material(
           key: const ValueKey<String>('game-attached-lookup-workbench'),
@@ -93,23 +98,6 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           _WorkbenchPill(
-                            label: t.game_lookup_attached_native_status,
-                            value: controller.nativeStatus ?? '—',
-                          ),
-                          const SizedBox(width: 6),
-                          _WorkbenchPill(
-                            label: t.game_lookup_attached_provider,
-                            value: galAttachedProviderLabel(
-                              providerKind: controller.providerKind,
-                              providerId: controller.providerId,
-                              providerStatus: controller.providerStatus,
-                              fallbackStatus: controller.status,
-                              unknownLabel:
-                                  t.game_lookup_attached_provider_unknown,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          _WorkbenchPill(
                             label: t.game_lookup_attached_profile,
                             value: profile == null || profile.variants.isEmpty
                                 ? t.game_lookup_attached_profile_missing
@@ -117,27 +105,28 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                       '(${profile.variants.length})',
                           ),
                           const SizedBox(width: 6),
-                          _WorkbenchPill(
-                            label: t.game_lookup_attached_shield,
-                            value: _shieldLabel(
-                              controller.shieldStatus.conclusion,
+                          Tooltip(
+                            message: <String>[
+                              '${t.game_lookup_attached_native_status}: '
+                                  '${controller.nativeStatus ?? '—'}',
+                              '${t.game_lookup_attached_provider}: '
+                                  '${galAttachedProviderLabel(providerKind: controller.providerKind, providerId: controller.providerId, providerStatus: controller.providerStatus, fallbackStatus: controller.status, unknownLabel: t.game_lookup_attached_provider_unknown)}',
+                              '${t.game_lookup_attached_shield}: '
+                                  '${_shieldLabel(controller.shieldStatus.conclusion)}',
+                              '${t.game_lookup_attached_risk}: '
+                                  '${riskModeActive
+                                      ? t.game_lookup_attached_risk_active
+                                      : riskPending
+                                      ? t.game_lookup_attached_risk_pending
+                                      : t.game_lookup_attached_risk_safe}',
+                            ].join('\n'),
+                            child: const Padding(
+                              key: ValueKey<String>(
+                                'game-attached-lookup-details',
+                              ),
+                              padding: EdgeInsets.all(6),
+                              child: Icon(Icons.info_outline, size: 18),
                             ),
-                            warning:
-                                controller.shieldStatus.conclusion !=
-                                GalAttachedShieldConclusion.verified,
-                          ),
-                          const SizedBox(width: 6),
-                          _WorkbenchPill(
-                            key: const ValueKey<String>(
-                              'game-attached-lookup-risk-status',
-                            ),
-                            label: t.game_lookup_attached_risk,
-                            value: riskModeActive
-                                ? t.game_lookup_attached_risk_active
-                                : riskPending
-                                ? t.game_lookup_attached_risk_pending
-                                : t.game_lookup_attached_risk_safe,
-                            warning: riskModeActive || riskPending,
                           ),
                           if (showThreadRequiredPill) ...<Widget>[
                             const SizedBox(width: 6),
@@ -152,24 +141,24 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (calibrationExposed)
+                if (calibrationExposed) ...<Widget>[
                   IconButton(
                     key: const ValueKey<String>(
-                      'game-attached-lookup-calibrate',
+                      'game-attached-lookup-dialogue-samples',
                     ),
-                    padding: EdgeInsets.zero,
-                    constraints: BoxConstraints.tightFor(
-                      width: tokens.density.compactControlHeight,
-                      height: tokens.density.compactControlHeight,
-                    ),
-                    tooltip: canOpenCalibration
-                        ? t.game_lookup_attached_calibrate
-                        : t.game_lookup_attached_thread_required,
-                    onPressed: canOpenCalibration
-                        ? () => _openCalibration(context)
+                    tooltip: t.game_lookup_samples_dialogue,
+                    onPressed:
+                        hasSelectedBodyThread &&
+                            controller.executableSha256 != null &&
+                            controller.currentClient != null
+                        ? () => _openSamples(
+                            context,
+                            slot: GalLookupCalibrationSlotV1.dialogue,
+                          )
                         : null,
-                    icon: const Icon(Icons.crop_free_outlined, size: 20),
+                    icon: const Icon(Icons.format_quote_outlined, size: 20),
                   ),
+                ],
                 PopupMenuButton<String>(
                   key: const ValueKey<String>('game-attached-lookup-mode'),
                   tooltip: t.game_lookup_attached_mode,
@@ -183,6 +172,8 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                                 value.wireName == action.substring(5),
                           );
                       unawaited(controller.setMode(selected));
+                    } else if (action == 'calibrate') {
+                      unawaited(_openCalibration(context));
                     } else if (action == 'clear') {
                       unawaited(_clearProfile(context));
                     }
@@ -200,6 +191,15 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             checked: value == mode,
                             enabled: controller.target != null,
                             child: Text(_modeLabel(value)),
+                          ),
+                        if (calibrationExposed)
+                          PopupMenuItem<String>(
+                            key: const ValueKey<String>(
+                              'game-attached-lookup-calibrate',
+                            ),
+                            value: 'calibrate',
+                            enabled: canOpenCalibration,
+                            child: Text(t.game_lookup_attached_calibrate),
                           ),
                         if (profile != null)
                           PopupMenuItem<String>(
@@ -256,47 +256,182 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
     await controller.acceptUnsafeRiskAndRetry(request);
   }
 
-  Future<void> _openCalibration(BuildContext context) async {
+  Future<void> _openSamples(
+    BuildContext context, {
+    required GalLookupCalibrationSlotV1 slot,
+  }) async {
+    final String? hash = controller.executableSha256;
+    final GalLookupReferenceClientV1? client = controller.currentClient;
+    final GalAttachedSurfaceTarget? target = controller.target;
+    if (hash == null || client == null || target == null) return;
+    final BuildContext hostContext = context;
+    GalLookupCalibrationSlotV1 activeSlot = slot;
+    GalLookupCalibrationDraft? draft;
+    while (true) {
+      if (!context.mounted ||
+          controller.executableSha256 != hash ||
+          controller.target?.matches(target) != true) {
+        return;
+      }
+      final GalLookupSurfaceVariantV1? seed = controller.profile
+          ?.nearestVariantForClient(client, slot: activeSlot);
+      GalLookupCalibrationSlotV1? requestedSlot;
+      draft = await showDialog<GalLookupCalibrationDraft>(
+        context: hostContext,
+        barrierDismissible: false,
+        builder: (BuildContext dialogContext) => GalLookupSamplesDialog(
+          exeSha256: hash,
+          initialRect:
+              seed?.bodyRect ?? GalAttachedTextController.defaultBodyRect,
+          initialLayout: seed?.layout ?? const GalLookupTextLayoutV1(),
+          slot: activeSlot,
+          onOpenNarrationCalibration:
+              activeSlot == GalLookupCalibrationSlotV1.dialogue
+              ? () async {
+                  requestedSlot = GalLookupCalibrationSlotV1.narration;
+                  Navigator.of(dialogContext).pop();
+                }
+              : null,
+          onOpenDialogueCalibration:
+              activeSlot == GalLookupCalibrationSlotV1.narration
+              ? () async {
+                  requestedSlot = GalLookupCalibrationSlotV1.dialogue;
+                  Navigator.of(dialogContext).pop();
+                }
+              : null,
+          capture:
+              GalHookTextOverlayController.instance.captureCalibrationSample,
+        ),
+      );
+      if (!context.mounted ||
+          controller.executableSha256 != hash ||
+          controller.target?.matches(target) != true) {
+        return;
+      }
+      if (draft != null) break;
+      if (requestedSlot == null) return;
+      final GalLookupCalibrationSlotV1? nextSlot = requestedSlot;
+      if (nextSlot == null) return;
+      activeSlot = nextSlot;
+    }
+    if (draft.layout.cellGrid == null) {
+      await _openCalibration(context, draft: draft, slot: activeSlot);
+      return;
+    }
+    final GalLookupSurfaceProfileV1? profile = controller.profile;
+    if (!(profile?.unsafeLeftClickAccepted ?? false) &&
+        !await _confirmRisk(context)) {
+      return;
+    }
+    if (!context.mounted ||
+        controller.executableSha256 != hash ||
+        controller.target?.matches(target) != true) {
+      return;
+    }
+    final GalLookupReferenceClientV1? measuredClient =
+        draft.layoutReferenceClient;
+    if (!draft.validFor(hash) ||
+        draft.samples.isEmpty ||
+        measuredClient == null) {
+      _showFailure(context, t.game_lookup_attached_calibration_failed);
+      return;
+    }
+    final GalLookupSurfaceVariantV1? variant = projectGalCalibrationToSource(
+      client: measuredClient,
+      rect: draft.rect,
+      layout: draft.layout,
+      slot: activeSlot,
+      metadata:
+          draft.layoutCaptureMetadata ??
+          draft.samples.first.capture.captureMetadata,
+    );
+    if (variant == null) {
+      _showFailure(context, t.game_lookup_attached_calibration_failed);
+      return;
+    }
+    final bool applied = await controller.applyMeasuredCalibration(
+      expectedTarget: target,
+      expectedExeSha256: hash,
+      variant: variant,
+    );
+    if (!applied && context.mounted) {
+      _showFailure(context, t.game_lookup_attached_calibration_failed);
+    }
+  }
+
+  Future<void> _openCalibration(
+    BuildContext context, {
+    GalLookupCalibrationDraft? draft,
+    GalLookupCalibrationSlotV1? slot,
+  }) async {
     if (!hasSelectedBodyThread || !controller.canCalibrate) return;
     final GalLookupSurfaceProfileV1? profile = controller.profile;
     final bool alreadyAccepted = profile?.unsafeLeftClickAccepted ?? false;
     if (!alreadyAccepted && !await _confirmRisk(context)) return;
     if (!context.mounted) return;
 
+    final String previewText = controller.latestSourceText.isNotEmpty
+        ? controller.latestSourceText
+        : bodyPreview;
     final GalAttachedProbePlan? probePlan = buildGalAttachedProbePlan(
-      controller.latestSourceText.isNotEmpty
-          ? controller.latestSourceText
-          : bodyPreview,
+      previewText,
     );
     if (probePlan == null) {
       _showFailure(context, t.game_lookup_attached_calibration_short_text);
       return;
     }
+    final GalLookupSurfaceVariantV1? initial =
+        draft?.layoutReferenceClient == null
+        ? null
+        : projectGalCalibrationToSource(
+            client: draft!.layoutReferenceClient!,
+            rect: draft.rect,
+            layout: draft.layout,
+            metadata:
+                draft.layoutCaptureMetadata ??
+                (draft.samples.isEmpty
+                    ? null
+                    : draft.samples.first.capture.captureMetadata),
+          );
+    if (draft != null && initial == null) {
+      _showFailure(context, t.game_lookup_attached_calibration_failed);
+      return;
+    }
     final bool started = await controller.beginCalibration(
       acceptUnsafeLeftClick: true,
+      slot: slot ?? draft?.slot,
+      initialBodyRect: initial?.bodyRect,
+      initialLayout: initial?.layout,
     );
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      if (started) await controller.cancelCalibration();
+      return;
+    }
     if (!started || controller.draftBodyRect == null) {
       _showFailure(context, t.game_lookup_attached_calibration_failed);
       return;
     }
 
-    final bool? committed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) => GalAttachedCalibrationDialog(
-        controller: controller,
-        previewText: controller.latestSourceText,
-        probePlan: probePlan,
-        initialRect:
-            controller.draftBodyRect ??
-            GalAttachedTextController.defaultBodyRect,
-        initialLayout: controller.draftLayout ?? const GalLookupTextLayoutV1(),
-      ),
-    );
-    if (committed != true &&
-        controller.status == GalAttachedTextStatus.calibrating) {
-      await controller.cancelCalibration();
+    bool? committed;
+    try {
+      committed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) => GalAttachedCalibrationDialog(
+          controller: controller,
+          previewText: previewText,
+          probePlan: probePlan,
+          initialRect:
+              controller.draftBodyRect ??
+              GalAttachedTextController.defaultBodyRect,
+          initialLayout:
+              controller.draftLayout ?? const GalLookupTextLayoutV1(),
+        ),
+      );
+    } finally {
+      if (committed != true && controller.calibrationActive) {
+        await controller.cancelCalibration();
+      }
     }
   }
 
@@ -356,7 +491,6 @@ class _WorkbenchPill extends StatelessWidget {
     required this.label,
     required this.value,
     this.warning = false,
-    super.key,
   });
 
   final String label;
@@ -510,6 +644,7 @@ class _GalAttachedCalibrationDialogState
   late GalLookupNormalizedRectV1 _rect;
   late GalLookupTextLayoutV1 _layout;
   late final TextEditingController _fontController;
+  late final int _previewTextGeneration;
   bool _startConfirmed = false;
   bool _middleConfirmed = false;
   bool _endConfirmed = false;
@@ -523,6 +658,7 @@ class _GalAttachedCalibrationDialogState
     _rect = widget.initialRect;
     _layout = widget.initialLayout;
     _fontController = TextEditingController(text: _layout.fontFamily);
+    _previewTextGeneration = widget.controller.textGeneration;
     widget.controller.addListener(_adoptNativeDraft);
   }
 
@@ -562,15 +698,25 @@ class _GalAttachedCalibrationDialogState
     endConfirmed: _endConfirmed && _endObserved,
   );
 
+  bool get _previewCurrent =>
+      widget.controller.latestSourceText == widget.previewText &&
+      widget.controller.textGeneration == _previewTextGeneration;
+
   bool get _startObserved =>
+      _previewCurrent &&
       widget.controller.probeStartObservedIndex == widget.probePlan.startIndex;
   bool get _middleObserved =>
+      _previewCurrent &&
       widget.controller.probeMiddleObservedIndex ==
-      widget.probePlan.middleIndex;
+          widget.probePlan.middleIndex;
   bool get _endObserved =>
+      _previewCurrent &&
       widget.controller.probeEndObservedIndex == widget.probePlan.endIndex;
 
   bool get _allConfirmed =>
+      widget.controller.calibrationActive &&
+      widget.controller.calibrationStatus !=
+          GalAttachedCalibrationStatus.failed &&
       _startConfirmed &&
       _middleConfirmed &&
       _endConfirmed &&
@@ -583,10 +729,11 @@ class _GalAttachedCalibrationDialogState
     final GalLookupTextLayoutV1 layout = _layout;
     final GalAttachedCalibrationProbes probes = _probes;
     _draftQueue = _draftQueue.then((_) async {
-      if (!mounted) return;
+      if (!mounted || !_previewCurrent) return;
       final bool styleOk = await widget.controller.updateCalibrationStyle(
         layout,
       );
+      if (!mounted || !_previewCurrent) return;
       final bool rectOk = await widget.controller.updateCalibration(
         bodyRect: rect,
         probes: probes,
@@ -630,6 +777,10 @@ class _GalAttachedCalibrationDialogState
     textAlign: textAlign ?? _layout.textAlign,
     verticalAlign: verticalAlign ?? _layout.verticalAlign,
     paddingPerClientHeight: _layout.paddingPerClientHeight,
+    cellGrid: _layout.cellGrid,
+    quotedTextOnly: _layout.quotedTextOnly,
+    punctuationVisualBounds: _layout.punctuationVisualBounds,
+    characterAdvances: _layout.characterAdvances,
   );
 
   void _setStartConfirmed(bool? value) {
@@ -655,6 +806,11 @@ class _GalAttachedCalibrationDialogState
     });
     _queueDraftPush();
     await _draftQueue;
+    if (!mounted) return;
+    if (!_allConfirmed) {
+      setState(() => _committing = false);
+      return;
+    }
     final bool committed = await widget.controller.commitCalibration(
       probes: _probes,
     );
@@ -680,6 +836,24 @@ class _GalAttachedCalibrationDialogState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              Semantics(
+                liveRegion: true,
+                child: Text(
+                  _calibrationStatusText(),
+                  key: const ValueKey<String>(
+                    'game-attached-calibration-status',
+                  ),
+                  style: TextStyle(
+                    color:
+                        !_previewCurrent ||
+                            widget.controller.calibrationStatus ==
+                                GalAttachedCalibrationStatus.failed
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Text(
                 t.game_lookup_attached_preview,
                 style: Theme.of(context).textTheme.labelLarge,
@@ -690,183 +864,195 @@ class _GalAttachedCalibrationDialogState
                 child: SelectableText(widget.previewText),
               ),
               const SizedBox(height: 16),
-              Text(
-                t.game_lookup_attached_body_rect,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_left,
-                value: _rect.left,
-                min: 0,
-                max: 1 - _rect.width,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: value,
-                    top: _rect.top,
-                    width: _rect.width,
-                    height: _rect.height,
-                  ),
+              if (_layout.cellGrid != null) ...[
+                Text(t.game_lookup_samples_auto_grid),
+                Text(t.game_lookup_samples_auto_success),
+              ] else ...[
+                Text(
+                  t.game_lookup_attached_body_rect,
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_top,
-                value: _rect.top,
-                min: 0,
-                max: 1 - _rect.height,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: value,
-                    width: _rect.width,
-                    height: _rect.height,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_width,
-                value: _rect.width,
-                min: 0.02,
-                max: 1 - _rect.left,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: _rect.top,
-                    width: value,
-                    height: _rect.height,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_height,
-                value: _rect.height,
-                min: 0.02,
-                max: 1 - _rect.top,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: _rect.top,
-                    width: _rect.width,
-                    height: value,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              const SizedBox(height: 8),
-              TextFormField(
-                key: const ValueKey<String>(
-                  'game-attached-calibration-font-family',
-                ),
-                controller: _fontController,
-                decoration: InputDecoration(
-                  labelText: t.game_lookup_attached_font_family,
-                  border: const OutlineInputBorder(),
-                ),
-                onFieldSubmitted: (String value) {
-                  _setLayout(_copyLayout(fontFamily: value.trim()));
-                  _queueDraftPush();
-                },
-              ),
-              const SizedBox(height: 8),
-              _RatioSlider(
-                label: t.game_lookup_attached_font_size,
-                value: _layout.fontSizePerClientHeight,
-                min: 0.01,
-                max: 0.12,
-                fractionDigits: 3,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(fontSizePerClientHeight: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_letter_spacing,
-                value: _layout.letterSpacingPerClientHeight.clamp(-0.02, 0.05),
-                min: -0.02,
-                max: 0.05,
-                fractionDigits: 3,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(letterSpacing: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_line_height,
-                value: _layout.lineHeight.clamp(0.5, 2.5),
-                min: 0.5,
-                max: 2.5,
-                fractionDigits: 2,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(lineHeight: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 12,
-                runSpacing: 8,
-                children: <Widget>[
-                  SizedBox(
-                    width: 250,
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _layout.textAlign,
-                      decoration: InputDecoration(
-                        labelText: t.game_lookup_attached_text_align,
-                        border: const OutlineInputBorder(),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
-                          value: 'left',
-                          child: Text(t.game_lookup_attached_align_left),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'center',
-                          child: Text(t.game_lookup_attached_align_center),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'right',
-                          child: Text(t.game_lookup_attached_align_right),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        _setLayout(_copyLayout(textAlign: value));
-                        _queueDraftPush();
-                      },
+                Text(t.game_lookup_attached_calibration_region_help),
+                _RatioSlider(
+                  label: t.game_lookup_attached_left,
+                  value: _rect.left,
+                  min: 0,
+                  max: 1 - _rect.width,
+                  onChanged: (double value) => _setRect(
+                    GalLookupNormalizedRectV1(
+                      left: value,
+                      top: _rect.top,
+                      width: _rect.width,
+                      height: _rect.height,
                     ),
                   ),
-                  SizedBox(
-                    width: 250,
-                    child: DropdownButtonFormField<String>(
-                      initialValue: _layout.verticalAlign,
-                      decoration: InputDecoration(
-                        labelText: t.game_lookup_attached_vertical_align,
-                        border: const OutlineInputBorder(),
-                      ),
-                      items: <DropdownMenuItem<String>>[
-                        DropdownMenuItem<String>(
-                          value: 'top',
-                          child: Text(t.game_lookup_attached_align_top),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'center',
-                          child: Text(t.game_lookup_attached_align_center),
-                        ),
-                        DropdownMenuItem<String>(
-                          value: 'bottom',
-                          child: Text(t.game_lookup_attached_align_bottom),
-                        ),
-                      ],
-                      onChanged: (String? value) {
-                        if (value == null) return;
-                        _setLayout(_copyLayout(verticalAlign: value));
-                        _queueDraftPush();
-                      },
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                _RatioSlider(
+                  label: t.game_lookup_attached_top,
+                  value: _rect.top,
+                  min: 0,
+                  max: 1 - _rect.height,
+                  onChanged: (double value) => _setRect(
+                    GalLookupNormalizedRectV1(
+                      left: _rect.left,
+                      top: value,
+                      width: _rect.width,
+                      height: _rect.height,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(t.game_lookup_attached_probes_hint),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                _RatioSlider(
+                  label: t.game_lookup_attached_width,
+                  value: _rect.width,
+                  min: 0.02,
+                  max: 1 - _rect.left,
+                  onChanged: (double value) => _setRect(
+                    GalLookupNormalizedRectV1(
+                      left: _rect.left,
+                      top: _rect.top,
+                      width: value,
+                      height: _rect.height,
+                    ),
+                  ),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                _RatioSlider(
+                  label: t.game_lookup_attached_height,
+                  value: _rect.height,
+                  min: 0.02,
+                  max: 1 - _rect.top,
+                  onChanged: (double value) => _setRect(
+                    GalLookupNormalizedRectV1(
+                      left: _rect.left,
+                      top: _rect.top,
+                      width: _rect.width,
+                      height: value,
+                    ),
+                  ),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  key: const ValueKey<String>(
+                    'game-attached-calibration-font-family',
+                  ),
+                  controller: _fontController,
+                  decoration: InputDecoration(
+                    labelText: t.game_lookup_attached_font_family,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onFieldSubmitted: (String value) {
+                    _setLayout(_copyLayout(fontFamily: value.trim()));
+                    _queueDraftPush();
+                  },
+                ),
+                const SizedBox(height: 8),
+                _RatioSlider(
+                  label: t.game_lookup_attached_font_size,
+                  value: _layout.fontSizePerClientHeight,
+                  min: 0.01,
+                  max: 0.12,
+                  fractionDigits: 3,
+                  onChanged: (double value) =>
+                      _setLayout(_copyLayout(fontSizePerClientHeight: value)),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                _RatioSlider(
+                  label: t.game_lookup_attached_letter_spacing,
+                  value: _layout.letterSpacingPerClientHeight.clamp(
+                    -0.02,
+                    0.05,
+                  ),
+                  min: -0.02,
+                  max: 0.05,
+                  fractionDigits: 3,
+                  onChanged: (double value) =>
+                      _setLayout(_copyLayout(letterSpacing: value)),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                _RatioSlider(
+                  label: t.game_lookup_attached_line_height,
+                  value: _layout.lineHeight.clamp(0.5, 2.5),
+                  min: 0.5,
+                  max: 2.5,
+                  fractionDigits: 2,
+                  onChanged: (double value) =>
+                      _setLayout(_copyLayout(lineHeight: value)),
+                  onChangeEnd: (_) => _queueDraftPush(),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    SizedBox(
+                      width: 250,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _layout.textAlign,
+                        decoration: InputDecoration(
+                          labelText: t.game_lookup_attached_text_align,
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: <DropdownMenuItem<String>>[
+                          DropdownMenuItem<String>(
+                            value: 'left',
+                            child: Text(t.game_lookup_attached_align_left),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'center',
+                            child: Text(t.game_lookup_attached_align_center),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'right',
+                            child: Text(t.game_lookup_attached_align_right),
+                          ),
+                        ],
+                        onChanged: (String? value) {
+                          if (value == null) return;
+                          _setLayout(_copyLayout(textAlign: value));
+                          _queueDraftPush();
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 250,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _layout.verticalAlign,
+                        decoration: InputDecoration(
+                          labelText: t.game_lookup_attached_vertical_align,
+                          border: const OutlineInputBorder(),
+                        ),
+                        items: <DropdownMenuItem<String>>[
+                          DropdownMenuItem<String>(
+                            value: 'top',
+                            child: Text(t.game_lookup_attached_align_top),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'center',
+                            child: Text(t.game_lookup_attached_align_center),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'bottom',
+                            child: Text(t.game_lookup_attached_align_bottom),
+                          ),
+                        ],
+                        onChanged: (String? value) {
+                          if (value == null) return;
+                          _setLayout(_copyLayout(verticalAlign: value));
+                          _queueDraftPush();
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (_previewCurrent &&
+                  widget.controller.calibrationStatus ==
+                      GalAttachedCalibrationStatus.ready)
+                Text(t.game_lookup_attached_probes_hint),
               FushiListItem(
                 key: const ValueKey<String>(
                   'game-attached-calibration-probe-start',
@@ -935,6 +1121,7 @@ class _GalAttachedCalibrationDialogState
       ),
       actions: <Widget>[
         TextButton(
+          key: const ValueKey<String>('game-attached-calibration-cancel'),
           onPressed: _committing
               ? null
               : () => Navigator.of(context).pop(false),
@@ -952,6 +1139,24 @@ class _GalAttachedCalibrationDialogState
         ),
       ],
     );
+  }
+
+  String _calibrationStatusText() {
+    if (!_previewCurrent) {
+      return t.game_lookup_attached_calibration_text_changed;
+    }
+    return switch (widget.controller.calibrationStatus) {
+      GalAttachedCalibrationStatus.idle =>
+        t.game_lookup_attached_calibration_ended,
+      GalAttachedCalibrationStatus.preparing =>
+        t.game_lookup_attached_calibration_preparing,
+      GalAttachedCalibrationStatus.ready =>
+        t.game_lookup_attached_calibration_ready,
+      GalAttachedCalibrationStatus.paused =>
+        t.game_lookup_attached_calibration_paused,
+      GalAttachedCalibrationStatus.failed =>
+        t.game_lookup_attached_calibration_unavailable,
+    };
   }
 }
 

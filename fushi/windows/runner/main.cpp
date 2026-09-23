@@ -11,6 +11,7 @@
 #include "hang_watchdog.h"
 #include "single_instance_mutex.h"
 #include "utils.h"
+#include "window_capture.h"
 
 namespace {
 
@@ -149,6 +150,16 @@ void EnsureWritableWebView2UserDataFolder() {
 
 int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
                       _In_ wchar_t *command_line, _In_ int show_command) {
+  // PrintWindow can synchronously enter an unresponsive target window. Keep
+  // that call in a killable helper process before any Flutter, WebView2, or
+  // single-instance initialization so a timeout cannot strand the app's
+  // runner thread or its global capture gate.
+  const int print_window_helper_exit =
+      ::fushi::RunPrintWindowCaptureHelperIfRequested();
+  if (print_window_helper_exit >= 0) {
+    return print_window_helper_exit;
+  }
+
   // Inno Setup 静默更新靠这个命名互斥量检测并关闭运行中的实例（见 hibiki.iss AppMutex）。
   // TODO-904 / BUG-437: 真单实例守卫。第二个 fushi.exe 与首实例共享同一 WebView2
   // 默认 userDataFolder（基于 exe 名），而 WebView2 契约不允许多进程并发同一

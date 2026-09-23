@@ -9,6 +9,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
+import 'package:fushi/src/lookup/gal_lookup_calibration_capture.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
@@ -21,6 +22,7 @@ import 'package:fushi/src/mining/galgame_window_gif.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/magpie_upscaling.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/app_font_loader.dart';
@@ -49,6 +51,7 @@ typedef GalHookHoverAutoLookupReader = bool Function();
 class GalHookTextOverlayController extends ChangeNotifier {
   static const Duration _geometryAdmissionTimeout = Duration(seconds: 1);
   static const Duration _attachedSyncTimeout = Duration(seconds: 2);
+  static final RegExp _captureReasonPattern = RegExp(r'^[a-z0-9_]{1,64}$');
 
   GalHookTextOverlayController._({
     GalHookSessionController? session,
@@ -152,9 +155,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
   bool _suppressedForSession = false;
   bool _syncing = false;
   bool _syncAgain = false;
+  bool _calibrationCaptureInFlight = false;
+  int _nextCalibrationCaptureGeneration = 1 << 52;
   int _syncRevision = 0;
   String _sessionSyncIdentity = '';
   String _attachedRoutingKey = '';
+  String? _lastAttachedStateDiagnostic;
   Timer? _syncRetryTimer;
   int _syncRetryAttempt = 0;
 
@@ -334,6 +340,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       onGalLookupAdmission: _ingameLookup.handleAdmission,
     );
     _attachedRoutingKey = _currentAttachedRoutingKey;
+    _lastAttachedStateDiagnostic = null;
     _sessionSyncIdentity = _currentSessionSyncIdentity;
     _attachedText.addListener(_onAttachedRoutingChanged);
     _session.addListener(_scheduleSessionSync);
@@ -1114,15 +1121,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
         lookupSurfaceActive && _attachedText.attachedProviderClaimed;
     // BUG-2142 复验用：`attachedReady` 是两个输入的合取，只记结论就分不清是「宿主没
     // 认领」还是「查词面整体没武装」——真机上这两种情况的排障方向完全相反。
-    glog(
-      'gal-overlay: attachedReady=$attachedReady '
-      'lookupSurfaceActive=$lookupSurfaceActive '
-      'claimed=${_attachedText.attachedProviderClaimed} '
-      'lookupActive=$lookupActive profileSynchronized=$profileSynchronized '
-      'attachedSynchronized=$attachedSynchronized '
-      'mode=${lookupMode.wireName} status=${_attachedText.status.name}/'
-      '${_attachedText.statusReason}',
-    );
+    final String diagnostic =
+        'gal-overlay: attachedReady=$attachedReady '
+        'lookupSurfaceActive=$lookupSurfaceActive '
+        'claimed=${_attachedText.attachedProviderClaimed} '
+        'lookupActive=$lookupActive profileSynchronized=$profileSynchronized '
+        'attachedSynchronized=$attachedSynchronized '
+        'mode=${lookupMode.wireName} status=${_attachedText.status.name}/'
+        '${_attachedText.statusReason}';
+    if (_lastAttachedStateDiagnostic != diagnostic) {
+      _lastAttachedStateDiagnostic = diagnostic;
+      glog(diagnostic);
+    }
     final bool nativeProviderDesired =
         sessionPushSucceeded &&
         lookupSurfaceActive &&
@@ -1222,7 +1232,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       if (!_isSyncSnapshotCurrent(syncRevision, nextSessionKey)) return;
     }
 
-    if (_suppressedForSession) return;
+    if (_suppressedForSession || _calibrationCaptureInFlight) return;
     if (lines.isEmpty) return;
     final TexthookerLineEntry latest = lines.last;
     // BUG-1981：`_visible` 是**派生镜像**，不是 HWND 真值。窗口被系统 / 外部
@@ -1697,6 +1707,325 @@ class GalHookTextOverlayController extends ChangeNotifier {
     await DesktopLookupService.instance.bringMainWindowToFront();
   }
 
+  /// Takes a bounded private calibration sample before live probe calibration.
+  /// The current selected occurrence must survive every asynchronous boundary;
+  /// a historical row or same-text replacement cannot become this screenshot.
+  Future<GalLookupCalibrationCapture> captureCalibrationSample() async {
+    if (_calibrationCaptureInFlight) {
+      throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.busy,
+      );
+    }
+    final int? sessionEpoch = _sessionKey;
+    final GalAttachedSurfaceTarget? requestedTarget = _attachedText.target;
+    if (!_started || !_attachedText.canCaptureCalibrationSample) {
+      final GalLookupCalibrationCaptureException? mappingFailure =
+          _calibrationSurfaceMappingFailure();
+      if (mappingFailure != null) {
+        _logCalibrationCaptureFailure(
+          mappingFailure,
+          requestedTarget: requestedTarget,
+          sessionEpoch: sessionEpoch,
+        );
+        throw mappingFailure;
+      }
+      throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.sourceNotReady,
+      );
+    }
+    _calibrationCaptureInFlight = true;
+    ++_syncRevision;
+    final bool overlayWasVisible = _visible;
+    try {
+      return await captureGalLookupCalibrationSample(
+        readSnapshot: _calibrationCaptureSnapshot,
+        captureWindow: WindowCaptureChannel.captureWindow,
+        acquireLease: () async {
+          // Freeze the occurrence before the first visibility await. WGC
+          // normally excludes separate HWNDs; explicitly hide the Hook text
+          // overlay too and prevent central sync from reopening it mid-frame.
+          if (overlayWasVisible) {
+            await GalHookTextOverlayChannel.hide();
+            if (await GalHookTextOverlayChannel.isShowing()) {
+              throw const GalLookupCalibrationCaptureException(
+                GalLookupCalibrationCaptureFailure.overlayHideFailed,
+              );
+            }
+            _visible = false;
+          }
+          return _acquireCalibrationCaptureLease();
+        },
+      );
+    } catch (error) {
+      final GalLookupCalibrationCaptureException failure =
+          _calibrationCaptureExceptionFor(error);
+      _logCalibrationCaptureFailure(
+        failure,
+        requestedTarget: requestedTarget,
+        sessionEpoch: sessionEpoch,
+      );
+      throw failure;
+    } finally {
+      _calibrationCaptureInFlight = false;
+      if (_started && sessionEpoch == _sessionKey && overlayWasVisible) {
+        _visible = false;
+      }
+      if (_started) _scheduleSync();
+      notifyListeners();
+    }
+  }
+
+  static GalLookupCalibrationCaptureException _calibrationCaptureExceptionFor(
+    Object error,
+  ) {
+    if (error is GalLookupCalibrationCaptureException) {
+      return error;
+    }
+    if (error is GalHookCaptureSuppressionException) {
+      return const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.suppressionUnavailable,
+      );
+    }
+    return const GalLookupCalibrationCaptureException(
+      GalLookupCalibrationCaptureFailure.unknown,
+    );
+  }
+
+  static String _boundedCaptureReason(String? value) {
+    final String? normalized = normalizeGalLookupCalibrationCaptureReason(
+      value,
+    );
+    if (normalized == null || !_captureReasonPattern.hasMatch(normalized)) {
+      return 'none';
+    }
+    return normalized;
+  }
+
+  static int _boundedCaptureDimension(int? value) {
+    if (value == null || value < 0 || value > 100000) {
+      return 0;
+    }
+    return value;
+  }
+
+  static int _boundedCaptureIdentity(int? value) {
+    if (value == null || value < 0 || value.bitLength > 63) {
+      return 0;
+    }
+    return value;
+  }
+
+  void _logCalibrationCaptureFailure(
+    GalLookupCalibrationCaptureException failure, {
+    required GalAttachedSurfaceTarget? requestedTarget,
+    required int? sessionEpoch,
+  }) {
+    final WindowCaptureMetadata? metadata = failure.captureMetadata;
+    glog(
+      'gal-overlay: calibration_sample failed '
+      'category=${failure.failure.name} '
+      'captureReason=${_boundedCaptureReason(failure.captureReason)} '
+      'captureHresults=${failure.captureErrorCodes.join(',')} '
+      'requestedHwnd=${_boundedCaptureIdentity(requestedTarget?.targetHwnd)} '
+      'requestedPid=${_boundedCaptureIdentity(requestedTarget?.targetPid)} '
+      'capturedHwnd=${_boundedCaptureIdentity(metadata?.capturedHwnd)} '
+      'capturedPid=${_boundedCaptureIdentity(metadata?.capturedPid)} '
+      'clientWidth=${_boundedCaptureDimension(metadata?.clientWidthPx)} '
+      'clientHeight=${_boundedCaptureDimension(metadata?.clientHeightPx)} '
+      'imageWidth=${_boundedCaptureDimension(metadata?.imageWidthPx)} '
+      'imageHeight=${_boundedCaptureDimension(metadata?.imageHeightPx)} '
+      'contentWidth=${_boundedCaptureDimension(metadata?.contentWidthPx)} '
+      'contentHeight=${_boundedCaptureDimension(metadata?.contentHeightPx)} '
+      'textureWidth=${_boundedCaptureDimension(metadata?.textureWidthPx)} '
+      'textureHeight=${_boundedCaptureDimension(metadata?.textureHeightPx)} '
+      'surfaceStatus=${_attachedText.status.name} '
+      'surfaceVisible=${_attachedText.surfaceVisible} '
+      'shieldConclusion=${_attachedText.shieldStatus.conclusion.name} '
+      'sessionEpoch=${sessionEpoch ?? 0}',
+    );
+  }
+
+  GalLookupCalibrationCaptureException? _calibrationSurfaceMappingFailure() {
+    final String? captureReason =
+        normalizeGalLookupCalibrationSurfaceMappingReason(
+          _attachedText.statusReason,
+        ) ??
+        normalizeGalLookupCalibrationSurfaceMappingReason(
+          _attachedText.nativeStatus,
+        );
+    if (captureReason == null ||
+        _attachedText.status != GalAttachedTextStatus.suspended) {
+      return null;
+    }
+    final GalHookSessionState state = _session.state;
+    final GalAttachedSurfaceTarget? target = _attachedText.target;
+    final GalLookupReferenceClientV1? client = _attachedText.currentClient;
+    final String? exePath = _attachedText.executablePath;
+    final String? exeSha256 = _attachedText.executableSha256;
+    final String? thread = _session.selectedTextThreadKey;
+    final int? epoch = state.sessionStartedAt?.microsecondsSinceEpoch;
+    final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
+    if (target == null ||
+        client == null ||
+        !client.isValid ||
+        exePath == null ||
+        exePath.isEmpty ||
+        exeSha256 == null ||
+        !GalLookupSurfaceProfileV1.isValidSha256(exeSha256) ||
+        thread == null ||
+        thread.isEmpty ||
+        lines.isEmpty ||
+        lines.last.text.trim().isEmpty ||
+        epoch == null ||
+        epoch != target.sessionEpoch ||
+        state.boundWindow?.hwnd != target.targetHwnd ||
+        state.boundWindow?.pid != target.targetPid ||
+        target.targetHwnd == 0 ||
+        target.targetPid <= 0) {
+      return null;
+    }
+    return GalLookupCalibrationCaptureException(
+      GalLookupCalibrationCaptureFailure.surfaceMappingUnavailable,
+      captureReason: captureReason,
+    );
+  }
+
+  GalLookupCalibrationCaptureSnapshot _calibrationCaptureSnapshot() {
+    final GalHookSessionState state = _session.state;
+    final GalAttachedSurfaceTarget? target = _attachedText.target;
+    final GalLookupReferenceClientV1? client = _attachedText.currentClient;
+    final String? exePath = _attachedText.executablePath;
+    final String? exeSha256 = _attachedText.executableSha256;
+    final String? thread = _session.selectedTextThreadKey;
+    final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
+    final int? epoch = state.sessionStartedAt?.microsecondsSinceEpoch;
+    final bool ownCaptureSuppression =
+        _calibrationCaptureInFlight &&
+        _attachedText.status == GalAttachedTextStatus.suspended &&
+        _attachedText.statusReason == 'captureSuppressed';
+    final GalLookupCalibrationCaptureException? mappingFailure =
+        _calibrationSurfaceMappingFailure();
+    if (mappingFailure != null) throw mappingFailure;
+    if (target == null ||
+        client == null ||
+        exePath == null ||
+        exeSha256 == null ||
+        thread == null ||
+        lines.isEmpty ||
+        epoch == null ||
+        epoch != target.sessionEpoch ||
+        state.boundWindow?.hwnd != target.targetHwnd ||
+        state.boundWindow?.pid != target.targetPid ||
+        !(_attachedText.canCaptureCalibrationSample || ownCaptureSuppression) ||
+        !_attachedText.calibrationManuallyEnabled) {
+      throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.sourceNotReady,
+      );
+    }
+    final TexthookerLineEntry entry = lines.last;
+    if (entry.rubySpans.isNotEmpty) {
+      throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.rubyUnsupported,
+      );
+    }
+    return GalLookupCalibrationCaptureSnapshot(
+      sourceText: entry.text,
+      referenceClient: client,
+      exePath: exePath,
+      exeSha256: exeSha256,
+      sessionEpoch: epoch,
+      occurrenceId: entry.id,
+      sourceSequence: entry.sourceSequence,
+      targetHwnd: target.targetHwnd,
+      targetPid: target.targetPid,
+      selectedThreadKey: thread,
+      sourceIdentity: jsonEncode(<Object?>[
+        entry.source.name,
+        entry.sourceLabel,
+        entry.textThreadKey,
+        entry.nativeTextThreadId,
+        target.surfaceEpoch,
+      ]),
+    );
+  }
+
+  Future<GalHookCaptureLease?> _acquireCalibrationCaptureLease() async {
+    final GalLookupCalibrationCaptureException? mappingFailure =
+        _calibrationSurfaceMappingFailure();
+    if (mappingFailure != null) throw mappingFailure;
+    if (_attachedText.canCaptureCalibrationSample &&
+        _attachedText.calibrationCaptureNeedsAttachedLease) {
+      return _acquireAttachedMiningCaptureLease(
+        requireCard: false,
+        allowBackgroundCalibrationCapture: true,
+      );
+    }
+    if (!_attachedText.canCaptureCalibrationSample ||
+        _attachedText.surfaceVisible) {
+      throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.sourceNotReady,
+      );
+    }
+    // A new profile has no attached surface. Only fence an existing dictionary
+    // card; inventing a glyph lease here would require a calibrated layout.
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    if (!await GlobalLookupChannel.isShowing()) {
+      final GalLookupCalibrationCaptureException? mappingAfterCheck =
+          _calibrationSurfaceMappingFailure();
+      if (mappingAfterCheck != null) throw mappingAfterCheck;
+      return null;
+    }
+    final int token = ++_nextCalibrationCaptureGeneration;
+    try {
+      final GalLookupCalibrationCaptureException? mappingBeforeSuspend =
+          _calibrationSurfaceMappingFailure();
+      if (mappingBeforeSuspend != null) throw mappingBeforeSuspend;
+      if (!await GlobalLookupChannel.suspendForCapture(token)) {
+        final GalLookupCalibrationCaptureException? mappingAfterSuspend =
+            _calibrationSurfaceMappingFailure();
+        if (mappingAfterSuspend != null) throw mappingAfterSuspend;
+        throw const GalLookupCalibrationCaptureException(
+          GalLookupCalibrationCaptureFailure.suppressionUnavailable,
+        );
+      }
+      final GalLookupCalibrationCaptureException? mappingAfterSuspend =
+          _calibrationSurfaceMappingFailure();
+      if (mappingAfterSuspend != null) throw mappingAfterSuspend;
+    } catch (_) {
+      await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.restoreAfterCapture(token),
+      );
+      rethrow;
+    }
+    return _AttachedCompositeCaptureLease(
+      releaseCallback: () async {
+        final bool restored = await GlobalLookupChannel.runWithRoute(
+          route,
+          () => GlobalLookupChannel.restoreAfterCapture(token),
+        );
+        if (!restored) {
+          throw const GalLookupCalibrationCaptureException(
+            GalLookupCalibrationCaptureFailure.restoreFailed,
+          );
+        }
+      },
+    );
+  }
+
+  /// Filter only the card sentence; never change the line used to bind audio.
+  String _cardSentenceForGame(TexthookerLineEntry entry, String source) =>
+      galLookupVisibleHookLineText(
+        source: source,
+        currentSession:
+            _session.state.isActive && _session.isLineInCurrentSession(entry),
+        sessionExecutable: _session.currentCaptureExecutable,
+        attachedExecutable: _attachedText.executablePath,
+        attachedSha256: _attachedText.executableSha256,
+        profile: _attachedText.profile,
+        client: _attachedText.currentClient,
+      ).text;
+
   /// [consumeOutsideClicksOwnerHwnd]：attached 校准字形表面命中时传游戏
   /// HWND，桌面弹窗「点卡外关闭」的点击成对吞掉、不推进游戏；台词浮窗（C 表面）
   /// 不传，行为不变。
@@ -1705,6 +2034,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     String text,
     int index,
     Rect? wordRect, {
+    GlobalLookupPhysicalPlacement? physicalPlacement,
     GalHookCaptureLeaseFactory? captureLeaseFactory,
     int? consumeOutsideClicksOwnerHwnd,
   }) async {
@@ -1728,11 +2058,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
       term,
       // 台词浮窗本身已经显示完整句子；查词卡只保留词典正文。完整 sentence 仍会
       // 进入 mining 上下文（{sentence} 回落）。
-      sentence: entry.text,
+      sentence: _cardSentenceForGame(entry, entry.text),
       // 卡片锚在被点中的那个词上（native 给的屏幕逻辑 px 矩形），而不是鼠标位置：
       // 浮窗里点词跟阅读器/剪贴板面板一样是「点哪个词看哪个词」。老 native 不带
       // 矩形时为 null，自动回落到光标定位。
       anchorScreenRect: wordRect,
+      physicalPlacement: physicalPlacement,
       miningHandler:
           ({required Map<String, String> fields, int? updateNoteId}) =>
               _mineFromLookup(
@@ -1768,6 +2099,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
       hit.sourceText,
       hit.charIndex,
       hit.wordRect,
+      physicalPlacement: hit.physicalWordRect == null
+          ? null
+          : GlobalLookupPhysicalPlacement(
+              anchorScreenRect: hit.physicalWordRect!,
+              destinationViewportScreenRect: hit.destinationViewportScreen,
+            ),
       captureLeaseFactory: _acquireAttachedMiningCaptureLease,
       consumeOutsideClicksOwnerHwnd: hit.target.targetHwnd,
     );
@@ -1778,10 +2115,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// the visible global dictionary card. The two exact generation tokens are
   /// kept together so a late release cannot revive either an old sentence or
   /// an old card route.
-  Future<GalHookCaptureLease> _acquireAttachedMiningCaptureLease() async {
+  Future<GalHookCaptureLease> _acquireAttachedMiningCaptureLease({
+    bool requireCard = true,
+    bool allowBackgroundCalibrationCapture = false,
+  }) async {
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     final GalAttachedMiningCaptureLease? attachedLease = await _attachedText
-        .acquireMiningCaptureLease();
+        .acquireMiningCaptureLease(
+          allowBackgroundCalibrationCapture: allowBackgroundCalibrationCapture,
+        );
     if (attachedLease == null) {
       throw const GalHookCaptureSuppressionException(
         'the attached glyph surface is no longer current',
@@ -1789,6 +2131,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
     }
 
     try {
+      if (!requireCard && !await GlobalLookupChannel.isShowing()) {
+        return _AttachedCompositeCaptureLease(
+          releaseCallback: () =>
+              _attachedText.releaseMiningCaptureLease(attachedLease),
+        );
+      }
       final bool cardHidden = await GlobalLookupChannel.runWithRoute(
         route,
         () => GlobalLookupChannel.suspendForCapture(
@@ -1987,10 +2335,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
     final BaseAnkiRepository repo = model.platformServices
         .createAnkiRepository();
+    final TexthookerLineEntry? entry = _session.entryById(lineId);
+    final String? cardSentence = entry == null
+        ? sentenceOverride
+        : _cardSentenceForGame(entry, sentenceOverride ?? entry.text);
     final GalHookMiningResult result = await _miningCoordinator.mineLine(
       lineId: lineId,
       fields: fields,
-      sentenceOverride: sentenceOverride,
+      sentenceOverride:
+          sentenceOverride != null ||
+              (entry != null && cardSentence != entry.text)
+          ? cardSentence
+          : null,
       occurrence: occurrence,
       compression: MiningMediaCompression.resolve(
         imageTier: model.miningImageQuality,

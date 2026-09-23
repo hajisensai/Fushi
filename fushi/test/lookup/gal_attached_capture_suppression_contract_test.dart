@@ -22,7 +22,7 @@ void main() {
       attachedLookup,
     );
     final int acquireSurface = controller.indexOf(
-      '.acquireMiningCaptureLease();',
+      '.acquireMiningCaptureLease(',
       suppliesLease,
     );
     final int suspendCard = controller.indexOf(

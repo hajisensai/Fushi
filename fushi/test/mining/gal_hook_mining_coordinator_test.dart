@@ -371,6 +371,77 @@ void main() {
     },
   );
 
+  test(
+    'filtered sentence reaches Anki while audio keeps raw Hook identity',
+    () async {
+      const String raw = '浜田「第一行。\n第二行」尾注';
+      const String filtered = '「第一行。\n第二行」';
+      final TexthookerLineEntry entry = service.appendLine(raw)!;
+      final List<String> audioSentences = <String>[];
+      final _RecordingRepo repo = _RecordingRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                }) async {
+                  audioSentences.add(sentence);
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '第一行'},
+            sentenceOverride: filtered,
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+      expect(result.success, isTrue);
+      expect(repo.contexts.single.sentence, filtered);
+      expect(audioSentences, <String>[raw]);
+      expect(service.entryById(entry.id)!.text, raw);
+    },
+  );
+
+  test(
+    'HTML break reaches Anki as newline with the same Hook occurrence',
+    () async {
+      final TexthookerLineEntry entry = service.appendLine(
+        '前<br>後',
+        source: TexthookerLineSource.engineHook,
+        sourceSequence: 501,
+      )!;
+      final List<String> audioLineIds = <String>[];
+      final _RecordingRepo repo = _RecordingRepo();
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                }) async {
+                  audioLineIds.add(lineId);
+                  expect(sentence, '前\n後');
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '後'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+
+      expect(result.success, isTrue);
+      expect(entry.sourceSequence, 501);
+      expect(audioLineIds, <String>[entry.id]);
+      expect(repo.contexts.single.sentence, '前\n後');
+    },
+  );
+
   test('exact duplicate lines keep distinct scene and audio context', () async {
     final DateTime now = DateTime(2026, 7, 20, 12, 0, 1);
     final TexthookerLineEntry first = service.appendLine(
@@ -658,7 +729,6 @@ void main() {
         reason: '实际产出是 GIF，若跟用户所选拼成 .avif 就是名不副实的容器',
       );
       expect(degraded.degradedToStill, isFalse, reason: '换格式不是降级为静态图');
-
       // ② 没降级：请求 avif、实际产出 avif → 名字是 .avif。两条一起才把「跟实际产出」
       // 与「跟用户所选」这两种实现区分开——只有 ① 会被「恒返回 gif」的假实现蒙混。
       final _RecordingRepo okRepo = _RecordingRepo();

@@ -14,6 +14,7 @@ import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
+import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
@@ -238,8 +239,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     title: Text(line.audioBackend ?? t.game_track_voice),
                     subtitle: Text(
                       <String>[
-                        if (line.audioResourceId != null)
-                          line.audioResourceId!,
+                        if (line.audioResourceId != null) line.audioResourceId!,
                         if (durationMs > 0)
                           '${(durationMs / 1000).toStringAsFixed(2)}s',
                       ].join(' · '),
@@ -524,6 +524,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
+    GalHookTextOverlayController.instance.attachedText.addListener(
+      _onAttachedTextChanged,
+    );
     // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
@@ -610,6 +613,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     WidgetsBinding.instance.removeObserver(this);
     TexthookerService.instance.removeListener(_onLines);
     _session.removeListener(_onSessionChanged);
+    GalHookTextOverlayController.instance.attachedText.removeListener(
+      _onAttachedTextChanged,
+    );
     final OverlayEntry? popupOverlay = _popupOverlayEntry;
     if (popupOverlay != null) {
       if (popupOverlay.mounted) popupOverlay.remove();
@@ -708,7 +714,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // fallback 制卡不走 [GalHookMiningCoordinator]（那条路径由协调器回写 mined）——
       // 这里在 super 成功（ankiConnect）后自己把当前活跃行标记为已制卡。
       final MinePopupResult result = await super.onMineEntry(
-        injectActiveSentence(fields, _activeSentence),
+        _fieldsForMine(fields),
       );
       final String? lineId = _activeLineId;
       if (result.ankiConnect && lineId != null) {
@@ -729,10 +735,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     if (!sessionState.externalWindowMode ||
         sessionState.boundWindow == null ||
         !Platform.isWindows) {
-      return super.onUpdateEntry(
-        noteId,
-        injectActiveSentence(fields, _activeSentence),
-      );
+      return super.onUpdateEntry(noteId, _fieldsForMine(fields));
     }
     return _mineActiveLine(fields: fields, updateNoteId: noteId);
   }
@@ -752,8 +755,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       return const MinePopupResult();
     }
+    final String sentence = _visibleHookLineText(entry).text;
     final Map<String, String> effectiveFields = Map<String, String>.from(fields)
-      ..['sentence'] = entry.text;
+      ..['sentence'] = sentence;
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
@@ -763,6 +767,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         .mineLine(
           lineId: entry.id,
           fields: effectiveFields,
+          sentenceOverride: sentence,
           compression: MiningMediaCompression.resolve(
             imageTier: mixinAppModel.miningImageQuality,
             audioTier: mixinAppModel.miningAudioQuality,
@@ -1005,7 +1010,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       // 语言跟着上面按 exe 路径回查到的库条目走；库里没有这个 exe（临时选的文件）
       // → null → 语言级整级跳过，与回查不到启动参数时同一条退路。
       unawaited(
-        ref.read(profileViewModelProvider.notifier).autoApplyBinding(
+        ref
+            .read(profileViewModelProvider.notifier)
+            .autoApplyBinding(
               languageTag: known?.language,
               mediaType: ProfileMediaKind.game,
             ),
@@ -1269,6 +1276,48 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
   }
 
+  void _onAttachedTextChanged() {
+    if (!mounted) return;
+    final String? lineId = _activeLineId;
+    final TexthookerLineEntry? line = lineId == null
+        ? null
+        : _session.entryById(lineId);
+    setState(() {
+      if (line != null) _activeSentence = _visibleHookLineText(line).text;
+    });
+  }
+
+  Map<String, String> _fieldsForMine(Map<String, String> fields) {
+    final String? lineId = _activeLineId;
+    final TexthookerLineEntry? line = lineId == null
+        ? null
+        : _session.entryById(lineId);
+    if (line != null) {
+      final String visible = _visibleHookLineText(line).text;
+      if (visible != line.text) {
+        return Map<String, String>.from(fields)..['sentence'] = visible;
+      }
+    }
+    return injectActiveSentence(fields, _activeSentence);
+  }
+
+  ({String text, int sourceOffset}) _visibleHookLineText(
+    TexthookerLineEntry line,
+  ) {
+    final GalAttachedTextController attached =
+        GalHookTextOverlayController.instance.attachedText;
+    return galLookupVisibleHookLineText(
+      source: line.text,
+      currentSession:
+          _session.state.isActive && _session.isLineInCurrentSession(line),
+      sessionExecutable: _session.currentCaptureExecutable,
+      attachedExecutable: attached.executablePath,
+      attachedSha256: attached.executableSha256,
+      profile: attached.profile,
+      client: attached.currentClient,
+    );
+  }
+
   void _onSessionChanged() {
     if (!mounted) return;
     setState(() {});
@@ -1396,18 +1445,18 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _captureSetupDialogOpen = true;
       final GalCaptureSetupOutcome? outcome =
           await showAppDialog<GalCaptureSetupOutcome>(
-        context: context,
-        builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
-          session: _session,
-          attachedText: attachedText,
-          onSelectThread: (TexthookerTextThread thread) =>
-              _session.selectTextThread(
-                thread.nativeThreadId,
-                threadKey: thread.key,
-                remember: true,
-              ),
-        ),
-      );
+            context: context,
+            builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
+              session: _session,
+              attachedText: attachedText,
+              onSelectThread: (TexthookerTextThread thread) =>
+                  _session.selectTextThread(
+                    thread.nativeThreadId,
+                    threadKey: thread.key,
+                    remember: true,
+                  ),
+            ),
+          );
       _captureSetupDialogOpen = false;
       // 「本会话已提示过」这个标记的唯一用途，是让**用户主动关掉**弹窗后不再被每来
       // 一行台词就弹一次（选中线程有自己的判据 selectedTextThreadKey == null，不靠
@@ -1459,10 +1508,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   void _selectLine(TexthookerLineEntry line) {
-    if (_activeLineId == line.id && _activeSentence == line.text) return;
+    final String sentence = _visibleHookLineText(line).text;
+    if (_activeLineId == line.id && _activeSentence == sentence) return;
     setState(() {
       _activeLineId = line.id;
-      _activeSentence = line.text;
+      _activeSentence = sentence;
     });
   }
 
@@ -2217,10 +2267,23 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     itemCount: visibleLines.length,
                     itemBuilder: (BuildContext context, int i) {
                       final TexthookerLineEntry line = visibleLines[i];
+                      final ({String text, int sourceOffset}) visible =
+                          _visibleHookLineText(line);
+                      final TexthookerLinePresentation presentation =
+                          texthookerLinePresentation(visible.text);
                       return _TexthookerLine(
                         line: line,
+                        displayText: visible.text,
+                        sourceOffset: visible.sourceOffset,
+                        presentation: presentation,
                         // 分词结果按行 id 缓存，避免每次 rebuild 重复 textToWords。
-                        words: _wordCache.wordsFor(line.id, line.text),
+                        // 异常长/批量文本不进入分词与逐字 widget 路径，避免一次历史输出
+                        // 构造数千个可点击字节点（正式 custom 的 BUG-1597 行为）。
+                        words:
+                            presentation ==
+                                TexthookerLinePresentation.interactive
+                            ? _wordCache.wordsFor(line.id, visible.text)
+                            : const <String>[],
                         selected: line.id == _activeLineId,
                         previewingAudio: line.id == _previewingLineId,
                         // 逐行改音轨要求：会话内有 engine helper、有可选音轨快照，
@@ -2243,8 +2306,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                             unawaited(_pickLineTrack(l)),
                         onRecapture: (TexthookerLineEntry l) =>
                             unawaited(_toggleLineRecapture(l)),
-                        onCopy: (TexthookerLineEntry l) =>
-                            _appModel.copyToClipboard(l.text),
+                        onCopy: (TexthookerLineEntry _) =>
+                            _appModel.copyToClipboard(visible.text),
                       );
                     },
                   ),
@@ -2509,9 +2572,8 @@ class _SessionOverviewCard extends StatelessWidget {
         state.japaneseLocaleSkipReason;
     // 原因分两类说话：语义门（证据不足 / 判为不需要）提示改「始终开启」；工程门
     // （64 位 / 系统本就日文区）改档位也没用，得直说，否则用户会白改一轮。
-    final String? localeSkippedHint = state.japaneseLocaleApplied ||
-            verdict == null ||
-            skipReason == null
+    final String? localeSkippedHint =
+        state.japaneseLocaleApplied || verdict == null || skipReason == null
         ? null
         : switch (skipReason) {
             GalJapaneseLocaleSkipReason.notNeeded ||
@@ -2527,8 +2589,8 @@ class _SessionOverviewCard extends StatelessWidget {
     final String localeSuffix = state.japaneseLocaleApplied
         ? ' · ${t.game_session_japanese_locale}'
         : localeSkippedHint != null
-            ? ' · ${t.game_session_japanese_locale_skipped}'
-            : '';
+        ? ' · ${t.game_session_japanese_locale_skipped}'
+        : '';
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
@@ -2587,11 +2649,7 @@ class _SessionOverviewCard extends StatelessWidget {
                     verdict == null || verdict.evidence.isEmpty
                         ? t.game_session_japanese_locale_hint
                         : '${t.game_session_japanese_locale_hint}\n'
-                            '${t.game_session_japanese_locale_evidence(
-                            evidence: galJapaneseLocaleEvidenceListLabel(
-                              verdict.evidence,
-                            ),
-                          )}',
+                              '${t.game_session_japanese_locale_evidence(evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence))}',
                     maxLines: 4,
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -3180,6 +3238,9 @@ class _StatusPill extends StatelessWidget {
 class _TexthookerLine extends ConsumerWidget {
   const _TexthookerLine({
     required this.line,
+    required this.displayText,
+    required this.sourceOffset,
+    required this.presentation,
     required this.words,
     required this.selected,
     required this.previewingAudio,
@@ -3196,6 +3257,9 @@ class _TexthookerLine extends ConsumerWidget {
   });
 
   final TexthookerLineEntry line;
+  final String displayText;
+  final int sourceOffset;
+  final TexthookerLinePresentation presentation;
   final List<String> words;
   final bool selected;
 
@@ -3346,18 +3410,15 @@ class _TexthookerLine extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 6),
-            Wrap(
-              children: <Widget>[
-                // 分词只决定视觉断行，命中粒度在 [_WordSpan] 内部细到字（BUG-1478）。
-                for (final (int start, String word) in _indexedWords(words))
-                  _WordSpan(
-                    word: word,
-                    startIndex: start,
-                    style: wordStyle,
-                    onTapChar: (int charIndex, Rect rect) =>
-                        onCharTap(line, charIndex, rect),
-                  ),
-              ],
+            _TexthookerLineText(
+              line: line,
+              displayText: displayText,
+              sourceOffset: sourceOffset,
+              presentation: presentation,
+              words: words,
+              style: wordStyle,
+              colors: colors,
+              onCharTap: onCharTap,
             ),
             if (line.audioBackend != null ||
                 line.audioResourceId != null ||
@@ -3379,6 +3440,121 @@ class _TexthookerLine extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TexthookerLineText extends StatefulWidget {
+  const _TexthookerLineText({
+    required this.line,
+    required this.displayText,
+    required this.sourceOffset,
+    required this.presentation,
+    required this.words,
+    required this.style,
+    required this.colors,
+    required this.onCharTap,
+  });
+
+  final TexthookerLineEntry line;
+  final String displayText;
+  final int sourceOffset;
+  final TexthookerLinePresentation presentation;
+  final List<String> words;
+  final TextStyle? style;
+  final ColorScheme colors;
+  final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
+  onCharTap;
+
+  @override
+  State<_TexthookerLineText> createState() => _TexthookerLineTextState();
+}
+
+class _TexthookerLineTextState extends State<_TexthookerLineText> {
+  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(_TexthookerLineText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.line.id != widget.line.id) {
+      _expanded = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.presentation == TexthookerLinePresentation.interactive) {
+      // A Hook line may contain explicit breaks (including normalized <br>).
+      // Wrap does not force a new row for a newline inside a word, so split
+      // into rows while preserving each glyph's UTF-16 index in the full line.
+      final List<List<(int, String)>> rows = _indexedWordRows(widget.words);
+      Widget buildRow(List<(int, String)> row) => Wrap(
+        children: <Widget>[
+          for (final (int start, String word) in row)
+            _WordSpan(
+              word: word,
+              startIndex: start + widget.sourceOffset,
+              style: widget.style,
+              onTapChar: (int charIndex, Rect rect) =>
+                  widget.onCharTap(widget.line, charIndex, rect),
+            ),
+        ],
+      );
+      if (rows.length == 1) return buildRow(rows.single);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (final List<(int, String)> row in rows)
+            row.isEmpty
+                ? SizedBox(height: widget.style?.fontSize ?? 16)
+                : buildRow(row),
+        ],
+      );
+    }
+
+    final bool collapsible =
+        widget.presentation == TexthookerLinePresentation.collapsed;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        if (collapsible) ...<Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                Icons.warning_amber_rounded,
+                size: 16,
+                color: widget.colors.tertiary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  t.game_line_bulk_text_hint,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: widget.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+        ],
+        Text(
+          widget.displayText,
+          key: ValueKey<String>('game-line-lightweight-text-${widget.line.id}'),
+          maxLines: collapsible && !_expanded ? 4 : null,
+          overflow: collapsible && !_expanded ? TextOverflow.ellipsis : null,
+          style: widget.style,
+        ),
+        if (collapsible)
+          TextButton.icon(
+            key: ValueKey<String>('game-line-expand-${widget.line.id}'),
+            onPressed: () => setState(() => _expanded = !_expanded),
+            icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+            label: Text(
+              _expanded ? t.collection_collapse : t.collection_expand,
+            ),
+          ),
+      ],
     );
   }
 }
@@ -3541,12 +3717,24 @@ class _LineAudioChip extends StatelessWidget {
 /// 依赖一条既有不变式：[JapaneseLanguage.textToWords] 是**切分**不是改写，
 /// 各片段按序拼回即原文（引擎未就绪时的逐字回退同样满足）。所以偏移就是前缀长度和，
 /// 不需要在原文里搜索——搜索会在重复词上给出错误位置。
-Iterable<(int, String)> _indexedWords(List<String> words) sync* {
+List<List<(int, String)>> _indexedWordRows(List<String> words) {
+  final List<List<(int, String)>> rows = <List<(int, String)>>[
+    <(int, String)>[],
+  ];
   int offset = 0;
   for (final String word in words) {
-    yield (offset, word);
-    offset += word.length;
+    final List<String> parts = word.split('\n');
+    for (int i = 0; i < parts.length; i++) {
+      final String part = parts[i];
+      if (part.isNotEmpty) rows.last.add((offset, part));
+      offset += part.length;
+      if (i < parts.length - 1) {
+        offset++;
+        rows.add(<(int, String)>[]);
+      }
+    }
   }
+  return rows;
 }
 
 /// 一个分词单元的渲染 + **逐字**命中（BUG-1478）。

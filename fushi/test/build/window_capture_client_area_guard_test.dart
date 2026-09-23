@@ -3,7 +3,7 @@
 // WGC `CreateForWindow` 的 item 覆盖整个 DWM 视觉（= DWMWA_EXTENDED_FRAME_BOUNDS），
 // 以前 CaptureCore 把整张纹理原样编码，窗口化跑的 galgame 必然把标题栏拍进图里。
 // C++ 无法在 Dart 测试里执行，故在源码层锁死结构：
-//   ① 裁剪原点必须是「客户区屏幕原点 − 扩展框架原点」（ClientToScreen −
+//   ① 裁剪原点必须是「客户区屏幕原点 − 扩展框架原点」（WINDOWINFO.rcClient −
 //      DWMWA_EXTENDED_FRAME_BOUNDS），不能用 GetWindowRect（Win10+ 不可见 resize 边框
 //      会让它偏出几像素，OBS「Client Area」同款算法）；
 //   ② 裁剪在编码前真的生效（指针按行距偏移到子矩形、宽高换成子矩形）；
@@ -32,14 +32,24 @@ void main() {
     fail('unbalanced braces after $signature');
   }
 
-  test('① 裁剪原点 = ClientToScreen − DWMWA_EXTENDED_FRAME_BOUNDS', () {
+  test('① 物理客户区统一读取，裁剪原点减去 DWM 扩展框架原点', () {
+    final String clientReader = functionBody(
+      'bool ReadPhysicalClientScreenRect(HWND hwnd, RECT* rect)',
+    );
+    expect(clientReader, contains('GetWindowInfo(hwnd, &info)'));
+    expect(clientReader, contains('*rect = info.rcClient;'));
+    expect(
+      clientReader,
+      isNot(contains('ClientToScreen(')),
+      reason: '跨 DPI 端点换算会舍入，现场曾把 2326 像素客户区算成 2324',
+    );
     final String crop = functionBody(
       'bool ComputeClientCropBox(HWND hwnd, UINT width, UINT height, RECT* box)',
     );
     expect(
-      crop.contains('GetClientRect(hwnd, &client)'),
+      crop.contains('ReadPhysicalClientScreenRect(hwnd, &client)'),
       isTrue,
-      reason: '客户区尺寸来自 GetClientRect',
+      reason: '裁剪与采集元数据必须读取同一物理客户区',
     );
     expect(
       crop.contains('DWMWA_EXTENDED_FRAME_BOUNDS'),
@@ -47,12 +57,18 @@ void main() {
       reason: 'WGC 纹理原点是 DWM 扩展框架原点，不是 GetWindowRect',
     );
     expect(
-      crop.contains('ClientToScreen(hwnd, &origin)'),
-      isTrue,
-      reason: '客户区屏幕原点来自 ClientToScreen',
+      crop.contains('ClientToScreen('),
+      isFalse,
+      reason: '不得把客户区的两角再次换算后舍入',
     );
-    expect(crop.contains('origin.x - frame.left'), isTrue);
-    expect(crop.contains('origin.y - frame.top'), isTrue);
+    expect(crop.contains('client.left - frame.left'), isTrue);
+    expect(crop.contains('client.top - frame.top'), isTrue);
+    expect(crop.contains('client.right - frame.left'), isTrue);
+    expect(crop.contains('client.bottom - frame.top'), isTrue);
+    final String snapshot = functionBody(
+      'bool ReadCaptureClient(HWND hwnd, WindowCaptureMetadata* metadata)',
+    );
+    expect(snapshot, contains('ReadPhysicalClientScreenRect(hwnd, &client)'));
     expect(
       crop.contains('GetWindowRect'),
       isFalse,
@@ -65,9 +81,9 @@ void main() {
     expect(map, isNot(-1));
     final String tail = capture.substring(map, capture.indexOf('Unmap(', map));
     expect(
-      tail.contains(
-        'ComputeClientCropBox(hwnd, desc.Width, desc.Height, &crop)',
-      ),
+      tail
+          .replaceAll(RegExp(r'\s+'), '')
+          .contains('ComputeClientCropBox(hwnd,desc.Width,desc.Height,&crop)'),
       isTrue,
       reason: '裁剪必须落在 Map 之后、编码之前',
     );

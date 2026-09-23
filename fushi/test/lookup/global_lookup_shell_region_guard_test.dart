@@ -34,7 +34,8 @@ import '../helpers/source_guard.dart';
 /// 覆盖窗真渲染依赖 native WebView2，headless 测不了，故源码扫描钉住契约；
 /// 行为面由 node harness（global_lookup_host_test.mjs R1-R3）覆盖。
 void main() {
-  String readRaw(String p) => File(p).readAsStringSync().replaceAll('\r\n', '\n');
+  String readRaw(String p) =>
+      File(p).readAsStringSync().replaceAll('\r\n', '\n');
 
   // 语料一律**剥注释**再断言。这个文件的 needle 全是标识符与代码片段，而它扫的
   // C++/JS 里注释密度极高：不掩码时，任何一句 `// 见 GlyphAnchoredCardOrigin`
@@ -277,13 +278,15 @@ void main() {
     expect(
       compactReveal,
       contains('direct_glyph_valid_=glyph_w>0&&glyph_h>0;'),
-      reason: '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
+      reason:
+          '字形路径的启用条件只能来自字形尺寸本身；写死成常量会让 '
           'GlyphAnchoredCardOrigin 整条分支变成死代码',
     );
     expect(
       compactReveal,
       contains('GlyphAnchoredCardOrigin(direct_glyph_left_,direct_glyph_top_,'),
-      reason: '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排，'
+      reason:
+          '卡片不再是画布单位，贴附必须以字形在**屏幕**上的矩形重排，'
           '直接把 anchor 乘 scale 会让卡片离命中的字 (scale-1)×卡片高',
     );
     expect(
@@ -355,7 +358,8 @@ void main() {
       expect(
         compactResize,
         isNot(matches(shape)),
-        reason: '直连不再被 1:1 客户区锁死：放大运行的游戏也必须走直连，'
+        reason:
+            '直连不再被 1:1 客户区锁死：放大运行的游戏也必须走直连，'
             '所以客户区尺寸不得再与画布尺寸做等值/容差比较（$shape）',
       );
     }
@@ -618,4 +622,29 @@ void main() {
       reason: '不得回退到 slide 延迟路径（stale-dismiss 会杀掉新卡，回归 signature）',
     );
   });
+
+  test(
+    'desktop work-area clamp keeps shell HRGN and shadow aligned with DOM',
+    () {
+      final String reveal = functionBody(
+        cpp,
+        'void GlobalLookupWindow::RevealStack(',
+      );
+      final String finalize = functionBody(
+        cpp,
+        'void GlobalLookupWindow::FinalizePendingShellGeometry(',
+      );
+      expect(reveal, contains('bbox_left + clamp_dx_css'));
+      expect(reveal, contains('bbox_top + clamp_dy_css'));
+      expect(
+        reveal,
+        contains('FinalizePendingShellGeometry(geometry_epoch, clamp_dx_css,'),
+      );
+      expect(finalize, contains('CommitPendingShellGeometry(geometry_epoch)'));
+      expect(finalize, contains('rect[0] -= clamp_dx_css;'));
+      expect(finalize, contains('rect[1] -= clamp_dy_css;'));
+      expect(hdr, contains('double clamp_dx_css = 0.0'));
+      expect(hdr, contains('double clamp_dy_css = 0.0'));
+    },
+  );
 }

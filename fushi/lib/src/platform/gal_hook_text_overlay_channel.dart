@@ -66,7 +66,13 @@ bool isGalLookupProductionProviderPair(int kind, int id) {
     case 1: // runtime_layout
       return id == 1 || id == 2 || id == 6 || id == 7 || id == 8;
     case 2: // engine_exact_layout
-      return id == 3 || id == 4 || id == 5 || id == 14 || id == 15 || id == 16;
+      return id == 3 ||
+          id == 4 ||
+          id == 5 ||
+          id == 14 ||
+          id == 15 ||
+          id == 16 ||
+          id == 17;
     case 3: // positioned_text_api
       return id == 9 || id == 10;
     default:
@@ -571,6 +577,11 @@ class GalAttachedShieldStatus {
     this.observedMask = 0,
     this.faultMask = 0,
     this.statusFlags = 0,
+    this.ownerKind = 0,
+    this.targetHwnd = 0,
+    this.transactionId = 0,
+    this.activeButtons = 0,
+    this.allowRisk = false,
   });
 
   static const int _verifiedFlag = 0x01;
@@ -588,6 +599,11 @@ class GalAttachedShieldStatus {
   final int observedMask;
   final int faultMask;
   final int statusFlags;
+  final int ownerKind;
+  final int targetHwnd;
+  final int transactionId;
+  final int activeButtons;
+  final bool allowRisk;
 
   GalAttachedShieldConclusion get conclusion {
     if ((statusFlags & _faultedFlag) != 0) {
@@ -621,6 +637,11 @@ class GalAttachedShieldStatus {
       observedMask: intOf('observedMask'),
       faultMask: intOf('faultMask'),
       statusFlags: intOf('statusFlags'),
+      ownerKind: intOf('ownerKind'),
+      targetHwnd: intOf('targetHwnd'),
+      transactionId: intOf('transactionId'),
+      activeButtons: intOf('activeButtons'),
+      allowRisk: map['allowRisk'] == true,
     );
   }
 }
@@ -636,6 +657,8 @@ class GalAttachedLookupHitV19 {
     required this.charIndex,
     required this.sourceLength,
     this.wordRect,
+    this.physicalWordRect,
+    this.destinationViewportScreen,
     this.hover = false,
   });
 
@@ -647,6 +670,15 @@ class GalAttachedLookupHitV19 {
   final int charIndex;
   final int sourceLength;
   final Rect? wordRect;
+
+  /// Raw screen-physical word rectangle from the attached DirectWrite layer.
+  /// Unlike [wordRect], this value must not be multiplied by the main Flutter
+  /// window's DPR.
+  final Rect? physicalWordRect;
+
+  /// Raw screen-physical presentation client viewport containing
+  /// [physicalWordRect]. It is optional for older native runners.
+  final Rect? destinationViewportScreen;
 
   /// True when the runner's Shift+hover timer emitted the hit instead of a
   /// completed shielded click. Both take the same lookup chain; the flag is
@@ -686,8 +718,19 @@ class GalAttachedLookupHitV19 {
       charIndex: charIndex,
       sourceLength: sourceLength,
       wordRect: GalHookTextOverlayChannel._wordRect(map),
+      physicalWordRect: GalHookTextOverlayChannel._physicalRect(
+        map['physicalWordRect'],
+      ),
+      destinationViewportScreen: GalHookTextOverlayChannel._physicalRect(
+        map['destinationViewportScreen'],
+      ),
       hover: map['hover'] == true,
     );
+    if ((map.containsKey('physicalWordRect') && hit.physicalWordRect == null) ||
+        (map.containsKey('destinationViewportScreen') &&
+            hit.destinationViewportScreen == null)) {
+      return null;
+    }
     return hit.isAddressable && hit.hasConsistentSourceLength ? hit : null;
   }
 }
@@ -1257,6 +1300,22 @@ class GalHookTextOverlayChannel extends FloatingOverlayChannel {
     }
     if (width <= 0 || height <= 0) return null;
     return Rect.fromLTWH(left, top, width, height);
+  }
+
+  static Rect? _physicalRect(Object? value) {
+    if (value is! Map) return null;
+    double? number(Object? value) =>
+        value is num && value.isFinite ? value.toDouble() : null;
+    final double? left = number(value['left']);
+    final double? top = number(value['top']);
+    final double? width = number(value['width']);
+    final double? height = number(value['height']);
+    if (left == null || top == null || width == null || height == null) {
+      return null;
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Rect rect = Rect.fromLTWH(left, top, width, height);
+    return rect.isFinite ? rect : null;
   }
 
   static Future<bool> show({
