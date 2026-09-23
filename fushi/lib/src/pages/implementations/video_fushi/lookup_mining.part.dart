@@ -321,8 +321,23 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 解析——否则顶格档会拿到 GIF 的封顶值，用户选了 AVIF 也享受不到原图档。
       format: appModel.videoMiningAnimatedFormat,
     );
-    final String? mediaSource = controller.miningSource;
+    String? mediaSource = controller.miningSource;
     final String? audioSource = controller.miningAudioSource;
+    // BUG-2642 残留：在线视频源（扩展 hoster / 粘贴的流）常把 HLS 分片伪装成图片——
+    // `.jpg` / `.image` 名、正文前垫一张 PNG。播放器经本机中继 + mpv 自己的放宽都能播，
+    // 制卡 ffmpeg 直连原始地址则被扩展名白名单拒掉、或把分片认成一张图。改走与播放器
+    // 同一条中继；地址当场改写（同步，保持点击顺序入队），登记在队列里等。
+    Future<void>? mediaSourceRouteReady;
+    if (mediaSource != null &&
+        _effectiveRemoteClient is RemoteVideoStreamHeaders &&
+        isNetworkStreamUri(mediaSource)) {
+      final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
+        mediaSource,
+        isHls: controller.isHlsStream(),
+      );
+      mediaSource = relayed.url;
+      mediaSourceRouteReady = relayed.ready;
+    }
     final int? audioStreamIndex = controller.currentAudioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
     final int episode = _currentEpisode;
@@ -457,6 +472,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // Referer/UA，ffmpeg 裸请求会被 403（`required audio missing`）。本地文件与
         // 无防盗链源这里是空 map，抽取器据此 no-op，既有路径零影响。
         mediaSourceHttpHeaders: _streamHttpHeaderFields,
+        mediaSourceRouteReady: mediaSourceRouteReady,
         // BUG-1004：互联 host 远端流句子音频优先走 host 端裁（绕开 client ffmpeg 抓远端流）。
         remoteAudioClipper: remoteAudioClipper,
         clipStartMs: clipStartMs,

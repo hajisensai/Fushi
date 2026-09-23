@@ -28,6 +28,9 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show ffmpegRemoteInputRouteResolver;
+import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_service.dart';
 
@@ -81,6 +84,9 @@ void installEngineHostBindings() {
   // 词典导入/删除前释放 FFI 引擎的文件映射（BUG-1756）。
   releaseDictionaryMappings = FushiDicts.releaseAllMappings;
   ffmpegPlatformBackendProvider = _platformFfmpegBackend;
+  // 制卡 ffmpeg 的远端输入经本机中继（在线视频源伪装分片，BUG-2642 残留）：
+  // 视频页登记，引擎按输入地址来查。
+  ffmpegRemoteInputRouteResolver = ffmpegRelayRouteFor;
   // fushi_audio 的两个插件级装配点（charset 探测 method channel、just_audio 时长探测 +
   // path_provider 文档根）：纯 Dart 一半住 fushi_audio_core，插件实现由这里写入。
   installPlatformCharsetDetector();

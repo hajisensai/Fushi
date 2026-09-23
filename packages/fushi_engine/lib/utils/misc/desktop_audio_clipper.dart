@@ -153,6 +153,73 @@ class _FfmpegHttpHeaderArgs {
   final String? extraHeaderBlock;
 }
 
+/// 远端输入该怎么连：经不经宿主的本机中继、要不要放开 HLS 分片扩展名检查。
+///
+/// 在线视频源（Aniyomi 扩展）的 hoster 常把 HLS 分片伪装成图片——`.jpg` / `.image` /
+/// `.html` 这类名字，甚至正文前先垫一张真 PNG。播放器那边两件事都有人管：mpv 自己
+/// 关了 hls 的扩展名检查，app 的本机中继把 PNG 前缀剥掉。ffmpeg 命令行直连原始地址
+/// 时两件都没人管（BUG-2642 残留）：
+/// - FFmpeg 6.1.3+ / 7.1.1+ 的 hls demuxer 默认按扩展名白名单拒掉这类分片
+///   （`Invalid data found when processing input`）；
+/// - 编进了 PNG 探测器的构建（Android 的 ffmpeg-kit）把带前缀的分片认成一张图。
+///
+/// [httpProxy]：宿主本机中继的端点（带凭据）；输入地址此时必须已是中继认识的
+/// 明文形式（`nativePlaybackUri`），否则 https 会走 CONNECT 隧道、中继看不到字节。
+/// [relaxHlsSegmentExtensions]：输入是 HLS **且**当前 ffmpeg 认得这几个选项
+/// （[ffmpegSupportsHlsSegmentExtensionOptions]）——它们是 hls demuxer 的私有选项，
+/// 喂给 mp4 输入或老版本 ffmpeg 都是致命的 `Option not found`，所以由知道这两件事的
+/// 宿主算好再交进来，这里不猜。
+class FfmpegRemoteInputRoute {
+  const FfmpegRemoteInputRoute({
+    this.httpProxy,
+    this.relaxHlsSegmentExtensions = false,
+  });
+
+  final String? httpProxy;
+  final bool relaxHlsSegmentExtensions;
+}
+
+/// 宿主装配点：给定 ffmpeg 输入地址，返回该怎么连；null = 直连（既有行为）。
+///
+/// 中继只存在于 app（引擎不能依赖它），而经中继的决定是在播放页做的，所以按输入
+/// 地址查宿主的登记表——与中继自己按原点登记（钉扎原点 / TLS 终结原点）同构。
+/// 不经参数一路传：抽取函数与它们的注入式 typedef 是整条制卡链共用的，多一个参数
+/// 就要改动所有调用点与测试假件，而它们对这件事一无所知。
+FfmpegRemoteInputRoute? Function(String inputPath)?
+    ffmpegRemoteInputRouteResolver;
+
+Future<bool>? _hlsSegmentExtensionOptionsSupport;
+
+/// 当前 ffmpeg 后端（桌面捆绑 / `FUSHI_FFMPEG` / 移动端 ffmpeg-kit）是否认得
+/// `-allowed_segment_extensions` 与 `-extension_picky`。
+///
+/// 这两个选项是 2025 年回移到维护分支的安全补丁（6.1.3+ / 7.1.1+ / 8.0 才有）：桌面
+/// 捆绑的 n7.1.5 有，移动端 ffmpeg-kit（FFmpeg 6.0）与发行版自带的老 ffmpeg 没有——
+/// 没有这道检查的版本也就不需要放开它。按实际后端问一次 `-h demuxer=hls`，不按平台
+/// 或版本号写死；结果进程内缓存，探测失败按不支持处理（不加这几个选项）。
+///
+/// 问的是同一构建的 **ffprobe**：帮助文本写 stdout，而 [FfmpegBackend.run] 只收 stderr
+/// （ffmpeg 的日志 / 进度都在那），[FfmpegBackend.runProbe] 才收 stdout。ffprobe 与 ffmpeg
+/// 链同一个 libavformat——桌面捆绑的 ffmpeg-min 目录里两者成对，移动端 ffmpeg-kit 也是。
+Future<bool> ffmpegSupportsHlsSegmentExtensionOptions() =>
+    _hlsSegmentExtensionOptionsSupport ??= () async {
+      try {
+        final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+          const <String>['-hide_banner', '-h', 'demuxer=hls'],
+          const Duration(seconds: 15),
+        );
+        return result.output.contains('allowed_segment_extensions') &&
+            result.output.contains('extension_picky');
+      } on Object {
+        return false;
+      }
+    }();
+
+@visibleForTesting
+void debugResetFfmpegHlsSegmentExtensionSupport() {
+  _hlsSegmentExtensionOptionsSupport = null;
+}
+
 /// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
 /// 网络韧性开关，**必须放在 `-i` 之前**（这些是 http 协议的输入选项）。googlevideo 在打开
 /// 输入时会间歇性丢连（实测 `Error number -138` opening input——多帧 GIF/音频段读取更易撞上），
@@ -181,6 +248,10 @@ class _FfmpegHttpHeaderArgs {
 List<String> buildFfmpegRemoteInputArgs(String inputPath,
     {String? tlsPinSha256, Map<String, String> httpHeaders = const {}}) {
   if (!_isRemoteFfmpegInput(inputPath)) return const <String>[];
+  final FfmpegRemoteInputRoute? route = ffmpegRemoteInputRouteResolver?.call(
+    inputPath,
+  );
+  final String? httpProxy = route?.httpProxy;
   final String? pin = tlsPinSha256?.trim();
   final _FfmpegHttpHeaderArgs headers =
       _FfmpegHttpHeaderArgs.from(httpHeaders, inputPath);
@@ -216,6 +287,20 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     '1',
     '-reconnect_delay_max',
     '5',
+    // 经宿主本机中继取字节（见 [FfmpegRemoteInputRoute]）：hls demuxer 会把 http_proxy
+    // 沿用到每个分片请求，与播放器走同一条归一化路径。
+    if (httpProxy != null && httpProxy.isNotEmpty) ...<String>[
+      '-http_proxy',
+      httpProxy,
+    ],
+    if (route?.relaxHlsSegmentExtensions ?? false) ...<String>[
+      '-allowed_extensions',
+      'ALL',
+      '-allowed_segment_extensions',
+      'ALL',
+      '-extension_picky',
+      '0',
+    ],
   ];
 }
 
