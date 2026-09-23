@@ -915,6 +915,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 双页布局偏好：页内菜单运行时切换，不持久化，默认自动（横屏双页/竖屏单页）。
   MangaSpreadPreference _spreadPreference = MangaSpreadPreference.auto;
   String _spreadDirection = 'rtl';
+
+  /// 顶栏方向按钮已发出、但 [_reapplyReaderPreferences] 还没读回的目标方向。
+  /// [_spreadDirection] 要等写库 + 重读完才更新，连点时第二下若按它取反，读到的
+  /// 还是旧值，两下写成同一个方向（第二下被吞）。按钮与早退都以在途值为准。
+  String? _pendingSpreadDirection;
   MangaReaderPreferences _readerPreferences = const MangaReaderPreferences();
   bool _readerSettingsOpen = false;
   bool _readerLookupOpen = false;
@@ -1457,14 +1462,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      _visibleOcrPaused = true;
-      _visibleOcrController?.showPages(const <int>[]);
-    } else if (state == AppLifecycleState.resumed) {
-      _visibleOcrPaused = false;
-      unawaited(_refreshVisibleOcr());
-    }
-    if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // 切屏 / 进后台自动暂停阅读计时（BUG-892）：stop 先结算部分窗口再封段落库。
       unawaited(_studyClock?.stop());
@@ -1474,6 +1471,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _studyClock?.start();
       // OS 层焦点丢失后 Flutter 不保证归还到原节点：切窗回来若不收回，翻页键全死。
       _focusOwnership.reclaim(FocusReclaimCause.appResumed);
+    }
+    // 边看边 OCR 只在真进后台时停（inactive 是切窗 / 弹系统框，不停识别）。放在计时
+    // 分支之后：statistics_write_convergence_guard ⑥ 按 inactive → resumed 的
+    // 文本顺序切出后台段 / 前台段核对 stop / start。
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _visibleOcrPaused = true;
+      _visibleOcrController?.showPages(const <int>[]);
+    } else if (state == AppLifecycleState.resumed) {
+      _visibleOcrPaused = false;
+      unawaited(_refreshVisibleOcr());
     }
   }
 
@@ -3376,6 +3384,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               appModel.mangaOcrEnginePreference,
             ),
             service,
+            userInitiated: manual,
           );
       if (!current() || !mounted) return;
       if (engine == MangaOcrEngineId.googleLens &&
@@ -3439,7 +3448,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             // 后面的页识别成功说明引擎已恢复，别让旧错误胶囊一直挂着。
             _visibleOcrError = null;
           });
-          if (_visibleOcrPages(missingOnly: false).contains(pageIndex)) {
+          // 按已加载窗口注入，不按视口：识别途中滚出视口、但仍在窗口里的页，
+          // 其 DOM 已标 data-ocr-loaded='1'，[_replaceSpreadOcr] 滚回来时会跳过
+          // 它、结果就永远不上屏。窗口外的页等进窗口时由 _replaceSpreadOcr 从
+          // 已更新的 _payload 取。与整卷完成路径同口径。
+          if (_loadedPageIndices().contains(pageIndex)) {
             unawaited(_replacePageOcrOverlay(pageIndex, recognized));
           }
         },
@@ -3582,6 +3595,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
+  /// 当前 WebView 窗口文档里已挂上 OCR 框的页（[_replaceSpreadOcr] 维护的窗口）。
+  Set<int> _loadedPageIndices() => <int>{
+    for (final int spread in _loadedSpreads)
+      if (spread >= 0 && spread < _spreads.length)
+        ..._spreads[spread].pageIndices,
+  };
+
   Future<void> _replacePageOcrOverlay(int pageIndex, MokuroImage page) async {
     final String boxes = mangaOcrBoxesHtml(page);
     await _controller?.evaluateJavascript(
@@ -3602,12 +3622,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrRunning = false;
     });
-    final Set<int> visiblePages = <int>{
-      for (final int spread in _loadedSpreads)
-        if (spread >= 0 && spread < _spreads.length)
-          ..._spreads[spread].pageIndices,
-    };
-    for (final int pageIndex in visiblePages) {
+    for (final int pageIndex in _loadedPageIndices()) {
       if (pageIndex >= 0 && pageIndex < payload.images.length) {
         await _replacePageOcrOverlay(pageIndex, payload.images[pageIndex]);
       }
@@ -4105,17 +4120,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   Future<void> _setSpreadDirection(String direction) async {
     final String normalized = direction == 'ltr' ? 'ltr' : 'rtl';
-    if (_spreadDirection == normalized) return;
+    if ((_pendingSpreadDirection ?? _spreadDirection) == normalized) return;
     final EpubBookRow? row = _bookRow;
     if (row == null || row.uid.isEmpty) return;
-    if (!await _patchReaderOverride(row.uid, <String, Object?>{
-      'direction': normalized,
-    })) {
-      return;
+    _pendingSpreadDirection = normalized;
+    try {
+      if (!await _patchReaderOverride(row.uid, <String, Object?>{
+        'direction': normalized,
+      })) {
+        return;
+      }
+      if (!mounted) return;
+      _resetPanelNavigation();
+      await _reapplyReaderPreferences();
+    } finally {
+      // 只有最后一次点击负责清空：更早的那次收尾时在途值已是后来者的。
+      if (_pendingSpreadDirection == normalized) _pendingSpreadDirection = null;
     }
-    if (!mounted) return;
-    _resetPanelNavigation();
-    await _reapplyReaderPreferences();
   }
 
   /// 读出本书现有覆盖、并入 [patch] 后写回。覆盖行损坏（非对象 JSON）按空覆盖
@@ -5079,7 +5100,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               : t.manga_direction_ltr,
           pinned: true,
           onPressed: () => unawaited(
-            _setSpreadDirection(_spreadDirection == 'rtl' ? 'ltr' : 'rtl'),
+            _setSpreadDirection(
+              (_pendingSpreadDirection ?? _spreadDirection) == 'rtl'
+                  ? 'ltr'
+                  : 'rtl',
+            ),
           ),
         ),
         MangaChromeAction(

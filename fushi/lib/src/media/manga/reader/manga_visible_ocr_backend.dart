@@ -55,12 +55,31 @@ class MangaVisibleOcrBackend {
   Future<String>? _localCacheDirPath;
   bool _closed = false;
 
+  /// 解析边看边识别用哪个引擎。
+  ///
+  /// [userInitiated] 为 false 是自动触发（翻页 / 滚动）。两条边界在这里一次判掉：
+  /// - 只支持整卷任务的引擎（外部 mokuro / 已配对主机）没有页级能力，判为不可用
+  ///   —— 否则 [recognize] 每个新可见页都抛一次、挂失败胶囊、写一条错误日志。
+  /// - 云端引擎（Google Lens）不许自动触发：授权文案同意的是「识别本漫画」这个
+  ///   用户动作，翻到哪页就静默上传哪页超出了那份同意；而 Lens 恰是出厂默认引擎，
+  ///   不挡的话自动模式开书就弹授权框（拒绝不记忆，每本书每章都弹），同意过整卷
+  ///   OCR 的存量用户则翻一页传一页。用户点「识别当前页」才走授权 + 上传。
   static Future<MangaOcrEngineId> resolveEngine(
     MangaOcrEnginePreference preference,
-    MangaOcrService service,
-  ) async {
+    MangaOcrService service, {
+    required bool userInitiated,
+  }) async {
     final MangaOcrEngineId? explicit = preference.explicitEngine;
-    if (explicit != null) return explicit;
+    if (explicit != null) {
+      if (explicit == MangaOcrEngineId.externalMokuro ||
+          explicit == MangaOcrEngineId.pairedHost) {
+        throw const MangaVisibleOcrEngineUnavailable();
+      }
+      if (explicit == MangaOcrEngineId.googleLens && !userInitiated) {
+        throw const MangaVisibleOcrEngineUnavailable();
+      }
+      return explicit;
+    }
     if (service is MangaOcrPageService &&
         service.isSupportedPlatform &&
         (await service.modelStatus()).allReady) {
