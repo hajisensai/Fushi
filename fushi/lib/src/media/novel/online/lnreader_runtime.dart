@@ -19,6 +19,10 @@ class LnReaderPluginException implements Exception {
   String toString() => message;
 }
 
+/// 宿主页的内容安全策略：除脚本（inline + eval）外一律 `none`。
+const String lnReaderHostCsp =
+    "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'";
+
 /// 装载插件所需的源码与持久化存储快照。
 typedef LnReaderPluginSource = ({String code, Map<String, Object?> storage});
 
@@ -71,6 +75,66 @@ abstract interface class LnReaderRuntime {
   Future<void> dispose();
 }
 
+/// 「哪些插件装在当前这一代宿主里」的账本（审查 B2）。
+///
+/// WebView 闲置销毁或 renderer 死亡后，新一代宿主里一个插件都没有；而浏览页翻页 /
+/// 搜索、详情页、下载都直接调插件方法、不经 [LnReaderRuntime.ensureLoaded]。所以
+/// 每次插件方法调用前都经 [ensure]：这一代没装就用记住的源码重新装。
+class LnReaderPluginLedger {
+  final Map<String, Future<LnReaderPluginSource> Function()> _sources =
+      <String, Future<LnReaderPluginSource> Function()>{};
+  final Map<String, LnReaderPluginInfo> _loaded =
+      <String, LnReaderPluginInfo>{};
+  final Map<String, Future<LnReaderPluginInfo>> _loading =
+      <String, Future<LnReaderPluginInfo>>{};
+
+  /// 宿主代次：装载途中宿主被拆掉，旧一代的装载结果不能记成新一代已装载。
+  int _generation = 0;
+
+  LnReaderPluginInfo? infoOf(String pluginId) => _loaded[pluginId];
+
+  /// 这一代宿主已装载就直接返回；否则用 [source]（缺省用上次记住的）经 [load]
+  /// 装进宿主。从没给过源码的插件返回 null——交给宿主报 `Plugin not loaded`。
+  Future<LnReaderPluginInfo?> ensure(
+    String pluginId, {
+    Future<LnReaderPluginSource> Function()? source,
+    required Future<LnReaderPluginInfo> Function(LnReaderPluginSource source)
+    load,
+  }) {
+    if (source != null) _sources[pluginId] = source;
+    final LnReaderPluginInfo? info = _loaded[pluginId];
+    if (info != null) return Future<LnReaderPluginInfo?>.value(info);
+    final Future<LnReaderPluginSource> Function()? remembered =
+        _sources[pluginId];
+    if (remembered == null) return Future<LnReaderPluginInfo?>.value();
+    final int generation = _generation;
+    final Future<LnReaderPluginInfo> pending = _loading[pluginId] ??= () async {
+      try {
+        final LnReaderPluginInfo loaded = await load(await remembered());
+        if (generation == _generation) _loaded[pluginId] = loaded;
+        return loaded;
+      } finally {
+        if (generation == _generation) unawaited(_loading.remove(pluginId));
+      }
+    }();
+    return pending;
+  }
+
+  /// 这一代宿主没了：装载状态作废，源码回调保留（下次调用自动重装）。
+  void hostGone() {
+    _generation++;
+    _loaded.clear();
+    _loading.clear();
+  }
+
+  /// 卸载 / 更新：连源码回调一起忘掉，下次由调用方重新给源码。
+  void forget(String pluginId) {
+    _sources.remove(pluginId);
+    _loaded.remove(pluginId);
+    _loading.remove(pluginId);
+  }
+}
+
 /// 在一个 headless WebView 里跑 LNReader 插件。
 ///
 /// - 懒建：第一次调用才起 WebView（桌面 WebView2 要求 Flutter view 已挂载，
@@ -103,10 +167,7 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
 
   HeadlessInAppWebView? _webView;
   Future<InAppWebViewController>? _ready;
-  final Map<String, LnReaderPluginInfo> _loaded =
-      <String, LnReaderPluginInfo>{};
-  final Map<String, Future<LnReaderPluginInfo>> _loading =
-      <String, Future<LnReaderPluginInfo>>{};
+  final LnReaderPluginLedger _plugins = LnReaderPluginLedger();
   int _inFlight = 0;
   Timer? _idleTimer;
   bool _disposed = false;
@@ -120,7 +181,21 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
         StateError('LNReader runtime disposed'),
       );
     }
-    return _ready ??= _start();
+    final Future<InAppWebViewController>? current = _ready;
+    if (current != null) return current;
+    final Future<InAppWebViewController> started = _start();
+    _ready = started;
+    // 起不来（宿主脚本失败 / 30 s 未加载）：立刻拆掉这一代，下一次调用重试，
+    // 而不是在空闲销毁前一直返回同一个失败；超时那一代的 WebView 也随之释放。
+    unawaited(
+      started.then<void>(
+        (_) {},
+        onError: (Object _) {
+          if (identical(_ready, started)) unawaited(_teardown());
+        },
+      ),
+    );
+    return started;
   }
 
   Future<InAppWebViewController> _start() async {
@@ -134,9 +209,15 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
     _death = Completer<void>();
     final HeadlessInAppWebView webView = HeadlessInAppWebView(
       initialData: InAppWebViewInitialData(
+        // CSP 封死页面自己的网络（fetch / XHR / WebSocket / 资源加载）：插件是任意
+        // 第三方 JS，不封的话它可以绕过宿主桥（代理装配 + 本机地址拦截）直接用
+        // WebView 原生网络打本机服务（审查 B1）。宿主与插件脚本由 Dart 注入、插件
+        // 经 `new Function` 执行，所以只放行 inline + eval；DOMParser 产出的文档
+        // 是惰性的，不受影响。
         data:
-            '<!doctype html><html><head><meta charset="utf-8"></head>'
-            '<body></body></html>',
+            '<!doctype html><html><head><meta charset="utf-8">'
+            '<meta http-equiv="Content-Security-Policy" content="$lnReaderHostCsp">'
+            '</head><body></body></html>',
         mimeType: 'text/html',
         encoding: 'utf-8',
         baseUrl: WebUri('https://fushi.local/lnreader/'),
@@ -216,8 +297,7 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
     final HeadlessInAppWebView? webView = _webView;
     _webView = null;
     _ready = null;
-    _loaded.clear();
-    _loading.clear();
+    _plugins.hostGone();
     if (webView != null) {
       try {
         await webView.dispose();
@@ -285,31 +365,43 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
   Future<LnReaderPluginInfo> ensureLoaded(
     String pluginId,
     Future<LnReaderPluginSource> Function() source,
-  ) {
-    final LnReaderPluginInfo? info = _loaded[pluginId];
-    if (info != null && _ready != null) return Future.value(info);
-    return _loading[pluginId] ??= () async {
-      try {
-        final LnReaderPluginSource loaded = await source();
-        final Object? raw = await _invoke('load', <Object?>[
-          pluginId,
-          loaded.code,
-          loaded.storage,
-        ]);
-        final LnReaderPluginInfo info = LnReaderPluginInfo.fromJson(
-          raw is Map ? raw : const <Object?, Object?>{},
-        );
-        _loaded[pluginId] = info;
-        return info;
-      } finally {
-        unawaited(_loading.remove(pluginId));
-      }
-    }();
+  ) async => (await _plugins.ensure(
+    pluginId,
+    source: source,
+    load: (LnReaderPluginSource loaded) => _loadIntoHost(pluginId, loaded),
+  ))!;
+
+  Future<LnReaderPluginInfo> _loadIntoHost(
+    String pluginId,
+    LnReaderPluginSource loaded,
+  ) async {
+    final Object? raw = await _invoke('load', <Object?>[
+      pluginId,
+      loaded.code,
+      loaded.storage,
+    ]);
+    return LnReaderPluginInfo.fromJson(
+      raw is Map ? raw : const <Object?, Object?>{},
+    );
+  }
+
+  /// 调插件方法：这一代宿主里没有该插件（闲置销毁 / renderer 死亡后重建）就先
+  /// 用记住的源码重新装载（审查 B2）。所有带 pluginId 的宿主方法都必须走这里。
+  Future<Object?> _invokePlugin(
+    String method,
+    String pluginId,
+    List<Object?> rest,
+  ) async {
+    await _plugins.ensure(
+      pluginId,
+      load: (LnReaderPluginSource loaded) => _loadIntoHost(pluginId, loaded),
+    );
+    return _invoke(method, <Object?>[pluginId, ...rest]);
   }
 
   @override
   Future<void> forget(String pluginId) async {
-    _loaded.remove(pluginId);
+    _plugins.forget(pluginId);
     if (_ready == null) return;
     await _invoke('unload', <Object?>[pluginId]);
   }
@@ -321,7 +413,7 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
     required bool latest,
     Map<String, Object?>? filters,
   }) async => _items(
-    await _invoke('popular', <Object?>[pluginId, page, latest, filters]),
+    await _invokePlugin('popular', pluginId, <Object?>[page, latest, filters]),
   );
 
   @override
@@ -329,15 +421,16 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
     String pluginId, {
     required String query,
     required int page,
-  }) async => _items(await _invoke('search', <Object?>[pluginId, query, page]));
+  }) async =>
+      _items(await _invokePlugin('search', pluginId, <Object?>[query, page]));
 
   @override
   Future<LnReaderNovel> novel(String pluginId, String path) async {
-    final Object? raw = await _invoke('novel', <Object?>[pluginId, path]);
+    final Object? raw = await _invokePlugin('novel', pluginId, <Object?>[path]);
     final LnReaderNovel novel = LnReaderNovel.fromJson(
       raw is Map ? raw : const <Object?, Object?>{},
     );
-    final LnReaderPluginInfo? info = _loaded[pluginId];
+    final LnReaderPluginInfo? info = _plugins.infoOf(pluginId);
     if (novel.totalPages <= 1 || info == null || !info.hasParsePage) {
       return novel;
     }
@@ -350,8 +443,7 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
       page <= novel.totalPages;
       page++
     ) {
-      final Object? chapters = await _invoke('page', <Object?>[
-        pluginId,
+      final Object? chapters = await _invokePlugin('page', pluginId, <Object?>[
         path,
         page,
       ]);
@@ -366,7 +458,8 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
 
   @override
   Future<String> chapter(String pluginId, String path) async =>
-      (await _invoke('chapter', <Object?>[pluginId, path]) ?? '').toString();
+      (await _invokePlugin('chapter', pluginId, <Object?>[path]) ?? '')
+          .toString();
 
   @override
   Future<String> resolveUrl(
@@ -374,7 +467,8 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
     String path, {
     required bool isNovel,
   }) async =>
-      (await _invoke('resolveUrl', <Object?>[pluginId, path, isNovel]) ?? '')
+      (await _invokePlugin('resolveUrl', pluginId, <Object?>[path, isNovel]) ??
+              '')
           .toString();
 
   @override

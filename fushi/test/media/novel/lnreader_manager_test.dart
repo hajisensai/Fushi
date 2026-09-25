@@ -37,6 +37,21 @@ void main() {
         response.write('[]');
       } else if (request.uri.path == '/plugins.min.json') {
         response.write(jsonEncode(index));
+      } else if (request.uri.path == '/evil.json') {
+        // 第三方仓库：与官方插件同 id、版本号更高（插件没有签名）。
+        response.write(
+          jsonEncode(<Map<String, Object?>>[
+            <String, Object?>{
+              'id': 'yomou.syosetu',
+              'name': 'Syosetu',
+              'site': 'https://yomou.syosetu.com/',
+              'lang': '日本語',
+              'version': '9.9.9',
+              'url': '$base/Evil.js',
+              'iconUrl': '',
+            },
+          ]),
+        );
       } else if (request.uri.path == '/not-a-repo') {
         response.write('<html>repo home page</html>');
       } else if (scripts.containsKey(request.uri.path)) {
@@ -234,6 +249,57 @@ void main() {
     expect(
       lnReaderStoreDisplayName(kLnReaderOfficialStoreUrl),
       'LNReader/lnreader-plugins',
+    );
+  });
+
+  // 审查：插件没有签名，来源仓库是唯一的身份绑定。第三方仓库发一个同 id、版本号
+  // 更高的条目，不能顶掉已装插件的目录条目，也不能被「全部更新」静默装上。
+  test('第三方仓库的同 id 高版本条目不算已装插件的更新', () async {
+    final LnReaderManager m = await ready();
+    final LnReaderRepoPlugin official = m.available.firstWhere(
+      (LnReaderRepoPlugin p) => p.id == 'yomou.syosetu',
+    );
+    await m.install(official);
+    await m.addStore('$base/evil.json');
+
+    final LnReaderRepoPlugin listed = m.available.firstWhere(
+      (LnReaderRepoPlugin p) => p.id == 'yomou.syosetu',
+    );
+    expect(listed.storeUrl, '$base/plugins.min.json');
+    expect(m.available.where(m.hasUpdate), isEmpty);
+    expect(
+      m.hasUpdate(
+        LnReaderRepoPlugin.tryParse(<String, Object?>{
+          'id': 'yomou.syosetu',
+          'name': 'Syosetu',
+          'site': 'https://yomou.syosetu.com/',
+          'lang': '日本語',
+          'version': '9.9.9',
+          'url': '$base/Evil.js',
+          'iconUrl': '',
+        }, storeUrl: '$base/evil.json')!,
+      ),
+      isFalse,
+    );
+  });
+
+  // 审查 B3：插件连续 storage.set、用户快速连点都会并发触发整份快照写盘。共用一个
+  // `.part` 时几路写互相覆盖 / rename，落下坏 JSON，读取时被当空状态——整份丢失。
+  test('并发写同一文件：最终 JSON 完好且是最后一次写入', () async {
+    final LnReaderManager m = manager(FakeLnReaderRuntime());
+    await m.initialise();
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < 20; i++)
+        m.persistStorage('p', <String, Object?>{'n': i, 'pad': 'x' * 4096}),
+    ]);
+    final File file = File('${root.path}/storage/p.json');
+    final Object? decoded = jsonDecode(await file.readAsString());
+    expect((decoded! as Map)['n'], 19);
+    expect(
+      Directory(
+        '${root.path}/storage',
+      ).listSync().where((FileSystemEntity e) => e.path.endsWith('.part')),
+      isEmpty,
     );
   });
 }

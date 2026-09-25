@@ -7,11 +7,84 @@ import 'dart:typed_data';
 ///
 /// 插件是第三方仓库的任意 JS，而 app 自己在本机开着 HTTP 服务（浏览器扩展查词
 /// 接口、互联 host 等）；不拦的话，一个恶意插件经宿主桥就能打到这些本机接口。
+///
+/// 这只是**名字层**的快速拒绝（给出可读错误、不发 DNS）。它挡不住 `localhost.`、
+/// A 记录指向 127.0.0.1 的外部域名、DNS rebinding——真正的边界是
+/// [guardLnReaderConnections] 在建连接那一刻按解析后的地址判。
 bool isLnReaderBlockedHost(String host) {
-  final String value = host.toLowerCase().replaceAll(RegExp(r'^\[|\]$'), '');
+  final String value = host
+      .toLowerCase()
+      .replaceAll(RegExp(r'^\[|\]$'), '')
+      .replaceAll(RegExp(r'\.+$'), '');
   if (value == 'localhost' || value.endsWith('.localhost')) return true;
   final InternetAddress? address = InternetAddress.tryParse(value);
-  return address != null && (address.isLoopback || address.isLinkLocal);
+  return address != null && isLnReaderBlockedAddress(address);
+}
+
+/// 解析后的地址是否落在本机：回环、链路本地、未指定（`0.0.0.0` / `::`，在多数
+/// 平台上连它就是连本机），以及 IPv4 映射的 IPv6（`::ffff:127.0.0.1`）。
+bool isLnReaderBlockedAddress(InternetAddress address) {
+  InternetAddress value = address;
+  final List<int> raw = value.rawAddress;
+  if (value.type == InternetAddressType.IPv6 &&
+      raw.length == 16 &&
+      raw.sublist(0, 10).every((int b) => b == 0) &&
+      raw[10] == 0xff &&
+      raw[11] == 0xff) {
+    value = InternetAddress.fromRawAddress(Uint8List.fromList(raw.sublist(12)));
+  }
+  if (value.isLoopback || value.isLinkLocal) return true;
+  return value.rawAddress.every((int b) => b == 0);
+}
+
+/// 让 [client] 在**建立连接那一刻**按解析后的地址拦截本机（BUG 审查 B1）。
+///
+/// 名字判据是字符串比较，`http://localhost.:8765/`、`*.nip.io`、攻击者自己把 A 记录
+/// 指到 127.0.0.1 的域名都能绕过，恶意插件就能打到 AnkiConnect 等本机服务。这里
+/// 自己解析目标主机、剔除本机地址，直连时只连剩下这些**已判过**的地址（TLS 的
+/// SNI / 证书校验仍按原主机名，`InternetAddress.lookup` 的结果带着它），所以解析与
+/// 连接之间没有 rebinding 的窗口。
+///
+/// 经代理时连接对象是代理、目标由代理解析：只能事先按本机解析结果判一次，代理侧
+/// 解析到本机的 rebinding 是已知残留面（与用户自己配置代理的信任边界一致）。
+void guardLnReaderConnections(
+  HttpClient client, {
+  bool Function(InternetAddress address) isBlockedAddress =
+      isLnReaderBlockedAddress,
+}) {
+  client.connectionFactory =
+      (Uri uri, String? proxyHost, int? proxyPort) async {
+        final List<InternetAddress> resolved = await InternetAddress.lookup(
+          uri.host,
+        );
+        final List<InternetAddress> allowed = <InternetAddress>[
+          for (final InternetAddress address in resolved)
+            if (!isBlockedAddress(address)) address,
+        ];
+        if (allowed.isEmpty) {
+          throw SocketException('blocked host: ${uri.host}');
+        }
+        if (proxyHost != null && proxyPort != null) {
+          return Socket.startConnect(proxyHost, proxyPort);
+        }
+        // 按解析顺序逐个试（与 HttpClient 默认的直连行为一致）：只连第一个时，
+        // IPv6 排前而本机只通 IPv4 的站点会直接连不上。
+        Future<Socket> connectFirstReachable() async {
+          late SocketException lastError;
+          for (final InternetAddress address in allowed) {
+            try {
+              return uri.scheme == 'https'
+                  ? await SecureSocket.connect(address, uri.port)
+                  : await Socket.connect(address, uri.port);
+            } on SocketException catch (error) {
+              lastError = error;
+            }
+          }
+          throw lastError;
+        }
+
+        return ConnectionTask.fromSocket(connectFirstReachable(), () {});
+      };
 }
 
 /// LNReader 插件出站请求的宿主端执行者。
@@ -29,10 +102,15 @@ class LnReaderFetchBridge {
     this.timeout = const Duration(seconds: 60),
     this.maxBodyBytes = 32 * 1024 * 1024,
     this.isBlockedHost = isLnReaderBlockedHost,
+    this.isBlockedAddress = isLnReaderBlockedAddress,
   }) : _clientFactory = clientFactory;
 
   final HttpClient Function() _clientFactory;
   HttpClient? _client;
+
+  /// 连接层（解析后地址）的拦截判据；生产恒为 [isLnReaderBlockedAddress]，测试
+  /// （本地回环服务器）注入。见 [guardLnReaderConnections]。
+  final bool Function(InternetAddress address) isBlockedAddress;
 
   /// 单次请求（连接 + 读完响应体）的时限。
   final Duration timeout;
@@ -103,7 +181,7 @@ class LnReaderFetchBridge {
 
     // 🔴 重定向手动跟：HttpClient 自动跟随时，一个指向 127.0.0.1 的 302 就能绕过
     // 上面的回环拦截。每一跳都重新过 [isLnReaderBlockedHost]。
-    final HttpClient client = _client ??= _clientFactory();
+    final HttpClient client = _client ??= _guardedClient();
     Uri current = uri;
     String currentMethod = method;
     late HttpClientResponse response;
@@ -176,6 +254,12 @@ class LnReaderFetchBridge {
   }
 
   static const int _maxRedirects = 10;
+
+  HttpClient _guardedClient() {
+    final HttpClient client = _clientFactory();
+    guardLnReaderConnections(client, isBlockedAddress: isBlockedAddress);
+    return client;
+  }
 
   void _rememberCookies(Uri uri, HttpClientResponse response) {
     for (final Cookie cookie in response.cookies) {

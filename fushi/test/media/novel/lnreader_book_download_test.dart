@@ -30,14 +30,23 @@ void main() {
     late Directory root;
     late HttpServer images;
     late String imageBase;
+    final List<String> requestedPaths = <String>[];
 
     setUp(() async {
+      requestedPaths.clear();
       root = await Directory.systemTemp.createTemp('lnreader_download_');
       images = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       imageBase = 'http://127.0.0.1:${images.port}';
       images.listen((HttpRequest request) async {
+        requestedPaths.add(request.uri.path);
         if (request.uri.path == '/ok.png') {
           request.response.add(_png);
+        } else if (request.uri.path == '/redirect.png') {
+          request.response.statusCode = HttpStatus.found;
+          request.response.headers.set(
+            HttpHeaders.locationHeader,
+            'http://localhost:${images.port}/ok.png',
+          );
         } else {
           request.response.statusCode = HttpStatus.notFound;
         }
@@ -79,11 +88,14 @@ void main() {
       author: '作者',
     );
 
-    Future<(LnReaderManager, FakeLnReaderRuntime)> setUpManager() async {
+    Future<(LnReaderManager, FakeLnReaderRuntime)> setUpManager({
+      String? chapter2,
+    }) async {
       final FakeLnReaderRuntime runtime = FakeLnReaderRuntime(
         novelResult: novel,
         chapterHtml: <String, String>{
           '/2':
+              chapter2 ??
               '<p>図<img src="$imageBase/ok.png"/>と<img src="$imageBase/missing.png"/></p>',
         },
       );
@@ -111,6 +123,7 @@ void main() {
             database: FushiDatabase.forTesting(NativeDatabase.memory()),
             httpClientFactory: HttpClient.new,
             isBlockedHost: (String _) => false,
+            isBlockedAddress: (InternetAddress _) => false,
             importEpub:
                 ({
                   required FushiDatabase db,
@@ -148,6 +161,53 @@ void main() {
       expect(archive.findFile('OEBPS/images/c2-0.png'), isNotNull);
     });
 
+    // 审查 B1：插图地址来自插件 / 站点。HttpClient 自动跟随重定向时只有首跳过
+    // 名字判据，一个 302 指向 localhost 就能打到本机服务。
+    test('插图经 302 跳到被拦主机：不跟随、只丢这张图', () async {
+      final (
+        LnReaderManager manager,
+        FakeLnReaderRuntime _,
+      ) = await setUpManager(
+        chapter2: '<p>図<img src="$imageBase/redirect.png"/></p>',
+      );
+      Uint8List? imported;
+      await LnReaderBookDownload(
+        manager: manager,
+        database: FushiDatabase.forTesting(NativeDatabase.memory()),
+        httpClientFactory: HttpClient.new,
+        // 测试服务器在回环上：放行 127.0.0.1，只拦 localhost（模拟「跳到本机」）；
+        // 连接层放行，钉住的是「每一跳重新过名字判据」这一处。
+        isBlockedHost: (String host) => host == 'localhost',
+        isBlockedAddress: (InternetAddress _) => false,
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              imported = bytes;
+              return 'book-key';
+            },
+      ).run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.skip(),
+      );
+      expect(requestedPaths, contains('/redirect.png'));
+      expect(
+        requestedPaths,
+        isNot(contains('/ok.png')),
+        reason: '重定向目标是被拦主机，一次都不能被请求到。',
+      );
+      final Archive archive = _unzip(imported!);
+      expect(
+        _entry(archive, 'OEBPS/chapter-2.xhtml'),
+        isNot(contains('images/c2-0')),
+      );
+    });
+
     test('任一章失败整次中止并指出是哪一章（不静默跳章）', () async {
       final (LnReaderManager manager, FakeLnReaderRuntime runtime) =
           await setUpManager();
@@ -159,6 +219,7 @@ void main() {
           database: FushiDatabase.forTesting(NativeDatabase.memory()),
           httpClientFactory: HttpClient.new,
           isBlockedHost: (String _) => false,
+          isBlockedAddress: (InternetAddress _) => false,
           importEpub:
               ({
                 required FushiDatabase db,
@@ -203,6 +264,7 @@ void main() {
           database: FushiDatabase.forTesting(NativeDatabase.memory()),
           httpClientFactory: HttpClient.new,
           isBlockedHost: (String _) => false,
+          isBlockedAddress: (InternetAddress _) => false,
           importEpub:
               ({
                 required FushiDatabase db,

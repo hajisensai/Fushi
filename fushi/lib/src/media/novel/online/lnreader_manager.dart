@@ -158,11 +158,46 @@ class LnReaderManager extends ChangeNotifier {
     );
   }
 
-  static Future<void> _writeAtomically(File target, String contents) async {
+  /// 每个目标文件一条写入链：同一文件的写按调用顺序串行（审查 B3）。
+  ///
+  /// 插件连续 `storage.set` 几个键、用户快速连点启用 / 排序，都会并发触发整份
+  /// 快照写盘。共用一个 `.part` 时几路写互相覆盖、互相 rename，实测 50 轮里 24 轮
+  /// 落下坏 JSON——而读取把坏 JSON 当空状态，结果是所有已装插件、用户仓库或插件
+  /// 登录态整份丢失。串行后最后发起的那次写一定最后落盘。
+  final Map<String, Future<void>> _writeChains = <String, Future<void>>{};
+  int _tempSeq = 0;
+
+  Future<void> _writeAtomically(File target, String contents) {
+    final String key = target.path;
+    final Future<void> previous = _writeChains[key] ?? Future<void>.value();
+    final Future<void> next = () async {
+      try {
+        await previous;
+      } on Object {
+        // 前一次写的失败已经交给它自己的调用方；这里只保证顺序，不影响本次写。
+      }
+      await _writeFile(target, contents);
+    }();
+    _writeChains[key] = next;
+    unawaited(
+      next.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+        if (identical(_writeChains[key], next)) _writeChains.remove(key);
+      }),
+    );
+    return next;
+  }
+
+  Future<void> _writeFile(File target, String contents) async {
     await target.parent.create(recursive: true);
-    final File temp = File('${target.path}.part');
-    await temp.writeAsString(contents, flush: true);
-    await temp.rename(target.path);
+    // 串行之外再给临时文件唯一名：即便将来有别的写入口绕过链，也不会互踩。
+    final File temp = File('${target.path}.${++_tempSeq}.part');
+    try {
+      await temp.writeAsString(contents, flush: true);
+      await temp.rename(target.path);
+    } on Object {
+      if (await temp.exists()) await temp.delete();
+      rethrow;
+    }
   }
 
   static List<LnReaderInstalledPlugin> _sorted(
@@ -256,6 +291,16 @@ class LnReaderManager extends ChangeNotifier {
       final Map<String, LnReaderRepoPlugin> byId =
           <String, LnReaderRepoPlugin>{};
       for (final LnReaderRepoPlugin plugin in merged) {
+        // 已装插件只认它来源仓库的条目：否则任意第三方仓库发一个同 id、版本号
+        // 更高的条目就会顶掉它，「全部更新」静默把官方插件换成第三方代码。
+        final LnReaderInstalledPlugin? installed = installedById(plugin.id);
+        final LnReaderRepoPlugin? kept = byId[plugin.id];
+        if (installed != null &&
+            kept != null &&
+            kept.storeUrl == installed.storeUrl &&
+            plugin.storeUrl != installed.storeUrl) {
+          continue;
+        }
         byId.remove(plugin.id);
         byId[plugin.id] = plugin;
       }
@@ -296,10 +341,12 @@ class LnReaderManager extends ChangeNotifier {
     return null;
   }
 
-  /// 目录里的版本比已装的新。
+  /// 目录里的版本比已装的新，且来自已装插件的来源仓库——别的仓库里同 id 的
+  /// 条目不是它的更新（插件没有签名，来源仓库是唯一的身份绑定）。
   bool hasUpdate(LnReaderRepoPlugin plugin) {
     final LnReaderInstalledPlugin? installed = installedById(plugin.id);
     return installed != null &&
+        plugin.storeUrl == installed.storeUrl &&
         compareLnReaderVersions(plugin.version, installed.version) > 0;
   }
 

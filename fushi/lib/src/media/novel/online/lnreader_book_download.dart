@@ -50,6 +50,7 @@ class LnReaderBookDownload {
     required this.database,
     required HttpClient Function() httpClientFactory,
     this.isBlockedHost = isLnReaderBlockedHost,
+    this.isBlockedAddress = isLnReaderBlockedAddress,
     Future<String> Function({
       required FushiDatabase db,
       required Uint8List bytes,
@@ -66,6 +67,9 @@ class LnReaderBookDownload {
 
   /// 插图 / 封面的主机拦截判据，与宿主桥同一条（插图地址同样来自插件）。
   final bool Function(String host) isBlockedHost;
+
+  /// 连接层（解析后地址）拦截判据，与宿主桥同一条（[guardLnReaderConnections]）。
+  final bool Function(InternetAddress address) isBlockedAddress;
   final Future<String> Function({
     required FushiDatabase db,
     required Uint8List bytes,
@@ -104,6 +108,7 @@ class LnReaderBookDownload {
     final LnReaderPluginInfo info = await manager.load(plugin);
     final LnReaderRuntime runtime = manager.runtime;
     final HttpClient client = _httpClientFactory();
+    guardLnReaderConnections(client, isBlockedAddress: isBlockedAddress);
     try {
       final List<LnReaderEpubChapter> built = <LnReaderEpubChapter>[];
       onProgress?.call(0, chapters.length);
@@ -201,19 +206,34 @@ class LnReaderBookDownload {
     required Map<String, String> headers,
   }) async {
     try {
-      final Uri uri = Uri.parse(url);
-      if (isBlockedHost(uri.host)) return null;
-      final HttpClientRequest request = await client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 30));
-      request.headers.set(
-        HttpHeaders.userAgentHeader,
-        LnReaderFetchBridge.defaultUserAgent,
-      );
-      headers.forEach(request.headers.set);
-      final HttpClientResponse response = await request.close().timeout(
-        const Duration(seconds: 30),
-      );
+      // 重定向手动跟：HttpClient 自动跟随时只有首跳过名字判据，一个 302 指向
+      // 127.0.0.1 就能打到本机（审查 B1）。每一跳重新过判据；连接层另有
+      // [guardLnReaderConnections] 按解析后地址兜底。
+      Uri uri = Uri.parse(url);
+      late HttpClientResponse response;
+      for (int hop = 0; ; hop++) {
+        if ((uri.scheme != 'http' && uri.scheme != 'https') ||
+            isBlockedHost(uri.host)) {
+          return null;
+        }
+        final HttpClientRequest request = await client
+            .getUrl(uri)
+            .timeout(const Duration(seconds: 30));
+        request.followRedirects = false;
+        request.headers.set(
+          HttpHeaders.userAgentHeader,
+          LnReaderFetchBridge.defaultUserAgent,
+        );
+        headers.forEach(request.headers.set);
+        response = await request.close().timeout(const Duration(seconds: 30));
+        final String? location = response.headers.value(
+          HttpHeaders.locationHeader,
+        );
+        if (!response.isRedirect || location == null) break;
+        await response.drain<void>();
+        if (hop >= 5) return null;
+        uri = uri.resolve(location);
+      }
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         return null;

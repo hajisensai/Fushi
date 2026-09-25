@@ -376,7 +376,9 @@ class _LnReaderFilterDialogState extends State<LnReaderFilterDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog.adaptive(
+    // 普通 AlertDialog：内含 Dropdown / FilterChip，`.adaptive` 在 iOS / macOS 主题
+    // 下没有 Material 祖先。
+    return AlertDialog(
       title: Text(t.novel_source_filters_title),
       content: SizedBox(
         width: 480,

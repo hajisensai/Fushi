@@ -352,7 +352,9 @@ class _LnReaderChapterRangeDialogState
     final int last = widget.chapters.length - 1;
     final int start = _range.start.round();
     final int end = _range.end.round();
-    return AlertDialog.adaptive(
+    // 普通 AlertDialog：内含 RangeSlider，`.adaptive` 在 iOS / macOS 主题下没有
+    // Material 祖先。
+    return AlertDialog(
       title: Text(t.novel_download_range_title),
       content: SizedBox(
         width: 480,

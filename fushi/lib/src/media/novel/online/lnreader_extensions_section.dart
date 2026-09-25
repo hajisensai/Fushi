@@ -84,7 +84,9 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     try {
       return await showAppDialog<String>(
         context: context,
-        builder: (BuildContext dialogContext) => AlertDialog.adaptive(
+        // 普通 AlertDialog：内含 TextField，`.adaptive` 在 iOS / macOS 主题下渲染成
+        // CupertinoAlertDialog、没有 Material 祖先（与 Mihon 输入框同一做法）。
+        builder: (BuildContext dialogContext) => AlertDialog(
           title: Text(title),
           content: Column(
             mainAxisSize: MainAxisSize.min,

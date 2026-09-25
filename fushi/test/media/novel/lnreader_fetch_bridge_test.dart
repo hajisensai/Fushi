@@ -51,8 +51,10 @@ void main() {
 
   LnReaderFetchBridge bridge() => LnReaderFetchBridge(
     clientFactory: HttpClient.new,
-    // 测试服务器本身在回环上：放行 127.0.0.1，只拦 localhost（模拟「打到本机」）。
+    // 测试服务器本身在回环上：放行 127.0.0.1，只拦 localhost（模拟「打到本机」）；
+    // 连接层（解析后地址）同样放行，由下面的专门用例钉。
     isBlockedHost: (String host) => host == 'localhost',
+    isBlockedAddress: (InternetAddress _) => false,
   );
 
   test('插件的请求头与请求体原样送出，缺省补 UA', () async {
@@ -138,5 +140,71 @@ void main() {
     expect(isLnReaderBlockedHost('169.254.169.254'), isTrue);
     expect(isLnReaderBlockedHost('ncode.syosetu.com'), isFalse);
     expect(isLnReaderBlockedHost('93.184.216.34'), isFalse);
+    // 末尾带点是同一个主机（FQDN 写法）。
+    expect(isLnReaderBlockedHost('localhost.'), isTrue);
+    expect(isLnReaderBlockedHost('[::ffff:127.0.0.1]'), isTrue);
+    expect(isLnReaderBlockedHost('0.0.0.0'), isTrue);
+  });
+
+  test('生产地址判据：回环 / 链路本地 / 未指定 / IPv4 映射回环被拦', () {
+    for (final String raw in <String>[
+      '127.0.0.1',
+      '127.8.9.1',
+      '::1',
+      '169.254.169.254',
+      'fe80::1',
+      '0.0.0.0',
+      '::',
+      '::ffff:127.0.0.1',
+    ]) {
+      expect(
+        isLnReaderBlockedAddress(InternetAddress(raw)),
+        isTrue,
+        reason: raw,
+      );
+    }
+    expect(isLnReaderBlockedAddress(InternetAddress('93.184.216.34')), isFalse);
+    expect(
+      isLnReaderBlockedAddress(InternetAddress('::ffff:93.184.216.34')),
+      isFalse,
+    );
+  });
+
+  // 连接层自己建 socket：解析出多个地址时必须逐个试。`localhost` 常先解析出
+  // `::1`，而测试服务器只听 IPv4——只连第一个地址就连不上（生产上等于 IPv6 排前、
+  // 本机只通 IPv4 的站点全部失败）。
+  test('连接层逐个尝试解析出的地址（IPv6 不通回落 IPv4）', () async {
+    final LnReaderFetchBridge open = LnReaderFetchBridge(
+      clientFactory: HttpClient.new,
+      isBlockedHost: (String _) => false,
+      isBlockedAddress: (InternetAddress _) => false,
+    );
+    final Map<String, Object?> result = await open.perform(<String, Object?>{
+      'url': 'http://localhost:${server.port}/echo',
+    });
+    expect(result['status'], 200, reason: '$result');
+    open.close();
+  });
+
+  // 审查 B1：名字判据是字符串比较，`localhost.`、A 记录指向 127.0.0.1 的外部域名、
+  // DNS rebinding 都能绕过。真正的边界在连接层按解析后地址判——这里把名字判据
+  // 整个放开，只靠连接层，证明本机服务一次都打不到。
+  test('连接层按解析后地址拦截：名字判据放开时本机也打不到', () async {
+    final LnReaderFetchBridge guarded = LnReaderFetchBridge(
+      clientFactory: HttpClient.new,
+      isBlockedHost: (String _) => false,
+    );
+    for (final String url in <String>[
+      '$base/secret',
+      'http://localhost.:${server.port}/secret',
+      'http://localhost:${server.port}/secret',
+    ]) {
+      final Map<String, Object?> result = await guarded.perform(
+        <String, Object?>{'url': url},
+      );
+      expect(result['error'], contains('blocked host'), reason: url);
+    }
+    expect(seenHeaders, isEmpty, reason: '拦截必须发生在连接之前，本机服务一次都不能被打到。');
+    guarded.close();
   });
 }
