@@ -301,4 +301,37 @@ void main() {
     );
     expect(focusGate.excluding, isTrue);
   });
+
+  // 首页 / 系列 / 全部视频共用一个 HomeVideoPage，页签 State 一直活着，指示条会滑；
+  // 其余分区此前各挂一份全新页签、以目标下标起步，切过去指示条原地跳变（用户反馈
+  // 「只有首页、系列、全部视频下面那个条有动画」）。
+  testWidgets('切到非本地分区：同一个页签 State 换位置，指示条从旧分区滑过去',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pump();
+
+    final Finder stripFinder =
+        find.byType(FushiSectionTabBar<VideoLibrarySection>);
+    final State<StatefulWidget> before = tester.state(stripFinder);
+    final FushiSectionTabBar<VideoLibrarySection> strip =
+        tester.widget(stripFinder);
+    strip.onChanged!(VideoLibrarySection.mediaServers);
+    await tester.pump();
+    // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 60));
+
+    expect(find.text('media server leaf'), findsOneWidget);
+    expect(tester.state(stripFinder), same(before),
+        reason: '页签必须是同一个 State 换父节点，而不是新挂一份');
+    final TabController controller =
+        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+    expect(controller.index, 3);
+    expect(controller.animation!.value, greaterThan(0));
+    expect(controller.animation!.value, lessThan(3),
+        reason: '指示条应正从「首页」滑向「媒体服务器」，而不是直接落位');
+
+    await tester.pumpAndSettle();
+    expect(controller.animation!.value, 3);
+  });
 }

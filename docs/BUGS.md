@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2467 条。点号进各自文件。
+> 共 2469 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2689](bugs/BUG-2689-section-tabs-no-slide.md) | ✅ | ✅ | 库页顶部导航切分区时指示条没有滑动动画 |
+| [BUG-2688](bugs/BUG-2688-media-server-tabs-covered.md) | ✅ | ✅ | 媒体服务器点开后整页覆盖顶部分区导航 |
 | [BUG-2684](bugs/BUG-2684-card-source-cross-device.md) | ✅ | ✅ | 同步过来的书卡片跳不回原文 |
 | [BUG-2683](bugs/BUG-2683-itest-prefs-leak-card-tags.md) | ✅ | ✅ | 集成测试写的 Anki 标签漏进用户真实配置，卡片多出 e2e 与 chars 标签 |
 | [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |

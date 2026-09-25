@@ -104,6 +104,15 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
   bool _sourcesVisited = false;
   bool _settingsVisited = false;
 
+  /// 分区页签的唯一身份。页签同一时刻只交给看得见的那个分区（[_navigationFor]），
+  /// 切分区时它从旧分区的页头挪到新分区的页头；给它一个壳持有的 [GlobalKey]，
+  /// 挪位置就是**同一个** State 换父节点，[TabController] 还停在旧下标、随后
+  /// 滑到新下标。没有这把 key，每个分区都挂一份全新的页签、以目标下标起步，指示条
+  /// 就只剩首页 / 系列 / 全部视图之间（它们共用一个 [HomeVideoPage]）会滑动。
+  final GlobalKey _navigationKey = GlobalKey(
+    debugLabel: 'video-library-sections',
+  );
+
   void _select(VideoLibrarySection value) {
     if (value == _section) return;
     setState(() {
@@ -197,6 +206,7 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ),
       ];
     final Widget navigation = LibrarySectionTabs<VideoLibrarySection>(
+      key: _navigationKey,
       tabs: tabs,
       selected: _section,
       onChanged: _select,
