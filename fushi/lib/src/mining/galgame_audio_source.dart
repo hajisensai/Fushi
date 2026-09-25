@@ -1064,6 +1064,46 @@ Future<void> awaitStableVoiceDumpFile(
   }
 }
 
+/// `Scene<后缀>.pck` 的语言后缀：空（原版）或至多 8 个 ASCII 字母数字（Steam 语言包）。
+final RegExp _siglusScenePackPattern = RegExp(
+  r'^scene([a-z0-9]{0,8})\.pck$',
+  caseSensitive: false,
+);
+
+/// Siglus 文件夹签名，与 native `include/siglus_launch.h` 的
+/// `DirectoryLooksLikeSiglus` 同一判据：配置 `Gameexe<后缀>.dat` 与剧本
+/// `Scene<后缀>.pck` 共享同一个后缀、成对出现。CLANNAD Steam 版选简体中文时只有
+/// `GameexeZH.dat` + `SceneZH.pck`，只认无后缀那一对会把它当成非 Siglus。
+bool directoryLooksLikeSiglus(Directory directory) {
+  final String separator = Platform.pathSeparator;
+  bool exists(String name) =>
+      File('${directory.path}$separator$name').existsSync();
+  if (exists('Gameexe.dat') && exists('Scene.pck')) {
+    return true;
+  }
+  final List<FileSystemEntity> entries;
+  try {
+    entries = directory.listSync(followLinks: false);
+  } on FileSystemException {
+    return false;
+  }
+  for (final FileSystemEntity entry in entries) {
+    if (entry is! File) {
+      continue;
+    }
+    final String name = entry.uri.pathSegments.last;
+    final RegExpMatch? match = _siglusScenePackPattern.firstMatch(name);
+    final String? suffix = match?.group(1);
+    if (suffix == null || suffix.isEmpty) {
+      continue;
+    }
+    if (exists('Gameexe$suffix.dat')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// Unity/Mono/IL2CPP 游戏的文本通常不走 GDI 渲染；Siglus 的 GDI 输出则会包含描边
 /// 重画伪影。两类目标都显式补装 LunaHook 通用 PC hooks，让 UI 能选择干净文本线程。
 bool shouldUseLunaPcHooksForExecutable(String executablePath) {
@@ -1077,10 +1117,7 @@ bool shouldUseLunaPcHooksForExecutable(String executablePath) {
 
   final Directory directory = File(executablePath).parent;
   final String separator = Platform.pathSeparator;
-  final bool hasSiglusLayout =
-      File('${directory.path}${separator}Gameexe.dat').existsSync() &&
-      File('${directory.path}${separator}Scene.pck').existsSync();
-  if (hasSiglusLayout) {
+  if (directoryLooksLikeSiglus(directory)) {
     return true;
   }
   final bool hasUnityPlayer = File(
