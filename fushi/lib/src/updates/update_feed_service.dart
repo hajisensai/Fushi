@@ -290,6 +290,22 @@ class UpdateFeedService implements UpdateFeedPublisher {
       kind: kind?.dbValue,
       seenAt: _now().millisecondsSinceEpoch,
     );
+    await _cancelNotifications(kind);
+  }
+
+  /// 清空更新记录（含未读）；[kind] 非空时只清该域，并撤掉该域挂着的系统通知
+  /// ——条目都没了，通知栏那条点进去也落不到任何东西。
+  ///
+  /// 删掉的只是「记录」：仍然成立的事件（例如还没装的最新 app 版本）会在该域
+  /// 下一轮检查时重新投递，这是对的——它确实还在等用户处理。返回删除条数。
+  Future<int> clear({UpdateFeedKind? kind}) async {
+    final int removed = await _db.clearUpdateFeedEntries(kind: kind?.dbValue);
+    await _cancelNotifications(kind);
+    return removed;
+  }
+
+  /// 撤系统通知；[kind] 为 null = 全部域。
+  Future<void> _cancelNotifications(UpdateFeedKind? kind) async {
     final List<UpdateFeedKind> kinds =
         kind == null ? UpdateFeedKind.values : <UpdateFeedKind>[kind];
     for (final UpdateFeedKind k in kinds) {
