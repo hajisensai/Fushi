@@ -1,0 +1,9 @@
+## BUG-2685 · 在线视频源只用网站第一条字幕轨
+- **报告**：2026-09-26（用户：「aniyomi 能否做到获取网站的字幕，如果可以直接修好」）
+- **真实性**：✅ 真 bug（能力缺口）。Aniyomi `Video.subtitleTracks` 两个宿主早已透传到 Dart（桌面 `DalvikHandler.kt:225`、Android `MihonModelBridge.kt:279`，`MihonVideo.subtitleTracks`），但消费端只取第一条：`fushi/lib/src/media/video/online/anime_source_video_client.dart:311`（`remoteVideoStreamUrls` 的 `chosen.subtitleTracks.firstOrNull`）与 `:367`（`getRemoteVideoSubtitle` 同款）。KickAssAnime 一集 8 条字幕轨，第一条是什么语言全看站点排序（多半英文），其余七条用户在播放页看不到、选不了；`RemoteVideoStreamUrls.embeddedSubtitleTracks` 恒空。
+- **[x] ① 已修复** — `5ef917324d9`。
+  - 在线源把全部轨经 `embeddedSubtitleTracks` 报给播放页既有的远端字幕轨菜单（与 Jellyfin 同一通路；`streamIndex` = 轨在 `Video.subtitleTracks` 的下标，`getRemoteVideoSubtitle(embeddedStreamIndex:)` 按下标下载，失效下标抛 `RangeError` 由播放页报「加载失败」）。
+  - 默认轨不再盲取第一条：按 `resolveSubtitleDownloadLanguage`（字幕工作台默认语言 > 默认内容语言，不猜）+ `rankByPreferredLanguage`（稳定排序、不过滤）挑；新增 `animeSubtitleLanguageCode` 把扩展的人读标签（`English` / `Japanese` / `日本語` / `Portuguese (Brazil)` / `jpn`）归成语言码，认不出不排序。语言在起播时现问（client 的 `subtitleLanguageResolver`），下载默认轨沿用取流时那次的语言，保证下的就是报出去的那条。
+  - `RemoteVideoEmbeddedSubtitleTrack` 新增 `isExternalFile`（wire 键缺省不发，旧 host 不受影响）：外挂文件轨下载失败时**不得**走 BUG-2590 的「交给 libmpv 自绘」回落——流里没有这条轨，按 `streamIndex` 去选会选中另一条不相干的内嵌轨（在线源 mp4 直链就是 `streamIsOriginalContainer=true`，会踩中）。Jellyfin/Emby 的外挂字幕文件（`IsExternal`，不在 `containerSubtitleOrdinals` 里，原先按全局流号兜底）同一隐患一并标上。菜单里外挂轨不再冠「Embedded N」，用字幕图标 + 语言标签。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/online/anime_source_video_client_test.dart`（全部轨上报且标外挂 / 默认轨按首选语言且下载同一条 / 按下标下载与失效下标报错 / 标签→语言码）、`fushi/test/sync/remote_dto_wire_format_golden_test.dart`（`isExternalFile` 缺省 false、默认不上线、往返与 copyWith）、`fushi/test/pages/video_remote_embedded_subtitle_player_fallback_guard_test.dart`（手选与恢复两条 libmpv 回落都判 `isExternalFile`）。
+- **备注**：未真机 E2E（需要真实扩展 + 站点，站点可用性见记忆里的 KickAssAnime/AnimeGG 清单）；持久化的 `embedded:<n>` 按下标重放，若扩展换了轨序或用户换了线路，重放的可能是另一种语言（与媒体服务器流号语义同级的已知限制）。

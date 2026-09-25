@@ -283,9 +283,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
             in _remoteEmbeddedSubtitleTracks)
           ListTile(
             leading: Icon(
-              track.isText
-                  ? Icons.movie_filter_outlined
-                  : Icons.image_not_supported_outlined,
+              !track.isText
+                  ? Icons.image_not_supported_outlined
+                  : track.isExternalFile
+                  ? Icons.closed_caption_outlined
+                  : Icons.movie_filter_outlined,
             ),
             title: Text(_remoteEmbeddedSubtitleLabel(track)),
             subtitle: Text(
@@ -1374,6 +1376,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if ((track.title ?? '').isNotEmpty) track.title!,
       track.codec,
     ];
+    // 外挂文件轨（在线源扩展的字幕链接、媒体服务器的外挂字幕）不在容器里，冠
+    // 「Embedded N」是误导；一集常有七八条轨，语言标签本身就是用户要挑的东西。
+    if (track.isExternalFile) return parts.join(' / ');
     return 'Embedded ${track.streamIndex}: ${parts.join(' / ')}';
   }
 
@@ -1471,7 +1476,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// （[VideoPlayerController.selectEmbeddedTextTrackViaPlayer]），选中即持久化选择、
   /// OSD 说明字幕随播放逐句出现（没播到的句子不会预先出现在列表里）。
   ///
-  /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨未就绪 / 序号越界，调用方
+  /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨本来就是外挂文件、不在流里
+  /// （[RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）/ 轨未就绪 / 序号越界，调用方
   /// 按下载失败提示。
   Future<bool> _showRemoteEmbeddedTrackViaPlayer(
     VideoPlayerController controller,
@@ -1479,7 +1485,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required String source,
     required String label,
   }) async {
-    if (!_remoteStreamIsOriginalContainer) return false;
+    if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
     final bool shown = await controller.selectEmbeddedTextTrackViaPlayer(
       track.containerTrackOrdinal ?? track.streamIndex,

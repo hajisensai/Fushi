@@ -277,6 +277,7 @@ void main() {
           url: 'http://h/s',
           fileName: 's.ass',
           containerTrackOrdinal: 0,
+          isExternalFile: true,
         ).toJson(),
         <String>{
           'streamIndex',
@@ -287,6 +288,7 @@ void main() {
           'url',
           'fileName',
           'containerTrackOrdinal',
+          'isExternalFile',
         },
         what: '内封字幕轨最大实例',
       );
@@ -312,6 +314,35 @@ void main() {
       expect(round.containerTrackOrdinal, 0);
       expect(round.copyWith(url: 'u').containerTrackOrdinal, 0,
           reason: 'copyWith 不得丢掉序号');
+    });
+
+    test('isExternalFile 缺失解成 false（旧 host 的轨都在容器里）；true 原样往返', () {
+      // 外挂文件轨（在线源字幕链接 / Emby 外挂字幕）下载失败时不得交给 libmpv
+      // 自绘：流里没有它。旧 host 不发这个键 → 按容器轨处理（BUG-2590 行为不变）。
+      expect(
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(
+          const <String, Object?>{'streamIndex': 2, 'codec': 'subrip'},
+        ).isExternalFile,
+        isFalse,
+      );
+      expect(
+        const RemoteVideoEmbeddedSubtitleTrack(streamIndex: 0, codec: 'vtt')
+            .toJson()
+            .containsKey('isExternalFile'),
+        isFalse,
+        reason: '默认值不上线，老 client 看到的 wire 不变',
+      );
+      final RemoteVideoEmbeddedSubtitleTrack round =
+          RemoteVideoEmbeddedSubtitleTrack.fromJson(
+        const RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: 0,
+          codec: 'vtt',
+          isExternalFile: true,
+        ).toJson(),
+      );
+      expect(round.isExternalFile, isTrue);
+      expect(round.copyWith(url: 'u').isExternalFile, isTrue,
+          reason: 'copyWith 不得丢掉外挂标记');
     });
 
     test('isText 缺失解成 true（反向默认，不是 false）', () {

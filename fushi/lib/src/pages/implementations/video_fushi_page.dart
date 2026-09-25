@@ -3201,6 +3201,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 解码（BUG-2648）。
               if (track != null &&
                   track.isText &&
+                  !track.isExternalFile &&
                   urls.streamIsOriginalContainer) {
                 playerRenderedTrack = track;
                 subtitleResolved = true;
