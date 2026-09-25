@@ -283,19 +283,29 @@ void main() {
       ),
       throwsFormatException,
     );
-    for (final String bad in <String>['', '  ', 'a\nb']) {
-      expect(
-        () => CardSourceLink(
-          kind: CardSourceKind.book,
-          uid: 'u',
-          bookKey: bad,
-          sourceId: _sourceId,
-          chapterIndex: 0,
-          charOffset: 0,
-        ),
-        throwsFormatException,
+    // A key that cannot be carried safely is dropped, never rejected: EPUB
+    // titles keep embedded newlines, and rejecting made every card of that book
+    // fail to mine. The link still resolves by uid and never emits the key.
+    for (final String bad in <String>['', '  ', 'a\nb', 'x' * 1025]) {
+      final CardSourceLink link = CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'u',
+        bookKey: bad,
+        sourceId: _sourceId,
+        chapterIndex: 0,
+        charOffset: 0,
       );
+      expect(link.bookKey, isNull);
+      expect(link.toUri().queryParameters.containsKey('bookKey'), isFalse);
     }
+    // A hand-edited link with an unusable bookKey still opens by uid.
+    final Uri tampered = book().toUri().replace(
+      queryParameters: <String, String>{
+        ...book().toUri().queryParameters,
+        'bookKey': 'a\tb',
+      },
+    );
+    expect(CardSourceLink.parse(tampered.toString()).bookKey, isNull);
   });
 
   test('rejects commands, paths, invalid anchors and ambiguous URL inputs', () {

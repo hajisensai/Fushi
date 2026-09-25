@@ -25,9 +25,24 @@ class CardSourceLink {
     this.audioFileIndex,
     this.chapterId,
     this.fingerprint,
-    this.bookKey,
-  }) {
+    String? bookKey,
+  }) : bookKey = _portableBookKey(bookKey) {
     _validate();
+  }
+
+  /// [bookKey] is only a fallback identity next to [uid]. A key that cannot be
+  /// carried safely (empty, oversized, or with control characters — EPUB titles
+  /// keep embedded newlines/tabs and `sanitizeTtuFilename` leaves them) is
+  /// dropped instead of rejected: rejecting it made every card of that book
+  /// fail to mine, while dropping it only loses the cross-device fallback.
+  static String? _portableBookKey(String? value) {
+    if (value == null ||
+        value.trim().isEmpty ||
+        value.length > 1024 ||
+        RegExp(r'[\x00-\x1f\x7f]').hasMatch(value)) {
+      return null;
+    }
+    return value;
   }
 
   final CardSourceKind kind;
@@ -154,11 +169,9 @@ class CardSourceLink {
             .any((String segment) => segment == '.' || segment == '..')) {
       throw const FormatException('Invalid library UID');
     }
-    if (bookKey != null &&
-        (bookKey!.trim().isEmpty ||
-            bookKey!.length > 1024 ||
-            RegExp(r'[\x00-\x1f\x7f]').hasMatch(bookKey!) ||
-            kind == CardSourceKind.video)) {
+    // Content problems were already dropped by [_portableBookKey]; a book key on
+    // a video identity is a malformed link (video identity is the fingerprint).
+    if (bookKey != null && kind == CardSourceKind.video) {
       throw const FormatException('Invalid library book key');
     }
     for (final int? value in <int?>[
