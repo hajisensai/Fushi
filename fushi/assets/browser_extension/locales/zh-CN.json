@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "查词后读取",
   "opt_narrowSidePanel_title": "侧边栏空间不足时",
   "opt_narrowSidePanel_desc": "侧边栏比查词框窄时自动按可用宽度收敛，必要时整窗等比缩小，不再把右半边裁掉。此行为恒开，不占设置。想让浏览器查词框重新跟随 app 内弹窗，去 Fushi 设置页关掉「浏览器扩展独立尺寸」。",
+  "opt_shiftHoverLookup_title": "Shift 悬停查词",
+  "opt_shiftHoverLookup_desc": "按住 <kbd>Shift</kbd> 把鼠标移到文字上即查词（网页正文与侧边栏字幕列表）。Shift 与站点快捷键或输入冲突时可以关掉；点击查词、悬浮字幕自动查词等其它入口不受影响。修改后立即生效。",
   "opt_touch_lookup_heading_section_kicker": "触屏查词与字幕抽屉",
   "opt_touch_lookup_heading_heading": "手机与平板",
   "opt_touch_lookup_heading_section_note": "修改后立即生效",

@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "검색 후 읽어옵니다",
   "opt_narrowSidePanel_title": "사이드 패널이 너무 좁을 때",
   "opt_narrowSidePanel_desc": "사이드 패널이 팝업보다 좁으면 팝업이 사용 가능한 너비에 맞춰 줄어들고, 필요하면 창 전체를 비율대로 축소하여 오른쪽 절반이 잘리지 않게 합니다. 항상 켜져 있으며 별도 설정은 없습니다. 브라우저 팝업이 다시 앱 내 팝업을 따르게 하려면 Fushi에서 “브라우저 확장 독립 크기”를 끄세요.",
+  "opt_shiftHoverLookup_title": "Shift 호버 검색",
+  "opt_shiftHoverLookup_desc": "<kbd>Shift</kbd>를 누른 채 마우스를 글자 위에 올리면 검색합니다(웹 페이지 본문과 사이드 패널 자막 목록). Shift가 사이트 단축키나 입력과 충돌하면 끌 수 있으며, 클릭 검색·자막 자동 검색 등 다른 진입점은 영향을 받지 않습니다. 변경 즉시 적용됩니다.",
   "opt_touch_lookup_heading_section_kicker": "터치 검색 및 자막 서랍",
   "opt_touch_lookup_heading_heading": "휴대폰과 태블릿",
   "opt_touch_lookup_heading_section_note": "즉시 적용됩니다",
