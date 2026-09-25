@@ -24,9 +24,14 @@ export 'package:fushi/src/pages/implementations/media_server/media_server_sessio
 
 /// 视频页「媒体服务器」分区：服务器列表 → 服务器首页 → 库网格 / 搜索 / 详情 → 播放。
 ///
-/// 前三层是**分区内**的嵌套 [Navigator]：分区页签始终在上方、切到别的分区再切回来
-/// 栈原样保留（壳把本页 Offstage 保活），每层的滚动位置随路由存活。播放页不在
-/// 这条栈里——它要压在整个 app 之上，走根 Navigator。
+/// 前三层是**分区内**的嵌套 [Navigator]：切到别的分区再切回来栈原样保留（壳把本页
+/// Offstage 保活），每层的滚动位置随路由存活。播放页不在这条栈里——它要压在整个
+/// app 之上，走根 Navigator。
+///
+/// **分区页签在嵌套 Navigator 之外**，由本页自己画在最上方，各层路由只在它下面叠
+/// 自己的紧凑页头（标题 / 返回 / 动作）。此前页签只放在栈底的服务器列表页里，push
+/// 首页 / 网格 / 详情时新路由整页盖住它；单台服务器一进分区就自动进首页，于是用户
+/// 一点开「媒体服务器」顶部导航就没了，只能靠返回键退出来。
 ///
 /// **返回键**：全局 `globalBack`（Escape / 手柄 B / 可绑定的鼠标侧键）在根路由不可
 /// pop 时被最外层的处理器直接丢掉（`_handleGlobalBack` 的 `!nav.canPop()` 门），
@@ -50,7 +55,7 @@ class MediaServerBrowsePage extends StatefulWidget {
     super.key,
   });
 
-  /// 分区页签（由视频壳传入，放服务器列表页头）。
+  /// 分区页签（由视频壳传入）。画在嵌套 Navigator 之上，钻进任何一层都不被盖住。
   final Widget navigation;
   final VideoBookRepository repo;
 
@@ -192,27 +197,36 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _handleKey,
-        child: NavigatorPopHandler(
-          enabled: widget.systemBackActive,
-          onPopWithResult: (void _) => _popNested(),
-          // 根 MaterialApp 的 HeroController 不能同时挂两个 Navigator；分区内不做
-          // Hero 动画，显式断开。
-          child: HeroControllerScope.none(
-            child: Navigator(
-              key: _navigatorKey,
-              onGenerateRoute: (RouteSettings settings) =>
-                  adaptivePageRoute<void>(
-                    context: context,
-                    settings: settings,
-                    builder: (_) => MediaServerListView(
-                      navigation: widget.navigation,
-                      loadServers: widget.loadServers,
-                      play: _play,
-                      onOpenSettings: _openSettings,
-                    ),
+        child: Column(
+          children: <Widget>[
+            // 与兄弟分区（设置 / 来源 / 发现）同一种页头，切分区时顶栏不跳位。
+            // Cupertino 渲染下页签另有归宿，与其余分区一样不画。
+            if (!isCupertinoPlatform(context))
+              FushiPageHeader.customTitle(title: widget.navigation),
+            Expanded(
+              child: NavigatorPopHandler(
+                enabled: widget.systemBackActive,
+                onPopWithResult: (void _) => _popNested(),
+                // 根 MaterialApp 的 HeroController 不能同时挂两个 Navigator；分区内
+                // 不做 Hero 动画，显式断开。
+                child: HeroControllerScope.none(
+                  child: Navigator(
+                    key: _navigatorKey,
+                    onGenerateRoute: (RouteSettings settings) =>
+                        adaptivePageRoute<void>(
+                          context: context,
+                          settings: settings,
+                          builder: (_) => MediaServerListView(
+                            loadServers: widget.loadServers,
+                            play: _play,
+                            onOpenSettings: _openSettings,
+                          ),
+                        ),
                   ),
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

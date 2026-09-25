@@ -606,7 +606,6 @@ void main() {
         _harness(
           key,
           MediaServerListView(
-            navigation: const SizedBox.shrink(),
             loadServers: () async => <MediaServerEntry>[
               MediaServerEntry(browser: _emby(), accountName: 'wight'),
               MediaServerEntry(browser: _homeJellyfin(), accountName: 'wight'),

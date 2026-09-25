@@ -35,15 +35,12 @@ class MediaServerEntry {
 /// 「去设置添加服务器」。
 class MediaServerListView extends StatefulWidget {
   const MediaServerListView({
-    required this.navigation,
     required this.loadServers,
     required this.play,
     required this.onOpenSettings,
     super.key,
   });
 
-  /// 分区页签（由视频壳传入，放页头）。
-  final Widget navigation;
   final Future<List<MediaServerEntry>> Function() loadServers;
   final MediaServerPlayHandler play;
   final VoidCallback onOpenSettings;
@@ -94,19 +91,21 @@ class _MediaServerListViewState extends State<MediaServerListView> {
     return Scaffold(
       body: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context))
-            FushiPageHeader.customTitle(
-              title: widget.navigation,
-              actions: <Widget>[
-                FushiIconButton(
-                  key: const ValueKey<String>('media-server-list-refresh'),
-                  icon: Icons.refresh_rounded,
-                  tooltip: t.refresh,
-                  focusId: const FushiFocusId('media-server-list-refresh'),
-                  onTap: _reload,
-                ),
-              ],
-            ),
+          // 分区页签归外层浏览页（画在嵌套 Navigator 之上），这里与首页 / 网格同构，
+          // 只出本层的紧凑页头。
+          FushiPageHeader(
+            title: t.media_server_servers_title,
+            compact: true,
+            actions: <Widget>[
+              FushiIconButton(
+                key: const ValueKey<String>('media-server-list-refresh'),
+                icon: Icons.refresh_rounded,
+                tooltip: t.refresh,
+                focusId: const FushiFocusId('media-server-list-refresh'),
+                onTap: _reload,
+              ),
+            ],
+          ),
           Expanded(
             child: FutureBuilder<List<MediaServerEntry>>(
               future: _future,
@@ -165,13 +164,6 @@ class _MediaServerListViewState extends State<MediaServerListView> {
         vertical: tokens.spacing.gap,
       ),
       children: <Widget>[
-        Padding(
-          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
-          child: Text(
-            t.media_server_servers_title,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-        ),
         for (final MediaServerEntry entry in servers)
           Padding(
             padding: EdgeInsets.only(bottom: tokens.spacing.gap),
