@@ -292,7 +292,7 @@ private:
                               std::string *error);
   bool CalibrationProbesComplete(std::string *error) const;
   void ResetObservedCalibrationProbes();
-  bool RecordObservedCalibrationProbe(POINT client_point, std::string *error);
+  bool RecordObservedCalibrationProbe(int cluster_index, std::string *error);
 
   bool EnsureWindow(std::string *error);
   void DestroySurfaceWindow();

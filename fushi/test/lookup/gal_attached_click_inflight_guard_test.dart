@@ -40,6 +40,14 @@ void main() {
     final String keep = sync.substring(ensure, gateHide);
     expect(keep, contains('return;'));
     expect(keep, contains('!layout_dirty_'));
+    // The shield acknowledgement alone is not proof the click is still live:
+    // an unanswered request stays pending after the LL worker fails the
+    // transaction open, and a faulted shield must reach the normal gate.
+    expect(
+      keep,
+      contains('fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_)'),
+    );
+    expect(keep, contains('!ShieldFaulted()'));
   });
 
   test('click judgement uses the full drag rectangle and logs drops', () {

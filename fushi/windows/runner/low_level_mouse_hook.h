@@ -151,6 +151,12 @@ uint32_t UpdateLowLevelAttachedGlyphHitRegions(
 // this bit to force a fresh publication on its next health sync.
 bool LowLevelAttachedGlyphHitSnapshotIsCurrent(HWND surface, uint32_t token);
 
+// True while the LL worker still owns a glyph transaction admitted from
+// |surface|'s snapshot.  A fail-open retire clears it before the abort message
+// reaches the surface, so an unanswered shield request stops counting as this
+// surface's in-flight click.  Window-thread only: takes the transaction lock.
+bool LowLevelAttachedGlyphTransactionActiveFor(HWND surface);
+
 // Revoke one surface's immutable snapshot and fail-open any owned transaction.
 // Safe to call repeatedly during sentence replacement, hide, detach or target
 // destruction. A live physical down is marked cancelled but retained; the

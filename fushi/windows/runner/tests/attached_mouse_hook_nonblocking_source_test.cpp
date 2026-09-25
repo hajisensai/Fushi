@@ -269,6 +269,13 @@ int main() {
   assert(up.find("pressed_cluster == released_cluster") != std::string::npos);
   assert(up.find("pointer_text_generation_ == text_generation_") !=
          std::string::npos);
+  // A graze that releases on the neighbour must record the pressed glyph, the
+  // same one the lookup uses; the release point would fill a probe slot with
+  // the wrong index that no later click can correct.
+  assert(up.find("RecordObservedCalibrationProbe(pressed_cluster") !=
+         std::string::npos);
+  assert(up.find("RecordObservedCalibrationProbe(client_point") ==
+         std::string::npos);
   const size_t probe = up.find("valid && RecordObservedCalibrationProbe(");
   const size_t probe_return = up.find("return;", probe);
   const size_t lookup = up.find("EmitLookupEvent(");

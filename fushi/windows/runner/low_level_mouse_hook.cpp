@@ -2146,6 +2146,16 @@ bool LowLevelAttachedGlyphHitSnapshotIsCurrent(HWND surface, uint32_t token) {
              std::memory_order_acquire) != token;
 }
 
+bool LowLevelAttachedGlyphTransactionActiveFor(HWND surface) {
+  if (surface == nullptr) return false;
+  AcquireSRWLockShared(&g_attached_transaction_lock);
+  const bool active = g_attached_active_transaction.latch.active() &&
+                      g_attached_active_transaction.snapshot != nullptr &&
+                      g_attached_active_transaction.snapshot->surface == surface;
+  ReleaseSRWLockShared(&g_attached_transaction_lock);
+  return active;
+}
+
 void ClearLowLevelAttachedGlyphHitRegions(HWND surface) {
   if (surface == nullptr) return;
   auto snapshot = std::atomic_load_explicit(

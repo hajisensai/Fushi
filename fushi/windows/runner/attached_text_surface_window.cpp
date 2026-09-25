@@ -1047,14 +1047,13 @@ void AttachedTextSurfaceWindow::ResetObservedCalibrationProbes() {
 }
 
 bool AttachedTextSurfaceWindow::RecordObservedCalibrationProbe(
-    POINT client_point, std::string *error) {
+    int cluster_index, std::string *error) {
   if (mode_ != Mode::kCalibration || source_text_.empty() ||
       text_generation_ <= 0 || layout_dirty_ || clusters_.empty()) {
     if (error != nullptr)
       *error = "calibration_probe_layout_unavailable";
     return false;
   }
-  const int cluster_index = ClusterAt(client_point);
   if (cluster_index < 0 ||
       static_cast<size_t>(cluster_index) >= clusters_.size()) {
     if (error != nullptr)
@@ -1680,13 +1679,17 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   if (handshake == ShieldHandshakeState::kPending && surface_visible_ &&
       !layout_dirty_ &&
       (mode_ == Mode::kConfigured || mode_ == Mode::kCalibration) &&
-      OwnGlyphTransactionInFlight()) {
+      !ShieldFaulted() && OwnGlyphTransactionInFlight() &&
+      fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_)) {
     // Our own glyph click (its down or its release tail) is waiting for the
     // injected acknowledgement. That input is already owned by this surface,
     // not a lost handshake: hiding here cancelled the in-flight gesture, so
     // the click was swallowed without a lookup whenever any sync landed inside
-    // the ~200 ms ack window. Keep the published surface until it resolves;
-    // the LL worker still fails the transaction closed on its own timeout.
+    // the ~200 ms ack window. Keep the published surface only while the LL
+    // worker still owns that transaction. If the shield never answers, the
+    // worker fails it open after its reconciliation timeout: it revokes the
+    // snapshot, clears the transaction and posts the abort message, so the
+    // next sync falls through to the pending-handshake hide below.
     return;
   }
   if (handshake != ShieldHandshakeState::kReady) {
@@ -2945,9 +2948,11 @@ void AttachedTextSurfaceWindow::EndPointerGesture(
     ReleaseCapture();
   ReleaseShieldTransaction();
   if (mode_ == Mode::kCalibration) {
+    // A boundary graze may release on the neighbour; the probe, like the
+    // lookup below, belongs to the glyph that was pressed.
     std::string probe_error;
     const bool observed =
-        valid && RecordObservedCalibrationProbe(client_point, &probe_error);
+        valid && RecordObservedCalibrationProbe(pressed_cluster, &probe_error);
     SetState("calibrating", "calibrating",
              observed ? "calibration_probe_observed"
                       : (valid ? probe_error : "calibration_click_rejected"));
