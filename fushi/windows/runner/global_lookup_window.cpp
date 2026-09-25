@@ -8,6 +8,7 @@
 #include "gal_direct_card_geometry.h"
 #include "game_client_extent.h"
 #include "low_level_mouse_hook.h"
+#include "native_glog.h"
 #include "resource.h"
 
 // v14 游戏内查词的输入 kind 取值真相源。只为下面那组 static_assert 而 include：
@@ -372,6 +373,8 @@ std::wstring MediaContentTypeHeader(const std::string& url) {
   return L"Content-Type: application/octet-stream";
 }
 
+}  // namespace
+
 // TODO-1153 -- native diagnostic logger for the overlay bring-up. The runner is
 // a WIN32 GUI exe with no console, so a failed WebView2 environment/controller
 // create otherwise vanishes. Appends timestamped lines to the SAME file the Dart
@@ -396,6 +399,8 @@ void NativeGlog(const std::string& message) {
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
   out << stamp << "  [native] " << message << "\n";
 }
+
+namespace {
 
 // TODO-1153 -- dedicated WebView2 user data folder for the app-external overlay.
 //

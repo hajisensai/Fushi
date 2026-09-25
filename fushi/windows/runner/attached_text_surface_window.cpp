@@ -21,6 +21,7 @@
 #include "attached_shield_status_policy.h"
 #include "lookup_hit_validation.h"
 #include "low_level_mouse_hook.h"
+#include "native_glog.h"
 #include "window_capture.h"
 #include "voice_hook_reader.h"
 
@@ -35,6 +36,17 @@ constexpr UINT kFollowTimerMs = 500;
 // floating lyric window does (floating_lyric_window.cpp MaybeHoverLookup).
 constexpr UINT_PTR kHoverTimerId = 2;
 constexpr UINT kHoverTimerMs = 60;
+// The injected shield acknowledges a handshake probe only through shared
+// memory, with no wake-up channel. A re-handshake takes one admission pass to
+// publish the probe and another to observe the ack, so leaving it to the 500 ms
+// follow timer kept the surface hidden (no highlight, clicks not looked up)
+// for up to seconds after every popup dismissal or advanced line. While a
+// handshake is outstanding, re-run admission at frame cadence instead.
+constexpr UINT_PTR kShieldHandshakeWatchTimerId = 3;
+constexpr UINT kShieldHandshakeWatchTimerMs = 16;
+// Resource bound only: a handshake still pending after this long returns to
+// the follow-timer cadence (and is logged) rather than polling indefinitely.
+constexpr ULONGLONG kShieldHandshakeWatchMaxMs = 5000;
 constexpr UINT kSyncTargetMessage = WM_APP + 0x235;
 constexpr int kMinimumBodyPixels = 8;
 constexpr size_t kMaximumSourceTextUnits = 32768;
@@ -1535,6 +1547,8 @@ void AttachedTextSurfaceWindow::DestroySurfaceWindow() {
   if (hwnd_ != nullptr && IsWindow(hwnd_)) {
     KillTimer(hwnd_, kFollowTimerId);
     KillTimer(hwnd_, kHoverTimerId);
+    StopShieldHandshakeWatchTimer();
+    shield_handshake_watch_active_ = false;
     HWND old = hwnd_;
     // DestroySurfaceWindow clears the member and userdata before DestroyWindow,
     // so WM_NCDESTROY cannot recover |this| to retire the passive candidate.
@@ -2506,7 +2520,88 @@ AttachedTextSurfaceWindow::EnsureShieldHandshake() {
   shield_handshake_transaction_id_ = transaction_id;
   shield_handshake_request_seq_ = request_seq;
   shield_handshake_established_ = false;
+  shield_handshake_probe_published_at_ = GetTickCount64();
   return ShieldHandshakeState::kPending;
+}
+
+void AttachedTextSurfaceWindow::UpdateShieldHandshakeWatch() {
+  // "unavailable" has no acknowledgement to wait for; only an outstanding
+  // (re)handshake is worth observing at frame cadence.
+  const bool pending = status_ == "shieldHandshakePending" &&
+                       reason_ != "input_shield_handshake_unavailable";
+  if (pending) {
+    if (!shield_handshake_watch_active_) {
+      shield_handshake_watch_active_ = true;
+      // The probe that opens an episode is usually published by this same
+      // admission pass just before SetState, so it is not cleared here.
+      shield_handshake_pending_since_ = GetTickCount64();
+      shield_handshake_watch_syncs_ = 0;
+    }
+    if (!shield_handshake_watch_timer_running_ && hwnd_ != nullptr &&
+        IsWindow(hwnd_) &&
+        GetTickCount64() - shield_handshake_pending_since_ <=
+            kShieldHandshakeWatchMaxMs &&
+        SetTimer(hwnd_, kShieldHandshakeWatchTimerId,
+                 kShieldHandshakeWatchTimerMs, nullptr) != 0) {
+      shield_handshake_watch_timer_running_ = true;
+    }
+    return;
+  }
+  if (!shield_handshake_watch_active_)
+    return;
+  StopShieldHandshakeWatchTimer();
+  shield_handshake_watch_active_ = false;
+  const ULONGLONG now = GetTickCount64();
+  const ULONGLONG probe_at = shield_handshake_probe_published_at_;
+  std::ostringstream line;
+  line << "gal-shield: handshake pending ended after "
+       << (now - shield_handshake_pending_since_) << "ms";
+  const ULONGLONG since = shield_handshake_pending_since_;
+  if (probe_at != 0 && probe_at + kShieldHandshakeWatchTimerMs >= since) {
+    line << " (neutral_wait=" << (probe_at > since ? probe_at - since : 0)
+         << "ms ack_wait=" << (now - probe_at) << "ms)";
+  } else {
+    line << " (no new probe)";
+  }
+  line << " syncs=" << shield_handshake_watch_syncs_ << " -> " << state_ << '/'
+       << status_;
+  NativeGlog(line.str());
+}
+
+void AttachedTextSurfaceWindow::StopShieldHandshakeWatchTimer() {
+  if (!shield_handshake_watch_timer_running_)
+    return;
+  if (hwnd_ != nullptr && IsWindow(hwnd_))
+    KillTimer(hwnd_, kShieldHandshakeWatchTimerId);
+  shield_handshake_watch_timer_running_ = false;
+}
+
+void AttachedTextSurfaceWindow::OnShieldHandshakeWatchTimer() {
+  if (!shield_handshake_watch_active_ || mode_ == Mode::kDetached ||
+      target_.hwnd == nullptr) {
+    // Detach/epoch changes hide the surface without a new admission state;
+    // there is no handshake left to observe.
+    StopShieldHandshakeWatchTimer();
+    shield_handshake_watch_active_ = false;
+    return;
+  }
+  const ULONGLONG elapsed = GetTickCount64() - shield_handshake_pending_since_;
+  if (elapsed > kShieldHandshakeWatchMaxMs) {
+    // Keep the episode open so its eventual end is still logged; only the
+    // cadence drops back to the follow timer.
+    StopShieldHandshakeWatchTimer();
+    std::ostringstream line;
+    line << "gal-shield: handshake still pending after " << elapsed
+         << "ms; request_seq=" << shield_status_.request_seq
+         << " applied_seq=" << shield_status_.applied_seq
+         << " active_buttons=" << shield_status_.active_buttons
+         << " transaction_active=" << shield_transaction_active_
+         << " probe_published=" << (shield_handshake_probe_published_at_ != 0);
+    NativeGlog(line.str());
+    return;
+  }
+  ++shield_handshake_watch_syncs_;
+  SyncToTarget();
 }
 
 bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake() const {
@@ -2928,6 +3023,7 @@ void AttachedTextSurfaceWindow::SetState(std::string state, std::string status,
   state_ = std::move(state);
   status_ = std::move(status);
   reason_ = std::move(reason);
+  UpdateShieldHandshakeWatch();
 }
 
 AttachedTextSurfaceWindow::Snapshot
@@ -3040,6 +3136,10 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
     }
     if (wparam == kHoverTimerId) {
       TickHoverLookup();
+      return 0;
+    }
+    if (wparam == kShieldHandshakeWatchTimerId) {
+      OnShieldHandshakeWatchTimer();
       return 0;
     }
     return DefWindowProcW(hwnd_, message, wparam, lparam);
