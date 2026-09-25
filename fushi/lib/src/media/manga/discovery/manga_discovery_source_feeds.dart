@@ -1,7 +1,6 @@
 /// 发现页「来源热门行」的数据口 + Mihon 适配（P2，用户决策混合 C 的下半部）。
 ///
-/// 与 `manga_source_matcher.dart` 同一纪律：页面只认「名字 + 一个加载函数 +
-/// 一组可渲染条目」，Mihon 的 context/封面/详情页跳转全部收在适配函数里——
+/// 页面只认「名字 + 一个加载函数 + 一组可渲染条目 + 可选的目录入口」，Mihon 的 context/封面/详情页跳转全部收在适配函数里——
 /// 页面因此可以用假 feed 做 widget 测试，不用架起真实扩展宿主。
 library;
 
@@ -35,12 +34,16 @@ class MangaDiscoverySourceFeed {
     required this.name,
     required this.language,
     required this.loadPopular,
+    this.openCatalog,
   });
 
   final String id;
   final String name;
   final String language;
   final Future<List<MangaDiscoverySourceItem>> Function() loadPopular;
+
+  /// 打开该来源的完整目录（行头「查看全部」）；为空时不出这个按钮。
+  final void Function(BuildContext context)? openCatalog;
 
   /// 行标题用的展示名（带语言码；同名多语言源只有这样才分得开）。
   String get displayName =>
@@ -61,6 +64,17 @@ List<MangaDiscoverySourceFeed> mihonDiscoverySourceFeeds({
         name: row.name,
         language: row.language,
         loadPopular: () => _loadMihonPopular(manager, row, imageQueue),
+        openCatalog: (BuildContext context) {
+          Navigator.of(context).push(
+            adaptivePageRoute<void>(
+              context: context,
+              builder: (BuildContext context) => MihonSourceBrowsePage(
+                manager: manager,
+                target: MihonInstalledTarget(row),
+              ),
+            ),
+          );
+        },
       ),
   ];
 }

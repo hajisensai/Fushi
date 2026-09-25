@@ -50,7 +50,10 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
-  AnimeSourceVideoClient client({http.Client? httpClient}) =>
+  AnimeSourceVideoClient client({
+    http.Client? httpClient,
+    String? preferredSubtitleLanguage,
+  }) =>
       AnimeSourceVideoClient(
         manager: manager,
         context: _context,
@@ -58,6 +61,7 @@ void main() {
         episodes: sortEpisodesForPlayback(episodes),
         httpClient:
             httpClient ?? MockClient((_) async => http.Response('', 404)),
+        subtitleLanguageResolver: () => preferredSubtitleLanguage,
       );
 
   test('episodes become playlist members with stable url-based ids', () {
@@ -365,6 +369,123 @@ void main() {
       expect(requests.single.headers.containsKey('Referer'), isFalse);
     },
   );
+
+  group('网站字幕轨（Video.subtitleTracks）全部可选', () {
+    List<Object?> multiTrackVideos() => <Object?>[
+          <Object?, Object?>{
+            'url': 'https://cdn.example/ep.m3u8',
+            'quality': '1080p',
+            'subtitleTracks': <Object?>[
+              <Object?, Object?>{
+                'url': 'https://cdn.example/en.vtt',
+                'lang': 'English',
+              },
+              <Object?, Object?>{
+                'url': 'https://cdn.example/es.vtt',
+                'lang': 'Spanish - Latin America',
+              },
+              <Object?, Object?>{'url': '', 'lang': 'Broken'},
+              <Object?, Object?>{
+                'url': 'https://cdn.example/ja.ass',
+                'lang': 'Japanese',
+              },
+            ],
+          },
+        ];
+
+    test('每条有链接的轨都报给播放页的字幕轨菜单，并标成外挂文件', () async {
+      runtime.videos = multiTrackVideos();
+      final AnimeSourceVideoClient c = client();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+        c.remoteVideos.first.id,
+      );
+      final List<RemoteVideoEmbeddedSubtitleTrack> tracks =
+          urls.embeddedSubtitleTracks;
+      // 空链接那条在解析层就丢了；下标与 MihonVideo.subtitleTracks 一致（回传时按它取）。
+      expect(
+        tracks.map((RemoteVideoEmbeddedSubtitleTrack t) => t.streamIndex),
+        <int>[0, 1, 2],
+      );
+      expect(
+        tracks.map((RemoteVideoEmbeddedSubtitleTrack t) => t.language),
+        <String>['English', 'Spanish - Latin America', 'Japanese'],
+      );
+      expect(
+        tracks.map((RemoteVideoEmbeddedSubtitleTrack t) => t.codec),
+        <String>['vtt', 'vtt', 'ass'],
+      );
+      expect(
+        tracks.every((RemoteVideoEmbeddedSubtitleTrack t) => t.isExternalFile),
+        isTrue,
+      );
+      expect(
+        tracks.every((RemoteVideoEmbeddedSubtitleTrack t) => t.isText),
+        isTrue,
+      );
+      // 不表态时默认轨保持扩展的顺序（旧行为）。
+      expect(urls.subtitleUrl, 'https://cdn.example/en.vtt');
+    });
+
+    test('默认轨按首选语言挑，下载的就是报出去的那一条', () async {
+      final List<Uri> fetched = <Uri>[];
+      runtime.videos = multiTrackVideos();
+      final AnimeSourceVideoClient c = client(
+        preferredSubtitleLanguage: 'ja',
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('WEBVTT', 200);
+        }),
+      );
+      final String id = c.remoteVideos.first.id;
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(id);
+      expect(urls.subtitleUrl, 'https://cdn.example/ja.ass');
+      expect(urls.subtitleFileName, 'episode_1.Japanese.ass');
+      await c.getRemoteVideoSubtitle(id, File('${root.path}/default.ass'));
+      expect(fetched.single.toString(), 'https://cdn.example/ja.ass');
+    });
+
+    test('菜单选中某条轨 → 按下标下载那一条；下标失效如实报错', () async {
+      final List<Uri> fetched = <Uri>[];
+      runtime.videos = multiTrackVideos();
+      final AnimeSourceVideoClient c = client(
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('WEBVTT', 200);
+        }),
+      );
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      await c.getRemoteVideoSubtitle(
+        id,
+        File('${root.path}/es.vtt'),
+        embeddedStreamIndex: 1,
+      );
+      expect(fetched.single.toString(), 'https://cdn.example/es.vtt');
+      for (final int stale in <int>[3, 9, -1]) {
+        await expectLater(
+          c.getRemoteVideoSubtitle(
+            id,
+            File('${root.path}/gone.vtt'),
+            embeddedStreamIndex: stale,
+          ),
+          throwsRangeError,
+        );
+      }
+    });
+  });
+
+  test('扩展的语言标签 → 语言码：名称 / 母语写法 / 码都认，轨名不硬猜', () {
+    expect(animeSubtitleLanguageCode('English'), 'en');
+    expect(animeSubtitleLanguageCode('English [CC]'), 'en');
+    expect(animeSubtitleLanguageCode('Japanese'), 'ja');
+    expect(animeSubtitleLanguageCode('日本語'), 'ja');
+    expect(animeSubtitleLanguageCode('jpn'), 'ja');
+    expect(animeSubtitleLanguageCode('pt-BR'), 'pt');
+    expect(animeSubtitleLanguageCode('Portuguese (Brazil)'), 'pt');
+    expect(animeSubtitleLanguageCode('Español - Latinoamérica'), 'es');
+    expect(animeSubtitleLanguageCode('Signs & Songs'), isNull);
+    expect(animeSubtitleLanguageCode(''), isNull);
+  });
 
   test(
     'covers go through the extension client, positions are local-only',

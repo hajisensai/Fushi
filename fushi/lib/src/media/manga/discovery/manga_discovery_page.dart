@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,9 +11,6 @@ import 'package:fushi/src/media/discovery/sources/opds_discovery_source.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_package_store.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_runtime.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_source_browse_page.dart';
-import 'package:fushi/src/media/manga/discovery/mal_manga_discovery_provider.dart';
-import 'package:fushi/src/media/manga/discovery/manga_discovery_detail_page.dart';
-import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dart';
 import 'package:fushi/src/media/manga/manga_global_search_page.dart';
@@ -33,36 +29,34 @@ import 'package:fushi/utils.dart';
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
 ///
 /// 页头下面一行是与书 / galgame 发现页同形的 [DiscoveryHeaderControls]（来源筛选
-/// 下拉 + 搜索框），正文自上而下是：
+/// 下拉 + 搜索框），正文**只由用户自己启用的来源**构成：
 ///
-/// 1. MAL 元数据的趋势 / 热门 / 高分 / 最新完结四条横滑行（仅「全部来源」时）；
-/// 2. 每个已启用来源的「热门」横滑行（[MangaDiscoverySourceRow]）；
-/// 3. 「浏览来源」一节（[MangaSourceCatalogSection]）：内置 mokuro.moe 目录 +
-///    已启用 Aidoku 包 + 已启用 Mihon 在线源，点进各自的目录页。
+/// 1. 「浏览来源」快捷条（[MangaSourceCatalogSection]）：内置 mokuro.moe 目录 +
+///    已启用 Aidoku 包 + 已启用 Mihon 在线源 + OPDS 服务器，一源一枚磁贴，点进
+///    各自的目录页；
+/// 2. 每个已启用在线源的「热门」横滑行（[MangaDiscoverySourceRow]），行头带
+///    「查看全部」直达该源目录。
 ///
-/// 第 3 节此前是**另一个** tab（`manga_browse_page.dart`，`library_view_browse`）。
-/// 那个 key 的文案被改成「发现」后，漫画库里出现了两个字面完全相同的「发现」
-/// tab，用户点哪个都叫发现（BUG-1710）。两页能力互补——这页有横滑行没搜索框，
-/// 那页有来源清单和全源搜索——所以合并取并集：来源清单进正文、全源搜索进头部
-/// 搜索框，冗余 tab 删掉，一个能力都没丢。
+/// 下拉选中具体来源时正文收窄成该源的磁贴 + 它的热门**网格**
+/// （[MangaDiscoverySourceGrid]）——只看一个源时，一条横滑行浪费了整屏宽度。
+/// 一个来源都没有时整页换成引导空态，指向「来源」视图。
 ///
-/// 结构对齐 hayase 化后的视频首页决策（用户拍板）：**不做自动播轮播**，趋势行
-/// 用更大的卡片充当页首视觉锚点，其余行标准卡片，全部是可拖动的横滑行。
+/// 此前页首是 MAL（经 Jikan）的趋势 / 热门 / 高分 / 最新完结四条元数据行，点开
+/// 再在已启用来源里按标题猜可读条目。那条链路整体移除：Jikan 频繁 5xx / 限流
+/// 让页首常年是一块失败牌坊，而且元数据条目本身不能读、标题匹配又常常猜不中，
+/// 用户点进去多半是「没有找到可读来源」。现在页面上的每一张卡片都来自真实来源，
+/// 点开即可读。
 ///
-/// MAL 条目是元数据不是来源条目；点开进 [MangaDiscoveryDetailPage]，由它在
-/// 已启用来源里自动匹配可读条目。本页因此在**五个平台都可用**（MAL 公开查询
-/// 与扩展宿主无关），与库页「视图列表无条件常量」的纪律一致。注意
-/// `AppModel.mihonManager` 在不支持的平台上会抛 [UnsupportedError]，所以任何读它
-/// 的路径都必须先过 [MihonRuntimeFactory.isSupported] 这道门。
+/// 注意 `AppModel.mihonManager` 在不支持的平台上会抛 [UnsupportedError]，所以任何
+/// 读它的路径都必须先过 [MihonRuntimeFactory.isSupported] 这道门。
 ///
-/// 首次切到本视图才发请求（库页壳惰性构建），结果保活在 State 里（壳 Offstage
-/// 保活），切走切回不重抓；显式刷新走页头按钮。
+/// 首次切到本视图才发请求（库页壳惰性构建），结果保活在各行 State 里（壳
+/// Offstage 保活），切走切回不重抓；显式刷新走页头按钮。
 class MangaDiscoveryPage extends ConsumerStatefulWidget {
   const MangaDiscoveryPage({
     super.key,
     this.navigation,
     this.embedded = false,
-    this.provider,
     this.sourceFeedsOverride,
     this.catalogOverride,
   });
@@ -73,9 +67,6 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   /// 嵌入下载资源聚合页时，外层已经提供「资源」页头，这里只渲染
   /// 漫画来源筛选、搜索与结果，避免再画一行「发现」。
   final bool embedded;
-
-  /// 数据源。为空时创建 MAL provider；测试注入假实现。
-  final MangaDiscoveryProvider? provider;
 
   /// 测试注入：给定时跳过平台来源发现，直接渲染这些来源热门行。
   final List<MangaDiscoverySourceFeed>? sourceFeedsOverride;
@@ -88,11 +79,6 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
 }
 
 class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
-  MalMangaDiscoveryProvider? _ownedProvider;
-  MangaDiscoverySnapshot? _snapshot;
-  Object? _error;
-  bool _loading = false;
-
   MihonManager? _mihonManager;
   final MihonSourceImageLoadQueue _imageQueue =
       MihonSourceImageLoadQueue(maxConcurrent: 4);
@@ -108,8 +94,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 当前下拉选中的来源；[kDiscoveryAllSourcesId] = 全部来源。
   String _selectedSourceId = kDiscoveryAllSourcesId;
 
-  MangaDiscoveryProvider get _provider =>
-      widget.provider ?? (_ownedProvider ??= MalMangaDiscoveryProvider());
+  /// 刷新代数：并进各热门行/网格的 key，递增即整批重新挂载、重新拉取。
+  int _generation = 0;
 
   /// 测试注入模式：**任一** override 给定就整条平台发现路径都不走。
   ///
@@ -121,7 +107,6 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
     // Aidoku 包清单：装/卸/启停后立即重载，否则保活的本页停在旧清单上。
     if (!_injected && AidokuRuntimeFactory.isSupported) {
       _aidokuChanges = AidokuPackageStore.changes.listen((_) => _loadAidoku());
@@ -165,8 +150,14 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     unawaited(_aidokuChanges?.cancel());
     _searchController.dispose();
     _searchFocusNode.dispose();
-    _ownedProvider?.close();
     super.dispose();
+  }
+
+  void _refresh() {
+    setState(() => _generation++);
+    if (!_injected && AidokuRuntimeFactory.isSupported) {
+      unawaited(_loadAidoku());
+    }
   }
 
   /// 来源热门行清单：测试注入优先，否则按平台从 Mihon 宿主取。
@@ -206,44 +197,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  Future<void> _load() async {
-    if (_loading) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final MangaDiscoverySnapshot snapshot = await _provider.fetchSnapshot();
-      if (!mounted) return;
-      setState(() {
-        _snapshot = snapshot;
-        _loading = false;
-      });
-    } on Object catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _error = error;
-        _loading = false;
-      });
-    }
-  }
-
-  void _openEntry(MangaDiscoveryEntry entry) {
-    // 详情页是 pushed route，拿不到壳的 InheritedWidget（它在 Navigator 下面），
-    // 所以「去导入」的去处必须在这里解析好、随构造参数带过去。
-    final VoidCallback? openSources = _openSourcesAction();
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext context) => MangaDiscoveryDetailPage(
-          entry: entry,
-          onOpenSources: openSources,
-        ),
-      ),
-    );
-  }
-
-  /// 「去『导入』视图装来源」的去处；本页不在库页壳里、或壳没有「导入」视图时为
+  /// 「去『来源』视图装来源」的去处；本页不在库页壳里、或壳没有「来源」视图时为
   /// null，空态只给文案不给按钮。
   ///
   /// 判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
@@ -334,7 +288,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       return;
     }
     final MangaSourceCatalog scope = catalog.filterById(selected);
-    // 一个源都没有时搜索页的空态要能把用户带去「导入」视图装来源：去处由库页壳
+    // 一个源都没有时搜索页的空态要能把用户带去「来源」视图装来源：去处由库页壳
     // 提供（[_openSourcesAction]），弹掉搜索页也由壳自己做。
     final VoidCallback? openSources = _openSourcesAction();
     Navigator.of(context).push(
@@ -352,13 +306,13 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   }
 
   /// 页头。与 `MangaSourcesPage` 同一范式：导航条存在时即页头主位，不再另渲染一个
-  /// 页面大标题。全源搜索不再是这里的 travel_explore 按钮——它被下面的搜索框取代。
+  /// 页面大标题。全源搜索不在这里——它是下面的搜索框。
   Widget _buildHeader() {
     final List<Widget> actions = <Widget>[
       IconButton(
         key: const ValueKey<String>('manga_discovery_refresh'),
-        tooltip: t.retry,
-        onPressed: _loading ? null : () => unawaited(_load()),
+        tooltip: t.refresh,
+        onPressed: _refresh,
         icon: const Icon(Icons.refresh),
       ),
     ];
@@ -406,183 +360,98 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  /// 正文。选中具体来源时收窄：MAL 行整体隐藏（它是跨来源的元数据，按来源筛
-  /// 选没有意义），只留该来源的热门行和它那张浏览卡片。
-  ///
-  /// MAL 的加载/失败态是**列表里的一项**，不再顶替整页：它挂了不该把「浏览
-  /// 来源」一起带走——那是本页合并进来的、与 MAL 完全无关的能力。
+  /// 正文三形态：没有任何来源 → 引导空态；全部来源 → 快捷条 + 热门横滑行；
+  /// 选中单个来源 → 该源磁贴 + 热门网格。
   Widget _buildBody(MangaSourceCatalog catalog, String selected) {
-    final bool allSources = selected == kDiscoveryAllSourcesId;
-    final MangaDiscoverySnapshot? snapshot = _snapshot;
-    final List<MangaDiscoverySourceFeed> feeds = _sourceFeeds()
-        .where((MangaDiscoverySourceFeed feed) =>
-            allSources || feed.id == selected)
-        .toList(growable: false);
-    return ListView(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      children: <Widget>[
-        if (allSources) ...<Widget>[
-          if (snapshot == null && _loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: Center(child: CircularProgressIndicator()),
+    final List<MangaDiscoverySourceFeed> feeds = _sourceFeeds();
+    if (catalog.isEmpty && feeds.isEmpty) return _buildEmpty();
+    final Widget catalogSection = MangaSourceCatalogSection(
+      catalog: catalog.filterById(selected),
+      onOpenMokuro: _openMokuro,
+      onOpenAidoku: _openAidokuSource,
+      onOpenMihon: _openMihonSource,
+      onOpenOpds: _openOpdsServer,
+    );
+    if (selected != kDiscoveryAllSourcesId) {
+      MangaDiscoverySourceFeed? feed;
+      for (final MangaDiscoverySourceFeed candidate in feeds) {
+        if (candidate.id == selected) feed = candidate;
+      }
+      return CustomScrollView(
+        slivers: <Widget>[
+          SliverToBoxAdapter(child: catalogSection),
+          if (feed != null)
+            MangaDiscoverySourceGrid(
+              key: ValueKey<String>(
+                'manga_discovery_grid_${feed.id}#$_generation',
+              ),
+              feed: feed,
             ),
-          if (snapshot == null && !_loading) _buildError(),
-          if (snapshot != null) ...<Widget>[
-            _buildSection(
-              title: t.manga_discovery_section_publishing,
-              entries: snapshot[MangaDiscoveryFeed.publishing],
-              cardWidth: 165,
-              stripHeight: 265,
-            ),
-            _buildSection(
-              title: t.manga_discovery_section_popular,
-              entries: snapshot[MangaDiscoveryFeed.popular],
-            ),
-            _buildSection(
-              title: t.manga_discovery_section_top_rated,
-              entries: snapshot[MangaDiscoveryFeed.topRated],
-            ),
-            _buildSection(
-              title: t.manga_discovery_section_latest_finished,
-              entries: snapshot[MangaDiscoveryFeed.latestFinished],
-            ),
-          ],
         ],
-        // P2：MAL 行之后接「来源热门」行——条目直接来自已启用来源，点开即
-        // 可读，不经过标题匹配。空/失败的行整行隐藏（补充内容，不立错误牌坊）。
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: <Widget>[
+        catalogSection,
+        // 条目直接来自已启用来源，点开即可读。空/失败的行整行隐藏
+        // （补充内容，不立错误牌坊）。
         for (final MangaDiscoverySourceFeed feed in feeds)
           MangaDiscoverySourceRow(
-            key: ValueKey<String>('manga_discovery_source_${feed.id}'),
+            key: ValueKey<String>(
+              'manga_discovery_source_${feed.id}#$_generation',
+            ),
             feed: feed,
           ),
-        // 末节：从原「浏览」tab 搬来的在线来源清单。
-        MangaSourceCatalogSection(
-          catalog: catalog.filterById(selected),
-          onOpenMokuro: _openMokuro,
-          onOpenAidoku: _openAidokuSource,
-          onOpenMihon: _openMihonSource,
-          onOpenOpds: _openOpdsServer,
-        ),
       ],
     );
   }
 
-  Widget _buildError() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Text(
-            t.manga_discovery_load_failed,
-            textAlign: TextAlign.center,
-          ),
-          if (_error != null) ...<Widget>[
-            const SizedBox(height: 8),
-            Text(
-              '$_error',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-            ),
-          ],
-          const SizedBox(height: 16),
-          FilledButton.tonal(
-            key: const ValueKey<String>('manga_discovery_retry'),
-            onPressed: () => unawaited(_load()),
-            child: Text(t.retry),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSection({
-    required String title,
-    required List<MangaDiscoveryEntry> entries,
-    double cardWidth = 130,
-    double stripHeight = 214,
-  }) {
-    if (entries.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // 桌面端默认 dragDevices 不含 mouse，横滑行必须包
-          // HorizontalDragScrollable（横向滚动守卫，与全局搜索页同一处理）。
-          SizedBox(
-            height: stripHeight,
-            child: HorizontalDragScrollable(
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: entries.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _buildCard(entries[index], width: cardWidth),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCard(MangaDiscoveryEntry entry, {required double width}) {
-    final double? score = entry.averageScore;
-    return SizedBox(
-      width: width,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: FushiCard(
-          padding: EdgeInsets.zero,
-          onTap: () => _openEntry(entry),
+  /// 一个来源都没有：整页引导空态。有扩展宿主时补一句「先装扩展」，没有宿主
+  /// 的平台（Linux 等）这句只会误导，那里本来就装不了扩展；「管理来源」按钮只在
+  /// 库页壳真有「来源」视图时出现。
+  Widget _buildEmpty() {
+    final ThemeData theme = Theme.of(context);
+    final VoidCallback? openSources = _openSourcesAction();
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            key: const ValueKey<String>('manga_discovery_empty'),
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Expanded(child: MangaDiscoveryCover(url: entry.coverUrl)),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      entry.preferredTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    if (score != null) ...<Widget>[
-                      const SizedBox(height: 2),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          Icon(
-                            Icons.star_rate_rounded,
-                            size: 14,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 2),
-                          Text(
-                            score.toStringAsFixed(1),
-                            style: Theme.of(context).textTheme.labelSmall,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
+              Icon(
+                Icons.travel_explore_outlined,
+                size: 56,
+                color: theme.colorScheme.primary,
               ),
+              const SizedBox(height: 16),
+              Text(
+                t.manga_discovery_empty_title,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.titleMedium,
+              ),
+              if (MihonRuntimeFactory.isSupported) ...<Widget>[
+                const SizedBox(height: 8),
+                Text(
+                  t.mihon_source_empty,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              if (openSources != null) ...<Widget>[
+                const SizedBox(height: 20),
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>('manga_discovery_open_sources'),
+                  onPressed: openSources,
+                  icon: const Icon(Icons.extension_outlined),
+                  label: Text(t.manga_discovery_empty_action),
+                ),
+              ],
             ],
           ),
         ),
@@ -591,8 +460,115 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   }
 }
 
-/// 一条「来源热门」横滑行：首次挂载才加载（发现视图本身已惰性构建，行不会
-/// 因页面存在就打请求风暴）；空/失败整行收起。
+/// 热门行与热门网格共用的加载状态：首次挂载才拉第 1 页（发现视图本身已惰性
+/// 构建，不会因页面存在就打请求风暴）。
+mixin _PopularFeedLoader<T extends StatefulWidget> on State<T> {
+  MangaDiscoverySourceFeed get feed;
+
+  List<MangaDiscoverySourceItem>? items;
+  bool failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadPopular());
+  }
+
+  Future<void> loadPopular() async {
+    if (items != null || failed) {
+      setState(() {
+        items = null;
+        failed = false;
+      });
+    }
+    try {
+      final List<MangaDiscoverySourceItem> loaded = await feed.loadPopular();
+      if (!mounted) return;
+      setState(() => items = loaded);
+    } on Object {
+      if (!mounted) return;
+      setState(() => failed = true);
+    }
+  }
+}
+
+/// 行 / 网格的标题行：源名 +（加载中）小转圈 +（有目录入口时）「查看全部」。
+class _FeedHeader extends StatelessWidget {
+  const _FeedHeader({required this.feed, required this.loading});
+
+  final MangaDiscoverySourceFeed feed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final void Function(BuildContext context)? openCatalog = feed.openCatalog;
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, right: 8),
+      child: SizedBox(
+        height: 40,
+        child: Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                t.manga_discovery_source_popular(source: feed.displayName),
+                style: Theme.of(context).textTheme.titleMedium,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            if (openCatalog != null)
+              TextButton(
+                key: ValueKey<String>('manga_discovery_view_all_${feed.id}'),
+                onPressed: () => openCatalog(context),
+                child: Text(t.manga_discovery_view_all),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 一张来源条目卡片：封面撑满剩余高度，标题两行。行与网格共用。
+class _SourceItemCard extends StatelessWidget {
+  const _SourceItemCard({required this.item});
+
+  final MangaDiscoverySourceItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiCard(
+      padding: EdgeInsets.zero,
+      onTap: () => item.open(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(child: item.buildCover(context)),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              item.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 一条「来源热门」横滑行；空/失败整行收起。
 ///
 /// 加载中渲染的是**带源名的行头 + 行内小转圈**，与全局搜索页每段的加载态同形。
 /// 此前是一条 2px 的裸 `LinearProgressIndicator`：启用二十几个源时页面就是二十
@@ -600,8 +576,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
 ///
 /// 加载中**同时把卡片条的高度占住**（与全局搜索页 `_buildSectionBody` 的
 /// `case loading: SizedBox(height: 200)` 同一条纪律）：光有行头不占位的话，加载
-/// 完成那一刻会凭空插入 222px，标题下方所有内容整体下移。行整体高度因此在
-/// pending → done 之间不变。
+/// 完成那一刻会凭空插入一整条卡片高度，标题下方所有内容整体下移。行整体高度因此
+/// 在 pending → done 之间不变。
 class MangaDiscoverySourceRow extends StatefulWidget {
   const MangaDiscoverySourceRow({required this.feed, super.key});
 
@@ -612,75 +588,43 @@ class MangaDiscoverySourceRow extends StatefulWidget {
       _MangaDiscoverySourceRowState();
 }
 
-class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
-  List<MangaDiscoverySourceItem>? _items;
-  bool _failed = false;
-
+class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow>
+    with _PopularFeedLoader<MangaDiscoverySourceRow> {
   @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  Future<void> _load() async {
-    try {
-      final List<MangaDiscoverySourceItem> items =
-          await widget.feed.loadPopular();
-      if (!mounted) return;
-      setState(() => _items = items);
-    } on Object {
-      // 来源热门是补充内容：单源失败静默收起，不立错误牌坊（与匹配编排同纪律）。
-      if (!mounted) return;
-      setState(() => _failed = true);
-    }
-  }
+  MangaDiscoverySourceFeed get feed => widget.feed;
 
   @override
   Widget build(BuildContext context) {
-    if (_failed) return const SizedBox.shrink();
-    final List<MangaDiscoverySourceItem>? items = _items;
-    if (items != null && items.isEmpty) return const SizedBox.shrink();
+    // 来源热门是补充内容：单源失败静默收起，不立错误牌坊（与全源搜索同纪律）。
+    if (failed) return const SizedBox.shrink();
+    final List<MangaDiscoverySourceItem>? loaded = items;
+    if (loaded != null && loaded.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    t.manga_discovery_source_popular(
-                      source: widget.feed.displayName,
-                    ),
-                    style: Theme.of(context).textTheme.titleMedium,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (items == null)
-                  const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // 高度常量与下面的卡片条一致：加载中占位、加载完原地换内容，行高不变。
+          _FeedHeader(feed: feed, loading: loaded == null),
+          const SizedBox(height: 4),
+          // 高度常量与卡片条一致：加载中占位、加载完原地换内容，行高不变。
           SizedBox(
             height: 214,
-            child: items == null
+            child: loaded == null
                 ? null
+                // 桌面端默认 dragDevices 不含 mouse，横滑行必须包
+                // HorizontalDragScrollable（横向滚动守卫）。
                 : HorizontalDragScrollable(
-                    child: ListView.builder(
+                    child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: items.length,
+                      itemCount: loaded.length,
+                      separatorBuilder: (BuildContext context, int index) =>
+                          const SizedBox(width: 12),
                       itemBuilder: (BuildContext context, int index) =>
-                          _buildCard(items[index]),
+                          SizedBox(
+                        width: 130,
+                        child: _SourceItemCard(item: loaded[index]),
+                      ),
                     ),
                   ),
           ),
@@ -688,58 +632,76 @@ class _MangaDiscoverySourceRowState extends State<MangaDiscoverySourceRow> {
       ),
     );
   }
+}
 
-  Widget _buildCard(MangaDiscoverySourceItem item) {
-    return SizedBox(
-      width: 130,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 12),
-        child: FushiCard(
-          padding: EdgeInsets.zero,
-          onTap: () => item.open(context),
+/// 选中单个来源时的热门网格（sliver）：按宽度自适应列数。
+///
+/// 与横滑行不同，这里失败**不收起**：用户已经明确只看这一个源，整块消失会让
+/// 页面看起来像「这个源什么都没有」，所以给失败文案 + 重试。
+class MangaDiscoverySourceGrid extends StatefulWidget {
+  const MangaDiscoverySourceGrid({required this.feed, super.key});
+
+  final MangaDiscoverySourceFeed feed;
+
+  @override
+  State<MangaDiscoverySourceGrid> createState() =>
+      _MangaDiscoverySourceGridState();
+}
+
+class _MangaDiscoverySourceGridState extends State<MangaDiscoverySourceGrid>
+    with _PopularFeedLoader<MangaDiscoverySourceGrid> {
+  @override
+  MangaDiscoverySourceFeed get feed => widget.feed;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<MangaDiscoverySourceItem>? loaded = items;
+    final Widget body;
+    if (failed) {
+      body = SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              Expanded(child: item.buildCover(context)),
-              Padding(
-                padding: const EdgeInsets.all(8),
-                child: Text(
-                  item.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
+              Text(t.manga_discovery_load_failed, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton.tonal(
+                key: const ValueKey<String>('manga_discovery_retry'),
+                onPressed: () => unawaited(loadPopular()),
+                child: Text(t.retry),
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// 发现封面（公开 CDN，经应用代理出口加载）；空/失败给占位图标。
-class MangaDiscoveryCover extends StatelessWidget {
-  const MangaDiscoveryCover({required this.url, super.key});
-
-  final String? url;
-
-  @override
-  Widget build(BuildContext context) {
-    final String value = url?.trim() ?? '';
-    if (value.isEmpty) {
-      return const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.image_not_supported_outlined)),
+      );
+    } else if (loaded == null || loaded.isEmpty) {
+      body = const SliverToBoxAdapter(child: SizedBox.shrink());
+    } else {
+      body = SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+        sliver: SliverGrid.builder(
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 160,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.6,
+          ),
+          itemCount: loaded.length,
+          itemBuilder: (BuildContext context, int index) =>
+              _SourceItemCard(item: loaded[index]),
+        ),
       );
     }
-    return Image(
-      image: AppHttpImage(value),
-      fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) => const ColoredBox(
-        color: Color(0x11000000),
-        child: Center(child: Icon(Icons.broken_image_outlined)),
-      ),
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: _FeedHeader(feed: feed, loading: loaded == null && !failed),
+          ),
+        ),
+        body,
+      ],
     );
   }
 }
