@@ -1933,6 +1933,48 @@ void main() {
   );
 
   test(
+    'the mine click transaction and its re-handshake keep the fence usable',
+    () async {
+      preferences[key()] = jsonEncode(_profile().toJson());
+      await sync();
+      for (final (String status, String reason) in <(String, String)>[
+        (
+          'mouseHookBusy',
+          'low_level_mouse_arm_failed:conflicting_transaction_pending',
+        ),
+        ('shieldHandshakePending', 'input_shield_rehandshake_pending'),
+      ]) {
+        controller.handleSurfaceStateChanged(
+          GalAttachedSurfaceStateEvent(
+            target: controller.target!,
+            state: 'suspended',
+            status: status,
+            reason: reason,
+          ),
+        );
+        final GalAttachedMiningCaptureLease? lease = await controller
+            .acquireMiningCaptureLease();
+        expect(lease, isNotNull, reason: reason);
+        port.restoreResult = GalAttachedCallResult(
+          status: status,
+          reason: reason,
+          surfaceVisible: false,
+        );
+        await controller.releaseMiningCaptureLease(lease!);
+      }
+      controller.handleSurfaceStateChanged(
+        GalAttachedSurfaceStateEvent(
+          target: controller.target!,
+          state: 'suspended',
+          status: 'shieldHandshakePending',
+          reason: 'input_shield_handshake_unavailable',
+        ),
+      );
+      expect(await controller.acquireMiningCaptureLease(), isNull);
+    },
+  );
+
+  test(
     'other hook failures and a changed line cannot use the card fence',
     () async {
       preferences[key()] = jsonEncode(_profile().toJson());

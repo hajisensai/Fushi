@@ -1833,15 +1833,23 @@ class GalAttachedTextController extends ChangeNotifier {
   }) async {
     final GalAttachedSurfaceTarget? target = _target;
     final int generation = _textGeneration;
-    // The dictionary card owns the singleton mouse hook while it is open.
-    // Losing input admission for that reason does not invalidate the current
-    // text or the configured surface. Native must still acknowledge hiding
-    // the exact epoch/generation; the caller separately fences the card.
+    // The dictionary card owns the singleton mouse hook while it is open, and
+    // the mine click itself runs a shield transaction that the attached
+    // surface then re-handshakes after. None of these input states invalidate
+    // the current text or the configured surface; refusing them made the first
+    // mine click fail at random. Native still acknowledges hiding the exact
+    // epoch/generation; the caller separately fences the card.
+    final bool transientInputOwner =
+        (_nativeStatus == 'mouseHookBusy' &&
+            (_statusReason ==
+                    'low_level_mouse_arm_failed:singleton_owned_by_other_hwnd' ||
+                _statusReason ==
+                    'low_level_mouse_arm_failed:conflicting_transaction_pending')) ||
+        (_nativeStatus == 'shieldHandshakePending' &&
+            _statusReason == 'input_shield_rehandshake_pending');
     final bool cardOwnsInput =
         _status == GalAttachedTextStatus.suspended &&
-        _nativeStatus == 'mouseHookBusy' &&
-        _statusReason ==
-            'low_level_mouse_arm_failed:singleton_owned_by_other_hwnd' &&
+        transientInputOwner &&
         !_surfaceVisible &&
         _attachedProviderClaimed &&
         _activeVariant != null &&
