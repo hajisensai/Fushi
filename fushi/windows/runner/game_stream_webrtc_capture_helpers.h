@@ -326,7 +326,8 @@ inline bool ConvertBgraToI420(const uint8_t* src, size_t src_stride,
 class FramePacer {
  public:
   explicit FramePacer(int fps)
-      : interval_us_((1000000LL + std::max(fps, 1) - 1) / std::max(fps, 1)) {}
+      : interval_us_((1000000LL + std::max<int>(fps, 1) - 1) /
+                     std::max<int>(fps, 1)) {}
 
   bool ShouldKeep(int64_t now_us) {
     if (!started_) {
