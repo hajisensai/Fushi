@@ -82,6 +82,16 @@ void main() {
       }
     });
 
+    test('手写模板里溢出 int64 的数字 → 空串，不让整张卡制卡失败', () {
+      expect(
+        render(
+          '<{glossary-first-99999999999999999999}>{expression}',
+          payloadWith(''),
+        ),
+        '<>ポリ',
+      );
+    });
+
     test('映射界面提供前两本 / 前三本', () {
       expect(
         AnkiHandlebarOptions.coreOptions,

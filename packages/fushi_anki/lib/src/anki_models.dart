@@ -950,7 +950,10 @@ class AnkiHandlebarRenderer {
     }
     final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
     if (firstN != null) {
-      return _firstGlossaries(payload, int.parse(firstN.group(1)!));
+      // 用户手写模板里的超长数字（溢出 int64）不能让整张卡制卡失败：
+      // 解析不了就当作无效 handlebar，与未知 handlebar 同样给空串。
+      final int? count = int.tryParse(firstN.group(1)!);
+      return count == null ? '' : _firstGlossaries(payload, count);
     }
     switch (handlebar) {
       case '{expression}':
