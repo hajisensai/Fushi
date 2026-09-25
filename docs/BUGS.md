@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2450 条。点号进各自文件。
+> 共 2451 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2647](bugs/BUG-2647-onedrive-refresh-token-rotation-not-persisted.md) | ✅ | ✅ | OneDrive 刷新后轮换的 refresh token 不落库，登录约 90 天后同步静默停止 |
 | [BUG-2645](bugs/BUG-2645-asset-transfer-row-foreign-progress.md) | ✅ | ✅ | 互联页词典传输行在任意同步时都转圈 |
 | [BUG-2644](bugs/BUG-2644-manga-ocr-nested-regions.md) | ✅ | ✅ | 漫画目录段落与内嵌行框重复识别和显示 |
 | [BUG-2643](bugs/BUG-2643-manga-ocr-preprocess-speed.md) | ✅ | ✅ | Windows 本地漫画 OCR 识别慢且缩图丢失细笔画 |
