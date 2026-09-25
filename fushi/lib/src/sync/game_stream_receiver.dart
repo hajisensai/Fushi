@@ -60,6 +60,8 @@ class GameStreamStatsSample {
   factory GameStreamStatsSample.fromReports(
     List<StatsReport> reports, {
     GameStreamStatsSample? previous,
+    // Sample time; tests pin it, production reads the wall clock.
+    int? nowMs,
   }) {
     Map<dynamic, dynamic>? video;
     double? rtt;
@@ -79,7 +81,7 @@ class GameStreamStatsSample {
       }
     }
     num? number(String key) => video?[key] is num ? video![key] as num : null;
-    final int timestampMs = DateTime.now().millisecondsSinceEpoch;
+    final int timestampMs = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final int bytes = number('bytesReceived')?.toInt() ?? 0;
     int? bitrate;
     if (previous != null &&
@@ -168,6 +170,8 @@ class FushiGameStreamReceiver extends ChangeNotifier
       createPeerConnection(<String, dynamic>{
         'iceServers': <Map<String, dynamic>>[],
         'sdpSemantics': 'unified-plan',
+        'bundlePolicy': 'max-bundle',
+        'rtcpMuxPolicy': 'require',
       });
 
   final FushiGameStreamClient _client;
@@ -179,6 +183,7 @@ class FushiGameStreamReceiver extends ChangeNotifier
   RTCPeerConnection? _connection;
   RTCDataChannel? _control;
   Timer? _pollTimer;
+  DateTime _lastPoll = DateTime.fromMillisecondsSinceEpoch(0);
   String? _sessionId;
   String? _clientId;
   int _hostSignalSequence = -1;
@@ -360,7 +365,13 @@ class FushiGameStreamReceiver extends ChangeNotifier
     if (_pollTimer != null || _backgrounded || _disposed || _hasTerminated) {
       return;
     }
-    _pollTimer = Timer.periodic(const Duration(milliseconds: 350), (_) {
+    _pollTimer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
+      final DateTime now = DateTime.now();
+      if (_state == GameStreamReceiverState.connected &&
+          now.difference(_lastPoll) < kGameStreamConnectedPoll) {
+        return;
+      }
+      _lastPoll = now;
       unawaited(_pollSignals());
     });
   }

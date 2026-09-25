@@ -28,6 +28,13 @@ Map<String, dynamic> decodeGameStreamJsonObject(String value) {
   return _stringMap(decoded);
 }
 
+/// Signalling cadence shared by host and receiver. Negotiation is polled fast
+/// so offer → answer → ICE completes in a few hundred milliseconds; once
+/// connected only liveness, late candidates and `bye` remain, at the slower
+/// cadence.
+const Duration kGameStreamNegotiationPoll = Duration(milliseconds: 100);
+const Duration kGameStreamConnectedPoll = Duration(milliseconds: 350);
+
 enum GameStreamSessionState {
   waiting,
   connecting,

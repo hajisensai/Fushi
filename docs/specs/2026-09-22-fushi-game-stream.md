@@ -22,11 +22,21 @@
 - **制卡修复（BUG-2636）**：见 `docs/bugs/BUG-2636-game-stream-lookup-mining.md`。
 - 以上均为代码与单测层证据；安卓真机 ↔ Windows 真游戏的端到端（远程启动、后台输入实效、各档参数、真卡）尚未执行。
 
+## 2026-09-25：串流性能（稳定性 / 速度 / 帧率 / 画质）
+
+状态同样是 `implemented_unverified`：纯函数与本机基准已验证，LAN 真机前后对比未做。
+
+- **帧率**：WGC 按显示器刷新送帧且有抖动，旧节拍 `now - last >= interval` 丢掉每个早到零点几毫秒的帧——本机模拟 60 Hz 源设 60 fps 实出 30～40 fps、120 Hz 设 120 实出 60。改为「截止时刻每次推进一个间隔、容许提前 1/4 间隔」的 `FramePacer`（`game_stream_webrtc_capture_helpers.h`），长期速率等于目标或源速率。
+- **静止画面**：画面不动时 WGC 不来帧，编码器既无法响应丢包后的关键帧请求（花屏/冻结到下次重绘），也无法把场景切换时码率不足的首帧逐步编清楚。现在静止 100 ms 起每 100 ms 重发上一帧（相同帧只编出几个字节）；节拍器丢掉的最后一帧由采集线程在其时隙过后补发，不会停在倒数第二帧。
+- **转换**：每帧只在 GPU 上拷客户区（不再整窗读回），缓冲与查表跨帧复用；最近邻缩放（缩小时整行整列丢，细笔画日文字发碎）换成中心对齐双线性（2:1 即盒式平均），1:1 直通。单线程 CPU 周期（`QueryThreadCycleTime`）：1080p 1:1 旧 52 M → 新 17 M（3.1×），缩放路径与旧版同成本；像素 ≥ 640×360 时按行对切最多 4 段并行。
+- **码率**：旧「自适应」每 2 秒把 `maxBitrate` 设成可用带宽估计的 75%（RTT > 100 ms 再砍 30%）。GCC 本来就把编码器限在估计值之下，且估计值受已分配上限约束，这层反馈会一路棘轮到 1 Mbps 地板——静态 VN 画面发送量小、估计本来就低，最明显。现在只给边界（`gameStreamBitrateWindow`）：自适应 = 地板 ≤ 1 Mbps、起始为目标一半、上限为目标；固定 = 三者都钉目标（Moonlight 式）。起始码率经主机对 answer 写入 `x-google-start-bitrate`（`gameStreamTuneVideoSdp`，跳过 rtx/red/fec），开播不再从 libwebrtc 默认 300 kbps 慢爬；上下限只走 `setParameters`（SDP 里钉死的 min/max 会在串流中改参数后残留，所以 answer 里若有也一并删掉）；视频编码 `networkPriority = high`（Wi-Fi WMM 优先队列）。
+- **连接速度**：信令协商期两端轮询 350 ms → 100 ms，连上后恢复 350 ms（`kGameStreamNegotiationPoll` / `kGameStreamConnectedPoll`）；两端 `max-bundle` + `rtcp-mux`，音视频与控制共用一条 ICE 路径。
+
 ## 实现
 
 `packages/fushi_engine/lib/sync/game_stream/` 保存 v1 wire 类型与会话服务；app 的 `game_stream_host.dart`、`game_stream_receiver.dart`、`game_stream_client.dart` 装配 WebRTC、原生窗口输入和配对传输。服务端提供 `/api/game-stream/sessions` 以及 `/join`、`/signal`、`/stop`、`/mine`，后四者也支持 `/sessions/{id}/...` 路径。
 
-主机显式调用 `flutter_webrtc` 的 Windows 窗口捕获入口，精确匹配十进制 HWND source id，要求视频和应用回环音频轨道同时存在，不回退到整桌面。仓库的版本化插件补丁将 `fushiClientArea` 请求接到 WGC → WebRTC custom source 适配：复用已有 D3D/客户区裁剪，以纹理实际 RowPitch 转 I420，输出限制在 1920×1080 内，首个真实帧转换成功后才完成启动。补丁缺失或无法定位客户区时明确失败。视频上限目标为 60fps、8 Mbps，根据 WebRTC 可用带宽与 RTT 降低编码码率、帧率与分辨率；逐行截图仍使用现有 WGC 通道。
+主机显式调用 `flutter_webrtc` 的 Windows 窗口捕获入口，精确匹配十进制 HWND source id，要求视频和应用回环音频轨道同时存在，不回退到整桌面。仓库的版本化插件补丁将 `fushiClientArea` 请求接到 WGC → WebRTC custom source 适配：复用已有 D3D/客户区裁剪，以纹理实际 RowPitch 转 I420，输出限制在 1920×1080 内，首个真实帧转换成功后才完成启动。补丁缺失或无法定位客户区时明确失败。码率只给边界（见下节「2026-09-25：串流性能」），拥塞适配交给 WebRTC 自身的 GCC；逐行截图仍使用现有 WGC 通道。
 
 可靠有序数据通道携带输入、ACK 与台词。两端信令序号独立，远端 SDP 之前到达的 ICE 先缓存。重复输入不会重新注入。Android 进入后台时发送按键释放消息、暂停输入与 HTTP 轮询，恢复时保留同一连接；短断线允许原连接恢复，失败的连接要求主机重新开启。窗口销毁、隐藏、最小化、Hook 会话结束、显式停止或 10 分钟无客户端活动会停止采集并释放按键。
 

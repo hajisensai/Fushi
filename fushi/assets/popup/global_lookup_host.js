@@ -1127,6 +1127,7 @@
       record.measuredContentHeight = 0;
       record.contentMeasureDirty = true;
       wrapFrameBridge(record);
+      watchFrameSelection(record);
       if (!record.active) {
         // The document load itself may land on the active card's presentation
         // task. Defer static/font priming through the same compositor/watchdog
@@ -1240,6 +1241,7 @@
     if (!record) {
       return;
     }
+    forgetRecordSelection(record);
     var oldId = record.id;
     record.active = false;
     stopRecordCallbacks(record);
@@ -1491,6 +1493,7 @@
     while (standbyRecords.length >= STANDBY_POOL_SIZE) {
       destroyRecord(standbyRecords.shift());
     }
+    forgetRecordSelection(record);
     var oldId = record.id;
     record.active = false;
     stopRecordCallbacks(record);
@@ -2287,6 +2290,7 @@
     maybeFlipRevealReady(record, record.route);
     if (record.loaded) {
       wrapFrameBridge(record);
+      watchFrameSelection(record);
       observeGalFrameDirty(record, record.route);
       // BUG-1833 / TODO-1231 P1 — immutable settings are keyed by a small
       // revision; entries + the per-frame render body are the only per-lookup
@@ -2352,6 +2356,10 @@
     if (parkCandidate) {
       parkRecord(parkCandidate);
     }
+    // BUG-2651 — a removed/parked card takes its selection with it but fires no
+    // selectionchange (its realm is gone or parked), so re-derive the aggregate
+    // here; otherwise native keeps Ctrl+C hijacked for a selection nobody sees.
+    reportSelectionState();
   }
 
   function frameDescriptors() {
@@ -3736,8 +3744,135 @@
     }
   }
 
+  // BUG-2651 (issue #1581) — 覆盖窗带 WS_EX_NOACTIVATE、永不拿键盘焦点，用户在卡片里
+  // 划选后按 Ctrl+C，那一下落在前台应用上，复制走的是**前台应用**的选区。native 只在
+  // 「卡片里真有非空选区」时才临时接管 Ctrl+C（RegisterHotKey），所以这里负责两件事：
+  //   · 每个卡片 iframe 的 selectionchange 汇总成一个布尔，**变化时**才上报
+  //     overlaySelection（native 就地消费，不转发 Dart）；
+  //   · 热键命中时 native 经 selectedText() 取文本，自己写剪贴板（卡片没焦点，页面内
+  //     execCommand('copy') / navigator.clipboard 都不可靠）。
+  // 选区可能同时残留在多个同源 iframe 里（在 B 里划选不会清 A 的选区），所以记下
+  // 最近一次产生非空选区的 realm，取文本时优先它，避免复制到一段旧选区。
+  var lastSelectionWindow = null;
+  var lastReportedSelection = false;
+
+  function selectionTextOf(win) {
+    try {
+      var selection = win && typeof win.getSelection === 'function'
+          ? win.getSelection()
+          : null;
+      if (!selection || selection.isCollapsed) {
+        return '';
+      }
+      return String(selection.toString() || '');
+    } catch (e) {
+      // A navigating/recovering realm has no readable selection.
+      return '';
+    }
+  }
+
+  function selectedText() {
+    var text = selectionTextOf(lastSelectionWindow);
+    if (text) {
+      return text;
+    }
+    text = selectionTextOf(window);
+    if (text) {
+      return text;
+    }
+    var found = '';
+    frames.forEach(function (record) {
+      if (found || !record || !record.iframe) {
+        return;
+      }
+      try {
+        found = selectionTextOf(record.iframe.contentWindow);
+      } catch (e) {
+        found = '';
+      }
+    });
+    return found;
+  }
+
+  function reportSelectionState() {
+    var has = selectedText() !== '';
+    if (has === lastReportedSelection) {
+      return;
+    }
+    lastReportedSelection = has;
+    postToHost('overlaySelection', [has]);
+  }
+
+  // Native reset its own view to "no selection" (the hotkey fired but
+  // selectedText() came back empty). Align the de-dup state with it, then
+  // re-derive: otherwise the next real selection compares equal to a stale
+  // `true` and is never reported, and Ctrl+C falls back to the foreground app.
+  function resetSelectionReport() {
+    lastReportedSelection = false;
+    reportSelectionState();
+  }
+
+  // Must run BEFORE the shell leaves the DOM: a detached iframe's contentWindow
+  // is null, so the identity check against lastSelectionWindow is impossible
+  // afterwards.
+  function forgetRecordSelection(record) {
+    var win = null;
+    try {
+      win = record && record.iframe ? record.iframe.contentWindow : null;
+    } catch (e) {
+      win = null;
+    }
+    if (win && lastSelectionWindow === win) {
+      lastSelectionWindow = null;
+    }
+  }
+
+  function onRealmSelectionChange(win) {
+    if (selectionTextOf(win)) {
+      lastSelectionWindow = win;
+    } else if (lastSelectionWindow === win) {
+      lastSelectionWindow = null;
+    }
+    reportSelectionState();
+  }
+
+  // 每次 iframe 导航都是新 realm：按 realm 打标记幂等挂监听（与 wrapFrameBridge 同一
+  // 调用点，load 与复用两条路都经过）。
+  function watchFrameSelection(record) {
+    var win = null;
+    try {
+      win = record && record.iframe ? record.iframe.contentWindow : null;
+    } catch (e) {
+      win = null;
+    }
+    if (!win || win.__fushiSelectionWatched) {
+      return;
+    }
+    try {
+      var doc = win.document;
+      if (!doc || typeof doc.addEventListener !== 'function') {
+        return;
+      }
+      doc.addEventListener('selectionchange', function () {
+        onRealmSelectionChange(win);
+      });
+      win.__fushiSelectionWatched = true;
+    } catch (e) {
+      // Cross-realm access failed (navigating) -> the next load re-attaches.
+    }
+  }
+
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('selectionchange', function () {
+      onRealmSelectionChange(window);
+    });
+  }
+
   window.__globalLookupHost = {
     __installed: true,
+    selectedText: selectedText,
+    resetSelectionReport: resetSelectionReport,
+    _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
     retainStack: retainStack,
     beginLookup: beginLookup,

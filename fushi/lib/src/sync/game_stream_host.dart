@@ -33,23 +33,109 @@ double gameStreamResolutionScale({
     ? 1
     : captureHeight / maxHeight;
 
-/// One adaptive step. A congested path (RTT > 100 ms) backs off by 30 %;
-/// otherwise the encoder follows 75 % of the estimated outgoing bandwidth,
-/// always within [minimum]..[target].
-int gameStreamAdaptedBitrate({
-  required int current,
-  required int target,
-  required int minimum,
-  double? availableOutgoing,
-  double? roundTripSeconds,
+/// Encoder bitrate bounds in bits per second.
+///
+/// WebRTC's own congestion controller (GCC) already keeps the encoder under
+/// its bandwidth estimate, so the host only states bounds and never feeds the
+/// estimate back into `maxBitrate`: doing that capped the probe ceiling, the
+/// estimate followed the cap down and a steady LAN ratcheted to the floor —
+/// most visibly on still visual-novel screens, whose tiny send rate keeps the
+/// estimate low. [max] is the receiver's target; [start] skips libwebrtc's
+/// 300 kbps default ramp so the first seconds are not blurry. Adaptive keeps a
+/// floor of at most 1 Mbps; fixed pins all three to the target (Moonlight's
+/// fixed-bitrate behaviour).
+({int min, int start, int max}) gameStreamBitrateWindow({
+  required int targetBps,
+  required bool adaptive,
 }) {
-  if (roundTripSeconds != null && roundTripSeconds > .1) {
-    return (current * .7).round().clamp(minimum, target);
+  if (!adaptive) return (min: targetBps, start: targetBps, max: targetBps);
+  final int floor = math.min(1000000, targetBps);
+  return (
+    min: floor,
+    start: (targetBps ~/ 2).clamp(floor, targetBps),
+    max: targetBps,
+  );
+}
+
+const Set<String> _kVideoSdpHelperCodecs = <String>{
+  'rtx',
+  'red',
+  'ulpfec',
+  'flexfec-03',
+};
+
+/// Sets `x-google-start-bitrate` (kbps) on every media codec of the video
+/// section of [sdp]. Applied by the sender to the remote answer: libwebrtc's
+/// send-side bandwidth estimator starts from it instead of 300 kbps. Only the
+/// start rate goes through SDP because it only matters at negotiation; the
+/// floor and ceiling stay with `setParameters`, which a later settings update
+/// can move — a `x-google-min/max-bitrate` pinned here would outlive it, so
+/// any such value in the answer is dropped. Retransmission / FEC payloads are
+/// left untouched.
+String gameStreamTuneVideoSdp(String sdp, {required int startKbps}) {
+  final String eol = sdp.contains('\r\n') ? '\r\n' : '\n';
+  final List<String> lines = sdp.split(eol);
+  final String params = 'x-google-start-bitrate=$startKbps';
+  final RegExp rtpmap = RegExp(r'^a=rtpmap:(\d+) ([^/\s]+)/');
+  final RegExp fmtp = RegExp(r'^a=fmtp:(\d+) (.*)$');
+  final RegExp existing = RegExp(r'^x-google-(min|start|max)-bitrate=');
+  final List<String> out = <String>[];
+  int sectionStart = -1;
+  bool video = false;
+
+  void finishSection() {
+    if (!video || sectionStart < 0) return;
+    final List<String> section = out.sublist(sectionStart);
+    final Set<String> media = <String>{};
+    for (final String line in section) {
+      final RegExpMatch? match = rtpmap.firstMatch(line);
+      if (match != null &&
+          !_kVideoSdpHelperCodecs.contains(match.group(2)!.toLowerCase())) {
+        media.add(match.group(1)!);
+      }
+    }
+    final Set<String> tuned = <String>{};
+    final List<String> rewritten = <String>[];
+    for (final String line in section) {
+      final RegExpMatch? match = fmtp.firstMatch(line);
+      if (match != null && media.contains(match.group(1))) {
+        final List<String> kept = match
+            .group(2)!
+            .split(';')
+            .map((String part) => part.trim())
+            .where((String part) => part.isNotEmpty && !existing.hasMatch(part))
+            .toList();
+        rewritten.add(
+          'a=fmtp:${match.group(1)} ${[...kept, params].join(';')}',
+        );
+        tuned.add(match.group(1)!);
+      } else {
+        rewritten.add(line);
+      }
+    }
+    // Codecs such as VP8 carry no fmtp line: add one right after the rtpmap.
+    for (int i = 0; i < rewritten.length; i++) {
+      final RegExpMatch? match = rtpmap.firstMatch(rewritten[i]);
+      final String? pt = match?.group(1);
+      if (pt != null && media.contains(pt) && tuned.add(pt)) {
+        rewritten.insert(i + 1, 'a=fmtp:$pt $params');
+      }
+    }
+    out
+      ..removeRange(sectionStart, out.length)
+      ..addAll(rewritten);
   }
-  if (availableOutgoing != null) {
-    return (availableOutgoing * .75).round().clamp(minimum, target);
+
+  for (final String line in lines) {
+    if (line.startsWith('m=')) {
+      finishSection();
+      sectionStart = out.length;
+      video = line.startsWith('m=video ');
+    }
+    out.add(line);
   }
-  return current.clamp(minimum, target);
+  finishSection();
+  return out.join(eol);
 }
 
 /// Local-only Windows capture owner. Paired HTTP requests can join an existing
@@ -87,11 +173,11 @@ class FushiGameStreamHost extends ChangeNotifier {
   MediaStream? _capture;
   RTCDataChannel? _control;
   Timer? _timer;
-  Timer? _statsTimer;
   Future<void>? _stopping;
   bool _starting = false;
   bool _pumping = false;
-  bool _adapting = false;
+  bool _connected = false;
+  DateTime _lastPump = DateTime.fromMillisecondsSinceEpoch(0);
   bool _sendingTexts = false;
   bool _disposed = false;
   bool _started = false;
@@ -106,17 +192,15 @@ class FushiGameStreamHost extends ChangeNotifier {
   Future<void> _inputs = Future<void>.value();
   GameStreamVideoSettings _settings = const GameStreamVideoSettings();
   int _captureHeight = 1080;
-  int _bitrate = 8000000;
   String? _error;
 
   /// Parameters in effect for the current session.
   GameStreamVideoSettings get settings => _settings;
 
-  /// Encoder target from the receiver's request, in bits per second.
-  int get _targetBitrate => _settings.bitrateKbps * 1000;
-
-  /// Adaptive floor: never below 1 Mbps, never above the target itself.
-  int get _minimumBitrate => math.min(1000000, _targetBitrate);
+  ({int min, int start, int max}) get _bitrates => gameStreamBitrateWindow(
+    targetBps: _settings.bitrateKbps * 1000,
+    adaptive: _settings.adaptiveBitrate,
+  );
 
   bool get started => _started;
   bool get starting => _starting;
@@ -164,7 +248,7 @@ class FushiGameStreamHost extends ChangeNotifier {
     _pendingTexts.clear();
     _settings = settings;
     _captureHeight = settings.maxHeight;
-    _bitrate = _targetBitrate;
+    _connected = false;
     final GameStreamSession current = service.createSession(
       windowId: 'hwnd:$hwnd',
       gameId: gameId,
@@ -271,6 +355,10 @@ class FushiGameStreamHost extends ChangeNotifier {
         <String, dynamic>{
           'iceServers': <Object>[],
           'sdpSemantics': 'unified-plan',
+          // One transport for audio, video and control: a single ICE check
+          // list connects sooner and one path cannot fail independently.
+          'bundlePolicy': 'max-bundle',
+          'rtcpMuxPolicy': 'require',
         },
       );
       if (generation != _generation) {
@@ -313,6 +401,8 @@ class FushiGameStreamHost extends ChangeNotifier {
       };
       connection.onConnectionState = (RTCPeerConnectionState state) {
         if (generation != _generation || current.state.isTerminal) return;
+        _connected =
+            state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           service.markConnected(sessionId: current.sessionId);
           notifyListeners();
@@ -348,11 +438,14 @@ class FushiGameStreamHost extends ChangeNotifier {
       _started = true;
       await _setVideoParameters();
       _requireGeneration(generation);
-      _timer = Timer.periodic(const Duration(milliseconds: 350), (_) {
+      _timer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
+        final DateTime now = DateTime.now();
+        if (_connected &&
+            now.difference(_lastPump) < kGameStreamConnectedPoll) {
+          return;
+        }
+        _lastPump = now;
         unawaited(_pump());
-      });
-      _statsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        unawaited(_adaptVideoSender());
       });
       notifyListeners();
       return current;
@@ -421,7 +514,13 @@ class FushiGameStreamHost extends ChangeNotifier {
         if (signal.type == GameStreamSignalType.answer) {
           if (!_remoteDescriptionSet) {
             await connection.setRemoteDescription(
-              RTCSessionDescription(signal.payload['sdp'] as String, 'answer'),
+              RTCSessionDescription(
+                gameStreamTuneVideoSdp(
+                  signal.payload['sdp'] as String,
+                  startKbps: _bitrates.start ~/ 1000,
+                ),
+                'answer',
+              ),
             );
             _remoteDescriptionSet = true;
             for (final RTCIceCandidate candidate in _pendingCandidates) {
@@ -467,7 +566,6 @@ class FushiGameStreamHost extends ChangeNotifier {
       maxFps: math.min(requested.maxFps, ceiling.maxFps),
     );
     _settings = effective;
-    _bitrate = _targetBitrate;
     if (_started) await _setVideoParameters();
     notifyListeners();
     return effective;
@@ -477,12 +575,17 @@ class FushiGameStreamHost extends ChangeNotifier {
     final RTCPeerConnection? connection = _connection;
     if (connection == null) return;
     final GameStreamVideoSettings settings = _settings;
+    final ({int min, int start, int max}) rates = _bitrates;
     for (final RTCRtpSender sender in await connection.getSenders()) {
       if (sender.track?.kind != 'video') continue;
       final RTCRtpParameters parameters = sender.parameters;
       for (final RTCRtpEncoding encoding
           in parameters.encodings ?? <RTCRtpEncoding>[]) {
-        encoding.maxBitrate = _bitrate;
+        encoding.minBitrate = rates.min;
+        encoding.maxBitrate = rates.max;
+        // DSCP marking on the LAN path: Wi-Fi WMM queues the video ahead of
+        // background traffic from the same host.
+        encoding.networkPriority = RTCPriorityType.high;
         encoding.maxFramerate = settings.maxFps;
         encoding.scaleResolutionDownBy = gameStreamResolutionScale(
           captureHeight: _captureHeight,
@@ -499,40 +602,6 @@ class FushiGameStreamHost extends ChangeNotifier {
       if (!await sender.setParameters(parameters)) {
         throw StateError('Video encoding limits were rejected');
       }
-    }
-  }
-
-  Future<void> _adaptVideoSender() async {
-    if (_adapting || !_started || _connection == null) return;
-    // Fixed bitrate (Moonlight's default behaviour) holds the requested rate.
-    if (!_settings.adaptiveBitrate) return;
-    _adapting = true;
-    try {
-      double? available;
-      double? rtt;
-      for (final StatsReport report in await _connection!.getStats()) {
-        if (report.type == 'candidate-pair' &&
-            report.values['state'] == 'succeeded' &&
-            report.values['nominated'] == true) {
-          available = (report.values['availableOutgoingBitrate'] as num?)
-              ?.toDouble();
-          rtt = (report.values['currentRoundTripTime'] as num?)?.toDouble();
-        }
-      }
-      final int previous = _bitrate;
-      _bitrate = gameStreamAdaptedBitrate(
-        current: _bitrate,
-        target: _targetBitrate,
-        minimum: _minimumBitrate,
-        availableOutgoing: available,
-        roundTripSeconds: rtt,
-      );
-      if (_started && previous != _bitrate) await _setVideoParameters();
-    } catch (error) {
-      _error = 'Video adaptation: $error';
-      notifyListeners();
-    } finally {
-      _adapting = false;
     }
   }
 
@@ -602,10 +671,9 @@ class FushiGameStreamHost extends ChangeNotifier {
   Future<void> _stop(String reason) async {
     ++_generation;
     _started = false;
+    _connected = false;
     _timer?.cancel();
-    _statsTimer?.cancel();
     _timer = null;
-    _statsTimer = null;
     final GameStreamSession? current = session;
     if (current != null && !current.state.isTerminal) {
       service.stop(sessionId: current.sessionId, reason: reason);

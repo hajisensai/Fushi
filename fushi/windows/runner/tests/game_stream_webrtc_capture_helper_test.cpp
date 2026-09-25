@@ -137,6 +137,101 @@ bool TestConfigurableCapsAndFps() {
   return ok;
 }
 
+// Counts frames kept by the pacer over one second of [source_hz] arrivals
+// with +/- [jitter_us] alternating jitter.
+int KeptPerSecond(int fps, double source_hz, int64_t jitter_us) {
+  flutter_webrtc_plugin::FramePacer pacer(fps);
+  const double period_us = 1000000.0 / source_hz;
+  int kept = 0;
+  for (int i = 0; i < static_cast<int>(source_hz * 10); ++i) {
+    const int64_t jitter = (i % 2 == 0) ? jitter_us : -jitter_us;
+    const int64_t now = static_cast<int64_t>(i * period_us) + jitter;
+    if (pacer.ShouldKeep(now)) ++kept;
+  }
+  return kept / 10;
+}
+
+bool TestFramePacer() {
+  bool ok = true;
+  // The old "now - last >= interval" rule kept ~30 of 60 jittered frames.
+  const int at60 = KeptPerSecond(60, 60, 500);
+  ok &= Expect(at60 >= 59 && at60 <= 60, "60 Hz source keeps 60 fps");
+  const int from144 = KeptPerSecond(60, 144, 300);
+  ok &= Expect(from144 >= 58 && from144 <= 61, "144 Hz source paces to 60");
+  const int half = KeptPerSecond(30, 60, 500);
+  ok &= Expect(half >= 29 && half <= 31, "60 Hz source paces to 30");
+  const int slow = KeptPerSecond(120, 60, 0);
+  ok &= Expect(slow == 60, "source slower than target keeps every frame");
+
+  flutter_webrtc_plugin::FramePacer pacer(60);
+  ok &= Expect(pacer.ShouldKeep(0), "first frame kept");
+  ok &= Expect(!pacer.ShouldKeep(5000), "early frame dropped");
+  // After a long idle gap the deadline restarts instead of bursting.
+  ok &= Expect(pacer.ShouldKeep(5000000), "frame after idle gap kept");
+  ok &= Expect(!pacer.ShouldKeep(5001000), "no burst after idle gap");
+  return ok;
+}
+
+bool TestBilinearDownscale() {
+  bool ok = true;
+  // 4x2 source of alternating black/white columns; 2:1 must box-average to
+  // mid grey instead of picking one column (nearest neighbour).
+  const size_t stride = 4 * 4;
+  std::vector<uint8_t> src(stride * 4, 0);
+  for (uint32_t yy = 0; yy < 4; ++yy) {
+    for (uint32_t xx = 0; xx < 4; ++xx) {
+      uint8_t* p = src.data() + yy * stride + xx * 4;
+      const uint8_t c = (xx % 2 == 0) ? 0 : 255;
+      p[0] = p[1] = p[2] = c;
+      p[3] = 255;
+    }
+  }
+  std::vector<uint8_t> y, u, v;
+  ok &= Expect(flutter_webrtc_plugin::ConvertBgraToI420(
+                   src.data(), stride, 0, 0, 4, 4, 2, 2, &y, &u, &v),
+               "2:1 downscale converts");
+  if (!ok) return false;
+  // Grey 128 → Y = ((66+129+25)*128 + 128 >> 8) + 16 = 126.
+  for (size_t i = 0; i < y.size(); ++i) {
+    ok &= Expect(y[i] >= 125 && y[i] <= 127, "2:1 is a box average");
+  }
+  ok &= Expect(u[0] == 128 && v[0] == 128, "grey has neutral chroma");
+
+  // A reused converter gives identical output and survives a size change.
+  flutter_webrtc_plugin::BgraToI420Converter converter;
+  std::vector<uint8_t> y2, u2, v2;
+  ok &= Expect(converter.Convert(src.data(), stride, 0, 0, 4, 4, 4, 4, &y2,
+                                 &u2, &v2) &&
+                   y2[0] == 16 && y2[1] == 235,
+               "converter keeps 1:1 exact");
+  ok &= Expect(converter.Convert(src.data(), stride, 0, 0, 4, 4, 2, 2, &y2,
+                                 &u2, &v2) &&
+                   y2 == y && u2 == u && v2 == v,
+               "converter reuse matches one-shot conversion");
+
+  std::vector<flutter_webrtc_plugin::ScaleTap> taps;
+  flutter_webrtc_plugin::BuildScaleTaps(1920, 1280, &taps);
+  bool in_range = taps.size() == 1280;
+  for (const auto& tap : taps) {
+    in_range &= tap.i0 < 1920 && tap.i1 < 1920 && tap.w1 < 256 &&
+                tap.i1 >= tap.i0;
+  }
+  ok &= Expect(in_range, "1.5:1 taps stay inside the source");
+  return ok;
+}
+
+bool TestIdleRepeat() {
+  namespace p = flutter_webrtc_plugin;
+  bool ok = true;
+  ok &= Expect(!p::ShouldRepeatIdleFrame(false, 1000000, 0),
+               "nothing to repeat before the first frame");
+  ok &= Expect(!p::ShouldRepeatIdleFrame(true, 50000, 0),
+               "a live stream is not duplicated");
+  ok &= Expect(p::ShouldRepeatIdleFrame(true, p::kCaptureIdleRepeatUs, 0),
+               "a still window repeats its last frame");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -144,6 +239,9 @@ int main() {
   ok &= TestKnownColorsPaddedCrop();
   ok &= TestOddScalingAndBounds();
   ok &= TestConfigurableCapsAndFps();
+  ok &= TestFramePacer();
+  ok &= TestBilinearDownscale();
+  ok &= TestIdleRepeat();
   if (!ok) return 1;
   std::cout << "game_stream_webrtc_capture_helper_test passed assertions="
             << g_assertions << "\n";
