@@ -1,0 +1,11 @@
+## BUG-2683 · 集成测试写的 Anki 标签漏进用户真实配置，卡片多出 e2e 与 chars 标签
+- **报告**：2026-09-26（用户：shishamo，截图里卡片多出 `chars_18712` 与 `fushi_game_stream_e2e_1790092216409643` 两个标签，要求砍掉）
+- **真实性**：✅ 真 bug。用户真实的 `%APPDATA%\Fushi\Fushi\shared_preferences.json` 里 `flutter.fushi_anki_settings.tags` = `fushi_game_stream_e2e_1790092216409643`。这个值是 `fushi/integration_test/helpers/game_stream_lan_fixture.dart:196` 的 `configureGameStreamTestAnki` 写进去的。测试虽然跑在 `run_windows_itest.ps1` 的隔离根里，但 Anki 设置走 SharedPreferences（`packages/fushi_anki/lib/src/base_anki_repository.dart:215`），不走 Drift，而 SharedPreferences 从来没有按 `FUSHI_TEST_ROOT` 隔离过：`shared_preferences_windows` 经 `PathProviderWindows` 调 `SHGetKnownFolderPath(RoamingAppData)` 取目录，不看 runner 改掉的 `APPDATA` 环境变量；macOS 走 bundle id 域的 NSUserDefaults。所以 E2E 一跑，用户此后每张卡都带上测试标签。`chars_<n>` 是 `auto_add_char_position_to_tags` 默认开（`fushi/lib/src/models/preferences_repository.dart:1997`）造成的，用户明确不要。
+- **[x] ① 已修复**（`1b1739d71aa`）：
+  - 新增 `fushi/lib/src/startup/test_root_shared_preferences.dart`：测试根生效时，桌面端的 `SharedPreferencesStorePlatform` 换成落在 `<测试根>/app-support/shared_preferences.json` 的文件存储。
+  - `main()` 和 `integration_test/support/test_app_launcher.dart` 都在第一次读 prefs 之前调用它。
+  - `chars_` 标签默认改为关，设置项保留。
+- **[x] ② 已加自动化测试**：`fushi/test/startup/test_root_shared_preferences_test.dart`，覆盖：写入落在测试根、跨实例读回且类型不变、幂等、无测试根或移动端时不动平台 store。
+- **备注**：
+  - 用户机器上已经被污染的配置不会自动清掉，需要在 Anki 设置里把默认标签里的 `fushi_game_stream_e2e_*` 删掉。
+  - 用 `FUSHI_TEST_ROOT` 编译的开发版以后使用独立的 prefs 文件，第一次启动时需要重新选一次 Anki 牌组、模板等配置。

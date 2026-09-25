@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show VideoFitMode;
+import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart'
@@ -333,6 +334,14 @@ class VideoPlayerController extends ChangeNotifier
   /// [selectSubtitleTrack]（关字幕 `no()`）/ [load]（换片复位）置 false。不用
   /// `_cues.isEmpty` 推断——图形轨与「无字幕的 OP 段」都是空 cue，会误判。
   bool _graphicSubtitleActive = false;
+
+  /// 远端内嵌文本轨交给 libmpv **只解码不画**、文本经 `sub-text` 回流成可点 cue
+  /// （[selectEmbeddedTextTrackViaPlayer]）时的订阅。非 null = 处于该模式；
+  /// [setCues]（换字幕源）/ [load] / [dispose] 时取消。
+  StreamSubscription<List<String>>? _playerDecodedTextSub;
+
+  /// 上一句 mpv 没给 `sub-end`、用了暂定时长的 cue，等下一次字幕变化按真实位置收尾。
+  AudioCue? _playerDecodedProvisionalCue;
 
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
@@ -1107,6 +1116,137 @@ class VideoPlayerController extends ChangeNotifier
     return true;
   }
 
+  /// 把容器内**文本**字幕轨交给 libmpv 解码、但**不画**：保持 `sub-visibility=no`，
+  /// 订阅 `sub-text` 把每句连同 `sub-start` / `sub-end` 拼成 cue 喂回可点 overlay
+  /// ——可逐字查词、字幕列表边播边累积。用于服务器抽不出内嵌轨、而直出流就是原始
+  /// 容器的远端播放（兼容层 Emby，BUG-2590 的回落此前是自绘、不可查词）；不额外读流。
+  ///
+  /// [streamIndex] 与 [selectEmbeddedGraphicTrack] 同义（去 auto/no 后的第 N 条）。
+  /// 选中返回 true；未 [load] / 轨未就绪 / 序号越界返回 false。
+  Future<bool> selectEmbeddedTextTrackViaPlayer(int streamIndex) async {
+    final Player? player = _player;
+    if (player == null) return false;
+    // 与 [selectEmbeddedGraphicTrack] 同一条防 UAF 纪律：每个 await 后重校验。
+    final int loadToken = _loadToken;
+    await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    final List<SubtitleTrack> real = player.state.tracks.subtitle
+        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .toList(growable: false);
+    if (streamIndex < 0 || streamIndex >= real.length) return false;
+    // 清掉旧 cue（同时结束上一次回流）；本模式是文本 overlay，不是图形渲染。
+    setCues(const <AudioCue>[]);
+    _graphicSubtitleActive = false;
+    await player.setSubtitleTrack(real[streamIndex]);
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    // 显式复位：load 时已是 no，但上一条若是图形轨会被打开过。字幕只由 overlay 画。
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleSuppressionProperties(),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSubtitleDelayProperty(_subtitleDelayMpvMs),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    // 上面几次 await 期间可能已有另一次选轨（起播恢复 + 用户手动选）装上了订阅：
+    // 先结束它，否则两个订阅并存、每句处理两遍，旧的直到 player 销毁才释放。
+    _stopPlayerDecodedText();
+    late final StreamSubscription<List<String>> sub;
+    sub = player.stream.subtitle.listen((List<String> texts) {
+      if (!_isCurrentLoad(player, loadToken)) return;
+      unawaited(_onPlayerDecodedText(
+        player,
+        loadToken,
+        sub,
+        texts.isEmpty ? '' : texts.first,
+      ));
+    });
+    _playerDecodedTextSub = sub;
+    // 选轨时正显示的那句（订阅前已上报）也要补上。
+    final List<String> current = player.state.subtitle;
+    if (current.isNotEmpty && current.first.trim().isNotEmpty) {
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, current.first));
+    }
+    return true;
+  }
+
+  /// 当前是否由 libmpv 解码内嵌文本轨、文本回流成可点 cue
+  /// （[selectEmbeddedTextTrackViaPlayer]）。播放页取证钩子用。
+  bool get isPlayerDecodedTextSubtitleActive => _playerDecodedTextSub != null;
+
+  void _stopPlayerDecodedText() {
+    unawaited(_playerDecodedTextSub?.cancel());
+    _playerDecodedTextSub = null;
+    _playerDecodedProvisionalCue = null;
+  }
+
+  Future<void> _onPlayerDecodedText(
+    Player player,
+    int loadToken,
+    StreamSubscription<List<String>> sub,
+    String text,
+  ) async {
+    // 只处理仍是当前那条订阅的事件：已被替换 / 结束的订阅迟到的句子一律丢弃。
+    if (!identical(sub, _playerDecodedTextSub)) return;
+    final int positionAtEvent = player.state.position.inMilliseconds;
+    // 上一句的暂定时长按真实变化时刻收尾（空串 = 句间空档，同样是收尾时机）。
+    final AudioCue? provisional = _playerDecodedProvisionalCue;
+    if (provisional != null) {
+      _playerDecodedProvisionalCue = null;
+      closePlayerDecodedCue(provisional, positionAtEvent);
+    }
+    if (text.trim().isEmpty) return;
+    final int? startMs = parseMpvSecondsToMs(await _getMpvProperty('sub-start'));
+    final int? endMs = parseMpvSecondsToMs(await _getMpvProperty('sub-end'));
+    // 起止时间是事件到达后才读的：UI 卡顿让事件晚到、mpv 已切到下一句时，读到的
+    // 是下一句的时间。再读一次当前文本核对，对不上就丢弃——下一句自己的事件会补上。
+    final String nowText = await _getMpvProperty('sub-text');
+    // await 期间换片 / 换字幕源 / 销毁：丢弃迟到的句子。
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (!identical(sub, _playerDecodedTextSub)) return;
+    if (nowText.replaceAll('\r\n', '\n').trim() !=
+        text.replaceAll('\r\n', '\n').trim()) {
+      return;
+    }
+    final AudioCue? cue = buildPlayerDecodedCue(
+      text: text,
+      startMs: startMs,
+      endMs: endMs,
+      positionMs: positionAtEvent,
+    );
+    if (cue == null) return;
+    if (endMs == null || endMs <= cue.startMs) {
+      _playerDecodedProvisionalCue = cue;
+    }
+    final ({List<AudioCue> cues, int index, bool inserted}) merged =
+        mergePlayerDecodedCue(_cues, cue);
+    _cues = merged.cues;
+    // 只重算活动集，不走 [setCues]：那会复位 seek 快照 / 单句停等播放态。下标类
+    // 状态必须**保持指向同一句**，不能作废：「重播本句」起播后播到目标句时 mpv 一定
+    // 重新上报这一句（同起点替换），作废单句停就一路播进下一句；首尾相接的两句间
+    // 事件先于 tick 到达，作废当前句就判不出上一句已结束、「字幕结束暂停」不停。
+    if (merged.inserted) {
+      int? shift(int? index) => shiftCueIndexForInsert(index, merged.index);
+      _currentCueIndex = shift(_currentCueIndex)!;
+      _oneShotHoldCueIndex = shift(_oneShotHoldCueIndex);
+      _lastSubtitleEndPauseCueIndex = shift(_lastSubtitleEndPauseCueIndex);
+      _seekTargetCueIndex = shift(_seekTargetCueIndex);
+      _activeCueIndices = <int>[
+        for (final int index in _activeCueIndices) shift(index)!,
+      ];
+    } else if (_currentCueIndex == merged.index) {
+      // 原地替换当前句：换成新对象，下标不动。
+      _currentCue = cue;
+    }
+    _syncCueForPosition(
+      player.state.position.inMilliseconds,
+      persistPosition: false,
+    );
+    notifyListeners();
+  }
+
   /// 真实字幕轨（去掉 libmpv 的 `auto`/`no` 伪轨）条数。按 ffmpeg `0:s:N` 的
   /// demux 顺序索引第 N 条时用它判「目标序号已解析就绪」
   /// （[selectEmbeddedGraphicTrack] 的越界判据）。
@@ -1221,6 +1361,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 设置 cue 列表：拷贝并按 startMs 升序排序（[JsonAlignmentParser.findCueIndex]
   /// 要求升序），重置当前 cue 状态。
   void setCues(List<AudioCue> cues) {
+    // 外部换字幕源（加载文件 / 关字幕 / 换片 / 选图形轨）一律结束 mpv 解码回流，
+    // 否则迟到的 sub-text 会把旧轨的句子插进新 cue 列表。
+    _stopPlayerDecodedText();
     // `\p` 绘图事件分流到渲染专用流（[_drawingCues]），对白流只留可读字幕。
     _cues = _sortedByStart(<AudioCue>[
       for (final AudioCue c in cues)
@@ -3895,6 +4038,7 @@ class VideoPlayerController extends ChangeNotifier
     _tick?.cancel();
     _tick = null;
     _stopCacheSpeedSampling();
+    _stopPlayerDecodedText();
     unawaited(_playingSub?.cancel());
     _playingSub = null;
     unawaited(_completedSub?.cancel());

@@ -1426,8 +1426,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
       if (!mounted) return;
       // BUG-2590：服务器抽不出该轨（兼容层没有字幕端点 → 404）但直出的是原始
-      // 容器，这条轨就在 libmpv 正在 demux 的流里：交给 libmpv 自绘把字幕显示
-      // 出来；流不是原始容器 / 轨未就绪才按下载失败提示。
+      // 容器，这条轨就在 libmpv 正在 demux 的流里：让 libmpv 只解码、把文本回流成
+      // 可点 cue（BUG-2648）；流不是原始容器 / 轨未就绪才按下载失败提示。
       final bool shown = await _showRemoteEmbeddedTrackViaPlayer(
         controller,
         track,
@@ -1450,12 +1450,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
   }
 
-  // ── BUG-2590 远端直出容器的内嵌轨：libmpv 自绘回落 ──────────────────────────
+  // ── BUG-2590 / 2648 远端直出容器的内嵌文本轨：libmpv 解码回流 ────────────────
   //
   // 媒体服务器兼容层（飞牛、「UHD Media Server」等自研 Emby 兼容层）没有
   // `/Videos/…/Subtitles/…/Stream` 抽取端点（nginx 404），PlaybackInfo 也如实标
   // `SupportsExternalStream=false`；但 DirectPlay 送来的就是原始 mkv，文本轨在流里。
-  // 把轨交给 libmpv 自绘：瞬时、零额外流量、不可查词（与图形轨 BUG-122 同一降级）。
+  // 把轨交给 libmpv 解码但不画（BUG-2648）：它本来就在 demux 这条流，`sub-text`
+  // 回流成 cue 进可点 overlay——瞬时、零额外流量、可逐字查词，字幕列表边播边累积。
+  // 此前是 libmpv 自绘（与图形轨 BUG-122 同一降级），字画进画面、点不了、列表为空。
   // 有意**不**在后台用 ffmpeg 把流再读一遍抽成 cue：那等于把整集流量翻倍（用户
   // 2026-09-19 拍板不要）。
 
@@ -1470,9 +1472,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return null;
   }
 
-  /// 把远端直出容器里的文本轨交给 libmpv 自绘（复用图形轨通路
-  /// [VideoPlayerController.selectEmbeddedGraphicTrack]：同样是「libmpv 渲染、无 cue、
-  /// 不可查词」的降级），选中即持久化选择、OSD 说明降级。
+  /// 把远端直出容器里的文本轨交给 libmpv 解码、文本回流成可点 cue
+  /// （[VideoPlayerController.selectEmbeddedTextTrackViaPlayer]），选中即持久化选择、
+  /// OSD 说明字幕随播放逐句出现（没播到的句子不会预先出现在列表里）。
   ///
   /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨本来就是外挂文件、不在流里
   /// （[RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）/ 轨未就绪 / 序号越界，调用方
@@ -1485,7 +1487,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
-    final bool shown = await controller.selectEmbeddedGraphicTrack(
+    final bool shown = await controller.selectEmbeddedTextTrackViaPlayer(
       track.containerTrackOrdinal ?? track.streamIndex,
     );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
@@ -1495,8 +1497,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
     _showOsd(
-      t.video_subtitle_remote_player_rendered(label: label),
-      severity: ToastSeverity.warning,
+      t.video_subtitle_remote_player_decoded(label: label),
     );
     return true;
   }
