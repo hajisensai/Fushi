@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Lue après une recherche",
   "opt_narrowSidePanel_title": "Quand le panneau latéral est trop étroit",
   "opt_narrowSidePanel_desc": "Si le panneau latéral est plus étroit que la fenêtre de recherche, celle-ci se réduit à la largeur disponible et diminue l’échelle de toute la fenêtre si nécessaire, au lieu de rogner la moitié droite. Toujours actif, sans réglage. Pour que la fenêtre du navigateur suive de nouveau celle de l’application, désactivez « Taille indépendante de l’extension de navigateur » dans Fushi.",
+  "opt_shiftHoverLookup_title": "Recherche au survol avec Maj",
+  "opt_shiftHoverLookup_desc": "Maintiens <kbd>Maj</kbd> et survole le texte avec la souris pour le rechercher (texte de la page et liste des sous-titres du panneau latéral). Désactive-la si Maj entre en conflit avec les raccourcis du site ou la saisie ; la recherche au clic, la recherche automatique des sous-titres et les autres accès ne sont pas affectés. Prend effet immédiatement.",
   "opt_touch_lookup_heading_section_kicker": "Recherche tactile et tiroir des sous-titres",
   "opt_touch_lookup_heading_heading": "Téléphones et tablettes",
   "opt_touch_lookup_heading_section_note": "Prise en compte immédiate",

@@ -5463,5 +5463,21 @@
   "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks.",
   "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
   "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
-  "manga_ocr_runtime_installing": "Installing the local OCR engine…"
+  "manga_ocr_runtime_installing": "Installing the local OCR engine…",
+  "anki_backup_import": "Import Anki backup for duplicate check",
+  "anki_backup_import_hint": "$count words imported. Export a .colpkg or .apkg backup from AnkiMobile and import it here so lookups recognize cards already in Anki. Re-import now and then to stay current.",
+  "anki_backup_import_done": "Imported $count words from the Anki backup",
+  "anki_backup_import_failed": "Could not read this Anki backup",
+  "discovery_source_capability_browsable": "Browse folders or search",
+  "discovery_source_capability_search_only": "Search only",
+  "video_setting_brightness_swipe_gesture": "Swipe to adjust brightness",
+  "video_setting_brightness_swipe_gesture_hint": "Swipe up/down on the left half of the video to change screen brightness. Turn off to use the system brightness slider instead",
+  "video_setting_volume_swipe_gesture": "Swipe to adjust volume",
+  "video_setting_volume_swipe_gesture_hint": "Swipe up/down on the right half of the video to change volume. Turn off to use the physical volume buttons instead",
+  "drag_drop_unsupported_on_collection": "Drop video files here to import them straight into this collection.",
+  "updates_history_clear": "Clear history",
+  "updates_history_clear_confirm_title": "Clear update history?",
+  "updates_history_clear_confirm_body": "Remove all entries under \"$scope\"? Updates that are still pending, such as a newer app version you have not installed, will show up again on the next check.",
+  "updates_history_clear_confirm_action": "Clear",
+  "updates_history_cleared": "Cleared $count entries"
 }

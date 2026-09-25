@@ -1,0 +1,6 @@
+## BUG-2649 · Calibre OPDS 下载报 ResumableDownloadIntegrityException: size mismatch
+- **报告**：2026-09-25（用户：GitHub issue hajisensai/Fushi#1605，cyndra0）——下载-资源 / 书架-发现里选 Calibre 源下载电子书，大部分失败，报 `ResumableDownloadIntegrityException: size mismatch: got X want Y`，少数能下。
+- **真实性**：✅ 真 bug。OPDS 解析把 `<link length>` 读进 `OpdsAcquisitionLink.sizeBytes`（`fushi/lib/src/media/discovery/sources/opds/opds_atom_parser.dart:149`），经 `DiscoveryHttpPayload.sizeBytes`（`opds_discovery_source.dart:206`）传给下载队列，队列把它当**严格**体积 `ResumableDownloader.expectedSize`（`packages/fushi_engine/lib/media/discovery/discovery_download_queue.dart:398`），下完 `_validateOrThrow` 不等即删 `.part` 抛完整性异常（`resumable_downloader.dart:287`），且完整性错误不重试。但 Atom（RFC 4287 §4.2.7.6）的 `length` 只是 advisory hint；Calibre 内容服务器的 `length` 是库里原文件体积，下载时默认把元数据写回 EPUB，实际字节数必然不同——只有恰好没被改写的书能下成，与「少数能成功」吻合。
+- **[x] ① 已修复** — `ResumableDownloader` 新增仅供进度分母的 `sizeHint`（永不参与完整性判定、不据它丢弃 `.part`），下载队列把目录体积改传 `sizeHint`；截断仍由 HttpClient 按响应 Content-Length 兜住（连接提前断 → HttpException，走瞬时重试）。提交见 PR。
+- **[x] ② 已加自动化测试** — `fushi/test/media/discovery/discovery_download_queue_test.dart`「目录声称体积与实际不符：照常下完导入」（去掉修复即红）；`fushi/test/utils/misc/resumable_downloader_test.dart` 三条 `sizeHint` 契约（不判失败 / 仅无响应长度时作进度分母 / 不丢弃已有 part）。
+- **备注**：未连真 Calibre 服务器复测；alist / shinnku 列表体积同走 `DiscoveryHttpPayload.sizeBytes`，一并降为提示。

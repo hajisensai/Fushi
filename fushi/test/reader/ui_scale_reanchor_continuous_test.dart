@@ -189,11 +189,17 @@ void main() {
           isTrue,
           reason: 'commit 必须在无有效暂存锚时整体 no-op，绝不误清别处重锚旗');
       // TODO-1229：commit 透传 begin 暂存的滚动位（<=0 章首区保位 hint，不弹回前导）。
+      // BUG-2652：句尾锚只由恢复重锚（beginRestoreReanchor）带入，缩放入口为 undefined。
       expect(
-          containsCodeLine(body,
-              'this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll)'),
+          containsCodeLine(
+              body,
+              'this.scrollToCharOffset(off, this._uiScaleReanchorEnd, '
+              'this._uiScaleReanchorScroll)'),
           isTrue,
           reason: 'commit 必须把锚滚回视口首边并透传采到的滚动位（settle 后的真实位置）');
+      expect(containsCodeLine(body, 'this._uiScaleReanchorEnd = undefined'),
+          isTrue,
+          reason: 'commit 必须清暂存句尾锚，避免下次缩放误用恢复时的句尾');
       // finally 清旗 + 清暂存，保证异常路径也不卡死 _reanchorPending（HBK-REG-004 同形）。
       expect(containsCodeLine(body, 'finally'), isTrue,
           reason: 'commit 必须在 finally 清旗，异常路径也不能卡死 _reanchorPending');
@@ -455,13 +461,19 @@ void main() {
       // 门控不绑 restoreInFlight（恢复完成路径下必为 false）。
       expect(containsCodeLine(body, 'restoreInFlight:'), isFalse,
           reason: '恢复重锚门控不应再绑 restoreInFlight');
-      // 复用同一两阶段 begin/commit invocation（与 _reanchorPending 串行旗一致）。
+      // BUG-2652：begin 取恢复自己的精确字符锚（beginRestoreReanchorInvocation），不再现场
+      // 采样——iOS 原地换章后视口头几帧瞬时读 0，采到的是章首。commit 仍与缩放重锚共用。
       final int idxBegin = body
-          .indexOf('ReaderPaginationScripts.beginUiScaleReanchorInvocation()');
+          .indexOf('ReaderPaginationScripts.beginRestoreReanchorInvocation()');
       final int idxCommit = body
           .indexOf('ReaderPaginationScripts.commitUiScaleReanchorInvocation()');
       expect(idxBegin, greaterThan(0),
-          reason: 'evalBegin 必须绑 beginUiScaleReanchorInvocation（归零前采锚+置旗）');
+          reason: 'evalBegin 必须绑 beginRestoreReanchorInvocation（取恢复锚+置旗）');
+      expect(
+          body.contains(
+              'ReaderPaginationScripts.beginUiScaleReanchorInvocation()'),
+          isFalse,
+          reason: '恢复重锚不得再现场采样视口（BUG-2652）');
       expect(idxCommit, greaterThan(0),
           reason:
               'evalCommit 必须绑 commitUiScaleReanchorInvocation（settle 后滚回清旗）');

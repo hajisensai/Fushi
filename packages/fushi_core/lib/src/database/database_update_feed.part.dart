@@ -89,6 +89,17 @@ mixin _FushiDbUpdateFeed on _$FushiDatabase {
     return (delete(updateFeedEntries)..where((t) => t.entryId.isIn(ids))).go();
   }
 
+  /// 用户手动清空更新记录；[kind] 非空时只清该域。与 [pruneSeenUpdateFeedEntries]
+  /// 不同，这里**连未读一起删**——是用户自己点的，不是后台悄悄抹。
+  Future<int> clearUpdateFeedEntries({String? kind}) {
+    final DeleteStatement<$UpdateFeedEntriesTable, UpdateFeedEntryRow> stmt =
+        delete(updateFeedEntries);
+    if (kind != null) {
+      stmt.where((t) => t.kind.equals(kind));
+    }
+    return stmt.go();
+  }
+
   /// 清掉**已读且早于** [seenBefore] 的条目。未读的一条不动——用户还没看见的提醒
   /// 不能因为「太老」被悄悄抹掉（订阅的番半年没看，那条新集提醒依然有效）。
   Future<int> pruneSeenUpdateFeedEntries({required int seenBefore}) =>
