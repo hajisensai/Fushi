@@ -5463,5 +5463,9 @@
   "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks.",
   "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
   "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
-  "manga_ocr_runtime_installing": "Installing the local OCR engine…"
+  "manga_ocr_runtime_installing": "Installing the local OCR engine…",
+  "video_setting_brightness_swipe_gesture": "垂直滑動調節亮度",
+  "video_setting_brightness_swipe_gesture_hint": "在畫面左半邊上下滑動調節螢幕亮度；關閉後改用系統亮度條",
+  "video_setting_volume_swipe_gesture": "垂直滑動調節音量",
+  "video_setting_volume_swipe_gesture_hint": "在畫面右半邊上下滑動調節音量；關閉後改用實體音量鍵"
 }
