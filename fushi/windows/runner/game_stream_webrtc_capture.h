@@ -28,10 +28,15 @@ class FushiGameStreamCapture {
 // Contract:
 // - [hwnd] must be a live capturable window. The capture stops itself when the
 //   WGC item is closed or IsWindow(hwnd) becomes false.
-// - [fps] is clamped to [1, 120]. Frames are sampled from WGC callbacks; the
-//   adapter never queues unbounded work and drops callbacks that arrive before
-//   the next frame deadline.
-// - Output is the client area, scaled (never upscaled) to fit inside
+// - [fps] is clamped to [1, 120]. Frames are sampled from WGC callbacks by a
+//   deadline pacer (FramePacer) that tolerates display-refresh jitter, so the
+//   delivered rate matches [fps] or the source rate when that is lower. The
+//   adapter never queues unbounded work: every callback crops into one GPU
+//   texture and only paced frames are read back. A frame the pacer skipped
+//   is delivered by the capture thread once its slot passes, and a window
+//   that stops redrawing keeps re-sending its last frame every 100 ms so the
+//   encoder can answer keyframe requests and sharpen still content.
+// - Output is the client area, bilinearly scaled (never upscaled) to fit inside
 //   [max_width]x[max_height] while preserving aspect ratio, with even
 //   dimensions required by I420. A cap <= 0 selects the 1920x1080 default;
 //   supplied caps are clamped to 320x180..3840x2160 (see
