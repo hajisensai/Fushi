@@ -291,9 +291,27 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           baseOffset: 0,
           extentOffset: _controller.text.length,
         );
-        _searchFocusNode.requestFocus();
+        _focusSearchField();
       case DictionaryFocusIntent.keepQuery:
-        _searchFocusNode.requestFocus();
+        _focusSearchField();
+    }
+  }
+
+  /// 把用户送进搜索框并确保软键盘弹起（BUG-2687）。
+  ///
+  /// 光 `requestFocus` 不够：搜索框**已经有焦点**时它是空操作，而移动端焦点在、
+  /// 键盘不在是常态——提交后收了键盘（BUG-2686）、系统返回键收了键盘，焦点都还
+  /// 留在框里。此时已在查词页再点「查词」，框清空了键盘却不弹。
+  /// [EditableTextState.requestKeyboard] 正是「点一下输入框」的语义：没焦点就
+  /// 聚焦，有焦点就向输入法再要一次键盘。
+  void _focusSearchField() {
+    if (!_searchFocusNode.canRequestFocus) return;
+    final EditableTextState? editable = _searchFocusNode.context
+        ?.findAncestorStateOfType<EditableTextState>();
+    if (editable != null && editable.mounted) {
+      editable.requestKeyboard();
+    } else {
+      _searchFocusNode.requestFocus();
     }
   }
 
@@ -474,9 +492,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _sourceHighlight = null;
     _historyWritten = false;
     setState(() {});
-    if (_searchFocusNode.canRequestFocus) {
-      _searchFocusNode.requestFocus();
-    }
+    _focusSearchField();
   }
 
   void _clearSearchFromResultPull() {

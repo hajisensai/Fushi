@@ -101,6 +101,40 @@ void main() {
     expect(settingsOpened, 1);
   });
 
+  testWidgets('分区页签在嵌套栈之上：进首页、钻进网格都不被路由盖住', (
+    WidgetTester tester,
+  ) async {
+    final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
+    await tester.pumpWidget(
+      harness(<MediaServerEntry>[MediaServerEntry(browser: only)]),
+    );
+    await tester.pumpAndSettle();
+
+    // 单台一进分区就自动 push 首页——此前页签只在栈底的列表页里，这一步就被整页
+    // 盖掉，用户看到的是「点开媒体服务器就占满整个页面」。
+    expect(find.byType(MediaServerHomeView), findsOneWidget);
+    expect(
+      find.text('nav-probe').hitTestable(),
+      findsOneWidget,
+      reason: '首页压在栈顶时分区页签仍可见可点',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('media-server-home-search')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('media-server-grid-search')),
+      findsOneWidget,
+    );
+    expect(
+      find.text('nav-probe').hitTestable(),
+      findsOneWidget,
+      reason: '再钻一层（网格）页签仍在最上方',
+    );
+    expect(find.text('nav-probe'), findsOneWidget, reason: '页签只画一份');
+  });
+
   testWidgets('单台：直接进那台的首页；返回后才出现列表', (WidgetTester tester) async {
     final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');
     await tester.pumpWidget(

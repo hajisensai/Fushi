@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 
@@ -24,6 +25,41 @@ const ValueKey<String> _kSectionTabLeadingOverflowCueKey = ValueKey<String>(
 const ValueKey<String> _kSectionTabTrailingOverflowCueKey = ValueKey<String>(
   'library-section-tabs-trailing-overflow-cue',
 );
+
+/// 向子树广播「模块此刻真正显示的是哪个分区」，让同一模块里**同时常驻**的多份
+/// [LibrarySectionTabs] 跟着它走。
+///
+/// 动因：游戏模块的七个子区在 IndexedStack 里一起常驻，每个子页各自挂一份页签、
+/// 各自的 `selected` 是常量——切到别的子区时，那一页的页签早就停在自己的位置上，
+/// 指示条没有起点可滑，看起来就是「导航栏没动画」。挂了本作用域后，**隐藏**页的
+/// 页签把指示器投影到 [current]（跟着用户真正所在的分区走），被切出来的那一刻才
+/// 从来源分区滑到自己。
+///
+/// [current] 的值不在某份页签的段里（如游戏「诊断」不设页签）时，该页签回落到
+/// 自己的 `selected`。只对自持形态生效；[LibrarySectionTabs.controlled] 的真相在
+/// 宿主 controller，不受影响。
+///
+/// 同一时刻只挂**一份**页签、切分区时整份换位置的壳（视频 / 书架 / 漫画）不用它，
+/// 而是给页签一个壳持有的 [GlobalKey]，让同一个 State 随分区移动——见
+/// `VideoLibraryShell` / `MediaLibraryShell`。
+class LibrarySectionFollowScope extends InheritedWidget {
+  const LibrarySectionFollowScope({
+    required this.current,
+    required super.child,
+    super.key,
+  });
+
+  /// 模块当前真正显示的分区值（与页签的 `LibrarySectionTab.value` 同值域）。
+  final ValueListenable<Object?> current;
+
+  static ValueListenable<Object?>? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<LibrarySectionFollowScope>()
+      ?.current;
+
+  @override
+  bool updateShouldNotify(LibrarySectionFollowScope oldWidget) =>
+      current != oldWidget.current;
+}
 
 /// [LibrarySectionTabs] 的一段：值 + 用户可读标签。
 class LibrarySectionTab<T> {
@@ -201,13 +237,36 @@ class _FushiSectionTabBarState<T extends Object>
     return index < 0 ? 0 : index;
   }
 
+  /// [LibrarySectionFollowScope] 广播的「模块当前分区」；没挂作用域时为 null。
+  ValueListenable<Object?>? _follow;
+
+  /// 指示器该停在哪：挂了跟随作用域且当前分区在本页签的段里时跟它走（隐藏页的
+  /// 页签就这样一直停在用户真正所在的分区上），否则是自己的 [widget.selected]。
+  /// 可见那一份两者恒等。
+  int get _targetIndex {
+    final Object? followed = _follow?.value;
+    if (followed != null) {
+      final int index = widget.tabs.indexWhere(
+        (LibrarySectionTab<T> tab) => tab.value == followed,
+      );
+      if (index >= 0) return index;
+    }
+    return _selectedIndex;
+  }
+
+  void _onFollowChanged() {
+    if (!mounted) return;
+    // 重建即经 build 里的投影校正滑过去；listener 触发时不在 build 阶段，可以 setState。
+    setState(() {});
+  }
+
   /// 自持 controller 的指示条滑动时长：eink 下归零（滑动 = 一串局部刷新的残影），
   /// 首帧 initState 里读不到 Theme，先按默认建，didChangeDependencies 再对齐。
   Duration _animationDuration = kTabScrollDuration;
 
   TabController _createController() => TabController(
     length: widget.tabs.length,
-    initialIndex: _selectedIndex,
+    initialIndex: _targetIndex,
     animationDuration: _animationDuration,
     vsync: this,
   );
@@ -221,6 +280,13 @@ class _FushiSectionTabBarState<T extends Object>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final ValueListenable<Object?>? follow = widget.controller == null
+        ? LibrarySectionFollowScope.maybeOf(context)
+        : null;
+    if (!identical(follow, _follow)) {
+      _follow?.removeListener(_onFollowChanged);
+      _follow = follow?..addListener(_onFollowChanged);
+    }
     final Duration duration = einkSafeDuration(context, kTabScrollDuration);
     if (duration == _animationDuration) return;
     _animationDuration = duration;
@@ -252,6 +318,7 @@ class _FushiSectionTabBarState<T extends Object>
 
   @override
   void dispose() {
+    _follow?.removeListener(_onFollowChanged);
     _owned?.dispose();
     super.dispose();
   }
@@ -301,7 +368,7 @@ class _FushiSectionTabBarState<T extends Object>
     return false;
   }
 
-  /// 把 controller 拉回 [widget.selected] 的投影。
+  /// 把 controller 拉回 [_targetIndex] 的投影（没挂跟随作用域时即 [widget.selected]）。
   ///
   /// 判据只看 `_controller.index`——切换动画进行中它已经是**目标**下标，此时无需干预，
   /// 让动画自己走完；若还去 `animateTo` 同一个下标，只会把动画反复推倒重来。
@@ -315,7 +382,7 @@ class _FushiSectionTabBarState<T extends Object>
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       _projectionScheduled = false;
       if (!mounted) return;
-      final int index = _selectedIndex;
+      final int index = _targetIndex;
       if (_controller.index == index) return;
       _controller.animateTo(index);
     });

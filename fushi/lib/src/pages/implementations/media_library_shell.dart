@@ -120,6 +120,13 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
   /// 已访问过的视图下标（惰性构建 + 保活，见类文档）。
   final Set<int> _visited = <int>{0};
 
+  /// 分段条的唯一身份：它只交给当前视图，切视图时从旧视图的页头挪到新视图的页头。
+  /// 壳持有的 [GlobalKey] 让挪位置成为**同一个** State 换父节点，指示条从旧视图
+  /// 滑到新视图；否则每次都是以目标下标起步的全新页签，切视图没有任何过渡。
+  final GlobalKey _navigationKey = GlobalKey(
+    debugLabel: 'media-library-sections',
+  );
+
   void _select(MediaLibraryViewKind kind) {
     final int index = widget.views
         .indexWhere((MediaLibraryViewSpec spec) => spec.kind == kind);
@@ -210,6 +217,7 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
     // 分段条走库页共享的 [LibrarySectionTabs]（内含 [FushiAdjustableSegmented]：
     // 单个焦点停靠点，左右方向键原地切视图，手柄/键盘可达）。
     return LibrarySectionTabs<MediaLibraryViewKind>(
+      key: _navigationKey,
       tabs: <LibrarySectionTab<MediaLibraryViewKind>>[
         for (final MediaLibraryViewSpec spec in views)
           LibrarySectionTab<MediaLibraryViewKind>(

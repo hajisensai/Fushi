@@ -4,41 +4,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/manga/discovery/manga_discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_source_feeds.dart';
 import 'package:fushi/src/media/manga/discovery/manga_source_catalog_section.dart';
+import 'package:fushi_core/fushi_core.dart';
 
-/// 发现页视图：注入假 provider，验证四条横滑行渲染、空 feed 整段不出现、
-/// 失败态给重试按钮且重试真的重新拉取。
+/// 发现页视图：正文只由已启用来源构成（MAL 元数据行已整体移除）。
 ///
-/// BUG-1710 合并后追加：头部的来源筛选下拉 + 搜索框、正文末尾的「浏览来源」节
-/// （原「浏览」tab 的全部内容），以及选中具体来源后 MAL 行整体收起。
-class _FakeProvider implements MangaDiscoveryProvider {
-  _FakeProvider(this._results);
-
-  final List<Object> _results;
-  int calls = 0;
-
-  @override
-  Future<MangaDiscoverySnapshot> fetchSnapshot({int perPage = 20}) async {
-    final Object result =
-        _results[calls < _results.length ? calls : _results.length - 1];
-    calls++;
-    if (result is MangaDiscoverySnapshot) return result;
-    throw result as Exception;
-  }
-
-  @override
-  void close() {}
-}
-
-MangaDiscoveryEntry _entry(int id, String title, {double? score}) =>
-    MangaDiscoveryEntry(
-      malId: id,
-      titleNative: title,
-      averageScore: score,
+/// 覆盖：来源热门行渲染 / 失败收起 / 加载中占位；页首「浏览来源」快捷条；
+/// 没有任何来源时的整页空态；选中单个来源后收窄成该源的热门网格；行头
+/// 「查看全部」与页头刷新。
+MangaDiscoverySourceItem _item(String title, {VoidCallback? onOpen}) =>
+    MangaDiscoverySourceItem(
+      title: title,
+      buildCover: (BuildContext context) =>
+          const ColoredBox(color: Color(0xFF808080)),
+      open: (BuildContext context) => onOpen?.call(),
     );
+
+const MangaOnlineSourceRow _mihonSource = MangaOnlineSourceRow(
+  mediaKind: 'manga',
+  extensionPackage: 'pkg',
+  sourceId: '1',
+  name: '某在线源',
+  language: 'ja',
+  baseUrl: 'https://example.com',
+  enabled: true,
+  pinned: false,
+  sortOrder: 0,
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
@@ -49,86 +43,16 @@ void main() {
         ),
       );
 
-  testWidgets('四条 feed 渲染成横滑行；空 feed 整段不出现', (WidgetTester tester) async {
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
-            _entry(1, '趋势作品', score: 8.9),
-          ],
-          MangaDiscoveryFeed.popular: <MangaDiscoveryEntry>[
-            _entry(2, '热门作品'),
-          ],
-          MangaDiscoveryFeed.topRated: const <MangaDiscoveryEntry>[],
-          MangaDiscoveryFeed.latestFinished: const <MangaDiscoveryEntry>[],
-        },
-      ),
-    ]);
-    await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
-      sourceFeedsOverride: const <MangaDiscoverySourceFeed>[],
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text(t.manga_discovery_section_publishing), findsOneWidget);
-    expect(find.text(t.manga_discovery_section_popular), findsOneWidget);
-    expect(find.text('趋势作品'), findsOneWidget);
-    expect(find.text('热门作品'), findsOneWidget);
-    expect(find.text('8.9'), findsOneWidget, reason: '评分随卡片展示');
-    expect(
-      find.text(t.manga_discovery_section_top_rated),
-      findsNothing,
-      reason: '空 feed 不渲染段标题（没有空壳段）',
-    );
-  });
-
-  testWidgets('加载失败给重试按钮，重试真的重新拉取', (WidgetTester tester) async {
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      Exception('network down'),
-      MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
-            _entry(1, '重试后出现'),
-          ],
-        },
-      ),
-    ]);
-    await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
-      sourceFeedsOverride: const <MangaDiscoverySourceFeed>[],
-    )));
-    await tester.pumpAndSettle();
-
-    expect(find.text(t.manga_discovery_load_failed), findsOneWidget);
-    await tester
-        .tap(find.byKey(const ValueKey<String>('manga_discovery_retry')));
-    await tester.pumpAndSettle();
-    expect(provider.calls, 2);
-    expect(find.text('重试后出现'), findsOneWidget);
-  });
-
-  testWidgets('P2 来源热门行：有货的行渲染、可点开，失败的行整行收起', (WidgetTester tester) async {
+  testWidgets('来源热门行：有货的行渲染、可点开，失败的行整行收起', (WidgetTester tester) async {
     int opened = 0;
-    // MAL 快照给空：源热门行顶到视口最上方，tap 不受上方行高影响。
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      const MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{},
-      ),
-    ]);
     await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
       sourceFeedsOverride: <MangaDiscoverySourceFeed>[
         MangaDiscoverySourceFeed(
           id: 'ok',
           name: '好源',
           language: 'ja',
           loadPopular: () async => <MangaDiscoverySourceItem>[
-            MangaDiscoverySourceItem(
-              title: '源里的热门作品',
-              buildCover: (BuildContext context) =>
-                  const ColoredBox(color: Color(0xFF808080)),
-              open: (BuildContext context) => opened++,
-            ),
+            _item('源里的热门作品', onOpen: () => opened++),
           ],
         ),
         MangaDiscoverySourceFeed(
@@ -162,13 +86,7 @@ void main() {
   testWidgets('来源热门行加载中显示带源名的行头，而不是一条裸横线', (WidgetTester tester) async {
     final Completer<List<MangaDiscoverySourceItem>> pending =
         Completer<List<MangaDiscoverySourceItem>>();
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      const MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{},
-      ),
-    ]);
     await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
       sourceFeedsOverride: <MangaDiscoverySourceFeed>[
         MangaDiscoverySourceFeed(
           id: 'slow',
@@ -193,20 +111,13 @@ void main() {
     );
     expect(find.byType(LinearProgressIndicator), findsNothing);
 
-    // 加载中就要把卡片条的高度占住，否则加载完成那一刻凭空插入 222px，标题下方
-    // 所有内容整体下移。`pumpAndSettle` 会跳过中间帧，钉不住这一条——必须在
-    // pending 态直接量行高，再与 done 态比。
+    // 加载中就要把卡片条的高度占住，否则加载完成那一刻凭空插入一整条卡片高度，
+    // 标题下方所有内容整体下移。`pumpAndSettle` 会跳过中间帧，钉不住这一条——
+    // 必须在 pending 态直接量行高，再与 done 态比。
     final double pendingHeight =
         tester.getSize(find.byType(MangaDiscoverySourceRow)).height;
 
-    pending.complete(<MangaDiscoverySourceItem>[
-      MangaDiscoverySourceItem(
-        title: '慢源的热门作品',
-        buildCover: (BuildContext context) =>
-            const ColoredBox(color: Color(0xFF808080)),
-        open: (BuildContext context) {},
-      ),
-    ]);
+    pending.complete(<MangaDiscoverySourceItem>[_item('慢源的热门作品')]);
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byType(MangaDiscoverySourceRow)).height,
@@ -225,16 +136,23 @@ void main() {
   });
 
   // BUG-1710：合并前「发现」没有搜索框也没有来源筛选，来源清单在另一个同名
-  // 「发现」tab 里。合并后这三样必须同处一页。
-  testWidgets('头部有来源筛选下拉 + 搜索框，正文末尾有「浏览来源」节', (WidgetTester tester) async {
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      const MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{},
-      ),
-    ]);
+  // 「发现」tab 里。合并后这三样必须同处一页；重设计后来源清单挪到页首。
+  testWidgets('头部有来源筛选下拉 + 搜索框，页首是「浏览来源」快捷条', (WidgetTester tester) async {
     await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
-      sourceFeedsOverride: const <MangaDiscoverySourceFeed>[],
+      catalogOverride: const MangaSourceCatalog(
+        mokuroEnabled: true,
+        mihonSources: <MangaOnlineSourceRow>[_mihonSource],
+      ),
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        MangaDiscoverySourceFeed(
+          id: MangaSourceCatalog.mihonSourceId(_mihonSource),
+          name: '某在线源',
+          language: 'ja',
+          loadPopular: () async => <MangaDiscoverySourceItem>[
+            _item('源里的热门作品'),
+          ],
+        ),
+      ],
     )));
     await tester.pumpAndSettle();
 
@@ -248,74 +166,173 @@ void main() {
       findsOneWidget,
       reason: '用户口径：发现页缺搜索栏',
     );
+    final Finder browse = find.text(t.manga_discovery_sources_browse);
+    expect(browse, findsOneWidget);
     expect(
-      find.text(t.manga_discovery_sources_browse),
+      find.byKey(const ValueKey<String>('manga-source-mokuro')),
       findsOneWidget,
-      reason: '原「浏览」tab 的来源清单必须落在发现页正文里，不能随 tab 一起消失',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga-mihon-mihon:pkg:1')),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(browse).dy,
+      lessThan(
+        tester
+            .getTopLeft(find
+                .text(t.manga_discovery_source_popular(source: '某在线源 (JA)')))
+            .dy,
+      ),
+      reason: '来源快捷条在热门行之上，不必滚过全部热门行才找得到',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_discovery_empty')),
+      findsNothing,
     );
   });
 
-  testWidgets('选中具体来源后 MAL 行整体收起，只留该来源的内容', (WidgetTester tester) async {
-    final _FakeProvider provider = _FakeProvider(<Object>[
-      MangaDiscoverySnapshot(
-        feeds: <MangaDiscoveryFeed, List<MangaDiscoveryEntry>>{
-          MangaDiscoveryFeed.publishing: <MangaDiscoveryEntry>[
-            _entry(1, '趋势作品'),
-          ],
-        },
-      ),
-    ]);
+  testWidgets('一个来源都没有时整页引导空态', (WidgetTester tester) async {
+    await tester.pumpWidget(wrap(const MangaDiscoveryPage(
+      catalogOverride: MangaSourceCatalog(),
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[],
+    )));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('manga_discovery_empty')),
+      findsOneWidget,
+    );
+    expect(find.text(t.manga_discovery_empty_title), findsOneWidget);
+    expect(
+      find.text(t.manga_discovery_sources_browse),
+      findsNothing,
+      reason: '空态替代整个正文，不再叠一个空的来源节',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('manga_discovery_open_sources')),
+      findsNothing,
+      reason: '不在库页壳里时没有「来源」视图可去，不渲染点了没反应的按钮',
+    );
+  });
+
+  testWidgets('选中具体来源后收窄：只留该源磁贴与它的热门网格', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
     await tester.pumpWidget(wrap(MangaDiscoveryPage(
-      provider: provider,
-      catalogOverride: const MangaSourceCatalog(mokuroEnabled: true),
+      catalogOverride: const MangaSourceCatalog(
+        mokuroEnabled: true,
+        mihonSources: <MangaOnlineSourceRow>[_mihonSource],
+      ),
       sourceFeedsOverride: <MangaDiscoverySourceFeed>[
         MangaDiscoverySourceFeed(
-          id: 'mihon:pkg:1',
+          id: MangaSourceCatalog.mihonSourceId(_mihonSource),
           name: '某在线源',
           language: 'ja',
           loadPopular: () async => <MangaDiscoverySourceItem>[
-            MangaDiscoverySourceItem(
-              title: '源里的热门作品',
-              buildCover: (BuildContext context) =>
-                  const ColoredBox(color: Color(0xFF808080)),
-              open: (BuildContext context) {},
-            ),
+            for (int i = 0; i < 6; i++) _item('热门 $i'),
           ],
         ),
       ],
     )));
     await tester.pumpAndSettle();
-
-    expect(find.text(t.manga_discovery_section_publishing), findsOneWidget);
-    expect(
-      find.text(t.manga_discovery_source_popular(source: '某在线源 (JA)')),
-      findsOneWidget,
-    );
-    expect(find.text(t.mihon_source_browse_mokuro), findsOneWidget);
+    expect(find.byType(MangaDiscoverySourceRow), findsOneWidget);
 
     await tester
         .tap(find.byKey(const ValueKey<String>('discovery_source_menu')));
     await tester.pumpAndSettle();
     // DropdownMenu 会把条目渲染两遍（隐藏的一份只用来量宽度），可见的那份在后。
-    await tester.tap(
-      find.widgetWithText(MenuItemButton, t.mihon_source_browse_mokuro).last,
-    );
+    await tester.tap(find.widgetWithText(MenuItemButton, '某在线源 (JA)').last);
     await tester.pumpAndSettle();
 
+    expect(find.byType(MangaDiscoverySourceRow), findsNothing);
+    expect(find.byType(MangaDiscoverySourceGrid), findsOneWidget);
     expect(
-      find.text(t.manga_discovery_section_publishing),
+      find.byKey(const ValueKey<String>('manga-source-mokuro')),
       findsNothing,
-      reason: 'MAL 是跨来源元数据，按单个来源筛选时整体收起',
+      reason: '没选中的来源磁贴跟着收起',
     );
     expect(
-      find.text(t.manga_discovery_source_popular(source: '某在线源 (JA)')),
-      findsNothing,
-      reason: '没选中的来源，它的热门行也要跟着收起',
+      find.byKey(const ValueKey<String>('manga-mihon-mihon:pkg:1')),
+      findsOneWidget,
     );
-    expect(
-      find.text(t.mihon_source_browse_mokuro),
-      findsWidgets,
-      reason: '选中的来源自己那张浏览卡片必须留着',
+    // 网格按宽度自适应列数：1200 宽下前两张并排、六张全部落在视口内。
+    final double y0 = tester.getTopLeft(find.text('热门 0')).dy;
+    final double y1 = tester.getTopLeft(find.text('热门 1')).dy;
+    expect(y0, y1, reason: '网格同一行');
+    expect(find.text('热门 5'), findsOneWidget);
+  });
+
+  testWidgets('网格加载失败给重试，重试真的重新拉取', (WidgetTester tester) async {
+    int calls = 0;
+    final String id = MangaSourceCatalog.mihonSourceId(_mihonSource);
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      catalogOverride: const MangaSourceCatalog(
+        mihonSources: <MangaOnlineSourceRow>[_mihonSource],
+      ),
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        MangaDiscoverySourceFeed(
+          id: id,
+          name: '某在线源',
+          language: 'ja',
+          loadPopular: () async {
+            calls++;
+            if (calls <= 2) throw StateError('down');
+            return <MangaDiscoverySourceItem>[_item('重试后出现')];
+          },
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(calls, 1, reason: '全部来源下行失败静默收起');
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('discovery_source_menu')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(MenuItemButton, '某在线源 (JA)').last);
+    await tester.pumpAndSettle();
+
+    expect(calls, 2);
+    expect(find.text(t.manga_discovery_load_failed), findsOneWidget);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_discovery_retry')));
+    await tester.pumpAndSettle();
+    expect(calls, 3);
+    expect(find.text('重试后出现'), findsOneWidget);
+  });
+
+  testWidgets('行头「查看全部」打开来源目录；页头刷新重新拉取', (WidgetTester tester) async {
+    int calls = 0;
+    int catalogOpened = 0;
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        MangaDiscoverySourceFeed(
+          id: 'ok',
+          name: '好源',
+          language: 'ja',
+          loadPopular: () async {
+            calls++;
+            return <MangaDiscoverySourceItem>[_item('作品 $calls')];
+          },
+          openCatalog: (BuildContext context) => catalogOpened++,
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('manga_discovery_view_all_ok')),
     );
+    await tester.pump();
+    expect(catalogOpened, 1);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('manga_discovery_refresh')));
+    await tester.pumpAndSettle();
+    expect(calls, 2, reason: '刷新让各热门行重新挂载、重新拉取');
+    expect(find.text('作品 2'), findsOneWidget);
   });
 }
