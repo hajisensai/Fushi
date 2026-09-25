@@ -5463,5 +5463,7 @@
   "manga_ocr_baberu_desc": "含横排文字模型约 284 MB。在 Windows 上自动使用 GPU 图像编码与 CPU 文字解码，不可用时使用 CPU。部分名字和手写文字可能更不准确。对新启动的 OCR 任务生效。",
   "manga_ocr_cuda_model": "manga-ocr（NVIDIA GPU 加速）",
   "manga_ocr_cuda_desc": "原版 manga-ocr，使用 GPU 批量识别。需要 NVIDIA 显卡；首次下载约 4 GB，应用自动安装独立的 Python 和 CUDA 运行库。",
-  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…"
+  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…",
+  "discovery_source_capability_browsable": "可浏览目录或搜索",
+  "discovery_source_capability_search_only": "仅支持关键词搜索"
 }
