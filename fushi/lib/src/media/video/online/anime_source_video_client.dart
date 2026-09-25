@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/jimaku_client.dart'
+    show detectSubtitleLanguage;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
@@ -44,7 +47,9 @@ class AnimeSourceVideoClient
     required List<MihonEpisode> episodes,
     http.Client? httpClient,
     MihonVideo Function(List<MihonVideo> candidates)? chooseVideo,
-  }) : episodes = List<MihonEpisode>.unmodifiable(episodes),
+    String? Function()? subtitleLanguageResolver,
+  }) : _subtitleLanguageResolver = subtitleLanguageResolver,
+       episodes = List<MihonEpisode>.unmodifiable(episodes),
        _httpClient = httpClient ?? createAppHttpIoClient(),
        _chooseVideo = chooseVideo ?? chooseBestAnimeVideo {
     _episodeIds = _buildEpisodeIds();
@@ -58,6 +63,15 @@ class AnimeSourceVideoClient
   final List<MihonEpisode> episodes;
   final http.Client _httpClient;
   final MihonVideo Function(List<MihonVideo> candidates) _chooseVideo;
+
+  /// 默认字幕轨的首选语言码（`resolveSubtitleDownloadLanguage` 的产物，可空）。
+  ///
+  /// 扩展一集常给七八条字幕轨（KickAssAnime 8 条），顺序是站点的顺序、多半英文在
+  /// 前；此前盲取第一条。null = 不表态，保持扩展给的顺序（与自动下字幕同一条铁律：
+  /// 不猜、只排序不过滤）。每次起播现问：用户在字幕工作台改了默认语言，下一集就跟上。
+  final String? Function()? _subtitleLanguageResolver;
+
+  String? get preferredSubtitleLanguage => _subtitleLanguageResolver?.call();
 
   /// 用户手动指定的线路（按集 id），优先于 [_chooseVideo]。
   ///
@@ -82,6 +96,10 @@ class AnimeSourceVideoClient
 
   /// 最近一次取流的集 id：播放页的线路菜单（[streamVariants]）列的就是这一集的候选。
   String? _currentEpisodeId;
+
+  /// 最近一次取流挑默认字幕轨时用的语言：[getRemoteVideoSubtitle] 下载默认轨时沿用
+  /// 它而不是再问一次，保证下的就是报给播放页的那一条。
+  String? _defaultSubtitleLanguage;
 
   AnimeMihonRuntime get _runtime => manager.animeRuntime;
 
@@ -308,7 +326,10 @@ class AnimeSourceVideoClient
         _matchPinned(_pinnedVideos[id], candidates) ?? _chooseVideo(candidates);
     _currentVideo = chosen;
     _currentEpisodeId = id;
-    final MihonVideoTrack? subtitle = chosen.subtitleTracks.firstOrNull;
+    final MihonVideoTrack? subtitle = defaultSubtitleTrack(
+      chosen.subtitleTracks,
+      _defaultSubtitleLanguage = preferredSubtitleLanguage,
+    );
     final String streamUrl = chosen.resolvedUrl;
     return RemoteVideoStreamUrls(
       streamUrl: streamUrl,
@@ -321,10 +342,45 @@ class AnimeSourceVideoClient
       // 的契约是后者（播放页会 audio-add 并选中它），塞进去会默认切到第一条配音、
       // 制卡也从它裁。替代音轨选择器留二期，这里恒 null。
       audioStreamUrl: null,
+      // 全部字幕轨交给播放页的字幕轨菜单（与媒体服务器同一条通路：选中即经
+      // [getRemoteVideoSubtitle] 的 `embeddedStreamIndex` 下载那一条）。
+      embeddedSubtitleTracks: subtitleTrackList(chosen.subtitleTracks, episode),
       // HLS 是转封装的分片流，不带原容器的内嵌字幕轨。
       streamIsOriginalContainer: !isHlsStreamUrl(streamUrl),
     );
   }
+
+  /// 扩展字幕轨 → 播放页字幕轨菜单条目。[RemoteVideoEmbeddedSubtitleTrack.streamIndex]
+  /// 就是轨在 `Video.subtitleTracks` 里的下标（本 client 自己回传自己解，不出进程；
+  /// 空链接的轨在 [MihonVideo.fromJson] 已丢弃，不会让下标错位）；
+  /// 都是独立字幕文件，标 [RemoteVideoEmbeddedSubtitleTrack.isExternalFile]——下载失败
+  /// 时播放页不能把它当容器轨交给 libmpv。
+  static List<RemoteVideoEmbeddedSubtitleTrack> subtitleTrackList(
+    List<MihonVideoTrack> tracks,
+    MihonEpisode episode,
+  ) => <RemoteVideoEmbeddedSubtitleTrack>[
+    for (int i = 0; i < tracks.length; i++)
+      RemoteVideoEmbeddedSubtitleTrack(
+        streamIndex: i,
+        codec: p
+            .extension(subtitleFileNameFor(tracks[i], episode))
+            .substring(1),
+        language: tracks[i].lang.isEmpty ? null : tracks[i].lang,
+        url: tracks[i].url,
+        fileName: subtitleFileNameFor(tracks[i], episode),
+        isExternalFile: true,
+      ),
+  ];
+
+  /// 起播默认挂哪条字幕轨：[preferred] 语言的第一条，没有就是扩展排的第一条。
+  static MihonVideoTrack? defaultSubtitleTrack(
+    List<MihonVideoTrack> tracks,
+    String? preferred,
+  ) => rankByPreferredLanguage<MihonVideoTrack>(
+    tracks,
+    preferred,
+    (MihonVideoTrack track) => animeSubtitleLanguageCode(track.lang),
+  ).firstOrNull;
 
   /// 外挂字幕落盘名：保留源给的扩展名（`.vtt` / `.srt` / `.ass`），缺省 `.vtt`
   /// （Aniyomi 生态的字幕轨绝大多数是 WebVTT）。
@@ -364,8 +420,23 @@ class AnimeSourceVideoClient
     void Function(double progress)? onProgress,
   }) async {
     final MihonVideo? video = _currentVideo;
-    final MihonVideoTrack? track = video?.subtitleTracks.firstOrNull;
-    if (video == null || track == null) return;
+    if (video == null) return;
+    // 菜单里挑的那一条按下标取；没指定（起播默认字幕）与 [remoteVideoStreamUrls]
+    // 同一个挑法，保证下载的就是它报给播放页的那一条。
+    final List<MihonVideoTrack> tracks = video.subtitleTracks;
+    final MihonVideoTrack? track = embeddedStreamIndex == null
+        ? defaultSubtitleTrack(tracks, _defaultSubtitleLanguage)
+        : (embeddedStreamIndex >= 0 && embeddedStreamIndex < tracks.length
+              ? tracks[embeddedStreamIndex]
+              : null);
+    if (track == null) {
+      // 菜单点了一条已不存在的轨（换了线路、扩展换了轨序）：如实报错，播放页会
+      // 提示加载失败；静默 return 会让它把一个空文件当字幕解析。
+      if (embeddedStreamIndex != null) {
+        throw RangeError.index(embeddedStreamIndex, tracks, 'subtitle track');
+      }
+      return;
+    }
     final Uri subtitleUri = Uri.parse(track.url);
     final Uri streamUri = Uri.parse(video.resolvedUrl);
     final bool sameSite =
@@ -463,4 +534,64 @@ List<MihonEpisode> sortEpisodesForPlayback(List<MihonEpisode> episodes) {
   return <MihonEpisode>[
     for (final (int, MihonEpisode) item in indexed) item.$2,
   ];
+}
+
+/// Aniyomi `Track.lang` 标签 → 字幕域语言码；认不出返回 null。
+///
+/// 扩展给的是给人看的**标签**，不是 BCP-47：`English`、`Japanese`、`日本語`、
+/// `Portuguese (Brazil)`、`Español - Latinoamérica`、`English [CC]`，少数才给
+/// `ja` / `jpn`。取括号 / 连字符 / 逗号前的主名比英文名表，再退到母语写法
+/// （[detectSubtitleLanguage] 那张表）与语言码（[normalizeSubtitleLanguageCode]）。
+/// 只列常见语言：认不出宁可不排序（保持扩展的顺序），不瞎映射。
+String? animeSubtitleLanguageCode(String label) {
+  final String trimmed = label.trim();
+  if (trimmed.isEmpty) return null;
+  final String head = trimmed
+      .split(RegExp(r'[\(\[\-,/]'))
+      .first
+      .trim()
+      .toLowerCase();
+  const Map<String, String> names = <String, String>{
+    'japanese': 'ja',
+    'english': 'en',
+    'chinese': 'zh',
+    'mandarin': 'zh',
+    'cantonese': 'zh',
+    'korean': 'ko',
+    'spanish': 'es',
+    'español': 'es',
+    'espanol': 'es',
+    'castilian': 'es',
+    'portuguese': 'pt',
+    'português': 'pt',
+    'portugues': 'pt',
+    'french': 'fr',
+    'français': 'fr',
+    'francais': 'fr',
+    'german': 'de',
+    'deutsch': 'de',
+    'italian': 'it',
+    'italiano': 'it',
+    'russian': 'ru',
+    'русский': 'ru',
+    'arabic': 'ar',
+    'العربية': 'ar',
+    'indonesian': 'id',
+    'thai': 'th',
+    'vietnamese': 'vi',
+    'turkish': 'tr',
+    'polish': 'pl',
+    'dutch': 'nl',
+    'hindi': 'hi',
+  };
+  final String? byName = names[head];
+  if (byName != null) return byName;
+  final String? byNative = detectSubtitleLanguage(trimmed);
+  if (byNative != null) return byNative;
+  // 形如 `ja` / `jpn` / `pt-BR` 的码：只认 2~3 个字母的主标签，`Signs` 这类轨名
+  // 不能被当成语言码。
+  if (RegExp(r'^[a-z]{2,3}$').hasMatch(head)) {
+    return normalizeSubtitleLanguageCode(head);
+  }
+  return null;
 }

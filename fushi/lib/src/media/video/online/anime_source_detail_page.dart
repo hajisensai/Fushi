@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_cloudflare_action.dart';
@@ -33,6 +34,7 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
     this.repositoryOverride,
     this.openPlayer,
     this.openExternal,
+    this.subtitleLanguageResolver,
   });
 
   final MihonManager manager;
@@ -53,6 +55,9 @@ class AnimeSourceDetailPage extends ConsumerStatefulWidget {
 
   /// 测试注入：默认用系统浏览器打开（[launchUrl]）。
   final Future<void> Function(Uri url)? openExternal;
+
+  /// 测试注入：默认字幕轨的首选语言；生产读偏好（见 `_preferredSubtitleLanguage`）。
+  final String? Function()? subtitleLanguageResolver;
 
   @override
   ConsumerState<AnimeSourceDetailPage> createState() =>
@@ -110,6 +115,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           context: context,
           anime: details,
           episodes: ordered,
+          subtitleLanguageResolver:
+              widget.subtitleLanguageResolver ?? _preferredSubtitleLanguage,
         );
         _loading = false;
       });
@@ -120,6 +127,19 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         _error = error;
       });
     }
+  }
+
+  /// 扩展字幕轨的默认语言：与自动下字幕同一条链（字幕工作台的默认语言 > 默认内容
+  /// 语言），都没设就不表态、保持扩展给的轨序。client 起播时才调用（见
+  /// [AnimeSourceVideoClient.preferredSubtitleLanguage]）。
+  String? _preferredSubtitleLanguage() {
+    // 播放页叠在本页之上，本页正常一直挂着；万一已卸载，`ref` 不可用，不表态。
+    if (!mounted) return null;
+    final AppModel appModel = ref.read(appProvider);
+    return resolveSubtitleDownloadLanguage(
+      explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+      globalDefaultContentLanguage: appModel.defaultContentLanguage,
+    );
   }
 
   /// 点集即进播放器：取流与选线路交给播放页（它有「正在连接视频流」阶段与失败态，

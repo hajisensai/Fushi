@@ -334,6 +334,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
         mediaSource,
         isHls: controller.isHlsStream(),
+        headers: _streamHttpHeaderFields,
       );
       mediaSource = relayed.url;
       mediaSourceRouteReady = relayed.ready;

@@ -1582,6 +1582,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     this.url,
     this.fileName,
     this.containerTrackOrdinal,
+    this.isExternalFile = false,
   });
 
   /// 服务端定位该轨用的流号：Fushi host 是 ffmpeg `-map 0:s:N` 的字幕相对序号，
@@ -1601,6 +1602,12 @@ class RemoteVideoEmbeddedSubtitleTrack {
   /// null = 旧 host / 未换算，调用方按 [streamIndex] 兜底（Fushi host 两者同值）。
   final int? containerTrackOrdinal;
 
+  /// 该轨是独立的字幕文件、**不在**播放流的容器里（Jellyfin/Emby 的外挂字幕、
+  /// 在线源扩展 `Video.subtitleTracks` 的 WebVTT 链接）。true 时服务器/站点下载失败
+  /// 不得回落到「交给 libmpv 自绘」（BUG-2590）：libmpv 正在 demux 的流里没有这条轨，
+  /// 按 [streamIndex] 去选只会选中另一条不相干的内嵌轨。
+  final bool isExternalFile;
+
   Map<String, Object?> toJson() => <String, Object?>{
         'streamIndex': streamIndex,
         'codec': codec,
@@ -1611,6 +1618,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         if (_isNonEmpty(fileName)) 'fileName': fileName,
         if (containerTrackOrdinal != null)
           'containerTrackOrdinal': containerTrackOrdinal,
+        if (isExternalFile) 'isExternalFile': true,
       };
 
   RemoteVideoEmbeddedSubtitleTrack copyWith({
@@ -1626,6 +1634,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         url: url ?? this.url,
         fileName: fileName ?? this.fileName,
         containerTrackOrdinal: containerTrackOrdinal,
+        isExternalFile: isExternalFile,
       );
 
   static RemoteVideoEmbeddedSubtitleTrack fromJson(
@@ -1640,6 +1649,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         url: _jsonString(json['url']),
         fileName: _jsonString(json['fileName']),
         containerTrackOrdinal: _jsonInt(json['containerTrackOrdinal']),
+        isExternalFile: json['isExternalFile'] == true,
       );
 }
 

@@ -4213,6 +4213,11 @@ class AppModel with ChangeNotifier {
   /// 时应回退「不限」，而不是崩在一个纯锦上添花的默认值上。
   String get jimakuDefaultLanguage => _prefsRepo?.jimakuDefaultLanguage ?? '';
 
+  /// 默认内容语言（`''` = 未设置）。见 [PreferencesRepository.defaultContentLanguage]；
+  /// 与 [jimakuDefaultLanguage] 同理走 `_prefsRepo?`，偏好未就绪时不表态。
+  String get defaultContentLanguage =>
+      _prefsRepo?.defaultContentLanguage ?? '';
+
   Future<void> setJimakuDefaultLanguage(String langCode) async {
     await prefsRepo.setJimakuDefaultLanguage(langCode);
     await reloadVideoDownloadPipelineRuntime();
