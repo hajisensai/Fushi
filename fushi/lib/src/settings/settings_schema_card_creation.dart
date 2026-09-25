@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
+    show ankiMobileLedgerIsDuplicateSource;
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -151,6 +153,21 @@ SettingsDestination buildCardCreationDestination() {
         hasRevealTarget: true,
         title: t.anki_allow_duplicates,
         subtitle: t.anki_allow_duplicates_hint,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.backup_import',
+        visible: (SettingsContext c) =>
+            Platform.isIOS &&
+            c.ref.watch(ankiViewModelProvider).isConfigured &&
+            ankiMobileLedgerIsDuplicateSource(
+              useAnkiConnectOnMobile: c.ref
+                  .watch(ankiViewModelProvider)
+                  .settings
+                  .useAnkiConnectOnMobile,
+              mineToServer: c.appModel.mineToServerEnabled,
+            ),
+        hasRevealTarget: true,
+        title: t.anki_backup_import,
       ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.overwrite_scope',

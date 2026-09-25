@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
+import 'package:fushi/utils.dart' show t;
 
 /// 更新中心：**进页面 = 已读**。用户从首页横幅 / 系统通知点进来这一下就是
 /// 「我看到了」，不该进来之后还要再按「全部已读」或逐条点才能把角标消掉。
@@ -64,5 +65,57 @@ void main() {
         updateNotificationId(UpdateFeedKind.videoEpisode, null),
       ]),
     );
+  });
+
+  testWidgets('清空按钮：确认后清掉当前筛选域的记录，其它域不动', (WidgetTester tester) async {
+    await makeService();
+    for (final String v in <String>['2.8.0-debug.15150', '2.8.0-debug.15535']) {
+      await service.publish(
+        UpdateFeedDraft(
+          kind: UpdateFeedKind.appRelease,
+          targetKey: v,
+          title: v,
+        ),
+      );
+    }
+    await service.publish(
+      const UpdateFeedDraft(
+        kind: UpdateFeedKind.videoEpisode,
+        targetKey: '1|ep1',
+        title: '孤独摇滚',
+      ),
+    );
+
+    await tester.pumpWidget(host());
+    await tester.pumpAndSettle();
+    // 切到「应用新版」筛选。
+    final Finder appChip = find.widgetWithText(
+      ChoiceChip,
+      updateFeedKindLabel(UpdateFeedKind.appRelease),
+    );
+    await tester.ensureVisible(appChip);
+    await tester.pumpAndSettle();
+    await tester.tap(appChip);
+    await tester.pumpAndSettle();
+    expect(find.text('2.8.0-debug.15535'), findsOneWidget);
+    expect(find.text('孤独摇滚'), findsNothing);
+
+    await tester.tap(find.byTooltip(t.updates_history_clear));
+    await tester.pumpAndSettle();
+    // 取消不删。
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    expect(find.text('2.8.0-debug.15535'), findsOneWidget);
+
+    await tester.tap(find.byTooltip(t.updates_history_clear));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.updates_history_clear_confirm_action));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2.8.0-debug.15150'), findsNothing);
+    expect(find.text('2.8.0-debug.15535'), findsNothing);
+    expect(find.text(t.updates_history_cleared(count: 2)), findsOneWidget);
+    final List<UpdateFeedEntryRow> left = await service.entries();
+    expect(left.map((UpdateFeedEntryRow e) => e.title), <String>['孤独摇滚']);
   });
 }

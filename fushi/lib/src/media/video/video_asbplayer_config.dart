@@ -11,6 +11,8 @@ class VideoAsbplayerConfig {
     required this.longPressSpeed,
     required this.dragSeekSensitivity,
     required this.tapTogglesPlayback,
+    required this.brightnessSwipeGesture,
+    required this.volumeSwipeGesture,
   });
 
   /// 双击「字幕跳句」哨兵值（TODO-173/BUG-231）：[doubleTapSeekSeconds] 取此值时，
@@ -37,6 +39,8 @@ class VideoAsbplayerConfig {
     longPressSpeed: 2.0,
     dragSeekSensitivity: VideoSeekSensitivity.medium,
     tapTogglesPlayback: true,
+    brightnessSwipeGesture: true,
+    volumeSwipeGesture: true,
   );
 
   final int seekSeconds;
@@ -59,6 +63,15 @@ class VideoAsbplayerConfig {
   /// 与快捷键都不受影响（各自独立入口）。
   final bool tapTogglesPlayback;
 
+  /// 移动端画面**左半区竖滑调屏幕亮度**手势开关（issue #1525）。默认 true（保持既有
+  /// 行为）。关掉后左半区竖滑不再改亮度，用户改走系统亮度条；只关这一侧，右半区音量
+  /// 手势由 [volumeSwipeGesture] 独立决定。桌面本无此手势，不消费本字段。
+  final bool brightnessSwipeGesture;
+
+  /// 移动端画面**右半区竖滑调音量**手势开关（issue #1525）。默认 true（保持既有行为）。
+  /// 关掉后右半区竖滑不再改音量，用户改用实体音量键；控制条音量滑条、键盘音量键不受影响。
+  final bool volumeSwipeGesture;
+
   VideoAsbplayerConfig copyWith({
     int? seekSeconds,
     double? speedStep,
@@ -67,6 +80,8 @@ class VideoAsbplayerConfig {
     double? longPressSpeed,
     VideoSeekSensitivity? dragSeekSensitivity,
     bool? tapTogglesPlayback,
+    bool? brightnessSwipeGesture,
+    bool? volumeSwipeGesture,
   }) {
     return VideoAsbplayerConfig(
       seekSeconds: seekSeconds ?? this.seekSeconds,
@@ -76,6 +91,9 @@ class VideoAsbplayerConfig {
       longPressSpeed: longPressSpeed ?? this.longPressSpeed,
       dragSeekSensitivity: dragSeekSensitivity ?? this.dragSeekSensitivity,
       tapTogglesPlayback: tapTogglesPlayback ?? this.tapTogglesPlayback,
+      brightnessSwipeGesture:
+          brightnessSwipeGesture ?? this.brightnessSwipeGesture,
+      volumeSwipeGesture: volumeSwipeGesture ?? this.volumeSwipeGesture,
     );
   }
 
@@ -87,6 +105,8 @@ class VideoAsbplayerConfig {
         'longPressSpeed': longPressSpeed,
         'dragSeekSensitivity': dragSeekSensitivity.name,
         'tapTogglesPlayback': tapTogglesPlayback,
+        'brightnessSwipeGesture': brightnessSwipeGesture,
+        'volumeSwipeGesture': volumeSwipeGesture,
       };
 
   static String encode(VideoAsbplayerConfig config) =>
@@ -116,6 +136,11 @@ class VideoAsbplayerConfig {
         // 旧档没有本键 → 回落 true，既有「点画面暂停」行为原样保留。
         tapTogglesPlayback:
             raw['tapTogglesPlayback'] as bool? ?? defaults.tapTogglesPlayback,
+        // 旧档没有这两个键 → 回落 true，既有竖滑调亮度/音量行为原样保留。
+        brightnessSwipeGesture: raw['brightnessSwipeGesture'] as bool? ??
+            defaults.brightnessSwipeGesture,
+        volumeSwipeGesture:
+            raw['volumeSwipeGesture'] as bool? ?? defaults.volumeSwipeGesture,
       );
     } catch (_) {
       return defaults;

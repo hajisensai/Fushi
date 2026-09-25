@@ -94,6 +94,8 @@
   opt_popupSizeHeight_placeholder: 'Read after a lookup',
   opt_narrowSidePanel_title: 'When the side panel is too narrow',
   opt_narrowSidePanel_desc: 'If the side panel is narrower than the popup, the popup shrinks to the available width and scales the whole window down when needed instead of clipping the right half. Always on, no setting. To make the browser popup follow the in-app popup again, turn off “Independent browser extension size” in Fushi.',
+  opt_shiftHoverLookup_title: 'Shift-hover lookup',
+  opt_shiftHoverLookup_desc: 'Hold <kbd>Shift</kbd> and move the mouse over text to look it up (page text and the side-panel subtitle list). Turn this off if Shift clashes with site shortcuts or typing; clicking a word, subtitle auto-lookup and other entry points are unaffected. Applies immediately.',
   opt_touch_lookup_heading_section_kicker: 'Touch lookup & subtitle drawer',
   opt_touch_lookup_heading_heading: 'Phones and tablets',
   opt_touch_lookup_heading_section_note: 'Applies immediately',

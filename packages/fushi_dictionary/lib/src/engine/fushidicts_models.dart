@@ -183,3 +183,15 @@ class FushiKanjiResult {
         'dictName': dictName,
       };
 }
+
+/// `fushidicts_zstd_decompress_file` 返回的非零错误码。
+///
+/// 1 输入打不开；2 输出打不开；3 zstd 解码错误；4 输入截断；5 写入失败。
+class FushiZstdException implements Exception {
+  const FushiZstdException(this.code);
+
+  final int code;
+
+  @override
+  String toString() => 'FushiZstdException(code: $code)';
+}
