@@ -101,34 +101,85 @@ void main() {
       expect(gameStreamResolutionScale(captureHeight: 720, maxHeight: 1080), 1);
     });
 
-    test('adaptive bitrate stays between floor and requested target', () {
-      expect(
-        gameStreamAdaptedBitrate(
-          current: 20000000,
-          target: 20000000,
-          minimum: 1000000,
-          roundTripSeconds: .2,
-        ),
-        14000000,
-      );
-      expect(
-        gameStreamAdaptedBitrate(
-          current: 5000000,
-          target: 20000000,
-          minimum: 1000000,
-          availableOutgoing: 100000000,
-        ),
-        20000000,
-      );
-      expect(
-        gameStreamAdaptedBitrate(
-          current: 5000000,
-          target: 20000000,
-          minimum: 1000000,
-          availableOutgoing: 100000,
-        ),
-        1000000,
-      );
+    test('adaptive bitrate window leaves adaptation to congestion control', () {
+      expect(gameStreamBitrateWindow(targetBps: 20000000, adaptive: true), (
+        min: 1000000,
+        start: 10000000,
+        max: 20000000,
+      ));
+      // A target below the 1 Mbps floor never produces min > max.
+      expect(gameStreamBitrateWindow(targetBps: 500000, adaptive: true), (
+        min: 500000,
+        start: 500000,
+        max: 500000,
+      ));
+    });
+
+    test('fixed bitrate pins floor, start and ceiling to the target', () {
+      expect(gameStreamBitrateWindow(targetBps: 20000000, adaptive: false), (
+        min: 20000000,
+        start: 20000000,
+        max: 20000000,
+      ));
+    });
+
+    group('answer SDP bitrate tuning', () {
+      const String answer =
+          'v=0\r\n'
+          'o=- 1 2 IN IP4 127.0.0.1\r\n'
+          's=-\r\n'
+          't=0 0\r\n'
+          'm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n'
+          'a=rtpmap:111 opus/48000/2\r\n'
+          'a=fmtp:111 minptime=10;useinbandfec=1\r\n'
+          'm=video 9 UDP/TLS/RTP/SAVPF 96 97 102 103\r\n'
+          'a=rtpmap:96 VP8/90000\r\n'
+          'a=rtcp-fb:96 nack pli\r\n'
+          'a=rtpmap:97 rtx/90000\r\n'
+          'a=fmtp:97 apt=96\r\n'
+          'a=rtpmap:102 H264/90000\r\n'
+          'a=fmtp:102 level-asymmetry-allowed=1;'
+          'packetization-mode=1;x-google-start-bitrate=300;'
+          'x-google-max-bitrate=2000\r\n'
+          'a=rtpmap:103 rtx/90000\r\n'
+          'a=fmtp:103 apt=102\r\n'
+          'm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n'
+          'a=sctp-port:5000\r\n';
+
+      final String tuned = gameStreamTuneVideoSdp(answer, startKbps: 10000);
+      const String rates = 'x-google-start-bitrate=10000';
+
+      test('adds an fmtp line to a codec that has none (VP8)', () {
+        expect(
+          tuned,
+          contains('a=rtpmap:96 VP8/90000\r\na=fmtp:96 $rates\r\n'),
+        );
+      });
+
+      test('replaces an existing rate and keeps codec parameters', () {
+        expect(
+          tuned,
+          contains(
+            'a=fmtp:102 level-asymmetry-allowed=1;packetization-mode=1;'
+            '$rates\r\n',
+          ),
+        );
+        expect(tuned, isNot(contains('x-google-start-bitrate=300')));
+        // A pinned ceiling would outlive a later setParameters raise.
+        expect(tuned, isNot(contains('x-google-max-bitrate')));
+      });
+
+      test('leaves rtx, audio and data sections untouched', () {
+        expect(tuned, contains('a=fmtp:97 apt=96\r\n'));
+        expect(tuned, contains('a=fmtp:103 apt=102\r\n'));
+        expect(tuned, contains('a=fmtp:111 minptime=10;useinbandfec=1\r\n'));
+        expect(tuned, endsWith('a=sctp-port:5000\r\n'));
+        expect(RegExp('x-google-start-bitrate').allMatches(tuned).length, 2);
+      });
+
+      test('is idempotent', () {
+        expect(gameStreamTuneVideoSdp(tuned, startKbps: 10000), tuned);
+      });
     });
   });
 
@@ -192,11 +243,14 @@ void main() {
         timestampMs: first.timestampMs - 1000,
         bytesReceived: 1000000,
       );
+      // Pin the clock: the JIT between two wall-clock samples on a loaded
+      // runner stretched the one-second window by over 100 ms.
       final GameStreamStatsSample second = GameStreamStatsSample.fromReports(
         reports,
         previous: earlier,
+        nowMs: first.timestampMs,
       );
-      expect(second.bitrateKbps, closeTo(8000, 200));
+      expect(second.bitrateKbps, 8000);
     });
   });
 

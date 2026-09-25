@@ -669,6 +669,114 @@ void ApplyRoundedShellUnionAlphaMask(
   }
 }
 
+// BUG-2651 (issue #1581) — 卡片内选区的 Ctrl+C 热键 id（应用自有区间 0..0xBFFF）与
+// 「把 ContextMenuRequested 挪出 COM 回调栈再弹菜单」的窗口私有消息。菜单是模态
+// 循环，直接在 WebView2 事件回调里 TrackPopupMenu 会把 WebView2 自己的派发挂住
+// （同 beginWindowResize 必须 PostMessage 的道理）。
+constexpr int kCopySelectionHotkeyId = 0xA1C0;
+constexpr UINT kShowContextMenuMessage = WM_APP + 0x70;
+constexpr UINT kContextMenuCopyCommand = 1;
+constexpr UINT kContextMenuSelectAllCommand = 2;
+
+// ExecuteScript 回来的结果是一个 JSON 值；这里只认 JSON 字符串字面量，按 UTF-16
+// 还原（含 \uXXXX 转义——选区里的控制字符、行分隔符会以这种形式出现）。其余类型
+// 一律视为「没有文本」。
+bool DecodeJsonStringLiteral(const std::wstring& json, std::wstring* out) {
+  if (out == nullptr) {
+    return false;
+  }
+  out->clear();
+  if (json.size() < 2 || json.front() != L'"' || json.back() != L'"') {
+    return false;
+  }
+  const size_t end = json.size() - 1;
+  size_t i = 1;
+  while (i < end) {
+    const wchar_t value = json[i++];
+    if (value != L'\\') {
+      out->push_back(value);
+      continue;
+    }
+    if (i >= end) {
+      return false;
+    }
+    const wchar_t escaped = json[i++];
+    switch (escaped) {
+      case L'"':
+      case L'\\':
+      case L'/':
+        out->push_back(escaped);
+        break;
+      case L'b':
+        out->push_back(L'\b');
+        break;
+      case L'f':
+        out->push_back(L'\f');
+        break;
+      case L'n':
+        out->push_back(L'\n');
+        break;
+      case L'r':
+        out->push_back(L'\r');
+        break;
+      case L't':
+        out->push_back(L'\t');
+        break;
+      case L'u': {
+        if (i + 4 > end) {
+          return false;
+        }
+        unsigned int unit = 0;
+        for (size_t k = 0; k < 4; ++k) {
+          const wchar_t hex = json[i++];
+          unit <<= 4;
+          if (hex >= L'0' && hex <= L'9') {
+            unit |= static_cast<unsigned int>(hex - L'0');
+          } else if (hex >= L'a' && hex <= L'f') {
+            unit |= static_cast<unsigned int>(hex - L'a' + 10);
+          } else if (hex >= L'A' && hex <= L'F') {
+            unit |= static_cast<unsigned int>(hex - L'A' + 10);
+          } else {
+            return false;
+          }
+        }
+        out->push_back(static_cast<wchar_t>(unit));
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+  return true;
+}
+
+// 把文本以 CF_UNICODETEXT 写进系统剪贴板。卡片永不拿焦点，页面内的
+// execCommand('copy') / navigator.clipboard 都不可靠，所以复制统一在 native 落地。
+bool WriteClipboardUnicodeText(HWND owner, const std::wstring& text) {
+  if (text.empty() || !OpenClipboard(owner)) {
+    return false;
+  }
+  bool written = false;
+  if (EmptyClipboard()) {
+    const size_t bytes = (text.size() + 1) * sizeof(wchar_t);
+    HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes);
+    if (memory != nullptr) {
+      void* locked = GlobalLock(memory);
+      if (locked != nullptr) {
+        memcpy(locked, text.c_str(), bytes);
+        GlobalUnlock(memory);
+        // 成功后内存归剪贴板所有；失败才由我们释放。
+        written = SetClipboardData(CF_UNICODETEXT, memory) != nullptr;
+      }
+      if (!written) {
+        GlobalFree(memory);
+      }
+    }
+  }
+  CloseClipboard();
+  return written;
+}
+
 }  // namespace
 
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
@@ -680,7 +788,18 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
   // The user activated another window (click outside the card). Own-process
   // events are skipped via WINEVENT_SKIPOWNPROCESS, so this never fires for our
   // own overlay/main window.
-  if (self != nullptr && self->IsShowing() && hwnd != self->hwnd_) {
+  if (self == nullptr) {
+    return;
+  }
+  // BUG-2651 — 自绘右键菜单结束后，我们把为弹菜单而临时抢来的前台还给原窗口；
+  // 那一下是本进程主动交还，不是用户点了卡外，不能关卡。只放过这一次、只认
+  // 那个窗口：用户在菜单开着时点进别的应用，那是另一个 hwnd，照常关卡。
+  if (self->context_menu_return_foreground_ != nullptr &&
+      hwnd == self->context_menu_return_foreground_) {
+    self->context_menu_return_foreground_ = nullptr;
+    return;
+  }
+  if (self->IsShowing() && hwnd != self->hwnd_) {
     self->Hide();
   }
 }
@@ -688,6 +807,10 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
 void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
                                            bool inside_window) {
   if (!IsShowing()) return;
+  // BUG-2651 — 自绘右键菜单的模态循环里，点菜单项那一下常落在卡片 rect 之外；
+  // 菜单自己负责「点菜单外即收起」，这里不能把它当成点卡外去关卡（那会在菜单
+  // 命令生效前就把宿主窗口藏掉）。
+  if (context_menu_active_) return;
   // TODO-867 P3c C4/E2 — the window is now the whole nested-stack bounding
   // box (E1): the transparent area BETWEEN cards is inside the HWND rect, so
   // a coarse "PtInRect -> Hide" would wrongly close on a click in that gap.
@@ -924,6 +1047,10 @@ GlobalLookupWindow::RouteContext GlobalLookupWindow::RouteForMessage(
 
 GlobalLookupWindow::~GlobalLookupWindow() {
   ReleaseDismissHooks();
+  if (copy_hotkey_registered_ && hwnd_ != nullptr) {
+    UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+    copy_hotkey_registered_ = false;
+  }
   if (controller_) {
     controller_->Close();
   }
@@ -1012,6 +1139,10 @@ void GlobalLookupWindow::ForgetDeadWindow() {
   ReleaseDismissHooks();
   // HWND 已死，定时器随它一起没了；清掉 id 免得下次 Start 以为还开着（BUG-1479）。
   topmost_guard_timer_ = 0;
+  // BUG-2651 — 热键挂在死 HWND 上，随它一起失效；重建的新窗口从「未注册」起步。
+  UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+  copy_hotkey_registered_ = false;
+  selection_present_ = false;
   // The HWND was destroyed out from under us (WebView2 runtime crash/update,
   // owner teardown, or any external DestroyWindow) yet hwnd_ stayed non-null,
   // so every later ShowAt took the SetWindowPos(else) branch against a corpse
@@ -1241,6 +1372,8 @@ void GlobalLookupWindow::Reveal(int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-2651 — 选区若在卡片离屏期间就已存在，上屏这一刻补注册 Ctrl+C。
+  UpdateCopyHotkey();
   // BUG-2123：这条 legacy 路径把窗口放在**光标处、单卡尺寸**，而不是 bbox 原点 +
   // bbox 尺寸。首帧预落位（host 的 measureAndReport 在 postToHost('overlaySize') 之前
   // 把图层推了 (-minLeft,-minTop)，为的是消掉「先闪在工作区左上角」）只对后者成立：
@@ -1326,6 +1459,8 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
   revealed_ = true;
   visible_ = true;
   offscreen_active_ = false;
+  // BUG-2651 — 选区若在卡片离屏期间就已存在，上屏这一刻补注册 Ctrl+C。
+  UpdateCopyHotkey();
   // BUG-1479：只设一次不够——同置顶带里「最后一次 SetWindowPos 的赢」，
   // 而大量 galgame 会周期性重申自己的置顶。
   StartTopmostGuard();
@@ -1545,6 +1680,7 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
           revealed_ = true;
           offscreen_active_ = false;
           resized_in_place = true;
+          UpdateCopyHotkey();  // BUG-2651 — 同上屏补注册。
         } else {
           transient_direct_failure = true;
         }
@@ -1722,6 +1858,14 @@ void GlobalLookupWindow::Hide(bool notify) {
   pending_outside_click_owner_ = nullptr;
   ReleaseDismissHooks();
   StopTopmostGuard();
+  // BUG-2651 — 卡片一离屏就交还 Ctrl+C（visible_ 已清，UpdateCopyHotkey 必然注销）：
+  // 隐藏的卡片绝不能继续截走用户在别的应用里的复制。菜单还开着（例如用户 Alt+Tab
+  // 走了）就一并收起，别留一个宿主已隐藏的孤儿菜单。
+  UpdateCopyHotkey();
+  if (context_menu_active_) {
+    EndMenu();
+  }
+  context_menu_return_foreground_ = nullptr;
   // 投影窗随卡片同步隐藏（WM_WINDOWPOSCHANGED 也会兜到，这里显式先藏，
   // 避免"卡没了影子晚一拍"）。
   shadow_.Hide();
@@ -2624,6 +2768,32 @@ void GlobalLookupWindow::ConfigureWebView() {
     ReportOverlayError("put_IsStatusBarEnabled(FALSE) failed", status_bar_hr);
   }
 
+  // BUG-2651 (issue #1581) — WebView2 自带的右键菜单在这个置顶卡片**下面**弹出
+  // （用户看到的是「菜单被弹窗盖住」），菜单里的「复制」于是永远点不到。接管
+  // ContextMenuRequested，由本窗用 Win32 弹出菜单（#32768 菜单窗天然在置顶带之上）。
+  // 同样走 ConfigureWebView 这个单一漏斗，BUG-693 自愈重建后照样生效。
+  wil::com_ptr<ICoreWebView2_11> webview11;
+  if (SUCCEEDED(webview_->QueryInterface(IID_PPV_ARGS(&webview11))) &&
+      webview11 != nullptr) {
+    const HRESULT menu_hr = webview11->add_ContextMenuRequested(
+        Callback<ICoreWebView2ContextMenuRequestedEventHandler>(
+            [this](ICoreWebView2*,
+                   ICoreWebView2ContextMenuRequestedEventArgs* args)
+                -> HRESULT {
+              HandleContextMenuRequested(args);
+              return S_OK;
+            })
+            .Get(),
+        nullptr);
+    if (FAILED(menu_hr)) {
+      ReportOverlayError("add_ContextMenuRequested failed", menu_hr);
+    }
+  } else {
+    ReportOverlayError("ICoreWebView2_11 unavailable; overlay context menu "
+                       "stays under the topmost card",
+                       E_NOINTERFACE);
+  }
+
   // BUG-1139 — 关掉 WebView2 自带的页面缩放（Ctrl+滚轮 / Ctrl+加减 / 触控板捏合）。
   //
   // 这个窗的几何链**整条**按「CSS px @ zoom=1」算：host 的 measureAndReport 用
@@ -2850,6 +3020,14 @@ void GlobalLookupWindow::ConfigureWebView() {
                   // Commit before Dart can capture/present this exact epoch.
                   FinalizePendingShellGeometry(geometry_epoch);
                 }
+              }
+              // BUG-2651 — host 汇总的「卡片里有无非空选区」。纯 Win32 状态（是否
+              // 临时接管 Ctrl+C），native 就地消费、不转发 Dart。
+              if (body.find("\"handler\":\"overlaySelection\"") !=
+                  std::string::npos) {
+                OnOverlaySelectionChanged(
+                    body.find("\"args\":[true]") != std::string::npos);
+                return S_OK;
               }
               if (body.find("\"handler\":\"beginWindowResize\"") !=
                   std::string::npos) {
@@ -3399,6 +3577,199 @@ void GlobalLookupWindow::ForwardGlobalClickToHost(int screen_x, int screen_y) {
   webview_->ExecuteScript(script.c_str(), nullptr);
 }
 
+// BUG-2651 (issue #1581) — 卡片内选区复制。
+void GlobalLookupWindow::OnOverlaySelectionChanged(bool has_selection) {
+  selection_present_ = has_selection;
+  UpdateCopyHotkey();
+}
+
+void GlobalLookupWindow::UpdateCopyHotkey() {
+  // 「卡片在屏 && 卡片里有非空选区」是接管 Ctrl+C 的唯一条件：卡片一离屏
+  // （Hide 的所有来路：点卡外、前台切走、程序化重置）立刻交还，用户在别的应用
+  // 里的 Ctrl+C 永远不会被截走。
+  const bool wanted = selection_present_ && IsShowing();
+  if (wanted == copy_hotkey_registered_) {
+    return;
+  }
+  if (!wanted) {
+    if (hwnd_ != nullptr) {
+      UnregisterHotKey(hwnd_, kCopySelectionHotkeyId);
+    }
+    copy_hotkey_registered_ = false;
+    return;
+  }
+  // MOD_NOREPEAT：按住不放不连发。修饰键精确匹配，Ctrl+Shift+C 等组合不受影响。
+  if (RegisterHotKey(hwnd_, kCopySelectionHotkeyId, MOD_CONTROL | MOD_NOREPEAT,
+                     'C')) {
+    copy_hotkey_registered_ = true;
+  } else {
+    // 另一个进程已占用全局 Ctrl+C 热键：只能退回「Ctrl+C 归前台应用」的旧行为，
+    // 右键菜单的复制仍然可用。
+    ReportOverlayError("RegisterHotKey(Ctrl+C) for overlay selection failed",
+                       HRESULT_FROM_WIN32(GetLastError()));
+  }
+}
+
+void GlobalLookupWindow::CopyOverlaySelectionToClipboard() {
+  if (webview_ == nullptr || !webview_ready_) {
+    return;
+  }
+  webview_->ExecuteScript(
+      L"(function(){var h=window.__globalLookupHost;"
+      L"return h&&typeof h.selectedText==='function'?h.selectedText():'';})()",
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [this](HRESULT error_code, LPCWSTR result_json) -> HRESULT {
+            std::wstring text;
+            if (SUCCEEDED(error_code) && result_json != nullptr) {
+              DecodeJsonStringLiteral(result_json, &text);
+            }
+            if (text.empty()) {
+              // 上报与真实选区不一致（选区在热键落地前被清掉）：以现场为准，
+              // 交还 Ctrl+C。host 的「变化才上报」去重状态也必须一起归零，否则
+              // 它还停在 true，下一次真选区被当成「没变化」不上报，Ctrl+C 又落回
+              // 前台应用（原 bug 复发）。
+              OnOverlaySelectionChanged(false);
+              if (webview_ != nullptr) {
+                webview_->ExecuteScript(
+                    L"(function(){var h=window.__globalLookupHost;"
+                    L"if(h&&typeof h.resetSelectionReport==='function')"
+                    L"h.resetSelectionReport();})()",
+                    nullptr);
+              }
+              return S_OK;
+            }
+            if (!WriteClipboardUnicodeText(hwnd_, text)) {
+              ReportOverlayError("overlay selection clipboard write failed",
+                                 HRESULT_FROM_WIN32(GetLastError()));
+            }
+            return S_OK;
+          })
+          .Get());
+}
+
+void GlobalLookupWindow::HandleContextMenuRequested(
+    ICoreWebView2ContextMenuRequestedEventArgs* args) {
+  if (args == nullptr) {
+    return;
+  }
+  // 一律接管：WebView2 自带的菜单在这个置顶窗口下面弹，用户根本够不着。
+  args->put_Handled(TRUE);
+  wil::com_ptr<ICoreWebView2Deferral> deferral;
+  if (FAILED(args->GetDeferral(&deferral)) || deferral == nullptr ||
+      hwnd_ == nullptr) {
+    return;
+  }
+  // 上一个还没弹出的请求（极快的连续右键）直接收尾，只弹最新的那个。
+  if (pending_context_menu_deferral_ != nullptr) {
+    pending_context_menu_deferral_->Complete();
+  }
+  pending_context_menu_args_ = args;
+  pending_context_menu_deferral_ = deferral;
+  PostMessage(hwnd_, kShowContextMenuMessage, 0, 0);
+}
+
+void GlobalLookupWindow::ShowPendingContextMenu() {
+  wil::com_ptr<ICoreWebView2ContextMenuRequestedEventArgs> args =
+      std::move(pending_context_menu_args_);
+  wil::com_ptr<ICoreWebView2Deferral> deferral =
+      std::move(pending_context_menu_deferral_);
+  if (args == nullptr || deferral == nullptr) {
+    return;
+  }
+  // 选区文本直接取自 WebView2 的菜单目标（右键落点所在 frame 的选区），不经 JS。
+  std::wstring selection_text;
+  wil::com_ptr<ICoreWebView2ContextMenuTarget> target;
+  if (SUCCEEDED(args->get_ContextMenuTarget(&target)) && target != nullptr) {
+    BOOL has_selection = FALSE;
+    if (SUCCEEDED(target->get_HasSelection(&has_selection)) && has_selection) {
+      wil::unique_cotaskmem_string value;
+      if (SUCCEEDED(target->get_SelectionText(&value)) && value) {
+        selection_text = value.get();
+      }
+    }
+  }
+  // 菜单文案沿用 WebView2 自己的本地化标签（跟随系统 UI 语言），只保留对只读
+  // 词典卡片有意义的两项：复制 / 全选。「全选」交回 WebView2 原生命令执行。
+  std::wstring copy_label;
+  std::wstring select_all_label;
+  INT32 select_all_command = -1;
+  wil::com_ptr<ICoreWebView2ContextMenuItemCollection> items;
+  if (SUCCEEDED(args->get_MenuItems(&items)) && items != nullptr) {
+    UINT32 count = 0;
+    items->get_Count(&count);
+    for (UINT32 index = 0; index < count; ++index) {
+      wil::com_ptr<ICoreWebView2ContextMenuItem> item;
+      if (FAILED(items->GetValueAtIndex(index, &item)) || item == nullptr) {
+        continue;
+      }
+      wil::unique_cotaskmem_string name;
+      wil::unique_cotaskmem_string label;
+      if (FAILED(item->get_Name(&name)) || !name ||
+          FAILED(item->get_Label(&label)) || !label) {
+        continue;
+      }
+      const std::wstring item_name = name.get();
+      if (item_name == L"copy") {
+        copy_label = label.get();
+      } else if (item_name == L"selectAll") {
+        select_all_label = label.get();
+        item->get_CommandId(&select_all_command);
+      }
+    }
+  }
+  HMENU menu = CreatePopupMenu();
+  if (menu == nullptr) {
+    deferral->Complete();
+    return;
+  }
+  if (!selection_text.empty()) {
+    AppendMenuW(menu, MF_STRING, kContextMenuCopyCommand,
+                copy_label.empty() ? L"&Copy" : copy_label.c_str());
+  }
+  if (select_all_command >= 0 && !select_all_label.empty()) {
+    AppendMenuW(menu, MF_STRING, kContextMenuSelectAllCommand,
+                select_all_label.c_str());
+  }
+  if (GetMenuItemCount(menu) <= 0 || !IsShowing()) {
+    DestroyMenu(menu);
+    deferral->Complete();
+    return;
+  }
+  POINT cursor{};
+  GetCursorPos(&cursor);
+  // TrackPopupMenu 的已知契约：宿主窗口不是前台时，点菜单外不会收起菜单、Esc 也
+  // 到不了菜单。卡片是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚发生
+  // 的右键让本进程有资格这么做），菜单结束后若前台还在我们手里就原样还回去。
+  const HWND previous_foreground = GetForegroundWindow();
+  const bool took_foreground = previous_foreground != hwnd_ &&
+                               SetForegroundWindow(hwnd_) != FALSE;
+  context_menu_active_ = true;
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, cursor.x, cursor.y,
+      hwnd_, nullptr));
+  context_menu_active_ = false;
+  // 同一契约的后半截：让菜单循环确实退出后再继续。
+  PostMessage(hwnd_, WM_NULL, 0, 0);
+  DestroyMenu(menu);
+  if (command == kContextMenuCopyCommand) {
+    if (!WriteClipboardUnicodeText(hwnd_, selection_text)) {
+      ReportOverlayError("overlay context-menu clipboard write failed",
+                         HRESULT_FROM_WIN32(GetLastError()));
+    }
+  } else if (command == kContextMenuSelectAllCommand) {
+    args->put_SelectedCommandId(select_all_command);
+  }
+  deferral->Complete();
+  if (took_foreground && previous_foreground != nullptr &&
+      IsWindow(previous_foreground) && GetForegroundWindow() == hwnd_) {
+    // 前台钩子会看到这次交还；它不是用户点卡外，登记一下让钩子放过它。
+    context_menu_return_foreground_ = previous_foreground;
+    if (!SetForegroundWindow(previous_foreground)) {
+      context_menu_return_foreground_ = nullptr;
+    }
+  }
+}
+
 LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
                                           LPARAM lparam) {
   switch (message) {
@@ -3415,6 +3786,16 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // 而没有返回值 —— CI 的 /WX 把 C4715 当错误（本机 debug 构建不开 /WX，
       // 所以本地那次 `flutter build windows --debug` 是绿的，别再被它骗一次）。
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    case WM_HOTKEY:
+      // BUG-2651 — 只在「卡片在屏且里面有非空选区」时注册的 Ctrl+C。
+      if (wparam == static_cast<WPARAM>(kCopySelectionHotkeyId)) {
+        CopyOverlaySelectionToClipboard();
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    case kShowContextMenuMessage:
+      ShowPendingContextMenu();
+      return 0;
     case fushi::kLowLevelMouseClickMessage:
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
