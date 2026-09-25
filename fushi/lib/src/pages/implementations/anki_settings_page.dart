@@ -1859,6 +1859,10 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_glossary;
     case '{glossary-first}':
       return t.handlebar_glossary_first;
+    case '{glossary-first-2}':
+      return t.handlebar_glossary_first_n(count: 2);
+    case '{glossary-first-3}':
+      return t.handlebar_glossary_first_n(count: 3);
     case '{selected-glossary}':
       return t.handlebar_selected_glossary;
     case '{popup-selection-text}':

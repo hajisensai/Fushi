@@ -5596,5 +5596,6 @@
   "novel_status_licensed": "Licensed",
   "novel_status_publishing_finished": "Publishing finished",
   "novel_status_cancelled": "Cancelled",
-  "novel_status_on_hiatus": "On hiatus"
+  "novel_status_on_hiatus": "On hiatus",
+  "handlebar_glossary_first_n": "釋義（前 ${count} 條）"
 }
