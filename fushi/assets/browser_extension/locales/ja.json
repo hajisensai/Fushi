@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "検索後に読み込み",
   "opt_narrowSidePanel_title": "サイドパネルが狭すぎるとき",
   "opt_narrowSidePanel_desc": "サイドパネルがポップアップより狭い場合、ポップアップは利用できる幅に縮み、必要に応じてウィンドウ全体を縮小します。右半分が切れることはありません。常に有効で、設定はありません。ブラウザのポップアップを再びアプリ内ポップアップに従わせるには、Fushi で「ブラウザ拡張機能の独立サイズ」をオフにしてください。",
+  "opt_shiftHoverLookup_title": "Shift ホバーで辞書検索",
+  "opt_shiftHoverLookup_desc": "<kbd>Shift</kbd> を押しながらマウスを文字に重ねると検索します（ページ本文とサイドパネルの字幕リスト）。Shift がサイトのショートカットや入力とぶつかる場合はオフにできます。クリック検索や字幕の自動検索など他の入口には影響しません。変更はすぐに反映されます。",
   "opt_touch_lookup_heading_section_kicker": "タッチ検索と字幕ドロワー",
   "opt_touch_lookup_heading_heading": "スマートフォンとタブレット",
   "opt_touch_lookup_heading_section_note": "即時反映",

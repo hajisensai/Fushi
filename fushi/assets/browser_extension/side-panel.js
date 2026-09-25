@@ -152,6 +152,21 @@
       else closePageLookup();
     });
   } catch (_) { /* storage 不可用：按默认（页面渲染）走 */ }
+  // 「按住 Shift 悬停查词」总开关（与 content.js 同一个 storage.shiftHoverLookup，默认开）。
+  // 关掉后字幕行上的 Shift 悬停与「按下 Shift 立即查」都不再触发；点击查词不受影响。
+  var shiftHoverLookup = true;
+  try {
+    chrome.storage.local.get('shiftHoverLookup', function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved && typeof saved.shiftHoverLookup === 'boolean') {
+        shiftHoverLookup = saved.shiftHoverLookup;
+      }
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
+      shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    });
+  } catch (_) { /* storage 不可用：按默认（开）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -877,7 +892,7 @@
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
         };
-        if (event.shiftKey) schedulePointerLookup(lastPointer);
+        if (event.shiftKey && shiftHoverLookup) schedulePointerLookup(lastPointer);
       }
       text.addEventListener('pointerenter', rememberPointer, { passive: true });
       text.addEventListener('pointermove', rememberPointer, { passive: true });
@@ -1232,7 +1247,7 @@
     }
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
     // 一次 pointer 坐标立即查，不要求用户再晃动鼠标，也不 preventDefault。
-    if (event.key === 'Shift' && !event.repeat && lastPointer) {
+    if (event.key === 'Shift' && !event.repeat && lastPointer && shiftHoverLookup) {
       lookupAtPointer(lastPointer, { explicit: true, announceMissing: true });
     }
   }, true);
