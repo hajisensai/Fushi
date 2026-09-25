@@ -205,6 +205,7 @@ class _TorrentSettingsSectionState
         context: context,
         appModel: ref.read(appProvider),
         dialogTitle: t.download_save_root_change,
+        initialDirectory: ref.read(appProvider).downloadSaveRoot,
       );
       if (picked == null || picked.trim().isEmpty || !mounted) return;
       final DownloadSaveRootIssue? issue = await ref
