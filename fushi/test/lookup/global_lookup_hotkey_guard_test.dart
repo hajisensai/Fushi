@@ -163,8 +163,22 @@ void main() {
       final String call = galOverlaySrc.substring(callAt, callEnd + 2);
       expect(call.contains('showSentenceBanner'), isFalse,
           reason: '横幅开关已删，调用点不得再传 showSentenceBanner');
-      expect(call.contains('sentence: entry.text'), isTrue,
+      // 句子经 _cardSentenceForGame 过滤：只有旧校准档案仍开着「只用「」内
+      // 台词」时才剥掉括号外文字，其余情况原样返回 entry.text。
+      expect(
+          call.contains('sentence: _cardSentenceForGame(entry, entry.text)'),
+          isTrue,
           reason: '制卡需要的完整句子上下文必须继续传入');
+      final int filterAt =
+          galOverlaySrc.indexOf('String _cardSentenceForGame(');
+      expect(filterAt, greaterThan(-1), reason: '制卡句子过滤入口必须存在');
+      final int filterEnd = galOverlaySrc.indexOf(').text;', filterAt);
+      expect(filterEnd, greaterThan(filterAt));
+      final String filter = galOverlaySrc.substring(filterAt, filterEnd);
+      expect(filter.contains('galLookupVisibleHookLineText('), isTrue,
+          reason: '只能走共享的可见台词过滤，不得另起截句逻辑');
+      expect(filter.contains('source: source'), isTrue,
+          reason: '过滤的输入必须是完整台词');
     });
   });
 }
