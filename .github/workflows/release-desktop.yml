@@ -116,7 +116,16 @@ concurrency:
   # 里 windows/macos/ios 早就并行上传同一个 release）；update-manifest 推送有「重取远端
   # tip 再合并」循环（TODO-781）。同一条 workflow 内仍按 tag/sha 串行，同 tag 两次 dispatch
   # 不会互相踩。守卫：fushi/test/build/release_workflow_concurrency_guard_test.dart。
-  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}
+  #
+  # testflight_only 单独成组（2026-09-25 用户要求「TF 直接并行跑」）：那条 run 只签 iOS、
+  # 只传 TestFlight，windows / macos / publish 全跳，不碰 GitHub Release 也不碰
+  # update-manifest，上面「同 tag/sha 串行防互踩资产」的理由对它不成立。而它恰恰总是
+  # 补在一次 push 之后、同一个 sha 上 dispatch 的——不拆组就得排在那条完整桌面/Apple
+  # 构建后面干等（#2268 等 #2267），还会被同组下一个 pending 顶掉。拆组不引入新的
+  # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条若也传了 TF（序列被 3 整除），串行时
+  # 后传的一样被 App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
+  # workflow 共用的那个字面量（check_release_policy.ps1 按包含校验）。
+  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
   cancel-in-progress: false
 
 jobs:
