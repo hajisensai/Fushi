@@ -425,6 +425,28 @@ void main() {
     expect(store.saved.last.layout.characterAdvances, isEmpty);
   });
 
+  testWidgets('a surface between states is not reported as a missing line', (
+    WidgetTester tester,
+  ) async {
+    await _open(
+      tester,
+      store: _MemoryStore(),
+      manual: false,
+      capture: () async => throw const GalLookupCalibrationCaptureException(
+        GalLookupCalibrationCaptureFailure.surfaceNotReady,
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('calibration-empty-capture')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.game_lookup_samples_capture_surface_not_ready),
+      findsOneWidget,
+    );
+    expect(find.text(t.game_lookup_samples_capture_source), findsNothing);
+  });
+
   testWidgets('empty notebook offers capturing the current line', (
     WidgetTester tester,
   ) async {

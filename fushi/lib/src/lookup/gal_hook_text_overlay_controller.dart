@@ -1729,9 +1729,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
         );
         throw mappingFailure;
       }
-      throw const GalLookupCalibrationCaptureException(
-        GalLookupCalibrationCaptureFailure.sourceNotReady,
+      final GalLookupCalibrationCaptureException notReady =
+          _calibrationNotReadyFailure();
+      _logCalibrationCaptureFailure(
+        notReady,
+        requestedTarget: requestedTarget,
+        sessionEpoch: sessionEpoch,
       );
+      throw notReady;
     }
     _calibrationCaptureInFlight = true;
     ++_syncRevision;
@@ -1814,6 +1819,16 @@ class GalHookTextOverlayController extends ChangeNotifier {
     }
     return value;
   }
+
+  /// "No line" only when there really is no selected body line; otherwise the
+  /// attached surface is between states, which the user fixes differently.
+  GalLookupCalibrationCaptureException _calibrationNotReadyFailure() =>
+      GalLookupCalibrationCaptureException(
+        _session.selectedTextThreadKey == null ||
+                _session.selectedSessionLines.isEmpty
+            ? GalLookupCalibrationCaptureFailure.sourceNotReady
+            : GalLookupCalibrationCaptureFailure.surfaceNotReady,
+      );
 
   void _logCalibrationCaptureFailure(
     GalLookupCalibrationCaptureException failure, {
@@ -1917,10 +1932,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
         state.boundWindow?.hwnd != target.targetHwnd ||
         state.boundWindow?.pid != target.targetPid ||
         !(_attachedText.canCaptureCalibrationSample || ownCaptureSuppression) ||
-        !_attachedText.calibrationManuallyEnabled) {
-      throw const GalLookupCalibrationCaptureException(
-        GalLookupCalibrationCaptureFailure.sourceNotReady,
-      );
+        !_attachedText.sampleCalibrationEnabled) {
+      throw _calibrationNotReadyFailure();
     }
     final TexthookerLineEntry entry = lines.last;
     if (entry.rubySpans.isNotEmpty) {
@@ -1963,7 +1976,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     if (!_attachedText.canCaptureCalibrationSample ||
         _attachedText.surfaceVisible) {
       throw const GalLookupCalibrationCaptureException(
-        GalLookupCalibrationCaptureFailure.sourceNotReady,
+        GalLookupCalibrationCaptureFailure.surfaceNotReady,
       );
     }
     // A new profile has no attached surface. Only fence an existing dictionary

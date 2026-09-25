@@ -201,6 +201,7 @@ typedef GalCalibrationCaptureLeaseFactory =
 enum GalLookupCalibrationCaptureFailure {
   busy,
   sourceNotReady,
+  surfaceNotReady,
   surfaceMappingUnavailable,
   rubyUnsupported,
   overlayHideFailed,

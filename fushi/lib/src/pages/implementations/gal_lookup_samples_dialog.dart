@@ -382,6 +382,8 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       GalLookupCalibrationCaptureFailure.sourceNotReady ||
       GalLookupCalibrationCaptureFailure.invalidSource =>
         t.game_lookup_samples_capture_source,
+      GalLookupCalibrationCaptureFailure.surfaceNotReady =>
+        t.game_lookup_samples_capture_surface_not_ready,
       GalLookupCalibrationCaptureFailure.rubyUnsupported =>
         t.game_lookup_samples_capture_unsupported,
       GalLookupCalibrationCaptureFailure.overlayHideFailed ||

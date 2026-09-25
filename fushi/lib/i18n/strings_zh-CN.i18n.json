@@ -5546,5 +5546,6 @@
   "game_lookup_attached_calibration_unavailable": "校准暂不可用。请停止点击游戏台词，调整参数或取消校准。",
   "game_line_bulk_text_hint": "检测到批量文本，已暂停逐字查词以避免卡顿。",
   "game_lookup_samples_auto_align": "从截图自动对齐",
-  "game_lookup_samples_hint": "等台词完整显示后再采集。先采集几句不同台词，再调整排版。"
+  "game_lookup_samples_hint": "等台词完整显示后再采集。先采集几句不同台词，再调整排版。",
+  "game_lookup_samples_capture_surface_not_ready": "查词层正在切换状态，暂时不能采集。请等一两秒再试；如果一直失败，请重新附着游戏。"
 }

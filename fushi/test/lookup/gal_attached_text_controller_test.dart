@@ -322,6 +322,64 @@ void main() {
     ),
   );
 
+  test('auto mode prepares and applies screenshot samples only', () async {
+    preferences[key()] = jsonEncode(
+      _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+    );
+    await sync();
+    expect(controller.profile!.mode, GalLookupSurfaceMode.auto);
+    expect(controller.sampleCalibrationEnabled, isTrue);
+    expect(controller.canCaptureCalibrationSample, isTrue);
+    // The live probe calibration still needs the explicit manual mode.
+    expect(controller.canCalibrate, isFalse);
+    expect(
+      await controller.beginCalibration(acceptUnsafeLeftClick: true),
+      isFalse,
+    );
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isTrue,
+    );
+    expect(controller.profile!.mode, GalLookupSurfaceMode.auto);
+
+    for (final GalLookupSurfaceMode mode in <GalLookupSurfaceMode>[
+      GalLookupSurfaceMode.off,
+      GalLookupSurfaceMode.nativeOnly,
+    ]) {
+      await controller.setMode(mode);
+      expect(controller.sampleCalibrationEnabled, isFalse, reason: '$mode');
+      expect(controller.canCaptureCalibrationSample, isFalse, reason: '$mode');
+    }
+  });
+
+  test('a hidden pending re-handshake still allows a clean capture', () async {
+    preferences[key()] = jsonEncode(_profile().toJson());
+    await sync();
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'shieldHandshakePending',
+        reason: 'input_shield_rehandshake_pending',
+      ),
+    );
+    expect(controller.surfaceVisible, isFalse);
+    expect(controller.canCaptureCalibrationSample, isTrue);
+    controller.handleSurfaceStateChanged(
+      GalAttachedSurfaceStateEvent(
+        target: controller.target!,
+        state: 'suspended',
+        status: 'shieldHandshakePending',
+        reason: 'input_shield_handshake_unavailable',
+      ),
+    );
+    expect(controller.canCaptureCalibrationSample, isFalse);
+  });
+
   test('measured calibration activates without manufacturing probes', () async {
     await sync();
     await controller.setMode(GalLookupSurfaceMode.attachedOnly);

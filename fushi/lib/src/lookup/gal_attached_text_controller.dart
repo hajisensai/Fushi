@@ -361,7 +361,7 @@ class GalAttachedTextController extends ChangeNotifier {
   /// sample dialog. Only that explicit hidden state is admissible; minimized,
   /// lost-target, unknown suspension and an active live calibration are not.
   bool get canCaptureCalibrationSample =>
-      calibrationManuallyEnabled &&
+      sampleCalibrationEnabled &&
       _target != null &&
       _currentClient != null &&
       _exePath != null &&
@@ -371,8 +371,24 @@ class GalAttachedTextController extends ChangeNotifier {
       (_status == GalAttachedTextStatus.needsCalibration ||
           _status == GalAttachedTextStatus.activeAttached ||
           (_status == GalAttachedTextStatus.suspended &&
-              _statusReason == 'targetBackground' &&
+              // While Fushi is in front the native gate may report a pending
+              // re-handshake before it reaches targetBackground; either way
+              // the glyph surface is hidden and the screenshot is clean.
+              (_statusReason == 'targetBackground' ||
+                  _statusReason == 'input_shield_rehandshake_pending') &&
               !_surfaceVisible));
+
+  /// Screenshot samples never draw over the game: capture hides the surface
+  /// and applying a measured grid only stores a variant. They are available
+  /// wherever the attached surface may run (auto or attached-only), matching
+  /// the workbench entry; the live probe calibration stays behind
+  /// [calibrationManuallyEnabled].
+  bool get sampleCalibrationEnabled {
+    final GalLookupSurfaceMode mode =
+        _profile?.mode ?? GalLookupSurfaceMode.auto;
+    return mode == GalLookupSurfaceMode.auto ||
+        mode == GalLookupSurfaceMode.attachedOnly;
+  }
 
   bool get calibrationCaptureNeedsAttachedLease =>
       _status == GalAttachedTextStatus.activeAttached ||
@@ -969,7 +985,10 @@ class GalAttachedTextController extends ChangeNotifier {
   }) async {
     final GalAttachedSurfaceTarget? target = _target;
     final GalLookupReferenceClientV1? client = _currentClient;
-    if (!canCalibrate ||
+    if (!sampleCalibrationEnabled ||
+        calibrationActive ||
+        _exePath == null ||
+        _latestSourceText.isEmpty ||
         target == null ||
         client == null ||
         !target.matches(expectedTarget) ||
@@ -1012,7 +1031,9 @@ class GalAttachedTextController extends ChangeNotifier {
                 (_statusReason == 'targetBackground' ||
                     _statusReason == 'targetMappingUnavailable' ||
                     _statusReason == 'geometryProviderPending' ||
-                    _statusReason == 'shieldHandshakePending')));
+                    _statusReason == 'shieldHandshakePending' ||
+                    // The native gate reports its reason, not the status.
+                    _statusReason == 'input_shield_rehandshake_pending')));
   }
 
   Future<bool> beginCalibration({
