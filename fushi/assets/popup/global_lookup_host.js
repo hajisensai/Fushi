@@ -1241,6 +1241,7 @@
     if (!record) {
       return;
     }
+    forgetRecordSelection(record);
     var oldId = record.id;
     record.active = false;
     stopRecordCallbacks(record);
@@ -1492,6 +1493,7 @@
     while (standbyRecords.length >= STANDBY_POOL_SIZE) {
       destroyRecord(standbyRecords.shift());
     }
+    forgetRecordSelection(record);
     var oldId = record.id;
     record.active = false;
     stopRecordCallbacks(record);
@@ -2354,6 +2356,10 @@
     if (parkCandidate) {
       parkRecord(parkCandidate);
     }
+    // BUG-2651 — a removed/parked card takes its selection with it but fires no
+    // selectionchange (its realm is gone or parked), so re-derive the aggregate
+    // here; otherwise native keeps Ctrl+C hijacked for a selection nobody sees.
+    reportSelectionState();
   }
 
   function frameDescriptors() {
@@ -3797,6 +3803,30 @@
     postToHost('overlaySelection', [has]);
   }
 
+  // Native reset its own view to "no selection" (the hotkey fired but
+  // selectedText() came back empty). Align the de-dup state with it, then
+  // re-derive: otherwise the next real selection compares equal to a stale
+  // `true` and is never reported, and Ctrl+C falls back to the foreground app.
+  function resetSelectionReport() {
+    lastReportedSelection = false;
+    reportSelectionState();
+  }
+
+  // Must run BEFORE the shell leaves the DOM: a detached iframe's contentWindow
+  // is null, so the identity check against lastSelectionWindow is impossible
+  // afterwards.
+  function forgetRecordSelection(record) {
+    var win = null;
+    try {
+      win = record && record.iframe ? record.iframe.contentWindow : null;
+    } catch (e) {
+      win = null;
+    }
+    if (win && lastSelectionWindow === win) {
+      lastSelectionWindow = null;
+    }
+  }
+
   function onRealmSelectionChange(win) {
     if (selectionTextOf(win)) {
       lastSelectionWindow = win;
@@ -3841,6 +3871,7 @@
   window.__globalLookupHost = {
     __installed: true,
     selectedText: selectedText,
+    resetSelectionReport: resetSelectionReport,
     _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
     retainStack: retainStack,

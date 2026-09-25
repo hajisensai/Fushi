@@ -3625,8 +3625,17 @@ void GlobalLookupWindow::CopyOverlaySelectionToClipboard() {
             }
             if (text.empty()) {
               // 上报与真实选区不一致（选区在热键落地前被清掉）：以现场为准，
-              // 交还 Ctrl+C。
+              // 交还 Ctrl+C。host 的「变化才上报」去重状态也必须一起归零，否则
+              // 它还停在 true，下一次真选区被当成「没变化」不上报，Ctrl+C 又落回
+              // 前台应用（原 bug 复发）。
               OnOverlaySelectionChanged(false);
+              if (webview_ != nullptr) {
+                webview_->ExecuteScript(
+                    L"(function(){var h=window.__globalLookupHost;"
+                    L"if(h&&typeof h.resetSelectionReport==='function')"
+                    L"h.resetSelectionReport();})()",
+                    nullptr);
+              }
               return S_OK;
             }
             if (!WriteClipboardUnicodeText(hwnd_, text)) {

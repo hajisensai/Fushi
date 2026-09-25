@@ -49,6 +49,18 @@ void main() {
     expect(hostJs, contains('if (has === lastReportedSelection)'));
     expect(hostJs, contains("addEventListener('selectionchange'"));
     expect(hostJs, contains('selectedText: selectedText,'));
+    // 卡片离栈（停放 / 销毁）不会触发 selectionchange，removeMissing 收尾必须
+    // 重新汇总；行为由 .mjs 的 BUG-2651 第二段覆盖。
+    final int removeMissing = hostJs.indexOf('function removeMissing(');
+    expect(removeMissing, greaterThanOrEqualTo(0));
+    expect(
+      hostJs.indexOf(
+        'reportSelectionState();',
+        hostJs.indexOf('parkRecord(parkCandidate);', removeMissing),
+      ),
+      lessThan(hostJs.indexOf('function frameDescriptors(', removeMissing)),
+      reason: 'removeMissing 结束前必须 reportSelectionState()',
+    );
     // load 与复用两条路都要给新 realm 挂监听。
     expect(
       RegExp(
@@ -98,6 +110,16 @@ void main() {
     );
     expect(copy, contains('selectedText()'));
     expect(copy, contains('WriteClipboardUnicodeText(hwnd_, text)'));
+    // 热键命中却取到空文本 = native 自行复位；host 的去重状态必须一起归零，
+    // 否则下一次真选区被当成「没变化」不上报（行为见 .mjs 的 BUG-2651 第二段）。
+    final int selfReset = copy.indexOf('OnOverlaySelectionChanged(false);');
+    expect(selfReset, greaterThanOrEqualTo(0));
+    expect(
+      copy.indexOf('h.resetSelectionReport()', selfReset),
+      greaterThan(selfReset),
+      reason: 'native 自行复位后必须回写 host 的 resetSelectionReport()',
+    );
+    expect(hostJs, contains('resetSelectionReport: resetSelectionReport,'));
     expect(cpp, contains('case WM_HOTKEY:'));
     expect(
       cpp.indexOf(
