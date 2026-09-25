@@ -91,12 +91,36 @@ void main() {
         contains(
             r"'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}'"),
         reason: 'check_release_policy.ps1 要求的组名与 workflow 里的不一致，发布第一步必红');
+    const String sharedGroup =
+        r'fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}';
     for (final String name in releaseWorkflows) {
       final ({String group, String cancel}) c = topLevelConcurrency(
           File('${workflowsDir.path}/$name').readAsStringSync(), name);
-      expect(policy, contains("'group: ${c.group}'"),
-          reason: '$name 的组名 `${c.group}` 不是 check_release_policy.ps1 要求的那一个');
+      // release-desktop.yml 在共用前缀后追加了 testflight_only 后缀（见下一条测试），
+      // 所以按「以共用字面量开头」比，而不是整串相等。
+      expect(c.group, startsWith(sharedGroup),
+          reason: '$name 的组名 `${c.group}` 不以 check_release_policy.ps1 要求的共用组名开头');
     }
+  });
+
+  test('release-desktop.yml 的 testflight_only run 单独成组，不排在同 sha 的完整构建后面', () {
+    // 2026-09-25：push 之后在同一个 sha 上 dispatch testflight_only=true 补传 TestFlight，
+    // 与 push 那条完整桌面/Apple 构建同组 → 干等一整条跑完（#2268 等 #2267），还会被同组
+    // 下一个 pending 顶掉。testflight_only 只签 iOS、只传 TestFlight，不碰 Release /
+    // update-manifest，没有串行的理由。
+    final ({String group, String cancel}) c = topLevelConcurrency(
+        File('${workflowsDir.path}/release-desktop.yml').readAsStringSync(),
+        'release-desktop.yml');
+    expect(
+        c.group,
+        endsWith(
+            r"${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}"),
+        reason: 'testflight_only 的 run 没有单独成组，又会排在同 sha 的完整构建后面');
+    final String policy =
+        File('../tool/check_release_policy.ps1').readAsStringSync();
+    expect(policy,
+        contains(r"github.event.inputs.testflight_only == 'true' && '-testflight' || ''"),
+        reason: 'check_release_policy.ps1 没钉住 testflight_only 的独立组后缀');
   });
 
   test('两条发布 workflow 的 name 不同——否则 `github.workflow` 分不开它们', () {

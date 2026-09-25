@@ -63,6 +63,11 @@ foreach ($relativePath in $workflowPaths) {
   # Dart 侧同一不变式：fushi/test/build/release_workflow_concurrency_guard_test.dart。
   Require-Text $relativePath $content 'group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}' 'same tag/commit publishes serialize within a workflow while Android and desktop publishers run in parallel'
   Require-Text $relativePath $content 'cancel-in-progress: false' 'Android and desktop publishers both need to complete'
+  # 2026-09-25：桌面/Apple 的 testflight_only run 只传 TestFlight、不碰 Release，单独成组与同 sha 的
+  # 完整构建并行，不再排队等它跑完。
+  if ($relativePath -eq '.github/workflows/release-desktop.yml') {
+    Require-Text $relativePath $content "`${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}" 'testflight_only runs must not queue behind the full desktop build on the same commit'
+  }
   Require-Text $relativePath $content 'fetch-depth: 0' 'release sequence uses full git history'
   Require-Text $relativePath $content 'RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)' 'release sequence must be shared by Android and desktop workflows'
   # 2026-08-12: 序号不再在 workflow 里算。重写历史会让 rev-list 计数倒退，所以算式加一次性地板，
