@@ -66,6 +66,7 @@ extension _ReaderMining on _ReaderFushiPageState {
         : CardSourceLink(
             kind: CardSourceKind.book,
             uid: sourceUid,
+            bookKey: widget.bookKey,
             sourceId: _sourceReviewSession?.link.sourceId ??
                 CardSourceLink.newSourceId(),
             chapterIndex: _favoriteSectionIndex,

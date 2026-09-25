@@ -236,6 +236,68 @@ void main() {
     },
   );
 
+  test('book and manga links carry the cross-device bookKey', () {
+    // The uid is minted per device at import; a synced copy of the same book
+    // on another device has a different uid and is only found by bookKey.
+    for (final CardSourceLink link in <CardSourceLink>[
+      CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'book_1790000000000000_1',
+        bookKey: '無職転生 ～異世界行ったら本気だす～ 25 (MFブックス)',
+        sourceId: _sourceId,
+        chapterIndex: 3,
+        charOffset: 18712,
+      ),
+      CardSourceLink(
+        kind: CardSourceKind.manga,
+        uid: 'book_1790000000000000_2',
+        bookKey: 'manga & key=1',
+        sourceId: _sourceId,
+        pageIndex: 7,
+      ),
+    ]) {
+      final CardSourceLink parsed = CardSourceLink.parse(
+        link.toUri().toString(),
+      );
+      expect(parsed.bookKey, link.bookKey);
+      expect(parsed.uid, link.uid);
+      final CardSourceLink fromHtml = CardSourceLink.fromHtml(
+        link.toHtml(),
+      ).single;
+      expect(fromHtml.bookKey, link.bookKey);
+      expect(link.withSourceId(_sourceId).bookKey, link.bookKey);
+    }
+    // Links minted before bookKey existed still parse (uid-only lookup).
+    expect(CardSourceLink.parse(book().toUri().toString()).bookKey, isNull);
+    // Video identity is the file fingerprint; a bookKey there is malformed.
+    expect(
+      () => CardSourceLink(
+        kind: CardSourceKind.video,
+        uid: 'video/x',
+        bookKey: 'x',
+        sourceId: _sourceId,
+        episodeIndex: 0,
+        startMs: 0,
+        endMs: 1,
+        fingerprint: 'a' * 64,
+      ),
+      throwsFormatException,
+    );
+    for (final String bad in <String>['', '  ', 'a\nb']) {
+      expect(
+        () => CardSourceLink(
+          kind: CardSourceKind.book,
+          uid: 'u',
+          bookKey: bad,
+          sourceId: _sourceId,
+          chapterIndex: 0,
+          charOffset: 0,
+        ),
+        throwsFormatException,
+      );
+    }
+  });
+
   test('rejects commands, paths, invalid anchors and ambiguous URL inputs', () {
     final String valid = book().toUri().toString();
     for (final String raw in <String>[

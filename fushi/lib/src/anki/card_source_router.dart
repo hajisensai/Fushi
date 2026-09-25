@@ -23,6 +23,21 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+/// Finds the local book/manga row a card link points at. The link's `uid` is
+/// minted per device at import (sync / interconnect re-import a book and get a
+/// fresh one), so a card mined on another device only matches here through the
+/// cross-device `bookKey`. `uid` goes first: it survives a local rename, which
+/// changes the title-derived `bookKey`.
+Future<EpubBookRow?> resolveCardSourceBook(
+  FushiDatabase db,
+  CardSourceLink link,
+) async {
+  final EpubBookRow? byUid = await db.getEpubBookByUid(link.uid);
+  if (byUid != null) return byUid;
+  final String? bookKey = link.bookKey;
+  return bookKey == null ? null : db.getEpubBook(bookKey);
+}
+
 /// Resolve a portable locator through the current library. URLs never supply
 /// paths, remote credentials, or arbitrary routes to the navigation layer.
 Future<void> openCardSource({
@@ -42,7 +57,7 @@ Future<void> _openCardSource({
   if (navigator == null || app.isMigrationReadonly) return;
   final EpubBookRow? book = link.kind == CardSourceKind.video
       ? null
-      : await app.database.getEpubBookByUid(link.uid);
+      : await resolveCardSourceBook(app.database, link);
   final VideoBookRepository videos = VideoBookRepository(app.database);
   final VideoBookRow? video = link.kind == CardSourceKind.video
       ? await videos.getByBookUid(link.uid)

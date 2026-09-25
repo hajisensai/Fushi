@@ -3778,6 +3778,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         : CardSourceLink(
             kind: CardSourceKind.manga,
             uid: bookUid,
+            bookKey: widget.bookKey,
             sourceId:
                 reviewSession?.link.sourceId ?? CardSourceLink.newSourceId(),
             pageIndex: _miningPageIndex ?? _currentPage,

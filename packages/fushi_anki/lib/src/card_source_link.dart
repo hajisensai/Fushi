@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
 
-/// Source identities are library UIDs, never device-local filenames.
+/// Source identities are library UIDs, never device-local filenames. Book and
+/// manga UIDs are machine-local (`book_<time>` minted at import), so those
+/// links also carry the cross-device `bookKey` that sync/backup/interconnect
+/// align on; a card mined on one device still finds the synced copy.
 enum CardSourceKind { book, manga, video }
 
 /// Versioned, portable source locator embedded in a mined Anki note.
@@ -22,6 +25,7 @@ class CardSourceLink {
     this.audioFileIndex,
     this.chapterId,
     this.fingerprint,
+    this.bookKey,
   }) {
     _validate();
   }
@@ -43,6 +47,11 @@ class CardSourceLink {
   /// whose existing library UID can otherwise collide across devices.
   final String? fingerprint;
 
+  /// Cross-device library identity of a book/manga (the title-derived key
+  /// shared by sync, backup and interconnect). Resolvers try [uid] first and
+  /// fall back to this. Absent on links minted before it existed.
+  final String? bookKey;
+
   static final RegExp _uuid = RegExp(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
   );
@@ -62,6 +71,7 @@ class CardSourceLink {
     'audioFileIndex',
     'chapterId',
     'fingerprint',
+    'bookKey',
   };
 
   static String newSourceId() {
@@ -107,6 +117,7 @@ class CardSourceLink {
         audioFileIndex: audioFileIndex,
         chapterId: chapterId,
         fingerprint: fingerprint,
+        bookKey: bookKey,
       );
 
   /// Reads only quoted source hrefs generated for note fields. The locator
@@ -142,6 +153,13 @@ class CardSourceLink {
             .split('/')
             .any((String segment) => segment == '.' || segment == '..')) {
       throw const FormatException('Invalid library UID');
+    }
+    if (bookKey != null &&
+        (bookKey!.trim().isEmpty ||
+            bookKey!.length > 1024 ||
+            RegExp(r'[\x00-\x1f\x7f]').hasMatch(bookKey!) ||
+            kind == CardSourceKind.video)) {
+      throw const FormatException('Invalid library book key');
     }
     for (final int? value in <int?>[
       chapterIndex,
@@ -224,6 +242,7 @@ class CardSourceLink {
           if (audioFileIndex != null) 'audioFileIndex': '$audioFileIndex',
           if (chapterId != null) 'chapterId': chapterId!,
           if (fingerprint != null) 'fingerprint': fingerprint!,
+          if (bookKey != null) 'bookKey': bookKey!,
         },
       );
 
@@ -291,6 +310,7 @@ class CardSourceLink {
       audioFileIndex: number('audioFileIndex'),
       chapterId: query['chapterId'],
       fingerprint: query['fingerprint'],
+      bookKey: query['bookKey'],
     );
   }
 }
