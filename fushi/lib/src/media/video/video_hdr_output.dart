@@ -108,12 +108,28 @@ class HdrDisplayInfo {
 bool isHdrVideoParams({required String? primaries, required String? gamma}) =>
     dynamicRangeFromMpv(primaries: primaries, gamma: gamma).isHdr;
 
+/// 片源是否必须经 Dolby Vision RPU 重整才能出正确颜色：libmpv `video-params/colormatrix`
+/// 报 `dolbyvision`。
+///
+/// 只有**不带兼容基础层**的 DV（Profile 5，IPTPQc2 色彩空间，流媒体 WEB-DL 常见）会
+/// 这样报；Profile 7/8 的基础层本身是 HDR10 / HLG，矩阵照常是 `bt.2020-ncl`，不命中。
+/// P5 的像素不是 YCbCr，纹理路径的 `vo=libmpv`（gl_video 渲染器）不认 RPU，直接按
+/// 普通 PQ 解就是整片紫/绿「反色」；只有 `vo=gpu-next`（libplacebo）做重整。实测
+/// 同一帧 `vo=gpu` 肤色品红、`vo=gpu-next` 正常（先发五虎 S01E01，DoviProfile50）。
+bool requiresDolbyVisionReshape(String? colormatrix) =>
+    colormatrix == 'dolbyvision';
+
 /// 唯一的模式判据（计划 §4.4）——所有「要不要走宿主窗」都只问这里。
+///
+/// [sourceDolbyVision]（见 [requiresDolbyVisionReshape]）在 auto 下**不看显示器**：
+/// 宿主窗的 gpu-next 在 SDR 屏上照样重整 + 色调映射（与 always 在 SDR 屏上是同一条
+/// 路径），而纹理路径对这类片源没有正确画面可出。off 仍然尊重用户：那是显式选择。
 bool shouldUseHdrHostWindow({
   required bool isWindows,
   required VideoHdrOutputMode mode,
   required bool displayHdr,
   required bool sourceHdr,
+  bool sourceDolbyVision = false,
 }) {
   if (!isWindows) return false;
   switch (mode) {
@@ -122,7 +138,7 @@ bool shouldUseHdrHostWindow({
     case VideoHdrOutputMode.always:
       return true;
     case VideoHdrOutputMode.auto:
-      return displayHdr && sourceHdr;
+      return sourceDolbyVision || (displayHdr && sourceHdr);
   }
 }
 
