@@ -334,4 +334,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.animation!.value, 3);
   });
+
+  // 反向切换：目标分区在布局序里排在旧分区前面，新位置的 LayoutBuilder 先布局，
+  // GlobalKey 要从一个仍 active 的旧父节点上抢过来——正向用例覆盖不到这条路。
+  testWidgets('从后排分区切回前排分区：页签 State 仍是同一个、无异常',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(harness());
+    await tester.pump();
+
+    final Finder stripFinder =
+        find.byType(FushiSectionTabBar<VideoLibrarySection>);
+    final State<StatefulWidget> before = tester.state(stripFinder);
+
+    await select(tester, VideoLibrarySection.discover);
+    await select(tester, VideoLibrarySection.mediaServers);
+    expect(tester.takeException(), isNull);
+    expect(find.text('media server leaf'), findsOneWidget);
+    expect(tester.state(stripFinder), same(before));
+
+    await select(tester, VideoLibrarySection.home);
+    expect(tester.takeException(), isNull);
+    expect(stripFinder, findsOneWidget);
+    expect(tester.state(stripFinder), same(before),
+        reason: '切回本地库也必须是同一个 State 换父节点');
+    final TabController controller =
+        tester.widget<TabBar>(find.byType(TabBar)).controller!;
+    expect(controller.index, 0);
+    expect(controller.animation!.value, 0);
+  });
 }
