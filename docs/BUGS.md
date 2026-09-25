@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2469 条。点号进各自文件。
+> 共 2471 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2687](bugs/BUG-2687-lookup-nav-retap-no-keyboard.md) | ✅ | ✅ | 已在查词页再点查词不弹键盘 |
+| [BUG-2686](bugs/BUG-2686-search-submit-keeps-keyboard.md) | ✅ | ✅ | 移动端搜索框按键盘确认后软键盘不收起 |
 | [BUG-2685](bugs/BUG-2685-anime-ext-subtitle-tracks.md) | ✅ | ✅ | 在线视频源只用网站第一条字幕轨 |
 | [BUG-2684](bugs/BUG-2684-card-source-cross-device.md) | ✅ | ✅ | 同步过来的书卡片跳不回原文 |
 | [BUG-2683](bugs/BUG-2683-itest-prefs-leak-card-tags.md) | ✅ | ✅ | 集成测试写的 Anki 标签漏进用户真实配置，卡片多出 e2e 与 chars 标签 |
