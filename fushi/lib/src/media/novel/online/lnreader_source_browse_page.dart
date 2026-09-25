@@ -330,7 +330,8 @@ class LnReaderCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget fallback = ColoredBox(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      // 与扩展行图标占位同一个设计 token（不在页面里另挑 colorScheme 色）。
+      color: FushiDesignTokens.of(context).surfaces.group,
       child: const Center(child: Icon(Icons.menu_book_outlined, size: 36)),
     );
     final String? value = url;

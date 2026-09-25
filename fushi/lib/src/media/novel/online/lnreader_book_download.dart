@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
@@ -238,9 +239,7 @@ class LnReaderBookDownload {
   }
 
   static String _safeFileName(String title) {
-    final String cleaned = title
-        .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1F]'), '_')
-        .trim();
+    final String cleaned = safeWindowsFileName(title).trim();
     if (cleaned.isEmpty) return 'novel';
     return cleaned.length > 120 ? cleaned.substring(0, 120) : cleaned;
   }
