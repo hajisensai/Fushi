@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/extension_management_tile.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
 import 'package:fushi/src/media/novel/online/lnreader_extensions_section.dart';
 import 'package:fushi/src/media/novel/online/lnreader_installed_sources_section.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
@@ -265,5 +268,84 @@ void main() {
       t.novel_status_publishing_finished,
     );
     expect(lnReaderStatusLabel('連載中（毎週更新）'), '連載中（毎週更新）');
+  });
+
+  LnReaderCloudflare newCloudflare() =>
+      LnReaderCloudflare(MangaCookieJar(File('${root.path}/cookies.json')));
+
+  LnReaderCloudflareChallenge challenge() => LnReaderCloudflareChallenge(
+    url: Uri.parse('https://syosetu.example/rank'),
+    userAgent: 'PluginUA/1',
+  );
+
+  const ValueKey<String> verifyKey = ValueKey<String>(
+    'novel_source_cloudflare_verify_syosetu',
+  );
+
+  testWidgets('浏览页：被 Cloudflare 拦下回空列表时给出「站点验证」，未拦时不占位', (
+    WidgetTester tester,
+  ) async {
+    runtime.items = const <LnReaderNovelItem>[];
+    final LnReaderCloudflare cloudflare = newCloudflare();
+    final LnReaderManager guarded = LnReaderManager(
+      rootDirectory: root,
+      runtime: runtime,
+      httpClientFactory: HttpClient.new,
+      builtinStoreUrl: builtin,
+      cloudflare: cloudflare,
+    );
+    addTearDown(guarded.dispose);
+    // 真实文件 IO 在 FakeAsync 区里永远不完成，必须出区跑。
+    await tester.runAsync(guarded.initialise);
+    await pump(
+      tester,
+      LnReaderSourceBrowsePage(
+        manager: guarded,
+        plugin: guarded.installed.single,
+      ),
+    );
+    await untilCalled(tester, 'popular:1:false');
+    expect(find.text(t.novel_source_no_results), findsOneWidget);
+    expect(find.byKey(verifyKey), findsNothing);
+
+    // 桥在这次调用里撞上挑战（fetchText 吞掉 403，插件只回空列表）。
+    cloudflare.record('syosetu', challenge());
+    await tester.tap(find.text(t.mihon_source_latest));
+    await untilCalled(tester, 'popular:1:true');
+    expect(find.byKey(verifyKey), findsOneWidget);
+  });
+
+  testWidgets('站点验证：同 UA 打开被拦地址，解开后挑战作废并重新加载', (WidgetTester tester) async {
+    final LnReaderCloudflare cloudflare = newCloudflare()
+      ..record('syosetu', challenge());
+    LnReaderCloudflareChallenge? opened;
+    int reloads = 0;
+    await pump(
+      tester,
+      Scaffold(
+        body: LnReaderCloudflareAction(
+          cloudflare: cloudflare,
+          pluginId: 'syosetu',
+          onVerified: () => reloads++,
+          pageBuilder: (LnReaderCloudflareChallenge challenge) {
+            opened = challenge;
+            return Builder(
+              builder: (BuildContext context) => TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('solved'),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(verifyKey));
+    await tester.pumpAndSettle();
+    expect(opened?.url.toString(), 'https://syosetu.example/rank');
+    expect(opened?.userAgent, 'PluginUA/1');
+    await tester.tap(find.text('solved'));
+    await tester.pumpAndSettle();
+    expect(reloads, 1);
+    expect(cloudflare.challengeFor('syosetu'), isNull);
   });
 }

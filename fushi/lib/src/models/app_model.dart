@@ -77,8 +77,10 @@ import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
@@ -4535,14 +4537,25 @@ class AppModel with ChangeNotifier {
 
   LnReaderManager _createLnReaderManager() {
     late final LnReaderManager manager;
+    final Directory root = Directory(
+      path.join(databaseDirectory.path, 'lnreader'),
+    );
+    // Cloudflare 放行 cookie 落在 LNReader 根目录下（删目录即彻底卸载）。
+    final LnReaderCloudflare cloudflare = LnReaderCloudflare(
+      MangaCookieJar(File(path.join(root.path, 'cookies.json'))),
+    );
     final WebViewLnReaderRuntime runtime = WebViewLnReaderRuntime(
-      fetchBridge: LnReaderFetchBridge(clientFactory: createAppHttpClient),
+      fetchBridge: LnReaderFetchBridge(
+        clientFactory: createAppHttpClient,
+        cloudflare: cloudflare,
+      ),
       onStoragePersist: (String pluginId, Map<String, Object?> data) =>
           manager.persistStorage(pluginId, data),
     );
     manager = LnReaderManager(
-      rootDirectory: Directory(path.join(databaseDirectory.path, 'lnreader')),
+      rootDirectory: root,
       runtime: runtime,
+      cloudflare: cloudflare,
       httpClientFactory: createAppHttpClient,
       // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
       refreshOnInitialise: true,

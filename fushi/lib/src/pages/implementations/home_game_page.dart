@@ -199,6 +199,11 @@ class _HomeGamePageState extends State<HomeGamePage> {
     };
     return Material(
       type: MaterialType.transparency,
+      // 七个子区常驻 IndexedStack、各挂一份常量 selected 的页签：广播真实所在子区，
+      // 让隐藏页的页签跟着走，被切出来时指示条才有起点可滑（见
+      // [LibrarySectionFollowScope]）。
+      child: LibrarySectionFollowScope(
+        current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
       // 页签序里，停在诊断时横滑不响应（导航层级只对页签序负责）。
       child: SectionSwipeNavigator<GameSection>(
@@ -221,6 +226,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
             ),
         ],
         ),
+      ),
       ),
     );
   }

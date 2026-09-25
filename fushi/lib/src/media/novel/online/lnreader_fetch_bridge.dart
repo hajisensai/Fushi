@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
+
 /// 插件不许访问的主机：本机回环。
 ///
 /// 插件是第三方仓库的任意 JS，而 app 自己在本机开着 HTTP 服务（浏览器扩展查词
@@ -103,7 +106,12 @@ class LnReaderFetchBridge {
     this.maxBodyBytes = 32 * 1024 * 1024,
     this.isBlockedHost = isLnReaderBlockedHost,
     this.isBlockedAddress = isLnReaderBlockedAddress,
+    this.cloudflare,
   }) : _clientFactory = clientFactory;
+
+  /// Cloudflare 放行 cookie 与待解挑战；null 时不带持久 cookie、不记挑战
+  /// （单测 / 无 UI 场景）。见 [LnReaderCloudflare]。
+  final LnReaderCloudflare? cloudflare;
 
   final HttpClient Function() _clientFactory;
   HttpClient? _client;
@@ -130,6 +138,18 @@ class LnReaderFetchBridge {
   static const String defaultUserAgent =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
       '(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+  /// LNReader app `fetchApi` 给每个请求补的默认头（`makeInit`，插件显式给的
+  /// 优先）。只带 UA 的请求会被部分站点当脚本拒掉（2026-09 对 69shu 同一时刻
+  /// A/B：只带 UA 回 403，补上这组回 200）。`Connection` / `Accept-Encoding`
+  /// 交给 HttpClient 自己协商。
+  static const Map<String, String> defaultHeaders = <String, String>{
+    'user-agent': defaultUserAgent,
+    'accept': '*/*',
+    'accept-language': '*',
+    'sec-fetch-mode': 'cors',
+    'cache-control': 'max-age=0',
+  };
 
   /// 由 HttpClient 自己协商的头：插件显式写 `Accept-Encoding: br` 时 Dart 解
   /// 不开，交给 HttpClient（autoUncompress）；长度由 HttpClient 按真实体积写。
@@ -176,8 +196,14 @@ class LnReaderFetchBridge {
     Uint8List? body = rawBody is String && rawBody.isNotEmpty
         ? base64Decode(rawBody)
         : null;
-    headers.putIfAbsent('user-agent', () => defaultUserAgent);
+    defaultHeaders.forEach(
+      (String name, String value) => headers.putIfAbsent(name, () => value),
+    );
     final bool pluginCookie = headers.containsKey('cookie');
+    // 宿主脚本给每个请求标上发起的插件（挑战按插件记，页面才知道该给谁弹验证）。
+    final String? pluginId = rawRequest['plugin']?.toString();
+    final LnReaderCloudflare? cloudflare = this.cloudflare;
+    await cloudflare?.jar.ensureLoadedBestEffort();
 
     // 🔴 重定向手动跟：HttpClient 自动跟随时，一个指向 127.0.0.1 的 302 就能绕过
     // 上面的回环拦截。每一跳都重新过 [isLnReaderBlockedHost]。
@@ -238,6 +264,24 @@ class LnReaderFetchBridge {
         return <String, Object?>{'error': 'response too large'};
       }
     }
+    final Uint8List bytes = buffer.takeBytes();
+    if (cloudflare != null && pluginId != null) {
+      if (isLnReaderCloudflareChallenge(
+        statusCode: response.statusCode,
+        headers: response.headers,
+        body: bytes,
+      )) {
+        cloudflare.record(
+          pluginId,
+          LnReaderCloudflareChallenge(
+            url: current,
+            userAgent: headers['user-agent']!,
+          ),
+        );
+      } else {
+        cloudflare.clear(pluginId, current.host);
+      }
+    }
     final Map<String, String> responseHeaders = <String, String>{};
     response.headers.forEach((String name, List<String> values) {
       // 响应体已由 HttpClient 解压，原来的编码 / 长度头不再成立。
@@ -249,7 +293,7 @@ class LnReaderFetchBridge {
       'statusText': response.reasonPhrase,
       'url': current.toString(),
       'headers': responseHeaders,
-      'body': base64Encode(buffer.takeBytes()),
+      'body': base64Encode(bytes),
     };
   }
 
@@ -261,31 +305,70 @@ class LnReaderFetchBridge {
     return client;
   }
 
+  /// 按浏览器的宽松口径记下 `Set-Cookie`。
+  ///
+  /// 不用 `response.cookies`：Dart 的 [Cookie] 严格按 RFC 6265 校验，值里有空格 /
+  /// 逗号 / 引号的一条 cookie 就让它整体抛 FormatException，整个请求变成
+  /// `{error}`——而浏览器和 LNReader app（OkHttp）都照收。这里逐条解析，只丢
+  /// 真的解析不出名字的那条。
   void _rememberCookies(Uri uri, HttpClientResponse response) {
-    for (final Cookie cookie in response.cookies) {
-      final String domain = (cookie.domain ?? uri.host).replaceFirst(
-        RegExp(r'^\.'),
-        '',
-      );
+    for (final String raw
+        in response.headers[HttpHeaders.setCookieHeader] ?? const <String>[]) {
+      final List<String> parts = raw.split(';');
+      final int eq = parts.first.indexOf('=');
+      if (eq <= 0) continue;
+      final String name = parts.first.substring(0, eq).trim();
+      final String value = parts.first.substring(eq + 1).trim();
+      if (name.isEmpty) continue;
+      String domain = uri.host;
+      int? maxAge;
+      DateTime? expires;
+      for (final String attribute in parts.skip(1)) {
+        final int split = attribute.indexOf('=');
+        final String key =
+            (split < 0 ? attribute : attribute.substring(0, split))
+                .trim()
+                .toLowerCase();
+        final String argument = split < 0
+            ? ''
+            : attribute.substring(split + 1).trim();
+        switch (key) {
+          case 'domain' when argument.isNotEmpty:
+            domain = argument.replaceFirst(RegExp(r'^\.'), '');
+          case 'max-age':
+            maxAge = int.tryParse(argument) ?? maxAge;
+          case 'expires':
+            try {
+              expires = HttpDate.parse(argument);
+            } on Exception {
+              // 日期写坏了就当会话 cookie（浏览器同样忽略坏掉的 Expires）。
+            }
+        }
+      }
+      // RFC 6265 §5.3：两者都在时 Max-Age 优先。
+      final bool expired = maxAge != null
+          ? maxAge <= 0
+          : expires != null && expires.isBefore(DateTime.now());
       final Map<String, String> jar = _cookies.putIfAbsent(
         domain.toLowerCase(),
         () => <String, String>{},
       );
-      final DateTime? expires = cookie.expires;
-      final bool expired =
-          (cookie.maxAge != null && cookie.maxAge! <= 0) ||
-          (expires != null && expires.isBefore(DateTime.now()));
       if (expired) {
-        jar.remove(cookie.name);
+        jar.remove(name);
       } else {
-        jar[cookie.name] = cookie.value;
+        jar[name] = value;
       }
     }
   }
 
+  /// 持久 jar（Cloudflare 放行等）打底，本次运行站点下发的会话 cookie 覆盖同名项。
   String? _cookieHeaderFor(Uri uri) {
     final String host = uri.host.toLowerCase();
-    final Map<String, String> merged = <String, String>{};
+    final Map<String, String> merged = <String, String>{
+      for (final MangaCookie cookie
+          in cloudflare?.jar.cookiesFor(uri) ?? const <MangaCookie>[])
+        cookie.name: cookie.value,
+    };
     _cookies.forEach((String domain, Map<String, String> jar) {
       if (host == domain || host.endsWith('.$domain')) merged.addAll(jar);
     });

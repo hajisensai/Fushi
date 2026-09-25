@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 
@@ -37,12 +38,17 @@ class LnReaderManager extends ChangeNotifier {
     required HttpClient Function() httpClientFactory,
     this.builtinStoreUrl = kLnReaderOfficialStoreUrl,
     this.refreshOnInitialise = false,
+    this.cloudflare,
     int Function()? clock,
   }) : _httpClientFactory = httpClientFactory,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final Directory rootDirectory;
   final LnReaderRuntime runtime;
+
+  /// 与 [runtime] 的出站桥共用的 Cloudflare 放行状态；页面据此给出「站点验证」。
+  /// null = 不支持验证（单测）。
+  final LnReaderCloudflare? cloudflare;
 
   /// 内置仓库地址。生产恒为 [kLnReaderOfficialStoreUrl]；单测指向本地服务器。
   final String builtinStoreUrl;

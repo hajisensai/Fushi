@@ -9,8 +9,7 @@ import 'package:fushi/src/media/manga/aidoku/aidoku_network_session.dart';
 /// 这块覆盖原先寄生在 `aidoku_runtime_cloudflare_test.dart` 里——那份测试整体
 /// 驱动的是 iOS 的 MethodChannel runtime，已随 Aidoku 的 iOS 宿主一起按 App Store
 /// 合规移除。但 `runSuppressed` 本身不是 iOS 的东西：全源搜索（`manga_global_search_runner`）
-/// 与发现页的来源自动匹配（`manga_source_matcher`）在**所有**有 Aidoku 的平台上都
-/// 靠它把后台扇出里的 Cloudflare 挑战压成状态码，而不是无操作弹出全屏解题 WebView。
+/// 在**所有**有 Aidoku 的平台上都靠它把后台扇出里的 Cloudflare 挑战压成状态码，而不是无操作弹出全屏解题 WebView。
 /// 实现没了就把测试一起删，会让这条仍在生产路径上的不变式变成零覆盖。
 void main() {
   tearDown(() {

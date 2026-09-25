@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
@@ -236,6 +237,13 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
     );
   }
 
+  Widget _cloudflareAction() => LnReaderCloudflareAction(
+    cloudflare: widget.manager.cloudflare,
+    pluginId: widget.plugin.id,
+    onVerified: () =>
+        unawaited(_info == null ? _initialise() : _load(reset: true)),
+  );
+
   Widget _buildResults() {
     if (_loading && _items.isEmpty) {
       return Center(child: adaptiveIndicator(context: context));
@@ -256,13 +264,25 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
                 icon: const Icon(Icons.refresh),
                 label: Text(t.refresh),
               ),
+              const SizedBox(height: 8),
+              _cloudflareAction(),
             ],
           ),
         ),
       );
     }
     if (_items.isEmpty) {
-      return Center(child: Text(t.novel_source_no_results));
+      // 被 Cloudflare 拦下的插件多半不抛错、只回空列表（fetchText 吞掉 403）。
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(t.novel_source_no_results),
+            const SizedBox(height: 12),
+            _cloudflareAction(),
+          ],
+        ),
+      );
     }
     final Map<String, String> headers =
         _info?.imageHeaders ?? const <String, String>{};

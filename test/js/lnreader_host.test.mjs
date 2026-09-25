@@ -210,3 +210,196 @@ test('章节 → XHTML：去脚本 / 事件 / 链接，图片改名并回报原�
   );
   assert.equal(doc.getElementsByTagName('parsererror').length, 0, 'XHTML 必须良构');
 });
+
+// 官方 kakuyomu 插件 1.0.0 的形态：热门读已不存在的旧排行榜 DOM（恒空），其余不动。
+function kakuyomuPlugin(version) {
+  return `
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+var fetch_1 = require("@libs/fetch");
+var cheerio_1 = require("cheerio");
+var KakuyomuPlugin = (function () {
+  function KakuyomuPlugin() {
+    this.id = "kakuyomu"; this.name = "kakuyomu"; this.site = "https://kakuyomu.jp";
+    this.version = "${version}";
+    this.filters = {
+      genre: { type: "Picker", label: "Genre", value: "all", options: [] },
+      period: { type: "Picker", label: "Period", value: "entire", options: [] },
+    };
+  }
+  KakuyomuPlugin.prototype.popularNovels = async function () {
+    var $ = (0, cheerio_1.load)(await (0, fetch_1.fetchText)(this.site + "/rankings/all/entire"));
+    return $(".widget-media-genresWorkList-right > .widget-work").map(function () { return {}; }).get();
+  };
+  KakuyomuPlugin.prototype.searchNovels = async function () { return []; };
+  KakuyomuPlugin.prototype.parseNovel = async function (path) { return { path: path, name: "" }; };
+  KakuyomuPlugin.prototype.parseChapter = async function () { return ""; };
+  return KakuyomuPlugin;
+}());
+exports.default = new KakuyomuPlugin();
+`;
+}
+
+// 2026-09 真站排行榜页的形态：Next.js，排名在内嵌 Apollo 缓存的 rankedWorks 里。
+function kakuyomuRankingPage(query, ids) {
+  const state = {
+    ROOT_QUERY: {
+      __typename: 'Query',
+      [`rankedWorks(${JSON.stringify(query)})`]: {
+        __typename: 'WorkConnection',
+        nodes: ids.map((id) => ({ __ref: `Work:${id}` })),
+      },
+    },
+  };
+  for (const id of ids) {
+    state[`Work:${id}`] = { __typename: 'Work', id, title: `作品${id}`, author: { __ref: 'UserAccount:1' } };
+  }
+  state[`Work:${ids[0]}`].adminCoverImageUrl = 'https://cdn.kakuyomu.jp/cover.jpg';
+  const data = JSON.stringify({ props: { pageProps: { __APOLLO_STATE__: state } } });
+  return '<!doctype html><div class="RankingWorkBox_workCard__8UBvb"></div>'
+    + `<script id="__NEXT_DATA__" type="application/json">${data}</script>`;
+}
+
+test('kakuyomu 1.0.0：热门改读排行榜页内嵌的 rankedWorks（顺序 / 筛选 / 翻页）', async () => {
+  const { ln, requests } = createHost({
+    'https://kakuyomu.jp/rankings/all/entire?work_variation=long': {
+      body: kakuyomuRankingPage({ first: 100, genre: null, period: 'ENTIRE', workVariation: 'LONG' }, ['30', '10', '20']),
+    },
+    'https://kakuyomu.jp/rankings/fantasy/daily?work_variation=long&page=2': {
+      body: kakuyomuRankingPage({ after: 'OTk', first: 100, genre: 'FANTASY', period: 'DAILY', workVariation: 'LONG' }, ['40']),
+    },
+  });
+  ln.load('kakuyomu', kakuyomuPlugin('1.0.0'), {});
+  const items = JSON.parse(JSON.stringify(await ln.popular('kakuyomu', 1, false, null)));
+  assert.deepEqual(items.map((item) => item.path), ['/works/30', '/works/10', '/works/20']);
+  assert.equal(items[0].name, '作品30');
+  assert.equal(items[0].cover, 'https://cdn.kakuyomu.jp/cover.jpg');
+  assert.match(items[1].cover, /coverNotAvailable/);
+  const page2 = await ln.popular('kakuyomu', 2, false, {
+    genre: { type: 'Picker', value: 'fantasy' },
+    period: { type: 'Picker', value: 'daily' },
+  });
+  assert.equal(page2[0].path, '/works/40');
+  assert.equal(requests.length, 2);
+});
+
+test('kakuyomu 补丁在上游发新版后自动退役', async () => {
+  const { ln, requests } = createHost({});
+  ln.load('kakuyomu', kakuyomuPlugin('1.0.1'), {});
+  assert.deepEqual(JSON.parse(JSON.stringify(await ln.popular('kakuyomu', 1, false, null))), []);
+  assert.equal(requests[0].url, 'https://kakuyomu.jp/rankings/all/entire', '走的是插件自己的实现');
+});
+
+test('插件裸调 fetch 也走宿主桥（LNReader app 里全局 fetch 是无 CORS 的原生网络）', async () => {
+  const { ln, requests } = createHost({
+    'https://bare.example/api': { body: '[{"n":"裸","p":"/b/1"}]', headers: { 'content-type': 'application/json' } },
+  });
+  ln.load('bare', `
+exports.default = {
+  id: "bare", name: "Bare", site: "https://bare.example/", version: "1.0.0",
+  popularNovels: async function () {
+    var res = await fetch("https://bare.example/api", { headers: { Referer: "https://bare.example/" } });
+    return (await res.json()).map(function (x) { return { name: x.n, path: x.p }; });
+  },
+  searchNovels: async function () { return []; },
+  parseNovel: async function (path) { return { path: path }; },
+  parseChapter: async function () { return ""; },
+};`, {});
+  const items = await ln.popular('bare', 1, false, null);
+  assert.equal(items[0].name, '裸');
+  assert.equal(requests[0].headers.referer, 'https://bare.example/');
+});
+
+test('每个请求标上发起插件；国际化域名转 punycode 再过桥', async () => {
+  const { ln, requests } = createHost({
+    'https://xn--80ac9aeh6f.xn--p1ai/books': { body: '[]', headers: { 'content-type': 'application/json' } },
+  });
+  ln.load('rnrf', `
+var fetch_1 = require("@libs/fetch");
+exports.default = {
+  id: "rnrf", name: "RNRF", site: "https://ранобэ.рф/", version: "1.0.0",
+  popularNovels: async function () { return (await (0, fetch_1.fetchApi)("https://ранобэ.рф/books")).json(); },
+  searchNovels: async function () { return []; },
+  parseNovel: async function (path) { return { path: path }; },
+  parseChapter: async function () { return ""; },
+};`, {});
+  assert.deepEqual(JSON.parse(JSON.stringify(await ln.popular('rnrf', 1, false, null))), []);
+  assert.equal(requests[0].url, 'https://xn--80ac9aeh6f.xn--p1ai/books');
+  assert.equal(requests[0].plugin, 'rnrf');
+});
+
+test('fetchProto：gRPC-web 帧（1 字节标志 + 4 字节大端长度）编码请求、解码响应', async () => {
+  const proto = `syntax = "proto3";
+message Req { string slug = 1; }
+message Res { string title = 1; int32 count = 2; }`;
+  const response = Buffer.concat([
+    Buffer.from([0, 0, 0, 0, 9]),
+    // Res{title:"Novel", count:3}
+    Buffer.from([0x0a, 0x05, 0x4e, 0x6f, 0x76, 0x65, 0x6c, 0x10, 0x03]),
+    // 尾随 trailer 帧不应干扰第一帧
+    Buffer.from([0x80, 0, 0, 0, 2, 0x61, 0x62]),
+  ]);
+  const { ln, requests } = createHost({
+    'https://grpc.example/api/Get': {
+      body: response.toString('hex'),
+      encoding: 'hex',
+      headers: { 'content-type': 'application/grpc-web+proto' },
+    },
+  });
+  ln.load('proto', `
+var fetch_1 = require("@libs/fetch");
+var PROTO = ${JSON.stringify(proto)};
+exports.default = {
+  id: "proto", name: "Proto", site: "https://grpc.example/", version: "1.0.0",
+  popularNovels: async function () {
+    var res = await (0, fetch_1.fetchProto)(
+      { proto: PROTO, requestType: "Req", requestData: { slug: "ab" }, responseType: "Res" },
+      "https://grpc.example/api/Get",
+      { headers: { "content-type": "application/grpc-web+proto" } });
+    return [{ name: res.title + "#" + res.count, path: "/n" }];
+  },
+  searchNovels: async function () { return []; },
+  parseNovel: async function (path) { return { path: path }; },
+  parseChapter: async function () { return ""; },
+};`, {});
+  const items = await ln.popular('proto', 1, false, null);
+  assert.equal(items[0].name, 'Novel#3');
+  assert.equal(requests[0].method, 'POST');
+  assert.equal(requests[0].headers['content-type'], 'application/grpc-web+proto');
+  // Req{slug:"ab"} = 0a 02 61 62，前缀 00 + 长度 4
+  assert.equal(Buffer.from(requests[0].body, 'base64').toString('hex'), '00000000040a026162');
+});
+
+test('dayjs 带 LNReader app 的全局扩展（madara 系 format("LL") 不再原样吐 "LL"）', () => {
+  const { ln } = createHost({});
+  ln.load('dates', `
+var dayjs = require("dayjs");
+exports.default = {
+  id: "dates", site: "https://d.example/", version: "1.0.0",
+  name: [
+    dayjs("2024-03-05").format("LL"),
+    dayjs("05/03/2024", "DD/MM/YYYY").format("YYYY-MM-DD"),
+    typeof dayjs().fromNow,
+    dayjs.duration(90, "minutes").asHours(),
+  ].join("|"),
+  popularNovels: async function () { return []; },
+};`, {});
+  assert.equal(ln.describe('dates').name, 'March 5, 2024|2024-03-05|function|1.5');
+});
+
+test('@libs/aes 与 @libs/utils：与 LNReader 同一套 AES-GCM（wtrlab 解密章节用）', () => {
+  const { ln } = createHost({});
+  ln.load('aes', `
+var aes_1 = require("@libs/aes");
+var utils_1 = require("@libs/utils");
+var key = new Uint8Array(32), iv = new Uint8Array(12);
+var sealed = aes_1.gcm(key, iv).encrypt(utils_1.utf8ToBytes("本文"));
+var opened = utils_1.bytesToUtf8(aes_1.gcm(key, iv).decrypt(sealed));
+exports.default = {
+  id: "aes", name: opened, site: "https://aes.example/", version: String(sealed.length),
+  popularNovels: async function () { return []; },
+};`, {});
+  const info = ln.describe('aes');
+  assert.equal(info.name, '本文');
+  assert.equal(info.version, String(6 + 16), '密文 = 明文 6 字节 + 16 字节 tag');
+});
