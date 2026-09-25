@@ -1675,21 +1675,26 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   }
   // Calibration probes consume game clicks too. They require the same
   // acknowledged shield and immutable glyph snapshot as ordinary lookup.
+  // Sample the LL ownership before the shared-memory status. Read the other
+  // way round, a release acknowledged and retired between the two reads would
+  // pair a stale pending status with an inactive worker and hide the surface
+  // under the still-queued up message.
+  const bool own_ll_transaction =
+      fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_);
   const ShieldHandshakeState handshake = EnsureShieldHandshake();
   if (handshake == ShieldHandshakeState::kPending && surface_visible_ &&
       !layout_dirty_ &&
       (mode_ == Mode::kConfigured || mode_ == Mode::kCalibration) &&
-      !ShieldFaulted() && OwnGlyphTransactionInFlight() &&
-      fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_)) {
+      own_ll_transaction && OwnGlyphTransactionInFlight()) {
     // Our own glyph click (its down or its release tail) is waiting for the
     // injected acknowledgement. That input is already owned by this surface,
     // not a lost handshake: hiding here cancelled the in-flight gesture, so
     // the click was swallowed without a lookup whenever any sync landed inside
     // the ~200 ms ack window. Keep the published surface only while the LL
-    // worker still owns that transaction. If the shield never answers, the
-    // worker fails it open after its reconciliation timeout: it revokes the
-    // snapshot, clears the transaction and posts the abort message, so the
-    // next sync falls through to the pending-handshake hide below.
+    // worker still owns that transaction. If the shield never answers or
+    // reports a fault, the worker fails it open after the physical up: it
+    // revokes the snapshot, clears the transaction and posts the abort
+    // message, so the next sync falls through to the pending-handshake hide.
     return;
   }
   if (handshake != ShieldHandshakeState::kReady) {

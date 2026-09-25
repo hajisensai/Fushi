@@ -42,12 +42,21 @@ void main() {
     expect(keep, contains('!layout_dirty_'));
     // The shield acknowledgement alone is not proof the click is still live:
     // an unanswered request stays pending after the LL worker fails the
-    // transaction open, and a faulted shield must reach the normal gate.
+    // transaction open. The LL ownership is sampled before the shared-memory
+    // read so a release retired in between cannot pair with a stale pending.
+    final int ownership = sync.indexOf(
+      'fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_)',
+    );
+    expect(ownership, isNonNegative);
+    expect(
+      ownership < ensure,
+      isTrue,
+      reason: 'LL ownership must be read before EnsureShieldHandshake()',
+    );
     expect(
       keep,
-      contains('fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_)'),
+      contains('own_ll_transaction && OwnGlyphTransactionInFlight()'),
     );
-    expect(keep, contains('!ShieldFaulted()'));
   });
 
   test('click judgement uses the full drag rectangle and logs drops', () {
