@@ -5547,5 +5547,7 @@
   "game_line_bulk_text_hint": "Bulk text detected. Character lookup is paused.",
   "game_lookup_samples_auto_align": "Align from screenshot",
   "game_lookup_samples_hint": "Wait until the line is fully visible, then capture it. Capture several different lines before adjusting the layout.",
-  "game_lookup_samples_capture_surface_not_ready": "The lookup layer is switching state and cannot capture right now. Wait a second or two and try again; if it keeps failing, reattach the game."
+  "game_lookup_samples_capture_surface_not_ready": "The lookup layer is switching state and cannot capture right now. Wait a second or two and try again; if it keeps failing, reattach the game.",
+  "game_lookup_samples_grid_advance_decrease": "Narrow cells by 0.1%",
+  "game_lookup_samples_grid_advance_increase": "Widen cells by 0.1%"
 }

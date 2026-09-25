@@ -721,24 +721,98 @@ void main() {
     await tester.tap(manualLayout);
     await tester.pumpAndSettle();
 
-    final Slider width = tester.widget<Slider>(
+    Slider slider() => tester.widget<Slider>(
       find.byKey(const ValueKey<String>('calibration-grid-advance-slider')),
     );
-    expect(width.value, closeTo(0.8, 1e-8));
-    expect(width.divisions, 3700);
-    width.onChanged!(1.1);
+    // A narrow ±15 % span around the starting width with 0.1 % steps.
+    expect(slider().value, closeTo(0.8, 1e-8));
+    expect(slider().min, closeTo(0.65, 1e-8));
+    expect(slider().max, closeTo(0.95, 1e-8));
+    expect(slider().divisions, 300);
+    expect(find.text('80.0%'), findsOneWidget);
+    slider().onChanged!(0.9);
     await tester.pump();
 
-    expect(canvas(tester).grid!.advancePerClientHeight, closeTo(0.055, 1e-8));
-    expect(canvas(tester).layoutRect!.width, closeTo(0.725, 1e-8));
+    // 20 cells × 0.005 advance × 600/800 = 0.075 wider box.
+    expect(canvas(tester).grid!.advancePerClientHeight, closeTo(0.045, 1e-8));
+    expect(canvas(tester).layoutRect!.width, closeTo(0.575, 1e-8));
+    expect(find.text('90.0%'), findsOneWidget);
     await tester.tap(find.text(t.game_lookup_samples_apply));
     await tester.pumpAndSettle();
     expect(
       store.saved.last.layout.cellGrid!.advancePerClientHeight,
-      closeTo(0.055, 1e-8),
+      closeTo(0.045, 1e-8),
     );
-    expect(store.saved.last.rect.width, closeTo(0.725, 1e-8));
+    expect(store.saved.last.rect.width, closeTo(0.575, 1e-8));
   });
+
+  testWidgets(
+    'grid width returns to the exact box and never leaves the image',
+    (WidgetTester tester) async {
+      const GalLookupCellGridV1 grid = GalLookupCellGridV1(
+        advancePerClientHeight: 0.04,
+        lineAdvancePerClientHeight: 0.06,
+        cellHeightPerClientHeight: 0.05,
+        columns: 20,
+        continuationIndent: 0,
+        quotedContinuationIndent: 1,
+      );
+      // Only 0.05 of free width to the right: the edge, not the span, limits.
+      const GalLookupNormalizedRectV1 rect = GalLookupNormalizedRectV1(
+        left: 0.35,
+        top: 0.6,
+        width: 0.6,
+        height: 0.25,
+      );
+      await _open(
+        tester,
+        store: _MemoryStore(
+          draft: _draft(
+            rect: rect,
+            layout: const GalLookupTextLayoutV1(cellGrid: grid),
+          ),
+        ),
+      );
+      final Finder manualLayout = find.byKey(
+        const ValueKey<String>('calibration-manual-layout'),
+      );
+      await tester.ensureVisible(manualLayout);
+      await tester.tap(manualLayout);
+      await tester.pumpAndSettle();
+      Slider slider() => tester.widget<Slider>(
+        find.byKey(const ValueKey<String>('calibration-grid-advance-slider')),
+      );
+      // 0.05 free width / (20 × 600/800) = 0.00333 advance → ratio ≈ 0.8667.
+      expect(slider().max, closeTo(0.8 + 0.05 / 15 / 0.05, 1e-8));
+      for (final double overshoot in <double>[5.0, 0.95, 0.9]) {
+        slider().onChanged!(overshoot);
+        await tester.pump();
+        expect(canvas(tester).layoutRect!.right, lessThanOrEqualTo(1 + 1e-9));
+        expect(canvas(tester).layoutRect!.width, greaterThan(0.6 - 1e-9));
+      }
+      slider().onChanged!(0.7);
+      await tester.pump();
+      slider().onChanged!(0.8);
+      await tester.pump();
+      expect(canvas(tester).grid!.advancePerClientHeight, closeTo(0.04, 1e-9));
+      expect(canvas(tester).layoutRect!.left, closeTo(0.35, 1e-9));
+      expect(canvas(tester).layoutRect!.width, closeTo(0.6, 1e-9));
+
+      final Finder increase = find.byKey(
+        const ValueKey<String>('calibration-grid-advance-increase'),
+      );
+      await tester.ensureVisible(increase);
+      await tester.tap(increase);
+      await tester.pump();
+      expect(find.text('80.1%'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('calibration-grid-advance-decrease')),
+      );
+      await tester.pump();
+      expect(find.text('80.0%'), findsOneWidget);
+      expect(canvas(tester).layoutRect!.width, closeTo(0.6, 1e-9));
+    },
+  );
 
   testWidgets('grid editing uses visual handles for uniform cell correction', (
     WidgetTester tester,

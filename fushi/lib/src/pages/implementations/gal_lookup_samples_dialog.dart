@@ -90,6 +90,11 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   bool _fitAllSamples = false;
   bool _manualGridEdit = false;
   bool _specialCharacterAdvancesEnabled = false;
+
+  /// Grid advance and blue-box width when the current grid-width adjustment
+  /// began. The slider derives the box from it; any other grid or box edit
+  /// (canvas drag, auto-align, new selection) clears it.
+  ({double advance, double width})? _advanceBaseline;
   late final TextEditingController _specialCharacterController;
   Timer? _autoSaveTimer;
   Future<bool>? _saveInFlight;
@@ -167,6 +172,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         _rect = draft.searchRect;
         _layoutRect = draft.rect;
         _layout = _withoutQuotedFilter(draft.layout);
+        _advanceBaseline = null;
         _specialCharacterAdvancesEnabled = _layout.characterAdvances.isNotEmpty;
         _layoutReferenceClient = draft.layoutReferenceClient;
         _layoutCaptureMetadata = draft.layoutCaptureMetadata;
@@ -607,6 +613,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       } else {
         _layoutRect = result.draft!.rect;
         _layout = result.draft!.layout;
+        _advanceBaseline = null;
         _layoutReferenceClient =
             result.draft!.layoutReferenceClient ??
             fittingSamples.first.capture.referenceClient;
@@ -632,11 +639,17 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
 
   void _setLayoutRect(GalLookupNormalizedRectV1 rect) {
     if (!rect.isValid) return;
+    _advanceBaseline = null;
     _layoutRect = rect;
     _changed();
   }
 
   void _setGrid(GalLookupCellGridV1 grid) {
+    _advanceBaseline = null;
+    _applyGrid(grid);
+  }
+
+  void _applyGrid(GalLookupCellGridV1 grid) {
     if (!grid.isValid) return;
     _layout = GalLookupTextLayoutV1(
       fontFamily: _layout.fontFamily,
@@ -678,41 +691,89 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     _setGrid(next);
   }
 
+  /// Half-width of the grid-width slider around its baseline, as a fraction of
+  /// the cell height. The full 15%-200% range made one pixel of travel worth
+  /// several tenths of a percent.
+  static const double _advanceSliderSpan = 0.15;
+
+  /// One button/keyboard step of the grid-width control (0.1 %).
+  static const double _advanceStep = 0.001;
+
+  GalLookupReferenceClientV1? get _gridClient =>
+      _layoutReferenceClient ?? _sample?.capture.referenceClient;
+
+  /// Normalized blue-box width gained per unit of grid advance.
+  double _boxWidthPerAdvance(
+    GalLookupCellGridV1 grid,
+    GalLookupReferenceClientV1 client,
+  ) =>
+      (grid.effectiveLineWidthInCells + (grid.hangingPunctuation ? 1 : 0)) *
+      client.heightPx /
+      client.widthPx;
+
+  ({double advance, double width}) _advanceBaselineFor(
+    GalLookupCellGridV1 grid,
+  ) =>
+      _advanceBaseline ??
+      (advance: grid.advancePerClientHeight, width: _layoutRect.width);
+
+  /// Slider bounds as advance/cell-height ratios: a narrow span around the
+  /// baseline, never letting the box leave the screenshot or collapse.
+  ({double min, double max}) _gridAdvanceRange(GalLookupCellGridV1 grid) {
+    final double cell = grid.cellHeightPerClientHeight;
+    final ({double advance, double width}) base = _advanceBaselineFor(grid);
+    final double baseRatio = base.advance / cell;
+    double minimum = math.max(0.001 / cell, baseRatio - _advanceSliderSpan);
+    double maximum = math.min(0.25 / cell, baseRatio + _advanceSliderSpan);
+    final GalLookupReferenceClientV1? client = _gridClient;
+    if (client != null) {
+      final double perAdvance = _boxWidthPerAdvance(grid, client);
+      final double minimumWidth = math.min(
+        base.width,
+        math.max(0.001, 8 / client.widthPx),
+      );
+      maximum = math.min(
+        maximum,
+        (base.advance + (1 - _layoutRect.left - base.width) / perAdvance) /
+            cell,
+      );
+      minimum = math.max(
+        minimum,
+        (base.advance - (base.width - minimumWidth) / perAdvance) / cell,
+      );
+    }
+    final double current = grid.advancePerClientHeight / cell;
+    return (min: math.min(minimum, current), max: math.max(maximum, current));
+  }
+
   void _setGridAdvanceRatio(double ratio) {
     final GalLookupCellGridV1? grid = _layout.cellGrid;
     if (grid == null || !ratio.isFinite) return;
-    final double nextAdvance = (grid.cellHeightPerClientHeight * ratio)
-        .clamp(0.001, 0.25)
-        .toDouble();
+    final ({double min, double max}) range = _gridAdvanceRange(grid);
+    final double nextAdvance =
+        (grid.cellHeightPerClientHeight * ratio.clamp(range.min, range.max))
+            .clamp(0.001, 0.25)
+            .toDouble();
     if ((nextAdvance - grid.advancePerClientHeight).abs() < 0.0000001) {
       return;
     }
-    final GalLookupCellGridV1 next = grid.copyWith(
-      advancePerClientHeight: nextAdvance,
-    );
-    final GalLookupReferenceClientV1? client =
-        _layoutReferenceClient ?? _sample?.capture.referenceClient;
+    // Derive the box from the baseline instead of accumulating deltas, so a
+    // value that returns to where it started restores the exact same box.
+    final ({double advance, double width}) base = _advanceBaseline ??=
+        _advanceBaselineFor(grid);
+    final GalLookupReferenceClientV1? client = _gridClient;
     if (client != null) {
-      final double widthDelta =
-          (nextAdvance - grid.advancePerClientHeight) *
-          client.heightPx /
-          client.widthPx;
-      final double minWidth = math.min(
-        _layoutRect.width,
-        math.max(0.001, 8 / client.widthPx),
-      );
-      final double right =
-          (_layoutRect.right + widthDelta * grid.effectiveLineWidthInCells)
-              .clamp(_layoutRect.left + minWidth, 1.0)
-              .toDouble();
+      final double width =
+          base.width +
+          (nextAdvance - base.advance) * _boxWidthPerAdvance(grid, client);
       _layoutRect = GalLookupNormalizedRectV1(
         left: _layoutRect.left,
         top: _layoutRect.top,
-        width: right - _layoutRect.left,
+        width: width,
         height: _layoutRect.height,
       );
     }
-    _setGrid(next);
+    _applyGrid(grid.copyWith(advancePerClientHeight: nextAdvance));
   }
 
   void _setCharacterAdvances(List<GalLookupCharacterAdvanceV1> advances) {
@@ -1312,26 +1373,19 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   }
 
   Widget _gridAdvanceControl(GalLookupCellGridV1 grid) {
-    final double currentRatio =
-        grid.advancePerClientHeight / grid.cellHeightPerClientHeight;
-    final double validMinimum = 0.001 / grid.cellHeightPerClientHeight;
-    final double validMaximum = 0.25 / grid.cellHeightPerClientHeight;
-    // Keep an older, unusual but valid ratio visible instead of silently
-    // snapping the slider to the usual 15%--200% range.
-    final double minimum = math.max(
-      validMinimum,
-      math.min(GalLookupCharacterAdvanceV1.minAdvanceRatio, currentRatio),
-    );
-    final double maximum = math.min(
-      validMaximum,
-      math.max(GalLookupCharacterAdvanceV1.maxAdvanceRatio, currentRatio),
-    );
-    final double value = currentRatio.clamp(minimum, maximum).toDouble();
-    // Keep the displayed value as a whole percentage, but make each internal
-    // slider step only 0.05% of the normal cell width. The previous 0.5%
-    // step was still too coarse for correcting accumulated line drift.
-    final int divisions = ((maximum - minimum) * 2000).round().clamp(1, 8000);
-    final String formattedValue = '${(value * 100).round()}%';
+    final ({double min, double max}) range = _gridAdvanceRange(grid);
+    final double value =
+        (grid.advancePerClientHeight / grid.cellHeightPerClientHeight)
+            .clamp(range.min, range.max)
+            .toDouble();
+    // 0.1 % per slider step, keyboard arrow and button press.
+    final int divisions = ((range.max - range.min) / _advanceStep)
+        .round()
+        .clamp(1, 4000);
+    final String formattedValue = '${(value * 100).toStringAsFixed(1)}%';
+    // Snap button steps to the 0.1 % grid so repeated presses stay exact.
+    double stepped(int direction) =>
+        ((value / _advanceStep).round() + direction) * _advanceStep;
     return Column(
       key: const ValueKey<String>('calibration-grid-advance'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1339,13 +1393,34 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         Row(
           children: <Widget>[
             Expanded(child: Text(t.game_lookup_samples_grid_advance)),
-            Text(formattedValue),
+            IconButton(
+              key: const ValueKey<String>('calibration-grid-advance-decrease'),
+              visualDensity: VisualDensity.compact,
+              tooltip: t.game_lookup_samples_grid_advance_decrease,
+              onPressed: _busy || value <= range.min
+                  ? null
+                  : () => _setGridAdvanceRatio(stepped(-1)),
+              icon: const Icon(Icons.remove),
+            ),
+            SizedBox(
+              width: 56,
+              child: Text(formattedValue, textAlign: TextAlign.center),
+            ),
+            IconButton(
+              key: const ValueKey<String>('calibration-grid-advance-increase'),
+              visualDensity: VisualDensity.compact,
+              tooltip: t.game_lookup_samples_grid_advance_increase,
+              onPressed: _busy || value >= range.max
+                  ? null
+                  : () => _setGridAdvanceRatio(stepped(1)),
+              icon: const Icon(Icons.add),
+            ),
           ],
         ),
         Slider(
           key: const ValueKey<String>('calibration-grid-advance-slider'),
-          min: minimum,
-          max: maximum,
+          min: range.min,
+          max: range.max,
           divisions: divisions,
           value: value,
           label: formattedValue,
@@ -1573,6 +1648,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
   void _setSearchRect(GalLookupNormalizedRectV1 rect) {
     _rect = rect;
     _layoutRect = rect;
+    _advanceBaseline = null;
     _manualGridEdit = false;
     // A new crop needs a new fit; never apply stale geometry from another crop.
     _layout = copyGalCalibrationLayout(_layout, clearCellGrid: true);
