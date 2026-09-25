@@ -169,15 +169,38 @@ class _FfmpegHttpHeaderArgs {
 /// （[ffmpegSupportsHlsSegmentExtensionOptions]）——它们是 hls demuxer 的私有选项，
 /// 喂给 mp4 输入或老版本 ffmpeg 都是致命的 `Option not found`，所以由知道这两件事的
 /// 宿主算好再交进来，这里不猜。
+/// [disableHlsSegmentPrefetch]：输入是 HLS（以播放器的 `file-format` 为准）**且**当前
+/// ffmpeg 认得 `http_multiple`（[ffmpegSupportsHlsHttpMultipleOption]）。制卡只裁几秒，
+/// hls demuxer 默认另开一条连接预取**下一个**分片（为连续播放设计）；片段落在单个分片
+/// 里时那条预取整片白下，还和真正要的分片抢带宽。关掉它：实测限速 HLS 上音频 + 动图
+/// 两路从 4.5 秒降到 3.8 秒，片段跨分片时也不更慢。它同样是 hls demuxer 的私有选项——
+/// 喂给 mp4 输入或不认得它的 ffmpeg 是致命的 `Option not found`（实测），所以与
+/// [relaxHlsSegmentExtensions] 同一口径：宿主按实际后端探测后才置真。
+/// [input]：ffmpeg 实际该读的地址；null = 原样读登记时的地址。master 播放列表会被宿主
+/// 预先解析成播放器默认选中的那一档变体（见 [ffmpegRemoteInputFor]）。
 class FfmpegRemoteInputRoute {
   const FfmpegRemoteInputRoute({
     this.httpProxy,
+    this.disableHlsSegmentPrefetch = false,
     this.relaxHlsSegmentExtensions = false,
+    this.input,
   });
 
   final String? httpProxy;
+  final bool disableHlsSegmentPrefetch;
   final bool relaxHlsSegmentExtensions;
+  final String? input;
 }
+
+/// 制卡 ffmpeg 对 [inputPath] 实际该读的地址：宿主登记过替代地址就用它，否则原样。
+///
+/// 在线视频源常直接给 HLS **master** 播放列表。ffmpeg 打开 master 时 hls demuxer 会把
+/// **每一档**变体的播放列表和开头两个分片都拉下来做格式探测，再只用其中一档——三档的
+/// master 上，音频与动图两路 ffmpeg 各白下一遍，实测比直接读变体慢 60%（限速 HLS：
+/// 7.3 秒 → 4.5 秒）。宿主在点击制卡时就开始把 master 解析成播放器默认选的那一档
+/// （最高码率，mpv 与 ffmpeg 默认选择一致），这里按输入地址取回。
+String ffmpegRemoteInputFor(String inputPath) =>
+    ffmpegRemoteInputRouteResolver?.call(inputPath)?.input ?? inputPath;
 
 /// 宿主装配点：给定 ffmpeg 输入地址，返回该怎么连；null = 直连（既有行为）。
 ///
@@ -188,7 +211,21 @@ class FfmpegRemoteInputRoute {
 FfmpegRemoteInputRoute? Function(String inputPath)?
     ffmpegRemoteInputRouteResolver;
 
-Future<bool>? _hlsSegmentExtensionOptionsSupport;
+Future<String>? _hlsDemuxerHelpText;
+
+/// 当前后端 ffprobe 的 `-h demuxer=hls` 帮助文本（进程内只问一次，失败按空文本）。
+/// hls demuxer 私有选项的能力判断都查它，不按平台或版本号写死。
+Future<String> _hlsDemuxerHelp() => _hlsDemuxerHelpText ??= () async {
+      try {
+        final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+          const <String>['-hide_banner', '-h', 'demuxer=hls'],
+          const Duration(seconds: 15),
+        );
+        return result.output;
+      } on Object {
+        return '';
+      }
+    }();
 
 /// 当前 ffmpeg 后端（桌面捆绑 / `FUSHI_FFMPEG` / 移动端 ffmpeg-kit）是否认得
 /// `-allowed_segment_extensions` 与 `-extension_picky`。
@@ -201,23 +238,21 @@ Future<bool>? _hlsSegmentExtensionOptionsSupport;
 /// 问的是同一构建的 **ffprobe**：帮助文本写 stdout，而 [FfmpegBackend.run] 只收 stderr
 /// （ffmpeg 的日志 / 进度都在那），[FfmpegBackend.runProbe] 才收 stdout。ffprobe 与 ffmpeg
 /// 链同一个 libavformat——桌面捆绑的 ffmpeg-min 目录里两者成对，移动端 ffmpeg-kit 也是。
-Future<bool> ffmpegSupportsHlsSegmentExtensionOptions() =>
-    _hlsSegmentExtensionOptionsSupport ??= () async {
-      try {
-        final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
-          const <String>['-hide_banner', '-h', 'demuxer=hls'],
-          const Duration(seconds: 15),
-        );
-        return result.output.contains('allowed_segment_extensions') &&
-            result.output.contains('extension_picky');
-      } on Object {
-        return false;
-      }
-    }();
+Future<bool> ffmpegSupportsHlsSegmentExtensionOptions() async {
+  final String help = await _hlsDemuxerHelp();
+  return help.contains('allowed_segment_extensions') &&
+      help.contains('extension_picky');
+}
+
+/// 当前 ffmpeg 后端的 hls demuxer 是否认得 `-http_multiple`（关分片预取用）。与
+/// [ffmpegSupportsHlsSegmentExtensionOptions] 同一次探测：这个私有选项喂给不认得它的
+/// 构建（`FUSHI_FFMPEG` 指到的老版本等）同样致命，不能只凭「是 HLS」就加。
+Future<bool> ffmpegSupportsHlsHttpMultipleOption() async =>
+    (await _hlsDemuxerHelp()).contains('http_multiple');
 
 @visibleForTesting
 void debugResetFfmpegHlsSegmentExtensionSupport() {
-  _hlsSegmentExtensionOptionsSupport = null;
+  _hlsDemuxerHelpText = null;
 }
 
 /// TODO-1000（BUG-528/522）：http(s) 流输入（YouTube googlevideo 分离流/直链）的 ffmpeg
@@ -292,6 +327,10 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
     if (httpProxy != null && httpProxy.isNotEmpty) ...<String>[
       '-http_proxy',
       httpProxy,
+    ],
+    if (route?.disableHlsSegmentPrefetch ?? false) ...<String>[
+      '-http_multiple',
+      '0',
     ],
     if (route?.relaxHlsSegmentExtensions ?? false) ...<String>[
       '-allowed_extensions',
