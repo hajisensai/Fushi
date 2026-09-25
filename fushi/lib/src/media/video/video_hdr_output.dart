@@ -21,7 +21,9 @@ import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 ///
 /// 模式切换只切 `vo`（mpv 运行时支持），不重建 Player：字幕轨、进度、着色器全部保留。
 enum VideoHdrOutputMode {
-  /// 显示器处于 HDR 模式且片源是 HDR（bt.2020 + PQ/HLG）时直通，否则纹理路径。
+  /// 显示器处于 HDR 模式且片源是 HDR（bt.2020 + PQ/HLG）时直通，否则纹理路径；
+  /// 例外是需要 Dolby Vision 重整的片源（见 [requiresDolbyVisionReshape]），不看
+  /// 显示器、一律走宿主窗。
   auto('auto'),
 
   /// 只要在 Windows 就走宿主窗（10-bit 输出，SDR 片源也受益于 10-bit 抖动）。
@@ -111,8 +113,11 @@ bool isHdrVideoParams({required String? primaries, required String? gamma}) =>
 /// 片源是否必须经 Dolby Vision RPU 重整才能出正确颜色：libmpv `video-params/colormatrix`
 /// 报 `dolbyvision`。
 ///
-/// 只有**不带兼容基础层**的 DV（Profile 5，IPTPQc2 色彩空间，流媒体 WEB-DL 常见）会
-/// 这样报；Profile 7/8 的基础层本身是 HDR10 / HLG，矩阵照常是 `bt.2020-ncl`，不命中。
+/// 已实测命中的是**不带兼容基础层**的 DV（Profile 5，IPTPQc2 色彩空间，流媒体 WEB-DL
+/// 常见）。Profile 7/8 的基础层本身是 HDR10 / HLG，但 mpv 只要 RPU 的
+/// `disable_residual_flag=1`（P8.1 即是）就会把 repr 映射成 DOLBYVISION，因此 P8.1
+/// **很可能同样命中**并走宿主窗（gpu-next 重整，画面正确但开销更高）——未拿 P8 样片
+/// 实测，仅凭 colormatrix 区分不了 P5 与 P8。
 /// P5 的像素不是 YCbCr，纹理路径的 `vo=libmpv`（gl_video 渲染器）不认 RPU，直接按
 /// 普通 PQ 解就是整片紫/绿「反色」；只有 `vo=gpu-next`（libplacebo）做重整。实测
 /// 同一帧 `vo=gpu` 肤色品红、`vo=gpu-next` 正常（先发五虎 S01E01，DoviProfile50）。

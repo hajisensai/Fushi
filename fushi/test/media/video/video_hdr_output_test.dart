@@ -142,7 +142,7 @@ void main() {
       expect(requiresDolbyVisionReshape('dolbyvision'), isTrue);
     });
 
-    test('P7/P8 的 HDR10 基础层、SDR、未知都不算', () {
+    test('bt.2020-ncl（HDR10 矩阵）、SDR、未知都不算', () {
       expect(requiresDolbyVisionReshape('bt.2020-ncl'), isFalse);
       expect(requiresDolbyVisionReshape('bt.709'), isFalse);
       expect(requiresDolbyVisionReshape(null), isFalse);
