@@ -1150,18 +1150,24 @@ class VideoPlayerController extends ChangeNotifier
       buildSubtitleDelayProperty(_subtitleDelayMpvMs),
     );
     if (!_isCurrentLoad(player, loadToken)) return false;
-    _playerDecodedTextSub = player.stream.subtitle.listen((List<String> texts) {
+    // 上面几次 await 期间可能已有另一次选轨（起播恢复 + 用户手动选）装上了订阅：
+    // 先结束它，否则两个订阅并存、每句处理两遍，旧的直到 player 销毁才释放。
+    _stopPlayerDecodedText();
+    late final StreamSubscription<List<String>> sub;
+    sub = player.stream.subtitle.listen((List<String> texts) {
       if (!_isCurrentLoad(player, loadToken)) return;
       unawaited(_onPlayerDecodedText(
         player,
         loadToken,
+        sub,
         texts.isEmpty ? '' : texts.first,
       ));
     });
+    _playerDecodedTextSub = sub;
     // 选轨时正显示的那句（订阅前已上报）也要补上。
     final List<String> current = player.state.subtitle;
     if (current.isNotEmpty && current.first.trim().isNotEmpty) {
-      unawaited(_onPlayerDecodedText(player, loadToken, current.first));
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, current.first));
     }
     return true;
   }
@@ -1179,9 +1185,11 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> _onPlayerDecodedText(
     Player player,
     int loadToken,
+    StreamSubscription<List<String>> sub,
     String text,
   ) async {
-    final StreamSubscription<List<String>>? sub = _playerDecodedTextSub;
+    // 只处理仍是当前那条订阅的事件：已被替换 / 结束的订阅迟到的句子一律丢弃。
+    if (!identical(sub, _playerDecodedTextSub)) return;
     final int positionAtEvent = player.state.position.inMilliseconds;
     // 上一句的暂定时长按真实变化时刻收尾（空串 = 句间空档，同样是收尾时机）。
     final AudioCue? provisional = _playerDecodedProvisionalCue;
@@ -1192,9 +1200,16 @@ class VideoPlayerController extends ChangeNotifier
     if (text.trim().isEmpty) return;
     final int? startMs = parseMpvSecondsToMs(await _getMpvProperty('sub-start'));
     final int? endMs = parseMpvSecondsToMs(await _getMpvProperty('sub-end'));
+    // 起止时间是事件到达后才读的：UI 卡顿让事件晚到、mpv 已切到下一句时，读到的
+    // 是下一句的时间。再读一次当前文本核对，对不上就丢弃——下一句自己的事件会补上。
+    final String nowText = await _getMpvProperty('sub-text');
     // await 期间换片 / 换字幕源 / 销毁：丢弃迟到的句子。
     if (!_isCurrentLoad(player, loadToken)) return;
-    if (sub == null || !identical(sub, _playerDecodedTextSub)) return;
+    if (!identical(sub, _playerDecodedTextSub)) return;
+    if (nowText.replaceAll('\r\n', '\n').trim() !=
+        text.replaceAll('\r\n', '\n').trim()) {
+      return;
+    }
     final AudioCue? cue = buildPlayerDecodedCue(
       text: text,
       startMs: startMs,
@@ -1205,14 +1220,26 @@ class VideoPlayerController extends ChangeNotifier
     if (endMs == null || endMs <= cue.startMs) {
       _playerDecodedProvisionalCue = cue;
     }
-    _cues = mergePlayerDecodedCue(_cues, cue);
-    // 只重算活动集，不走 [setCues]：那会复位 seek 快照 / 单句停等播放态。插入
-    // 可能挪动下标，旧下标类状态一并作废。
-    _currentCue = null;
-    _currentCueIndex = -1;
-    _activeCueIndices = const <int>[];
-    _oneShotHoldCueIndex = null;
-    _lastSubtitleEndPauseCueIndex = null;
+    final ({List<AudioCue> cues, int index, bool inserted}) merged =
+        mergePlayerDecodedCue(_cues, cue);
+    _cues = merged.cues;
+    // 只重算活动集，不走 [setCues]：那会复位 seek 快照 / 单句停等播放态。下标类
+    // 状态必须**保持指向同一句**，不能作废：「重播本句」起播后播到目标句时 mpv 一定
+    // 重新上报这一句（同起点替换），作废单句停就一路播进下一句；首尾相接的两句间
+    // 事件先于 tick 到达，作废当前句就判不出上一句已结束、「字幕结束暂停」不停。
+    if (merged.inserted) {
+      int? shift(int? index) => shiftCueIndexForInsert(index, merged.index);
+      _currentCueIndex = shift(_currentCueIndex)!;
+      _oneShotHoldCueIndex = shift(_oneShotHoldCueIndex);
+      _lastSubtitleEndPauseCueIndex = shift(_lastSubtitleEndPauseCueIndex);
+      _seekTargetCueIndex = shift(_seekTargetCueIndex);
+      _activeCueIndices = <int>[
+        for (final int index in _activeCueIndices) shift(index)!,
+      ];
+    } else if (_currentCueIndex == merged.index) {
+      // 原地替换当前句：换成新对象，下标不动。
+      _currentCue = cue;
+    }
     _syncCueForPosition(
       player.state.position.inMilliseconds,
       persistPosition: false,

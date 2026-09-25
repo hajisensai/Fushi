@@ -69,25 +69,59 @@ void main() {
   group('mergePlayerDecodedCue', () {
     test('按起点升序插入并重排 sentenceIndex（seek 回看补前面的句子）', () {
       List<AudioCue> cues = <AudioCue>[];
-      cues = mergePlayerDecodedCue(cues, _cue('b', 5000, 6000));
-      cues = mergePlayerDecodedCue(cues, _cue('c', 9000, 10000));
-      cues = mergePlayerDecodedCue(cues, _cue('a', 1000, 2000));
+      cues = mergePlayerDecodedCue(cues, _cue('b', 5000, 6000)).cues;
+      cues = mergePlayerDecodedCue(cues, _cue('c', 9000, 10000)).cues;
+      final ({List<AudioCue> cues, int index, bool inserted}) front =
+          mergePlayerDecodedCue(cues, _cue('a', 1000, 2000));
+      expect(front.inserted, isTrue);
+      expect(front.index, 0);
+      cues = front.cues;
       expect(cues.map((AudioCue c) => c.text), <String>['a', 'b', 'c']);
       expect(cues.map((AudioCue c) => c.sentenceIndex), <int>[0, 1, 2]);
     });
 
-    test('同一起点重复上报（回看重放）替换而不重复', () {
-      List<AudioCue> cues = <AudioCue>[_cue('a', 1000, 2000)];
-      cues = mergePlayerDecodedCue(cues, _cue('a2', 1000, 2200));
-      expect(cues, hasLength(1));
-      expect(cues.single.text, 'a2');
-      expect(cues.single.endMs, 2200);
+    test('同一起点重复上报（回看重放）替换而不重复，报告为原地替换', () {
+      final ({List<AudioCue> cues, int index, bool inserted}) merged =
+          mergePlayerDecodedCue(<AudioCue>[
+            _cue('a', 1000, 2000),
+            _cue('b', 3000, 4000),
+          ], _cue('b2', 3000, 4200));
+      expect(merged.inserted, isFalse);
+      expect(merged.index, 1);
+      expect(merged.cues.map((AudioCue c) => c.text), <String>['a', 'b2']);
+      expect(merged.cues.last.endMs, 4200);
     });
 
     test('不改入参列表', () {
       final List<AudioCue> original = <AudioCue>[_cue('a', 1000, 2000)];
       mergePlayerDecodedCue(original, _cue('b', 3000, 4000));
       expect(original, hasLength(1));
+    });
+  });
+
+  // 「重播本句」的单句停、「字幕结束暂停」、当前句高亮都是**下标**：一句插进来
+  // 只能把它之后的下标后移，不能作废（作废 = 重播本句播进下一句、句尾不停）。
+  group('shiftCueIndexForInsert', () {
+    test('插入位及之后后移一位，之前不动，null / -1 原样', () {
+      expect(shiftCueIndexForInsert(3, 2), 4);
+      expect(shiftCueIndexForInsert(2, 2), 3);
+      expect(shiftCueIndexForInsert(1, 2), 1);
+      expect(shiftCueIndexForInsert(null, 0), isNull);
+      expect(shiftCueIndexForInsert(-1, 0), -1);
+    });
+
+    test('平移后仍指向同一句', () {
+      final List<AudioCue> before = <AudioCue>[
+        _cue('b', 5000, 6000),
+        _cue('c', 9000, 10000),
+      ];
+      const int held = 1; // 正在单句停的是 c
+      final ({List<AudioCue> cues, int index, bool inserted}) merged =
+          mergePlayerDecodedCue(before, _cue('a', 1000, 2000));
+      expect(
+        merged.cues[shiftCueIndexForInsert(held, merged.index)!].text,
+        'c',
+      );
     });
   });
 
@@ -149,6 +183,34 @@ void main() {
       expect(b.contains('buildGraphicSubtitleVisibilityProperties()'), isFalse);
       expect(b.contains('_graphicSubtitleActive = true'), isFalse);
       expect(b.contains('player.stream.subtitle.listen('), isTrue);
+    });
+
+    test('listen 前先结束旧回流：并发两次选轨不留两个订阅', () {
+      final String b = body();
+      final int stop = b.lastIndexOf('_stopPlayerDecodedText();');
+      final int listen = b.indexOf('player.stream.subtitle.listen(');
+      expect(stop, greaterThanOrEqualTo(0));
+      expect(stop, lessThan(listen));
+    });
+
+    test('回流处理保持下标类播放态、核对当前文本再落 cue', () {
+      final int start = src.indexOf('Future<void> _onPlayerDecodedText(');
+      expect(start, greaterThanOrEqualTo(0));
+      final String handler = src.substring(
+        start,
+        src.indexOf('\n  }\n', start),
+      );
+      // 作废这些 = 「重播本句」播进下一句、首尾相接的「字幕结束暂停」不停。
+      for (final String cleared in <String>[
+        '_oneShotHoldCueIndex = null;',
+        '_lastSubtitleEndPauseCueIndex = null;',
+        '_currentCueIndex = -1;',
+      ]) {
+        expect(handler.contains(cleared), isFalse, reason: cleared);
+      }
+      expect(handler.contains('shiftCueIndexForInsert('), isTrue);
+      // 起止时间在事件到达后才读：必须再读一次 sub-text 核对，防止配上下一句的时间。
+      expect(handler.contains("_getMpvProperty('sub-text')"), isTrue);
     });
 
     test('外部换字幕源（setCues）结束回流，迟到的句子不串进新列表', () {

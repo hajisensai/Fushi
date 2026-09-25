@@ -46,16 +46,28 @@ AudioCue? buildPlayerDecodedCue({
     ..audioFileIndex = 0;
 }
 
-/// 把 [cue] 合进按 startMs 升序的 [cues]，返回新列表（不改入参）。
+/// 把 [cue] 合进按 startMs 升序的 [cues]，返回新列表（不改入参）、这句落在第几位
+/// [index]，以及是不是插入 [inserted]（false = 原地替换）。
 ///
 /// - 同一起点的已有句（seek 回看重放 / mpv 对同一句重复上报）→ 替换，不重复；
 /// - 否则按起点插入；
 /// - 结果的 [AudioCue.sentenceIndex] 按列表位置重排（字幕列表 / 跳句按它编号）。
-List<AudioCue> mergePlayerDecodedCue(List<AudioCue> cues, AudioCue cue) {
+///
+/// 调用方据此维护下标类播放态：替换不动任何下标，插入只把 ≥ [index] 的下标
+/// 后移一位（[shiftCueIndexForInsert]）。整体作废会让「重播本句」的单句停与
+/// 「字幕结束暂停」失效——播到目标句时 mpv 必然重新上报这一句。
+({List<AudioCue> cues, int index, bool inserted}) mergePlayerDecodedCue(
+  List<AudioCue> cues,
+  AudioCue cue,
+) {
   final List<AudioCue> next = List<AudioCue>.of(cues);
   final int same = next.indexWhere((AudioCue c) => c.startMs == cue.startMs);
+  final int index;
+  final bool inserted;
   if (same >= 0) {
     next[same] = cue;
+    index = same;
+    inserted = false;
   } else {
     int insertAt = next.length;
     for (int i = 0; i < next.length; i++) {
@@ -65,11 +77,19 @@ List<AudioCue> mergePlayerDecodedCue(List<AudioCue> cues, AudioCue cue) {
       }
     }
     next.insert(insertAt, cue);
+    index = insertAt;
+    inserted = true;
   }
   for (int i = 0; i < next.length; i++) {
     next[i].sentenceIndex = i;
   }
-  return next;
+  return (cues: next, index: index, inserted: inserted);
+}
+
+/// 在第 [insertedAt] 位插入一句后，原下标 [index] 的新位置（null 保持 null）。
+int? shiftCueIndexForInsert(int? index, int insertedAt) {
+  if (index == null || index < 0) return index;
+  return index >= insertedAt ? index + 1 : index;
 }
 
 /// mpv 没给 `sub-end` 的那句（暂定时长）在字幕下一次变化时按真实位置 [atMs]

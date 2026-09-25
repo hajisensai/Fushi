@@ -1421,8 +1421,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
       if (!mounted) return;
       // BUG-2590：服务器抽不出该轨（兼容层没有字幕端点 → 404）但直出的是原始
-      // 容器，这条轨就在 libmpv 正在 demux 的流里：交给 libmpv 自绘把字幕显示
-      // 出来；流不是原始容器 / 轨未就绪才按下载失败提示。
+      // 容器，这条轨就在 libmpv 正在 demux 的流里：让 libmpv 只解码、把文本回流成
+      // 可点 cue（BUG-2648）；流不是原始容器 / 轨未就绪才按下载失败提示。
       final bool shown = await _showRemoteEmbeddedTrackViaPlayer(
         controller,
         track,
@@ -1445,7 +1445,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
   }
 
-  // ── BUG-2590 远端直出容器的内嵌轨：libmpv 自绘回落 ──────────────────────────
+  // ── BUG-2590 / 2648 远端直出容器的内嵌文本轨：libmpv 解码回流 ────────────────
   //
   // 媒体服务器兼容层（飞牛、「UHD Media Server」等自研 Emby 兼容层）没有
   // `/Videos/…/Subtitles/…/Stream` 抽取端点（nginx 404），PlaybackInfo 也如实标
