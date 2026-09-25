@@ -9,8 +9,9 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel channel =
-      MethodChannel('app.fushi.reader/window_capture');
+  const MethodChannel channel = MethodChannel(
+    'app.fushi.reader/window_capture',
+  );
   final TestDefaultBinaryMessenger messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
 
@@ -72,6 +73,95 @@ void main() {
       expect(res.pngBytes, isNull);
     });
 
+    test('解析 bounded capture reason 与 WGC frame metadata', () async {
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <Object?, Object?>{
+          'error': 'capture timed out',
+          'captureReason': 'no_frame',
+          'metadata': <Object?, Object?>{
+            'capturedHwnd': 11,
+            'capturedPid': 22,
+            'clientLeftPx': 0,
+            'clientTopPx': 0,
+            'clientWidthPx': 1280,
+            'clientHeightPx': 720,
+            'imageWidthPx': 0,
+            'imageHeightPx': 0,
+            'contentWidthPx': 1280,
+            'contentHeightPx': 720,
+            'textureWidthPx': 1280,
+            'textureHeightPx': 720,
+            'dpi': 96.0,
+            'clientAreaComplete': false,
+            'capturedAtTickMs': 0,
+          },
+        };
+      });
+      final WindowCaptureResult res = await WindowCaptureChannel.captureWindow(
+        11,
+      );
+      expect(res.captureReason, 'no_frame');
+      expect(res.metadata!.contentWidthPx, 1280);
+      expect(res.metadata!.textureHeightPx, 720);
+    });
+
+    test('旧 runner metadata 缺少 frame 字段仍可解析', () async {
+      messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+        return <Object?, Object?>{
+          'pngBytes': Uint8List.fromList([1, 2, 3]),
+          'metadata': <Object?, Object?>{
+            'capturedHwnd': 11,
+            'capturedPid': 22,
+            'clientLeftPx': 0,
+            'clientTopPx': 0,
+            'clientWidthPx': 1,
+            'clientHeightPx': 1,
+            'imageWidthPx': 1,
+            'imageHeightPx': 1,
+            'dpi': 96.0,
+            'clientAreaComplete': true,
+            'capturedAtTickMs': 1,
+          },
+        };
+      });
+      final WindowCaptureResult res = await WindowCaptureChannel.captureWindow(
+        11,
+      );
+      expect(res.metadata, isNotNull);
+      expect(res.metadata!.contentWidthPx, 0);
+      expect(res.metadata!.textureWidthPx, 0);
+    });
+
+    test(
+      'malformed capture reason is dropped and malformed frame field rejects metadata',
+      () async {
+        messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
+          return <Object?, Object?>{
+            'pngBytes': Uint8List.fromList([1, 2, 3]),
+            'captureReason': 'free form title/path',
+            'metadata': <Object?, Object?>{
+              'capturedHwnd': 11,
+              'capturedPid': 22,
+              'clientLeftPx': 0,
+              'clientTopPx': 0,
+              'clientWidthPx': 1,
+              'clientHeightPx': 1,
+              'imageWidthPx': 1,
+              'imageHeightPx': 1,
+              'contentWidthPx': '1',
+              'dpi': 96.0,
+              'clientAreaComplete': true,
+              'capturedAtTickMs': 1,
+            },
+          };
+        });
+        final WindowCaptureResult res =
+            await WindowCaptureChannel.captureWindow(11);
+        expect(res.captureReason, isNull);
+        expect(res.metadata, isNull);
+      },
+    );
+
     test('PlatformException -> 收敛为 error 结果（不抛）', () async {
       messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
         throw PlatformException(code: 'capture_failed', message: 'WGC failed');
@@ -102,7 +192,8 @@ void main() {
       messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
         return <Object?, Object?>{
           'pngBytes': png,
-          'diagnostics': 'capture target redirected: Magpie scaling window -> '
+          'diagnostics':
+              'capture target redirected: Magpie scaling window -> '
               'source window (Magpie.SrcHWND)',
         };
       });
@@ -116,7 +207,8 @@ void main() {
       messenger.setMockMethodCallHandler(channel, (MethodCall call) async {
         return <Object?, Object?>{
           'error': 'capture timed out',
-          'diagnostics': 'IGraphicsCaptureSession2 unavailable (needs Windows '
+          'diagnostics':
+              'IGraphicsCaptureSession2 unavailable (needs Windows '
               '10 build 19041+); WGC cursor NOT suppressed hr=0x80004002',
         };
       });

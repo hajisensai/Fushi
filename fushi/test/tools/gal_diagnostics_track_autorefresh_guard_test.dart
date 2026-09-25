@@ -49,7 +49,18 @@ void main() {
   });
 
   test('controller：_stopSources 回收音轨刷新定时器', () {
-    final int stopAt = controllerSrc.indexOf('Future<void> _stopSources()');
+    // _stopSources 是单飞包装（并发 stop 共用同一个 future），真正的清理在
+    // _stopSourcesInternal：钉住委托关系，再在清理体开头找定时器取消。
+    final int wrapperAt = controllerSrc.indexOf('Future<void> _stopSources()');
+    expect(wrapperAt, greaterThan(0));
+    expect(
+      controllerSrc.indexOf('_stopSourcesInternal();', wrapperAt) - wrapperAt,
+      allOf(greaterThan(0), lessThan(400)),
+      reason: '_stopSources 必须直接委托 _stopSourcesInternal',
+    );
+    final int stopAt = controllerSrc.indexOf(
+      'Future<void> _stopSourcesInternal()',
+    );
     expect(stopAt, greaterThan(0));
     final int cancelAt =
         controllerSrc.indexOf('_trackRefreshTimer?.cancel();', stopAt);

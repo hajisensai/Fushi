@@ -29,11 +29,18 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2458 条。点号进各自文件。
+> 共 2465 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |
+| [BUG-2680](bugs/BUG-2680-gal-mine-lease-refused-after-calibration.md) | 🚧 | 🚧 | 校准后制卡截图租约被拒 |
+| [BUG-2679](bugs/BUG-2679-gal-first-mine-capture-refused.md) | ✅ | ✅ | 查词窗口里第一次点制卡截图被拒 |
+| [BUG-2678](bugs/BUG-2678-gal-grid-width-slider-drift.md) | ✅ | ✅ | 调整格宽后字格消失且拉回后位置对不上 |
+| [BUG-2677](bugs/BUG-2677-gal-calibration-capture-refused-auto-mode.md) | ✅ | ✅ | 自动模式下校准采集被误报为没有台词 |
+| [BUG-2676](bugs/BUG-2676-gal-lookup-hook-linebreak-width.md) | ✅ | ✅ | 自带换行的游戏长句超出校准宽度后对不上 |
+| [BUG-2675](bugs/BUG-2675-gal-lookup-hidden-after-fast-advance.md) | 🚧 | 🚧 | 快速翻页后新台词暂时没有内嵌查词 |
+| [BUG-2674](bugs/BUG-2674-gal-lookup-click-after-popup-ignored.md) | ✅ | ✅ | 关闭查词窗口后点击台词时灵时不灵 |
 | [BUG-2653](bugs/BUG-2653-clannad-steam-siglus-suffix.md) | ✅ | ✅ | CLANNAD Steam 版不被识别为 Siglus：语言后缀的 GameexeZH.dat + SceneZH.pck |
 | [BUG-2652](bugs/BUG-2652-ios-scroll-switch-restore-reset.md) | ✅ | ✅ | iOS 书内分页切滚动后落点被钉回章首（原地换章视口瞬时读 0） |
 | [BUG-2651](bugs/BUG-2651-global-lookup-overlay-copy.md) | ✅ | ✅ | 应用外查词弹窗无法复制：Ctrl+C 复制到前台应用、右键菜单被弹窗盖住（issue #1581） |

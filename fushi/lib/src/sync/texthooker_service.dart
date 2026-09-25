@@ -6,6 +6,39 @@ import 'package:fushi/src/utils/misc/ruby_markup.dart';
 
 enum TexthookerLineSource { websocket, engineHook, unknown }
 
+/// Hook script line breaks are part of the text, not printable characters.
+/// Normalize before ruby parsing so all downstream UTF-16 indexes share the
+/// same displayed text (including ruby spans and native hit testing).
+final RegExp _hookHtmlLineBreak = RegExp(r'<br\s*/?>', caseSensitive: false);
+
+String normalizeTexthookerLineBreaks(String text) =>
+    text.replaceAll(_hookHtmlLineBreak, '\n');
+
+/// 异常长/批量文本的渲染级别。正常台词保持逐字可点；较长文本改普通 Text；
+/// 明显历史/批量输出再折叠提示，避免一次 hook 造出成千上万个字级 widget。
+enum TexthookerLinePresentation { interactive, plain, collapsed }
+
+const int texthookerInteractiveTextLimit = 300;
+const int texthookerCollapsedTextLimit = 800;
+const int texthookerCollapsedLineBreakLimit = 8;
+
+TexthookerLinePresentation texthookerLinePresentation(String text) {
+  if (text.length > texthookerCollapsedTextLimit) {
+    return TexthookerLinePresentation.collapsed;
+  }
+  int lineBreaks = 0;
+  for (int i = 0; i < text.length; i++) {
+    if (text.codeUnitAt(i) == 0x0a &&
+        ++lineBreaks > texthookerCollapsedLineBreakLimit) {
+      return TexthookerLinePresentation.collapsed;
+    }
+  }
+  if (text.length > texthookerInteractiveTextLimit) {
+    return TexthookerLinePresentation.plain;
+  }
+  return TexthookerLinePresentation.interactive;
+}
+
 /// 线程选择弹窗每条线程保留的预览句数上限（BUG-1474）。
 ///
 /// 3 是因为选择弹窗那行本来就写着 `maxLines: 3`；再多也显示不出来，只是白占内存。
@@ -224,23 +257,21 @@ class TexthookerTextThread {
     int? observedArtifactCount,
     bool? previewIsArtifact,
     List<String>? recentPreviewTexts,
-  }) =>
-      TexthookerTextThread(
-        key: key,
-        label: label ?? this.label,
-        hookCode: hookCode,
-        nativeThreadId: nativeThreadId,
-        lineCount: lineCount,
-        latestAt: latestAt,
-        latestText: latestText,
-        audioLineCount: audioLineCount,
-        previewText: previewText ?? this.previewText,
-        observedLineCount: observedLineCount ?? this.observedLineCount,
-        observedArtifactCount:
-            observedArtifactCount ?? this.observedArtifactCount,
-        previewIsArtifact: previewIsArtifact ?? this.previewIsArtifact,
-        recentPreviewTexts: recentPreviewTexts ?? this.recentPreviewTexts,
-      );
+  }) => TexthookerTextThread(
+    key: key,
+    label: label ?? this.label,
+    hookCode: hookCode,
+    nativeThreadId: nativeThreadId,
+    lineCount: lineCount,
+    latestAt: latestAt,
+    latestText: latestText,
+    audioLineCount: audioLineCount,
+    previewText: previewText ?? this.previewText,
+    observedLineCount: observedLineCount ?? this.observedLineCount,
+    observedArtifactCount: observedArtifactCount ?? this.observedArtifactCount,
+    previewIsArtifact: previewIsArtifact ?? this.previewIsArtifact,
+    recentPreviewTexts: recentPreviewTexts ?? this.recentPreviewTexts,
+  );
 
   final String key;
   final String label;
@@ -397,15 +428,13 @@ class TexthookerLineEntry {
   /// 本行是否已有可用句音：matched（配到游戏资源）/ encoded（音频已提取进卡）/
   /// fallback（回退环回声）三态即有音频；pending/missing/unavailable 视作无。
   bool get hasAudio => switch (audioStatus) {
-        TexthookerLineAudioStatus.matched ||
-        TexthookerLineAudioStatus.encoded ||
-        TexthookerLineAudioStatus.fallback =>
-          true,
-        TexthookerLineAudioStatus.pending ||
-        TexthookerLineAudioStatus.missing ||
-        TexthookerLineAudioStatus.unavailable =>
-          false,
-      };
+    TexthookerLineAudioStatus.matched ||
+    TexthookerLineAudioStatus.encoded ||
+    TexthookerLineAudioStatus.fallback => true,
+    TexthookerLineAudioStatus.pending ||
+    TexthookerLineAudioStatus.missing ||
+    TexthookerLineAudioStatus.unavailable => false,
+  };
 
   TexthookerLineEntry copyWith({
     String? text,
@@ -441,12 +470,15 @@ class TexthookerLineEntry {
       receivedAt: receivedAt,
       audioStatus: audioStatus ?? this.audioStatus,
       audioBackend: audioBackend ?? this.audioBackend,
-      audioResourceId:
-          clearAudioResourceId ? null : audioResourceId ?? this.audioResourceId,
-      audioDurationMs:
-          clearAudioDuration ? null : audioDurationMs ?? this.audioDurationMs,
-      fallbackReason:
-          clearFallbackReason ? null : fallbackReason ?? this.fallbackReason,
+      audioResourceId: clearAudioResourceId
+          ? null
+          : audioResourceId ?? this.audioResourceId,
+      audioDurationMs: clearAudioDuration
+          ? null
+          : audioDurationMs ?? this.audioDurationMs,
+      fallbackReason: clearFallbackReason
+          ? null
+          : fallbackReason ?? this.fallbackReason,
       mined: mined ?? this.mined,
       minedNoteId: clearMinedNoteId ? null : minedNoteId ?? this.minedNoteId,
       favorited: favorited ?? this.favorited,
@@ -474,8 +506,7 @@ class TexthookerService extends ChangeNotifier {
   ///
   /// [entries] 每次都要复制整张表；折叠判定是**每条 hook 行**都要做一次的热路径，
   /// 走这个 O(1) 的入口。
-  TexthookerLineEntry? get lastEntry =>
-      _entries.isEmpty ? null : _entries.last;
+  TexthookerLineEntry? get lastEntry => _entries.isEmpty ? null : _entries.last;
 
   /// 折叠「同一句台词的多次快照」（见 [isProgressiveTextUpdate]）。
   ///
@@ -531,11 +562,11 @@ class TexthookerService extends ChangeNotifier {
   List<TexthookerTextThread> textThreadsSince(DateTime? startedAt) {
     final Map<String, TexthookerTextThread> byKey =
         <String, TexthookerTextThread>{
-      for (final MapEntry<String, TexthookerTextThread> entry
-          in _discoveredTextThreads.entries)
-        if (startedAt == null || !entry.value.latestAt.isBefore(startedAt))
-          entry.key: entry.value,
-    };
+          for (final MapEntry<String, TexthookerTextThread> entry
+              in _discoveredTextThreads.entries)
+            if (startedAt == null || !entry.value.latestAt.isBefore(startedAt))
+              entry.key: entry.value,
+        };
     for (final TexthookerLineEntry entry in _entries) {
       if (startedAt != null && entry.receivedAt.isBefore(startedAt)) continue;
       final String? key = entry.textThreadKey;
@@ -843,7 +874,9 @@ class TexthookerService extends ChangeNotifier {
     // 制卡 sentence / 字数统计 / 跨线程折叠）拿到 `entry.text` 之前的唯一收口，
     // 剥在这里才能保证它们天然共用同一坐标系；放到显示层剥会让
     // `_onLookupText` 的 `entry.text != text` 守卫恒真，点字直接失效。
-    final RubyMarkupText parsed = parseRubyMarkup(line).trimmed();
+    final RubyMarkupText parsed = parseRubyMarkup(
+      normalizeTexthookerLineBreaks(line),
+    ).trimmed();
     final String trimmed = parsed.text;
     if (trimmed.isEmpty) return null;
     _lastFoldedLineIds.clear();
@@ -891,8 +924,10 @@ class TexthookerService extends ChangeNotifier {
         );
         if (tailIndex < 0) break;
         final TexthookerLineEntry tail = _entries[tailIndex];
-        final bool layoutRefresh =
-            isWhitespaceOnlyLayoutRefresh(tail.text, mergedText);
+        final bool layoutRefresh = isWhitespaceOnlyLayoutRefresh(
+          tail.text,
+          mergedText,
+        );
         if (!layoutRefresh && !isProgressiveTextUpdate(tail.text, mergedText)) {
           break;
         }
@@ -929,16 +964,21 @@ class TexthookerService extends ChangeNotifier {
       // 制卡 / 收藏位取并集：被吞的那几条里只要有一条已制卡（或已收藏），合并
       // 结果就该带着那个徽章 —— 只从 base 继承的话，用户刚给第 ② 拍制的卡会在
       // 第 ③ 拍折叠后从工作台上「消失」。
-      final bool anyMined =
-          absorbed.any((TexthookerLineEntry e) => e.mined);
-      final bool anyFavorited =
-          absorbed.any((TexthookerLineEntry e) => e.favorited);
+      final bool anyMined = absorbed.any((TexthookerLineEntry e) => e.mined);
+      final bool anyFavorited = absorbed.any(
+        (TexthookerLineEntry e) => e.favorited,
+      );
       final int? mergedNoteId = absorbed
-          .firstWhere((TexthookerLineEntry e) => e.minedNoteId != null,
-              orElse: () => base)
+          .firstWhere(
+            (TexthookerLineEntry e) => e.minedNoteId != null,
+            orElse: () => base,
+          )
           .minedNoteId;
-      final bool inheritsAudio =
-          _canInheritAudio(audioDonor, sourceSequence, eventOwnedVoice);
+      final bool inheritsAudio = _canInheritAudio(
+        audioDonor,
+        sourceSequence,
+        eventOwnedVoice,
+      );
       final TexthookerLineEntry merged = base.copyWith(
         text: mergedText,
         rubySpans: mergedSpans,
@@ -1041,7 +1081,8 @@ class TexthookerService extends ChangeNotifier {
       audioBackend: backend,
       audioResourceId: resourceId,
       audioDurationMs: durationMs,
-      clearAudioDuration: durationMs == null &&
+      clearAudioDuration:
+          durationMs == null &&
           resourceId != null &&
           resourceId != _entries[index].audioResourceId,
       fallbackReason: fallbackReason,
@@ -1135,13 +1176,14 @@ class TexthookerService extends ChangeNotifier {
 /// 实时台词筛选的唯一 predicate：枚举驱动、无特殊分支。页面/服务共用，
 /// 保证「有音频 / 已制卡 / 已收藏」的判据单一真相源。
 bool lineMatchesFilter(
-        TexthookerLineEntry entry, TexthookerLineFilter filter) =>
-    switch (filter) {
-      TexthookerLineFilter.all => true,
-      TexthookerLineFilter.withAudio => entry.hasAudio,
-      TexthookerLineFilter.mined => entry.mined,
-      TexthookerLineFilter.favorited => entry.favorited,
-    };
+  TexthookerLineEntry entry,
+  TexthookerLineFilter filter,
+) => switch (filter) {
+  TexthookerLineFilter.all => true,
+  TexthookerLineFilter.withAudio => entry.hasAudio,
+  TexthookerLineFilter.mined => entry.mined,
+  TexthookerLineFilter.favorited => entry.favorited,
+};
 
 /// 「全部文本线程」的展示投影：折叠同一渲染瞬间被不同 Luna 线程各回传一次的同文行。
 ///
@@ -1164,8 +1206,8 @@ List<TexthookerLineEntry> collapseParallelTextThreadDuplicates(
     final int? currentHookAt = entry.hookTimestampMs;
     final String? previousThread = previous.textThreadKey;
     final String? currentThread = entry.textThreadKey;
-    final bool parallelDuplicate = previous.source ==
-            TexthookerLineSource.engineHook &&
+    final bool parallelDuplicate =
+        previous.source == TexthookerLineSource.engineHook &&
         entry.source == TexthookerLineSource.engineHook &&
         previousThread != null &&
         currentThread != null &&

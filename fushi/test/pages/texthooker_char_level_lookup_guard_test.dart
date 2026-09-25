@@ -59,12 +59,20 @@ void main() {
 
   test('词首偏移按前缀长度累加，不在原文里搜索', () {
     final String masked = maskComments(page);
-    expect(masked.contains('offset += word.length'), isTrue);
-    expect(
-      masked.contains('text.indexOf(word)'),
-      isFalse,
-      reason: '搜索会在重复词上给出错误位置——同一句里出现两次的词必然定位到第一处',
-    );
+    // 词按 Hook 换行拆成多行片段后，逐片段累加长度，换行符本身再占一位。
+    expect(masked.contains('offset += part.length'), isTrue);
+    expect(masked.contains('offset++'), isTrue,
+        reason: '换行符在原文里占一个下标，漏加会让后续行整体左移');
+    for (final String needle in <String>[
+      'text.indexOf(word)',
+      'text.indexOf(part)',
+    ]) {
+      expect(
+        masked.contains(needle),
+        isFalse,
+        reason: '搜索会在重复词上给出错误位置——同一句里出现两次的词必然定位到第一处',
+      );
+    }
   });
 
   test('顶层查词仍复用热槽（BUG-1028 不得被本次改动带坏）', () {

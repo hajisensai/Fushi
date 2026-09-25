@@ -283,6 +283,67 @@ void main() {
     },
   );
 
+  test(
+    'attached hit keeps physical geometry distinct from legacy DPI units',
+    () async {
+      GalAttachedLookupHitV19? received;
+      GalHookTextOverlayChannel.setEventHandlers(
+        onAttachedLookupText: (GalAttachedLookupHitV19 hit) => received = hit,
+      );
+      final Map<String, Object?> payload = {
+        'surface': 'attached',
+        ..._target.toMap(),
+        'sourceText': '合成本文',
+        'textGeneration': 9,
+        'charIndex': 0,
+        'sourceLength': 1,
+        'wordLeft': 100,
+        'wordTop': 200,
+        'wordWidth': 20,
+        'wordHeight': 24,
+        'physicalWordRect': {
+          'left': -1400,
+          'top': 900,
+          'width': 35,
+          'height': 42,
+        },
+        'destinationViewportScreen': {
+          'left': -1920,
+          'top': 100,
+          'width': 1600,
+          'height': 900,
+        },
+      };
+      await invokeFromNative('lookupText', payload);
+      expect(received!.wordRect, const Rect.fromLTWH(100, 200, 20, 24));
+      expect(
+        received!.physicalWordRect,
+        const Rect.fromLTWH(-1400, 900, 35, 42),
+      );
+      expect(
+        received!.destinationViewportScreen,
+        const Rect.fromLTWH(-1920, 100, 1600, 900),
+      );
+
+      for (final Object invalid in [
+        {'left': double.infinity, 'top': 0, 'width': 20, 'height': 24},
+        {'left': 0, 'top': 0, 'width': -1, 'height': 24},
+        {'left': 0, 'top': 0, 'height': 24},
+      ]) {
+        received = null;
+        await invokeFromNative('lookupText', {
+          ...payload,
+          'physicalWordRect': invalid,
+        });
+        expect(
+          received,
+          isNull,
+          reason: 'invalid new geometry must not use legacy units',
+        );
+      }
+    },
+  );
+
   test('attached lookup rejects half or malformed UTF-16 clusters', () async {
     int calls = 0;
     GalHookTextOverlayChannel.setEventHandlers(
@@ -357,6 +418,11 @@ void main() {
           'observedMask': 0x7f,
           'faultMask': 0,
           'statusFlags': 1,
+          'ownerKind': 4,
+          'targetHwnd': 77,
+          'transactionId': 4294967297,
+          'activeButtons': 1,
+          'allowRisk': true,
         },
         'calibrationProbeMask': 3,
       });
@@ -382,6 +448,11 @@ void main() {
       expect(state?.providerId, 11);
       expect(state?.providerStatus, 2);
       expect(state?.shield.conclusion, GalAttachedShieldConclusion.verified);
+      expect(state?.shield.ownerKind, 4);
+      expect(state?.shield.targetHwnd, 77);
+      expect(state?.shield.transactionId, 4294967297);
+      expect(state?.shield.activeButtons, 1);
+      expect(state?.shield.allowRisk, isTrue);
       expect(state?.calibrationProbeMask, 3);
       expect(committed?.bodyRect, _rect);
       expect(committed?.riskAccepted, isTrue);

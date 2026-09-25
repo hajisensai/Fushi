@@ -7,14 +7,13 @@ TexthookerThreadPreview preview({
   required int lineCount,
   int artifactCount = 0,
   bool isArtifact = false,
-}) =>
-    TexthookerThreadPreview(
-      nativeThreadId: threadId,
-      text: text,
-      observedLineCount: lineCount,
-      observedArtifactCount: artifactCount,
-      isArtifact: isArtifact,
-    );
+}) => TexthookerThreadPreview(
+  nativeThreadId: threadId,
+  text: text,
+  observedLineCount: lineCount,
+  observedArtifactCount: artifactCount,
+  isArtifact: isArtifact,
+);
 
 void main() {
   setUp(() => TexthookerService.instance.clear());
@@ -32,6 +31,21 @@ void main() {
     TexthookerService.instance.removeListener(listener);
   });
 
+  test('Hook HTML breaks become canonical newlines before ruby indexes', () {
+    expect(normalizeTexthookerLineBreaks('前<br>後<BR/>末<br />完'), '前\n後\n末\n完');
+    expect(normalizeTexthookerLineBreaks('前\n後 <brace>'), '前\n後 <brace>');
+
+    final TexthookerLineEntry entry = TexthookerService.instance.appendLine(
+      '前<br><rふる>震</r>後',
+      source: TexthookerLineSource.engineHook,
+      sourceSequence: 17,
+    )!;
+    expect(entry.text, '前\n震後');
+    expect(entry.rubySpans.single.start, 2);
+    expect(entry.rubySpans.single.length, 1);
+    expect(entry.sourceSequence, 17);
+  });
+
   test('blank lines are ignored', () {
     TexthookerService.instance.appendLine('   ');
     TexthookerService.instance.appendLine('');
@@ -39,15 +53,19 @@ void main() {
   });
 
   test('buffer caps at maxLines, dropping oldest', () {
-    final TexthookerLineEntry first =
-        TexthookerService.instance.appendLine('first')!;
+    final TexthookerLineEntry first = TexthookerService.instance.appendLine(
+      'first',
+    )!;
     for (int i = 0; i < TexthookerService.maxLines + 10; i++) {
       TexthookerService.instance.appendLine('line $i');
     }
     expect(TexthookerService.instance.lines.length, TexthookerService.maxLines);
     expect(TexthookerService.instance.lines.first, 'line 10');
-    expect(TexthookerService.instance.entryById(first.id), isNull,
-        reason: 'an evicted line must not silently resolve to newer text');
+    expect(
+      TexthookerService.instance.entryById(first.id),
+      isNull,
+      reason: 'an evicted line must not silently resolve to newer text',
+    );
   });
 
   test('clear empties and notifies', () {
@@ -132,20 +150,14 @@ void main() {
     expect(TexthookerService.instance.textThreads, hasLength(2));
     expect(TexthookerService.instance.textThreads.first.key, 'luna:clean');
     expect(TexthookerService.instance.textThreads.first.lineCount, 2);
-    expect(
-      TexthookerService.instance.textThreads.first.nativeThreadId,
-      0xCAFE,
-    );
+    expect(TexthookerService.instance.textThreads.first.nativeThreadId, 0xCAFE);
     expect(
       TexthookerService.instance
           .entriesForTextThread('luna:clean')
           .map((entry) => entry.text),
       <String>['干净文本一', '干净文本二'],
     );
-    expect(
-      TexthookerService.instance.entriesForTextThread(null),
-      hasLength(3),
-    );
+    expect(TexthookerService.instance.entriesForTextThread(null), hasLength(3));
   });
 
   test('discovered Luna thread is selectable before it publishes a line', () {
@@ -179,76 +191,92 @@ void main() {
     expect(TexthookerService.instance.textThreads, isEmpty);
   });
 
-  test('text-ring lines rebuild a missing thread directory without publishing',
-      () {
-    for (int i = 1; i <= 3; i++) {
-      TexthookerService.instance.observeTextThreadLine(
-        key: 'hook:user1',
-        label: 'UserHook1',
-        hookCode: 'HQFN-24@328E0',
-        nativeThreadId: 0x1234,
-        text: '台詞$i',
+  test(
+    'text-ring lines rebuild a missing thread directory without publishing',
+    () {
+      for (int i = 1; i <= 3; i++) {
+        TexthookerService.instance.observeTextThreadLine(
+          key: 'hook:user1',
+          label: 'UserHook1',
+          hookCode: 'HQFN-24@328E0',
+          nativeThreadId: 0x1234,
+          text: '台詞$i',
+        );
+      }
+
+      expect(
+        TexthookerService.instance.entries,
+        isEmpty,
+        reason: '目录观测不能绕过控制器的选中线程发布门',
       );
-    }
+      final TexthookerTextThread thread =
+          TexthookerService.instance.textThreads.single;
+      expect(thread.key, 'hook:user1');
+      expect(thread.label, 'UserHook1');
+      expect(thread.nativeThreadId, 0x1234);
+      expect(thread.observedLineCount, 3);
+      expect(thread.previewText, '台詞3');
+    },
+  );
 
-    expect(TexthookerService.instance.entries, isEmpty,
-        reason: '目录观测不能绕过控制器的选中线程发布门');
-    final TexthookerTextThread thread =
-        TexthookerService.instance.textThreads.single;
-    expect(thread.key, 'hook:user1');
-    expect(thread.label, 'UserHook1');
-    expect(thread.nativeThreadId, 0x1234);
-    expect(thread.observedLineCount, 3);
-    expect(thread.previewText, '台詞3');
-  });
+  test(
+    'text-bearing threads sort before freshly-discovered 0-line threads',
+    () {
+      final DateTime base = DateTime(2026, 7, 26, 12);
+      // 有台词的线程先出现（较早）……
+      TexthookerService.instance.appendLine(
+        '当前台词',
+        textThreadKey: 'luna:voice',
+        textThreadLabel: 'KiriKiriZ · 0xa74600',
+        receivedAt: base,
+      );
+      // ……随后一条 ThreadCreate 把 0 行线程的 latestAt 顶到更晚（旧排序会让它排最前）。
+      TexthookerService.instance.registerTextThread(
+        key: 'luna:empty',
+        label: 'TextRender · 0x9c7c571',
+        discoveredAt: base.add(const Duration(seconds: 5)),
+      );
 
-  test('text-bearing threads sort before freshly-discovered 0-line threads',
-      () {
-    final DateTime base = DateTime(2026, 7, 26, 12);
-    // 有台词的线程先出现（较早）……
-    TexthookerService.instance.appendLine(
-      '当前台词',
-      textThreadKey: 'luna:voice',
-      textThreadLabel: 'KiriKiriZ · 0xa74600',
-      receivedAt: base,
-    );
-    // ……随后一条 ThreadCreate 把 0 行线程的 latestAt 顶到更晚（旧排序会让它排最前）。
-    TexthookerService.instance.registerTextThread(
-      key: 'luna:empty',
-      label: 'TextRender · 0x9c7c571',
-      discoveredAt: base.add(const Duration(seconds: 5)),
-    );
+      final List<TexthookerTextThread> threads =
+          TexthookerService.instance.textThreads;
+      expect(threads, hasLength(2));
+      expect(
+        threads.first.key,
+        'luna:voice',
+        reason: '有台词的线程必须排在刚发现的 0 行线程之前，即便后者 latestAt 更晚',
+      );
+      expect(threads.last.key, 'luna:empty');
+    },
+  );
 
-    final List<TexthookerTextThread> threads =
-        TexthookerService.instance.textThreads;
-    expect(threads, hasLength(2));
-    expect(threads.first.key, 'luna:voice',
-        reason: '有台词的线程必须排在刚发现的 0 行线程之前，即便后者 latestAt 更晚');
-    expect(threads.last.key, 'luna:empty');
-  });
+  test(
+    'threads with audio sort ahead of text-only threads of equal recency',
+    () {
+      final DateTime at = DateTime(2026, 7, 26, 13);
+      TexthookerService.instance.appendLine(
+        '无音频行',
+        textThreadKey: 'luna:textonly',
+        textThreadLabel: 'A',
+        receivedAt: at,
+      );
+      final TexthookerLineEntry withAudio = TexthookerService.instance
+          .appendLine(
+            '有音频行',
+            textThreadKey: 'luna:withaudio',
+            textThreadLabel: 'B',
+            receivedAt: at,
+          )!;
+      TexthookerService.instance.updateLineAudio(
+        withAudio.id,
+        status: TexthookerLineAudioStatus.matched,
+      );
 
-  test('threads with audio sort ahead of text-only threads of equal recency',
-      () {
-    final DateTime at = DateTime(2026, 7, 26, 13);
-    TexthookerService.instance.appendLine(
-      '无音频行',
-      textThreadKey: 'luna:textonly',
-      textThreadLabel: 'A',
-      receivedAt: at,
-    );
-    final TexthookerLineEntry withAudio = TexthookerService.instance.appendLine(
-      '有音频行',
-      textThreadKey: 'luna:withaudio',
-      textThreadLabel: 'B',
-      receivedAt: at,
-    )!;
-    TexthookerService.instance.updateLineAudio(
-      withAudio.id,
-      status: TexthookerLineAudioStatus.matched,
-    );
-
-    expect(TexthookerService.instance.textThreads.first.key, 'luna:withaudio');
-  });
+      expect(
+        TexthookerService.instance.textThreads.first.key,
+        'luna:withaudio',
+      );
+    },
+  );
 
   group('foldRepeatedTextForPreview', () {
     test('collapses a short unit repeated many times', () {
@@ -260,10 +288,7 @@ void main() {
     test('collapses long runs of one grapheme', () {
       expect(foldRepeatedTextForPreview('靴靴靴靴靴'), '靴');
       // 混合垃圾：长游程收成单字，可读性大幅提升（不追求完美复原）。
-      expect(
-        foldRepeatedTextForPreview('靴靴靴靴靴ををを脱脱脱'),
-        '靴を脱',
-      );
+      expect(foldRepeatedTextForPreview('靴靴靴靴靴ををを脱脱脱'), '靴を脱');
     });
 
     test('leaves normal Japanese sentences untouched', () {
@@ -289,14 +314,19 @@ void main() {
       expect(preview, 'あ');
     });
 
-    test('a non-repeating long line is truncated to maxCharacters + ellipsis',
-        () {
-      const String base = '零一二三四五六七八九';
-      final String long = base * 5; // 50 graphemes, no run/period match
-      final String preview = collapseTexthookerPreview(long, maxCharacters: 40);
-      // base*5 恰为周期串 → 折叠成 base（10 字），因此不截断。
-      expect(preview, base);
-    });
+    test(
+      'a non-repeating long line is truncated to maxCharacters + ellipsis',
+      () {
+        const String base = '零一二三四五六七八九';
+        final String long = base * 5; // 50 graphemes, no run/period match
+        final String preview = collapseTexthookerPreview(
+          long,
+          maxCharacters: 40,
+        );
+        // base*5 恰为周期串 → 折叠成 base（10 字），因此不截断。
+        expect(preview, base);
+      },
+    );
   });
 
   group('assignThreadDisplayLabels', () {
@@ -309,11 +339,12 @@ void main() {
         );
 
     test('unique labels are returned unchanged', () {
-      final Map<String, String> labels =
-          assignThreadDisplayLabels(<TexthookerTextThread>[
-        thread('a', 'KiriKiriZ · 0xa74600'),
-        thread('b', 'TextRender · 0x9c7c571'),
-      ]);
+      final Map<String, String> labels = assignThreadDisplayLabels(
+        <TexthookerTextThread>[
+          thread('a', 'KiriKiriZ · 0xa74600'),
+          thread('b', 'TextRender · 0x9c7c571'),
+        ],
+      );
       expect(labels['a'], 'KiriKiriZ · 0xa74600');
       expect(labels['b'], 'TextRender · 0x9c7c571');
     });
@@ -321,85 +352,95 @@ void main() {
     test('duplicate labels get #N suffixes in input order', () {
       final Map<String, String> labels =
           assignThreadDisplayLabels(<TexthookerTextThread>[
-        thread('a', 'TextRender · 0x9c7c571'),
-        thread('b', 'TextRender · 0x9c7c571'),
-        thread('c', 'TextRender · 0x9c7c571'),
-      ]);
+            thread('a', 'TextRender · 0x9c7c571'),
+            thread('b', 'TextRender · 0x9c7c571'),
+            thread('c', 'TextRender · 0x9c7c571'),
+          ]);
       expect(labels['a'], 'TextRender · 0x9c7c571 #1');
       expect(labels['b'], 'TextRender · 0x9c7c571 #2');
       expect(labels['c'], 'TextRender · 0x9c7c571 #3');
     });
   });
 
-  test('current session thread catalog excludes stale process-bound candidates',
-      () {
-    final DateTime oldSession = DateTime(2026, 7, 26, 12);
-    final DateTime currentSession = oldSession.add(const Duration(hours: 1));
-    TexthookerService.instance.registerTextThread(
-      key: 'luna:old-textrender',
-      label: 'TextRender · 0x9c7c571',
-      nativeThreadId: 0x10,
-      discoveredAt: oldSession,
-    );
-    TexthookerService.instance.appendLine(
-      '旧会话台词',
-      textThreadKey: 'luna:old-textrender',
-      textThreadLabel: 'TextRender · 0x9c7c571',
-      nativeTextThreadId: 0x10,
-      receivedAt: oldSession.add(const Duration(seconds: 1)),
-    );
-    TexthookerService.instance.registerTextThread(
-      key: 'luna:current-textrender',
-      label: 'TextRender · 0x9c7c571',
-      nativeThreadId: 0x20,
-      discoveredAt: currentSession,
-    );
+  test(
+    'current session thread catalog excludes stale process-bound candidates',
+    () {
+      final DateTime oldSession = DateTime(2026, 7, 26, 12);
+      final DateTime currentSession = oldSession.add(const Duration(hours: 1));
+      TexthookerService.instance.registerTextThread(
+        key: 'luna:old-textrender',
+        label: 'TextRender · 0x9c7c571',
+        nativeThreadId: 0x10,
+        discoveredAt: oldSession,
+      );
+      TexthookerService.instance.appendLine(
+        '旧会话台词',
+        textThreadKey: 'luna:old-textrender',
+        textThreadLabel: 'TextRender · 0x9c7c571',
+        nativeTextThreadId: 0x10,
+        receivedAt: oldSession.add(const Duration(seconds: 1)),
+      );
+      TexthookerService.instance.registerTextThread(
+        key: 'luna:current-textrender',
+        label: 'TextRender · 0x9c7c571',
+        nativeThreadId: 0x20,
+        discoveredAt: currentSession,
+      );
 
-    final List<TexthookerTextThread> current =
-        TexthookerService.instance.textThreadsSince(currentSession);
-    expect(current, hasLength(1));
-    expect(current.single.key, 'luna:current-textrender');
-    expect(current.single.nativeThreadId, 0x20);
-    expect(current.single.lineCount, 0,
-        reason: '当前 TextRender 尚无输出时仍可选，但不得借旧进程的历史行');
-  });
+      final List<TexthookerTextThread> current = TexthookerService.instance
+          .textThreadsSince(currentSession);
+      expect(current, hasLength(1));
+      expect(current.single.key, 'luna:current-textrender');
+      expect(current.single.nativeThreadId, 0x20);
+      expect(
+        current.single.lineCount,
+        0,
+        reason: '当前 TextRender 尚无输出时仍可选，但不得借旧进程的历史行',
+      );
+    },
+  );
 
-  test('all-thread projection folds only simultaneous cross-thread duplicates',
-      () {
-    final DateTime at = DateTime(2026, 7, 27, 10);
-    final TexthookerLineEntry first = TexthookerService.instance.appendLine(
-      '同一句台词',
-      source: TexthookerLineSource.engineHook,
-      hookTimestampMs: 123000,
-      textThreadKey: 'luna:kiri-a',
-      receivedAt: at,
-    )!;
-    TexthookerService.instance.appendLine(
-      '同一句台词',
-      source: TexthookerLineSource.engineHook,
-      hookTimestampMs: 123008,
-      textThreadKey: 'luna:kiri-b',
-      receivedAt: at.add(const Duration(milliseconds: 8)),
-    );
-    final TexthookerLineEntry legitimateRepeat =
-        TexthookerService.instance.appendLine(
-      '同一句台词',
-      source: TexthookerLineSource.engineHook,
-      hookTimestampMs: 125000,
-      textThreadKey: 'luna:kiri-a',
-      receivedAt: at.add(const Duration(seconds: 2)),
-    )!;
+  test(
+    'all-thread projection folds only simultaneous cross-thread duplicates',
+    () {
+      final DateTime at = DateTime(2026, 7, 27, 10);
+      final TexthookerLineEntry first = TexthookerService.instance.appendLine(
+        '同一句台词',
+        source: TexthookerLineSource.engineHook,
+        hookTimestampMs: 123000,
+        textThreadKey: 'luna:kiri-a',
+        receivedAt: at,
+      )!;
+      TexthookerService.instance.appendLine(
+        '同一句台词',
+        source: TexthookerLineSource.engineHook,
+        hookTimestampMs: 123008,
+        textThreadKey: 'luna:kiri-b',
+        receivedAt: at.add(const Duration(milliseconds: 8)),
+      );
+      final TexthookerLineEntry legitimateRepeat = TexthookerService.instance
+          .appendLine(
+            '同一句台词',
+            source: TexthookerLineSource.engineHook,
+            hookTimestampMs: 125000,
+            textThreadKey: 'luna:kiri-a',
+            receivedAt: at.add(const Duration(seconds: 2)),
+          )!;
 
-    expect(TexthookerService.instance.entries, hasLength(3),
-        reason: '底层逐行身份不能丢，线程选择和音频状态仍需各自的原始行');
-    expect(
-      collapseParallelTextThreadDuplicates(
+      expect(
         TexthookerService.instance.entries,
-      ).map((TexthookerLineEntry entry) => entry.id),
-      <String>[first.id, legitimateRepeat.id],
-      reason: '只折叠同一渲染瞬间、不同 Hook 线程双写的那一份',
-    );
-  });
+        hasLength(3),
+        reason: '底层逐行身份不能丢，线程选择和音频状态仍需各自的原始行',
+      );
+      expect(
+        collapseParallelTextThreadDuplicates(
+          TexthookerService.instance.entries,
+        ).map((TexthookerLineEntry entry) => entry.id),
+        <String>[first.id, legitimateRepeat.id],
+        reason: '只折叠同一渲染瞬间、不同 Hook 线程双写的那一份',
+      );
+    },
+  );
 
   test('同标签文本线程补可区分后缀，唯一标签保持原样', () {
     // 用户实拍：下拉里 6 条线程全叫 `CodeX · 0x459f50`——同一 hook 的并行线程只在
@@ -435,8 +476,10 @@ void main() {
       reason: '不重名的线程不加后缀噪音',
     );
     // key / 行数等身份字段不得被改写。
-    expect(disambiguated.map((t) => t.key).toList(),
-        threads.map((t) => t.key).toList());
+    expect(
+      disambiguated.map((t) => t.key).toList(),
+      threads.map((t) => t.key).toList(),
+    );
     expect(disambiguated[0].lineCount, 160);
   });
 
@@ -459,11 +502,7 @@ void main() {
       expect(thread.hasObservedLines, isFalse);
 
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
-        preview(
-          threadId: 111,
-          text: '可愛らしい声がオレを呼び止める。',
-          lineCount: 7,
-        ),
+        preview(threadId: 111, text: '可愛らしい声がオレを呼び止める。', lineCount: 7),
       ]);
 
       thread = svc.textThreads.single;
@@ -480,11 +519,7 @@ void main() {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(key: 'luna:aa', label: 'A', nativeThreadId: 111);
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
-        preview(
-          threadId: 111,
-          text: 'keep me',
-          lineCount: 3,
-        ),
+        preview(threadId: 111, text: 'keep me', lineCount: 3),
       ]);
       // ThreadCreate 会在同一条线程上重复触发。
       svc.registerTextThread(key: 'luna:aa', label: 'A', nativeThreadId: 111);
@@ -495,11 +530,20 @@ void main() {
     test('排序：有观测行的排前面，脏线程排后面', () {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(
-          key: 'luna:empty', label: 'Empty', nativeThreadId: 1);
+        key: 'luna:empty',
+        label: 'Empty',
+        nativeThreadId: 1,
+      );
       svc.registerTextThread(
-          key: 'luna:dirty', label: 'Dirty', nativeThreadId: 2);
+        key: 'luna:dirty',
+        label: 'Dirty',
+        nativeThreadId: 2,
+      );
       svc.registerTextThread(
-          key: 'luna:clean', label: 'Clean', nativeThreadId: 3);
+        key: 'luna:clean',
+        label: 'Clean',
+        nativeThreadId: 3,
+      );
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
         // 逐字重绘型 hook：行多但绝大多数是伪影。
         preview(
@@ -509,15 +553,12 @@ void main() {
           artifactCount: 80,
           isArtifact: true,
         ),
-        preview(
-          threadId: 3,
-          text: '「あの……保科君」',
-          lineCount: 9,
-        ),
+        preview(threadId: 3, text: '「あの……保科君」', lineCount: 9),
       ]);
 
-      final List<String> order =
-          svc.textThreads.map((TexthookerTextThread t) => t.key).toList();
+      final List<String> order = svc.textThreads
+          .map((TexthookerTextThread t) => t.key)
+          .toList();
       // 干净线程第一，脏线程仍然可见（对齐 Luna：不藏，只是排后面），空线程垫底。
       expect(order, <String>['luna:clean', 'luna:dirty', 'luna:empty']);
     });
@@ -570,10 +611,7 @@ void main() {
       final TexthookerTextThread thread = svc.textThreads.single;
       expect(thread.isArtifactDominated, isTrue);
       // 折叠后的预览确实像干净句子——这正是没有标记时用户会选错的原因。
-      expect(
-        collapseTexthookerPreview(thread.displayPreviewText!),
-        '徐々に汗ばむ',
-      );
+      expect(collapseTexthookerPreview(thread.displayPreviewText!), '徐々に汗ばむ');
     });
 
     test('texthookerThreadSubtitle 把伪影提示放在最前', () {
@@ -602,11 +640,7 @@ void main() {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
-        preview(
-          threadId: 1,
-          text: 'first',
-          lineCount: 2,
-        ),
+        preview(threadId: 1, text: 'first', lineCount: 2),
       ]);
       expect(svc.textThreads.single.previewText, 'first');
 
@@ -620,12 +654,7 @@ void main() {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
       final List<TexthookerThreadPreview> snapshot = <TexthookerThreadPreview>[
-        preview(
-          threadId: 1,
-          text: 'same',
-          lineCount: 5,
-          artifactCount: 1,
-        ),
+        preview(threadId: 1, text: 'same', lineCount: 5, artifactCount: 1),
       ];
       svc.applyTextThreadPreviews(snapshot);
 
@@ -636,12 +665,7 @@ void main() {
       svc.applyTextThreadPreviews(snapshot);
       expect(notifications, 0);
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
-        preview(
-          threadId: 1,
-          text: 'changed',
-          lineCount: 6,
-          artifactCount: 1,
-        ),
+        preview(threadId: 1, text: 'changed', lineCount: 6, artifactCount: 1),
       ]);
       expect(notifications, 1);
       svc.removeListener(listener);
@@ -651,11 +675,7 @@ void main() {
       final TexthookerService svc = TexthookerService.instance;
       svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);
       svc.applyTextThreadPreviews(<TexthookerThreadPreview>[
-        preview(
-          threadId: 1,
-          text: 'stale',
-          lineCount: 4,
-        ),
+        preview(threadId: 1, text: 'stale', lineCount: 4),
       ]);
       svc.clear();
       svc.registerTextThread(key: 'luna:a', label: 'A', nativeThreadId: 1);

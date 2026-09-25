@@ -181,6 +181,21 @@ void main() {
       expect(tick.contains('GetKeyState('), isFalse);
       expect(tick.contains('hover_tracker_.Observe('), isTrue);
       expect(tick.contains('EmitLookupEvent(cluster,true)'), isTrue);
+      expect(
+        tick.contains('visual_cluster=over_text?cluster:-1'),
+        isTrue,
+        reason: '普通查词和校准的视觉高亮都必须独立于 Shift 查词事件',
+      );
+      expect(
+        tick.contains('visual_cluster') && tick.contains('hover_cluster_'),
+        isTrue,
+        reason: '移动到新字簇时才重绘，避免 60ms 定时器不断刷位图',
+      );
+      expect(
+        tick.contains('if(!shift_down){hover_tracker_.Reset();return;}'),
+        isTrue,
+        reason: '高亮可不按 Shift，但 Shift 查词状态仍须复位',
+      );
       for (final String forbidden in <String>[
         'AdoptShieldTransaction(',
         'BeginPointerGesture(',
@@ -208,6 +223,20 @@ void main() {
         isTrue,
       );
       expect(source.contains('KillTimer(hwnd_,kHoverTimerId);'), isTrue);
+      expect(
+        source.contains('hover_cluster_>=0') &&
+            source.contains('PremultipliedPixel(88,49,215,255)') &&
+            source.contains(
+              'clusters_[static_cast<size_t>(hover_cluster_)].visual_rect',
+            ),
+        isTrue,
+        reason: '按 KiriKiri 参考用浅蓝填充当前字簇的视觉框，命中仍使用完整格',
+      );
+      expect(
+        header.contains('inthover_cluster_=-1;'),
+        isTrue,
+        reason: '视觉高亮必须有独立状态，不能复用查词 tracker',
+      );
 
       final String gesture = compactCode(
         methodBody(
@@ -248,6 +277,48 @@ void main() {
   });
 
   group('Dart: attached hit → lookupText 必带游戏 HWND', () {
+    test('attached physical hit and viewport reach the public popup route', () {
+      final String emit = compactCode(
+        methodBody(
+          attachedSource,
+          'void AttachedTextSurfaceWindow::EmitLookupEvent(',
+        ),
+      );
+      expect(
+        emit,
+        contains(
+          'event.destination_viewport_screen_px='
+          'surface_geometry_.destination_viewport_screen;',
+        ),
+      );
+      final String attached = compactCode(
+        methodBody(
+          overlayController,
+          'Future<void> _onAttachedLookupText(GalAttachedLookupHitV19 hit)',
+        ),
+      );
+      expect(attached, contains('GlobalLookupPhysicalPlacement('));
+      expect(attached, contains('anchorScreenRect:hit.physicalWordRect!'));
+      expect(
+        attached,
+        contains('destinationViewportScreenRect:hit.destinationViewportScreen'),
+      );
+      final String lookup = compactCode(
+        methodBody(overlayController, 'Future<void> _onLookupText('),
+      );
+      expect(lookup, contains('physicalPlacement:physicalPlacement'));
+      final String callback = flutterWindowSource.substring(
+        flutterWindowSource.indexOf(
+          'attached_text_surface_window_->SetLookupCallback(',
+        ),
+        flutterWindowSource.indexOf(
+          'attached_text_surface_window_->SetShieldStatusCallback(',
+        ),
+      );
+      expect(callback, contains('EncodableValue("physicalWordRect")'));
+      expect(callback, contains('EncodableValue("destinationViewportScreen")'));
+    });
+
     test('_onAttachedLookupText 传 hit.target.targetHwnd，浮窗路径不传', () {
       final String attached = compactCode(
         methodBody(

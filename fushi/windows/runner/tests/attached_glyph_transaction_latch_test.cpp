@@ -5,6 +5,7 @@
 #undef NDEBUG
 
 #include "../attached_glyph_transaction_latch.h"
+#include "../attached_popup_rearm_policy.h"
 
 #include <cstdint>
 #include <iostream>
@@ -102,6 +103,35 @@ int main() {
                "acknowledgement wait must retain the full grace interval");
   ok &= Expect(fushi::AttachedGlyphAcknowledgeTimedOut(7000, 10000, 3000),
                "acknowledgement wait must terminate at the bounded deadline");
+
+  // Popup close must immediately wake the retained attached candidate once
+  // its matching up and every sampled-input tail are neutral. This is the
+  // deterministic replacement for waiting until the next 500 ms health tick.
+  using fushi::attached_popup_rearm_policy::CanRequestRearm;
+  using fushi::attached_popup_rearm_policy::State;
+  State popup_closed;
+  popup_closed.candidate_surface = reinterpret_cast<HWND>(0x1234);
+  ok &= Expect(CanRequestRearm(popup_closed),
+               "closed popup with neutral tails must request attached rearm");
+  popup_closed.swallowed_buttons = 1;
+  ok &= Expect(!CanRequestRearm(popup_closed),
+               "dismiss down must retain ownership until matching up");
+  popup_closed.swallowed_buttons = 0;
+  popup_closed.direct_shield_tail_token = 7;
+  ok &= Expect(!CanRequestRearm(popup_closed),
+               "sampled-input tail must settle before attached rearm");
+  popup_closed.direct_shield_tail_token = 0;
+  popup_closed.attached_transaction_active = true;
+  ok &= Expect(!CanRequestRearm(popup_closed),
+               "previous attached glyph transaction must retire first");
+  popup_closed.attached_transaction_active = false;
+  popup_closed.current_target = reinterpret_cast<HWND>(0x5678);
+  ok &= Expect(!CanRequestRearm(popup_closed),
+               "a newer popup binding must keep ownership");
+  popup_closed.current_target = nullptr;
+  popup_closed.rearm_pending = true;
+  ok &= Expect(!CanRequestRearm(popup_closed),
+               "an already queued rearm must not post duplicate messages");
 
   if (!ok)
     return 1;

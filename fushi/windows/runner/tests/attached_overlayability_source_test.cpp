@@ -76,11 +76,9 @@ int main() {
   const std::string sync = FunctionSlice(
       source, "void AttachedTextSurfaceWindow::SyncToTarget()",
       "void AttachedTextSurfaceWindow::HideSurface()");
-  const size_t non_calibration =
-      sync.find("if (mode_ != Mode::kCalibration)");
-  const size_t native_monitor = sync.find("!EnsureWindow(", non_calibration);
+  // Calibration now uses the same HWND/shield readiness path as lookup.
+  const size_t native_monitor = sync.find("!EnsureWindow(");
   const size_t active_native = sync.find("\"activeNative\"");
-  assert(non_calibration != std::string::npos);
   assert(native_monitor != std::string::npos);
   assert(active_native != std::string::npos);
   assert(native_monitor < active_native);

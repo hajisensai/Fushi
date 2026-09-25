@@ -8,6 +8,7 @@
 #include "gal_direct_card_geometry.h"
 #include "game_client_extent.h"
 #include "low_level_mouse_hook.h"
+#include "native_glog.h"
 #include "resource.h"
 
 // v14 游戏内查词的输入 kind 取值真相源。只为下面那组 static_assert 而 include：
@@ -372,6 +373,8 @@ std::wstring MediaContentTypeHeader(const std::string& url) {
   return L"Content-Type: application/octet-stream";
 }
 
+}  // namespace
+
 // TODO-1153 -- native diagnostic logger for the overlay bring-up. The runner is
 // a WIN32 GUI exe with no console, so a failed WebView2 environment/controller
 // create otherwise vanishes. Appends timestamped lines to the SAME file the Dart
@@ -396,6 +399,8 @@ void NativeGlog(const std::string& message) {
               st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
   out << stamp << "  [native] " << message << "\n";
 }
+
+namespace {
 
 // TODO-1153 -- dedicated WebView2 user data folder for the app-external overlay.
 //
@@ -1006,13 +1011,23 @@ bool GlobalLookupWindow::CommitPendingShellGeometry(
 }
 
 void GlobalLookupWindow::FinalizePendingShellGeometry(
-    int64_t geometry_epoch) {
+    int64_t geometry_epoch, double clamp_dx_css, double clamp_dy_css) {
   if (!OwnsLiveWindow()) {
     ClearPendingShellGeometry();
     return;
   }
   if (!CommitPendingShellGeometry(geometry_epoch)) {
     return;
+  }
+  // RevealStack shifts the DOM when the work-area clamp moves the HWND away
+  // from its intended bbox origin. shellRects were announced before that
+  // clamp, so apply the same correction only to the newly committed rects.
+  // Both the Win32 hit/paint region and the shadow must follow the visible DOM.
+  if (clamp_dx_css != 0.0 || clamp_dy_css != 0.0) {
+    for (std::array<double, 4>& rect : shell_rects_css_) {
+      rect[0] -= clamp_dx_css;
+      rect[1] -= clamp_dy_css;
+    }
   }
   // The host layer shift has executed, so committed shell rects and visible DOM
   // now share one window-local origin. Only here may HRGN and shadow consume the
@@ -1496,10 +1511,13 @@ void GlobalLookupWindow::RevealStack(int dx, int dy, int width, int height,
     const HRESULT shift_hr = webview_->ExecuteScript(
         shift_script.c_str(),
         Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
-            [this, geometry_epoch](HRESULT error_code,
-                                   LPCWSTR result_json) -> HRESULT {
+            [this, geometry_epoch, clamp_dx_css, clamp_dy_css](
+                HRESULT error_code, LPCWSTR result_json) -> HRESULT {
               if (ScriptResultIsTrue(error_code, result_json)) {
-                FinalizePendingShellGeometry(geometry_epoch);
+                // Keep HRGN/shadow in the clamped HWND's coordinate system,
+                // exactly matching commitLayerShift's adjusted DOM origin.
+                FinalizePendingShellGeometry(geometry_epoch, clamp_dx_css,
+                                             clamp_dy_css);
               }
               return S_OK;
             })

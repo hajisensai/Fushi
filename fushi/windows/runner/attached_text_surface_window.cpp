@@ -16,10 +16,12 @@
 #include <utility>
 
 #include "attached_layout_validation.h"
+#include "attached_bitmap_bounds.h"
 #include "attached_overlayability.h"
 #include "attached_shield_status_policy.h"
 #include "lookup_hit_validation.h"
 #include "low_level_mouse_hook.h"
+#include "native_glog.h"
 #include "window_capture.h"
 #include "voice_hook_reader.h"
 
@@ -34,9 +36,19 @@ constexpr UINT kFollowTimerMs = 500;
 // floating lyric window does (floating_lyric_window.cpp MaybeHoverLookup).
 constexpr UINT_PTR kHoverTimerId = 2;
 constexpr UINT kHoverTimerMs = 60;
+// The injected shield acknowledges a handshake probe only through shared
+// memory, with no wake-up channel. A re-handshake takes one admission pass to
+// publish the probe and another to observe the ack, so leaving it to the 500 ms
+// follow timer kept the surface hidden (no highlight, clicks not looked up)
+// for up to seconds after every popup dismissal or advanced line. While a
+// handshake is outstanding, re-run admission at frame cadence instead.
+constexpr UINT_PTR kShieldHandshakeWatchTimerId = 3;
+constexpr UINT kShieldHandshakeWatchTimerMs = 16;
+// Resource bound only: a handshake still pending after this long returns to
+// the follow-timer cadence (and is logged) rather than polling indefinitely.
+constexpr ULONGLONG kShieldHandshakeWatchMaxMs = 5000;
 constexpr UINT kSyncTargetMessage = WM_APP + 0x235;
 constexpr int kMinimumBodyPixels = 8;
-constexpr double kMinimumNormalizedExtent = 0.002;
 constexpr size_t kMaximumSourceTextUnits = 32768;
 constexpr uint32_t kProbeStartMask = 1u;
 constexpr uint32_t kProbeMiddleMask = 2u;
@@ -274,37 +286,24 @@ bool WindowIsCloaked(HWND hwnd) {
 
 RECT ClientScreenRect(HWND hwnd) {
   RECT client{};
-  if (hwnd == nullptr || !GetClientRect(hwnd, &client))
+  if (!fushi::ReadPhysicalClientScreenRect(hwnd, &client))
     return RECT{};
-  POINT top_left{client.left, client.top};
-  POINT bottom_right{client.right, client.bottom};
-  if (!ClientToScreen(hwnd, &top_left) ||
-      !ClientToScreen(hwnd, &bottom_right)) {
-    return RECT{};
-  }
-  return RECT{top_left.x, top_left.y, bottom_right.x, bottom_right.y};
-}
-
-RECT ResolveNormalizedRect(
-    const RECT &client,
-    const AttachedTextSurfaceWindow::NormalizedRect &normalized) {
-  const double width = static_cast<double>(client.right - client.left);
-  const double height = static_cast<double>(client.bottom - client.top);
-  const LONG left =
-      client.left + static_cast<LONG>(std::llround(normalized.left * width));
-  const LONG top =
-      client.top + static_cast<LONG>(std::llround(normalized.top * height));
-  const LONG right =
-      client.left + static_cast<LONG>(std::llround(
-                        (normalized.left + normalized.width) * width));
-  const LONG bottom =
-      client.top + static_cast<LONG>(std::llround(
-                       (normalized.top + normalized.height) * height));
-  return RECT{left, top, right, bottom};
+  return client;
 }
 
 bool RectHasArea(const RECT &rect) {
   return rect.right > rect.left && rect.bottom > rect.top;
+}
+
+bool SurfaceGeometryEqual(
+    const AttachedTextSurfaceWindow::SurfaceGeometry &left,
+    const AttachedTextSurfaceWindow::SurfaceGeometry &right) {
+  return EqualRect(&left.source_client_screen, &right.source_client_screen) &&
+         EqualRect(&left.source_viewport_screen, &right.source_viewport_screen) &&
+         EqualRect(&left.presentation_client_screen,
+                   &right.presentation_client_screen) &&
+         EqualRect(&left.destination_viewport_screen,
+                   &right.destination_viewport_screen);
 }
 
 using QueryVidPnExclusiveOwnership =
@@ -430,12 +429,7 @@ int AttachedTextSurfaceWindow::CompareEpoch(const Epoch &left,
 
 bool AttachedTextSurfaceWindow::IsNormalizedRectValid(
     const NormalizedRect &rect) {
-  return std::isfinite(rect.left) && std::isfinite(rect.top) &&
-         std::isfinite(rect.width) && std::isfinite(rect.height) &&
-         rect.width >= kMinimumNormalizedExtent &&
-         rect.height >= kMinimumNormalizedExtent && rect.left >= 0.0 &&
-         rect.top >= 0.0 && rect.left + rect.width <= 1.0 &&
-         rect.top + rect.height <= 1.0;
+  return fushi::attached_text_layout::IsNormalizedRectValid(rect);
 }
 
 AttachedTextSurfaceWindow::NormalizedRect
@@ -474,6 +468,11 @@ void AttachedTextSurfaceWindow::AdoptNewEpoch(const Epoch &epoch,
   calibration_rect_ = NormalizedRect{};
   pre_calibration_rect_ = NormalizedRect{};
   pre_calibration_configured_ = false;
+  surface_geometry_ = SurfaceGeometry{};
+  magpie_mapping_active_ = false;
+  source_body_screen_rect_ = RECT{};
+  mapped_body_screen_rect_ = RECT{};
+  presentation_dpi_ = 96;
   probe_start_index_ = -1;
   probe_middle_index_ = -1;
   probe_end_index_ = -1;
@@ -687,17 +686,72 @@ bool AttachedTextSurfaceWindow::RefreshTargetClient(RECT *client_screen,
       *error = "target_cloaked";
     return false;
   }
-  const RECT client = ClientScreenRect(geometry_window);
+  RECT client = ClientScreenRect(geometry_window);
   if (!RectHasArea(client)) {
     if (error != nullptr)
       *error = "target_client_unavailable";
     return false;
   }
-  UINT dpi = GetDpiForWindow(geometry_window);
-  *client_screen = client;
-  reference->width_px = client.right - client.left;
-  reference->height_px = client.bottom - client.top;
-  reference->dpi = static_cast<int>(dpi == 0 ? 96 : dpi);
+  const RECT source_client = ClientScreenRect(target_.hwnd);
+  if (!RectHasArea(source_client)) {
+    if (error != nullptr)
+      *error = "target_source_client_unavailable";
+    return false;
+  }
+  SurfaceGeometry geometry;
+  magpie_mapping_active_ = false;
+  geometry.source_client_screen = source_client;
+  geometry.source_viewport_screen = source_client;
+  geometry.presentation_client_screen = client;
+  geometry.destination_viewport_screen = client;
+  // Magpie may letterbox or crop the source inside a larger presentation
+  // client. Its public viewport properties are the only trustworthy mapping
+  // for that case; using the whole client shifts every calibrated hit box.
+  if (geometry_window != target_.hwnd &&
+      fushi::ResolveScalingSourceWindow(geometry_window) == target_.hwnd) {
+    fushi::MagpiePresentationMapping mapping;
+    if (!fushi::ReadMagpiePresentationMapping(geometry_window, target_.hwnd,
+                                              &mapping)) {
+      if (error != nullptr)
+        *error = "magpie_viewport_unavailable";
+      return false;
+    }
+    geometry.source_viewport_screen = mapping.source_rect_screen;
+    geometry.destination_viewport_screen = mapping.destination_rect_screen;
+    if (!fushi::attached_magpie_surface_geometry::RectContainedIn(
+            geometry.destination_viewport_screen,
+            geometry.presentation_client_screen)) {
+      if (error != nullptr)
+        *error = "magpie_viewport_outside_presentation";
+      return false;
+    }
+    if (!fushi::attached_magpie_surface_geometry::RectContainedIn(
+            geometry.source_viewport_screen, geometry.source_client_screen)) {
+      if (error != nullptr)
+        *error = "magpie_source_viewport_invalid";
+      return false;
+    }
+    if (!fushi::attached_magpie_surface_geometry::IsMappingValid(geometry)) {
+      if (error != nullptr)
+        *error = "magpie_viewport_invalid";
+      return false;
+    }
+    magpie_mapping_active_ = true;
+  }
+  if (!fushi::attached_magpie_surface_geometry::IsMappingValid(geometry)) {
+    if (error != nullptr)
+      *error = "target_client_unavailable";
+    return false;
+  }
+  const UINT source_dpi = GetDpiForWindow(target_.hwnd);
+  const UINT presentation_dpi = GetDpiForWindow(geometry_window);
+  surface_geometry_ = geometry;
+  presentation_dpi_ = static_cast<int>(presentation_dpi == 0 ? 96
+                                                               : presentation_dpi);
+  *client_screen = geometry.destination_viewport_screen;
+  reference->width_px = source_client.right - source_client.left;
+  reference->height_px = source_client.bottom - source_client.top;
+  reference->dpi = static_cast<int>(source_dpi == 0 ? 96 : source_dpi);
   return true;
 }
 
@@ -812,7 +866,12 @@ AttachedTextSurfaceWindow::StartCalibration(
           layout.font_size_per_client_height,
           layout.letter_spacing_per_client_height, layout.line_height,
           layout.text_align, layout.vertical_align,
-          layout.padding_per_client_height)) {
+          layout.padding_per_client_height) ||
+      (layout.cell_grid.has_value() &&
+       !fushi::attached_text_layout::IsCellGridValid(*layout.cell_grid)) ||
+      !fushi::attached_text_layout::IsPunctuationVisualBoundsListValid(
+          layout) ||
+      !fushi::attached_text_layout::IsCharacterAdvancesListValid(layout)) {
     if (error != nullptr)
       *error = "invalid_layout";
     return RequestResult::kRejected;
@@ -915,6 +974,7 @@ AttachedTextSurfaceWindow::CommitCalibration(const Epoch &epoch,
     return RequestResult::kRejected;
   }
   body_rect_ = calibration_rect_;
+  HideSurface();
   mode_ = pre_calibration_configured_ ? Mode::kConfigured : Mode::kTargetReady;
   layout_dirty_ = true;
   NotifyCalibrationCommitted();
@@ -987,14 +1047,13 @@ void AttachedTextSurfaceWindow::ResetObservedCalibrationProbes() {
 }
 
 bool AttachedTextSurfaceWindow::RecordObservedCalibrationProbe(
-    POINT client_point, std::string *error) {
+    int cluster_index, std::string *error) {
   if (mode_ != Mode::kCalibration || source_text_.empty() ||
       text_generation_ <= 0 || layout_dirty_ || clusters_.empty()) {
     if (error != nullptr)
       *error = "calibration_probe_layout_unavailable";
     return false;
   }
-  const int cluster_index = ClusterAt(client_point);
   if (cluster_index < 0 ||
       static_cast<size_t>(cluster_index) >= clusters_.size()) {
     if (error != nullptr)
@@ -1054,7 +1113,9 @@ AttachedTextSurfaceWindow::CancelCalibration(const Epoch &epoch,
     return RequestResult::kRejected;
   }
   body_rect_ = pre_calibration_rect_;
+  HideSurface();
   mode_ = pre_calibration_configured_ ? Mode::kConfigured : Mode::kTargetReady;
+  layout_dirty_ = true;
   NotifyCalibrationCancelled(reason.empty() ? "cancelled" : reason);
   SyncToTarget();
   return RequestResult::kApplied;
@@ -1091,7 +1152,12 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::Configure(
           layout.font_size_per_client_height,
           layout.letter_spacing_per_client_height, layout.line_height,
           layout.text_align, layout.vertical_align,
-          layout.padding_per_client_height)) {
+          layout.padding_per_client_height) ||
+      (layout.cell_grid.has_value() &&
+       !fushi::attached_text_layout::IsCellGridValid(*layout.cell_grid)) ||
+      !fushi::attached_text_layout::IsPunctuationVisualBoundsListValid(
+          layout) ||
+      !fushi::attached_text_layout::IsCharacterAdvancesListValid(layout)) {
     if (error != nullptr)
       *error = "invalid_layout";
     return RequestResult::kRejected;
@@ -1178,8 +1244,8 @@ AttachedTextSurfaceWindow::RequestResult AttachedTextSurfaceWindow::UpdateText(
     return RequestResult::kRejected;
   }
   // Never leave the previous sentence's region live while a replacement
-  // DirectWrite layout is being built. This also releases any down latch tied
-  // to the old generation before publishing the new source.
+  // DirectWrite layout is being built. This cancels submission for the old
+  // generation; the LL layer still owns its matching physical release tail.
   const bool calibration_text_changed =
       mode_ == Mode::kCalibration &&
       (source_text_ != source_text || text_generation_ != text_generation);
@@ -1207,7 +1273,12 @@ AttachedTextSurfaceWindow::UpdateStyle(const Epoch &epoch, uint32_t target_pid,
           layout.font_size_per_client_height,
           layout.letter_spacing_per_client_height, layout.line_height,
           layout.text_align, layout.vertical_align,
-          layout.padding_per_client_height)) {
+          layout.padding_per_client_height) ||
+      (layout.cell_grid.has_value() &&
+       !fushi::attached_text_layout::IsCellGridValid(*layout.cell_grid)) ||
+      !fushi::attached_text_layout::IsPunctuationVisualBoundsListValid(
+          layout) ||
+      !fushi::attached_text_layout::IsCharacterAdvancesListValid(layout)) {
     if (error != nullptr)
       *error = "invalid_layout";
     return RequestResult::kRejected;
@@ -1218,7 +1289,45 @@ AttachedTextSurfaceWindow::UpdateStyle(const Epoch &epoch, uint32_t target_pid,
   const auto same_double = [](double left, double right) {
     return std::abs(left - right) <= 1e-12;
   };
+  const auto same_punctuation_bounds = [&](const auto &left,
+                                           const auto &right) {
+    if (left.size() != right.size())
+      return false;
+    for (size_t index = 0; index < left.size(); ++index) {
+      const auto &a = left[index];
+      const auto &b = right[index];
+      if (a.code_point != b.code_point ||
+          !same_double(a.left, b.left) || !same_double(a.top, b.top) ||
+          !same_double(a.right, b.right) || !same_double(a.bottom, b.bottom)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const auto same_character_advances = [&](const auto &left,
+                                           const auto &right) {
+    if (left.size() != right.size())
+      return false;
+    for (size_t index = 0; index < left.size(); ++index) {
+      const auto &a = left[index];
+      const auto &b = right[index];
+      if (a.code_point != b.code_point ||
+          !same_double(a.advance_ratio, b.advance_ratio)) {
+        return false;
+      }
+    }
+    return true;
+  };
   const bool layout_changed =
+      desired.cell_grid != layout_.cell_grid ||
+      desired.quoted_text_only != layout_.quoted_text_only ||
+      !same_punctuation_bounds(desired.punctuation_visual_bounds,
+                               layout_.punctuation_visual_bounds) ||
+      !same_character_advances(desired.character_advances,
+                               layout_.character_advances) ||
+      desired.punctuation_visual_bounds_valid !=
+          layout_.punctuation_visual_bounds_valid ||
+      desired.character_advances_valid != layout_.character_advances_valid ||
       desired.font_family != layout_.font_family ||
       !same_double(desired.font_size_per_client_height,
                    layout_.font_size_per_client_height) ||
@@ -1248,6 +1357,13 @@ AttachedTextSurfaceWindow::Detach(const Epoch &epoch, uint32_t target_pid,
     return accepted;
   CancelPointerGesture();
   HideSurface();
+  // Detach only hides the window, so WM_NCDESTROY never retires the passive
+  // re-arm candidate. Left in place, every later desktop/global popup release
+  // would arm the fail-closed fence for this dead surface and swallow all
+  // mouse downs system-wide until the platform thread drained the re-arm
+  // message. The next published hit snapshot re-registers a live surface.
+  if (hwnd_ != nullptr)
+    fushi::RetireLowLevelAttachedGlyphRearmCandidate(hwnd_);
   ResetShieldHandshake();
   shield_status_ = ShieldStatus{};
   mode_ = Mode::kDetached;
@@ -1433,10 +1549,17 @@ void AttachedTextSurfaceWindow::DestroySurfaceWindow() {
   if (active_instance_ == this)
     active_instance_ = nullptr;
   hover_tracker_.Reset();
+  hover_cluster_ = -1;
   if (hwnd_ != nullptr && IsWindow(hwnd_)) {
     KillTimer(hwnd_, kFollowTimerId);
     KillTimer(hwnd_, kHoverTimerId);
+    StopShieldHandshakeWatchTimer();
+    shield_handshake_watch_active_ = false;
     HWND old = hwnd_;
+    // DestroySurfaceWindow clears the member and userdata before DestroyWindow,
+    // so WM_NCDESTROY cannot recover |this| to retire the passive candidate.
+    // Retire it explicitly while the concrete HWND is still known.
+    fushi::RetireLowLevelAttachedGlyphRearmCandidate(old);
     hwnd_ = nullptr;
     SetWindowLongPtrW(old, GWLP_USERDATA, 0);
     DestroyWindow(old);
@@ -1496,6 +1619,8 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     HideSurface();
     return;
   }
+  const SurfaceGeometry previous_geometry = surface_geometry_;
+  const RECT previous_source_body = source_body_screen_rect_;
   std::string error;
   RECT client{};
   ReferenceClient reference;
@@ -1505,8 +1630,12 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
       mode_ = Mode::kTargetReady;
     }
     HideSurface();
-    SetState(error == "target_cloaked" ? "suspended" : "error",
-             error == "target_cloaked" ? "targetCloaked" : "targetUnavailable",
+    const bool mapping_unavailable = error.rfind("magpie_", 0) == 0;
+    SetState(error == "target_cloaked" || mapping_unavailable ? "suspended"
+                                                             : "error",
+             error == "target_cloaked" ? "targetCloaked"
+             : mapping_unavailable ? "targetMappingUnavailable"
+                                   : "targetUnavailable",
              error);
     EmitStateIfChanged();
     return;
@@ -1545,23 +1674,44 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     EmitStateIfChanged();
     return;
   }
-  if (mode_ != Mode::kCalibration) {
-    if (!EnsureWindow(&error)) {
-      HideSurface();
-      SetState("error", "surfaceUnavailable", error);
-      EmitStateIfChanged();
-      return;
-    }
-    const ShieldHandshakeState handshake = EnsureShieldHandshake();
-    if (handshake != ShieldHandshakeState::kReady) {
-      HideSurface();
-      SetState("suspended", "shieldHandshakePending",
-               handshake == ShieldHandshakeState::kUnavailable
-                   ? "input_shield_handshake_unavailable"
-                   : "input_shield_rehandshake_pending");
-      EmitStateIfChanged();
-      return;
-    }
+  if (!EnsureWindow(&error)) {
+    HideSurface();
+    SetState("error", "surfaceUnavailable", error);
+    EmitStateIfChanged();
+    return;
+  }
+  // Calibration probes consume game clicks too. They require the same
+  // acknowledged shield and immutable glyph snapshot as ordinary lookup.
+  // Sample the LL ownership before the shared-memory status. Read the other
+  // way round, a release acknowledged and retired between the two reads would
+  // pair a stale pending status with an inactive worker and hide the surface
+  // under the still-queued up message.
+  const bool own_ll_transaction =
+      fushi::LowLevelAttachedGlyphTransactionActiveFor(hwnd_);
+  const ShieldHandshakeState handshake = EnsureShieldHandshake();
+  if (handshake == ShieldHandshakeState::kPending && surface_visible_ &&
+      !layout_dirty_ &&
+      (mode_ == Mode::kConfigured || mode_ == Mode::kCalibration) &&
+      own_ll_transaction && OwnGlyphTransactionInFlight()) {
+    // Our own glyph click (its down or its release tail) is waiting for the
+    // injected acknowledgement. That input is already owned by this surface,
+    // not a lost handshake: hiding here cancelled the in-flight gesture, so
+    // the click was swallowed without a lookup whenever any sync landed inside
+    // the ~200 ms ack window. Keep the published surface only while the LL
+    // worker still owns that transaction. If the shield never answers or
+    // reports a fault, the worker fails it open after the physical up: it
+    // revokes the snapshot, clears the transaction and posts the abort
+    // message, so the next sync falls through to the pending-handshake hide.
+    return;
+  }
+  if (handshake != ShieldHandshakeState::kReady) {
+    HideSurface();
+    SetState("suspended", "shieldHandshakePending",
+             handshake == ShieldHandshakeState::kUnavailable
+                 ? "input_shield_handshake_unavailable"
+                 : "input_shield_rehandshake_pending");
+    EmitStateIfChanged();
+    return;
   }
   if (native_provider_preferred) {
     if (!overlayability.overlayable && !native_without_desktop_overlay) {
@@ -1646,19 +1796,8 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
 
-  if (mode_ == Mode::kCalibration) {
-    SetRuntimeClickThrough(false);
-    PositionSurface(client, true);
-    if (layout_dirty_)
-      (void)RebuildClusters();
-    ApplyInteractiveRegion();
-    RenderLayerBitmap(true);
-    SetVisible(true);
-    SetState("calibrating", "calibrating");
-    EmitStateIfChanged();
-    return;
-  }
-  if (mode_ != Mode::kConfigured || !ShieldPermitsLookup()) {
+  const bool calibration = mode_ == Mode::kCalibration;
+  if ((!calibration && mode_ != Mode::kConfigured) || !ShieldPermitsLookup()) {
     HideSurface();
     SetState(ShieldFaulted()
                  ? "error"
@@ -1677,7 +1816,34 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
 
-  const RECT body = ResolveNormalizedRect(client, body_rect_);
+  const NormalizedRect &active_body =
+      calibration ? calibration_rect_ : body_rect_;
+  RECT source_body{};
+  if (!fushi::attached_magpie_surface_geometry::ResolveSourceBodyRect(
+          surface_geometry_.source_client_screen, active_body, &source_body)) {
+    source_body_screen_rect_ = RECT{};
+    mapped_body_screen_rect_ = RECT{};
+    HideSurface();
+    SetState("error", "invalidConfiguration", "body_rect_invalid");
+    EmitStateIfChanged();
+    return;
+  }
+  RECT body{};
+  if (!fushi::attached_magpie_surface_geometry::ResolveVisibleBody(
+          surface_geometry_, active_body, &body)) {
+    source_body_screen_rect_ = source_body;
+    mapped_body_screen_rect_ = RECT{};
+    HideSurface();
+    SetState("error", "invalidConfiguration", "body_rect_not_visible");
+    EmitStateIfChanged();
+    return;
+  }
+  if (!SurfaceGeometryEqual(previous_geometry, surface_geometry_) ||
+      !EqualRect(&previous_source_body, &source_body)) {
+    layout_dirty_ = true;
+  }
+  source_body_screen_rect_ = source_body;
+  mapped_body_screen_rect_ = body;
   if (body.right - body.left < kMinimumBodyPixels ||
       body.bottom - body.top < kMinimumBodyPixels) {
     HideSurface();
@@ -1685,17 +1851,26 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     EmitStateIfChanged();
     return;
   }
+  // Hard-break grids may have glyphs outside the saved body (right of it, or
+  // rows below it). Keep the overlay click-through and expose only actual
+  // glyph hit regions.
+  const bool hard_break_grid =
+      fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
+  const RECT surface = calibration || hard_break_grid ? client : body;
   const bool size_changed =
-      body.right - body.left !=
+      surface.right - surface.left !=
           surface_screen_rect_.right - surface_screen_rect_.left ||
-      body.bottom - body.top !=
+      surface.bottom - surface.top !=
           surface_screen_rect_.bottom - surface_screen_rect_.top ||
       reference.height_px != previous_reference.height_px ||
       reference.dpi != previous_reference.dpi;
   SetRuntimeClickThrough(true);
-  PositionSurface(body, false);
-  if (size_changed)
+  PositionSurface(surface, calibration);
+  if (size_changed) {
+    if (calibration)
+      ResetObservedCalibrationProbes();
     layout_dirty_ = true;
+  }
   if (layout_dirty_ && !RebuildClusters()) {
     HideSurface();
     SetState("ready", "noGlyphClusters",
@@ -1721,6 +1896,10 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     if (snapshot_publication_error == "geometry_provider_not_owned") {
       SetState("suspended", "geometryProviderPending",
                "attached_registry_owner_changed");
+    } else if (snapshot_publication_error ==
+               "magpie_cursor_capture_inactive") {
+      SetState("suspended", "cursorCapturePending",
+               "magpie_presentation_not_transparent");
     } else if (!snapshot_publication_error.empty()) {
       SetState("unavailable", "exclusiveFullscreenUnavailable",
                snapshot_publication_error);
@@ -1731,7 +1910,7 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     EmitStateIfChanged();
     return;
   }
-  RenderLayerBitmap(false);
+  RenderLayerBitmap(calibration);
   if (!SetVisible(true)) {
     // BUG-2140：这一路有五个互不相干的闸门，报出到底是哪条。
     const char *arm_failure = fushi::LastAttachedGlyphArmFailure();
@@ -1743,7 +1922,8 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     return;
   }
   const bool risky = fushi::LowLevelAttachedGlyphUsesRiskFallback(hwnd_);
-  SetState("visible", risky ? "visibleRisky" : "visible",
+  SetState(calibration ? "calibrating" : "visible",
+           calibration ? "calibrating" : (risky ? "visibleRisky" : "visible"),
            risky ? "sampled_input_shield_unverified" : std::string());
   EmitStateIfChanged();
 }
@@ -1764,6 +1944,9 @@ bool AttachedTextSurfaceWindow::SetVisible(bool visible) {
     hit_snapshot_token_ = 0;
     published_snapshot_game_ = nullptr;
     published_snapshot_allow_risk_ = false;
+    published_snapshot_has_cursor_mapping_ = false;
+    published_snapshot_cursor_presentation_ = nullptr;
+    published_snapshot_cursor_mapping_ = SurfaceGeometry{};
     published_screen_rects_.clear();
     fushi::DisarmLowLevelMouseHook(hwnd_);
     mouse_hook_ready_ = false;
@@ -1772,7 +1955,7 @@ bool AttachedTextSurfaceWindow::SetVisible(bool visible) {
     return true;
   }
 
-  if (mode_ == Mode::kConfigured) {
+  if (mode_ == Mode::kConfigured || mode_ == Mode::kCalibration) {
     // Revalidate singleton ownership on every 500ms health sync. A desktop or
     // global popup may have taken the process-wide HHOOK after this surface was
     // shown; attached must hide and retry later, never steal it back.
@@ -1784,6 +1967,9 @@ bool AttachedTextSurfaceWindow::SetVisible(bool visible) {
       hit_snapshot_token_ = 0;
       published_snapshot_game_ = nullptr;
       published_snapshot_allow_risk_ = false;
+      published_snapshot_has_cursor_mapping_ = false;
+      published_snapshot_cursor_presentation_ = nullptr;
+      published_snapshot_cursor_mapping_ = SurfaceGeometry{};
       published_screen_rects_.clear();
       fushi::FinalizeLowLevelMouseDirectInputShield(hwnd_);
       ShowWindow(hwnd_, SW_HIDE);
@@ -1818,6 +2004,14 @@ void AttachedTextSurfaceWindow::PositionSurface(const RECT &screen_rect,
                                                 bool calibration) {
   const bool changed = !EqualRect(&surface_screen_rect_, &screen_rect) ||
                        ((mode_ == Mode::kCalibration) != calibration);
+  if (changed) {
+    // The new surface can be smaller than the old calibration surface.  Drop
+    // the old hit snapshot and cluster geometry before changing the HWND
+    // bounds; otherwise a resize can render old full-client boxes into the
+    // new, smaller DIB before SyncToTarget rebuilds them.
+    ClearInteractiveRegion();
+    layout_dirty_ = true;
+  }
   surface_screen_rect_ = screen_rect;
   if (hwnd_ == nullptr || !RectHasArea(screen_rect))
     return;
@@ -1825,9 +2019,6 @@ void AttachedTextSurfaceWindow::PositionSurface(const RECT &screen_rect,
                screen_rect.right - screen_rect.left,
                screen_rect.bottom - screen_rect.top,
                SWP_NOACTIVATE | SWP_NOZORDER);
-  if (changed) {
-    RenderLayerBitmap(calibration);
-  }
 }
 
 // BUG-2138：17 个失败点原本全是裸 `return false`，对外只发一条笼统的
@@ -1851,241 +2042,95 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
       return ClusterFailure("dwrite_factory_failed");
   }
 
-  const float client_height =
-      static_cast<float>(std::max(1, live_reference_client_.height_px));
-  const float font_size = static_cast<float>(std::clamp(
-      layout_.font_size_per_client_height * client_height, 1.0, 512.0));
-  const float padding = static_cast<float>(
-      std::max(0.0, layout_.padding_per_client_height * client_height));
-  const float surface_width = static_cast<float>(surface_screen_rect_.right -
-                                                 surface_screen_rect_.left);
-  const float surface_height = static_cast<float>(surface_screen_rect_.bottom -
-                                                  surface_screen_rect_.top);
-  RECT layout_bounds{0, 0, static_cast<LONG>(surface_width),
-                     static_cast<LONG>(surface_height)};
-  if (mode_ == Mode::kCalibration) {
-    if (!IsNormalizedRectValid(calibration_rect_))
-      return ClusterFailure("calibration_rect_invalid");
-    const RECT full_client = layout_bounds;
-    layout_bounds = ResolveNormalizedRect(full_client, calibration_rect_);
+  if (!RectHasArea(source_body_screen_rect_) ||
+      !RectHasArea(mapped_body_screen_rect_)) {
+    return ClusterFailure("mapped_body_not_visible");
   }
-  const float layout_width =
-      static_cast<float>(layout_bounds.right - layout_bounds.left);
-  const float layout_height =
-      static_cast<float>(layout_bounds.bottom - layout_bounds.top);
-  if (layout_width < kMinimumBodyPixels || layout_height < kMinimumBodyPixels) {
-    return ClusterFailure("layout_bounds_too_small");
-  }
-  const float layout_origin_x =
-      static_cast<float>(layout_bounds.left) + padding;
-  const float layout_origin_y = static_cast<float>(layout_bounds.top) + padding;
-  const float content_width = std::max(1.0f, layout_width - 2.0f * padding);
-  const float content_height = std::max(1.0f, layout_height - 2.0f * padding);
+  // Build in source pixels with the source reference height.  Magpie can
+  // enlarge the destination several times; transforming the finished boxes
+  // keeps wrapping, cell advances and punctuation geometry identical to the
+  // source profile instead of leaving the catch surface at source scale.
+  const int source_width = source_body_screen_rect_.right -
+                           source_body_screen_rect_.left;
+  const int source_height = source_body_screen_rect_.bottom -
+                            source_body_screen_rect_.top;
+  const RECT layout_bounds{0, 0, source_width, source_height};
+  const bool hard_break_grid =
+      fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
+  const int surface_width = hard_break_grid
+      ? surface_geometry_.source_client_screen.right -
+            source_body_screen_rect_.left
+      : source_width;
+  const int surface_height =
+      layout_.cell_grid.has_value() && layout_.cell_grid->explicit_line_breaks
+      ? surface_geometry_.source_client_screen.bottom -
+            source_body_screen_rect_.top
+      : source_height;
+  fushi::attached_text_layout::Result result =
+      fushi::attached_text_layout::Build(
+          dwrite_factory_.Get(), source_text_, layout_,
+          live_reference_client_.height_px, surface_width, surface_height,
+          layout_bounds);
+  if (!result.ok())
+    return ClusterFailure(result.reason.c_str());
 
-  Microsoft::WRL::ComPtr<IDWriteTextFormat> format;
-  HRESULT hr = dwrite_factory_->CreateTextFormat(
-      layout_.font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-      DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size, L"ja-JP",
-      &format);
-  if (FAILED(hr))
-    return ClusterFailure("create_text_format_failed");
-  if (layout_.text_align == "center") {
-    format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-  } else if (layout_.text_align == "right" ||
-             layout_.text_align == "trailing") {
-    format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
-  } else {
-    format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-  }
-  if (layout_.vertical_align == "center") {
-    format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-  } else if (layout_.vertical_align == "bottom" ||
-             layout_.vertical_align == "far") {
-    format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_FAR);
-  } else {
-    format->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-  }
-  format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-  const float line_spacing =
-      std::max(font_size, font_size * static_cast<float>(layout_.line_height));
-  // BUG-2138：基线距离原本硬编码成 `font_size * 0.8`。那是拉丁字体的经验值；日文字体
-  // 的 ascent 普遍在 0.88 em 上下，于是**第一行的墨迹必然伸到版面框上方**，紧接着的
-  // `GetOverhangMetrics` 恒判 `overhang.top > 0` 而整轮建簇失败——attached 通路对日文
-  // 正文因此永远建不出一个字形簇（真机 WoH：`fallback/overhang_outside_body_rect`）。
-  // 这里不去猜某个新常数，而是先用一次性版面**量出**真实上溢，再把基线下移同样多；
-  // 本来就不上溢的字体量到 0，行为一字不变。
-  float baseline = font_size * 0.8f;
-  {
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> probe_format;
-    if (SUCCEEDED(dwrite_factory_->CreateTextFormat(
-            layout_.font_family.c_str(), nullptr, DWRITE_FONT_WEIGHT_NORMAL,
-            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, font_size,
-            L"ja-JP", &probe_format))) {
-      probe_format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-      probe_format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,
-                                   line_spacing, baseline);
-      Microsoft::WRL::ComPtr<IDWriteTextLayout> probe_layout;
-      if (SUCCEEDED(dwrite_factory_->CreateTextLayout(
-              source_text_.data(), static_cast<UINT32>(source_text_.size()),
-              probe_format.Get(), content_width, content_height,
-              &probe_layout))) {
-        DWRITE_OVERHANG_METRICS probe{};
-        if (SUCCEEDED(probe_layout->GetOverhangMetrics(&probe)) &&
-            probe.top > 0.0f) {
-          baseline += probe.top;
-        }
-      }
+  std::vector<ClusterBox> mapped_clusters;
+  mapped_clusters.reserve(result.boxes.size());
+  const auto map_cluster_rect = [&](const RECT &source_local,
+                                    RECT *surface_local) {
+    if (surface_local == nullptr || !RectHasArea(source_local))
+      return false;
+    RECT source_screen = source_local;
+    OffsetRect(&source_screen, source_body_screen_rect_.left,
+               source_body_screen_rect_.top);
+    RECT mapped_screen{};
+    if (!fushi::attached_magpie_surface_geometry::MapSourceRectToDestination(
+            surface_geometry_, source_screen, &mapped_screen)) {
+      return false;
     }
-  }
-  format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM, line_spacing,
-                         baseline);
-
-  hr = dwrite_factory_->CreateTextLayout(
-      source_text_.data(), static_cast<UINT32>(source_text_.size()),
-      format.Get(), content_width, content_height, &text_layout_);
-  if (FAILED(hr) || text_layout_ == nullptr)
-    return ClusterFailure("create_text_layout_failed");
-
-  const float letter_spacing = static_cast<float>(
-      layout_.letter_spacing_per_client_height * client_height);
-  if (letter_spacing != 0.0f) {
-    Microsoft::WRL::ComPtr<IDWriteTextLayout1> layout1;
-    if (SUCCEEDED(text_layout_.As(&layout1))) {
-      const DWRITE_TEXT_RANGE range{0,
-                                    static_cast<UINT32>(source_text_.size())};
-      layout1->SetCharacterSpacing(letter_spacing * 0.5f, letter_spacing * 0.5f,
-                                   0.0f, range);
+    RECT clipped_screen{};
+    if (!fushi::attached_magpie_surface_geometry::ClipRectTo(
+            mapped_screen, surface_screen_rect_, &clipped_screen)) {
+      return false;
     }
-  }
-
-  // A catch surface must never publish geometry for text that DirectWrite
-  // clipped. A partially laid-out sentence makes the final visible glyphs map
-  // to stale/absent boxes, which is worse than reporting no surface. Validate
-  // all three views of the layout before exposing a single HWND region.
-  constexpr float kLayoutEpsilon = 0.01f;
-  DWRITE_TEXT_METRICS text_metrics{};
-  if (FAILED(text_layout_->GetMetrics(&text_metrics)) ||
-      text_metrics.left < -kLayoutEpsilon ||
-      text_metrics.top < -kLayoutEpsilon ||
-      text_metrics.left + text_metrics.widthIncludingTrailingWhitespace >
-          content_width + kLayoutEpsilon ||
-      text_metrics.top + text_metrics.height >
-          content_height + kLayoutEpsilon) {
-    ClearInteractiveRegion();
-    return ClusterFailure("metrics_overflow_body_rect");
-  }
-  DWRITE_OVERHANG_METRICS overhang{};
-  if (FAILED(text_layout_->GetOverhangMetrics(&overhang)) ||
-      overhang.left > kLayoutEpsilon || overhang.top > kLayoutEpsilon ||
-      overhang.right > kLayoutEpsilon || overhang.bottom > kLayoutEpsilon) {
-    ClearInteractiveRegion();
-    return ClusterFailure("overhang_outside_body_rect");
-  }
-
-  UINT32 line_count = 0;
-  HRESULT line_hr = text_layout_->GetLineMetrics(nullptr, 0, &line_count);
-  if ((line_hr != E_NOT_SUFFICIENT_BUFFER && FAILED(line_hr)) ||
-      line_count == 0) {
-    ClearInteractiveRegion();
-    return ClusterFailure("line_metrics_unavailable");
-  }
-  std::vector<DWRITE_LINE_METRICS> lines(line_count);
-  line_hr = text_layout_->GetLineMetrics(lines.data(), line_count, &line_count);
-  if (FAILED(line_hr)) {
-    ClearInteractiveRegion();
-    return ClusterFailure("line_metrics_read_failed");
-  }
-  uint64_t line_units = 0;
-  double line_height_total = 0.0;
-  for (UINT32 index = 0; index < line_count; ++index) {
-    if (lines[index].isTrimmed) {
-      ClearInteractiveRegion();
-      return ClusterFailure("line_trimmed");
+    OffsetRect(&clipped_screen, -surface_screen_rect_.left,
+               -surface_screen_rect_.top);
+    if (!RectHasArea(clipped_screen))
+      return false;
+    *surface_local = clipped_screen;
+    return true;
+  };
+  for (ClusterBox cluster : result.boxes) {
+    RECT hit_rect{};
+    RECT visual_rect{};
+    if (!map_cluster_rect(cluster.hit_rect, &hit_rect) ||
+        !map_cluster_rect(cluster.visual_rect, &visual_rect)) {
+      continue;
     }
-    line_units += lines[index].length;
-    line_height_total += lines[index].height;
+    cluster.hit_rect = hit_rect;
+    cluster.visual_rect = visual_rect;
+    mapped_clusters.push_back(std::move(cluster));
   }
-  if (line_units != source_text_.size() ||
-      line_height_total > content_height + kLayoutEpsilon) {
-    ClearInteractiveRegion();
-    return ClusterFailure("line_units_or_height_mismatch");
-  }
-
-  UINT32 cluster_count = 0;
-  hr = text_layout_->GetClusterMetrics(nullptr, 0, &cluster_count);
-  if (hr != E_NOT_SUFFICIENT_BUFFER && FAILED(hr))
-    return ClusterFailure("cluster_metrics_unavailable");
-  if (cluster_count == 0)
-    return ClusterFailure("cluster_count_zero");
-  std::vector<DWRITE_CLUSTER_METRICS> metrics(cluster_count);
-  hr = text_layout_->GetClusterMetrics(metrics.data(), cluster_count,
-                                       &cluster_count);
-  if (FAILED(hr))
-    return ClusterFailure("cluster_metrics_read_failed");
-
-  uint32_t text_position = 0;
-  for (UINT32 index = 0; index < cluster_count; ++index) {
-    const DWRITE_CLUSTER_METRICS &cluster = metrics[index];
-    const uint32_t length = cluster.length;
-    if (length == 0 || text_position >= source_text_.size() ||
-        static_cast<uint64_t>(text_position) + length > source_text_.size()) {
-      ClearInteractiveRegion();
-      return ClusterFailure("cluster_range_out_of_text");
-    }
-    if (!cluster.isWhitespace && !cluster.isNewline && !cluster.isSoftHyphen) {
-      UINT32 hit_count = 0;
-      HRESULT hit_hr = text_layout_->HitTestTextRange(
-          text_position, length, layout_origin_x, layout_origin_y, nullptr, 0,
-          &hit_count);
-      if ((hit_hr != E_NOT_SUFFICIENT_BUFFER && FAILED(hit_hr)) ||
-          hit_count == 0) {
-        ClearInteractiveRegion();
-        return ClusterFailure("hit_test_range_empty");
-      }
-      std::vector<DWRITE_HIT_TEST_METRICS> hits(hit_count);
-      hit_hr = text_layout_->HitTestTextRange(
-          text_position, length, layout_origin_x, layout_origin_y, hits.data(),
-          hit_count, &hit_count);
-      if (FAILED(hit_hr)) {
-        ClearInteractiveRegion();
-        return ClusterFailure("hit_test_range_failed");
-      }
-      for (UINT32 hit_index = 0; hit_index < hit_count; ++hit_index) {
-        const DWRITE_HIT_TEST_METRICS &hit = hits[hit_index];
-        RECT box{
-            static_cast<LONG>(std::floor(hit.left)),
-            static_cast<LONG>(std::floor(hit.top)),
-            static_cast<LONG>(std::ceil(hit.left + hit.width)),
-            static_cast<LONG>(std::ceil(hit.top + hit.height)),
-        };
-        if (!RectHasArea(box) || box.left < 0 || box.top < 0 ||
-            box.right > static_cast<LONG>(surface_width) ||
-            box.bottom > static_cast<LONG>(surface_height)) {
-          ClearInteractiveRegion();
-          return ClusterFailure("cluster_box_outside_surface");
-        }
-        clusters_.push_back(ClusterBox{text_position, length, box});
-      }
-    }
-    text_position += length;
-  }
-  if (text_position != source_text_.size()) {
-    ClearInteractiveRegion();
-    return ClusterFailure("text_position_mismatch");
-  }
-  if (clusters_.empty()) return ClusterFailure("clusters_empty");
+  if (mapped_clusters.empty())
+    return ClusterFailure("mapped_clusters_empty");
+  text_layout_ = std::move(result.text_layout);
+  clusters_ = std::move(mapped_clusters);
   last_cluster_failure_.clear();
   return true;
 }
 
 void AttachedTextSurfaceWindow::ClearInteractiveRegion() {
   CancelPointerGesture();
+  hover_cluster_ = -1;
   if (hwnd_ != nullptr) {
     fushi::ClearLowLevelAttachedGlyphHitRegions(hwnd_);
   }
   hit_snapshot_token_ = 0;
   published_snapshot_game_ = nullptr;
   published_snapshot_allow_risk_ = false;
+  published_snapshot_has_cursor_mapping_ = false;
+  published_snapshot_cursor_presentation_ = nullptr;
+  published_snapshot_cursor_mapping_ = SurfaceGeometry{};
   published_screen_rects_.clear();
   clusters_.clear();
   text_layout_.Reset();
@@ -2114,8 +2159,8 @@ void AttachedTextSurfaceWindow::ApplyInteractiveRegion() {
   } else {
     for (const ClusterBox &cluster : clusters_) {
       HRGN box =
-          CreateRectRgn(cluster.client_rect.left, cluster.client_rect.top,
-                        cluster.client_rect.right, cluster.client_rect.bottom);
+          CreateRectRgn(cluster.hit_rect.left, cluster.hit_rect.top,
+                        cluster.hit_rect.right, cluster.hit_rect.bottom);
       if (box != nullptr) {
         CombineRgn(region, region, box, RGN_OR);
         DeleteObject(box);
@@ -2132,7 +2177,8 @@ bool AttachedTextSurfaceWindow::PublishInteractiveSnapshot(
   if (publication_error != nullptr)
     publication_error->clear();
   if (hwnd_ == nullptr || !IsWindow(hwnd_) || target_.hwnd == nullptr ||
-      clusters_.empty() || mode_ != Mode::kConfigured) {
+      clusters_.empty() ||
+      (mode_ != Mode::kConfigured && mode_ != Mode::kCalibration)) {
     return false;
   }
   // Re-read immediately before the low-level immutable snapshot publication.
@@ -2156,17 +2202,41 @@ bool AttachedTextSurfaceWindow::PublishInteractiveSnapshot(
     }
     return false;
   }
+  const bool has_cursor_mapping = magpie_mapping_active_;
+  if (has_cursor_mapping) {
+    // Magpie's cursor is in source coordinates only while its presentation
+    // window is transparent.  A verified viewport with a non-transparent
+    // presentation is a toolbar/obscured state, so pause the attached layer
+    // instead of guessing which desktop space the next click uses.
+    SetLastError(ERROR_SUCCESS);
+    const LONG_PTR style = GetWindowLongPtrW(presentation_hwnd_, GWL_EXSTYLE);
+    if ((style == 0 && GetLastError() != ERROR_SUCCESS) ||
+        (style & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) == 0) {
+      if (publication_error != nullptr)
+        *publication_error = "magpie_cursor_capture_inactive";
+      return false;
+    }
+  }
   std::vector<RECT> screen_rects;
   screen_rects.reserve(clusters_.size());
   for (const ClusterBox &cluster : clusters_) {
-    RECT screen = cluster.client_rect;
+    RECT screen = cluster.hit_rect;
     OffsetRect(&screen, surface_screen_rect_.left, surface_screen_rect_.top);
     screen_rects.push_back(screen);
   }
   const bool effective_allow_risk = EffectiveAllowRisk();
+  const bool cursor_mapping_unchanged =
+      published_snapshot_has_cursor_mapping_ == has_cursor_mapping &&
+      (!has_cursor_mapping ||
+       (published_snapshot_cursor_presentation_ == presentation_hwnd_ &&
+        SurfaceGeometryEqual(published_snapshot_cursor_mapping_,
+                              surface_geometry_)));
   const bool unchanged =
       hit_snapshot_token_ != 0 && published_snapshot_game_ == target_.hwnd &&
       published_snapshot_allow_risk_ == effective_allow_risk &&
+      cursor_mapping_unchanged &&
+      fushi::LowLevelAttachedGlyphHitSnapshotIsCurrent(hwnd_,
+                                                       hit_snapshot_token_) &&
       published_screen_rects_.size() == screen_rects.size() &&
       std::equal(screen_rects.begin(), screen_rects.end(),
                  published_screen_rects_.begin(),
@@ -2182,13 +2252,23 @@ bool AttachedTextSurfaceWindow::PublishInteractiveSnapshot(
   }
   hit_snapshot_token_ = fushi::UpdateLowLevelAttachedGlyphHitRegions(
       hwnd_, target_.hwnd, screen_rects.data(), screen_rects.size(),
-      effective_allow_risk);
+      effective_allow_risk,
+      has_cursor_mapping ? &surface_geometry_ : nullptr,
+      has_cursor_mapping ? presentation_hwnd_ : nullptr);
   if (hit_snapshot_token_ != 0) {
     published_snapshot_game_ = target_.hwnd;
     published_snapshot_allow_risk_ = effective_allow_risk;
+    published_snapshot_has_cursor_mapping_ = has_cursor_mapping;
+    published_snapshot_cursor_presentation_ =
+        has_cursor_mapping ? presentation_hwnd_ : nullptr;
+    published_snapshot_cursor_mapping_ =
+        has_cursor_mapping ? surface_geometry_ : SurfaceGeometry{};
     published_screen_rects_ = std::move(screen_rects);
   } else {
     published_snapshot_game_ = nullptr;
+    published_snapshot_has_cursor_mapping_ = false;
+    published_snapshot_cursor_presentation_ = nullptr;
+    published_snapshot_cursor_mapping_ = SurfaceGeometry{};
     published_screen_rects_.clear();
   }
   return hit_snapshot_token_ != 0;
@@ -2241,19 +2321,16 @@ void AttachedTextSurfaceWindow::RenderLayerBitmap(bool calibration) {
     // Alpha is the final pixel-level catch gate in addition to WindowRgn. Keep
     // every gap, whitespace cell and unused body pixel exactly zero-alpha.
     for (const ClusterBox &cluster : clusters_) {
-      for (LONG y = cluster.client_rect.top; y < cluster.client_rect.bottom;
-           ++y) {
-        for (LONG x = cluster.client_rect.left; x < cluster.client_rect.right;
-             ++x) {
-          pixels[static_cast<size_t>(y) * static_cast<size_t>(width) +
-                 static_cast<size_t>(x)] = 0x01000000u;
-        }
-      }
+      // Keep the bitmap write bounded even if a stale or malformed cluster
+      // reaches this defensive rendering path.
+      fushi::attached_bitmap_bounds::FillRectClippedToSurface(
+          pixels, width, height, cluster.hit_rect, 0x01000000u);
     }
   }
   if (calibration && IsNormalizedRectValid(calibration_rect_)) {
-    const RECT local_client{0, 0, width, height};
-    RECT selection = ResolveNormalizedRect(local_client, calibration_rect_);
+    RECT selection = mapped_body_screen_rect_;
+    OffsetRect(&selection, -surface_screen_rect_.left,
+               -surface_screen_rect_.top);
     selection.left = std::clamp(selection.left, 0L, static_cast<LONG>(width));
     selection.top = std::clamp(selection.top, 0L, static_cast<LONG>(height));
     selection.right = std::clamp(selection.right, 0L, static_cast<LONG>(width));
@@ -2261,7 +2338,7 @@ void AttachedTextSurfaceWindow::RenderLayerBitmap(bool calibration) {
         std::clamp(selection.bottom, 0L, static_cast<LONG>(height));
     const uint32_t fill = PremultipliedPixel(18, 64, 160, 255);
     const uint32_t border = PremultipliedPixel(210, 64, 180, 255);
-    const int border_width = std::max(2, live_reference_client_.dpi / 48);
+    const int border_width = std::max(2, presentation_dpi_ / 48);
     for (int y = selection.top; y < selection.bottom; ++y) {
       for (int x = selection.left; x < selection.right; ++x) {
         const bool edge = x < selection.left + border_width ||
@@ -2269,6 +2346,55 @@ void AttachedTextSurfaceWindow::RenderLayerBitmap(bool calibration) {
                           y < selection.top + border_width ||
                           y >= selection.bottom - border_width;
         pixels[static_cast<size_t>(y) * width + x] = edge ? border : fill;
+      }
+    }
+    // Show the observed visual rectangles inside the larger hit cells. A click
+    // outside the hit boxes remains a game miss, while the visual outline lets
+    // calibration distinguish the glyph from its catch area.
+    // Green records the observed cluster without confusing the outer frame
+    // with a click shield.
+    for (const ClusterBox &cluster : clusters_) {
+      const int64_t index = static_cast<int64_t>(cluster.text_position);
+      const bool observed = index == probe_start_observed_index_ ||
+                            index == probe_middle_observed_index_ ||
+                            index == probe_end_observed_index_;
+      const uint32_t outline = observed ? PremultipliedPixel(230, 64, 230, 128)
+                                        : PremultipliedPixel(210, 64, 180, 255);
+      const RECT box{
+          std::clamp(cluster.visual_rect.left, 0L, static_cast<LONG>(width)),
+          std::clamp(cluster.visual_rect.top, 0L, static_cast<LONG>(height)),
+          std::clamp(cluster.visual_rect.right, 0L, static_cast<LONG>(width)),
+          std::clamp(cluster.visual_rect.bottom, 0L, static_cast<LONG>(height))};
+      for (LONG y = box.top; y < box.bottom; ++y) {
+        for (LONG x = box.left; x < box.right; ++x) {
+          if (x == box.left || x == box.right - 1 || y == box.top ||
+              y == box.bottom - 1) {
+            pixels[static_cast<size_t>(y) * width + x] = outline;
+          }
+        }
+      }
+    }
+  }
+
+  // Show the current text cluster under the global cursor when hover geometry
+  // is available. The surface remains WS_EX_NOACTIVATE/click-through; this is
+  // paint-only and never changes probe state or the input shield.
+  if (hover_cluster_ >= 0 &&
+      static_cast<size_t>(hover_cluster_) < clusters_.size()) {
+    const RECT cluster =
+        clusters_[static_cast<size_t>(hover_cluster_)].visual_rect;
+    const RECT box{
+        std::clamp(cluster.left, 0L, static_cast<LONG>(width)),
+        std::clamp(cluster.top, 0L, static_cast<LONG>(height)),
+        std::clamp(cluster.right, 0L, static_cast<LONG>(width)),
+        std::clamp(cluster.bottom, 0L, static_cast<LONG>(height))};
+    // Match KiriKiri's fushiLookupPaintHighlight: colorRect(0x31d7ff, 88).
+    // PremultipliedPixel takes alpha first; keep this as a translucent fill
+    // over the observed visual glyph bounds, without an outline.
+    const uint32_t hover_fill = PremultipliedPixel(88, 49, 215, 255);
+    for (LONG y = box.top; y < box.bottom; ++y) {
+      for (LONG x = box.left; x < box.right; ++x) {
+        pixels[static_cast<size_t>(y) * width + x] = hover_fill;
       }
     }
   }
@@ -2288,7 +2414,7 @@ void AttachedTextSurfaceWindow::RenderLayerBitmap(bool calibration) {
 
 int AttachedTextSurfaceWindow::ClusterAt(POINT client_point) const {
   for (size_t index = 0; index < clusters_.size(); ++index) {
-    if (PtInRect(&clusters_[index].client_rect, client_point)) {
+    if (PtInRect(&clusters_[index].hit_rect, client_point)) {
       return static_cast<int>(index);
     }
   }
@@ -2425,7 +2551,111 @@ AttachedTextSurfaceWindow::EnsureShieldHandshake() {
   shield_handshake_transaction_id_ = transaction_id;
   shield_handshake_request_seq_ = request_seq;
   shield_handshake_established_ = false;
+  shield_handshake_probe_published_at_ = GetTickCount64();
   return ShieldHandshakeState::kPending;
+}
+
+void AttachedTextSurfaceWindow::UpdateShieldHandshakeWatch() {
+  // "unavailable" has no acknowledgement to wait for; only an outstanding
+  // (re)handshake is worth observing at frame cadence.
+  const bool pending = status_ == "shieldHandshakePending" &&
+                       reason_ != "input_shield_handshake_unavailable";
+  if (pending) {
+    if (!shield_handshake_watch_active_) {
+      shield_handshake_watch_active_ = true;
+      // The probe that opens an episode is usually published by this same
+      // admission pass just before SetState, so it is not cleared here.
+      shield_handshake_pending_since_ = GetTickCount64();
+      shield_handshake_watch_syncs_ = 0;
+    }
+    if (!shield_handshake_watch_timer_running_ && hwnd_ != nullptr &&
+        IsWindow(hwnd_) &&
+        GetTickCount64() - shield_handshake_pending_since_ <=
+            kShieldHandshakeWatchMaxMs &&
+        SetTimer(hwnd_, kShieldHandshakeWatchTimerId,
+                 kShieldHandshakeWatchTimerMs, nullptr) != 0) {
+      shield_handshake_watch_timer_running_ = true;
+    }
+    return;
+  }
+  if (!shield_handshake_watch_active_)
+    return;
+  StopShieldHandshakeWatchTimer();
+  shield_handshake_watch_active_ = false;
+  const ULONGLONG now = GetTickCount64();
+  const ULONGLONG probe_at = shield_handshake_probe_published_at_;
+  std::ostringstream line;
+  line << "gal-shield: handshake pending ended after "
+       << (now - shield_handshake_pending_since_) << "ms";
+  const ULONGLONG since = shield_handshake_pending_since_;
+  if (probe_at != 0 && probe_at + kShieldHandshakeWatchTimerMs >= since) {
+    line << " (neutral_wait=" << (probe_at > since ? probe_at - since : 0)
+         << "ms ack_wait=" << (now - probe_at) << "ms)";
+  } else {
+    line << " (no new probe)";
+  }
+  line << " syncs=" << shield_handshake_watch_syncs_ << " -> " << state_ << '/'
+       << status_;
+  NativeGlog(line.str());
+}
+
+void AttachedTextSurfaceWindow::StopShieldHandshakeWatchTimer() {
+  if (!shield_handshake_watch_timer_running_)
+    return;
+  if (hwnd_ != nullptr && IsWindow(hwnd_))
+    KillTimer(hwnd_, kShieldHandshakeWatchTimerId);
+  shield_handshake_watch_timer_running_ = false;
+}
+
+void AttachedTextSurfaceWindow::OnShieldHandshakeWatchTimer() {
+  if (!shield_handshake_watch_active_ || mode_ == Mode::kDetached ||
+      target_.hwnd == nullptr) {
+    // Detach/epoch changes hide the surface without a new admission state;
+    // there is no handshake left to observe.
+    StopShieldHandshakeWatchTimer();
+    shield_handshake_watch_active_ = false;
+    return;
+  }
+  const ULONGLONG elapsed = GetTickCount64() - shield_handshake_pending_since_;
+  if (elapsed > kShieldHandshakeWatchMaxMs) {
+    // Keep the episode open so its eventual end is still logged; only the
+    // cadence drops back to the follow timer.
+    StopShieldHandshakeWatchTimer();
+    std::ostringstream line;
+    line << "gal-shield: handshake still pending after " << elapsed
+         << "ms; request_seq=" << shield_status_.request_seq
+         << " applied_seq=" << shield_status_.applied_seq
+         << " active_buttons=" << shield_status_.active_buttons
+         << " transaction_active=" << shield_transaction_active_
+         << " probe_published=" << (shield_handshake_probe_published_at_ != 0);
+    NativeGlog(line.str());
+    return;
+  }
+  ++shield_handshake_watch_syncs_;
+  SyncToTarget();
+}
+
+bool AttachedTextSurfaceWindow::OwnGlyphTransactionInFlight() const {
+  namespace policy = fushi::attached_shield_status_policy;
+  const auto status_identity = policy::StatusIdentity{
+      shield_status_.available,      shield_status_.request_seq,
+      shield_status_.applied_seq,    shield_status_.owner_kind,
+      shield_status_.target_hwnd,    shield_status_.transaction_id,
+      shield_status_.active_buttons, shield_status_.allow_risk,
+      shield_status_.status_flags,
+  };
+  const auto handshake = policy::HandshakeIdentity{
+      policy::Epoch{shield_handshake_epoch_.session,
+                    shield_handshake_epoch_.surface},
+      static_cast<uint64_t>(
+          reinterpret_cast<uintptr_t>(shield_handshake_target_)),
+      shield_handshake_transaction_id_, shield_handshake_request_seq_};
+  return policy::ClassifyAttachedAfterHandshake(
+             status_identity, shield_handshake_established_, handshake,
+             policy::Epoch{epoch_.session, epoch_.surface},
+             static_cast<uint64_t>(
+                 reinterpret_cast<uintptr_t>(target_.hwnd))) ==
+         policy::Attribution::kPending;
 }
 
 bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake() const {
@@ -2639,14 +2869,32 @@ void AttachedTextSurfaceWindow::OnGeometryProviderStatusChanged() {
     EmitStateIfChanged(true);
 }
 
+void AttachedTextSurfaceWindow::OnExternalWindowLifecycle(HWND output_window,
+                                                           bool scaling) {
+  (void)output_window;
+  (void)scaling;
+  if (mode_ == Mode::kDetached || hwnd_ == nullptr || !IsWindow(hwnd_)) {
+    return;
+  }
+  // Keep all target/presentation changes on the surface window's existing
+  // message path. The Magpie broadcast runs on the runner UI thread too, but
+  // posting avoids re-entering SyncToTarget while WndProc is still dispatching
+  // the broadcast and preserves the same lifecycle ordering as WinEvent hooks.
+  PostMessageW(hwnd_, kSyncTargetMessage, 0, 0);
+}
+
 void AttachedTextSurfaceWindow::BeginPointerGesture(
     POINT client_point, uint64_t external_transaction_id) {
   CancelPointerGesture();
   const int cluster = ClusterAt(client_point);
-  if (cluster < 0)
+  if (cluster < 0) {
+    LogDroppedClick("down_outside_glyph");
     return;
-  if (!AdoptShieldTransaction(external_transaction_id))
+  }
+  if (!AdoptShieldTransaction(external_transaction_id)) {
+    LogDroppedClick("down_transaction_not_adopted");
     return;
+  }
   pointer_down_ = true;
   pointer_dragged_ = false;
   pressed_cluster_ = cluster;
@@ -2659,9 +2907,15 @@ void AttachedTextSurfaceWindow::UpdatePointerGesture(POINT client_point) {
   if (!pointer_down_ || pointer_dragged_)
     return;
   // Match the shell's configured drag rectangle (including accessibility and
-  // user customisation), rather than inventing a DPI-scaled pixel constant.
-  const int threshold_x = std::max(1, GetSystemMetrics(SM_CXDRAG) / 2);
-  const int threshold_y = std::max(1, GetSystemMetrics(SM_CYDRAG) / 2);
+  // user customisation) at this surface's DPI. Half of it (about 2 px) turned
+  // ordinary hand jitter into a "drag" that silently dropped the lookup.
+  const UINT dpi = hwnd_ != nullptr ? GetDpiForWindow(hwnd_) : 0;
+  const int threshold_x = std::max(
+      1, dpi != 0 ? GetSystemMetricsForDpi(SM_CXDRAG, dpi)
+                  : GetSystemMetrics(SM_CXDRAG));
+  const int threshold_y = std::max(
+      1, dpi != 0 ? GetSystemMetricsForDpi(SM_CYDRAG, dpi)
+                  : GetSystemMetrics(SM_CYDRAG));
   if (std::abs(client_point.x - pointer_down_point_.x) > threshold_x ||
       std::abs(client_point.y - pointer_down_point_.y) > threshold_y) {
     pointer_dragged_ = true;
@@ -2670,30 +2924,55 @@ void AttachedTextSurfaceWindow::UpdatePointerGesture(POINT client_point) {
 
 void AttachedTextSurfaceWindow::EndPointerGesture(
     POINT client_point, uint64_t external_transaction_id) {
-  if (external_transaction_id != 0 &&
-      (!shield_transaction_active_ ||
-       shield_transaction_.transaction_id != external_transaction_id)) {
+  if (external_transaction_id == 0 || !shield_transaction_active_ ||
+      shield_transaction_.transaction_id != external_transaction_id) {
+    LogDroppedClick("up_without_active_gesture");
     return;
   }
   if (!pointer_down_) {
     ReleaseShieldTransaction();
+    LogDroppedClick("up_without_pointer_down");
     return;
   }
   UpdatePointerGesture(client_point);
   const int released_cluster = ClusterAt(client_point);
   const int pressed_cluster = pressed_cluster_;
-  const bool valid = !pointer_dragged_ && pressed_cluster >= 0 &&
-                     pressed_cluster == released_cluster &&
-                     static_cast<size_t>(pressed_cluster) < clusters_.size() &&
-                     CompareEpoch(pointer_epoch_, epoch_) == 0 &&
-                     pointer_text_generation_ == text_generation_;
+  // A press and release on the same glyph is a click even if the hand moved a
+  // little in between; a release on a neighbour counts only within the drag
+  // rectangle (a boundary graze), and then looks up the pressed glyph.
+  const bool same_identity = CompareEpoch(pointer_epoch_, epoch_) == 0 &&
+                             pointer_text_generation_ == text_generation_;
+  const bool pressed_valid =
+      pressed_cluster >= 0 &&
+      static_cast<size_t>(pressed_cluster) < clusters_.size();
+  const bool same_glyph_or_near =
+      pressed_cluster == released_cluster || !pointer_dragged_;
+  const bool valid = pressed_valid && same_identity && same_glyph_or_near;
+  if (!valid) {
+    LogDroppedClick(!pressed_valid    ? "pressed_glyph_gone"
+                    : !same_identity  ? "text_or_epoch_changed"
+                                      : "released_on_other_glyph_after_drag");
+  }
   pointer_down_ = false;
   pointer_dragged_ = false;
   pressed_cluster_ = -1;
   if (GetCapture() == hwnd_)
     ReleaseCapture();
   ReleaseShieldTransaction();
-  if (!valid || !on_lookup_)
+  if (mode_ == Mode::kCalibration) {
+    // A boundary graze may release on the neighbour; the probe, like the
+    // lookup below, belongs to the glyph that was pressed.
+    std::string probe_error;
+    const bool observed =
+        valid && RecordObservedCalibrationProbe(pressed_cluster, &probe_error);
+    SetState("calibrating", "calibrating",
+             observed ? "calibration_probe_observed"
+                      : (valid ? probe_error : "calibration_click_rejected"));
+    RenderLayerBitmap(true);
+    EmitStateIfChanged(true);
+    return;
+  }
+  if (!valid || mode_ != Mode::kConfigured || !on_lookup_)
     return;
   EmitLookupEvent(pressed_cluster, false);
 }
@@ -2713,10 +2992,15 @@ void AttachedTextSurfaceWindow::EmitLookupEvent(int cluster_index,
   event.source_text = source_text_utf8_;
   event.char_index = cluster.text_position;
   event.source_length = cluster.text_length;
-  event.screen_rect_px = cluster.client_rect;
+  event.screen_rect_px = cluster.visual_rect;
   OffsetRect(&event.screen_rect_px, surface_screen_rect_.left,
              surface_screen_rect_.top);
-  event.dpi = std::max(96, live_reference_client_.dpi);
+  event.destination_viewport_screen_px =
+      surface_geometry_.destination_viewport_screen;
+  // screen_rect_px is in the presentation monitor's physical pixels.  The
+  // source DPI belongs to profile/layout scaling and may differ when Magpie
+  // presents the output on another monitor.
+  event.dpi = std::max(96, presentation_dpi_);
   event.hover = hover;
   on_lookup_(event);
 }
@@ -2744,26 +3028,55 @@ void AttachedTextSurfaceWindow::TickHoverLookup() {
   const bool shift_down =
       eligible && (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
   int cluster = -1;
-  if (shift_down) {
+  bool over_text = false;
+  if (eligible) {
     POINT screen{};
     if (GetCursorPos(&screen)) {
       // The runtime surface is click-through, so the cursor must be over the
       // game itself (or this surface). A cursor resting on the lookup card or
       // any other window is not a hover over game text.
       const HWND under = WindowFromPoint(screen);
-      const bool over_text =
+      over_text =
           under != nullptr &&
           (under == hwnd_ || under == target_.hwnd ||
            under == presentation_hwnd_ ||
            IsChild(target_.hwnd, under) != FALSE);
+      POINT destination = screen;
+      if (over_text && magpie_mapping_active_) {
+        SetLastError(ERROR_SUCCESS);
+        const LONG_PTR style =
+            GetWindowLongPtrW(presentation_hwnd_, GWL_EXSTYLE);
+        const bool cursor_captured =
+            !(style == 0 && GetLastError() != ERROR_SUCCESS) &&
+            (style & static_cast<LONG_PTR>(WS_EX_TRANSPARENT)) != 0;
+        if (!cursor_captured ||
+            !fushi::attached_magpie_surface_geometry::
+                MapSourcePointToDestination(surface_geometry_, screen,
+                                            &destination)) {
+          over_text = false;
+        }
+      }
       if (over_text) {
-        // Invert the same offset EmitLookupEvent applies; do not rely on
-        // ScreenToClient while the HWND may be hidden (mouseHookBusy).
-        const POINT client{screen.x - surface_screen_rect_.left,
-                           screen.y - surface_screen_rect_.top};
+        // WindowFromPoint above answers only whether the raw cursor is over
+        // the game/presentation area.  Apply Magpie's source->destination
+        // cursor transform exactly once for the glyph lookup itself.
+        const POINT client{destination.x - surface_screen_rect_.left,
+                           destination.y - surface_screen_rect_.top};
         cluster = ClusterAt(client);
       }
     }
+  }
+  const int visual_cluster = over_text ? cluster : -1;
+  if (visual_cluster != hover_cluster_) {
+    hover_cluster_ = visual_cluster;
+    RenderLayerBitmap(mode_ == Mode::kCalibration);
+  }
+  if (!shift_down) {
+    // The visual state above is useful without Shift, but lookup submission
+    // remains explicitly Shift-gated and the tracker must forget its prior
+    // cluster when Shift is released.
+    hover_tracker_.Reset();
+    return;
   }
   if (!hover_tracker_.Observe(shift_down, cluster, epoch_.session,
                               epoch_.surface, text_generation_)) {
@@ -2775,7 +3088,20 @@ void AttachedTextSurfaceWindow::TickHoverLookup() {
   EmitLookupEvent(cluster, true);
 }
 
+void AttachedTextSurfaceWindow::LogDroppedClick(const char *reason) const {
+  // One line per swallowed glyph click that will not produce a lookup, so a
+  // "clicked but nothing opened" report names its gate (SOP: a consumed click
+  // without a published lookup must carry a reason).
+  std::ostringstream line;
+  line << "gal-click: dropped reason=" << reason << " state=" << state_ << '/'
+       << status_ << " visible=" << surface_visible_
+       << " gen=" << text_generation_;
+  NativeGlog(line.str());
+}
+
 void AttachedTextSurfaceWindow::CancelPointerGesture() {
+  if (pointer_down_)
+    LogDroppedClick("gesture_cancelled");
   pointer_down_ = false;
   pointer_dragged_ = false;
   pressed_cluster_ = -1;
@@ -2789,6 +3115,7 @@ void AttachedTextSurfaceWindow::SetState(std::string state, std::string status,
   state_ = std::move(state);
   status_ = std::move(status);
   reason_ = std::move(reason);
+  UpdateShieldHandshakeWatch();
 }
 
 AttachedTextSurfaceWindow::Snapshot
@@ -2903,114 +3230,37 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
       TickHoverLookup();
       return 0;
     }
+    if (wparam == kShieldHandshakeWatchTimerId) {
+      OnShieldHandshakeWatchTimer();
+      return 0;
+    }
     return DefWindowProcW(hwnd_, message, wparam, lparam);
   case WM_MOUSEACTIVATE:
     return MA_NOACTIVATE;
   case WM_NCHITTEST:
-    return mode_ == Mode::kCalibration ? HTCLIENT : HTTRANSPARENT;
+    return HTTRANSPARENT;
   case WM_SETCURSOR:
     SetCursor(LoadCursorW(nullptr,
                           mode_ == Mode::kCalibration ? IDC_CROSS : IDC_HAND));
     return TRUE;
-  case WM_LBUTTONDOWN: {
-    POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (mode_ == Mode::kCalibration) {
-      calibration_dragging_ = true;
-      calibration_drag_moved_ = false;
-      calibration_drag_start_ = point;
-      SetCapture(hwnd_);
-    } else if (mode_ == Mode::kConfigured) {
-      // Runtime is click-through. A real attached down arrives only through
-      // the low-level hook with an already-published v19 transaction id.
-      BeginPointerGesture(point, 0);
-    }
+  case WM_LBUTTONDOWN:
+  case WM_LBUTTONUP:
+  case WM_MOUSEMOVE:
+    // Both modes are click-through. Only the LL glyph messages below carry
+    // an already-published shield transaction. Ordinary window messages must
+    // neither record a probe nor finish a different physical LL transaction.
     return 0;
-  }
-  case WM_MOUSEMOVE: {
-    POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (mode_ == Mode::kCalibration && calibration_dragging_) {
-      if (!calibration_drag_moved_) {
-        const int threshold_x = std::max(1, GetSystemMetrics(SM_CXDRAG) / 2);
-        const int threshold_y = std::max(1, GetSystemMetrics(SM_CYDRAG) / 2);
-        if (std::abs(point.x - calibration_drag_start_.x) <= threshold_x &&
-            std::abs(point.y - calibration_drag_start_.y) <= threshold_y) {
-          return 0;
-        }
-        calibration_drag_moved_ = true;
-        ResetObservedCalibrationProbes();
-      }
-      const int width =
-          std::max(1, static_cast<int>(surface_screen_rect_.right -
-                                       surface_screen_rect_.left));
-      const int height =
-          std::max(1, static_cast<int>(surface_screen_rect_.bottom -
-                                       surface_screen_rect_.top));
-      const int left = std::clamp(
-          static_cast<int>(std::min(calibration_drag_start_.x, point.x)), 0,
-          width);
-      const int top = std::clamp(
-          static_cast<int>(std::min(calibration_drag_start_.y, point.y)), 0,
-          height);
-      const int right = std::clamp(
-          static_cast<int>(std::max(calibration_drag_start_.x, point.x)), 0,
-          width);
-      const int bottom = std::clamp(
-          static_cast<int>(std::max(calibration_drag_start_.y, point.y)), 0,
-          height);
-      calibration_rect_ = NormalizedRect{
-          static_cast<double>(left) / width,
-          static_cast<double>(top) / height,
-          static_cast<double>(right - left) / width,
-          static_cast<double>(bottom - top) / height,
-      };
-      layout_dirty_ = true;
-      RenderLayerBitmap(true);
-    } else {
-      UpdatePointerGesture(point);
-    }
-    return 0;
-  }
-  case WM_LBUTTONUP: {
-    POINT point{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (mode_ == Mode::kCalibration && calibration_dragging_) {
-      const bool calibration_was_dragged = calibration_drag_moved_;
-      calibration_dragging_ = false;
-      if (GetCapture() == hwnd_)
-        ReleaseCapture();
-      std::string probe_error;
-      if (calibration_was_dragged) {
-        if (!IsNormalizedRectValid(calibration_rect_)) {
-          calibration_rect_ = NormalizedRect{0.08, 0.68, 0.84, 0.24};
-        }
-        layout_dirty_ = true;
-        (void)RebuildClusters();
-        ApplyInteractiveRegion();
-        SetState("calibrating", "calibrating");
-      } else {
-        if (layout_dirty_)
-          (void)RebuildClusters();
-        ApplyInteractiveRegion();
-        if (RecordObservedCalibrationProbe(point, &probe_error)) {
-          SetState("calibrating", "calibrating");
-        } else {
-          SetState("calibrating", "calibrating", probe_error);
-        }
-      }
-      calibration_drag_moved_ = false;
-      RenderLayerBitmap(true);
-      EmitStateIfChanged(true);
-    } else {
-      EndPointerGesture(point);
-    }
-    return 0;
-  }
   case fushi::kLowLevelMouseAttachedGlyphDownMessage: {
     const uint64_t transaction_id = static_cast<uint64_t>(wparam);
     const uint32_t snapshot_token =
         fushi::LowLevelAttachedGlyphSnapshotToken(transaction_id);
-    if (mode_ != Mode::kConfigured || !surface_visible_ ||
+    if ((mode_ != Mode::kConfigured && mode_ != Mode::kCalibration) ||
+        !surface_visible_ ||
         transaction_id == 0 || snapshot_token == 0 ||
         snapshot_token != hit_snapshot_token_) {
+      if (transaction_id != 0)
+        LogDroppedClick(!surface_visible_ ? "down_while_surface_hidden"
+                                          : "down_stale_hit_snapshot");
       return 0;
     }
     POINT point = fushi::UnpackMouseHookPoint(static_cast<WPARAM>(lparam));
@@ -3022,6 +3272,8 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
     const uint64_t transaction_id = static_cast<uint64_t>(wparam);
     if (transaction_id == 0 || fushi::LowLevelAttachedGlyphSnapshotToken(
                                    transaction_id) != hit_snapshot_token_) {
+      if (transaction_id != 0 && pointer_down_)
+        LogDroppedClick("up_stale_hit_snapshot");
       return 0;
     }
     POINT point = fushi::UnpackMouseHookPoint(static_cast<WPARAM>(lparam));
@@ -3056,13 +3308,11 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
   }
   case WM_CAPTURECHANGED:
   case WM_CANCELMODE:
-    calibration_dragging_ = false;
-    calibration_drag_moved_ = false;
     CancelPointerGesture();
     return 0;
   case fushi::kLowLevelMouseClickMessage:
-    // The low-level hook only pre-arms sampled-input suppression for this
-    // surface. Normal region hit-testing delivers the actual pointer messages.
+    // Legacy popup notification: attached glyphs use the transaction-specific
+    // down/up messages above, including calibration probes.
     return 0;
   case fushi::kLowLevelMouseShieldReleaseMessage:
     fushi::FinalizeLowLevelMouseDirectInputShield(hwnd_);
@@ -3082,7 +3332,15 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
   case kSyncTargetMessage:
     SyncToTarget();
     return 0;
+  case fushi::kLowLevelMouseAttachedGlyphRearmMessage:
+    // A popup released the singleton only after its full input transaction
+    // became neutral. Re-run normal admission now instead of waiting for the
+    // 500 ms health timer.
+    SyncToTarget();
+    fushi::CompleteLowLevelAttachedGlyphRearm(hwnd_);
+    return 0;
   case WM_NCDESTROY:
+    fushi::RetireLowLevelAttachedGlyphRearmCandidate(hwnd_);
     SetWindowLongPtrW(hwnd_, GWLP_USERDATA, 0);
     return DefWindowProcW(hwnd_, message, wparam, lparam);
   default:

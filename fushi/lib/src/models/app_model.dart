@@ -2776,6 +2776,9 @@ class AppModel with ChangeNotifier {
       'material-symbols-rounded',
       // 内置 AnkiConnect 插件包（assets/anki/，GPLv3，新手引导一键安装用）。
       'anki-connect',
+      // galgame 校准 OCR 的 NFKC 映射表（gal_lookup_ocr_unicode.dart）由
+      // Unicode Character Database 生成，Unicode License V3 要求随附许可。
+      'unicode-data',
     ];
 
     for (String packageName in packageNames) {
