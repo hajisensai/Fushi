@@ -73,57 +73,93 @@
     return out;
   }
 
-  async function fetchApi(input, init) {
-    init = init || {};
-    var url = typeof input === 'string' ? input : (input && input.url) || String(input);
-    var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
-    var headers = flattenHeaders(init.headers || (input && input.headers));
-    var body = null;
-    if (init.body != null && method !== 'GET' && method !== 'HEAD') {
-      var normalised = new Request('https://fushi.invalid/', { method: method, body: init.body });
-      body = bytesToBase64(new Uint8Array(await normalised.arrayBuffer()));
-      var contentType = normalised.headers.get('content-type');
-      if (contentType && !('content-type' in headers)) headers['content-type'] = contentType;
+  /**
+   * 每个插件一份 `@libs/fetch`：请求带上发起插件的 id 过桥，Dart 侧据此把
+   * Cloudflare 挑战记到对应的源上（页面才知道该给哪个源弹「验证」）。
+   */
+  function createFetchLib(pluginId) {
+    async function fetchApi(input, init) {
+      init = init || {};
+      var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+      // 国际化域名（ранобэ.рф）按浏览器规则转成 punycode：原样过桥时 Dart 的 Uri
+      // 会把非 ASCII 主机百分号编码，DNS 必然查不到。
+      try {
+        url = new URL(url).href;
+      } catch (_) {}
+      var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+      var headers = flattenHeaders(init.headers || (input && input.headers));
+      var body = null;
+      if (init.body != null && method !== 'GET' && method !== 'HEAD') {
+        var normalised = new Request('https://fushi.invalid/', { method: method, body: init.body });
+        body = bytesToBase64(new Uint8Array(await normalised.arrayBuffer()));
+        var contentType = normalised.headers.get('content-type');
+        if (contentType && !('content-type' in headers)) headers['content-type'] = contentType;
+      }
+      var result = await bridge().fetch({
+        url: url,
+        method: method,
+        headers: headers,
+        body: body,
+        plugin: pluginId,
+      });
+      if (!result || result.error) {
+        throw new TypeError('Network request failed: ' + ((result && result.error) || 'no response'));
+      }
+      var status = result.status;
+      var nullBody = status === 101 || status === 204 || status === 205 || status === 304;
+      var response = new Response(nullBody ? null : base64ToBytes(result.body), {
+        status: status < 200 || status > 599 ? 599 : status,
+        statusText: result.statusText || '',
+        headers: result.headers || {},
+      });
+      Object.defineProperty(response, 'url', { value: result.url || url });
+      return response;
     }
-    var result = await bridge().fetch({ url: url, method: method, headers: headers, body: body });
-    if (!result || result.error) {
-      throw new TypeError('Network request failed: ' + ((result && result.error) || 'no response'));
-    }
-    var status = result.status;
-    var nullBody = status === 101 || status === 204 || status === 205 || status === 304;
-    var response = new Response(nullBody ? null : base64ToBytes(result.body), {
-      status: status < 200 || status > 599 ? 599 : status,
-      statusText: result.statusText || '',
-      headers: result.headers || {},
-    });
-    Object.defineProperty(response, 'url', { value: result.url || url });
-    return response;
-  }
 
-  async function fetchText(url, init, encoding) {
-    try {
-      var response = await fetchApi(url, init);
-      if (!response.ok) return '';
-      return new TextDecoder(encoding || 'utf-8').decode(await response.arrayBuffer());
-    } catch (_) {
-      return '';
+    async function fetchText(url, init, encoding) {
+      try {
+        var response = await fetchApi(url, init);
+        if (!response.ok) return '';
+        return new TextDecoder(encoding || 'utf-8').decode(await response.arrayBuffer());
+      } catch (_) {
+        return '';
+      }
     }
-  }
 
-  async function fetchFile(url, init) {
-    try {
-      var response = await fetchApi(url, init);
-      if (!response.ok) return '';
-      return bytesToBase64(new Uint8Array(await response.arrayBuffer()));
-    } catch (_) {
-      return '';
+    async function fetchFile(url, init) {
+      try {
+        var response = await fetchApi(url, init);
+        if (!response.ok) return '';
+        return bytesToBase64(new Uint8Array(await response.arrayBuffer()));
+      } catch (_) {
+        return '';
+      }
     }
-  }
 
-  function unsupported(name) {
-    return function () {
-      throw new Error(name + ' is not supported by this host');
-    };
+    /**
+     * gRPC-web 一元调用，与 LNReader app 的 `fetchProto` 同口径：请求 = 1 字节标志
+     * + 4 字节大端长度 + protobuf 消息，POST 出去；响应按同一帧格式取第一帧解码。
+     */
+    async function fetchProto(protoInit, url, init) {
+      var root = libs.parseProto(protoInit.proto).root;
+      var RequestMessage = root.lookupType(protoInit.requestType);
+      if (RequestMessage.verify(protoInit.requestData)) throw new Error('Invalid Proto');
+      var encoded = RequestMessage.encode(protoInit.requestData).finish();
+      var frame = new Uint8Array(5 + encoded.length);
+      new DataView(frame.buffer).setUint32(1, encoded.length);
+      frame.set(encoded, 5);
+      var options = { method: 'POST' };
+      Object.keys(init || {}).forEach(function (key) {
+        options[key] = init[key];
+      });
+      options.body = frame;
+      var payload = new Uint8Array(await (await fetchApi(url, options)).arrayBuffer());
+      if (payload.length < 5) throw new Error('Empty gRPC-web response');
+      var length = new DataView(payload.buffer, payload.byteOffset).getUint32(1);
+      return root.lookupType(protoInit.responseType).decode(payload.subarray(5, 5 + length));
+    }
+
+    return { fetchApi: fetchApi, fetchText: fetchText, fetchFile: fetchFile, fetchProto: fetchProto };
   }
 
   // ── 常量模块 ──────────────────────────────────────────────────────────────
@@ -201,31 +237,19 @@
 
   // ── require ───────────────────────────────────────────────────────────────
 
-  function makeRequire(pluginId, storageSeed) {
+  function makeRequire(pluginId, storageSeed, fetchLib) {
     var storageModule = null;
     var modules = {
       cheerio: libs.cheerio,
       htmlparser2: libs.htmlparser2,
       dayjs: libs.dayjs,
-      '@libs/fetch': {
-        fetchApi: fetchApi,
-        fetchText: fetchText,
-        fetchFile: fetchFile,
-        fetchProto: unsupported('fetchProto'),
-      },
+      '@libs/fetch': fetchLib,
       '@libs/novelStatus': { NovelStatus: NovelStatus },
       '@libs/filterInputs': { FilterTypes: FilterTypes },
       '@libs/defaultCover': { defaultCover: defaultCover },
       '@libs/isAbsoluteUrl': { isUrlAbsolute: isUrlAbsolute },
-      '@libs/aes': { gcm: unsupported('@libs/aes') },
-      '@libs/utils': {
-        utf8ToBytes: function (text) {
-          return new TextEncoder().encode(text);
-        },
-        bytesToUtf8: function (bytes) {
-          return new TextDecoder().decode(bytes);
-        },
-      },
+      '@libs/aes': { gcm: libs.gcm },
+      '@libs/utils': { utf8ToBytes: libs.utf8ToBytes, bytesToUtf8: libs.bytesToUtf8 },
       urlencode: { encode: encodeURIComponent, decode: decodeURIComponent },
       // 上游 app 的包表里没有它（返回 undefined），两个插件因此坏掉；按其源码
       // 语义补上。
@@ -239,6 +263,80 @@
       if (Object.prototype.hasOwnProperty.call(modules, name)) return modules[name];
       throw new Error('Module not available in Fushi LNReader host: ' + name);
     };
+  }
+
+  // ── 插件兼容补丁 ──────────────────────────────────────────────────────────
+  //
+  // 站点改版把官方插件的某个方法弄坏、而上游仓库还没发修复版时的临时覆盖。
+  // 按 `id` + `maxVersion` 匹配：上游一旦发了更高版本，补丁自动退役、用上游的
+  // 实现——所以这里只放「上游确认坏了」的方法，不重写插件其余部分。
+
+  function compareVersions(a, b) {
+    var left = str(a).split('.');
+    var right = str(b).split('.');
+    for (var i = 0; i < Math.max(left.length, right.length); i++) {
+      var diff = (parseInt(left[i], 10) || 0) - (parseInt(right[i], 10) || 0);
+      if (diff) return diff < 0 ? -1 : 1;
+    }
+    return 0;
+  }
+
+  /** Next.js 页面内嵌的 Apollo 缓存（`__NEXT_DATA__`）；取不到返回 `{}`。 */
+  function nextApolloState(html) {
+    try {
+      var raw = libs.cheerio.load(html)('script#__NEXT_DATA__').html();
+      var data = JSON.parse(raw || '{}');
+      return (data && data.props && data.props.pageProps && data.props.pageProps.__APOLLO_STATE__) || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  var pluginFixes = [
+    {
+      // 2026-09 kakuyomu.jp 把排行榜改成 Next.js（CSS 类名带哈希、307 到
+      // `?work_variation=long`），插件 1.0.0 的 `.widget-media-genresWorkList-right`
+      // 一个都匹配不上，「热门」恒空——源一进去就是空页。排名顺序改从页面内嵌的
+      // Apollo 缓存 `rankedWorks(...)` 读（每页 100 部，`?page=N` 翻页）。
+      // 详情 / 章节 / 搜索本就读 `__NEXT_DATA__`，实测仍可用，不动。
+      id: 'kakuyomu',
+      maxVersion: '1.0.0',
+      apply: function (plugin, fetchLib) {
+        plugin.popularNovels = async function (pageNo, options) {
+          var filters = (options && options.filters) || {};
+          var genre = (filters.genre && filters.genre.value) || 'all';
+          var period = (filters.period && filters.period.value) || 'entire';
+          var url = new URL('/rankings/' + genre + '/' + period, plugin.site);
+          url.searchParams.set('work_variation', 'long');
+          if (pageNo > 1) url.searchParams.set('page', String(pageNo));
+          var state = nextApolloState(await fetchLib.fetchText(url.toString()));
+          var root = state.ROOT_QUERY || {};
+          var key = Object.keys(root).filter(function (name) {
+            return name.indexOf('rankedWorks(') === 0;
+          })[0];
+          var nodes = (key && root[key] && root[key].nodes) || [];
+          var novels = [];
+          nodes.forEach(function (node) {
+            var work = node && state[node.__ref];
+            if (!work || !work.id) return;
+            novels.push({
+              name: str(work.title),
+              path: '/works/' + work.id,
+              cover: work.adminCoverImageUrl || defaultCover,
+            });
+          });
+          return novels;
+        };
+      },
+    },
+  ];
+
+  function applyPluginFixes(plugin, fetchLib) {
+    pluginFixes.forEach(function (fix) {
+      if (plugin.id === fix.id && compareVersions(plugin.version, fix.maxVersion) <= 0) {
+        fix.apply(plugin, fetchLib);
+      }
+    });
   }
 
   // ── 插件注册表与调用面 ────────────────────────────────────────────────────
@@ -312,16 +410,22 @@
     /** 装载插件源码；返回插件自报的元数据。重复装载同 id 即替换。 */
     load: function (id, code, storageSeed) {
       var module = { exports: {} };
+      // 插件里裸调的 `fetch`：LNReader app 跑在 React Native 里，全局 fetch 是原生
+      // 网络、没有 CORS，少数插件（ixdzs8 / daotekno / rainofsnow 等）就直接用它。
+      // 本宿主页被 CSP 封了网络，原生 fetch 必失败——给插件一个同名形参，走宿主桥。
       var factory = new Function(
         'require',
         'module',
         'exports',
+        'fetch',
         String(code) + '\n;return module.exports.default || exports.default;',
       );
-      var plugin = factory(makeRequire(id, storageSeed), module, module.exports);
+      var fetchLib = createFetchLib(id);
+      var plugin = factory(makeRequire(id, storageSeed, fetchLib), module, module.exports, fetchLib.fetchApi);
       if (!plugin || typeof plugin.popularNovels !== 'function') {
         throw new Error('Not an LNReader plugin: ' + id);
       }
+      applyPluginFixes(plugin, fetchLib);
       plugins[id] = plugin;
       return api.describe(id);
     },
