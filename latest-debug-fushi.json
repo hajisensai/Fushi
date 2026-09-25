@@ -8,22 +8,22 @@
   "notes": "Automated release-signed debug-channel build from develop @ bdeb02e. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-2.8.0-debug.15648-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15648-ios.ipa",
-      "releaseSequence": 15648,
-      "tag": "v2.8.0-debug.15648+92e97c9",
-      "version": "2.8.0-debug.15648",
-      "size": 67445403,
-      "sha256": "e068b61891f31de148ae2ef029b54345ef8975067704ca334551dd4a6183a632"
+      "name": "fushi-2.8.0-debug.15653-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15653-ios.ipa",
+      "releaseSequence": 15653,
+      "tag": "v2.8.0-debug.15653+225b2eb",
+      "version": "2.8.0-debug.15653",
+      "size": 67460206,
+      "sha256": "cab546616bdc054eda0fee6654de93321425457d7b6f7270ee6e43c30f88d750"
     },
     {
-      "name": "fushi-2.8.0-debug.15648-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15648-macos.zip",
-      "releaseSequence": 15648,
-      "tag": "v2.8.0-debug.15648+92e97c9",
-      "version": "2.8.0-debug.15648",
-      "size": 342238799,
-      "sha256": "857d23fb4c261ff712ed34d51cddab0be4edfb92fecb255fa21ac80af0ab3716"
+      "name": "fushi-2.8.0-debug.15653-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.15653-macos.zip",
+      "releaseSequence": 15653,
+      "tag": "v2.8.0-debug.15653+225b2eb",
+      "version": "2.8.0-debug.15653",
+      "size": 342239447,
+      "sha256": "a8dfb09dae0f62b3ee8dfc3b58d1c8f451bd3afa94c4af746a76b9260d33cbaf"
     },
     {
       "name": "fushi-2.8.0-debug.15653-windows-setup.exe",
