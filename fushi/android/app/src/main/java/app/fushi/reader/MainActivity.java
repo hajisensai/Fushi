@@ -649,6 +649,7 @@ public class MainActivity extends AudioServiceActivity {
                         pendingSafResult = result;
                         pendingSafDestPath = destPath;
                         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        applyTreeInitialLocation(intent, null);
                         startActivityForResult(intent, SAF_PICK_DIR_REQUEST);
                         break;
                     }
@@ -662,6 +663,7 @@ public class MainActivity extends AudioServiceActivity {
                         }
                         pendingSafResult = result;
                         Intent dirIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                        applyTreeInitialLocation(dirIntent, call.argument("initialDirectory"));
                         try {
                             startActivityForResult(dirIntent, SAF_PICK_REAL_DIR_REQUEST);
                         } catch (Exception e) {
@@ -1383,6 +1385,46 @@ public class MainActivity extends AudioServiceActivity {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // BUG-2646: a bare ACTION_OPEN_DOCUMENT_TREE lets DocumentsUI open wherever
+    // it likes; several ROMs (reported on a ColorOS-style DocumentsUI) land on
+    // "Recent", which in folder mode lists nothing and has no "use this folder"
+    // button, so the user cannot pick any folder at all. Always point the picker
+    // at a real browsable location: the caller's current folder when it lives on
+    // shared storage, otherwise the internal-storage root. EXTRA_INITIAL_URI is
+    // API 26+; older DocumentsUI already opens on a storage root.
+    private void applyTreeInitialLocation(Intent intent, String initialDirectory) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        final String docId = realPathToExternalStorageDocId(initialDirectory);
+        intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI,
+            DocumentsContract.buildDocumentUri(
+                "com.android.externalstorage.documents",
+                docId != null ? docId : "primary:"));
+    }
+
+    // Inverse of externalStorageDocIdToPath: real absolute path -> externalstorage
+    // docId "volumeId:relative". Walks up to the nearest existing directory (the
+    // current folder may not be created yet). Returns null for paths outside
+    // shared storage (e.g. app-private /data/user/0/...), which SAF cannot show.
+    private String realPathToExternalStorageDocId(String path) {
+        if (path == null || path.trim().isEmpty()) return null;
+        File dir = new File(path.trim());
+        while (dir != null && !dir.isDirectory()) dir = dir.getParentFile();
+        if (dir == null) return null;
+        final String abs = dir.getAbsolutePath();
+        final String primary = Environment.getExternalStorageDirectory().getAbsolutePath();
+        if (abs.equals(primary)) return "primary:";
+        if (abs.startsWith(primary + "/")) {
+            return "primary:" + abs.substring(primary.length() + 1);
+        }
+        final Matcher m = Pattern.compile("^/storage/([^/]+)(?:/(.*))?$").matcher(abs);
+        if (m.matches()) {
+            final String volumeId = m.group(1);
+            if ("emulated".equals(volumeId) || "self".equals(volumeId)) return null;
+            return volumeId + ":" + (m.group(2) != null ? m.group(2) : "");
+        }
+        return null;
     }
 
     // externalstorage docId "volumeId:relative" -> real absolute path.

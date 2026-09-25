@@ -257,4 +257,47 @@ void main() {
       expect(body.contains('visible:'), isFalse, reason: '两端都真实生效，不应按平台隐藏');
     });
   });
+
+  group('issue #1525: 竖滑调亮度 / 音量手势开关', () {
+    // 竖滑手势跑不了 headless，钉两条源码不变量：① 移动 theme 的 volumeGesture /
+    // brightnessGesture 读用户配置（不得回到硬编码 true / 只看 canControl）；② schema
+    // 两行经 commitVideoAsbConfig + copyWith 落盘、仅移动端可见。
+    test('_mobileControlsTheme 两个竖滑手势读 _asbConfig 开关', () {
+      final String body = _flat(methodBodyByName(
+          pageCorpus, 'MaterialVideoControlsThemeData _mobileControlsTheme('));
+      expect(
+          body.contains('volumeGesture:_asbConfig.volumeSwipeGesture,'), isTrue,
+          reason: '右半区竖滑调音量必须受 volumeSwipeGesture 开关控制');
+      expect(
+          body.contains('brightnessGesture:_brightness.canControl'
+              '&&_asbConfig.brightnessSwipeGesture,'),
+          isTrue,
+          reason: '左半区竖滑调亮度必须同时受平台能力与 brightnessSwipeGesture 开关控制');
+      expect(body.contains('volumeGesture:true'), isFalse,
+          reason: '不得把音量竖滑写死为开（用户关不掉）');
+    });
+
+    for (final (String id, String field) in <(String, String)>[
+      ('video.playback.brightness_swipe_gesture', 'brightnessSwipeGesture'),
+      ('video.playback.volume_swipe_gesture', 'volumeSwipeGesture'),
+    ]) {
+      test('schema 行 $id 经双路写穿落盘、仅移动端可见', () {
+        final int start = schemaSrc.indexOf("id: '$id'");
+        expect(start, greaterThanOrEqualTo(0), reason: '缺设置行 $id');
+        final int end = schemaSrc.indexOf("id: '", start + 1);
+        expect(end, greaterThan(start));
+        final String body = schemaSrc.substring(start, end);
+        expect(
+            body.contains('VideoPlacement(group: VideoGroup.playback'), isTrue,
+            reason: '该行必须投影进播放页面板 playback 分类');
+        expect(body.contains('.$field'), isTrue, reason: 'value 必须读 $field');
+        expect(body.contains('copyWith($field: value)'), isTrue,
+            reason: 'onChanged 必须 copyWith($field:) 落盘');
+        expect(body.contains('commitVideoAsbConfig('), isTrue,
+            reason: '必须经 commitVideoAsbConfig 双路写穿（host 即时回调 / 无 host 落 pref）');
+        expect(body.contains('visible: (_) => isMobilePlatform'), isTrue,
+            reason: '桌面控制条没有竖滑手势，桌面显示是假开关');
+      });
+    }
+  });
 }

@@ -136,6 +136,9 @@ target_include_directories(fushidicts_ffi PRIVATE
 
 target_link_libraries(fushidicts_ffi PRIVATE
     fushidicts
+    # fushidicts_zstd_decompress_file（Anki 备份的 collection.anki21b）直接调
+    # zstd 流式 API；fushidicts 对它是 PRIVATE 链接，头文件路径不会传过来。
+    libzstd_static
     ${FUSHIDICTS_PLATFORM_LIBS}
 )
 

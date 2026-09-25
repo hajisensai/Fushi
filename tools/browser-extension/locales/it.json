@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Letto dopo una ricerca",
   "opt_narrowSidePanel_title": "Quando il pannello laterale è troppo stretto",
   "opt_narrowSidePanel_desc": "Se il pannello laterale è più stretto del popup, il popup si restringe alla larghezza disponibile e, se necessario, riduce in scala l’intera finestra invece di tagliare la metà destra. Sempre attivo, nessuna impostazione. Per far seguire di nuovo al popup del browser quello nell’app, disattiva “Dimensione indipendente dell’estensione browser” in Fushi.",
+  "opt_shiftHoverLookup_title": "Ricerca al passaggio con Shift",
+  "opt_shiftHoverLookup_desc": "Tieni premuto <kbd>Shift</kbd> e passa il mouse sul testo per cercarlo (testo della pagina ed elenco sottotitoli del pannello laterale). Disattivala se Shift entra in conflitto con le scorciatoie del sito o con la digitazione; la ricerca con clic, la ricerca automatica dei sottotitoli e gli altri accessi non cambiano. Effetto immediato.",
   "opt_touch_lookup_heading_section_kicker": "Ricerca al tocco e cassetto sottotitoli",
   "opt_touch_lookup_heading_heading": "Telefoni e tablet",
   "opt_touch_lookup_heading_section_note": "Si applica subito",

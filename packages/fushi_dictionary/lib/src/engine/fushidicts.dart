@@ -187,6 +187,30 @@ class FushiDicts {
   /// 调用方接着就会经 [instance] 触发结算。
   static bool get isInitialized => _instance != null || _pending != null;
 
+  /// 把 zstd 压缩文件 [inPath] 流式解压到 [outPath]（覆盖写）。
+  ///
+  /// 借本原生库里已经静态链接的 libzstd，不需要任何词典句柄，可在后台 isolate
+  /// 里调用。用途：Anki 2.1.50+ 备份里的 `collection.anki21b`。
+  ///
+  /// 失败抛 [FushiZstdException]；随包原生库还没有这个导出时抛
+  /// [UnsupportedError]。
+  static void zstdDecompressFile(String inPath, String outPath) {
+    final ZstdDecompressFileDart? decompress = lookupZstdDecompressFile();
+    if (decompress == null) {
+      throw UnsupportedError(
+          'fushidicts_zstd_decompress_file is not available in this build');
+    }
+    final Pointer<Utf8> nativeIn = inPath.toNativeUtf8(allocator: calloc);
+    final Pointer<Utf8> nativeOut = outPath.toNativeUtf8(allocator: calloc);
+    try {
+      final int code = decompress(nativeIn, nativeOut);
+      if (code != 0) throw FushiZstdException(code);
+    } finally {
+      calloc.free(nativeIn);
+      calloc.free(nativeOut);
+    }
+  }
+
   static List<String>? _cachedTransformJsons;
 
   static Future<void> preloadTransforms() async {

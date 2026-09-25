@@ -867,6 +867,14 @@ class ReaderPaginationScripts {
 
   /// TODO-693: 第二阶段——过渡帧 settle 后把暂存锚滚回视口首边并清 `_reanchorPending`。
   /// 仅当第一阶段成功暂存了有效锚时才生效，否则 no-op（绝不误清别处的重锚旗）。
+  /// BUG-2652：恢复完成重锚的第一阶段——锚取恢复自己的精确字符锚（无精确锚时退回
+  /// [beginUiScaleReanchorInvocation] 的现场采样），commit 仍是
+  /// [commitUiScaleReanchorInvocation]。
+  static String beginRestoreReanchorInvocation() =>
+      '(window.fushiReader && '
+      "typeof window.fushiReader.beginRestoreReanchor === 'function') "
+      '? window.fushiReader.beginRestoreReanchor() : -1';
+
   static String commitUiScaleReanchorInvocation() =>
       '(window.fushiReader && '
       "typeof window.fushiReader.commitUiScaleReanchor === 'function') "
@@ -1054,6 +1062,20 @@ window.__fushiInstallShell = function(C) {
   // （每列在 block 轴填满整页），不变。仅当 used 子列明显窄于整轴（真 pageColumns>=2）才夹到
   // 子列；单列 / 连续 / VN（无 column-count → columnWidth=='auto'→NaN，或子列≈整轴）回退整轴、
   // 与旧 cs.w/cs.h 字节等价（零回归，不碰 TODO-729/753/792 分页几何）。ratio 恒作用在宽（与旧同）。
+  // BUG-2652：setChromeInsets 的重锚只为补偿「inset 改变 → body padding 改变 → 重排」。
+  // 下发的 inset 与已生效的变量逐值相同、图片盒也不变时根本没有重排，采样首字锚
+  // 只会读到**尚未落定的视口**：iOS 上同一个 WKWebView 原地换章（切滚动/分页模式等
+  // 结构性重载）后，恢复滚动刚写下去的头几帧里原生侧会让 scrollX/scrollY 瞬时读成 0，
+  // 此刻采到的锚就是章首，rAF 里 scrollToCharOffset(0) 便把用户钉回章首并落库。
+  // 这里判「无变化」，调用方直接返回——不采样、不置旗、不动 metrics。
+  _chromeInsetsUnchanged: function(topPx, bottomPx) {
+    var st = document.documentElement.style;
+    if (st.getPropertyValue('--chrome-top-inset') !== topPx + 'px') return false;
+    if (st.getPropertyValue('--chrome-bottom-inset') !== bottomPx + 'px') return false;
+    var box = this._imageMaxBox();
+    return st.getPropertyValue('--fushi-image-max-width') === box.w + 'px' &&
+        st.getPropertyValue('--fushi-image-max-height') === box.h + 'px';
+  },
   _imageMaxBox: function() {
     var cs = this._contentSize();
     var ratio = (typeof this._imageWidthRatio === 'number') ? this._imageWidthRatio : 1;
@@ -3096,6 +3118,8 @@ $_sharedJs
     this.setPagePosition(context, aligned);
   },
   setChromeInsets: function(topPx, bottomPx) {
+    // BUG-2652：inset 与图片盒都没变 = 没有重排可补偿，见 _chromeInsetsUnchanged。
+    if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
     // Re-anchoring (after a chrome-inset OR a page-size change) is serialised
     // through one shared in-flight flag, _reanchorPending. A layout change
     // transiently resets scrollTop to 0; if a re-anchor rAF is already pending
@@ -3780,6 +3804,8 @@ $_sharedJs
     this._settleAndNotify();
   },
   setChromeInsets: function(topPx, bottomPx) {
+    // BUG-2652：同分页版——无变化不采样、不重锚（见 _chromeInsetsUnchanged）。
+    if (this._chromeInsetsUnchanged(topPx, bottomPx)) return;
     // See the paginated setChromeInsets: re-anchoring is serialised through the
     // shared _reanchorPending flag so a transiently reset scrollTop (from a
     // previous inset/size change's relayout) is never sampled as the chapter
@@ -3828,15 +3854,37 @@ $_sharedJs
     this._uiScaleReanchorScroll = this._readContinuousScroll();
     return charOffset;
   },
+  // BUG-2652：恢复完成重锚（TODO-718，Dart `_reanchorContinuousAfterRestore`）的锚取
+  // **恢复自己的语义锚**，不再现场采样视口。恢复刚写下滚动的头几帧，视口还没落定：
+  // iOS 上同一个 WKWebView 原地换章（书内切滚动/分页等结构性重载）后，原生侧会让
+  // scrollX/scrollY 瞬时读成 0（Mac 模拟器实测：写入 -1047 后 +16ms 读到 0、约 40ms 后
+  // 滚动树里仍是 -1047，这之间没有任何 JS 写入）。此刻 getFirstVisibleCharOffset 采到章首，
+  // commit 就 scrollToChapterStart——位置被永久钉回章首并落库，而新开书（全新
+  // WebView）没有这个瞬时态，所以只在「书内切换」时坏、退出重进又好。
+  // 恢复锚就是 registerImageLateAnchor 登记的那一个（恢复落地到用户首次翻页之间有效，
+  // 此刻用户还碰不到正文）；只有精确字符锚能这样取，progress / fragment 恢复仍走采样。
+  beginRestoreReanchor: function() {
+    var co = this.__imgReanchorCharOffset;
+    if (typeof co !== 'number' || co <= 0) return this.beginUiScaleReanchor();
+    if (this._reanchorPending === true) return -1;
+    this._setReanchorPending(true);
+    this._uiScaleReanchorOffset = co;
+    this._uiScaleReanchorEnd = this.__imgReanchorCharOffsetEnd;
+    this._uiScaleReanchorScroll = this._readContinuousScroll();
+    return co;
+  },
   commitUiScaleReanchor: function() {
     // beginUiScaleReanchor 必须先成功置旗 + 暂存锚；否则（旗未由本入口置/锚无效）整体 no-op，
     // 绝不误清别处的 _reanchorPending（finally 只在本入口确实拥有旗时执行）。
     var off = this._uiScaleReanchorOffset;
     if (off === undefined || off < 0) return false;
     try {
-      this.scrollToCharOffset(off, undefined, this._uiScaleReanchorScroll);
+      // 句尾锚只由 beginRestoreReanchor 带入（收藏句跳转的整句对齐，BUG-461）；缩放入口
+      // 不设，undefined 与旧行为一致。
+      this.scrollToCharOffset(off, this._uiScaleReanchorEnd, this._uiScaleReanchorScroll);
     } finally {
       this._uiScaleReanchorOffset = undefined;
+      this._uiScaleReanchorEnd = undefined;
       this._uiScaleReanchorScroll = undefined;
       this._setReanchorPending(false);
     }

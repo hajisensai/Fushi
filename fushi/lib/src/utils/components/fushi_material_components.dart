@@ -190,7 +190,10 @@ class FushiListItem extends StatefulWidget {
   /// （golden `list_tile_narrow` 即在 150×80 的盒子里复现出 overflow 红条），窄容器
   /// 里标题一换行就会撑破父容器。所以放宽必须逐调用点显式进行——只在父容器高度自由
   /// 的地方传 `titleMaxLines: 2`，而不是改默认值连带影响每一个既有调用点。
-  final int titleMaxLines;
+  ///
+  /// null = 不限行数：只给父容器高度自由、且截断会丢掉**唯一区分信息**的调用点
+  /// （发现页同系列书名只在末尾差一个卷号，两行 ellipsis 恰好把卷号切掉）。
+  final int? titleMaxLines;
   final int subtitleMaxLines;
   final FushiFocusId? focusId;
 
@@ -267,7 +270,11 @@ class _FushiListItemState extends State<FushiListItem> {
                   DefaultTextStyle.merge(
                     style: titleStyle,
                     maxLines: widget.titleMaxLines,
-                    overflow: TextOverflow.ellipsis,
+                    // 不限行时不能带 ellipsis：TextPainter 在 maxLines 为 null
+                    // 时把省略号作用于**第一行**，「不限行」反而退化成单行。
+                    overflow: widget.titleMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
                     child: widget.title,
                   ),
                   if (widget.subtitle != null)

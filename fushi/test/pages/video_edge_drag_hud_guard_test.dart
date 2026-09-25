@@ -70,9 +70,14 @@ void main() {
     final String page = readVideoFushiSource();
 
     test('移动控制条仍启用 media_kit volumeGesture / brightnessGesture', () {
-      // 移动端竖滑是独立路径，与被删的桌面手势零共享，必须保留。
-      expect(page.contains('volumeGesture: true'), isTrue,
+      // 移动端竖滑是独立路径，与被删的桌面手势零共享，必须保留。#1525 起它接在
+      // 用户开关上（默认开 = 旧行为，默认值由 video_asbplayer_config_test 钉），
+      // 守卫钉的是「仍接线到开关」，不是写死 true。
+      expect(
+          page.contains('volumeGesture: _asbConfig.volumeSwipeGesture'), isTrue,
           reason: '移动端 media_kit 音量竖滑不应被误删');
+      expect(page.contains('_asbConfig.brightnessSwipeGesture'), isTrue,
+          reason: '移动端 media_kit 亮度竖滑不应被误删');
       expect(page.contains('brightnessGesture:'), isTrue,
           reason: '移动端 media_kit 亮度竖滑不应被误删');
     });
