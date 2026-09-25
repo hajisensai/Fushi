@@ -142,7 +142,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     super.initState();
     _rect = widget.initialRect;
     _layoutRect = widget.initialRect;
-    _layout = widget.initialLayout;
+    _layout = _withoutQuotedFilter(widget.initialLayout);
     _specialCharacterController = TextEditingController();
     _specialCharacterAdvancesEnabled = _layout.characterAdvances.isNotEmpty;
     unawaited(_load());
@@ -166,7 +166,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       if (draft != null) {
         _rect = draft.searchRect;
         _layoutRect = draft.rect;
-        _layout = draft.layout;
+        _layout = _withoutQuotedFilter(draft.layout);
         _specialCharacterAdvancesEnabled = _layout.characterAdvances.isNotEmpty;
         _layoutReferenceClient = draft.layoutReferenceClient;
         _layoutCaptureMetadata = draft.layoutCaptureMetadata;
@@ -652,11 +652,15 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     _changed();
   }
 
-  void _setQuotedTextOnly(bool value) {
-    if (_layout.quotedTextOnly == value) return;
-    _layout = copyGalCalibrationLayout(_layout, quotedTextOnly: value);
-    _changed();
-  }
+  // The calibration-only 「」 filter is superseded by the Hook text processing
+  // rules (keep 「」 text, regex replace), which already shape the text the
+  // attached surface receives. A saved profile keeps its stored value until it
+  // is recalibrated here.
+  static GalLookupTextLayoutV1 _withoutQuotedFilter(
+    GalLookupTextLayoutV1 layout,
+  ) => layout.quotedTextOnly
+      ? copyGalCalibrationLayout(layout, quotedTextOnly: false)
+      : layout;
 
   void _setContinuationIndent(double value) {
     final GalLookupCellGridV1? grid = _layout.cellGrid;
@@ -1351,14 +1355,6 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                     ? null
                     : (bool value) => setState(() => _fitAllSamples = value),
               ),
-            SwitchListTile.adaptive(
-              key: const ValueKey<String>('calibration-quoted-text-only'),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              title: Text(t.game_lookup_samples_quoted_text_only),
-              subtitle: Text(t.game_lookup_samples_quoted_text_only_hint),
-              value: _layout.quotedTextOnly,
-              onChanged: _busy ? null : _setQuotedTextOnly,
-            ),
             const Divider(height: 24),
             Align(
               alignment: Alignment.centerLeft,

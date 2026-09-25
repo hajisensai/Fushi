@@ -439,24 +439,55 @@ void main() {
     );
   });
 
-  testWidgets('quote-only filter can be set before any grid is fitted', (
+  testWidgets('retired quote-only filter is cleared when recalibrating', (
     WidgetTester tester,
   ) async {
-    final _MemoryStore store = _MemoryStore(draft: _draft());
-    await _open(
-      tester,
-      store: store,
-      slot: GalLookupCalibrationSlotV1.dialogue,
+    const GalLookupCellGridV1 grid = GalLookupCellGridV1(
+      advancePerClientHeight: 0.04,
+      lineAdvancePerClientHeight: 0.06,
+      cellHeightPerClientHeight: 0.05,
+      columns: 20,
+      continuationIndent: 0,
+      quotedContinuationIndent: 1,
     );
+    final _MemoryStore store = _MemoryStore(
+      draft: _draft(
+        layout: const GalLookupTextLayoutV1(
+          cellGrid: grid,
+          quotedTextOnly: true,
+        ),
+      ),
+    );
+    await _open(tester, store: store);
+    expect(
+      find.byKey(const ValueKey<String>('calibration-quoted-text-only')),
+      findsNothing,
+    );
+    final Finder manualLayout = find.byKey(
+      const ValueKey<String>('calibration-manual-layout'),
+    );
+    await tester.ensureVisible(manualLayout);
+    await tester.tap(manualLayout);
+    await tester.pumpAndSettle();
     final Finder toggle = find.byKey(
-      const ValueKey<String>('calibration-quoted-text-only'),
+      const ValueKey<String>('calibration-special-character-width'),
     );
     await tester.ensureVisible(toggle);
-    expect(tester.widget<SwitchListTile>(toggle).value, isFalse);
     await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('calibration-special-character-input')),
+      '、',
+    );
+    final Finder add = find.byKey(
+      const ValueKey<String>('calibration-special-character-add'),
+    );
+    await tester.ensureVisible(add);
+    await tester.tap(add);
     await tester.pump(const Duration(milliseconds: 450));
     await tester.pumpAndSettle();
-    expect(store.saved.last.layout.quotedTextOnly, isTrue);
+    expect(store.saved, isNotEmpty);
+    expect(store.saved.last.layout.quotedTextOnly, isFalse);
   });
 
   test(

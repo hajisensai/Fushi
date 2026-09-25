@@ -5521,8 +5521,6 @@
   "game_lookup_samples_manual_layout": "手动排版（高级）",
   "game_lookup_samples_narration": "旁白校准",
   "game_lookup_samples_narration_hint": "只有台词和旁白的文字排版不一致时才需要单独校准；排版一致时无需进行旁白校准。",
-  "game_lookup_samples_quoted_text_only": "只用「」内台词",
-  "game_lookup_samples_quoted_text_only_hint": "过滤掉「…」以外的人名等字符。",
   "game_lookup_samples_region_hint": "拖动橙色外框内部可移动，拖动边角可缩放。宽高控制排版空间和换行，不改变单个字框大小。",
   "game_lookup_samples_remove": "删除样本",
   "game_lookup_samples_save_failed": "自动保存失败，当前样本仍保留在本窗口；请重试。",

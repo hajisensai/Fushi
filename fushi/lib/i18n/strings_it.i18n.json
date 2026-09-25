@@ -5521,8 +5521,6 @@
   "game_lookup_samples_manual_layout": "Manual layout (advanced)",
   "game_lookup_samples_narration": "Narration calibration",
   "game_lookup_samples_narration_hint": "Only calibrate narration separately when its text layout differs from dialogue. If they use the same layout, no narration calibration is needed.",
-  "game_lookup_samples_quoted_text_only": "Use text inside 「」 only",
-  "game_lookup_samples_quoted_text_only_hint": "Filter speaker names and other characters outside 「…」.",
   "game_lookup_samples_region_hint": "Drag inside the orange outline to move it; drag its handles to resize. Width and height control wrapping space, not character size.",
   "game_lookup_samples_remove": "Remove sample",
   "game_lookup_samples_save_failed": "Automatic save failed. The current samples remain in this window; try again.",
