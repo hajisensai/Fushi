@@ -113,6 +113,7 @@ class ResumableDownloader {
     required this.partFile,
     required this.open,
     this.expectedSize,
+    this.sizeHint,
     this.expectedSha256,
     this.resumeState,
     this.onProgress,
@@ -125,7 +126,18 @@ class ResumableDownloader {
   final File destination;
   final File partFile;
   final ResumableDownloadOpen open;
+
+  /// 严格体积：下完不等于它就判完整性失败并删掉 `.part`。只给调用方**确知**
+  /// 服务端会原样返回的字节数（自家 manifest、已校验的清单）。
   final int? expectedSize;
+
+  /// 仅供进度展示的体积提示：响应既没 Content-Length 也没 Content-Range 总长时
+  /// 才拿来当进度分母，**永不参与完整性判定**，也不据它丢弃已有 `.part`。
+  ///
+  /// 目录/列表里声称的体积（OPDS `<link length>`、网盘列表的 size）属于这一类：
+  /// Atom（RFC 4287 §4.2.7.6）明确 `length` 只是 advisory hint，而 Calibre 等
+  /// 服务端下载时会把元数据写回 EPUB，实际字节数与目录值必然不同（BUG-2649）。
+  final int? sizeHint;
   final String? expectedSha256;
   final ResumableDownloadState? resumeState;
   final ResumableDownloadProgress? onProgress;
@@ -206,12 +218,12 @@ class ResumableDownloader {
     onMeta?.call(ResumableDownloadMetaInfo(
       etag: response.header(HttpHeaders.etagHeader),
       lastModified: response.header(HttpHeaders.lastModifiedHeader),
-      totalBytes: expectedSize ?? total,
+      totalBytes: expectedSize ?? total ?? sizeHint,
       resumeOutcome: outcome,
       writeOffset: writeOffset,
     ));
 
-    final int? knownTotal = expectedSize ?? total;
+    final int? knownTotal = expectedSize ?? total ?? sizeHint;
     await _streamToPart(
       response: response,
       writeOffset: writeOffset,

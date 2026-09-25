@@ -1319,9 +1319,11 @@ extension _ReaderChrome on _ReaderFushiPageState {
         lyricsMode: _lyricsMode,
         continuousMode: _settings?.isContinuousMode == true,
       ),
-      // 阶段 1：在归零前同步采样恢复落定的锚 + 置旗（要求①③：采锚必须在 reflow 归零前）。
+      // 阶段 1：取恢复自己的精确字符锚 + 置旗。BUG-2652：不能现场采样——iOS 上同一个
+      // WKWebView 原地换章后视口头几帧会瞬时读成 0，采到的就是章首（见 JS
+      // beginRestoreReanchor）。无精确锚（progress / fragment 恢复）时 JS 退回采样。
       evalBegin: () => _controller!.evaluateJavascript(
-        source: ReaderPaginationScripts.beginUiScaleReanchorInvocation(),
+        source: ReaderPaginationScripts.beginRestoreReanchorInvocation(),
       ),
       // 阶段 2：等过渡帧 settle 后提交滚动并清旗，并打 _reanchorClearedAt 武装 B-3 窗。
       evalCommit: () async {

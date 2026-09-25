@@ -1,0 +1,12 @@
+## BUG-2652 · iOS 书内分页切滚动后落点被钉回章首（原地换章视口瞬时读 0）
+- **报告**：2026-09-25（用户：「iOS 本身是翻页模式的，在书里打开滚动模式会一直卡住出不来，要退出书再进去才能正常切换到滚动模式」）
+- **真实性**：✅ 真 bug（iOS 26.5 模拟器 iPhone 17 Pro 真 WKWebView 复现：横竖排各 4 轮「章中分页 → 滚动」，**8/8 次**切换后首个可见字符都变成 0 = 章首，并把 `normOffset=0` 落库；新开书从不复现）。
+  书内切模式 = 设置页先 await 持久化 view mode，再 `onLayoutReloadLive` → `_reloadWithCurrentSettings`（`fushi/lib/src/pages/implementations/reader_fushi/chrome.part.dart`）在**同一个 WKWebView** 里 `loadUrl` 重载本章。连续 shell 的恢复把滚动写对了（charOffset 663 → `scrollLeft=-1047`），但原生侧随后几帧让 `scrollX/scrollY` 瞬时读成 0：探针钩住 `scrollTo` / `scrollTop` / `scrollLeft` / `scrollIntoView` 写入，t=3ms 写入 -1047、+16ms 读到 0，**其间没有任何 JS 写入**，约 40ms 时滚动事件里仍是 -1047。恰在这个窗口里有两次重锚采样首字锚：
+  1. `_onRestoreComplete` → `_reapplyChromeInsetsAfterFirstLoad()` → JS `setChromeInsets`（`fushi/lib/src/reader/reader_pagination_scripts.dart`，分页 / 连续两个 shell）。重载时下发的 inset 与已烘焙进引擎配置的完全相同、没有重排要补偿，它却照样 `getFirstVisibleCharOffset()`（读到 0）→ rAF 里 `scrollToCharOffset(0)` → `scrollToChapterStart()`；
+  2. 把 1 修掉后，紧随其后的 TODO-718 恢复完成重锚 `_reanchorContinuousAfterRestore`（`chrome.part.dart`）的 `beginUiScaleReanchor` 同样现场采样视口、采到章首，commit 时 `scrollToChapterStart()`（修掉 1 之后实测 7/8 仍失败）。
+  新开书是全新 WebView、没有这个瞬时态，所以「退出重进就好」。已排除：WebKit 的同 URL 重载 / 历史视图状态恢复（新文档 `performance` 导航类型是 `navigate`、`history.length=1`）；`#fushi-cloak` 的 `visibility:hidden` 推迟首帧合成（改成 `opacity:0` 仍 8/8 失败）。
+- **[x] ① 已修复** —（本提交）
+  - JS `setChromeInsets` 两个 shell 开头加 `_chromeInsetsUnchanged(top, bottom)`（`_sharedJs`）：inset 与已生效的 CSS 变量逐值相同、图片盒也不变 = 没有重排，直接返回——不采样、不置旗、不动 metrics。inset 真变（首次开书补底栏预留、挤压态切换）或图片盒过期时行为不变。
+  - 连续 shell 新增 `beginRestoreReanchor()`：恢复完成重锚取**恢复自己的语义锚**（`registerImageLateAnchor` 登记的精确字符锚与句尾锚，从恢复落地到用户首次翻页有效），不再采样视口；无精确锚（progress / fragment 恢复）退回 `beginUiScaleReanchor`。`commitUiScaleReanchor` 透传句尾锚（BUG-461 整句对齐），缩放入口不设、行为不变。Dart 恢复重锚改调 `ReaderPaginationScripts.beginRestoreReanchorInvocation()`。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/restore_reanchor_transient_viewport_behavior_test.dart`（+ `.js`）：Node 真执行分页 / 连续 shell，采样器恒答「章首」模拟未落定视口，钉 inset 无变化不采样不重锚、有变化 / 图片盒过期照旧、恢复重锚取恢复锚与句尾锚不采样、无精确锚退回采样；两个变异（撤判据 / 撤恢复锚）各自转红。`fushi/test/reader/ui_scale_reanchor_continuous_test.dart` 的接线守卫改钉 `beginRestoreReanchorInvocation`。iOS 真 WKWebView：`fushi/integration_test/reader_ios_mode_switch_position_itest.dart`（横竖排各 4 轮分页 ↔ 滚动，断言首字偏移不变）。
+- **备注**：修复后同一模拟器探针 0/8 失败，横竖排双向切换首字偏移逐字保持（663→663、1455→1455…）。用户原话是「卡住出不来」，模拟器上看到的是「切过去落在章首、位置被写坏」，没有复现出界面冻结；待用户在真机上确认书内切换后是否仍有卡住。

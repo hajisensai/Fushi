@@ -56,6 +56,9 @@ class MediaDiscoveryPage extends StatefulWidget {
   State<MediaDiscoveryPage> createState() => _MediaDiscoveryPageState();
 }
 
+/// 引导态来源卡片的最小宽度：按它算列数，宽屏多列、窄屏退成单列。
+const double _kSourceCardMinWidth = 280;
+
 /// 空查询时的页面态。只有 [none] 才该向源发请求——另外两态发出去要么无语义、
 /// 要么必然失败，本页据此在首帧就分流（BUG-1711）。
 enum _DiscoveryIdle {
@@ -574,7 +577,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final List<String> parts = <String>[
       service.sourceById(item.sourceId)?.displayName ?? item.sourceId,
       if (item.sizeBytes != null) formatDiscoveryBytes(item.sizeBytes!),
-      if (item.dateText != null) item.dateText!,
+      if (item.dateText != null) formatDiscoveryDate(item.dateText!),
       if (item.seeders != null) '↑${item.seeders}',
       if (item.note != null) item.note!,
       if (item.contentHint == DiscoveryContentHint.manga)
@@ -612,58 +615,65 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     );
   }
 
-  /// 种子结果的筛选条：隐藏无人做种 / 隐藏疑似漫画（客户端过滤）+ Nyaa 过滤
-  /// 三态（服务端 `f`）。三组各自只在对当前结果有意义时出现。
-  Widget? _buildTorrentFilters() {
+  /// 种子结果的筛选项：隐藏无人做种 / 隐藏疑似漫画（客户端过滤）+ Nyaa 过滤
+  /// 三态（服务端 `f`）。每组各自只在对当前结果有意义时出现；返回的是**组**，
+  /// 由 [_buildHeaderLeading] 统一排进同一条筛选行。
+  List<List<Widget>> _buildTorrentFilterGroups() {
     final bool seederChip = _hasSeederEntries;
     final bool mangaChip =
         _kind == DiscoveryMediaKind.novel && _hasContentHints;
-    final bool nyaaFilter = _nyaaFilterAvailable;
-    if (!seederChip && !mangaChip && !nyaaFilter) return null;
-    return Wrap(
-      spacing: 8,
-      runSpacing: 4,
-      children: <Widget>[
-        if (seederChip)
-          FilterChip(
-            key: const ValueKey<String>('discovery_filter_hide_zero_seeders'),
-            label: Text(t.discovery_filter_hide_zero_seeders),
-            selected: _hideZeroSeeders,
-            onSelected: _setHideZeroSeeders,
-          ),
-        if (mangaChip)
-          FilterChip(
-            key:
-                const ValueKey<String>('discovery_filter_hide_suspected_manga'),
-            label: Text(t.discovery_filter_hide_suspected_manga),
-            selected: _hideSuspectedManga,
-            onSelected: _setHideSuspectedManga,
-          ),
-        if (nyaaFilter)
+    return <List<Widget>>[
+      if (seederChip || mangaChip)
+        <Widget>[
+          if (seederChip)
+            FushiSelectableChip(
+              key: const ValueKey<String>('discovery_filter_hide_zero_seeders'),
+              label: t.discovery_filter_hide_zero_seeders,
+              leadingIcon: Icons.filter_alt_outlined,
+              selected: _hideZeroSeeders,
+              onSelected: _setHideZeroSeeders,
+            ),
+          if (mangaChip)
+            FushiSelectableChip(
+              key: const ValueKey<String>(
+                  'discovery_filter_hide_suspected_manga'),
+              label: t.discovery_filter_hide_suspected_manga,
+              leadingIcon: Icons.filter_alt_outlined,
+              selected: _hideSuspectedManga,
+              onSelected: _setHideSuspectedManga,
+            ),
+        ],
+      if (_nyaaFilterAvailable)
+        <Widget>[
           for (final NyaaQualityFilter f in NyaaQualityFilter.values)
-            ChoiceChip(
+            FushiSelectableChip(
               key: ValueKey<String>('discovery_nyaa_filter_${f.index}'),
-              label: Text(switch (f) {
+              label: switch (f) {
                 NyaaQualityFilter.all => t.discovery_nyaa_filter_all,
                 NyaaQualityFilter.noRemakes =>
                   t.discovery_nyaa_filter_no_remakes,
                 NyaaQualityFilter.trustedOnly =>
                   t.discovery_nyaa_filter_trusted_only,
-              }),
+              },
               selected: _nyaaQualityFilter == f,
               onSelected: (_) => _setNyaaQualityFilter(f),
             ),
-      ],
-    );
+        ],
+    ];
   }
 
   /// header 上方插槽：媒体类型分段（多域时）+ BUG-1910 的游戏汉化状态筛选 +
-  /// 种子筛选条。
+  /// 种子筛选项。
   ///
-  /// 三者可能同时存在（书+游戏合用一页时），所以纵向叠放而不是二选一。
+  /// 几组可能同时存在（书+游戏合用一页时）。此前每组各占一行、三种控件外观
+  /// （带勾的分段按钮 / FilterChip / ChoiceChip）纵向叠三层，搜索框被挤到很下面；
+  /// 现在排进**同一条** [Wrap]：组间一道竖分隔线，窄屏装不下再自然折行。
   Widget? _buildHeaderLeading() {
-    final Widget? kindSelector = widget.kinds.length > 1
-        ? SegmentedButton<DiscoveryMediaKind>(
+    final List<List<Widget>> groups = <List<Widget>>[
+      if (widget.kinds.length > 1)
+        <Widget>[
+          adaptiveSegmentedButton<DiscoveryMediaKind>(
+            context: context,
             segments: <ButtonSegment<DiscoveryMediaKind>>[
               for (final DiscoveryMediaKind kind in widget.kinds)
                 ButtonSegment<DiscoveryMediaKind>(
@@ -674,43 +684,36 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             selected: <DiscoveryMediaKind>{_kind},
             onSelectionChanged: (Set<DiscoveryMediaKind> selection) =>
                 _selectKind(selection.first),
-          )
-        : null;
-    // BUG-1910：只有当前结果里确实有带分类的条目才出这排 chip——否则视频/书域，
-    // 或搜的是不给分类的源时，凭空多一排没用的控件。
-    final Widget? typeFilter = _gameTypeFilterAvailable
-        ? Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: <Widget>[
-              for (final _GameTypeFilter f in _GameTypeFilter.values)
-                ChoiceChip(
-                  label: Text(f.label),
-                  // 视觉密度走 MD3 默认：这是普通页面 chrome，不该自开本地决策
-                  // （md3_design_system_static_test 钉死）。番剧下载那排 chip 用
-                  // compact 是**对话框**里的既有豁免类，不该顺手继承过来。
-                  selected: _gameTypeFilter == f,
-                  // 纯客户端过滤：不重新请求，只换渲染集合。
-                  onSelected: (_) => setState(() => _gameTypeFilter = f),
-                ),
-            ],
-          )
-        : null;
-    final Widget? torrentFilters = _buildTorrentFilters();
-    final List<Widget> rows = <Widget>[
-      if (kindSelector != null) kindSelector,
-      if (typeFilter != null) typeFilter,
-      if (torrentFilters != null) torrentFilters,
+          ),
+        ],
+      // BUG-1910：只有当前结果里确实有带分类的条目才出这组 chip——否则视频/书域，
+      // 或搜的是不给分类的源时，凭空多一组没用的控件。
+      if (_gameTypeFilterAvailable)
+        <Widget>[
+          for (final _GameTypeFilter f in _GameTypeFilter.values)
+            FushiSelectableChip(
+              label: f.label,
+              selected: _gameTypeFilter == f,
+              // 纯客户端过滤：不重新请求，只换渲染集合。
+              onSelected: (_) => setState(() => _gameTypeFilter = f),
+            ),
+        ],
+      ..._buildTorrentFilterGroups(),
     ];
-    if (rows.isEmpty) return null;
-    if (rows.length == 1) return rows.single;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
+    if (groups.isEmpty) return null;
+    return Wrap(
+      key: const ValueKey<String>('discovery_filter_bar'),
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        for (int i = 0; i < rows.length; i++) ...<Widget>[
-          if (i > 0) const SizedBox(height: 8),
-          rows[i],
+        for (int i = 0; i < groups.length; i++) ...<Widget>[
+          if (i > 0)
+            const SizedBox(
+              height: 24,
+              child: VerticalDivider(width: 1),
+            ),
+          ...groups[i],
         ],
       ],
     );
@@ -797,31 +800,114 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   /// 「全部来源」+ 空查询的引导态：把候选来源摆出来让用户点，而不是把某个
   /// 恰好支持浏览的源的根目录冒充成聚合结果。
+  ///
+  /// 来源排成自适应卡片网格（宽屏多列、窄屏单列），每张卡标出「可浏览目录」
+  /// 还是「仅支持搜索」——用户点之前就知道点进去是目录还是要先输关键词。
   Widget _buildSourcePicker(
     BuildContext context,
     MediaDiscoveryService service,
   ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            t.discovery_source_pick_hint,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+    final List<MediaDiscoverySource> sources = service.sourcesFor(_kind);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double gap = tokens.spacing.gap;
+        final double page = tokens.spacing.page;
+        final double available = constraints.maxWidth - page * 2;
+        final int columns =
+            ((available + gap) / (_kSourceCardMinWidth + gap)).floor().clamp(
+                  1,
+                  sources.isEmpty ? 1 : sources.length,
+                );
+        final double cardWidth = (available - gap * (columns - 1)) / columns;
+        return ListView(
+          padding: EdgeInsets.all(page),
+          children: <Widget>[
+            Padding(
+              padding: EdgeInsets.only(bottom: gap),
+              child: Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.travel_explore_outlined,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  SizedBox(width: gap),
+                  Expanded(
+                    child: Text(
+                      t.discovery_source_pick_hint,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: <Widget>[
+                for (final MediaDiscoverySource source in sources)
+                  SizedBox(
+                    width: cardWidth,
+                    child: _buildSourceCard(context, source),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSourceCard(BuildContext context, MediaDiscoverySource source) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final bool browsable = source.capabilities.supportsBrowse;
+    return FushiCard(
+      key: ValueKey<String>('discovery_source_pick_${source.id}'),
+      onTap: () => _selectSource(source.id),
+      child: Row(
+        children: <Widget>[
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: colors.secondaryContainer,
+            foregroundColor: colors.onSecondaryContainer,
+            child: Icon(
+              browsable ? Icons.folder_open_outlined : Icons.search,
+              size: 20,
+            ),
           ),
-        ),
-        for (final MediaDiscoverySource source in service.sourcesFor(_kind))
-          FushiListItem(
-            key: ValueKey<String>('discovery_source_pick_${source.id}'),
-            leading: const Icon(Icons.travel_explore_outlined),
-            title: Text(source.displayName),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => _selectSource(source.id),
+          SizedBox(width: tokens.spacing.rowHorizontal),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  source.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                Text(
+                  browsable
+                      ? t.discovery_source_capability_browsable
+                      : t.discovery_source_capability_search_only,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listSubtitle.copyWith(
+                    color: tokens.surfaces.onVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
-      ],
+          Icon(Icons.chevron_right, color: tokens.surfaces.onVariant),
+        ],
+      ),
     );
   }
 
@@ -953,7 +1039,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                           : Icons.insert_drive_file_outlined,
                     ),
                     title: _buildResourceTitle(context, entry),
-                    titleMaxLines: 2,
+                    // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
+                    // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
+                    // 切掉，用户分不出哪一卷。
+                    titleMaxLines: null,
                     subtitle: Text(_subtitleFor(entry, service)),
                     trailing: _resolvingTorrentIds.contains(
                               '${entry.sourceId}\u0000${entry.id}',

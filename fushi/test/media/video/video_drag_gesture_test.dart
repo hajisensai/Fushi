@@ -36,13 +36,17 @@ void main() {
     test('enables independent volume gesture and brightness-gated drag gesture',
         () {
       // 复用 media_kit 控制条手势而不是自造一套；音量是播放器能力，不应跟随亮度能力门控。
-      expect(videoPage.contains('volumeGesture: true'), isTrue);
+      // issue #1525：两侧各受用户开关控制（默认开），亮度仍额外受平台能力门控。
+      final String flat = videoPage.replaceAll(RegExp(r'\s+'), '');
+      expect(flat.contains('volumeGesture:_asbConfig.volumeSwipeGesture,'),
+          isTrue);
       expect(
         videoPage.contains('volumeGesture: _brightness.canControl'),
         isFalse,
       );
       expect(
-        videoPage.contains('brightnessGesture: _brightness.canControl'),
+        flat.contains('brightnessGesture:_brightness.canControl'
+            '&&_asbConfig.brightnessSwipeGesture,'),
         isTrue,
       );
     });

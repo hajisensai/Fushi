@@ -853,6 +853,34 @@ enum SyncAssetChannelScope {
   interconnect,
 }
 
+/// 一次手动资产传输的目标：哪一类资产、跑在哪类通道上。
+class SyncAssetTransferTarget {
+  const SyncAssetTransferTarget(this.kind, this.scope);
+
+  final SyncAssetKind kind;
+  final SyncAssetChannelScope scope;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SyncAssetTransferTarget &&
+      other.kind == kind &&
+      other.scope == scope;
+
+  @override
+  int get hashCode => Object.hash(kind, scope);
+}
+
+/// 正在跑的那次手动资产传输的目标；没有资产传输在跑时为 null。
+///
+/// BUG-2645：设置页「词典 / 本地音频数据库 · 传输 ▾」那几行以前只看全局
+/// [syncInProgress]，于是**任何**同步（全量 sweep、退出书单本、合集轻量）在跑时，
+/// 互联页那行「词典」都换成转圈 + 别人的阶段进度——用户没开「上传词典」，一点立即
+/// 同步就看见词典在转，以为开关没生效。[syncActivity] 只记最后开始的那一轮、会被并发
+/// 同步覆盖，也不带资产种类与通道，所以单独维护这个精确值，由 [runManualAssetTransfer]
+/// 独占设置与清空。
+final ValueNotifier<SyncAssetTransferTarget?> activeAssetTransfer =
+    ValueNotifier<SyncAssetTransferTarget?>(null);
+
 /// 用户在设置页点「上传」/「下载」：只跑**一类资产、一个方向**，且只在 [scope] 指定
 /// 的那一类通道上跑（另一类被显式跳过，见循环里的注释）。
 ///
@@ -884,6 +912,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
     return const ManualSyncResult(ManualSyncOutcome.busy);
   }
   _beginSyncActivity(const SyncActivity(SyncActivityKind.assetTransfer));
+  activeAssetTransfer.value = SyncAssetTransferTarget(kind, scope);
   SyncOutcomeReason reason = SyncOutcomeReason.failed;
   int channelsRun = 0;
   try {
@@ -964,6 +993,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
     });
   } finally {
     _syncingIds.remove('__asset_transfer__');
+    activeAssetTransfer.value = null;
     _endSyncActivity(SyncRunOutcome(
       kind: SyncActivityKind.assetTransfer,
       reason: reason,

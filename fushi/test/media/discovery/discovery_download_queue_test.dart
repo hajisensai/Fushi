@@ -12,6 +12,7 @@ DiscoveryResourceItem _item(
   String id, {
   String url = 'https://example.com/files/book.epub',
   String? fileName,
+  int? sizeBytes,
 }) {
   return DiscoveryResourceItem(
     sourceId: 'src',
@@ -19,7 +20,11 @@ DiscoveryResourceItem _item(
     id: id,
     kind: DiscoveryMediaKind.novel,
     payloadKind: DiscoveryPayloadKind.httpFile,
-    payload: DiscoveryHttpPayload(url: url, fileName: fileName),
+    payload: DiscoveryHttpPayload(
+      url: url,
+      fileName: fileName,
+      sizeBytes: sizeBytes,
+    ),
   );
 }
 
@@ -82,6 +87,31 @@ void main() {
     expect(importedFiles.single, task.filePath);
     expect(task.importOutcome?.summary, 'ok');
     expect(queue.importedCount, 1);
+  });
+
+  // BUG-2649：Calibre OPDS 的 `<link length>` 是库里原文件体积，下载时服务端
+  // 把元数据写回 EPUB，实际字节数不同。目录体积只是提示，不能判 size mismatch。
+  test('目录声称体积与实际不符：照常下完导入，不判完整性失败', () async {
+    final List<int> body = utf8.encode('calibre-rewrote-this-epub');
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: _defaultResolver,
+      importer: (DiscoveryDownloadTask task, File file) async =>
+          const DiscoveryImportOutcome(importedCount: 1, summary: 'ok'),
+      openOverride: (Uri uri, Map<String, String> headers) async =>
+          okBytes(body),
+    );
+    addTearDown(queue.dispose);
+
+    queue.enqueue(
+      _item('1', sizeBytes: body.length - 7),
+      destinationDir: tempDir.path,
+    );
+    await _waitFor(() => queue.tasks.single.isFinished);
+
+    final DiscoveryDownloadTask task = queue.tasks.single;
+    expect(task.error, isNull);
+    expect(task.status, DiscoveryDownloadStatus.done);
+    expect(await File(task.filePath!).readAsBytes(), body);
   });
 
   test('同源同 id 未完成任务去重；顺序一次一个', () async {
