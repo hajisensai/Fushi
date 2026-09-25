@@ -38,6 +38,9 @@ void main() {
       );
       expect(body.contains('_remoteStreamIsOriginalContainer'), isTrue,
           reason: '转码 HLS 不带容器内字幕轨');
+      expect(body.contains('track.isExternalFile'), isTrue,
+          reason: '外挂文件轨（在线源字幕链接 / Emby 外挂字幕）不在流里，'
+              '按 streamIndex 去选会选中另一条不相干的内嵌轨');
       expect(
         body.contains('track.containerTrackOrdinal ?? track.streamIndex'),
         isTrue,
@@ -57,6 +60,8 @@ void main() {
       );
       expect(body.contains('playerRenderedTrack = track'), isTrue,
           reason: '恢复路径的下载失败不能再静默落回无字幕');
+      expect(body.contains('!track.isExternalFile'), isTrue,
+          reason: '恢复路径同样不得把外挂文件轨交给 libmpv 自绘');
       expect(body.contains('_showRemoteEmbeddedTrackViaPlayer('), isTrue);
       expect(
           body.contains(
