@@ -1,0 +1,6 @@
+## BUG-2676 · 自带换行的游戏长句超出校准宽度后对不上
+- **报告**：2026-09-25（用户：以前在「超时空恋人」遇到过。游戏自己在文本里换行时，用较短的台词、较小的框校准，之后比它长的台词查词框对不上。用户判断这是所有「文本自带换行」游戏的通用问题）
+- **真实性**：✅ 真 bug（源码确认，未实机复现）。样本里没有自然折行时，`fushi/lib/src/ocr/gal_lookup_calibration_ocr.dart` 用「样本最长一行」和「橙色框宽度」中较大的那个作为每行宽度（`if (rowEnds.any((row) => row.softWrap))` 的 else 分支），行数上限来自橙色框高度。运行时 `fushi/windows/runner/attached_text_layout.h` 只在当前句子本身带换行时才按 Hook 换行（`HasExplicitGridLineBreak`）。因此，一句比校准句更长、但本身没有换行的台词会在校准宽度处被强行折开，后半截的查词框落到下一行。行数超过正文框时，整句报 `grid_overflow_body_rect`，不生成查词框。
+- **[x] ① 已修复** — `fb69c2588b`：校准时，如果训练样本的每一行都正好在 Hook 换行处断开（`_rowsFollowHookLineBreaks`），并且没有任何自然折行，就在档案里记下 `cellGrid.explicitLineBreaks`。运行时对这类档案的每一句都只按 Hook 换行，不再按校准宽度折行，行宽和行数都允许延伸到游戏画面边缘（`UsesHookLineBreaks`；查词层窗口和校准预览同步放宽）。没有这个标记的档案行为不变。Dart 与 native 的档案字段解析和回传同步加入新字段；`GalLookupCellGridV1.copyWith` 保证调整格宽和缩进时不会丢掉可选字段。
+- **[x] ② 已加自动化测试** — `fushi/windows/runner/tests/attached_text_layout_test.cpp`：开启标记后，超出校准宽度的单行保持一行；超出正文框的 Hook 行仍生成字框；仍以画面边缘为限；预览与运行时结果一致；未开启时维持原有折行和越界拒绝。`fushi/test/ocr/gal_lookup_calibration_ocr_test.dart`：只有 Hook 换行的样本（`\n` 与 `\r\n`）会打开标记，任一自然折行样本会关闭标记。`fushi/test/lookup/gal_lookup_surface_profile_test.dart`：字段的保存、读取、类型校验与 `copyWith` 保留。
+- **备注**：旧档案没有这个标记，需要在这类游戏里重新校准一次，并且至少用一张有两行、按 Hook 换行的截图。只靠单行样本无法证明游戏靠 Hook 换行，这种情况会保持旧行为。以 Hook 换行符为准的前提是换行信息能传到查词层：目前只认 `\n` / `\r`；如果游戏用引擎控制码表示换行，并且被文本处理删掉，仍会退回按宽度折行。

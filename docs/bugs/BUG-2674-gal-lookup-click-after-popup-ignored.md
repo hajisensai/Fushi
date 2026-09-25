@@ -1,0 +1,6 @@
+## BUG-2674 · 关闭查词窗口后点击台词时灵时不灵
+- **报告**：2026-09-25（用户：リトルバスターズ！EX 校准后查词，点第一个词能弹；换另一个词，前两次点击不弹，第三次才弹，感觉卡）
+- **真实性**：✅ 真 bug（源码与日志确认根因候选，未实机复验）。用户当次 `hibiki_glookup.log` 显示：每次弹出查词窗口时，贴附层进入 `suspended/shieldHandshakePending`；如果关闭窗口时握手还没完成，要再过 0.3～2.9 秒才回到 `activeAttached`（例如 10:49:33.660 关闭，10:49:36.540 才恢复）。这段时间查词层是隐藏的，点击不会查词。握手需要两轮准入检查：先发出握手请求，再读到游戏进程的回应。回应只能通过共享内存读取，没有唤醒通知；而这两轮检查原先只由 500 ms 的跟随定时器推动（`fushi/windows/runner/attached_text_surface_window.cpp:33` `kFollowTimerMs`），再加上等待拦截回到空闲的时间，就会出现秒级的空窗。
+- **[x] ① 已修复** — `5c24144040`：握手未完成期间，以 16 ms 间隔重跑准入检查，最长 5 秒后回到跟随定时器（`attached_text_surface_window.cpp` `UpdateShieldHandshakeWatch` / `OnShieldHandshakeWatchTimer`）。只有我们发出的请求已被替换、并且拦截回到空闲时，才会发新的请求，所以提高检查频率不会让游戏来不及回应。每次等待结束写一行 `gal-shield: handshake pending ended after …ms (neutral_wait / ack_wait)`，超过 5 秒另记一行 `still pending`，供复测时区分是「等拦截回到空闲」还是「等游戏回应」。
+- **[ ] ② 未加自动化测试** — 这是 Win32 定时器与共享内存时序，现有 native 测试没有可驱动的窗口消息循环；代码只完成 MSVC /W4 /WX 编译和现有 native 源码守卫测试。需要实机复测。
+- **备注**：`candidate-built`（待用户编译）之前的阶段只到 `native-compiled`。如果复测后仍慢，看新增的 `gal-shield:` 日志：若 `neutral_wait` 占大头，下一步查游戏进程内拦截何时放行（`native/galgame_hook/hook/generic_input_shield.inc` `release_waiting`）；若 `ack_wait` 占大头，查游戏进程的轮询节拍。与 [BUG-2675](BUG-2675-gal-lookup-hidden-after-fast-advance.md) 可能同源。
