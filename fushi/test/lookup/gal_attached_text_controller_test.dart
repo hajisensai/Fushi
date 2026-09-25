@@ -356,6 +356,43 @@ void main() {
     }
   });
 
+  test('engine geometry still accepts a fallback calibration', () async {
+    preferences[key()] = jsonEncode(
+      _profile(mode: GalLookupSurfaceMode.auto).toJson(),
+    );
+    port.inspection = const GalAttachedCallResult(
+      status: 'ready',
+      exePath: r'C:\Games\Sample\game.exe',
+      exeSha256: _sha,
+      referenceClient: _client,
+      providerKind: 1,
+      providerId: 1,
+      providerStatus: 1,
+      shield: GalAttachedShieldStatus(available: true, statusFlags: 0x01),
+    );
+    await sync();
+    expect(controller.status, GalAttachedTextStatus.activeNative);
+    expect(controller.surfaceVisible, isFalse);
+    expect(controller.canCaptureCalibrationSample, isTrue);
+    // No attached surface is shown, so the capture needs no attached lease.
+    expect(controller.calibrationCaptureNeedsAttachedLease, isFalse);
+    expect(
+      await controller.applyMeasuredCalibration(
+        expectedTarget: controller.target!,
+        expectedExeSha256: _sha,
+        variant: measuredVariant(),
+      ),
+      isTrue,
+    );
+    expect(controller.status, GalAttachedTextStatus.activeNative);
+    expect(
+      controller.profile!.variants.any(
+        (GalLookupSurfaceVariantV1 v) => v.layout.cellGrid != null,
+      ),
+      isTrue,
+    );
+  });
+
   test('a hidden pending re-handshake still allows a clean capture', () async {
     preferences[key()] = jsonEncode(_profile().toJson());
     await sync();

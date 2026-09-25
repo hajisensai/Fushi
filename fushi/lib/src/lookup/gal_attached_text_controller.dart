@@ -370,6 +370,10 @@ class GalAttachedTextController extends ChangeNotifier {
       _draftLayout == null &&
       (_status == GalAttachedTextStatus.needsCalibration ||
           _status == GalAttachedTextStatus.activeAttached ||
+          // The engine provides glyph positions; a calibration prepared now is
+          // kept as the fallback for when that provider is unavailable. The
+          // attached surface is not shown, so the screenshot stays clean.
+          (_status == GalAttachedTextStatus.activeNative && !_surfaceVisible) ||
           (_status == GalAttachedTextStatus.suspended &&
               // While Fushi is in front the native gate may report a pending
               // re-handshake before it reaches targetBackground; either way
@@ -1026,6 +1030,8 @@ class GalAttachedTextController extends ChangeNotifier {
         identical(_profile, measured) &&
         _shieldStatus.conclusion != GalAttachedShieldConclusion.faulted &&
         (_status == GalAttachedTextStatus.activeAttached ||
+            // Saved as the fallback while the engine's own geometry is used.
+            _status == GalAttachedTextStatus.activeNative ||
             _status == GalAttachedTextStatus.waitingForBodyThread ||
             (_status == GalAttachedTextStatus.suspended &&
                 (_statusReason == 'targetBackground' ||

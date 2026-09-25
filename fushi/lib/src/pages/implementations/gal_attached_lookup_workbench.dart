@@ -299,6 +299,8 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                   Navigator.of(dialogContext).pop();
                 }
               : null,
+          nativeGeometryActive:
+              controller.status == GalAttachedTextStatus.activeNative,
           capture:
               GalHookTextOverlayController.instance.captureCalibrationSample,
         ),

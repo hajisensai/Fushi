@@ -145,6 +145,7 @@ Future<_Result> _open(
   GalLookupCalibrationSlotV1? slot,
   Future<void> Function()? onOpenNarrationCalibration,
   Future<void> Function()? onOpenDialogueCalibration,
+  bool nativeGeometryActive = false,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -169,6 +170,7 @@ Future<_Result> _open(
                     slot: slot,
                     onOpenNarrationCalibration: onOpenNarrationCalibration,
                     onOpenDialogueCalibration: onOpenDialogueCalibration,
+                    nativeGeometryActive: nativeGeometryActive,
                     store: store,
                     previewBuilder: previewBuilder,
                     imageFitter: imageFitter,
@@ -423,6 +425,35 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(store.saved.last.layout.characterAdvances, isEmpty);
+  });
+
+  testWidgets('engine geometry marks the calibration as a fallback', (
+    WidgetTester tester,
+  ) async {
+    await _open(
+      tester,
+      store: _MemoryStore(draft: _draft()),
+      manual: false,
+      nativeGeometryActive: true,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('calibration-native-fallback')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(t.game_lookup_samples_native_fallback_hint),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('attached calibration shows no fallback note', (
+    WidgetTester tester,
+  ) async {
+    await _open(tester, store: _MemoryStore(draft: _draft()), manual: false);
+    expect(
+      find.byKey(const ValueKey<String>('calibration-native-fallback')),
+      findsNothing,
+    );
   });
 
   testWidgets('a surface between states is not reported as a missing line', (

@@ -5549,5 +5549,6 @@
   "game_lookup_samples_hint": "等台词完整显示后再采集。尽量选一句两行以上的台词，自动对齐会更准。",
   "game_lookup_samples_capture_surface_not_ready": "查词层正在切换状态，暂时不能采集。请等一两秒再试；如果一直失败，请重新附着游戏。",
   "game_lookup_samples_grid_advance_decrease": "格宽减小 0.1%",
-  "game_lookup_samples_grid_advance_increase": "格宽增大 0.1%"
+  "game_lookup_samples_grid_advance_increase": "格宽增大 0.1%",
+  "game_lookup_samples_native_fallback_hint": "这款游戏现在由引擎直接提供字的位置，查词不需要校准。这里做的校准会作为备用，只在引擎位置不可用时使用。"
 }

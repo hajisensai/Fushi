@@ -5549,5 +5549,6 @@
   "game_lookup_samples_hint": "Capture once the line is fully shown. A line spanning two or more rows makes automatic alignment more reliable.",
   "game_lookup_samples_capture_surface_not_ready": "The lookup layer is switching state and cannot capture right now. Wait a second or two and try again; if it keeps failing, reattach the game.",
   "game_lookup_samples_grid_advance_decrease": "Narrow cells by 0.1%",
-  "game_lookup_samples_grid_advance_increase": "Widen cells by 0.1%"
+  "game_lookup_samples_grid_advance_increase": "Widen cells by 0.1%",
+  "game_lookup_samples_native_fallback_hint": "This game currently provides character positions from the engine, so lookup works without calibration. A calibration made here is kept as a fallback for when the engine positions are unavailable."
 }

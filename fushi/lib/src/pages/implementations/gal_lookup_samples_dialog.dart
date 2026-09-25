@@ -47,6 +47,7 @@ class GalLookupSamplesDialog extends StatefulWidget {
     this.slot,
     this.onOpenNarrationCalibration,
     this.onOpenDialogueCalibration,
+    this.nativeGeometryActive = false,
     this.store = const GalLookupCalibrationStore(),
     this.previewBuilder = GalLookupCalibrationPreviewChannel.build,
     this.imageFitter = fitGalCalibrationImages,
@@ -60,6 +61,10 @@ class GalLookupSamplesDialog extends StatefulWidget {
   final GalLookupCalibrationSlotV1? slot;
   final Future<void> Function()? onOpenNarrationCalibration;
   final Future<void> Function()? onOpenDialogueCalibration;
+
+  /// The engine currently supplies glyph positions, so this calibration is
+  /// only a fallback for when that provider is unavailable.
+  final bool nativeGeometryActive;
   final GalLookupCalibrationStore store;
   final GalCalibrationPreviewBuilder previewBuilder;
   final Future<GalCalibrationImageFit> Function(
@@ -1503,6 +1508,27 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (widget.nativeGeometryActive) ...<Widget>[
+          Row(
+            key: const ValueKey<String>('calibration-native-fallback'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  t.game_lookup_samples_native_fallback_hint,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+        ],
         if (_canSwitchSlot) ...<Widget>[
           _secondaryText(t.game_lookup_samples_narration_hint),
           const SizedBox(height: 20),
