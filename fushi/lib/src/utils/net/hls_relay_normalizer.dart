@@ -180,6 +180,51 @@ String rewriteHlsPlaylistUris(
 bool _isHttps(String uri) =>
     uri.length > 8 && uri.substring(0, 8).toLowerCase() == 'https://';
 
+final RegExp _bandwidthAttribute = RegExp(r'(?:^|[:,])BANDWIDTH=(\d+)');
+final RegExp _mediaTypeAttribute = RegExp(r'(?:^|[:,])TYPE=([A-Z-]+)');
+
+/// [playlist] 是 master 播放列表时，返回播放器默认会选的那一档变体地址（原文，可能是
+/// 相对地址）；不是 master、或不能安全地只读一档时返回 null。
+///
+/// 「默认会选的那一档」= `BANDWIDTH` 最高者（并列取先出现的）：mpv 的 `hls-bitrate`
+/// 默认 `max`，ffmpeg 的默认视频流选最高分辨率，两者在正常 master 上是同一档。
+///
+/// 有 `TYPE=AUDIO` / `TYPE=VIDEO` 且带 `URI` 的 `#EXT-X-MEDIA` 时返回 null：那种 master
+/// 的音轨（或画面）是独立的 rendition 播放列表，单读一档变体会丢掉它们，句子音频直接
+/// 抽不出来。字幕 / 隐藏字幕 rendition 不影响制卡。`#EXT-X-I-FRAME-STREAM-INF`（只有
+/// 关键帧的 trick-play 档）不算变体。
+String? selectHlsMasterVariant(String playlist) {
+  String? best;
+  int bestBandwidth = -1;
+  int? pendingBandwidth;
+  for (final String rawLine in playlist.split('\n')) {
+    final String line = rawLine.trim();
+    if (line.isEmpty) continue;
+    if (line.startsWith('#EXT-X-STREAM-INF:')) {
+      final Match? bandwidth = _bandwidthAttribute.firstMatch(
+        line.substring('#EXT-X-STREAM-INF:'.length),
+      );
+      pendingBandwidth = bandwidth == null ? 0 : int.parse(bandwidth.group(1)!);
+    } else if (line.startsWith('#EXT-X-MEDIA:')) {
+      final String attributes = line.substring('#EXT-X-MEDIA:'.length);
+      final String? type = _mediaTypeAttribute.firstMatch(attributes)?.group(1);
+      if ((type == 'AUDIO' || type == 'VIDEO') &&
+          _uriAttribute.hasMatch(attributes)) {
+        return null;
+      }
+    } else if (line.startsWith('#')) {
+      continue;
+    } else if (pendingBandwidth != null) {
+      if (pendingBandwidth > bestBandwidth) {
+        best = line;
+        bestBandwidth = pendingBandwidth;
+      }
+      pendingBandwidth = null;
+    }
+  }
+  return best;
+}
+
 /// 请求要的是不是从 0 起的整包：没带 Range，或 `bytes=0-`（ffmpeg 的 http 首请求
 /// 默认这么带，用来探服务器支不支持范围）。
 bool isWholeBodyRangeRequest(String? rangeHeader) {

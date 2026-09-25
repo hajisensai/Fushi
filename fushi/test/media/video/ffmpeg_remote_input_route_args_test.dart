@@ -60,4 +60,36 @@ void main() {
     ffmpegRemoteInputRouteResolver = (String _) => fail('本地输入不该查远端连接方式');
     expect(buildFfmpegRemoteInputArgs(local), isEmpty);
   });
+
+  // 制卡提速：制卡只裁几秒，hls demuxer 为连续播放预取下一个分片的那条连接是白下。
+  // `-http_multiple` 也是 hls 私有选项，非 HLS 输入给了就是 `Option not found`。
+  test('⑤ 只有 HLS 输入关掉下一分片预取（-http_multiple 0）', () {
+    ffmpegRemoteInputRouteResolver = (String _) => const FfmpegRemoteInputRoute(
+      httpProxy: 'http://fushi:s@127.0.0.1:9',
+      hls: true,
+    );
+    final List<String> hls = buildFfmpegRemoteInputArgs(relayed);
+    final int i = hls.indexOf('-http_multiple');
+    expect(i, greaterThanOrEqualTo(0));
+    expect(hls[i + 1], '0');
+
+    ffmpegRemoteInputRouteResolver = (String _) =>
+        const FfmpegRemoteInputRoute(httpProxy: 'http://fushi:s@127.0.0.1:9');
+    expect(
+      buildFfmpegRemoteInputArgs(relayed),
+      isNot(contains('-http_multiple')),
+      reason: 'mp4 等非 HLS 输入不认这个选项',
+    );
+  });
+
+  // 制卡提速：master 播放列表由宿主预先解析成选中的那一档，ffmpeg 直接读它。
+  test('⑥ ffmpegRemoteInputFor：登记了替代地址用它，否则原样', () {
+    expect(ffmpegRemoteInputFor(relayed), relayed, reason: '没有装配点');
+    const String variant = 'http://cdn.hoster.example:443/hls/1080/index.m3u8';
+    ffmpegRemoteInputRouteResolver = (String input) => input == relayed
+        ? const FfmpegRemoteInputRoute(hls: true, input: variant)
+        : null;
+    expect(ffmpegRemoteInputFor(relayed), variant);
+    expect(ffmpegRemoteInputFor(local), local, reason: '未登记的地址原样');
+  });
 }

@@ -169,15 +169,35 @@ class _FfmpegHttpHeaderArgs {
 /// （[ffmpegSupportsHlsSegmentExtensionOptions]）——它们是 hls demuxer 的私有选项，
 /// 喂给 mp4 输入或老版本 ffmpeg 都是致命的 `Option not found`，所以由知道这两件事的
 /// 宿主算好再交进来，这里不猜。
+/// [hls]：输入是 HLS（以播放器的 `file-format` 为准）。制卡只裁几秒，hls demuxer 默认
+/// 另开一条连接预取**下一个**分片（`http_multiple`，为连续播放设计）；片段落在单个分片
+/// 里时那条预取整片白下，还和真正要的分片抢带宽。关掉它：实测限速 HLS 上音频 + 动图
+/// 两路从 4.5 秒降到 3.8 秒，片段跨分片时也不更慢（hls 私有选项，只给 HLS 输入）。
+/// [input]：ffmpeg 实际该读的地址；null = 原样读登记时的地址。master 播放列表会被宿主
+/// 预先解析成播放器默认选中的那一档变体（见 [ffmpegRemoteInputFor]）。
 class FfmpegRemoteInputRoute {
   const FfmpegRemoteInputRoute({
     this.httpProxy,
+    this.hls = false,
     this.relaxHlsSegmentExtensions = false,
+    this.input,
   });
 
   final String? httpProxy;
+  final bool hls;
   final bool relaxHlsSegmentExtensions;
+  final String? input;
 }
+
+/// 制卡 ffmpeg 对 [inputPath] 实际该读的地址：宿主登记过替代地址就用它，否则原样。
+///
+/// 在线视频源常直接给 HLS **master** 播放列表。ffmpeg 打开 master 时 hls demuxer 会把
+/// **每一档**变体的播放列表和开头两个分片都拉下来做格式探测，再只用其中一档——三档的
+/// master 上，音频与动图两路 ffmpeg 各白下一遍，实测比直接读变体慢 60%（限速 HLS：
+/// 7.3 秒 → 4.5 秒）。宿主在点击制卡时就开始把 master 解析成播放器默认选的那一档
+/// （最高码率，mpv 与 ffmpeg 默认选择一致），这里按输入地址取回。
+String ffmpegRemoteInputFor(String inputPath) =>
+    ffmpegRemoteInputRouteResolver?.call(inputPath)?.input ?? inputPath;
 
 /// 宿主装配点：给定 ffmpeg 输入地址，返回该怎么连；null = 直连（既有行为）。
 ///
@@ -293,6 +313,7 @@ List<String> buildFfmpegRemoteInputArgs(String inputPath,
       '-http_proxy',
       httpProxy,
     ],
+    if (route?.hls ?? false) ...<String>['-http_multiple', '0'],
     if (route?.relaxHlsSegmentExtensions ?? false) ...<String>[
       '-allowed_extensions',
       'ALL',
