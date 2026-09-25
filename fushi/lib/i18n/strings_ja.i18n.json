@@ -5596,5 +5596,6 @@
   "novel_status_licensed": "書籍化済み",
   "novel_status_publishing_finished": "刊行完了",
   "novel_status_cancelled": "打ち切り",
-  "novel_status_on_hiatus": "休載中"
+  "novel_status_on_hiatus": "休載中",
+  "handlebar_glossary_first_n": "用語集（最初の ${count} 件）"
 }
