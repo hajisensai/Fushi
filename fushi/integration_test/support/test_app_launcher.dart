@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/main.dart' as app;
+import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/legacy_support_dir_migration.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -13,6 +14,7 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 /// calls [app.main] directly so the onboarding path remains covered.
 Future<void> launchFushiTestApp() async {
   WidgetsFlutterBinding.ensureInitialized();
+  isolateSharedPreferencesUnderTestRoot();
   await migrateLegacySupportDir();
   await recoverLegacyMacosPrefsFromSharedPreferences();
   final AppPaths paths = await AppPaths.resolve();

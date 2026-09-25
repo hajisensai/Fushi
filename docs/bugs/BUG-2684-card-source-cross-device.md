@@ -1,0 +1,13 @@
+## BUG-2684 · 同步过来的书卡片跳不回原文
+- **报告**：2026-09-26（用户：shishamo：「如果不是本设备的书 / 通过 fushi 同步过来的书，也跳不回去」）
+- **真实性**：✅ 真 bug。卡片里的回跳链接 `fushi://source?...&uid=…` 只带书的 `uid`（`fushi/lib/src/pages/implementations/reader_fushi/mining.part.dart:66`、`fushi/lib/src/media/manga/reader/manga_fushi_page.dart:3778`），回跳时 `fushi/lib/src/anki/card_source_router.dart` 也只按 `getEpubBookByUid(link.uid)` 查。可是 `EpubBooks.uid` 按设计是「导入时生成、不进 wire」的机器局域身份（`packages/fushi_core/lib/src/database/tables.dart:439`）：同步 / 互联把书送到另一台设备时会经 `EpubImporter` 重新导入，拿到新的 uid（`packages/fushi_engine/lib/epub/epub_importer.dart:170`）。结果是在设备 B 制的卡（或手机经互联转发到桌面制的卡）到了设备 A 就查不到书，只提示「媒体缺失」。
+- **[x] ① 已修复**（`1b1739d71aa`）：
+  - `CardSourceLink` 新增可选的 `bookKey`，即 sync / 备份 / 互联共用的跨设备身份。只允许用在书和漫画链接上。
+  - 小说和漫画制卡时写入 `bookKey`。
+  - 新增 `resolveCardSourceBook`：先按 uid 查（本机改名时 bookKey 会变、uid 不变），查不到再按 `bookKey` 回落。
+- **[x] ② 已加自动化测试**：
+  - `fushi/test/anki/card_source_book_resolve_test.dart`，覆盖：uid 不在本机时按 bookKey 找到、uid 优先、没有 bookKey 的旧链接返回 null。
+  - `packages/fushi_anki/test/card_source_link_test.dart` 新增用例「book and manga links carry the cross-device bookKey」，覆盖：往返、旧链接兼容、视频链接和空值拒绝。
+- **备注**：
+  - 修复前制的旧卡链接里没有 bookKey，在另一台设备上仍然跳不回去。
+  - 旧版 App 的解析器会拒绝未知参数，所以新卡在没升级的设备上点开会提示链接无效，需要各设备都升级到带这次修复的版本。
