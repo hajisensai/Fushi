@@ -316,7 +316,7 @@ void main() {
             ? null
             : FfmpegRemoteInputRoute(
                 httpProxy: route.httpProxy,
-                hls: route.hls,
+                disableHlsSegmentPrefetch: route.disableHlsSegmentPrefetch,
                 relaxHlsSegmentExtensions: route.relaxHlsSegmentExtensions,
               );
       };

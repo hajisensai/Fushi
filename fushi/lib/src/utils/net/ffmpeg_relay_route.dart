@@ -11,7 +11,10 @@ import 'package:fushi/src/utils/net/hls_relay_normalizer.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show FfmpegRemoteInputRoute, ffmpegSupportsHlsSegmentExtensionOptions;
+    show
+        FfmpegRemoteInputRoute,
+        ffmpegSupportsHlsHttpMultipleOption,
+        ffmpegSupportsHlsSegmentExtensionOptions;
 
 /// 制卡 ffmpeg 的远端输入改走本机中继的登记表（BUG-2642 残留）。
 ///
@@ -24,9 +27,11 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
 /// 是 HLS 且当前 ffmpeg 认得那几个选项时再放开扩展名检查。
 ///
 /// 引擎经装配点 `ffmpegRemoteInputRouteResolver`（`installEngineHostBindings` 接线）
-/// 按输入地址查这里；与中继自己按原点登记同构。只留最近几条：制卡是一次一张卡
-/// （master 被解析成变体时一张卡占两条：master 与变体各一条）。
-const int _kMaxRelayedInputs = 16;
+/// 按输入地址查这里；与中继自己按原点登记同构。只留最近几条：制卡是一次一张卡，
+/// 但 master 被解析成变体时一张卡占两条（master 与变体各一条），队列里积压的不同集
+/// 若把最早那张的登记挤掉，ffmpeg 就会不带 `-http_proxy` 直连中继形式的明文地址而
+/// 失败——所以按「两条一张卡」留足余量。
+const int _kMaxRelayedInputs = 32;
 
 /// 预先取 master 播放列表的时限。登记完成前制卡队列在等，所以必须有界；超时就
 /// 不解析，ffmpeg 照旧自己读 master（慢，但结果一样）。
@@ -66,6 +71,10 @@ FfmpegRemoteInputRoute? ffmpegRelayRouteFor(String inputPath) =>
       final bool hls = await isHls;
       final bool relax =
           hls && await ffmpegSupportsHlsSegmentExtensionOptions();
+      // `-http_multiple` 与扩展名那几个一样是 hls demuxer 私有选项：只给 HLS 输入、
+      // 且只在当前 ffmpeg 认得时给，否则 `Option not found` 让整张卡抽取失败。
+      final bool noPrefetch =
+          hls && await ffmpegSupportsHlsHttpMultipleOption();
       final String? variant = hls
           ? await _resolveMasterVariant(relayed, endpoint, headers)
           : null;
@@ -73,7 +82,7 @@ FfmpegRemoteInputRoute? ffmpegRelayRouteFor(String inputPath) =>
         relayed,
         FfmpegRemoteInputRoute(
           httpProxy: endpoint.toString(),
-          hls: hls,
+          disableHlsSegmentPrefetch: noPrefetch,
           relaxHlsSegmentExtensions: relax,
           input: variant,
         ),
@@ -83,7 +92,7 @@ FfmpegRemoteInputRoute? ffmpegRelayRouteFor(String inputPath) =>
           variant,
           FfmpegRemoteInputRoute(
             httpProxy: endpoint.toString(),
-            hls: true,
+            disableHlsSegmentPrefetch: noPrefetch,
             relaxHlsSegmentExtensions: relax,
           ),
         );
