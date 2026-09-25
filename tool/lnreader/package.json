@@ -6,9 +6,11 @@
     "build": "node build_libs.mjs"
   },
   "devDependencies": {
+    "@noble/ciphers": "2.2.0",
     "cheerio": "1.0.0-rc.12",
     "dayjs": "1.11.13",
+    "esbuild": "0.24.0",
     "htmlparser2": "8.0.2",
-    "esbuild": "0.24.0"
+    "protobufjs": "8.7.1"
   }
 }

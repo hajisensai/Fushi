@@ -7,6 +7,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
@@ -155,6 +156,8 @@ class _LnReaderNovelDetailPageState
               )
             : '$error';
         FushiToast.show(msg: message, severity: ToastSeverity.error);
+        // 章节被 Cloudflare 拦下时桥已记下挑战：重建一次让「站点验证」出现。
+        setState(() {});
       case LnReaderDownloadAborted():
         FushiToast.show(msg: t.novel_download_cancelled);
     }
@@ -264,6 +267,18 @@ class _LnReaderNovelDetailPageState
               style: TextStyle(color: theme.colorScheme.error),
             ),
           ),
+        // 详情 / 章节下载被 Cloudflare 拦下时给出验证；没有待解挑战时不占位。
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: LnReaderCloudflareAction(
+              cloudflare: widget.manager.cloudflare,
+              pluginId: widget.plugin.id,
+              onVerified: () => unawaited(_load()),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.only(top: 24, bottom: 8),
           child: Text(

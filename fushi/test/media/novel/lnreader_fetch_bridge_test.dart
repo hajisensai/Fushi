@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/manga/cookie/manga_cookie_jar.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 
 /// 宿主桥是插件全部网络的唯一出口：这里用本机真实 HTTP 服务器验证它把插件的
@@ -36,6 +38,36 @@ void main() {
           response.headers.set(HttpHeaders.locationHeader, '/final');
         case '/final':
           response.write('landed ${request.method}');
+        case '/messy-cookies':
+          // 浏览器照收、Dart 的 Cookie 会整体抛错的写法：值里带空格 / 引号，
+          // 外加一条没有名字的坏条目和一条已过期的。
+          response.headers
+            ..add(HttpHeaders.setCookieHeader, 'pref=dark mode; Path=/')
+            ..add(HttpHeaders.setCookieHeader, 'quoted="a,b"; Max-Age=60')
+            ..add(HttpHeaders.setCookieHeader, '=novalue')
+            ..add(
+              HttpHeaders.setCookieHeader,
+              'gone=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT',
+            );
+          response.write('ok');
+        case '/cf':
+          // 现行 Cloudflare 挑战：标准头 cf-mitigated。
+          response.statusCode = HttpStatus.forbidden;
+          response.headers.set('cf-mitigated', 'challenge');
+          response.write('<html>challenge</html>');
+        case '/cf-legacy':
+          // 老式 JS 挑战：没有 cf-mitigated，只能认服务器 + 挑战页标记。
+          response.statusCode = HttpStatus.serviceUnavailable;
+          response.headers.set(HttpHeaders.serverHeader, 'cloudflare');
+          response.write(
+            '<title>Just a moment...</title>'
+            '<script src="/cdn-cgi/challenge-platform/h/b/orchestrate"></script>',
+          );
+        case '/cf-forbidden':
+          // 站点自己的 403（地区限制 / 需登录），只是恰好挂在 Cloudflare 后面。
+          response.statusCode = HttpStatus.forbidden;
+          response.headers.set(HttpHeaders.serverHeader, 'cloudflare');
+          response.write('<h1>403 Forbidden</h1>');
         case '/gbk':
           // 「日本」的 GBK 字节：桥只搬字节，解码归插件（fetchText 的 encoding）。
           response.headers.contentType = ContentType('text', 'html');
@@ -56,6 +88,122 @@ void main() {
     isBlockedHost: (String host) => host == 'localhost',
     isBlockedAddress: (InternetAddress _) => false,
   );
+
+  LnReaderFetchBridge cloudflareBridge(LnReaderCloudflare cloudflare) =>
+      LnReaderFetchBridge(
+        clientFactory: HttpClient.new,
+        isBlockedHost: (String host) => host == 'localhost',
+        isBlockedAddress: (InternetAddress _) => false,
+        cloudflare: cloudflare,
+      );
+
+  Future<LnReaderCloudflare> newCloudflare() async {
+    final Directory dir = await Directory.systemTemp.createTemp('lnreader_cf');
+    addTearDown(() => dir.delete(recursive: true));
+    return LnReaderCloudflare(
+      MangaCookieJar(File('${dir.path}${Platform.pathSeparator}cookies.json')),
+    );
+  }
+
+  test('缺省补齐 LNReader app 的默认请求头，插件显式给的优先', () async {
+    await bridge().perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+      'headers': <String, Object?>{'Accept': 'application/json'},
+    });
+    final HttpHeaders headers = seenHeaders.single;
+    expect(headers.value('accept'), 'application/json');
+    expect(headers.value('accept-language'), '*');
+    expect(headers.value('sec-fetch-mode'), 'cors');
+    expect(headers.value('cache-control'), 'max-age=0');
+    expect(headers.value('user-agent'), LnReaderFetchBridge.defaultUserAgent);
+  });
+
+  test('Cloudflare 挑战按插件记下（带实际 UA），同站再通过即清除', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    final Map<String, Object?> blocked = await fetch.perform(<String, Object?>{
+      'url': '$base/cf',
+      'method': 'GET',
+      'headers': <String, Object?>{'User-Agent': 'PluginUA/1'},
+      'plugin': 'novel.site',
+    });
+    // 响应照常交还插件：插件自己的错误文案（"open in webview"）仍然显示。
+    expect(blocked['status'], HttpStatus.forbidden);
+    final LnReaderCloudflareChallenge? challenge = cloudflare.challengeFor(
+      'novel.site',
+    );
+    expect(challenge?.url.toString(), '$base/cf');
+    expect(challenge?.userAgent, 'PluginUA/1');
+    expect(cloudflare.challengeFor('other.plugin'), isNull);
+
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+      'plugin': 'novel.site',
+    });
+    expect(cloudflare.challengeFor('novel.site'), isNull);
+  });
+
+  test('老式 JS 挑战也认；站点自己的 403 不当成挑战', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/cf-forbidden',
+      'method': 'GET',
+      'plugin': 'a',
+    });
+    expect(cloudflare.challengeFor('a'), isNull);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/cf-legacy',
+      'method': 'GET',
+      'plugin': 'a',
+    });
+    expect(cloudflare.challengeFor('a')?.url.path, '/cf-legacy');
+  });
+
+  test('验证拿到的放行 cookie 随请求发出，会话 cookie 同名覆盖', () async {
+    final LnReaderCloudflare cloudflare = await newCloudflare();
+    await cloudflare.jar.replaceForHost('127.0.0.1', const <MangaCookie>[
+      MangaCookie(name: 'cf_clearance', value: 'solved', domain: '127.0.0.1'),
+      MangaCookie(name: 'session', value: 'stale', domain: '127.0.0.1'),
+    ]);
+    final LnReaderFetchBridge fetch = cloudflareBridge(cloudflare);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    expect(seenHeaders.last.value('cookie'), contains('cf_clearance=solved'));
+    await fetch.perform(<String, Object?>{
+      'url': '$base/login',
+      'method': 'GET',
+    });
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    final String cookie = seenHeaders.last.value('cookie')!;
+    expect(cookie, contains('cf_clearance=solved'));
+    expect(cookie, contains('session=abc'));
+    expect(cookie, isNot(contains('stale')));
+  });
+
+  test('不合 RFC 的 Set-Cookie 不拖垮请求，能解析的照样回带', () async {
+    final LnReaderFetchBridge fetch = bridge();
+    final Map<String, Object?> result = await fetch.perform(<String, Object?>{
+      'url': '$base/messy-cookies',
+      'method': 'GET',
+    });
+    expect(result['status'], 200);
+    await fetch.perform(<String, Object?>{
+      'url': '$base/echo',
+      'method': 'GET',
+    });
+    final String cookie = seenHeaders.last.value('cookie')!;
+    expect(cookie, contains('pref=dark mode'));
+    expect(cookie, contains('quoted="a,b"'));
+    expect(cookie, isNot(contains('gone')));
+  });
 
   test('插件的请求头与请求体原样送出，缺省补 UA', () async {
     final Map<String, Object?> result = await bridge().perform(
