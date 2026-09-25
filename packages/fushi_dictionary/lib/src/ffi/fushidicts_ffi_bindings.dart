@@ -304,3 +304,25 @@ class FushidictsFfiBindings {
   late final _LookupPopupJsonDart lookupPopupJson;
   late final _FreeStringDart freeString;
 }
+
+// ── zstd 文件解压（按需解析） ───────────────────────────────────────
+
+typedef _ZstdDecompressFileNative = Int32 Function(
+    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+typedef ZstdDecompressFileDart = int Function(
+    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+
+/// `fushidicts_zstd_decompress_file` 的绑定，**用到时才解析**。
+///
+/// 不放进 [FushidictsFfiBindings] 的构造函数：那里是急切查找，某个平台上随包
+/// 的原生库若还是没有这个导出的旧版本，整套查词绑定会在构造时一起抛。单独解析
+/// 让缺符号只影响这一个功能（返回 null，调用方报「本平台不支持」）。
+ZstdDecompressFileDart? lookupZstdDecompressFile() {
+  try {
+    return _openNativeLib()
+        .lookupFunction<_ZstdDecompressFileNative, ZstdDecompressFileDart>(
+            'fushidicts_zstd_decompress_file');
+  } on ArgumentError {
+    return null;
+  }
+}

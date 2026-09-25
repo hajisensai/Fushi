@@ -2,6 +2,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -12,6 +14,7 @@
 #include "fushidicts/lookup.hpp"
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
+#include <zstd.h>
 
 // ── helpers ──────────────────────────────────────────────────────────
 static char* dup(const std::string& s) {
@@ -740,6 +743,67 @@ char* fushidicts_lookup_popup_json(void* handle, const char* text,
 FUSHI_EXPORT
 void fushidicts_free_string(char* s) {
   ffi_guard_void("fushidicts_free_string", [&]() { free(s); });
+}
+
+// ── zstd 文件解压 ────────────────────────────────────────────────────
+//
+// Anki 2.1.50+ 的备份（.colpkg / .apkg）里 collection 是 zstd 压缩的
+// `collection.anki21b`。Dart 侧的 archive 包没有 zstd，本库本来就静态链着
+// libzstd（词典 v2 格式在用），所以在这里出一个流式的「文件 → 文件」解压，
+// 不为这一处再引一个原生依赖。流式是必须的：collection 解压后几十到上百 MB，
+// 不能整份读进内存。
+//
+// 返回 0 成功；1 输入打不开；2 输出打不开；3 zstd 解码错误；4 输入截断
+// （帧没结束就到了 EOF）；5 写入失败。
+FUSHI_EXPORT
+int32_t fushidicts_zstd_decompress_file(const char* in_path,
+                                        const char* out_path) {
+  return ffi_guard_or(
+      "fushidicts_zstd_decompress_file",
+      [&]() -> int32_t {
+        if (!in_path || !out_path) return 1;
+        std::ifstream in(std::filesystem::u8path(in_path), std::ios::binary);
+        if (!in) return 1;
+        std::ofstream out(std::filesystem::u8path(out_path),
+                          std::ios::binary | std::ios::trunc);
+        if (!out) return 2;
+
+        ZSTD_DCtx* dctx = ZSTD_createDCtx();
+        if (!dctx) return 3;
+        std::vector<char> in_buf(ZSTD_DStreamInSize());
+        std::vector<char> out_buf(ZSTD_DStreamOutSize());
+        size_t last_ret = 0;
+        int32_t status = 0;
+        while (status == 0) {
+          in.read(in_buf.data(), static_cast<std::streamsize>(in_buf.size()));
+          const size_t read = static_cast<size_t>(in.gcount());
+          if (read == 0) break;
+          ZSTD_inBuffer input{in_buf.data(), read, 0};
+          while (input.pos < input.size) {
+            ZSTD_outBuffer output{out_buf.data(), out_buf.size(), 0};
+            last_ret = ZSTD_decompressStream(dctx, &output, &input);
+            if (ZSTD_isError(last_ret)) {
+              FUSHI_LOGE("zstd decompress failed: %s",
+                         ZSTD_getErrorName(last_ret));
+              status = 3;
+              break;
+            }
+            out.write(out_buf.data(),
+                      static_cast<std::streamsize>(output.pos));
+            if (!out) {
+              status = 5;
+              break;
+            }
+          }
+        }
+        ZSTD_freeDCtx(dctx);
+        if (status != 0) return status;
+        // last_ret != 0：最后一帧还没解完就没输入了。
+        if (last_ret != 0) return 4;
+        out.flush();
+        return out ? 0 : 5;
+      },
+      []() -> int32_t { return 3; });
 }
 
 } // extern "C"
