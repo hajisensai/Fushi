@@ -17,6 +17,40 @@ void main() {
     );
     // 「点击画面播放/暂停」默认开 = 保持既有行为（桌面单击 / 移动端双击中带）。
     expect(VideoAsbplayerConfig.defaults.tapTogglesPlayback, isTrue);
+    // issue #1525: 竖滑调亮度 / 音量默认开 = 保持既有手势行为。
+    expect(VideoAsbplayerConfig.defaults.brightnessSwipeGesture, isTrue);
+    expect(VideoAsbplayerConfig.defaults.volumeSwipeGesture, isTrue);
+  });
+
+  test('issue #1525: 竖滑手势开关旧档/脏值回落 true，关态两侧独立往返', () {
+    // 升级前写下的配置没有这两个键——不得把既有竖滑手势悄悄关掉。
+    final VideoAsbplayerConfig legacy = VideoAsbplayerConfig.decode(
+      '{"seekSeconds":5,"speedStep":0.2,"pauseAtSubtitleEnd":false}',
+    );
+    expect(legacy.brightnessSwipeGesture, isTrue);
+    expect(legacy.volumeSwipeGesture, isTrue);
+    final VideoAsbplayerConfig dirty = VideoAsbplayerConfig.decode(
+      '{"brightnessSwipeGesture":0,"volumeSwipeGesture":"off"}',
+    );
+    expect(dirty.brightnessSwipeGesture, isTrue);
+    expect(dirty.volumeSwipeGesture, isTrue);
+
+    // 只关亮度：音量不受牵连（两侧是独立开关）。
+    final VideoAsbplayerConfig brightnessOff = VideoAsbplayerConfig.decode(
+      VideoAsbplayerConfig.encode(
+        VideoAsbplayerConfig.defaults.copyWith(brightnessSwipeGesture: false),
+      ),
+    );
+    expect(brightnessOff.brightnessSwipeGesture, isFalse);
+    expect(brightnessOff.volumeSwipeGesture, isTrue);
+    // 只关音量：亮度不受牵连。
+    final VideoAsbplayerConfig volumeOff = VideoAsbplayerConfig.decode(
+      VideoAsbplayerConfig.encode(
+        VideoAsbplayerConfig.defaults.copyWith(volumeSwipeGesture: false),
+      ),
+    );
+    expect(volumeOff.brightnessSwipeGesture, isTrue);
+    expect(volumeOff.volumeSwipeGesture, isFalse);
   });
 
   test('旧档（无 tapTogglesPlayback 键）与脏值都回落 true（既有行为不变）', () {
@@ -59,6 +93,8 @@ void main() {
       longPressSpeed: 2.5,
       dragSeekSensitivity: VideoSeekSensitivity.low,
       tapTogglesPlayback: false,
+      brightnessSwipeGesture: false,
+      volumeSwipeGesture: false,
     );
 
     final VideoAsbplayerConfig decoded =
@@ -71,6 +107,8 @@ void main() {
     expect(decoded.longPressSpeed, 2.5);
     expect(decoded.dragSeekSensitivity, VideoSeekSensitivity.low);
     expect(decoded.tapTogglesPlayback, isFalse);
+    expect(decoded.brightnessSwipeGesture, isFalse);
+    expect(decoded.volumeSwipeGesture, isFalse);
   });
 
   test('BUG-1485: 旧档（无 dragSeekSensitivity 键）与脏值都回落默认档', () {

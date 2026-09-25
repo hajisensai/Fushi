@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Dibaca setelah pencarian",
   "opt_narrowSidePanel_title": "Saat panel samping terlalu sempit",
   "opt_narrowSidePanel_desc": "Jika panel samping lebih sempit daripada popup, popup menyusut ke lebar yang tersedia dan seluruh jendela diperkecil bila perlu, alih-alih memotong bagian kanannya. Selalu aktif, tanpa pengaturan. Agar popup peramban kembali mengikuti popup di dalam aplikasi, matikan “Ukuran mandiri ekstensi peramban” di Fushi.",
+  "opt_shiftHoverLookup_title": "Cari dengan Shift saat mengarahkan",
+  "opt_shiftHoverLookup_desc": "Tahan <kbd>Shift</kbd> dan arahkan mouse ke teks untuk mencarinya (teks halaman dan daftar subtitle di panel samping). Matikan jika Shift bentrok dengan pintasan situs atau saat mengetik; cari dengan klik, pencarian otomatis subtitle, dan jalur lain tidak terpengaruh. Langsung berlaku.",
   "opt_touch_lookup_heading_section_kicker": "Pencarian sentuh & laci subtitel",
   "opt_touch_lookup_heading_heading": "Ponsel dan tablet",
   "opt_touch_lookup_heading_section_note": "Langsung berlaku",

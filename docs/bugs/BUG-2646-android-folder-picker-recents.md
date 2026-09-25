@@ -1,0 +1,6 @@
+## BUG-2646 · 安卓选文件夹停在空的「最近」、选不了任何目录
+- **报告**：2026-09-25（用户录屏：下载中心 → 设置 → 下载目录 →「更改目录」，系统文件界面停在空的「最近」，无侧栏入口、无「使用此文件夹」按钮，只能返回）
+- **真实性**：✅ 真 bug。`fushi/android/app/src/main/java/app/fushi/reader/MainActivity.java` 的 `pickRealDirectory`（及 `pickAndCopyDirectory`）发的是裸 `new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)`，不带 `EXTRA_INITIAL_URI`，落点交给 DocumentsUI 自决；该 ROM 落在「最近」，目录选择模式下「最近」不列任何目录也不给确认按钮。Dart 侧 `pickRealDirectoryPath`（`fushi/lib/src/media/import/real_path_directory_picker.dart`）又明说「安卓忽略 initialDirectory」，当前目录从未传到原生。所有走 `pickRealDirectoryPath` 的安卓入口（下载目录、视频/书来源文件夹、数据根等）同受影响。
+- **[x] ① 已修复** — 原生新增 `applyTreeInitialLocation`：每个 `ACTION_OPEN_DOCUMENT_TREE` 启动前设 `EXTRA_INITIAL_URI`（API 26+），调用方当前目录在共享存储（`/storage/emulated/0/...` 或 SD 卡 `/storage/<id>/...`）下时换算成 externalstorage docId（逐级上溯到已存在目录），否则退回内部存储根 `primary:`；Dart `pickRealDirectory` 经通道参数把 `initialDirectory` 交给原生；下载目录设置传当前下载根。提交见 PR 分支 `pr/saf-tree-initial-uri`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/import/saf_tree_initial_location_test.dart`：真通道断言 `initialDirectory` 送达原生（含 null）；源码守卫每个 `ACTION_OPEN_DOCUMENT_TREE` intent 启动前都调 `applyTreeInitialLocation`、该方法恒设 `EXTRA_INITIAL_URI` 并有 `primary:` 兜底；下载目录入口传 `initialDirectory`。
+- **备注**：未在用户同款 ROM 真机复测（本机无该设备）；Android 11+ 仍禁止把内部存储根 / Download 根本身选为目录树，这是系统限制，打开后需进入子目录再选。

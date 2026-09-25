@@ -265,10 +265,15 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 双击全屏语义并存，竞技场先达成者胜）。
       // 单击暂停 / 字幕点击查词不受影响：media_kit 的竖直 drag 与 tap 同一手势 arena，
       // 纯点击时 drag 不启动。亮度回调经 [ScreenBrightnessController]（桌面 no-op）。
-      volumeGesture: true,
+      // issue #1525：两侧手势各有用户开关（[_asbConfig.brightnessSwipeGesture] /
+      // [_asbConfig.volumeSwipeGesture]，默认开 = 旧行为），关掉后改走系统亮度条 / 实体
+      // 音量键，避免误触。fork 每个竖滑事件现读 theme，设置改完经 `_setAsbConfig` 的
+      // setState 重建即时生效。
+      volumeGesture: _asbConfig.volumeSwipeGesture,
       volumeIndicatorBuilder: (BuildContext _, double __) =>
           const SizedBox.shrink(),
-      brightnessGesture: _brightness.canControl,
+      brightnessGesture:
+          _brightness.canControl && _asbConfig.brightnessSwipeGesture,
       brightnessIndicatorBuilder: (BuildContext _, double __) =>
           const SizedBox.shrink(),
       // 竖滑灵敏度降到约 1/3（TODO-172/BUG-230）：media_kit 默认 100 太敏感，轻划即

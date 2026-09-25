@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Se lee tras una búsqueda",
   "opt_narrowSidePanel_title": "Cuando el panel lateral es demasiado estrecho",
   "opt_narrowSidePanel_desc": "Si el panel lateral es más estrecho que la ventana de búsqueda, esta se reduce al ancho disponible y, cuando hace falta, escala toda la ventana en lugar de recortar la mitad derecha. Siempre activo, sin ajuste. Para que la ventana del navegador vuelva a seguir la de la aplicación, desactiva «Tamaño independiente de la extensión de navegador» en Fushi.",
+  "opt_shiftHoverLookup_title": "Buscar con Shift al pasar el ratón",
+  "opt_shiftHoverLookup_desc": "Mantén <kbd>Shift</kbd> y pasa el ratón sobre el texto para buscarlo (texto de la página y lista de subtítulos del panel lateral). Desactívalo si Shift choca con atajos del sitio o al escribir; buscar con clic, la búsqueda automática de subtítulos y otras vías no se ven afectadas. Se aplica al instante.",
   "opt_touch_lookup_heading_section_kicker": "Búsqueda táctil y cajón de subtítulos",
   "opt_touch_lookup_heading_heading": "Móviles y tabletas",
   "opt_touch_lookup_heading_section_note": "Se aplica al instante",

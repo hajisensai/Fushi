@@ -75,6 +75,7 @@ final class DiscoveryHttpPayload extends DiscoveryPayload {
   /// 服务端真实文件名（可与展示标题不同）；null 时由下载侧从 URL 推导。
   final String? fileName;
 
+  /// 源在目录/列表里声称的体积，只作进度提示，不是完整性判据（BUG-2649）。
   final int? sizeBytes;
 }
 

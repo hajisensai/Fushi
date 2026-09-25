@@ -577,7 +577,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final List<String> parts = <String>[
       service.sourceById(item.sourceId)?.displayName ?? item.sourceId,
       if (item.sizeBytes != null) formatDiscoveryBytes(item.sizeBytes!),
-      if (item.dateText != null) item.dateText!,
+      if (item.dateText != null) formatDiscoveryDate(item.dateText!),
       if (item.seeders != null) '↑${item.seeders}',
       if (item.note != null) item.note!,
       if (item.contentHint == DiscoveryContentHint.manga)
@@ -1039,7 +1039,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                           : Icons.insert_drive_file_outlined,
                     ),
                     title: _buildResourceTitle(context, entry),
-                    titleMaxLines: 2,
+                    // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
+                    // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
+                    // 切掉，用户分不出哪一卷。
+                    titleMaxLines: null,
                     subtitle: Text(_subtitleFor(entry, service)),
                     trailing: _resolvingTorrentIds.contains(
                               '${entry.sourceId}\u0000${entry.id}',

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -41,7 +42,11 @@ class _FakeSource extends MediaDiscoverySource {
     required this.displayName,
     required this.priority,
     required DiscoveryCapabilities capabilities,
+    this.searchEntries,
   }) : _capabilities = capabilities;
+
+  /// 非 null 时 [search] 返回这些条目，而不是默认的单条 `$id-hit`。
+  final List<DiscoveryEntry>? searchEntries;
 
   @override
   final String id;
@@ -65,6 +70,8 @@ class _FakeSource extends MediaDiscoverySource {
     DiscoveryRequest request,
   ) async {
     searchCalls++;
+    final List<DiscoveryEntry>? custom = searchEntries;
+    if (custom != null) return _page(custom);
     return _page(<DiscoveryEntry>[
       DiscoveryResourceItem(
         sourceId: id,
@@ -424,6 +431,87 @@ void main() {
     expect(empty.browseCalls, 1);
     expect(find.text(t.discovery_empty), findsOneWidget);
     expect(find.textContaining(t.discovery_sources_unavailable), findsNothing);
+  });
+
+  // 用户反馈（Discord 2026-09-25，OPDS/Bookorbit）：同系列几卷书名只在末尾差
+  // 卷号，旧的两行 ellipsis 恰好把卷号切掉，「看不出是哪一卷」；副标题还原样
+  // 露着 `2026-09-25T04:55:58.997Z`。断言落在渲染结果上：窄屏下书名段落
+  // 没有被截断、卷号真的画出来了，日期是本地 yyyy-MM-dd 而非 ISO 原文。
+  testWidgets('窄屏长书名完整换行显示卷号，ISO 时间戳收成本地日期', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    // 测试字体没有 CJK 字形（假名汉字宽度为 0、永不换行），用罗马字同名书名
+    // 才能真的把版面撑到多行。
+    const String series =
+        'Zettai ni Hatarakitakunai Dungeon Master ga Damin wo Musaboru made';
+    const String updated = '2026-09-25T04:55:58.997Z';
+    final _FakeSource opds = _FakeSource(
+      id: 'opds',
+      displayName: 'Bookorbit',
+      priority: 1,
+      capabilities: DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.novel},
+      ),
+      searchEntries: <DiscoveryEntry>[
+        for (final int volume in <int>[3, 2])
+          DiscoveryResourceItem(
+            sourceId: 'opds',
+            title: '$series $volume',
+            id: 'opds-$volume',
+            kind: DiscoveryMediaKind.novel,
+            payloadKind: DiscoveryPayloadKind.httpFile,
+            dateText: updated,
+            note: '鬼影スパナ',
+          ),
+      ],
+    );
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[opds]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester, kind: DiscoveryMediaKind.novel);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_opds')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'きたくない',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(opds.searchCalls, 1);
+
+    for (final int volume in <int>[3, 2]) {
+      final String text = '$series $volume';
+      final RenderParagraph title =
+          tester.renderObject<RenderParagraph>(find.text(text));
+      final double lineHeight =
+          title.getFullHeightForCaret(const TextPosition(offset: 0));
+      // 窄屏下确实折成了多于两行——旧的 maxLines: 2 在这里必然截断。
+      expect(title.size.height, greaterThan(lineHeight * 2.5));
+      expect(title.didExceedMaxLines, isFalse);
+      // 末尾的卷号真的排进了版面（ellipsis 截掉的字符没有 box）。
+      expect(
+        title.getBoxesForSelection(
+          TextSelection(baseOffset: text.length - 1, extentOffset: text.length),
+        ),
+        isNotEmpty,
+      );
+    }
+
+    final DateTime local = DateTime.parse(updated).toLocal();
+    final String localDate = '${local.year}-'
+        '${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')}';
+    expect(
+      find.text('Bookorbit · $localDate · 鬼影スパナ'),
+      findsNWidgets(2),
+    );
+    expect(find.textContaining('T04:55'), findsNothing);
   });
 
   group('Nyaa 小说源：做种排序 / 隐藏无人做种 / 隐藏疑似漫画 / 过滤三态', () {

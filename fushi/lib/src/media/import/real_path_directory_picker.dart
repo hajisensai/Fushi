@@ -30,9 +30,11 @@ String? debugRealDirectoryPathOverride;
 /// 只有 externalstorage provider（设备存储/SD 卡）能映射出真实路径；云盘/虚拟
 /// provider 无真实路径 → 原生返回 null → 这里取消（与旧自绘浏览器同样不可达，无退化）。
 ///
-/// [dialogTitle] / [initialDirectory] 只对桌面 / iOS 的 `getDirectoryPath()` 生效
-/// （原样透传）。安卓走系统 SAF（`ACTION_OPEN_DOCUMENT_TREE`），标题与初始目录由
-/// 系统自己决定，两个参数被忽略——这不是退化，是 SAF 本来就不接受这两项。
+/// [dialogTitle] 只对桌面 / iOS 的 `getDirectoryPath()` 生效（SAF 不接受标题）。
+/// [initialDirectory] 桌面 / iOS 原样透传；安卓交给原生换成 `EXTRA_INITIAL_URI`
+/// ——不在共享存储下（或为 null）时原生退回内部存储根目录。安卓**必须**给选择器
+/// 一个起点：裸 `ACTION_OPEN_DOCUMENT_TREE` 在部分 ROM 上停在「最近」，目录模式下
+/// 那里空无一物、也没有「使用此文件夹」按钮，用户一个目录都选不了（BUG-2646）。
 Future<String?> pickRealDirectoryPath({
   required BuildContext context,
   required AppModel appModel,
@@ -64,7 +66,9 @@ Future<String?> pickRealDirectoryPath({
   }
 
   // 原生 SAF 目录选择器 → 原生把 tree URI 解析成真实绝对路径（不复制）。
-  return _pickRealPathViaSaf('pickRealDirectory');
+  return _pickRealPathViaSaf('pickRealDirectory', <String, Object?>{
+    'initialDirectory': initialDirectory,
+  });
 }
 
 /// 「选一个**文件**并返回它的真实文件系统绝对路径」的统一入口（board 1112）。
@@ -218,9 +222,12 @@ Future<PickedFilePath?> _detailedFallback({
 
 /// 调原生 SAF 选择器并返回真实绝对路径；null = 用户取消，或云盘/虚拟 provider
 /// 无法映射真实路径。仅用于目录；文件走带出处的 [_pickFileViaSaf]。
-Future<String?> _pickRealPathViaSaf(String method) async {
+Future<String?> _pickRealPathViaSaf(
+  String method, [
+  Map<String, Object?>? arguments,
+]) async {
   try {
-    return await FushiChannels.saf.invokeMethod<String>(method);
+    return await FushiChannels.saf.invokeMethod<String>(method, arguments);
   } on PlatformException {
     return null;
   } on MissingPluginException {

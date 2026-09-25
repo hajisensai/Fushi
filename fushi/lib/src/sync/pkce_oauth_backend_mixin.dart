@@ -67,6 +67,10 @@ mixin PkceOAuthBackendMixin on SyncBackend {
   String? _pendingVerifier;
   SyncRepository? _pendingRepo;
 
+  /// 当前 refresh token 落库所在的 repo（换码 / 恢复时记下）。[refreshAuth] 的签名
+  /// 不带 repo，靠它把 provider 轮换出的新 refresh token 写回（BUG-2647）。
+  SyncRepository? _tokenRepo;
+
   @override
   Future<bool> get isAuthenticated async => accessToken != null;
 
@@ -155,6 +159,7 @@ mixin PkceOAuthBackendMixin on SyncBackend {
     );
     accessToken = tokens.accessToken;
     refreshToken = tokens.refreshToken;
+    _tokenRepo = repo;
 
     await fetchUserEmail();
     await writeStoredToken(repo, jsonEncode({'refresh_token': refreshToken}));
@@ -167,6 +172,7 @@ mixin PkceOAuthBackendMixin on SyncBackend {
     accessToken = null;
     refreshToken = null;
     email = null;
+    _tokenRepo = null;
     clearCache();
     await writeStoredToken(repo, null);
   }
@@ -181,6 +187,7 @@ mixin PkceOAuthBackendMixin on SyncBackend {
           jsonDecode(stored) as Map<String, dynamic>;
       refreshToken = json['refresh_token'] as String?;
       if (refreshToken == null) return false;
+      _tokenRepo = repo;
 
       await refreshAuth();
       await fetchUserEmail();
@@ -205,8 +212,16 @@ mixin PkceOAuthBackendMixin on SyncBackend {
     final PkceTokens tokens = await oauth.refreshTokens(refreshToken: current);
     accessToken = tokens.accessToken;
     // The provider may or may not return a new refresh token.
-    if (tokens.refreshToken != null) {
-      refreshToken = tokens.refreshToken;
+    final String? rotated = tokens.refreshToken;
+    if (rotated == null || rotated == current) return;
+    refreshToken = rotated;
+    // BUG-2647：Microsoft 每次刷新都轮换 refresh token，且每一枚都有自己的固定寿命
+    // （默认 90 天）。只换内存不落库，存储里就永远是登录那一刻的那枚——每轮同步
+    // 开头的 restoreAuth 都拿它去刷新，到期那天刷新失败、通道静默跳过，而设置页
+    // 按「存储里有 token」照旧显示已登录。Dropbox 不回新值，走不到这里。
+    final SyncRepository? repo = _tokenRepo;
+    if (repo != null) {
+      await writeStoredToken(repo, jsonEncode({'refresh_token': rotated}));
     }
   }
 }
