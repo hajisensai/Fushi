@@ -256,6 +256,40 @@ void main() {
     );
   });
 
+  testWidgets('来源卡片标出能力：目录型「可浏览」、搜索型「仅搜索」', (WidgetTester tester) async {
+    await pumpPage(tester);
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('discovery_source_pick_browsable')),
+        matching: find.text(t.discovery_source_capability_browsable),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('discovery_source_pick_search-only'),
+        ),
+        matching: find.text(t.discovery_source_capability_search_only),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('来源下拉与搜索框同高、顶边对齐', (WidgetTester tester) async {
+    await pumpPage(tester);
+
+    final Rect menu = tester.getRect(
+      find.byKey(const ValueKey<String>('discovery_source_menu')),
+    );
+    final Rect search = tester.getRect(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+    );
+    expect(menu.height, search.height);
+    expect(menu.top, search.top);
+  });
+
   testWidgets('选只支持搜索的来源：提示要关键词，仍不发请求', (WidgetTester tester) async {
     await pumpPage(tester);
 
@@ -598,7 +632,7 @@ void main() {
       // 两个 chip 默认选中；偏好默认值也是开。
       expect(
         tester
-            .widget<FilterChip>(
+            .widget<FushiSelectableChip>(
               find.byKey(
                 const ValueKey<String>('discovery_filter_hide_zero_seeders'),
               ),
@@ -608,7 +642,7 @@ void main() {
       );
       expect(
         tester
-            .widget<FilterChip>(
+            .widget<FushiSelectableChip>(
               find.byKey(
                 const ValueKey<String>('discovery_filter_hide_suspected_manga'),
               ),
@@ -714,7 +748,7 @@ void main() {
           findsOneWidget,
         );
       }
-      ChoiceChip chip(int index) => tester.widget<ChoiceChip>(
+      FushiSelectableChip chip(int index) => tester.widget<FushiSelectableChip>(
             find.byKey(ValueKey<String>('discovery_nyaa_filter_$index')),
           );
       expect(chip(0).selected, isTrue);

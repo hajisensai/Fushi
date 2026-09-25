@@ -5464,6 +5464,8 @@
   "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
   "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
   "manga_ocr_runtime_installing": "Installing the local OCR engine…",
+  "discovery_source_capability_browsable": "フォルダを閲覧、または検索",
+  "discovery_source_capability_search_only": "キーワード検索のみ",
   "video_setting_brightness_swipe_gesture": "スワイプで明るさ調整",
   "video_setting_brightness_swipe_gesture_hint": "画面の左半分を上下にスワイプして画面の明るさを変更します。オフにするとシステムの明るさスライダーを使います",
   "video_setting_volume_swipe_gesture": "スワイプで音量調整",

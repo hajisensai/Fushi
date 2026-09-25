@@ -92,6 +92,20 @@ class DiscoveryHeaderControls extends StatelessWidget {
                   key: const ValueKey<String>('discovery_source_menu'),
                   initialSelection: selectedSourceId,
                   requestFocusOnTap: false,
+                  // 与右侧搜索框同一几何：DropdownMenu 默认是 56 高的 MD3
+                  // 文本框，比 [kFushiSearchFieldHeight] 的搜索框高出一截、字号也
+                  // 大一号，同一行两个输入控件高低不齐。压到同高 + 同一排版令牌。
+                  textStyle: tokens.type.listTitle,
+                  inputDecorationTheme:
+                      Theme.of(context).inputDecorationTheme.copyWith(
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: tokens.spacing.rowHorizontal,
+                            ),
+                            constraints: const BoxConstraints.tightFor(
+                              height: kFushiSearchFieldHeight,
+                            ),
+                          ),
                   onSelected: (String? value) =>
                       onSourceSelected(value ?? kDiscoveryAllSourcesId),
                   dropdownMenuEntries: <DropdownMenuEntry<String>>[
