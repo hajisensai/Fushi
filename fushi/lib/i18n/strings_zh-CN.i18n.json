@@ -5503,5 +5503,11 @@
   "novel_download_building": "正在生成 EPUB…",
   "novel_download_done": "已加入书架：$title",
   "novel_download_failed": "下载在「$chapter」失败：$error",
-  "novel_download_cancelled": "已取消下载"
+  "novel_download_cancelled": "已取消下载",
+  "novel_status_ongoing": "连载中",
+  "novel_status_completed": "已完结",
+  "novel_status_licensed": "已授权出版",
+  "novel_status_publishing_finished": "出版已完结",
+  "novel_status_cancelled": "已中止",
+  "novel_status_on_hiatus": "停更中"
 }

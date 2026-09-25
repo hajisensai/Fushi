@@ -5503,5 +5503,11 @@
   "novel_download_building": "EPUB を作成中…",
   "novel_download_done": "本棚に追加しました：$title",
   "novel_download_failed": "「$chapter」でダウンロードに失敗しました：$error",
-  "novel_download_cancelled": "ダウンロードをキャンセルしました"
+  "novel_download_cancelled": "ダウンロードをキャンセルしました",
+  "novel_status_ongoing": "連載中",
+  "novel_status_completed": "完結済み",
+  "novel_status_licensed": "書籍化済み",
+  "novel_status_publishing_finished": "刊行完了",
+  "novel_status_cancelled": "打ち切り",
+  "novel_status_on_hiatus": "休載中"
 }

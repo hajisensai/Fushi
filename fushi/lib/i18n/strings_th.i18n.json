@@ -5503,5 +5503,11 @@
   "novel_download_building": "Building EPUB…",
   "novel_download_done": "Added to bookshelf: $title",
   "novel_download_failed": "Download failed at $chapter: $error",
-  "novel_download_cancelled": "Download cancelled"
+  "novel_download_cancelled": "Download cancelled",
+  "novel_status_ongoing": "Ongoing",
+  "novel_status_completed": "Completed",
+  "novel_status_licensed": "Licensed",
+  "novel_status_publishing_finished": "Publishing finished",
+  "novel_status_cancelled": "Cancelled",
+  "novel_status_on_hiatus": "On hiatus"
 }

@@ -254,4 +254,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, const RangeValues(0, 2));
   });
+
+  test('连载状态：标准值本地化、Unknown 不显示、非标准值原样', () {
+    expect(lnReaderStatusLabel(null), isNull);
+    expect(lnReaderStatusLabel('Unknown'), isNull);
+    expect(lnReaderStatusLabel('Ongoing'), t.novel_status_ongoing);
+    expect(lnReaderStatusLabel('On Hiatus'), t.novel_status_on_hiatus);
+    expect(
+      lnReaderStatusLabel('Publishing Finished'),
+      t.novel_status_publishing_finished,
+    );
+    expect(lnReaderStatusLabel('連載中（毎週更新）'), '連載中（毎週更新）');
+  });
 }

@@ -220,7 +220,7 @@ class _LnReaderNovelDetailPageState
                   Text(title, style: theme.textTheme.titleLarge),
                   for (final String? line in <String?>[
                     novel?.author,
-                    novel?.status,
+                    lnReaderStatusLabel(novel?.status),
                   ])
                     if (line != null && line.isNotEmpty)
                       Padding(
@@ -302,6 +302,21 @@ class _LnReaderNovelDetailPageState
     );
   }
 }
+
+/// 插件报的连载状态 → 显示文案。
+///
+/// 与上游 `@libs/novelStatus` 的取值一一对应；`Unknown` 不带信息不显示；插件自己
+/// 塞的非标准值原样显示（不猜）。
+String? lnReaderStatusLabel(String? status) => switch (status?.trim()) {
+  null || '' || 'Unknown' => null,
+  'Ongoing' => t.novel_status_ongoing,
+  'Completed' => t.novel_status_completed,
+  'Licensed' => t.novel_status_licensed,
+  'Publishing Finished' => t.novel_status_publishing_finished,
+  'Cancelled' => t.novel_status_cancelled,
+  'On Hiatus' => t.novel_status_on_hiatus,
+  final String other => other,
+};
 
 /// 选下载范围：一个区间滑块（键盘方向键可调）+ 两端章节名 + 「全部章节」。
 /// 返回 0 基的闭区间 `[start, end]`。
