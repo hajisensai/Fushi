@@ -15,6 +15,12 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/novel/online/lnreader_extensions_section.dart';
+import 'package:fushi/src/media/novel/online/lnreader_installed_sources_section.dart';
+import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
+import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -36,7 +42,9 @@ import 'package:fushi/utils.dart';
 /// 2. 仓库 / 3. 扩展 / 4. 在线源——仅视频域、且过了
 ///    [isVideoOnlineSourcesAvailable] 才有：视频源扩展（Aniyomi）的仓库、扩展
 ///    目录与已装源，复用漫画那套 [MihonExtensionsPage] /
-///    [MihonInstalledSourcesSection]。此前它们是一张入口卡 push 出去的独立页
+///    [MihonInstalledSourcesSection]。书域同位置是小说源（LNReader 插件，过了
+///    [isNovelOnlineSourcesAvailable] 才有），三段结构一致、行组件共享。
+///    此前它们是一张入口卡 push 出去的独立页
 ///    （2026-09-19 用户口径：「统一一下视频和动画的导入页」），现在与本地来源
 ///    同页同一条选择器；只有一段（书）时选择器不出现。
 ///
@@ -117,6 +125,14 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     return null;
   }
 
+  /// 小说源（LNReader 插件）的管理器：书域、且过了合规门 + 运行时平台门才取。
+  LnReaderManager? get _novelManager {
+    if (widget.mediaKind == 'book' && isNovelOnlineSourcesAvailable) {
+      return _appModel.lnReaderManager;
+    }
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -161,6 +177,19 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
     );
   }
 
+  /// 点已启用的小说源进它的浏览页。
+  void _openNovelSource(LnReaderInstalledPlugin plugin) {
+    final LnReaderManager? manager = _novelManager;
+    if (manager == null) return;
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) =>
+            LnReaderSourceBrowsePage(manager: manager, plugin: plugin),
+      ),
+    );
+  }
+
   void _taskChanged() {
     if (mounted) setState(() {});
   }
@@ -184,9 +213,10 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MihonManager? animeManager = _animeManager;
+    final LnReaderManager? novelManager = _novelManager;
     final List<ImportPageSegment> segments = <ImportPageSegment>[
       ImportPageSegment.local,
-      if (animeManager != null) ...<ImportPageSegment>[
+      if (animeManager != null || novelManager != null) ...<ImportPageSegment>[
         ImportPageSegment.stores,
         ImportPageSegment.extensions,
         ImportPageSegment.sources,
@@ -271,6 +301,31 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
                             manager: animeManager,
                             onOpenSource: _openAnimeSource,
                             emptyLabel: t.video_online_sources_empty,
+                          ),
+                      ],
+                      if (novelManager != null) ...<Widget>[
+                        if (segment != ImportPageSegment.local)
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Text(
+                                t.novel_online_sources_hint,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                        // 与视频的扩展节同理常驻在树里（筛选 / 搜索是它的 State）。
+                        LnReaderExtensionsSection(
+                          key: const ValueKey<String>('book_lnreader_extensions'),
+                          manager: novelManager,
+                          showStores: segment == ImportPageSegment.stores,
+                          showCatalog: segment == ImportPageSegment.extensions,
+                        ),
+                        if (segment == ImportPageSegment.sources)
+                          LnReaderInstalledSourcesSection(
+                            key: const ValueKey<String>('book_lnreader_sources'),
+                            manager: novelManager,
+                            onOpenSource: _openNovelSource,
                           ),
                       ],
                     ],

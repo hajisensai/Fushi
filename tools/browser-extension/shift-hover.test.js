@@ -197,6 +197,45 @@ test('未按 Shift 的 mousemove 不发查词（不刷爆服务器）', () => {
   );
 });
 
+// 设置页「Shift 悬停查词」开关（storage.shiftHoverLookup）：显式 false 时 Shift 悬停整条入口
+// 不发查词、也不动原生选区；其它查词入口（悬浮字幕自动查词）不受影响；onChanged 热切换。
+test('shiftHoverLookup=false 时 Shift 悬停不发查词，悬浮字幕自动查词照常', () => {
+  const h = loadContentAndFireShift({ stored: { shiftHoverLookup: false } });
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(
+    h.sent.filter((m) => m && m.type === 'lookup').length,
+    0,
+    '关掉 Shift 悬停查词后仍发了查词',
+  );
+  h.windowObj.fushiLookupAtPoint(300, 400, { startMs: 0, endMs: 1000, text: '世界です' }, { auto: true });
+  assert.strictEqual(
+    h.sent.filter((m) => m && m.type === 'lookup').length,
+    1,
+    '关掉 Shift 悬停查词不得连带关掉悬浮字幕自动查词',
+  );
+});
+
+test('shiftHoverLookup 经 storage.onChanged 热切换，无需刷新页面', () => {
+  const h = loadContentAndFireShift();
+  const lookups = () => h.sent.filter((m) => m && m.type === 'lookup').length;
+  fireShiftLookup(h.docListeners, 300, 400);
+  assert.strictEqual(lookups(), 1, '默认应开启 Shift 悬停查词');
+
+  for (const listener of h.storageListeners) {
+    listener({ shiftHoverLookup: { newValue: false } }, 'local');
+  }
+  h.nowRef.value += 60000; // 越过在途闸截止时间，排除防洪干扰
+  fireShiftLookup(h.docListeners, 500, 600);
+  assert.strictEqual(lookups(), 1, '热关闭后不得再发 Shift 查词');
+
+  for (const listener of h.storageListeners) {
+    listener({ shiftHoverLookup: { newValue: true } }, 'local');
+  }
+  h.nowRef.value += 60000;
+  fireShiftLookup(h.docListeners, 700, 650);
+  assert.strictEqual(lookups(), 2, '热开启后应恢复 Shift 查词');
+});
+
 test('查词时暂停默认开启（对齐 app TODO-1108）；显式关闭后不暂停', () => {
   const on = loadContentAndFireShift();
   for (const fn of on.docListeners.mousemove) {

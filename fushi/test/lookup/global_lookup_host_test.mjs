@@ -3244,4 +3244,154 @@ function flushTimers() {
   assert.strictEqual(rootShell.style.width, '360px');
 }
 
+// BUG-2651 (issue #1581) — the WS_EX_NOACTIVATE overlay never owns keyboard focus,
+// so native only takes over Ctrl+C while a card holds a NON-EMPTY selection. The
+// host is the single place that knows that: it aggregates every card realm's
+// selectionchange into ONE boolean, posts `overlaySelection` only on a change
+// (native consumes it without a Dart round-trip), and serves the selected text
+// through selectedText() — preferring the realm the user selected in MOST
+// RECENTLY, because selecting in card B does not clear a stale selection in A.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const iframeOf = (id) => shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === id)
+    .children.find((c) => c.tagName === 'IFRAME');
+  // Give each realm a controllable selection + a selectionchange event source,
+  // then re-run the (idempotent) watcher the load handler would have run.
+  function armRealm(id) {
+    const win = iframeOf(id).contentWindow;
+    const listeners = [];
+    win._selected = '';
+    win.getSelection = () => ({
+      isCollapsed: win._selected === '',
+      toString: () => win._selected,
+    });
+    win.document = {
+      addEventListener(type, fn) {
+        if (type === 'selectionchange') listeners.push(fn);
+      },
+    };
+    host._watchFrameSelection(host._frames.get(id));
+    host._watchFrameSelection(host._frames.get(id));
+    win._select = (text) => {
+      win._selected = text;
+      listeners.forEach((fn) => fn());
+    };
+    win._listenerCount = () => listeners.length;
+    return win;
+  }
+  const w0 = armRealm('frame-0');
+  const w1 = armRealm('frame-1');
+  assert.strictEqual(w0._listenerCount(), 1, 'watcher is idempotent per realm');
+  hostPostLog = [];
+  const selectionPosts = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySelection').map((m) => m.args[0]);
+
+  assert.strictEqual(host.selectedText(), '', 'no selection anywhere');
+  w0._select('猫');
+  assert.deepStrictEqual(selectionPosts(), [true], 'first selection reports true');
+  assert.strictEqual(host.selectedText(), '猫');
+  w0._select('猫が');
+  assert.deepStrictEqual(selectionPosts(), [true], 'a growing selection does not re-post');
+  // Selecting in the child card leaves the parent's selection alive; the most
+  // recent realm wins.
+  w1._select('犬');
+  assert.strictEqual(host.selectedText(), '犬', 'most recent realm wins');
+  w1._select('');
+  assert.strictEqual(host.selectedText(), '猫が',
+    'falls back to a remaining non-empty selection');
+  assert.deepStrictEqual(selectionPosts(), [true], 'still has a selection -> no post');
+  w0._select('');
+  assert.deepStrictEqual(selectionPosts(), [true, false],
+    'the last selection clearing reports false exactly once');
+  assert.strictEqual(host.selectedText(), '');
+}
+
+// BUG-2651 — a card that leaves the stack (closed child -> parked, whole stack
+// cleared -> destroyed) takes its selection with it WITHOUT a selectionchange:
+// the removed realm is gone/parked. The host must re-derive and report false,
+// and must stop serving that realm's text; otherwise native keeps Ctrl+C
+// hijacked (the foreground app's copy silently fails) for a selection nobody
+// can see. Then: when native resets its own view (hotkey fired, selectedText()
+// came back empty), resetSelectionReport() aligns the de-dup state so the NEXT
+// real selection is reported again instead of comparing equal to a stale true.
+{
+  const { host, document } = freshHost();
+  const stack = (ids) => ({
+    popups: ids.map((id, i) => ({
+      id, parentIndex: i - 1,
+      frame: { left: i * 200, top: 0, width: 360, height: 480 }, settingsJs: '',
+    })),
+  });
+  host.renderStack(stack(['frame-0', 'frame-1']));
+  function armRealm(id) {
+    const win = shellsOf(document)
+      .find((s) => s.getAttribute('data-frame-id') === id)
+      .children.find((c) => c.tagName === 'IFRAME').contentWindow;
+    // The watcher is idempotent per realm; a realm armed earlier keeps its
+    // listener, so reuse it rather than swapping in an unwatched fake document.
+    if (win._select) return win;
+    const listeners = [];
+    win._selected = '';
+    win.getSelection = () => ({
+      isCollapsed: win._selected === '',
+      toString: () => win._selected,
+    });
+    win.document = {
+      addEventListener(type, fn) {
+        if (type === 'selectionchange') listeners.push(fn);
+      },
+    };
+    host._watchFrameSelection(host._frames.get(id));
+    win._select = (text) => {
+      win._selected = text;
+      listeners.forEach((fn) => fn());
+    };
+    return win;
+  }
+  armRealm('frame-0');
+  const child = armRealm('frame-1');
+  hostPostLog = [];
+  const selectionPosts = () =>
+    hostPostLog.filter((m) => m.handler === 'overlaySelection').map((m) => m.args[0]);
+
+  // Close the child that holds the only selection. The parked realm still
+  // "has" it (a real parked iframe keeps its DOM), but it is not a card anymore.
+  child._select('犬');
+  assert.deepStrictEqual(selectionPosts(), [true]);
+  host.renderStack(stack(['frame-0']));
+  assert.deepStrictEqual(selectionPosts(), [true, false],
+    'closing the card that held the selection reports false');
+  assert.strictEqual(host.selectedText(), '',
+    'a parked realm\'s stale selection is never served to Ctrl+C');
+
+  // Whole stack cleared (destroy path, no park candidate).
+  const root = armRealm('frame-0');
+  root._select('猫');
+  assert.deepStrictEqual(selectionPosts(), [true, false, true]);
+  host.renderStack(stack([]));
+  assert.deepStrictEqual(selectionPosts(), [true, false, true, false],
+    'clearing the stack reports false');
+  assert.strictEqual(host.selectedText(), '');
+
+  // Native self-reset: host believes true, the selection vanished with no event.
+  host.renderStack(stack(['frame-0']));
+  const again = armRealm('frame-0');
+  again._select('鳥');
+  assert.deepStrictEqual(selectionPosts(), [true, false, true, false, true]);
+  again._selected = '';  // dropped without a selectionchange
+  host.resetSelectionReport();
+  assert.deepStrictEqual(selectionPosts(), [true, false, true, false, true],
+    'resetSelectionReport does not echo false back to native');
+  again._select('魚');
+  assert.deepStrictEqual(selectionPosts(), [true, false, true, false, true, true],
+    'after a native reset the next real selection is reported again');
+}
+
 console.log('global_lookup_host_test: PASS');

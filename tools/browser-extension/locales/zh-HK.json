@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "查詞後讀取",
   "opt_narrowSidePanel_title": "側邊欄太窄時",
   "opt_narrowSidePanel_desc": "如果側邊欄比彈出視窗窄，彈出視窗會縮至可用寬度，必要時整個視窗等比縮小，而不是裁掉右半邊。此行為恆常開啟，沒有設定。若想讓瀏覽器的彈出視窗重新跟隨應用程式內的彈出視窗，請在 Fushi 關閉「瀏覽器擴充功能獨立尺寸」。",
+  "opt_shiftHoverLookup_title": "Shift 懸停查詞",
+  "opt_shiftHoverLookup_desc": "按住 <kbd>Shift</kbd> 把滑鼠移到文字上即查詞（網頁正文與側邊欄字幕列表）。Shift 與網站快捷鍵或輸入衝突時可以關掉；點擊查詞、懸浮字幕自動查詞等其他入口不受影響。修改後立即生效。",
   "opt_touch_lookup_heading_section_kicker": "觸控查詞與字幕抽屜",
   "opt_touch_lookup_heading_heading": "手機與平板電腦",
   "opt_touch_lookup_heading_section_note": "即時生效",

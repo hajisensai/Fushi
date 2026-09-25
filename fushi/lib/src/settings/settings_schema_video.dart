@@ -377,6 +377,42 @@ SettingsDestination buildVideoDestination() {
                   );
                 },
           ),
+          // issue #1525：移动端左半区竖滑调亮度 / 右半区竖滑调音量各自可关（默认开 =
+          // 旧行为），常误触的用户改用系统亮度条与实体音量键。仅移动端可见——桌面控制条
+          // 本无这两个手势，显出来是假开关。播放页在场时经 host 回调即时生效。
+          SettingsSwitchItem(
+            id: 'video.playback.brightness_swipe_gesture',
+            title: t.video_setting_brightness_swipe_gesture,
+            subtitle: t.video_setting_brightness_swipe_gesture_hint,
+            icon: Icons.brightness_6_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 96),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).brightnessSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) =>
+                    c.copyWith(brightnessSwipeGesture: value),
+              );
+            },
+          ),
+          SettingsSwitchItem(
+            id: 'video.playback.volume_swipe_gesture',
+            title: t.video_setting_volume_swipe_gesture,
+            subtitle: t.video_setting_volume_swipe_gesture_hint,
+            icon: Icons.volume_up_outlined,
+            visible: (_) => isMobilePlatform,
+            video: VideoPlacement(group: VideoGroup.playback, order: 97),
+            value: (SettingsContext settingsContext) =>
+                currentVideoAsbConfig(settingsContext).volumeSwipeGesture,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await commitVideoAsbConfig(
+                settingsContext,
+                (VideoAsbplayerConfig c) => c.copyWith(volumeSwipeGesture: value),
+              );
+            },
+          ),
           SettingsSwitchItem(
             id: 'video.playback.lock_window_aspect',
             title: t.video_setting_lock_window_aspect,

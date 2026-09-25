@@ -56,9 +56,9 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
                              int fps, int max_width, int max_height)
       : hwnd_(hwnd),
         source_(std::move(source)),
-        fps_(ClampCaptureFps(fps)),
         max_width_(ClampCaptureMaxWidth(max_width)),
-        max_height_(ClampCaptureMaxHeight(max_height)) {}
+        max_height_(ClampCaptureMaxHeight(max_height)),
+        pacer_(ClampCaptureFps(fps)) {}
 
   ~FushiGameStreamCaptureImpl() override { Stop(); }
 
@@ -351,38 +351,34 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     frame_pool_.Reset();
     item_.Reset();
     staging_.Reset();
+    latest_.Reset();
     device_.Reset();
     context_.Reset();
     d3d_.Reset();
     pool_size_ = {};
-    has_last_ = false;
-    last_frame_time_ = std::chrono::steady_clock::time_point{};
+    pacer_.Reset();
+    pending_ = false;
+    has_frame_ = false;
+    last_delivered_us_ = 0;
   }
 
-  bool ShouldKeep(std::chrono::steady_clock::time_point now) {
-    const auto interval = std::chrono::microseconds(
-        (1000000LL + static_cast<long long>(fps_) - 1) /
-        static_cast<long long>(fps_));
-    if (!has_last_ || now - last_frame_time_ >= interval) {
-      has_last_ = true;
-      last_frame_time_ = now;
-      return true;
-    }
-    return false;
+  static int64_t NowUs() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
   }
 
+  // Every arriving frame is cropped into [latest_] on the GPU (a cheap
+  // device-local copy); only frames the pacer keeps are read back and
+  // converted. A frame the pacer drops stays pending, so when a game stops
+  // redrawing right after it, the idle tick still delivers the final picture
+  // instead of freezing one frame behind.
   void HandleFrameLocked(WGC::IDirect3D11CaptureFrame* frame) {
     SizeInt32 content = {};
     if (FAILED(frame->get_ContentSize(&content)) || content.Width <= 0 ||
         content.Height <= 0) {
       return;
     }
-    const auto now = std::chrono::steady_clock::now();
-    if (!ShouldKeep(now)) {
-      RecreatePoolIfNeeded(content);
-      return;
-    }
-
     ComPtr<WGDXD3D::IDirect3DSurface> surface;
     ComPtr<IDxgiInterfaceAccessLocal> access;
     ComPtr<ID3D11Texture2D> texture;
@@ -397,72 +393,124 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     }
     D3D11_TEXTURE2D_DESC desc = {};
     texture->GetDesc(&desc);
-    D3D11_TEXTURE2D_DESC staging_desc = {};
-    if (staging_) staging_->GetDesc(&staging_desc);
-    if (!staging_ || staging_desc.Width != desc.Width ||
-        staging_desc.Height != desc.Height || staging_desc.Format != desc.Format) {
-      staging_desc = desc;
-      staging_desc.Usage = D3D11_USAGE_STAGING;
-      staging_desc.BindFlags = 0;
-      staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-      staging_desc.MiscFlags = 0;
-      staging_.Reset();
-      d3d_->CreateTexture2D(&staging_desc, nullptr, staging_.GetAddressOf());
-    }
-    if (!staging_) {
-      RecreatePoolIfNeeded(content);
-      return;
-    }
-    context_->CopyResource(staging_.Get(), texture.Get());
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
-      RecreatePoolIfNeeded(content);
-      return;
-    }
-
     const UINT valid_w = std::min<UINT>(desc.Width, static_cast<UINT>(content.Width));
     const UINT valid_h = std::min<UINT>(desc.Height, static_cast<UINT>(content.Height));
     RECT crop{};
     if (!ComputeClientCropBox(hwnd_, valid_w, valid_h, &crop)) {
-      context_->Unmap(staging_.Get(), 0);
       RequestStop("client_area_unavailable");
       RecreatePoolIfNeeded(content);
       return;
     }
-    const uint32_t crop_w = static_cast<uint32_t>(crop.right - crop.left);
-    const uint32_t crop_h = static_cast<uint32_t>(crop.bottom - crop.top);
-    const OutputSize out =
-        FitInsideEven(crop_w, crop_h, max_width_, max_height_);
-    std::vector<uint8_t> y;
-    std::vector<uint8_t> u;
-    std::vector<uint8_t> v;
-    const bool converted = out.width > 0 && out.height > 0 &&
-        ConvertBgraToI420(static_cast<const uint8_t*>(mapped.pData),
-                          mapped.RowPitch, static_cast<uint32_t>(crop.left),
-                          static_cast<uint32_t>(crop.top), crop_w, crop_h,
-                          out.width, out.height, &y, &u, &v);
-    context_->Unmap(staging_.Get(), 0);
-
-    if (converted && source_) {
-      scoped_refptr<RTCVideoFrame> video_frame = RTCVideoFrame::Create(
-          static_cast<int>(out.width), static_cast<int>(out.height), y.data(),
-          static_cast<int>(out.width), u.data(), static_cast<int>(out.width / 2),
-          v.data(), static_cast<int>(out.width / 2));
-      if (video_frame) {
-        {
-          std::lock_guard<std::mutex> lock(size_mutex_);
-          output_width_ = static_cast<int>(out.width);
-          output_height_ = static_cast<int>(out.height);
-        }
-        source_->OnCapturedFrame(video_frame);
-        {
-          std::lock_guard<std::mutex> lock(first_frame_mutex_);
-          first_frame_ready_ = true;
-        }
-        first_frame_cv_.notify_all();
-      }
+    const UINT crop_w = static_cast<UINT>(crop.right - crop.left);
+    const UINT crop_h = static_cast<UINT>(crop.bottom - crop.top);
+    if (!EnsureTexturesLocked(crop_w, crop_h, desc.Format)) {
+      RecreatePoolIfNeeded(content);
+      return;
     }
+    const D3D11_BOX box{static_cast<UINT>(crop.left), static_cast<UINT>(crop.top),
+                        0, static_cast<UINT>(crop.right),
+                        static_cast<UINT>(crop.bottom), 1};
+    context_->CopySubresourceRegion(latest_.Get(), 0, 0, 0, 0, texture.Get(), 0,
+                                    &box);
+    pending_ = true;
     RecreatePoolIfNeeded(content);
+    const int64_t now = NowUs();
+    if (pacer_.ShouldKeep(now)) DeliverLatestLocked(now);
+  }
+
+  bool EnsureTexturesLocked(UINT width, UINT height, DXGI_FORMAT format) {
+    D3D11_TEXTURE2D_DESC current = {};
+    if (latest_) latest_->GetDesc(&current);
+    if (latest_ && staging_ && current.Width == width &&
+        current.Height == height && current.Format == format) {
+      return true;
+    }
+    latest_.Reset();
+    staging_.Reset();
+    pending_ = false;
+    D3D11_TEXTURE2D_DESC texture_desc = {};
+    texture_desc.Width = width;
+    texture_desc.Height = height;
+    texture_desc.MipLevels = 1;
+    texture_desc.ArraySize = 1;
+    texture_desc.Format = format;
+    texture_desc.SampleDesc.Count = 1;
+    texture_desc.Usage = D3D11_USAGE_DEFAULT;
+    if (FAILED(d3d_->CreateTexture2D(&texture_desc, nullptr,
+                                     latest_.GetAddressOf()))) {
+      return false;
+    }
+    texture_desc.Usage = D3D11_USAGE_STAGING;
+    texture_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    if (FAILED(d3d_->CreateTexture2D(&texture_desc, nullptr,
+                                     staging_.GetAddressOf()))) {
+      latest_.Reset();
+      return false;
+    }
+    return true;
+  }
+
+  void DeliverLatestLocked(int64_t now) {
+    if (!pending_ || !latest_ || !staging_) return;
+    pending_ = false;
+    D3D11_TEXTURE2D_DESC desc = {};
+    staging_->GetDesc(&desc);
+    context_->CopyResource(staging_.Get(), latest_.Get());
+    D3D11_MAPPED_SUBRESOURCE mapped = {};
+    if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+      return;
+    }
+    const OutputSize out =
+        FitInsideEven(desc.Width, desc.Height, max_width_, max_height_);
+    const bool converted = out.width > 0 && out.height > 0 &&
+        converter_.Convert(static_cast<const uint8_t*>(mapped.pData),
+                           mapped.RowPitch, 0, 0, desc.Width, desc.Height,
+                           out.width, out.height, &y_, &u_, &v_);
+    context_->Unmap(staging_.Get(), 0);
+    if (!converted) {
+      has_frame_ = false;
+      return;
+    }
+    has_frame_ = true;
+    frame_width_ = out.width;
+    frame_height_ = out.height;
+    PushCachedFrameLocked(now);
+  }
+
+  void PushCachedFrameLocked(int64_t now) {
+    if (!has_frame_ || !source_) return;
+    scoped_refptr<RTCVideoFrame> video_frame = RTCVideoFrame::Create(
+        static_cast<int>(frame_width_), static_cast<int>(frame_height_),
+        y_.data(), static_cast<int>(frame_width_), u_.data(),
+        static_cast<int>(frame_width_ / 2), v_.data(),
+        static_cast<int>(frame_width_ / 2));
+    if (!video_frame) return;
+    {
+      std::lock_guard<std::mutex> lock(size_mutex_);
+      output_width_ = static_cast<int>(frame_width_);
+      output_height_ = static_cast<int>(frame_height_);
+    }
+    source_->OnCapturedFrame(video_frame);
+    last_delivered_us_ = now;
+    {
+      std::lock_guard<std::mutex> lock(first_frame_mutex_);
+      first_frame_ready_ = true;
+    }
+    first_frame_cv_.notify_all();
+  }
+
+  // Runs on the capture thread between WGC callbacks: flushes a frame the
+  // pacer held back once its slot has passed, and keeps a still window's
+  // last frame flowing (see kCaptureIdleRepeatUs).
+  void IdleTick() {
+    std::lock_guard<std::mutex> lock(frame_mutex_);
+    if (teardown_) return;
+    const int64_t now = NowUs();
+    if (pending_ && now - last_delivered_us_ >= pacer_.interval_us()) {
+      DeliverLatestLocked(now);
+    } else if (ShouldRepeatIdleFrame(has_frame_, now, last_delivered_us_)) {
+      PushCachedFrameLocked(now);
+    }
   }
 
   void RecreatePoolIfNeeded(const SizeInt32& content) {
@@ -507,7 +555,13 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     }
     init_cv_.notify_all();
 
-    WaitForSingleObject(stop_event_, INFINITE);
+    // Wake about once per frame interval (5..50 ms) for IdleTick; WGC frames
+    // keep arriving on their own free-threaded callbacks meanwhile.
+    const DWORD tick_ms = static_cast<DWORD>(
+        std::clamp<int64_t>(pacer_.interval_us() / 1000, 5, 50));
+    while (WaitForSingleObject(stop_event_, tick_ms) == WAIT_TIMEOUT) {
+      IdleTick();
+    }
     running_.store(false);
     TeardownCapture();
     if (SUCCEEDED(ro)) RoUninitialize();
@@ -515,7 +569,6 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
 
   HWND hwnd_ = nullptr;
   scoped_refptr<RTCVideoSource> source_;
-  int fps_ = 60;
   uint32_t max_width_ = kCaptureDefaultMaxWidth;
   uint32_t max_height_ = kCaptureDefaultMaxHeight;
   HANDLE stop_event_ = nullptr;
@@ -544,12 +597,22 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   ComPtr<WGC::IGraphicsCaptureItem> item_;
   ComPtr<WGC::IDirect3D11CaptureFramePool> frame_pool_;
   ComPtr<WGC::IGraphicsCaptureSession> session_;
+  ComPtr<ID3D11Texture2D> latest_;
   ComPtr<ID3D11Texture2D> staging_;
   SizeInt32 pool_size_ = {};
   EventRegistrationToken frame_token_ = {};
   EventRegistrationToken closed_token_ = {};
-  bool has_last_ = false;
-  std::chrono::steady_clock::time_point last_frame_time_{};
+  // Guarded by frame_mutex_.
+  FramePacer pacer_;
+  BgraToI420Converter converter_;
+  bool pending_ = false;
+  bool has_frame_ = false;
+  int64_t last_delivered_us_ = 0;
+  uint32_t frame_width_ = 0;
+  uint32_t frame_height_ = 0;
+  std::vector<uint8_t> y_;
+  std::vector<uint8_t> u_;
+  std::vector<uint8_t> v_;
 };
 
 }  // namespace

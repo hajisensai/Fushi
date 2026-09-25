@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2456 条。点号进各自文件。
+> 共 2464 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |
 | [BUG-2680](bugs/BUG-2680-gal-mine-lease-refused-after-calibration.md) | 🚧 | 🚧 | 校准后制卡截图租约被拒 |
 | [BUG-2679](bugs/BUG-2679-gal-first-mine-capture-refused.md) | ✅ | ✅ | 查词窗口里第一次点制卡截图被拒 |
 | [BUG-2678](bugs/BUG-2678-gal-grid-width-slider-drift.md) | ✅ | ✅ | 调整格宽后字格消失且拉回后位置对不上 |
@@ -40,6 +41,13 @@
 | [BUG-2676](bugs/BUG-2676-gal-lookup-hook-linebreak-width.md) | ✅ | ✅ | 自带换行的游戏长句超出校准宽度后对不上 |
 | [BUG-2675](bugs/BUG-2675-gal-lookup-hidden-after-fast-advance.md) | 🚧 | 🚧 | 快速翻页后新台词暂时没有内嵌查词 |
 | [BUG-2674](bugs/BUG-2674-gal-lookup-click-after-popup-ignored.md) | ✅ | ✅ | 关闭查词窗口后点击台词时灵时不灵 |
+| [BUG-2652](bugs/BUG-2652-ios-scroll-switch-restore-reset.md) | ✅ | ✅ | iOS 书内分页切滚动后落点被钉回章首（原地换章视口瞬时读 0） |
+| [BUG-2651](bugs/BUG-2651-global-lookup-overlay-copy.md) | ✅ | ✅ | 应用外查词弹窗无法复制：Ctrl+C 复制到前台应用、右键菜单被弹窗盖住（issue #1581） |
+| [BUG-2650](bugs/BUG-2650-ios-ankimobile-backup-import.md) | ✅ | ✅ | iOS 查词查不出 Anki 里已有的卡：AnkiMobile 无回读通道，补「导入 Anki 备份」 |
+| [BUG-2649](bugs/BUG-2649-opds-size-mismatch.md) | ✅ | ✅ | Calibre OPDS 下载报 ResumableDownloadIntegrityException: size mismatch |
+| [BUG-2647](bugs/BUG-2647-onedrive-refresh-token-rotation-not-persisted.md) | ✅ | ✅ | OneDrive 刷新后轮换的 refresh token 不落库，登录约 90 天后同步静默停止 |
+| [BUG-2646](bugs/BUG-2646-android-folder-picker-recents.md) | ✅ | ✅ | 安卓选文件夹停在空的「最近」、选不了任何目录 |
+| [BUG-2645](bugs/BUG-2645-asset-transfer-row-foreign-progress.md) | ✅ | ✅ | 互联页词典传输行在任意同步时都转圈 |
 | [BUG-2644](bugs/BUG-2644-manga-ocr-nested-regions.md) | ✅ | ✅ | 漫画目录段落与内嵌行框重复识别和显示 |
 | [BUG-2643](bugs/BUG-2643-manga-ocr-preprocess-speed.md) | ✅ | ✅ | Windows 本地漫画 OCR 识别慢且缩图丢失细笔画 |
 | [BUG-2642](bugs/BUG-2642-aniyomi-mining-hls-demuxer.md) | ✅ | ✅ | Aniyomi 在线视频制卡失败：捆绑 ffmpeg 缺 hls demuxer（required audio missing / Invalid data） |

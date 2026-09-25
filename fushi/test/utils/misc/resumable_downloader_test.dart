@@ -203,6 +203,89 @@ void main() {
       expect(part().existsSync(), isFalse);
     });
 
+    // BUG-2649：目录声称的体积（OPDS `<link length>`）只是提示。Calibre 下载时
+    // 把元数据写回 EPUB，实际字节数与目录值不同——不能当完整性判据删文件。
+    test('sizeHint mismatch still completes (advisory only)', () async {
+      final List<int> body = payload();
+      final File file = await ResumableDownloader(
+        url: 'http://host/stream',
+        destination: dest(),
+        partFile: part(),
+        sizeHint: body.length - 3,
+        open: (Uri uri, Map<String, String> headers) async =>
+            ResumableDownloadResponse.bytes(
+          statusCode: HttpStatus.ok,
+          body: body,
+          headers: <String, String>{
+            HttpHeaders.contentLengthHeader: '${body.length}',
+          },
+        ),
+      ).download();
+      expect(await file.readAsBytes(), body);
+    });
+
+    test('sizeHint is progress denominator only without response length',
+        () async {
+      final List<int> body = payload();
+      final List<int?> totals = <int?>[];
+      await ResumableDownloader(
+        url: 'http://host/stream',
+        destination: dest(),
+        partFile: part(),
+        sizeHint: 999,
+        onProgress: (int received, int? total) => totals.add(total),
+        open: (Uri uri, Map<String, String> headers) async =>
+            ResumableDownloadResponse.bytes(
+          statusCode: HttpStatus.ok,
+          body: body,
+        ),
+      ).download();
+      expect(totals.toSet(), <int?>{999});
+
+      totals.clear();
+      await ResumableDownloader(
+        url: 'http://host/stream',
+        destination: dest(),
+        partFile: part(),
+        sizeHint: 999,
+        onProgress: (int received, int? total) => totals.add(total),
+        open: (Uri uri, Map<String, String> headers) async =>
+            ResumableDownloadResponse.bytes(
+          statusCode: HttpStatus.ok,
+          body: body,
+          headers: <String, String>{
+            HttpHeaders.contentLengthHeader: '${body.length}',
+          },
+        ),
+      ).download();
+      expect(totals.toSet(), <int?>{body.length});
+    });
+
+    test('sizeHint smaller than existing part does not discard it', () async {
+      final List<int> body = payload();
+      await part().writeAsBytes(body.sublist(0, 6), flush: true);
+      final List<String?> ranges = <String?>[];
+      final File file = await ResumableDownloader(
+        url: 'http://host/stream',
+        destination: dest(),
+        partFile: part(),
+        sizeHint: 4,
+        open: (Uri uri, Map<String, String> headers) async {
+          ranges.add(headers[HttpHeaders.rangeHeader]);
+          return ResumableDownloadResponse.bytes(
+            statusCode: HttpStatus.partialContent,
+            body: body.sublist(6),
+            headers: <String, String>{
+              HttpHeaders.contentRangeHeader:
+                  'bytes 6-${body.length - 1}/${body.length}',
+            },
+          );
+        },
+      ).download();
+      expect(ranges, <String?>['bytes=6-']);
+      expect(await file.readAsBytes(), body);
+    });
+
     test('reports resumed outcome on accepted 206 resume', () async {
       final List<int> body = payload();
       await part().writeAsBytes(body.sublist(0, 6), flush: true);

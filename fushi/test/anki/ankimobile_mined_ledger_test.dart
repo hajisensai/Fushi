@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
@@ -193,6 +194,123 @@ void main() {
         ledger.contains('見学'),
       ]);
       expect(answers, <bool>[true, true, false]);
+    });
+  });
+
+  // 「导入 Anki 备份」补进来的快照：iOS 上唯一能知道「别处加过的卡」的来源。
+  group('AnkiMobileMinedLedger 导入快照', () {
+    late Directory dir;
+    setUp(() => dir = Directory.systemTemp.createTempSync('ledger_snapshot_'));
+    tearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+
+    String snapshotPath() =>
+        '${dir.path}/${AnkiMobileMinedLedger.importedSnapshotFileName}';
+    AnkiMobileMinedLedger ledger() =>
+        AnkiMobileMinedLedger(importedSnapshotPath: () async => snapshotPath());
+
+    test('导入的词算已制卡，与回跳落账取并集', () async {
+      final l = ledger();
+      await l.record('勉強');
+      expect(await l.replaceImported(<String>['見物', ' 猫 ', '']), 2);
+      expect(await l.contains('見物'), isTrue);
+      expect(await l.contains('猫'), isTrue);
+      expect(await l.contains('勉強'), isTrue);
+      expect(await l.importedCount(), 2);
+    });
+
+    test('重新导入整份替换快照（备份后删掉的卡消失），回跳落账不受影响', () async {
+      final l = ledger();
+      await l.record('勉強');
+      await l.replaceImported(<String>['見物', '猫']);
+      await l.replaceImported(<String>['猫']);
+      expect(await l.contains('見物'), isFalse);
+      expect(await l.contains('猫'), isTrue);
+      // Hoshi 整体覆盖会把这条冲掉；我们分两份存，它得还在。
+      expect(await l.contains('勉強'), isTrue);
+    });
+
+    test('快照穿到文件：换个实例（≈重启 app）仍认得，且不进 SharedPreferences', () async {
+      await ledger().replaceImported(<String>['見物']);
+      expect(File(snapshotPath()).existsSync(), isTrue);
+      expect(await persisted(), isEmpty);
+      expect(await ledger().contains('見物'), isTrue);
+    });
+
+    test('快照不受回跳账本的条数上限约束', () async {
+      final l = AnkiMobileMinedLedger(
+        limit: 2,
+        importedSnapshotPath: () async => snapshotPath(),
+      );
+      await l.replaceImported(<String>['a', 'b', 'c', 'd']);
+      for (final String w in <String>['a', 'b', 'c', 'd']) {
+        expect(await l.contains(w), isTrue, reason: w);
+      }
+    });
+
+    test('forget 两份一起划：只在快照里的词也能被用户纠正', () async {
+      final l = ledger();
+      await l.record('見物');
+      await l.replaceImported(<String>['見物', '猫']);
+      expect(await l.forget('見物'), isTrue);
+      expect(await l.contains('見物'), isFalse);
+      expect(await l.forget('猫'), isTrue);
+      expect(await l.contains('猫'), isFalse);
+      // 划掉也穿到文件。
+      expect(await ledger().contains('猫'), isFalse);
+    });
+
+    test('导入广播「范围未知」的刷新：所有已渲染的 ✓ 都可能变', () async {
+      final List<String?> seen = <String?>[];
+      final sub = MinedStateSignal.instance.changes.listen(
+        (MinedStateChange change) => seen.add(change.expression),
+      );
+      addTearDown(sub.cancel);
+      await ledger().replaceImported(<String>['見物']);
+      await Future<void>.delayed(Duration.zero);
+      expect(seen, <String?>[null]);
+    });
+
+    test('快照文件坏了当空快照继续，不抛', () async {
+      File(snapshotPath()).writeAsStringSync('{not json');
+      expect(await ledger().contains('見物'), isFalse);
+      expect(await ledger().importedCount(), 0);
+    });
+
+    test('只有账本真是查重来源时才提供导入（改用 AnkiConnect / 制卡到服务器时不提供）', () {
+      expect(
+        ankiMobileLedgerIsDuplicateSource(
+          useAnkiConnectOnMobile: false,
+          mineToServer: false,
+        ),
+        isTrue,
+      );
+      expect(
+        ankiMobileLedgerIsDuplicateSource(
+          useAnkiConnectOnMobile: true,
+          mineToServer: false,
+        ),
+        isFalse,
+      );
+      expect(
+        ankiMobileLedgerIsDuplicateSource(
+          useAnkiConnectOnMobile: false,
+          mineToServer: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('导入时写不进文件必须报错（不能说导入了 N 个、重启后全没了）', () async {
+      final l = AnkiMobileMinedLedger(
+        importedSnapshotPath: () async => throw const FileSystemException('x'),
+      );
+      await expectLater(
+        l.replaceImported(<String>['見物']),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(await l.contains('見物'), isFalse);
     });
   });
 
