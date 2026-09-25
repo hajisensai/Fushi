@@ -1,4 +1,6 @@
-// Included in the PID attach path after resolving the actual process image.
+// Included in the PID attach path after resolving the actual process image,
+// and in the Steam client launch path after discovering the game process.
+// Both inject into an already running process, so neither may skip this gate.
   // Automatic recovery after a launch failure comes through this same entry.
   // It must not bypass the confirmed Siglus child's delayed-attach boundary.
   if (IsSiglusGame(target_exe)) {
