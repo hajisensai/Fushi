@@ -1992,10 +1992,10 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 小说阅读器制卡时是否给卡片追加「制卡所在字符数」标签（`chars_12345`，全书绝对
-  /// 学习字数位置，countStudyChars 口径）。默认开：这是用户点名要的标注，且只多一个
-  /// tag、不动任何既有字段。
+  /// 学习字数位置，countStudyChars 口径）。默认关（2026-09-26 用户要求砍掉这个
+  /// 默认标签：每张卡多一个无意义的数字 tag）；需要的人在 Anki 设置里自己打开。
   bool get autoAddCharPositionToTags =>
-      getPref('auto_add_char_position_to_tags', defaultValue: true) as bool;
+      getPref('auto_add_char_position_to_tags', defaultValue: false) as bool;
 
   void toggleAutoAddCharPositionToTags() async {
     await setPref('auto_add_char_position_to_tags', !autoAddCharPositionToTags);

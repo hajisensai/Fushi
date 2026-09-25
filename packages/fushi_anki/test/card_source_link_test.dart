@@ -236,6 +236,78 @@ void main() {
     },
   );
 
+  test('book and manga links carry the cross-device bookKey', () {
+    // The uid is minted per device at import; a synced copy of the same book
+    // on another device has a different uid and is only found by bookKey.
+    for (final CardSourceLink link in <CardSourceLink>[
+      CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'book_1790000000000000_1',
+        bookKey: '無職転生 ～異世界行ったら本気だす～ 25 (MFブックス)',
+        sourceId: _sourceId,
+        chapterIndex: 3,
+        charOffset: 18712,
+      ),
+      CardSourceLink(
+        kind: CardSourceKind.manga,
+        uid: 'book_1790000000000000_2',
+        bookKey: 'manga & key=1',
+        sourceId: _sourceId,
+        pageIndex: 7,
+      ),
+    ]) {
+      final CardSourceLink parsed = CardSourceLink.parse(
+        link.toUri().toString(),
+      );
+      expect(parsed.bookKey, link.bookKey);
+      expect(parsed.uid, link.uid);
+      final CardSourceLink fromHtml = CardSourceLink.fromHtml(
+        link.toHtml(),
+      ).single;
+      expect(fromHtml.bookKey, link.bookKey);
+      expect(link.withSourceId(_sourceId).bookKey, link.bookKey);
+    }
+    // Links minted before bookKey existed still parse (uid-only lookup).
+    expect(CardSourceLink.parse(book().toUri().toString()).bookKey, isNull);
+    // Video identity is the file fingerprint; a bookKey there is malformed.
+    expect(
+      () => CardSourceLink(
+        kind: CardSourceKind.video,
+        uid: 'video/x',
+        bookKey: 'x',
+        sourceId: _sourceId,
+        episodeIndex: 0,
+        startMs: 0,
+        endMs: 1,
+        fingerprint: 'a' * 64,
+      ),
+      throwsFormatException,
+    );
+    // A key that cannot be carried safely is dropped, never rejected: EPUB
+    // titles keep embedded newlines, and rejecting made every card of that book
+    // fail to mine. The link still resolves by uid and never emits the key.
+    for (final String bad in <String>['', '  ', 'a\nb', 'x' * 1025]) {
+      final CardSourceLink link = CardSourceLink(
+        kind: CardSourceKind.book,
+        uid: 'u',
+        bookKey: bad,
+        sourceId: _sourceId,
+        chapterIndex: 0,
+        charOffset: 0,
+      );
+      expect(link.bookKey, isNull);
+      expect(link.toUri().queryParameters.containsKey('bookKey'), isFalse);
+    }
+    // A hand-edited link with an unusable bookKey still opens by uid.
+    final Uri tampered = book().toUri().replace(
+      queryParameters: <String, String>{
+        ...book().toUri().queryParameters,
+        'bookKey': 'a\tb',
+      },
+    );
+    expect(CardSourceLink.parse(tampered.toString()).bookKey, isNull);
+  });
+
   test('rejects commands, paths, invalid anchors and ambiguous URL inputs', () {
     final String valid = book().toUri().toString();
     for (final String raw in <String>[

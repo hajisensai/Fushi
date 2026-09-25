@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2466 条。点号进各自文件。
+> 共 2468 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2684](bugs/BUG-2684-card-source-cross-device.md) | ✅ | ✅ | 同步过来的书卡片跳不回原文 |
+| [BUG-2683](bugs/BUG-2683-itest-prefs-leak-card-tags.md) | ✅ | ✅ | 集成测试写的 Anki 标签漏进用户真实配置，卡片多出 e2e 与 chars 标签 |
 | [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |
 | [BUG-2680](bugs/BUG-2680-gal-mine-lease-refused-after-calibration.md) | 🚧 | 🚧 | 校准后制卡截图租约被拒 |
 | [BUG-2679](bugs/BUG-2679-gal-first-mine-capture-refused.md) | ✅ | ✅ | 查词窗口里第一次点制卡截图被拒 |
