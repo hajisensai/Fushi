@@ -93,6 +93,10 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
           '它自带 connectionFactory 做连接期超时；走 HTTP 代理会让制卡整条链路当场失效。',
   'fushi/lib/src/media/manga/mihon/desktop_mihon_runtime.dart':
       'Mihon 桌面 sidecar：控制面与封面图都打本进程拉起的 127.0.0.1:<port> 认证代理端点。',
+  'fushi/lib/src/utils/net/ffmpeg_relay_route.dart':
+      '制卡预取 HLS master：findProxy 钉死为本进程的原生中继（127.0.0.1 带凭据），'
+          '与 ffmpeg 读同一条路径。真正出网的是中继自己的 appNativeProxyUpstreamClientFactory'
+          '（已走 app 代理）；这里再套用户代理会把本机中继请求也送进代理，取不到。',
   'packages/fushi_engine/lib/media/torrent/qbittorrent_client.dart':
       '外接 qBittorrent WebUI，默认 127.0.0.1:8080（用户可改成局域网 NAS）。',
   'packages/fushi_engine/lib/media/torrent/torznab_client.dart':
@@ -118,7 +122,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 21;
+const int kRegisteredOutboundFileCount = 22;
 
 /// 裸出站构造的判据。
 ///
