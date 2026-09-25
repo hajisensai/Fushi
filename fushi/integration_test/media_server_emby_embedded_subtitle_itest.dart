@@ -1,5 +1,6 @@
 // BUG-2590 取证：媒体服务器兼容层（「UHD Media Server」等）没有字幕抽取端点时，
-// 内嵌文本轨要能 ① 立即由 libmpv 自绘显示、② 重进影片恢复到同一轨。对真服务器跑，
+// 内嵌文本轨要能 ① 立即交给 libmpv 解码、文本回流成可点 cue（BUG-2648，此前是
+// 自绘、不可查词）、② 重进影片恢复到同一轨。对真服务器跑，
 // 直接把该条目推成播放页（不走库浏览）。
 //
 // 需要真实凭据 + 条目 id，经 --dart-define 注入（runner 用 -DartDefine 转发）：
@@ -47,7 +48,7 @@ const bool _expectFallback =
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('真 Emby 兼容层：内嵌轨 libmpv 自绘回落 → 后台抽取升级 → 重进恢复',
+  testWidgets('真 Emby 兼容层：内嵌轨 libmpv 解码回流成 cue → 重进恢复',
       (WidgetTester tester) async {
     final bool hasToken = _token.isNotEmpty && _userId.isNotEmpty;
     expect(
@@ -137,7 +138,7 @@ void main() {
           return hooks;
         }
 
-        // ── ① 选内嵌轨：服务器 404 → libmpv 自绘 ──
+        // ── ① 选内嵌轨：服务器 404 → libmpv 解码回流 ──
         final VideoFushiTestHooks hooks = await openAndPlay('first');
         expect(hooks.debugRemoteEmbeddedStreamIndices, contains(_trackIndex),
             reason: '字幕轨列表应含目标内嵌轨');
@@ -170,11 +171,17 @@ void main() {
             isNot(anyOf(isNull, 'no', 'auto')),
             reason: 'libmpv 应选中容器内真实字幕轨',
           );
-          expect(graphicAfterSelect, isTrue,
-              reason: '进入 libmpv 自绘模式（与图形轨同一降级）');
-          expect(cuesAfterSelect, 0, reason: '自绘模式没有 cue');
+          expect(graphicAfterSelect, isFalse,
+              reason: '文本轨不再走自绘（BUG-2648）');
+          expect(hooks.debugPlayerDecodedSubtitleActive, isTrue,
+              reason: '进入 libmpv 解码 → sub-text 回流模式');
           if (_shotSeekMs > 0) await hooks.debugSeekMs(_shotSeekMs);
-          await tester.pump(const Duration(seconds: 6));
+          for (int i = 0; i < 80 && hooks.debugCueCount == 0; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          debugPrint('[emb-itest] decoded cues=${hooks.debugCueCount}');
+          expect(hooks.debugCueCount, greaterThan(0),
+              reason: '播到有字幕处应有 libmpv 回流的可点 cue');
           final ObserveShot shot1 = await captureFlutterFrame(
             tester,
             'emb-01-player-rendered',
@@ -182,7 +189,7 @@ void main() {
           expect(shot1.saved, isTrue);
         }
 
-        // ── ② 重进：按持久化的 embedded:<n> 恢复（原版 → cue；兼容层 → 自绘）──
+        // ── ② 重进：按持久化的 embedded:<n> 恢复（原版 → cue；兼容层 → 解码回流）──
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
         navigator.pop();
@@ -192,18 +199,20 @@ void main() {
         }
         expect(find.byType(VideoFushiPage), findsNothing);
         final VideoFushiTestHooks hooks2 = await openAndPlay('reopen');
-        // 自绘回落是 load 之后异步选轨，多给几秒。
+        // 回落是 load 之后异步选轨，多给几秒。
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 250));
           if (hooks2.debugCurrentSubtitleSource == 'embedded:$_trackIndex' &&
-              (hooks2.debugCueCount > 0 || hooks2.debugGraphicSubtitleActive)) {
+              (hooks2.debugCueCount > 0 ||
+                  hooks2.debugPlayerDecodedSubtitleActive)) {
             break;
           }
         }
         debugPrint(
           '[emb-itest] reopen: source=${hooks2.debugCurrentSubtitleSource} '
           'cues=${hooks2.debugCueCount} mpvTrack=${hooks2.debugActiveSubtitleTrackId} '
-          'graphic=${hooks2.debugGraphicSubtitleActive}',
+          'graphic=${hooks2.debugGraphicSubtitleActive} '
+          'decoded=${hooks2.debugPlayerDecodedSubtitleActive}',
         );
         expect(hooks2.debugCurrentSubtitleSource, 'embedded:$_trackIndex',
             reason: '重进应恢复上次选的内嵌轨');
@@ -211,9 +220,9 @@ void main() {
           expect(hooks2.debugCueCount, greaterThan(0),
               reason: '服务器可抽 → 重进直接得到 cue');
         } else {
-          expect(hooks2.debugGraphicSubtitleActive, isTrue,
-              reason: '兼容层 → 重进后仍由 libmpv 自绘');
-          expect(hooks2.debugCueCount, 0);
+          expect(hooks2.debugPlayerDecodedSubtitleActive, isTrue,
+              reason: '兼容层 → 重进后仍由 libmpv 解码回流');
+          expect(hooks2.debugGraphicSubtitleActive, isFalse);
         }
         final ObserveShot shot3 = await captureFlutterFrame(
           tester,

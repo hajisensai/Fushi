@@ -63,6 +63,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
 import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
+import 'package:fushi/src/startup/test_root_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
@@ -198,6 +199,9 @@ void main([List<String> args = const <String>[]]) {
     /// Necessary to initialise Flutter when running native code before
     /// starting the application.
     final binding = WidgetsFlutterBinding.ensureInitialized();
+    // 测试根（FUSHI_TEST_ROOT）下 SharedPreferences 也要隔离，且必须抢在下面第一次
+    // 读 prefs 之前：否则集成测试写的 Anki 设置会落进用户真实的 prefs 文件。
+    isolateSharedPreferencesUnderTestRoot();
     // Fushi 改名：app-support 根一次性搬迁（Windows
     // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
     // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。

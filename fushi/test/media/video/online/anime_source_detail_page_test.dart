@@ -115,6 +115,7 @@ void main() {
               manager: manager,
               sourceContext: await context(),
               anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
               openPlayer:
                   (
                     _,
@@ -181,6 +182,7 @@ void main() {
               manager: manager,
               sourceContext: await context(),
               anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
               openPlayer:
                   (
                     _,
@@ -251,6 +253,7 @@ void main() {
             manager: manager,
             sourceContext: await context(),
             anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+            subtitleLanguageResolver: () => null,
             openPlayer:
                 (
                   _,

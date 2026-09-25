@@ -5068,7 +5068,6 @@
   "video_anidb_login_test_failed_other": "AniDB 登录失败（$reason）",
   "shortcut_lookup_page_escape_minimize": "查词页按返回键最小化窗口",
   "shortcut_lookup_page_escape_minimize_hint": "置顶快捷键唤出查词页后，在查词页按返回键（默认 Esc）把窗口收回去，直接回到之前的程序；查询和结果原样保留。",
-  "video_subtitle_remote_player_rendered": "服务器无法抽取该字幕轨，已改由播放器直接渲染（不可逐字查词）：$label",
   "video_anidb_login_test_failed_backoff": "AniDB 连续无应答，正在退避，请稍后再试",
   "video_extensions_title": "视频源扩展",
   "video_online_sources_hint": "第三方 Aniyomi 扩展（extensions-lib 14）。内容来自各扩展对应的站点，在内置播放器中播放。",
@@ -5596,5 +5595,7 @@
   "novel_status_licensed": "已授权出版",
   "novel_status_publishing_finished": "出版已完结",
   "novel_status_cancelled": "已中止",
-  "novel_status_on_hiatus": "停更中"
+  "novel_status_on_hiatus": "停更中",
+  "handlebar_glossary_first_n": "释义（前 ${count} 条）",
+  "video_subtitle_remote_player_decoded": "服务器无法抽取该字幕轨，改由播放器边播边解码（字幕随播放逐句出现，可查词）：$label"
 }

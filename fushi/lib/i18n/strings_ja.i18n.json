@@ -5068,7 +5068,6 @@
   "video_anidb_login_test_failed_other": "AniDB login failed ($reason)",
   "shortcut_lookup_page_escape_minimize": "Back key on the lookup page minimizes the window",
   "shortcut_lookup_page_escape_minimize_hint": "After the bring-to-front hotkey, press the back key (Esc by default) on the lookup page to send the window away and return to what you were doing. The query and results are kept.",
-  "video_subtitle_remote_player_rendered": "Server cannot extract this subtitle track; the player renders it directly (no word lookup): $label",
   "video_anidb_login_test_failed_backoff": "AniDB has not answered several requests in a row; backing off, try again shortly",
   "video_extensions_title": "Video source extensions",
   "video_online_sources_hint": "Third-party Aniyomi extensions (extensions-lib 14). Content comes from each extension's website and plays in the built-in player.",
@@ -5596,5 +5595,7 @@
   "novel_status_licensed": "書籍化済み",
   "novel_status_publishing_finished": "刊行完了",
   "novel_status_cancelled": "打ち切り",
-  "novel_status_on_hiatus": "休載中"
+  "novel_status_on_hiatus": "休載中",
+  "handlebar_glossary_first_n": "用語集（最初の ${count} 件）",
+  "video_subtitle_remote_player_decoded": "Server cannot extract this subtitle track; the player decodes it during playback, so lines appear as you watch: $label"
 }

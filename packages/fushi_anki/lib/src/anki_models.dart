@@ -915,6 +915,11 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
+  /// `{glossary-first-<n>}`：前 n 本词典的释义（`{glossary-first}` 的多本版）。
+  static final RegExp _glossaryFirstNPattern = RegExp(
+    r'^\{glossary-first-(\d+)\}$',
+  );
+
   static String render(
     String template,
     AnkiMiningPayload payload,
@@ -942,6 +947,13 @@ class AnkiHandlebarRenderer {
         handlebar.length - 1,
       );
       return _singleGlossaryForDictionary(payload, dictionary);
+    }
+    final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
+    if (firstN != null) {
+      // 用户手写模板里的超长数字（溢出 int64）不能让整张卡制卡失败：
+      // 解析不了就当作无效 handlebar，与未知 handlebar 同样给空串。
+      final int? count = int.tryParse(firstN.group(1)!);
+      return count == null ? '' : _firstGlossaries(payload, count);
     }
     switch (handlebar) {
       case '{expression}':
@@ -1073,14 +1085,42 @@ class AnkiHandlebarRenderer {
     AnkiMiningPayload payload,
     String dictionary,
   ) {
-    if (dictionary.isEmpty) return '';
-    final direct = payload.singleGlossaries[dictionary];
-    if (direct != null) return direct;
+    final String? key = _singleGlossaryKeyForDictionary(payload, dictionary);
+    return key == null ? '' : payload.singleGlossaries[key]!;
+  }
+
+  /// [dictionary] 在 [AnkiMiningPayload.singleGlossaries] 里对应的键：先精确命中，
+  /// 再按去掉 `[n]` 后缀的归一化名命中；查不到返回 null。
+  static String? _singleGlossaryKeyForDictionary(
+    AnkiMiningPayload payload,
+    String dictionary,
+  ) {
+    if (dictionary.isEmpty) return null;
+    if (payload.singleGlossaries.containsKey(dictionary)) return dictionary;
     final normalized = _normalizeDictionaryName(dictionary);
-    for (final entry in payload.singleGlossaries.entries) {
-      if (_normalizeDictionaryName(entry.key) == normalized) return entry.value;
+    for (final String key in payload.singleGlossaries.keys) {
+      if (_normalizeDictionaryName(key) == normalized) return key;
     }
-    return '';
+    return null;
+  }
+
+  /// `{glossary-first-<n>}`：前 [count] 本词典的释义，按弹窗里的词典顺序拼接。
+  ///
+  /// 与 `{glossary-first}` 同一套「选中优先」（BUG-1035）：长按选中的那本排第一，
+  /// 其余按原顺序补足到 [count] 本；没选中就是纯粹的前 [count] 本。词典不足
+  /// [count] 本时有几本给几本。`singleGlossaries` 为空（只带 glossaryFirst 的旧
+  /// 发送端）时退回 glossaryFirst，不产出空字段。每本已是独立的
+  /// `.yomitan-glossary` 块（各自带 `<ol>` 与词典样式），直接相接即可。
+  static String _firstGlossaries(AnkiMiningPayload payload, int count) {
+    if (payload.singleGlossaries.isEmpty) return payload.glossaryFirst;
+    final String? selectedKey = _singleGlossaryKeyForDictionary(
+      payload,
+      payload.selectedDictionary,
+    );
+    return <String>[
+      if (selectedKey != null) selectedKey,
+      ...payload.singleGlossaries.keys.where((String k) => k != selectedKey),
+    ].take(count).map((String k) => payload.singleGlossaries[k]!).join();
   }
 
   static String _normalizeDictionaryName(String name) =>
@@ -1125,6 +1165,8 @@ class AnkiHandlebarOptions {
     '{audio}',
     '{glossary}',
     '{glossary-first}',
+    '{glossary-first-2}',
+    '{glossary-first-3}',
     '{selected-glossary}',
     '{popup-selection-text}',
     '{sentence}',
