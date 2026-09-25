@@ -1295,6 +1295,18 @@ Future<GalCalibrationImageFit> fitGalCalibrationOcrGrid(
       (ranges.length - 1) * lineAdvance + height,
     );
   }
+  // Rows that only ever end at Hook line breaks mean this game breaks through
+  // the Hook text. A short calibration sentence then cannot bound how long a
+  // later line may be, so the runtime must follow Hook breaks for every
+  // sentence instead of wrapping at the width measured here.
+  final bool explicitLineBreaks =
+      !rowEnds.any((row) => row.softWrap) &&
+      training.any(
+        (int index) => _rowsFollowHookLineBreaks(
+          sources[index],
+          geometries[index]!['renderRanges'] as List,
+        ),
+      );
   final ({double width, bool hanging})? capacity;
   if (rowEnds.any((row) => row.softWrap)) {
     capacity = _fitOcrRowCapacity(rowEnds);
@@ -1324,6 +1336,7 @@ Future<GalCalibrationImageFit> fitGalCalibrationOcrGrid(
     quotedContinuationIndent: indent,
     hangingPunctuation: capacity.hanging,
     trimWrapWhitespace: trimWrapWhitespace,
+    explicitLineBreaks: explicitLineBreaks,
   );
   final int rows = math.max(
     referenceLines.length,

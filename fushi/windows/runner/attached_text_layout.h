@@ -50,6 +50,11 @@ struct CellGrid {
       std::numeric_limits<double>::quiet_NaN();
   bool hanging_punctuation = false;
   bool trim_wrap_whitespace = false;
+  // Calibration proved this game's rows come from Hook line breaks. Every
+  // sentence then follows only those breaks: a line is never wrapped at the
+  // calibrated width, and rows may extend past the calibrated body to the
+  // client edge, because a short calibration sentence cannot bound them.
+  bool explicit_line_breaks = false;
 
   bool operator==(const CellGrid &other) const {
     const bool same_line_width =
@@ -73,7 +78,8 @@ struct CellGrid {
            columns == other.columns &&
            same_continuation_indent && same_quoted_continuation_indent &&
            hanging_punctuation == other.hanging_punctuation &&
-           trim_wrap_whitespace == other.trim_wrap_whitespace;
+           trim_wrap_whitespace == other.trim_wrap_whitespace &&
+           explicit_line_breaks == other.explicit_line_breaks;
   }
 
   bool operator!=(const CellGrid &other) const { return !(*this == other); }
@@ -421,6 +427,15 @@ inline bool HasExplicitGridLineBreak(const std::wstring &source,
          source.find_first_of(L"\r\n", start) < last_content;
 }
 
+// Rows follow only Hook line breaks: this sentence has one, or calibration
+// proved the game always breaks through the Hook text.
+inline bool UsesHookLineBreaks(const std::wstring &source,
+                               const Layout &style) {
+  return style.cell_grid.has_value() &&
+         (style.cell_grid->explicit_line_breaks ||
+          HasExplicitGridLineBreak(source, style));
+}
+
 inline Result BuildCellGrid(const std::wstring &source, const Layout &style,
                             int client_height_px, int surface_width_px,
                             int surface_height_px,
@@ -463,8 +478,12 @@ inline Result BuildCellGrid(const std::wstring &source, const Layout &style,
   const uint32_t source_start = static_cast<uint32_t>(start);
   const uint32_t source_end = static_cast<uint32_t>(end);
   // A Hook hard break owns every row boundary for this sentence. Keep the
-  // saved width and wrapping unchanged for text without an explicit break.
-  const bool hard_break = HasExplicitGridLineBreak(source, style);
+  // saved width and wrapping unchanged for text without an explicit break,
+  // unless calibration proved the game always breaks through the Hook text.
+  const bool hard_break = UsesHookLineBreaks(source, style);
+  // Only a profile calibrated as Hook-only may place rows below the saved
+  // body; otherwise extra rows remain a body overflow, as before.
+  const bool rows_extend_to_client = grid.explicit_line_breaks;
   const bool quoted =
       source_start < source_end &&
       (source[source_start] == L'\u300C' ||
@@ -492,7 +511,8 @@ inline Result BuildCellGrid(const std::wstring &source, const Layout &style,
         !std::isfinite(right) || !std::isfinite(bottom) ||
         left < bounds_left || top < bounds_top ||
         right > (hard_break ? surface_width_px : bounds_right) ||
-        bottom > bounds_bottom || left < 0.0 || top < 0.0 ||
+        bottom > (rows_extend_to_client ? surface_height_px : bounds_bottom) ||
+        left < 0.0 || top < 0.0 ||
         right > static_cast<double>(surface_width_px) ||
         bottom > static_cast<double>(surface_height_px)) {
       return false;
@@ -504,7 +524,10 @@ inline Result BuildCellGrid(const std::wstring &source, const Layout &style,
     if (!RectHasArea(*box) || box->left < layout_bounds.left ||
         box->top < layout_bounds.top ||
         box->right > (hard_break ? surface_width_px : layout_bounds.right) ||
-        box->bottom > layout_bounds.bottom || box->left < 0 || box->top < 0 ||
+        box->bottom >
+            (rows_extend_to_client ? surface_height_px
+                                   : layout_bounds.bottom) ||
+        box->left < 0 || box->top < 0 ||
         box->right > surface_width_px || box->bottom > surface_height_px) {
       return false;
     }
@@ -884,11 +907,14 @@ inline Result Preview(const std::wstring &source,
     style.font_family = L"Yu Gothic";
   // Hard-break cells can extend past the selected rectangle, but never past
   // the source client. Preview and runtime must use the same physical limit.
-  const int surface_width = HasExplicitGridLineBreak(source, style)
-                                ? reference.width_px - body.left
-                                : width;
+  const bool hard_break = UsesHookLineBreaks(source, style);
+  const int surface_width = hard_break ? reference.width_px - body.left : width;
+  const int surface_height =
+      style.cell_grid.has_value() && style.cell_grid->explicit_line_breaks
+          ? reference.height_px - body.top
+          : height;
   Result result = Build(factory.Get(), source, style, reference.height_px,
-                        surface_width, height, bounds);
+                        surface_width, surface_height, bounds);
   for (ClusterBox &box : result.boxes) {
     box.hit_rect.left += body.left;
     box.hit_rect.right += body.left;

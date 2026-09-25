@@ -1824,11 +1824,11 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
     EmitStateIfChanged();
     return;
   }
-  // Hard-break grids may have a final glyph just outside the saved body.
-  // Keep the overlay click-through and expose only actual glyph hit regions.
+  // Hard-break grids may have glyphs outside the saved body (right of it, or
+  // rows below it). Keep the overlay click-through and expose only actual
+  // glyph hit regions.
   const bool hard_break_grid =
-      fushi::attached_text_layout::HasExplicitGridLineBreak(source_text_,
-                                                            layout_);
+      fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
   const RECT surface = calibration || hard_break_grid ? client : body;
   const bool size_changed =
       surface.right - surface.left !=
@@ -2029,16 +2029,20 @@ bool AttachedTextSurfaceWindow::RebuildClusters() {
                             source_body_screen_rect_.top;
   const RECT layout_bounds{0, 0, source_width, source_height};
   const bool hard_break_grid =
-      fushi::attached_text_layout::HasExplicitGridLineBreak(source_text_,
-                                                            layout_);
+      fushi::attached_text_layout::UsesHookLineBreaks(source_text_, layout_);
   const int surface_width = hard_break_grid
       ? surface_geometry_.source_client_screen.right -
             source_body_screen_rect_.left
       : source_width;
+  const int surface_height =
+      layout_.cell_grid.has_value() && layout_.cell_grid->explicit_line_breaks
+      ? surface_geometry_.source_client_screen.bottom -
+            source_body_screen_rect_.top
+      : source_height;
   fushi::attached_text_layout::Result result =
       fushi::attached_text_layout::Build(
           dwrite_factory_.Get(), source_text_, layout_,
-          live_reference_client_.height_px, surface_width, source_height,
+          live_reference_client_.height_px, surface_width, surface_height,
           layout_bounds);
   if (!result.ok())
     return ClusterFailure(result.reason.c_str());

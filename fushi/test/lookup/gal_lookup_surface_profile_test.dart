@@ -226,6 +226,59 @@ void main() {
     },
   );
 
+  test('cell grid round-trips Hook line break mode and keeps it on copy', () {
+    const GalLookupCellGridV1 legacyGrid = GalLookupCellGridV1(
+      advancePerClientHeight: 0.03,
+      lineAdvancePerClientHeight: 0.04,
+      cellHeightPerClientHeight: 0.035,
+      columns: 24,
+      continuationIndent: 2,
+      quotedContinuationIndent: 3,
+    );
+    expect(legacyGrid.explicitLineBreaks, isFalse);
+    expect(legacyGrid.toJson().containsKey('explicitLineBreaks'), isFalse);
+
+    const GalLookupCellGridV1 hookGrid = GalLookupCellGridV1(
+      advancePerClientHeight: 0.03,
+      lineAdvancePerClientHeight: 0.04,
+      cellHeightPerClientHeight: 0.035,
+      columns: 24,
+      continuationIndent: 2,
+      quotedContinuationIndent: 3,
+      hangingPunctuation: true,
+      trimWrapWhitespace: true,
+      explicitLineBreaks: true,
+      lineWidthInCells: 23.5,
+    );
+    final Map<String, Object?> hookJson = hookGrid.toJson();
+    expect(hookJson['explicitLineBreaks'], true);
+    expect(GalLookupCellGridV1.tryFromJson(hookJson), hookGrid);
+    expect(hookGrid, isNot(legacyGrid.copyWith()));
+
+    final Map<String, Object?> explicitFalse = Map<String, Object?>.of(
+      legacyGrid.toJson(),
+    )..['explicitLineBreaks'] = false;
+    expect(GalLookupCellGridV1.tryFromJson(explicitFalse), legacyGrid);
+    final Map<String, Object?> wrongType = Map<String, Object?>.of(hookJson)
+      ..['explicitLineBreaks'] = 1;
+    expect(GalLookupCellGridV1.tryFromJson(wrongType), isNull);
+    final Map<String, Object?> missingLegacy = Map<String, Object?>.of(hookJson)
+      ..remove('columns');
+    expect(GalLookupCellGridV1.tryFromJson(missingLegacy), isNull);
+
+    final GalLookupCellGridV1 resized = hookGrid.copyWith(
+      advancePerClientHeight: 0.02,
+      continuationIndent: 1,
+      quotedContinuationIndent: 1,
+    );
+    expect(resized.advancePerClientHeight, 0.02);
+    expect(resized.continuationIndent, 1);
+    expect(resized.explicitLineBreaks, isTrue);
+    expect(resized.trimWrapWhitespace, isTrue);
+    expect(resized.hangingPunctuation, isTrue);
+    expect(resized.lineWidthInCells, 23.5);
+  });
+
   test(
     'cell grid preserves fractional continuation indents and old integers',
     () {

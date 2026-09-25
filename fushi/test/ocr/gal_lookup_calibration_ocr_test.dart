@@ -951,6 +951,44 @@ void main() {
     }
   });
 
+  // Runtime wrapping and row limits for this mode are native behavior and are
+  // covered by attached_text_layout_test.cpp; here the fitter must only prove
+  // the mode from Hook-only rows and never infer it without row evidence.
+  test('Hook-only rows mark the profile as following Hook breaks', () async {
+    const List<String> rows = ['あいうえお', 'かきくけ'];
+    for (final String separator in ['\n', '\r\n']) {
+      final String text = rows.join(separator);
+      final GalCalibrationImageFit fit = await _fit(
+        [_sample(text)],
+        [_alignment(rows, source: text)],
+      );
+      expect(fit.draft, isNotNull, reason: '${fit.reason}: ${fit.detail}');
+      expect(fit.draft!.layout.cellGrid!.explicitLineBreaks, isTrue);
+    }
+  });
+
+  test('any soft-wrapped training row rules out Hook-only breaks', () async {
+    const List<String> softRows = ['あいうえおかきく', 'けこさしす'];
+    const List<String> hardRows = ['たちつてと', 'なにぬね'];
+    final String hard = hardRows.join('\n');
+    final GalCalibrationImageFit fit = await _fit(
+      [_sample(softRows.join()), _sample(hard)],
+      [_alignment(softRows), _alignment(hardRows, source: hard)],
+    );
+    expect(fit.draft, isNotNull, reason: '${fit.reason}: ${fit.detail}');
+    expect(fit.draft!.layout.cellGrid!.explicitLineBreaks, isFalse);
+  });
+
+  test('soft-wrapped rows keep wrapping at the calibrated width', () async {
+    const List<String> rows = ['あいうえおかきく', 'けこさしす'];
+    final GalCalibrationImageFit fit = await _fit(
+      [_sample(rows.join())],
+      [_alignment(rows)],
+    );
+    expect(fit.draft, isNotNull, reason: '${fit.reason}: ${fit.detail}');
+    expect(fit.draft!.layout.cellGrid!.explicitLineBreaks, isFalse);
+  });
+
   test(
     'explicit newlines and surrogate offsets survive native validation',
     () async {
@@ -1445,7 +1483,8 @@ Future<GalCalibrationPreview> _preview({
         column = indent > 0 ? indent : 0;
         pendingWrapSpace = false;
       }
-      if (column + characterWidth > capacity + 1e-6 &&
+      if (!grid.explicitLineBreaks &&
+          column + characterWidth > capacity + 1e-6 &&
           !(grid.hangingPunctuation &&
               (column - capacity).abs() < 1e-6 &&
               '」』）)]｝}】〕〉》、。，．！？!?ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ'.contains(
@@ -1460,7 +1499,11 @@ Future<GalCalibrationPreview> _preview({
         pitch * characterWidth,
         height,
       );
-      if (box.bottom > rect.bottom * client.heightPx + .5) {
+      if (box.bottom >
+          (grid.explicitLineBreaks
+                  ? client.heightPx
+                  : rect.bottom * client.heightPx) +
+              .5) {
         return const GalCalibrationPreview(boxes: [], reason: 'overflow');
       }
       if (String.fromCharCode(rune).trim().isNotEmpty) {

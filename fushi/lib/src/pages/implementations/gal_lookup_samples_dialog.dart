@@ -663,18 +663,11 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     if (grid == null || !value.isFinite) return;
     final double maximumIndent = math.min(grid.columns - 1, 8).toDouble();
     final double indent = value.clamp(-1.0, maximumIndent).toDouble();
-    final GalLookupCellGridV1 next = GalLookupCellGridV1(
-      advancePerClientHeight: grid.advancePerClientHeight,
-      lineAdvancePerClientHeight: grid.lineAdvancePerClientHeight,
-      cellHeightPerClientHeight: grid.cellHeightPerClientHeight,
-      columns: grid.columns,
+    final GalLookupCellGridV1 next = grid.copyWith(
       // Keep the legacy second field synchronized so old profile files and
       // native payloads still round-trip while one UI value controls all text.
       continuationIndent: indent,
       quotedContinuationIndent: indent,
-      hangingPunctuation: grid.hangingPunctuation,
-      trimWrapWhitespace: grid.trimWrapWhitespace,
-      lineWidthInCells: grid.lineWidthInCells,
     );
     _setGrid(next);
   }
@@ -688,16 +681,8 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     if ((nextAdvance - grid.advancePerClientHeight).abs() < 0.0000001) {
       return;
     }
-    final GalLookupCellGridV1 next = GalLookupCellGridV1(
+    final GalLookupCellGridV1 next = grid.copyWith(
       advancePerClientHeight: nextAdvance,
-      lineAdvancePerClientHeight: grid.lineAdvancePerClientHeight,
-      cellHeightPerClientHeight: grid.cellHeightPerClientHeight,
-      columns: grid.columns,
-      continuationIndent: grid.continuationIndent,
-      quotedContinuationIndent: grid.quotedContinuationIndent,
-      hangingPunctuation: grid.hangingPunctuation,
-      trimWrapWhitespace: grid.trimWrapWhitespace,
-      lineWidthInCells: grid.lineWidthInCells,
     );
     final GalLookupReferenceClientV1? client =
         _layoutReferenceClient ?? _sample?.capture.referenceClient;

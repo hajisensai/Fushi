@@ -247,6 +247,49 @@ int main() {
                   narrow_body.top);
   ++cases;
 
+  // Calibration proved Hook-only line breaks. A later plain line longer than
+  // the short calibration sentence stays on one row, and Hook rows below the
+  // saved body still get cells inside the client. Without that proof the
+  // same text keeps the saved width and body, as before.
+  layout::Layout hook_rows_style = hard_break_style;
+  hook_rows_style.cell_grid->explicit_line_breaks = true;
+  assert(*hook_rows_style.cell_grid != *hard_break_style.cell_grid);
+  const layout::NormalizedRect short_rect{0.1, 0.1, 0.16, 0.08};
+  const RECT short_body = layout::ResolveBodyRect(
+      RECT{0, 0, client.width_px, client.height_px}, short_rect);
+  const auto long_plain =
+      layout::Preview(L"ABCDEFGH", client, short_rect, hook_rows_style);
+  assert(long_plain.ok() && long_plain.boxes.size() == 8);
+  assert(long_plain.boxes[7].hit_rect.top ==
+         long_plain.boxes.front().hit_rect.top);
+  assert(long_plain.boxes[7].hit_rect.right > short_body.right);
+  const auto wrapped_plain =
+      layout::Preview(L"ABCDEFGH", client, short_rect, hard_break_style);
+  assert(wrapped_plain.ok() && wrapped_plain.boxes.size() == 8);
+  assert(wrapped_plain.boxes[4].hit_rect.top >
+         wrapped_plain.boxes.front().hit_rect.top);
+  const auto many_rows =
+      layout::Preview(L"A\nB\nC\nD\nE", client, short_rect, hook_rows_style);
+  assert(many_rows.ok() && many_rows.boxes.size() == 5);
+  assert(many_rows.boxes[4].hit_rect.top ==
+         many_rows.boxes.front().hit_rect.top + 4 * 24);
+  assert(many_rows.boxes[4].hit_rect.bottom > short_body.bottom);
+  ExpectRejected(
+      layout::Preview(L"A\nB\nC\nD\nE", client, short_rect, hard_break_style),
+      "grid_overflow_body_rect");
+  // Rows still stop at the client edge.
+  ExpectRejected(layout::Preview(std::wstring(24 * 2, L'\n') + L"A", client,
+                                 short_rect, hook_rows_style),
+                 "grid_overflow_body_rect");
+  const auto runtime_hook_rows = layout::Build(
+      factory.Get(), L"A\nB\nC\nD\nE", hook_rows_style, client.height_px,
+      client.width_px - short_body.left, client.height_px - short_body.top,
+      RECT{0, 0, short_body.right - short_body.left,
+           short_body.bottom - short_body.top});
+  ExpectSameBoxes(many_rows, runtime_hook_rows, short_body.left,
+                  short_body.top);
+  ++cases;
+
   // Regression: the OCR fitter reserves one pixel at the calibration size.
   // At half size the required width is 288.48 and the continuous body is
   // 288.98, but nearest-rounded edges used to leave only 288 integer pixels.

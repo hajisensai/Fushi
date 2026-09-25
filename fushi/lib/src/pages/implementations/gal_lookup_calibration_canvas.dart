@@ -382,18 +382,7 @@ class _GalLookupCalibrationCanvasState
   GalLookupCellGridV1 _copyGrid(
     GalLookupCellGridV1 grid, {
     double? advancePerClientHeight,
-  }) => GalLookupCellGridV1(
-    advancePerClientHeight:
-        advancePerClientHeight ?? grid.advancePerClientHeight,
-    lineAdvancePerClientHeight: grid.lineAdvancePerClientHeight,
-    cellHeightPerClientHeight: grid.cellHeightPerClientHeight,
-    columns: grid.columns,
-    continuationIndent: grid.continuationIndent,
-    quotedContinuationIndent: grid.quotedContinuationIndent,
-    hangingPunctuation: grid.hangingPunctuation,
-    trimWrapWhitespace: grid.trimWrapWhitespace,
-    lineWidthInCells: grid.lineWidthInCells,
-  );
+  }) => grid.copyWith(advancePerClientHeight: advancePerClientHeight);
 
   void _handlePointerSignal(PointerSignalEvent event) {
     if (!widget.enabled || event is! PointerScrollEvent) return;

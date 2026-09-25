@@ -1079,7 +1079,7 @@ bool HasExactCellGridKeys(const flutter::EncodableMap* map) {
   constexpr size_t kLegacyKeyCount =
       sizeof(kLegacyKeys) / sizeof(kLegacyKeys[0]);
   if (map == nullptr || map->size() < kLegacyKeyCount ||
-      map->size() > kLegacyKeyCount + 3)
+      map->size() > kLegacyKeyCount + 4)
     return false;
   for (const char* key : kLegacyKeys) {
     if (map->find(flutter::EncodableValue(key)) == map->end()) return false;
@@ -1092,6 +1092,11 @@ bool HasExactCellGridKeys(const flutter::EncodableMap* map) {
   if (trim_wrap_whitespace != map->end() &&
       std::get_if<bool>(&trim_wrap_whitespace->second) == nullptr)
     return false;
+  const auto explicit_line_breaks =
+      map->find(flutter::EncodableValue("explicitLineBreaks"));
+  if (explicit_line_breaks != map->end() &&
+      std::get_if<bool>(&explicit_line_breaks->second) == nullptr)
+    return false;
   const auto line_width = map->find(flutter::EncodableValue("lineWidthInCells"));
   if (line_width != map->end() &&
       std::get_if<double>(&line_width->second) == nullptr &&
@@ -1102,6 +1107,7 @@ bool HasExactCellGridKeys(const flutter::EncodableMap* map) {
   if (map->size() != kLegacyKeyCount +
                            (hanging != map->end() ? 1u : 0u) +
                            (trim_wrap_whitespace != map->end() ? 1u : 0u) +
+                           (explicit_line_breaks != map->end() ? 1u : 0u) +
                            (line_width != map->end() ? 1u : 0u)) {
     return false;
   }
@@ -1251,6 +1257,12 @@ AttachedTextSurfaceWindow::Layout AttachedLayoutFromArgs(
       if (trim_wrap_whitespace != grid_map->end()) {
         grid.trim_wrap_whitespace =
             std::get<bool>(trim_wrap_whitespace->second);
+      }
+      const auto explicit_line_breaks =
+          grid_map->find(flutter::EncodableValue("explicitLineBreaks"));
+      if (explicit_line_breaks != grid_map->end()) {
+        grid.explicit_line_breaks =
+            std::get<bool>(explicit_line_breaks->second);
       }
     }
     layout.cell_grid = grid;
@@ -1511,6 +1523,10 @@ flutter::EncodableMap AttachedLayoutMap(
     }
     if (grid.trim_wrap_whitespace) {
       serialized_grid[flutter::EncodableValue("trimWrapWhitespace")] =
+          flutter::EncodableValue(true);
+    }
+    if (grid.explicit_line_breaks) {
+      serialized_grid[flutter::EncodableValue("explicitLineBreaks")] =
           flutter::EncodableValue(true);
     }
     result[flutter::EncodableValue("cellGrid")] =
