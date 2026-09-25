@@ -8,6 +8,11 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
+import 'package:fushi/src/media/collections/collection_drag.dart'
+    show CollectionAddOutcome, addMediaRefToCollection;
+import 'package:fushi/src/media/drag_drop/drop_classification.dart';
+import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
+import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_episode_binding_dialog.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -959,6 +964,72 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           onChanged: widget.onChanged,
         ),
       ),
+    );
+  }
+
+  /// 把视频文件拖进本合集详情页 = 导入并**直接**归入本合集。
+  ///
+  /// 此前拖放只在视频库首页生效，导完还得回头手动「加入合集」。这里逐个处理：
+  /// 同一物理文件已在库（[VideoBookRepository.findByVideoPath]）就复用那一行，
+  /// 不再弹导入框、也不派生第二身份；未入库的走与首页同一个 [VideoImportDialog]
+  /// 预填导入（字幕配对口径同首页：单视频取第一条字幕、多视频按文件名主干配）。
+  /// 某一条取消只跳过该条。归入合集走共享的 [addMediaRefToCollection]（查重提示
+  /// + 失败提示都在它里面，永不抛）。
+  ///
+  /// 只收视频文件：文件夹 / 播放列表 / 种子在首页各有去处，合集页里没有「归入
+  /// 本合集」的明确语义，给可见提示而不是静默。
+  Future<void> _handleCollectionFileDrop(
+    List<String> paths,
+    Offset globalPosition,
+  ) async {
+    final DroppedFiles files = classifyDroppedFiles(
+      paths,
+      isDirectory: (String path) => Directory(path).existsSync(),
+    );
+    debugPrint(
+      '[fushi-drop] [collection-detail] videos=${files.videos.length} '
+      'subtitles=${files.subtitles.length} collection=${widget.collection.id}',
+    );
+    if (files.videos.isEmpty) {
+      FushiToast.show(
+        msg: t.drag_drop_unsupported_on_collection,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final VideoBookRepository repo = VideoBookRepository(widget.database);
+    int added = 0;
+    for (final String video in files.videos) {
+      if (!mounted) return;
+      String? bookUid = (await repo.findByVideoPath(video))?.bookUid;
+      if (bookUid == null) {
+        if (!mounted) return;
+        final String? subtitle = files.videos.length == 1
+            ? (files.subtitles.isNotEmpty ? files.subtitles.first : null)
+            : subtitleForVideoByStem(video, files.subtitles);
+        bookUid = await showAppDialog<String>(
+          context: context,
+          builder: (_) => VideoImportDialog(
+            repo: repo,
+            initialVideoPath: video,
+            initialSubtitlePath: subtitle,
+          ),
+        );
+      }
+      if (bookUid == null) continue;
+      final CollectionAddOutcome outcome = await addMediaRefToCollection(
+        database: widget.database,
+        collectionId: widget.collection.id,
+        mediaRef: MediaRef(kind: MediaKind.video, entryKey: bookUid),
+      );
+      if (outcome == CollectionAddOutcome.added) added++;
+    }
+    if (added == 0 || !mounted) return;
+    await _reload();
+    widget.onChanged();
+    FushiToast.show(
+      msg: t.batch_add_to_collection_success(n: added),
+      severity: ToastSeverity.success,
     );
   }
 
@@ -2179,7 +2250,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Scaffold(
+    final Widget page = Scaffold(
       appBar: _buildAppBar(),
       body: _loading
           ? SafeArea(
@@ -2238,6 +2309,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                     ),
                   ],
                 ),
+    );
+    // 整页（含空合集占位）都是拖放落点：把视频文件拖进来即导入并归入本合集。
+    // 本页是独立路由，被播放页 / 对话框盖住时由 FushiFileDropTarget 的
+    // ModalRoute 门挡掉；移动端透传 child。
+    return FushiFileDropTarget(
+      debugLabel: 'collection-detail',
+      onDrop: _handleCollectionFileDrop,
+      child: page,
     );
   }
 }
