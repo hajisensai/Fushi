@@ -71,7 +71,7 @@
 #include "hunex_hfa.h"
 #include "siglus_ovk.h"
 #include "siglus_voice_binding.h"
-#include "siglus_launch.h"
+#include "siglus_launch_win32.h"
 #include "adapters/siglus_lookup.h"
 #include "adapters/siglus_image.h"
 #include "adapters/siglus_autoprofile.h"
