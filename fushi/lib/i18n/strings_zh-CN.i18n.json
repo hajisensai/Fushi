@@ -3983,7 +3983,7 @@
   "video_setting_hdr_output": "HDR / 10-bit 输出",
   "video_setting_hdr_output_always": "始终",
   "video_setting_hdr_output_auto": "自动",
-  "video_setting_hdr_output_hint": "仅 Windows。自动：显示器开着 HDR 且片源是 HDR 时经原生视频窗口直通；始终：所有视频都走原生窗口（10-bit 输出）；关闭：沿用常规渲染。",
+  "video_setting_hdr_output_hint": "仅 Windows。自动：显示器开着 HDR 且片源是 HDR 时经原生视频窗口直通（杜比视界 Profile 5 片源不论显示器都走它，只有它能正确还原颜色）；始终：所有视频都走原生窗口（10-bit 输出）；关闭：沿用常规渲染。",
   "video_setting_hdr_output_off": "关闭",
   "video_setting_hdr_tone_mapping": "HDR 色调映射",
   "video_setting_hdr_tone_mapping_hint": "把 HDR 片源压到 SDR 屏幕上时用的曲线。自动 = 交给 mpv 按片源挑。",

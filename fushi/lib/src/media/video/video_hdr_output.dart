@@ -21,7 +21,9 @@ import 'package:fushi/src/models/preferences_repository.dart' show VideoFitMode;
 ///
 /// 模式切换只切 `vo`（mpv 运行时支持），不重建 Player：字幕轨、进度、着色器全部保留。
 enum VideoHdrOutputMode {
-  /// 显示器处于 HDR 模式且片源是 HDR（bt.2020 + PQ/HLG）时直通，否则纹理路径。
+  /// 显示器处于 HDR 模式且片源是 HDR（bt.2020 + PQ/HLG）时直通，否则纹理路径；
+  /// 例外是需要 Dolby Vision 重整的片源（见 [requiresDolbyVisionReshape]），不看
+  /// 显示器、一律走宿主窗。
   auto('auto'),
 
   /// 只要在 Windows 就走宿主窗（10-bit 输出，SDR 片源也受益于 10-bit 抖动）。
@@ -108,12 +110,31 @@ class HdrDisplayInfo {
 bool isHdrVideoParams({required String? primaries, required String? gamma}) =>
     dynamicRangeFromMpv(primaries: primaries, gamma: gamma).isHdr;
 
+/// 片源是否必须经 Dolby Vision RPU 重整才能出正确颜色：libmpv `video-params/colormatrix`
+/// 报 `dolbyvision`。
+///
+/// 已实测命中的是**不带兼容基础层**的 DV（Profile 5，IPTPQc2 色彩空间，流媒体 WEB-DL
+/// 常见）。Profile 7/8 的基础层本身是 HDR10 / HLG，但 mpv 只要 RPU 的
+/// `disable_residual_flag=1`（P8.1 即是）就会把 repr 映射成 DOLBYVISION，因此 P8.1
+/// **很可能同样命中**并走宿主窗（gpu-next 重整，画面正确但开销更高）——未拿 P8 样片
+/// 实测，仅凭 colormatrix 区分不了 P5 与 P8。
+/// P5 的像素不是 YCbCr，纹理路径的 `vo=libmpv`（gl_video 渲染器）不认 RPU，直接按
+/// 普通 PQ 解就是整片紫/绿「反色」；只有 `vo=gpu-next`（libplacebo）做重整。实测
+/// 同一帧 `vo=gpu` 肤色品红、`vo=gpu-next` 正常（先发五虎 S01E01，DoviProfile50）。
+bool requiresDolbyVisionReshape(String? colormatrix) =>
+    colormatrix == 'dolbyvision';
+
 /// 唯一的模式判据（计划 §4.4）——所有「要不要走宿主窗」都只问这里。
+///
+/// [sourceDolbyVision]（见 [requiresDolbyVisionReshape]）在 auto 下**不看显示器**：
+/// 宿主窗的 gpu-next 在 SDR 屏上照样重整 + 色调映射（与 always 在 SDR 屏上是同一条
+/// 路径），而纹理路径对这类片源没有正确画面可出。off 仍然尊重用户：那是显式选择。
 bool shouldUseHdrHostWindow({
   required bool isWindows,
   required VideoHdrOutputMode mode,
   required bool displayHdr,
   required bool sourceHdr,
+  bool sourceDolbyVision = false,
 }) {
   if (!isWindows) return false;
   switch (mode) {
@@ -122,7 +143,7 @@ bool shouldUseHdrHostWindow({
     case VideoHdrOutputMode.always:
       return true;
     case VideoHdrOutputMode.auto:
-      return displayHdr && sourceHdr;
+      return sourceDolbyVision || (displayHdr && sourceHdr);
   }
 }
 

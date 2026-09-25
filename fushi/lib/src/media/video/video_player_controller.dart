@@ -459,6 +459,7 @@ class VideoPlayerController extends ChangeNotifier
   VideoHdrOutputMode _hdrOutputMode = VideoHdrOutputMode.auto;
   VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
   bool _hdrSourceIsHdr = false;
+  bool _hdrSourceIsDolbyVision = false;
   Rect? _hdrHostRect;
   HdrVideoHostChannel? _hdrHostChannel;
 
@@ -3134,10 +3135,17 @@ class VideoPlayerController extends ChangeNotifier
       primaries: params.primaries,
       gamma: params.gamma,
     );
-    if (hdr == _hdrSourceIsHdr && hdrHostActive.value == hdr) return;
+    final bool dolbyVision = requiresDolbyVisionReshape(params.colormatrix);
+    if (hdr == _hdrSourceIsHdr &&
+        dolbyVision == _hdrSourceIsDolbyVision &&
+        hdrHostActive.value == (hdr || dolbyVision)) {
+      return;
+    }
     debugPrint('[hdr-host] params primaries=${params.primaries} '
-        'gamma=${params.gamma} hdr=$hdr');
+        'gamma=${params.gamma} matrix=${params.colormatrix} hdr=$hdr '
+        'dolbyVision=$dolbyVision');
     _hdrSourceIsHdr = hdr;
+    _hdrSourceIsDolbyVision = dolbyVision;
     unawaited(_evaluateHdrOutput());
   }
 
@@ -3162,9 +3170,11 @@ class VideoPlayerController extends ChangeNotifier
       mode: _hdrOutputMode,
       displayHdr: displayHdr,
       sourceHdr: _hdrSourceIsHdr,
+      sourceDolbyVision: _hdrSourceIsDolbyVision,
     );
     debugPrint('[hdr-host] eval mode=${_hdrOutputMode.name} '
-        'display=$displayHdr source=$_hdrSourceIsHdr want=$want '
+        'display=$displayHdr source=$_hdrSourceIsHdr '
+        'dolbyVision=$_hdrSourceIsDolbyVision want=$want '
         'active=${hdrHostActive.value}');
     if (want == hdrHostActive.value) return;
     if (want) {

@@ -94,6 +94,59 @@ void main() {
         }
       }
     });
+
+    // BUG-2691：DV Profile 5（IPTPQc2）只有 gpu-next 会做 RPU 重整，纹理路径出紫绿
+    // 反色；auto 下不论显示器是否 HDR 都得进宿主窗。
+    test('auto + Dolby Vision P5：SDR 屏也进宿主窗', () {
+      for (final bool d in <bool>[false, true]) {
+        expect(
+          shouldUseHdrHostWindow(
+            isWindows: true,
+            mode: VideoHdrOutputMode.auto,
+            displayHdr: d,
+            sourceHdr: true,
+            sourceDolbyVision: true,
+          ),
+          isTrue,
+          reason: 'display=$d',
+        );
+      }
+    });
+
+    test('Dolby Vision P5：off 仍尊重用户、非 Windows 仍不进', () {
+      expect(
+        shouldUseHdrHostWindow(
+          isWindows: true,
+          mode: VideoHdrOutputMode.off,
+          displayHdr: false,
+          sourceHdr: true,
+          sourceDolbyVision: true,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldUseHdrHostWindow(
+          isWindows: false,
+          mode: VideoHdrOutputMode.auto,
+          displayHdr: false,
+          sourceHdr: true,
+          sourceDolbyVision: true,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('requiresDolbyVisionReshape', () {
+    test('只认 mpv colormatrix=dolbyvision（P5 IPTPQc2）', () {
+      expect(requiresDolbyVisionReshape('dolbyvision'), isTrue);
+    });
+
+    test('bt.2020-ncl（HDR10 矩阵）、SDR、未知都不算', () {
+      expect(requiresDolbyVisionReshape('bt.2020-ncl'), isFalse);
+      expect(requiresDolbyVisionReshape('bt.709'), isFalse);
+      expect(requiresDolbyVisionReshape(null), isFalse);
+    });
   });
 
   group('HdrDisplayInfo', () {

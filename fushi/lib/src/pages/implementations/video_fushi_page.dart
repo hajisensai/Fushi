@@ -831,6 +831,9 @@ abstract class VideoFushiTestHooks {
   /// BUG-2648：内嵌文本轨由 libmpv 解码、`sub-text` 回流成可点 cue。
   bool get debugPlayerDecodedSubtitleActive;
   List<int> get debugRemoteEmbeddedStreamIndices;
+
+  /// BUG-2691：当前是否已切到 gpu-next 宿主窗（Windows HDR / DV P5 路径）。
+  bool get debugHdrHostActive;
 }
 
 // TODO-314：字幕跳转列表不再走 overlay 面板系统，改 push-aside（[_subtitleListVisible]
@@ -1108,6 +1111,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   bool get debugPlayerDecodedSubtitleActive =>
       _controller?.isPlayerDecodedTextSubtitleActive ?? false;
+
+  @override
+  bool get debugHdrHostActive => _controller?.hdrHostActive.value ?? false;
 
   @override
   List<int> get debugRemoteEmbeddedStreamIndices => <int>[
