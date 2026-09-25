@@ -8,6 +8,7 @@ import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
