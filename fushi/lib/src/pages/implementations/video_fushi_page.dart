@@ -827,6 +827,9 @@ abstract class VideoFushiTestHooks {
   int get debugCueCount;
   String? get debugActiveSubtitleTrackId;
   bool get debugGraphicSubtitleActive;
+
+  /// BUG-2648：内嵌文本轨由 libmpv 解码、`sub-text` 回流成可点 cue。
+  bool get debugPlayerDecodedSubtitleActive;
   List<int> get debugRemoteEmbeddedStreamIndices;
 }
 
@@ -1101,6 +1104,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   bool get debugGraphicSubtitleActive =>
       _controller?.isPlayerRenderedSubtitleActive ?? false;
+
+  @override
+  bool get debugPlayerDecodedSubtitleActive =>
+      _controller?.isPlayerDecodedTextSubtitleActive ?? false;
 
   @override
   List<int> get debugRemoteEmbeddedStreamIndices => <int>[
@@ -3132,7 +3139,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // _currentSubtitleSource 设成外挂文件路径（下载的临时抽取产物），须在其后
       // 改回本编码，否则字幕菜单的内嵌轨行高亮不上、再选一次还会重复下载。
       String? restoredPrimarySource;
-      // BUG-2590：上次是服务器抽不出、走了 libmpv 自绘的内嵌轨——起播后仍按同一
+      // BUG-2590：上次是服务器抽不出、走了 libmpv 回落的内嵌轨——起播后仍按同一
       // 序号交给 libmpv（mpv 轨表要等 load 后才有，故记下来在 _applyLoad 之后做）。
       RemoteVideoEmbeddedSubtitleTrack? playerRenderedTrack;
       if (persistedSub != null) {
@@ -3191,7 +3198,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               debugPrint(
                 '[VideoFushiPage] embedded subtitle replay failed: $e',
               );
-              // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 自绘。
+              // BUG-2590：服务器抽不出 → 与手选时同款回落，起播后交给 libmpv 解码（BUG-2648）。
               if (track != null &&
                   track.isText &&
                   urls.streamIsOriginalContainer) {
@@ -3289,7 +3296,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           seq == _episodeLoadSeq &&
           mounted &&
           !_failed) {
-        // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 自绘；
+        // BUG-2590：mpv 轨表 load 后才有，此时再把上次选的轨交给 libmpv 解码回流（BUG-2648）；
         // 选不中（轨已变）静默无字幕，不阻断播放。
         unawaited(
           _showRemoteEmbeddedTrackViaPlayer(
