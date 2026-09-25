@@ -1,0 +1,6 @@
+## BUG-2645 · 互联页词典传输行在任意同步时都转圈
+- **报告**：2026-09-25（用户：互联页没开「上传词典」，同步的时候「词典」那一行却在转，截图为 iOS 互联设置页）
+- **真实性**：✅ 真 bug（UI 层）。数据层没传词典：全量 sweep 的互联通道词典阶段由 `isInterconnectSyncDictionaryEnabled()` 门控（`fushi/lib/src/sync/sync_auto_trigger.dart` `resolveChannelSyncFlags` → `sync_orchestrator.dart` `if (syncDictionary)`），开关关着就整段跳过。错在「词典 · 传输 ▾」行（BUG-2494 加的 `_AssetTransferMenuRow`，`fushi/lib/src/sync/sync_settings_schema/actions.part.dart` `build`）只看全局 `syncInProgress`：任何同步（全量 sweep / 退出书单本 / 合集轻量）在飞，它都换成转圈 + 别人的阶段进度，用户自然以为词典在同步、开关没生效。云备份页的「词典 / 本地音频数据库」两行同病。
+- **[x] ① 已修复**（`pr/dict-sync-toggle`，见 git log 中 BUG-2645 提交）— `sync_auto_trigger.dart` 新增 `SyncAssetTransferTarget`（资产种类 + 通道范围）与全局 `activeAssetTransfer`，只由 `runManualAssetTransfer` 在飞时设置、finally 清空；传输行改为只在 `activeAssetTransfer == (本行 kind, scope)` 时显示进度，别的同步在飞时保持静态提示与菜单（点了由既有 busy guard 提示「同步进行中」）。不复用 `syncActivity`：它只记最后开始的一轮、会被并发同步覆盖，也不带资产与通道。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/asset_transfer_row_progress_scope_test.dart`：渲染 schema 里真实的 `interconnect.dictionary_transfer` / `sync.dictionary_transfer` / `sync.local_audio_transfer` 行，断言全量 sweep 在飞、其它通道或其它资产的传输在飞时都不转圈，仅本行自己的传输在飞时转圈；另钉 `runManualAssetTransfer` 在飞时公布目标、结束后清空。
+- **备注**：
