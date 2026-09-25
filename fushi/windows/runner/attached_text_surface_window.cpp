@@ -1677,6 +1677,18 @@ void AttachedTextSurfaceWindow::SyncToTarget() {
   // Calibration probes consume game clicks too. They require the same
   // acknowledged shield and immutable glyph snapshot as ordinary lookup.
   const ShieldHandshakeState handshake = EnsureShieldHandshake();
+  if (handshake == ShieldHandshakeState::kPending && surface_visible_ &&
+      !layout_dirty_ &&
+      (mode_ == Mode::kConfigured || mode_ == Mode::kCalibration) &&
+      OwnGlyphTransactionInFlight()) {
+    // Our own glyph click (its down or its release tail) is waiting for the
+    // injected acknowledgement. That input is already owned by this surface,
+    // not a lost handshake: hiding here cancelled the in-flight gesture, so
+    // the click was swallowed without a lookup whenever any sync landed inside
+    // the ~200 ms ack window. Keep the published surface until it resolves;
+    // the LL worker still fails the transaction closed on its own timeout.
+    return;
+  }
   if (handshake != ShieldHandshakeState::kReady) {
     HideSurface();
     SetState("suspended", "shieldHandshakePending",
@@ -2608,6 +2620,29 @@ void AttachedTextSurfaceWindow::OnShieldHandshakeWatchTimer() {
   SyncToTarget();
 }
 
+bool AttachedTextSurfaceWindow::OwnGlyphTransactionInFlight() const {
+  namespace policy = fushi::attached_shield_status_policy;
+  const auto status_identity = policy::StatusIdentity{
+      shield_status_.available,      shield_status_.request_seq,
+      shield_status_.applied_seq,    shield_status_.owner_kind,
+      shield_status_.target_hwnd,    shield_status_.transaction_id,
+      shield_status_.active_buttons, shield_status_.allow_risk,
+      shield_status_.status_flags,
+  };
+  const auto handshake = policy::HandshakeIdentity{
+      policy::Epoch{shield_handshake_epoch_.session,
+                    shield_handshake_epoch_.surface},
+      static_cast<uint64_t>(
+          reinterpret_cast<uintptr_t>(shield_handshake_target_)),
+      shield_handshake_transaction_id_, shield_handshake_request_seq_};
+  return policy::ClassifyAttachedAfterHandshake(
+             status_identity, shield_handshake_established_, handshake,
+             policy::Epoch{epoch_.session, epoch_.surface},
+             static_cast<uint64_t>(
+                 reinterpret_cast<uintptr_t>(target_.hwnd))) ==
+         policy::Attribution::kPending;
+}
+
 bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake() const {
   namespace policy = fushi::attached_shield_status_policy;
   const auto status_identity = policy::StatusIdentity{
@@ -2837,10 +2872,14 @@ void AttachedTextSurfaceWindow::BeginPointerGesture(
     POINT client_point, uint64_t external_transaction_id) {
   CancelPointerGesture();
   const int cluster = ClusterAt(client_point);
-  if (cluster < 0)
+  if (cluster < 0) {
+    LogDroppedClick("down_outside_glyph");
     return;
-  if (!AdoptShieldTransaction(external_transaction_id))
+  }
+  if (!AdoptShieldTransaction(external_transaction_id)) {
+    LogDroppedClick("down_transaction_not_adopted");
     return;
+  }
   pointer_down_ = true;
   pointer_dragged_ = false;
   pressed_cluster_ = cluster;
@@ -2853,9 +2892,15 @@ void AttachedTextSurfaceWindow::UpdatePointerGesture(POINT client_point) {
   if (!pointer_down_ || pointer_dragged_)
     return;
   // Match the shell's configured drag rectangle (including accessibility and
-  // user customisation), rather than inventing a DPI-scaled pixel constant.
-  const int threshold_x = std::max(1, GetSystemMetrics(SM_CXDRAG) / 2);
-  const int threshold_y = std::max(1, GetSystemMetrics(SM_CYDRAG) / 2);
+  // user customisation) at this surface's DPI. Half of it (about 2 px) turned
+  // ordinary hand jitter into a "drag" that silently dropped the lookup.
+  const UINT dpi = hwnd_ != nullptr ? GetDpiForWindow(hwnd_) : 0;
+  const int threshold_x = std::max(
+      1, dpi != 0 ? GetSystemMetricsForDpi(SM_CXDRAG, dpi)
+                  : GetSystemMetrics(SM_CXDRAG));
+  const int threshold_y = std::max(
+      1, dpi != 0 ? GetSystemMetricsForDpi(SM_CYDRAG, dpi)
+                  : GetSystemMetrics(SM_CYDRAG));
   if (std::abs(client_point.x - pointer_down_point_.x) > threshold_x ||
       std::abs(client_point.y - pointer_down_point_.y) > threshold_y) {
     pointer_dragged_ = true;
@@ -2866,20 +2911,33 @@ void AttachedTextSurfaceWindow::EndPointerGesture(
     POINT client_point, uint64_t external_transaction_id) {
   if (external_transaction_id == 0 || !shield_transaction_active_ ||
       shield_transaction_.transaction_id != external_transaction_id) {
+    LogDroppedClick("up_without_active_gesture");
     return;
   }
   if (!pointer_down_) {
     ReleaseShieldTransaction();
+    LogDroppedClick("up_without_pointer_down");
     return;
   }
   UpdatePointerGesture(client_point);
   const int released_cluster = ClusterAt(client_point);
   const int pressed_cluster = pressed_cluster_;
-  const bool valid = !pointer_dragged_ && pressed_cluster >= 0 &&
-                     pressed_cluster == released_cluster &&
-                     static_cast<size_t>(pressed_cluster) < clusters_.size() &&
-                     CompareEpoch(pointer_epoch_, epoch_) == 0 &&
-                     pointer_text_generation_ == text_generation_;
+  // A press and release on the same glyph is a click even if the hand moved a
+  // little in between; a release on a neighbour counts only within the drag
+  // rectangle (a boundary graze), and then looks up the pressed glyph.
+  const bool same_identity = CompareEpoch(pointer_epoch_, epoch_) == 0 &&
+                             pointer_text_generation_ == text_generation_;
+  const bool pressed_valid =
+      pressed_cluster >= 0 &&
+      static_cast<size_t>(pressed_cluster) < clusters_.size();
+  const bool same_glyph_or_near =
+      pressed_cluster == released_cluster || !pointer_dragged_;
+  const bool valid = pressed_valid && same_identity && same_glyph_or_near;
+  if (!valid) {
+    LogDroppedClick(!pressed_valid    ? "pressed_glyph_gone"
+                    : !same_identity  ? "text_or_epoch_changed"
+                                      : "released_on_other_glyph_after_drag");
+  }
   pointer_down_ = false;
   pointer_dragged_ = false;
   pressed_cluster_ = -1;
@@ -3013,7 +3071,20 @@ void AttachedTextSurfaceWindow::TickHoverLookup() {
   EmitLookupEvent(cluster, true);
 }
 
+void AttachedTextSurfaceWindow::LogDroppedClick(const char *reason) const {
+  // One line per swallowed glyph click that will not produce a lookup, so a
+  // "clicked but nothing opened" report names its gate (SOP: a consumed click
+  // without a published lookup must carry a reason).
+  std::ostringstream line;
+  line << "gal-click: dropped reason=" << reason << " state=" << state_ << '/'
+       << status_ << " visible=" << surface_visible_
+       << " gen=" << text_generation_;
+  NativeGlog(line.str());
+}
+
 void AttachedTextSurfaceWindow::CancelPointerGesture() {
+  if (pointer_down_)
+    LogDroppedClick("gesture_cancelled");
   pointer_down_ = false;
   pointer_dragged_ = false;
   pressed_cluster_ = -1;
@@ -3170,6 +3241,9 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
         !surface_visible_ ||
         transaction_id == 0 || snapshot_token == 0 ||
         snapshot_token != hit_snapshot_token_) {
+      if (transaction_id != 0)
+        LogDroppedClick(!surface_visible_ ? "down_while_surface_hidden"
+                                          : "down_stale_hit_snapshot");
       return 0;
     }
     POINT point = fushi::UnpackMouseHookPoint(static_cast<WPARAM>(lparam));
@@ -3181,6 +3255,8 @@ LRESULT AttachedTextSurfaceWindow::HandleMessage(UINT message, WPARAM wparam,
     const uint64_t transaction_id = static_cast<uint64_t>(wparam);
     if (transaction_id == 0 || fushi::LowLevelAttachedGlyphSnapshotToken(
                                    transaction_id) != hit_snapshot_token_) {
+      if (transaction_id != 0 && pointer_down_)
+        LogDroppedClick("up_stale_hit_snapshot");
       return 0;
     }
     POINT point = fushi::UnpackMouseHookPoint(static_cast<WPARAM>(lparam));

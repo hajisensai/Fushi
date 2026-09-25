@@ -337,6 +337,8 @@ private:
   void StopShieldHandshakeWatchTimer();
   void OnShieldHandshakeWatchTimer();
   bool ShieldStatusBelongsToCurrentHandshake() const;
+  bool OwnGlyphTransactionInFlight() const;
+  void LogDroppedClick(const char *reason) const;
   ShieldStatus ShieldStatusForSnapshot() const;
   bool EffectiveAllowRisk() const;
   void RefreshGeometryProviderStatus();

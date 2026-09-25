@@ -1548,12 +1548,21 @@ class GalAttachedTextController extends ChangeNotifier {
   }
 
   Future<void> handleLookupText(GalAttachedLookupHitV19 hit) async {
-    if (!_matches(hit.target) ||
-        _status != GalAttachedTextStatus.activeAttached ||
-        !hit.hasConsistentSourceLength ||
-        hit.textGeneration != _textGeneration ||
-        hit.sourceText != _sentSourceText ||
-        hit.sourceText != _latestSourceText) {
+    final String? dropped = !_matches(hit.target)
+        ? 'target_changed'
+        : _status != GalAttachedTextStatus.activeAttached
+        ? 'status_${_status.name}/$_statusReason'
+        : !hit.hasConsistentSourceLength
+        ? 'inconsistent_source_length'
+        : hit.textGeneration != _textGeneration
+        ? 'text_generation_changed'
+        : hit.sourceText != _sentSourceText ||
+              hit.sourceText != _latestSourceText
+        ? 'source_text_changed'
+        : null;
+    if (dropped != null) {
+      // The native click was already swallowed; say why no lookup follows.
+      glog('gal-click: dropped reason=$dropped (host)');
       return;
     }
     await _onLookup?.call(hit);

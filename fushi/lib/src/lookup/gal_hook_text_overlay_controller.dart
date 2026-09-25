@@ -2082,15 +2082,25 @@ class GalHookTextOverlayController extends ChangeNotifier {
           PreferencesRepository.galIngameLookupEnabledDefault,
         ) !=
         true) {
+      glog('gal-click: dropped reason=ingame_lookup_disabled (host)');
       return;
     }
     final List<TexthookerLineEntry> lines = _session.selectedSessionLines;
-    if (lines.isEmpty) return;
+    if (lines.isEmpty) {
+      glog('gal-click: dropped reason=no_session_line (host)');
+      return;
+    }
     final TexthookerLineEntry latest = lines.last;
     // attached hit 必须逐字对应 central sync 刚送出的当前正文。任何旧 epoch、旧
     // generation 或长度漂移已在子控制器丢弃；这里再以 session line identity 收口，
     // 从而完整复用既有查词/制卡链而不发明第二份上下文模型。
-    if (latest.rubySpans.isNotEmpty || latest.text != hit.sourceText) return;
+    if (latest.rubySpans.isNotEmpty || latest.text != hit.sourceText) {
+      glog(
+        'gal-click: dropped reason='
+        '${latest.rubySpans.isNotEmpty ? 'ruby_line' : 'line_changed'} (host)',
+      );
+      return;
+    }
     // 点击与 Shift+悬浮（hit.hover）走同一条查词链：同一字簇的重复悬浮已在
     // runner 去重。attached 表面打开的桌面弹窗必须带游戏 HWND——点卡外关闭
     // 的 down/up 成对吞掉，不得穿透推进台词。
