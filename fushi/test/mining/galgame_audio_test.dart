@@ -1486,6 +1486,26 @@ void main() {
       expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
     });
 
+    test('Steam 语言包 Siglus（GameexeZH.dat + SceneZH.pck）启用 PC hooks', () async {
+      // CLANNAD Steam 版：SiglusEngine_Steam.exe，选简体中文时目录里没有无后缀的那一对。
+      final File exe = File(join(dir.path, 'SiglusEngine_Steam.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'GameexeZH.dat')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'SceneZH.pck')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isTrue);
+    });
+
+    test('Siglus 语言后缀必须成对：GameexeEN.dat + SceneZH.pck 不启用', () async {
+      final File exe = File(join(dir.path, 'summer.exe'));
+      await exe.writeAsBytes(_craftPe(0x014c), flush: true);
+      await File(join(dir.path, 'GameexeEN.dat')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'SceneZH.pck')).writeAsBytes(<int>[1]);
+      await File(join(dir.path, 'Scene_old.pck')).writeAsBytes(<int>[1]);
+
+      expect(shouldUseLunaPcHooksForExecutable(exe.path), isFalse);
+    });
+
     test('改名普通 PE 只有一个 Siglus 数据文件时不启用 PC hooks', () async {
       final File exe = File(join(dir.path, 'summer.exe'));
       await exe.writeAsBytes(_craftPe(0x014c), flush: true);

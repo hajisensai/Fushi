@@ -30,7 +30,7 @@
 #include "kirikiri_launch_profile.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
-#include "siglus_launch.h"
+#include "siglus_launch_win32.h"
 #include "unreal_launch.h"
 #include "steam_launch.h"
 #include "luna_bridge.h"
@@ -2251,15 +2251,11 @@ bool LooksLikeRenpyRuntime(const std::wstring& exe) {
          FileExists(JoinPath(dir, L"pythonw.exe"));
 }
 
-// 目录是否带引擎数据签名。Siglus（Gameexe.dat + Scene.pck）与 UE IoStore
+// 目录是否带引擎数据签名。Siglus（Gameexe[语言].dat + Scene[语言].pck）与 UE IoStore
 // （Content\Paks\*.utoc 的 16 字节 TOC 魔数）各出一条；再加引擎时在这里多写一个 ||
 // 即可，判据本身不用动。两条都要求数据文件真实存在/魔数成立，不认裸目录名。
 bool DirectoryHasEngineSignature(const std::wstring& dir) {
-  return fushi_voice_hook::DirectoryLooksLikeSiglus(
-             dir,
-             [](const std::wstring& d, const wchar_t* name) {
-               return FileExists(JoinPath(d, name));
-             }) ||
+  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(dir) ||
          fushi_voice_hook::DirectoryLooksLikeUnrealIostore(dir);
 }
 
@@ -2619,11 +2615,7 @@ bool LooksLikeUnrealRuntime(const std::wstring& exe) {
 // Siglus 游戏（含改名 exe）：exe 名严格匹配，或 exe 同目录具备 Siglus 文件夹签名。用于把 launch
 // 的早注入改为延迟附着，绕过 Enigma 保护壳拒绝挂起态注入导致的 launch_or_inject_failed。
 bool LooksLikeSiglusRuntime(const std::wstring& exe) {
-  const std::wstring dir = ExecutableDirectory(exe);
-  return fushi_voice_hook::DirectoryLooksLikeSiglus(
-      dir, [](const std::wstring& d, const wchar_t* name) {
-        return FileExists(JoinPath(d, name));
-      });
+  return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(ExecutableDirectory(exe));
 }
 
 bool IsSiglusGame(const std::wstring& exe) {
@@ -2854,6 +2846,12 @@ int RunSteamLaunch(const std::wstring& exe, const std::wstring& app_id,
             expected_exe.c_str());
   }
 
+  // Steam 客户端拉起的进程在这里被发现时还处于启动早期（15ms 轮询），而 Siglus 的进程
+  // 策略是「主窗口就绪后再附着」（engine-support.yaml process_strategy；Enigma 壳拒绝
+  // 早注入）。launch 与 PID 附着都守这条，只有 Steam 路径绕开了它（BUG-2653 排查中发现）。
+  // 与 PID 附着共用同一个就绪门，不另写一份等待逻辑。
+  const std::wstring& target_exe = expected_exe;
+#include "attached_siglus_readiness.inc"
   ApplyLunaProfiles(expected_exe, pid, luna.profile_path, &luna);
   // Steam 路径的游戏由客户端启动、始终处于运行态，没有可恢复的挂起主线程；但失败原因
   // 同样必须回报，否则 host 只能看到一个没有原因的非零退出。

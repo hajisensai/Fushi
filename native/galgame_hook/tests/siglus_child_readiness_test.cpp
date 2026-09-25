@@ -168,6 +168,22 @@ void TestProductionPlacement(const std::filesystem::path& source_path){
         "PID gate follows actual image discovery before profiles and injection");
   Check(source.find(attached_marker,attach_gate+attached_marker.size())==std::string::npos&&
         source.find("target_exe =",attach_gate)>attach_apply,"single attach gate with stable target identity");
+  // BUG-2653: the Steam client launch path discovers an already running game
+  // ~15 ms after steam://run. It must pass the same Siglus delayed-attach gate
+  // as launch and PID attach instead of injecting during startup.
+  const size_t steam=source.find("int RunSteamLaunch(");
+  const size_t steam_end=source.find("\nint RunLaunch(",steam);
+  const size_t steam_found=source.find("[steam] discovered launched game",steam);
+  const size_t steam_gate=source.find(attached_marker,steam);
+  const size_t steam_apply=source.find("ApplyLunaProfiles(expected_exe, pid",steam);
+  const size_t steam_inject=source.find("RunInjection(target, pid",steam);
+  Check(steam!=std::string::npos&&steam_end!=std::string::npos&&steam_found!=std::string::npos&&
+        steam_gate!=std::string::npos&&steam_apply!=std::string::npos&&steam_inject!=std::string::npos,
+        "actual Steam launch path uses the shared readiness block");
+  Check(steam<steam_found&&steam_found<steam_gate&&steam_gate<steam_apply&&steam_apply<steam_inject&&
+        steam_inject<steam_end,"Steam gate follows game discovery before profiles and injection");
+  Check(source.find(attached_marker,steam_gate+attached_marker.size())>steam_end,
+        "single Steam readiness gate");
   const size_t rights=source.find("constexpr DWORD kInjectionProcessRights =");
   Check(rights!=std::string::npos,"shared injection process rights declaration exists");
   const size_t end_rights=source.find(';',rights);
