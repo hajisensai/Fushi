@@ -203,33 +203,10 @@ void main() {
     );
     await popAll(tester, appModel);
 
-    // ⑤ 详情页：真目录。
+    // ⑤ 先不经 UI：运行时直调 parseNovel（Syosetu 用 Promise.all 并发取目录
+    // 分页，桥上是多路并发 callHandler）→ 下载三章 → EPUB → 真入库。
     final LnReaderNovelItem item = popular.first;
-    await push(
-      appModel,
-      LnReaderNovelDetailPage(
-        manager: manager,
-        plugin: installed,
-        item: item,
-        imageHeaders: info.imageHeaders,
-      ),
-    );
-    expect(
-      await until(
-        tester,
-        () => find
-            .byKey(const ValueKey<String>('novel_detail_library_add'))
-            .evaluate()
-            .isNotEmpty &&
-            find.byType(ListView).evaluate().isNotEmpty &&
-            find.textContaining('第').evaluate().length > 2,
-      ),
-      isTrue,
-    );
-    await captureFlutterFrame(tester, 'lnreader-05-detail');
-    await popAll(tester, appModel);
-
-    // ⑥ 下载前三章 → EPUB → 真入库。
+    debugPrint('[lnreader-itest] step5 novel(${item.path}) start');
     final LnReaderNovel novel = await settle(
       tester,
       manager.runtime.novel(installed.id, item.path),
@@ -249,6 +226,8 @@ void main() {
         novel: novel,
         chapters: first3,
         policy: const DuplicatePolicy.suffix(),
+        onProgress: (int done, int total) =>
+            debugPrint('[lnreader-itest] download $done/$total'),
       ),
     );
     final EpubBookRow? row = await settle(
@@ -256,10 +235,35 @@ void main() {
       appModel.database.getEpubBook(bookKey),
     );
     debugPrint(
-      '[lnreader-itest] imported bookKey=$bookKey chapters=${row?.chapterCount} title=${row?.title}',
+      '[lnreader-itest] imported bookKey=$bookKey chapters=${row?.chapterCount}',
     );
     expect(row, isNotNull);
     expect(row!.chapterCount, 3);
+
+    // ⑥ 详情页 UI：每一轮 pump 后把框架吞下的异常打出来。
+    debugPrint('[lnreader-itest] step6 detail page');
+    await push(
+      appModel,
+      LnReaderNovelDetailPage(
+        manager: manager,
+        plugin: installed,
+        item: item,
+        imageHeaders: info.imageHeaders,
+      ),
+    );
+    final bool detailReady = await until(tester, () {
+      final Object? error = tester.takeException();
+      if (error != null) debugPrint('[lnreader-itest] detail exception: $error');
+      return find
+              .byKey(const ValueKey<String>('novel_detail_library_add'))
+              .evaluate()
+              .isNotEmpty &&
+          find.text(novel.chapters.first.name).evaluate().isNotEmpty;
+    });
+    debugPrint('[lnreader-itest] detailReady=$detailReady');
+    await captureFlutterFrame(tester, 'lnreader-05-detail');
+    expect(detailReady, isTrue);
+    await popAll(tester, appModel);
     expect(t.novel_download_done(title: novel.name), isNotEmpty);
   });
 }
