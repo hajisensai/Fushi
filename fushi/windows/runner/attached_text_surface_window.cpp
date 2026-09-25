@@ -1357,6 +1357,13 @@ AttachedTextSurfaceWindow::Detach(const Epoch &epoch, uint32_t target_pid,
     return accepted;
   CancelPointerGesture();
   HideSurface();
+  // Detach only hides the window, so WM_NCDESTROY never retires the passive
+  // re-arm candidate. Left in place, every later desktop/global popup release
+  // would arm the fail-closed fence for this dead surface and swallow all
+  // mouse downs system-wide until the platform thread drained the re-arm
+  // message. The next published hit snapshot re-registers a live surface.
+  if (hwnd_ != nullptr)
+    fushi::RetireLowLevelAttachedGlyphRearmCandidate(hwnd_);
   ResetShieldHandshake();
   shield_status_ = ShieldStatus{};
   mode_ = Mode::kDetached;

@@ -142,6 +142,36 @@ void main() {
       expect(session.closed, isTrue);
     });
 
+    // 漫画 OCR 的热路径必须保持单遍 argmax：不转调详细路径（逐帧全词表置信度 +
+    // 全张量有限值检查），也不因个别非有限 logit 整行报错。两条路径解出的文字一致。
+    test('recognizeLine 保持单遍解码：非有限 logit 不报错，文字与详细路径一致', () async {
+      final List<String> vocab = buildPpOcrCtcVocab(<String>['a', 'b']);
+      final Float32List logits = _logits(<int>[1, 1, 0, 1, 2, 2, 0], 4);
+      final _FakeSession clean = _FakeSession(<String, OcrTensor>{
+        'fetch_name_0': OcrTensor.float32(logits, <int>[1, 7, 4]),
+      });
+      final PpOcrLineRecognizer cleanRec = PpOcrLineRecognizer(
+        clean,
+        vocab: vocab,
+      );
+      final img.Image line = img.Image(width: 200, height: 30);
+      expect(
+        await cleanRec.recognizeLine(line),
+        (await cleanRec.recognizeLineDetailed(line)).text,
+      );
+
+      final Float32List noisy = Float32List.fromList(logits)..[3] = double.nan;
+      final _FakeSession session = _FakeSession(<String, OcrTensor>{
+        'fetch_name_0': OcrTensor.float32(noisy, <int>[1, 7, 4]),
+      });
+      final PpOcrLineRecognizer rec = PpOcrLineRecognizer(
+        session,
+        vocab: vocab,
+      );
+      expect(await rec.recognizeLine(line), 'aab');
+      expect(() => rec.recognizeLineDetailed(line), throwsStateError);
+    });
+
     test('recognizeLineDetailed：blank 分隔的重复字保留为两个 token，并保留帧范围', () async {
       final List<String> vocab = buildPpOcrCtcVocab(<String>['a', 'b']);
       // a a blank a b b blank blank → aab，首尾 token 的帧范围不均分。

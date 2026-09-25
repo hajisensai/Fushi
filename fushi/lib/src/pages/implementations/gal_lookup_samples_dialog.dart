@@ -10,6 +10,7 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_preview.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 bool _sameSourceViewport(WindowCaptureMetadata? a, WindowCaptureMetadata? b) {
   List<double>? normalizedViewport(WindowCaptureMetadata? value) {
@@ -976,8 +977,6 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                                               label: Text('${i + 1}'),
                                               selected: i == _selected,
                                               showCheckmark: false,
-                                              visualDensity:
-                                                  VisualDensity.compact,
                                               onSelected: _busy
                                                   ? null
                                                   : (_) => setState(() {
@@ -1036,8 +1035,10 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
       decoration: BoxDecoration(
         color: _failed
             ? colors.errorContainer
-            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(8),
+            : FushiDesignTokens.of(
+                context,
+              ).surfaces.overlay.withValues(alpha: 0.5),
+        borderRadius: FushiBorderRadius.card,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1083,7 +1084,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: colors.outlineVariant),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FushiBorderRadius.control,
       ),
       child: Center(
         child: ConstrainedBox(
@@ -1400,7 +1401,6 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             Expanded(child: Text(t.game_lookup_samples_grid_advance)),
             IconButton(
               key: const ValueKey<String>('calibration-grid-advance-decrease'),
-              visualDensity: VisualDensity.compact,
               tooltip: t.game_lookup_samples_grid_advance_decrease,
               onPressed: _busy || value <= range.min
                   ? null
@@ -1413,7 +1413,6 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
             ),
             IconButton(
               key: const ValueKey<String>('calibration-grid-advance-increase'),
-              visualDensity: VisualDensity.compact,
               tooltip: t.game_lookup_samples_grid_advance_increase,
               onPressed: _busy || value >= range.max
                   ? null

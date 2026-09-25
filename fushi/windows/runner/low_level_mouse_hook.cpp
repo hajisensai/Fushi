@@ -1535,6 +1535,12 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       if ((stale_shield & bit) != 0 && (stale_shield & ~bit) == 0) {
         RequestDirectInputShieldFinalize();
       }
+      // The re-arm fence's private pair bits follow the same rule: a fresh down
+      // proves the fenced press ended, even if its up arrived after an unhook.
+      // Without this a stale bit would swallow an unrelated future up while its
+      // down reached the foreground app (a stuck button).
+      g_attached_rearm_suppressed_buttons.fetch_and(~bit,
+                                                    std::memory_order_relaxed);
     }
   }
   // BUG-2613 — 落在登记的覆盖窗口上的左键 down：向注入侧发布 Popup 护盾请求，
@@ -1716,6 +1722,8 @@ void HookThreadMain() {
       const bool has_pending_button =
           g_swallowed_buttons.load(std::memory_order_relaxed) != 0 ||
           g_direct_input_shield_buttons.load(std::memory_order_relaxed) != 0 ||
+          g_attached_rearm_suppressed_buttons.load(
+              std::memory_order_relaxed) != 0 ||
           HasActiveAttachedGlyphTransaction() ||
           g_overlay_transaction_id.load(std::memory_order_relaxed) != 0;
       if (disarm_timer != 0 && !has_pending_button) {
@@ -1823,8 +1831,15 @@ void HookThreadMain() {
           ReconcileAttachedGlyphTransactionWithPhysicalState();
       const bool overlay_still_held =
           ReconcileOverlayClickShieldTransactionWithPhysicalState();
+      // Re-arm fence pairs get the same physical reconciliation: keep the hook
+      // while a fenced press is really held (its up must still be swallowed),
+      // drop bits whose button is already up (lost up on device switch).
+      const uint32_t rearm_still_held = PhysicalButtonsStillHeld(
+          g_attached_rearm_suppressed_buttons.load(std::memory_order_relaxed));
+      g_attached_rearm_suppressed_buttons.fetch_and(rearm_still_held,
+                                                    std::memory_order_relaxed);
       if (still_held != 0 || shield_still_held != 0 ||
-          attached_still_held || overlay_still_held) {
+          attached_still_held || overlay_still_held || rearm_still_held != 0) {
         disarm_timer = SetTimer(nullptr, 0, kDisarmGraceMs, nullptr);
         continue;
       }
@@ -1838,6 +1853,8 @@ void HookThreadMain() {
         // 所有配对 up 都已收齐后才会走到这里。清零是防御式收尾，避免未来
         // 新增按钮位时遗漏某条释放路径。
         g_swallowed_buttons.store(0, std::memory_order_relaxed);
+        g_attached_rearm_suppressed_buttons.store(0,
+                                                  std::memory_order_relaxed);
       }
     }
   }

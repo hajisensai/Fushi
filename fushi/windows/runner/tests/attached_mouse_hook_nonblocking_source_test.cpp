@@ -343,6 +343,38 @@ int main() {
          std::string::npos);
   assert(surface.find("RetireLowLevelAttachedGlyphRearmCandidate(hwnd_)") !=
          std::string::npos);
+
+  // Re-arm fence pair bits must share every lifecycle backstop of the other
+  // swallowed-button sets. A fenced press whose up lands after the hook is
+  // unloaded otherwise leaves a bit that later swallows an unrelated up while
+  // its down reached the foreground app (a stuck button).
+  assert(hook.find("g_attached_rearm_suppressed_buttons.fetch_and(~bit,") !=
+         std::string::npos);
+  const size_t pending = source.find("const bool has_pending_button =");
+  assert(pending != std::string::npos);
+  const size_t pending_end = source.find(';', pending);
+  assert(source.substr(pending, pending_end - pending)
+             .find("g_attached_rearm_suppressed_buttons") != std::string::npos);
+  const size_t rearm_reconcile = source.find(
+      "PhysicalButtonsStillHeld(\n          g_attached_rearm_suppressed_buttons");
+  assert(rearm_reconcile != std::string::npos);
+  assert(source.find("rearm_still_held != 0", rearm_reconcile) !=
+         std::string::npos);
+  size_t rearm_resets = 0;
+  for (size_t at = source.find("g_attached_rearm_suppressed_buttons.store(0");
+       at != std::string::npos;
+       at = source.find("g_attached_rearm_suppressed_buttons.store(0", at + 1)) {
+    ++rearm_resets;
+  }
+  assert(rearm_resets >= 2 && "retire and unhook both reset the fence bits");
+
+  // Detach only hides the surface; it must retire the passive candidate or
+  // every later desktop popup release arms the fence for a dead surface.
+  const std::string detach =
+      FunctionSlice(surface, "AttachedTextSurfaceWindow::Detach(",
+                    "AttachedTextSurfaceWindow::SuspendForCapture(");
+  assert(detach.find("RetireLowLevelAttachedGlyphRearmCandidate(hwnd_)") !=
+         std::string::npos);
   std::cout << "attached mouse hook and calibration source guards passed\n";
   return 0;
 }

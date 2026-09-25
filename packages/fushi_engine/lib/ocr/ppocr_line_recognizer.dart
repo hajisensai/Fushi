@@ -412,9 +412,40 @@ class PpOcrLineRecognizer {
   final String inputName;
 
   /// 识别一张已裁好的横排行图。
+  ///
+  /// 漫画 OCR（`routing_ocr_recognizer`）的热路径：只做单遍 argmax 的
+  /// [ctcGreedyDecode]。**不要**改成转调 [recognizeLineDetailed]——详细路径每帧
+  /// 要扫整个词表求置信度、对整个输出张量做有限值检查，逐行解码成本约涨数倍，且
+  /// 遇到非有限值会抛错（这里照常解码）。解出的文字两条路径一致。
   Future<String> recognizeLine(img.Image line) async {
-    final PpOcrLineRecognition result = await recognizeLineDetailed(line);
-    return result.text;
+    if (line.width <= 0 || line.height <= 0) {
+      return '';
+    }
+    final ({Float32List data, int width}) input = ppRecPreprocess(line);
+    final Map<String, OcrTensor> outputs = await _session.run(
+      <String, OcrTensor>{
+        inputName: OcrTensor.float32(input.data, <int>[
+          1,
+          3,
+          kPpRecHeight,
+          input.width,
+        ]),
+      },
+    );
+    if (outputs.length != 1) {
+      throw StateError(
+        'PP-OCR rec expected 1 output, got ${outputs.keys.toList()}',
+      );
+    }
+    final OcrTensor logits = outputs.values.single;
+    final int vocabSize = logits.shape.last;
+    final int frames = logits.shape[logits.shape.length - 2];
+    if (vocabSize != vocab.length) {
+      throw StateError(
+        'PP-OCR rec vocab mismatch: model $vocabSize vs dict ${vocab.length}',
+      );
+    }
+    return ctcGreedyDecode(logits.floatData!, frames, vocabSize, vocab);
   }
 
   /// 识别一张已裁好的横排行图，并保留 CTC 非 blank token 的位置和置信度。
