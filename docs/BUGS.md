@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2455 条。点号进各自文件。
+> 共 2456 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |
 | [BUG-2652](bugs/BUG-2652-ios-scroll-switch-restore-reset.md) | ✅ | ✅ | iOS 书内分页切滚动后落点被钉回章首（原地换章视口瞬时读 0） |
 | [BUG-2650](bugs/BUG-2650-ios-ankimobile-backup-import.md) | ✅ | ✅ | iOS 查词查不出 Anki 里已有的卡：AnkiMobile 无回读通道，补「导入 Anki 备份」 |
 | [BUG-2649](bugs/BUG-2649-opds-size-mismatch.md) | ✅ | ✅ | Calibre OPDS 下载报 ResumableDownloadIntegrityException: size mismatch |
