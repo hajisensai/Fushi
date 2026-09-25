@@ -1,9 +1,19 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/src/anki/mined_state_signal.dart';
+
+/// iOS 上查词的 ✓ 是否由本账本决定（调用方先判 `Platform.isIOS`）：改用了
+/// AnkiConnect 时直接问 Anki；「制卡到服务器」时查重问的是 host。只有剩下这种
+/// 情况，「导入 Anki 备份」才有意义。
+bool ankiMobileLedgerIsDuplicateSource({
+  required bool useAnkiConnectOnMobile,
+  required bool mineToServer,
+}) => !useAnkiConnectOnMobile && !mineToServer;
 
 /// AnkiMobile 后端「这个词是不是已经制过卡」的**唯一真值来源**。
 ///
@@ -36,8 +46,36 @@ import 'package:fushi/src/anki/mined_state_signal.dart';
 ///
 /// 持久化跟着 anki 仓库层既有的 SharedPreferences 走（设置串 `fushi_anki_settings`
 /// 就在那儿），不为一个 iOS 专属的降级账本动 Drift schema。
+///
+/// **导入快照**（[replaceImported]）：用户从 Anki 导出的备份里读出的全部第一字段，
+/// 对齐 Hoshi Reader iOS 的「Import Anki Backup」。它补的是上面能力边界里「别处加的、
+/// 装 Fushi 之前加的」那一大块。与回跳落账分两份存：
+/// * 快照是**某一时刻整个 collection** 的样子，重新导入就整份替换——备份之后在 Anki
+///   里删掉的卡借此自然消失；回跳落账是「备份之后本机又制的卡」，不能被替换冲掉
+///   （Hoshi 整体覆盖，导入一次就把回跳记下的词全丢了）。
+/// * 快照动辄数万条，不进 SharedPreferences（iOS 上整份 plist 启动即读），落应用
+///   支持目录下的独立 JSON 文件，也不受 [limit] 约束。
+/// 查询取两者之并；[forget] 两边一起划。
 class AnkiMobileMinedLedger {
-  AnkiMobileMinedLedger({this.limit = defaultLimit});
+  AnkiMobileMinedLedger({
+    this.limit = defaultLimit,
+    Future<String> Function()? importedSnapshotPath,
+  }) : _importedSnapshotPath =
+           importedSnapshotPath ?? _defaultImportedSnapshotPath;
+
+  /// 导入快照的文件名（应用支持目录下）。
+  static const String importedSnapshotFileName =
+      'ankimobile_imported_expressions.json';
+
+  static Future<String> _defaultImportedSnapshotPath() async {
+    final Directory dir = await getApplicationSupportDirectory();
+    return '${dir.path}/$importedSnapshotFileName';
+  }
+
+  final Future<String> Function() _importedSnapshotPath;
+
+  /// 导入快照的内存索引；与 [_entries] 同一次载入。
+  Set<String> _imported = <String>{};
 
   static final AnkiMobileMinedLedger instance = AnkiMobileMinedLedger();
 
@@ -99,24 +137,52 @@ class AnkiMobileMinedLedger {
     if (key.isEmpty) return false;
     await _ensureLoaded();
     final Set<String> entries = _entries!;
-    if (!entries.remove(key)) return false;
-    await _persist(entries);
+    // 两份都要划：只划回跳账本的话，导入快照里还躺着同一个词，✓ 照亮。
+    final bool fromRecorded = entries.remove(key);
+    final bool fromImported = _imported.remove(key);
+    if (!fromRecorded && !fromImported) return false;
+    if (fromRecorded) await _persist(entries);
+    if (fromImported) await _persistImported(_imported);
     MinedStateSignal.instance.notifyWord(key);
     return true;
   }
 
-  /// 这个词在本机经 Fushi 制过卡吗。
+  /// 这个词在本机经 Fushi 制过卡，或出现在最近一次导入的 Anki 备份里吗。
   Future<bool> contains(String expression) async {
     final String key = _normalize(expression);
     if (key.isEmpty) return false;
     await _ensureLoaded();
-    return _entries!.contains(key);
+    return _entries!.contains(key) || _imported.contains(key);
+  }
+
+  /// 用一份 Anki 备份读出的第一字段集合**整份替换**导入快照（为什么是替换而不是
+  /// 合并见类注释）。回跳落账不受影响。返回快照条数。
+  ///
+  /// 所有已渲染弹窗的 ✓ 都可能变，所以广播「范围未知」的刷新。
+  Future<int> replaceImported(Iterable<String> expressions) async {
+    await _ensureLoaded();
+    final Set<String> next = <String>{};
+    for (final String expression in expressions) {
+      final String key = _normalize(expression);
+      if (key.isNotEmpty) next.add(key);
+    }
+    await _persistImported(next, throwOnFailure: true);
+    _imported = next;
+    MinedStateSignal.instance.notifyAll();
+    return next.length;
+  }
+
+  /// 导入快照当前条数（设置页显示「已导入 N 个词」）。
+  Future<int> importedCount() async {
+    await _ensureLoaded();
+    return _imported.length;
   }
 
   /// 丢掉内存索引，下次访问重新从持久层读。测试用（单例跨用例复用）。
   @visibleForTesting
   void resetForTesting() {
     _entries = null;
+    _imported = <String>{};
     _loading = null;
   }
 
@@ -142,7 +208,37 @@ class AnkiMobileMinedLedger {
     } catch (e, stack) {
       debugPrint('AnkiMobileMinedLedger load failed: $e\n$stack');
     }
+    Set<String> imported = <String>{};
+    try {
+      final File file = File(await _importedSnapshotPath());
+      if (await file.exists()) {
+        imported = _decode(await file.readAsString());
+      }
+    } catch (e, stack) {
+      debugPrint('AnkiMobileMinedLedger imported load failed: $e\n$stack');
+    }
     _entries = decoded;
+    _imported = imported;
+  }
+
+  /// 先写临时文件再改名：写到一半被杀掉时旧快照还在，不会留下半截 JSON。
+  ///
+  /// [throwOnFailure]：用户手动导入时写失败必须报出来（否则设置页说「导入了 N 个」
+  /// 而下次启动全没了）；[forget] 顺带改写时沿用账本的 fail-soft。
+  Future<void> _persistImported(
+    Set<String> imported, {
+    bool throwOnFailure = false,
+  }) async {
+    try {
+      final File file = File(await _importedSnapshotPath());
+      await file.parent.create(recursive: true);
+      final File tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(jsonEncode(imported.toList()), flush: true);
+      await tmp.rename(file.path);
+    } catch (e, stack) {
+      if (throwOnFailure) rethrow;
+      debugPrint('AnkiMobileMinedLedger imported persist failed: $e\n$stack');
+    }
   }
 
   static Set<String> _decode(String? raw) {

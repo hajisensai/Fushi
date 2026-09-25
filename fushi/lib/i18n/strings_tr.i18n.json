@@ -5463,5 +5463,9 @@
   "manga_ocr_baberu_desc": "About 284 MB including horizontal-line models. Windows uses GPU image encoding with CPU text decoding when available, otherwise CPU. Some names and handwriting may be less accurate. Applies to new OCR tasks.",
   "manga_ocr_cuda_model": "manga-ocr (NVIDIA GPU)",
   "manga_ocr_cuda_desc": "Original manga-ocr with GPU batching. Requires NVIDIA GPU; the first download includes a private Python and CUDA runtime (about 4 GB). No separate installation needed.",
-  "manga_ocr_runtime_installing": "Installing the local OCR engine…"
+  "manga_ocr_runtime_installing": "Installing the local OCR engine…",
+  "anki_backup_import": "Import Anki backup for duplicate check",
+  "anki_backup_import_hint": "$count words imported. Export a .colpkg or .apkg backup from AnkiMobile and import it here so lookups recognize cards already in Anki. Re-import now and then to stay current.",
+  "anki_backup_import_done": "Imported $count words from the Anki backup",
+  "anki_backup_import_failed": "Could not read this Anki backup"
 }

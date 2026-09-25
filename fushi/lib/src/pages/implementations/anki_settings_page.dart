@@ -10,7 +10,13 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, JapaneseLanguage;
 import 'package:fushi/src/ai/ai_feature.dart';
+import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
+import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
+import 'package:fushi/src/media/import/real_path_directory_picker.dart'
+    show pickFilesByExtensions;
+import 'package:file_picker/file_picker.dart' show FilePickerResult;
+import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
@@ -70,6 +76,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// 以 Future 完成顺序覆盖最后一次手势。
   bool _ankiBackendBusy = false;
 
+  /// 「导入 Anki 备份用于查重」在途（选文件 + 解包 + 读库，大备份要几秒）。
+  bool _ankiBackupImportBusy = false;
+
+  /// 导入快照当前条数；null = 还没从账本读出来。
+  int? _ankiBackupImportedCount;
+
   /// 本平台的原生 Anki 后端是否受限、因而提供「改用 AnkiConnect」这个开关。
   /// 与 [PlatformServices.offersMobileAnkiConnectChoice] 同义：iOS 的 AnkiMobile
   /// 只有加卡的 URL scheme，Android 的 AnkiDroid 走 Content Provider（能改模板，
@@ -99,6 +111,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   @override
   void initState() {
     super.initState();
+    if (widget.panel == null && Platform.isIOS) {
+      unawaited(_loadAnkiBackupImportedCount());
+    }
     if (widget.panel != null && widget.panel != AnkiSettingsPanel.maintenance) {
       return;
     }
@@ -225,6 +240,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
                   onChanged: vm.updateAllowDupes,
                 ),
               ),
+              // iOS + AnkiMobile：查重只能问本机账本，而账本天生不知道别处加的卡。
+              // 导入一份 Anki 备份把整个 collection 的第一字段补进来（对齐 Hoshi
+              // Reader iOS 的「Import Anki Backup」）。
+              if (Platform.isIOS &&
+                  ankiMobileLedgerIsDuplicateSource(
+                    useAnkiConnectOnMobile: settings.useAnkiConnectOnMobile,
+                    mineToServer: ref.watch(
+                      appProvider.select((AppModel m) => m.mineToServerEnabled),
+                    ),
+                  ))
+                SettingsSearchTarget(
+                  id: 'card_creation.anki.backup_import',
+                  child: _buildAnkiBackupImportRow(),
+                ),
               // TODO-614：「覆写已制卡片」范围单选——和「允许重复」并排（两者都关乎
               // 「再点 ✓ 时改旧卡还是建新卡」）。latest=仅最近一张（默认=现状）；
               // all=按同一查重条件覆写任意已存在卡（含更早制的）。
@@ -932,6 +961,60 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     selected: appModel.galMiningStillFormat,
     onChanged: appModel.setGalMiningStillFormat,
   );
+
+  Widget _buildAnkiBackupImportRow() {
+    return AdaptiveSettingsRow(
+      icon: Icons.upload_file_outlined,
+      showIcon: true,
+      title: t.anki_backup_import,
+      subtitle: t.anki_backup_import_hint(count: _ankiBackupImportedCount ?? 0),
+      trailing: _ankiBackupImportBusy
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
+            )
+          : null,
+      onTap: _ankiBackupImportBusy ? null : _importAnkiBackup,
+    );
+  }
+
+  Future<void> _loadAnkiBackupImportedCount() async {
+    final int count = await AnkiMobileMinedLedger.instance.importedCount();
+    if (!mounted) return;
+    setState(() => _ankiBackupImportedCount = count);
+  }
+
+  /// 选一份 `.colpkg` / `.apkg` → 读出全部笔记第一字段 → 整份替换账本的导入快照。
+  Future<void> _importAnkiBackup() async {
+    setState(() => _ankiBackupImportBusy = true);
+    try {
+      final FilePickerResult? picked = await pickFilesByExtensions(
+        context: context,
+        allowedExtensions: const <String>{'colpkg', 'apkg'},
+      );
+      final String? path = picked?.files.single.path;
+      if (path == null) return;
+      final Directory temp = await getTemporaryDirectory();
+      final Set<String> words = await readAnkiBackupFirstFields(
+        backupPath: path,
+        workDir:
+            '${temp.path}/anki_backup_import_'
+            '${DateTime.now().microsecondsSinceEpoch}',
+      );
+      final int count = await AnkiMobileMinedLedger.instance.replaceImported(
+        words,
+      );
+      if (!mounted) return;
+      setState(() => _ankiBackupImportedCount = count);
+      FushiToast.show(msg: t.anki_backup_import_done(count: count));
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AnkiSettings.importAnkiBackup', e, stack);
+      if (mounted) FushiToast.show(msg: t.anki_backup_import_failed);
+    } finally {
+      if (mounted) setState(() => _ankiBackupImportBusy = false);
+    }
+  }
 
   Widget _buildFetchTile(AnkiUiState uiState, AnkiViewModel vm) {
     // Lapis 创建在途时 vm 的 isFetching 也为 true（vm 内部复用同一 flag）；

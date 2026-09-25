@@ -5463,5 +5463,9 @@
   "manga_ocr_baberu_desc": "含横排文字模型约 284 MB。在 Windows 上自动使用 GPU 图像编码与 CPU 文字解码，不可用时使用 CPU。部分名字和手写文字可能更不准确。对新启动的 OCR 任务生效。",
   "manga_ocr_cuda_model": "manga-ocr（NVIDIA GPU 加速）",
   "manga_ocr_cuda_desc": "原版 manga-ocr，使用 GPU 批量识别。需要 NVIDIA 显卡；首次下载约 4 GB，应用自动安装独立的 Python 和 CUDA 运行库。",
-  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…"
+  "manga_ocr_runtime_installing": "正在安装本地 OCR 引擎…",
+  "anki_backup_import": "导入 Anki 备份用于查重",
+  "anki_backup_import_hint": "已导入 $count 个词。从 AnkiMobile 导出 .colpkg 或 .apkg 备份后在这里导入，查词即可认出 Anki 里已有的卡；建议不时重新导入。",
+  "anki_backup_import_done": "已从 Anki 备份导入 $count 个词",
+  "anki_backup_import_failed": "无法读取这个 Anki 备份"
 }
