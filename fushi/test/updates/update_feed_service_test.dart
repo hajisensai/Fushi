@@ -165,6 +165,51 @@ void main() {
         reason: '半年没看的订阅，那条未读提醒依然有效，不能因为老就抹掉');
   });
 
+  test('手动清空：按域删（含未读）、撤该域通知、不碰别的域；仍成立的事件可再投递',
+      () async {
+    final UpdateFeedService service = await makeService();
+    for (final String v in <String>['2.8.0-debug.15150', '2.8.0-debug.15535']) {
+      await service.publish(UpdateFeedDraft(
+        kind: UpdateFeedKind.appRelease,
+        targetKey: v,
+        title: v,
+      ));
+    }
+    await service.publishBatch(
+        UpdateFeedKind.videoEpisode, <UpdateFeedDraft>[episode('1')]);
+    await service.markSeen(<String>[
+      (await service.entries(kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease}))
+          .first
+          .entryId,
+    ]);
+
+    final int removed = await service.clear(kind: UpdateFeedKind.appRelease);
+
+    expect(removed, 2, reason: '已读与未读的版本记录一起清掉');
+    expect(
+        await service.entries(kinds: <UpdateFeedKind>{UpdateFeedKind.appRelease}),
+        isEmpty);
+    expect(await service.entries(), hasLength(1),
+        reason: '只清选中的域，番剧新集原样保留');
+    expect(notifier.cancelled,
+        contains(updateNotificationId(UpdateFeedKind.appRelease, null)));
+    expect(notifier.cancelled,
+        isNot(contains(updateNotificationId(UpdateFeedKind.videoEpisode, null))));
+
+    // 还没装的最新版下一轮检查仍会投递回来——清的是记录，不是事实。
+    final UpdateFeedPublishResult again = await service.publish(
+      const UpdateFeedDraft(
+        kind: UpdateFeedKind.appRelease,
+        targetKey: '2.8.0-debug.15535',
+        title: '2.8.0-debug.15535',
+      ),
+    );
+    expect(again.hasNew, isTrue);
+
+    expect(await service.clear(), 2, reason: 'kind 为空 = 全部域');
+    expect(await service.entries(), isEmpty);
+  });
+
   test('未读计数按域分组，且域没有未读时键不出现', () async {
     final UpdateFeedService service = await makeService();
     await service.publishBatch(

@@ -68,6 +68,34 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     await _load();
   }
 
+  /// 清空当前筛选下的全部记录（「全部」= 四个域一起清）。破坏性操作，先确认。
+  Future<void> _clear() async {
+    final UpdateFeedKind? kind = _filter;
+    final FushiDestructiveConfirmResult? confirmed =
+        await showAppDialog<FushiDestructiveConfirmResult>(
+          context: context,
+          builder: (BuildContext dialogContext) =>
+              FushiDestructiveConfirmDialog(
+                title: t.updates_history_clear_confirm_title,
+                message: t.updates_history_clear_confirm_body(
+                  scope: kind == null
+                      ? t.updates_filter_all
+                      : updateFeedKindLabel(kind),
+                ),
+                confirmLabel: t.updates_history_clear_confirm_action,
+                leadingIcon: Icons.delete_sweep_outlined,
+              ),
+        );
+    if (confirmed == null || !mounted) return;
+    final int removed = await widget.service.clear(kind: kind);
+    if (!mounted) return;
+    await _load();
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(t.updates_history_cleared(count: removed))),
+    );
+  }
+
   Future<void> _open(UpdateFeedEntryRow entry) async {
     // 先标已读再跳转：跳转可能把本页顶掉（push 新路由），之后的 setState 就到不
     // 了了；而「点开过」这个事实不该取决于跳转成功与否。
@@ -85,6 +113,11 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
           icon: Icons.done_all_outlined,
           tooltip: t.updates_mark_all_seen,
           onTap: _entries.isEmpty ? null : _markAllSeen,
+        ),
+        FushiIconButton(
+          icon: Icons.delete_sweep_outlined,
+          tooltip: t.updates_history_clear,
+          onTap: _loading || _entries.isEmpty ? null : _clear,
         ),
         FushiIconButton(
           icon: Icons.refresh,
