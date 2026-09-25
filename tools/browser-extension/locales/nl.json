@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Wordt gelezen na een opzoeking",
   "opt_narrowSidePanel_title": "Als het zijpaneel te smal is",
   "opt_narrowSidePanel_desc": "Is het zijpaneel smaller dan het opzoekvenster, dan krimpt het venster tot de beschikbare breedte en wordt het hele venster zo nodig verkleind in plaats van de rechterhelft af te snijden. Altijd aan, geen instelling. Om het browservenster weer het venster in de app te laten volgen, schakelt u “Eigen grootte voor browserextensie” in Fushi uit.",
+  "opt_shiftHoverLookup_title": "Opzoeken met Shift-hover",
+  "opt_shiftHoverLookup_desc": "Houd <kbd>Shift</kbd> ingedrukt en beweeg de muis over tekst om die op te zoeken (paginatekst en ondertitellijst in het zijpaneel). Zet dit uit als Shift botst met sneltoetsen van de site of met typen; opzoeken met een klik, automatisch opzoeken in ondertitels en andere ingangen blijven werken. Werkt direct.",
   "opt_touch_lookup_heading_section_kicker": "Opzoeken via aanraking en ondertitellade",
   "opt_touch_lookup_heading_heading": "Telefoons en tablets",
   "opt_touch_lookup_heading_section_note": "Direct van kracht",

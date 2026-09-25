@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Đọc sau khi tra từ",
   "opt_narrowSidePanel_title": "Khi bảng bên quá hẹp",
   "opt_narrowSidePanel_desc": "Nếu bảng bên hẹp hơn cửa sổ tra từ, cửa sổ sẽ thu lại theo chiều rộng khả dụng và khi cần thu nhỏ toàn bộ theo tỷ lệ thay vì cắt mất nửa bên phải. Luôn bật, không có tùy chọn. Để cửa sổ tra từ trên trình duyệt lại theo cửa sổ trong ứng dụng, hãy tắt “Kích thước riêng cho tiện ích trình duyệt” trong Fushi.",
+  "opt_shiftHoverLookup_title": "Tra từ khi rê chuột với Shift",
+  "opt_shiftHoverLookup_desc": "Giữ <kbd>Shift</kbd> và rê chuột lên chữ để tra (văn bản trang và danh sách phụ đề ở bảng bên). Tắt nếu Shift xung đột với phím tắt của trang hoặc khi gõ; tra bằng cú nhấp, tự động tra phụ đề và các lối vào khác không bị ảnh hưởng. Có hiệu lực ngay.",
   "opt_touch_lookup_heading_section_kicker": "Tra từ cảm ứng & ngăn kéo phụ đề",
   "opt_touch_lookup_heading_heading": "Điện thoại và máy tính bảng",
   "opt_touch_lookup_heading_section_note": "Áp dụng ngay lập tức",

@@ -90,6 +90,8 @@
   "opt_popupSizeHeight_placeholder": "Wird nach einem Nachschlagen gelesen",
   "opt_narrowSidePanel_title": "Wenn die Seitenleiste zu schmal ist",
   "opt_narrowSidePanel_desc": "Ist die Seitenleiste schmaler als das Popup, passt sich das Popup der verfügbaren Breite an und verkleinert bei Bedarf das ganze Fenster, statt die rechte Hälfte abzuschneiden. Immer aktiv, keine Einstellung. Damit das Browser-Popup wieder dem Popup in der App folgt, schalte in Fushi „Eigene Größe der Browsererweiterung“ aus.",
+  "opt_shiftHoverLookup_title": "Nachschlagen per Shift-Hover",
+  "opt_shiftHoverLookup_desc": "Halte <kbd>Shift</kbd> gedrückt und bewege die Maus über Text, um ihn nachzuschlagen (Seitentext und Untertitelliste in der Seitenleiste). Schalte das aus, wenn Shift mit Tastenkürzeln der Website oder beim Tippen kollidiert; Nachschlagen per Klick, automatisches Untertitel-Nachschlagen und andere Wege bleiben unberührt. Wirkt sofort.",
   "opt_touch_lookup_heading_section_kicker": "Touch-Nachschlagen & Untertitel-Schublade",
   "opt_touch_lookup_heading_heading": "Smartphones und Tablets",
   "opt_touch_lookup_heading_section_note": "Gilt sofort",

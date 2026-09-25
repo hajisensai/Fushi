@@ -416,6 +416,29 @@ try {
   });
 } catch (_) {}
 
+// 「按住 Shift 悬停查词」总开关（storage.shiftHoverLookup，默认开）。Shift 在不少站点/输入场景
+// 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
+// 其余入口。只认显式 false；storage.onChanged 实时生效。
+let fushiShiftHoverLookup = true;
+function fushiApplyShiftHoverLookupPref(saved) {
+  if (saved && typeof saved.shiftHoverLookup === 'boolean') {
+    fushiShiftHoverLookup = saved.shiftHoverLookup;
+  }
+}
+try {
+  const fushiShiftPrefPromise = chrome.storage.local.get(
+    ['shiftHoverLookup'],
+    fushiApplyShiftHoverLookupPref,
+  );
+  if (fushiShiftPrefPromise && typeof fushiShiftPrefPromise.then === 'function') {
+    fushiShiftPrefPromise.then(fushiApplyShiftHoverLookupPref, () => {});
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
+    fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+  });
+} catch (_) {}
+
 // 弹窗尺寸精细化 Phase D：拖拽调整扩展弹窗尺寸。
 // fushiResizeGrip：右下角拖拽把手（顶层 position:fixed overlay，与高亮层同父挂在
 //   fullscreenElement||body；不放进 host 的 shadow，避开 host 的 zoom 建立包含块干扰 fixed）。
@@ -2124,6 +2147,8 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   if (!e[FUSHI_MOD]) { fushiLastTerm = ''; return; } // 松开 Shift 复位，下次可重查同词
+  // 用户关掉了 Shift 悬停查词：整条入口不动，连原生选区清理也不做（Shift+拖选照常是浏览器的）。
+  if (!fushiShiftHoverLookup) { fushiLastTerm = ''; return; }
   // TODO-1279：Shift 悬停取词是「纯悬停扫描」——浏览器会在 Shift 按住+指针移动时把原生文本选区从
   // 既有 caret 扩到指针，与我们自绘的覆盖层高亮叠出一条多余的蓝色原生选区（用户报「一个我们的选区、
   // 一个浏览器自带的蓝色选区」）。纯悬停（无鼠标键按下，e.buttons===0）时清掉原生选区，只留覆盖层
