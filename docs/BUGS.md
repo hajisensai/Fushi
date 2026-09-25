@@ -38,7 +38,7 @@
 | [BUG-2678](bugs/BUG-2678-gal-grid-width-slider-drift.md) | ✅ | ✅ | 调整格宽后字格消失且拉回后位置对不上 |
 | [BUG-2677](bugs/BUG-2677-gal-calibration-capture-refused-auto-mode.md) | ✅ | ✅ | 自动模式下校准采集被误报为没有台词 |
 | [BUG-2676](bugs/BUG-2676-gal-lookup-hook-linebreak-width.md) | ✅ | ✅ | 自带换行的游戏长句超出校准宽度后对不上 |
-| [BUG-2675](bugs/BUG-2675-gal-lookup-hidden-after-fast-advance.md) | ✅ | 🚧 | 快速翻页后新台词暂时没有内嵌查词 |
+| [BUG-2675](bugs/BUG-2675-gal-lookup-hidden-after-fast-advance.md) | 🚧 | 🚧 | 快速翻页后新台词暂时没有内嵌查词 |
 | [BUG-2674](bugs/BUG-2674-gal-lookup-click-after-popup-ignored.md) | ✅ | ✅ | 关闭查词窗口后点击台词时灵时不灵 |
 | [BUG-2644](bugs/BUG-2644-manga-ocr-nested-regions.md) | ✅ | ✅ | 漫画目录段落与内嵌行框重复识别和显示 |
 | [BUG-2643](bugs/BUG-2643-manga-ocr-preprocess-speed.md) | ✅ | ✅ | Windows 本地漫画 OCR 识别慢且缩图丢失细笔画 |
