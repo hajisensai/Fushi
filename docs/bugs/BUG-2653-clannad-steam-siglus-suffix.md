@@ -21,11 +21,29 @@
     多语言并存时任一完整后缀对即认；后缀解析的大小写与非法字符。
   - `fushi/test/mining/galgame_audio_test.dart`：`SiglusEngine_Steam.exe` + `GameexeZH.dat` + `SceneZH.pck`
     启用 PC hooks；`GameexeEN.dat` + `SceneZH.pck` + `Scene_old.pck` 不启用。
+- **顺带修复** — 提交 `4a2ee8e66a9`：注入器 `steam://run` 路径发现进程后 15ms 即注入，绕开了 Siglus
+  既定的「主窗口就绪后再附着」策略（launch / PID 附着都守）。改为复用 PID 附着的就绪门，
+  `siglus_child_readiness_test.cpp` 加放置守卫（删掉门的源码反例使守卫失败，退出码 91）。
+  **这不是 CLANNAD 卡死的修复**：去掉就绪门的早注入对照 3 次均未卡死。
 - **备注**：
-  - 离线候选证据：一次性探针把 `SiglusEngine_Steam.exe` 以映像装载、补 IAT 后逐族跑查词结构解析器，
-    结果 `luna_scenario=1 native_ecx=0 legacy=0 eightarg=0 unique=1`——唯一命中 LunaScenario 族。
-    这只是 `candidate`，不是运行期证据。
-  - 真机原始路径未跑通：本机 `steam://run/324160` 被 Steam 转成「远程畅玩」（库里显示 CLANNAD 正在另一台
-    电脑上运行），游戏未在本机启动，`process_found` 即未通过。`engine-support.yaml` 的 Siglus 条目未改
-    （verified 引擎的声明受哈希白名单冻结，需 release 级台账才能动）。
-  - 用户 Steam 语言设为简体中文，剧本是中文；学日语要把 CLANNAD 的 Steam 语言改为日语重新下载日文剧本。
+  - 日文剧本：Steam 版要保持简体中文语言，再覆盖社区日语补丁 v1.1（Steam 指南 2213979247；只含
+    `GameexeZH.dat`、`dat/text*.dbs`、`g00/`、`mov/` 与日文字体，无可执行文件）。台词正文在
+    `dat/text*.dbs`。目录布局仍是 `GameexeZH.dat` + `SceneZH.pck`，正是本 bug 的后缀布局。
+  - 离线候选：一次性探针以映像装载 exe 逐族跑查词结构解析器，`luna_scenario=1`，其余三族 0，唯一命中。
+  - 运行期（2026-09-25，原始 `steam://run` 路径，打过日语补丁）：
+    - 文本：`siglus_text_owner=kNativeOwned`，由 SiglusEngine 原生消息 hook（src=4）产出，逐句与画面一致
+      （「一面、白い世界…」「「はぁ」」…）。
+    - 语音：第 50 句「「はぁ」」落盘 `fushi_textseq50_z0414.ovk_0.ogg`，与 `koe/z0414.ovk` 第 0 条目
+      （13967 B，偏移 1028）SHA-256 一致 `4728EF76CB1888704B64A8E29E2CC193435C6D826E67E6F75D4612B005F6E67A`；
+      后续 13 句有配音台词都按文本序号配对落盘。
+    - 查词：以测试工具扮演 host 发布 `NativeOnly + NativeInputAllowed`（与 Fushi `activeNative` 时同一位）后，
+      几何提供者为 EngineExactLayout/Siglus。Shift 与单击都命中正确字符（如 `[3,+1]`=白、`[5,+1]`=世、
+      `[1,+1]`=は、`[2,+1]`=ぁ，含多行台词第 2 行），单击字形**不推进**，单击空白正常推进；
+      打字机播放中点已显示的字 5/5 不跳句（游戏自身补全整句）。
+    - 未经 host 准入时 `PublishHit` 以 `kHitPublicationRejected` 拒绝，这是 Siglus 作为 NativeInputGated
+      provider 的设计，不是缺陷。
+  - **未复现的卡死**：注入状态下两次观察到主线程停在窗口过程里的 D3D9 `Reset` 循环
+    （`SiglusEngine_Steam.exe+0x2639b0`：`Sleep(100)` + `device->Reset` 返回 `D3DERR_DEVICELOST`）。一次在补丁后
+    首次启动，一次在用户游玩后。不注入、早注入 ×3、最小化/还原、Alt+Enter 全屏往返、最大化、同步/异步改尺寸、
+    Steam 覆盖层开关、连续 150 余句游玩均未复现；原因未定，dump 与栈解析未入库。
+  - 未做：真 Fushi app 内弹窗与真卡写入 E2E；`engine-support.yaml` 未改（verified 引擎声明受哈希白名单冻结）。
