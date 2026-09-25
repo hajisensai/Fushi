@@ -79,6 +79,9 @@ import 'package:fushi/src/models/media_history_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
+import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_runtime.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
@@ -4515,6 +4518,31 @@ class AppModel with ChangeNotifier {
     return manager;
   }
 
+  /// 小说在线源（LNReader 插件）管理器。按首次访问懒建，只有进入书的「导入」
+  /// 视图在线源三段才会碰；插件运行时（headless WebView）更要等第一次真正调用
+  /// 插件才起。平台门在 [isNovelOnlineSourcesAvailable]，没过门的平台别来取。
+  LnReaderManager? _lnReaderManager;
+  LnReaderManager get lnReaderManager =>
+      _lnReaderManager ??= _createLnReaderManager();
+
+  LnReaderManager _createLnReaderManager() {
+    late final LnReaderManager manager;
+    final WebViewLnReaderRuntime runtime = WebViewLnReaderRuntime(
+      fetchBridge: LnReaderFetchBridge(clientFactory: createAppHttpClient),
+      onStoragePersist: (String pluginId, Map<String, Object?> data) =>
+          manager.persistStorage(pluginId, data),
+    );
+    manager = LnReaderManager(
+      rootDirectory: Directory(path.join(databaseDirectory.path, 'lnreader')),
+      runtime: runtime,
+      httpClientFactory: createAppHttpClient,
+      // 只有真实 app 进页即刷新内置官方仓库（单测构造的 manager 不碰外网）。
+      refreshOnInitialise: true,
+    );
+    unawaited(manager.initialise());
+    return manager;
+  }
+
   /// 按 runtime 分派在线漫画书架服务。
   ///
   /// 书架条目和作品页手上只有 `bookKey` + 描述符里的 runtime，不知道该找哪个
@@ -7390,6 +7418,8 @@ class AppModel with ChangeNotifier {
     _mihonManager = null;
     _animeMihonManager?.dispose();
     _animeMihonManager = null;
+    _lnReaderManager?.dispose();
+    _lnReaderManager = null;
     final ExitFlushCallback? mihonExitShutdown = _mihonRuntimeExitShutdown;
     _mihonRuntimeExitShutdown = null;
     if (mihonExitShutdown != null) {

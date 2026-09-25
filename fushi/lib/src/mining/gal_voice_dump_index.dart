@@ -851,7 +851,8 @@ final class GalVoiceDumpIndex {
     final String name = _fileBaseName(file.path);
     final String lower = name.toLowerCase();
     final GalVoiceDumpKind? kind =
-        lower.endsWith('.ogg') || lower.endsWith('.xwma')
+        lower.endsWith('.ogg') ||
+        lower.endsWith('.opus') || lower.endsWith('.xwma')
             ? GalVoiceDumpKind.oggLike
             : lower.endsWith('.wav')
                 ? GalVoiceDumpKind.wav

@@ -230,6 +230,8 @@ flutter:
     - assets/gamepad/switch/
     - assets/fonts/
     - assets/licenses/
+    # 小说在线源（LNReader 插件）宿主：lnreader_libs.js 由 tool/lnreader/ 重建。
+    - assets/lnreader/
     - assets/meta/
     - assets/popup/
     - assets/transforms/
