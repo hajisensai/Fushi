@@ -65,15 +65,11 @@ GalLookupSurfaceVariantV1? projectGalCalibrationToSource({
     textAlign: layout.textAlign,
     verticalAlign: layout.verticalAlign,
     paddingPerClientHeight: layout.paddingPerClientHeight * vertical,
-    cellGrid: grid == null
-        ? null
-        : grid.copyWith(
-            advancePerClientHeight: grid.advancePerClientHeight * horizontal,
-            lineAdvancePerClientHeight:
-                grid.lineAdvancePerClientHeight * vertical,
-            cellHeightPerClientHeight:
-                grid.cellHeightPerClientHeight * vertical,
-          ),
+    cellGrid: grid?.copyWith(
+      advancePerClientHeight: grid.advancePerClientHeight * horizontal,
+      lineAdvancePerClientHeight: grid.lineAdvancePerClientHeight * vertical,
+      cellHeightPerClientHeight: grid.cellHeightPerClientHeight * vertical,
+    ),
     quotedTextOnly: layout.quotedTextOnly,
     punctuationVisualBounds: layout.punctuationVisualBounds,
     characterAdvances: layout.characterAdvances,
