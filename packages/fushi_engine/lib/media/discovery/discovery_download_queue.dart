@@ -395,7 +395,10 @@ class DiscoveryDownloadQueue extends EngineChangeNotifier {
         destination: destination,
         partFile: File('${destination.path}.part'),
         open: open,
-        expectedSize: payload.sizeBytes,
+        // 目录声称的体积只是提示（BUG-2649）：Calibre 下载时改写 EPUB 元数据，
+        // 当严格判据会把完整文件判 size mismatch 删掉。截断由 HttpClient 按
+        // Content-Length 兜住（连接提前断 → HttpException，走瞬时重试）。
+        sizeHint: payload.sizeBytes,
         onProgress: (int received, int? total) {
           task.receivedBytes = received;
           task.totalBytes = total;

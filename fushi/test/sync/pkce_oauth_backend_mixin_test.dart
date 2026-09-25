@@ -100,6 +100,55 @@ void main() {
       expect(backend.refresh, 'r2');
     });
 
+    test(
+        'BUG-2647：restoreAuth 刷新拿到轮换后的 refresh token 必须落库，下一轮恢复用新值',
+        () async {
+      backend.stored = jsonEncode({'refresh_token': 'r-login'});
+      final List<String> presented = <String>[];
+      int n = 0;
+      flow.onRefresh = (String refreshToken) async {
+        presented.add(refreshToken);
+        n++;
+        return PkceTokens(accessToken: 'a$n', refreshToken: 'r-rot$n');
+      };
+
+      expect(await backend.restoreAuth(repo), isTrue);
+      expect(jsonDecode(backend.stored!), {'refresh_token': 'r-rot1'});
+
+      // 模拟进程重启：内存态全丢，只剩落库那枚。
+      final _TestBackend restarted = _TestBackend(flow)..stored = backend.stored;
+      expect(await restarted.restoreAuth(repo), isTrue);
+      expect(presented, <String>['r-login', 'r-rot1'],
+          reason: '第二轮必须出示上一轮轮换出的 token，而不是登录那一刻的旧 token');
+      expect(jsonDecode(restarted.stored!), {'refresh_token': 'r-rot2'});
+    });
+
+    test('BUG-2647：provider 没轮换（缺省或原值）时不写库', () async {
+      backend.stored = jsonEncode({'refresh_token': 'r1'});
+      flow.onRefresh =
+          (_) async => const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
+      expect(await backend.restoreAuth(repo), isTrue);
+      flow.onRefresh = (_) async => const PkceTokens(accessToken: 'a2');
+      await backend.refreshAuth();
+      expect(backend.storeWrites, 0);
+      expect(backend.refresh, 'r1');
+    });
+
+    test('BUG-2647：换码登录后的 refreshAuth 轮换同样落库', () async {
+      flow.onExchange = (_, __, ___) async =>
+          const PkceTokens(accessToken: 'a1', refreshToken: 'r1');
+      await backend.exchangeForTest(
+        code: 'c',
+        verifier: 'v',
+        redirectUri: 'fushi://auth/test',
+        repo: repo,
+      );
+      flow.onRefresh =
+          (_) async => const PkceTokens(accessToken: 'a2', refreshToken: 'r2');
+      await backend.refreshAuth();
+      expect(jsonDecode(backend.stored!), {'refresh_token': 'r2'});
+    });
+
     test('handleAuthCode：没有 pending 流时拒绝，且不碰 token 端点', () async {
       flow.onExchange = (_, __, ___) async => fail('must not exchange');
       await expectLater(
@@ -272,8 +321,11 @@ class _TestBackend extends SyncBackend with PkceOAuthBackendMixin {
 
   @override
   Future<void> writeStoredToken(SyncRepository repo, String? token) async {
+    storeWrites++;
     stored = token;
   }
+
+  int storeWrites = 0;
 
   @override
   Future<void> fetchUserEmail() async {

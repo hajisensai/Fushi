@@ -5467,5 +5467,11 @@
   "video_setting_brightness_swipe_gesture": "スワイプで明るさ調整",
   "video_setting_brightness_swipe_gesture_hint": "画面の左半分を上下にスワイプして画面の明るさを変更します。オフにするとシステムの明るさスライダーを使います",
   "video_setting_volume_swipe_gesture": "スワイプで音量調整",
-  "video_setting_volume_swipe_gesture_hint": "画面の右半分を上下にスワイプして音量を変更します。オフにすると本体の音量ボタンを使います"
+  "video_setting_volume_swipe_gesture_hint": "画面の右半分を上下にスワイプして音量を変更します。オフにすると本体の音量ボタンを使います",
+  "drag_drop_unsupported_on_collection": "動画ファイルのみドロップできます。ドロップした動画は読み込まれ、このコレクションに直接追加されます。",
+  "updates_history_clear": "Clear history",
+  "updates_history_clear_confirm_title": "Clear update history?",
+  "updates_history_clear_confirm_body": "Remove all entries under \"$scope\"? Updates that are still pending, such as a newer app version you have not installed, will show up again on the next check.",
+  "updates_history_clear_confirm_action": "Clear",
+  "updates_history_cleared": "Cleared $count entries"
 }

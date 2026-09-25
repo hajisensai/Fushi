@@ -12,6 +12,8 @@ const D = self.FUSHI_DEFAULTS || { host: '127.0.0.1', port: 19633, token: '' };
 // 界面文案统一走 i18n.js（fushiT）。
 const tr = (key, params) => (typeof self.fushiT === 'function' ? self.fushiT(key, params) : key);
 const settingDefaults = Object.freeze({
+  // 按住 Shift 悬停查词（网页正文与侧边栏字幕行）。默认开；关掉只留点击等其余查词入口。
+  shiftHoverLookup: true,
   netflixSubtitlePanel: false,
   subtitleOverlayEnabled: true,
   subtitleDragDropEnabled: true,
@@ -57,6 +59,7 @@ const settingDefaults = Object.freeze({
   videoShortcutRateUp: true,
 });
 const toggleIds = Object.freeze({
+  shiftHoverLookup: 'shiftHoverLookup',
   nfSubList: 'netflixSubtitlePanel',
   subtitleOverlayEnabled: 'subtitleOverlayEnabled',
   subtitleDragDropEnabled: 'subtitleDragDropEnabled',
