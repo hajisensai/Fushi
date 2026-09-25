@@ -448,7 +448,10 @@ class ImmersionMiningEngine {
           providedCoverFileName(req.providedCoverName, provided), provided);
     }
 
-    final String? src = req.mediaSource;
+    // 远端输入登记时可能已被宿主换成更省的等价地址（HLS master → 选中的那一档
+    // 变体，见 [ffmpegRemoteInputFor]）；本地路径与未登记的地址原样。
+    final String? src =
+        req.mediaSource == null ? null : ffmpegRemoteInputFor(req.mediaSource!);
     final bool providedVideo = synchronizedVideo &&
         coverPath != null &&
         coverPath.toLowerCase().endsWith('.mp4');

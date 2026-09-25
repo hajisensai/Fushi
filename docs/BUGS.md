@@ -29,11 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2466 条。点号进各自文件。
+> 共 2470 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2690](bugs/BUG-2690-lnreader-kakuyomu-popular-empty.md) | ✅ | ✅ | LNReader kakuyomu 源打不开（热门恒空） |
+| [BUG-2685](bugs/BUG-2685-anime-ext-subtitle-tracks.md) | ✅ | ✅ | 在线视频源只用网站第一条字幕轨 |
+| [BUG-2684](bugs/BUG-2684-card-source-cross-device.md) | ✅ | ✅ | 同步过来的书卡片跳不回原文 |
+| [BUG-2683](bugs/BUG-2683-itest-prefs-leak-card-tags.md) | ✅ | ✅ | 集成测试写的 Anki 标签漏进用户真实配置，卡片多出 e2e 与 chars 标签 |
 | [BUG-2682](bugs/BUG-2682-ousama-opus-voice.md) | ✅ | ✅ | 王様恋愛导出的 Opus 语音未进入资源索引 |
 | [BUG-2680](bugs/BUG-2680-gal-mine-lease-refused-after-calibration.md) | 🚧 | 🚧 | 校准后制卡截图租约被拒 |
 | [BUG-2679](bugs/BUG-2679-gal-first-mine-capture-refused.md) | ✅ | ✅ | 查词窗口里第一次点制卡截图被拒 |
@@ -47,6 +50,7 @@
 | [BUG-2651](bugs/BUG-2651-global-lookup-overlay-copy.md) | ✅ | ✅ | 应用外查词弹窗无法复制：Ctrl+C 复制到前台应用、右键菜单被弹窗盖住（issue #1581） |
 | [BUG-2650](bugs/BUG-2650-ios-ankimobile-backup-import.md) | ✅ | ✅ | iOS 查词查不出 Anki 里已有的卡：AnkiMobile 无回读通道，补「导入 Anki 备份」 |
 | [BUG-2649](bugs/BUG-2649-opds-size-mismatch.md) | ✅ | ✅ | Calibre OPDS 下载报 ResumableDownloadIntegrityException: size mismatch |
+| [BUG-2648](bugs/BUG-2648-emby-embedded-sub-lookup.md) | ✅ | ✅ | 兼容层 Emby 内嵌文本字幕走 libmpv 自绘：不可查词、字幕列表为空 |
 | [BUG-2647](bugs/BUG-2647-onedrive-refresh-token-rotation-not-persisted.md) | ✅ | ✅ | OneDrive 刷新后轮换的 refresh token 不落库，登录约 90 天后同步静默停止 |
 | [BUG-2646](bugs/BUG-2646-android-folder-picker-recents.md) | ✅ | ✅ | 安卓选文件夹停在空的「最近」、选不了任何目录 |
 | [BUG-2645](bugs/BUG-2645-asset-transfer-row-foreign-progress.md) | ✅ | ✅ | 互联页词典传输行在任意同步时都转圈 |

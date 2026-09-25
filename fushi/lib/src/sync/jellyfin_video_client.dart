@@ -2574,6 +2574,8 @@ class JellyfinVideoClient
         url: url,
         fileName: _subtitleFileName(item, s),
         containerTrackOrdinal: ordinals[s.index],
+        // 外挂字幕文件不在直出的容器里：抽取失败时不能交给 libmpv 自绘。
+        isExternalFile: s.isExternal,
       ));
     }
 

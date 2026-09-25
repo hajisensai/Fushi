@@ -169,6 +169,166 @@ void main() {
     skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
     timeout: const Timeout(Duration(seconds: 90)),
   );
+
+  // 制卡提速：在线源常直接给 master。ffmpeg 读 master 时 hls demuxer 把**每一档**的
+  // 播放列表和开头分片都拉下来探测（限速实测三档 master：音频 + 动图两路 7.3 秒，直接
+  // 读变体 4.5 秒）。登记时预先经中继取 master、选播放器默认那一档，ffmpeg 只碰那一档。
+  test(
+    '在线源 HLS master：登记时选好那一档，ffmpeg 只读它（对照：直接读 master 会拉每一档）',
+    () async {
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'relay_master_',
+      );
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final String? oldOverride = ffmpegPathOverride;
+      final String? oldProbeOverride = ffprobePathOverride;
+      final String Function() oldMode = appUserProxyModeReader;
+      final String Function() oldProxy = appUserProxyReader;
+      addTearDown(() {
+        ffmpegPathOverride = oldOverride;
+        ffprobePathOverride = oldProbeOverride;
+        setFfmpegBackendForTesting(null);
+        debugResetFfmpegHlsSegmentExtensionSupport();
+        ffmpegRemoteInputRouteResolver = null;
+        debugClearFfmpegRelayRoutes();
+        appUserProxyModeReader = oldMode;
+        appUserProxyReader = oldProxy;
+      });
+      ffmpegPathOverride = bundled;
+      ffprobePathOverride = p.join(
+        p.dirname(bundled!),
+        Platform.isWindows ? 'ffprobe.exe' : 'ffprobe',
+      );
+      setFfmpegBackendForTesting(null);
+      debugResetFfmpegHlsSegmentExtensionSupport();
+
+      final String ts = p.join(tmp.path, 'seg0.ts');
+      final ProcessResult mux = await Process.run(bundled, <String>[
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-y',
+        '-i',
+        p.join('..', 'docs', 'todo-524-video.mp4'),
+        '-t',
+        '3',
+        '-c',
+        'copy',
+        '-f',
+        'mpegts',
+        ts,
+      ]);
+      expect(mux.exitCode, 0, reason: '${mux.stderr}');
+      final Uint8List segment = File(ts).readAsBytesSync();
+
+      final List<String> seen = <String>[];
+      String? masterReferer;
+      final HttpServer upstream = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => upstream.close(force: true));
+      upstream.listen((HttpRequest request) async {
+        final HttpResponse res = request.response;
+        if (request.requestedUri.host != 'native-source.invalid') {
+          res.statusCode = HttpStatus.badGateway;
+          await res.close();
+          return;
+        }
+        final String path = request.requestedUri.path;
+        seen.add(path);
+        const String mpegurl = 'application/vnd.apple.mpegurl';
+        if (path == '/m/master') {
+          masterReferer = request.headers.value(HttpHeaders.refererHeader);
+          // 最高码率那档排在中间：选档看 BANDWIDTH，不看先后。
+          res.headers.contentType = ContentType.parse(mpegurl);
+          res.write(
+            '#EXTM3U\n#EXT-X-VERSION:3\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360\n'
+            'lo/index\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\n'
+            'hi/index\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\n'
+            'mid/index\n',
+          );
+        } else if (path.endsWith('/index')) {
+          res.headers.contentType = ContentType.parse(mpegurl);
+          res.write(
+            '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:3\n'
+            '#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:3.0,\nseg0.ts\n'
+            '#EXT-X-ENDLIST\n',
+          );
+        } else if (path.endsWith('/seg0.ts')) {
+          res.headers.contentType = ContentType('video', 'mp2t');
+          res.contentLength = segment.length;
+          res.add(segment);
+        } else {
+          res.statusCode = HttpStatus.notFound;
+        }
+        await res.close();
+      });
+      appUserProxyModeReader = () => kProxyModeManual;
+      appUserProxyReader = () => '127.0.0.1:${upstream.port}';
+      ffmpegRemoteInputRouteResolver = ffmpegRelayRouteFor;
+
+      final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
+        'http://native-source.invalid/m/master',
+        isHls: Future<bool>.value(true),
+        headers: const <String, String>{'Referer': 'https://site.example/'},
+      );
+      await relayed.ready;
+      final String input = ffmpegRemoteInputFor(relayed.url);
+      expect(input, endsWith('/m/hi/index'));
+      expect(seen, <String>['/m/master'], reason: '登记只取 master 本身');
+      expect(
+        masterReferer,
+        'https://site.example/',
+        reason: '与 ffmpeg 同一组防盗链头',
+      );
+
+      final List<String> failures = <String>[];
+      Future<String?> cut(String inputPath, String name) =>
+          extractAudioSegmentViaFfmpeg(
+            inputPath: inputPath,
+            startMs: 100,
+            endMs: 900,
+            outputPath: p.join(tmp.path, '$name.aac'),
+            onFailure: failures.add,
+          );
+
+      seen.clear();
+      final String? out = await cut(input, 'variant');
+      expect(out, isNotNull, reason: 'ffmpeg: $failures; upstream saw $seen');
+      expect(File(out!).lengthSync(), greaterThan(0));
+      expect(seen, containsAll(<String>['/m/hi/index', '/m/hi/seg0.ts']));
+      expect(
+        seen.where((String s) => s.startsWith('/m/lo/') || s.contains('/mid/')),
+        isEmpty,
+        reason: '只碰选中的那一档',
+      );
+
+      // 对照：同一条中继路径直接读 master，ffmpeg 会把每一档都拉下来探测。
+      seen.clear();
+      failures.clear();
+      ffmpegRemoteInputRouteResolver = (String inputPath) {
+        final FfmpegRemoteInputRoute? route = ffmpegRelayRouteFor(inputPath);
+        return route == null
+            ? null
+            : FfmpegRemoteInputRoute(
+                httpProxy: route.httpProxy,
+                disableHlsSegmentPrefetch: route.disableHlsSegmentPrefetch,
+                relaxHlsSegmentExtensions: route.relaxHlsSegmentExtensions,
+              );
+      };
+      expect(await cut(relayed.url, 'master'), isNotNull, reason: '$failures');
+      expect(
+        seen,
+        containsAll(<String>['/m/lo/index', '/m/mid/index', '/m/hi/index']),
+      );
+    },
+    skip: bundled == null ? '只在带捆绑 ffmpeg-min 的平台跑（Windows / macOS）' : false,
+    timeout: const Timeout(Duration(seconds: 90)),
+  );
 }
 
 String? _bundledFfmpeg() {

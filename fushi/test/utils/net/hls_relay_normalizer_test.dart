@@ -219,6 +219,86 @@ void main() {
     });
   });
 
+  // 制卡提速：master 预先解析成播放器默认选的那一档，ffmpeg 不再逐档探测。
+  group('selectHlsMasterVariant', () {
+    test(
+      'picks the highest BANDWIDTH, not AVERAGE-BANDWIDTH or list order',
+      () {
+        const String master =
+            '#EXTM3U\r\n'
+            '#EXT-X-VERSION:3\r\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=800000,AVERAGE-BANDWIDTH=9900000,'
+            'RESOLUTION=640x360\r\n'
+            'lo/index.m3u8\r\n'
+            '\r\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080\r\n'
+            'https://cdn.example/hi/index.m3u8\r\n'
+            '#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=90000000,URI="iframe.m3u8"\r\n'
+            '#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\r\n'
+            'mid/index.m3u8\r\n';
+        expect(
+          selectHlsMasterVariant(master),
+          'https://cdn.example/hi/index.m3u8',
+        );
+      },
+    );
+
+    test('ties keep the first variant', () {
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000\na.m3u8\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000\nb.m3u8\n',
+        ),
+        'a.m3u8',
+      );
+    });
+
+    test('media playlists are not masters', () {
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n'
+          '#EXT-X-ENDLIST\n',
+        ),
+        isNull,
+      );
+    });
+
+    test('separate audio / video renditions keep the master', () {
+      // 单读一档会丢掉独立的音轨播放列表，句子音频抽不出来。
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n'
+          '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="ja",URI="a/ja.m3u8"\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="a"\nv.m3u8\n',
+        ),
+        isNull,
+      );
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n'
+          '#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="v",NAME="alt",URI="alt.m3u8"\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000,VIDEO="v"\nv.m3u8\n',
+        ),
+        isNull,
+      );
+    });
+
+    test('muxed audio groups and subtitle renditions are fine', () {
+      // 不带 URI 的 AUDIO rendition = 音轨就在变体流里；字幕不影响制卡。
+      expect(
+        selectHlsMasterVariant(
+          '#EXTM3U\n'
+          '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="ja",DEFAULT=YES\n'
+          '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="en",URI="s.m3u8"\n'
+          '#EXT-X-STREAM-INF:BANDWIDTH=1000,AUDIO="a",SUBTITLES="s"\n'
+          'v.m3u8\n',
+        ),
+        'v.m3u8',
+      );
+    });
+  });
+
   group('range judgements', () {
     test('whole-body requests: no Range or bytes=0-', () {
       expect(isWholeBodyRangeRequest(null), isTrue);
