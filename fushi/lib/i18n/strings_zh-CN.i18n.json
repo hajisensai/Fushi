@@ -5482,11 +5482,11 @@
   "game_lookup_samples_auto_line_spacing_missing": "未能测出可靠行距，请换一张完整的两行或三行台词图。",
   "game_lookup_samples_auto_line_wrap_inconsistent": "按测得字宽无法复现样本换行。",
   "game_lookup_samples_auto_multiline": "请选择或采集一张完整的两行或三行台词；短句无法确定换行位置。",
-  "game_lookup_samples_auto_pending": "尚未自动对齐。黄框只需包含各行正文，点击“自动对齐”；无需先调字号、字距或逐字点中心。",
+  "game_lookup_samples_auto_pending": "尚未自动对齐。橙框只需包含各行正文，点击“自动对齐”；无需先调字号、字距或逐字点中心。",
   "game_lookup_samples_auto_preview_failed": "自动测量结果未能通过完整台词校验，未应用此次结果。",
   "game_lookup_samples_auto_preview_text_overflow": "拟合文字超出校准正文区。",
   "game_lookup_samples_auto_preview_unavailable": "原生排版预览不可用。",
-  "game_lookup_samples_auto_rows_missing": "未找到清晰的正文行。请检查黄框是否包含完整正文，且未包含姓名或界面按钮。",
+  "game_lookup_samples_auto_rows_missing": "未找到清晰的正文行。请检查橙框是否包含完整正文，且未包含姓名或界面按钮。",
   "game_lookup_samples_auto_sample_failed": "样本 $sample：$reason",
   "game_lookup_samples_auto_success": "已测出字格。确认每个框都包含对应文字、后续各行也对应，再应用即可。",
   "game_lookup_samples_auto_text_alignment_failed": "检测到的文字与 Hook 正文对应不足。",
@@ -5506,7 +5506,6 @@
   "game_lookup_samples_continuation_hint": "自定义第二行及后续行相对第一行的起点，所有文本使用同一数值；0 表示同一起点。",
   "game_lookup_samples_continuation_label": "文本续行",
   "game_lookup_samples_continuation_title": "续行起点",
-  "game_lookup_samples_current": "当前样本：第 $sample / $total 张",
   "game_lookup_samples_diagnostic": "诊断：${reason}${detail}",
   "game_lookup_samples_dialogue": "对话校准",
   "game_lookup_samples_empty": "还没有样本",
@@ -5545,5 +5544,7 @@
   "game_lookup_attached_calibration_region_help": "请在这里调整正文区域，或在样本编辑器的截图上拖框。游戏中的覆盖层只接收高亮字形探针。",
   "game_lookup_attached_calibration_text_changed": "台词已变化，请取消并重新打开校准，以当前台词重新确认。",
   "game_lookup_attached_calibration_unavailable": "校准暂不可用。请停止点击游戏台词，调整参数或取消校准。",
-  "game_line_bulk_text_hint": "检测到批量文本，已暂停逐字查词以避免卡顿。"
+  "game_line_bulk_text_hint": "检测到批量文本，已暂停逐字查词以避免卡顿。",
+  "game_lookup_samples_auto_align": "从截图自动对齐",
+  "game_lookup_samples_hint": "等台词完整显示后再采集。先采集几句不同台词，再调整排版。"
 }

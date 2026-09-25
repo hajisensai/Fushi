@@ -425,6 +425,33 @@ void main() {
     expect(store.saved.last.layout.characterAdvances, isEmpty);
   });
 
+  testWidgets('empty notebook offers capturing the current line', (
+    WidgetTester tester,
+  ) async {
+    final _MemoryStore store = _MemoryStore();
+    int captures = 0;
+    await _open(
+      tester,
+      store: store,
+      manual: false,
+      capture: () async {
+        captures++;
+        return _capture();
+      },
+    );
+    expect(find.text(t.game_lookup_samples_empty), findsOneWidget);
+    final Finder capture = find.byKey(
+      const ValueKey<String>('calibration-empty-capture'),
+    );
+    expect(capture, findsOneWidget);
+    await tester.tap(capture);
+    await tester.pump(const Duration(milliseconds: 450));
+    await tester.pumpAndSettle();
+    expect(captures, 1);
+    expect(find.byType(GalLookupCalibrationCanvas), findsOneWidget);
+    expect(capture, findsNothing);
+  });
+
   testWidgets('dialogue advanced settings expose manual layout entry', (
     WidgetTester tester,
   ) async {
@@ -1439,8 +1466,13 @@ void main() {
       );
       expect(find.text(t.game_lookup_samples_unavailable), findsNothing);
       expect(find.text(t.game_lookup_samples_auto_pending), findsOneWidget);
-      final TextButton apply = tester.widget<TextButton>(
-        find.widgetWithText(TextButton, t.game_lookup_samples_apply),
+      final ButtonStyleButton apply = tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text(t.game_lookup_samples_apply),
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is ButtonStyleButton,
+          ),
+        ),
       );
       expect(apply.onPressed, isNull);
       final Finder autoAlign = find.byKey(

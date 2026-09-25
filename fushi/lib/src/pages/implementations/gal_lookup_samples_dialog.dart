@@ -836,7 +836,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         child: Scaffold(
           appBar: AppBar(
             automaticallyImplyLeading: false,
-            title: Text(_title),
+            title: _canSwitchSlot ? _slotSwitch() : Text(_title),
             actions: [
               IconButton(
                 onPressed: _busy ? null : _capture,
@@ -849,7 +849,8 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                 icon: const Icon(Icons.delete_outline),
                 tooltip: t.game_lookup_samples_remove,
               ),
-              TextButton(
+              const SizedBox(width: 8),
+              FilledButton.icon(
                 onPressed:
                     _busy ||
                         !_canPreview ||
@@ -858,43 +859,18 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                         !_applyPreviewsAccepted
                     ? null
                     : () => _finish(apply: true),
-                child: Text(t.game_lookup_samples_apply),
+                icon: const Icon(Icons.sports_esports_outlined),
+                label: Text(t.game_lookup_samples_apply),
               ),
+              const SizedBox(width: 4),
               CloseButton(onPressed: _busy ? null : () => _finish()),
+              const SizedBox(width: 4),
             ],
           ),
           body: Column(
             children: [
               if (_busy || _previewRunning) const LinearProgressIndicator(),
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Text(
-                      _message ??
-                          (_canPreview
-                              ? t.game_lookup_samples_auto_hint
-                              : t.game_lookup_samples_auto_pending),
-                      style: _failed
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            )
-                          : null,
-                    ),
-                    if (_failed && _diagnosticDetail != null) ...<Widget>[
-                      const SizedBox(height: 4),
-                      SelectableText(
-                        t.game_lookup_samples_diagnostic(
-                          reason: _diagnosticDetail!,
-                          detail: '',
-                        ),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+              _statusBanner(),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -907,83 +883,65 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                               BoxConstraints constraints,
                             ) => Column(
                               children: [
-                                if (_showAdvanced)
+                                if (_samples.length > 1)
                                   ConstrainedBox(
                                     constraints: BoxConstraints(
                                       maxHeight: constraints.maxHeight * 0.2,
                                     ),
                                     child: SingleChildScrollView(
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                        ),
-                                        child: Wrap(
-                                          spacing: 6,
-                                          runSpacing: 6,
-                                          children: [
-                                            for (
-                                              int i = 0;
-                                              i < _samples.length;
-                                              i++
-                                            )
-                                              ChoiceChip(
-                                                label: Text('${i + 1}'),
-                                                selected: i == _selected,
-                                                onSelected: _busy
-                                                    ? null
-                                                    : (_) => setState(() {
-                                                        _selected = i;
-                                                        _hoverIndex = null;
-                                                      }),
-                                              ),
-                                          ],
-                                        ),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        8,
+                                        16,
+                                        0,
                                       ),
-                                    ),
-                                  )
-                                else if (_samples.length > 1)
-                                  Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      12,
-                                      8,
-                                      12,
-                                      0,
-                                    ),
-                                    child: Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Text(
-                                        t.game_lookup_samples_current(
-                                          sample: '${_selected + 1}',
-                                          total: '${_samples.length}',
-                                        ),
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: [
+                                          for (
+                                            int i = 0;
+                                            i < _samples.length;
+                                            i++
+                                          )
+                                            ChoiceChip(
+                                              label: Text('${i + 1}'),
+                                              selected: i == _selected,
+                                              showCheckmark: false,
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              onSelected: _busy
+                                                  ? null
+                                                  : (_) => setState(() {
+                                                      _selected = i;
+                                                      _hoverIndex = null;
+                                                    }),
+                                            ),
+                                        ],
                                       ),
                                     ),
                                   ),
                                 Expanded(
                                   child: Padding(
-                                    padding: const EdgeInsets.all(12),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      16,
+                                      12,
+                                      16,
+                                      8,
+                                    ),
                                     child: _image(),
                                   ),
                                 ),
-                                if (_sample != null)
-                                  SizedBox(
-                                    height: math.min(
-                                      _manualGridEdit ? 210 : 160,
-                                      constraints.maxHeight * 0.45,
-                                    ),
-                                    child: SingleChildScrollView(
-                                      child: _sampleControls(),
-                                    ),
-                                  ),
+                                if (_sample != null) _sampleControls(),
                               ],
                             ),
                       ),
                     ),
                     const VerticalDivider(width: 1),
                     SizedBox(
-                      width: 310,
+                      width: 340,
                       child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                         child: _controls(),
                       ),
                     ),
@@ -997,9 +955,194 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     );
   }
 
+  Widget _statusBanner() {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final TextTheme text = Theme.of(context).textTheme;
+    final Color foreground = _failed
+        ? colors.onErrorContainer
+        : colors.onSurfaceVariant;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _failed
+            ? colors.errorContainer
+            : colors.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Icon(
+            _failed ? Icons.error_outline : Icons.info_outline,
+            size: 18,
+            color: foreground,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  _message ??
+                      (_canPreview
+                          ? t.game_lookup_samples_auto_hint
+                          : t.game_lookup_samples_auto_pending),
+                  style: text.bodyMedium?.copyWith(color: foreground),
+                ),
+                if (_failed && _diagnosticDetail != null) ...<Widget>[
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    t.game_lookup_samples_diagnostic(
+                      reason: _diagnosticDetail!,
+                      detail: '',
+                    ),
+                    style: text.bodySmall?.copyWith(color: foreground),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptySamples() {
+    final TextTheme text = Theme.of(context).textTheme;
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: colors.outlineVariant),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.add_photo_alternate_outlined,
+                size: 48,
+                color: colors.onSurfaceVariant,
+              ),
+              const SizedBox(height: 12),
+              Text(t.game_lookup_samples_empty, style: text.titleMedium),
+              const SizedBox(height: 6),
+              Text(
+                t.game_lookup_samples_hint,
+                textAlign: TextAlign.center,
+                style: text.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.tonalIcon(
+                key: const ValueKey<String>('calibration-empty-capture'),
+                onPressed: _busy ? null : _capture,
+                icon: const Icon(Icons.add_photo_alternate_outlined),
+                label: Text(t.game_lookup_samples_capture),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stepHeader(int step, String title) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colors.primaryContainer,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '$step',
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: colors.onPrimaryContainer),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+        ),
+      ],
+    );
+  }
+
+  Widget _secondaryText(String value) => Text(
+    value,
+    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    ),
+  );
+
+  bool get _canSwitchSlot =>
+      widget.slot != null &&
+      (widget.onOpenNarrationCalibration != null ||
+          widget.onOpenDialogueCalibration != null);
+
+  /// Replaces the title when the other calibration slot can be opened.
+  Widget _slotSwitch() {
+    final GalLookupCalibrationSlotV1 slot = widget.slot!;
+    final Future<void> Function()? toNarration =
+        widget.onOpenNarrationCalibration;
+    final Future<void> Function()? toDialogue =
+        widget.onOpenDialogueCalibration;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: SegmentedButton<GalLookupCalibrationSlotV1>(
+        showSelectedIcon: false,
+        segments: <ButtonSegment<GalLookupCalibrationSlotV1>>[
+          ButtonSegment<GalLookupCalibrationSlotV1>(
+            value: GalLookupCalibrationSlotV1.dialogue,
+            icon: const Icon(Icons.format_quote_outlined),
+            enabled:
+                slot == GalLookupCalibrationSlotV1.dialogue ||
+                toDialogue != null,
+            label: Text(
+              t.game_lookup_samples_dialogue,
+              key: const ValueKey<String>('calibration-dialogue-settings'),
+            ),
+          ),
+          ButtonSegment<GalLookupCalibrationSlotV1>(
+            value: GalLookupCalibrationSlotV1.narration,
+            icon: const Icon(Icons.subject_outlined),
+            enabled:
+                slot == GalLookupCalibrationSlotV1.narration ||
+                toNarration != null,
+            label: Text(
+              t.game_lookup_samples_narration,
+              key: const ValueKey<String>('calibration-narration-settings'),
+            ),
+          ),
+        ],
+        selected: <GalLookupCalibrationSlotV1>{slot},
+        onSelectionChanged: _busy
+            ? null
+            : (Set<GalLookupCalibrationSlotV1> next) {
+                final Future<void> Function()? open =
+                    next.first == GalLookupCalibrationSlotV1.narration
+                    ? toNarration
+                    : toDialogue;
+                if (next.first != slot && open != null) {
+                  unawaited(_switchCalibrationSlot(open));
+                }
+              },
+      ),
+    );
+  }
+
   Widget _image() {
     final GalCalibrationSample? sample = _sample;
-    if (sample == null) return Center(child: Text(t.game_lookup_samples_empty));
+    if (sample == null) return _emptySamples();
     return GalLookupCalibrationCanvas(
       key: ValueKey<Object>(sample.capture),
       pngBytes: sample.capture.pngBytes,
@@ -1036,24 +1179,27 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         ? null
         : _preview?.boxForIndex(_hoverIndex!);
     return Padding(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (_canPreview)
-            Text(
-              hovered == null
-                  ? t.game_lookup_samples_hover
-                  : '「${sample.capture.sourceText.substring(hovered.charIndex, hovered.charIndex + hovered.charLength)}」 · ${hovered.charIndex + 1}',
-            ),
-          Text(t.game_lookup_samples_region_hint),
-          if (_manualGridEdit) ...<Widget>[
-            const SizedBox(height: 4),
-            Text(t.game_lookup_samples_grid_edit_hint),
-          ],
-          Text(
-            '${sample.capture.referenceClient.widthPx} × ${sample.capture.referenceClient.heightPx}',
-            style: Theme.of(context).textTheme.bodySmall,
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  !_canPreview
+                      ? t.game_lookup_samples_region_hint
+                      : hovered == null
+                      ? t.game_lookup_samples_hover
+                      : '「${sample.capture.sourceText.substring(hovered.charIndex, hovered.charIndex + hovered.charLength)}」 · ${hovered.charIndex + 1}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const SizedBox(width: 12),
+              _secondaryText(
+                '${sample.capture.referenceClient.widthPx} × ${sample.capture.referenceClient.heightPx}',
+              ),
+            ],
           ),
           if (_preview != null && !_preview!.accepted)
             Text(
@@ -1262,7 +1408,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           t.game_lookup_samples_continuation_title,
           style: Theme.of(context).textTheme.titleSmall,
         ),
-        Text(t.game_lookup_samples_continuation_hint),
+        _secondaryText(t.game_lookup_samples_continuation_hint),
         const SizedBox(height: 8),
         _continuationIndentControl(
           keyName: 'continuation-indent',
@@ -1280,7 +1426,17 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text(
+        if (_canSwitchSlot) ...<Widget>[
+          _secondaryText(t.game_lookup_samples_narration_hint),
+          const SizedBox(height: 20),
+        ],
+        _stepHeader(1, t.game_lookup_samples_search_title),
+        const SizedBox(height: 6),
+        _secondaryText(t.game_lookup_samples_search_hint),
+        const SizedBox(height: 20),
+        _stepHeader(2, t.game_lookup_samples_auto_align),
+        const SizedBox(height: 6),
+        _secondaryText(
           _fitAllSamples
               ? t.game_lookup_samples_auto_all_hint
               : t.game_lookup_samples_auto_current_hint,
@@ -1288,9 +1444,19 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         const SizedBox(height: 8),
         if (galCalibrationOcrModelStatus != null) ...[
           if (_ocrModel?.ready == true)
-            Text(t.manga_ocr_model_status_ready)
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.check_circle_outline,
+                  size: 16,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(child: _secondaryText(t.manga_ocr_model_status_ready)),
+              ],
+            )
           else ...[
-            Text(
+            _secondaryText(
               '${t.manga_ocr_model_status_missing} · '
               '${t.manga_ocr_model_download_size(size: '31 MB')}。'
               '${t.manga_ocr_engine_local_onnx_desc}',
@@ -1328,19 +1494,19 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
                 : t.game_lookup_samples_auto_align_current,
           ),
         ),
-        const Divider(),
-        Text(
-          t.game_lookup_samples_search_title,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        Text(t.game_lookup_samples_search_hint),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        const Divider(height: 1),
         ExpansionTile(
           key: const ValueKey<String>('calibration-advanced'),
           initiallyExpanded: _showAdvanced,
           tilePadding: EdgeInsets.zero,
-          title: Text(t.game_lookup_samples_advanced),
-          subtitle: Text(t.game_lookup_samples_advanced_hint),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          title: Text(
+            t.game_lookup_samples_advanced,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          subtitle: _secondaryText(t.game_lookup_samples_advanced_hint),
           onExpansionChanged: (bool value) =>
               setState(() => _showAdvanced = value),
           children: [
@@ -1395,49 +1561,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               _continuationIndentControls(grid),
               _specialCharacterControls(),
             ],
-            if (widget.slot == GalLookupCalibrationSlotV1.narration) ...[
-              const Divider(height: 24),
-              Text(
-                t.game_lookup_samples_narration_hint,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              if (widget.onOpenDialogueCalibration != null)
-                OutlinedButton.icon(
-                  key: const ValueKey<String>('calibration-dialogue-settings'),
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(
-                          _switchCalibrationSlot(
-                            widget.onOpenDialogueCalibration,
-                          ),
-                        ),
-                  icon: const Icon(Icons.format_quote_outlined),
-                  label: Text(t.game_lookup_samples_dialogue),
-                ),
-            ],
-            if (widget.slot == GalLookupCalibrationSlotV1.dialogue &&
-                widget.onOpenNarrationCalibration != null) ...<Widget>[
-              const Divider(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  key: const ValueKey<String>('calibration-narration-settings'),
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(
-                          _switchCalibrationSlot(
-                            widget.onOpenNarrationCalibration,
-                          ),
-                        ),
-                  icon: const Icon(Icons.subject_outlined),
-                  label: Text(t.game_lookup_samples_narration),
-                ),
-              ),
-              Text(
-                t.game_lookup_samples_narration_hint,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+            const SizedBox(height: 8),
           ],
         ),
       ],

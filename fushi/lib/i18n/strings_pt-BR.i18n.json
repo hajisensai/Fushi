@@ -5482,11 +5482,11 @@
   "game_lookup_samples_auto_line_spacing_missing": "Reliable line spacing could not be measured. Try a complete two- or three-line sample.",
   "game_lookup_samples_auto_line_wrap_inconsistent": "The measured character widths cannot reproduce the sample's line wrapping.",
   "game_lookup_samples_auto_multiline": "Select or capture one complete sample with two or more lines; a short line cannot determine the wrap position.",
-  "game_lookup_samples_auto_pending": "Not automatically aligned yet. Let the yellow frame contain each line of dialogue, then select “Align from screenshot”. You do not need to adjust font size, character spacing, or click character centres first.",
+  "game_lookup_samples_auto_pending": "Not automatically aligned yet. Let the orange frame contain each line of dialogue, then select “Align from screenshot”. You do not need to adjust font size, character spacing, or click character centres first.",
   "game_lookup_samples_auto_preview_failed": "The automatic measurement did not pass the complete-dialogue check, so this result was not applied.",
   "game_lookup_samples_auto_preview_text_overflow": "The fitted text exceeds the calibrated body region.",
   "game_lookup_samples_auto_preview_unavailable": "The native layout preview was unavailable.",
-  "game_lookup_samples_auto_rows_missing": "No clear dialogue lines were found. Check that the yellow frame contains the complete dialogue but not the speaker name or interface buttons.",
+  "game_lookup_samples_auto_rows_missing": "No clear dialogue lines were found. Check that the orange frame contains the complete dialogue but not the speaker name or interface buttons.",
   "game_lookup_samples_auto_sample_failed": "Sample $sample: $reason",
   "game_lookup_samples_auto_success": "Grid measured. Check that each box contains its character and that subsequent lines match before applying.",
   "game_lookup_samples_auto_text_alignment_failed": "The detected text does not match the hooked text closely enough.",
@@ -5506,7 +5506,6 @@
   "game_lookup_samples_continuation_hint": "Set where the second and later lines start relative to the first line. One value applies to all text; 0 keeps the same start.",
   "game_lookup_samples_continuation_label": "Text continuation",
   "game_lookup_samples_continuation_title": "Continuation line start",
-  "game_lookup_samples_current": "Current sample: $sample of $total",
   "game_lookup_samples_diagnostic": "Diagnostic: ${reason}${detail}",
   "game_lookup_samples_dialogue": "Dialogue calibration",
   "game_lookup_samples_empty": "No samples yet",
@@ -5545,5 +5544,7 @@
   "game_lookup_attached_calibration_region_help": "Adjust the region here, or drag it over a screenshot in the sample editor. The game overlay only accepts highlighted character probes.",
   "game_lookup_attached_calibration_text_changed": "The dialogue changed. Cancel and reopen calibration for the current line.",
   "game_lookup_attached_calibration_unavailable": "Calibration is unavailable. Stop clicking the game dialogue; adjust the parameters or cancel calibration.",
-  "game_line_bulk_text_hint": "Bulk text detected. Character lookup is paused."
+  "game_line_bulk_text_hint": "Bulk text detected. Character lookup is paused.",
+  "game_lookup_samples_auto_align": "Align from screenshot",
+  "game_lookup_samples_hint": "Wait until the line is fully visible, then capture it. Capture several different lines before adjusting the layout."
 }
