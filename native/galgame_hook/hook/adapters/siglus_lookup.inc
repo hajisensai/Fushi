@@ -444,7 +444,13 @@ bool SameSiglusMeasuredAnchors(const fushi_voice_hook::SiglusLookupProfile& lhs,
       lhs.get_key_state_return_rva == rhs.get_key_state_return_rva &&
       lhs.get_keyboard_state_return_rva == rhs.get_keyboard_state_return_rva &&
       lhs.input_message_rva == rhs.input_message_rva &&
-      lhs.main_input_message_return_rva == rhs.main_input_message_return_rva;
+      lhs.main_input_message_return_rva == rhs.main_input_message_return_rva &&
+      // 选项调用点是可选锚点（BUG-2712）：已测哈希表（rhs）里为 0 表示测量时没
+      // 记这一项，不能拿它否决现场结构解析出的非 0 值——否则已测作品（如 SPRB）
+      // 只要 exe 里也有选项签名，整条台词查词就会因「锚点不一致」被拒。已测
+      // 非 0 时照常要求一致。
+      (rhs.selection_glyph_return_rva == 0 ||
+       lhs.selection_glyph_return_rva == rhs.selection_glyph_return_rva);
 }
 
 bool IsSiglusLookupProfileMatched() {
@@ -581,6 +587,12 @@ bool IsSiglusExactBinaryStructureMatched(
       (executable_rva(profile->exact_text_return_rva) &&
        fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
            image, profile->exact_text_return_rva, profile->exact_text_rva));
+  const bool selection_call_valid =
+      profile->selection_glyph_return_rva == 0u ||
+      (executable_rva(profile->selection_glyph_return_rva) &&
+       fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
+           image, profile->selection_glyph_return_rva,
+           profile->glyph_layout_rva));
   const bool matched =
       opened && executable_rva(profile->glyph_layout_rva) &&
       executable_rva(profile->dialogue_glyph_return_rva) &&
@@ -599,7 +611,7 @@ bool IsSiglusExactBinaryStructureMatched(
       fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
           image, profile->dialogue_glyph_return_rva,
           profile->glyph_layout_rva) &&
-      exact_text_call_valid &&
+      exact_text_call_valid && selection_call_valid &&
       fushi_voice_hook::exact_lookup::MatchesExecutableCallEndingAt(
           image, profile->get_key_state_return_rva) &&
       fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
@@ -661,7 +673,8 @@ thread_local fushi_voice_hook::siglus_eightarg_glyph_batch::Collector
     g_siglus_eightarg_glyph_batch;
 
 void PublishSiglusLookupGlyphRecord(uint16_t code_unit, int32_t design_x,
-                                   int32_t design_y, int32_t extent, bool invalid) {
+                                   int32_t design_y, int32_t extent, uint16_t kind) {
+  const bool invalid = kind == kSiglusLookupGlyphEventInvalidation;
   if (!invalid && (code_unit == 0 || extent <= 0))
     return;
   const auto* profile = ActiveSiglusLookupProfile();
@@ -675,7 +688,7 @@ void PublishSiglusLookupGlyphRecord(uint16_t code_unit, int32_t design_x,
       &g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
   InterlockedExchange64(&event->seq, 0);
   event->code_unit = code_unit;
-  event->reserved = invalid ? 1 : 0;
+  event->kind = kind;
   event->design_x = design_x;
   event->design_y = design_y;
   event->extent = extent;
@@ -685,8 +698,9 @@ void PublishSiglusLookupGlyphRecord(uint16_t code_unit, int32_t design_x,
 }
 
 void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t design_x,
-                                   int32_t design_y, int32_t extent) {
-  PublishSiglusLookupGlyphRecord(code_unit, design_x, design_y, extent, false);
+                                   int32_t design_y, int32_t extent,
+                                   uint16_t kind = kSiglusLookupGlyphEventBody) {
+  PublishSiglusLookupGlyphRecord(code_unit, design_x, design_y, extent, kind);
 }
 void PublishSiglusLookupGlyphInvalidation() {
   g_siglus_eightarg_glyph_batch.Reset();
@@ -1016,7 +1030,56 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
 }
 
 
+// A tick that does not put a frame up clears it, covering every early return
+// (lookup off, geometry retired, window or view lost, cursor elsewhere).
+struct SiglusLookupHighlightScope {
+  bool keep = false;
+  ~SiglusLookupHighlightScope() {
+    if (!keep) ClearLookupHoverHighlight();
+  }
+};
+
+// Hover frame while no card is up; looked-up term frame while one is. Both
+// use the committed line geometry, so a tick landing mid-redraw does not blink.
+bool UpdateSiglusLookupHighlight(HWND game, const POINT& origin,
+                                 int32_t client_width, int32_t client_height,
+                                 const fushi_voice_hook::SiglusLookupEngineView& view) {
+  const auto* profile = ActiveSiglusLookupProfile();
+  if (profile == nullptr || !g_siglus_lookup_layout.line_has_complete_layout ||
+      GetForegroundWindow() != game)
+    return false;
+  const bool popup_visible =
+      IsLookupOverlayInputShieldVisible() ||
+      (GetValidPublishedSiglusSampledInputShieldPopup(game) != nullptr &&
+       IsSiglusSampledInputShieldReadyPublished(game));
+  fushi_voice_hook::SiglusLookupRect box;
+  if (popup_visible) {
+    uint32_t start = 0, length = 0;
+    if (g_siglus_lookup_term_generation != g_siglus_lookup_layout.generation ||
+        !ReadLookupTermHighlight(&start, &length) ||
+        !fushi_voice_hook::SiglusLookupTermRect(
+            *profile, view, g_siglus_lookup_layout.geometry, start, length,
+            client_width, client_height, &box))
+      return false;
+  } else {
+    POINT cursor = {};
+    if (!GetCursorPos(&cursor)) return false;
+    const HWND point_window = WindowFromPoint(cursor);
+    if (point_window == nullptr ||
+        (point_window != game && !IsChild(game, point_window)) ||
+        !fushi_voice_hook::SiglusLookupHoverCell(
+            *profile, view, g_siglus_lookup_layout.geometry,
+            cursor.x - origin.x, cursor.y - origin.y, client_width,
+            client_height, &box))
+      return false;
+  }
+  RequestLookupHoverHighlight(origin.x + box.x, origin.y + box.y, box.width,
+                              box.height);
+  return true;
+}
+
 void ProcessSiglusLookupTick() {
+  SiglusLookupHighlightScope highlight;
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       g_header->lookup_enabled == 0) {
@@ -1112,6 +1175,10 @@ void ProcessSiglusLookupTick() {
         fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
         fushi_voice_hook::kLookupGeometryProviderIdSiglus);
   }
+
+  highlight.keep = UpdateSiglusLookupHighlight(
+      game, origin, client.right - client.left, client.bottom - client.top,
+      engine_view);
 
   const bool click_submitted = ProcessSiglusLookupClickSubmissions();
 

@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include <cstdint>
 #include <iostream>
 #include <string>

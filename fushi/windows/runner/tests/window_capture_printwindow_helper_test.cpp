@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include <windows.h>
 
 #include <cstdlib>
