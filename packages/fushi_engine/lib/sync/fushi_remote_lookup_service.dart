@@ -130,6 +130,15 @@ abstract class FushiRemoteMiningService {
     required String reading,
   });
 
+  /// Issue #1409：浏览器扩展查词弹窗的 ↗「在 Anki 中打开这个词的卡」。与 app 内
+  /// `openInAnki` 桥（`overlay_bridge_handlers._handleOpenInAnkiBridge`）同一
+  /// `repo.openWordInAnki`——判据与画 ✓ 的查重一致（BUG-2051）。实现方不得抛：
+  /// 后端不可达/未配置/异常一律回 [AnkiOpenWordOutcome.failed]。
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  });
+
   // ── 互联 Lapis 客制化：主机端 note type 模板读写 ──────────────────────
   //
   // 开启「制卡到已配对设备」时卡片落在**主机**的 Anki 上，改客户端本机卡型

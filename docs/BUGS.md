@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2479 条。点号进各自文件。
+> 共 2480 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2699](bugs/BUG-2699-system-proxy-stale-cache.md) | ✅ | ✅ | 自动代理模式只在启动时读取系统代理 |
+| [BUG-2698](bugs/BUG-2698-extension-open-in-anki.md) | ✅ | ✅ | 浏览器扩展「在 Anki 中打开」未接通 |
 | [BUG-2697](bugs/BUG-2697-youtube-bridge-trusted-types.md) | ✅ | ✅ | YouTube MAIN world 解析字幕触发 TrustedHTML 报错 |
 | [BUG-2693](bugs/BUG-2693-lnreader-cover-load.md) | ✅ | ✅ | LNReader 源作品列表封面大量加载失败（相对地址被丢、无 UA/Referer/CF cookie、无磁盘缓存） |
 | [BUG-2692](bugs/BUG-2692-emby-mining-ffmpeg-direct-tls.md) | ✅ | ✅ | Emby/Jellyfin 能播放但制卡三条抽取全报 I/O error |
