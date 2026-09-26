@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2487 条。点号进各自文件。
+> 共 2488 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2704](bugs/BUG-2704-kirikiri-disc-chs-notice-before-entry.md) | ✅ | ✅ | 千恋＊万花光盘版汉化 exe 在 TLS 回调里弹声明框，Fushi 早注入就绪超时 |
 | [BUG-2703](bugs/BUG-2703-kirikiri-japanese-named-se-as-voice.md) | 🚧 | 🚧 | KiriKiri 日文命名的 SE 被当作语音候选配对（喫茶ステラ） |
 | [BUG-2702](bugs/BUG-2702-kirikiri-encrypted-member-voice-duplicate.md) | ✅ | ✅ | KiriKiri 插件层加密成员的密文被当语音落盘并与真语音拼接（喫茶ステラ） |
 | [BUG-2701](bugs/BUG-2701-kirikiri-tls-callback-early-inject-hang.md) | ✅ | ✅ | 带 TLS 回调的加壳 exe 被早注入卡死（喫茶ステラ 汉化版 Enigma） |

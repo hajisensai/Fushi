@@ -1,0 +1,12 @@
+## BUG-2704 · 千恋＊万花光盘版汉化 exe 在 TLS 回调里弹声明框，Fushi 早注入就绪超时
+- **报告**：2026-09-26（用户转述群友：正版千恋＊万花「Steam 版能用，反而光驱版不行」）
+- **真实性**：✅ 真 bug，原始路径精确复现。光盘版整合包（`[160729][ゆずソフト] 千恋＊万花`）目录内有两个入口：日文原版 `SenrenBanka.exe`（SHA-256 `5b9cdea0a8c5b22cfb1a7df2ecb2e01484a190dce31b2cd6d6b101b178645727`，无 TLS 回调）与汉化 `SenrenBankaCHS.exe`（`2369627f97a0de5222781e456e4abe9679d24a39e0b35f15e04f4184a59f3153`，Enigma：`.enigma1/.enigma2/.newimp`，1 个 TLS 回调）。汉化 exe 在 TLS 回调里（入口点之前）弹汉化组声明框「重要信息」，等用户点「确定」。Steam 正版自带官方中文、不需要这个 exe，所以只有光盘版玩家撞上。
+  - 旧构建（develop 9/25 Debug 注入器，`--launch --hold`）：`kernel32 target=00000000` → 远程 `LoadLibraryW wait=258 exit=0x103`（声明框挂在注入线程上）→ `readyTimeout` rc=2 → 宿主只能降级。
+  - BUG-2701 的加载器初始化门只修了一半：主线程合法地停在声明框上，门 20 s 超时后退回旧方式，照样卡住；宿主 `_InjectorReadyWait`（`fushi/lib/src/mining/galgame_audio_source.dart`）30 s 预算也会在用户读框时耗尽。
+  - 转区不是原因：两个 exe 在 auto 档下都判 `not_needed`（目录内 GBK 汉化说明，`dir_text_gbk`），不会走 Locale Emulator。
+- **[x] ① 已修复** — 提交 `6480d3fb0cc`：`native/galgame_hook/injector/injector_main.cpp` `RunLoaderInitGate` 只把「目标没有任何可见 UI」的时间计入 20 s 超时（`ProcessHasVisibleTopLevelWindow`），等待用户期间向 stdout 报 `WAIT pid=<n> reason=user`、结束报 `reason=none`；壳自己改写入口字节时立刻结束门且不写回解密前的原字节。宿主 `parseInjectorUserWait` + `_InjectorReadyWait.userInteraction` 在等待期间暂停就绪计时、结束后重给一整段预算；旧宿主忽略该行。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_launcher_wait_test.dart`（等用户超过预算仍能接受 hook / 等待结束后预算重新计时并能超时 / 等待中 helper 退出能收尾）；`fushi/test/mining/galgame_audio_test.dart`（WAIT 解析严格性 + native `printf` 格式与 Dart 解析的契约守卫）；`native/galgame_hook/tests/adapter_structure_test.py::test_launch_runs_loader_init_gate_before_injection`（UI 时间不计超时、报 WAIT、入口被改写时不写回原字节）。
+- **备注**：
+  - 修复后真机：`[loader-gate] exe declares 1 TLS callback(s)` → 0.5 s `WAIT pid=… reason=user` → 35 s 内不超时。日文原版 `SenrenBanka.exe` 不过门，`OK hooked`、LunaHook 连上、存活，行为不变。
+  - **未能端到端跑通汉化 exe**：点掉声明框后这个整合包自身报「警告：丢失以下文件：patch.xp3」（文件实际存在；不经 Fushi 直接启动同样报，与注入无关），之后声明框在合成输入下反复重弹。汉化 exe 进入游戏后的文本 / 语音 / 查词未验证。
+  - x86 CTest 118/118、x64 114/114、结构守卫 54/54、定向 `flutter test` 98/98 通过。
