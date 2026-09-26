@@ -218,7 +218,7 @@ class RecommendedDictionary {
   final String? langCode;
 
   /// TODO-1075：本条目对应的**远端 index.json 可访问 URL**（供在线更新检查拉
-  /// revision 比对；见 [DictionaryUpdateService.fetchRemoteIndex]）。
+  /// revision 比对；见 [DictionaryUpdateService.fetchRemoteIndexResult]）。
   ///
   /// 只有确实提供「与 zip 分离的、可 HTTP GET 到 index.json」端点的来源才非 null：
   /// - yomidevs `jmdict-yomitan` releases：sibling `<X>.json`（把 `.zip` 换 `.json`，

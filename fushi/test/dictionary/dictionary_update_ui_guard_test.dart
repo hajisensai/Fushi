@@ -68,9 +68,35 @@ void main() {
         reason: '更新链路不得回退到按 title 判重的 force 重导（BUG-1595 旧陷阱）');
   });
 
-  test('比对走 DictionaryUpdateService（fetchRemoteIndex + needsUpdate）', () {
-    expect(src.contains('DictionaryUpdateService.fetchRemoteIndex'), isTrue);
+  test('比对走 DictionaryUpdateService（fetchRemoteIndexResult + needsUpdate）', () {
+    expect(
+        src.contains('DictionaryUpdateService.fetchRemoteIndexResult'), isTrue);
     expect(src.contains('DictionaryUpdateService.needsUpdate'), isTrue);
+  });
+
+  // BUG-2707：手动（单本 / 全部）与启动自动更新三条链路都必须按远端 index 声明的
+  // 新版地址下载、并把它回写进 metadata。本地记录的 downloadUrl 可能钉在旧版本
+  // 目录（Pixiv Light）或旧包名（COBUILD8），拿它下载等于把旧包重导一遍。
+  test('BUG-2707：更新链路按远端 index 的新版地址下载与回写', () {
+    final String appModelSrc =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    for (final MapEntry<String, String> e in <String, String>{
+      'dictionary_dialog_page.dart': src,
+      'app_model.dart': appModelSrc,
+    }.entries) {
+      expect(e.value.contains('remote.resolveDownloadUrl('), isTrue,
+          reason: '${e.key}：下载地址必须取远端 index 声明的新版');
+      expect(e.value.contains('remote.updatedSourceMetadata('), isTrue,
+          reason: '${e.key}：回写来源必须推进到远端地址');
+      expect(
+          RegExp(r"'downloadUrl':\s*(dictionary|d)\.downloadUrl")
+              .hasMatch(e.value),
+          isFalse,
+          reason: '${e.key}：不得把本地旧 downloadUrl 原样回写');
+      expect(
+          RegExp(r'url:\s*dictionary\.downloadUrl').hasMatch(e.value), isFalse,
+          reason: '${e.key}：不得直接拿本地旧 downloadUrl 下载');
+    }
   });
 
   test('在线下载落来源（catalog 回填 downloadUrl，可更新源再补 isUpdatable+indexUrl）', () {
