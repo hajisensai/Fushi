@@ -210,6 +210,12 @@ void main() {
       // 见 auto_reposition_repository_delegation_test）。这里的
       // `_inner.openWordInAnki(...)` 是转发上面三条车道的调用，不是新起一处。
       'lib/src/anki/auto_reposition_anki_repository.dart',
+      // Issue #1409 / BUG-2698：浏览器扩展车道。扩展弹窗跑在浏览器里、够不着
+      // overlay bridge，只能经本机 API（`POST /api/anki/open`）进来；
+      // `_AppModelRemoteLookupService.openWordInAnki` 是那条端点的服务实现，
+      // 与 overlay bridge 同一 `repo.openWordInAnki(expression, reading)` 一行，
+      // 不另拼判据。
+      'lib/src/models/app_model.dart',
     };
     expect(
       filesWhere('lib', (String code) => code.contains('.openWordInAnki(')),

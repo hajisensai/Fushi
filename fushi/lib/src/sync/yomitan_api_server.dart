@@ -57,6 +57,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/lookup/audio',
   '/api/mine',
   '/api/duplicate',
+  '/api/anki/open',
 };
 
 /// TODO-2936：「浏览器」媒体类型 Profile 绑定的触发端点集合——真正代表「用户正在
@@ -384,6 +385,9 @@ class YomitanApiServer {
         return _lookupRoutes.handleAnkiNoteType(request, path);
       case '/api/duplicate':
         return _lookupRoutes.handleDuplicate(request);
+      // Issue #1409：弹窗 ↗「在 Anki 中打开」（与 app 内 openInAnki 桥同一 repo 方法）。
+      case '/api/anki/open':
+        return _lookupRoutes.handleOpenInAnki(request);
       case '/api/extension/popup-size':
         return _handleExtensionPopupSize(request);
       case '/api/extension/study':
@@ -672,7 +676,7 @@ class YomitanApiServer {
   }
 
   // /api/mine、/api/mine/forward、/api/anki/note-type/*、/api/duplicate、
-  // /api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
+  // /api/anki/open、/api/lookup/audio[/file] 的 handler 正文在 [RemoteLookupRoutes]（与
   // FushiSyncServer 共用）；扩展默认指向本 server（19633），故那是真正被命中的路径。
 
   /// A（BUG-783 后续）：浏览器扩展抓 YouTube 网页视频**真整集字幕**端点——复用 app 内已

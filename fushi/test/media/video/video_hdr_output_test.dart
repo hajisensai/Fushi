@@ -157,7 +157,7 @@ void main() {
       }
     });
 
-    test('非 Windows（mac/iOS/Android 无 gpu-next）：任何模式都提示', () {
+    test('Linux（系统 libmpv，无补丁）：任何模式都提示', () {
       for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
         expect(
           dolbyVisionColorsUnsupported(
@@ -169,6 +169,55 @@ void main() {
           reason: m.name,
         );
       }
+    });
+
+    test('macOS / iOS / Android：随包 gl_video 自带重整，任何模式都不提示', () {
+      for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: false,
+            isApple: true,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isFalse,
+          reason: 'apple ${m.name}',
+        );
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: false,
+            isAndroid: true,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isFalse,
+          reason: 'android ${m.name}',
+        );
+      }
+    });
+
+    test('Android DV P5 强制软解（mediacodec 不解析 RPU），其它平台 / 非 DV 不动', () {
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: true,
+          sourceDolbyVision: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: true,
+          sourceDolbyVision: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: false,
+          sourceDolbyVision: true,
+        ),
+        isFalse,
+      );
     });
 
     test('Windows：只有用户关了 HDR 输出才提示', () {

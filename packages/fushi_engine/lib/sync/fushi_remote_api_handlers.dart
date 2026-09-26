@@ -388,6 +388,25 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   return <String, dynamic>{'duplicate': duplicate};
 }
 
+/// Issue #1409：`POST /api/anki/open` 的响应体。[body] 需含非空 `expression`
+/// （+可选 `reading`），缺失抛 [FormatException]（调用方转 400）。回
+/// `{outcome: 'opened' | 'noMatch' | 'failed'}`——正是弹窗 `openWordInAnki` 认的三态名
+/// （[AnkiOpenWordOutcome.name]），经注入的 [mining].openWordInAnki 复用 app 内同一
+/// `repo.openWordInAnki`。
+Future<Map<String, dynamic>> buildRemoteOpenInAnkiResponse(
+  Map<String, dynamic> body, {
+  required FushiRemoteMiningService mining,
+}) async {
+  final String expression = body['expression']?.toString() ?? '';
+  final String reading = body['reading']?.toString() ?? '';
+  if (expression.trim().isEmpty) {
+    throw const FormatException('Missing expression');
+  }
+  final AnkiOpenWordOutcome outcome =
+      await mining.openWordInAnki(expression: expression, reading: reading);
+  return <String, dynamic>{'outcome': outcome.name};
+}
+
 /// `POST /api/anki/note-type/read` 的响应体。互联 Lapis 客制化：手机端（AnkiDroid /
 /// AnkiMobile 没有改已存在模板的平台 API）经互联读主机端 note type 完整定义，供可视化
 /// 编辑器拿真实基线、备份与漂移判定。[body] 需含 `modelName`（非空），缺失/类型错抛

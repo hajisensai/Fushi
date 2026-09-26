@@ -62,6 +62,13 @@ class _FakeMining implements FushiRemoteMiningService {
   Future<bool> isDuplicate(
           {required String expression, required String reading}) async =>
       false;
+
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async =>
+      AnkiOpenWordOutcome.failed;
 }
 
 void main() {

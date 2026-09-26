@@ -61,17 +61,9 @@ void main() {
       'black-theme',
     ];
     final List<List<Color>> swatches = darkKeys.map((String key) {
-      final ({
-        Color seed,
-        Brightness brightness,
-        DynamicSchemeVariant variant
-      }) preset = AppModel.themePresets[key]!;
+      final ThemePreset preset = AppModel.themePresets[key]!;
       return fushiSchemeSwatchColors(
-        buildFushiColorScheme(
-          seedColor: preset.seed,
-          brightness: preset.brightness,
-          variant: preset.variant,
-        ),
+        AppModel.buildPresetColorScheme(preset, preset.brightness),
       );
     }).toList();
     // 每一对暗色预设的四色组合都必须不同（不存在两个完全一样的暗色色板）。

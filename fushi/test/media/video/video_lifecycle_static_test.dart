@@ -358,7 +358,8 @@ void main() {
         // 字幕抑制（多行调用）：用其首行锚定。
         'buildSubtitleSuppressionProperties(),',
         'await applyShadersToPlayer(player, _shaderPaths);',
-        'await applyMpvConfigToPlayer(player, _mpvConfig);',
+        // BUG-2691：实参包了一层 _mpvConfigForCurrentSource(...)，锚点用调用头。
+        'await applyMpvConfigToPlayer(',
         'await player.setVolume(initialVolume);',
         'await player.setRate(initialSpeed);',
       ];

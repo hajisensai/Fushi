@@ -115,7 +115,7 @@
     { key: 'fushi', seed: FUSHI_SEED, brightness: null, neutral: false, labelKey: 'theme_preset_fushi' },
     { key: 'light-theme', seed: '#1f4959', brightness: 'light', neutral: false, labelKey: 'theme_preset_light' },
     { key: 'ecru-theme', seed: '#8b7355', brightness: 'light', neutral: false, labelKey: 'theme_preset_ecru' },
-    { key: 'water-theme', seed: '#4a7c8f', brightness: 'light', neutral: false, labelKey: 'theme_preset_water' },
+    { key: 'water-theme', seed: '#3a6ea5', brightness: 'light', neutral: false, labelKey: 'theme_preset_water' },
     { key: 'eyecare-theme', seed: '#5e8c63', brightness: 'light', neutral: false, labelKey: 'theme_preset_eyecare' },
     { key: 'gray-theme', seed: '#5c6b73', brightness: 'dark', neutral: true, labelKey: 'theme_preset_gray' },
     { key: 'dark-theme', seed: '#1f4959', brightness: 'dark', neutral: false, labelKey: 'theme_preset_dark' },

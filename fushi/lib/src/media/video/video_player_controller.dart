@@ -1694,8 +1694,19 @@ class VideoPlayerController extends ChangeNotifier
     _mpvConfig = config;
     final Player? player = _player;
     if (player == null) return;
-    await applyMpvConfigToPlayer(player, config);
+    await applyMpvConfigToPlayer(player, _mpvConfigForCurrentSource(config));
   }
+
+  /// BUG-2691：Android 上服务器元数据已知是 DV P5 的片源，本次开片强制软解
+  /// （[shouldForceSoftwareDecodeForDolbyVision]）。只改实际下发的值，用户设置原样
+  /// 保存在 [_mpvConfig]；下一个非 DV 片源开片时照常按用户设置下发。
+  VideoMpvConfig _mpvConfigForCurrentSource(VideoMpvConfig config) =>
+      shouldForceSoftwareDecodeForDolbyVision(
+        isAndroid: Platform.isAndroid,
+        sourceDolbyVision: _sourceDolbyVisionHint,
+      )
+          ? config.copyWith(hwdec: 'no')
+          : config;
 
   /// 加载视频并开始播放准备：实例化 [Player] / [VideoController]、打开视频、
   /// 可选挂载外挂字幕、设置初速、seek 到初始位置、订阅播放态、启动 125ms tick。
@@ -1863,7 +1874,9 @@ class VideoPlayerController extends ChangeNotifier
       _videoController = VideoController(
         player,
         configuration: VideoControllerConfiguration(
-          hwdec: resolvePlatformHwdec(mpvConfig.hwdec),
+          hwdec: resolvePlatformHwdec(
+            _mpvConfigForCurrentSource(mpvConfig).hwdec,
+          ),
         ),
       );
       // 测试 / 取证钩子（与 runner 的 FUSHI_TEST_* 同类）：FUSHI_TEST_MPV_LOG_FILE 指定
@@ -2092,7 +2105,7 @@ class VideoPlayerController extends ChangeNotifier
 
     // 应用 mpv 画质/解码配置（五平台 libmpv 生效；仅非 libmpv 后端 / 不支持属性 no-op）。
     _mpvConfig = mpvConfig;
-    await applyMpvConfigToPlayer(player, _mpvConfig);
+    await applyMpvConfigToPlayer(player, _mpvConfigForCurrentSource(_mpvConfig));
     if (!_isCurrentLoad(player, loadToken)) return; // mpv 配置下发后换片/销毁。
 
     initialVolume = initialVolume.clamp(0.0, 100.0).toDouble();
@@ -3171,6 +3184,8 @@ class VideoPlayerController extends ChangeNotifier
   void _refreshDolbyVisionColorsUnsupported() {
     dolbyVisionColorsUnsupportedNotifier.value = dolbyVisionColorsUnsupported(
       isWindows: Platform.isWindows,
+      isApple: Platform.isMacOS || Platform.isIOS,
+      isAndroid: Platform.isAndroid,
       mode: _hdrOutputMode,
       sourceDolbyVision: _hdrSourceIsDolbyVision,
     );
