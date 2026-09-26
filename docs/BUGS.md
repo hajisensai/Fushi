@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2696](bugs/BUG-2696-manga-local-ocr-current-page-last.md) | ✅ | ✅ | 本地 OCR 整卷任务不从当前页开始，读到第 30 页要等前 29 页识别完 |
 | [BUG-2695](bugs/BUG-2695-manga-reader-dead-chapter-switches.md) | ✅ | ✅ | 漫画阅读器设置里跳过已读/已过滤/重复章节与章节过渡四个开关不生效 |
 | [BUG-2692](bugs/BUG-2692-emby-mining-ffmpeg-direct-tls.md) | ✅ | ✅ | Emby/Jellyfin 能播放但制卡三条抽取全报 I/O error |
 | [BUG-2691](bugs/BUG-2691-dovi-p5-inverted-colors.md) | ✅ | ✅ | Emby 杜比视界 Profile 5 片源画面紫绿反色 |
