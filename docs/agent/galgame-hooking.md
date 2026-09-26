@@ -11,6 +11,7 @@
 - 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
 - **适配成功 = 四条同时满足**（根 `CLAUDE.md`「Galgame Hook 硬规则」）：文本 hook、对应语音（非纯 Loopback）、游戏内内嵌查词、点击查词能查到且不推进剧情；缺一条只算部分适配，汇报时逐条给证据。
+- 引擎适配的排期（玩家多 → 小众）与完成度看板见 [docs/specs/2026-09-26-galgame-engine-adaptation-roadmap.md](../specs/2026-09-26-galgame-engine-adaptation-roadmap.md)。
 - **只做引擎级适配**（根 `CLAUDE.md`「Galgame Hook 硬规则」）：单款游戏的失败要修成所属引擎/引擎变体的通用判据与生命周期，不新增按 exe 哈希、文件名或标题写死的 profile/特判；判据取自引擎结构特征，并用同引擎多版本样本 + 他引擎负向样本验证。
 - 先记录游戏名、版本、exe 架构、启动器与真实游戏进程关系、原始失败路径；没有真实样本证据时只能标记 `implemented_unverified`，不得写成“已支持”。
 - 不收集、提交或上传游戏 exe、脚本、图片、语音、归档密钥等受版权或敏感内容。诊断包也遵守同一边界。
