@@ -15,9 +15,9 @@ import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 /// **逐帧行走文件，不走日志**：`ametadata=print` 带 `file=` 把逐帧行写进临时文件，再由
 /// Dart 读回解析。此前只打 stderr，桌面 CLI 读子进程管道没问题，移动端 ffmpeg-kit 却要把
 /// 每一行日志跨 JNI / 平台通道异步搬回来（20ms 窗口抽 20 分钟 = 6 万帧、12 万条日志），
-/// `getOutput` 默认只等 5 秒异步日志——结果不全或为空，波形对轴在 Android / iOS 从来打不开
-/// （「可视化字幕调轴只有 Windows 有」）。文件通道与后端无关，五端同一条数据路径；stderr
-/// 仍作兜底解析（极旧的 ffmpeg 不认 `file=` 时）。
+/// `getOutput` 默认只等 5 秒尚未送达的异步日志——此前的实现与注释都记录移动端拿不到逐帧行，
+/// 用户侧表现是「可视化字幕调轴只有 Windows 有」。文件通道不经日志，与后端无关，五端同一条
+/// 数据路径；stderr 仍作兜底解析（极旧的 ffmpeg 不认 `file=` 时）。
 ///
 /// **降级**：ffmpeg 不可用/超时/两路都拿不到逐帧行——此时返回空包络，调用方靠
 /// `subtitle_auto_align` 的置信门控安全降级（不写穿延迟），并 `debugPrint` 诊断而非静默。
@@ -39,6 +39,10 @@ const int kSubtitleWaveformWindowMs = 20;
 /// 从 t=0 同 binMs 起、截到同一上界，相位一致不偏。0 或负值表示不截断（抽整轨）。
 const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 
+/// [buildFfmpegPcmEnvelopeArgs] 记完逐帧 RMS 后，把音频拼回多大的输出帧（秒）。
+/// 小帧直接进 null 复用器的逐帧开销比 astats 本身还大，见该函数文档。
+const int _kEnvelopeOutputFrameSeconds = 6;
+
 /// **纯函数**：构造抽取逐帧音频 RMS 能量的 ffmpeg 参数。
 ///
 /// 关键链路（必须 `astats` + `ametadata=print` **配对**）：
@@ -47,6 +51,11 @@ const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 ///   每块对应一个分析窗口（≈[windowMs] 毫秒）。
 /// - `astats=metadata=1:reset=1`：对**每个**样本块算统计并写进 frame metadata
 ///   （`reset=1` 让统计逐块复位，否则只在 EOF 出一条汇总——单 `astats` 的陷阱）。
+///   `measure_perchannel=none:measure_overall=RMS_level` 只算我们要的那一项：默认 astats
+///   每块要算二十来项统计（峰值 / 直流 / 熵 / 过零率……），全都被丢掉。实测 20 分钟音频
+///   20ms 窗口（6 万块）在桌面 ffmpeg 7.1 上 28.5s → 12.3s、逐帧输出逐字节相同；移动端
+///   ffmpeg-kit（6.0）同样认这两个选项（FFmpeg 4.4 起），手机上这一步的耗时决定波形
+///   能不能在超时内出来。
 /// - `ametadata=print:key=lavfi.astats.Overall.RMS_level`：把每块的 RMS_level 连同
 ///   `pts_time` 打出来（这步才让逐帧能量「可见」，否则 astats 只是写进 metadata
 ///   没人读）。给了 [metadataFilePath] 时追加 `:file=<转义路径>` 写进该文件（见文件头：
@@ -65,6 +74,10 @@ const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 ///   → 整条命令在打开输出阶段 `Encoder not found` 硬失败 → 零逐帧 RMS 行 → 空包络 →
 ///   **对轴界面波形完全不显示**。`-vn` 只喂音频给 astats，与最小 ffmpeg 兼容，且省掉无谓的
 ///   视频解码/编码（本就只要音频能量）。全量 ffmpeg 有 `wrapped_avframe` 也不受影响。
+/// - 末尾再一个 `asetnsamples=n=<rate*[_kEnvelopeOutputFrameSeconds]>:p=0`：`ametadata`
+///   已经逐小块记完，**再把音频拼回大帧**才交给编码器 / null 复用器：6 万个 20ms 小帧
+///   逐帧过 pcm 编码器与 null 复用器的开销比 astats 本身还大，拼成 6s 一帧后 20 分钟只剩
+///   200 个输出帧。实测 ffmpeg 7.1：12.3s → 5.0s，逐帧 RMS 输出逐字节相同。
 /// - `-f null -`：丢弃音频输出，只要 stderr 上的元数据。
 ///
 /// 无 IO，可单测。
@@ -111,8 +124,10 @@ List<String> buildFfmpegPcmEnvelopeArgs({
     '-af',
     'aresample=$rate,'
         'asetnsamples=n=$blockSamples:p=0,'
-        'astats=metadata=1:reset=1,'
-        'ametadata=print:key=lavfi.astats.Overall.RMS_level$printTarget',
+        'astats=metadata=1:reset=1:'
+        'measure_perchannel=none:measure_overall=RMS_level,'
+        'ametadata=print:key=lavfi.astats.Overall.RMS_level$printTarget,'
+        'asetnsamples=n=${rate * _kEnvelopeOutputFrameSeconds}:p=0',
     '-f',
     'null',
     '-',

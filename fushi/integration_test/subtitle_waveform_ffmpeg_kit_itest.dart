@@ -10,14 +10,23 @@ import 'package:integration_test/integration_test.dart';
 
 /// 设备验证：字幕波形对轴的逐帧 RMS 在移动端（进程内 ffmpeg-kit）真能拿到。
 ///
-/// 按真实规模造 20 分钟音频（= [kSubtitleAutoAlignProbeLimitMs]，20ms 窗口约 6 万帧），
-/// 在含逗号 / 分号 / 方括号 / 单引号 / 空格 / 中文的缓存子目录里跑：
-/// - 旧通道（逐帧行打 stderr、经 `getOutput` 回传）只打印拿到了多少帧，作对照证据；
-/// - 新通道（[extractAudioEnergyEnvelope]，`ametadata` 写 `file=`）必须拿满且响/静分得开。
+/// 在含逗号 / 分号 / 方括号 / 单引号 / 空格 / 中文的缓存子目录里造一段「偶数秒静音、
+/// 奇数秒响」的音频（默认 6 分钟 = 1.8 万个 20ms 窗口；`WAVEFORM_ITEST_SECONDS` 可调，须为
+/// 偶数），经 [extractAudioEnergyEnvelope] 抽包络：帧数必须拿满、首尾响静分得开。
 ///
-/// 只在 Android / iOS 有意义（桌面走 CLI 后端，另有单测覆盖）：
-/// flutter drive --driver=test_driver/integration_test.dart
-///   --target=integration_test/subtitle_waveform_ffmpeg_kit_itest.dart -d <emulator>
+/// `WAVEFORM_ITEST_LEGACY=true` 改跑旧通道（逐帧行打 stderr、经 `getOutput` 回传，且不拼
+/// 大帧）作对照，只打印不断言，不与新通道同跑（互不污染平台通道）。
+///
+/// 只在 Android / iOS 有意义（桌面走 CLI 后端，另有单测覆盖），且必须是 **arm 设备**：
+/// ffmpeg-kit 只带 arm 库，x86_64 模拟器靠 ARM 转译跑时**任何** ffmpeg-kit 命令（连
+/// `-version`）都会在结束后被整条重跑、永不回调完成（实测 60 秒重跑 288 次，疑为转译层
+/// 对 fftools `setjmp`/`longjmp` 退出路径的处理问题），在那里跑只会超时。真机直接：
+///   flutter drive --driver=test_driver/integration_test.dart
+///     --target=integration_test/subtitle_waveform_ffmpeg_kit_itest.dart -d <device>
+const int _seconds =
+    int.fromEnvironment('WAVEFORM_ITEST_SECONDS', defaultValue: 360);
+const bool _legacy = bool.fromEnvironment('WAVEFORM_ITEST_LEGACY');
+
 Uint8List _alternatingWav({required int seconds}) {
   const int rate = 8000;
   final int total = seconds * rate;
@@ -54,46 +63,44 @@ Uint8List _alternatingWav({required int seconds}) {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('ffmpeg-kit: waveform RMS arrives via file channel at full scale',
+  testWidgets('ffmpeg-kit: waveform RMS arrives via the file channel',
       (WidgetTester tester) async {
     if (!Platform.isAndroid && !Platform.isIOS) return;
-    const int seconds = kSubtitleAutoAlignProbeLimitMs ~/ 1000;
-    const int expectedFrames = seconds * 1000 ~/ kSubtitleWaveformWindowMs;
+    const int expectedFrames = _seconds * 1000 ~/ kSubtitleWaveformWindowMs;
 
     await tester.runAsync(() async {
       final Directory dir =
           Directory.systemTemp.createTempSync("waveform a b,c;[x]'q 字");
       try {
         final File wav = File('${dir.path}/in.wav')
-          ..writeAsBytesSync(_alternatingWav(seconds: seconds));
+          ..writeAsBytesSync(_alternatingWav(seconds: _seconds));
         setFfmpegBackendForTesting(const KitFfmpegBackend());
+        final Stopwatch watch = Stopwatch()..start();
 
-        // 对照：旧通道（stderr / getOutput）。
-        final Stopwatch legacyWatch = Stopwatch()..start();
-        final FfmpegRunResult legacy = await resolveFfmpegBackend().run(
-          buildFfmpegPcmEnvelopeArgs(
+        if (_legacy) {
+          // 旧实现：逐帧行打 stderr，最后一个滤镜后不拼大帧。
+          final List<String> args = buildFfmpegPcmEnvelopeArgs(
             inputPath: wav.path,
             windowMs: kSubtitleWaveformWindowMs,
-            limitSeconds: seconds,
-          ),
-          const Duration(minutes: 5),
-        );
-        legacyWatch.stop();
-        final int legacyFrames =
-            parseAudioRmsEnvelopeFromFfmpegLog(legacy.output).length;
+            limitSeconds: _seconds,
+          );
+          final int af = args.indexOf('-af');
+          args[af + 1] = args[af + 1]
+              .substring(0, args[af + 1].lastIndexOf(',asetnsamples='));
+          final FfmpegRunResult legacy = await resolveFfmpegBackend()
+              .run(args, const Duration(minutes: 5));
+          debugPrint('[waveform-itest] legacy expected=$expectedFrames '
+              'got=${parseAudioRmsEnvelopeFromFfmpegLog(legacy.output).length} '
+              'rc=${legacy.returnCode} ${watch.elapsedMilliseconds}ms');
+          return;
+        }
 
-        // 新通道：file=。
-        final Stopwatch fileWatch = Stopwatch()..start();
         final List<double> env = await extractAudioEnergyEnvelope(
           videoPath: wav.path,
           windowMs: kSubtitleWaveformWindowMs,
         );
-        fileWatch.stop();
-
-        debugPrint('[waveform-itest] expected=$expectedFrames '
-            'legacy(stderr)=$legacyFrames rc=${legacy.returnCode} '
-            '${legacyWatch.elapsedMilliseconds}ms | '
-            'file=${env.length} ${fileWatch.elapsedMilliseconds}ms');
+        debugPrint('[waveform-itest] file expected=$expectedFrames '
+            'got=${env.length} ${watch.elapsedMilliseconds}ms');
 
         expect(env.length,
             inInclusiveRange(expectedFrames - 10, expectedFrames + 1));
@@ -102,9 +109,10 @@ void main() {
         final double loud = env.sublist(60, 90).reduce(math.max);
         expect(loud, greaterThan(-20.0));
         expect(quiet, lessThan(-60.0));
-        // 末尾那一秒（第 1199 秒，奇数 = 响）也要拿到，证明没有被截断在中途。
+        // 最后一秒（奇数秒 = 响）也要拿到，证明没有被截断在中途。
         final double tail = env.sublist(env.length - 30).reduce(math.max);
         expect(tail, greaterThan(-20.0));
+        debugPrint('[waveform-itest] PASS');
       } finally {
         setFfmpegBackendForTesting(null);
         dir.deleteSync(recursive: true);

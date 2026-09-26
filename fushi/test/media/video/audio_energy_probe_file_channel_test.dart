@@ -43,14 +43,16 @@ String _avGetTokenUnescape(String s) {
 String _decodeFilterOptionValue(String escaped) =>
     _avGetTokenUnescape(_avGetTokenUnescape(escaped));
 
-/// 从 `-af` 滤镜串里取出 `ametadata` 的 `file=` 选项值（原样，未反转义）。
+/// 从 `-af` 滤镜串里取出 `ametadata` 的 `file=` 选项值（原样，未反转义）。其后紧跟
+/// 末尾的 `,asetnsamples=` 拼帧滤镜；路径里的逗号都已转义成 `\,`，不会误切。
 String? _metadataFileArg(List<String> args) {
   final int af = args.indexOf('-af');
   if (af < 0) return null;
   final String graph = args[af + 1];
   final int at = graph.indexOf(':file=');
   if (at < 0) return null;
-  return graph.substring(at + ':file='.length);
+  final int end = graph.lastIndexOf(',asetnsamples=');
+  return graph.substring(at + ':file='.length, end > at ? end : graph.length);
 }
 
 /// 模拟移动端 ffmpeg-kit：日志一行都不回（`getOutput` 空），只按参数把逐帧行写进
@@ -193,9 +195,11 @@ void main() {
       expect(
         graph,
         startsWith('aresample=8000,asetnsamples=n=800:p=0,'
-            'astats=metadata=1:reset=1,'
+            'astats=metadata=1:reset=1:'
+            'measure_perchannel=none:measure_overall=RMS_level,'
             'ametadata=print:key=lavfi.astats.Overall.RMS_level:file='),
       );
+      expect(graph, endsWith(',asetnsamples=n=48000:p=0'));
       expect(_decodeFilterOptionValue(_metadataFileArg(withFile)!),
           "/tmp/a b,c/rms'.txt");
     });
