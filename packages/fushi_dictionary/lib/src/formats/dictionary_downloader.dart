@@ -55,6 +55,22 @@ Future<Dio> createDictionaryDio() async {
 /// 同一套装配方向。
 List<String> Function(String url)? dictionaryUrlCandidatesResolver;
 
+/// 下载 [url] 时的落盘文件名：只取原址路径最后一段的**纯文件名**。
+///
+/// `Uri.pathSegments` 返回的是**解码后**的片段：`..%2F..%2Fx` 会变成 `../../x`，
+/// `%2Fabs%2Fpath` 会让 `path.join` 直接返回绝对路径，写到临时目录以外。下载地址
+/// 又来自第三方远端 index（每次更新检查都能改，明文 http 时还可能被中间人篡改），
+/// 所以这里先把反斜杠归一再取 basename，空名 / `.` / `..` 以及路径为空的地址（如
+/// `https://host/`，原先 `pathSegments.last` 直接抛 StateError）一律回落固定名。
+String dictionaryDownloadFileName(String url) {
+  const String fallback = 'dictionary.zip';
+  final List<String> segments = Uri.parse(url).pathSegments;
+  if (segments.isEmpty) return fallback;
+  final String name = path.posix.basename(segments.last.replaceAll(r'\', '/'));
+  if (name.isEmpty || name == '.' || name == '..') return fallback;
+  return name;
+}
+
 /// [url] 的候选地址序列。恒非空、首位恒为 [url]、无重复。
 List<String> dictionaryDownloadCandidates(String url) {
   final List<String> resolved =
@@ -964,8 +980,11 @@ class DictionaryDownloader {
 
     // 落盘文件名恒取自**原址**：镜像候选是「前缀 + 原址」，路径尾段虽然相同，但让
     // 产物名字随候选变化只会让后续导入路径难以复现。
-    final String fileName = Uri.parse(url).pathSegments.last;
+    final String fileName = dictionaryDownloadFileName(url);
     final String destPath = path.join(tempDir.path, fileName);
+    if (!path.isWithin(tempDir.path, destPath)) {
+      throw ArgumentError.value(url, 'url', 'download file name escapes tempDir');
+    }
     final List<String> candidates = dictionaryDownloadCandidates(url);
     final List<String> attempted = <String>[];
 
