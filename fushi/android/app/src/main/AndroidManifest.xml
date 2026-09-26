@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -205,6 +206,11 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="clipboard_dictionary_overlay"/>
         </service>
+        <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
+             防止切到后台后进程被杀、下载随之中断。 -->
+        <service android:name=".DownloadKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"/>
         <!-- 暂时取消无障碍权限的申请：注释掉无障碍服务声明，app 不再出现在
              系统「无障碍」列表里，悬浮词典仅靠剪贴板+手动搜索。后面再决定是否恢复。
              恢复方法：取消本段注释即可（Java/xml/提示文案均保留未删）。

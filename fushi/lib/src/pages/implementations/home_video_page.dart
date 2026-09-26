@@ -1,5 +1,8 @@
 import 'dart:async' show StreamSubscription, Timer, unawaited;
+import 'dart:convert' show utf8;
 import 'dart:io';
+
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -99,6 +102,7 @@ import 'package:fushi_engine/sync/video_metadata_work_target.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
+import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_image.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
@@ -283,6 +287,9 @@ class HomeVideoPage extends BaseModuleTabPage {
 class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Future<List<VideoBookRow>>? _future;
   Future<_RemoteVideoState?>? _remoteFuture;
+
+  /// 本页实例已尝试接回过的中断下载（视频 id）。见 [_resumeInterruptedRemoteDownloads]。
+  final Set<String> _resumeAttempted = <String>{};
 
   /// 待人工确认身份的作品数（0 = 不显示提醒条）。
   int _pendingScrapeCount = 0;
@@ -1370,9 +1377,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
       final Set<String> localUids =
           localVideos.map((VideoBookRow r) => r.bookUid).toSet();
-      return _RemoteVideoState(
-        videos: dedupeRemoteVideos(remote: videos, localBookUids: localUids),
-      );
+      final List<RemoteVideoInfo> remoteOnly =
+          dedupeRemoteVideos(remote: videos, localBookUids: localUids);
+      // BUG-2714：清单到手才知道哪些中断的下载还能接（不挡列表渲染）。
+      unawaited(_resumeInterruptedRemoteDownloads(source, remoteOnly));
+      return _RemoteVideoState(videos: remoteOnly);
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
       // 云盘侧清单结构非法（FormatException）也落这里 → 本轮云视频不可用。
@@ -2378,6 +2387,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         await _prepareRemoteDownload(video, source, manager);
     try {
       await start();
+    } on RemoteDownloadCancelled {
+      // 用户在下载中心点了暂停：任务停在暂停态、`.part` 留着，不是失败。
+      return;
     } catch (e) {
       debugPrint('[home-video] remote video download failed: $e');
       if (!mounted) return;
@@ -2435,12 +2447,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     RemoteVideoSource source,
     InterconnectDownloadManager manager,
   ) async {
-    final File dest = await _remoteDownloadDestination(video);
-    Future<void> run(
-      File target, {
-      void Function(double progress)? onProgress,
-    }) =>
-        source.downloadRemoteVideo(video.id, target, onProgress: onProgress);
+    final _RemoteVideoDownloadPlan plan = _remoteDownloadPlan(
+      video,
+      source,
+      await _remoteDownloadDestination(video),
+    );
+    return () => plan.start(manager);
+  }
+
+  /// [_prepareRemoteDownload] 的本体：落点 [dest] 由调用方给（新下载按命名规则
+  /// 派生，续传沿用清单里记的落点——那才是 `.part` 所在）。
+  _RemoteVideoDownloadPlan _remoteDownloadPlan(
+    RemoteVideoInfo video,
+    RemoteVideoSource source,
+    File dest,
+  ) {
     // 收尾登记仍按源分流：互联要回填外挂字幕 + host 断点，云盘要按资产名取封面、
     // 且没有字幕/进度可回填。这是两种源**真实**的能力差异，不是样板分支。
     final CloudRemoteVideoClient? cloud = _cloudRemoteVideoClient;
@@ -2450,13 +2471,83 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             _registerDownloadedVideo(client, video, downloaded)
         : (File downloaded) =>
             _registerDownloadedCloudVideo(cloud!, video, downloaded);
-    return () => manager.startVideoDownload(
-          id: video.id,
-          title: video.title,
-          dest: dest,
-          run: run,
-          onComplete: onComplete,
-        );
+    return _RemoteVideoDownloadPlan(
+      video: video,
+      source: source,
+      dest: dest,
+      onComplete: onComplete,
+    );
+  }
+
+  /// BUG-2714：把上次没下完、进程就被杀掉的远端视频下载接回来。
+  ///
+  /// 真相是 `remote_videos/` 下与 `.part` 并排的续传清单：只接**同一来源**、且
+  /// 该视频仍在本次远端清单里的（来源换了或对端删了片子，part 的归属就不可信，
+  /// 留给用户下次手动点下载时覆盖）。用户上次主动暂停的只以暂停态登记进下载
+  /// 中心；其余串行自动续（与合集整批下载同一理由：单台 host，不并发抢带宽）。
+  ///
+  /// 每个页面实例每条只接一次（[_resumeAttempted]）：清单刷新是高频事件，失败的
+  /// 续传不该每次刷新都重打一轮。
+  Future<void> _resumeInterruptedRemoteDownloads(
+    RemoteVideoSource source,
+    List<RemoteVideoInfo> videos,
+  ) async {
+    // 测试注入了落点时不碰真实文档目录。
+    if (widget.remoteVideoDownloadDestination != null) return;
+    final List<InterconnectVideoResumeRecord> records;
+    try {
+      records = await InterconnectVideoResumeStore.scan(
+        await AppPaths.remoteVideosDirectory(),
+      );
+    } catch (e) {
+      debugPrint('[home-video] scan resume manifests failed: $e');
+      return;
+    }
+    if (records.isEmpty || !mounted) return;
+    final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{
+      for (final RemoteVideoInfo video in videos) video.id: video,
+    };
+    final InterconnectDownloadManager manager =
+        ref.read(interconnectDownloadManagerProvider);
+    final List<_RemoteVideoDownloadPlan> autoResume =
+        <_RemoteVideoDownloadPlan>[];
+    for (final InterconnectVideoResumeRecord record in records) {
+      if (record.sourceId != source.remoteLibrarySourceId) continue;
+      final RemoteVideoInfo? video = byId[record.videoId];
+      if (video == null || !_resumeAttempted.add(record.videoId)) continue;
+      final InterconnectDownloadTask? task = manager.taskFor(video.id);
+      if (task != null && (task.isRunning || task.isPaused)) continue;
+      final _RemoteVideoDownloadPlan plan =
+          _remoteDownloadPlan(video, source, record.dest);
+      if (!record.paused) {
+        autoResume.add(plan);
+        continue;
+      }
+      int? received;
+      try {
+        received = await record.partFile.length();
+      } catch (_) {
+        received = null;
+      }
+      plan.registerPaused(
+        manager,
+        receivedBytes: received,
+        totalBytes: record.totalBytes,
+      );
+    }
+    // 串行续传：成员之间不撤保活（见 holdKeepAliveDuring）。
+    await manager.holdKeepAliveDuring(() async {
+      for (final _RemoteVideoDownloadPlan plan in autoResume) {
+        try {
+          await plan.start(manager);
+        } catch (e) {
+          // 失败 / 暂停的状态已落在任务快照里（下载中心与卡片角标可见）。
+          debugPrint('[home-video] auto-resume ${plan.video.id} stopped: $e');
+          continue;
+        }
+        if (mounted) _refresh();
+      }
+    });
   }
 
   /// 合集整体下载（#6）：把 [collection] 里**只在对端**的成员 [members] 串行排进
@@ -2837,10 +2928,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // TODO-935 E0：经唯一入口 [AppPaths] 派生 `<documents>/remote_videos`。
     final Directory dir = await AppPaths.remoteVideosDirectory();
     await dir.create(recursive: true);
-    final String safeTitle = safeWindowsFileName(video.title);
-    final String fileName =
-        safeTitle.toLowerCase().endsWith('.mp4') ? safeTitle : '$safeTitle.mp4';
-    return File(p.join(dir.path, fileName));
+    return File(p.join(dir.path, remoteVideoDownloadFileName(video)));
   }
 
   // ── 长按菜单 ──────────────────────────────────────────────────────
@@ -5772,6 +5860,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               ? t.remote_video_download_failed
               : '${t.remote_video_download_failed}: ${task.error}',
         );
+      case InterconnectDownloadStatus.paused:
       case InterconnectDownloadStatus.completed:
         return null;
     }
@@ -8145,4 +8234,91 @@ class _RemoteVideoState {
   /// （spec §2.4）。初次静默加载走离线语义不打扰用户；**显式下拉刷新**失败时
   /// [_pullToRefresh] 据此弹一句本地化友好提示（不再「看不到远端视频还不知为何」）。
   final bool failed;
+}
+
+/// 远端视频下载到本机的文件名：`<标题>.<id 短哈希>.mp4`（纯函数）。
+///
+/// 此前只按标题命名（BUG-2714）：合集里同叫「第1話」的两部作品共用同一个
+/// `.part`，续传会把另一部的字节接在后面；任务又按 id 去重，两者还能同时写同一个
+/// part。id 哈希把落点钉到远端身份上，标题留着只是方便用户在文件管理器里认。
+@visibleForTesting
+String remoteVideoDownloadFileName(RemoteVideoInfo video) {
+  String stem = safeWindowsFileName(video.title).trim();
+  if (stem.toLowerCase().endsWith('.mp4')) {
+    stem = stem.substring(0, stem.length - 4);
+  }
+  // 给哈希、扩展名和 `.part.etag` / `.resume.json` 后缀留出路径余量。
+  if (stem.length > 80) stem = stem.substring(0, 80);
+  final String idHash =
+      sha1.convert(utf8.encode(video.id)).toString().substring(0, 10);
+  return stem.isEmpty ? '$idHash.mp4' : '$stem.$idHash.mp4';
+}
+
+/// 一条远端视频下载的全部装配（落点 + 传输原语 + 收尾登记 + 续传清单）。
+///
+/// 起跑（[start]）与以暂停态登记（[registerPaused]）用的是同一份东西——暂停后
+/// 从下载中心「继续」时管理器正是拿它重跑。
+class _RemoteVideoDownloadPlan {
+  _RemoteVideoDownloadPlan({
+    required this.video,
+    required this.source,
+    required this.dest,
+    required this.onComplete,
+  });
+
+  final RemoteVideoInfo video;
+  final RemoteVideoSource source;
+  final File dest;
+  final InterconnectDownloadComplete onComplete;
+
+  // 续传清单与 `.part` 并排落盘——进程被杀（Android 切后台被回收）后管理器的
+  // 内存任务表整张消失，下次拿到远端清单时靠它把任务接回来。
+  InterconnectVideoResumeRecord get _resumeRecord =>
+      InterconnectVideoResumeRecord(
+        videoId: video.id,
+        title: video.title,
+        sourceId: source.remoteLibrarySourceId,
+        destPath: dest.path,
+        totalBytes: video.sizeBytes,
+      );
+
+  Future<void> _run(
+    File target, {
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) =>
+      source.downloadRemoteVideo(
+        video.id,
+        target,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        cancelSignal: cancelSignal,
+      );
+
+  Future<InterconnectDownloadTask> start(InterconnectDownloadManager manager) =>
+      manager.startVideoDownload(
+        id: video.id,
+        title: video.title,
+        dest: dest,
+        run: _run,
+        onComplete: onComplete,
+        resumeRecord: _resumeRecord,
+      );
+
+  void registerPaused(
+    InterconnectDownloadManager manager, {
+    int? receivedBytes,
+    int? totalBytes,
+  }) =>
+      manager.registerPausedVideoDownload(
+        id: video.id,
+        title: video.title,
+        dest: dest,
+        run: _run,
+        onComplete: onComplete,
+        resumeRecord: _resumeRecord.copyWith(paused: true),
+        receivedBytes: receivedBytes,
+        totalBytes: totalBytes ?? video.sizeBytes,
+      );
 }

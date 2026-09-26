@@ -155,7 +155,18 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       final File? file =
           await svc.resolveVideoFile(streamId, episodeIndex: tok.episodeIndex);
       if (file == null) return shelf.Response.notFound('Video not found');
-      return serveFileWithRange(file, request);
+      // 带 ETag + 按需校验 If-Range：client 下载续传会带上次记下的验证器，文件在
+      // host 上被替换时降级 200 全量；播放器的盲 Range（seek）不带 If-Range，照常
+      // 206（ifRangeRequired: false）。
+      if (!file.existsSync()) {
+        return shelf.Response.notFound('Video not found');
+      }
+      return serveFileWithRange(
+        file,
+        request,
+        etag: videoFileEtag(file),
+        ifRangeRequired: false,
+      );
     }
 
     // GET /api/library/videos/<id>/hls.m3u8         — 转码播放列表

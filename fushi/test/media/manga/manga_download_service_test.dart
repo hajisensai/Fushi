@@ -15,6 +15,7 @@ import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
+import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -85,6 +86,27 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
       <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }
 
+/// 记录 update / stop 顺序的假保活（BUG-2714）。
+class _RecordingKeepAlive implements DownloadKeepAlive {
+  final List<String> events = <String>[];
+  final List<int?> percents = <int?>[];
+
+  @override
+  Future<void> update({
+    required String title,
+    required String text,
+    int? percent,
+  }) async {
+    events.add('update:$title');
+    percents.add(percent);
+  }
+
+  @override
+  Future<void> stop() async {
+    events.add('stop');
+  }
+}
+
 class _FakeOcrService implements MangaOcrService {
   @override
   bool get isSupportedPlatform => true;
@@ -149,11 +171,15 @@ void main() {
   late String bookKey;
   late String bookDir;
 
-  MangaDownloadService build({MangaDownloadOcrHook? onChapterDownloaded}) =>
+  MangaDownloadService build({
+    MangaDownloadOcrHook? onChapterDownloaded,
+    DownloadKeepAlive? keepAlive,
+  }) =>
       MangaDownloadService(
         database: db,
         serviceFor: (OnlineMangaRuntimeKind runtime) => library,
         onChapterDownloaded: onChapterDownloaded,
+        keepAlive: keepAlive,
         wait: (Duration duration) async {
           waits.add(duration);
         },
@@ -488,5 +514,52 @@ void main() {
     expect((await jobOf('/chapter/1')).status, MangaDownloadJobStatus.done,
         reason: 'OCR 跳过不影响下载结果');
     downloads.dispose();
+  });
+
+  group('下载保活（BUG-2714）', () {
+    test('worker 开跑即保活、报页进度；两章连跑中间不撤，排空后撤一次', () async {
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final MangaDownloadService downloads = build(keepAlive: keepAlive);
+      await downloads.enqueueChapters(
+        entry: _entry(),
+        chapters: _chapters,
+        autoOcr: false,
+      );
+      expect(keepAlive.events, isEmpty, reason: '未 start 不该挂保活');
+
+      await downloads.start();
+      await downloads.whenIdle;
+
+      expect(keepAlive.events.first, 'update:Fixture series');
+      expect(keepAlive.events.last, 'stop');
+      expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1),
+          reason: '队列没排空之前不能撤（后台里撤了就再也拉不起前台服务）');
+      expect(keepAlive.percents, contains(100));
+      downloads.dispose();
+      expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1),
+          reason: '已撤过，dispose 不重复 stop');
+    });
+
+    test('跑到一半 dispose → 撤保活', () async {
+      adapter.gate = Completer<void>();
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final MangaDownloadService downloads = build(keepAlive: keepAlive);
+      await downloads.enqueueChapter(
+        entry: _entry(),
+        chapter: _chapters.last,
+        autoOcr: false,
+      );
+      await downloads.start();
+      while ((adapter.fetchCounts[0] ?? 0) == 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(keepAlive.events, isNot(contains('stop')));
+
+      downloads.dispose();
+      expect(keepAlive.events.last, 'stop');
+      adapter.gate!.complete();
+      await downloads.whenIdle;
+      expect(keepAlive.events.where((String e) => e == 'stop'), hasLength(1));
+    });
   });
 }
