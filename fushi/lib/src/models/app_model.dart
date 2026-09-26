@@ -183,10 +183,11 @@ import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
-    show ThemeNotifier, CustomThemeEntry;
+    show ThemeNotifier, CustomThemeEntry, ThemePreset;
 // TODO-930: re-export the multi-theme value type so `fushi/models.dart`
 // consumers (theme swatch row, CustomThemePage) can name it.
-export 'package:fushi/src/models/theme_notifier.dart' show CustomThemeEntry;
+export 'package:fushi/src/models/theme_notifier.dart'
+    show CustomThemeEntry, ThemePreset;
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -3542,9 +3543,14 @@ class AppModel with ChangeNotifier {
 
   // ── Theme delegates (logic moved to ThemeNotifier) ──────────────────
 
-  static Map<String,
-          ({Color seed, Brightness brightness, DynamicSchemeVariant variant})>
-      get themePresets => ThemeNotifier.themePresets;
+  static Map<String, ThemePreset> get themePresets =>
+      ThemeNotifier.themePresets;
+
+  static ColorScheme buildPresetColorScheme(
+    ThemePreset preset,
+    Brightness brightness,
+  ) =>
+      ThemeNotifier.buildPresetColorScheme(preset, brightness);
 
   static String themeLabel(String key) => ThemeNotifier.themeLabel(key);
 
@@ -9130,6 +9136,23 @@ class _AppModelRemoteLookupService
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     return repo.isDuplicate(expression, reading);
+  }
+
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async {
+    // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
+    // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
+    try {
+      final BaseAnkiRepository repo =
+          _appModel.platformServices.createAnkiRepository();
+      return await repo.openWordInAnki(expression, reading);
+    } catch (e, st) {
+      ErrorLogService.instance.log('Anki.openWordInAnki.extension', e, st);
+      return AnkiOpenWordOutcome.failed;
+    }
   }
 
   @override

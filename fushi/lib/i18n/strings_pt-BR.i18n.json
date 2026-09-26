@@ -5174,9 +5174,7 @@
   "manga_reader_mode_hint": "Show reading mode on entry",
   "manga_reader_tap_hint": "Show tap zones",
   "manga_reader_skip_read": "Skip read chapters",
-  "manga_reader_skip_filtered": "Skip filtered chapters",
   "manga_reader_skip_duplicate": "Skip duplicate chapters",
-  "manga_reader_transition": "Always show chapter transition",
   "manga_reader_fullscreen": "Full screen",
   "manga_reader_keep_screen": "Keep screen on",
   "manga_reader_invert_volume": "Invert volume key direction",
@@ -5588,5 +5586,13 @@
   "video_subtitle_remote_player_decoded": "Server cannot extract this subtitle track; the player decodes it during playback, so lines appear as you watch: $label",
   "manga_discovery_view_all": "View all",
   "manga_discovery_empty_title": "No manga sources to discover yet",
-  "manga_discovery_empty_action": "Manage sources"
+  "manga_discovery_empty_action": "Manage sources",
+  "manga_reader_download_ahead": "Download next chapter while reading",
+  "video_dolby_vision_colors_unsupported": "Dolby Vision profile 5 video: this platform can't render its colors correctly yet, so the picture may look purple or green.",
+  "video_dolby_vision_colors_enable_hdr_output": "Dolby Vision profile 5 video: colors will look purple or green with HDR / 10-bit output turned off. Set it to Auto to fix them.",
+  "novel_detail_read_online": "Read online",
+  "novel_detail_chapter_download": "Download from this chapter",
+  "novel_online_chapter_pending": "This chapter hasn't been loaded yet. Check your connection, then reopen the chapter to load it from the source.",
+  "novel_online_open_failed": "Couldn't open online: $error",
+  "novel_online_chapter_failed": "Couldn't load the chapter: $error"
 }

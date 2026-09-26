@@ -243,14 +243,7 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
               );
             },
           ),
-        if (_continueWatching.isNotEmpty)
-          _itemRow(
-            key: const ValueKey<String>('media-server-home-continue'),
-            title: t.video_continue_watching,
-            storageKey: '$prefix-home-continue',
-            items: _continueWatching,
-            cardHeight: cardHeight,
-          ),
+        if (_continueWatching.isNotEmpty) _continueRow(prefix),
         if (_latest.isNotEmpty)
           _itemRow(
             key: const ValueKey<String>('media-server-home-latest'),
@@ -272,6 +265,38 @@ class _MediaServerHomeViewState extends State<MediaServerHomeView> {
               viewAllFocusId: FushiFocusId('$prefix-row-all-${library.id}'),
             ),
       ],
+    );
+  }
+
+  /// 「继续观看」行：16:9 横卡（视频是横屏的，且要看得出停在哪一集、还剩多少），
+  /// 不与下面几行共用 2:3 海报竖卡。
+  Widget _continueRow(String prefix) {
+    final String storageKey = '$prefix-home-continue';
+    final List<MediaServerItem> items = _continueWatching;
+    return MediaServerRow(
+      key: const ValueKey<String>('media-server-home-continue'),
+      title: t.video_continue_watching,
+      storageKey: storageKey,
+      itemCount: items.length,
+      itemWidth: kMediaServerContinueCardWidth,
+      rowHeight: mediaServerContinueCardHeight(context),
+      itemBuilder: (BuildContext context, int index) {
+        final MediaServerItem item = items[index];
+        return MediaServerContinueCard(
+          key: ValueKey<String>('$storageKey-card-${item.id}'),
+          browser: _browser,
+          item: item,
+          focusId: FushiFocusId('$storageKey-card-${item.id}'),
+          onTap: () => openMediaServerItem(
+            context,
+            widget.session,
+            item,
+            siblings: items,
+          ),
+          onLongPress: () =>
+              openMediaServerItemDetail(context, widget.session, item),
+        );
+      },
     );
   }
 

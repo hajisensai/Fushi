@@ -21,9 +21,19 @@ all: Frameworks/*.xcframework Frameworks/.symlinks
 # the macos-arm64_x86_64 slice and contains the truehd decoder. SHA256
 # recomputed from the uploaded tarball.
 #
+# BUG-2691 (Dolby Vision profile 5): this build additionally carries
+# `patches/mpv-gl-dovi-p5.patch` (branch hibiki/dovi-p5-gl). mpv 0.36 has no
+# libplacebo here, so the render API only has gl_video, which never applied the
+# Dolby Vision RPU: profile 5 (IPTPQc2) played purple/green. The patch ports
+# libplacebo's pl_shader_dovi_reshape + DOLBYVISION decode into gl_video.
+# Verified on a real Mac through the render API + CGL (software and
+# videotoolbox decoding): the unpatched framework renders the reference frame
+# pink/magenta, this one matches vo=gpu-next. The Dart side relies on it via
+# textureRendererReshapesDolbyVision(); dropping the patch means flipping that.
+#
 # MPV_XCFRAMEWORKS_VERSION is only a cache-path label here, not an upstream tag.
-MPV_XCFRAMEWORKS_VERSION=ffmpeg6.1.6
-MPV_XCFRAMEWORKS_SHA256SUM=716ca82aa1a45b7e8482b7dc723bf1d91047edbc5dedb48d736822c4250732a6
+MPV_XCFRAMEWORKS_VERSION=ffmpeg6.1.6-dovi
+MPV_XCFRAMEWORKS_SHA256SUM=a688dc0fe50c2f37df17e9fd84a9f2c19967cb6f33bf26619b3663af940c99e4
 
 .cache/xcframeworks/libmpv-xcframeworks-${MPV_XCFRAMEWORKS_VERSION}-macos-universal.tar.gz:
 	mkdir -p .cache/xcframeworks

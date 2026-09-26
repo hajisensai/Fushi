@@ -365,6 +365,19 @@ void main() {
         contains('if(novelManager!=null)...<Widget>['),
         reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
       );
+      // 在线小说书的描述符会随备份恢复到 iOS：阅读器开书建取章加载器（它会拉起
+      // lnReaderManager、联网刷仓库、跑插件）也必须挂在同一个门后。
+      final String onlineBook = compactCode(
+        read('lib/src/media/novel/online/lnreader_online_book.dart'),
+      );
+      expect(
+        onlineBook,
+        contains(
+          'if(!(onlineSourcesAvailable??isNovelOnlineSourcesAvailable))'
+          'returnnull;',
+        ),
+        reason: '阅读器开在线书时取 lnReaderManager 必须先过在线小说门。',
+      );
     });
   });
 

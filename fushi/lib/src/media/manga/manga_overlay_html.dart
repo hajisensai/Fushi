@@ -841,6 +841,10 @@ String mangaWindowDocument(
       // Highlight `fushi-selection`；没有这条规则浏览器什么都不画，用户看不出
       // 自己查的是哪个字。半透明是为了不盖住页图上的原字。
       '::highlight(fushi-selection){background-color:rgba(255,196,0,0.45);}'
+      // 没有 CSS Highlight API 的内核（Android System WebView < 105、
+      // iOS/macOS WebKit < 17.2）走 highlightSelection 的降级分支：把命中字符
+      // 包进 .fushi-dict-highlight span。缺这条规则时那一侧照样什么都不画。
+      '.fushi-dict-highlight{background-color:rgba(255,196,0,0.45);}'
       '</style></head>'
       '<body${showOcrBoxes ? ' class="ocr-boxes-visible"' : ''}>'
       '$body'

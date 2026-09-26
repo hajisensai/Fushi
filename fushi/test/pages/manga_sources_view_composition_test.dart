@@ -76,10 +76,11 @@ void main() {
       expect(sources, contains("keyPrefix: 'aidoku_extension'"));
     });
 
-    test('Aidoku 源浏览页不再直读章节（在线漫画先下载再读，设计稿 2026-09-12）', () {
+    test('Aidoku 源浏览页点章一律经作品页（直读 / 下载都由作品页分流）', () {
       final String browse =
           _read(<String>['aidoku', 'aidoku_source_browse_page.dart']);
-      // 章节一律经作品页入队下载；源浏览页里不许再长出一条「点章即在线读」的路。
+      // 2026-09-26 起未下载的章也能在线直读，但分流（已下载读盘 / 未下载直读 / 锁章
+      // 问下载）只在作品页 + 阅读器里做一次；源浏览页不许自己拼一条旁路直开阅读器。
       expect(browse, isNot(contains('AidokuReaderChapter(')));
       expect(browse, isNot(contains('MangaFushiPage(')));
       expect(browse, contains('MangaSeriesPage('));

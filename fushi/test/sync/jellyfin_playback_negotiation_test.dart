@@ -307,6 +307,109 @@ void main() {
     });
   });
 
+  group('杜比视界 Profile 5 识别（BUG-2691）', () {
+    test('mediaStreamRequiresDolbyVisionReshape：只认无兼容基础层的 DV', () {
+      // Emby（含 uhdnow 兼容层实测：DoviProfile50）。
+      expect(
+          mediaStreamRequiresDolbyVisionReshape(
+              <String, Object?>{'ExtendedVideoSubtype': 'DoviProfile50'}),
+          isTrue);
+      for (final String p in <String>[
+        'DoviProfile81',
+        'DoviProfile84',
+        'DoviProfile76',
+      ]) {
+        expect(
+            mediaStreamRequiresDolbyVisionReshape(
+                <String, Object?>{'ExtendedVideoSubtype': p}),
+            isFalse,
+            reason: p);
+      }
+      // Jellyfin。
+      expect(
+          mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+            'DvProfile': 5,
+            'DvBlSignalCompatibilityId': 0
+          }),
+          isTrue);
+      expect(
+          mediaStreamRequiresDolbyVisionReshape(<String, Object?>{
+            'DvProfile': 8,
+            'DvBlSignalCompatibilityId': 1
+          }),
+          isFalse);
+      expect(
+          mediaStreamRequiresDolbyVisionReshape(
+              <String, Object?>{'VideoRangeType': 'DOVI'}),
+          isTrue);
+      expect(
+          mediaStreamRequiresDolbyVisionReshape(
+              <String, Object?>{'VideoRangeType': 'DOVIWithHDR10'}),
+          isFalse);
+      expect(mediaStreamRequiresDolbyVisionReshape(const <String, Object?>{}),
+          isFalse);
+    });
+
+    Map<String, Object?> dvEpisode() => <String, Object?>{
+          'Id': 'ep1',
+          'Name': 'E01',
+          'Type': 'Episode',
+          'MediaSources': <Object?>[
+            <String, Object?>{
+              'Id': 'src1',
+              'MediaStreams': <Object?>[
+                <String, Object?>{
+                  'Type': 'Video',
+                  'Index': 0,
+                  'VideoRange': 'Dolby Vision',
+                  'ExtendedVideoType': 'DolbyVision',
+                  'ExtendedVideoSubtype': 'DoviProfile50',
+                },
+              ],
+            },
+          ],
+        };
+
+    test('直出：流带 DV P5 标记，交给播放页', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') return json(dvEpisode());
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return json(_playbackInfoJson());
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.sourceRequiresDolbyVisionReshape, isTrue);
+    });
+
+    test('转码：服务器重新编码过，不再标 DV', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') return json(dvEpisode());
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return json(_playbackInfoJson(
+            directPlay: false,
+            transcodingUrl: '/videos/ep1/master.m3u8?PlaySessionId=ps-1',
+          ));
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.sourceRequiresDolbyVisionReshape, isFalse);
+    });
+
+    test('普通片源不标', () async {
+      final JellyfinVideoClient c = clientWith((http.Request req) async {
+        if (req.url.path == '/Users/u1/Items/ep1') return json(_episodeJson());
+        if (req.url.path == '/Items/ep1/PlaybackInfo') {
+          return json(_playbackInfoJson());
+        }
+        return http.Response('', 204);
+      });
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('ep1');
+      expect(urls.sourceRequiresDolbyVisionReshape, isFalse);
+    });
+  });
+
   group('会话生命周期', () {
     Future<JellyfinVideoClient> negotiated({
       bool transcode = false,

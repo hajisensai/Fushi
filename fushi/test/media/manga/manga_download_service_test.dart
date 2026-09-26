@@ -108,6 +108,7 @@ class _FakeOcrService implements MangaOcrService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) =>
       const Stream<MangaOcrVolumeEvent>.empty();
 }

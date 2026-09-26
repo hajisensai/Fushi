@@ -5,7 +5,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
-    show CustomThemeEntry, kCustomThemeDefaultSeed;
+    show CustomThemeEntry, ThemePreset, kCustomThemeDefaultSeed;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/utils.dart';
@@ -321,20 +321,12 @@ Widget buildThemeSelector(SettingsContext settingsContext) {
           },
         ),
         ...AppModel.themePresets.entries.map(
-          (MapEntry<
-                  String,
-                  ({
-                    Color seed,
-                    Brightness brightness,
-                    DynamicSchemeVariant variant
-                  })>
-              entry) {
+          (MapEntry<String, ThemePreset> entry) {
             return FushiSchemeSwatch(
               colors: fushiSchemeSwatchColors(
-                buildFushiColorScheme(
-                  seedColor: entry.value.seed,
-                  brightness: entry.value.brightness,
-                  variant: entry.value.variant,
+                AppModel.buildPresetColorScheme(
+                  entry.value,
+                  entry.value.brightness,
                 ),
               ),
               size: _swatchSize,

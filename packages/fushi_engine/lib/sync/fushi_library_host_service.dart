@@ -2053,6 +2053,7 @@ class RemoteVideoStreamUrls {
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
     this.streamIsOriginalContainer = true,
+    this.sourceRequiresDolbyVisionReshape = false,
   });
 
   final String streamUrl;
@@ -2064,6 +2065,11 @@ class RemoteVideoStreamUrls {
   /// 正在 demux 的流里，服务器抽不出文本时可交给 libmpv 自绘（BUG-2590）；转码
   /// HLS 流不带内嵌字幕轨，这条回落路不可用。
   final bool streamIsOriginalContainer;
+
+  /// 服务器元数据说这条流是**无兼容基础层**的杜比视界（Profile 5 类，需要 RPU 重整
+  /// 才能出正确颜色）。libmpv 旧版（mac / iOS 的 0.36、Android）不报
+  /// `colormatrix=dolbyvision`，播放页只能靠这一位得知（BUG-2691）。转码流为 false。
+  final bool sourceRequiresDolbyVisionReshape;
 
   /// TODO-1000：分离音视频流（YouTube video-only）时的 audio-only 流 URL；播放页经
   /// `AudioTrack.uri` 外挂、制卡音频从它裁。同轨/muxed 时为 null。
