@@ -445,7 +445,12 @@ bool SameSiglusMeasuredAnchors(const fushi_voice_hook::SiglusLookupProfile& lhs,
       lhs.get_keyboard_state_return_rva == rhs.get_keyboard_state_return_rva &&
       lhs.input_message_rva == rhs.input_message_rva &&
       lhs.main_input_message_return_rva == rhs.main_input_message_return_rva &&
-      lhs.selection_glyph_return_rva == rhs.selection_glyph_return_rva;
+      // 选项调用点是可选锚点（BUG-2712）：已测哈希表（rhs）里为 0 表示测量时没
+      // 记这一项，不能拿它否决现场结构解析出的非 0 值——否则已测作品（如 SPRB）
+      // 只要 exe 里也有选项签名，整条台词查词就会因「锚点不一致」被拒。已测
+      // 非 0 时照常要求一致。
+      (rhs.selection_glyph_return_rva == 0 ||
+       lhs.selection_glyph_return_rva == rhs.selection_glyph_return_rva);
 }
 
 bool IsSiglusLookupProfileMatched() {

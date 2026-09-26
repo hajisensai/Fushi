@@ -603,6 +603,10 @@ class AdapterStructureTest(unittest.TestCase):
         admission = self._function_body(source, "bool IsSiglusLookupProfileMatched()")
         self.assertIn("ResolveSiglusLiveFamily", admission)
         self.assertIn("SameSiglusMeasuredAnchors", admission)
+        # 选项调用点是可选锚点：已测 profile 为 0（没测）时不得否决现场解析值，
+        # 否则已测作品只要 exe 里也有选项签名，整条台词查词就被拒（BUG-2712）。
+        anchors = self._function_body(source, "bool SameSiglusMeasuredAnchors(")
+        self.assertIn("rhs.selection_glyph_return_rva == 0 ||", anchors)
         self.assertNotIn("profile = g_siglus_measured_profile", admission)
         install = self._function_body(source, "bool InstallSiglusLookupSensor()")
         self.assertIn("width != profile->viewport_width", install)
