@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2486 条。点号进各自文件。
+> 共 2488 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2715](bugs/BUG-2715-selection-longpress-null-crash.md) | ✅ | ✅ | 日志面板内容变化或视口变高后长按空白处选区端点空断言崩溃 |
+| [BUG-2714](bugs/BUG-2714-interconnect-video-download-resume.md) | ✅ | ✅ | 互联视频下载：切屏被杀后任务消失、下载中心看不到进度、续传不校验/同名串 part/公网下到 m3u8 |
 | [BUG-2709](bugs/BUG-2709-dict-online-update-parity.md) | ✅ | ✅ | 词典在线更新：钉版本号的下载地址更新不到新版，旧版导入的词典被判不可更新 |
 | [BUG-2707](bugs/BUG-2707-dict-update-stale-download-url.md) | ✅ | ✅ | 词典在线更新用本地旧 downloadUrl 下载，更新永不生效 |
 | [BUG-2700](bugs/BUG-2700-anki-compact-glossaries.md) | ✅ | ✅ | 制卡「紧凑释义」开关不生效 |

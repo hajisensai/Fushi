@@ -606,6 +606,7 @@ public class MainActivity extends AudioServiceActivity {
         SystemOcrChannel.registerWith(flutterEngine);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
+        DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
