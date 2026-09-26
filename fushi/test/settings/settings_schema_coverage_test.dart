@@ -83,6 +83,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
   'interconnect/Transcode video for peers':
       'test/sync/fushi_sync_server_transcode_test.dart',
+  // 游戏串流「允许远程启动」（host 侧许可，默认关，只在 Windows 出现）。写
+  // prefsRepo（changed=true），生效点在 **HTTP 端点**：app 把
+  // `prefsRepo.gameStreamRemoteLaunchEnabled` 实时注入成 host 的
+  // `isLaunchEnabled`（app_model），`/api/game-stream/launch` 每次处理都读它，关着就
+  // 403 `disabled`、不起进程。harness 里没有起 server，探不到。由专项测试咬住。
+  'interconnect/Allow remote launch':
+      'packages/fushi_engine/test/game_stream_launch_settings_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
