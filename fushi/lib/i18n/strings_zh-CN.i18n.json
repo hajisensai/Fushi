@@ -5174,9 +5174,7 @@
   "manga_reader_mode_hint": "进入时显示阅读模式",
   "manga_reader_tap_hint": "显示点击区提示",
   "manga_reader_skip_read": "跳过已读章节",
-  "manga_reader_skip_filtered": "跳过已过滤章节",
   "manga_reader_skip_duplicate": "跳过重复章节",
-  "manga_reader_transition": "始终显示章节过渡",
   "manga_reader_fullscreen": "全屏",
   "manga_reader_keep_screen": "保持亮屏",
   "manga_reader_invert_volume": "反转音量键翻页方向",
@@ -5588,5 +5586,6 @@
   "video_subtitle_remote_player_decoded": "服务器无法抽取该字幕轨，改由播放器边播边解码（字幕随播放逐句出现，可查词）：$label",
   "manga_discovery_view_all": "查看全部",
   "manga_discovery_empty_title": "还没有可发现的漫画来源",
-  "manga_discovery_empty_action": "管理来源"
+  "manga_discovery_empty_action": "管理来源",
+  "manga_reader_download_ahead": "阅读时预下载下一章"
 }

@@ -38,6 +38,7 @@ import 'package:fushi/src/media/manga/manga_panel_detector.dart';
 import 'package:fushi/src/media/manga/manga_panel_navigation.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
+import 'package:fushi/src/media/manga/library/manga_adjacent_chapter.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
@@ -860,6 +861,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 「本章未下载」态下观察下载表的订阅：任务表一变就复核磁盘判据。
   StreamSubscription<void>? _downloadWatch;
+
+  /// 本会话里已经为哪些章做过「预下载下一话」判定（按当前章 key）。每章只判
+  /// 一次：翻页每一步都会进来，不去重就是每页一次数据库 + 磁盘探测。
+  final Set<String> _prefetchCheckedChapterKeys = <String>{};
 
   /// 当前章在书架体系里的身份；非书架在线条目为 null。
   String? get _shelfChapterKey {
@@ -2665,12 +2670,86 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   // ── 换章 ───────────────────────────────────────────────────────────
 
-  /// 章节列表里「下一章」的下标偏移。
-  ///
-  /// 源按**新→旧**返回（列表 0 = 最新一话），所以「读下一话」是下标 **-1**。
-  /// 这个方向反直觉，是本文件里最容易写反的一处，因此收成一个具名常量而不是
-  /// 散落在各处的 `-1`。
-  static const int _kNextChapterStep = -1;
+  /// 阅读顺序上的相邻章（源按新→旧，方向见 [kMangaNextChapterStep]），按本书
+  /// 生效的「跳过已读 / 跳过重复章节」过滤；没有可去的章返回 null。
+  Future<int?> _adjacentChapterIndex({required bool forward}) async {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    final EpubBookRow? row = _bookRow;
+    if (entry == null) return null;
+    final MangaReaderPreferences prefs = _readerPreferences;
+    Set<String> readKeys = const <String>{};
+    if (prefs.skipRead && row != null && row.uid.isNotEmpty) {
+      final Map<String, MangaChapterStateRow> states = await appModel.database
+          .getMangaChapterStates(row.uid);
+      readKeys = <String>{
+        for (final MapEntry<String, MangaChapterStateRow> e in states.entries)
+          if (e.value.readAt != null) e.key,
+      };
+    }
+    return resolveAdjacentMangaChapter(
+      chapters: entry.chapters,
+      currentIndex: _shelfChapterIndex,
+      forward: forward,
+      readChapterKeys: readKeys,
+      skipRead: prefs.skipRead,
+      skipDuplicate: prefs.skipDuplicate,
+    );
+  }
+
+  /// 预下载下一话（对齐 Mihon「预下载」）：读在线章过了约 2/3（短章一进来就
+  /// 算），且下一话没下载、没在队列里，就把它排进下载队列——连续阅读不必在每个
+  /// 章节边界停下来等下载。每章每会话只判一次；本地书与来源回看会话不参与。
+  Future<void> _maybePrefetchNextChapter() async {
+    final OnlineMangaLibraryEntry? entry = _shelfEntry;
+    final EpubBookRow? row = _bookRow;
+    final String? chapterKey = _shelfChapterKey;
+    final int pageCount = _payload?.images.length ?? 0;
+    if (entry == null ||
+        row == null ||
+        chapterKey == null ||
+        _chapterNotDownloaded ||
+        _switchingChapter ||
+        _sourceReviewActive ||
+        !_readerPreferences.downloadAhead ||
+        _prefetchCheckedChapterKeys.contains(chapterKey) ||
+        !shouldPrefetchNextMangaChapter(
+          currentPage: _currentPage,
+          pageCount: pageCount,
+        )) {
+      return;
+    }
+    _prefetchCheckedChapterKeys.add(chapterKey);
+    try {
+      final int? target = await _adjacentChapterIndex(forward: true);
+      if (target == null || !mounted) return;
+      final OnlineMangaChapter next = entry.chapters[target];
+      // 锁定章入队必败（要登录购买），预下载不替用户去撞。
+      if (next.locked) return;
+      if (await isChapterDownloaded(
+        await MangaStorage.bookPath(row.bookKey),
+        next.key,
+      )) {
+        return;
+      }
+      // 已有任务行就不动：排队 / 下载中本来就会下完；失败 / 已取消是用户看得见
+      // 的状态，后台静默重排会把「我取消了」悄悄推翻。
+      final MangaDownloadJobRow? job = (await appModel.mangaDownloadService
+          .jobsForBook(row.bookKey))[next.key];
+      if (job != null && job.status != MangaDownloadJobStatus.done) return;
+      if (!mounted) return;
+      await appModel.mangaDownloadService.enqueueChapter(
+        entry: entry,
+        chapter: next,
+        autoOcr: false,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MangaFushiPage.prefetchNextChapter',
+        error,
+        stack,
+      );
+    }
+  }
 
   /// 读到当前章的边界（[delta] > 0 = 想往后翻）。
   Future<void> _onReachedChapterEdge(int delta) async {
@@ -2682,9 +2761,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       // （追到最新话），「读完了」也必须记上，否则作品页永远显示未读。
       await _markCurrentChapterRead();
     }
-    final int step = forward ? _kNextChapterStep : -_kNextChapterStep;
-    final int target = _shelfChapterIndex + step;
-    if (target < 0 || target >= entry.chapters.length) {
+    final int? target = await _adjacentChapterIndex(forward: forward);
+    if (target == null) {
       // 一章只提示一次。队列会把长按攒下的 pendingDelta 一步步喂进来，每一步都
       // 撞在同一个边界上——不去重就是一串一模一样的 toast 糊住屏幕。
       if (mounted && !_edgeToastShown) {
@@ -3978,6 +4056,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _currentPage = page;
     _pageNotifier.value = page;
     _noteVisiblePages();
+    unawaited(_maybePrefetchNextChapter());
     // 600ms debounce：连续翻页/滚动只落最后一次。
     _progressDebounce?.cancel();
     _progressDebounce = Timer(const Duration(milliseconds: 600), () {
