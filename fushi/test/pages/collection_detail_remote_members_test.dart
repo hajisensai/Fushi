@@ -198,7 +198,10 @@ void main() {
       id: 'video/e1',
       title: 'Show 01',
       dest: File('${dir.path}/e1.mp4'),
-      run: (File target, {void Function(double progress)? onProgress}) async {
+      run: (File target,
+          {void Function(double progress)? onProgress,
+          void Function(int received, int? total)? onBytes,
+          Future<void>? cancelSignal}) async {
         report = onProgress;
         await gate.future;
       },

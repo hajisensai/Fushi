@@ -14,6 +14,7 @@ import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -394,6 +395,11 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                 BuildContext context,
                                 List<DownloadTaskEntry> remote,
                               ) =>
+                                  InterconnectDownloadTasksSection(
+                              tasksBuilder: (
+                                BuildContext context,
+                                List<DownloadTaskEntry> interconnect,
+                              ) =>
                                   VideoDownloadJobsPanel.database(
                               unified: true,
                               additionalTasks: <DownloadTaskEntry>[
@@ -401,6 +407,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                 ...direct,
                                 ...manga,
                                 ...remote,
+                                ...interconnect,
                               ],
                               database: ref.read(appProvider).database,
                               metricsLoader: ref
@@ -515,7 +522,7 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                                   );
                                 }
                               },
-                            )),
+                            ))),
                           ),
                         ),
                       ),

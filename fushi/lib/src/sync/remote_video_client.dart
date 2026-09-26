@@ -27,13 +27,35 @@ abstract class RemoteVideoSource implements RemoteLibrarySource {
 
   /// 把 [id] 对应的视频整片下载到 [dest]。
   ///
-  /// 续传口径按源写实：互联走 host live 下载引擎（Range + `.part`，中断可续）；
-  /// 云盘是整文件重下，失败清残片、无断点续传。
+  /// 续传口径按源写实：互联走 host live 下载引擎（Range + `.part` + `If-Range`
+  /// 验证器，中断可续、host 文件换了就从头下）；云盘是整文件重下，失败清残片、
+  /// 无断点续传。
+  ///
+  /// [onBytes] 报字节级进度 `(已收, 总量)`；续传时 `已收` 从断点偏移起算，总量
+  /// 未知为 null。能廉价拿到字节数的源才报。
+  ///
+  /// [cancelSignal] 完成即请求取消：支持取消的源中止传输并抛
+  /// [RemoteDownloadCancelled]（互联保留 `.part` 供下次续传）；不支持的源忽略。
   Future<void> downloadRemoteVideo(
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   });
+}
+
+/// [RemoteVideoSource.downloadRemoteVideo] 被 `cancelSignal` 取消。
+///
+/// 与失败区分开：调用方据此不报错、不清断点（互联源的 `.part` 仍在，下次同一
+/// 目标路径的下载从断点续上）。
+class RemoteDownloadCancelled implements Exception {
+  const RemoteDownloadCancelled([this.message = 'remote download cancelled']);
+
+  final String message;
+
+  @override
+  String toString() => 'RemoteDownloadCancelled: $message';
 }
 
 /// 具备实时流播 / 外挂字幕 / 跨端断点的远端视频源——只有互联 host 的 live 库有这些
