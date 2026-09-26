@@ -4674,7 +4674,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
-			// BUG-2707：TextRender 分支只改类成员，而 TJS2 的 `new` 把成员拷进实例——
+			// BUG-2708：TextRender 分支只改类成员，而 TJS2 的 `new` 把成员拷进实例——
 			// bootstrap 之前就建好的消息层渲染器永远拿着原函数，采集从不触发（千恋＊万花：
 			// 有 textrender.dll、没有 msgwin 插件）。这里在 KAG 标准容器
 			// kag.fore/back.messages[] 上按 textrender 插件的惯用挂载字段有界地找既有
@@ -5016,7 +5016,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			else
 			{
 				installStage = 32;
-				// BUG-2707：TextRender 插件在、却没有绑到任何消息层实例上（KAGEX 系：正文由
+				// BUG-2708：TextRender 插件在、却没有绑到任何消息层实例上（KAGEX 系：正文由
 				// MessageLayer 走 processCh 画在 textLayer 上，TextRender 只给别处用）——
 				// 类级包装永远不会采到正文。此时消息层按 classic KAG 处理：processCh 前读
 				// 图层自身的绘制光标 x/y 取几何，与经典 KAG3 同一条采集。

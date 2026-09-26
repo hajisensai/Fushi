@@ -137,7 +137,7 @@ class AdapterStructureTest(unittest.TestCase):
                           self._function_body(source, detour))
 
     def test_kirikiri_textrender_without_bound_instance_falls_back_to_classic(self) -> None:
-        # BUG-2707: a TextRender plugin that is not bound to any message-layer instance
+        # BUG-2708: a TextRender plugin that is not bound to any message-layer instance
         # (KAGEX CustomMessageLayer, Senren Banka) must not leave the sensor with class-only
         # wrappers that never capture; the message layers get the classic processCh capture.
         source = (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8")
