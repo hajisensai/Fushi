@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -134,10 +136,97 @@ void main() {
         ThemeNotifier.themePresets['dark-theme']!.variant,
         DynamicSchemeVariant.tonalSpot,
       );
+      // 纯黑靠真黑表面区分，强调色走 M3 默认 tonalSpot（不再用高彩度 vibrant）。
       expect(
         ThemeNotifier.themePresets['black-theme']!.variant,
-        DynamicSchemeVariant.vibrant,
+        DynamicSchemeVariant.tonalSpot,
       );
+      expect(ThemeNotifier.themePresets['black-theme']!.pureBlack, isTrue);
+    });
+
+    test('presets stay on M3 default-chroma variants (no vibrant/expressive)',
+        () {
+      for (final MapEntry<String, ThemePreset> entry
+          in ThemeNotifier.themePresets.entries) {
+        expect(
+          <DynamicSchemeVariant>[
+            DynamicSchemeVariant.tonalSpot,
+            DynamicSchemeVariant.neutral,
+          ],
+          contains(entry.value.variant),
+          reason: '${entry.key} 用了高彩度变体，亮色 primary 会远超 M3 常规彩度',
+        );
+      }
+    });
+
+    test('black-theme dark surfaces are true black; light stays ordinary',
+        () {
+      final ThemePreset black = ThemeNotifier.themePresets['black-theme']!;
+      final ColorScheme dark =
+          ThemeNotifier.buildPresetColorScheme(black, Brightness.dark);
+      expect(dark.surface, const Color(0xFF000000));
+      expect(dark.surfaceContainerLowest, const Color(0xFF000000));
+      expect(dark.surfaceContainer, isNot(const Color(0xFF000000)));
+      final ColorScheme light =
+          ThemeNotifier.buildPresetColorScheme(black, Brightness.light);
+      expect(light.surface.computeLuminance(), greaterThan(0.9));
+    });
+
+    test('water-theme is not a recolor of the brand teal (hue apart)', () {
+      double hueGap(Color a, Color b) {
+        final double d = (Hct.fromInt(a.toARGB32()).hue -
+                    Hct.fromInt(b.toARGB32()).hue)
+                .abs() %
+            360;
+        return d > 180 ? 360 - d : d;
+      }
+
+      for (final Brightness b in Brightness.values) {
+        final ColorScheme water = ThemeNotifier.buildPresetColorScheme(
+            ThemeNotifier.themePresets['water-theme']!, b);
+        final ColorScheme teal = ThemeNotifier.buildPresetColorScheme(
+            ThemeNotifier.themePresets['light-theme']!, b);
+        expect(hueGap(water.primary, teal.primary), greaterThan(15),
+            reason: '${b.name}: 水蓝与白色主题 primary 色相几乎相同');
+      }
+    });
+
+    test('switch uses M3 default role colors (track primary, thumb onPrimary)',
+        () {
+      final SwitchThemeData sw = notifier.theme.switchTheme;
+      // 不覆写滑块 / 轨道色，交回 M3 默认；覆写回 primaryContainer 轨道就是 M2 配法。
+      expect(sw.thumbColor, isNull);
+      expect(sw.trackColor, isNull);
+    });
+
+    test('switch check icon is tinted primary, readable on the onPrimary thumb',
+        () {
+      final ThemeData theme = notifier.theme;
+      final Icon? icon = theme.switchTheme.thumbIcon!
+          .resolve(<WidgetState>{WidgetState.selected});
+      // 不着色就回落 M3 的 onPrimaryContainer：自定义主题钉主色时它与
+      // onPrimary（滑块）可能同黑同白，勾消失。
+      expect(icon?.color, theme.colorScheme.primary);
+
+      double contrast(Color a, Color b) {
+        final double la = a.computeLuminance();
+        final double lb = b.computeLuminance();
+        return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+      }
+
+      // 两个撞色场景：深色模式钉深主色、亮色模式钉亮主色。
+      for (final (Brightness b, Color pinned) in <(Brightness, Color)>[
+        (Brightness.dark, const Color(0xFF1565C0)),
+        (Brightness.light, const Color(0xFFFFEB3B)),
+      ]) {
+        final ColorScheme cs = buildFushiColorScheme(
+          seedColor: pinned,
+          brightness: b,
+          primary: pinned,
+        );
+        expect(contrast(cs.primary, cs.onPrimary), greaterThanOrEqualTo(3),
+            reason: '${b.name} $pinned：勾（primary）压在滑块（onPrimary）上看不清');
+      }
     });
   });
 
