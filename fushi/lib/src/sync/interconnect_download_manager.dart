@@ -224,6 +224,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
   final DownloadKeepAlive? _keepAlive;
   final int Function() _now;
   bool _keepAliveActive = false;
+  int _keepAliveHolds = 0;
 
   /// 书域任务键（BUG-1693 批审计）：书任务与视频任务同居一张 [_tasks] 表——视频
   /// 键是 `RemoteVideoInfo.id`、书键是 `RemoteBookInfo.downloadId`（= host 的
@@ -279,15 +280,32 @@ class InterconnectDownloadManager extends ChangeNotifier {
       total: starters.length,
     );
     _notify();
-    for (final Future<void> Function() start in starters) {
-      try {
-        await start();
-        _updateBatch(id, completed: 1);
-      } catch (_) {
-        _updateBatch(id, failed: 1);
+    await holdKeepAliveDuring(() async {
+      for (final Future<void> Function() start in starters) {
+        try {
+          await start();
+          _updateBatch(id, completed: 1);
+        } catch (_) {
+          _updateBatch(id, failed: 1);
+        }
       }
-    }
+    });
     return _batches[id]!;
+  }
+
+  /// 串行跑多条下载的调用方（整批 [startBatch]、启动时的自动续传）用它把保活撑过
+  /// 成员之间的空档：一条下完、下一条还没起的那一瞬间没有在跑的任务，若照常撤掉
+  /// 前台服务，而 app 此时已在后台，Android 12+ 不允许再拉起（抛
+  /// `ForegroundServiceStartNotAllowedException`），后续成员全程没有保活、进程一被
+  /// 杀就断。[body] 期间不撤服务；结束后按实际状态同步一次。
+  Future<T> holdKeepAliveDuring<T>(Future<T> Function() body) async {
+    _keepAliveHolds++;
+    try {
+      return await body();
+    } finally {
+      _keepAliveHolds--;
+      if (!_disposed) _syncKeepAlive();
+    }
   }
 
   void _updateBatch(String id, {int completed = 0, int failed = 0}) {
@@ -737,6 +755,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
         if (task.isRunning) task,
     ];
     if (running.isEmpty) {
+      // 串行下载的空档（见 [holdKeepAliveDuring]）：不撤，下一条起跑时再 update。
+      if (_keepAliveHolds > 0) return;
       if (_keepAliveActive) {
         _keepAliveActive = false;
         unawaited(keepAlive.stop());

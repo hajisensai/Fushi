@@ -2535,16 +2535,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         totalBytes: record.totalBytes,
       );
     }
-    for (final _RemoteVideoDownloadPlan plan in autoResume) {
-      try {
-        await plan.start(manager);
-      } catch (e) {
-        // 失败 / 暂停的状态已落在任务快照里（下载中心与卡片角标可见）。
-        debugPrint('[home-video] auto-resume ${plan.video.id} stopped: $e');
-        continue;
+    // 串行续传：成员之间不撤保活（见 holdKeepAliveDuring）。
+    await manager.holdKeepAliveDuring(() async {
+      for (final _RemoteVideoDownloadPlan plan in autoResume) {
+        try {
+          await plan.start(manager);
+        } catch (e) {
+          // 失败 / 暂停的状态已落在任务快照里（下载中心与卡片角标可见）。
+          debugPrint('[home-video] auto-resume ${plan.video.id} stopped: $e');
+          continue;
+        }
+        if (mounted) _refresh();
       }
-      if (mounted) _refresh();
-    }
+    });
   }
 
   /// 合集整体下载（#6）：把 [collection] 里**只在对端**的成员 [members] 串行排进

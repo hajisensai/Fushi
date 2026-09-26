@@ -396,6 +396,44 @@ void main() {
       await running;
       expect(keepAlive.stops, 1);
     });
+
+    test('整批串行下载：成员之间不撤前台服务，整批结束才撤', () async {
+      // 成员之间若撤了服务，app 已在后台时 Android 12+ 不允许再拉起，后续成员
+      // 全程没有保活。
+      final _RecordingKeepAlive keepAlive = _RecordingKeepAlive();
+      final InterconnectDownloadManager manager =
+          InterconnectDownloadManager(keepAlive: keepAlive);
+      addTearDown(manager.dispose);
+      final List<int> stopsBeforeMember = <int>[];
+      Future<void> Function() member(String id) => () async {
+            stopsBeforeMember.add(keepAlive.stops);
+            await manager.startVideoDownload(
+              id: id,
+              title: 'Title $id',
+              dest: dest('$id.mp4'),
+              run: (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) async {
+                onBytes?.call(50, 100);
+              },
+            );
+          };
+      await manager.startBatch(
+        id: 'batch',
+        title: 'Batch',
+        starters: <Future<void> Function()>[
+          member('b1'),
+          member('b2'),
+          member('b3'),
+        ],
+      );
+      expect(stopsBeforeMember, <int>[0, 0, 0],
+          reason: '任何一个成员起跑前都不该已经撤过服务');
+      expect(keepAlive.stops, 1, reason: '整批结束后撤一次');
+    });
   });
 }
 
