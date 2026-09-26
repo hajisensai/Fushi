@@ -63,9 +63,24 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 /// snapshot is a transient JSON asset, the local state lives in the existing
 /// statistic tables + favorite_sentences pref.
 class AggregateSyncService {
-  AggregateSyncService(this._db, {this.scope = SyncChannelScope.unscoped});
+  AggregateSyncService(
+    this._db, {
+    this.scope = SyncChannelScope.unscoped,
+    this.localApplyLock,
+  });
 
   final FushiDatabase _db;
+
+  /// 包住「把合并结果写回本地 DB」这一步的窄互斥（BUG-2717）。
+  ///
+  /// 本机同时是互联 host 时，对端 PUT 来的快照经 host 的
+  /// `applyAggregateSnapshot` → [foldIntoLocal] 落进同一批统计 / 收藏表；两边
+  /// 都是「materialize → MAX 折叠 → 绝对值写回」，交错就会让后写者用陈旧的
+  /// 较小值覆盖先写者（丢更新）。app 把 host 侧与这里接到同一把锁上。
+  ///
+  /// 锁只包本地步骤，绝不包网络：拉远端 / 推快照期间不持锁，否则对端写又会被
+  /// 本机慢网络拖住。null（测试 / 无头服务端，那里没有出站同步）= 不加锁。
+  final Future<void> Function(Future<void> Function() body)? localApplyLock;
 
   /// 本次同步跑的是哪条通道（BUG-1580）。「上次推上去的快照哈希」是**相对某一个
   /// 远端**的去重记录：共用一份键时，云通道推完写下的哈希会让互联通道以为对端
@@ -121,7 +136,7 @@ class AggregateSyncService {
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     if (!identical(merged, localSnapshot)) {
-      await applySnapshotToLocal(merged);
+      await _applyMergedLocally(merged);
     }
 
     // 5) Upload this device's now-merged snapshot so peers converge next sync.
@@ -243,7 +258,7 @@ class AggregateSyncService {
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     if (!identical(merged, localSnapshot)) {
-      await applySnapshotToLocal(merged);
+      await _applyMergedLocally(merged);
     }
 
     // 5) Push the merged snapshot back so the host converges to the union.
@@ -1199,6 +1214,23 @@ class AggregateSyncService {
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);
+  }
+
+  /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内**重新** materialize 本地再折叠
+  /// [merged]，而不是直接写回 [merged]。
+  ///
+  /// [merged] 基于第 1 步的本地快照，中间隔着一次网络往返；这段时间里互联对端可能
+  /// 已经把更大的值折进了本地（host 的 [foldIntoLocal]）。直接写回会用陈旧值覆盖它。
+  /// 锁内重读再 MAX 折叠（与 host 侧同一个 [foldIntoLocal]）让结果只增不减，且合并
+  /// 满足交换 / 幂等，本地没被改过时结果与直接写回 [merged] 逐字段相同。
+  Future<void> _applyMergedLocally(AggregateSnapshot merged) async {
+    final Future<void> Function(Future<void> Function() body)? lock =
+        localApplyLock;
+    if (lock == null) {
+      await foldIntoLocal(merged);
+      return;
+    }
+    await lock(() => foldIntoLocal(merged));
   }
 
   /// Folds an INCOMING peer snapshot into the local DB safely: materialises the

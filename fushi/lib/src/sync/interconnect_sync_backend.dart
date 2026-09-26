@@ -143,6 +143,16 @@ Future<bool> _defaultFushiProbe(String url, String token) async {
   }
 }
 
+/// BUG-2717：互联小请求超时的诊断消息——带方法与路径，便于从日志判断是哪个端点在
+/// host 侧卡住。只取 [Uri.path]：query 里可能有参数，不进日志。
+@visibleForTesting
+String interconnectRequestTimeoutMessage(
+  String method,
+  Uri uri,
+  Duration limit,
+) =>
+    'interconnect request timed out after $limit: $method ${uri.path}';
+
 /// Sync backend for connecting to another Hibiki instance's embedded server.
 ///
 /// Uses the WebDAV protocol (same as [WebDavSyncBackend]) but stores
@@ -207,6 +217,9 @@ class InterconnectSyncBackend extends SyncBackend
 
   /// BUG-1567：把 [req] 发出并在 [requestTimeout] 内等到响应头；超时则中止请求
   /// （释放底层连接）并抛 [TimeoutException]，让挂死 host 降级为可重试失败。
+  ///
+  /// BUG-2717：超时消息带上方法与路径（不带 query，令牌与参数不进日志）。此前只有
+  /// 「interconnect request timed out」，日志里分不清是哪个端点在 host 侧排队。
   Future<HttpClientResponse> _sendBounded(
     HttpClientRequest req, {
     Duration? timeout,
@@ -215,7 +228,7 @@ class InterconnectSyncBackend extends SyncBackend
     return req.close().timeout(limit, onTimeout: () {
       req.abort();
       throw TimeoutException(
-        'interconnect request timed out after $limit',
+        interconnectRequestTimeoutMessage(req.method, req.uri, limit),
         limit,
       );
     });

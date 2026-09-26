@@ -181,6 +181,7 @@ import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_conflict_prompter.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi/src/models/theme_notifier.dart' as theme_notifier;
 import 'package:fushi/src/models/theme_notifier.dart'
     show ThemeNotifier, CustomThemeEntry, ThemePreset;
@@ -653,6 +654,10 @@ class AppModel with ChangeNotifier {
         dictRepo.clearDictionaryResultsCache();
       },
       runExclusive: runExclusiveWithSync,
+      // BUG-2717：对端推来的聚合快照 / 合集清单只和「本地落库步骤」互斥，不排在
+      // 本机整轮自动同步后面（整轮可能是几分钟的云备份，对端 15s 就超时）。本机
+      // 出站同步的聚合 / 合集落库持的是同一把窄锁，见 sync_state_apply_lock.dart。
+      runSyncStateExclusive: runExclusiveWithSyncStateApply,
       // BUG-714: 必须接线 importBookFromFile，否则 host 收到对端 client 的
       // PUT /api/library/books/<title> 时 importBook 抛 UnsupportedError，被
       // 服务端 catch 成 HTTP 500，互联/live 书籍推送（client→host）整体失效。

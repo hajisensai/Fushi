@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2487 条。点号进各自文件。
+> 共 2488 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
 | [BUG-2711](bugs/BUG-2711-vn-split-screen-margin-asymmetry.md) | ✅ | ✅ | VN 模式拆屏后左右间距不一致 |
 | [BUG-2709](bugs/BUG-2709-dict-online-update-parity.md) | ✅ | ✅ | 词典在线更新：钉版本号的下载地址更新不到新版，旧版导入的词典被判不可更新 |
 | [BUG-2707](bugs/BUG-2707-dict-update-stale-download-url.md) | ✅ | ✅ | 词典在线更新用本地旧 downloadUrl 下载，更新永不生效 |

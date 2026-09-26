@@ -38,20 +38,25 @@ extension _SyncOrchestratorCollections on SyncOrchestrator {
         return;
       }
 
-      final CollectionManifest local = await loadLocalCollectionManifest(_db);
       final SyncRepository repo = SyncRepository(_db);
-      // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
-      int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
-      if (baseline > nextBaseline) baseline = nextBaseline;
-      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
-        local: local,
-        remote: remote,
-        lastSyncedAtMs: baseline,
-        nowMs: nextBaseline,
-      );
+      // BUG-2717：读本地清单 → 合并 → 落库是一次读-改-写，与本机作为 host 处理对端
+      // POST 的 mergeCollectionManifest 持同一把窄锁（只包本地步骤，网络都在锁外）。
+      late final CollectionSyncOutcome outcome;
+      await runExclusiveWithSyncStateApply(() async {
+        final CollectionManifest local = await loadLocalCollectionManifest(_db);
+        // 时钟回拨钳制：持久化基线晚于 now 时钳到 now。
+        int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
+        if (baseline > nextBaseline) baseline = nextBaseline;
+        outcome = CollectionSyncEngine.merge(
+          local: local,
+          remote: remote,
+          lastSyncedAtMs: baseline,
+          nowMs: nextBaseline,
+        );
 
-      report.collectionsUpdated +=
-          await applyCollectionLocalChanges(_db, outcome.changes);
+        report.collectionsUpdated +=
+            await applyCollectionLocalChanges(_db, outcome.changes);
+      });
 
       // 回写门槛：字节有变才 POST（确定性排序保证内容相等 ⇒ 字节相等，避免每轮
       // 无谓写放大）。
