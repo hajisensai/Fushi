@@ -30,7 +30,8 @@
 //                               ③ 点字形弹出查词卡 ④ 这一击不推进剧情
 //                               ⑤ 关卡（点 (ox,oy)，缺省再点同一字形）也不推进
 //                               ⑥ 关卡后再点同一字形能再次出卡（BUG-2710 回归）
-//                               ⑦ 已执行 fakeanki 时对该句制卡，卡里有台词、语音、图片。
+//                               ⑦ 已执行 fakeanki 时在查词卡上触发「制卡」（手柄 A 同一路径），
+//                                  卡里有台词、语音、图片。
 //                               每条一行 PASS/FAIL + 证据，末行 verdict=full|partial。
 //   lines [n]                   最近 n 条台词
 //   shot game|card|hwnd:<n>     WGC 抓窗口像素（与制卡截图同一通道）
@@ -61,6 +62,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -451,6 +453,9 @@ void main() {
                   'audioFallbackDisabled=${result.audioFallbackDisabled} '
                   'degradedToStill=${result.degradedToStill} '
                   'failureReason=${result.failureReason} '
+                  'errorCode=${result.outcome?.errorCode} '
+                  'errorDetail=${result.outcome?.errorDetail} '
+                  'error=${result.outcome?.error} '
                   'text=${entry.text.replaceAll('\n', '⏎')}');
             case 'fakeanki':
               fakeAnki ??= await FakeAnkiConnect.start();
@@ -518,25 +523,29 @@ void main() {
                   _lookupCardOnScreen, const Duration(seconds: 5));
               verdict('relookup_after_dismiss', reshown,
                   'click=$gx,$gy card=$reshown (BUG-2710)');
-              if (reshown) {
-                await clickAndSettle(ox, oy);
-                await pollUntil(
-                    () => !_lookupCardOnScreen(), const Duration(seconds: 4));
-              }
+              // ⑦ 真卡：在还开着的查词卡上触发「制卡」。走手柄 A 键同一条生产路径
+              // （DictionaryPopupGamepadRegistry → fushiPopupMineFirstEntry，等于点卡上的
+              // 「+」），字段由查词卡按词条给出——驱动自拼字段会漏掉首字段（Lapis 的
+              // Expression），测的就不是用户路径。
               final FakeAnkiConnect? anki = fakeAnki;
+              final String lineText = last?.text.trim() ?? '';
               if (anki == null) {
                 out('#$seq ACCEPT4 card=SKIP run fakeanki first');
                 failed.add('card');
+              } else if (!reshown) {
+                verdict('card', false, 'no lookup card to mine from');
               } else {
                 final int notesBefore = anki.notes.length;
-                final (TexthookerLineEntry, GalHookMiningResult)? mined =
-                    await mineLatest();
+                final DictionaryPopupGamepadHooks? popup =
+                    DictionaryPopupGamepadRegistry.current;
+                if (popup != null) await popup.mineFirstEntry();
+                await pollUntil(() => anki.notes.length > notesBefore,
+                    const Duration(seconds: 30));
                 final Map<String, Object?>? note =
                     anki.notes.length > notesBefore ? anki.notes.last : null;
                 final Map<String, String> fields = note == null
                     ? const <String, String>{}
                     : Map<String, String>.from(note['fields']! as Map);
-                final String lineText = mined?.$1.text.trim() ?? '';
                 final bool hasSentence = lineText.isNotEmpty &&
                     fields.values.any((String v) => v.contains(lineText));
                 final bool hasAudio =
@@ -546,12 +555,16 @@ void main() {
                 verdict(
                   'card',
                   note != null && hasSentence && hasAudio && hasImage,
-                  'noteId=${note?['noteId']} sentence=$hasSentence '
-                      'audio=$hasAudio image=$hasImage '
-                      'result=${mined?.$2.outcome?.result.name} '
-                      'failure=${mined?.$2.failureReason} '
-                      'media=${anki.mediaFileNames.length}',
+                  'popup=${popup != null} noteId=${note?['noteId']} '
+                      'sentence=$hasSentence audio=$hasAudio image=$hasImage '
+                      'media=${anki.mediaFileNames.length} '
+                      'ankiActions=${anki.requests.map((Map<String, Object?> r) => r['action']).toSet().join('/')}',
                 );
+              }
+              if (reshown) {
+                await clickAndSettle(ox, oy);
+                await pollUntil(
+                    () => !_lookupCardOnScreen(), const Duration(seconds: 4));
               }
               out('#$seq ACCEPT4 verdict='
                   '${failed.isEmpty ? 'full' : 'partial missing=${failed.join(',')}'}');

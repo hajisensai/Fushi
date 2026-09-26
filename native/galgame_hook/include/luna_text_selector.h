@@ -199,11 +199,37 @@ class LunaPairedTailTracker {
     // 是台词，不论带不带别的尾巴，都不能顶掉已记下的尾巴。有界：超长的不可能是标签。
     if (len <= kMaxTailChars && !StartsWithPairedBlock(text, len)) {
       standalone_[thread_id].assign(text, text + len);
+      recurring_.erase(thread_id);
+      return base;
     }
+    // helper 在循环音效**已经开始之后**才附着时，从没见过独立的 T（BUG-2705 已知限制），
+    // 上面那条路剥不了，这一段每句都是 `P P T`，而且文本道里存的是畸形串，游戏内查词按
+    // 原文反查不到文本代次、整段点不出卡。补一个同样只看结构的判据：同一线程**连续两条**
+    // 事件以同一个非成对后缀结尾，去掉它后正文都能完整折叠、且正文不同，这个后缀就是粘尾。
+    // 合法叠句（「わかったわかった、もう行くよ」）要连续两句带同一段尾巴才会被误判。
+    int body_len = 0;
+    const int tail_len = ShortestFoldableTail(text, len, &body_len);
+    if (tail_len <= 0) {
+      recurring_.erase(thread_id);
+      return base;
+    }
+    const std::wstring tail(text + body_len, text + len);
+    const std::wstring body(text, text + body_len);
+    const auto seen = recurring_.find(thread_id);
+    if (seen != recurring_.end() && seen->second.tail == tail &&
+        seen->second.body != body) {
+      standalone_[thread_id] = tail;
+      recurring_.erase(seen);
+      return LunaNormalizedTextLength(text, body_len);
+    }
+    recurring_[thread_id] = RecurringTail{tail, body};
     return base;
   }
 
-  void Reset() { standalone_.clear(); }
+  void Reset() {
+    standalone_.clear();
+    recurring_.clear();
+  }
 
  private:
   static bool StartsWithPairedBlock(const wchar_t* text, int len) {
@@ -213,8 +239,29 @@ class LunaPairedTailTracker {
     return false;
   }
 
+  // 最短的、去掉后剩余正文能完整成对折叠的后缀长度；没有则返回 0。尾巴自身不能以成对块
+  // 开头（那是下一句台词，不是标签），且有界。
+  static int ShortestFoldableTail(const wchar_t* text, int len, int* body_len) {
+    for (int body = len - 1; body >= kLunaMinFoldedLineChars * 2; --body) {
+      const int tail = len - body;
+      if (tail > kMaxTailChars) break;
+      if (StartsWithPairedBlock(text + body, tail)) continue;
+      if (LunaNormalizedTextLength(text, body) < body) {
+        *body_len = body;
+        return tail;
+      }
+    }
+    return 0;
+  }
+
+  struct RecurringTail {
+    std::wstring tail;
+    std::wstring body;
+  };
+
   static constexpr int kMaxTailChars = 256;
   std::map<uint64_t, std::wstring> standalone_;
+  std::map<uint64_t, RecurringTail> recurring_;
 };
 
 // Luna's x64 TYPEMOON hook reports the story renderer and the in-game toolbar
