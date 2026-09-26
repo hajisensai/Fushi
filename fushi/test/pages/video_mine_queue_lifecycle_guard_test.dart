@@ -73,7 +73,7 @@ void main() {
     expect(commit, contains('_providerContainer.read(ankiRepositoryProvider)'));
   });
 
-  test('后台落地 / 打开列表用 State 的 mounted，不取 context', () {
+  test('后台落地用 State 的 mounted；打开列表在 await 前抓住 context', () {
     final String land = compactCode(
       methodBody(read(miningPartPath), 'MinePopupResult _landVideoMine('),
     );
@@ -83,8 +83,14 @@ void main() {
     final String open = compactCode(
       methodBody(read(queuePartPath), 'Future<void> _openVideoMineQueue()'),
     );
-    expect(open, isNot(contains('context.mounted')));
-    expect(open, contains('if(!mounted)return;'));
+    // 打开列表要用 context 弹窗：await 之前先抓住 element，await 之后问它的
+    // mounted（不在 await 之后取 `this.context`）。
+    expect(open, contains('finalBuildContextcontext=this.context;'));
+    expect(
+      open.indexOf('finalBuildContextcontext=this.context;'),
+      lessThan(open.indexOf('await_videoMineQueue()')),
+    );
+    expect(open, contains('if(!context.mounted)return;'));
   });
 
   test('后台落地回调写制卡历史用点击时冻结的库，不经 ref / context', () {

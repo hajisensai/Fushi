@@ -76,9 +76,11 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
 
   /// 打开待制卡列表。
   Future<void> _openVideoMineQueue() async {
+    // await 之前先抓住 element：unmount 之后再取 `this.context` 本身就会抛，而抓住的
+    // element 在卸载后 `mounted` 只返回 false。
+    final BuildContext context = this.context;
     final VideoMineQueue queue = await _videoMineQueue();
-    // State 的 `mounted`：unmount 之后连取 `context` 都会抛。
-    if (!mounted) return;
+    if (!context.mounted) return;
     final VideoMineCommitSummary? summary = await showVideoMineQueueDialog(
       context: context,
       queue: queue,
