@@ -466,18 +466,22 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   /// 本合集的季号提示：成员文件名一致解析出同一季（`S04E18`）就用它；成员跨季或
   /// 解析不出时看查询词、合集名里的季度记号（「… 4th season (2026)」）。
   int? _seasonHint(String query) {
+    return subtitleSeasonHint(
+      parsedSeason: _memberSeason(),
+      titles: <String?>[query, widget.collection.name],
+    );
+  }
+
+  /// 成员文件名一致解析出的**显式**季号（`S04E18`），不一致或解析不出为 null。
+  /// 只有它会作为 `season_number` 发给 OpenSubtitles / SubDL：从查询词、合集名推断
+  /// 的季号只用来挑 AniList 条目（标题记号与 TMDB 季号并不总对得上）。
+  int? _memberSeason() {
     final Set<int?> memberSeasons = <int?>{
       for (final VideoBookRow member in widget.members)
         subtitleSeasonFromName(p.basename(member.videoPath)) ??
             subtitleSeasonFromName(member.title),
     };
-    final int? memberSeason = memberSeasons.length == 1
-        ? memberSeasons.single
-        : null;
-    return subtitleSeasonHint(
-      parsedSeason: memberSeason,
-      titles: <String?>[query, widget.collection.name],
-    );
+    return memberSeasons.length == 1 ? memberSeasons.single : null;
   }
 
   /// 「搜」这一半：把某个 AniList 候选当作**本次检索的身份**，不碰数据库。
@@ -555,7 +559,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 anilistId: anilistId ?? _canonicalAnilistId,
               ),
               query: query,
-              season: _seasonHint(query),
+              season: _memberSeason(),
             ),
           );
       if (!mounted || requestGeneration != _generation) return;

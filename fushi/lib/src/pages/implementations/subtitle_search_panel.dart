@@ -769,9 +769,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               alternateTitles: untouchedQuery
                   ? seed.fallbackQueries
                   : const <String>[],
-              // OpenSubtitles / SubDL 据此按 season_number 收敛，不再把同名别季/
-              // 别的作品平铺出来。
-              season: _seasonHint(queryFallback),
+              // OpenSubtitles / SubDL 据此按 season_number 收敛。只给**显式**季号
+              // （调用方从文件名 / 远端标题 `S04E18` 解析的）：从标题推断的季号只
+              // 用来挑 AniList 条目——标题里的季度记号与 TMDB 季号并不总对得上，
+              // 发给服务端当筛选条件会把同一部剧的另一季当成精确命中。
+              season: untouchedQuery ? widget.initialSeason : null,
               episode: episode,
               fingerprint: fingerprint,
             ),

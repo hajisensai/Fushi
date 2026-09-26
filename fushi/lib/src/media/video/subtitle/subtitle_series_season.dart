@@ -24,9 +24,7 @@ int? subtitleSeasonHint({
 }) {
   if (parsedSeason != null && parsedSeason > 0) return parsedSeason;
   for (final String? title in titles) {
-    final String text = title?.trim() ?? '';
-    if (text.isEmpty) continue;
-    final Set<int> seasons = detectVideoSeasonsInText(text);
+    final Set<int> seasons = _seasonsInTitle(title);
     if (seasons.length == 1) return seasons.single;
   }
   return null;
@@ -83,6 +81,24 @@ AniListMedia? pickAniListSeriesForSeason(
   return matches.first;
 }
 
+/// 分段记号（Part / cour / 第N部 / 第Nクール）。`detectVideoSeasonsInText` 会把
+/// 「Part 5」「第5部」也读成季号，但它们不是季：《JoJo》Part 5 在 TMDB 上不是第 5
+/// 季、「The Final Season Part 2」是 S4 的后半。季号推断前先剥掉它们，免得「3rd
+/// Season Part 2」被当成第 2 季的候选、或凭「Part 5」推出一个假季号。
+final RegExp _partMarker = RegExp(
+  r'\b(?:part|cour)\s*[0-9]+'
+  r'|[0-9]+(?:st|nd|rd|th)\s+(?:part|cour)'
+  r'|第\s*[0-9一二三四五六七八九十]+\s*(?:部|クール)',
+  caseSensitive: false,
+);
+
+/// [title] 里的季号（先剥掉 [_partMarker] 分段记号）。
+Set<int> _seasonsInTitle(String? title) {
+  final String text = (title ?? '').replaceAll(_partMarker, ' ').trim();
+  if (text.isEmpty) return const <int>{};
+  return detectVideoSeasonsInText(text);
+}
+
 final RegExp _splitCourMarker = RegExp(
   r'\b(?:part|cour)\s*[0-9]+'
   r'|[0-9]+(?:st|nd|rd|th)\s+cour'
@@ -103,9 +119,7 @@ Set<int> _seasonsOf(AniListMedia media) {
     media.english,
     media.native,
   ]) {
-    final String text = title?.trim() ?? '';
-    if (text.isEmpty) continue;
-    out.addAll(detectVideoSeasonsInText(text));
+    out.addAll(_seasonsInTitle(title));
   }
   return out;
 }

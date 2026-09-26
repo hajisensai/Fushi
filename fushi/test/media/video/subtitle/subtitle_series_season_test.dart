@@ -117,6 +117,30 @@ void main() {
         isNull,
       );
     });
+
+    test('Part / 第N部 / cour 分段记号不是季号', () {
+      // 《JoJo》Part 5 在 TMDB 上不是第 5 季；「The Final Season Part 2」是 S4 后半。
+      expect(
+        subtitleSeasonHint(
+          titles: <String>['JoJo no Kimyou na Bouken Part 5'],
+        ),
+        isNull,
+      );
+      expect(
+        subtitleSeasonHint(titles: <String>['ジョジョの奇妙な冒険 第5部']),
+        isNull,
+      );
+      expect(
+        subtitleSeasonHint(
+          titles: <String>['Shingeki no Kyojin: The Final Season Part 2'],
+        ),
+        isNull,
+      );
+      expect(
+        subtitleSeasonHint(titles: <String>['Foo 2nd Season Part 2']),
+        2,
+      );
+    });
   });
 
   group('pickAniListSeriesForSeason', () {
@@ -150,6 +174,17 @@ void main() {
           reZero[5],
         ], season: 1)?.id,
         21355,
+      );
+    });
+
+    test('找第二季时不拿「3rd Season Part 2」冒充（Part 记号不算季号）', () {
+      expect(
+        pickAniListSeriesForSeason(<AniListMedia>[
+          const AniListMedia(id: 1, romaji: 'Foo'),
+          const AniListMedia(id: 3, romaji: 'Foo 3rd Season Part 2'),
+        ], season: 2)?.id,
+        1,
+        reason: '没有第二季条目 → 回退首条（旧行为），不挑第三季下半',
       );
     });
 
