@@ -2348,7 +2348,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///
   /// **只整体平移、不重排 cue、不解帧率漂移**——等价于自动算出「手动延迟」该填多少。
   /// 输入不足（无 cue/无视频路径/无音频包络）或置信度低于阈值时**不**改动延迟，仅弹
-  /// 低置信 OSD（避免乱平移）。移动端 [KitFfmpegBackend] 拿不到逐帧 RMS 时包络为空，
+  /// 低置信 OSD（避免乱平移）。ffmpeg 不可用 / 超时 / 无音轨时包络为空，
   /// 走 noData 分支安全降级（[extractAudioEnergyEnvelope] 已 debugPrint 诊断）。
   ///
   /// TODO-1206：返回本次实际写穿的整体平移 offset（毫秒），供快速设置面板把滑条/数值
@@ -2432,7 +2432,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///
   /// 复用与 [_autoAlignSubtitle] 同一探测入口 [extractAudioEnergyEnvelope]（同音轨、同前
   /// N 分钟截断），返回原始逐帧包络交给面板降采样成 0..1 波形桶（降采样在面板层随宽度算，
-  /// 不在此处、不在 paint 里跑 ffmpeg）。无 controller / 无视频路径 / 移动端拿不到逐帧行时
+  /// 不在此处、不在 paint 里跑 ffmpeg）。无 controller / 无视频路径 / ffmpeg 抽不出音轨时
   /// 返回空列表，面板据此退化成纯 stepper（不崩不空白）。
   Future<List<double>> _loadSubtitleWaveformEnvelope() async {
     final VideoPlayerController? controller = _controller;
@@ -2465,7 +2465,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// [_autoAlignSubtitle]，逐句试听 / 播放头 / 弹窗内快捷键与快速设置面板路径同源。
   ///
   /// 降级路径与面板入口同款：无 controller / 无字幕 cue / 无本地视频路径 / 抽波形返回空
-  /// （移动端拿不到逐帧行 / ffmpeg 不可用）时不弹窗，改弹 OSD 提示不可用（不崩不空白）。
+  /// （无音轨 / ffmpeg 不可用 / 超时）时不弹窗，改弹 OSD 提示不可用（不崩不空白）。
   Future<void> _openSubtitleWaveformAlign() async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
