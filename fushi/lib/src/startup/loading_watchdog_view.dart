@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/startup/startup_splash_mark.dart';
 import 'package:fushi/utils.dart' show t;
 
 /// TODO-1260：启动「加载中」界面（含超时逃生态）。
@@ -10,7 +11,8 @@ import 'package:fushi/utils.dart' show t;
 /// 返回，就无限转圈、无任何逃生口（TODO-1260「偶发无限加载」根因之一）。
 ///
 /// 本 widget 把「转圈」与「超时逃生 UI」收敛成 [timedOut] 的纯函数：
-///   - [timedOut] == false → 居中转圈（与旧行为一致）。
+///   - [timedOut] == false → [StartupSplashMark]：延续系统启动画面的图标，慢于
+///     [kStartupProgressRevealDelay] 才淡入细进度条（不再首帧就裸转圈）。
 ///   - [timedOut] == true  → 「耗时超预期 + 说明 + 重试」逃生 UI，[onRetry] 触发重试。
 ///
 /// 计时（何时翻 [timedOut]）由 `_FushiReaderAppState` 的看门狗 [Timer] 负责；本 widget
@@ -24,7 +26,7 @@ class LoadingWatchdogView extends StatelessWidget {
     this.isMobile,
   });
 
-  /// 是否已超过看门狗时限仍未初始化完成（true 显示逃生 UI，false 显示转圈）。
+  /// 是否已超过看门狗时限仍未初始化完成（true 显示逃生 UI，false 显示启动品牌标）。
   final bool timedOut;
 
   /// 首帧配色（与原生 splash 亮暗一致，避免闪白）。
@@ -40,9 +42,8 @@ class LoadingWatchdogView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!timedOut) {
-      return Center(
-        child: CircularProgressIndicator(color: colorScheme.primary),
-      );
+      // 不再裸转圈：延续系统启动画面的图标，慢了才淡入细进度条。
+      return StartupSplashMark(colorScheme: colorScheme);
     }
     // BUG-815: the desktop copy explains the dropped custom-drive data root +
     // "start with the default location" escape. On mobile there is NO custom

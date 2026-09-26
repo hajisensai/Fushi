@@ -1620,7 +1620,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
     // Fields like locales/theme are late and only available
     // after initialise() completes. Return a minimal app while loading and
-    // render the spinner directly instead of going through LoadingPage.
+    // render the startup splash mark directly instead of going through
+    // LoadingPage.
     //
     // Use system brightness to match the native splash and avoid a white
     // flash when the user has dark mode enabled.
