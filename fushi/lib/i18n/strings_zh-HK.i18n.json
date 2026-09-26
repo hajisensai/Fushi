@@ -5595,5 +5595,7 @@
   "novel_detail_chapter_download": "Download from this chapter",
   "novel_online_chapter_pending": "This chapter hasn't been loaded yet. Check your connection, then reopen the chapter to load it from the source.",
   "novel_online_open_failed": "Couldn't open online: $error",
-  "novel_online_chapter_failed": "Couldn't load the chapter: $error"
+  "novel_online_chapter_failed": "Couldn't load the chapter: $error",
+  "anki_lapis_visual_text_indent": "首行縮排",
+  "anki_lapis_visual_text_indent_chars": "$count 字"
 }

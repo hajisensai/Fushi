@@ -5595,5 +5595,7 @@
   "novel_detail_chapter_download": "从这一章开始下载",
   "novel_online_chapter_pending": "本章尚未加载。请检查网络后重新打开本章，即可从源站读取。",
   "novel_online_open_failed": "在线打开失败：$error",
-  "novel_online_chapter_failed": "章节加载失败：$error"
+  "novel_online_chapter_failed": "章节加载失败：$error",
+  "anki_lapis_visual_text_indent": "首行缩进",
+  "anki_lapis_visual_text_indent_chars": "$count 字"
 }

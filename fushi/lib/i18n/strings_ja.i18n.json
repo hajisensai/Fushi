@@ -5595,5 +5595,7 @@
   "novel_detail_chapter_download": "この章からダウンロード",
   "novel_online_chapter_pending": "この章はまだ読み込まれていません。接続を確認してから章を開き直すと、配信元から読み込みます。",
   "novel_online_open_failed": "オンラインで開けませんでした：$error",
-  "novel_online_chapter_failed": "章を読み込めませんでした：$error"
+  "novel_online_chapter_failed": "章を読み込めませんでした：$error",
+  "anki_lapis_visual_text_indent": "字下げ",
+  "anki_lapis_visual_text_indent_chars": "$count 字"
 }

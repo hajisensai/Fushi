@@ -245,6 +245,7 @@ class LapisVisualRule {
     this.fontScalePercent = 100,
     this.bold = false,
     this.alignment,
+    this.textIndentPercent,
     this.colorHex,
     this.lineHeightPercent,
     this.backgroundColorHex,
@@ -258,6 +259,10 @@ class LapisVisualRule {
   final int fontScalePercent;
   final bool bold;
   final LapisVisualTextAlign? alignment;
+
+  /// 首行缩进，以一个字宽（1em）为 100。只缩首行而不是整段左移：与对齐同属
+  /// 段落排版，日文释义习惯的「字下げ」正是首行空一字。
+  final int? textIndentPercent;
   final String? colorHex;
   final int? lineHeightPercent;
   final String? backgroundColorHex;
@@ -271,6 +276,7 @@ class LapisVisualRule {
       fontScalePercent == 100 &&
       !bold &&
       alignment == null &&
+      textIndentPercent == null &&
       colorHex == null &&
       lineHeightPercent == null &&
       backgroundColorHex == null &&
@@ -284,6 +290,7 @@ class LapisVisualRule {
     int? fontScalePercent,
     bool? bold,
     Object? alignment = _lapisVisualUnset,
+    Object? textIndentPercent = _lapisVisualUnset,
     Object? colorHex = _lapisVisualUnset,
     Object? lineHeightPercent = _lapisVisualUnset,
     Object? backgroundColorHex = _lapisVisualUnset,
@@ -299,6 +306,9 @@ class LapisVisualRule {
         alignment: identical(alignment, _lapisVisualUnset)
             ? this.alignment
             : alignment as LapisVisualTextAlign?,
+        textIndentPercent: identical(textIndentPercent, _lapisVisualUnset)
+            ? this.textIndentPercent
+            : textIndentPercent as int?,
         colorHex: identical(colorHex, _lapisVisualUnset)
             ? this.colorHex
             : colorHex as String?,
@@ -329,6 +339,7 @@ class LapisVisualRule {
         'fontScalePercent': fontScalePercent,
         'bold': bold,
         if (alignment != null) 'alignment': alignment!.cssValue,
+        if (textIndentPercent != null) 'textIndentPercent': textIndentPercent,
         if (colorHex != null) 'colorHex': colorHex,
         if (lineHeightPercent != null) 'lineHeightPercent': lineHeightPercent,
         if (backgroundColorHex != null)
@@ -348,6 +359,11 @@ class LapisVisualRule {
     final LapisVisualTextAlign? alignment = rawAlignment is String
         ? LapisVisualTextAlign.fromCssValue(rawAlignment)
         : null;
+    final int? textIndent = _clampedOptionalInt(
+      value['textIndentPercent'],
+      min: 0,
+      max: 400,
+    );
     final Object? rawColor = value['colorHex'];
     final String? color = rawColor is String && _isCssHexColor(rawColor)
         ? rawColor.toUpperCase()
@@ -385,6 +401,7 @@ class LapisVisualRule {
       fontScalePercent: scale,
       bold: value['bold'] == true,
       alignment: alignment,
+      textIndentPercent: textIndent,
       colorHex: color,
       lineHeightPercent: lineHeight,
       backgroundColorHex: backgroundColor,
@@ -651,6 +668,8 @@ List<String> lapisVisualDeclarations(LapisVisualRule rule) => <String>[
       if (rule.bold) '  font-weight: 700 !important;',
       if (rule.alignment != null)
         '  text-align: ${rule.alignment!.renderedCssValue} !important;',
+      if (rule.textIndentPercent != null)
+        '  text-indent: ${(rule.textIndentPercent! / 100).toStringAsFixed(2)}em !important;',
       if (rule.colorHex != null) '  color: ${rule.colorHex} !important;',
       if (rule.lineHeightPercent != null)
         '  line-height: ${(rule.lineHeightPercent! / 100).toStringAsFixed(2)} !important;',
