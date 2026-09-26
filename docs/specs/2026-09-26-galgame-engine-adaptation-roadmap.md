@@ -41,6 +41,12 @@
 | 启动路径 | BUG-2126（LE + x86 崩）、BUG-1192（SteamStub 需正版样本） | 光盘版 / Steam 版差异大多卡在启动层 |
 | 引擎识别表 | 对用户库 / 下载库里的 exe 做静态引擎识别并统计分布 | 用真实数据校准第 2 节的排序 |
 
+P0 进展（2026-09-26 晚）：
+
+- **BUG-2710**：宿主层已排除——同一套直连卡 + 系统钩子在 CLANNAD（Siglus）上按原序列四连击，关卡后第一击正常出卡；问题收窄到 KiriKiri 注入侧。宿主点击状态与注入侧 submit 发布结局的诊断日志已加，待 KiriKiri 样本复现。
+- **制卡 E2E 装置**：真机驱动 `fushi/integration_test/gal_realgame_driver_itest.dart` 新增 `fakeanki` 与 `accept4 <x> <y> [ox oy]`。游戏停在一句对白上后，一条命令依次判 ① 文本 ② 非 Loopback 语音 ③ 点字出卡 ④ 不推进 ⑤ 关卡不推进 ⑥ 关卡后再点能出卡（BUG-2710 回归）⑦ 写进假 AnkiConnect 的卡带台词 / 语音 / 图片，末行 `verdict=full|partial`。已过定向 analyze，**尚未在真游戏上跑过**（本轮可用样本都被其它会话占用）。
+- **样本**：本机现存 galgame 只剩 CLANNAD、SGRE、WoH，且各有会话在用；KiriKiri 样本需要重新取得。Steam 版千恋＊万花（AppID 1144400，用户已拥有、只装了成人补丁）装上后可同时解 BUG-2710 与 BUG-1192（正版 SteamStub 样本）。
+
 ### P1 · 主流引擎（玩家最多）
 
 | 顺序 | 引擎 | 当前 | 缺哪条 | 下一步 |

@@ -22,6 +22,16 @@
 //   mine                        对「当前会话最新台词行」制卡（走与浮窗➕同一条采集链：
 //                               封面按 galMiningImageMode/格式偏好、句子音频按会话音频后端），
 //                               打印 noteId 与产出的图/音字段，供 AnkiConnect 取证。
+//   fakeanki                    起一个 loopback 假 AnkiConnect 并走生产「获取」路径指过去，
+//                               之后的 mine / accept4 制卡都写进它，不碰用户真实集合。
+//   accept4 <x> <y> [ox oy]     引擎适配验收（路线图「四条 + 真卡」）：游戏停在一句对白上、
+//                               (x,y) 是这句里某个字形的屏幕坐标，依次验
+//                               ① 选定线程有干净台词 ② 该句配到非 Loopback 语音
+//                               ③ 点字形弹出查词卡 ④ 这一击不推进剧情
+//                               ⑤ 关卡（点 (ox,oy)，缺省再点同一字形）也不推进
+//                               ⑥ 关卡后再点同一字形能再次出卡（BUG-2710 回归）
+//                               ⑦ 已执行 fakeanki 时对该句制卡，卡里有台词、语音、图片。
+//                               每条一行 PASS/FAIL + 证据，末行 verdict=full|partial。
 //   lines [n]                   最近 n 条台词
 //   shot game|card|hwnd:<n>     WGC 抓窗口像素（与制卡截图同一通道）
 //   windows                     枚举 FushiGlobalLookupWindow 类窗口的可见性/矩形
@@ -57,6 +67,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
+import 'support/fake_ankiconnect.dart';
+import 'support/fake_ankiconnect_setup.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
@@ -82,6 +94,23 @@ final int Function(int, Pointer<Int32>) _getWindowRect = _user32.lookupFunction<
     int Function(int, Pointer<Int32>)>('GetWindowRect');
 final int Function() _getForegroundWindow = _user32
     .lookupFunction<IntPtr Function(), int Function()>('GetForegroundWindow');
+final int Function(int) _getSystemMetrics =
+    _user32.lookupFunction<Int32 Function(Int32), int Function(int)>(
+        'GetSystemMetrics');
+
+/// 查词窗是否**在桌面上可见**：预热 / 离屏渲染的查词窗同样 IsWindowVisible，
+/// 只是停在虚拟桌面之外，必须再比一次虚拟屏矩形。
+bool _onVirtualScreen(List<int> rect) {
+  if (rect.length != 4) return false;
+  final int left = _getSystemMetrics(76); // SM_XVIRTUALSCREEN
+  final int top = _getSystemMetrics(77); // SM_YVIRTUALSCREEN
+  final int right = left + _getSystemMetrics(78); // SM_CXVIRTUALSCREEN
+  final int bottom = top + _getSystemMetrics(79); // SM_CYVIRTUALSCREEN
+  return rect[0] < right && rect[2] > left && rect[1] < bottom && rect[3] > top;
+}
+
+bool _lookupCardOnScreen() =>
+    _lookupWindows().any((w) => w.visible && _onVirtualScreen(w.rect));
 
 const int _inputSize = 40; // x64: DWORD type + 4 pad + 32-byte union
 const int _inputMouse = 0;
@@ -223,6 +252,57 @@ void main() {
           .join('\n    ');
     }
 
+    FakeAnkiConnect? fakeAnki;
+
+    Future<(TexthookerLineEntry, GalHookMiningResult)?> mineLatest() async {
+      final ProviderContainer container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp).first),
+      );
+      final AppModel appModel = container.read(appProvider);
+      final List<TexthookerLineEntry> lines = session.selectedSessionLines;
+      if (lines.isEmpty) return null;
+      final TexthookerLineEntry entry = lines.last;
+      final BaseAnkiRepository repo =
+          appModel.platformServices.createAnkiRepository();
+      final GalHookMiningResult result =
+          await GalHookMiningCoordinator().mineLine(
+        lineId: entry.id,
+        fields: <String, String>{'Sentence': entry.text},
+        sentenceOverride: entry.text,
+        compression: MiningMediaCompression.resolve(
+          imageTier: appModel.miningImageQuality,
+          audioTier: appModel.miningAudioQuality,
+          format: appModel.galMiningAnimatedFormat,
+        ),
+        repo: repo,
+        imageMode: appModel.galMiningImageMode,
+        animatedFormat: appModel.galMiningAnimatedFormat,
+        stillFormat: appModel.galMiningStillFormat,
+      );
+      return (entry, result);
+    }
+
+    /// 轮询到 [condition] 成立或超时；期间持续 pump，让宿主通道回调照常跑。
+    Future<bool> pollUntil(bool Function() condition, Duration timeout) async {
+      final Stopwatch sw = Stopwatch()..start();
+      while (sw.elapsed < timeout) {
+        if (condition()) return true;
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      return condition();
+    }
+
+    /// 选定线程台词列表的身份快照：条数 + 最后一句 id。剧情推进必然改变它。
+    String lineSnapshot() {
+      final List<TexthookerLineEntry> lines = session.selectedSessionLines;
+      return '${lines.length}:${lines.isEmpty ? '-' : lines.last.id}';
+    }
+
+    Future<void> clickAndSettle(int x, int y) async {
+      await _clickAt(x, y);
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
     bool quit = false;
     final Stopwatch idle = Stopwatch()..start();
     while (!quit && idle.elapsed < const Duration(minutes: 40)) {
@@ -354,38 +434,15 @@ void main() {
                   'lh=${layout.lineHeight} -> ${describeState()}');
               out('#$seq profile=${attached.profile?.toJson()}');
             case 'mine':
-              final ProviderContainer container = ProviderScope.containerOf(
-                tester.element(find.byType(MaterialApp).first),
-              );
-              final AppModel appModel = container.read(appProvider);
-              final List<TexthookerLineEntry> lines =
-                  session.selectedSessionLines;
-              if (lines.isEmpty) {
+              final (TexthookerLineEntry, GalHookMiningResult)? mined =
+                  await mineLatest();
+              if (mined == null) {
                 out('#$seq mine: no session lines');
                 break;
               }
-              final TexthookerLineEntry entry = lines.last;
-              final BaseAnkiRepository repo =
-                  appModel.platformServices.createAnkiRepository();
-              final GalHookMiningCoordinator coordinator =
-                  GalHookMiningCoordinator();
-              final GalHookMiningResult result = await coordinator.mineLine(
-                lineId: entry.id,
-                fields: <String, String>{'Sentence': entry.text},
-                sentenceOverride: entry.text,
-                compression: MiningMediaCompression.resolve(
-                  imageTier: appModel.miningImageQuality,
-                  audioTier: appModel.miningAudioQuality,
-                  format: appModel.galMiningAnimatedFormat,
-                ),
-                repo: repo,
-                imageMode: appModel.galMiningImageMode,
-                animatedFormat: appModel.galMiningAnimatedFormat,
-                stillFormat: appModel.galMiningStillFormat,
-              );
+              final (TexthookerLineEntry entry, GalHookMiningResult result) =
+                  mined;
               out('#$seq mine lineId=${entry.id} '
-                  'imageMode=${appModel.galMiningImageMode.name} '
-                  'animated=${appModel.galMiningAnimatedFormat.name} '
                   'result=${result.outcome?.result.name} '
                   'noteId=${result.outcome?.noteId} '
                   'aborted=${result.aborted} success=${result.success} '
@@ -395,6 +452,109 @@ void main() {
                   'degradedToStill=${result.degradedToStill} '
                   'failureReason=${result.failureReason} '
                   'text=${entry.text.replaceAll('\n', '⏎')}');
+            case 'fakeanki':
+              fakeAnki ??= await FakeAnkiConnect.start();
+              await configureFakeAnkiConnect(tester, fakeAnki);
+              out('#$seq fakeanki ${fakeAnki.uri} deck=${fakeAnki.deckName}');
+            case 'accept4':
+              final int gx = int.parse(parts[1]);
+              final int gy = int.parse(parts[2]);
+              final int ox = parts.length > 4 ? int.parse(parts[3]) : gx;
+              final int oy = parts.length > 4 ? int.parse(parts[4]) : gy;
+              final List<String> failed = <String>[];
+              void verdict(String name, bool ok, String evidence) {
+                if (!ok) failed.add(name);
+                out('#$seq ACCEPT4 $name=${ok ? 'PASS' : 'FAIL'} $evidence');
+              }
+
+              final List<TexthookerLineEntry> lines =
+                  session.selectedSessionLines;
+              final TexthookerLineEntry? last =
+                  lines.isEmpty ? null : lines.last;
+              verdict(
+                'text',
+                last != null && last.text.trim().isNotEmpty,
+                last == null
+                    ? 'no selected-thread lines (pick one with threads/thread)'
+                    : 'thread=${last.textThreadKey} '
+                        'text=${last.text.replaceAll('\n', '⏎')}',
+              );
+              final String backend = last?.audioBackend ?? '';
+              verdict(
+                'audio',
+                last != null &&
+                    last.audioStatus == TexthookerLineAudioStatus.matched &&
+                    backend.isNotEmpty &&
+                    !backend.toLowerCase().contains('loopback'),
+                'status=${last?.audioStatus.name} backend=$backend '
+                    'resource=${last?.audioResourceId} '
+                    'durationMs=${last?.audioDurationMs}',
+              );
+              if (_lookupCardOnScreen()) {
+                verdict('precondition', false,
+                    'a lookup card is already on screen; dismiss it first');
+                out('#$seq ACCEPT4 verdict=aborted');
+                break;
+              }
+              final String before = lineSnapshot();
+              await clickAndSettle(gx, gy);
+              final bool shown = await pollUntil(
+                  _lookupCardOnScreen, const Duration(seconds: 5));
+              verdict('lookup', shown, 'click=$gx,$gy card=$shown');
+              // 推进判据要等过引擎推进一句的时间，而不是一出卡就判。
+              await pollUntil(() => false, const Duration(milliseconds: 1500));
+              final String afterLookup = lineSnapshot();
+              verdict('no_advance', afterLookup == before,
+                  'lines $before -> $afterLookup');
+              await clickAndSettle(ox, oy);
+              final bool hidden = await pollUntil(
+                  () => !_lookupCardOnScreen(), const Duration(seconds: 4));
+              await pollUntil(() => false, const Duration(milliseconds: 1500));
+              final String afterDismiss = lineSnapshot();
+              verdict('dismiss_no_advance', hidden && afterDismiss == before,
+                  'click=$ox,$oy hidden=$hidden lines $before -> $afterDismiss');
+              await clickAndSettle(gx, gy);
+              final bool reshown = await pollUntil(
+                  _lookupCardOnScreen, const Duration(seconds: 5));
+              verdict('relookup_after_dismiss', reshown,
+                  'click=$gx,$gy card=$reshown (BUG-2710)');
+              if (reshown) {
+                await clickAndSettle(ox, oy);
+                await pollUntil(
+                    () => !_lookupCardOnScreen(), const Duration(seconds: 4));
+              }
+              final FakeAnkiConnect? anki = fakeAnki;
+              if (anki == null) {
+                out('#$seq ACCEPT4 card=SKIP run fakeanki first');
+                failed.add('card');
+              } else {
+                final int notesBefore = anki.notes.length;
+                final (TexthookerLineEntry, GalHookMiningResult)? mined =
+                    await mineLatest();
+                final Map<String, Object?>? note =
+                    anki.notes.length > notesBefore ? anki.notes.last : null;
+                final Map<String, String> fields = note == null
+                    ? const <String, String>{}
+                    : Map<String, String>.from(note['fields']! as Map);
+                final String lineText = mined?.$1.text.trim() ?? '';
+                final bool hasSentence = lineText.isNotEmpty &&
+                    fields.values.any((String v) => v.contains(lineText));
+                final bool hasAudio =
+                    fields.values.any((String v) => v.contains('[sound:'));
+                final bool hasImage =
+                    fields.values.any((String v) => v.contains('<img'));
+                verdict(
+                  'card',
+                  note != null && hasSentence && hasAudio && hasImage,
+                  'noteId=${note?['noteId']} sentence=$hasSentence '
+                      'audio=$hasAudio image=$hasImage '
+                      'result=${mined?.$2.outcome?.result.name} '
+                      'failure=${mined?.$2.failureReason} '
+                      'media=${anki.mediaFileNames.length}',
+                );
+              }
+              out('#$seq ACCEPT4 verdict='
+                  '${failed.isEmpty ? 'full' : 'partial missing=${failed.join(',')}'}');
             case 'thread':
               // 只传 native threadId 会让 Dart 侧 `_selectedTextThreadKey` 留空，
               // 而 `selectedSessionLines` 在 key 为空时**恒返回空表**——工作台看得见
@@ -538,6 +698,7 @@ void main() {
     try {
       await session.stopCapture();
     } catch (_) {}
+    await fakeAnki?.close();
     out('exit');
   }, timeout: const Timeout(Duration(minutes: 45)));
 }
