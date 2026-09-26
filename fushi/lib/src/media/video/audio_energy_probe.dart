@@ -12,9 +12,15 @@ import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 /// 打到 stderr，解析成等间隔的能量序列（dB，越大越响）。`-f null -` 不产出文件，只读
 /// 元数据。结果喂 `subtitle_auto_align.dart` 的纯算法做互相关求整体平移。
 ///
-/// **降级**：移动端 [KitFfmpegBackend] 的 `getOutput` 未必含逐帧 `ametadata` 行，或
-/// ffmpeg 不可用/超时——此时返回空包络，调用方靠 `subtitle_auto_align` 的置信门控
-/// 安全降级（不写穿延迟），并 `debugPrint` 诊断而非静默。
+/// **逐帧行走文件，不走日志**：`ametadata=print` 带 `file=` 把逐帧行写进临时文件，再由
+/// Dart 读回解析。此前只打 stderr，桌面 CLI 读子进程管道没问题，移动端 ffmpeg-kit 却要把
+/// 每一行日志跨 JNI / 平台通道异步搬回来（20ms 窗口抽 20 分钟 = 6 万帧、12 万条日志），
+/// `getOutput` 默认只等 5 秒异步日志——结果不全或为空，波形对轴在 Android / iOS 从来打不开
+/// （「可视化字幕调轴只有 Windows 有」）。文件通道与后端无关，五端同一条数据路径；stderr
+/// 仍作兜底解析（极旧的 ffmpeg 不认 `file=` 时）。
+///
+/// **降级**：ffmpeg 不可用/超时/两路都拿不到逐帧行——此时返回空包络，调用方靠
+/// `subtitle_auto_align` 的置信门控安全降级（不写穿延迟），并 `debugPrint` 诊断而非静默。
 
 /// 默认分析窗口（毫秒）。与 [kSubtitleAutoAlignBinMs] 对齐：100ms 一帧 RMS，既给互相关
 /// 足够分辨率，又把一部 2h 电影的样本控制在 ~72000 行内。
@@ -42,8 +48,9 @@ const int kSubtitleAutoAlignProbeLimitMs = 20 * 60 * 1000;
 /// - `astats=metadata=1:reset=1`：对**每个**样本块算统计并写进 frame metadata
 ///   （`reset=1` 让统计逐块复位，否则只在 EOF 出一条汇总——单 `astats` 的陷阱）。
 /// - `ametadata=print:key=lavfi.astats.Overall.RMS_level`：把每块的 RMS_level 连同
-///   `pts_time` 打到 stderr（这步才让逐帧能量「可见」，否则 astats 只是写进 metadata
-///   没人读）。
+///   `pts_time` 打出来（这步才让逐帧能量「可见」，否则 astats 只是写进 metadata
+///   没人读）。给了 [metadataFilePath] 时追加 `:file=<转义路径>` 写进该文件（见文件头：
+///   移动端日志通道不可靠）；不给则打到 stderr。
 /// - `-map 0:a:<idx>`（可选）：多音轨时裁到用户正在听的那条轨。越界由 [resolveAudioMapIndex]
 ///   （BUG-345 同范式）拦截：[audioStreamIndex] >= [audioStreamCount] 时不加 `-map` 回退默认
 ///   轨——外挂音轨场景 mpv 轨序号未必 = ffmpeg `0:a:N`，越界会让 ffmpeg `Stream map matches
@@ -68,6 +75,7 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   int? audioStreamIndex,
   int? audioStreamCount,
   int? limitSeconds,
+  String? metadataFilePath,
 }) {
   final int win = windowMs <= 0 ? kAudioEnergyWindowMs : windowMs;
   final int rate = sampleRate <= 0 ? 8000 : sampleRate;
@@ -95,12 +103,16 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   // 送进 `-f null -`，用 null 复用器的默认视频编码器 wrapped_avframe 编码——桌面捆绑的最小
   // ffmpeg-min 无此编码器，整条命令 `Encoder not found` 硬失败→空包络→波形不显示。只要音频。
   args.add('-vn');
+  // 逐帧行写文件（移动端日志通道不可靠，见文件头）；不给路径则沿旧行为打 stderr。
+  final String printTarget = metadataFilePath == null
+      ? ''
+      : ':file=${escapeFfmpegFilterOptionValue(metadataFilePath)}';
   args.addAll(<String>[
     '-af',
     'aresample=$rate,'
         'asetnsamples=n=$blockSamples:p=0,'
         'astats=metadata=1:reset=1,'
-        'ametadata=print:key=lavfi.astats.Overall.RMS_level',
+        'ametadata=print:key=lavfi.astats.Overall.RMS_level$printTarget',
     '-f',
     'null',
     '-',
@@ -108,7 +120,40 @@ List<String> buildFfmpegPcmEnvelopeArgs({
   return args;
 }
 
-/// **纯函数**：解析 `buildFfmpegPcmEnvelopeArgs` 跑出的 ffmpeg stderr，提取按时间排序
+/// **纯函数**：把任意字符串（典型是文件路径）转义成可以放进 `-af` 滤镜图里某个滤镜
+/// **选项值**的形式。
+///
+/// ffmpeg 对滤镜图做两层解析（官方文档 "Notes on filtergraph escaping"），每层都会吃掉
+/// 引号与反斜杠：
+/// 1. 滤镜选项层（`key=value:key=value`）：`:` 分隔选项，`'` 引号、`\` 转义。先把值整体
+///    包进单引号（引号内除 `'` 外全是字面量——Windows 盘符的 `:`、反斜杠都安全），值里的
+///    `'` 按 shell 惯例拆成 `'\''`。
+/// 2. 滤镜图层（`a,b;c[x]`）：`,` `;` `[` `]` 切分滤镜/链/标签，同样认 `'` 与 `\`。对第 1
+///    步的结果再把 `\` `'` `,` `;` `[` `]` 逐个加反斜杠。
+///
+/// 两层都转义后，路径含空格、逗号、分号、方括号、单引号、盘符冒号或非 ASCII 字符都能原样
+/// 到达滤镜。参数以 argv 数组传给 ffmpeg（CLI `Process.start` / ffmpeg-kit
+/// `executeWithArguments`），不经 shell，故无第三层。无 IO，可单测。
+String escapeFfmpegFilterOptionValue(String value) {
+  final String quoted = "'${value.replaceAll("'", r"'\''")}'";
+  final StringBuffer out = StringBuffer();
+  for (final int rune in quoted.runes) {
+    final String ch = String.fromCharCode(rune);
+    if (ch == r'\' ||
+        ch == "'" ||
+        ch == ',' ||
+        ch == ';' ||
+        ch == '[' ||
+        ch == ']') {
+      out.write(r'\');
+    }
+    out.write(ch);
+  }
+  return out.toString();
+}
+
+/// **纯函数**：解析 `buildFfmpegPcmEnvelopeArgs` 跑出的 ffmpeg stderr（或 `file=` 写出的
+/// 逐帧文件，两者行格式相同），提取按时间排序
 /// 的逐帧 RMS 能量序列（dB）。
 ///
 /// ametadata=print 的输出形如（成对的两行）：
@@ -120,7 +165,7 @@ List<String> buildFfmpegPcmEnvelopeArgs({
 /// ```
 /// 按出现顺序收集 `RMS_level` 值（已随时间单调排序，与窗口次序一致）。`-inf`（纯静音
 /// 块的 dB）映射为一个很低的有限值（[silenceDb]），避免污染后续 min/max 归一化。
-/// 无匹配行返回空列表（移动端 KitFfmpegBackend 拿不到逐帧行时即此情形）。
+/// 无匹配行返回空列表。
 List<double> parseAudioRmsEnvelopeFromFfmpegLog(
   String ffmpegStderr, {
   double silenceDb = -120.0,
@@ -156,9 +201,10 @@ Duration audioEnergyProbeTimeoutForBytes(int sizeBytes) {
 /// 抽取 [videoPath] 的逐帧音频 RMS 能量包络（经 [FfmpegBackend]）。
 ///
 /// 超时复用 [subtitleExtractTimeoutForBytes]（按容器字节数放大，BUG-104 同范式）。
-/// 失败 / 超时 / 空输出一律返回空列表（优雅降级），并 `debugPrint` 诊断——尤其移动端
-/// [KitFfmpegBackend] 的 `getOutput` 可能不含逐帧 `ametadata` 行，此时空包络会让上层
-/// 自动对轴按置信门控降级，**不**错误平移。
+/// 逐帧行经 `ametadata` 的 `file=` 写进 [Directory.systemTemp] 下的临时文件（五端都可写：
+/// 桌面是系统临时目录，Android / iOS 是 app 缓存目录），读完即删；文件没有逐帧行时回退
+/// 解析 stderr。失败 / 超时 / 两路都空一律返回空列表（优雅降级），并 `debugPrint` 诊断，
+/// 空包络会让上层自动对轴按置信门控降级，**不**错误平移。
 Future<List<double>> extractAudioEnergyEnvelope({
   required String videoPath,
   int windowMs = kAudioEnergyWindowMs,
@@ -176,7 +222,11 @@ Future<List<double>> extractAudioEnergyEnvelope({
   // <=0 或 null 表示抽整轨。与 [buildCueActivityEnvelope] 的 durationMs 上界须取同值。
   final int? limitSeconds =
       (limitMs != null && limitMs > 0) ? (limitMs + 999) ~/ 1000 : null;
+  Directory? tempDir;
   try {
+    tempDir = Directory.systemTemp.createTempSync('fushi_audio_energy_');
+    final File metadataFile =
+        File('${tempDir.path}${Platform.pathSeparator}rms.txt');
     final FfmpegRunResult result = await resolveFfmpegBackend().run(
       buildFfmpegPcmEnvelopeArgs(
         inputPath: videoPath,
@@ -184,6 +234,7 @@ Future<List<double>> extractAudioEnergyEnvelope({
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,
         limitSeconds: limitSeconds,
+        metadataFilePath: metadataFile.path,
       ),
       timeout,
     );
@@ -192,14 +243,17 @@ Future<List<double>> extractAudioEnergyEnvelope({
           '(size=$sizeBytes bytes) — auto-align skipped this time');
       return const <double>[];
     }
-    final List<double> envelope =
-        parseAudioRmsEnvelopeFromFfmpegLog(result.output);
+    List<double> envelope = metadataFile.existsSync()
+        ? parseAudioRmsEnvelopeFromFfmpegLog(metadataFile.readAsStringSync())
+        : const <double>[];
     if (envelope.isEmpty) {
-      // 跑成功但拿不到逐帧 RMS 行：移动端 KitFfmpegBackend.getOutput 不含 ametadata
-      // 逐帧打印的典型表现。上层据空包络置信门控降级，不静默。
-      debugPrint('[audio-energy] no per-frame RMS in ffmpeg output for '
-          '"$videoPath" (returnCode=${result.returnCode}, '
-          'executable=${result.executable}); auto-align will degrade');
+      envelope = parseAudioRmsEnvelopeFromFfmpegLog(result.output);
+    }
+    if (envelope.isEmpty) {
+      // 文件与 stderr 都没有逐帧 RMS 行：ffmpeg 失败（看 failureSummary）或输入无音轨。
+      // 上层据空包络置信门控降级，不静默。
+      debugPrint('[audio-energy] no per-frame RMS for "$videoPath": '
+          '${result.failureSummary}; auto-align will degrade');
     }
     return envelope;
   } on ProcessException catch (e) {
@@ -208,6 +262,10 @@ Future<List<double>> extractAudioEnergyEnvelope({
   } catch (e, stack) {
     debugPrint('[audio-energy] failed: $e\n$stack');
     return const <double>[];
+  } finally {
+    try {
+      tempDir?.deleteSync(recursive: true);
+    } catch (_) {}
   }
 }
 

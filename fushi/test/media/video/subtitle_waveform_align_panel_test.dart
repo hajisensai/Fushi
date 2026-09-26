@@ -917,4 +917,45 @@ void main() {
       expect(slots[1]!.lane, 0);
     });
   });
+
+  // ---------------------------------------------------------------------
+  // 字幕波形对轴全平台化：放大视图在手机竖屏 / 横屏（看视频的常态）逻辑尺寸下完整
+  // 可用——不溢出、调轴控件与关闭按钮都在树里。此前移动端根本拿不到波形、从未打开过
+  // 这个弹窗，布局只在桌面尺寸下被验证过。
+  // ---------------------------------------------------------------------
+  for (final Size size in const <Size>[Size(360, 640), Size(800, 360)]) {
+    testWidgets('zoom view lays out without overflow at phone size $size',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SubtitleWaveformZoomView(
+            rawEnvelope: List<double>.generate(
+                3000, (int i) => i.isEven ? -60.0 : -12.0),
+            cues: <AudioCue>[
+              for (int s = 0; s < 60; s++)
+                _cue(s * 1000, s * 1000 + 800, text: 'S$s'),
+            ],
+            windowEndMs: 60000,
+            initialDelayMs: 0,
+            onCommitDelay: (int _) async {},
+            onAutoAlign: () async => null,
+            onSnapDelayToCue: ({required bool next}) => null,
+            onPlayCue: (int _) async {},
+            isPlaying: () => false,
+            onTogglePlayPause: () async {},
+            onSeek: (int _) async {},
+            currentPositionMs: () => 0,
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(find.byType(TextField), findsWidgets);
+    });
+  }
 }
