@@ -93,11 +93,12 @@ mixin _LocalLibraryHostSyncState
   /// [AggregateSyncService.foldIntoLocal]（先 materialize host 自己 → MAX / 并集
   /// 合并 incoming → apply），保证 host 侧也满足 never-shrinks：client 上报的某字段
   /// 即便小于 host 当前值（并发 / GET 后 host 又涨），MAX 折叠让 host 值不被缩小；
-  /// 幂等（重复 apply 同一快照不变）；删除不跨端传播。经 [_runExclusive] 与其它库
-  /// 变动串行，避免与 host 本机写统计/收藏竞态。
+  /// 幂等（重复 apply 同一快照不变）；删除不跨端传播。经 [_runSyncStateExclusive]
+  /// 与本机出站同步的聚合落库串行，避免读-改-写交错丢更新；**不**排在 host 自己的
+  /// 整轮同步后面（BUG-2717：否则对端 PUT 15s 拿不到响应头即超时）。
   @override
   Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot) async {
-    await _runExclusive(
+    await _runSyncStateExclusive(
       () => AggregateSyncService(_db).foldIntoLocal(snapshot),
     );
   }
@@ -122,14 +123,15 @@ mixin _LocalLibraryHostSyncState
   /// 使已应用的墓碑成为「旧闻」，日后本端或对端重加时不被旧墓碑再删（收敛正确性依赖
   /// 此推进，见 collection_sync_engine 注释）。
   ///
-  /// 经 [_runExclusive] 与其它库变动串行：读清单→合并→落库→推基线整体互斥，
-  /// 避免与 host 本机合集编辑竞态。重放同一清单幂等（应用端按目标态调和）。
+  /// 经 [_runSyncStateExclusive] 串行：读清单→合并→落库→推基线整体互斥，避免与
+  /// 本机出站同步的合集落库交错（BUG-2717：不再等 host 自己的整轮同步）。重放同一
+  /// 清单幂等（应用端按目标态调和）。
   @override
   Future<CollectionManifest> mergeCollectionManifest(
     CollectionManifest incoming,
   ) async {
     late CollectionManifest merged;
-    await _runExclusive(() async {
+    await _runSyncStateExclusive(() async {
       final CollectionManifest local = await loadLocalCollectionManifest(_db);
       // BUG-1579：host 收 POST 走**自己那本账**（[SyncChannelScope.host]）。它与
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client
