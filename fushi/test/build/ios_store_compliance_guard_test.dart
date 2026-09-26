@@ -229,13 +229,13 @@ void main() {
           'StoreRestrictedCapability.downloads.isAvailable&&'
           'StoreRestrictedCapability.externalDiscovery.isAvailable';
 
-      // 首页入口：AI 已指派 + 两道门 + 运行时就绪。
+      // 首页入口：偏好就绪 + 两道门（AI 未指派 / runtime 没起改在点击时引导，
+      // 不再藏入口——藏了新用户就永远找不到它）。
       expect(
         compactCode(read('lib/src/pages/implementations/home_page.dart')),
         contains(
           'boolget_canAiAcquire=>appModelNoUpdate.isPreferencesReady&&'
-          'resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo)!=null&&'
-          '$gates&&',
+          '$gates;',
         ),
       );
 

@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2483 条。点号进各自文件。
+> 共 2484 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -39,6 +39,7 @@
 | [BUG-2697](bugs/BUG-2697-youtube-bridge-trusted-types.md) | ✅ | ✅ | YouTube MAIN world 解析字幕触发 TrustedHTML 报错 |
 | [BUG-2696](bugs/BUG-2696-manga-local-ocr-current-page-last.md) | ✅ | ✅ | 本地 OCR 整卷任务不从当前页开始，读到第 30 页要等前 29 页识别完 |
 | [BUG-2695](bugs/BUG-2695-manga-reader-dead-chapter-switches.md) | ✅ | ✅ | 漫画阅读器设置里跳过已读/已过滤/重复章节与章节过渡四个开关不生效 |
+| [BUG-2694](bugs/BUG-2694-ai-acquire-entry-hidden.md) | ✅ | ✅ | AI 下视频入口在未指派 AI 时整颗隐藏，Windows/Mac 都找不到 |
 | [BUG-2693](bugs/BUG-2693-lnreader-cover-load.md) | ✅ | ✅ | LNReader 源作品列表封面大量加载失败（相对地址被丢、无 UA/Referer/CF cookie、无磁盘缓存） |
 | [BUG-2692](bugs/BUG-2692-emby-mining-ffmpeg-direct-tls.md) | ✅ | ✅ | Emby/Jellyfin 能播放但制卡三条抽取全报 I/O error |
 | [BUG-2691](bugs/BUG-2691-dovi-p5-inverted-colors.md) | ✅ | ✅ | Emby 杜比视界 Profile 5 片源画面紫绿反色 |
