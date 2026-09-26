@@ -810,7 +810,20 @@ void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
 }
 
 void GlobalLookupWindow::HandleGlobalClick(POINT screen_pt,
-                                           bool inside_window) {
+                                           bool inside_window, bool consumed) {
+  // BUG-2710 — 一次被钩子吞掉、却既不关卡也不转发的点击对用户就是「点了没反应」。
+  // 把收到这一击时卡片的真实状态记下来，才能区分「卡片已隐藏但绑定还在」与别的路径。
+  NativeGlog("global click tick=" + std::to_string(GetTickCount64()) +
+             " inside=" + std::to_string(inside_window ? 1 : 0) +
+             " consumed=" + std::to_string(consumed ? 1 : 0) +
+             " showing=" + std::to_string(IsShowing() ? 1 : 0) +
+             " visible=" + std::to_string(visible_ ? 1 : 0) +
+             " revealed=" + std::to_string(revealed_ ? 1 : 0) +
+             " offscreen=" + std::to_string(offscreen_active_ ? 1 : 0) +
+             " direct=" + std::to_string(direct_process_client_active_ ? 1 : 0) +
+             " winVisible=" +
+             std::to_string(hwnd_ != nullptr && IsWindowVisible(hwnd_) ? 1 : 0) +
+             " armed=" + std::to_string(mouse_hook_armed_ ? 1 : 0));
   if (!IsShowing()) return;
   // BUG-2651 — 自绘右键菜单的模态循环里，点菜单项那一下常落在卡片 rect 之外；
   // 菜单自己负责「点菜单外即收起」，这里不能把它当成点卡外去关卡（那会在菜单
@@ -1347,6 +1360,10 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // geometry work is done, so the successful direct binding is published only
   // a few instructions before SetWindowPos makes the off-screen renderer visible.
   bool prearm_direct_click_swallow = consume_outside_owner != nullptr;
+  NativeGlog("lookup reveal tick=" + std::to_string(GetTickCount64()) +
+             " consume_owner=" +
+             std::to_string(consume_outside_owner != nullptr ? 1 : 0) +
+             " visible=" + std::to_string(visible_ ? 1 : 0));
   if (prearm_direct_click_swallow) {
     if (!fushi::ArmLowLevelMouseHookAndWait(hwnd_, consume_outside_owner)) {
       fushi::DisarmLowLevelMouseHook(hwnd_);
@@ -1856,6 +1873,10 @@ void GlobalLookupWindow::Hide(bool notify) {
   // hook, both fire on one click-outside) does not double-notify Dart.
   const bool was_showing = visible_ || offscreen_active_;
   const RouteContext hidden_route = route_context_;
+  NativeGlog("lookup hide tick=" + std::to_string(GetTickCount64()) +
+             " notify=" + std::to_string(notify ? 1 : 0) +
+             " was_showing=" + std::to_string(was_showing ? 1 : 0) +
+             " armed=" + std::to_string(mouse_hook_armed_ ? 1 : 0));
   // A genuine/programmatic dismissal wins over a pending capture restore.  Do
   // this before clearing visible_ so RestoreAfterCapture can never reopen a
   // card that was dismissed while the screenshot was in flight.
@@ -3818,7 +3839,10 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
       // BUG-1048 — 钩子线程投递的全局点击（wparam 打包屏幕物理坐标，lparam=是否
       // 落在本窗口 rect 内）。真正的决策（关闭 / 转发给 host）在这里做，钩子线程
       // 只搬坐标：那条线程必须随时能返回，否则整个系统的鼠标输入都跟着它排队。
-      HandleGlobalClick(fushi::UnpackMouseHookPoint(wparam), lparam != 0);
+      HandleGlobalClick(
+          fushi::UnpackMouseHookPoint(wparam),
+          (lparam & fushi::kLowLevelMouseClickInsideBit) != 0,
+          (lparam & fushi::kLowLevelMouseClickConsumedBit) != 0);
       return 0;
     case fushi::kLowLevelMouseWheelMessage:
       // BUG-1166 — 钩子线程已把这一格滚轮从输入流里吞掉（游戏收不到了），这里负责

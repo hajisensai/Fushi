@@ -51,6 +51,101 @@ int main(int argc, char** argv) {
       return 51;
     }
   }
+  // BUG-2705：EmbedKrkrZ 的「P P T」粘性尾巴（千恋＊万花光盘版原版：T = 当前循环音效标签）。
+  {
+    using fushi_voice_hook::LunaPairedTailTracker;
+    const std::wstring tail = L"■自動車（車内／走行）";
+    const std::wstring line1 = L"「あっ、はい。なんですか？」";
+    const std::wstring line2 = L"「お客さんってば」";
+    const std::wstring legit =
+        L"わかったわかった、もう行くよ";
+    auto len_of = [](LunaPairedTailTracker& t, uint64_t thread, const char* hook,
+                     const std::wstring& s) {
+      return t.NormalizedLength(thread, hook, s.c_str(), static_cast<int>(s.size()));
+    };
+    LunaPairedTailTracker tracker;
+    // 尾巴先单独出现：原样放行。
+    if (len_of(tracker, 7, "EmbedKrkrZ", tail) != static_cast<int>(tail.size())) return 60;
+    // 此后每句 `P P T` 折成 P。
+    if (len_of(tracker, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>(line1.size())) {
+      return 61;
+    }
+    if (len_of(tracker, 7, "EmbedKrkrZ", line2 + line2 + tail) !=
+        static_cast<int>(line2.size())) {
+      return 62;
+    }
+    // 完整成对的行不受影响，也不覆盖已记的尾巴。
+    if (len_of(tracker, 7, "EmbedKrkrZ", line2 + line2) != static_cast<int>(line2.size())) {
+      return 63;
+    }
+    if (len_of(tracker, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>(line1.size())) {
+      return 64;
+    }
+    // 尾巴不等于本线程上一条独立文本：合法叠句原样放行（不吞用户的字）。
+    LunaPairedTailTracker fresh;
+    if (len_of(fresh, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size())) return 65;
+    // 线程隔离：线程 7 的尾巴不作用于线程 8。
+    if (len_of(tracker, 8, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>((line1 + line1 + tail).size())) {
+      return 66;
+    }
+    // 不做成对折叠的 hook 面完全不受影响（跨引擎负向）。
+    LunaPairedTailTracker other;
+    if (len_of(other, 9, "SiglusEngine", tail) != static_cast<int>(tail.size()) ||
+        len_of(other, 9, "SiglusEngine", line1 + line1 + tail) !=
+            static_cast<int>((line1 + line1 + tail).size())) {
+      return 67;
+    }
+    // 尾巴换了（新音效）之后，旧尾巴不再被剥。
+    const std::wstring tail2 = L"■雨（小雨）";
+    if (len_of(tracker, 7, "EmbedKrkrZ", tail2) != static_cast<int>(tail2.size())) return 68;
+    if (len_of(tracker, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>((line1 + line1 + tail).size())) {
+      return 69;
+    }
+    if (len_of(tracker, 7, "EmbedKrkrZ", line1 + line1 + tail2) !=
+        static_cast<int>(line1.size())) {
+      return 70;
+    }
+    // 音效循环中途才附着（从没见过独立的 T）：第一条原样放行，连续第二条以同一尾巴结尾、
+    // 正文不同 → 确认粘尾并剥掉，之后照常剥。
+    LunaPairedTailTracker attached;
+    if (len_of(attached, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>((line1 + line1 + tail).size())) {
+      return 71;
+    }
+    if (len_of(attached, 7, "EmbedKrkrZ", line2 + line2 + tail) !=
+        static_cast<int>(line2.size())) {
+      return 72;
+    }
+    if (len_of(attached, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>(line1.size())) {
+      return 73;
+    }
+    // 同一句叠句连着出现两次（正文相同）不是粘尾证据：原样放行。
+    LunaPairedTailTracker repeated;
+    if (len_of(repeated, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size()) ||
+        len_of(repeated, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size())) {
+      return 74;
+    }
+    // 两句叠句的尾巴不同：原样放行。
+    const std::wstring legit2 = L"はいはい、今行きます";
+    LunaPairedTailTracker distinct;
+    if (len_of(distinct, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size()) ||
+        len_of(distinct, 7, "EmbedKrkrZ", legit2) != static_cast<int>(legit2.size())) {
+      return 75;
+    }
+    // 不做成对折叠的 hook 面，连续同尾也不受影响（跨引擎负向）。
+    LunaPairedTailTracker siglus;
+    if (len_of(siglus, 9, "SiglusEngine", line1 + line1 + tail) !=
+            static_cast<int>((line1 + line1 + tail).size()) ||
+        len_of(siglus, 9, "SiglusEngine", line2 + line2 + tail) !=
+            static_cast<int>((line2 + line2 + tail).size())) {
+      return 76;
+    }
+  }
   if (argc != 2) return 1;
   const std::wstring single_line =
       L"\u300c\u6c17\u3092\u4ed8\u3051\u307e\u3059\u3063\u3002"

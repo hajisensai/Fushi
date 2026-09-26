@@ -119,6 +119,130 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("registry.Poll();", source)
         self.assertNotIn("TryHook", source)
 
+    def test_kirikiri_voice_enqueue_rejects_non_audio_payloads(self) -> None:
+        # Both named-storage detours funnel through this one function; plugin-level
+        # encrypted archive members (hashed physical names, ciphertext bytes) must be
+        # dropped here by container magic, before a task slot is claimed.
+        source = self._strip_comments(
+            (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8"))
+        body = self._function_body(source, "void EnqueueKirikiriVoiceResourceOwned(")
+        gate = "fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr"
+        self.assertIn(gate, body)
+        self.assertLess(body.index(gate), body.index("g_kirikiri_voice_tasks[i]"))
+        for detour in (
+            "IStream* __stdcall Detour_TVPCreateIStreamStub(",
+            "TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(",
+        ):
+            self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
+                          self._function_body(source, detour))
+
+    def test_kirikiri_textrender_without_bound_instance_falls_back_to_classic(self) -> None:
+        # BUG-2708: a TextRender plugin that is not bound to any message-layer instance
+        # (KAGEX CustomMessageLayer, Senren Banka) must not leave the sensor with class-only
+        # wrappers that never capture; the message layers get the classic processCh capture.
+        source = (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8")
+        sweep_start = source.index("global.fushiLookupSweepLayerRenderers = function()")
+        sweep = source[sweep_start:source.index("global.fushiLookupFindGetRenderPatch", sweep_start)]
+        # Never enumerate members (throwing getters crash the game, BUG-2116).
+        self.assertNotIn("Dictionary.assign", sweep)
+        self.assertNotIn(".assign(", sweep)
+        self.assertIn("typeof layer[fields[f]] != \"Object\"", sweep)
+        self.assertIn("global.fushiLookupPatchRendererInstance(renderer)", sweep)
+        self.assertIn("return found;", sweep)
+        # The msgwin plugin path keeps precedence; the fallback runs only without it.
+        fallback = source[source.index("installStage = 32;"):source.index("installStage = 33;") + 200]
+        self.assertIn("if(global.fushiLookupSweepLayerRenderers() == 0)", fallback)
+        self.assertIn("global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;", fallback)
+        self.assertIn("global.fushiLookupSweepClassicLayers();", fallback)
+        # Re-sweep on KAG stable/run edges so re-created layers are covered too.
+        refresh = source[source.index("global.fushiLookupRefreshCaptureBridges = function()"):]
+        refresh = refresh[:refresh.index("};")]
+        self.assertIn("global.fushiLookupSweepLayerRenderers();", refresh)
+
+    def test_launch_runs_loader_init_gate_before_injection(self) -> None:
+        # The primary thread initialises TLS-callback executables itself, but only when the
+        # KiriKiri launch profile (XP3 archive signature beside the exe; no title/hash/exe
+        # name) declares the gate. Owner 2026-09-26: every non-KiriKiri exe keeps the
+        # pre-gate launch timing, so the gate must never be admitted by PE structure alone.
+        source = self._strip_comments(
+            (ROOT / "injector/injector_main.cpp").read_text(encoding="utf-8"))
+        launch = self._function_body(source, "int RunLaunch(")
+        self.assertIn("ReadPeLaunchLayout(exe)", launch)
+        self.assertIn(
+            "fushi_voice_hook::SelectKirikiriLaunchProfile(LooksLikeKirikiriRuntime(exe))",
+            launch)
+        admission = "ShouldUseLoaderInitGate(\n            pe_layout, true, kirikiri_profile.loader_init_gate)"
+        self.assertIn(admission, launch)
+        # Exactly one admission site, and no PE-structure-only (two-argument) admission.
+        self.assertEqual(launch.count("ShouldUseLoaderInitGate("), 1)
+        self.assertNotIn("ShouldUseLoaderInitGate(pe_layout, true)", source)
+        self.assertLess(launch.index("SelectKirikiriLaunchProfile("),
+                        launch.index("ShouldUseLoaderInitGate("))
+        self.assertLess(launch.index("ReadPeLaunchLayout(exe)"),
+                        launch.index("ShouldUseLoaderInitGate("))
+        self.assertLess(launch.index("RunLoaderInitGate("), launch.index("RunInjection("))
+        gate_condition = launch[:launch.index("ShouldUseLoaderInitGate(")]
+        for guard in ("launched_suspended", "!resumed_before_discovery",
+                      "!delayed_attach", "!follow_children"):
+            self.assertIn(guard, gate_condition[-400:])
+        # The KiriKiri judgment is the structural XP3 archive signature from the profile
+        # header, not a title / exe-name / hash table.
+        kirikiri = self._function_body(source, "bool LooksLikeKirikiriRuntime(")
+        self.assertIn("fushi_voice_hook::DirectoryLooksLikeKirikiri(", kirikiri)
+        self.assertIn('L"*.xp3"', kirikiri)
+        self.assertNotIn("Sha256File", kirikiri)
+        self.assertNotIn("ExecutableBaseName", kirikiri)
+        signature = (ROOT / "include/kirikiri_launch_signature.h").read_text(encoding="utf-8")
+        self.assertIn("'X', 'P', '3', 0x0D, 0x0A, 0x20, 0x0A, 0x1A, 0x8B, 0x67, 0x01", signature)
+        gate_header = self._strip_comments(
+            (ROOT / "include/loader_init_gate.h").read_text(encoding="utf-8"))
+        should = self._function_body(gate_header, "inline bool ShouldUseLoaderInitGate(")
+        self.assertIn("engine_profile_requests_gate", should)
+        # BUG-1192: a SteamStub exe falling back to a direct launch must say so.
+        steam_fallback = launch[launch.index("RunSteamLaunch("):launch.index("creation_flags")]
+        self.assertIn("pe_layout.steam_stub", steam_fallback)
+        gate = self._function_body(source, "LoaderInitGateOutcome RunLoaderInitGate(")
+        # Original entry bytes are restored on the reached path ...
+        reached = gate[gate.index("if (reached) {"):]
+        reached = reached[:reached.index("}")]
+        self.assertIn("restore();", reached)
+        self.assertIn("return Outcome::kParkedAtEntry;", reached)
+        # ... but once the image rewrote its own entry (in-place unpacker) the gate must not
+        # suspend the primary thread (it may hold the loader lock mid TLS callback: a remote
+        # LoadLibraryW would then deadlock), must not write the entry back, must not touch
+        # the page protection, and hands the game over as an already running process.
+        rewritten = gate[gate.index("if (entry_rewritten) {"):gate.index("if (reached) {")]
+        for forbidden in ("SuspendThread(", "restore();", "WriteProcessMemory(",
+                          "VirtualProtectEx("):
+            self.assertNotIn(forbidden, rewritten)
+        self.assertIn("return Outcome::kLeftRunning;", rewritten)
+        self.assertNotIn("continuing with the process initialised", gate)
+        # The rewrite probe runs while the thread is running (before it is suspended for the
+        # IP check), so leaving the loop there leaves it running.
+        loop = gate[gate.index("while (GetTickCount64() - idle_since < kGateTimeoutMs)"):
+                    gate.index("if (entry_rewritten) {")]
+        self.assertLess(loop.index("entry_rewritten = true;"), loop.index("SuspendThread(thread)"))
+        # A timeout never parks the thread mid-initialisation either: it is resumed and the
+        # game attached as a running process.
+        tail = gate[gate.index("const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;"):]
+        self.assertIn("ResumeThread(thread);", tail)
+        self.assertTrue(tail.rstrip().endswith("return Outcome::kLeftRunning;\n}")
+                        or tail.rstrip().endswith("return Outcome::kLeftRunning;\r\n}"))
+        # RunLaunch then takes the running-process attach path: no post-injection resume
+        # (the injector no longer owns a suspended primary thread) and no kill on readiness
+        # timeout.
+        running = self._function_body(launch, "if (loader_gate_left_running)")
+        self.assertIn("resumed_before_discovery = true;", running)
+        self.assertIn("WaitForReadyGameWindow(pi.hProcess, pi.dwProcessId, 20000)", running)
+        self.assertNotIn("TerminateProcess(", running)
+        self.assertLess(launch.index("if (loader_gate_left_running) {"),
+                        launch.index("MustResumeAfterInjection("))
+        # Time spent on visible UI (a TLS-callback notice waiting for OK) is not a
+        # timeout, and the host is told so it pauses its own ready budget.
+        self.assertIn("ProcessHasVisibleTopLevelWindow(pid)", gate)
+        self.assertIn("if (ui_visible) idle_since = now;", gate)
+        self.assertIn('"WAIT pid=%lu reason=%s\\n"', gate)
+
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         adapters = {

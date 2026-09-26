@@ -36,9 +36,13 @@ namespace fushi {
 
 // 钩子命中时 PostMessage 给目标窗口的消息（WM_APP 段，进程内私有）：
 //   wparam = 打包的屏幕物理坐标 ((uint32)x << 32) | (uint32)y
-//   lparam = 1 表示点击真实命中目标 window region/子窗，0 表示在透明区或窗外
+//   lparam = 位集：kLowLevelMouseClickInsideBit 表示点击真实命中目标 window
+//            region/子窗（否则在透明区或窗外）；kLowLevelMouseClickConsumedBit 表示
+//            钩子已把这次 down（及配对 up）从游戏的输入流里吞掉
 // 窗口线程自己决定「转发给 host / 关闭浮窗」——钩子线程不碰任何 C++ 对象。
 constexpr UINT kLowLevelMouseClickMessage = WM_APP + 0x51;
+constexpr LPARAM kLowLevelMouseClickInsideBit = 1;
+constexpr LPARAM kLowLevelMouseClickConsumedBit = 2;
 
 // BUG-1166 — 落在目标窗口内的滚轮：钩子**吞掉**它（回调返回非 0，事件不再进入
 // 输入流），改投这条消息让窗口线程自己消化。
