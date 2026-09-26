@@ -58,6 +58,20 @@ P0 进展（2026-09-26 晚）：
 | 5 | **CatSystem2** | partial | ③④ | 从 CS2 的文本绘制边界取几何 |
 | 6 | **Artemis** | partial | ③④ | 同上；覆盖 PC 与移植构建 |
 
+P1 进展（2026-09-27，分支 `claude/galgame-p1`；样本一律经 Fushi 发现源「真红小站」下载）：
+
+| 引擎 / 样本 | ① 文本 | ② 语音 | ③ 查词 | ④ 不推进 | 状态与下一步 |
+|---|---|---|---|---|---|
+| KiriKiri Z · 千恋＊万花 光盘版（KAGEX） | ✅ | ✅ | ✅ | ✅ | accept4 `verdict=full`，含真卡写入 |
+| KiriKiri Z · PARQUET 2021（ゆずソフトSOUR，msgwin 插件登记但不画正文） | ✅ EmbedKrkrZ | ✅ game_resource（opus/ogg） | ❌→已修 | ❌→已修 | BUG-2721 修复已提交，**待宿主复验** accept4 |
+| KiriKiri2 · 夏空カナタ（2008） | — | — | — | — | 下载包自带汉化补丁（正文乱码），不作样本；已删 |
+| RealLive · planetarian Kinetic Novel（2004，脚本打进 .pak，语音 NWK） | 待宿主 | ✅ 运行时导出 `Z0001.nwk_529.wav` | 缺几何 | 缺几何 | 新增结构识别 + NWK/NWA 解码（离线 856/856 条）；③④ 需 RealLive 字形几何 provider |
+| SiglusEngine · planetarian HD Steam | — | — | — | — | 下载包为汉化 + Steam 模拟器，无日文 Scene.pck，不适合；需另取日文 Siglus 样本 |
+| CMVS | — | — | — | — | BUG-2718：runner 白名单漏 id 16，精确布局 hit 被丢；已修并加三处镜像守卫，无样本未真机 |
+| BGI / CatSystem2 / Artemis / Unity | — | — | — | — | 已选样本（放課後しっぽデイズ / グリザイアの有閑 / アマナツ PE / デスマッチラブコメ！），下载随宿主被内存回收中断；三者 ③④ 需各自的引擎字形几何 provider（现只有手动校准） |
+
+宿主注意：驱动测试原 45 分钟超时会杀掉宿主与内存里的下载队列（旧的「exit 79」），已改 6 小时。
+
 ### P2 · 常见但覆盖面较窄
 
 | 顺序 | 引擎 | 当前 | 下一步 |
