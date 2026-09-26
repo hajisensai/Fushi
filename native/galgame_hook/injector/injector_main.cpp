@@ -28,6 +28,7 @@
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
+#include "loader_init_gate.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
 #include "siglus_launch_win32.h"
@@ -1395,6 +1396,147 @@ bool ResumeLaunchedGame(HANDLE process, HANDLE thread, const char* stage) {
     return true;
   }
   fprintf(stderr, "[resume] %s NtResumeProcess failed\n", stage);
+  return false;
+}
+
+// 读 exe 文件的 PE 头与 TLS 目录（判据见 loader_init_gate.h）。只读前 16 MiB：TLS 目录与
+// 回调数组都在头部附近的节里，超大资源尾部不必读。
+fushi_voice_hook::PeLaunchLayout ReadPeLaunchLayout(const std::wstring& exe) {
+  std::ifstream in(exe, std::ios::binary);
+  if (!in) return {};
+  std::vector<uint8_t> bytes(16u << 20);
+  in.read(reinterpret_cast<char*>(bytes.data()),
+          static_cast<std::streamsize>(bytes.size()));
+  bytes.resize(static_cast<size_t>(in.gcount()));
+  return fushi_voice_hook::ParsePeLaunchLayout(bytes.data(), bytes.size());
+}
+
+// 目标进程（同位数）的映像基址：PEB->ImageBaseAddress。挂起创建后 PEB 已就绪。
+uintptr_t RemoteImageBase(HANDLE process) {
+  struct BasicInfo {
+    void* reserved1;
+    void* peb_base;
+    void* reserved2[2];
+    ULONG_PTR unique_pid;
+    void* reserved3;
+  } info = {};
+  using NtQueryInformationProcess_t =
+      LONG(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+  const auto query = reinterpret_cast<NtQueryInformationProcess_t>(
+      reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"),
+                                             "NtQueryInformationProcess")));
+  if (query == nullptr ||
+      query(process, 0 /* ProcessBasicInformation */, &info, sizeof(info),
+            nullptr) < 0 ||
+      info.peb_base == nullptr) {
+    return 0;
+  }
+  // PEB.ImageBaseAddress：32 位 +0x08，64 位 +0x10（注入器与目标同位数）。
+  const uintptr_t field =
+      reinterpret_cast<uintptr_t>(info.peb_base) + sizeof(void*) * 2;
+  uintptr_t base = 0;
+  SIZE_T read = 0;
+  if (!ReadProcessMemory(process, reinterpret_cast<const void*>(field), &base,
+                         sizeof(base), &read) ||
+      read != sizeof(base)) {
+    return 0;
+  }
+  return base;
+}
+
+// 加载器初始化门（判据与来由见 loader_init_gate.h）：入口点写 `EB FE`，恢复主线程让它
+// 自己完成进程初始化（静态导入 DllMain + TLS 回调），停在入口点后挂起、还原原字节。
+// 返回 true 时主线程处于挂起态（计数 1），调用方照常注入并由既有路径恢复。
+// 返回 false 表示没过门：入口点字节已尽力还原，主线程被挂起（若进程还活着），调用方
+// 退回旧行为继续注入——门是生命周期修正，不是新的失败面。
+bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
+  if (thread == nullptr) {
+    fprintf(stderr,
+            "[loader-gate] no primary thread handle; skipping gate (legacy "
+            "early injection)\n");
+    return false;
+  }
+  const uintptr_t image_base = RemoteImageBase(process);
+  if (image_base == 0) {
+    fprintf(stderr, "[loader-gate] cannot read image base; skipping gate\n");
+    return false;
+  }
+  void* const entry = reinterpret_cast<void*>(image_base + entry_rva);
+  uint8_t original[2] = {};
+  SIZE_T io = 0;
+  if (!ReadProcessMemory(process, entry, original, sizeof(original), &io) ||
+      io != sizeof(original)) {
+    fprintf(stderr, "[loader-gate] cannot read entry bytes at %p: %lu\n", entry,
+            GetLastError());
+    return false;
+  }
+  DWORD old_protect = 0;
+  if (!VirtualProtectEx(process, entry, sizeof(original), PAGE_EXECUTE_READWRITE,
+                        &old_protect)) {
+    fprintf(stderr, "[loader-gate] VirtualProtectEx failed: %lu\n",
+            GetLastError());
+    return false;
+  }
+  const uint8_t spin[2] = {0xEB, 0xFE};  // jmp $
+  const auto restore = [&]() {
+    SIZE_T written = 0;
+    WriteProcessMemory(process, entry, original, sizeof(original), &written);
+    FlushInstructionCache(process, entry, sizeof(original));
+    DWORD ignored = 0;
+    VirtualProtectEx(process, entry, sizeof(original), old_protect, &ignored);
+  };
+  if (!WriteProcessMemory(process, entry, spin, sizeof(spin), &io) ||
+      io != sizeof(spin)) {
+    fprintf(stderr, "[loader-gate] cannot patch entry: %lu\n", GetLastError());
+    restore();
+    return false;
+  }
+  FlushInstructionCache(process, entry, sizeof(spin));
+
+  const uint64_t started = GetTickCount64();
+  // 恢复到挂起计数归零（Locale Emulator 路径下初始计数可能是 2，见 ResumeLaunchedGame）。
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    const DWORD previous = ResumeThread(thread);
+    if (previous == static_cast<DWORD>(-1) || previous <= 1) break;
+  }
+  constexpr DWORD kGateTimeoutMs = 20000;
+  bool reached = false;
+  while (GetTickCount64() - started < kGateTimeoutMs) {
+    if (WaitForSingleObject(process, 0) != WAIT_TIMEOUT) break;  // 进程已退出
+    if (SuspendThread(thread) == static_cast<DWORD>(-1)) break;
+    CONTEXT ctx = {};
+    ctx.ContextFlags = CONTEXT_CONTROL;
+    if (GetThreadContext(thread, &ctx)) {
+#if defined(_M_X64)
+      const uintptr_t ip = static_cast<uintptr_t>(ctx.Rip);
+#else
+      const uintptr_t ip = static_cast<uintptr_t>(ctx.Eip);
+#endif
+      if (ip == reinterpret_cast<uintptr_t>(entry)) {
+        reached = true;
+        break;  // 保持挂起
+      }
+    }
+    ResumeThread(thread);
+    Sleep(2);
+  }
+  const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+  if (!reached && alive) {
+    // 超时：把主线程挂住再还原字节，保证之后的注入仍面对一个挂起的进程。
+    SuspendThread(thread);
+  }
+  restore();
+  if (reached) {
+    fprintf(stderr,
+            "[loader-gate] primary thread initialised the process and parked at "
+            "entry %p after %llu ms\n",
+            entry, static_cast<unsigned long long>(GetTickCount64() - started));
+    return true;
+  }
+  fprintf(stderr,
+          "[loader-gate] primary thread did not reach entry %p within %lu ms "
+          "(alive=%d); continuing with legacy early injection\n",
+          entry, kGateTimeoutMs, alive ? 1 : 0);
   return false;
 }
 
@@ -2948,6 +3090,18 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     return RunSteamLaunch(exe, steam_app_id, dll_path, wait_ms, hold,
                           effective_luna, native_loopback_requested);
   }
+  const fushi_voice_hook::PeLaunchLayout pe_layout = ReadPeLaunchLayout(exe);
+  if (pe_layout.steam_stub) {
+    // BUG-1192：SteamStub 包壳 exe 却没从 appmanifest 发现 AppID，只能直接启动。以前这里完全
+    // 静默，用户只看到游戏自己弹的 `Application load error`，无从判断是启动方式不对。
+    fprintf(stderr,
+            "[steam] exe is SteamStub-wrapped (.bind) but no Steam AppID was "
+            "discovered for its install path (steam_app_id=%ls, "
+            "force_direct=%d); launching directly — the DRM may refuse to "
+            "start outside the Steam client\n",
+            steam_app_id.empty() ? L"<none>" : steam_app_id.c_str(),
+            force_direct_launch ? 1 : 0);
+  }
   const DWORD creation_flags =
       (delayed_attach || follow_children) ? 0 : CREATE_SUSPENDED;
   wchar_t previous_steam_app_id[64] = {0};
@@ -3036,6 +3190,18 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
       return 1;
     }
     resumed_before_discovery = true;
+  }
+
+  // 加载器初始化门（loader_init_gate.h）：exe 带 TLS 回调时，不能让注入线程替进程跑初始化。
+  if (launched_suspended && !resumed_before_discovery && !delayed_attach &&
+      !follow_children) {
+    if (fushi_voice_hook::ShouldUseLoaderInitGate(pe_layout, true)) {
+      fprintf(stderr,
+              "[loader-gate] exe declares %u TLS callback(s); letting the primary "
+              "thread initialise the process before injection\n",
+              pe_layout.tls_callback_count);
+      RunLoaderInitGate(pi.hProcess, pi.hThread, pe_layout.entry_point_rva);
+    }
   }
 
   const wchar_t* readiness_module =
