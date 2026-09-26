@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2490 条。点号进各自文件。
+> 共 2491 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2708](bugs/BUG-2708-kirikiri-kagex-textrender-unbound-lookup.md) | ✅ | ✅ | KiriKiri KAGEX 有 TextRender 插件但未绑消息层，游戏内查词采不到字形且点击推进剧情（千恋＊万花） |
 | [BUG-2706](bugs/BUG-2706-gal-thread-memory-restores-dead-thread.md) | ✅ | ✅ | 同一 Fushi 进程二次启动同款游戏时文本线程记忆恢复到上一次的死线程 |
 | [BUG-2705](bugs/BUG-2705-kirikiri-embed-sticky-se-tail.md) | ✅ | ✅ | KiriKiri EmbedKrkrZ 台词被双写并拼上当前循环音效标签（千恋＊万花） |
 | [BUG-2704](bugs/BUG-2704-kirikiri-disc-chs-notice-before-entry.md) | ✅ | ✅ | 千恋＊万花光盘版汉化 exe 在 TLS 回调里弹声明框，Fushi 早注入就绪超时 |
