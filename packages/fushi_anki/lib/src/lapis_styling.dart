@@ -401,7 +401,10 @@ class LapisVisualRule {
       fontScalePercent: scale,
       bold: value['bold'] == true,
       alignment: alignment,
-      textIndentPercent: textIndent,
+      // 0 缩进就是默认：归一成 null，否则 AI / 手写 CONFIG 给的 0 会生成一条
+      // `text-indent: 0.00em !important` 覆盖、`isDefault` 为 false，而编辑器
+      // 下拉框把 0 显示成「默认」，两边对不上。
+      textIndentPercent: textIndent == 0 ? null : textIndent,
       colorHex: color,
       lineHeightPercent: lineHeight,
       backgroundColorHex: backgroundColor,

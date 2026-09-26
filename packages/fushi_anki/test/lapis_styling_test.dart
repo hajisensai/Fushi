@@ -684,13 +684,20 @@ void main() {
             .textIndentPercent,
         400,
       );
+      // 负值夹到 0，而 0 就是默认：归一成 null、不生成覆盖。
       expect(
         LapisVisualRule.fromJson(
           <String, dynamic>{'textIndentPercent': -50},
         )!
             .textIndentPercent,
-        0,
+        isNull,
       );
+      final LapisVisualRule zero = LapisVisualRule.fromJson(
+        <String, dynamic>{'textIndentPercent': 0},
+      )!;
+      expect(zero.textIndentPercent, isNull);
+      expect(zero.isDefault, isTrue);
+      expect(lapisVisualDeclarations(zero).join(), isNot(contains('text-indent')));
     });
 
     test('copyWith 可以把缩进清回默认', () {
