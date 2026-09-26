@@ -175,16 +175,14 @@ void main() {
       );
     });
 
-    test('只对带请求头能力的在线流（扩展 hoster / 粘贴的流）、且是网络地址时改道', () {
+    test('改道与否只经 videoMiningInputUsesPlaybackRelay 判', () {
+      // 判据本身（在线流 / 媒体服务器改道，互联主机 / 本地 / YouTube 不改）的行为
+      // 测试见 `test/mining/media_server_mining_relay_test.dart`（BUG-2692）。
       final int call = src.indexOf('relayFfmpegRemoteInput(');
       expect(call, greaterThanOrEqualTo(0));
       final String guard = src.substring(src.lastIndexOf('if (', call), call);
-      expect(
-        guard,
-        contains('is RemoteVideoStreamHeaders'),
-        reason: 'YouTube / 互联主机 / 媒体服务器各有自己的取流特例，不能一起改道',
-      );
-      expect(guard, contains('isNetworkStreamUri('));
+      expect(guard, contains('videoMiningInputUsesPlaybackRelay('));
+      expect(guard, contains('remoteClient: _effectiveRemoteClient'));
       expect(
         src.substring(call, src.indexOf(';', call)),
         contains('controller.isHlsStream()'),
