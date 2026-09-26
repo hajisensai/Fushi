@@ -564,7 +564,8 @@ void main() {
         bookId: 'book',
         pageCount: 3,
         loadPage: (int page) async => pageImage(page),
-        onProgress: (int done, int total) => progress.add(<int>[done, total]),
+        onProgress: (int done, int total, int pageIndex) =>
+            progress.add(<int>[done, total]),
       );
 
       expect(results, hasLength(3));
@@ -606,7 +607,7 @@ void main() {
           pageCount: 5,
           loadPage: (int page) async => pageImage(page),
           cancelToken: token,
-          onProgress: (int done, int total) {
+          onProgress: (int done, int total, int pageIndex) {
             if (done == 2) {
               token.cancel();
             }
@@ -626,7 +627,8 @@ void main() {
           expect(page, greaterThanOrEqualTo(2), reason: '缓存命中页不应再加载图像');
           return pageImage(page);
         },
-        onProgress: (int done, int total) => progress.add(<int>[done, total]),
+        onProgress: (int done, int total, int pageIndex) =>
+            progress.add(<int>[done, total]),
       );
       expect(results, hasLength(5));
       expect(results.map((OcrPageResult r) => r.pageIndex).toList(), <int>[
@@ -639,6 +641,87 @@ void main() {
       // 每页检测总次数仍为 1：缓存页没有重复检测。
       expect(detector.callsByPage, <int, int>{0: 1, 1: 1, 2: 1, 3: 1, 4: 1});
       expect(progress.last, <int>[5, 5]);
+    });
+
+    test('startPage：从当前页起向后、再绕回开头；结果仍按页序', () async {
+      final FakeDetector detector = FakeDetector();
+      final MemoryCache cache = MemoryCache();
+      final MangaOcrPipeline pipeline = MangaOcrPipeline(
+        detector: detector,
+        recognizer: FakeRecognizer(),
+        cache: cache,
+      );
+      final List<int> loaded = <int>[];
+      final List<List<int>> progress = <List<int>>[];
+      final List<OcrPageResult> results = await pipeline.processBook(
+        bookId: 'book',
+        pageCount: 5,
+        startPage: 3,
+        loadPage: (int page) async {
+          loaded.add(page);
+          return pageImage(page);
+        },
+        onProgress: (int done, int total, int pageIndex) =>
+            progress.add(<int>[done, total, pageIndex]),
+      );
+
+      // 读者停在第 3 页：它最先识别，之后 4，再绕回 0..2。
+      expect(loaded, <int>[3, 4, 0, 1, 2]);
+      expect(cache.writes, <int>[3, 4, 0, 1, 2]);
+      // 进度事件带的是真实页号，不是「第 N 个完成」。
+      expect(progress, <List<int>>[
+        <int>[1, 5, 3],
+        <int>[2, 5, 4],
+        <int>[3, 5, 0],
+        <int>[4, 5, 1],
+        <int>[5, 5, 2],
+      ]);
+      // 返回值与起点无关：按页序，每页结果属于自己的页。
+      expect(
+        results.map((OcrPageResult r) => r.pageIndex).toList(),
+        <int>[0, 1, 2, 3, 4],
+      );
+      for (int page = 0; page < 5; page++) {
+        expect(results[page].blocks.first.lines.single, 'p$page@400');
+      }
+    });
+
+    test('startPage：已缓存页跳过推理，但仍按旋转顺序报进度', () async {
+      final FakeDetector detector = FakeDetector();
+      final MemoryCache cache = MemoryCache();
+      final MangaOcrPipeline pipeline = MangaOcrPipeline(
+        detector: detector,
+        recognizer: FakeRecognizer(),
+        cache: cache,
+      );
+      // 先只把第 0、3 页跑进缓存（模拟边看边识别留下的页）。
+      for (final int page in <int>[0, 3]) {
+        await cache.write(
+          'book',
+          await pipeline.processPage(pageIndex: page, image: pageImage(page)),
+        );
+      }
+      detector.callsByPage.clear();
+
+      final List<int> progressPages = <int>[];
+      await pipeline.processBook(
+        bookId: 'book',
+        pageCount: 4,
+        startPage: 2,
+        loadPage: (int page) async => pageImage(page),
+        onProgress: (int done, int total, int pageIndex) =>
+            progressPages.add(pageIndex),
+      );
+      expect(progressPages, <int>[2, 3, 0, 1]);
+      expect(detector.callsByPage.keys, <int>[2, 1]);
+    });
+
+    test('mangaOcrPageOrder：越界起点夹到合法范围', () {
+      expect(mangaOcrPageOrder(0, 3), isEmpty);
+      expect(mangaOcrPageOrder(3, 0), <int>[0, 1, 2]);
+      expect(mangaOcrPageOrder(3, 1), <int>[1, 2, 0]);
+      expect(mangaOcrPageOrder(3, 99), <int>[2, 0, 1]);
+      expect(mangaOcrPageOrder(3, -4), <int>[0, 1, 2]);
     });
 
     test('识别为空串的块被丢弃', () async {

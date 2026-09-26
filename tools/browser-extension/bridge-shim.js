@@ -128,6 +128,26 @@ window.flutter_inappwebview = {
             return false;
           }
         })();
+      case 'openInAnki':
+        // Issue #1409：↗「在 Anki 中打开这个词的卡」。经 background.js 转发到 server
+        // /api/anki/open（与 app 内 openInAnki 桥同一 repo.openWordInAnki）。回三态名
+        // 'opened' / 'noMatch' / 'failed'（popup.js openWordInAnki 的契约）；**不能回 null**
+        // ——null 专指「宿主没接这根桥」，此前正是落到 default 分支才恒提示打不开。
+        // 任何失败（扩展已重载、server 未开、旧 app 无此端点 404、outcome 不认识）→ 'failed'。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var resp = await chrome.runtime.sendMessage({
+              type: 'openInAnki',
+              expression: a.expression || '',
+              reading: a.reading || '',
+            });
+            var outcome = resp && resp.ok && resp.data ? resp.data.outcome : null;
+            return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
+          } catch (_) {
+            return 'failed';
+          }
+        })();
       // 多句合一制卡（与 app 内 dictionary_popup_webview 四个 handler 同名同契约；实现在
       // content.js，宿主未装时按「不支持草稿」降级：计数 0 / 空预览 / 模态不弹）。
       case 'setSentenceContext': {

@@ -468,4 +468,143 @@ void main() {
       expect(client.captured!(Uri.parse('https://example.com/')), 'DIRECT');
     });
   });
+
+  // #1514：自动模式下系统代理只在启动时读一次，FlClash 等代理软件比 Fushi 晚开、或用户
+  // 中途才开系统代理，整个进程就一直直连（浏览器扩展 YouTube 制卡 manifest 全部超时）。
+  group('自动模式的系统代理跟上运行期变化（#1514）', () {
+    final Uri youtube = Uri.parse('https://www.youtube.com/watch?v=x');
+    const Map<String, String> clash = <String, String>{
+      'http_proxy': '127.0.0.1:7890',
+      'https_proxy': '127.0.0.1:7890',
+    };
+    late DateTime now;
+    late Map<String, String> registry;
+    late int reads;
+
+    bool envHasProxy() => Platform.environment.keys.any((String k) {
+      final String lower = k.toLowerCase();
+      return lower == 'http_proxy' || lower == 'https_proxy';
+    });
+
+    setUp(() {
+      now = DateTime(2026, 9, 26, 12);
+      registry = const <String, String>{};
+      reads = 0;
+      appUserProxyModeReader = () => kProxyModeAuto;
+    });
+
+    Map<String, String> readRegistry() {
+      reads++;
+      return registry;
+    }
+
+    test('Windows：启动时没开系统代理，之后开了——过有效期后的请求就走代理', () async {
+      if (envHasProxy()) {
+        markTestSkipped('本进程 env 已设代理，env 优先于系统代理，无法判别');
+        return;
+      }
+      debugSetSystemProxySourceForTest(
+        syncReader: readRegistry,
+        clock: () => now,
+      );
+      await primeAppProxy();
+      expect(resolveAppProxyDirective(youtube), 'DIRECT');
+
+      registry = clash; // 用户此刻在 FlClash 里打开「系统代理」
+      now = now.add(kSyncSystemProxyRefreshInterval);
+      expect(
+        resolveAppProxyDirective(youtube),
+        'PROXY 127.0.0.1:7890',
+        reason: '同步读注册表的平台过期后当次请求就要现读，不能停在启动时的空缓存上',
+      );
+
+      registry = const <String, String>{}; // 关掉系统代理也要跟上
+      now = now.add(kSyncSystemProxyRefreshInterval);
+      expect(resolveAppProxyDirective(youtube), 'DIRECT');
+    });
+
+    test('Windows：有效期内不重复读注册表（findProxy 是高频回调）', () async {
+      debugSetSystemProxySourceForTest(
+        syncReader: readRegistry,
+        clock: () => now,
+      );
+      await primeAppProxy();
+      final int afterPrime = reads;
+      for (int i = 0; i < 20; i++) {
+        resolveAppProxyDirective(youtube);
+      }
+      if (!envHasProxy()) expect(reads, afterPrime);
+    });
+
+    test('macOS / Linux：过期后后台刷新，下一个请求起生效', () async {
+      if (envHasProxy()) {
+        markTestSkipped('本进程 env 已设代理，env 优先于系统代理，无法判别');
+        return;
+      }
+      debugSetSystemProxySourceForTest(
+        syncReader: null,
+        asyncReader: () async {
+          reads++;
+          return registry;
+        },
+        clock: () => now,
+      );
+      await primeAppProxy();
+      expect(resolveAppProxyDirective(youtube), 'DIRECT');
+
+      registry = clash;
+      now = now.add(kAsyncSystemProxyRefreshInterval);
+      // findProxy 是同步回调，不能等子进程：本次仍是旧值，同时触发刷新。
+      expect(resolveAppProxyDirective(youtube), 'DIRECT');
+      await pumpEventQueue();
+      expect(resolveAppProxyDirective(youtube), 'PROXY 127.0.0.1:7890');
+      expect(reads, 2, reason: 'prime 一次 + 过期刷新一次，不能每个请求起一个子进程');
+    });
+
+    test('异步入口建的长寿 client 同样跟上（不再烘焙建 client 时的系统代理）', () async {
+      if (envHasProxy()) {
+        markTestSkipped('本进程 env 已设代理，env 优先于系统代理，无法判别');
+        return;
+      }
+      debugSetSystemProxySourceForTest(
+        syncReader: readRegistry,
+        clock: () => now,
+      );
+      final _CapturingHttpClient client = _CapturingHttpClient();
+      await applyAppProxy(client);
+      expect(client.captured!(youtube), 'DIRECT');
+
+      registry = clash;
+      now = now.add(kSyncSystemProxyRefreshInterval);
+      expect(client.captured!(youtube), 'PROXY 127.0.0.1:7890');
+    });
+
+    test('没 prime 过的精简入口维持「该格为空」，不去读注册表', () {
+      debugSetSystemProxySourceForTest(
+        syncReader: readRegistry,
+        clock: () => now,
+      );
+      registry = clash;
+      now = now.add(kSyncSystemProxyRefreshInterval * 10);
+      final String directive = resolveAppProxyDirective(youtube);
+      expect(reads, 0);
+      if (!envHasProxy()) expect(directive, 'DIRECT');
+    });
+
+    test('手动模式不受系统代理刷新影响，也不读注册表', () async {
+      debugSetSystemProxySourceForTest(
+        syncReader: readRegistry,
+        clock: () => now,
+      );
+      await primeAppProxy();
+      final int afterPrime = reads;
+      appUserProxyModeReader = () => kProxyModeManual;
+      appUserProxyReader = () => '10.0.0.1:1080';
+      registry = clash;
+      now = now.add(kSyncSystemProxyRefreshInterval * 10);
+
+      expect(resolveAppProxyDirective(youtube), 'PROXY 10.0.0.1:1080');
+      expect(reads, afterPrime);
+    });
+  });
 }

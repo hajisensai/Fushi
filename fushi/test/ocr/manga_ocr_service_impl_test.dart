@@ -82,13 +82,14 @@ class _FakeRunner implements MangaOcrVolumeJobRunner {
   final List<MangaOcrVolumeJobRequest> requests = <MangaOcrVolumeJobRequest>[];
   final Completer<void> started = Completer<void>();
   _FakeJob? lastJob;
-  void Function(int, int)? lastOnProgress;
+  void Function(int, int, int)? lastOnProgress;
   void Function(MangaOcrAcceleration)? lastOnAcceleration;
 
   @override
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
-    required void Function(int pagesDone, int pagesTotal) onProgress,
+    required void Function(int pagesDone, int pagesTotal, int pageIndex)
+    onProgress,
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   }) {
     requests.add(request);
@@ -800,12 +801,14 @@ void main() {
 
       final List<MangaOcrVolumeEvent> events = <MangaOcrVolumeEvent>[];
       final Future<void> done = impl
-          .ocrFolder(imageDirPath: 'D:/vol1', volumeTitle: '第1卷')
+          .ocrFolder(imageDirPath: 'D:/vol1', volumeTitle: '第1卷', startPage: 1)
           .forEach(events.add);
       // 模型指纹含文件 IO，等待 runner 真正启动，不能假设一轮事件循环已足够。
       await runner.started.future;
       expect(runner.requests.single.imageDirPath, 'D:/vol1');
       expect(runner.requests.single.volumeTitle, '第1卷');
+      // 阅读器的当前页起点必须一路传进整卷任务（isolate 按它旋转处理）。
+      expect(runner.requests.single.startPage, 1);
       // 模型路径接线：detector/encoder/decoder/vocab 各归其位。
       final MangaOcrModelPaths paths = runner.requests.single.modelPaths;
       expect(p.basename(paths.detectorPath), 'detector-v4-s_int8.onnx');
@@ -816,16 +819,18 @@ void main() {
       expect(p.basename(paths.ppRecPath), kPpOcrRecFileName);
       expect(p.basename(paths.ppRecDictPath), kPpOcrRecDictFileName);
 
-      runner.lastOnProgress!(1, 2);
-      runner.lastOnProgress!(2, 2);
+      runner.lastOnProgress!(1, 2, 1);
+      runner.lastOnProgress!(2, 2, 0);
       runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
       await done;
 
       expect(events, hasLength(3));
       expect(events[0].pagesDone, 1);
       expect(events[0].pagesTotal, 2);
+      expect(events[0].pageIndex, 1, reason: '进度事件必须带真实页号，不是完成计数');
       expect(events[0].finished, isFalse);
       expect(events[1].pagesDone, 2);
+      expect(events[1].pageIndex, 0);
       expect(events[2].finished, isTrue);
       expect(events[2].pagesDone, 2);
       expect(events[2].mangaJsonPath, 'D:/vol1/manga_ocr_out/manga.json');
@@ -842,7 +847,7 @@ void main() {
           .ocrFolder(imageDirPath: 'D:/vol1')
           .listen(events.add, onError: (Object e) => streamError = e);
       await runner.started.future;
-      runner.lastOnProgress!(1, 3);
+      runner.lastOnProgress!(1, 3, 0);
       await Future<void>.delayed(Duration.zero);
 
       await sub.cancel();
@@ -874,7 +879,7 @@ void main() {
       );
 
       // 加速状态尚未回报前先来一页进度：该页只能是 null，不能瞎猜成 GPU。
-      runner.lastOnProgress!(1, 2);
+      runner.lastOnProgress!(1, 2, 0);
       runner.lastOnAcceleration!(
         const MangaOcrAcceleration(
           detection: OcrExecutionProvider.cpu,
@@ -884,7 +889,7 @@ void main() {
           ],
         ),
       );
-      runner.lastOnProgress!(2, 2);
+      runner.lastOnProgress!(2, 2, 1);
       runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
       await done;
 
@@ -917,7 +922,7 @@ void main() {
           recognition: OcrExecutionProvider.cpu,
         ),
       );
-      runner.lastOnProgress!(1, 1);
+      runner.lastOnProgress!(1, 1, 0);
       runner.lastJob!.completer.complete('D:/vol1/manga_ocr_out/manga.json');
       await done;
 

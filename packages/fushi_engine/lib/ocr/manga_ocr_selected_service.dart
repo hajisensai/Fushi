@@ -32,6 +32,10 @@ class SelectedMangaOcrService
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
-  }) =>
-      _select().ocrFolder(imageDirPath: imageDirPath, volumeTitle: volumeTitle);
+    int startPage = 0,
+  }) => _select().ocrFolder(
+    imageDirPath: imageDirPath,
+    volumeTitle: volumeTitle,
+    startPage: startPage,
+  );
 }
