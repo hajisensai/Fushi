@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2476 条。点号进各自文件。
+> 共 2477 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2694](bugs/BUG-2694-ai-acquire-entry-hidden.md) | ✅ | ✅ | AI 下视频入口在未指派 AI 时整颗隐藏，Windows/Mac 都找不到 |
 | [BUG-2692](bugs/BUG-2692-emby-mining-ffmpeg-direct-tls.md) | ✅ | ✅ | Emby/Jellyfin 能播放但制卡三条抽取全报 I/O error |
 | [BUG-2691](bugs/BUG-2691-dovi-p5-inverted-colors.md) | ✅ | ✅ | Emby 杜比视界 Profile 5 片源画面紫绿反色 |
 | [BUG-2690](bugs/BUG-2690-lnreader-kakuyomu-popular-empty.md) | ✅ | ✅ | LNReader kakuyomu 源打不开（热门恒空） |
