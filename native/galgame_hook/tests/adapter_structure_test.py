@@ -155,9 +155,19 @@ class AdapterStructureTest(unittest.TestCase):
         steam_fallback = launch[launch.index("RunSteamLaunch("):launch.index("creation_flags")]
         self.assertIn("pe_layout.steam_stub", steam_fallback)
         gate = self._function_body(source, "bool RunLoaderInitGate(")
-        # Original entry bytes are always restored, including the timeout path.
+        # Original entry bytes are restored on the reached and timeout paths ...
         self.assertIn("restore();", gate)
         self.assertLess(gate.rindex("restore();"), gate.index("if (reached) {"))
+        # ... but never after the image rewrote its own entry (unpacker): writing the
+        # pre-unpack bytes back would corrupt the decrypted code (BUG-2704).
+        rewritten = gate[gate.index("if (entry_rewritten) {"):gate.rindex("restore();")]
+        self.assertNotIn("restore();", rewritten)
+        self.assertIn("return false;", rewritten)
+        # Time spent on visible UI (a TLS-callback notice waiting for OK) is not a
+        # timeout, and the host is told so it pauses its own ready budget.
+        self.assertIn("ProcessHasVisibleTopLevelWindow(pid)", gate)
+        self.assertIn("if (ui_visible) idle_since = now;", gate)
+        self.assertIn('"WAIT pid=%lu reason=%s\\n"', gate)
 
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")

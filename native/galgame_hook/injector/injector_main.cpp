@@ -1444,6 +1444,28 @@ uintptr_t RemoteImageBase(HANDLE process) {
   return base;
 }
 
+// 目标进程是否有任何可见的顶层窗口（对话框、壳的启动画面等）：有就说明它正在展示 UI、
+// 可能在等用户操作，而不是卡死。
+bool ProcessHasVisibleTopLevelWindow(DWORD pid) {
+  struct Search {
+    DWORD pid;
+    bool found;
+  } search = {pid, false};
+  EnumWindows(
+      [](HWND window, LPARAM param) -> BOOL {
+        auto* s = reinterpret_cast<Search*>(param);
+        DWORD owner = 0;
+        GetWindowThreadProcessId(window, &owner);
+        if (owner == s->pid && IsWindowVisible(window)) {
+          s->found = true;
+          return FALSE;
+        }
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&search));
+  return search.found;
+}
+
 // 加载器初始化门（判据与来由见 loader_init_gate.h）：入口点写 `EB FE`，恢复主线程让它
 // 自己完成进程初始化（静态导入 DllMain + TLS 回调），停在入口点后挂起、还原原字节。
 // 返回 true 时主线程处于挂起态（计数 1），调用方照常注入并由既有路径恢复。
@@ -1499,10 +1521,39 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
     const DWORD previous = ResumeThread(thread);
     if (previous == static_cast<DWORD>(-1) || previous <= 1) break;
   }
+  // 超时只计「进程没有任何可见 UI」的时间：TLS 回调里的壳 / 汉化补丁常先弹一个等用户点
+  // 「确定」的对话框（《千恋＊万花》光盘版 SenrenBankaCHS.exe：「重要信息」声明框），那段
+  // 时间主线程合法地停在 TLS 回调里，用户读多久都不算卡死。等待期间向宿主报 WAIT，
+  // 让宿主暂停自己的就绪计时（galgame_audio_source.dart `_InjectorReadyWait`）。
   constexpr DWORD kGateTimeoutMs = 20000;
+  const DWORD pid = GetProcessId(process);
+  uint64_t idle_since = started;
+  uint64_t next_ui_probe = 0;
+  bool waiting_user = false;
   bool reached = false;
-  while (GetTickCount64() - started < kGateTimeoutMs) {
+  bool entry_rewritten = false;
+  while (GetTickCount64() - idle_since < kGateTimeoutMs) {
     if (WaitForSingleObject(process, 0) != WAIT_TIMEOUT) break;  // 进程已退出
+    const uint64_t now = GetTickCount64();
+    if (now >= next_ui_probe) {
+      next_ui_probe = now + 100;
+      // 壳在 TLS 回调里解密代码段时会覆盖入口处的 `EB FE`：主线程不会再停在这里，
+      // 且此后绝不能再写回原字节（那是解密前的密文）。
+      uint8_t current[2] = {};
+      SIZE_T got = 0;
+      if (ReadProcessMemory(process, entry, current, sizeof(current), &got) &&
+          got == sizeof(current) && (current[0] != spin[0] || current[1] != spin[1])) {
+        entry_rewritten = true;
+        break;
+      }
+      const bool ui_visible = ProcessHasVisibleTopLevelWindow(pid);
+      if (ui_visible) idle_since = now;
+      if (ui_visible != waiting_user) {
+        waiting_user = ui_visible;
+        printf("WAIT pid=%lu reason=%s\n", pid, waiting_user ? "user" : "none");
+        fflush(stdout);
+      }
+    }
     if (SuspendThread(thread) == static_cast<DWORD>(-1)) break;
     CONTEXT ctx = {};
     ctx.ContextFlags = CONTEXT_CONTROL;
@@ -1520,10 +1571,24 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
     ResumeThread(thread);
     Sleep(2);
   }
+  if (waiting_user) {
+    printf("WAIT pid=%lu reason=none\n", pid);
+    fflush(stdout);
+  }
   const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
   if (!reached && alive) {
-    // 超时：把主线程挂住再还原字节，保证之后的注入仍面对一个挂起的进程。
+    // 超时 / 入口被改写：把主线程挂住，保证之后的注入仍面对一个挂起的进程。
     SuspendThread(thread);
+  }
+  if (entry_rewritten) {
+    // 入口已被壳改写成解密后的真实代码：只还原页保护，不写回原字节。
+    DWORD ignored = 0;
+    VirtualProtectEx(process, entry, sizeof(original), old_protect, &ignored);
+    fprintf(stderr,
+            "[loader-gate] entry %p was rewritten by the image itself (unpacker) "
+            "after %llu ms; continuing with the process initialised\n",
+            entry, static_cast<unsigned long long>(GetTickCount64() - started));
+    return false;
   }
   restore();
   if (reached) {
@@ -1535,7 +1600,8 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
   }
   fprintf(stderr,
           "[loader-gate] primary thread did not reach entry %p within %lu ms "
-          "(alive=%d); continuing with legacy early injection\n",
+          "without visible UI (alive=%d); continuing with legacy early "
+          "injection\n",
           entry, kGateTimeoutMs, alive ? 1 : 0);
   return false;
 }
