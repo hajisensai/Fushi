@@ -604,6 +604,75 @@ void main() {
     );
   });
 
+  testWidgets('BUG-2713：成员是 S04E18 → 自动首搜按第四季的 AniList 条目检索', (
+    WidgetTester tester,
+  ) async {
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/rezero-s04e18'),
+        title: Value<String>('Re Zero kara Hajimeru Isekai Seikatsu S04E18'),
+        videoPath: Value<String>(
+          'C:/video/[NanakoRaws] Re Zero kara Hajimeru Isekai Seikatsu '
+          'S04E18 (AT-X TV 1080p HEVC AAC).mkv',
+        ),
+      ),
+    );
+    final VideoBookRow member = (await repo.getByBookUid(
+      'video/rezero-s04e18',
+    ))!;
+    final MediaCollectionRow collection = await seedCollection();
+    // 相关度首条恒为第一季（2026-09-26 实测 AniList 原样顺序）。
+    Future<http.Client> factory() async => MockClient(
+      (http.Request request) async => http.Response(
+        jsonEncode(<String, Object?>{
+          'data': <String, Object?>{
+            'Page': <String, Object?>{
+              'media': <Object?>[
+                for (final (int id, String romaji) in const <(int, String)>[
+                  (21355, 'Re:Zero kara Hajimeru Isekai Seikatsu'),
+                  (108632, 'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season'),
+                  (163134, 'Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season'),
+                  (189046, 'Re:Zero kara Hajimeru Isekai Seikatsu 4th Season'),
+                ])
+                  <String, Object?>{
+                    'id': id,
+                    'title': <String, Object?>{'romaji': romaji},
+                  },
+              ],
+            },
+          },
+        }),
+        200,
+      ),
+    );
+    final List<VideoSubtitleSearchRequest> requests =
+        <VideoSubtitleSearchRequest>[];
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        httpClientFactory: factory,
+        onSearch: (VideoSubtitleSearchRequest request) async {
+          requests.add(request);
+          return ProviderBatchResult<VideoSubtitleCandidate>.success(
+            <VideoSubtitleCandidate>[
+              _Cand('Show - 18.ja.srt', source: 'e1', episode: 18),
+            ],
+          );
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(requests, hasLength(1));
+    expect(
+      requests.single.media!.anilistId,
+      189046,
+      reason: '按第一季的 id 查 Jimaku 只会列出第一季的字幕',
+    );
+    expect(requests.single.effectiveSeason, 4);
+  });
+
   testWidgets('用户显式点选系列 → anilistId 才写进合集', (WidgetTester tester) async {
     final VideoBookRow member = await seedMember();
     final MediaCollectionRow collection = await seedCollection();

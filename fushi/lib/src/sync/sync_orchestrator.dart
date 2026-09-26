@@ -29,6 +29,7 @@ import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_state_apply_lock.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -874,8 +875,6 @@ class SyncOrchestrator {
         }
       }
 
-      final CollectionManifest local = await loadLocalCollectionManifest(_db);
-
       // 时钟回拨钳制：持久化基线晚于 now（时钟被拨回）时钳到 now，避免基线永远大于
       // 一切 publishedAt/removedAt 而把所有墓碑当旧闻。
       int baseline = await repo.getCollectionsSyncBaselineMs(_scope);
@@ -886,15 +885,21 @@ class SyncOrchestrator {
       final CollectionManifest remote =
           CollectionSyncEngine.combinePeers(peers);
 
-      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
-        local: local,
-        remote: remote,
-        lastSyncedAtMs: baseline,
-        nowMs: nextBaseline,
-      );
+      // BUG-2717：读本地清单 → 合并 → 落库是一次读-改-写，与本机作为互联 host 处理
+      // 对端 POST 的 mergeCollectionManifest 持同一把窄锁（网络读写都在锁外）。
+      late final CollectionSyncOutcome outcome;
+      await runExclusiveWithSyncStateApply(() async {
+        final CollectionManifest local = await loadLocalCollectionManifest(_db);
+        outcome = CollectionSyncEngine.merge(
+          local: local,
+          remote: remote,
+          lastSyncedAtMs: baseline,
+          nowMs: nextBaseline,
+        );
 
-      report.collectionsUpdated +=
-          await applyCollectionLocalChanges(_db, outcome.changes);
+        report.collectionsUpdated +=
+            await applyCollectionLocalChanges(_db, outcome.changes);
+      });
 
       // 回写门槛：本端 per-device 文件内容有变才写自己那份；本端尚无文件且合并结果为空
       // （零合集库）不无中生有地创建空文件；但本端文件损坏时强制回写以自愈。只写 ownName

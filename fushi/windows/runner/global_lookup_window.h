@@ -288,7 +288,9 @@ class GlobalLookupWindow {
   // BUG-1048 — 处理钩子线程投递过来的「全局点击」消息（见 low_level_mouse_hook.h）：
   // 落在窗口外 -> 关闭浮窗；落在窗口内 -> 交给 web host 自己命中测试。跑在窗口线程，
   // 钩子线程只搬坐标，不碰任何 C++ 对象。
-  void HandleGlobalClick(POINT screen_pt, bool inside_window);
+  // |consumed| = 钩子已把这一击从游戏输入流吞掉（BUG-2710 取证：吞了却不关卡 /
+  // 不转发，就是一次被静默吃掉的点击）。
+  void HandleGlobalClick(POINT screen_pt, bool inside_window, bool consumed);
   // BUG-1166 — 处理钩子线程投递过来的「落在卡片上的滚轮」（钩子已把它从输入流里
   // 吞掉，见 low_level_mouse_hook.h）。这里把它还原成一条真 WM_MOUSEWHEEL 交给
   // WebView2：composition 实例经 SendMouseInput，windowed 实例投给光标压着的

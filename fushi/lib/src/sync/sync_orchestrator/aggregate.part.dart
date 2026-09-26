@@ -13,7 +13,11 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
   /// 维度同纪律）。删除不跨端传播；无 schema 变更。
   Future<void> _syncAggregate(SyncRunReport report) async {
     try {
-      await AggregateSyncService(_db, scope: _scope).sync(
+      await AggregateSyncService(
+        _db,
+        scope: _scope,
+        localApplyLock: runExclusiveWithSyncStateApply,
+      ).sync(
         store: _backend,
         deviceId: deviceId,
       );
@@ -59,7 +63,11 @@ extension _SyncOrchestratorAggregate on SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) async {
     try {
-      await AggregateSyncService(_db, scope: _scope).syncOverClient(
+      await AggregateSyncService(
+        _db,
+        scope: _scope,
+        localApplyLock: runExclusiveWithSyncStateApply,
+      ).syncOverClient(
         fetchRemote: backend.getRemoteAggregate,
         pushMerged: backend.putRemoteAggregate,
         shareStats: syncStats,

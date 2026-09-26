@@ -2702,7 +2702,7 @@ class GalHookSessionController extends ChangeNotifier {
         // 用户已亲自表态：本会话不再自动恢复，并把这次选择记成新的真值。
         _textThreadMemoryApplied = true;
         TexthookerTextThread? chosen;
-        for (final TexthookerTextThread thread in _textService.textThreads) {
+        for (final TexthookerTextThread thread in textThreads) {
           if (thread.key == _selectedTextThreadKey) {
             chosen = thread;
             break;
@@ -3056,7 +3056,10 @@ class GalHookSessionController extends ChangeNotifier {
       return;
     }
     TexthookerTextThread? best;
-    for (final TexthookerTextThread thread in _textService.textThreads) {
+    // BUG-2706：必须是**本会话**的线程目录。全量目录里还留着同一 Fushi 进程上一次启动
+    // 这款游戏时的线程（thread id 含进程身份，已是死线程），它累计的行数更多，会赢下
+    // 恢复——选中后本会话一行台词都来不了。
+    for (final TexthookerTextThread thread in textThreads) {
       if (textThreadFingerprint(thread) != wanted) continue;
       // 🔴 判据必须用 observedLineCount（native 观测总行数），**不能**用 lineCount
       // （已发布行数）。v12 取消自动选线程后，用户选定之前文本环恒空、lineCount 对所有
@@ -3101,7 +3104,7 @@ class GalHookSessionController extends ChangeNotifier {
   /// 未出行的线程被选中后一行不来。选中后本会话不再自动改。
   void _maybeAutoSelectEngineExactThread() {
     TexthookerTextThread? best;
-    for (final TexthookerTextThread thread in _textService.textThreads) {
+    for (final TexthookerTextThread thread in textThreads) {
       if (!isEngineExactTextThread(thread)) continue;
       if (thread.nativeThreadId == null || thread.nativeThreadId == 0) continue;
       if (thread.observedLineCount < _textThreadRestoreMinLines) continue;

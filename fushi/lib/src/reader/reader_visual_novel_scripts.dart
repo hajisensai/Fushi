@@ -2573,6 +2573,7 @@ $sharedInitViewport
     content.className = 'fushi-vn-content';
     content.appendChild(this.screens[safeIndex].render());
     this.screen.appendChild(content);
+    this.centerScreenInk(content);
     if (fullyRevealed || this.revealSpeed <= 0) {
       this.revealComplete = true;
     } else {
@@ -2582,6 +2583,54 @@ $sharedInitViewport
     this.buildNodeOffsets();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
     if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
+  },
+  // BUG-2711：拆屏判据（measureScreenFits → renderedTextFitsBounds）认的是**字形墨迹**
+  // 落在内容盒内，而 flex 居中认的是段落的 margin 盒。长段落被拆开后，屏上那一截的
+  // margin 盒（两侧各 1em 段距 + 末列半行距）比内容盒宽，`max-width: 100%` 把内容钳成
+  // 满宽、flex 无从居中，段落只能从 block-start 一侧贴着段距往 block-end 排——竖排右边
+  // 空出「边距 + 1em + 半行距」、最左列压进左边距；横排同理上宽下窄。这里用与判据同一
+  // 把尺子（墨迹）沿 block 轴把本屏摆正：判据已保证墨迹装得下，平移后不会越出内容盒。
+  // 含图片/媒体的屏交回 flex 居中（图片晚加载会改几何，这里算的偏移会过期）；墨迹本身
+  // 就比内容盒宽的（不可拆的溢出屏）不动，否则会把屏首也推出裁切区。
+  centerScreenInk: function(content) {
+    if (!content || !this.screen || !content.style || !document.createRange) return;
+    content.style.removeProperty('transform');
+    if (content.querySelector && content.querySelector('img, svg, video, canvas, iframe')) return;
+    var vertical = this.isVertical();
+    var screenRect = this.screen.getBoundingClientRect();
+    var screenStyle = window.getComputedStyle(this.screen);
+    var boxStart = vertical
+      ? screenRect.left + (parseFloat(screenStyle.paddingLeft) || 0)
+      : screenRect.top + (parseFloat(screenStyle.paddingTop) || 0);
+    var boxEnd = vertical
+      ? screenRect.right - (parseFloat(screenStyle.paddingRight) || 0)
+      : screenRect.bottom - (parseFloat(screenStyle.paddingBottom) || 0);
+    var inkStart = Infinity;
+    var inkEnd = -Infinity;
+    var walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+    var range = document.createRange();
+    var node;
+    while (node = walker.nextNode()) {
+      if (!(node.textContent || '').trim()) continue;
+      range.selectNodeContents(node);
+      var rects = range.getClientRects ? range.getClientRects() : [];
+      for (var i = 0; i < rects.length; i++) {
+        var rect = rects[i];
+        if (!rect || (!rect.width && !rect.height)) continue;
+        inkStart = Math.min(inkStart, vertical ? rect.left : rect.top);
+        inkEnd = Math.max(inkEnd, vertical ? rect.right : rect.bottom);
+      }
+    }
+    if (range.detach) range.detach();
+    if (!(inkEnd > inkStart) || !(boxEnd > boxStart)) return;
+    // 与 rectFitsBounds 同一容差（每侧 1px）。
+    if (inkEnd - inkStart > boxEnd - boxStart + 2) return;
+    var offset = ((boxStart + boxEnd) - (inkStart + inkEnd)) / 2;
+    if (Math.abs(offset) < 1) return;
+    content.style.setProperty(
+      'transform',
+      (vertical ? 'translateX(' : 'translateY(') + offset + 'px)'
+    );
   },
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];

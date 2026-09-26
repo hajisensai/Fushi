@@ -142,6 +142,16 @@ void EnqueueKirikiriVoiceResourceOwned(
     free(data);
     return;
   }
+  // 只发布字节层面真是音频容器（Ogg / RIFF-WAVE）的流。存储名粗筛（IsVoiceStorageName）
+  // 故意宽，而插件层解密的归档（柚子社 KiriKiri Z：PackinOne/yuzuex + 哈希成员名）会让
+  // 引擎对同一句语音开两次流：一次是逻辑名、字节已解密；一次是 32 位十六进制哈希物理名、
+  // 字节仍是密文。旧实现两份都当语音落盘，密文那份名字照样是 `.ogg`，配对到它的卡片音频
+  // 不可解码（《喫茶ステラと死神の蝶》真机：每句 noz*.ogg 都伴随一份同长度 NOT-OGG 文件）。
+  // 按魔数判定与引擎版本、加密方案、文件命名都无关。
+  if (fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr) {
+    free(data);
+    return;
+  }
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 1, 0) != 0) continue;
@@ -923,6 +933,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 这用于把「插件根不存在 / renders 形态不符 / renderer 方法面不符 /
 			// wrapper 安装失败」四个静默出口在真机上分开。
 			global.fushiLookupInstanceShapeLast = "";
+			global.fushiLookupLayerSweepLast = "";
 			global.fushiLookupInstanceRejectShape = 0;
 			global.fushiLookupInstanceRejectClass = 0;
 			global.fushiLookupInstanceRejectMixed = 0;
@@ -2065,6 +2076,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			{
 				global.fushiLookupInstallGetRenderBridge();
 				global.fushiLookupSweepMsgwinRenders();
+				global.fushiLookupSweepLayerRenderers();
 				// classic KAG3：numMessageLayers 变化新建的消息层在这之后才存在；非 classic
 				// 游戏里这一步以位 0 为门，零开销。
 				global.fushiLookupSweepClassicLayers();
@@ -4660,6 +4672,74 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				catch(e) { global.fushiLookupFault(); }
 			};
 
+)TJS" LR"TJS(
+
+			// BUG-2708：TextRender 分支只改类成员，而 TJS2 的 `new` 把成员拷进实例——
+			// bootstrap 之前就建好的消息层渲染器永远拿着原函数，采集从不触发（千恋＊万花：
+			// 有 textrender.dll、没有 msgwin 插件）。这里在 KAG 标准容器
+			// kag.fore/back.messages[] 上按 textrender 插件的惯用挂载字段有界地找既有
+			// 渲染器实例，交给同一个单实例补丁。**不做成员枚举**（Dictionary.assign 会踩
+			// 会抛的 getter，BUG-2116）：每个字段先 typeof 再读，全部在 try 里。
+			// msgwin 插件路径存在时由它负责，这里不重复。
+			global.fushiLookupLayerRendererFields = ["textRender", "textRenderer", "renderer"];
+			global.fushiLookupSweepLayerRenderers = function()
+			{
+				var layers = 0, found = 0, patched = 0, fieldsHit = "";
+				try
+				{
+					if(typeof global.TextRender != "Object") return 0;
+					if(global.fushiLookupResolveMsgwinPlugin() !== void) return 0;
+					var kag = global.kag;
+					if(kag === void || kag === null || !isvalid kag) return 0;
+					var fields = global.fushiLookupLayerRendererFields;
+					var pages = [global.fushiLookupField(kag, "fore"),
+						global.fushiLookupField(kag, "back")];
+					for(var p = 0; p < 2; p++)
+					{
+						var page = pages[p];
+						if(page === void || page === null || !isvalid page) continue;
+						var messages = global.fushiLookupField(page, "messages");
+						if(typeof messages != "Object" || messages === null || !isvalid messages)
+							continue;
+						var count = messages.count;
+						if(count > 16) count = 16;
+						for(var i = 0; i < count; i++)
+						{
+							var layer = messages[i];
+							if(layer === void || layer === null || !isvalid layer) continue;
+							layers++;
+							for(var f = 0; f < fields.count; f++)
+							{
+								var renderer = void;
+								try
+								{
+									if(typeof layer[fields[f]] != "Object") continue;
+									renderer = layer[fields[f]];
+								}
+								catch(e) { continue; }
+								if(renderer === void || renderer === null || !isvalid renderer ||
+									typeof renderer.render != "Object" ||
+									typeof renderer.done != "Object" ||
+									typeof renderer.drawCh != "Object" ||
+									typeof renderer.getCharacters != "Object") continue;
+								found++;
+								fieldsHit += fields[f] + ";";
+								if(global.fushiLookupPatchRendererInstance(renderer)) patched++;
+							}
+						}
+					}
+				}
+				catch(e) { global.fushiLookupFault(); }
+				var shape = "layers=" + layers + ",found=" + found + ",patched=" + patched +
+					",fields=" + fieldsHit;
+				if(shape != global.fushiLookupLayerSweepLast)
+				{
+					global.fushiLookupLayerSweepLast = shape;
+					global.fushiLookupNoteError("instance.layers", %[message:shape]);
+				}
+				return found;
+			};
+
 			global.fushiLookupFindGetRenderPatch = function(owner)
 			{
 				try
@@ -4932,6 +5012,20 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				installStage = 36;
 				global.fushiLookupSweepMsgwinRenders();
 				installStage = 37;
+			}
+			else
+			{
+				installStage = 32;
+				// BUG-2708：TextRender 插件在、却没有绑到任何消息层实例上（KAGEX 系：正文由
+				// MessageLayer 走 processCh 画在 textLayer 上，TextRender 只给别处用）——
+				// 类级包装永远不会采到正文。此时消息层按 classic KAG 处理：processCh 前读
+				// 图层自身的绘制光标 x/y 取几何，与经典 KAG3 同一条采集。
+				if(global.fushiLookupSweepLayerRenderers() == 0)
+				{
+					installStage = 33;
+					global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+					global.fushiLookupSweepClassicLayers();
+				}
 			}
 			// KAG stable=false(run) 在后续脚本之前，只适合补采集桥；
 			// stable=true 才是 transition/动画完成后修复新 primary 归属的时机。
@@ -6093,10 +6187,22 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   publication.line_utf8 = encoded_line;
   publication.line_bytes = line_bytes;
   uint64_t published_seq = 0;
-  if (!fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication,
-                                               &published_seq)) {
-    return false;
+  const bool published = fushi_voice_hook::g_geometry_provider_registry.PublishHit(
+      g_header, publication, &published_seq);
+  // BUG-2710 取证：每笔 TJS submit 的发布结局各记一行（同一 seq 的重试只记首次与
+  // 最终成功），「点了没反应」时才分得清是没到 TJS、还是在哪道门被拒。
+  static uint64_t last_logged_submit_seq = 0;
+  if (published || hit_seq != last_logged_submit_seq) {
+    last_logged_submit_seq = hit_seq;
+    wchar_t submit_log[160];
+    swprintf_s(submit_log, L"lookup.submit seq=%llu published=%d wire=%llu reject=%u tick=%llu",
+               static_cast<unsigned long long>(hit_seq), published ? 1 : 0,
+               static_cast<unsigned long long>(published_seq),
+               fushi_voice_hook::g_geometry_provider_registry.last_hit_reject(),
+               static_cast<unsigned long long>(GetTickCount64()));
+    HookLogLine(submit_log);
   }
+  if (!published) return false;
   // Card frames answer the registry's global wire sequence, not the TJS-local
   // SubmitSeq. Keep the TJS sequence only in processed/retry bookkeeping.
   g_lookup_submit_hit_seq = published_seq;
