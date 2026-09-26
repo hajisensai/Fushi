@@ -19,6 +19,42 @@ Future<void> _expand(WidgetTester tester, String title) async {
 }
 
 void main() {
+  group('首行缩进', () {
+    testWidgets('选了缩进档位后保存，托管区段带上 text-indent', (WidgetTester tester) async {
+      useWideWindow(tester);
+
+      final LapisVisualEditorResult? result = await openEditorAndSave(
+        tester,
+        initialCustomCss: '',
+        interact: (WidgetTester tester) async {
+          final Finder menu = find.byWidgetPredicate(
+            (Widget widget) =>
+                widget is DropdownMenu<int> &&
+                '${(widget.key as ValueKey<String>?)?.value}'
+                    .startsWith('text-indent-'),
+          );
+          await tester.ensureVisible(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(menu);
+          await tester.pumpAndSettle();
+          await tester.tap(
+            find.text(t.anki_lapis_visual_text_indent_chars(count: '2')).last,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+
+      expect(result, isNotNull);
+      expect(result!.customCss, contains('text-indent: 2.00em !important;'));
+      final LapisVisualStyleSheet sheet =
+          splitLapisVisualStyleSheet(result.customCss);
+      expect(
+        sheet.rules.values.map((LapisVisualRule r) => r.textIndentPercent),
+        contains(200),
+      );
+    });
+  });
+
   group('区块位置', () {
     testWidgets('选了例句位置后保存，托管区段带上桌面+移动端变量', (WidgetTester tester) async {
       useWideWindow(tester);
@@ -453,6 +489,8 @@ void main() {
         initialCustomCss: '',
         interact: (WidgetTester tester) async {
           // 文字颜色那一行的取色器入口（第一个调色板图标）。
+          await tester.ensureVisible(find.byIcon(Icons.palette_outlined).first);
+          await tester.pumpAndSettle();
           await tester.tap(find.byIcon(Icons.palette_outlined).first);
           await tester.pumpAndSettle();
           expect(find.byType(ColorPicker), findsOneWidget);
@@ -483,6 +521,8 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byIcon(Icons.palette_outlined).first);
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.palette_outlined).first);
       await tester.pumpAndSettle();

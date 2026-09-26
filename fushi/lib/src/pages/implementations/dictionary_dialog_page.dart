@@ -492,20 +492,26 @@ class _DictionaryDialogPageState extends BasePageState {
         spacing: tokens.spacing.gap,
         runSpacing: tokens.spacing.gap,
         children: <Widget>[
+          // TODO-609：一键更新全部可在线更新的词典（逐本比 revision，有新版才下）。
+          // 放第一个、常驻显示：以前「没有可更新词典就不显示」，而旧版导入的词典
+          // 缺来源字段全被判成不可更新，用户根本找不到这个入口，只看得到行尾那个
+          // 要自己下新包再选文件的按钮。现在没有可更新词典时点了会明确告诉原因。
+          _buildActionButton(
+            focusPrefix: 'dict-action-update',
+            icon: Icons.system_update_alt,
+            label: t.dict_update_all,
+            onTap: _checkForUpdates,
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+            ),
+          ),
           _buildActionButton(
             focusPrefix: 'dict-action-download',
             icon: Icons.cloud_download_outlined,
             label: t.dict_download_browse,
             onTap: _showDownloadSelectionDialog,
           ),
-          // TODO-609：遍历所有可在线更新的词典逐个比对 revision，汇总结果。
-          if (appModel.dictionaries.any((Dictionary d) => d.isUpdatable))
-            _buildActionButton(
-              focusPrefix: 'dict-action-update',
-              icon: Icons.system_update_alt,
-              label: t.dict_update_check,
-              onTap: _checkForUpdates,
-            ),
           // Folder import is unavailable on iOS. This bar only renders on
           // Material, so the guard is a no-op on a normal iOS device (Cupertino
           // there); it stays live only for a forced Material design-system
@@ -569,6 +575,11 @@ class _DictionaryDialogPageState extends BasePageState {
   List<Widget> _buildDesktopPageActions() {
     return [
       FushiIconButton(
+        tooltip: t.dict_update_all,
+        icon: Icons.system_update_alt,
+        onTap: _checkForUpdates,
+      ),
+      FushiIconButton(
         tooltip: t.dict_download_browse,
         icon: Icons.cloud_download_outlined,
         onTap: _showDownloadSelectionDialog,
@@ -600,6 +611,11 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: Icons.more_vert,
         onSelected: (VoidCallback action) => action(),
         items: [
+          buildPopupItem(
+            label: t.dict_update_all,
+            icon: Icons.system_update_alt,
+            action: _checkForUpdates,
+          ),
           buildPopupItem(
             label: t.dict_download_browse,
             icon: Icons.cloud_download_outlined,
@@ -1812,7 +1828,11 @@ class _DictionaryDialogPageState extends BasePageState {
         FushiIconButton(
           icon: Icons.system_update_alt,
           size: 20,
-          tooltip: t.dict_update_tooltip,
+          // 不可在线更新的词典点下去是「选本地文件覆盖」，tooltip 要把这件事说在
+          // 前头，别让用户以为和 Yomitan 一样会自己去下新版。
+          tooltip: dictionary.isUpdatable
+              ? t.dict_update_tooltip
+              : t.dict_update_from_file_tooltip,
           onTap: () => dictionary.isUpdatable
               ? _updateSingleDictionary(dictionary)
               : _updateDictionaryFromFile(dictionary),
@@ -2007,12 +2027,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 下载 [dictionary] 来源处的新包并以它为**显式替换目标**重导（BUG-1595：即便
   /// 远端包改了标题也替换这本，而非按 title 误判成新增），保留
-  /// order/hidden/collapsed，落上新来源（[sourceOverride] 至少带回 downloadUrl）。
+  /// order/hidden/collapsed，落上新来源。下载地址与回写来源都取自 [remote]
+  /// （BUG-2707：远端 index 声明的新版地址优先，本地旧地址可能钉在旧版本目录）。
   /// 复用现有下载进度 UI（[DictionaryDownloadProgressDialog]）。成功返 true。
   Future<bool> _redownloadAndReimport({
     required Dictionary dictionary,
+    required DictionaryRemoteIndexResult remote,
     required DictionaryDownloadJob job,
-    required Map<String, String> sourceOverride,
   }) async {
     // 只喂文案（进度行 / 导入阶段提示 / 完成 toast），无身份用途——身份走
     // `dictionary` 对象本身（downloadUrl / 目录名）。所以这里用显示名：用户改过名
@@ -2028,7 +2049,7 @@ class _DictionaryDialogPageState extends BasePageState {
       progressNotifier.value = t.dict_update_updating(name: name);
       downloadProgress.value = 0;
       final File zipFile = await DictionaryDownloader.download(
-        url: dictionary.downloadUrl,
+        url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: downloadProgress,
         cancelToken: job.cancelToken,
@@ -2047,7 +2068,12 @@ class _DictionaryDialogPageState extends BasePageState {
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
         replaceTarget: dictionary,
-        sourceOverride: sourceOverride,
+        // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+        // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+        sourceOverride: remote.updatedSourceMetadata(
+          localDownloadUrl: dictionary.downloadUrl,
+          localIndexUrl: dictionary.indexUrl,
+        ),
       );
       return true;
     } finally {
@@ -2067,11 +2093,19 @@ class _DictionaryDialogPageState extends BasePageState {
         // 三种结局（已最新 / 已更新 / 更新失败）共用一条 toast，配色跟着文案一起定，
         // 否则失败也是一条无色提示、与「已是最新」长得一模一样。
         try {
-          final String? remoteRevision =
-              await DictionaryUpdateService.fetchRemoteIndex(
+          final DictionaryRemoteIndexResult remote =
+              await DictionaryUpdateService.fetchRemoteIndexResult(
                   dictionary.indexUrl);
+          // 拉不到远端 index 不是「已是最新」——以前两者同一条提示，断网时用户
+          // 被告知已最新，其实根本没检查成。
+          if (!remote.succeeded) {
+            return DictionaryDownloadOutcome(
+              message: t.dict_update_check_failed,
+              severity: ToastSeverity.error,
+            );
+          }
           if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remoteRevision)) {
+              dictionary.revision, remote.revision)) {
             return DictionaryDownloadOutcome(
               message: t.dict_update_latest,
               severity: ToastSeverity.info,
@@ -2079,14 +2113,8 @@ class _DictionaryDialogPageState extends BasePageState {
           }
           await _redownloadAndReimport(
             dictionary: dictionary,
+            remote: remote,
             job: job,
-            // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-            // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-            sourceOverride: <String, String>{
-              'isUpdatable': 'true',
-              'downloadUrl': dictionary.downloadUrl,
-              'indexUrl': dictionary.indexUrl,
-            },
           );
           return DictionaryDownloadOutcome(
             message: t.dict_update_done(
@@ -2237,7 +2265,7 @@ class _DictionaryDialogPageState extends BasePageState {
         appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
     if (updatable.isEmpty) {
       FushiToast.show(
-        msg: t.dict_update_none,
+        msg: t.dict_update_all_no_source,
         severity: ToastSeverity.info,
       );
       return;
@@ -2258,21 +2286,23 @@ class _DictionaryDialogPageState extends BasePageState {
             job.markDownloadPhase();
             job.progress.value = 0;
             job.message.value = t.dict_update_checking;
-            final String? remoteRevision =
-                await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
+            final DictionaryRemoteIndexResult remote =
+                await DictionaryUpdateService.fetchRemoteIndexResult(
+                    d.indexUrl);
+            // 检查失败计入失败，不算「最新」（旧实现把断网也数成最新）。
+            if (!remote.succeeded) {
+              failed++;
+              continue;
+            }
             if (!DictionaryUpdateService.needsUpdate(
-                d.revision, remoteRevision)) {
+                d.revision, remote.revision)) {
               current++;
               continue;
             }
             await _redownloadAndReimport(
               dictionary: d,
+              remote: remote,
               job: job,
-              sourceOverride: <String, String>{
-                'isUpdatable': 'true',
-                'downloadUrl': d.downloadUrl,
-                'indexUrl': d.indexUrl,
-              },
             );
             updated++;
           } catch (e, stack) {

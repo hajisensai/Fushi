@@ -294,8 +294,13 @@ void main() {
     final String engineNorm = engine.replaceAll(RegExp(r'\s+'), ' ');
     expect(engine, contains('extractVideoFrameViaFfmpeg'),
         reason: 'GIF 不可用时须按 cue 时间从视频文件抽单帧（而非截当前解码帧）。');
-    expect(engineNorm, contains('atSeconds: req.stillFrameAnchorMs / 1000.0'),
-        reason: '降级帧的取帧时间必须 = 字幕起点锚（与 GIF 主路径同一播放器轴坐标）。');
+    // 在线视频的播放器缓冲副本（CachedMediaSnapshot）0 点不在播放器轴 0 点上：锚点
+    // 仍是字幕起点，只是按媒体文件自己的时间轴减去 mediaTimeOffsetMs（远端 / 本地为 0）。
+    expect(engineNorm,
+        contains('atSeconds: (req.stillFrameAnchorMs - offsetMs) / 1000.0'),
+        reason: '降级帧的取帧时间必须 = 字幕起点锚（与 GIF 主路径同一坐标换算）。');
+    expect(engineNorm, contains('final int offsetMs = req.mediaTimeOffsetMs;'),
+        reason: '坐标换算只认请求声明的媒体时间轴偏移。');
     // shell 在点击时立即启动当前帧截图，并把冻结的 Future 作为最后兜底喂进引擎；
     // 不能等任务真正出队后再读 controller，否则换集/销毁会截错或访问已释放播放器。
     final String mineCard = region(
@@ -307,7 +312,8 @@ void main() {
 
     // 引擎里：cue 抽帧(_frame) 必须排在 stillFallback（当前解码帧）之前——有区间时优先按
     // cue 取帧，截当前帧只能是 cue 抽帧也失败/无区间后的最后兜底。
-    final int frameIdx = engineNorm.indexOf('atSeconds: req.stillFrameAnchorMs');
+    final int frameIdx =
+        engineNorm.indexOf('atSeconds: (req.stillFrameAnchorMs - offsetMs)');
     final int stillIdx = engineNorm.indexOf('req.stillFallback!()');
     expect(frameIdx, greaterThanOrEqualTo(0));
     expect(stillIdx, greaterThan(frameIdx),

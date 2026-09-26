@@ -208,6 +208,11 @@ class DictionaryRepository {
     await _db.upsertDictionaryMeta(_dictionaryToCompanion(dictionary));
   }
 
+  /// 批量版 [persistDictionary]：一次缓存替换 + **一次**引擎重载 + 一次缓存失效。
+  /// 启动期批量回填元数据用——逐本 [persistDictionary] 会让引擎连重载 N 次。
+  Future<void> persistDictionaries(List<Dictionary> dictionaries) =>
+      updateDictionaryOrder(dictionaries);
+
   Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
     final updatedNames = newDictionaries.map((d) => d.name).toSet();
     final others =
