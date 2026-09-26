@@ -112,3 +112,38 @@ Windows 的 debug / beta / formal **发布通道**均通过现有发布流程携
 本轮 CUDA 的变更映射覆盖 199 个测试文件，分四批实际执行 **1,858 通过、1 项既有失败、1 跳过**。唯一失败仍是上述基底已有的 `settings_schema_coverage_test.dart`（`interconnect/Allow remote launch`），没有新引入失败。安装器 24 项、worker/桥接 14 项、批处理/路由 23 项专项测试均通过。全量 `flutter analyze --no-pub` 无问题；安装器最后的小改动另作定向 analyze 通过。证据为 `.codex-test/ocr-cuda-impact-batch{1..4}.log`、`ocr-cuda-runtime-tests.log`、`cuda-worker-level1-tests.log`、`ocr-cuda-final-analyze.log` 和 `ocr-cuda-runtime-final-analyze-retry.log`。
 
 最终代码再次覆盖 52 个目录守卫文件与 10 个受影响 OCR 测试文件，串行执行 **523 项全通过、退出码 0**，耗时 8 分 52 秒。此前一次运行停在 Flutter 编译器，未计为通过；串行重跑完成真实执行。最终日志为 `.codex-test/ocr-cuda-final-tests-serial.log`。提交前独立复核安装器的取消、父进程退出、配置隔离、文件锁和就绪发布，未发现遗留阻塞问题。
+
+## Windows CPU 线程数复测（2026-09-26）
+
+起因：用户（Ryzen 7800X3D）反馈本地 OCR「很慢、在用 CPU」，问 `intraOpNumThreads = processorCount.clamp(1, 2)`（`6b333442ac8`）是否把 CPU 压得太死。
+
+方法：`HEAD = 04ac1dffb56` 的 `fushi_engine`，AOT 编译的独立 Dart 程序。经 `planOcrAcceleration` 求出生产线程计划，只把 `intraOpNumThreads` 换成 N；五个 CPU 会话（int8 检测、encoder、decoder、PP-OCRv6 det/rec）组成的 `RoutingOcrRecognizer` 交给 `MangaOcrPipeline.processPage`。onnxruntime 与 app 是同一份 ORT 1.22 DLL，但经纯 Dart FFI 调用，没有走 flutter_onnxruntime 插件桥。所以绝对时间比 app 低，桥接开销与 N 无关。计时不含解码和建会话。测试页是三张真实漫画页，共 26 框。三轮交错（2,4,8,1,16 循环），取中位数。
+
+**测量机器是 i5-12600KF（6P+4E，16 线程），不是用户的 7800X3D。** 测量期间本机另有多个 agent 并发，跑前系统 CPU 占用 23–48%；同一 N 的轮间波动可达 ±30%。
+
+| 每页中位数（秒） | N=1 | N=2（现行） | N=4 | N=8 | N=16 |
+|---|---:|---:|---:|---:|---:|
+| 页 A（11 框，12 次 manga-ocr） | 67.7 | 35.0 | 35.9 | 55.2 | 93.6 |
+| 页 B（11 框，21 次 manga-ocr） | 103.7 | 63.7 | 60.0 | 86.2 | 146.8 |
+| 页 C（4 框） | 20.5 | 10.9 | 13.3 | 18.2 | 31.6 |
+| 合计 | 194.5 | 113.6 | 112.9 | 155.8 | 268.7 |
+
+合计三轮原始值：
+
+| N | 第 1 轮 | 第 2 轮 | 第 3 轮 |
+|---|---:|---:|---:|
+| 1 | 194.5 | 200.2 | 189.7 |
+| 2 | 146.7 | 113.6 | 102.1 |
+| 4 | 90.0 | 114.2 | 112.9 |
+| 8 | 155.2 | 168.1 | 155.8 |
+| 16 | 267.2 | 277.9 | 268.7 |
+
+N=2 的合计 113.6 秒里，manga-ocr 解码占 108.7 秒，检测只占 4.3 秒。
+
+结论：
+
+- **N=2 与 N=4 在噪声内分不出高下。** N≥8 明显变慢（+37% / +137%），N=1 慢约 71%。据此**不改线程上限**。
+- 放开到核数在这台大小核机器上是净退化；同构 8 核的 7800X3D 上 N=4 是否更快，这次无法外推，需在同构机器或空闲机器上复测后再定。
+- 慢的主因不是线程数，而是无 KV cache、beam 4 的自回归解码：单次调用 3–6 秒（含并发负载）。竖排多列、近方框被 PP 切列后逐列回送 manga-ocr，调用次数随之增加（页 B 11 框 21 次）。可行方向是已有的 CUDA 托管引擎 / Baberu（DML + KV cache），或给 ONNX 路径补 KV cache，而不是继续调线程。
+
+证据（本机，不入库）：`D:\hibiki-tmp\ocrbench\results\`（`summary.txt`、逐次 `r*_n*.json/.log`、`load.csv` 负载快照、`texts_n2.json` 逐框输出）。

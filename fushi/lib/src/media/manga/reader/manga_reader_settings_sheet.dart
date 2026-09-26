@@ -92,13 +92,12 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     MapEntry<String, String>('invertBoth', t.manga_reader_invert_both),
     MapEntry<String, String>('showReadingMode', t.manga_reader_mode_hint),
     MapEntry<String, String>('showTapZonesOverlay', t.manga_reader_tap_hint),
+    // 换章时的落点规则（resolveAdjacentMangaChapter）。`skipFiltered` 与
+    // `alwaysShowChapterTransition` 不露出：前者没有章节过滤可跳，后者没有章节
+    // 过渡页；字段只为兼容旧覆盖 JSON 保留（显示了却不生效的开关比没有更糟）。
     MapEntry<String, String>('skipRead', t.manga_reader_skip_read),
-    MapEntry<String, String>('skipFiltered', t.manga_reader_skip_filtered),
     MapEntry<String, String>('skipDuplicate', t.manga_reader_skip_duplicate),
-    MapEntry<String, String>(
-      'alwaysShowChapterTransition',
-      t.manga_reader_transition,
-    ),
+    MapEntry<String, String>('downloadAhead', t.manga_reader_download_ahead),
     MapEntry<String, String>('fullscreen', t.manga_reader_fullscreen),
     MapEntry<String, String>('keepScreenOn', t.manga_reader_keep_screen),
     MapEntry<String, String>('invertVolumeKeys', t.manga_reader_invert_volume),

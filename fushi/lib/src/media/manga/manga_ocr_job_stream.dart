@@ -26,6 +26,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_fingerprint.dart';
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
+    show mangaOcrPageOrder;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -159,9 +161,11 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
       ),
     );
     final String output = await writeMangaOcrCachedOutput(dir, payload);
-    for (int pageIndex = 0; pageIndex < payload.images.length; pageIndex++) {
+    final List<int> order = mangaOcrPageOrder(pages.length, spec.startPage);
+    for (int orderIndex = 0; orderIndex < order.length; orderIndex++) {
+      final int pageIndex = order[orderIndex];
       yield MangaOcrBackgroundEvent.progress(
-        pagesDone: pageIndex + 1,
+        pagesDone: orderIndex + 1,
         pagesTotal: pages.length,
         pageIndex: pageIndex,
         page: payload.images[pageIndex],
@@ -177,6 +181,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
   await for (final MangaOcrVolumeEvent event in spec.engines.service.ocrFolder(
     imageDirPath: dir,
     volumeTitle: spec.volumeTitle,
+    startPage: spec.startPage,
   )) {
     if (event.finished) {
       yield MangaOcrBackgroundEvent.finished(
@@ -187,7 +192,9 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
       );
       continue;
     }
-    final int pageIndex = event.pagesDone - 1;
+    // 本地引擎从 startPage 旋转处理：完成计数不是页号，页号以事件为准。
+    // 只有不报页号的实现（没按起点重排）才退回「第 N 个完成的就是第 N 页」。
+    final int pageIndex = event.pageIndex ?? event.pagesDone - 1;
     MokuroImage? page;
     if (pageIndex >= 0 && pageIndex < pages.length) {
       final OcrPageResult? result = await cache.read('manga_ocr', pageIndex);
@@ -213,13 +220,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
 ) async* {
   final String dir = spec.imageDirPath;
   final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
-  final int start = pages.isEmpty
-      ? 0
-      : spec.startPage.clamp(0, pages.length - 1);
-  final List<int> order = <int>[
-    for (int index = start; index < pages.length; index++) index,
-    for (int index = 0; index < start; index++) index,
-  ];
+  final List<int> order = mangaOcrPageOrder(pages.length, spec.startPage);
   final Directory lensCacheDir = Directory(
     p.join(
       dir,
@@ -306,13 +307,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrSystemEvents(
 ) async* {
   final String dir = spec.imageDirPath;
   final List<MangaOcrPageFile> pages = enumerateMangaPages(Directory(dir));
-  final int start = pages.isEmpty
-      ? 0
-      : spec.startPage.clamp(0, pages.length - 1);
-  final List<int> order = <int>[
-    for (int index = start; index < pages.length; index++) index,
-    for (int index = 0; index < start; index++) index,
-  ];
+  final List<int> order = mangaOcrPageOrder(pages.length, spec.startPage);
   final GoogleLensPageCache cache = GoogleLensPageCache(
     Directory(
       p.join(

@@ -94,6 +94,7 @@ class MangaReaderPreferences {
     this.skipFiltered = true,
     this.skipDuplicate = false,
     this.alwaysShowChapterTransition = true,
+    this.downloadAhead = true,
     this.volumeKeys = true,
     this.invertVolumeKeys = false,
     this.automaticBackground = false,
@@ -146,9 +147,18 @@ class MangaReaderPreferences {
   final bool showCutout;
   final bool flashOnPageChange;
   final bool skipRead;
+
+  /// 同 [alwaysShowChapterTransition]：没有章节过滤概念可跳，面板不再露出，
+  /// 字段只为兼容旧覆盖 JSON。
   final bool skipFiltered;
   final bool skipDuplicate;
+
+  /// 旧版设置面板上的开关，从未被阅读器读取；现在已不在面板上露出，只为兼容
+  /// 已同步 / 已落库的覆盖 JSON 保留字段。
   final bool alwaysShowChapterTransition;
+
+  /// 读在线章到后段时自动把下一话排进下载队列（对齐 Mihon「预下载」）。
+  final bool downloadAhead;
   final bool volumeKeys;
   final bool invertVolumeKeys;
   final bool automaticBackground;
@@ -208,6 +218,7 @@ class MangaReaderPreferences {
     'skipFiltered': skipFiltered,
     'skipDuplicate': skipDuplicate,
     'alwaysShowChapterTransition': alwaysShowChapterTransition,
+    'downloadAhead': downloadAhead,
     'volumeKeys': volumeKeys,
     'invertVolumeKeys': invertVolumeKeys,
     'automaticBackground': automaticBackground,
@@ -305,6 +316,7 @@ class MangaReaderPreferences {
       skipFiltered: flag('skipFiltered', true),
       skipDuplicate: flag('skipDuplicate', false),
       alwaysShowChapterTransition: flag('alwaysShowChapterTransition', true),
+      downloadAhead: flag('downloadAhead', true),
       volumeKeys: flag('volumeKeys', true),
       invertVolumeKeys: flag('invertVolumeKeys', false),
       automaticBackground: flag('automaticBackground', false),

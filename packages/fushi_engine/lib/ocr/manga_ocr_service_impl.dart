@@ -128,6 +128,7 @@ class MangaOcrVolumeJobRequest {
     required this.modelPaths,
     this.volumeTitle,
     this.engineSignature,
+    this.startPage = 0,
   });
 
   final String imageDirPath;
@@ -136,6 +137,9 @@ class MangaOcrVolumeJobRequest {
   /// 展示用卷名（manga.json 结构本身无标题字段，仅透传给未来 UI/日志）。
   final String? volumeTitle;
   final String? engineSignature;
+
+  /// 处理起点页号（语义见 [MangaOcrService.ocrFolder]）。
+  final int startPage;
 }
 
 /// 一次在跑的整卷任务句柄。
@@ -151,9 +155,12 @@ abstract interface class MangaOcrVolumeJob {
 abstract interface class MangaOcrVolumeJobRunner {
   /// [onAcceleration] 在会话建成后回报本次真正生效的执行后端与降级原因；
   /// 会话建立和运行时设备降级都会回报（BUG-1163）。
+  /// [onProgress] 的 `pageIndex` 是刚完成那页的真实页号（任务按
+  /// [MangaOcrVolumeJobRequest.startPage] 旋转处理）。
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
-    required void Function(int pagesDone, int pagesTotal) onProgress,
+    required void Function(int pagesDone, int pagesTotal, int pageIndex)
+    onProgress,
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   });
 }
@@ -193,9 +200,10 @@ class _JobControlPortMessage {
 }
 
 class _JobProgressMessage {
-  const _JobProgressMessage(this.pagesDone, this.pagesTotal);
+  const _JobProgressMessage(this.pagesDone, this.pagesTotal, this.pageIndex);
   final int pagesDone;
   final int pagesTotal;
+  final int pageIndex;
 }
 
 class _JobAccelerationMessage {
@@ -230,6 +238,7 @@ class _JobIsolateArgs {
     required this.imageDirPath,
     required this.modelPaths,
     required this.engineSignature,
+    required this.startPage,
   });
 
   final SendPort events;
@@ -243,6 +252,7 @@ class _JobIsolateArgs {
   final String imageDirPath;
   final MangaOcrModelPaths modelPaths;
   final String? engineSignature;
+  final int startPage;
 }
 
 /// 请求 ORT 之前就能定下的 EP 决策：三个会话各请求哪些 provider，以及此刻**已经
@@ -699,9 +709,10 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
       detector: engine.detector!,
       recognizer: engine.recognizer!,
       engineSignature: engineSignature,
+      startPage: args.startPage,
       cancelToken: cancelToken,
-      onProgress: (int done, int total) {
-        args.events.send(_JobProgressMessage(done, total));
+      onProgress: (int done, int total, int pageIndex) {
+        args.events.send(_JobProgressMessage(done, total, pageIndex));
       },
     );
     args.events.send(_JobDoneMessage(mangaJsonPath));
@@ -1035,7 +1046,8 @@ class IsolateMangaOcrVolumeJobRunner implements MangaOcrVolumeJobRunner {
   @override
   MangaOcrVolumeJob start(
     MangaOcrVolumeJobRequest request, {
-    required void Function(int pagesDone, int pagesTotal) onProgress,
+    required void Function(int pagesDone, int pagesTotal, int pageIndex)
+    onProgress,
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
   }) {
     final OcrSessionFactory Function()? factoryBuilder =
@@ -1055,7 +1067,7 @@ class IsolateMangaOcrVolumeJobRunner implements MangaOcrVolumeJobRunner {
 class _IsolateVolumeJob implements MangaOcrVolumeJob {
   _IsolateVolumeJob(this._onProgress, this._onAcceleration);
 
-  final void Function(int pagesDone, int pagesTotal) _onProgress;
+  final void Function(int pagesDone, int pagesTotal, int pageIndex) _onProgress;
   final void Function(MangaOcrAcceleration acceleration)? _onAcceleration;
   final Completer<String> _completer = Completer<String>();
   final ReceivePort _events = ReceivePort();
@@ -1082,6 +1094,7 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
             imageDirPath: request.imageDirPath,
             modelPaths: request.modelPaths,
             engineSignature: request.engineSignature,
+            startPage: request.startPage,
           ),
           onError: _events.sendPort,
           debugName: 'manga_ocr_volume_job',
@@ -1108,7 +1121,7 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
     }
     if (message is _JobProgressMessage) {
       if (!_completer.isCompleted) {
-        _onProgress(message.pagesDone, message.pagesTotal);
+        _onProgress(message.pagesDone, message.pagesTotal, message.pageIndex);
       }
       return;
     }
@@ -1444,6 +1457,7 @@ class MangaOcrServiceImpl
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) {
     final StreamController<MangaOcrVolumeEvent> controller =
         StreamController<MangaOcrVolumeEvent>();
@@ -1467,14 +1481,16 @@ class MangaOcrServiceImpl
               modelPaths: modelPaths,
               volumeTitle: volumeTitle,
               engineSignature: engineSignature,
+              startPage: startPage,
             ),
-            onProgress: (int done, int total) {
+            onProgress: (int done, int total, int pageIndex) {
               lastTotal = total;
               if (!controller.isClosed) {
                 controller.add(
                   MangaOcrVolumeEvent.page(
                     pagesDone: done,
                     pagesTotal: total,
+                    pageIndex: pageIndex,
                     acceleration: acceleration,
                   ),
                 );
