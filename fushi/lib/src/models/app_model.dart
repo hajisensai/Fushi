@@ -1911,6 +1911,7 @@ class AppModel with ChangeNotifier {
   void _migrateDictionaryTypes() {
     if (_dictTypesMigrated) return;
     _dictTypesMigrated = true;
+    unawaited(_backfillDictionarySourceMetadata());
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
       // 探过就跳过——包括「探过、结论是什么都不用改」。
@@ -2005,6 +2006,44 @@ class AppModel with ChangeNotifier {
         debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       }
     }
+  }
+
+  /// 启动期一次性：给在线更新功能之前导入的词典从磁盘 index.json 补来源字段
+  /// （revision / isUpdatable / indexUrl / downloadUrl），见 [kDictSourceProbeKey]。
+  /// 没有这一步，这些词典的「更新」按钮只能让用户自己去下新包再选文件，
+  /// 「更新全部词典」也会漏掉它们。
+  ///
+  /// 异步读盘（不在 UI isolate 上同步 IO，OneDrive「仅云端」目录会同步卡死），
+  /// 全部读完后一次批量落库（只重载一次引擎）。落库前按名字取**当前**缓存里的
+  /// 那本再合并，不拿开头的快照覆盖读盘期间别处写下的变更（比如类型自愈标记）。
+  Future<void> _backfillDictionarySourceMetadata() async {
+    final Map<String, Map<String, String>> fromIndex =
+        <String, Map<String, String>>{};
+    for (final Dictionary d in dictRepo.dictionaries) {
+      if (!needsSourceMetadataBackfill(d.metadata)) continue;
+      final File indexFile = File(
+          path.join(dictionaryResourceDirectory.path, d.name, 'index.json'));
+      try {
+        // 文件不在不打标记：可能只是还没落盘，下次启动再读。
+        if (!await indexFile.exists()) continue;
+        fromIndex[d.name] =
+            parseSourceMetadataFromIndexJson(await indexFile.readAsString());
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
+      }
+    }
+    if (fromIndex.isEmpty) return;
+    final List<Dictionary> updated = <Dictionary>[
+      for (final Dictionary d in dictRepo.dictionaries)
+        if (fromIndex.containsKey(d.name) &&
+            needsSourceMetadataBackfill(d.metadata))
+          d.copyWith(
+            metadata: mergeBackfilledSourceMetadata(
+                d.metadata, fromIndex[d.name]!),
+          ),
+    ];
+    if (updated.isEmpty) return;
+    await dictRepo.persistDictionaries(updated);
   }
 
   // 隐藏的 freq/pitch/kanji 不进引擎（无渲染期隐藏过滤会直接冒出来，BUG-177/TODO-094）；
@@ -5993,7 +6032,13 @@ class AppModel with ChangeNotifier {
               completedCount++;
               continue;
             }
-            await _autoRedownloadAndReimport(dictionary, job);
+            await _autoRedownloadAndReimport(
+              dictionary,
+              job,
+              // 远端 index 声明的新包地址优先：钉版本号的 downloadUrl（pixiv-yomitan
+              // 等）拿本地旧地址会把旧包原样下回来。
+              downloadUrl: remote.resolveDownloadUrl(dictionary.downloadUrl),
+            );
             completedCount++;
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
@@ -6023,8 +6068,9 @@ class AppModel with ChangeNotifier {
   /// 在词典页状态行 / 进度框里可见且可取消（下载阶段）。
   Future<void> _autoRedownloadAndReimport(
     Dictionary dictionary,
-    DictionaryDownloadJob job,
-  ) async {
+    DictionaryDownloadJob job, {
+    required String downloadUrl,
+  }) async {
     final Directory tempDir = Directory(
       path.join(dictionaryResourceDirectory.path, 'auto_update_temp'),
     );
@@ -6033,7 +6079,7 @@ class AppModel with ChangeNotifier {
       job.progress.value = 0;
       job.message.value = t.dict_update_updating(name: dictionary.name);
       final File zipFile = await DictionaryDownloader.download(
-        url: dictionary.downloadUrl,
+        url: downloadUrl,
         tempDir: tempDir,
         progressNotifier: job.progress,
         cancelToken: job.cancelToken,
@@ -6050,7 +6096,7 @@ class AppModel with ChangeNotifier {
         replaceTarget: dictionary,
         sourceOverride: <String, String>{
           'isUpdatable': 'true',
-          'downloadUrl': dictionary.downloadUrl,
+          'downloadUrl': downloadUrl,
           'indexUrl': dictionary.indexUrl,
         },
       );

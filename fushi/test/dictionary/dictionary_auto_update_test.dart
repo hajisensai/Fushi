@@ -147,4 +147,31 @@ void main() {
     );
     expect(source, isNot(contains('if (successCount > 0)')));
   });
+
+  test('自动更新下载远端 index 声明的新包地址', () {
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(
+        source, contains('remote.resolveDownloadUrl(dictionary.downloadUrl)'));
+    final int fn = source.indexOf('Future<void> _autoRedownloadAndReimport(');
+    final int end = source.indexOf('\n  }\n', fn);
+    expect(source.substring(fn, end), isNot(contains('dictionary.downloadUrl')),
+        reason: '重导函数只能用传进来的 downloadUrl');
+  });
+
+  test('启动期回填旧词典来源字段：接在类型自愈里、批量落库', () {
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(source, contains('unawaited(_backfillDictionarySourceMetadata());'));
+    final int fn =
+        source.indexOf('Future<void> _backfillDictionarySourceMetadata()');
+    final int end = source.indexOf('\n  }\n', fn);
+    final String body = source.substring(fn, end);
+    expect(body, contains('needsSourceMetadataBackfill('));
+    expect(body, contains('await indexFile.readAsString()'),
+        reason: '异步读盘，不在 UI isolate 上同步 IO');
+    expect(body, contains('dictRepo.persistDictionaries('),
+        reason: '一次批量落库，只重载一次引擎');
+    expect(body, isNot(contains('persistDictionary(')));
+  });
 }

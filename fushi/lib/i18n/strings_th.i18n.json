@@ -982,7 +982,6 @@
   "dict_task_failed_download": "Download failed: $name ($reason)",
   "dict_task_failed_import": "Import failed: $name ($reason)",
   "dict_task_failed_summary": "$n dictionary(s) failed",
-  "dict_update_check": "ตรวจสอบอัปเดต",
   "dict_update_checking": "กำลังตรวจสอบอัปเดต…",
   "dict_update_done": "อัปเดต $name แล้ว",
   "dict_update_failed": "อัปเดตไม่สำเร็จ: $error",
@@ -992,7 +991,6 @@
   "dict_update_latest": "เป็นเวอร์ชันล่าสุดแล้ว",
   "dict_update_name_mismatch_body": "ไฟล์ที่เลือกคือ \"$incoming\" แต่คุณกำลังอัปเดต \"$existing\" จะแทนที่ต่อไปหรือไม่?",
   "dict_update_name_mismatch_title": "ชื่อไม่ตรงกัน",
-  "dict_update_none": "พจนานุกรมทั้งหมดเป็นเวอร์ชันล่าสุดแล้ว",
   "dict_update_summary": "อัปเดต $updated, ล่าสุดแล้ว $current, ล้มเหลว $failed",
   "dict_update_tooltip": "อัปเดตพจนานุกรม",
   "dict_update_updating": "กำลังอัปเดต $name…",
@@ -5595,5 +5593,9 @@
   "novel_detail_chapter_download": "Download from this chapter",
   "novel_online_chapter_pending": "This chapter hasn't been loaded yet. Check your connection, then reopen the chapter to load it from the source.",
   "novel_online_open_failed": "Couldn't open online: $error",
-  "novel_online_chapter_failed": "Couldn't load the chapter: $error"
+  "novel_online_chapter_failed": "Couldn't load the chapter: $error",
+  "dict_update_all": "Update all dictionaries",
+  "dict_update_all_no_source": "None of your dictionaries declares an online update source. Dictionaries whose index.json has no update URL can only be updated from a local file.",
+  "dict_update_check_failed": "Couldn't check for updates. Check your network or proxy settings.",
+  "dict_update_from_file_tooltip": "Update from a local file (this dictionary has no online update source)"
 }

@@ -8,7 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// widget 测试起不来；纯函数（isUpdatable / needsUpdate / readSourceMetadataFromIndex /
 /// decideUpdate）已各有单测覆盖。本守卫锁住 UI 接线的关键不变量，防回归：
 /// - 行更新按钮**仅** isUpdatable 时显示（向后兼容：旧词典不显示、不崩）。
-/// - action bar「检查更新」按钮按 isUpdatable 存在性门控。
+/// - action bar「更新全部词典」常驻首位（不再按 isUpdatable 存在性门控：旧版导入的
+///   词典缺来源字段时入口整个消失，用户只找得到要自己下新包的行尾按钮）。
+/// - 更新下载远端 index 声明的新包地址，远端检查失败不算「已是最新」。
 /// - 单本/批量/从文件更新都以被点击词典为显式替换目标（replaceTarget，BUG-1595）。
 /// - 在线下载落来源（sourceOverride 带 downloadUrl 回填）。
 void main() {
@@ -46,14 +48,45 @@ void main() {
         reason: '异名确认应复用 DictionaryConfirmationDialog');
   });
 
-  test('action bar「检查更新」按 isUpdatable 存在性门控', () {
+  test('action bar「更新全部词典」常驻且排第一，桌面/移动动作栏同样有', () {
     expect(
       src.contains(
           'appModel.dictionaries.any((Dictionary d) => d.isUpdatable)'),
-      isTrue,
-      reason: '检查更新按钮应仅在存在可更新词典时显示',
+      isFalse,
+      reason: '更新全部词典按钮不得再按可更新词典存在性隐藏',
     );
-    expect(src.contains('onTap: _checkForUpdates'), isTrue);
+    final int bar = src.indexOf('Widget _buildActionBar()');
+    final int update = src.indexOf("focusPrefix: 'dict-action-update'", bar);
+    final int download =
+        src.indexOf("focusPrefix: 'dict-action-download'", bar);
+    expect(update, greaterThan(bar));
+    expect(update, lessThan(download), reason: '更新全部词典应排在第一个');
+    expect('label: t.dict_update_all,'.allMatches(src).length, 2,
+        reason: 'Material 动作栏 + 移动端溢出菜单');
+    expect('tooltip: t.dict_update_all,'.allMatches(src).length, 1,
+        reason: '桌面 Cupertino 动作栏');
+    expect(src.contains('msg: t.dict_update_all_no_source,'), isTrue,
+        reason: '没有可在线更新词典时要说明原因，而不是说「均为最新」');
+  });
+
+  test('更新下载远端 index 声明的新包地址；检查失败不算最新', () {
+    expect(
+      'remote.resolveDownloadUrl('.allMatches(src).length,
+      2,
+      reason: '单本与批量更新都必须用远端 downloadUrl（钉版本号的包地址）',
+    );
+    expect(src.contains('url: dictionary.downloadUrl,'), isFalse,
+        reason: '不得再用本地存的旧版本地址下载');
+    expect(src.contains('t.dict_update_check_failed'), isTrue);
+    expect(
+      src,
+      matches(RegExp(r'if \(!remote\.succeeded\) \{\s*failed\+\+;')),
+      reason: '批量更新里拉不到远端 index 要计入失败',
+    );
+  });
+
+  test('非可在线更新词典的行尾按钮 tooltip 说明是从本地文件更新', () {
+    expect(src.contains('t.dict_update_from_file_tooltip'), isTrue);
   });
 
   test('单本/批量/从文件更新以被点击词典为显式替换目标（replaceTarget）', () {
