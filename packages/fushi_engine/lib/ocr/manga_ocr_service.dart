@@ -29,9 +29,16 @@ abstract class MangaOcrService {
   /// 对一个裸图片目录跑整卷 OCR，产出内部 manga.json（不落库；落库由
   /// 导入器接手）。事件：逐页完成进度 → 最终 [MangaOcrVolumeEvent.finished]
   /// 携带 manga.json 绝对路径。
+  ///
+  /// [startPage]（按 `enumerateMangaPages` 自然序的页号）是处理起点：从它起
+  /// 向后、再绕回开头补齐（阅读器传当前页，眼前这页最先出结果）。做不到按序
+  /// 的实现（远端 / 外部 CLI）可以忽略它；按序处理的实现必须在逐页事件里如实
+  /// 给出 [MangaOcrVolumeEvent.pageIndex]——完成计数不再等于页号 + 1。
+  /// 产物 manga.json 的内容与页序与起点无关。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   });
 }
 
@@ -195,6 +202,7 @@ class MangaOcrVolumeEvent {
   const MangaOcrVolumeEvent.page({
     required this.pagesDone,
     required this.pagesTotal,
+    this.pageIndex,
     this.acceleration,
   }) : mangaJsonPath = null,
        finished = false;
@@ -204,10 +212,17 @@ class MangaOcrVolumeEvent {
     required String this.mangaJsonPath,
     this.acceleration,
   }) : pagesDone = pagesTotal,
+       pageIndex = null,
        finished = true;
 
   final int pagesDone;
   final int pagesTotal;
+
+  /// 刚完成的那一页的真实页号（按 `enumerateMangaPages` 自然序）。
+  ///
+  /// 整卷任务从 `startPage` 起旋转处理，完成计数不等于页号 + 1。null 只表示
+  /// 该实现不报页号（也就没按起点重排），消费方此时才可退回 `pagesDone - 1`。
+  final int? pageIndex;
 
   /// finished 事件携带产出的 manga.json 绝对路径。
   final String? mangaJsonPath;

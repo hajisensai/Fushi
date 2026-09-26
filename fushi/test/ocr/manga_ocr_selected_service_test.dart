@@ -44,10 +44,11 @@ class _Source<T> {
 }
 
 class _FolderCall {
-  _FolderCall(this.directory, this.title);
+  _FolderCall(this.directory, this.title, this.startPage);
 
   final String directory;
   final String? title;
+  final int startPage;
   final _Source<MangaOcrVolumeEvent> source = _Source<MangaOcrVolumeEvent>();
 }
 
@@ -89,8 +90,9 @@ class _Service extends MangaOcrService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) {
-    final _FolderCall call = _FolderCall(imageDirPath, volumeTitle);
+    final _FolderCall call = _FolderCall(imageDirPath, volumeTitle, startPage);
     folders.add(call);
     return call.source.controller.stream;
   }
@@ -246,12 +248,15 @@ void main() {
     );
     final List<MangaOcrVolumeEvent> currentEvents = <MangaOcrVolumeEvent>[];
     final StreamSubscription<MangaOcrVolumeEvent> currentSub = service
-        .ocrFolder(imageDirPath: 'D:/books/current')
+        .ocrFolder(imageDirPath: 'D:/books/current', startPage: 7)
         .listen(currentEvents.add);
     expect(manga.folders.single.directory, 'D:/books/previous');
     expect(manga.folders.single.title, 'Previous volume');
+    expect(manga.folders.single.startPage, 0);
     expect(baberu.folders.single.directory, 'D:/books/current');
     expect(baberu.folders.single.title, isNull);
+    // 阅读器的「当前页优先」起点必须原样转发给被选中的模型实现。
+    expect(baberu.folders.single.startPage, 7);
 
     const MangaOcrVolumeEvent progress = MangaOcrVolumeEvent.page(
       pagesDone: 1,

@@ -42,8 +42,24 @@ class OcrCancelledException implements Exception {
   String toString() => 'OcrCancelledException';
 }
 
-/// 进度回调：completedPages 含缓存命中页。
-typedef OcrProgressCallback = void Function(int completedPages, int totalPages);
+/// 进度回调：completedPages 含缓存命中页；[pageIndex] 是刚完成的那一页的真实
+/// 页号（整卷任务按 `startPage` 旋转顺序跑，完成计数不再等于页号 + 1）。
+typedef OcrProgressCallback = void Function(
+    int completedPages, int totalPages, int pageIndex);
+
+/// 整卷处理顺序：从 [startPage]（越界时夹到合法范围）起向后到末页，再绕回
+/// 0 补齐前面的页。阅读器从当前页开跑，读者眼前这页最先出结果——与 Lens /
+/// 系统 OCR 路径同一口径（`manga_ocr_job_stream.dart`）。
+List<int> mangaOcrPageOrder(int pageCount, int startPage) {
+  if (pageCount <= 0) {
+    return const <int>[];
+  }
+  final int start = startPage.clamp(0, pageCount - 1);
+  return <int>[
+    for (int page = start; page < pageCount; page++) page,
+    for (int page = 0; page < start; page++) page,
+  ];
+}
 
 /// 按页索引懒加载解码好的页面图像（由调用方实现，通常从压缩包/目录读）。
 typedef OcrPageLoader = Future<img.Image> Function(int pageIndex);
@@ -103,26 +119,29 @@ class MangaOcrPipeline {
   /// 阅读方向（日漫 RTL 默认）。
   final bool rightToLeft;
 
-  /// 处理整卷。返回按页序排列的结果（含缓存命中页）。
+  /// 处理整卷。返回**按页序**排列的结果（含缓存命中页），与 [startPage] 无关。
   ///
+  /// 处理顺序见 [mangaOcrPageOrder]：从 [startPage] 起、绕回开头补齐。
   /// 中断（[cancelToken] 置位）抛 [OcrCancelledException]；已完成页已落
   /// 缓存，重跑时只补缺页。
   Future<List<OcrPageResult>> processBook({
     required String bookId,
     required int pageCount,
     required OcrPageLoader loadPage,
+    int startPage = 0,
     OcrCancelToken? cancelToken,
     OcrProgressCallback? onProgress,
   }) async {
-    final List<OcrPageResult> results = <OcrPageResult>[];
+    final List<OcrPageResult?> results =
+        List<OcrPageResult?>.filled(pageCount, null);
     int completed = 0;
-    for (int page = 0; page < pageCount; page++) {
+    for (final int page in mangaOcrPageOrder(pageCount, startPage)) {
       cancelToken?.throwIfCancelled();
       final OcrPageResult? cached = await cache?.read(bookId, page);
       if (cached != null) {
-        results.add(cached);
+        results[page] = cached;
         completed++;
-        onProgress?.call(completed, pageCount);
+        onProgress?.call(completed, pageCount, page);
         continue;
       }
       final img.Image image = await loadPage(page);
@@ -132,11 +151,13 @@ class MangaOcrPipeline {
         cancelToken: cancelToken,
       );
       await cache?.write(bookId, result);
-      results.add(result);
+      results[page] = result;
       completed++;
-      onProgress?.call(completed, pageCount);
+      onProgress?.call(completed, pageCount, page);
     }
-    return results;
+    return <OcrPageResult>[
+      for (final OcrPageResult? result in results) result!,
+    ];
   }
 
   /// 处理单页：检测 → 阅读顺序 → 按识别器能力单框或有界批识别。
