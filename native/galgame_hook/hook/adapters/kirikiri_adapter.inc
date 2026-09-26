@@ -6187,10 +6187,22 @@ bool PublishKirikiriLookupHit(bool new_notification) {
   publication.line_utf8 = encoded_line;
   publication.line_bytes = line_bytes;
   uint64_t published_seq = 0;
-  if (!fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication,
-                                               &published_seq)) {
-    return false;
+  const bool published = fushi_voice_hook::g_geometry_provider_registry.PublishHit(
+      g_header, publication, &published_seq);
+  // BUG-2710 取证：每笔 TJS submit 的发布结局各记一行（同一 seq 的重试只记首次与
+  // 最终成功），「点了没反应」时才分得清是没到 TJS、还是在哪道门被拒。
+  static uint64_t last_logged_submit_seq = 0;
+  if (published || hit_seq != last_logged_submit_seq) {
+    last_logged_submit_seq = hit_seq;
+    wchar_t submit_log[160];
+    swprintf_s(submit_log, L"lookup.submit seq=%llu published=%d wire=%llu reject=%u tick=%llu",
+               static_cast<unsigned long long>(hit_seq), published ? 1 : 0,
+               static_cast<unsigned long long>(published_seq),
+               fushi_voice_hook::g_geometry_provider_registry.last_hit_reject(),
+               static_cast<unsigned long long>(GetTickCount64()));
+    HookLogLine(submit_log);
   }
+  if (!published) return false;
   // Card frames answer the registry's global wire sequence, not the TJS-local
   // SubmitSeq. Keep the TJS sequence only in processed/retry bookkeeping.
   g_lookup_submit_hit_seq = published_seq;
