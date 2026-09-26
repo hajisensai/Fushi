@@ -24,6 +24,8 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/pages/implementations/module_settings_view.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -90,6 +92,7 @@ import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
@@ -1604,9 +1607,11 @@ class _HomePageState extends BasePageState<HomePage>
       // 取消不经下载 tab，所以**不随** downloadsReachable 门控：下载模块被关掉的
       // 用户照样可能有一条在飞的任务需要停掉。
       onCancelDownloads: _cancelVideoDiscoveryDownloads,
-      // 「AI 下视频」入口：AI 提供商未指派 / 平台合规不可用 / 下载 runtime 没起时
-      // 不接线，发现页搜索行整颗按钮不渲染。
-      onAiAcquire: _canAiAcquire ? _openAiVideoAcquisition : null,
+      // 「AI 下视频」入口：仅平台合规不可用（iOS）时不接线、整颗按钮不渲染；
+      // AI 未指派 / 下载 runtime 没起在点击时引导配置（见 _canAiAcquire）。
+      onAiAcquire: _canAiAcquire && _aiAcquireModulesEnabled
+          ? _openAiVideoAcquisition
+          : null,
     );
   }
 
@@ -1993,23 +1998,48 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 「AI 下视频」入口可用的门（build 期求值，AI 指派变更后随 appModel 通知重算）：
-  /// AI 提供商已指派 + 下载中心与外部发现在本平台可用（iOS 合规）+ 资源 registry
-  /// 与下载管线已起。判据只问 [StoreRestrictedCapability]，不写 `Platform.isIOS`。
+  /// 「AI 下视频」入口渲染的门：只看本平台允许与否（iOS 合规）。判据只问
+  /// [StoreRestrictedCapability]，不写 `Platform.isIOS`。
+  ///
+  /// **AI 未指派、下载 runtime 没起都不藏入口**：此前两者任一不满足整颗按钮不渲染，
+  /// 而新装用户两者恰恰都不满足——入口对他们永远不存在，也没有任何线索提示「要先
+  /// 去 AI 设置指派」（用户 2026-09-26 反馈 Windows / Mac 都找不到）。缺什么改由
+  /// [_openAiVideoAcquisition] 在点击时直接弹对应的配置引导。
   bool get _canAiAcquire =>
       appModelNoUpdate.isPreferencesReady &&
-      resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) != null &&
       StoreRestrictedCapability.downloads.isAvailable &&
-      StoreRestrictedCapability.externalDiscovery.isAvailable &&
-      appModelNoUpdate.videoResourceRegistry != null &&
-      appModelNoUpdate.videoDownloadPipelineService != null;
+      StoreRestrictedCapability.externalDiscovery.isAvailable;
+
+  /// 「AI 下视频」入口的模块门：用户在「功能模块」里关掉的东西，入口不能再把它
+  /// 带出来。
+  ///
+  /// - 在线服务（`ModuleId.services`）关了 = 用户主动隐藏了「设置 › AI」。入口一旦
+  ///   出现，点击就会经 [_pushAiSettings] 推出这个被关掉的页面（`ModuleSettingsView`
+  ///   不查 `visible`），所以这里按同一判据 [isSettingsDestinationVisible] 收起。
+  /// - 下载模块关了：这个功能的产物就是下载任务，与设置里「AI 下视频」段
+  ///   （`settings_schema_ai.dart`）同一个门。
+  bool get _aiAcquireModulesEnabled =>
+      isSettingsDestinationVisible(
+        SettingsDestinationId.ai,
+        appModel.moduleVisibility,
+      ) &&
+      appModel.moduleVisibility.isEnabled(ModuleId.downloads);
 
   /// 打开「AI 下视频」对话页：组装全部端口后交给 [VideoAcquisitionService]。
   ///
-  /// 前置与资源搜索页一致：后端 runtime 没起 → 配置引导；没有受管视频来源 → 补来源
-  /// 引导。页面本身不挂 Riverpod，所有能力按闭包注入，AI 提供商每次调用时现解析。
+  /// 前置按顺序逐个引导，配完即继续：AI 提供商未指派 → 推 AI 设置页；后端 runtime
+  /// 没起 → 配置引导；没有受管视频来源 → 补来源引导。页面本身不挂 Riverpod，所有
+  /// 能力按闭包注入，AI 提供商每次调用时现解析。
   Future<void> _openAiVideoAcquisition() async {
     final BuildContext context = this.context;
+    if (resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) == null) {
+      _showVideoDiscoveryMessage(context, t.ai_assist_no_provider);
+      await _pushAiSettings(context);
+      if (!context.mounted ||
+          resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) == null) {
+        return;
+      }
+    }
     final VideoResourceRegistry? registry =
         appModelNoUpdate.videoResourceRegistry;
     final VideoDownloadPipelineService? pipeline =
@@ -2255,6 +2285,39 @@ class _HomePageState extends BasePageState<HomePage>
               subtitleAttachMessage(result, title: book.title),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  /// 推一页独立的「设置 › AI」（提供商 + 功能指派），返回即回到原入口。
+  Future<void> _pushAiSettings(BuildContext context) {
+    return Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => Scaffold(
+          body: SafeArea(
+            child: ModuleSettingsView(
+              destinationId: SettingsDestinationId.ai,
+              navigation: Row(
+                children: <Widget>[
+                  FushiIconButton(
+                    icon: Icons.arrow_back,
+                    tooltip: t.back,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      t.ai_settings_title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

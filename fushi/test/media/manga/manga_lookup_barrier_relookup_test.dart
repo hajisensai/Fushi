@@ -98,6 +98,13 @@ void main() {
       final String doc = _document();
       expect(doc, contains('::highlight(fushi-selection){background-color:'));
     });
+
+    test('无 Highlight API 的降级 span 也有高亮样式', () {
+      // highlightSelection 在 CSS.highlights 缺失时把命中字符包进
+      // .fushi-dict-highlight；覆盖层不给它上色就等于没高亮。
+      final String doc = _document();
+      expect(doc, contains('.fushi-dict-highlight{background-color:'));
+    });
   });
 
   group('BUG-2553 纯函数 barrierTapClosesPopup', () {

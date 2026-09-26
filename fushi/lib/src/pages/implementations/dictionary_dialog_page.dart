@@ -2027,13 +2027,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 下载 [dictionary] 来源处的新包并以它为**显式替换目标**重导（BUG-1595：即便
   /// 远端包改了标题也替换这本，而非按 title 误判成新增），保留
-  /// order/hidden/collapsed，落上新来源（[sourceOverride] 至少带回 downloadUrl）。
+  /// order/hidden/collapsed，落上新来源。下载地址与回写来源都取自 [remote]
+  /// （BUG-2707：远端 index 声明的新版地址优先，本地旧地址可能钉在旧版本目录）。
   /// 复用现有下载进度 UI（[DictionaryDownloadProgressDialog]）。成功返 true。
   Future<bool> _redownloadAndReimport({
     required Dictionary dictionary,
+    required DictionaryRemoteIndexResult remote,
     required DictionaryDownloadJob job,
-    required String downloadUrl,
-    required Map<String, String> sourceOverride,
   }) async {
     // 只喂文案（进度行 / 导入阶段提示 / 完成 toast），无身份用途——身份走
     // `dictionary` 对象本身（downloadUrl / 目录名）。所以这里用显示名：用户改过名
@@ -2049,7 +2049,7 @@ class _DictionaryDialogPageState extends BasePageState {
       progressNotifier.value = t.dict_update_updating(name: name);
       downloadProgress.value = 0;
       final File zipFile = await DictionaryDownloader.download(
-        url: downloadUrl,
+        url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: downloadProgress,
         cancelToken: job.cancelToken,
@@ -2068,7 +2068,12 @@ class _DictionaryDialogPageState extends BasePageState {
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
         replaceTarget: dictionary,
-        sourceOverride: sourceOverride,
+        // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+        // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+        sourceOverride: remote.updatedSourceMetadata(
+          localDownloadUrl: dictionary.downloadUrl,
+          localIndexUrl: dictionary.indexUrl,
+        ),
       );
       return true;
     } finally {
@@ -2106,21 +2111,10 @@ class _DictionaryDialogPageState extends BasePageState {
               severity: ToastSeverity.info,
             );
           }
-          // 远端 index 声明的新包地址优先：pixiv-yomitan 这类钉了版本号的
-          // downloadUrl，拿本地存的旧地址下回来的还是旧包。
-          final String downloadUrl =
-              remote.resolveDownloadUrl(dictionary.downloadUrl);
           await _redownloadAndReimport(
             dictionary: dictionary,
+            remote: remote,
             job: job,
-            downloadUrl: downloadUrl,
-            // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-            // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-            sourceOverride: <String, String>{
-              'isUpdatable': 'true',
-              'downloadUrl': downloadUrl,
-              'indexUrl': dictionary.indexUrl,
-            },
           );
           return DictionaryDownloadOutcome(
             message: t.dict_update_done(
@@ -2305,16 +2299,10 @@ class _DictionaryDialogPageState extends BasePageState {
               current++;
               continue;
             }
-            final String downloadUrl = remote.resolveDownloadUrl(d.downloadUrl);
             await _redownloadAndReimport(
               dictionary: d,
+              remote: remote,
               job: job,
-              downloadUrl: downloadUrl,
-              sourceOverride: <String, String>{
-                'isUpdatable': 'true',
-                'downloadUrl': downloadUrl,
-                'indexUrl': d.indexUrl,
-              },
             );
             updated++;
           } catch (e, stack) {

@@ -104,6 +104,20 @@ class _FakeMining implements FushiRemoteMiningService {
     return dupResult;
   }
 
+  // Issue #1409：弹窗 ↗「在 Anki 中打开」（/api/anki/open）的捕获。
+  AnkiOpenWordOutcome openResult = AnkiOpenWordOutcome.opened;
+  String? lastOpenExpression;
+  String? lastOpenReading;
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async {
+    lastOpenExpression = expression;
+    lastOpenReading = reading;
+    return openResult;
+  }
+
   // 互联 Lapis 客制化端点的捕获（/api/anki/note-type/*）。
   AnkiNoteTypeDefinition? noteTypeDef;
   String? lastNoteTypeRead;
@@ -785,6 +799,83 @@ void main() {
       );
       expect(resp.statusCode, 200);
       expect((await _json(resp)).containsKey('audioSources'), isFalse);
+    });
+
+    // Issue #1409：扩展弹窗 ↗「在 Anki 中打开」此前没有端点，bridge-shim 恒回 null → 永远
+    // 提示打不开。端点回的 outcome 名必须正是 popup.js openWordInAnki 认的三态。
+    for (final AnkiOpenWordOutcome outcome in AnkiOpenWordOutcome.values) {
+      test('/api/anki/open 回 outcome=${outcome.name}（#1409）', () async {
+        await startServer(apiKey: 'k123');
+        mining.openResult = outcome;
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/anki/open',
+          <String, dynamic>{'expression': '走る', 'reading': 'はしる'},
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect((await _json(resp))['outcome'], outcome.name);
+        expect(mining.lastOpenExpression, '走る');
+        expect(mining.lastOpenReading, 'はしる');
+      });
+    }
+
+    test('/api/anki/open 三态名与 popup.js 认的字面量一致（#1409）', () {
+      expect(
+        AnkiOpenWordOutcome.values.map((AnkiOpenWordOutcome o) => o.name),
+        unorderedEquals(<String>['opened', 'noMatch', 'failed']),
+      );
+    });
+
+    test('/api/anki/open 缺 expression → 400，不打后端（#1409）', () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/anki/open',
+        <String, dynamic>{'reading': 'はしる'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 400);
+      await resp.drain<void>();
+      expect(mining.lastOpenExpression, isNull);
+    });
+
+    test('/api/anki/open 错 token → 401，不打后端（#1409）', () async {
+      await startServer(apiKey: 'k123');
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/anki/open',
+        <String, dynamic>{'expression': '猫'},
+        auth: _basic('WRONG'),
+      );
+      expect(resp.statusCode, 401);
+      await resp.drain<void>();
+      expect(mining.lastOpenExpression, isNull);
+    });
+
+    test('/api/anki/open 刷新扩展 last-seen（#1409）', () async {
+      int seen = 0;
+      lookup = _FakeLookup();
+      mining = _FakeMining();
+      server = YomitanApiServer(
+        port: 0,
+        lookupService: lookup,
+        miningService: mining,
+        tokenizer: tok,
+        readingResolver: rr,
+        onExtensionSeen: () => seen++,
+        apiKey: 'k123',
+      );
+      await server.start();
+      final HttpClientResponse resp = await _post(
+        server.port,
+        '/api/anki/open',
+        <String, dynamic>{'expression': '猫'},
+        auth: _basic('k123'),
+      );
+      expect(resp.statusCode, 200);
+      await resp.drain<void>();
+      expect(seen, 1);
     });
 
     test('/api/duplicate wrong token → 401', () async {

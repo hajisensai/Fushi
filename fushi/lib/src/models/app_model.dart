@@ -2043,7 +2043,13 @@ class AppModel with ChangeNotifier {
           ),
     ];
     if (updated.isEmpty) return;
-    await dictRepo.persistDictionaries(updated);
+    // 调用方是 unawaited：落库失败不能漏成未捕获的 zone 错误。不打标记即下次
+    // 启动再试。
+    try {
+      await dictRepo.persistDictionaries(updated);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
+    }
   }
 
   // 隐藏的 freq/pitch/kanji 不进引擎（无渲染期隐藏过滤会直接冒出来，BUG-177/TODO-094）；
@@ -6032,13 +6038,7 @@ class AppModel with ChangeNotifier {
               completedCount++;
               continue;
             }
-            await _autoRedownloadAndReimport(
-              dictionary,
-              job,
-              // 远端 index 声明的新包地址优先：钉版本号的 downloadUrl（pixiv-yomitan
-              // 等）拿本地旧地址会把旧包原样下回来。
-              downloadUrl: remote.resolveDownloadUrl(dictionary.downloadUrl),
-            );
+            await _autoRedownloadAndReimport(dictionary, remote, job);
             completedCount++;
           } catch (e, stack) {
             if (DictionaryDownloadController.isCancellation(e)) break;
@@ -6066,11 +6066,14 @@ class AppModel with ChangeNotifier {
   /// 静默下载 + force 重导单本词典（复用手动链路语义：保留 order/hidden/collapsed，
   /// 回填 isUpdatable/URL 来源）。进度写进 [job] 的 notifier，让「后台正在更新什么」
   /// 在词典页状态行 / 进度框里可见且可取消（下载阶段）。
+  ///
+  /// BUG-2707：下载地址与回写来源都取自 [remote]（远端 index 声明的新版地址），
+  /// 本地记录的旧 downloadUrl 可能钉在旧版本目录，拿它下载等于重导旧包。
   Future<void> _autoRedownloadAndReimport(
     Dictionary dictionary,
-    DictionaryDownloadJob job, {
-    required String downloadUrl,
-  }) async {
+    DictionaryRemoteIndexResult remote,
+    DictionaryDownloadJob job,
+  ) async {
     final Directory tempDir = Directory(
       path.join(dictionaryResourceDirectory.path, 'auto_update_temp'),
     );
@@ -6079,7 +6082,7 @@ class AppModel with ChangeNotifier {
       job.progress.value = 0;
       job.message.value = t.dict_update_updating(name: dictionary.name);
       final File zipFile = await DictionaryDownloader.download(
-        url: downloadUrl,
+        url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: job.progress,
         cancelToken: job.cancelToken,
@@ -6094,11 +6097,10 @@ class AppModel with ChangeNotifier {
         // BUG-1595：自动更新替换的就是这本——远端包哪怕改了标题（title 携带版本
         // 号等）也不允许按 title 误判成新增、旧本残留。
         replaceTarget: dictionary,
-        sourceOverride: <String, String>{
-          'isUpdatable': 'true',
-          'downloadUrl': downloadUrl,
-          'indexUrl': dictionary.indexUrl,
-        },
+        sourceOverride: remote.updatedSourceMetadata(
+          localDownloadUrl: dictionary.downloadUrl,
+          localIndexUrl: dictionary.indexUrl,
+        ),
       );
     } finally {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
@@ -9182,6 +9184,23 @@ class _AppModelRemoteLookupService
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
     return repo.isDuplicate(expression, reading);
+  }
+
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async {
+    // Issue #1409：与 app 内 openInAnki 桥（_handleOpenInAnkiBridge）同一
+    // repo.openWordInAnki；抛出一律按 failed（弹窗提示打不开，绝不静默）。
+    try {
+      final BaseAnkiRepository repo =
+          _appModel.platformServices.createAnkiRepository();
+      return await repo.openWordInAnki(expression, reading);
+    } catch (e, st) {
+      ErrorLogService.instance.log('Anki.openWordInAnki.extension', e, st);
+      return AnkiOpenWordOutcome.failed;
+    }
   }
 
   @override

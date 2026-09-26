@@ -5172,9 +5172,7 @@
   "manga_reader_mode_hint": "进入时显示阅读模式",
   "manga_reader_tap_hint": "显示点击区提示",
   "manga_reader_skip_read": "跳过已读章节",
-  "manga_reader_skip_filtered": "跳过已过滤章节",
   "manga_reader_skip_duplicate": "跳过重复章节",
-  "manga_reader_transition": "始终显示章节过渡",
   "manga_reader_fullscreen": "全屏",
   "manga_reader_keep_screen": "保持亮屏",
   "manga_reader_invert_volume": "反转音量键翻页方向",
@@ -5587,6 +5585,7 @@
   "manga_discovery_view_all": "查看全部",
   "manga_discovery_empty_title": "还没有可发现的漫画来源",
   "manga_discovery_empty_action": "管理来源",
+  "manga_reader_download_ahead": "阅读时预下载下一章",
   "video_dolby_vision_colors_unsupported": "杜比视界 Profile 5 片源：本平台暂时无法正确还原它的颜色，画面可能偏紫或偏绿。",
   "video_dolby_vision_colors_enable_hdr_output": "杜比视界 Profile 5 片源：HDR / 10-bit 输出关闭时颜色会偏紫或偏绿，改成「自动」即可正常显示。",
   "novel_detail_read_online": "在线阅读",
@@ -5597,5 +5596,7 @@
   "dict_update_all": "更新全部词典",
   "dict_update_all_no_source": "没有词典声明在线更新地址。index.json 里没有更新地址的词典只能从本地文件更新。",
   "dict_update_check_failed": "检查更新失败，请检查网络或代理设置。",
-  "dict_update_from_file_tooltip": "从本地文件更新（此词典没有在线更新地址）"
+  "dict_update_from_file_tooltip": "从本地文件更新（此词典没有在线更新地址）",
+  "anki_lapis_visual_text_indent": "首行缩进",
+  "anki_lapis_visual_text_indent_chars": "$count 字"
 }

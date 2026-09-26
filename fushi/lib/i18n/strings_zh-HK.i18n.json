@@ -5172,9 +5172,7 @@
   "manga_reader_mode_hint": "Show reading mode on entry",
   "manga_reader_tap_hint": "Show tap zones",
   "manga_reader_skip_read": "Skip read chapters",
-  "manga_reader_skip_filtered": "Skip filtered chapters",
   "manga_reader_skip_duplicate": "Skip duplicate chapters",
-  "manga_reader_transition": "Always show chapter transition",
   "manga_reader_fullscreen": "Full screen",
   "manga_reader_keep_screen": "Keep screen on",
   "manga_reader_invert_volume": "Invert volume key direction",
@@ -5587,6 +5585,7 @@
   "manga_discovery_view_all": "View all",
   "manga_discovery_empty_title": "No manga sources to discover yet",
   "manga_discovery_empty_action": "Manage sources",
+  "manga_reader_download_ahead": "Download next chapter while reading",
   "video_dolby_vision_colors_unsupported": "Dolby Vision profile 5 video: this platform can't render its colors correctly yet, so the picture may look purple or green.",
   "video_dolby_vision_colors_enable_hdr_output": "Dolby Vision profile 5 video: colors will look purple or green with HDR / 10-bit output turned off. Set it to Auto to fix them.",
   "novel_detail_read_online": "Read online",
@@ -5597,5 +5596,7 @@
   "dict_update_all": "更新全部詞典",
   "dict_update_all_no_source": "沒有詞典聲明線上更新地址。index.json 裡沒有更新地址的詞典只能從本機檔案更新。",
   "dict_update_check_failed": "檢查更新失敗，請檢查網路或代理設定。",
-  "dict_update_from_file_tooltip": "從本機檔案更新（此詞典沒有線上更新地址）"
+  "dict_update_from_file_tooltip": "從本機檔案更新（此詞典沒有線上更新地址）",
+  "anki_lapis_visual_text_indent": "首行縮排",
+  "anki_lapis_visual_text_indent_chars": "$count 字"
 }

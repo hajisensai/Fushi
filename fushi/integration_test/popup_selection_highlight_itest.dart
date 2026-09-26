@@ -87,7 +87,6 @@ void main() {
       window.hiddenDictionaryNames = [];
       window.dictionaryStyles = {};
       window.compactGlossaries = false;
-      window.compactGlossariesAnki = false;
       window.useAnkiConnect = false;
       window.embedMedia = false;
       window.audioSources = [];

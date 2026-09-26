@@ -96,7 +96,7 @@
       updateParents();
     });
   }
-  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'openLink',
+  const allowed = new Set(['mineEntry', 'duplicateCheck', 'resolveWordAudio', 'openLink', 'openInAnki',
     'setSentenceContext', 'clearSentenceDraft', 'sentenceContextPreview']);
   function receive(layer, message) {
     if (!layers.includes(layer) || !message || message.__fushiPopupFrame !== true) return;
