@@ -6,7 +6,7 @@
   3. **进度只在库页封面角上**：`remote_download_progress_badge.dart` 一个圆环，离开库页即不可见；下载中心（`downloads_page.dart` 任务链）不含本机互联下载，也无字节数。
   4. **续传不校验**：`interconnect_sync_backend.dart` `downloadRemoteVideo` 未带 If-Range / ETag，host `/stream`（`fushi_sync_server/video.part.dart`）也不发 ETag——host 换了文件时旧 part 后面直接拼新字节；落点 `home_video_page.dart` `_remoteDownloadDestination` 只按标题命名，同名视频（合集里的「第1話」）共用一个 `.part`。
   5. **公网下到播放列表**：`downloadRemoteVideo` 取流地址时带着播放画质档，host 开转码时签发 `hls.m3u8`，下载把播放列表存成 `.mp4`。
-- **[x] ① 已修复** —
+- **[x] ① 已修复** — 提交 b552ac782b8（PR #1677）
   - Android `DownloadKeepAliveService`（dataSync 前台服务 + 进度通知，`fushi/android/.../DownloadKeepAliveService.java`）+ Dart 门面 `platform/mobile/android_download_keep_alive.dart`（节流 / 去重）+ 多来源汇总 `platform/mobile/download_keep_alive_hub.dart`；互联下载、自动更新下载（及同 PR 接入的其它下载来源）各领租约，最后一个来源结束才撤服务。
   - 续传清单 `sync/interconnect_video_resume_store.dart`（与 `.part` 并排的 `.resume.json`，写入按落点串行、不挡传输）；视频页拿到远端清单后 `_resumeInterruptedRemoteDownloads` 自动接回（用户暂停过的以暂停态登记）。
   - 管理器加 `paused` 状态、字节进度、`pause` / `resume` / `discard`；下载中心新增「从配对设备下载」段（`interconnect_download_tasks_section.dart`），给「已收 / 总 (百分比)」与暂停 / 继续 / 重试 / 删除。
