@@ -840,6 +840,14 @@ abstract class VideoFushiTestHooks {
   bool get debugPlayerDecodedSubtitleActive;
   List<int> get debugRemoteEmbeddedStreamIndices;
 
+  /// 副字幕版：按服务器流号把内嵌轨选为**副字幕**（走产品同一条
+  /// `_applyRemoteEmbeddedSecondarySubtitle`）；兼容层抽不出时由 libmpv
+  /// `secondary-sid` 解码、`secondary-sub-text` 回流成副 cue。
+  Future<void> debugSelectRemoteEmbeddedSecondarySubtitle(int streamIndex);
+  String? get debugCurrentSecondarySubtitleSource;
+  int get debugSecondaryCueCount;
+  bool get debugSecondaryPlayerDecodedSubtitleActive;
+
   /// BUG-2691：当前是否已切到 gpu-next 宿主窗（Windows HDR / DV P5 路径）。
   bool get debugHdrHostActive;
 }
@@ -1119,6 +1127,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   bool get debugPlayerDecodedSubtitleActive =>
       _controller?.isPlayerDecodedTextSubtitleActive ?? false;
+
+  @override
+  Future<void> debugSelectRemoteEmbeddedSecondarySubtitle(
+    int streamIndex,
+  ) async {
+    final VideoPlayerController? controller = _controller;
+    final RemoteVideoEmbeddedSubtitleTrack? track =
+        _remoteEmbeddedTrackByStreamIndex(streamIndex);
+    if (controller == null || track == null) {
+      throw StateError('no controller / no remote embedded track $streamIndex');
+    }
+    await _applyRemoteEmbeddedSecondarySubtitle(controller, track);
+  }
+
+  @override
+  String? get debugCurrentSecondarySubtitleSource =>
+      _currentSecondarySubtitleSource;
+
+  @override
+  int get debugSecondaryCueCount => _controller?.secondaryCues.length ?? 0;
+
+  @override
+  bool get debugSecondaryPlayerDecodedSubtitleActive =>
+      _controller?.isSecondaryPlayerDecodedTextSubtitleActive ?? false;
 
   @override
   bool get debugHdrHostActive => _controller?.hdrHostActive.value ?? false;

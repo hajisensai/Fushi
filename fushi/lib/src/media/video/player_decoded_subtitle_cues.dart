@@ -99,3 +99,29 @@ bool closePlayerDecodedCue(AudioCue cue, int atMs) {
   cue.endMs = atMs;
   return true;
 }
+
+/// media_kit `Player.stream.subtitle` / `state.subtitle` 的第 [slot] 槽文本：
+/// 0 = 主字幕 `sub-text`，1 = 副字幕 `secondary-sub-text`。列表不够长按空串。
+String playerSubtitleSlotText(List<String> texts, int slot) =>
+    slot < texts.length ? texts[slot] : '';
+
+/// 只在第 [slot] 槽文本**真的变化**时出事件（初值 [initial] = 订阅时已处理过的那句）。
+///
+/// media_kit 把 `sub-text` 与 `secondary-sub-text` 合成同一条 `[主, 副]` 流上报：
+/// 副字幕一换句，主字幕的订阅也会收到一次「主文本不变」的事件。回流逻辑把每次事件
+/// 当作「上一句到此结束」（[closePlayerDecodedCue]），不按槽去重，另一槽换句就会把
+/// 这一槽没给 end 的暂定句提前截断。
+Stream<String> playerSubtitleSlotChanges(
+  Stream<List<String>> reports,
+  int slot,
+  String initial,
+) {
+  String last = initial;
+  return reports
+      .map((List<String> texts) => playerSubtitleSlotText(texts, slot))
+      .where((String text) {
+        if (text == last) return false;
+        last = text;
+        return true;
+      });
+}

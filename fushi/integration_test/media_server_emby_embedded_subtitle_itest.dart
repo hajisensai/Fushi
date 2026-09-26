@@ -7,6 +7,8 @@
 //   FUSHI_EMBY_URL / FUSHI_EMBY_USER / FUSHI_EMBY_PASS / FUSHI_EMBY_ITEM
 //   （或用已签发的令牌代替密码：FUSHI_EMBY_TOKEN + FUSHI_EMBY_USERID）
 //   FUSHI_EMBY_TRACK（服务器流号，默认 2）
+//   FUSHI_EMBY_SECONDARY_TRACK（服务器流号，默认 -1 = 不测副字幕；BUG-2720：
+//   另一条内嵌文本轨作副字幕，兼容层上由 libmpv secondary-sid 解码回流）
 //   FUSHI_EMBY_SHOT_SEEK_MS（① 截图前 seek 到的位置，真片首句常在台标之后）
 //   FUSHI_EMBY_EXPECT_FALLBACK（默认 true = 服务器抽不出、走回落；false = 原版
 //   Emby / Jellyfin，服务器抽取成功，直接 cue overlay、libmpv 不选轨——回归口径）
@@ -39,6 +41,8 @@ const String _userId = String.fromEnvironment('FUSHI_EMBY_USERID');
 const String _itemId = String.fromEnvironment('FUSHI_EMBY_ITEM');
 const int _trackIndex =
     int.fromEnvironment('FUSHI_EMBY_TRACK', defaultValue: 2);
+const int _secondaryTrackIndex =
+    int.fromEnvironment('FUSHI_EMBY_SECONDARY_TRACK', defaultValue: -1);
 
 /// 截图前 seek 到这里（毫秒；0 = 不 seek）：真片首条 cue 可能在片头台标之后。
 const int _shotSeekMs = int.fromEnvironment('FUSHI_EMBY_SHOT_SEEK_MS');
@@ -189,6 +193,47 @@ void main() {
           expect(shot1.saved, isTrue);
         }
 
+        // ── ①b BUG-2720 副字幕：另一条内嵌轨作副字幕，兼容层同样回落 ──
+        if (_secondaryTrackIndex >= 0) {
+          expect(hooks.debugRemoteEmbeddedStreamIndices,
+              contains(_secondaryTrackIndex),
+              reason: '字幕轨列表应含副字幕目标轨');
+          final int primaryCuesBefore = hooks.debugCueCount;
+          await hooks
+              .debugSelectRemoteEmbeddedSecondarySubtitle(_secondaryTrackIndex);
+          debugPrint(
+            '[emb-itest] after secondary select: '
+            'source=${hooks.debugCurrentSecondarySubtitleSource} '
+            'decoded=${hooks.debugSecondaryPlayerDecodedSubtitleActive} '
+            'cues=${hooks.debugSecondaryCueCount}',
+          );
+          expect(hooks.debugCurrentSecondarySubtitleSource,
+              'embedded:$_secondaryTrackIndex',
+              reason: '副字幕选中后应记为该轨（此前兼容层直接「加载失败」）');
+          if (_expectFallback) {
+            expect(hooks.debugSecondaryPlayerDecodedSubtitleActive, isTrue,
+                reason: '兼容层 → libmpv secondary-sid 解码回流');
+            expect(hooks.debugPlayerDecodedSubtitleActive, isTrue,
+                reason: '副字幕不能把主字幕的回流顶掉');
+          }
+          for (int i = 0; i < 120 && hooks.debugSecondaryCueCount == 0; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+          }
+          debugPrint(
+            '[emb-itest] secondary cues=${hooks.debugSecondaryCueCount} '
+            'primary cues=${hooks.debugCueCount} (before=$primaryCuesBefore)',
+          );
+          expect(hooks.debugSecondaryCueCount, greaterThan(0),
+              reason: '播到有字幕处应有副字幕 cue');
+          expect(hooks.debugCueCount, greaterThanOrEqualTo(primaryCuesBefore),
+              reason: '主字幕 cue 继续累积、不被副字幕清掉');
+          final ObserveShot shotSec = await captureFlutterFrame(
+            tester,
+            'emb-01b-secondary',
+          );
+          expect(shotSec.saved, isTrue);
+        }
+
         // ── ② 重进：按持久化的 embedded:<n> 恢复（原版 → cue；兼容层 → 解码回流）──
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
@@ -223,6 +268,30 @@ void main() {
           expect(hooks2.debugPlayerDecodedSubtitleActive, isTrue,
               reason: '兼容层 → 重进后仍由 libmpv 解码回流');
           expect(hooks2.debugGraphicSubtitleActive, isFalse);
+        }
+        if (_secondaryTrackIndex >= 0) {
+          for (int i = 0; i < 40; i++) {
+            await tester.pump(const Duration(milliseconds: 250));
+            if (hooks2.debugSecondaryCueCount > 0 ||
+                hooks2.debugSecondaryPlayerDecodedSubtitleActive) {
+              break;
+            }
+          }
+          debugPrint(
+            '[emb-itest] reopen secondary: '
+            'source=${hooks2.debugCurrentSecondarySubtitleSource} '
+            'decoded=${hooks2.debugSecondaryPlayerDecodedSubtitleActive} '
+            'cues=${hooks2.debugSecondaryCueCount}',
+          );
+          expect(hooks2.debugCurrentSecondarySubtitleSource,
+              'embedded:$_secondaryTrackIndex',
+              reason: '重进应恢复上次选的副字幕轨');
+          if (_expectFallback) {
+            expect(hooks2.debugSecondaryPlayerDecodedSubtitleActive, isTrue,
+                reason: '兼容层 → 重进后副字幕仍由 libmpv 解码回流');
+          } else {
+            expect(hooks2.debugSecondaryCueCount, greaterThan(0));
+          }
         }
         final ObserveShot shot3 = await captureFlutterFrame(
           tester,
