@@ -33,6 +33,12 @@
 //                               ⑦ 已执行 fakeanki 时在查词卡上触发「制卡」（手柄 A 同一路径），
 //                                  卡里有台词、语音、图片。
 //                               每条一行 PASS/FAIL + 证据，末行 verdict=full|partial。
+//   dlsources                   列出发现源（id / 展示名 / 是否自配），供 dlsearch 选源
+//   dlsearch <源id|*> <关键词…>  走发现页同一条 mediaDiscoveryService.load 搜游戏，
+//                               结果编号暂存（只留可下载的资源条目）
+//   dl <序号> <目标目录>         把 dlsearch 的第 n 条交给 app 的 discoveryDownloadQueue
+//                               （发现页「下载」同一路径：下完自动解压 + 登记进游戏库），立即返回
+//   dlstat                      下载队列每个任务的状态 / 字节 / 落盘路径 / 错误 / 入库结果
 //   lines [n]                   最近 n 条台词
 //   shot game|card|hwnd:<n>     WGC 抓窗口像素（与制卡截图同一通道）
 //   windows                     枚举 FushiGlobalLookupWindow 类窗口的可见性/矩形
@@ -60,10 +66,16 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/media/discovery/media_discovery_service.dart';
+import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
+import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:integration_test/integration_test.dart';
@@ -255,6 +267,11 @@ void main() {
     }
 
     FakeAnkiConnect? fakeAnki;
+    List<DiscoveryResourceItem> lastFound = <DiscoveryResourceItem>[];
+
+    AppModel readAppModel() => ProviderScope.containerOf(
+          tester.element(find.byType(MaterialApp).first),
+        ).read(appProvider);
 
     Future<(TexthookerLineEntry, GalHookMiningResult)?> mineLatest() async {
       final ProviderContainer container = ProviderScope.containerOf(
@@ -536,9 +553,23 @@ void main() {
                 verdict('card', false, 'no lookup card to mine from');
               } else {
                 final int notesBefore = anki.notes.length;
+                // 卡片有两种承载：位图路由画进游戏 Layer（独占手柄路由
+                // GalIngameLookupGamepadRoute 持有钩子），直连路由是独立的桌面查词窗口
+                // （BUG-1882，用户用鼠标点窗里的「+」）。直连时按同一个 popup.js 入口
+                // fushiPopupMineFirstEntry 向桌面查词窗下发「mine」，等价于点「+」。
                 final DictionaryPopupGamepadHooks? popup =
-                    DictionaryPopupGamepadRegistry.current;
-                if (popup != null) await popup.mineFirstEntry();
+                    GalIngameLookupGamepadRoute.current ??
+                        DictionaryPopupGamepadRegistry.current;
+                final String mineVia = popup != null
+                    ? (GalIngameLookupGamepadRoute.current != null
+                        ? 'ingameRoute'
+                        : 'appPopup')
+                    : 'desktopLookupWindow';
+                if (popup != null) {
+                  await popup.mineFirstEntry();
+                } else {
+                  await GlobalLookupChannel.gamepadAction('mine');
+                }
                 await pollUntil(() => anki.notes.length > notesBefore,
                     const Duration(seconds: 30));
                 final Map<String, Object?>? note =
@@ -546,8 +577,11 @@ void main() {
                 final Map<String, String> fields = note == null
                     ? const <String, String>{}
                     : Map<String, String>.from(note['fields']! as Map);
+                // 句子字段会把查到的词加粗（「そろそろ<b>着きます</b>けど…」），先去标签再比。
                 final bool hasSentence = lineText.isNotEmpty &&
-                    fields.values.any((String v) => v.contains(lineText));
+                    fields.values.any((String v) => v
+                        .replaceAll(RegExp(r'<[^>]*>'), '')
+                        .contains(lineText));
                 final bool hasAudio =
                     fields.values.any((String v) => v.contains('[sound:'));
                 final bool hasImage =
@@ -555,7 +589,7 @@ void main() {
                 verdict(
                   'card',
                   note != null && hasSentence && hasAudio && hasImage,
-                  'popup=${popup != null} noteId=${note?['noteId']} '
+                  'via=$mineVia noteId=${note?['noteId']} '
                       'sentence=$hasSentence audio=$hasAudio image=$hasImage '
                       'media=${anki.mediaFileNames.length} '
                       'ankiActions=${anki.requests.map((Map<String, Object?> r) => r['action']).toSet().join('/')}',
@@ -568,6 +602,80 @@ void main() {
               }
               out('#$seq ACCEPT4 verdict='
                   '${failed.isEmpty ? 'full' : 'partial missing=${failed.join(',')}'}');
+            case 'ankilast':
+              final FakeAnkiConnect? ankiNow = fakeAnki;
+              if (ankiNow == null || ankiNow.notes.isEmpty) {
+                out('#$seq ankilast none');
+              } else {
+                final Map<String, Object?> note = ankiNow.notes.last;
+                final Map<Object?, Object?> fields =
+                    note['fields']! as Map<Object?, Object?>;
+                out('#$seq ankilast noteId=${note['noteId']}\n    ${fields.entries.map(
+                      (MapEntry<Object?, Object?> e) =>
+                          '${e.key}=${e.value.toString().replaceAll('\n', '⏎')}',
+                    ).join('\n    ')}');
+              }
+            case 'dlsources':
+              final List<MediaDiscoverySource> sources =
+                  readAppModel().mediaDiscoveryService.sources;
+              out('#$seq dlsources n=${sources.length}\n    ${sources.map(
+                    (MediaDiscoverySource s) =>
+                        '${s.id} name=${s.displayName} '
+                        'userConfigured=${s.isUserConfigured}',
+                  ).join('\n    ')}');
+            case 'dlsearch':
+              // dlsearch <源id|*> <关键词…>
+              final String sourceArg = parts.length > 1 ? parts[1] : '*';
+              final String query = parts.length > 2
+                  ? cmd.substring(cmd.indexOf(parts[2], op.length + 1)).trim()
+                  : '';
+              final DiscoveryAggregateResult found =
+                  await readAppModel().mediaDiscoveryService.load(
+                        DiscoveryRequest(
+                          kind: DiscoveryMediaKind.game,
+                          query: query,
+                        ),
+                        sourceId: sourceArg == '*' ? null : sourceArg,
+                      );
+              lastFound = found.entries
+                  .whereType<DiscoveryResourceItem>()
+                  .toList(growable: false);
+              final StringBuffer sb = StringBuffer(
+                '#$seq dlsearch source=$sourceArg query=$query '
+                'n=${lastFound.length} failures=${found.failures.length}',
+              );
+              for (int i = 0; i < lastFound.length && i < 60; i++) {
+                final DiscoveryResourceItem item = lastFound[i];
+                final int? size = item.sizeBytes;
+                sb.write('\n    [$i] ${item.sourceId} '
+                    '${size == null ? '?' : (size / (1 << 30)).toStringAsFixed(2)}G '
+                    '${item.title}');
+              }
+              for (final ExternalProviderFailure f in found.failures) {
+                sb.write('\n    failure ${f.providerId}: ${f.message}');
+              }
+              out(sb.toString());
+            case 'dl':
+              // dl <序号> <目标目录>
+              final int index = int.parse(parts[1]);
+              final String dest = cmd.substring(cmd.indexOf(parts[2])).trim();
+              Directory(dest).createSync(recursive: true);
+              final bool queued = readAppModel()
+                  .discoveryDownloadQueue
+                  .enqueue(lastFound[index], destinationDir: dest);
+              out('#$seq dl queued=$queued title=${lastFound[index].title} '
+                  'dest=$dest');
+            case 'dlstat':
+              final List<DiscoveryDownloadTask> tasks =
+                  readAppModel().discoveryDownloadQueue.tasks;
+              out('#$seq dlstat n=${tasks.length}\n    ${tasks.map(
+                    (DiscoveryDownloadTask t) =>
+                        '${t.status.name} ${t.receivedBytes}/${t.totalBytes} '
+                        'file=${t.filePath} error=${t.error} '
+                        'imported=${t.importOutcome?.importedCount} '
+                        'summary=${t.importOutcome?.summary} '
+                        'title=${t.item.title}',
+                  ).join('\n    ')}');
             case 'thread':
               // 只传 native threadId 会让 Dart 侧 `_selectedTextThreadKey` 留空，
               // 而 `selectedSessionLines` 在 key 为空时**恒返回空表**——工作台看得见
