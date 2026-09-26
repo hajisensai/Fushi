@@ -323,7 +323,6 @@ class JellyfinSubtitleStream {
   final bool isTextSubtitleStream;
 }
 
-/// 一个库条目（电影 / 剧 / 季 / 集 / 文件夹）。只保留视频域消费的字段。
 /// **纯函数**：Emby / Jellyfin 的视频 `MediaStreams[]` 条目是否**无兼容基础层**的
 /// 杜比视界（Profile 5 类，像素是 IPTPQc2，不做 RPU 重整就是紫绿反色，BUG-2691）。
 ///
@@ -344,6 +343,7 @@ bool mediaStreamRequiresDolbyVisionReshape(Map<String, Object?> stream) {
   return stream['VideoRangeType'] == 'DOVI';
 }
 
+/// 一个库条目（电影 / 剧 / 季 / 集 / 文件夹）。只保留视频域消费的字段。
 class JellyfinItem {
   const JellyfinItem({
     required this.id,
