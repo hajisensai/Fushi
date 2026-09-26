@@ -2880,6 +2880,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 预下载下一话（对齐 Mihon「预下载」）：读在线章过了约 2/3（短章一进来就
   /// 算），且下一话没下载、没在队列里，就把它排进下载队列——连续阅读不必在每个
   /// 章节边界停下来等下载。每章每会话只判一次；本地书与来源回看会话不参与。
+  ///
+  /// 只有当前章本身是已下载章时才往后预下载（与 Mihon 同口径）：在线直读
+  /// （[_streamingChapter]）的用户选的就是不下载，读到哪就把下一话持久化下到
+  /// 哪会悄悄累积流量与存储、并与直读会话一起对源站翻倍并发（所有者 2026-09-26
+  /// 拍板）。
   Future<void> _maybePrefetchNextChapter() async {
     final OnlineMangaLibraryEntry? entry = _shelfEntry;
     final EpubBookRow? row = _bookRow;
@@ -2889,6 +2894,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         row == null ||
         chapterKey == null ||
         _chapterNotDownloaded ||
+        _streamingChapter ||
         _switchingChapter ||
         _sourceReviewActive ||
         !_readerPreferences.downloadAhead ||

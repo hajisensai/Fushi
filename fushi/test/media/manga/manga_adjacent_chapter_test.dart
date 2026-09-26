@@ -284,6 +284,8 @@ void main() {
         'Future<void> _maybePrefetchNextChapter() async {',
       );
       expect(prefetch, contains('_readerPreferences.downloadAhead'));
+      // 在线直读章不预下载：只有当前章本身已下载才往后下（所有者 2026-09-26）。
+      expect(prefetch, contains('_streamingChapter ||'));
       expect(prefetch, contains('shouldPrefetchNextMangaChapter('));
       expect(prefetch, contains('_adjacentChapterIndex(forward: true)'));
       expect(prefetch, contains('_prefetchCheckedChapterKeys'));
