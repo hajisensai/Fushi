@@ -1383,6 +1383,35 @@ void main() {
       expect(launch.gameTarget, isTrue);
       expect(launch.localeLaunch, isTrue);
     });
+    // BUG-2704：加载器初始化门等用户操作时的 WAIT 记录。两侧同一契约：native 打印格式
+    // 与 Dart 解析器必须一起改。
+    test('native loader gate prints the WAIT records the host parses', () {
+      final String producer = File(
+        '../native/galgame_hook/injector/injector_main.cpp',
+      ).readAsStringSync();
+      expect(producer, contains('"WAIT pid=%lu reason=%s\\n"'));
+      expect(producer, contains('waiting_user ? "user" : "none"'));
+      expect(producer, contains('"WAIT pid=%lu reason=none\\n"'));
+    });
+    test('user-wait records are parsed strictly', () {
+      expect(parseInjectorUserWait('WAIT pid=3333 reason=user\n'), isTrue);
+      expect(parseInjectorUserWait('WAIT pid=3333 reason=none\r\n'), isFalse);
+      expect(
+        parseInjectorUserWait(
+          'WAIT pid=3333 reason=user\nWAIT pid=3333 reason=none\n',
+        ),
+        isFalse,
+      );
+      for (final String malformed in <String>[
+        'WAIT pid=0 reason=user\n',
+        'WAIT pid=3333 reason=launcher\n',
+        'WAIT pid=3333\n',
+        'LAUNCH pid=3333 arch=x86 role=game\n',
+        ' WAIT pid=3333 reason=user\n',
+      ]) {
+        expect(parseInjectorUserWait(malformed), isNull, reason: malformed);
+      }
+    });
     test('注入结果之前就能拿到已创建的游戏 PID', () {
       expect(parseInjectorLaunchedPid('LAUNCH pid=20096 arch=x64\n'), 20096);
     });

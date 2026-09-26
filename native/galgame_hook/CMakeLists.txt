@@ -623,6 +623,15 @@ target_include_directories(fushi_kirikiri_launch_profile_test PRIVATE "include")
 add_test(NAME fushi_kirikiri_launch_profile_test
   COMMAND fushi_kirikiri_launch_profile_test)
 
+# 加载器初始化门：KiriKiri launch profile（XP3 归档签名）+ exe 带 TLS 回调时，由主线程自己跑
+# 进程初始化再注入；含跨引擎负向（带 TLS 回调的非 KiriKiri 不过门）。
+add_executable(fushi_loader_init_gate_test
+  "tests/loader_init_gate_test.cpp"
+)
+target_include_directories(fushi_loader_init_gate_test PRIVATE "include")
+add_test(NAME fushi_loader_init_gate_test
+  COMMAND fushi_loader_init_gate_test)
+
 add_executable(fushi_luna_hook_config_test tests/luna_hook_config_test.cpp)
 target_include_directories(fushi_luna_hook_config_test PRIVATE include)
 add_test(NAME fushi_luna_hook_config_test COMMAND fushi_luna_hook_config_test)
