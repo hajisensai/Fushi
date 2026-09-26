@@ -1189,8 +1189,9 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     return OnlineMangaLibraryService.resumeChapterIndex(entry, _states);
   }
 
-  /// 点章节：已下载 → 开读；否则入队并提示（设计稿 2026-09-12 §5，在线漫画先
-  /// 下载再读）。未入库的先入库——任务表按 bookKey 记，没有行就没地方挂任务。
+  /// 点章节：开读——已下载从磁盘读，未下载在线直读（2026-09-26 用户撤回设计稿
+  /// 2026-09-12 §1.1「先下载再读」；下载入口不变，走章节行溢出菜单 / 下载全部）。
+  /// 未入库的先入库——进度、已读标记、下载任务都按 bookKey 记，没有行就无处可落。
   Future<void> _openChapterAt(int index) async {
     final OnlineMangaLibraryService? service = _service;
     OnlineMangaLibraryEntry? entry = _entry;
@@ -1212,9 +1213,13 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
       }
       final OnlineMangaChapter chapter = entry.chapters[index];
       final String bookDir = await MangaStorage.bookPath(bookKey);
-      if (!await isChapterDownloaded(bookDir, chapter.key)) {
-        if (chapter.locked && !await _promptLockedChapter(chapter)) return;
-        await _enqueueChapter(chapter);
+      // 未下载的章也直接开读：阅读器按同一判据分流，已下载从磁盘读、未下载在线
+      // 直读（2026-09-26 用户撤回设计稿 §1.1）。锁章（源标了要登录 / 购买）照旧
+      // 先问：弹窗的出口是「仍然下载」/「登录」，选下载就入队、不开读。
+      if (chapter.locked && !await isChapterDownloaded(bookDir, chapter.key)) {
+        if (await _promptLockedChapter(chapter)) {
+          await _enqueueChapter(chapter);
+        }
         return;
       }
       final OnlineMangaLibraryEntry selected = await service.selectChapter(

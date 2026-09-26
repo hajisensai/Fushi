@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/media/novel/online/lnreader_cloudflare.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
+import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
@@ -284,7 +287,7 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
         ),
       );
     }
-    final Map<String, String> headers =
+    final Map<String, String> pluginHeaders =
         _info?.imageHeaders ?? const <String, String>{};
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -319,7 +322,12 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Expanded(
-                    child: LnReaderCover(url: item.cover, headers: headers),
+                    child: LnReaderCover(
+                      url: item.cover,
+                      site: widget.plugin.site,
+                      pluginHeaders: pluginHeaders,
+                      cloudflare: widget.manager.cloudflare,
+                    ),
                   ),
                   Padding(
                     padding: const EdgeInsets.all(10),
@@ -339,13 +347,27 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
   }
 }
 
-/// 小说封面：插件给的封面地址 + 插件要求的请求头（Referer 等），走 app 代理出口
-/// 的 [AppHttpImage]。缺图 / 插件占位图 / 失败统一画书本图标。
+/// 小说封面：插件给的封面地址，请求头按 [lnReaderImageHeaders] 装配（浏览器 UA +
+/// Referer=站点 打底、插件 `imageRequestInit` 覆盖、Cloudflare 放行 cookie），走
+/// app 代理出口的磁盘缓存 [AppCachedHttpImage]（超时 / 5xx 自动退避重试，滚动
+/// 往返与重进页面不重复下载）。缺图 / 插件占位图 / 失败统一画书本图标。
 class LnReaderCover extends StatelessWidget {
-  const LnReaderCover({required this.url, required this.headers, super.key});
+  const LnReaderCover({
+    required this.url,
+    required this.site,
+    this.pluginHeaders = const <String, String>{},
+    this.cloudflare,
+    super.key,
+  });
 
   final String? url;
-  final Map<String, String> headers;
+
+  /// 插件站点：相对地址的兜底基址，也是默认 Referer。
+  final String site;
+
+  /// 插件 `imageRequestInit.headers`。
+  final Map<String, String> pluginHeaders;
+  final LnReaderCloudflare? cloudflare;
 
   @override
   Widget build(BuildContext context) {
@@ -354,21 +376,67 @@ class LnReaderCover extends StatelessWidget {
       color: FushiDesignTokens.of(context).surfaces.group,
       child: const Center(child: Icon(Icons.menu_book_outlined, size: 36)),
     );
-    final String? value = url;
-    if (value == null ||
-        value.isEmpty ||
-        value.contains('coverNotAvailable') ||
-        !value.startsWith('http')) {
-      return fallback;
-    }
+    final ImageProvider<Object>? image = lnReaderCoverImage(
+      url,
+      site: site,
+      pluginHeaders: pluginHeaders,
+      cloudflare: cloudflare,
+    );
+    if (image == null) return fallback;
     return Image(
-      image: AppHttpImage(value, headers: headers.isEmpty ? null : headers),
+      image: image,
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) => fallback,
       loadingBuilder: (_, Widget child, ImageChunkEvent? progress) =>
           progress == null ? child : fallback,
     );
   }
+}
+
+/// 封面地址 → 图片来源；不可用（空 / 插件「无封面」占位 / 本机地址 / 认不出的
+/// scheme）返回 null。
+///
+/// 宿主脚本已按站点补全相对地址，这里再兜一次底（旧缓存结果、插件 `parseNovel`
+/// 之外的来源）。`data:` 内联图直接解码，不发请求。
+ImageProvider<Object>? lnReaderCoverImage(
+  String? url, {
+  required String site,
+  Map<String, String> pluginHeaders = const <String, String>{},
+  LnReaderCloudflare? cloudflare,
+}) {
+  final String value = url?.trim() ?? '';
+  if (value.isEmpty || isLnReaderPlaceholderCover(value)) return null;
+  if (value.startsWith('data:')) {
+    final UriData? data = Uri.tryParse(value)?.data;
+    if (data == null || !data.mimeType.startsWith('image/')) return null;
+    try {
+      return MemoryImage(data.contentAsBytes());
+    } on FormatException {
+      return null;
+    }
+  }
+  final Uri? base = Uri.tryParse(site);
+  final Uri? parsed = Uri.tryParse(value);
+  final Uri? uri = parsed == null
+      ? null
+      : parsed.hasScheme || base == null
+      ? parsed
+      : base.resolveUri(parsed);
+  if (uri == null ||
+      (uri.scheme != 'http' && uri.scheme != 'https') ||
+      uri.host.isEmpty ||
+      isLnReaderBlockedHost(uri.host)) {
+    return null;
+  }
+  return AppCachedHttpImage(
+    uri.toString(),
+    headers: lnReaderImageHeaders(
+      uri: uri,
+      referer: site,
+      pluginHeaders: pluginHeaders,
+      cloudflare: cloudflare,
+    ),
+  );
 }
 
 /// 插件筛选对话框：按种类出控件（下拉 / 文本 / 开关 / 多选 / 三态多选）。

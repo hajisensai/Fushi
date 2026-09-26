@@ -185,8 +185,8 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
 /// `MihonLibraryService` 直接把 `MihonManager` 焊死在签名里。
 ///
 /// 取页是**两段式**（设计稿 2026-09-12 §3）：先 [resolveChapterPages] 拿页表，再逐页
-/// [fetchChapterPage] 取字节。没有阅读会话、没有页缓存——在线章只能下载后读，
-/// 落盘由 `MangaDownloadService` 统一做。
+/// [fetchChapterPage] 取字节。两个消费者共用这一对方法：下载服务（落章目录）与
+/// 阅读器的在线直读会话 `OnlineMangaReaderSession`（2026-09-26 起，临时缓存）。
 abstract interface class OnlineMangaRuntimeAdapter {
   OnlineMangaRuntimeKind get kind;
 

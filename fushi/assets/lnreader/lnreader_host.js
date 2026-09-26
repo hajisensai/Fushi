@@ -359,14 +359,29 @@
     return text ? text : null;
   }
 
-  function normaliseItems(items) {
+  /**
+   * 封面地址按插件站点补全：不少站点在列表里给相对（`/img/x.jpg`）或协议相对
+   * （`//cdn…`）地址，LNReader app 的 `<Image>` 也只认绝对地址，原样透传就只能
+   * 画占位图。`data:` 与绝对地址不动；补不全就原样返回（由 Dart 侧判不可用）。
+   */
+  function resolveCover(plugin, cover) {
+    var value = optionalStr(cover);
+    if (!value || /^(https?:|data:)/i.test(value)) return value;
+    try {
+      return new URL(value, plugin && plugin.site).toString();
+    } catch (_) {
+      return value;
+    }
+  }
+
+  function normaliseItems(items, plugin) {
     if (!Array.isArray(items)) return [];
     return items
       .filter(function (item) {
         return item && item.path != null;
       })
       .map(function (item) {
-        return { name: str(item.name).trim(), path: str(item.path), cover: optionalStr(item.cover) };
+        return { name: str(item.name).trim(), path: str(item.path), cover: resolveCover(plugin, item.cover) };
       });
   }
 
@@ -467,20 +482,22 @@
         });
       }
       var options = { showLatestNovels: !!showLatest, filters: filters };
-      return normaliseItems(await plugin.popularNovels(page, options));
+      return normaliseItems(await plugin.popularNovels(page, options), plugin);
     },
 
     search: async function (id, term, page) {
-      return normaliseItems(await pluginFor(id).searchNovels(term, page));
+      var plugin = pluginFor(id);
+      return normaliseItems(await plugin.searchNovels(term, page), plugin);
     },
 
     novel: async function (id, path) {
-      var novel = (await pluginFor(id).parseNovel(path)) || {};
+      var plugin = pluginFor(id);
+      var novel = (await plugin.parseNovel(path)) || {};
       var totalPages = Number(novel.totalPages);
       return {
         name: str(novel.name).trim(),
         path: str(novel.path || path),
-        cover: optionalStr(novel.cover),
+        cover: resolveCover(plugin, novel.cover),
         genres: optionalStr(novel.genres),
         summary: optionalStr(novel.summary),
         author: optionalStr(novel.author),

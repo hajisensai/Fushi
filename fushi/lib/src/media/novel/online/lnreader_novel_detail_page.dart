@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
+import 'package:fushi_core/fushi_core.dart' show BookFormat;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -10,17 +12,22 @@ import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_cloudflare_action.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/collections_page.dart'
+    show buildCollectionReaderMediaItem;
 import 'package:fushi/utils.dart';
 
 /// 小说源的作品页：详情 + 章节目录 → 选章节范围下载进书架。
 ///
 /// 版式与视频源作品页（`AnimeSourceDetailPage`）一致：封面 + 标题 / 作者 /
-/// 类型，简介，列表区；页头「在网站打开」「刷新」。差别在落地动作：视频点集
-/// 直接进播放器，小说是**下载成 EPUB 进书架**——入库后就是一本普通书，阅读器 /
-/// 查词 / 制卡 / 统计 / 同步全部复用。点某一章 = 从这一章开始下载。
+/// 类型，简介，列表区；页头「在网站打开」「刷新」。点某一章 = **在线阅读**这一章
+/// （[LnReaderOnlineLibrary]：作品第一次在线打开时建成全章占位书进书架，阅读器
+/// 读到哪章取哪章）；行尾下载按钮 / 「加入书架」= 把选定范围整本下载成 EPUB。
+/// 两条路都落到普通书，阅读器 / 查词 / 制卡 / 统计 / 同步全部复用。
 class LnReaderNovelDetailPage extends ConsumerStatefulWidget {
   const LnReaderNovelDetailPage({
     required this.manager,
@@ -49,6 +56,9 @@ class _LnReaderNovelDetailPageState
   LnReaderNovel? _novel;
   bool _loading = true;
   Object? _error;
+
+  /// 正在准备在线书（首次建占位书 / 同步章节列表），期间禁止重复点。
+  bool _opening = false;
 
   @override
   void initState() {
@@ -106,6 +116,63 @@ class _LnReaderNovelDetailPageState
 
   static Future<void> _launchExternal(Uri url) async {
     await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  /// 在线阅读：找到或建好这部作品的在线书，再开阅读器。[chapterIndex] 为 null
+  /// 时续读上次的位置（新书从第一章开始）。
+  Future<void> _readOnline({int? chapterIndex}) async {
+    final LnReaderNovel? novel = _novel;
+    if (novel == null || novel.chapters.isEmpty || _opening) return;
+    setState(() => _opening = true);
+    final AppModel appModel = ref.read(appProvider);
+    final String bookKey;
+    try {
+      bookKey =
+          await LnReaderOnlineLibrary(
+            manager: widget.manager,
+            database: appModel.database,
+            download: LnReaderBookDownload(
+              manager: widget.manager,
+              database: appModel.database,
+              httpClientFactory: createAppHttpClient,
+            ),
+          ).ensureBook(
+            plugin: widget.plugin,
+            novel: novel,
+            pendingText: t.novel_online_chapter_pending,
+          );
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() => _opening = false);
+      FushiToast.show(
+        msg: t.novel_online_open_failed(error: '$error'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _opening = false);
+    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+    ref.invalidate(srtBooksProvider);
+    final MediaItem item = buildCollectionReaderMediaItem(
+      bookKey: bookKey,
+      title: novel.name.isNotEmpty ? novel.name : widget.item.name,
+      format: BookFormat.epub,
+    );
+    await appModel.openMedia(
+      ref: ref,
+      mediaSource: item.getMediaSource(appModel: appModel),
+      item: item,
+      waitUntilClosed: false,
+      initialBookmarkJump: chapterIndex == null
+          ? null
+          : Bookmark(
+              sectionIndex: chapterIndex,
+              normCharOffset: 0,
+              label: '',
+              createdAt: DateTime.now(),
+            ),
+    );
   }
 
   Future<void> _download({int startIndex = 0}) async {
@@ -211,7 +278,9 @@ class _LnReaderNovelDetailPageState
                 padding: EdgeInsets.zero,
                 child: LnReaderCover(
                   url: novel?.cover ?? widget.item.cover,
-                  headers: widget.imageHeaders,
+                  site: widget.plugin.site,
+                  pluginHeaders: widget.imageHeaders,
+                  cloudflare: widget.manager.cloudflare,
                 ),
               ),
             ),
@@ -241,13 +310,34 @@ class _LnReaderNovelDetailPageState
                       ),
                     ),
                   const SizedBox(height: 12),
-                  FilledButton.icon(
-                    key: const ValueKey<String>('novel_detail_library_add'),
-                    onPressed: chapters.isEmpty
-                        ? null
-                        : () => unawaited(_download()),
-                    icon: const Icon(Icons.library_add_outlined),
-                    label: Text(t.novel_detail_library_add),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      FilledButton.icon(
+                        key: const ValueKey<String>('novel_detail_read_online'),
+                        onPressed: chapters.isEmpty || _opening
+                            ? null
+                            : () => unawaited(_readOnline()),
+                        icon: _opening
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.menu_book_outlined),
+                        label: Text(t.novel_detail_read_online),
+                      ),
+                      OutlinedButton.icon(
+                        key: const ValueKey<String>('novel_detail_library_add'),
+                        onPressed: chapters.isEmpty
+                            ? null
+                            : () => unawaited(_download()),
+                        icon: const Icon(Icons.download_outlined),
+                        label: Text(t.novel_detail_library_add),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -311,8 +401,15 @@ class _LnReaderNovelDetailPageState
         subtitle: chapter.releaseTime == null
             ? null
             : Text(chapter.releaseTime!),
-        trailing: const Icon(Icons.download_outlined),
-        onTap: () => unawaited(_download(startIndex: index)),
+        trailing: IconButton(
+          key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
+          tooltip: t.novel_detail_chapter_download,
+          onPressed: () => unawaited(_download(startIndex: index)),
+          icon: const Icon(Icons.download_outlined),
+        ),
+        onTap: _opening
+            ? null
+            : () => unawaited(_readOnline(chapterIndex: index)),
       ),
     );
   }

@@ -24,8 +24,9 @@ import 'package:path/path.dart' as p;
 
 import '../../helpers/test_platform_services.dart';
 
-/// 作品页「先下载再读」（设计稿 2026-09-12 §5）：点未下载的章 → 入队（表里出现
-/// queued 行）、不开阅读器；点已下载的章 → 开读、不入队。
+/// 作品页点章（设计稿 2026-09-12 §5 + 2026-09-26 补记：撤回「先下载再读」）：
+/// 点未下载的章 → 直接开读（阅读器在线直读）、不入队；点已下载的章 → 开读、不入队；
+/// 锁章 → 先弹锁章框，选「仍然下载」才入队、不开读。
 class _FakeAdapter implements OnlineMangaRuntimeAdapter {
   @override
   OnlineMangaRuntimeKind get kind => OnlineMangaRuntimeKind.mihon;
@@ -114,6 +115,13 @@ Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
 
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
   OnlineMangaChapter(
+    key: '/chapter/3',
+    name: 'Chapter 3',
+    number: 3,
+    locked: true,
+    raw: <String, Object?>{'url': '/chapter/3'},
+  ),
+  OnlineMangaChapter(
     key: '/chapter/2',
     name: 'Chapter 2',
     number: 2,
@@ -190,7 +198,7 @@ void main() {
     if (root.existsSync()) root.deleteSync(recursive: true);
   });
 
-  testWidgets('点未下载的章 → 表里出现 queued 行，不开阅读器', (WidgetTester tester) async {
+  testWidgets('点未下载的章 → 直接开读（在线直读），不入队', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -203,12 +211,12 @@ void main() {
       await tester.pumpWidget(_harness(appModel, bookKey));
       await _pumpUntil(tester, find.text('Chapter 1'));
       expect(find.text('Chapter 1'), findsOneWidget);
-      // 两章都没下载：状态位全是「未下载」。
+      // 三章都没下载：状态位全是「未下载」（下载入口照旧在）。
       expect(
         find.byKey(
           const ValueKey<String>('manga_chapter_download_notDownloaded'),
         ),
-        findsNWidgets(2),
+        findsNWidgets(3),
       );
 
       await tester.tap(find.text('Chapter 1'));
@@ -218,26 +226,54 @@ void main() {
       }
     });
 
+    expect(appModel.opened, hasLength(1), reason: '未下载也直接开读（在线直读）');
+    expect(await db.listMangaDownloadJobs(), isEmpty, reason: '点章不再隐式入队');
+    final EpubBookRow after = (await db.getEpubBook(bookKey))!;
+    expect(
+      OnlineMangaLibraryEntry.tryParse(after.sourceMetadata)!
+          .currentChapter
+          ?.key,
+      '/chapter/1',
+      reason: '开读前记下「选了这一章」，阅读器据此定位',
+    );
+  });
+
+  testWidgets('点未下载的锁章 → 先弹锁章框；选「仍然下载」入队、不开读', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final _TestAppModel appModel = _TestAppModel(db, library, root);
+
+    late String bookKey;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookKey = row.bookKey;
+      await tester.pumpWidget(_harness(appModel, bookKey));
+      await _pumpUntil(tester, find.text('Chapter 3'));
+      await tester.tap(find.text('Chapter 3'));
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_chapter_locked_dialog')),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('manga_chapter_locked_dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text(t.manga_chapter_locked_download_anyway));
+      for (int i = 0; i < 10; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+      }
+    });
+
     final MangaDownloadJobRow? job = await db.findMangaDownloadJob(
       kind: MangaDownloadJobKind.chapter,
       bookKey: bookKey,
-      chapterKey: '/chapter/1',
+      chapterKey: '/chapter/3',
     );
     expect(job, isNotNull);
     expect(job!.status, MangaDownloadJobStatus.queued);
-    expect(job.autoOcr, isFalse);
-    expect(appModel.opened, isEmpty, reason: '没下载就不能开读');
-    // 状态位跟着任务表刷新：这一章变成「排队中」。
-    await tester.runAsync(() async {
-      await _pumpUntil(
-        tester,
-        find.byKey(const ValueKey<String>('manga_chapter_download_queued')),
-      );
-    });
-    expect(
-      find.byKey(const ValueKey<String>('manga_chapter_download_queued')),
-      findsOneWidget,
-    );
+    expect(appModel.opened, isEmpty, reason: '锁章选下载就只入队');
   });
 
   testWidgets('点已下载的章 → 开读、不入队', (WidgetTester tester) async {

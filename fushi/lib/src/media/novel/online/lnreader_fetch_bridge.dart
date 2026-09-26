@@ -384,3 +384,42 @@ class LnReaderFetchBridge {
     _cookies.clear();
   }
 }
+
+/// 封面 / 插图请求头：与插件页面请求同一套默认头打底（桌面 Chrome UA、
+/// Referer = 站点），插件 `imageRequestInit.headers`（[pluginHeaders]）按名字不
+/// 分大小写覆盖，Cloudflare 放行 cookie（[cloudflare]）按图片地址补上。
+///
+/// 只带插件头时出去的是 Dart 默认 UA（`Dart/x (dart:io)`）且没有 Referer，防盗链
+/// / 查 UA 的图床一律 403，列表整页占位图；`cf_clearance` 又绑定解题时的 UA，所以
+/// UA 必须与宿主桥（[LnReaderFetchBridge.defaultUserAgent]）逐字节一致。
+Map<String, String> lnReaderImageHeaders({
+  required Uri uri,
+  String? referer,
+  Map<String, String> pluginHeaders = const <String, String>{},
+  LnReaderCloudflare? cloudflare,
+}) {
+  final Map<String, String> headers = <String, String>{
+    'User-Agent': LnReaderFetchBridge.defaultUserAgent,
+    'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+    if (referer != null && referer.isNotEmpty) 'Referer': referer,
+  };
+  pluginHeaders.forEach((String name, String value) {
+    headers.removeWhere(
+      (String key, String _) => key.toLowerCase() == name.toLowerCase(),
+    );
+    headers[name] = value;
+  });
+  final bool hasCookie = headers.keys.any(
+    (String key) => key.toLowerCase() == 'cookie',
+  );
+  if (!hasCookie) {
+    final List<MangaCookie> cookies =
+        cloudflare?.jar.cookiesFor(uri) ?? const <MangaCookie>[];
+    if (cookies.isNotEmpty) {
+      headers['Cookie'] = cookies
+          .map((MangaCookie cookie) => '${cookie.name}=${cookie.value}')
+          .join('; ');
+    }
+  }
+  return headers;
+}
