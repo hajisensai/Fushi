@@ -327,10 +327,13 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // `.jpg` / `.image` 名、正文前垫一张 PNG。播放器经本机中继 + mpv 自己的放宽都能播，
     // 制卡 ffmpeg 直连原始地址则被扩展名白名单拒掉、或把分片认成一张图。改走与播放器
     // 同一条中继；地址当场改写（同步，保持点击顺序入队），登记在队列里等。
+    // 媒体服务器同理，判据见 [videoMiningInputUsesPlaybackRelay]。
     Future<void>? mediaSourceRouteReady;
     if (mediaSource != null &&
-        _effectiveRemoteClient is RemoteVideoStreamHeaders &&
-        isNetworkStreamUri(mediaSource)) {
+        videoMiningInputUsesPlaybackRelay(
+          remoteClient: _effectiveRemoteClient,
+          mediaSource: mediaSource,
+        )) {
       final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
         mediaSource,
         isHls: controller.isHlsStream(),
@@ -603,6 +606,26 @@ extension _VideoLookupMining on _VideoFushiPageState {
       debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
     }
   }
+}
+
+/// 制卡 ffmpeg 的远端输入是否改走本机中继（与播放器同一条取流路径）。
+///
+/// - 在线视频源（[RemoteVideoStreamHeaders]：扩展 hoster / 粘贴的流）：BUG-2642 残留，
+///   伪装成图片的 HLS 分片只有中继 + 放开扩展名才读得动。
+/// - 媒体服务器（[MediaServerBrowser]：Emby / Jellyfin）：BUG-2692。播放器早就经
+///   [nativePlaybackUri] 走中继（Dart 的 TLS + 应用代理），制卡 ffmpeg 却直连原始
+///   https——移动端 ffmpeg-kit 用自己编进去的 TLS、也不认应用代理，于是「能播放、
+///   制不了卡」，截图 / 动图 / 句子音频三条抽取全报 `I/O error`。
+/// - 互联主机**不在此列**：它有指纹钉扎（`-tls_pin_sha256` 只对 https 输入有效，
+///   改成中继的明文地址反而让 ffmpeg 报选项不认）与 host 端裁音频两条专用通道。
+/// - 本地文件 / YouTube（没有远端 client）不改道。
+bool videoMiningInputUsesPlaybackRelay({
+  required RemoteVideoClient? remoteClient,
+  required String mediaSource,
+}) {
+  if (!isNetworkStreamUri(mediaSource)) return false;
+  return remoteClient is RemoteVideoStreamHeaders ||
+      remoteClient is MediaServerBrowser;
 }
 
 /// 纯函数：据是否播放列表 + 系列名 + 剧集名算制卡 `documentTitle`（TODO-761，方案 B）。
