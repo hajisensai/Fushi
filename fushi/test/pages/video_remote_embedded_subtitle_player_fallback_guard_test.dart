@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import '../helpers/source_guard.dart';
@@ -131,6 +133,22 @@ void main() {
         expect(src.contains(banned), isFalse,
             reason: '视频页出现了远端流 ffmpeg 抽取入口：$banned');
       }
+    });
+
+    test('副槽不选主字幕正占着的同一条轨（libmpv 静默不切，不得假装成功）', () {
+      final String body = compactCode(
+        methodBody(
+          File('lib/src/media/video/video_player_controller.dart')
+              .readAsStringSync(),
+          'Future<bool> selectEmbeddedSecondaryTextTrackViaPlayer(',
+        ),
+      );
+      final int guard = body.indexOf(
+        'if(player.state.track.subtitle.id==real[streamIndex].id)returnfalse;',
+      );
+      expect(guard, greaterThanOrEqualTo(0));
+      expect(guard, lessThan(body.indexOf('setSecondaryCues(')),
+          reason: '要在清副 cue、下发 secondary-sid 之前拦下');
     });
   });
 }

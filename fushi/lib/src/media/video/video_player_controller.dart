@@ -1275,6 +1275,9 @@ class VideoPlayerController extends ChangeNotifier
         .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
         .toList(growable: false);
     if (streamIndex < 0 || streamIndex >= real.length) return false;
+    // 同一条轨不能同时占主、副两个槽：libmpv 对 `secondary-sid` 报「Track already
+    // selected」后静默不切，照常返回 true 就会一直等不到副字幕、还提示「随播放出现」。
+    if (player.state.track.subtitle.id == real[streamIndex].id) return false;
     // 清掉旧副 cue（同时结束上一次副字幕回流）。
     setSecondaryCues(const <AudioCue>[]);
     // 先关可见性再选轨：顺序反过来 libmpv 会把副字幕画进画面一瞬。
