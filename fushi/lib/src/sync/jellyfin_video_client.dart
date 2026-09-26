@@ -323,6 +323,26 @@ class JellyfinSubtitleStream {
   final bool isTextSubtitleStream;
 }
 
+/// **纯函数**：Emby / Jellyfin 的视频 `MediaStreams[]` 条目是否**无兼容基础层**的
+/// 杜比视界（Profile 5 类，像素是 IPTPQc2，不做 RPU 重整就是紫绿反色，BUG-2691）。
+///
+/// - Emby：`ExtendedVideoSubtype` 形如 `DoviProfile50`（P5）/ `DoviProfile81`
+///   （P8.1，HDR10 兼容）/ `DoviProfile84`（HLG 兼容）/ `DoviProfile76`——只有
+///   Profile 5 没有兼容层；
+/// - Jellyfin：`DvProfile` + `DvBlSignalCompatibilityId`（0 = 无兼容层），
+///   `VideoRangeType` 为纯 `DOVI`（带兼容层的是 `DOVIWithHDR10` 等）。
+bool mediaStreamRequiresDolbyVisionReshape(Map<String, Object?> stream) {
+  final Object? subtype = stream['ExtendedVideoSubtype'];
+  if (subtype is String && subtype.startsWith('DoviProfile5')) return true;
+  final Object? profile = stream['DvProfile'];
+  if (profile is num) {
+    if (profile.toInt() == 5) return true;
+    final Object? compat = stream['DvBlSignalCompatibilityId'];
+    if (compat is num && compat.toInt() == 0) return true;
+  }
+  return stream['VideoRangeType'] == 'DOVI';
+}
+
 /// 一个库条目（电影 / 剧 / 季 / 集 / 文件夹）。只保留视频域消费的字段。
 class JellyfinItem {
   const JellyfinItem({
@@ -341,6 +361,7 @@ class JellyfinItem {
     this.mediaSourceId,
     this.subtitleStreams = const <JellyfinSubtitleStream>[],
     this.hasTextSubtitle = false,
+    this.videoRequiresDolbyVisionReshape = false,
     this.sizeBytes,
     this.lastPlayedAtMs = 0,
     this.childCount,
@@ -353,6 +374,8 @@ class JellyfinItem {
     this.hasBackdrop = false,
     this.hasThumbImage = false,
     this.hasLogoImage = false,
+    this.parentThumbItemId,
+    this.parentBackdropItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
@@ -391,6 +414,13 @@ class JellyfinItem {
   final bool hasThumbImage;
   final bool hasLogoImage;
 
+  /// 集 / 季借用的上级横图（`ParentThumbItemId` + `ParentThumbImageTag`、
+  /// `ParentBackdropItemId` + `ParentBackdropImageTags`）：服务器已经替客户端
+  /// 找好「这张图挂在哪个祖先上」，只有对应 tag 存在时才非 null——没 tag 的 id
+  /// 拿去请求必 404。「继续观看」横卡在集自身没有横图时回落到它们。
+  final String? parentThumbItemId;
+  final String? parentBackdropItemId;
+
   /// 详情字段（`Overview` / `CommunityRating` / `Genres`）：清单请求不带对应
   /// Fields 时为空，单条目 `/Items/{id}` 全量返回。
   final String? overview;
@@ -415,6 +445,10 @@ class JellyfinItem {
 
   /// 默认媒体源的文件字节数（MediaSources[0].Size）；服务器没给则 null。
   final int? sizeBytes;
+
+  /// 默认媒体源的视频流是否无兼容基础层的杜比视界（见
+  /// [mediaStreamRequiresDolbyVisionReshape]）。
+  final bool videoRequiresDolbyVisionReshape;
 
   /// 服务器端断点的最后更新时刻（UserData.LastPlayedDate -> epoch 毫秒）。
   ///
@@ -1657,6 +1691,7 @@ class JellyfinApi {
     // 默认媒体源 + 字幕流：取 MediaSources[0]（direct play 与 stream URL 同源）。
     String? mediaSourceId;
     int? sizeBytes;
+    bool videoRequiresDolbyVisionReshape = false;
     final List<JellyfinSubtitleStream> subs = <JellyfinSubtitleStream>[];
     final List<Object?> sources =
         (json['MediaSources'] as List?) ?? const <Object?>[];
@@ -1670,6 +1705,9 @@ class JellyfinApi {
       for (final Object? raw in streams) {
         if (raw is! Map) continue;
         final Map<String, Object?> s = raw.cast<String, Object?>();
+        if (s['Type'] == 'Video' && mediaStreamRequiresDolbyVisionReshape(s)) {
+          videoRequiresDolbyVisionReshape = true;
+        }
         if (s['Type'] != 'Subtitle') continue;
         subs.add(JellyfinSubtitleStream(
           index: (s['Index'] as num?)?.toInt() ?? 0,
@@ -1688,6 +1726,9 @@ class JellyfinApi {
     final List<Object?> backdropTags =
         (json['BackdropImageTags'] as List?) ?? const <Object?>[];
     final List<Object?> genres = (json['Genres'] as List?) ?? const <Object?>[];
+    final String? parentThumbTag = json['ParentThumbImageTag'] as String?;
+    final List<Object?> parentBackdropTags =
+        (json['ParentBackdropImageTags'] as List?) ?? const <Object?>[];
 
     return JellyfinItem(
       id: (json['Id'] as String?) ?? '',
@@ -1710,6 +1751,7 @@ class JellyfinApi {
           ? ((json['HasSubtitles'] as bool?) ?? false)
           : subs.any((JellyfinSubtitleStream s) => s.isTextSubtitleStream),
       sizeBytes: sizeBytes,
+      videoRequiresDolbyVisionReshape: videoRequiresDolbyVisionReshape,
       lastPlayedAtMs:
           DateTime.tryParse((userData['LastPlayedDate'] as String?) ?? '')
                   ?.millisecondsSinceEpoch ??
@@ -1724,6 +1766,12 @@ class JellyfinApi {
       hasBackdrop: backdropTags.isNotEmpty,
       hasThumbImage: imageTags.containsKey('Thumb'),
       hasLogoImage: imageTags.containsKey('Logo'),
+      parentThumbItemId: parentThumbTag == null || parentThumbTag.isEmpty
+          ? null
+          : json['ParentThumbItemId'] as String?,
+      parentBackdropItemId: parentBackdropTags.isEmpty
+          ? null
+          : json['ParentBackdropItemId'] as String?,
       overview: json['Overview'] as String?,
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
       genres: <String>[
@@ -1977,6 +2025,8 @@ class JellyfinVideoClient
         hasBackdrop: item.hasBackdrop,
         hasThumb: item.hasThumbImage,
         hasLogo: item.hasLogoImage,
+        parentThumbItemId: item.parentThumbItemId,
+        parentBackdropItemId: item.parentBackdropItemId,
         overview: item.overview,
         communityRating: item.communityRating,
         genres: item.genres,
@@ -2599,6 +2649,9 @@ class JellyfinVideoClient
       // 转码 HLS 不带容器内字幕轨（profile 声明文本轨 External，服务器不烧），
       // 播放页的「交给 libmpv 自绘」回落只对直出原始容器有效（BUG-2590）。
       streamIsOriginalContainer: playback.session?.playMethod != 'Transcode',
+      // 转码流由服务器重新编码，不再是 DV（BUG-2691）。
+      sourceRequiresDolbyVisionReshape: item.videoRequiresDolbyVisionReshape &&
+          playback.session?.playMethod != 'Transcode',
     );
   }
 

@@ -147,6 +147,27 @@ bool shouldUseHdrHostWindow({
   }
 }
 
+/// DV P5 片源在当前平台 / 设置下是否**画不对**（没有 gpu-next 可切），据此提示用户。
+///
+/// 只有 Windows 的宿主窗是 gpu-next；macOS / iOS / Android 的随包 libmpv 都没编
+/// libplacebo，只剩不做 RPU 重整的 gl_video，所以恒 true。Windows 上只有用户把
+/// HDR 输出设成「关闭」时为 true（提示可以打开它）。显示器状态与这个判断无关：
+/// DV P5 的宿主窗判据本就不看显示器。
+bool dolbyVisionColorsUnsupported({
+  required bool isWindows,
+  required VideoHdrOutputMode mode,
+  required bool sourceDolbyVision,
+}) {
+  if (!sourceDolbyVision) return false;
+  return !shouldUseHdrHostWindow(
+    isWindows: isWindows,
+    mode: mode,
+    displayHdr: false,
+    sourceHdr: true,
+    sourceDolbyVision: true,
+  );
+}
+
 /// 进入宿主窗模式时按**顺序**下发的 mpv 属性。`wid` / `gpu-context` /
 /// `d3d11-output-format` 只在下一次 VO 创建时生效，所以 `vo` 必须放最后。
 Map<String, String> hdrHostMpvProperties(int hostWindowHandle) {

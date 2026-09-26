@@ -1187,5 +1187,37 @@ void main() {
         expect(minimal.seriesId, isNull);
       },
     );
+
+    test('集借用的剧级横图：有 tag 才给 id，并透传到 MediaServerItem', () {
+      final JellyfinItem episode = JellyfinApi.parseItem(<String, Object?>{
+        'Id': 'ep1',
+        'Name': 'Ep',
+        'Type': 'Episode',
+        'ParentThumbItemId': 'series-1',
+        'ParentThumbImageTag': 'thumb-tag',
+        'ParentBackdropItemId': 'series-1',
+        'ParentBackdropImageTags': <Object?>['bd-tag'],
+      });
+      expect(episode.parentThumbItemId, 'series-1');
+      expect(episode.parentBackdropItemId, 'series-1');
+      final MediaServerItem mapped = JellyfinVideoClient.mediaServerItemFrom(
+        episode,
+        MediaServerItemType.episode,
+      );
+      expect(mapped.parentThumbItemId, 'series-1');
+      expect(mapped.parentBackdropItemId, 'series-1');
+
+      // 只有 id 没 tag（服务器没有这张图）：拿去请求必 404，解析成 null。
+      final JellyfinItem noTags = JellyfinApi.parseItem(<String, Object?>{
+        'Id': 'ep2',
+        'Name': 'Ep',
+        'Type': 'Episode',
+        'ParentThumbItemId': 'series-1',
+        'ParentBackdropItemId': 'series-1',
+        'ParentBackdropImageTags': <Object?>[],
+      });
+      expect(noTags.parentThumbItemId, isNull);
+      expect(noTags.parentBackdropItemId, isNull);
+    });
   });
 }

@@ -5588,5 +5588,12 @@
   "video_subtitle_remote_player_decoded": "Server cannot extract this subtitle track; the player decodes it during playback, so lines appear as you watch: $label",
   "manga_discovery_view_all": "View all",
   "manga_discovery_empty_title": "No manga sources to discover yet",
-  "manga_discovery_empty_action": "Manage sources"
+  "manga_discovery_empty_action": "Manage sources",
+  "video_dolby_vision_colors_unsupported": "Dolby Vision profile 5 video: this platform can't render its colors correctly yet, so the picture may look purple or green.",
+  "video_dolby_vision_colors_enable_hdr_output": "Dolby Vision profile 5 video: colors will look purple or green with HDR / 10-bit output turned off. Set it to Auto to fix them.",
+  "novel_detail_read_online": "オンラインで読む",
+  "novel_detail_chapter_download": "この章からダウンロード",
+  "novel_online_chapter_pending": "この章はまだ読み込まれていません。接続を確認してから章を開き直すと、配信元から読み込みます。",
+  "novel_online_open_failed": "オンラインで開けませんでした：$error",
+  "novel_online_chapter_failed": "章を読み込めませんでした：$error"
 }

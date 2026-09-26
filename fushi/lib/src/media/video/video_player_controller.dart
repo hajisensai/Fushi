@@ -422,6 +422,11 @@ class VideoPlayerController extends ChangeNotifier
   /// 宿主窗模式是否激活（页面据此把 Scaffold / 全屏 Material 底色改透明）。
   final ValueNotifier<bool> hdrHostActive = ValueNotifier<bool>(false);
 
+  /// 当前片源是 DV Profile 5 且本平台 / 设置下没有能正确还原颜色的渲染器
+  /// （[dolbyVisionColorsUnsupported]）。页面据此提示用户，BUG-2691。
+  final ValueNotifier<bool> dolbyVisionColorsUnsupportedNotifier =
+      ValueNotifier<bool>(false);
+
   /// 网络流的读取速度（bytes/s，mpv `cache-speed`：缓存层与下层 I/O 之间过去 1 秒
   /// 的吞吐）；null = 当前不是网络流 / 尚无采样。加载 overlay 与缓冲圈据此给用户
   /// 「到底在不在下」的反馈——此前裸转圈，链路停滞与慢速下载看起来一模一样。
@@ -460,6 +465,7 @@ class VideoPlayerController extends ChangeNotifier
   VideoFitMode _hdrHostFitMode = VideoFitMode.contain;
   bool _hdrSourceIsHdr = false;
   bool _hdrSourceIsDolbyVision = false;
+  bool _sourceDolbyVisionHint = false;
   Rect? _hdrHostRect;
   HdrVideoHostChannel? _hdrHostChannel;
 
@@ -3117,7 +3123,10 @@ class VideoPlayerController extends ChangeNotifier
         unawaited(_setMpvProperties(hdrHostFitProperties(fitMode)));
       }
     }
-    if (modeChanged) unawaited(_evaluateHdrOutput());
+    if (modeChanged) {
+      _refreshDolbyVisionColorsUnsupported();
+      unawaited(_evaluateHdrOutput());
+    }
   }
 
   /// [HdrHostRectReporter] 回报的 Video 物理像素矩形（主窗客户区坐标系）。非直通时
@@ -3135,18 +3144,36 @@ class VideoPlayerController extends ChangeNotifier
       primaries: params.primaries,
       gamma: params.gamma,
     );
-    final bool dolbyVision = requiresDolbyVisionReshape(params.colormatrix);
-    if (hdr == _hdrSourceIsHdr &&
+    // 新版 libmpv（Windows）会报 colormatrix=dolbyvision；mac / iOS 的 0.36 与
+    // Android 的构建不报，只能靠调用方给的服务器元数据（[setSourceDolbyVisionHint]）。
+    final bool dolbyVision = requiresDolbyVisionReshape(params.colormatrix) ||
+        _sourceDolbyVisionHint;
+    final bool unchanged = hdr == _hdrSourceIsHdr &&
         dolbyVision == _hdrSourceIsDolbyVision &&
-        hdrHostActive.value == (hdr || dolbyVision)) {
-      return;
-    }
+        hdrHostActive.value == (hdr || dolbyVision);
+    _hdrSourceIsHdr = hdr;
+    _hdrSourceIsDolbyVision = dolbyVision;
+    // 提示位与宿主窗无关，所有平台都要算（非 Windows 的重判会直接返回）。
+    _refreshDolbyVisionColorsUnsupported();
+    if (unchanged) return;
     debugPrint('[hdr-host] params primaries=${params.primaries} '
         'gamma=${params.gamma} matrix=${params.colormatrix} hdr=$hdr '
         'dolbyVision=$dolbyVision');
-    _hdrSourceIsHdr = hdr;
-    _hdrSourceIsDolbyVision = dolbyVision;
     unawaited(_evaluateHdrOutput());
+  }
+
+  /// 调用方（远端播放）按服务器元数据声明片源是否 DV P5 类；每次开片前设一次
+  /// （本地文件传 false），在 `video-params` 到位时与 libmpv 的判断取或。
+  void setSourceDolbyVisionHint(bool value) {
+    _sourceDolbyVisionHint = value;
+  }
+
+  void _refreshDolbyVisionColorsUnsupported() {
+    dolbyVisionColorsUnsupportedNotifier.value = dolbyVisionColorsUnsupported(
+      isWindows: Platform.isWindows,
+      mode: _hdrOutputMode,
+      sourceDolbyVision: _hdrSourceIsDolbyVision,
+    );
   }
 
   /// 排队一次重判（串行，见 [_hdrEvalChain]）。
