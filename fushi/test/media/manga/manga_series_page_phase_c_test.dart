@@ -408,8 +408,12 @@ void main() {
     expect(raw, isNotNull, reason: '偏好必须写穿到 preferences 表，不是只改内存');
     expect(PrefCodec.decode(raw!, false), isTrue);
 
+    // 单章下载走章节行溢出菜单的「下载」：点章节本身现在是开读（未下载章在线
+    // 直读，#1659 撤回设计稿 2026-09-12 §1.1），不再入队。
     await tester.runAsync(() async {
-      await tester.tap(find.text('Chapter 1'));
+      await tester.tap(_chapterMenu('Chapter 1'));
+      await _settle(tester);
+      await tester.tap(find.text(t.manga_chapter_download_action));
       await _settle(tester);
     });
     final MangaDownloadJobRow? job = await db.findMangaDownloadJob(
