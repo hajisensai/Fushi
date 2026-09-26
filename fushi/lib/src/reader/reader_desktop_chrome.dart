@@ -400,22 +400,34 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
   }
 }
 
-/// 右侧抽屉外壳：标题行（标题 + 关闭 ×）+ 可滚动内容。
+/// 右侧抽屉外壳：标题行（标题 + 关闭 ×）+ 可选固定页头 [bottom] + 内容。
 class ReaderSideSheet extends StatelessWidget {
   const ReaderSideSheet({
     super.key,
     required this.title,
     required this.child,
     required this.onClose,
-    this.padding = const EdgeInsets.fromLTRB(20, 4, 20, 24),
+    this.padding = defaultPadding,
     this.headerActions = const <Widget>[],
+    this.bottom,
+    this.scrollable = true,
   });
+
+  /// 内容区默认留白；自管滚动的调用方（[scrollable] = false）按它对齐。
+  static const EdgeInsets defaultPadding = EdgeInsets.fromLTRB(20, 4, 20, 24);
 
   final String title;
   final Widget child;
   final VoidCallback onClose;
   final EdgeInsets padding;
   final List<Widget> headerActions;
+
+  /// 标题行下方、不随内容滚动的页头（如设置抽屉的标签栏）。
+  final Widget? bottom;
+
+  /// false 时 [child] 直接铺满内容区、自己负责滚动（如 [TabBarView] 每页各自
+  /// 滚动），[padding] 不再生效。
+  final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
@@ -449,8 +461,11 @@ class ReaderSideSheet extends StatelessWidget {
             ],
           ),
         ),
+        if (bottom != null) bottom!,
         Expanded(
-          child: SingleChildScrollView(padding: padding, child: child),
+          child: scrollable
+              ? SingleChildScrollView(padding: padding, child: child)
+              : child,
         ),
       ],
     );
