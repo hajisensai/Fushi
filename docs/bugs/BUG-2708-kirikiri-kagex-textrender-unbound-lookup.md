@@ -7,5 +7,5 @@
 - **[x] ② 已加自动化测试** — `native/galgame_hook/tests/adapter_structure_test.py::test_kirikiri_textrender_without_bound_instance_falls_back_to_classic`（无成员枚举、typeof 守卫、未绑实例才回退 classic、stable/run 重扫）。
 - **备注**：
   - 修复后真机（注入器直启 + lookup_probe 打开 lookup_enabled，无 Fushi 宿主）：`instance.layers layers=4,found=0` → 回退 classic；推进台词后 `lookup_diag=0xB0001741`（新增 classic_patch_installed / classic_geometry_captured / classic_processch_fired），坐标事件 `N=1`、字形框落在台词行；点击「運転手」：`text_write_count` 保持 16、画面仍是同一句、被点的「転」出现游戏内选中高亮。
-  - **未验证**：Fushi 宿主内的查词卡渲染（③ 的卡片）与制卡——宿主重建时本机空闲内存降到 0.4 GB（主 checkout 的 Debug Fushi 占 6.7 GB），为避免 OOM 主动中止。lookup_probe 读数里 `hits` 仍为 0，是否需宿主应答后才发布，待宿主复测确认。
+  - 2026-09-26 18:00 宿主真机验收（重建的 itest 宿主，`launchoff` 原始路径，游戏内查词开）：点「そろそろ着きますけど」里的字 → `lookup_diag=0xB0001747`（新增 geometry_observed / hit_submitted）、`hits=1 frames=2`、Fushi 查词窗口弹在游戏上方；点「着」中心 → 卡片「着きま…」，被点字高亮；宿主台词列表 `lines=8` 始终停在同一句（点击不推进）。之前无宿主时 `hits=0` 是因为命中要宿主开窗应答后才计数。关卡后下一击被吞一次另记 BUG-2710。制卡未跑。
   - x86 CTest 118/118、结构守卫全绿。
