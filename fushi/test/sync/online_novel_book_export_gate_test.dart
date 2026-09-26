@@ -52,7 +52,7 @@ void main() {
 
     setUp(() async {
       root = await Directory.systemTemp.createTemp('online_novel_gate');
-      db = FushiDatabase(p.join(root.path, 'db'));
+      db = FushiDatabase(root.path);
     });
 
     tearDown(() async {
