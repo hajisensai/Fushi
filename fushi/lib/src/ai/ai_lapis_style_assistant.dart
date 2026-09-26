@@ -156,6 +156,7 @@ Rule props (all optional; omit what should stay unchanged):
 - fontScalePercent: integer percent of the default size, 50-250 (100 = unchanged)
 - bold: true or false
 - alignment: "start", "center" or "end"
+- textIndentPercent: first-line indent, integer 0-400 (100 = one character)
 - colorHex: "#RRGGBB" text colour
 - lineHeightPercent: integer 100-250
 - backgroundColorHex: "#RRGGBB"
@@ -318,6 +319,7 @@ Map<String, dynamic> _normalizeRule(
     switch (key) {
       case 'fontScalePercent':
       case 'lineHeightPercent':
+      case 'textIndentPercent':
       case 'borderWidthPx':
       case 'borderRadiusPx':
       case 'paddingPx':

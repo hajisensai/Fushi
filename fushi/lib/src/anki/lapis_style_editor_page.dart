@@ -902,6 +902,34 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             ),
           ),
           SizedBox(height: tokens.spacing.card),
+          DropdownMenu<int>(
+            key: ValueKey<String>(
+              'text-indent-${_selectedField.wireName}-'
+              '${rule.textIndentPercent}',
+            ),
+            expandedInsets: EdgeInsets.zero,
+            initialSelection: rule.textIndentPercent ?? 0,
+            label: Text(t.anki_lapis_visual_text_indent),
+            dropdownMenuEntries: <DropdownMenuEntry<int>>[
+              DropdownMenuEntry<int>(
+                value: 0,
+                label: t.anki_lapis_visual_default,
+              ),
+              for (final int percent in _textIndentChoices)
+                DropdownMenuEntry<int>(
+                  value: percent,
+                  label: t.anki_lapis_visual_text_indent_chars(
+                    count: _formatIndentChars(percent),
+                  ),
+                ),
+            ],
+            onSelected: (int? value) => _updateSelectedRule(
+              rule.copyWith(
+                textIndentPercent: value == null || value == 0 ? null : value,
+              ),
+            ),
+          ),
+          SizedBox(height: tokens.spacing.card),
           _buildColorRow(
             tokens: tokens,
             label: t.anki_lapis_visual_color,
@@ -1013,6 +1041,13 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       ),
     );
   }
+
+  /// 首行缩进档位（1 字 = 100）。半字给西文/数字开头的释义留余地。
+  static const List<int> _textIndentChoices = <int>[50, 100, 200, 300, 400];
+
+  static String _formatIndentChars(int percent) => percent % 100 == 0
+      ? '${percent ~/ 100}'
+      : (percent / 100).toStringAsFixed(1);
 
   String _fieldLabel(LapisVisualField field) => switch (field) {
         LapisVisualField.expression => t.anki_lapis_visual_field_expression,

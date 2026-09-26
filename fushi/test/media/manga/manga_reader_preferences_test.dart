@@ -88,4 +88,30 @@ void main() {
       MangaReadingMode.webtoon,
     );
   });
+
+  test('downloadAhead defaults on and legacy chapter keys still round-trip',
+      () {
+    expect(const MangaReaderPreferences().downloadAhead, isTrue);
+    expect(
+      MangaReaderPreferences.fromJson(const <String, Object?>{}).downloadAhead,
+      isTrue,
+    );
+    // skipFiltered / alwaysShowChapterTransition 已不在面板上，但旧覆盖 JSON
+    // 里的值必须原样保留，不能被当成未知键丢掉。
+    final MangaReaderPreferences resolved = MangaReaderPreferences.resolve(
+        const MangaReaderPreferences(), <String, Object?>{
+      'downloadAhead': false,
+      'skipFiltered': false,
+      'alwaysShowChapterTransition': false,
+    });
+    expect(resolved.downloadAhead, isFalse);
+    expect(resolved.skipFiltered, isFalse);
+    expect(resolved.alwaysShowChapterTransition, isFalse);
+    expect(
+      MangaReaderPreferences.normalizedOverride(<String, Object?>{
+        'downloadAhead': 'yes',
+      }),
+      isEmpty,
+    );
+  });
 }

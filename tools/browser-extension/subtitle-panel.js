@@ -49,7 +49,7 @@
     overlayHovered: false, autoLookupLastX: -1, autoLookupLastY: -1,
     // 「用 Fushi 字幕替代站点原生字幕」：用预取的整集轨自绘一整句，并藏掉站点原生字幕。
     // 针对 YouTube 自动生成字幕——它是**逐词滚动**渲染的（DOM 里每帧多一个词），
-    // 拿它划词/制卡永远只能拿到半句；而 youtube-bridge.js 早就把整集 srv3 轨按 <p> 段
+    // 拿它划词/制卡永远只能拿到半句；而 youtube-bridge.js 早就把整集 json3 轨按事件（整句）
     // 预取进 store 了，只是渲染侧默认不用（站点自带轨不叠加，避免双份字幕）。
     // replaceNativeActive = 本轮判定「替代确实生效中」，推给 content.js 决定藏不藏原生。
     replaceNative: false, replaceNativeActive: false,

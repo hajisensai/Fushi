@@ -37,7 +37,7 @@ function loadBridge(initialId) {
       get search() { return '?v=' + videoParam; },
       get href() { return 'https://www.youtube.com/watch?v=' + videoParam; },
     },
-    URL, URLSearchParams, DOMParser: function () {},
+    URL, URLSearchParams,
     Date: { now() { return now; } },
     setInterval(fn) { intervals.push(fn); return intervals.length; },
     clearInterval() {},

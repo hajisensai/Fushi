@@ -318,7 +318,9 @@ Future<img.Image> decodeMangaPageFile(File file) async {
 ///   （[MangaOcrFilePageCache]），重跑只补缺页。
 /// - [cancelToken] 置位后在页/块边界抛 [OcrCancelledException]；已完成页
 ///   缓存保留。
-/// - [onProgress] 逐页回调（含缓存命中页）。
+/// - [onProgress] 逐页回调（含缓存命中页），带该页真实页号。
+/// - [startPage] 处理起点（页号，按 [enumerateMangaPages] 的自然序）：从它起向后、
+///   再绕回开头（[mangaOcrPageOrder]）。产物 manga.json 内容与页序与起点无关。
 /// - [decodePage] 可注入（测试免真图解码）。
 /// - [engineSignature] 逐页缓存子目录名 + 产物元数据里的引擎签名。**必须**由调用
 ///   方按已安装模型解析（见 `manga_ocr_model_fingerprint.dart`）：这里不给默认值，
@@ -329,6 +331,7 @@ Future<String> runMangaOcrFolderJob({
   required OcrRecognizer recognizer,
   required String engineSignature,
   List<String>? relativeUrls,
+  int startPage = 0,
   OcrCancelToken? cancelToken,
   OcrProgressCallback? onProgress,
   Future<img.Image> Function(File file)? decodePage,
@@ -383,6 +386,7 @@ Future<String> runMangaOcrFolderJob({
     bookId: 'manga_ocr',
     pageCount: pages.length,
     loadPage: (int pageIndex) => decode(pages[pageIndex].file),
+    startPage: startPage,
     cancelToken: cancelToken,
     onProgress: onProgress,
   );

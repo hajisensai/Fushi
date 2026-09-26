@@ -2007,12 +2007,13 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 下载 [dictionary] 来源处的新包并以它为**显式替换目标**重导（BUG-1595：即便
   /// 远端包改了标题也替换这本，而非按 title 误判成新增），保留
-  /// order/hidden/collapsed，落上新来源（[sourceOverride] 至少带回 downloadUrl）。
+  /// order/hidden/collapsed，落上新来源。下载地址与回写来源都取自 [remote]
+  /// （BUG-2707：远端 index 声明的新版地址优先，本地旧地址可能钉在旧版本目录）。
   /// 复用现有下载进度 UI（[DictionaryDownloadProgressDialog]）。成功返 true。
   Future<bool> _redownloadAndReimport({
     required Dictionary dictionary,
+    required DictionaryRemoteIndexResult remote,
     required DictionaryDownloadJob job,
-    required Map<String, String> sourceOverride,
   }) async {
     // 只喂文案（进度行 / 导入阶段提示 / 完成 toast），无身份用途——身份走
     // `dictionary` 对象本身（downloadUrl / 目录名）。所以这里用显示名：用户改过名
@@ -2028,7 +2029,7 @@ class _DictionaryDialogPageState extends BasePageState {
       progressNotifier.value = t.dict_update_updating(name: name);
       downloadProgress.value = 0;
       final File zipFile = await DictionaryDownloader.download(
-        url: dictionary.downloadUrl,
+        url: remote.resolveDownloadUrl(dictionary.downloadUrl),
         tempDir: tempDir,
         progressNotifier: downloadProgress,
         cancelToken: job.cancelToken,
@@ -2047,7 +2048,12 @@ class _DictionaryDialogPageState extends BasePageState {
         progressNotifier: progressNotifier,
         onImportSuccess: () {},
         replaceTarget: dictionary,
-        sourceOverride: sourceOverride,
+        // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
+        // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
+        sourceOverride: remote.updatedSourceMetadata(
+          localDownloadUrl: dictionary.downloadUrl,
+          localIndexUrl: dictionary.indexUrl,
+        ),
       );
       return true;
     } finally {
@@ -2067,11 +2073,11 @@ class _DictionaryDialogPageState extends BasePageState {
         // 三种结局（已最新 / 已更新 / 更新失败）共用一条 toast，配色跟着文案一起定，
         // 否则失败也是一条无色提示、与「已是最新」长得一模一样。
         try {
-          final String? remoteRevision =
-              await DictionaryUpdateService.fetchRemoteIndex(
+          final DictionaryRemoteIndexResult remote =
+              await DictionaryUpdateService.fetchRemoteIndexResult(
                   dictionary.indexUrl);
           if (!DictionaryUpdateService.needsUpdate(
-              dictionary.revision, remoteRevision)) {
+              dictionary.revision, remote.revision)) {
             return DictionaryDownloadOutcome(
               message: t.dict_update_latest,
               severity: ToastSeverity.info,
@@ -2079,14 +2085,8 @@ class _DictionaryDialogPageState extends BasePageState {
           }
           await _redownloadAndReimport(
             dictionary: dictionary,
+            remote: remote,
             job: job,
-            // W-2：更新即知本词典可更新——显式回填 isUpdatable:'true' + 两 URL，使
-            // 即便重导包内 index.json 不声明 isUpdatable，更新后仍保持可更新（不丢按钮）。
-            sourceOverride: <String, String>{
-              'isUpdatable': 'true',
-              'downloadUrl': dictionary.downloadUrl,
-              'indexUrl': dictionary.indexUrl,
-            },
           );
           return DictionaryDownloadOutcome(
             message: t.dict_update_done(
@@ -2258,21 +2258,18 @@ class _DictionaryDialogPageState extends BasePageState {
             job.markDownloadPhase();
             job.progress.value = 0;
             job.message.value = t.dict_update_checking;
-            final String? remoteRevision =
-                await DictionaryUpdateService.fetchRemoteIndex(d.indexUrl);
+            final DictionaryRemoteIndexResult remote =
+                await DictionaryUpdateService.fetchRemoteIndexResult(
+                    d.indexUrl);
             if (!DictionaryUpdateService.needsUpdate(
-                d.revision, remoteRevision)) {
+                d.revision, remote.revision)) {
               current++;
               continue;
             }
             await _redownloadAndReimport(
               dictionary: d,
+              remote: remote,
               job: job,
-              sourceOverride: <String, String>{
-                'isUpdatable': 'true',
-                'downloadUrl': d.downloadUrl,
-                'indexUrl': d.indexUrl,
-              },
             );
             updated++;
           } catch (e, stack) {

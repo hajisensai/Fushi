@@ -1212,6 +1212,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
         });
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
+      } else if (msg.type === 'openInAnki') {
+        // Issue #1409：弹窗 ↗「在 Anki 中打开这个词的卡」。POST {expression,reading}
+        // → server /api/anki/open，与 app 内 openInAnki 桥同一 repo.openWordInAnki，
+        // 回 {outcome:'opened'|'noMatch'|'failed'}。
+        const r = await fetch(base + '/api/anki/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({ expression: msg.expression || '', reading: msg.reading || '' }),
+        });
+        sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineYoutube') {
         // 批量制卡（YouTube，非 DRM）：视频ID + 视频时间窗 → 服务端 resolveYoutubeSource 从真实
         // 流精确裁 GIF+音频。无需录屏、无回放、无跳动。
