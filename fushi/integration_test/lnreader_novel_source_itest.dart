@@ -262,8 +262,9 @@ void main() {
     );
     final bool detailReady = await until(tester, () {
       final Object? error = tester.takeException();
-      if (error != null)
+      if (error != null) {
         debugPrint('[lnreader-itest] detail exception: $error');
+      }
       return find
               .byKey(const ValueKey<String>('novel_detail_library_add'))
               .evaluate()
