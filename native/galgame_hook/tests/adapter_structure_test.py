@@ -136,6 +136,29 @@ class AdapterStructureTest(unittest.TestCase):
             self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
                           self._function_body(source, detour))
 
+    def test_kirikiri_textrender_without_bound_instance_falls_back_to_classic(self) -> None:
+        # BUG-2707: a TextRender plugin that is not bound to any message-layer instance
+        # (KAGEX CustomMessageLayer, Senren Banka) must not leave the sensor with class-only
+        # wrappers that never capture; the message layers get the classic processCh capture.
+        source = (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8")
+        sweep_start = source.index("global.fushiLookupSweepLayerRenderers = function()")
+        sweep = source[sweep_start:source.index("global.fushiLookupFindGetRenderPatch", sweep_start)]
+        # Never enumerate members (throwing getters crash the game, BUG-2116).
+        self.assertNotIn("Dictionary.assign", sweep)
+        self.assertNotIn(".assign(", sweep)
+        self.assertIn("typeof layer[fields[f]] != \"Object\"", sweep)
+        self.assertIn("global.fushiLookupPatchRendererInstance(renderer)", sweep)
+        self.assertIn("return found;", sweep)
+        # The msgwin plugin path keeps precedence; the fallback runs only without it.
+        fallback = source[source.index("installStage = 32;"):source.index("installStage = 33;") + 200]
+        self.assertIn("if(global.fushiLookupSweepLayerRenderers() == 0)", fallback)
+        self.assertIn("global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;", fallback)
+        self.assertIn("global.fushiLookupSweepClassicLayers();", fallback)
+        # Re-sweep on KAG stable/run edges so re-created layers are covered too.
+        refresh = source[source.index("global.fushiLookupRefreshCaptureBridges = function()"):]
+        refresh = refresh[:refresh.index("};")]
+        self.assertIn("global.fushiLookupSweepLayerRenderers();", refresh)
+
     def test_launch_runs_loader_init_gate_before_injection(self) -> None:
         # The primary thread must initialise TLS-callback executables itself; the gate is
         # admitted by PE structure only (no title/hash/engine name) and precedes injection.
