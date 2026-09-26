@@ -1,7 +1,7 @@
 ## BUG-2699 · 自动代理模式只在启动时读取系统代理
 - **报告**：2026-09-26（用户：上游 issue hajisensai/hibiki#1514——Windows + FlClash 系统代理，浏览器扩展 YouTube 制卡 `/api/mine` 报 `youtube manifest failed for all clients ... TimeoutException after 0:00:13`，手动填同一个代理地址后正常）
 - **真实性**：✅ 真 bug。YouTube 解析走 `YoutubeHttpClient(createAppHttpIoClient())`（`packages/fushi_engine/lib/media/video/youtube_source_resolver.dart:38`），出口本身接了应用代理；但自动模式的 GUI 系统代理那一格只在启动时由 `primeAppProxy()`（`packages/fushi_engine/lib/utils/net/app_proxy.dart:328`，旧行号；由 `fushi/lib/src/utils/net/app_network_bindings.dart:19` 在 initialise 调）读一次进 `_cachedSystemProxyEnv`，此后 `resolveAppProxyDirective`（旧 `app_proxy.dart:379-384`）一直查这份缓存。FlClash 只在用户点「系统代理」时写注册表 `ProxyServer`：Fushi 比代理软件先启动、或用户中途才开系统代理 → 缓存是空 → 整个进程生命周期直连 → 墙内 YouTube 全部超时。异步入口 `applyAppProxy` 也把建 client 时的解析结果烘焙进闭包（`systemEnvOverride`），长寿 client 同样停在旧值。手动模式不经这一格，所以手填地址立刻好。
-- **[x] ① 已修复** — 本分支 `pr/system-proxy-refresh` 提交 `fix(net): refresh system proxy in auto mode (#1514)`。系统代理缓存带读取时刻与有效期（`app_proxy.dart` `_currentSystemProxyEnv`，约 :372）：
+- **[x] ① 已修复** — 本分支 `pr/system-proxy-refresh` 提交 `bcf9468542f`（`fix(net): refresh system proxy in auto mode (#1514)`）。系统代理缓存带读取时刻与有效期（`app_proxy.dart` `_currentSystemProxyEnv`，约 :372）：
   - Windows 注册表读取本就是同步 FFI（`RegGetValueW`，微秒级），拆出同步本体 `readWindowsSystemProxyEnvironmentSync`（约 :637），缓存过 `kSyncSystemProxyRefreshInterval`（5 s）后在 `findProxy` 请求时现读并回写——过期后的第一个请求就拿到新值，有效期只给高频回调限流；
   - macOS / Linux 要起 `scutil` / `gsettings` 子进程，`findProxy` 是同步回调不能等：过 `kAsyncSystemProxyRefreshInterval`（30 s）后台刷新一次（去重在飞请求），本次用旧值、下个请求起生效；
   - `applyAppProxy` 改为自动模式先 `await primeAppProxy()` 再走同一条请求时求值的装配，不再烘焙 `systemEnvOverride`；
