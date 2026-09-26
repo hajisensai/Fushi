@@ -3,7 +3,7 @@
 /// Locales: 17
 /// Strings: 95489 (5617 per locale)
 ///
-/// Built on 2026-09-26 at 13:31 UTC
+/// Built on 2026-09-26 at 19:04 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -6843,7 +6843,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audiobook_follow_audio => 'Follow audio';
   String get reader_floating_ball => 'Floating ball';
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   String get reader_control_item_play_pause => 'Play / Pause';
   String get reader_control_item_seek_back => 'Rewind 10 seconds';
   String get reader_control_item_seek_forward => 'Forward 10 seconds';
@@ -19507,7 +19507,7 @@ class _StringsAr extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -33184,7 +33184,7 @@ class _StringsDe extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -46918,7 +46918,7 @@ class _StringsEs extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -60685,7 +60685,7 @@ class _StringsFr extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -74259,7 +74259,7 @@ class _StringsId extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -87918,7 +87918,7 @@ class _StringsIt extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -100955,7 +100955,7 @@ class _StringsJa extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -113984,7 +113984,7 @@ class _StringsKo extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -127591,7 +127591,7 @@ class _StringsNl extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -141262,7 +141262,7 @@ class _StringsPtBr extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -154911,7 +154911,7 @@ class _StringsRu extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -168357,7 +168357,7 @@ class _StringsTh extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -181915,7 +181915,7 @@ class _StringsTr extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -195440,7 +195440,7 @@ class _StringsVi extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -208008,7 +208008,7 @@ class _StringsZhCn extends _StringsEn {
   String get reader_floating_ball => '悬浮球';
   @override
   String get reader_floating_ball_hint =>
-      '半透明小球停靠在页面边缘。点击后按钮环绕小球展开，再点收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。';
+      '半透明小球停靠在页面边缘。点击后按钮在小球上方竖排一列展开（小球在最下方），再点小球收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。';
   @override
   String get reader_control_item_play_pause => '播放 / 暂停';
   @override
@@ -220531,7 +220531,7 @@ class _StringsZhHk extends _StringsEn {
   String get reader_floating_ball => 'Floating ball';
   @override
   String get reader_floating_ball_hint =>
-      'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+      'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
   @override
   String get reader_control_item_play_pause => 'Play / Pause';
   @override
@@ -232448,7 +232448,7 @@ extension on _StringsEn {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -244031,7 +244031,7 @@ extension on _StringsAr {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -255663,7 +255663,7 @@ extension on _StringsDe {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -267285,7 +267285,7 @@ extension on _StringsEs {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -278915,7 +278915,7 @@ extension on _StringsFr {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -290515,7 +290515,7 @@ extension on _StringsId {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -302138,7 +302138,7 @@ extension on _StringsIt {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -313685,7 +313685,7 @@ extension on _StringsJa {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -325234,7 +325234,7 @@ extension on _StringsKo {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -336852,7 +336852,7 @@ extension on _StringsNl {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -348465,7 +348465,7 @@ extension on _StringsPtBr {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -360084,7 +360084,7 @@ extension on _StringsRu {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -371672,7 +371672,7 @@ extension on _StringsTh {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -383276,7 +383276,7 @@ extension on _StringsTr {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -394874,7 +394874,7 @@ extension on _StringsVi {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
@@ -406376,7 +406376,7 @@ extension on _StringsZhCn {
       case 'reader_floating_ball':
         return '悬浮球';
       case 'reader_floating_ball_hint':
-        return '半透明小球停靠在页面边缘。点击后按钮环绕小球展开，再点收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。';
+        return '半透明小球停靠在页面边缘。点击后按钮在小球上方竖排一列展开（小球在最下方），再点小球收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。';
       case 'reader_control_item_play_pause':
         return '播放 / 暂停';
       case 'reader_control_item_seek_back':
@@ -417885,7 +417885,7 @@ extension on _StringsZhHk {
       case 'reader_floating_ball':
         return 'Floating ball';
       case 'reader_floating_ball_hint':
-        return 'A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
+        return 'A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.';
       case 'reader_control_item_play_pause':
         return 'Play / Pause';
       case 'reader_control_item_seek_back':
