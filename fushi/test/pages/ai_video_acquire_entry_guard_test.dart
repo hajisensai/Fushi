@@ -32,6 +32,26 @@ void main() {
     expect(gate, isNot(contains('videoDownloadPipelineService')));
   });
 
+  test('入口仍尊重用户关掉的模块：在线服务（设置 › AI）与下载模块', () {
+    expect(
+      home,
+      contains('onAiAcquire:_canAiAcquire&&_aiAcquireModulesEnabled?'),
+      reason: '模块门挂在入口渲染处，iOS 合规门 _canAiAcquire 另由合规守卫钉。',
+    );
+    final int start = home.indexOf('boolget_aiAcquireModulesEnabled=>');
+    expect(start, isNot(-1));
+    final String gate = home.substring(start, home.indexOf(';', start));
+    expect(
+      gate,
+      contains(
+        'isSettingsDestinationVisible(SettingsDestinationId.ai,'
+        'appModel.moduleVisibility,)',
+      ),
+      reason: '关了在线服务 = 隐藏了设置 › AI，入口不得再把这页推出来。',
+    );
+    expect(gate, contains('moduleVisibility.isEnabled(ModuleId.downloads)'));
+  });
+
   test('BUG-2694 点击时 AI 未指派 → 推 AI 设置页，返回后重判再继续', () {
     final String open = bodyOf('Future<void>_openAiVideoAcquisition()async{');
     expect(

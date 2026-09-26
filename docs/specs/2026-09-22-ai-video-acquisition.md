@@ -19,7 +19,7 @@
 - **本地纯函数状态机**（`video_acquisition_reducer.dart`）决定缺什么、问什么、何时提交；热路径（搜作品、拉详情、搜资源、选版本、入队、建订阅）全是确定性代码。
 - AI 只在两处介入：① 把用户一句话解析成结构化补丁（`parseVideoAcquisitionIntent`，逐字段本地校验）；② 在已取回的作品候选里选唯一命中（复用 `AiVideoIdentityQuery / Decision`，阈值 `kAiVideoIdentityAutoAcceptConfidence`）。第三处 tie-break（同分辨率做种相近的两张卡）可选、默认不接。
 - 助手发言全是 [`VideoAcquisitionSay`]（i18n 键 + 参数）+ chip；**AI 输出里没有自由文本字段**，模型散文永不进 UI。
-- 未指派提供商（`AiFeature.videoAcquire`）→ 入口不渲染；AI 调用失败 → 原文当查询词 / 重出 chip，流程照样走完；chip 点击永不经 AI。
+- 未指派提供商（`AiFeature.videoAcquire`）→ 入口照常渲染，点击时提示并推「设置 › AI」，返回后已指派才继续进对话页，未指派不发任何 AI 请求（2026-09-26 所有者拍板改口径，BUG-2694；原为「入口不渲染」，新装用户因此永远找不到入口）。入口仍须过 iOS 合规门，且在线服务 / 下载模块被用户关掉时不渲染；AI 调用失败 → 原文当查询词 / 重出 chip，流程照样走完；chip 点击永不经 AI。
 - 三处 AI 调用共用 `videoAcquire` 一个指派；旧 `videoSearch` 只剩后台 `aiSubtitleBackfillReorder`。
 
 ## 3. 底座（PR1）

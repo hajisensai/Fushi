@@ -92,6 +92,7 @@ import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/utils.dart';
@@ -1608,7 +1609,9 @@ class _HomePageState extends BasePageState<HomePage>
       onCancelDownloads: _cancelVideoDiscoveryDownloads,
       // 「AI 下视频」入口：仅平台合规不可用（iOS）时不接线、整颗按钮不渲染；
       // AI 未指派 / 下载 runtime 没起在点击时引导配置（见 _canAiAcquire）。
-      onAiAcquire: _canAiAcquire ? _openAiVideoAcquisition : null,
+      onAiAcquire: _canAiAcquire && _aiAcquireModulesEnabled
+          ? _openAiVideoAcquisition
+          : null,
     );
   }
 
@@ -2006,6 +2009,21 @@ class _HomePageState extends BasePageState<HomePage>
       appModelNoUpdate.isPreferencesReady &&
       StoreRestrictedCapability.downloads.isAvailable &&
       StoreRestrictedCapability.externalDiscovery.isAvailable;
+
+  /// 「AI 下视频」入口的模块门：用户在「功能模块」里关掉的东西，入口不能再把它
+  /// 带出来。
+  ///
+  /// - 在线服务（`ModuleId.services`）关了 = 用户主动隐藏了「设置 › AI」。入口一旦
+  ///   出现，点击就会经 [_pushAiSettings] 推出这个被关掉的页面（`ModuleSettingsView`
+  ///   不查 `visible`），所以这里按同一判据 [isSettingsDestinationVisible] 收起。
+  /// - 下载模块关了：这个功能的产物就是下载任务，与设置里「AI 下视频」段
+  ///   （`settings_schema_ai.dart`）同一个门。
+  bool get _aiAcquireModulesEnabled =>
+      isSettingsDestinationVisible(
+        SettingsDestinationId.ai,
+        appModel.moduleVisibility,
+      ) &&
+      appModel.moduleVisibility.isEnabled(ModuleId.downloads);
 
   /// 打开「AI 下视频」对话页：组装全部端口后交给 [VideoAcquisitionService]。
   ///
