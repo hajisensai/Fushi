@@ -119,6 +119,46 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("registry.Poll();", source)
         self.assertNotIn("TryHook", source)
 
+    def test_kirikiri_voice_enqueue_rejects_non_audio_payloads(self) -> None:
+        # Both named-storage detours funnel through this one function; plugin-level
+        # encrypted archive members (hashed physical names, ciphertext bytes) must be
+        # dropped here by container magic, before a task slot is claimed.
+        source = self._strip_comments(
+            (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8"))
+        body = self._function_body(source, "void EnqueueKirikiriVoiceResourceOwned(")
+        gate = "fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr"
+        self.assertIn(gate, body)
+        self.assertLess(body.index(gate), body.index("g_kirikiri_voice_tasks[i]"))
+        for detour in (
+            "IStream* __stdcall Detour_TVPCreateIStreamStub(",
+            "TjsBinaryStream* __fastcall Detour_TVPCreateBinaryStream(",
+        ):
+            self.assertIn("EnqueueKirikiriVoiceResourceOwned(",
+                          self._function_body(source, detour))
+
+    def test_launch_runs_loader_init_gate_before_injection(self) -> None:
+        # The primary thread must initialise TLS-callback executables itself; the gate is
+        # admitted by PE structure only (no title/hash/engine name) and precedes injection.
+        source = self._strip_comments(
+            (ROOT / "injector/injector_main.cpp").read_text(encoding="utf-8"))
+        launch = self._function_body(source, "int RunLaunch(")
+        self.assertIn("fushi_voice_hook::ShouldUseLoaderInitGate(pe_layout, true)", launch)
+        self.assertIn("ReadPeLaunchLayout(exe)", launch)
+        self.assertLess(launch.index("ReadPeLaunchLayout(exe)"),
+                        launch.index("ShouldUseLoaderInitGate("))
+        self.assertLess(launch.index("RunLoaderInitGate("), launch.index("RunInjection("))
+        gate_condition = launch[:launch.index("ShouldUseLoaderInitGate(pe_layout, true)")]
+        for guard in ("launched_suspended", "!resumed_before_discovery",
+                      "!delayed_attach", "!follow_children"):
+            self.assertIn(guard, gate_condition[-300:])
+        # BUG-1192: a SteamStub exe falling back to a direct launch must say so.
+        steam_fallback = launch[launch.index("RunSteamLaunch("):launch.index("creation_flags")]
+        self.assertIn("pe_layout.steam_stub", steam_fallback)
+        gate = self._function_body(source, "bool RunLoaderInitGate(")
+        # Original entry bytes are always restored, including the timeout path.
+        self.assertIn("restore();", gate)
+        self.assertLess(gate.rindex("restore();"), gate.index("if (reached) {"))
+
     def test_every_adapter_is_an_independent_include(self) -> None:
         source = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
         adapters = {

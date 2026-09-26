@@ -142,6 +142,16 @@ void EnqueueKirikiriVoiceResourceOwned(
     free(data);
     return;
   }
+  // 只发布字节层面真是音频容器（Ogg / RIFF-WAVE）的流。存储名粗筛（IsVoiceStorageName）
+  // 故意宽，而插件层解密的归档（柚子社 KiriKiri Z：PackinOne/yuzuex + 哈希成员名）会让
+  // 引擎对同一句语音开两次流：一次是逻辑名、字节已解密；一次是 32 位十六进制哈希物理名、
+  // 字节仍是密文。旧实现两份都当语音落盘，密文那份名字照样是 `.ogg`，配对到它的卡片音频
+  // 不可解码（《喫茶ステラと死神の蝶》真机：每句 noz*.ogg 都伴随一份同长度 NOT-OGG 文件）。
+  // 按魔数判定与引擎版本、加密方案、文件命名都无关。
+  if (fushi_voice_hook::KirikiriVoicePayloadExtension(data, len) == nullptr) {
+    free(data);
+    return;
+  }
   for (int i = 0; i < kKirikiriVoiceTaskSlots; ++i) {
     KiriKiriVoiceTask* task = &g_kirikiri_voice_tasks[i];
     if (InterlockedCompareExchange(&task->state, 1, 0) != 0) continue;
