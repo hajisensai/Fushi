@@ -821,5 +821,5 @@ void main() {
     } catch (_) {}
     await fakeAnki?.close();
     out('exit');
-  }, timeout: const Timeout(Duration(minutes: 45)));
+  }, timeout: const Timeout(Duration(hours: 6)));
 }

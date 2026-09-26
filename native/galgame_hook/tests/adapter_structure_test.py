@@ -159,6 +159,42 @@ class AdapterStructureTest(unittest.TestCase):
         refresh = refresh[:refresh.index("};")]
         self.assertIn("global.fushiLookupSweepLayerRenderers();", refresh)
 
+    def test_kirikiri_inert_msgwin_plugin_falls_back_to_classic(self) -> None:
+        # BUG-2721: PARQUET (2021) registers kag.renderMsgwinPlugin but getRender returns
+        # void on every line and renders stays empty; the text is drawn by the MessageLayer.
+        # The install-time either/or dispatch must not strand such a build on the msgwin
+        # branch. The criterion is the plugin's observed behaviour (never timing), and the
+        # demotion is reversible once getRender yields a real render.
+        source = (ROOT / "hook/adapters/kirikiri_adapter.inc").read_text(encoding="utf-8")
+        demote = source[source.index("global.fushiLookupDemoteInertMsgwin = function()"):]
+        demote = demote[:demote.index("global.fushiLookupRestoreActiveMsgwin = function()")]
+        self.assertIn("!global.fushiLookupMsgwinVoidSeen || global.fushiLookupMsgwinYielded", demote)
+        self.assertIn("renders.count > 0) return;", demote)
+        self.assertIn("if(global.fushiLookupSweepLayerRenderers() == 0)", demote)
+        self.assertIn("global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;", demote)
+        restore = source[source.index("global.fushiLookupRestoreActiveMsgwin = function()"):]
+        restore = restore[:restore.index("};")]
+        self.assertIn("global.fushiLookupClassicSource & ~1", restore)
+        # Observation lives in the getRender wrapper, after the game's own call.
+        wrapper = source[source.index("global.fushiLookupMakeGetRenderWrapper = function(owner)"):]
+        wrapper = wrapper[:wrapper.index("global.fushiLookupInstallGetRenderBridge = function()")]
+        self.assertLess(wrapper.index("(original incontextof this)(...)"),
+                        wrapper.index("global.fushiLookupMsgwinVoidSeen = true;"))
+        self.assertIn("global.fushiLookupRestoreActiveMsgwin();", wrapper)
+        # Checked on every capture-bridge refresh (KAG run edge), which does not depend on
+        # geometry having been captured; the sentence-surface refresh would be circular.
+        refresh = source[source.index("global.fushiLookupRefreshCaptureBridges = function()"):]
+        refresh = refresh[:refresh.index("};")]
+        self.assertIn("global.fushiLookupDemoteInertMsgwin();", refresh)
+        sweep = source[source.index("global.fushiLookupSweepLayerRenderers = function()"):]
+        sweep = sweep[:sweep.index("return found;")]
+        self.assertIn("!global.fushiLookupMsgwinInert) return 0;", sweep)
+        # Classic instance wrappers capture only while bit 0 is on, so a restored msgwin
+        # build never has two geometry sources.
+        classic = source[source.index("global.fushiLookupPatchClassicLayer = function(layer)"):]
+        classic = classic[:classic.index("global.fushiLookupSweepClassicLayers = function()")]
+        self.assertEqual(classic.count("if((global.fushiLookupClassicSource & 1) != 0)"), 2)
+
     def test_launch_runs_loader_init_gate_before_injection(self) -> None:
         # The primary thread initialises TLS-callback executables itself, but only when the
         # KiriKiri launch profile (XP3 archive signature beside the exe; no title/hash/exe
