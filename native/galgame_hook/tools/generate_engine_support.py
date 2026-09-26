@@ -277,6 +277,7 @@ AUDIO_PROOF_BOUNDARIES = {
     "process_loopback": "loopback_observed",
     "qlie_wuvorbis_float_per_source_pcm": "pcm_observed",
     "qlie_wuvorbis_per_source_pcm": "pcm_observed",
+    "reallive_nwk_nwa_resource": "resource_observed",
     "resource_audio": "resource_observed",
     "smash_fzmedia_fcd_ogg_resource": "resource_observed",
     "tyrano_asar_voice_resource": "resource_observed",

@@ -45,6 +45,11 @@ def _prove_engine_claim(document: dict, claim: str, value: object) -> None:
     )
 
 
+def _audio(engine: dict, kind: str) -> dict:
+    """按 kind 取音频能力，不依赖 priority 下标（引擎可在前面插入更优先的资源层）。"""
+    return next(item for item in engine["audio"]["priority"] if item["kind"] == kind)
+
+
 class EngineSupportManifestTest(unittest.TestCase):
     def setUp(self) -> None:
         self.manifest = GENERATOR.load_manifest(ROOT / "engine-support.yaml")
@@ -281,7 +286,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         reallive = next(
             item for item in self.manifest["engines"] if item["id"] == "reallive"
         )
-        reallive["audio"]["priority"][0]["status"] = "verified"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "verified"
         with self.assertRaisesRegex(
             GENERATOR.ManifestError, "support_evidence"
         ):
@@ -295,7 +300,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_structured_release_evidence_allows_a_scoped_promotion(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence()
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -327,7 +332,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_support_evidence_is_engine_bound_and_hash_pinned(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence()
         document["task"]["support_status"] = "partial"
         document["stages"]["release"]["proved_capabilities"][0][
@@ -355,7 +360,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_pcm_e2e_cannot_prove_a_resource_capability(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence("pcm_observed")
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -386,8 +391,8 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_multiple_evidence_files_accumulate_distinct_audio_layers(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
-        reallive["audio"]["priority"][1]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
+        _audio(reallive, "xaudio2_or_directsound_pcm")["status"] = "partial"
         resource_document = _complete_evidence("resource_observed")
         pcm_document = _complete_evidence("pcm_observed")
         records = []
@@ -437,7 +442,7 @@ class EngineSupportManifestTest(unittest.TestCase):
     def test_new_verified_game_must_match_hash_pinned_runtime_identity(self) -> None:
         reallive = self.engines["reallive"]
         reallive["current_status"] = "partial"
-        reallive["audio"]["priority"][0]["status"] = "partial"
+        _audio(reallive, "visual_arts_ovk_resource")["status"] = "partial"
         document = _complete_evidence("resource_observed")
         document["task"]["engine_id"] = "reallive"
         document["task"]["support_status"] = "partial"
@@ -567,7 +572,7 @@ class EngineSupportManifestTest(unittest.TestCase):
         new_engine["current_status"] = "partial"
         new_engine["family"] = {"id": "fabricated", "relation": "unproved"}
         new_engine["process_strategy"]["attach"] = "works_everywhere"
-        new_engine["audio"]["priority"][0]["status"] = "partial"
+        _audio(new_engine, "visual_arts_ovk_resource")["status"] = "partial"
         self.manifest["engines"].append(new_engine)
         document = _complete_evidence("resource_observed")
         document["task"]["engine_id"] = "new_engine"

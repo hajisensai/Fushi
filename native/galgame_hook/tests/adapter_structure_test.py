@@ -1782,6 +1782,54 @@ class AdapterStructureTest(unittest.TestCase):
         remember = remember.split("void ForgetSiglusOvk", 1)[0]
         self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
 
+    def test_reallive_nwk_capture_is_identity_gated_and_worker_owned(self) -> None:
+        """RealLive NWK：身份只取结构判据；游戏线程回调只做固定检查 + 有界入队。"""
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        siglus = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "siglus_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        # 身份：结构判据 + Siglus 否决，不认 exe 摘要。
+        identity = self._function_body(adapter, "bool IsRealliveEngine(")
+        self.assertIn("MatchesRealliveProfile(", identity)
+        self.assertIn("IsSiglusEngine()", identity)
+        self.assertIn("DirectoryLooksLikeSiglusOnDisk(", identity)
+        for forbidden in ("Sha256", "SHA256", "BCrypt", "Kinetic", "planetarian"):
+            self.assertNotIn(forbidden, adapter)
+        # 测量失败不得直接写永久否定缓存。
+        unmeasured = identity.index("if (!inputs.image_measured && !inputs.reallive_directory)")
+        self.assertLess(
+            unmeasured,
+            identity.rindex("InterlockedExchange(&g_reallive_identity_state"),
+        )
+        # 入队必须先过身份武装位。
+        observe = self._function_body(adapter, "void ObserveRealliveNwkRead(")
+        self.assertLess(
+            observe.index("g_reallive_capture_armed"),
+            observe.index("QueueRealliveNwkVoice("),
+        )
+        for name in ("void ObserveRealliveNwkRead(", "void RememberRealliveNwk(",
+                     "void ForgetRealliveNwk(", "void QueueRealliveNwkVoice("):
+            callback = self._function_body(adapter, name)
+            for forbidden in ("CreateFile", "malloc(", "WriteVoiceOggAt",
+                              "DecodeNwaToWav", "ParseNwaHeader",
+                              "EnterCriticalSection", "Sleep("):
+                self.assertNotIn(forbidden, callback, f"{name} 不得含 {forbidden}")
+        install = self._function_body(adapter, "bool install() override")
+        self.assertLess(install.index("probe()"),
+                        install.index("g_reallive_capture_armed"))
+        # 共享 broker 只转发，不解析 NWK。
+        self.assertIn("ObserveRealliveNwkRead(file, buffer, done, overlapped);",
+                      self._function_body(siglus, "BOOL WINAPI Detour_ReadFile("))
+        self.assertIn("ForgetRealliveNwk(handle);",
+                      self._function_body(siglus, "BOOL WINAPI Detour_CloseHandle("))
+        self.assertNotIn("reallive::", siglus)
+
     def test_qlie_float_callback_is_bounded_and_does_not_copy_pack_streams(
         self,
     ) -> None:

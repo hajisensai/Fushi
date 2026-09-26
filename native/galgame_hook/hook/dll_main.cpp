@@ -113,6 +113,7 @@
 #include "unity_text_mesh_reassembler.h"
 #include "unity_text_profile.h"
 #include "visual_arts_ovk.h"
+#include "reallive_nwk.h"
 #include "voice_hook_ipc.h"
 #include "siglus_text_owner.h"
 #include "voice_resource_filename.h"

@@ -101,6 +101,12 @@ void RememberHunexVoiceHfa(HANDLE handle, const wchar_t* path);
 void ObserveHunexVoiceHfaRead(HANDLE file, const void* buffer, DWORD done,
                               LPOVERLAPPED overlapped);
 void ForgetHunexVoiceHfa(HANDLE handle);
+// RealLive owns NWK identity, index parsing, NWA decoding and worker tasks
+// (reallive_adapter.inc). This broker only forwards fixed file events.
+void RememberRealliveNwk(HANDLE handle, const wchar_t* path);
+void ObserveRealliveNwkRead(HANDLE file, const void* buffer, DWORD done,
+                            LPOVERLAPPED overlapped);
+void ForgetRealliveNwk(HANDLE handle);
 
 bool HasOvkSuffix(const wchar_t* path) {
   if (path == nullptr) return false;
@@ -187,6 +193,7 @@ HANDLE WINAPI Detour_CreateFileW(LPCWSTR file_name, DWORD desired_access,
     RememberLeafAquaplusVoicePak(result, file_name);
   }
   if (result != INVALID_HANDLE_VALUE) RememberHunexVoiceHfa(result, file_name);
+  if (result != INVALID_HANDLE_VALUE) RememberRealliveNwk(result, file_name);
   if (result != INVALID_HANDLE_VALUE) RememberUnityVoiceBundle(file_name);
   return result;
 }
@@ -219,6 +226,7 @@ HANDLE WINAPI Detour_CreateFileA(LPCSTR file_name, DWORD desired_access,
       RememberElfAi6VoiceArc(result, wide);
       RememberLeafAquaplusVoicePak(result, wide);
       RememberHunexVoiceHfa(result, wide);
+      RememberRealliveNwk(result, wide);
       RememberUnityVoiceBundle(wide);
     }
   }
@@ -297,6 +305,7 @@ BOOL WINAPI Detour_ReadFile(HANDLE file, LPVOID buffer, DWORD requested,
   ObserveElfAi6VoiceArcRead(file, buffer, done, overlapped);
   ObserveLeafAquaplusVoicePakRead(file, buffer, done, overlapped, caller);
   ObserveHunexVoiceHfaRead(file, buffer, done, overlapped);
+  ObserveRealliveNwkRead(file, buffer, done, overlapped);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) == 0) return ok;
 
   wchar_t path[kSiglusPathChars] = {0};
@@ -338,6 +347,7 @@ BOOL WINAPI Detour_CloseHandle(HANDLE handle) {
   ForgetElfAi6VoiceArc(handle);
   ForgetLeafAquaplusVoicePak(handle);
   ForgetHunexVoiceHfa(handle);
+  ForgetRealliveNwk(handle);
   ForgetMalieMapping(handle);
   if (InterlockedCompareExchange(&g_visual_arts_ovk_seen, 0, 0) != 0) {
     ForgetSiglusOvk(handle);

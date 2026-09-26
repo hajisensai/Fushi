@@ -10,7 +10,7 @@
 |---|---|---|---|---|---|
 | `siglus` | SiglusEngine | `verified` | engine_exact_utf16_hook (implemented_unverified)；luna_hook (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | resource_audio (verified)；directsound_pcm (verified)；process_loopback (verified) | 1 |
 | `elf_ai6` | elf AI6 | `implemented_unverified` | luna_textouta_hook (implemented_unverified) | ai6_voice_arc_resource (implemented_unverified)；directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `reallive` | RealLive / old VisualArt's | `implemented_unverified` | luna_hook (implemented_unverified) | reallive_nwk_nwa_resource (implemented_unverified)；visual_arts_ovk_resource (implemented_unverified)；xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `cmvs` | CMVS (Purple Software) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `kirikiri_z` | KiriKiri2 / KiriKiriZ | `partial` | luna_auto_or_pc_hooks (implemented_unverified)；ingame_lookup_geometry (implemented_unverified) | kirikiri_resource_stream (implemented_unverified)；kirikiri_decoder_pcm (implemented_unverified)；directsound_pcm (verified)；process_loopback (verified) | 2 |
 | `xaudio2_directsound` | XAudio2 / DirectSound generic capture | `verified` | — | xaudio2_source_voice_pcm (verified)；directsound_buffer_pcm (verified)；xwma_compressed_resource (implemented_unverified) | 1 |
@@ -203,7 +203,8 @@ Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`
 
 识别签名（所有非空项均带真实样本或运行时观察证据）：
 
-- `resource_extensions`：.ovk；证据：real_sample — anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence
+- `pe_architectures`：x86；证据：real_sample — Key planetarian Kinetic Novel (2004) ships its RealLive build renamed as Kinetic.exe, PE32 machine 0x014c; static probe 2026-09-27
+- `resource_extensions`：.ovk、.nwk；证据：real_sample — anemoi VisualArt's/Siglus koe/*.ovk proves the shared container path only; it is not RealLive compatibility evidence. Key planetarian Kinetic Novel (RealLive, x86) Kineticdata/KOE/z0001.nwk (754 members) and z0002.nwk (102 members): every member parsed and decoded offline to 16-bit WAV on 2026-09-27; offline format evidence only, no runtime read observed
 
 文本能力：
 
@@ -213,9 +214,10 @@ Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`
 
 音频优先级：
 
-1. `visual_arts_ovk_resource` — `implemented_unverified`；格式：strict u32 count + 16-byte entries + complete Ogg/EOS；clean voice：not_verified
-2. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：generic source PCM fallback；clean voice：engine_dependent
-3. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
+1. `reallive_nwk_nwa_resource` — `implemented_unverified`；格式：u32 count + 12-byte {byte_len, offset, voice_id} entries; NWA complevel -1..5 (16-bit, mono/stereo) decoded on the worker to PCM WAV；clean voice：not_verified
+2. `visual_arts_ovk_resource` — `implemented_unverified`；格式：strict u32 count + 16-byte entries + complete Ogg/EOS；clean voice：not_verified
+3. `xaudio2_or_directsound_pcm` — `implemented_unverified`；格式：generic source PCM fallback；clean voice：engine_dependent
+4. `process_loopback` — `implemented_unverified`；格式：host PCM fallback；clean voice：否
 
 真实样本证据：
 
@@ -225,10 +227,13 @@ Tests：`tests/elf_ai6_adapter_test.cpp`、`tests/resource_audio_ready_test.cpp`
 - Format sharing with verified Siglus OVK is not evidence that a RealLive title is compatible.
 - NWK/KOE/NWA remain unevaluated because no real old VisualArt's sample is available; no parser or support claim is added for them.
 - A real original-path run must add executable/module hashes, text-thread evidence and byte-identity proof before promotion.
+- Supersedes the NWK/NWA line above: a bounded NWK index parser and NWA decoder (complevel -1..5, 16-bit) now decode all 856 members of a real planetarian Kinetic Novel sample offline; no runtime KOE read, text pairing or card has been recorded, so the path stays implemented_unverified.
+- Identity is structural: ASCII Gameexe.ini plus a Seen script name in the executable file, or Gameexe.ini plus Seen.txt beside it, with any SiglusEngine marker or Siglus directory signature as a veto. Older AVG32 builds share that naming and are not distinguished.
+- NWK capture only observes a synchronous ReadFile that starts exactly at an indexed member; pending overlapped reads, memory-mapped KOE access and 8-bit NWA are not captured. Standard RealLive KOE/*.ovk titles still rely on the shared OVK path.
 
 Fixtures：`tests/fixtures/reallive_replay.json`
 
-Tests：`tests/reallive_adapter_test.cpp`
+Tests：`tests/reallive_adapter_test.cpp`、`tests/reallive_nwk_test.cpp`
 
 ### CMVS (Purple Software) (`cmvs`)
 

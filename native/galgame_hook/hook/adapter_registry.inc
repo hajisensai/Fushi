@@ -565,6 +565,11 @@ class AdapterRegistry {
     // Install it before startup-ready resumes the suspended game so the first
     // playback read cannot race ahead of handle tracking.
     hunex_gge_.install();
+    // RealLive identity is structural (exe string table / Seen.txt+Gameexe.ini)
+    // and arms NWK capture on the same broker. Arm it before resume so the
+    // first KOE read cannot race ahead; a transient measurement failure is
+    // retried from Poll via ProcessPendingEvents.
+    reallive_.install();
     // SGRE RawImageEx labels can be rasterized once on the very first frame
     // and then live only as cached textures. Install its optional UI trace
     // while the injector still owns the startup suspension; the generated
@@ -618,6 +623,7 @@ class AdapterRegistry {
     hunex_gge_.ProcessPendingEvents();
     smash_fzmedia_.ProcessPendingEvents();
     cmvs_.ProcessPendingEvents();
+    reallive_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.
