@@ -415,7 +415,7 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("InvalidateSiglusLookupClickTarget();", cursor_failure)
         self.assertNotIn("Retire(", cursor_failure)
         captures = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
-        changed_line = self._function_body(captures, "if (!same)")
+        changed_line = self._function_body(captures, "if (!same || leaves_selection)")
         self.assertIn("ResetSiglusLookupLayout", changed_line)
         self.assertIn(".Retire(", changed_line)
         self.assertIn("InvalidateSiglusLookupClickTarget();", captures)
@@ -472,8 +472,13 @@ class AdapterStructureTest(unittest.TestCase):
         capture = self._function_body(siglus, "void ConsumeSiglusLookupCaptures()")
         self.assertIn("ReadLatestSiglusLookupText(&text_snapshot, &text_seq)", capture)
         self.assertIn("text_snapshot.text_units != 0", capture)
-        changed = self._function_body(capture, "if (!same)")
+        changed = self._function_body(capture, "if (!same || leaves_selection)")
         self.assertIn("g_siglus_lookup_active_line_units = text_snapshot.text_units", changed)
+        # A new dialogue occurrence ends a choice screen before the body swap.
+        self.assertIn("g_siglus_lookup_selection_active && (identity_changed || !same)",
+                      capture)
+        self.assertLess(capture.index("const bool leaves_selection"),
+                        capture.index("if (!same || leaves_selection)"))
         self.assertIn("ResetSiglusLookupLayout", changed)
         self.assertIn("InvalidateSiglusLookupClickTarget", changed)
         self.assertIn("g_geometry_provider_registry.Retire", changed)

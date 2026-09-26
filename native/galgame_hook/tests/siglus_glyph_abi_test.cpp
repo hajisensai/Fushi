@@ -39,9 +39,14 @@ bool ReadSiglusEightArgGlyphOrdinal(void*, uint32_t* ordinal, uint32_t* count,
   *ordinal = 0; *count = 1; return glyph_owned;
 }
 void PublishSiglusLookupGlyphInvalidation() { ++invalidations; }
+constexpr uint16_t kSiglusLookupGlyphEventBody = 0;
+constexpr uint16_t kSiglusLookupGlyphEventSelection = 2;
+uint16_t published_kind = 0xffff;
 void PublishSiglusLookupGlyphEvent(uint16_t code_unit, int32_t x, int32_t y,
-                                   int32_t extent) {
+                                   int32_t extent,
+                                   uint16_t kind = kSiglusLookupGlyphEventBody) {
   published = {code_unit, extent, x, y};
+  published_kind = kind;
   ++publications;
 }
 void CaptureSiglusEightArgGlyphRecord(const SiglusGlyphRecord& glyph,
@@ -190,5 +195,23 @@ int main() {
       test_profile.glyph_abi);
   assert(publications == 3);
   assert(invalidations == 3); // Failed ordinal ends an eight-argument pass.
+
+  // Choice text: only the proved selection caller of the ten-argument family
+  // joins, tagged so the worker can retire the displaced dialogue line.
+  Put(record, 0x40, 400.0f);
+  test_profile.glyph_abi = SiglusGlyphLayoutAbi::kEcxTenArguments;
+  CaptureSiglusLookupGlyph(record, 1, caller, test_profile.glyph_abi);
+  assert(publications == 4 && published_kind == kSiglusLookupGlyphEventBody);
+  CaptureSiglusLookupGlyph(record, 1, caller + 0x100, test_profile.glyph_abi);
+  assert(publications == 4); // Unproved selection caller stays out.
+  test_profile.selection_glyph_return_rva = 0x200;
+  CaptureSiglusLookupGlyph(record, 1, caller + 0x100, test_profile.glyph_abi);
+  assert(publications == 5 && published_kind == kSiglusLookupGlyphEventSelection);
+  assert(published.x == 400 && published.y == 300);
+  CaptureSiglusLookupGlyph(record, 1, caller + 0x80, test_profile.glyph_abi);
+  assert(publications == 5); // Name plates and other text objects stay out.
+  test_profile.glyph_abi = SiglusGlyphLayoutAbi::kStackSixteenArguments;
+  CaptureSiglusLookupGlyph(record, 1, caller + 0x100, test_profile.glyph_abi);
+  assert(publications == 5); // The selection caller is a ten-argument site.
   std::puts("Siglus x86 ABI: argument bits, AL, stack cleanup and capture gates passed");
 }

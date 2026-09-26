@@ -19,7 +19,8 @@ bool PublishSiglusEightArgGlyphBatch(const fushi_voice_hook::SiglusGlyphRecord* 
     auto& event = g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
     InterlockedExchange64(&event.seq, 0);
     event.occurrence = occurrence;
-    event.reserved = invalid ? 1 : 0;
+    event.kind = invalid ? kSiglusLookupGlyphEventInvalidation
+                         : kSiglusLookupGlyphEventBody;
     event.code_unit = invalid ? 0 : glyphs[i].code_unit;
     event.design_x = invalid ? 0 : glyphs[i].x;
     event.design_y = invalid ? 0 : glyphs[i].y;
