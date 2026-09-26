@@ -1155,10 +1155,6 @@ function enableDefinitionImagePreview(node, imageUrl, alt) {
     });
 }
 
-const COMPACT_GLOSSARIES_ANKI = `.yomitan-glossary ul[data-sc-content="glossary"] > li:not(:first-child)::before, .yomitan-glossary .glossary-list > li:not(:first-child)::before { white-space: pre-wrap; content: " | "; display: inline; color: rgb(119, 119, 119); }
-.yomitan-glossary ul[data-sc-content="glossary"] > li, .yomitan-glossary .glossary-list > li { display: inline; }
-.yomitan-glossary ul[data-sc-content="glossary"], .yomitan-glossary .glossary-list { display: inline; list-style: none; padding-left: 0px; }`;
-
 // BUG-1666: exported glossary HTML used to keep the dictionary's raw
 // cross-reference anchors (`entry://词` / relative hrefs). Anki desktop and
 // AnkiDroid render cards in a WebView whose base URL is their local media
@@ -1448,9 +1444,6 @@ function constructSingleGlossaryHtml(entryIndex) {
             .trim();
             html += `<style>${formatted}</style>`;
         }
-        if (window.compactGlossariesAnki) {
-            html += `<style>${COMPACT_GLOSSARIES_ANKI}</style>`;
-        }
         html += `</div>`;
         
         glossaries[lastDict] = html;
@@ -1592,9 +1585,6 @@ function constructGlossaryHtml(entryIndex) {
         .replace(/;\s*/g, '; ')
         .trim();
         result += `<style>${formatted}</style>`;
-    }
-    if (window.compactGlossariesAnki) {
-        result += `<style>${COMPACT_GLOSSARIES_ANKI}</style>`;
     }
     result += '</div>';
     return result;

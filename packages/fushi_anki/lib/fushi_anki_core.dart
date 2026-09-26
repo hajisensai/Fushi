@@ -8,6 +8,7 @@
 /// foundation）只从 `fushi_anki.dart` 导出。
 library fushi_anki_core;
 
+export 'src/anki_compact_glossaries.dart';
 export 'src/anki_media_dedup.dart';
 export 'src/anki_models.dart';
 export 'src/anki_note_type_definition.dart';
