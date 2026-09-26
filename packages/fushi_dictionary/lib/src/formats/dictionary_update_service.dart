@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import 'package:path/path.dart' as path;
 
+import '../engine/dictionary.dart' show kDictSourceProbeKey;
 import 'dictionary_downloader.dart' show createDictionaryDio;
 
 /// TODO-861③（移植 Hoshi `94d0c41` #59）：词典自动更新的检查周期。`.name` 持久化
@@ -118,10 +119,22 @@ final class DictionaryRemoteIndexResult {
 Map<String, String> readSourceMetadataFromIndex(Directory finalDir) {
   final File indexFile = File(path.join(finalDir.path, 'index.json'));
   if (!indexFile.existsSync()) return <String, String>{};
+  final String text;
+  try {
+    text = indexFile.readAsStringSync();
+  } catch (_) {
+    return <String, String>{};
+  }
+  return parseSourceMetadataFromIndexJson(text);
+}
 
+/// [readSourceMetadataFromIndex] 的纯解析半边：index.json 文本 → 来源 metadata。
+/// 坏 JSON / 顶层非对象 → 空 Map（不抛）。启动期回填旧词典来源时走异步读文件再
+/// 调这里，不在 UI isolate 上同步读盘。
+Map<String, String> parseSourceMetadataFromIndexJson(String text) {
   final dynamic decoded;
   try {
-    decoded = jsonDecode(indexFile.readAsStringSync());
+    decoded = jsonDecode(text);
   } catch (_) {
     return <String, String>{};
   }
@@ -157,6 +170,36 @@ Map<String, String> readSourceMetadataFromIndex(Directory finalDir) {
   }
 
   return out;
+}
+
+/// [readSourceMetadataFromIndex] 落进 metadata 的来源字段（语言字段不算：它们缺席
+/// 不影响可更新性判断）。
+const List<String> kDictSourceMetadataKeys = <String>[
+  'revision',
+  'isUpdatable',
+  'indexUrl',
+  'downloadUrl',
+];
+
+/// 这本词典的 metadata 是否需要从磁盘 index.json 回填来源字段（见
+/// [kDictSourceProbeKey]）：没回填过、且一个来源字段都没有——导入路径（在线更新
+/// 之后的版本）总会带上至少一个来源字段，不会被误判成要回填。
+bool needsSourceMetadataBackfill(Map<String, String> metadata) {
+  if (metadata.containsKey(kDictSourceProbeKey)) return false;
+  return !kDictSourceMetadataKeys.any(metadata.containsKey);
+}
+
+/// 回填合并：已有 metadata 压过 index.json 读出的字段（用户/导入链路写下的值是
+/// 权威），再打上 [kDictSourceProbeKey] 标记。
+Map<String, String> mergeBackfilledSourceMetadata(
+  Map<String, String> existing,
+  Map<String, String> fromIndex,
+) {
+  return <String, String>{
+    ...fromIndex,
+    ...existing,
+    kDictSourceProbeKey: '1',
+  };
 }
 
 /// TODO-609：在线更新检查——拉远端 index.json 比 revision。

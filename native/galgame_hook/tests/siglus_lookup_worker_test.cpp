@@ -2,6 +2,7 @@
 #undef NDEBUG
 #endif
 #include "../hook/adapters/siglus_lookup.h"
+#include "../hook/adapters/siglus_selection_line.h"
 #include "../hook/geometry_provider_registry.h"
 #include <Windows.h>
 #include <atomic>
@@ -138,6 +139,9 @@ struct Fixture {
     g_siglus_lookup_waiting_click_seq = 0;
     g_siglus_lookup_waiting_glyph_seq = 0;
     g_siglus_lookup_unpublished_glyph_frontier = 0;
+    g_siglus_lookup_selection_active = false;
+    g_siglus_lookup_selection_pass.Reset();
+    g_siglus_lookup_dialogue_line_units = 0;
     g_siglus_lookup_worker_diagnostic_count = 0;
     g_siglus_lookup_last_hit_identity = 0;
     g_siglus_lookup_last_hit_tick = 0;
@@ -751,7 +755,7 @@ void TestEightArgGlyphOccurrenceCannotMix() {
   assert(g_siglus_lookup_glyph_processed_seq == 10);
   assert(g_siglus_lookup_layout.geometry.glyphs[0].rect.x == 200);
   Glyph(0, 0, 3);
-  g_siglus_lookup_glyph_events[11].reserved = 1;
+  g_siglus_lookup_glyph_events[11].kind = kSiglusLookupGlyphEventInvalidation;
   Consume();
   assert(!g_siglus_lookup_layout.current_valid);
   assert(!g_siglus_lookup_layout.line_has_complete_layout);
@@ -795,7 +799,168 @@ void TestEightArgBatchFrontierNeverExposesPartialRedraw() {
 }
 }  // namespace
 
+void SelectionGlyph(char16_t character, int32_t x, int32_t y) {
+  const uint64_t next = static_cast<uint64_t>(
+      InterlockedIncrement64(&g_siglus_lookup_glyph_event_count));
+  auto& slot = g_siglus_lookup_glyph_events[next % kSiglusLookupGlyphEventSlots];
+  slot.seq = 0;
+  slot.code_unit = character;
+  slot.kind = kSiglusLookupGlyphEventSelection;
+  slot.design_x = x;
+  slot.design_y = y;
+  slot.extent = 40;
+  slot.occurrence = 0;
+  InterlockedExchange64(&slot.seq, static_cast<LONG64>(next));
+}
+// Two choices on the rows the dialogue line used, replayed once per frame.
+void ChoicePass() {
+  SelectionGlyph(u'X', 100, 200); SelectionGlyph(u'Y', 140, 200);
+  SelectionGlyph(u'Z', 100, 246);
+}
+bool ActiveLineIs(const wchar_t* text) {
+  const size_t units = wcslen(text);
+  return g_siglus_lookup_active_line_units == units &&
+         memcmp(g_siglus_lookup_active_line, text, units * sizeof(wchar_t)) == 0;
+}
+SiglusLookupPayload PressActiveGlyph(size_t glyph) {
+  SiglusLookupPayload payload;
+  payload.text_identity = g_siglus_lookup_text_identity;
+  payload.geometry_generation = g_siglus_lookup_layout.generation;
+  payload.snapshot_epoch = g_siglus_lookup_layout.snapshot_epoch;
+  payload.text_units = g_siglus_lookup_active_line_units;
+  payload.char_index = g_siglus_lookup_layout.geometry.glyphs[glyph].char_index;
+  payload.rect = g_siglus_lookup_layout.geometry.glyphs[glyph].rect;
+  payload.engine_view = active_view;
+  assert(ProjectSiglusLookupRect(active_profile, active_view, payload.rect,
+                                1920, 1080, &payload.rect));
+  payload.game_window = reinterpret_cast<uintptr_t>(kWindow);
+  payload.client_width = 1920;
+  payload.client_height = 1080;
+  memcpy(payload.text, g_siglus_lookup_active_line,
+         g_siglus_lookup_active_line_units * sizeof(wchar_t));
+  return payload;
+}
+
+void TestSelectionPassBuilderSplitsRowsAndBoundsPasses() {
+  SiglusSelectionPassBuilder builder;
+  assert(!builder.Push(u'X', 100, 200, 40));
+  assert(!builder.Push(u'Y', 140, 200, 40));
+  assert(!builder.Push(u'Z', 100, 246, 40));
+  assert(builder.Push(u'X', 100, 200, 40));  // first glyph again closes it
+  assert(builder.line_units == 4);
+  assert(memcmp(builder.line.data(), u"XY\nZ", 4 * sizeof(char16_t)) == 0);
+  // The same unit at another anchor is part of the pass, not its end.
+  builder.Reset();
+  assert(!builder.Push(u'A', 100, 200, 40));
+  assert(!builder.Push(u'A', 140, 200, 40));
+  assert(builder.Push(u'A', 100, 200, 40));
+  assert(builder.line_units == 2);
+  // A pass that cannot fit one geometry never becomes a line.
+  builder.Reset();
+  for (size_t index = 0; index <= kSiglusLookupMaxGlyphs; ++index)
+    assert(!builder.Push(u'B', static_cast<int32_t>(index), 200, 40));
+  assert(!builder.Push(u'B', 0, 200, 40));
+  assert(builder.line_units == 0);
+}
+
+// BUG: CLANNAD choice screen looked up the previous dialogue line, because
+// its glyph table stayed live under the choice rows.
+void TestChoiceRetiresDisplacedDialogueAndBecomesTheLine() {
+  Fixture fixture;
+  Begin();
+  const auto old_press = Press(1);
+  ChoicePass();
+  Consume();
+  assert(g_siglus_lookup_selection_active);
+  assert(g_siglus_lookup_active_line_units == 0);
+  assert(!g_siglus_lookup_layout.current_valid);
+  assert(!g_siglus_lookup_layout.line_has_complete_layout);
+  QueueSiglusLookupClickSubmit(old_press);
+  assert(!ProcessSiglusLookupClickSubmissions());
+  assert(g_siglus_lookup_click_processed_seq == 1);
+  assert(g_header->lookup_hit_count == 0);
+
+  ChoicePass();
+  Consume();
+  assert(ActiveLineIs(L"XY\nZ"));
+  assert(g_siglus_lookup_layout.current_valid);
+  const auto choice = PressActiveGlyph(2);
+  assert(choice.char_index == 3);
+  QueueSiglusLookupClickSubmit(choice);
+  assert(ProcessSiglusLookupClickSubmissions());
+  assert(g_header->lookup_hit_count == 1);
+  const auto* hit = LookupHitOf(g_header);
+  // Mining still binds to the dialogue occurrence the choice follows.
+  assert(hit->text_generation == 42);
+  assert(hit->char_index == 3);
+  assert(hit->line_bytes == 4 && memcmp(hit->line_utf8, "XY\nZ", 4) == 0);
+  assert(g_siglus_lookup_term_generation == g_siglus_lookup_layout.generation);
+
+  // Term frame: a range spanning both choices stops at the first row.
+  SiglusLookupRect first, second, box;
+  assert(ProjectSiglusLookupRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry.glyphs[0].rect, 1920, 1080, &first));
+  assert(ProjectSiglusLookupRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry.glyphs[1].rect, 1920, 1080, &second));
+  assert(SiglusLookupTermRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, 0, 4, 1920, 1080, &box));
+  assert(box.x == first.x && box.y == first.y &&
+         box.x + box.width == second.x + second.width &&
+         box.height == first.height);
+  assert(SiglusLookupTermRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, 3, 1, 1920, 1080, &box));
+  assert(box.x == choice.rect.x && box.y == choice.rect.y);
+  assert(!SiglusLookupTermRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, 2, 1, 1920, 1080, &box));  // LF only
+  assert(!SiglusLookupTermRect(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, 0, 0, 1920, 1080, &box));
+  // Hover frame: the projected cell under the cursor, nothing off the text.
+  assert(SiglusLookupHoverCell(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, second.x + 1, second.y + 1, 1920, 1080,
+      &box));
+  assert(box.x == second.x && box.width == second.width);
+  assert(!SiglusLookupHoverCell(active_profile, active_view,
+      g_siglus_lookup_layout.geometry, 1900, 1070, 1920, 1080, &box));
+}
+
+void TestDialogueRedrawEndsChoice() {
+  Fixture fixture;
+  Begin();
+  ChoicePass(); ChoicePass();
+  Consume();
+  assert(ActiveLineIs(L"XY\nZ"));
+  FullRedraw();
+  Consume();
+  assert(!g_siglus_lookup_selection_active);
+  assert(ActiveLineIs(L"ABC"));
+  assert(g_siglus_lookup_layout.current_valid);
+  QueueSiglusLookupClickSubmit(Press(0));
+  assert(ProcessSiglusLookupClickSubmissions());
+  assert(LookupHitOf(g_header)->line_bytes == 3);
+}
+
+void TestNewDialogueEndsChoiceButRepublishedBodyDoesNot() {
+  Fixture fixture;
+  Begin();
+  ChoicePass(); ChoicePass();
+  Consume();
+  PublishSiglusLookupTextSnapshot(L"ABC", 3, {42, 7});
+  Consume();
+  assert(g_siglus_lookup_selection_active);
+  assert(ActiveLineIs(L"XY\nZ"));
+  PublishSiglusLookupTextSnapshot(L"DEF", 3, {43, 7});
+  Consume();
+  assert(!g_siglus_lookup_selection_active);
+  assert(ActiveLineIs(L"DEF"));
+  assert(g_siglus_lookup_text_identity.event_id == 43);
+  assert(!g_siglus_lookup_layout.line_has_complete_layout);
+}
+
 int main() {
+  TestSelectionPassBuilderSplitsRowsAndBoundsPasses();
+  TestChoiceRetiresDisplacedDialogueAndBecomesTheLine();
+  TestDialogueRedrawEndsChoice();
+  TestNewDialogueEndsChoiceButRepublishedBodyDoesNot();
   TestEightArgBatchFrontierNeverExposesPartialRedraw();
   TestEightArgGlyphOccurrenceCannotMix();
   TestZeroPrefixReservedGapPreservesOnlyPendingRelease();
@@ -823,5 +988,5 @@ int main() {
   TestOnlyTerminalOutcomesPublishDiagnostic();
   TestDiagnosticRingIsBoundedMetadata();
   TestResetAndOverflowDiagnosticRanges();
-  std::puts("siglus_lookup_worker_test: 27 groups passed (atomic batch publication, occurrence filtering, reserved gaps and rejection variants)");
+  std::puts("siglus_lookup_worker_test: 31 groups passed (atomic batch publication, occurrence filtering, reserved gaps, rejection variants and choice screens)");
 }

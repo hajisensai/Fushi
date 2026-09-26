@@ -365,9 +365,32 @@ class ImmersionMiningEngine {
     FfmpegFailureReporter? onAudioFailure,
   }) {
     final ImmersionMiningRequest frozenRequest = req.frozen();
+    // 副本 Future 在点击当下就开跑，轮到本任务前可能早已失败：当场接住，否则排队期间
+    // 它就是一个未处理的异步错误。
+    final Future<CachedMediaSnapshot?> pendingSnapshot =
+        _guardSnapshot(frozenRequest.cachedMediaSnapshot);
     return _sharedMiningQueue.enqueueRethrowing<ImmersionMiningResult>(
       () async {
         final String resolvedTempDir = await tempDir;
+        // 在线视频：播放器在点击当下把这句所在的缓冲落成了本地副本。拿到就对副本抽取
+        // （本地 seek，毫秒级），副本抽不出来（中止）再走下面的远端抽取；副本用完即删。
+        final CachedMediaSnapshot? snapshot = await pendingSnapshot;
+        if (snapshot != null) {
+          try {
+            final ImmersionMiningResult local = await _mineNow(
+              frozenRequest.withCachedSnapshot(snapshot),
+              compression: compression,
+              tempDir: resolvedTempDir,
+              repo: repo,
+              onFailure: onFailure,
+              onCoverFailure: onCoverFailure,
+              onAudioFailure: onAudioFailure,
+            );
+            if (!local.aborted) return local;
+          } finally {
+            await _deleteQuietly(snapshot.path);
+          }
+        }
         // 远端输入的连接方式（经中继 / 放开 HLS 扩展名）在入队时才开始登记，构造
         // ffmpeg 参数前必须已经就位。
         await frozenRequest.mediaSourceRouteReady;
@@ -382,6 +405,29 @@ class ImmersionMiningEngine {
         );
       },
     );
+  }
+
+  /// 缓冲副本；落盘任何异常都当「没有副本」（回到远端抽取），不让它打断制卡。
+  /// 错误处理在调用当下同步挂上（[Future.then] 的 onError），不等到出队。
+  static Future<CachedMediaSnapshot?> _guardSnapshot(
+      Future<CachedMediaSnapshot?>? pending) {
+    if (pending == null) return Future<CachedMediaSnapshot?>.value();
+    return pending.then(
+      (CachedMediaSnapshot? snapshot) {
+        if (snapshot == null) return null;
+        final File file = File(snapshot.path);
+        if (!file.existsSync() || file.lengthSync() == 0) return null;
+        return snapshot;
+      },
+      onError: (Object _) => null,
+    );
+  }
+
+  static Future<void> _deleteQuietly(String path) async {
+    try {
+      final File file = File(path);
+      if (file.existsSync()) await file.delete();
+    } catch (_) {}
   }
 
   Future<ImmersionMiningResult> _mineNow(
@@ -409,6 +455,12 @@ class ImmersionMiningEngine {
     }
     final bool synchronizedVideo =
         req.source == AnkiMiningSource.video && req.imageMode.isVideoClip;
+    // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
+    // （[ImmersionMiningRequest.mediaTimeOffsetMs]），远端流 / 本地文件为 0。
+    // 卡面的 clip 窗（下方 AnkiMiningContext）仍写播放器轴原值。
+    final int offsetMs = req.mediaTimeOffsetMs;
+    final int extractStartMs = req.clipStartMs - offsetMs;
+    final int extractEndMs = req.clipEndMs - offsetMs;
 
     // 按来源分流的两个上报口：各自先喂专属回调，再合流进 [onFailure]（保持既有语义）。
     // BUG-1664：两个上报口流经的**精确**失败摘要（含 `ffmpeg launch failed:
@@ -479,8 +531,8 @@ class ImmersionMiningEngine {
           await extractAnimatedClipWithFallback(
         format: req.animatedFormat,
         inputPath: src,
-        startMs: req.clipStartMs,
-        endMs: req.clipEndMs,
+        startMs: extractStartMs,
+        endMs: extractEndMs,
         outputPathStem: '$tempDir/immersion_clip',
         compression: compression,
         extractor: _gif,
@@ -510,7 +562,7 @@ class ImmersionMiningEngine {
           inputPath: src,
           outputPath: '$tempDir/immersion_frame.${attempt.fileExtension}',
           // 静态帧锚点与音频窗起点分离：窗起点含用户头 padding，封面不该跟着往前。
-          atSeconds: req.stillFrameAnchorMs / 1000.0,
+          atSeconds: (req.stillFrameAnchorMs - offsetMs) / 1000.0,
           // 由收口原语决定这次尝试要不要报告（能力探测那次是 null）。
           onFailure: onFailure,
           tlsPinSha256: req.mediaSourceTlsPinSha256,
@@ -617,8 +669,8 @@ class ImmersionMiningEngine {
         video = await _synchronizedVideo(
           videoPath: src!,
           audioPath: audioPath,
-          startMs: req.clipStartMs,
-          endMs: req.clipEndMs,
+          startMs: extractStartMs,
+          endMs: extractEndMs,
           outputPath: '${exportedVideoDir.path}/immersion_video.mp4',
           tlsPinSha256: req.mediaSourceTlsPinSha256,
           httpHeaders: req.mediaSourceHttpHeaders,
@@ -695,13 +747,17 @@ class ImmersionMiningEngine {
       outcome = req.sourceReviewMine != null
           ? await req.sourceReviewMine!(
               rawPayloadJson: jsonEncode(req.fields), context: context)
-          : req.updateNoteId == null
-              ? await repo.mineEntry(
+          // 看完再制卡：媒体已备好，先暂存、不落卡（见 [ImmersionMiningRequest.stageNote]）。
+          : req.stageNote != null
+              ? await req.stageNote!(
                   rawPayloadJson: jsonEncode(req.fields), context: context)
-              : await repo.updateMinedNote(
-                  noteId: req.updateNoteId!,
-                  rawPayloadJson: jsonEncode(req.fields),
-                  context: context);
+              : req.updateNoteId == null
+                  ? await repo.mineEntry(
+                      rawPayloadJson: jsonEncode(req.fields), context: context)
+                  : await repo.updateMinedNote(
+                      noteId: req.updateNoteId!,
+                      rawPayloadJson: jsonEncode(req.fields),
+                      context: context);
     } finally {
       // Upload/import has completed before removing this job's private MP4.
       if (exportedVideoDir != null) {
@@ -774,10 +830,14 @@ class ImmersionMiningEngine {
       );
       if (materialized != null) cutInput = materialized;
     }
+    // 缓冲副本的时间轴偏移只作用于 [ImmersionMiningRequest.mediaSource] 自己；
+    // 独立音频源（YouTube 分离音轨）与副本互斥（有它就不落副本），偏移恒 0。
+    final int audioOffsetMs =
+        req.audioSource == null ? req.mediaTimeOffsetMs : 0;
     audioPath = await _audio(
       inputPath: cutInput,
-      startMs: req.clipStartMs,
-      endMs: req.clipEndMs,
+      startMs: req.clipStartMs - audioOffsetMs,
+      endMs: req.clipEndMs - audioOffsetMs,
       outputPath: '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
       audioStreamIndex: req.audioStreamIndex,
       audioStreamCount: req.audioStreamCount,

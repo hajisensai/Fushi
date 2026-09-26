@@ -147,4 +147,46 @@ void main() {
     );
     expect(source, isNot(contains('if (successCount > 0)')));
   });
+
+  test('自动更新下载远端 index 声明的新包地址', () {
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(
+        source, contains('_autoRedownloadAndReimport(dictionary, remote, job)'),
+        reason: '远端 index 结果必须传进重导函数');
+    final int fn = source.indexOf('Future<void> _autoRedownloadAndReimport(');
+    final int end = source.indexOf('\n  }\n', fn);
+    final String body = source.substring(fn, end);
+    // BUG-2707（#1670）：本地 downloadUrl 只能作为 resolveDownloadUrl /
+    // updatedSourceMetadata 的回落值出现，不能直接拿来下载或回写。
+    expect(body,
+        contains('url: remote.resolveDownloadUrl(dictionary.downloadUrl)'),
+        reason: '下载地址必须是远端 index 声明的新包地址（缺省才回落本地）');
+    expect(body, contains('remote.updatedSourceMetadata('),
+        reason: '回写来源必须推进到远端地址');
+    expect(RegExp(r'url:\s*dictionary\.downloadUrl').hasMatch(body), isFalse,
+        reason: '不得直接拿本地旧地址下载');
+  });
+
+  test('启动期回填旧词典来源字段：接在类型自愈里、批量落库', () {
+    final String source =
+        File('lib/src/models/app_model.dart').readAsStringSync();
+    expect(source, contains('unawaited(_backfillDictionarySourceMetadata());'));
+    final int fn =
+        source.indexOf('Future<void> _backfillDictionarySourceMetadata()');
+    final int end = source.indexOf('\n  }\n', fn);
+    final String body = source.substring(fn, end);
+    expect(body, contains('needsSourceMetadataBackfill('));
+    expect(body, contains('await indexFile.readAsString()'),
+        reason: '异步读盘，不在 UI isolate 上同步 IO');
+    expect(body, contains('dictRepo.persistDictionaries('),
+        reason: '一次批量落库，只重载一次引擎');
+    expect(
+      RegExp(r'try \{\s*await dictRepo\.persistDictionaries\(updated\);\s*\} catch')
+          .hasMatch(body),
+      isTrue,
+      reason: '调用方 unawaited：落库失败必须就地捕获并记日志，不能漏成 zone 错误',
+    );
+    expect(body, isNot(contains('persistDictionary(')));
+  });
 }
