@@ -35,6 +35,7 @@ import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningHeadPadMs, kMiningPadMaxMs, kMiningTailPadMs;
@@ -2066,6 +2067,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   void setVideoMiningImageMode(VideoMiningImageMode mode) async {
     await setPref('video_mining_image_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  // 在线视频点制卡后弹窗等不等（见 [VideoOnlineMiningMode]）。默认 background。
+  VideoOnlineMiningMode get videoOnlineMiningMode =>
+      VideoOnlineMiningMode.fromWireName(
+          getPref('video_online_mining_mode', defaultValue: null) as String?);
+
+  Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) async {
+    await setPref('video_online_mining_mode', mode.wireName);
     notifyListeners();
   }
 

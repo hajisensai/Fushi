@@ -5598,5 +5598,22 @@
   "dict_update_check_failed": "检查更新失败，请检查网络或代理设置。",
   "dict_update_from_file_tooltip": "从本地文件更新（此词典没有在线更新地址）",
   "anki_lapis_visual_text_indent": "首行缩进",
-  "anki_lapis_visual_text_indent_chars": "$count 字"
+  "anki_lapis_visual_text_indent_chars": "$count 字",
+  "video_online_mining_mode": "在线视频制卡",
+  "video_online_mining_mode_background": "后台制卡",
+  "video_online_mining_mode_background_hint": "弹窗立刻显示已加入、视频照常播放，媒体在后台准备并写入 Anki。",
+  "video_online_mining_mode_deferred": "看完再制卡",
+  "video_online_mining_mode_deferred_hint": "后台准备好媒体后先放进待制卡列表，离开播放页或点「全部写入」时统一写入 Anki，写入前可删掉点错的。",
+  "video_online_mining_mode_wait": "等待完成",
+  "video_online_mining_mode_wait_hint": "弹窗等到卡片写入 Anki 才返回，保留「修改最新卡片」。",
+  "video_mine_staged": "已加入待制卡 · 共 $count 张",
+  "video_mine_in_progress": "正在制卡 $count",
+  "video_mine_queue_badge": "待制卡 $count",
+  "video_mine_queue_title": "待制卡",
+  "video_mine_queue_empty": "没有待写入的卡片。",
+  "video_mine_queue_commit_all": "全部写入 Anki",
+  "video_mine_queue_committing": "正在写入 $done/$total…",
+  "video_mine_queue_committed": "已写入 $ok 张，失败 $failed 张",
+  "video_mine_queue_failed": "写入失败：$reason",
+  "video_mine_queue_remove": "移除"
 }

@@ -69,7 +69,18 @@ class MinePopupResult {
     this.ankiConnect = false,
     this.noteId,
     this.duplicate = false,
-  });
+  }) : queued = false;
+
+  /// 制卡请求已接下、在后台进行（在线视频：抽媒体要时间，弹窗不陪着等）。
+  ///
+  /// 弹窗把按钮画成「已加入」✓（popup.js `result.queued` 分支，网页播放器队列早就在用），
+  /// 不回查 Anki、也不把它当成功记「最新可改」——那张卡此刻还不存在。真实结局由宿主
+  /// 在后台完成时用 OSD 报告。
+  const MinePopupResult.queued()
+      : ankiConnect = false,
+        noteId = null,
+        duplicate = false,
+        queued = true;
 
   /// BUG-1915：一次**未成功**的制卡结果。
   ///
@@ -91,7 +102,8 @@ class MinePopupResult {
   MinePopupResult.failed(MineOutcome outcome)
       : ankiConnect = false,
         noteId = null,
-        duplicate = outcome.result == MineResult.duplicate;
+        duplicate = outcome.result == MineResult.duplicate,
+        queued = false;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -111,6 +123,9 @@ class MinePopupResult {
   /// 权威答复。仅重复时为真。
   final bool duplicate;
 
+  /// 见 [MinePopupResult.queued]。
+  final bool queued;
+
   /// 序列化成 JS 可读的 Map（经 inappwebview callHandler 回传）。
   Map<String, Object?> toJson() => <String, Object?>{
         'ankiConnect': ankiConnect,
@@ -118,6 +133,7 @@ class MinePopupResult {
         // 只在为真时带上：popup.js 的 `reply.duplicate === true` 对缺字段与 false
         // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
         if (duplicate) 'duplicate': true,
+        if (queued) 'queued': true,
       };
 }
 

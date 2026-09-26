@@ -601,6 +601,8 @@ extension _VideoLayout on _VideoFushiPageState {
                           ),
                         ),
                         _buildOsdOverlay(),
+                        // 在线视频后台制卡 / 看完再制卡的右上角角标（无任务时零尺寸）。
+                        _buildMineQueueBadgeOverlay(),
                         // TODO-1154：长按倍速徽章跟随指针（在 OSD 之后、其余 chrome 之前挂）。
                         _buildLongPressSpeedBadgeOverlay(),
                         _buildAutoAdvanceOverlay(),

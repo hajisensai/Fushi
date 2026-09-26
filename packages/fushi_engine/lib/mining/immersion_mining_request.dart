@@ -277,6 +277,22 @@ enum MiningStillFormat {
   }
 }
 
+/// 播放器把**已缓冲**的一段远端流原样落成的本地文件（libmpv `dump-cache`）。
+///
+/// 在线视频（媒体服务器 / 在线源扩展）制卡慢，是因为句子音频与封面动图各起一个 ffmpeg
+/// 去远端重新开流、seek、下载——而用户刚听完的那句，播放器缓冲里就有。落盘只是把缓冲
+/// 里的包写成一个 mkv，毫秒级；之后两路抽取都是本地 seek。
+///
+/// [zeroMs] 是文件 0 点对应的**播放器轴**时刻：`dump-cache` 会把时间戳归零到它写出的
+/// 第一个包，调用方从某个缓冲段起点开始落盘，那个起点就是这里的 0 点。引擎据此把播放器
+/// 轴的抽取时刻换算成文件内时刻（见 [ImmersionMiningRequest.mediaTimeOffsetMs]）。
+class CachedMediaSnapshot {
+  const CachedMediaSnapshot({required this.path, required this.zeroMs});
+
+  final String path;
+  final int zeroMs;
+}
+
 /// 统一沉浸制卡请求。任何来源（本地/YouTube/Netflix）都构造这个喂 [ImmersionMiningEngine]。
 ///
 /// [mediaSource] 是 ffmpeg 的 inputPath——本地绝对路径 或 可 seek 的 http 流 URL。
@@ -317,6 +333,9 @@ class ImmersionMiningRequest {
     this.mediaSourceHttpHeaders = const {},
     this.mediaSourceRouteReady,
     this.remoteAudioClipper,
+    this.cachedMediaSnapshot,
+    this.mediaTimeOffsetMs = 0,
+    this.stageNote,
   });
 
   final Map<String, String> fields;
@@ -437,6 +456,62 @@ class ImmersionMiningRequest {
     required String outputPath,
   })? remoteAudioClipper;
 
+  /// 远端 [mediaSource] 的**本地缓冲副本**（见 [CachedMediaSnapshot]）。调用方在点击当下
+  /// 就让播放器落盘（那一刻数据还在缓冲里），引擎在队列里轮到本任务时等它：拿到副本
+  /// 就改成对本地文件抽取（[withCachedSnapshot]），拿不到（null：缓冲已被挤掉 / 非 libmpv
+  /// / 落盘失败）照旧对远端抽取。本地副本抽取中止时引擎还会再用远端源试一次。
+  ///
+  /// 只在 [audioSource] 为 null（音画同一条流）时有意义：落盘写的是播放器当前选中的
+  /// 轨道，分离音轨（YouTube）不在这条流里。
+  final Future<CachedMediaSnapshot?>? cachedMediaSnapshot;
+
+  /// [mediaSource] 文件 0 点对应的播放器轴时刻（毫秒）。抽取（动图 / 起始帧 / 句子音频 /
+  /// 同步视频）一律用「播放器轴时刻 − 本值」；卡面 `{clip-timestamp}` 仍用播放器轴原值。
+  /// 远端流与本地文件为 0（两轴重合）。
+  final int mediaTimeOffsetMs;
+
+  /// 非 null = **只准备媒体、不落卡**：引擎照常抽好封面与句子音频、组好
+  /// [AnkiMiningContext]，然后交给它而不是 Anki 后端（「看完再制卡」把这一张先暂存进
+  /// 队列，看完再统一写入）。它必须在返回前把 context 里的媒体文件拷走——引擎的临时
+  /// 文件名是固定的，下一张卡会覆盖。返回值原样作为本次结果的 outcome。
+  final Future<MineOutcome> Function({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  })? stageNote;
+
+  /// 换成对本地缓冲副本抽取的请求：媒体源指向 [snapshot]，所有「怎么连远端」的参数
+  /// （请求头 / 中继登记 / TLS 指纹 / host 端裁音频）一并清掉；副本里只有播放器当前
+  /// 选中的那一条音轨，所以音轨定位也清掉（按文件里唯一的音轨取）。
+  ImmersionMiningRequest withCachedSnapshot(CachedMediaSnapshot snapshot) =>
+      ImmersionMiningRequest(
+        fields: fields,
+        clipStartMs: clipStartMs,
+        clipEndMs: clipEndMs,
+        stillFrameAtMs: stillFrameAtMs,
+        sentence: sentence,
+        mediaSource: snapshot.path,
+        cueSentence: cueSentence,
+        documentTitle: documentTitle,
+        source: source,
+        bookTitleTag: bookTitleTag,
+        collectionTag: collectionTag,
+        updateNoteId: updateNoteId,
+        sourceLink: sourceLink,
+        sourceLinkResolver: sourceLinkResolver,
+        sourceReviewMine: sourceReviewMine,
+        stillFallback: stillFallback,
+        providedCoverBytes: providedCoverBytes,
+        providedCoverName: providedCoverName,
+        providedAudioBytes: providedAudioBytes,
+        providedAudioName: providedAudioName,
+        requireAudio: requireAudio,
+        imageMode: imageMode,
+        animatedFormat: animatedFormat,
+        stillFormat: stillFormat,
+        mediaTimeOffsetMs: snapshot.zeroMs,
+        stageNote: stageNote,
+      );
+
   /// 卡面时间窗非空——**纯几何判据**，只回答「这张卡有没有时间窗可显示」，不回答
   /// 「引擎要不要去裁」。渲染侧 [AnkiHandlebarRenderer.formatClipTimestamp] 用的正是
   /// 这一条（`end > start`）。
@@ -503,6 +578,9 @@ class ImmersionMiningRequest {
             Map<String, String>.unmodifiable(mediaSourceHttpHeaders),
         mediaSourceRouteReady: mediaSourceRouteReady,
         remoteAudioClipper: remoteAudioClipper,
+        cachedMediaSnapshot: cachedMediaSnapshot,
+        mediaTimeOffsetMs: mediaTimeOffsetMs,
+        stageNote: stageNote,
       );
 }
 
