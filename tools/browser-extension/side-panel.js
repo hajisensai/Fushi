@@ -723,6 +723,17 @@
           return !!(response && response.ok && response.data && response.data.duplicate === true);
         });
       }
+      if (name === 'openInAnki') {
+        // Issue #1409：与 bridge-shim 同契约——回 'opened' / 'noMatch' / 'failed'，绝不回 null
+        // （null = 宿主没接这根桥）；background 超时/失败/旧 app 无端点 → 'failed'。
+        var openReq = args[0] || {};
+        return sendRuntime({
+          type: 'openInAnki', expression: openReq.expression || '', reading: openReq.reading || '',
+        }).then(function (response) {
+          var outcome = response && response.ok && response.data ? response.data.outcome : null;
+          return (outcome === 'opened' || outcome === 'noMatch') ? outcome : 'failed';
+        });
+      }
       if (name === 'resolveWordAudio') {
         var audio = args[0] || {};
         return sendRuntime({

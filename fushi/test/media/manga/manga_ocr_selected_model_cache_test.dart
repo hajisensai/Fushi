@@ -25,6 +25,7 @@ class _SelectedModelService implements MangaOcrService, MangaOcrPageService {
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
+    int startPage = 0,
   }) async* {
     jobs++;
   }

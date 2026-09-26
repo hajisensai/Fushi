@@ -35,6 +35,54 @@ void main() {
     );
   });
 
+  test('only chapter-navigation switches the reader honours are exposed', () {
+    // skipFiltered / alwaysShowChapterTransition 没有任何读取方：没有章节过滤
+    // 可跳、没有章节过渡页。显示了却不生效的开关不得回到面板上。
+    final Set<String> keys = <String>{
+      for (final MangaReaderPreferenceDescriptor d
+          in mangaReaderPreferenceDescriptors(<String>{}))
+        d.key,
+    };
+    expect(keys, containsAll(<String>['skipRead', 'skipDuplicate']));
+    expect(keys, contains('downloadAhead'));
+    expect(keys, isNot(contains('skipFiltered')));
+    expect(keys, isNot(contains('alwaysShowChapterTransition')));
+  });
+
+  testWidgets('download-ahead switch persists a sparse override', (
+    WidgetTester tester,
+  ) async {
+    Map<String, Object?> saved = <String, Object?>{};
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 400,
+            child: MangaReaderSettingsSheet(
+              globalDefaults: const MangaReaderPreferences(),
+              overrides: saved,
+              onChanged: (Map<String, Object?> next) async => saved = next,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder row = find.text('Download next chapter while reading');
+    await tester.scrollUntilVisible(
+      row,
+      200,
+      scrollable: find.descendant(
+        of: find.byKey(const PageStorageKey<String>('manga_settings_tab_0')),
+        matching: find.byType(Scrollable),
+      ).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(saved, <String, Object?>{'downloadAhead': false});
+  });
+
   testWidgets('sheet shows inherited state and reset clears sparse override', (
     WidgetTester tester,
   ) async {

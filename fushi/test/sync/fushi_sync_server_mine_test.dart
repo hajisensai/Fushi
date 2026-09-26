@@ -46,6 +46,13 @@ class _FakeMining implements FushiRemoteMiningService {
     return dupResult;
   }
 
+  @override
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async =>
+      AnkiOpenWordOutcome.failed;
+
   // 互联 Lapis 客制化端点的捕获（/api/anki/note-type/*）。
   AnkiNoteTypeDefinition? noteTypeDef;
   bool noteTypeWriteOk = true;

@@ -452,7 +452,11 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
 
   void _runBuiltin(String dir) {
     _runSub = _engines.service
-        .ocrFolder(imageDirPath: dir, volumeTitle: _title)
+        .ocrFolder(
+          imageDirPath: dir,
+          volumeTitle: _title,
+          startPage: widget.startPage,
+        )
         .listen(
       (MangaOcrVolumeEvent event) {
         if (!mounted) return;

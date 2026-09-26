@@ -279,7 +279,8 @@ void main() {
         engineSignature: kLocalMangaOcrEngineSignature,
         detector: detector,
         recognizer: recognizer,
-        onProgress: (int done, int total) => progress.add(<int>[done, total]),
+        onProgress: (int done, int total, int pageIndex) =>
+            progress.add(<int>[done, total]),
       );
 
       expect(progress, <List<int>>[
@@ -318,6 +319,44 @@ void main() {
       );
     });
 
+    test('startPage：当前页先识别、进度带真实页号，manga.json 与从头跑一致', () async {
+      final Directory fromStart =
+          Directory.systemTemp.createTempSync('manga_job_start0_');
+      addTearDown(() => fromStart.deleteSync(recursive: true));
+      _writePng(p.join(fromStart.path, 'p1.png'), 40, 80);
+      _writePng(p.join(fromStart.path, 'p2.png'), 50, 80);
+      _writePng(p.join(fromStart.path, 'p3.png'), 60, 80);
+      final String baselinePath = await runMangaOcrFolderJob(
+        imageDirPath: fromStart.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: _FakeDetector(),
+        recognizer: _FakeRecognizer(),
+      );
+
+      final _FakeDetector detector = _FakeDetector();
+      final List<List<int>> progress = <List<int>>[];
+      final String outPath = await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+        startPage: 1,
+        onProgress: (int done, int total, int pageIndex) =>
+            progress.add(<int>[done, total, pageIndex]),
+      );
+
+      expect(detector.detectedSizes, <String>['50x80', '60x80', '40x80'],
+          reason: '读者在第 2 页（index 1）：它先识别，再向后，最后绕回开头');
+      expect(progress, <List<int>>[
+        <int>[1, 3, 1],
+        <int>[2, 3, 2],
+        <int>[3, 3, 0],
+      ]);
+      expect(File(outPath).readAsStringSync(),
+          File(baselinePath).readAsStringSync(),
+          reason: '起点只影响处理顺序，不影响产物内容与页序');
+    });
+
     test('取消：页边界停 + 已完成页缓存保留；重跑只补缺页', () async {
       final _FakeDetector detector = _FakeDetector();
       final _FakeRecognizer recognizer = _FakeRecognizer();
@@ -330,7 +369,7 @@ void main() {
           detector: detector,
           recognizer: recognizer,
           cancelToken: token,
-          onProgress: (int done, int total) {
+          onProgress: (int done, int total, int pageIndex) {
             if (done == 1) token.cancel();
           },
         ),

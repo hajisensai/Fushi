@@ -9,7 +9,11 @@
 //   t=25960 …
 // srv3 解析只在「下一行恰是 \n 行」时截断；json3 回落路径以前不截断——制卡按 cue 窗裁音频，
 // 裁出来的是两行的声音，卡上却只有第一行的字。这里在受控 vm 里真加载 youtube-bridge.js，
-// 分别走 json3 与 srv3（含**没有** \n 行的变体）取轨，断言发布出去的 cue 两两不重叠。
+// 走 json3（含**没有** \n 行的变体）取轨，断言发布出去的 cue 两两不重叠。
+//
+// BUG-2697（issue #1495）：桥跑在 MAIN world，YouTube 强制 Trusted Types，DOM 解析器的
+// parseFromString 对裸字符串必抛 TrustedHTML 异常，srv3 路径已删、只取 json3。沙箱里的
+// DOM 解析器换成「一调用就像真 YouTube 那样抛」的桩，并断言桥从不请求 fmt=srv3。
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
@@ -32,42 +36,18 @@ const ROLLING_EVENTS = [
   { tStartMs: 29119, dDurationMs: 5241, segs: [{ utf8: 'thinking' }] },
 ];
 
-// 同一形状的 srv3 XML；withAppendRows=false 时去掉 \n 行（部分轨没有它，只剩重叠的正文行）。
-function rollingSrv3(withAppendRows) {
-  const rows = [];
-  for (const e of ROLLING_EVENTS) {
-    const text = e.segs.map((s) => s.utf8).join('');
-    if (!text) continue;
-    if (e.aAppend) {
-      if (withAppendRows) rows.push('<p t="' + e.tStartMs + '" d="' + (e.dDurationMs || 10) + '" w="1" a="1">\n</p>');
-      continue;
-    }
-    rows.push('<p t="' + e.tStartMs + '" d="' + e.dDurationMs + '" w="1"><s ac="0">' + text + '</s></p>');
-  }
-  return '<?xml version="1.0" encoding="utf-8" ?><timedtext format="3"><body>' + rows.join('') + '</body></timedtext>';
-}
+// 去掉 \n 追加行的同一形状（部分轨没有它，只剩重叠的正文行）。
+const ROLLING_EVENTS_NO_APPEND = ROLLING_EVENTS.filter((e) => !e.aAppend);
 
-// 沙箱里的最小 DOMParser：只认 srv3 的 <p t d a>…</p>，textContent 与真 DOMParser 一致
-// （子元素文本拼接、\n 行保留换行）。
-function FakeDOMParser() {}
-FakeDOMParser.prototype.parseFromString = function (text) {
-  const rows = [];
-  const re = /<p\b([^>]*)>([\s\S]*?)<\/p>/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const attrs = {};
-    m[1].replace(/(\w+)="([^"]*)"/g, (_, k, v) => { attrs[k] = v; return ''; });
-    const textContent = m[2].replace(/<[^>]+>/g, '');
-    rows.push({ getAttribute: (k) => (k in attrs ? attrs[k] : null), textContent });
-  }
-  return {
-    querySelector: () => null, // 没有 parsererror
-    querySelectorAll: (sel) => (sel === 'timedtext > body > p' ? rows : []),
-  };
+// 真 YouTube 页面在 Trusted Types 强制下对裸字符串 parseFromString 的行为：直接抛。
+function TrustedTypesDOMParser() {}
+TrustedTypesDOMParser.prototype.parseFromString = function () {
+  throw new TypeError("This document requires 'TrustedHTML' assignment and no 'default' policy for 'TrustedHTML' has been defined.");
 };
 
 function loadBridge(options) {
   const posted = [];
+  const requests = [];
   const windowObject = {
     ytcfg: { get() { return 'x'; } },
     addEventListener() {},
@@ -100,16 +80,13 @@ function loadBridge(options) {
       get search() { return '?v=vid1'; },
       get href() { return 'https://www.youtube.com/watch?v=vid1'; },
     },
-    URL, URLSearchParams, DOMParser: FakeDOMParser,
+    URL, URLSearchParams, DOMParser: TrustedTypesDOMParser,
     Date: { now() { return 1000000; } },
     setInterval() { return 1; },
     clearInterval() {},
     fetch(url) {
       const u = String(url);
-      if (/fmt=srv3/.test(u)) {
-        if (!options.srv3) return Promise.resolve({ ok: false, status: 404 });
-        return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(options.srv3) });
-      }
+      requests.push(u);
       if (/fmt=json3/.test(u)) {
         if (!options.json3) return Promise.resolve({ ok: false, status: 404 });
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(options.json3) });
@@ -119,7 +96,7 @@ function loadBridge(options) {
   };
   vm.runInNewContext(SOURCE, sandbox, { filename: 'youtube-bridge.js' });
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
-  return { posted, flush };
+  return { posted, requests, flush };
 }
 
 function publishedCues(h) {
@@ -154,18 +131,21 @@ test('BUG-2629：json3 回落路径——滚动双行的 cue 结束收到下一�
   assert.strictEqual(music.endMs, 320 + 14260, '本就不重叠的 cue 时长原样保留');
 });
 
-test('BUG-2629：srv3 带 \\n 追加行——截断结果与原有逻辑一致（不多不少）', async () => {
-  const h = loadBridge({ srv3: rollingSrv3(true) });
+test('BUG-2697：只取 json3，从不请求 srv3（MAIN world 下 srv3 解析必撞 TrustedHTML）', async () => {
+  const h = loadBridge({ json3: { events: ROLLING_EVENTS } });
   await h.flush();
-  const cues = publishedCues(h);
-  assert.strictEqual(cues.length, 5, '\\n 行不是 cue');
-  assertNoOverlap(cues);
-  const line = cues.find((c) => c.text === "We're no strangers to");
-  assert.strictEqual(line.endMs, 21790, 'srv3 原有截断：止于 \\n 追加行');
+  const captionRequests = h.requests.filter((u) => /\/api\/timedtext/.test(u));
+  assert.ok(captionRequests.length > 0, '必须取过字幕');
+  for (const u of captionRequests) {
+    assert.ok(/fmt=json3/.test(u), '字幕请求必须是 json3：' + u);
+    assert.ok(!/fmt=srv3/.test(u), '不得再白发 srv3 请求：' + u);
+  }
+  assert.strictEqual(captionRequests.length, 1, '一条轨恰好一次请求');
+  assert.strictEqual(publishedCues(h).length, 5, '沙箱 DOM 解析器会抛，cue 仍须完整发布');
 });
 
-test('BUG-2629：srv3 没有 \\n 追加行（正文行背靠背重叠）——同样收到下一行开始', async () => {
-  const h = loadBridge({ srv3: rollingSrv3(false) });
+test('BUG-2629：json3 没有 \\n 追加行（正文行背靠背重叠）——同样收到下一行开始', async () => {
+  const h = loadBridge({ json3: { events: ROLLING_EVENTS_NO_APPEND } });
   await h.flush();
   const cues = publishedCues(h);
   assert.strictEqual(cues.length, 5);
