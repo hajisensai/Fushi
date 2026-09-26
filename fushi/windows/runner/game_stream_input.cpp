@@ -486,12 +486,78 @@ bool GameStreamInput::PreparePress(bool foreground_mode, bool press,
   return Activate(reason);
 }
 
+bool GameStreamInput::MoveCursorToClient(double x, double y) {
+  if (hwnd_ == nullptr) return false;
+  // Same DPI rule as PostWheel: client extent, ClientToScreen and the cursor
+  // move must share the target's context, or a DPI-unaware game (SGRE on a
+  // 200 % display) receives the point scaled twice.
+  const ScopedWindowDpiContext dpi(hwnd_);
+  if (!dpi.valid()) return false;
+  RECT rect{};
+  if (!GetClientRect(hwnd_, &rect)) return false;
+  const int width = rect.right - rect.left;
+  const int height = rect.bottom - rect.top;
+  if (width <= 0 || height <= 0) return false;
+  POINT point{NormalizedCoordinate(x, width), NormalizedCoordinate(y, height)};
+  if (!ClientToScreen(hwnd_, &point)) return false;
+  return SetCursorPos(point.x, point.y) != FALSE;
+}
+
+// SGRE ignores mouse window messages: it polls the DirectInput mouse for
+// buttons and hit-tests at the system cursor (the adapter's own click lookup
+// reads GetCursorPos for the same reason). A tap therefore moves the real
+// cursor to the tapped client point and presses through the same native left
+// button channel as the gamepad confirm. Moving the host cursor is only done
+// while the game owns the foreground; a hover move otherwise is dropped rather
+// than steering the cursor over some other window.
+bool GameStreamInput::SendNativePointer(const flutter::EncodableMap& event,
+                                        const std::string& action,
+                                        bool foreground_mode,
+                                        std::string* reason) {
+  const double x = ReadDouble(event, "x", 0.0);
+  const double y = ReadDouble(event, "y", 0.0);
+  if (action == "move") {
+    if (GetForegroundWindow() != hwnd_) return true;
+    if (!MoveCursorToClient(x, y)) {
+      SetReason(reason, "post_failed");
+      return false;
+    }
+    return true;
+  }
+  if (action != "down" && action != "up") {
+    SetReason(reason, "unsupported_native_pointer");
+    return false;
+  }
+  PointerButton button{};
+  if (!ResolvePointerButton(ReadString(event, "button"), &button)) {
+    SetReason(reason, "invalid_pointer_button");
+    return false;
+  }
+  if (button.mask != MK_LBUTTON) {
+    SetReason(reason, "unsupported_native_pointer");
+    return false;
+  }
+  if (action == "up") {
+    // A release never requires the foreground (see Send): it only drops state
+    // this client already holds.
+    if (!native_left_down_) return true;
+    if (GetForegroundWindow() == hwnd_) MoveCursorToClient(x, y);
+    return SendNativeLeftButton(false, false, false, reason);
+  }
+  if (!PreparePress(foreground_mode, true, reason)) return false;
+  if (!ValidateTarget(true, reason)) return false;
+  if (!MoveCursorToClient(x, y)) {
+    SetReason(reason, "post_failed");
+    return false;
+  }
+  return SendNativeLeftButton(true, true, true, reason);
+}
+
 bool GameStreamInput::SendPointer(const flutter::EncodableMap& event,
                                   const std::string& action,
                                   bool foreground_mode, std::string* reason) {
   if (HasSgreNativeConfirmCapability()) {
-    SetReason(reason, "unsupported_native_pointer");
-    return false;
+    return SendNativePointer(event, action, foreground_mode, reason);
   }
   if (action == "wheel") {
     const double dx = ReadDouble(event, "dx", 0.0);
