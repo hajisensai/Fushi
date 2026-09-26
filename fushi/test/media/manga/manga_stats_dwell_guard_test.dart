@@ -64,7 +64,7 @@ void main() {
     );
     expect(note, contains('_studyClock?.touch();'));
     expect(note, contains('_readLedger.arrive(start, end);'));
-    // 装载（本地卷与已下载的在线章共用 _loadLocalPayload，2026-09-12 起阅读器
+    // 装载（本地卷 / 已下载的在线章 / 在线直读章共用 _presentPayload，阅读器
     // 只有这一条装载路径）/ _recordProgress / spread↔webtoon 切换 / 卡片来源
     // 回看转正常阅读（_onSourceReviewChanged：回看态不计统计，用户点「继续阅读」
     // 那一刻才建时钟并把当前页交给账本）。
@@ -160,11 +160,12 @@ void main() {
           '单行 leave 已无：关书三条路零账本动作；生命周期 paused 也不 leave——'
           '停表期间 addPages 会被丢弃，且恢复后当前页要继续算',
     );
-    // 换章：同一 State 内页号坐标系重用，先结算旧章末页再清并集。装载路径只有
-    // _loadLocalPayload 一条（在线章下载后就是本地形状），首次打开两步都是 no-op。
+    // 换章：同一 State 内页号坐标系重用，先结算旧章末页再清并集。装载路径收在
+    // _presentPayload 一条（本地卷 / 已下载章 / 2026-09-26 起的在线直读章共用），
+    // 首次打开两步都是 no-op。
     final String load = _functionSource(
       src,
-      '  Future<void> _loadLocalPayload({',
+      '  Future<void> _presentPayload({',
       '\n  }\n',
     );
     expect(load, contains('_readLedger\n      ..leave()\n      ..reset();'));

@@ -14,10 +14,10 @@ abstract interface class MangaPageProvider {
 
 /// 阅读器的页会话契约。
 ///
-/// 2026-09-12 起在线漫画必须先下载再读（设计稿 §1），阅读器唯一的实现是
-/// [LocalMangaReaderSession]：在线章下载完成后就是一份本地 `manga.json + images/`，
-/// 与本地导入卷同形。旧的 Mihon / Aidoku / 互联在线会话（两级页缓存、请求限流、
-/// Cloudflare 重试）整条删除。
+/// 两个实现：[LocalMangaReaderSession]（本地导入卷 / 已下载的在线章，一份本地
+/// `manga.json + images/`）与 `OnlineMangaReaderSession`（未下载的在线章直读，
+/// 2026-09-26 用户撤回设计稿 §1.1「必须先下载再读」后恢复；页经适配器懒取、
+/// 落在 app 临时目录的会话私有缓存里，不碰章下载目录）。
 abstract interface class MangaReaderSession {
   int get pageCount;
 

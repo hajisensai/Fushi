@@ -80,7 +80,10 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // 下载 EPUB 打包——把整套页图 + manga.json 塞进 zip，client 落地成一本
         // 夹带全部页图的「文字书」、漫画身份静默丢失（坏包）。漫画内容走
         // hasMangaContent + 漫画包通道。
+        // 在线小说占位书（LNReader）不算可下载内容：对端收到的会是一本补不全的
+        // 书（见 isLnReaderOnlineBookMetadata）。
         hasContent: format == BookFormat.epub &&
+            !isLnReaderOnlineBookMetadata(r.sourceMetadata) &&
             resolveExtractedEpubRoot(r.extractDir) != null,
         format: format.dbValue,
         hasMangaContent: format == BookFormat.manga &&
@@ -226,6 +229,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       return out;
     }
     if (format != BookFormat.epub ||
+        isLnReaderOnlineBookMetadata(row.sourceMetadata) ||
         resolveExtractedEpubRoot(row.extractDir) == null) {
       // PDF（无互联内容通道）/ EPUB 树缺失：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');

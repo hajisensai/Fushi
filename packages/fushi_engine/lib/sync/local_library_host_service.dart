@@ -38,6 +38,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
     show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
+import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show hasExportableMangaContent, kMangaPackageMarker, repackageMangaBook;
 import 'package:fushi_engine/stats/stat_facts.dart';
