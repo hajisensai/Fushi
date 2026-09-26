@@ -1281,6 +1281,12 @@ def find_invalid_lookup_entry_visibility_lifecycle(
         "35",
         "36",
         "37",
+        # 32/33：私有 msgwin 插件**没有**出现时的另一支（BUG-2708）。32 = 进入该支；
+        # TextRender 插件在、却扫不到任何绑在消息层上的渲染器实例（KAGEX 系正文由
+        # MessageLayer 走 processCh 画）时才到 33，按 classic KAG 打开图层光标几何采集。
+        # 与 35/36/37 互斥，源码顺序上排在它们之后。
+        "32",
+        "33",
         # 38/39：注册 KAG stable-state plugin。两个边沿都只尝试迁移
         # carrier，仅 stable=false 的 run 边沿补 renderer/getRender 采集桥。
         "38",
@@ -1295,7 +1301,7 @@ def find_invalid_lookup_entry_visibility_lifecycle(
     if install_stages != expected_install_stages:
         violations.append(
             f"{ADAPTER.name}: bootstrap installStage 必须固定为 "
-            "0→10/11→20/21→30/31→35/36/37→38/39→40/43→50；"
+            "0→10/11→20/21→30/31→35/36/37 | 32/33→38/39→40/43→50；"
             f"实际 {install_stages}"
         )
 
@@ -4566,6 +4572,16 @@ if(global.fushiLookupResolveMsgwinPlugin() !== void)
   installStage = 36;
   global.fushiLookupSweepMsgwinRenders();
   installStage = 37;
+}
+else
+{
+  installStage = 32;
+  if(global.fushiLookupSweepLayerRenderers() == 0)
+  {
+    installStage = 33;
+    global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;
+    global.fushiLookupSweepClassicLayers();
+  }
 }
 installStage = 38;
 if(typeof global.kag.addPlugin == "Object")
