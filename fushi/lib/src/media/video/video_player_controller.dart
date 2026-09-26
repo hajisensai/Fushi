@@ -341,10 +341,18 @@ class VideoPlayerController extends ChangeNotifier
   /// 远端内嵌文本轨交给 libmpv **只解码不画**、文本经 `sub-text` 回流成可点 cue
   /// （[selectEmbeddedTextTrackViaPlayer]）时的订阅。非 null = 处于该模式；
   /// [setCues]（换字幕源）/ [load] / [dispose] 时取消。
-  StreamSubscription<List<String>>? _playerDecodedTextSub;
+  StreamSubscription<String>? _playerDecodedTextSub;
 
   /// 上一句 mpv 没给 `sub-end`、用了暂定时长的 cue，等下一次字幕变化按真实位置收尾。
   AudioCue? _playerDecodedProvisionalCue;
+
+  /// 副字幕版的 [_playerDecodedTextSub]（[selectEmbeddedSecondaryTextTrackViaPlayer]，
+  /// libmpv `secondary-sid` 只解码不画、`secondary-sub-text` 回流成副 cue）。
+  /// [setSecondaryCues] / [clearSecondaryCues] / [load] / [dispose] 时取消。
+  StreamSubscription<String>? _secondaryPlayerDecodedTextSub;
+
+  /// 副字幕版的 [_playerDecodedProvisionalCue]。
+  AudioCue? _secondaryPlayerDecodedProvisionalCue;
 
   /// 最近一次 [setSpeed] / [load] 之倍速；player 未实例化时供 [speed] getter 回退。
   double _lastSpeed = 1.0;
@@ -1233,23 +1241,134 @@ class VideoPlayerController extends ChangeNotifier
     // 上面几次 await 期间可能已有另一次选轨（起播恢复 + 用户手动选）装上了订阅：
     // 先结束它，否则两个订阅并存、每句处理两遍，旧的直到 player 销毁才释放。
     _stopPlayerDecodedText();
-    late final StreamSubscription<List<String>> sub;
-    sub = player.stream.subtitle.listen((List<String> texts) {
+    // 选轨时正显示的那句（订阅前已上报）也要补上。
+    final String current = playerSubtitleSlotText(player.state.subtitle, 0);
+    late final StreamSubscription<String> sub;
+    sub = playerSubtitleSlotChanges(player.stream.subtitle, 0, current).listen((
+      String text,
+    ) {
       if (!_isCurrentLoad(player, loadToken)) return;
-      unawaited(_onPlayerDecodedText(
-        player,
-        loadToken,
-        sub,
-        texts.isEmpty ? '' : texts.first,
-      ));
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, text));
     });
     _playerDecodedTextSub = sub;
-    // 选轨时正显示的那句（订阅前已上报）也要补上。
-    final List<String> current = player.state.subtitle;
-    if (current.isNotEmpty && current.first.trim().isNotEmpty) {
-      unawaited(_onPlayerDecodedText(player, loadToken, sub, current.first));
+    if (current.trim().isNotEmpty) {
+      unawaited(_onPlayerDecodedText(player, loadToken, sub, current));
     }
     return true;
+  }
+
+  /// [selectEmbeddedTextTrackViaPlayer] 的**副字幕**版（远端直出容器、服务器抽不出
+  /// 该轨时的副字幕回落）：libmpv `secondary-sid` 选中这条轨、`secondary-sub-visibility=no`
+  /// 只解码不画，`secondary-sub-text` + `secondary-sub-start` / `secondary-sub-end`
+  /// 回流成副 cue 进可点 overlay 副层——与主字幕同样零额外流量、可逐字查词。
+  ///
+  /// 与主字幕回流互不干扰：两条轨在 libmpv 里是 `sid` / `secondary-sid` 两个槽，
+  /// media_kit 同一条 `stream.subtitle` 上报 `[主, 副]`，两边各自只响应自己那一槽的变化
+  /// （[playerSubtitleSlotChanges]）。[streamIndex] 语义同 [selectEmbeddedTextTrackViaPlayer]。
+  Future<bool> selectEmbeddedSecondaryTextTrackViaPlayer(int streamIndex) async {
+    final Player? player = _player;
+    if (player == null) return false;
+    final int loadToken = _loadToken;
+    await _waitUntilSubtitleTracksReady(player, minTrackCount: streamIndex + 1);
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    final List<SubtitleTrack> real = player.state.tracks.subtitle
+        .where((SubtitleTrack t) => t.id != 'auto' && t.id != 'no')
+        .toList(growable: false);
+    if (streamIndex < 0 || streamIndex >= real.length) return false;
+    // 清掉旧副 cue（同时结束上一次副字幕回流）。
+    setSecondaryCues(const <AudioCue>[]);
+    // 先关可见性再选轨：顺序反过来 libmpv 会把副字幕画进画面一瞬。
+    await applySubtitleMpvPropertiesToPlayer(
+      player,
+      buildSecondarySubtitleDecodeProperties(real[streamIndex].id),
+    );
+    if (!_isCurrentLoad(player, loadToken)) return false;
+    // await 期间另一次选副轨已装上订阅：先结束它（同主字幕那条纪律）。
+    _stopSecondaryPlayerDecodedText(resetPlayerTrack: false);
+    final String current = playerSubtitleSlotText(player.state.subtitle, 1);
+    late final StreamSubscription<String> sub;
+    sub = playerSubtitleSlotChanges(player.stream.subtitle, 1, current).listen((
+      String text,
+    ) {
+      if (!_isCurrentLoad(player, loadToken)) return;
+      unawaited(_onSecondaryPlayerDecodedText(player, loadToken, sub, text));
+    });
+    _secondaryPlayerDecodedTextSub = sub;
+    if (current.trim().isNotEmpty) {
+      unawaited(_onSecondaryPlayerDecodedText(player, loadToken, sub, current));
+    }
+    return true;
+  }
+
+  /// 当前是否由 libmpv 解码副字幕轨回流成副 cue
+  /// （[selectEmbeddedSecondaryTextTrackViaPlayer]）。播放页取证钩子用。
+  bool get isSecondaryPlayerDecodedTextSubtitleActive =>
+      _secondaryPlayerDecodedTextSub != null;
+
+  /// 结束副字幕回流。[resetPlayerTrack] 为 true 时顺手把 libmpv `secondary-sid`
+  /// 放回 `no`：副字幕换成文件源 / 关闭后 libmpv 不必再解码那条轨。
+  void _stopSecondaryPlayerDecodedText({bool resetPlayerTrack = true}) {
+    final StreamSubscription<String>? sub = _secondaryPlayerDecodedTextSub;
+    _secondaryPlayerDecodedTextSub = null;
+    _secondaryPlayerDecodedProvisionalCue = null;
+    if (sub == null) return;
+    unawaited(sub.cancel());
+    final Player? player = _player;
+    if (resetPlayerTrack && player != null) {
+      unawaited(applySubtitleMpvPropertiesToPlayer(
+        player,
+        const <String, String>{'secondary-sid': 'no'},
+      ));
+    }
+  }
+
+  Future<void> _onSecondaryPlayerDecodedText(
+    Player player,
+    int loadToken,
+    StreamSubscription<String> sub,
+    String text,
+  ) async {
+    if (!identical(sub, _secondaryPlayerDecodedTextSub)) return;
+    final int positionAtEvent = player.state.position.inMilliseconds;
+    final AudioCue? provisional = _secondaryPlayerDecodedProvisionalCue;
+    if (provisional != null) {
+      _secondaryPlayerDecodedProvisionalCue = null;
+      closePlayerDecodedCue(provisional, positionAtEvent);
+    }
+    if (text.trim().isEmpty) return;
+    final int? startMs = parseMpvSecondsToMs(
+      await _getMpvProperty('secondary-sub-start'),
+    );
+    final int? endMs = parseMpvSecondsToMs(
+      await _getMpvProperty('secondary-sub-end'),
+    );
+    // 与主字幕同一道核对：起止时间是事件到达后才读的，对不上当前文本就丢弃。
+    final String nowText = await _getMpvProperty('secondary-sub-text');
+    if (!_isCurrentLoad(player, loadToken)) return;
+    if (!identical(sub, _secondaryPlayerDecodedTextSub)) return;
+    if (nowText.replaceAll('\r\n', '\n').trim() !=
+        text.replaceAll('\r\n', '\n').trim()) {
+      return;
+    }
+    final AudioCue? cue = buildPlayerDecodedCue(
+      text: text,
+      startMs: startMs,
+      endMs: endMs,
+      positionMs: positionAtEvent,
+    );
+    if (cue == null) return;
+    if (endMs == null || endMs <= cue.startMs) {
+      _secondaryPlayerDecodedProvisionalCue = cue;
+    }
+    // 副字幕只有活动集一种下标状态，由 [_syncCueForPosition] 按位置整份重算，
+    // 不需要主字幕那套插入平移。
+    _secondaryCues = mergePlayerDecodedCue(_secondaryCues, cue).cues;
+    _activeSecondaryCueIndices = const <int>[];
+    _syncCueForPosition(
+      player.state.position.inMilliseconds,
+      persistPosition: false,
+    );
+    notifyListeners();
   }
 
   /// 当前是否由 libmpv 解码内嵌文本轨、文本回流成可点 cue
@@ -1265,7 +1384,7 @@ class VideoPlayerController extends ChangeNotifier
   Future<void> _onPlayerDecodedText(
     Player player,
     int loadToken,
-    StreamSubscription<List<String>> sub,
+    StreamSubscription<String> sub,
     String text,
   ) async {
     // 只处理仍是当前那条订阅的事件：已被替换 / 结束的订阅迟到的句子一律丢弃。
@@ -1476,6 +1595,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 副字幕与主字幕独立、同一 effective 位置各自求活动集，一起交给 Flutter overlay 多层
   /// 渲染（不再走 libmpv `secondary-sid`）——副字幕因此也可逐字符查词。空列表 = 无副字幕。
   void setSecondaryCues(List<AudioCue> cues) {
+    // 外部换副字幕源一律结束 libmpv 副轨回流（同 [setCues] 对主字幕的纪律），
+    // 否则迟到的 secondary-sub-text 会把旧轨的句子插进新副 cue 列表。
+    _stopSecondaryPlayerDecodedText();
     _secondaryCues = _sortedByStart(<AudioCue>[
       for (final AudioCue c in cues)
         if (!c.isRenderOnly) c,
@@ -1491,6 +1613,7 @@ class VideoPlayerController extends ChangeNotifier
 
   /// TODO-1312：关闭副字幕（清空副字幕 cue 流 + 活动集）。幂等：本就无副字幕时不通知。
   void clearSecondaryCues() {
+    _stopSecondaryPlayerDecodedText();
     if (_secondaryCues.isEmpty &&
         _activeSecondaryCueIndices.isEmpty &&
         _secondaryDrawingCues.isEmpty) {
@@ -1861,6 +1984,7 @@ class VideoPlayerController extends ChangeNotifier
     // TODO-1312：换片复位副字幕 cue 流（旧下标对新片失效；新集副字幕由页面
     // _restoreSecondarySubtitle 重挂）。在 setCues 之前复位，让 setCues 的单次
     // notify 已反映清空后的副字幕状态。
+    _stopSecondaryPlayerDecodedText();
     _secondaryCues = <AudioCue>[];
     _activeSecondaryCueIndices = const <int>[];
     _secondaryDrawingCues = <AudioCue>[];
@@ -4164,6 +4288,7 @@ class VideoPlayerController extends ChangeNotifier
     _tick = null;
     _stopCacheSpeedSampling();
     _stopPlayerDecodedText();
+    _stopSecondaryPlayerDecodedText(resetPlayerTrack: false);
     unawaited(_playingSub?.cancel());
     _playingSub = null;
     unawaited(_completedSub?.cancel());

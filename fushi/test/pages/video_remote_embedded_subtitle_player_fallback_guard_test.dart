@@ -73,6 +73,54 @@ void main() {
           isTrue);
     });
 
+    // 副字幕同一条回落：此前副字幕只会下载抽取，兼容层 Emby 上主字幕能用、
+    // 副字幕一选就「加载失败」、重进也静默恢复不了。
+    test('副字幕 _applyRemoteEmbeddedSecondarySubtitle 下载失败先回落，再报失败', () {
+      final String body = maskComments(
+        methodBody(readVideoFushiSource(),
+            'Future<void> _applyRemoteEmbeddedSecondarySubtitle('),
+      );
+      final int fallback =
+          body.indexOf('_showRemoteEmbeddedSecondaryTrackViaPlayer(');
+      final int failed = body.indexOf('video_subtitle_load_failed');
+      expect(fallback, greaterThanOrEqualTo(0),
+          reason: '副字幕的 404 同样不能直接判失败：\n$body');
+      expect(failed, greaterThan(fallback), reason: '先回落、回落不成才报失败');
+    });
+
+    test('_showRemoteEmbeddedSecondaryTrackViaPlayer 走副槽、按容器内序号选轨并持久化', () {
+      final String body = maskComments(
+        methodBody(
+          readVideoFushiSource(),
+          'Future<bool> _showRemoteEmbeddedSecondaryTrackViaPlayer(',
+        ),
+      );
+      expect(body.contains('_remoteStreamIsOriginalContainer'), isTrue);
+      expect(body.contains('track.isExternalFile'), isTrue);
+      expect(
+        body.contains('track.containerTrackOrdinal ?? track.streamIndex'),
+        isTrue,
+      );
+      expect(body.contains('selectEmbeddedSecondaryTextTrackViaPlayer('), isTrue,
+          reason: '副字幕走 libmpv secondary-sid 槽，不能占主字幕的 sid');
+      expect(body.contains('selectEmbeddedTextTrackViaPlayer('), isFalse,
+          reason: '走主槽会把用户的主字幕顶掉');
+      expect(body.contains('videoRemoteSecondarySubtitlePrefKey('), isTrue,
+          reason: '回落选中也要持久化，重进才能恢复');
+      expect(body.contains('_currentSecondarySubtitleSource = source'), isTrue);
+    });
+
+    test('副字幕重进恢复 embedded:<n>：下载失败回落到副槽', () {
+      final String body = maskComments(
+        methodBody(readVideoFushiSource(),
+            'Future<void> _restoreRemoteSecondarySubtitle('),
+      );
+      expect(body.contains('selectEmbeddedSecondaryTextTrackViaPlayer('), isTrue,
+          reason: '恢复路径的下载失败不能再静默落回无副字幕');
+      expect(body.contains('_remoteStreamIsOriginalContainer'), isTrue);
+      expect(body.contains('track.isExternalFile'), isTrue);
+    });
+
     test('不得在后台用 ffmpeg 把远端流再读一遍抽字幕（流量翻倍）', () {
       final String src = maskComments(readVideoFushiSource());
       for (final String banned in <String>[
