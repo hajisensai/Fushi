@@ -147,24 +147,61 @@ bool shouldUseHdrHostWindow({
   }
 }
 
-/// DV P5 片源在当前平台 / 设置下是否**画不对**（没有 gpu-next 可切），据此提示用户。
+/// 随包 libmpv 的纹理路径渲染器（gl_video）是否自带 DV Profile 5 重整。
 ///
-/// 只有 Windows 的宿主窗是 gpu-next；macOS / iOS / Android 的随包 libmpv 都没编
-/// libplacebo，只剩不做 RPU 重整的 gl_video，所以恒 true。Windows 上只有用户把
-/// HDR 输出设成「关闭」时为 true（提示可以打开它）。显示器状态与这个判断无关：
-/// DV P5 的宿主窗判据本就不看显示器。
+/// macOS / iOS / Android 的 libmpv 由 hajisensai 的两个构建仓库出包（mpv 0.36 /
+/// master 78d4374，都没编 libplacebo），打了 `mpv-gl-dovi-p5.patch`：gl_video 读帧上的
+/// `AV_FRAME_DATA_DOVI_METADATA`，移植 libplacebo 的重整 + IPT→LMS→RGB 解码
+/// （BUG-2691）。Windows 用 zhongfly 预编译、没有这个补丁，靠 gpu-next 宿主窗；Linux
+/// 用系统 libmpv，能力未知。Android 另有一个前提：帧上要有 DV 元数据，而默认的
+/// mediacodec 硬解不解析 RPU——见 [shouldForceSoftwareDecodeForDolbyVision]。
+///
+/// 随包 libmpv 的产物名由守卫测试钉住（`dolby_vision_bundled_libmpv_guard_test.dart`），
+/// 换回没打补丁的构建时这里必须同步改回 false。
+bool textureRendererReshapesDolbyVision({
+  required bool isApple,
+  required bool isAndroid,
+}) => isApple || isAndroid;
+
+/// Android 上 DV P5 片源（服务器元数据预先告知）要不要本次开片强制软解。
+///
+/// 默认 `mediacodec-copy` 硬解走的是独立解码器 `hevc_mediacodec`，不解析 RPU，帧上
+/// 没有 DV 元数据，gl_video 的重整补丁就无从下手、照样紫绿；FFmpeg 的 hevc 软解会把
+/// RPU 挂到帧上。代价是 4K 10-bit 软解在中低端机上可能掉帧——用户 2026-09-26 拍板
+/// 颜色正确优先。
+bool shouldForceSoftwareDecodeForDolbyVision({
+  required bool isAndroid,
+  required bool sourceDolbyVision,
+}) => isAndroid && sourceDolbyVision;
+
+/// DV P5 片源在当前平台 / 设置下是否**画不对**，据此提示用户。
+///
+/// - Windows：只有宿主窗（gpu-next）画得对，所以只有用户把 HDR 输出设成「关闭」时
+///   为 true（提示可以打开它）。显示器状态与这个判断无关：DV P5 的宿主窗判据本就
+///   不看显示器；
+/// - macOS / iOS / Android：纹理路径自带重整（[textureRendererReshapesDolbyVision]；
+///   Android 配合 [shouldForceSoftwareDecodeForDolbyVision] 软解），false；
+/// - 其它（Linux 系统 libmpv）：true。
 bool dolbyVisionColorsUnsupported({
   required bool isWindows,
+  bool isApple = false,
+  bool isAndroid = false,
   required VideoHdrOutputMode mode,
   required bool sourceDolbyVision,
 }) {
   if (!sourceDolbyVision) return false;
-  return !shouldUseHdrHostWindow(
-    isWindows: isWindows,
-    mode: mode,
-    displayHdr: false,
-    sourceHdr: true,
-    sourceDolbyVision: true,
+  if (isWindows) {
+    return !shouldUseHdrHostWindow(
+      isWindows: true,
+      mode: mode,
+      displayHdr: false,
+      sourceHdr: true,
+      sourceDolbyVision: true,
+    );
+  }
+  return !textureRendererReshapesDolbyVision(
+    isApple: isApple,
+    isAndroid: isAndroid,
   );
 }
 

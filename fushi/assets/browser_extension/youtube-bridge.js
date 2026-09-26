@@ -2,9 +2,10 @@
 //
 // Mirrors asbplayer's acquisition order: prefer #movie_player.getAudioTrack().captionTracks because
 // those URLs include runtime-only POT parameters, then fall back to Android Innertube and the current
-// player response. Caption files are fetched as srv3 and converted to complete cue arrays here. The
-// bridge only reads player state and posts plain data to the isolated content script; it never inserts,
-// wraps, replaces, or resizes host-page DOM.
+// player response. Caption files are fetched as json3 (plain JSON: no Trusted Types sink in the MAIN
+// world) and converted to complete cue arrays here. The bridge only reads player state and posts
+// plain data to the isolated content script; it never inserts, wraps, replaces, or resizes host-page
+// DOM.
 (function () {
   'use strict';
   if (window.__fushiYoutubeBridgeInstalled) return;
@@ -136,28 +137,6 @@
     } catch (_) { return []; }
   }
 
-  function parseSrv3(text) {
-    var doc = new DOMParser().parseFromString(text, 'text/xml');
-    if (doc.querySelector('parsererror')) return [];
-    var rows = Array.from(doc.querySelectorAll('timedtext > body > p'));
-    var cues = [];
-    for (var i = 0; i < rows.length; i++) {
-      var row = rows[i];
-      var start = Number(row.getAttribute('t'));
-      var duration = Number(row.getAttribute('d'));
-      if (!Number.isFinite(start) || !Number.isFinite(duration)) continue;
-      var value = String(row.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!value) continue;
-      var next = rows[i + 1];
-      if (next && String(next.textContent || '') === '\n') {
-        var nextStart = Number(next.getAttribute('t'));
-        if (Number.isFinite(nextStart)) duration = Math.min(duration, Math.max(0, nextStart - start));
-      }
-      cues.push({ startMs: start, endMs: start + Math.max(1, duration), text: value });
-    }
-    return cues;
-  }
-
   function parseJson3(payload) {
     var events = payload && Array.isArray(payload.events) ? payload.events : [];
     var cues = [];
@@ -182,7 +161,7 @@
   // YouTube 自动字幕是「滚动双行」显示：每一行 cue 的时长一直跨到**下下行**开头（它要在
   // 屏幕上停留到被顶出去为止），只靠中间那条 `\n` 追加行来截断。实测（dQw4w9WgXcQ，en asr）
   // "We're no strangers to" t=18800 d=7160 → 26 秒，而下一行 "love. You know…" 21800 就开始了。
-  // srv3 解析有一条只认「下一行恰是 \n 行」的截断，json3 回落路径以前没有——制卡按 cue 窗裁
+  // 旧 srv3 解析有一条只认「下一行恰是 \n 行」的截断，json3 路径以前没有——制卡按 cue 窗裁
   // 音频，裁出来的是两行的声音，卡上却只有第一行的字（BUG-2629）。统一在解析之后收口：按起
   // 始时间排好序后，任何一条的结束不得越过下一条的开始。手工轨极少真正重叠，两人同时说话那种
   // 也只会少录被盖住的尾巴，不会多录下一句。
@@ -213,22 +192,21 @@
     var raw = track && (track.url || track.baseUrl);
     if (!raw) return [];
     var url = new URL(raw, location.href);
-    url.searchParams.set('fmt', 'srv3');
+    // 只取 json3：本文件跑在 MAIN world，YouTube 页面强制 Trusted Types
+    // （require-trusted-types-for 'script'），DOM 解析器的 parseFromString 属 TrustedHTML
+    // sink，传裸字符串直接抛 "This document requires 'TrustedHTML' assignment"。以前先取
+    // srv3 再用它解析，在 YouTube 上必抛、被 catch 吞掉后才回落 json3——每条轨白发一次 srv3
+    // 请求，扩展错误页还留一条报错（BUG-2697 / issue #1495）。json3 是纯 JSON，不经任何
+    // HTML/XML sink；滚动双行截断由 finishTrackCues 统一收口，与原 srv3 路径输出等价（唯一
+    // 差别：自动字幕截断点从 `\n` 追加行改为下一行开头，实测晚约 10ms）。
+    // 守卫：main-world-trusted-types.test.js 禁止 MAIN world 脚本再出现 HTML sink。
+    url.searchParams.set('fmt', 'json3');
     try {
       if (window.ytcfg && typeof window.ytcfg.get === 'function') {
         url.searchParams.set('c', window.ytcfg.get('INNERTUBE_CLIENT_NAME') || 'WEB');
       }
     } catch (_) {}
     try {
-      var response = await fetch(url.toString(), { credentials: 'include' });
-      if (response.ok) {
-        var text = await response.text();
-        var cues = parseSrv3(text);
-        if (cues.length) return finishTrackCues(track, cues);
-      }
-    } catch (_) {}
-    try {
-      url.searchParams.set('fmt', 'json3');
       var jsonResponse = await fetch(url.toString(), { credentials: 'include' });
       if (!jsonResponse.ok) return [];
       return finishTrackCues(track, parseJson3(await jsonResponse.json()));
