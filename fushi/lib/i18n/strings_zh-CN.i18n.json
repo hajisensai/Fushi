@@ -5589,6 +5589,8 @@
   "manga_discovery_view_all": "查看全部",
   "manga_discovery_empty_title": "还没有可发现的漫画来源",
   "manga_discovery_empty_action": "管理来源",
+  "video_dolby_vision_colors_unsupported": "杜比视界 Profile 5 片源：本平台暂时无法正确还原它的颜色，画面可能偏紫或偏绿。",
+  "video_dolby_vision_colors_enable_hdr_output": "杜比视界 Profile 5 片源：HDR / 10-bit 输出关闭时颜色会偏紫或偏绿，改成「自动」即可正常显示。",
   "novel_detail_read_online": "在线阅读",
   "novel_detail_chapter_download": "从这一章开始下载",
   "novel_online_chapter_pending": "本章尚未加载。请检查网络后重新打开本章，即可从源站读取。",

@@ -1,6 +1,7 @@
 // BUG-2691 取证：杜比视界 Profile 5（IPTPQc2）片源在 SDR 屏 + HDR 输出「自动」下
 // 必须切进 gpu-next 宿主窗——纹理路径（vo=libmpv）不做 RPU 重整，画面紫绿反色。
-// 对真服务器跑，直接把 DV P5 条目推成播放页（不走库浏览），断言起播后宿主窗激活。
+// 对真服务器跑，直接把 DV P5 条目推成播放页（不走库浏览），断言起播后宿主窗激活；
+// 再把 HDR 输出设成「关闭」重进，断言不进宿主窗、改为弹出「颜色会偏」提示 OSD。
 //
 // 需要真实凭据 + 条目 id，经 --dart-define 注入（runner 用 -DartDefine 转发）：
 //   FUSHI_EMBY_URL / FUSHI_EMBY_ITEM + FUSHI_EMBY_TOKEN / FUSHI_EMBY_USERID
@@ -11,7 +12,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/models.dart';
+import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -72,30 +75,50 @@ void main() {
 
         final NavigatorState navigator =
             tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage.neutralizedRemote(
-            info: info,
-            repo: repo,
-            client: client,
-          ),
-        )));
-        bool ready = false;
-        for (int i = 0; i < 360; i++) {
+
+        // 提示 OSD 只停 3.6 s，起播过程中每帧都采一次，别等起播完再看。
+        bool warnedSeen = false;
+        Future<void> pumpAndSample() async {
           await tester.pump(const Duration(milliseconds: 250));
-          if (readHooks()?.debugPositionMs != null) {
-            ready = true;
-            break;
+          if (find
+              .textContaining(t.video_dolby_vision_colors_enable_hdr_output)
+              .evaluate()
+              .isNotEmpty) {
+            warnedSeen = true;
           }
         }
-        expect(ready, isTrue, reason: '流控制器应在 90s 内就绪');
-        final VideoFushiTestHooks hooks = readHooks()!;
-        await hooks.debugPlay();
-        int played = 0;
-        for (int i = 0; i < 240 && played < 1500; i++) {
-          await tester.pump(const Duration(milliseconds: 250));
-          played = hooks.debugPositionMs ?? 0;
+
+        Future<VideoFushiTestHooks> openAndPlay(String tag) async {
+          warnedSeen = false;
+          unawaited(navigator.push<void>(MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage.neutralizedRemote(
+              info: info,
+              repo: repo,
+              client: client,
+            ),
+          )));
+          bool ready = false;
+          for (int i = 0; i < 360; i++) {
+            await pumpAndSample();
+            if (readHooks()?.debugPositionMs != null) {
+              ready = true;
+              break;
+            }
+          }
+          expect(ready, isTrue, reason: '[$tag] 流控制器应在 90s 内就绪');
+          final VideoFushiTestHooks hooks = readHooks()!;
+          await hooks.debugPlay();
+          int played = 0;
+          for (int i = 0; i < 240 && played < 1500; i++) {
+            await pumpAndSample();
+            played = hooks.debugPositionMs ?? 0;
+          }
+          expect(played, greaterThan(1500), reason: '[$tag] 真流应自然前进');
+          return hooks;
         }
-        expect(played, greaterThan(1500), reason: '真流应自然前进');
+
+        await appModel.setVideoHdrOutputMode(VideoHdrOutputMode.auto);
+        final VideoFushiTestHooks hooks = await openAndPlay('auto');
 
         // video-params 到位后重判是异步的（先问 runner 显示器状态再切 VO）。
         for (int i = 0; i < 80 && !hooks.debugHdrHostActive; i++) {
@@ -113,6 +136,29 @@ void main() {
         }
         expect(hooks.debugPositionMs ?? 0, greaterThan(before),
             reason: '切 VO 后播放应继续');
+        expect(warnedSeen, isFalse, reason: 'auto 下能正确显色，不该提示');
+
+        // ── HDR 输出「关闭」：尊重用户、不进宿主窗，但要提示颜色会偏 ──
+        navigator.pop();
+        for (int i = 0; i < 80; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
+          if (find.byType(VideoFushiPage).evaluate().isEmpty) break;
+        }
+        await appModel.setVideoHdrOutputMode(VideoHdrOutputMode.off);
+        try {
+          final VideoFushiTestHooks offHooks = await openAndPlay('off');
+          for (int i = 0; i < 12 && !warnedSeen; i++) {
+            await pumpAndSample();
+          }
+          final bool warned = warnedSeen;
+          debugPrint('[dv-itest] off: hdrHostActive='
+              '${offHooks.debugHdrHostActive} warned=$warned');
+          expect(offHooks.debugHdrHostActive, isFalse,
+              reason: '用户关了 HDR 输出就不进宿主窗');
+          expect(warned, isTrue, reason: '关闭时 DV P5 应弹出颜色提示 OSD');
+        } finally {
+          await appModel.setVideoHdrOutputMode(VideoHdrOutputMode.auto);
+        }
       },
     );
   });
