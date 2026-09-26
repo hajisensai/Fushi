@@ -206,6 +206,19 @@ void main() {
           400);
     });
 
+    test('anki/open（#1409）：无挖词 service → {outcome:failed}，非法 JSON → 400',
+        () async {
+      final RemoteLookupRoutes off =
+          RemoteLookupRoutes(audioTokens: RemoteAudioTokenStore());
+      final shelf.Response r = await off
+          .handleOpenInAnki(post('/api/anki/open', {'expression': '猫'}));
+      expect(r.statusCode, 200);
+      expect(jsonDecode(await r.readAsString()), {'outcome': 'failed'});
+      expect(
+          (await off.handleOpenInAnki(post('/api/anki/open', '{'))).statusCode,
+          400);
+    });
+
     test('readJsonObjectBody：空体 / 非 object / 非法 JSON 一律 null；object 原样返回',
         () async {
       expect(await readJsonObjectBody(post('/x', '')), isNull);

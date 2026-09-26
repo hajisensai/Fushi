@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:fushi_anki/fushi_anki_core.dart' show AnkiOpenWordOutcome;
 
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -326,5 +327,24 @@ class RemoteLookupRoutes {
       return jsonResponse(<String, dynamic>{'duplicate': false});
     }
     return jsonResponse(await buildRemoteDuplicateResponse(body, mining: svc));
+  }
+
+  /// Issue #1409：查词弹窗 ↗「在 Anki 中打开这个词的卡」。回 `{outcome}` 三态名；
+  /// 未注入挖词 service → `{outcome:'failed'}`（弹窗提示打不开，而不是 404 让扩展
+  /// 猜）；非法 JSON / 空 expression → 400。
+  Future<shelf.Response> handleOpenInAnki(shelf.Request request) async {
+    final FushiRemoteMiningService? svc = mining;
+    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
+    if (svc == null) {
+      return jsonResponse(
+          <String, dynamic>{'outcome': AnkiOpenWordOutcome.failed.name});
+    }
+    try {
+      return jsonResponse(
+          await buildRemoteOpenInAnkiResponse(body, mining: svc));
+    } on FormatException catch (e) {
+      return shelf.Response(400, body: e.message);
+    }
   }
 }
