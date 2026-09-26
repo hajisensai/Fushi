@@ -922,6 +922,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     if (book == null) return;
     final List<EpubImageRef> images = book.images;
     final int currentChapter = _currentChapter;
+    final List<TtuTocEntry> toc = _buildTtuToc();
     // 章内位置也要带过去：插图册与书架端插图库用同一把尺判「读到没读到」
     // （BUG-2559）。缓存的分数属于别的章时（刚跳章、还没回报进度）退到章首 0，
     // 与落库时的同款判据一致。
@@ -937,6 +938,16 @@ extension _ReaderChrome on _ReaderFushiPageState {
             builder: (BuildContext routeContext) => ReaderGalleryPage(
               // 节头用真实章名（TOC 命中）；命不中时页面自己退到「第 N 章」。
               chapterLabelFor: _currentChapterLabelFor,
+              // 按目录分节：一个 xhtml 装好几话的书，插图按章内位置归到各话；
+              // 连续几页插图同属一话时合成一节。与顶栏章名同一份目录与判据。
+              toc: ReaderGalleryToc(
+                entries: toc,
+                currentEntry: resolveCurrentTocEntry(
+                  toc,
+                  currentChapter,
+                  _tocCharOffsetFor(currentChapter),
+                ),
+              ),
               images: images,
               currentChapter: currentChapter,
               currentNormCharOffset: currentNormCharOffset,

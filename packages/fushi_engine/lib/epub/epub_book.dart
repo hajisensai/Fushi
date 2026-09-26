@@ -350,7 +350,13 @@ class EpubBook {
     final List<EpubImageRef> built = <EpubImageRef>[];
     final Set<String> seen = <String>{};
 
-    void add(int chapterIndex, String resolvedSrc, int normCharOffset) {
+    void add(
+      int chapterIndex,
+      String resolvedSrc,
+      int normCharOffset, {
+      int charOffset = 0,
+      List<String> leadingAnchorIds = const <String>[],
+    }) {
       final String? key = normalizeEpubImageKey(resolvedSrc);
       if (key == null || !seen.add(key)) return;
       built.add(EpubImageRef(
@@ -359,6 +365,8 @@ class EpubBook {
         src: resolvedSrc,
         revealKey: key,
         normCharOffset: normCharOffset,
+        charOffset: charOffset,
+        leadingAnchorIds: leadingAnchorIds,
       ));
     }
 
@@ -382,6 +390,8 @@ class EpubBook {
           i,
           resolveImageHref(chapterHref, hit.src),
           _normCharOffsetOf(hit.charsBefore, scan.totalChars),
+          charOffset: hit.charsBefore,
+          leadingAnchorIds: hit.leadingAnchorIds,
         );
       }
     }
@@ -400,17 +410,31 @@ class EpubBook {
   static _ChapterImageScan _scanChapterImages(html_dom.Element? body) {
     final List<_ChapterImageHit> hits = <_ChapterImageHit>[];
     int chars = 0;
+    // Ids of the elements opened since the last study character, in document
+    // order: at a given character count they are exactly the anchors that
+    // come *before* an image sitting at that same count.
+    List<String> idsAtCount = <String>[];
 
     void visit(html_dom.Node node) {
       if (node is html_dom.Text) {
-        chars += countStudyChars(node.text);
+        final int added = countStudyChars(node.text);
+        if (added > 0) {
+          chars += added;
+          idsAtCount = <String>[];
+        }
         return;
       }
       if (node is! html_dom.Element) return;
       final String tag = (node.localName ?? '').toLowerCase();
       if (tag == 'rt' || tag == 'rp' || tag == 'rtc') return;
+      final String id = node.id;
+      if (id.isNotEmpty) idsAtCount = <String>[...idsAtCount, id];
       for (final String src in elementImageRefs(node, tag)) {
-        hits.add(_ChapterImageHit(src: src, charsBefore: chars));
+        hits.add(_ChapterImageHit(
+          src: src,
+          charsBefore: chars,
+          leadingAnchorIds: idsAtCount,
+        ));
       }
       for (final html_dom.Node child in node.nodes) {
         visit(child);
@@ -583,6 +607,8 @@ class EpubImageRef {
     required this.src,
     required this.revealKey,
     this.normCharOffset = 0,
+    this.charOffset = 0,
+    this.leadingAnchorIds = const <String>[],
   });
 
   final int chapterIndex;
@@ -600,6 +626,24 @@ class EpubImageRef {
   /// stored reader position uses. 0 for the cover and for image-only chapters
   /// (no text to measure against).
   final int normCharOffset;
+
+  /// Study characters that precede this image within [chapterIndex] — the
+  /// unnormalized form of [normCharOffset], on the same ruler as
+  /// [EpubBook.chapterAnchorCharOffsets]. That shared ruler is what lets a
+  /// caller file an image under the right TOC entry when one xhtml holds
+  /// several of them (`#anchor` sections): a 0..10000 fraction cannot be
+  /// compared with an anchor offset.
+  final int charOffset;
+
+  /// Ids of the elements that open at [charOffset] *before* this image in
+  /// document order (no study character between them and the image).
+  ///
+  /// Character counts alone cannot order an image against an anchor at the
+  /// same count: `…text<img/><h2 id="a7">` (the plate closes the previous
+  /// section) and `<div id="a7"><img/><h2>…` (it opens section a7) both put
+  /// image and anchor at one offset. An anchor listed here precedes the image;
+  /// one at the same offset that is not listed follows it.
+  final List<String> leadingAnchorIds;
 
   /// The spine chapter to navigate to for this image. Same as [chapterIndex]
   /// except for a cover that no chapter references ([kEpubCoverChapterIndex]),
@@ -633,13 +677,20 @@ String? normalizeEpubImageKey(String href) {
 }
 
 class _ChapterImageHit {
-  const _ChapterImageHit({required this.src, required this.charsBefore});
+  const _ChapterImageHit({
+    required this.src,
+    required this.charsBefore,
+    required this.leadingAnchorIds,
+  });
 
   /// The raw, chapter-relative reference (not yet resolved).
   final String src;
 
   /// Study characters that precede this image within its chapter.
   final int charsBefore;
+
+  /// See [EpubImageRef.leadingAnchorIds].
+  final List<String> leadingAnchorIds;
 }
 
 class _ChapterImageScan {

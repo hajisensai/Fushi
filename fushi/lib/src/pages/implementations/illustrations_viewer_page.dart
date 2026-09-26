@@ -11,6 +11,8 @@ import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
     show TtuTocEntry;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart'
     show ReaderFushiSource;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show computeTocAnchorCharOffsets, tocAnchorKey;
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart'
     show epubImageFileFor, parseVolumeBookForPeek;
@@ -107,6 +109,11 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           ? Future<Set<String>>.value(<String>{})
           : widget.database.getRevealedImageKeys(widget.bookUid);
       final EpubBook book = await bookFuture;
+      // 目录锚点的章内偏移：一个 xhtml 装好几话的书，插图靠它分到各话、节头
+      // 才叫得对（缺了就全按章首算，整文件的插图都挂在第一话名下）。与阅读器
+      // 同一个计算入口，同样放 isolate——一章可能几万字。
+      final Map<String, int> anchorOffsets =
+          await compute(computeTocAnchorCharOffsets, book);
       final ReaderPosition? position = await positionFuture;
       final Set<String> revealed = await revealedFuture;
       if (!mounted) return;
@@ -115,7 +122,12 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
           book: book,
           position: position,
           revealed: revealed,
-          toc: flattenTtuTocEntries(book.toc, book.chapterIndexForHref),
+          toc: flattenTtuTocEntries(
+            book.toc,
+            book.chapterIndexForHref,
+            anchorCharOffset: (int chapter, String fragment) =>
+                anchorOffsets[tocAnchorKey(chapter, fragment)],
+          ),
         );
       });
     } catch (e, stack) {
@@ -203,6 +215,16 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       chapterLabelFor: (int chapterIndex) =>
           _chapterLabelFor(input, chapterIndex) ??
           t.auto_chapter(n: chapterIndex + 1),
+      toc: ReaderGalleryToc(
+        entries: input.toc,
+        currentEntry: position == null
+            ? null
+            : resolveCurrentTocEntry(
+                input.toc,
+                position.sectionIndex,
+                position.charOffset,
+              ),
+      ),
       fileForRef: _fileFor,
       onOpenImage: _openZoom,
       onJumpTo: _jumpTo,
