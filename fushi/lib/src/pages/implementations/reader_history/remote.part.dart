@@ -353,6 +353,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
               ? t.remote_book_download_failed
               : '${t.remote_book_download_failed}: ${task.error}',
         );
+      case InterconnectDownloadStatus.paused:
       case InterconnectDownloadStatus.completed:
         return null;
     }

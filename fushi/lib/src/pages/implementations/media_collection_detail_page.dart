@@ -1847,6 +1847,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               ? t.remote_video_download_failed
               : '${t.remote_video_download_failed}: ${task.error}',
         );
+      case InterconnectDownloadStatus.paused:
       case InterconnectDownloadStatus.completed:
         return null;
     }
