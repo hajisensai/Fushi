@@ -197,6 +197,11 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/video_mine_queue.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/web_mine_queue_store.dart'
+    show decodeWebMineFields;
+import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
@@ -237,6 +242,7 @@ part 'video_fushi/controls_theme.part.dart';
 part 'video_fushi/speed.part.dart';
 part 'video_fushi/lookup_favorite.part.dart';
 part 'video_fushi/lookup_mining.part.dart';
+part 'video_fushi/mine_queue.part.dart';
 part 'video_fushi/subtitle_caret.part.dart';
 part 'video_fushi/fullscreen.part.dart';
 part 'video_fushi/mini_window.part.dart';
@@ -1298,11 +1304,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 子类持有的这个转发器统一承接，零行为变化（仅转发）。
   void _rebuild(VoidCallback fn) => setState(fn);
 
-  /// 同 [_rebuild]：库内 part（extension）调 [DictionaryPageMixin] 的 @protected
-  /// [recordMined] 会报 invalid_use_of_protected_member（扩展不算 State 子类实例
-  /// 成员）。由本 State 子类持有的这个转发器统一承接，零行为变化（仅转发）。
-  Future<void> _recordMinedForVideo() => recordMined();
-
   /// 顶栏标题的响应式来源（BUG-120）。顶栏文字渲染在 media_kit 控制条主题里，全屏是
   /// 推到根 navigator 的独立路由、进入时**快照捕获**当时的主题（含标题字符串），页面
   /// `setState` 不会重建全屏路由 → 全屏换集后标题停在旧集。改用 [ValueNotifier] + 顶栏
@@ -1447,6 +1448,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// OSD 自动消失定时器（每次 [_showOsd] 重置）。
   Timer? _osdTimer;
+
+  /// 在线视频后台制卡在途数（弹窗已返回「已加入」、媒体还在准备）。驱动右上角角标
+  /// （见 mine_queue.part.dart），与 OSD 一样用 notifier，全屏路由也跟着刷新。
+  final ValueNotifier<int> _minesInFlight = ValueNotifier<int>(0);
+
+  /// 本视频「看完再制卡」列表里还没写入 Anki 的卡数（待写入 + 写入失败）。
+  final ValueNotifier<int> _stagedMineCount = ValueNotifier<int>(0);
+
+  /// 在途的后台制卡任务。离开页面时先等它们暂存完，再统一写入。
+  final List<Future<void>> _backgroundMineJobs = <Future<void>>[];
 
   /// 自动连播倒计时剩余秒数（TODO-639）。null=没有倒计时；非空时画面右下角显示
   /// 「N 秒后播放下一集 · 取消」可点 overlay，归零后进下一集。与 [_osdNotifier] 分开：
@@ -2352,6 +2363,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     // TODO-1204：接线查词计数（视频来源，带 bookUid + 剧集标题）。
     attachLookupCounter(_popup);
+    // 上次没写完的「看完再制卡」列表：进页就把角标亮出来（best-effort）。
+    unawaited(_refreshStagedMineCount());
     _subtitleListVisible.value = widget.initialSubtitleListVisible;
     // 小窗能力探测 + 系统画中画进出回程（见 mini_window.part.dart）。放 initState
     // 是因为入口按钮的显隐必须在首帧就定下来，不能在用户眼皮底下冒出来。
@@ -4821,6 +4834,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     unawaited(_pictureInPictureSub?.cancel());
     _pictureInPictureSub = null;
     _disposeMiniWindow();
+    // 离开播放页 = 看完了：把「看完再制卡」列表写进 Anki（异步，不挡退出）。必须在
+    // controller / notifier 释放前取好 `ref` 与在途任务。
+    _flushStagedMinesOnExit();
     final ExitFlushCallback? exitFlush = _exitFlushCallback;
     if (exitFlush != null) {
       ExitFlushRegistry.instance.unregister(exitFlush);
@@ -4907,6 +4923,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _lockButtonHovered.dispose();
     _osdTimer?.cancel();
     _osdNotifier.dispose();
+    _minesInFlight.dispose();
+    _stagedMineCount.dispose();
     _longPressSpeedBadge.dispose();
     _autoAdvanceCountdownTimer?.cancel();
     _autoAdvanceCountdownNotifier.dispose();

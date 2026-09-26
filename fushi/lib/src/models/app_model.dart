@@ -215,6 +215,7 @@ import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
@@ -7536,6 +7537,12 @@ class AppModel with ChangeNotifier {
       prefsRepo.videoMiningImageMode;
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setVideoMiningImageMode(mode);
+
+  // 在线视频制卡弹窗等不等（后台 / 看完再制卡 / 等待完成，透传 prefsRepo）。默认后台。
+  VideoOnlineMiningMode get videoOnlineMiningMode =>
+      prefsRepo.videoOnlineMiningMode;
+  Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) =>
+      prefsRepo.setVideoOnlineMiningMode(mode);
 
   VideoMiningImageMode get galMiningImageMode => prefsRepo.galMiningImageMode;
   void setGalMiningImageMode(VideoMiningImageMode mode) =>

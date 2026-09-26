@@ -461,6 +461,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // 句子音频头/尾 padding：效果在裁剪区间（padSentenceRange），纯函数 + 偏好写穿 +
   // 两条制卡链调用点源码守卫都在专项测试里。
+  // 在线视频制卡方式（后台 / 看完再制卡 / 等待完成）：写 prefsRepo，生效点是视频页
+  // 点制卡时的模式判定（纯函数 resolveVideoOnlineMiningMode）与暂存队列，harness 里
+  // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
+  'cardCreation/Online video mining':
+      'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
