@@ -83,6 +83,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 由专项测试咬住：能力位随开关实时翻转、关着时报了画质档也退回直传。
   'interconnect/Transcode video for peers':
       'test/sync/fushi_sync_server_transcode_test.dart',
+  // 游戏串流「允许远程启动」（host 侧许可，默认关，只在 Windows 出现）。写
+  // prefsRepo（changed=true），生效点在 **HTTP 端点**：app 把
+  // `prefsRepo.gameStreamRemoteLaunchEnabled` 实时注入成 host 的
+  // `isLaunchEnabled`（app_model），`/api/game-stream/launch` 每次处理都读它，关着就
+  // 403 `disabled`、不起进程。harness 里没有起 server，探不到。由专项测试咬住。
+  'interconnect/Allow remote launch':
+      'packages/fushi_engine/test/game_stream_launch_settings_test.dart',
   'appearance/Books': 'test/pages/home_page_tabs_test.dart',
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
@@ -461,6 +468,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_media_quality_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // 句子音频头/尾 padding：效果在裁剪区间（padSentenceRange），纯函数 + 偏好写穿 +
   // 两条制卡链调用点源码守卫都在专项测试里。
+  // 在线视频制卡方式（后台 / 看完再制卡 / 等待完成）：写 prefsRepo，生效点是视频页
+  // 点制卡时的模式判定（纯函数 resolveVideoOnlineMiningMode）与暂存队列，harness 里
+  // 没有在线视频播放器可探；判定、队列落卡、弹窗与引擎暂存契约都在专项测试里。
+  'cardCreation/Online video mining':
+      'test/media/video/mpv_cache_snapshot_test.dart + test/mining/video_mine_queue_test.dart + test/mining/immersion_mining_cached_snapshot_test.dart',
   'cardCreation/Audio padding before sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':

@@ -29,6 +29,7 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -671,6 +672,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           id: 'card_creation.anki.video_mining_still_format',
           child: _buildVideoMiningStillFormatPicker(),
         ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_online_mining_mode',
+          child: _buildVideoOnlineMiningModePicker(),
+        ),
         if (Platform.isWindows) ...[
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_image_mode',
@@ -816,6 +821,44 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
         setState(() {});
+      },
+    );
+  }
+
+  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后弹窗等不等：后台（默认）/
+  /// 看完再制卡 / 等待完成。副标题随选中项说明取舍，透传
+  /// [AppModel.videoOnlineMiningMode]。本地视频不受影响（恒等待，本来就秒出）。
+  Widget _buildVideoOnlineMiningModePicker() {
+    final VideoOnlineMiningMode mode = appModel.videoOnlineMiningMode;
+    return AdaptiveSettingsPickerRow<VideoOnlineMiningMode>(
+      title: t.video_online_mining_mode,
+      subtitle: switch (mode) {
+        VideoOnlineMiningMode.background =>
+          t.video_online_mining_mode_background_hint,
+        VideoOnlineMiningMode.deferred =>
+          t.video_online_mining_mode_deferred_hint,
+        VideoOnlineMiningMode.wait => t.video_online_mining_mode_wait_hint,
+      },
+      icon: Icons.cloud_download_outlined,
+      controlBelow: true,
+      selected: mode,
+      options: [
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.background,
+          label: t.video_online_mining_mode_background,
+        ),
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.deferred,
+          label: t.video_online_mining_mode_deferred,
+        ),
+        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
+          value: VideoOnlineMiningMode.wait,
+          label: t.video_online_mining_mode_wait,
+        ),
+      ],
+      onChanged: (VideoOnlineMiningMode value) async {
+        await appModel.setVideoOnlineMiningMode(value);
+        if (mounted) setState(() {});
       },
     );
   }

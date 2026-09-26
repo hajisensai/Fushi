@@ -215,6 +215,7 @@ import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
+import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
 import 'package:fushi/src/mining/youtube_clip_miner.dart';
@@ -1911,6 +1912,7 @@ class AppModel with ChangeNotifier {
   void _migrateDictionaryTypes() {
     if (_dictTypesMigrated) return;
     _dictTypesMigrated = true;
+    unawaited(_backfillDictionarySourceMetadata());
     final dicts = dictRepo.dictionaries;
     for (final d in dicts) {
       // 探过就跳过——包括「探过、结论是什么都不用改」。
@@ -2004,6 +2006,50 @@ class AppModel with ChangeNotifier {
       if (detected != null) {
         debugPrint('[Fushi] migrated dict type: ${d.name} → ${detected.name}');
       }
+    }
+  }
+
+  /// 启动期一次性：给在线更新功能之前导入的词典从磁盘 index.json 补来源字段
+  /// （revision / isUpdatable / indexUrl / downloadUrl），见 [kDictSourceProbeKey]。
+  /// 没有这一步，这些词典的「更新」按钮只能让用户自己去下新包再选文件，
+  /// 「更新全部词典」也会漏掉它们。
+  ///
+  /// 异步读盘（不在 UI isolate 上同步 IO，OneDrive「仅云端」目录会同步卡死），
+  /// 全部读完后一次批量落库（只重载一次引擎）。落库前按名字取**当前**缓存里的
+  /// 那本再合并，不拿开头的快照覆盖读盘期间别处写下的变更（比如类型自愈标记）。
+  Future<void> _backfillDictionarySourceMetadata() async {
+    final Map<String, Map<String, String>> fromIndex =
+        <String, Map<String, String>>{};
+    for (final Dictionary d in dictRepo.dictionaries) {
+      if (!needsSourceMetadataBackfill(d.metadata)) continue;
+      final File indexFile = File(
+          path.join(dictionaryResourceDirectory.path, d.name, 'index.json'));
+      try {
+        // 文件不在不打标记：可能只是还没落盘，下次启动再读。
+        if (!await indexFile.exists()) continue;
+        fromIndex[d.name] =
+            parseSourceMetadataFromIndexJson(await indexFile.readAsString());
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
+      }
+    }
+    if (fromIndex.isEmpty) return;
+    final List<Dictionary> updated = <Dictionary>[
+      for (final Dictionary d in dictRepo.dictionaries)
+        if (fromIndex.containsKey(d.name) &&
+            needsSourceMetadataBackfill(d.metadata))
+          d.copyWith(
+            metadata: mergeBackfilledSourceMetadata(
+                d.metadata, fromIndex[d.name]!),
+          ),
+    ];
+    if (updated.isEmpty) return;
+    // 调用方是 unawaited：落库失败不能漏成未捕获的 zone 错误。不打标记即下次
+    // 启动再试。
+    try {
+      await dictRepo.persistDictionaries(updated);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('AppModel.dictSourceBackfill', e, stack);
     }
   }
 
@@ -7539,6 +7585,12 @@ class AppModel with ChangeNotifier {
       prefsRepo.videoMiningImageMode;
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setVideoMiningImageMode(mode);
+
+  // 在线视频制卡弹窗等不等（后台 / 看完再制卡 / 等待完成，透传 prefsRepo）。默认后台。
+  VideoOnlineMiningMode get videoOnlineMiningMode =>
+      prefsRepo.videoOnlineMiningMode;
+  Future<void> setVideoOnlineMiningMode(VideoOnlineMiningMode mode) =>
+      prefsRepo.setVideoOnlineMiningMode(mode);
 
   VideoMiningImageMode get galMiningImageMode => prefsRepo.galMiningImageMode;
   void setGalMiningImageMode(VideoMiningImageMode mode) =>

@@ -492,20 +492,26 @@ class _DictionaryDialogPageState extends BasePageState {
         spacing: tokens.spacing.gap,
         runSpacing: tokens.spacing.gap,
         children: <Widget>[
+          // TODO-609：一键更新全部可在线更新的词典（逐本比 revision，有新版才下）。
+          // 放第一个、常驻显示：以前「没有可更新词典就不显示」，而旧版导入的词典
+          // 缺来源字段全被判成不可更新，用户根本找不到这个入口，只看得到行尾那个
+          // 要自己下新包再选文件的按钮。现在没有可更新词典时点了会明确告诉原因。
+          _buildActionButton(
+            focusPrefix: 'dict-action-update',
+            icon: Icons.system_update_alt,
+            label: t.dict_update_all,
+            onTap: _checkForUpdates,
+            style: FilledButton.styleFrom(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+            ),
+          ),
           _buildActionButton(
             focusPrefix: 'dict-action-download',
             icon: Icons.cloud_download_outlined,
             label: t.dict_download_browse,
             onTap: _showDownloadSelectionDialog,
           ),
-          // TODO-609：遍历所有可在线更新的词典逐个比对 revision，汇总结果。
-          if (appModel.dictionaries.any((Dictionary d) => d.isUpdatable))
-            _buildActionButton(
-              focusPrefix: 'dict-action-update',
-              icon: Icons.system_update_alt,
-              label: t.dict_update_check,
-              onTap: _checkForUpdates,
-            ),
           // Folder import is unavailable on iOS. This bar only renders on
           // Material, so the guard is a no-op on a normal iOS device (Cupertino
           // there); it stays live only for a forced Material design-system
@@ -569,6 +575,11 @@ class _DictionaryDialogPageState extends BasePageState {
   List<Widget> _buildDesktopPageActions() {
     return [
       FushiIconButton(
+        tooltip: t.dict_update_all,
+        icon: Icons.system_update_alt,
+        onTap: _checkForUpdates,
+      ),
+      FushiIconButton(
         tooltip: t.dict_download_browse,
         icon: Icons.cloud_download_outlined,
         onTap: _showDownloadSelectionDialog,
@@ -600,6 +611,11 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: Icons.more_vert,
         onSelected: (VoidCallback action) => action(),
         items: [
+          buildPopupItem(
+            label: t.dict_update_all,
+            icon: Icons.system_update_alt,
+            action: _checkForUpdates,
+          ),
           buildPopupItem(
             label: t.dict_download_browse,
             icon: Icons.cloud_download_outlined,
@@ -1812,7 +1828,11 @@ class _DictionaryDialogPageState extends BasePageState {
         FushiIconButton(
           icon: Icons.system_update_alt,
           size: 20,
-          tooltip: t.dict_update_tooltip,
+          // 不可在线更新的词典点下去是「选本地文件覆盖」，tooltip 要把这件事说在
+          // 前头，别让用户以为和 Yomitan 一样会自己去下新版。
+          tooltip: dictionary.isUpdatable
+              ? t.dict_update_tooltip
+              : t.dict_update_from_file_tooltip,
           onTap: () => dictionary.isUpdatable
               ? _updateSingleDictionary(dictionary)
               : _updateDictionaryFromFile(dictionary),
@@ -2076,6 +2096,14 @@ class _DictionaryDialogPageState extends BasePageState {
           final DictionaryRemoteIndexResult remote =
               await DictionaryUpdateService.fetchRemoteIndexResult(
                   dictionary.indexUrl);
+          // 拉不到远端 index 不是「已是最新」——以前两者同一条提示，断网时用户
+          // 被告知已最新，其实根本没检查成。
+          if (!remote.succeeded) {
+            return DictionaryDownloadOutcome(
+              message: t.dict_update_check_failed,
+              severity: ToastSeverity.error,
+            );
+          }
           if (!DictionaryUpdateService.needsUpdate(
               dictionary.revision, remote.revision)) {
             return DictionaryDownloadOutcome(
@@ -2237,7 +2265,7 @@ class _DictionaryDialogPageState extends BasePageState {
         appModel.dictionaries.where((Dictionary d) => d.isUpdatable).toList();
     if (updatable.isEmpty) {
       FushiToast.show(
-        msg: t.dict_update_none,
+        msg: t.dict_update_all_no_source,
         severity: ToastSeverity.info,
       );
       return;
@@ -2261,6 +2289,11 @@ class _DictionaryDialogPageState extends BasePageState {
             final DictionaryRemoteIndexResult remote =
                 await DictionaryUpdateService.fetchRemoteIndexResult(
                     d.indexUrl);
+            // 检查失败计入失败，不算「最新」（旧实现把断网也数成最新）。
+            if (!remote.succeeded) {
+              failed++;
+              continue;
+            }
             if (!DictionaryUpdateService.needsUpdate(
                 d.revision, remote.revision)) {
               current++;

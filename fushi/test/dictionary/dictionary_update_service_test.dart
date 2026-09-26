@@ -273,4 +273,133 @@ void main() {
       expect(invalidResult.revision, isNull);
     });
   });
+
+  // 用户报告（2026-09-26）：「更新」按钮要自己下新包选文件，和 Yomitan 不一样。
+  // 两个根因：钉了版本号的 downloadUrl 用本地旧地址下回来还是旧包；旧版导入的
+  // 词典 metadata 缺来源字段，被判不可更新。下面钉这两条的纯函数契约。
+  const String pixivOldIndex = '{"title":"Pixiv Light [2026-03-26]","format":3,'
+      '"revision":"2026-03-26","isUpdatable":true,'
+      '"indexUrl":"https://github.com/MarvNC/pixiv-yomitan/releases/latest/download/pixiv_light_index.json",'
+      '"downloadUrl":"https://github.com/MarvNC/pixiv-yomitan/releases/download/2026-03-26/PixivLight_2026-03-26.zip"}';
+  const String pixivNewZip =
+      'https://github.com/MarvNC/pixiv-yomitan/releases/download/2026-04-20/PixivLight_2026-04-20.zip';
+
+  group('远端 index 的 downloadUrl（钉版本号的包地址）', () {
+    test('fetchRemoteIndexResult 带回远端声明的新包地址', () async {
+      final Dio dio = _dioWith(_FakeAdapter((String url) =>
+          _body('{"revision":"2026-04-20","downloadUrl":"$pixivNewZip"}')));
+
+      final DictionaryRemoteIndexResult result =
+          await DictionaryUpdateService.fetchRemoteIndexResult(
+        'https://x/pixiv_light_index.json',
+        dio: dio,
+      );
+
+      expect(result.succeeded, isTrue);
+      expect(result.downloadUrl, pixivNewZip);
+    });
+
+    test('resolveDownloadUrl：远端优先，本地旧地址不能再被用来「更新」', () {
+      final Map<String, String> local =
+          parseSourceMetadataFromIndexJson(pixivOldIndex);
+      const DictionaryRemoteIndexResult remote =
+          DictionaryRemoteIndexResult.success('2026-04-20',
+              downloadUrl: pixivNewZip);
+
+      expect(remote.resolveDownloadUrl(local['downloadUrl']!), pixivNewZip);
+    });
+
+    test('远端没声明 downloadUrl → 回退本地（releases/latest 恒指最新）', () {
+      const DictionaryRemoteIndexResult remote =
+          DictionaryRemoteIndexResult.success('JMdict.2026-04-01');
+      const String latest =
+          'https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/JMdict.zip';
+
+      expect(remote.resolveDownloadUrl(latest), latest);
+      // 远端 downloadUrl 空白 / 非 http(s) 绝对地址都不采信，回落本地（#1670 口径）。
+      expect(
+        DictionaryUpdateService.parseRemoteIndexJson(
+                '{"revision":"x","downloadUrl":"  "}')
+            .resolveDownloadUrl(latest),
+        latest,
+      );
+      expect(
+        DictionaryUpdateService.parseRemoteIndexJson(
+                '{"revision":"x","downloadUrl":"PixivLight.zip"}')
+            .resolveDownloadUrl(latest),
+        latest,
+      );
+      expect(DictionaryUpdateService.parseRemoteIndexJson('bad').succeeded,
+          isFalse);
+    });
+  });
+
+  group('旧词典来源字段回填（kDictSourceProbeKey）', () {
+    test('缺全部来源字段 → 需要回填；已有来源字段或已回填过 → 不需要', () {
+      expect(needsSourceMetadataBackfill(const <String, String>{}), isTrue);
+      expect(
+        needsSourceMetadataBackfill(const <String, String>{'typeProbe': '1'}),
+        isTrue,
+        reason: '类型自愈标记不是来源字段',
+      );
+      expect(
+        needsSourceMetadataBackfill(const <String, String>{'revision': 'r'}),
+        isFalse,
+      );
+      expect(
+        needsSourceMetadataBackfill(
+            const <String, String>{kDictSourceProbeKey: '1'}),
+        isFalse,
+      );
+    });
+
+    test('用磁盘 index.json 回填后，旧导入的 Pixiv 变成可在线更新', () {
+      final Dictionary legacy = Dictionary(
+        name: 'Pixiv Light [2026-03-26]',
+        formatKey: 'yomichan',
+        order: 0,
+        metadata: const <String, String>{'typeProbe': '1'},
+      );
+      expect(legacy.isUpdatable, isFalse, reason: '回填前：被判不可更新');
+
+      final Dictionary backfilled = legacy.copyWith(
+        metadata: mergeBackfilledSourceMetadata(
+          legacy.metadata,
+          parseSourceMetadataFromIndexJson(pixivOldIndex),
+        ),
+      );
+
+      expect(backfilled.isUpdatable, isTrue);
+      expect(backfilled.revision, '2026-03-26');
+      expect(backfilled.metadata['typeProbe'], '1');
+      expect(needsSourceMetadataBackfill(backfilled.metadata), isFalse);
+    });
+
+    test('包里本来没有来源字段 → 仍打标记，下次启动不再读盘', () {
+      final Map<String, String> merged = mergeBackfilledSourceMetadata(
+        const <String, String>{},
+        parseSourceMetadataFromIndexJson('{"title":"大辞林","revision":""}'),
+      );
+
+      expect(merged[kDictSourceProbeKey], '1');
+      expect(needsSourceMetadataBackfill(merged), isFalse);
+      expect(merged.containsKey('isUpdatable'), isFalse);
+    });
+
+    test('已有 metadata 压过 index.json（不覆盖权威值）', () {
+      final Map<String, String> merged = mergeBackfilledSourceMetadata(
+        const <String, String>{'targetLanguage': 'zh'},
+        parseSourceMetadataFromIndexJson(
+            '{"targetLanguage":"ja","revision":"r"}'),
+      );
+
+      expect(merged['targetLanguage'], 'zh');
+      expect(merged['revision'], 'r');
+    });
+
+    test('坏 JSON → 空 Map，不抛', () {
+      expect(parseSourceMetadataFromIndexJson('{oops'), isEmpty);
+      expect(parseSourceMetadataFromIndexJson('[1]'), isEmpty);
+    });
+  });
 }
