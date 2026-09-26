@@ -1588,11 +1588,18 @@ class JellyfinApi {
   }
 
   /// 通用下载：GET [url] 流式写入 [dest]，按 Content-Length 汇报进度。
+  ///
+  /// [onBytes] 报 `(已收, Content-Length)`。[cancelSignal] 完成后在下一个数据块到达
+  /// 时中止并抛 [RemoteDownloadCancelled]（本源无续传，半截文件照常删掉）。
   Future<void> downloadToFile(
     String url,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {
+    bool cancelled = false;
+    cancelSignal?.then((_) => cancelled = true, onError: (_) {});
     try {
       final http.Request req = http.Request('GET', Uri.parse(url));
       req.headers.addAll(_headers);
@@ -1609,8 +1616,10 @@ class JellyfinApi {
       bool ok = false;
       try {
         await for (final List<int> chunk in res.stream) {
+          if (cancelled) throw const RemoteDownloadCancelled();
           sink.add(chunk);
           received += chunk.length;
+          onBytes?.call(received, total);
           if (total != null && total > 0) {
             onProgress?.call(received / total);
           }
@@ -2486,6 +2495,8 @@ class JellyfinVideoClient
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {
     // 飞牛要求 stream 端点带 MediaSourceId（BUG-2254 ③），而下载入参只有条目
     // id：先打一次 /Items/{id} 拿 MediaSources[0].Id。原版 Jellyfin/Emby 上省这发
@@ -2495,6 +2506,8 @@ class JellyfinVideoClient
       api.streamUrl(id, mediaSourceId: item.mediaSourceId),
       dest,
       onProgress: onProgress,
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
     );
   }
 

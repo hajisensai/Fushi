@@ -5615,5 +5615,9 @@
   "video_mine_queue_committing": "追加中 $done/$total…",
   "video_mine_queue_committed": "$ok 件を追加、$failed 件失敗",
   "video_mine_queue_failed": "追加失敗：$reason",
-  "video_mine_queue_remove": "削除"
+  "video_mine_queue_remove": "削除",
+  "download_interconnect_section_title": "From paired devices",
+  "interconnect_download_notification_title": "Downloading $count items from paired devices",
+  "download_keep_alive_multiple_title": "$count downloads in progress",
+  "update_download_notification_title": "Downloading update $version"
 }

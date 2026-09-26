@@ -464,6 +464,8 @@ class AnimeSourceVideoClient
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {
     throw UnsupportedError('anime source stream not downloadable');
   }

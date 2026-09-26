@@ -5615,5 +5615,9 @@
   "video_mine_queue_committing": "Adding $done/$total…",
   "video_mine_queue_committed": "Added $ok cards, $failed failed",
   "video_mine_queue_failed": "Failed: $reason",
-  "video_mine_queue_remove": "Remove"
+  "video_mine_queue_remove": "Remove",
+  "download_interconnect_section_title": "From paired devices",
+  "interconnect_download_notification_title": "Downloading $count items from paired devices",
+  "download_keep_alive_multiple_title": "$count downloads in progress",
+  "update_download_notification_title": "Downloading update $version"
 }

@@ -42,6 +42,8 @@ import 'package:fushi/src/media/manga/download/manga_download_sidecar.dart';
 import 'package:fushi/src/media/manga/manga_json_writeback.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
+import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
+import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -158,6 +160,7 @@ class MangaDownloadService {
     MokuroMoeVolumeDownloaderFactory? mokuroDownloader,
     DateTime Function()? clock,
     Future<void> Function(Duration duration)? wait,
+    DownloadKeepAlive? keepAlive,
     this.pageConcurrency = 4,
   }) : _database = database,
        _serviceFor = serviceFor,
@@ -165,7 +168,8 @@ class MangaDownloadService {
        _sidecarFetcher = sidecarFetcher,
        _mokuroDownloader = mokuroDownloader,
        _clock = clock ?? DateTime.now,
-       _wait = wait ?? ((Duration duration) => Future<void>.delayed(duration));
+       _wait = wait ?? ((Duration duration) => Future<void>.delayed(duration)),
+       _keepAlive = keepAlive ?? downloadKeepAliveHub.lease('manga');
 
   final FushiDatabase _database;
   final OnlineMangaLibraryService Function(OnlineMangaRuntimeKind runtime)
@@ -175,6 +179,11 @@ class MangaDownloadService {
   final MokuroMoeVolumeDownloaderFactory? _mokuroDownloader;
   final DateTime Function() _clock;
   final Future<void> Function(Duration duration) _wait;
+
+  /// BUG-2714：worker 有任务在跑就挂下载保活（Android 前台服务），队列排空 /
+  /// 服务停止时撤。与其它下载来源经 [downloadKeepAliveHub] 汇总，互不撤对方。
+  final DownloadKeepAlive _keepAlive;
+  bool _keepAliveActive = false;
 
   /// 任务内同时在飞的取页数。
   final int pageConcurrency;
@@ -223,6 +232,7 @@ class MangaDownloadService {
       active.token.stopped = true;
       active.abort?.call();
     }
+    _stopKeepAlive();
   }
 
   /// 任务表变了的信号流（不带行，消费方自己 [listJobs]）。
@@ -482,6 +492,7 @@ class MangaDownloadService {
         if (next == null) break;
         final _ActiveJob active = _ActiveJob(next.jobId);
         _active = active;
+        _reportKeepAlive(next);
         try {
           await _run(next, active);
         } on Object catch (error, stack) {
@@ -502,10 +513,43 @@ class MangaDownloadService {
       _idle = null;
       idle?.complete();
       if (_wakeRequested && !_disposed) {
+        // 马上还有下一轮：不撤保活——撤了之后 app 若已在后台，Android 不允许
+        // 再拉起前台服务，后续任务就失去保护。
         _wakeRequested = false;
         _kick();
+      } else {
+        _stopKeepAlive();
       }
     }
+  }
+
+  /// 当前任务的保活通知：标题是作品名，正文是章 / 卷名（有页数时带百分比）。
+  /// 节流 / 去重在 [DownloadKeepAlive] 实现里做，这里每次进度变化都如实报。
+  void _reportKeepAlive(
+    MangaDownloadJobRow job, {
+    int done = 0,
+    int total = 0,
+  }) {
+    if (_disposed) return;
+    final int? percent = total > 0
+        ? (done.clamp(0, total) * 100 ~/ total)
+        : null;
+    _keepAliveActive = true;
+    unawaited(
+      _keepAlive.update(
+        title: job.title,
+        text: percent == null
+            ? job.chapterTitle
+            : '${job.chapterTitle} · $percent%',
+        percent: percent,
+      ),
+    );
+  }
+
+  void _stopKeepAlive() {
+    if (!_keepAliveActive) return;
+    _keepAliveActive = false;
+    unawaited(_keepAlive.stop());
   }
 
   Future<void> _run(MangaDownloadJobRow job, _ActiveJob active) async {
@@ -631,6 +675,7 @@ class MangaDownloadService {
       pagesTotal: pages.length,
       updatedAt: _now,
     );
+    _reportKeepAlive(job, done: done, total: pages.length);
     final List<int> pending = <int>[
       for (int index = 0; index < pages.length; index++)
         if (files[index] == null) index,
@@ -655,6 +700,7 @@ class MangaDownloadService {
             pagesTotal: pages.length,
             updatedAt: _now,
           );
+          _reportKeepAlive(job, done: done, total: pages.length);
         } on Object catch (error, stack) {
           firstError ??= error;
           firstStack ??= stack;
@@ -766,6 +812,7 @@ class MangaDownloadService {
             pagesTotal: progress.total,
             updatedAt: _now,
           );
+          _reportKeepAlive(job, done: progress.done, total: progress.total);
         }
       }
     } on MokuroMoeDownloadCancelled {

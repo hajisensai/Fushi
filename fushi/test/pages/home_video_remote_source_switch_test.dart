@@ -323,6 +323,8 @@ class _FakeInterconnectVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async =>
       throw UnimplementedError();
 
@@ -394,6 +396,8 @@ class _FakeCloudVideoSource implements CloudRemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async =>
       throw UnimplementedError();
 

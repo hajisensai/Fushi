@@ -43,7 +43,9 @@ void main() {
           title: id,
           dest: dest('$id.mp4'),
           run: (File target,
-              {void Function(double progress)? onProgress}) async {},
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {},
         );
 
     test('结束态有界保留：超过 maxFinishedTasks 的最旧任务被淘汰（不再只增不减）', () async {
@@ -65,7 +67,10 @@ void main() {
           id: 'v1',
           title: 'v1',
           dest: dest('v1.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw const SocketException('reset'),
         ),
         throwsA(isA<SocketException>()),
@@ -85,7 +90,10 @@ void main() {
         id: 'running',
         title: 'running',
         dest: dest('running.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           while (!released) {
             await Future<void>.delayed(const Duration(milliseconds: 1));
           }
@@ -106,7 +114,10 @@ void main() {
           id: 'v1',
           title: 'v1',
           dest: dest('v1.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw const SocketException('connection reset by peer'),
         ),
         throwsA(isA<SocketException>()),
@@ -128,7 +139,9 @@ void main() {
       );
 
       Future<void> ok(File target,
-          {void Function(double progress)? onProgress}) async {}
+          {void Function(double progress)? onProgress,
+          void Function(int received, int? total)? onBytes,
+          Future<void>? cancelSignal}) async {}
 
       await runOk('X'); // 视频任务（裸键）
       await manager.startBookDownload(
@@ -165,7 +178,10 @@ void main() {
           downloadId: 'b1',
           title: 'b1',
           dest: dest('b1.epub'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw const SocketException('connection refused'),
         ),
         throwsA(isA<SocketException>()),
@@ -182,7 +198,10 @@ void main() {
           id: 'v2',
           title: 'v2',
           dest: dest('v2.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw StateError('weird custom failure'),
         ),
         throwsA(isA<StateError>()),

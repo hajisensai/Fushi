@@ -33,7 +33,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           onProgress?.call(0.25);
           onProgress?.call(0.75);
         },
@@ -56,7 +59,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           runCalls += 1;
           await gate.future;
         },
@@ -66,7 +72,10 @@ void main() {
         id: 'v1',
         title: 'Video One',
         dest: dest('v1.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) async {
+        run: (File target,
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {
           runCalls += 1;
         },
       );
@@ -85,7 +94,10 @@ void main() {
           id: 'v1',
           title: 'Video One',
           dest: dest('v1.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw const SocketException('reset'),
         ),
         throwsA(isA<SocketException>()),
@@ -104,7 +116,9 @@ void main() {
           title: 'Video One',
           dest: dest('v1.mp4'),
           run: (File target,
-              {void Function(double progress)? onProgress}) async {},
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {},
           onComplete: (File f) => throw StateError('register failed'),
         ),
         throwsA(isA<StateError>()),
@@ -123,7 +137,9 @@ void main() {
         title: 'Video One',
         dest: dest('v1.mp4'),
         run: (File target,
-            {void Function(double progress)? onProgress}) async {},
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {},
       );
       // 没有任何页面 State 参与；任务仍可从 app 级 manager 取到。
       expect(manager.taskFor('v1'), isNotNull);
@@ -136,7 +152,10 @@ void main() {
         id: 'run',
         title: 'Running',
         dest: dest('run.mp4'),
-        run: (File target, {void Function(double progress)? onProgress}) =>
+        run: (File target,
+                {void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal}) =>
             gate.future,
       );
       // running 任务不可清除。
@@ -148,7 +167,9 @@ void main() {
         title: 'Done',
         dest: dest('done.mp4'),
         run: (File target,
-            {void Function(double progress)? onProgress}) async {},
+            {void Function(double progress)? onProgress,
+            void Function(int received, int? total)? onBytes,
+            Future<void>? cancelSignal}) async {},
       );
       manager.clearTask('done');
       expect(manager.taskFor('done'), isNull);
@@ -169,7 +190,9 @@ void main() {
                   title: id,
                   dest: dest('$id.mp4'),
                   run: (File target,
-                      {void Function(double progress)? onProgress}) async {
+                      {void Function(double progress)? onProgress,
+                      void Function(int received, int? total)? onBytes,
+                      Future<void>? cancelSignal}) async {
                     order.add('start:$id');
                     if (id == 'a') await firstGate.future;
                     if (fail) throw StateError('boom $id');
@@ -224,7 +247,10 @@ void main() {
           id: 'a',
           title: 'a',
           dest: dest('a.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               gateA.future,
         );
         await Future<void>.delayed(Duration.zero);
@@ -240,7 +266,10 @@ void main() {
           id: 'b',
           title: 'b',
           dest: dest('b.mp4'),
-          run: (File target, {void Function(double progress)? onProgress}) =>
+          run: (File target,
+                  {void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal}) =>
               throw StateError('boom'),
         );
         await expectLater(b, throwsStateError);
@@ -249,7 +278,9 @@ void main() {
           title: 'c',
           dest: dest('c.mp4'),
           run: (File target,
-              {void Function(double progress)? onProgress}) async {
+              {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {
             reportC = onProgress;
             await gateC.future;
           },

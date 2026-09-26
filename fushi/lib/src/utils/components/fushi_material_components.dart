@@ -2982,6 +2982,49 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
     _selectionAreaKey.currentState?.selectableRegion.clearSelection();
   }
 
+  /// BUG-2715：行集合被**非滚动**原因换掉时丢弃选区（BUG-1582 的补全）。
+  ///
+  /// 与 BUG-1582 同一个框架不变式（`scrollable.dart` `_updateDragLocationsFromGeometries`
+  /// 假定 `currentSelectionStart/EndIndex` 指向的 Selectable 仍持有选区），但 BUG-1582
+  /// 只收口了「用户滚动回收端点行」这一个来源。选区端点行离开 `selectables` 的
+  /// 来源其实有三个，另两个与滚动无关：
+  ///
+  /// 1. **日志内容变化**：错误/调试日志页监听日志服务，新条目一来就整段重拼
+  ///    （新条目在最前，所有行下移）→ 行 Text 内容变化 → `RenderParagraph.text`
+  ///    走 layout 分支，把旧 `_SelectableFragment` 从 registrar `remove()` 掉再注册新的。
+  ///    `_removeSelectable` 只把下标减一，选区端点于是指向一个**没有选区**的片段。
+  /// 2. **视口变高度**（转屏 / 分屏 / 键盘）：视口变矮后端点行落出 cacheExtent 被回收，
+  ///    同样只做下标减一；外层 `StaticSelectionContainerDelegate` 也会因此读到空端点。
+  ///
+  /// 之后再长按到**命不中任何 Selectable 的位置**（每条错误日志都有的空行——空文本
+  /// 的 `RenderParagraph` 不注册片段；行尾空白；列表内边距），
+  /// `_handleSelectBoundary` 不改下标就返回，`handleSelectWord` 随即无条件读陈旧下标
+  /// → `startSelectionPoint!` / `endSelectionPoint!` 空断言（release 下 assert 不执行，
+  /// 直接 Null check operator）。
+  ///
+  /// 选区只对「划它时屏幕上那批行」有意义：行被换掉，旧选区指的已经不是同一段
+  /// 文字；所以在行集合被换掉时清掉选区，让选区状态与渲染快照同步。纯尾部追加
+  /// 不换掉任何既有行（见 [logUpdateReplacesRows]），选区与菜单照常保留
+  /// （TODO-1380「日志流追加期间菜单保持打开」）。无条件清（不看 [_hasSelection]）：
+  /// 桌面单击留下的折叠选区 plainText 为空，同样持有下标。
+  void _dropSelectionForReplacedRows() {
+    _hasSelection = false;
+    _selectionAreaKey.currentState?.selectableRegion.clearSelection();
+  }
+
+  // BUG-2715：上一次看到的视口主轴尺寸，用来从 ScrollMetricsNotification 里
+  // 只挑出「视口本身变了」这一种（懒加载列表滚动时 maxScrollExtent 估值也会变，
+  // 那由 [_dropStaleSelectionOnUserScroll] 管）。
+  double? _lastViewportDimension;
+
+  void _dropSelectionOnViewportResize(ScrollMetricsNotification notification) {
+    final double viewport = notification.metrics.viewportDimension;
+    final double? previous = _lastViewportDimension;
+    _lastViewportDimension = viewport;
+    if (previous == null || (previous - viewport).abs() < 0.5) return;
+    _dropSelectionForReplacedRows();
+  }
+
   // 整段 log 按行预切一次（不在 build 里反复 split），仅 widget.log 变化时重切。
   // ListView.builder 按 [_lines] 索引懒构造每行，只渲染视口内行。
   late List<String> _lines = _splitLines(widget.log);
@@ -3004,7 +3047,13 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
   void didUpdateWidget(covariant FushiLogPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.log != widget.log) {
-      _lines = _splitLines(widget.log);
+      final List<String> newLines = _splitLines(widget.log);
+      // BUG-2715：既有行被换掉时先清选区再换行——此刻旧片段还在 registrar 里，
+      // 清得干净。纯尾部追加不动既有行，保留选区。
+      if (logUpdateReplacesRows(_lines, newLines)) {
+        _dropSelectionForReplacedRows();
+      }
+      _lines = newLines;
     }
   }
 
@@ -3124,50 +3173,58 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
                         _hasSelection =
                             content != null && content.plainText.isNotEmpty;
                       },
-                      child: NotificationListener<ScrollUpdateNotification>(
-                        // BUG-1582：挂在 SelectionArea 与 ListView 之间——滚动
-                        // 通知自下而上冒泡，这里既拿得到，又不会拦住外层。
+                      child: NotificationListener<ScrollMetricsNotification>(
+                        // BUG-2715：视口变高度（转屏 / 分屏）回收端点行。
                         onNotification:
-                            (ScrollUpdateNotification notification) {
-                          _dropStaleSelectionOnUserScroll(notification);
+                            (ScrollMetricsNotification notification) {
+                          _dropSelectionOnViewportResize(notification);
                           return false;
                         },
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: EdgeInsets.all(tokens.spacing.card),
-                          itemCount: _lines.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            // TODO-806/TODO-822：单行不换行（softWrap:false）。
-                            // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
-                            // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
-                            // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
-                            // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
-                            // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
-                            // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
-                            //
-                            // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
-                            // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
-                            // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
-                            // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
-                            // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
-                            // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
-                            // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
-                            // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
-                            // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
-                            return ClipRect(
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxWidth: constraints.maxWidth,
-                                ),
-                                child: Text(
-                                  _lines[index],
-                                  style: lineStyle,
-                                  softWrap: false,
-                                  overflow: TextOverflow.clip,
-                                ),
-                              ),
-                            );
+                        child: NotificationListener<ScrollUpdateNotification>(
+                          // BUG-1582：挂在 SelectionArea 与 ListView 之间——滚动
+                          // 通知自下而上冒泡，这里既拿得到，又不会拦住外层。
+                          onNotification:
+                              (ScrollUpdateNotification notification) {
+                            _dropStaleSelectionOnUserScroll(notification);
+                            return false;
                           },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: EdgeInsets.all(tokens.spacing.card),
+                            itemCount: _lines.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              // TODO-806/TODO-822：单行不换行（softWrap:false）。
+                              // 换行会把一行日志拆成多视觉行 → SelectionArea 的单行
+                              // 选区命中要对每段 wrap 后的子矩形逐一求交，命中成本随
+                              // 行长放大（TODO-806 框选坐标错位、TODO-822 拖拽卡顿的
+                              // 放大器）。日志是 monospace，超视口宽的长行在屏幕右侧
+                              // 裁切（本列表只纵向滚动、无横向滚动层），看全整段走
+                              // 下方常驻「复制全部」（拿 widget.log 未裁剪全量）。
+                              //
+                              // BUG-925：仅 softWrap:false 时，行 Text 的布局宽度 =
+                              // 整行无界单行宽（ListView 只纵向滚动，水平方向没有约束
+                              // 收口它）。SelectionArea 对这种无界宽度的 Selectable 做
+                              // 命中测试 / getBoxesForSelection 时（单击 / 框选触发），
+                              // 会对超出视口的极端横坐标求交，触发越界（与 BUG-413/423
+                              // 同族坐标错位）→ 点一下调试日志文字就崩。把每行 Text 的
+                              // 布局宽度钉死在视口可用宽度内（ConstrainedBox + ClipRect），
+                              // Selectable 的矩形不再越界，同时保留逐行选择能力——超视口
+                              // 的长行仍按原设计在右侧裁切（看全整段走「复制全部」）。
+                              return ClipRect(
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: constraints.maxWidth,
+                                  ),
+                                  child: Text(
+                                    _lines[index],
+                                    style: lineStyle,
+                                    softWrap: false,
+                                    overflow: TextOverflow.clip,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ),
@@ -3195,6 +3252,22 @@ class _FushiLogPanelState extends State<FushiLogPanel> {
       ),
     );
   }
+}
+
+/// BUG-2715：一次日志更新是否会换掉某个**已有文字**的行（`_lines[i]` 非空且
+/// 更新后该下标的文字不同或不复存在）。
+///
+/// 行 i 的 Text 内容一变，`RenderParagraph` 就把旧的选区片段从 registrar 移除，
+/// 选区端点可能随之陈旧（见 [_FushiLogPanelState._dropSelectionForReplacedRows]）。
+/// 空行不注册片段、新增行只是 add，都不会让端点陈旧——所以纯尾部追加（含「末尾
+/// 空行被填上文字」）返回 false；新条目插在最前（错误 / 调试日志页的真实顺序）、
+/// 截断、清空都返回 true。
+bool logUpdateReplacesRows(List<String> oldLines, List<String> newLines) {
+  for (int i = 0; i < oldLines.length; i++) {
+    if (oldLines[i].isEmpty) continue;
+    if (i >= newLines.length || newLines[i] != oldLines[i]) return true;
+  }
+  return false;
 }
 
 /// BUG-119 拽回判据的纯函数核心：在拖拽选区期间，决定是否放行一次程序化滚动

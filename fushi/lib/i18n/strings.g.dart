@@ -1,9 +1,9 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 95489 (5617 per locale)
+/// Strings: 95557 (5621 per locale)
 ///
-/// Built on 2026-09-26 at 13:31 UTC
+/// Built on 2026-09-26 at 14:43 UTC
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8003,6 +8003,13 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String video_mine_queue_failed({required Object reason}) =>
       'Failed: ${reason}';
   String get video_mine_queue_remove => 'Remove';
+  String get download_interconnect_section_title => 'From paired devices';
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -21446,6 +21453,17 @@ class _StringsAr extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -35129,6 +35147,17 @@ class _StringsDe extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -48863,6 +48892,17 @@ class _StringsEs extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -62636,6 +62676,17 @@ class _StringsFr extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -76199,6 +76250,17 @@ class _StringsId extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -89863,6 +89925,17 @@ class _StringsIt extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -102882,6 +102955,17 @@ class _StringsJa extends _StringsEn {
   String video_mine_queue_failed({required Object reason}) => '追加失敗：${reason}';
   @override
   String get video_mine_queue_remove => '削除';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -115918,6 +116002,17 @@ class _StringsKo extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -129536,6 +129631,17 @@ class _StringsNl extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -143207,6 +143313,17 @@ class _StringsPtBr extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -156853,6 +156970,17 @@ class _StringsRu extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -170296,6 +170424,17 @@ class _StringsTh extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -183853,6 +183992,17 @@ class _StringsTr extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -197381,6 +197531,17 @@ class _StringsVi extends _StringsEn {
       'Failed: ${reason}';
   @override
   String get video_mine_queue_remove => 'Remove';
+  @override
+  String get download_interconnect_section_title => 'From paired devices';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      'Downloading ${count} items from paired devices';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} downloads in progress';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      'Downloading update ${version}';
 }
 
 // Path: <root>
@@ -209755,6 +209916,17 @@ class _StringsZhCn extends _StringsEn {
   String video_mine_queue_failed({required Object reason}) => '写入失败：${reason}';
   @override
   String get video_mine_queue_remove => '移除';
+  @override
+  String get download_interconnect_section_title => '从配对设备下载';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      '正在从配对设备下载 ${count} 项';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} 项下载进行中';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      '正在下载更新 ${version}';
 }
 
 // Path: <root>
@@ -222455,6 +222627,17 @@ class _StringsZhHk extends _StringsEn {
   String video_mine_queue_failed({required Object reason}) => '寫入失敗：${reason}';
   @override
   String get video_mine_queue_remove => '移除';
+  @override
+  String get download_interconnect_section_title => '從配對裝置下載';
+  @override
+  String interconnect_download_notification_title({required Object count}) =>
+      '正在從配對裝置下載 ${count} 項';
+  @override
+  String download_keep_alive_multiple_title({required Object count}) =>
+      '${count} 項下載進行中';
+  @override
+  String update_download_notification_title({required Object version}) =>
+      '正在下載更新 ${version}';
 }
 
 /// Flat map(s) containing all translations.
@@ -234043,6 +234226,15 @@ extension on _StringsEn {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -245626,6 +245818,15 @@ extension on _StringsAr {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -257258,6 +257459,15 @@ extension on _StringsDe {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -268880,6 +269090,15 @@ extension on _StringsEs {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -280510,6 +280729,15 @@ extension on _StringsFr {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -292110,6 +292338,15 @@ extension on _StringsId {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -303733,6 +303970,15 @@ extension on _StringsIt {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -315277,6 +315523,15 @@ extension on _StringsJa {
         return ({required Object reason}) => '追加失敗：${reason}';
       case 'video_mine_queue_remove':
         return '削除';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -326829,6 +327084,15 @@ extension on _StringsKo {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -338447,6 +338711,15 @@ extension on _StringsNl {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -350060,6 +350333,15 @@ extension on _StringsPtBr {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -361679,6 +361961,15 @@ extension on _StringsRu {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -373267,6 +373558,15 @@ extension on _StringsTh {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -384871,6 +385171,15 @@ extension on _StringsTr {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -396469,6 +396778,15 @@ extension on _StringsVi {
         return ({required Object reason}) => 'Failed: ${reason}';
       case 'video_mine_queue_remove':
         return 'Remove';
+      case 'download_interconnect_section_title':
+        return 'From paired devices';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) =>
+            'Downloading ${count} items from paired devices';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} downloads in progress';
+      case 'update_download_notification_title':
+        return ({required Object version}) => 'Downloading update ${version}';
       default:
         return null;
     }
@@ -407955,6 +408273,14 @@ extension on _StringsZhCn {
         return ({required Object reason}) => '写入失败：${reason}';
       case 'video_mine_queue_remove':
         return '移除';
+      case 'download_interconnect_section_title':
+        return '从配对设备下载';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) => '正在从配对设备下载 ${count} 项';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} 项下载进行中';
+      case 'update_download_notification_title':
+        return ({required Object version}) => '正在下载更新 ${version}';
       default:
         return null;
     }
@@ -419479,6 +419805,14 @@ extension on _StringsZhHk {
         return ({required Object reason}) => '寫入失敗：${reason}';
       case 'video_mine_queue_remove':
         return '移除';
+      case 'download_interconnect_section_title':
+        return '從配對裝置下載';
+      case 'interconnect_download_notification_title':
+        return ({required Object count}) => '正在從配對裝置下載 ${count} 項';
+      case 'download_keep_alive_multiple_title':
+        return ({required Object count}) => '${count} 項下載進行中';
+      case 'update_download_notification_title':
+        return ({required Object version}) => '正在下載更新 ${version}';
       default:
         return null;
     }

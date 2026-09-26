@@ -17,6 +17,12 @@ public final class NotificationIds {
     /** Foreground notification for {@code FloatingLyricService}. */
     public static final int FLOATING_LYRIC = 9527;
 
+    /** Foreground notification for {@code DownloadKeepAliveService}（互联下载保活）. */
+    public static final int DOWNLOAD_KEEP_ALIVE = 9530;
+
+    /** Notification channel ID for {@code DownloadKeepAliveService}（低重要度、无声）. */
+    public static final String CHANNEL_DOWNLOAD_KEEP_ALIVE = "fushi_download_keep_alive";
+
     /** Notification channel ID for {@code FloatingDictService}. */
     public static final String CHANNEL_FLOATING_DICT = "hibiki_floating_dict";
 

@@ -221,7 +221,9 @@ void main() {
       id: 'video/remote-ep2',
       title: 'Remote Ep2',
       dest: File('${pathProviderDir.path}/remote-ep2.mp4'),
-      run: (File target, {void Function(double progress)? onProgress}) async {
+      run: (File target, {void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal}) async {
         report = onProgress;
         await gate.future;
       },
@@ -411,6 +413,8 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {}
 
   @override

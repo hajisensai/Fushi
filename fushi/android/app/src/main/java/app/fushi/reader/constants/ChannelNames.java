@@ -33,6 +33,9 @@ public final class ChannelNames {
     // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
     // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
     public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
+    // 互联下载保活：下载进行期间挂 dataSync 前台服务 + 进度通知，防止切走后进程被杀。
+    // 实现见 DownloadKeepAliveService，Dart 门面 android_download_keep_alive.dart。
+    public static final String DOWNLOAD_KEEP_ALIVE = PREFIX + "/download_keep_alive";
     // Hibiki→Fushi 跨包名迁移（改名迁移计划 P1-3/P1-4）：探测/拉起新包、
     // 发起卸载、注销 PROCESS_TEXT 系统入口。
     public static final String MIGRATION = PREFIX + "/migration";

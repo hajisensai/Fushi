@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
@@ -151,5 +153,117 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  // ── BUG-2715：行集合被**非滚动**原因换掉 ─────────────────────────────────
+  // BUG-1582 只在用户滚动时清选区；另两个来源——日志内容变化（错误日志页
+  // 监听日志服务，新条目一来整段重拼）、视口变高度（转屏 / 分屏）——同样让
+  // 选区端点行的 Selectable 离开 registrar，下标只被减一、指向无选区的片段。
+  // 之后长按空白处（空行 / 行尾 / 内边距都命不中 Selectable）就读到空端点。
+  group('BUG-2715 selection longpress null crash', () {
+    // 真实错误日志形状：新条目在最前，每条之间有空行和分隔线。
+    String entries(int count, {int from = 0}) {
+      final StringBuffer buf = StringBuffer();
+      for (int i = from + count - 1; i >= from; i--) {
+        buf
+          ..writeln('[2026-09-26 10:00:$i] Source$i.method')
+          ..writeln('#0 Frame$i.call (package:x/y.dart:$i)')
+          ..writeln()
+          ..writeln('─' * 60);
+      }
+      return buf.toString();
+    }
+
+    Finder frameLine(int i) =>
+        find.text('#0 Frame$i.call (package:x/y.dart:$i)');
+
+    // 真机触屏长按：touch 指针按住超过 kLongPressTimeout 再抬起。
+    Future<void> touchLongPress(WidgetTester tester, Offset at) async {
+      final TestGesture gesture =
+          await tester.startGesture(at, kind: PointerDeviceKind.touch);
+      await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+      await gesture.up();
+      await tester.pump();
+    }
+
+    // 面板内是否有非折叠选区（逐个 RenderParagraph 看它自己的选区）。
+    bool hasSelectedText(WidgetTester tester) => tester
+        .renderObjectList<RenderParagraph>(find.byType(RichText))
+        .any((RenderParagraph p) =>
+            p.selections.any((TextSelection s) => !s.isCollapsed));
+
+    Future<void> longPressBlankCorner(WidgetTester tester) async {
+      final Rect list = tester.getRect(find.byType(ListView));
+      await touchLongPress(tester, Offset(list.right - 10, list.bottom - 10));
+      await tester.pump();
+    }
+
+    test('BUG-2715 logUpdateReplacesRows：只有换掉既有文字行才算', () {
+      // 纯尾部追加（TODO-1380 要求菜单保持打开的场景）不换行。
+      expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['a', 'b', 'c']),
+          isFalse);
+      // 末尾空行被填上文字：空行本就没有选区片段。
+      expect(logUpdateReplacesRows(<String>['a', ''], <String>['a', 'x', '']),
+          isFalse);
+      // 新条目插在最前（错误 / 调试日志页真实顺序）。
+      expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['n', 'a', 'b']),
+          isTrue);
+      // 截断 / 清空。
+      expect(logUpdateReplacesRows(<String>['a', 'b'], <String>['a']), isTrue);
+      expect(logUpdateReplacesRows(<String>['a'], <String>['']), isTrue);
+    });
+
+    testWidgets('BUG-2715 日志内容变化后长按空白处不崩', (WidgetTester tester) async {
+      await tester.pumpWidget(buildSubject(entries(5)));
+      await tester.pump();
+
+      // ① 长按选中一个词（真实选区）。
+      await touchLongPress(tester, tester.getCenter(frameLine(1)));
+      expect(hasSelectedText(tester), isTrue, reason: '前置：长按确实建立了选区');
+
+      // ② 日志服务推来新内容（ErrorLogPage._onLogChanged 同路径）。
+      await tester.pumpWidget(buildSubject(entries(2, from: 10)));
+      await tester.pump();
+      await tester.pump();
+      expect(
+        hasSelectedText(tester),
+        isFalse,
+        reason: '内容换了，旧选区已不指向同一段文字，必须被清掉',
+      );
+
+      // ③ 长按命不中任何行的空白处 —— 修复前这里抛
+      //    scrollable.dart `_updateDragLocationsFromGeometries` 的端点断言。
+      await longPressBlankCorner(tester);
+      expect(tester.takeException(), isNull);
+
+      // ④ 选区能力不受影响：再长按一行文字仍能选中。
+      await touchLongPress(tester, tester.getCenter(frameLine(11)));
+      expect(tester.takeException(), isNull);
+      expect(hasSelectedText(tester), isTrue);
+    });
+
+    testWidgets('BUG-2715 视口变矮回收端点行后长按空白处不崩', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(buildSubject(entries(200)));
+      await tester.pump();
+
+      // ① 在竖屏视口底部选中一行。
+      final Rect portrait = tester.getRect(find.byType(ListView));
+      await touchLongPress(
+        tester,
+        Offset(portrait.left + 40, portrait.bottom - 30),
+      );
+
+      // ② 转成矮视口：端点行落出 cacheExtent 被回收。
+      tester.view.physicalSize = const Size(2400, 600);
+      await tester.pump();
+      await tester.pump();
+
+      // ③ 修复前这里抛外层 StaticSelectionContainerDelegate 的空断言。
+      await longPressBlankCorner(tester);
+      expect(tester.takeException(), isNull);
+    });
   });
 }
