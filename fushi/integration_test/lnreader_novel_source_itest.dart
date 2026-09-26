@@ -1,7 +1,13 @@
 import 'dart:async';
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/main.dart' show FushiReaderApp;
+import 'package:fushi/media.dart' show MediaItem;
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_extensions_section.dart';
@@ -9,10 +15,13 @@ import 'package:fushi/src/media/novel/online/lnreader_installed_sources_section.
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
+import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:integration_test/integration_test.dart';
@@ -23,7 +32,8 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 /// 小说在线源（LNReader）真 app 端到端取证：内置官方仓库 → 装真 Syosetu 插件 →
-/// headless WebView 里跑插件（热门 / 详情 / 章节）→ 下载三章成 EPUB 真入库。
+/// headless WebView 里跑插件（热门 / 详情 / 章节）→ 下载三章成 EPUB 真入库 →
+/// 在线阅读：全章占位书入库，真阅读器开到第 2 章时经拦截层按需取正文。
 ///
 /// 走**真网络**（官方仓库 + syosetu.com），只有显式跑它时才打；页面都用
 /// `navigatorKey` 确定性压栈，截图证明版式与漫画 / 视频扩展 UI 一致。
@@ -100,11 +110,10 @@ void main() {
     expect(
       await until(
         tester,
-        () =>
-            find
-                .byKey(const ValueKey<String>('import_segment_extensions'))
-                .evaluate()
-                .isNotEmpty,
+        () => find
+            .byKey(const ValueKey<String>('import_segment_extensions'))
+            .evaluate()
+            .isNotEmpty,
       ),
       isTrue,
       reason: '书导入页应出现「扩展」段',
@@ -253,7 +262,8 @@ void main() {
     );
     final bool detailReady = await until(tester, () {
       final Object? error = tester.takeException();
-      if (error != null) debugPrint('[lnreader-itest] detail exception: $error');
+      if (error != null)
+        debugPrint('[lnreader-itest] detail exception: $error');
       return find
               .byKey(const ValueKey<String>('novel_detail_library_add'))
               .evaluate()
@@ -265,5 +275,90 @@ void main() {
     expect(detailReady, isTrue);
     await popAll(tester, appModel);
     expect(t.novel_download_done(title: novel.name), isNotEmpty);
+
+    // ⑦ 在线阅读：与详情页点章节同一条链（建占位书 → openMedia 带书签），
+    // 断言真阅读器的 WebView 拦截层把第 2 章占位页换成了插件取回的正文、
+    // 顺手预取了第 3 章、第 1 章没人要就没取，书行字数跟着补上。
+    debugPrint('[lnreader-itest] step7 online read');
+    final String onlineKey = await settle(
+      tester,
+      LnReaderOnlineLibrary(
+        manager: manager,
+        database: appModel.database,
+        download: LnReaderBookDownload(
+          manager: manager,
+          database: appModel.database,
+          httpClientFactory: createAppHttpClient,
+        ),
+      ).ensureBook(
+        plugin: installed,
+        novel: novel,
+        pendingText: t.novel_online_chapter_pending,
+      ),
+    );
+    final EpubBookRow onlineRow = (await settle(
+      tester,
+      appModel.database.getEpubBook(onlineKey),
+    ))!;
+    expect(onlineRow.chapterCount, novel.chapters.length);
+    File chapterFile(int index) =>
+        lnReaderOnlineChapterFile(onlineRow.extractDir, index);
+    bool pending(int index) => chapterFile(
+      index,
+    ).readAsStringSync().contains(kLnReaderPendingChapterAttribute);
+    expect(pending(0) && pending(1) && pending(2), isTrue);
+
+    final MediaItem? onlineItem = await settle(
+      tester,
+      ReaderFushiSource.instance.mediaItemForBookKey(onlineKey),
+    );
+    final WidgetRef ref =
+        tester.element(find.byType(FushiReaderApp)) as ConsumerStatefulElement;
+    unawaited(
+      appModel.openMedia(
+        ref: ref,
+        mediaSource: ReaderFushiSource.instance,
+        item: onlineItem,
+        initialBookmarkJump: Bookmark(
+          sectionIndex: 1,
+          normCharOffset: 0,
+          label: '',
+          createdAt: DateTime.now(),
+        ),
+      ),
+    );
+    final bool chapterLoaded = await until(
+      tester,
+      () => !pending(1),
+      timeout: const Duration(minutes: 2),
+    );
+    debugPrint('[lnreader-itest] online chapter2 loaded=$chapterLoaded');
+    expect(chapterLoaded, isTrue, reason: '阅读器开到第 2 章应经拦截层取回正文');
+    expect(
+      await until(
+        tester,
+        () => !pending(2),
+        timeout: const Duration(minutes: 1),
+      ),
+      isTrue,
+      reason: '第 3 章应被预取',
+    );
+    await tester.pump(const Duration(seconds: 3));
+    await captureFlutterFrame(tester, 'lnreader-06-online-reader');
+    expect(pending(0), isTrue, reason: '没人要的第 1 章不该取');
+    final List<Object?> counts =
+        jsonDecode(
+              (await settle(
+                tester,
+                appModel.database.getEpubBook(onlineKey),
+              ))!.chaptersJson,
+            )
+            as List<Object?>;
+    debugPrint('[lnreader-itest] online chapter chars=${counts[1]}');
+    expect(
+      ((counts[1]! as Map<String, Object?>)['characters']! as num) > 50,
+      isTrue,
+    );
+    await popAll(tester, appModel);
   });
 }

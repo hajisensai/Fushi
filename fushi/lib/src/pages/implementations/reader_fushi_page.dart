@@ -18,6 +18,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
@@ -1478,6 +1479,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   ReaderSettings? _settings;
   String? _extractDir;
 
+  /// 在线小说书（LNReader 在线阅读）的按需取章；普通书为 null。开书定位时按
+  /// 书行描述符建一次，拦截层读章节文件前经它把占位页换成正文。
+  LnReaderOnlineChapterLoader? _onlineChapterLoader;
+
   /// v82：本书子表键（= EpubBooks.uid，开书定位时一次解析存下，写库不再逐次
   /// resolve）。null = 书行缺失或旧行无 uid——reader_positions / revealed_images
   /// 的读写跳过，**不**拿 bookKey 兜底写入（epub 域 uid 缺失即 no-op，与
@@ -2486,6 +2491,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     final EpubBookRow? bookRow = located.bookRow;
     final String extractDir = located.extractDir;
     _extractDir = extractDir;
+    _onlineChapterLoader = lnReaderOnlineChapterLoaderFor(
+      row: bookRow,
+      extractDir: extractDir,
+      database: db,
+      manager: () => appModelNoUpdate.lnReaderManager,
+    );
     // v82：子表（阅读位置/揭图）键 = 书稳定 uid，一次解析存字段。空 uid（不应
     // 出现，v81 回填兜底）视同缺失——相关写入跳过，不拿 bookKey 兜底。
     // 正文语言：本书手动指定/导入回填的 dc:language > 全局默认内容语言。
