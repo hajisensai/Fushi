@@ -5596,5 +5596,22 @@
   "novel_online_open_failed": "Couldn't open online: $error",
   "novel_online_chapter_failed": "Couldn't load the chapter: $error",
   "anki_lapis_visual_text_indent": "首行縮排",
-  "anki_lapis_visual_text_indent_chars": "$count 字"
+  "anki_lapis_visual_text_indent_chars": "$count 字",
+  "video_online_mining_mode": "線上影片製卡",
+  "video_online_mining_mode_background": "背景製卡",
+  "video_online_mining_mode_background_hint": "彈窗立即顯示已加入、影片照常播放，媒體在背景準備並寫入 Anki。",
+  "video_online_mining_mode_deferred": "看完再製卡",
+  "video_online_mining_mode_deferred_hint": "背景準備好媒體後先放進待製卡清單，離開播放頁或按「全部寫入」時統一寫入 Anki，寫入前可刪掉點錯的。",
+  "video_online_mining_mode_wait": "等待完成",
+  "video_online_mining_mode_wait_hint": "彈窗等到卡片寫入 Anki 才返回，保留「修改最新卡片」。",
+  "video_mine_staged": "已加入待製卡 · 共 $count 張",
+  "video_mine_in_progress": "正在製卡 $count",
+  "video_mine_queue_badge": "待製卡 $count",
+  "video_mine_queue_title": "待製卡",
+  "video_mine_queue_empty": "沒有待寫入的卡片。",
+  "video_mine_queue_commit_all": "全部寫入 Anki",
+  "video_mine_queue_committing": "正在寫入 $done/$total…",
+  "video_mine_queue_committed": "已寫入 $ok 張，失敗 $failed 張",
+  "video_mine_queue_failed": "寫入失敗：$reason",
+  "video_mine_queue_remove": "移除"
 }

@@ -390,6 +390,11 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           title: t.video_mining_still_format,
           subtitle: t.video_mining_still_format_hint,
         ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_online_mining_mode',
+          hasRevealTarget: true,
+          title: t.video_online_mining_mode,
+        ),
       ],
       if (panel == AnkiSettingsPanel.connection &&
           (Platform.isAndroid || Platform.isIOS))

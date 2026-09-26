@@ -11,6 +11,9 @@ import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
+import 'package:fushi/src/media/video/mpv_cache_snapshot.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show CachedMediaSnapshot;
 import 'package:fushi/src/models/preferences_repository.dart'
     show VideoFitMode;
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
@@ -1024,6 +1027,76 @@ class VideoPlayerController extends ChangeNotifier
   /// 截取当前解码帧为 JPEG 字节（制卡截图用）。未 [load] 返回 null。
   Future<Uint8List?> screenshot() async {
     return _player?.screenshot(format: 'image/jpeg');
+  }
+
+  /// 把播放器轴 `[startMs, endMs]` 这段**已缓冲**的远端流原样落成本地文件
+  /// （libmpv `dump-cache`），给在线视频制卡当本地抽取源（见 [CachedMediaSnapshot]）。
+  ///
+  /// 只对网络流生效；本地文件本来就能本地抽，返回 null。这段不在缓冲里（已被挤出后向
+  /// 缓冲 / 用户刚跳过来）、非 libmpv 后端、落盘失败、等待期间换集或销毁，都返回 null
+  /// ——调用方据此回到远端抽取，永不因为落盘而制不出卡。
+  ///
+  /// 起点在缓冲里、尾巴还没下载到（在一句中途点制卡）时最多等 [tailWait]：前向缓冲
+  /// 正在往后读，通常不到一秒就覆盖句尾。落盘本身同步完成（实测 7～109 ms）。
+  Future<CachedMediaSnapshot?> snapshotCachedRange({
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    Duration tailWait = const Duration(seconds: 8),
+  }) async {
+    final Player? player = _player;
+    if (player == null || !_sourceIsNetwork) return null;
+    final int loadToken = _loadToken;
+    final Stopwatch waited = Stopwatch()..start();
+    while (true) {
+      final String raw = await _getMpvProperty('demuxer-cache-state');
+      if (!_isCurrentLoad(player, loadToken)) return null;
+      final MpvCacheDumpDecision decision = planMpvCacheDump(
+        ranges: parseMpvSeekableRanges(raw),
+        startMs: startMs,
+        endMs: endMs,
+      );
+      final MpvCacheDumpPlan? plan = decision.plan;
+      if (plan != null) {
+        try {
+          final File out = File(outputPath);
+          if (out.existsSync()) out.deleteSync();
+          await (player.platform as dynamic)
+              .command(mpvDumpCacheCommand(plan, outputPath));
+        } catch (_) {
+          // dump 中途失败可能留下半截文件：调用方拿到 null 不会再管这个路径。
+          _deleteSnapshotFile(outputPath);
+          return null;
+        }
+        // 落盘成功但等待期间换了集 / 空文件：这份副本不会交给任何人，就地删掉，
+        // 不在临时目录里越攒越多。
+        if (!_isCurrentLoad(player, loadToken)) {
+          _deleteSnapshotFile(outputPath);
+          return null;
+        }
+        final File out = File(outputPath);
+        if (!out.existsSync()) return null;
+        if (out.lengthSync() == 0) {
+          _deleteSnapshotFile(outputPath);
+          return null;
+        }
+        return CachedMediaSnapshot(path: outputPath, zeroMs: plan.zeroMs);
+      }
+      if (!decision.waitForTail || waited.elapsed >= tailWait) return null;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (!_isCurrentLoad(player, loadToken)) return null;
+    }
+  }
+
+  /// 删掉一份不再交出去的缓冲副本。删不掉（被占用 / 已不在）不影响制卡：调用方
+  /// 已经拿到 null、会回到远端抽取；这里只是不留垃圾。
+  static void _deleteSnapshotFile(String path) {
+    try {
+      final File file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException catch (e) {
+      debugPrint('[video] cached snapshot cleanup failed: $path: $e');
+    }
   }
 
   /// 当前视频可用的字幕轨（含内嵌轨）；未 [load] 时为空。

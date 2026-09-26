@@ -5596,5 +5596,22 @@
   "novel_online_open_failed": "Couldn't open online: $error",
   "novel_online_chapter_failed": "Couldn't load the chapter: $error",
   "anki_lapis_visual_text_indent": "First-line indent",
-  "anki_lapis_visual_text_indent_chars": "$count em"
+  "anki_lapis_visual_text_indent_chars": "$count em",
+  "video_online_mining_mode": "Online video mining",
+  "video_online_mining_mode_background": "In the background",
+  "video_online_mining_mode_background_hint": "The popup marks the card as added right away and keeps the video going; the clip is prepared and sent to Anki in the background.",
+  "video_online_mining_mode_deferred": "After watching",
+  "video_online_mining_mode_deferred_hint": "Cards are prepared in the background and kept in a list; they go to Anki when you leave the player or tap Add all. Remove any you don't want first.",
+  "video_online_mining_mode_wait": "Wait for the card",
+  "video_online_mining_mode_wait_hint": "The popup waits until the card is in Anki, so you can still edit the latest card.",
+  "video_mine_staged": "Saved for later · $count waiting",
+  "video_mine_in_progress": "Making $count card(s)…",
+  "video_mine_queue_badge": "$count to add",
+  "video_mine_queue_title": "Cards to add",
+  "video_mine_queue_empty": "No cards waiting.",
+  "video_mine_queue_commit_all": "Add all to Anki",
+  "video_mine_queue_committing": "Adding $done/$total…",
+  "video_mine_queue_committed": "Added $ok cards, $failed failed",
+  "video_mine_queue_failed": "Failed: $reason",
+  "video_mine_queue_remove": "Remove"
 }
