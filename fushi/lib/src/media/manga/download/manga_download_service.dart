@@ -1,6 +1,7 @@
 /// 在线漫画章节下载服务（设计稿 2026-09-12 §4，app 级、挂 `AppModel`）。
 ///
-/// 在线漫画必须先下载再读：点章节即入队，单 worker 串行取 `manga_download_jobs`
+/// 下载是在线直读之外的离线入口（2026-09-26 起点章即在线直读，设计稿 §1 补记）：
+/// 单 worker 串行取 `manga_download_jobs`
 /// 里最早的 `queued` 任务，任务内 4 并发取页落到章目录，全部齐后写章 `manga.json`
 /// → `done`。失败按 2s / 8s / 20s 退避重试三次，再失败留 `failed` + `last_error`；
 /// 取消真中止并删半成品目录。进程重启后 `running` 行复位为 `queued` 续跑，已落地的

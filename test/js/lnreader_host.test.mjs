@@ -132,6 +132,28 @@ test('热门：没传筛选时补插件默认值（真 Syosetu 插件不补就 T
   assert.equal(requests.length, 2);
 });
 
+test('封面：相对 / 协议相对地址按插件站点补全，绝对与 data: 原样', async () => {
+  const { ln } = createHost({
+    'https://novel.example/rank?genre=all&p=1': {
+      body: '<div class="novel">'
+        + '<a href="/n/1" data-cover="/img/1.jpg">一</a>'
+        + '<a href="/n/2" data-cover="//cdn.example/2.png">二</a>'
+        + '<a href="/n/3" data-cover="https://img.example/3.webp">三</a>'
+        + '<a href="/n/4" data-cover="data:image/png;base64,AAAA">四</a>'
+        + '</div>',
+    },
+  });
+  ln.load('test.plugin', PLUGIN, {});
+  const items = JSON.parse(JSON.stringify(await ln.popular('test.plugin', 1, false, null)));
+  const covers = items.map((item) => item.cover);
+  assert.deepEqual(covers, [
+    'https://novel.example/img/1.jpg',
+    'https://cdn.example/2.png',
+    'https://img.example/3.webp',
+    'data:image/png;base64,AAAA',
+  ]);
+});
+
 test('fetch 过桥：FormData 规整成 multipart 字节 + Content-Type，Headers 摊平', async () => {
   const { ln, requests } = createHost({
     'https://novel.example/search': { body: '[{"t":"検索","p":"/s/1"}]', headers: { 'content-type': 'application/json' } },
