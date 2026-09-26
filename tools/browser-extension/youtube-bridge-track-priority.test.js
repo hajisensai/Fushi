@@ -40,13 +40,13 @@ function loadBridge(captionTracks, audioTrack) {
       get search() { return '?v=vid1'; },
       get href() { return 'https://www.youtube.com/watch?v=vid1'; },
     },
-    URL, URLSearchParams, DOMParser: function () {},
+    URL, URLSearchParams,
     Date: { now() { return 1000000; } },
     setInterval() { return 1; },
     clearInterval() {},
     fetch(url) {
       const u = String(url);
-      // 沙箱没有真 DOMParser，srv3 解析必空 → 桥会退到 json3；这里只让 json3 成功，
+      // 桥只取 json3（BUG-2697：MAIN world 下 srv3 解析会撞 Trusted Types）；这里只让 json3 成功，
       // 断言按 json3 请求计数（每轨恰好一次）。
       if (!/fmt=json3/.test(u)) return Promise.resolve({ ok: false, status: 404 });
       fetches.push(u);
