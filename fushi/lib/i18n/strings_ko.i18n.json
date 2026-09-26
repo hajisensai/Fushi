@@ -5588,5 +5588,7 @@
   "video_subtitle_remote_player_decoded": "Server cannot extract this subtitle track; the player decodes it during playback, so lines appear as you watch: $label",
   "manga_discovery_view_all": "View all",
   "manga_discovery_empty_title": "No manga sources to discover yet",
-  "manga_discovery_empty_action": "Manage sources"
+  "manga_discovery_empty_action": "Manage sources",
+  "video_dolby_vision_colors_unsupported": "Dolby Vision profile 5 video: this platform can't render its colors correctly yet, so the picture may look purple or green.",
+  "video_dolby_vision_colors_enable_hdr_output": "Dolby Vision profile 5 video: colors will look purple or green with HDR / 10-bit output turned off. Set it to Auto to fix them."
 }
