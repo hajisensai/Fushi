@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
@@ -196,6 +197,36 @@ void main() {
       // 不覆写滑块 / 轨道色，交回 M3 默认；覆写回 primaryContainer 轨道就是 M2 配法。
       expect(sw.thumbColor, isNull);
       expect(sw.trackColor, isNull);
+    });
+
+    test('switch check icon is tinted primary, readable on the onPrimary thumb',
+        () {
+      final ThemeData theme = notifier.theme;
+      final Icon? icon = theme.switchTheme.thumbIcon!
+          .resolve(<WidgetState>{WidgetState.selected});
+      // 不着色就回落 M3 的 onPrimaryContainer：自定义主题钉主色时它与
+      // onPrimary（滑块）可能同黑同白，勾消失。
+      expect(icon?.color, theme.colorScheme.primary);
+
+      double contrast(Color a, Color b) {
+        final double la = a.computeLuminance();
+        final double lb = b.computeLuminance();
+        return (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05);
+      }
+
+      // 两个撞色场景：深色模式钉深主色、亮色模式钉亮主色。
+      for (final (Brightness b, Color pinned) in <(Brightness, Color)>[
+        (Brightness.dark, const Color(0xFF1565C0)),
+        (Brightness.light, const Color(0xFFFFEB3B)),
+      ]) {
+        final ColorScheme cs = buildFushiColorScheme(
+          seedColor: pinned,
+          brightness: b,
+          primary: pinned,
+        );
+        expect(contrast(cs.primary, cs.onPrimary), greaterThanOrEqualTo(3),
+            reason: '${b.name} $pinned：勾（primary）压在滑块（onPrimary）上看不清');
+      }
     });
   });
 

@@ -1459,10 +1459,14 @@ class ThemeNotifier extends ChangeNotifier {
       // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
       // 勾图标仍按 onPrimaryContainer 着色——亮色下深色勾压在 primary 滑块上几乎
       // 看不见。墨水屏下 primary=前景、onPrimary=底色，默认配色同样黑白分明。
+      // 勾显式着 primary：M3 默认的 onPrimaryContainer 只在原生色阶里与 onPrimary
+      // 明暗相反；自定义主题钉了主色时 onPrimary 与 onPrimaryContainer 是各自另算
+      // 的可读色，可能同黑同白（深色模式钉深主色 / 亮色模式钉亮主色），勾就与
+      // 滑块撞色消失。primary 与 onPrimary 的对比度由构造保证。
       switchTheme: SwitchThemeData(
         thumbIcon: WidgetStateProperty.resolveWith((states) {
           return states.contains(WidgetState.selected)
-              ? const Icon(Icons.check, size: 14)
+              ? Icon(Icons.check, size: 14, color: cs.primary)
               : null;
         }),
         trackOutlineColor: WidgetStateColor.resolveWith((states) {
