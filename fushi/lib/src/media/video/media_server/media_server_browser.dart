@@ -219,6 +219,8 @@ class MediaServerItem {
     this.hasBackdrop = false,
     this.hasThumb = false,
     this.hasLogo = false,
+    this.parentThumbItemId,
+    this.parentBackdropItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
@@ -275,6 +277,12 @@ class MediaServerItem {
   /// 必 404 的地址去请求。
   final bool hasThumb;
   final bool hasLogo;
+
+  /// 集 / 季可借用的上级横图所在条目 id（通常是剧）：Thumb 与 Backdrop 各一。
+  /// 只在服务器确实报了对应图片 tag 时非 null。拿它们取图时把 id 当成一个
+  /// `hasThumb` / `hasBackdrop` 的条目交给 [MediaServerBrowser.coverUrl] 即可。
+  final String? parentThumbItemId;
+  final String? parentBackdropItemId;
   final String? overview;
   final double? communityRating;
   final List<String> genres;
