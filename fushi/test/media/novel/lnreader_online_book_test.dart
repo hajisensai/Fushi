@@ -314,6 +314,7 @@ void main() {
             extractDir: row.extractDir,
             database: db,
             manager: () => manager,
+            onlineSourcesAvailable: true,
           );
       expect(loader?.bookKey, key);
       expect(loader?.descriptor.chapters.length, chapters.length);
@@ -328,6 +329,7 @@ void main() {
             touched = true;
             return manager;
           },
+          onlineSourcesAvailable: true,
         ),
         isNull,
       );
@@ -380,6 +382,54 @@ void main() {
       expect(third.readAsStringSync(), contains('第三章の本文'));
       // 第一章没人要，就不取。
       expect(runtime.calls, isNot(contains('chapter:/1')));
+    });
+
+    test('后台预取的章：翻到时仍报「刚换成正文」，阅读器据此丢掉预热进缓存的占位页', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      expect(
+        await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 1).path),
+        isTrue,
+      );
+      // 第三章在后台预取落盘——阅读器自己的相邻章预热可能在此之前已把它的占位
+      // 页读进了缓存。
+      await loader.whenIdle();
+      final String third = lnReaderOnlineChapterFile(dir, 2).path;
+      expect(File(third).readAsStringSync(), contains('第三章の本文'));
+
+      expect(await loader.ensureLoaded(third), isTrue);
+      expect(runtime.calls.where((String c) => c == 'chapter:/3').length, 1);
+      // 确认过一次就不再报。
+      expect(await loader.ensureLoaded(third), isFalse);
+    });
+
+    test('在线源平台门没过（iOS 合规 / Linux）：不建加载器，也不碰 LNReader 管理器', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      bool touched = false;
+      expect(
+        lnReaderOnlineChapterLoaderFor(
+          row: row,
+          extractDir: row.extractDir,
+          database: db,
+          manager: () {
+            touched = true;
+            return manager;
+          },
+          onlineSourcesAvailable: false,
+        ),
+        isNull,
+      );
+      expect(touched, isFalse);
     });
 
     test('取章失败抛出且占位页保留（重进这一章会再取）；插件被删报清楚的错', () async {

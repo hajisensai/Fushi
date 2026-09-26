@@ -520,6 +520,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
           if (!await file.exists()) return;
           final Uint8List raw = await file.readAsBytes();
           if (!mounted || _settings == null) return;
+          // 在线小说书还没取正文的章：占位页不进缓存。正文随后由拦截层 /
+          // 后台预取写盘，占位页若进了缓存，翻到这一章时会被原样下发。
+          if (_onlineChapterLoader != null &&
+              utf8
+                  .decode(raw, allowMalformed: true)
+                  .contains(kLnReaderPendingChapterAttribute)) {
+            return;
+          }
           final Uint8List built = _buildSanitizedChapterHtmlBytes(
             raw,
             chapterIndex: index,

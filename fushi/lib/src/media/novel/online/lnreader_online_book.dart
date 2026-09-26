@@ -11,6 +11,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
+import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
@@ -18,6 +19,8 @@ import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
 import 'package:fushi/src/media/novel/online/lnreader_epub_assembler.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/novel_online_sources_gate.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 在线小说书的重启安全描述符，存在 `EpubBooks.sourceMetadata`。
 ///
@@ -36,7 +39,7 @@ class LnReaderOnlineBookDescriptor {
     required this.chapters,
   });
 
-  static const String marker = 'fushi-lnreader-online';
+  static const String marker = kLnReaderOnlineBookMarker;
   static const int version = 1;
 
   final String pluginId;
@@ -410,12 +413,18 @@ class LnReaderOnlinePluginMissing implements Exception {
 ///
 /// [manager] 是惰性的——普通书不该为了这个判断把 LNReader 运行时（一个
 /// headless WebView）拉起来。
+///
+/// [onlineSourcesAvailable] 没过（iOS 合规门 / Linux 无 headless WebView）时一律
+/// null：描述符会随备份恢复到这些平台，开书不得因此拉起在线小说宿主联网，书退化
+/// 成普通书（没取过的章停在占位页）。
 LnReaderOnlineChapterLoader? lnReaderOnlineChapterLoaderFor({
   required EpubBookRow? row,
   required String extractDir,
   required FushiDatabase database,
   required LnReaderManager Function() manager,
+  bool? onlineSourcesAvailable,
 }) {
+  if (!(onlineSourcesAvailable ?? isNovelOnlineSourcesAvailable)) return null;
   final LnReaderOnlineBookDescriptor? descriptor =
       LnReaderOnlineBookDescriptor.tryParse(row?.sourceMetadata);
   if (row == null || descriptor == null) return null;
@@ -457,6 +466,11 @@ class LnReaderOnlineChapterLoader {
   final LnReaderOnlineBookDescriptor descriptor;
 
   final Map<int, Future<bool>> _inflight = <int, Future<bool>>{};
+
+  /// 已把占位页换成正文、但阅读器还没经 [ensureLoaded] 确认过的章。后台预取的
+  /// 章也记在这里：阅读器自己的相邻章预热可能在正文落盘前就把占位页读进了缓存，
+  /// 翻到这一章时必须据此丢缓存，不能只看「这一次调用有没有亲手取」。
+  final Set<int> _unacknowledged = <int>{};
   Future<void> _queue = Future<void>.value();
 
   /// 排队中的取章（含后台预取）全部结束。
@@ -483,18 +497,30 @@ class LnReaderOnlineChapterLoader {
     return index;
   }
 
-  /// 确保 [filePath] 这一章已有正文。返回 true = 本次刚把占位页换成了正文
-  /// （调用方据此丢掉缓存）；不是本书正文文件 / 早已取过返回 false。取不到抛出。
+  /// 确保 [filePath] 这一章已有正文。返回 true = 占位页换成正文之后调用方还
+  /// 没确认过（本次亲手取的，或后台预取的；调用方据此丢掉缓存）；不是本书正文
+  /// 文件 / 早已确认过返回 false。取不到抛出。
   Future<bool> ensureLoaded(String filePath) async {
     final int? index = chapterIndexForFile(filePath);
     if (index == null) return false;
     final bool loaded = await _ensureIndex(index);
+    final bool unacknowledged = _unacknowledged.remove(index);
     if (loaded && index + 1 < descriptor.chapters.length) {
       unawaited(
-        _ensureIndex(index + 1).then<void>((_) {}, onError: (Object _) {}),
+        _ensureIndex(index + 1).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) {
+            // 预取失败不打断阅读（翻到那一章时前台再取、再报），但要留痕。
+            ErrorLogService.instance.log(
+              'LnReaderOnlineChapterLoader.prefetch',
+              error,
+              stack,
+            );
+          },
+        ),
       );
     }
-    return loaded;
+    return loaded || unacknowledged;
   }
 
   Future<bool> _ensureIndex(int index) {
@@ -573,6 +599,7 @@ class LnReaderOnlineChapterLoader {
       ),
     );
     await _updateCharacterCount(index);
+    _unacknowledged.add(index);
     return true;
   }
 
