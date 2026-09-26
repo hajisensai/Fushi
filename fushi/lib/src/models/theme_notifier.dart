@@ -71,6 +71,7 @@ typedef _FushiSchemeKey = (
   int? primaryContainer,
   int? surface,
   bool neutralDerived,
+  bool pureBlack,
 );
 final Map<_FushiSchemeKey, ColorScheme> _hibikiSchemeCache =
     <_FushiSchemeKey, ColorScheme>{};
@@ -80,6 +81,9 @@ const int _hibikiSchemeCacheLimit = 64;
 /// [deriveSurfaceRolesFrom] 从它推出整套中性角色（容器梯度、文字、描边、反色），
 /// 不再从 seed 的中性调色板取——那套永远带主题色相（tonalSpot neutral chroma 6），
 /// 用户想要纯白 / 纯黑底色时没有别的路。
+///
+/// [pureBlack]：深色下表面走 [applyFushiPureBlackSurfaceLadder]（页面底真黑），
+/// 内置「纯黑」预设用；亮色下不起作用。
 ColorScheme buildFushiColorScheme({
   required Color seedColor,
   required Brightness brightness,
@@ -90,6 +94,7 @@ ColorScheme buildFushiColorScheme({
   Color? primaryContainer,
   Color? surface,
   bool neutralDerived = false,
+  bool pureBlack = false,
 }) {
   final _FushiSchemeKey key = (
     seedColor.toARGB32(),
@@ -101,6 +106,7 @@ ColorScheme buildFushiColorScheme({
     primaryContainer?.toARGB32(),
     surface?.toARGB32(),
     neutralDerived,
+    pureBlack,
   );
   final ColorScheme? cached = _hibikiSchemeCache[key];
   if (cached != null) return cached;
@@ -173,7 +179,9 @@ ColorScheme buildFushiColorScheme({
         : base.onPrimaryContainer,
   );
   if (surfaceRoles == null) {
-    return _hibikiSchemeCache[key] = applyFushiSurfaceLadder(withRoles);
+    return _hibikiSchemeCache[key] = pureBlack
+        ? applyFushiPureBlackSurfaceLadder(withRoles)
+        : applyFushiSurfaceLadder(withRoles);
   }
   return _hibikiSchemeCache[key] = withRoles.copyWith(
     surface: surfaceRoles.surface,
@@ -267,8 +275,7 @@ ColorScheme applyFushiSurfaceLadder(ColorScheme scheme) {
   // 锚定原方案的中性色相 / 彩度：tonalSpot 给中性色 chroma 6、monochrome 给 0，
   // 取 surfaceContainer 的 HCT 就能原样继承，不必区分 variant。
   final Hct anchor = Hct.fromInt(scheme.surfaceContainer.toARGB32());
-  Color at(double tone) =>
-      Color(Hct.from(anchor.hue, anchor.chroma, tone).toInt());
+  Color at(double tone) => hctToneKeepingHue(anchor.hue, anchor.chroma, tone);
   return scheme.copyWith(
     surfaceContainerLowest: at(tones[0]),
     surface: at(tones[1]),
@@ -281,6 +288,60 @@ ColorScheme applyFushiSurfaceLadder(ColorScheme scheme) {
     surfaceBright: at(light ? tones[1] : 26),
     surfaceDim: at(light ? 85 : 4),
   );
+}
+
+/// 深色「纯黑」阶梯（OLED 省电 / 纯黑阅读）：页面底与最低层都是真黑 #000，
+/// 其余四级沿用与 [_darkSurfaceTones] 同样的间距往上推，卡片、菜单仍看得出层次。
+const List<double> _pureBlackSurfaceTones = <double>[0, 0, 4.5, 9, 14, 19];
+
+/// 深色下把 [scheme] 的表面换成 [_pureBlackSurfaceTones]；亮色原样走
+/// [applyFushiSurfaceLadder]——纯黑只是深色的一个变体，用户把全局明暗切到浅色时
+/// 这个预设就是一套普通的浅色方案。
+ColorScheme applyFushiPureBlackSurfaceLadder(ColorScheme scheme) {
+  if (scheme.brightness == Brightness.light) {
+    return applyFushiSurfaceLadder(scheme);
+  }
+  const List<double> tones = _pureBlackSurfaceTones;
+  final Hct anchor = Hct.fromInt(scheme.surfaceContainer.toARGB32());
+  Color at(double tone) => hctToneKeepingHue(anchor.hue, anchor.chroma, tone);
+  return scheme.copyWith(
+    surfaceContainerLowest: at(tones[0]),
+    surface: at(tones[1]),
+    surfaceContainerLow: at(tones[2]),
+    surfaceContainer: at(tones[3]),
+    surfaceContainerHigh: at(tones[4]),
+    surfaceContainerHighest: at(tones[5]),
+    surfaceBright: at(24),
+    surfaceDim: at(0),
+  );
+}
+
+/// 按 [hue] / [chroma] / [tone] 取色，但**不许色相漂移**。
+///
+/// HCT 在极亮 / 极暗端能容纳的彩度很小，请求的彩度超出色域时求解器会连色相一起
+/// 漂走：米黄主题（色相 74°）在 tone 99.5 解出的是偏紫的 `#fffdff`（色相 252°），
+/// 暖色主题的页面底成了冷白。这里逐级降彩度直到解出的色相落回 [hue] 附近；解出
+/// 的彩度不再高于同 tone 纯灰时就退回纯灰。
+///
+/// 基准是「同 tone 纯灰在 HCT 里读出的彩度」而不是 0：HCT 在极亮端连纯灰都读出
+/// 彩度 ~2.8，中性 / monochrome 方案的锚点彩度就落在这一带——它本来就是灰，没有
+/// 色相可守，原样取解；否则往更低彩度试反而会解出 #fbfeff 这类更偏的颜色。
+Color hctToneKeepingHue(double hue, double chroma, double tone) {
+  final int gray = Hct.from(hue, 0, tone).toInt();
+  final double grayChroma = Hct.fromInt(gray).chroma;
+  if (chroma <= grayChroma + 0.5) {
+    return Color(Hct.from(hue, chroma, tone).toInt());
+  }
+  double c = chroma;
+  while (c > grayChroma) {
+    final int argb = Hct.from(hue, c, tone).toInt();
+    final Hct back = Hct.fromInt(argb);
+    final double d = (back.hue - hue).abs() % 360;
+    final double hueDistance = d > 180 ? 360 - d : d;
+    if (hueDistance <= 10 && back.chroma <= chroma + 1.5) return Color(argb);
+    c /= 2;
+  }
+  return Color(gray);
 }
 
 /// 以 [surface] 为页面底色，向对比端（底色偏亮 → 暗，偏暗 → 亮）逐级推出分组 /
@@ -427,6 +488,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
     );
   }
 }
+
+/// 一个内置主题预设：[seed] + M3 [variant] 决定配色，[brightness] 是选中它时写入的
+/// 全局明暗，[pureBlack] 让深色下的页面底为真黑。
+typedef ThemePreset = ({
+  Color seed,
+  Brightness brightness,
+  DynamicSchemeVariant variant,
+  bool pureBlack,
+});
 
 /// Default seed for a brand-new / unconfigured custom theme. Matches the legacy
 /// `custom_theme_seed` default (the Hibiki brand teal); used by migration to
@@ -844,23 +914,29 @@ class ThemeNotifier extends ChangeNotifier {
 
   // ── Theme presets ──────────────────────────────────────────────────
 
-  static const Map<String,
-          ({Color seed, Brightness brightness, DynamicSchemeVariant variant})>
-      themePresets = {
+  // 全部走 M3 默认的 tonalSpot（中性灰例外，用 neutral），靠 seed 色相区分——
+  // vibrant 这类高彩度变体会把亮色 primary 推到彩度 80+，不像正常 M3 应用。
+  static const Map<String, ThemePreset> themePresets = {
     'light-theme': (
       seed: Color(0xFF1F4959),
       brightness: Brightness.light,
       variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: false,
     ),
     'ecru-theme': (
       seed: Color(0xFF8B7355),
       brightness: Brightness.light,
       variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: false,
     ),
+    // 水蓝：原 seed #4A7C8F 与品牌青 #1F4959 的 HCT 色相只差 2°，生成的方案逐色
+    // 几乎相同（亮 primary #096780 对 #0f6681），两张色卡选了等于没选。改成与阅读器
+    // 水蓝主题（底 #dfecf4、链接 #3a5fad）同族的天蓝，色相拉开到与青色可辨。
     'water-theme': (
-      seed: Color(0xFF4A7C8F),
+      seed: Color(0xFF3A6EA5),
       brightness: Brightness.light,
       variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: false,
     ),
     // Eye-care (护眼): a warm, low-blue-light sage-green light theme. The seed is a
     // muted bean-paste green (豆沙绿 family) so the whole app chrome carries a soft
@@ -871,30 +947,48 @@ class ThemeNotifier extends ChangeNotifier {
       seed: Color(0xFF5E8C63),
       brightness: Brightness.light,
       variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: false,
     ),
-    // The three dark presets share near-identical tonalSpot output (all collapse
-    // to teal #8bd0ef on near-black), so each gets a distinct M3 scheme variant
-    // to stay visibly apart (TODO-100):
+    // The three dark presets must stay visibly apart (TODO-100): gray by its
+    // neutral variant, dark by the teal brand hue, black by its true-black
+    // surfaces plus an indigo accent.
     'gray-theme': (
       // Neutral: a real neutral-grey primary (~#bac9d1), no teal cast.
       seed: Color(0xFF5C6B73),
       brightness: Brightness.dark,
       variant: DynamicSchemeVariant.neutral,
+      pureBlack: false,
     ),
     'dark-theme': (
       // TonalSpot: the teal Hibiki brand colour (~#8ad0ee).
       seed: Color(0xFF1F4959),
       brightness: Brightness.dark,
       variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: false,
     ),
     'black-theme': (
-      // Vibrant indigo: blue-violet primary (~#bac3ff) on a blue-tinted surface;
-      // seed bumped to indigo so vibrant has a hue to express.
+      // 「纯黑」：页面底真黑 #000（与阅读器同名主题的 `#000`、浏览器扩展镜像的
+      // `surface: '#000000'` 一致），强调色是 tonalSpot 靛蓝 (~#bac3ff)。原先的
+      // vibrant 变体给的是藏青底 #0f101a，名不副实。
       seed: Color(0xFF3F51B5),
       brightness: Brightness.dark,
-      variant: DynamicSchemeVariant.vibrant,
+      variant: DynamicSchemeVariant.tonalSpot,
+      pureBlack: true,
     ),
   };
+
+  /// 预设 [preset] 在 [brightness] 下的 ColorScheme——设置页色卡与生效主题同源。
+  static ColorScheme buildPresetColorScheme(
+    ThemePreset preset,
+    Brightness brightness,
+  ) {
+    return buildFushiColorScheme(
+      seedColor: preset.seed,
+      brightness: brightness,
+      variant: preset.variant,
+      pureBlack: preset.pureBlack,
+    );
+  }
 
   static const _themeLabelKeys = {
     'light-theme': 'theme_light',
@@ -1223,6 +1317,7 @@ class ThemeNotifier extends ChangeNotifier {
       ),
       surface: activeCustomThemeSurfaceColor,
       neutralDerived: activeCustomThemeNeutralDerived,
+      pureBlack: themePresets[appThemeKey]?.pureBlack ?? false,
     );
   }
 
@@ -1359,25 +1454,24 @@ class ThemeNotifier extends ChangeNotifier {
         scrolledUnderElevation: 0,
         centerTitle: false,
       ),
+      // 滑块 / 轨道配色交回 M3 默认（选中：轨道 primary、滑块 onPrimary、勾
+      // onPrimaryContainer；未选中：轨道 surfaceContainerHighest、滑块 outline）。
+      // 以前覆写成「轨道 primaryContainer + 滑块 primary」是 M2 的配法，而 M3 的
+      // 勾图标仍按 onPrimaryContainer 着色——亮色下深色勾压在 primary 滑块上几乎
+      // 看不见。墨水屏下 primary=前景、onPrimary=底色，默认配色同样黑白分明。
+      // 勾显式着 primary：M3 默认的 onPrimaryContainer 只在原生色阶里与 onPrimary
+      // 明暗相反；自定义主题钉了主色时 onPrimary 与 onPrimaryContainer 是各自另算
+      // 的可读色，可能同黑同白（深色模式钉深主色 / 亮色模式钉亮主色），勾就与
+      // 滑块撞色消失。primary 与 onPrimary 的对比度由构造保证。
       switchTheme: SwitchThemeData(
         thumbIcon: WidgetStateProperty.resolveWith((states) {
           return states.contains(WidgetState.selected)
-              ? const Icon(Icons.check, size: 14)
+              ? Icon(Icons.check, size: 14, color: cs.primary)
               : null;
         }),
-        thumbColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primary
-              : cs.onSurfaceVariant;
-        }),
-        trackColor: WidgetStateColor.resolveWith((states) {
-          return states.contains(WidgetState.selected)
-              ? cs.primaryContainer
-              : cs.surfaceContainerHighest;
-        }),
         trackOutlineColor: WidgetStateColor.resolveWith((states) {
-          // E-ink: the selected track is primaryContainer == the background, so
-          // without an outline the switch body vanishes into the page.
+          // E-ink: keep a solid outline on both states so the switch body
+          // never depends on a fill the panel may dither.
           if (eink) return cs.outline;
           return states.contains(WidgetState.selected)
               ? Colors.transparent
