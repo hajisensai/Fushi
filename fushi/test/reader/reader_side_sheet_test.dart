@@ -115,6 +115,38 @@ void main() {
         .tap(find.byKey(const ValueKey<String>('fushi_side_sheet_close')));
     expect(closed, 1);
   });
+
+  testWidgets('ReaderSideSheet 外壳：bottom 固定在标题下、不随内容滚动', (tester) async {
+    final ScrollController scroll = ScrollController();
+    addTearDown(scroll.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          height: 400,
+          child: ReaderSideSheet(
+            title: '设置',
+            onClose: () {},
+            scrollable: false,
+            bottom: const SizedBox(height: 48, child: Text('TABS')),
+            child: ListView(
+              controller: scroll,
+              children: <Widget>[
+                for (int i = 0; i < 40; i++)
+                  SizedBox(height: 40, child: Text('$i')),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ));
+    final double tabsTop = tester.getTopLeft(find.text('TABS')).dy;
+    expect(tabsTop, greaterThan(tester.getTopLeft(find.text('设置')).dy));
+    // 内容区由调用方自管滚动：外壳不再套一层 SingleChildScrollView。
+    expect(find.byType(SingleChildScrollView), findsNothing);
+    scroll.jumpTo(600);
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('TABS')).dy, tabsTop);
+  });
 }
 
 /// 抽屉内容占位。

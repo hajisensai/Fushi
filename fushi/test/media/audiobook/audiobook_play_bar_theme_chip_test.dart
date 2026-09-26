@@ -207,7 +207,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+        findsOneWidget);
     final Finder close = find.byKey(
       const ValueKey<String>('fushi_side_sheet_close'),
     );
@@ -343,7 +344,7 @@ void main() {
         isTrue);
   });
 
-  testWidgets('桌面「设置」抽屉：三组分段同屏、无 push 返回箭头', (tester) async {
+  testWidgets('桌面「设置」抽屉：三组标签页同屏、无 push 返回箭头', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -372,9 +373,15 @@ void main() {
     );
     await tester.pump();
 
-    // 「设置」抽屉：顶部一条分段条把分类摊平同屏切换（导航 / 有声书不在这里，
-    // 它们各有自己的 presentation），默认落在第一组「布局显示」上。
-    expect(find.byType(FushiSegmentedStrip<String>), findsOneWidget);
+    // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
+    // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
+    expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
+    final TabBar tabBar = tester.widget<TabBar>(find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+      matching: find.byType(TabBar),
+    ));
+    expect(tabBar.tabs, hasLength(3));
+    expect(tabBar.controller!.index, 0);
     expect(find.text(t.section_layout), findsWidgets);
     // 导航分类被排除（它是 sideSheetNavigation 的地盘）。
     expect(find.text(t.reading_progress), findsNothing);
@@ -384,6 +391,66 @@ void main() {
     // 默认组即 layout：主题行直接可见，不需要再点一层。
     expect(find.text(t.reader_theme), findsOneWidget);
     expect(find.byType(AdaptiveSettingsSegmentedRow<Object>), findsWidgets);
+  });
+
+  testWidgets('桌面「设置」抽屉：恢复记住的标签页，点击 / 滑动切换都回写', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final List<String> changes = <String>[];
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: Consumer(
+              builder: (context, ref, _) => ReaderQuickSettingsSheet(
+                controller: null,
+                toc: const [],
+                readerProgress: const (1, 3),
+                onJumpSection: (_, __) async {},
+                onExitReader: () {},
+                webViewController: _FakeInAppWebViewController(),
+                appModel: _testAppModel(),
+                ref: ref,
+                isFushiReader: true,
+                initialSideSheetTab: 'lookup',
+                onSideSheetTabChanged: changes.add,
+                presentation:
+                    ReaderQuickSettingsPresentation.sideSheetAppearance,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 上次停在「查词」：直接落在该页，不回写。
+    expect(find.text(t.auto_read_on_lookup), findsOneWidget);
+    expect(find.text(t.reader_theme), findsNothing);
+    expect(changes, isEmpty);
+
+    // 点击标签：动画开始 / 结束两次通知只回写一次。
+    await tester.tap(find.descendant(
+      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+      matching: find.text(t.section_layout),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.reader_theme), findsOneWidget);
+    expect(find.text(t.auto_read_on_lookup), findsNothing);
+    expect(changes, <String>['layout']);
+
+    // 向左滑到下一页「阅读操作」。
+    await tester.fling(
+      find.byKey(const PageStorageKey<String>('fushi_side_sheet_tab_layout')),
+      const Offset(-600, 0),
+      2000,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.reader_theme), findsNothing);
+    expect(changes, <String>['layout', 'behavior']);
   });
 
   testWidgets('reader exit is deferred and only scheduled once',
