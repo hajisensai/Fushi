@@ -142,24 +142,80 @@ inline int LunaNormalizedTextLength(const wchar_t* text, int len) {
   return block[0] > 0 ? block[0] : len;
 }
 
+// TYPEMOON/HUNEX uses the same structural double-write shape for the
+// in-game toolbar: each control description can be emitted as a consecutive
+// pair before the next description is appended.  Reuse the conservative
+// all-blocks-must-pair rule above so both the native thread preview and the
+// selected text lane see the same bounded first block.  The gate is Luna's
+// semantic hook identity; no executable name/RVA or localized toolbar text
+// participates in the decision.
+inline bool LunaHookFoldsPairedBlocks(const char* hook_name) {
+  return hook_name != nullptr &&
+         (std::strcmp(hook_name, "EmbedKrkrZ") == 0 ||
+          std::strcmp(hook_name, "typemoon") == 0);
+}
+
 inline int LunaNormalizedTextLengthForHook(const char* hook_name,
                                            const wchar_t* text, int len) {
-  // TYPEMOON/HUNEX uses the same structural double-write shape for the
-  // in-game toolbar: each control description can be emitted as a consecutive
-  // pair before the next description is appended.  Reuse the conservative
-  // all-blocks-must-pair rule above so both the native thread preview and the
-  // selected text lane see the same bounded first block.  The gate is Luna's
-  // semantic hook identity; no executable name/RVA or localized toolbar text
-  // participates in the decision.
-  const bool folds_paired_blocks =
-      hook_name != nullptr &&
-      (std::strcmp(hook_name, "EmbedKrkrZ") == 0 ||
-       std::strcmp(hook_name, "typemoon") == 0);
-  if (!folds_paired_blocks) {
+  if (!LunaHookFoldsPairedBlocks(hook_name)) {
     return len;
   }
   return LunaNormalizedTextLength(text, len);
 }
+
+// 成对折叠 hook 面上的「粘性尾巴」（BUG-2705）。
+//
+// KiriKiri Z 的 EmbedKrkrZ 面在某些构建上会把「当前循环音效的标签」拼在每句成对台词
+// 之后：音效开始时本线程先单独发出一条不成对的 `T`（如 `■自動車（車内／走行）`），此后
+// 每条台词都是 `P P T`（《千恋＊万花》光盘版原版真机）。块级判据要求整串无剩余地成对，
+// `P P T` 一条都折不了，于是用户看到的每句都是「台词台词■音效名」。
+//
+// 判据是结构性的、按线程有状态：只有当尾巴**逐字等于本线程上一条不成对的独立文本**、且
+// 去掉尾巴后剩余部分能被完整成对切分时才剥掉它。合法叠句（「わかったわかった、もう行くよ」）
+// 的尾巴不可能恰好等于前一条独立事件，照旧原样放行——与块级判据「宁可漏折，也不能吞用户
+// 的字」同一方向。不看任何文本内容、游戏名或哈希。
+class LunaPairedTailTracker {
+ public:
+  // 与 LunaNormalizedTextLengthForHook 同一返回约定：可展示前缀的长度。
+  int NormalizedLength(uint64_t thread_id, const char* hook_name,
+                       const wchar_t* text, int len) {
+    const int base = LunaNormalizedTextLengthForHook(hook_name, text, len);
+    if (base != len || text == nullptr || len <= 0 ||
+        !LunaHookFoldsPairedBlocks(hook_name)) {
+      return base;  // 已完整折叠，或本 hook 面不做成对折叠
+    }
+    const auto it = standalone_.find(thread_id);
+    if (it != standalone_.end()) {
+      const std::wstring& tail = it->second;
+      const int tail_len = static_cast<int>(tail.size());
+      const int body_len = len - tail_len;
+      if (tail_len > 0 && body_len >= kLunaMinFoldedLineChars * 2 &&
+          std::wmemcmp(text + body_len, tail.data(), tail.size()) == 0) {
+        const int folded = LunaNormalizedTextLength(text, body_len);
+        if (folded < body_len) return folded;
+      }
+    }
+    // 只有「开头不是成对块」的独立事件才是候选尾巴（标签本身从不双写）；以 `P P` 开头的
+    // 是台词，不论带不带别的尾巴，都不能顶掉已记下的尾巴。有界：超长的不可能是标签。
+    if (len <= kMaxTailChars && !StartsWithPairedBlock(text, len)) {
+      standalone_[thread_id].assign(text, text + len);
+    }
+    return base;
+  }
+
+  void Reset() { standalone_.clear(); }
+
+ private:
+  static bool StartsWithPairedBlock(const wchar_t* text, int len) {
+    for (int k = kLunaMinFoldedLineChars; 2 * k <= len; ++k) {
+      if (std::wmemcmp(text, text + k, static_cast<size_t>(k)) == 0) return true;
+    }
+    return false;
+  }
+
+  static constexpr int kMaxTailChars = 256;
+  std::map<uint64_t, std::wstring> standalone_;
+};
 
 // Luna's x64 TYPEMOON hook reports the story renderer and the in-game toolbar
 // through the same hook address/name while keeping them in separate

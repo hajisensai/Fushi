@@ -747,6 +747,8 @@ uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
 // Luna 侧写者状态。**必须定义在所有写路径之前**：v13 起写文本道也要在这把锁下认领，
 // 与预览槽认领共用同一把锁、同一套下标分区。
 fushi_voice_hook::LunaTextSelector g_lunaTextSelector;
+// 成对折叠 hook 面的粘性尾巴（BUG-2705），与选择器共用 g_lunaSelectCs。
+fushi_voice_hook::LunaPairedTailTracker g_lunaPairedTails;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
@@ -930,9 +932,18 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
             text, raw_len, g_luna.normalize_mages_controls);
     const wchar_t* normalized_text = normalized_storage.c_str();
     const int escaped_len = static_cast<int>(normalized_storage.size());
-    const int normalized_len =
-        fushi_voice_hook::LunaNormalizedTextLengthForHook(
-            hookname, normalized_text, escaped_len);
+    // thread_id 只依赖 hook 身份与 ThreadParam，不依赖文本；折叠要按线程记状态，所以先算。
+    const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
+    int normalized_len = escaped_len;
+    if (g_lunaSelectCsInit) {
+      EnterCriticalSection(&g_lunaSelectCs);
+      normalized_len = g_lunaPairedTails.NormalizedLength(
+          thread_id, hookname, normalized_text, escaped_len);
+      LeaveCriticalSection(&g_lunaSelectCs);
+    } else {
+      normalized_len = fushi_voice_hook::LunaNormalizedTextLengthForHook(
+          hookname, normalized_text, escaped_len);
+    }
     if (LunaDiagEnabled()) {
       char u8[1024];
       LunaWideToUtf8(text, raw_len, u8, sizeof(u8));
@@ -954,7 +965,6 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       // 先判伪影，再决定本行是否写入文本环。
       const bool artifact =
           fushi_voice_hook::LunaTextIsArtifact(normalized_text, normalized_len);
-      const uint64_t thread_id = LunaTextThreadId(hookcode, hookname, tp);
       const uint64_t face_id = LunaTextFaceId(hookcode, hookname, tp);
       // v12：预览必须写在门控**之前**且无条件（含伪影行）。预览区的全部意义就是让用户
       // 看见未被发布的线程；放到门控之后就只剩已选中的那条，等于没做。
@@ -1177,6 +1187,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
     g_lunaSelectCsInit = true;
   }
   g_lunaTextSelector.Reset();
+  g_lunaPairedTails.Reset();
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
   // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
