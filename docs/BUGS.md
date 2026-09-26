@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2497 条。点号进各自文件。
+> 共 2498 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
+| [BUG-2713](bugs/BUG-2713-subtitle-season-series.md) | ✅ | ✅ | 在线字幕搜索无视季号按第一季检索，第四季字幕查不到 |
 | [BUG-2712](bugs/BUG-2712-siglus-choice-lookup.md) | ✅ | ✅ | Siglus（CLANNAD）选项画面查词查到上一句、没有查词框、全屏看不到弹窗 |
 | [BUG-2711](bugs/BUG-2711-vn-split-screen-margin-asymmetry.md) | ✅ | ✅ | VN 模式拆屏后左右间距不一致 |
 | [BUG-2710](bugs/BUG-2710-kirikiri-lookup-click-swallowed-after-dismiss.md) | ✅ | ✅ | KiriKiri 游戏内查词关卡后，下一次点字被当作关闭再吞一次 |

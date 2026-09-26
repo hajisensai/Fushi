@@ -26,6 +26,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -285,6 +286,7 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.showTitle = true,
     required this.initialQuery,
     this.initialEpisode,
+    this.initialSeason,
     required this.initialApiKey,
     required this.onApiKeyChanged,
     required this.saveDirectory,
@@ -330,6 +332,13 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 都得自己数当前是第几集再手填，而这个数字调用方本来就知道。现在只在调用方能给出
   /// **可靠**集号时预填；给不出仍留空，那条旧行为在没有集号的来源上原样保留。
   final int? initialEpisode;
+
+  /// 调用方从文件名 / 远端标题解析出的季号；null = 不知道（面板再从预填词、合集名等
+  /// 标题里的季度记号推断，见 [subtitleSeasonHint]）。
+  ///
+  /// AniList 把每一季登记成独立条目、相关度首条恒为第一季：不带季号时看第四季也会按
+  /// 第一季的 id 去查 Jimaku，第四季条目里现成的字幕永远列不出来。
+  final int? initialSeason;
 
   /// 该视频**已知的身份**（刮削存下的 AniList / TMDB id 与备选搜索词），BUG-1842。
   ///
@@ -639,9 +648,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       });
       // 降级但仍留着同一番名的旧系列列表时，按旧列表首条继续检索：比退回纯文本搜准，
       // 也不用再问一次 AniList。
+      // 相关度首条恒为第一季：按本集季号挑对应那一季的条目（挑不出才退回首条）。
+      final int? season = _seasonHint(query);
       final int? resolvedSeriesId = outcome.media.isNotEmpty
-          ? outcome.media.first.id
-          : (_seriesMatches.isNotEmpty ? _seriesMatches.first.id : null);
+          ? pickAniListSeriesForSeason(outcome.media, season: season)?.id
+          : pickAniListSeriesForSeason(_seriesMatches, season: season)?.id;
       await _fetchCandidates(
         anilistId: resolvedSeriesId,
         queryFallback: query,
@@ -651,6 +662,19 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       anilist?.close();
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// 本次检索的季号提示：输入框里的词自带季度记号就用它；用户没改过番名时再看
+  /// 调用方给的季号（文件名 `S04E18`）与种子里的备选词（合集名「… 4th season」）。
+  /// 用户改了番名就只信他自己写的，不拿原视频的季号去套另一部作品。
+  int? _seasonHint(String query) {
+    final bool untouchedQuery = query == widget.initialQuery.trim();
+    final int? typed = subtitleSeasonHint(titles: <String>[query]);
+    if (typed != null || !untouchedQuery) return typed;
+    return subtitleSeasonHint(
+      parsedSeason: widget.initialSeason,
+      titles: widget.seed.queries,
+    );
   }
 
   /// 用户点某个系列 chip：以该系列 id 重搜 Jimaku（不再重跑 AniList，保留已展示的候选
@@ -745,6 +769,11 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
               alternateTitles: untouchedQuery
                   ? seed.fallbackQueries
                   : const <String>[],
+              // OpenSubtitles / SubDL 据此按 season_number 收敛。只给**显式**季号
+              // （调用方从文件名 / 远端标题 `S04E18` 解析的）：从标题推断的季号只
+              // 用来挑 AniList 条目——标题里的季度记号与 TMDB 季号并不总对得上，
+              // 发给服务端当筛选条件会把同一部剧的另一季当成精确命中。
+              season: untouchedQuery ? widget.initialSeason : null,
               episode: episode,
               fingerprint: fingerprint,
             ),
