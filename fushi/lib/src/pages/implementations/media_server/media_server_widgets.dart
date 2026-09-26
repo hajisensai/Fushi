@@ -255,6 +255,246 @@ class MediaServerItemCard extends StatelessWidget {
 /// 再多就只剩细条）。
 const int kMediaServerLibraryCollageCount = 3;
 
+/// 「继续观看」横卡的宽度（16:9）。比媒体库横卡再宽一点：这一行是首页最常点
+/// 的一行，缩略图要看得清是哪一集的画面。
+const double kMediaServerContinueCardWidth = 260;
+
+/// 「继续观看」横卡整卡高度：16:9 缩略图 + 两行文字。
+double mediaServerContinueCardHeight(BuildContext context) =>
+    kMediaServerContinueCardWidth * 9 / 16 + mediaServerCardTextBlock(context);
+
+/// 「继续观看」横卡的候选图，按优先级排好；前一张取不回来（兼容层会报 tag 却
+/// 404，BUG-2602）就换下一张，见 [MediaServerFallbackImage]。
+///
+/// - 集：自身 Thumb → 自身 Primary（Jellyfin / Emby 的集主图就是一帧 16:9 截图）
+///   → 剧的 Thumb → 剧的 Backdrop。
+/// - 电影：Thumb → Backdrop → Primary（2:3 海报，横槽里由
+///   [PortraitCoverImage] 模糊垫底后完整显示）。
+///
+/// 上级图借 [MediaServerItem.parentThumbItemId] / `parentBackdropItemId`：把那个
+/// id 包成一个只带对应图片旗子的条目交给 [MediaServerBrowser.coverUrl]，不用给
+/// 契约再开一个「按 id 取图」的口子，缓存键也自然按剧共享。
+List<ImageProvider> mediaServerContinueImages(
+  MediaServerBrowser browser,
+  MediaServerItem item,
+) {
+  final List<ImageProvider> images = <ImageProvider>[];
+  void add(MediaServerItem source, MediaServerImageKind kind) {
+    final ImageProvider? image = mediaServerCoverImage(
+      browser,
+      source,
+      kind: kind,
+    );
+    if (image != null) images.add(image);
+  }
+
+  if (item.type == MediaServerItemType.episode) {
+    add(item, MediaServerImageKind.thumb);
+    add(item, MediaServerImageKind.primary);
+    final String? parentThumb = item.parentThumbItemId;
+    if (parentThumb != null && parentThumb.isNotEmpty) {
+      add(
+        MediaServerItem(
+          id: parentThumb,
+          name: '',
+          type: MediaServerItemType.series,
+          hasThumb: true,
+        ),
+        MediaServerImageKind.thumb,
+      );
+    }
+    final String? parentBackdrop = item.parentBackdropItemId;
+    if (parentBackdrop != null && parentBackdrop.isNotEmpty) {
+      add(
+        MediaServerItem(
+          id: parentBackdrop,
+          name: '',
+          type: MediaServerItemType.series,
+          hasBackdrop: true,
+        ),
+        MediaServerImageKind.backdrop,
+      );
+    }
+  } else {
+    add(item, MediaServerImageKind.thumb);
+    add(item, MediaServerImageKind.backdrop);
+    add(item, MediaServerImageKind.primary);
+  }
+  return images;
+}
+
+/// 「继续观看」横卡的角标：有断点且知道时长 →「剩余 N 分钟」（不足一分钟退回
+/// 「已看至 mm:ss」）；有断点不知时长 →「已看至 mm:ss」；没断点的集（NextUp
+/// 补进来的下一集）→「下一集」；其余 null（不画角标）。
+String? mediaServerContinueBadge(MediaServerItem item) {
+  final int position = item.positionMs;
+  final int? duration = item.durationMs;
+  if (position > 0) {
+    if (duration != null && duration - position >= 60000) {
+      return t.video_home_remaining_minutes(
+        minutes: ((duration - position) / 60000).ceil(),
+      );
+    }
+    return t.video_watched_up_to(time: formatMediaServerDuration(position));
+  }
+  if (item.type == MediaServerItemType.episode) return t.video_next_episode;
+  return null;
+}
+
+/// 「继续观看」横卡的第二行：集 =「S01E02 集名」；电影 =「12:34 / 1:32:05」
+/// （断点 / 总长，缺一个就只写另一个，都缺用常规元数据）。
+String mediaServerContinueSubtitle(MediaServerItem item) {
+  if (item.type == MediaServerItemType.episode) {
+    return '${item.episodeCode} ${item.name}'.trim();
+  }
+  final String position = formatMediaServerDuration(item.positionMs);
+  final String duration = formatMediaServerDuration(item.durationMs);
+  if (position.isNotEmpty && duration.isNotEmpty) {
+    return '$position / $duration';
+  }
+  if (position.isNotEmpty) return position;
+  if (duration.isNotEmpty) return duration;
+  return mediaServerItemMetadata(item);
+}
+
+/// 「继续观看」横卡：16:9 缩略图（候选图逐张回落）+ 剧名 / 片名 + 第二行。
+/// 缩略图底边是加粗的服务器端进度条，右下角标写明还剩多少或看到哪。
+///
+/// 视频本身是横屏的；继续观看要让人一眼认出「停在哪一集、看到哪」，所以这一行
+/// 不用 2:3 海报竖卡——竖卡只认得出是哪部剧，进度只有一条 3px 细线。
+class MediaServerContinueCard extends StatelessWidget {
+  const MediaServerContinueCard({
+    required this.browser,
+    required this.item,
+    required this.onTap,
+    this.onLongPress,
+    this.focusId,
+    super.key,
+  });
+
+  final MediaServerBrowser browser;
+  final MediaServerItem item;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final FushiFocusId? focusId;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double? progress = mediaServerProgress(item);
+    final String? badge = mediaServerContinueBadge(item);
+    final bool isEpisode = item.type == MediaServerItemType.episode;
+    final String title = isEpisode && (item.seriesName?.isNotEmpty ?? false)
+        ? item.seriesName!
+        : item.name;
+    return FushiCard(
+      padding: EdgeInsets.zero,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      onSecondaryTap: onLongPress,
+      focusId: focusId,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          AspectRatio(
+            aspectRatio: 16 / 9,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                MediaServerFallbackImage(
+                  images: mediaServerContinueImages(browser, item),
+                  placeholderIcon: isEpisode
+                      ? Icons.tv_outlined
+                      : Icons.movie_outlined,
+                ),
+                if (badge != null)
+                  Positioned(
+                    right: 6,
+                    bottom: progress == null ? 6 : 10,
+                    child: CoverBadge(
+                      key: const ValueKey<String>(
+                        'media-server-continue-badge',
+                      ),
+                      label: badge,
+                    ),
+                  ),
+                if (progress != null)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: LinearProgressIndicator(
+                        key: const ValueKey<String>(
+                          'media-server-continue-progress',
+                        ),
+                        value: progress,
+                        minHeight: 4,
+                        backgroundColor: Colors.black.withValues(alpha: 0.45),
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.listTitle,
+                ),
+                Text(
+                  mediaServerContinueSubtitle(item),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tokens.type.metadata,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 横槽里按顺序尝试 [images]：当前一张加载失败就换下一张，全失败（或本来就
+/// 没有）画 [placeholderIcon] 占位。每张都走 [PortraitCoverImage] 横槽，竖图
+/// 自动模糊垫底。
+class MediaServerFallbackImage extends StatelessWidget {
+  const MediaServerFallbackImage({
+    required this.images,
+    required this.placeholderIcon,
+    super.key,
+  });
+
+  final List<ImageProvider> images;
+  final IconData placeholderIcon;
+
+  @override
+  Widget build(BuildContext context) => _candidate(context, 0);
+
+  Widget _candidate(BuildContext context, int index) {
+    if (index >= images.length) {
+      return ShelfCoverPlaceholder(icon: placeholderIcon);
+    }
+    return PortraitCoverImage(
+      key: ValueKey<int>(index),
+      image: images[index],
+      landscapeSlot: true,
+      errorBuilder: (BuildContext context) => _candidate(context, index + 1),
+    );
+  }
+}
+
 /// 媒体库横卡（16:9）：库封面或按类型的图标 + 库名。
 ///
 /// 库自身没图（Jellyfin 库可以不配封面）或图取不回来时，用 [fallbackItems] 里

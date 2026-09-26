@@ -353,6 +353,8 @@ class JellyfinItem {
     this.hasBackdrop = false,
     this.hasThumbImage = false,
     this.hasLogoImage = false,
+    this.parentThumbItemId,
+    this.parentBackdropItemId,
     this.overview,
     this.communityRating,
     this.genres = const <String>[],
@@ -390,6 +392,13 @@ class JellyfinItem {
   final bool hasBackdrop;
   final bool hasThumbImage;
   final bool hasLogoImage;
+
+  /// 集 / 季借用的上级横图（`ParentThumbItemId` + `ParentThumbImageTag`、
+  /// `ParentBackdropItemId` + `ParentBackdropImageTags`）：服务器已经替客户端
+  /// 找好「这张图挂在哪个祖先上」，只有对应 tag 存在时才非 null——没 tag 的 id
+  /// 拿去请求必 404。「继续观看」横卡在集自身没有横图时回落到它们。
+  final String? parentThumbItemId;
+  final String? parentBackdropItemId;
 
   /// 详情字段（`Overview` / `CommunityRating` / `Genres`）：清单请求不带对应
   /// Fields 时为空，单条目 `/Items/{id}` 全量返回。
@@ -1688,6 +1697,9 @@ class JellyfinApi {
     final List<Object?> backdropTags =
         (json['BackdropImageTags'] as List?) ?? const <Object?>[];
     final List<Object?> genres = (json['Genres'] as List?) ?? const <Object?>[];
+    final String? parentThumbTag = json['ParentThumbImageTag'] as String?;
+    final List<Object?> parentBackdropTags =
+        (json['ParentBackdropImageTags'] as List?) ?? const <Object?>[];
 
     return JellyfinItem(
       id: (json['Id'] as String?) ?? '',
@@ -1724,6 +1736,12 @@ class JellyfinApi {
       hasBackdrop: backdropTags.isNotEmpty,
       hasThumbImage: imageTags.containsKey('Thumb'),
       hasLogoImage: imageTags.containsKey('Logo'),
+      parentThumbItemId: parentThumbTag == null || parentThumbTag.isEmpty
+          ? null
+          : json['ParentThumbItemId'] as String?,
+      parentBackdropItemId: parentBackdropTags.isEmpty
+          ? null
+          : json['ParentBackdropItemId'] as String?,
       overview: json['Overview'] as String?,
       communityRating: (json['CommunityRating'] as num?)?.toDouble(),
       genres: <String>[
@@ -1977,6 +1995,8 @@ class JellyfinVideoClient
         hasBackdrop: item.hasBackdrop,
         hasThumb: item.hasThumbImage,
         hasLogo: item.hasLogoImage,
+        parentThumbItemId: item.parentThumbItemId,
+        parentBackdropItemId: item.parentBackdropItemId,
         overview: item.overview,
         communityRating: item.communityRating,
         genres: item.genres,
