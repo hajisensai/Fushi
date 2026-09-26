@@ -88,6 +88,8 @@ struct SiglusLookupProfile {
   uintptr_t viewport_config_rva = 0;
   SiglusGlyphLayoutAbi glyph_abi = SiglusGlyphLayoutAbi::kEcxTenArguments;
   uintptr_t get_keyboard_state_return_rva = 0;
+  // Optional choice-text caller of the same glyph entry; zero when unproved.
+  uintptr_t selection_glyph_return_rva = 0;
 };
 
 inline constexpr SiglusLookupProfile kAnemoiSiglusLookupProfile = {
@@ -785,6 +787,70 @@ inline bool ProjectSiglusLookupRect(const SiglusLookupProfile& profile,
   if (r <= x || b <= y) return false;
   *output = {static_cast<int32_t>(x), static_cast<int32_t>(y),
              static_cast<int32_t>(r-x), static_cast<int32_t>(b-y)};
+  return true;
+}
+
+// Highlight frames (BUG-2086 hover / BUG-2087 looked-up term, as SGRE draws
+// them) in client pixels. The hover cell is the projected glyph under the
+// cursor; the term box is the union of the projected cells whose UTF-16 index
+// lies in [start, start + length) on the row the term starts on.
+inline bool SiglusLookupHoverCell(const SiglusLookupProfile& profile,
+                                  const SiglusLookupEngineView& view,
+                                  const SiglusLookupGeometry& geometry,
+                                  int32_t cursor_x, int32_t cursor_y,
+                                  int32_t client_width, int32_t client_height,
+                                  SiglusLookupRect* cell) {
+  if (cell == nullptr) return false;
+  for (size_t index = 0; index < geometry.glyph_count; ++index) {
+    SiglusLookupRect projected;
+    if (!ProjectSiglusLookupRect(profile, view, geometry.glyphs[index].rect,
+                                 client_width, client_height, &projected))
+      continue;
+    if (cursor_x >= projected.x && cursor_y >= projected.y &&
+        cursor_x < projected.x + projected.width &&
+        cursor_y < projected.y + projected.height) {
+      *cell = projected;
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool SiglusLookupTermRect(const SiglusLookupProfile& profile,
+                                 const SiglusLookupEngineView& view,
+                                 const SiglusLookupGeometry& geometry,
+                                 uint32_t start, uint32_t length,
+                                 int32_t client_width, int32_t client_height,
+                                 SiglusLookupRect* box) {
+  if (box == nullptr || length == 0) return false;
+  const uint64_t end = static_cast<uint64_t>(start) + length;
+  bool have_row = false, have_box = false;
+  uint16_t row = 0;
+  int64_t left = 0, top = 0, right = 0, bottom = 0;
+  for (size_t index = 0; index < geometry.glyph_count; ++index) {
+    const auto& glyph = geometry.glyphs[index];
+    if (glyph.char_index < start || glyph.char_index >= end) continue;
+    if (!have_row) {
+      row = glyph.visual_line;
+      have_row = true;
+    } else if (glyph.visual_line != row) {
+      break;
+    }
+    SiglusLookupRect cell;
+    if (!ProjectSiglusLookupRect(profile, view, glyph.rect, client_width,
+                                 client_height, &cell))
+      continue;
+    const int64_t cell_right = static_cast<int64_t>(cell.x) + cell.width;
+    const int64_t cell_bottom = static_cast<int64_t>(cell.y) + cell.height;
+    left = have_box ? std::min<int64_t>(left, cell.x) : cell.x;
+    top = have_box ? std::min<int64_t>(top, cell.y) : cell.y;
+    right = have_box ? std::max(right, cell_right) : cell_right;
+    bottom = have_box ? std::max(bottom, cell_bottom) : cell_bottom;
+    have_box = true;
+  }
+  if (!have_box) return false;
+  *box = {static_cast<int32_t>(left), static_cast<int32_t>(top),
+          static_cast<int32_t>(right - left), static_cast<int32_t>(bottom - top)};
   return true;
 }
 

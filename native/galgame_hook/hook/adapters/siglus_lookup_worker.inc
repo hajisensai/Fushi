@@ -11,6 +11,71 @@ uint64_t g_siglus_lookup_waiting_glyph_seq = 0;
 // pending, the worker cannot republish a fresh target or submit via Shift.
 uint64_t g_siglus_lookup_unpublished_glyph_frontier = 0;
 
+// Choice screen. The selection caller lays the choices out in the rows the
+// last dialogue line occupied, and the dialogue caller goes silent meanwhile.
+// While it owns the screen the active line is the choice text rebuilt from its
+// glyph passes; the committed dialogue body is kept separately so republishing
+// that same body cannot flip lookup back onto rows that are no longer drawn.
+bool g_siglus_lookup_selection_active = false;
+fushi_voice_hook::SiglusSelectionPassBuilder g_siglus_lookup_selection_pass;
+wchar_t g_siglus_lookup_dialogue_line[kSiglusLookupMaxTextUnits];
+uint32_t g_siglus_lookup_dialogue_line_units = 0;
+
+// Layout generation of the last hit the host accepted. The looked-up term box
+// is drawn only over that same geometry; a newer line never inherits a range.
+uint64_t g_siglus_lookup_term_generation = 0;
+
+void RetireSiglusLookupDisplayedLine() {
+  fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
+  fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
+  InvalidateSiglusLookupClickTarget();
+  fushi_voice_hook::g_geometry_provider_registry.Retire(
+      g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+}
+
+void EnterSiglusLookupSelection() {
+  g_siglus_lookup_selection_active = true;
+  g_siglus_lookup_selection_pass.Reset();
+  // No line until one complete choice pass is seen: the dialogue body must
+  // never be matched against, or hit through, the choice rows.
+  g_siglus_lookup_active_line_units = 0;
+  RetireSiglusLookupDisplayedLine();
+}
+
+void LeaveSiglusLookupSelection() {
+  g_siglus_lookup_selection_active = false;
+  g_siglus_lookup_selection_pass.Reset();
+  g_siglus_lookup_active_line_units = g_siglus_lookup_dialogue_line_units;
+  memcpy(g_siglus_lookup_active_line, g_siglus_lookup_dialogue_line,
+         static_cast<size_t>(g_siglus_lookup_dialogue_line_units) *
+             sizeof(wchar_t));
+  RetireSiglusLookupDisplayedLine();
+}
+
+// Returns true when the completed pass changed the active choice line.
+bool CommitSiglusLookupSelectionLine() {
+  const auto& pass = g_siglus_lookup_selection_pass;
+  if (pass.line_units == 0 || pass.line_units > kSiglusLookupMaxTextUnits)
+    return false;
+  const uint32_t units = static_cast<uint32_t>(pass.line_units);
+  bool same = units == g_siglus_lookup_active_line_units;
+  for (uint32_t index = 0; same && index < units; ++index)
+    same = g_siglus_lookup_active_line[index] ==
+           static_cast<wchar_t>(pass.line[index]);
+  if (same) return false;
+  for (uint32_t index = 0; index < units; ++index)
+    g_siglus_lookup_active_line[index] = static_cast<wchar_t>(pass.line[index]);
+  g_siglus_lookup_active_line_units = units;
+  // Keep the captured pass: it is exactly the glyph run of the new line.
+  fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
+  InvalidateSiglusLookupClickTarget();
+  fushi_voice_hook::g_geometry_provider_registry.Retire(
+      g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus);
+  return true;
+}
+
 bool IsSiglusLookupCaptureReadyForInput() {
   return g_siglus_lookup_layout.current_valid &&
          g_siglus_lookup_unpublished_glyph_frontier == 0;
@@ -199,6 +264,7 @@ void ResetSiglusLookupRuntimeLayout() {
   // are required after reset; preserving its ID does not revive old geometry.
   fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
   fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
+  g_siglus_lookup_selection_pass.Reset();
   g_siglus_lookup_glyph_processed_seq = static_cast<uint64_t>(
       InterlockedCompareExchange64(&g_siglus_lookup_glyph_event_count, 0, 0));
   g_siglus_lookup_layout_window = nullptr;
@@ -223,12 +289,23 @@ void ConsumeSiglusLookupCaptures() {
       changed = true;
     }
     const bool same =
-        text_snapshot.text_units == g_siglus_lookup_active_line_units &&
+        text_snapshot.text_units == g_siglus_lookup_dialogue_line_units &&
         text_snapshot.text_units != 0 &&
-        memcmp(text_snapshot.text, g_siglus_lookup_active_line,
+        memcmp(text_snapshot.text, g_siglus_lookup_dialogue_line,
                static_cast<size_t>(text_snapshot.text_units) *
                    sizeof(wchar_t)) == 0;
-    if (!same) {
+    // A new dialogue occurrence ends the choice screen; the same committed
+    // body republished while the choices are drawn does not.
+    const bool leaves_selection =
+        g_siglus_lookup_selection_active && (identity_changed || !same);
+    if (leaves_selection) {
+      g_siglus_lookup_selection_active = false;
+      g_siglus_lookup_selection_pass.Reset();
+    }
+    if (!same || leaves_selection) {
+      g_siglus_lookup_dialogue_line_units = text_snapshot.text_units;
+      memcpy(g_siglus_lookup_dialogue_line, text_snapshot.text,
+             static_cast<size_t>(text_snapshot.text_units) * sizeof(wchar_t));
       g_siglus_lookup_active_line_units = text_snapshot.text_units;
       memcpy(g_siglus_lookup_active_line, text_snapshot.text,
              static_cast<size_t>(text_snapshot.text_units) * sizeof(wchar_t));
@@ -270,7 +347,18 @@ void ConsumeSiglusLookupCaptures() {
         processed_through = seq;
         continue;
       }
-      if (event.reserved != 0) {
+      if (event.kind == kSiglusLookupGlyphEventSelection) {
+        if (!g_siglus_lookup_selection_active) EnterSiglusLookupSelection();
+        if (g_siglus_lookup_selection_pass.Push(
+                static_cast<char16_t>(event.code_unit), event.design_x,
+                event.design_y, event.extent))
+          CommitSiglusLookupSelectionLine();
+      } else if (event.kind == kSiglusLookupGlyphEventBody &&
+                 g_siglus_lookup_selection_active) {
+        // The dialogue caller draws again: the choice rows are gone.
+        LeaveSiglusLookupSelection();
+      }
+      if (event.kind == kSiglusLookupGlyphEventInvalidation) {
         fushi_voice_hook::ResetSiglusLookupLayout(&g_siglus_lookup_layout);
         fushi_voice_hook::ClearSiglusLookupGlyphCapture(&g_siglus_lookup_glyph_captures);
         InvalidateSiglusLookupClickTarget();
@@ -358,7 +446,10 @@ bool PublishSiglusLookupHit(const SiglusLookupPayload &payload) {
   publication.flags = fushi_voice_hook::kLookupHitFlagSubmit;
   publication.line_utf8 = reinterpret_cast<const uint8_t *>(utf8);
   publication.line_bytes = static_cast<uint32_t>(bytes);
-  return fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication);
+  if (!fushi_voice_hook::g_geometry_provider_registry.PublishHit(g_header, publication))
+    return false;
+  g_siglus_lookup_term_generation = payload.geometry_generation;
+  return true;
 }
 
 bool IsSiglusLookupPayloadEligible(const SiglusLookupPayload &payload,

@@ -168,6 +168,7 @@ import 'package:fushi/src/media/video/video_thumbnail_preview_controller.dart';
 import 'package:fushi/src/media/video/video_thumbnail_preview_overlay.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';

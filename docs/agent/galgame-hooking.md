@@ -10,6 +10,9 @@
 - 合仓的依据：迁出独立仓库的真正根因是「主仓库那份 workflow 不在默认分支、无法 workflow_dispatch」，合仓后 workflow 就在 develop 上，问题消失；而「必被杀软报毒」经实测证伪（Defender 签名 1.455.357.0 对全部文件与 zip 零检出，同轮 EICAR 阳性对照正常报出，见 hibiki-hook#8）。国产杀软未验证，若被拦按误报处理。
 - 消费端（IPC 消费、文本与音频配对、制卡 UI）与 native 采集实现现在同仓，**改 IPC 契约必须两侧在同一个 PR 里落地**——这正是合仓要消除的版本不同步。引擎支持矩阵唯一真相源是 `native/galgame_hook/docs/engine-support.md`（由同目录 `engine-support.yaml` 自动生成），不得另存副本。
 - 一引擎一任务、一独立 worktree；批量引擎任务只负责排队和汇总，不在同一实现任务里交叉试错。worktree 先运行 `tool/setup_worktree.ps1`，并按根 `CLAUDE.md` 登记 ownership。
+- **适配成功 = 四条同时满足**（根 `CLAUDE.md`「Galgame Hook 硬规则」）：文本 hook、对应语音（非纯 Loopback）、游戏内内嵌查词、点击内嵌查词不会推进游戏进度；缺一条只算部分适配，汇报时逐条给证据。
+- 引擎适配的排期（玩家多 → 小众）与完成度看板见 [docs/specs/2026-09-26-galgame-engine-adaptation-roadmap.md](../specs/2026-09-26-galgame-engine-adaptation-roadmap.md)。
+- **只做引擎级适配**（根 `CLAUDE.md`「Galgame Hook 硬规则」）：单款游戏的失败要修成所属引擎/引擎变体的通用判据与生命周期，不新增按 exe 哈希、文件名或标题写死的 profile/特判；判据取自引擎结构特征，并用同引擎多版本样本 + 他引擎负向样本验证。
 - 先记录游戏名、版本、exe 架构、启动器与真实游戏进程关系、原始失败路径；没有真实样本证据时只能标记 `implemented_unverified`，不得写成“已支持”。
 - 不收集、提交或上传游戏 exe、脚本、图片、语音、归档密钥等受版权或敏感内容。诊断包也遵守同一边界。
 
@@ -145,6 +148,8 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 - 一次完整“显示台词 → 捕获对应语音 → 截图 → 真卡写入”的结果；
 - 原始逐句资源时的格式、大小/哈希一致性证据；否则明确说明是否含混音；
 - 失败、降级与已知限制，以及证据日期。
+
+四条标准 + 真卡的逐条判定用真机驱动的一条命令完成（`fushi/integration_test/gal_realgame_driver_itest.dart`，启动方式见其文件头）：先 `fakeanki` 把制卡指到 loopback 假 AnkiConnect（不碰用户真实集合），游戏停在一句对白上后 `accept4 <字形屏幕 x> <y> [关卡点 x y]`，输出每条 `ACCEPT4 <项>=PASS|FAIL <证据>` 与末行 `verdict=full|partial missing=…`。`verdict=full` 才能作为「四条 + 真卡」的运行证据写进台账；它不替代身份台账与原始资源哈希一致性。
 
 证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 `native/galgame_hook/engine-support.yaml`，运行生成器更新 `native/galgame_hook/docs/engine-support.md`（唯一真相源，不得另存副本）。状态只能按证据从 `implemented_unverified` 提升为已验证。
 

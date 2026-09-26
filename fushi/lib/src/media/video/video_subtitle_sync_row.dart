@@ -302,8 +302,8 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
             onSubmitted: _delayInput.onSubmitted,
           ),
           // TODO-1051 阶段B / TODO-1207：音频波形对轴入口（有字幕 cue + 可抽波形时才挂）。
-          // 调轴经 onCommitDelay 写回权威 [_delayMs]（同源、零第二套状态）；拿不到波形
-          // （移动端 ffmpeg 无逐帧行）时入口收起，不崩不空白、不显示按钮。
+          // 调轴经 onCommitDelay 写回权威 [_delayMs]（同源、零第二套状态）；五端同一条
+          // 抽取路径（逐帧 RMS 走 ffmpeg 写文件），抽不出波形时入口内联提示、不隐藏。
           if (host.loadSubtitleWaveform != null &&
               host.subtitleWaveformCues.isNotEmpty) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),

@@ -29,14 +29,25 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2488 条。点号进各自文件。
+> 共 2499 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
+| [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
+| [BUG-2713](bugs/BUG-2713-subtitle-season-series.md) | ✅ | ✅ | 在线字幕搜索无视季号按第一季检索，第四季字幕查不到 |
+| [BUG-2712](bugs/BUG-2712-siglus-choice-lookup.md) | ✅ | ✅ | Siglus（CLANNAD）选项画面查词查到上一句、没有查词框、全屏看不到弹窗 |
 | [BUG-2711](bugs/BUG-2711-vn-split-screen-margin-asymmetry.md) | ✅ | ✅ | VN 模式拆屏后左右间距不一致 |
+| [BUG-2710](bugs/BUG-2710-kirikiri-lookup-click-swallowed-after-dismiss.md) | ✅ | ✅ | KiriKiri 游戏内查词关卡后，下一次点字被当作关闭再吞一次 |
 | [BUG-2709](bugs/BUG-2709-dict-online-update-parity.md) | ✅ | ✅ | 词典在线更新：钉版本号的下载地址更新不到新版，旧版导入的词典被判不可更新 |
+| [BUG-2708](bugs/BUG-2708-kirikiri-kagex-textrender-unbound-lookup.md) | ✅ | ✅ | KiriKiri KAGEX 有 TextRender 插件但未绑消息层，游戏内查词采不到字形且点击推进剧情（千恋＊万花） |
 | [BUG-2707](bugs/BUG-2707-dict-update-stale-download-url.md) | ✅ | ✅ | 词典在线更新用本地旧 downloadUrl 下载，更新永不生效 |
+| [BUG-2706](bugs/BUG-2706-gal-thread-memory-restores-dead-thread.md) | ✅ | ✅ | 同一 Fushi 进程二次启动同款游戏时文本线程记忆恢复到上一次的死线程 |
+| [BUG-2705](bugs/BUG-2705-kirikiri-embed-sticky-se-tail.md) | ✅ | ✅ | KiriKiri EmbedKrkrZ 台词被双写并拼上当前循环音效标签（千恋＊万花） |
+| [BUG-2704](bugs/BUG-2704-kirikiri-disc-chs-notice-before-entry.md) | ✅ | ✅ | 千恋＊万花光盘版汉化 exe 在 TLS 回调里弹声明框，Fushi 早注入就绪超时 |
+| [BUG-2703](bugs/BUG-2703-kirikiri-japanese-named-se-as-voice.md) | 🚧 | 🚧 | KiriKiri 日文命名的 SE 被当作语音候选配对（喫茶ステラ） |
+| [BUG-2702](bugs/BUG-2702-kirikiri-encrypted-member-voice-duplicate.md) | ✅ | ✅ | KiriKiri 插件层加密成员的密文被当语音落盘并与真语音拼接（喫茶ステラ） |
+| [BUG-2701](bugs/BUG-2701-kirikiri-tls-callback-early-inject-hang.md) | ✅ | ✅ | 带 TLS 回调的加壳 exe 被早注入卡死（喫茶ステラ 汉化版 Enigma） |
 | [BUG-2700](bugs/BUG-2700-anki-compact-glossaries.md) | ✅ | ✅ | 制卡「紧凑释义」开关不生效 |
 | [BUG-2699](bugs/BUG-2699-system-proxy-stale-cache.md) | ✅ | ✅ | 自动代理模式只在启动时读取系统代理 |
 | [BUG-2698](bugs/BUG-2698-extension-open-in-anki.md) | ✅ | ✅ | 浏览器扩展「在 Anki 中打开」未接通 |

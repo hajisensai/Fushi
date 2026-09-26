@@ -26,8 +26,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 /// **懒探测（TODO-1315）**：波形数据来自 [loadWaveform]（页面经 ffmpeg 抽逐帧音频能量，对
 /// 长视频要数十秒）。**只在用户点击入口时**才调 [loadWaveform]，不在挂载时预跑——进字幕
 /// 设置分类不再被 ffmpeg 抽轨拖卡。放大视图关闭后本地不保留包络引用即释放（页面级
-/// `WaveformEnvelopeCache` 仍留一份供秒开）。点击时探测返回空包络（移动端拿不到逐帧行 /
-/// ffmpeg 不可用）就不弹窗、改在入口副标题内联提示「本设备无法生成波形」，入口仍在、可重试。
+/// `WaveformEnvelopeCache` 仍留一份供秒开）。点击时探测返回空包络（无音轨 /
+/// ffmpeg 不可用 / 超时）就不弹窗、改在入口副标题内联提示「本设备无法生成波形」，入口仍在、可重试。
 ///
 /// **调轴同源、零第二套状态**：放大视图里的所有调轴都经 [onCommitDelay] 写回上方快速
 /// 设置的权威 `_delayMs`，与顶部滑条 / 步进 / 自动对轴完全同一个延迟值。本面板自身不落
@@ -68,7 +68,7 @@ class SubtitleWaveformAlignPanel extends StatefulWidget {
   final int durationMs;
 
   /// 抽音频能量包络（原始逐帧 dB 序列）。由页面提供（经 extractAudioEnergyEnvelope）；
-  /// 返回空列表 = 拿不到波形（移动端降级，入口内联提示不可用、不隐藏）。TODO-1315 起
+  /// 返回空列表 = 拿不到波形（降级态，入口内联提示不可用、不隐藏）。TODO-1315 起
   /// **只在用户点击入口时**才调一次（懒探测），不在挂载时预跑。
   final Future<List<double>> Function() loadWaveform;
 
@@ -128,7 +128,7 @@ class _SubtitleWaveformAlignPanelState
   /// 入口显示 spinner 并防重入。
   bool _probing = false;
 
-  /// 上次点开探测返回空包络（移动端拿不到逐帧行 / ffmpeg 不可用 / 超时的降级态）。true 时
+  /// 上次点开探测返回空包络（无音轨 / ffmpeg 不可用 / 超时的降级态）。true 时
   /// 入口副标题改显「本设备无法生成波形」，不弹放大视图（不崩不空白）；再次点击重试时清零。
   bool _probeUnavailable = false;
 
@@ -1170,13 +1170,25 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
               );
             },
           ),
-        const Spacer(),
+        // 手机竖屏（弹窗内容宽 ~300）放不下完整的「跳到播放头」文字：按钮占住剩余宽度、
+        // 靠右，文字单行省略，而不是把整行撑出 RenderFlex 溢出。宽屏时与 Spacer 等价。
         if (canJump)
-          TextButton.icon(
-            onPressed: _jumpToPlayhead,
-            icon: const Icon(Icons.my_location, size: 18),
-            label: Text(t.video_subtitle_waveform_jump_playhead),
-          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _jumpToPlayhead,
+                icon: const Icon(Icons.my_location, size: 18),
+                label: Text(
+                  t.video_subtitle_waveform_jump_playhead,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          )
+        else
+          const Spacer(),
         IconButton(
           icon: const Icon(Icons.zoom_out),
           tooltip: t.video_subtitle_waveform_zoom_out,

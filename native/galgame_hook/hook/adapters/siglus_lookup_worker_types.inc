@@ -5,13 +5,18 @@ constexpr size_t kSiglusLookupClickEventSlots = 4;
 constexpr size_t kSiglusLookupMaxTextUnits =
     fushi_voice_hook::kSiglusLookupTextCapacity;
 constexpr ULONGLONG kSiglusLookupClickTargetMaxAgeMs = 64;
+// Glyph transport kinds. A selection glyph comes from the choice caller and
+// displaces the dialogue line on screen until the dialogue caller draws again.
+constexpr uint16_t kSiglusLookupGlyphEventBody = 0;
+constexpr uint16_t kSiglusLookupGlyphEventInvalidation = 1;
+constexpr uint16_t kSiglusLookupGlyphEventSelection = 2;
 constexpr ULONGLONG kSiglusLookupDuplicateHitWindowMs = 250;
 
 struct SiglusLookupGlyphEvent {
   volatile LONG64 seq = 0;
   uint64_t occurrence = 0;
   uint16_t code_unit = 0;
-  uint16_t reserved = 0;
+  uint16_t kind = 0;  // kSiglusLookupGlyphEvent*
   int32_t design_x = 0;
   int32_t design_y = 0;
   int32_t extent = 0;

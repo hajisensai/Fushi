@@ -1637,7 +1637,9 @@ LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam) {
       g_swallowed_buttons.fetch_or(bit, std::memory_order_relaxed);
     }
     PostMessage(target, kLowLevelMouseClickMessage,
-                PackMouseHookPoint(info->pt.x, info->pt.y), inside ? 1 : 0);
+                PackMouseHookPoint(info->pt.x, info->pt.y),
+                (inside ? kLowLevelMouseClickInsideBit : 0) |
+                    (consume_click ? kLowLevelMouseClickConsumedBit : 0));
     if (consume_click) {
       // 返回非 0 = 这次 down 不进入游戏的输入队列。窗口线程已经收到
       // 异步 dismiss 消息；这里绝不同步等它，否则又把 Flutter/WebView2 忙闲

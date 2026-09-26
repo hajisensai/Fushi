@@ -35,6 +35,14 @@ struct Signature {
 inline constexpr Signature kDialogueCall{
     "FF 75 28 8B 5D F8 FF 75 E0 FF 75 20 8B 83 AC 01 00 00 FF 75 1C 03 45 E4 51 56 8B 75 F4 8B C8 57 FF 75 F0 6A 00 56 E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? 8B 45 EC 81 45 E4 B4 03 00 00"};
 inline constexpr size_t kDialogueCallOffset = 38u;
+// The choice traversal: one call per character of a selection item (same
+// 0x3b4 glyph stride), reached from the per-item loop. Measured on CLANNAD
+// Steam at runtime: this caller alone lays out 「助ける／腕を振りほどく」 while the
+// dialogue caller above goes silent. Optional: a build without it keeps the
+// dialogue-only behavior.
+inline constexpr Signature kSelectionCall{
+    "8B 43 08 8B 4B 04 03 4D 18 03 45 1C 50 51 FF 75 14 8B 8B 80 00 00 00 FF 75 10 03 CA 56 57 FF 75 F4 6A 00 FF 75 E4 FF 75 E0 E8 ?? ?? ?? ?? 8B 8B 84 00 00 00 B8 71 F8 42 8A 2B 8B 80 00 00 00 FF 45 F0 81 45 F8 B4 03 00 00"};
+inline constexpr size_t kSelectionCallOffset = 41u;
 
 // Start at entry+5: Luna may already own the first five bytes. The original
 // prologue or a validated external E9 is checked separately, never wildcarded.
@@ -209,6 +217,12 @@ inline bool ResolveSiglusFamilyProfile(
   out->get_key_state_return_rva = keyboard + 15u;
   out->input_message_rva = input;
   out->main_input_message_return_rva = main_call + kMainInputCallOffset + 5u;
+  uintptr_t selection = 0u;
+  if (Unique(image, kSelectionCall.pattern(), &selection) &&
+      exact_lookup::MatchesRel32CallEndingAt(
+          image, selection + kSelectionCallOffset + 5u, glyph)) {
+    out->selection_glyph_return_rva = selection + kSelectionCallOffset + 5u;
+  }
   // No executable digest or guessed viewport becomes part of admission.
   return true;
 }

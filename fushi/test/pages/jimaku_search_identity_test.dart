@@ -51,6 +51,7 @@ void main() {
     SubtitleSearchSeed seed = const SubtitleSearchSeed(),
     String initialQuery = 'Re：从零开始的异世界生活 第四季 丧失篇',
     String? videoPath,
+    int? initialSeason,
     List<AniListMedia>? series,
   }) =>
       TranslationProvider(
@@ -64,6 +65,7 @@ void main() {
               subtitleRegistry: () => registry,
               seed: seed,
               videoPath: videoPath,
+              initialSeason: initialSeason,
               httpClientFactory: () async => anilist,
               debugInitialSeriesMatches: series,
             ),
@@ -100,6 +102,119 @@ void main() {
 
   String tempDir(String prefix) =>
       Directory.systemTemp.createTempSync(prefix).path;
+
+  group('BUG-2713 按本集季号挑 AniList 系列', () {
+    // 2026-09-26 实测 AniList 对该番名的原样返回：第一季恒为相关度首条。
+    const List<Map<String, Object?>> reZeroMedia = <Map<String, Object?>>[
+      <String, Object?>{
+        'id': 21355,
+        'title': <String, Object?>{
+          'romaji': 'Re:Zero kara Hajimeru Isekai Seikatsu',
+        },
+      },
+      <String, Object?>{
+        'id': 119661,
+        'title': <String, Object?>{
+          'romaji': 'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season Part 2',
+        },
+      },
+      <String, Object?>{
+        'id': 108632,
+        'title': <String, Object?>{
+          'romaji': 'Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season',
+        },
+      },
+      <String, Object?>{
+        'id': 163134,
+        'title': <String, Object?>{
+          'romaji': 'Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season',
+        },
+      },
+      <String, Object?>{
+        'id': 189046,
+        'title': <String, Object?>{
+          'romaji': 'Re:Zero kara Hajimeru Isekai Seikatsu 4th Season',
+        },
+      },
+    ];
+
+    testWidgets('文件名是 S04E18：按第四季的 AniList id 检索并带上季号', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingSubtitleProvider provider = _RecordingSubtitleProvider();
+      await sized(
+        tester,
+        host(
+          registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+          saveDirectory: tempDir('fushi_season_file'),
+          anilist: anilistClient(media: reZeroMedia),
+          initialQuery: 'Re Zero kara Hajimeru Isekai Seikatsu',
+          initialSeason: 4,
+        ),
+      );
+
+      await search(tester);
+
+      final VideoSubtitleSearchRequest request = provider.requests.single;
+      expect(
+        request.media?.anilistId,
+        189046,
+        reason: '相关度首条是第一季；按它查 Jimaku 只会列出第一季的字幕',
+      );
+      expect(request.effectiveSeason, 4);
+    });
+
+    testWidgets('预填日文原名不带季号：从种子里的合集名读出第四季', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingSubtitleProvider provider = _RecordingSubtitleProvider();
+      await sized(
+        tester,
+        host(
+          registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+          saveDirectory: tempDir('fushi_season_seed'),
+          anilist: anilistClient(media: reZeroMedia),
+          seed: const SubtitleSearchSeed(
+            queries: <String>[
+              'Re:ゼロから始める異世界生活',
+              'Re:ゼロから始める異世界生活 4th season (2026)',
+            ],
+          ),
+          initialQuery: 'Re:ゼロから始める異世界生活',
+        ),
+      );
+
+      await search(tester);
+
+      expect(provider.requests.single.media?.anilistId, 189046);
+    });
+
+    testWidgets('用户改了番名：不拿原视频的季号去套他写的词', (
+      WidgetTester tester,
+    ) async {
+      final _RecordingSubtitleProvider provider = _RecordingSubtitleProvider();
+      await sized(
+        tester,
+        host(
+          registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+          saveDirectory: tempDir('fushi_season_edited'),
+          anilist: anilistClient(media: reZeroMedia),
+          initialQuery: 'Re Zero kara Hajimeru Isekai Seikatsu',
+          initialSeason: 4,
+        ),
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, t.video_jimaku_query),
+        'Re:Zero kara Hajimeru Isekai Seikatsu',
+      );
+
+      await search(tester);
+
+      final VideoSubtitleSearchRequest request = provider.requests.single;
+      expect(request.media?.anilistId, 21355);
+      expect(request.effectiveSeason, isNull);
+    });
+  });
 
   group('BUG-1842 身份优先检索', () {
     testWidgets('刮削存下的 AniList id 直接用于检索，完全不碰 AniList 文本匹配', (
