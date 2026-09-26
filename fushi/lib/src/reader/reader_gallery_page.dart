@@ -15,10 +15,14 @@ import 'package:flutter/services.dart';
 import 'package:fushi_engine/epub/epub_book.dart'
     show EpubImageRef, kEpubCoverChapterIndex;
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart'
+    show TtuTocEntry;
 import 'package:fushi/src/reader/illustration_aspect_probe.dart';
 import 'package:fushi/src/reader/illustration_grid_columns.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/masked_illustration_cover.dart';
+import 'package:fushi/src/reader/ttu_toc_flatten.dart'
+    show resolveTocEntryForImage;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/utils.dart';
 
@@ -52,6 +56,25 @@ class ReaderGalleryVolumeSwitch {
   final void Function(int volume, EpubImageRef ref, File file) onOpenImage;
 }
 
+/// 画廊按目录分节的输入：压平后的目录与当前阅读位置落在的那一条。
+///
+/// 目录是 spine 的稀疏映射：一个 xhtml 可以装好几话（目录靠 `#anchor` 分节），
+/// 连续几张插图页也可以各占一个 xhtml 却同属一话。按 spine 章分节时前者整文件
+/// 的插图都挂在第一话名下，后者拆成好几节同名节。有了它，每张图按
+/// `(章号, EpubImageRef.charOffset)` 落到不晚于它的最后一条目录项
+/// （[resolveTocEntryForImage]，与阅读器顶栏章名同一 floor 口径），相邻同一条的
+/// 图合成一节。[entries] 里的锚点偏移（[TtuTocEntry.anchorCharOffset]）必须已填好，
+/// 否则同一 xhtml 的各条都按章首算，又退回「整文件归第一话」。
+class ReaderGalleryToc {
+  const ReaderGalleryToc({required this.entries, this.currentEntry});
+
+  final List<TtuTocEntry> entries;
+
+  /// 当前阅读位置落在 [entries] 的哪一条；null = 位置早于第一条目录项（或没有
+  /// 阅读位置），此时退回按 spine 章号判当前节。
+  final int? currentEntry;
+}
+
 class ReaderGalleryPage extends StatefulWidget {
   const ReaderGalleryPage({
     super.key,
@@ -66,6 +89,7 @@ class ReaderGalleryPage extends StatefulWidget {
     this.onRevealImage,
     this.onUnrevealImage,
     this.chapterLabelFor,
+    this.toc,
     this.volumeSwitch,
   });
 
@@ -95,6 +119,10 @@ class ReaderGalleryPage extends StatefulWidget {
   /// 章节节头文案（spine 章号 → 章名，通常来自 TOC）。缺省用「第 N 章」。
   final String Function(int chapterIndex)? chapterLabelFor;
 
+  /// 按目录分节（见 [ReaderGalleryToc]）；null = 按 spine 章分节。只作用于当前卷：
+  /// 兄弟卷有自己的目录，这里没有，看兄弟卷时退回按 spine 章分节。
+  final ReaderGalleryToc? toc;
+
   /// 同合集卷切换；null = 单卷，头部不出卷 chip。
   final ReaderGalleryVolumeSwitch? volumeSwitch;
 
@@ -102,10 +130,12 @@ class ReaderGalleryPage extends StatefulWidget {
   State<ReaderGalleryPage> createState() => _ReaderGalleryPageState();
 }
 
-/// 一节 = 同一章的（当前过滤视图下）可见插图。
+/// 一节 = 同一章（给了目录时是同一条目录项）的（当前过滤视图下）可见插图。
 class _GallerySection {
   const _GallerySection({
     required this.chapterIndex,
+    required this.tocEntry,
+    required this.current,
     required this.images,
     required this.offset,
     required this.slots,
@@ -113,7 +143,14 @@ class _GallerySection {
     required this.rowStarts,
   });
 
+  /// 本节第一张图的 spine 章号（节头兜底文案、无目录时的节身份）。
   final int chapterIndex;
+
+  /// 本节归属的目录项下标；null = 按 spine 章分节（没给目录 / 早于第一条目录项）。
+  final int? tocEntry;
+
+  /// 当前阅读位置就落在本节（节头高亮、打开时定位到这里）。
+  final bool current;
   final List<EpubImageRef> images;
 
   /// 节头在滚动轴上的起点（逻辑像素）。
@@ -170,31 +207,29 @@ class _GalleryLayout {
   _GalleryLayout({
     required double gridWidth,
     required List<_ChapterGroup> groups,
-    required int? currentChapter,
+    required bool Function(_ChapterGroup group)? isCurrent,
+    required bool Function(_ChapterGroup group) isAhead,
     required int Function(EpubImageRef ref) spanOf,
   }) : columns = _columnsFor(gridWidth) {
     cellWidth = (gridWidth - (columns - 1) * _kGridSpacing) / columns;
     cellHeight = cellWidth / _kCardAspectRatio;
-    // 当前章自己有插图 → 标记画在它的节头上；没有 → 独立标记条插在
-    // 第一个「晚于当前章」的节之前（全都早于当前章就压在末尾）。
-    // [currentChapter] 为 null（看兄弟卷）时没有「当前阅读位置」可标，不出标记。
+    // 当前节自己有插图 → 标记画在它的节头上；没有 → 独立标记条插在
+    // 第一个「晚于当前位置」的节之前（全都早于当前位置就压在末尾）。
+    // [isCurrent] 为 null（看兄弟卷 / 没有阅读位置）时没有可标的，不出标记。
     final bool needsMarker =
-        currentChapter != null &&
-        groups.isNotEmpty &&
-        !groups.any((_ChapterGroup g) => g.chapterIndex == currentChapter);
+        isCurrent != null && groups.isNotEmpty && !groups.any(isCurrent);
     double cursor = _kTopPadding;
     int? markerBefore;
     final List<_GallerySection> built = <_GallerySection>[];
     for (final _ChapterGroup group in groups) {
-      if (needsMarker &&
-          markerBefore == null &&
-          group.chapterIndex > currentChapter) {
+      if (needsMarker && markerBefore == null && isAhead(group)) {
         markerBefore = built.length;
         markerOffset = cursor;
         cursor += _kMarkerHeight;
       }
       final _GallerySection section = _packSection(
         group,
+        current: isCurrent?.call(group) ?? false,
         offset: cursor,
         columns: columns,
         spanOf: spanOf,
@@ -218,6 +253,7 @@ class _GalleryLayout {
   /// 按阅读顺序把一章的图装进 [columns] 列的网格。
   static _GallerySection _packSection(
     _ChapterGroup group, {
+    required bool current,
     required double offset,
     required int columns,
     required int Function(EpubImageRef ref) spanOf,
@@ -242,6 +278,8 @@ class _GalleryLayout {
     }
     return _GallerySection(
       chapterIndex: group.chapterIndex,
+      tocEntry: group.tocEntry,
+      current: current,
       images: group.images,
       offset: offset,
       slots: slots,
@@ -350,9 +388,20 @@ class _SlotGridLayout extends SliverGridLayout {
 }
 
 class _ChapterGroup {
-  const _ChapterGroup(this.chapterIndex, this.images);
+  const _ChapterGroup(this.chapterIndex, this.tocEntry, this.images);
+
+  /// 第一张图的 spine 章号。
   final int chapterIndex;
+
+  /// 归属的目录项下标；null = 按 spine 章分节。
+  final int? tocEntry;
   final List<EpubImageRef> images;
+
+  /// [ref] 与本组是否同一节：有目录项就比目录项（连续几张各占一个 xhtml 的
+  /// 插图页同属一话，合成一节），没有就比 spine 章号。
+  bool accepts(EpubImageRef ref, int? refTocEntry) => refTocEntry != null
+      ? tocEntry == refTocEntry
+      : tocEntry == null && chapterIndex == ref.chapterIndex;
 }
 
 enum _LockedAction { backToLastSeen, revealAnyway }
@@ -361,6 +410,10 @@ const double _kCardAspectRatio = 0.72;
 const double _kGridSpacing = 12;
 const double _kPagePadding = 16;
 const double _kTopPadding = 8;
+
+/// 顶栏宽度不小于它时过滤分段按钮与标题同行，否则另起一行（Material 的
+/// compact / medium 宽度档分界）。
+const double _kHeaderInlineFilterMinWidth = 600;
 const double _kSectionHeaderHeight = 44;
 const double _kSectionGap = 16;
 const double _kMarkerHeight = 32;
@@ -466,16 +519,61 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   List<EpubImageRef> get _visible => _unlockedOnly ? _unlocked : _images;
 
+  /// 当前生效的目录分节输入：兄弟卷没有它的目录，退回按 spine 章分节。
+  ReaderGalleryToc? get _toc => _peekingSibling ? null : widget.toc;
+
+  /// [ref] 落在哪条目录项上（不晚于它的最后一条，与阅读器顶栏章名同一口径）；
+  /// 没给目录 / 早于第一条目录项 / 未被正文引用的封面时 null。
+  int? _tocEntryOf(EpubImageRef ref) {
+    final ReaderGalleryToc? toc = _toc;
+    if (toc == null || ref.chapterIndex < 0) return null;
+    return resolveTocEntryForImage(toc.entries, ref);
+  }
+
   List<_ChapterGroup> _groupsOf(List<EpubImageRef> refs) {
     final List<_ChapterGroup> groups = <_ChapterGroup>[];
     for (final EpubImageRef ref in refs) {
-      if (groups.isNotEmpty && groups.last.chapterIndex == ref.chapterIndex) {
+      final int? entry = _tocEntryOf(ref);
+      if (groups.isNotEmpty && groups.last.accepts(ref, entry)) {
         groups.last.images.add(ref);
       } else {
-        groups.add(_ChapterGroup(ref.chapterIndex, <EpubImageRef>[ref]));
+        groups.add(_ChapterGroup(ref.chapterIndex, entry, <EpubImageRef>[ref]));
       }
     }
     return groups;
+  }
+
+  /// 当前阅读位置是否落在 [group] 这一节。有目录项可比就比目录项；阅读位置
+  /// 早于第一条目录项（或没给目录）时比 spine 章号，只认同样没有目录项的节。
+  bool _isCurrentGroup(_ChapterGroup group) {
+    final int? current = _toc?.currentEntry;
+    if (current != null) return group.tocEntry == current;
+    return group.tocEntry == null &&
+        group.chapterIndex == widget.currentChapter;
+  }
+
+  /// [group] 是否整节都在当前阅读位置之后（「当前阅读位置」标记条插在第一个
+  /// 这样的节之前）。
+  bool _isAheadGroup(_ChapterGroup group) {
+    final int? current = _toc?.currentEntry;
+    if (current != null) {
+      final int? entry = group.tocEntry;
+      return entry != null && entry > current;
+    }
+    final int currentChapter = widget.currentChapter ?? 0;
+    // 阅读位置早于第一条目录项：凡是已经归到某条目录项的节都在它之后。
+    return group.chapterIndex > currentChapter ||
+        (group.chapterIndex == currentChapter && group.tocEntry != null);
+  }
+
+  /// 节头 / 查看器 / 锁定提示里这张图所在节的名字。
+  String _sectionLabelOf(EpubImageRef ref) =>
+      _labelFor(_tocEntryOf(ref), ref.chapterIndex);
+
+  String _labelFor(int? tocEntry, int chapterIndex) {
+    final ReaderGalleryToc? toc = _toc;
+    if (toc != null && tocEntry != null) return toc.entries[tocEntry].label;
+    return _chapterLabel(chapterIndex);
   }
 
   String _chapterLabel(int chapterIndex) {
@@ -581,7 +679,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     final _GalleryLayout? layout = _layout;
     if (layout == null || !_hasReadingPosition) return null;
     for (final _GallerySection section in layout.sections) {
-      if (section.chapterIndex == widget.currentChapter) return section.offset;
+      if (section.current) return section.offset;
     }
     return layout.markerOffset;
   }
@@ -749,7 +847,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     await adaptiveModalSheet<void>(
       context: context,
       builder: (BuildContext sheetContext) => FushiModalSheetFrame(
-        title: _chapterLabel(ref.chapterIndex),
+        title: _sectionLabelOf(ref),
         subtitle: locked ? _lockedHint(ref) : null,
         leadingIcon: Icons.image_outlined,
         body: Column(
@@ -805,9 +903,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
   }
 
   String _lockedHint(EpubImageRef ref) => _unreadAhead(ref)
-      ? t.reader_gallery_locked_unlock_hint(
-          chapter: _chapterLabel(ref.chapterIndex),
-        )
+      ? t.reader_gallery_locked_unlock_hint(chapter: _sectionLabelOf(ref))
       : t.reader_gallery_locked_blur_hint;
 
   /// 「跳到此插图」：兄弟卷 = 切书 + 跳章（带卷号），当前卷走页面自己的回调。
@@ -1060,75 +1156,101 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
 
   Widget _buildHeader(FushiDesignTokens tokens, int unlockedCount) {
     final ThemeData theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
-      child: Row(
-        children: <Widget>[
-          // 标题 + 计数让位给右侧控件：窄窗先截计数，不让整行溢出。
-          Expanded(
-            child: Row(
-              children: <Widget>[
-                Text(
-                  t.reader_gallery_title,
-                  style: theme.textTheme.titleMedium,
-                ),
-                const SizedBox(width: 12),
-                Flexible(
-                  child: Text(
-                    t.reader_gallery_unlocked_count(
-                      unlocked: unlockedCount,
-                      total: _images.length,
-                    ),
-                    key: const ValueKey<String>('fushi_gallery_count'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: tokens.type.metadata,
-                  ),
-                ),
-              ],
-            ),
+    // 兄弟卷全视为已解锁、也没有当前阅读位置：过滤与定位两个控件对它无意义。
+    final bool showControls = _images.isNotEmpty && !_peekingSibling;
+    // 标题与计数上下叠放，横向只占两者中较宽的一个：同一行里还要放过滤分段
+    // 按钮和两个图标按钮，并排时 iPhone 竖屏（390pt）上计数被挤成 0 宽、
+    // 英文等长文案整行溢出。
+    final Widget titleBlock = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          t.reader_gallery_title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleMedium,
+        ),
+        Text(
+          t.reader_gallery_unlocked_count(
+            unlocked: unlockedCount,
+            total: _images.length,
           ),
-          // 兄弟卷全视为已解锁、也没有当前阅读位置：过滤与定位两个控件对它无意义。
-          if (_images.isNotEmpty && !_peekingSibling) ...<Widget>[
-            SegmentedButton<bool>(
-              key: const ValueKey<String>('fushi_gallery_filter'),
-              showSelectedIcon: false,
-              segments: <ButtonSegment<bool>>[
-                ButtonSegment<bool>(
-                  value: true,
-                  label: Text(t.reader_gallery_filter_unlocked),
-                ),
-                ButtonSegment<bool>(
-                  value: false,
-                  label: Text(t.reader_gallery_filter_all),
-                ),
-              ],
-              selected: <bool>{_unlockedOnly},
-              onSelectionChanged: (Set<bool> selection) {
-                setState(() => _unlockedOnly = selection.single);
-              },
-            ),
-            const SizedBox(width: 8),
-            // 没有阅读位置（书架端打开没读过的书）就没有可定位的地方。
-            if (_hasReadingPosition)
-              IconButton(
-                key: const ValueKey<String>('fushi_gallery_position'),
-                tooltip: t.reader_gallery_position_jump,
-                icon: const Icon(Icons.my_location_outlined),
-                onPressed: () => _scrollToCurrentPosition(animate: true),
-              ),
-          ],
-          Semantics(
-            identifier: 'hibiki.reader.gallery.close',
-            child: IconButton(
-              key: const ValueKey<String>('fushi_gallery_close'),
-              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.of(context).maybePop(),
-            ),
-          ),
-        ],
+          key: const ValueKey<String>('fushi_gallery_count'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: tokens.type.metadata,
+        ),
+      ],
+    );
+    final Widget filter = SegmentedButton<bool>(
+      key: const ValueKey<String>('fushi_gallery_filter'),
+      showSelectedIcon: false,
+      segments: <ButtonSegment<bool>>[
+        ButtonSegment<bool>(
+          value: true,
+          label: Text(t.reader_gallery_filter_unlocked),
+        ),
+        ButtonSegment<bool>(
+          value: false,
+          label: Text(t.reader_gallery_filter_all),
+        ),
+      ],
+      selected: <bool>{_unlockedOnly},
+      onSelectionChanged: (Set<bool> selection) {
+        setState(() => _unlockedOnly = selection.single);
+      },
+    );
+    final List<Widget> actions = <Widget>[
+      // 没有阅读位置（书架端打开没读过的书）就没有可定位的地方。
+      if (showControls && _hasReadingPosition)
+        IconButton(
+          key: const ValueKey<String>('fushi_gallery_position'),
+          tooltip: t.reader_gallery_position_jump,
+          icon: const Icon(Icons.my_location_outlined),
+          onPressed: () => _scrollToCurrentPosition(animate: true),
+        ),
+      Semantics(
+        identifier: 'hibiki.reader.gallery.close',
+        child: IconButton(
+          key: const ValueKey<String>('fushi_gallery_close'),
+          tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
       ),
+    ];
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        // 窄窗（手机竖屏 / 桌面窄窗，Material compact 宽度档）把过滤按钮挪到
+        // 第二行：一行放不下标题、计数、分段按钮和两个图标按钮。
+        final bool inlineFilter =
+            constraints.maxWidth >= _kHeaderInlineFilterMinWidth;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 8, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Expanded(child: titleBlock),
+                  if (showControls && inlineFilter) ...<Widget>[
+                    filter,
+                    const SizedBox(width: 8),
+                  ],
+                  ...actions,
+                ],
+              ),
+              if (showControls && !inlineFilter)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, right: 12),
+                  child: filter,
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1201,7 +1323,8 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
         final _GalleryLayout layout = _GalleryLayout(
           gridWidth: math.max(1, constraints.maxWidth - _kPagePadding * 2),
           groups: _groupsOf(visible),
-          currentChapter: _hasReadingPosition ? widget.currentChapter : null,
+          isCurrent: _hasReadingPosition ? _isCurrentGroup : null,
+          isAhead: _isAheadGroup,
           spanOf: _spanOf,
         );
         _layout = layout;
@@ -1240,7 +1363,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           padding: const EdgeInsets.symmetric(horizontal: _kPagePadding),
           child: Row(
             children: <Widget>[
-              _PositionBadge(tokens: tokens),
+              Flexible(child: _PositionBadge(tokens: tokens)),
               const SizedBox(width: 8),
               Expanded(
                 child: Divider(color: tokens.surfaces.primary, thickness: 1),
@@ -1257,10 +1380,14 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
     _GallerySection section,
   ) {
     final ThemeData theme = Theme.of(context);
-    final bool current =
-        !_peekingSibling && section.chapterIndex == widget.currentChapter;
+    final bool current = section.current;
+    final int? tocEntry = section.tocEntry;
     return SliverToBoxAdapter(
-      key: ValueKey<String>('fushi_gallery_section_${section.chapterIndex}'),
+      key: ValueKey<String>(
+        tocEntry != null
+            ? 'fushi_gallery_section_toc_$tocEntry'
+            : 'fushi_gallery_section_${section.chapterIndex}',
+      ),
       child: SizedBox(
         height: _kSectionHeaderHeight,
         child: Padding(
@@ -1269,7 +1396,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
             children: <Widget>[
               Flexible(
                 child: Text(
-                  _chapterLabel(section.chapterIndex).toUpperCase(),
+                  _labelFor(tocEntry, section.chapterIndex).toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
@@ -1291,7 +1418,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
               ),
               if (current) ...<Widget>[
                 const SizedBox(width: 8),
-                _PositionBadge(tokens: tokens),
+                Flexible(child: _PositionBadge(tokens: tokens)),
               ],
             ],
           ),
@@ -1414,7 +1541,7 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
                   const SizedBox(width: 12),
                   Flexible(
                     child: Text(
-                      _chapterLabel(current.chapterIndex),
+                      _sectionLabelOf(current),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: tokens.type.metadata,
@@ -1532,11 +1659,16 @@ class _PositionBadge extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(
-          t.reader_gallery_position_current,
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: tokens.surfaces.primary,
-            fontWeight: FontWeight.w600,
+        // 节头行里与章名、分隔线共用一行：窄屏 / 长章名时省略而不是溢出。
+        Flexible(
+          child: Text(
+            t.reader_gallery_position_current,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: tokens.surfaces.primary,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

@@ -1,0 +1,17 @@
+## BUG-2722 · 插图册按 spine 章分节：同文件多话的插图归错话、连续插图页拆成多个同名节
+- **报告**：2026-09-27（用户：小说插画章节位置有问题，有的图片在第 7 话却显示在第 5 话；都是「鎧」却分开了多个「鎧」。样本《無職転生 ～異世界行ったら本気だす～ 25 (MFブックス)》）
+- **真实性**：✅ 真 bug。样本书结构：`part0008.html` 装第一～四話、`part0009.html` 装第五～九話（目录靠 `#id-a00x` 分节），`part0011`～`part0017` 是七个各只有一张横版插图、不进目录的插图页。
+  - `fushi/lib/src/reader/reader_gallery_page.dart` 的 `_groupsOf` 按 `EpubImageRef.chapterIndex`（spine 章）分节，节名走 `chapterLabelFor(chapterIndex)` → `resolveCurrentTocEntry(toc, chapterIndex, null)`：偏移未知取该章**第一条**目录项，于是 part0009 的四张插图全标「第五話」（实际在第五 / 六 / 八 / 九話）。
+  - 书架端 `fushi/lib/src/pages/implementations/illustrations_viewer_page.dart` 压平目录时**没传 `anchorCharOffset`**，同一 xhtml 的各条全按章首 0 算、并列取先出现的一条；part0011～0017 floor 到 part0010 时命中「間話『鎧』」而不是位置上真正在前面的「間話『僕は英雄になりたかった』」。
+  - 七个插图页各是一个 spine 章 → 七个节，节名相同 → 「好几个『鎧』」。
+  - `EpubImageRef` 只存了 0~10000 的 `normCharOffset`，原始字符数被丢掉，无法与锚点偏移比较。
+- **[x] ① 已修复** — `0858ef3918c`。
+  - `packages/fushi_engine/lib/epub/epub_book.dart`：`EpubImageRef` 新增 `charOffset`（章内原始字符数，与 `chapterAnchorCharOffsets` 同一 `countStudyChars` 口径）与 `leadingAnchorIds`（同一字符位置上先于图片打开的元素 id）。后者解决平局：`…正文<img/><h2 id="a7">`（图收尾上一话）与 `<div id="a7"><img/><h2>`（图开启 a7）字符偏移相同，只能靠文档顺序分。
+  - `fushi/lib/src/reader/ttu_toc_flatten.dart`：纯函数 `resolveTocEntryForImage`，与 `resolveCurrentTocEntry` 同一 floor 口径 + 上述平局规则。
+  - `reader_gallery_page.dart`：新参数 `ReaderGalleryToc`（目录 + 当前目录项）；相邻同一目录项的图合成一节；当前节高亮、「当前阅读位置」标记条、打开时自动定位、节头 / 单图查看器 / 锁定提示里的节名全部改按目录项。不给目录（或看兄弟卷）时行为不变。
+  - 阅读器 `reader_fushi/chrome.part.dart` 传 `_buildTtuToc()` 与按 `_tocCharOffsetFor` 解出的当前目录项；书架端在 isolate 里跑 `computeTocAnchorCharOffsets` 补上锚点偏移，当前目录项用 `ReaderPosition.charOffset` 解。
+  - 真书复核（解析 `D:\文档\fushi_books\…25 (MFブックス)`，走书架端同一链路）：part0008 三张由「第二十五章」→ 第二 / 三 / 四話；part0009 四张由全「第五話」→ 第五 / 六 / 八 / 九話；part0011～0017 七张由七节「間話『鎧』」→ 一节「間話『僕は英雄になりたかった』」（按位置它们在这一话之后，与阅读器顶栏读到那几页时的章名一致）。
+- **[x] ② 已加自动化测试** — `0858ef3918c`，`fushi/test/reader/reader_gallery_toc_sections_bug2722_test.dart`：按样本书结构造书、走 `computeTocAnchorCharOffsets → flattenTtuTocEntries` 同一链路后真渲染画廊，断言节序列只有 4 节、各卡片落在对应节头之下、插图页合成一节、单图查看器顶栏章名、当前节徽标与「当前话无插图」时标记条的位置；平局两种写法（收尾 / 开启）的纯函数用例；锚点偏移未知时保持章首语义。
+- **备注**：
+  - 未在真机 UI 上目测，结论来自真书解析探针 + widget 测试。
+  - 早于第一条目录项的口绘（样本书 part0000～0005）仍按 spine 章各成一节（「第 N 章」），与修复前相同；外字图（`class="gaiji"`）仍进插图册。均不在本次范围。
