@@ -62,7 +62,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     void Function(int done, int total)? onProgress,
   }) async {
     final VideoMineQueue queue = await _videoMineQueue();
-    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    // 跨了 async gap：页面可能已经关了，不能再 `ref.read`（见 [_providerContainer]）。
+    final BaseAnkiRepository repo =
+        _providerContainer.read(ankiRepositoryProvider);
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: widget.bookUid,
       repo: repo,
@@ -75,7 +77,8 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   /// 打开待制卡列表。
   Future<void> _openVideoMineQueue() async {
     final VideoMineQueue queue = await _videoMineQueue();
-    if (!context.mounted) return;
+    // State 的 `mounted`：unmount 之后连取 `context` 都会抛。
+    if (!mounted) return;
     final VideoMineCommitSummary? summary = await showVideoMineQueueDialog(
       context: context,
       queue: queue,
@@ -100,24 +103,26 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
 
   /// 离开播放页 = 看完了：等在途的暂存任务收尾，再把本视频的待制卡统一写入。
   ///
-  /// 在 [dispose] 里、`ref` 还能用时取好 Anki 后端与队列根，后面的异步链不再碰本页
-  /// 状态；结果由 [commitStagedVideoMinesAfterExit] 报（OSD 随页面没了）。什么都没有就
-  /// 什么都不做。
+  /// 在 [dispose] 里调用：此时 element 已经 deactivated，**不能** `ref.read`（见
+  /// [_providerContainer]），Anki 后端从 [didChangeDependencies] 抓住的 container 读；
+  /// 后面的异步链不再碰本页状态，结果由 [commitStagedVideoMinesAfterExit] 报（OSD 随
+  /// 页面没了）。什么都没有就什么都不做。
   void _flushStagedMinesOnExit() {
     final List<Future<void>> inFlight =
         List<Future<void>>.of(_backgroundMineJobs);
     if (_stagedMineCount.value == 0 && inFlight.isEmpty) return;
     final String bookUid = widget.bookUid;
     final BaseAnkiRepository repo;
-    final Future<VideoMineQueue> queueFuture;
     try {
-      repo = ref.read(ankiRepositoryProvider);
-      queueFuture = _videoMineQueue();
-    } catch (_) {
+      repo = _providerContainer.read(ankiRepositoryProvider);
+    } catch (error, stack) {
+      // 不静默：这里失败 = 这批待制卡本次没写（行还在，下次进页可写）。dispose 不能
+      // 因此中断，所以记日志后返回。
+      ErrorLogService.instance.log('mineVideoCard.flushStaged', error, stack);
       return;
     }
     commitStagedVideoMinesAfterExit(
-      queue: queueFuture,
+      queue: _videoMineQueue(),
       bookUid: bookUid,
       repo: repo,
       inFlight: inFlight,

@@ -1064,16 +1064,38 @@ class VideoPlayerController extends ChangeNotifier
           await (player.platform as dynamic)
               .command(mpvDumpCacheCommand(plan, outputPath));
         } catch (_) {
+          // dump 中途失败可能留下半截文件：调用方拿到 null 不会再管这个路径。
+          _deleteSnapshotFile(outputPath);
           return null;
         }
-        if (!_isCurrentLoad(player, loadToken)) return null;
+        // 落盘成功但等待期间换了集 / 空文件：这份副本不会交给任何人，就地删掉，
+        // 不在临时目录里越攒越多。
+        if (!_isCurrentLoad(player, loadToken)) {
+          _deleteSnapshotFile(outputPath);
+          return null;
+        }
         final File out = File(outputPath);
-        if (!out.existsSync() || out.lengthSync() == 0) return null;
+        if (!out.existsSync()) return null;
+        if (out.lengthSync() == 0) {
+          _deleteSnapshotFile(outputPath);
+          return null;
+        }
         return CachedMediaSnapshot(path: outputPath, zeroMs: plan.zeroMs);
       }
       if (!decision.waitForTail || waited.elapsed >= tailWait) return null;
       await Future<void>.delayed(const Duration(milliseconds: 250));
       if (!_isCurrentLoad(player, loadToken)) return null;
+    }
+  }
+
+  /// 删掉一份不再交出去的缓冲副本。删不掉（被占用 / 已不在）不影响制卡：调用方
+  /// 已经拿到 null、会回到远端抽取；这里只是不留垃圾。
+  static void _deleteSnapshotFile(String path) {
+    try {
+      final File file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException catch (e) {
+      debugPrint('[video] cached snapshot cleanup failed: $path: $e');
     }
   }
 

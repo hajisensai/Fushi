@@ -1459,6 +1459,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 在途的后台制卡任务。离开页面时先等它们暂存完，再统一写入。
   final List<Future<void>> _backgroundMineJobs = <Future<void>>[];
 
+  /// 本页所在的 [ProviderContainer]，在 [didChangeDependencies]（element 仍 active）
+  /// 时抓住。**不能**在 [dispose] 里或跨 async gap 之后 `ref.read`：那时 element 已经
+  /// deactivated，debug 抛「Looking up a deactivated widget's ancestor is unsafe」、
+  /// release 抛「No ProviderScope found」（与 BUG-513、`opds_server_settings_section`
+  /// 同一类）。退出时写入「看完再制卡」列表恰恰只在 dispose 里跑，用 `ref` 就必然
+  /// 失败、一张卡都写不进去。container 本身活得比页面久，dispose 时从它读到的是当时的
+  /// Anki 后端（切了「制卡发到主机」也跟得上）。
+  late ProviderContainer _providerContainer;
+
   /// 自动连播倒计时剩余秒数（TODO-639）。null=没有倒计时；非空时画面右下角显示
   /// 「N 秒后播放下一集 · 取消」可点 overlay，归零后进下一集。与 [_osdNotifier] 分开：
   /// 这个 overlay 必须可点（取消按钮），不能套 [IgnorePointer]。
@@ -1710,6 +1719,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _providerContainer = ProviderScope.containerOf(context, listen: false);
     final SourceReviewSession? session =
         widget.sourceReviewSession ?? SourceReviewScope.maybeOf(context);
     if (identical(session, _sourceReviewSession)) return;

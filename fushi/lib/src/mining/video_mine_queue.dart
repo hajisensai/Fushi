@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -111,11 +112,47 @@ class VideoMineQueue {
   /// 每张：用暂存的媒体组 context → [BaseAnkiRepository.mineEntry] → 成功记统计与制卡
   /// 历史、删暂存；失败标 failed 留着（下次可重试），原因写进行里。暂存媒体丢了的行
   /// 同样标 failed——没有媒体就不建空壳卡（与引擎「无音频中止」同一纪律）。
+  ///
+  /// 同一 [bookUid] 的写入在进程内**串行**：列表弹窗的「全部写入」与退出页面时的
+  /// 后台写入可能同时触发，两边若各自读到同一批 pending 行，就会把同一张卡写两遍，
+  /// 或者后跑的一边把先跑那边已成功的行又标成 failed（重复）。第二个调用排在第一个
+  /// 之后，等它写完再读 pending 行——那时已写完的行不在 pending 里了。锁是静态的：
+  /// 调用方每次都新建 [VideoMineQueue]，锁必须跨实例。
   Future<VideoMineCommitSummary> commitAll({
     required String bookUid,
     required BaseAnkiRepository repo,
     void Function(int done, int total)? onProgress,
     DateTime Function() now = DateTime.now,
+  }) async {
+    final Future<void>? previous = _commitChains[bookUid];
+    final Completer<void> done = Completer<void>();
+    _commitChains[bookUid] = done.future;
+    try {
+      if (previous != null) await previous;
+      return await _commitAllLocked(
+        bookUid: bookUid,
+        repo: repo,
+        onProgress: onProgress,
+        now: now,
+      );
+    } finally {
+      done.complete();
+      if (identical(_commitChains[bookUid], done.future)) {
+        _commitChains.remove(bookUid);
+      }
+    }
+  }
+
+  /// 按 bookUid 串起来的 [commitAll] 链尾（完成 = 该作品当前没有写入在跑）。只会
+  /// 正常完成，不带错误：链上某次写入抛错不能把后面排队的写入一起拖垮。
+  static final Map<String, Future<void>> _commitChains =
+      <String, Future<void>>{};
+
+  Future<VideoMineCommitSummary> _commitAllLocked({
+    required String bookUid,
+    required BaseAnkiRepository repo,
+    void Function(int done, int total)? onProgress,
+    required DateTime Function() now,
   }) async {
     await _store.requeueFailed(bookUid);
     final List<WebMineQueueRow> rows = await _store.pending(bookUid);

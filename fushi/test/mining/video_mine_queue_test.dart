@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -27,6 +28,25 @@ class _Repo implements BaseAnkiRepository {
       expect(File(context.sentenceAudioPath!).existsSync(), isTrue);
     }
     return outcomes.removeAt(0);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
+}
+
+/// 每次写入都先让出事件循环（模拟 AnkiConnect 往返），恒成功；记下写入了哪些词。
+class _SlowRepo implements BaseAnkiRepository {
+  final List<String> expressions = <String>[];
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    final Object? fields = jsonDecode(rawPayloadJson);
+    expressions.add((fields! as Map<String, Object?>)['expression']! as String);
+    return MineOutcome.success(noteId: expressions.length);
   }
 
   @override
@@ -154,6 +174,50 @@ void main() {
     );
     expect(retry.succeeded, 1);
     expect(await queue.failed('remote/emby/1'), isEmpty);
+  });
+
+  test('同一作品并发两次全部写入：串行执行，每张卡只写一次', () async {
+    await stageOne('走る');
+    await stageOne('跳ぶ');
+    // 每次写入都让出事件循环：没有互斥时，两次 commitAll 会各自读到同一批 pending
+    // 行，把每张卡写两遍。
+    final _SlowRepo repo = _SlowRepo();
+    final List<VideoMineCommitSummary> summaries = await Future.wait(
+      <Future<VideoMineCommitSummary>>[
+        queue.commitAll(bookUid: 'remote/emby/1', repo: repo),
+        // 调用方每次都新建 VideoMineQueue（弹窗写入 vs 退出写入），锁必须跨实例。
+        VideoMineQueue(
+          db: db,
+          root: Directory('${tmp.path}/${VideoMineQueue.dirName}'),
+        ).commitAll(bookUid: 'remote/emby/1', repo: repo),
+      ],
+    );
+    expect(repo.expressions, <String>['走る', '跳ぶ']);
+    expect(summaries[0].succeeded, 2);
+    expect(summaries[0].failed, 0);
+    // 第二次排在第一次之后，读到的 pending 已经空了：既不重写，也不把成功行标失败。
+    expect(summaries[1].succeeded, 0);
+    expect(summaries[1].failed, 0);
+    expect(await queue.pending('remote/emby/1'), isEmpty);
+    expect(await queue.failed('remote/emby/1'), isEmpty);
+    expect(await db.select(db.minedSentences).get(), hasLength(2));
+  });
+
+  test('前一次写入抛错不拖垮排在后面的写入', () async {
+    await stageOne('走る');
+    final Future<VideoMineCommitSummary> first = queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: _SlowRepo(),
+      now: () => throw StateError('boom'),
+    );
+    final Future<VideoMineCommitSummary> second = queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: _SlowRepo(),
+    );
+    await expectLater(first, throwsStateError);
+    final VideoMineCommitSummary summary = await second;
+    // 第一次在记账前抛出：行没标 done，第二次照常把它写掉。
+    expect(summary.succeeded, 1);
   });
 
   test('暂存媒体丢了：不建空壳卡，标失败', () async {
