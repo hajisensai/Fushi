@@ -844,6 +844,12 @@ class EpubChapter {
     return _lazyHtml ??= _readChapterFile(_filePath);
   }
 
+  /// 章节文件在盘上被换掉后（在线小说按需取章：占位页 → 正文）丢掉已读入的
+  /// 正文，下次访问 [html] 重新读盘。eager 章节没有盘上文件，不受影响。
+  void discardCachedHtml() {
+    _lazyHtml = null;
+  }
+
   static String _readChapterFile(String? filePath) {
     if (filePath == null) return '';
     final File file = File(filePath);

@@ -87,7 +87,6 @@ function makeSandbox(hiddenNames) {
     dictionaryStyles: {},
     hiddenDictionaryNames: hiddenNames || [],
     collapsedDictionaryNames: [],
-    compactGlossariesAnki: false,
     flutter_inappwebview: { callHandler() { return Promise.resolve(false); } },
     getSelection() { return { toString() { return ''; } }; },
   };

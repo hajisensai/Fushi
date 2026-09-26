@@ -638,6 +638,9 @@ class AnkiMobileRepository extends BaseAnkiRepository {
           : sentenceAudioUrl,
     );
 
+    // issue #1432：「紧凑释义」开关只在这里落地——payload 进 handlebar 渲染前给
+    // 释义 HTML 注入紧凑样式；关闭时三份释义原样透传，输出逐字节不变。
+    final bool compactGlossaries = settings.compactGlossaries;
     final mediaPayload = AnkiMiningPayload(
       expression: payload.expression,
       reading: payload.reading,
@@ -645,9 +648,18 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       furiganaPlain: payload.furiganaPlain,
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
-      glossary: payload.glossary,
-      glossaryFirst: payload.glossaryFirst,
-      singleGlossaries: payload.singleGlossaries,
+      glossary: compactAnkiGlossaryHtml(
+        payload.glossary,
+        enabled: compactGlossaries,
+      ),
+      glossaryFirst: compactAnkiGlossaryHtml(
+        payload.glossaryFirst,
+        enabled: compactGlossaries,
+      ),
+      singleGlossaries: compactAnkiGlossaryMap(
+        payload.singleGlossaries,
+        enabled: compactGlossaries,
+      ),
       pitchPositions: payload.pitchPositions,
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,

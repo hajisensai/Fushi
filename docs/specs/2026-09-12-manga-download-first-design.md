@@ -7,7 +7,16 @@
 
 ## 1. 决策（不再讨论）
 
-1. **在线漫画（Mihon / Aidoku / 互联对端）强制下载后才能看**。点章节即入队下载，下载完成才可读。在线直读、阅读期页图缓存（`reader-cache/`）、在线懒 OCR 整条删除。
+> **2026-09-26 补记：用户撤回 §1.1，恢复在线直读，与下载并存。**
+>
+> - 作品页点未下载的章 / 「继续阅读」落到未下载的章 → 直接开阅读器在线读；阅读器内换章（翻过章尾 / 章节侧栏）到未下载的章同样在线读。已下载的章照旧从章目录读（判据仍只问 `isChapterDownloaded`）。
+> - 页经适配器两段式契约（`resolveChapterPages` + `fetchChapterPage`，Mihon 仍只走扩展自己的客户端）由 `OnlineMangaReaderSession`（`fushi/lib/src/media/manga/mihon/online_manga_reader_session.dart`）懒取：同页请求合并、3 并发、前台插队、前后各预取 2 页；字节落在 app 临时目录 `manga_stream_cache/<sha(bookKey)>/<sha(chapterKey)>-<n>/`，**不进**章下载目录（「已下载」判据与下载 worker 续跑不受影响），会话关闭即删，崩溃残留在下次打开时清。
+> - 直读失败（源不可用 / 页表为空 / 落点页取不到）才退回既有「本章未下载」态（入队 / 换章），并 toast 错误。
+> - 锁章（源标了登录 / 购买）点开照旧先弹锁章框，出口不变（仍然下载 / 登录）。
+> - **§1.2 / §1.3 不变**：在线直读章在阅读器内不触发、不接回任何 OCR（进入即识别、手动识别、重跑、缓存恢复全部跳过）；OCR 仍只对下载完成的章在阅读器外起。下载菜单、队列、下载全部、自动下载订阅全部不变。mokuro.moe 卷仍是整卷 CBZ 下载，不做直读。
+> - §3 里「三个 `OnlineMangaReaderChapter` 实现与在线 `MangaReaderSession` 全部删除」与 §7「不做边下边读」相应失效：`MangaReaderSession` 现有本地 / 在线两个实现。
+
+1. ~~**在线漫画（Mihon / Aidoku / 互联对端）强制下载后才能看**~~（2026-09-26 撤回，见上方补记）。点章节即入队下载，下载完成才可读。在线直读、阅读期页图缓存（`reader-cache/`）、在线懒 OCR 整条删除。
 2. **阅读器内不触发任何 OCR**。顶栏整卷按钮、点击即识别、手动框选重识别（含撤销）全部移除。阅读器只保留：观察外部已启动任务的进度 HUD、逐页热替换、取消按钮。
 3. **OCR 只在阅读器外触发**：作品页「识别本章 / 识别全部已下载」、书架本地漫画长按「整卷 OCR」、下载完成钩子「完成后自动识别」。任务一律经 `MangaOcrJobRegistry.start`（BUG-2449），阅读器按 bookKey + 目录接回进度。
 4. **已有在线书架条目的阅读进度保留**：沿用现有 `epub_books` 那一行（`bookKey` / `uid` 不变），`manga_chapter_states(bookUid, chapterKey)` 零迁移。

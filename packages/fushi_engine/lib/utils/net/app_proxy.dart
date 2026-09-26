@@ -247,25 +247,21 @@ bool _isValidProxyHost(String host) {
 /// 参数「给某个 client 单独指定一个代理」，那会被静默吞掉。
 ///
 /// 本函数与 [applyAppProxySync] 走**同一条**装配路（[_installAppProxy]），唯一差别是
-/// 自动模式那一格的 GUI 系统代理由这里现场解析、同步版取 [primeAppProxy] 缓存。
+/// 自动模式下这里先 await 一次 [primeAppProxy]，保证装配时缓存是此刻的系统代理。
 Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
   final String? trimmed = userProxy?.trim();
   final String? legacyUserProxy =
       !hasResolvedProxyMode() && trimmed != null && trimmed.isNotEmpty
       ? trimmed
       : null;
-  // 自动模式那一格要的是**此刻**的平台 GUI 系统代理（fake-ip/TUN 下注册表刚被改过也能
-  // 跟上），故仍现场解析一次；同步入口取 [primeAppProxy] 的缓存。非自动模式不解析：
-  // 省掉 `reg query` / `scutil` 子进程，而且这一格反正不会被查到。
-  final Map<String, String>? systemEnv =
-      _resolveProxyDecision(legacyUserProxy).mode == kProxyModeAuto
-      ? await resolveSystemProxyEnvironment()
-      : null;
-  _installAppProxy(
-    client,
-    legacyUserProxy: legacyUserProxy,
-    systemEnvOverride: systemEnv,
-  );
+  // 自动模式那一格要的是**此刻**的平台 GUI 系统代理，故先刷新一次进程级缓存。以前这里
+  // 把现场解析结果烘焙进闭包（`systemEnvOverride`），长寿 client 就永远停在建它那一刻的
+  // 系统代理上（#1514 的同一类问题）；现在闭包读的是会按有效期刷新的缓存。非自动模式
+  // 不解析：省掉 `scutil` / `gsettings` 子进程，而且这一格反正不会被查到。
+  if (_resolveProxyDecision(legacyUserProxy).mode == kProxyModeAuto) {
+    await primeAppProxy();
+  }
+  _installAppProxy(client, legacyUserProxy: legacyUserProxy);
 }
 
 /// **唯一装配路**（两个入口共用）：装一个**请求时求值**的 `findProxy` 闭包 + 凭据钩子。
@@ -273,16 +269,9 @@ Future<void> applyAppProxy(HttpClient client, {String? userProxy}) async {
 /// 「请求时求值」是这次收敛的关键。异步入口以前把模式裁决**烘焙**进闭包、并且只在
 /// manual 分支里装凭据钩子：用户在 auto 模式下建好的 client，之后改成 manual，那些
 /// client 既不会改走手填代理、也永远拿不到 407 应答。两个装配点从此不可能给出不同答案。
-void _installAppProxy(
-  HttpClient client, {
-  String? legacyUserProxy,
-  Map<String, String>? systemEnvOverride,
-}) {
-  client.findProxy = (Uri uri) => resolveAppProxyDirective(
-    uri,
-    legacyUserProxy: legacyUserProxy,
-    systemEnvOverride: systemEnvOverride,
-  );
+void _installAppProxy(HttpClient client, {String? legacyUserProxy}) {
+  client.findProxy = (Uri uri) =>
+      resolveAppProxyDirective(uri, legacyUserProxy: legacyUserProxy);
   _installManualProxyCredentials(client, legacyUserProxy: legacyUserProxy);
 }
 
@@ -296,7 +285,7 @@ bool _hasEnvProxy(Map<String, String> environment) =>
 /// 按平台读 GUI 系统代理（Windows 注册表 / macOS scutil / Linux gsettings）。
 /// 其余平台返回空 map。
 Future<Map<String, String>> resolveSystemProxyEnvironment() async {
-  if (Platform.isWindows) return resolveWindowsSystemProxyEnvironment();
+  if (Platform.isWindows) return readWindowsSystemProxyEnvironmentSync();
   if (Platform.isMacOS) return resolveMacSystemProxyEnvironment();
   if (Platform.isLinux) return resolveLinuxSystemProxyEnvironment();
   return const <String, String>{};
@@ -314,37 +303,156 @@ Future<Map<String, String>> resolveSystemProxyEnvironment() async {
 //
 // 解法是把「异步的那一半」搬到进程启动时做一次：`AppModel.initialise()` 调
 // [primeAppProxy] 缓存平台 GUI 系统代理解析结果，此后 [applyAppProxySync] 纯同步装配。
-// 系统代理是机器级设置、一次解析足够；用户在设置页改了手填代理不受影响，因为
-// `findProxy` 是**请求时**才调的闭包，每次都重读 [appUserProxyReader]。
+// 用户在设置页改了手填代理不受影响，因为 `findProxy` 是**请求时**才调的闭包，每次都
+// 重读 [appUserProxyReader]。
+//
+// **系统代理不是「一次解析足够」的（#1514）**：FlClash / Clash 这类软件在用户点「系统
+// 代理」的那一刻才写注册表，Fushi 比代理软件先启动、或用户中途才开系统代理，是常态而
+// 不是边角。缓存只在启动时读一次，自动模式就整个进程生命周期直连——浏览器扩展 YouTube
+// 制卡 `/api/mine` 取 manifest 在墙内全部超时，用户手填同一个地址就好了。所以缓存带有效
+// 期，过期后按平台能力刷新（见 [_currentSystemProxyEnv]）。
+
+/// Windows 系统代理缓存的有效期。注册表读取是同步 FFI（两次 `RegGetValueW`，微秒级），
+/// 过期后在请求线程上直接现读，**过期后的第一个请求就拿到新值**；有效期只是给高频
+/// `findProxy` 限流，不是延迟掩盖。
+const Duration kSyncSystemProxyRefreshInterval = Duration(seconds: 5);
+
+/// macOS / Linux 系统代理缓存的有效期。那边要起 `scutil` / `gsettings` 子进程，而
+/// `findProxy` 是同步回调不能等：过期时后台刷新一次、本次仍用旧值，下一个请求起生效。
+/// 间隔取长一些，避免持续出站时每几秒起一个子进程。
+const Duration kAsyncSystemProxyRefreshInterval = Duration(seconds: 30);
 
 /// 平台 GUI 系统代理解析结果的进程级缓存。null = 还没 prime 过。
 Map<String, String>? _cachedSystemProxyEnv;
 
-/// 预解析并缓存平台 GUI 系统代理，供 [applyAppProxySync] 同步取用。
-///
-/// 在 `AppModel.initialise()` 里调一次即可；重复调用会按当前系统设置刷新缓存
-/// （用户改了系统代理后可以再调一次让它生效）。解析失败按各 `resolve*` 的约定
-/// 返回空 map（= 不补代理），绝不抛。
-Future<void> primeAppProxy() async {
-  _cachedSystemProxyEnv = await resolveSystemProxyEnvironment();
+/// [_cachedSystemProxyEnv] 的读取时刻（取自 [_systemProxyClock]）。
+DateTime? _cachedSystemProxyEnvAt;
+
+/// 正在进行的后台刷新（macOS / Linux），防止同一过期窗口里重复起子进程。
+Future<void>? _systemProxyRefreshInFlight;
+
+/// 缓存代次：测试重置 / 注入后，还没回来的旧后台刷新不得覆盖新状态。
+int _systemProxyGeneration = 0;
+
+/// 同步读取器：本平台能在请求线程上现读系统代理时非 null（目前只有 Windows）。
+Map<String, String> Function()? _systemProxySyncReader =
+    _defaultSystemProxySyncReader();
+
+/// 异步读取器：[primeAppProxy] 与 macOS / Linux 后台刷新用。
+Future<Map<String, String>> Function() _systemProxyAsyncReader =
+    resolveSystemProxyEnvironment;
+
+DateTime Function() _systemProxyClock = DateTime.now;
+
+Map<String, String> Function()? _defaultSystemProxySyncReader() =>
+    Platform.isWindows ? readWindowsSystemProxyEnvironmentSync : null;
+
+void _storeSystemProxyEnv(Map<String, String> env) {
+  _cachedSystemProxyEnv = Map<String, String>.of(env);
+  _cachedSystemProxyEnvAt = _systemProxyClock();
 }
 
-/// 重置 GUI 系统代理缓存（测试用；生产上重新 [primeAppProxy] 即可）。
+/// 预解析并缓存平台 GUI 系统代理，供 [applyAppProxySync] 同步取用。
+///
+/// 在 `AppModel.initialise()` 里调一次即可；此后缓存按有效期自动刷新（见
+/// [_currentSystemProxyEnv]），重复调用则立即按当前系统设置刷新。解析失败按各
+/// `resolve*` 的约定返回空 map（= 不补代理），绝不抛。
+Future<void> primeAppProxy() async {
+  final int generation = _systemProxyGeneration;
+  final Map<String, String> env = await _systemProxyAsyncReader();
+  if (generation != _systemProxyGeneration) return;
+  _storeSystemProxyEnv(env);
+}
+
+/// 自动模式那一格此刻该用的 GUI 系统代理。
+///
+/// * 没 prime 过（精简入口 / 测试没选择解析系统代理）→ 空，与引入缓存前逐字等价；
+/// * 有同步读取器（Windows）且缓存过期 → 现读并回写，本次请求就用新值；
+/// * 否则（macOS / Linux）缓存过期 → 后台刷新，本次用旧值。
+Map<String, String> _currentSystemProxyEnv() {
+  final Map<String, String>? cached = _cachedSystemProxyEnv;
+  if (cached == null) return const <String, String>{};
+  final DateTime now = _systemProxyClock();
+  final Duration age = now.difference(_cachedSystemProxyEnvAt ?? now);
+  final Map<String, String> Function()? syncReader = _systemProxySyncReader;
+  if (syncReader != null) {
+    if (age < kSyncSystemProxyRefreshInterval) return cached;
+    final Map<String, String> fresh = syncReader();
+    _storeSystemProxyEnv(fresh);
+    return _cachedSystemProxyEnv!;
+  }
+  if (age >= kAsyncSystemProxyRefreshInterval) {
+    _refreshSystemProxyInBackground();
+  }
+  return cached;
+}
+
+void _refreshSystemProxyInBackground() {
+  if (_systemProxyRefreshInFlight != null) return;
+  final int generation = _systemProxyGeneration;
+  _systemProxyRefreshInFlight = _systemProxyAsyncReader()
+      .then(
+        (Map<String, String> env) {
+          if (generation == _systemProxyGeneration) _storeSystemProxyEnv(env);
+        },
+        onError: (Object e) {
+          // 各 resolve* 约定不抛；真抛了就保留旧缓存、不更新时刻，下个请求再试。
+          fushiDebugPrint('[AppProxy] refresh system proxy failed: $e');
+        },
+      )
+      .whenComplete(() {
+        if (generation == _systemProxyGeneration) {
+          _systemProxyRefreshInFlight = null;
+        }
+      });
+}
+
+/// 重置 GUI 系统代理缓存与读取源（测试用；生产上重新 [primeAppProxy] 即可）。
 @visibleForTesting
 void resetAppProxyCacheForTest() {
+  _systemProxyGeneration++;
   _cachedSystemProxyEnv = null;
+  _cachedSystemProxyEnvAt = null;
+  _systemProxyRefreshInFlight = null;
+  _systemProxySyncReader = _defaultSystemProxySyncReader();
+  _systemProxyAsyncReader = resolveSystemProxyEnvironment;
+  _systemProxyClock = DateTime.now;
 }
 
 /// 覆盖 GUI 系统代理缓存（测试用：本机跑不出目标平台的 GUI 代理，只能注入）。
+/// 注入值的读取时刻记为当前 [_systemProxyClock]，在有效期内原样生效。
 @visibleForTesting
 void debugSetCachedSystemProxyEnv(Map<String, String>? env) {
-  _cachedSystemProxyEnv = env == null ? null : Map<String, String>.of(env);
+  _systemProxyGeneration++;
+  _systemProxyRefreshInFlight = null;
+  if (env == null) {
+    _cachedSystemProxyEnv = null;
+    _cachedSystemProxyEnvAt = null;
+  } else {
+    _storeSystemProxyEnv(env);
+  }
+}
+
+/// 替换系统代理的读取源与时钟（测试用），[resetAppProxyCacheForTest] 还原。
+///
+/// [syncReader] 为 null 模拟 macOS / Linux（只能后台刷新）；[asyncReader] 省略时
+/// 取 [syncReader] 的结果（都没有则为空 map）。
+@visibleForTesting
+void debugSetSystemProxySourceForTest({
+  required Map<String, String> Function()? syncReader,
+  Future<Map<String, String>> Function()? asyncReader,
+  DateTime Function()? clock,
+}) {
+  _systemProxySyncReader = syncReader;
+  _systemProxyAsyncReader =
+      asyncReader ?? () async => syncReader?.call() ?? const <String, String>{};
+  _systemProxyClock = clock ?? DateTime.now;
 }
 
 /// **同步版** [applyAppProxy]：装一个请求时才求值的 `findProxy` 闭包。
 ///
 /// 优先级与异步版逐字一致（本机/局域网直连 > 模式裁决 > 自动模式的 env/系统代理），
-/// 唯一差别是 GUI 系统代理那一格取自 [primeAppProxy] 缓存而不是现场 `Process.run`。
+/// GUI 系统代理那一格取自 [primeAppProxy] 缓存（按有效期刷新）。
 /// **没 prime 过时该格为空**，于是退化成 `env > DIRECT`——与本函数存在之前那些裸
 /// `HttpClient()` 相比只多不少，绝不会更坏。
 void applyAppProxySync(HttpClient client) => _installAppProxy(client);
@@ -377,11 +485,10 @@ String resolveAppProxyDirective(
     ...Platform.environment,
   };
   // env 变量优先：用户显式 set 的不该被 GUI 系统代理覆盖。仅当 env 没给代理时才补 GUI
-  // 系统代理——异步入口现场解析的那一份优先，否则取 [primeAppProxy] 缓存（TODO-704）。
+  // 系统代理——调用方显式给的那一份优先，否则取 [primeAppProxy] 缓存（TODO-704），
+  // 缓存过期按平台刷新（#1514）。
   if (!_hasEnvProxy(environment)) {
-    environment.addAll(
-      systemEnvOverride ?? _cachedSystemProxyEnv ?? const <String, String>{},
-    );
+    environment.addAll(systemEnvOverride ?? _currentSystemProxyEnv());
   }
   return HttpClient.findProxyFromEnvironment(uri, environment: environment);
 }
@@ -519,9 +626,15 @@ List<int>? _parseIpv4(String host) {
 /// [HttpClient.findProxyFromEnvironment] 的 environment 片段（`{'https_proxy': ...,
 /// 'http_proxy': ...}`）；未启用 / 读取失败 / 非 Windows 返回空 map（= 不补代理）。
 ///
-/// 走 `reg query`（异步、无需 FFI、无新依赖），在构建 client 前一次性解析；解析逻辑下沉到
-/// 纯函数 [parseWindowsRegistryProxy] 以便单测。
-Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async {
+/// 异步签名只为与 macOS / Linux 同形；实际读取是同步的，见
+/// [readWindowsSystemProxyEnvironmentSync]。
+Future<Map<String, String>> resolveWindowsSystemProxyEnvironment() async =>
+    readWindowsSystemProxyEnvironmentSync();
+
+/// [resolveWindowsSystemProxyEnvironment] 的同步本体：经 Win32 FFI 直读注册表
+/// （`RegGetValueW`，无子进程），快到可以在 `findProxy` 请求时调用（#1514）。解析逻辑
+/// 下沉到纯函数 [parseWindowsRegistryProxy] 以便单测。
+Map<String, String> readWindowsSystemProxyEnvironmentSync() {
   if (!Platform.isWindows) return const <String, String>{};
   try {
     const String key =

@@ -91,7 +91,7 @@ test('预设与 app theme_notifier.dart 的七款同名同种子；fushi 默认�
   assert.deepStrictEqual(Object.keys(byKey), ['fushi', 'light-theme', 'ecru-theme', 'water-theme', 'eyecare-theme', 'gray-theme', 'dark-theme', 'black-theme']);
   assert.strictEqual(byKey['light-theme'].seed, '#1f4959');
   assert.strictEqual(byKey['ecru-theme'].seed, '#8b7355');
-  assert.strictEqual(byKey['water-theme'].seed, '#4a7c8f');
+  assert.strictEqual(byKey['water-theme'].seed, '#3a6ea5');
   assert.strictEqual(byKey['eyecare-theme'].seed, '#5e8c63');
   assert.strictEqual(byKey['gray-theme'].seed, '#5c6b73');
   assert.strictEqual(byKey['dark-theme'].seed, '#1f4959');

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -135,6 +137,127 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  // BUG-2691 办法 4：没有 gpu-next 可切时提示用户，而不是让人以为片子坏了。
+  group('dolbyVisionColorsUnsupported', () {
+    test('非 DV 片源恒 false', () {
+      for (final bool w in <bool>[false, true]) {
+        for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
+          expect(
+            dolbyVisionColorsUnsupported(
+              isWindows: w,
+              mode: m,
+              sourceDolbyVision: false,
+            ),
+            isFalse,
+            reason: 'windows=$w mode=${m.name}',
+          );
+        }
+      }
+    });
+
+    test('Linux（系统 libmpv，无补丁）：任何模式都提示', () {
+      for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: false,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isTrue,
+          reason: m.name,
+        );
+      }
+    });
+
+    test('macOS / iOS / Android：随包 gl_video 自带重整，任何模式都不提示', () {
+      for (final VideoHdrOutputMode m in VideoHdrOutputMode.values) {
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: false,
+            isApple: true,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isFalse,
+          reason: 'apple ${m.name}',
+        );
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: false,
+            isAndroid: true,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isFalse,
+          reason: 'android ${m.name}',
+        );
+      }
+    });
+
+    test('Android DV P5 强制软解（mediacodec 不解析 RPU），其它平台 / 非 DV 不动', () {
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: true,
+          sourceDolbyVision: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: true,
+          sourceDolbyVision: false,
+        ),
+        isFalse,
+      );
+      expect(
+        shouldForceSoftwareDecodeForDolbyVision(
+          isAndroid: false,
+          sourceDolbyVision: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('Windows：只有用户关了 HDR 输出才提示', () {
+      expect(
+        dolbyVisionColorsUnsupported(
+          isWindows: true,
+          mode: VideoHdrOutputMode.off,
+          sourceDolbyVision: true,
+        ),
+        isTrue,
+      );
+      for (final VideoHdrOutputMode m in <VideoHdrOutputMode>[
+        VideoHdrOutputMode.auto,
+        VideoHdrOutputMode.always,
+      ]) {
+        expect(
+          dolbyVisionColorsUnsupported(
+            isWindows: true,
+            mode: m,
+            sourceDolbyVision: true,
+          ),
+          isFalse,
+          reason: m.name,
+        );
+      }
+    });
+  });
+
+  // BUG-2691：远端播放（Emby / Jellyfin / 互联）的 _initRemote 提前返回，此前漏读
+  // HDR 输出与画面 fit，用户设的「关闭」「始终」对远端片源全不生效。
+  test('播放页远端初始化读取 HDR 输出与画面 fit 设置', () {
+    final String src = File(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    ).readAsStringSync();
+    final int start = src.indexOf('Future<void> _initRemote() async {');
+    expect(start, greaterThan(0));
+    final int end = src.indexOf('\n  }\n', start);
+    final String body = src.substring(start, end);
+    expect(body, contains('_videoHdrOutputMode = appModel.videoHdrOutputMode'));
+    expect(body, contains('_videoFitMode = appModel.videoFitMode'));
   });
 
   group('requiresDolbyVisionReshape', () {

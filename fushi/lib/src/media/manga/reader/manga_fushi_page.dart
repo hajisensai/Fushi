@@ -39,10 +39,12 @@ import 'package:fushi/src/media/manga/manga_panel_navigation.dart';
 import 'package:fushi/src/media/manga/manga_spread_model.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/library/manga_adjacent_chapter.dart';
+import 'package:fushi/src/media/manga/mihon/online_manga_reader_session.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
+import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/panel_detection.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_cache_recovery.dart';
@@ -855,9 +857,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 「已经是最新/第一章了」这一章内是否已经提示过。开新章时归零。
   bool _edgeToastShown = false;
 
-  /// 当前选中的在线章还没下载：正文区显示「本章未下载」态（入队 / 选章两个出口），
+  /// 当前选中的在线章还没下载、在线直读也没成（源不可用 / 取不到页）：正文区显示
+  /// 「本章未下载」态（入队 / 选章两个出口），
   /// 顶部 chrome 不显示，返回键照常在。下载服务把这一章下完后自动装载。
   bool _chapterNotDownloaded = false;
+
+  /// 当前章是在线直读（未下载，页经 [OnlineMangaReaderSession] 懒取）。
+  ///
+  /// 为真时阅读器内一切 OCR 入口 / 自动识别 / 任务接回都关着：设计稿 2026-09-12
+  /// §1.2 / §1.3 仍有效，OCR 只对下载完成的章在阅读器外起。
+  bool _streamingChapter = false;
 
   /// 「本章未下载」态下观察下载表的订阅：任务表一变就复核磁盘判据。
   StreamSubscription<void>? _downloadWatch;
@@ -1613,7 +1622,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required String mangaJsonPath,
     int? initialPage,
   }) async {
-    final FushiDatabase db = appModel.database;
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
       setState(() {
@@ -1629,7 +1637,34 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       jsonStr,
     );
     if (!mounted) return;
+    await _presentPayload(
+      row: row,
+      payload: payload,
+      imagesDir: imagesDir,
+      openSession: (List<String> relativePagePaths) => LocalMangaPageProvider(
+        imagesRoot: Directory(imagesDir),
+        relativePaths: relativePagePaths,
+      ).open(),
+      initialPage: initialPage,
+    );
+  }
 
+  /// 把一份已解析的 [payload] 装进阅读器：偏好 / 覆盖 / 阅读模式 / 进度恢复 / 页会话
+  /// 挂接。本地卷、已下载的在线章（[_loadLocalPayload]）与在线直读章
+  /// （[_openStreamingChapter]）共用这一条，只有页会话来源不同。
+  ///
+  /// [streaming] = 在线直读：阅读器内不触发、不接回任何 OCR（设计稿 2026-09-12
+  /// §1.2 / §1.3 仍有效；OCR 只对下载完成的章在阅读器外起）。
+  Future<void> _presentPayload({
+    required EpubBookRow row,
+    required MokuroPayload payload,
+    required String imagesDir,
+    required Future<MangaReaderSession> Function(List<String> relativePagePaths)
+        openSession,
+    int? initialPage,
+    bool streaming = false,
+  }) async {
+    final FushiDatabase db = appModel.database;
     _spreadPreference = MangaSpreadPreferenceKey.fromKey(
       appModel.mangaSpreadPreference,
     );
@@ -1760,10 +1795,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               MangaFushiPage.mangaImageRelativePath(image.url),
         )
         .toList(growable: false);
-    final MangaReaderSession localPageSession = await LocalMangaPageProvider(
-      imagesRoot: Directory(imagesDir),
-      relativePaths: relativePagePaths,
-    ).open();
+    final MangaReaderSession localPageSession = await openSession(
+      relativePagePaths,
+    );
     if (!mounted) {
       await localPageSession.close();
       return;
@@ -1852,6 +1886,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _lastSavedPage = saved != null ? restoredPage : -1;
       _lastSavedFraction = saved != null ? restoredFraction : -1;
       _chapterNotDownloaded = false;
+      _streamingChapter = streaming;
       _loadFailed = false;
     });
     _resetPanelNavigation();
@@ -1859,6 +1894,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 首屏页成为当前单元：开书直接停在恢复位置时不会再有 _recordProgress，
     // 翻走时才入账（存档页不预置，续读也计一次）。
     _noteVisiblePages();
+    // 在线直读章没有章目录可供 OCR 读写：缓存恢复、任务接回、进入即识别全部跳过。
+    if (streaming) return;
     // A cancelled/background task intentionally does not replace manga.json,
     // but every atomic page cache is already safe to use. Restore those pages
     // after the first paint so opening a large book stays fast and both local
@@ -1929,9 +1966,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 首次进入和「换章」共用这一条路径，所以换章不会走出任何首次进入没走过的
   /// 分支——OCR 接回、进度恢复全部一致。
   ///
-  /// 章必须**已下载**（设计稿 2026-09-12 §1：在线漫画先下载再读，不留半下载可读
-  /// 路径）：判据只问 [isChapterDownloaded]；未下载就切到「本章未下载」态返回，
-  /// 由用户入队或换到已下载的章，下载表一变就复核。
+  /// 已下载的章（判据只问 [isChapterDownloaded]）从章目录按本地卷装载；未下载的章
+  /// 在线直读（[_openStreamingChapter]，2026-09-26 用户撤回设计稿 §1.1「必须先下载
+  /// 再读」）。直读失败（源不可用 / 页表为空 / 首屏页取不到）才退到「本章未下载」态，
+  /// 由用户入队或换章，下载表一变就复核。
   Future<void> _openShelfChapter({
     required EpubBookRow row,
     required OnlineMangaLibraryService service,
@@ -1947,18 +1985,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       row.extractDir,
       chapter.key,
     );
-    if (!await isChapterDownloaded(row.extractDir, chapter.key)) {
-      if (!mounted) return;
-      _detachWholeVolumeOcrObserver();
-      setState(() {
-        _bookRow = row;
-        _volumeOcrQueued = false;
-        _volumeOcrNoEngine = false;
-        _chapterNotDownloaded = true;
-      });
-      _watchDownloadsForCurrentChapter();
-      return;
-    }
+    final bool downloaded = await isChapterDownloaded(
+      row.extractDir,
+      chapter.key,
+    );
     // 每章进度：切回读过一半的旧章要落回原页，而不是从头开始（v88 前
     // selectChapter 会把唯一那行 reader_positions 清零，上一章位置永久丢失）。
     //
@@ -1977,6 +2007,30 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     }
     if (!mounted) return;
+    if (!downloaded) {
+      if (await _openStreamingChapter(
+        row: row,
+        service: service,
+        entry: entry,
+        chapter: chapter,
+        chapterDir: chapterDir,
+        initialPage: initialPage,
+      )) {
+        return;
+      }
+      if (!mounted) return;
+      _detachWholeVolumeOcrObserver();
+      setState(() {
+        _bookRow = row;
+        // 换章直读失败时这里还挂着旧章正文：清掉，免得旧页码被当成新章进度落库。
+        _payload = null;
+        _volumeOcrQueued = false;
+        _volumeOcrNoEngine = false;
+        _chapterNotDownloaded = true;
+      });
+      _watchDownloadsForCurrentChapter();
+      return;
+    }
     // 换章：先不再观察旧章的整卷任务（任务本身照跑），装好新章后按目录接回。
     _detachWholeVolumeOcrObserver();
     final File mangaJson = mangaChapterJsonFile(chapterDir);
@@ -1988,6 +2042,133 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       mangaJsonPath: mangaJson.path,
       initialPage: initialPage,
     );
+  }
+
+  /// 在线直读 [chapter]：解析页表 → 开 [OnlineMangaReaderSession] → 先取落点页量
+  /// 尺寸 → 占位几何的 payload 交给 [_presentPayload]。
+  ///
+  /// 返回 false = 直读不成（已记日志、已 toast），调用方退到「本章未下载」态；
+  /// 页面已卸载时返回 true（调用方什么都不用再做）。
+  Future<bool> _openStreamingChapter({
+    required EpubBookRow row,
+    required OnlineMangaLibraryService service,
+    required OnlineMangaLibraryEntry entry,
+    required OnlineMangaChapter chapter,
+    required Directory chapterDir,
+    required int initialPage,
+  }) async {
+    OnlineMangaReaderSession? pendingSession;
+    try {
+      final OnlineMangaRuntimeAdapter adapter = service.adapter;
+      final List<OnlineMangaPageRef> pages = await adapter.resolveChapterPages(
+        entry: entry,
+        chapter: chapter,
+      );
+      if (pages.isEmpty) throw StateError('The chapter has no pages');
+      if (!mounted) return true;
+      late final OnlineMangaReaderSession session;
+      session = await OnlineMangaReaderSession.open(
+        cacheRoot: Directory(
+          p.join(appModel.temporaryDirectory.path, kMangaStreamCacheDirName),
+        ),
+        bookKey: row.bookKey,
+        chapterKey: chapter.key,
+        pageIdentities: <String>[
+          for (int index = 0; index < pages.length; index++)
+            'online\u001f${row.bookKey}\u001f${chapter.key}\u001f$index'
+                '\u001f${pages[index].sourceUrl ?? ''}',
+        ],
+        fetchPage: (int index) => adapter.fetchChapterPage(pages[index]),
+        onPageMeasured: (int index, int width, int height) =>
+            _onStreamingPageMeasured(session, index, width, height),
+      );
+      pendingSession = session;
+      // 先取落点页：源不可用就在这里失败、退回「本章未下载」态，不留一屏坏图；
+      // 顺带拿它的真实比例当全章占位几何（比固定竖版比例更接近，自动阅读模式的
+      // 长宽比判定也据此）。其余页的真实尺寸在取到时回写（JS 侧图片 load 时自校正）。
+      final int landing = initialPage.clamp(0, pages.length - 1);
+      final MangaPageBytes first = await session.page(landing);
+      if (!mounted) {
+        await session.close();
+        return true;
+      }
+      final MokuroSize placeholder = first.hasDimensions
+          ? MokuroSize(first.width!.toDouble(), first.height!.toDouble())
+          : const MokuroSize(1000, 1414);
+      final MokuroPayload payload = MokuroPayload(
+        images: <MokuroImage>[
+          for (int index = 0; index < pages.length; index++)
+            MokuroImage(
+              // 带章摘要一段：各章页名同形，URL 不能在章与章之间撞（WebView 缓存）。
+              url: '${MangaStorage.kImagesDirName}/'
+                  '${p.basename(chapterDir.path)}/'
+                  'page-${(index + 1).toString().padLeft(6, '0')}',
+              size: placeholder,
+              blocks: const <MokuroBlock>[],
+            ),
+        ],
+      );
+      // 换章：先不再观察旧章的整卷任务（任务本身照跑）。
+      _detachWholeVolumeOcrObserver();
+      // 交出去之后会话归阅读器管（_presentPayload 挂上或自己关），这里不再关。
+      pendingSession = null;
+      await _presentPayload(
+        row: row.copyWith(
+          epubPath: p.basename(mangaChapterJsonFile(chapterDir).path),
+          extractDir: chapterDir.path,
+        ),
+        payload: payload,
+        imagesDir: session.directory.path,
+        openSession: (List<String> _) async => session,
+        initialPage: initialPage,
+        streaming: true,
+      );
+      return true;
+    } on Object catch (error, stack) {
+      await pendingSession?.close();
+      ErrorLogService.instance.log(
+        'MangaFushiPage.openStreamingChapter',
+        error,
+        stack,
+      );
+      if (mounted) {
+        FushiToast.show(
+          msg: error is OnlineMangaUnavailable ? error.message : '$error',
+          severity: ToastSeverity.error,
+        );
+      }
+      return false;
+    }
+  }
+
+  /// 直读页取到真实尺寸：回写内存里的 payload，之后重建窗口 / 单双页判定按真值走。
+  /// 不重建 spread——JS 侧图片 load 时已自行校正页框比例。
+  void _onStreamingPageMeasured(
+    OnlineMangaReaderSession session,
+    int index,
+    int width,
+    int height,
+  ) {
+    final MokuroPayload? payload = _payload;
+    if (!mounted ||
+        !_streamingChapter ||
+        !identical(session, _pageSession) ||
+        payload == null ||
+        index < 0 ||
+        index >= payload.images.length) {
+      return;
+    }
+    final MokuroImage previous = payload.images[index];
+    if (previous.size.width == width && previous.size.height == height) {
+      return;
+    }
+    final List<MokuroImage> images = List<MokuroImage>.of(payload.images);
+    images[index] = MokuroImage(
+      url: previous.url,
+      size: MokuroSize(width.toDouble(), height.toDouble()),
+      blocks: previous.blocks,
+    );
+    _payload = MokuroPayload(images: images, ocr: payload.ocr);
   }
 
   /// 「本章未下载」态：把当前章交给下载服务。
@@ -2799,26 +2980,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
     setState(() => _switchingChapter = true);
     try {
-      // 目标章没下载就不动：停在当前章、把它交给下载队列并提示（设计稿
-      // 2026-09-12 §5）。判据与作品页 / 下载服务同一处（isChapterDownloaded）。
+      // 目标章下没下载都能换：已下载从章目录读，未下载在线直读（2026-09-26 用户
+      // 撤回设计稿 §1.1），分流在 [_openShelfChapter] 里只做一次。
       // 注意 [_bookRow] 在读章时指向**章目录**副本，书根要从 bookKey 重新解析。
       final String bookDir = await MangaStorage.bookPath(row.bookKey);
-      final OnlineMangaChapter target = entry.chapters[index];
-      if (!await isChapterDownloaded(bookDir, target.key)) {
-        await appModel.mangaDownloadService.enqueueChapter(
-          entry: entry,
-          chapter: target,
-          autoOcr: false,
-        );
-        if (mounted) {
-          FushiToast.show(
-            msg:
-                '${t.manga_chapter_not_downloaded} · '
-                '${t.manga_chapter_download_queued}',
-          );
-        }
-        return;
-      }
       // 换章前把当前章的进度落库，否则「翻到下一章再翻回来」会丢掉刚读的位置。
       await _saveCurrentChapterState();
       final OnlineMangaLibraryEntry selected = _sourceReviewActive
@@ -2835,7 +3000,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         chapterIndex: index,
       );
       final int pageCount = _payload?.images.length ?? 0;
-      if (landOnLastPage && mounted && pageCount > 0) {
+      // 直读失败退到「本章未下载」态时 _payload 还是旧章的，不能拿它跳页。
+      if (landOnLastPage &&
+          mounted &&
+          !_chapterNotDownloaded &&
+          pageCount > 0) {
         await _jumpToPage(pageCount);
       }
     } on Object catch (error, stack) {
@@ -3389,10 +3558,15 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _currentPageImagePath = null;
       return;
     }
-    _currentPageImagePath = MangaFushiPage.resolveMangaResource(
-      imagesDir,
-      MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
-    );
+    final MangaReaderSession? session = _pageSession;
+    // 在线直读章的页名不带扩展名、只在会话缓存里：按页序问会话（还没取到 → null，
+    // 制卡时再经 [_currentMangaPageFile] 现取）。
+    _currentPageImagePath = session is OnlineMangaReaderSession
+        ? session.cachedFilePath(page)
+        : MangaFushiPage.resolveMangaResource(
+            imagesDir,
+            MangaFushiPage.mangaImageRelativePath(payload.images[page].url),
+          );
   }
 
   /// 视口里的页（连续模式按 JS 报告的视口，分页模式按当前 entry）。窗口就绪时据此
@@ -3411,21 +3585,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 顶栏「识别本卷」：只在手动模式、本卷还没识别过、也没有任务在跑 / 排队时出现。
   bool get _showManualVolumeOcrAction =>
+      !_noChapterOcr &&
       (_readerPreferences.ocrTrigger == 'manual' || _lensAutoOcrDeclined) &&
       !_volumeOcrSettled &&
       !_wholeVolumeOcrRunning &&
       !_volumeOcrQueued;
 
+  /// 当前章没有可供 OCR 读写的章目录：「本章未下载」态，或在线直读章（OCR 只对
+  /// 下载完成的章在阅读器外起，设计稿 2026-09-12 §1.2 / §1.3）。
+  bool get _noChapterOcr => _chapterNotDownloaded || _streamingChapter;
+
   /// 顶栏「重新识别本卷」：本卷已识别过、也没有任务在跑 / 排队时出现。自动路径对
   /// 已识别的卷永不重排（不重送 Lens），换引擎重跑 / 识别质量不满意只能从这里来。
   bool get _showRerunVolumeOcrAction =>
-      _volumeOcrSettled && !_wholeVolumeOcrRunning && !_volumeOcrQueued;
+      !_noChapterOcr &&
+      _volumeOcrSettled &&
+      !_wholeVolumeOcrRunning &&
+      !_volumeOcrQueued;
 
   /// 打开整卷 OCR 向导（可选引擎，含外部 mokuro / 已配对主机），整卷重跑本卷 / 本章
   /// 并把任务交给注册表；完成后由既有的观察链（[_syncVolumeOcrJob]）热替换正文。
   Future<void> _rerunVolumeOcr() async {
     final EpubBookRow? row = _bookRow;
-    if (!mounted || row == null || _payload == null || _chapterNotDownloaded) {
+    if (!mounted || row == null || _payload == null || _noChapterOcr) {
       return;
     }
     final String directory = row.extractDir;
@@ -3451,7 +3633,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 排的任务都从这里接回，不依赖是谁排的。
   void _syncVolumeOcrJob() {
     final EpubBookRow? row = _bookRow;
-    if (!mounted || row == null || _payload == null || _chapterNotDownloaded) {
+    if (!mounted || row == null || _payload == null || _noChapterOcr) {
       return;
     }
     final bool queued = _ocrRegistry
@@ -3472,7 +3654,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         row == null ||
         _payload == null ||
         _loadFailed ||
-        _chapterNotDownloaded ||
+        _noChapterOcr ||
         _sourceReviewActive ||
         _volumeOcrSettled ||
         _volumeOcrStarting) {
@@ -3520,7 +3702,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             },
           );
       if (!mounted ||
-          _chapterNotDownloaded ||
+          _noChapterOcr ||
           _bookRow == null ||
           !p.equals(_bookRow!.extractDir, directory)) {
         return;
@@ -3870,9 +4052,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : (fields['sentence'] ?? '');
 
       String? coverPath;
-      final String? pageImage = _miningPageIndex == null
+      String? pageImage = _miningPageIndex == null
           ? _currentPageImagePath
           : _miningPageImagePath;
+      // 在线直读：翻页那一刻当前页可能还没落进会话缓存，制卡时现取一次。
+      if (pageImage == null && _miningPageIndex == null && _streamingChapter) {
+        pageImage = (await _currentMangaPageFile())?.path;
+      }
       if (pageImage != null && File(pageImage).existsSync()) {
         // mokuro 页图自带合法图片扩展名；仅无扩展名的裁剪输出需要补 .png（M2）。
         coverPath = await ensureMangaCoverPng(pageImage);
@@ -5477,7 +5663,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
   }
 
-  /// 「本章未下载」态（设计稿 2026-09-12 §1：在线漫画先下载再读）。
+  /// 「本章未下载」态：未下载的章在线直读失败时的退路（入队 / 换章）。
   ///
   /// 两个出口：把本章交给下载队列（下完自动装载）、换到别的章。返回键由外层
   /// 无条件提供，这里不再画第二个。

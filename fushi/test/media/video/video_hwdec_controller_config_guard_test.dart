@@ -52,7 +52,11 @@ void main() {
     test('configuration 的 hwdec 必须来自 app 策略（resolvePlatformHwdec + mpvConfig）',
         () {
       expect(
-        RegExp(r'hwdec:\s*resolvePlatformHwdec\(\s*mpvConfig\.hwdec\s*\)')
+        // BUG-2691：Android 远端 DV P5 片源经 _mpvConfigForCurrentSource 强制软解，
+        // 包装后仍是本次 load 的 mpvConfig，两种形态都认。
+        RegExp(r'hwdec:\s*resolvePlatformHwdec\(\s*'
+                r'(?:mpvConfig|_mpvConfigForCurrentSource\(\s*mpvConfig\s*\))'
+                r'\.hwdec\s*,?\s*\)')
             .hasMatch(src),
         isTrue,
         reason: 'hwdec 必须由本次 load 的 mpvConfig 经 resolvePlatformHwdec 解析，'

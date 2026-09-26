@@ -35,9 +35,20 @@ class LnReaderRepoPlugin {
       lang: field('lang'),
       version: version,
       url: url,
-      iconUrl: field('iconUrl'),
+      iconUrl: _resolveAgainstStore(field('iconUrl'), storeUrl),
       storeUrl: storeUrl,
     );
+  }
+
+  /// 自建仓库的索引常写相对图标路径（相对索引文件）；原样交给图片组件只会是
+  /// 一个解析不了的地址，扩展列表整列占位图标。与 Mihon 仓库索引同口径。
+  static String _resolveAgainstStore(String value, String storeUrl) {
+    if (value.isEmpty) return value;
+    final Uri? parsed = Uri.tryParse(value);
+    if (parsed == null || parsed.hasScheme) return value;
+    final Uri? base = Uri.tryParse(storeUrl);
+    if (base == null || !base.hasScheme) return value;
+    return base.resolveUri(parsed).toString();
   }
 
   final String id;

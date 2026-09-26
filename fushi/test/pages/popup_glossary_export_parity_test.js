@@ -95,7 +95,6 @@ function makeSandbox() {
     dictionaryStyles: {},
     hiddenDictionaryNames: [],
     collapsedDictionaryNames: [],
-    compactGlossariesAnki: false,
     // Mining payload path: dictionary media is embedded, so exported images are
     // <img src="fushi_dict_N.ext"> and go through applyImageStyles.
     embedMedia: true,

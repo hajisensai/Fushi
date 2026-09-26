@@ -30,6 +30,7 @@ import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
+import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/video_manifest.dart';
 import 'package:fushi_audio/fushi_audio.dart'

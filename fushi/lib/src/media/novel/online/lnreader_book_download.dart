@@ -106,9 +106,7 @@ class LnReaderBookDownload {
       throw ArgumentError.value(chapters, 'chapters', 'must not be empty');
     }
     final LnReaderPluginInfo info = await manager.load(plugin);
-    final LnReaderRuntime runtime = manager.runtime;
-    final HttpClient client = _httpClientFactory();
-    guardLnReaderConnections(client, isBlockedAddress: isBlockedAddress);
+    final HttpClient client = openClient();
     try {
       final List<LnReaderEpubChapter> built = <LnReaderEpubChapter>[];
       onProgress?.call(0, chapters.length);
@@ -118,39 +116,15 @@ class LnReaderBookDownload {
         }
         final LnReaderChapter chapter = chapters[i];
         try {
-          final String html = await runtime.chapter(plugin.id, chapter.path);
-          final String baseUrl = await runtime.resolveUrl(
-            plugin.id,
-            chapter.path,
-            isNovel: false,
+          built.add(
+            await fetchChapter(
+              client: client,
+              plugin: plugin,
+              info: info,
+              chapter: chapter,
+              imagePrefix: 'images/c${i + 1}-',
+            ),
           );
-          final LnReaderXhtml xhtml = await runtime.toXhtml(
-            html,
-            baseUrl: baseUrl,
-            imagePrefix: 'images/c${i + 1}-',
-          );
-          final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
-          String body = xhtml.xhtml;
-          for (final ({String url, String fileName}) image in xhtml.images) {
-            final LnReaderEpubImage? fetched = await _fetchImage(
-              client,
-              image.url,
-              fileName: image.fileName,
-              headers: <String, String>{
-                ...info.imageHeaders,
-                if (!info.imageHeaders.keys.any(
-                  (String key) => key.toLowerCase() == 'referer',
-                ))
-                  'Referer': baseUrl,
-              },
-            );
-            if (fetched == null) {
-              body = removeLnReaderImageReference(body, image.fileName);
-            } else {
-              images.add(fetched);
-            }
-          }
-          built.add((title: chapter.name, xhtmlBody: body, images: images));
         } on LnReaderDownloadCancelled {
           rethrow;
         } on Object catch (error) {
@@ -164,23 +138,19 @@ class LnReaderBookDownload {
       }
       if (isCancelled?.call() ?? false) throw const LnReaderDownloadCancelled();
 
-      final String? coverUrl = novel.cover;
-      final LnReaderEpubImage? cover =
-          coverUrl == null || isLnReaderPlaceholderCover(coverUrl)
-          ? null
-          : await _fetchImage(
-              client,
-              coverUrl,
-              fileName: 'cover',
-              headers: info.imageHeaders,
-            );
+      final LnReaderEpubImage? cover = await fetchCover(
+        client: client,
+        plugin: plugin,
+        info: info,
+        novel: novel,
+      );
       final String title = novel.name.trim().isEmpty
           ? chapters.first.name
           : novel.name.trim();
       final Uint8List bytes = LnReaderEpubAssembler.build(
         title: title,
         languageTag: lnReaderLanguageTag(plugin.lang),
-        identifier: 'lnreader:${plugin.id}:${novel.path}',
+        identifier: lnReaderBookIdentifier(plugin.id, novel.path),
         author: novel.author,
         description: novel.summary == null
             ? null
@@ -191,12 +161,91 @@ class LnReaderBookDownload {
       return await _importEpub(
         db: database,
         bytes: bytes,
-        fileName: '${_safeFileName(title)}.epub',
+        fileName: '${lnReaderSafeFileName(title)}.epub',
         policy: policy,
       );
     } finally {
       client.close(force: true);
     }
+  }
+
+  /// 抓取用的 HttpClient：连接层按解析后地址拦本机（[guardLnReaderConnections]）。
+  /// 调用方负责 `close`。
+  HttpClient openClient() {
+    final HttpClient client = _httpClientFactory();
+    guardLnReaderConnections(client, isBlockedAddress: isBlockedAddress);
+    return client;
+  }
+
+  /// 抓一章：插件取正文 → 规整成 XHTML 片段 → 逐张下插图（图片落在
+  /// `$imagePrefix<n>.<ext>`）。插图单张失败只丢那一张（正文完整优先）；正文取
+  /// 不到直接抛，由调用方决定是中止整次下载还是只报这一章。
+  Future<LnReaderEpubChapter> fetchChapter({
+    required HttpClient client,
+    required LnReaderInstalledPlugin plugin,
+    required LnReaderPluginInfo info,
+    required LnReaderChapter chapter,
+    required String imagePrefix,
+  }) async {
+    final LnReaderRuntime runtime = manager.runtime;
+    final String html = await runtime.chapter(plugin.id, chapter.path);
+    final String baseUrl = await runtime.resolveUrl(
+      plugin.id,
+      chapter.path,
+      isNovel: false,
+    );
+    final LnReaderXhtml xhtml = await runtime.toXhtml(
+      html,
+      baseUrl: baseUrl,
+      imagePrefix: imagePrefix,
+    );
+    final List<LnReaderEpubImage> images = <LnReaderEpubImage>[];
+    String body = xhtml.xhtml;
+    for (final ({String url, String fileName}) image in xhtml.images) {
+      final LnReaderEpubImage? fetched = await _fetchImage(
+        client,
+        image.url,
+        fileName: image.fileName,
+        headers: <String, String>{
+          ...info.imageHeaders,
+          if (!info.imageHeaders.keys.any(
+            (String key) => key.toLowerCase() == 'referer',
+          ))
+            'Referer': baseUrl,
+        },
+      );
+      if (fetched == null) {
+        body = removeLnReaderImageReference(body, image.fileName);
+      } else {
+        images.add(fetched);
+      }
+    }
+    return (title: chapter.name, xhtmlBody: body, images: images);
+  }
+
+  /// 下封面；插件占位图 / 取不到返回 null（书照样生成，只是没封面）。
+  Future<LnReaderEpubImage?> fetchCover({
+    required HttpClient client,
+    required LnReaderInstalledPlugin plugin,
+    required LnReaderPluginInfo info,
+    required LnReaderNovel novel,
+  }) async {
+    final String? coverUrl = novel.cover;
+    if (coverUrl == null || isLnReaderPlaceholderCover(coverUrl)) return null;
+    final Uri? uri = Uri.tryParse(coverUrl);
+    if (uri == null) return null;
+    return _fetchImage(
+      client,
+      coverUrl,
+      fileName: 'cover',
+      // 与书架外的封面网格同一套头：防盗链图床只认浏览器 UA + 站点 Referer。
+      headers: lnReaderImageHeaders(
+        uri: uri,
+        referer: plugin.site,
+        pluginHeaders: info.imageHeaders,
+        cloudflare: manager.cloudflare,
+      ),
+    );
   }
 
   Future<LnReaderEpubImage?> _fetchImage(
@@ -257,12 +306,17 @@ class LnReaderBookDownload {
       return null;
     }
   }
+}
 
-  static String _safeFileName(String title) {
-    final String cleaned = safeWindowsFileName(title).trim();
-    if (cleaned.isEmpty) return 'novel';
-    return cleaned.length > 120 ? cleaned.substring(0, 120) : cleaned;
-  }
+/// EPUB `dc:identifier`：同一插件的同一部作品恒同一个值（下载与在线阅读共用）。
+String lnReaderBookIdentifier(String pluginId, String novelPath) =>
+    'lnreader:$pluginId:$novelPath';
+
+/// 书名 → 导入用文件名（去 Windows 非法字符、限长）。
+String lnReaderSafeFileName(String title) {
+  final String cleaned = safeWindowsFileName(title).trim();
+  if (cleaned.isEmpty) return 'novel';
+  return cleaned.length > 120 ? cleaned.substring(0, 120) : cleaned;
 }
 
 /// 插件用来占位的「无封面」图：不值得下载进 EPUB。

@@ -173,6 +173,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
+    final LnReaderOnlineChapterLoader? onlineChapters = _onlineChapterLoader;
+    if (onlineChapters != null) {
+      await _ensureOnlineChapter(onlineChapters, filePath);
+    }
     final File file = File(filePath);
     if (!file.existsSync()) {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
@@ -253,6 +257,32 @@ extension _ReaderWebView on _ReaderFushiPageState {
       },
       data: data,
     );
+  }
+
+  /// 在线小说书：WebView 要的章节还是占位页就先经插件取正文写回解压树（按需
+  /// 取章，见 [LnReaderOnlineChapterLoader]）。换成正文后丢掉这一章的 sanitize
+  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
+  /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
+  Future<void> _ensureOnlineChapter(
+    LnReaderOnlineChapterLoader loader,
+    String filePath,
+  ) async {
+    try {
+      if (!await loader.ensureLoaded(filePath)) return;
+      _sanitizedHtmlCache.remove(filePath);
+      final int? index = loader.chapterIndexForFile(filePath);
+      final EpubBook? book = _book;
+      if (book != null && index != null && index < book.chapters.length) {
+        book.chapters[index].discardCachedHtml();
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderFushi.onlineChapter', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.novel_online_chapter_failed(error: '$e'),
+        severity: ToastSeverity.error,
+      );
+    }
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
@@ -490,6 +520,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
           if (!await file.exists()) return;
           final Uint8List raw = await file.readAsBytes();
           if (!mounted || _settings == null) return;
+          // 在线小说书还没取正文的章：占位页不进缓存。正文随后由拦截层 /
+          // 后台预取写盘，占位页若进了缓存，翻到这一章时会被原样下发。
+          if (_onlineChapterLoader != null &&
+              utf8
+                  .decode(raw, allowMalformed: true)
+                  .contains(kLnReaderPendingChapterAttribute)) {
+            return;
+          }
           final Uint8List built = _buildSanitizedChapterHtmlBytes(
             raw,
             chapterIndex: index,
