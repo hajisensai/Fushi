@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2492 条。点号进各自文件。
+> 共 2493 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2710](bugs/BUG-2710-kirikiri-lookup-click-swallowed-after-dismiss.md) | 🚧 | 🚧 | KiriKiri 游戏内查词关卡后，下一次点字被当作关闭再吞一次 |
+| [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
+| [BUG-2710](bugs/BUG-2710-kirikiri-lookup-click-swallowed-after-dismiss.md) | ✅ | ✅ | KiriKiri 游戏内查词关卡后，下一次点字被当作关闭再吞一次 |
 | [BUG-2708](bugs/BUG-2708-kirikiri-kagex-textrender-unbound-lookup.md) | ✅ | ✅ | KiriKiri KAGEX 有 TextRender 插件但未绑消息层，游戏内查词采不到字形且点击推进剧情（千恋＊万花） |
 | [BUG-2706](bugs/BUG-2706-gal-thread-memory-restores-dead-thread.md) | ✅ | ✅ | 同一 Fushi 进程二次启动同款游戏时文本线程记忆恢复到上一次的死线程 |
 | [BUG-2705](bugs/BUG-2705-kirikiri-embed-sticky-se-tail.md) | ✅ | ✅ | KiriKiri EmbedKrkrZ 台词被双写并拼上当前循环音效标签（千恋＊万花） |

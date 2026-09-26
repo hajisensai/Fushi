@@ -109,6 +109,42 @@ int main(int argc, char** argv) {
         static_cast<int>(line1.size())) {
       return 70;
     }
+    // 音效循环中途才附着（从没见过独立的 T）：第一条原样放行，连续第二条以同一尾巴结尾、
+    // 正文不同 → 确认粘尾并剥掉，之后照常剥。
+    LunaPairedTailTracker attached;
+    if (len_of(attached, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>((line1 + line1 + tail).size())) {
+      return 71;
+    }
+    if (len_of(attached, 7, "EmbedKrkrZ", line2 + line2 + tail) !=
+        static_cast<int>(line2.size())) {
+      return 72;
+    }
+    if (len_of(attached, 7, "EmbedKrkrZ", line1 + line1 + tail) !=
+        static_cast<int>(line1.size())) {
+      return 73;
+    }
+    // 同一句叠句连着出现两次（正文相同）不是粘尾证据：原样放行。
+    LunaPairedTailTracker repeated;
+    if (len_of(repeated, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size()) ||
+        len_of(repeated, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size())) {
+      return 74;
+    }
+    // 两句叠句的尾巴不同：原样放行。
+    const std::wstring legit2 = L"はいはい、今行きます";
+    LunaPairedTailTracker distinct;
+    if (len_of(distinct, 7, "EmbedKrkrZ", legit) != static_cast<int>(legit.size()) ||
+        len_of(distinct, 7, "EmbedKrkrZ", legit2) != static_cast<int>(legit2.size())) {
+      return 75;
+    }
+    // 不做成对折叠的 hook 面，连续同尾也不受影响（跨引擎负向）。
+    LunaPairedTailTracker siglus;
+    if (len_of(siglus, 9, "SiglusEngine", line1 + line1 + tail) !=
+            static_cast<int>((line1 + line1 + tail).size()) ||
+        len_of(siglus, 9, "SiglusEngine", line2 + line2 + tail) !=
+            static_cast<int>((line2 + line2 + tail).size())) {
+      return 76;
+    }
   }
   if (argc != 2) return 1;
   const std::wstring single_line =
