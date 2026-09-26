@@ -18,6 +18,6 @@
   - 本条只做定位、不改代码；`native/galgame_hook/engine-support.yaml` 未碰，无任何引擎支持状态变更。
   - **2026-09-26 补充（证据升到 observed，① 仍未修）**：
     - 本机现状：Steam 库 `D:\steam\steamapps\common\SenrenBanka` 目录还在，但只剩 DLC `adult*.xp3` 与存档；注册表 `HKCU\Software\Valve\Steam\Apps\1144400` 为 `Installed=0`，`steamapps\` 下没有 `appmanifest_1144400.acf`——本体已卸载，仍不能作样本。
-    - 结构判据：SteamStub 包壳 exe 带 `.bind` 节、入口点落在壳里（PARQUET Steam 原版 exe 实测，SHA-256 `b43516fae2e39cb7…`；破解版与光盘版无此节）。提交 `3ab4237b6aa` 在 `include/loader_init_gate.h` 识别 `steam_stub`，`injector_main.cpp` 在「SteamStub + 未发现 AppID → 直接启动」时打 `[steam] exe is SteamStub-wrapped (.bind) but no Steam AppID was discovered …`，**不再静默**；启动方式本身未改（没有正版样本，不猜）。单测 `tests/loader_init_gate_test.cpp`、守卫 `adapter_structure_test.py::test_launch_runs_loader_init_gate_before_injection`。
+    - 结构判据：SteamStub 包壳 exe 带 `.bind` 节、入口点落在壳里（PARQUET Steam 原版 exe 实测，SHA-256 `b43516fae2e39cb7…`；破解版与光盘版无此节）。提交 `f9388f6835c` 在 `include/loader_init_gate.h` 识别 `steam_stub`，`injector_main.cpp` 在「SteamStub + 未发现 AppID → 直接启动」时打 `[steam] exe is SteamStub-wrapped (.bind) but no Steam AppID was discovered …`，**不再静默**；启动方式本身未改（没有正版样本，不猜）。单测 `tests/loader_init_gate_test.cpp`、守卫 `adapter_structure_test.py::test_launch_runs_loader_init_gate_before_injection`。
     - 真机：PARQUET 原版 Steam exe 放在库外、Steam 客户端在跑（本账号不拥有该作）→ 诊断行打出 → `OK hooked` → 约 2 s 后游戏退出，注入器 `rc=0`。即「Steam 版起不来但宿主以为成功」的形态可复现；rc=0 掩盖提前退出是同链路下一个边界。
     - 下一步仍需一个**正版已安装**的 Steam KiriKiri 样本（如重新安装千恋＊万花）走 `steam://run` 与库外直接启动两条路径各一次，才能定 ① 的启动策略。

@@ -28,6 +28,7 @@
 #include "launch_failure_policy.h"
 #include "locale_emulator_launch.h"
 #include "kirikiri_launch_profile.h"
+#include "kirikiri_launch_signature.h"
 #include "loader_init_gate.h"
 #include "launcher_layout.h"
 #include "launcher_wait.h"
@@ -1477,22 +1478,28 @@ bool ProcessHasVisibleTopLevelWindow(DWORD pid) {
   return search.found;
 }
 
-// 加载器初始化门（判据与来由见 loader_init_gate.h）：入口点写 `EB FE`，恢复主线程让它
-// 自己完成进程初始化（静态导入 DllMain + TLS 回调），停在入口点后挂起、还原原字节。
-// 返回 true 时主线程处于挂起态（计数 1），调用方照常注入并由既有路径恢复。
-// 返回 false 表示没过门：入口点字节已尽力还原，主线程被挂起（若进程还活着），调用方
-// 退回旧行为继续注入——门是生命周期修正，不是新的失败面。
-bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
+// 加载器初始化门（判据与来由见 loader_init_gate.h；只由引擎 launch profile 声明启用）：
+// 入口点写 `EB FE`，恢复主线程让它自己完成进程初始化（静态导入 DllMain + TLS 回调），停在
+// 入口点后挂起、还原原字节。结果见 LoaderInitGateOutcome：
+//   kParkedAtEntry：主线程挂起（计数 1）停在入口，调用方照常早注入并由既有路径恢复；
+//   kNotStarted：门没开始（主线程从未被恢复），调用方照常早注入；
+//   kLeftRunning：主线程已在跑进程初始化却没停到入口（入口被映像自己改写 / 无 UI 超时），
+//     保持运行、不挂回去，调用方按已运行进程附着——挂回去再远程 LoadLibraryW 会在 loader
+//     lock 上互等死锁。门是生命周期修正，不是新的失败面。
+fushi_voice_hook::LoaderInitGateOutcome RunLoaderInitGate(HANDLE process,
+                                                          HANDLE thread,
+                                                          uint32_t entry_rva) {
+  using Outcome = fushi_voice_hook::LoaderInitGateOutcome;
   if (thread == nullptr) {
     fprintf(stderr,
             "[loader-gate] no primary thread handle; skipping gate (legacy "
             "early injection)\n");
-    return false;
+    return Outcome::kNotStarted;
   }
   const uintptr_t image_base = RemoteImageBase(process);
   if (image_base == 0) {
     fprintf(stderr, "[loader-gate] cannot read image base; skipping gate\n");
-    return false;
+    return Outcome::kNotStarted;
   }
   void* const entry = reinterpret_cast<void*>(image_base + entry_rva);
   uint8_t original[2] = {};
@@ -1501,14 +1508,14 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
       io != sizeof(original)) {
     fprintf(stderr, "[loader-gate] cannot read entry bytes at %p: %lu\n", entry,
             GetLastError());
-    return false;
+    return Outcome::kNotStarted;
   }
   DWORD old_protect = 0;
   if (!VirtualProtectEx(process, entry, sizeof(original), PAGE_EXECUTE_READWRITE,
                         &old_protect)) {
     fprintf(stderr, "[loader-gate] VirtualProtectEx failed: %lu\n",
             GetLastError());
-    return false;
+    return Outcome::kNotStarted;
   }
   const uint8_t spin[2] = {0xEB, 0xFE};  // jmp $
   const auto restore = [&]() {
@@ -1518,11 +1525,31 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
     DWORD ignored = 0;
     VirtualProtectEx(process, entry, sizeof(original), old_protect, &ignored);
   };
+  // 入口处是否仍是我们写的 `EB FE`。不是就说明映像自己改写了入口（壳原地解密代码段）。
+  const auto entry_still_spinning = [&]() {
+    uint8_t current[2] = {};
+    SIZE_T got = 0;
+    return ReadProcessMemory(process, entry, current, sizeof(current), &got) &&
+           got == sizeof(current) && current[0] == spin[0] &&
+           current[1] == spin[1];
+  };
+  // 主线程当前是否停在入口点（调用方须已挂起它）。
+  const auto thread_at_entry = [&]() {
+    CONTEXT ctx = {};
+    ctx.ContextFlags = CONTEXT_CONTROL;
+    if (!GetThreadContext(thread, &ctx)) return false;
+#if defined(_M_X64)
+    const uintptr_t ip = static_cast<uintptr_t>(ctx.Rip);
+#else
+    const uintptr_t ip = static_cast<uintptr_t>(ctx.Eip);
+#endif
+    return ip == reinterpret_cast<uintptr_t>(entry);
+  };
   if (!WriteProcessMemory(process, entry, spin, sizeof(spin), &io) ||
       io != sizeof(spin)) {
     fprintf(stderr, "[loader-gate] cannot patch entry: %lu\n", GetLastError());
     restore();
-    return false;
+    return Outcome::kNotStarted;
   }
   FlushInstructionCache(process, entry, sizeof(spin));
 
@@ -1549,11 +1576,8 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
     if (now >= next_ui_probe) {
       next_ui_probe = now + 100;
       // 壳在 TLS 回调里解密代码段时会覆盖入口处的 `EB FE`：主线程不会再停在这里，
-      // 且此后绝不能再写回原字节（那是解密前的密文）。
-      uint8_t current[2] = {};
-      SIZE_T got = 0;
-      if (ReadProcessMemory(process, entry, current, sizeof(current), &got) &&
-          got == sizeof(current) && (current[0] != spin[0] || current[1] != spin[1])) {
+      // 且此后绝不能再写回原字节（那是解密前的密文）。此时主线程正在运行（本轮还没挂起它）。
+      if (!entry_still_spinning()) {
         entry_rewritten = true;
         break;
       }
@@ -1566,18 +1590,9 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
       }
     }
     if (SuspendThread(thread) == static_cast<DWORD>(-1)) break;
-    CONTEXT ctx = {};
-    ctx.ContextFlags = CONTEXT_CONTROL;
-    if (GetThreadContext(thread, &ctx)) {
-#if defined(_M_X64)
-      const uintptr_t ip = static_cast<uintptr_t>(ctx.Rip);
-#else
-      const uintptr_t ip = static_cast<uintptr_t>(ctx.Eip);
-#endif
-      if (ip == reinterpret_cast<uintptr_t>(entry)) {
-        reached = true;
-        break;  // 保持挂起
-      }
+    if (thread_at_entry()) {
+      reached = true;
+      break;  // 保持挂起
     }
     ResumeThread(thread);
     Sleep(2);
@@ -1586,35 +1601,61 @@ bool RunLoaderInitGate(HANDLE process, HANDLE thread, uint32_t entry_rva) {
     printf("WAIT pid=%lu reason=none\n", pid);
     fflush(stdout);
   }
-  const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
-  if (!reached && alive) {
-    // 超时 / 入口被改写：把主线程挂住，保证之后的注入仍面对一个挂起的进程。
-    SuspendThread(thread);
-  }
   if (entry_rewritten) {
-    // 入口已被壳改写成解密后的真实代码：只还原页保护，不写回原字节。
-    DWORD ignored = 0;
-    VirtualProtectEx(process, entry, sizeof(original), old_protect, &ignored);
+    // 入口已被映像自己改写（壳原地解密）：主线程此刻在进程初始化中途运行，可能持有 loader
+    // lock。不挂起它、不写回入口字节、也不动页保护（壳可能还在写这一页），让进程照常跑完初始化；
+    // 调用方改按已运行进程附着（kLeftRunning）。
     fprintf(stderr,
-            "[loader-gate] entry %p was rewritten by the image itself (unpacker) "
-            "after %llu ms; continuing with the process initialised\n",
+            "[loader-gate] entry %p was rewritten by the image itself (in-place "
+            "unpacker) after %llu ms; process initialisation is still in "
+            "progress, so the primary thread is left running untouched (no "
+            "suspend, no entry restore) and the game will be attached as an "
+            "already running process\n",
             entry, static_cast<unsigned long long>(GetTickCount64() - started));
-    return false;
+    return Outcome::kLeftRunning;
   }
-  restore();
   if (reached) {
+    restore();
     fprintf(stderr,
             "[loader-gate] primary thread initialised the process and parked at "
             "entry %p after %llu ms\n",
             entry, static_cast<unsigned long long>(GetTickCount64() - started));
-    return true;
+    return Outcome::kParkedAtEntry;
   }
+  const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+  if (alive && SuspendThread(thread) != static_cast<DWORD>(-1)) {
+    // 无 UI 超时：先停住主线程再核对，避免它恰好踩到入口时我们在改字节。
+    if (!entry_still_spinning()) {
+      ResumeThread(thread);
+      fprintf(stderr,
+              "[loader-gate] entry %p was rewritten by the image itself while "
+              "timing out; primary thread left running untouched, attaching as "
+              "an already running process\n",
+              entry);
+      return Outcome::kLeftRunning;
+    }
+    if (thread_at_entry()) {
+      restore();
+      fprintf(stderr,
+              "[loader-gate] primary thread parked at entry %p at the timeout "
+              "edge after %llu ms\n",
+              entry,
+              static_cast<unsigned long long>(GetTickCount64() - started));
+      return Outcome::kParkedAtEntry;
+    }
+    restore();
+    ResumeThread(thread);
+  } else {
+    restore();
+  }
+  // 主线程已经跑进了进程初始化却没到入口：挂回去只会让远程 LoadLibraryW 在 loader lock 上
+  // 互等，所以放它继续跑，按已运行进程附着。
   fprintf(stderr,
           "[loader-gate] primary thread did not reach entry %p within %lu ms "
-          "without visible UI (alive=%d); continuing with legacy early "
-          "injection\n",
+          "without visible UI (alive=%d); entry restored, primary thread left "
+          "running, attaching as an already running process\n",
           entry, kGateTimeoutMs, alive ? 1 : 0);
-  return false;
+  return Outcome::kLeftRunning;
 }
 
 bool NativeLoopbackPolicyApplied(SharedHeader* header, uint32_t requested,
@@ -2837,6 +2878,38 @@ bool LooksLikeSiglusRuntime(const std::wstring& exe) {
   return fushi_voice_hook::DirectoryLooksLikeSiglusOnDisk(ExecutableDirectory(exe));
 }
 
+// KiriKiri（2 / Z）：exe 同目录至少一个 `*.xp3` 以 XP3 归档魔数开头（判据本体与来由见
+// include/kirikiri_launch_signature.h）。exe 本身可能被 Enigma 整体加壳、不导出任何 TVP 符号，
+// 所以不看 exe，只看引擎数据归档的结构。这里只提供 Win32 的目录枚举与读文件头。
+bool LooksLikeKirikiriRuntime(const std::wstring& exe) {
+  return fushi_voice_hook::DirectoryLooksLikeKirikiri(
+      ExecutableDirectory(exe),
+      [](const std::wstring& dir, auto visit) {
+        WIN32_FIND_DATAW data = {};
+        HANDLE find = FindFirstFileExW(JoinPath(dir, L"*.xp3").c_str(),
+                                       FindExInfoBasic, &data,
+                                       FindExSearchNameMatch, nullptr, 0);
+        if (find == INVALID_HANDLE_VALUE) return;
+        do {
+          if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) continue;
+          if (!visit(JoinPath(dir, data.cFileName))) break;
+        } while (FindNextFileW(find, &data));
+        FindClose(find);
+      },
+      [](const std::wstring& path, uint8_t* out, size_t capacity) -> size_t {
+        HANDLE file = CreateFileW(
+            path.c_str(), GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file == INVALID_HANDLE_VALUE) return 0;
+        DWORD read = 0;
+        const BOOL ok =
+            ReadFile(file, out, static_cast<DWORD>(capacity), &read, nullptr);
+        CloseHandle(file);
+        return ok ? static_cast<size_t>(read) : 0;
+      });
+}
+
 bool IsSiglusGame(const std::wstring& exe) {
   return IsSiglusExecutable(exe) || LooksLikeSiglusRuntime(exe);
 }
@@ -3168,6 +3241,9 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
                           effective_luna, native_loopback_requested);
   }
   const fushi_voice_hook::PeLaunchLayout pe_layout = ReadPeLaunchLayout(exe);
+  // 引擎 launch profile（结构判据，不按标题 / exe 名 / 哈希）：决定是否需要加载器初始化门。
+  const fushi_voice_hook::KirikiriLaunchProfile kirikiri_profile =
+      fushi_voice_hook::SelectKirikiriLaunchProfile(LooksLikeKirikiriRuntime(exe));
   if (pe_layout.steam_stub) {
     // BUG-1192：SteamStub 包壳 exe 却没从 appmanifest 发现 AppID，只能直接启动。以前这里完全
     // 静默，用户只看到游戏自己弹的 `Application load error`，无从判断是启动方式不对。
@@ -3269,15 +3345,32 @@ int RunLaunch(const std::wstring& exe, const std::wstring& workdir_in,
     resumed_before_discovery = true;
   }
 
-  // 加载器初始化门（loader_init_gate.h）：exe 带 TLS 回调时，不能让注入线程替进程跑初始化。
+  // 加载器初始化门（loader_init_gate.h）：只有引擎 launch profile 声明需要（目前只有
+  // KiriKiri）且 exe 带 TLS 回调时，才不让注入线程替进程跑初始化。其余 exe 不进这里。
+  bool loader_gate_left_running = false;
   if (launched_suspended && !resumed_before_discovery && !delayed_attach &&
       !follow_children) {
-    if (fushi_voice_hook::ShouldUseLoaderInitGate(pe_layout, true)) {
+    if (fushi_voice_hook::ShouldUseLoaderInitGate(
+            pe_layout, true, kirikiri_profile.loader_init_gate)) {
       fprintf(stderr,
-              "[loader-gate] exe declares %u TLS callback(s); letting the primary "
-              "thread initialise the process before injection\n",
+              "[loader-gate] KiriKiri launch profile (XP3 archive signature) and "
+              "exe declares %u TLS callback(s); letting the primary thread "
+              "initialise the process before injection\n",
               pe_layout.tls_callback_count);
-      RunLoaderInitGate(pi.hProcess, pi.hThread, pe_layout.entry_point_rva);
+      loader_gate_left_running =
+          fushi_voice_hook::LoaderInitGateLeftProcessRunning(RunLoaderInitGate(
+              pi.hProcess, pi.hThread, pe_layout.entry_point_rva));
+    }
+  }
+  if (loader_gate_left_running) {
+    // 门没能把主线程停在入口（入口被壳改写 / 超时）：主线程已在运行，游戏按已运行进程附着
+    // ——与 --pid 同一套编排（注入器不再负责恢复游戏，失败也不按挂起态处置）。先等游戏
+    // 窗口就绪（与延迟附着同一个就绪门），让进程初始化跑完；等不到也不杀游戏，照常附着。
+    resumed_before_discovery = true;
+    if (!WaitForReadyGameWindow(pi.hProcess, pi.dwProcessId, 20000)) {
+      fprintf(stderr,
+              "[loader-gate] no ready game window within 20000 ms after the "
+              "gate; attaching to the running process anyway\n");
     }
   }
 

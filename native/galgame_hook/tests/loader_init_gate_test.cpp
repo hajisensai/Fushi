@@ -5,8 +5,11 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <map>
+#include <string>
 #include <vector>
 
+#include "kirikiri_launch_signature.h"
 #include "loader_init_gate.h"
 
 namespace {
@@ -14,6 +17,10 @@ namespace {
 using fushi_voice_hook::ParsePeLaunchLayout;
 using fushi_voice_hook::PeLaunchLayout;
 using fushi_voice_hook::ShouldUseLoaderInitGate;
+
+// 下面 PE 结构断言都在「引擎 profile 已声明需要门」（KiriKiri）的前提下验 PE 判据本身；
+// 引擎 profile 这一维的正负向单独在 TestEngineProfileAdmission 里验。
+constexpr bool kKirikiri = true;
 
 void Put16(std::vector<uint8_t>& b, size_t off, uint16_t v) { std::memcpy(&b[off], &v, 2); }
 void Put32(std::vector<uint8_t>& b, size_t off, uint32_t v) { std::memcpy(&b[off], &v, 4); }
@@ -101,9 +108,150 @@ PeLaunchLayout Parse(const std::vector<uint8_t>& b) {
   return ParsePeLaunchLayout(b.data(), b.size());
 }
 
+// 假目录：文件全路径 → 文件头字节。
+using FakeDir = std::map<std::wstring, std::vector<uint8_t>>;
+
+bool FakeDirLooksLikeKirikiri(const FakeDir& files, const std::wstring& dir) {
+  return fushi_voice_hook::DirectoryLooksLikeKirikiri(
+      dir,
+      [&](const std::wstring& d, auto visit) {
+        for (const auto& entry : files) {
+          const std::wstring& path = entry.first;
+          if (path.size() <= d.size() + 1 || path.compare(0, d.size(), d) != 0 ||
+              path[d.size()] != L'\\') {
+            continue;
+          }
+          const std::wstring name = path.substr(d.size() + 1);
+          if (name.find(L'\\') != std::wstring::npos) continue;  // 只看直接子文件
+          if (name.size() < 4 || name.compare(name.size() - 4, 4, L".xp3") != 0) continue;
+          if (!visit(path)) break;
+        }
+      },
+      [&](const std::wstring& path, uint8_t* out, size_t capacity) -> size_t {
+        const auto it = files.find(path);
+        if (it == files.end()) return 0;
+        const size_t n = it->second.size() < capacity ? it->second.size() : capacity;
+        if (n != 0) std::memcpy(out, it->second.data(), n);
+        return n;
+      });
+}
+
+std::vector<uint8_t> Xp3Header() {
+  std::vector<uint8_t> header(fushi_voice_hook::kKirikiriXp3Magic,
+                              fushi_voice_hook::kKirikiriXp3Magic +
+                                  fushi_voice_hook::kKirikiriXp3MagicBytes);
+  header.push_back(0x00);  // 后面跟索引偏移，内容无关
+  return header;
+}
+
+// 从目录（假文件表）+ exe 的 PE 布局一路算到「是否启用门」，与 RunLaunch 的判定链同形。
+bool GateAdmitted(const FakeDir& files, const std::wstring& dir,
+                  const PeLaunchLayout& layout) {
+  const fushi_voice_hook::KirikiriLaunchProfile profile =
+      fushi_voice_hook::SelectKirikiriLaunchProfile(FakeDirLooksLikeKirikiri(files, dir));
+  return ShouldUseLoaderInitGate(layout, true, profile.loader_init_gate);
+}
+
+void TestKirikiriSignature() {
+  const std::wstring game = L"C:\\Games\\Title";
+  // 原版 exe 与 Enigma 加壳汉化 exe 同目录：data.xp3 带 XP3 魔数 → KiriKiri。
+  {
+    const FakeDir files = {{game + L"\\data.xp3", Xp3Header()},
+                           {game + L"\\voice.xp3", Xp3Header()}};
+    assert(FakeDirLooksLikeKirikiri(files, game));
+    const auto profile = fushi_voice_hook::SelectKirikiriLaunchProfile(true);
+    assert(profile.recognised && profile.loader_init_gate);
+  }
+  // 只有扩展名、没有魔数（别家用同后缀的文件 / 空文件 / 截断文件）→ 不认（fail closed）。
+  {
+    const FakeDir files = {{game + L"\\data.xp3", {'P', 'K', 0x03, 0x04}},
+                           {game + L"\\empty.xp3", {}}};
+    assert(!FakeDirLooksLikeKirikiri(files, game));
+    std::vector<uint8_t> truncated = Xp3Header();
+    truncated.resize(fushi_voice_hook::kKirikiriXp3MagicBytes - 1);
+    const FakeDir short_file = {{game + L"\\data.xp3", truncated}};
+    assert(!FakeDirLooksLikeKirikiri(short_file, game));
+  }
+  // 魔数只在子目录里（不在 exe 同目录）→ 不认。
+  {
+    const FakeDir files = {{game + L"\\sub\\data.xp3", Xp3Header()}};
+    assert(!FakeDirLooksLikeKirikiri(files, game));
+  }
+  // 空目录 / 空目录名 → 不认。
+  assert(!FakeDirLooksLikeKirikiri(FakeDir{}, game));
+  assert(!FakeDirLooksLikeKirikiri(FakeDir{{L"\\data.xp3", Xp3Header()}}, L""));
+  // 扫描有上限：前 kKirikiriXp3ScanLimit 个都不是 XP3 时不再往后读。
+  {
+    FakeDir files;
+    for (size_t i = 0; i < fushi_voice_hook::kKirikiriXp3ScanLimit; ++i) {
+      files[game + L"\\a" + std::to_wstring(100 + i) + L".xp3"] = {'n', 'o'};
+    }
+    files[game + L"\\z.xp3"] = Xp3Header();
+    assert(!FakeDirLooksLikeKirikiri(files, game));
+  }
+  const std::vector<uint8_t> header = Xp3Header();
+  assert(fushi_voice_hook::IsKirikiriXp3ArchiveHeader(header.data(), header.size()));
+  assert(!fushi_voice_hook::IsKirikiriXp3ArchiveHeader(nullptr, 0));
+  const auto none = fushi_voice_hook::SelectKirikiriLaunchProfile(false);
+  assert(!none.recognised && !none.loader_init_gate);
+}
+
+void TestEngineProfileAdmission() {
+  for (bool is64 : {false, true}) {
+    PeSpec packed;
+    packed.is64 = is64;
+    packed.tls_callbacks = 1;
+    const PeLaunchLayout tls = Parse(BuildPe(packed));
+    PeSpec plain_spec;
+    plain_spec.is64 = is64;
+    const PeLaunchLayout plain = Parse(BuildPe(plain_spec));
+    assert(tls.tls_callback_count == 1 && plain.tls_callback_count == 0);
+
+    // 正向：KiriKiri 结构特征（exe 同目录 XP3 归档）+ TLS 回调（Enigma 加壳汉化 exe）→ 过门。
+    const std::wstring krkr = L"C:\\Games\\Krkr";
+    const FakeDir krkr_files = {{krkr + L"\\data.xp3", Xp3Header()},
+                                {krkr + L"\\patch.xp3", Xp3Header()}};
+    assert(GateAdmitted(krkr_files, krkr, tls));
+    // KiriKiri 但 exe 没有 TLS 回调（原版 CafeStella.exe / SenrenBanka.exe 形态）→ 不过门。
+    assert(!GateAdmitted(krkr_files, krkr, plain));
+
+    // 跨引擎负向：带 TLS 回调、但 exe 目录没有 KiriKiri 签名的一律不过门，启动时序不变。
+    //   Siglus（Enigma 加壳；Gameexe.dat + Scene.pck）
+    const std::wstring siglus = L"C:\\Games\\Siglus";
+    assert(!GateAdmitted(FakeDir{{siglus + L"\\Gameexe.dat", {0x00}},
+                                 {siglus + L"\\Scene.pck", {0x00}}},
+                         siglus, tls));
+    //   NW.js 版 TyranoScript（package.nw / nw.dll）
+    const std::wstring nwjs = L"C:\\Games\\Tyrano";
+    assert(!GateAdmitted(FakeDir{{nwjs + L"\\package.nw", {'P', 'K', 0x03, 0x04}},
+                                 {nwjs + L"\\nw.dll", {'M', 'Z'}}},
+                         nwjs, tls));
+    //   MinGW 运行时 / Themida、VMProtect 加壳 / 用 thread_local 的 MSVC exe：目录里只有 exe 与 DLL
+    const std::wstring other = L"C:\\Games\\Other";
+    assert(!GateAdmitted(FakeDir{{other + L"\\libgcc_s_dw2-1.dll", {'M', 'Z'}}}, other, tls));
+    assert(!GateAdmitted(FakeDir{}, other, tls));
+    //   同后缀但不是 XP3 的归档 → 不过门
+    assert(!GateAdmitted(FakeDir{{other + L"\\data.xp3", {'P', 'K', 0x03, 0x04}}}, other, tls));
+  }
+}
+
+void TestGateOutcomeDisposition() {
+  using fushi_voice_hook::LoaderInitGateLeftProcessRunning;
+  using fushi_voice_hook::LoaderInitGateOutcome;
+  // 只有「主线程已在跑初始化却没停到入口」（入口被壳改写 / 超时）才改按已运行进程附着；
+  // 停到入口或门根本没开始时照旧早注入、注入后恢复。
+  assert(LoaderInitGateLeftProcessRunning(LoaderInitGateOutcome::kLeftRunning));
+  assert(!LoaderInitGateLeftProcessRunning(LoaderInitGateOutcome::kParkedAtEntry));
+  assert(!LoaderInitGateLeftProcessRunning(LoaderInitGateOutcome::kNotStarted));
+}
+
 }  // namespace
 
 int main() {
+  TestKirikiriSignature();
+  TestEngineProfileAdmission();
+  TestGateOutcomeDisposition();
+
   // 普通 exe（CafeStella.exe / PARQUET.exe 形态）：无 TLS 目录 → 不过门，行为不变。
   for (bool is64 : {false, true}) {
     PeSpec plain;
@@ -113,7 +261,7 @@ int main() {
     assert(layout.is_64bit == is64);
     assert(layout.entry_point_rva == 0x1010);
     assert(layout.tls_callback_count == 0);
-    assert(!ShouldUseLoaderInitGate(layout, true));
+    assert(!ShouldUseLoaderInitGate(layout, true, kKirikiri));
   }
 
   // 有 TLS 目录但回调数组为空（夏空カナタ.exe：BCB 的 .tls 数据段）→ 不过门。
@@ -123,7 +271,7 @@ int main() {
     const PeLaunchLayout layout = Parse(BuildPe(empty_tls));
     assert(layout.valid);
     assert(layout.tls_callback_count == 0);
-    assert(!ShouldUseLoaderInitGate(layout, true));
+    assert(!ShouldUseLoaderInitGate(layout, true, kKirikiri));
   }
 
   // 有 TLS 回调（Enigma 加壳的汉化 exe：1 个回调）→ 过门；32/64 位都数得对。
@@ -135,9 +283,9 @@ int main() {
       const PeLaunchLayout layout = Parse(BuildPe(packed));
       assert(layout.valid);
       assert(layout.tls_callback_count == static_cast<uint32_t>(count));
-      assert(ShouldUseLoaderInitGate(layout, true));
+      assert(ShouldUseLoaderInitGate(layout, true, kKirikiri));
       // 进程不归注入器恢复（延迟附着 / 跟随子进程 / 已提前恢复）时门没有意义。
-      assert(!ShouldUseLoaderInitGate(layout, false));
+      assert(!ShouldUseLoaderInitGate(layout, false, kKirikiri));
     }
   }
 
@@ -149,7 +297,7 @@ int main() {
     const PeLaunchLayout layout = Parse(BuildPe(runtime_filled));
     assert(layout.valid);
     assert(layout.tls_callback_count == 1);
-    assert(ShouldUseLoaderInitGate(layout, true));
+    assert(ShouldUseLoaderInitGate(layout, true, kKirikiri));
   }
 
   // SteamStub（`.bind` 节）只作诊断分型：识别出来，但不影响是否过门。
@@ -162,7 +310,7 @@ int main() {
     const PeLaunchLayout layout = Parse(steam);
     assert(layout.valid);
     assert(layout.steam_stub);
-    assert(!ShouldUseLoaderInitGate(layout, true));
+    assert(!ShouldUseLoaderInitGate(layout, true, kKirikiri));
     assert(!Parse(BuildPe(plain)).steam_stub);
     // `.binder` 之类前缀相同的节名不算。
     std::memcpy(&steam[second_section], ".binder", 7);
@@ -174,7 +322,7 @@ int main() {
     PeSpec no_entry;
     no_entry.tls_callbacks = 1;
     no_entry.entry_rva = 0;
-    assert(!ShouldUseLoaderInitGate(Parse(BuildPe(no_entry)), true));
+    assert(!ShouldUseLoaderInitGate(Parse(BuildPe(no_entry)), true, kKirikiri));
   }
 
   // 损坏 / 截断输入一律判无效、不过门、不越界。
@@ -186,7 +334,7 @@ int main() {
                        size_t{0x1F0}, size_t{0x410}, size_t{0x503}, size_t{0x601}}) {
       const PeLaunchLayout layout = ParsePeLaunchLayout(good.data(), cut);
       assert(layout.tls_callback_count <= 2);
-      if (!layout.valid) assert(!ShouldUseLoaderInitGate(layout, true));
+      if (!layout.valid) assert(!ShouldUseLoaderInitGate(layout, true, kKirikiri));
     }
     std::vector<uint8_t> bad_mz = good;
     bad_mz[0] = 'X';
