@@ -28,6 +28,7 @@ class SubtitleEpisodeSearchSpec {
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
     this.episode,
+    this.season,
   });
 
   /// 预填搜索词（文件名解析出的番名 / 刮削名）。
@@ -45,6 +46,10 @@ class SubtitleEpisodeSearchSpec {
   /// BUG-2626：预填的集号；null = 输入框留空（列出全部版本，旧行为）。调用方算不出
   /// 可靠集号时必须传 null，不要拿播放序凑——填错的集号会把用户引到另一集的字幕上。
   final int? episode;
+
+  /// 文件名 / 远端标题解析出的季号；null = 不知道。面板据此在 AniList 同名多季的
+  /// 候选里挑对应那一季（相关度首条恒为第一季）。
+  final int? season;
 }
 
 /// 「整个合集」作用域的输入。
@@ -198,6 +203,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       videoPath: spec.videoPath,
       initialQuery: spec.initialQuery,
       initialEpisode: spec.episode,
+      initialSeason: spec.season,
       initialApiKey: host.jimakuApiKey,
       onApiKeyChanged: host.setJimakuApiKey,
       subtitleRegistry: () => host.subtitleRegistry,

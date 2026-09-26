@@ -1124,6 +1124,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return episode != null && episode > 0 ? episode : null;
   }
 
+  /// 当前视频的季号：本地看文件名（`S04E18` / `4th season - 18`），远端看来源给的
+  /// 标题（Jellyfin/Emby 单集标题拼了 `剧名 S04E18 集名`）。解析不出 null——面板会再从
+  /// 番名/合集名里的季度记号推断，这里不猜。
+  int? _jimakuSeasonNumber() {
+    if (_isRemote) {
+      return subtitleSeasonFromName(_effectiveRemoteInfo?.title);
+    }
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null || videoPath.trim().isEmpty) return null;
+    return subtitleSeasonFromName(p.basename(videoPath));
+  }
+
   /// 组装在线字幕检索的**身份种子**：优先用刮削早就存下的外部 ID 与日文原名，而不是
   /// 界面上的显示名（BUG-1842）。
   ///
@@ -1231,6 +1243,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         seed: seed,
         // BUG-2626：预填当前集号（算不出就留空 = 列出全部，旧行为）。
         episode: _jimakuEpisodeNumber(),
+        season: _jimakuSeasonNumber(),
         // 本地视频才有指纹可算（远端流恒 null），OpenSubtitles 据此按文件哈希精确匹配。
         videoPath: _isRemote ? null : _currentVideoPath,
       ),

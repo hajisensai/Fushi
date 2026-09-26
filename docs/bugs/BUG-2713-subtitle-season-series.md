@@ -1,0 +1,9 @@
+## BUG-2713 · 在线字幕搜索无视季号按第一季检索，第四季字幕查不到
+- **报告**：2026-09-26（用户：《Re:Zero》第四季第 18 集「查不到字幕」，附三张字幕面板截图与三份 Jimaku 上现成的 S04E18 / S04E83 字幕：NanakoRaws、shincaps、ABEMA）
+- **真实性**：✅ 真 bug。实测 Jimaku 对番名文本搜索返回 6 个条目，其中「4th Season」（entry 11820，`anilist_id` 189046）`episode=18` 正好列出用户附的 NanakoRaws / shincaps 两份，`episode=83` 列出 ABEMA 那份——源里有，是 Fushi 没去问。AniList 把每一季登记成独立条目，对该番名的搜索按相关度排序、首条恒为第一季（21355），而字幕面板无条件取首条：
+  - 单集面板 `fushi/lib/src/pages/implementations/subtitle_search_panel.dart` `_search` 里 `resolvedSeriesId = outcome.media.first.id`；
+  - 合集面板 `fushi/lib/src/pages/implementations/subtitle_collection_panel.dart` `_resolveSeries` 里 `_applySeries(outcome.media.first)`。
+  于是按第一季的 id 查 Jimaku，只拿到第一季条目（截图 1 左栏高亮第一季、右栏「共 25 集」），第四季条目一次都没被问到。视频自身的季号（文件名 `S04E18`、合集名「… 4th season」、Jellyfin 单集标题 `S04E18`）从未参与选系列，也从没作为 `season` 放进检索请求——OpenSubtitles 于是按裸番名搜出「Zero (2018)」「From Ground Zero」这类无关结果（截图 2/3）。
+- **[x] ① 已修复** — 新增纯函数模块 `fushi/lib/src/media/video/subtitle/subtitle_series_season.dart`：`subtitleSeasonHint`（文件名/远端标题解析的季号优先，否则取查询词、种子备选词、合集名里唯一的季度记号，复用引擎的 `detectVideoSeasonsInText`）+ `pickAniListSeriesForSeason`（挑季度记号恰好是该季的条目，同季分上下半时先取不带 Part/cour 的；挑不出回退首条 = 旧行为）。单集面板新增 `initialSeason`（播放页 `_jimakuSeasonNumber()` 从本地文件名或远端标题解析，经 `SubtitleEpisodeSearchSpec.season` 传入），合集面板按成员文件名一致的季号；两处请求都带上 `season`，OpenSubtitles / SubDL 据此按 `season_number` 收敛。用户改过番名时只认他输入里的季度记号，不拿原视频的季号去套。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/subtitle/subtitle_series_season_test.dart`（用户三份文件名 + Jellyfin 标题的季号解析、实测 AniList 顺序下各季挑选、Part 2 排前、季号未知回退首条）；`fushi/test/pages/jimaku_search_identity_test.dart` 「BUG-2713 按本集季号挑 AniList 系列」组（真面板路径：文件名季号 / 种子合集名季号 → 请求 anilistId 189046 + season 4；改番名后不套季号）；`fushi/test/pages/subtitle_collection_panel_test.dart`「BUG-2713：成员是 S04E18 → 自动首搜按第四季的 AniList 条目检索」。
+- **备注**：刮削身份里已有 AniList id（`seed.anilistId` / 合集 `anilistId`）时仍直接按它检索、不经本逻辑——那是确定身份，若它本身绑错了季属另一问题。未在用户手机上真机复测。

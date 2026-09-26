@@ -27,6 +27,7 @@ import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -442,9 +443,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _seriesLookupFailed = outcome.degraded;
         _seriesLookupKind = outcome.kind;
       });
-      if (outcome.media.isNotEmpty) {
-        // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。
-        await _applySeries(outcome.media.first, generation: generation);
+      final AniListMedia? picked = pickAniListSeriesForSeason(
+        outcome.media,
+        season: _seasonHint(query),
+      );
+      if (picked != null) {
+        // **只搜不绑**：模糊搜索的首条命中是猜测，不是用户的选择。相关度首条恒为
+        // 第一季，按合集成员的季号挑对应那一季（挑不出才退回首条）。
+        await _applySeries(picked, generation: generation);
       } else {
         setState(() => _selectedSeriesId = null);
         await _searchSources(anilistId: null, generation: generation);
@@ -455,6 +461,23 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         setState(() => _resolving = false);
       }
     }
+  }
+
+  /// 本合集的季号提示：成员文件名一致解析出同一季（`S04E18`）就用它；成员跨季或
+  /// 解析不出时看查询词、合集名里的季度记号（「… 4th season (2026)」）。
+  int? _seasonHint(String query) {
+    final Set<int?> memberSeasons = <int?>{
+      for (final VideoBookRow member in widget.members)
+        subtitleSeasonFromName(p.basename(member.videoPath)) ??
+            subtitleSeasonFromName(member.title),
+    };
+    final int? memberSeason = memberSeasons.length == 1
+        ? memberSeasons.single
+        : null;
+    return subtitleSeasonHint(
+      parsedSeason: memberSeason,
+      titles: <String?>[query, widget.collection.name],
+    );
   }
 
   /// 「搜」这一半：把某个 AniList 候选当作**本次检索的身份**，不碰数据库。
@@ -532,6 +555,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                 anilistId: anilistId ?? _canonicalAnilistId,
               ),
               query: query,
+              season: _seasonHint(query),
             ),
           );
       if (!mounted || requestGeneration != _generation) return;
