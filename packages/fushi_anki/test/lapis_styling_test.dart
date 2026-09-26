@@ -651,6 +651,62 @@ void main() {
     });
   });
 
+  group('首行缩进', () {
+    test('以字宽为单位渲染 text-indent 并完整往返', () {
+      final String css = composeLapisVisualStyleSheet(
+        freeformCss: '',
+        rules: const <LapisVisualField, LapisVisualRule>{
+          LapisVisualField.definitionContent:
+              LapisVisualRule(textIndentPercent: 150),
+        },
+      );
+      expect(css, contains('text-indent: 1.50em !important;'));
+      expect(css, contains('"textIndentPercent":150'));
+      expect(
+        splitLapisVisualStyleSheet(css)
+            .ruleFor(LapisVisualField.definitionContent)
+            .textIndentPercent,
+        150,
+      );
+    });
+
+    test('未设置时不生成覆盖，越界值夹到 0–400', () {
+      expect(const LapisVisualRule().isDefault, isTrue);
+      expect(const LapisVisualRule(textIndentPercent: 100).isDefault, isFalse);
+      expect(
+        lapisVisualDeclarations(const LapisVisualRule()).join(),
+        isNot(contains('text-indent')),
+      );
+      expect(
+        LapisVisualRule.fromJson(
+          <String, dynamic>{'textIndentPercent': 9999},
+        )!
+            .textIndentPercent,
+        400,
+      );
+      // 负值夹到 0，而 0 就是默认：归一成 null、不生成覆盖。
+      expect(
+        LapisVisualRule.fromJson(
+          <String, dynamic>{'textIndentPercent': -50},
+        )!
+            .textIndentPercent,
+        isNull,
+      );
+      final LapisVisualRule zero = LapisVisualRule.fromJson(
+        <String, dynamic>{'textIndentPercent': 0},
+      )!;
+      expect(zero.textIndentPercent, isNull);
+      expect(zero.isDefault, isTrue);
+      expect(lapisVisualDeclarations(zero).join(), isNot(contains('text-indent')));
+    });
+
+    test('copyWith 可以把缩进清回默认', () {
+      const LapisVisualRule rule = LapisVisualRule(textIndentPercent: 200);
+      expect(rule.copyWith(bold: true).textIndentPercent, 200);
+      expect(rule.copyWith(textIndentPercent: null).isDefault, isTrue);
+    });
+  });
+
   group('Lapis 区块位置', () {
     test('布局保留键不与任何可视字段 wireName 相撞', () {
       // 撞上就意味着某个字段的规则会被当成布局吃掉（或反之）。

@@ -59,26 +59,28 @@ void main() {
     // TODO-590 batch14: 制卡记账（describeMineOutcome / recordMined）已随
     // `_mineVideoCard` 搬进 lookup_mining.part.dart，读合并语料才能命中。
     final String src = readVideoFushiSource();
-    // video mixin 了 DictionaryPageMixin，record 时调 protected recordMined()。
-    // TODO-590 batch14: `_mineVideoCard` 搬进 extension 后不能直调 @protected，故经
-    // 主壳 `_recordMinedForVideo()` 转发（纯 1 行委托，等价于直调 recordMined）；
-    // 来源仍由 dictionarySourceType => kStatSourceVideo 决定。
+    // 记账不再经 mixin 的 protected recordMined()：在线视频的卡可能在页面关掉之后才在
+    // 后台落地（VideoOnlineMiningMode），`ref` 已不可用，故改由 `_recordVideoMineStat`
+    // 用点击时冻结的库 + 归属直调同一个复合入口 recordMiningEvent。
     expect(containsIdentifierCall(src, 'describeMineOutcome'), isTrue,
         reason: 'video 应经 describeMineOutcome 判定制卡结果');
-    // 回看会话（BUG-2503）里的制卡是对已有卡的回写，不记新卡账，故多一个
-    // `reviewSession == null` 门；普通路径仍按 described.record 记账。
-    expect(
-        containsCodeLine(
-            src, 'if (described.record && reviewSession == null) {'),
+    // 回看会话（BUG-2503）里的制卡是对已有卡的回写，不记新卡账：调用点把
+    // `reviewSession == null` 作为 recordStats 传进收尾；普通路径仍按 described.record 记账。
+    expect(containsCodeLine(src, 'if (described.record && recordStats) {'),
         isTrue,
         reason: 'video 成功（described.record）必须记账，否则视频统计「制卡」恒为 0');
-    expect(containsCodeLine(src, 'unawaited(_recordMinedForVideo());'), isTrue);
-    // 主壳的 _recordMinedForVideo 必须是 recordMined 的纯转发器（不得吞掉记账）。
+    expect(containsCodeLine(src, 'recordStats: reviewSession == null,'), isTrue,
+        reason: '回看会话的回写不得记新卡账');
     expect(
         containsCodeLine(
-            src, 'Future<void> _recordMinedForVideo() => recordMined();'),
-        isTrue,
-        reason: 'extension 经主壳转发器调 @protected recordMined，转发器不得改写语义');
+            src, 'unawaited(_recordVideoMineStat(mineDb, statIdentity));'),
+        isTrue);
+    final String recordBody =
+        methodBody(src, 'Future<void> _recordVideoMineStat(');
+    expect(containsIdentifierCall(recordBody, 'recordMiningEvent'), isTrue,
+        reason: 'video 记账必须走 FushiDatabase.recordMiningEvent 复合入口');
+    expect(containsCodeLine(recordBody, 'sourceType: kStatSourceVideo,'), isTrue,
+        reason: 'video 记账来源应为视频');
     expect(
         containsCodeLine(
             src, 'String get dictionarySourceType => kStatSourceVideo'),

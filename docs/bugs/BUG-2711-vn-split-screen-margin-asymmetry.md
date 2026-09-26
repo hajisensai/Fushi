@@ -1,0 +1,7 @@
+## BUG-2711 · VN 模式拆屏后左右间距不一致
+- **报告**：2026-09-26（用户：竖排 VN 截图，左右边距都设 5%，右侧空白明显比左侧宽）
+- **真实性**：✅ 真 bug。拆屏判据 `measureScreenFits`（`fushi/lib/src/reader/reader_visual_novel_scripts.dart:1526` 的 `measurementScrollFits` 不过时，回落到 `:1583` 的 `renderedTextFitsBounds`）只要求**字形墨迹**落在内容盒内；屏幕排版却按段落 **margin 盒**做 flex 居中（`fushi/lib/src/reader/reader_content_styles.dart:1161` 的 `.fushi-vn-content { max-width: 100% }`）。长段落被拆开后，那一截的 margin 盒（两侧各 1em 段距 + 末列半行距）比内容盒宽，内容被钳成满宽、flex 无从居中，竖排从右侧贴着 `margin-block-start` 往左排：右侧空出「边距 + 1em + 半行距」，最左列压进左边距。未拆的屏 margin 盒装得下，flex 正常居中，所以只有拆屏的那几屏歪。横排 `scrollHeight` 会计入底部段距，判据在该方向本来就严格，不受影响。
+  - headless Chrome 真引擎复现（竖排 38px / 行高 1.65 / 左右 5% / 下 2%，526px 宽视口，一段长文拆成 3 屏）：拆屏墨迹左右间距 **22.9 / 64.3px**，未拆屏 74.9 / 74.9px；横排六屏上下全对称。
+- **[x] ① 已修复** — `renderScreen` 在内容挂上屏后、渐显拆 span 前调用新增的 `centerScreenInk`：用判据同一把尺子（文本节点的 client rects）沿 block 轴把墨迹包围盒平移到屏幕内容盒正中（竖排 `translateX`、横排 `translateY`）。判据已保证墨迹装得下，平移后不会越出内容盒；偏差 < 1px 不动（已居中的屏零变化）；含 img/svg/video/canvas/iframe 的屏交回 flex 居中（图片晚加载会让偏移过期）；墨迹本身比内容盒宽的不可拆溢出屏不动（否则屏首也被推出裁切区）。修后同一复现：拆屏 **42.8 / 44.4px**（残差是行盒与字形 rect 的亚像素差），未拆屏与横排数值不变。样式热更新 / 尺寸变化都经 `refitScreensToCurrentViewport → renderScreen`，偏移随之重算。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/vn_screen_ink_centering_test.dart`：源码顺序守卫（appendChild → centerScreenInk → hideCurrentScreenForReveal）+ 从生产 shell 抽出 `centerScreenInk` 函数体在 node 里用伪 DOM 跑五种几何（拆屏竖排居中、已居中不动、横排走竖轴、溢出不动、含媒体不动）。
+- **备注**：headless 真引擎探针（生产 CSS + `engineShell(vnMode: true)` + 桩 `__fushiApplyReaderMargins`）数值见上；未在用户 Android 真机复测。

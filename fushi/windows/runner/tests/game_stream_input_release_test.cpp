@@ -1,3 +1,4 @@
+#undef NDEBUG
 // Run with tool/run_game_stream_input_test.ps1. The assertions remain active
 // with NDEBUG: this fixture intentionally uses no standard assert() calls.
 // Windows-only, isolated non-activating HWNDs; never activates a window or uses

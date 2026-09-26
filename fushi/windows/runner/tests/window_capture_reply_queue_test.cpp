@@ -1,3 +1,4 @@
+#undef NDEBUG
 #include "../window_capture_reply_queue.h"
 
 #include <cstdlib>

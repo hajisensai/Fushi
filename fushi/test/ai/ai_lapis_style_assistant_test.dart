@@ -24,6 +24,23 @@ void main() {
       expect(rule.paddingPx, 8);
     });
 
+    test('首行缩进：数字字符串取整并越界夹紧', () {
+      final AiLapisStyleSuggestion suggestion = parseAiLapisStyleSuggestion(
+        '{"rules": ['
+        '{"field": "definition-content", "textIndentPercent": "100%"},'
+        '{"field": "sentence", "textIndentPercent": 1000}'
+        ']}',
+      );
+      expect(
+        suggestion.rules[LapisVisualField.definitionContent]!.textIndentPercent,
+        100,
+      );
+      expect(
+        suggestion.rules[LapisVisualField.sentence]!.textIndentPercent,
+        400,
+      );
+    });
+
     test('键值形规则（托管区段 CONFIG 同形）也能解析', () {
       final AiLapisStyleSuggestion suggestion = parseAiLapisStyleSuggestion(
         '{"rules": {"definition-box": {"borderWidthPx": 2,'
@@ -147,6 +164,7 @@ void main() {
       }
       expect(prompt, contains('fontScalePercent'));
       expect(prompt, contains('marginBlockPx'));
+      expect(prompt, contains('textIndentPercent'));
       expect(prompt, contains('box fields only'));
     });
 

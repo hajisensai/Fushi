@@ -41,6 +41,16 @@ const String kDictTypeProbeKey = 'typeProbe';
 /// 当前类型探测器的版本。改探测语义时 +1（见 [kDictTypeProbeKey]）。
 const String kDictTypeProbeVersion = '1';
 
+/// [Dictionary.metadata] 里记录「启动期已从磁盘 index.json 回填过来源字段」的键。
+///
+/// 在线更新（TODO-609）之前导入的词典，metadata 里没有 revision / isUpdatable /
+/// indexUrl / downloadUrl——哪怕它的 index.json 明明声明了 `isUpdatable:true`
+/// （pixiv-yomitan、Jitendex、JMdict……），于是被判成不可更新：「更新」按钮只会
+/// 让用户去自己下载新包再选文件，「更新全部词典」也不出现。index.json 一直躺在
+/// 词典目录里，启动期读回来补上即可；这个键让「读过、包里本来就没有来源字段」的
+/// 词典不必每次启动再读一遍。
+const String kDictSourceProbeKey = 'sourceProbe';
+
 
 /// 改名投影：**真名 -> 显示名**，只含真正改过名的词典。
 ///

@@ -19,7 +19,13 @@ namespace fushi_voice_hook {
 //
 // 门的做法：在 exe 入口点写 `EB FE`（jmp $），让主线程自己完成进程初始化并停在入口点，
 // 挂起它、还原原字节后再注入。仍早于 exe 自身任何代码（CRT 静态构造、引擎启动、音频设备
-// 创建），不丢早注入的能力。判据只看 PE 结构：有 TLS 回调才启用，其余 exe 行为不变。
+// 创建），不丢早注入的能力。
+//
+// 启用条件有两条且缺一不可（所有者 2026-09-26 拍板收窄）：① PE 结构上有 TLS 回调；② 启动前
+// 被结构判据认出的**引擎 launch profile 声明需要这道门**——目前只有 KiriKiri
+// （kirikiri_launch_signature.h）。真机样本全是 KiriKiri；非 KiriKiri 带 TLS 回调的 exe
+// （MinGW 运行时、NW.js、Themida/VMProtect 加壳、用 thread_local 的 MSVC exe）没有一个跑过
+// 这道门，它们的启动时序保持与门出现之前完全一致。
 
 struct PeLaunchLayout {
   bool valid = false;
@@ -168,11 +174,35 @@ inline PeLaunchLayout ParsePeLaunchLayout(const uint8_t* data, size_t size) {
 }
 
 // 是否对这个 exe 启用加载器初始化门。只有「挂起创建、且之后由注入器负责恢复」的早注入
-// 路径才有意义（延迟附着 / 跟随子进程 / 已提前恢复的进程早已在跑）；判据只看 PE 结构。
+// 路径才有意义（延迟附着 / 跟随子进程 / 已提前恢复的进程早已在跑）；
+// engine_profile_requests_gate 来自启动前按结构判据选出的引擎 launch profile（目前只有
+// KiriKiri 声明），没有 profile 声明时一律不启用——哪怕 exe 带 TLS 回调。
 inline bool ShouldUseLoaderInitGate(const PeLaunchLayout& layout,
-                                    bool injector_owns_suspended_primary) {
-  return injector_owns_suspended_primary && layout.valid &&
-         layout.entry_point_rva != 0 && layout.tls_callback_count > 0;
+                                    bool injector_owns_suspended_primary,
+                                    bool engine_profile_requests_gate) {
+  return injector_owns_suspended_primary && engine_profile_requests_gate &&
+         layout.valid && layout.entry_point_rva != 0 &&
+         layout.tls_callback_count > 0;
+}
+
+// 门跑完后主线程处于什么状态（决定注入走哪条路）。
+enum class LoaderInitGateOutcome {
+  // 门没真正开始（拿不到线程句柄 / 映像基址 / 改不了入口）：主线程从未被恢复过，进程仍是
+  // 挂起创建时的原样，照旧早注入。
+  kNotStarted,
+  // 主线程完成了进程初始化并停在入口点、已挂起、原字节已还原：照旧早注入，注入后恢复。
+  kParkedAtEntry,
+  // 主线程已经开始跑进程初始化，但没有停到入口点（入口字节被映像自己改写——壳在 TLS 回调里
+  // 原地解密代码段；或无 UI 地超时）。此时绝不能把它挂回去再远程 LoadLibraryW：它可能正停在
+  // TLS 回调中途、持有 loader lock，Win10+ 上新注入线程要等进程初始化完成 → 互等死锁。
+  // 也不能再碰入口字节（壳原地解密时会把我们写的 `EB FE` 一起解坏）。主线程保持运行，
+  // 按已运行进程附着（与 --pid 同一条注入编排：不再由注入器恢复游戏）。
+  kLeftRunning,
+};
+
+// 门之后是否要按「已运行进程」附着（纯函数）。
+inline bool LoaderInitGateLeftProcessRunning(LoaderInitGateOutcome outcome) {
+  return outcome == LoaderInitGateOutcome::kLeftRunning;
 }
 
 }  // namespace fushi_voice_hook
