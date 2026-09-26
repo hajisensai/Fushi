@@ -6,12 +6,12 @@
   - 电脑自己跑一轮（可能是几分钟的云备份）期间，手机的 PUT/POST 在 `fushi/lib/src/sync/interconnect_sync_backend.dart:199` 的 15s `requestTimeout` 内拿不到响应头（`_sendBounded` :210-222）→ 超时。
   - 无头服务端（`packages/fushi_server/lib/src/headless_host.dart:89/285`）给 host 服务的是一把库专用锁——那才是对的形状。
   - 连带问题：出站同步的聚合落库（`packages/fushi_engine/lib/sync/aggregate_sync_service.dart:124` 云通道、`:246` 互联通道）直接写回基于第 1 步陈旧本地快照算出的 `merged`（绝对值覆盖），中间隔着一次网络往返；一旦对端写不再被整轮锁挡住，这段窗口里对端折进的更大值会被覆盖（丢更新）。
-- **[x] ① 已修复** — 修复提交见下方备注。
+- **[x] ① 已修复** — `b6b50e6c0ff`。
   - `LocalLibraryHostService` 新增 `runSyncStateExclusive`（未注入退回 `runExclusive`，无头服务端形状不变）；聚合折叠与合集合并改走它。
   - app 新增窄锁 `fushi/lib/src/sync/sync_state_apply_lock.dart`（`runExclusiveWithSyncStateApply`），`app_model.dart` 把 host 的同步状态域接到它上面。
   - 出站同步只在**本地落库步骤**持同一把窄锁：`AggregateSyncService.localApplyLock` 包住第 4 步，且第 4 步改为锁内重新 materialize 再 `foldIntoLocal(merged)`（只增不减，本地未被改时结果与原先逐字段相同）；`SyncOrchestrator` 云 / 互联两条合集路径的「读本地清单 → 合并 → `applyCollectionLocalChanges`」包在窄锁里。网络读写全在锁外；锁序只允许「整轮锁 → 窄锁」。
   - `_sendBounded` 超时消息带方法与路径（不带 query）：`interconnectRequestTimeoutMessage`。
-- **[x] ② 已加自动化测试** — `fushi/test/sync/interconnect_host_sync_lock_test.dart`：整轮锁被占住 / 出站同步卡在网络上时对端聚合 PUT 与合集 POST 仍立即完成；窄锁被占住时对端写等待；出站同步网络往返期间对端折进更大值不被覆盖（回退到旧的直接写回会红：`Actual: <200>`）；超时消息格式；app 接线与出站合集 / 聚合持锁的源码守卫。
+- **[x] ② 已加自动化测试** — `b6b50e6c0ff`，`fushi/test/sync/interconnect_host_sync_lock_test.dart`：整轮锁被占住 / 出站同步卡在网络上时对端聚合 PUT 与合集 POST 仍立即完成；窄锁被占住时对端写等待；出站同步网络往返期间对端折进更大值不被覆盖（回退到旧的直接写回会红：`Actual: <200>`）；超时消息格式；app 接线与出站合集 / 聚合持锁的源码守卫。
 - **备注**：
   - 有意**没动**的对端写：书 / 有声书 / 词典 / 本地音频 / 视频的导入与删除、书进度 PUT、视频刮削资料写、Profile 导入导出，仍在整轮锁下。它们和出站同步的资产下载 / 进度 LWW 落库共享数据，但出站那侧没有可以单独包住的「纯本地读-改-写」步骤（决策读与落库之间隔着网络），硬挪到窄锁会引入新的交错窗口。其中删除类与书进度 PUT 同样受 15s 封顶，理论上在电脑跑长同步轮时也会超时——本次日志没出现，留作后续（需先把出站进度落库改成锁内比较-写入）。
   - 未真机验证：手机 ↔ Windows 互联 + 电脑同时跑云备份的原始路径没有复测。
