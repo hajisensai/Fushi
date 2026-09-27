@@ -23,6 +23,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -127,9 +128,13 @@ class VideoSubtitleBackfillService {
     this.defaultContentLanguage,
     this.maxCandidates = 4,
     this.aiReorder,
+    this.subtitleAligner,
   }) : preferredLanguages = List<String>.unmodifiable(preferredLanguages);
 
   final VideoSubtitleRegistry registry;
+
+  /// 写 sidecar 前按视频内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 用户在设置里**显式**选的字幕语言。非空即硬过滤（进搜索请求）。
   final List<String> preferredLanguages;
@@ -325,7 +330,13 @@ class VideoSubtitleBackfillService {
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
-    await temp.writeAsBytes(download.bytes, flush: true);
+    final AutomaticSubtitleAligner? aligner = subtitleAligner;
+    await temp.writeAsBytes(
+      aligner == null
+          ? download.bytes
+          : await aligner(download.bytes, video.path),
+      flush: true,
+    );
     await temp.rename(target);
     return target;
   }

@@ -11,6 +11,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:path/path.dart' as p;
@@ -119,6 +120,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   String? preferredLanguage,
   SubtitleBatchItemCallback? onItemStart,
   SubtitleBatchItemCallback? onItemDone,
+  AutomaticSubtitleAligner? subtitleAligner,
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -159,7 +161,12 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             dir.path,
             batchSubtitleFileName(target.bookUid, download.fileName),
           );
-          await File(dest).writeAsBytes(download.bytes);
+          // 流媒体没有本地文件可读内嵌轨，对齐器自己会原样返回。
+          await File(dest).writeAsBytes(
+            subtitleAligner == null
+                ? download.bytes
+                : await subtitleAligner(download.bytes, target.videoPath),
+          );
           item.subtitlePath = dest;
           item.language = download.language.isEmpty ? null : download.language;
           item.status = SubtitleBatchStatus.done;

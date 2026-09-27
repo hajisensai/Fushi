@@ -177,6 +177,11 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';

@@ -232,6 +232,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
         ),
+      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。只对本地文件——参考轨
+      // 要从容器里抽。当前不是外挂字幕时点了会说明原因，不隐藏入口。
+      if (!_isRemote && _currentVideoPath != null)
+        ListTile(
+          leading: const Icon(Icons.sync_alt_outlined),
+          title: Text(t.video_subtitle_reference_sync_action),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
+        ),
       const Divider(height: 1),
       ListTile(
         leading: const Icon(Icons.subtitles_off),
@@ -2052,6 +2063,167 @@ extension _VideoSubtitle on _VideoFushiPageState {
       icon: Icons.model_training_outlined,
       severity: ToastSeverity.success,
     );
+  }
+
+  /// 按视频自带的文本字幕轨给当前外挂字幕对时间轴（embedded_reference_subtitle_sync.dart）。
+  ///
+  /// 与自动下载路径同一套判定，多一档：证据不足以自动写（needsConfirmation）时弹窗
+  /// 让用户定。结果另存新档，原档不动（与 [_retimeSubtitleWithSpeechModel] 同理）。
+  /// 当前这份若是下载时自动对齐写下的，改为提供「恢复原始时间轴」。
+  Future<void> _alignSubtitleToEmbeddedTracks(
+    VideoPlayerController controller,
+  ) async {
+    final String? videoPath = _currentVideoPath;
+    final String? subtitlePath = _currentExternalSubtitlePath();
+    if (videoPath == null || subtitlePath == null) {
+      _showOsd(
+        t.video_subtitle_reference_sync_need_external,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final Uint8List bytes = await File(subtitlePath).readAsBytes();
+    final Uint8List? original = await findSubtitleAlignmentOriginal(bytes);
+    if (original != null) {
+      await _offerRestoreSubtitleOriginal(controller, subtitlePath, original);
+      return;
+    }
+    _showOsd(
+      t.video_subtitle_reference_sync_running,
+      icon: Icons.sync_alt_outlined,
+      severity: ToastSeverity.info,
+    );
+    final EmbeddedReferenceSyncResult result =
+        await syncSubtitleToEmbeddedReferences(
+          subtitleBytes: bytes,
+          videoPath: videoPath,
+          videoDurationMs: await probeVideoDurationMs(videoPath),
+        );
+    if (!mounted) return;
+    final String? problem = _referenceSyncProblem(result);
+    if (problem != null) {
+      _showOsd(problem, severity: ToastSeverity.warning);
+      return;
+    }
+    final SubtitleSyncDecision decision = result.decision!;
+    final String offsets = formatAlignmentOffsets(decision.segments);
+    if (decision.kind == SubtitleSyncDecisionKind.needsConfirmation &&
+        !await _confirmReferenceSync(
+          title: t.video_subtitle_reference_sync_confirm_title,
+          body: t.video_subtitle_reference_sync_confirm_body(
+            offset: offsets,
+            excess: decision.chosen!.judgement.fit.excess.toStringAsFixed(1),
+            groups: decision.agreeingGroups,
+          ),
+          action: t.video_subtitle_reference_sync_apply,
+        )) {
+      return;
+    }
+    await _importSubtitleVariant(
+      controller,
+      subtitlePath,
+      result.retime!.bytes,
+      'aligned',
+    );
+    if (!mounted) return;
+    _showOsd(
+      t.video_subtitle_reference_sync_done(offset: offsets),
+      icon: Icons.sync_alt_outlined,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 当前选中的外挂字幕文件路径；内嵌轨 / 关闭 / 文件已不在时为 null。
+  String? _currentExternalSubtitlePath() {
+    final String? source = _currentSubtitleSource;
+    if (source == null ||
+        SubtitleSource.isOff(source) ||
+        SubtitleSource.isEmbeddedPersisted(source) ||
+        !File(source).existsSync()) {
+      return null;
+    }
+    return source;
+  }
+
+  /// 不能应用的结局 → 给用户的一句话；能应用返回 null。
+  String? _referenceSyncProblem(EmbeddedReferenceSyncResult result) {
+    switch (result.status) {
+      case EmbeddedReferenceSyncStatus.noReference:
+        return t.video_subtitle_reference_sync_no_reference;
+      case EmbeddedReferenceSyncStatus.subtitleUnreadable:
+        return t.video_subtitle_reference_sync_unreadable;
+      case EmbeddedReferenceSyncStatus.decided:
+        if (result.kind == SubtitleSyncDecisionKind.refused) {
+          return t.video_subtitle_reference_sync_refused;
+        }
+        return result.changesTiming
+            ? null
+            : t.video_subtitle_reference_sync_in_sync;
+    }
+  }
+
+  Future<void> _offerRestoreSubtitleOriginal(
+    VideoPlayerController controller,
+    String subtitlePath,
+    Uint8List original,
+  ) async {
+    if (!await _confirmReferenceSync(
+      title: t.video_subtitle_reference_sync_restore_title,
+      body: t.video_subtitle_reference_sync_restore_body,
+      action: t.video_subtitle_reference_sync_restore,
+    )) {
+      return;
+    }
+    await _importSubtitleVariant(
+      controller,
+      subtitlePath,
+      original,
+      'original',
+    );
+  }
+
+  Future<bool> _confirmReferenceSync({
+    required String title,
+    required String body,
+    required String action,
+  }) async {
+    if (!mounted) return false;
+    return await showDialog<bool>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(body),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text(t.dialog_cancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text(action),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  /// 把 [bytes] 另存为 `<原名>.<tag><扩展名>` 进字幕目录，走既有外挂字幕链路选中。
+  Future<void> _importSubtitleVariant(
+    VideoPlayerController controller,
+    String subtitlePath,
+    Uint8List bytes,
+    String tag,
+  ) async {
+    final Directory dir = await AppPaths.videoSubtitlesDirectory();
+    final String target = p.join(
+      dir.path,
+      '${p.basenameWithoutExtension(subtitlePath)}.$tag'
+      '${p.extension(subtitlePath)}',
+    );
+    await File(target).writeAsBytes(bytes, flush: true);
+    if (!mounted) return;
+    await _importExternalSubtitle(controller, target);
   }
 
   Future<void> _importExternalSubtitle(

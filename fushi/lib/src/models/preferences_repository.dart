@@ -1812,6 +1812,17 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 自动下载的外挂字幕是否按视频内嵌文本字幕轨对时间轴（见
+  /// embedded_reference_subtitle_sync.dart）。默认开：只在证据足够时才改，
+  /// 其余一律原样，关掉它等于回到此前的行为。
+  bool get subtitleReferenceSyncEnabled =>
+      getPref('subtitle_reference_sync_enabled', defaultValue: true) as bool;
+
+  Future<void> setSubtitleReferenceSyncEnabled(bool value) async {
+    await setPref('subtitle_reference_sync_enabled', value);
+    notifyListeners();
+  }
+
   /// 每系列（番名）记住的 Jimaku 字幕语言偏好：`{ "<series 小写归一>": "<langCode>" }`。
   ///
   /// 单一 JSON map 落 KV 表（避免每系列一个 key 撑爆表）；解析失败回退空 map

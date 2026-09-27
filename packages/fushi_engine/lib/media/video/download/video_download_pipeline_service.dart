@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert' show jsonEncode;
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart' show Value;
@@ -43,6 +44,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -816,6 +818,7 @@ class VideoDownloadPipelineService {
     required this.scrapeCoordinator,
     this.onBackendTaskAdded,
     this.subtitleRegistry,
+    this.subtitleAligner,
     this.defaultContentLanguage,
     this.subtitleLanguageResolver,
     this.discoveryImporter,
@@ -838,6 +841,10 @@ class VideoDownloadPipelineService {
   final FushiDatabase database;
   final VideoResourceRegistry resourceRegistry;
   final VideoSubtitleRegistry? subtitleRegistry;
+
+  /// 装 sidecar 前按视频内嵌字幕轨对时间轴（见 embedded_reference_subtitle_sync.dart）；
+  /// null = 不对齐。算法是确定性的，所以续跑时按内容认领已落盘文件照样成立。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 用户在设置里**显式**选的字幕语言（`jimakuDefaultLanguage`）。非空即硬过滤
   /// （进 `VideoSubtitleSearchRequest.languages`）——他自己说的。
@@ -3077,6 +3084,11 @@ class VideoDownloadPipelineService {
         final VideoSubtitleDownload download =
             verified?.download ?? await subtitleRegistry!.download(candidate);
         _ensureLeaseHeld();
+        final AutomaticSubtitleAligner? aligner = subtitleAligner;
+        final Uint8List subtitleBytes = aligner == null
+            ? download.bytes
+            : await aligner(download.bytes, video.path);
+        _ensureLeaseHeld();
         // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
         // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
         // 否则 ASS/VTT 会被装成 `.srt`——时轴校验按内容解析、拦不住这个。
@@ -3094,7 +3106,7 @@ class VideoDownloadPipelineService {
                 '.$language$resolvedExtension',
               );
         final String selectedTarget = await _selectSidecarTarget(
-          bytes: download.bytes,
+          bytes: subtitleBytes,
           initialTarget: resolvedInitialTarget,
         );
         final String tempPath = '$selectedTarget.${job.jobId}.fushi.tmp';
@@ -3113,7 +3125,7 @@ class VideoDownloadPipelineService {
         );
         _ensureLeaseHeld();
         final String installed = await _installSidecarAtTargetAtomically(
-          bytes: download.bytes,
+          bytes: subtitleBytes,
           target: selectedTarget,
           tempPath: tempPath,
         );

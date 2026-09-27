@@ -70,6 +70,18 @@ void main() {
       expect(fit.excess, greaterThan(kSingleReferenceAutoExcess));
     });
 
+    test('本来就对齐：偏移恰好为 0，不做没有证据的亚容差平移', () {
+      // 参考与目标各自抖动 ±0.25s（不同语言开口时刻的真实差异量级），真实偏移为 0。
+      final List<double> ja = _track(truth, seed: 29, jitter: 0.25);
+      final List<double> ref = _track(truth, seed: 14, jitter: 0.25);
+      final SubtitleReferenceFit fit = fitSubtitleToReference(
+        ref,
+        ja,
+        durationSeconds: 1440,
+      );
+      expect(fit.segments.single.offsetSeconds, 0.0);
+    });
+
     test('CM 断点：前半段 -2 秒、600 秒后 +8 秒 → 两段', () {
       final List<double> ja = _track(
         truth,

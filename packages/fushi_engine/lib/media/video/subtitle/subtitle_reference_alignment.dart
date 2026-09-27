@@ -481,6 +481,13 @@ List<double>? _earnsItself(
 }
 
 /// 用真实目标函数在 ±0.6s 上逐 0.01s 精修一段的偏移，取平台中心。
+///
+/// **比参考自身精度还小的偏移不动**：参考是另一种语言的轨，它与日字真时间轴之间本就
+/// 有零点几秒的系统差。实测（高木同学 2，内嵌日文轨当标准答案）：本来就对齐的
+/// `.ja.ass`（对标准答案偏 -0.01s）按 Netflix 各语言轨被推了 0.10–0.29s，对标准答案
+/// 的命中率一分没涨——那是参考的误差，不是字幕的误差。|偏移| < [kAlignMatchTolerance]
+/// 一律当 0：它既在目标函数分辨率以内，也在观众可察觉的量级以下（tsubasa 同一判断，
+/// 见 [kAlignMaxBucketDrift] 的由来）。
 double _refineSegment(List<double> ref, List<double> sub, double offset) {
   if (ref.isEmpty || sub.isEmpty) return offset;
   final int steps = (2 * _refineWindow / _refineStep).round();
@@ -492,7 +499,9 @@ double _refineSegment(List<double> ref, List<double> sub, double offset) {
   if (top <= 0) return offset;
   final int first = rates.indexWhere((double r) => r >= top - 1e-12);
   final int last = rates.lastIndexWhere((double r) => r >= top - 1e-12);
-  return offset - _refineWindow + (first + last) / 2 * _refineStep;
+  final double refined =
+      offset - _refineWindow + (first + last) / 2 * _refineStep;
+  return refined.abs() < kAlignMatchTolerance ? 0.0 : refined;
 }
 
 // ---------------------------------------------------------------------------
@@ -719,8 +728,9 @@ SubtitleReferenceFit fitSubtitleToReference(
     for (int si = 0; si < bounds.length - 1; si++) {
       final ({List<int> bounds, List<int> labels, double score})? trial =
           _trySplit(si, bounds, labels, hits, prefix, cands, chance, n);
-      if (trial == null || trial.score - combined < kAlignMinSplitGain)
+      if (trial == null || trial.score - combined < kAlignMinSplitGain) {
         continue;
+      }
       if (pick == null || trial.score > pick.score) pick = trial;
     }
     if (pick == null) break;

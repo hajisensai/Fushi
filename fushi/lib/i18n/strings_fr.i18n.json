@@ -5676,5 +5676,21 @@
   "ai_web_knowledge_section_hint": "Fushi itself fetches article text from the selected sources and hands it to the AI (used when AI video download lists the works of a franchise and when identifying video works). Your AI provider does not need web access. The AI can only cite what was fetched, and every listed work is still checked against the metadata source one by one.",
   "ai_web_knowledge_wikipedia_zh": "Wikipedia (中文)",
   "ai_web_knowledge_wikipedia_ja": "Wikipedia (日本語)",
-  "ai_web_knowledge_wikipedia_en": "Wikipedia (English)"
+  "ai_web_knowledge_wikipedia_en": "Wikipedia (English)",
+  "video_setting_subtitle_reference_sync": "Auto-align downloaded subtitles",
+  "video_setting_subtitle_reference_sync_hint": "Retime downloaded subtitles to the video's embedded subtitle tracks. Applied only when the evidence is strong; otherwise the file is left as-is.",
+  "video_subtitle_reference_sync_action": "Align to embedded subtitles",
+  "video_subtitle_reference_sync_need_external": "Select a downloaded or imported subtitle first",
+  "video_subtitle_reference_sync_running": "Aligning to the embedded subtitle tracks…",
+  "video_subtitle_reference_sync_no_reference": "This video has no text subtitle track to align against",
+  "video_subtitle_reference_sync_unreadable": "Couldn't read enough timed lines from this subtitle",
+  "video_subtitle_reference_sync_refused": "The timing doesn't match the embedded tracks (wrong episode or a different cut?). Left unchanged.",
+  "video_subtitle_reference_sync_in_sync": "Already in sync with the embedded tracks",
+  "video_subtitle_reference_sync_done": "Aligned: $offset",
+  "video_subtitle_reference_sync_confirm_title": "Alignment is uncertain",
+  "video_subtitle_reference_sync_confirm_body": "Suggested shift: $offset. The match is $excess× what chance would give, and $groups independent reference track group(s) agree. Save it as a new subtitle file? The original stays unchanged.",
+  "video_subtitle_reference_sync_apply": "Apply",
+  "video_subtitle_reference_sync_restore_title": "Already auto-aligned",
+  "video_subtitle_reference_sync_restore_body": "It was retimed to the embedded subtitle tracks when it was downloaded. Restore the original timing as a new subtitle file?",
+  "video_subtitle_reference_sync_restore": "Restore original"
 }

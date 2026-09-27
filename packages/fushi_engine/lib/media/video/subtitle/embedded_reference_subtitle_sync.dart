@@ -12,8 +12,10 @@ import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_time_rewriter.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 /// 评论音轨配套的字幕与正片台词时间无关，不当参考。
@@ -80,6 +82,14 @@ class EmbeddedReferenceSyncResult {
         'dropped=${retime?.droppedCount ?? 0} :: $groups';
   }
 }
+
+/// 给界面看的偏移：`+1.23s`；有 CM 断点时按段列出 `0.00s / -9.72s`。
+String formatAlignmentOffsets(List<AlignmentSegment> segments) => segments
+    .map(
+      (AlignmentSegment s) =>
+          '${s.offsetSeconds > 0 ? '+' : ''}${s.offsetSeconds.toStringAsFixed(2)}s',
+    )
+    .join(' / ');
 
 String _describeSegments(List<AlignmentSegment> segments) => segments
     .map(
@@ -196,4 +206,52 @@ Future<EmbeddedReferenceSyncResult> syncSubtitleToEmbeddedReferences({
       originalBytes: subtitleBytes,
     );
   }
+}
+
+/// 给 [aligner] 套上开关：**每次调用现读** [enabled]，关着就原样返回、不碰视频。
+/// 持有钩子的下载服务生命周期跟 app 一样长，开关却随时能改，不能在装配时读一次。
+AutomaticSubtitleAligner gatedAutomaticSubtitleAligner(
+  bool Function() enabled, {
+  AutomaticSubtitleAligner aligner = alignSubtitleForAutomaticPath,
+}) {
+  return (Uint8List subtitleBytes, String videoPath) async =>
+      enabled() ? aligner(subtitleBytes, videoPath) : subtitleBytes;
+}
+
+Future<int?> _probeDurationMs(String videoPath) =>
+    probeVideoDurationMs(videoPath);
+
+/// 自动下载路径统一用的钩子：刚下到手的字幕字节 + 它要配的本地视频 → 该写盘的字节。
+///
+/// 调用方拿到 null（用户关了「按内嵌字幕自动对齐」）就原样写盘。
+typedef AutomaticSubtitleAligner =
+    Future<Uint8List> Function(Uint8List subtitleBytes, String videoPath);
+
+/// [AutomaticSubtitleAligner] 的标准实现：只有证据足够（autoApply）才改，其余原样。
+/// 远端流 / 文件不存在直接原样返回，不探测。改了就把原稿备份（见
+/// subtitle_alignment_backup.dart），备份失败则放弃对齐、写原稿——不能留下
+/// 一份找不回原样的字幕。
+Future<Uint8List> alignSubtitleForAutomaticPath(
+  Uint8List subtitleBytes,
+  String videoPath, {
+  SubtitleReferenceTrackLoader loadReferences = loadEmbeddedReferenceTracks,
+  Future<int?> Function(String videoPath) probeDurationMs = _probeDurationMs,
+}) async {
+  if (!File(videoPath).existsSync()) return subtitleBytes;
+  final EmbeddedReferenceSyncResult result =
+      await syncSubtitleToEmbeddedReferences(
+        subtitleBytes: subtitleBytes,
+        videoPath: videoPath,
+        videoDurationMs: await probeDurationMs(videoPath),
+        loadReferences: loadReferences,
+      );
+  final Uint8List out = result.bytesForAutomaticPath;
+  if (identical(out, subtitleBytes)) return subtitleBytes;
+  try {
+    await saveSubtitleAlignmentOriginal(original: subtitleBytes, aligned: out);
+  } catch (e) {
+    fushiDebugPrint('[ReferenceSync] backup failed, keeping original: $e');
+    return subtitleBytes;
+  }
+  return out;
 }

@@ -307,6 +307,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 字幕——悬停（MouseRegion 的 onEnter/onExit）、点击、以及暂停 / 查词浮层触发的
   // 自动显形。harness 里没有真播放器、没有指针悬停、也没有查词浮层，无适用探针；
   // 由专项 widget 测试咬住四条显形来源与总闸的关系。
+  // 下载字幕按内嵌字幕轨自动对齐。写 prefsRepo（changed=true），生效点在各下载路径
+  // 写盘前的对齐钩子（AppModel.alignDownloadedSubtitle = gatedAutomaticSubtitleAligner，
+  // 每次调用现读开关）——要下载 + 真视频内嵌轨，不是 reader CSS / 主题树，无适用
+  // 探针；由专项测试咬住（关=原样返回且不调用对齐器、运行中改开关下一次即生效）。
+  'video/Auto-align downloaded subtitles':
+      'test/media/video/embedded_reference_subtitle_sync_test.dart'
+          '（gatedAutomaticSubtitleAligner：开关每次现读）',
   'video/Reveal when paused or hovered':
       'test/media/video/video_subtitle_hide_hover_reveal_test.dart'
           '（悬停 / 点击 / 暂停 / 查词四条显形来源同属一个总闸）',

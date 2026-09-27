@@ -5676,5 +5676,21 @@
   "ai_web_knowledge_section_hint": "Fushi 自己抓取所选来源的条目正文交给 AI（AI 下视频列出系列作品、视频作品识别时使用），不需要 AI 提供商支持联网。AI 只能引用抓到的内容，列出的作品还会逐部在资料源里核对。",
   "ai_web_knowledge_wikipedia_zh": "维基百科（中文）",
   "ai_web_knowledge_wikipedia_ja": "Wikipedia（日本語）",
-  "ai_web_knowledge_wikipedia_en": "Wikipedia（English）"
+  "ai_web_knowledge_wikipedia_en": "Wikipedia（English）",
+  "video_setting_subtitle_reference_sync": "下载字幕自动对齐",
+  "video_setting_subtitle_reference_sync_hint": "按视频自带的字幕轨给下载的字幕对时间轴。只在证据充分时才改，否则保持原样。",
+  "video_subtitle_reference_sync_action": "按内嵌字幕对齐",
+  "video_subtitle_reference_sync_need_external": "先选一条下载或导入的外挂字幕",
+  "video_subtitle_reference_sync_running": "正在按内嵌字幕轨对齐…",
+  "video_subtitle_reference_sync_no_reference": "这个视频没有可当参考的文本字幕轨",
+  "video_subtitle_reference_sync_unreadable": "这条字幕读不出足够的时间轴",
+  "video_subtitle_reference_sync_refused": "与内嵌字幕对不上（可能不是这一集，或剪辑不同），保持原样",
+  "video_subtitle_reference_sync_in_sync": "已经与内嵌字幕对齐，无需修改",
+  "video_subtitle_reference_sync_done": "已对齐：$offset",
+  "video_subtitle_reference_sync_confirm_title": "对齐结果不太确定",
+  "video_subtitle_reference_sync_confirm_body": "建议平移：$offset。匹配率是瞎碰概率的 $excess 倍，$groups 组独立参考字幕轨给出一致结果。要另存为一份新字幕吗？原字幕不会改动。",
+  "video_subtitle_reference_sync_apply": "应用",
+  "video_subtitle_reference_sync_restore_title": "这条字幕下载时已自动对齐",
+  "video_subtitle_reference_sync_restore_body": "下载时已按内嵌字幕轨调整过时间轴。要把原始时间轴恢复成一份新字幕吗？",
+  "video_subtitle_reference_sync_restore": "恢复原始字幕"
 }

@@ -169,7 +169,8 @@ class SubtitleTimedLine {
   final int blockStart;
   final int blockEnd;
 
-  /// 能否当对齐证据：注释行、定位特效字、绘图、空白行不算（写回时照样平移）。
+  /// 能否当对齐证据（写回时不论如何都照样平移）。不算的只有三类，见 [_isEvidence]：
+  /// 注释行 / 绘图 / 空文本，以及只持续一两帧的逐帧特效事件。
   final bool alignable;
 
   int get startMs => startStamp.ms;
@@ -210,13 +211,26 @@ List<SubtitleTimedLine> scanSubtitleTimedLines(String text) {
   return isAss ? _scanAss(text, lines) : _scanArrowCues(text, lines);
 }
 
+/// 短于它（毫秒）的事件不当对齐证据：逐帧特效字（一个招牌动画拆成几百个一帧长的
+/// 事件，实测高木同学 2 的 Asakura 轨一集 1.9 万个）会把 cue 密度、也就是瞎碰概率
+/// 抬到毫无意义；台词再短也要显示半秒以上。
+const int _kMinEvidenceMs = 250;
+
+/// **不按 `\pos` 判特效**：电视字幕（ARIB）转出来的 ASS 每一行台词都带 `\pos`
+/// 逐行定位（实测 Re:Zero 4 的 AT-X 录制字幕 621 行全带），按它排除会把整份字幕
+/// 判成零证据。「是不是特效」看的是时长，不是有没有定位。
+bool _isEvidence(
+  bool hasText,
+  SubtitleTimestamp start,
+  SubtitleTimestamp end,
+) => hasText && end.ms - start.ms >= _kMinEvidenceMs;
+
 // ---- ASS ------------------------------------------------------------------
 
 final RegExp _assOverride = RegExp(r'\{[^}]*\}');
 final RegExp _assDrawing = RegExp(r'\\p[1-9]');
 
 bool _assTextAlignable(String body) {
-  if (body.contains(r'\pos(') || body.contains(r'\move(')) return false;
   if (_assDrawing.hasMatch(body)) return false;
   final String plain = body
       .replaceAll(_assOverride, '')
@@ -307,7 +321,7 @@ SubtitleTimedLine? _scanAssEvent(String text, _Line line, _AssColumns columns) {
     endStamp: end,
     blockStart: line.start,
     blockEnd: line.next,
-    alignable: dialogue && _assTextAlignable(body),
+    alignable: _isEvidence(dialogue && _assTextAlignable(body), start, end),
   );
 }
 
@@ -363,7 +377,11 @@ SubtitleTimedLine? _scanArrowCue(String text, List<_Line> lines, int i) {
     endStamp: end,
     blockStart: lines[first].start,
     blockEnd: after < lines.length ? lines[after].start : text.length,
-    alignable: body.toString().replaceAll(_markupTag, '').trim().isNotEmpty,
+    alignable: _isEvidence(
+      body.toString().replaceAll(_markupTag, '').trim().isNotEmpty,
+      start,
+      end,
+    ),
   );
 }
 

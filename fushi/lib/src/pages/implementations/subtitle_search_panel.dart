@@ -10,6 +10,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
@@ -29,6 +30,7 @@ import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
 import 'package:fushi/src/pages/implementations/jimaku_api_key_field.dart';
@@ -296,6 +298,7 @@ class SubtitleSearchPanel extends StatefulWidget {
     this.httpClientFactory,
     this.seed = const SubtitleSearchSeed(),
     this.videoPath,
+    this.subtitleAligner,
     this.debugInitialCandidates,
     this.debugInitialSeriesMatches,
     this.debugInitialSeriesLookupFailed = false,
@@ -350,6 +353,9 @@ class SubtitleSearchPanel extends StatefulWidget {
   /// 当前视频的本地文件绝对路径；非空且存在时用于算 OSDb 文件哈希做精确匹配
   /// （BUG-1847）。远端流 / 无本地文件为 null。
   final String? videoPath;
+
+  /// 落盘前按 [videoPath] 的内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   /// 预填的 Jimaku API key。
   final String initialApiKey;
@@ -955,7 +961,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
           dir.path,
           safeSubtitleFileName(download.fileName),
         );
-        await File(dest).writeAsBytes(download.bytes);
+        await File(dest).writeAsBytes(await _alignedBytes(download));
         saved.add(dest);
       } on Object catch (error) {
         failed++;
@@ -973,6 +979,13 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     }
     if (failed > 0) _showError(t.download_batch_failed(n: failed));
     widget.onDownloaded(saved);
+  }
+
+  Future<Uint8List> _alignedBytes(VideoSubtitleDownload download) async {
+    final AutomaticSubtitleAligner? aligner = widget.subtitleAligner;
+    final String? path = widget.videoPath;
+    if (aligner == null || path == null) return download.bytes;
+    return aligner(download.bytes, path);
   }
 
   Future<void> _downloadSource(VideoSubtitleCandidate source) async {
@@ -997,7 +1010,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         dir.path,
         safeSubtitleFileName(download.fileName),
       );
-      await File(dest).writeAsBytes(download.bytes);
+      await File(dest).writeAsBytes(await _alignedBytes(download));
       if (!mounted) return;
       widget.onDownloaded(<String>[dest]);
     } on Object catch (error) {

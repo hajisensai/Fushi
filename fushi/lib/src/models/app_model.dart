@@ -152,6 +152,7 @@ import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -4097,6 +4098,20 @@ class AppModel with ChangeNotifier {
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
 
+  /// 自动下载的外挂字幕按视频内嵌字幕轨对时间轴（默认开）。
+  bool get subtitleReferenceSyncEnabled =>
+      prefsRepo.subtitleReferenceSyncEnabled;
+
+  Future<void> setSubtitleReferenceSyncEnabled(bool value) =>
+      prefsRepo.setSubtitleReferenceSyncEnabled(value);
+
+  /// 各自动下载路径共用的对齐钩子（开关每次调用现读，见
+  /// [gatedAutomaticSubtitleAligner]）。
+  late final AutomaticSubtitleAligner alignDownloadedSubtitle =
+      gatedAutomaticSubtitleAligner(
+    () => isPreferencesReady && prefsRepo.subtitleReferenceSyncEnabled,
+  );
+
   /// 视频条目自动刮削开关（落 Drift preferences，默认开）。
   bool get videoAutoScrape => prefsRepo.videoAutoScrape;
 
@@ -4984,6 +4999,7 @@ class AppModel with ChangeNotifier {
         httpClientFactory: createDownloadHttpClient,
         stagingDirFor: store.subsDirFor,
         defaultContentLanguageProvider: () => prefsRepo.defaultContentLanguage,
+        subtitleAligner: alignDownloadedSubtitle,
       ).resolve,
       backendFactory: _torrentBackendFor,
       onTick: () {
@@ -5241,6 +5257,7 @@ class AppModel with ChangeNotifier {
     final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
     _videoSubtitleBackfillService = VideoSubtitleBackfillService(
       registry: subtitles,
+      subtitleAligner: alignDownloadedSubtitle,
       preferredLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
@@ -5276,6 +5293,7 @@ class AppModel with ChangeNotifier {
       database: database,
       resourceRegistry: resources,
       subtitleRegistry: subtitles,
+      subtitleAligner: alignDownloadedSubtitle,
       preferredSubtitleLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],

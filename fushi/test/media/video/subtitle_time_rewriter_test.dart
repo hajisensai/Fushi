@@ -25,25 +25,29 @@ const String _ass =
     'Comment: 0,0:00:08.00,0:00:09.00,Default,,0,0,0,,note\r\n'
     r'Dialogue: 0,0:00:10.00,0:00:12.00,Sign,,0,0,0,,{\pos(100,200)}SIGN'
     '\r\n'
-    'Dialogue: 0,0:00:13.00,0:00:14.00,Default,,0,0,0,,{\\i1}{\\b1}\r\n';
+    'Dialogue: 0,0:00:13.00,0:00:14.00,Default,,0,0,0,,{\\i1}{\\b1}\r\n'
+    r'Dialogue: 0,0:00:16.00,0:00:16.04,Sign,,0,0,0,,{\move(1,2,3,4)}X'
+    '\r\n';
 
 void main() {
   group('scanSubtitleTimedLines', () {
-    test('ASS：注释、定位特效字、空文本行不当对齐证据', () {
+    test('ASS：注释、空文本、逐帧特效不当对齐证据；带 \\pos 的台词照算', () {
       final List<SubtitleTimedLine> lines = scanSubtitleTimedLines(_ass);
       expect(lines.map((SubtitleTimedLine l) => l.startMs), <int>[
         5000,
         8000,
         10000,
         13000,
+        16000,
       ]);
       expect(lines.map((SubtitleTimedLine l) => l.alignable), <bool>[
         true,
         false,
+        true,
         false,
         false,
       ]);
-      expect(alignableCueStartSeconds(_ascii(_ass)), <double>[5.0]);
+      expect(alignableCueStartSeconds(_ascii(_ass)), <double>[5.0, 10.0]);
     });
 
     test('ASS：Format 列顺序不同也按列名找 Start/End', () {
@@ -84,9 +88,10 @@ void main() {
           .replaceFirst('0:00:05.00,0:00:07.50', '0:00:06.23,0:00:08.73')
           .replaceFirst('0:00:08.00,0:00:09.00', '0:00:09.23,0:00:10.23')
           .replaceFirst('0:00:10.00,0:00:12.00', '0:00:11.23,0:00:13.23')
-          .replaceFirst('0:00:13.00,0:00:14.00', '0:00:14.23,0:00:15.23');
+          .replaceFirst('0:00:13.00,0:00:14.00', '0:00:14.23,0:00:15.23')
+          .replaceFirst('0:00:16.00,0:00:16.04', '0:00:17.23,0:00:17.27');
       expect(String.fromCharCodes(out.bytes), expected);
-      expect(out.shiftedCount, 4);
+      expect(out.shiftedCount, 5);
       expect(out.droppedCount, 0);
     });
 
