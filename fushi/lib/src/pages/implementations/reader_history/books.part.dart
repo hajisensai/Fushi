@@ -557,6 +557,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle:
             anyLocalFiles ? t.delete_local_files_audio_desc : null,
+        // 纯解散合集不删任何书，统计无从谈起。
+        statisticsSubtitle: mediaCount == 0 ? null : _statisticsSubtitle,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
@@ -565,6 +567,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (decision == null || !mounted) return;
     final DeleteScope scope = decision.scope;
     final bool deleteLocalFiles = decision.deleteLocalFiles;
+    final bool deleteStatistics = decision.deleteStatistics;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     // 用确认框弹出前定死的那份目标，不重新读选中集。
@@ -606,6 +609,14 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               bookKey: book.bookKey,
               scope: scope,
               deleteLocalFiles: deleteLocalFiles,
+              deleteStatistics: deleteStatistics,
+            );
+          } else if (deleteStatistics) {
+            // 纯字幕书不走 deleteBook，统计要在删行之前按 uid 身份清掉。
+            await ReaderFushiSource.deleteBookStatistics(
+              db: appModel.database,
+              title: book.title,
+              mediaKeys: <String>[uid],
             );
           }
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
@@ -628,6 +639,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             bookKey: bookKey,
             scope: scope,
             deleteLocalFiles: deleteLocalFiles,
+            deleteStatistics: deleteStatistics,
           );
           localFiles = localFiles.merge(result.localFiles);
           if (result.deleted) deleted++;
@@ -987,6 +999,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
       localFilesSubtitle:
           hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      statisticsSubtitle: _statisticsSubtitle,
     );
     if (decision == null) return;
     final DeleteScope scope = decision.scope;
@@ -1006,8 +1019,16 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         bookKey: book.bookKey,
         scope: scope,
         deleteLocalFiles: decision.deleteLocalFiles,
+        deleteStatistics: decision.deleteStatistics,
       );
       localFiles = localFiles.merge(result.localFiles);
+    } else if (decision.deleteStatistics) {
+      // 纯字幕书不走 deleteBook，统计要在删行之前按 uid 身份清掉。
+      await ReaderFushiSource.deleteBookStatistics(
+        db: appModel.database,
+        title: book.title,
+        mediaKeys: <String>[book.uid],
+      );
     }
     // TODO-2470 死角①：纯字幕书（bookKey 空）不走上面的 deleteBook，删除范围必须在
     // 这里落地，否则勾了「从所有设备删除」静默无效。
@@ -1078,6 +1099,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
       localFilesSubtitle:
           hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      statisticsSubtitle: _statisticsSubtitle,
     );
     if (decision == null) return;
 
@@ -1090,6 +1112,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       bookKey: bookKey,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
+      deleteStatistics: decision.deleteStatistics,
     );
     if (!mounted) return;
     reportLocalFileDeleteFailures(

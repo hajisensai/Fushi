@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 
 void main() {
@@ -9,6 +10,7 @@ void main() {
   Future<void> openDialog(
     WidgetTester tester, {
     String? checkboxLabel,
+    String? statisticsSubtitle,
   }) async {
     dialogResult = null;
     await tester.pumpWidget(MaterialApp(
@@ -22,6 +24,7 @@ void main() {
                   title: '删除书籍',
                   message: '此操作不可撤销。',
                   checkboxLabel: checkboxLabel,
+                  statisticsSubtitle: statisticsSubtitle,
                 ),
               );
             },
@@ -182,6 +185,42 @@ void main() {
       await tester.tap(confirm());
       await tester.pumpAndSettle();
       expect((await dialogResult)!.checked, isFalse);
+    });
+  });
+
+  group('「同时删除统计数据」无主勾选时独立成行（游戏库移除游戏）', () {
+    testWidgets('默认不勾：直接确认 deleteStatistics=false', (
+      WidgetTester tester,
+    ) async {
+      await openDialog(tester, statisticsSubtitle: '游戏统计口径');
+      expect(find.text(t.delete_statistics), findsOneWidget,
+          reason: '没有主勾选也要摆出统计行');
+
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      final FushiDestructiveConfirmResult value = (await dialogResult)!;
+      expect(value.checked, isFalse);
+      expect(value.deleteStatistics, isFalse);
+    });
+
+    testWidgets('勾上后确认 deleteStatistics=true', (WidgetTester tester) async {
+      await openDialog(tester, statisticsSubtitle: '游戏统计口径');
+      await tester.tap(find.text(t.delete_statistics));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      expect((await dialogResult)!.deleteStatistics, isTrue);
+    });
+
+    testWidgets('有主勾选时仍挂在主勾选之下：主勾选未勾就不出现', (
+      WidgetTester tester,
+    ) async {
+      await openDialog(tester,
+          checkboxLabel: '连同本体删除', statisticsSubtitle: '统计口径');
+      expect(find.text(t.delete_statistics), findsNothing);
+      await tester.tap(find.text('连同本体删除'));
+      await tester.pumpAndSettle();
+      expect(find.text(t.delete_statistics), findsOneWidget);
     });
   });
 }

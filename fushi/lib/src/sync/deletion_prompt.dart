@@ -143,6 +143,14 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
     );
   }
 
+  /// 披露跟着两个二级勾选翻面：勾了哪个，对应条目就从「会被保留」挪进「会被删除」。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_deleteStatistics) shown = shown.withStatisticsDeleted();
+    return shown;
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -164,9 +172,7 @@ class _DeleteScopeConfirmDialogState extends State<_DeleteScopeConfirmDialog> {
             if (widget.disclosure != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               DeletionDisclosureView(
-                disclosure: _deleteLocalFiles
-                    ? widget.disclosure!.withLocalFilesDeleted()
-                    : widget.disclosure!,
+                disclosure: _shownDisclosure(widget.disclosure!),
               ),
             ],
             SizedBox(height: tokens.spacing.gap),

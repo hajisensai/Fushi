@@ -272,6 +272,10 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
   /// 先弹统一确认框（与书架/合集同款 [FushiDestructiveConfirmDialog]）：语义
   /// 只是**从库移除**，绝不删磁盘上的游戏文件——确认文案明说这点，免得用户
   /// 不敢点或误以为会连本体一起没。
+  ///
+  /// 「同时删除统计数据」（默认不勾，与书架 / 漫画 / 视频删除同一选项）勾上时，在删
+  /// 行**之前**清该游戏的统计（[FushiDatabase.deleteGameStatisticsForId]）：
+  /// study_segments 要按游戏身份立碑，行删了身份也就没了。
   Future<void> _removeGame(GalgameEntry game) async {
     final FushiDestructiveConfirmResult? result =
         await showAppDialog<FushiDestructiveConfirmResult>(
@@ -280,9 +284,13 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
         title: t.game_remove,
         message: t.game_remove_confirm,
         confirmLabel: t.game_remove,
+        statisticsSubtitle: t.delete_statistics_game_desc,
       ),
     );
     if (result == null || !mounted) return;
+    if (result.deleteStatistics) {
+      await _appModel.database.deleteGameStatisticsForId(game.id);
+    }
     await _repo.remove(game.id);
     _refresh();
   }

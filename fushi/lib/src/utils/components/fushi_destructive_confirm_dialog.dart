@@ -10,7 +10,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 /// pop `null` = 取消；非 null = 已确认，[checked] 携带可选勾选项状态
 /// （无 [FushiDestructiveConfirmDialog.checkboxLabel] 时恒为 false）。
 /// [deleteLocalFiles] / [deleteStatistics] 是挂在 [checked] 之下的两个二级勾选
-/// （对应的 subtitle 没传、或主勾选未勾时恒为 false）。
+/// （对应的 subtitle 没传、或主勾选未勾时恒为 false）；没有主勾选时
+/// [deleteStatistics] 是独立勾选行的状态。
 @immutable
 class FushiDestructiveConfirmResult {
   const FushiDestructiveConfirmResult({
@@ -24,7 +25,8 @@ class FushiDestructiveConfirmResult {
   /// 用户是否要求连磁盘上的原始文件一起删（仅在 [checked] 为真时可能为真）。
   final bool deleteLocalFiles;
 
-  /// 用户是否要求连这些媒体攒下的统计一起删（仅在 [checked] 为真时可能为真）。
+  /// 用户是否要求连这些媒体攒下的统计一起删（有主勾选时仅在 [checked] 为真时
+  /// 可能为真）。
   final bool deleteStatistics;
 }
 
@@ -89,6 +91,9 @@ class FushiDestructiveConfirmDialog extends StatefulWidget {
   /// 与 [localFilesSubtitle] 同款纪律（必填副标题、只在主勾选为真时可见、主勾选
   /// 取消时复位），但**默认恒为未勾且不被记忆**：统计是与「这条媒体还在不在库里」
   /// 正交的另一类事实，删条目远比删统计常见，默认值站在保留那一侧。
+  ///
+  /// 没有主勾选（[checkboxLabel] 为 null，如游戏库「移除游戏」：确认即删条目本身）
+  /// 时，它作为独立勾选行直接挂在正文下方。
   final String? statisticsSubtitle;
 
   /// 勾选框被勾上后追加渲染的「会被删除 / 会被保留」逐项披露。
@@ -122,6 +127,11 @@ class _FushiDestructiveConfirmDialogState
   // 统计删除**永远**从未勾开始，也不进「记住这些选择」：删条目是常事，把看它花掉
   // 的那些小时从图表里抹掉是另一件事，而且按身份立碑后其他设备也跟着删、没有撤销。
   bool _deleteStatistics = false;
+
+  /// 统计勾选此刻是否可见：有主勾选时跟随主勾选，没有主勾选时恒可见。
+  bool get _statisticsOffered =>
+      widget.statisticsSubtitle != null &&
+      (widget.checkboxLabel == null || _checked);
 
   @override
   Widget build(BuildContext context) {
@@ -191,7 +201,7 @@ class _FushiDestructiveConfirmDialogState
                   subtitle: widget.localFilesSubtitle!,
                   onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
                 ),
-              if (_checked && widget.statisticsSubtitle != null)
+              if (_statisticsOffered)
                 DeleteStatisticsRow(
                   value: _deleteStatistics,
                   subtitle: widget.statisticsSubtitle!,
@@ -207,6 +217,14 @@ class _FushiDestructiveConfirmDialogState
                       : widget.checkedDisclosure!,
                 ),
               ],
+            ],
+            if (widget.checkboxLabel == null && _statisticsOffered) ...[
+              SizedBox(height: tokens.spacing.gap),
+              DeleteStatisticsRow(
+                value: _deleteStatistics,
+                subtitle: widget.statisticsSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteStatistics = v),
+              ),
             ],
           ],
         ),
@@ -233,9 +251,8 @@ class _FushiDestructiveConfirmDialogState
                           deleteLocalFiles: _checked &&
                               widget.localFilesSubtitle != null &&
                               _deleteLocalFiles,
-                          deleteStatistics: _checked &&
-                              widget.statisticsSubtitle != null &&
-                              _deleteStatistics,
+                          deleteStatistics:
+                              _statisticsOffered && _deleteStatistics,
                         ),
                       ),
               child: Text(widget.confirmLabel ?? t.dialog_delete),

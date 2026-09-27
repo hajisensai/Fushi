@@ -477,6 +477,65 @@ void main() {
     });
   });
 
+  group('deleteGameStatisticsForId（删除游戏时「同时删除统计数据」）', () {
+    Future<void> seedGame(FushiDatabase db, String id) async {
+      await db.upsertGalgame(GalgamesCompanion.insert(
+        id: id,
+        name: id,
+        exePath: '/g/$id.exe',
+        workdir: '/g',
+        addedAt: 0,
+      ));
+      await db.insertGalgameSession(GalgameSessionsCompanion.insert(
+        gameId: id,
+        startMs: 0,
+        endMs: 60000,
+        durationSeconds: 60,
+        dateKey: '2026-07-05',
+      ));
+      await _seedSegment(db,
+          mediaKind: kActivityMediaGame, mediaKey: id, title: id);
+      await db.into(db.activityEvents).insert(ActivityEventsCompanion.insert(
+            eventType: kActivityGame,
+            mediaType: kActivityMediaGame,
+            title: id,
+            mediaKey: Value(id),
+            dateKey: '2026-07-05',
+            timestampMs: 1,
+            charsDelta: const Value(120),
+          ));
+    }
+
+    test('清该游戏的段（立按身份碑）/ 游玩会话 / legacy 字数行，别的游戏不动', () async {
+      final FushiDatabase db = await _openDb();
+      await seedGame(db, 'g1');
+      await seedGame(db, 'g2');
+
+      await db.deleteGameStatisticsForId('g1');
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g1'),
+          isEmpty);
+      expect(await db.getGalgameSessions('g1'), isEmpty);
+      expect(await db.getGalgame('g1'), isNotNull,
+          reason: '只清统计，游戏本体行由调用方随后自己删');
+      final List<ActivityEventRow> events =
+          await db.select(db.activityEvents).get();
+      expect(events.map((ActivityEventRow e) => e.mediaKey), <String?>['g2']);
+      expect(
+          (await db.getStudySegmentTombstones())
+              .map((StudySegmentTombstoneRow t) => (t.mediaKind, t.mediaKey)),
+          <(String, String)>[(kActivityMediaGame, 'g1')]);
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g2'),
+          hasLength(1));
+      expect(await db.getGalgameSessions('g2'), hasLength(1));
+    });
+  });
+
   group('BUG-2587: 远端 host-playlist 按集覆盖并集键', () {
     test('videoWatchCoverageEpisodePrefKey: 第 0 集回退整书键，其后带 #ep 后缀',
         () {
