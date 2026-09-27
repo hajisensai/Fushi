@@ -6,8 +6,8 @@
 /// 返回是退书的唯一可见入口（BUG-2230 同一口径），设置是其它所有面板的入口；它们
 /// 也不能进悬浮球——悬浮球有总开关，关掉后槽里的按钮整个不画，必需项会凭空消失。
 ///
-/// 悬浮球槽（[ReaderControlSlot.floatingBall]）的按钮由 `ReaderFloatingBall` 以弧形
-/// 环绕球体展开；出厂放有声书的上一句 / 播放暂停 / 下一句三键。
+/// 悬浮球槽（[ReaderControlSlot.floatingBall]）的按钮由 `ReaderFloatingBall` 在球正上方
+/// 竖排展开（一列放不下时向屏幕中央换列）；出厂放有声书的上一句 / 播放暂停 / 下一句三键。
 ///
 /// 持久化键 `reader_control_layout`，JSON `{version:1, slots:{...}, removed:[...]}`
 /// （与视频 v3 同形；阅读器没有历史布局，不需要迁移）。
