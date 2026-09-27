@@ -83,6 +83,13 @@ struct SgreAnchorSet {
   SgreResolvedAnchor ui_renderer_context;
   SgreResolvedAnchor scenario_text_vtable;
   SgreResolvedAnchor direct_input_mouse_device;
+  // Optional game-stream remote gamepad channel (BUG-2726). The same per-frame
+  // input update that polls the mouse first polls a GUID_SysKeyboard device
+  // with GetDeviceState(256, ...) and folds every pressed DIK through the
+  // engine's live key-binding vector into its action bits. Neither anchor is
+  // part of complete(): lookup and the mouse shield never depend on them.
+  SgreResolvedAnchor direct_input_keyboard_device;
+  SgreResolvedAnchor keyboard_binding_vector;
   bool known_build = false;
 
   // The in-game lookup sensor needs both the draw boundary and the scenario
@@ -92,6 +99,10 @@ struct SgreAnchorSet {
   }
   bool direct_input_shield_available() const {
     return direct_input_mouse_device.resolved();
+  }
+  bool remote_keyboard_available() const {
+    return direct_input_keyboard_device.resolved() &&
+           keyboard_binding_vector.resolved();
   }
   bool ui_draw_text_available() const { return ui_draw_text.resolved(); }
   bool ui_lookup_chain_available() const {
@@ -377,6 +388,52 @@ inline constexpr SgreAnchorSignature
         "4C 8D 44 24 30 "
         "BA 14 00 00 00 "
         "FF 50 48",
+        nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
+
+// Keyboard device slot. CreateDevice(GUID_SysKeyboard) follows the failure
+// branch of the DirectInput8Create call (test/js rel32), which the mouse
+// CreateDevice (preceded by the keyboard-ready byte store) does not; the
+// standalone key-state helper polls the same slot with GetDeviceState(0x100).
+inline constexpr SgreAnchorSignature kSgreDirectInputKeyboardDeviceSignature = {
+    "85 C0 0F 88 ?? ?? ?? ?? "
+    "48 8B 0D ?? ?? ?? ?? "
+    "4C 8D 05 ?? ?? ?? ?? "
+    "45 33 C9 "
+    "48 8D 15 ?? ?? ?? ?? "
+    "48 8B 01 "
+    "FF 50 18 "
+    "85 C0 78 ??",
+    nullptr, SgreAnchorKind::kWritableData, 0, 18, 22};
+inline constexpr SgreAnchorSignature
+    kSgreDirectInputKeyboardDeviceCorroborationSignature = {
+        "48 8B 0D ?? ?? ?? ?? "
+        "4C 8B C3 "
+        "BA 00 01 00 00 "
+        "48 8B 01 "
+        "FF 50 48",
+        nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
+
+// Key-binding vector (std::vector<{u32 dik, u32 action, u32 alt_action}>).
+// The input update walks [begin, end) right after the keyboard poll and tests
+// the sampled 256-byte state at [rsp + dik + 0x50]; the binding reset loads the
+// same begin/end pair before refilling it from the engine's default table.
+inline constexpr SgreAnchorSignature kSgreKeyboardBindingVectorSignature = {
+    "48 8B 05 ?? ?? ?? ?? "
+    "4C 8B 0D ?? ?? ?? ?? "
+    "49 3B C1 74 ?? "
+    "8B 15 ?? ?? ?? ?? "
+    "44 8B 05 ?? ?? ?? ?? "
+    "8B 08 "
+    "40 38 74 0C 50 "
+    "7D ??",
+    nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
+inline constexpr SgreAnchorSignature
+    kSgreKeyboardBindingVectorCorroborationSignature = {
+        "48 8B 05 ?? ?? ?? ?? "
+        "48 8B 15 ?? ?? ?? ?? "
+        "48 3B C2 74 ?? "
+        "48 8B D0 "
+        "48 89 05 ?? ?? ?? ??",
         nullptr, SgreAnchorKind::kWritableData, 0, 3, 7};
 
 inline constexpr size_t kSgreSignatureMaxBytes = 128;
@@ -932,6 +989,20 @@ inline SgreResolvedAnchor ResolveSgreDirectInputMouseDevice(
       kSgreDirectInputMouseDeviceCorroborationSignature, image);
 }
 
+inline SgreResolvedAnchor ResolveSgreDirectInputKeyboardDevice(
+    const SgreImageView& image) {
+  return ResolveSameSgreAnchor(
+      kSgreDirectInputKeyboardDeviceSignature,
+      kSgreDirectInputKeyboardDeviceCorroborationSignature, image);
+}
+
+inline SgreResolvedAnchor ResolveSgreKeyboardBindingVector(
+    const SgreImageView& image) {
+  return ResolveSameSgreAnchor(
+      kSgreKeyboardBindingVectorSignature,
+      kSgreKeyboardBindingVectorCorroborationSignature, image);
+}
+
 inline bool ValidateSgreLookupAnchorStructure(
     const SgreAnchorSet& set, const SgreImageView& image) {
   constexpr size_t kScenarioTextDrawVtableSlot = 4u;
@@ -963,6 +1034,32 @@ inline bool ValidateSgreDirectInputAnchorStructure(
   return set.direct_input_shield_available() &&
          SgreStructureAccepts(SgreAnchorKind::kWritableData,
                               set.direct_input_mouse_device.rva, image);
+}
+
+// The keyboard slot, the binding vector's begin/end pair and the mouse slot
+// are distinct globals; a decode that collapses any two of them is not the
+// input update this channel was built against.
+inline bool ValidateSgreRemoteKeyboardAnchorStructure(
+    const SgreAnchorSet& set, const SgreImageView& image) {
+  if (!set.remote_keyboard_available() ||
+      !SgreStructureAccepts(SgreAnchorKind::kWritableData,
+                            set.direct_input_keyboard_device.rva, image) ||
+      !SgreStructureAccepts(SgreAnchorKind::kWritableData,
+                            set.keyboard_binding_vector.rva, image) ||
+      !SgreImageSpanAvailable(image, set.keyboard_binding_vector.rva,
+                              2u * sizeof(uintptr_t))) {
+    return false;
+  }
+  const uintptr_t keyboard = set.direct_input_keyboard_device.rva;
+  const uintptr_t bindings = set.keyboard_binding_vector.rva;
+  if (keyboard >= bindings && keyboard < bindings + 2u * sizeof(uintptr_t)) {
+    return false;
+  }
+  return !set.direct_input_mouse_device.resolved() ||
+         (set.direct_input_mouse_device.rva != keyboard &&
+          (set.direct_input_mouse_device.rva < bindings ||
+           set.direct_input_mouse_device.rva >=
+               bindings + 2u * sizeof(uintptr_t)));
 }
 
 inline bool ValidateSgreUiDrawTextAnchorStructure(
@@ -1060,6 +1157,9 @@ inline SgreAnchorSet ResolveSgreAnchors(const uint8_t* digest,
   set.ui_renderer_context = ResolveSgreUiRendererContext(image);
   set.direct_input_mouse_device =
       ResolveSgreDirectInputMouseDevice(image);
+  set.direct_input_keyboard_device =
+      ResolveSgreDirectInputKeyboardDevice(image);
+  set.keyboard_binding_vector = ResolveSgreKeyboardBindingVector(image);
 
   if (set.lookup_sensor_available() &&
       !ValidateSgreLookupAnchorStructure(set, image)) {
@@ -1069,6 +1169,12 @@ inline SgreAnchorSet ResolveSgreAnchors(const uint8_t* digest,
   if (set.direct_input_shield_available() &&
       !ValidateSgreDirectInputAnchorStructure(set, image)) {
     set.direct_input_mouse_device = RejectSgreAnchorStructure();
+  }
+  if ((set.direct_input_keyboard_device.resolved() ||
+       set.keyboard_binding_vector.resolved()) &&
+      !ValidateSgreRemoteKeyboardAnchorStructure(set, image)) {
+    set.direct_input_keyboard_device = RejectSgreAnchorStructure();
+    set.keyboard_binding_vector = RejectSgreAnchorStructure();
   }
   const bool any_ui_anchor =
       set.ui_draw_text.resolved() || set.ui_raster_text.resolved() ||

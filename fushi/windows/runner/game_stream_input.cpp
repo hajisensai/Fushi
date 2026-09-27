@@ -240,15 +240,13 @@ void GameStreamInput::Release() {
   if (!target.alive || !target.process_matches) {
     pressed_keys_.clear();
     pointer_buttons_ = 0;
-    native_left_down_ = false;
-    native_left_transaction_id_ = 0;
+    ResetNativeButtons();
     return;
   }
-  if (native_left_down_) {
+  if (native_buttons_ != 0) {
     std::string ignored;
-    SendNativeLeftButton(false, false, false, &ignored);
-    native_left_down_ = false;
-    native_left_transaction_id_ = 0;
+    PublishNativeButtons(0, 0, false, &ignored);
+    ResetNativeButtons();
   }
   for (const UINT key : pressed_keys_) {
     PostKey(key, false);
@@ -330,95 +328,137 @@ bool GameStreamInput::HasSgreNativeConfirmCapability() const {
          fushi_voice_hook::kSgreDirectInputShieldReadyValue;
 }
 
-bool GameStreamInput::PublishNativeLeftButton(bool down, bool wait_for_ack,
-                                              std::string* reason) {
+uint32_t GameStreamInput::NativeGamepadButton(const std::string& name) {
+  static const struct {
+    const char* name;
+    uint32_t bit;
+  } buttons[] = {
+      {"confirm", fushi_voice_hook::kGameStreamInputButtonLeft},
+      {"dpad_up", fushi_voice_hook::kGameStreamInputButtonDpadUp},
+      {"dpad_down", fushi_voice_hook::kGameStreamInputButtonDpadDown},
+      {"dpad_left", fushi_voice_hook::kGameStreamInputButtonDpadLeft},
+      {"dpad_right", fushi_voice_hook::kGameStreamInputButtonDpadRight},
+      {"cancel", fushi_voice_hook::kGameStreamInputButtonCancel},
+      {"shoulder_left", fushi_voice_hook::kGameStreamInputButtonShoulderLeft},
+      {"shoulder_right", fushi_voice_hook::kGameStreamInputButtonShoulderRight},
+      {"menu", fushi_voice_hook::kGameStreamInputButtonMenu},
+  };
+  for (const auto& button : buttons) {
+    if (_stricmp(name.c_str(), button.name) == 0) return button.bit;
+  }
+  return 0;
+}
+
+void GameStreamInput::ResetNativeButtons() {
+  native_buttons_ = 0;
+  native_transaction_id_ = 0;
+}
+
+void GameStreamInput::CommitNativeButtons(uint32_t buttons) {
+  native_buttons_ = buttons;
+  if (buttons == 0) native_transaction_id_ = 0;
+}
+
+// Publishes the complete held mask. `verify` names the newly pressed bits that
+// must be read back from the target's sampled state before the press counts;
+// releases pass 0 and never wait. On failure the previous mask is restored so
+// buttons that were already held stay held and nothing new is left pressed.
+bool GameStreamInput::PublishNativeButtons(uint32_t buttons, uint32_t verify,
+                                           bool wait_for_ack,
+                                           std::string* reason) {
+  const uint32_t previous = native_buttons_;
   VoiceHookOpenResult opened = VoiceHookReader::Instance().Open(pid_);
   if (!opened.ok()) {
     SetReason(reason, "native_input_unavailable");
     return false;
   }
-  if (down) {
-    if (!native_left_down_) {
-      native_left_transaction_id_ = next_native_transaction_id_++;
-      if (next_native_transaction_id_ == 0) next_native_transaction_id_ = 1;
-    }
-  } else if (native_left_transaction_id_ == 0) {
-    native_left_transaction_id_ = next_native_transaction_id_++;
+  if (native_transaction_id_ == 0) {
+    native_transaction_id_ = next_native_transaction_id_++;
     if (next_native_transaction_id_ == 0) next_native_transaction_id_ = 1;
   }
   const uint64_t deadline =
       GetTickCount64() + fushi_voice_hook::kGameStreamInputDefaultLeaseMs;
-  const uint32_t active =
-      down ? fushi_voice_hook::kGameStreamInputButtonLeft : 0u;
   const uint32_t seq = VoiceHookReader::Instance().PublishGameStreamInput(
-      hwnd_, native_left_transaction_id_, active, deadline);
+      hwnd_, native_transaction_id_, buttons, deadline);
   if (seq == 0) {
     SetReason(reason, "native_input_unavailable");
+    if (previous == 0) native_transaction_id_ = 0;
     return false;
   }
-  if (!wait_for_ack) {
-    native_left_down_ = down;
-    if (!down) native_left_transaction_id_ = 0;
+  if (!wait_for_ack || verify == 0) {
+    CommitNativeButtons(buttons);
     return true;
   }
 
+  // The adapter republishes the ACK on every sampled frame. SGRE samples the
+  // keyboard before the mouse within one input update, so the first ACK of a
+  // new generation can come from a frame whose keyboard poll predates it; an
+  // Applied ACK that does not yet show the pressed bit is therefore not final
+  // until the wait window closes.
+  bool applied_without_observation = false;
   const uint64_t wait_deadline = GetTickCount64() + 250;
   while (GetTickCount64() <= wait_deadline) {
     const VoiceHookGameStreamInputStatus status =
         VoiceHookReader::Instance().GameStreamInputStatus();
     if (status.ok() && status.request_seq == seq &&
-        status.transaction_id == native_left_transaction_id_ &&
+        status.transaction_id == native_transaction_id_ &&
         status.applied_seq == seq) {
       if (status.status == fushi_voice_hook::kGameStreamInputStatusApplied) {
-        if (down && (status.observed_buttons &
-                     fushi_voice_hook::kGameStreamInputButtonLeft) == 0) {
-          SetReason(reason, "native_input_not_observed");
-          PublishNativeLeftButton(false, false, nullptr);
-          native_left_down_ = false;
-          native_left_transaction_id_ = 0;
-          return false;
+        if ((status.observed_buttons & verify) == verify) {
+          CommitNativeButtons(buttons);
+          return true;
         }
-        native_left_down_ = down;
-        if (!down) native_left_transaction_id_ = 0;
-        return true;
+        applied_without_observation = true;
+      } else {
+        SetReason(reason, status.status ==
+                                  fushi_voice_hook::kGameStreamInputStatusExpired
+                              ? "native_input_timeout"
+                              : "native_input_rejected");
+        PublishNativeButtons(previous, 0, false, nullptr);
+        return false;
       }
-      SetReason(reason, status.status ==
-                                fushi_voice_hook::kGameStreamInputStatusExpired
-                            ? "native_input_timeout"
-                            : "native_input_rejected");
-      if (down) {
-        PublishNativeLeftButton(false, false, nullptr);
-      }
-      native_left_down_ = false;
-      native_left_transaction_id_ = 0;
-      return false;
     }
     Sleep(4);
   }
-  SetReason(reason, "native_input_timeout");
-  if (down) {
-    PublishNativeLeftButton(false, false, nullptr);
-  }
-  native_left_down_ = false;
-  native_left_transaction_id_ = 0;
+  SetReason(reason, applied_without_observation ? "native_input_not_observed"
+                                                : "native_input_timeout");
+  PublishNativeButtons(previous, 0, false, nullptr);
   return false;
 }
 
-bool GameStreamInput::SendNativeLeftButton(bool down, bool require_foreground,
-                                           bool wait_for_ack,
-                                           std::string* reason) {
+bool GameStreamInput::SendNativeButton(uint32_t button, bool down,
+                                       bool require_foreground,
+                                       bool wait_for_ack,
+                                       std::string* reason) {
+  // Releasing a button this client does not hold is a no-op, never a reason
+  // to demand the foreground.
+  if (!down && (native_buttons_ & button) == 0) return true;
   if (require_foreground) {
     if (!ValidateTarget(true, reason)) return false;
   } else {
     const GameStreamWindowInfo target = InspectBound();
     if (!target.alive || !target.process_matches) {
       SetReason(reason, "process_changed");
-      native_left_down_ = false;
-      native_left_transaction_id_ = 0;
+      ResetNativeButtons();
       return false;
     }
   }
-  return PublishNativeLeftButton(down, wait_for_ack, reason);
+  const uint32_t next =
+      down ? (native_buttons_ | button) : (native_buttons_ & ~button);
+  return PublishNativeButtons(next, down ? button : 0u, wait_for_ack, reason);
+}
+
+// A release only drops state this client already holds, so it skips the
+// visibility/foreground gates: a target minimised or hidden while the finger
+// is down must still get its native left button released now, not when the
+// lease runs out. Identity is still checked by SendNativeButton.
+bool GameStreamInput::ReleaseNativePointer(const flutter::EncodableMap& event,
+                                           std::string* reason) {
+  if (GetForegroundWindow() == hwnd_) {
+    MoveCursorToClient(ReadDouble(event, "x", 0.0), ReadDouble(event, "y", 0.0));
+  }
+  return SendNativeButton(fushi_voice_hook::kGameStreamInputButtonLeft, false,
+                          false, false, reason);
 }
 
 bool GameStreamInput::PostKey(UINT vk, bool down) {
@@ -537,20 +577,15 @@ bool GameStreamInput::SendNativePointer(const flutter::EncodableMap& event,
     SetReason(reason, "unsupported_native_pointer");
     return false;
   }
-  if (action == "up") {
-    // A release never requires the foreground (see Send): it only drops state
-    // this client already holds.
-    if (!native_left_down_) return true;
-    if (GetForegroundWindow() == hwnd_) MoveCursorToClient(x, y);
-    return SendNativeLeftButton(false, false, false, reason);
-  }
+  if (action == "up") return ReleaseNativePointer(event, reason);
   if (!PreparePress(foreground_mode, true, reason)) return false;
   if (!ValidateTarget(true, reason)) return false;
   if (!MoveCursorToClient(x, y)) {
     SetReason(reason, "post_failed");
     return false;
   }
-  return SendNativeLeftButton(true, true, true, reason);
+  return SendNativeButton(fushi_voice_hook::kGameStreamInputButtonLeft, true,
+                          true, true, reason);
 }
 
 bool GameStreamInput::SendPointer(const flutter::EncodableMap& event,
@@ -624,16 +659,28 @@ bool GameStreamInput::SendPointer(const flutter::EncodableMap& event,
 
 bool GameStreamInput::Send(const flutter::EncodableMap& event,
                            std::string* reason) {
-  // A release removes already-authorised state. Do not require foreground
-  // ownership: a brief focus change must not leave a synthetic button held
-  // when the game resumes polling. Identity is still checked before publishing.
-  if (native_left_down_ && ReadString(event, "kind") == "gamepad" &&
-      ReadString(event, "action") == "up" &&
-      _stricmp(ReadString(event, "button").c_str(), "confirm") == 0) {
-    return SendNativeLeftButton(false, false, false, reason);
-  }
   const std::string kind_value = ReadString(event, "kind");
   const std::string action_value = ReadString(event, "action");
+  // A release removes already-authorised state. Do not require foreground
+  // ownership or visibility: a brief focus change or a minimise while a button
+  // is held must not leave a native button pressed when the game resumes
+  // polling. Identity is still checked before publishing.
+  if (native_buttons_ != 0 && action_value == "up") {
+    if (kind_value == "gamepad") {
+      const uint32_t native = NativeGamepadButton(ReadString(event, "button"));
+      if (native != 0 && (native_buttons_ & native) != 0) {
+        return SendNativeButton(native, false, false, false, reason);
+      }
+    } else if (kind_value == "pointer" &&
+               (native_buttons_ &
+                fushi_voice_hook::kGameStreamInputButtonLeft) != 0) {
+      PointerButton button{};
+      if (ResolvePointerButton(ReadString(event, "button"), &button) &&
+          button.mask == MK_LBUTTON) {
+        return ReleaseNativePointer(event, reason);
+      }
+    }
+  }
   if (kind_value.empty() || action_value.empty()) {
     SetReason(reason, "invalid_event");
     return false;
@@ -680,21 +727,24 @@ bool GameStreamInput::Send(const flutter::EncodableMap& event,
     }
     const bool down = IsDown(action_value);
     const bool sgre_native_ready = HasSgreNativeConfirmCapability();
-    const bool gamepad_confirm =
-        kind_value == "gamepad" &&
-        _stricmp(ReadString(event, "button").c_str(), "confirm") == 0;
-    if (sgre_native_ready && gamepad_confirm) {
-      // The SGRE adapter samples the foreground window, so its confirm keeps
-      // the foreground requirement (SendNativeLeftButton validates it).
-      // Foreground mode activates the window before a DOWN; background mode
-      // rejects with window_not_foreground as before.
+    if (sgre_native_ready && kind_value == "gamepad") {
+      // SGRE ignores window messages and samples DirectInput only while it is
+      // the foreground window, so every native gamepad press keeps the
+      // foreground requirement (SendNativeButton validates it). Foreground mode
+      // activates the window before a DOWN; background mode rejects with
+      // window_not_foreground. Confirm is the sampled left mouse button; the
+      // other buttons are engine actions the adapter presses through the
+      // keyboard key the engine binds to them (BUG-2726).
+      const uint32_t native = NativeGamepadButton(ReadString(event, "button"));
+      if (native == 0) {
+        SetReason(reason, "unsupported_native_gamepad_button");
+        return false;
+      }
       if (!PreparePress(foreground_mode, down, reason)) return false;
-      return SendNativeLeftButton(down, true, true, reason);
+      return SendNativeButton(native, down, true, true, reason);
     }
     if (sgre_native_ready) {
-      SetReason(reason, kind_value == "gamepad"
-                            ? "unsupported_native_gamepad_button"
-                            : "unsupported_native_key");
+      SetReason(reason, "unsupported_native_key");
       return false;
     }
     if (!PreparePress(foreground_mode, down, reason)) return false;

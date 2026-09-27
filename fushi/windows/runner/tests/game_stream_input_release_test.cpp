@@ -23,6 +23,9 @@ namespace {
 VoiceHookOpenError g_open_error = VoiceHookOpenError::kMappingNotFound;
 uint32_t g_publish_seq = 0;
 VoiceHookGameStreamInputStatus g_status;
+// Bits the fake injected adapter reads back; clearing a bit models an engine
+// that did not sample it (an old DLL, an unbound action, a lookup card up).
+uint32_t g_observable_buttons = 0xffffffffu;
 }
 VoiceHookReader& VoiceHookReader::Instance() {
   static VoiceHookReader reader;
@@ -49,7 +52,7 @@ uint32_t VoiceHookReader::PublishGameStreamInput(
   g_status.deadline_tick_ms = deadline_tick_ms;
   g_status.active_buttons = active_buttons;
   g_status.status = fushi_voice_hook::kGameStreamInputStatusApplied;
-  g_status.observed_buttons = active_buttons;
+  g_status.observed_buttons = active_buttons & g_observable_buttons;
   return g_publish_seq;
 }
 VoiceHookGameStreamInputStatus VoiceHookReader::GameStreamInputStatus() {
@@ -186,6 +189,8 @@ void CheckKeyMessageBits() {
   DestroyWindow(hwnd);
 }
 
+constexpr uint32_t kLeft = fushi_voice_hook::kGameStreamInputButtonLeft;
+
 void CheckNativeConfirmRequiresMapping() {
   HWND hwnd = NewWindow();
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
@@ -224,29 +229,31 @@ void CheckNativeConfirmRequiresMapping() {
   }
   input.hwnd_ = hwnd;
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
-  Expect(!input.PublishNativeLeftButton(true, true, &reason) &&
+  Expect(!input.PublishNativeButtons(kLeft, kLeft, true, &reason) &&
              reason == "native_input_unavailable",
          "native confirm without hook mapping is a NACK");
   fushi::g_open_error = fushi::VoiceHookOpenError::kNone;
   reason.clear();
-  Expect(input.PublishNativeLeftButton(true, true, &reason),
+  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
          "native confirm ACK requires injected sampled state");
-  Expect(input.native_left_down_, "native confirm tracks held state after ACK");
+  Expect(input.native_buttons_ == kLeft,
+         "native confirm tracks held state after ACK");
   reason.clear();
-  Expect(input.PublishNativeLeftButton(false, true, &reason),
+  Expect(input.PublishNativeButtons(0, 0, true, &reason),
          "native release ACK clears sampled state");
-  Expect(!input.native_left_down_, "native release clears held state");
-  Expect(input.PublishNativeLeftButton(true, true, &reason),
+  Expect(input.native_buttons_ == 0 && input.native_transaction_id_ == 0,
+         "native release clears held state");
+  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
          "seed native held confirm before focus loss");
   event[flutter::EncodableValue("action")] = flutter::EncodableValue("up");
   Expect(GetForegroundWindow() != hwnd, "native release fixture stays background");
   Expect(input.Send(event, &reason),
          "held native confirm releases through Send while background");
-  Expect(!input.native_left_down_ && fushi::g_status.active_buttons == 0,
+  Expect(input.native_buttons_ == 0 && fushi::g_status.active_buttons == 0,
          "background confirm up publishes zero mask immediately");
   Expect(Count(hwnd, WM_KEYUP) == 0 && Count(hwnd, WM_LBUTTONUP) == 0,
          "native background release never posts desktop or pointer input");
-  Expect(input.PublishNativeLeftButton(true, true, &reason),
+  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
          "seed native held confirm before identity mismatch");
   const uint32_t published = fushi::g_publish_seq;
   input.pid_ ^= 0x40000000;
@@ -303,6 +310,132 @@ void CheckNativeConfirmRequiresMapping() {
                reason == "unsupported_native_pointer",
            "SGRE wheel has no native channel yet");
   }
+  fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
+  RemovePropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty);
+  input.Unbind();
+  DestroyWindow(hwnd);
+}
+
+// BUG-2726: SGRE samples DirectInput only, so every gamepad button (not just
+// confirm) goes through the native channel as an engine action; none may fall
+// back to window messages, and holding several buttons is one held mask.
+void CheckNativeGamepadButtons() {
+  HWND hwnd = NewWindow();
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  fushi::GameStreamInput input;
+  std::string reason;
+  Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
+         "bind native gamepad fixture");
+  SetPropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
+           reinterpret_cast<HANDLE>(static_cast<uintptr_t>(
+               fushi_voice_hook::kSgreDirectInputShieldReadyValue)));
+  fushi::g_open_error = fushi::VoiceHookOpenError::kNone;
+
+  const struct {
+    const char* name;
+    uint32_t bit;
+  } buttons[] = {
+      {"dpad_up", fushi_voice_hook::kGameStreamInputButtonDpadUp},
+      {"dpad_down", fushi_voice_hook::kGameStreamInputButtonDpadDown},
+      {"dpad_left", fushi_voice_hook::kGameStreamInputButtonDpadLeft},
+      {"dpad_right", fushi_voice_hook::kGameStreamInputButtonDpadRight},
+      {"cancel", fushi_voice_hook::kGameStreamInputButtonCancel},
+      {"shoulder_left", fushi_voice_hook::kGameStreamInputButtonShoulderLeft},
+      {"shoulder_right", fushi_voice_hook::kGameStreamInputButtonShoulderRight},
+      {"menu", fushi_voice_hook::kGameStreamInputButtonMenu},
+  };
+  bool all_mapped = true;
+  bool all_need_foreground = true;
+  for (const auto& button : buttons) {
+    all_mapped = all_mapped &&
+                 fushi::GameStreamInput::NativeGamepadButton(button.name) ==
+                     button.bit &&
+                 (button.bit & fushi_voice_hook::kGameStreamInputButtonMask) ==
+                     button.bit;
+    auto down = Event("gamepad", "down");
+    Set(down, "button", button.name);
+    const uint32_t published = fushi::g_publish_seq;
+    reason.clear();
+    all_need_foreground = all_need_foreground && !input.Send(down, &reason) &&
+                          reason == "window_not_foreground" &&
+                          fushi::g_publish_seq == published;
+  }
+  Expect(all_mapped, "every SGRE gamepad button has a native channel bit");
+  Expect(all_need_foreground,
+         "background SGRE gamepad presses are refused, not reported unsupported");
+  Expect(Count(hwnd, WM_KEYDOWN) == 0 && Count(hwnd, WM_KEYUP) == 0,
+         "SGRE gamepad buttons never fall back to key messages");
+
+  auto key = Event("key", "down");
+  Set(key, "key", "up");
+  reason.clear();
+  Expect(!input.Send(key, &reason) && reason == "unsupported_native_key",
+         "raw keyboard keys still have no SGRE channel");
+
+  const uint32_t up = fushi_voice_hook::kGameStreamInputButtonDpadUp;
+  const uint32_t cancel = fushi_voice_hook::kGameStreamInputButtonCancel;
+  reason.clear();
+  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason) &&
+             input.PublishNativeButtons(kLeft | up, up, true, &reason) &&
+             fushi::g_status.active_buttons == (kLeft | up) &&
+             input.native_buttons_ == (kLeft | up),
+         "held confirm and dpad publish one combined mask");
+  const uint64_t transaction = input.native_transaction_id_;
+
+  // Not observed: the adapter ACKs the generation but its sampled state lacks
+  // the new bit. The press fails and the previous mask is restored.
+  fushi::g_observable_buttons = ~cancel;
+  reason.clear();
+  const uint64_t started = GetTickCount64();
+  Expect(!input.PublishNativeButtons(kLeft | up | cancel, cancel, true,
+                                     &reason) &&
+             reason == "native_input_not_observed",
+         "an unsampled SGRE action is a NACK, never a fake ACK");
+  Expect(GetTickCount64() - started >= 200,
+         "an ACK without the bit is not final until the wait window closes");
+  Expect(input.native_buttons_ == (kLeft | up) &&
+             fushi::g_status.active_buttons == (kLeft | up) &&
+             input.native_transaction_id_ == transaction,
+         "a failed press restores the held mask in the same transaction");
+  fushi::g_observable_buttons = 0xffffffffu;
+
+  auto release = Event("gamepad", "up");
+  Set(release, "button", "dpad_up");
+  reason.clear();
+  Expect(input.Send(release, &reason) &&
+             fushi::g_status.active_buttons == kLeft &&
+             input.native_buttons_ == kLeft,
+         "background dpad release drops only that bit");
+  reason.clear();
+  const uint32_t published = fushi::g_publish_seq;
+  Expect(input.Send(release, &reason) && fushi::g_publish_seq == published,
+         "releasing an unheld native button is a no-op");
+
+  // Review follow-up: a native left held by a tap must be released even when
+  // the target was minimised in the meantime (no visibility gate on release).
+  ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+  auto pointer_up = Event("pointer", "up");
+  Set(pointer_up, "x", 0.5);
+  Set(pointer_up, "y", 0.5);
+  reason.clear();
+  Expect(input.Send(pointer_up, &reason) &&
+             fushi::g_status.active_buttons == 0 &&
+             input.native_buttons_ == 0 && input.native_transaction_id_ == 0,
+         "pointer up releases a held native left on a minimised target");
+  Expect(DrainMouse(hwnd).empty(),
+         "native pointer release posts no window mouse messages");
+
+  ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+  Expect(input.PublishNativeButtons(
+             fushi_voice_hook::kGameStreamInputButtonShoulderRight,
+             fushi_voice_hook::kGameStreamInputButtonShoulderRight, true,
+             &reason),
+         "seed a held shoulder before hiding");
+  ShowWindow(hwnd, SW_HIDE);
+  input.Release();
+  Expect(input.native_buttons_ == 0 && fushi::g_status.active_buttons == 0,
+         "Release() drops every held native button on a hidden target");
+
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
   RemovePropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty);
   input.Unbind();
@@ -637,6 +770,7 @@ int main() {
   CheckRejected("destroyed HWND receives no release", 2);
   CheckKeyMessageBits();
   CheckNativeConfirmRequiresMapping();
+  CheckNativeGamepadButtons();
   CheckPointerDpiCoordinates();
   CheckBackgroundInputAccepted();
   CheckForegroundMode();

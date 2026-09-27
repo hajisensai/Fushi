@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "exact_lookup_signature.h"
 #include "sgre_anchors.h"
@@ -146,6 +147,106 @@ inline uint32_t ApplySgreGameStreamRemoteButtons(bool allowed,
   uint32_t observed = 0;
   if ((normalized & kGameStreamInputButtonLeft) != 0 && (*primary & 0x80u) != 0) {
     observed |= kGameStreamInputButtonLeft;
+  }
+  return observed;
+}
+
+// ── Game-stream remote gamepad → SGRE keyboard actions (BUG-2726) ──────────
+//
+// SGRE/M2 never reads keyboard window messages or GetAsyncKeyState for game
+// actions. Its per-frame input update calls the GUID_SysKeyboard device's
+// GetDeviceState(256, state) through the same dinput8 CDIDev implementation the
+// mouse shield already detours (slot 9), then walks a live binding vector of
+// {u32 dik, u32 action, u32 alt_action} records and ORs `action` for every
+// entry whose state[dik] has the high bit set. The action bits are the
+// runtime's own named gamepad vocabulary (its key-config table spells them
+// "a", "b", "up", "l1", "r1", "back", ...), so a remote gamepad action maps to
+// an engine action, and the engine's own binding vector says which DIK that
+// action is currently read from. No DIK is hard-coded: a rebound key follows
+// the binding, and an action with no single-action binding fails closed.
+inline constexpr size_t kSgreDirectInputKeyboardStateBytes = 256u;
+inline constexpr size_t kSgreKeyboardBindingStride = 12u;
+inline constexpr size_t kSgreKeyboardBindingActionOffset = 4u;
+// The engine's default table has 17 records; anything far larger is not the
+// binding vector this channel was built against.
+inline constexpr size_t kSgreKeyboardBindingMaxEntries = 64u;
+
+inline constexpr uint32_t kSgreEngineActionB = 0x2u;
+inline constexpr uint32_t kSgreEngineActionRight = 0x10u;
+inline constexpr uint32_t kSgreEngineActionLeft = 0x20u;
+inline constexpr uint32_t kSgreEngineActionUp = 0x40u;
+inline constexpr uint32_t kSgreEngineActionDown = 0x80u;
+inline constexpr uint32_t kSgreEngineActionR1 = 0x100u;
+inline constexpr uint32_t kSgreEngineActionL1 = 0x200u;
+inline constexpr uint32_t kSgreEngineActionBack = 0x100000u;
+
+struct SgreGameStreamKeyAction {
+  uint32_t game_stream_button;
+  uint32_t engine_action;
+};
+
+// Remote cancel is the engine's "b" (the same action its default bindings give
+// the right mouse button and X); menu is "back" (its Escape binding), matching
+// the Escape that non-native targets receive for menu.
+inline constexpr SgreGameStreamKeyAction kSgreGameStreamKeyActions[] = {
+    {kGameStreamInputButtonDpadUp, kSgreEngineActionUp},
+    {kGameStreamInputButtonDpadDown, kSgreEngineActionDown},
+    {kGameStreamInputButtonDpadLeft, kSgreEngineActionLeft},
+    {kGameStreamInputButtonDpadRight, kSgreEngineActionRight},
+    {kGameStreamInputButtonCancel, kSgreEngineActionB},
+    {kGameStreamInputButtonShoulderLeft, kSgreEngineActionL1},
+    {kGameStreamInputButtonShoulderRight, kSgreEngineActionR1},
+    {kGameStreamInputButtonMenu, kSgreEngineActionBack},
+};
+
+// First DIK bound to exactly `engine_action` (a record that also carries other
+// action bits would press those too). 0 when none: callers fail closed.
+inline uint32_t FindSgreKeyboardBindingDik(const uint8_t* bindings,
+                                           size_t binding_count,
+                                           uint32_t engine_action) {
+  if (bindings == nullptr || engine_action == 0 ||
+      binding_count > kSgreKeyboardBindingMaxEntries) {
+    return 0;
+  }
+  for (size_t i = 0; i < binding_count; ++i) {
+    const uint8_t* record = bindings + i * kSgreKeyboardBindingStride;
+    uint32_t dik = 0;
+    uint32_t action = 0;
+    std::memcpy(&dik, record, sizeof(dik));
+    std::memcpy(&action, record + kSgreKeyboardBindingActionOffset,
+                sizeof(action));
+    if (action == engine_action && dik != 0 &&
+        dik < kSgreDirectInputKeyboardStateBytes) {
+      return dik;
+    }
+  }
+  return 0;
+}
+
+// OR the high bit of each requested action's bound DIK into the keyboard state
+// SGRE is about to sample. Never clears a byte, so a real key stays real input,
+// and release/expiry simply stop OR-ing. Like the mouse channel, `observed` is
+// read back from the buffer the game will sample, never echoed from the
+// request, so an unbound action or a refused injection cannot fake an ACK.
+inline uint32_t ApplySgreGameStreamRemoteKeys(bool allowed,
+                                              uint32_t active_buttons,
+                                              const uint8_t* bindings,
+                                              size_t binding_count,
+                                              uint8_t* state,
+                                              size_t state_bytes) {
+  if (!allowed || state == nullptr ||
+      state_bytes != kSgreDirectInputKeyboardStateBytes) {
+    return 0;
+  }
+  const uint32_t requested = active_buttons & kGameStreamInputGamepadButtonMask;
+  uint32_t observed = 0;
+  for (const SgreGameStreamKeyAction& entry : kSgreGameStreamKeyActions) {
+    if ((requested & entry.game_stream_button) == 0) continue;
+    const uint32_t dik = FindSgreKeyboardBindingDik(bindings, binding_count,
+                                                    entry.engine_action);
+    if (dik == 0) continue;
+    state[dik] |= 0x80u;
+    if ((state[dik] & 0x80u) != 0) observed |= entry.game_stream_button;
   }
   return observed;
 }
