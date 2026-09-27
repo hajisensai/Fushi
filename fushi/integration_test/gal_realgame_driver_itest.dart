@@ -69,6 +69,10 @@ import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/torrent/anime_download_plan.dart';
+import 'package:fushi/src/pages/implementations/download_actions.dart';
+import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
@@ -665,6 +669,52 @@ void main() {
                   .enqueue(lastFound[index], destinationDir: dest);
               out('#$seq dl queued=$queued title=${lastFound[index].title} '
                   'dest=$dest');
+            case 'dlt':
+              // dlt <序号>：torrent 结果走与发现页同一条 pushGenericMagnet（本机后端、
+              // 游戏域计划）。隔离根里预置「已看过上传说明」，否则首用弹窗会卡住驱动。
+              final int tIndex = int.parse(parts[1]);
+              final DiscoveryResourceItem tItem = lastFound[tIndex];
+              final AppModel tModel = readAppModel();
+              final MediaDiscoverySource? tSource =
+                  tModel.mediaDiscoveryService.sourceById(tItem.sourceId);
+              if (tSource == null) {
+                out('#$seq dlt no source ${tItem.sourceId}');
+                break;
+              }
+              final DiscoveryPayload tPayload =
+                  tItem.payload ?? await tSource.resolvePayload(tItem);
+              if (tPayload is! DiscoveryTorrentPayload) {
+                out('#$seq dlt unsupported payload ${tPayload.runtimeType}');
+                break;
+              }
+              if (!tModel.torrentUploadIntroShown) {
+                await tModel.setTorrentUploadIntroShown();
+              }
+              final GenericPushOutcome tOutcome = await pushGenericMagnet(
+                context: tester.element(find.byType(Navigator).first),
+                appModel: tModel,
+                magnet: tPayload.magnetUri,
+                contentKind: AnimeDownloadPlan.kindGame,
+                discoveryKind: DiscoveryMediaKind.game,
+              );
+              out('#$seq dlt outcome=${tOutcome.name} title=${tItem.title}');
+            case 'tstat':
+              final AppModel sModel = readAppModel();
+              final TorrentBackend sBackend = sModel.createTorrentBackend(
+                effectiveTorrentConfig(sModel.qbConnectionConfig),
+              );
+              try {
+                final List<TorrentSnapshot> list =
+                    await sBackend.listTorrents();
+                out('#$seq tstat n=${list.length}\n    ${list.map(
+                      (TorrentSnapshot t) =>
+                          '${t.state} ${(t.progress * 100).toStringAsFixed(1)}% '
+                          'down=${t.downRateBps} left=${t.amountLeft} '
+                          'path=${t.contentPath} name=${t.name}',
+                    ).join('\n    ')}');
+              } finally {
+                sBackend.close();
+              }
             case 'dlstat':
               final List<DiscoveryDownloadTask> tasks =
                   readAppModel().discoveryDownloadQueue.tasks;
