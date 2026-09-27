@@ -363,6 +363,17 @@ class MaterialVideoControlsThemeData {
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Duration)? onSeekEnd;
 
+  /// Hibiki patch (BUG-2731 follow-up): fires right after a **committed** seek
+  /// has been handed to `player.seek`, with that call's [Future]. `player.seek`
+  /// first waits on the player's internal lock (and video-controller
+  /// initialisation) before the mpv command is actually issued; until then the
+  /// old content keeps playing normally. Hibiki waits on this future before it
+  /// starts treating "playing, not buffering, advancing" as evidence that the
+  /// seek has finished, so a slow dispatch can't clear the in-flight target
+  /// early. Null (upstream default) = no callback, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function(Future<void> seek)? onSeekDispatched;
+
   /// Hibiki patch (BUG-2731 follow-up): the base position that **relative**
   /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
   /// stream a seek re-buffers for seconds while `player.state.position` still
@@ -443,6 +454,7 @@ class MaterialVideoControlsThemeData {
     this.restartHideTimerSignal,
     this.onSeekStart,
     this.onSeekEnd,
+    this.onSeekDispatched,
     this.relativeSeekBasePosition,
   });
 
@@ -502,6 +514,7 @@ class MaterialVideoControlsThemeData {
     Listenable? restartHideTimerSignal,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
+    void Function(Future<void> seek)? onSeekDispatched,
     Duration Function()? relativeSeekBasePosition,
   }) {
     return MaterialVideoControlsThemeData(
@@ -584,6 +597,7 @@ class MaterialVideoControlsThemeData {
           restartHideTimerSignal ?? this.restartHideTimerSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
+      onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       relativeSeekBasePosition:
           relativeSeekBasePosition ?? this.relativeSeekBasePosition,
     );
@@ -899,9 +913,28 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       _theme(context).relativeSeekBasePosition?.call() ??
       controller(context).player.state.position;
 
+  /// Hibiki patch (BUG-2731 follow-up): the base snapshotted when the current
+  /// horizontal drag started. Re-reading [_relativeSeekBase] on every update
+  /// would make the HUD / preview jump mid-drag whenever the host's in-flight
+  /// target lands or clears; one drag measures from one base. Null = no drag.
+  Duration? _swipeBase;
+
+  /// Base for the drag in progress (snapshot), else the live relative base.
+  Duration _currentSwipeBase(BuildContext context) =>
+      _swipeBase ?? _relativeSeekBase(context);
+
+  /// Hibiki patch (BUG-2731 follow-up): commit a relative seek and hand the
+  /// dispatch [Future] to the host (see
+  /// [MaterialVideoControlsThemeData.onSeekDispatched]).
+  void _dispatchSeek(BuildContext context, Duration target) {
+    final Future<void> seek = controller(context).player.seek(target);
+    _theme(context).onSeekDispatched?.call(seek);
+  }
+
   void onHorizontalDragUpdate(DragUpdateDetails details) {
     if (_dragInitialDelta == Offset.zero) {
       _dragInitialDelta = details.localPosition;
+      _swipeBase = _relativeSeekBase(context);
       return;
     }
 
@@ -913,7 +946,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         dragDx: details.localPosition.dx - _dragInitialDelta.dx,
         surfaceWidth: widgetWidth(context),
         duration: controller(context).player.state.duration,
-        position: _relativeSeekBase(context),
+        position: _currentSwipeBase(context),
       );
       setState(() {
         swipeDuration = delta;
@@ -925,7 +958,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
     final diff = _dragInitialDelta.dx - details.localPosition.dx;
     final duration = controller(context).player.state.duration.inSeconds;
-    final position = _relativeSeekBase(context).inSeconds;
+    final position = _currentSwipeBase(context).inSeconds;
 
     final seconds =
         -(diff * duration / _theme(context).horizontalGestureSensitivity)
@@ -945,7 +978,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     if (swipeDuration != Duration.zero) {
       // Hibiki patch (BUG-2731 follow-up): measured from the pending seek
       // target when one is in flight, not the lagging player position.
-      Duration newPosition = _relativeSeekBase(context) + swipeDuration;
+      Duration newPosition = _currentSwipeBase(context) + swipeDuration;
       newPosition = newPosition.clamp(
         Duration.zero,
         controller(context).player.state.duration,
@@ -954,9 +987,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
       // bars do (BUG-796 follow-up), so the host knows where playback is headed
       // while the seek is still in flight. See PATCHES.md.
       _theme(context).onSeekEnd?.call(newPosition);
-      controller(context).player.seek(newPosition);
+      _dispatchSeek(context, newPosition);
     }
 
+    _swipeBase = null;
     setState(() {
       _dragInitialDelta = Offset.zero;
       showSwipeDuration = false;
@@ -1342,6 +1376,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                             if (_theme(context).displaySeekBar)
                               MaterialSeekBar(
                                 delta: _seekBarDeltaValueNotifier,
+                                // Hibiki patch (BUG-2731 follow-up): preview
+                                // from the same base the commit will use.
+                                deltaBase: () => _currentSwipeBase(context),
                               ),
                             Container(
                               height: _theme(context).buttonBarHeight,
@@ -1676,7 +1713,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         // Hibiki patch (BUG-2731): see
                                         // onHorizontalDragEnd.
                                         _theme(context).onSeekEnd?.call(result);
-                                        controller(context).player.seek(result);
+                                        _dispatchSeek(context, result);
                                       },
                                     ),
                                   )
@@ -1734,7 +1771,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         // Hibiki patch (BUG-2731): see
                                         // onHorizontalDragEnd.
                                         _theme(context).onSeekEnd?.call(result);
-                                        controller(context).player.seek(result);
+                                        _dispatchSeek(context, result);
                                       },
                                     ),
                                   )
@@ -1760,6 +1797,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 /// Material design seek bar.
 class MaterialSeekBar extends StatefulWidget {
   final ValueNotifier<Duration>? delta;
+
+  /// Hibiki patch (BUG-2731 follow-up): base position the [delta] preview is
+  /// added to. Null = `player.state.position` (upstream).
+  final Duration Function()? deltaBase;
   final VoidCallback? onSeekStart;
 
   /// Hibiki patch (BUG-796 follow-up): retyped from `VoidCallback?` to carry the
@@ -1770,6 +1811,7 @@ class MaterialSeekBar extends StatefulWidget {
   const MaterialSeekBar({
     super.key,
     this.delta,
+    this.deltaBase,
     this.onSeekStart,
     this.onSeekEnd,
   });
@@ -1799,7 +1841,9 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
   void listener() {
     setState(() {
       final delta = widget.delta?.value ?? Duration.zero;
-      position = controller(context).player.state.position + delta;
+      final base =
+          widget.deltaBase?.call() ?? controller(context).player.state.position;
+      position = base + delta;
     });
   }
 
@@ -1905,7 +1949,10 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
       tapped = false;
       position = duration * slider;
     });
-    controller(context).player.seek(duration * slider);
+    // Hibiki patch (BUG-2731 follow-up): hand the dispatch future to the host.
+    final Future<void> seek =
+        controller(context).player.seek(duration * slider);
+    _theme(context).onSeekDispatched?.call(seek);
   }
 
   void onPanStart(DragStartDetails e, BoxConstraints constraints) {

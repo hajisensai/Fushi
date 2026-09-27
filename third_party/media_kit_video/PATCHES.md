@@ -222,6 +222,22 @@ to work). The host returns its in-flight seek target when one is pending (Hibiki
 wires `VideoPlayerController.resumePositionMs`), else the live position. Null
 keeps upstream behaviour.
 
+One drag measures from one base: `onHorizontalDragUpdate` snapshots
+`_relativeSeekBase` into `_swipeBase` on the drag's first event and
+`_currentSwipeBase` reads that snapshot until `onHorizontalDragEnd` clears it,
+so the HUD / preview never jumps mid-drag when the host's in-flight target lands
+or clears. `MaterialSeekBar` gained `deltaBase`; the swipe-preview seek bar adds
+its delta to that same base instead of `player.state.position`.
+
+Committed seeks also hand their `player.seek` future to the host through the new
+theme field `onSeekDispatched` (both `material.dart` and `material_desktop.dart`):
+the mobile `_dispatchSeek` helper (swipe end + both double-tap indicators) and
+both seek bars' `onPointerUp`. `Player.seek` first waits on the player's internal
+lock and video-controller initialisation before issuing `mpv_command_async`;
+the old content keeps playing meanwhile, so the host only starts counting
+"playing, not buffering, advancing" as "the seek is over" after that future
+completes.
+
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-2731 follow-up: relative seeks measure from the pending target`).
 

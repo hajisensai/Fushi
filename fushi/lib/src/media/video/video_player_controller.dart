@@ -334,30 +334,45 @@ class VideoPlayerController extends ChangeNotifier
   /// 会在 seek 刚发出就误判落地。窗口外的旧位置都是「还没落地」。
   static const int _kSeekLandingWindowMs = 1500;
 
-  /// 「seek 已经结束（哪怕没落在目标附近）」的判据：连续这么多个 tick（125ms/拍，
-  /// 即 1 秒）都是「在播、不缓冲、位置逐拍正常推进」（BUG-2731 后续）。
+  /// 「seek 已经结束（哪怕没落在目标附近）」的判据：seek 命令**确认已下发**之后，
+  /// 「在播、不缓冲、位置正常推进」累计推进满这么多毫秒（BUG-2731 后续）。
   ///
   /// 只看 ±窗口会让**从未落地**的 seek 目标永久残留：seek 被忽略（直播 / 不可 seek 的
   /// 流）、失败（Range 出错）或被关键帧吸附到窗口之外，播放照常继续，几分钟后手动
   /// 换档仍跳回那个过期目标，停止上报也报旧位置。seek 真在途时 mpv 不会一边缓冲一边
-  /// 往前播旧内容，所以「持续正常推进」本身就是「这次 seek 已经收场」的证据。
+  /// 往前播旧内容，所以「下发之后持续正常推进」本身就是「这次 seek 已经收场」的证据。
   ///
-  /// 为什么不读 mpv 的 `seeking` 属性：media_kit 1.2.6 不暴露 seek 完成事件，只能每拍
-  /// 走异步 FFI `getProperty` 轮询；而 seek 命令本身也是异步下发的，读在 mpv 核心处理
-  /// 该命令之前会读到 `no`，恰好把刚登记的目标误清掉。`seeking` 在成功和失败时都会
-  /// 回落，携带的信息也不比「播放已恢复且在推进」更多。这不是超时：卡在缓冲、暂停或
-  /// 位置不动时计数一拍都不涨，目标会一直保留。
-  static const int _kSeekSettledTicks = 8;
+  /// 按**累计推进量**而不是连续拍数：低帧率 / VFR 片源（帧间隔 > 125ms）和定时器抖动
+  /// 都会让相邻两拍读到同一位置，那一拍既不加也不归零；只有缓冲、暂停、倒退或跳变才
+  /// 归零。这不是超时：卡在缓冲、暂停或位置不动时累计量一毫秒都不涨。
+  ///
+  /// 为什么必须等「确认已下发」：`Player.seek` 要先拿到播放器内部锁、等视频控制器初始化，
+  /// 才真正发 `mpv_command_async`；在那之前旧内容照常「在播、不缓冲、推进」。若从登记
+  /// 就开始累计，锁被占 ≥1 秒时目标会在 seek 还没发出去时就被误清。
+  ///
+  /// 为什么不用 mpv 的 `seeking` 属性（media_kit 1.2.6 可以用事件式 `observeProperty`
+  /// 观测它）：属性观测会合并快速的 yes→no 翻转——短 seek 可能一次 `yes` 都观测不到；
+  /// 而且 seek 失败时它同样回落到 `no`。两条都让「`seeking` 回落」无法区分「落地了」与
+  /// 「根本没发生 / 已失败」，携带的信息不比「下发后播放已恢复且在推进」更多。
+  static const int _kSeekSettledAdvanceMs = 1000;
 
   /// 一拍内「正常推进」的位移上限（毫秒）：125ms 一拍，1000ms 覆盖到 8 倍速；更大的
-  /// 跳变是 seek 落地 / 换位本身，不算推进（计数从下一拍重新累积）。
+  /// 跳变是 seek 落地 / 换位本身，不算推进（累计量归零后重新积）。
   static const int _kSeekSettledMaxStepMs = 1000;
 
-  /// 已连续观察到「正常推进」的拍数（见 [_kSeekSettledTicks]）。
-  int _seekSettledTicks = 0;
+  /// 确认下发后累计的「正常推进」毫秒数（见 [_kSeekSettledAdvanceMs]）。
+  int _seekSettledAdvanceMs = 0;
 
-  /// 上一拍的原始位置，用来判「逐拍推进」；每次登记新目标都复位。
+  /// 上一拍的原始位置，用来判「推进」；每次登记新目标都复位。
   int? _seekSettlePrevPosMs;
+
+  /// 当前在途目标对应的 seek 命令是否已确认下发（`player.seek` 的 Future 已完成）。
+  /// 未确认时不累计推进（见 [_kSeekSettledAdvanceMs]）；落地窗口判据不受影响。
+  bool _pendingSeekDispatched = false;
+
+  /// 每登记一次在途目标 +1，给异步的「下发确认」认领：确认回来时目标已被更新的 seek
+  /// 覆盖，就不能替新目标背书。
+  int _pendingSeekToken = 0;
 
   /// 每发出一次 seek 就 +1（[seekMs] / [notifyExternalSeek] / [skipToCue] 等全部入口）。
   ///
@@ -800,26 +815,66 @@ class VideoPlayerController extends ChangeNotifier
   /// 见 [_pendingSeekLandingMs]（BUG-2731）。
   int? get resumePositionMs => _pendingSeekLandingMs ?? positionMs;
 
+  /// 取一次相对 seek 基准（= [resumePositionMs]）并记下（BUG-2731 后续）。
+  ///
+  /// 播放页把它接给 fork 的 `relativeSeekBasePosition`：fork 在一次横滑开始时只取
+  /// 一次基准（整段拖动用同一个快照，拖动中途在途目标落地 / 清掉也不跳），拖动 HUD
+  /// 读 [lastRelativeSeekBaseMs] 与它对齐，而不是每帧重读会变的 [resumePositionMs]。
+  int? captureRelativeSeekBaseMs() => _lastRelativeSeekBaseMs = resumePositionMs;
+
+  /// 最近一次 [captureRelativeSeekBaseMs] 取到的基准；从未取过为 null。
+  int? get lastRelativeSeekBaseMs => _lastRelativeSeekBaseMs;
+  int? _lastRelativeSeekBaseMs;
+
   /// 见 [_seekGeneration]。
   int get seekGeneration => _seekGeneration;
 
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
-  void _noteSeekIssued(int targetMs) {
+  int _noteSeekIssued(int targetMs) {
     _seekGeneration++;
-    _setPendingSeekLanding(targetMs);
+    return _setPendingSeekLanding(targetMs);
   }
 
-  /// 换在途目标（或清掉）的唯一入口：连同「已结束」判据的累积状态一起复位，免得上一个
-  /// 目标攒下的推进拍数替新目标背书。
-  void _setPendingSeekLanding(int? targetMs) {
+  /// 换在途目标（或清掉）的唯一入口：连同「已结束」判据的累积状态与下发确认一起复位，
+  /// 免得上一个目标攒下的推进量替新目标背书。返回本次登记的认领号，交给
+  /// [_confirmSeekDispatched]。
+  int _setPendingSeekLanding(int? targetMs) {
     _pendingSeekLandingMs = targetMs;
-    _seekSettledTicks = 0;
+    _seekSettledAdvanceMs = 0;
+    _seekSettlePrevPosMs = null;
+    _pendingSeekDispatched = false;
+    return ++_pendingSeekToken;
+  }
+
+  /// [token] 对应的 seek 命令已确认下发：从现在起「正常推进」才开始作数。目标已被
+  /// 更新的登记覆盖（认领号对不上）时忽略。
+  void _confirmSeekDispatched(int token) {
+    if (token != _pendingSeekToken || _pendingSeekLandingMs == null) return;
+    _pendingSeekDispatched = true;
+    _seekSettledAdvanceMs = 0;
     _seekSettlePrevPosMs = null;
   }
 
+  /// seek 命令下发失败（`player.seek` 抛错）：这次 seek 没发生，在途目标作废。
+  void _abandonPendingSeek(int token) {
+    if (token != _pendingSeekToken) return;
+    _setPendingSeekLanding(null);
+  }
+
+  /// 等 [seek]（一次已登记目标的 `player.seek`）完成后确认下发；抛错则作废目标。
+  Future<void> _awaitSeekDispatch(int token, Future<void>? seek) async {
+    try {
+      await seek;
+    } catch (_) {
+      _abandonPendingSeek(token);
+      rethrow;
+    }
+    _confirmSeekDispatched(token);
+  }
+
   /// 按 tick 读到的真实位置判定未落地的 seek 是否已收场：落到目标 ±窗口内（落地），
-  /// 或连续 [_kSeekSettledTicks] 拍「在播、不缓冲、位置正常推进」（seek 已结束但没落在
-  /// 目标附近——被忽略 / 失败 / 被吸附到别处，见 [_kSeekSettledTicks]）。
+  /// 或 seek 命令确认下发后累计 [_kSeekSettledAdvanceMs] 的「在播、不缓冲、位置正常
+  /// 推进」（seek 已结束但没落在目标附近——被忽略 / 失败 / 被吸附到别处）。
   void _checkSeekLanded(int rawPosMs) {
     final int? target = _pendingSeekLandingMs;
     if (target == null) return;
@@ -827,16 +882,26 @@ class VideoPlayerController extends ChangeNotifier
       _setPendingSeekLanding(null);
       return;
     }
+    // 下发前旧内容照常推进，那不是 seek 收场的证据（见 [_kSeekSettledAdvanceMs]）。
+    if (!_pendingSeekDispatched) return;
     final int? prev = _seekSettlePrevPosMs;
     _seekSettlePrevPosMs = rawPosMs;
-    final bool advancing = prev != null &&
-        rawPosMs > prev &&
-        rawPosMs - prev <= _kSeekSettledMaxStepMs;
-    if (isPlaying && !isBuffering && advancing) {
-      _seekSettledTicks++;
-      if (_seekSettledTicks >= _kSeekSettledTicks) _setPendingSeekLanding(null);
-    } else {
-      _seekSettledTicks = 0;
+    if (prev == null) return;
+    if (!isPlaying || isBuffering) {
+      _seekSettledAdvanceMs = 0;
+      return;
+    }
+    final int step = rawPosMs - prev;
+    // 同一位置（低帧率 / VFR / 定时器抖动）：既不加也不归零。
+    if (step == 0) return;
+    if (step < 0 || step > _kSeekSettledMaxStepMs) {
+      // 倒退或跳变：是位置被改了，不是正常播放。
+      _seekSettledAdvanceMs = 0;
+      return;
+    }
+    _seekSettledAdvanceMs += step;
+    if (_seekSettledAdvanceMs >= _kSeekSettledAdvanceMs) {
+      _setPendingSeekLanding(null);
     }
   }
 
@@ -844,9 +909,13 @@ class VideoPlayerController extends ChangeNotifier
   @visibleForTesting
   int? get debugPendingSeekLandingMs => _pendingSeekLandingMs;
 
-  /// 测试可见：「seek 已结束」判据要求的连续推进拍数（断言用，避免硬编码漂移）。
+  /// 测试可见：「seek 已结束」判据要求的累计推进毫秒数（断言用，避免硬编码漂移）。
   @visibleForTesting
-  static int get debugSeekSettledTicks => _kSeekSettledTicks;
+  static int get debugSeekSettledAdvanceMs => _kSeekSettledAdvanceMs;
+
+  /// 测试可见：当前在途目标的 seek 命令是否已确认下发。
+  @visibleForTesting
+  bool get debugPendingSeekDispatched => _pendingSeekDispatched;
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
@@ -2457,7 +2526,7 @@ class VideoPlayerController extends ChangeNotifier
     // 恢复 seek 同样是一次在途 seek（BUG-2731 后续）：目标换成按真实 duration 复核后的
     // 起点（near-end 翻转时就是 0），由 tick 的落地判据照常清掉。不计 [seekGeneration]
     // ——那是给自适应画质区分「用户 seek」的，重开本身已让它 reset。
-    _setPendingSeekLanding(resolvedStartMs);
+    final int restoreSeekToken = _setPendingSeekLanding(resolvedStartMs);
     if (resolvedStartMs > 0) {
       _restoreTargetMs = resolvedStartMs;
       _restoreGuardTicksLeft = _restoreGuardGraceTicks;
@@ -2474,6 +2543,8 @@ class VideoPlayerController extends ChangeNotifier
       _restoreTargetMs = null;
       _restoreGuardTicksLeft = 0;
     }
+    // 起点定位已下发（`start` 加载参数 + 上面的对齐 seek 都已返回）。
+    _confirmSeekDispatched(restoreSeekToken);
     _syncCueForPosition(resolvedStartMs, persistPosition: false);
 
     // 订阅播放态翻转（包括播完自动暂停、焦点丢失），即时刷新 UI 图标。
@@ -3144,6 +3215,15 @@ class VideoPlayerController extends ChangeNotifier
     _beginPlainSeekInFlight(clampedMs);
     _noteSeekIssued(clampedMs);
     _syncCueForPosition(clampedMs, persistPosition: false);
+  }
+
+  /// 外部 seek（[notifyExternalSeek] 登记过目标的那次 `player.seek`）的下发 Future：
+  /// fork 在 `player.seek` 之后经主题 `onSeekDispatched` 交过来（BUG-2731 后续）。等它
+  /// 完成才确认下发、开始按「正常推进」判 seek 收场；抛错则作废在途目标。未交 Future
+  /// 的外部 seek 只能等落地窗口判据清目标。
+  void noteExternalSeekDispatched(Future<void> seek) {
+    final int token = _pendingSeekToken;
+    unawaited(_awaitSeekDispatch(token, seek).catchError((Object _) {}));
   }
 
   /// 主动跳转目标 snap 的纯决策（TODO-565，越界判据 BUG-378 收紧到 endMs）。所有几何在
@@ -3884,10 +3964,13 @@ class VideoPlayerController extends ChangeNotifier
     // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
     _oneShotHoldCueIndex = null;
     _beginPlainSeekInFlight(clampedMs);
-    _noteSeekIssued(clampedMs);
+    final int token = _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
     _syncCueForPosition(clampedMs, persistPosition: false);
-    await _player?.seek(Duration(milliseconds: clampedMs));
+    await _awaitSeekDispatch(
+      token,
+      _player?.seek(Duration(milliseconds: clampedMs)),
+    );
   }
 
   /// 直发 player seek（只清「主动跳转目标」快照，**不**置普通 seek 在途保护）——[skipToCue]
@@ -3902,8 +3985,11 @@ class VideoPlayerController extends ChangeNotifier
     // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
     _oneShotHoldCueIndex = null;
     final int clampedMs = positionMs.clamp(0, 1 << 30);
-    _noteSeekIssued(clampedMs);
-    await _player?.seek(Duration(milliseconds: clampedMs));
+    final int token = _noteSeekIssued(clampedMs);
+    await _awaitSeekDispatch(
+      token,
+      _player?.seek(Duration(milliseconds: clampedMs)),
+    );
   }
 
   /// 相对当前位置 seek（±[deltaMs]，如 ±10 秒），clamp 到 [0, duration]。
