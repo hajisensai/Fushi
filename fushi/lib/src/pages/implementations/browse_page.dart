@@ -19,7 +19,9 @@ import 'package:fushi/src/pages/implementations/remote_download_tasks_section.da
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
+import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
@@ -35,24 +37,32 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
 
-/// 独立「下载」页：资源、任务、订阅、设置共用一个下载中心。
+/// 「浏览」页签（Mihon 的 Browse 形态）：来源 / 扩展 / 发现 / 下载。
 ///
-/// 资源页先选择内容类型，再直接复用书架、漫画、游戏、视频各自的发现页。
-class DownloadsPage extends ConsumerStatefulWidget {
-  const DownloadsPage({
+/// 2026-09-27 由「下载」模块改名而来（持久化键 `module_downloads_enabled` 冻结），
+/// 同时把散在各库页与导入页的在线入口收拢到这里：
+/// - **来源**：小说（LNReader）/ 漫画（Mihon + mokuro.moe）/ 视频（Aniyomi）三域
+///   已装扩展提供的在线源，点进源的浏览页；
+/// - **扩展**：三域的可装扩展目录与已装扩展管理，扩展仓库挂在本页签的「仓库」
+///   动作上（Mihon 把 repo 放在 Extensions 的工具栏）；
+/// - **发现**：书 / 漫画 / 游戏 / 视频四域的生产发现页（原「资源」页签）；
+/// - **下载**：统一下载中心的任务与订阅，下载设置在页头齿轮里。
+///
+/// 每个页签内先选内容域，再直接复用各域自己的生产组件，不另写第二套 UI。
+class BrowsePage extends ConsumerStatefulWidget {
+  const BrowsePage({
     super.key,
-    this.initialShowSettings = false,
-    this.initialTabIndex = 0,
+    this.initialTab,
+    this.initialDownloadsSection = BrowseDownloadsSection.tasks,
     this.videoDiscoveryController,
     this.videoDiscoveryActions = const VideoDiscoveryActions(),
   });
 
-  /// 初始即显示设置面板（「后端未配置」横幅的「去设置」从对话框入口 push
-  /// 本页直落配置用）。默认 false = 正常下载流程。
-  final bool initialShowSettings;
+  /// 打开时停在哪个页签；null 或此刻不可见 = 第一个可见页签。
+  final BrowseTab? initialTab;
 
-  /// 发现详情“管理订阅”等入口可直接落到对应子页。
-  final int initialTabIndex;
+  /// 「下载」页签里先显示任务还是订阅（发现详情「管理订阅」等入口直落订阅）。
+  final BrowseDownloadsSection initialDownloadsSection;
 
   /// 与视频模块共用同一套生产发现服务，避免下载页另起网络生命周期。
   final VideoDiscoveryController? videoDiscoveryController;
@@ -61,10 +71,30 @@ class DownloadsPage extends ConsumerStatefulWidget {
   final VideoDiscoveryActions videoDiscoveryActions;
 
   @override
-  ConsumerState<DownloadsPage> createState() => _DownloadsPageState();
+  ConsumerState<BrowsePage> createState() => _BrowsePageState();
 }
 
-class _DownloadsPageState extends ConsumerState<DownloadsPage> {
+/// 「浏览」的页签。**用枚举而不是下标**：页签随平台 / 模块开关增减，跨页跳转
+/// （视频发现详情「管理订阅」等）若按下标就会在页签少一个时静默落错页。
+enum BrowseTab { sources, extensions, discover, downloads }
+
+/// 「下载」页签里的两段。
+enum BrowseDownloadsSection { tasks, subscriptions }
+
+class _BrowsePageState extends ConsumerState<BrowsePage> {
+  /// 来源 / 扩展两个页签共用的内容域选择（在两页签之间来回切不丢选择）。
+  OnlineSourcesDomain _onlineDomain = OnlineSourcesDomain.novel;
+
+  /// 已访问过的在线域，按页签分开记（首次访问后保持挂载，来回切不丢搜索与滚动）。
+  final Map<BrowseTab, Set<OnlineSourcesDomain>> _visitedOnlineDomains =
+      <BrowseTab, Set<OnlineSourcesDomain>>{
+        BrowseTab.sources: <OnlineSourcesDomain>{},
+        BrowseTab.extensions: <OnlineSourcesDomain>{},
+      };
+
+  late BrowseDownloadsSection _downloadsSection =
+      widget.initialDownloadsSection;
+
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
 
   /// 已访问过的资源域（首次访问后保持挂载，来回切不丢搜索词/结果/滚动位置）。
@@ -87,6 +117,152 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
     if (domains.isNotEmpty) _resourceDomain = domains.first;
     _visitedResourceDomains.add(_resourceDomain);
+    final List<OnlineSourcesDomain> onlineDomains = _visibleOnlineDomains(
+      initialAppModel.moduleVisibility,
+    );
+    if (onlineDomains.isNotEmpty) _onlineDomain = onlineDomains.first;
+  }
+
+  /// 此刻可见的页签，顺序即页头顺序。
+  ///
+  /// 来源 / 扩展两页签只在至少一个域有在线宿主时出现（Linux 没有 Mihon 与
+  /// headless WebView，就只剩发现与下载）；发现页签跟四个库模块走；下载恒在。
+  List<BrowseTab> _visibleTabs(AppModel appModel) {
+    final bool online = _visibleOnlineDomains(
+      appModel.moduleVisibility,
+    ).isNotEmpty;
+    // 发现页签自己再问一次合规门，不只靠整个模块委托的 downloads 能力：两种能力
+    // 今天都只在 iOS 缺席，但它们是两条独立的审核理由，日后范围分开时发现页签
+    // 不能静默漏门。
+    final bool discover =
+        StoreRestrictedCapability.externalDiscovery.isAvailable &&
+        _visibleResourceDomains(
+          appModel.moduleVisibility,
+          gamesForm: appModel.gamesModuleForm,
+        ).isNotEmpty;
+    return <BrowseTab>[
+      if (online) BrowseTab.sources,
+      if (online) BrowseTab.extensions,
+      if (discover) BrowseTab.discover,
+      BrowseTab.downloads,
+    ];
+  }
+
+  String _tabLabel(BrowseTab tab) => switch (tab) {
+    BrowseTab.sources => t.media_import_segment_sources,
+    BrowseTab.extensions => t.media_import_segment_extensions,
+    BrowseTab.discover => t.library_view_discover,
+    BrowseTab.downloads => t.nav_downloads,
+  };
+
+  String _onlineDomainLabel(OnlineSourcesDomain domain) => switch (domain) {
+    OnlineSourcesDomain.novel => t.discovery_kind_novel,
+    OnlineSourcesDomain.manga => t.manga_library,
+    OnlineSourcesDomain.video => t.nav_video,
+  };
+
+  void _selectOnlineDomain(OnlineSourcesDomain domain) {
+    if (domain == _onlineDomain) return;
+    setState(() => _onlineDomain = domain);
+  }
+
+  /// 「扩展」页签的「仓库」动作：push 同一域的扩展仓库管理（与扩展目录同一组
+  /// 组件的仓库形态）。
+  void _openStores(OnlineSourcesDomain domain) {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => _BrowseSubPage(
+          title: '${t.media_import_segment_stores} · '
+              '${_onlineDomainLabel(domain)}',
+          child: BrowseOnlineSourcesView(
+            domain: domain,
+            section: OnlineSourcesSection.stores,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 来源 / 扩展页签：内容域选择条 + 各域保活的在线来源面。
+  Widget _buildOnlineTab(BrowseTab tab) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final AppModel appModel = ref.watch(appProvider);
+    final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+      appModel.moduleVisibility,
+    );
+    if (domains.isEmpty) return const SizedBox.shrink();
+    final OnlineSourcesDomain selected = domains.contains(_onlineDomain)
+        ? _onlineDomain
+        : domains.first;
+    final Set<OnlineSourcesDomain> visited = _visitedOnlineDomains[tab]!
+      ..add(selected);
+    final OnlineSourcesSection section = tab == BrowseTab.sources
+        ? OnlineSourcesSection.sources
+        : OnlineSourcesSection.extensions;
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.gap,
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: FushiSegmentedStrip<OnlineSourcesDomain>(
+                  key: ValueKey<String>('browse-${tab.name}-domain-picker'),
+                  segments: <ButtonSegment<OnlineSourcesDomain>>[
+                    for (final OnlineSourcesDomain domain in domains)
+                      ButtonSegment<OnlineSourcesDomain>(
+                        value: domain,
+                        label: Text(_onlineDomainLabel(domain)),
+                      ),
+                  ],
+                  selected: selected,
+                  onChanged: _selectOnlineDomain,
+                  minSegmentWidth: 72,
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+              if (tab == BrowseTab.extensions)
+                FushiIconButton(
+                  key: const ValueKey<String>('browse-extensions-stores'),
+                  icon: Icons.hub_outlined,
+                  tooltip: t.media_import_segment_stores,
+                  label: t.media_import_segment_stores,
+                  onTap: () => _openStores(selected),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            children: <Widget>[
+              for (final OnlineSourcesDomain domain in domains)
+                if (visited.contains(domain))
+                  Positioned.fill(
+                    child: Offstage(
+                      offstage: domain != selected,
+                      child: TickerMode(
+                        enabled: domain == selected,
+                        child: BrowseOnlineSourcesView(
+                          key: ValueKey<String>(
+                            'browse-${tab.name}-${domain.name}',
+                          ),
+                          domain: domain,
+                          section: section,
+                        ),
+                      ),
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   /// 「补对齐文件」：把已下完的孤立音频直接喂进统一导入对话框。
@@ -288,94 +464,124 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
     );
   }
 
-  /// 统一门头：分区导航（资源 / 任务 / 订阅 / 设置）作页头主位 + 页头动作，与其余
-  /// 顶层库页同构；独立 push 进来（无 home 壳）时在 leading 位保留返回按钮——旧
-  /// AppBar 的自动返回键由这里承接。
+  /// 下载设置（原「设置」页签）：push 一页，入口在「下载」页签的页头齿轮与番剧
+  /// 下载对话框「去设置」。
+  void _openDownloadSettings() {
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => const BrowseDownloadSettingsPage(),
+      ),
+    );
+  }
+
+  /// 统一门头：页签导航作页头主位 + 页头动作，与其余顶层库页同构；独立 push 进来
+  /// （无 home 壳）时在 leading 位保留返回按钮。
   ///
-  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动 [TabBarView]，
-  /// 交给导航组件共用那一个即可。此前这里是「分段条镜像 controller」——外面套
-  /// [AnimatedBuilder] 读 index、点段回调 animateTo，两处都只是把 controller 的状态
-  /// 抄一遍；抄出来的指示器在横滑 TabBarView 时只能在越过一半时跳一下，共用同一个
-  /// controller 才跟手连续滑动。
-  Widget _buildHeader(BuildContext tabContext) {
+  /// 走 [LibrarySectionTabs.controlled]：本页的 [TabController] 同时驱动
+  /// [TabBarView]，横滑时指示条跟手连续滑动。
+  ///
+  /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
+  /// 发现的动作。
+  Widget _buildHeader(BuildContext tabContext, List<BrowseTab> tabs) {
     // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
     // 左上角凭空出现返回键。
     final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
-    return FushiPageHeader.customTitle(
-      leading: showBackButton
-          ? FushiIconButton(
-              icon: Icons.arrow_back,
-              tooltip: t.back,
-              onTap: () => Navigator.of(context).maybePop(),
-            )
-          : null,
-      title: LibrarySectionTabs<int>.controlled(
-        tabs: <LibrarySectionTab<int>>[
-          LibrarySectionTab<int>(value: 0, label: t.download_resources_tab),
-          LibrarySectionTab<int>(value: 1, label: t.download_tasks_tab),
-          LibrarySectionTab<int>(value: 2, label: t.download_subscriptions_tab),
-          LibrarySectionTab<int>(value: 3, label: t.settings),
+    final TabController controller = DefaultTabController.of(tabContext);
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (BuildContext context, Widget? child) {
+        final bool onDownloads =
+            tabs[controller.index.clamp(0, tabs.length - 1)] ==
+            BrowseTab.downloads;
+        return FushiPageHeader.customTitle(
+          leading: showBackButton
+              ? FushiIconButton(
+                  icon: Icons.arrow_back,
+                  tooltip: t.back,
+                  onTap: () => Navigator.of(context).maybePop(),
+                )
+              : null,
+          title: child!,
+          actions: <Widget>[
+            if (onDownloads) ...<Widget>[
+              FushiIconButton(
+                icon: Icons.add,
+                tooltip: t.download_task_add,
+                label: t.download_task_add,
+                onTap: _openManualTaskDialog,
+              ),
+              FushiIconButton(
+                key: const ValueKey<String>('browse-download-settings'),
+                icon: Icons.settings_outlined,
+                tooltip: t.download_settings,
+                onTap: _openDownloadSettings,
+              ),
+            ],
+          ],
+        );
+      },
+      child: LibrarySectionTabs<BrowseTab>.controlled(
+        tabs: <LibrarySectionTab<BrowseTab>>[
+          for (final BrowseTab tab in tabs)
+            LibrarySectionTab<BrowseTab>(value: tab, label: _tabLabel(tab)),
         ],
-        controller: DefaultTabController.of(tabContext),
-        focusIdPrefix: 'downloads-tab',
+        controller: controller,
+        focusIdPrefix: 'browse-tab',
       ),
-      // 页头动作只留「添加任务」（2026-08-21 用户点名）：旧「放送日历」
-      // 「在线目录」入口都不是下载动作，前者迁往发现页（独立改造），后者
-      // 在漫画库页「浏览」视图仍然可达。
-      actions: <Widget>[
-        FushiIconButton(
-          icon: Icons.add,
-          tooltip: t.download_task_add,
-          label: t.download_task_add,
-          onTap: _openManualTaskDialog,
+    );
+  }
+
+  /// 「下载」页签：任务 / 订阅两段。
+  Widget _buildDownloadsTab() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.gap,
+          ),
+          child: FushiSegmentedStrip<BrowseDownloadsSection>(
+            key: const ValueKey<String>('browse-downloads-section-picker'),
+            segments: <ButtonSegment<BrowseDownloadsSection>>[
+              ButtonSegment<BrowseDownloadsSection>(
+                value: BrowseDownloadsSection.tasks,
+                label: Text(t.download_tasks_tab),
+              ),
+              ButtonSegment<BrowseDownloadsSection>(
+                value: BrowseDownloadsSection.subscriptions,
+                label: Text(t.download_subscriptions_tab),
+              ),
+            ],
+            selected: _downloadsSection,
+            onChanged: (BrowseDownloadsSection value) =>
+                setState(() => _downloadsSection = value),
+            minSegmentWidth: 72,
+            alignment: Alignment.centerLeft,
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _downloadsSection.index,
+            children: <Widget>[
+              _buildTasks(),
+              const VideoDownloadSubscriptionsPanel(),
+            ],
+          ),
         ),
       ],
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // 整页是 .torrent 的落点（桌面拖放）；移动端 FushiFileDropTarget 直接透传。
-    return FushiFileDropTarget(
-        debugLabel: 'downloads',
-        onDrop: _handleDownloadsDrop,
-        child: DefaultTabController(
-      initialIndex:
-          widget.initialShowSettings ? 3 : widget.initialTabIndex.clamp(0, 2),
-      length: 4,
-      // eink：TabBarView 的 300ms 横滑 = 整页一串局部刷新的残影，归零。
-      animationDuration: einkSafeDuration(context, kTabScrollDuration),
-      child: Builder(
-        builder: (BuildContext tabContext) => Scaffold(
-          // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载任务折叠区
-          // 贴底、中段结果列表是唯一的 Expanded。默认 resizeToAvoidBottomInset:true 时，
-          // 手机软键盘弹出会压掉 body 高度、顶掉贴底任务区，使其爬到顶部输入框边上（看似
-          // 「下载任务被输入框挤上去」）。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
-          // 本就不看），顶部输入框保持可见、布局不反流。
-          resizeToAvoidBottomInset: false,
-          // 统一门头（2026-08-13）：与书 / 漫画 / 视频 / 游戏库页同一范式——
-          // FushiPageHeader.customTitle（左对齐分段条）+ FushiIconButton 动作，
-          // 替代旧 AppBar + 居中 TabBar 的独有形态（本页此前是全 app 唯一还在
-          // 用 AppBar 门头的顶层 tab）。分段条与 TabBarView 由同一个
-          // TabController 驱动，横滑切页不受影响；旧 TabBar 的「窄屏可滚不裁
-          // 字」（BUG-1184）由 FushiSegmentedStrip 的同一契约承接。作为 home
-          // tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push 进来
-          // （设置/对话框入口）失去 AppBar 后的状态栏避让，双层无副作用。
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: <Widget>[
-                if (!isCupertinoPlatform(context)) _buildHeader(tabContext),
-                Expanded(
-                  child: TabBarView(
-                    children: <Widget>[
-                      _buildResourceHub(),
-                      AnimeDownloadDialog(
+  Widget _buildTasks() {
+    return AnimeDownloadDialog(
                         embedded: true,
                         tasksOnly: true,
                         showTasks: false,
-                        onOpenSettings: () =>
-                            DefaultTabController.of(tabContext).animateTo(3),
+                        onOpenSettings: _openDownloadSettings,
                         tasksBuilder: (
                           BuildContext context,
                           List<DownloadTaskEntry> legacy,
@@ -525,9 +731,73 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                             ))),
                           ),
                         ),
-                      ),
-                      const VideoDownloadSubscriptionsPanel(),
-                      ListView(
+                      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<BrowseTab> tabs = _visibleTabs(ref.watch(appProvider));
+    final int initialIndex = widget.initialTab == null
+        ? 0
+        : tabs.indexOf(widget.initialTab!).clamp(0, tabs.length - 1);
+    // 整页是 .torrent 的落点（桌面拖放）；移动端 FushiFileDropTarget 直接透传。
+    return FushiFileDropTarget(
+      debugLabel: 'downloads',
+      onDrop: _handleDownloadsDrop,
+      child: DefaultTabController(
+        initialIndex: initialIndex,
+        length: tabs.length,
+        // eink：TabBarView 的 300ms 横滑 = 整页一串局部刷新的残影，归零。
+        animationDuration: einkSafeDuration(context, kTabScrollDuration),
+        child: Builder(
+          builder: (BuildContext tabContext) => Scaffold(
+            // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
+            // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
+            // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
+            // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
+            // 本就不看），顶部输入框保持可见、布局不反流。
+            resizeToAvoidBottomInset: false,
+            // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
+            // 进来（设置入口）时的状态栏避让，双层无副作用。
+            body: SafeArea(
+              bottom: false,
+              child: Column(
+                children: <Widget>[
+                  if (!isCupertinoPlatform(context))
+                    _buildHeader(tabContext, tabs),
+                  Expanded(
+                    child: TabBarView(
+                      children: <Widget>[
+                        for (final BrowseTab tab in tabs)
+                          switch (tab) {
+                            BrowseTab.sources ||
+                            BrowseTab.extensions => _buildOnlineTab(tab),
+                            BrowseTab.discover => _buildResourceHub(),
+                            BrowseTab.downloads => _buildDownloadsTab(),
+                          },
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 下载设置页：内置引擎 / qBittorrent、在线服务入口、下载路由。原「下载」页的
+/// 「设置」页签，2026-09-27 起改为「浏览 › 下载」页头齿轮 push 的独立页。
+class BrowseDownloadSettingsPage extends ConsumerWidget {
+  const BrowseDownloadSettingsPage({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return _BrowseSubPage(
+      title: t.download_settings,
+      child: ListView(
                         children: <Widget>[
                           const TorrentSettingsSection(),
                           // 索引器 / 字幕来源 / 发现来源已迁到设置 → 在线服务
@@ -563,15 +833,37 @@ class _DownloadsPageState extends ConsumerState<DownloadsPage> {
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-              ],
+    );
+  }
+}
+
+/// 浏览页 push 出来的二级页外壳：带返回键的统一门头 + 正文。
+class _BrowseSubPage extends StatelessWidget {
+  const _BrowseSubPage({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: <Widget>[
+            FushiPageHeader(
+              title: title,
+              leading: FushiIconButton(
+                icon: Icons.arrow_back,
+                tooltip: t.back,
+                onTap: () => Navigator.of(context).maybePop(),
+              ),
             ),
-          ),
+            Expanded(child: child),
+          ],
         ),
       ),
-    ));
+    );
   }
 }
 
@@ -603,3 +895,19 @@ List<_DownloadsResourceDomain> _visibleResourceDomains(
             gamesForm == GamesModuleForm.localLibrary))
       domain,
 ];
+
+/// 在线域 → 所属功能模块（穷尽 switch）：关掉某个库模块，它的在线来源一并不出。
+ModuleId _moduleOfOnlineDomain(OnlineSourcesDomain domain) => switch (domain) {
+  OnlineSourcesDomain.novel => ModuleId.books,
+  OnlineSourcesDomain.manga => ModuleId.manga,
+  OnlineSourcesDomain.video => ModuleId.video,
+};
+
+/// 此刻可见的在线域：模块开着、且本平台有该域的在线来源宿主。
+List<OnlineSourcesDomain> _visibleOnlineDomains(ModuleVisibility visibility) =>
+    <OnlineSourcesDomain>[
+      for (final OnlineSourcesDomain domain in OnlineSourcesDomain.values)
+        if (visibility.isEnabled(_moduleOfOnlineDomain(domain)) &&
+            isOnlineSourcesDomainAvailable(domain))
+          domain,
+    ];

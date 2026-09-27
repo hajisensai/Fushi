@@ -1876,7 +1876,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 拖入 .torrent → 下载中心「添加任务」对话框预填种子，内容类型预填视频。
         // 与页头按钮同一入口：后端未配时同样弹引导，不在这里另写一套。下载中心
         // 关掉时给可见提示（与书架同一形态），不静默。
-        if (!appModel.moduleVisibility.isEnabled(ModuleId.downloads)) {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(t.module_disabled_hint)),
           );

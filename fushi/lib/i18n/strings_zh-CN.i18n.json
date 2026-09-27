@@ -2372,7 +2372,7 @@
   "mining_still_format_jpg": "JPG（体积更小）",
   "mining_still_format_png": "PNG",
   "module_disabled_hint": "该功能模块已在「设置 → 外观 → 功能模块」中关闭。",
-  "module_downloads_hidden_hint": "「下载」页已在 设置 → 外观 → 功能模块 中隐藏；重新打开它才能管理订阅。",
+  "module_downloads_hidden_hint": "「浏览」页已在 设置 → 外观 → 功能模块 中隐藏；重新打开它才能管理订阅。",
   "module_extension_label": "浏览器扩展",
   "move_down": "下移",
   "move_up": "上移",
@@ -5061,7 +5061,6 @@
   "video_online_episodes_title": "剧集",
   "video_online_episodes_empty": "没有找到剧集。",
   "video_online_stream_none": "该集没有可播放的流。",
-  "media_import_segment_local": "本地",
   "media_import_segment_stores": "仓库",
   "media_import_segment_extensions": "扩展",
   "media_import_segment_sources": "在线源",
@@ -5625,5 +5624,6 @@
   "video_subtitle_host_upload_failed": "字幕上传服务端失败，仅保存在本机",
   "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机",
   "video_setting_subtitle_auto_upload_to_host": "导入的字幕自动上传到服务端",
-  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。"
+  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。",
+  "nav_browse": "浏览"
 }

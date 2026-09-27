@@ -49,7 +49,7 @@ void main() {
       ),
       reason: '关了在线服务 = 隐藏了设置 › AI，入口不得再把这页推出来。',
     );
-    expect(gate, contains('moduleVisibility.isEnabled(ModuleId.downloads)'));
+    expect(gate, contains('moduleVisibility.isEnabled(ModuleId.browse)'));
   });
 
   test('BUG-2694 点击时 AI 未指派 → 推 AI 设置页，返回后重判再继续', () {

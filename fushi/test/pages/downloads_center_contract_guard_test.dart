@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 const String _downloadsPath =
-    'lib/src/pages/implementations/downloads_page.dart';
+    'lib/src/pages/implementations/browse_page.dart';
 const String _downloadActionsPath =
     'lib/src/pages/implementations/download_actions.dart';
 
@@ -16,65 +16,103 @@ String _read(String path) {
 }
 
 void main() {
-  test('BUG-1956：下载中心保留资源、任务、订阅、设置四个顶层页签', () {
+  test('BUG-1956：浏览页保留来源、扩展、发现、下载四个顶层页签', () {
+    // 2026-09-27 起「下载」模块改名「浏览」（Mihon Browse 形态）：原「资源」页签
+    // 变成「发现」，任务 / 订阅收进「下载」页签的两段，设置改成页头齿轮 push 的
+    // 独立页。页签用枚举而不是下标（随平台 / 模块开关增减时不落错页）。
     final String source = _read(_downloadsPath);
     final String code = maskCommentsAndScriptLines(source);
     final String structural = maskCommentsAndStrings(source);
 
     expect(
-      RegExp(r'\bLibrarySectionTab<int>\s*\(').allMatches(code),
-      hasLength(4),
-      reason: '下载中心顶层只能有且必须有四个目的地',
+      code,
+      contains(
+        'enum BrowseTab { sources, extensions, discover, downloads }',
+      ),
+      reason: '浏览页顶层只能有且必须有四个目的地，顺序即页头顺序',
     );
-    final List<String> labels = <String>[
-      'label: t.download_resources_tab',
-      'label: t.download_tasks_tab',
-      'label: t.download_subscriptions_tab',
-      'label: t.settings',
-    ];
-    int previous = -1;
-    for (final String label in labels) {
-      final int current = code.indexOf(label);
-      expect(current, greaterThan(previous), reason: '页签缺失或顺序错误：$label');
-      previous = current;
+    final String labels = compactCode(
+      methodBody(source, 'String _tabLabel('),
+    );
+    for (final String label in <String>[
+      'BrowseTab.sources=>t.media_import_segment_sources,',
+      'BrowseTab.extensions=>t.media_import_segment_extensions,',
+      'BrowseTab.discover=>t.library_view_discover,',
+      'BrowseTab.downloads=>t.nav_downloads,',
+    ]) {
+      expect(labels, contains(label), reason: '页签文案缺失：$label');
     }
+    expect(
+      code,
+      isNot(contains('LibrarySectionTab<int>')),
+      reason: '页签不得退回整数下标',
+    );
+
+    expect(
+      code,
+      contains('enum BrowseDownloadsSection { tasks, subscriptions }'),
+      reason: '「下载」页签必须保留任务 / 订阅两段',
+    );
+    expect(
+      code,
+      contains("'browse-downloads-section-picker'"),
+      reason: '任务 / 订阅分段条必须有稳定 key，便于焦点导航与行为验证',
+    );
 
     expect(identifierCall('DefaultTabController').hasMatch(structural), isTrue);
     expect(identifierCall('TabBarView').hasMatch(structural), isTrue);
     expect(
       identifierCall('VideoDownloadJobsPanel').hasMatch(structural),
       isTrue,
-      reason: '任务页不得再被从下载中心拆掉',
+      reason: '任务段不得再被从下载中心拆掉',
     );
     expect(
       identifierCall('VideoDownloadSubscriptionsPanel').hasMatch(structural),
       isTrue,
-      reason: '订阅页不得再被从下载中心拆掉',
+      reason: '订阅段不得再被从下载中心拆掉',
+    );
+
+    // 设置：独立页 BrowseDownloadSettingsPage，入口是「下载」页签页头的齿轮。
+    final String settingsPage = source.substring(
+      source.indexOf('class BrowseDownloadSettingsPage '),
     );
     expect(
-      identifierCall('TorrentSettingsSection').hasMatch(structural),
+      identifierCall('TorrentSettingsSection').hasMatch(settingsPage),
       isTrue,
-      reason: '设置页不得再被从下载中心拆掉',
+      reason: '下载设置页不得再被从浏览模块拆掉',
+    );
+    expect(code, contains("'browse-download-settings'"));
+    expect(
+      compactCode(methodBody(source, 'void _openDownloadSettings(')),
+      contains('constBrowseDownloadSettingsPage()'),
     );
   });
 
-  test('BUG-1956：initialTabIndex 与 initialShowSettings 真正决定初始页', () {
+  test('BUG-1956：initialTab 与 initialDownloadsSection 真正决定初始页', () {
     final String source = _read(_downloadsPath);
-    final EnclosingCall controller = enclosingCallOf(
-      source,
-      'widget.initialShowSettings',
-    );
-    expect(controller.name, 'DefaultTabController');
-    final String code = compactCode(controller.text);
+    final String code = compactCode(source);
 
-    expect(code, contains('length:4'));
     expect(
       code,
       contains(
-        'initialIndex:widget.initialShowSettings?3:'
-        'widget.initialTabIndex.clamp(0,2)',
+        'finalintinitialIndex=widget.initialTab==null?0:'
+        'tabs.indexOf(widget.initialTab!).clamp(0,tabs.length-1);',
       ),
-      reason: '这两个外部入口参数不得再降级为 no-op 兼容参数',
+      reason: '外部入口参数不得再降级为 no-op 兼容参数',
+    );
+    final EnclosingCall controller = enclosingCallOf(
+      source,
+      'initialIndex: initialIndex',
+    );
+    expect(controller.name, 'DefaultTabController');
+    expect(compactCode(controller.text), contains('length:tabs.length'));
+    expect(
+      code,
+      contains(
+        'lateBrowseDownloadsSection_downloadsSection='
+        'widget.initialDownloadsSection;',
+      ),
+      reason: '「管理订阅」等入口要能直落订阅段',
     );
   });
 

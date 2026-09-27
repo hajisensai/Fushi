@@ -3319,7 +3319,7 @@ class AppModel with ChangeNotifier {
       //
       // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
       // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
-      if (modules.isEnabled(ModuleId.downloads)) {
+      if (modules.isEnabled(ModuleId.browse)) {
         unawaited(
             startAnimeDownloadService().catchError((Object e, StackTrace s) {
           ErrorLogService.instance

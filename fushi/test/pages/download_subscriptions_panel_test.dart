@@ -14,7 +14,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -244,7 +244,7 @@ void main() {
   });
 
   testWidgets(
-      'downloads page switches between resources, tasks and subscriptions',
+      'browse page downloads tab switches between tasks and subscriptions',
       (WidgetTester tester) async {
     final _MemorySubscriptionStore store = _MemorySubscriptionStore();
     final _MemoryPlanStore planStore = _MemoryPlanStore();
@@ -263,15 +263,17 @@ void main() {
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(
-          child: const MaterialApp(home: DownloadsPage()),
+          child: const MaterialApp(
+            home: BrowsePage(initialTab: BrowseTab.downloads),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(t.download_resources_tab), findsOneWidget);
-    await tester.tap(find.text(t.download_tasks_tab));
-    await tester.pumpAndSettle();
+    expect(find.text(t.nav_downloads), findsOneWidget);
+    // 任务是「下载」页签的默认段。
+    expect(find.text(t.download_tasks_tab), findsOneWidget);
     expect(find.text(t.anime_download_no_tasks), findsOneWidget);
 
     await tester.tap(find.text(t.download_subscriptions_tab));

@@ -2372,7 +2372,7 @@
   "mining_still_format_jpg": "JPG (daha küçük)",
   "mining_still_format_png": "PNG (kayıpsız)",
   "module_disabled_hint": "This feature module is turned off in Settings > Appearance > Feature modules.",
-  "module_downloads_hidden_hint": "İndirmeler sekmesi Ayarlar → Görünüm → Özellik modülleri altında gizli; abonelikleri yönetmek için yeniden açın.",
+  "module_downloads_hidden_hint": "Göz at sekmesi Ayarlar → Görünüm → Özellik modülleri altında gizli; abonelikleri yönetmek için yeniden açın.",
   "module_extension_label": "Tarayıcı eklentisi",
   "move_down": "Aşağı taşı",
   "move_up": "Yukarı taşı",
@@ -5061,7 +5061,6 @@
   "video_online_episodes_title": "Episodes",
   "video_online_episodes_empty": "No episodes found.",
   "video_online_stream_none": "This episode returned no playable stream.",
-  "media_import_segment_local": "Local",
   "media_import_segment_stores": "Stores",
   "media_import_segment_extensions": "Extensions",
   "media_import_segment_sources": "Sources",
@@ -5625,5 +5624,6 @@
   "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device",
   "video_subtitle_host_upload_unsupported": "The host's Fushi is too old to receive subtitles; it's only saved on this device",
   "video_setting_subtitle_auto_upload_to_host": "Auto-upload imported subtitles to host",
-  "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only."
+  "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
+  "nav_browse": "Göz at"
 }

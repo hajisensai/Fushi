@@ -198,10 +198,10 @@ void main() {
     expect(StoreRestrictedCapability.externalDiscovery.isAvailable, isTrue);
     expect(section().isVisible(settingsContext), isTrue);
 
-    await appModel.setModuleEnabled(ModuleId.downloads, false);
+    await appModel.setModuleEnabled(ModuleId.browse, false);
     expect(section().isVisible(settingsContext), isFalse);
 
-    await appModel.setModuleEnabled(ModuleId.downloads, true);
+    await appModel.setModuleEnabled(ModuleId.browse, true);
     expect(section().isVisible(settingsContext), isTrue);
   });
 }

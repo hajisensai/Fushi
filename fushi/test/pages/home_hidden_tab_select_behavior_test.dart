@@ -131,7 +131,7 @@ ModuleVisibility _visibility({
       if (manga) ModuleId.manga,
       if (video) ModuleId.video,
       if (games) ModuleId.games,
-      if (downloads) ModuleId.downloads,
+      if (downloads) ModuleId.browse,
       if (lookup) ModuleId.lookup,
       if (browserExtension) ModuleId.browserExtension,
     });

@@ -50,7 +50,7 @@ void main() {
 
     test('下载中心在 iOS 上不是一个可用模块', () {
       expect(
-        ModuleId.downloads.availableOn(
+        ModuleId.browse.availableOn(
           isWindows: false,
           isDesktop: false,
           isIOS: true,
@@ -59,7 +59,7 @@ void main() {
         isFalse,
       );
       expect(
-        ModuleId.downloads.availableOn(
+        ModuleId.browse.availableOn(
           isWindows: false,
           isDesktop: false,
           isIOS: false,
@@ -74,7 +74,7 @@ void main() {
 
     test('iOS 与 Android 的模块集合只差下载中心（外加 games 这一条技术例外）', () {
       for (final ModuleId module in ModuleId.values) {
-        if (module == ModuleId.downloads) continue;
+        if (module == ModuleId.browse) continue;
         // games 是**技术**例外，不是合规边界：Android 的 games 模块是串流接收端
         // （WebRTC 接收入口只接了 Android），iOS 没有这个接收端，所以两端结论
         // 不同。它不属于 StoreRestrictedCapability，别据此把它登记进合规边界。
@@ -124,7 +124,7 @@ void main() {
         isIOS: true,
         isAndroid: false,
       );
-      expect(ios.isEnabled(ModuleId.downloads), isFalse);
+      expect(ios.isEnabled(ModuleId.browse), isFalse);
       expect(
         ios.isEnabled(ModuleId.manga),
         isTrue,
@@ -137,42 +137,74 @@ void main() {
         isIOS: false,
         isAndroid: true,
       );
-      expect(android.isEnabled(ModuleId.downloads), isTrue);
+      expect(android.isEnabled(ModuleId.browse), isTrue);
     });
   });
 
   group('发现入口全部过同一道门', () {
-    test('书 / 漫画 / 视频三个库页的发现视图都由 externalDiscovery 门控', () {
-      const String gate =
-          'if(StoreRestrictedCapability.externalDiscovery.isAvailable)';
-
-      // 书 tab：统一发现页（小说 + 有声书在线源）。
+    test('发现视图只住在「浏览」模块：库页不再声明发现视图，浏览整模块过 downloads 门', () {
+      // 2026-09-27 起在线发现从书 / 漫画 / 视频 / 游戏四个库页搬进顶层「浏览」
+      // 模块（browse_page.dart 的「发现」页签）。合规边界随之上移：库页里不得
+      // 再长出发现视图（否则它不在任何门后），浏览模块整个在 iOS 上缺席。
       expect(
         compactCode(
           read('lib/src/pages/implementations/home_reader_page.dart'),
         ),
-        contains(
-          '${gate}MediaLibraryViewSpec(kind:MediaLibraryViewKind.browse,',
+        allOf(
+          isNot(contains('MediaLibraryViewKind.browse')),
+          isNot(contains('MediaLibraryViewKind.discover')),
         ),
+        reason: '书 tab 的统一发现页已搬进「浏览」，书架页不得再挂发现视图。',
       );
-
-      // 漫画 tab：AniList 榜单 + 各来源热门行 + mokuro.moe 卷下载。
       expect(
         compactCode(read('lib/src/media/manga/manga_library_page.dart')),
-        contains(
-          '${gate}MediaLibraryViewSpec(kind:MediaLibraryViewKind.discover,',
+        allOf(
+          isNot(contains('MediaLibraryViewKind.discover')),
+          isNot(contains('MediaLibraryViewKind.browse')),
         ),
+        reason: '漫画发现（AniList 榜单 / 来源热门 / mokuro.moe）已搬进「浏览」。',
       );
-
-      // 视频 tab：番剧发现 → 资源索引器 → 种子获取。
       expect(
         compactCode(
           read('lib/src/pages/implementations/video_library_shell.dart'),
         ),
+        isNot(contains('VideoLibrarySection.discover')),
+        reason: '视频发现（番剧发现 → 资源索引器 → 种子获取）已搬进「浏览」。',
+      );
+      expect(
+        compactCode(read('lib/src/pages/implementations/game_shared.dart')),
+        isNot(contains('GameSection.discover')),
+        reason: '游戏资源发现已搬进「浏览」。',
+      );
+
+      // 浏览模块的可用性委托给合规边界的唯一真相源，不自己写平台判断。
+      expect(
+        compactCode(read('lib/src/models/module_id.dart')),
         contains(
-          '${gate}LibrarySectionTab<VideoLibrarySection>'
-          '(value:VideoLibrarySection.discover,',
+          'ModuleId.browse=>StoreRestrictedCapability.downloads.availableOn('
+          'isIOS:isIOS,),',
         ),
+      );
+      final String browse = compactCode(
+        read('lib/src/pages/implementations/browse_page.dart'),
+      );
+      expect(
+        browse,
+        contains('BrowseTab.discover=>_buildResourceHub(),'),
+        reason: '发现页签就是资源发现 hub，只在浏览模块里构建。',
+      );
+      expect(
+        browse,
+        contains(
+          'finalbooldiscover='
+          'StoreRestrictedCapability.externalDiscovery.isAvailable&&',
+        ),
+        reason: '发现页签自己问 externalDiscovery，不只靠模块委托的 downloads 能力。',
+      );
+      expect(
+        browse,
+        isNot(contains('Platform.isIOS')),
+        reason: '消费端不得各自写平台判断，只问 StoreRestrictedCapability。',
       );
     });
 
@@ -245,7 +277,7 @@ void main() {
         contains(
           "id:'ai.video_download',title:t.ai_video_download_section,"
           'visible:(SettingsContextc)=>$gates&&'
-          'c.appModel.moduleVisibility.isEnabled(ModuleId.downloads),',
+          'c.appModel.moduleVisibility.isEnabled(ModuleId.browse),',
         ),
       );
 
@@ -282,9 +314,16 @@ void main() {
       );
     });
 
-    test('漫画「来源」视图的在线源三节由 onlineMangaSource 门控', () {
-      final String source = compactCode(
+    test('漫画在线源三节（浏览模块）由 onlineMangaSource 门控', () {
+      // 2026-09-27 起漫画在线源从「来源」导入视图拆进 MangaOnlineSourcesView，
+      // 只由「浏览」模块挂载；导入视图只剩本地来源。
+      final String importPage = compactCode(
         read('lib/src/media/manga/manga_sources_page.dart'),
+      );
+      expect(importPage, isNot(contains('MihonExtensionsPage')));
+      expect(importPage, isNot(contains('MihonInstalledSourcesSection')));
+      final String source = compactCode(
+        read('lib/src/media/manga/manga_online_sources_view.dart'),
       );
       expect(
         source,
@@ -293,17 +332,28 @@ void main() {
           'StoreRestrictedCapability.onlineMangaSource.isAvailable;',
         ),
       );
-      expect(source, contains('if(onlineSourcesAvailable)'));
+      expect(source, contains('elseif(onlineSourcesAvailable)'));
       expect(
         source,
         contains('if(onlineSourcesAvailable&&manager!=null)'),
         reason: 'Mihon 扩展提供的源行也在这节里，不能只挡住标题。',
       );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/browse_online_sources_view.dart'),
+        ),
+        contains(
+          'OnlineSourcesDomain.manga=>'
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable&&'
+          'MihonRuntimeFactory.isSupported,',
+        ),
+        reason: '浏览页签是否出现漫画域也问同一道合规门。',
+      );
     });
 
-    test('视频「导入」视图的在线源三段（Aniyomi）由 onlineVideoSource 门控', () {
+    test('视频在线源三段（Aniyomi，浏览模块）由 onlineVideoSource 门控', () {
       // 判据只写在 video_online_sources_gate.dart 一处（合规门 + 运行时平台门），
-      // 导入页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
+      // 浏览页只问它——这条边界失效是静默的（本地与 CI 全绿、上架才被拒）。
       final String gate = compactCode(
         read('lib/src/media/video/online/video_online_sources_gate.dart'),
       );
@@ -315,17 +365,32 @@ void main() {
           'MihonRuntimeFactory.isSupported;',
         ),
       );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/media_sources_page.dart'),
+        ),
+        isNot(contains('animeMihonManager')),
+        reason: '视频导入页只剩本地来源，不得再取 animeMihonManager。',
+      );
       final String sources = compactCode(
-        read('lib/src/pages/implementations/media_sources_page.dart'),
+        read('lib/src/pages/implementations/browse_online_sources_view.dart'),
       );
       expect(
         sources,
-        contains("if(widget.mediaKind=='video'&&isVideoOnlineSourcesAvailable)"),
-        reason: '视频导入页取 animeMihonManager（仓库 / 扩展 / 在线源三段）必须挂在这个门后。',
+        contains(
+          'MihonManager?get_animeManager=>'
+          'isVideoOnlineSourcesAvailable?_appModel.animeMihonManager:null;',
+        ),
+        reason: '浏览页取 animeMihonManager（仓库 / 扩展 / 在线源）必须挂在这个门后。',
       );
       expect(
         sources,
-        contains('if(animeManager!=null)...<Widget>['),
+        contains('OnlineSourcesDomain.video=>isVideoOnlineSourcesAvailable,'),
+        reason: '浏览页签是否出现视频域也问同一道门。',
+      );
+      expect(
+        sources,
+        contains('finalMihonManagermanager=>_videoSlivers(manager),'),
         reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
       );
       expect(
@@ -335,7 +400,7 @@ void main() {
       );
     });
 
-    test('书「导入」视图的小说源三段（LNReader）由 onlineNovelSource 门控', () {
+    test('小说源三段（LNReader，浏览模块）由 onlineNovelSource 门控', () {
       final String gate = compactCode(
         read('lib/src/media/novel/online/novel_online_sources_gate.dart'),
       );
@@ -352,17 +417,31 @@ void main() {
         isNot(contains('Platform.isIOS')),
         reason: '运行时平台门只列真支持的平台，iOS 的缺席归合规门管。',
       );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/media_sources_page.dart'),
+        ),
+        isNot(contains('lnReaderManager')),
+        reason: '书导入页只剩本地来源，不得再取 lnReaderManager。',
+      );
       final String sources = compactCode(
-        read('lib/src/pages/implementations/media_sources_page.dart'),
+        read('lib/src/pages/implementations/browse_online_sources_view.dart'),
       );
       expect(
         sources,
-        contains("if(widget.mediaKind=='book'&&isNovelOnlineSourcesAvailable)"),
-        reason: '书导入页取 lnReaderManager（仓库 / 扩展 / 在线源三段）必须挂在这个门后。',
+        contains(
+          'LnReaderManager?get_novelManager=>'
+          'isNovelOnlineSourcesAvailable?_appModel.lnReaderManager:null;',
+        ),
+        reason: '浏览页取 lnReaderManager（仓库 / 扩展 / 在线源）必须挂在这个门后。',
       );
       expect(
         sources,
-        contains('if(novelManager!=null)...<Widget>['),
+        contains('OnlineSourcesDomain.novel=>isNovelOnlineSourcesAvailable,'),
+      );
+      expect(
+        sources,
+        contains('finalLnReaderManagermanager=>_novelSlivers(manager),'),
         reason: '三段的 sliver 只在拿到 manager 时才进树，门失效时整段不出现。',
       );
       // 在线小说书的描述符会随备份恢复到 iOS：阅读器开书建取章加载器（它会拉起
