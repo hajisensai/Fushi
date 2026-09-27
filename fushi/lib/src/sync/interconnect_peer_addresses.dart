@@ -219,26 +219,86 @@ Future<List<FushiClientUrl>> _rankGroup(
   FushiClientUrl? winner;
   if (cached != null && now().difference(cached.$2) < _raceCacheTtl) {
     for (final FushiClientUrl u in group) {
-      if (u.url == cached.$1) winner = u;
+      if (u.url == cached.$1) winner = await _resolveTransport(u);
     }
   }
+  // 直连地址（LAN / IPv6 / 组网 / 公网）先并发选；全部不通才建 P2P 隧道——
+  // 否则每次选路都会去连一次中继（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
   winner ??= await raceInterconnectHostAddresses(
-    group,
+    <FushiClientUrl>[
+      for (final FushiClientUrl u in group)
+        if (!_isP2pUrl(u.url)) u,
+    ],
     hostId: hostId,
     probe: probe,
     grace: grace,
   );
+  winner ??= await _raceP2p(group, hostId: hostId, probe: probe, grace: grace);
   if (winner == null) {
     _raceCache.remove(hostId);
     return group;
   }
-  _raceCache[hostId] = (winner.url, now());
+  // 缓存记的是持久地址（P2P 是 `p2p://`，不是本次的本地转发口）。
   final FushiClientUrl first = winner;
+  final String persistedUrl = _p2pOrigins[first.url] ?? first.url;
+  _raceCache[hostId] = (persistedUrl, now());
   return <FushiClientUrl>[
     first,
     for (final FushiClientUrl u in group)
-      if (!identical(u, first)) u,
+      if (u.url != persistedUrl) u,
   ];
+}
+
+Future<FushiClientUrl?> _raceP2p(
+  List<FushiClientUrl> group, {
+  required String hostId,
+  required InterconnectAddressProbe probe,
+  required Duration grace,
+}) async {
+  final List<FushiClientUrl> tunnels = <FushiClientUrl>[];
+  for (final FushiClientUrl u in group) {
+    if (!_isP2pUrl(u.url)) continue;
+    final FushiClientUrl? resolved = await _resolveTransport(u);
+    if (resolved != null) tunnels.add(resolved);
+  }
+  if (tunnels.isEmpty) return null;
+  return raceInterconnectHostAddresses(
+    tunnels,
+    hostId: hostId,
+    probe: probe,
+    grace: grace,
+  );
+}
+
+bool _isP2pUrl(String url) => url.startsWith('p2p://');
+
+/// 本地转发口 URL → 它代表的 `p2p://` 持久地址（选路结果回写缓存 / 组内去重用）。
+final Map<String, String> _p2pOrigins = <String, String>{};
+
+/// `p2p://` 地址 → 本地转发口候选（隧道层没装 / 起不来 → null）；其余原样。
+Future<FushiClientUrl?> _resolveTransport(FushiClientUrl candidate) async {
+  if (!_isP2pUrl(candidate.url)) return candidate;
+  final Future<FushiClientUrl?> Function(FushiClientUrl)? resolver =
+      _p2pResolver;
+  if (resolver == null) return null;
+  try {
+    final FushiClientUrl? local = await resolver(candidate);
+    if (local != null) _p2pOrigins[local.url] = candidate.url;
+    return local;
+  } on Object catch (e, st) {
+    engineLog.log('InterconnectP2p.resolve', e, st);
+    return null;
+  }
+}
+
+Future<FushiClientUrl?> Function(FushiClientUrl candidate)? _p2pResolver;
+
+/// 隧道层装配点：把 `p2p://<nodeId>` 候选变成 `http(s)://127.0.0.1:<转发口>`。
+/// 解析出的 URL 只活在内存里（不落库）：转发口每次运行都不同。
+void setInterconnectP2pResolver(
+  Future<FushiClientUrl?> Function(FushiClientUrl candidate)? resolver,
+) {
+  _p2pResolver = resolver;
 }
 
 /// 一条已存地址的优先级，由 URL 字面推断（存量条目没有记 kind）。与
@@ -308,7 +368,10 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       if (!_acceptP2pAddresses) continue;
     }
     if (out.any((FushiClientUrl u) => u.url == a.url)) continue;
-    final bool https = a.url.toLowerCase().startsWith('https://');
+    // 指纹只给走 TLS 的地址：https，或 host 开着 TLS 时的 `p2p://…?tls=1`
+    // （隧道里跑的仍是同一张自签证书）。
+    final bool https = a.url.toLowerCase().startsWith('https://') ||
+        (_isP2pUrl(a.url) && Uri.tryParse(a.url)?.queryParameters['tls'] == '1');
     final FushiClientUrl learned = FushiClientUrl(
       url: a.url,
       fingerprintSha256: https ? anchor.fingerprintSha256 : null,

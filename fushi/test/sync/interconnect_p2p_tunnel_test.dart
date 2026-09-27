@@ -1,0 +1,186 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
+import 'package:fushi/src/sync/interconnect_video_quality.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
+import 'package:http/http.dart' as http;
+
+import 'temp_dir_cleanup.dart';
+
+/// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+///
+/// 真隧道那组需要原生库：`FUSHI_P2P_LIB` 指向 fushi_p2p.dll / .so，或它就在
+/// `native/fushi_p2p/prebuilt/<平台>/` 下；缺库时跳过（能力本就判不可用）。
+void main() {
+  late Directory dir;
+  late FushiSyncServer server;
+
+  Future<void> startHost() async {
+    dir = await Directory.systemTemp.createTemp('fushi_p2p_tunnel_test');
+    server =
+        FushiSyncServer(
+            syncDataDir: dir.path,
+            port: 0,
+            token: 'shared-token',
+            allowLan: true,
+          )
+          ..hostId = 'HOST-P2P'
+          ..onPairRequest = ((FushiPairRequest r) async => true)
+          ..lanRequiresPinProvider = (() async => false)
+          ..interfaceLister = (() async => <NetworkInterface>[]);
+    await server.start();
+  }
+
+  Future<bool> pinRequiredVia(int port) async {
+    final http.Response resp = await http.post(
+      Uri.parse('http://127.0.0.1:$port/api/pair/v2'),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{'clientNonce': 'cn'}),
+    );
+    expect(resp.statusCode, 200);
+    return (jsonDecode(resp.body) as Map<String, dynamic>)['pinRequired']
+        as bool;
+  }
+
+  group('信任区（不需要原生库）', () {
+    setUp(startHost);
+    tearDown(() async {
+      await server.stop();
+      await cleanupTempDir(dir);
+    });
+
+    test('隧道监听口进来的配对一律按公网：强制 PIN（即便来源是 127.0.0.1）', () async {
+      expect(
+        await pinRequiredVia(server.port),
+        isFalse,
+        reason: '对照：主监听口的 127.0.0.1 仍按本机免 PIN',
+      );
+      final int tunnelPort = await server.startP2pListener();
+      expect(await pinRequiredVia(tunnelPort), isTrue);
+      expect(await server.startP2pListener(), tunnelPort, reason: '幂等');
+      await server.stopP2pListener();
+    });
+
+    test('p2p 地址编解码：tls 与拨号提示往返', () {
+      final String url = interconnectP2pUrl(
+        'nodeabc',
+        tls: true,
+        relayUrl: 'https://relay.example/',
+        directAddrs: <String>['192.168.1.5:5000', '[2408::5]:5000'],
+      );
+      final ({
+        String nodeId,
+        bool tls,
+        String? relayUrl,
+        List<String> directAddrs,
+      })?
+      parsed = parseInterconnectP2pUrl(url);
+      expect(parsed!.nodeId, 'nodeabc');
+      expect(parsed.tls, isTrue);
+      expect(parsed.relayUrl, 'https://relay.example/');
+      expect(parsed.directAddrs, <String>[
+        '192.168.1.5:5000',
+        '[2408::5]:5000',
+      ]);
+      expect(parseInterconnectP2pUrl('http://x:1'), isNull);
+      expect(interconnectUrlRank(url), 4, reason: 'P2P 恒排最后');
+    });
+  });
+
+  group('真隧道端到端', () {
+    final bool available = InterconnectP2pRuntime.isAvailable;
+    late InterconnectP2pRuntime hostRuntime;
+    late FushiDatabase db;
+    late SyncRepository repo;
+
+    setUp(() async {
+      if (!available) return;
+      resetInterconnectRaceCache();
+      await startHost();
+      String? hostSecret;
+      hostRuntime = InterconnectP2pRuntime(
+        loadSecret: () async => hostSecret,
+        saveSecret: (String s) async => hostSecret = s,
+        loadRelayUrls: () async => const <String>[],
+      );
+      final InterconnectP2pNode node = (await hostRuntime.ensure())!;
+      node.hostListen(await server.startP2pListener());
+      server.extraAddressesProvider = () =>
+          hostRuntime.hostAddresses(tls: false);
+      db = FushiDatabase(dir.path);
+      repo = SyncRepository(db);
+      installInterconnectP2pClient(repo);
+    });
+
+    tearDown(() async {
+      if (!available) return;
+      await currentAppInterconnectP2pRuntime?.dispose();
+      await hostRuntime.dispose();
+      await server.stop();
+      await db.close();
+      await cleanupTempDir(dir);
+    });
+
+    test(
+      '直连全死 → 经 P2P 隧道到达，隧道里仍核对身份、强制 PIN、按外网定画质',
+      () async {
+        final List<InterconnectHostAddress> published = hostRuntime
+            .hostAddresses(tls: false);
+        expect(published.single.kind, InterconnectAddressKind.p2p);
+        final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
+          <FushiClientUrl>[
+            const FushiClientUrl(url: 'http://127.0.0.1:1', hostId: 'HOST-P2P'),
+            FushiClientUrl(
+              url: published.single.url,
+              hostId: 'HOST-P2P',
+              learned: true,
+            ),
+          ],
+        );
+        final Uri first = Uri.parse(ranked.first.url);
+        expect(first.host, '127.0.0.1');
+        expect(first.port, isNot(1), reason: '胜出的是隧道本地转发口');
+        expect(
+          isPrivateNetworkHost(ranked.first.url),
+          isFalse,
+          reason: '隧道口字面是回环，画质必须按外网给',
+        );
+        expect(
+          await pinRequiredVia(first.port),
+          isTrue,
+          reason: '隧道流量落在信任区，配对强制 PIN',
+        );
+      },
+      skip: available ? false : 'fushi_p2p 原生库不可用',
+    );
+
+    test('host 地址集经鉴权端点公布 p2p 地址', () async {
+      final http.Response resp = await http.get(
+        Uri.parse('http://127.0.0.1:${server.port}/api/host/addresses'),
+        headers: <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:shared-token'))}',
+        },
+      );
+      expect(resp.statusCode, 200);
+      final List<dynamic> addresses =
+          (jsonDecode(resp.body) as Map<String, dynamic>)['addresses']
+              as List<dynamic>;
+      expect(
+        addresses.any(
+          (dynamic a) =>
+              (a as Map<String, dynamic>)['kind'] == 'p2p' &&
+              (a['url'] as String).startsWith('p2p://'),
+        ),
+        isTrue,
+      );
+    }, skip: available ? false : 'fushi_p2p 原生库不可用');
+  });
+}

@@ -11,6 +11,11 @@ import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
     show decodeInterconnectPublicUrls, kInterconnectPublicUrlsPref;
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show
+        kInterconnectP2pEnabledPref,
+        kInterconnectP2pRelayUrlsPref,
+        kInterconnectP2pSecretPref;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
@@ -878,6 +883,9 @@ class SyncRepository {
   static const _keyLanRequiresPin = 'sync_lan_requires_pin';
   static const _keyServerTlsEnabled = 'sync_server_tls_enabled';
   static const _keyInterconnectPublicUrls = kInterconnectPublicUrlsPref;
+  static const _keyInterconnectP2pEnabled = kInterconnectP2pEnabledPref;
+  static const _keyInterconnectP2pSecret = kInterconnectP2pSecretPref;
+  static const _keyInterconnectP2pRelayUrls = kInterconnectP2pRelayUrlsPref;
 
   /// Single source of truth for the default Hibiki sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
@@ -945,6 +953,39 @@ class SyncRepository {
       return;
     }
     await _setString(_keyInterconnectPublicUrls, jsonEncode(cleaned));
+  }
+
+  /// host 侧「允许经 P2P 隧道远程连接」（默认关，见 [kInterconnectP2pEnabledPref]）。
+  Future<bool> isInterconnectP2pEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectP2pEnabled, false);
+  Future<void> setInterconnectP2pEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectP2pEnabled, v);
+
+  /// 本机 iroh 私钥（设备本地；同一把钥匙出现在两台设备上就是同一个 NodeId）。
+  Future<String?> getInterconnectP2pSecret() async {
+    final String? encoded = await _getStringOrNull(_keyInterconnectP2pSecret);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setInterconnectP2pSecret(String v) =>
+      _setString(_keyInterconnectP2pSecret, _encodeSecret(v));
+
+  /// 自建 iroh-relay 地址（空 = iroh 默认公共中继）。
+  Future<List<String>> getInterconnectP2pRelayUrls() async =>
+      decodeInterconnectPublicUrls(
+        await _getStringOrNull(_keyInterconnectP2pRelayUrls),
+      );
+
+  Future<void> setInterconnectP2pRelayUrls(List<String> urls) async {
+    final List<String> cleaned = <String>[
+      for (final String u in urls)
+        if (u.trim().isNotEmpty) u.trim(),
+    ];
+    if (cleaned.isEmpty) {
+      await _deleteKey(_keyInterconnectP2pRelayUrls);
+      return;
+    }
+    await _setString(_keyInterconnectP2pRelayUrls, jsonEncode(cleaned));
   }
 
   Future<bool> getLanRequiresPin() =>
@@ -1425,6 +1466,10 @@ class SyncRepository {
     _keyLanRequiresPin,
     _keyServerTlsEnabled,
     _keyInterconnectPublicUrls,
+    // P2P：私钥外带 = 两台设备同一个 NodeId；开关与中继是本机的意愿与网络环境。
+    _keyInterconnectP2pEnabled,
+    _keyInterconnectP2pSecret,
+    _keyInterconnectP2pRelayUrls,
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,

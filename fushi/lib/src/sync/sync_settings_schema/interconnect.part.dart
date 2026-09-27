@@ -1054,6 +1054,10 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
 
   /// 公网 / 反代 / DDNS 地址（每行一个），经 /api/host/addresses 公布给已配对设备。
   late final TextEditingController _publicUrlsController;
+
+  /// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §6）。
+  bool _p2pEnabled = false;
+  late final TextEditingController _p2pRelayController;
   bool _loaded = false;
 
   // TODO-961 M1b: 已配对设备（per-peer token 表 fushi_paired_peers 的行）。开启
@@ -1071,6 +1075,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     super.initState();
     _portController = TextEditingController(text: '$_port');
     _publicUrlsController = TextEditingController();
+    _p2pRelayController = TextEditingController();
     _serverController.addListener(_onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
     _syncSettings(widget.settingsContext)
@@ -1087,6 +1092,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         .removeListener(_onRoleRevision);
     _portController.dispose();
     _publicUrlsController.dispose();
+    _p2pRelayController.dispose();
     // NOTE: do NOT stop the server here. It is owned app-wide by AppModel now
     // (BUG-085); leaving this settings page must not kill the running host.
     super.dispose();
@@ -1119,9 +1125,13 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     final List<FushiPairedPeerRow> peers =
         await _serverController.pairedPeers();
     final List<String> publicUrls = await repo.getInterconnectPublicUrls();
+    final bool p2pEnabled = await repo.isInterconnectP2pEnabled();
+    final List<String> relayUrls = await repo.getInterconnectP2pRelayUrls();
     if (mounted) {
       _publicUrlsController.text = publicUrls.join('\n');
+      _p2pRelayController.text = relayUrls.join('\n');
       setState(() {
+        _p2pEnabled = p2pEnabled;
         _enabled = enabled;
         _tlsEnabled = tlsEnabled;
         _port = port;
@@ -1343,6 +1353,40 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               minLines: 1,
               onChanged: _setPublicUrls,
             ),
+            // P2P 隧道：原生库随包的平台才出现（缺库时整个能力不可用）。
+            if (InterconnectP2pRuntime.isAvailable) ...<Widget>[
+              const SizedBox(height: 8),
+              AdaptiveSettingsSwitchRow(
+                title: t.sync_p2p_enable,
+                subtitle: t.sync_p2p_enable_hint,
+                value: _p2pEnabled,
+                onChanged: (bool v) async {
+                  setState(() => _p2pEnabled = v);
+                  await _serverController.setP2pEnabled(v);
+                },
+              ),
+              if (_p2pEnabled) ...<Widget>[
+                FushiTextField(
+                  controller: _p2pRelayController,
+                  labelText: t.sync_p2p_relay_urls,
+                  hintText: t.sync_p2p_relay_urls_hint,
+                  keyboardType: TextInputType.multiline,
+                  maxLines: 3,
+                  minLines: 1,
+                ),
+                // 显式保存才重建端点：多行框里回车只是换行，逐字重建又会在半截
+                // 地址上反复断连。
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => _serverController.setP2pRelayUrls(
+                      _p2pRelayController.text.split(RegExp(r'[\r\n]+')),
+                    ),
+                    child: Text(t.dialog_save),
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 12),
             Text(t.sync_server_token,
                 style: Theme.of(context).textTheme.labelSmall),

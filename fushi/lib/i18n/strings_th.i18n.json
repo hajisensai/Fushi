@@ -5705,5 +5705,9 @@
   "sync_pair_nfc_written": "NFC tag written",
   "sync_pair_nfc_failed": "Couldn't write the NFC tag. Make sure NFC is on and the tag is writable.",
   "sync_server_public_urls": "Public / reverse proxy addresses",
-  "sync_server_public_urls_hint": "One per line, e.g. https://home.example.com. Paired devices pick these up automatically."
+  "sync_server_public_urls_hint": "One per line, e.g. https://home.example.com. Paired devices pick these up automatically.",
+  "sync_p2p_enable": "Allow remote connections over a P2P tunnel",
+  "sync_p2p_enable_hint": "For when neither side has a public IP. Uses iroh's relay and discovery servers, which can see this device's IP address. Video may be slow when the connection goes through a relay.",
+  "sync_p2p_relay_urls": "Self-hosted relays (optional)",
+  "sync_p2p_relay_urls_hint": "One iroh-relay URL per line. Leave empty to use iroh's public relays."
 }

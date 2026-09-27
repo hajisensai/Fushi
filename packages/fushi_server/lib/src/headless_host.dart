@@ -16,8 +16,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
-import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
-    show decodeInterconnectPublicUrls, kInterconnectPublicUrlsPref;
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
@@ -85,6 +84,7 @@ class HeadlessHost {
 
   FushiSyncServer? _server;
   LanAdvertiser? _advertiser;
+  InterconnectP2pRuntime? _p2p;
   MangaOcrServiceImpl? _ocrService;
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
@@ -185,9 +185,9 @@ class HeadlessHost {
       ..pairedPeerTokensProvider = _loadPairedPeerTokens
       // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
       ..hostId = identity.deviceId
-      ..publicUrlsProvider = (() async => decodeInterconnectPublicUrls(
-          prefs.getPref(kInterconnectPublicUrlsPref)));
+      ..publicUrlsProvider = (() async => config.publicUrls);
     await server.start();
+    await _attachP2p(server, tls: securityContext != null);
     _server = server;
 
     _advertiser = LanAdvertiser(
@@ -204,10 +204,40 @@ class HeadlessHost {
     );
   }
 
+  /// P2P 隧道（配置 `p2p: true` 且随包带了 libfushi_p2p 时）：起 iroh 端点、开
+  /// 信任区监听口、把 `p2p://<nodeId>` 加进地址集。私钥存服务端偏好表（设备身份，
+  /// 不进用户手改的配置文件）。失败只留痕，不影响互联本身。
+  Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) async {
+    if (!config.p2p) return;
+    if (!InterconnectP2pRuntime.isAvailable) {
+      engineLog.logDiagnostic(
+        'HeadlessHost',
+        'p2p: true 但没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB），P2P 隧道未启用',
+      );
+      return;
+    }
+    final InterconnectP2pRuntime runtime = InterconnectP2pRuntime(
+      loadSecret: () async => prefs.getPref(kInterconnectP2pSecretPref) as String?,
+      saveSecret: (String secret) =>
+          prefs.setPref(kInterconnectP2pSecretPref, secret),
+      loadRelayUrls: () async => config.p2pRelays,
+    );
+    final InterconnectP2pNode? node = await runtime.ensure();
+    if (node == null) return;
+    _p2p = runtime;
+    final int port = await server.startP2pListener();
+    node.hostListen(port);
+    server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+    engineLog.logDiagnostic('HeadlessHost', 'p2p node ${node.nodeId}');
+  }
+
   Future<void> stop() async {
     final LanAdvertiser? adv = _advertiser;
     _advertiser = null;
     await adv?.stop();
+    final InterconnectP2pRuntime? p2p = _p2p;
+    _p2p = null;
+    await p2p?.dispose();
     final FushiSyncServer? server = _server;
     _server = null;
     await server?.stop();

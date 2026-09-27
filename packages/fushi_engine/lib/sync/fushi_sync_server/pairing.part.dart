@@ -23,7 +23,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 只在对端不支持 v2 时才回落 v1）。
     final String? pairRemote = _remoteAddress(request);
     final bool v1PinRequired = FushiPairingProtocol.computePinRequired(
-      isLanPeer: FushiPairingProtocol.isPrivateLanAddress(pairRemote),
+      isLanPeer: _isLanPeerRequest(request, pairRemote),
       lanRequiresPin:
           await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false)),
     );
@@ -102,7 +102,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       );
     }
 
-    final bool isLanPeer = FushiPairingProtocol.isPrivateLanAddress(remote);
+    final bool isLanPeer = _isLanPeerRequest(request, remote);
     final bool lanRequiresPin =
         await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
     final bool pinRequired = FushiPairingProtocol.computePinRequired(
@@ -531,6 +531,12 @@ String? _pinRateLimitSourceKey(FushiPairSession session) {
   if (remote != null && remote.isNotEmpty) return 'ip:$remote';
   return null;
 }
+
+/// 配对的「局域网对端」判据：P2P 隧道进来的请求来源永远是 127.0.0.1，必须按
+/// 公网处理（强制 PIN / 票据），否则拿到 NodeId 的任何人都能免 PIN 配上。
+bool _isLanPeerRequest(shelf.Request request, String? remote) =>
+    request.context[kFushiRequestZone] != 'p2p' &&
+    FushiPairingProtocol.isPrivateLanAddress(remote);
 
 /// Source IP of the request's TCP connection, or null when shelf_io did not
 /// attach connection info (e.g. some test harnesses).

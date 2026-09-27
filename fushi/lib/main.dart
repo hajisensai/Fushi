@@ -26,8 +26,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show runInterconnectLinkPairingFlow;
+import 'package:fushi/src/sync/interconnect_p2p_app.dart'
+    show installInterconnectP2pClient;
+import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
@@ -62,7 +63,10 @@ import 'package:fushi/src/storage/data_root_migration_view.dart';
 import 'package:fushi/src/startup/loading_watchdog_view.dart';
 import 'package:fushi/src/sync/backup_import_overlay_view.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show backupImportRestart, dataRootMigrationRestart;
+    show
+        backupImportRestart,
+        dataRootMigrationRestart,
+        runInterconnectLinkPairingFlow;
 import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
@@ -551,6 +555,9 @@ void main([List<String> args = const <String>[]]) {
         .read(profileViewModelProvider.notifier)
         .autoApplyBinding(mediaType: ProfileMediaKind.browser);
     await appModel.initialise();
+    // 互联 P2P 隧道（原生库可用才装）：client 选路在直连全失败后经隧道兜底
+    // （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+    installInterconnectP2pClient(SyncRepository(appModel.database));
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
     // 用户还在看主页/书架时就把冷启动成本吃掉：~500-1500ms。

@@ -5705,5 +5705,9 @@
   "sync_pair_nfc_written": "NFC 贴纸已写入",
   "sync_pair_nfc_failed": "写入 NFC 贴纸失败。请确认已开启 NFC 且贴纸可写。",
   "sync_server_public_urls": "公网 / 反代地址",
-  "sync_server_public_urls_hint": "每行一个，例如 https://home.example.com。已配对设备会自动学到。"
+  "sync_server_public_urls_hint": "每行一个，例如 https://home.example.com。已配对设备会自动学到。",
+  "sync_p2p_enable": "允许经 P2P 隧道远程连接",
+  "sync_p2p_enable_hint": "用于双方都没有公网 IP 的情况。会用到 iroh 的中继与发现服务器（它们能看到本机 IP）；连接走中继时看视频可能较慢。",
+  "sync_p2p_relay_urls": "自建中继（可选）",
+  "sync_p2p_relay_urls_hint": "每行一个 iroh-relay 地址；留空则用 iroh 公共中继。"
 }

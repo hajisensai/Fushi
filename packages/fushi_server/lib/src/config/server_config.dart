@@ -74,6 +74,9 @@ class ServerConfig {
     required this.torrentEngine,
     required this.torrentLibraryPath,
     required this.torrentListen,
+    this.publicUrls = const <String>[],
+    this.p2p = false,
+    this.p2pRelays = const <String>[],
   });
 
   static const int defaultPort = 38765;
@@ -162,6 +165,16 @@ class ServerConfig {
   final String? torrentLibraryPath;
   final String torrentListen;
 
+  /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  final List<String> publicUrls;
+
+  /// 允许经 P2P 隧道远程连接（iroh；默认关：会连 iroh 公共中继与发现服务）。
+  final bool p2p;
+
+  /// 自建 iroh-relay 地址；空 = iroh 公共中继。
+  final List<String> p2pRelays;
+
   ServerConfig copyWith({
     int? port,
     String? bind,
@@ -184,6 +197,9 @@ class ServerConfig {
     String? torrentEngine,
     String? torrentLibraryPath,
     String? torrentListen,
+    List<String>? publicUrls,
+    bool? p2p,
+    List<String>? p2pRelays,
   }) =>
       ServerConfig(
         dataDir: dataDir,
@@ -208,6 +224,9 @@ class ServerConfig {
         torrentEngine: torrentEngine ?? this.torrentEngine,
         torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
         torrentListen: torrentListen ?? this.torrentListen,
+        publicUrls: publicUrls ?? this.publicUrls,
+        p2p: p2p ?? this.p2p,
+        p2pRelays: p2pRelays ?? this.p2pRelays,
       );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -260,8 +279,17 @@ class ServerConfig {
       torrentEngine: engine,
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
+      publicUrls: _strings(map['public_urls']),
+      p2p: _bool(map['p2p']) ?? base.p2p,
+      p2pRelays: _strings(map['p2p_relays']),
     );
   }
+
+  static List<String> _strings(Object? v) => <String>[
+        if (v is List)
+          for (final Object? e in v)
+            if (e != null && '$e'.trim().isNotEmpty) '$e'.trim(),
+      ];
 
   static Future<ServerConfig> load(File file) async {
     final String text = await file.readAsString();
@@ -288,6 +316,15 @@ class ServerConfig {
       b.writeln('onnxruntime_library: ${_q(ortLibraryPath!)}');
     }
     b.writeln('upload_quota_bytes: $uploadQuotaBytes');
+    b.writeln('public_urls:${publicUrls.isEmpty ? ' []' : ''}');
+    for (final String u in publicUrls) {
+      b.writeln('  - ${_q(u)}');
+    }
+    b.writeln('p2p: $p2p');
+    b.writeln('p2p_relays:${p2pRelays.isEmpty ? ' []' : ''}');
+    for (final String u in p2pRelays) {
+      b.writeln('  - ${_q(u)}');
+    }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');

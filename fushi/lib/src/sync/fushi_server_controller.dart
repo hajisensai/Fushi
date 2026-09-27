@@ -23,6 +23,8 @@ import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
@@ -686,6 +688,7 @@ class FushiSyncServerController extends ChangeNotifier {
     }
     _server = server;
     await repo.setServerEnabled(true);
+    await _attachP2p(server, tls: securityContext != null);
     // Advertise the ACTUAL bound port so peers discover the host even when the
     // requested port was 0/auto or differs from the configured one.
     // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
@@ -730,6 +733,8 @@ class FushiSyncServerController extends ChangeNotifier {
     _broadcast = null;
     final FushiSyncServer? server = _server;
     _server = null;
+    // 端点留着（client 选路也用它），只停入站；信任区监听口随 server.stop 关。
+    currentAppInterconnectP2pRuntime?.current?.hostStop();
     await broadcast?.stop();
     await server?.stop();
     await _gameStreamHost?.stop(reason: 'host_shutdown');
@@ -742,6 +747,56 @@ class FushiSyncServerController extends ChangeNotifier {
     if (persistDisabled) await _repo.setServerEnabled(false);
     notifyListeners();
   }
+
+  /// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）：用户开了
+  /// 「允许经 P2P 隧道远程连接」且原生库可用时，起端点、开信任区监听口、把
+  /// `p2p://<nodeId>` 加进地址集。失败只留痕，不影响 host 本身。
+  Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) async {
+    if (!InterconnectP2pRuntime.isAvailable) return;
+    if (!await _repo.isInterconnectP2pEnabled()) return;
+    final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
+    final InterconnectP2pNode? node = await runtime.ensure();
+    if (node == null || !identical(_server, server)) return;
+    try {
+      final int port = await server.startP2pListener();
+      node.hostListen(port);
+      server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('FushiServerController.attachP2p', e, st);
+    }
+  }
+
+  Future<void> _detachP2p(FushiSyncServer server) async {
+    currentAppInterconnectP2pRuntime?.current?.hostStop();
+    server.extraAddressesProvider = null;
+    await server.stopP2pListener();
+  }
+
+  /// 切换「允许经 P2P 隧道远程连接」，host 正在跑时即时生效。
+  Future<void> setP2pEnabled(bool enabled) async {
+    await _repo.setInterconnectP2pEnabled(enabled);
+    final FushiSyncServer? server = _server;
+    if (server != null) {
+      if (enabled) {
+        await _attachP2p(server, tls: _serverUsesTls(server));
+      } else {
+        await _detachP2p(server);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 改自建中继：重建端点（NodeId 不变，私钥是持久的），host 在跑时重新挂上。
+  Future<void> setP2pRelayUrls(List<String> urls) async {
+    await _repo.setInterconnectP2pRelayUrls(urls);
+    final FushiSyncServer? server = _server;
+    if (server != null) await _detachP2p(server);
+    await currentAppInterconnectP2pRuntime?.restart();
+    if (server != null) await _attachP2p(server, tls: _serverUsesTls(server));
+    notifyListeners();
+  }
+
+  bool _serverUsesTls(FushiSyncServer server) => server.usesTls;
 
   /// 扫码配对：签发一次性票据并组装二维码 / 复制链接用的配对链接
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。host 没在跑 → null。

@@ -76,6 +76,9 @@ part 'fushi_sync_server/game_stream.part.dart';
 /// and verified on real devices; it is intentionally NOT bolted on here. Until
 /// then, treat LAN sync as unencrypted and only use it on a network you trust.
 
+/// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
+const String kFushiRequestZone = 'fushi.zone';
+
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
 class FushiPairRequest {
@@ -448,6 +451,9 @@ class FushiSyncServer {
   Set<String>? _cachedPeerTokens;
 
   bool get isRunning => _server != null;
+
+  /// 是否以 HTTPS 对外服务（P2P 地址据此带 `?tls=1`）。
+  bool get usesTls => _securityContext != null;
   int get port => _server?.port ?? _requestedPort;
 
   static String generateToken() {
@@ -471,10 +477,7 @@ class FushiSyncServer {
     // port-in-use error — and since it runs before serve(), a failure leaves no
     // half-bound socket to roll back.
     await Directory(syncDataDir).create(recursive: true);
-    final handler = const shelf.Pipeline()
-        .addMiddleware(_gzipTextMiddleware())
-        .addMiddleware(_authMiddleware())
-        .addHandler(_handleRequest);
+    final shelf.Handler handler = _buildHandler();
     try {
       _server = await _bindListener(handler);
     } on SocketException catch (e) {
@@ -483,6 +486,41 @@ class FushiSyncServer {
       }
       rethrow;
     }
+  }
+
+  shelf.Handler _buildHandler() => const shelf.Pipeline()
+      .addMiddleware(_gzipTextMiddleware())
+      .addMiddleware(_authMiddleware())
+      .addHandler(_handleRequest);
+
+  /// P2P 隧道的信任区监听口（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+  HttpServer? _p2pServer;
+
+  /// 为 P2P 隧道单独开一个 loopback 监听口，与主监听口同一个 handler，但请求带
+  /// `fushi.zone = p2p` 标记。隧道流量在 host 看来来自 127.0.0.1——不单独标出来，
+  /// 配对判据会把它当「本机 / 局域网」免 PIN，任何拿到 NodeId 的人都能配上。
+  /// 返回监听端口（重复调用返回同一个）。同样起 TLS：隧道里仍是端到端钉扎的
+  /// 自签证书，与直连同一套信任。
+  Future<int> startP2pListener() async {
+    final HttpServer? existing = _p2pServer;
+    if (existing != null) return existing.port;
+    final shelf.Handler inner = _buildHandler();
+    final HttpServer server = await shelf_io.serve(
+      (shelf.Request request) => inner(
+        request.change(context: <String, Object>{kFushiRequestZone: 'p2p'}),
+      ),
+      InternetAddress.loopbackIPv4,
+      0,
+      securityContext: _securityContext,
+    );
+    _p2pServer = server;
+    return server.port;
+  }
+
+  Future<void> stopP2pListener() async {
+    final HttpServer? server = _p2pServer;
+    _p2pServer = null;
+    await server?.close(force: true);
   }
 
   /// 仅本机 → loopback v4。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
@@ -528,6 +566,7 @@ class FushiSyncServer {
   final ExportPackageCache _exportCache = ExportPackageCache();
 
   Future<void> stop() async {
+    await stopP2pListener();
     await _server?.close(force: true);
     _server = null;
     _exportCache.dispose();
