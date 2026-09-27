@@ -507,6 +507,21 @@ SettingsDestination buildVideoDestination() {
               );
             },
           ),
+          // 下载字幕按内嵌字幕轨自动对齐（embedded_reference_subtitle_sync.dart）。
+          // 纯下载期行为，不进播放页面板（无 VideoPlacement）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.reference_sync',
+            title: t.video_setting_subtitle_reference_sync,
+            subtitle: t.video_setting_subtitle_reference_sync_hint,
+            icon: Icons.sync_alt_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.subtitleReferenceSyncEnabled,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setSubtitleReferenceSyncEnabled(
+                value,
+              );
+            },
+          ),
           // TODO-840 Part B：遮蔽模式三态选择器——不遮蔽 / 模糊（听力沉浸）/ 隐藏。
           // 持久化是 preferences 层 lazy 投影（见
           // [PreferencesRepository.videoSubtitleObscureMode]），无新 Drift schema。
