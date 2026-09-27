@@ -153,7 +153,25 @@ class VideoAcquisitionService {
   Future<void> confirm() =>
       choose(VideoAcquisitionSlot.resource, kVideoAcquisitionOptionConfirm);
 
-  Future<void> cancel() => dispatch(const VideoAcquisitionCancelEvent());
+  /// 取消。有效果在飞时（找系列要走 TMDB + MAL 关联 + 联网资料，可能一两分钟）
+  /// **立即**归约，不排在那个效果后面：reducer 是纯函数，取消只产出 Close，结果
+  /// 回来时会话已是终态、回灌事件被丢弃。在飞的请求本身跑完即止，不再有后续。
+  /// 提交在飞时 reducer 不接取消（见 `_cancel`），这里不会把它撕开。
+  Future<void> cancel() {
+    if (!_draining) return dispatch(const VideoAcquisitionCancelEvent());
+    if (_disposed) return Future<void>.value();
+    final (
+      VideoAcquisitionState next,
+      List<VideoAcquisitionEffect> _,
+    ) = reduceVideoAcquisition(
+      _state,
+      const VideoAcquisitionCancelEvent(),
+      _defaults,
+    );
+    _state = next;
+    _states.add(next);
+    return Future<void>.value();
+  }
 
   /// 「再下一部」。
   Future<void> restart() => dispatch(const VideoAcquisitionRestartEvent());

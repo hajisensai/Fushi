@@ -71,6 +71,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi/src/ai/ai_video_franchise_assistant.dart';
 import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
@@ -2078,8 +2079,14 @@ class _HomePageState extends BasePageState<HomePage>
             (await _matchingVideoDiscoverySubscriptions(reference))
                 .any((VideoDownloadSubscriptionRow row) => row.enabled),
         searchResources: registry.search,
-        loadFranchise: (VideoDiscoveryItem item) async =>
-            discoveryService?.loadFranchise(item),
+        // 资料源（TMDB collection + MAL 关联）+ 联网资料补全（维基 → AI 列作品 →
+        // 逐部回资料源核对），见 ai_video_franchise_assistant.dart。
+        loadFranchise: createPreferencesVideoFranchiseLoader(
+          prefs,
+          base: (VideoDiscoveryItem item) async =>
+              discoveryService?.loadFranchise(item),
+          searchWorks: discovery.load,
+        ),
         parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
         decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
         persistPreference:

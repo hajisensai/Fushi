@@ -15,6 +15,7 @@ import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_reply_json.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
@@ -22,7 +23,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart'
 export 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
 /// 系统提示：任务是「本地目录对应哪个候选作品」，只回一个 JSON 对象。
-String buildAiVideoIdentitySystemPrompt({required String locale}) => '''
+String buildAiVideoIdentitySystemPrompt({required String locale}) =>
+    '''
 You match a local video folder to exactly one of the candidate works returned by
 a metadata provider. The candidates were already fetched; you only choose among
 them and must not invent other works or identifiers.
@@ -45,11 +47,74 @@ Rules:
 - Compare titles across languages and romanizations (Japanese, Chinese,
   Korean, English, romaji), ignoring case, punctuation and release-group tags.
 - "reason" is one short sentence written in the language with tag "$locale".
+$kAiIdentityReferenceRule''';
+
+/// 带联网资料时追加的规则（刮削与 AI 下视频两套系统提示共用）。
+const String kAiIdentityReferenceRule = '''
+- The user message may contain a "reference" array of encyclopedia excerpts
+  fetched by the app. Use it only as background knowledge (titles in other
+  languages, release years, which entries are sequels, movies or remakes). It
+  never adds candidates: the answer must still be one of the candidate keys or
+  null.
 ''';
 
-/// 用户侧提示：把本地线索和候选一起序列化成 JSON，模型不用猜字段含义。
-String buildAiVideoIdentityUserPrompt(AiVideoIdentityQuery query) =>
-    const JsonEncoder.withIndent('  ').convert(query.toJson());
+/// 参考资料最多几页、每页多少字：识别只要一小段背景，别把上下文撑爆。
+const int kAiIdentityReferenceMaxPages = 3;
+const int kAiIdentityReferenceMaxChars = 3000;
+
+/// 为这次识别抓联网资料：按第一个本地标题搜，每个来源取一页。失败 / 没开来源 →
+/// 空（识别照常，只是没有背景）。
+Future<List<WebKnowledgePage>> fetchAiIdentityReferences(
+  WebKnowledgeClient? web,
+  AiVideoIdentityQuery query,
+) async {
+  if (web == null || !web.isEnabled || query.localTitles.isEmpty) {
+    return const <WebKnowledgePage>[];
+  }
+  final List<WebKnowledgePage> pages = await web.search(
+    query.localTitles.first,
+    maxCharsPerPage: kAiIdentityReferenceMaxChars,
+  );
+  return pickDiverseWebKnowledgePages(pages, kAiIdentityReferenceMaxPages);
+}
+
+/// 按来源类型轮流挑页：先每种类型（百科 / ANN / TVmaze）各取第一页，再按原顺序
+/// 补满 [limit]。只按顺序取前几页的话，三个维基永远占满名额，ANN / TVmaze 这类
+/// 对动画 / 剧集身份最有用的清单页白抓。
+List<WebKnowledgePage> pickDiverseWebKnowledgePages(
+  List<WebKnowledgePage> pages,
+  int limit,
+) {
+  final List<WebKnowledgePage> picked = <WebKnowledgePage>[];
+  final Set<WebKnowledgeSiteKind> seenKinds = <WebKnowledgeSiteKind>{};
+  for (final WebKnowledgePage page in pages) {
+    if (picked.length >= limit) break;
+    if (seenKinds.add(page.site.kind)) picked.add(page);
+  }
+  for (final WebKnowledgePage page in pages) {
+    if (picked.length >= limit) break;
+    if (!picked.contains(page)) picked.add(page);
+  }
+  return List<WebKnowledgePage>.unmodifiable(picked);
+}
+
+/// 用户侧提示：把本地线索和候选一起序列化成 JSON，模型不用猜字段含义；有联网
+/// 资料时挂在 `reference` 下。
+String buildAiVideoIdentityUserPrompt(
+  AiVideoIdentityQuery query, {
+  List<WebKnowledgePage> references = const <WebKnowledgePage>[],
+}) => const JsonEncoder.withIndent('  ').convert(<String, Object?>{
+  ...query.toJson(),
+  if (references.isNotEmpty)
+    'reference': <Map<String, Object?>>[
+      for (final WebKnowledgePage page in references)
+        <String, Object?>{
+          'source': page.url.toString(),
+          'title': page.title,
+          'text': page.text,
+        },
+    ],
+});
 
 /// 解析模型回复。
 ///
@@ -88,6 +153,7 @@ Future<AiVideoIdentityDecision> requestAiVideoIdentity({
   required AiChatClient client,
   required AiProviderConfig provider,
   required AiVideoIdentityQuery query,
+  List<WebKnowledgePage> references = const <WebKnowledgePage>[],
 }) async {
   final String reply = await client.complete(
     provider: provider,
@@ -95,7 +161,9 @@ Future<AiVideoIdentityDecision> requestAiVideoIdentity({
       AiChatMessage.system(
         buildAiVideoIdentitySystemPrompt(locale: query.locale),
       ),
-      AiChatMessage.user(buildAiVideoIdentityUserPrompt(query)),
+      AiChatMessage.user(
+        buildAiVideoIdentityUserPrompt(query, references: references),
+      ),
     ],
     // 回复只有一个小 JSON 对象；给 512 是留给推理型模型偶尔多话。
     maxTokens: 512,
@@ -111,9 +179,13 @@ Future<AiVideoIdentityDecision> requestAiVideoIdentity({
 ///
 /// 失败先记诊断日志再原样抛出：协调器（引擎包，无日志服务）据此把本趟 run 余下
 /// 的歧义作品跳过 AI，本条照旧进人工确认 / 待确认。
+///
+/// 联网资料（设置 › AI › 联网资料）开着时先抓一小段背景一起给模型；抓失败不影响
+/// 识别本身。[webFactory] 同样只给测试注入。
 AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
   PreferencesRepository prefsRepo, {
   AiChatClient Function()? clientFactory,
+  WebKnowledgeClient Function()? webFactory,
 }) => (AiVideoIdentityQuery query) async {
   final AiProviderConfig? provider = prefsRepo.aiFeatureAssignments.resolve(
     AiFeature.videoIdentify,
@@ -123,11 +195,15 @@ AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
     return null;
   }
   final AiChatClient client = clientFactory?.call() ?? AiChatClient();
+  final WebKnowledgeClient web =
+      webFactory?.call() ??
+      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
   try {
     return await requestAiVideoIdentity(
       client: client,
       provider: provider,
       query: query,
+      references: await fetchAiIdentityReferences(web, query),
     );
   } catch (error, stack) {
     ErrorLogService.instance.logDiagnostic(
@@ -137,5 +213,6 @@ AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
     rethrow;
   } finally {
     client.close();
+    web.close();
   }
 };

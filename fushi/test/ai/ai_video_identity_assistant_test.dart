@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -136,6 +137,55 @@ void main() {
       expect(synopsis, endsWith('…'));
     });
 
+    test('联网资料挂在 reference 下；不带时与原提示一致', () {
+      final AiVideoIdentityQuery query = _query();
+      final Map<String, Object?> plain =
+          jsonDecode(buildAiVideoIdentityUserPrompt(query))
+              as Map<String, Object?>;
+      expect(plain.containsKey('reference'), isFalse);
+      final Map<String, Object?> withRef =
+          jsonDecode(
+                buildAiVideoIdentityUserPrompt(
+                  query,
+                  references: <WebKnowledgePage>[
+                    WebKnowledgePage(
+                      site: kBuiltinWebKnowledgeSites[1],
+                      title: 'ドラえもん (2005年のテレビアニメ)',
+                      url: Uri.parse('https://ja.wikipedia.org/wiki/x'),
+                      text: '2005年4月から放送',
+                    ),
+                  ],
+                ),
+              )
+              as Map<String, Object?>;
+      final List<Object?> reference = withRef['reference']! as List<Object?>;
+      expect(reference.single, containsPair('text', '2005年4月から放送'));
+      expect(
+        buildAiVideoIdentitySystemPrompt(locale: 'zh-CN'),
+        contains('"reference"'),
+      );
+    });
+
+    test('fetchAiIdentityReferences：没开来源不请求；按第一个本地标题搜，最多 3 页', () async {
+      expect(await fetchAiIdentityReferences(null, _query()), isEmpty);
+      final _FakeWeb web = _FakeWeb(<WebKnowledgePage>[
+        for (int i = 0; i < 5; i++)
+          WebKnowledgePage(
+            site: kBuiltinWebKnowledgeSites.first,
+            title: 'p$i',
+            url: Uri.parse('https://zh.wikipedia.org/wiki/p$i'),
+            text: 't',
+          ),
+      ]);
+      final List<WebKnowledgePage> pages = await fetchAiIdentityReferences(
+        web,
+        _query(),
+      );
+      expect(web.queries, <String>['ドラえもん 2005']);
+      expect(web.maxChars, kAiIdentityReferenceMaxChars);
+      expect(pages, hasLength(kAiIdentityReferenceMaxPages));
+    });
+
     test('系统提示要求只回 JSON、说明 null 规则、带上 locale', () {
       final String prompt = buildAiVideoIdentitySystemPrompt(locale: 'ja');
       expect(prompt, contains('"key"'));
@@ -238,4 +288,58 @@ void main() {
       expect(parseVideoScrapeAiIdentityNote('ai:matched'), isNull);
     });
   });
+
+  test('pickDiverseWebKnowledgePages：每种来源先各取一页，再按原顺序补满', () {
+    WebKnowledgePage page(WebKnowledgeSite site, String title) =>
+        WebKnowledgePage(
+          site: site,
+          title: title,
+          url: Uri.parse('https://example.org/$title'),
+          text: 't',
+        );
+    final List<WebKnowledgeSite> sites = kBuiltinWebKnowledgeSites;
+    WebKnowledgeSite byId(String id) =>
+        sites.firstWhere((WebKnowledgeSite s) => s.id == id);
+    final List<WebKnowledgePage> pages = <WebKnowledgePage>[
+      page(byId('wikipedia_zh'), 'zh'),
+      page(byId('wikipedia_ja'), 'ja'),
+      page(byId('wikipedia_en'), 'en'),
+      page(byId('ann'), 'ann'),
+      page(byId('tvmaze'), 'tvmaze'),
+    ];
+    expect(
+      pickDiverseWebKnowledgePages(
+        pages,
+        3,
+      ).map((WebKnowledgePage p) => p.title),
+      <String>['zh', 'ann', 'tvmaze'],
+    );
+    expect(
+      pickDiverseWebKnowledgePages(
+        pages,
+        4,
+      ).map((WebKnowledgePage p) => p.title),
+      <String>['zh', 'ann', 'tvmaze', 'ja'],
+    );
+  });
+}
+
+class _FakeWeb extends WebKnowledgeClient {
+  _FakeWeb(this.pages)
+    : super(sites: <WebKnowledgeSite>[kBuiltinWebKnowledgeSites.first]);
+
+  final List<WebKnowledgePage> pages;
+  final List<String> queries = <String>[];
+  int? maxChars;
+
+  @override
+  Future<List<WebKnowledgePage>> search(
+    String query, {
+    int pagesPerSource = 1,
+    int maxCharsPerPage = 12000,
+  }) async {
+    queries.add(query);
+    maxChars = maxCharsPerPage;
+    return pages;
+  }
 }

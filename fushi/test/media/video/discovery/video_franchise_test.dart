@@ -2,6 +2,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show MalRelatedWorks, MalRelation;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 
@@ -234,6 +236,55 @@ void main() {
     );
   });
 
+  test('合并去重看别名与外部 id：TMDB / MAL 同一部电影只留一条', () {
+    final VideoDiscoveryItem tmdbMovie = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'tmdb',
+        mediaId: '500',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: '名侦探柯南：贝克街的亡灵',
+        originalTitle: '劇場版 名探偵コナン ベイカー街の亡霊',
+        year: 2002,
+        tmdbId: 500,
+      ),
+    );
+    final VideoDiscoveryItem malByAlias = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '600',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: '名探偵コナン ベイカー街の亡霊',
+        aliases: const <String>['劇場版 名探偵コナン ベイカー街の亡霊'],
+        year: 2002,
+      ),
+    );
+    final VideoDiscoveryItem malById = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '601',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: 'Totally Different Romanization',
+        externalIds: const <String, String>{'tmdb': '500'},
+      ),
+    );
+    final VideoFranchise merged = mergeVideoFranchises(<VideoFranchise?>[
+      VideoFranchise(
+        name: 'Conan',
+        series: const <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[tmdbMovie],
+      ),
+      VideoFranchise(
+        name: 'Conan',
+        series: const <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[malByAlias, malById],
+      ),
+    ])!;
+    expect(merged.movies.single.reference.mediaId, '500');
+  });
+
   group('videoFranchiseCollectionMatches', () {
     bool matches(String name, String title) => videoFranchiseCollectionMatches(
       TmdbCollectionHit(id: 1, name: name),
@@ -255,4 +306,200 @@ void main() {
       expect(matches('Monster High Collection', 'Monster'), isFalse);
     });
   });
+  group('resolveMalFranchise', () {
+    MalRelatedWorks node(
+      int id,
+      String title,
+      String type,
+      int year,
+      List<MalRelation> relations,
+    ) => MalRelatedWorks(
+      work: VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: type == 'Movie'
+            ? VideoMetadataMediaKind.movie
+            : VideoMetadataMediaKind.tv,
+        title: title,
+        year: year,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: 'mal', value: '$id', isDefault: true),
+        ],
+      ),
+      malType: type,
+      relations: relations,
+    );
+
+    test('沿续作 / 外传 / 重制走；OVA、PV 不收；Other / Spin-off 不走', () async {
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Doraemon', 'TV', 2005, const <MalRelation>[
+          MalRelation(relation: 'Side story', malId: 2),
+          MalRelation(relation: 'Alternative version', malId: 3),
+          MalRelation(relation: 'Other', malId: 9),
+          MalRelation(relation: 'Spin-off', malId: 8),
+        ]),
+        2: node(2, 'Movie 1980', 'Movie', 1980, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: 4),
+          MalRelation(relation: 'Parent story', malId: 1),
+        ]),
+        3: node(3, 'Doraemon 1979', 'TV', 1979, const <MalRelation>[]),
+        4: node(4, 'Movie 1981', 'Movie', 1981, const <MalRelation>[
+          MalRelation(relation: 'Side story', malId: 5),
+        ]),
+        5: node(5, 'Bonus OVA', 'OVA', 1982, const <MalRelation>[]),
+        8: node(8, 'Spin-off', 'TV', 2010, const <MalRelation>[]),
+        9: node(9, 'Crossover', 'Movie', 2011, const <MalRelation>[]),
+      });
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '1',
+          'Doraemon',
+          kind: VideoMetadataMediaKind.tv,
+          provider: 'mal',
+        ),
+      ))!;
+      expect(
+        franchise.series.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['3', '1'],
+      );
+      expect(
+        franchise.movies.map((VideoDiscoveryItem e) => e.reference.mediaId),
+        <String>['2', '4'],
+      );
+      expect(mal.fetched, isNot(contains(8)));
+      expect(mal.fetched, isNot(contains(9)));
+    });
+
+    test('走到上限就停', () async {
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        for (int i = 1; i <= 10; i++)
+          i: node(i, 'Movie $i', 'Movie', 1980 + i, <MalRelation>[
+            MalRelation(relation: 'Sequel', malId: i + 1),
+          ]),
+      });
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item('1', 'Movie 1', provider: 'mal'),
+        maxWorks: 3,
+      ))!;
+      expect(franchise.movies, hasLength(3));
+      expect(mal.fetched, hasLength(3));
+    });
+
+    test('锚点没有 MAL 身份：按标题搜，只认标题完全一致的', () async {
+      final _FakeMal mal = _FakeMal(
+        <int, MalRelatedWorks>{
+          7: node(7, 'Doraemon', 'TV', 2005, const <MalRelation>[]),
+        },
+        search: <String, List<VideoMetadataWork>>{
+          'Doraemon': <VideoMetadataWork>[
+            VideoMetadataWork(
+              provider: VideoMetadataProviderKind.mal,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'Doraemon: Nobita',
+              ids: const <VideoMetadataId>[
+                VideoMetadataId(type: 'mal', value: '99'),
+              ],
+            ),
+            VideoMetadataWork(
+              provider: VideoMetadataProviderKind.mal,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'Doraemon',
+              ids: const <VideoMetadataId>[
+                VideoMetadataId(type: 'mal', value: '7'),
+              ],
+            ),
+          ],
+        },
+      );
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item('100', 'Doraemon', kind: VideoMetadataMediaKind.tv),
+      ))!;
+      expect(franchise.series.single.reference.mediaId, '7');
+    });
+
+    test('走到一半请求失败：停下并交出已收集的', () async {
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Movie 1', 'Movie', 1980, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: 2),
+        ]),
+        2: node(2, 'Movie 2', 'Movie', 1981, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: 3),
+        ]),
+      }, failOn: 3);
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item('1', 'Movie 1', provider: 'mal'),
+      ))!;
+      expect(franchise.movies, hasLength(2));
+    });
+
+    test('同名新旧版按年份选起点', () async {
+      VideoMetadataWork hit(String id, int year) => VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Hunter x Hunter',
+        year: year,
+        ids: <VideoMetadataId>[VideoMetadataId(type: 'mal', value: id)],
+      );
+      final _FakeMal mal = _FakeMal(
+        <int, MalRelatedWorks>{
+          11: node(11, 'Hunter x Hunter', 'TV', 2011, const <MalRelation>[]),
+        },
+        search: <String, List<VideoMetadataWork>>{
+          'Hunter x Hunter': <VideoMetadataWork>[
+            hit('136', 1999),
+            hit('11', 2011),
+          ],
+        },
+      );
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '9',
+          'Hunter x Hunter',
+          kind: VideoMetadataMediaKind.tv,
+          year: 2011,
+        ),
+      ))!;
+      expect(franchise.series.single.reference.mediaId, '11');
+    });
+
+    test('搜不到 MAL 身份 → null', () async {
+      expect(
+        await resolveMalFranchise(
+          _FakeMal(const <int, MalRelatedWorks>{}),
+          _item('100', 'Nothing', kind: VideoMetadataMediaKind.tv),
+        ),
+        isNull,
+      );
+    });
+  });
+}
+
+class _FakeMal implements VideoFranchiseRelationSource {
+  _FakeMal(
+    this.works, {
+    this.search = const <String, List<VideoMetadataWork>>{},
+    this.failOn,
+  });
+
+  final int? failOn;
+
+  final Map<int, MalRelatedWorks> works;
+  final Map<String, List<VideoMetadataWork>> search;
+  final List<int> fetched = <int>[];
+
+  @override
+  Future<MalRelatedWorks?> fetchRelatedWorks(String malId) async {
+    final int id = int.parse(malId);
+    fetched.add(id);
+    if (id == failOn) throw StateError('jikan 504');
+    return works[id];
+  }
+
+  @override
+  Future<List<VideoMetadataWork>> searchAnime(String title) async =>
+      search[title] ?? const <VideoMetadataWork>[];
 }
