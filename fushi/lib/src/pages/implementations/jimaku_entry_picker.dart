@@ -187,7 +187,14 @@ class JimakuLanguagePicker extends StatelessWidget {
           selected: selectedLanguage == null,
           onSelected: enabled ? (_) => onSelected(null) : null,
         ),
-        for (final String language in kJimakuLanguageCodes)
+        // 选中的语言可能来自 AI 下视频写入的每系列记忆（西语、法语……不在这四种
+        // 里）：补一枚 chip，否则一个都不亮、点掉以后也选不回来。
+        for (final String language in <String>[
+          ...kJimakuLanguageCodes,
+          if (selectedLanguage != null &&
+              !kJimakuLanguageCodes.contains(selectedLanguage))
+            selectedLanguage!,
+        ])
           ChoiceChip(
             label: Text(jimakuLanguageLabel(language)),
             selected: selectedLanguage == language,

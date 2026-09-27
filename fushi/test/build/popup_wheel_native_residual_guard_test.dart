@@ -110,10 +110,16 @@ void main() {
           reason: '滚轮还原的是设备 DPR，不是纹理采集缩放；拿错了在 dpr == 采集'
               '缩放的机器上完全看不出来');
       expect(
-        RegExp(r'delta \* kScrollMultiplier \* \w+ \+ residual')
+        RegExp(r'dprScale \* static_cast<double>\(WHEEL_DELTA\)')
             .hasMatch(sendScrollBody),
         isTrue,
-        reason: '缩放系数必须乘进 scaled，且仍走 BUG-870 的 residual 累积',
+        reason: 'DPR 必须乘进每逻辑像素的 wheel 单位换算（BUG-2734 后的形式）',
+      );
+      expect(
+        sendScrollBody
+            .contains('delta * wheelUnitsPerLogicalPixel + residual'),
+        isTrue,
+        reason: '换算系数必须乘进 scaled，且仍走 BUG-870 的 residual 累积',
       );
     });
 
@@ -146,6 +152,31 @@ void main() {
         isFalse,
         reason: 'overlay 侧不得对 wheel delta 再做缩放/打折（parity 对照端）',
       );
+    });
+  });
+
+  // BUG-2734：视频查词框滚轮比 galgame 覆盖窗「又快又一格一大跳」。旧换算写死
+  // `delta * 6 * dpr`，前提「一档 delta≈20」早已不成立——现行 Windows 引擎一档发
+  // `行数×100/3` 物理像素（默认 100），一档到 WebView2 成了 600 = 5 个 WHEEL_DELTA。
+  // 正确做法是按引擎同一公式逆算回原生滚轮单位；行数必须与引擎读同一个系统设置。
+  group('BUG-2734 按引擎滚轮倍率逆算回 WHEEL_DELTA', () {
+    test('不再写死 6 倍', () {
+      expect(sendScrollBody.contains('kScrollMultiplier'), isFalse,
+          reason: '「一档≈20 逻辑像素 × 6」是旧引擎的假设，现行引擎下是 5 倍');
+    });
+
+    test('行数读系统 SPI_GETWHEELSCROLLLINES，与引擎 UpdateScrollOffsetMultiplier 同源',
+        () {
+      expect(sendScrollBody.contains('SPI_GETWHEELSCROLLLINES'), isTrue);
+      expect(sendScrollBody.contains('100.0 / 3.0'), isTrue,
+          reason: '与 flutter_window.cc 的 `行数 * 100.0 / 3.0` 同一公式');
+      expect(sendScrollBody.contains('static_cast<int>('), isTrue,
+          reason: '引擎以 int 传倍率（1 行=33），逆算必须同样截断');
+    });
+
+    test('整页滚动 / 0 行回落默认倍率，绝不除零', () {
+      expect(sendScrollBody.contains('WHEEL_PAGESCROLL'), isTrue);
+      expect(sendScrollBody.contains('engineMultiplier = 100'), isTrue);
     });
   });
 }

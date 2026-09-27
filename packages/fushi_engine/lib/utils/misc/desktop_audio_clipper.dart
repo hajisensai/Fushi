@@ -58,6 +58,10 @@ bool isBilibiliCdnHost(String host) {
     'bilivideo.cn', // *.mcdn.bilivideo.cn
     'acgvideo.com', // 老 upos-hz-mirrorcos.acgvideo.com
     'hdslb.com',
+    // B 站 PCDN（`b-<id>.edge.mountaintoys.cn:4483`），实测不带 Referer 403。PCDN 域名会
+    // 轮换，这张表永远追不全；B 站制卡链路已改由流解析层显式声明 Referer
+    // （`kBilibiliMediaHttpHeaders`），这里只是其他入口的兜底。
+    'mountaintoys.cn',
   ]) {
     if (h == domain || h.endsWith('.$domain')) return true;
   }

@@ -7,8 +7,8 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show jimakuLanguageLabel;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 
 /// 「AI」一级设置分类：用户自配的大模型提供商 + 每个功能用哪家。
 ///
@@ -19,7 +19,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 /// 提供商与功能指派走 [SettingsDestination.body] 逃生口：提供商是一份**可增删的
 /// 记录列表**（每条还带自己的探测状态与模型下拉），schema 的声明式 item 树表达
 /// 不了；与 OPDS / Torznab 段同一条切法。body 之后再挂声明式 section（`AI 下视频`
-/// 的两个默认值），`bodyBeforeSections` 让 body 排在前面。
+/// 的画质 / 片源 / 码率 / 字幕语言默认值），`bodyBeforeSections` 让 body 排在前面。
 ///
 /// **必须零参、返回纯字面量树**：schema 按 locale 缓存（见 `settings_schema.dart`
 /// 的 `_SettingsSchemaCache`），任何构造期读运行状态的口子都会让缓存发陈旧数据，
@@ -65,20 +65,92 @@ SettingsDestination buildAiDestination() {
                 value: kVideoAcquisitionPrefAsk,
                 label: t.ai_video_download_quality_ask,
               ),
-              // 档位字面量（`2160p` …）是分辨率事实，不翻译；`any` 才有文案。
+              // 档位字面量（`2160p` …）是分辨率事实，不翻译；`best` / `any` 才有文案。
               for (final VideoAcquisitionQuality quality
                   in VideoAcquisitionQuality.values)
                 SettingsSegmentOption<String>(
                   value: quality.storageKey,
-                  label: quality == VideoAcquisitionQuality.any
-                      ? t.ai_video_download_quality_any
-                      : quality.storageKey,
+                  label: switch (quality) {
+                    VideoAcquisitionQuality.best =>
+                      t.ai_video_download_quality_best,
+                    VideoAcquisitionQuality.any =>
+                      t.ai_video_download_quality_any,
+                    _ => quality.storageKey,
+                  },
                 ),
             ],
             selected: (SettingsContext c) =>
                 c.appModel.prefsRepo.aiVideoDownloadQuality,
             onChanged: (SettingsContext c, String value) =>
                 c.appModel.prefsRepo.setAiVideoDownloadQuality(value),
+          ),
+          SettingsSegmentedItem<VideoAcquisitionSourcePref>(
+            id: 'ai.video_download_source',
+            dropdown: true,
+            title: t.ai_video_download_source,
+            subtitle: t.ai_video_download_source_hint,
+            options: <SettingsSegmentOption<VideoAcquisitionSourcePref>>[
+              for (final VideoAcquisitionSourcePref source
+                  in VideoAcquisitionSourcePref.values)
+                SettingsSegmentOption<VideoAcquisitionSourcePref>(
+                  value: source,
+                  label: switch (source) {
+                    VideoAcquisitionSourcePref.any =>
+                      t.ai_video_download_source_any,
+                    VideoAcquisitionSourcePref.best =>
+                      t.ai_video_download_source_best,
+                    VideoAcquisitionSourcePref.bluray =>
+                      t.ai_video_download_source_bluray,
+                    VideoAcquisitionSourcePref.web =>
+                      t.ai_video_download_source_web,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => VideoAcquisitionSourcePref.parse(
+              c.appModel.prefsRepo.aiVideoDownloadSource,
+            ),
+            onChanged: (SettingsContext c, VideoAcquisitionSourcePref value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadSource(value.storageKey),
+          ),
+          SettingsSegmentedItem<VideoAcquisitionBitratePref>(
+            id: 'ai.video_download_bitrate',
+            dropdown: true,
+            title: t.ai_video_download_bitrate,
+            subtitle: t.ai_video_download_bitrate_hint,
+            options: <SettingsSegmentOption<VideoAcquisitionBitratePref>>[
+              for (final VideoAcquisitionBitratePref bitrate
+                  in VideoAcquisitionBitratePref.values)
+                SettingsSegmentOption<VideoAcquisitionBitratePref>(
+                  value: bitrate,
+                  label: switch (bitrate) {
+                    VideoAcquisitionBitratePref.any =>
+                      t.ai_video_download_bitrate_any,
+                    VideoAcquisitionBitratePref.high =>
+                      t.ai_video_download_bitrate_high,
+                    VideoAcquisitionBitratePref.low =>
+                      t.ai_video_download_bitrate_low,
+                  },
+                ),
+            ],
+            selected: (SettingsContext c) => VideoAcquisitionBitratePref.parse(
+              c.appModel.prefsRepo.aiVideoDownloadBitrate,
+            ),
+            onChanged: (SettingsContext c, VideoAcquisitionBitratePref value) =>
+                c.appModel.prefsRepo.setAiVideoDownloadBitrate(
+                  value.storageKey,
+                ),
+          ),
+          // 跳过特典：对所有下载进视频来源的任务生效（管线现读偏好），放在这一段是
+          // 因为「带不带 PV」是用户在配 AI 下视频时提的；键是全局下载偏好。
+          SettingsSwitchItem(
+            id: 'ai.video_download_skip_extras',
+            title: t.ai_video_download_skip_extras,
+            subtitle: t.ai_video_download_skip_extras_hint,
+            icon: Icons.movie_filter_outlined,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.videoDownloadSkipExtras,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setVideoDownloadSkipExtras(value),
           ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_subtitle_language',
@@ -102,7 +174,7 @@ SettingsDestination buildAiDestination() {
               for (final String code in kVideoAcquisitionSubtitleLanguageCodes)
                 SettingsSegmentOption<String>(
                   value: code,
-                  label: jimakuLanguageLabel(code),
+                  label: subtitleLanguageNativeName(code),
                 ),
               SettingsSegmentOption<String>(
                 value: kVideoAcquisitionSubtitleNone,

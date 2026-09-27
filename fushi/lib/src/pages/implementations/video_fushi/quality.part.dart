@@ -230,7 +230,7 @@ extension _VideoQuality on _VideoFushiPageState {
         : await relayYoutubeStreamUrl(audioRaw, headers);
     if (!mounted) return;
     final VideoPlayerController? controller = _controller;
-    final int posMs = controller?.positionMs ?? 0;
+    final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
         ? List<AudioCue>.of(controller.cues)
         : const <AudioCue>[];
@@ -279,6 +279,7 @@ extension _VideoQuality on _VideoFushiPageState {
     // 按 host 链路重算（换 peer / 从公网回到局域网都要重新起步），不是无脑 ??=。
     client.ensureAdaptiveQualityStart();
     _adaptiveQuality.reset();
+    _adaptiveSeenSeekGeneration = _controller?.seekGeneration ?? 0;
     _adaptiveQualityTimer = Timer.periodic(
       const Duration(seconds: 1),
       (_) => _tickAdaptiveQuality(),
@@ -304,6 +305,13 @@ extension _VideoQuality on _VideoFushiPageState {
       _stopAdaptiveQuality();
       return;
     }
+    // seek 引起的缓冲不是网况（BUG-2731）。放在「暂停不评估」之前：暂停时 seek、
+    // 按播放后才缓冲，也要算到这次 seek 头上。
+    final int seekGeneration = controller.seekGeneration;
+    if (seekGeneration != _adaptiveSeenSeekGeneration) {
+      _adaptiveSeenSeekGeneration = seekGeneration;
+      _adaptiveQuality.noteSeek();
+    }
     // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
     if (!controller.isPlaying) return;
 
@@ -326,7 +334,7 @@ extension _VideoQuality on _VideoFushiPageState {
   ) async {
     _adaptiveQualitySwitching = true;
     try {
-      final int posMs = _controller?.positionMs ?? 0;
+      final int posMs = _controller?.resumePositionMs ?? 0;
       client.adaptiveQualityIndex = decision.targetIndex;
       await _reportRemotePlaybackStopped(
         info: _effectiveRemoteInfo,
@@ -385,7 +393,7 @@ extension _VideoQuality on _VideoFushiPageState {
       _hideVideoSidePanel();
       return;
     }
-    final int posMs = _controller?.positionMs ?? 0;
+    final int posMs = _controller?.resumePositionMs ?? 0;
     _hideVideoSidePanel();
     await _writeQualityPresetIndex(server, target);
     if (!mounted) return;
@@ -431,7 +439,7 @@ extension _VideoQuality on _VideoFushiPageState {
       _hideVideoSidePanel();
       return;
     }
-    final int posMs = _controller?.positionMs ?? 0;
+    final int posMs = _controller?.resumePositionMs ?? 0;
     final String label = variants[index].label;
     _hideVideoSidePanel();
     client.streamVariantIndex = index;
@@ -456,7 +464,7 @@ extension _VideoQuality on _VideoFushiPageState {
     }
     final String target = index < 0 ? master : _hlsVariants[index].url;
     final VideoPlayerController? controller = _controller;
-    final int posMs = controller?.positionMs ?? 0;
+    final int posMs = controller?.resumePositionMs ?? 0;
     final List<AudioCue> cues = controller != null
         ? List<AudioCue>.of(controller.cues)
         : const <AudioCue>[];

@@ -5283,6 +5283,8 @@ class AppModel with ChangeNotifier {
       // 按作品的字幕语言：读字幕工作台 / AI 下载写的每系列记忆，键与导入落库的
       // 合集名同源；没记过就走上面的全局默认语言链。
       subtitleLanguageResolver: _resolveVideoDownloadSubtitleLanguage,
+      // 现读偏好：设置里一改，还没拿到文件表的任务就按新值跳过特典。
+      skipDownloadExtras: () => prefsRepo.videoDownloadSkipExtras,
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
@@ -9423,6 +9425,9 @@ class _AppModelRemoteLookupService
           // 只解析音轨：封面走 providedCoverBytes（扩展的解码帧）。
           mediaSource: null,
           audioSource: bi.audioSource,
+          // B 站 CDN 防盗链：流解析层声明的 Referer 随请求下发给 ffmpeg，不靠按 host 猜
+          // （PCDN 域名会轮换，白名单漏一个就 403 → required audio missing）。
+          mediaSourceHttpHeaders: bi.httpHeaders,
           clipStartMs: bi.clipStartMs,
           clipEndMs: bi.clipEndMs,
           sentence: bi.sentence,

@@ -13,6 +13,8 @@ part of '../reader_fushi_history_page.dart';
 /// keepLocalOnly——由调用方按 `hasDeletionPropagationChannel` 传入：本机一个同步通道
 /// 都没有时，那个勾选框兑现不了（TODO-2470 死角②）。取消返回 null。
 /// 漫画作品页「移出漫画书架」也用它（BUG-2513），删除确认的披露与传播语义两处一致。
+/// deleteStatistics 来自「同时删除统计数据」勾选（仅 [statisticsSubtitle] 非 null 时
+/// 渲染；恒从未勾开始、不进「记住这些选择」，与视频删除确认同一纪律）。
 class ReaderHistoryDeleteDialog extends StatefulWidget {
   const ReaderHistoryDeleteDialog({
     required this.title,
@@ -20,6 +22,7 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
     required this.onConfirm,
     this.showSyncScope = true,
     this.localFilesSubtitle,
+    this.statisticsSubtitle,
     this.disclosure,
     this.rememberedChoices,
     this.onPersistChoices,
@@ -34,6 +37,10 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
   /// null = 这条目没有本机可删的原件 → 不渲染勾选框，恒 deleteLocalFiles=false。
   final String? localFilesSubtitle;
 
+  /// null = 这个入口不提供「同时删除统计数据」→ 恒 deleteStatistics=false。
+  /// 非 null = 渲染勾选行，副标题如实说清删掉的是哪些统计口径。
+  final String? statisticsSubtitle;
+
   /// 逐项披露真实删除范围；null 表示该入口暂未接入结构化披露。
   final DeletionDisclosure? disclosure;
   final DeletePromptRememberedChoices? rememberedChoices;
@@ -47,6 +54,8 @@ class ReaderHistoryDeleteDialog extends StatefulWidget {
 class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
   late bool _syncDelete;
   late bool _deleteLocalFiles;
+  // 统计删除恒从未勾开始、不被记忆（见 [DeleteStatisticsRow]）。
+  bool _deleteStatistics = false;
   late bool _rememberChoices;
   bool _saving = false;
 
@@ -80,8 +89,18 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             : DeleteScope.keepLocalOnly,
         deleteLocalFiles:
             widget.localFilesSubtitle != null && _deleteLocalFiles,
+        deleteStatistics:
+            widget.statisticsSubtitle != null && _deleteStatistics,
       ),
     );
+  }
+
+  /// 披露跟着两个二级勾选翻面：勾了哪个，对应条目就从「会被保留」挪进「会被删除」。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_deleteStatistics) shown = shown.withStatisticsDeleted();
+    return shown;
   }
 
   @override
@@ -114,9 +133,7 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
             if (widget.disclosure != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               DeletionDisclosureView(
-                disclosure: _deleteLocalFiles
-                    ? widget.disclosure!.withLocalFilesDeleted()
-                    : widget.disclosure!,
+                disclosure: _shownDisclosure(widget.disclosure!),
               ),
             ],
             SizedBox(height: tokens.spacing.gap),
@@ -138,6 +155,12 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
                 value: _deleteLocalFiles,
                 subtitle: widget.localFilesSubtitle!,
                 onChanged: (bool v) => setState(() => _deleteLocalFiles = v),
+              ),
+            if (widget.statisticsSubtitle != null)
+              DeleteStatisticsRow(
+                value: _deleteStatistics,
+                subtitle: widget.statisticsSubtitle!,
+                onChanged: (bool v) => setState(() => _deleteStatistics = v),
               ),
             if (widget.showSyncScope || widget.localFilesSubtitle != null)
               DeleteRememberChoicesRow(

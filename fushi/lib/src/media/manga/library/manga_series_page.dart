@@ -1117,6 +1117,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             db: appModel.database,
             bookKey: row.bookKey,
             scope: decision.scope,
+            deleteStatistics: decision.deleteStatistics,
           );
       if (!mounted) return;
       if (!result.deleted) {
@@ -1158,6 +1159,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
         appModel: appModel,
         title: t.manga_series_remove_from_bookshelf,
         message: t.manga_series_remove_confirm,
+        statisticsSubtitle: t.delete_statistics_manga_desc,
       );
 
   /// 「继续阅读」落到哪一章。

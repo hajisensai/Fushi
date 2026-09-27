@@ -20,6 +20,7 @@ Future<DeleteDecision?> confirmRemoveOnlineWorkFromShelf({
   required AppModel appModel,
   required String title,
   required String message,
+  String? statisticsSubtitle,
 }) async {
   final bool canSyncEverywhere = await hasDeletionPropagationChannel(
     SyncRepository(appModel.database),
@@ -38,6 +39,7 @@ Future<DeleteDecision?> confirmRemoveOnlineWorkFromShelf({
         target: DeletionDisclosureTarget.shelfBook,
       ),
       showSyncScope: canSyncEverywhere,
+      statisticsSubtitle: statisticsSubtitle,
       rememberedChoices: rememberedChoices,
       onPersistChoices: preferenceStore.write,
       onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),

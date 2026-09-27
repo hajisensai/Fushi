@@ -201,6 +201,7 @@ class _LnReaderNovelDetailPageState
       appModel: appModel,
       title: t.novel_detail_library_remove,
       message: t.novel_detail_library_remove_confirm,
+      statisticsSubtitle: t.delete_statistics_book_desc,
     );
     if (decision == null || !mounted) return;
     setState(() => _opening = true);

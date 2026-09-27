@@ -119,13 +119,63 @@ void main() {
     test('枚举越界逐字段丢弃：quality "4k" 丢、mode 留', () {
       final VideoAcquisitionIntent intent = _parse(
         '{"intent": "provide", "quality": "4k", "mode": "download", '
-        '"category": "ova", "subtitleLanguage": "fr"}',
+        '"category": "ova", "subtitleLanguage": "xx"}',
       );
       expect(intent.kind, VideoAcquisitionIntentKind.provide);
       expect(intent.patch.quality, isNull);
       expect(intent.patch.category, isNull);
-      expect(intent.patch.subtitleLanguage, isNull, reason: 'fr 不在白名单');
+      expect(intent.patch.subtitleLanguage, isNull, reason: 'xx 不在白名单');
       expect(intent.patch.mode, VideoAcquisitionMode.download);
+    });
+
+    test('字幕语言白名单覆盖 OpenSubtitles 常见语言（fra / es-ES 归一）', () {
+      expect(
+        _parse(
+          '{"intent": "provide", "subtitleLanguage": "fra"}',
+        ).patch.subtitleLanguage,
+        'fr',
+      );
+      expect(
+        _parse(
+          '{"intent": "provide", "subtitleLanguage": "es-ES"}',
+        ).patch.subtitleLanguage,
+        'es',
+      );
+    });
+
+    test('scope：整套 / 全部剧场版 / 全部剧集，非法值丢弃', () {
+      expect(
+        _parse('{"intent": "provide", "scope": "movies"}').patch.scope,
+        VideoAcquisitionScope.franchiseMovies,
+      );
+      expect(
+        _parse('{"intent": "provide", "scope": "ALL"}').patch.scope,
+        VideoAcquisitionScope.franchise,
+      );
+      expect(
+        _parse('{"intent": "provide", "scope": "everything"}').patch.scope,
+        isNull,
+      );
+    });
+
+    test('系统提示列出 scope 的全部枚举值', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      for (final VideoAcquisitionScope scope in VideoAcquisitionScope.values) {
+        expect(prompt, contains('"${scope.storageKey}"'));
+      }
+    });
+
+    test('quality "best" / "1440p" 是合法档位', () {
+      expect(
+        _parse('{"intent": "provide", "quality": "best"}').patch.quality,
+        VideoAcquisitionQuality.best,
+      );
+      expect(
+        _parse('{"intent": "provide", "quality": "1440p"}').patch.quality,
+        VideoAcquisitionQuality.p1440,
+      );
     });
 
     test('枚举比对忽略大小写；quality 走 fromStorageKey', () {

@@ -647,6 +647,50 @@ void main() {
     });
 
     test(
+        'deleteStatistics 默认 false 保留统计；true 时删行前按身份清掉该书统计 '
+        '（「同时删除统计数据」勾选的落地）', () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+      Future<void> seedStats(String key) async {
+        await db.insertEpubBook(epubBook(key));
+        await db.upsertStudySegment(StudySegmentsCompanion.insert(
+          uid: FushiDatabase.newStudySegmentUid(),
+          deviceId: 'dev-test',
+          mediaKind: kActivityMediaBook,
+          mediaKey: key,
+          title: key,
+          startAt: 1000,
+          endAt: 61000,
+          dateKey: '2026-07-05',
+          hour: 10,
+          updatedAt: 61000,
+        ));
+      }
+
+      await seedStats('Kept');
+      await seedStats('Wiped');
+
+      await ReaderFushiSource.instance.deleteBook(db: db, bookKey: 'Kept');
+      final DeleteBookResult wiped = await ReaderFushiSource.instance
+          .deleteBook(db: db, bookKey: 'Wiped', deleteStatistics: true);
+
+      expect(wiped.deleted, isTrue);
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'Kept'),
+          hasLength(1),
+          reason: '默认不勾 = 书删了、统计留着');
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaBook, mediaKey: 'Wiped'),
+          isEmpty);
+      expect(await db.getStatisticsTombstoneKeys(), contains(('Wiped', 'book')));
+      expect(await db.getStatisticsTombstoneKeys(),
+          isNot(contains(('Kept', 'book'))));
+    });
+
+    test(
         'returns false when the bookKey matches no EPUB/SRT row '
         '(orphan shell / missing key must not fake success)', () async {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());

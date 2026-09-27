@@ -129,22 +129,7 @@ import 'package:fushi_core/fushi_core.dart'
         VideoSourceScrapeRunRow,
         VideoSourceScrapeSettingRow;
 
-/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
-/// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
-/// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
-/// 成位置。games（galgame 库）紧跟在 video 之后。顶层 texthooker tab 已删（galgame 捕获
-/// 工作台现内嵌于 games tab，会话见 [GalHookSessionController]）。
-enum HomeTab {
-  home,
-  books,
-  manga,
-  video,
-  browse,
-  dictionaries,
-  games,
-  browserExtension,
-  settings,
-}
+export 'package:fushi/src/models/home_tab.dart';
 
 /// 纯函数：给定视频开关与游戏库开关，返回可见顶层 tab 的**视觉顺序**——视频固定插在书架
 /// 与词典之间（用户要求「在书架和词典管理中间」），games（galgame 库）仅在开启时出现，
@@ -2054,7 +2039,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 前置按顺序逐个引导，配完即继续：AI 提供商未指派 → 推 AI 设置页；后端 runtime
   /// 没起 → 配置引导；没有受管视频来源 → 补来源引导。页面本身不挂 Riverpod，所有
   /// 能力按闭包注入，AI 提供商每次调用时现解析。
-  Future<void> _openAiVideoAcquisition() async {
+  Future<void> _openAiVideoAcquisition([String? initialQuery]) async {
     final BuildContext context = this.context;
     if (resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) == null) {
       _showVideoDiscoveryMessage(context, t.ai_assist_no_provider);
@@ -2085,6 +2070,10 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoAcquisitionService service = VideoAcquisitionService(
       defaults: VideoAcquisitionDefaults(
         qualityPref: prefs.aiVideoDownloadQuality,
+        sourcePref:
+            VideoAcquisitionSourcePref.parse(prefs.aiVideoDownloadSource),
+        bitratePref:
+            VideoAcquisitionBitratePref.parse(prefs.aiVideoDownloadBitrate),
         subtitleLanguagePref: prefs.aiVideoDownloadSubtitleLanguage,
         sources: <VideoAcquisitionSource>[
           for (final MediaSourceRow source in sources)
@@ -2092,6 +2081,7 @@ class _HomePageState extends BasePageState<HomePage>
         ],
         defaultSourceId: (defaultSourceId ?? 0) == 0 ? null : defaultSourceId,
         locale: appModelNoUpdate.appLocale.toLanguageTag(),
+        skipExtras: prefs.videoDownloadSkipExtras,
       ),
       ports: VideoAcquisitionPorts(
         searchWorks: discovery.load,
@@ -2102,6 +2092,8 @@ class _HomePageState extends BasePageState<HomePage>
             (await _matchingVideoDiscoverySubscriptions(reference))
                 .any((VideoDownloadSubscriptionRow row) => row.enabled),
         searchResources: registry.search,
+        loadFranchise: (VideoDiscoveryItem item) async =>
+            discoveryService?.loadFranchise(item),
         parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
         decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
         persistPreference:
@@ -2191,6 +2183,7 @@ class _HomePageState extends BasePageState<HomePage>
         MaterialPageRoute<void>(
           builder: (_) => AiVideoAcquisitionPage(
             service: service,
+            initialQuery: initialQuery,
             onConfigureBackend: _promptDownloadBackendSetup,
           ),
         ),

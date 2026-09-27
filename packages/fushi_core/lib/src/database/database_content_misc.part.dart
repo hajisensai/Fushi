@@ -729,6 +729,32 @@ mixin _FushiDbContentMisc
         }
       });
 
+  /// 删除某游戏（[gameId] = `galgames.id`）的**纯统计**：v92 `study_segments` 段
+  /// （按身份立碑防互联/云同步复活）、当前 Profile 的游玩会话 `galgame_sessions`
+  /// （游戏时长真相源）与 legacy 活动表里 v92 前的 hook 字数行。
+  ///
+  /// 与 [deleteReadingStatisticsForTitle] 同一「只清纯统计」边界：不动游戏本体行、
+  /// 收藏、制卡历史。游戏没有 per-game 查词/制卡计数行（lookup_mining_counters 只有
+  /// book / video 两个 sourceType），故无需清。legacy 行只在当前 Profile 看得见时
+  /// 才清（v105，与 [deleteStatFactsOnDays] 同一判据）。
+  Future<void> deleteGameStatisticsForId(String gameId) =>
+      transaction(() async {
+        if (gameId.isEmpty) return;
+        await deleteStudySegmentsForMedia(
+            mediaKind: kActivityMediaGame, mediaKey: gameId);
+        final int profileId = await resolveActiveProfileId();
+        await (delete(galgameSessions)
+              ..where((t) =>
+                  t.profileId.equals(profileId) & t.gameId.equals(gameId)))
+            .go();
+        if (!await legacyStatsVisibleTo(profileId)) return;
+        await (delete(activityEvents)
+              ..where((t) =>
+                  t.eventType.equals(kActivityGame) &
+                  t.mediaKey.equals(gameId)))
+            .go();
+      });
+
   /// TODO-1322: 一键清空**全部阅读统计**（book 域纯统计数字）：阅读时长 / 字数
   /// (reading_statistics)、按小时时段日志 (reading_hourly_logs)、per-book 查词 / 制卡
   /// 计数 (lookup_mining_counters 的 book 行) 与全局按日制卡计数 (mining_statistics 的

@@ -758,6 +758,16 @@ mixin DictionaryPageMixin {
       screen,
       autoFitHeight: entry.autoFitHeight,
     );
+    // 自适应高度只收外壳，WebView 仍按外壳取最大高度时的正文高度布局、超出裁掉
+    // （[DictionaryPopupLayer.webViewOverflowHeight]）：内容增减不再改原生表面尺寸，
+    // 杜绝 Windows 上旧尺寸帧被拉伸的那几帧。外壳本就是最大高度时差值为 0。
+    final double fullPopupHeight = entry.autoFitHeight == null ||
+            mixinAppModel.popupBottomDocked ||
+            _popupResizePreview != null
+        ? pos.height
+        : _calcMixinPopupPosition(entry.selectionRect, screen).height;
+    final double webViewOverflowHeight =
+        fullPopupHeight > pos.height ? fullPopupHeight - pos.height : 0.0;
     // Phase B 拖拽尺寸：缓存顶层卡当前 rect/选区，供 [_onMixinPopupResizeStart] 冻结左上角。
     if (index == controller.entries.length - 1) {
       _topPopupSelectionRect = entry.selectionRect;
@@ -777,6 +787,9 @@ mixin DictionaryPageMixin {
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
       visible: entry.visible && _popupHidingDialogDepth == 0,
+      // 接替已画出的搜索占位卡时，接着占位卡的淡入进度淡完（不从 0 重来、也不跳满）。
+      entranceStartProgress:
+          popupEntranceProgressAfter(entry.searchPlaceholderShownFor),
       screen: screen,
       child: _wrapPopupContent(
           wrapContent,
@@ -792,6 +805,7 @@ mixin DictionaryPageMixin {
             overrideFillColor: mixinAppModel.overrideDictionaryColor,
             // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
             bottomDocked: mixinAppModel.popupBottomDocked,
+            webViewOverflowHeight: webViewOverflowHeight,
             onDismiss: () => onPop(index),
             // BUG-1269：弹窗是原生 WebView，指针落上去后宿主收不到键盘/鼠标——把宿主
             // 声明的那些输入交回来（表由注册表当前绑定实时导出，改键立即跟随）。
@@ -867,8 +881,10 @@ mixin DictionaryPageMixin {
               }
               final double preferredMaxHeight =
                   mixinAppModel.popupMaxHeight * mixinAppModel.appUiScale;
+              // JS 上报的视口是 WebView 的布局高度，对应的外壳是
+              // [fullPopupHeight]（WebView 按它布局），不是裁剪后的 pos.height。
               final double nextHeight = resolveAutoFitPopupHeight(
-                currentPopupHeight: pos.height,
+                currentPopupHeight: fullPopupHeight,
                 contentHeight: contentHeight,
                 viewportHeight: viewportHeight,
                 minHeight: kLookupPopupMinHeight * mixinAppModel.appUiScale,
@@ -1005,7 +1021,8 @@ mixin DictionaryPageMixin {
       child: Visibility(
         // BUG-1364：与 [parkedPopupLayer] 的 `visible` 同源，纳入同一个嵌套安全计数。
         visible: _popupHidingDialogDepth == 0,
-        child: FushiPopupSurface(
+        child: popupEntranceFade(
+            child: FushiPopupSurface(
           color: fill,
           child: Column(
             children: <Widget>[
@@ -1017,7 +1034,7 @@ mixin DictionaryPageMixin {
               const Expanded(child: SizedBox.shrink()),
             ],
           ),
-        ),
+        )),
       ),
     );
   }

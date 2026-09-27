@@ -208,6 +208,7 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
     required this.result,
     super.key,
     this.hasChildPopup = false,
+    this.visibleViewportHeight,
     this.transparentDocumentBackground = false,
     this.onTextSelected,
     this.onLinkClick,
@@ -250,6 +251,13 @@ class DictionaryPopupWebView extends ConsumerStatefulWidget {
   /// popup.js 在点卡片本体留白时据此决定是否发 `tapOutside`（有子层才关后代，叶子层
   /// 不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生传入。
   final bool hasChildPopup;
+
+  /// BUG-2734：宿主让本 WebView 按外壳最大高度布局、外壳只裁剪时，用户实际看得见的
+  /// 视口高度（逻辑像素 = WebView 视觉 px）。注入 popup.js 的
+  /// `__fushiSetVisibleViewportHeight`：tooltip / 按钮提示 / 图片灯箱据此定位，并开启
+  /// 内容尺寸复报（`popupContentResized` → [onContentMetrics]）。null = 不裁剪，JS 用
+  /// `innerHeight`。
+  final double? visibleViewportHeight;
 
   /// TODO-1065：本弹窗宿主是「app 外 / 悬浮字幕」独立查词窗（popup_main 宿主）时置 true。
   /// 该路径的圆角卡由 Flutter [FushiPopupSurface] 画，弹窗 WebView 跑在透明浮动窗里；
@@ -541,6 +549,7 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
       _pushResults();
     }
     _setHasChildPopupJs(widget.hasChildPopup);
+    _setVisibleViewportHeightJs(widget.visibleViewportHeight);
   }
 
   /// renderer 死亡处置（救命动作 = 下面 [InAppWebView.onRenderProcessGone] 传了
@@ -1323,6 +1332,9 @@ JSON.stringify((function(){
     if (oldWidget.hasChildPopup != widget.hasChildPopup) {
       _setHasChildPopupJs(widget.hasChildPopup);
     }
+    if (oldWidget.visibleViewportHeight != widget.visibleViewportHeight) {
+      _setVisibleViewportHeightJs(widget.visibleViewportHeight);
+    }
     // 键表随用户改键而变，故比较 spec 本身而不是「回调有没有」——只比回调会让改键
     // 在弹窗持焦时不生效（BUG-1071 复诉的一半）。
     if ((oldWidget.onHostInputToken == null) !=
@@ -1339,6 +1351,18 @@ JSON.stringify((function(){
     if (_controller == null || !_ready) return;
     _controller!
         .evaluateJavascript(source: 'window.__hasChildPopup = $hasChild;');
+  }
+
+  /// BUG-2734：把 [visibleViewportHeight] 交给 popup.js（门控同 [_setHasChildPopupJs]，
+  /// 未就绪时由 onLoadStop 旁的种子调用补发当前值）。
+  void _setVisibleViewportHeightJs(double? height) {
+    if (_controller == null || !_ready) return;
+    final String value =
+        height != null && height.isFinite && height > 0 ? '$height' : 'null';
+    _controller!.evaluateJavascript(
+      source: 'window.__fushiSetVisibleViewportHeight && '
+          'window.__fushiSetVisibleViewportHeight($value);',
+    );
   }
 
   @override
@@ -2151,6 +2175,41 @@ JSON.stringify((function(){
               ErrorLogService.instance,
               () {
                 widget.onTopPullReleased?.call();
+                return null;
+              },
+            );
+          },
+        );
+
+        // BUG-2734：裁剪模式下内容在两次渲染之间变高的复报（见 popup.js
+        // __fushiObserveContentResize）。只更新外壳高度，不碰渲染 token / reveal。
+        controller.addJavaScriptHandler(
+          handlerName: 'popupContentResized',
+          callback: (args) {
+            return _guardJsBridge<Object?>(
+              'DictPopupWebview.popupContentResized',
+              null,
+              ErrorLogService.instance,
+              () {
+                final Object? rawContent = args.isNotEmpty ? args[0] : null;
+                final double? contentHeight = rawContent is num
+                    ? rawContent.toDouble()
+                    : double.tryParse(rawContent?.toString() ?? '');
+                final Object? rawViewport = args.length > 1 ? args[1] : null;
+                final RenderObject? renderObject = context.findRenderObject();
+                final double? viewportHeight = resolvePopupViewportHeight(
+                  reportedHeight: rawViewport is num
+                      ? rawViewport.toDouble()
+                      : double.tryParse(rawViewport?.toString() ?? ''),
+                  layoutHeight: renderObject is RenderBox &&
+                          renderObject.attached &&
+                          renderObject.hasSize
+                      ? renderObject.size.height
+                      : null,
+                );
+                if (contentHeight != null && viewportHeight != null) {
+                  widget.onContentMetrics?.call(contentHeight, viewportHeight);
+                }
                 return null;
               },
             );

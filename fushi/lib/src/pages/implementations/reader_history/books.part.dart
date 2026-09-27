@@ -537,6 +537,10 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     // 原始音频**时才摆出来（书本体没有可删原件，见 ReaderFushiSource.deleteBook）。
     final bool anyLocalFiles =
         mediaCount > 0 && await _selectionHasLocalFiles();
+    // 「同时删除统计数据」只在选中散卡里至少有一本**带 bookKey** 的书时摆出来；
+    // 全是纯字幕书就不摆（执行时也跳过它们，见下面的删除循环）。
+    final bool anyStatisticsTarget =
+        mediaCount > 0 && await _selectionHasStatisticsTarget(targetKeys);
     final DeletePromptPreferenceStore preferenceStore =
         DeletePromptPreferenceStore(appModel.database);
     final DeletePromptRememberedChoices? rememberedChoices =
@@ -557,6 +561,8 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle:
             anyLocalFiles ? t.delete_local_files_audio_desc : null,
+        // 纯解散合集不删任何书，统计无从谈起；全是纯字幕书同样不摆。
+        statisticsSubtitle: anyStatisticsTarget ? _statisticsSubtitle : null,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
@@ -565,6 +571,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     if (decision == null || !mounted) return;
     final DeleteScope scope = decision.scope;
     final bool deleteLocalFiles = decision.deleteLocalFiles;
+    final bool deleteStatistics = decision.deleteStatistics;
 
     // 先解散选中合集（只删合集容器 + 成员引用行，绝不删媒体本体）。
     // 用确认框弹出前定死的那份目标，不重新读选中集。
@@ -606,8 +613,11 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
               bookKey: book.bookKey,
               scope: scope,
               deleteLocalFiles: deleteLocalFiles,
+              deleteStatistics: deleteStatistics,
             );
           }
+          // 纯字幕书（bookKey 空）刻意不删统计：它的统计只能按 title 定位，会连坐
+          // 同名 EPUB（见 [_selectionHasStatisticsTarget]）。
           // BUG-439：以前无条件 deleted++，即便 repo.delete 实际没删到行也计数，
           // 末尾照样弹「已删除 N 本」谎报。改为只对真删掉的 srt_books 行计数。
           // TODO-2470 死角①：纯字幕书（bookKey 空）没有上面那次 deleteBook，
@@ -628,6 +638,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
             bookKey: bookKey,
             scope: scope,
             deleteLocalFiles: deleteLocalFiles,
+            deleteStatistics: deleteStatistics,
           );
           localFiles = localFiles.merge(result.localFiles);
           if (result.deleted) deleted++;
@@ -662,6 +673,26 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       localFiles,
       source: 'ReaderHistory.batchDeleteLocalFiles',
     );
+  }
+
+  /// 选中散卡里是否至少有一本能安全删统计的书：EPUB / PDF / 漫画（bookKey 选择
+  /// 键），或配对了 EPUB 的字幕书（bookKey 非空）。纯字幕书（bookKey 空）不算——
+  /// 它的 legacy 统计与墓碑只能按 title 定位，删它会连坐同名 EPUB 的统计。
+  Future<bool> _selectionHasStatisticsTarget(Set<String> keys) async {
+    final FushiDatabase db = appModel.database;
+    for (final String key in keys) {
+      if (!key.startsWith('srt_')) {
+        if (_parseBookKey(key) != null) return true;
+        continue;
+      }
+      final SrtBook? book =
+          await SrtBookRepository(db).findByUid(key.substring(4));
+      if (book != null &&
+          ReaderFushiSource.srtBookOffersStatisticsDeletion(book)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /// 选中的散卡里有没有任何一条有可删的本机原件（批删确认框据此决定摆不摆
@@ -987,6 +1018,12 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
       localFilesSubtitle:
           hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      // 纯字幕书（bookKey 空）不摆「同时删除统计数据」：它的 legacy 阅读统计 /
+      // 计数行与墓碑只能按 title 定位，同名 EPUB 的统计会被连坐删掉。
+      statisticsSubtitle:
+          ReaderFushiSource.srtBookOffersStatisticsDeletion(book)
+              ? _statisticsSubtitle
+              : null,
     );
     if (decision == null) return;
     final DeleteScope scope = decision.scope;
@@ -1006,6 +1043,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
         bookKey: book.bookKey,
         scope: scope,
         deleteLocalFiles: decision.deleteLocalFiles,
+        deleteStatistics: decision.deleteStatistics,
       );
       localFiles = localFiles.merge(result.localFiles);
     }
@@ -1078,6 +1116,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       ),
       localFilesSubtitle:
           hasLocalFiles ? t.delete_local_files_audio_desc : null,
+      statisticsSubtitle: _statisticsSubtitle,
     );
     if (decision == null) return;
 
@@ -1090,6 +1129,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       bookKey: bookKey,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
+      deleteStatistics: decision.deleteStatistics,
     );
     if (!mounted) return;
     reportLocalFileDeleteFailures(

@@ -58,7 +58,10 @@ class VideoDiscoveryActions {
 
   /// 打开「AI 下视频」对话页（发现页搜索行的入口）。null = 不渲染入口：AI 提供商
   /// 未指派、下载中心 / 外部发现在本平台不可用（iOS 合规）、或后端 runtime 没起。
-  final VoidCallback? onAiAcquire;
+  ///
+  /// 参数是搜索框里已经输入的文字（空 = 没输入）：对话页拿它直接开聊，用户不用
+  /// 把刚打过的作品名再打一遍。
+  final ValueChanged<String?>? onAiAcquire;
 }
 
 class VideoDiscoveryAcquisitionState {

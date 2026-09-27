@@ -61,6 +61,8 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // onSeekEnd 透出落点 target，页面补调 notifyExternalSeek 应用同款保护（不重复 seek）。
       onSeekEnd: (Duration target) =>
           controller.notifyExternalSeek(target.inMilliseconds),
+      // BUG-2731 后续（同移动 theme）：进度条落点那次 player.seek 的 Future。
+      onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-669：进度条 hover 缩略图预览。seek bar hover 时 fork 把 hover 比例
       // （轨道内宽权威值）回调给 [_onSeekBarHover]，桌面转发到取帧调度器、移动端不接
       // （触屏无 hover，故仅桌面 theme 接线）。null 时 fork 零行为变化。
@@ -255,6 +257,16 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 旧字幕立即消失、不被滞后旧 position 拉回；不重复 seek（进度条内部已 seek）。
       onSeekEnd: (Duration target) =>
           controller.notifyExternalSeek(target.inMilliseconds),
+      // BUG-2731 后续：横滑 / 双击快进快退是**相对** seek，基准取 controller 的
+      // [VideoPlayerController.resumePositionMs]（有在途 seek 取其目标，否则取当前位置）。
+      // 远端流上一次 seek 还在缓冲时 player 位置仍是旧值，按它算第二次滑动会把第一次
+      // 的位移整个抹掉（录屏里 HUD 一直 ±0:00、只能反复小幅滑动）。
+      // fork 在一次横滑开始时只取一次（快照），HUD 经 lastRelativeSeekBaseMs 读同一值。
+      relativeSeekBasePosition: () =>
+          Duration(milliseconds: controller.captureRelativeSeekBaseMs() ?? 0),
+      // BUG-2731 后续：fork 把横滑 / 双击 / 进度条落点那次 player.seek 的 Future 交过来，
+      // 等它完成才开始按「正常推进」判 seek 收场（seek 还在排队时旧内容照常推进）。
+      onSeekDispatched: controller.noteExternalSeekDispatched,
       // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
@@ -305,8 +317,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         sensitivity: _asbConfig.dragSeekSensitivity,
       ),
       // 居中 HUD：fork 默认只显增量，这里替换成「目标绝对时间 + 增量」两行（主流
-      // 播放器手感）。builder 每帧随拖动重建，读 controller 实时 position + 增量算
-      // 目标时间（clamp [0,duration]）。delta 为 fork 回传的有符号 swipeDuration。
+      // 播放器手感）。builder 每帧随拖动重建，以本次横滑开始时快照的相对 seek 基准
+      // （controller.lastRelativeSeekBaseMs，有在途 seek 时是其目标）+ 增量算目标时间
+      // （clamp [0,duration]），与 fork 松手落点同一口径。delta 为 fork 回传的有符号
+      // swipeDuration。
       seekIndicatorBuilder: (BuildContext context, Duration delta) =>
           _buildSeekIndicator(controller, delta),
       onVolumeChanged: _onMediaKitVolumeChanged,
@@ -413,7 +427,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
   /// TODO-916 症状①：横滑 seek 居中 HUD（替换 fork 默认只显增量的 HUD）。
   ///
   /// fork 的 `seekIndicatorBuilder` 只回传增量 [delta]（有符号 swipeDuration）。主流
-  /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 实时位置/时长，经纯函数
+  /// 播放器横滑时显示**目标绝对时间**，故这里读 [controller] 的基准位置/时长，经纯函数
   /// [VideoSeekIndicatorLabel.target] /
   /// [VideoSeekIndicatorLabel.deltaSigned] 算出「目标时间」与「±增量」
   /// 两行。fork 把本 widget 套在居中 `IgnorePointer + AnimatedOpacity` 里，故这里只画
@@ -422,8 +436,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoPlayerController controller,
     Duration delta,
   ) {
-    final Duration position =
-        Duration(milliseconds: controller.positionMs ?? 0);
+    // 与 fork 横滑落点同一基准（relativeSeekBasePosition，BUG-2731 后续）：fork 在横滑
+    // 开始时取一次快照（经 captureRelativeSeekBaseMs 记下），HUD 读同一快照——在途 seek
+    // 未落地时从那次 seek 的目标算起，拖动途中目标落地 / 清掉也不跳。
+    final Duration position = Duration(
+      milliseconds:
+          controller.lastRelativeSeekBaseMs ?? controller.resumePositionMs ?? 0,
+    );
     final Duration duration =
         Duration(milliseconds: controller.durationMs ?? 0);
     final String targetLabel =

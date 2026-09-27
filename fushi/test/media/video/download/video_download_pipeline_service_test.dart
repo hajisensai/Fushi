@@ -2658,6 +2658,436 @@ void main() {
       expect(job.mediaKind, DiscoveryMediaKind.novel.name);
     });
   });
+
+  group('skipDownloadExtras', () {
+    List<TorrentFileEntry> mixedFiles() => <TorrentFileEntry>[
+          const TorrentFileEntry(
+              name: 'Show/EP01.mkv', size: 4, progress: 0.5, index: 0),
+          const TorrentFileEntry(
+              name: 'Show/EP02.mkv', size: 4, progress: 0.5, index: 1),
+          const TorrentFileEntry(
+              name: 'Show/SPs/NCOP.mkv', size: 4, progress: 0, index: 2),
+          const TorrentFileEntry(
+              name: 'Show/PV/PV1.mp4', size: 4, progress: 0, index: 3),
+        ];
+
+    Future<_PipelineEnvironment> createEnvironment(
+      _FakeDetailTorrentBackend backend, {
+      bool Function()? skipDownloadExtras,
+    }) async {
+      late _PipelineEnvironment environment;
+      late Directory downloadDirectory;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        skipDownloadExtras: skipDownloadExtras,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/downloads',
+              localRoot: downloadDirectory.path,
+            ),
+            VideoDownloadPathMapping(
+              remoteRoot: '/media',
+              localRoot: environment.root.path,
+            ),
+          ],
+        ),
+      );
+      downloadDirectory = Directory(p.join(environment.root.path, 'incoming'));
+      await downloadDirectory.create(recursive: true);
+      return environment;
+    }
+
+    /// 跑一轮下载观察：唤醒后等到本轮释放 claim。
+    Future<void> observeOnce(
+      _PipelineEnvironment environment,
+      String jobId,
+    ) async {
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.claimedBy == null && row.nextAttemptAt != null,
+      );
+    }
+
+    test('下载途中跳过特典文件，完成后只整理正片', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'skip-extras-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+        subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+      );
+
+      await observeOnce(environment, jobId);
+
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        2: TorrentFilePriority.skip,
+        3: TorrentFilePriority.skip,
+      });
+      final List<VideoDownloadJobFileRow> rows =
+          await environment.database.getVideoDownloadJobFiles(jobId);
+      final Map<int, VideoDownloadJobFileRow> byIndex =
+          <int, VideoDownloadJobFileRow>{
+        for (final VideoDownloadJobFileRow row in rows)
+          row.backendFileIndex!: row,
+      };
+      expect(byIndex.keys.toSet(), <int>{0, 1, 2, 3});
+      expect(byIndex[0]!.selected, isTrue);
+      expect(byIndex[1]!.selected, isTrue);
+      expect(byIndex[2]!.selected, isFalse);
+      expect(byIndex[3]!.selected, isFalse);
+      expect(byIndex[2]!.status, VideoDownloadJobFileStatus.skipped);
+      expect(byIndex[0]!.status, VideoDownloadJobFileStatus.downloading);
+
+      // 第二轮仍未完成：已决定过，不再重复写优先级。
+      backend.priorities.clear();
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, isEmpty);
+
+      backend.snapshots[0] = _completeSnapshot();
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      final VideoDownloadJobRow done = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle != VideoDownloadJobLifecycle.active,
+      );
+      expect(done.lifecycle, VideoDownloadJobLifecycle.completed,
+          reason: '${done.lastError}');
+      expect(backend.renamedIndexes..sort(), <int>[0, 1],
+          reason: '被跳过的特典不改名、不落位');
+      final List<VideoDownloadJobFileRow> finalRows =
+          await environment.database.getVideoDownloadJobFiles(jobId);
+      for (final VideoDownloadJobFileRow row in finalRows) {
+        if (row.backendFileIndex! >= 2) {
+          expect(row.selected, isFalse);
+          expect(row.status, VideoDownloadJobFileStatus.skipped);
+          expect(row.finalAbsolutePath, isNull);
+          expect(row.targetRelativePath, isNull);
+        } else {
+          expect(row.kind, 'video');
+          expect(row.finalAbsolutePath, isNotNull);
+        }
+      }
+      expect((await environment.database.allVideoBooks()).length, 2,
+          reason: '只有两集正片入库');
+    });
+
+    test('整个种子都是特典时一个也不跳', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: <TorrentFileEntry>[
+          const TorrentFileEntry(
+              name: 'Show/SPs/NCOP.mkv', size: 4, progress: 0, index: 0),
+          const TorrentFileEntry(
+              name: 'Show/PV/PV1.mp4', size: 4, progress: 0, index: 1),
+        ],
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'all-extras-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      await observeOnce(environment, jobId);
+
+      expect(backend.priorities, isEmpty);
+      expect(
+          await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
+    });
+
+    test('没有特典的种子只判一次，之后的轮询不再列文件', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: <TorrentFileEntry>[
+          const TorrentFileEntry(
+              name: 'Show/EP01.mkv', size: 4, progress: 0.5, index: 0),
+          const TorrentFileEntry(
+              name: 'Show/EP02.mkv', size: 4, progress: 0.5, index: 1),
+        ],
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'no-extras-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      for (int round = 0; round < 3; round++) {
+        await observeOnce(environment, jobId);
+      }
+
+      expect(backend.listFilesCalls, 1);
+      expect(backend.priorities, isEmpty);
+      expect(
+          await environment.database.getVideoDownloadJobFiles(jobId), isEmpty,
+          reason: '不落全选文件行，保持既有非选择性路径');
+    });
+
+    test('自动跳过特典的任务丢了后端任务：磁力整颗重加，下一轮补写 skip 优先级', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'extras-rewind-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await observeOnce(environment, jobId);
+      expect(backend.priorities.keys.toSet(), <int>{2, 3});
+
+      // 内置引擎快速恢复丢失：后端里没有这颗 torrent 了。
+      backend.snapshots.clear();
+      backend.priorities.clear();
+      backend.beforeAdd = () async {
+        backend.snapshots.add(_downloadingSnapshot(progress: 0.1));
+      };
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.enqueue && row.claimedBy == null,
+      );
+
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      final VideoDownloadJobRow readded = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.download &&
+            row.claimedBy == null,
+      );
+      expect(readded.lifecycle, VideoDownloadJobLifecycle.active,
+          reason: '${readded.lastError}');
+      expect(backend.addCalls, 1, reason: '磁力走普通整颗添加，不要求 .torrent 元数据');
+
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        2: TorrentFilePriority.skip,
+        3: TorrentFilePriority.skip,
+      });
+      final List<VideoDownloadJobFileRow> rows =
+          await environment.database.getVideoDownloadJobFiles(jobId);
+      expect(rows.length, 4, reason: '不重复写行');
+
+      // 本进程已补写过：后续轮询不再重复写。
+      backend.priorities.clear();
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, isEmpty);
+    });
+
+    test('自动跳过特典的任务删除时整颗连文件删', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'extras-delete-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await observeOnce(environment, jobId);
+      expect(
+        (await environment.database.getVideoDownloadJobFiles(jobId))
+            .where((VideoDownloadJobFileRow row) => !row.selected)
+            .map((VideoDownloadJobFileRow row) => row.kind)
+            .toSet(),
+        <String>{'extra'},
+      );
+
+      await environment.service.deleteJob(jobId, deleteFiles: true);
+
+      expect(backend.removeDeleteFiles, <bool>[true]);
+      expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+    });
+
+    test('用户亲手选文件的任务仍走选择性路径（重投要元数据、删除不连合集）', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'user-selection-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.enqueue,
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final TorrentFileEntry file in mixedFiles()) {
+        await environment.database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion.insert(
+            jobId: jobId,
+            backendFileIndex: Value<int?>(file.index),
+            originalRelativePath: file.name,
+            currentRelativePath: file.name,
+            kind: const Value<String>('other'),
+            selected: Value<bool>(file.index == 0),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+
+      environment.service.wake();
+      final VideoDownloadJobRow job = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+      );
+      expect(job.lastError, contains('single-file selection'));
+      expect(backend.addCalls, 0);
+
+      await environment.service.deleteJob(jobId, deleteFiles: true);
+      expect(backend.removeDeleteFiles, <bool>[false]);
+    });
+
+    test('开关未装配或关闭时行为不变', () async {
+      for (final bool Function()? toggle in <bool Function()?>[
+        null,
+        () => false,
+      ]) {
+        final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+          snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+          files: mixedFiles(),
+        );
+        final _PipelineEnvironment environment = await createEnvironment(
+          backend,
+          skipDownloadExtras: toggle,
+        );
+        const String jobId = 'no-skip-job';
+        await environment.insertJob(
+          jobId: jobId,
+          stage: VideoDownloadJobStage.download,
+        );
+
+        await observeOnce(environment, jobId);
+
+        expect(backend.priorities, isEmpty);
+        expect(backend.listFilesCalls, 0, reason: '未完成时不该去列文件');
+        expect(await environment.database.getVideoDownloadJobFiles(jobId),
+            isEmpty);
+        await environment.close();
+      }
+    });
+
+    test('磁力元数据未到（文件列表为空）时本轮不动，下一轮再判', () async {
+      final List<TorrentFileEntry> files = <TorrentFileEntry>[];
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0)],
+        files: files,
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'metadata-pending-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, isEmpty);
+      expect(
+          await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
+
+      files.addAll(mixedFiles());
+      await observeOnce(environment, jobId);
+      expect(backend.priorities.keys.toSet(), <int>{2, 3});
+      expect(
+        (await environment.database.getVideoDownloadJobFiles(jobId)).length,
+        4,
+      );
+    });
+
+    test('后端拒绝写优先级时不落文件行，下一轮重试', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      )..priorityResult = false;
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'priority-rejected-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+
+      await observeOnce(environment, jobId);
+      expect(
+          await environment.database.getVideoDownloadJobFiles(jobId), isEmpty);
+      final VideoDownloadJobRow? job =
+          await environment.database.getVideoDownloadJob(jobId);
+      expect(job!.lifecycle, VideoDownloadJobLifecycle.active);
+      expect(job.attemptCount, 0);
+
+      backend.priorityResult = true;
+      await observeOnce(environment, jobId);
+      expect(
+        (await environment.database.getVideoDownloadJobFiles(jobId)).length,
+        4,
+      );
+    });
+  });
 }
 
 /// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
@@ -2741,6 +3171,7 @@ class _PipelineEnvironment {
     String? candidateMagnetUri,
     UpdateFeedPublisher? updateFeed,
     VideoCoverExtractor? coverExtractor,
+    bool Function()? skipDownloadExtras,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -2790,6 +3221,7 @@ class _PipelineEnvironment {
       updateFeed: updateFeed,
       coverExtractor: coverExtractor,
       videoCoversDirectory: Directory(p.join(root.path, 'covers')),
+      skipDownloadExtras: skipDownloadExtras,
     );
     return _PipelineEnvironment._(
       database: database,
@@ -3233,6 +3665,70 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   ) async {
     renameFileCalls += 1;
     return TorrentStorageResult(ok: true, path: newPath);
+  }
+}
+
+/// 带文件优先级能力的 fake：记录每次写入的优先级与被改名的文件序号。
+class _FakeDetailTorrentBackend extends _FakeTorrentBackend
+    implements TorrentDetailBackend, TorrentRemovalBackend {
+  _FakeDetailTorrentBackend({
+    required List<TorrentSnapshot> snapshots,
+    required List<TorrentFileEntry> files,
+  }) : super(snapshots: snapshots, files: files);
+
+  bool priorityResult = true;
+  final Map<int, TorrentFilePriority> priorities = <int, TorrentFilePriority>{};
+  final List<int> renamedIndexes = <int>[];
+
+  /// 每次 removeTorrent 的 deleteFiles 参数。
+  final List<bool> removeDeleteFiles = <bool>[];
+
+  @override
+  Future<bool> removeTorrent(String torrentId,
+      {bool deleteFiles = false}) async {
+    removeDeleteFiles.add(deleteFiles);
+    return true;
+  }
+
+  @override
+  bool get detailAvailable => true;
+
+  @override
+  Future<List<TorrentPeerDetail>?> listPeers(String torrentId) async => null;
+
+  @override
+  Future<List<TorrentTrackerDetail>?> listTrackers(String torrentId) async =>
+      null;
+
+  @override
+  Future<List<TorrentFilePriority>?> filePriorities(String torrentId) async =>
+      null;
+
+  @override
+  Future<bool> setFilePriority(
+    String torrentId,
+    int fileIndex,
+    TorrentFilePriority priority,
+  ) async {
+    if (!priorityResult) return false;
+    priorities[fileIndex] = priority;
+    return true;
+  }
+
+  @override
+  Future<TorrentSessionStatusInfo?> sessionStatus() async => null;
+
+  @override
+  Future<TorrentPieceStates?> pieceStates(String torrentId) async => null;
+
+  @override
+  Future<TorrentStorageResult> renameFile(
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) {
+    renamedIndexes.add(fileIndex);
+    return super.renameFile(torrentId, fileIndex, newPath);
   }
 }
 

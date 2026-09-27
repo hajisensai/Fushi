@@ -1,6 +1,8 @@
 library;
 
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_provider_label.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
@@ -13,7 +15,8 @@ import 'package:http/http.dart' as http;
 ///
 /// 认证信息只用于请求头或 query，不进入 cache key、错误消息与模型。电影与剧集的
 /// 子请求彼此隔离，单类失败时仍返回另一类结果。
-class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
+class TmdbVideoDiscoveryProvider
+    implements VideoDiscoveryProvider, VideoFranchiseSource {
   TmdbVideoDiscoveryProvider({
     String apiKey = '',
     String accessToken = '',
@@ -63,6 +66,7 @@ class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
         supportsPaging: true,
       );
 
+  @override
   bool get isAvailable => _apiKey.isNotEmpty || _accessToken.isNotEmpty;
 
   @override
@@ -498,6 +502,145 @@ class TmdbVideoDiscoveryProvider implements VideoDiscoveryProvider {
                   : VideoDiscoveryCategory.tv,
       externalId: id,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 系列（TMDB collection）：「整套下载」用。TMDB 的 collection 只收电影；剧集那半
+  // 由调用方按系列名另搜。
+  // ---------------------------------------------------------------------------
+
+  /// `/search/collection`：按名字找系列。失败 / 未配置返回空（系列是加法信息，
+  /// 找不到时退回单部作品，不让整条流程失败）。
+  @override
+  Future<List<TmdbCollectionHit>> searchCollections(String query) async {
+    final String trimmed = query.trim();
+    if (!isAvailable || trimmed.isEmpty) return const <TmdbCollectionHit>[];
+    final Map<String, Object?>? payload = await _getJsonOrNull(
+      '/search/collection',
+      query: <String, String>{'query': trimmed, 'page': '1'},
+      operation: 'TMDB search collection',
+      cacheKey: 'tmdb:search:collection:$trimmed:$language',
+    );
+    if (payload == null) return const <TmdbCollectionHit>[];
+    return <TmdbCollectionHit>[
+      for (final Object? node in metadataList(payload['results']))
+        if (metadataObject(node) case final Map<String, Object?> raw)
+          if (metadataInt(raw['id']) case final int collectionId)
+            TmdbCollectionHit(
+              id: collectionId,
+              name: metadataString(raw['name']) ?? '$collectionId',
+              originalName: metadataString(raw['original_name']),
+            ),
+    ];
+  }
+
+  /// `/movie/{id}` 的 `belongs_to_collection.id`；不属于任何系列 / 失败 → null。
+  @override
+  Future<int?> movieCollectionId(int movieId) async {
+    if (!isAvailable) return null;
+    final Map<String, Object?>? payload = await _getJsonOrNull(
+      '/movie/$movieId',
+      query: const <String, String>{},
+      operation: 'TMDB movie collection',
+      cacheKey: 'tmdb:movie:collection:$movieId:$language',
+    );
+    final Map<String, Object?>? collection = metadataObject(
+      payload?['belongs_to_collection'],
+    );
+    return metadataInt(collection?['id']);
+  }
+
+  /// `/collection/{id}`：系列名 + 全部电影（按上映日期升序，未定档的殿后）。
+  @override
+  Future<TmdbCollection?> fetchCollection(int collectionId) async {
+    if (!isAvailable) return null;
+    final Map<String, Object?>? payload = await _getJsonOrNull(
+      '/collection/$collectionId',
+      query: const <String, String>{},
+      operation: 'TMDB collection',
+      cacheKey: 'tmdb:collection:$collectionId:$language',
+    );
+    if (payload == null) return null;
+    final List<({String date, VideoDiscoveryItem item})> parts =
+        <({String date, VideoDiscoveryItem item})>[
+      for (final Object? node in metadataList(payload['parts']))
+        if (metadataObject(node) case final Map<String, Object?> raw)
+          // collection 的 parts 只收电影；个别条目 media_type 缺省，照电影映射。
+          if (metadataString(raw['media_type']) == null ||
+              metadataString(raw['media_type']) == 'movie')
+            if (_mapItem(raw, VideoMetadataMediaKind.movie)
+                case final VideoDiscoveryItem item)
+              (date: metadataString(raw['release_date']) ?? '', item: item),
+    ];
+    parts.sort((
+      ({String date, VideoDiscoveryItem item}) a,
+      ({String date, VideoDiscoveryItem item}) b,
+    ) {
+      if (a.date.isEmpty != b.date.isEmpty) return a.date.isEmpty ? 1 : -1;
+      return a.date.compareTo(b.date);
+    });
+    return TmdbCollection(
+      id: collectionId,
+      name: metadataString(payload['name']) ?? '$collectionId',
+      movies: <VideoDiscoveryItem>[
+        for (final ({String date, VideoDiscoveryItem item}) part in parts)
+          part.item,
+      ],
+    );
+  }
+
+  /// 系列的剧集那半：`/search/tv`，取第一页（系列名搜剧集，结果按相关度，前几条
+  /// 足够；是否同一系列由调用方按标题完全相等判定）。
+  @override
+  Future<List<VideoDiscoveryItem>> searchSeries(String query) async {
+    final String trimmed = query.trim();
+    if (!isAvailable || trimmed.isEmpty) return const <VideoDiscoveryItem>[];
+    final ProviderBatchResult<VideoDiscoveryPage> result = await search(
+      VideoDiscoveryRequest(
+        query: trimmed,
+        category: VideoDiscoveryCategory.tv,
+        pageSize: 10,
+        sort: VideoDiscoverySort.relevance,
+      ),
+    );
+    return <VideoDiscoveryItem>[
+      for (final VideoDiscoveryPage page in result.items) ...page.items,
+    ];
+  }
+
+  Future<Map<String, Object?>?> _getJsonOrNull(
+    String path, {
+    required Map<String, String> query,
+    required String operation,
+    required String cacheKey,
+  }) async {
+    try {
+      final VideoMetadataHttpResponse response = await _transport.get(
+        Uri.parse('$baseUrl$path').replace(
+          queryParameters: <String, String>{
+            if (_apiKey.isNotEmpty) 'api_key': _apiKey,
+            'language': language,
+            ...query,
+          },
+        ),
+        headers: <String, String>{
+          'Accept': 'application/json',
+          if (_accessToken.isNotEmpty) 'Authorization': 'Bearer $_accessToken',
+        },
+        operation: operation,
+        cacheKey: cacheKey,
+      );
+      return response.decodeJsonObject(operation: operation);
+    } on Object catch (error) {
+      // 系列查询是加法：失败退回单部作品，但必须留痕（限流 / key 失效时用户只会
+      // 看到「没找到系列」）。错误文本不含凭据：key 只在 query 里，transport 的
+      // 异常已脱敏。
+      ErrorLogService.instance.logDiagnostic(
+        'TmdbVideoDiscoveryProvider.$operation',
+        '$error',
+      );
+      return null;
+    }
   }
 
   String? _imageUrl(String? path) {

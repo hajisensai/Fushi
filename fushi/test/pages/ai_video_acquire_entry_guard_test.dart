@@ -53,7 +53,9 @@ void main() {
   });
 
   test('BUG-2694 点击时 AI 未指派 → 推 AI 设置页，返回后重判再继续', () {
-    final String open = bodyOf('Future<void>_openAiVideoAcquisition()async{');
+    final String open = bodyOf(
+      'Future<void>_openAiVideoAcquisition([String?initialQuery])async{',
+    );
     expect(
       open,
       contains(

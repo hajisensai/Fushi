@@ -50,6 +50,7 @@ class DeletionDisclosure {
     required this.willDelete,
     required this.willKeep,
     this.localFiles,
+    this.statisticsEntry,
   });
 
   /// 确认后真的会从本机消失的东西。
@@ -60,6 +61,10 @@ class DeletionDisclosure {
 
   /// 勾选「同时删除本地文件」时对上面两组做的替换；null = 这个目标没有可删的原件。
   final LocalFilesDisclosureSwap? localFiles;
+
+  /// 勾选「同时删除统计数据」时从「会被保留」挪进「会被删除」的那一条；null = 这个
+  /// 目标的披露不涉及统计。必须是 `willKeep` 的成员。
+  final String? statisticsEntry;
 
   /// 勾选「同时删除本地文件」后的披露。
   ///
@@ -79,6 +84,23 @@ class DeletionDisclosure {
             swap.narrowedKeptEntry!,
       ],
       localFiles: swap,
+      statisticsEntry: statisticsEntry,
+    );
+  }
+
+  /// 勾选「同时删除统计数据」后的披露：[statisticsEntry] 从「会被保留」挪进「会被
+  /// 删除」。幂等，且与 [withLocalFilesDeleted] 可任意顺序叠加。
+  DeletionDisclosure withStatisticsDeleted() {
+    final String? entry = statisticsEntry;
+    if (entry == null || willDelete.contains(entry)) return this;
+    return DeletionDisclosure(
+      willDelete: <String>[...willDelete, entry],
+      willKeep: <String>[
+        for (final String item in willKeep)
+          if (item != entry) item,
+      ],
+      localFiles: localFiles,
+      statisticsEntry: entry,
     );
   }
 }
@@ -100,7 +122,9 @@ DeletionDisclosure buildDeletionDisclosure({
       //      `<documents>/audiobooks/<hash>`；
       //   3) EpubStorage.deleteBookDir(extractDir) 递归删 `<documents>/fushi_books/<key>`。
       // 不删：epub_books.epubPath 只存文件名，删除路径从不据它删用户原始文件；
-      //       reading_statistics / reading_hourly_logs 无人清理，确实留着。
+      //       reading_statistics / reading_hourly_logs 默认留着；勾了「同时删除
+      //       统计数据」才由 deleteBook 走 deleteReadingStatisticsForTitle 清掉
+      //       （statisticsEntry 随之挪进「会被删除」）。
       // 「同时删除本地文件」只对有声书 / 配对字幕书**显式登记的原始音频**有意义：
       // 书本体（EPUB / PDF / 漫画）与字幕的原件路径根本没入库，deleteBook 无从删起。
       // 所以勾选后加进「会被删除」的是那条只讲音频的措辞，而「会被保留」那条同时
@@ -121,6 +145,7 @@ DeletionDisclosure buildDeletionDisclosure({
           deletedEntry: t.delete_disclosure_audio_source_files,
           narrowedKeptEntry: t.delete_disclosure_book_source_kept,
         ),
+        statisticsEntry: t.delete_disclosure_stats_kept,
       );
     case DeletionDisclosureTarget.attachedAudiobook:
       // 真实删除集合见 AudiobookRepository.deleteAudiobook：

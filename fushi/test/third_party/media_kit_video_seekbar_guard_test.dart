@@ -361,4 +361,304 @@ void main() {
       },
     );
   });
+
+  group('BUG-2731: swipe / double-tap seeks report onSeekEnd(target)', () {
+    test('horizontal swipe commit reports the target before seeking', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      final int start = source.indexOf('void onHorizontalDragEnd()');
+      expect(start, isNonNegative);
+      final String body = source.substring(start, start + 1200);
+      final int notify = body.indexOf(
+        '_theme(context).onSeekEnd?.call(newPosition);',
+      );
+      // BUG-2731 follow-up: the seek itself goes through `_dispatchSeek`
+      // (player.seek + onSeekDispatched), still right after onSeekEnd.
+      final int seek = body.indexOf('_dispatchSeek(context, newPosition);');
+      expect(
+        notify,
+        isNonNegative,
+        reason:
+            'swipe seek must tell the host its target (BUG-2731); '
+            'otherwise a quality reload during the in-flight seek reopens '
+            'the stream at the stale pre-swipe position.',
+      );
+      expect(seek, greaterThan(notify));
+    });
+
+    test('both double-tap seek indicators report the target', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      final RegExp pair = RegExp(
+        r'_theme\(context\)\.onSeekEnd\?\.call\(result\);\s*'
+        r'_dispatchSeek\(context, result\);',
+      );
+      expect(
+        pair.allMatches(source).length,
+        2,
+        reason:
+            'backward and forward double-tap seeks must both report '
+            'onSeekEnd(result) right before player.seek (BUG-2731).',
+      );
+    });
+
+    test('video page reloads resume from resumePositionMs, and adaptive '
+        'quality treats seeks as seeks', () {
+      final String quality = File(
+        'lib/src/pages/implementations/video_fushi/quality.part.dart',
+      ).readAsStringSync();
+      expect(
+        quality.contains('positionMs ?? 0'),
+        isFalse,
+        reason:
+            'reload-at-position sites must use resumePositionMs so an '
+            'in-flight seek target wins over the lagging player position '
+            '(BUG-2731).',
+      );
+      expect(
+        quality.contains('_adaptiveQuality.noteSeek()'),
+        isTrue,
+        reason:
+            'adaptive sampling must tell the controller about seeks, or '
+            'seek re-buffering is read as a network stall (BUG-2731).',
+      );
+    });
+  });
+
+  group('BUG-2731 follow-up: relative seeks measure from the pending target', () {
+    test('swipe and double-tap seeks never read the raw player position', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      expect(
+        source.contains('final Duration Function()? relativeSeekBasePosition;'),
+        isTrue,
+        reason: 'theme must expose the host base-position hook',
+      );
+      expect(
+        source.contains(
+          'relativeSeekBasePosition ?? this.relativeSeekBasePosition',
+        ),
+        isTrue,
+        reason: 'copyWith must carry the hook over',
+      );
+      expect(
+        source.contains(
+          'Duration newPosition = _currentSwipeBase(context) + '
+          'swipeDuration;',
+        ),
+        isTrue,
+        reason:
+            'swipe commit must be measured from the pending seek target, or '
+            'a second swipe during a buffering seek erases the first one',
+      );
+      expect(
+        RegExp(
+          r'var result =\s*_relativeSeekBase\(context\) [-+] value;',
+        ).allMatches(source).length,
+        2,
+        reason: 'both double-tap indicators must use the same base',
+      );
+      expect(
+        source.contains('position: _currentSwipeBase(context),'),
+        isTrue,
+        reason: 'horizontalSeekResolver must see the same base position',
+      );
+      // Everything relative inside the main controls state goes through the
+      // helper; the only raw reads left are the helper's own fallback and the
+      // seek bars' absolute drag math.
+      final int start = source.indexOf('void onHorizontalDragUpdate(');
+      final int end = source.indexOf('bool _isInSegment(');
+      expect(start, isNonNegative);
+      expect(end, greaterThan(start));
+      expect(
+        source.substring(start, end).contains('player.state.position'),
+        isFalse,
+        reason: 'swipe handlers must not read the lagging raw position',
+      );
+    });
+
+    test('one drag measures from one snapshotted base', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      final int start = source.indexOf('void onHorizontalDragUpdate(');
+      final String update = source.substring(
+        start,
+        source.indexOf('void onHorizontalDragEnd()', start),
+      );
+      expect(
+        RegExp(
+          r'if \(_dragInitialDelta == Offset\.zero\) \{\s*'
+          r'_dragInitialDelta = details\.localPosition;\s*'
+          r'_swipeBase = _relativeSeekBase\(context\);',
+        ).hasMatch(update),
+        isTrue,
+        reason: 'the base is captured once, when the drag starts',
+      );
+      expect(update.contains('_relativeSeekBase(context).'), isFalse);
+      final int end = source.indexOf('void onHorizontalDragEnd()');
+      expect(
+        source.substring(end, end + 1500).contains('_swipeBase = null;'),
+        isTrue,
+        reason: 'the snapshot must not leak into the next gesture',
+      );
+    });
+
+    test('seek bar drag preview adds delta to the same base', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      expect(
+        source.contains('deltaBase: () => _currentSwipeBase(context),'),
+        isTrue,
+      );
+      final int start = source.indexOf('class MaterialSeekBarState');
+      final int listener = source.indexOf('void listener()', start);
+      final String body = source.substring(
+        listener,
+        source.indexOf('void initState()', listener),
+      );
+      expect(body.contains('widget.deltaBase?.call()'), isTrue);
+      expect(body.contains('position = base + delta;'), isTrue);
+    });
+
+    test('committed seeks hand their dispatch future to the host', () {
+      for (final String path in <String>[mobileControlsPath, controlsPath]) {
+        final String source = File(path).readAsStringSync();
+        expect(
+          source.contains(
+            'final void Function(Future<void> seek)? onSeekDispatched;',
+          ),
+          isTrue,
+          reason: '$path theme must expose onSeekDispatched',
+        );
+        expect(
+          source.contains('onSeekDispatched ?? this.onSeekDispatched'),
+          isTrue,
+          reason: '$path copyWith must carry onSeekDispatched',
+        );
+        // Seek bar commit (pointer up).
+        expect(
+          RegExp(
+            r'final Future<void> seek =\s*controller\(context\)\.player\.seek\('
+            r'duration \* slider\);\s*'
+            r'_theme\(context\)\.onSeekDispatched\?\.call\(seek\);',
+          ).hasMatch(source),
+          isTrue,
+          reason: '$path seek bar commit must hand its future to the host',
+        );
+      }
+      final String mobile = File(mobileControlsPath).readAsStringSync();
+      final int helper = mobile.indexOf('void _dispatchSeek(');
+      expect(helper, isNonNegative);
+      final String helperBody = mobile.substring(helper, helper + 300);
+      expect(
+        RegExp(
+          r'final Future<void> seek =\s*controller\(context\)\.player\.seek\('
+          r'target\);\s*'
+          r'_theme\(context\)\.onSeekDispatched\?\.call\(seek\);',
+        ).hasMatch(helperBody),
+        isTrue,
+      );
+      // swipe + two double-taps.
+      expect(RegExp(r'_dispatchSeek\(context, ').allMatches(mobile).length, 3);
+    });
+
+    test('video page wires the base and the dispatch future', () {
+      final String theme = File(
+        'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
+      ).readAsStringSync();
+      expect(
+        RegExp(
+          r'relativeSeekBasePosition: \(\) =>\s*'
+          r'Duration\(milliseconds: controller\.captureRelativeSeekBaseMs\(\) \?\? 0\)',
+        ).hasMatch(theme),
+        isTrue,
+      );
+      expect(
+        'onSeekDispatched: controller.noteExternalSeekDispatched,'
+            .allMatches(theme)
+            .length,
+        2,
+        reason: 'both control themes must forward the dispatch future',
+      );
+      final int hud = theme.indexOf('Widget _buildSeekIndicator(');
+      expect(
+        theme
+            .substring(hud, hud + 1200)
+            .contains('controller.lastRelativeSeekBaseMs'),
+        isTrue,
+        reason: 'the HUD reads the same snapshotted base as the fork',
+      );
+    });
+
+    test('controller: seekRelative and load register the in-flight target', () {
+      final String controller = File(
+        'lib/src/media/video/video_player_controller.dart',
+      ).readAsStringSync();
+      final int rel = controller.indexOf('Future<void> seekRelative(');
+      expect(rel, isNonNegative);
+      final String relBody = controller.substring(
+        rel,
+        controller.indexOf('static int clampSeekTargetMs(', rel),
+      );
+      expect(relBody.contains('final int? pos = resumePositionMs;'), isTrue);
+
+      // Settle evidence only counts once the seek command is confirmed.
+      final int check = controller.indexOf('void _checkSeekLanded(');
+      final String checkBody = controller.substring(
+        check,
+        controller.indexOf('@visibleForTesting', check),
+      );
+      expect(
+        checkBody.contains('if (!_pendingSeekDispatched) return;'),
+        isTrue,
+      );
+      for (final String entry in <String>[
+        'Future<void> seekMs(',
+        'Future<void> _rawSeekMs(',
+      ]) {
+        final int at = controller.indexOf(entry);
+        expect(at, isNonNegative);
+        expect(
+          controller
+              .substring(at, at + 2500)
+              .contains('await _awaitSeekDispatch('),
+          isTrue,
+          reason: '$entry must confirm dispatch after player.seek returns',
+        );
+      }
+
+      // Reopen-at-position: the load's start point is the in-flight target
+      // from the very beginning (before open), then re-armed with the
+      // duration-checked resolvedStartMs before the restore seek.
+      final int load = controller.indexOf('Future<void> load({');
+      expect(load, isNonNegative);
+      final int early = controller.indexOf(
+        '_setPendingSeekLanding(preloadStartMs);',
+        load,
+      );
+      final int armed = controller.indexOf(
+        'applyMpvStartPosition(player, preloadStartMs)',
+        load,
+      );
+      final int resolved = controller.indexOf(
+        'final int restoreSeekToken = _setPendingSeekLanding(resolvedStartMs);',
+        load,
+      );
+      final int restoreSeek = controller.indexOf(
+        'await player.seek(Duration(milliseconds: resolvedStartMs));',
+        load,
+      );
+      expect(early, isNonNegative);
+      expect(armed, greaterThan(early));
+      expect(resolved, greaterThan(armed));
+      expect(restoreSeek, greaterThan(resolved));
+      final int confirmed = controller.indexOf(
+        '_confirmSeekDispatched(restoreSeekToken);',
+        load,
+      );
+      expect(confirmed, greaterThan(restoreSeek));
+      expect(
+        controller.contains('_pendingSeekLandingMs = null;'),
+        isFalse,
+        reason:
+            'clearing the target must go through _setPendingSeekLanding so '
+            'the settle counters reset with it',
+      );
+    });
+  });
 }

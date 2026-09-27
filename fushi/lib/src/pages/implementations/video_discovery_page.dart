@@ -435,7 +435,8 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               // 「AI 下视频」入口跟搜索框同一行：embedded 于下载页时页头不渲染，
               // 搜索行是三种宽度下唯一都可见的位置。null = 宿主没接线（平台合规
               // 不可用），整颗按钮不渲染；AI 未指派由宿主在点击时引导去配置。
-              final VoidCallback? onAiAcquire = widget.actions.onAiAcquire;
+              final ValueChanged<String?>? onAiAcquire =
+                  widget.actions.onAiAcquire;
               final Widget? aiEntry = onAiAcquire == null
                   ? null
                   : IconButton.filledTonal(
@@ -445,7 +446,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       ),
                       key: const ValueKey<String>('video-discovery-ai-acquire'),
                       tooltip: t.ai_video_acquire_entry,
-                      onPressed: onAiAcquire,
+                      onPressed: () => onAiAcquire(_searchController.text),
                       icon: const Icon(Icons.auto_awesome_outlined),
                     );
               if (compact) {

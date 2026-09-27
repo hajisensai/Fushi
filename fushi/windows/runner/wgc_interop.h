@@ -9,6 +9,7 @@
 #include <wrl/client.h>
 
 #include <windows.foundation.h>
+#include <windows.graphics.capture.h>
 
 #include <cwchar>
 
@@ -51,6 +52,26 @@ void CloseIfClosable(const Microsoft::WRL::ComPtr<T>& obj) {
   if (SUCCEEDED(obj.As(&closable))) {
     closable->Close();
   }
+}
+
+// 去掉 WGC 在被捕获窗口四周画的黄色高亮框，返回 put_IsBorderRequired(false) 的
+// HRESULT。IGraphicsCaptureSession3 是 Windows build 20348 才有的接口（Windows 10
+// 22H2 = 19045 没有）：缺它时返回 E_NOINTERFACE，此时黄框**应用无法关闭**，由调用方
+// 决定这次捕获还值不值得做——短暂的单帧截图可以接受一闪，持续整局的会话不行。
+// 非打包桌面应用无需先 GraphicsCaptureAccess::RequestAccessAsync(Borderless)
+// （Windows 11 上实测裸 put 即 S_OK、读回 false）。
+inline HRESULT SuppressCaptureBorder(
+    ABI::Windows::Graphics::Capture::IGraphicsCaptureSession* session) {
+  if (session == nullptr) {
+    return E_POINTER;
+  }
+  Microsoft::WRL::ComPtr<ABI::Windows::Graphics::Capture::IGraphicsCaptureSession3>
+      session3;
+  const HRESULT qi = session->QueryInterface(IID_PPV_ARGS(&session3));
+  if (FAILED(qi) || !session3) {
+    return E_NOINTERFACE;
+  }
+  return session3->put_IsBorderRequired(false);
 }
 
 }  // namespace wgc

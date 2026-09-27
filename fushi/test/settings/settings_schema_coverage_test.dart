@@ -1050,6 +1050,20 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'ai/Subtitle language':
       'test/settings/ai_video_download_settings_test.dart + '
           'test/ai/ai_video_acquisition_preferences_test.dart',
+  // 片源 / 码率偏好：同上，生效点是 reducer 重过滤时的版本排序
+  // （filterResourceGroups → rankResourceGroups），由 resource_picker 用例咬住。
+  'ai/Preferred source':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
+  'ai/Bitrate':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
+  // 跳过特典：生效点是下载管线的文件优先级（每轮现读偏好）与 AI 下视频的候选清洗，
+  // harness 里没有种子。
+  'ai/Skip extras':
+      'test/settings/ai_video_download_settings_test.dart + '
+          'test/media/video/download/video_download_pipeline_service_test.dart + '
+          'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /
