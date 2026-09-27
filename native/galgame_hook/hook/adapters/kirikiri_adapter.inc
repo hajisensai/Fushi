@@ -4027,14 +4027,14 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						try { consumed = global.fushiLookupLeftClickHook(); }
 						catch(e) { global.fushiLookupFault(); }
 						if(consumed) return true;
-						return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+						return this.fushiLookupOrig_onPrimaryClick(...);
 					} incontextof global.kag)) seams = seams | 0x2;
 				if(global.fushiLookupWrapKagSeam("onMouseMove",
 					function(x, y)
 					{
 						try { global.fushiLookupMouseMoveHook(x, y); }
 						catch(e) { global.fushiLookupFault(); }
-						return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+						return this.fushiLookupOrig_onMouseMove(...);
 					} incontextof global.kag)) seams = seams | 0x4;
 				if(global.fushiLookupWrapKagSeam("onMouseWheel",
 					function(shift, delta, x, y)
@@ -4043,7 +4043,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
 						catch(e) { global.fushiLookupFault(); }
 						if(consumed) return true;
-						return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+						return this.fushiLookupOrig_onMouseWheel(...);
 					} incontextof global.kag)) seams = seams | 0x8;
 				if(global.fushiLookupWrapKagSeam("onKeyDown",
 					function(key, shift)
@@ -4052,7 +4052,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						try { consumed = global.fushiLookupKeyDownHook(key, shift); }
 						catch(e) { global.fushiLookupFault(); }
 						if(consumed) return true;
-						return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+						return this.fushiLookupOrig_onKeyDown(...);
 					} incontextof global.kag)) seams = seams | 0x10;
 				global.fushiLookupKagSeams = seams;
 			};
