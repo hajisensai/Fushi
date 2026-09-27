@@ -314,6 +314,8 @@ class _FakeCloudRemoteVideoClient implements CloudRemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) =>
       getRemoteVideo(id, dest, onProgress: onProgress);
 

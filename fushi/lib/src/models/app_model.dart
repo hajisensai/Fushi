@@ -118,6 +118,7 @@ import 'package:fushi/src/media/torrent/anime_download_importer.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_executor.dart';
+import 'package:fushi/src/media/downloads/download_keep_alive_bindings.dart';
 import 'package:fushi/src/media/discovery/import/discovery_import_production.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
@@ -4682,6 +4683,9 @@ class AppModel with ChangeNotifier {
   /// 对话框新写入的计划；启动前已有 JSON 会先迁入这里并归档。
   VideoDownloadPipelineService? _videoDownloadPipelineService;
 
+  /// BUG-2714：内置引擎有活动任务时挂下载保活（随管线 runtime 起停）。
+  VideoDownloadJobsKeepAliveBinding? _videoDownloadKeepAlive;
+
   /// 下载管线 runtime「应当活着」的语义位（BUG-1738）。
   ///
   /// [reloadVideoDownloadPipelineRuntime] 曾拿 `_videoDownloadPipelineService
@@ -5281,6 +5285,8 @@ class AppModel with ChangeNotifier {
       updateFeed: updateFeedService,
     )..start();
     _videoDownloadPipelineService = pipeline;
+    _videoDownloadKeepAlive =
+        VideoDownloadJobsKeepAliveBinding(database.watchVideoDownloadJobs());
     _videoDownloadSubscriptionService = VideoDownloadSubscriptionService(
       database: database,
       resourceRegistry: resources,
@@ -5416,6 +5422,10 @@ class AppModel with ChangeNotifier {
   Future<void> _disposeVideoDownloadPipelineRuntime({
     Duration? pipelineDrainTimeout,
   }) async {
+    final VideoDownloadJobsKeepAliveBinding? keepAlive =
+        _videoDownloadKeepAlive;
+    _videoDownloadKeepAlive = null;
+    if (keepAlive != null) await keepAlive.dispose();
     final VideoDownloadSubscriptionService? subscriptions =
         _videoDownloadSubscriptionService;
     _videoDownloadSubscriptionService = null;
@@ -5676,20 +5686,28 @@ class AppModel with ChangeNotifier {
 
   /// 发现页直链下载队列（懒建，app 生命周期常驻——关闭发现页不中断下载，
   /// 语义同 [mangaDownloadService]）。
-  DiscoveryDownloadQueue get discoveryDownloadQueue =>
-      _discoveryDownloadQueue ??= DiscoveryDownloadQueue(
-        resolvePayload: (DiscoveryResourceItem item) {
-          final MediaDiscoverySource? source =
-              mediaDiscoveryService.sourceById(item.sourceId);
-          if (source == null) {
-            throw StateError('unknown discovery source: ${item.sourceId}');
-          }
-          return source.resolvePayload(item);
-        },
-        importer: (DiscoveryDownloadTask task, File file) =>
-            discoveryImportExecutor.importDownload(task, file),
-      );
+  DiscoveryDownloadQueue get discoveryDownloadQueue {
+    final DiscoveryDownloadQueue? existing = _discoveryDownloadQueue;
+    if (existing != null) return existing;
+    final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
+      resolvePayload: (DiscoveryResourceItem item) {
+        final MediaDiscoverySource? source =
+            mediaDiscoveryService.sourceById(item.sourceId);
+        if (source == null) {
+          throw StateError('unknown discovery source: ${item.sourceId}');
+        }
+        return source.resolvePayload(item);
+      },
+      importer: (DiscoveryDownloadTask task, File file) =>
+          discoveryImportExecutor.importDownload(task, file),
+    );
+    // BUG-2714：队列有未结束任务时挂下载保活。
+    _discoveryDownloadKeepAlive = DiscoveryDownloadKeepAliveBinding(queue);
+    return _discoveryDownloadQueue = queue;
+  }
+
   DiscoveryDownloadQueue? _discoveryDownloadQueue;
+  DiscoveryDownloadKeepAliveBinding? _discoveryDownloadKeepAlive;
 
   /// 发现页下载的落盘目录（与 torrent 同根：用户配置的下载根 → 默认根
   /// [downloadDefaultSaveRoot]，再按媒体域分子目录）。
@@ -7411,6 +7429,8 @@ class AppModel with ChangeNotifier {
     _videoSpecsService?.dispose();
     _videoSpecsService = null;
     _videoSpecsServiceDb = null;
+    _discoveryDownloadKeepAlive?.dispose();
+    _discoveryDownloadKeepAlive = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();
@@ -7491,6 +7511,8 @@ class AppModel with ChangeNotifier {
     _videoSpecsService?.dispose();
     _videoSpecsService = null;
     _videoSpecsServiceDb = null;
+    _discoveryDownloadKeepAlive?.dispose();
+    _discoveryDownloadKeepAlive = null;
     _discoveryDownloadQueue?.dispose();
     _discoveryDownloadQueue = null;
     _mediaDiscoveryService?.close();

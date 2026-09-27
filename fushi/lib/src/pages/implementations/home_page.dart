@@ -394,6 +394,15 @@ class _HomePageState extends BasePageState<HomePage>
 
   HomeTab _currentTab = HomeTab.home;
 
+  /// BUG-2719：tab 正文（[_bodyWithMiniBar]）的唯一身份。三套布局把正文挂在不同的父链下
+  /// （底栏：`Scaffold.body > SafeArea`；侧栏：`Row > Expanded`；macOS：
+  /// `ContentArea`），而 [LayoutBuilder] 只按**当前宽度**挑其一。没有这把 key，
+  /// 宽度一越过 600 的断点，整棵正文就被卸载重建，所有 tab 的 State 一起丢掉。
+  /// 最常见的触发是手机竖屏点开视频：播放页转横屏，被它盖住的首页跟着变宽换成侧栏
+  /// 布局，退出视频转回竖屏再换一次——视频库的分区（系列 / 全部视频 / 媒体服务器…）
+  /// 于是每次都回到第一个「首页」分区。持有 [GlobalKey] 让换布局变成同一子树换父节点。
+  final GlobalKey _homeBodyKey = GlobalKey(debugLabel: 'home-tab-body');
+
   /// Android games tab（串流接收端）的依赖装配；只在首次切到该 tab 时构造。
   late final GameStreamLibraryServices _gameStreamLibraryServices =
       GameStreamLibraryServices.interconnect(appModel: appModelNoUpdate);
@@ -1474,6 +1483,7 @@ class _HomePageState extends BasePageState<HomePage>
     // ——关掉下载/听书后它们仍钉在首页底部，与「看起来像纯粹的阅读器」直接相反。
     final ModuleVisibility visibility = appModel.moduleVisibility;
     return Column(
+      key: _homeBodyKey,
       children: <Widget>[
         Expanded(child: buildBody()),
         if (visibility.isEnabled(ModuleId.downloads))
