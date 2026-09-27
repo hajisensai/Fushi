@@ -15,6 +15,12 @@ import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+
+import '../../../helpers/test_platform_services.dart';
 
 /// 视频源扩展的浏览 → 作品页 → 起播链路（播放页本体被 openPlayer 桩替换：widget
 /// 测试里起不了 libmpv）。
@@ -240,6 +246,110 @@ void main() {
     },
   );
 
+  group('primary play button', () {
+    late PreferencesRepository prefs;
+    late _TestAppModel appModel;
+
+    setUp(() {
+      LocaleSettings.setLocale(AppLocale.en);
+      prefs = PreferencesRepository(database);
+      appModel = _TestAppModel(prefs, root);
+    });
+
+    String episodeId(String url) =>
+        '$kAnimeSourceVideoIdPrefix'
+        'eu.kanade.tachiyomi.animeextension.all.fixture:42:$url';
+
+    Future<List<(RemoteVideoInfo, int)>> pumpDetail(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final List<(RemoteVideoInfo, int)> opened = <(RemoteVideoInfo, int)>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
+              openPlayer:
+                  (
+                    _,
+                    AnimeSourceVideoClient client,
+                    RemoteVideoInfo info,
+                    int index,
+                  ) async => opened.add((info, index)),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      return opened;
+    }
+
+    Finder playButton() =>
+        find.byKey(const ValueKey<String>('anime_source_play'));
+
+    String playLabel(WidgetTester tester) => tester
+        .widget<Text>(
+          find.descendant(of: playButton(), matching: find.byType(Text)),
+        )
+        .data!;
+
+    testWidgets('without any watch position it reads Play and plays the '
+        'first episode', (WidgetTester tester) async {
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      expect(find.text('Fixture Show (details)'), findsWidgets);
+      expect(playLabel(tester), t.play);
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 0);
+      expect(opened.single.$1.id, episodeId('/ep/1'));
+    });
+
+    Future<void> seedWatchedAt(
+      WidgetTester tester,
+      Map<String, int> atByEpisodeUrl,
+    ) => tester.runAsync(() async {
+      for (final MapEntry<String, int> entry in atByEpisodeUrl.entries) {
+        await prefs.setPref(
+          videoRemotePositionEpisodeAtPrefKey(episodeId(entry.key), 0),
+          entry.value,
+        );
+      }
+    });
+
+    testWidgets('continue watching lands on the episode watched most '
+        'recently (episode 2 newer than episode 1)', (
+      WidgetTester tester,
+    ) async {
+      await seedWatchedAt(tester, <String, int>{'/ep/1': 1000, '/ep/2': 2000});
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      final String label = playLabel(tester);
+      expect(label, contains(t.video_continue_watching));
+      expect(label, contains('Episode 2'));
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 1);
+      expect(opened.single.$1.id, episodeId('/ep/2'));
+    });
+
+    testWidgets('recency wins over list order: a later-watched episode 1 '
+        'beats an earlier-watched episode 2', (WidgetTester tester) async {
+      await seedWatchedAt(tester, <String, int>{'/ep/2': 1000, '/ep/1': 2000});
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      expect(playLabel(tester), '${t.video_continue_watching} · Episode 1');
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 0);
+    });
+  });
+
   testWidgets('an episode without streams still opens the player, '
       'which reports NO stream on load', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
@@ -323,6 +433,15 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+/// 作品页经 `appProvider` 读远端断点时间戳：挂一份真 [PreferencesRepository]（同一个
+/// 内存 DB），其余 AppModel 初始化不跑。
+class _TestAppModel extends AppModel {
+  _TestAppModel(PreferencesRepository prefs, Directory root)
+    : super(testPlatformServices()) {
+    wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: root);
+  }
 }
 
 class _AnimeRuntime extends MihonBridgeRuntime {

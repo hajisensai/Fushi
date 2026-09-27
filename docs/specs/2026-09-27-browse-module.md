@@ -31,13 +31,34 @@
 - 漫画发现页底部的「浏览来源」节（`MangaSourceCatalogSection`）仍在。它和发现页的来源下拉 / 热门行共用一份快照，留到阶段 3 连同发现页一起处理。
 - 更新中心的「扩展更新」仍 push 独立的 `MihonExtensionsPage`。
 
-## 阶段 2：来源浏览页与作品页统一为视频形态
+## 阶段 2：来源浏览页与作品页统一为视频形态（已做 2a，2b 待拍板）
 
-- 现有三份几乎同形的浏览页：`MihonSourceBrowsePage`（漫画 + 视频共用）、`LnReaderSourceBrowsePage`、`AidokuSourceBrowsePage`。收成一个吃适配器的 `OnlineSourceBrowsePage`，适配器接口为 fetchPage / filters / cover / openDetail / cloudflare。筛选语义差异由适配器表达：LNReader 筛选作用在热门上，Mihon 筛选切到搜索。
-- 从 `AnimeSourceDetailPage` 抽出作品页骨架，结构是封面 + 元数据、简介、条目列表，页头放网站 / 刷新；点行即在线打开。主操作区三个槽：在线开始 / 继续、加入书架、下载。
-  - 小说：`LnReaderNovelDetailPage` 本来就是这个形态，迁到骨架上。
-  - 漫画：Mihon / Aidoku 详情不再直接进 `MangaSeriesPage`，改走骨架。点章用在线直读；加入书架用 `OnlineMangaLibraryService.add`。已在库时按钮变成「打开书架页」，进 `MangaSeriesPage`，OCR / 已读 / 订阅 / 自动下载留在那里。
-  - 视频（阶段 2b，另起设计稿）：在线集目前只以 `RemoteVideoInfo` 记进度、不进库表。「加入媒体库」需要新的持久模型，大概率升 schema；「下载」复用 `AnimeVideoLoader` 取流 → 下载队列 → 按本地视频入库。
+### 2a（本分支已实现）
+- **源浏览页只剩一份**：`lib/src/media/online/online_source_browse_page.dart` 的 `OnlineSourceBrowsePage<T>`，差异收进适配器 `OnlineSourceCatalog<T>`。`MihonSourceBrowsePage`（漫画 + 视频扩展）、`LnReaderSourceBrowsePage`、`AidokuSourceBrowsePage` 三页各只剩一个适配器。
+  - 列表：Mihon / LNReader 是热门 / 最新，Aidoku 是包自己声明的 listing，Aidoku 原来的页头下拉框改成分段条。
+  - 筛选应用后的去向由适配器决定：Mihon 切到搜索，LNReader 回到热门并清空搜索词。
+  - 翻页按视频发现页的口径：离底 600 以内自动加载下一页，保留「加载更多」格作为键盘 / 手柄兜底。
+- **作品页版式只剩一份**：`lib/src/media/online/online_work_detail.dart`，从视频源作品页抽出。
+  - 头部：120×170 封面 + 标题 / 元信息 / 类型标签 + 主操作区，简介在头部下方整宽；条目区是小标题加一行一条，点行即在线打开。
+  - 视频：主操作「播放 / 继续观看 · 第 N 集」，落点按播放页合集模式的远端断点键 `(成员 id, 0)` 取最新一集。
+  - 小说：「在线阅读 / 继续阅读」「加入书架 / 移出书架」「下载」三个动作。「加入书架」只建在线书、不开阅读器；此前它其实是整本下载，与漫画的语义不一致。移出书架和漫画共用书架长按删除的确认框（`online_shelf_removal.dart`）。
+  - 漫画：`MangaSeriesPage` 头部改用同一套版式，原有的继续阅读、加入 / 移出书架、下载全部、OCR 动作与章节列表不变。
+
+### 2b 视频「加入媒体库」「下载」（设计稿，待所有者确认）
+**不升 schema**，复用 TODO-1157「流媒体书」的形态（`VideoBooks` 里 `videoPath` + `streamSpecJson` 描述怎么重开）：
+
+- **加入媒体库**：每集一行 `VideoBooks`。
+  - `bookUid` 沿用 `RemoteVideoInfo.id`（`anime-source:<包>/<源>/<集 URL>`）。播放页已按这个 id 记断点、字幕记忆与调轴，入库前后的进度自然连续。
+  - `videoPath` 写一个非 http 的 `anime-source://…` 标识，避免被 `isStreamVideoBook` 误判成直链。
+  - `streamSpecJson` 写 `{kind: anime-source, extensionPackage, sourceId, animeUrl, episodeUrl, animeTitle}`。
+  - 同一作品的集用 playlist 类型的 media collection 归组，封面与标题取作品详情。
+  - 重开时由 `stream_video_launch.dart` 新增的 anime-source 分支按描述重建 `AnimeSourceVideoClient`，取流仍走播放页的「正在连接视频流」阶段；扩展被卸载时在书架给出明确提示。
+  - 刷新剧集时只补新集，不删已看的集。
+- **下载**：先用宿主 `AnimeVideoLoader` 解析出选中那条流（URL + 防盗链头），再按流的类型分两路：
+  - 直链 mp4 / mkv 进 `DiscoveryDownloadQueue`（已有的直链队列，任务出现在「浏览 › 下载」）；
+  - HLS 走一条 ffmpeg `-c copy` 转封装任务。ffmpeg-min 已带 hls demuxer（BUG-2630）；中继的图片伪装分片处理（BUG-2609）需要复用到这一路。
+  - 下完落地的文件按本地视频入库，并替换掉那一集的在线行（同 bookUid，进度保留）。
+- 风险：扩展取到的流 URL 多数有时效，下载必须在解析后立即开始，失败时重新解析而不是重试旧 URL。部分源的 HLS 带 AES 加密，ffmpeg 可以解；DRM 源不支持，要明确报错。
 
 ## 阶段 3：发现页统一为视频发现页交互
 

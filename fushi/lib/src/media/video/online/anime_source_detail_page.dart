@@ -11,6 +11,7 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
+import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -19,12 +20,17 @@ import 'package:url_launcher/url_launcher.dart';
 
 /// 视频源扩展的作品页：详情 + 剧集列表 → 内置播放器（起播默认选线路）。
 ///
-/// 与漫画的 `MangaSeriesPage` 不同，本页**不入库**（浏览态零入库，收藏是二期）：
-/// 进页拉一次详情与剧集，点集**直接进播放器**——取流、默认选线路（扩展标的
+/// 这是三域在线作品页的**版式基准**（2026-09-27「浏览」阶段 2，[OnlineWorkHeader]
+/// 等共用件就是从本页抽出来的）：点集**直接进播放器**——取流、默认选线路（扩展标的
 /// `preferred` / 排序第一条）都在播放页的「正在连接视频流」阶段做，多条候选
-/// （画质 / hoster）不再在这里弹选择器拦一道，用户进去后在播放器画质菜单里换线路
+/// （画质 / hoster）不在这里弹选择器拦一道，用户进去后在播放器画质菜单里换线路
 /// （[AnimeSourceVideoClient] 的 `RemoteVideoStreamVariants` 能力）。播放页拿到整部
 /// 作品的集列表当 `remoteCollectionMembers`，看完自动连播下一集。
+///
+/// 主操作「继续观看」落到最近看过的那一集：播放页在合集模式下按「成员 id, 0」
+/// 记远端断点（`videoRemotePositionEpisodeAtPrefKey`），本页按同一把键取最新的一集。
+/// 本页仍**不入库**；加入媒体库 / 下载需要新的持久模型，见
+/// `docs/specs/2026-09-27-browse-module.md` 阶段 2b。
 class AnimeSourceDetailPage extends ConsumerStatefulWidget {
   const AnimeSourceDetailPage({
     required this.manager,
@@ -68,6 +74,9 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   late MihonAnime _anime = widget.anime;
   List<MihonEpisode> _episodes = const <MihonEpisode>[];
   AnimeSourceVideoClient? _client;
+
+  /// 最近看过的一集（按远端断点时间戳取最新）；-1 = 一集都没看过。
+  int _resumeIndex = -1;
   bool _loading = true;
   Object? _error;
 
@@ -126,7 +135,44 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         _loading = false;
         _error = error;
       });
+      return;
     }
+    // 在详情加载的 try 之外：断点只决定「继续观看」落点，读不到不能冒充成「详情
+    // 加载失败」。
+    _reloadResumeIndex();
+  }
+
+  /// 拿不到 AppModel 是正常状态（没有 ProviderScope 的宿主树，如 widget 测试）：
+  /// 页面照常展示，只是没有「继续观看」落点。与 `MangaSeriesPage` 同一口径。
+  AppModel? get _appModelOrNull {
+    try {
+      return ref.read(appProvider);
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 按远端断点时间戳找最近看过的一集。键与播放页合集模式的落盘同式：
+  /// `(成员 id, 0)`（见 `VideoFushiPage._remotePositionKeyForIndex`）。
+  void _reloadResumeIndex() {
+    final AnimeSourceVideoClient? client = _client;
+    final AppModel? appModel = _appModelOrNull;
+    if (client == null || appModel == null || !mounted) return;
+    final List<RemoteVideoInfo> members = client.remoteVideos;
+    int best = -1;
+    int bestAt = 0;
+    for (int index = 0; index < members.length; index++) {
+      final Object? at = appModel.prefsRepo.getPref(
+        videoRemotePositionEpisodeAtPrefKey(members[index].id, 0),
+        defaultValue: 0,
+      );
+      final int atMs = at is int ? at : 0;
+      if (atMs > bestAt) {
+        bestAt = atMs;
+        best = index;
+      }
+    }
+    if (best != _resumeIndex) setState(() => _resumeIndex = best);
   }
 
   /// 扩展字幕轨的默认语言：与自动下字幕同一条链（字幕工作台的默认语言 > 默认内容
@@ -179,6 +225,8 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
         ),
       ),
     );
+    // 播放页退出时已把断点落进 prefs：回来立刻刷新「继续观看」落点。
+    _reloadResumeIndex();
   }
 
   /// 「在网站打开」：源站网页地址（扩展的 `getAnimeUrl`，兜底 baseUrl + url）交给
@@ -234,59 +282,38 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   Widget _buildBody(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Object? error = _error;
+    final int resume = _resumeIndex;
+    final bool canPlay = !_loading && _episodes.isNotEmpty;
     return ListView(
       padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SizedBox(
-              width: 120,
-              height: 170,
-              child: FushiCard(
-                padding: EdgeInsets.zero,
-                child: MihonSourceImage(
-                  runtime: widget.manager.runtime,
-                  cache: widget.manager.coverCache,
-                  context: widget.sourceContext,
-                  url: _anime.coverUrl,
-                ),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(_anime.title, style: theme.textTheme.titleLarge),
-                  if (_anime.author != null && _anime.author!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _anime.author!,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                  if (_anime.genre != null && _anime.genre!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _anime.genre!,
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                ],
+        OnlineWorkHeader(
+          cover: MihonSourceImage(
+            runtime: widget.manager.runtime,
+            cache: widget.manager.coverCache,
+            context: widget.sourceContext,
+            url: _anime.coverUrl,
+          ),
+          title: _anime.title,
+          lines: <String?>[_anime.author],
+          genres: splitOnlineWorkGenres(_anime.genre),
+          description: _anime.description,
+          actions: <Widget>[
+            FilledButton.icon(
+              key: const ValueKey<String>('anime_source_play'),
+              onPressed: canPlay
+                  ? () => unawaited(_play(resume >= 0 ? resume : 0))
+                  : null,
+              icon: const Icon(Icons.play_arrow),
+              label: Text(
+                resume >= 0 && resume < _episodes.length
+                    ? '${t.video_continue_watching} · '
+                          '${_episodeTitle(_episodes[resume])}'
+                    : t.play,
               ),
             ),
           ],
         ),
-        if (_anime.description != null && _anime.description!.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: Text(_anime.description!, style: theme.textTheme.bodyMedium),
-          ),
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 16),
@@ -305,28 +332,21 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
               ],
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.only(top: 24, bottom: 8),
-          child: Text(
-            t.video_online_episodes_title,
-            style: theme.textTheme.titleMedium,
-          ),
-        ),
-        if (_loading)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: adaptiveIndicator(context: context),
-            ),
+        OnlineWorkSectionTitle(t.video_online_episodes_title),
+        if (_loading || _episodes.isEmpty)
+          OnlineWorkItemsPlaceholder(
+            loading: _loading,
+            emptyText: t.video_online_episodes_empty,
           )
-        else if (_episodes.isEmpty)
-          Text(t.video_online_episodes_empty)
         else
           for (int index = 0; index < _episodes.length; index++)
             _buildEpisodeRow(context, index),
       ],
     );
   }
+
+  String _episodeTitle(MihonEpisode episode) =>
+      episode.name.isNotEmpty ? episode.name : episode.number.toString();
 
   Widget _buildEpisodeRow(BuildContext context, int index) {
     final MihonEpisode episode = _episodes[index];
@@ -335,23 +355,17 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
             episode.uploadedAt,
           ).toLocal().toString().split(' ').first
         : null;
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        key: ValueKey<String>('anime_episode_${episode.url}'),
-        title: Text(
-          episode.name.isNotEmpty ? episode.name : episode.number.toString(),
-        ),
-        subtitle: uploaded == null
-            ? null
-            : Text(
-                episode.scanlator == null || episode.scanlator!.isEmpty
-                    ? uploaded
-                    : '$uploaded · ${episode.scanlator}',
-              ),
-        trailing: const Icon(Icons.play_arrow),
-        onTap: () => unawaited(_play(index)),
-      ),
+    final String? scanlator = episode.scanlator?.trim();
+    return OnlineWorkItemTile(
+      key: ValueKey<String>('anime_episode_${episode.url}'),
+      title: _episodeTitle(episode),
+      subtitle: <String>[
+        if (uploaded != null) uploaded,
+        if (scanlator != null && scanlator.isNotEmpty) scanlator,
+      ].join(' · '),
+      current: index == _resumeIndex,
+      trailing: const Icon(Icons.play_arrow),
+      onTap: () => unawaited(_play(index)),
     );
   }
 }

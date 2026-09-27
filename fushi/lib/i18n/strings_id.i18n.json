@@ -5625,5 +5625,9 @@
   "video_subtitle_host_upload_unsupported": "The host's Fushi is too old to receive subtitles; it's only saved on this device",
   "video_setting_subtitle_auto_upload_to_host": "Auto-upload imported subtitles to host",
   "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
-  "nav_browse": "Jelajah"
+  "nav_browse": "Jelajah",
+  "novel_detail_library_remove": "Hapus dari rak buku",
+  "novel_detail_library_remove_confirm": "Hapus novel ini dari rak buku? Bab yang tersimpan dan progres membaca akan dihapus.",
+  "novel_detail_download": "Unduh",
+  "novel_detail_library_added": "Ditambahkan ke rak buku"
 }

@@ -5625,5 +5625,9 @@
   "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机",
   "video_setting_subtitle_auto_upload_to_host": "导入的字幕自动上传到服务端",
   "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。",
-  "nav_browse": "浏览"
+  "nav_browse": "浏览",
+  "novel_detail_library_remove": "移出书架",
+  "novel_detail_library_remove_confirm": "把这部小说移出书架？已缓存的章节和阅读进度会一并删除。",
+  "novel_detail_download": "下载",
+  "novel_detail_library_added": "已加入书架"
 }
