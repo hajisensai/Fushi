@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cwchar>
+#include <string>
 #include <vector>
 
 #include "../hook/adapters/unity_mono_text.h"
@@ -229,12 +230,122 @@ void TestAbiSelection() {
 #else
   assert(kMonoManagedAbiForBuild == MonoManagedAbi::kX64Win64);
 #endif
-  // 与 IL2CPP 的根本差异：托管 setter 只有 (this, string)，没有尾随 MethodInfo*。
+  // 与 IL2CPP 的根本差异：托管入口只有 (this, string, ...)，没有尾随 MethodInfo*。
   for (const MonoTextHookSpec& spec : kUnityMonoTextHookSpecs) {
     assert(spec.instance);
-    assert(spec.param_count >= 1 && spec.param_count <= 2);
+    assert(spec.param_count >= 1 && spec.param_count <= kMonoTextHookMaxParams);
     assert(spec.params[0] == kMonoTypeString);
   }
+}
+
+// Fungus（公开框架，独立 Fungus.dll 或源码编进 Assembly-CSharp）：
+//   IEnumerator SayDialog.DoSay(string, bool×5, AudioClip, Action)
+FakeImage FungusImage(const char* image_name, bool exact_signature = true) {
+  FakeImage image{image_name, {}};
+  std::vector<int> params = {kMonoTypeString,  kMonoTypeBoolean,
+                             kMonoTypeBoolean, kMonoTypeBoolean,
+                             kMonoTypeBoolean, kMonoTypeBoolean,
+                             kMonoTypeClass,   kMonoTypeClass};
+  if (!exact_signature) params[6] = kMonoTypeString;
+  image.classes.push_back(
+      {"Fungus",
+       "SayDialog",
+       // 同名 7 参重载排在前面：只按名字找会挂错。
+       {{"DoSay", true, kMonoTypeClass,
+         {kMonoTypeString, kMonoTypeBoolean, kMonoTypeBoolean,
+          kMonoTypeBoolean, kMonoTypeBoolean, kMonoTypeBoolean,
+          kMonoTypeClass},
+         0},
+        {"Say", true, kMonoTypeVoid, params, 0},
+        {"DoSay", true, kMonoTypeClass, params, 0}}});
+  return image;
+}
+
+void TestFungusDoSayIsResolvedExactlyAndUniquely() {
+  {
+    std::vector<FakeImage> images = {ScriptImage(false, false),
+                                     FungusImage("Fungus"), UnityUiImages()};
+    g_images = &images;
+    const MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+    const auto* dosay = static_cast<FakeMethod*>(
+        r.methods[static_cast<size_t>(MonoTextHookId::kFungusSayDialogDoSay)]);
+    assert(dosay != nullptr && std::strcmp(dosay->name, "DoSay") == 0 &&
+           dosay->params.size() == 8);
+    assert(r.framework_ambiguous == 0);
+    const uint32_t plan = PlanUnityMonoTextHooks(r);
+    // 名牌与其它 UI 文本仍走 UI.Text；正文另有 DoSay 这条稳定道。
+    assert(plan == (MonoTextHookBit(MonoTextHookId::kUiTextSetText) |
+                    MonoTextHookBit(MonoTextHookId::kFungusSayDialogDoSay)));
+    const MonoTextHookSpec& spec =
+        MonoTextHookSpecFor(MonoTextHookId::kFungusSayDialogDoSay);
+    assert(spec.stable_identity);
+    assert(spec.scope == MonoTextHookScope::kFrameworkUnique);
+  }
+  {
+    // 源码导入形态：Fungus 类型编进 Assembly-CSharp 本身。
+    FakeImage script = FungusImage("Assembly-CSharp");
+    std::vector<FakeImage> images = {script};
+    g_images = &images;
+    const MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+    assert(r.script_assembly_loaded);
+    assert(PlanUnityMonoTextHooks(r) ==
+           MonoTextHookBit(MonoTextHookId::kFungusSayDialogDoSay));
+  }
+  {
+    // 负向：两个程序集各有一个 Fungus.SayDialog —— 说不清，不装。
+    std::vector<FakeImage> images = {ScriptImage(false, false),
+                                     FungusImage("Fungus"),
+                                     FungusImage("Fungus.Other")};
+    g_images = &images;
+    const MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+    assert(r.framework_ambiguous ==
+           MonoTextHookBit(MonoTextHookId::kFungusSayDialogDoSay));
+    assert(PlanUnityMonoTextHooks(r) == 0);
+  }
+  {
+    // 负向：签名不符（第 7 个参数不是引用类型）。
+    std::vector<FakeImage> images = {ScriptImage(false, false),
+                                     FungusImage("Fungus", false)};
+    g_images = &images;
+    const MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+    assert(r.methods[static_cast<size_t>(
+               MonoTextHookId::kFungusSayDialogDoSay)] == nullptr);
+    assert(PlanUnityMonoTextHooks(r) == 0);
+  }
+  {
+    // 负向：同名 SayDialog 但不在 Fungus 命名空间。
+    FakeImage other = FungusImage("Other");
+    other.classes[0].ns = "";
+    std::vector<FakeImage> images = {ScriptImage(false, false), other};
+    g_images = &images;
+    const MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+    assert(PlanUnityMonoTextHooks(r) == 0);
+  }
+}
+
+std::wstring Strip(const wchar_t* in, int capacity = 64) {
+  wchar_t out[64] = {};
+  const int n = StripFungusTextTags(in, static_cast<int>(std::wcslen(in)),
+                                    out, capacity);
+  return std::wstring(out, static_cast<size_t>(n));
+}
+
+void TestStripFungusTextTags() {
+  // 控制标记整段去掉（含参数的 {w=0.5} {voice=…} {ruby=…}），正文与换行保留。
+  assert(Strip(L"{w=0.5}あ{b}い{/b}\nう{voice=sce_0001}") == L"あい\nう");
+  assert(Strip(L"え{ruby=かな,2}お{wc}") == L"えお");
+  // Writer.DoWords 把字面量 \n 换成换行。
+  assert(Strip(L"か\\nき") == L"か\nき");
+  // 没有闭合 } 的 { 原样保留；{ 与 } 跨行不算标记（Fungus 正则的 . 不跨换行）。
+  assert(Strip(L"く{け") == L"く{け");
+  assert(Strip(L"こ{さ\nし}") == L"こ{さ\nし}");
+  // 富文本 <...> 不在这里剥（共用发布入口剥），原样保留。
+  assert(Strip(L"<b>す</b>") == L"<b>す</b>");
+  // 容量上限与空输入。
+  assert(Strip(L"たちつてと", 3) == L"たちつ");
+  wchar_t out[4] = {};
+  assert(StripFungusTextTags(nullptr, 3, out, 4) == 0);
+  assert(StripFungusTextTags(L"x", 0, out, 4) == 0);
 }
 
 void TestSpecTableIsIndexedById() {
@@ -429,6 +540,8 @@ int main() {
   TestStaticOrWrongReturnDoesNotMatch();
   TestMonoStringBoundedRead();
   TestAttachScopeBalances();
+  TestFungusDoSayIsResolvedExactlyAndUniquely();
+  TestStripFungusTextTags();
   std::printf("unity_mono_text_test: ok\n");
   return 0;
 }

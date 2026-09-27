@@ -1714,7 +1714,9 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("RecordUnityTextChars(", detours)
         # Mono 托管签名没有 IL2CPP 的尾随 MethodInfo*。
         self.assertNotIn("const void* method", detours)
-        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 5)
+        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 6)
+        # Fungus 整句先剥框架自己的 {...} 标记，再走共用发布入口。
+        self.assertIn("StripFungusTextTags(", detours)
         # IL2CPP 与 Mono 共用同一发布入口，过滤口径不分叉。
         unity = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"
@@ -2155,7 +2157,10 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("InstallUnityMonoLookupHooks(lookup_code)", install)
         # Main-thread callbacks: bounded copies and engine reads only.
         for name in ("void FUSHI_MONO_MANAGED_CALL UmFixedUpdateDetour(",
+                     "void FUSHI_MONO_MANAGED_CALL UmFungusLateUpdateDetour(",
+                     "void UmSampleFrame(",
                      "uint32_t SampleUmInstance(",
+                     "uint32_t SampleUmFungus(",
                      "void SampleUmGlyph(",
                      "LRESULT CALLBACK UmLookupWindowProc(",
                      "bool UmPressEligible("):
@@ -2178,6 +2183,60 @@ class AdapterStructureTest(unittest.TestCase):
         window = self._function_body(runtime, "HWND FindUmGameWindow(")
         self.assertIn("kUmGameWindowClass", window)
         self.assertIn('L"UnityWndClass"', runtime)
+        # Fungus branch: framework types by namespace + full signature, unique
+        # across images; never a title / sample name.
+        for forbidden in ("sentimental", "qureate", "deathloop", "timeleap",
+                          "advmanager", "audiomanager"):
+            self.assertNotIn(forbidden, core.lower())
+            self.assertNotIn(forbidden, runtime.lower())
+        fungus = self._function_body(
+            core, "inline FungusSiteResolution ResolveFungusSites(")
+        for proof in ("FindClassInImages(", "MonoTextHookId::kFungusSayDialogDoSay",
+                      "LateUpdate", "ListLayout(", "ResolveFungusIcall(",
+                      "class_value_size(", "m_LastString"):
+            self.assertIn(proof, fungus)
+        self.assertIn("ResolveUnityMonoFungusLookup(api, runtime)", scope)
+
+    def test_unity_mono_voice_is_bundle_proven_and_callbacks_stay_bounded(
+        self,
+    ) -> None:
+        """Unity Mono 逐句语音：主线程 detour 只做门 + 引擎取名 + 有界入队；
+
+        voice bundle 判定、去重、共享环事件与日志只在 HookWorker；Fungus 打字音排除
+        先于播放入口生效；判据不含任何标题 / 样本名。"""
+        audio = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_audio.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("sentimental", "qureate", "deathloop", "sce_",
+                          "voice_0", "audiomanager", "sha256"):
+            self.assertNotIn(forbidden, audio.lower())
+        record = self._function_body(adapter, "void RecordUnityMonoAudio(")
+        for forbidden in ("UmLookupLog(", "CreateFile", "WriteFile",
+                          "PublishUnityVoiceEvent(", "thread_attach",
+                          "runtime_invoke", "EnterCriticalSection", "Sleep(",
+                          "HookFn("):
+            self.assertNotIn(forbidden, record, forbidden)
+        self.assertIn("IsVoiceCandidate(", record)
+        self.assertIn("GetCurrentThreadId() != g_unity_mono_main_thread", record)
+        worker = self._function_body(adapter, "void ProcessUnityMonoAudioEvents(")
+        for proof in ("ShouldPublishAudioEvent(", "IsDuplicatePlayback(",
+                      "PublishUnityVoiceEvent(", "CopyLastUnityVoiceBundle(",
+                      "kDiagUnityAudioPlaybackHookReady"):
+            self.assertIn(proof, worker)
+        install = self._function_body(adapter, "void InstallUnityMonoAudioHooks(")
+        self.assertLess(install.index("kUmWriterAudioDetours"),
+                        install.index("kUmAudioDetours"))
+        # The voice-bundle memory must be armed with the identity (suspended
+        # start), before Unity loads its first bundle.
+        identity = self._function_body(adapter, "bool install() override")
+        self.assertIn("TryHookSiglusOvk()", identity)
 
     def test_reallive_nwk_capture_is_identity_gated_and_worker_owned(self) -> None:
         """RealLive NWK：身份只取结构判据；游戏线程回调只做固定检查 + 有界入队。"""

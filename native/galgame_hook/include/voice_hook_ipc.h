@@ -610,10 +610,16 @@ inline constexpr bool HasReadyGameResourceAudio(uint32_t reserved_luna,
                                                 uint32_t hook_diagnostics,
                                                 uint32_t reserved_hook_diagnostics = 0,
                                                 uint32_t xaudio_diagnostics = 0) {
-  const uint32_t unity_required = kDiagUnityIl2CppHooksReady |
-                                  kDiagUnityResourceExtractorReady;
+  // Unity 资源语音链：injector 侧抽取器就绪，且游戏内一侧的 AudioClip 播放入口已挂——
+  // IL2CPP 置 kDiagUnityIl2CppHooksReady；Mono（MonoBleedingEdge / 5.x mono.dll）
+  // 没有 IL2CPP 那组位，只在有语音资源证据（本会话打开过 *voice*.bundle 或框架的
+  // voiceover 入口）时于次诊断字置 kDiagUnityAudioPlaybackHookReady（IL2CPP 同样会置）。
+  const bool unity_hooks_ready =
+      (hook_diagnostics & kDiagUnityIl2CppHooksReady) != 0 ||
+      (reserved_hook_diagnostics & kDiagUnityAudioPlaybackHookReady) != 0;
   const bool unity_ready =
-      (hook_diagnostics & unity_required) == unity_required;
+      unity_hooks_ready &&
+      (hook_diagnostics & kDiagUnityResourceExtractorReady) != 0;
   return (reserved_luna & kDiagKirikiriVoiceStreamHookReady) != 0 ||
          (reserved_luna & kDiagSiglusOvkHooksReady) != 0 ||
          (hook_diagnostics & kDiagFfmpegResourceHooksReady) != 0 ||

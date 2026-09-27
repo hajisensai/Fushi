@@ -2,6 +2,10 @@
 
 // Unity (Mono runtime) in-game lookup: pure, unit-tested half.
 //
+// Two frameworks share provider id 20 (one geometry model, one click claim):
+// framework 1, the per-glyph TextMesh message framework (this section), and
+// framework 2, Fungus SayDialog on a UGUI Text (the section at the end).
+//
 // Scope: the per-glyph TextMesh message framework the Mono text path already
 // admits structurally (unity_mono_text.h: instance `string Message.Mes(string,
 // bool)` in Assembly-CSharp plus the static `Game.NewText(... string ...)`
@@ -194,6 +198,8 @@ using IcallInstanceBoolFn = bool(FUSHI_UNITY_ICALL*)(void* self);
 using IcallGetComponentFn = void*(FUSHI_UNITY_ICALL*)(void* self, void* type);
 using IcallInstanceOutFn = void(FUSHI_UNITY_ICALL*)(void* self, void* out);
 using IcallStaticOutFn = void(FUSHI_UNITY_ICALL*)(void* out);
+using IcallInstanceFloatFn = float(FUSHI_UNITY_ICALL*)(void* self);
+using IcallInstanceArgFn = void(FUSHI_UNITY_ICALL*)(void* self, void* arg);
 
 // ── resolved sites ──────────────────────────────────────────────────────────
 
@@ -673,5 +679,537 @@ inline uint64_t Fingerprint(uint64_t hash, const void* data, size_t bytes) {
   return hash;
 }
 inline constexpr uint64_t kFingerprintSeed = 1469598103934665603ull;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Framework 2: Fungus SayDialog on a UGUI Text.
+//
+// Scope: the public Unity VN framework Fungus (namespace `Fungus`), whose
+// SayDialog shows a line through a Writer that re-assigns the dialog's
+// `storyText` (UnityEngine.UI.Text) on every revealed glyph as
+//   visible part + `<color=#RRGGBB00>` rest-of-line `</color>`
+// (Writer.ConcatenateString: read-ahead text is laid out but alpha 0, so the
+// layout never jumps while typing).  The text path already admits the
+// framework structurally (unity_mono_text.h, kFungusSayDialogDoSay).
+//
+// Engine facts used (Unity 2021.3 MonoBleedingEdge player, x64; measured
+// 2026-09-28 with Frida on a Steam Fungus title — the sample only, never an
+// identity input):
+//   * SayDialog.LateUpdate runs once per frame on the main thread after the
+//     Writer coroutines assigned this frame's text.
+//   * UGUI Text lays out through its cached TextGenerator (`m_TextCache`).
+//     `GetCharactersInternal` / `GetLinesInternal` fill the generator's own
+//     `m_Characters` / `m_Lines` lists from the last layout: one UICharInfo
+//     per UTF-16 unit of the *raw* string (rich-text tag units included, with
+//     width 0) plus a terminator, cursorPos.x the left edge, cursorPos.y the
+//     line top; UILineInfo {startCharIdx, height, topY}.  Generator space is
+//     the RectTransform's local space times `pixelsPerUnit` (the canvas scale
+//     factor for a dynamic font).  `m_LastString` is the exact string object
+//     the last layout used; while it differs from `m_Text` the layout is one
+//     frame behind and nothing is sampled.
+//   * Local -> world through Transform.localToWorldMatrix; world -> Unity
+//     screen pixels: identity for a Screen Space - Overlay root canvas,
+//     Camera.WorldToScreenPoint of the root canvas' worldCamera for Screen
+//     Space - Camera (a World Space canvas is refused).  Measured cells match
+//     the rendered glyphs to the pixel.
+//   * Visibility: the text's GameObject active and the Text enabled
+//     (Behaviour.isActiveAndEnabled), its CanvasRenderer not culled and its
+//     inherited CanvasGroup alpha and own color alpha readable (>= 0.5), the
+//     glyph outside an alpha-0 `<color>` span.
+//   * Input: Unity's input (the Input System package included) takes mouse
+//     buttons from the window procedure: swallowing WM_LBUTTONDOWN/UP in the
+//     UnityWndClass procedure keeps that click from advancing the line
+//     (measured with a real SendInput click on a Fungus line).
+//
+// Nothing here consults a hash, file name or title; every class, method,
+// field and internal call is resolved by namespace + name + full signature
+// (+ internal-call flag), unique across images; any gap installs nothing.
+
+inline constexpr int kMonoTypeObject = 0x1c;
+
+enum class FungusIcall : uint8_t {
+  kComponentGameObject = 0,
+  kComponentTransform,
+  kBehaviourActiveAndEnabled,
+  kTransformLocalToWorld,
+  kCanvasRoot,
+  kCanvasRenderMode,
+  kCanvasScaleFactor,
+  kCanvasWorldCamera,
+  kCanvasRendererInheritedAlpha,
+  kCanvasRendererCull,
+  kFontDynamic,
+  kGeneratorCharacters,
+  kGeneratorLines,
+  kCameraWorldToScreen,
+  kCameraTargetTexture,
+  kScreenWidth,
+  kScreenHeight,
+  kCount,
+};
+inline constexpr size_t kFungusIcallCount =
+    static_cast<size_t>(FungusIcall::kCount);
+
+struct FungusIcallSpec {
+  FungusIcall id;
+  const char* name_space;
+  const char* class_name;
+  const char* method;
+  bool instance;
+  int return_type;
+  uint8_t param_count;
+  int params[3];
+  uint8_t byref_mask;
+};
+
+inline constexpr FungusIcallSpec kFungusIcallSpecs[kFungusIcallCount] = {
+    {FungusIcall::kComponentGameObject, "UnityEngine", "Component",
+     "get_gameObject", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kComponentTransform, "UnityEngine", "Component",
+     "get_transform", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kBehaviourActiveAndEnabled, "UnityEngine", "Behaviour",
+     "get_isActiveAndEnabled", true, kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kTransformLocalToWorld, "UnityEngine", "Transform",
+     "get_localToWorldMatrix_Injected", true, kMonoTypeVoid, 1,
+     {kMonoTypeValueType, 0, 0}, 0x1u},
+    {FungusIcall::kCanvasRoot, "UnityEngine", "Canvas", "get_rootCanvas", true,
+     kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kCanvasRenderMode, "UnityEngine", "Canvas", "get_renderMode",
+     true, kMonoTypeValueType, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kCanvasScaleFactor, "UnityEngine", "Canvas",
+     "get_scaleFactor", true, kMonoTypeSingle, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kCanvasWorldCamera, "UnityEngine", "Canvas",
+     "get_worldCamera", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kCanvasRendererInheritedAlpha, "UnityEngine",
+     "CanvasRenderer", "GetInheritedAlpha", true, kMonoTypeSingle, 0,
+     {0, 0, 0}, 0u},
+    {FungusIcall::kCanvasRendererCull, "UnityEngine", "CanvasRenderer",
+     "get_cull", true, kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kFontDynamic, "UnityEngine", "Font", "get_dynamic", true,
+     kMonoTypeBoolean, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kGeneratorCharacters, "UnityEngine", "TextGenerator",
+     "GetCharactersInternal", true, kMonoTypeVoid, 1,
+     {kMonoTypeObject, 0, 0}, 0u},
+    {FungusIcall::kGeneratorLines, "UnityEngine", "TextGenerator",
+     "GetLinesInternal", true, kMonoTypeVoid, 1, {kMonoTypeObject, 0, 0}, 0u},
+    {FungusIcall::kCameraWorldToScreen, "UnityEngine", "Camera",
+     "WorldToScreenPoint_Injected", true, kMonoTypeVoid, 3,
+     {kMonoTypeValueType, kMonoTypeValueType, kMonoTypeValueType}, 0x5u},
+    {FungusIcall::kCameraTargetTexture, "UnityEngine", "Camera",
+     "get_targetTexture", true, kMonoTypeClass, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kScreenWidth, "UnityEngine", "Screen", "get_width", false,
+     kMonoTypeI4, 0, {0, 0, 0}, 0u},
+    {FungusIcall::kScreenHeight, "UnityEngine", "Screen", "get_height", false,
+     kMonoTypeI4, 0, {0, 0, 0}, 0u},
+};
+
+// RenderMode (UnityEngine.RenderMode).
+inline constexpr int32_t kRenderModeScreenSpaceOverlay = 0;
+inline constexpr int32_t kRenderModeScreenSpaceCamera = 1;
+
+// `mono_class_value_size` (element stride of UICharInfo[] / UILineInfo[]).
+struct MonoValueSizeApi {
+  int32_t (*class_value_size)(void* klass, uint32_t* align) = nullptr;
+};
+
+struct FungusSites {
+  void* late_update = nullptr;         // MonoMethod* of SayDialog.LateUpdate
+  uint32_t story_text_offset = 0u;     // SayDialog.storyText (UI.Text)
+  uint32_t text_string_offset = 0u;    // Text.m_Text
+  uint32_t text_cache_offset = 0u;     // Text.m_TextCache (TextGenerator)
+  uint32_t font_data_offset = 0u;      // Text.m_FontData
+  uint32_t font_data_font_offset = 0u; // FontData.m_Font
+  uint32_t graphic_canvas_offset = 0u; // Graphic.m_Canvas
+  uint32_t graphic_renderer_offset = 0u;  // Graphic.m_CanvasRenderer
+  uint32_t graphic_color_alpha_offset = 0u;  // Graphic.m_Color.a
+  uint32_t generator_chars_offset = 0u;  // TextGenerator.m_Characters
+  uint32_t generator_lines_offset = 0u;  // TextGenerator.m_Lines
+  uint32_t generator_last_offset = 0u;   // TextGenerator.m_LastString
+  uint32_t char_list_items_offset = 0u;  // List<UICharInfo>._items/_size
+  uint32_t char_list_size_offset = 0u;
+  uint32_t line_list_items_offset = 0u;  // List<UILineInfo>._items/_size
+  uint32_t line_list_size_offset = 0u;
+  uint32_t char_stride = 0u;             // sizeof(UICharInfo)
+  uint32_t char_cursor_offset = 0u;      // UICharInfo.cursorPos (Vector2)
+  uint32_t char_width_offset = 0u;       // UICharInfo.charWidth
+  uint32_t line_stride = 0u;             // sizeof(UILineInfo)
+  uint32_t line_start_offset = 0u;       // UILineInfo.startCharIdx
+  uint32_t line_height_offset = 0u;      // UILineInfo.height
+  uint32_t line_top_offset = 0u;         // UILineInfo.topY
+  uint32_t cached_ptr_offset = 0u;       // UnityEngine.Object.m_CachedPtr
+  std::array<void*, kFungusIcallCount> icalls{};
+
+  template <typename Fn>
+  Fn Get(FungusIcall id) const {
+    return reinterpret_cast<Fn>(icalls[static_cast<size_t>(id)]);
+  }
+};
+
+enum class FungusSiteResult : uint32_t {
+  kResolved = 0,
+  kApiIncomplete = 1,
+  kNoSayDialog = 2,       // absent or ambiguous across images
+  kNoLateUpdate = 3,
+  kStoryTextMissing = 4,  // SayDialog.storyText is not a UGUI Text
+  kTextFieldsMissing = 5,
+  kGraphicFieldsMissing = 6,
+  kGeneratorFieldsMissing = 7,
+  kCharLayoutMismatch = 8,
+  kLineLayoutMismatch = 9,
+  kObjectFieldMissing = 10,
+  kIcallMissing = 11,
+};
+
+struct FungusSiteResolution {
+  FungusSiteResult result = FungusSiteResult::kApiIncomplete;
+  int32_t missing_icall = -1;
+};
+
+// A declared field of `klass` whose type resolves to exactly `expected`.
+inline bool FieldOfClass(const MonoEmbeddingApi& api,
+                         const MonoLookupApi& lookup, void* klass,
+                         const char* name, int type_kind, void* expected,
+                         uint32_t* offset_out, void** field_out = nullptr) {
+  void* field = nullptr;
+  if (!FieldOfType(api, lookup, klass, name, type_kind, &field, offset_out)) {
+    return false;
+  }
+  if (expected != nullptr &&
+      lookup.class_from_mono_type(lookup.field_get_type(field)) != expected) {
+    return false;
+  }
+  if (field_out != nullptr) *field_out = field;
+  return true;
+}
+
+// Offset of a value type's field relative to the unboxed value (mono reports
+// value-type field offsets including the object header).
+inline bool ValueFieldOffset(const MonoEmbeddingApi& api,
+                             const MonoLookupApi& lookup, void* klass,
+                             const char* name, int type_kind,
+                             uint32_t* offset_out) {
+  uint32_t boxed = 0u;
+  if (!FieldOfType(api, lookup, klass, name, type_kind, nullptr, &boxed)) {
+    return false;
+  }
+  *offset_out = boxed - 2u * static_cast<uint32_t>(sizeof(void*));
+  return true;
+}
+
+inline void* ResolveFungusIcall(const MonoEmbeddingApi& api,
+                                const MonoLookupApi& lookup,
+                                const MonoAssemblyList& list,
+                                const FungusIcallSpec& spec) {
+  const IcallSpec generic = {Icall::kCount,
+                             spec.name_space,
+                             spec.class_name,
+                             spec.method,
+                             spec.instance,
+                             spec.return_type,
+                             spec.param_count,
+                             {spec.params[0], spec.params[1], spec.params[2]},
+                             spec.byref_mask};
+  return ResolveIcall(api, lookup, list, generic);
+}
+
+// Caller must be attached to the root domain.
+inline FungusSiteResolution ResolveFungusSites(const MonoEmbeddingApi& api,
+                                               const MonoLookupApi& lookup,
+                                               const MonoValueSizeApi& sizes,
+                                               FungusSites* out) {
+  FungusSiteResolution resolution;
+  if (out == nullptr || !api.CompleteForResolution() || !lookup.Complete() ||
+      sizes.class_value_size == nullptr) {
+    return resolution;
+  }
+  *out = FungusSites();
+  MonoAssemblyList list;
+  api.assembly_foreach(&CollectMonoAssembly, &list);
+  const MonoTextHookSpec& say =
+      MonoTextHookSpecFor(MonoTextHookId::kFungusSayDialogDoSay);
+  void* dialog = FindClassInImages(api, list, say.name_space, say.class_name);
+  if (dialog == nullptr) {
+    resolution.result = FungusSiteResult::kNoSayDialog;
+    return resolution;
+  }
+  out->late_update = FindMonoMethod(api, dialog, "LateUpdate", true,
+                                    kMonoTypeVoid, 0, nullptr);
+  if (out->late_update == nullptr) {
+    resolution.result = FungusSiteResult::kNoLateUpdate;
+    return resolution;
+  }
+  void* text = FindClassInImages(api, list, "UnityEngine.UI", "Text");
+  void* graphic = FindClassInImages(api, list, "UnityEngine.UI", "Graphic");
+  void* font_data = FindClassInImages(api, list, "UnityEngine.UI", "FontData");
+  void* generator =
+      FindClassInImages(api, list, "UnityEngine", "TextGenerator");
+  void* font = FindClassInImages(api, list, "UnityEngine", "Font");
+  void* canvas = FindClassInImages(api, list, "UnityEngine", "Canvas");
+  void* renderer =
+      FindClassInImages(api, list, "UnityEngine", "CanvasRenderer");
+  void* color = FindClassInImages(api, list, "UnityEngine", "Color");
+  void* char_info = FindClassInImages(api, list, "UnityEngine", "UICharInfo");
+  void* line_info = FindClassInImages(api, list, "UnityEngine", "UILineInfo");
+  if (text == nullptr ||
+      !FieldOfClass(api, lookup, dialog, "storyText", kMonoTypeClass, text,
+                    &out->story_text_offset)) {
+    resolution.result = FungusSiteResult::kStoryTextMissing;
+    return resolution;
+  }
+  if (generator == nullptr || font_data == nullptr || font == nullptr ||
+      !FieldOfType(api, lookup, text, "m_Text", kMonoTypeString, nullptr,
+                   &out->text_string_offset) ||
+      !FieldOfClass(api, lookup, text, "m_TextCache", kMonoTypeClass,
+                    generator, &out->text_cache_offset) ||
+      !FieldOfClass(api, lookup, text, "m_FontData", kMonoTypeClass,
+                    font_data, &out->font_data_offset) ||
+      !FieldOfClass(api, lookup, font_data, "m_Font", kMonoTypeClass, font,
+                    &out->font_data_font_offset)) {
+    resolution.result = FungusSiteResult::kTextFieldsMissing;
+    return resolution;
+  }
+  uint32_t color_offset = 0u, alpha_offset = 0u;
+  if (graphic == nullptr || canvas == nullptr || renderer == nullptr ||
+      color == nullptr ||
+      !FieldOfClass(api, lookup, graphic, "m_Canvas", kMonoTypeClass, canvas,
+                    &out->graphic_canvas_offset) ||
+      !FieldOfClass(api, lookup, graphic, "m_CanvasRenderer", kMonoTypeClass,
+                    renderer, &out->graphic_renderer_offset) ||
+      !FieldOfClass(api, lookup, graphic, "m_Color", kMonoTypeValueType,
+                    color, &color_offset) ||
+      !ValueFieldOffset(api, lookup, color, "a", kMonoTypeSingle,
+                        &alpha_offset) ||
+      alpha_offset + 4u > 16u) {
+    resolution.result = FungusSiteResult::kGraphicFieldsMissing;
+    return resolution;
+  }
+  out->graphic_color_alpha_offset = color_offset + alpha_offset;
+  void* chars_field = nullptr;
+  void* lines_field = nullptr;
+  if (!FieldOfType(api, lookup, generator, "m_LastString", kMonoTypeString,
+                   nullptr, &out->generator_last_offset) ||
+      !FieldOfType(api, lookup, generator, "m_Characters",
+                   kMonoTypeGenericInst, &chars_field,
+                   &out->generator_chars_offset) ||
+      !FieldOfType(api, lookup, generator, "m_Lines", kMonoTypeGenericInst,
+                   &lines_field, &out->generator_lines_offset)) {
+    resolution.result = FungusSiteResult::kGeneratorFieldsMissing;
+    return resolution;
+  }
+  // List<UICharInfo>: element class and value layout.
+  void* chars_list = lookup.class_from_mono_type(lookup.field_get_type(chars_field));
+  void* chars_element =
+      ListLayout(api, lookup, chars_list, &out->char_list_items_offset,
+                 &out->char_list_size_offset);
+  uint32_t align = 0u;
+  const int32_t char_size =
+      char_info == nullptr ? 0 : sizes.class_value_size(char_info, &align);
+  if (char_info == nullptr || chars_element != char_info || char_size <= 0 ||
+      !ValueFieldOffset(api, lookup, char_info, "cursorPos",
+                        kMonoTypeValueType, &out->char_cursor_offset) ||
+      !ValueFieldOffset(api, lookup, char_info, "charWidth", kMonoTypeSingle,
+                        &out->char_width_offset) ||
+      out->char_cursor_offset + 8u > static_cast<uint32_t>(char_size) ||
+      out->char_width_offset + 4u > static_cast<uint32_t>(char_size)) {
+    resolution.result = FungusSiteResult::kCharLayoutMismatch;
+    return resolution;
+  }
+  out->char_stride = static_cast<uint32_t>(char_size);
+  void* lines_list = lookup.class_from_mono_type(lookup.field_get_type(lines_field));
+  void* lines_element =
+      ListLayout(api, lookup, lines_list, &out->line_list_items_offset,
+                 &out->line_list_size_offset);
+  const int32_t line_size =
+      line_info == nullptr ? 0 : sizes.class_value_size(line_info, &align);
+  if (line_info == nullptr || lines_element != line_info || line_size <= 0 ||
+      !ValueFieldOffset(api, lookup, line_info, "startCharIdx", kMonoTypeI4,
+                        &out->line_start_offset) ||
+      !ValueFieldOffset(api, lookup, line_info, "height", kMonoTypeI4,
+                        &out->line_height_offset) ||
+      !ValueFieldOffset(api, lookup, line_info, "topY", kMonoTypeSingle,
+                        &out->line_top_offset) ||
+      out->line_start_offset + 4u > static_cast<uint32_t>(line_size) ||
+      out->line_height_offset + 4u > static_cast<uint32_t>(line_size) ||
+      out->line_top_offset + 4u > static_cast<uint32_t>(line_size)) {
+    resolution.result = FungusSiteResult::kLineLayoutMismatch;
+    return resolution;
+  }
+  out->line_stride = static_cast<uint32_t>(line_size);
+  void* unity_object = FindClassInImages(api, list, "UnityEngine", "Object");
+  if (!FieldOfType(api, lookup, unity_object, "m_CachedPtr", kMonoTypeI,
+                   nullptr, &out->cached_ptr_offset)) {
+    resolution.result = FungusSiteResult::kObjectFieldMissing;
+    return resolution;
+  }
+  for (const FungusIcallSpec& spec : kFungusIcallSpecs) {
+    void* entry = ResolveFungusIcall(api, lookup, list, spec);
+    if (entry == nullptr) {
+      resolution.result = FungusSiteResult::kIcallMissing;
+      resolution.missing_icall = static_cast<int32_t>(spec.id);
+      return resolution;
+    }
+    out->icalls[static_cast<size_t>(spec.id)] = entry;
+  }
+  resolution.result = FungusSiteResult::kResolved;
+  return resolution;
+}
+
+// ── UGUI rich text ──────────────────────────────────────────────────────────
+//
+// The rendered string carries UGUI rich-text tags (Fungus emits <b> <i>
+// <color> <size> and the alpha-0 read-ahead span).  The text lane strips any
+// `<...>` (RecordUnityTextChars), so the same stripping defines the plain
+// text here; a glyph is hidden while the innermost open <color> has alpha 0.
+
+inline constexpr uint16_t kRawTag = 0xffffu;
+inline constexpr size_t kMaxColorDepth = 16u;
+
+inline int HexNibble(wchar_t c) {
+  if (c >= L'0' && c <= L'9') return c - L'0';
+  if (c >= L'a' && c <= L'f') return c - L'a' + 10;
+  if (c >= L'A' && c <= L'F') return c - L'A' + 10;
+  return -1;
+}
+
+// Alpha of a <color=...> value: #RRGGBBAA / #RGBA carry it, every other form
+// (#RRGGBB, #RGB, a colour name) is opaque.
+inline bool ColorValueIsTransparent(const wchar_t* value, size_t length) {
+  if (value == nullptr || length == 0u || value[0] != L'#') return false;
+  if (length == 9u) {
+    return HexNibble(value[7]) == 0 && HexNibble(value[8]) == 0;
+  }
+  if (length == 5u) return HexNibble(value[4]) == 0;
+  return false;
+}
+
+struct RichTextMap {
+  size_t plain_length = 0u;
+  // Per raw unit: plain index, or kRawTag for a unit inside a tag.
+  std::array<uint16_t, kMaxLineUnits> raw_to_plain{};
+  // Per raw unit: inside an alpha-0 colour span.
+  std::array<uint8_t, kMaxLineUnits> hidden{};
+  std::array<wchar_t, kMaxLineUnits> plain{};
+};
+
+// false: too long, or an unclosed '<' (then the lane's stripping and the
+// renderer disagree about the plain text and nothing is mapped).
+inline bool ParseRichText(const wchar_t* raw, size_t length, RichTextMap* map) {
+  if (raw == nullptr || map == nullptr || length == 0u ||
+      length > kMaxLineUnits) {
+    return false;
+  }
+  map->plain_length = 0u;
+  bool colour_hidden[kMaxColorDepth] = {};
+  size_t depth = 0u;
+  for (size_t i = 0u; i < length; ++i) {
+    if (raw[i] == L'<') {
+      size_t close = i + 1u;
+      while (close < length && raw[close] != L'>') ++close;
+      if (close >= length) return false;
+      const wchar_t* body = raw + i + 1u;
+      const size_t body_length = close - i - 1u;
+      static constexpr wchar_t kOpen[] = L"color=";
+      static constexpr wchar_t kClose[] = L"/color";
+      if (body_length > 6u && std::wmemcmp(body, kOpen, 6u) == 0) {
+        if (depth < kMaxColorDepth) {
+          colour_hidden[depth] =
+              ColorValueIsTransparent(body + 6u, body_length - 6u);
+        }
+        ++depth;
+      } else if (body_length == 6u && std::wmemcmp(body, kClose, 6u) == 0) {
+        if (depth > 0u) --depth;
+      }
+      for (size_t k = i; k <= close; ++k) {
+        map->raw_to_plain[k] = kRawTag;
+        map->hidden[k] = 1u;
+      }
+      i = close;
+      continue;
+    }
+    const size_t top = depth == 0u ? 0u : (depth > kMaxColorDepth
+                                               ? kMaxColorDepth
+                                               : depth);
+    map->hidden[i] = top > 0u && colour_hidden[top - 1u] ? 1u : 0u;
+    map->raw_to_plain[i] = static_cast<uint16_t>(map->plain_length);
+    map->plain[map->plain_length++] = raw[i];
+  }
+  return true;
+}
+
+// ── generator space -> Unity screen ─────────────────────────────────────────
+
+struct Matrix4 {
+  float m[16] = {};  // column-major (UnityEngine.Matrix4x4 layout)
+};
+static_assert(sizeof(Matrix4) == 64, "UnityEngine.Matrix4x4 layout");
+
+inline Vec3 TransformPoint(const Matrix4& matrix, float x, float y) {
+  const float* m = matrix.m;
+  return {m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13],
+          m[2] * x + m[6] * y + m[14]};
+}
+
+// The UILineInfo containing raw unit `index` (lines are sorted by start).
+inline bool LineOfUnit(const int32_t* line_starts, size_t lines, size_t index,
+                       size_t* line) {
+  if (line_starts == nullptr || line == nullptr || lines == 0u ||
+      line_starts[0] > static_cast<int32_t>(index)) {
+    return false;
+  }
+  size_t found = 0u;
+  for (size_t k = 1u; k < lines; ++k) {
+    if (line_starts[k] < line_starts[k - 1u]) return false;
+    if (line_starts[k] <= static_cast<int32_t>(index)) found = k;
+  }
+  *line = found;
+  return true;
+}
+
+// One glyph's cell in generator space: [cursor.x, cursor.x + width] x
+// [top - height, top].  Converted to local by dividing by pixels-per-unit.
+struct LocalCell {
+  float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f;
+};
+
+inline bool GeneratorCell(float cursor_x, float width, float line_top,
+                          int32_t line_height, float pixels_per_unit,
+                          LocalCell* out) {
+  if (out == nullptr || !(width > 0.0f) || line_height <= 0 ||
+      !(pixels_per_unit > 0.0f) || !std::isfinite(cursor_x) ||
+      !std::isfinite(width) || !std::isfinite(line_top) ||
+      !std::isfinite(pixels_per_unit)) {
+    return false;
+  }
+  out->x0 = cursor_x / pixels_per_unit;
+  out->x1 = (cursor_x + width) / pixels_per_unit;
+  out->y1 = line_top / pixels_per_unit;
+  out->y0 = (line_top - static_cast<float>(line_height)) / pixels_per_unit;
+  return true;
+}
+
+// The Fungus sampler records each glyph's index into the plain text; the
+// indices must address drawn (non line-break) units in strictly increasing
+// order, or the snapshot is not a layout of that text.
+inline bool ValidateGlyphSources(const wchar_t* text, size_t units,
+                                 const uint16_t* sources, size_t count) {
+  if (text == nullptr || sources == nullptr || units == 0u ||
+      units > kMaxLineUnits || count > kMaxGlyphs) {
+    return false;
+  }
+  for (size_t i = 0u; i < count; ++i) {
+    if (sources[i] >= units || text[sources[i]] == L'\n' ||
+        (i > 0u && sources[i] <= sources[i - 1u])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+inline constexpr float kMinReadableAlpha = 0.5f;
+
+inline bool FungusTextReadable(bool active_and_enabled, bool culled,
+                               float inherited_alpha, float color_alpha) {
+  return active_and_enabled && !culled && inherited_alpha >= kMinReadableAlpha &&
+         color_alpha >= kMinReadableAlpha;
+}
 
 }  // namespace fushi_voice_hook::unity_mono_lookup

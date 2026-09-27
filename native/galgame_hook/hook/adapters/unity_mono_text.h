@@ -84,13 +84,17 @@ enum class MonoTextHookId : uint8_t {
   kUiTextSetText = 2,
   kTextMeshSetText = 3,
   kMessageRendererMes = 4,
-  kCount = 5,
+  kFungusSayDialogDoSay = 5,
+  kCount = 6,
 };
 constexpr size_t kMonoTextHookCount = static_cast<size_t>(MonoTextHookId::kCount);
 
 constexpr uint32_t MonoTextHookBit(MonoTextHookId id) {
   return 1u << static_cast<uint32_t>(id);
 }
+
+// 规格表里最长的签名（Fungus SayDialog.DoSay 的 8 个参数）。
+constexpr size_t kMonoTextHookMaxParams = 8;
 
 enum class MonoTextHookScope : uint8_t {
   // Unity 内置组件：在所有已加载程序集里找（TMP 随包名历代不同，
@@ -99,6 +103,10 @@ enum class MonoTextHookScope : uint8_t {
   // 脚本层框架类型：只在 Assembly-CSharp 里找——全局命名空间的短类名在别的程序集里
   // 撞名不代表同一个框架。
   kScriptAssembly = 1,
+  // 带自有命名空间的公开框架（Fungus）：随包形态不定——asmdef 编成独立的 Fungus.dll，
+  // 或者源码导入直接编进 Assembly-CSharp——所以在全部已加载程序集里找，但**必须唯一**：
+  // 两个程序集里各有一个 `Fungus.SayDialog` 是说不清的形状，不装。
+  kFrameworkUnique = 2,
 };
 
 struct MonoTextHookSpec {
@@ -110,7 +118,7 @@ struct MonoTextHookSpec {
   bool instance;
   int return_type;
   uint8_t param_count;
-  int params[2];
+  int params[kMonoTextHookMaxParams];
   // 发布到文本道上的 hook 名 / hook code（ring_probe --dump-text-events 可见）。
   const char* hook_name;
   const wchar_t* hook_code;
@@ -155,7 +163,59 @@ constexpr MonoTextHookSpec kUnityMonoTextHookSpecs[kMonoTextHookCount] = {
      "", "Message", "Mes", true, kMonoTypeString, 2,
      {kMonoTypeString, kMonoTypeBoolean}, "Unity Mono Message.Mes",
      L"Mono:Message.Mes(string,bool)->string", true},
+    {MonoTextHookId::kFungusSayDialogDoSay, MonoTextHookScope::kFrameworkUnique,
+     "Fungus", "SayDialog", "DoSay", true, kMonoTypeClass, 8,
+     {kMonoTypeString, kMonoTypeBoolean, kMonoTypeBoolean, kMonoTypeBoolean,
+      kMonoTypeBoolean, kMonoTypeBoolean, kMonoTypeClass, kMonoTypeClass},
+     "Unity Mono Fungus Say", L"Mono:Fungus.SayDialog.DoSay", true},
 };
+// kFungusSayDialogDoSay：公开 Unity VN 框架 Fungus 的整句入口
+//   IEnumerator SayDialog.DoSay(string text, bool clearPrevious, bool waitForInput,
+//                               bool fadeWhenDone, bool stopVoiceover, bool waitForVO,
+//                               AudioClip voiceOverClip, Action onComplete)
+// Say 命令走 SayDialog.Say → StartCoroutine(DoSay(...))，Fungus 的 Lua `say()` 直接调
+// DoSay 拿迭代器 runwait——两条路都经过它，所以只挂 DoSay。text 是**当前显示语言**的整句
+// （本地化在 Say/Lua 层已替换完），带 Fungus 自己的 `{...}` 控制标记（{w} {wc} {b} {voice=…}
+// 等，见 StripFungusTextTags），不含说话人名——名牌由 SayDialog.nameText（UI.Text /
+// TMP 组件）或脚本层自己的名牌组件显示，走它自己那条按组件区分的道。
+// 实测样本（2026-09-28，静态元数据 + Frida）：センチメンタルデスループ Steam 版 x64
+// （Unity 2021.3.10f1 MonoBleedingEdge，Fungus.dll 独立程序集，脚本经 Lua `say()`）——
+// 只是样本，从不作为身份输入；判据是命名空间 + 类名 + 完整 8 参签名，且全域唯一。
+
+// Fungus 文本标记剥离，与 Fungus.TextTagParser 同口径：正则 `\{.*?\}`——`{` 到同一行内
+// 最近的 `}` 整段是标记（`.` 不跨换行）；找不到闭合 `}` 的 `{` 原样保留。Writer.DoWords
+// 另把字面量 `\n`（反斜杠 + n）换成换行，这里一并照做，保证文本道的整句与画面上
+// 渲染出来的字符序列逐字相同（游戏内查词据此对字）。返回写出的 UTF-16 单元数。
+inline int StripFungusTextTags(const wchar_t* in, int length, wchar_t* out,
+                               int capacity) {
+  if (in == nullptr || out == nullptr || length <= 0 || capacity <= 0) {
+    return 0;
+  }
+  int written = 0;
+  for (int i = 0; i < length && written < capacity; ++i) {
+    const wchar_t c = in[i];
+    if (c == L'{') {
+      int close = -1;
+      for (int j = i + 1; j < length && in[j] != L'\n'; ++j) {
+        if (in[j] == L'}') {
+          close = j;
+          break;
+        }
+      }
+      if (close >= 0) {
+        i = close;
+        continue;
+      }
+    }
+    if (c == L'\\' && i + 1 < length && in[i + 1] == L'n') {
+      out[written++] = L'\n';
+      ++i;
+      continue;
+    }
+    out[written++] = c;
+  }
+  return written;
+}
 
 // Message.Mes 的结构伴随判据：同一 Assembly-CSharp 里的逐字排版工厂
 //   static GameObject Game.NewText(float x, float y, int priority, string str, ...8 参)
@@ -318,6 +378,8 @@ struct MonoTextResolution {
   bool assemblies_truncated = false;
   size_t assembly_count = 0;
   uint32_t classes_found = 0;  // MonoTextHookBit 掩码
+  // kFrameworkUnique 的类在两个程序集里各出现一次（MonoTextHookBit 掩码）：不认。
+  uint32_t framework_ambiguous = 0;
   bool message_renderer_companion = false;
   void* methods[kMonoTextHookCount] = {};
 
@@ -360,6 +422,20 @@ inline MonoTextResolution ResolveUnityMonoTextMethods(
     if (spec.scope == MonoTextHookScope::kScriptAssembly) {
       klass = api.class_from_name(script_image, spec.name_space,
                                   spec.class_name);
+    } else if (spec.scope == MonoTextHookScope::kFrameworkUnique) {
+      for (size_t i = 0; i < list.count; ++i) {
+        void* image = api.assembly_get_image(list.assemblies[i]);
+        if (image == nullptr) continue;
+        void* found = api.class_from_name(image, spec.name_space,
+                                          spec.class_name);
+        if (found == nullptr || found == klass) continue;
+        if (klass != nullptr) {
+          result.framework_ambiguous |= MonoTextHookBit(spec.id);
+          klass = nullptr;
+          break;
+        }
+        klass = found;
+      }
     } else {
       for (size_t i = 0; i < list.count && klass == nullptr; ++i) {
         void* image = api.assembly_get_image(list.assemblies[i]);
@@ -392,6 +468,9 @@ inline MonoTextResolution ResolveUnityMonoTextMethods(
 //     Message.Mes 的返回值取，**不再挂 TextMesh.set_text**：那条在这类框架上只产出
 //     逐字单字组件，会把线程表冲满。
 //   * Mes 方法在但伴随判据不成立：不认这个 Message 类（可能只是同名的别家类）。
+//   * Fungus DoSay 与 UI.Text / TMP setter 并存：名牌与其它 UI 文本仍按组件分道，
+//     正文另有一条按框架入口的稳定道（故事文本组件自己的那条由 detour 侧让位，见
+//     unity_mono_adapter.inc 的 UnityMonoIsFungusStoryText）。
 inline uint32_t PlanUnityMonoTextHooks(const MonoTextResolution& resolution) {
   const uint32_t found = resolution.MethodsFound();
   uint32_t plan = found;

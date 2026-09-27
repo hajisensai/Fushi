@@ -39,6 +39,7 @@
 #include "luna_hook_config.h"
 #include "luna_text_selector.h"
 #include "text_thread_identity.h"
+#include "unity_voice_bundles.h"
 
 // galgame 一键制卡 C 阶段注入器（C.1）。把 hook DLL 注入目标游戏进程，建立共享内存 + 就绪
 // 事件，确认注入成功后读回语音格式。Hibiki 主进程把它当子进程拉起（部署红线：注入代码只在
@@ -612,6 +613,59 @@ bool CommitUnityWavePcm(SharedHeader* header, const UnityVoiceEvent& event,
   return true;
 }
 
+// One extractor run: `input_flag` is `--bundle` or `--data-dir`.
+bool RunUnityExtractor(const UnityExtractorRuntime& runtime,
+                       const wchar_t* input_flag, const std::wstring& input,
+                       const wchar_t* clip_name, const std::wstring& output) {
+  std::wstring command = QuoteWindowsArgument(runtime.executable) + L" " +
+      input_flag + L" " + QuoteWindowsArgument(input) +
+      L" --clip " + QuoteWindowsArgument(clip_name) +
+      L" --output " + QuoteWindowsArgument(output) +
+      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
+      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
+  std::vector<wchar_t> command_buffer(command.begin(), command.end());
+  command_buffer.push_back(0);
+  STARTUPINFOW startup = {0};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process = {0};
+  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
+                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
+                      InjectorDir().c_str(), &startup, &process)) {
+    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
+            GetLastError(), clip_name);
+    return false;
+  }
+  CloseHandle(process.hThread);
+  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
+  DWORD exit_code = 2;
+  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
+  if (wait != WAIT_OBJECT_0) TerminateProcess(process.hProcess, 2);
+  CloseHandle(process.hProcess);
+  return wait == WAIT_OBJECT_0 && exit_code == 0 && RegularFileExists(output);
+}
+
+// File names (no directory) of the `*.bundle` entries next to a bundle the
+// game opened; the voice-bundle filter is applied by the candidate ordering.
+std::vector<std::wstring> ListUnityBundleSiblings(const std::wstring& directory) {
+  std::vector<std::wstring> names;
+  if (directory.empty()) return names;
+  WIN32_FIND_DATAW data = {};
+  HANDLE find = FindFirstFileW((directory + L"\\*.bundle").c_str(), &data);
+  if (find == INVALID_HANDLE_VALUE) return names;
+  do {
+    if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+      names.emplace_back(data.cFileName);
+    }
+  } while (names.size() < 256 && FindNextFileW(find, &data));
+  FindClose(find);
+  return names;
+}
+
+// Per injector session: the voice bundle the last clip was found in (tried
+// first), and clip names found in none of them (BGM / SE / typing sounds).
+std::wstring g_unity_voice_last_bundle;
+fushi_voice_injector::UnityVoiceNegativeCache g_unity_voice_negative;
+
 bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
                        const std::wstring& data_directory,
                        const UnityVoiceEvent& event, SharedHeader* header) {
@@ -628,40 +682,46 @@ bool ExtractUnityVoice(const UnityExtractorRuntime& runtime,
       dir + L"\\" + std::to_wstring(event.timestamp_ms) + L"_" +
       SafeVoiceFileName(event.clip_name) + L".wav";
 
-  std::wstring command = QuoteWindowsArgument(runtime.executable) +
-      (event.bundle_path[0] == 0
-           ? L" --data-dir " + QuoteWindowsArgument(data_directory)
-           : L" --bundle " + QuoteWindowsArgument(event.bundle_path)) +
-      L" --clip " + QuoteWindowsArgument(event.clip_name) +
-      L" --output " + QuoteWindowsArgument(output) +
-      L" --classdata " + QuoteWindowsArgument(runtime.classdata) +
-      L" --decoder " + QuoteWindowsArgument(runtime.decoder);
-  std::vector<wchar_t> command_buffer(command.begin(), command.end());
-  command_buffer.push_back(0);
-  STARTUPINFOW startup = {0};
-  startup.cb = sizeof(startup);
-  PROCESS_INFORMATION process = {0};
-  if (!CreateProcessW(runtime.executable.c_str(), command_buffer.data(),
-                      nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr,
-                      InjectorDir().c_str(), &startup, &process)) {
-    fprintf(stderr, "[unity-audio] extractor launch failed=%lu clip=%ls\n",
-            GetLastError(), event.clip_name);
-    return false;
+  if (event.bundle_path[0] == 0) {
+    const bool extracted = RunUnityExtractor(runtime, L"--data-dir",
+                                             data_directory, event.clip_name,
+                                             output);
+    const bool ok = extracted && CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            data_directory.c_str(), output.c_str());
+    return ok;
   }
-  CloseHandle(process.hThread);
-  const DWORD wait = WaitForSingleObject(process.hProcess, 30000);
-  DWORD exit_code = 2;
-  if (wait == WAIT_OBJECT_0) GetExitCodeProcess(process.hProcess, &exit_code);
-  CloseHandle(process.hProcess);
-  const bool extracted = wait == WAIT_OBJECT_0 && exit_code == 0 &&
-                         RegularFileExists(output);
-  const bool ok = extracted && CommitUnityWavePcm(header, event, output);
-  fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
-          ok ? "extracted-and-committed" : "failed", event.clip_name,
-          event.bundle_path[0] == 0 ? data_directory.c_str()
-                                    : event.bundle_path,
-          output.c_str());
-  return ok;
+
+  const std::wstring opened(event.bundle_path);
+  const std::wstring bundle_directory =
+      fushi_voice_injector::UnityBundleDirectory(opened);
+  if (g_unity_voice_negative.Contains(bundle_directory, event.clip_name)) {
+    return false;  // already proven not to be in any voice bundle
+  }
+  std::vector<std::wstring> candidates =
+      fushi_voice_injector::OrderUnityVoiceBundleCandidates(
+          opened, ListUnityBundleSiblings(bundle_directory),
+          g_unity_voice_last_bundle);
+  if (candidates.empty()) candidates.push_back(opened);
+  for (const std::wstring& bundle : candidates) {
+    if (!RunUnityExtractor(runtime, L"--bundle", bundle, event.clip_name,
+                           output)) {
+      continue;
+    }
+    g_unity_voice_last_bundle = bundle;
+    const bool ok = CommitUnityWavePcm(header, event, output);
+    fprintf(stderr, "[unity-audio] %s clip=%ls input=%ls output=%ls\n",
+            ok ? "extracted-and-committed" : "failed", event.clip_name,
+            bundle.c_str(), output.c_str());
+    return ok;
+  }
+  g_unity_voice_negative.Add(bundle_directory, event.clip_name);
+  fprintf(stderr,
+          "[unity-audio] clip=%ls not in any of %zu voice bundle(s) under %ls; "
+          "not a voice (cached)\n",
+          event.clip_name, candidates.size(), bundle_directory.c_str());
+  return false;
 }
 
 void ProcessUnityVoiceEvents(SharedHeader* header,

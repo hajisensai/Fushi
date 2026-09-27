@@ -22,10 +22,12 @@
 #include <utility>
 #include <vector>
 
+#include "adapters/unity_mono_audio.h"
 #include "adapters/unity_mono_lookup_core.h"
 
 using namespace fushi_voice_hook;
 namespace ul = fushi_voice_hook::unity_mono_lookup;
+namespace ua = fushi_voice_hook::unity_mono_audio;
 
 namespace {
 
@@ -59,6 +61,7 @@ struct FakeClass {
   std::vector<FakeField> fields;
   FakeClass* element = nullptr;  // array classes
   FakeType self_type;
+  int32_t value_size = 0;  // mono_class_value_size (value types)
 };
 
 struct FakeImage {
@@ -517,6 +520,491 @@ void TestRoleKey() {
   assert(ul::MessageRoleKey(body, 0) == 0u);
 }
 
+// ── framework 2: Fungus SayDialog on a UGUI Text ────────────────────────────
+
+int32_t FakeValueSize(void* klass, uint32_t* align) {
+  if (align != nullptr) *align = 4u;
+  return static_cast<FakeClass*>(klass)->value_size;
+}
+
+ul::MonoValueSizeApi SizeApi() {
+  ul::MonoValueSizeApi api;
+  api.class_value_size = &FakeValueSize;
+  return api;
+}
+
+// Offsets as mono reports them (instance fields after a two-pointer header;
+// value-type fields likewise boxed-relative).
+constexpr uint32_t kHdr = 2 * kPtr;
+
+// A Unity-2021.3 / Fungus-3.x-shaped world (measured 2026-09-28 on a real
+// player: UICharInfo {Vector2 cursorPos; float charWidth} = 12 bytes,
+// UILineInfo {int startCharIdx; int height; float topY; float leading} = 16).
+struct FungusWorld {
+  FakeType tvoid = T(kMonoTypeVoid), tbool = T(kMonoTypeBoolean),
+           ti4 = T(ul::kMonoTypeI4), tr4 = T(kMonoTypeSingle),
+           tstring = T(kMonoTypeString), tclass = T(kMonoTypeClass),
+           tintptr = T(ul::kMonoTypeI), tvalue = T(ul::kMonoTypeValueType),
+           tvalue_ref = T(ul::kMonoTypeValueType, true),
+           tobject = T(ul::kMonoTypeObject);
+  FakeClass say_dialog{"Fungus", "SayDialog"};
+  FakeClass text{"UnityEngine.UI", "Text"};
+  FakeClass graphic{"UnityEngine.UI", "Graphic"};
+  FakeClass font_data{"UnityEngine.UI", "FontData"};
+  FakeClass generator{"UnityEngine", "TextGenerator"};
+  FakeClass font{"UnityEngine", "Font"};
+  FakeClass canvas{"UnityEngine", "Canvas"};
+  FakeClass renderer{"UnityEngine", "CanvasRenderer"};
+  FakeClass color{"UnityEngine", "Color"};
+  FakeClass char_info{"UnityEngine", "UICharInfo"};
+  FakeClass line_info{"UnityEngine", "UILineInfo"};
+  FakeClass char_list{"System.Collections.Generic", "List`1"};
+  FakeClass line_list{"System.Collections.Generic", "List`1"};
+  FakeClass char_array{"", "UICharInfo[]"};
+  FakeClass line_array{"", "UILineInfo[]"};
+  FakeClass unity_object{"UnityEngine", "Object"};
+  FakeClass component{"UnityEngine", "Component"};
+  FakeClass behaviour{"UnityEngine", "Behaviour"};
+  FakeClass transform{"UnityEngine", "Transform"};
+  FakeClass camera{"UnityEngine", "Camera"};
+  FakeClass screen{"UnityEngine", "Screen"};
+  FakeType t_text, t_generator, t_font_data, t_font, t_canvas, t_renderer,
+      t_color, t_char_list, t_line_list, t_char_items, t_line_items,
+      t_vector2;
+  std::vector<FakeImage> images;
+
+  static FakeMethod Icall(const char* name, bool instance, FakeType* ret,
+                          std::vector<FakeType*> params) {
+    return {name, instance, ret, std::move(params), ul::kMethodImplInternalCall,
+            0};
+  }
+
+  FungusWorld() {
+    t_text = T(kMonoTypeClass, false, &text);
+    t_generator = T(kMonoTypeClass, false, &generator);
+    t_font_data = T(kMonoTypeClass, false, &font_data);
+    t_font = T(kMonoTypeClass, false, &font);
+    t_canvas = T(kMonoTypeClass, false, &canvas);
+    t_renderer = T(kMonoTypeClass, false, &renderer);
+    t_color = T(ul::kMonoTypeValueType, false, &color);
+    t_vector2 = T(ul::kMonoTypeValueType);
+    t_char_list = T(ul::kMonoTypeGenericInst, false, &char_list);
+    t_line_list = T(ul::kMonoTypeGenericInst, false, &line_list);
+    char_array.element = &char_info;
+    line_array.element = &line_info;
+    t_char_items = T(ul::kMonoTypeSzArray, false, &char_array);
+    t_line_items = T(ul::kMonoTypeSzArray, false, &line_array);
+    say_dialog.fields = {{"nameText", &t_text, 5 * kPtr},
+                         {"storyText", &t_text, 8 * kPtr}};
+    say_dialog.methods = {{"LateUpdate", true, &tvoid, {}, 0, 0}};
+    text.fields = {{"m_FontData", &t_font_data, 24 * kPtr},
+                   {"m_Text", &tstring, 25 * kPtr},
+                   {"m_TextCache", &t_generator, 26 * kPtr}};
+    graphic.fields = {{"m_CanvasRenderer", &t_renderer, 5 * kPtr},
+                      {"m_Canvas", &t_canvas, 6 * kPtr},
+                      {"m_Color", &t_color, 100}};
+    font_data.fields = {{"m_Font", &t_font, kHdr}};
+    color.fields = {{"r", &tr4, kHdr}, {"g", &tr4, kHdr + 4},
+                    {"b", &tr4, kHdr + 8}, {"a", &tr4, kHdr + 12}};
+    color.value_size = 16;
+    generator.fields = {{"m_LastString", &tstring, 3 * kPtr},
+                        {"m_Characters", &t_char_list, 18 * kPtr},
+                        {"m_Lines", &t_line_list, 19 * kPtr}};
+    char_list.fields = {{"_items", &t_char_items, kItems},
+                        {"_size", &ti4, kSize}};
+    line_list.fields = {{"_items", &t_line_items, kItems},
+                        {"_size", &ti4, kSize}};
+    char_info.fields = {{"cursorPos", &t_vector2, kHdr},
+                        {"charWidth", &tr4, kHdr + 8}};
+    char_info.value_size = 12;
+    line_info.fields = {{"startCharIdx", &ti4, kHdr},
+                        {"height", &ti4, kHdr + 4},
+                        {"topY", &tr4, kHdr + 8},
+                        {"leading", &tr4, kHdr + 12}};
+    line_info.value_size = 16;
+    unity_object.fields = {{"m_CachedPtr", &tintptr, 2 * kPtr}};
+    component.methods = {Icall("get_gameObject", true, &tclass, {}),
+                         Icall("get_transform", true, &tclass, {})};
+    behaviour.methods = {Icall("get_enabled", true, &tbool, {}),
+                         Icall("get_isActiveAndEnabled", true, &tbool, {})};
+    transform.methods = {Icall("get_localToWorldMatrix_Injected", true, &tvoid,
+                               {&tvalue_ref})};
+    canvas.methods = {Icall("get_rootCanvas", true, &tclass, {}),
+                      Icall("get_renderMode", true, &tvalue, {}),
+                      Icall("get_scaleFactor", true, &tr4, {}),
+                      Icall("get_worldCamera", true, &tclass, {})};
+    renderer.methods = {Icall("GetInheritedAlpha", true, &tr4, {}),
+                        Icall("get_cull", true, &tbool, {})};
+    font.methods = {Icall("get_dynamic", true, &tbool, {})};
+    generator.methods = {
+        Icall("GetCharactersInternal", true, &tvoid, {&tobject}),
+        Icall("GetLinesInternal", true, &tvoid, {&tobject})};
+    camera.methods = {Icall("WorldToScreenPoint_Injected", true, &tvoid,
+                            {&tvalue_ref, &tvalue, &tvalue_ref}),
+                      Icall("get_targetTexture", true, &tclass, {})};
+    screen.methods = {Icall("get_width", false, &ti4, {}),
+                      Icall("get_height", false, &ti4, {})};
+    images = {{"UnityEngine.CoreModule",
+               {&unity_object, &component, &behaviour, &transform, &camera,
+                &screen, &color}},
+              {"UnityEngine.UIModule", {&canvas, &renderer}},
+              {"UnityEngine.TextRenderingModule",
+               {&generator, &font, &char_info, &line_info}},
+              {"UnityEngine.UI", {&text, &graphic, &font_data}},
+              {"Fungus", {&say_dialog}},
+              {"Assembly-CSharp", {}}};
+    g_images = &images;
+  }
+};
+
+void TestFungusResolvesUguiShape() {
+  FungusWorld world;
+  ul::FungusSites sites;
+  const auto result =
+      ul::ResolveFungusSites(Api(), LookupApi(), SizeApi(), &sites);
+  assert(result.result == ul::FungusSiteResult::kResolved);
+  assert(sites.late_update == &world.say_dialog.methods[0]);
+  assert(sites.story_text_offset == 8 * kPtr);
+  assert(sites.text_string_offset == 25 * kPtr &&
+         sites.text_cache_offset == 26 * kPtr &&
+         sites.font_data_offset == 24 * kPtr && sites.font_data_font_offset == kHdr);
+  assert(sites.graphic_canvas_offset == 6 * kPtr &&
+         sites.graphic_renderer_offset == 5 * kPtr);
+  // m_Color boxed at 100, `a` 12 bytes into the value.
+  assert(sites.graphic_color_alpha_offset == 112);
+  assert(sites.generator_last_offset == 3 * kPtr &&
+         sites.generator_chars_offset == 18 * kPtr &&
+         sites.generator_lines_offset == 19 * kPtr);
+  assert(sites.char_stride == 12 && sites.char_cursor_offset == 0 &&
+         sites.char_width_offset == 8);
+  assert(sites.line_stride == 16 && sites.line_start_offset == 0 &&
+         sites.line_height_offset == 4 && sites.line_top_offset == 8);
+  assert(sites.char_list_items_offset == kItems &&
+         sites.line_list_size_offset == kSize);
+  // Behaviour.get_isActiveAndEnabled, not get_enabled.
+  assert(sites.icalls[static_cast<size_t>(
+             ul::FungusIcall::kBehaviourActiveAndEnabled)] ==
+         &world.behaviour.methods[1].entry_tag);
+  for (void* entry : sites.icalls) assert(entry != nullptr);
+}
+
+void ExpectFungusFailure(FungusWorld& world, ul::FungusSiteResult expected) {
+  g_images = &world.images;
+  ul::FungusSites sites;
+  const auto result =
+      ul::ResolveFungusSites(Api(), LookupApi(), SizeApi(), &sites);
+  if (result.result != expected) {
+    std::printf("fungus expected %u got %u\n", static_cast<unsigned>(expected),
+                static_cast<unsigned>(result.result));
+  }
+  assert(result.result == expected);
+}
+
+void TestFungusFailClosedBranches() {
+  {
+    FungusWorld w;
+    w.images[4].classes.clear();
+    ExpectFungusFailure(w, ul::FungusSiteResult::kNoSayDialog);
+  }
+  {
+    FungusWorld w;  // the framework type twice (two copies of Fungus)
+    FakeClass twin{"Fungus", "SayDialog"};
+    twin.fields = w.say_dialog.fields;
+    twin.methods = w.say_dialog.methods;
+    w.images[5].classes.push_back(&twin);
+    ExpectFungusFailure(w, ul::FungusSiteResult::kNoSayDialog);
+  }
+  {
+    FungusWorld w;  // LateUpdate with a parameter is not the framework's
+    w.say_dialog.methods[0].params = {&w.tbool};
+    ExpectFungusFailure(w, ul::FungusSiteResult::kNoLateUpdate);
+  }
+  {
+    FungusWorld w;  // storyText is a TextMeshPro component: not this branch
+    FakeClass tmp{"TMPro", "TextMeshProUGUI"};
+    FakeType t_tmp = T(kMonoTypeClass, false, &tmp);
+    w.say_dialog.fields[1].type = &t_tmp;
+    ExpectFungusFailure(w, ul::FungusSiteResult::kStoryTextMissing);
+  }
+  {
+    FungusWorld w;
+    w.text.fields[1].type = &w.ti4;  // m_Text must be a string
+    ExpectFungusFailure(w, ul::FungusSiteResult::kTextFieldsMissing);
+  }
+  {
+    FungusWorld w;
+    w.graphic.fields.pop_back();  // no m_Color
+    ExpectFungusFailure(w, ul::FungusSiteResult::kGraphicFieldsMissing);
+  }
+  {
+    FungusWorld w;
+    w.generator.fields[0].name = "m_LastStr";
+    ExpectFungusFailure(w, ul::FungusSiteResult::kGeneratorFieldsMissing);
+  }
+  {
+    FungusWorld w;  // List<UIVertex> where List<UICharInfo> is expected
+    FakeClass vertex{"UnityEngine", "UIVertex"};
+    w.char_array.element = &vertex;
+    ExpectFungusFailure(w, ul::FungusSiteResult::kCharLayoutMismatch);
+  }
+  {
+    FungusWorld w;  // a UICharInfo layout the stride cannot hold
+    w.char_info.value_size = 8;
+    ExpectFungusFailure(w, ul::FungusSiteResult::kCharLayoutMismatch);
+  }
+  {
+    FungusWorld w;
+    w.line_info.fields[2].type = &w.ti4;  // topY must be a float
+    ExpectFungusFailure(w, ul::FungusSiteResult::kLineLayoutMismatch);
+  }
+  {
+    FungusWorld w;
+    w.unity_object.fields.clear();
+    ExpectFungusFailure(w, ul::FungusSiteResult::kObjectFieldMissing);
+  }
+  {
+    FungusWorld w;  // a managed GetCharactersInternal is not the binding
+    w.generator.methods[0].iflags = 0u;
+    ExpectFungusFailure(w, ul::FungusSiteResult::kIcallMissing);
+  }
+  {
+    FungusWorld w;  // `out Matrix4x4` must be by-ref
+    w.transform.methods[0].params = {&w.tvalue};
+    ExpectFungusFailure(w, ul::FungusSiteResult::kIcallMissing);
+  }
+  {
+    FungusWorld w;
+    ul::FungusSites sites;
+    ul::MonoValueSizeApi none;
+    assert(ul::ResolveFungusSites(Api(), LookupApi(), none, &sites).result ==
+           ul::FungusSiteResult::kApiIncomplete);
+  }
+}
+
+void TestRichTextMap() {
+  // The Writer's read-ahead: visible part, then the rest in an alpha-0 span.
+  const std::wstring raw = L"あい<color=#FFFFFF00>う\nえ</color>";
+  ul::RichTextMap map;
+  assert(ul::ParseRichText(raw.data(), raw.size(), &map));
+  assert(map.plain_length == 5);
+  assert(std::wstring(map.plain.data(), map.plain_length) == L"あいう\nえ");
+  assert(map.raw_to_plain[0] == 0 && map.raw_to_plain[1] == 1);
+  assert(map.raw_to_plain[2] == ul::kRawTag);   // '<' of the open tag
+  assert(map.raw_to_plain[19] == 2);            // う
+  assert(map.hidden[0] == 0 && map.hidden[1] == 0);
+  assert(map.hidden[19] == 1 && map.hidden[21] == 1);
+  // Opaque colours, style tags and nesting.
+  const std::wstring nested =
+      L"<b>か</b><color=red>き<color=#00000000>く</color>け</color>";
+  assert(ul::ParseRichText(nested.data(), nested.size(), &map));
+  assert(std::wstring(map.plain.data(), map.plain_length) == L"かきくけ");
+  const size_t ki = nested.find(L'き'), ku = nested.find(L'く'),
+               ke = nested.find(L'け');
+  assert(map.hidden[ki] == 0 && map.hidden[ku] == 1 && map.hidden[ke] == 0);
+  // Short #RGBA form.
+  const std::wstring short_form = L"<color=#FFF0>こ</color>";
+  assert(ul::ParseRichText(short_form.data(), short_form.size(), &map));
+  assert(map.hidden[short_form.find(L'こ')] == 1);
+  assert(!ul::ColorValueIsTransparent(L"#FFFFFF", 7));
+  assert(!ul::ColorValueIsTransparent(L"#FFFFFF01", 9));
+  assert(ul::ColorValueIsTransparent(L"#12345600", 9));
+  // An unclosed '<' makes the lane's stripping and the renderer disagree.
+  const std::wstring open = L"さ<し";
+  assert(!ul::ParseRichText(open.data(), open.size(), &map));
+  assert(!ul::ParseRichText(nullptr, 3, &map));
+}
+
+void TestFungusGeometry() {
+  // Measured layout: 24-px advance, line tops 0 / -35, height 34, pixels per
+  // unit 1 (canvas scale factor), overlay canvas where world == screen.
+  int32_t starts[] = {0, 19, 30};
+  size_t line = 9;
+  assert(ul::LineOfUnit(starts, 3, 0, &line) && line == 0);
+  assert(ul::LineOfUnit(starts, 3, 18, &line) && line == 0);
+  assert(ul::LineOfUnit(starts, 3, 19, &line) && line == 1);
+  assert(ul::LineOfUnit(starts, 3, 31, &line) && line == 2);
+  int32_t unsorted[] = {0, 19, 5};
+  assert(!ul::LineOfUnit(unsorted, 3, 20, &line));
+  ul::LocalCell local;
+  assert(ul::GeneratorCell(24, 24, -35, 34, 1.0f, &local));
+  assert(local.x0 == 24 && local.x1 == 48 && local.y1 == -35 &&
+         local.y0 == -69);
+  assert(ul::GeneratorCell(48, 24, 0, 34, 2.0f, &local) && local.x0 == 24 &&
+         local.x1 == 36 && local.y0 == -17);
+  assert(!ul::GeneratorCell(24, 0, 0, 34, 1.0f, &local));   // '\n' / tag
+  assert(!ul::GeneratorCell(24, 24, 0, 0, 1.0f, &local));
+  assert(!ul::GeneratorCell(24, 24, 0, 34, 0.0f, &local));
+  // Local -> world (Unity column-major TRS: scale 1, translate (330, 141)).
+  ul::Matrix4 m;
+  m.m[0] = 1; m.m[5] = 1; m.m[10] = 1; m.m[15] = 1;
+  m.m[12] = 330; m.m[13] = 141;
+  const ul::Vec3 a = ul::TransformPoint(m, 24, -69);
+  const ul::Vec3 b = ul::TransformPoint(m, 48, -35);
+  ul::GlyphCell cell;
+  assert(ul::CellFromScreenCorners(a, b, true, &cell));
+  assert(cell.x0 == 354 && cell.x1 == 378 && cell.y0 == 72 && cell.y1 == 106);
+  // -> client pixels (top-left origin): 720-106 = 614 .. 720-72 = 648.
+  ul::PixelRect rect;
+  assert(ul::ProjectCell(cell, 1280, 720, 1280, 720, &rect));
+  assert(rect.x == 354 && rect.y == 614 && rect.w == 24 && rect.h == 34);
+  // Sources must address drawn units in order.
+  const std::wstring plain = L"あい\nう";
+  const uint16_t good[] = {0, 1, 3};
+  assert(ul::ValidateGlyphSources(plain.data(), plain.size(), good, 3));
+  const uint16_t newline[] = {0, 2};
+  assert(!ul::ValidateGlyphSources(plain.data(), plain.size(), newline, 2));
+  const uint16_t backwards[] = {1, 0};
+  assert(!ul::ValidateGlyphSources(plain.data(), plain.size(), backwards, 2));
+  const uint16_t past[] = {4};
+  assert(!ul::ValidateGlyphSources(plain.data(), plain.size(), past, 1));
+  // Readability.
+  assert(ul::FungusTextReadable(true, false, 1.0f, 1.0f));
+  assert(!ul::FungusTextReadable(false, false, 1.0f, 1.0f));
+  assert(!ul::FungusTextReadable(true, true, 1.0f, 1.0f));      // culled
+  assert(!ul::FungusTextReadable(true, false, 0.3f, 1.0f));     // faded out
+  assert(!ul::FungusTextReadable(true, false, 1.0f, 0.0f));     // colour a=0
+}
+
+// ── per-line voice (unity_mono_audio.h) ─────────────────────────────────────
+
+struct AudioWorld {
+  FakeType tvoid = T(kMonoTypeVoid), tclass = T(kMonoTypeClass),
+           tr4 = T(kMonoTypeSingle), tu8 = T(ua::kMonoTypeU8),
+           tr8 = T(ua::kMonoTypeR8), tstring = T(kMonoTypeString),
+           tintptr = T(ul::kMonoTypeI);
+  FakeClass source{"UnityEngine", "AudioSource"};
+  FakeClass unity_object{"UnityEngine", "Object"};
+  FakeClass writer_audio{"Fungus", "WriterAudio"};
+  std::vector<FakeImage> images;
+
+  static FakeMethod Icall(const char* name, bool instance, FakeType* ret,
+                          std::vector<FakeType*> params) {
+    return {name, instance, ret, std::move(params), ul::kMethodImplInternalCall,
+            0};
+  }
+  static FakeMethod Managed(const char* name, FakeType* ret,
+                            std::vector<FakeType*> params) {
+    return {name, true, ret, std::move(params), 0u, 0};
+  }
+
+  AudioWorld() {
+    // 2019+ player: the public methods are managed wrappers.
+    source.methods = {
+        Managed("Play", &tvoid, {}),
+        Managed("Play", &tvoid, {&tu8}),
+        Managed("PlayOneShot", &tvoid, {&tclass, &tr4}),
+        Icall("PlayHelper", false, &tvoid, {&tclass, &tu8}),
+        Icall("Play", true, &tvoid, {&tr8}),
+        Icall("PlayOneShotHelper", false, &tvoid, {&tclass, &tclass, &tr4}),
+        Icall("get_clip", true, &tclass, {})};
+    unity_object.fields = {{"m_CachedPtr", &tintptr, 2 * kPtr}};
+    unity_object.methods = {Icall("GetName", false, &tstring, {&tclass})};
+    writer_audio.methods = {Managed("OnGlyph", &tvoid, {}),
+                            Managed("OnStart", &tvoid, {&tclass}),
+                            Managed("OnVoiceover", &tvoid, {&tclass})};
+    images = {{"UnityEngine.CoreModule", {&unity_object}},
+              {"UnityEngine.AudioModule", {&source}},
+              {"Fungus", {&writer_audio}}};
+    g_images = &images;
+  }
+};
+
+void TestAudioSites() {
+  {
+    AudioWorld w;
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kResolved);
+    const auto at = [&](ua::AudioIcall id) {
+      return sites.icalls[static_cast<size_t>(id)];
+    };
+    assert(at(ua::AudioIcall::kPlayOneShotHelper) ==
+           &w.source.methods[5].entry_tag);
+    assert(at(ua::AudioIcall::kPlayHelper) == &w.source.methods[3].entry_tag);
+    // Play(double) is the extern; the managed Play(ulong) wrapper is not.
+    assert(at(ua::AudioIcall::kPlayDelayed) == &w.source.methods[4].entry_tag);
+    assert(at(ua::AudioIcall::kLegacyPlay) == nullptr);
+    assert(at(ua::AudioIcall::kLegacyPlayOneShot) == nullptr);
+    assert(at(ua::AudioIcall::kGetClip) == &w.source.methods[6].entry_tag);
+    assert(sites.get_name == &w.unity_object.methods[0].entry_tag);
+    assert(sites.cached_ptr_offset == 2 * kPtr);
+    assert(sites.HasWriterAudio());
+    assert(sites.writer_audio[static_cast<size_t>(
+               ua::WriterAudioMethod::kOnVoiceover)] ==
+           &w.writer_audio.methods[2]);
+  }
+  {
+    // Pre-2018 player: PlayOneShot / Play(ulong) are the externs themselves.
+    AudioWorld w;
+    w.source.methods = {
+        AudioWorld::Icall("Play", true, &w.tvoid, {&w.tu8}),
+        AudioWorld::Icall("PlayOneShot", true, &w.tvoid, {&w.tclass, &w.tr4}),
+        AudioWorld::Icall("get_clip", true, &w.tclass, {})};
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kResolved);
+    assert(sites.icalls[static_cast<size_t>(ua::AudioIcall::kLegacyPlay)] ==
+           &w.source.methods[0].entry_tag);
+    assert(sites.icalls[static_cast<size_t>(
+               ua::AudioIcall::kLegacyPlayOneShot)] ==
+           &w.source.methods[1].entry_tag);
+  }
+  {
+    AudioWorld w;  // no playback binding at all
+    w.source.methods.resize(3);
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kNoPlayback);
+  }
+  {
+    AudioWorld w;  // PlayHelper carries no clip: needs get_clip
+    w.source.methods.pop_back();
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kNoClipGetter);
+  }
+  {
+    AudioWorld w;
+    w.unity_object.fields.clear();
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kNoObjectName);
+  }
+  {
+    // Fungus absent, or a WriterAudio without the voiceover call: playback
+    // still resolves, the typing exclusion is off, nothing half-installed.
+    AudioWorld w;
+    w.writer_audio.methods.pop_back();
+    ua::AudioSites sites;
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kResolved);
+    assert(!sites.HasWriterAudio());
+    for (void* m : sites.writer_audio) assert(m == nullptr);
+    w.images.pop_back();
+    assert(ua::ResolveAudioSites(Api(), LookupApi(), &sites) ==
+           ua::AudioSiteResult::kResolved);
+    assert(!sites.HasWriterAudio());
+  }
+}
+
+void TestAudioDecisions() {
+  // Typing sounds (inside WriterAudio.OnGlyph / OnStart) are never voice.
+  assert(ua::IsVoiceCandidate(0u, 0));
+  assert(!ua::IsVoiceCandidate(0u, 1));
+  assert(ua::IsVoiceCandidate(ua::kAudioFlagFungusVoiceover, 1));
+  // Without any *voice*.bundle evidence only the framework's voiceover goes.
+  assert(!ua::ShouldPublishAudioEvent(0u, false));
+  assert(ua::ShouldPublishAudioEvent(0u, true));
+  assert(ua::ShouldPublishAudioEvent(ua::kAudioFlagFungusVoiceover, false));
+  // The same clip restarted within 100 ms is one playback.
+  ua::RecentClip recent;
+  assert(!ua::IsDuplicatePlayback(&recent, L"sce_0001", 1000));
+  assert(ua::IsDuplicatePlayback(&recent, L"sce_0001", 1050));
+  assert(!ua::IsDuplicatePlayback(&recent, L"sce_0001", 1200));
+  assert(!ua::IsDuplicatePlayback(&recent, L"sce_0002", 1210));
+  assert(!ua::IsDuplicatePlayback(&recent, L"sce_0001", 1220));
+}
+
 }  // namespace
 
 int main() {
@@ -528,6 +1016,12 @@ int main() {
   TestHitTest();
   TestClaim();
   TestRoleKey();
+  TestFungusResolvesUguiShape();
+  TestFungusFailClosedBranches();
+  TestRichTextMap();
+  TestFungusGeometry();
+  TestAudioSites();
+  TestAudioDecisions();
   std::printf("unity_mono_lookup_test: ok\n");
   return 0;
 }

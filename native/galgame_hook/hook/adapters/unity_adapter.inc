@@ -401,18 +401,21 @@ void RecordUnityTextMesh(void* text_component, void* string_object) {
   if (g_cs_ready) LeaveCriticalSection(&g_cs);
 }
 
-void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
-  if (g_header == nullptr || clip == nullptr) return;
-  wchar_t clip_name[kUnityClipNameChars] = {0};
-  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+// 最近一次打开的 `*voice*.bundle` 路径（CreateFile 钩子记下）；空串 = 本会话还没见过。
+void CopyLastUnityVoiceBundle(wchar_t* out, size_t out_chars) {
+  if (out == nullptr || out_chars == 0) return;
+  out[0] = 0;
+  if (!g_cs_ready) return;
+  EnterCriticalSection(&g_cs);
+  wcsncpy_s(out, out_chars, g_last_unity_voice_bundle, _TRUNCATE);
+  LeaveCriticalSection(&g_cs);
+}
 
-  wchar_t bundle_path[kUnityBundlePathChars] = {0};
-  if (g_cs_ready) {
-    EnterCriticalSection(&g_cs);
-    wcsncpy_s(bundle_path, g_last_unity_voice_bundle, _TRUNCATE);
-    LeaveCriticalSection(&g_cs);
-  }
-
+// Unity 资源语音事件（clip 名 + voice bundle）写共享环；IL2CPP 与 Mono
+// （unity_mono_adapter.inc）两条运行时共用，injector 侧据此抽取解码。HookWorker 调用。
+void PublishUnityVoiceEvent(const wchar_t* clip_name, const wchar_t* bundle_path,
+                            uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip_name == nullptr || clip_name[0] == 0) return;
   const uint64_t index = static_cast<uint64_t>(InterlockedExchangeAdd64(
       reinterpret_cast<volatile LONGLONG*>(
           &g_header->unity_voice_write_count),
@@ -422,9 +425,20 @@ void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
   event->seq = 0;
   event->timestamp_ms = timestamp_ms;
   wcsncpy_s(event->clip_name, clip_name, _TRUNCATE);
-  wcsncpy_s(event->bundle_path, bundle_path, _TRUNCATE);
+  wcsncpy_s(event->bundle_path, bundle_path == nullptr ? L"" : bundle_path,
+            _TRUNCATE);
   MemoryBarrier();
   event->seq = index + 1;
+}
+
+void RecordUnityVoiceResourceEvent(void* clip, uint64_t timestamp_ms) {
+  if (g_header == nullptr || clip == nullptr) return;
+  wchar_t clip_name[kUnityClipNameChars] = {0};
+  if (!CopyUnityClipName(clip, clip_name, kUnityClipNameChars)) return;
+
+  wchar_t bundle_path[kUnityBundlePathChars] = {0};
+  CopyLastUnityVoiceBundle(bundle_path, kUnityBundlePathChars);
+  PublishUnityVoiceEvent(clip_name, bundle_path, timestamp_ms);
 }
 
 void EnqueueUnityAudioClip(void* source, void* clip) {
