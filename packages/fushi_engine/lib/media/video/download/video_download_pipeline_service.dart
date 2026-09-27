@@ -410,6 +410,28 @@ class VideoDownloadJobFilesNotDeleted implements Exception {
       'deleted: ${paths.map(p.basename).join(', ')}';
 }
 
+/// 「下载时跳过特典」自动取消选择的文件行：`selected: false` + `kind: 'extra'`。
+///
+/// 整理阶段写 `kind: 'extra'` 的行都是选中的（只排布选中文件），手动选卷写的
+/// 行是 `kind: 'other'`，所以这两个条件合起来唯一标出自动跳过的特典。
+bool _isAutoSkippedExtraRow(VideoDownloadJobFileRow row) =>
+    !row.selected && row.kind == 'extra';
+
+/// 用户是否**亲手**选过文件（手动选卷 / 选单文件）。
+///
+/// 这决定任务是否共享一颗「用户只要其中一部分」的合集 torrent：重新投递要走
+/// 暂停添加 + 写优先级（只有 .torrent 元数据能做到），删除只能删选中的文件、
+/// 不能让后端连合集一起删。自动跳过的特典不算——那条任务仍是整颗 torrent 的
+/// 唯一主人：磁力照常重加、删除照常整颗连文件删，否则磁力任务一掉进重新投递
+/// 就永远卡在「需要 .torrent 元数据」，删除还会把特典残片留在盘上。
+///
+/// 「有没有被跳过的行」（整理排除、完成时的行状态）仍用 `!row.selected`，
+/// 那里两种来源的语义相同。
+bool _hasUserFileSelection(Iterable<VideoDownloadJobFileRow> rows) => rows.any(
+  (VideoDownloadJobFileRow row) =>
+      !row.selected && !_isAutoSkippedExtraRow(row),
+);
+
 /// Deletes the durable half of a job independently of the active pipeline.
 /// Only exact file/link paths recorded by this job are removed; directories
 /// are deliberately never deleted recursively, and a backend-reported relative
@@ -430,9 +452,7 @@ Future<void> deletePersistedVideoDownloadJob({
   if (deleteFiles) {
     final List<VideoDownloadJobFileRow> files = await database
         .getVideoDownloadJobFiles(job.jobId);
-    final bool selective = files.any(
-      (VideoDownloadJobFileRow file) => !file.selected,
-    );
+    final bool selective = _hasUserFileSelection(files);
     final List<VideoDownloadJobSubtitleRow> subtitles = await database
         .getVideoDownloadJobSubtitles(job.jobId);
     final Set<String> managedPaths = <String>{
@@ -807,6 +827,7 @@ class VideoDownloadPipelineService {
     this.updateFeed,
     VideoCoverExtractor? coverExtractor,
     this.videoCoversDirectory,
+    this.skipDownloadExtras,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
@@ -856,6 +877,26 @@ class VideoDownloadPipelineService {
   /// 走两条路径。
   /// 更新提醒的投递端口（app 注入 UpdateFeedService；服务端可以不给）。
   final UpdateFeedPublisher? updateFeed;
+
+  /// 全局偏好「下载时跳过特典」（PV / CM / 预告 / NCOP / NCED / 菜单 / 特典…）。
+  ///
+  /// 每轮观察下载时现读（用户中途改开关，对还没做过决定的任务立即生效）；
+  /// null = 永不跳过——服务端与既有测试不装配它，行为与加这个开关之前一致。
+  /// 只作用于 `library` 策略任务，且每条任务只决定一次（见
+  /// [_skipExtrasIfRequested]）。
+  final bool Function()? skipDownloadExtras;
+
+  /// 已判定「没有可跳的特典」的任务（无特典 / 全是特典）。种子文件列表拿到后
+  /// 就不会再变，判一次就够：不记下来的话开关打开期间每轮轮询都要再列一次
+  /// 文件（外接 qBittorrent 上是每 5 秒一次 HTTP）。刻意只放内存、不落全选的
+  /// 文件行——落行会把普通任务变成「有文件行」的形态，改变既有非选择性路径；
+  /// 进程重启后各任务重判一次，代价可以忽略。
+  final Set<String> _extrasDecidedJobIds = <String>{};
+
+  /// 本进程里已经把自动跳过的特典优先级写进后端的任务。后端任务是整颗重加的
+  /// （重新投递、进程重启后的首次观察），skip 优先级不会跟着回来，所以
+  /// 不在这个集合里的、带自动跳过特典行的任务，观察时要重写一次。
+  final Set<String> _extrasSkipAppliedJobIds = <String>{};
 
   final VideoBookRepository _videoRepository;
   final VideoDownloadOrganizer _organizer = const VideoDownloadOrganizer();
@@ -1502,9 +1543,7 @@ class VideoDownloadPipelineService {
         .trim();
     final List<VideoDownloadJobFileRow> persistedFiles = await database
         .getVideoDownloadJobFiles(job.jobId);
-    final bool selective = persistedFiles.any(
-      (VideoDownloadJobFileRow file) => !file.selected,
-    );
+    final bool selective = _hasUserFileSelection(persistedFiles);
     if (torrentId.isNotEmpty) {
       try {
         final VideoDownloadBackendBinding? binding = await backendResolver(job);
@@ -1809,10 +1848,7 @@ class VideoDownloadPipelineService {
     final List<VideoDownloadJobFileRow> persistedFiles = await database
         .getVideoDownloadJobFiles(job.jobId);
     _ensureLeaseHeld();
-    final bool selective = persistedFiles.any(
-      (VideoDownloadJobFileRow row) => !row.selected,
-    );
-    if (selective) {
+    if (_hasUserFileSelection(persistedFiles)) {
       await _addSelectedTorrentPaused(
         job: job,
         backend: binding.backend,
@@ -1835,6 +1871,8 @@ class VideoDownloadPipelineService {
           throw StateError('download backend rejected the torrent');
         }
       }
+      // 整颗重新投递会让后端丢掉此前写的特典 skip 优先级：下一轮观察重新写。
+      _extrasSkipAppliedJobIds.remove(job.jobId);
     }
     final Future<void> Function(VideoDownloadJobRow job)? checkpoint =
         onBackendTaskAdded;
@@ -2194,6 +2232,7 @@ class VideoDownloadPipelineService {
           updatedAt: Value<int>(now),
         ),
       );
+      await _skipExtrasIfRequested(job, binding.backend, hash);
       _ensureLeaseHeld();
       await _releaseLeaseWith(
         () => database.releaseVideoDownloadJobClaim(
@@ -2214,6 +2253,145 @@ class VideoDownloadPipelineService {
       VideoDownloadJobStage.organize,
       observedSavePath: snapshot.savePath,
     );
+  }
+
+  /// 「下载时跳过特典」：下载途中把特典文件的优先级设成 skip，并把整份文件
+  /// 选择落成文件行（特典 `selected: false` + `kind: 'extra'`）。完成判定、
+  /// [_ensureDownloadedFileRows]、整理排除都按「有被跳过的行」处理它；重新
+  /// 投递与删除则仍当整颗 torrent（见 [_hasUserFileSelection]）。
+  ///
+  /// 只决定一次：任务一旦有文件行（手动选择、或上一轮已决定）就不再重判，
+  /// 用户中途关掉开关也不会把已跳过的特典再拉回来——已决定跳过的，后端任务
+  /// 被整颗重加后还会重写 skip 优先级（[_reapplyExtrasSkip]）。磁力还没拿到
+  /// 元数据（文件列表为空）时本轮什么都不做，下一轮再判。
+  ///
+  /// 判据用整理器同一份（[isVideoDownloadExtraFile]）：特典目录里的非视频文件
+  /// （扫图、CD 音轨）同样跳过，整理器反正也只会把它们当附件。永远留至少
+  /// 一个正片视频——整个种子都是特典时（用户就是来下 SP 盘的）原样全下。
+  Future<void> _skipExtrasIfRequested(
+    VideoDownloadJobRow job,
+    TorrentBackend backend,
+    String hash,
+  ) async {
+    // 没装配开关（服务端 / 既有测试）= 这个进程从不产生自动跳过的特典行。
+    final bool Function()? toggle = skipDownloadExtras;
+    if (toggle == null) return;
+    if (job.organizationPolicy != 'library') return;
+    if (_extrasDecidedJobIds.contains(job.jobId) ||
+        _extrasSkipAppliedJobIds.contains(job.jobId)) {
+      return;
+    }
+    if (backend is! TorrentDetailBackend || !backend.detailAvailable) return;
+    _ensureLeaseHeld();
+    final List<VideoDownloadJobFileRow> existing = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    _ensureLeaseHeld();
+    if (existing.isNotEmpty) {
+      await _reapplyExtrasSkip(job, backend, hash, existing);
+      return;
+    }
+    if (!toggle()) return;
+    final List<TorrentFileEntry> files = await backend.listFiles(hash);
+    _ensureLeaseHeld();
+    if (files.isEmpty) return;
+    final String? sharedRoot = videoDownloadSharedRoot(files);
+    final Set<int> extras = <int>{
+      for (final TorrentFileEntry file in files)
+        if (isVideoDownloadExtraFile(file.name, sharedRoot: sharedRoot))
+          file.index,
+    };
+    final bool keepsMainVideo = files.any(
+      (TorrentFileEntry file) =>
+          !extras.contains(file.index) && isVideoDownloadVideoFile(file.name),
+    );
+    if (extras.isEmpty || !keepsMainVideo) {
+      // 文件列表非空 = 元数据已知，这个结论不会再变。
+      _extrasDecidedJobIds.add(job.jobId);
+      return;
+    }
+    if (!await _setFilePriorities(
+      backend,
+      backend,
+      hash,
+      extras.toList()..sort(),
+      TorrentFilePriority.skip,
+    )) {
+      // 不落文件行：下一轮仍是「未决定」，会再试一次；任务本身照常下载。
+      engineLog.log(
+        'VideoDownloadPipeline',
+        'Backend rejected skipping ${extras.length} extras files '
+            'of job ${job.jobId}; will retry on the next poll',
+      );
+      return;
+    }
+    _ensureLeaseHeld();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await database.transaction(() async {
+      for (final TorrentFileEntry file in files) {
+        final bool selected = !extras.contains(file.index);
+        await database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion(
+            jobId: Value<String>(job.jobId),
+            backendFileIndex: Value<int?>(file.index),
+            originalRelativePath: Value<String>(file.name),
+            currentRelativePath: Value<String>(file.name),
+            // 'extra' 把「自动跳过的特典」与用户亲手取消选择的文件区分开，
+            // 见 [_isAutoSkippedExtraRow]。
+            kind: Value<String>(selected ? 'other' : 'extra'),
+            sizeBytes: Value<int?>(file.size),
+            selected: Value<bool>(selected),
+            status: Value<String>(
+              selected
+                  ? VideoDownloadJobFileStatus.downloading
+                  : VideoDownloadJobFileStatus.skipped,
+            ),
+            createdAt: Value<int>(now),
+            updatedAt: Value<int>(now),
+          ),
+        );
+      }
+    });
+    _extrasSkipAppliedJobIds.add(job.jobId);
+  }
+
+  /// 已决定跳过特典的任务，在本进程里还没把 skip 优先级写进**当前**后端任务
+  /// 时补写一次（重新投递 / 进程重启后后端任务是整颗重加的）。没有自动跳过行
+  /// 的任务（用户手动选择的任务）不归这里管，判一次就记为已决定。
+  Future<void> _reapplyExtrasSkip(
+    VideoDownloadJobRow job,
+    TorrentDetailBackend backend,
+    String hash,
+    List<VideoDownloadJobFileRow> rows,
+  ) async {
+    final List<int> skipped = <int>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if (_isAutoSkippedExtraRow(row) && row.backendFileIndex != null)
+          row.backendFileIndex!,
+    ]..sort();
+    if (skipped.isEmpty) {
+      _extrasDecidedJobIds.add(job.jobId);
+      return;
+    }
+    // 磁力重加后要等元数据到了才有文件可设优先级。
+    final List<TorrentFileEntry> files = await backend.listFiles(hash);
+    _ensureLeaseHeld();
+    if (files.isEmpty) return;
+    if (!await _setFilePriorities(
+      backend,
+      backend,
+      hash,
+      skipped,
+      TorrentFilePriority.skip,
+    )) {
+      engineLog.log(
+        'VideoDownloadPipeline',
+        'Backend rejected re-applying skip to ${skipped.length} extras files '
+            'of job ${job.jobId}; will retry on the next poll',
+      );
+      return;
+    }
+    _ensureLeaseHeld();
+    _extrasSkipAppliedJobIds.add(job.jobId);
   }
 
   Future<void> _ensureDownloadedFileRows(
@@ -2321,9 +2499,19 @@ class VideoDownloadPipelineService {
       sourceRoot: source.rootPath,
       pathMapping: mapping,
     );
-    final List<TorrentFileEntry> backendFiles = await binding.backend.listFiles(
-      hash,
-    );
+    // 选择性任务（手动选文件 / 跳过特典）里没选的文件没下完或根本没下：
+    // 不排布、不改名、不入库，否则半截文件会被当成已整理的正片或特典。
+    final Set<int> skippedIndexes = <int>{
+      for (final VideoDownloadJobFileRow row in rows)
+        if (!row.selected && row.backendFileIndex != null)
+          row.backendFileIndex!,
+    };
+    final List<TorrentFileEntry> backendFiles =
+        (await binding.backend.listFiles(hash))
+            .where(
+              (TorrentFileEntry file) => !skippedIndexes.contains(file.index),
+            )
+            .toList(growable: false);
     _ensureLeaseHeld();
     final VideoOrganizationPlan planned;
     try {
@@ -2336,6 +2524,7 @@ class VideoDownloadPipelineService {
     final VideoOrganizationResult result = await _organizer.organize(
       backend: binding.backend,
       request: request,
+      excludedFileIndexes: skippedIndexes,
       onFileCommitted: (VideoOrganizationFilePlan file) async {
         _ensureLeaseHeld();
         final VideoDownloadJobFileRow? row = await _jobFileByIndex(

@@ -733,7 +733,8 @@ void main() {
       expect(q.slot, VideoAcquisitionSlot.work);
       expect(s.optionIds, <String>['0', '1', kVideoAcquisitionOptionNone]);
       expect(q.options.first.label, 'Show');
-      expect(q.options.first.hint, '2019 · anime');
+      // 类别由页面按候选翻译，reducer 只给年份 / 原名这类字面量。
+      expect(q.options.first.hint, '2019');
       expect(q.preselectedIndex, 1);
       expect(s.state.busy, isFalse);
 
@@ -988,8 +989,10 @@ void main() {
       expect(summary.say.args['batch'], isFalse);
       expect(summary.say.args['seeders'], 50);
       expect(s.state.question!.slot, VideoAcquisitionSlot.resource);
+      // 只有一张卡：没有候选版本 chip；多集剧集下载给「只下最新一集」。
       expect(s.optionIds, <String>[
         kVideoAcquisitionOptionConfirm,
+        kVideoAcquisitionOptionLatest,
         kVideoAcquisitionOptionNext,
         kVideoAcquisitionOptionCancel,
       ]);
@@ -1217,8 +1220,17 @@ void main() {
         expect(s.state.stage, VideoAcquisitionStage.cancelled);
         expect(s.lastAssistant.say.kind, VideoAcquisitionSayKind.cancelled);
         expect(s.state.busy, isFalse);
-        // 终态后再来事件一律忽略。
-        expect(s.feed(const VideoAcquisitionUserTextEvent('again')), isEmpty);
+        // 终态后除了打字（= 再下一部）其它事件一律忽略。
+        expect(
+          s.feed(
+            const VideoAcquisitionChipChosenEvent(
+              slot: VideoAcquisitionSlot.resource,
+              optionId: kVideoAcquisitionOptionConfirm,
+            ),
+          ),
+          isEmpty,
+        );
+        expect(s.state.stage, VideoAcquisitionStage.cancelled);
       }
     });
 

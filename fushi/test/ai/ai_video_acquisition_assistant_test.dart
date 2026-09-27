@@ -143,6 +143,30 @@ void main() {
       );
     });
 
+    test('scope：整套 / 全部剧场版 / 全部剧集，非法值丢弃', () {
+      expect(
+        _parse('{"intent": "provide", "scope": "movies"}').patch.scope,
+        VideoAcquisitionScope.franchiseMovies,
+      );
+      expect(
+        _parse('{"intent": "provide", "scope": "ALL"}').patch.scope,
+        VideoAcquisitionScope.franchise,
+      );
+      expect(
+        _parse('{"intent": "provide", "scope": "everything"}').patch.scope,
+        isNull,
+      );
+    });
+
+    test('系统提示列出 scope 的全部枚举值', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      for (final VideoAcquisitionScope scope in VideoAcquisitionScope.values) {
+        expect(prompt, contains('"${scope.storageKey}"'));
+      }
+    });
+
     test('quality "best" / "1440p" 是合法档位', () {
       expect(
         _parse('{"intent": "provide", "quality": "best"}').patch.quality,

@@ -93,7 +93,7 @@ void main() {
     final VideoDiscoveryActions actions =
         HomePage.debugVideoDiscoveryActions!.call();
     expect(actions.onAiAcquire, isNotNull, reason: '入口应已接线');
-    actions.onAiAcquire!.call();
+    actions.onAiAcquire!.call(null);
     for (int i = 0; i < 20; i++) {
       await tester.pump(const Duration(milliseconds: 250));
       if (find.byType(AiVideoAcquisitionPage).evaluate().isNotEmpty) break;

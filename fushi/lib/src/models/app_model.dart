@@ -5283,6 +5283,8 @@ class AppModel with ChangeNotifier {
       // 按作品的字幕语言：读字幕工作台 / AI 下载写的每系列记忆，键与导入落库的
       // 合集名同源；没记过就走上面的全局默认语言链。
       subtitleLanguageResolver: _resolveVideoDownloadSubtitleLanguage,
+      // 现读偏好：设置里一改，还没拿到文件表的任务就按新值跳过特典。
+      skipDownloadExtras: () => prefsRepo.videoDownloadSkipExtras,
       backendResolver: _resolveVideoDownloadBackend,
       scrapeCoordinator: scrape,
       onBackendTaskAdded: _checkpointEmbeddedVideoDownload,
