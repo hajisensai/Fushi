@@ -21,6 +21,9 @@
 //  ⑦ `StudyClock.stop()` 结构性幂等：清引用在第一个 await 之前；
 //  ⑧ 首页每日目标分子与阅读统计页同函数（`studyGoalCharsForDay`，学习域口径）。
 //  ⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）。
+//  ⑩ 外来段的落地原语 `upsertStudySegmentsIfNewer`（LWW + 墓碑门）只许 sync 域调：
+//     同步 / 备份落地与第三方阅读器备份导入（Hoshi Reader）。本地写入面仍只经
+//     StudyClock；这条堵的是「页面拿批量 LWW 原语绕开时钟直接拼段」。
 
 import 'dart:io';
 
@@ -467,6 +470,36 @@ void main() {
             '`if (mounted) setState(() => _loading = false);`',
       );
     }
+  });
+
+  test('⑩ upsertStudySegmentsIfNewer（外来段落地）只许 sync 域调', () {
+    final List<String> offenders = <String>[];
+    final List<String> callers = <String>[];
+    for (final File f in dartFiles()) {
+      final String path = norm(f.path);
+      if (!containsIdentifierCall(
+        f.readAsStringSync(),
+        'upsertStudySegmentsIfNewer',
+        allowNamedConstructor: false,
+      )) {
+        continue;
+      }
+      (_isSyncDomain(path) ? callers : offenders).add(path);
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: '批量 LWW 落地原语只给「不是本机时钟产出的段」用（同步 / 备份 / 第三方'
+          '备份导入）；本地写入面必须经 StudyClock：\n${offenders.join('\n')}',
+    );
+    // 正向：两条合法落地面确实走它——守卫不是在空转。
+    expect(
+      callers,
+      containsAll(<String>[
+        '../packages/fushi_engine/lib/sync/aggregate_sync_service.dart',
+        'lib/src/sync/external_reader_import/external_reader_import_service.dart',
+      ]),
+    );
   });
 
   test('legacy 累加 DAO 已从 DB 层彻底删除（编译层守卫的文本镜像）', () {

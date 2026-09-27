@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
+import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/utils.dart';
 
@@ -201,6 +202,11 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             label: t.media_import_folder,
             onTap: _importFolder,
           ),
+          QuickImportAction(
+            icon: Icons.move_to_inbox_outlined,
+            label: t.hoshi_import_entry,
+            onTap: _importExternalReaderBackup,
+          ),
         ],
       'video' => <QuickImportAction>[
           QuickImportAction(
@@ -234,6 +240,20 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
       ),
     );
     if (imported == true) _invalidateBookProviders();
+  }
+
+  /// 从 Hoshi Reader 的 `.hoshi` 书库备份导入书 + 阅读位置 + 统计（与设置 ›
+  /// 同步与备份里的入口同一个页面）。
+  Future<void> _importExternalReaderBackup() async {
+    await Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) =>
+            ExternalReaderImportPage(appModel: _appModel),
+      ),
+    );
+    if (!mounted) return;
+    _invalidateBookProviders();
   }
 
   /// 「导入文件夹」：二选一——设为常驻来源（Komga 式，长期自动扫描）或
