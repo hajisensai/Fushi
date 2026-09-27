@@ -603,4 +603,72 @@ void main() {
       expect(await planScrapeWorksForCollection(db, id), isEmpty);
     });
   });
+
+  group('planScrapeWorkForVideoBook（「重刮这一个视频」的定位入口，BUG-2737）', () {
+    test('不在任何合集里的独立电影命中它自己的 book 单元', () async {
+      // 用户真实形状：一部电影直接挂在来源下、没进任何合集——合集菜单那条入口
+      // 对它是断头路，这里必须能定位到。
+      final int sourceId = await addSource('D:/movies');
+      await addVideo(
+        'liz',
+        'D:/movies/Liz and the Blue Bird (2018).mkv',
+        sourceId,
+        title: 'リズと青い鳥',
+      );
+
+      final VideoPendingScrapeWork? planned =
+          await planScrapeWorkForVideoBook(db, 'liz');
+
+      expect(planned, isNotNull);
+      expect(planned!.source.id, sourceId);
+      expect(planned.work.stableKey, 'book:liz');
+      expect(planned.work.title, 'リズと青い鳥');
+    });
+
+    test('剧集里的一集命中整部剧的合集单元（身份是作品级的）', () async {
+      final int sourceId = await addSource('D:/A');
+      for (final String uid in <String>['s-e1', 's-e2']) {
+        await addVideo(uid, 'D:/A/$uid.mkv', sourceId, title: uid);
+      }
+      final int id = await db.createMediaCollection('Show');
+      await db.addToCollection(id, MediaKind.video, 's-e1');
+      await db.addToCollection(id, MediaKind.video, 's-e2');
+
+      final VideoPendingScrapeWork? planned =
+          await planScrapeWorkForVideoBook(db, 's-e2');
+
+      expect(planned?.work.stableKey, 'collection:$id');
+      expect(planned?.work.title, 'Show');
+    });
+
+    test('只看视频自己的来源：同名文件在别的来源里不会认错', () async {
+      final int a = await addSource('D:/A');
+      final int b = await addSource('D:/B');
+      await addVideo('a-movie', 'D:/A/Movie.mkv', a, title: 'Movie');
+      await addVideo('b-movie', 'D:/B/Movie.mkv', b, title: 'Movie');
+
+      final VideoPendingScrapeWork? planned =
+          await planScrapeWorkForVideoBook(db, 'b-movie');
+
+      expect(planned?.source.id, b);
+      expect(planned?.work.stableKey, 'book:b-movie');
+    });
+
+    test('视频不存在 / 来源非 local 时返回 null（调用方据此给可见提示）', () async {
+      expect(await planScrapeWorkForVideoBook(db, 'missing'), isNull);
+
+      final int remoteId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'remote',
+          mediaKind: 'video',
+          rootPath: 'remote://lib',
+          createdAt: 1,
+          transport: const Value<String>('interconnect'),
+        ),
+      );
+      await addVideo('remote-1', 'remote://lib/Movie.mkv', remoteId,
+          title: 'Movie');
+      expect(await planScrapeWorkForVideoBook(db, 'remote-1'), isNull);
+    });
+  });
 }

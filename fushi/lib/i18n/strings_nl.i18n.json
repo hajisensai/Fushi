@@ -5671,5 +5671,7 @@
   "ai_video_acquire_failure_no_sources": "There is no managed video source to download into.",
   "ai_video_acquire_failure_nothing_selected": "Nothing selected to submit.",
   "ai_video_download_skip_extras": "Skip extras",
-  "ai_video_download_skip_extras_hint": "PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked."
+  "ai_video_download_skip_extras_hint": "PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked.",
+  "video_item_rescrape": "Rescrape metadata and cover",
+  "video_item_rescrape_not_planned": "This video isn't in any local video source's scrape plan"
 }

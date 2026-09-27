@@ -14,6 +14,9 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -33,6 +36,21 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+
+/// 永不被真调用的刮削 runner：菜单测试只需要一个在场的 controller 来点亮入口。
+class _IdleScrapeRunner implements VideoSourceScrapeRunner {
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async =>
+      SourceScrapeReport(sourceIds: <int>[source.id]);
+}
 
 class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   PausingBatchDeleteVideoBookRepository(
@@ -259,6 +277,7 @@ void main() {
   Widget buildApp({
     bool captureToasts = false,
     VideoBookRepository? repo,
+    VideoSourceScrapeTaskController? scrapeTaskController,
   }) =>
       ProviderScope(
         overrides: <Override>[
@@ -278,6 +297,7 @@ void main() {
               body: HomeVideoPage(
                 repo: repo ?? VideoBookRepository(db),
                 section: VideoLibrarySection.allVideos,
+                scrapeTaskController: scrapeTaskController,
               ),
             ),
           ),
@@ -481,6 +501,73 @@ void main() {
     expect(find.byType(FushiDialogFrame), findsOneWidget,
         reason: '菜单本身仍要弹出，缺的只是这一条动作');
     expect(find.text(t.media_file_location_open), findsNothing);
+  });
+
+  group('视频卡「重新刮削资料与封面」（BUG-2737）', () {
+    late VideoSourceScrapeTaskController scrapeController;
+    setUp(() {
+      scrapeController = VideoSourceScrapeTaskController(_IdleScrapeRunner());
+    });
+    tearDown(() => scrapeController.dispose());
+
+    testWidgets('有刮削 controller 的本地视频卡菜单出现重刮入口', (WidgetTester tester) async {
+      // 用户实报：刮错封面的独立电影长按后没有任何重刮入口，合集菜单那条够不着。
+      await seedTaggedVideo();
+      await tester.pumpWidget(
+          buildApp(scrapeTaskController: scrapeController));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+
+      expect(find.text(t.video_item_rescrape), findsOneWidget);
+    });
+
+    testWidgets('没有刮削 controller 时不画重刮入口', (WidgetTester tester) async {
+      await seedTaggedVideo();
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+
+      expect(find.byType(FushiDialogFrame), findsOneWidget);
+      expect(find.text(t.video_item_rescrape), findsNothing);
+    });
+
+    testWidgets('流媒体视频卡不画重刮入口（远端没有本机刮削计划）',
+        (WidgetTester tester) async {
+      await db.upsertVideoBook(const VideoBooksCompanion(
+        bookUid: Value('video/stream'),
+        title: Value('Stream Episode'),
+        videoPath: Value('https://example.com/live/ep1.m3u8'),
+      ));
+      await tester.pumpWidget(
+          buildApp(scrapeTaskController: scrapeController));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/stream'));
+
+      expect(find.byType(FushiDialogFrame), findsOneWidget);
+      expect(find.text(t.video_item_rescrape), findsNothing);
+    });
+
+    testWidgets('视频不在任何本地来源计划里时点重刮给可见提示，不静默',
+        (WidgetTester tester) async {
+      // seedTaggedVideo 的行没有 sourceId：计划器给不出单元。
+      await seedTaggedVideo();
+      FushiToast.navigatorKey = toastNavigatorKey;
+      await tester.pumpWidget(buildApp(
+        captureToasts: true,
+        scrapeTaskController: scrapeController,
+      ));
+      await tester.pumpAndSettle();
+
+      await openCardMenu(tester, videoCard('video/1'));
+      await tester.tap(find.text(t.video_item_rescrape));
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.video_item_rescrape_not_planned), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+    });
   });
 
   testWidgets('从未看过的视频卡菜单不出现「清除观看进度」', (WidgetTester tester) async {

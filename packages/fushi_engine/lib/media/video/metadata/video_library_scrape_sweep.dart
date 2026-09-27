@@ -99,6 +99,38 @@ Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
   return List<VideoPendingScrapeWork>.unmodifiable(memberWorks);
 }
 
+/// 在视频自己所属来源的刮削计划里定位包含它的作品单元（「重新刮削这个视频」）。
+///
+/// 与 [planScrapeWorksForCollection] 同一份计划、同一套判据，只是锚点换成单个
+/// 成员：独立电影不在任何合集里，合集菜单那条入口对它是断头路（BUG-2737）。
+/// 计划器把每个成员恰好分进一个单元，所以答案至多一个——可能是它自己的
+/// `book:<uid>` 单元，也可能是它所在剧集的 `collection:<id>` 单元（身份是作品级
+/// 的，重刮一集就是重认整部剧）。
+///
+/// 返回 null：视频不存在、没有来源、来源不是本机扫描根（远端流 / 互联），或来源
+/// 是目录分组模式 / 被特典分类器排除（计划器不给单元）。调用方据此给可见提示。
+Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
+  FushiDatabase database,
+  String bookUid,
+) async {
+  final int? sourceId =
+      (await database.getVideoBookByBookUid(bookUid))?.sourceId;
+  if (sourceId == null) return null;
+  final SourceLibraryRow? source = await database.getMediaSourceById(sourceId);
+  if (source == null ||
+      source.mediaKind != 'video' ||
+      source.transport != 'local') {
+    return null;
+  }
+  for (final VideoSourceScrapeWork work
+      in await VideoSourceWorkPlanner(database).plan(source)) {
+    if (work.members.any((VideoBookRow m) => m.bookUid == bookUid)) {
+      return VideoPendingScrapeWork(source: source, work: work);
+    }
+  }
+  return null;
+}
+
 /// 自动补刮调度器。生命周期跟随 HomePage 的刮削 controller。
 class VideoLibraryScrapeSweep {
   VideoLibraryScrapeSweep({

@@ -2960,6 +2960,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickCover(book);
             },
           ),
+          // 「重新刮削」：门与合集菜单同一条（有刮削 controller）；再加本机文件——
+          // 只有本机扫描根才有刮削计划，远端流 / 互联条目画出来点了必然扑空。
+          if (widget.scrapeTaskController != null &&
+              videoBookHasLocalFiles(book))
+            DialogQuickAction(
+              label: t.video_item_rescrape,
+              icon: Icons.image_search,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_rescrapeVideo(book));
+              },
+            ),
           DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
@@ -6960,12 +6972,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 搜索种子：整个合集就是这一个作品时用合集名（成员标题可能是「S00E01」这种
     // 纯集号标签，拿它当种子等于让用户对着无意义的词搜）；合集里有多个作品时合
     // 集名描述的是整个播放列表，反而是选中成员自己的标题更贴。
+    await _rescrapePlannedWork(
+      controller,
+      chosen,
+      searchTitle: planned.length == 1 ? collection.name : chosen.work.title,
+    );
+  }
+
+  /// 视频卡「重新刮削资料与封面」（BUG-2737）：独立电影不在任何合集里，合集菜单
+  /// 那条入口够不着它，刮错了就只能整来源重刮。定位问计划器要包含这个视频的作品
+  /// 单元（[planScrapeWorkForVideoBook]），之后与合集入口走同一条手动指定管线。
+  Future<void> _rescrapeVideo(VideoBookRow book) async {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) return;
+    final VideoPendingScrapeWork? planned = await planScrapeWorkForVideoBook(
+      ref.read(appProvider).database,
+      book.bookUid,
+    );
+    if (!mounted) return;
+    if (planned == null) {
+      FushiToast.show(
+        msg: t.video_item_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    await _rescrapePlannedWork(
+      controller,
+      planned,
+      searchTitle: planned.work.title,
+    );
+  }
+
+  /// 手动指定身份并重刮一个计划器作品单元：搜索弹窗 →
+  /// [VideoSourceScrapeTaskController.rescrapeWorkWithLookup]。合集与单视频两个
+  /// 入口共用，落库只有 `_store.apply` 这一条。
+  Future<void> _rescrapePlannedWork(
+    VideoSourceScrapeTaskController controller,
+    VideoPendingScrapeWork chosen, {
+    required String searchTitle,
+  }) async {
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
       context: context,
       controller: controller,
       source: chosen.source,
-      workTitle: planned.length == 1 ? collection.name : chosen.work.title,
+      workTitle: searchTitle,
       workStableKey: chosen.work.stableKey,
     );
     if (candidate == null || !mounted) return;
@@ -6984,7 +7037,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 用户在任务面板撤回了尚未执行的绑定，不是失败。
       return;
     } on Object catch (e, stack) {
-      ErrorLogService.instance.log('video.rescrapeCollection', e, stack);
+      ErrorLogService.instance.log('video.rescrapeWork', e, stack);
       if (!mounted) return;
       FushiToast.show(
         msg: t.collection_rescrape_failed,
