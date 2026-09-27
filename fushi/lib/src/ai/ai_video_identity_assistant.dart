@@ -23,7 +23,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart'
 export 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 
 /// 系统提示：任务是「本地目录对应哪个候选作品」，只回一个 JSON 对象。
-String buildAiVideoIdentitySystemPrompt({required String locale}) => '''
+String buildAiVideoIdentitySystemPrompt({required String locale}) =>
+    '''
 You match a local video folder to exactly one of the candidate works returned by
 a metadata provider. The candidates were already fetched; you only choose among
 them and must not invent other works or identifiers.
@@ -74,7 +75,27 @@ Future<List<WebKnowledgePage>> fetchAiIdentityReferences(
     query.localTitles.first,
     maxCharsPerPage: kAiIdentityReferenceMaxChars,
   );
-  return pages.take(kAiIdentityReferenceMaxPages).toList(growable: false);
+  return pickDiverseWebKnowledgePages(pages, kAiIdentityReferenceMaxPages);
+}
+
+/// 按来源类型轮流挑页：先每种类型（百科 / ANN / TVmaze）各取第一页，再按原顺序
+/// 补满 [limit]。只按顺序取前几页的话，三个维基永远占满名额，ANN / TVmaze 这类
+/// 对动画 / 剧集身份最有用的清单页白抓。
+List<WebKnowledgePage> pickDiverseWebKnowledgePages(
+  List<WebKnowledgePage> pages,
+  int limit,
+) {
+  final List<WebKnowledgePage> picked = <WebKnowledgePage>[];
+  final Set<WebKnowledgeSiteKind> seenKinds = <WebKnowledgeSiteKind>{};
+  for (final WebKnowledgePage page in pages) {
+    if (picked.length >= limit) break;
+    if (seenKinds.add(page.site.kind)) picked.add(page);
+  }
+  for (final WebKnowledgePage page in pages) {
+    if (picked.length >= limit) break;
+    if (!picked.contains(page)) picked.add(page);
+  }
+  return List<WebKnowledgePage>.unmodifiable(picked);
 }
 
 /// 用户侧提示：把本地线索和候选一起序列化成 JSON，模型不用猜字段含义；有联网
@@ -176,7 +197,7 @@ AiVideoIdentityDecider createPreferencesAiVideoIdentityDecider(
   final AiChatClient client = clientFactory?.call() ?? AiChatClient();
   final WebKnowledgeClient web =
       webFactory?.call() ??
-      WebKnowledgeClient(sources: prefsRepo.aiWebKnowledgeSources);
+      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
   try {
     return await requestAiVideoIdentity(
       client: client,
