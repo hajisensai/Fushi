@@ -274,10 +274,7 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     if (SUCCEEDED(session_.As(&session2)) && session2) {
       session2->put_IsCursorCaptureEnabled(false);
     }
-    ComPtr<WGC::IGraphicsCaptureSession3> session3;
-    if (SUCCEEDED(session_.As(&session3)) && session3) {
-      session3->put_IsBorderRequired(false);
-    }
+    fushi::wgc::SuppressCaptureBorder(session_.Get());
 
     const std::weak_ptr<CallbackGate> weak_gate = callback_gate_;
     auto frame_handler = Callback<Microsoft::WRL::Implements<

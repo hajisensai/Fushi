@@ -1,0 +1,9 @@
+## BUG-2733 · galgame 全屏时游戏窗口四周常驻一圈黄线（WGC 捕获框）
+- **报告**：2026-09-27（用户截图：galgame 全屏 1280×800，顶部 Fushi 字幕覆盖层正常，整个游戏画面四边贴着一圈 2px 黄线，左右两边随底下画面变色，是叠在画面上的半透明框。）
+- **真实性**：✅ 真 bug。像素是 ≈(255,221,0) 在 75% / 37.5% 两级覆盖下的结果，仓库里（runner C++ / Dart / popup 资产）没有任何代码画这个颜色，所以是系统画的 Windows.Graphics.Capture 捕获高亮框。
+  - `fushi/lib/src/mining/gal_hook_session_controller.dart:6083-6101`：滚动录制（`windowRecordingTargetHwnd` = 超分同一判据）只要 hook 会话不是 idle、又绑定了窗口，就对游戏窗口常驻一个 WGC 会话，**与制卡媒体设置无关**。默认 `gal_mining_image_mode = gif` 时它录下的帧根本用不到。
+  - `fushi/windows/runner/window_recorder.cpp`（原 :406-409）：去框只做了 `IGraphicsCaptureSession3` 的 QI + `put_IsBorderRequired(false)`，失败静默吞掉。`IsBorderRequired` 要 Windows build 20348+，Windows 10 22H2（19045）没有这个接口，应用**关不掉**这个框。于是 Win10 用户整局游戏都看着一圈黄线。
+  - 排除项：Windows 11 上实测，非打包桌面应用裸调 `put_IsBorderRequired(false)` 就返回 S_OK、读回 false，屏幕像素确认框消失，**不需要** `GraphicsCaptureAccess::RequestAccessAsync(Borderless)`。另外 Win11 的框（里亮外暗、≈(255,203,64)、不透明）和用户截图的形态也不同。`flutter_inappwebview_windows` 的 texture_bridge 用的是 visual 捕获，不画窗口边框，与本问题无关。
+- **[x] ① 已修复**：去框收口到 `fushi/windows/runner/wgc_interop.h` 的 `SuppressCaptureBorder`，返回 HRESULT，Session3 缺失时返回 `E_NOINTERFACE`。滚动录制去框失败就在 `StartCapture` 之前拒绝开会话（走 `SetupCapture` 的出错返回：拆会话、`Start` 返回 false，Dart 侧记 `window.recording_unavailable`）。视频片段卡照常退回既有的动图 → 静图阶梯。单帧截图的会话只活到拿到一帧，照常截图，但把 Session3 缺失或 put 失败写进 diagnostics（和 BUG-1096 的光标那条同理，事后可以从日志确认用户是不是 Win10）。串流也改走同一个 helper（行为不变）。提交见本文件所在的修复提交。
+- **[x] ② 已加自动化测试**：`fushi/test/build/window_recorder_capture_border_guard_test.dart`（源码守卫，5 条）：helper 能区分 Session3 缺失并交回 put 的 HRESULT；录制的去框门在 `StartCapture` 之前、失败走出错返回；runner 里除 helper 外不得再有裸 `->put_IsBorderRequired(`；单帧截图写 diagnostics；coordinator 的视频片段降级链存在。做过反例对照：删掉录制的门，守卫变红。
+- **备注**：没有在 Windows 10 真机上复演（本机是 Win11，只能证明 Win11 上去框确实生效）。Win10 上仍会出现的两种情况：制卡时单帧 / 动图截图会让框短暂一闪（会话只存活到拿到帧为止）；局域网串流期间框会一直在（这是用户主动开启的，没有退路，本轮没动）。相邻但**没改**的一点：默认的 gif 模式下滚动录制照样常驻，帧白录；改成只在 `isVideoClip` 时才录，要让会话控制器订阅制卡媒体偏好，属于另一件事，留档。
