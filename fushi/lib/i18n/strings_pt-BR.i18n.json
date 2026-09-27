@@ -5687,5 +5687,6 @@
   "ai_web_knowledge_custom_endpoint": "API address",
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
-  "ai_web_knowledge_custom_remove": "Remove site"
+  "ai_web_knowledge_custom_remove": "Remove site",
+  "remote_video_stream_play": "Play (stream)"
 }

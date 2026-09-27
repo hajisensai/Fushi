@@ -188,6 +188,28 @@ void main() {
       expect(out, contains('X-Emby-Token: [redacted]'));
     });
 
+    test('云盘流播：Bearer 头、OneDrive tempauth、预签名路径签名都抹掉', () {
+      const String text =
+          'Authorization: Bearer ya29.a0AfB_secret\n'
+          'GET https://contoso-my.sharepoint.com/personal/u/_layouts/15/'
+          'download.aspx?UniqueId=1&tempauth=eyJ0eXAiOi.sig&ApiVersion=2.0\n'
+          'GET https://public.bn.files.1drv.com/y4mSECRETsig/movie.mkv'
+          '?download&psid=1\n'
+          'GET https://uc1a2b.dl.dropboxusercontent.com/cd/0/get/'
+          'AbCdSECRET_link/file';
+      final String out = redactVideoDiagSecrets(text);
+      expect(out, isNot(contains('ya29.a0AfB_secret')));
+      expect(out, isNot(contains('eyJ0eXAiOi.sig')));
+      expect(out, isNot(contains('y4mSECRETsig')));
+      expect(out, isNot(contains('AbCdSECRET_link')));
+      expect(out, contains('tempauth=[redacted]'));
+      expect(out, contains('files.1drv.com/[redacted]/movie.mkv'));
+      expect(
+        out,
+        contains('dl.dropboxusercontent.com/cd/0/get/[redacted]/file'),
+      );
+    });
+
     test('没有敏感字段的行逐字节不变', () {
       const String line = '[vo/gpu] using d3d11 1920x1080 hwdec=d3d11va';
       expect(redactVideoDiagSecrets(line), line);

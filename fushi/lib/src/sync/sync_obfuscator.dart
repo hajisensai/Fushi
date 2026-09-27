@@ -79,6 +79,20 @@ class SyncObfuscator {
     return true;
   }
 
+  // ── 随机访问 API（Range 流播） ────────────────────────────────────────
+
+  /// 还原混淆正文里**从正文偏移 [bodyOffset] 起**的一段字节 [chunk]（不含 header）。
+  ///
+  /// keystream 与位置绑定、与分块无关，所以任意偏移起的一段都能单独还原——这正是
+  /// 云盘视频不下载、按 `Range` 流播（seek 到中间）所需的能力。
+  static Uint8List deobfuscateBodyAt(List<int> chunk, int bodyOffset) {
+    final out = Uint8List(chunk.length);
+    for (var i = 0; i < chunk.length; i++) {
+      out[i] = chunk[i] ^ _keystream[(bodyOffset + i) % _period];
+    }
+    return out;
+  }
+
   // ── 流式 API（content / 大文件 / 资产包） ─────────────────────────────
 
   /// 流式混淆：先发 [magicHeader]，再对每个分块逐字节 XOR（维护全局偏移）。

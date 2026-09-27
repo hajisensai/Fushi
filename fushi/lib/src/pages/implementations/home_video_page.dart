@@ -68,6 +68,7 @@ import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
@@ -2246,8 +2247,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     RemoteVideoInfo video, {
     List<RemoteVideoInfo>? collectionMembers,
     int startIndex = 0,
+    // 云盘视频的「播放（流播）」动作显式传入 [CloudStreamVideoClient]；缺省按当前源
+    // 的 live 能力（互联 / 媒体服务器）走。
+    RemoteVideoClient? streamClient,
   }) async {
-    final RemoteVideoClient? client = _remoteVideoClient;
+    final RemoteVideoClient? client = streamClient ?? _remoteVideoClient;
     if (client == null) {
       // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
       // 而不是静默 return（占位卡点了像没反应）。仅当存在云 client 时分派；两者都无时
@@ -2774,6 +2778,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
+    await _adoptCloudStreamPosition(bookUid);
     await RemoteCollectionAdoptionService(appModelNoUpdate.database)
         .adoptVideo(video);
     // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
@@ -2818,6 +2823,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     } finally {
       coverLease.release();
     }
+  }
+
+  /// 流播过的云视频下载入库后接着看：流播断点落在按云端条目 uid 记的 prefs
+  /// （`videoRemotePositionEpisodePrefKey(uid, 0)`，见 [CloudStreamVideoClient]），
+  /// 本地行的 bookUid 就是同一个 uid，这里把它写进本地行的 `lastPositionMs`——同一
+  /// 视频不会变成两条进度各走各的记录（流播卡在下载后本就被去重隐藏）。
+  Future<void> _adoptCloudStreamPosition(String bookUid) async {
+    final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
+    final Object? rawPos = prefs.getPref(
+      videoRemotePositionEpisodePrefKey(bookUid, 0),
+      defaultValue: 0,
+    );
+    final int positionMs = rawPos is num ? rawPos.toInt() : 0;
+    if (positionMs <= 0) return;
+    final Object? rawAt = prefs.getPref(
+      videoRemotePositionEpisodeAtPrefKey(bookUid, 0),
+      defaultValue: 0,
+    );
+    final int at = rawAt is num ? rawAt.toInt() : 0;
+    await widget.repo.updatePosition(
+      bookUid,
+      positionMs,
+      playedAt: at > 0 ? at : null,
+    );
   }
 
   Future<CoverMetaStore?> _prepareAutoFrameCover(String bookUid) async {
@@ -6216,6 +6245,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     final RemoteVideoClient? client = _remoteVideoClient;
     final bool canDelete = client is InterconnectSyncBackend;
+    // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive）时多给一个
+    // 「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义不变）。
+    final CloudStreamVideoClient? cloudStream =
+        _cloudRemoteVideoClient?.streamingClient();
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -6223,6 +6256,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         title: video.title,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
+          if (cloudStream != null)
+            DialogQuickAction(
+              label: t.remote_video_stream_play,
+              icon: Icons.play_circle_outline,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_openRemote(video, streamClient: cloudStream));
+              },
+            ),
           DialogQuickAction(
             label: t.remote_video_download,
             icon: Icons.download_outlined,

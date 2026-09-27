@@ -5687,5 +5687,6 @@
   "ai_web_knowledge_custom_endpoint": "API 地址",
   "ai_web_knowledge_custom_endpoint_hint": "站点的 api.php，例如 https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "请填写以 https:// 开头、以 api.php 结尾的地址",
-  "ai_web_knowledge_custom_remove": "删除站点"
+  "ai_web_knowledge_custom_remove": "删除站点",
+  "remote_video_stream_play": "播放（流播）"
 }
