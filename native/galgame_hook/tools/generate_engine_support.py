@@ -106,6 +106,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdCmvs",
     ): ("cmvs", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdArtemis",
+    ): ("artemis_pfs", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

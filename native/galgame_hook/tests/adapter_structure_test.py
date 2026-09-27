@@ -44,6 +44,104 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("PublishCmvsShiftTarget(request.target, frame)", pending)
         self.assertNotIn("raw_frame", pending)
 
+    def test_artemis_lookup_is_structural_bounded_and_input_gated(self) -> None:
+        """Artemis 查词：站点只来自结构签名，detour 有界，点击吞掉受宿主准入门控。
+
+        * 站点：`ResolveSites` 只走唯一签名 + 结构交叉验证（工厂 → 构造 → 字形
+          vtable → 绘制槽、Input::Update、光标映射），不读哈希/文件名/标题；
+          任何一条不唯一或缺失都 fail closed、不装钩子。
+        * 不碰 LunaHook 的构造函数站点：钩的是工厂，构造只拿来解析 vtable。
+        * 游戏线程 detour 只做有界拷贝：不做文件 IO、不写日志、不发 IPC hit。
+        * 吞点击：仅在新按下时判 eligible，且 eligible 必须过 NativeInputAllowed、
+          护盾、前台与字形命中；hit 由 worker 在 OfferReady 之后发布。
+        """
+        adapters = ROOT / "hook" / "adapters"
+        core = self._strip_comments(
+            (adapters / "artemis_lookup_core.h").read_text(encoding="utf-8")
+        )
+        runtime = self._strip_comments(
+            (adapters / "artemis_lookup.inc").read_text(encoding="utf-8")
+        )
+        adapter = self._strip_comments(
+            (adapters / "artemis_adapter.inc").read_text(encoding="utf-8")
+        )
+        self.assertIn('#include "artemis_lookup.inc"', adapter)
+        resolve = self._function_body(core, "inline SiteResult ResolveSites(")
+        for required in (
+            "FindUniquePatternInExecutableSections(image, factory_pattern)",
+            "DecodeRel32CallTarget",
+            "IsReadOnlyDataImageAddress",
+            "MatchesGlyphForwarder(image, draw, 0x18u)",
+            "MatchesGlyphForwarder(image, sibling, 0x10u)",
+            "FindUniquePatternInExecutableSections(image, update_pattern)",
+            "FindUniquePatternInExecutableSections(image, cursor_pattern)",
+        ):
+            self.assertIn(required, resolve)
+        for forbidden in ("Sha256", "GetModuleFileName", "amanatu", "0x18d260"):
+            self.assertNotIn(forbidden, resolve)
+            self.assertNotIn(forbidden.lower(), core.lower())
+
+        install = self._function_body(runtime, "bool InstallArtemisLookup()")
+        self.assertIn("InstallArtemisHooksBatched(rt.sites)", install)
+        self.assertIn("SiteResult::kResolved", install)
+        # LunaHook owns the glyph constructor; only the factory, the draw slot
+        # and Input::Update are detoured, in one MinHook transaction.
+        batch = self._function_body(runtime, "bool InstallArtemisHooksBatched(")
+        for target in ("sites.glyph_factory", "sites.glyph_draw", "sites.input_update"):
+            self.assertIn(target, batch)
+        self.assertNotIn("glyph_ctor", batch)
+        self.assertIn("MH_ApplyQueued()", batch)
+        self.assertNotIn("HookFn(", batch)
+
+        for detour in (
+            "void* __fastcall ArtemisGlyphFactoryDetour(",
+            "void RecordArtemisDrawnGlyph(",
+            "uint64_t __fastcall ArtemisInputUpdateDetour(",
+            "void ClaimArtemisLeftButton(",
+            "void PublishArtemisFrame(",
+        ):
+            body = self._function_body(runtime, detour)
+            for forbidden in (
+                "CreateFile",
+                "WriteFile",
+                "ArtemisLookupLog",
+                "PublishHit",
+                "OfferReady",
+                "ReadSelectedLookupText",
+                "std::wstring",
+                "new ",
+                "malloc",
+            ):
+                self.assertNotIn(forbidden, body, f"{detour} {forbidden}")
+
+        claim = self._function_body(runtime, "void ClaimArtemisLeftButton(")
+        self.assertIn("!rt.claim.owned && value == artemis_lookup::kKeyStatePressed", claim)
+        self.assertIn("DecideLeftButton", claim)
+        eligible = self._function_body(runtime, "bool ArtemisPressEligible(")
+        for required in (
+            "NativeInputAllowed",
+            "kLookupGeometryProviderIdArtemis",
+            "ArtemisShieldActive(game)",
+            "GetForegroundWindow() != game",
+            "HitTestModel",
+        ):
+            self.assertIn(required, eligible)
+        tick = self._function_body(runtime, "void ProcessArtemisLookupTick()")
+        self.assertLess(
+            tick.index("g_geometry_provider_registry.OfferReady"),
+            tick.index("ReadLatestArtemisSubmit"),
+        )
+        publish = self._function_body(runtime, "bool PublishArtemisLookupHit(")
+        self.assertIn("submit.generation != model.generation", publish)
+        registry = (ROOT / "hook" / "geometry_provider_registry.h").read_text(
+            encoding="utf-8"
+        )
+        gated = registry[
+            registry.index("kLookupGeometryNativeInputGatedProviders[]") :
+        ]
+        gated = gated[: gated.index("};")]
+        self.assertIn("kLookupGeometryProviderIdArtemis", gated)
+
     @staticmethod
     def _siglus_source() -> str:
         adapters = ROOT / "hook" / "adapters"
@@ -333,7 +431,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(8, len(publishers), publishers)
+        self.assertEqual(9, len(publishers), publishers)
+        self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
         self.assertIn("smash_fzmedia_lookup.inc", publishers)
@@ -391,8 +490,11 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(8, len(seen), seen)
+        self.assertEqual(9, len(seen), seen)
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["artemis_lookup.inc"]
+        )
         # PrimaryLayer 是唯一需要 host 做画布→客户区缩放的域；它多一个成员就意味着
         # 多一个引擎走那条缩放路径，必须连同 host 的映射与其单测一起复核。
         primary = sorted(

@@ -87,6 +87,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/bgi_ethornell_profile.h"
   "hook/adapters/artemis_adapter.inc"
   "hook/adapters/artemis_profile.h"
+  "hook/adapters/artemis_lookup.inc"
+  "hook/adapters/artemis_lookup_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
@@ -930,6 +932,21 @@ target_include_directories(fushi_smash_fzmedia_lookup_test PRIVATE
   "hook/adapters")
 add_test(NAME fushi_smash_fzmedia_lookup_test
   COMMAND fushi_smash_fzmedia_lookup_test)
+
+# Artemis in-game lookup core: structural site resolution on a synthetic PE
+# (factory -> constructor -> glyph vtable -> draw slot, Input::Update, cursor
+# mapping) with every fail-closed branch, factory character decoding, the
+# glyph code table, cell/letterbox/DPI projection, selected-line suffix
+# mapping and the left-button claim reducer.
+add_executable(fushi_artemis_lookup_test
+  "tests/artemis_lookup_test.cpp"
+)
+target_include_directories(fushi_artemis_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_artemis_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_artemis_lookup_test
+  COMMAND fushi_artemis_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")

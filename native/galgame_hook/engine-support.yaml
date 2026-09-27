@@ -186,16 +186,16 @@
         "engine_id": "artemis_pfs",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; no uniquely traced hybrid positioned-text provider is admitted."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact glyph-node provider (kLookupGeometryProviderIdArtemis). Sites resolve only from structure: a unique Layer::CreateGlyph factory signature whose constructor must carry the glyph vtable, cell-size and multibyte-width proofs; vtable slot 4 must be the per-frame draw forwarder (slot 3 its sibling); a unique Input::Update prologue pins the key-state array and a unique cursor-mapping block pins the HWND and letterbox scale. Any missing/ambiguous proof installs nothing. Visible glyphs are the ones drawn in the last frame; the selected LunaHook line must equal the creation-ordered suffix of those glyphs, and each glyph's world scale must equal the engine root scale 1/k (world units are engine client pixels). 2026-09-27 runtime on アマナツ ～Perfect Edition～ Ver2.0.0 x64 (exe SHA-256 C0C14E52…F37A92E2, same bytes as the trial row) via fushi_voice_injector --launch --hold plus a scratch host emulator (not the Fushi host): sites resolved in 12.5 ms, OfferReady published name+dialogue models (e.g. 14 glyphs, 遥 at 330,490 39x56, dialogue cells 27x41 from 340,552 on a 1280x720 client), a bare left click on 海 published hit kind=2 id=17 char=6 rect=448,552 27x41 and the line did not advance, while a click off the text advanced it. Host card and same-session card E2E are not recorded."
         },
         "verified_shield": {
           "status": "implemented_unverified",
-          "evidence": "The generic standard-surface shield is present, without the required real-build transaction corpus."
+          "evidence": "A claimed glyph press is masked in the engine's own per-frame key-state array (Input::Update, left button) from press through release, so neither edge reaches the script; a masked click was measured not to advance. Dismiss clicks while a card is shown rely on the generic GetAsyncKeyState shield (the engine polls all 256 keys through GetAsyncKeyState; its per-key message queue stayed empty for mouse clicks). No real-build transaction corpus has run."
         },
         "risky_left_click": {
           "status": "implemented_unverified",
-          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded."
+          "evidence": "Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract. The exact provider consumes a press only under NativeInputAllowed, with no card/shield active, the game in the foreground and the cursor on exactly one mapped glyph; no measured real-build click-leak rate is recorded."
         }
       },
       {

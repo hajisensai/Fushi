@@ -59,6 +59,7 @@
 #include "hunex_gge_trace.h"
 #include "leaf_d3d_trace.h"
 #include "artemis_pfs.h"
+#include "adapters/artemis_lookup_core.h"
 #include "lookup_selected_text.h"
 #include "asar_runtime.h"
 #include "bgi_arc.h"
