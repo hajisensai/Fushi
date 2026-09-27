@@ -670,5 +670,57 @@ void main() {
           title: 'Movie');
       expect(await planScrapeWorkForVideoBook(db, 'remote-1'), isNull);
     });
+
+    test('入口判据 videoBookHasScrapePlan 与计划器定位逐例同口径', () async {
+      // 库页菜单只用纯函数判据决定画不画「重新刮削」；它与真跑计划器的结果但凡
+      // 分叉，就会画出点了必然扑空的按钮（或反过来藏掉能用的入口）。
+      final int series = await addSource('D:/series');
+      final int folder = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'folder',
+          mediaKind: 'video',
+          rootPath: 'D:/folder',
+          createdAt: 1,
+          videoGroupingMode: const Value<String>('folder'),
+        ),
+      );
+      final int remote = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'remote',
+          mediaKind: 'video',
+          rootPath: 'remote://lib',
+          createdAt: 1,
+          transport: const Value<String>('interconnect'),
+        ),
+      );
+      await addVideo('movie', 'D:/series/Liz (2018).mkv', series);
+      await addVideo('ncop', 'D:/series/Liz NCOP.mkv', series);
+      await addVideo('in-folder', 'D:/folder/Movie.mkv', folder);
+      await addVideo('remote', 'remote://lib/Movie.mkv', remote);
+      await db.upsertVideoBook(const VideoBooksCompanion(
+        bookUid: Value<String>('manual'),
+        title: Value<String>('manual'),
+        videoPath: Value<String>('C:/Users/me/Videos/Movie.mkv'),
+      ));
+
+      final Map<String, bool> expected = <String, bool>{
+        'movie': true,
+        'ncop': false,
+        'in-folder': false,
+        'remote': false,
+        'manual': false,
+      };
+      for (final MapEntry<String, bool> entry in expected.entries) {
+        final VideoBookRow book = (await db.getVideoBookByBookUid(entry.key))!;
+        final SourceLibraryRow? source = book.sourceId == null
+            ? null
+            : await db.getMediaSourceById(book.sourceId!);
+        expect(videoBookHasScrapePlan(book, source), entry.value,
+            reason: '${entry.key}：入口判据');
+        expect(await planScrapeWorkForVideoBook(db, entry.key) != null,
+            entry.value,
+            reason: '${entry.key}：计划器定位与入口判据必须一致');
+      }
+    });
   });
 }

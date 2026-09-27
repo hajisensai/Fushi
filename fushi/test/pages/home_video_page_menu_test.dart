@@ -510,50 +510,113 @@ void main() {
     });
     tearDown(() => scrapeController.dispose());
 
-    testWidgets('有刮削 controller 的本地视频卡菜单出现重刮入口', (WidgetTester tester) async {
+    /// 一条视频来源（根目录就是 [externalVideoDir]），返回来源 id。
+    Future<int> seedVideoSource({
+      String transport = 'local',
+      String groupingMode = 'series',
+    }) =>
+        db.insertMediaSource(MediaSourcesCompanion.insert(
+          label: 'Local videos',
+          mediaKind: 'video',
+          rootPath: externalVideoDir.path,
+          createdAt: 1,
+          transport: Value(transport),
+          videoGroupingMode: Value(groupingMode),
+        ));
+
+    /// 挂在 [sourceId] 下、磁盘上真有文件的视频行。
+    Future<void> seedSourcedVideo(
+      String bookUid, {
+      required int sourceId,
+      String fileName = 'Liz (2018).mp4',
+    }) async {
+      final File video = writeOriginalVideo(fileName);
+      await db.upsertVideoBook(VideoBooksCompanion(
+        bookUid: Value(bookUid),
+        title: const Value('Liz'),
+        videoPath: Value(video.path),
+        sourceId: Value<int?>(sourceId),
+      ));
+    }
+
+    testWidgets('本机来源里的视频卡菜单出现重刮入口（列表行，与合集菜单同文案）', (WidgetTester tester) async {
       // 用户实报：刮错封面的独立电影长按后没有任何重刮入口，合集菜单那条够不着。
-      await seedTaggedVideo();
-      await tester.pumpWidget(
-          buildApp(scrapeTaskController: scrapeController));
+      await seedSourcedVideo('video/liz', sourceId: await seedVideoSource());
+      await tester.pumpWidget(buildApp(scrapeTaskController: scrapeController));
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, videoCard('video/1'));
+      await openCardMenu(tester, videoCard('video/liz'));
 
-      expect(find.text(t.video_item_rescrape), findsOneWidget);
+      expect(
+        find.widgetWithText(FushiListItem, t.collection_rescrape),
+        findsOneWidget,
+        reason: '做成列表行而不是快捷 chip：最长的标签不该压少整格 chip 的列数',
+      );
     });
 
     testWidgets('没有刮削 controller 时不画重刮入口', (WidgetTester tester) async {
-      await seedTaggedVideo();
+      await seedSourcedVideo('video/liz', sourceId: await seedVideoSource());
       await tester.pumpWidget(buildApp());
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, videoCard('video/1'));
+      await openCardMenu(tester, videoCard('video/liz'));
 
       expect(find.byType(FushiDialogFrame), findsOneWidget);
-      expect(find.text(t.video_item_rescrape), findsNothing);
+      expect(find.text(t.collection_rescrape), findsNothing);
     });
 
-    testWidgets('流媒体视频卡不画重刮入口（远端没有本机刮削计划）',
-        (WidgetTester tester) async {
-      await db.upsertVideoBook(const VideoBooksCompanion(
-        bookUid: Value('video/stream'),
-        title: Value('Stream Episode'),
-        videoPath: Value('https://example.com/live/ep1.m3u8'),
-      ));
-      await tester.pumpWidget(
-          buildApp(scrapeTaskController: scrapeController));
-      await tester.pumpAndSettle();
+    // 入口判据与 planScrapeWorkForVideoBook 同口径（videoBookHasScrapePlan）：
+    // 这些视频在计划器里拿不到作品单元，画出来点了必然只剩「不在计划里」。
+    final Map<String, Future<String> Function()> unplannable =
+        <String, Future<String> Function()>{
+      '手动导入（没有 sourceId）': () async {
+        await seedTaggedVideo();
+        return 'video/1';
+      },
+      '流媒体（URL，无来源）': () async {
+        await db.upsertVideoBook(const VideoBooksCompanion(
+          bookUid: Value('video/stream'),
+          title: Value('Stream Episode'),
+          videoPath: Value('https://example.com/live/ep1.m3u8'),
+        ));
+        return 'video/stream';
+      },
+      '目录分组模式的来源': () async {
+        await seedSourcedVideo('video/folder',
+            sourceId: await seedVideoSource(groupingMode: 'folder'));
+        return 'video/folder';
+      },
+      '非本机来源（sftp）': () async {
+        await seedSourcedVideo('video/sftp',
+            sourceId: await seedVideoSource(transport: 'sftp'));
+        return 'video/sftp';
+      },
+      '特典文件（NCOP）': () async {
+        await seedSourcedVideo('video/ncop',
+            sourceId: await seedVideoSource(), fileName: 'Liz NCOP.mp4');
+        return 'video/ncop';
+      },
+    };
+    unplannable.forEach((String label, Future<String> Function() seed) {
+      testWidgets('不在刮削计划里的视频不画重刮入口：$label', (WidgetTester tester) async {
+        final String bookUid = await seed();
+        await tester
+            .pumpWidget(buildApp(scrapeTaskController: scrapeController));
+        await tester.pumpAndSettle();
 
-      await openCardMenu(tester, videoCard('video/stream'));
+        await openCardMenu(tester, videoCard(bookUid));
 
-      expect(find.byType(FushiDialogFrame), findsOneWidget);
-      expect(find.text(t.video_item_rescrape), findsNothing);
+        expect(find.byType(FushiDialogFrame), findsOneWidget,
+            reason: '菜单本身仍要弹出，缺的只是这一条动作');
+        expect(find.text(t.collection_rescrape), findsNothing);
+      });
     });
 
-    testWidgets('视频不在任何本地来源计划里时点重刮给可见提示，不静默',
-        (WidgetTester tester) async {
-      // seedTaggedVideo 的行没有 sourceId：计划器给不出单元。
-      await seedTaggedVideo();
+    testWidgets('菜单打开后来源被删：点重刮给可见提示，不静默', (WidgetTester tester) async {
+      // 入口已与计划器同口径，「不在计划里」只剩竞态：菜单画出来之后来源被删
+      // （FK setNull 把视频的 sourceId 清掉），点下去计划器已经给不出单元。
+      final int sourceId = await seedVideoSource();
+      await seedSourcedVideo('video/liz', sourceId: sourceId);
       FushiToast.navigatorKey = toastNavigatorKey;
       await tester.pumpWidget(buildApp(
         captureToasts: true,
@@ -561,8 +624,12 @@ void main() {
       ));
       await tester.pumpAndSettle();
 
-      await openCardMenu(tester, videoCard('video/1'));
-      await tester.tap(find.text(t.video_item_rescrape));
+      await openCardMenu(tester, videoCard('video/liz'));
+      final Finder entry = find.text(t.collection_rescrape);
+      expect(entry, findsOneWidget);
+      await db.deleteMediaSource(sourceId);
+      await tester.ensureVisible(entry);
+      await tester.tap(entry);
       await tester.pumpAndSettle();
 
       expect(find.text(t.video_item_rescrape_not_planned), findsOneWidget);

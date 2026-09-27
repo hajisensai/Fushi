@@ -421,6 +421,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
 
+  /// 视频来源行（id → 行），与 [_loadLibraryMaps] 同一次预取（目录分组策略本来就要
+  /// 这张表）。视频卡菜单用它同步判「重新刮削」画不画（[videoBookHasScrapePlan]），
+  /// 不为开菜单多一次查询。
+  Map<int, MediaSourceRow> _videoSourcesById = const <int, MediaSourceRow>{};
+
   /// UI v2 Phase B / v39：最近观看时间（watch-stats max(lastModified)），驱动
   /// 「继续观看 hero」排序与「上次观看」外显。v39 起按 bookUid 键控；迁移遗留
   /// NULL-uid 行按 title 回退。与 [_loadLibraryMaps] 同批预取。
@@ -902,12 +907,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       mediaImagesF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
+    final List<MediaSourceRow> videoSources = await folderSourcesF;
     final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
       primary: await primaryMapF,
       collections: collections,
       items: await collectionItemsF,
       books: await folderBooksF,
-      sources: await folderSourcesF,
+      sources: videoSources,
     );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
     // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
@@ -1002,6 +1008,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final MediaCollectionRow c in collections) c.id: c,
       };
       _primaryCollectionByEntry = primaryMap;
+      _videoSourcesById = <int, MediaSourceRow>{
+        for (final MediaSourceRow source in videoSources) source.id: source,
+      };
       _libraryMapsReady = true;
       _watchAtByUid = watchByUid;
       _legacyWatchAtByTitle = legacyByTitle;
@@ -2960,18 +2969,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               _pickCover(book);
             },
           ),
-          // 「重新刮削」：门与合集菜单同一条（有刮削 controller）；再加本机文件——
-          // 只有本机扫描根才有刮削计划，远端流 / 互联条目画出来点了必然扑空。
-          if (widget.scrapeTaskController != null &&
-              videoBookHasLocalFiles(book))
-            DialogQuickAction(
-              label: t.video_item_rescrape,
-              icon: Icons.image_search,
-              onPressed: () {
-                Navigator.pop(dialogContext);
-                unawaited(_rescrapeVideo(book));
-              },
-            ),
           DialogQuickAction(
             label: t.video_import_pick_subtitle,
             icon: Icons.subtitles_outlined,
@@ -3031,6 +3028,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_clearWatchProgress(book));
+              },
+            ),
+        ],
+        // 「重新刮削资料与封面」（BUG-2737）：与合集菜单同一形态（列表行）、同一份
+        // 文案——做成快捷 chip 的话这条最长的标签会把整格 chip 的列数压少。门与
+        // [planScrapeWorkForVideoBook] 同一判据 [videoBookHasScrapePlan]：没有
+        // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
+        // 画出来就一定定位得到作品单元。
+        listActions: <DialogListAction>[
+          if (widget.scrapeTaskController != null &&
+              videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
+            DialogListAction(
+              label: t.collection_rescrape,
+              icon: Icons.image_search,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_rescrapeVideo(book));
               },
             ),
         ],
@@ -6986,10 +7000,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     final VideoSourceScrapeTaskController? controller =
         widget.scrapeTaskController;
     if (controller == null) return;
-    final VideoPendingScrapeWork? planned = await planScrapeWorkForVideoBook(
-      ref.read(appProvider).database,
-      book.bookUid,
-    );
+    // 菜单以 unawaited 发起：定位阶段（读库 + 跑计划器）的异常在这里接住，不能
+    // 变成无人处理的 Future 错误、让用户点完没有任何反馈。
+    final VideoPendingScrapeWork? planned;
+    try {
+      planned = await planScrapeWorkForVideoBook(
+        ref.read(appProvider).database,
+        book.bookUid,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.rescrapeVideo.plan', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
     if (planned == null) {
       FushiToast.show(
