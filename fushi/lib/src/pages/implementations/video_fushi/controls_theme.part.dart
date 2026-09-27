@@ -255,7 +255,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 旧字幕立即消失、不被滞后旧 position 拉回；不重复 seek（进度条内部已 seek）。
       onSeekEnd: (Duration target) =>
           controller.notifyExternalSeek(target.inMilliseconds),
-      // TODO-057: 启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
+      // BUG-2731 后续：横滑 / 双击快进快退是**相对** seek，基准取 controller 的
+      // [VideoPlayerController.resumePositionMs]（有在途 seek 取其目标，否则取当前位置）。
+      // 远端流上一次 seek 还在缓冲时 player 位置仍是旧值，按它算第二次滑动会把第一次
+      // 的位移整个抹掉（录屏里 HUD 一直 ±0:00、只能反复小幅滑动）。
+      relativeSeekBasePosition: () =>
+          Duration(milliseconds: controller.resumePositionMs ?? 0),
+      // TODO-057:启用 media_kit 移动控制条内建的「左半区竖滑调亮度 / 右半区竖滑
       // 调音量」手势，指示器由 Hibiki 的左右百分比 HUD 接管。仅移动端有此控制条；桌面走
       // [_desktopControlsTheme]（无此手势，屏幕亮度本就不可控，诚实降级）。横滑 seek
       // 见下方 [seekGesture] + [horizontalSeekResolver]（TODO-916 症状①；换算已在
@@ -422,8 +428,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     VideoPlayerController controller,
     Duration delta,
   ) {
+    // 与 fork 横滑落点同一基准（relativeSeekBasePosition，BUG-2731 后续）：在途 seek
+    // 未落地时 HUD 的目标时间也从那次 seek 的目标算起，显示的就是松手后真正去的位置。
     final Duration position =
-        Duration(milliseconds: controller.positionMs ?? 0);
+        Duration(milliseconds: controller.resumePositionMs ?? 0);
     final Duration duration =
         Duration(milliseconds: controller.durationMs ?? 0);
     final String targetLabel =

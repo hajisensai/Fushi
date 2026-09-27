@@ -334,6 +334,31 @@ class VideoPlayerController extends ChangeNotifier
   /// 会在 seek 刚发出就误判落地。窗口外的旧位置都是「还没落地」。
   static const int _kSeekLandingWindowMs = 1500;
 
+  /// 「seek 已经结束（哪怕没落在目标附近）」的判据：连续这么多个 tick（125ms/拍，
+  /// 即 1 秒）都是「在播、不缓冲、位置逐拍正常推进」（BUG-2731 后续）。
+  ///
+  /// 只看 ±窗口会让**从未落地**的 seek 目标永久残留：seek 被忽略（直播 / 不可 seek 的
+  /// 流）、失败（Range 出错）或被关键帧吸附到窗口之外，播放照常继续，几分钟后手动
+  /// 换档仍跳回那个过期目标，停止上报也报旧位置。seek 真在途时 mpv 不会一边缓冲一边
+  /// 往前播旧内容，所以「持续正常推进」本身就是「这次 seek 已经收场」的证据。
+  ///
+  /// 为什么不读 mpv 的 `seeking` 属性：media_kit 1.2.6 不暴露 seek 完成事件，只能每拍
+  /// 走异步 FFI `getProperty` 轮询；而 seek 命令本身也是异步下发的，读在 mpv 核心处理
+  /// 该命令之前会读到 `no`，恰好把刚登记的目标误清掉。`seeking` 在成功和失败时都会
+  /// 回落，携带的信息也不比「播放已恢复且在推进」更多。这不是超时：卡在缓冲、暂停或
+  /// 位置不动时计数一拍都不涨，目标会一直保留。
+  static const int _kSeekSettledTicks = 8;
+
+  /// 一拍内「正常推进」的位移上限（毫秒）：125ms 一拍，1000ms 覆盖到 8 倍速；更大的
+  /// 跳变是 seek 落地 / 换位本身，不算推进（计数从下一拍重新累积）。
+  static const int _kSeekSettledMaxStepMs = 1000;
+
+  /// 已连续观察到「正常推进」的拍数（见 [_kSeekSettledTicks]）。
+  int _seekSettledTicks = 0;
+
+  /// 上一拍的原始位置，用来判「逐拍推进」；每次登记新目标都复位。
+  int? _seekSettlePrevPosMs;
+
   /// 每发出一次 seek 就 +1（[seekMs] / [notifyExternalSeek] / [skipToCue] 等全部入口）。
   ///
   /// 给「按采样判断网况」的消费者（互联自适应画质）区分「这段缓冲是用户 seek 引起的」
@@ -781,17 +806,47 @@ class VideoPlayerController extends ChangeNotifier
   /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
   void _noteSeekIssued(int targetMs) {
     _seekGeneration++;
-    _pendingSeekLandingMs = targetMs;
+    _setPendingSeekLanding(targetMs);
   }
 
-  /// 按 tick 读到的真实位置判定未落地的 seek 是否已落定。
+  /// 换在途目标（或清掉）的唯一入口：连同「已结束」判据的累积状态一起复位，免得上一个
+  /// 目标攒下的推进拍数替新目标背书。
+  void _setPendingSeekLanding(int? targetMs) {
+    _pendingSeekLandingMs = targetMs;
+    _seekSettledTicks = 0;
+    _seekSettlePrevPosMs = null;
+  }
+
+  /// 按 tick 读到的真实位置判定未落地的 seek 是否已收场：落到目标 ±窗口内（落地），
+  /// 或连续 [_kSeekSettledTicks] 拍「在播、不缓冲、位置正常推进」（seek 已结束但没落在
+  /// 目标附近——被忽略 / 失败 / 被吸附到别处，见 [_kSeekSettledTicks]）。
   void _checkSeekLanded(int rawPosMs) {
     final int? target = _pendingSeekLandingMs;
     if (target == null) return;
     if ((rawPosMs - target).abs() <= _kSeekLandingWindowMs) {
-      _pendingSeekLandingMs = null;
+      _setPendingSeekLanding(null);
+      return;
+    }
+    final int? prev = _seekSettlePrevPosMs;
+    _seekSettlePrevPosMs = rawPosMs;
+    final bool advancing = prev != null &&
+        rawPosMs > prev &&
+        rawPosMs - prev <= _kSeekSettledMaxStepMs;
+    if (isPlaying && !isBuffering && advancing) {
+      _seekSettledTicks++;
+      if (_seekSettledTicks >= _kSeekSettledTicks) _setPendingSeekLanding(null);
+    } else {
+      _seekSettledTicks = 0;
     }
   }
+
+  /// 测试可见：当前未收场的 seek 目标（null = 没有在途 seek）。
+  @visibleForTesting
+  int? get debugPendingSeekLandingMs => _pendingSeekLandingMs;
+
+  /// 测试可见：「seek 已结束」判据要求的连续推进拍数（断言用，避免硬编码漂移）。
+  @visibleForTesting
+  static int get debugSeekSettledTicks => _kSeekSettledTicks;
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
@@ -1021,7 +1076,17 @@ class VideoPlayerController extends ChangeNotifier
   /// libmpv 当前是否处于缓冲态（`core-idle` / `paused-for-cache`）。media_kit 的
   /// 缓冲圈据同一 `player.state.buffering` 渲染，此处读同一真值让页面的首开就绪判据
   /// 与之对齐。未 [load]（无 player）时视为非缓冲。
-  bool get isBuffering => _player?.state.buffering ?? false;
+  bool get isBuffering =>
+      _debugIsBufferingOverride ?? (_player?.state.buffering ?? false);
+
+  /// 测试可注入的缓冲态：widget 测试无真实 [Player]（[isBuffering] 恒 false），无法驱动
+  /// 「缓冲中不算 seek 已收场」（BUG-2731 后续）。置非 null 时覆盖；传 null 还原。
+  bool? _debugIsBufferingOverride;
+
+  @visibleForTesting
+  void debugSetIsBufferingForTesting(bool? buffering) {
+    _debugIsBufferingOverride = buffering;
+  }
 
   /// TODO-1297：首帧解码出画**且**已不再缓冲——「首开可挂载 [Video]」的完整就绪判据。
   ///
@@ -1988,8 +2053,14 @@ class VideoPlayerController extends ChangeNotifier
     // 换片同样要复位：上一片的「已打开」不能给新片背书，否则新片 open 失败时旧
     // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
     _mediaOpened = false;
-    // 上一片没落地的 seek 目标不属于这一片（重开本身就带着起点，见 [resumePositionMs]）。
-    _pendingSeekLandingMs = null;
+    // 上一片没落地的 seek 目标不属于这一片；这一片的「在途目标」就是它的起播点
+    // （BUG-2731 后续）。重开流（换档 / 换音轨 / 自适应降档）还在打开、缓冲时再换一次档，
+    // 读 [resumePositionMs] 必须拿到这次要去的起点，而不是复用的 Player 上一条流的残留
+    // 位置或新流起播前的 0。open 后按真实 duration 复核出 resolvedStartMs 再覆盖一次。
+    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
+    final int preloadStartMs =
+        resolveEpisodeStart(startIntent, requestedStartMs, null);
+    _setPendingSeekLanding(preloadStartMs);
     _bookUid = bookUid;
     // 蓝光播放列表：`videoPath` 指向 `BDMV/PLAYLIST/*.mpls` 时，先把它解析成内核吃
     // 得下的东西——单段完整覆盖给 `STREAM/*.m2ts` 真实路径，多段/需截取给 `edl://`
@@ -2231,9 +2302,7 @@ class VideoPlayerController extends ChangeNotifier
     // 此处 duration 尚不可知，故按 intent 先算一次（[resolveEpisodeStart] 的 duration=null
     // 分支已把 manualPrevious/autoAdvance 归 0，不会给「本就该从头」的入口设 start）；
     // near-end 判定要等 open 后真实 duration，在下面复核并按需拉回 0。
-    final int requestedStartMs = initialPositionMs < 0 ? 0 : initialPositionMs;
-    final int preloadStartMs =
-        resolveEpisodeStart(startIntent, requestedStartMs, null);
+    // （[requestedStartMs] / [preloadStartMs] 在方法开头算好，同时登记成在途目标。）
     final bool startArmed = await applyMpvStartPosition(player, preloadStartMs);
     if (!_isCurrentLoad(player, loadToken)) return; // start 下发后换片/销毁。
 
@@ -2385,6 +2454,10 @@ class VideoPlayerController extends ChangeNotifier
       await clearMpvStartPosition(player);
       if (!_isCurrentLoad(player, loadToken)) return; // 复位后换片/销毁。
     }
+    // 恢复 seek 同样是一次在途 seek（BUG-2731 后续）：目标换成按真实 duration 复核后的
+    // 起点（near-end 翻转时就是 0），由 tick 的落地判据照常清掉。不计 [seekGeneration]
+    // ——那是给自适应画质区分「用户 seek」的，重开本身已让它 reset。
+    _setPendingSeekLanding(resolvedStartMs);
     if (resolvedStartMs > 0) {
       _restoreTargetMs = resolvedStartMs;
       _restoreGuardTicksLeft = _restoreGuardGraceTicks;
@@ -3843,7 +3916,10 @@ class VideoPlayerController extends ChangeNotifier
     // 统一清除点，靠这一句保证无 position（未 load）时快照也被清；有 position 时与
     // [seekMs] 的清除二次重叠、无害幂等。
     _clearSeekTargetSnap();
-    final int? pos = positionMs;
+    // 基准取 [resumePositionMs]（有未落地的 seek 取其目标）而不是 [positionMs]（BUG-2731
+    // 后续）：远端流上一次 seek 还在缓冲时 player 位置仍是 seek 前的旧值，按它算会让
+    // 连按两次 ±10 秒只剩一次位移——第二次把第一次抹掉。
+    final int? pos = resumePositionMs;
     if (pos == null) return;
     await seekMs(clampSeekTargetMs(pos, deltaMs, durationMs));
   }

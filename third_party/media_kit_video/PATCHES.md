@@ -204,6 +204,27 @@ the seek bars, so the host's `notifyExternalSeek` records the in-flight target.
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-2731: swipe / double-tap seeks report onSeekEnd(target)`).
 
+## BUG-2731 follow-up: relative seeks measure from the pending target (`relativeSeekBasePosition`)
+
+`lib/media_kit_video_controls/src/controls/material.dart`, new theme field
+`MaterialVideoControlsThemeData.relativeSeekBasePosition` (+ `copyWith`) and the
+state helper `_relativeSeekBase(context)`, used by `onHorizontalDragUpdate`
+(both the `horizontalSeekResolver` `position:` argument and the upstream
+fallback formula), `onHorizontalDragEnd`, and the two double-tap indicators'
+`onSubmitted`.
+
+Upstream computes every relative seek as `player.state.position ± delta`. On a
+remote stream the first seek re-buffers for seconds while `state.position`
+still reports the pre-seek value, so a second swipe / double-tap during that
+window lands at "old position + delta2" and the first displacement is lost
+(the user-visible form: the HUD keeps showing ±0:00 and only small nudges seem
+to work). The host returns its in-flight seek target when one is pending (Hibiki
+wires `VideoPlayerController.resumePositionMs`), else the live position. Null
+keeps upstream behaviour.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-2731 follow-up: relative seeks measure from the pending target`).
+
 ## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart`,

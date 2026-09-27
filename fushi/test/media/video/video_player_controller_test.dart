@@ -2207,6 +2207,93 @@ void main() {
       c.debugUpdateCueForPosition(10000);
       expect(c.resumePositionMs, 40000);
     });
+
+    // BUG-2731 后续：录屏里「HUD 一直 ±0:00、只能反复小幅滑动」的形态——第一次 seek
+    // 还在缓冲时再 seek，第二次若按滞后旧位置算，第一次的位移就丢了。
+    test('连续两次 seekRelative：第一次未落地时位移累加，不互相抹掉', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(true);
+      c.debugSetPositionForTesting(100000);
+
+      await c.seekRelative(10000);
+      expect(c.resumePositionMs, 110000);
+      // 远端流缓冲中：真实位置还停在 seek 前。
+      c.debugUpdateCueForPosition(100000);
+      await c.seekRelative(10000);
+      expect(c.resumePositionMs, 120000, reason: '两次 +10 秒应累加成 +20 秒');
+      await c.seekRelative(-30000);
+      expect(c.resumePositionMs, 90000);
+    });
+
+    test('seek 从未落地但播放已正常推进：在途目标被清掉，不永久残留', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(false);
+      c.debugSetPositionForTesting(300000);
+      // seek 被忽略（不可 seek 的流 / Range 出错）：位置从来没去过目标附近。
+      c.notifyExternalSeek(600000);
+
+      int pos = 300000;
+      final int settled = VideoPlayerController.debugSeekSettledTicks;
+      // 第一拍只记基准，之后每拍推进 125ms；推进满 settled 拍之前目标都保留。
+      for (var i = 0; i < settled; i++) {
+        c.debugUpdateCueForPosition(pos);
+        expect(c.debugPendingSeekLandingMs, 600000, reason: '第 $i 拍还不够证据');
+        pos += 125;
+      }
+      c.debugUpdateCueForPosition(pos);
+      expect(c.debugPendingSeekLandingMs, isNull);
+      c.debugSetPositionForTesting(pos);
+      expect(c.resumePositionMs, pos, reason: '换档应按真实播放位置重开');
+    });
+
+    test('缓冲中 / 暂停 / 位置不动都不算 seek 已收场', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(300000);
+      c.notifyExternalSeek(600000);
+      final int n = VideoPlayerController.debugSeekSettledTicks * 3;
+
+      // 在播但缓冲中：位置哪怕在动也不作数（seek 真在途时就是这个形态）。
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetIsBufferingForTesting(true);
+      int pos = 300000;
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 暂停。
+      c.debugSetIsBufferingForTesting(false);
+      c.debugSetIsPlayingForTesting(false);
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 在播不缓冲但位置不动（卡住）。
+      c.debugSetIsPlayingForTesting(true);
+      for (var i = 0; i < n; i++) {
+        c.debugUpdateCueForPosition(pos);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+
+      // 推进被打断要重新累积：差一拍够数时插一拍缓冲，计数归零。
+      final int settled = VideoPlayerController.debugSeekSettledTicks;
+      for (var i = 0; i < settled - 1; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      c.debugSetIsBufferingForTesting(true);
+      c.debugUpdateCueForPosition(pos += 125);
+      c.debugSetIsBufferingForTesting(false);
+      for (var i = 0; i < settled - 1; i++) {
+        c.debugUpdateCueForPosition(pos += 125);
+      }
+      expect(c.debugPendingSeekLandingMs, 600000);
+    });
   });
 
   // BUG-2441：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那

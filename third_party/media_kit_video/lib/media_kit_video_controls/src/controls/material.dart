@@ -363,6 +363,17 @@ class MaterialVideoControlsThemeData {
   /// identical to pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Duration)? onSeekEnd;
 
+  /// Hibiki patch (BUG-2731 follow-up): the base position that **relative**
+  /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
+  /// stream a seek re-buffers for seconds while `player.state.position` still
+  /// reports the pre-seek position; measuring the next swipe from it silently
+  /// drops the first swipe's displacement ("the HUD keeps showing ±0:00, I can
+  /// only nudge it"). The host returns its in-flight seek target when one is
+  /// pending, else the live position. Null (upstream default) =
+  /// `player.state.position`, behaviour identical to pub.dev. See
+  /// third_party/media_kit_video/PATCHES.md.
+  final Duration Function()? relativeSeekBasePosition;
+
   /// {@macro material_video_controls_theme_data}
   const MaterialVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -432,6 +443,7 @@ class MaterialVideoControlsThemeData {
     this.restartHideTimerSignal,
     this.onSeekStart,
     this.onSeekEnd,
+    this.relativeSeekBasePosition,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -490,6 +502,7 @@ class MaterialVideoControlsThemeData {
     Listenable? restartHideTimerSignal,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
+    Duration Function()? relativeSeekBasePosition,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -571,6 +584,8 @@ class MaterialVideoControlsThemeData {
           restartHideTimerSignal ?? this.restartHideTimerSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
+      relativeSeekBasePosition:
+          relativeSeekBasePosition ?? this.relativeSeekBasePosition,
     );
   }
 }
@@ -876,6 +891,14 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
     });
   }
 
+  /// Hibiki patch (BUG-2731 follow-up): where relative seeks start from. A
+  /// pending seek's target wins over the lagging `player.state.position`, so
+  /// back-to-back swipes / double-taps accumulate instead of overwriting each
+  /// other. See [MaterialVideoControlsThemeData.relativeSeekBasePosition].
+  Duration _relativeSeekBase(BuildContext context) =>
+      _theme(context).relativeSeekBasePosition?.call() ??
+      controller(context).player.state.position;
+
   void onHorizontalDragUpdate(DragUpdateDetails details) {
     if (_dragInitialDelta == Offset.zero) {
       _dragInitialDelta = details.localPosition;
@@ -890,7 +913,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         dragDx: details.localPosition.dx - _dragInitialDelta.dx,
         surfaceWidth: widgetWidth(context),
         duration: controller(context).player.state.duration,
-        position: controller(context).player.state.position,
+        position: _relativeSeekBase(context),
       );
       setState(() {
         swipeDuration = delta;
@@ -902,7 +925,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
     final diff = _dragInitialDelta.dx - details.localPosition.dx;
     final duration = controller(context).player.state.duration.inSeconds;
-    final position = controller(context).player.state.position.inSeconds;
+    final position = _relativeSeekBase(context).inSeconds;
 
     final seconds =
         -(diff * duration / _theme(context).horizontalGestureSensitivity)
@@ -920,8 +943,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
 
   void onHorizontalDragEnd() {
     if (swipeDuration != Duration.zero) {
-      Duration newPosition =
-          controller(context).player.state.position + swipeDuration;
+      // Hibiki patch (BUG-2731 follow-up): measured from the pending seek
+      // target when one is in flight, not the lagging player position.
+      Duration newPosition = _relativeSeekBase(context) + swipeDuration;
       newPosition = newPosition.clamp(
         Duration.zero,
         controller(context).player.state.duration,
@@ -1638,11 +1662,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                         setState(() {
                                           _hideSeekBackwardButton = true;
                                         });
-                                        var result = controller(context)
-                                                .player
-                                                .state
-                                                .position -
-                                            value;
+                                        // Hibiki patch (BUG-2731 follow-up):
+                                        // measured from the pending seek target.
+                                        var result =
+                                            _relativeSeekBase(context) - value;
                                         result = result.clamp(
                                           Duration.zero,
                                           controller(context)
@@ -1697,11 +1720,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                           _hideSeekForwardButton = true;
                                         });
 
-                                        var result = controller(context)
-                                                .player
-                                                .state
-                                                .position +
-                                            value;
+                                        // Hibiki patch (BUG-2731 follow-up):
+                                        // measured from the pending seek target.
+                                        var result =
+                                            _relativeSeekBase(context) + value;
                                         result = result.clamp(
                                           Duration.zero,
                                           controller(context)

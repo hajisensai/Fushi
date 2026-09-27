@@ -422,4 +422,126 @@ void main() {
       );
     });
   });
+
+  group(
+    'BUG-2731 follow-up: relative seeks measure from the pending target',
+    () {
+      test('swipe and double-tap seeks never read the raw player position', () {
+        final String source = File(mobileControlsPath).readAsStringSync();
+        expect(
+          source.contains(
+            'final Duration Function()? relativeSeekBasePosition;',
+          ),
+          isTrue,
+          reason: 'theme must expose the host base-position hook',
+        );
+        expect(
+          source.contains(
+            'relativeSeekBasePosition ?? this.relativeSeekBasePosition',
+          ),
+          isTrue,
+          reason: 'copyWith must carry the hook over',
+        );
+        expect(
+          source.contains(
+            'Duration newPosition = _relativeSeekBase(context) + '
+            'swipeDuration;',
+          ),
+          isTrue,
+          reason:
+              'swipe commit must be measured from the pending seek target, or '
+              'a second swipe during a buffering seek erases the first one',
+        );
+        expect(
+          RegExp(
+            r'var result =\s*_relativeSeekBase\(context\) [-+] value;',
+          ).allMatches(source).length,
+          2,
+          reason: 'both double-tap indicators must use the same base',
+        );
+        expect(
+          source.contains('position: _relativeSeekBase(context),'),
+          isTrue,
+          reason: 'horizontalSeekResolver must see the same base position',
+        );
+        // Everything relative inside the main controls state goes through the
+        // helper; the only raw reads left are the helper's own fallback and the
+        // seek bars' absolute drag math.
+        final int start = source.indexOf('void onHorizontalDragUpdate(');
+        final int end = source.indexOf('bool _isInSegment(');
+        expect(start, isNonNegative);
+        expect(end, greaterThan(start));
+        expect(
+          source.substring(start, end).contains('player.state.position'),
+          isFalse,
+          reason: 'swipe handlers must not read the lagging raw position',
+        );
+      });
+
+      test('video page wires the base to resumePositionMs', () {
+        final String theme = File(
+          'lib/src/pages/implementations/video_fushi/controls_theme.part.dart',
+        ).readAsStringSync();
+        expect(
+          RegExp(
+            r'relativeSeekBasePosition: \(\) =>\s*'
+            r'Duration\(milliseconds: controller\.resumePositionMs \?\? 0\)',
+          ).hasMatch(theme),
+          isTrue,
+        );
+      });
+
+      test(
+        'controller: seekRelative and load register the in-flight target',
+        () {
+          final String controller = File(
+            'lib/src/media/video/video_player_controller.dart',
+          ).readAsStringSync();
+          final int rel = controller.indexOf('Future<void> seekRelative(');
+          expect(rel, isNonNegative);
+          final String relBody = controller.substring(
+            rel,
+            controller.indexOf('static int clampSeekTargetMs(', rel),
+          );
+          expect(
+            relBody.contains('final int? pos = resumePositionMs;'),
+            isTrue,
+          );
+
+          // Reopen-at-position: the load's start point is the in-flight target
+          // from the very beginning (before open), then re-armed with the
+          // duration-checked resolvedStartMs before the restore seek.
+          final int load = controller.indexOf('Future<void> load({');
+          expect(load, isNonNegative);
+          final int early = controller.indexOf(
+            '_setPendingSeekLanding(preloadStartMs);',
+            load,
+          );
+          final int armed = controller.indexOf(
+            'applyMpvStartPosition(player, preloadStartMs)',
+            load,
+          );
+          final int resolved = controller.indexOf(
+            '_setPendingSeekLanding(resolvedStartMs);',
+            load,
+          );
+          final int restoreSeek = controller.indexOf(
+            'await player.seek(Duration(milliseconds: resolvedStartMs));',
+            load,
+          );
+          expect(early, isNonNegative);
+          expect(armed, greaterThan(early));
+          expect(resolved, greaterThan(armed));
+          expect(restoreSeek, greaterThan(resolved));
+          expect(
+            controller.contains('_pendingSeekLandingMs = null;'),
+            isFalse,
+            reason:
+                'clearing the target must go through _setPendingSeekLanding so '
+                'the settle counters reset with it',
+          );
+        },
+      );
+    },
+  );
 }
