@@ -45,7 +45,7 @@ class BlankImage {
 void TestResolveSitesFailsClosed() {
   core::ImportSlots imports;
   imports.get_keyboard_state = 0x100u;
-  imports.get_foreground_window = 0x104u;
+  imports.get_focus = 0x104u;
   imports.get_glyph_outline = 0x108u;
   core::Sites sites;
   {
@@ -191,14 +191,15 @@ void TestCellTrimming() {
   for (const auto& candidate : tracker.slots()) {
     if (candidate.bits == kText) slot = &candidate;
   }
-  assert(slot != nullptr);
-  if (slot->count == 3u) {
-    tracker.RecordComposite(Blit(kText, kTextW, kTextH, 0, 0), kScreen,
-                            kScreenW, kScreenH);
-    core::LineGlyph glyphs[4];
-    assert(core::CollectVisibleGlyphs(*slot, glyphs, 4u) == 3u);
-    assert(glyphs[0].w == 24 && glyphs[1].w == 24 && glyphs[2].w == 26);
-  }
+  // Neighbours overlapping by 2 px are not a page redraw (measured on the
+  // real engine: 69 glyphs rendered, 65 bogus resets before this rule).
+  assert(slot != nullptr && slot->count == 3u);
+  assert(tracker.stats().page_resets == 0u);
+  tracker.RecordComposite(Blit(kText, kTextW, kTextH, 0, 0), kScreen, kScreenW,
+                          kScreenH);
+  core::LineGlyph glyphs[4];
+  assert(core::CollectVisibleGlyphs(*slot, glyphs, 4u) == 3u);
+  assert(glyphs[0].w == 24 && glyphs[1].w == 24 && glyphs[2].w == 26);
 }
 
 // ── suffix mapping, projection, hit test ────────────────────────────────────

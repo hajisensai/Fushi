@@ -144,7 +144,8 @@ inline constexpr size_t kKeyPathKeyboardOperand = 16u;
 inline constexpr size_t kKeyPathJoinJump = 20u;  // `eb 13`
 inline constexpr size_t kKeyPathJoin = 41u;
 
-// Focused(): `call [GetForegroundWindow]; cmp eax,[hwnd]; jne; mov eax,1; ret`.
+// Focused(): `call [GetFocus]; cmp eax,[hwnd]; jne; mov eax,1; ret` (keyboard
+// focus, not the foreground window; the engine imports no GetForegroundWindow).
 inline constexpr uint8_t kFocusBytes[] = {0xff, 0x15, 0x00, 0x00, 0x00, 0x00,
                                           0x3b, 0x05, 0x00, 0x00, 0x00, 0x00,
                                           0x75, 0x06, 0xb8, 0x01, 0x00, 0x00,
@@ -176,7 +177,7 @@ inline constexpr uint8_t kBlitPrologueBytes[] = {
 
 struct ImportSlots {
   uintptr_t get_keyboard_state = 0u;     // IAT slot RVAs
-  uintptr_t get_foreground_window = 0u;
+  uintptr_t get_focus = 0u;
   uintptr_t get_glyph_outline = 0u;
 };
 
@@ -283,7 +284,7 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
     return SiteResult::kNotX86;
   }
   if (imports.get_keyboard_state == 0u ||
-      imports.get_foreground_window == 0u || imports.get_glyph_outline == 0u) {
+      imports.get_focus == 0u || imports.get_glyph_outline == 0u) {
     return SiteResult::kImportsMissing;
   }
   Sites found;
@@ -341,7 +342,7 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
       !OperandNamesSlot(
           image,
           reinterpret_cast<const uint8_t*>(focus) + kFocusForegroundOperand,
-          imports.get_foreground_window) ||
+          imports.get_focus) ||
       !DecodeDataGlobal(
           image, reinterpret_cast<const uint8_t*>(focus) + kFocusWindowOperand,
           &found.window_rva)) {
@@ -549,8 +550,18 @@ inline IntRect Intersect(const IntRect& a, const IntRect& b) {
           (std::min)(a.x1, b.x1), (std::min)(a.y1, b.y1)};
 }
 
+struct TrackerStats {
+  uint32_t recorded = 0u;
+  uint32_t rejected_args = 0u;
+  uint32_t rejected_bounds = 0u;
+  uint32_t page_resets = 0u;
+  int32_t last_x = 0, last_y = 0, last_w = 0, last_h = 0, last_size = 0;
+};
+
 class GlyphTracker {
  public:
+  const TrackerStats& stats() const { return stats_; }
+
   void Clear() {
     for (auto& slot : slots_) slot = SurfaceRecord();
     clock_ = 0u;
@@ -565,20 +576,39 @@ class GlyphTracker {
     if (bits == 0u || width <= 0 || height <= 0 || width > kMaxSurfaceSide ||
         height > kMaxSurfaceSide || font_size < kMinFontSize ||
         font_size > kMaxFontSize) {
+      ++stats_.rejected_args;
+      stats_.last_size = font_size;
+      stats_.last_w = width;
+      stats_.last_h = height;
       return false;
     }
     const int32_t w = GlyphCellWidth(code, font_size);
     const int32_t h = font_size;
-    if (x < 0 || y < 0 || x > width - w || y > height - h) return false;
+    stats_.last_x = x;
+    stats_.last_y = y;
+    stats_.last_w = width;
+    stats_.last_h = height;
+    stats_.last_size = font_size;
+    if (x < 0 || y < 0 || x > width - w || y > height - h) {
+      ++stats_.rejected_bounds;
+      return false;
+    }
     SurfaceRecord& slot = SlotFor(bits, width, height);
     const IntRect cell = {x, y, x + w, y + h};
+    const uint32_t codepoint = DecodeGlyphCode(code);
     for (uint32_t index = 0u; index < slot.count; ++index) {
       const GlyphRecord& old = slot.glyphs[index];
-      if (cell.Intersects({old.x, old.y, old.x + old.w, old.y + old.h})) {
-        // Drawing over an existing cell means the buffer was cleared and a
-        // new page is being rendered into it.
+      const IntRect overlap =
+          Intersect(cell, {old.x, old.y, old.x + old.w, old.y + old.h});
+      // Neighbours overlap by a few pixels whenever the letter spacing is
+      // tighter than the font size (measured: 26 px glyphs on a narrower pen
+      // advance).  Only drawing mostly over an existing cell means the buffer
+      // was cleared and a new page is being rendered into it.
+      if (!overlap.Empty() &&
+          2 * (overlap.x1 - overlap.x0) * (overlap.y1 - overlap.y0) > w * h) {
         slot.count = 0u;
         slot.overflow = false;
+        ++stats_.page_resets;
         break;
       }
     }
@@ -588,8 +618,9 @@ class GlyphTracker {
       slot.overflow = true;
       return false;
     }
+    ++stats_.recorded;
     GlyphRecord& out = slot.glyphs[slot.count++];
-    out.codepoint = DecodeGlyphCode(code);
+    out.codepoint = codepoint;
     out.seq = ++seq_;
     out.x = static_cast<int16_t>(x);
     out.y = static_cast<int16_t>(y);
@@ -677,6 +708,7 @@ class GlyphTracker {
   }
 
   std::array<SurfaceRecord, kSurfaceSlots> slots_{};
+  TrackerStats stats_{};
   uint64_t clock_ = 0u;
   uint32_t seq_ = 0u;
   uint64_t version_ = 0u;

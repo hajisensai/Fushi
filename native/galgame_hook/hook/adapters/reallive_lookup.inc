@@ -228,10 +228,15 @@ uint32_t ReadRealliveGlobal(uintptr_t rva) {
 // ── game-thread detours ────────────────────────────────────────────────────
 
 // TextRender join.  `frame` is esp at the join (see kFrame* offsets).
+std::atomic<uint32_t> g_reallive_join_hits{0u};
+std::atomic<uint32_t> g_reallive_join_other_thread{0u};
+
 void __cdecl RealliveGlyphJoinObserve(const uint8_t* frame) {
   auto& rt = g_reallive_lookup;
+  g_reallive_join_hits.fetch_add(1u, std::memory_order_relaxed);
   if (!rt.live.load(std::memory_order_acquire) || rt.game_thread == 0u ||
       GetCurrentThreadId() != rt.game_thread) {
+    g_reallive_join_other_thread.fetch_add(1u, std::memory_order_relaxed);
     return;
   }
   __try {
@@ -594,8 +599,8 @@ bool InstallRealliveLookup() {
   } else {
     imports.get_keyboard_state = reallive_lookup::FindImportSlotRva(
         image, "user32.dll", "GetKeyboardState");
-    imports.get_foreground_window = reallive_lookup::FindImportSlotRva(
-        image, "user32.dll", "GetForegroundWindow");
+    imports.get_focus = reallive_lookup::FindImportSlotRva(
+        image, "user32.dll", "GetFocus");
     imports.get_glyph_outline = reallive_lookup::FindImportSlotRva(
         image, "gdi32.dll", "GetGlyphOutlineA");
     rt.site_result = reallive_lookup::ResolveSites(image, imports, &rt.sites);
@@ -670,6 +675,19 @@ struct RealliveDpiScope {
 };
 
 // Builds the candidate model from the newest snapshot and the selected line.
+// Diagnostic detail of the last model-build failure (worker only).
+struct RealliveModelFailure {
+  uint32_t step = 0u;  // 1 window 2 dpi 3 screen/client 4 no match 5 ambiguous 6 projection
+  int32_t a = 0, b = 0, c = 0, d = 0;
+};
+RealliveModelFailure g_reallive_model_failure;
+
+bool FailRealliveModel(uint32_t step, int32_t a = 0, int32_t b = 0,
+                       int32_t c = 0, int32_t d = 0) {
+  g_reallive_model_failure = {step, a, b, c, d};
+  return false;
+}
+
 bool BuildRealliveModel(const RealliveSnapshot& snapshot,
                         const std::wstring& line, RealliveModel* model,
                         uint32_t* first_glyph) {
@@ -680,7 +698,7 @@ bool BuildRealliveModel(const RealliveSnapshot& snapshot,
   if (game == nullptr || !IsWindow(game) ||
       GetWindowThreadProcessId(game, &pid) == 0 ||
       pid != GetCurrentProcessId() || !IsWindowVisible(game) || IsIconic(game)) {
-    return false;
+    return FailRealliveModel(1u);
   }
   const int32_t screen_w =
       static_cast<int32_t>(ReadRealliveGlobal(rt.sites.screen_width_rva));
@@ -691,13 +709,13 @@ bool BuildRealliveModel(const RealliveSnapshot& snapshot,
   {
     RealliveDpiScope unaware(DPI_AWARENESS_CONTEXT_UNAWARE);
     if (unaware.previous == nullptr || !GetClientRect(game, &logical)) {
-      return false;
+      return FailRealliveModel(2u);
     }
   }
   {
     RealliveDpiScope aware(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if (aware.previous == nullptr || !GetClientRect(game, &physical)) {
-      return false;
+      return FailRealliveModel(2u);
     }
   }
   // The screen buffer is presented 1:1 at the client origin: the engine's
@@ -706,7 +724,9 @@ bool BuildRealliveModel(const RealliveSnapshot& snapshot,
   if (screen_w <= 0 || screen_h <= 0 ||
       logical.right - logical.left != screen_w ||
       logical.bottom - logical.top != screen_h) {
-    return false;
+    return FailRealliveModel(3u, screen_w, screen_h,
+                             logical.right - logical.left,
+                             logical.bottom - logical.top);
   }
   const int32_t physical_w = physical.right - physical.left;
   const int32_t physical_h = physical.bottom - physical.top;
@@ -728,12 +748,16 @@ bool BuildRealliveModel(const RealliveSnapshot& snapshot,
     const size_t first = reallive_lookup::MapSelectedSuffix(
         rt.match_scratch.data(), surface.count, line.data(), line.size());
     if (first >= surface.count) continue;
-    if (matched != nullptr) return false;  // ambiguous
+    if (matched != nullptr) return FailRealliveModel(5u);  // ambiguous
     matched = &surface;
     matched_first = first;
     matched_count = surface.count;
   }
-  if (matched == nullptr) return false;
+  if (matched == nullptr) {
+    return FailRealliveModel(4u, static_cast<int32_t>(snapshot.surface_count),
+                             static_cast<int32_t>(snapshot.glyph_count),
+                             static_cast<int32_t>(line.size()));
+  }
   std::copy_n(snapshot.glyphs.data() + matched->first, matched_count,
               rt.match_scratch.data());
   reallive_lookup::MapSelectedSuffix(rt.match_scratch.data(), matched_count,
@@ -756,7 +780,7 @@ bool BuildRealliveModel(const RealliveSnapshot& snapshot,
     // line is not a line the user can be looking at.
     if (!reallive_lookup::ProjectCell(glyph, screen_w, screen_h, physical_w,
                                       physical_h, &out.rect)) {
-      return false;
+      return FailRealliveModel(6u, glyph.x, glyph.y, physical_w, physical_h);
     }
     out.line = glyph;
     ++model->count;
@@ -865,12 +889,42 @@ bool ReadLatestRealliveSubmit(RealliveSubmit* out) {
   return slot_seq.load(std::memory_order_acquire) == sequence;
 }
 
+// Why the last tick retired (0 = published).  Logged once per change so a
+// silent provider always says which gate it is waiting on.
+void NoteRealliveRetire(uint32_t reason) {
+  static uint32_t last = UINT32_MAX;
+  static uint32_t budget = 24u;
+  const uint32_t key =
+      reason == 4u ? 100u + g_reallive_model_failure.step : reason;
+  if (key == last || budget == 0u) return;
+  last = key;
+  --budget;
+  static const wchar_t* const kNames[] = {
+      L"offered", L"lookup-disabled", L"key-poll-stale", L"no-selected-text",
+      L"model-unbuilt", L"offer-rejected"};
+  if (reason == 4u) {
+    const auto& f = g_reallive_model_failure;
+    const auto& t = g_reallive_lookup.tracker.stats();
+    RealliveLookupLog(
+        L"reallive-lookup: gate=%s step=%u %d,%d,%d,%d joins=%u other=%u "
+        L"rec=%u args=%u bounds=%u reset=%u last=%d,%d surf=%dx%d "
+        L"size=%d",
+        kNames[reason], f.step, f.a, f.b, f.c, f.d,
+        g_reallive_join_hits.load(), g_reallive_join_other_thread.load(),
+        t.recorded, t.rejected_args, t.rejected_bounds, t.page_resets, t.last_x, t.last_y, t.last_w, t.last_h, t.last_size);
+    return;
+  }
+  RealliveLookupLog(L"reallive-lookup: gate=%s",
+                    reason < 6u ? kNames[reason] : L"?");
+}
+
 void ProcessRealliveLookupTick() {
   auto& rt = g_reallive_lookup;
   if (!rt.installed) return;
   if (g_stop || g_header == nullptr ||
       !fushi_voice_hook::HasLookupRegion(g_header) ||
       fushi_voice_hook::AtomicLoadShared32(&g_header->lookup_enabled) == 0u) {
+    NoteRealliveRetire(1u);
     RetireRealliveLookup();
     return;
   }
@@ -884,6 +938,7 @@ void ProcessRealliveLookupTick() {
   RealliveSnapshot& snapshot = rt.snapshot_copy;
   if (polled == 0u || now < polled || now - polled > kRealliveFrameStaleMs ||
       !ReadRealliveSnapshot(&snapshot)) {
+    NoteRealliveRetire(2u);
     RetireRealliveLookup();
     return;
   }
@@ -894,12 +949,14 @@ void ProcessRealliveLookupTick() {
   if (!fushi_voice_hook::ReadSelectedLookupText(
           g_header, &line, &event, &thread,
           reallive_lookup::kMaxSurfaceGlyphs)) {
+    NoteRealliveRetire(3u);
     RetireRealliveLookup();
     return;
   }
   RealliveModel candidate;
   uint32_t first_glyph = 0u;
   if (!BuildRealliveModel(snapshot, line, &candidate, &first_glyph)) {
+    NoteRealliveRetire(4u);
     RetireRealliveLookup();
     return;
   }
@@ -942,7 +999,9 @@ void ProcessRealliveLookupTick() {
     rt.provider_offered = true;
     fushi_voice_hook::AtomicOrShared32(
         &g_header->lookup_diag, fushi_voice_hook::kLookupDiagGeometryObserved);
+    NoteRealliveRetire(0u);
   } else {
+    NoteRealliveRetire(5u);
     RetireRealliveLookup();
     return;
   }
