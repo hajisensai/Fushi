@@ -239,6 +239,8 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) async {}
 
   @override
