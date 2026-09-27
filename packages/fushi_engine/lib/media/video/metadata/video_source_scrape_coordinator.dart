@@ -852,6 +852,10 @@ class VideoSourceScrapeCoordinator
             settings: settings,
             cancellationToken: cancellationToken,
             episodeOverrides: resolved.episodeOverrides,
+            // 只认调用方给的已确认身份（手动指定 / 下载导入），不认途中按 AniDB
+            // 拆出来的子单元：前者是「这部就是它」的明确意图，旧产物理应换掉。
+            replaceOwnArtifacts:
+                confirmedLookups.containsKey(localWork.stableKey),
           );
           nfoWritten += sidecars.nfoWritten;
           imagesWritten += sidecars.imagesWritten;
@@ -3790,6 +3794,7 @@ class VideoSourceScrapeCoordinator
     required _EffectiveSourceSettings settings,
     required VideoSourceScrapeCancellationToken cancellationToken,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
+    bool replaceOwnArtifacts = false,
   }) async {
     if (!settings.writeNfo && !settings.writeImages) {
       return const _SidecarOutcome();
@@ -3852,16 +3857,27 @@ class VideoSourceScrapeCoordinator
       int? episodeId,
       String? remoteUrl,
     }) {
+      // 用户手动指定身份重刮（BUG-2737）：默认「只补缺失」会原样留着旧身份写下的
+      // poster / NFO——库页封面与目录里的资料都还是刮错的那部。这里只把
+      // missingOnly 升成 overwrite，且**不带**危险覆盖授权：第三方文件与用户改过的
+      // Fushi 生成物仍由 writer 的所有权账本保护（protectedExisting /
+      // protectedModified），换掉的只有 Fushi 自己写下、未被改动过的旧产物；
+      // skip 仍是 skip。
+      final bool replaceOwn =
+          replaceOwnArtifacts && policy == SidecarWritePolicy.missingOnly;
+      final SidecarWritePolicy effectivePolicy =
+          replaceOwn ? SidecarWritePolicy.overwrite : policy;
       final _PlannedArtifact value = _PlannedArtifact(
         request: SidecarWriteRequest(
           targetPath: path,
           bytes: bytes,
-          policy: policy,
-          allowProtectedOverwrite: settings.allowExternalOverwrite,
+          policy: effectivePolicy,
+          allowProtectedOverwrite:
+              !replaceOwn && settings.allowExternalOverwrite,
         ),
         context: VideoSidecarArtifactContext(
           artifactKind: kind,
-          writePolicy: policy.name,
+          writePolicy: effectivePolicy.name,
           workId:
               seasonId == null && episodeId == null ? persisted.workId : null,
           seasonId: episodeId == null ? seasonId : null,

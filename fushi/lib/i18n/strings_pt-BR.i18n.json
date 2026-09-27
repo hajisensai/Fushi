@@ -5688,6 +5688,7 @@
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
   "ai_web_knowledge_custom_remove": "Remove site",
+  "video_item_rescrape_not_planned": "This video isn't in any local video source's scrape plan",
   "plex_settings_hint": "Sign in with your Plex account, or connect to a server with its address and X-Plex-Token. Playback streams the original file (direct play); Plex transcoding is not used.",
   "plex_account_sign_in": "Sign in with Plex",
   "plex_pin_waiting": "Waiting for you to approve Fushi in the browser…",
