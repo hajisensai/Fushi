@@ -71,6 +71,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi/src/ai/ai_video_franchise_assistant.dart';
 import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
@@ -86,8 +87,8 @@ import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry;
-import 'package:fushi/src/sync/jellyfin_video_client.dart'
-    show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/media/video/media_server/media_server_config.dart'
+    show MediaServerConfig;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
 import 'package:fushi/src/media/audiobook/now_listening_mini_bar.dart';
@@ -2078,8 +2079,14 @@ class _HomePageState extends BasePageState<HomePage>
             (await _matchingVideoDiscoverySubscriptions(reference))
                 .any((VideoDownloadSubscriptionRow row) => row.enabled),
         searchResources: registry.search,
-        loadFranchise: (VideoDiscoveryItem item) async =>
-            discoveryService?.loadFranchise(item),
+        // 资料源（TMDB collection + MAL 关联）+ 联网资料补全（维基 → AI 列作品 →
+        // 逐部回资料源核对），见 ai_video_franchise_assistant.dart。
+        loadFranchise: createPreferencesVideoFranchiseLoader(
+          prefs,
+          base: (VideoDiscoveryItem item) async =>
+              discoveryService?.loadFranchise(item),
+          searchWorks: discovery.load,
+        ),
         parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
         decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
         persistPreference:
@@ -2956,18 +2963,18 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// 视频页「媒体服务器」分区的服务器清单：每台已登录的 Jellyfin/Emby 配置出一个
-  /// 浏览器（`client is MediaServerBrowser`）。每次进分区重取——设置页登入 / 登出
+  /// 视频页「媒体服务器」分区的服务器清单：每台已登录的服务器（Jellyfin 家族 /
+  /// Plex）经 [MediaServerConfig.buildBrowser] 出一个浏览器（`client is
+  /// MediaServerBrowser`），这里不按类型分支。每次进分区重取——设置页登入 / 登出
   /// 立即反映，不缓存 client 实例。
   Future<List<MediaServerEntry>> _loadMediaServerEntries() async {
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
-    final List<JellyfinServerConfig> configs =
-        await syncRepo.getJellyfinServers();
+    final List<MediaServerConfig> configs = await syncRepo.getMediaServers();
     return <MediaServerEntry>[
-      for (final JellyfinServerConfig config in configs)
+      for (final MediaServerConfig config in configs)
         MediaServerEntry(
-          browser: config.buildClient(),
-          accountName: config.username,
+          browser: config.buildBrowser(),
+          accountName: config.accountName,
           routeUrls: config.routeUrls,
           onSwitchRoute: (String url) => _switchMediaServerRoute(config, url),
         ),
@@ -2976,21 +2983,14 @@ class _HomePageState extends BasePageState<HomePage>
 
   /// 视频页服务器卡片上的「切换线路」：写回配置并失效这台的远端清单缓存槽
   /// （槽里的封面 / 流 URL 烤着旧线路的 host）。与设置页 `_switchRoute` 同口径；
-  /// 身份锚（[JellyfinServerConfig.serverUrl]）不变，历史 / 封面磁盘缓存照常。
+  /// 身份锚（[MediaServerConfig.sourceId]）不变，历史 / 封面磁盘缓存照常。
   Future<void> _switchMediaServerRoute(
-    JellyfinServerConfig config,
+    MediaServerConfig config,
     String url,
   ) async {
     final SyncRepository syncRepo = SyncRepository(appModelNoUpdate.database);
-    await syncRepo.upsertJellyfinServer(
-      config.copyWithRoutes(activeServerUrl: url),
-    );
-    ref.read(remoteLibraryCacheProvider).invalidateSource(
-          JellyfinVideoClient.sourceIdFor(
-            serverUrl: config.serverUrl,
-            userId: config.userId,
-          ),
-        );
+    await syncRepo.upsertMediaServer(config.withActiveRoute(url));
+    ref.read(remoteLibraryCacheProvider).invalidateSource(config.sourceId);
   }
 
   Widget _buildTabContent(HomeTab tab) {

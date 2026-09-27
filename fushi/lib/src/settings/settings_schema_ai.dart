@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -40,6 +42,39 @@ SettingsDestination buildAiDestination() {
         const AiProviderSettingsSection(),
     bodyBeforeSections: true,
     sections: <SettingsSection>[
+      // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
+      // 门控——整页已经过 AI 模块门，这一段跟着页面走。内置站是声明式开关；自定义
+      // MediaWiki 站点是可增删的记录列表，走 custom 行（同提供商列表的切法）。
+      SettingsSection(
+        id: 'ai.web_knowledge',
+        title: t.ai_web_knowledge_section,
+        footer: t.ai_web_knowledge_section_hint,
+        items: <SettingsItem>[
+          for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites)
+            SettingsSwitchItem(
+              id: 'ai.web_knowledge.${site.id}',
+              title: webKnowledgeSiteDisplayLabel(site),
+              icon: Icons.public,
+              value: (SettingsContext c) => c
+                  .appModel
+                  .prefsRepo
+                  .aiWebKnowledgeEnabledSiteIds
+                  .contains(site.id),
+              onChanged: (SettingsContext c, bool value) =>
+                  setWebKnowledgeSiteEnabled(
+                    c.appModel.prefsRepo,
+                    site.id,
+                    enabled: value,
+                  ),
+            ),
+          SettingsCustomItem(
+            id: 'ai.web_knowledge.custom',
+            searchTitle: t.ai_web_knowledge_custom_title,
+            builder: (SettingsContext c) =>
+                const AiWebKnowledgeCustomSitesSection(),
+          ),
+        ],
+      ),
       SettingsSection(
         id: 'ai.video_download',
         title: t.ai_video_download_section,

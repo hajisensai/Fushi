@@ -32,6 +32,32 @@ bool isMalPlaceholderImageUrl(String url) {
       path.contains('/img/sp/icon/');
 }
 
+/// MAL 上的一条关联：关系名原串（`Sequel` / `Prequel` / `Side story` /
+/// `Alternative version` …）+ 对端 anime id。
+class MalRelation {
+  const MalRelation({required this.relation, required this.malId});
+
+  final String relation;
+  final int malId;
+}
+
+/// [MalVideoMetadataProvider.fetchRelatedWorks] 的结果。
+class MalRelatedWorks {
+  const MalRelatedWorks({
+    required this.work,
+    required this.malType,
+    required this.relations,
+  });
+
+  final VideoMetadataWork work;
+
+  /// Jikan `type` 原串：`TV` / `Movie` / `OVA` / `ONA` / `Special` /
+  /// `TV Special` / `Music` / `CM` / `PV`；[VideoMetadataWork.kind] 只分电影 / 剧集，
+  /// 区分不了 OVA 与 PV，系列展开要靠它。
+  final String? malType;
+  final List<MalRelation> relations;
+}
+
 /// MAL metadata delivered by the public, read-only Jikan v4 API.
 class MalVideoMetadataProvider
     implements VideoMetadataProvider, VideoMetadataRelationsProvider {
@@ -150,6 +176,41 @@ class MalVideoMetadataProvider
                       mediaKind: lookup.mediaKind,
                     ),
     ];
+  }
+
+  /// 一部作品 + 它在 MAL 上的全部 anime 关联（`relations[].entry` 里 `type == anime`
+  /// 的条目）。只打 `anime/{id}/full` 一个请求（与 [fetchWork] / [fetchPrequels]
+  /// 同一缓存），**不**拉 characters / staff——「整套下载」要沿关联链走几十部，
+  /// 每部多两个请求在 Jikan 限流下就是几分钟。404 → null。
+  Future<MalRelatedWorks?> fetchRelatedWorks(String malId) async {
+    final int? id = int.tryParse(malId.trim());
+    if (id == null || id <= 0) return null;
+    final Map<String, Object?> payload;
+    try {
+      payload = await _get('anime/$id/full');
+    } on VideoMetadataNetworkException catch (error) {
+      if (error.statusCode == 404) return null;
+      rethrow;
+    }
+    final Map<String, Object?>? item = metadataObject(payload['data']);
+    if (item == null) return null;
+    final VideoMetadataWork? work = _work(item);
+    if (work == null) return null;
+    return MalRelatedWorks(
+      work: work,
+      malType: metadataString(item['type']),
+      relations: <MalRelation>[
+        for (final Object? node in metadataList(item['relations']))
+          if (metadataObject(node) case final Map<String, Object?> relation)
+            if (metadataString(relation['relation']) case final String kind)
+              for (final Object? entryNode in metadataList(relation['entry']))
+                if (metadataObject(entryNode)
+                    case final Map<String, Object?> entry)
+                  if (metadataString(entry['type'])?.toLowerCase() == 'anime')
+                    if (metadataInt(entry['mal_id']) case final int relatedId)
+                      MalRelation(relation: kind, malId: relatedId),
+      ],
+    );
   }
 
   Future<Map<String, Object?>> _optionalCredits(

@@ -1064,6 +1064,27 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/ai_video_download_settings_test.dart + '
           'test/media/video/download/video_download_pipeline_service_test.dart + '
           'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
+  // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
+  // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
+  // 测试咬住「只请求传入的站点」。
+  'ai/Wikipedia (中文)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Wikipedia (日本語)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Wikipedia (English)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Moegirlpedia (萌娘百科)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Anime News Network':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/TVmaze':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
 };
 
 /// 八个媒体类型 → Profile 绑定行共用的证据（同一条 resolveProfileId /
