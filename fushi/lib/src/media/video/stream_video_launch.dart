@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
+import 'package:fushi_engine/media/video/strm_file.dart';
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi/src/media/video/youtube_stream_cache.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -7,13 +11,122 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-/// 流媒体书判据（TODO-1157）：`videoPath` 是可播 http/https 流 URL。
+/// 流媒体书判据（TODO-1157）：`videoPath` 是网络流地址，或 `.strm` 流指针。
 ///
 /// 「粘贴 URL 导入」的流媒体书 [VideoBookRow.videoPath] 存原始 URL（YouTube=watch URL，
 /// 直链/HLS=直链）；本地文件视频 videoPath 是文件路径 → false。判据唯一、不依赖额外
 /// 标记列（[VideoBooks.streamSpecJson] 只在有外挂字幕/防盗链 header 时非空，不当判据）。
+///
+/// - 网络流按 [isNetworkStreamUrl]：除 http(s) 外还认 IPTV 频道列表常见的
+///   rtsp / rtmp / udp 等直播协议（播放内核直接能开，本地文件路径打不开它们）。
+/// - `.strm`（[isStrmPath]，本地或来源库网络条目）：`videoPath` 存 `.strm` 自身，
+///   真正的流地址起播时经 [resolveStrmStreamTarget] 现读。
 bool isStreamVideoBook(VideoBookRow book) =>
-    isPlayableStreamUrl(book.videoPath);
+    isNetworkStreamUrl(book.videoPath) || isStrmPath(book.videoPath);
+
+/// `.strm` 读不出可播地址的原因（起播失败文案据此分派）。
+enum StrmResolveFailure {
+  /// 文件里没有任何地址行（空文件 / 只有注释）。
+  empty,
+
+  /// 指向本机文件路径——不支持（本地文件请直接放进来源库）。
+  localTarget,
+
+  /// 相对路径 / 未知协议（`plugin://`、`smb://` …）。
+  unsupportedTarget,
+
+  /// 文件本身读不到（不存在、HTTP 非 2xx、超过 [kStrmMaxBytes]）。
+  unreadable,
+}
+
+/// [resolveStrmStreamTarget] 的类型化失败。
+class StrmResolveException implements Exception {
+  const StrmResolveException(this.failure, this.strmPath, [this.detail]);
+
+  final StrmResolveFailure failure;
+  final String strmPath;
+  final String? detail;
+
+  @override
+  String toString() =>
+      'StrmResolveException(${failure.name}, $strmPath${detail == null ? '' : ', $detail'})';
+}
+
+/// 读取 `.strm` 流指针 [strmPath]，返回它指向的网络流地址。
+///
+/// - 本地路径：直接读文件；来源库网络条目（http(s)，WebDAV / AList）：经
+///   [urlResolver]（AList 换签名直链）后 GET，带 [strmHttpHeaders]——这组头是
+///   **按 `.strm` 自身地址**解析、只对来源根内生效的认证头（`.strm` 就在来源根里）。
+///   它**不会**被带到返回的目标地址上：目标通常是第三方主机，调用方须按目标地址
+///   另行解析（凭据作用域见 stream_auth_scope.dart）。
+/// - 内容按 [parseStrmTarget] 取首条地址，[classifyStrmTarget] 分类；只接受网络流，
+///   其余抛 [StrmResolveException]（调用方转成用户可见文案）。
+Future<String> resolveStrmStreamTarget(
+  String strmPath, {
+  Map<String, String> strmHttpHeaders = const <String, String>{},
+  StreamUrlResolver? urlResolver,
+  http.Client? httpClient,
+}) async {
+  final String content = await _readStrmContent(
+    strmPath,
+    headers: strmHttpHeaders,
+    urlResolver: urlResolver,
+    httpClient: httpClient,
+  );
+  final String? target = parseStrmTarget(content);
+  if (target == null) {
+    throw StrmResolveException(StrmResolveFailure.empty, strmPath);
+  }
+  switch (classifyStrmTarget(target)) {
+    case StrmTargetKind.networkStream:
+      return target;
+    case StrmTargetKind.localPath:
+      throw StrmResolveException(
+          StrmResolveFailure.localTarget, strmPath, target);
+    case StrmTargetKind.unsupported:
+      throw StrmResolveException(
+          StrmResolveFailure.unsupportedTarget, strmPath, target);
+  }
+}
+
+Future<String> _readStrmContent(
+  String strmPath, {
+  required Map<String, String> headers,
+  required StreamUrlResolver? urlResolver,
+  required http.Client? httpClient,
+}) async {
+  if (!isNetworkStreamUrl(strmPath)) {
+    final File file = File(strmPath);
+    if (!await file.exists()) {
+      throw StrmResolveException(
+          StrmResolveFailure.unreadable, strmPath, 'not found');
+    }
+    if (await file.length() > kStrmMaxBytes) {
+      throw StrmResolveException(
+          StrmResolveFailure.unreadable, strmPath, 'too large');
+    }
+    return utf8.decode(await file.readAsBytes(), allowMalformed: true);
+  }
+  final String url =
+      urlResolver == null ? strmPath : await urlResolver.resolve(strmPath);
+  final http.Client client = httpClient ?? createAppHttpIoClient();
+  try {
+    final http.Response res = await client
+        .get(Uri.parse(url), headers: headers.isEmpty ? null : headers)
+        .timeout(const Duration(seconds: 15));
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw StrmResolveException(
+          StrmResolveFailure.unreadable, strmPath, 'HTTP ${res.statusCode}');
+    }
+    if (res.bodyBytes.length > kStrmMaxBytes) {
+      throw StrmResolveException(
+          StrmResolveFailure.unreadable, strmPath, 'too large');
+    }
+    return utf8.decode(res.bodyBytes, allowMalformed: true);
+  } finally {
+    if (httpClient == null) client.close();
+  }
+}
 
 /// TODO-1314：缓存命中后确认流 URL 未失效的 liveness 探测签名。生产走 1 字节 Range GET，
 /// 测试注入假件。返回 true=存活（用缓存）/ false=失效（invalidate + 重解析）。

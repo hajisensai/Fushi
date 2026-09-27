@@ -19,6 +19,8 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkStreamUrl, isStrmPath;
 
 /// 压在封面左下角的规格角标条。规格未知时**整个不占位**（返回 SizedBox.shrink）。
 class VideoSpecsBadgeStrip extends StatefulWidget {
@@ -119,5 +121,8 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
 /// 请求——库页绝不做这种事。
 bool isProbableStreamUrl(String path) {
   final String lower = path.trim().toLowerCase();
-  return lower.startsWith('http://') || lower.startsWith('https://');
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return true;
+  // IPTV 频道（rtsp / rtmp / udp …）与 `.strm` 流指针同属「不值得在库页探」：
+  // 前者是网络直播，后者是一行文本，真正的流要起播时才读出来。
+  return isNetworkStreamUrl(path) || isStrmPath(path);
 }

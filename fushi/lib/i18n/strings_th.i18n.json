@@ -5687,5 +5687,15 @@
   "ai_web_knowledge_custom_endpoint": "API address",
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
-  "ai_web_knowledge_custom_remove": "Remove site"
+  "ai_web_knowledge_custom_remove": "Remove site",
+  "video_strm_target_local": "This .strm file points to a local file path, which isn't supported. Put the video file in a source library directly.",
+  "video_strm_target_unsupported": "This .strm file has no playable stream address (http, https, rtsp, …).",
+  "video_strm_file_unreadable": "Couldn't read the .strm file.",
+  "video_iptv_import_action": "Import IPTV list",
+  "video_iptv_import_title": "Import M3U / IPTV channel list",
+  "video_iptv_url_field": "Channel list URL",
+  "video_iptv_pick_file": "Choose a local .m3u / .m3u8 file",
+  "video_iptv_import_hint": "Each channel is added as a stream and grouped into collections by group-title. An HLS stream playlist is imported as a single video.",
+  "video_iptv_list_empty": "No channels found in this list.",
+  "video_iptv_imported": "Imported ${count} channels"
 }

@@ -25,6 +25,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/iptv_playlist_import_dialog.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
@@ -388,6 +389,11 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
             onTap: _importVideo,
           ),
           QuickImportAction(
+            icon: Icons.live_tv_outlined,
+            label: t.video_iptv_import_action,
+            onTap: _importIptvPlaylist,
+          ),
+          QuickImportAction(
             icon: Icons.drive_folder_upload_outlined,
             label: t.media_import_folder,
             onTap: _importFolder,
@@ -434,6 +440,36 @@ class _MediaSourcesPageState extends ConsumerState<MediaSourcesPage> {
       ),
     );
     if (bookUid != null && mounted) widget.onLibraryChanged?.call();
+  }
+
+  /// M3U / IPTV 频道列表导入（对齐 SenPlayer 的 IPTV 播放列表）。频道按既有
+  /// 「清单拆集」形状入库；填进来的若其实是一条 HLS 流，转交 [VideoImportDialog]
+  /// 按单个视频 / 流链接导入（远端自动导入，本地预填待确认）。
+  Future<void> _importIptvPlaylist() async {
+    final VideoBookRepository repo = VideoBookRepository(_appModel.database);
+    final IptvPlaylistImportOutcome? outcome =
+        await showAppDialog<IptvPlaylistImportOutcome>(
+      context: context,
+      builder: (_) => IptvPlaylistImportDialog(repo: repo),
+    );
+    if (!mounted || outcome == null) return;
+    switch (outcome) {
+      case IptvPlaylistImported():
+        widget.onLibraryChanged?.call();
+      case IptvPlaylistIsHlsStream(
+          :final String? url,
+          :final String? localPath,
+        ):
+        final String? bookUid = await showAppDialog<String>(
+          context: context,
+          builder: (_) => VideoImportDialog(
+            repo: repo,
+            initialStreamUrl: url,
+            initialVideoPath: localPath,
+          ),
+        );
+        if (bookUid != null && mounted) widget.onLibraryChanged?.call();
+    }
   }
 
   /// 书架 provider 失效（快速导入落库后书架 / 漫画库立即刷新）。

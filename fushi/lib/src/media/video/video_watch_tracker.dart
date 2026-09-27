@@ -15,6 +15,14 @@ bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
   return positionMs / durationMs >= 0.9;
 }
 
+/// 流媒体断点是否值得写（IPTV / 直播 `.strm`）：总时长未知或为 0 的是直播流。
+///
+/// 直播的 position 只是「开播至今」，写进断点后下次起播会带 `start=<旧位置>`，
+/// 落到直播窗口之外（黑屏 / 卡住），「继续观看」也会把频道当成看了一半的片子。
+/// 与 [shouldMarkCompleted] 同一口径：时长不可知就不谈进度。
+bool shouldPersistStreamPosition({required int? durationMs}) =>
+    durationMs != null && durationMs > 0;
+
 /// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
 /// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
 ///

@@ -147,9 +147,9 @@ String resolveM3uEntryPath(
   final p.Context ctx = context ?? p.context;
   final String entry = entryRaw.trim();
   if (entry.isEmpty) return entry;
-  // 绝对 http(s) URL 条目（HLS/直链清单）：原样直通。此前会落进下面的
-  // 「相对」分支被 join 到 playlistDir 上，纯属误判。
-  if (_isHttpUrl(entry)) return entry;
+  // 绝对 URL 条目（HLS/直链清单的 http(s)，IPTV 频道列表的 rtsp / rtmp / udp …）：
+  // 原样直通。此前会落进下面的「相对」分支被 join 到 playlistDir 上，纯属误判。
+  if (_hasUrlScheme(entry)) return entry;
   if (_isAbsoluteM3uEntryPath(entry)) {
     // Absolute: normalize only; never join playlistDir (would break drive/UNC).
     return ctx.normalize(entry);
@@ -178,6 +178,12 @@ String resolveM3uEntryPath(
   final String rel = entry.replaceAll('\\', '/');
   return ctx.normalize(ctx.join(playlistDir, rel));
 }
+
+final RegExp _urlSchemePrefix = RegExp(r'^[A-Za-z][A-Za-z0-9+.\-]*://');
+
+/// 纯字符串判「带 scheme 的绝对 URL」（`xxx://`）。Windows 盘符路径 `C:\` / `C:/`
+/// 没有 `//`，不会误中。
+bool _hasUrlScheme(String s) => _urlSchemePrefix.hasMatch(s);
 
 /// 纯字符串判 http(s) URL（不经 Uri.parse，空串/畸形不抛）。
 bool _isHttpUrl(String s) =>
@@ -240,9 +246,13 @@ List<PlaylistEntry> parseM3u8({
 
     if (line.startsWith('#')) {
       if (line.startsWith('#EXTINF:')) {
-        final int comma = line.indexOf(',');
-        // 逗号后整段是标题（保留其中的中文/括号/逗号以外字符）。
-        pendingTitle = comma >= 0 ? line.substring(comma + 1).trim() : null;
+        // 逗号后整段是标题；属性值里引号包着的逗号（`group-title="A, B"`）不算
+        // 分隔符。显示名为空时退回 `tvg-name`（IPTV 列表常见写法）。
+        final M3uExtinf info = parseM3uExtinf(line);
+        final String display = info.displayName.isNotEmpty
+            ? info.displayName
+            : (info.attributes['tvg-name'] ?? '').trim();
+        pendingTitle = display.isEmpty ? null : display;
       }
       // 其它注释（#EXTM3U 等）忽略。
       continue;
@@ -259,6 +269,187 @@ List<PlaylistEntry> parseM3u8({
   }
 
   return entries;
+}
+
+/// 一行 `#EXTINF` 的解析结果（扩展 M3U / IPTV 频道列表）。
+///
+/// 形如 `#EXTINF:-1 tvg-id="x" tvg-name="名" tvg-logo="http://…" group-title="组",显示名`：
+/// [durationSeconds] 是冒号后的时长（直播频道写 `-1`，解析不出为 null）；
+/// [attributes] 的键统一小写（`tvg-name` / `tvg-logo` / `group-title` …），值已剥引号；
+/// [displayName] 是**引号外第一个逗号**之后的整段（可再含逗号）。
+@immutable
+class M3uExtinf {
+  const M3uExtinf({
+    required this.durationSeconds,
+    required this.attributes,
+    required this.displayName,
+  });
+
+  final double? durationSeconds;
+  final Map<String, String> attributes;
+  final String displayName;
+}
+
+final RegExp _m3uAttrPattern =
+    RegExp(r'([A-Za-z0-9_\-]+)\s*=\s*(?:"([^"]*)"|([^\s",]+))');
+
+/// **纯函数**：解析一行 `#EXTINF:`（容错：缺逗号 / 缺时长 / 未闭合引号都不抛）。
+M3uExtinf parseM3uExtinf(String line) {
+  String body = line.trim();
+  if (body.startsWith('#EXTINF:')) body = body.substring('#EXTINF:'.length);
+  // 引号外第一个逗号切开「时长 + 属性」与显示名。
+  int split = -1;
+  bool inQuotes = false;
+  for (int i = 0; i < body.length; i++) {
+    final String ch = body[i];
+    if (ch == '"') {
+      inQuotes = !inQuotes;
+    } else if (ch == ',' && !inQuotes) {
+      split = i;
+      break;
+    }
+  }
+  final String head = split >= 0 ? body.substring(0, split) : body;
+  final String displayName = split >= 0 ? body.substring(split + 1).trim() : '';
+  final String headTrimmed = head.trimLeft();
+  final Match? durationMatch =
+      RegExp(r'^-?\d+(?:\.\d+)?').firstMatch(headTrimmed);
+  final double? duration =
+      durationMatch == null ? null : double.tryParse(durationMatch.group(0)!);
+  final String attrText = durationMatch == null
+      ? headTrimmed
+      : headTrimmed.substring(durationMatch.end);
+  final Map<String, String> attributes = <String, String>{};
+  for (final Match m in _m3uAttrPattern.allMatches(attrText)) {
+    final String key = m.group(1)!.toLowerCase();
+    final String value = (m.group(2) ?? m.group(3) ?? '').trim();
+    attributes[key] = value;
+  }
+  return M3uExtinf(
+    durationSeconds: duration,
+    attributes: attributes,
+    displayName: displayName,
+  );
+}
+
+/// IPTV 频道列表里的一个频道（[parseM3uChannels] 的产物）。
+///
+/// [url] 已按列表位置解析（相对条目 → 列表所在目录 / URL 目录，见
+/// [resolveM3uEntryPath]）；[title] 取 `#EXTINF` 逗号后的显示名，空则退
+/// `tvg-name`，再空退条目 basename。其余属性缺省为 null。
+@immutable
+class M3uChannel {
+  const M3uChannel({
+    required this.title,
+    required this.url,
+    this.tvgId,
+    this.tvgName,
+    this.tvgLogo,
+    this.groupTitle,
+  });
+
+  final String title;
+  final String url;
+  final String? tvgId;
+  final String? tvgName;
+
+  /// 频道台标 URL（`tvg-logo`），可作封面。
+  final String? tvgLogo;
+
+  /// 分组（`group-title`）；`#EXTGRP:` 行同样落到这里（`#EXTINF` 自带的优先）。
+  final String? groupTitle;
+
+  /// 转成既有入库形状（`VideoBookRepository.importSplitPlaylist` 吃的
+  /// [PlaylistEntry]）——频道列表不另造存储。
+  PlaylistEntry toPlaylistEntry() => PlaylistEntry(title: title, path: url);
+}
+
+String? _nonEmpty(String? s) {
+  final String? t = s?.trim();
+  return (t == null || t.isEmpty) ? null : t;
+}
+
+/// **纯函数**：把扩展 M3U 频道列表解析成 [M3uChannel]（无 IO）。
+///
+/// - `#EXTINF` 提供显示名与 `tvg-*` / `group-title` 属性，作用于其后第一条
+///   非空、非 `#` 行（频道地址）；`#EXTGRP:` 提供分组兜底。
+/// - 无前置 `#EXTINF` 的裸地址行也算一个频道（标题回退 basename）。
+/// - 其余 `#` 行（`#EXTM3U` / `#EXTVLCOPT` …）忽略；`\r\n` 与 BOM 容错。
+///
+/// 调用前应先用 [isHlsStreamPlaylist] 排除 HLS 媒体 / master 列表——那是**单条
+/// 流**，拆开会把分片当频道。
+List<M3uChannel> parseM3uChannels({
+  required String content,
+  required String baseDir,
+}) {
+  final List<M3uChannel> channels = <M3uChannel>[];
+  M3uExtinf? pending;
+  String? pendingGroup;
+  String text = content;
+  if (text.startsWith('﻿')) text = text.substring(1);
+  for (final String rawLine in text.split('\n')) {
+    final String line = rawLine.trim();
+    if (line.isEmpty) continue;
+    if (line.startsWith('#')) {
+      if (line.startsWith('#EXTINF:')) {
+        pending = parseM3uExtinf(line);
+      } else if (line.startsWith('#EXTGRP:')) {
+        pendingGroup = _nonEmpty(line.substring('#EXTGRP:'.length));
+      }
+      continue;
+    }
+    final String url = resolveM3uEntryPath(line, baseDir);
+    if (url.isEmpty) continue;
+    final Map<String, String> attrs =
+        pending?.attributes ?? const <String, String>{};
+    final String? tvgName = _nonEmpty(attrs['tvg-name']);
+    final String title = _nonEmpty(pending?.displayName) ??
+        tvgName ??
+        decodedSourceBasename(url);
+    channels.add(M3uChannel(
+      title: title,
+      url: url,
+      tvgId: _nonEmpty(attrs['tvg-id']),
+      tvgName: tvgName,
+      tvgLogo: _nonEmpty(attrs['tvg-logo']),
+      groupTitle: _nonEmpty(attrs['group-title']) ?? pendingGroup,
+    ));
+    pending = null;
+    pendingGroup = null;
+  }
+  return channels;
+}
+
+/// HLS 专有标签：出现任一个，这份 m3u8 就是**一条 HLS 流**（media playlist 的
+/// 分片表或 master playlist 的码率档），不是频道 / 分集列表。
+const List<String> _kHlsStreamTags = <String>[
+  '#EXT-X-TARGETDURATION',
+  '#EXT-X-STREAM-INF',
+  '#EXT-X-I-FRAME-STREAM-INF',
+  '#EXT-X-MEDIA-SEQUENCE',
+  '#EXT-X-DISCONTINUITY-SEQUENCE',
+  '#EXT-X-ENDLIST',
+  '#EXT-X-PLAYLIST-TYPE',
+  '#EXT-X-MAP',
+  '#EXT-X-KEY',
+  '#EXT-X-PART-INF',
+  '#EXT-X-SERVER-CONTROL',
+];
+
+/// **纯函数**：[content] 是否是 HLS 流（media 或 master playlist）。
+///
+/// 判据是 HLS 专有标签（[_kHlsStreamTags]），不看 `#EXT-X-VERSION`（部分 IPTV
+/// 列表也会带）也不看 `#EXTINF`（频道列表 / 分集清单都有）。true 时整份清单应当
+/// 作为**单个流**直接交给播放器，不能按行拆成频道或分集。
+bool isHlsStreamPlaylist(String content) {
+  for (final String rawLine in content.split('\n')) {
+    final String line = rawLine.trim();
+    if (!line.startsWith('#EXT-X-')) continue;
+    for (final String tag in _kHlsStreamTags) {
+      if (line.startsWith(tag)) return true;
+    }
+  }
+  return false;
 }
 
 /// HLS **master** playlist 里的一个码率 variant（同一内容的不同画质档）。

@@ -53,6 +53,7 @@ import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
@@ -2876,6 +2877,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
+        // `.strm` 流指针：videoPath 是 `.strm` 自身（本地或来源根内的网络条目），
+        // 起播时现读出它指向的流地址，之后整条链路按**目标地址**走——认证头
+        // 只用于读 `.strm` 本身（它在来源根内），目标多为第三方主机，下面按目标
+        // 地址重新解析、自然拿不到来源凭据。
+        VideoBookRow launchRow = row;
+        if (isStrmPath(row.videoPath)) {
+          final StreamUrlResolver? strmResolver =
+              await resolveSourceStreamUrlResolver(
+                db: appModel.database,
+                sourceId: row.sourceId,
+              );
+          try {
+            final String strmTarget = await resolveStrmStreamTarget(
+              row.videoPath,
+              strmHttpHeaders: await resolveSourceStreamHeaders(
+                db: appModel.database,
+                sourceId: row.sourceId,
+                targetUrl: row.videoPath,
+              ),
+              urlResolver: strmResolver,
+            );
+            launchRow = row.copyWith(videoPath: strmTarget);
+          } finally {
+            strmResolver?.close();
+          }
+        }
         // 来源库网络视频（WebDAV）：认证头按 sourceId 现解析（凭据不落行级
         // spec——改来源密码一处生效）；非来源书解析为空 map，零分支。
         // targetUrl 传本行真实流地址：来源根下的 m3u8 清单可以指向第三方主机，
@@ -2885,7 +2912,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             await resolveSourceStreamHeaders(
               db: appModel.database,
               sourceId: row.sourceId,
-              targetUrl: row.videoPath,
+              targetUrl: launchRow.videoPath,
             );
         // AList / OpenList 来源：条目地址不能直接播，起播前经 fs/get 换临期签名
         // 直链；非该来源解析为 null，零分支。
@@ -2896,7 +2923,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(
-              row,
+              launchRow,
               youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
               sourceHttpHeaders: sourceHeaders,
               sourceUrlResolver: sourceUrlResolver,
@@ -3700,6 +3727,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // → 下次打开从头播放。近起点不算有效进度，跳过不写即可。
     const int kMeaningfulRemoteWatchMs = 5000;
     if (clamped < kMeaningfulRemoteWatchMs) return;
+    // 直播流（IPTV 频道 / 直播 `.strm`）没有总时长：它的 position 只是「开播至今」，
+    // 写下去下次会带着 start=<旧位置> 起播、跳出直播窗口。见 [shouldPersistStreamPosition]。
+    if (!shouldPersistStreamPosition(durationMs: _controller?.durationMs)) {
+      return;
+    }
     // TODO-885 / 合集连播：按当前集 key 落库 + 上报。合集模式键 = (当前成员 id, 0)（成员天然
     // 隔离，与 host 按成员带回的 positionMs 对齐）；单视频/host-playlist = (widget.bookUid,
     // _currentEpisode)（此时 keyUid==uid，行为零变化）。传入的 [uid] 恒是 widget.bookUid。
@@ -9064,6 +9096,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // `.strm` 流指针读不出可播地址：原因明确，不走下面的子串阶梯。
+    if (error is StrmResolveException) {
+      return switch (error.failure) {
+        StrmResolveFailure.localTarget => t.video_strm_target_local,
+        StrmResolveFailure.empty ||
+        StrmResolveFailure.unsupportedTarget =>
+          t.video_strm_target_unsupported,
+        StrmResolveFailure.unreadable => t.video_strm_file_unreadable,
+      };
+    }
     // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
     // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
     if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;

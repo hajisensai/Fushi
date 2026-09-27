@@ -33,6 +33,8 @@ import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkStreamUrl, isStrmPath;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
@@ -175,10 +177,15 @@ bool isPlaylistManifestPath(String path) =>
 ///   [extractVideoCover]，本谓词只服务回填候选过滤，不是 ffmpeg 能力判定）；
 /// - 本地播放列表清单（[isPlaylistManifestPath]）：文本清单不是媒体流本体，
 ///   抽帧永远失败——嵌套 m3u8 条目拆集成的行 `videoPath` 就是 `.m3u8` 自身。
+/// - 其它网络流协议（rtsp / rtmp / udp …，IPTV 频道）：同 http(s)，且直播流
+///   ffmpeg 抽帧会一直等到超时；
+/// - `.strm` 流指针（[isStrmPath]）：文本文件，真正的流在起播时才读出来。
 bool isLocalFrameExtractableVideoSource(String videoPath) {
   final String path = videoPath.trim();
   if (path.isEmpty) return false;
   if (path.startsWith('http://') || path.startsWith('https://')) return false;
+  if (isNetworkStreamUrl(path)) return false;
+  if (isStrmPath(path)) return false;
   if (isPlaylistManifestPath(path)) return false;
   return true;
 }
