@@ -130,8 +130,7 @@ void main() {
     );
 
     group('weak-network resolution ladder', () {
-      final DateTime t0 = DateTime(2026, 9, 27);
-      DateTime at(int seconds) => t0.add(Duration(seconds: seconds));
+      Duration at(int seconds) => Duration(seconds: seconds);
 
       test('holds full resolution while the estimate covers it', () {
         final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
@@ -225,6 +224,33 @@ void main() {
         expect(ladder.observe(at: at(4), availableKbps: 500), isFalse);
         expect(ladder.observe(at: at(6), availableKbps: 500), isFalse);
         expect(ladder.observe(at: at(8), availableKbps: 500), isTrue);
+      });
+
+      test('a gap in the estimates restarts the timers', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        ladder.observe(at: at(0), availableKbps: 500);
+        ladder.observe(at: at(2), availableKbps: 500);
+        // Four seconds without a sample: the shortfall is not "sustained".
+        expect(ladder.observe(at: at(6), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(8), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(10), availableKbps: 500), isTrue);
+      });
+
+      test('hold returns to a height and restarts the timers', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        for (int s = 0; s <= 4; s += 2) {
+          ladder.observe(at: at(s), availableKbps: 800);
+        }
+        expect(ladder.height, 720);
+        ladder.hold(1080);
+        expect(ladder.height, 1080);
+        expect(ladder.observe(at: at(6), availableKbps: 800), isFalse);
+        ladder.hold(4320);
+        expect(ladder.height, 1080, reason: 'never above the ceiling');
       });
 
       test('a non-standard ceiling is the top step', () {

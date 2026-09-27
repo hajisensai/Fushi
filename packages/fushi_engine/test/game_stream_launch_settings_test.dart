@@ -105,11 +105,15 @@ void main() {
     });
 
     test('unknown values fall back to defaults instead of failing', () {
-      final GameStreamVideoSettings settings = GameStreamVideoSettings.fromJson(
-        <String, Object?>{'codec': 'h266', 'degradation': 'sideways'},
-      );
-      expect(settings.codec, GameStreamCodec.auto);
-      expect(settings.degradation, GameStreamDegradation.maintainResolution);
+      final GameStreamVideoSettings settings =
+          GameStreamVideoSettings.fromJson(<String, Object?>{
+            'codec': 'h266',
+            'degradation': 'sideways',
+            'inputFocus': 'elsewhere',
+            'adaptiveBitrate': 'no',
+            'audio': 0,
+          });
+      expect(settings, const GameStreamVideoSettings());
       expect(
         GameStreamVideoSettings.fromJson('not a map'),
         const GameStreamVideoSettings(),

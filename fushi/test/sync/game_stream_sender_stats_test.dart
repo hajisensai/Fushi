@@ -33,6 +33,44 @@ List<StatsReport> _reports({
 ];
 
 void main() {
+  group('bandwidth estimate', () {
+    StatsReport pair(String id, Map<String, Object?> values) =>
+        StatsReport(id, 'candidate-pair', 0, <dynamic, dynamic>{
+          'nominated': true,
+          'state': 'succeeded',
+          'currentRoundTripTime': 0.003,
+          ...values,
+        });
+
+    test('comes from the transport\'s selected candidate pair', () {
+      final GameStreamSenderStats stats = GameStreamSenderStats.fromReports(
+        <StatsReport>[
+          pair('CPv4', <String, Object?>{'availableOutgoingBitrate': 8000000}),
+          // Another nominated pair (IPv6 / second interface) listed later,
+          // without an estimate: it must not shadow the selected one.
+          pair('CPv6', <String, Object?>{'currentRoundTripTime': 0.009}),
+          StatsReport('T', 'transport', 0, <dynamic, dynamic>{
+            'selectedCandidatePairId': 'CPv4',
+          }),
+        ],
+        at: DateTime(2026, 9, 27),
+      );
+      expect(stats.availableOutgoingKbps, 8000);
+      expect(stats.rttMs, 3);
+    });
+
+    test('falls back to the pair that carries an estimate', () {
+      final GameStreamSenderStats stats = GameStreamSenderStats.fromReports(
+        <StatsReport>[
+          pair('A', <String, Object?>{'availableOutgoingBitrate': 6000000}),
+          pair('B', <String, Object?>{}),
+        ],
+        at: DateTime(2026, 9, 27),
+      );
+      expect(stats.availableOutgoingKbps, 6000);
+    });
+  });
+
   test('sender stats line reports rates over the sampling window', () {
     final DateTime t0 = DateTime(2026, 9, 26, 12);
     final GameStreamSenderStats first = GameStreamSenderStats.fromReports(

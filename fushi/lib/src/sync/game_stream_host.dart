@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/platform/game_stream_input_channel.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 
@@ -86,6 +87,11 @@ int gameStreamMinimumUsableKbps(int height) => switch (height) {
 /// Sustained time below [gameStreamMinimumUsableKbps] before a step down.
 const Duration kGameStreamLadderDownAfter = Duration(seconds: 4);
 
+/// A gap between two estimates longer than this (samples paused, connection
+/// interrupted) restarts both timers: nothing is known about the link in
+/// between, so it cannot count as sustained.
+const Duration kGameStreamLadderMaxSampleGap = Duration(seconds: 3);
+
 /// Sustained headroom before a step back up. Longer than the way down, and
 /// the headroom is twice the upper step's minimum, so a link hovering at one
 /// threshold does not flip the resolution back and forth.
@@ -115,8 +121,9 @@ class GameStreamResolutionLadder {
 
   int _ceiling;
   int _height;
-  DateTime? _belowSince;
-  DateTime? _aboveSince;
+  Duration? _belowSince;
+  Duration? _aboveSince;
+  Duration? _lastAt;
 
   /// Height the encoder should currently produce, at most the ceiling.
   int get height => _height;
@@ -124,9 +131,16 @@ class GameStreamResolutionLadder {
   /// Starts over from [ceilingHeight] (a new session or new settings).
   void reset(int ceilingHeight) {
     _ceiling = ceilingHeight;
-    _height = ceilingHeight;
+    hold(ceilingHeight);
+  }
+
+  /// Returns to [height] (at most the ceiling) with both timers restarted,
+  /// e.g. after the encoder refused the height the last step asked for.
+  void hold(int height) {
+    _height = math.min(height, _ceiling);
     _belowSince = null;
     _aboveSince = null;
+    _lastAt = null;
   }
 
   int? get _lower {
@@ -144,20 +158,28 @@ class GameStreamResolutionLadder {
     return _ceiling;
   }
 
-  /// Feeds one bandwidth estimate taken [at]; returns whether [height]
-  /// changed. A missing estimate says nothing about the link and clears the
-  /// pending timers instead of counting toward either direction.
-  bool observe({required DateTime at, required int? availableKbps}) {
+  /// Feeds one bandwidth estimate taken at [at] on a monotonic clock;
+  /// returns whether [height] changed. A missing estimate says nothing about
+  /// the link and clears the pending timers instead of counting toward
+  /// either direction, and so does a gap over [kGameStreamLadderMaxSampleGap]
+  /// since the previous estimate.
+  bool observe({required Duration at, required int? availableKbps}) {
+    final Duration? last = _lastAt;
+    _lastAt = at;
     if (availableKbps == null || availableKbps <= 0) {
       _belowSince = null;
       _aboveSince = null;
       return false;
     }
+    if (last == null || at - last > kGameStreamLadderMaxSampleGap) {
+      _belowSince = null;
+      _aboveSince = null;
+    }
     final int? lower = _lower;
     if (lower != null && availableKbps < gameStreamMinimumUsableKbps(_height)) {
       _aboveSince = null;
-      final DateTime since = _belowSince ??= at;
-      if (at.difference(since) < kGameStreamLadderDownAfter) return false;
+      final Duration since = _belowSince ??= at;
+      if (at - since < kGameStreamLadderDownAfter) return false;
       _height = lower;
       _belowSince = null;
       return true;
@@ -166,8 +188,8 @@ class GameStreamResolutionLadder {
     final int? upper = _upper;
     if (upper != null &&
         availableKbps >= 2 * gameStreamMinimumUsableKbps(upper)) {
-      final DateTime since = _aboveSince ??= at;
-      if (at.difference(since) < kGameStreamLadderUpAfter) return false;
+      final Duration since = _aboveSince ??= at;
+      if (at - since < kGameStreamLadderUpAfter) return false;
       _height = upper;
       _aboveSince = null;
       return true;
@@ -181,6 +203,11 @@ class GameStreamResolutionLadder {
 /// in the capturer's source list, and how often it re-checks.
 const Duration kGameStreamWindowSourceWait = Duration(seconds: 8);
 const Duration kGameStreamWindowSourcePoll = Duration(milliseconds: 300);
+
+/// How often the host samples sender stats while connected, and how long one
+/// `getStats` call may take before that sample counts as missing.
+const Duration kGameStreamStatsInterval = Duration(seconds: 2);
+const Duration kGameStreamStatsTimeout = Duration(seconds: 5);
 
 /// Opt-in private diagnostics file shared with the native WGC capture.
 final String? _kCaptureTracePath = () {
@@ -217,19 +244,42 @@ class GameStreamSenderStats {
   }) {
     Map<dynamic, dynamic>? video;
     Map<dynamic, dynamic>? audio;
-    Map<dynamic, dynamic>? pair;
+    final Map<String, Map<dynamic, dynamic>> pairs =
+        <String, Map<dynamic, dynamic>>{};
+    String? selectedPairId;
     for (final StatsReport report in reports) {
       final Map<dynamic, dynamic> values = report.values;
       if (report.type == 'outbound-rtp') {
         final Object? kind = values['kind'] ?? values['mediaType'];
         if (kind == 'video') video = values;
         if (kind == 'audio') audio = values;
-      } else if (report.type == 'candidate-pair' &&
-          (values['nominated'] == true || values['state'] == 'succeeded') &&
-          values['currentRoundTripTime'] != null) {
-        pair = values;
+      } else if (report.type == 'candidate-pair') {
+        pairs[report.id] = values;
+      } else if (report.type == 'transport') {
+        final Object? id = values['selectedCandidatePairId'];
+        if (id is String && id.isNotEmpty) selectedPairId = id;
       }
     }
+    // The estimate is only reported on the pair the transport sends over.
+    // With several interfaces or IPv4 and IPv6 there are other nominated or
+    // succeeded pairs without it, so take the transport's selected pair and
+    // fall back to the pair that carries an estimate.
+    bool live(Map<dynamic, dynamic> values) =>
+        values['nominated'] == true || values['state'] == 'succeeded';
+    final Map<dynamic, dynamic>? pair =
+        pairs[selectedPairId] ??
+        pairs.values
+            .where(
+              (Map<dynamic, dynamic> values) =>
+                  live(values) && values['availableOutgoingBitrate'] != null,
+            )
+            .lastOrNull ??
+        pairs.values
+            .where(
+              (Map<dynamic, dynamic> values) =>
+                  live(values) && values['currentRoundTripTime'] != null,
+            )
+            .lastOrNull;
     num? number(Map<dynamic, dynamic>? map, String key) {
       final Object? value = map?[key];
       return value is num ? value : num.tryParse('$value');
@@ -383,7 +433,11 @@ String gameStreamTuneVideoSdp(String sdp, {required int startKbps}) {
 /// Local-only Windows capture owner. Paired HTTP requests can join an existing
 /// session but cannot instantiate this class or select another capture source.
 class FushiGameStreamHost extends ChangeNotifier {
-  FushiGameStreamHost({required this.service, this.onInput}) {
+  FushiGameStreamHost({
+    required this.service,
+    this.onInput,
+    @visibleForTesting Duration Function()? monotonicClock,
+  }) : _elapsed = monotonicClock ?? _stopwatchClock() {
     service.onInput = (GameStreamInputEvent event, GameStreamSession _) async {
       if (onInput != null) {
         await onInput!(event);
@@ -419,8 +473,16 @@ class FushiGameStreamHost extends ChangeNotifier {
   bool _starting = false;
   bool _pumping = false;
   bool _connected = false;
+  final Duration Function() _elapsed;
+
+  static Duration Function() _stopwatchClock() {
+    final Stopwatch stopwatch = Stopwatch()..start();
+    return () => stopwatch.elapsed;
+  }
+
   bool _samplingStats = false;
-  DateTime _lastStatsSample = DateTime.fromMillisecondsSinceEpoch(0);
+  Duration? _lastStatsSample;
+  Future<void> _videoParameters = Future<void>.value();
   final GameStreamResolutionLadder _ladder = GameStreamResolutionLadder(
     ceilingHeight: const GameStreamVideoSettings().maxHeight,
   );
@@ -452,6 +514,9 @@ class FushiGameStreamHost extends ChangeNotifier {
       _settings.degradation == GameStreamDegradation.maintainResolution
       ? math.min(_settings.maxHeight, _ladder.height)
       : _settings.maxHeight;
+
+  @visibleForTesting
+  int get debugLadderHeight => _ladder.height;
 
   ({int min, int start, int max}) get _bitrates => gameStreamBitrateWindow(
     targetBps: _settings.bitrateKbps * 1000,
@@ -681,6 +746,9 @@ class FushiGameStreamHost extends ChangeNotifier {
         if (generation != _generation || current.state.isTerminal) return;
         _connected =
             state == RTCPeerConnectionState.RTCPeerConnectionStateConnected;
+        if (!_connected) {
+          _ladder.observe(at: _elapsed(), availableKbps: null);
+        }
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           service.markConnected(sessionId: current.sessionId);
           notifyListeners();
@@ -719,7 +787,7 @@ class FushiGameStreamHost extends ChangeNotifier {
       _requireGeneration(generation);
       _timer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
         final DateTime now = DateTime.now();
-        _sampleSenderStats(now);
+        _sampleSenderStats(now, _elapsed());
         if (_connected &&
             now.difference(_lastPump) < kGameStreamConnectedPoll) {
           return;
@@ -852,7 +920,19 @@ class FushiGameStreamHost extends ChangeNotifier {
     return effective;
   }
 
-  Future<void> _setVideoParameters() async {
+  /// Writes the encoder limits for the current [_settings] and ladder height.
+  /// Writers (start, a receiver's new settings, a ladder step) are chained,
+  /// so an older write can never land after a newer one; each write reads
+  /// the state when its turn comes.
+  Future<void> _setVideoParameters() {
+    final Future<void> write = _videoParameters.then(
+      (_) => _writeVideoParameters(),
+    );
+    _videoParameters = write.then<void>((_) {}, onError: (Object _) {});
+    return write;
+  }
+
+  Future<void> _writeVideoParameters() async {
     final RTCPeerConnection? connection = _connection;
     if (connection == null) return;
     final GameStreamVideoSettings settings = _settings;
@@ -958,17 +1038,23 @@ class FushiGameStreamHost extends ChangeNotifier {
     }
   }
 
-  /// Reads the sender's stats every 2 s while connected. The congestion
-  /// controller's estimate drives the resolution ladder; with
-  /// `FUSHI_GAME_STREAM_CAPTURE_TRACE` set the sample is also appended to
-  /// that file (the native capture writes its per-stage timings there too),
-  /// so a stutter report can be split into capture, encoder and network
-  /// causes without a debugger.
-  void _sampleSenderStats(DateTime now) {
+  /// Reads the sender's stats every [kGameStreamStatsInterval] while
+  /// connected. The congestion controller's estimate drives the resolution
+  /// ladder; with `FUSHI_GAME_STREAM_CAPTURE_TRACE` set the sample is also
+  /// appended to that file (the native capture writes its per-stage timings
+  /// there too), so a stutter report can be split into capture, encoder and
+  /// network causes without a debugger.
+  ///
+  /// Nothing here stops the stream. A failed or late sample only means no
+  /// estimate, and an encoder that refuses a ladder step keeps its previous
+  /// limits — the ladder returns to that height, matching how a refused
+  /// receiver settings change is handled.
+  void _sampleSenderStats(DateTime now, Duration at) {
     final RTCPeerConnection? connection = _connection;
     if (connection == null || !_connected || _samplingStats) return;
-    if (now.difference(_lastStatsSample) < const Duration(seconds: 2)) return;
-    _lastStatsSample = now;
+    final Duration? last = _lastStatsSample;
+    if (last != null && at - last < kGameStreamStatsInterval) return;
+    _lastStatsSample = at;
     _samplingStats = true;
     final int generation = _generation;
     final String? trace = _kCaptureTracePath;
@@ -977,22 +1063,21 @@ class FushiGameStreamHost extends ChangeNotifier {
         final GameStreamSenderStats sample;
         try {
           sample = GameStreamSenderStats.fromReports(
-            await connection.getStats(),
+            await connection.getStats().timeout(kGameStreamStatsTimeout),
             at: now,
           );
         } on Object catch (error) {
-          // A missing sample carries no bandwidth estimate: the ladder holds
-          // its step and restarts its timers, exactly as for a report without
-          // `availableOutgoingBitrate`. The stream itself is unaffected.
-          _ladder.observe(at: now, availableKbps: null);
+          if (generation != _generation) return;
+          _ladder.observe(at: at, availableKbps: null);
           if (trace != null) await _appendTrace(trace, '[fushi_sender] $error');
           return;
         }
         if (generation != _generation) return;
         final GameStreamSenderStats? previous = _lastSenderStats;
         _lastSenderStats = sample;
+        final int before = _ladder.height;
         final bool stepped = _ladder.observe(
-          at: now,
+          at: at,
           availableKbps: sample.availableOutgoingKbps,
         );
         if (trace != null) {
@@ -1005,22 +1090,28 @@ class FushiGameStreamHost extends ChangeNotifier {
             _settings.degradation != GameStreamDegradation.maintainResolution) {
           return;
         }
+        final int target = _ladder.height;
+        String outcome = 'applied';
+        try {
+          await _setVideoParameters();
+        } on Object catch (error, stack) {
+          if (generation != _generation) return;
+          // The encoder keeps its previous limits; so does the ladder, unless
+          // a newer reset already moved it on.
+          if (_ladder.height == target) _ladder.hold(before);
+          outcome = 'rejected ($error)';
+          engineLog.log('GameStream.ladder', error, stack);
+        }
         if (trace != null) {
           await _appendTrace(
             trace,
-            '[fushi_ladder] height=${_ladder.height} '
-            'avail=${sample.availableOutgoingKbps}',
+            '[fushi_ladder] height=$target from=$before '
+            'avail=${sample.availableOutgoingKbps} $outcome',
           );
         }
-        await _setVideoParameters();
         notifyListeners();
-      } on Object catch (error) {
-        if (generation == _generation) {
-          _error = '$error';
-          await stop(reason: 'stream_failed');
-        }
       } finally {
-        _samplingStats = false;
+        if (generation == _generation) _samplingStats = false;
       }
     }());
   }
@@ -1052,6 +1143,8 @@ class FushiGameStreamHost extends ChangeNotifier {
     _timer?.cancel();
     _timer = null;
     _lastSenderStats = null;
+    _samplingStats = false;
+    _lastStatsSample = null;
     final GameStreamSession? current = session;
     if (current != null && !current.state.isTerminal) {
       service.stop(sessionId: current.sessionId, reason: reason);
