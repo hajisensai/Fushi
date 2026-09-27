@@ -4106,7 +4106,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
       FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+        return MinePopupResult.mined(outcome);
       }
       // BUG-1908/1915：重复 ≠ 没制成，见 MinePopupResult.duplicate；
       // 失败结局一律经 .failed(outcome) 这一个入口，别在各表面散写判据。

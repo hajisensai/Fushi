@@ -430,7 +430,7 @@ mixin DictionaryPageMixin {
     if (described.success) {
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：重复是「卡已在 Anki 里」而不是「没有卡」，把这个确定事实带回
     // 弹窗，否则 ✓ 被画成 ＋ 且 ↗ 入口消失（弹窗侧不许回查 Anki——TODO-448）。
@@ -465,7 +465,7 @@ mixin DictionaryPageMixin {
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }

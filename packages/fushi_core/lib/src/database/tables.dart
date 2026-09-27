@@ -2166,6 +2166,14 @@ class PendingMineQueue extends Table {
   TextColumn get lastError => text().nullable()();
   IntColumn get lastAttemptAt => integer().nullable()();
 
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  TextColumn get originDeviceId => text().nullable()();
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  BoolColumn get uploaded => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -2174,6 +2182,10 @@ abstract final class PendingMineStatus {
   static const String pending = 'pending';
   static const String sending = 'sending';
   static const String failed = 'failed';
+
+  /// 已交给 Anki，但远端中转命名空间还有这张卡的记录（本机上传过，或它来自其他
+  /// 设备），等下一轮同步清理远端后再删行。
+  static const String landed = 'landed';
 }
 
 @DataClassName('VideoDownloadJobRow')

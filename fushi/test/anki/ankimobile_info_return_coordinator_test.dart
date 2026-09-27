@@ -7,6 +7,8 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -384,6 +386,19 @@ void main() {
         ),
         same(local),
       );
+      // 当前 provider 的完整形状：待发队列(自动重排(本地))。
+      expect(
+        resolveAnkiMobileRepository(
+          PendingMiningAnkiRepository(
+            inner: wrap(local),
+            store: PendingMineStore(
+              db: () => throw StateError('解包不应碰数据库'),
+              root: () async => Directory.systemTemp,
+            ),
+          ),
+        ),
+        same(local),
+      );
     });
 
     // 源码守卫：lib/src/anki 下每个「包着另一个 BaseAnkiRepository」的包装类都必须
@@ -411,10 +426,11 @@ void main() {
       expect(
         wrappers,
         containsAll(<String>[
-          'AutoRepositionAnkiRepository',
+          // 自动重排、待发队列等装饰器都继承它，按基类解包、不必逐个登记。
+          'DelegatingAnkiRepository',
           'RemoteMiningAnkiRepository',
         ]),
-        reason: '扫描面自检：两层已知包装必须被扫出来，否则守卫空转',
+        reason: '扫描面自检：两种已知包装必须被扫出来，否则守卫空转',
       );
 
       final String resolver = File('lib/src/anki/ankimobile_repository.dart')

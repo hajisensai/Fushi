@@ -33,15 +33,22 @@
 
 ## 第 1 期：本地待发制卡队列
 
-- 一张卡 = 一条**创建后不可变**的记录：uuid、来源设备、创建时间、目标后端、已渲染的字段、牌组/笔记类型、标签、媒体（入队时复制到 app 数据目录，按内容哈希命名）。
+- 一张卡 = 一条**创建后不可变**的记录：id、来源设备、创建时间，以及**未渲染**的制卡请求（`ForwardedMinePayload`：弹窗字段 JSON + 上下文文本 + 全部媒体字节）。
+  补发时按**执行补发的那台设备当时的** Anki 配置（牌组、笔记类型、字段映射）渲染——这正是第 2 期「由落地设备按自己的配置落卡」需要的语义；
+  代价是入队后切 Profile / 换牌组，卡会落到新配置里。
 - 状态：`pending` → `sending` → 出队（送达或 Anki 判重复）；`failed`（Anki 拒收，记录原因，等用户重试 / 删除）。
   进程在 `sending` 中途退出，下次补发按 `pending` 处理——重放若已落卡，Anki 会判重复，照样出队。
 - 入队时机：只收**确定没送到**的失败（`connectionRefused`、`pairedDeviceUnreachable`）；
   `connectionTimeout` / `connectionUnknown`（含 AnkiConnect「提交结果未知」）可能已落卡，仍按失败报给用户，不自动重发。
   「批量制卡」开启时一律入队、不碰后端。
 - 补发时机：直接制卡成功（说明后端可达）后、app 回前台时自动补发，串行、遇不可达即停；
-  AnkiMobile（`switchesAppPerNote`）绝不自动补发——用户点「全部发送」开启会话，每次 `x-success` 跳回（回前台）发下一张，
-  队列清空后打开 `anki://x-callback-url/sync`。
+  AnkiMobile（`switchesAppPerNote`）绝不自动补发——用户点「全部发送」拉起一张，行留在 `sending`；
+  只有 `fushi://ankiSuccess` 回跳（词条对得上）才出队并拉起下一张，队列清空后才打开 `anki://x-callback-url/sync`。
+  用户在 AnkiMobile 里取消（没有回跳）卡不丢，下次「全部发送」重发它。回前台对 AnkiMobile 不做任何事。
+- 互联转发（`mineForward`）只有「确定没送到」（无已配对设备 / 全部候选建连失败）才返回 null 进而入队；
+  对端回过话或请求发出后超时抛 `RemoteMineOutcomeUnknown`（主机可能已落卡），按失败报给用户。
+- 补发中任何意外（载荷丢失、后端违约抛异常）把该卡标 `failed`，不挡住后续卡；补发前清理孤儿载荷与半截 `.tmp`（与入队共用一把 I/O 锁）。
+- 入队后弹窗按钮走 `MinePopupResult.queued()`（画 ✓、不回查 Anki），视频页与「看完再制卡」队列同口径。
 - 实现：仓库层装饰器 `PendingMiningAnkiRepository`（最外层，包住自动重排），公共委派基类 `DelegatingAnkiRepository`
   （委派清单只写一次）；载荷复用 `ForwardedMinePayload` 与 `forwarded_mine_codec.dart`（与互联转发同一套打包 / 还原）；
   表 `pending_mine_queue`（schema v114，设备本地）+ `<support>/pending_mine_queue/<id>.json`。

@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
-import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -168,8 +168,8 @@ class AnkiMobileInfoReturnCoordinator {
 /// [AnkiMobileRepository]（BUG-2493）。不是 AnkiMobile 后端时返回 null（iOS 改用
 /// AnkiConnect 时就是这样，回传无事可做）。
 ///
-/// provider 现在**恒**把本地仓库包在 [AutoRepositionAnkiRepository] 里（制卡后自动
-/// 重排，d55752a5e1 起），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
+/// provider 现在**恒**把本地仓库包在 [DelegatingAnkiRepository] 系装饰器里（待发队列 ∘
+/// 制卡后自动重排），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
 /// 此前 `main.dart` 直接 `is! AnkiMobileRepository` 判型——自动重排那层一进来，
 /// iOS 上**每个人**的 `fushi://ankiFetch` 回调都被静默丢弃（模拟器实测第一步就撞上）。
 /// 新增包装层必须在这里登记，守卫见 ankimobile_info_return_coordinator_test.dart。
@@ -177,7 +177,9 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
   BaseAnkiRepository current = repo;
   while (true) {
     if (current is AnkiMobileRepository) return current;
-    if (current is AutoRepositionAnkiRepository) {
+    // 所有「行为同 inner、只在 mineEntry 上加料」的装饰器（自动重排、待发队列……）
+    // 都继承 DelegatingAnkiRepository：按基类拆，新增装饰器不必再回来登记。
+    if (current is DelegatingAnkiRepository) {
       current = current.inner;
       continue;
     }

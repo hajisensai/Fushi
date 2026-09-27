@@ -1311,6 +1311,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     } catch (e, stack) {
       debugPrint('AnkiMobile mined ledger record failed: $e\n$stack');
     }
+    // 待发队列的「全部发送」：回跳是这张卡真正进了 Anki 的唯一证据，据此出队并发下一张。
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    try {
+      await repo.confirmAnkiMobileDelivery(expression);
+    } catch (e, stack) {
+      debugPrint('Pending mine AnkiMobile confirm failed: $e\n$stack');
+    }
   }
 
   Future<void> _handleAnkiMobileInfoCallback() =>

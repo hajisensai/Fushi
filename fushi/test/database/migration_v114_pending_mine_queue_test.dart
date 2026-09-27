@@ -68,6 +68,8 @@ void main() {
       expect(row.attempts, 0);
       expect(row.lastError, isNull);
       expect(row.lastAttemptAt, isNull);
+      expect(row.originDeviceId, isNull, reason: '默认是本机制的卡');
+      expect(row.uploaded, isFalse);
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
@@ -83,12 +85,16 @@ void main() {
         'attempts',
         'last_error',
         'last_attempt_at',
+        'origin_device_id',
+        'uploaded',
       });
       expect(columns['id']!['pk'], 1);
       expect(columns['id']!['type'], 'TEXT');
       expect(columns['created_at']!['notnull'], 1);
       expect(columns['last_error']!['notnull'], 0);
       expect(columns['last_attempt_at']!['notnull'], 0);
+      expect(columns['origin_device_id']!['notnull'], 0);
+      expect(columns['uploaded']!['notnull'], 1);
     },
   );
 

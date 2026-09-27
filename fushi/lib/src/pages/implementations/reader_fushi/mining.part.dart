@@ -354,7 +354,7 @@ extension _ReaderMining on _ReaderFushiPageState {
       // TODO-270 D：AnkiConnect 成功制卡带回 note id（noteId 非空），让弹窗把这张
       // 标记为「最新可改」第三态；AnkiDroid 的 noteId 恒为 null（优雅降级，进不了
       // 第三态）。ankiConnect 沿用旧的「成功即可同步刷新 ✓」语义。
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：同 DictionaryPageMixin.onMineEntry —— 重复要能与「真的没制成」
     // 区分；判据只住在 .failed(outcome) 一处。
@@ -391,7 +391,7 @@ extension _ReaderMining on _ReaderFushiPageState {
     FushiToast.show(
         msg: described.message, severity: mineToastSeverity(described.status));
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }

@@ -16,11 +16,15 @@ class _FakeBackend implements BaseAnkiRepository {
     List<MineOutcome>? outcomes,
     this.batchMining = false,
     this.switchesApp = false,
+    this.throwFor = const <String>{},
   }) : outcomes = outcomes ?? <MineOutcome>[];
 
   final List<MineOutcome> outcomes;
   final bool batchMining;
   final bool switchesApp;
+
+  /// 收到这些词时违约抛异常（MineOutcome 契约本是永不抛）。
+  final Set<String> throwFor;
   final List<String> expressions = <String>[];
   final List<String?> coverContents = <String?>[];
 
@@ -38,7 +42,9 @@ class _FakeBackend implements BaseAnkiRepository {
   }) async {
     final Map<String, Object?> fields =
         jsonDecode(rawPayloadJson) as Map<String, Object?>;
-    expressions.add(fields['expression']! as String);
+    final String expression = fields['expression']! as String;
+    expressions.add(expression);
+    if (throwFor.contains(expression)) throw StateError('backend bug');
     final String? cover = context.coverPath;
     coverContents.add(
       cover != null && File(cover).existsSync()
@@ -228,7 +234,7 @@ void main() {
     expect(await store.count(), 0);
   });
 
-  test('每张卡都切 app 的后端：不自动补发；会话里一次一张，发完请求同步', () async {
+  test('AnkiMobile：回前台不自动补发；x-success 回跳才出队，发完才请求同步', () async {
     final PendingMiningAnkiRepository offlineRepo = repoOver(
       _FakeBackend(batchMining: true, switchesApp: true),
     );
@@ -238,22 +244,117 @@ void main() {
     final _FakeBackend mobile = _FakeBackend(switchesApp: true);
     final PendingMiningAnkiRepository repo = repoOver(mobile);
 
-    // 回前台的自动补发：没有会话就什么都不做。
+    // 回前台的自动补发：什么都不做。
     expect((await repo.flush()).skipped, isTrue);
     expect(mobile.expressions, isEmpty);
 
-    // 用户点「全部发送」：只发一张。
+    // 用户点「全部发送」：拉起第一张，行仍在队列里（等回跳确认）。
     await repo.flush(interactive: true);
     expect(mobile.expressions, <String>['m1']);
+    expect(await store.count(), 2);
     expect(opened, isEmpty);
 
-    // AnkiMobile 跳回 → 回前台：会话里发下一张；队列空了请求同步。
-    await repo.flush();
+    // 词条对不上的回跳（来自别的直接制卡）不算数。
+    await repo.confirmAnkiMobileDelivery('别的词');
+    expect(mobile.expressions, <String>['m1']);
+    expect(await store.count(), 2);
+
+    // m1 回跳：出队并拉起 m2；此时还不能同步——m2 还没存进 AnkiMobile。
+    await repo.confirmAnkiMobileDelivery('m1');
     expect(mobile.expressions, <String>['m1', 'm2']);
+    expect(await store.count(), 1);
+    expect(opened, isEmpty);
+
+    // m2 回跳：队列清空，这时才请求 AnkiMobile 同步。
+    await repo.confirmAnkiMobileDelivery('m2');
+    expect(await store.count(), 0);
     expect(opened, <Uri>[ankiMobileSyncUri]);
 
-    // 会话已结束：再回前台不再触发任何东西。
+    // 之后的回前台 / 回跳都不再触发任何东西。
     await repo.flush();
+    await repo.confirmAnkiMobileDelivery('m2');
     expect(opened, <Uri>[ankiMobileSyncUri]);
+  });
+
+  test('AnkiMobile：用户取消（没有回跳）时卡不丢，下次「全部发送」重发它', () async {
+    await mine(
+      repoOver(_FakeBackend(batchMining: true, switchesApp: true)),
+      'c1',
+    );
+
+    final _FakeBackend mobile = _FakeBackend(switchesApp: true);
+    final PendingMiningAnkiRepository repo = repoOver(mobile);
+    await repo.flush(interactive: true);
+    // 用户在 AnkiMobile 里取消、手动切回：没有 x-success。
+    expect((await repo.flush()).skipped, isTrue);
+    expect(await store.count(), 1, reason: '没确认送达就不能出队');
+
+    await repo.flush(interactive: true);
+    expect(mobile.expressions, <String>['c1', 'c1']);
+    await repo.confirmAnkiMobileDelivery('c1');
+    expect(await store.count(), 0);
+  });
+
+  test('补发中的意外（载荷丢失 / 后端违约抛异常）标 failed，不挡住后面的卡', () async {
+    final PendingMiningAnkiRepository offlineRepo = repoOver(
+      _FakeBackend(batchMining: true),
+    );
+    for (final String w in <String>['lost', 'boom', 'ok']) {
+      await mine(offlineRepo, w);
+    }
+    final PendingMineRow lost = (await store.all()).first;
+    File(
+      '${tmp.path}/${PendingMineStore.dirName}/${lost.id}.json',
+    ).deleteSync();
+
+    final _FakeBackend backend = _FakeBackend(throwFor: <String>{'boom'});
+    final PendingFlushReport report = await repoOver(backend).flush();
+
+    expect(backend.expressions, <String>['boom', 'ok']);
+    expect(report.delivered, 1);
+    expect(report.failed, 2);
+    expect(report.unreachable, isFalse);
+    final List<PendingMineRow> left = await store.all();
+    expect(left.map((PendingMineRow r) => r.expression), <String>[
+      'lost',
+      'boom',
+    ]);
+    expect(
+      left.every((PendingMineRow r) => r.status == PendingMineStatus.failed),
+      isTrue,
+    );
+  });
+
+  test('上传过的卡送达后标 landed：不在待发列表里，但行留给中转清理远端', () async {
+    await mine(repoOver(_FakeBackend(batchMining: true)), 'up');
+    final PendingMineRow row = (await store.all()).single;
+    await (db.update(db.pendingMineQueue)
+          ..where(($PendingMineQueueTable t) => t.id.equals(row.id)))
+        .write(const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
+
+    await repoOver(_FakeBackend()).flush();
+
+    expect(await store.count(), 0);
+    expect(await store.all(), isEmpty);
+    final PendingMineRow landed = (await store.rows()).single;
+    expect(landed.status, PendingMineStatus.landed);
+    expect(await store.sendable(), isEmpty, reason: 'landed 不能被再次补发');
+  });
+
+  test('孤儿载荷与半截 .tmp 在补发前被清掉，有行的载荷保留', () async {
+    await mine(repoOver(_FakeBackend(batchMining: true)), 'keep');
+    final Directory dir = Directory('${tmp.path}/${PendingMineStore.dirName}');
+    File('${dir.path}/orphan.json').writeAsStringSync('{}');
+    File('${dir.path}/half.json.tmp').writeAsStringSync('{');
+
+    // 补发一个不可达的后端：卡留在队列里，只看清理效果。
+    await repoOver(_FakeBackend(outcomes: <MineOutcome>[_refused()])).flush();
+
+    final List<String> names = dir
+        .listSync()
+        .map((FileSystemEntity e) => e.uri.pathSegments.last)
+        .toList();
+    final String keepId = (await store.all()).single.id;
+    expect(names, <String>['$keepId.json']);
   });
 }

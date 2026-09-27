@@ -691,8 +691,10 @@ extension _VideoLookupMining on _VideoFushiPageState {
       if (outcome.result == MineResult.success) unawaited(_onVideoMineStaged());
       return const MinePopupResult();
     }
-    final MinePopupResult result = outcome.result == MineResult.success
-        ? MinePopupResult(ankiConnect: true, noteId: outcome.noteId)
+    final MinePopupResult result =
+        outcome.result == MineResult.success ||
+            outcome.result == MineResult.queued
+        ? MinePopupResult.mined(outcome)
         : MinePopupResult.failed(outcome);
     // 牌组名由后端随成功结果带回（outcome.deckName，BUG-1549）。
     // overwrite=true（updateNoteId 非空）→ 收口产 card_overwritten + record=false；

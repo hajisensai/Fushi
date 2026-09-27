@@ -605,7 +605,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       }
       FushiToast.showMine(msg: described.message, status: described.status);
       if (described.success) {
-        return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+        return MinePopupResult.mined(outcome);
       }
       return MinePopupResult.failed(outcome);
     } catch (e, stack) {

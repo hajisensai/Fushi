@@ -55040,6 +55040,32 @@ class $PendingMineQueueTable extends PendingMineQueue
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _originDeviceIdMeta = const VerificationMeta(
+    'originDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> originDeviceId = GeneratedColumn<String>(
+    'origin_device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _uploadedMeta = const VerificationMeta(
+    'uploaded',
+  );
+  @override
+  late final GeneratedColumn<bool> uploaded = GeneratedColumn<bool>(
+    'uploaded',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("uploaded" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -55050,6 +55076,8 @@ class $PendingMineQueueTable extends PendingMineQueue
     attempts,
     lastError,
     lastAttemptAt,
+    originDeviceId,
+    uploaded,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -55117,6 +55145,21 @@ class $PendingMineQueueTable extends PendingMineQueue
         ),
       );
     }
+    if (data.containsKey('origin_device_id')) {
+      context.handle(
+        _originDeviceIdMeta,
+        originDeviceId.isAcceptableOrUnknown(
+          data['origin_device_id']!,
+          _originDeviceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('uploaded')) {
+      context.handle(
+        _uploadedMeta,
+        uploaded.isAcceptableOrUnknown(data['uploaded']!, _uploadedMeta),
+      );
+    }
     return context;
   }
 
@@ -55158,6 +55201,14 @@ class $PendingMineQueueTable extends PendingMineQueue
         DriftSqlType.int,
         data['${effectivePrefix}last_attempt_at'],
       ),
+      originDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_device_id'],
+      ),
+      uploaded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}uploaded'],
+      )!,
     );
   }
 
@@ -55185,6 +55236,14 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
   final int attempts;
   final String? lastError;
   final int? lastAttemptAt;
+
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  final String? originDeviceId;
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  final bool uploaded;
   const PendingMineRow({
     required this.id,
     required this.createdAt,
@@ -55194,6 +55253,8 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
     required this.attempts,
     this.lastError,
     this.lastAttemptAt,
+    this.originDeviceId,
+    required this.uploaded,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -55210,6 +55271,10 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
     if (!nullToAbsent || lastAttemptAt != null) {
       map['last_attempt_at'] = Variable<int>(lastAttemptAt);
     }
+    if (!nullToAbsent || originDeviceId != null) {
+      map['origin_device_id'] = Variable<String>(originDeviceId);
+    }
+    map['uploaded'] = Variable<bool>(uploaded);
     return map;
   }
 
@@ -55227,6 +55292,10 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
       lastAttemptAt: lastAttemptAt == null && nullToAbsent
           ? const Value.absent()
           : Value(lastAttemptAt),
+      originDeviceId: originDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originDeviceId),
+      uploaded: Value(uploaded),
     );
   }
 
@@ -55244,6 +55313,8 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
       attempts: serializer.fromJson<int>(json['attempts']),
       lastError: serializer.fromJson<String?>(json['lastError']),
       lastAttemptAt: serializer.fromJson<int?>(json['lastAttemptAt']),
+      originDeviceId: serializer.fromJson<String?>(json['originDeviceId']),
+      uploaded: serializer.fromJson<bool>(json['uploaded']),
     );
   }
   @override
@@ -55258,6 +55329,8 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
       'attempts': serializer.toJson<int>(attempts),
       'lastError': serializer.toJson<String?>(lastError),
       'lastAttemptAt': serializer.toJson<int?>(lastAttemptAt),
+      'originDeviceId': serializer.toJson<String?>(originDeviceId),
+      'uploaded': serializer.toJson<bool>(uploaded),
     };
   }
 
@@ -55270,6 +55343,8 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
     int? attempts,
     Value<String?> lastError = const Value.absent(),
     Value<int?> lastAttemptAt = const Value.absent(),
+    Value<String?> originDeviceId = const Value.absent(),
+    bool? uploaded,
   }) => PendingMineRow(
     id: id ?? this.id,
     createdAt: createdAt ?? this.createdAt,
@@ -55281,6 +55356,10 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
     lastAttemptAt: lastAttemptAt.present
         ? lastAttemptAt.value
         : this.lastAttemptAt,
+    originDeviceId: originDeviceId.present
+        ? originDeviceId.value
+        : this.originDeviceId,
+    uploaded: uploaded ?? this.uploaded,
   );
   PendingMineRow copyWithCompanion(PendingMineQueueCompanion data) {
     return PendingMineRow(
@@ -55296,6 +55375,10 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
       lastAttemptAt: data.lastAttemptAt.present
           ? data.lastAttemptAt.value
           : this.lastAttemptAt,
+      originDeviceId: data.originDeviceId.present
+          ? data.originDeviceId.value
+          : this.originDeviceId,
+      uploaded: data.uploaded.present ? data.uploaded.value : this.uploaded,
     );
   }
 
@@ -55309,7 +55392,9 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
           ..write('status: $status, ')
           ..write('attempts: $attempts, ')
           ..write('lastError: $lastError, ')
-          ..write('lastAttemptAt: $lastAttemptAt')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded')
           ..write(')'))
         .toString();
   }
@@ -55324,6 +55409,8 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
     attempts,
     lastError,
     lastAttemptAt,
+    originDeviceId,
+    uploaded,
   );
   @override
   bool operator ==(Object other) =>
@@ -55336,7 +55423,9 @@ class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
           other.status == this.status &&
           other.attempts == this.attempts &&
           other.lastError == this.lastError &&
-          other.lastAttemptAt == this.lastAttemptAt);
+          other.lastAttemptAt == this.lastAttemptAt &&
+          other.originDeviceId == this.originDeviceId &&
+          other.uploaded == this.uploaded);
 }
 
 class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
@@ -55348,6 +55437,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
   final Value<int> attempts;
   final Value<String?> lastError;
   final Value<int?> lastAttemptAt;
+  final Value<String?> originDeviceId;
+  final Value<bool> uploaded;
   final Value<int> rowid;
   const PendingMineQueueCompanion({
     this.id = const Value.absent(),
@@ -55358,6 +55449,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
     this.attempts = const Value.absent(),
     this.lastError = const Value.absent(),
     this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PendingMineQueueCompanion.insert({
@@ -55369,6 +55462,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
     this.attempts = const Value.absent(),
     this.lastError = const Value.absent(),
     this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        createdAt = Value(createdAt),
@@ -55382,6 +55477,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
     Expression<int>? attempts,
     Expression<String>? lastError,
     Expression<int>? lastAttemptAt,
+    Expression<String>? originDeviceId,
+    Expression<bool>? uploaded,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -55393,6 +55490,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
       if (attempts != null) 'attempts': attempts,
       if (lastError != null) 'last_error': lastError,
       if (lastAttemptAt != null) 'last_attempt_at': lastAttemptAt,
+      if (originDeviceId != null) 'origin_device_id': originDeviceId,
+      if (uploaded != null) 'uploaded': uploaded,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -55406,6 +55505,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
     Value<int>? attempts,
     Value<String?>? lastError,
     Value<int?>? lastAttemptAt,
+    Value<String?>? originDeviceId,
+    Value<bool>? uploaded,
     Value<int>? rowid,
   }) {
     return PendingMineQueueCompanion(
@@ -55417,6 +55518,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
       attempts: attempts ?? this.attempts,
       lastError: lastError ?? this.lastError,
       lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
+      originDeviceId: originDeviceId ?? this.originDeviceId,
+      uploaded: uploaded ?? this.uploaded,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -55448,6 +55551,12 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
     if (lastAttemptAt.present) {
       map['last_attempt_at'] = Variable<int>(lastAttemptAt.value);
     }
+    if (originDeviceId.present) {
+      map['origin_device_id'] = Variable<String>(originDeviceId.value);
+    }
+    if (uploaded.present) {
+      map['uploaded'] = Variable<bool>(uploaded.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -55465,6 +55574,8 @@ class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
           ..write('attempts: $attempts, ')
           ..write('lastError: $lastError, ')
           ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -95779,6 +95890,8 @@ typedef $$PendingMineQueueTableCreateCompanionBuilder =
       Value<int> attempts,
       Value<String?> lastError,
       Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
       Value<int> rowid,
     });
 typedef $$PendingMineQueueTableUpdateCompanionBuilder =
@@ -95791,6 +95904,8 @@ typedef $$PendingMineQueueTableUpdateCompanionBuilder =
       Value<int> attempts,
       Value<String?> lastError,
       Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
       Value<int> rowid,
     });
 
@@ -95840,6 +95955,16 @@ class $$PendingMineQueueTableFilterComposer
 
   ColumnFilters<int> get lastAttemptAt => $composableBuilder(
     column: $table.lastAttemptAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -95892,6 +96017,16 @@ class $$PendingMineQueueTableOrderingComposer
     column: $table.lastAttemptAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$PendingMineQueueTableAnnotationComposer
@@ -95930,6 +96065,14 @@ class $$PendingMineQueueTableAnnotationComposer
     column: $table.lastAttemptAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get uploaded =>
+      $composableBuilder(column: $table.uploaded, builder: (column) => column);
 }
 
 class $$PendingMineQueueTableTableManager
@@ -95977,6 +96120,8 @@ class $$PendingMineQueueTableTableManager
                 Value<int> attempts = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingMineQueueCompanion(
                 id: id,
@@ -95987,6 +96132,8 @@ class $$PendingMineQueueTableTableManager
                 attempts: attempts,
                 lastError: lastError,
                 lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -95999,6 +96146,8 @@ class $$PendingMineQueueTableTableManager
                 Value<int> attempts = const Value.absent(),
                 Value<String?> lastError = const Value.absent(),
                 Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PendingMineQueueCompanion.insert(
                 id: id,
@@ -96009,6 +96158,8 @@ class $$PendingMineQueueTableTableManager
                 attempts: attempts,
                 lastError: lastError,
                 lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
