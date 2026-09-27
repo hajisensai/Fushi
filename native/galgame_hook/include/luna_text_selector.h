@@ -278,6 +278,59 @@ inline bool LunaTextRequiresExactThreadContext(const char* hook_name) {
   return hook_name != nullptr && std::strcmp(hook_name, "typemoon") == 0;
 }
 
+// CatSystem2: LunaHook's EmbedCS2 hook sits on a script string command that
+// the engine runs twice for every message — once when the script line is
+// processed on the click, and again when the message window starts showing
+// it (measured 2026-09-27 on a cs2 2.6.1 build: each dialogue line and each
+// speaker name arrives as the same text on the same thread 0.2–0.4 s apart,
+// the second copy at the moment the window starts rendering).  The text lane
+// must carry one line per message, so the immediate re-emission is dropped.
+//
+// The rule is keyed by Luna's engine hook identity (no executable name, hash
+// or text content), per thread, exact text only, and time-bounded: a line
+// the player legitimately sees twice in a row needs a click in between, which
+// the engine's own double run never waits for.  Other hooks are untouched
+// (cross-engine negative in luna_text_replay_test).
+inline constexpr uint64_t kLunaImmediateRepeatWindowMs = 1000u;
+
+inline bool LunaHookRepeatsEachMessage(const char* hook_name) {
+  return hook_name != nullptr && std::strcmp(hook_name, "EmbedCS2") == 0;
+}
+
+class LunaImmediateRepeatFilter {
+ public:
+  // True when this event only repeats the previous event of the same thread
+  // and must not be written to the text lane.  Every event (repeat or not)
+  // becomes the thread's new reference.
+  bool IsRepeat(uint64_t thread_id, const char* hook_name,
+                const wchar_t* text, int len, uint64_t now_ms) {
+    if (!LunaHookRepeatsEachMessage(hook_name) || text == nullptr ||
+        len <= 0) {
+      return false;
+    }
+    Last& last = last_[thread_id];
+    const bool repeat =
+        last.valid && now_ms >= last.at_ms &&
+        now_ms - last.at_ms <= kLunaImmediateRepeatWindowMs &&
+        last.text.size() == static_cast<size_t>(len) &&
+        std::wmemcmp(last.text.data(), text, static_cast<size_t>(len)) == 0;
+    last.valid = true;
+    last.at_ms = now_ms;
+    last.text.assign(text, text + len);
+    return repeat;
+  }
+
+  void Reset() { last_.clear(); }
+
+ private:
+  struct Last {
+    bool valid = false;
+    uint64_t at_ms = 0u;
+    std::wstring text;
+  };
+  std::map<uint64_t, Last> last_;
+};
+
 inline bool LunaTextIsArtifact(const wchar_t* text, int len) {
   if (text == nullptr || len <= 1) return false;
   if ((len % 2) == 0) {

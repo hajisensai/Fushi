@@ -750,6 +750,9 @@ uint64_t LunaTextFaceId(const wchar_t* hookcode, const char* hookname,
 fushi_voice_hook::LunaTextSelector g_lunaTextSelector;
 // 成对折叠 hook 面的粘性尾巴（BUG-2705），与选择器共用 g_lunaSelectCs。
 fushi_voice_hook::LunaPairedTailTracker g_lunaPairedTails;
+// EmbedCS2 re-emits every message once more when the window starts showing it
+// (luna_text_selector.h LunaImmediateRepeatFilter); guarded by g_lunaSelectCs.
+fushi_voice_hook::LunaImmediateRepeatFilter g_lunaRepeats;
 CRITICAL_SECTION g_lunaSelectCs;
 bool g_lunaSelectCsInit = false;
 alignas(8) volatile uint64_t g_lunaPreviewGeneration = 0;
@@ -982,7 +985,15 @@ void LunaOutput(const wchar_t* hookcode, const char* hookname,
       if (!artifact) {
         g_luna.header->luna_active = 1;
       }
-      if (LunaShouldWriteLine(thread_id, artifact, face_id)) {
+      // The preview above still shows the repeat; only the lane skips it.
+      bool repeat = false;
+      if (!artifact && g_lunaSelectCsInit) {
+        EnterCriticalSection(&g_lunaSelectCs);
+        repeat = g_lunaRepeats.IsRepeat(thread_id, hookname, normalized_text,
+                                        normalized_len, GetTickCount64());
+        LeaveCriticalSection(&g_lunaSelectCs);
+      }
+      if (!repeat && LunaShouldWriteLine(thread_id, artifact, face_id)) {
         WriteLunaTextLine(g_luna.header, hookcode, hookname, tp, thread_id,
                           face_id, normalized_text, normalized_len);
       }
@@ -1189,6 +1200,7 @@ bool InitLunaHook(SharedHeader* header, HANDLE target, DWORD pid, int codepage,
   }
   g_lunaTextSelector.Reset();
   g_lunaPairedTails.Reset();
+  g_lunaRepeats.Reset();
 
   // 注册回调，顺序严格对齐 texthook.py：Connect, Disconnect, ThreadCreate, ThreadRemove,
   // Output, HostInfo, HookInsert, Embed, I18NQuery, EmuGameInfo。后两项本组件不用，传空让
