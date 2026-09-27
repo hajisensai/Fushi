@@ -1562,6 +1562,16 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // BUG-782 加固：PopScope 退出链（onWillPop 异步 flush + closeMedia）在途为真，
   // 并发退出触发（ESC 连按/退出按钮后再 ESC）合并为一次，防连退两级。
   bool _popInProgress = false;
+
+  /// 外部导航收页（[ExternalMediaNavigation.closeActive]）与页内退出共用
+  /// [_popInProgress] 这一把单飞门。
+  @override
+  bool claimSourceExit() {
+    if (_popInProgress) return false;
+    _popInProgress = true;
+    return true;
+  }
+
   double _initialProgress = 0;
   // BUG-162: 退出再进的精确恢复锚（section 内绝对字符偏移）。-1 = 无精确锚（旧
   // 存档 / 书签跳转）→ 走粗粒度 restoreProgress 分数。

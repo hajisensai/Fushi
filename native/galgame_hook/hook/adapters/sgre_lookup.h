@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "exact_lookup_signature.h"
 #include "sgre_anchors.h"
@@ -148,6 +149,159 @@ inline uint32_t ApplySgreGameStreamRemoteButtons(bool allowed,
     observed |= kGameStreamInputButtonLeft;
   }
   return observed;
+}
+
+// ── Game-stream remote gamepad → SGRE keyboard actions (BUG-2726) ──────────
+//
+// SGRE/M2 does not take game actions from keyboard window messages. Its
+// per-frame input update reads two sources:
+//   1. The GUID_SysKeyboard device: GetDeviceState(256, state) through the
+//      same dinput8 CDIDev implementation the mouse shield already detours
+//      (slot 9), then a live binding vector of {u32 dik, u32 action, u32 alt}
+//      records; for every entry whose state[dik] has the high bit set it ORs
+//      `action` into one per-frame action word and `alt` into a second one.
+//   2. A small virtual-key table sampled with user32 GetKeyState (default:
+//      Enter -> a unless Alt is held, right button -> b, Ctrl -> r1). The
+//      remote channel does not use it: GetKeyState follows the thread's input
+//      queue, which only real or SendInput input updates, and SendInput is
+//      global rather than scoped to the target window.
+// The action bits are the runtime's own named gamepad vocabulary (its
+// key-config table spells them "a", "b", "up", "l1", "r1", "back", ...) and
+// `alt` is the same named action in the runtime's second bit vocabulary
+// (that table's second column: up = 0x40 / 0x1, b = 0x2 / 0x2000, ...). A
+// remote gamepad action therefore maps to an engine action, and the engine's
+// own binding vector says which DIK that action is currently read from. No DIK
+// is hard-coded: a rebound key follows the binding, and an action with no
+// binding that presses exactly that action fails closed.
+inline constexpr size_t kSgreDirectInputKeyboardStateBytes = 256u;
+inline constexpr size_t kSgreKeyboardBindingStride = 12u;
+inline constexpr size_t kSgreKeyboardBindingActionOffset = 4u;
+inline constexpr size_t kSgreKeyboardBindingAltOffset = 8u;
+// The engine's default table has 17 records; anything far larger is not the
+// binding vector this channel was built against.
+inline constexpr size_t kSgreKeyboardBindingMaxEntries = 64u;
+
+inline constexpr uint32_t kSgreEngineActionB = 0x2u;
+inline constexpr uint32_t kSgreEngineActionRight = 0x10u;
+inline constexpr uint32_t kSgreEngineActionLeft = 0x20u;
+inline constexpr uint32_t kSgreEngineActionUp = 0x40u;
+inline constexpr uint32_t kSgreEngineActionDown = 0x80u;
+inline constexpr uint32_t kSgreEngineActionR1 = 0x100u;
+inline constexpr uint32_t kSgreEngineActionL1 = 0x200u;
+inline constexpr uint32_t kSgreEngineActionBack = 0x100000u;
+
+// The same named actions in the runtime's second vocabulary (`alt`).
+inline constexpr uint32_t kSgreEngineAltUp = 0x1u;
+inline constexpr uint32_t kSgreEngineAltDown = 0x2u;
+inline constexpr uint32_t kSgreEngineAltLeft = 0x4u;
+inline constexpr uint32_t kSgreEngineAltRight = 0x8u;
+inline constexpr uint32_t kSgreEngineAltR1 = 0x200u;
+inline constexpr uint32_t kSgreEngineAltL1 = 0x100u;
+inline constexpr uint32_t kSgreEngineAltB = 0x2000u;
+inline constexpr uint32_t kSgreEngineAltBack = 0x0u;  // "back" has none
+
+struct SgreGameStreamKeyAction {
+  uint32_t game_stream_button;
+  uint32_t engine_action;
+  uint32_t engine_alt;
+};
+
+// Remote cancel is the engine's "b" (the same action its default bindings give
+// the right mouse button and X); menu is "back" (its Escape binding), matching
+// the Escape that non-native targets receive for menu.
+inline constexpr SgreGameStreamKeyAction kSgreGameStreamKeyActions[] = {
+    {kGameStreamInputButtonDpadUp, kSgreEngineActionUp, kSgreEngineAltUp},
+    {kGameStreamInputButtonDpadDown, kSgreEngineActionDown,
+     kSgreEngineAltDown},
+    {kGameStreamInputButtonDpadLeft, kSgreEngineActionLeft,
+     kSgreEngineAltLeft},
+    {kGameStreamInputButtonDpadRight, kSgreEngineActionRight,
+     kSgreEngineAltRight},
+    {kGameStreamInputButtonCancel, kSgreEngineActionB, kSgreEngineAltB},
+    {kGameStreamInputButtonShoulderLeft, kSgreEngineActionL1,
+     kSgreEngineAltL1},
+    {kGameStreamInputButtonShoulderRight, kSgreEngineActionR1,
+     kSgreEngineAltR1},
+    {kGameStreamInputButtonMenu, kSgreEngineActionBack, kSgreEngineAltBack},
+};
+
+// First DIK whose record presses exactly `engine_action` in both words: the
+// action word must equal it, and the alt word must be empty or that same
+// action's alt value. Either word carrying anything else would press another
+// action too. 0 when none: callers fail closed.
+inline uint32_t FindSgreKeyboardBindingDik(const uint8_t* bindings,
+                                           size_t binding_count,
+                                           uint32_t engine_action,
+                                           uint32_t engine_alt) {
+  if (bindings == nullptr || engine_action == 0 ||
+      binding_count > kSgreKeyboardBindingMaxEntries) {
+    return 0;
+  }
+  for (size_t i = 0; i < binding_count; ++i) {
+    const uint8_t* record = bindings + i * kSgreKeyboardBindingStride;
+    uint32_t dik = 0;
+    uint32_t action = 0;
+    uint32_t alt = 0;
+    std::memcpy(&dik, record, sizeof(dik));
+    std::memcpy(&action, record + kSgreKeyboardBindingActionOffset,
+                sizeof(action));
+    std::memcpy(&alt, record + kSgreKeyboardBindingAltOffset, sizeof(alt));
+    if (action == engine_action && (alt == 0 || alt == engine_alt) &&
+        dik != 0 && dik < kSgreDirectInputKeyboardStateBytes) {
+      return dik;
+    }
+  }
+  return 0;
+}
+
+// OR the high bit of each requested action's bound DIK into the keyboard state
+// SGRE is about to sample. Never clears a byte, so a real key stays real input,
+// and release/expiry simply stop OR-ing. Like the mouse channel, `observed` is
+// read back from the buffer the game will sample, never echoed from the
+// request, so an unbound action or a refused injection cannot fake an ACK.
+inline uint32_t ApplySgreGameStreamRemoteKeys(bool allowed,
+                                              uint32_t active_buttons,
+                                              const uint8_t* bindings,
+                                              size_t binding_count,
+                                              uint8_t* state,
+                                              size_t state_bytes) {
+  if (!allowed || state == nullptr ||
+      state_bytes != kSgreDirectInputKeyboardStateBytes) {
+    return 0;
+  }
+  const uint32_t requested = active_buttons & kGameStreamInputGamepadButtonMask;
+  uint32_t observed = 0;
+  for (const SgreGameStreamKeyAction& entry : kSgreGameStreamKeyActions) {
+    if ((requested & entry.game_stream_button) == 0) continue;
+    const uint32_t dik = FindSgreKeyboardBindingDik(
+        bindings, binding_count, entry.engine_action, entry.engine_alt);
+    if (dik == 0) continue;
+    state[dik] |= 0x80u;
+    if ((state[dik] & 0x80u) != 0) observed |= entry.game_stream_button;
+  }
+  return observed;
+}
+
+// The mouse sample publishes the one ACK the host decides on, so a gamepad
+// request must not be ACKed before its own keyboard sample exists (an ACK
+// without the key bits reads as "not observed"). The keyboard is polled before
+// the mouse in the same input update, so the wait is bounded to one mouse
+// sample: the first sample of a request with no keyboard observation defers
+// (and records the seq in *deferred_seq); the next one publishes whatever was
+// observed, and the host NACKs a missing bit at once. No live keyboard slot
+// (older build, unresolved anchors) means nothing is deferred.
+inline bool DeferSgreGameStreamAckForKeyboard(uint32_t request_seq,
+                                              uint32_t active_buttons,
+                                              bool keyboard_slot_live,
+                                              uint32_t keyboard_observed_seq,
+                                              uint32_t* deferred_seq) {
+  if (deferred_seq == nullptr || request_seq == 0 || !keyboard_slot_live ||
+      (active_buttons & kGameStreamInputGamepadButtonMask) == 0 ||
+      keyboard_observed_seq == request_seq || *deferred_seq == request_seq) {
+    return false;
+  }
+  *deferred_seq = request_seq;
+  return true;
 }
 
 enum class SgreLookupClickAction : uint8_t {

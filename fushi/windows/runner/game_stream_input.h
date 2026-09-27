@@ -42,9 +42,12 @@ struct GameStreamWindowInfo {
 //     foreground: before a press (down/button) on a non-foreground window,
 //                 activates it (SetForegroundWindow + bounded WM_NULL sync)
 //                 and rejects when activation fails.
-// Window identity, liveness, minimised and hidden checks always apply. The
-// SGRE native confirm DOWN still requires the foreground window (activated
-// first in foreground mode).
+// Window identity, liveness, minimised and hidden checks always apply to
+// presses. SGRE targets (DirectInput shield ready) take gamepad buttons and
+// left pointer taps through the injected native channel instead of window
+// messages; every native press requires the foreground window (activated
+// first in foreground mode), and releasing held native input skips the
+// visibility and foreground checks.
 class GameStreamInput {
  public:
   GameStreamInput() = default;
@@ -69,6 +72,13 @@ class GameStreamInput {
   static int WheelDelta(double notches, bool vertical);
 
  private:
+  // Test-only accessor, defined solely by
+  // tests/game_stream_input_release_test.cpp. Production never defines it.
+  // (A `#define private public` shim cannot be used: MSVC encodes member
+  // access in decorated names, so the test would reference symbols the
+  // production object never exports.)
+  friend struct GameStreamInputTestAccess;
+
   bool ValidateTarget(bool require_foreground, std::string* reason);
   bool CaptureProcessIdentity(DWORD pid);
   bool ProcessIdentityStillValid() const;
@@ -84,10 +94,16 @@ class GameStreamInput {
                          const std::string& action, bool foreground_mode,
                          std::string* reason);
   bool MoveCursorToClient(double x, double y);
-  bool SendNativeLeftButton(bool down, bool require_foreground,
+  // Native channel bit for a gamepad button name; 0 when it has none.
+  static uint32_t NativeGamepadButton(const std::string& name);
+  bool SendNativeButton(uint32_t button, bool down, bool require_foreground,
+                        bool wait_for_ack, std::string* reason);
+  bool PublishNativeButtons(uint32_t buttons, uint32_t verify,
                             bool wait_for_ack, std::string* reason);
-  bool PublishNativeLeftButton(bool down, bool wait_for_ack,
-                               std::string* reason);
+  bool ReleaseNativePointer(const flutter::EncodableMap& event,
+                            std::string* reason);
+  void CommitNativeButtons(uint32_t buttons);
+  void ResetNativeButtons();
   bool HasSgreNativeConfirmCapability() const;
 
   HWND hwnd_ = nullptr;
@@ -100,8 +116,10 @@ class GameStreamInput {
   // Test seam: replaces Activate() for foreground-mode presses so the fixture
   // never steals focus from the desktop. Always null in production.
   bool (*activate_for_test_)(GameStreamInput*, std::string*) = nullptr;
-  bool native_left_down_ = false;
-  uint64_t native_left_transaction_id_ = 0;
+  // fushi_voice_hook::kGameStreamInputButton* bits held through the native
+  // channel; one transaction spans from the first press to the last release.
+  uint32_t native_buttons_ = 0;
+  uint64_t native_transaction_id_ = 0;
   uint64_t next_native_transaction_id_ = 1;
   std::string last_reason_;
 };
