@@ -7,9 +7,11 @@ import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/web_knowledge.dart'
     show
-        WebKnowledgeSource,
-        encodeWebKnowledgeSources,
-        parseWebKnowledgeSources;
+        WebKnowledgeSite,
+        encodeWebKnowledgeCustomSites,
+        kBuiltinWebKnowledgeSites,
+        parseWebKnowledgeCustomSites,
+        parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -1900,18 +1902,57 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// AI 联网资料启用的来源。从未写过 = 默认全开；写过 `''` = 用户全关——两者
-  /// 必须分得开，所以读时默认值给 null（缺键哨兵），不能给 `''`。
-  Set<WebKnowledgeSource> get aiWebKnowledgeSources => parseWebKnowledgeSources(
-    getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
-  );
+  /// AI 联网资料：用户自加的 MediaWiki 站点（读时逐条校验，坏条目丢弃）。
+  List<WebKnowledgeSite> get aiWebKnowledgeCustomSites =>
+      parseWebKnowledgeCustomSites(
+        getPref('ai_web_knowledge_custom_sites', defaultValue: null) as String?,
+      );
 
-  Future<void> setAiWebKnowledgeSources(Set<WebKnowledgeSource> sources) async {
+  Future<void> setAiWebKnowledgeCustomSites(
+    List<WebKnowledgeSite> sites,
+  ) async {
     await setPref(
-      'ai_web_knowledge_sources',
-      encodeWebKnowledgeSources(sources),
+      'ai_web_knowledge_custom_sites',
+      encodeWebKnowledgeCustomSites(sites),
     );
     notifyListeners();
+  }
+
+  /// 启用的站点 id（内置 + 自定义）。从未写过 = 全开；写过 `''` = 用户全关——两者
+  /// 必须分得开，所以读时默认值给 null（缺键哨兵），不能给 `''`。
+  Set<String> get aiWebKnowledgeEnabledSiteIds =>
+      parseWebKnowledgeEnabledIds(
+        getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
+      ) ??
+      <String>{
+        for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites) site.id,
+        for (final WebKnowledgeSite site in aiWebKnowledgeCustomSites) site.id,
+      };
+
+  Future<void> setAiWebKnowledgeEnabledSiteIds(Set<String> ids) async {
+    // 按「内置顺序 + 自定义顺序」写出，同一组选择写出的值恒相同；已删掉的站点 id
+    // 顺手清掉，不在偏好里越攒越多。
+    final List<String> ordered = <String>[
+      for (final WebKnowledgeSite site in <WebKnowledgeSite>[
+        ...kBuiltinWebKnowledgeSites,
+        ...aiWebKnowledgeCustomSites,
+      ])
+        if (ids.contains(site.id)) site.id,
+    ];
+    await setPref('ai_web_knowledge_sources', ordered.join(','));
+    notifyListeners();
+  }
+
+  /// 实际要查的站点：启用的内置站（内置顺序）+ 启用的自定义站（添加顺序）。
+  List<WebKnowledgeSite> get aiWebKnowledgeSites {
+    final Set<String> enabled = aiWebKnowledgeEnabledSiteIds;
+    return <WebKnowledgeSite>[
+      for (final WebKnowledgeSite site in <WebKnowledgeSite>[
+        ...kBuiltinWebKnowledgeSites,
+        ...aiWebKnowledgeCustomSites,
+      ])
+        if (enabled.contains(site.id)) site,
+    ];
   }
 
   /// 刮削完成后，自动为**仍缺字幕**的视频补一条在线字幕。默认开。

@@ -10,9 +10,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 class _FakeWeb extends WebKnowledgeClient {
   _FakeWeb(this.pages, {bool enabled = true})
     : super(
-        sources: enabled
-            ? <WebKnowledgeSource>{WebKnowledgeSource.wikipediaZh}
-            : <WebKnowledgeSource>{},
+        sites: enabled
+            ? <WebKnowledgeSite>[kBuiltinWebKnowledgeSites.first]
+            : const <WebKnowledgeSite>[],
       );
 
   final List<WebKnowledgePage> pages;
@@ -29,12 +29,14 @@ class _FakeWeb extends WebKnowledgeClient {
   }
 }
 
-WebKnowledgePage _page(String title, String text) => WebKnowledgePage(
-  source: WebKnowledgeSource.wikipediaZh,
-  title: title,
-  url: Uri.parse('https://zh.wikipedia.org/wiki/$title'),
-  text: text,
-);
+WebKnowledgePage _page(String title, String text, {bool isList = false}) =>
+    WebKnowledgePage(
+      site: kBuiltinWebKnowledgeSites.first,
+      title: title,
+      url: Uri.parse('https://zh.wikipedia.org/wiki/$title'),
+      text: text,
+      isList: isList,
+    );
 
 VideoDiscoveryItem _item(
   String id,
@@ -88,6 +90,21 @@ void main() {
     expect(picked.first.title, '哆啦A梦电影作品列表');
     expect(picked, hasLength(2));
     expect(picked.last.text.length, kAiFranchiseMaxCharsPerPage);
+  });
+
+  test('pickFranchisePages：清单型站点（isList）排在「作品列表」条目之前，同档保持原序', () {
+    final List<WebKnowledgePage> picked = pickFranchisePages(<WebKnowledgePage>[
+      _page('哆啦A梦', 'plain'),
+      _page('哆啦A梦电影作品列表', 'list'),
+      _page('Anime News Network: 哆啦A梦', 'ann', isList: true),
+      _page('TVmaze: 哆啦A梦', 'tvmaze', isList: true),
+    ]);
+    expect(picked.map((WebKnowledgePage p) => p.title), <String>[
+      'Anime News Network: 哆啦A梦',
+      'TVmaze: 哆啦A梦',
+      '哆啦A梦电影作品列表',
+    ]);
+    expect(picked.first.isList, isTrue);
   });
 
   group('aiFranchiseWorkMatches', () {
