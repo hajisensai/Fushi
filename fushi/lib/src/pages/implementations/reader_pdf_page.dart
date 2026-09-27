@@ -704,6 +704,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) {
         if (didPop) return;
+        // 与外部导航收页（closeActive）/ 连按返回共用单飞门，退出只跑一遍。
+        if (!claimSourceExit()) return;
         final NavigatorState navigator = Navigator.of(context);
         // BUG-2119 口径（视频页 / 阅读器同此）：**退出不等落库**。onWillPop 是位置
         // flush + closeMedia 两笔 drift 写，一条 SQLITE_BUSY 后未 reset 的写语句能让

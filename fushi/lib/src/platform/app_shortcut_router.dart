@@ -58,6 +58,7 @@ class AppShortcutQueue {
 /// - 查词：交给 [openLookup]（HomePage 的查词落地入口；阅读器 / 播放器压在上面时
 ///   它推独立查词页到最上层，不打断正在看的东西）。
 /// - 其余 tab：切 tab 后逐层退回首页根路由，否则 tab 切了也被上层页面挡住。
+///   两步都排在 [ExternalMediaNavigation.navigate] 队列里。
 Future<void> runAppShortcut(
   AppShortcut shortcut, {
   required ModuleVisibility visibility,
@@ -76,26 +77,29 @@ Future<void> runAppShortcut(
     openLookup();
     return;
   }
-  selectHomeTab(shortcut.homeTab);
-  if (navigator == null) return;
   final ExternalMediaNavigation mediaNavigation =
       media ?? ExternalMediaNavigation.instance;
   // 与卡片来源回跳（card_source_router）同一条队列：两个外部入口不会同时去收
-  // 同一个媒体页。
-  await mediaNavigation.navigate(
-    () => unwindToHomeRoute(navigator, media: mediaNavigation),
-  );
+  // 同一个媒体页。切 tab 也排在队列里：前一个外部导航还没收完时先切 tab，页面
+  // 却迟迟不退，用户看到的是 tab 变了、画面没变。
+  await mediaNavigation.navigate(() async {
+    selectHomeTab(shortcut.homeTab);
+    if (navigator == null) return;
+    await unwindToHomeRoute(navigator, media: mediaNavigation);
+  });
 }
 
 /// 逐层退回首页根路由。
 ///
-/// 每层先 `maybePop`（等同按返回键），让阅读器 / 编辑页的 PopScope 存进度或拦下
-/// 未保存的改动。返回键被**吸收**（那一层还在）时分两种：
-/// - 栈顶是登记在 [ExternalMediaNavigation] 的媒体页：返回键只关掉了它的一层
-///   前台浮层（视频页词典弹窗 / 侧栏 / 字幕列表等，BUG-1862 的逐级退出）。
-///   交给页面自己的 `closeActive`——它一次关掉全部浮层、落库、出栈并等路由真正
-///   结束；落库失败它会拒绝，此时停在原地、不丢页面。
-/// - 其它页面拒绝出栈（弹了「放弃修改？」之类）：停在那里交给用户。
+/// - 栈顶是登记在 [ExternalMediaNavigation] 的媒体页（阅读器 / 漫画 / PDF /
+///   视频，含视频全屏路由）：**不按返回键**，直接交给它的 `closeActive`，与卡片
+///   来源回跳同口径。媒体页的返回回调是 async 的（漫画页先 await 退出窗口全屏），
+///   `maybePop` 不等它；先按返回再 closeActive 会让同一页的退出（落盘、
+///   closeMedia、自动同步）跑两遍。返回键在视频页上还只会关掉一层前台浮层
+///   （BUG-1862 逐级退出）。closeActive 一次关掉全部浮层、落库、出栈并等路由
+///   真正结束；它拒绝（例如上面还压着对话框）就停在原地、不丢页面。
+/// - 其它页面：`maybePop`（等同按返回键），让编辑页的 PopScope 拦下未保存的改动。
+///   路由还在就停下交给用户。
 ///
 /// 判「这层走没走」看路由是否还 active，而不是栈顶是否换了：拒绝出栈时弹出的
 /// 确认对话框也会换掉栈顶，按身份比较会把对话框当成进展，下一轮再 pop 掉它
@@ -107,11 +111,11 @@ Future<void> unwindToHomeRoute(
   while (navigator.mounted && navigator.canPop()) {
     final Route<dynamic>? top = _topRoute(navigator);
     if (top == null) return;
-    await navigator.maybePop();
-    if (!navigator.mounted) return;
-    if (!top.isActive) continue;
-    if (!top.isCurrent) return;
-    if (!await media.closeActive()) return;
+    if (media.ownsRoute(top)) {
+      if (!await media.closeActive()) return;
+    } else {
+      await navigator.maybePop();
+    }
     if (!navigator.mounted || top.isActive) return;
   }
 }

@@ -186,6 +186,8 @@ void main() {
     tearDown(() {
       _FakeMediaPageState.last = null;
       _ConfirmOnBackPage.prompts = 0;
+      _AsyncBackMediaPage.persists = 0;
+      _AsyncBackMediaPage.pops = 0;
     });
 
     testWidgets('lookup opens the lookup landing without popping anything', (
@@ -224,6 +226,27 @@ void main() {
       expect(find.text('home'), findsOneWidget);
       expect(nav().canPop(), isFalse);
       expect(_FakeMediaPageState.last!.closedForExternal, isTrue);
+    });
+
+    // 漫画页的返回回调是 async（先 await 退出窗口全屏），maybePop 不等它。旧实现
+    // 先 maybePop、看路由还在就当成「返回被吸收」再 closeActive，于是页面自己的
+    // 退出与外部收页各跑一遍：落盘 / closeMedia / 自动同步都执行两次。
+    testWidgets('a media page with an async back handler exits exactly once', (
+      WidgetTester tester,
+    ) async {
+      await pumpHome(tester);
+      push(const Scaffold(body: Text('series detail')), 'detail');
+      await tester.pumpAndSettle();
+      push(const _AsyncBackMediaPage(), 'manga');
+      await tester.pumpAndSettle();
+
+      await run(tester, AppShortcut.books);
+
+      expect(_AsyncBackMediaPage.persists, 1);
+      expect(_AsyncBackMediaPage.pops, 1);
+      expect(find.text('async media'), findsNothing);
+      expect(find.text('home'), findsOneWidget);
+      expect(nav().canPop(), isFalse);
     });
 
     testWidgets('a media page that refuses to close (persist failed) stays', (
@@ -290,7 +313,12 @@ class _FakeMediaPageState extends State<_FakeMediaPage> {
   void initState() {
     super.initState();
     last = this;
-    _media.register(this, _closeForExternal);
+    _media.register(
+      this,
+      _closeForExternal,
+      ownsRoute: (Route<dynamic> route) =>
+          mounted && identical(ModalRoute.of(context), route),
+    );
   }
 
   @override
@@ -353,6 +381,68 @@ class _ConfirmOnBackPage extends StatelessWidget {
         );
       },
       child: const Scaffold(body: Text('editor')),
+    );
+  }
+}
+
+/// 仿漫画页（`BaseSourcePageState` 子类）：返回回调先 await 一次（漫画页是
+/// `_exitOwnedFullscreenBeforePop` 里的平台通道），再「落库 + 出栈」；外部收页走
+/// 与 `_closeForSourceReturn` 同形的 close。故意**不带**单飞门，只验路由层不会
+/// 触发两条退出。
+class _AsyncBackMediaPage extends StatefulWidget {
+  const _AsyncBackMediaPage();
+
+  static int persists = 0;
+  static int pops = 0;
+
+  @override
+  State<_AsyncBackMediaPage> createState() => _AsyncBackMediaPageState();
+}
+
+class _AsyncBackMediaPageState extends State<_AsyncBackMediaPage> {
+  @override
+  void initState() {
+    super.initState();
+    _media.register(
+      this,
+      _close,
+      ownsRoute: (Route<dynamic> route) =>
+          mounted && identical(ModalRoute.of(context), route),
+    );
+  }
+
+  @override
+  void dispose() {
+    _media.unregister(this);
+    super.dispose();
+  }
+
+  void _exit(NavigatorState navigator) {
+    _AsyncBackMediaPage.persists++;
+    _AsyncBackMediaPage.pops++;
+    navigator.pop();
+  }
+
+  Future<bool> _close() async {
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    if (route == null || !route.isCurrent) return false;
+    _exit(Navigator.of(context));
+    await route.completed;
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) async {
+        if (didPop) return;
+        final NavigatorState navigator = Navigator.of(context);
+        await Future<void>(() {});
+        if (!mounted) return;
+        _exit(navigator);
+      },
+      child: const Scaffold(body: Text('async media')),
     );
   }
 }

@@ -5999,7 +5999,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isSourceReview: () => _sourceReviewActive,
       returnToReading: (_sourceReviewSession ?? widget.sourceReviewSession)
           ?.onReturnToReading,
+      ownsRoute: _ownsRouteForExternalNavigation,
     );
+  }
+
+  /// 本页路由，或全屏时 media_kit 压在它上面的全屏路由——两者都由
+  /// [_closeForExternalNavigation] 收掉。
+  bool _ownsRouteForExternalNavigation(Route<dynamic> route) {
+    if (!mounted) return false;
+    if (identical(ModalRoute.of(context), route)) return true;
+    final BuildContext? controlsContext = _videoControlsContext;
+    return controlsContext != null &&
+        controlsContext.mounted &&
+        identical(ModalRoute.of(controlsContext), route);
   }
 
   Future<bool> _closeForExternalNavigation() async {

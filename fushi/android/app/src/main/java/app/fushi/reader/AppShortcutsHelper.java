@@ -26,8 +26,14 @@ public final class AppShortcutsHelper {
 
     private AppShortcutsHelper() {}
 
+    /// [moduleDisabledIds]：仍是快捷方式、只是模块被关掉的 id——它们的固定快捷方式
+    /// 置灰时显示 [disabledMessage]；其余不再提供的固定快捷方式（已下线的 id）用
+    /// 启动器默认文案。
     public static void setShortcuts(
-        Context context, List<Map<String, String>> items, String disabledMessage) {
+        Context context,
+        List<Map<String, String>> items,
+        String disabledMessage,
+        List<String> moduleDisabledIds) {
         // Dart 本次仍在提供的全部快捷方式（含因启动器上限进不了菜单的）：只有不在
         // 这里的固定快捷方式才是「模块被关掉了」，也只有这里的才该被重新启用。
         List<ShortcutInfoCompat> offered = new ArrayList<>();
@@ -64,25 +70,42 @@ public final class AppShortcutsHelper {
         }
         Set<String> offeredIds = new HashSet<>();
         for (ShortcutInfoCompat shortcut : offered) offeredIds.add(shortcut.getId());
-        disableRemovedPinned(context, offeredIds, disabledMessage);
+        disableRemovedPinned(
+            context, offeredIds, new HashSet<>(moduleDisabledIds), disabledMessage);
     }
 
-    /// 被固定到桌面的快捷方式不受 setDynamicShortcuts 管：模块关掉后它还在桌面上，
-    /// 点下去会把用户送进一个已关的模块。置灰它，启动器点击时显示 [disabledMessage]
-    /// （空则用启动器默认文案）。Dart 侧 `runAppShortcut` 另有一道模块门兜底。
+    /// 被固定到桌面的快捷方式不受 setDynamicShortcuts 管：模块关掉、或 id 已下线后
+    /// 它还在桌面上，点下去会把用户送进一个已关的模块 / 不存在的入口。置灰它：模块
+    /// 关闭的显示 [disabledMessage]，已下线的用启动器默认文案（传 null）——「设置」
+    /// 不是模块，游戏库模块也可能开着，说「模块已关闭」是错的。Dart 侧
+    /// `runAppShortcut` / `AppShortcut.tryParse` 另有兜底。
     private static void disableRemovedPinned(
-        Context context, Set<String> offered, String disabledMessage) {
-        List<String> removed = new ArrayList<>();
+        Context context,
+        Set<String> offered,
+        Set<String> moduleDisabled,
+        String disabledMessage) {
+        List<String> moduleOff = new ArrayList<>();
+        List<String> retired = new ArrayList<>();
         try {
             for (ShortcutInfoCompat pinned :
                 ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)) {
-                if (!offered.contains(pinned.getId())) removed.add(pinned.getId());
+                String id = pinned.getId();
+                if (offered.contains(id)) continue;
+                if (moduleDisabled.contains(id)) {
+                    moduleOff.add(id);
+                } else {
+                    retired.add(id);
+                }
             }
-            if (removed.isEmpty()) return;
-            ShortcutManagerCompat.disableShortcuts(
-                context,
-                removed,
-                disabledMessage == null || disabledMessage.isEmpty() ? null : disabledMessage);
+            if (!moduleOff.isEmpty()) {
+                ShortcutManagerCompat.disableShortcuts(
+                    context,
+                    moduleOff,
+                    disabledMessage == null || disabledMessage.isEmpty() ? null : disabledMessage);
+            }
+            if (!retired.isEmpty()) {
+                ShortcutManagerCompat.disableShortcuts(context, retired, null);
+            }
         } catch (RuntimeException e) {
             Log.w(TAG, "disableShortcuts failed", e);
         }

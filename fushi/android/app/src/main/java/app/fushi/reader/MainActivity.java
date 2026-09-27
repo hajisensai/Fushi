@@ -1132,8 +1132,12 @@ public class MainActivity extends AudioServiceActivity {
                 if ("setShortcuts".equals(call.method)) {
                     List<Map<String, String>> items = call.argument("items");
                     String disabledMessage = call.argument("disabledMessage");
+                    List<String> moduleDisabledIds = call.argument("moduleDisabledIds");
                     AppShortcutsHelper.setShortcuts(
-                        this, items == null ? new ArrayList<>() : items, disabledMessage);
+                        this,
+                        items == null ? new ArrayList<>() : items,
+                        disabledMessage,
+                        moduleDisabledIds == null ? new ArrayList<>() : moduleDisabledIds);
                     result.success(null);
                 } else {
                     result.notImplemented();

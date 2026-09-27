@@ -40,7 +40,7 @@ enum AppShortcut {
   static const String _host = 'shortcut';
 
   /// 两端原生侧只认这个 id（选图标用），改名要同步 `AppShortcutsHelper.java`
-  /// 与 `SceneDelegate.swift`。
+  /// 与 `AppDelegate.swift`（`appShortcutSymbol`）。
   String get id => name;
 
   String get url => '$_scheme://$_host/$id';
@@ -88,9 +88,12 @@ class AppShortcutsPublisher {
 
   String? _lastSignature;
 
-  /// [disabledMessage]：Android 上已被固定到桌面、这次不再发布的快捷方式（对应
-  /// 模块被关掉了）会被置灰，用户点它时启动器显示这句话。`setDynamicShortcuts`
-  /// 删不掉固定快捷方式，不置灰的话它照样能把用户送进一个已关的模块。
+  /// Android 上已被固定到桌面、这次不再发布的快捷方式会被原生侧置灰
+  /// （`setDynamicShortcuts` 删不掉固定快捷方式）。置灰提示分两种：
+  /// - 仍是 [AppShortcut] 但模块被关掉了（载荷 `moduleDisabledIds`）：用户点它时
+  ///   启动器显示 [disabledMessage]（「此功能模块已关闭」）。
+  /// - 已不再是快捷方式的旧 id（曾发布过的游戏库 / 设置）：不是模块关闭，给启动器
+  ///   默认文案。
   void sync(
     List<AppShortcut> shortcuts, {
     required String Function(AppShortcut shortcut) labelOf,
@@ -105,6 +108,10 @@ class AppShortcutsPublisher {
           'url': shortcut.url,
         },
     ];
+    final List<String> moduleDisabledIds = [
+      for (final AppShortcut shortcut in AppShortcut.values)
+        if (!shortcuts.contains(shortcut)) shortcut.id,
+    ];
     final String signature = [
       for (final Map<String, String> item in payload)
         '${item['id']}=${item['title']}',
@@ -116,6 +123,7 @@ class AppShortcutsPublisher {
         .invokeMethod<void>('setShortcuts', <String, Object>{
           'items': payload,
           'disabledMessage': disabledMessage,
+          'moduleDisabledIds': moduleDisabledIds,
         })
         .catchError((Object error) {
           // 发布失败只影响图标菜单，不影响 app 本身；清掉签名让下次重建重试。
