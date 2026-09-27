@@ -16,6 +16,10 @@
 /// 槽位决策表（[_advance]）按顺序找第一个未定的槽位提问：
 /// presence → mode → season → quality → subtitleLanguage → targetSource →
 /// 搜资源；资源阶段的确定性规则在 `video_acquisition_resource_picker.dart`。
+///
+/// 整套下载（[VideoAcquisitionScope.isFranchise]）走同一张决策表的后半段
+/// （quality → subtitleLanguage → targetSource），然后找系列、逐部搜资源、逐部按
+/// 放送状态定下载 / 订阅，最后一张清单一次提交。
 library;
 
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -23,6 +27,7 @@ import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
 import 'package:fushi/src/media/video/acquisition/video_work_content_language.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
@@ -66,8 +71,18 @@ VideoAcquisitionReduction reduceVideoAcquisition(
   VideoAcquisitionEvent event,
   VideoAcquisitionDefaults defaults,
 ) {
-  if (_isTerminal(state)) return (state, _noEffects);
+  if (event is VideoAcquisitionRestartEvent) {
+    return (_restart(state), _noEffects);
+  }
+  if (_isTerminal(state)) {
+    // 结束后接着打字 = 再下一部：页面不用先点「再下一部」。
+    if (event is VideoAcquisitionUserTextEvent) {
+      return _onUserText(_restart(state, greet: false), event);
+    }
+    return (state, _noEffects);
+  }
   return switch (event) {
+    VideoAcquisitionRestartEvent _ => (_restart(state), _noEffects),
     VideoAcquisitionUserTextEvent e => _onUserText(state, e),
     VideoAcquisitionChipChosenEvent e => _onChipChosen(state, e, defaults),
     VideoAcquisitionAiIntentEvent e => _onAiIntent(state, e, defaults),
@@ -87,6 +102,24 @@ VideoAcquisitionReduction reduceVideoAcquisition(
       state,
       e,
       defaults,
+    ),
+    VideoAcquisitionFranchiseLoadedEvent e => _onFranchiseLoaded(
+      state,
+      e,
+      defaults,
+    ),
+    VideoAcquisitionFranchiseEntryResolvedEvent e => _onFranchiseEntryResolved(
+      state,
+      e,
+      defaults,
+    ),
+    VideoAcquisitionFranchiseEntryToggledEvent e => (
+      _toggleFranchiseEntry(state, e.index),
+      _noEffects,
+    ),
+    VideoAcquisitionFranchiseSubmittedEvent e => _onFranchiseSubmitted(
+      state,
+      e,
     ),
     VideoAcquisitionSubmittedEvent e => _onSubmitted(state, e),
     VideoAcquisitionFailedEvent e => _onFailed(state, e),
@@ -224,6 +257,7 @@ VideoAcquisitionReduction _resumeAfterPatch(
   VideoAcquisitionIntentPatch patch,
   VideoAcquisitionDefaults defaults,
 ) {
+  if (patch.scope != null) return _changeScope(state, patch.scope!, defaults);
   switch (state.stage) {
     case VideoAcquisitionStage.collectingSlots:
       return _advance(state, defaults);
@@ -242,6 +276,9 @@ VideoAcquisitionReduction _resumeAfterPatch(
     case VideoAcquisitionStage.awaitingWorkChoice:
     case VideoAcquisitionStage.loadingDetails:
     case VideoAcquisitionStage.resolvingResources:
+    case VideoAcquisitionStage.resolvingFranchise:
+    case VideoAcquisitionStage.planningFranchise:
+    case VideoAcquisitionStage.awaitingFranchiseConfirm:
     case VideoAcquisitionStage.submitting:
     case VideoAcquisitionStage.done:
     case VideoAcquisitionStage.cancelled:
@@ -287,6 +324,8 @@ VideoAcquisitionReduction _applyPatch(
       );
     }
   }
+  final VideoAcquisitionScope? scope = patch.scope;
+  if (scope != null) slots = slots.copyWith(scope: scope);
   final String? subtitleLanguage = patch.subtitleLanguage?.trim();
   if (subtitleLanguage != null && subtitleLanguage.isNotEmpty) {
     final bool remember =
@@ -561,12 +600,16 @@ VideoAcquisitionState _askWork(
   );
 }
 
+/// 作品候选的副标题：年份 + 原名（类别由页面按候选取 i18n，这里只放不用翻译的
+/// 字面量）。
 String? _candidateHintOf(VideoDiscoveryItem item) {
+  final VideoMediaReference reference = item.reference;
+  final String original = reference.originalTitle?.trim() ?? '';
   final List<String> parts = <String>[
-    if (item.reference.year != null) '${item.reference.year}',
-    item.reference.discoveryCategory.name,
+    if (reference.year != null) '${reference.year}',
+    if (original.isNotEmpty && original != reference.title) original,
   ];
-  return parts.join(' · ');
+  return parts.isEmpty ? null : parts.join(' · ');
 }
 
 /// 选定作品：落 `chosenItem`，拉详情。
@@ -644,11 +687,15 @@ VideoAcquisitionReduction _advance(
     stage: VideoAcquisitionStage.collectingSlots,
     busy: false,
   );
+  final bool franchise = s.slots.scope.isFranchise;
   final List<_SlotStep Function(VideoAcquisitionState)> rows =
       <_SlotStep Function(VideoAcquisitionState)>[
-        _decidePresence,
-        _decideMode,
-        _decideSeason,
+        // 整套：在库 / 模式 / 季都是逐部决定的，不在会话层问。
+        if (!franchise) ...<_SlotStep Function(VideoAcquisitionState)>[
+          _decidePresence,
+          _decideMode,
+          _decideSeason,
+        ],
         (VideoAcquisitionState current) => _decideQuality(current, defaults),
         (VideoAcquisitionState current) =>
             _decideSubtitleLanguage(current, defaults),
@@ -664,7 +711,7 @@ VideoAcquisitionReduction _advance(
       return (s, _noEffects);
     }
   }
-  return _searchResources(s);
+  return franchise ? _startFranchise(s) : _searchResources(s);
 }
 
 /// 已在库 / 已订阅：先说明，让用户选继续或取消。
@@ -984,11 +1031,17 @@ VideoAcquisitionReduction _onChipChosen(
   VideoAcquisitionChipChosenEvent event,
   VideoAcquisitionDefaults defaults,
 ) {
-  // 「换一部」挂在 aiPicked 那句上，不是阻塞问题：提交前任何时候都可点。
+  // 作品操作条（换一部 / 整个系列 / 全部剧场版…）不是阻塞问题：选定作品后到
+  // 提交前任何时候都可点，页面据 [videoAcquisitionWorkActions] 渲染。
   if (event.slot == VideoAcquisitionSlot.work &&
-      event.optionId == kVideoAcquisitionOptionNone &&
-      state.stage != VideoAcquisitionStage.submitting) {
-    return _restartWork(state);
+      videoAcquisitionWorkActions(state).contains(event.optionId)) {
+    if (event.optionId == kVideoAcquisitionOptionNone) {
+      return _restartWork(state);
+    }
+    final VideoAcquisitionScope? scope = VideoAcquisitionScope.fromStorageKey(
+      event.optionId.substring(kVideoAcquisitionOptionScopePrefix.length),
+    );
+    if (scope != null) return _changeScope(state, scope, defaults);
   }
   final VideoAcquisitionQuestion? question = state.question;
   if (question == null || question.slot != event.slot) {
@@ -1042,9 +1095,19 @@ VideoAcquisitionReduction _applyChoice(
       if (optionId == kVideoAcquisitionOptionCancel) return _cancel(state);
       return _advance(state.copyWith(presenceAcknowledged: true), defaults);
     case VideoAcquisitionSlot.resource:
+      if (optionId.startsWith(kVideoAcquisitionOptionAltPrefix)) {
+        return _chooseAlternative(state, optionId, defaults);
+      }
       return switch (optionId) {
         kVideoAcquisitionOptionConfirm => _submit(state, defaults),
         kVideoAcquisitionOptionNext => _nextGroup(state),
+        kVideoAcquisitionOptionLatest => _onlyLatestEpisode(state),
+        kVideoAcquisitionOptionCancel => _cancel(state),
+        _ => (state, _noEffects),
+      };
+    case VideoAcquisitionSlot.franchise:
+      return switch (optionId) {
+        kVideoAcquisitionOptionSubmitAll => _submitFranchise(state),
         kVideoAcquisitionOptionCancel => _cancel(state),
         _ => (state, _noEffects),
       };
@@ -1187,8 +1250,17 @@ VideoAcquisitionReduction _onResourcesLoaded(
   if (state.stage != VideoAcquisitionStage.resolvingResources) {
     return (state, _noEffects);
   }
+  final VideoMediaReference reference = state.reference!;
   final VideoAcquisitionState next = state.copyWith(
-    groups: buildVideoResourceVersionGroups(event.items),
+    groups: buildVideoResourceVersionGroups(
+      cleanResourceCandidates(
+        event.items,
+        skipExtras: defaults.skipExtras,
+        movieYear: reference.mediaKind == VideoMetadataMediaKind.movie
+            ? reference.year
+            : null,
+      ),
+    ),
     busy: false,
   );
   return _refilter(next, defaults);
@@ -1326,17 +1398,29 @@ VideoAcquisitionState _presentPlan(
             'startAfterEpisode': plan.startAfterEpisode,
             'index': index + 1,
             'total': state.eligibleGroups.length,
+            'source': videoResourceSourceTag(group),
+            'bytesPerEpisode': estimatedBytesPerEpisode(group),
           },
         ),
       );
+  final bool canPickLatest =
+      state.slots.mode == VideoAcquisitionMode.download &&
+      state.reference?.mediaKind == VideoMetadataMediaKind.tv &&
+      state.slots.episodes is VideoAcquisitionAllEpisodes &&
+      plan.group.episodes.length > 1;
   return _ask(
     next,
-    const VideoAcquisitionQuestion(
+    VideoAcquisitionQuestion(
       slot: VideoAcquisitionSlot.resource,
       options: <VideoAcquisitionOption>[
-        VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
-        VideoAcquisitionOption(id: kVideoAcquisitionOptionNext),
-        VideoAcquisitionOption(id: kVideoAcquisitionOptionCancel),
+        const VideoAcquisitionOption(id: kVideoAcquisitionOptionConfirm),
+        // 直接点其它版本：不用一张张「换一个」翻过去。
+        for (final int alt in _alternativeIndexes(state, index))
+          VideoAcquisitionOption(id: '$kVideoAcquisitionOptionAltPrefix$alt'),
+        if (canPickLatest)
+          const VideoAcquisitionOption(id: kVideoAcquisitionOptionLatest),
+        const VideoAcquisitionOption(id: kVideoAcquisitionOptionNext),
+        const VideoAcquisitionOption(id: kVideoAcquisitionOptionCancel),
       ],
     ),
   );
@@ -1461,6 +1545,10 @@ VideoAcquisitionReduction _onFailed(
   );
   final VideoAcquisitionState said = state.copyWith(busy: false).say(say);
   if (question != null) return (_ask(said, question), _noEffects);
+  if (state.stage == VideoAcquisitionStage.submitting &&
+      state.franchiseEntries.isNotEmpty) {
+    return (_askFranchiseConfirm(said), _noEffects);
+  }
   if (state.stage == VideoAcquisitionStage.submitting && state.plan != null) {
     return (_presentPlan(said, state.groupCursor, state.plan!), _noEffects);
   }
@@ -1528,6 +1616,492 @@ VideoAcquisitionState _resetToIdle(VideoAcquisitionState state) {
       subtitleLanguageRemember: slots.subtitleLanguageRemember,
       targetSourceId: slots.targetSourceId,
     ),
+  );
+}
+
+/// 「再下一部」：回到等文本，保留对话记录与通用偏好槽位，再说一次开场白。
+VideoAcquisitionState _restart(
+  VideoAcquisitionState state, {
+  bool greet = true,
+}) {
+  final VideoAcquisitionState reset = _resetToIdle(state);
+  return greet
+      ? reset.say(const VideoAcquisitionSay(VideoAcquisitionSayKind.greeting))
+      : reset;
+}
+
+// ---------------------------------------------------------------------------
+// 作品操作条 / 范围切换
+// ---------------------------------------------------------------------------
+
+/// 选定作品后常驻的非阻塞操作（option id 列表）；空 = 不渲染。
+///
+/// 此前「换一部」挂在 aiPicked 那句话上，而页面只渲染当前挂起问题的选项——它
+/// 实际从来没出现过。操作条改成由状态推导，页面照这张表渲染。
+List<String> videoAcquisitionWorkActions(VideoAcquisitionState state) {
+  if (state.chosenItem == null || state.busy) return const <String>[];
+  switch (state.stage) {
+    case VideoAcquisitionStage.collectingSlots:
+    case VideoAcquisitionStage.awaitingResourceConfirm:
+    case VideoAcquisitionStage.awaitingFranchiseConfirm:
+      break;
+    case VideoAcquisitionStage.idle:
+    case VideoAcquisitionStage.resolvingWork:
+    case VideoAcquisitionStage.awaitingWorkChoice:
+    case VideoAcquisitionStage.loadingDetails:
+    case VideoAcquisitionStage.resolvingResources:
+    case VideoAcquisitionStage.resolvingFranchise:
+    case VideoAcquisitionStage.planningFranchise:
+    case VideoAcquisitionStage.submitting:
+    case VideoAcquisitionStage.done:
+    case VideoAcquisitionStage.cancelled:
+      return const <String>[];
+  }
+  final VideoAcquisitionScope current = state.slots.scope;
+  return <String>[
+    kVideoAcquisitionOptionNone,
+    for (final VideoAcquisitionScope scope in VideoAcquisitionScope.values)
+      if (scope != current)
+        '$kVideoAcquisitionOptionScopePrefix${scope.storageKey}',
+  ];
+}
+
+/// 换范围：丢掉已搜到的资源 / 清单，按新范围从决策表重新走（已定的画质 / 字幕 /
+/// 来源保留，不重问）。
+VideoAcquisitionReduction _changeScope(
+  VideoAcquisitionState state,
+  VideoAcquisitionScope scope,
+  VideoAcquisitionDefaults defaults,
+) {
+  final VideoAcquisitionState next = VideoAcquisitionState(
+    stage: VideoAcquisitionStage.collectingSlots,
+    slots: state.slots.copyWith(scope: scope),
+    transcript: state.transcript,
+    chosenItem: state.chosenItem,
+    work: state.work,
+    airing: state.airing,
+    contentLanguage: state.contentLanguage,
+    presence: state.presence,
+    alreadySubscribed: state.alreadySubscribed,
+    presenceAcknowledged: state.presenceAcknowledged,
+    subtitleLanguageAsked: state.subtitleLanguageAsked,
+    subtitleLanguageResolutionSaid: state.subtitleLanguageResolutionSaid,
+    aiDecision: state.aiDecision,
+  );
+  if (state.chosenItem == null) return (next, _noEffects);
+  return _advance(next, defaults);
+}
+
+// ---------------------------------------------------------------------------
+// 版本卡：直接点选 / 只下最新一集
+// ---------------------------------------------------------------------------
+
+/// 当前卡之外、给得出计划的前几张卡（按 eligibleGroups 次序）。
+const int kVideoAcquisitionMaxAlternatives = 3;
+
+List<int> _alternativeIndexes(VideoAcquisitionState state, int current) {
+  final List<int> result = <int>[];
+  for (int i = 0; i < state.eligibleGroups.length; i++) {
+    if (i == current) continue;
+    if (result.length >= kVideoAcquisitionMaxAlternatives) break;
+    if (_planAt(state, i) != null) result.add(i);
+  }
+  return result;
+}
+
+VideoAcquisitionResourcePlan? _planAt(VideoAcquisitionState state, int index) {
+  final VideoMediaReference? reference = state.reference;
+  final VideoAcquisitionMode? mode = state.slots.mode;
+  if (reference == null || mode == null) return null;
+  if (index < 0 || index >= state.eligibleGroups.length) return null;
+  return planResourceFromGroup(
+    state.eligibleGroups[index],
+    mode: mode,
+    kind: reference.mediaKind,
+    episodes: state.slots.episodes,
+  );
+}
+
+/// 点了某张候选版本：直接就用它（点具体版本本身就是决定，不再多问一句）。
+VideoAcquisitionReduction _chooseAlternative(
+  VideoAcquisitionState state,
+  String optionId,
+  VideoAcquisitionDefaults defaults,
+) {
+  final int? index = int.tryParse(
+    optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
+  );
+  final VideoAcquisitionResourcePlan? plan = index == null
+      ? null
+      : _planAt(state, index);
+  if (index == null || plan == null) return (state, _noEffects);
+  return _submit(state.copyWith(groupCursor: index, plan: plan), defaults);
+}
+
+/// 「只下最新一集」：把集选择收成当前卡里最大的集号，重算当前卡的计划。
+VideoAcquisitionReduction _onlyLatestEpisode(VideoAcquisitionState state) {
+  final VideoAcquisitionResourcePlan? current = state.plan;
+  if (current == null || current.group.episodes.isEmpty) {
+    return (state, _noEffects);
+  }
+  final int latest = current.group.episodes.reduce(
+    (int a, int b) => a > b ? a : b,
+  );
+  final VideoAcquisitionState narrowed = state.copyWith(
+    slots: state.slots.copyWith(
+      episodes: VideoAcquisitionSingleEpisode(latest),
+    ),
+  );
+  final VideoAcquisitionResourcePlan? plan = _planAt(
+    narrowed,
+    state.groupCursor,
+  );
+  if (plan == null) return (state, _noEffects);
+  return (_presentPlan(narrowed, state.groupCursor, plan), _noEffects);
+}
+
+// ---------------------------------------------------------------------------
+// 整套下载
+// ---------------------------------------------------------------------------
+
+/// `failed` 的 message 固定键：整套清单里一部都没勾 / 一部都没有资源。
+const String kVideoAcquisitionFailureNothingSelected = 'nothing_selected';
+
+VideoAcquisitionReduction _startFranchise(VideoAcquisitionState state) {
+  final VideoDiscoveryItem item = state.chosenItem!;
+  final VideoAcquisitionState next = state
+      .say(
+        VideoAcquisitionSay(
+          VideoAcquisitionSayKind.franchiseSearching,
+          args: <String, Object?>{'title': item.reference.title},
+        ),
+      )
+      .copyWith(
+        stage: VideoAcquisitionStage.resolvingFranchise,
+        clearQuestion: true,
+        busy: true,
+      );
+  return (
+    next,
+    <VideoAcquisitionEffect>[VideoAcquisitionLoadFranchiseEffect(item)],
+  );
+}
+
+VideoAcquisitionReduction _onFranchiseLoaded(
+  VideoAcquisitionState state,
+  VideoAcquisitionFranchiseLoadedEvent event,
+  VideoAcquisitionDefaults defaults,
+) {
+  if (state.stage != VideoAcquisitionStage.resolvingFranchise) {
+    return (state, _noEffects);
+  }
+  final VideoDiscoveryItem anchor = state.chosenItem!;
+  final VideoFranchise? franchise = event.franchise;
+  final VideoAcquisitionScope scope = state.slots.scope;
+  final List<VideoDiscoveryItem> members = franchise == null
+      ? const <VideoDiscoveryItem>[]
+      : <VideoDiscoveryItem>[
+          if (scope != VideoAcquisitionScope.franchiseMovies)
+            ...franchise.series,
+          if (scope != VideoAcquisitionScope.franchiseSeries)
+            ...franchise.movies,
+        ];
+  final bool onlyAnchor =
+      members.length == 1 &&
+      _sameWork(members.single.reference, anchor.reference);
+  if (members.isEmpty || onlyAnchor) {
+    // 没有更多同系列作品：说一声，按单部继续（不让整条流程失败）。
+    final VideoAcquisitionState single = state
+        .copyWith(
+          busy: false,
+          slots: state.slots.copyWith(scope: VideoAcquisitionScope.work),
+        )
+        .say(
+          VideoAcquisitionSay(
+            VideoAcquisitionSayKind.franchiseNotFound,
+            args: <String, Object?>{'title': anchor.reference.title},
+          ),
+        );
+    return _advance(single, defaults);
+  }
+  final List<VideoAcquisitionFranchiseEntry> entries =
+      <VideoAcquisitionFranchiseEntry>[
+        for (final VideoDiscoveryItem item in members)
+          VideoAcquisitionFranchiseEntry(item: item),
+      ];
+  final VideoAcquisitionState next = state
+      .say(
+        VideoAcquisitionSay(
+          VideoAcquisitionSayKind.franchiseFound,
+          args: <String, Object?>{
+            'name': franchise!.name,
+            'series': entries
+                .where(
+                  (VideoAcquisitionFranchiseEntry e) =>
+                      e.item.reference.mediaKind == VideoMetadataMediaKind.tv,
+                )
+                .length,
+            'movies': entries
+                .where(
+                  (VideoAcquisitionFranchiseEntry e) =>
+                      e.item.reference.mediaKind ==
+                      VideoMetadataMediaKind.movie,
+                )
+                .length,
+          },
+        ),
+      )
+      .copyWith(
+        stage: VideoAcquisitionStage.planningFranchise,
+        franchiseName: franchise.name,
+        franchiseEntries: entries,
+        busy: true,
+      );
+  return (
+    next,
+    <VideoAcquisitionEffect>[
+      VideoAcquisitionResolveFranchiseEntryEffect(
+        index: 0,
+        item: entries.first.item,
+      ),
+    ],
+  );
+}
+
+bool _sameWork(VideoMediaReference a, VideoMediaReference b) =>
+    (a.providerId == b.providerId && a.mediaId == b.mediaId) ||
+    (a.tmdbId != null && a.tmdbId == b.tmdbId && a.mediaKind == b.mediaKind);
+
+/// 一部搜完：定模式、定计划，然后发下一部；最后一部完了出清单。
+VideoAcquisitionReduction _onFranchiseEntryResolved(
+  VideoAcquisitionState state,
+  VideoAcquisitionFranchiseEntryResolvedEvent event,
+  VideoAcquisitionDefaults defaults,
+) {
+  final int index = event.index;
+  if (state.stage != VideoAcquisitionStage.planningFranchise ||
+      index < 0 ||
+      index >= state.franchiseEntries.length) {
+    return (state, _noEffects);
+  }
+  final VideoAcquisitionFranchiseEntry resolved = planFranchiseEntry(
+    state.franchiseEntries[index],
+    event,
+    quality: state.slots.quality ?? VideoAcquisitionQuality.best,
+    defaults: defaults,
+  );
+  final List<VideoAcquisitionFranchiseEntry> entries =
+      List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
+  entries[index] = resolved;
+  final VideoAcquisitionState next = state.copyWith(franchiseEntries: entries);
+  final int following = index + 1;
+  if (following < entries.length) {
+    return (
+      next,
+      <VideoAcquisitionEffect>[
+        VideoAcquisitionResolveFranchiseEntryEffect(
+          index: following,
+          item: entries[following].item,
+        ),
+      ],
+    );
+  }
+  final int ready = entries
+      .where(
+        (VideoAcquisitionFranchiseEntry e) =>
+            e.status == VideoAcquisitionFranchiseEntryStatus.ready,
+      )
+      .length;
+  return (
+    _askFranchiseConfirm(
+      next
+          .copyWith(busy: false)
+          .say(
+            VideoAcquisitionSay(
+              VideoAcquisitionSayKind.franchiseReady,
+              args: <String, Object?>{'ready': ready, 'total': entries.length},
+            ),
+          ),
+    ),
+    _noEffects,
+  );
+}
+
+/// 一部作品的计划（纯函数，单测直接打）：
+///
+/// * 模式：电影 / 已完结 / 已取消 → 下载；在播 / 未开播 / 状态未知 → 订阅（订阅
+///   从已知最小集号起，已出的集会一起下）。订阅推不出严格规则时退回下载。
+/// * 画质：会话画质找不到时退到「最高可用」——整套里不逐部追问。
+/// * 已在库 / 已订阅：照样给计划，默认不勾。
+VideoAcquisitionFranchiseEntry planFranchiseEntry(
+  VideoAcquisitionFranchiseEntry entry,
+  VideoAcquisitionFranchiseEntryResolvedEvent event, {
+  required VideoAcquisitionQuality quality,
+  required VideoAcquisitionDefaults defaults,
+}) {
+  final VideoMediaReference reference = entry.item.reference;
+  final VideoMetadataMediaKind kind = reference.mediaKind;
+  final VideoAiringStatus? airing = event.work?.airingStatus;
+  final VideoAcquisitionMode preferred =
+      kind == VideoMetadataMediaKind.movie ||
+          airing == VideoAiringStatus.finished ||
+          airing == VideoAiringStatus.cancelled
+      ? VideoAcquisitionMode.download
+      : VideoAcquisitionMode.subscribe;
+  final List<VideoResourceVersionGroup> groups =
+      buildVideoResourceVersionGroups(
+        cleanResourceCandidates(
+          event.items,
+          skipExtras: defaults.skipExtras,
+          movieYear: kind == VideoMetadataMediaKind.movie
+              ? reference.year
+              : null,
+        ),
+      );
+  ({VideoAcquisitionMode mode, VideoAcquisitionResourcePlan plan})? found;
+  for (final VideoAcquisitionMode mode in <VideoAcquisitionMode>[
+    preferred,
+    if (preferred == VideoAcquisitionMode.subscribe)
+      VideoAcquisitionMode.download,
+  ]) {
+    for (final VideoAcquisitionQuality wanted in <VideoAcquisitionQuality>[
+      quality,
+      if (quality != VideoAcquisitionQuality.best) VideoAcquisitionQuality.best,
+    ]) {
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        groups,
+        mode: mode,
+        quality: wanted,
+        source: defaults.sourcePref,
+        bitrate: defaults.bitratePref,
+      );
+      for (final VideoResourceVersionGroup group in outcome.eligible) {
+        final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
+          group,
+          mode: mode,
+          kind: kind,
+          episodes: const VideoAcquisitionAllEpisodes(),
+        );
+        if (plan != null) {
+          found = (mode: mode, plan: plan);
+          break;
+        }
+      }
+      if (found != null) break;
+    }
+    if (found != null) break;
+  }
+  final bool owned =
+      event.presence?.inLibrary == true || event.alreadySubscribed;
+  if (found == null) {
+    return entry.copyWith(
+      status: VideoAcquisitionFranchiseEntryStatus.noResource,
+      selected: false,
+      owned: owned,
+    );
+  }
+  return entry.copyWith(
+    status: VideoAcquisitionFranchiseEntryStatus.ready,
+    mode: found.mode,
+    plan: found.plan,
+    selected: !owned,
+    owned: owned,
+  );
+}
+
+VideoAcquisitionState _askFranchiseConfirm(VideoAcquisitionState state) => _ask(
+  state.copyWith(stage: VideoAcquisitionStage.awaitingFranchiseConfirm),
+  const VideoAcquisitionQuestion(
+    slot: VideoAcquisitionSlot.franchise,
+    options: <VideoAcquisitionOption>[
+      VideoAcquisitionOption(id: kVideoAcquisitionOptionSubmitAll),
+      VideoAcquisitionOption(id: kVideoAcquisitionOptionCancel),
+    ],
+  ),
+);
+
+VideoAcquisitionState _toggleFranchiseEntry(
+  VideoAcquisitionState state,
+  int index,
+) {
+  if (state.stage != VideoAcquisitionStage.awaitingFranchiseConfirm ||
+      index < 0 ||
+      index >= state.franchiseEntries.length) {
+    return state;
+  }
+  final VideoAcquisitionFranchiseEntry entry = state.franchiseEntries[index];
+  if (entry.status != VideoAcquisitionFranchiseEntryStatus.ready) return state;
+  final List<VideoAcquisitionFranchiseEntry> entries =
+      List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
+  entries[index] = entry.copyWith(selected: !entry.selected);
+  return state.copyWith(franchiseEntries: entries);
+}
+
+VideoAcquisitionReduction _submitFranchise(VideoAcquisitionState state) {
+  final int? targetSourceId = state.slots.targetSourceId;
+  final String? subtitleLanguage = state.slots.subtitleLanguage;
+  final List<VideoAcquisitionFranchiseEntry> picked =
+      <VideoAcquisitionFranchiseEntry>[
+        for (final VideoAcquisitionFranchiseEntry entry
+            in state.franchiseEntries)
+          if (entry.submittable) entry,
+      ];
+  if (picked.isEmpty || targetSourceId == null || subtitleLanguage == null) {
+    return (
+      _sayThenReask(
+        state,
+        const VideoAcquisitionSay(
+          VideoAcquisitionSayKind.failed,
+          args: <String, Object?>{
+            'message': kVideoAcquisitionFailureNothingSelected,
+          },
+        ),
+      ),
+      _noEffects,
+    );
+  }
+  final String? code = switch (subtitleLanguage) {
+    kVideoAcquisitionSubtitleNone => null,
+    kVideoAcquisitionSubtitleOriginal => state.contentLanguage?.code,
+    _ => subtitleLanguage,
+  };
+  return (
+    state.copyWith(
+      stage: VideoAcquisitionStage.submitting,
+      clearQuestion: true,
+      busy: true,
+    ),
+    <VideoAcquisitionEffect>[
+      VideoAcquisitionSubmitFranchiseEffect(
+        entries: picked,
+        targetSourceId: targetSourceId,
+        subtitleLanguageCode: code,
+      ),
+    ],
+  );
+}
+
+VideoAcquisitionReduction _onFranchiseSubmitted(
+  VideoAcquisitionState state,
+  VideoAcquisitionFranchiseSubmittedEvent event,
+) {
+  if (state.stage != VideoAcquisitionStage.submitting) {
+    return (state, _noEffects);
+  }
+  return (
+    state
+        .copyWith(stage: VideoAcquisitionStage.done, busy: false)
+        .say(
+          VideoAcquisitionSay(
+            VideoAcquisitionSayKind.franchiseSubmitted,
+            args: <String, Object?>{
+              'downloads': event.downloads,
+              'subscriptions': event.subscriptions,
+              'failed': event.failed,
+            },
+          ),
+        ),
+    const <VideoAcquisitionEffect>[VideoAcquisitionCloseEffect()],
   );
 }
 

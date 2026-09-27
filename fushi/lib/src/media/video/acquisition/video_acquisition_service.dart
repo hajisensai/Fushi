@@ -17,6 +17,7 @@ import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
@@ -39,6 +40,7 @@ class VideoAcquisitionPorts {
     required this.setSeriesSubtitleLanguage,
     required this.submitDownload,
     required this.submitSubscription,
+    required this.loadFranchise,
   });
 
   /// 发现聚合搜索（`VideoDiscoveryController.load`）。
@@ -92,6 +94,9 @@ class VideoAcquisitionPorts {
 
   final Future<void> Function(VideoAcquisitionSubmitSubscriptionEffect effect)
   submitSubscription;
+
+  /// 「整套下载」：[item] 所在系列的剧集与剧场版；null = 没有可用的系列来源。
+  final Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise;
 }
 
 class VideoAcquisitionService {
@@ -149,6 +154,13 @@ class VideoAcquisitionService {
       choose(VideoAcquisitionSlot.resource, kVideoAcquisitionOptionConfirm);
 
   Future<void> cancel() => dispatch(const VideoAcquisitionCancelEvent());
+
+  /// 「再下一部」。
+  Future<void> restart() => dispatch(const VideoAcquisitionRestartEvent());
+
+  /// 整套清单上勾 / 取消勾一部。
+  Future<void> toggleFranchiseEntry(int index) =>
+      dispatch(VideoAcquisitionFranchiseEntryToggledEvent(index));
 
   /// 把事件喂给 reducer 并执行它产出的效果；返回的 Future 在**本事件引发的整条
   /// 效果链**跑完后完成（含回灌事件），测试据此同步等待。
@@ -226,10 +238,149 @@ class VideoAcquisitionService {
           await _ports.submitSubscription(effect);
           _queue.add(const VideoAcquisitionSubmittedEvent(count: 1));
         });
+      case VideoAcquisitionLoadFranchiseEffect():
+        await _loadFranchise(effect.item);
+      case VideoAcquisitionResolveFranchiseEntryEffect():
+        await _resolveFranchiseEntry(effect);
+      case VideoAcquisitionSubmitFranchiseEffect():
+        return _guard(() => _submitFranchise(effect));
       case VideoAcquisitionCloseEffect():
         break;
     }
     return true;
+  }
+
+  Future<void> _loadFranchise(VideoDiscoveryItem item) async {
+    VideoFranchise? franchise;
+    try {
+      franchise = await _ports.loadFranchise(item);
+    } catch (error, stack) {
+      // 找不到系列 = 按单部继续（reducer 会说一声）；原因必须留痕。
+      lastError = error;
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.loadFranchise',
+        '${item.reference.title}: $error\n$stack',
+      );
+    }
+    _queue.add(VideoAcquisitionFranchiseLoadedEvent(franchise));
+  }
+
+  /// 一部作品：详情（剧集才要——定下载还是订阅）+ 在库 / 已订阅 + 资源。任何一步
+  /// 失败都降级成「这部没资料 / 没资源」，不让整张清单卡死。
+  Future<void> _resolveFranchiseEntry(
+    VideoAcquisitionResolveFranchiseEntryEffect effect,
+  ) async {
+    final VideoDiscoveryItem item = effect.item;
+    final VideoMediaReference reference = item.reference;
+    VideoMetadataWork? work;
+    VideoLibraryPresence? presence;
+    bool subscribed = false;
+    List<VideoResourceCandidate> items = const <VideoResourceCandidate>[];
+    if (reference.mediaKind == VideoMetadataMediaKind.tv) {
+      try {
+        work = await _ports.loadDetails(item);
+      } catch (error, stack) {
+        ErrorLogService.instance.logDiagnostic(
+          'VideoAcquisition.franchiseDetails',
+          '${reference.title}: $error\n$stack',
+        );
+      }
+    }
+    try {
+      presence = await _ports.queryPresence(reference);
+      subscribed = await _ports.isSubscribed(reference);
+    } catch (error, stack) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.franchisePresence',
+        '${reference.title}: $error\n$stack',
+      );
+    }
+    try {
+      final ProviderBatchResult<VideoResourceCandidate> result = await _ports
+          .searchResources(
+            VideoResourceSearchRequest(
+              media: reference,
+              query: videoResourceSubscriptionSearchQuery(reference),
+            ),
+          );
+      items = result.items;
+    } catch (error, stack) {
+      lastError = error;
+      ErrorLogService.instance.logDiagnostic(
+        'VideoAcquisition.franchiseResources',
+        '${reference.title}: $error\n$stack',
+      );
+    }
+    _queue.add(
+      VideoAcquisitionFranchiseEntryResolvedEvent(
+        index: effect.index,
+        work: work,
+        presence: presence,
+        alreadySubscribed: subscribed,
+        items: items,
+      ),
+    );
+  }
+
+  /// 逐部提交。单部失败只计数、不中断；**一部都没成**时抛第一个异常（后端没配 /
+  /// 来源失效这类对整批成立的问题），由 [_guard] 回灌 failed 让页面给「去配置」。
+  Future<void> _submitFranchise(
+    VideoAcquisitionSubmitFranchiseEffect effect,
+  ) async {
+    int downloads = 0;
+    int subscriptions = 0;
+    int failed = 0;
+    Object? firstError;
+    StackTrace? firstStack;
+    final String? code = effect.subtitleLanguageCode;
+    for (final VideoAcquisitionFranchiseEntry entry in effect.entries) {
+      if (_disposed) return;
+      final VideoAcquisitionResourcePlan plan = entry.plan!;
+      try {
+        if (code != null) {
+          await _ports.setSeriesSubtitleLanguage(entry.item.reference, code);
+        }
+        switch (entry.mode) {
+          case VideoAcquisitionMode.download:
+            downloads += await _ports.submitDownload(
+              VideoAcquisitionSubmitDownloadEffect(
+                item: entry.item,
+                plan: plan,
+                targetSourceId: effect.targetSourceId,
+                installSubtitles: code != null,
+              ),
+            );
+          case VideoAcquisitionMode.subscribe:
+            await _ports.submitSubscription(
+              VideoAcquisitionSubmitSubscriptionEffect(
+                item: entry.item,
+                plan: plan,
+                targetSourceId: effect.targetSourceId,
+                installSubtitles: code != null,
+              ),
+            );
+            subscriptions++;
+        }
+      } catch (error, stack) {
+        failed++;
+        firstError ??= error;
+        firstStack ??= stack;
+        ErrorLogService.instance.logDiagnostic(
+          'VideoAcquisition.franchiseSubmit',
+          '${entry.item.reference.title}: $error\n$stack',
+        );
+      }
+    }
+    if (downloads == 0 && subscriptions == 0 && firstError != null) {
+      Error.throwWithStackTrace(firstError, firstStack!);
+    }
+    _queue.add(
+      VideoAcquisitionFranchiseSubmittedEvent(
+        downloads: downloads,
+        subscriptions: subscriptions,
+        failed: failed,
+      ),
+    );
   }
 
   /// 效果失败 → 记住原始异常、回灌 failed 事件、返回 false；绝不让异常冲出
@@ -285,6 +436,7 @@ class VideoAcquisitionService {
       'workKind': reference?.mediaKind.name,
       'airing': _state.airing?.name,
       'mode': slots.mode?.name,
+      'scope': slots.scope.storageKey,
       'quality': slots.quality?.storageKey,
       'subtitleLanguage': slots.subtitleLanguage,
       'season': slots.season,

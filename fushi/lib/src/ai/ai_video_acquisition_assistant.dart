@@ -131,6 +131,11 @@ List<String> get _subtitleLanguageKeys => <String>[
   kVideoAcquisitionSubtitleNone,
 ];
 
+List<String> get _scopeKeys => <String>[
+  for (final VideoAcquisitionScope scope in VideoAcquisitionScope.values)
+    scope.storageKey,
+];
+
 List<String> get _categoryNames => <String>[
   for (final VideoDiscoveryCategory category in VideoDiscoveryCategory.values)
     category.name,
@@ -165,7 +170,8 @@ Answer with a single JSON object and nothing else. Every field is optional excep
   "quality": ${_quoted(_qualityKeys)},
   "qualityRemember": <true only when the user says this quality should be the default from now on>,
   "subtitleLanguage": ${_quoted(_subtitleLanguageKeys)},
-  "subtitleLanguageRemember": <true only when the user says this subtitle language should be the default from now on>
+  "subtitleLanguageRemember": <true only when the user says this subtitle language should be the default from now on>,
+  "scope": ${_quoted(_scopeKeys)}
 }
 
 Rules:
@@ -192,6 +198,12 @@ Rules:
 - "subtitleLanguage": "original" when the user wants subtitles in the work's
   own language; a language code for an explicit language; "none" when the
   user wants no subtitles.
+- "scope": "all" when the user wants the whole franchise / series (every
+  season and every movie, e.g. "the whole thing", "everything", "整套",
+  "全部"); "movies" when they want all the theatrical movies of the franchise
+  (e.g. "all Doraemon movies", "所有剧场版"); "series" when they want every TV
+  season but no movies; "work" when they explicitly want only this one work.
+  Omit it otherwise. The work title still goes into "workQueries".
 - "qualityRemember" / "subtitleLanguageRemember": true only when the user
   explicitly says "from now on", "by default", "always" or equivalent.
   Otherwise omit them; a one-off choice is not a new default.
@@ -265,6 +277,9 @@ VideoAcquisitionIntent parseVideoAcquisitionIntent(
       (VideoAcquisitionMode value) => value.name,
     ),
     choiceIndex: choiceIndex,
+    scope: decoded['scope'] is String
+        ? VideoAcquisitionScope.fromStorageKey(decoded['scope'] as String)
+        : null,
   );
   if (kind == VideoAcquisitionIntentKind.provide && patch.isEmpty) {
     return const VideoAcquisitionIntent.unclear();

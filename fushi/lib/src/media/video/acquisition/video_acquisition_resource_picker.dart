@@ -8,6 +8,7 @@ library;
 
 import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
+import 'package:fushi_engine/media/video/download/video_release_extras.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
@@ -206,6 +207,21 @@ int _sourceScore(
   };
 }
 
+/// 版本卡的片源短标签（`Remux` / `BD` / `WEB-DL` / `WEBRip` / `TV` / `DVD`）；标题
+/// 没写片源返回 null。判据同 [_sourceScore]。
+String? videoResourceSourceTag(VideoResourceVersionGroup group) =>
+    switch (parseAnimeReleaseDescriptor(
+      group.representative.title,
+    ).videoSource) {
+      AnimeVideoSource.remux => 'Remux',
+      AnimeVideoSource.bluRay => 'BD',
+      AnimeVideoSource.webDl => 'WEB-DL',
+      AnimeVideoSource.webRip => 'WEBRip',
+      AnimeVideoSource.television => 'TV',
+      AnimeVideoSource.dvd => 'DVD',
+      AnimeVideoSource.unknown => null,
+    };
+
 /// 每集平均体积（码率的代理量）；估不出返回 null。
 ///
 /// 只数**单集**发布：整季合集的体积要除以集数，而合集标题里的集数范围本就不可靠
@@ -363,6 +379,36 @@ List<String> availableResolutionsOf(List<VideoResourceVersionGroup> groups) {
     return a.compareTo(b);
   });
   return List<String>.unmodifiable(resolutions);
+}
+
+/// 选版本前的候选清洗（两条都是**丢弃**，不是排序——留着只会被选中）：
+///
+/// * [skipExtras]：只有特典的发布（PV / NCOP / 菜单…，判据在引擎
+///   `looksLikeExtrasOnlyRelease`）。
+/// * [movieYear]：电影标题里写了别的年份的发布。长寿系列的重制版同名不同年
+///   （哆啦A梦《大雄的恐龙》1980 / 2006），不按年份排除就会下错那一部。标题里
+///   没写年份的照留；允许 ±1（首映与上映跨年）。
+List<VideoResourceCandidate> cleanResourceCandidates(
+  List<VideoResourceCandidate> items, {
+  required bool skipExtras,
+  int? movieYear,
+}) => <VideoResourceCandidate>[
+  for (final VideoResourceCandidate item in items)
+    if (!(skipExtras && looksLikeExtrasOnlyRelease(item.title)) &&
+        !(movieYear != null && releaseYearConflicts(item.title, movieYear)))
+      item,
+];
+
+/// [title] 里出现了年份，且没有一个落在 [year] ±1 内。
+bool releaseYearConflicts(String title, int year) {
+  final List<int> years = <int>[
+    for (final RegExpMatch match in RegExp(
+      r'(?<![0-9])(19[3-9][0-9]|20[0-9][0-9])(?![0-9])',
+    ).allMatches(title))
+      int.parse(match.group(1)!),
+  ];
+  if (years.isEmpty) return false;
+  return !years.any((int value) => (value - year).abs() <= 1);
 }
 
 /// 供 tie-break / 摘要用：这张卡的代表条。

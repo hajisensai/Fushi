@@ -1913,6 +1913,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）。默认关：
+  /// 整颗种子全下（旧行为）。下载管线每轮现读，改了对还没拿到文件表的任务生效。
+  bool get videoDownloadSkipExtras =>
+      getPref('video_download_skip_extras', defaultValue: false) as bool;
+
+  Future<void> setVideoDownloadSkipExtras(bool enabled) async {
+    await setPref('video_download_skip_extras', enabled);
+    notifyListeners();
+  }
+
   /// 远端（互联 host）视频上导入 / 重定时得到的字幕是否自动上传到 host 并设为该集
   /// 默认字幕（BUG-2728 的自动上传）。上传会改掉**所有** peer 在这一集看到的默认
   /// 字幕，所以给用户一个开关；关掉时字幕只在本机应用与记忆，不发任何上传请求。

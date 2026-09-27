@@ -16,6 +16,7 @@ import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/media/video/download/video_discovery_selection.dart';
 import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
 
@@ -25,6 +26,39 @@ import 'package:fushi/src/media/video/download/video_resource_version_groups.dar
 
 /// 直接下载已出的，还是订阅追更。
 enum VideoAcquisitionMode { download, subscribe }
+
+/// 这次要的是一部作品，还是它所在的整个系列。
+///
+/// 系列范围下每部作品的下载 / 订阅由放送状态**逐部**决定（完结的下载、还在播的
+/// 订阅），不再问模式；画质 / 字幕 / 来源这些偏好对整套统一生效。
+enum VideoAcquisitionScope {
+  /// 只要选中的这一部（旧行为）。
+  work('work'),
+
+  /// 整个系列：全部剧集 + 全部剧场版。
+  franchise('all'),
+
+  /// 系列里的全部剧场版。
+  franchiseMovies('movies'),
+
+  /// 系列里的全部剧集。
+  franchiseSeries('series');
+
+  const VideoAcquisitionScope(this.storageKey);
+
+  /// 对话补丁 / chip id 里的枚举串。
+  final String storageKey;
+
+  bool get isFranchise => this != work;
+
+  static VideoAcquisitionScope? fromStorageKey(String? raw) {
+    final String key = raw?.trim().toLowerCase() ?? '';
+    for (final VideoAcquisitionScope value in values) {
+      if (value.storageKey == key) return value;
+    }
+    return null;
+  }
+}
 
 /// 画质档位。`storageKey` 同时是偏好值与对话补丁里的枚举串。
 enum VideoAcquisitionQuality {
@@ -184,6 +218,9 @@ enum VideoAcquisitionSlot {
   /// 下到哪个受管视频来源（仅多来源且无默认）。
   targetSource,
 
+  /// 整套清单确认：全部提交 / 取消（逐部勾选在页面的清单卡上）。
+  franchise,
+
   /// 版本确认：就这个 / 换一个 / 取消。
   resource,
 
@@ -244,6 +281,7 @@ class VideoAcquisitionSlots {
     this.subtitleLanguageRemember = false,
     this.episodes = const VideoAcquisitionAllEpisodes(),
     this.targetSourceId,
+    this.scope = VideoAcquisitionScope.work,
   });
 
   /// 作品查询词（AI 补的 2~4 条，或用户原文一条），依次试到首个非空命中。
@@ -275,6 +313,9 @@ class VideoAcquisitionSlots {
 
   final int? targetSourceId;
 
+  /// 单部还是整个系列。
+  final VideoAcquisitionScope scope;
+
   VideoAcquisitionSlots copyWith({
     List<String>? workQueries,
     VideoDiscoveryCategory? category,
@@ -287,6 +328,7 @@ class VideoAcquisitionSlots {
     bool? subtitleLanguageRemember,
     VideoAcquisitionEpisodes? episodes,
     int? targetSourceId,
+    VideoAcquisitionScope? scope,
   }) => VideoAcquisitionSlots(
     workQueries: workQueries ?? this.workQueries,
     category: category ?? this.category,
@@ -300,6 +342,7 @@ class VideoAcquisitionSlots {
         subtitleLanguageRemember ?? this.subtitleLanguageRemember,
     episodes: episodes ?? this.episodes,
     targetSourceId: targetSourceId ?? this.targetSourceId,
+    scope: scope ?? this.scope,
   );
 }
 
@@ -359,6 +402,21 @@ enum VideoAcquisitionSayKind {
 
   /// 没听懂，请点选或换个说法
   unclear,
+
+  /// 正在找系列（args: title）
+  franchiseSearching,
+
+  /// 找到系列（args: name, series, movies）——之后逐部找资源
+  franchiseFound,
+
+  /// 这部作品没有找到同系列的其它作品，按单部继续（args: title）
+  franchiseNotFound,
+
+  /// 整套清单已就绪（args: ready, total）
+  franchiseReady,
+
+  /// 整套已提交（args: downloads, subscriptions, failed）
+  franchiseSubmitted,
 
   /// 提问本身（配 [VideoAcquisitionQuestion]）
   question,
@@ -475,6 +533,7 @@ class VideoAcquisitionIntentPatch {
     this.subtitleLanguageRemember,
     this.mode,
     this.choiceIndex,
+    this.scope,
   });
 
   final List<String> workQueries;
@@ -494,6 +553,9 @@ class VideoAcquisitionIntentPatch {
   /// 对当前问题选项的下标（已校验在范围内）。
   final int? choiceIndex;
 
+  /// 「整套 / 所有剧场版 / 所有季」。
+  final VideoAcquisitionScope? scope;
+
   bool get isEmpty =>
       workQueries.isEmpty &&
       category == null &&
@@ -506,7 +568,8 @@ class VideoAcquisitionIntentPatch {
       subtitleLanguage == null &&
       subtitleLanguageRemember == null &&
       mode == null &&
-      choiceIndex == null;
+      choiceIndex == null &&
+      scope == null;
 }
 
 class VideoAcquisitionIntent {
@@ -579,6 +642,15 @@ enum VideoAcquisitionStage {
   /// 版本摘要等确认。
   awaitingResourceConfirm,
 
+  /// 正在找系列成员（TMDB collection + 同名剧集）。
+  resolvingFranchise,
+
+  /// 逐部找资源、定下载 / 订阅。
+  planningFranchise,
+
+  /// 整套清单等确认。
+  awaitingFranchiseConfirm,
+
   /// 正在入队 / 建订阅。
   submitting,
 
@@ -606,6 +678,63 @@ class VideoWorkContentLanguage {
   final VideoWorkLanguageEvidence evidence;
 }
 
+/// 整套清单里一部作品的进度。
+enum VideoAcquisitionFranchiseEntryStatus {
+  /// 还没轮到 / 正在找资源。
+  pending,
+
+  /// 有落地计划。
+  ready,
+
+  /// 没找到可用版本。
+  noResource,
+}
+
+/// 整套清单的一行：作品 + 它的下载 / 订阅计划。
+class VideoAcquisitionFranchiseEntry {
+  const VideoAcquisitionFranchiseEntry({
+    required this.item,
+    this.status = VideoAcquisitionFranchiseEntryStatus.pending,
+    this.mode = VideoAcquisitionMode.download,
+    this.plan,
+    this.selected = true,
+    this.owned = false,
+  });
+
+  final VideoDiscoveryItem item;
+  final VideoAcquisitionFranchiseEntryStatus status;
+
+  /// 完结 / 电影 = download；还在播 / 未知 = subscribe（订阅会连已出的集一起下）。
+  final VideoAcquisitionMode mode;
+  final VideoAcquisitionResourcePlan? plan;
+
+  /// 用户在清单上勾没勾（只有 ready 的行能提交）。
+  final bool selected;
+
+  /// 已在库 / 已订阅：照样给出计划，但默认不勾。
+  final bool owned;
+
+  bool get submittable =>
+      selected &&
+      status == VideoAcquisitionFranchiseEntryStatus.ready &&
+      plan != null;
+
+  VideoAcquisitionFranchiseEntry copyWith({
+    VideoAcquisitionFranchiseEntryStatus? status,
+    VideoAcquisitionMode? mode,
+    VideoAcquisitionResourcePlan? plan,
+    bool? selected,
+    bool? owned,
+  }) => VideoAcquisitionFranchiseEntry(
+    item: item,
+    status: status ?? this.status,
+    mode: mode ?? this.mode,
+    plan: plan ?? this.plan,
+    selected: selected ?? this.selected,
+    owned: owned ?? this.owned,
+  );
+}
+
 /// 整个会话的快照。不可变；reducer 返回新实例。
 class VideoAcquisitionState {
   const VideoAcquisitionState({
@@ -631,6 +760,8 @@ class VideoAcquisitionState {
     this.plan,
     this.aiDecision,
     this.busy = false,
+    this.franchiseName,
+    this.franchiseEntries = const <VideoAcquisitionFranchiseEntry>[],
   });
 
   final VideoAcquisitionStage stage;
@@ -688,6 +819,12 @@ class VideoAcquisitionState {
   /// 有效果在执行（页面禁用输入）。
   final bool busy;
 
+  /// 整套下载：系列显示名（null = 不在系列流程里）。
+  final String? franchiseName;
+
+  /// 整套下载的清单（剧集在前、剧场版按上映顺序在后）。
+  final List<VideoAcquisitionFranchiseEntry> franchiseEntries;
+
   VideoMediaReference? get reference => chosenItem?.reference;
 
   VideoAcquisitionState copyWith({
@@ -716,6 +853,8 @@ class VideoAcquisitionState {
     bool clearPlan = false,
     AiVideoIdentityDecision? aiDecision,
     bool? busy,
+    String? franchiseName,
+    List<VideoAcquisitionFranchiseEntry>? franchiseEntries,
   }) => VideoAcquisitionState(
     stage: stage ?? this.stage,
     slots: slots ?? this.slots,
@@ -740,6 +879,8 @@ class VideoAcquisitionState {
     plan: clearPlan ? null : (plan ?? this.plan),
     aiDecision: aiDecision ?? this.aiDecision,
     busy: busy ?? this.busy,
+    franchiseName: franchiseName ?? this.franchiseName,
+    franchiseEntries: franchiseEntries ?? this.franchiseEntries,
   );
 
   /// 追加一条对话记录。
@@ -778,6 +919,7 @@ class VideoAcquisitionDefaults {
     this.sources = const <VideoAcquisitionSource>[],
     this.defaultSourceId,
     this.locale = 'en',
+    this.skipExtras = false,
   });
 
   /// `ai_video_download_quality`：`''` 未设置 / `ask` / 固定档。
@@ -799,6 +941,9 @@ class VideoAcquisitionDefaults {
   final int? defaultSourceId;
 
   final String locale;
+
+  /// 「下载时跳过特典」：只有特典的发布（PV / NCOP / 菜单…）不参与选版本。
+  final bool skipExtras;
 }
 
 // ---------------------------------------------------------------------------
@@ -907,6 +1052,62 @@ class VideoAcquisitionCancelEvent extends VideoAcquisitionEvent {
   const VideoAcquisitionCancelEvent();
 }
 
+/// 「再下一部」：结束（完成 / 取消 / 失败）后在同一页重新开始，保留对话记录与
+/// 本会话已定的通用偏好（画质 / 字幕 / 来源）。
+class VideoAcquisitionRestartEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionRestartEvent();
+}
+
+/// 系列解析返回；null = 没有可用的系列来源。
+class VideoAcquisitionFranchiseLoadedEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionFranchiseLoadedEvent(this.franchise);
+
+  final VideoFranchise? franchise;
+}
+
+/// 整套清单里第 [index] 部的资料与资源搜完了。
+class VideoAcquisitionFranchiseEntryResolvedEvent
+    extends VideoAcquisitionEvent {
+  const VideoAcquisitionFranchiseEntryResolvedEvent({
+    required this.index,
+    this.work,
+    this.presence,
+    this.alreadySubscribed = false,
+    this.items = const <VideoResourceCandidate>[],
+  });
+
+  final int index;
+  final VideoMetadataWork? work;
+  final VideoLibraryPresence? presence;
+  final bool alreadySubscribed;
+  final List<VideoResourceCandidate> items;
+}
+
+/// 用户在整套清单上勾 / 取消勾第 [index] 部。
+class VideoAcquisitionFranchiseEntryToggledEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionFranchiseEntryToggledEvent(this.index);
+
+  final int index;
+}
+
+/// 整套提交完成。
+class VideoAcquisitionFranchiseSubmittedEvent extends VideoAcquisitionEvent {
+  const VideoAcquisitionFranchiseSubmittedEvent({
+    required this.downloads,
+    required this.subscriptions,
+    required this.failed,
+  });
+
+  /// 入队的下载任务条数。
+  final int downloads;
+
+  /// 新建的订阅个数。
+  final int subscriptions;
+
+  /// 提交失败的作品数。
+  final int failed;
+}
+
 // ---------------------------------------------------------------------------
 // 效果（reducer 产出，service 执行）
 // ---------------------------------------------------------------------------
@@ -1003,6 +1204,42 @@ class VideoAcquisitionSubmitSubscriptionEffect extends VideoAcquisitionEffect {
   final bool installSubtitles;
 }
 
+/// 找 [item] 所在的系列。
+class VideoAcquisitionLoadFranchiseEffect extends VideoAcquisitionEffect {
+  const VideoAcquisitionLoadFranchiseEffect(this.item);
+
+  final VideoDiscoveryItem item;
+}
+
+/// 整套清单的一部：拉详情（放送状态，定下载还是订阅）+ 在库检查 + 搜资源。
+/// 逐部串行（一部完成再发下一部）：进度能逐行亮起，也不对索引站并发轰炸。
+class VideoAcquisitionResolveFranchiseEntryEffect
+    extends VideoAcquisitionEffect {
+  const VideoAcquisitionResolveFranchiseEntryEffect({
+    required this.index,
+    required this.item,
+  });
+
+  final int index;
+  final VideoDiscoveryItem item;
+}
+
+/// 整套提交：逐部入队 / 建订阅，单部失败不拖垮其余。
+class VideoAcquisitionSubmitFranchiseEffect extends VideoAcquisitionEffect {
+  const VideoAcquisitionSubmitFranchiseEffect({
+    required this.entries,
+    required this.targetSourceId,
+    required this.subtitleLanguageCode,
+  });
+
+  /// 只含可提交的行（[VideoAcquisitionFranchiseEntry.submittable]）。
+  final List<VideoAcquisitionFranchiseEntry> entries;
+  final int targetSourceId;
+
+  /// 每部都写进每系列字幕记忆的语言；null = 不配字幕。
+  final String? subtitleLanguageCode;
+}
+
 /// 会话结束（done / cancelled），页面可以关。
 class VideoAcquisitionCloseEffect extends VideoAcquisitionEffect {
   const VideoAcquisitionCloseEffect();
@@ -1032,3 +1269,16 @@ const String kVideoAcquisitionOptionAll = 'all';
 
 /// subscribeFallback 问题：「改为直接下载」（值与 [VideoAcquisitionMode.download] 同名）。
 const String kVideoAcquisitionOptionDownload = 'download';
+
+/// resource 问题：「只下最新一集」。
+const String kVideoAcquisitionOptionLatest = 'latest';
+
+/// resource 问题里直接点某个候选版本：`alt:<eligibleGroups 下标>`。
+const String kVideoAcquisitionOptionAltPrefix = 'alt:';
+
+/// 作品操作条（非阻塞，选定作品后到提交前一直可点）：「下载整个系列」等，
+/// id 是 `scope:<VideoAcquisitionScope.storageKey>`。
+const String kVideoAcquisitionOptionScopePrefix = 'scope:';
+
+/// franchise 问题：「全部提交」。
+const String kVideoAcquisitionOptionSubmitAll = 'submit_all';

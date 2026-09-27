@@ -242,6 +242,24 @@ void main() {
     );
   });
 
+  testWidgets('skip extras switch writes the global download preference', (
+    WidgetTester tester,
+  ) async {
+    await pumpContext(tester);
+    final SettingsSwitchItem item =
+        section().items.singleWhere(
+              (SettingsItem candidate) =>
+                  candidate.id == 'ai.video_download_skip_extras',
+            )
+            as SettingsSwitchItem;
+    expect(item.value(settingsContext), isFalse, reason: '默认整颗种子全下');
+    await item.onChanged(settingsContext, true);
+    expect(prefs.videoDownloadSkipExtras, isTrue);
+    final PreferencesRepository reloaded = PreferencesRepository(db);
+    await reloaded.loadFromDb();
+    expect(reloaded.videoDownloadSkipExtras, isTrue);
+  });
+
   testWidgets('section follows the downloads module gate', (
     WidgetTester tester,
   ) async {

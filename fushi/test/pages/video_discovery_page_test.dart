@@ -131,7 +131,7 @@ void main() {
     int opened = 0;
     await tester.pumpWidget(_harness(
       controller,
-      actions: VideoDiscoveryActions(onAiAcquire: () => opened++),
+      actions: VideoDiscoveryActions(onAiAcquire: (_) => opened++),
     ));
     await tester.pumpAndSettle();
     final Finder entry =
