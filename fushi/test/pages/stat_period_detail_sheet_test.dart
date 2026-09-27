@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_period_detail_sheet.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -320,5 +321,71 @@ void main() {
     expect(tappedKind, kActivityMediaVideo);
     expect(tappedKey, 'v1');
     expect(find.text('动画EP1'), findsNothing, reason: '跳转前 sheet 必须先收起');
+  });
+
+  testWidgets('BUG-2741：条目多时 sheet 截到屏高上限并在内部滚动，不顶进状态栏', (
+    WidgetTester tester,
+  ) async {
+    // iPhone 15 逻辑尺寸；dpr 1 让 physicalSize 即逻辑像素。
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _open(
+      tester,
+      facts: <StatFact>[
+        for (int i = 0; i < 40; i++)
+          _fact(
+            'book',
+            '2026-09-01',
+            key: 'b$i',
+            title: 'Book$i',
+            ms: 1000 * (40 - i),
+          ),
+      ],
+      contains: (String _) => true,
+    );
+    final double sheetHeight = tester.getSize(find.byType(BottomSheet)).height;
+    expect(
+      sheetHeight,
+      // 内容截到上限；BottomSheet 另含 48dp 拖动条。
+      lessThanOrEqualTo(
+        852 * kStatSheetMaxHeightFactor + kMinInteractiveDimension + 0.5,
+      ),
+    );
+    expect(
+      tester.getTopLeft(find.byType(BottomSheet)).dy,
+      // iPhone 灵动岛机型顶部安全区 59pt。
+      greaterThan(59 + 40),
+      reason: 'sheet 顶边必须留在状态栏 / 灵动岛之下',
+    );
+    // 截短后末尾条目仍能滚到。
+    await tester.scrollUntilVisible(
+      find.text('Book39'),
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(BottomSheet),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(find.text('Book39'), findsOneWidget);
+  });
+
+  testWidgets('BUG-2741：条目少时 sheet 仍按内容收缩，不被撑到上限', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _open(
+      tester,
+      facts: <StatFact>[
+        _fact('book', '2026-09-01', key: 'b1', title: 'Only', ms: 1000),
+      ],
+      contains: (String _) => true,
+    );
+    expect(
+      tester.getSize(find.byType(BottomSheet)).height,
+      lessThan(852 * kStatSheetMaxHeightFactor / 2),
+    );
   });
 }
