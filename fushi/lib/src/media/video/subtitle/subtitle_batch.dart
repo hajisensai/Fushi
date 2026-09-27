@@ -161,9 +161,11 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
             dir.path,
             batchSubtitleFileName(target.bookUid, download.fileName),
           );
-          // 流媒体没有本地文件可读内嵌轨，对齐器自己会原样返回。
+          // 流媒体没有本地文件可读内嵌轨，对齐器自己会原样返回。网络路径
+          // （UNC / smb:// …）是后台批量，不抽内嵌轨——整片 demux 走网络等于把整部
+          // 视频拉一遍，原样写。
           await File(dest).writeAsBytes(
-            subtitleAligner == null
+            subtitleAligner == null || isNetworkMediaPath(target.videoPath)
                 ? download.bytes
                 : await subtitleAligner(download.bytes, target.videoPath),
           );

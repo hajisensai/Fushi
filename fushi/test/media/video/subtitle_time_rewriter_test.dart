@@ -242,5 +242,36 @@ void main() {
       final Uint8List out = retimeSubtitleBytes(bytes, _shift(1)).bytes;
       expect(utf8.decode(out), '1\n00:00:02,000 --> 00:00:03,000\n日本語\n');
     });
+
+    test('tab 分隔的 SRT 时间行：能解析、平移，tab 原样保留', () {
+      final Uint8List bytes = _ascii(
+        '1\n\t00:00:01,000\t-->\t00:00:02,000\t\nA\n\n'
+        '2\n00:00:10,000\t--> 00:00:11,000\nB\n',
+      );
+      expect(alignableCueStartSeconds(bytes), <double>[1.0, 10.0]);
+      final Uint8List out = retimeSubtitleBytes(bytes, _shift(2)).bytes;
+      expect(
+        String.fromCharCodes(out),
+        '1\n\t00:00:03,000\t-->\t00:00:04,000\t\nA\n\n'
+        '2\n00:00:12,000\t--> 00:00:13,000\nB\n',
+      );
+    });
+
+    test('ASS 时间列两侧带 tab 也能解析与平移', () {
+      const String ass =
+          '[Events]\n'
+          'Format: Layer, Start, End, Style, Text\n'
+          'Dialogue: 0,\t0:00:05.00\t,0:00:07.50\t,Default,hi\n';
+      final SubtitleTimedLine l = scanSubtitleTimedLines(ass).single;
+      expect(l.startMs, 5000);
+      expect(l.endMs, 7500);
+      final Uint8List out = retimeSubtitleBytes(_ascii(ass), _shift(1)).bytes;
+      expect(
+        String.fromCharCodes(out),
+        '[Events]\n'
+        'Format: Layer, Start, End, Style, Text\n'
+        'Dialogue: 0,\t0:00:06.00\t,0:00:08.50\t,Default,hi\n',
+      );
+    });
   });
 }

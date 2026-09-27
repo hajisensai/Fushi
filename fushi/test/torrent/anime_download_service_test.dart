@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -14,6 +15,7 @@ import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles, pickSidecar;
 
@@ -321,10 +323,12 @@ void main() {
     AnimeDownloadService buildService({
       QbConnectionConfig? Function()? config,
       bool withSubtitleResolver = true,
+      AutomaticSubtitleAligner? subtitleAligner,
     }) {
       return AnimeDownloadService(
         store: store,
         configProvider: config ?? () => _kConfig,
+        subtitleAligner: subtitleAligner,
         subtitleResolver: !withSubtitleResolver
             ? null
             : (AnimeDownloadPlan plan, List<String> videos) async {
@@ -1135,6 +1139,145 @@ void main() {
         expect(saved.importedEarly, isTrue);
         expect(saved.collectionId, 42);
         expect(importCalls, hasLength(1));
+      });
+
+      group('按内嵌字幕轨对齐（B1：边下边播不在残缺视频上抽轨）', () {
+        late List<String> alignerCalls;
+        late String savePath;
+        late String staged;
+
+        Future<Uint8List> fakeAligner(Uint8List bytes, String videoPath) async {
+          alignerCalls.add(videoPath);
+          return Uint8List.fromList(
+            utf8.encode('aligned:${utf8.decode(bytes)}'),
+          );
+        }
+
+        void stubPendingSubtitle() {
+          final Directory subsDir = store.subsDirFor(_kHash)
+            ..createSync(recursive: true);
+          staged = p.join(subsDir.path, 'Show 01.ja.srt');
+          subtitleResolverOverride =
+              (AnimeDownloadPlan plan, List<String> videos) async {
+            File(staged).writeAsStringSync('raw');
+            return ResolvedPlanSubtitles.ok(<PlanSubtitle>[
+              PlanSubtitle(
+                episode: 1,
+                fileName: 'Show 01.ja.srt',
+                stagedPath: staged,
+                language: 'ja',
+              ),
+            ]);
+          };
+        }
+
+        void setTorrent({required bool complete}) {
+          qb.torrents = <Map<String, dynamic>>[
+            complete
+                ? _torrentJson(savePath: savePath)
+                : _torrentJson(
+                    state: 'downloading',
+                    progress: 0.3,
+                    amountLeft: 700,
+                    savePath: savePath,
+                  ),
+          ];
+        }
+
+        setUp(() async {
+          alignerCalls = <String>[];
+          savePath = p.join(tempDir.path, 'downloads');
+          Directory(savePath).createSync(recursive: true);
+          await store.save(
+            _plan().copyWith(
+              jimakuEntryId: 7,
+              subtitleStatus: AnimeDownloadPlan.subtitlePending,
+            ),
+          );
+          qb.files = <Map<String, dynamic>>[
+            <String, dynamic>{
+              'name': 'Show 01.mkv',
+              'size': 1,
+              'progress': 0.5,
+            },
+          ];
+          stubPendingSubtitle();
+        });
+
+        test('边下边播：不调对齐器、原样放 sidecar 并记 pending；下完那一轮补对齐并替换原稿 sidecar',
+            () async {
+          final String sidecar = p.join(savePath, 'Show 01.ja.srt');
+          setTorrent(complete: false);
+          final AnimeDownloadService service = buildService(
+            subtitleAligner: fakeAligner,
+          );
+          expect(await service.importNow(_kHash), isTrue);
+          // 视频还残缺：绝不抽轨。
+          expect(alignerCalls, isEmpty);
+          expect(File(sidecar).readAsStringSync(), 'raw');
+          AnimeDownloadPlan saved = (await store.loadAll()).single;
+          expect(saved.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
+          expect(saved.subtitleAlignPending, isTrue);
+
+          // 仍在下载的 tick：还是不对。
+          await service.tick();
+          expect(alignerCalls, isEmpty);
+
+          // 真正完成：对暂存字幕补一次对齐，原稿 sidecar 一并换成对齐结果。
+          setTorrent(complete: true);
+          await service.tick();
+          expect(alignerCalls, <String>[p.join(savePath, 'Show 01.mkv')]);
+          expect(File(staged).readAsStringSync(), 'aligned:raw');
+          expect(File(sidecar).readAsStringSync(), 'aligned:raw');
+          saved = (await store.loadAll()).single;
+          expect(saved.status, AnimeDownloadPlan.statusImported);
+          expect(saved.subtitleAlignPending, isFalse);
+          // 重试路径不会再把 resolved 的计划对一遍。
+          expect(subtitleResolverCalls, hasLength(1));
+        });
+
+        test('完成前用户换过 sidecar 内容：补对齐只改暂存，不覆盖用户的档', () async {
+          final String sidecar = p.join(savePath, 'Show 01.ja.srt');
+          setTorrent(complete: false);
+          final AnimeDownloadService service = buildService(
+            subtitleAligner: fakeAligner,
+          );
+          expect(await service.importNow(_kHash), isTrue);
+          File(sidecar).writeAsStringSync('user edited');
+
+          setTorrent(complete: true);
+          await service.tick();
+          expect(alignerCalls, hasLength(1));
+          expect(File(staged).readAsStringSync(), 'aligned:raw');
+          expect(File(sidecar).readAsStringSync(), 'user edited');
+        });
+
+        test('直接下完才入库：落 sidecar 前就对齐，不留 pending', () async {
+          setTorrent(complete: true);
+          await buildService(subtitleAligner: fakeAligner).tick();
+          expect(alignerCalls, <String>[p.join(savePath, 'Show 01.mkv')]);
+          expect(
+            File(p.join(savePath, 'Show 01.ja.srt')).readAsStringSync(),
+            'aligned:raw',
+          );
+          final AnimeDownloadPlan saved = (await store.loadAll()).single;
+          expect(saved.status, AnimeDownloadPlan.statusImported);
+          expect(saved.subtitleAlignPending, isFalse);
+        });
+
+        test('subtitleAlignPending 随计划 JSON 落盘往返；老计划缺字段 = false', () {
+          final AnimeDownloadPlan plan = _plan().copyWith(
+            subtitleAlignPending: true,
+          );
+          final AnimeDownloadPlan? back = decodeAnimeDownloadPlan(
+            encodeAnimeDownloadPlan(plan),
+          );
+          expect(back?.subtitleAlignPending, isTrue);
+          final Map<String, dynamic> legacy = encodeAnimeDownloadPlan(_plan())
+            ..remove('subtitleAlignPending');
+          expect(
+              decodeAnimeDownloadPlan(legacy)?.subtitleAlignPending, isFalse);
+        });
       });
 
       test('计划不存在 / 种子不在列表 → false', () async {

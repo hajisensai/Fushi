@@ -2113,7 +2113,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final Uint8List bytes = await File(subtitlePath).readAsBytes();
     final Uint8List? original = await findSubtitleAlignmentOriginal(bytes);
     if (original != null) {
-      await _offerRestoreSubtitleOriginal(controller, subtitlePath, original);
+      await _offerRestoreSubtitleOriginal(
+        controller,
+        videoPath,
+        subtitlePath,
+        original,
+      );
       return;
     }
     _showOsd(
@@ -2127,7 +2132,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
           videoPath: videoPath,
           videoDurationMs: await probeVideoDurationMs(videoPath),
         );
-    if (!mounted) return;
+    // 抽轨要几十秒：这期间换了集，结果是给上一集算的，不能落到新集上。
+    if (!_stillOnVideo(videoPath)) return;
     final String? problem = _referenceSyncProblem(result);
     if (problem != null) {
       _showOsd(problem, severity: ToastSeverity.warning);
@@ -2147,12 +2153,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
         )) {
       return;
     }
-    await _importSubtitleVariant(
-      controller,
-      subtitlePath,
-      result.retime!.bytes,
-      'aligned',
-    );
+    // 确认弹窗期间同样可能换集。
+    if (!_stillOnVideo(videoPath)) return;
+    final Uint8List aligned = result.retime!.bytes;
+    // 与自动路径同一份登记：新档由此被认作「对齐产物」——播放页据此让调轴归零
+    // （[_refreshPrimarySubtitleAlignment]），菜单再点也能提供「恢复原始时间轴」。
+    await saveSubtitleAlignmentOriginal(original: bytes, aligned: aligned);
+    await _importSubtitleVariant(controller, subtitlePath, aligned, 'aligned');
+    if (!_stillOnVideo(videoPath)) return;
+    // 对齐后的时间轴已经贴着视频：系列级 / 本集的旧调轴是给没对齐的字幕调的，
+    // 叠上去只会再推歪。确定性地按新选中的档重算一次（归零），不等选源的异步检查。
+    await _refreshPrimarySubtitleAlignment(_currentSubtitleSource);
     if (!mounted) return;
     _showOsd(
       t.video_subtitle_reference_sync_done(offset: offsets),
@@ -2192,6 +2203,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   Future<void> _offerRestoreSubtitleOriginal(
     VideoPlayerController controller,
+    String videoPath,
     String subtitlePath,
     Uint8List original,
   ) async {
@@ -2202,6 +2214,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     )) {
       return;
     }
+    if (!_stillOnVideo(videoPath)) return;
     await _importSubtitleVariant(
       controller,
       subtitlePath,
@@ -2216,24 +2229,59 @@ extension _VideoSubtitle on _VideoFushiPageState {
     required String action,
   }) async {
     if (!mounted) return false;
-    return await showDialog<bool>(
-          context: context,
-          builder: (BuildContext ctx) => AlertDialog(
-            title: Text(title),
-            content: Text(body),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text(t.dialog_cancel),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text(action),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    // guardOverlay：确认弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
+    // （确定 / 取消 / Esc / 点外部）都要归还（docs/agent/focus-ownership.md）。
+    final bool? confirmed = await _focusOwnership.guardOverlay(
+      () => showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(action),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  /// 异步操作回来后当前页是否还在放 [videoPath]（没卸载、没换集）。
+  bool _stillOnVideo(String videoPath) =>
+      mounted && _currentVideoPath == videoPath;
+
+  /// 按当前主字幕档重算「对齐产物 → 调轴归零」（见 [_primarySubtitleAligned]）。
+  ///
+  /// 当前档是按内嵌轨对齐写下的产物（subtitle_alignment_backup.dart 登记过）时，
+  /// 有效调轴从 0 起算：系列级 / 本集持久化的调轴是给没对齐的字幕调的，对齐后的
+  /// 时间轴已经贴着视频，再叠上去只会推歪。换回别的档时恢复原调轴。持久化值本身
+  /// 不动——系列级调轴对同系列其它没对齐的集仍然有效。
+  Future<void> _refreshPrimarySubtitleAlignment(String? source) async {
+    final int generation = ++_subtitleAlignmentCheckGeneration;
+    final bool aligned =
+        !_isRemote &&
+        source != null &&
+        !SubtitleSource.isOff(source) &&
+        !SubtitleSource.isEmbeddedPersisted(source) &&
+        await isSubtitleAlignmentProduct(source);
+    if (!mounted || generation != _subtitleAlignmentCheckGeneration) return;
+    if (aligned == _primarySubtitleAligned) return;
+    _primarySubtitleAligned = aligned;
+    if (aligned) {
+      _delayBeforeAlignedSubtitleMs = _delayMs;
+      _delayMs = 0;
+    } else {
+      _delayMs = _delayBeforeAlignedSubtitleMs;
+    }
+    _controller?.setDelayMs(_delayMs);
+    _rebuild(() {});
   }
 
   /// 把 [bytes] 另存为 `<原名>.<tag>-<视频键><扩展名>` 进字幕目录，走既有外挂字幕

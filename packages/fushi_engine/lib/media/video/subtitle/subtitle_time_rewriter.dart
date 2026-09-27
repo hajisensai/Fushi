@@ -335,10 +335,10 @@ SubtitleTimedLine? _scanAssEvent(String text, _Line line, _AssColumns columns) {
   SubtitleTimestamp? field(int col) {
     int s = fieldStarts[col];
     int e = col + 1 < fieldStarts.length ? fieldStarts[col + 1] - 1 : line.end;
-    while (s < e && text.codeUnitAt(s) == 0x20) {
+    while (s < e && _isInlineSpace(text.codeUnitAt(s))) {
       s++;
     }
-    while (e > s && text.codeUnitAt(e - 1) == 0x20) {
+    while (e > s && _isInlineSpace(text.codeUnitAt(e - 1))) {
       e--;
     }
     return SubtitleTimestamp.parse(text, s, e);
@@ -420,13 +420,11 @@ SubtitleTimedLine? _scanArrowCue(
   final int arrow = text.indexOf('-->', line.start);
   final SubtitleTimestamp? start = _trimmedStamp(text, line.start, arrow);
   int e = arrow + 3;
-  while (e < line.end && text.codeUnitAt(e) == 0x20) {
+  while (e < line.end && _isInlineSpace(text.codeUnitAt(e))) {
     e++;
   }
   int f = e;
-  while (f < line.end &&
-      text.codeUnitAt(f) != 0x20 &&
-      text.codeUnitAt(f) != 0x09) {
+  while (f < line.end && !_isInlineSpace(text.codeUnitAt(f))) {
     f++;
   }
   final SubtitleTimestamp? end = SubtitleTimestamp.parse(text, e, f);
@@ -457,14 +455,17 @@ SubtitleTimedLine? _scanArrowCue(
 
 SubtitleTimestamp? _trimmedStamp(String text, int s, int e) {
   s = _bomLength(text, s);
-  while (s < e && text.codeUnitAt(s) == 0x20) {
+  while (s < e && _isInlineSpace(text.codeUnitAt(s))) {
     s++;
   }
-  while (e > s && text.codeUnitAt(e - 1) == 0x20) {
+  while (e > s && _isInlineSpace(text.codeUnitAt(e - 1))) {
     e--;
   }
   return SubtitleTimestamp.parse(text, s, e);
 }
+
+/// 时间戳两侧允许的行内空白：空格与制表符（有的 SRT 用 tab 隔 `-->`）。
+bool _isInlineSpace(int c) => c == 0x20 || c == 0x09;
 
 // ---------------------------------------------------------------------------
 // 对外

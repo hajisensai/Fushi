@@ -40,3 +40,19 @@ Future<Uint8List?> findSubtitleAlignmentOriginal(Uint8List current) async {
   final File f = File(p.join((await _backupDir()).path, _keyOf(current)));
   return f.existsSync() ? f.readAsBytes() : null;
 }
+
+/// [path] 这份字幕文件是不是按内嵌轨对齐写下的产物（自动路径与播放页手动入口都经
+/// [saveSubtitleAlignmentOriginal] 登记）。读不了 / 不存在 → false。
+///
+/// 播放页据此让调轴归零：对齐产物的时间轴已经贴着视频，系列级 / 本集的旧调轴是
+/// 给没对齐的字幕调的，叠上去只会再推歪。
+Future<bool> isSubtitleAlignmentProduct(String path) async {
+  try {
+    final File file = File(path);
+    if (!file.existsSync()) return false;
+    return await findSubtitleAlignmentOriginal(await file.readAsBytes()) !=
+        null;
+  } catch (_) {
+    return false;
+  }
+}

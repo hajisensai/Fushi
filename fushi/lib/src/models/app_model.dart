@@ -4999,8 +4999,9 @@ class AppModel with ChangeNotifier {
         httpClientFactory: createDownloadHttpClient,
         stagingDirFor: store.subsDirFor,
         defaultContentLanguageProvider: () => prefsRepo.defaultContentLanguage,
-        subtitleAligner: alignDownloadedSubtitle,
       ).resolve,
+      // 对时间轴在视频真正下完后做（边下边播那一轮视频还残缺）。
+      subtitleAligner: alignDownloadedSubtitle,
       backendFactory: _torrentBackendFor,
       onTick: () {
         _embeddedTorrentHost?.sweepAntiLeech();

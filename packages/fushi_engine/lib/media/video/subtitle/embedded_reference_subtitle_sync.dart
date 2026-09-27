@@ -8,6 +8,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart';
@@ -163,11 +164,13 @@ Future<List<SubtitleReferenceTrack>> loadEmbeddedReferenceTracks(
       codec: track.codec,
     );
     if (file == null) continue;
+    final Uint8List trackBytes = await file.readAsBytes();
     out.add(
       SubtitleReferenceTrack(
         label: referenceTrackLabel(track),
-        starts: uniqueCueStarts(
-          alignableCueStartSeconds(await file.readAsBytes()),
+        // 整轨扫描是纯 CPU（大 ASS 几万行），放后台 isolate，别卡调用方的 UI 帧。
+        starts: await Isolate.run(
+          () => uniqueCueStarts(alignableCueStartSeconds(trackBytes)),
         ),
       ),
     );
@@ -190,12 +193,28 @@ Future<EmbeddedReferenceSyncResult> syncSubtitleToEmbeddedReferences({
   SubtitleReferenceTrackLoader loadReferences = loadEmbeddedReferenceTracks,
 }) async {
   try {
-    final EmbeddedReferenceSyncResult result = syncSubtitleBytesToReferences(
-      subtitleBytes: subtitleBytes,
-      references: await loadReferences(videoPath),
-      durationSeconds: videoDurationMs == null
-          ? null
-          : videoDurationMs / 1000.0,
+    final List<SubtitleReferenceTrack> references = await loadReferences(
+      videoPath,
+    );
+    final double? durationSeconds = videoDurationMs == null
+        ? null
+        : videoDurationMs / 1000.0;
+    // 判定（逐轨相关 + 断点搜索）与改写都是纯 CPU：手动入口从播放页调，放后台
+    // isolate，别让播放页掉帧。
+    final EmbeddedReferenceSyncResult computed = await Isolate.run(
+      () => syncSubtitleBytesToReferences(
+        subtitleBytes: subtitleBytes,
+        references: references,
+        durationSeconds: durationSeconds,
+      ),
+    );
+    // 跨 isolate 回来的原稿是副本：换回调用方手上那一份，「原样」才仍是同一个
+    // 对象（[alignSubtitleForAutomaticPath] 靠 identical 判断没改）。
+    final EmbeddedReferenceSyncResult result = EmbeddedReferenceSyncResult(
+      status: computed.status,
+      originalBytes: subtitleBytes,
+      decision: computed.decision,
+      retime: computed.retime,
     );
     fushiDebugPrint('[ReferenceSync] "$videoPath" ${result.describe()}');
     return result;
@@ -223,7 +242,8 @@ Future<int?> _probeDurationMs(String videoPath) =>
 
 /// 自动下载路径统一用的钩子：刚下到手的字幕字节 + 它要配的本地视频 → 该写盘的字节。
 ///
-/// 调用方拿到 null（用户关了「按内嵌字幕自动对齐」）就原样写盘。
+/// 调用方持有的钩子为 null（没装配对齐）就原样写盘；用户关了「按内嵌字幕自动对齐」
+/// 由 [gatedAutomaticSubtitleAligner] 在钩子内部现读开关、原样返回。
 typedef AutomaticSubtitleAligner =
     Future<Uint8List> Function(Uint8List subtitleBytes, String videoPath);
 
@@ -246,7 +266,11 @@ Future<Uint8List> alignSubtitleForAutomaticPath(
         loadReferences: loadReferences,
       );
   final Uint8List out = result.bytesForAutomaticPath;
-  if (identical(out, subtitleBytes)) return subtitleBytes;
+  // 零偏移的「对齐结果」内容与原稿相同（判定在后台 isolate 里做，回来的是副本，
+  // 不再 identical）：不能当对齐产物登记，否则播放页会按对齐产物把调轴归零。
+  if (identical(out, subtitleBytes) || !result.changesTiming) {
+    return subtitleBytes;
+  }
   try {
     await saveSubtitleAlignmentOriginal(original: subtitleBytes, aligned: out);
   } catch (e) {
@@ -254,4 +278,19 @@ Future<Uint8List> alignSubtitleForAutomaticPath(
     return subtitleBytes;
   }
   return out;
+}
+
+/// 形如 `smb://` / `nfs://` 的 URI 前缀（scheme 至少两字符，排除 `C:` 盘符）。
+final RegExp _networkUriScheme = RegExp(r'^[A-Za-z][A-Za-z0-9+.-]+://');
+
+/// [path] 是否明显落在网络上：UNC（`\\host\share`、`//host/share`、`\\?\UNC\`）或
+/// 带 scheme 的 URI（`smb://` / `nfs://` / `afp://` / `http://` …）。
+///
+/// 后台自动路径（刮削后补字幕、合集批量）遇到它就不抽内嵌轨：抽轨是整片 demux，
+/// 走网络等于把整部视频拉一遍。映射成盘符的网络盘（`Z:`）与 POSIX 挂载点从路径上
+/// 认不出，按本地处理。纯函数。
+bool isNetworkMediaPath(String path) {
+  final String trimmed = path.trim();
+  if (trimmed.startsWith(r'\\') || trimmed.startsWith('//')) return true;
+  return _networkUriScheme.hasMatch(trimmed);
 }

@@ -8,7 +8,6 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
-import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
@@ -42,17 +41,12 @@ class JimakuPlanSubtitleResolver {
     required Future<http.Client> Function() httpClientFactory,
     required Directory Function(String planId) stagingDirFor,
     String Function()? defaultContentLanguageProvider,
-    AutomaticSubtitleAligner? subtitleAligner,
   })  : _apiKeyProvider = apiKeyProvider,
         _httpClientFactory = httpClientFactory,
         _stagingDirFor = stagingDirFor,
-        _defaultContentLanguage = defaultContentLanguageProvider ?? (() => ''),
-        _subtitleAligner = subtitleAligner;
+        _defaultContentLanguage = defaultContentLanguageProvider ?? (() => '');
 
   final String Function() _apiKeyProvider;
-
-  /// 落暂存前按视频内嵌字幕轨对时间轴；null = 不对齐。
-  final AutomaticSubtitleAligner? _subtitleAligner;
   final Future<http.Client> Function() _httpClientFactory;
   final Directory Function(String planId) _stagingDirFor;
 
@@ -137,17 +131,13 @@ class JimakuPlanSubtitleResolver {
     final Map<String, String> stagedByUrl = <String, String>{};
     final List<PlanSubtitle> out = <PlanSubtitle>[];
     // 每个视频只探一次时长（同一 URL 的字幕会配给多个视频，但校验是按视频算的）。
+    // 按内嵌字幕轨对时间轴不在这里做：边下边播时视频还残缺，由
+    // AnimeDownloadService 在视频真正下完后对暂存字幕统一补做。
     final Map<String, int?> durationByVideo = <String, int?>{};
-    // 对时间轴是按**一个**视频算的：同一份字幕配给同集多个版本（BD / WEB）时，
-    // 对着其中一个对齐会把另一个推歪，那种就原样放。
-    final Map<String, int> videosPerUrl = <String, int>{};
-    for (final ResolvedSubtitleMatch match in matches) {
-      videosPerUrl.update(match.file.url, (int n) => n + 1, ifAbsent: () => 1);
-    }
     for (final ResolvedSubtitleMatch match in matches) {
       String? staged = stagedByUrl[match.file.url];
       if (staged == null) {
-        Uint8List? bytes = await jimaku.downloadFile(match.file.url);
+        final Uint8List? bytes = await jimaku.downloadFile(match.file.url);
         if (bytes == null) continue;
         final String? videoPath = _videoPathFor(match, videoAbsolutePaths);
         if (videoPath != null) {
@@ -164,10 +154,6 @@ class JimakuPlanSubtitleResolver {
           // 这条路径**没有备选候选**（集号已经锁定唯一一条字幕），所以只认正面
           // 矛盾，不因「读不出」就把用户唯一的字幕扔掉。见 contradictsVideo。
           if (check.contradictsVideo) continue;
-          final AutomaticSubtitleAligner? aligner = _subtitleAligner;
-          if (aligner != null && videosPerUrl[match.file.url] == 1) {
-            bytes = await aligner(bytes, videoPath);
-          }
         }
         try {
           final File dest =

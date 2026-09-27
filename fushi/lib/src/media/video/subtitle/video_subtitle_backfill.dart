@@ -331,12 +331,22 @@ class VideoSubtitleBackfillService {
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
     final AutomaticSubtitleAligner? aligner = subtitleAligner;
+    // 后台自动路径：网络路径（UNC / smb:// …）不抽内嵌轨——整片 demux 走网络等于
+    // 把整部视频拉一遍。原样写。
     await temp.writeAsBytes(
-      aligner == null
+      aligner == null || isNetworkMediaPath(video.path)
           ? download.bytes
           : await aligner(download.bytes, video.path),
       flush: true,
     );
+    // 对齐可能要几十秒（整片抽轨）：这期间用户 / 另一条路径可能已经落了同名
+    // sidecar，rename 会把它覆盖掉。再查一次，已存在就放弃这份。
+    if (dest.existsSync()) {
+      try {
+        await temp.delete();
+      } catch (_) {}
+      return target;
+    }
     await temp.rename(target);
     return target;
   }

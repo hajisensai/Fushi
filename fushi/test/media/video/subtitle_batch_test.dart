@@ -116,6 +116,46 @@ void main() {
     expect(provider.downloaded, <String>['Show - 01.ja.srt']);
   });
 
+  test('对齐钩子：本机路径调用；UNC / smb:// 网络路径不抽内嵌轨、原样落盘', () async {
+    final _FakeProvider provider = _FakeProvider();
+    final List<String> alignedFor = <String>[];
+    SubtitleBatchTarget target(int index, String name, String videoPath) =>
+        SubtitleBatchTarget(
+          bookUid: 'video/$name',
+          title: name,
+          videoPath: videoPath,
+          sortIndex: index,
+          isStream: false,
+        );
+    final List<SubtitleBatchItem> results = await runSubtitleBatch(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+      candidates: <VideoSubtitleCandidate>[
+        _Cand('Show - 01.ja.srt', episode: 1),
+        _Cand('Show - 02.ja.srt', episode: 2),
+        _Cand('Show - 03.ja.srt', episode: 3),
+      ],
+      targets: <SubtitleBatchTarget>[
+        target(0, 'Show - 01', 'C:/v/Show - 01.mkv'),
+        target(1, 'Show - 02', r'\\nas\anime\Show - 02.mkv'),
+        target(2, 'Show - 03', 'smb://nas/anime/Show - 03.mkv'),
+      ],
+      saveDirectory: tmp.path,
+      subtitleAligner: (Uint8List bytes, String videoPath) async {
+        alignedFor.add(videoPath);
+        return Uint8List.fromList('aligned'.codeUnits);
+      },
+    );
+    expect(alignedFor, <String>['C:/v/Show - 01.mkv']);
+    expect(File(results[0].subtitlePath!).readAsStringSync(), 'aligned');
+    for (final SubtitleBatchItem item in results.skip(1)) {
+      expect(item.status, SubtitleBatchStatus.done);
+      expect(
+        File(item.subtitlePath!).readAsStringSync(),
+        startsWith('1\n00:00:01,000'),
+      );
+    }
+  });
+
   test('preferredLanguage 把该语言排到前面', () async {
     final _FakeProvider provider = _FakeProvider();
     final List<SubtitleBatchItem> results = await runSubtitleBatch(

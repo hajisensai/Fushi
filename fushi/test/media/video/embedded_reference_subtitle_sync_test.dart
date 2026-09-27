@@ -158,6 +158,47 @@ void main() {
     expect(calls, 1);
   });
 
+  test('isSubtitleAlignmentProduct：对齐写下的档认得出，原稿 / 不存在的档不认', () async {
+    final Uint8List original = _srt(truth.map((double t) => t + 4));
+    final Uint8List out = await alignSubtitleForAutomaticPath(
+      original,
+      video.path,
+      loadReferences: refs,
+      probeDurationMs: duration,
+    );
+    final File alignedFile = File('${tmp.path}/ep.ja.srt')
+      ..writeAsBytesSync(out);
+    final File originalFile = File('${tmp.path}/ep.orig.srt')
+      ..writeAsBytesSync(original);
+    expect(await isSubtitleAlignmentProduct(alignedFile.path), isTrue);
+    expect(await isSubtitleAlignmentProduct(originalFile.path), isFalse);
+    expect(
+      await isSubtitleAlignmentProduct('${tmp.path}/missing.srt'),
+      isFalse,
+    );
+  });
+
+  test('isNetworkMediaPath：UNC 与 smb:// / nfs:// 等 URI 认作网络，本机路径不认', () {
+    for (final String path in <String>[
+      r'\\nas\anime\ep01.mkv',
+      r'\\?\UNC\nas\anime\ep01.mkv',
+      '//nas/anime/ep01.mkv',
+      'smb://nas/anime/ep01.mkv',
+      'nfs://nas/anime/ep01.mkv',
+      'https://example.com/ep01.mkv',
+    ]) {
+      expect(isNetworkMediaPath(path), isTrue, reason: path);
+    }
+    for (final String path in <String>[
+      r'C:\anime\ep01.mkv',
+      'D:/anime/ep01.mkv',
+      '/home/me/anime/ep01.mkv',
+      r'anime\ep01.mkv',
+    ]) {
+      expect(isNetworkMediaPath(path), isFalse, reason: path);
+    }
+  });
+
   test('formatAlignmentOffsets', () {
     expect(
       formatAlignmentOffsets(const <AlignmentSegment>[
