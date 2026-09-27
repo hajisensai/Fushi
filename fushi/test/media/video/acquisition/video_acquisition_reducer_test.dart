@@ -663,7 +663,8 @@ void main() {
         decide.query.candidates.map((AiVideoIdentityCandidate c) => c.key),
         <String>['mal:1', 'mal:2'],
       );
-      expect(decide.query.localTitles, <String>['Show', 'Show']);
+      // 作品查询词在前（它会被拿去搜联网资料）；原话与查询词相同时不重复。
+      expect(decide.query.localTitles, <String>['Show']);
       expect(decide.query.candidates.first.episodeCount, 12);
       expect(s.state.stage, VideoAcquisitionStage.awaitingWorkChoice);
       expect(s.state.busy, isTrue);

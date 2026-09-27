@@ -236,6 +236,55 @@ void main() {
     );
   });
 
+  test('合并去重看别名与外部 id：TMDB / MAL 同一部电影只留一条', () {
+    final VideoDiscoveryItem tmdbMovie = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'tmdb',
+        mediaId: '500',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: '名侦探柯南：贝克街的亡灵',
+        originalTitle: '劇場版 名探偵コナン ベイカー街の亡霊',
+        year: 2002,
+        tmdbId: 500,
+      ),
+    );
+    final VideoDiscoveryItem malByAlias = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '600',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: '名探偵コナン ベイカー街の亡霊',
+        aliases: const <String>['劇場版 名探偵コナン ベイカー街の亡霊'],
+        year: 2002,
+      ),
+    );
+    final VideoDiscoveryItem malById = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '601',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: 'Totally Different Romanization',
+        externalIds: const <String, String>{'tmdb': '500'},
+      ),
+    );
+    final VideoFranchise merged = mergeVideoFranchises(<VideoFranchise?>[
+      VideoFranchise(
+        name: 'Conan',
+        series: const <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[tmdbMovie],
+      ),
+      VideoFranchise(
+        name: 'Conan',
+        series: const <VideoDiscoveryItem>[],
+        movies: <VideoDiscoveryItem>[malByAlias, malById],
+      ),
+    ])!;
+    expect(merged.movies.single.reference.mediaId, '500');
+  });
+
   group('videoFranchiseCollectionMatches', () {
     bool matches(String name, String title) => videoFranchiseCollectionMatches(
       TmdbCollectionHit(id: 1, name: name),
@@ -370,6 +419,53 @@ void main() {
       expect(franchise.series.single.reference.mediaId, '7');
     });
 
+    test('走到一半请求失败：停下并交出已收集的', () async {
+      final _FakeMal mal = _FakeMal(<int, MalRelatedWorks>{
+        1: node(1, 'Movie 1', 'Movie', 1980, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: 2),
+        ]),
+        2: node(2, 'Movie 2', 'Movie', 1981, const <MalRelation>[
+          MalRelation(relation: 'Sequel', malId: 3),
+        ]),
+      }, failOn: 3);
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item('1', 'Movie 1', provider: 'mal'),
+      ))!;
+      expect(franchise.movies, hasLength(2));
+    });
+
+    test('同名新旧版按年份选起点', () async {
+      VideoMetadataWork hit(String id, int year) => VideoMetadataWork(
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Hunter x Hunter',
+        year: year,
+        ids: <VideoMetadataId>[VideoMetadataId(type: 'mal', value: id)],
+      );
+      final _FakeMal mal = _FakeMal(
+        <int, MalRelatedWorks>{
+          11: node(11, 'Hunter x Hunter', 'TV', 2011, const <MalRelation>[]),
+        },
+        search: <String, List<VideoMetadataWork>>{
+          'Hunter x Hunter': <VideoMetadataWork>[
+            hit('136', 1999),
+            hit('11', 2011),
+          ],
+        },
+      );
+      final VideoFranchise franchise = (await resolveMalFranchise(
+        mal,
+        _item(
+          '9',
+          'Hunter x Hunter',
+          kind: VideoMetadataMediaKind.tv,
+          year: 2011,
+        ),
+      ))!;
+      expect(franchise.series.single.reference.mediaId, '11');
+    });
+
     test('搜不到 MAL 身份 → null', () async {
       expect(
         await resolveMalFranchise(
@@ -386,7 +482,10 @@ class _FakeMal implements VideoFranchiseRelationSource {
   _FakeMal(
     this.works, {
     this.search = const <String, List<VideoMetadataWork>>{},
+    this.failOn,
   });
+
+  final int? failOn;
 
   final Map<int, MalRelatedWorks> works;
   final Map<String, List<VideoMetadataWork>> search;
@@ -396,6 +495,7 @@ class _FakeMal implements VideoFranchiseRelationSource {
   Future<MalRelatedWorks?> fetchRelatedWorks(String malId) async {
     final int id = int.parse(malId);
     fetched.add(id);
+    if (id == failOn) throw StateError('jikan 504');
     return works[id];
   }
 

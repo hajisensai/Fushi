@@ -497,10 +497,13 @@ AiVideoIdentityQuery _identityQueryOf(
   VideoAcquisitionDefaults defaults,
 ) {
   final String? userText = _lastUserText(state);
+  // 作品名（AI 从原话里抠出的查询词）在前、原话在后：`localTitles.first` 会被拿去
+  // 搜联网资料，整句「帮我下载 xx 第二季 1080p」既搜不准，也不该原样外发。
   return AiVideoIdentityQuery(
     localTitles: <String>[
-      if (userText != null) userText,
       ...state.slots.workQueries,
+      if (userText != null && !state.slots.workQueries.contains(userText))
+        userText,
     ],
     season: state.slots.season,
     candidates: <AiVideoIdentityCandidate>[

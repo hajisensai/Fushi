@@ -153,9 +153,7 @@ List<WebKnowledgePage> pickFranchisePages(List<WebKnowledgePage> pages) {
         source: page.source,
         title: page.title,
         url: page.url,
-        text: page.text.length > kAiFranchiseMaxCharsPerPage
-            ? page.text.substring(0, kAiFranchiseMaxCharsPerPage)
-            : page.text,
+        text: truncateWebKnowledgeText(page.text, kAiFranchiseMaxCharsPerPage),
       ),
   ];
 }
@@ -223,12 +221,14 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
   final String franchise = known?.name ?? reference.title;
   try {
     final List<WebKnowledgePage> fetched = <WebKnowledgePage>[];
+    // 系列名 + 原名两个查询、每站一页：只用得上 3 页，别抓十几页。
     for (final String query in <String>{
       franchise,
-      reference.title,
       if (reference.originalTitle != null) reference.originalTitle!,
-    }.take(3)) {
-      fetched.addAll(await web.search(query, pagesPerSource: 2));
+    }.take(2)) {
+      fetched.addAll(
+        await web.search(query, maxCharsPerPage: kAiFranchiseMaxCharsPerPage),
+      );
     }
     final List<WebKnowledgePage> pages = pickFranchisePages(fetched);
     if (pages.isEmpty) return known;
@@ -246,6 +246,9 @@ Future<VideoFranchise?> expandVideoFranchiseFromWeb({
       )) {
         continue;
       }
+      // 补进来的作品必须带年份：没有年份就只剩「类型 + 标题」可比，泛名（`Air`）
+      // 会把同名的别的作品带进清单。
+      if (work.year == null) continue;
       for (final VideoDiscoveryItem candidate in await findCandidates(work)) {
         if (aiFranchiseWorkMatches(work, candidate)) {
           (work.kind == VideoMetadataMediaKind.movie ? movies : series).add(

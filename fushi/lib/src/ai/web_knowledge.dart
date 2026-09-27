@@ -18,6 +18,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/utils/net/app_user_agent.dart';
@@ -98,12 +99,26 @@ class WebKnowledgeClient {
     required Set<WebKnowledgeSource> sources,
     http.Client? client,
     this.requestTimeout = const Duration(seconds: 20),
-  }) : _sources = Set<WebKnowledgeSource>.unmodifiable(sources),
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now,
+       _sources = Set<WebKnowledgeSource>.unmodifiable(sources),
        _client = client ?? createAppHttpIoClient(),
        _ownsClient = client == null;
 
   final Set<WebKnowledgeSource> _sources;
+  final DateTime Function() _now;
   final http.Client _client;
+
+  /// 一个来源失败（连不上 / 超时 / 坏响应）后本进程停用它多久。
+  ///
+  /// 客户端是按调用新建的，失败若不跨实例记住，后台刮削会对每个歧义作品都去撞
+  /// 一次注定失败的站点（直连被墙时每次白等 20~40 秒，100 部就是半小时以上）。
+  static const Duration failureCooldown = Duration(minutes: 10);
+  static final Map<WebKnowledgeSource, DateTime> _cooldownUntil =
+      <WebKnowledgeSource, DateTime>{};
+
+  @visibleForTesting
+  static void resetFailureCooldowns() => _cooldownUntil.clear();
   final bool _ownsClient;
 
   Set<WebKnowledgeSource> get sources => _sources;
@@ -124,8 +139,13 @@ class WebKnowledgeClient {
     if (trimmed.isEmpty || pagesPerSource <= 0 || maxCharsPerPage <= 0) {
       return const <WebKnowledgePage>[];
     }
+    final DateTime now = _now();
     final List<WebKnowledgeSource> ordered = WebKnowledgeSource.values
         .where(_sources.contains)
+        .where(
+          (WebKnowledgeSource source) =>
+              !(_cooldownUntil[source]?.isAfter(now) ?? false),
+        )
         .toList();
     final List<List<WebKnowledgePage>> perSource =
         await Future.wait<List<WebKnowledgePage>>(
@@ -162,6 +182,7 @@ class WebKnowledgeClient {
       }
     } catch (error, stack) {
       // 已抓到的页照样返回：一条正文失败不该连累同来源前面成功的。
+      _cooldownUntil[source] = _now().add(failureCooldown);
       ErrorLogService.instance.logDiagnostic(
         'WebKnowledgeClient.${source.storageKey}',
         '$query: $error\n$stack',
@@ -271,6 +292,9 @@ Object? _path(Object? json, List<String> keys) {
 }
 
 /// 按 UTF-16 码元截断，但不把代理对劈成两半（劈开的孤儿码元进 JSON 会变乱码）。
+String truncateWebKnowledgeText(String text, int maxChars) =>
+    _truncate(text, maxChars);
+
 String _truncate(String text, int maxChars) {
   if (text.length <= maxChars) return text;
   int end = maxChars;

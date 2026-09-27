@@ -5652,7 +5652,7 @@
   "ai_video_acquire_action_scope_series": "All TV series",
   "ai_video_acquire_action_scope_work": "Only this work",
   "ai_video_acquire_restart": "Download another",
-  "ai_video_acquire_franchise_searching": "Looking for every work in the series of “$title”…",
+  "ai_video_acquire_franchise_searching": "Looking for every work in the series of “$title” (checking each work, this can take a minute)…",
   "ai_video_acquire_franchise_found": "Found “$name”: $series TV series and $movies movies. Searching releases one by one…",
   "ai_video_acquire_franchise_not_found": "No other works found in the series of “$title”, continuing with this one.",
   "ai_video_acquire_franchise_ready": "$ready of $total works have releases. Untick what you don't want, then submit. Series still airing will be subscribed.",

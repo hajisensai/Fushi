@@ -1,5 +1,7 @@
 // 「AI 下视频」整套下载的编排：找系列 → 逐部找资源 → 在播的订阅、完结的下载 →
 // 逐部提交（单部失败不拖垮其余）。
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/external_provider.dart';
@@ -187,5 +189,80 @@ void main() {
       'subscriptions': 1,
       'failed': 1,
     });
+  });
+
+  test('找系列在飞时取消立即生效；结果回来被丢弃，不再发下一步', () async {
+    final VideoDiscoveryItem show = _work(
+      'tv',
+      'Doraemon',
+      VideoMetadataMediaKind.tv,
+      year: 2005,
+      status: 'Returning Series',
+    );
+    final Completer<VideoFranchise?> franchise = Completer<VideoFranchise?>();
+    int resourceSearches = 0;
+    final VideoAcquisitionService service = VideoAcquisitionService(
+      defaults: const VideoAcquisitionDefaults(
+        qualityPref: '1080p',
+        subtitleLanguagePref: 'ja',
+        sources: <VideoAcquisitionSource>[
+          VideoAcquisitionSource(id: 7, label: 'Anime'),
+        ],
+      ),
+      ports: VideoAcquisitionPorts(
+        searchWorks: (_) async =>
+            ProviderBatchResult<VideoDiscoveryPage>.success(
+              <VideoDiscoveryPage>[
+                VideoDiscoveryPage(
+                  items: <VideoDiscoveryItem>[show],
+                  page: 1,
+                  hasMore: false,
+                ),
+              ],
+            ),
+        loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
+        loadFranchise: (_) => franchise.future,
+        queryPresence: (_) async => VideoLibraryPresence.none,
+        isSubscribed: (_) async => false,
+        searchResources: (_) async {
+          resourceSearches++;
+          return ProviderBatchResult<VideoResourceCandidate>.success(
+            const <VideoResourceCandidate>[],
+          );
+        },
+        parseIntent: (_) async => const VideoAcquisitionIntent(
+          VideoAcquisitionIntentKind.provide,
+          VideoAcquisitionIntentPatch(
+            workQueries: <String>['Doraemon'],
+            scope: VideoAcquisitionScope.franchise,
+          ),
+        ),
+        decideIdentity: (_) async => null,
+        persistPreference: (_, _) async {},
+        setSeriesSubtitleLanguage: (_, _) async {},
+        submitDownload: (_) async => 0,
+        submitSubscription: (_) async {},
+      ),
+    );
+    addTearDown(service.dispose);
+
+    final Future<void> running = service.submitText('哆啦A梦 整套');
+    await pumpEventQueue();
+    expect(service.state.stage, VideoAcquisitionStage.resolvingFranchise);
+    await service.cancel();
+    expect(service.state.stage, VideoAcquisitionStage.cancelled);
+
+    franchise.complete(
+      VideoFranchise(
+        name: 'Doraemon',
+        series: <VideoDiscoveryItem>[show],
+        movies: <VideoDiscoveryItem>[
+          _work('a', 'Movie A', VideoMetadataMediaKind.movie, year: 1980),
+        ],
+      ),
+    );
+    await running;
+    expect(service.state.stage, VideoAcquisitionStage.cancelled);
+    expect(resourceSearches, 0);
   });
 }

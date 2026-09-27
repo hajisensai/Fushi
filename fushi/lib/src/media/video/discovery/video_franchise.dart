@@ -20,6 +20,7 @@ import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.da
     show MalRelatedWorks, MalRelation;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// `/search/collection` 的一条结果。
 class TmdbCollectionHit {
@@ -163,7 +164,8 @@ abstract interface class VideoFranchiseRelationSource {
 const int kVideoFranchiseMaxMalWorks = 60;
 
 /// 沿着走的 MAL 关系（小写）。「Other」「Spin-off」「Character」「Summary」不走：
-/// 长寿作品在这几类上挂满联动、客串与总集篇。
+/// 长寿作品在这几类上挂满联动、客串与总集篇；「Alternative setting」也不走——
+/// 高达 / Fate / 光之美少女经它能串进整个宇宙，几步就把上限耗在别的系列上。
 const Set<String> kVideoFranchiseMalRelations = <String>{
   'sequel',
   'prequel',
@@ -171,7 +173,6 @@ const Set<String> kVideoFranchiseMalRelations = <String>{
   'full story',
   'side story',
   'alternative version',
-  'alternative setting',
 };
 
 /// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music——
@@ -199,7 +200,18 @@ Future<VideoFranchise?> resolveMalFranchise(
   while (queue.isNotEmpty && visited.length < maxWorks) {
     final int id = queue.removeAt(0);
     if (!visited.add(id)) continue;
-    final MalRelatedWorks? related = await source.fetchRelatedWorks('$id');
+    final MalRelatedWorks? related;
+    try {
+      related = await source.fetchRelatedWorks('$id');
+    } on Object catch (error, stack) {
+      // 走到第 40 部碰上一次 5xx / 限流重试用尽：停在这里、交出已经收集到的，
+      // 而不是让前面 39 部一起作废。
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFranchise.malTraversal',
+        'stopped at mal:$id after ${visited.length - 1} works: $error\n$stack',
+      );
+      break;
+    }
     if (related == null) continue;
     name ??= related.work.title;
     final VideoMetadataMediaKind? kind = _malFranchiseKind(related.malType);
@@ -243,6 +255,8 @@ Future<String?> _anchorMalId(
   final Set<String> wanted = <String>{
     for (final String name in names) TitleNormalizer.normalize(name),
   };
+  final int? year = reference.year;
+  String? fallback;
   for (final String name in names) {
     for (final VideoMetadataWork work in await source.searchAnime(name)) {
       final bool same =
@@ -252,12 +266,21 @@ Future<String?> _anchorMalId(
                 wanted.contains(TitleNormalizer.normalize(value)),
           );
       if (!same) continue;
-      for (final VideoMetadataId id in work.ids) {
-        if (id.type == 'mal') return id.value;
+      final String? id = work.ids
+          .where((VideoMetadataId value) => value.type == 'mal')
+          .map((VideoMetadataId value) => value.value)
+          .firstOrNull;
+      if (id == null) continue;
+      // 同名新旧版（HUNTER×HUNTER 1999 / 2011）：年份对得上的优先；锚点没年份
+      // 或都对不上时才退到第一个同名的。
+      final int? workYear = work.year;
+      if (year != null && workYear != null && (workYear - year).abs() <= 1) {
+        return id;
       }
+      fallback ??= id;
     }
   }
-  return null;
+  return fallback;
 }
 
 /// 合并几份系列清单：按标题 + 年份去重，剧集 / 剧场版各自按年份排；名字取第一份
@@ -385,11 +408,25 @@ class _WorkSet {
   void add(VideoDiscoveryItem item) {
     final VideoMediaReference reference = item.reference;
     final String providerKey = '${reference.providerId}:${reference.mediaId}';
-    final List<String> titles = <String>[
-      TitleNormalizer.normalize(reference.title),
-      if (reference.originalTitle != null)
-        TitleNormalizer.normalize(reference.originalTitle!),
+    // 外部 id（TMDB 条目带 mal、MAL 条目带 tmdb 时）是最硬的同一判据。
+    final List<String> idKeys = <String>[
+      providerKey,
+      for (final MapEntry<String, String> id in reference.externalIds.entries)
+        if (id.key == 'mal' || id.key == 'tmdb' || id.key == 'anidb')
+          '${id.key}:${id.value}',
+      if (reference.tmdbId != null) 'tmdb:${reference.tmdbId}',
     ];
+    // 别名也算：TMDB 的原名与 MAL 的 title_japanese 常差一个「劇場版」前缀或
+    // 副标题写法，只比 title / originalTitle 会把同一部电影列两次、下两次。
+    final List<String> titles = <String>{
+      for (final String? value in <String?>[
+        reference.title,
+        reference.originalTitle,
+        ...reference.aliases,
+      ])
+        if (value != null && value.trim().isNotEmpty)
+          TitleNormalizer.normalize(value),
+    }.toList();
     // 年份 ±1：MAL 与 TMDB 对同一部剧的首播年常差一年（首播日跨年 / 时区）。
     final int? year = reference.year;
     final List<String> probes = <String>[
@@ -399,8 +436,8 @@ class _WorkSet {
         else
           for (int y = year - 1; y <= year + 1; y++) '$title|$y',
     ];
-    if (_keys.contains(providerKey) || probes.any(_keys.contains)) return;
-    _keys.add(providerKey);
+    if (idKeys.any(_keys.contains) || probes.any(_keys.contains)) return;
+    _keys.addAll(idKeys);
     for (final String title in titles) {
       _keys.add('$title|$year');
     }

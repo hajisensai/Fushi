@@ -5652,7 +5652,7 @@
   "ai_video_acquire_action_scope_series": "全部剧集",
   "ai_video_acquire_action_scope_work": "只下这一部",
   "ai_video_acquire_restart": "再下一部",
-  "ai_video_acquire_franchise_searching": "正在找「$title」这个系列的全部作品…",
+  "ai_video_acquire_franchise_searching": "正在找「$title」这个系列的全部作品（要逐部查资料，可能需要一分钟）…",
   "ai_video_acquire_franchise_found": "找到「$name」：$series 部剧集、$movies 部剧场版，正在逐部找资源…",
   "ai_video_acquire_franchise_not_found": "没找到「$title」同系列的其它作品，先按这一部继续。",
   "ai_video_acquire_franchise_ready": "$total 部里有 $ready 部找到了资源。取消勾选不要的再提交；还在播的剧集会自动订阅。",

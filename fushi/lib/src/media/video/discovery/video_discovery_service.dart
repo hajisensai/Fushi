@@ -286,6 +286,15 @@ class VideoDiscoveryService {
         () => resolveMalFranchise(_MalFranchiseSource(malProvider), item),
       );
     }
+    // 动画的剧集以 MAL 为准：TMDB 把一部动画按「整部剧（含全部季）」收，MAL 按
+    // 每季一个作品收——两边都进清单，同一批集会被整部剧和分季重复下载。
+    if (tmdb != null && mal != null && mal.series.isNotEmpty) {
+      tmdb = VideoFranchise(
+        name: tmdb.name,
+        series: const <VideoDiscoveryItem>[],
+        movies: tmdb.movies,
+      );
+    }
     return mergeVideoFranchises(<VideoFranchise?>[tmdb, mal]);
   }
 

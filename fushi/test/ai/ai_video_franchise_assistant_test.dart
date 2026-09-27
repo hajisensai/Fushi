@@ -203,6 +203,23 @@ void main() {
       expect(result.series.single.reference.mediaId, 'tv');
     });
 
+    test('没有年份的补全作品不收（泛名同名作品防线）', () async {
+      final List<String> searched = <String>[];
+      await expandVideoFranchiseFromWeb(
+        anchor: anchor,
+        known: known,
+        web: _FakeWeb(<WebKnowledgePage>[_page('p', 't')]),
+        listWorks: (_, _) async => const <AiFranchiseWork>[
+          AiFranchiseWork(title: 'Air', kind: VideoMetadataMediaKind.movie),
+        ],
+        findCandidates: (AiFranchiseWork work) async {
+          searched.add(work.title);
+          return const <VideoDiscoveryItem>[];
+        },
+      );
+      expect(searched, isEmpty);
+    });
+
     test('来源全关 / AI 抛错 → 原样返回资料源结果', () async {
       final VideoFranchise? off = await expandVideoFranchiseFromWeb(
         anchor: anchor,

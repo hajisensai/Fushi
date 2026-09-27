@@ -74,6 +74,9 @@ class _FakeWiki {
 }
 
 void main() {
+  // 失败冷却是进程级的：前一个用例里失败的来源不能把后面的用例一起停掉。
+  setUp(WebKnowledgeClient.resetFailureCooldowns);
+
   test('search → extract：标题、正文、URL 都来自对应语言站', () async {
     final _FakeWiki wiki = _FakeWiki(
       titlesByHost: <String, List<String>>{
@@ -366,5 +369,42 @@ void main() {
     expect(pages.map((WebKnowledgePage p) => p.source), <WebKnowledgeSource>[
       WebKnowledgeSource.wikipediaEn,
     ]);
+  });
+
+  test('来源失败后冷却：同一进程里新建的客户端也跳过它，冷却期满再试', () async {
+    DateTime clock = DateTime(2026, 9, 27, 12);
+    int jaCalls = 0;
+    WebKnowledgeClient make() => WebKnowledgeClient(
+      sources: <WebKnowledgeSource>{
+        WebKnowledgeSource.wikipediaJa,
+        WebKnowledgeSource.wikipediaEn,
+      },
+      now: () => clock,
+      client: MockClient((http.Request request) async {
+        if (request.url.host.startsWith('ja.')) {
+          jaCalls++;
+          throw http.ClientException('blocked');
+        }
+        if (request.url.queryParameters['list'] == 'search') {
+          return http.Response(
+            '{"query":{"search":[{"title":"Doraemon"}]}}',
+            200,
+          );
+        }
+        return http.Response(
+          '{"query":{"pages":[{"title":"Doraemon","extract":"text"}]}}',
+          200,
+        );
+      }),
+    );
+    await make().search('Doraemon');
+    expect(jaCalls, 1);
+    final List<WebKnowledgePage> second = await make().search('Doraemon');
+    expect(jaCalls, 1, reason: '冷却期内不再撞 ja');
+    expect(second.single.source, WebKnowledgeSource.wikipediaEn);
+    clock = clock.add(WebKnowledgeClient.failureCooldown);
+    clock = clock.add(const Duration(seconds: 1));
+    await make().search('Doraemon');
+    expect(jaCalls, 2, reason: '冷却期满重试');
   });
 }
