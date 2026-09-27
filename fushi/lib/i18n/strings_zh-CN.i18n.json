@@ -5652,7 +5652,7 @@
   "ai_video_acquire_action_scope_series": "全部剧集",
   "ai_video_acquire_action_scope_work": "只下这一部",
   "ai_video_acquire_restart": "再下一部",
-  "ai_video_acquire_franchise_searching": "正在找「$title」这个系列的全部作品…",
+  "ai_video_acquire_franchise_searching": "正在找「$title」这个系列的全部作品（要逐部查资料，可能需要一分钟）…",
   "ai_video_acquire_franchise_found": "找到「$name」：$series 部剧集、$movies 部剧场版，正在逐部找资源…",
   "ai_video_acquire_franchise_not_found": "没找到「$title」同系列的其它作品，先按这一部继续。",
   "ai_video_acquire_franchise_ready": "$total 部里有 $ready 部找到了资源。取消勾选不要的再提交；还在播的剧集会自动订阅。",
@@ -5671,5 +5671,10 @@
   "ai_video_acquire_failure_no_sources": "没有可以下载到的受管视频来源。",
   "ai_video_acquire_failure_nothing_selected": "没有勾选任何可提交的作品。",
   "ai_video_download_skip_extras": "跳过特典",
-  "ai_video_download_skip_extras_hint": "PV、CM、NCOP/NCED、菜单等。对所有下载到视频来源的任务生效：种子里的特典文件不下载，只有特典的发布也不会被选中。"
+  "ai_video_download_skip_extras_hint": "PV、CM、NCOP/NCED、菜单等。对所有下载到视频来源的任务生效：种子里的特典文件不下载，只有特典的发布也不会被选中。",
+  "ai_web_knowledge_section": "联网资料",
+  "ai_web_knowledge_section_hint": "Fushi 自己抓取所选来源的条目正文交给 AI（AI 下视频列出系列作品、视频作品识别时使用），不需要 AI 提供商支持联网。AI 只能引用抓到的内容，列出的作品还会逐部在资料源里核对。",
+  "ai_web_knowledge_wikipedia_zh": "维基百科（中文）",
+  "ai_web_knowledge_wikipedia_ja": "Wikipedia（日本語）",
+  "ai_web_knowledge_wikipedia_en": "Wikipedia（English）"
 }

@@ -5,6 +5,11 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/web_knowledge.dart'
+    show
+        WebKnowledgeSource,
+        encodeWebKnowledgeSources,
+        parseWebKnowledgeSources;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
@@ -1892,6 +1897,20 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   Future<void> setAiVideoDownloadSubtitleLanguage(String value) async {
     await setPref('ai_video_download_subtitle_language', value);
+    notifyListeners();
+  }
+
+  /// AI 联网资料启用的来源。从未写过 = 默认全开；写过 `''` = 用户全关——两者
+  /// 必须分得开，所以读时默认值给 null（缺键哨兵），不能给 `''`。
+  Set<WebKnowledgeSource> get aiWebKnowledgeSources => parseWebKnowledgeSources(
+    getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
+  );
+
+  Future<void> setAiWebKnowledgeSources(Set<WebKnowledgeSource> sources) async {
+    await setPref(
+      'ai_web_knowledge_sources',
+      encodeWebKnowledgeSources(sources),
+    );
     notifyListeners();
   }
 
