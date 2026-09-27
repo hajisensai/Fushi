@@ -5629,5 +5629,14 @@
   "novel_detail_library_remove": "Remover da estante",
   "novel_detail_library_remove_confirm": "Remover este romance da estante? Os capítulos em cache e o progresso de leitura serão apagados.",
   "novel_detail_download": "Baixar",
-  "novel_detail_library_added": "Adicionado à estante"
+  "novel_detail_library_added": "Adicionado à estante",
+  "video_online_extension_unavailable": "The video source extension for this episode is not installed or is disabled. Reinstall or enable it in Browse › Extensions.",
+  "video_online_library_add": "Add to video library",
+  "video_online_library_remove": "Remove from video library",
+  "video_online_library_added": "Added $n episodes to the video library",
+  "video_online_library_removed": "Removed from the video library",
+  "video_online_download_all": "Download all",
+  "video_online_download_episode": "Download this episode",
+  "video_online_download_started": "Download started — see Browse › Downloads",
+  "video_online_downloaded": "Downloaded"
 }

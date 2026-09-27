@@ -44,28 +44,57 @@
   - 小说：「在线阅读 / 继续阅读」「加入书架 / 移出书架」「下载」三个动作。「加入书架」只建在线书、不开阅读器；此前它其实是整本下载，与漫画的语义不一致。移出书架和漫画共用书架长按删除的确认框（`online_shelf_removal.dart`）。
   - 漫画：`MangaSeriesPage` 头部改用同一套版式，原有的继续阅读、加入 / 移出书架、下载全部、OCR 动作与章节列表不变。
 
-### 2b 视频「加入媒体库」「下载」（设计稿，待所有者确认）
-**不升 schema**，复用 TODO-1157「流媒体书」的形态（`VideoBooks` 里 `videoPath` + `streamSpecJson` 描述怎么重开）：
+### 2b 视频「加入媒体库」「下载」（已实现，2026-09-27 所有者：直接一次性做完）
+**没有升 schema**，复用 TODO-1157「流媒体书」的存法。代码在 `fushi/lib/src/media/video/online/anime_source_library.dart` 与 `anime_episode_downloader.dart`，路径判据在 `packages/fushi_engine/lib/media/video/anime_source_video_path.dart`。
 
-- **加入媒体库**：每集一行 `VideoBooks`。
-  - `bookUid` 沿用 `RemoteVideoInfo.id`（`anime-source:<包>/<源>/<集 URL>`）。播放页已按这个 id 记断点、字幕记忆与调轴，入库前后的进度自然连续。
-  - `videoPath` 写一个非 http 的 `anime-source://…` 标识，避免被 `isStreamVideoBook` 误判成直链。
-  - `streamSpecJson` 写 `{kind: anime-source, extensionPackage, sourceId, animeUrl, episodeUrl, animeTitle}`。
-  - 同一作品的集用 playlist 类型的 media collection 归组，封面与标题取作品详情。
-  - 重开时由 `stream_video_launch.dart` 新增的 anime-source 分支按描述重建 `AnimeSourceVideoClient`，取流仍走播放页的「正在连接视频流」阶段；扩展被卸载时在书架给出明确提示。
-  - 刷新剧集时只补新集，不删已看的集。
-- **下载**：先用宿主 `AnimeVideoLoader` 解析出选中那条流（URL + 防盗链头），再按流的类型分两路：
-  - 直链 mp4 / mkv 进 `DiscoveryDownloadQueue`（已有的直链队列，任务出现在「浏览 › 下载」）；
-  - HLS 走一条 ffmpeg `-c copy` 转封装任务。ffmpeg-min 已带 hls demuxer（BUG-2630）；中继的图片伪装分片处理（BUG-2609）需要复用到这一路。
-  - 下完落地的文件按本地视频入库，并替换掉那一集的在线行（同 bookUid，进度保留）。
-- 风险：扩展取到的流 URL 多数有时效，下载必须在解析后立即开始，失败时重新解析而不是重试旧 URL。部分源的 HLS 带 AES 加密，ffmpeg 可以解；DRM 源不支持，要明确报错。
+- **加入媒体库**（`AnimeSourceLibrary.addToLibrary`）：每集一行 `VideoBooks`。
+  - `bookUid` = `AnimeSourceVideoClient.episodeVideoId`（入库前后断点连续）。
+  - `videoPath` = `anime-source://<包>/<源>/<作品名> - E03`，最后一段只为可读。
+  - `streamSpecJson` = `AnimeSourceBookSpec`，包含包、源、作品 JSON、本集 JSON。
+  - 分组：经 `RemoteCollectionAdoptionService.adoptVideo` 归进以作品名命名的 playlist 合集。
+  - 封面：经扩展取（`fetchRemoteCover`），每集写一份自己的封面文件（删行只回收自己的），另写一份合集封面。
+  - 再点一次只补新集；「移出媒体库」只删在线行，已下载的集保留。
+- **重开**（`buildAnimeSourceLaunch`，`VideoFushiPage._init` 的 anime-source 分支）：
+  - 读打开时所在合集里同一作品的在线行，按行里的规格重建 client，不联网拉剧集。
+  - client 的集 id 直接沿用各行的 bookUid（新参数 `episodeIds`），不按子集重算撞车后缀。
+  - 这些行作为连播成员；扩展被卸载 / 停用时提示 `video_online_extension_unavailable`。
+  - 合集连播时，进度写进当前那一集自己的行（此前写进起播那一集的行）。
+- **不再当本地文件的地方**：凡是按 http 前缀判断「是不是本地文件」的门都改用 `isNetworkOnlyVideoPath` / `isAnimeSourceVideoPath`。
+  - 涉及：资源缺失校验、抽帧、刮削（两处）、ffprobe 规格、备份可达性（Dart 判据与 merge SQL 同改）。
+  - 互联 host 的 `listVideos` 不下发这类行：对端没有这个扩展，拿到也放不了。
+- **下载**（`AnimeSourceVideoClient.downloadRemoteVideo` + `AnimeEpisodeDownloader`，任务交给 `InterconnectDownloadManager`，出现在「浏览 › 下载」）：
+  - 每次（重）跑都重新向扩展取流（BUG-2617），挑线路与起播同一口径。
+  - 直链走 `ResumableDownloader`。
+  - HLS 在 Dart 端逐分片下载：master 取最高码率变体，`#EXT-X-MAP` 初始化段，`#EXT-X-KEY` AES-128 用 pointycastle 解，图片伪装前缀按 BUG-2609 同一判据剥掉。分片进度记在 `.hls.progress`，可断点续传。
+  - HLS 下完后本地 `ffmpeg -c copy` 转封装为 mp4；转封装失败时原样保留分片流。
+  - URL 没有 `.m3u8` 后缀但下回来是播放列表时，改走分片下载。
+  - 独立音轨 master、BYTERANGE、SAMPLE-AES / DRM 如实报「不支持」。
+  - 下完 `registerDownloaded`：同 bookUid 覆盖在线行（改成本地文件、清掉规格），默认字幕落在视频旁；之后作品页点这一集直接播本地文件。
+- 已知限制：
+  - 下载任务在进程被杀后不自动接回（流地址会过期，续传必须回到作品页重新解析）；已下完的分片仍在，重点下载会接着下。
+  - 依赖 `mpvArgs` 的流下载可能失败。
 
-## 阶段 3：发现页统一为视频发现页交互
+## 阶段 3：发现页统一为视频发现页交互（已实现）
+共享件在 `fushi/lib/src/pages/implementations/discovery/discovery_widgets.dart`，三页都在用：
+- `DiscoverySearchDebouncer`：输入停 350ms 搜索，输入一变就作废在途请求；
+- `discoveryShouldLoadMore`：离底 600 自动翻页，只认纵向滚动；
+- `DiscoveryProviderWarningBanner`：部分失败横幅，印来源展示名，文案按失败性质选；
+- `DiscoveryShelf`：横滑行，外包 `HorizontalDragScrollable`，加载中照样占住行高；
+- `DiscoveryLoadMoreFooter`：翻页尾巴。
 
-以 `video_discovery_page.dart` 为准：
-- 搜索防抖 350ms；
-- 分类用 chip，窄屏时筛选收进底部弹层；
-- 横滑行 + `SliverGrid`，滚到底自动翻页；
-- 部分失败时显示横幅。
+视频发现页改用这些共享件，key 与行为不变。
 
-漫画发现页、书 / 游戏资源站发现页的控制区与结果形态向它靠拢。资源站没有作品详情，目录下钻保留。
+各页：
+- **书 / 有声书 / 游戏资源站**
+  - 输入停 350ms 自动搜索（清空路径栈，BUG-1768）；
+  - 滚动自动翻页，「加载更多」保留作兜底；
+  - 追加页失败保留已有结果、页码回退，给重试；此前会推翻整页、页码不回退；
+  - 异常和全部失败用 `FushiPlaceholderMessage` 加重试；部分失败用共享横幅。
+  - 下钻、面包屑、来源卡片网格、列表行都不变。
+- **漫画**
+  - 「全部来源」改为 `CustomScrollView`，热门行用共享 `DiscoveryShelf`；
+  - 行失败汇总成页首横幅，全部失败时给整块提示加重试；
+  - 单源网格按源的 `hasNextPage` 自动翻页（feed 新增 `loadPopularPage`）；
+  - 空态和错误态统一用 `FushiPlaceholderMessage`。
+  - 搜索**只在提交时**触发：漫画搜索是 push 全源聚合搜索页，防抖等于每停顿一下就推一页、给所有源各打一轮请求。
+  - 「浏览来源」节保留：mokuro.moe / Aidoku / OPDS 没有热门行，这一节是它们在发现页唯一的入口。

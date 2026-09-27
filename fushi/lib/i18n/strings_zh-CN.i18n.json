@@ -5629,5 +5629,14 @@
   "novel_detail_library_remove": "移出书架",
   "novel_detail_library_remove_confirm": "把这部小说移出书架？已缓存的章节和阅读进度会一并删除。",
   "novel_detail_download": "下载",
-  "novel_detail_library_added": "已加入书架"
+  "novel_detail_library_added": "已加入书架",
+  "video_online_extension_unavailable": "这一集所属的视频源扩展没有安装或已停用。请到「浏览 › 扩展」重新安装或启用。",
+  "video_online_library_add": "加入媒体库",
+  "video_online_library_remove": "移出媒体库",
+  "video_online_library_added": "已把 $n 集加入媒体库",
+  "video_online_library_removed": "已移出媒体库",
+  "video_online_download_all": "下载全部",
+  "video_online_download_episode": "下载本集",
+  "video_online_download_started": "已开始下载，进度见「浏览 › 下载」",
+  "video_online_downloaded": "已下载"
 }

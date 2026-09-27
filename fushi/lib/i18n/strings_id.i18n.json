@@ -5629,5 +5629,14 @@
   "novel_detail_library_remove": "Hapus dari rak buku",
   "novel_detail_library_remove_confirm": "Hapus novel ini dari rak buku? Bab yang tersimpan dan progres membaca akan dihapus.",
   "novel_detail_download": "Unduh",
-  "novel_detail_library_added": "Ditambahkan ke rak buku"
+  "novel_detail_library_added": "Ditambahkan ke rak buku",
+  "video_online_extension_unavailable": "The video source extension for this episode is not installed or is disabled. Reinstall or enable it in Browse › Extensions.",
+  "video_online_library_add": "Add to video library",
+  "video_online_library_remove": "Remove from video library",
+  "video_online_library_added": "Added $n episodes to the video library",
+  "video_online_library_removed": "Removed from the video library",
+  "video_online_download_all": "Download all",
+  "video_online_download_episode": "Download this episode",
+  "video_online_download_started": "Download started — see Browse › Downloads",
+  "video_online_downloaded": "Downloaded"
 }

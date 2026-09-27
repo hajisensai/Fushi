@@ -12,6 +12,8 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_web_url.dart';
 import 'package:fushi/src/media/online/online_work_detail.dart';
+import 'package:fushi/src/media/video/online/anime_source_library.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -29,8 +31,9 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// 主操作「继续观看」落到最近看过的那一集：播放页在合集模式下按「成员 id, 0」
 /// 记远端断点（`videoRemotePositionEpisodeAtPrefKey`），本页按同一把键取最新的一集。
-/// 本页仍**不入库**；加入媒体库 / 下载需要新的持久模型，见
-/// `docs/specs/2026-09-27-browse-module.md` 阶段 2b。
+/// 另有「加入媒体库 / 移出媒体库」「下载全部」与每集的下载按钮（阶段 2b，见
+/// [AnimeSourceLibrary]）：入库是每集一行流媒体书，下载交给 app 级下载管理器
+/// （任务在「浏览 › 下载」），下完的集就是普通本地视频，点它直接播本地文件。
 class AnimeSourceDetailPage extends ConsumerStatefulWidget {
   const AnimeSourceDetailPage({
     required this.manager,
@@ -77,6 +80,11 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
 
   /// 最近看过的一集（按远端断点时间戳取最新）；-1 = 一集都没看过。
   int _resumeIndex = -1;
+
+  /// 本作品已在媒体库里的集 / 已下载到本机的集（集 id）。
+  Set<String> _libraryIds = const <String>{};
+  Set<String> _downloadedIds = const <String>{};
+  bool _libraryBusy = false;
   bool _loading = true;
   Object? _error;
 
@@ -140,6 +148,115 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     // 在详情加载的 try 之外：断点只决定「继续观看」落点，读不到不能冒充成「详情
     // 加载失败」。
     _reloadResumeIndex();
+    unawaited(_reloadLibraryState());
+  }
+
+  AnimeSourceLibrary? _libraryOrNull() {
+    final AppModel? appModel = _appModelOrNull;
+    if (appModel == null) return null;
+    return AnimeSourceLibrary(
+      database: appModel.database,
+      repository: widget.repositoryOverride,
+    );
+  }
+
+  Future<void> _reloadLibraryState() async {
+    final AnimeSourceVideoClient? client = _client;
+    final Set<String> inLibrary;
+    final Set<String> downloaded;
+    try {
+      final AnimeSourceLibrary? library = _libraryOrNull();
+      if (client == null || library == null) return;
+      inLibrary = await library.libraryEpisodeIds(client);
+      downloaded = await library.downloadedEpisodeIds(client);
+    } on Object catch (error, stack) {
+      // 入库状态只决定按钮是「加入」还是「移出」、哪些集已下载：读不到时页面照常
+      // 在线可用，记日志而不是让它变成未捕获的异步错误。
+      ErrorLogService.instance.log(
+        'AnimeSourceDetailPage.libraryState',
+        error,
+        stack,
+      );
+      return;
+    }
+    if (!mounted || !identical(client, _client)) return;
+    setState(() {
+      _libraryIds = inLibrary;
+      _downloadedIds = downloaded;
+    });
+  }
+
+  bool get _inLibrary => _libraryIds.isNotEmpty;
+
+  /// 「加入媒体库」：每集一行流媒体书，归进作品合集（刷新后再点只补新集）。
+  Future<void> _addToLibrary() async {
+    final AnimeSourceVideoClient? client = _client;
+    final AnimeSourceLibrary? library = _libraryOrNull();
+    if (client == null || library == null || _libraryBusy) return;
+    setState(() => _libraryBusy = true);
+    try {
+      final int added = await library.addToLibrary(client);
+      FushiToast.show(
+        msg: t.video_online_library_added(n: added),
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('AnimeSourceDetailPage.add', error, stack);
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    } finally {
+      if (mounted) setState(() => _libraryBusy = false);
+    }
+    await _reloadLibraryState();
+  }
+
+  /// 「移出媒体库」：删在线行；已下载的集是普通本地视频，留在库里（删它们走媒体库
+  /// 自己的删除，那里有「同时删除本地文件」的确认）。
+  Future<void> _removeFromLibrary() async {
+    final AnimeSourceVideoClient? client = _client;
+    final AnimeSourceLibrary? library = _libraryOrNull();
+    if (client == null || library == null || _libraryBusy) return;
+    setState(() => _libraryBusy = true);
+    try {
+      await library.removeFromLibrary(client);
+      FushiToast.show(msg: t.video_online_library_removed);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'AnimeSourceDetailPage.remove',
+        error,
+        stack,
+      );
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    } finally {
+      if (mounted) setState(() => _libraryBusy = false);
+    }
+    await _reloadLibraryState();
+  }
+
+  /// 下载若干集（交给 app 级下载管理器；任务在「浏览 › 下载」）。
+  Future<void> _download(List<String> ids) async {
+    final AnimeSourceVideoClient? client = _client;
+    final AnimeSourceLibrary? library = _libraryOrNull();
+    if (client == null || library == null || ids.isEmpty) return;
+    final InterconnectDownloadManager manager = ref.read(
+      interconnectDownloadManagerProvider,
+    );
+    FushiToast.show(msg: t.video_online_download_started);
+    await startAnimeEpisodeDownloads(
+      manager: manager,
+      library: library,
+      template: client,
+      episodeIds: ids,
+    );
+    if (mounted) await _reloadLibraryState();
+  }
+
+  Future<void> _downloadAll() async {
+    final AnimeSourceVideoClient? client = _client;
+    if (client == null) return;
+    await _download(<String>[
+      for (final RemoteVideoInfo info in client.remoteVideos)
+        if (!_downloadedIds.contains(info.id)) info.id,
+    ]);
   }
 
   /// 拿不到 AppModel 是正常状态（没有 ProviderScope 的宿主树，如 widget 测试）：
@@ -193,6 +310,22 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   Future<void> _play(int index) async {
     final AnimeSourceVideoClient? client = _client;
     if (client == null) return;
+    // 已下载到本机的集直接播本地文件（普通本地视频行，进度与在线时同一个 bookUid）。
+    final String id = client.remoteVideos[index].id;
+    if (_downloadedIds.contains(id) && widget.openPlayer == null) {
+      final VideoBookRepository repo =
+          widget.repositoryOverride ??
+          VideoBookRepository(ref.read(appProvider).database);
+      await Navigator.of(context).push(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) =>
+              VideoFushiPage.neutralized(bookUid: id, repo: repo),
+        ),
+      );
+      _reloadResumeIndex();
+      return;
+    }
     await _openPlayer(client, index);
   }
 
@@ -312,6 +445,32 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     : t.play,
               ),
             ),
+            // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（与漫画 / 小说
+            // 作品页同一口径）。
+            if (_inLibrary)
+              OutlinedButton.icon(
+                key: const ValueKey<String>('anime_source_library_remove'),
+                onPressed: _libraryBusy
+                    ? null
+                    : () => unawaited(_removeFromLibrary()),
+                icon: const Icon(Icons.video_library),
+                label: Text(t.video_online_library_remove),
+              )
+            else
+              OutlinedButton.icon(
+                key: const ValueKey<String>('anime_source_library_add'),
+                onPressed: !canPlay || _libraryBusy
+                    ? null
+                    : () => unawaited(_addToLibrary()),
+                icon: const Icon(Icons.video_library_outlined),
+                label: Text(t.video_online_library_add),
+              ),
+            OutlinedButton.icon(
+              key: const ValueKey<String>('anime_source_download_all'),
+              onPressed: canPlay ? () => unawaited(_downloadAll()) : null,
+              icon: const Icon(Icons.download_outlined),
+              label: Text(t.video_online_download_all),
+            ),
           ],
         ),
         if (error != null)
@@ -356,16 +515,44 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
           ).toLocal().toString().split(' ').first
         : null;
     final String? scanlator = episode.scanlator?.trim();
+    final String? id = _client?.remoteVideos[index].id;
     return OnlineWorkItemTile(
       key: ValueKey<String>('anime_episode_${episode.url}'),
       title: _episodeTitle(episode),
       subtitle: <String>[
         if (uploaded != null) uploaded,
         if (scanlator != null && scanlator.isNotEmpty) scanlator,
+        if (id != null && _downloadedIds.contains(id))
+          t.video_online_downloaded,
       ].join(' · '),
       current: index == _resumeIndex,
-      trailing: const Icon(Icons.play_arrow),
+      trailing: id == null ? null : _episodeDownloadAction(id),
       onTap: () => unawaited(_play(index)),
+    );
+  }
+
+  /// 行尾：已下载 = 完成标记；下载中 = 进度环（管理器任务快照）；否则 = 下载按钮。
+  Widget _episodeDownloadAction(String id) {
+    if (_downloadedIds.contains(id)) {
+      return Tooltip(
+        message: t.video_online_downloaded,
+        child: const Icon(Icons.download_done),
+      );
+    }
+    final InterconnectDownloadTask? task = _appModelOrNull == null
+        ? null
+        : ref.watch(interconnectDownloadManagerProvider).taskFor(id);
+    if (task != null && task.isRunning) {
+      return SizedBox.square(
+        dimension: 24,
+        child: CircularProgressIndicator(strokeWidth: 2, value: task.progress),
+      );
+    }
+    return IconButton(
+      key: ValueKey<String>('anime_download_$id'),
+      tooltip: t.video_online_download_episode,
+      onPressed: () => unawaited(_download(<String>[id])),
+      icon: const Icon(Icons.download_outlined),
     );
   }
 }

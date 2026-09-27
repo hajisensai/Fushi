@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -80,6 +82,16 @@ void main() {
   Future<MihonSourceContext> context() =>
       manager.contextForSource(manager.sources.single);
 
+  /// 作品页的库状态读写走真 DB（异步 IO）：在真时间里让它跑完再重建。
+  Future<void> settle(WidgetTester tester) async {
+    for (int i = 0; i < 5; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
   testWidgets('browse grid of an anime manager opens the anime detail page', (
     WidgetTester tester,
   ) async {
@@ -146,6 +158,7 @@ void main() {
       // 源给的是新集在前，页面按集号升序排。
       final Finder rows = find.byWidgetPredicate(
         (Widget w) =>
+            w is OnlineWorkItemTile &&
             w.key is ValueKey<String> &&
             (w.key! as ValueKey<String>).value.startsWith('anime_episode_'),
       );
@@ -253,7 +266,7 @@ void main() {
     setUp(() {
       LocaleSettings.setLocale(AppLocale.en);
       prefs = PreferencesRepository(database);
-      appModel = _TestAppModel(prefs, root);
+      appModel = _TestAppModel(prefs, root, database);
     });
 
     String episodeId(String url) =>
@@ -350,6 +363,110 @@ void main() {
     });
   });
 
+  group('media library', () {
+    late _TestAppModel appModel;
+
+    setUp(() {
+      LocaleSettings.setLocale(AppLocale.en);
+      appModel = _TestAppModel(PreferencesRepository(database), root, database);
+    });
+
+    Future<void> pumpDetail(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
+              openPlayer:
+                  (
+                    _,
+                    AnimeSourceVideoClient client,
+                    RemoteVideoInfo info,
+                    int index,
+                  ) async {},
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+    }
+
+    Finder addButton() =>
+        find.byKey(const ValueKey<String>('anime_source_library_add'));
+    Finder removeButton() =>
+        find.byKey(const ValueKey<String>('anime_source_library_remove'));
+
+    testWidgets('add writes one online row per episode and flips the button '
+        'to remove; remove deletes them again', (WidgetTester tester) async {
+      await pumpDetail(tester);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_download_all')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'anime_download_$kAnimeSourceVideoIdPrefix'
+            'eu.kanade.tachiyomi.animeextension.all.fixture:42:/ep/1',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(addButton());
+      await settle(tester);
+
+      final List<VideoBookRow> rows = (await tester.runAsync(
+        database.allVideoBooks,
+      ))!;
+      expect(rows.length, 2);
+      expect(
+        rows.every((VideoBookRow r) => isAnimeSourceVideoPath(r.videoPath)),
+        isTrue,
+      );
+      expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+
+      expect((await tester.runAsync(database.allVideoBooks))!, isEmpty);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an episode already in the library shows remove on open', (
+      WidgetTester tester,
+    ) async {
+      await tester.runAsync(
+        () => database.upsertVideoBook(
+          VideoBooksCompanion.insert(
+            bookUid:
+                '$kAnimeSourceVideoIdPrefix'
+                'eu.kanade.tachiyomi.animeextension.all.fixture:42:/ep/2',
+            title: 'Episode 2',
+            videoPath: 'anime-source://fixture/42/Fixture Show - E02',
+          ),
+        ),
+      );
+      await pumpDetail(tester);
+      expect(removeButton(), findsOneWidget);
+      expect(addButton(), findsNothing);
+    });
+  });
+
   testWidgets('an episode without streams still opens the player, '
       'which reports NO stream on load', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
@@ -438,9 +555,14 @@ void main() {
 /// 作品页经 `appProvider` 读远端断点时间戳：挂一份真 [PreferencesRepository]（同一个
 /// 内存 DB），其余 AppModel 初始化不跑。
 class _TestAppModel extends AppModel {
-  _TestAppModel(PreferencesRepository prefs, Directory root)
-    : super(testPlatformServices()) {
+  _TestAppModel(
+    PreferencesRepository prefs,
+    Directory root,
+    FushiDatabase database,
+  ) : super(testPlatformServices()) {
     wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: root);
+    // 作品页读「本作品哪些集已在库 / 已下载」要用同一个库。
+    wireDatabaseForTesting(database);
   }
 }
 
