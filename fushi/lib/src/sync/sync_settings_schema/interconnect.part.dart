@@ -54,6 +54,9 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
         .addListener(_onClientConfigRevision);
+    // 后台地址学习也会写候选列表：跟着真值重载，免得下次编辑把学到的地址整份覆盖。
+    SyncRepository.fushiClientUrlsRevision
+        .addListener(_onClientConfigRevision);
     // Rebuild when the server-enabled flag flips so "add connection" re-gates.
     _syncSettings(widget.settingsContext)
         .roleRevision
@@ -64,6 +67,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   void dispose() {
     _syncSettings(widget.settingsContext)
         .clientConfigRevision
+        .removeListener(_onClientConfigRevision);
+    SyncRepository.fushiClientUrlsRevision
         .removeListener(_onClientConfigRevision);
     _syncSettings(widget.settingsContext)
         .roleRevision
@@ -120,7 +125,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       _tokenPresent = _tokenController.text.trim().isNotEmpty;
     });
     _syncSettings(widget.settingsContext)
-      ..peerCount = urls.length
+      // 按 host 计数：同一台机器的多条地址（LAN / IPv6 / 组网）只算一台。
+      ..peerCount = interconnectPeerRepresentatives(urls).length
       ..setHasClientConnection(urls.isNotEmpty);
   }
 
@@ -136,7 +142,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // toggle; adding one must lock it. Every URL mutation routes through here.
     // 主页「配对与设备」入口行的已配对数也从这里刷新（C2）。
     _syncSettings(widget.settingsContext)
-      ..peerCount = _urls.length
+      ..peerCount = interconnectPeerRepresentatives(_urls).length
       ..setHasClientConnection(_urls.isNotEmpty);
   }
 
@@ -247,7 +253,8 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
           // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
           // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
           copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
-              ? edited.copyWith(url: normalizedResult)
+              // 用户亲手改过的条目从此归用户所有：不再随 host 地址集自动增删。
+              ? edited.copyWith(url: normalizedResult, learned: false)
               : FushiClientUrl(
                   url: normalizedResult,
                   enabled: edited.enabled,
@@ -868,6 +875,14 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     // 只写全局键会让「配对第二台对端」把第一台的凭据覆盖掉，而第一台地址仍排在
     // 候选前列且可达 → 拿着别人的 token 撞 401 → 整个互联瘫痪。
     await _pairRepo.setFushiClientTokenForUrl(baseUrl, token);
+    // 配对成功立即学一次 host 的地址集（IPv6 / 组网 / 公网 / P2P）：出了这个
+    // 局域网也连得回来。失败只留痕，不影响配对结果。
+    for (final FushiClientUrl u in await _pairRepo.getFushiClientUrls()) {
+      if (u.url == baseUrl) {
+        InterconnectAddressLearner(_pairRepo).refreshInBackground(u);
+        break;
+      }
+    }
     // BUG-1693：配对**成功**才代表互联真的投入使用，此刻才落「互联已启用」。
     // 已启用时（本 UI 的常态——配置区本就门控于互联开关）是幂等 no-op。
     await _syncSettings(_pairSettingsContext).setInterconnectEnabled(true);

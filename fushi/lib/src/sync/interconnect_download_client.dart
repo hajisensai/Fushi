@@ -4,6 +4,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -16,9 +17,19 @@ class HostDownloadTarget {
     required this.backend,
     this.kinds = const <String>['video'],
     this.fingerprintSha256,
+    this.peerUrls = const <String>{},
   });
 
   final String baseUrl;
+
+  /// 这台 host 在候选列表里的全部地址（含 [baseUrl]）。「下载执行设备」偏好存的是
+  /// 某一条地址，而选路可能经另一条（LAN / IPv6 / 组网 / P2P）到达同一台 host；
+  /// 判「是不是偏好里那台」用 [isPeer]，不按 URL 字面比。
+  final Set<String> peerUrls;
+
+  /// [url] 是否指向这台 host。
+  bool isPeer(String? url) =>
+      url != null && (url == baseUrl || peerUrls.contains(url));
   final String? deviceName;
 
   /// `qbittorrent` / `embedded`。
@@ -111,19 +122,35 @@ class InterconnectDownloadClient {
   /// 只探这一台（用户在「下载执行设备」里选定的那台）；不在配对清单里 / 没宣告
   /// 能力 / 探不到 → null，**不**退而求其次换别的 host——用户点名的设备连不上要
   /// 如实告诉他，而不是悄悄下到另一台机器上。
+  ///
+  /// [baseUrl] 认的是「那台 host」而不是那一条地址：偏好里存的是用户当初选中时的
+  /// 地址（在家可能是 LAN），出门后同一台 host 仍可经 IPv6 / 组网 / P2P 到达，
+  /// 按组内可达性依次试。
   Future<HostDownloadTarget?> probeUrl(String baseUrl) async {
-    for (final FushiClientUrl candidate in await _enabledCandidates()) {
-      if (candidate.url == baseUrl) return _probeCandidate(candidate);
+    final List<FushiClientUrl> host =
+        interconnectPeerAddressesOf(await _enabledCandidates(), baseUrl);
+    for (final FushiClientUrl candidate
+        in await rankInterconnectCandidates(host)) {
+      final HostDownloadTarget? target = await _probeCandidate(candidate);
+      if (target != null) return target;
     }
     return null;
   }
 
   /// 全部宣告能力的已配对 host（资源搜索页的「下载到」下拉要列出来让用户挑）。
+  ///
+  /// 按 host 去重：同一台 host 的多条地址只产出一个目标（组内已按可达性排序）。
   Future<List<HostDownloadTarget>> probeAll() async {
     final List<HostDownloadTarget> targets = <HostDownloadTarget>[];
-    for (final FushiClientUrl candidate in await _enabledCandidates()) {
-      final HostDownloadTarget? target = await _probeCandidate(candidate);
-      if (target != null) targets.add(target);
+    final List<FushiClientUrl> candidates =
+        await rankInterconnectCandidates(await _enabledCandidates());
+    for (final List<FushiClientUrl> host in groupInterconnectPeers(candidates)) {
+      for (final FushiClientUrl candidate in host) {
+        final HostDownloadTarget? target = await _probeCandidate(candidate);
+        if (target == null) continue;
+        targets.add(target);
+        break;
+      }
     }
     return targets;
   }
@@ -160,6 +187,13 @@ class InterconnectDownloadClient {
             ? kinds.map((Object? k) => k.toString()).toList(growable: false)
             : const <String>['video'],
         fingerprintSha256: candidate.fingerprintSha256,
+        peerUrls: <String>{
+          for (final FushiClientUrl u in interconnectPeerAddressesOf(
+            await _repo.getFushiClientUrls(),
+            candidate.url,
+          ))
+            u.url,
+        },
       );
     } catch (_) {
       return null;

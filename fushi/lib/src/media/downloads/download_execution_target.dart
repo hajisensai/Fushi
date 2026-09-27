@@ -10,6 +10,7 @@
 /// 「在哪台设备下」，手机不需要知道电脑用的是内置引擎还是外接 qBittorrent。
 library;
 
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -56,15 +57,14 @@ Future<DownloadExecutionResolution> resolveDownloadExecution(
   // 下载、番剧对话框磁链都恒返回「执行设备连不上」，而 UI 里没有任何地方能把它
   // 改回本机。配对关系都没有了就不该再守着它：退回本机。
   // 「在清单里但此刻探不到」仍按原语义拒绝（不静默改在别的机器上下载）。
-  final List<FushiClientUrl> paired = await repo.getFushiClientUrls();
-  String? deviceName;
-  bool stillPaired = false;
-  for (final FushiClientUrl u in paired) {
-    if (u.url != url) continue;
-    stillPaired = true;
-    deviceName = u.deviceName;
-  }
-  if (!stillPaired) return const DownloadExecutionLocal();
+  // 按「那台 host」判：同一台 host 的地址会随它换 IP 被自动增删，偏好里那一条
+  // 恰好被删不等于解绑了这台设备。
+  final FushiClientUrl? paired = interconnectPeerRepresentativeOf(
+    await repo.getFushiClientUrls(),
+    url,
+  );
+  if (paired == null) return const DownloadExecutionLocal();
+  final String? deviceName = paired.deviceName;
   HostDownloadTarget? target;
   try {
     target = await resolved.probeUrl(url);

@@ -610,6 +610,8 @@ class FushiSyncServerController extends ChangeNotifier {
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
+    // 与 LAN 广播 TXT `id=` 同一个值：client 靠它把本机的多条地址归为一台 host。
+    final String hostId = await repo.getOrCreateDeviceId();
     final HostJobManager? hostJobs = await _hostJobsFactory?.call();
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: _syncDataDir(),
@@ -655,7 +657,11 @@ class FushiSyncServerController extends ChangeNotifier {
       // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
       ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens
+      // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
+      // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
+      ..hostId = hostId
+      ..publicUrlsProvider = repo.getInterconnectPublicUrls;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

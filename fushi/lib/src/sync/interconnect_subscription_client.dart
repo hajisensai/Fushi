@@ -6,6 +6,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -191,48 +192,66 @@ class InterconnectSubscriptionClient {
       createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
 
   /// 所有宣告 `subscriptions.supported` 的已配对 host（一个用户可能配多台）。
+  ///
+  /// 按 host 去重：同一台 host 的多条地址（LAN / IPv6 / 组网）只产出一个目标，
+  /// 取组内第一条能答复的地址（组内已按可达性排好序）。
   Future<List<HostSubscriptionTarget>> probeAll() async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
+    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false),
+    );
     final String? fallbackToken = await _repo.getFushiClientToken();
     final List<HostSubscriptionTarget> targets = <HostSubscriptionTarget>[];
-    for (final FushiClientUrl candidate in candidates) {
-      final Uri? uri = _uri(candidate.url, '/api/capabilities');
-      final String? token = interconnectTokenFor(candidate, fallbackToken);
-      if (uri == null || token == null) continue;
-      final (http.Client client, bool closeAfter) = _clientFor(
-        candidate.url,
-        fingerprint: candidate.fingerprintSha256,
-      );
-      try {
-        final http.Response response = await client
-            .get(uri, headers: _headers(token))
-            .timeout(_probeTimeout);
-        if (response.statusCode != 200) continue;
-        final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
-        if (decoded is! Map) continue;
-        final Object? subs = decoded['subscriptions'];
-        if (subs is! Map || subs['supported'] != true) continue;
-        final Object? providers = subs['providers'];
-        targets.add(HostSubscriptionTarget(
-          baseUrl: candidate.url,
-          deviceName: candidate.deviceName,
-          backend: (subs['backend'] ?? '').toString(),
-          providers: providers is List
-              ? providers
-                  .map((dynamic e) => e.toString())
-                  .toList(growable: false)
-              : const <String>[],
-          fingerprintSha256: candidate.fingerprintSha256,
-        ));
-      } catch (_) {
-        continue;
-      } finally {
-        if (closeAfter) client.close();
+    for (final List<FushiClientUrl> host in groupInterconnectPeers(candidates)) {
+      for (final FushiClientUrl candidate in host) {
+        final HostSubscriptionTarget? target =
+            await _probeCandidate(candidate, fallbackToken);
+        if (target == null) continue;
+        targets.add(target);
+        break;
       }
     }
     return targets;
+  }
+
+  Future<HostSubscriptionTarget?> _probeCandidate(
+    FushiClientUrl candidate,
+    String? fallbackToken,
+  ) async {
+    final Uri? uri = _uri(candidate.url, '/api/capabilities');
+    final String? token = interconnectTokenFor(candidate, fallbackToken);
+    if (uri == null || token == null) return null;
+    final (http.Client client, bool closeAfter) = _clientFor(
+      candidate.url,
+      fingerprint: candidate.fingerprintSha256,
+    );
+    try {
+      final http.Response response = await client
+          .get(uri, headers: _headers(token))
+          .timeout(_probeTimeout);
+      if (response.statusCode != 200) return null;
+      final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map) return null;
+      final Object? subs = decoded['subscriptions'];
+      if (subs is! Map || subs['supported'] != true) return null;
+      final Object? providers = subs['providers'];
+      return HostSubscriptionTarget(
+        baseUrl: candidate.url,
+        deviceName: candidate.deviceName,
+        backend: (subs['backend'] ?? '').toString(),
+        providers: providers is List
+            ? providers
+                .map((dynamic e) => e.toString())
+                .toList(growable: false)
+            : const <String>[],
+        fingerprintSha256: candidate.fingerprintSha256,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      if (closeAfter) client.close();
+    }
   }
 
   Future<HostSubscription> create(

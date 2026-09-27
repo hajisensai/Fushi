@@ -38,6 +38,7 @@ import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/ftp_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_url.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -1060,7 +1061,9 @@ class _SyncSettingsState {
   }
 
   Future<void> _reloadPeerCount() async {
-    final int count = (await _repo.getFushiClientUrls()).length;
+    final int count =
+        interconnectPeerRepresentatives(await _repo.getFushiClientUrls())
+            .length;
     if (peerCount == count) return;
     peerCount = count;
     _settingsContext.refresh();
@@ -1151,7 +1154,7 @@ class _SyncSettingsState {
       serverPort = await _repo.getServerPort();
       final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
       hasClientConnection = urls.isNotEmpty;
-      peerCount = urls.length;
+      peerCount = interconnectPeerRepresentatives(urls).length;
       _loaded = true;
       _settingsContext.refresh();
     } finally {

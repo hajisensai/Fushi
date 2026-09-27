@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -62,10 +63,11 @@ class GameStreamLibraryServices {
     final SyncRepository repository = SyncRepository(appModel.database);
     final PreferencesRepository prefs = appModel.prefsRepo;
     return GameStreamLibraryServices(
-      loadPeers: () async => <FushiClientUrl>[
+      // 每台 host 一次：同一台机器的多条地址只取组内最先可达的那条。
+      loadPeers: () async => resolveInterconnectPeerConnections(<FushiClientUrl>[
         for (final FushiClientUrl peer in await repository.getFushiClientUrls())
           if (peer.enabled) peer,
-      ],
+      ]),
       createClient: (FushiClientUrl peer) => FushiGameStreamClient(
         transport: InterconnectGameStreamTransport(repo: repository),
       )..bindPeer(peer),

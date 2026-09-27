@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart'
     show mangaOcrPollDelay;
 import 'package:fushi/src/sync/webdav_ops.dart';
@@ -116,9 +117,11 @@ class InterconnectJobClient {
 
   /// 找到第一台支持 [kind] 的已配对 host。
   Future<HostJobTarget?> probe(String kind) async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
+    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false),
+    );
     final String? fallbackToken = await _repo.getFushiClientToken();
     for (final FushiClientUrl candidate in candidates) {
       final Uri? uri = _uri(candidate.url, '/api/capabilities');

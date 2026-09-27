@@ -16,6 +16,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
+    show decodeInterconnectPublicUrls, kInterconnectPublicUrlsPref;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
@@ -180,7 +182,11 @@ class HeadlessHost {
       ..onPairSessionResolved = _clearPendingPairing
       ..lanRequiresPinProvider = (() async => config.lanRequiresPin)
       ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens
+      // 地址集：与 LAN 广播同一个设备 id；公网 / 反代地址与 app 同一个偏好键。
+      ..hostId = identity.deviceId
+      ..publicUrlsProvider = (() async => decodeInterconnectPublicUrls(
+          prefs.getPref(kInterconnectPublicUrlsPref)));
     await server.start();
     _server = server;
 

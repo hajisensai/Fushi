@@ -334,6 +334,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       },
       if (_deviceName != null && _deviceName.isNotEmpty)
         'deviceName': _deviceName,
+      // 选路探测的身份核对：学到的 LAN 地址换个网络可能指向**别人的** Fushi
+      // host，明文 http 下只看 app=='fushi' 会选中它并把 token 发过去。hostId
+      // 本就在 LAN 广播 TXT 里公开，不是秘密。
+      if (hostId != null) 'hostId': hostId,
     });
   }
 
@@ -389,6 +393,25 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         if (_hostFingerprint != null) 'fingerprint': _hostFingerprint,
       },
       'pairing': <String, dynamic>{'v2': true},
+    });
+  }
+
+  /// GET /api/host/addresses → `{hostId, addresses:[{url, kind}]}`
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  ///
+  /// 需鉴权——不放无鉴权的 /api/ping：不向任何能探到端口的人泄露内网拓扑。也不
+  /// 并进 capabilities：那是「支持什么」，这是「在哪里」；capabilities 被各功能
+  /// 频繁读，每次都枚举网卡是白费。没有 hostId 的 host（老调用方 / 单测）404，
+  /// client 无从分组也就不学。
+  Future<shelf.Response> _handleHostAddresses() async {
+    final String? id = hostId;
+    if (id == null) return shelf.Response.notFound('No host id');
+    return jsonResponse(<String, dynamic>{
+      'hostId': id,
+      'addresses': <Map<String, Object?>>[
+        for (final InterconnectHostAddress a in await _hostAddresses())
+          a.toJson(),
+      ],
     });
   }
 

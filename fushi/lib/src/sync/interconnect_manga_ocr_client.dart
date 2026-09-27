@@ -25,6 +25,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
@@ -206,9 +207,11 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
 
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
+    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false),
+    );
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (candidates.isEmpty) return null;
 

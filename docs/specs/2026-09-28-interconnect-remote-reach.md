@@ -27,7 +27,8 @@
 - 主机侧新增纯函数 `collectInterconnectHostAddresses(interfaces, port, tls, publicUrls)` → `List<HostAddress{url, kind}>`，kind ∈ `lan | lanV6 | ipv6 | overlay | public | p2p`。
   - 私网 v4（10/8、172.16/12、192.168/16）→ lan；ULA fc00::/7 → lanV6；全局单播 2000::/3 → ipv6；100.64/10 → overlay（Tailscale/ZeroTier/EasyTier 虚拟网卡）；用户配置的公网地址 → public；P2P 节点 → `p2p://<nodeId>`。
   - 排除 loopback、169.254、fe80::（无 scope id 不可用）。
-- `/api/capabilities`（需鉴权）新增 `hostId` 与 `addresses`。**不放进无鉴权的 `/api/ping`**：不向任何能探测端口的人泄露内网拓扑。
+- 新增需鉴权端点 `GET /api/host/addresses` → `{hostId, addresses}`。**不放进无鉴权的 `/api/ping`**（不向能探到端口的人泄露内网拓扑），也**不并进 `/api/capabilities`**（那是「支持什么」，这是「在哪里」；capabilities 被各功能频繁读，每次枚举网卡是白费）。老 host 404 → client 不学。
+- `/api/ping` 只加 `hostId`（它本就在 LAN 广播 TXT 里公开）：选路探测据此核对「这个地址背后还是不是我那台 host」——学到的 LAN 地址换个网络可能指向别人的 Fushi host，明文 http 下只看 `app=='fushi'` 会把 token 发过去。
 - 客户端纯函数 `mergeLearnedHostAddresses(list, anchor, hostId, addresses)`：
   - 锚点条目补 `hostId`；同 hostId 的 learned 条目按新集合增删；token / 指纹 / 展示名从锚点复制（per-peer token 对这台主机的所有地址都有效，证书同一张）。
   - 已存在的 URL（无论手输与否）不重复添加。

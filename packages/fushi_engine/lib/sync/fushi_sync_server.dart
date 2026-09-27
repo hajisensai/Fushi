@@ -37,6 +37,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
@@ -376,6 +377,38 @@ class FushiSyncServer {
   /// [invalidatePeerTokenCache] 在配对/吊销后清缓存促其下次重载。null 时只认共享 token。
   Future<Set<String>> Function()? pairedPeerTokensProvider;
 
+  /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
+  /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
+  /// 多条地址归为一组、自动学习新地址（docs/specs/2026-09-28-interconnect-remote-reach.md
+  /// §1）。null（老调用方 / 单测）→ 不公布，client 行为同升级前。
+  String? hostId;
+
+  /// 用户在 host 上填的公网 / 反代 / DDNS 地址（每次 capabilities 实时读）。
+  Future<List<String>> Function()? publicUrlsProvider;
+
+  /// 网卡之外的附加地址（P2P 节点等），每次 capabilities 实时读。
+  List<InterconnectHostAddress> Function()? extraAddressesProvider;
+
+  /// 测试缝：替换网卡枚举。
+  @visibleForTesting
+  Future<List<NetworkInterface>> Function()? interfaceLister;
+
+  /// 本 host 当前可公布的地址集。只在 LAN 开放时有意义——仅本机监听时公布网卡
+  /// 地址等于告诉 client 一堆连不上的地址。
+  Future<List<InterconnectHostAddress>> _hostAddresses() async {
+    if (!_allowLan || _server == null) return const <InterconnectHostAddress>[];
+    return listInterconnectHostAddresses(
+      port: port,
+      tls: _securityContext != null,
+      publicUrls:
+          await (publicUrlsProvider?.call() ?? Future<List<String>>.value(
+              const <String>[])),
+      extra: extraAddressesProvider?.call() ??
+          const <InterconnectHostAddress>[],
+      interfaceLister: interfaceLister,
+    );
+  }
+
   /// [pairedPeerTokensProvider] 结果的缓存（避免每个请求打一次 DB）。null=未加载。
   /// 配对新增 / 吊销后经 [invalidatePeerTokenCache] 置 null，下次 auth 重新拉取。
   Set<String>? _cachedPeerTokens;
@@ -584,6 +617,10 @@ class FushiSyncServer {
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       return _handleCapabilities();
+    }
+    if (reqPath == '/api/host/addresses') {
+      if (method != 'GET') return shelf.Response(405);
+      return _handleHostAddresses();
     }
     // 漫画 P3：互联 host 代跑 OCR。鉴权走上方 middleware（无豁免），处理逻辑在
     // fushi_manga_ocr_host.dart（本文件是共享热点，只留最小分发）。
