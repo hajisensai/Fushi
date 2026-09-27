@@ -194,6 +194,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   ReaderFushiHistoryPage get _pageWidget => widget as ReaderFushiHistoryPage;
   bool get _mangaOnly => _pageWidget.mangaOnly;
 
+  /// 「同时删除统计数据」勾选行的副标题：漫画库与书架各说各的统计口径。
+  String get _statisticsSubtitle => _mangaOnly
+      ? t.delete_statistics_manga_desc
+      : t.delete_statistics_book_desc;
+
   @override
   MediaType get mediaType => mediaSource.mediaType;
 
@@ -1904,6 +1909,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       },
       onDeleteMembersMedia: _deleteCollectionMembersMedia,
       deleteMembersCheckboxLabel: t.delete_collection_also_books,
+      deleteMembersStatisticsSubtitle: _statisticsSubtitle,
       deleteMembersDisclosure: buildDeletionDisclosure(
         target: DeletionDisclosureTarget.shelfBook,
       ),
@@ -1926,6 +1932,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             if (mounted) setState(() {});
           },
           onDeleteMembersMedia: _deleteCollectionMembersMedia,
+          deleteMembersStatisticsSubtitle: _statisticsSubtitle,
         ),
       ),
     );
@@ -1934,10 +1941,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   /// 「删除合集」时连同成员本体一起删：按 (mediaType, entryKey) 分派到删书/删视频。
   /// 复用批量删除同一分派纪律（[_batchDeleteConfirm]）——epub 直接删；srt 先 findByUid
   /// 拿 bookKey 删本体再删 srt 行；video 逐个删并末尾一次 compact。删书本身各自 VACUUM。
-  /// [deleteLocalFiles] / [deleteStatistics] 与视频侧共用同一回调形状。书架合集这
-  /// 两个二级勾选都不提供（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]；
-  /// 统计删除目前只在视频域落地），故这里恒收到 false；混入的视频成员照旧只删 DB
-  /// 行 + app 副本、保留原始文件与统计。
+  /// [deleteLocalFiles] / [deleteStatistics] 与视频侧共用同一回调形状。书架合集不提供
+  /// 「同时删除本地文件」（书的原件删除自有纪律，走 [ReaderFushiSource.deleteBook]），
+  /// 故 [deleteLocalFiles] 恒 false；[deleteStatistics] 来自「同时删除统计数据」勾选，
+  /// 书成员经 deleteBook 落地。混入的视频成员照旧只删 DB 行 + app 副本、保留原始
+  /// 文件与统计——这里的勾选副标题只承诺删书的统计。
   Future<void> _deleteCollectionMembersMedia(
     List<MediaCollectionItemRow> members,
     bool deleteLocalFiles,
@@ -1957,6 +1965,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             db: appModel.database,
             bookKey: epubBookKey,
             appModel: appModel,
+            deleteStatistics: deleteStatistics,
           );
         case MediaKind.srt:
           final SrtBookRepository repo = SrtBookRepository(appModel.database);
@@ -1967,8 +1976,11 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 db: appModel.database,
                 bookKey: book.bookKey,
                 appModel: appModel,
+                deleteStatistics: deleteStatistics,
               );
             }
+            // 纯字幕书（bookKey 空）刻意不删统计：它的 legacy 统计与墓碑只能按
+            // title 定位，会连坐同名 EPUB 的统计（与书架单删 / 批删同一边界）。
             await repo.delete(m.entryKey);
           }
         case MediaKind.video:
@@ -2161,6 +2173,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     required String message,
     DeletionDisclosure? disclosure,
     String? localFilesSubtitle,
+    String? statisticsSubtitle,
   }) async {
     // TODO-2470 死角②：本机没有任何删除传播通道时不摆那个兑现不了的勾选框。
     // 纯本地零网络判据，在弹窗弹出前解析完（弹窗自身不做 IO）。
@@ -2179,6 +2192,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         disclosure: disclosure,
         showSyncScope: canSyncEverywhere,
         localFilesSubtitle: localFilesSubtitle,
+        statisticsSubtitle: statisticsSubtitle,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),

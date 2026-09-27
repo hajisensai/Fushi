@@ -318,7 +318,7 @@ void main() {
       );
     });
 
-    test('删游戏时源快照与会话经 FK cascade 连带清理', () async {
+    test('删游戏时源快照经 FK cascade 连带清理，游玩会话保留并快照显示名（v113）', () async {
       await repo.addAll(<GalgameEntry>[newEntry('g1')]);
       await repo.saveScrapeResult(
         gameId: 'g1',
@@ -335,9 +335,12 @@ void main() {
           dateKey: '2026-07-01',
         ),
       );
+      final String displayName = repo.byId('g1')!.displayName;
       await repo.remove('g1');
       expect(await repo.sourcesOf('g1'), isEmpty);
-      expect(await repo.sessions('g1'), isEmpty);
+      final List<GalgameSessionRow> kept = await repo.sessions('g1');
+      expect(kept, hasLength(1), reason: '游玩时长是统计：只有「同时删除统计数据」才删');
+      expect(kept.single.gameTitle, displayName);
     });
   });
 }

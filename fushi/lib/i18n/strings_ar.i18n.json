@@ -5625,5 +5625,8 @@
   "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device",
   "video_subtitle_host_upload_unsupported": "The host's Fushi is too old to receive subtitles; it's only saved on this device",
   "video_setting_subtitle_auto_upload_to_host": "Auto-upload imported subtitles to host",
-  "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only."
+  "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
+  "delete_statistics_book_desc": "Reading time, characters read and lookup/mining counts for this book are removed from statistics on every device",
+  "delete_statistics_manga_desc": "Reading time, characters, pages and lookup/mining counts for this manga are removed from statistics on every device",
+  "delete_statistics_game_desc": "Play time and text characters for this game are removed from statistics on this device"
 }

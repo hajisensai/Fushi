@@ -2588,9 +2588,11 @@ class GalgameSources extends Table {
 class GalgameSessions extends Table {
   IntColumn get id => integer().autoIncrement()();
 
-  /// 所属游戏。删游戏 cascade 清本表。
-  TextColumn get gameId =>
-      text().references(Galgames, #id, onDelete: KeyAction.cascade)();
+  /// 所属游戏（`galgames.id`）。自 v113 起是**逻辑外键**：从库移除游戏不再
+  /// cascade 清本表——会话是用户攒下的游玩时长，只有删除框勾了「同时删除统计数据」
+  /// （`deleteGameStatisticsForId`）或统计页显式删除时才删。游戏移除后会话成为孤儿，
+  /// 靠 [gameTitle] 快照继续在统计页显示名字。
+  TextColumn get gameId => text()();
 
   /// 会话起始毫秒戳。
   IntColumn get startMs => integer()();
@@ -2610,6 +2612,11 @@ class GalgameSessions extends Table {
   /// 时写下的行，只在纯 DB 测试里出现）。统计按 Profile 隔离的分区键，与
   /// [StudySegments.profileId] 同律；写入时由 DAO 从 `active_profile_id` 偏好盖戳。
   IntColumn get profileId => integer().withDefault(const Constant(0))();
+
+  /// v113：游戏被从库移除时快照下的显示名（`deleteGalgame` 同事务写入）。游戏还在库
+  /// 里时恒为空串、读取端一律以库内当前显示名为准；游戏移除后 [gameId] 反查不到
+  /// 行，统计页 / 会话流靠它显示名字而不是裸 id。
+  TextColumn get gameTitle => text().withDefault(const Constant(''))();
 }
 
 // ── study_segments ──────────────────────────────────────────────────

@@ -334,6 +334,9 @@ Future<StatFacts> loadStatFacts(
       : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
   final Future<List<(String, String, int)>> gameDailyF =
       db.getGalgameDailySecondsByGame(profileId: scope);
+  // v113：已从库移除的游戏，其会话留着、名字在会话行的快照上。
+  final Future<Map<String, String>> gameSessionTitlesF =
+      db.getGalgameSessionTitles();
   final Future<List<ActivityEventRow>> activityF =
       db.getRecentActivityEvents(limit: activityLimit);
   final Future<List<ActivityEventRow>> gameActivityF = legacyVisible
@@ -362,6 +365,7 @@ Future<StatFacts> loadStatFacts(
     readingHourlyF,
     videoHourlyF,
     gameDailyF,
+    gameSessionTitlesF,
     activityF,
     gameActivityF,
     segmentsF,
@@ -449,12 +453,14 @@ Future<StatFacts> loadStatFacts(
     );
   }
   // 游戏时长真相源 galgame_sessions（v55 起就是事实表）：按 (game, day) 进日面。
+  // title 只带已移除游戏的快照名（库内游戏恒空串，展示层按 id 反查库内显示名）。
+  final Map<String, String> gameSessionTitles = await gameSessionTitlesF;
   for (final (String gameId, String dateKey, int seconds) in await gameDailyF) {
     daily.add(
       StatFact(
         mediaKind: kActivityMediaGame,
         mediaKey: gameId,
-        title: '',
+        title: gameSessionTitles[gameId] ?? '',
         format: '',
         dateKey: dateKey,
         hour: -1,
@@ -525,9 +531,11 @@ Future<StatFacts> loadStatFacts(
   }
   // 游玩会话（活动流合成「游玩」事件用；activityLimit 为 0 时不取）。
   final List<GalgameSessionRow> recentGameSessions = await recentGameSessionsF;
+  // 库内显示名优先；已移除游戏的孤儿会话回落会话行上的快照名（v113）。
   final Map<String, String> gameNamesById = recentGameSessions.isEmpty
       ? const <String, String>{}
       : <String, String>{
+          ...gameSessionTitles,
           for (final GalgameRow g in await db.getAllGalgames()) g.id: g.name,
         };
   return StatFacts(
@@ -568,7 +576,9 @@ Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
 
 /// 把游玩会话映射成活动流行（id=0 哨兵）：v92 前 `GalgamePlayTracker` 会在
 /// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在
-/// 只在读取时合成。title 取当前库内显示名（游戏已删则空串，展示层回退 mediaKey）。
+/// 只在读取时合成。title 取当前库内显示名；游戏已从库移除时是会话行上的快照名
+/// （v113，经 [loadStatFacts] 并进 [gameNamesById]），都没有才空串（展示层回退
+/// mediaKey）。
 List<ActivityEventRow> galgameSessionsAsActivityRows(
   List<GalgameSessionRow> sessions,
   Map<String, String> gameNamesById,

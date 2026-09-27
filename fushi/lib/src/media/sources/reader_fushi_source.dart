@@ -902,6 +902,40 @@ class ReaderFushiSource extends ReaderMediaSource {
     return null;
   }
 
+  /// 删一本书（EPUB / PDF / 漫画 / 字幕书）攒下的统计：「同时删除统计数据」勾选的
+  /// 落地，书架单删 / 批删 / 合集连删 / 漫画作品页移出书架共用。
+  ///
+  /// 逐身份走 [FushiDatabase.deleteReadingStatisticsForTitle]：它在一个事务里删
+  /// `study_segments` 并按身份立碑、删 legacy 阅读时长/字数与查词/制卡计数，并立
+  /// title 墓碑防同步复活。[mediaKeys] 同时给 bookKey 与 srt uid——后台听书时钟对
+  /// 纯字幕书以 uid 为身份（`SessionBookInfo.studyMediaKey`），两个都得清。
+  ///
+  /// best-effort：统计删失败不该拦住书本身的删除（用户可在统计页再删），只记日志。
+  static Future<void> deleteBookStatistics({
+    required FushiDatabase db,
+    required String title,
+    required Iterable<String> mediaKeys,
+  }) async {
+    for (final String key
+        in mediaKeys.where((String k) => k.isNotEmpty).toSet()) {
+      try {
+        await db.deleteReadingStatisticsForTitle(title, bookKey: key);
+      } catch (e, stack) {
+        ErrorLogService.instance
+            .log('ReaderFushiSource.deleteStatistics', e, stack);
+      }
+    }
+  }
+
+  /// 删除这本字幕书时能否提供「同时删除统计数据」。
+  ///
+  /// 只有配对了 EPUB 的字幕书（bookKey 非空，走 [deleteBook]）能安全删统计。纯字幕书
+  /// （bookKey 空）不行：它的 legacy `reading_statistics` / book 类查词制卡计数与
+  /// `(title, 'book')` 墓碑只能按 title 定位，同名 EPUB 的统计会被连坐删掉（PR #1697
+  /// 审查阻断 2）。书架单删 / 批删 / 合集连删共用这一条判据：不摆勾选、执行时跳过。
+  static bool srtBookOffersStatisticsDeletion(SrtBook book) =>
+      book.bookKey.isNotEmpty;
+
   /// Delete a book and all of its associated data.
   ///
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
@@ -917,12 +951,16 @@ class ReaderFushiSource extends ReaderMediaSource {
   /// （EPUB / PDF / 漫画）导入即拷贝进 app 目录、原件路径根本没入库，没有可删的
   /// 原件——这就是 [hasLocalFiles] 只看音频列的原因，也是「同时删除本地文件」这条
   /// 披露只讲音频的原因。
+  /// [deleteStatistics]（默认 false，对应删除弹窗「同时删除统计数据」）：true 时在删
+  /// 行**之前**把这本书攒下的统计一并删掉（[deleteBookStatistics]）——标题与 srt uid
+  /// 都住在即将被删的行上，行一删就无从定位。
   Future<DeleteBookResult> deleteBook({
     required FushiDatabase db,
     required String bookKey,
     AppModel? appModel,
     DeleteScope scope = DeleteScope.keepLocalOnly,
     bool deleteLocalFiles = false,
+    bool deleteStatistics = false,
   }) async {
     try {
       // 原件位置在 audiobooks / srt_books 行上，deleteEpubBook 的事务会把它们
@@ -957,6 +995,14 @@ class ReaderFushiSource extends ReaderMediaSource {
             .logDiagnostic('ReaderFushiSource.deleteBook', reason);
         debugPrint('[ReaderFushiSource] deleteBook: $reason');
         return DeleteBookResult.failure(reason);
+      }
+
+      if (deleteStatistics) {
+        await deleteBookStatistics(
+          db: db,
+          title: bookRow?.title ?? srt!.title,
+          mediaKeys: <String>[bookKey, if (srt != null) srt.uid],
+        );
       }
 
       // TODO-1195 part B: a user shelf delete records a tombstone so a later

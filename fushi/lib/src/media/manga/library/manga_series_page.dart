@@ -1121,6 +1121,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
             db: appModel.database,
             bookKey: row.bookKey,
             scope: decision.scope,
+            deleteStatistics: decision.deleteStatistics,
           );
       if (!mounted) return;
       if (!result.deleted) {
@@ -1175,6 +1176,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           target: DeletionDisclosureTarget.shelfBook,
         ),
         showSyncScope: canSyncEverywhere,
+        statisticsSubtitle: t.delete_statistics_manga_desc,
         rememberedChoices: rememberedChoices,
         onPersistChoices: preferenceStore.write,
         onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
