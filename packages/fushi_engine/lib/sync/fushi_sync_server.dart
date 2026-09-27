@@ -409,17 +409,51 @@ class FushiSyncServer {
         .addMiddleware(_authMiddleware())
         .addHandler(_handleRequest);
     try {
-      _server = await shelf_io.serve(
-        handler,
-        _allowLan ? InternetAddress.anyIPv4 : InternetAddress.loopbackIPv4,
-        _requestedPort,
-        securityContext: _securityContext,
-      );
+      _server = await _bindListener(handler);
     } on SocketException catch (e) {
       if (isAddressInUseError(e)) {
         throw SyncServerPortInUseException(_requestedPort);
       }
       rethrow;
+    }
+  }
+
+  /// 仅本机 → loopback v4。允许 LAN → IPv6 双栈（`::`、`v6Only:false`，同一个端口
+  /// 同时收 v4 与 v6）：国内家宽普遍没有公网 v4 却有公网 v6，只监听 v4 等于把这
+  /// 条最便宜的直连路堵死。v4 对端在双栈 socket 上报成 `::ffff:a.b.c.d`，由
+  /// [FushiPairingProtocol.unmapIPv4MappedAddress] 还原。
+  ///
+  /// 系统禁用了 IPv6（内核关掉 / 容器无 v6 栈）时 `::` 根本绑不上，这是平台能力
+  /// 边界，回落只监听 v4——行为与升级前一致。端口被占不在此回落：它在 v4 上同样会
+  /// 撞，交给调用方报 [SyncServerPortInUseException]。
+  Future<HttpServer> _bindListener(shelf.Handler handler) async {
+    if (!_allowLan) {
+      return shelf_io.serve(
+        handler,
+        InternetAddress.loopbackIPv4,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
+    }
+    try {
+      return await shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv6,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
+    } on SocketException catch (e) {
+      if (isAddressInUseError(e)) rethrow;
+      engineLog.logDiagnostic(
+        'FushiSyncServer.bind',
+        'IPv6 dual-stack bind failed, IPv4 only: $e',
+      );
+      return shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv4,
+        _requestedPort,
+        securityContext: _securityContext,
+      );
     }
   }
 

@@ -449,6 +449,9 @@ String? _pinRateLimitSourceKey(FushiPairSession session) {
 /// attach connection info (e.g. some test harnesses).
 String? _remoteAddress(shelf.Request request) {
   final Object? info = request.context['shelf.io.connection_info'];
-  if (info is HttpConnectionInfo) return info.remoteAddress.address;
+  if (info is HttpConnectionInfo) {
+    return FushiPairingProtocol.unmapIPv4MappedAddress(
+        info.remoteAddress.address);
+  }
   return null;
 }

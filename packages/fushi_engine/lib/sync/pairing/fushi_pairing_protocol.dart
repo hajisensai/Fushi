@@ -147,8 +147,11 @@ class FushiPairingProtocol {
   /// (10/8, 172.16/12, 192.168/16, 169.254/16 link-local, 127/8) 与 IPv6 环回
   /// (::1) / 唯一本地地址 (fc00::/7) / link-local (fe80::/10)。
   static bool isPrivateLanAddress(String? remoteAddress) {
-    final String? addr = remoteAddress?.trim();
-    if (addr == null || addr.isEmpty) return false;
+    final String? trimmed = remoteAddress?.trim();
+    if (trimmed == null || trimmed.isEmpty) return false;
+    // 双栈监听（IPv6 socket 同时收 v4）下，v4 对端被报成 `::ffff:a.b.c.d`——按它
+    // 字面判会把整个 LAN 当公网，强制 PIN。先还原成 v4 再判。
+    final String addr = unmapIPv4MappedAddress(trimmed);
     // IPv6：环回与本地段。
     if (addr.contains(':')) {
       final String lower = addr.toLowerCase();
@@ -172,6 +175,18 @@ class FushiPairingProtocol {
     if (a == 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
     if (a == 169 && b == 254) return true; // 169.254.0.0/16 link-local
     return false;
+  }
+
+  /// IPv4 映射的 IPv6 地址（`::ffff:192.168.1.5`，双栈 socket 上的 v4 对端）还原为
+  /// 点分 v4；其余地址原样返回。来源地址的**唯一**规范化入口：LAN 判定、限速来源
+  /// key、`lastSeenIp` 落库都必须看到同一种写法，否则同一台设备经 v4/v6 两条路来
+  /// 会被当成两个来源。
+  static String unmapIPv4MappedAddress(String address) {
+    final String lower = address.toLowerCase();
+    const String prefix = '::ffff:';
+    if (!lower.startsWith(prefix)) return address;
+    final String rest = lower.substring(prefix.length);
+    return rest.split('.').length == 4 ? rest : address;
   }
 
   /// 去空白、转小写以归一化 proof hex 串后比对。
