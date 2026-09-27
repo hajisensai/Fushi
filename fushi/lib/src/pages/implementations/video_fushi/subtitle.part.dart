@@ -1903,7 +1903,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return;
     }
     final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
-    if (audio == null || !mounted) return;
+    if (audio == null || !context.mounted) return;
     // 远端视频的音轨是 host 裁好的临时文件，名字没有意义；新档按片名命名。
     final String baseName = _isRemote
         ? (_title ?? _effectiveRemoteInfo?.title ?? 'subtitle')
