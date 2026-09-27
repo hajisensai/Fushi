@@ -229,6 +229,11 @@ import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
+import 'package:fushi/src/media/video/online/anime_source_library.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';
@@ -2352,7 +2357,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 让流媒体书像本地视频一样从书架点开，却复用与「导入即播」完全一致的远端播放路径
   /// （prefs 断点、无本地文件），行为与旧临时流播放一致（Never break userspace）。
   RemoteVideoInfo? _resolvedStreamInfo;
-  UrlStreamVideoClient? _resolvedStreamClient;
+  RemoteVideoClient? _resolvedStreamClient;
+
+  /// 在线视频源（Aniyomi）入库集重开时，同一作品合集里的在线行（连播成员）与起播
+  /// 下标（见 `buildAnimeSourceLaunch`）。其它流媒体书恒 null。
+  List<RemoteVideoInfo>? _resolvedStreamMembers;
+  int? _resolvedStreamStartIndex;
+
+  /// 本页为在线视频源入库集建的 client：持有 http 客户端，退出时释放。
+  AnimeSourceVideoClient? _ownedAnimeClient;
 
   /// 客户端互联视频合集播放：有序远端合集成员（来自 widget.remoteCollectionMembers）。
   /// `length > 1` = 合集连播模式；单视频 / host-playlist 恒空。
@@ -2855,6 +2868,59 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
         return;
       }
+      // 在线视频源（Aniyomi）入库集：按行里的规格重建扩展 client（起播时向扩展
+      // 取流），合集里同一作品的在线行作连播成员。
+      if (isAnimeSourceVideoPath(row.videoPath)) {
+        _setLoadingPhase(_VideoLoadPhase.connecting);
+        try {
+          // 合规门 + 运行时平台门（iOS 不带在线源宿主、Linux 没有 Mihon 宿主）：
+          // 取 animeMihonManager 之前先问门——门外取用会在不该有宿主的平台上起宿主
+          // （或直接抛 UnsupportedError）。不可用走下面「扩展不可用」的失败提示。
+          if (!isVideoOnlineSourcesAvailable) {
+            throw const AnimeSourceLaunchUnavailable(
+              'online video sources are unavailable on this platform',
+            );
+          }
+          final ({
+            AnimeSourceVideoClient client,
+            RemoteVideoInfo info,
+            List<RemoteVideoInfo> members,
+            int startIndex,
+          }) launch = await buildAnimeSourceLaunch(
+            row: row,
+            database: appModel.database,
+            repository: widget.repo,
+            manager: appModel.animeMihonManager,
+            playlistCollectionId: widget.playlistCollectionId,
+            subtitleLanguageResolver: () => resolveSubtitleDownloadLanguage(
+              explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+              globalDefaultContentLanguage: appModel.defaultContentLanguage,
+            ),
+          );
+          if (!mounted) {
+            launch.client.dispose();
+            return;
+          }
+          _ownedAnimeClient = launch.client;
+          _resolvedStreamClient = launch.client;
+          _resolvedStreamInfo = launch.info;
+          _resolvedStreamMembers = launch.members;
+          _resolvedStreamStartIndex = launch.startIndex;
+        } catch (e) {
+          debugPrint('[VideoFushiPage] anime-source launch failed: $e');
+          if (mounted) {
+            setState(() {
+              _failed = true;
+              _failReason = e is AnimeSourceLaunchUnavailable
+                  ? t.video_online_extension_unavailable
+                  : _describeLoadFailure(e);
+            });
+          }
+          return;
+        }
+        await _initRemote();
+        return;
+      }
       // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
       // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
       // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
@@ -3017,7 +3083,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 客户端合集连播：有序成员列表（>1 才成合集）。起播成员 = 首页点的那个（widget.remoteInfo，
     // 其下标 = initialEpisodeIndex）。
     _remoteMembers =
-        widget.remoteCollectionMembers ?? const <RemoteVideoInfo>[];
+        widget.remoteCollectionMembers ??
+        _resolvedStreamMembers ??
+        const <RemoteVideoInfo>[];
     _activeRemoteMember = null;
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
@@ -3057,6 +3125,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           (widget.sourceReview?.episodeIndex ??
                   _remoteLastAttemptedEpisode ??
                   widget.initialEpisodeIndex ??
+                  _resolvedStreamStartIndex ??
                   0)
               .clamp(0, _remoteMembers.length - 1);
       _episodes = <_PlaylistEpisodeRef>[
@@ -3721,12 +3790,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 只写 prefs 会让书架的「继续观看 / 在看筛选 / 合集续播选集」对它全部失明——那些
     // 读的是 `lastPositionMs` / `lastPlayedAt`。与本地 [_persistPosition] 对齐补写 DB 行
     // （resume 仍走上面的 prefs LWW，两者读写路径互不干扰）。互联远端无行，保持原样。
+    //
+    // 合集连播（在线视频源入库集）时当前成员就是它自己那一行：写 keyUid，不是起播
+    // 那一集的 widget.bookUid——否则换集后的进度全写进第一集的行。
     if (_bookRow != null) {
-      await widget.repo.updatePosition(
-        widget.bookUid,
-        clamped,
-        playedAt: nowMs,
-      );
+      final String rowUid = _isRemoteCollection ? keyUid : widget.bookUid;
+      await widget.repo.updatePosition(rowUid, clamped, playedAt: nowMs);
     }
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
@@ -4866,6 +4935,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();
     _discardRemoteTimingAudio();
+    _ownedAnimeClient?.dispose();
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);

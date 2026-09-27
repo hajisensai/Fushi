@@ -18,6 +18,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
@@ -963,8 +964,9 @@ class BackupService {
   /// self-contained (re-opens by URL, needs no packed file). Mirrors the merge
   /// engine's SQL predicate so export counts and import filtering stay aligned
   /// (TODO-1261).
+  /// 流媒体行不带文件也可达：http/https 流与在线视频源入库集（起播时向扩展取流）。
   static bool _isStreamingVideoPath(String videoPath) =>
-      videoPath.startsWith('http://') || videoPath.startsWith('https://');
+      isNetworkOnlyVideoPath(videoPath);
 
   /// COUNT(*) of a table on the live DB (used to report honest export totals).
   Future<int> _countRows(String table) async {

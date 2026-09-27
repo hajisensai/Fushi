@@ -24,6 +24,7 @@ import 'package:fushi/src/media/video/scraper/member_cover_cleanup.dart'
     show runMemberCoverCleanup;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// 自动刮削调度器。生命周期跟随视频页（initState 建 / dispose 销），无全局单例：
 /// 页面不在就没人需要刮削结果，跑着也是白跑。
@@ -157,9 +158,7 @@ class VideoScrapeAutoService {
   /// 本地文件视频判据：与 [CoverScraperService] 一致（http/https = 远端/流媒体）。
   static bool _isLocal(VideoBookRow book) {
     final String path = book.videoPath;
-    return path.isNotEmpty &&
-        !path.startsWith('http://') &&
-        !path.startsWith('https://');
+    return path.isNotEmpty && !isNetworkOnlyVideoPath(path);
   }
 
   /// 忘掉某本的「本进程已尝试」记录，并丢弃缓存的本地封面 service。

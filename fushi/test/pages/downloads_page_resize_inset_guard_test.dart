@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// 源码守卫（BUG-1003）：独立「下载」页（[DownloadsPage] → 内联
+/// 源码守卫（BUG-1003）：「浏览」页（[BrowsePage]，原「下载」页 → 内联
 /// [AnimeDownloadDialog]）的 [Scaffold] 必须显式 `resizeToAvoidBottomInset: false`。
 ///
 /// 根因：内联下载流程把 apikey / 搜番 / Nyaa 查询 / 通用磁力等**输入框全放在页面
@@ -16,14 +16,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// 复现，故用源码扫描守卫钉住这行接线不被回退。
 void main() {
   test(
-      'downloads_page 的 Scaffold 设 resizeToAvoidBottomInset:false（软键盘不顶掉贴底任务区）',
+      'browse_page 的 Scaffold 设 resizeToAvoidBottomInset:false（软键盘不顶掉贴底任务区）',
       () {
-    final File f = File('lib/src/pages/implementations/downloads_page.dart');
+    final File f = File('lib/src/pages/implementations/browse_page.dart');
     expect(f.existsSync(), isTrue,
-        reason: '找不到 downloads_page.dart（路径变了要同步本守卫）');
+        reason: '找不到 browse_page.dart（路径变了要同步本守卫）');
     final String src = f.readAsStringSync();
 
-    // 必须出现在文件里且落在 Scaffold(...) 内（本文件只有一个 Scaffold）。
+    // 必须出现在文件里且落在 Scaffold(...) 内（第一个 Scaffold 是浏览页本体）。
     final int scaffold = src.indexOf('Scaffold(');
     expect(scaffold, greaterThanOrEqualTo(0), reason: '下载页应是一个 Scaffold');
     expect(
@@ -37,7 +37,7 @@ void main() {
   test('downloads task, subscription, and settings surfaces are full width',
       () {
     final String downloads = File(
-      'lib/src/pages/implementations/downloads_page.dart',
+      'lib/src/pages/implementations/browse_page.dart',
     ).readAsStringSync();
     final String jobs = File(
       'lib/src/pages/implementations/video_download_jobs_panel.dart',

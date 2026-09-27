@@ -32,8 +32,8 @@ enum OnboardingFeature {
   /// galgame 游戏库页（模块，仅 Windows 提供勾选）。
   games,
 
-  /// 下载中心（模块）。
-  downloads,
+  /// 浏览（模块）：在线来源 / 扩展 / 发现 / 下载。
+  browse,
 
   /// 查词页（模块）。注意关掉它只关**页面入口**，划词查词能力全留。
   lookup,
@@ -93,7 +93,7 @@ OnboardingFeature onboardingFeatureOfModule(ModuleId module) =>
       ModuleId.manga => OnboardingFeature.manga,
       ModuleId.video => OnboardingFeature.video,
       ModuleId.games => OnboardingFeature.games,
-      ModuleId.downloads => OnboardingFeature.downloads,
+      ModuleId.browse => OnboardingFeature.browse,
       ModuleId.lookup => OnboardingFeature.lookup,
       ModuleId.browserExtension => OnboardingFeature.browserExtension,
       ModuleId.listening => OnboardingFeature.listening,

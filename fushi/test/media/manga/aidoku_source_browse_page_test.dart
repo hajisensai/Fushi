@@ -31,19 +31,17 @@ void main() {
     expect(runtime.searchCalls, 0);
     expect(find.text('Latest fixture manga'), findsOneWidget);
     expect(find.byType(GridView), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('aidoku_source_search')),
-        findsOneWidget);
-    final Offset titlePosition = tester.getTopLeft(find.text('Aidoku fixture'));
-    final Offset backPosition = tester.getTopLeft(
-      find.byKey(const ValueKey<String>('aidoku_source_back')),
+    // 版式是三域共用的 OnlineSourceBrowsePage（2026-09-27「浏览」阶段 2）：页头
+    // 搜索框，listing 是正文顶部的分段条（不再是页头下拉框）。
+    expect(
+      find.byKey(const ValueKey<String>('aidoku_source_search_field')),
+      findsOneWidget,
     );
-    final Offset listingPosition = tester.getTopRight(
+    expect(
       find.byKey(const ValueKey<String>('aidoku_source_listing')),
+      findsOneWidget,
     );
-    expect(titlePosition.dy, closeTo(listingPosition.dy, 20));
-    expect(titlePosition.dy, closeTo(backPosition.dy, 20));
-    expect(backPosition.dx, lessThan(titlePosition.dx));
-    expect(titlePosition.dx, lessThan(listingPosition.dx));
+    expect(find.text('Aidoku fixture'), findsOneWidget);
 
     await tester.tap(find.text('Latest fixture manga'));
     await tester.pump();

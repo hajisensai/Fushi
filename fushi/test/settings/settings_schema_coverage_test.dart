@@ -94,7 +94,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
   'appearance/Game': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Browse': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏

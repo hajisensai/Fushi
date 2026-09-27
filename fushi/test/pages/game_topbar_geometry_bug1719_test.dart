@@ -114,7 +114,6 @@ void main() {
         GameSection.library: HomeGamePage.libraryKey,
         GameSection.monitor: HomeGamePage.monitorKey,
         GameSection.importGames: HomeGamePage.importKey,
-        GameSection.discover: HomeGamePage.discoverKey,
         GameSection.settings: HomeGamePage.settingsKey,
       };
       final Map<GameSection, Rect> rects = <GameSection, Rect>{

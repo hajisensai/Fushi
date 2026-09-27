@@ -43,6 +43,7 @@ import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// Builds the ffmpeg argument list to extract the **embedded cover art** of a
 /// video container (e.g. an mkv with a `cover.jpg`/`cover.png` attachment, or an
@@ -178,7 +179,7 @@ bool isPlaylistManifestPath(String path) =>
 bool isLocalFrameExtractableVideoSource(String videoPath) {
   final String path = videoPath.trim();
   if (path.isEmpty) return false;
-  if (path.startsWith('http://') || path.startsWith('https://')) return false;
+  if (isNetworkOnlyVideoPath(path)) return false;
   if (isPlaylistManifestPath(path)) return false;
   return true;
 }
