@@ -91,6 +91,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/artemis_lookup_core.h"
   "hook/adapters/reallive_lookup.inc"
   "hook/adapters/reallive_lookup_core.h"
+  "hook/adapters/catsystem2_lookup.inc"
+  "hook/adapters/catsystem2_lookup_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
@@ -965,6 +967,23 @@ target_compile_definitions(fushi_reallive_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_reallive_lookup_test
   COMMAND fushi_reallive_lookup_test)
+
+# CatSystem2 in-game lookup core: structural site resolution on a synthetic
+# x86 image (ClearPage+RenderChar pair -> record layout -> GetCharImage ->
+# GetGlyphOutlineA rasteriser, Window::Update -> reveal/sync, layer query ->
+# scene list layout, Input::Handle -> capture imports) with every
+# fail-closed branch, Shift_JIS codes, the page tracker, layer placement and
+# covers, suffix mapping, projection, client->design mapping and the
+# message-level click claim.
+add_executable(fushi_catsystem2_lookup_test
+  "tests/catsystem2_lookup_test.cpp"
+)
+target_include_directories(fushi_catsystem2_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_catsystem2_lookup_test
+  COMMAND fushi_catsystem2_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")

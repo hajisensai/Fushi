@@ -2,6 +2,9 @@
 // The worker parses all voice archive indices before process resume. ReadFile
 // callbacks only match immutable ranges and enqueue fixed-size metadata.
 #include "catsystem2_profile.h"
+// 游戏内查词（字形几何 + 点击认领）在 catsystem2_lookup.inc，结构判据与纯逻辑在
+// catsystem2_lookup_core.h（由 dll_main.cpp 在顶层引入）。
+#include "catsystem2_lookup.inc"
 
 constexpr size_t kCatSystem2PathChars = 520;
 constexpr size_t kCatSystem2NameBytes = 64;
@@ -375,11 +378,35 @@ class CatSystem2Adapter final : public fushi_voice_hook::EngineAdapter {
     return fushi_voice_hook::MatchesCatSystem2Profile(nullptr);
   }
   bool install() override {
+    // 查词站点只来自 exe 自身结构、与语音归档无关：身份成立就装（语音归档加密/缺失时
+    // 语音层失败，查词照常）。结构不符的映像一个钩子也不装。
+    if (probe()) lookup_installed_ = InstallCatSystem2Lookup() || lookup_installed_;
     ready_ = TryHookCatSystem2PcmVoice();
     installed_ = installed_ || ready_;
     return ready_;
   }
-  void ProcessPendingEvents() { ProcessCatSystem2VoiceTasks(); }
+  void ProcessPendingEvents() {
+    ProcessCatSystem2VoiceTasks();
+    ProcessCatSystem2LookupTick();
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (CatSystem2LookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // Sites were resolved and rejected: terminal for this executable, so the
+    // host gets the digest to report instead of waiting for a gate.
+    if (CatSystem2LookupSitesRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    // The registry only asks after probe() held (identity is structural).
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
            fushi_voice_hook::AdapterCapability::kResourceAudio |
@@ -387,6 +414,8 @@ class CatSystem2Adapter final : public fushi_voice_hook::EngineAdapter {
   }
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
+    ShutdownCatSystem2Lookup();
+    lookup_installed_ = false;
     StopCatSystem2PcmVoice();
     installed_ = false;
     ready_ = false;
@@ -399,4 +428,5 @@ class CatSystem2Adapter final : public fushi_voice_hook::EngineAdapter {
  private:
   bool installed_ = false;
   bool ready_ = false;
+  bool lookup_installed_ = false;
 };

@@ -431,7 +431,7 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(10, len(publishers), publishers)
+        self.assertEqual(11, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
@@ -490,7 +490,7 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(10, len(seen), seen)
+        self.assertEqual(11, len(seen), seen)
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["artemis_lookup.inc"]
@@ -1972,6 +1972,46 @@ class AdapterStructureTest(unittest.TestCase):
         # 解码出的 WAV 不是源条目的同字节载荷，不得冒认 Captured。
         self.assertNotIn("kDiagVisualArtsOvkCaptured", adapter)
         self.assertNotIn("kXAudioDiagGameResourcePublished", adapter)
+
+    def test_catsystem2_lookup_is_structural_and_callbacks_stay_bounded(
+        self,
+    ) -> None:
+        """CatSystem2 查词：站点只来自结构；游戏线程 / 消息线程回调不做 IO。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "catsystem2_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "catsystem2_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("sha256", "bcrypt", "grisaia", "getmodulefilename",
+                          "cs2.exe", "cs2_open"):
+            self.assertNotIn(forbidden, core.lower())
+            self.assertNotIn(forbidden, runtime.lower())
+        # The site proof walks the GetGlyphOutlineA chain and the capture imports.
+        resolve = self._function_body(core, "inline SiteResult ResolveSites(")
+        for proof in ("ProveCharImage(", "CallsTarget(", "FindAgreeingCallTarget(",
+                      "imports.set_capture", "imports.release_capture",
+                      "imports.window_from_point"):
+            self.assertIn(proof, resolve)
+        # Detours: bounded copies only; logging / file IO stays on the worker.
+        for name in ("int __fastcall Cs2ClearDetour(",
+                     "int __fastcall Cs2RenderDetour(",
+                     "int __fastcall Cs2UpdateDetour(",
+                     "LRESULT __stdcall Cs2InputDetour(",
+                     "bool Cs2PressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("Cs2LookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "PublishHit("):
+                self.assertNotIn(forbidden, body, name)
+        # The claim never skips the host's native-input admission.
+        eligible = self._function_body(runtime, "bool Cs2PressEligible(")
+        self.assertIn("NativeInputAllowed(", eligible)
+        self.assertIn("Cs2ShieldActive(", eligible)
+        self.assertIn("GetForegroundWindow()", eligible)
 
     def test_reallive_nwk_capture_is_identity_gated_and_worker_owned(self) -> None:
         """RealLive NWK：身份只取结构判据；游戏线程回调只做固定检查 + 有界入队。"""

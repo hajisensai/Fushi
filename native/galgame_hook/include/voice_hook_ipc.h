@@ -881,6 +881,8 @@ constexpr uint32_t kLookupGeometryProviderIdCmvs = 16u;
 constexpr uint32_t kLookupGeometryProviderIdArtemis = 17u;
 // RealLive text-surface exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdReallive = 18u;
+// CatSystem2 message-page exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdCatSystem2 = 19u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

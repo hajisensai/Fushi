@@ -114,6 +114,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdReallive",
     ): ("reallive", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdCatSystem2",
+    ): ("catsystem2", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",
