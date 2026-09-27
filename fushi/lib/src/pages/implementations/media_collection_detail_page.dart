@@ -1067,7 +1067,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return container
         .read(appProvider)
         .moduleVisibility
-        .isEnabled(ModuleId.downloads);
+        .isEnabled(ModuleId.browse);
   }
 
   /// 本页所在树上的 Riverpod 容器；没有 [ProviderScope] 时返回 null。

@@ -63,7 +63,7 @@ class _StatefulProbeLeafState extends State<_StatefulProbeLeaf> {
         Text(widget.label),
         if (widget.withField)
           TextField(
-            key: const ValueKey<String>('discovery-probe-search'),
+            key: const ValueKey<String>('section-probe-search'),
             controller: _controller,
           ),
       ],
@@ -76,7 +76,6 @@ void main() {
   late VideoSourceScrapeTaskController scrapeController;
   late ChangeNotifier refreshSignal;
   late int localInitCount;
-  late int discoveryInitCount;
   late int mediaServerInitCount;
   VideoLibrarySection? lastLocalSection;
 
@@ -86,7 +85,6 @@ void main() {
     scrapeController = VideoSourceScrapeTaskController(_NoopScrapeRunner());
     refreshSignal = ChangeNotifier();
     localInitCount = 0;
-    discoveryInitCount = 0;
     mediaServerInitCount = 0;
     lastLocalSection = null;
   });
@@ -124,21 +122,12 @@ void main() {
                 ],
               );
             },
-            discoveryPageBuilder: (_, Widget navigation) => Column(
-              children: <Widget>[
-                navigation,
-                _StatefulProbeLeaf(
-                  label: 'discover leaf',
-                  withField: true,
-                  onInit: () => discoveryInitCount += 1,
-                ),
-              ],
-            ),
             mediaServerPageBuilder: (_, Widget navigation) => Column(
               children: <Widget>[
                 navigation,
                 _StatefulProbeLeaf(
                   label: 'media server leaf',
+                  withField: true,
                   onInit: () => mediaServerInitCount += 1,
                 ),
               ],
@@ -160,12 +149,10 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是在线发现，最后才是管理类分区
-  // ——与书 / 漫画 / 游戏同位。发现曾夹在首页与系列之间，一排里「自己的库 → 推荐 →
-  // 自己的库」来回跳（2026-08-24 用户反馈），是四个模块里唯一的例外。
-  // 媒体服务器（用户自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图
-  // 之后、在线发现之前。
-  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、发现、来源、设置',
+  // 本地库的各视图（首页 / 系列 / 全部视频）排完才是管理类分区。媒体服务器（用户
+  // 自己登录的 Jellyfin/Emby）是自己的库、只是远端的，排在本地库视图之后。在线发现
+  // 2026-09-27 起只住在顶层「浏览」模块，视频库页不再有「发现」分区。
+  testWidgets('页签顺序固定为首页、系列、全部视频、媒体服务器、来源、设置',
       (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
@@ -182,7 +169,6 @@ void main() {
         VideoLibrarySection.series,
         VideoLibrarySection.allVideos,
         VideoLibrarySection.mediaServers,
-        VideoLibrarySection.discover,
         VideoLibrarySection.sources,
         VideoLibrarySection.settings,
       ],
@@ -193,24 +179,24 @@ void main() {
     );
   });
 
-  testWidgets('发现未访问不构建，访问后切走保持 State 和搜索文字', (WidgetTester tester) async {
+  testWidgets('非本地分区访问后切走保持 State 和输入文字', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
 
     expect(localInitCount, 1);
-    expect(discoveryInitCount, 0, reason: '在线发现不得随视频首页挂载而发起加载');
+    expect(mediaServerInitCount, 0, reason: '媒体服务器分区不得随视频首页挂载而发起加载');
 
-    await select(tester, VideoLibrarySection.discover);
-    expect(discoveryInitCount, 1);
+    await select(tester, VideoLibrarySection.mediaServers);
+    expect(mediaServerInitCount, 1);
     await tester.enterText(
-      find.byKey(const ValueKey<String>('discovery-probe-search')),
+      find.byKey(const ValueKey<String>('section-probe-search')),
       '保留的搜索词',
     );
     await select(tester, VideoLibrarySection.home);
-    await select(tester, VideoLibrarySection.discover);
+    await select(tester, VideoLibrarySection.mediaServers);
 
     expect(localInitCount, 1);
-    expect(discoveryInitCount, 1, reason: 'Offstage 保活后切回不得重建发现页 State');
+    expect(mediaServerInitCount, 1, reason: 'Offstage 保活后切回不得重建 State');
     expect(find.text('保留的搜索词'), findsOneWidget);
     expect(
       find.byType(FushiAdjustableSegmented<VideoLibrarySection>),
@@ -219,10 +205,10 @@ void main() {
     );
   });
 
-  testWidgets('切走后隐藏发现页退出焦点遍历但继续保活', (WidgetTester tester) async {
+  testWidgets('切走后隐藏的非本地分区退出焦点遍历但继续保活', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.pump();
-    await select(tester, VideoLibrarySection.discover);
+    await select(tester, VideoLibrarySection.mediaServers);
     final EditableText field = tester.widget<EditableText>(
       find.byType(EditableText),
     );
@@ -236,14 +222,14 @@ void main() {
     final ExcludeFocus focusGate = tester.widget<ExcludeFocus>(
       find.ancestor(
         of: find.byKey(
-          const ValueKey<String>('discovery-probe-search'),
+          const ValueKey<String>('section-probe-search'),
           skipOffstage: false,
         ),
         matching: find.byType(ExcludeFocus, skipOffstage: false),
       ),
     );
     expect(focusGate.excluding, isTrue);
-    expect(discoveryInitCount, 1, reason: '排除焦点不能销毁发现页状态');
+    expect(mediaServerInitCount, 1, reason: '排除焦点不能销毁分区状态');
   });
 
   // 触屏横滑切分区（与页签同一份视觉序）。用户反馈的原始诉求：视频首页从右往左
@@ -276,7 +262,6 @@ void main() {
     expect(mediaServerInitCount, 1, reason: '横滑与页签同一条 _select 路径，'
         '首次进入媒体服务器才惰性构建');
     expect(find.text('media server leaf'), findsOneWidget);
-    expect(discoveryInitCount, 0, reason: '发现在媒体服务器之后，尚未到达');
   });
 
   testWidgets('媒体服务器未访问不构建，访问后切走保活、退出焦点遍历', (WidgetTester tester) async {
@@ -346,7 +331,6 @@ void main() {
         find.byType(FushiSectionTabBar<VideoLibrarySection>);
     final State<StatefulWidget> before = tester.state(stripFinder);
 
-    await select(tester, VideoLibrarySection.discover);
     await select(tester, VideoLibrarySection.mediaServers);
     expect(tester.takeException(), isNull);
     expect(find.text('media server leaf'), findsOneWidget);

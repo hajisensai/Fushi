@@ -1,9 +1,11 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1247,6 +1249,90 @@ void main() {
     final List<VideoSourceScrapeRunRow> runs =
         await db.getVideoSourceScrapeRuns(sourceId: source.id);
     expect(runs.single.scope, 'work');
+  });
+
+  test('手动改绑身份重刮替换 Fushi 自己写下的旧封面并驱逐缓存，用户改过的 NFO 仍受保护（BUG-2737）', () async {
+    // 用户实报：独立电影被刮成同名度很低的别的片子，手动指定正确作品重刮后封面
+    // 还是错的那张。默认 missingOnly 下旧身份写下的 poster 会被原样跳过；图名只按
+    // 图种派生，换身份就是覆盖同一路径，还得驱逐宿主解码缓存。
+    final Future<void> Function(File) hostEvict = evictImageCacheForFile;
+    final List<String> evicted = <String>[];
+    evictImageCacheForFile = (File file) async => evicted.add(file.path);
+    addTearDown(() => evictImageCacheForFile = hostEvict);
+
+    final Directory movieDir =
+        await Directory(p.join(root.path, 'Liz')).create();
+    final File video = File(p.join(movieDir.path, 'Liz (2018).mkv'));
+    await video.writeAsBytes(const <int>[0]);
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Movies',
+        mediaKind: 'video',
+        rootPath: root.path,
+        createdAt: 1,
+      ),
+    );
+    await db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: const Value<String>('liz'),
+      title: const Value<String>('Liz'),
+      videoPath: Value<String>(video.path),
+      sourceId: Value<int?>(sourceId),
+    ));
+    // 写 NFO + 图片，两者都是默认的 missingOnly。
+    await db.upsertVideoSourceScrapeSettings(
+      VideoSourceScrapeSettingsCompanion.insert(
+        sourceId: Value<int>(sourceId),
+        providerOverride: const Value<String?>('anidb'),
+        fanartEnabled: const Value<bool>(false),
+        updatedAt: 1,
+      ),
+    );
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeCoordinator coordinator =
+        VideoSourceScrapeCoordinator(
+      primaryProvider: VideoMetadataProviderKind.anidb,
+      database: db,
+      config: const VideoSourceScrapeGlobalConfig(),
+      registry: VideoMetadataProviderRegistry(
+          <VideoMetadataProvider>[_CoverPerIdentityAniDbProvider()]),
+      assetDownloader: _UrlEchoAssetDownloader(),
+    );
+    Future<SourceScrapeReport> bindTo(String anidbId) async {
+      final VideoSourceScrapeWork work =
+          (await VideoSourceWorkPlanner(db).plan(source)).single;
+      return coordinator.rescrapeWorkWithLookup(
+        source: source,
+        workTitle: work.title,
+        workStableKey: work.stableKey,
+        lookup: VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: anidbId,
+          mediaKind: VideoMetadataMediaKind.movie,
+        ),
+        cancellationToken: VideoSourceScrapeCancellationToken(),
+        onProgress: (_) {},
+      );
+    }
+
+    final File poster = File(p.join(movieDir.path, 'poster.jpg'));
+    final File nfo = File(p.join(movieDir.path, 'Liz (2018).nfo'));
+    final SourceScrapeReport wrong = await bindTo('1');
+    expect(wrong.succeededWorks, 1, reason: '${wrong.errors}');
+    expect(await poster.readAsString(), 'IMG https://images.test/1.jpg');
+    expect((await db.getVideoBookByBookUid('liz'))?.coverPath, poster.path);
+    expect(evicted, isEmpty, reason: '首次写入没有旧解码可清');
+    // 用户手改过的 NFO：不是 Fushi 未改动的生成物，换身份也不能动它。
+    await nfo.writeAsString('<movie><title>my notes</title></movie>');
+
+    final SourceScrapeReport fixed = await bindTo('2');
+
+    expect(fixed.succeededWorks, 1, reason: '${fixed.errors}');
+    expect(await poster.readAsString(), 'IMG https://images.test/2.jpg',
+        reason: '旧身份写下的 poster 必须被换掉，否则库页封面永远是错的那张');
+    expect(evicted, contains(poster.path));
+    expect((await db.getVideoBookByBookUid('liz'))?.coverPath, poster.path);
+    expect(await nfo.readAsString(), '<movie><title>my notes</title></movie>');
+    expect(fixed.protectedArtifacts, 1);
   });
 
   group('AI 歧义消解', () {
@@ -2572,6 +2658,74 @@ class _RecordingAssetDownloader extends VideoMetadataAssetDownloader {
       contentType: 'image/jpeg',
     );
   }
+
+  @override
+  void close() {}
+}
+
+/// 按 lookup 的 AniDB id 给出不同封面 URL 的电影 provider（换身份 = 换封面）。
+class _CoverPerIdentityAniDbProvider implements VideoMetadataProvider {
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.anidb;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) async =>
+      const <VideoMetadataWork>[];
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
+      VideoMetadataWork(
+        provider: providerKind,
+        kind: VideoMetadataMediaKind.movie,
+        title: 'Work ${lookup.externalId}',
+        year: 2018,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(
+            type: 'anidb',
+            value: lookup.externalId,
+            isDefault: true,
+          ),
+        ],
+        images: <VideoMetadataImage>[
+          VideoMetadataImage(
+            kind: VideoMetadataImageKind.cover,
+            url: 'https://images.test/${lookup.externalId}.jpg',
+            provider: providerKind,
+          ),
+        ],
+      );
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) async =>
+      const <VideoMetadataSeason>[];
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async =>
+      const <VideoMetadataEpisode>[];
+
+  @override
+  void close() {}
+}
+
+/// 把 URL 本身当图片字节回显，便于断言落盘的是哪一张。
+class _UrlEchoAssetDownloader extends VideoMetadataAssetDownloader {
+  @override
+  Future<VideoMetadataDownloadedAsset> download(String url) async =>
+      VideoMetadataDownloadedAsset(
+        bytes: Uint8List.fromList(utf8.encode('IMG $url')),
+        extension: '.jpg',
+        contentType: 'image/jpeg',
+      );
 
   @override
   void close() {}

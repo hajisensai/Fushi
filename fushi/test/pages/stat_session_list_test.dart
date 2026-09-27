@@ -3,6 +3,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/stat_session_list.dart';
+import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -368,5 +369,40 @@ void main() {
       findsNothing,
     );
     expect(find.byIcon(Icons.delete_outline), findsNothing);
+  });
+
+  testWidgets('BUG-2741：「全部会话」sheet 会话多时截到屏高上限并在内部滚动', (
+    WidgetTester tester,
+  ) async {
+    // iPhone 15 逻辑尺寸；dpr 1 让 physicalSize 即逻辑像素。
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 40; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      limit: 2,
+    );
+    await tester.tap(find.text('${t.stat_sessions_show_all} (40)'));
+    await tester.pumpAndSettle();
+    final Finder sheet = find.byType(BottomSheet);
+    expect(
+      tester.getSize(sheet).height,
+      // 内容截到上限；BottomSheet 另含 48dp 拖动条。
+      lessThanOrEqualTo(
+        852 * kStatSheetMaxHeightFactor + kMinInteractiveDimension + 0.5,
+      ),
+    );
+    await tester.scrollUntilVisible(
+      find.text('S39'),
+      200,
+      scrollable: find
+          .descendant(of: sheet, matching: find.byType(Scrollable))
+          .first,
+    );
+    expect(find.text('S39'), findsOneWidget);
   });
 }

@@ -393,4 +393,72 @@ void main() {
     );
     expect(tester.getRect(cover).top, coverTop);
   });
+
+  // 章节刻度曾是 slider 下方单独一条 CustomPaint、左右硬写 24px 内缩，而
+  // slider 轨道内缩是 max(overlay, thumb)/2 = 12px：刻度整体往中间压，拇指走到
+  // 章首时与刻度错开。现在刻度画在 slider 自己的轨道上，这里钉住「值 = 章首
+  // 位置时，拇指中心与刻度同一 x」。
+  for (final double fraction in <double>[0.1, 0.5, 0.9]) {
+    testWidgets('章节刻度与拇指对齐（fraction=$fraction）', (tester) async {
+      const double width = 400;
+      final SliderThemeData theme = SliderThemeData(
+        trackHeight: 3,
+        trackShape: ReaderAudiobookChapterTrackShape(
+          fractions: <double>[fraction],
+          tickColor: const Color(0xFF123456),
+        ),
+        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: width,
+                child: SliderTheme(
+                  data: theme,
+                  child: Slider(value: fraction, onChanged: (_) {}),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final RenderBox box = tester.renderObject<RenderBox>(
+        find.byWidgetPredicate(
+          (Widget w) => w.runtimeType.toString() == '_SliderRenderObjectWidget',
+        ),
+      );
+      final Rect track = theme.trackShape!.getPreferredRect(
+        parentBox: box,
+        sliderTheme: theme,
+        isEnabled: true,
+      );
+      // 轨道内缩由 overlay 决定（12px），不是旧刻度条的 24px。
+      expect(track.left, 12);
+      expect(track.width, box.size.width - 24);
+      final double x = track.left + fraction * track.width;
+      expect(
+        ReaderAudiobookChapterTrackShape.tickX(
+          track,
+          fraction,
+          TextDirection.ltr,
+        ),
+        x,
+      );
+      final double half = track.height / 2 + 3;
+      expect(
+        box,
+        paints
+          ..line(
+            p1: Offset(x, track.center.dy - half),
+            p2: Offset(x, track.center.dy + half),
+            color: const Color(0xFF123456),
+          ),
+      );
+      // 拇指（RoundSliderThumbShape 画在中心的圆）与刻度同一 x。
+      expect(box, paints..circle(x: x, y: track.center.dy, radius: 6));
+    });
+  }
 }

@@ -131,7 +131,7 @@ void main() {
         HomeTab.home,
         HomeTab.books,
         HomeTab.video,
-        HomeTab.downloads,
+        HomeTab.browse,
         if (Platform.isWindows) HomeTab.games,
         HomeTab.settings,
       ];

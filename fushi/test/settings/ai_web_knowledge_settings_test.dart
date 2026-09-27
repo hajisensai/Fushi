@@ -151,9 +151,9 @@ void main() {
   ) async {
     await pumpContext(tester);
     expect(section().isVisible(settingsContext), isTrue);
-    await appModel.setModuleEnabled(ModuleId.downloads, false);
+    await appModel.setModuleEnabled(ModuleId.browse, false);
     expect(section().isVisible(settingsContext), isTrue);
-    await appModel.setModuleEnabled(ModuleId.downloads, true);
+    await appModel.setModuleEnabled(ModuleId.browse, true);
   });
 
   group('custom MediaWiki sites', () {

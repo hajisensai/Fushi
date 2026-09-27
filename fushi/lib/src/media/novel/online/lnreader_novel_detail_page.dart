@@ -3,9 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart' show Bookmark;
-import 'package:fushi_core/fushi_core.dart' show BookFormat;
+import 'package:fushi_core/fushi_core.dart' show BookFormat, EpubBookRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
@@ -16,17 +17,23 @@ import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
 import 'package:fushi/src/media/novel/online/lnreader_source_browse_page.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/online/online_shelf_removal.dart';
+import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart'
     show buildCollectionReaderMediaItem;
 import 'package:fushi/utils.dart';
 
-/// 小说源的作品页：详情 + 章节目录 → 选章节范围下载进书架。
+/// 小说源的作品页：详情 + 章节目录。默认**在线阅读**，另有「加入书架」「下载」。
 ///
-/// 版式与视频源作品页（`AnimeSourceDetailPage`）一致：封面 + 标题 / 作者 /
-/// 类型，简介，列表区；页头「在网站打开」「刷新」。点某一章 = **在线阅读**这一章
-/// （[LnReaderOnlineLibrary]：作品第一次在线打开时建成全章占位书进书架，阅读器
-/// 读到哪章取哪章）；行尾下载按钮 / 「加入书架」= 把选定范围整本下载成 EPUB。
+/// 版式是三域共用的 [OnlineWorkHeader]（以视频源作品页为准）：封面 + 标题 / 作者 /
+/// 状态 / 类型，主操作区，简介，章节列表；页头「在网站打开」「刷新」。
+/// - 点某一章 / 「在线阅读」= 在线读这一章（[LnReaderOnlineLibrary]：作品第一次在线
+///   打开时建成全章占位书进书架，阅读器读到哪章取哪章）；
+/// - 「加入书架」= 只建那本在线书、不开阅读器（2026-09-27 起与「下载」分开：此前
+///   「加入书架」实际是整本下载，与漫画「加入书架」语义不一致）；在书架里时同一
+///   位置是「移出书架」，与书架长按删除同一条路径；
+/// - 「下载」/ 行尾下载按钮 = 把选定范围整本下载成 EPUB。
 /// 两条路都落到普通书，阅读器 / 查词 / 制卡 / 统计 / 同步全部复用。
 class LnReaderNovelDetailPage extends ConsumerStatefulWidget {
   const LnReaderNovelDetailPage({
@@ -57,8 +64,11 @@ class _LnReaderNovelDetailPageState
   bool _loading = true;
   Object? _error;
 
-  /// 正在准备在线书（首次建占位书 / 同步章节列表），期间禁止重复点。
+  /// 正在准备在线书（首次建占位书 / 同步章节列表）或移出书架，期间禁止重复点。
   bool _opening = false;
+
+  /// 这部作品在书架上的在线书（null = 不在书架）。
+  EpubBookRow? _shelfBook;
 
   @override
   void initState() {
@@ -77,9 +87,14 @@ class _LnReaderNovelDetailPageState
         widget.plugin.id,
         widget.item.path,
       );
+      final EpubBookRow? shelfBook = await _onlineLibrary().findBook(
+        widget.plugin.id,
+        widget.item.path,
+      );
       if (!mounted) return;
       setState(() {
         _novel = novel;
+        _shelfBook = shelfBook;
         _loading = false;
       });
     } on Object catch (error) {
@@ -118,42 +133,121 @@ class _LnReaderNovelDetailPageState
     await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
-  /// 在线阅读：找到或建好这部作品的在线书，再开阅读器。[chapterIndex] 为 null
-  /// 时续读上次的位置（新书从第一章开始）。
-  Future<void> _readOnline({int? chapterIndex}) async {
-    final LnReaderNovel? novel = _novel;
-    if (novel == null || novel.chapters.isEmpty || _opening) return;
-    setState(() => _opening = true);
+  LnReaderOnlineLibrary _onlineLibrary() {
     final AppModel appModel = ref.read(appProvider);
-    final String bookKey;
+    return LnReaderOnlineLibrary(
+      manager: widget.manager,
+      database: appModel.database,
+      download: LnReaderBookDownload(
+        manager: widget.manager,
+        database: appModel.database,
+        httpClientFactory: createAppHttpClient,
+      ),
+    );
+  }
+
+  /// 找到或建好这部作品的在线书（进书架），返回 bookKey；失败提示并返回 null。
+  Future<String?> _ensureShelfBook(LnReaderNovel novel) async {
+    setState(() => _opening = true);
     try {
-      bookKey =
-          await LnReaderOnlineLibrary(
-            manager: widget.manager,
-            database: appModel.database,
-            download: LnReaderBookDownload(
-              manager: widget.manager,
-              database: appModel.database,
-              httpClientFactory: createAppHttpClient,
-            ),
-          ).ensureBook(
-            plugin: widget.plugin,
-            novel: novel,
-            pendingText: t.novel_online_chapter_pending,
-          );
+      final LnReaderOnlineLibrary library = _onlineLibrary();
+      final String bookKey = await library.ensureBook(
+        plugin: widget.plugin,
+        novel: novel,
+        pendingText: t.novel_online_chapter_pending,
+      );
+      final EpubBookRow? shelfBook = await library.findBook(
+        widget.plugin.id,
+        widget.item.path,
+      );
+      if (!mounted) return bookKey;
+      setState(() {
+        _opening = false;
+        _shelfBook = shelfBook;
+      });
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(srtBooksProvider);
+      return bookKey;
     } on Object catch (error) {
-      if (!mounted) return;
+      if (!mounted) return null;
       setState(() => _opening = false);
       FushiToast.show(
         msg: t.novel_online_open_failed(error: '$error'),
         severity: ToastSeverity.error,
       );
-      return;
+      return null;
     }
-    if (!mounted) return;
-    setState(() => _opening = false);
-    ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-    ref.invalidate(srtBooksProvider);
+  }
+
+  /// 「加入书架」：只建在线书、不开阅读器。
+  Future<void> _addToShelf() async {
+    final LnReaderNovel? novel = _novel;
+    if (novel == null || novel.chapters.isEmpty || _opening) return;
+    final String? bookKey = await _ensureShelfBook(novel);
+    if (bookKey == null || !mounted) return;
+    FushiToast.show(
+      msg: t.novel_detail_library_added,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 「移出书架」：与书架长按删除同一个确认框、同一条 `deleteBook` 路径。
+  Future<void> _removeFromShelf() async {
+    final EpubBookRow? book = _shelfBook;
+    if (book == null || _opening) return;
+    final AppModel appModel = ref.read(appProvider);
+    final DeleteDecision? decision = await confirmRemoveOnlineWorkFromShelf(
+      context: context,
+      appModel: appModel,
+      title: t.novel_detail_library_remove,
+      message: t.novel_detail_library_remove_confirm,
+      statisticsSubtitle: t.delete_statistics_book_desc,
+    );
+    if (decision == null || !mounted) return;
+    setState(() => _opening = true);
+    try {
+      final DeleteBookResult result = await ReaderFushiSource.instance
+          .deleteBook(
+            db: appModel.database,
+            bookKey: book.bookKey,
+            scope: decision.scope,
+          );
+      if (!mounted) return;
+      if (!result.deleted) {
+        final String reason = result.failureReason ?? '';
+        FushiToast.show(
+          msg: reason.isEmpty
+              ? t.epub_delete_error
+              : '${t.epub_delete_error}: $reason',
+          severity: ToastSeverity.error,
+        );
+        return;
+      }
+      setState(() => _shelfBook = null);
+      ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+      ref.invalidate(srtBooksProvider);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'LnReaderNovelDetailPage.remove',
+        error,
+        stack,
+      );
+      if (mounted) {
+        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  /// 在线阅读：找到或建好这部作品的在线书，再开阅读器。[chapterIndex] 为 null
+  /// 时续读上次的位置（新书从第一章开始）。
+  Future<void> _readOnline({int? chapterIndex}) async {
+    final LnReaderNovel? novel = _novel;
+    if (novel == null || novel.chapters.isEmpty || _opening) return;
+    final String? bookKey = await _ensureShelfBook(novel);
+    if (bookKey == null || !mounted) return;
+    final AppModel appModel = ref.read(appProvider);
     final MediaItem item = buildCollectionReaderMediaItem(
       bookKey: bookKey,
       title: novel.name.isNotEmpty ? novel.name : widget.item.name,
@@ -265,90 +359,66 @@ class _LnReaderNovelDetailPageState
         : stripLnReaderHtml(novel!.summary!);
     final List<LnReaderChapter> chapters =
         novel?.chapters ?? const <LnReaderChapter>[];
+    final bool inShelf = _shelfBook != null;
     return ListView(
       padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            SizedBox(
-              width: 120,
-              height: 170,
-              child: FushiCard(
-                padding: EdgeInsets.zero,
-                child: LnReaderCover(
-                  url: novel?.cover ?? widget.item.cover,
-                  site: widget.plugin.site,
-                  pluginHeaders: widget.imageHeaders,
-                  cloudflare: widget.manager.cloudflare,
-                ),
+        OnlineWorkHeader(
+          cover: LnReaderCover(
+            url: novel?.cover ?? widget.item.cover,
+            site: widget.plugin.site,
+            pluginHeaders: widget.imageHeaders,
+            cloudflare: widget.manager.cloudflare,
+          ),
+          title: title,
+          lines: <String?>[novel?.author, lnReaderStatusLabel(novel?.status)],
+          genres: splitOnlineWorkGenres(novel?.genres),
+          description: summary,
+          selectableDescription: true,
+          actions: <Widget>[
+            FilledButton.icon(
+              key: const ValueKey<String>('novel_detail_read_online'),
+              onPressed: chapters.isEmpty || _opening
+                  ? null
+                  : () => unawaited(_readOnline()),
+              icon: _opening
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.menu_book_outlined),
+              label: Text(
+                inShelf ? t.book_continue_reading : t.novel_detail_read_online,
               ),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(title, style: theme.textTheme.titleLarge),
-                  for (final String? line in <String?>[
-                    novel?.author,
-                    lnReaderStatusLabel(novel?.status),
-                  ])
-                    if (line != null && line.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(line, style: theme.textTheme.bodyMedium),
-                      ),
-                  if (novel?.genres != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        novel!.genres!,
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      FilledButton.icon(
-                        key: const ValueKey<String>('novel_detail_read_online'),
-                        onPressed: chapters.isEmpty || _opening
-                            ? null
-                            : () => unawaited(_readOnline()),
-                        icon: _opening
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.menu_book_outlined),
-                        label: Text(t.novel_detail_read_online),
-                      ),
-                      OutlinedButton.icon(
-                        key: const ValueKey<String>('novel_detail_library_add'),
-                        onPressed: chapters.isEmpty
-                            ? null
-                            : () => unawaited(_download()),
-                        icon: const Icon(Icons.download_outlined),
-                        label: Text(t.novel_detail_library_add),
-                      ),
-                    ],
-                  ),
-                ],
+            // 同一个位置、同一个按钮：不在书架是「加入」，在书架是「移出」（与漫画
+            // 作品页同一口径）。
+            if (inShelf)
+              OutlinedButton.icon(
+                key: const ValueKey<String>('novel_detail_library_remove'),
+                onPressed: _opening
+                    ? null
+                    : () => unawaited(_removeFromShelf()),
+                icon: const Icon(Icons.library_add_check),
+                label: Text(t.novel_detail_library_remove),
+              )
+            else
+              OutlinedButton.icon(
+                key: const ValueKey<String>('novel_detail_library_add'),
+                onPressed: chapters.isEmpty || _opening
+                    ? null
+                    : () => unawaited(_addToShelf()),
+                icon: const Icon(Icons.library_add_outlined),
+                label: Text(t.novel_detail_library_add),
               ),
+            OutlinedButton.icon(
+              key: const ValueKey<String>('novel_detail_download'),
+              onPressed: chapters.isEmpty ? null : () => unawaited(_download()),
+              icon: const Icon(Icons.download_outlined),
+              label: Text(t.novel_detail_download),
             ),
           ],
         ),
-        if (summary != null && summary.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: SelectableText(summary, style: theme.textTheme.bodyMedium),
-          ),
         if (error != null)
           Padding(
             padding: const EdgeInsets.only(top: 16),
@@ -369,22 +439,14 @@ class _LnReaderNovelDetailPageState
             ),
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.only(top: 24, bottom: 8),
-          child: Text(
-            t.novel_detail_chapters_title(count: chapters.length),
-            style: theme.textTheme.titleMedium,
-          ),
+        OnlineWorkSectionTitle(
+          t.novel_detail_chapters_title(count: chapters.length),
         ),
-        if (_loading)
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: adaptiveIndicator(context: context),
-            ),
+        if (_loading || chapters.isEmpty)
+          OnlineWorkItemsPlaceholder(
+            loading: _loading,
+            emptyText: t.novel_detail_chapters_empty,
           )
-        else if (chapters.isEmpty)
-          Text(t.novel_detail_chapters_empty)
         else
           for (int index = 0; index < chapters.length; index++)
             _buildChapterRow(chapters[index], index),
@@ -393,24 +455,19 @@ class _LnReaderNovelDetailPageState
   }
 
   Widget _buildChapterRow(LnReaderChapter chapter, int index) {
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        key: ValueKey<String>('novel_chapter_${chapter.path}'),
-        title: Text(chapter.name.isNotEmpty ? chapter.name : '${index + 1}'),
-        subtitle: chapter.releaseTime == null
-            ? null
-            : Text(chapter.releaseTime!),
-        trailing: IconButton(
-          key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
-          tooltip: t.novel_detail_chapter_download,
-          onPressed: () => unawaited(_download(startIndex: index)),
-          icon: const Icon(Icons.download_outlined),
-        ),
-        onTap: _opening
-            ? null
-            : () => unawaited(_readOnline(chapterIndex: index)),
+    return OnlineWorkItemTile(
+      key: ValueKey<String>('novel_chapter_${chapter.path}'),
+      title: chapter.name.isNotEmpty ? chapter.name : '${index + 1}',
+      subtitle: chapter.releaseTime,
+      trailing: IconButton(
+        key: ValueKey<String>('novel_chapter_download_${chapter.path}'),
+        tooltip: t.novel_detail_chapter_download,
+        onPressed: () => unawaited(_download(startIndex: index)),
+        icon: const Icon(Icons.download_outlined),
       ),
+      onTap: _opening
+          ? null
+          : () => unawaited(_readOnline(chapterIndex: index)),
     );
   }
 }

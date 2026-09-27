@@ -39,8 +39,12 @@ enum ModuleId {
   /// 两种形态见 [GamesModuleForm]。
   games('module_games_enabled'),
 
-  /// 统一下载中心（torrent / 磁力 / 在线目录卷队列）。
-  downloads('module_downloads_enabled'),
+  /// 浏览（Mihon 式 Browse）：三域在线来源、扩展目录、四域发现页与统一下载中心
+  /// （torrent / 磁力 / 在线目录卷队列）。
+  ///
+  /// 2026-09-27 由「下载」改名而来：持久化键仍是历史名 `module_downloads_enabled`
+  /// （**冻结不追改**）。
+  browse('module_downloads_enabled'),
 
   /// 查词页与词典管理入口。
   ///
@@ -98,10 +102,10 @@ enum ModuleId {
       GamesModuleForm.on(isWindows: isWindows, isAndroid: isAndroid) != null,
     // 手机浏览器不支持加载未解压扩展，故按平台而非实验开关门控。
     ModuleId.browserExtension => isDesktop,
-    // 通用 torrent / 磁力下载器不能进 App Store。判据不在这里写死，委托给
-    // 合规边界的唯一真相源——发现页与在线漫画源受同一条边界约束，但它们不是
-    // 模块，两处若各判各的就会分头漂移。
-    ModuleId.downloads => StoreRestrictedCapability.downloads.availableOn(
+    // 「浏览」装的是发现页、三域在线扩展源与通用 torrent / 磁力下载器，都不能进
+    // App Store。判据不在这里写死，委托给合规边界的唯一真相源；各页签内的每个域
+    // 仍各自再问对应的 [StoreRestrictedCapability]，两处若各判各的就会分头漂移。
+    ModuleId.browse => StoreRestrictedCapability.downloads.availableOn(
       isIOS: isIOS,
     ),
     ModuleId.books ||
