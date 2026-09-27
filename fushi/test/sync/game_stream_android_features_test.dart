@@ -103,24 +103,174 @@ void main() {
 
     test('adaptive bitrate window leaves adaptation to congestion control', () {
       expect(gameStreamBitrateWindow(targetBps: 20000000, adaptive: true), (
-        min: 1000000,
+        min: kGameStreamCongestionFloorBps,
         start: 10000000,
         max: 20000000,
       ));
-      // A target below the 1 Mbps floor never produces min > max.
-      expect(gameStreamBitrateWindow(targetBps: 500000, adaptive: true), (
-        min: 500000,
-        start: 500000,
-        max: 500000,
+      // A target below the floor never produces min > max.
+      expect(gameStreamBitrateWindow(targetBps: 100000, adaptive: true), (
+        min: 100000,
+        start: 100000,
+        max: 100000,
       ));
     });
 
-    test('fixed bitrate pins floor, start and ceiling to the target', () {
-      expect(gameStreamBitrateWindow(targetBps: 20000000, adaptive: false), (
-        min: 20000000,
-        start: 20000000,
-        max: 20000000,
-      ));
+    test(
+      'fixed bitrate starts at the target but keeps the congestion floor',
+      () {
+        // Pinning min to the target made it the congestion controller's floor:
+        // on a link below the target the estimate could not fall, so lost
+        // bandwidth turned into seconds of queueing delay.
+        expect(gameStreamBitrateWindow(targetBps: 20000000, adaptive: false), (
+          min: kGameStreamCongestionFloorBps,
+          start: 20000000,
+          max: 20000000,
+        ));
+      },
+    );
+
+    group('weak-network resolution ladder', () {
+      Duration at(int seconds) => Duration(seconds: seconds);
+
+      test('holds full resolution while the estimate covers it', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        // A still visual-novel screen encodes to a few hundred kbps; the
+        // ladder looks at the estimate, not at that output rate.
+        for (int s = 0; s <= 60; s += 2) {
+          expect(ladder.observe(at: at(s), availableKbps: 1500), isFalse);
+        }
+        expect(ladder.height, 1080);
+      });
+
+      test('steps down one choice only after a sustained shortfall', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        expect(ladder.observe(at: at(0), availableKbps: 800), isFalse);
+        expect(ladder.observe(at: at(2), availableKbps: 800), isFalse);
+        expect(ladder.observe(at: at(4), availableKbps: 800), isTrue);
+        expect(ladder.height, 720);
+        // 800 kbps covers 720p: no further step.
+        for (int s = 6; s <= 30; s += 2) {
+          expect(ladder.observe(at: at(s), availableKbps: 800), isFalse);
+        }
+        expect(ladder.height, 720);
+      });
+
+      test('a brief dip does not step down', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        ladder.observe(at: at(0), availableKbps: 500);
+        ladder.observe(at: at(2), availableKbps: 500);
+        ladder.observe(at: at(3), availableKbps: 5000);
+        expect(ladder.observe(at: at(5), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(7), availableKbps: 500), isFalse);
+        expect(ladder.height, 1080);
+      });
+
+      test('climbs back one step at a time after sustained headroom', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        int s = 0;
+        while (ladder.height > 360) {
+          ladder.observe(at: at(s), availableKbps: 100);
+          s += 2;
+        }
+        expect(ladder.height, 360);
+        // Enough for 480p (2 × 400) but not for 720p (2 × 700).
+        final int start = s;
+        while (s < start + 60) {
+          ladder.observe(at: at(s), availableKbps: 1000);
+          s += 2;
+        }
+        expect(ladder.height, 480);
+        final List<int> heights = <int>[];
+        while (ladder.height < 1080) {
+          if (ladder.observe(at: at(s), availableKbps: 10000)) {
+            heights.add(ladder.height);
+          }
+          s += 2;
+        }
+        expect(heights, <int>[720, 1080]);
+      });
+
+      test('the way up needs twice the upper minimum, so it cannot flap', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        int s = 0;
+        while (ladder.height == 1080) {
+          ladder.observe(at: at(s), availableKbps: 1100);
+          s += 2;
+        }
+        expect(ladder.height, 720);
+        // Just above 1080p's minimum is not headroom for going back up.
+        for (final int end = s + 120; s < end; s += 2) {
+          expect(ladder.observe(at: at(s), availableKbps: 1300), isFalse);
+        }
+        expect(ladder.height, 720);
+      });
+
+      test('a missing estimate restarts the timers instead of counting', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        ladder.observe(at: at(0), availableKbps: 500);
+        ladder.observe(at: at(2), availableKbps: null);
+        expect(ladder.observe(at: at(4), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(6), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(8), availableKbps: 500), isTrue);
+      });
+
+      test('a gap in the estimates restarts the timers', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        ladder.observe(at: at(0), availableKbps: 500);
+        ladder.observe(at: at(2), availableKbps: 500);
+        // Four seconds without a sample: the shortfall is not "sustained".
+        expect(ladder.observe(at: at(6), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(8), availableKbps: 500), isFalse);
+        expect(ladder.observe(at: at(10), availableKbps: 500), isTrue);
+      });
+
+      test('hold returns to a height and restarts the timers', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1080,
+        );
+        for (int s = 0; s <= 4; s += 2) {
+          ladder.observe(at: at(s), availableKbps: 800);
+        }
+        expect(ladder.height, 720);
+        ladder.hold(1080);
+        expect(ladder.height, 1080);
+        expect(ladder.observe(at: at(6), availableKbps: 800), isFalse);
+        ladder.hold(4320);
+        expect(ladder.height, 1080, reason: 'never above the ceiling');
+      });
+
+      test('a non-standard ceiling is the top step', () {
+        final GameStreamResolutionLadder ladder = GameStreamResolutionLadder(
+          ceilingHeight: 1017,
+        );
+        int s = 0;
+        while (ladder.height == 1017) {
+          ladder.observe(at: at(s), availableKbps: 800);
+          s += 2;
+        }
+        expect(ladder.height, 720);
+        while (ladder.height == 720) {
+          ladder.observe(at: at(s), availableKbps: 5000);
+          s += 2;
+        }
+        expect(ladder.height, 1017);
+        ladder.reset(720);
+        expect(ladder.height, 720);
+      });
     });
 
     group('answer SDP bitrate tuning', () {

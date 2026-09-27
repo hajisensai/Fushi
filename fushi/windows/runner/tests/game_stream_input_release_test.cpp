@@ -254,14 +254,54 @@ void CheckNativeConfirmRequiresMapping() {
              fushi::g_publish_seq == published,
          "background native up still rejects another process identity");
   input.pid_ ^= 0x40000000;
+  input.Send(event, &reason);  // drop the held confirm seeded above
   {
+    // SGRE polls DirectInput and hit-tests at the system cursor, so a tap is
+    // a cursor move plus the native left button — never a window message.
     flutter::EncodableMap pointer;
     pointer[flutter::EncodableValue("kind")] = flutter::EncodableValue("pointer");
+    pointer[flutter::EncodableValue("x")] = flutter::EncodableValue(0.5);
+    pointer[flutter::EncodableValue("y")] = flutter::EncodableValue(0.5);
+    POINT cursor_before{};
+    GetCursorPos(&cursor_before);
+    const uint32_t published_before = fushi::g_publish_seq;
+
+    pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("move");
+    reason.clear();
+    Expect(input.Send(pointer, &reason),
+           "SGRE hover move is accepted while the game is in the background");
+    POINT cursor_after{};
+    GetCursorPos(&cursor_after);
+    Expect(cursor_after.x == cursor_before.x && cursor_after.y == cursor_before.y,
+           "background SGRE hover never steers the host cursor");
+
     pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("down");
+    reason.clear();
+    Expect(!input.Send(pointer, &reason) && reason == "window_not_foreground" &&
+               fushi::g_publish_seq == published_before,
+           "SGRE tap needs the foreground like the native confirm");
+    Expect(Count(hwnd, WM_LBUTTONDOWN) == 0 && Count(hwnd, WM_MOUSEMOVE) == 0,
+           "SGRE tap posts no window mouse messages");
+
+    pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("up");
+    reason.clear();
+    Expect(input.Send(pointer, &reason) && fushi::g_publish_seq == published_before,
+           "SGRE up with nothing held is a no-op");
+
+    pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("down");
+    pointer[flutter::EncodableValue("button")] = flutter::EncodableValue("right");
     reason.clear();
     Expect(!input.Send(pointer, &reason) &&
                reason == "unsupported_native_pointer",
-           "SGRE target still rejects pointer input with a specific reason");
+           "SGRE right button has no native channel yet");
+
+    pointer.erase(flutter::EncodableValue("button"));
+    pointer[flutter::EncodableValue("action")] = flutter::EncodableValue("wheel");
+    pointer[flutter::EncodableValue("dy")] = flutter::EncodableValue(1.0);
+    reason.clear();
+    Expect(!input.Send(pointer, &reason) &&
+               reason == "unsupported_native_pointer",
+           "SGRE wheel has no native channel yet");
   }
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
   RemovePropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty);

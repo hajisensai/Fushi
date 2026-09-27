@@ -339,6 +339,7 @@ mixin _LocalLibraryHostVideos
       audioStreamCount: audioStreamCount,
       audioChannels: audioChannels,
       audioBitrate: audioBitrate,
+      timeout: clipVideoAudioTimeout(endMs - startMs),
     );
     if (result == null) {
       try {
@@ -719,48 +720,127 @@ mixin _LocalLibraryHostVideos
       throw ArgumentError.value(suffix, 'suffix', 'unsafe subtitle suffix');
     }
     await _runExclusive(() async {
-      final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
-      if (row == null) throw StateError('unknown video: $id');
-      final String videoPath = row.videoPath;
-      final String lower = videoPath.toLowerCase();
-      if (videoPath.isEmpty ||
-          lower.startsWith('http://') ||
-          lower.startsWith('https://')) {
-        throw StateError('video has no local file: $id');
-      }
-      final File dest = File(p.join(p.dirname(videoPath),
-          '${p.basenameWithoutExtension(videoPath)}$suffix'));
-      await _moveFileInto(subtitleFile, dest);
-      final String? preferred =
-          findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
-      if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
-      final String ext =
-          p.extension(preferred).replaceFirst('.', '').toLowerCase();
-      List<AudioCue> cues = const <AudioCue>[];
-      try {
-        cues = parseSubtitleCues(
-          content: await readTextWithEncoding(File(preferred)),
-          format: ext,
-          bookUid: id,
-        );
-      } catch (_) {
-        // best-effort：解析失败不挡字幕文件落位。
-      }
-      await _db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(id),
-        title: Value(row.title),
-        videoPath: Value(row.videoPath),
-        subtitleSource: Value<String?>(preferred),
-        subtitleFormat: Value<String?>(ext),
-        embeddedSubtitleTrack: const Value<int?>(null),
-      ));
-      if (cues.isNotEmpty) {
-        await _db.replaceCuesForBook(
-            id, cues.map(AudioCue.toCompanion).toList());
-      }
+      final VideoBookRow row = await _videoRowWithLocalFile(id);
+      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
     });
   }
+
+  /// 远端播放时用户导入 / 重定时的字幕设为默认（见 [VideoSubtitleDefaultHost]）。
+  @override
+  Future<String> importDefaultVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String format,
+  }) async {
+    _assertSafeVideoId(id);
+    final String? suffix =
+        defaultSidecarSubtitleSuffix(format, langCode: _videoSubtitleLangCode);
+    if (suffix == null) {
+      throw ArgumentError.value(format, 'format', 'not a subtitle format');
+    }
+    await _runExclusive(() async {
+      final VideoBookRow row = await _videoRowWithLocalFile(id);
+      _displaceSidecarsFor(row.videoPath, suffix);
+      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+    });
+    return suffix;
+  }
+
+  /// [id] 对应、且视频是 host 本地文件的库行；否则抛 [StateError]（端点映射 404）。
+  Future<VideoBookRow> _videoRowWithLocalFile(String id) async {
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) throw StateError('unknown video: $id');
+    final String videoPath = row.videoPath;
+    final String lower = videoPath.toLowerCase();
+    if (videoPath.isEmpty ||
+        lower.startsWith('http://') ||
+        lower.startsWith('https://')) {
+      throw StateError('video has no local file: $id');
+    }
+    return row;
+  }
+
+  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
+  /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
+  void _displaceSidecarsFor(String videoPath, String suffix) {
+    final String dir = p.dirname(videoPath);
+    final String stemLower =
+        p.basenameWithoutExtension(videoPath).toLowerCase();
+    final Set<String> displaced =
+        sidecarSuffixesDisplacedBy(suffix, langCode: _videoSubtitleLangCode)
+            .map((String s) => '$stemLower$s')
+            .toSet();
+    final List<File> siblings;
+    try {
+      siblings = Directory(dir)
+          .listSync(followLinks: false)
+          .whereType<File>()
+          .toList();
+    } on FileSystemException {
+      return;
+    }
+    for (final File f in siblings) {
+      if (!displaced.contains(p.basename(f.path).toLowerCase())) continue;
+      final File backup = File('${f.path}$kDisplacedSidecarBackupSuffix');
+      if (backup.existsSync()) {
+        f.deleteSync();
+      } else {
+        f.renameSync(backup.path);
+      }
+    }
+  }
+
+  /// 把上传的 [subtitleFile] 落到 `<视频 stem><suffix>`，再按 host 学习语言重解析首选
+  /// sidecar 落库（[importVideoSubtitle] / [importDefaultVideoSubtitle] 共用）。
+  Future<void> _placeVideoSubtitleSidecar(
+    File subtitleFile, {
+    required VideoBookRow row,
+    required String suffix,
+  }) async {
+    final String id = row.bookUid;
+    final String videoPath = row.videoPath;
+    final File dest = File(p.join(p.dirname(videoPath),
+        '${p.basenameWithoutExtension(videoPath)}$suffix'));
+    await _moveFileInto(subtitleFile, dest);
+    final String? preferred =
+        findSidecarSubtitle(videoPath, langCode: _videoSubtitleLangCode);
+    if (preferred == null) return; // 防御：刚落位的 dest 本身就是候选。
+    final String ext =
+        p.extension(preferred).replaceFirst('.', '').toLowerCase();
+    List<AudioCue> cues = const <AudioCue>[];
+    try {
+      cues = parseSubtitleCues(
+        content: await readTextWithEncoding(File(preferred)),
+        format: ext,
+        bookUid: id,
+      );
+    } catch (_) {
+      // best-effort：解析失败不挡字幕文件落位。
+    }
+    await _db.upsertVideoBook(VideoBooksCompanion(
+      bookUid: Value(id),
+      title: Value(row.title),
+      videoPath: Value(row.videoPath),
+      subtitleSource: Value<String?>(preferred),
+      subtitleFormat: Value<String?>(ext),
+      embeddedSubtitleTrack: const Value<int?>(null),
+    ));
+    if (cues.isNotEmpty) {
+      await _db.replaceCuesForBook(id, cues.map(AudioCue.toCompanion).toList());
+    }
+  }
 }
+
+/// [clipVideoAudio] 的 ffmpeg 超时：句子片段沿用 120s；整集音轨（client 远端对轴 /
+/// 重定时拉整条音轨）按「至少 10 倍速转码」放大，两小时电影给到 12 分钟。
+Duration clipVideoAudioTimeout(int spanMs) {
+  final int scaled = (spanMs ~/ 10) ~/ 1000;
+  return Duration(seconds: scaled > 120 ? scaled : 120);
+}
+
+/// 「设为默认字幕」让位的旧 sidecar 改名时追加的后缀；不是字幕扩展名，
+/// [pickSidecar] / [listSidecarSubtitles] 都不会再把它当候选。
+const String kDisplacedSidecarBackupSuffix = '.fushi-bak';
 
 // ── 本域私有的顶层 helper（原 LocalLibraryHostService 的 private static；mixin 体内看不到
 //    宿主类的 static，故提到库顶层）。

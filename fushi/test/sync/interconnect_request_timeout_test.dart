@@ -111,7 +111,7 @@ void main() {
       //   firstByteTimeout/bodyTimeout 负责停顿封顶）；
       // - 流式上传 6 处：putRemoteDictionary / putRemoteBook /
       //   putRemoteLocalAudio / putRemoteAudiobook / putRemoteVideo /
-      //   putRemoteVideoSubtitle（body 发送时长与文件大小成正比、host 侧收尾
+      //   _sendVideoSubtitle（putRemoteVideoSubtitle / AsDefault 共用；body 发送时长与文件大小成正比、host 侧收尾
       //   可能分钟级，固定值封顶会砍断合法慢传输）。
       // 新增小型端点必须走 _sendBounded / _readBodyBounded；若合法新增流式端点，
       // 更新本计数并在上面白名单里记名。

@@ -5399,7 +5399,7 @@
   "game_stream_mine_snapshot_missing": "The host has no screenshot for this line; look up the current line",
   "game_stream_more": "More",
   "game_stream_settings_adaptive": "Adaptive bitrate",
-  "game_stream_settings_adaptive_hint": "Lower the bitrate when the network is congested",
+  "game_stream_settings_adaptive_hint": "Start at half the bitrate and ramp up. When off, start at the full bitrate. Both lower it when the network is congested",
   "game_stream_settings_apply_failed": "Could not apply stream settings",
   "game_stream_settings_audio": "Play game audio",
   "game_stream_settings_bitrate": "Bitrate",
@@ -5619,5 +5619,11 @@
   "download_interconnect_section_title": "From paired devices",
   "interconnect_download_notification_title": "Downloading $count items from paired devices",
   "download_keep_alive_multiple_title": "$count downloads in progress",
-  "update_download_notification_title": "Downloading update $version"
+  "update_download_notification_title": "Downloading update $version",
+  "video_subtitle_remote_audio_fetching": "Fetching the audio track from the host…",
+  "video_subtitle_host_upload_done": "Subtitle uploaded to the host as this episode's default",
+  "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device",
+  "video_subtitle_host_upload_unsupported": "The host's Fushi is too old to receive subtitles; it's only saved on this device",
+  "video_setting_subtitle_auto_upload_to_host": "Auto-upload imported subtitles to host",
+  "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only."
 }

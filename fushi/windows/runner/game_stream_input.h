@@ -80,6 +80,10 @@ class GameStreamInput {
   bool SendPointer(const flutter::EncodableMap& event,
                    const std::string& action, bool foreground_mode,
                    std::string* reason);
+  bool SendNativePointer(const flutter::EncodableMap& event,
+                         const std::string& action, bool foreground_mode,
+                         std::string* reason);
+  bool MoveCursorToClient(double x, double y);
   bool SendNativeLeftButton(bool down, bool require_foreground,
                             bool wait_for_ack, std::string* reason);
   bool PublishNativeLeftButton(bool down, bool wait_for_ack,

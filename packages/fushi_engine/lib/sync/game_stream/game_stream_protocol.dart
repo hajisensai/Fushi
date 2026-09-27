@@ -93,6 +93,13 @@ const Set<String> kGameStreamPointerButtons = <String>{
 
 /// How the host encoder trades quality when bandwidth drops. Wire names match
 /// WebRTC's `RTCDegradationPreference`.
+///
+/// The default is [maintainResolution]. Under [balanced], libwebrtc scales
+/// the resolution of encoders whose QP it does not trust (OpenH264, the
+/// Windows host's H.264) by their *encoded* bitrate. A visual novel encodes
+/// to a few hundred kbps, so on a real LAN with a 75 Mbps estimate the
+/// stream still sat at 720p/540p and text turned to mush; the same session
+/// with [maintainResolution] held the full capture size.
 enum GameStreamDegradation {
   balanced('balanced'),
   maintainFramerate('maintain-framerate'),
@@ -101,13 +108,14 @@ enum GameStreamDegradation {
   const GameStreamDegradation(this.wireName);
   final String wireName;
 
-  static GameStreamDegradation parse(Object? value) {
+  /// The matching value, or null for an unknown one.
+  static GameStreamDegradation? tryParse(Object? value) {
     for (final GameStreamDegradation candidate in values) {
       if (candidate.wireName == value || candidate.name == value) {
         return candidate;
       }
     }
-    return balanced;
+    return null;
   }
 }
 
@@ -118,8 +126,13 @@ enum GameStreamInputFocus {
   background,
   foreground;
 
-  static GameStreamInputFocus parse(Object? value) =>
-      value == foreground.name ? foreground : background;
+  /// The matching value, or null for an unknown one.
+  static GameStreamInputFocus? tryParse(Object? value) {
+    for (final GameStreamInputFocus candidate in values) {
+      if (candidate.name == value) return candidate;
+    }
+    return null;
+  }
 }
 
 /// Preferred video codec. Applied by the receiving side through
@@ -140,11 +153,12 @@ enum GameStreamCodec {
     av1 => 'AV1',
   };
 
-  static GameStreamCodec parse(Object? value) {
+  /// The matching value, or null for an unknown one.
+  static GameStreamCodec? tryParse(Object? value) {
     for (final GameStreamCodec candidate in values) {
       if (candidate.name == value) return candidate;
     }
-    return auto;
+    return null;
   }
 }
 
@@ -157,25 +171,35 @@ class GameStreamVideoSettings {
     this.maxFps = 60,
     this.bitrateKbps = 20000,
     this.adaptiveBitrate = true,
-    this.degradation = GameStreamDegradation.balanced,
+    this.degradation = GameStreamDegradation.maintainResolution,
     this.codec = GameStreamCodec.auto,
     this.inputFocus = GameStreamInputFocus.background,
     this.audio = true,
   });
 
   factory GameStreamVideoSettings.fromJson(Object? raw) {
-    if (raw is! Map) return const GameStreamVideoSettings();
+    const GameStreamVideoSettings defaults = GameStreamVideoSettings();
+    if (raw is! Map) return defaults;
     int integer(Object? value, int fallback) =>
         value is num && value.isFinite ? value.round() : fallback;
+    bool boolean(Object? value, bool fallback) =>
+        value is bool ? value : fallback;
     return GameStreamVideoSettings(
-      maxHeight: integer(raw['maxHeight'], 1080),
-      maxFps: integer(raw['maxFps'], 60),
-      bitrateKbps: integer(raw['bitrateKbps'], 20000),
-      adaptiveBitrate: raw['adaptiveBitrate'] != false,
-      degradation: GameStreamDegradation.parse(raw['degradation']),
-      codec: GameStreamCodec.parse(raw['codec']),
-      inputFocus: GameStreamInputFocus.parse(raw['inputFocus']),
-      audio: raw['audio'] != false,
+      maxHeight: integer(raw['maxHeight'], defaults.maxHeight),
+      maxFps: integer(raw['maxFps'], defaults.maxFps),
+      bitrateKbps: integer(raw['bitrateKbps'], defaults.bitrateKbps),
+      adaptiveBitrate: boolean(
+        raw['adaptiveBitrate'],
+        defaults.adaptiveBitrate,
+      ),
+      degradation:
+          GameStreamDegradation.tryParse(raw['degradation']) ??
+          defaults.degradation,
+      codec: GameStreamCodec.tryParse(raw['codec']) ?? defaults.codec,
+      inputFocus:
+          GameStreamInputFocus.tryParse(raw['inputFocus']) ??
+          defaults.inputFocus,
+      audio: boolean(raw['audio'], defaults.audio),
     ).clamped();
   }
 
@@ -193,7 +217,10 @@ class GameStreamVideoSettings {
   final int maxFps;
   final int bitrateKbps;
 
-  /// When false the host holds [bitrateKbps] instead of following estimates.
+  /// How the encoder reaches [bitrateKbps], its ceiling in both modes. When
+  /// true it starts at half and climbs with the bandwidth estimate; when false
+  /// it starts at the full target. Either way congestion control may pull it
+  /// down to the host's floor on a link that cannot carry the target.
   final bool adaptiveBitrate;
   final GameStreamDegradation degradation;
   final GameStreamCodec codec;
@@ -264,6 +291,19 @@ class GameStreamVideoSettings {
     'inputFocus': inputFocus.name,
     'audio': audio,
   };
+
+  /// Only the fields that differ from the defaults, for local persistence.
+  /// A field the user never changed is left out, so it follows the current
+  /// default instead of freezing whatever the default was when some other
+  /// field was saved. [fromJson] fills the missing fields back in.
+  Map<String, Object?> toOverridesJson() {
+    final Map<String, Object?> defaults = const GameStreamVideoSettings()
+        .toJson();
+    return <String, Object?>{
+      for (final MapEntry<String, Object?> entry in toJson().entries)
+        if (defaults[entry.key] != entry.value) entry.key: entry.value,
+    };
+  }
 
   @override
   bool operator ==(Object other) =>

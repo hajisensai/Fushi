@@ -213,6 +213,29 @@ abstract interface class AudiobookDelayHost {
   Future<void> putAudiobookDelay(String identity, int delayMs, int updatedAtMs);
 }
 
+/// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
+/// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
+/// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
+/// `liveLibrary.videoSubtitleDefault`；不实现时带 `X-Hibiki-Subtitle-Default` 的 PUT
+/// 回 409、不落盘——**不能**退回 [FushiLibraryHostService.importVideoSubtitle]，那条
+/// 按 client 报的后缀覆盖同名旧字幕且不留备份（BUG-2728）。
+///
+/// 和 `importVideoSubtitle` 的区别在**谁定后缀**：那条是 live push 把 client 本地
+/// sidecar 原名镜像过去；这条是用户在远端播放时明确选了一份字幕，意图是「这一集
+/// 以后就用它」。所以后缀由 host 按**自己的**学习语言定成 [pickSidecar] 优先级最高的
+/// 一组，排在它前面（或同名）的旧 sidecar 改名成 `<原名>.fushi-bak` 让位——不删，
+/// 用户随时能在 host 上改回来。
+abstract interface class VideoSubtitleDefaultHost {
+  /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
+  /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
+  /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  Future<String> importDefaultVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String format,
+  });
+}
+
 /// 旧名兼容：有声书 diff 已并入 [SyncKeyDiff]。
 @Deprecated('已并入 SyncKeyDiff（computeKeyUnionDiff），请改用新名')
 typedef AudiobookSyncDiff = SyncKeyDiff;

@@ -87,12 +87,33 @@ void main() {
       expect(GameStreamVideoSettings.fromJson(settings.toJson()), settings);
     });
 
-    test('unknown values fall back to defaults instead of failing', () {
-      final GameStreamVideoSettings settings = GameStreamVideoSettings.fromJson(
-        <String, Object?>{'codec': 'h266', 'degradation': 'sideways'},
+    test('persisted overrides keep only what differs from the defaults', () {
+      expect(const GameStreamVideoSettings().toOverridesJson(), isEmpty);
+      final GameStreamVideoSettings chosen = const GameStreamVideoSettings()
+          .copyWith(maxHeight: 720, codec: GameStreamCodec.vp9);
+      expect(chosen.toOverridesJson(), <String, Object?>{
+        'maxHeight': 720,
+        'codec': 'vp9',
+      });
+      // Untouched fields come back as the current defaults, so a changed
+      // default reaches every saved configuration.
+      final GameStreamVideoSettings restored = GameStreamVideoSettings.fromJson(
+        chosen.toOverridesJson(),
       );
-      expect(settings.codec, GameStreamCodec.auto);
-      expect(settings.degradation, GameStreamDegradation.balanced);
+      expect(restored, chosen);
+      expect(restored.degradation, GameStreamDegradation.maintainResolution);
+    });
+
+    test('unknown values fall back to defaults instead of failing', () {
+      final GameStreamVideoSettings settings =
+          GameStreamVideoSettings.fromJson(<String, Object?>{
+            'codec': 'h266',
+            'degradation': 'sideways',
+            'inputFocus': 'elsewhere',
+            'adaptiveBitrate': 'no',
+            'audio': 0,
+          });
+      expect(settings, const GameStreamVideoSettings());
       expect(
         GameStreamVideoSettings.fromJson('not a map'),
         const GameStreamVideoSettings(),

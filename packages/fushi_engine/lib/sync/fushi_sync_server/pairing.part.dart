@@ -367,6 +367,12 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
         'videoTranscode': lib && _videoTranscodeEnabled,
+        // 远端导入 / 重定时字幕「设为这一集的默认字幕」（`PUT .../subtitle` 带
+        // `X-Hibiki-Subtitle-Default: 1`，host 按自己的学习语言定后缀、旧 sidecar
+        // 改名 `.fushi-bak` 让位）。老 host 无此字段 → client **不上传**：老 host
+        // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
+        // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
+        'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
         // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
         'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
         'serviceConfig': _securityContext != null &&

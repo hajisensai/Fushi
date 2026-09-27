@@ -4293,6 +4293,16 @@ class AppModel with ChangeNotifier {
     notifyListeners();
   }
 
+  /// 远端视频导入 / 重定时的字幕自动上传 host 并设为默认（默认开）。见
+  /// [PreferencesRepository.videoSubtitleAutoUploadToHost]。
+  bool get videoSubtitleAutoUploadToHost =>
+      _prefsRepo?.videoSubtitleAutoUploadToHost ?? true;
+
+  Future<void> setVideoSubtitleAutoUploadToHost(bool enabled) async {
+    await prefsRepo.setVideoSubtitleAutoUploadToHost(enabled);
+    notifyListeners();
+  }
+
   /// AJATT 字幕库开关，见 [PreferencesRepository.videoSubtitleAjattEnabled]。
   bool get videoSubtitleAjattEnabled =>
       _prefsRepo?.videoSubtitleAjattEnabled ?? true;
