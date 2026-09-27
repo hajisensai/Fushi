@@ -125,6 +125,57 @@ void TestAttachedRequestsNeedAnEstablishedEpochHandshake() {
          policy::Attribution::kPending);
 }
 
+void TestPopupClickKeepsTheEstablishedHandshake() {
+  constexpr policy::Epoch epoch{16u, 5u};
+  constexpr uint64_t target = 0x789u;
+  constexpr policy::HandshakeIdentity handshake{epoch, target, 0x300000001u,
+                                                61u};
+  policy::StatusIdentity popup;
+  popup.available = true;
+  popup.request_seq = 63u;  // Release published, tail not yet retired.
+  popup.applied_seq = 62u;  // The popup down was acknowledged.
+  popup.owner_kind = policy::kOwnerPopup;
+  popup.target_hwnd = target;
+  popup.transaction_id = 0xA00000001u;
+  // Clicking the popup while its release tail waits for the game's next sample
+  // is still this host's input: it must not read as a lost handshake.
+  assert(policy::ClassifyPopupAfterHandshake(popup, true, handshake, epoch,
+                                             target) ==
+         policy::Attribution::kPending);
+  popup.applied_seq = popup.request_seq;
+  assert(policy::ClassifyPopupAfterHandshake(popup, true, handshake, epoch,
+                                             target) ==
+         policy::Attribution::kAcknowledged);
+  // The tail still owns the slot: no challenge may overwrite it early.
+  popup.applied_seq = popup.request_seq - 1u;
+  assert(!policy::IsNeutralForRehandshake(popup));
+
+  // Only after this epoch/HWND proved its own challenge, and only for it.
+  assert(policy::ClassifyPopupAfterHandshake(popup, false, handshake, epoch,
+                                             target) ==
+         policy::Attribution::kForeign);
+  assert(policy::ClassifyPopupAfterHandshake(
+             popup, true, handshake, {epoch.session, epoch.surface + 1u},
+             target) == policy::Attribution::kForeign);
+  assert(policy::ClassifyPopupAfterHandshake(popup, true, handshake, epoch,
+                                             target + 1u) ==
+         policy::Attribution::kForeign);
+  policy::StatusIdentity other_window = popup;
+  other_window.target_hwnd = target + 1u;
+  assert(policy::ClassifyPopupAfterHandshake(other_window, true, handshake,
+                                             epoch, target) ==
+         policy::Attribution::kForeign);
+  policy::StatusIdentity risky = popup;
+  risky.allow_risk = true;
+  assert(policy::ClassifyPopupAfterHandshake(risky, true, handshake, epoch,
+                                             target) ==
+         policy::Attribution::kForeign);
+  // Attached glyph attribution stays exact; the popup rule does not widen it.
+  assert(policy::ClassifyAttachedAfterHandshake(popup, true, handshake, epoch,
+                                                target) ==
+         policy::Attribution::kForeign);
+}
+
 void TestNativeInspectionNeedsNoAttachedRiskConfiguration() {
   // BUG-2154: a native provider reaches this policy after InspectTarget only,
   // with neither a saved profile nor a Configure/StartCalibration request.
@@ -204,6 +255,17 @@ void TestSurfaceWiresRebindAndEffectiveRiskPolicy() {
       "bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake()");
   assert(handshake.find("publish_shield_probe_(target_.hwnd, transaction_id, "
                         "false)") != std::string::npos);
+  // Our own popup click must be attributed before the neutral gate decides the
+  // handshake was lost (which hid the surface and dismissed the popup).
+  const size_t popup_admit = handshake.find("ClassifyPopupAfterHandshake(");
+  const size_t neutral_gate = handshake.find("IsNeutralForRehandshake(");
+  assert(popup_admit != std::string::npos &&
+         neutral_gate != std::string::npos && popup_admit < neutral_gate);
+  const std::string belongs = FunctionSlice(
+      source,
+      "bool AttachedTextSurfaceWindow::ShieldStatusBelongsToCurrentHandshake()",
+      "AttachedTextSurfaceWindow::ShieldStatusForSnapshot()");
+  assert(belongs.find("ClassifyPopupAfterHandshake(") != std::string::npos);
 
   const std::string rebind =
       FunctionSlice(source, "bool AttachedTextSurfaceWindow::TryRebindTarget(",
@@ -321,6 +383,7 @@ int main() {
   TestEpochAndTransactionFenceTheHandshake();
   TestPendingChallengeAndStuckTransactionRemainBlocked();
   TestAttachedRequestsNeedAnEstablishedEpochHandshake();
+  TestPopupClickKeepsTheEstablishedHandshake();
   TestNativeInspectionNeedsNoAttachedRiskConfiguration();
   TestDefaultAcceptanceStillRequiresCurrentStrictProbe();
   TestSurfaceWiresRebindAndEffectiveRiskPolicy();
