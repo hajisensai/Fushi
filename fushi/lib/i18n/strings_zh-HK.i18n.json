@@ -5684,5 +5684,10 @@
   "ai_video_acquire_failure_no_sources": "There is no managed video source to download into.",
   "ai_video_acquire_failure_nothing_selected": "Nothing selected to submit.",
   "ai_video_download_skip_extras": "Skip extras",
-  "ai_video_download_skip_extras_hint": "PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked."
+  "ai_video_download_skip_extras_hint": "PV, CM, NCOP/NCED, menus and similar. Applies to every download into a video source: extras inside a torrent are not downloaded, and extras-only releases are never picked.",
+  "ai_web_knowledge_section": "Web knowledge",
+  "ai_web_knowledge_section_hint": "Fushi itself fetches article text from the selected sources and hands it to the AI (used when AI video download lists the works of a franchise and when identifying video works). Your AI provider does not need web access. The AI can only cite what was fetched, and every listed work is still checked against the metadata source one by one.",
+  "ai_web_knowledge_wikipedia_zh": "Wikipedia (中文)",
+  "ai_web_knowledge_wikipedia_ja": "Wikipedia (日本語)",
+  "ai_web_knowledge_wikipedia_en": "Wikipedia (English)"
 }

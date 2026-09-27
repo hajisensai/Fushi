@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -40,6 +41,33 @@ SettingsDestination buildAiDestination() {
         const AiProviderSettingsSection(),
     bodyBeforeSections: true,
     sections: <SettingsSection>[
+      // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
+      // 门控——整页已经过 AI 模块门，这一段跟着页面走。
+      SettingsSection(
+        id: 'ai.web_knowledge',
+        title: t.ai_web_knowledge_section,
+        footer: t.ai_web_knowledge_section_hint,
+        items: <SettingsItem>[
+          for (final WebKnowledgeSource source in WebKnowledgeSource.values)
+            SettingsSwitchItem(
+              id: 'ai.web_knowledge.${source.storageKey}',
+              title: _webKnowledgeSourceLabel(source),
+              icon: Icons.public,
+              value: (SettingsContext c) =>
+                  c.appModel.prefsRepo.aiWebKnowledgeSources.contains(source),
+              onChanged: (SettingsContext c, bool value) {
+                final Set<WebKnowledgeSource> next =
+                    c.appModel.prefsRepo.aiWebKnowledgeSources;
+                if (value) {
+                  next.add(source);
+                } else {
+                  next.remove(source);
+                }
+                return c.appModel.prefsRepo.setAiWebKnowledgeSources(next);
+              },
+            ),
+        ],
+      ),
       SettingsSection(
         id: 'ai.video_download',
         title: t.ai_video_download_section,
@@ -203,3 +231,10 @@ SettingsDestination buildAiDestination() {
     ],
   );
 }
+
+/// 来源的开关文案：站点名 + 语种用母语写（与字幕语言下拉同一思路），不随界面语言变。
+String _webKnowledgeSourceLabel(WebKnowledgeSource source) => switch (source) {
+  WebKnowledgeSource.wikipediaZh => t.ai_web_knowledge_wikipedia_zh,
+  WebKnowledgeSource.wikipediaJa => t.ai_web_knowledge_wikipedia_ja,
+  WebKnowledgeSource.wikipediaEn => t.ai_web_knowledge_wikipedia_en,
+};
