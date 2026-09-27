@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -172,6 +174,8 @@ void main() {
         documentTitle: '从零开始的异世界生活 第13话',
       );
       expect(req.audioSource, 'https://cdn/pgc-audio-30280.m4s');
+      expect(req.httpHeaders['Referer'], 'https://www.bilibili.com/',
+          reason: 'BUG-2730：番剧音轨同样落在防盗链节点上');
       expect(req.clipStartMs, 61000);
       expect(req.clipEndMs, 64500);
       expect(req.documentTitle, '从零开始的异世界生活 第13话');
@@ -206,6 +210,39 @@ void main() {
     });
   });
 
+  group('BilibiliClipMiner 防盗链头（BUG-2730）', () {
+    test('白名单外的新 PCDN 域名也带 -referer：Referer 来自请求声明，不靠 host 猜', () {
+      // 实测 B 站把音轨分到 `b-<id>.edge.mountaintoys.cn:4483` 这种 PCDN 节点时，
+      // 旧的按 host 白名单推 Referer 漏掉它 → ffmpeg 不带 Referer → 403 →
+      // required audio missing。PCDN 域名会轮换，这里故意用一个任何白名单都不认的域名。
+      const String url =
+          'https://b-abc.edge.some-future-pcdn.example:4483/upgcxcode/1-30280.m4s';
+      expect(isBilibiliCdnHost(Uri.parse(url).host), isFalse,
+          reason: '前提：这个域名不在白名单里');
+      final BilibiliClipRequest req = BilibiliClipMiner().buildPgcRequest(
+        playurlBody: jsonEncode(<String, Object?>{
+          'code': 0,
+          'result': <String, Object?>{
+            'dash': <String, Object?>{
+              'audio': <Object?>[
+                <String, Object?>{'baseUrl': url, 'bandwidth': 1},
+              ],
+            },
+          },
+        }),
+        startMs: 0,
+        endMs: 1000,
+        fields: const <String, String>{},
+        sentence: 's',
+      );
+      final List<String> args = buildFfmpegRemoteInputArgs(req.audioSource,
+          httpHeaders: req.httpHeaders);
+      final int i = args.indexOf('-referer');
+      expect(i, greaterThanOrEqualTo(0));
+      expect(args[i + 1], 'https://www.bilibili.com/');
+    });
+  });
+
   group('BilibiliClipMiner', () {
     test('两次往返解析出音轨与标题，分 P 进 cid', () async {
       final List<Uri> calls = <Uri>[];
@@ -226,6 +263,8 @@ void main() {
         sentence: '正道ではなく邪道',
       );
       expect(req.audioSource, 'https://cdn/audio-30280.m4s');
+      expect(req.httpHeaders['Referer'], 'https://www.bilibili.com/',
+          reason: 'BUG-2730：upos / PCDN 节点不带 Referer 一律 403');
       expect(req.clipStartMs, 61000);
       expect(req.clipEndMs, 64500);
       expect(req.documentTitle, '从零开始的异世界生活 第四季 - 第14话');

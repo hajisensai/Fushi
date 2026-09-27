@@ -107,6 +107,13 @@ void main() {
               '封面由扩展的 providedCoverBytes 给。');
     });
 
+    test('B 站防盗链头随请求下发给 ffmpeg（BUG-2730）', () {
+      expect(
+          bilibiliSegment(), contains('mediaSourceHttpHeaders: bi.httpHeaders'),
+          reason: 'upos / PCDN 节点不带 Referer 一律 403；按 host 白名单猜 Referer '
+              '追不上 PCDN 域名轮换，必须由流解析层声明、随请求下发。');
+    });
+
     test('番剧（bilibili-pgc）与稿件同走这一段，只是音轨来路不同', () {
       final String segment = bilibiliSegment();
       // 番剧的音轨由扩展在页面主世界里解析后回传（要带 SESSDATA，服务端匿名请求拿不到）。
