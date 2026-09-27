@@ -66,13 +66,14 @@ P1 进展（2026-09-27，分支 `claude/galgame-p1`；样本一律经 Fushi 发�
 | KiriKiri Z · PARQUET 2021（ゆずソフトSOUR，msgwin 插件登记但不画正文） | ✅ EmbedKrkrZ | ✅ game_resource（opus/ogg） | ✅ | ✅ | BUG-2721 修复后宿主 accept4（物理像素坐标）过四条 + 真卡；样本已删 |
 | KiriKiri2 · 夏空カナタ（2008） | — | — | — | — | 下载包自带汉化补丁（正文乱码），不作样本；已删 |
 | RealLive · planetarian Kinetic Novel（2004，脚本打进 .pak，语音 NWK） | 待宿主 | ✅ 运行时导出 `Z0001.nwk_529.wav` | 缺几何 | 缺几何 | 新增结构识别 + NWK/NWA 解码（离线 856/856 条）；③④ 需 RealLive 字形几何 provider |
-| RealLive · 智代アフター 2005 日文原版（光盘直拷，x86，800x600） | ✅ Luna `RealLive · 0x415b00` 正文 context | ✅ BUG-2732 修复后 `matched/game_resource`（`Z0629.nwk_<id>.wav`），旁白/主人公行 pending | ❌ | ❌ | 修复前语音被 DirectSound 流（BGM）冒领、accept4 audio 误判 PASS；③④ 需 RealLive 字形几何 provider：逆向子代理两次中止（第二次被平台安全分类器以 `[cyber]` 拦截，未规避），半成品脚手架存于分支 `wip/reallive-lookup-provider`（6d07e422de5，未验证、镜像与测试缺）；同 hook 的正文/名字牌线程指纹相同，记忆曾恢复到名字线程——9a09d4a133c 改为按典型行长消歧（单测覆盖，待真机二次启动复验）；首启独占全屏会切桌面分辨率，须窗口模式 |
+| RealLive · 智代アフター 2005 日文原版（光盘直拷，x86，800x600） | ✅ Luna `RealLive · 0x415b00` 正文 context | ✅ BUG-2732 修复后 `matched/game_resource`（`Z0629.nwk_<id>.wav`），旁白/主人公行 pending | ❌ | ❌ | 修复前语音被 DirectSound 流（BGM）冒领、accept4 audio 误判 PASS；③④ 需 RealLive 字形几何 provider：逆向子代理两次中止（第二次被平台安全分类器以 `[cyber]` 拦截，未规避），半成品脚手架存于分支 `wip/reallive-lookup-provider`（6d07e422de5，未验证、镜像与测试缺）；同 hook 的正文/名字牌线程指纹相同，记忆曾恢复到名字线程——9a09d4a133c 改为按典型行长消歧；真机复验：旧记忆（无行长）复现恢复到名字线程 #a792，手选正文后二次启动自动恢复正文线程并照常 `game_resource` 配对；首启独占全屏会切桌面分辨率，须窗口模式 |
 | SiglusEngine · planetarian HD Steam | — | — | — | — | 下载包为汉化 + Steam 模拟器，无日文 Scene.pck，不适合；需另取日文 Siglus 样本 |
 | CMVS | — | — | — | — | BUG-2718：runner 白名单漏 id 16，精确布局 hit 被丢；已修并加三处镜像守卫，无样本未真机 |
 | Unity Mono · デスマッチラブコメ！ Steam 版（2020，MonoBleedingEdge，x86） | ✅ `Unity Mono Message.Mes` 整句（多行、剥 `%` 色标），adapter flags `0x011014d3` | 样本无语音（`resources.resource` 仅 53MB BGM/SE） | 缺几何 | 缺几何 | 需另取有语音的 Unity Mono 样本；③④ 需 Unity 运行时字形几何 provider（provider 7/8 尚无生产者） |
 | Artemis · アマナツ Perfect Edition Ver2.0.0（x64，PF8） | ✅ Luna 0x14018d260 | ✅ game_resource `222273750_fem_kog_00019.ogg` | ✅ 引擎精确字形 provider（kind 2 id 17） | ✅ 帧级按键表清零 | 宿主 accept4 `verdict=full` + 真卡（ffd072e0f6d）；manifest 几何门（200 正探针等）未跑，仍 `implemented_unverified`；单样本，需第二个 Artemis 版本 |
 | BGI · 放課後しっぽデイズ 2013 光盘版（mds+mdf） | — | — | — | — | 无法起样本：① `GetSystemDefaultLangID()&0x3ff==0x11` 否则静默退出（中文系统须该游戏开「日文转区」，LE 下返回 0x0411 已过）；② 单实例互斥量 `Buriko General Interpreter for <游戏> is executing.`，本机退出的进程常卡成杀不掉的僵尸并继续持有它，新实例 `FindWindowA` 落空后静默退出（上午「BGI 自己退出」的真因）；③ 主循环在不建窗的情况下返回，盘上 `BGI.hvl`→`BHVC.exe` 为光盘保护校验，拷出的镜像过不了——不做 DRM 规避，需无光盘保护的 DL 版样本。样本已删 |
 | SiglusEngine · Harmonia 2017（真红小站包） | — | — | — | — | 原版 `SiglusEngine.exe` 弹 AlphaROM `[1200]` 认证框无法启动；包内另有汉化 exe + `SiglusUniversalPatch.dll`（改动过的引擎 + 中文脚本），不作样本。Siglus 维持 CLANNAD Steam 的既有验证。已删 |
+| BGI · あざスミ 2019（SMEE，真红小站 files 包） | — | — | — | — | 目录名含 〜（U+301C）无法经 CP932 往返，`CreateFileA` 读自身 exe 得 err=123 后退出（改 ASCII 目录可过）；原 exe 被销售平台 DRM（`Paltiosoft\Wrapping`）包裹，包内是第三方破解（`Mai@KF.dll` + `.exe.org`），不作样本、已删 |
 | CatSystem2 | — | — | — | — | 已选样本（グリザイアの有閑）；③④ 需引擎字形几何 provider |
 
 取样注意：本机网络为 Clash TUN（fake-ip），UDP tracker 与 DHT 全部超时，Fushi 内置 torrent 引擎拿不到元数据（Sukebei 四个种子均停在 metadata 0%）；日文原版改走真红小站 HTTP 源（有「[日期][品牌] 原名.rar」原版包）。
