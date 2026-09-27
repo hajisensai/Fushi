@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2506 条。点号进各自文件。
+> 共 2509 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2727](bugs/BUG-2727-game-stream-low-resolution.md) | ✅ | ✅ | 串流码率卡在 2.5 Mbps、分辨率被压到 720p 以下 |
+| [BUG-2726](bugs/BUG-2726-game-stream-sgre-touch.md) | ✅ | ✅ | 串流触屏在 SGRE 上一律「输入未送达」 |
+| [BUG-2725](bugs/BUG-2725-game-stream-audio-chop.md) | ✅ | ✅ | 串流音频断续：回环音频喂送线程长期落后实时 |
 | [BUG-2724](bugs/BUG-2724-ios-furigana-gap.md) | ✅ | ✅ | iOS 振假名离本行远、贴近上一行/上一列 |
 | [BUG-2723](bugs/BUG-2723-gallery-header-overflow.md) | ✅ | ✅ | 插图册顶栏在手机竖屏挤爆：计数被压成 0 宽、英文等长文案整行溢出 |
 | [BUG-2722](bugs/BUG-2722-gallery-toc-sections.md) | ✅ | ✅ | 插图册按 spine 章分节：同文件多话的插图归错话、连续插图页拆成多个同名节 |

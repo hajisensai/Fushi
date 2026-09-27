@@ -19,9 +19,8 @@ if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $runnerDir = Join-Path $repoRoot 'fushi/windows/runner'
-$testSource = Join-Path $runnerDir 'tests/game_stream_webrtc_capture_helper_test.cpp'
+$testNames = @('game_stream_webrtc_capture_helper_test', 'game_stream_audio_feed_clock_test')
 $outputDir = Join-Path $repoRoot '.codex-test/game-stream-capture-test'
-$executable = Join-Path $outputDir 'game_stream_webrtc_capture_helper_test.exe'
 New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 
 $vcvarsPath = $null
@@ -61,7 +60,11 @@ if ([string]::IsNullOrWhiteSpace($CompilerPath)) {
 
 $compilerName = [IO.Path]::GetFileNameWithoutExtension($CompilerPath)
 Push-Location -LiteralPath $outputDir
+$testExit = 0
 try {
+  foreach ($testName in $testNames) {
+    $testSource = Join-Path $runnerDir "tests/$testName.cpp"
+    $executable = Join-Path $outputDir "$testName.exe"
     if ($compilerName -eq 'cl') {
         $compileArguments = @('/nologo','/utf-8','/std:c++17','/EHsc','/DNOMINMAX','/DWIN32','/D_WINDOWS',"/I$runnerDir",$testSource,"/Fe:$executable")
         if ($vcvarsPath) {
@@ -78,8 +81,9 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Capture helper test compilation failed with exit code $LASTEXITCODE."
     }
-    & $executable | Tee-Object -FilePath (Join-Path $outputDir 'results.log')
-    $testExit = $LASTEXITCODE
+    & $executable | Tee-Object -FilePath (Join-Path $outputDir "$testName.log")
+    if ($LASTEXITCODE -ne 0) { $testExit = $LASTEXITCODE }
+  }
 } finally {
     Pop-Location
 }

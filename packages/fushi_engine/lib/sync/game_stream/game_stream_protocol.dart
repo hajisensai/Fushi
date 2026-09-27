@@ -93,6 +93,13 @@ const Set<String> kGameStreamPointerButtons = <String>{
 
 /// How the host encoder trades quality when bandwidth drops. Wire names match
 /// WebRTC's `RTCDegradationPreference`.
+///
+/// The default is [maintainResolution]. Under [balanced], libwebrtc scales
+/// the resolution of encoders whose QP it does not trust (OpenH264, the
+/// Windows host's H.264) by their *encoded* bitrate. A visual novel encodes
+/// to a few hundred kbps, so on a real LAN with a 75 Mbps estimate the
+/// stream still sat at 720p/540p and text turned to mush; the same session
+/// with [maintainResolution] held the full capture size.
 enum GameStreamDegradation {
   balanced('balanced'),
   maintainFramerate('maintain-framerate'),
@@ -107,7 +114,7 @@ enum GameStreamDegradation {
         return candidate;
       }
     }
-    return balanced;
+    return maintainResolution;
   }
 }
 
@@ -157,7 +164,7 @@ class GameStreamVideoSettings {
     this.maxFps = 60,
     this.bitrateKbps = 20000,
     this.adaptiveBitrate = true,
-    this.degradation = GameStreamDegradation.balanced,
+    this.degradation = GameStreamDegradation.maintainResolution,
     this.codec = GameStreamCodec.auto,
     this.inputFocus = GameStreamInputFocus.background,
     this.audio = true,

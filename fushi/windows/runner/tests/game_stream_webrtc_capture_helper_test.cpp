@@ -235,6 +235,28 @@ bool TestIdleRepeat() {
 
 }  // namespace
 
+bool TestCaptureStageStats() {
+  flutter_webrtc_plugin::CaptureStageStats stats;
+  bool ok = Expect(!stats.ShouldReport(1000000), "first call opens the window");
+  stats.arrived = 60;
+  stats.pushed = 30;
+  stats.AddStage(2000, 4000);
+  stats.AddStage(4000, 8000);
+  ok &= Expect(!stats.ShouldReport(1900000), "no report inside one second");
+  ok &= Expect(stats.ShouldReport(2000000), "report after one second");
+  const std::string line = stats.Report(2000000, 1920, 1080);
+  ok &= Expect(line.find("out=1920x1080") != std::string::npos, "size");
+  ok &= Expect(line.find("arrived=60.0fps pushed=30.0fps") != std::string::npos,
+               "rates");
+  ok &= Expect(line.find("readback=3.00/4.00ms convert=6.00/8.00ms") !=
+                   std::string::npos,
+               "stage averages and peaks");
+  ok &= Expect(stats.arrived == 0 && stats.converted == 0 &&
+                   stats.window_start_us == 2000000,
+               "report starts a fresh window");
+  return ok;
+}
+
 int main() {
   bool ok = true;
   ok &= TestKnownColorsPaddedCrop();
@@ -243,6 +265,7 @@ int main() {
   ok &= TestFramePacer();
   ok &= TestBilinearDownscale();
   ok &= TestIdleRepeat();
+  ok &= TestCaptureStageStats();
   if (!ok) return 1;
   std::cout << "game_stream_webrtc_capture_helper_test passed assertions="
             << g_assertions << "\n";

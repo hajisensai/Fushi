@@ -25,6 +25,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -413,6 +415,7 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     context_->CopySubresourceRegion(latest_.Get(), 0, 0, 0, 0, texture.Get(), 0,
                                     &box);
     pending_ = true;
+    ++stats_.arrived;
     RecreatePoolIfNeeded(content);
     const int64_t now = NowUs();
     if (pacer_.ShouldKeep(now)) DeliverLatestLocked(now);
@@ -455,11 +458,13 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
     pending_ = false;
     D3D11_TEXTURE2D_DESC desc = {};
     staging_->GetDesc(&desc);
+    const int64_t readback_start = NowUs();
     context_->CopyResource(staging_.Get(), latest_.Get());
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
       return;
     }
+    const int64_t convert_start = NowUs();
     const OutputSize out =
         FitInsideEven(desc.Width, desc.Height, max_width_, max_height_);
     const bool converted = out.width > 0 && out.height > 0 &&
@@ -467,6 +472,7 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
                            mapped.RowPitch, 0, 0, desc.Width, desc.Height,
                            out.width, out.height, &y_, &u_, &v_);
     context_->Unmap(staging_.Get(), 0);
+    stats_.AddStage(convert_start - readback_start, NowUs() - convert_start);
     if (!converted) {
       has_frame_ = false;
       return;
@@ -490,7 +496,10 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
       output_width_ = static_cast<int>(frame_width_);
       output_height_ = static_cast<int>(frame_height_);
     }
+    const int64_t push_start = NowUs();
     source_->OnCapturedFrame(video_frame);
+    stats_.push_us += NowUs() - push_start;
+    ++stats_.pushed;
     last_delivered_us_ = now;
     {
       std::lock_guard<std::mutex> lock(first_frame_mutex_);
@@ -510,6 +519,15 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
       DeliverLatestLocked(now);
     } else if (ShouldRepeatIdleFrame(has_frame_, now, last_delivered_us_)) {
       PushCachedFrameLocked(now);
+      ++stats_.repeats;
+    }
+    if (!trace_path_.empty() && stats_.ShouldReport(now)) {
+      const std::string line = stats_.Report(now, frame_width_, frame_height_);
+      FILE* file = nullptr;
+      if (fopen_s(&file, trace_path_.c_str(), "a") == 0 && file != nullptr) {
+        std::fputs(line.c_str(), file);
+        std::fclose(file);
+      }
     }
   }
 
@@ -525,6 +543,15 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   }
 
   void ThreadMain() {
+    {
+      char* path = nullptr;
+      size_t length = 0;
+      if (_dupenv_s(&path, &length, "FUSHI_GAME_STREAM_CAPTURE_TRACE") == 0 &&
+          path != nullptr) {
+        trace_path_ = path;
+      }
+      std::free(path);
+    }
     const HRESULT ro = RoInitialize(RO_INIT_MULTITHREADED);
     std::string error;
     if (FAILED(ro) && ro != RPC_E_CHANGED_MODE) {
@@ -608,6 +635,8 @@ class FushiGameStreamCaptureImpl : public FushiGameStreamCapture {
   bool pending_ = false;
   bool has_frame_ = false;
   int64_t last_delivered_us_ = 0;
+  CaptureStageStats stats_;
+  std::string trace_path_;
   uint32_t frame_width_ = 0;
   uint32_t frame_height_ = 0;
   std::vector<uint8_t> y_;

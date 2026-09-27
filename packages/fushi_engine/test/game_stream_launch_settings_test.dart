@@ -92,7 +92,7 @@ void main() {
         <String, Object?>{'codec': 'h266', 'degradation': 'sideways'},
       );
       expect(settings.codec, GameStreamCodec.auto);
-      expect(settings.degradation, GameStreamDegradation.balanced);
+      expect(settings.degradation, GameStreamDegradation.maintainResolution);
       expect(
         GameStreamVideoSettings.fromJson('not a map'),
         const GameStreamVideoSettings(),

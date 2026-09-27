@@ -5,6 +5,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -363,6 +365,59 @@ inline bool ShouldRepeatIdleFrame(bool has_frame, int64_t now_us,
                                   int64_t last_delivered_us) {
   return has_frame && now_us - last_delivered_us >= kCaptureIdleRepeatUs;
 }
+
+// Per-second capture counters for the opt-in FUSHI_GAME_STREAM_CAPTURE_TRACE
+// file: separates "the game draws slowly" (arrived) from "the capture thread
+// is too slow" (readback / convert) from "WebRTC blocks the push" (push).
+struct CaptureStageStats {
+  int64_t window_start_us = 0;
+  uint32_t arrived = 0;
+  uint32_t pushed = 0;
+  uint32_t repeats = 0;
+  uint32_t converted = 0;
+  int64_t readback_us = 0;
+  int64_t convert_us = 0;
+  int64_t max_readback_us = 0;
+  int64_t max_convert_us = 0;
+  int64_t push_us = 0;
+
+  void AddStage(int64_t readback, int64_t convert) {
+    ++converted;
+    readback_us += readback;
+    convert_us += convert;
+    max_readback_us = (std::max)(max_readback_us, readback);
+    max_convert_us = (std::max)(max_convert_us, convert);
+  }
+
+  bool ShouldReport(int64_t now_us) {
+    if (window_start_us == 0) {
+      window_start_us = now_us;
+      return false;
+    }
+    return now_us - window_start_us >= 1000000;
+  }
+
+  // Formats the window as one line and starts the next window.
+  std::string Report(int64_t now_us, uint32_t width, uint32_t height) {
+    const double seconds =
+        std::max<int64_t>(now_us - window_start_us, 1) / 1e6;
+    const auto avg_ms = [](int64_t total, uint32_t n) {
+      return n == 0 ? 0.0 : total / 1000.0 / n;
+    };
+    char line[320];
+    std::snprintf(
+        line, sizeof(line),
+        "[fushi_capture] out=%ux%u arrived=%.1ffps pushed=%.1ffps "
+        "repeats=%u readback=%.2f/%.2fms convert=%.2f/%.2fms push=%.2fms\n",
+        width, height, arrived / seconds, pushed / seconds, repeats,
+        avg_ms(readback_us, converted), max_readback_us / 1000.0,
+        avg_ms(convert_us, converted), max_convert_us / 1000.0,
+        avg_ms(push_us, pushed));
+    *this = CaptureStageStats{};
+    window_start_us = now_us;
+    return line;
+  }
+};
 
 }  // namespace flutter_webrtc_plugin
 
