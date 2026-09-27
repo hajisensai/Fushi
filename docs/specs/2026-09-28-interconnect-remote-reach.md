@@ -1,7 +1,7 @@
 # 互联：无公网 IP 可达（地址集 / 并发选路 / IPv6 / 扫码配对 / P2P 隧道）
 
 - 日期：2026-09-28
-- 状态：实施中（worktree `interconnect-remote`）
+- 状态：已实现（分支 `worktree-interconnect-remote`），遗留项见 §9
 - 背景调研结论见本会话；核心判断：「谁牵线、谁兜底中继」是唯一问题，协议层不动，只换可达性。
 
 ## 0. 目标与非目标
@@ -100,3 +100,20 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 
 - PR-1（纯 Dart）：§1 + §2 + §3 + §4。
 - PR-2（原生）：§5 + §6。
+
+实际落地为同一分支上的 6 个提交（设计 → IPv6 → 地址集与选路 → 票据与链接 → 配对 UI → P2P 接线），合为一个 PR 便于整体审查。
+
+## 9. 实现中的修正与遗留
+
+实现时对设计的修正（都已落地）：
+- 地址集**不并进 capabilities**，单独 `GET /api/host/addresses`：capabilities 是「支持什么」，被各功能频繁读，每次枚举网卡是白费；并进去还让「能力位只探一次」的既有测试多出一次请求。
+- `/api/ping` 加 `hostId`，选路探测核对身份：学到的 LAN 地址换个网络可能指向别人的 Fushi host，明文 http 下会把 token 发过去。
+- URL 身份审计：同步目录缓存（folderId 是绝对 URL）只恢复同源条目；制卡源编辑草稿身份改为 host + 凭据（v1 草稿照认）；`onlyCandidate` / 下载执行设备 / 下载对话框默认目标按 host 认；「已配对 N 台」按 host 计。
+- P2P 地址捎 home relay 与直连地址作拨号提示，不依赖 n0 DNS 发现（发现服务在某些网络里解析不了）。
+- `fushi://pair` 深链一律先弹「连接到 <设备>？」确认框：链接可能来自任何网页。
+
+遗留（需要决策或外部条件）：
+1. **发布流水线未接 Rust 构建**：`native/fushi_p2p` 目前只在本机编（Windows DLL / Android `.so` 已验证可编）。CI 装 Rust 工具链 + cargo-ndk、各平台产出预编译库并随包之前，发布包里 P2P 能力不可用（开关不出现），其余功能不受影响。iOS 需 staticlib 链入 + `DynamicLibrary.process()`，未做。
+2. **国内真实网络的打洞率与 n0 公共中继可达性未实测**（需两台不同网络的真机）。
+3. 无头服务端的 WebUI 暂无公网地址 / P2P 的表单项，改 `fushi_server.yaml`。
+4. 桌面开 Clash TUN 等改写 UDP 源端口的环境会长期走中继；`FushiP2pEndpoint.status` 已能读路径类型，UI 提示尚未做。

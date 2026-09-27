@@ -97,6 +97,9 @@ metadata_locale: "zh-CN"      # 刮削资料语言（BCP-47）：TMDB 文字/海
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
+public_urls: []               # 公网 / 反代 / DDNS 地址（如 - "https://nas.example.com"），经 /api/host/addresses 公布给已配对设备自动学习
+p2p: false                    # 允许经 iroh P2P 隧道远程连接（无公网 IP 时用；会连 iroh 公共中继与发现服务）。需随包 libfushi_p2p（bin/../lib/ 或 FUSHI_P2P_LIB）
+p2p_relays: []                # 自建 iroh-relay 地址；空 = iroh 公共中继
 torrent:
   engine: "auto"              # auto | embedded | qbittorrent
   # library: "/opt/fushi_server/lib/libfushi_torrent_ffi.so"   # 缺省找 bundle/lib，再找系统路径

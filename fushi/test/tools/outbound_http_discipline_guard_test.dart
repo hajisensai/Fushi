@@ -116,13 +116,16 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '互联内容订阅客户端：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'packages/fushi_engine/lib/sync/pairing/fushi_ping_client.dart':
       '配对 peer 存活 ping：目标是 mDNS 发现出来的局域网地址。',
+  'fushi/lib/src/sync/interconnect_peer_addresses.dart':
+      '互联地址学习（/api/host/addresses）：目标恒为已配对 host 的某条地址（LAN / IPv6 / '
+          '组网 / P2P 本地转发口 127.0.0.1），与 manga-OCR 客户端同一理由；隧道口走代理必然取不到。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
 };
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 22;
+const int kRegisteredOutboundFileCount = 23;
 
 /// 裸出站构造的判据。
 ///
