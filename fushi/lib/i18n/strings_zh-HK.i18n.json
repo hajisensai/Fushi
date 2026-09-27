@@ -5622,5 +5622,6 @@
   "update_download_notification_title": "正在下載更新 $version",
   "video_subtitle_remote_audio_fetching": "Fetching the audio track from the host…",
   "video_subtitle_host_upload_done": "Subtitle uploaded to the host as this episode's default",
-  "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device"
+  "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device",
+  "video_subtitle_host_upload_unsupported": "The host's Fushi is too old to receive subtitles; it's only saved on this device"
 }
