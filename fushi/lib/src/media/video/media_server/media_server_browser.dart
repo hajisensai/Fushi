@@ -1,5 +1,5 @@
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
-    show RemoteVideoInfo;
+    show RemoteCollectionMembership, RemoteVideoInfo;
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 
@@ -136,6 +136,35 @@ abstract interface class MediaServerBrowser implements RemoteCoverFetcher {
   /// 页面把当前季（或整部剧）的集清单逐条过这里，得到播放页的
   /// `remoteCollectionMembers`，剧集面板与上下集就都有了。
   RemoteVideoInfo toRemoteVideoInfo(MediaServerItem item);
+}
+
+/// 展示标题（各实现 [MediaServerBrowser.toRemoteVideoInfo] 共用）：单集拼
+/// `剧名 S01E02 集名`，其余用条目名。播放页的合集面板 / 通知栏都吃它。
+String mediaServerDisplayTitle(MediaServerItem item) {
+  final String? series = item.seriesName;
+  if (item.type != MediaServerItemType.episode ||
+      series == null ||
+      series.isEmpty) {
+    return item.name;
+  }
+  final String code = item.episodeCode;
+  return '$series${code.isEmpty ? '' : ' $code'} ${item.name}';
+}
+
+/// 单集 → 按剧名归入 playlist 合集（库页折叠成一张剧卡）；电影独立。各实现
+/// 共用，保证不同服务器类型的剧在播放页 / 库页的折叠口径一致。
+RemoteCollectionMembership? mediaServerCollectionOf(MediaServerItem item) {
+  final String? series = item.seriesName;
+  if (item.type != MediaServerItemType.episode ||
+      series == null ||
+      series.isEmpty) {
+    return null;
+  }
+  return RemoteCollectionMembership(
+    collectionName: series,
+    collectionType: 'playlist',
+    sortIndex: (item.seasonNumber ?? 0) * 10000 + (item.episodeNumber ?? 0),
+  );
 }
 
 /// 网格一页的条目数。桌面 6 列 × 10 行，移动端 3 列 × 20 行，都在一页内可滚一段。
