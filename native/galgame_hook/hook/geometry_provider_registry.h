@@ -95,6 +95,8 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdReallive},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdCatSystem2},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdUnityMono},
         {kLookupGeometryProviderPositionedTextApi,
          kLookupGeometryProviderIdGdiPositioned},
         {kLookupGeometryProviderPositionedTextApi,
@@ -146,6 +148,8 @@ inline constexpr LookupGeometryProviderIdentity
          kLookupGeometryProviderIdReallive},
         {kLookupGeometryProviderEngineExactLayout,
          kLookupGeometryProviderIdCatSystem2},
+        {kLookupGeometryProviderEngineExactLayout,
+         kLookupGeometryProviderIdUnityMono},
 };
 
 inline constexpr bool IsLookupGeometryNativeInputGatedProvider(uint32_t kind,

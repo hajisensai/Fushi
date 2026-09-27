@@ -114,7 +114,9 @@ struct MonoTextHookSpec {
   // 发布到文本道上的 hook 名 / hook code（ring_probe --dump-text-events 可见）。
   const char* hook_name;
   const wchar_t* hook_code;
-  // true：线程身份不含组件指针（组件随场景重建也保持同一条可选线程）。
+  // true：线程身份不含组件指针（组件随场景重建也保持同一条可选线程）。Message.Mes
+  // 另带角色键（对象场景名的哈希，unity_mono_adapter.inc 的 UnityMonoMessageRole）：
+  // 正文与名牌是同类两个对象，同一条道上最新行会永远是说话人名字。
   bool stable_identity;
 };
 

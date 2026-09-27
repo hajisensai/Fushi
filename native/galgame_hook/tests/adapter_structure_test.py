@@ -431,8 +431,9 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(11, len(publishers), publishers)
+        self.assertEqual(12, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
+        self.assertIn("unity_mono_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
         self.assertIn("smash_fzmedia_lookup.inc", publishers)
@@ -490,8 +491,11 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(11, len(seen), seen)
+        self.assertEqual(12, len(seen), seen)
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["unity_mono_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["artemis_lookup.inc"]
         )
@@ -2012,6 +2016,75 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("NativeInputAllowed(", eligible)
         self.assertIn("Cs2ShieldActive(", eligible)
         self.assertIn("GetForegroundWindow()", eligible)
+
+    def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
+        self,
+    ) -> None:
+        """Unity Mono 查词：站点只来自托管元数据结构；主线程回调不做 IO / 日志 / 分配。"""
+        core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_lookup.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "unity_mono_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("sha256", "bcrypt", "dmlc", "kemco",
+                          "getmodulefilename", "deathmatch"):
+            self.assertNotIn(forbidden, core.lower())
+            self.assertNotIn(forbidden, runtime.lower())
+        # Every engine binding is an internal call matched by full signature,
+        # by-ref-ness and the internal-call flag; the glyph container must be
+        # proven List<List<GameObject>>.
+        resolve = self._function_body(core, "inline SiteResolution ResolveSites(")
+        for proof in ("ResolveIcall(", "ListLayout(", "game_object",
+                      "m_CachedPtr", "FixedUpdate", "gchandle_new("):
+            self.assertIn(proof, resolve)
+        icall = self._function_body(core, "inline void* ResolveIcall(")
+        for proof in ("kMethodImplInternalCall", "ParamsByrefMatch(",
+                      "MonoSignatureMatches(", "lookup_internal_call("):
+            self.assertIn(proof, icall)
+        # The lookup rides on the text path's framework verdict and attach
+        # scope; the detour is hooked only after detach.
+        install = adapter.split("void TryInstallManagedTextHooks()", 1)[1]
+        scope = install.split("MonoAttachedThreadScope managed_thread", 1)[1]
+        scope = scope.split("text_done_ = true;", 1)[0]
+        self.assertIn("ResolveUnityMonoLookup(api, runtime, domain)", scope)
+        self.assertIn("kMessageRendererMes", scope)
+        self.assertNotIn("InstallUnityMonoLookupHooks(", scope)
+        self.assertIn("InstallUnityMonoLookupHooks(lookup_code)", install)
+        # Main-thread callbacks: bounded copies and engine reads only.
+        for name in ("void FUSHI_MONO_MANAGED_CALL UmFixedUpdateDetour(",
+                     "uint32_t SampleUmInstance(",
+                     "void SampleUmGlyph(",
+                     "LRESULT CALLBACK UmLookupWindowProc(",
+                     "bool UmPressEligible("):
+            body = self._function_body(runtime, name)
+            for forbidden in ("UmLookupLog(", "CreateFile", "WriteFile",
+                              "malloc(", "std::wstring", "PublishHit(",
+                              "runtime_invoke", "thread_attach", "Sleep("):
+                self.assertNotIn(forbidden, body, name)
+        role = self._function_body(adapter, "uint64_t UnityMonoMessageRole(")
+        for forbidden in ("UmLookupLog(", "CreateFile", "runtime_invoke",
+                          "thread_attach", "Sleep("):
+            self.assertNotIn(forbidden, role)
+        self.assertIn("g_unity_mono_main_thread", role)
+        # The claim never skips the host's native-input admission.
+        eligible = self._function_body(runtime, "bool UmPressEligible(")
+        self.assertIn("NativeInputAllowed(", eligible)
+        self.assertIn("UmShieldActive(", eligible)
+        self.assertIn("GetForegroundWindow()", eligible)
+        # The subclass is bound only to the engine's own window class.
+        window = self._function_body(runtime, "HWND FindUmGameWindow(")
+        self.assertIn("kUmGameWindowClass", window)
+        self.assertIn('L"UnityWndClass"', runtime)
 
     def test_reallive_nwk_capture_is_identity_gated_and_worker_owned(self) -> None:
         """RealLive NWK：身份只取结构判据；游戏线程回调只做固定检查 + 有界入队。"""

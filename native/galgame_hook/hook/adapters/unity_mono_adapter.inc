@@ -54,6 +54,9 @@ constexpr LONG kUnityMonoFlagTextPublished = 0x01000000;
 constexpr LONG kUnityMonoFlagResolveExhausted = 0x02000000;
 constexpr LONG kUnityMonoFlagCompileFailed = 0x04000000;
 constexpr LONG kUnityMonoFlagNoTextClasses = 0x08000000;
+// 游戏内查词（unity_mono_lookup.inc）：站点解析成功并装上 FixedUpdate detour / 被拒。
+constexpr LONG kUnityMonoFlagLookupInstalled = 0x10000000;
+constexpr LONG kUnityMonoFlagLookupRejected = 0x20000000;
 static_assert(fushi_voice_hook::kMonoTextHookCount <= 8,
               "hook id bits must fit their flag byte");
 
@@ -64,6 +67,32 @@ const wchar_t* (*g_unity_mono_string_chars)(void*) = nullptr;
 constexpr int kUnityMonoTextMaxChars = 2000;
 
 void MarkUnityMonoFlag(LONG flag) { InterlockedOr(&g_unity_mono_flags, flag); }
+
+// 逐字消息框架的「角色」线程身份（理由见 unity_mono_lookup_core.h 的
+// MessageRoleKey）：正文与名牌是同一个 Message 类的两个对象，脚本对每句有说话人的台词
+// 先 body.Mes(text) 再 name.Mes(speaker)，共用一条道时道上的最新行永远是名字。
+// 角色键 = 该对象的场景名（不透明哈希），场景重载后组件重建仍是同一条道。
+// 只在 Unity 主线程上取（Object.GetName 是主线程引擎调用）。Mes 每条消息只调一次，
+// 所以每次现取、不按组件指针缓存：Boehm GC 会复用已销毁对象的地址，指针缓存会把
+// 新对象错认成旧角色。
+fushi_voice_hook::unity_mono_lookup::IcallGetNameFn g_unity_mono_object_get_name =
+    nullptr;
+DWORD g_unity_mono_main_thread = 0;
+
+uint64_t UnityMonoMessageRole(void* component) {
+  if (component == nullptr || g_unity_mono_object_get_name == nullptr ||
+      g_unity_mono_main_thread == 0 ||
+      GetCurrentThreadId() != g_unity_mono_main_thread) {
+    return 0;
+  }
+  const fushi_voice_hook::MonoStringView name =
+      fushi_voice_hook::ReadMonoStringBounded(
+          g_unity_mono_object_get_name(component), g_unity_mono_string_length,
+          g_unity_mono_string_chars,
+          fushi_voice_hook::unity_mono_lookup::kMaxRoleNameUnits);
+  return fushi_voice_hook::unity_mono_lookup::MessageRoleKey(name.chars,
+                                                             name.length);
+}
 
 using UnityMonoTextSetter = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*);
 using UnityMonoTextSetterWithFlag = void(FUSHI_MONO_MANAGED_CALL*)(void*, void*,
@@ -91,8 +120,12 @@ void RecordUnityMonoText(fushi_voice_hook::MonoTextHookId id, void* component,
   if (view.length <= 0) return;
   const fushi_voice_hook::MonoTextHookSpec& spec =
       fushi_voice_hook::MonoTextHookSpecFor(id);
+  const uint64_t role =
+      id == fushi_voice_hook::MonoTextHookId::kMessageRendererMes
+          ? UnityMonoMessageRole(component)
+          : 0;
   if (RecordUnityTextChars(component, view.chars, view.length, spec.hook_name,
-                           spec.hook_code, spec.stable_identity)) {
+                           spec.hook_code, spec.stable_identity, role)) {
     MarkUnityMonoFlag(kUnityMonoFlagTextPublished);
   }
 }
@@ -206,6 +239,11 @@ fushi_voice_hook::MonoEmbeddingApi LoadUnityMonoEmbeddingApi(HMODULE runtime) {
   return api;
 }
 
+// 游戏内查词（逐字消息框架的字形几何 + UnityWndClass 窗口过程点击认领）在
+// unity_mono_lookup.inc，结构判据与纯逻辑在 unity_mono_lookup_core.h（由 dll_main.cpp
+// 在顶层引入）。
+#include "unity_mono_lookup.inc"
+
 class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
  public:
   const char* id() const override { return "unity_mono"; }
@@ -217,6 +255,10 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
   bool install() override {
     installed_ = probe();
     if (installed_) MarkUnityMonoFlag(kUnityMonoFlagIdentity);
+    // shutdown 之后再 install：FixedUpdate detour 仍挂着，只需恢复采样。
+    if (installed_ && text_done_ && lookup_framework_) {
+      ReinstallUnityMonoLookup();
+    }
     return installed_;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
@@ -228,8 +270,35 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
     if (!installed_ && module_name == nullptr) install();
   }
   // registry Poll 调用（HookWorker）。
-  void ProcessPendingEvents() { TryInstallManagedTextHooks(); }
-  void shutdown() override { installed_ = false; }
+  void ProcessPendingEvents() {
+    TryInstallManagedTextHooks();
+    ProcessUnityMonoLookupTick();
+  }
+  void shutdown() override {
+    ShutdownUnityMonoLookup();
+    installed_ = false;
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (UnityMonoLookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // 站点解析过且被拒：本 exe 的终态，给 host 摘要让它去报告。
+    if (UnityMonoLookupSitesRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    // 托管解析已结束但脚本程序集里没有逐字消息框架：查词只覆盖这一框架。
+    if (text_done_ && !lookup_framework_) {
+      report.state = fushi_voice_hook::kLookupAdmissionEngineUnsupported;
+      return report;
+    }
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
+  }
   fushi_voice_hook::AdapterDiagnostics diagnostics() const override {
     return {id(), probe(), installed_,
             static_cast<uint32_t>(
@@ -278,6 +347,8 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
 
     void* code[fushi_voice_hook::kMonoTextHookCount] = {};
     uint32_t plan = 0;
+    void* lookup_code = nullptr;
+    void* get_name = nullptr;
     {
       fushi_voice_hook::MonoAttachedThreadScope managed_thread(api, domain);
       if (!managed_thread.attached()) {
@@ -297,6 +368,17 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
         code[i] = api.compile_method(resolution.methods[i]);
         if (code[i] == nullptr) MarkUnityMonoFlag(kUnityMonoFlagCompileFailed);
       }
+      // 查词只覆盖逐字消息框架：PlanUnityMonoTextHooks 认定了它（Mes + 伴随判据）
+      // 才解析；角色身份的 Object.GetName 与查词站点都在同一个 attach 作用域里取。
+      lookup_framework_ =
+          (plan & fushi_voice_hook::MonoTextHookBit(
+                      fushi_voice_hook::MonoTextHookId::kMessageRendererMes)) !=
+          0;
+      if (lookup_framework_) {
+        get_name = fushi_voice_hook::unity_mono_lookup::ResolveObjectGetName(
+            api, LoadUnityMonoLookupApi(runtime));
+        lookup_code = ResolveUnityMonoLookup(api, runtime, domain);
+      }
     }
     // 解析只做一次：脚本程序集已就绪，之后不会再出现新的 Unity 文本组件类型。
     text_done_ = true;
@@ -307,6 +389,16 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
     // accessor 必须在第一个 hook 生效前就位；detour 只读它们。
     g_unity_mono_string_length = api.string_length;
     g_unity_mono_string_chars = api.string_chars;
+    if (lookup_framework_) {
+      const HWND unity_window = FindUmGameWindow();
+      g_unity_mono_main_thread =
+          unity_window == nullptr
+              ? 0
+              : GetWindowThreadProcessId(unity_window, nullptr);
+      g_unity_mono_object_get_name =
+          reinterpret_cast<fushi_voice_hook::unity_mono_lookup::IcallGetNameFn>(
+              get_name);
+    }
     MemoryBarrier();
     // 已 detach 之后才 HookFn：MH_EnableHook 会挂起全部线程，不在托管线程身份下做。
     for (const UnityMonoDetourBinding& binding : kUnityMonoDetours) {
@@ -317,10 +409,16 @@ class UnityMonoAdapter final : public fushi_voice_hook::EngineAdapter {
                                  static_cast<LONG>(index)));
       }
     }
+    if (lookup_framework_) {
+      MarkUnityMonoFlag(InstallUnityMonoLookupHooks(lookup_code)
+                            ? kUnityMonoFlagLookupInstalled
+                            : kUnityMonoFlagLookupRejected);
+    }
   }
 
   bool installed_ = false;
   bool text_done_ = false;
+  bool lookup_framework_ = false;
   int attempts_ = 0;
   ULONGLONG last_attempt_ms_ = 0;
 };

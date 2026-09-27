@@ -50,6 +50,7 @@ LOOKUP_ACCEPTANCE_ENGINE_IDS = {
     "sgre",
     "smash_fzmedia",
     "cmvs",
+    "unity_mono",
 }
 LOOKUP_PROVIDERS = {
     "runtime_layout",
@@ -118,6 +119,10 @@ LOOKUP_NATIVE_PROVIDER_MANIFEST_BINDINGS = {
         "kLookupGeometryProviderEngineExactLayout",
         "kLookupGeometryProviderIdCatSystem2",
     ): ("catsystem2", "engine_exact_layout"),
+    (
+        "kLookupGeometryProviderEngineExactLayout",
+        "kLookupGeometryProviderIdUnityMono",
+    ): ("unity_mono", "engine_exact_layout"),
 }
 SIGNATURE_FIELDS = (
     "executable_names",

@@ -59,6 +59,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
   "hook/adapters/unity_mono_text.h"
+  "hook/adapters/unity_mono_lookup.inc"
+  "hook/adapters/unity_mono_lookup_core.h"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
@@ -912,6 +914,18 @@ add_test(NAME fushi_unity_mono_adapter_test COMMAND fushi_unity_mono_adapter_tes
 add_executable(fushi_unity_mono_text_test "tests/unity_mono_text_test.cpp")
 target_include_directories(fushi_unity_mono_text_test PRIVATE "hook")
 add_test(NAME fushi_unity_mono_text_test COMMAND fushi_unity_mono_text_test)
+# Unity Mono in-game lookup core: exact internal-call / field / List`1 layout
+# resolution on a fake runtime (every fail-closed branch), glyph visibility,
+# text <-> rendered-structure mapping, projection, hit testing (touching and
+# overlapping cells), the message-level click claim and the text lane role
+# key.
+add_executable(fushi_unity_mono_lookup_test
+  "tests/unity_mono_lookup_test.cpp")
+target_include_directories(fushi_unity_mono_lookup_test PRIVATE "hook")
+target_compile_definitions(fushi_unity_mono_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_unity_mono_lookup_test
+  COMMAND fushi_unity_mono_lookup_test)
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")

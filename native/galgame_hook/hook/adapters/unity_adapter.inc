@@ -285,7 +285,8 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
 bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
                           int source_length, const char* hook_name,
                           const wchar_t* hook_code,
-                          bool stable_across_components = false) {
+                          bool stable_across_components = false,
+                          uint64_t stable_identity_key = 0) {
   if (chars == nullptr || source_length <= 0) return false;
 
   // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
@@ -321,9 +322,12 @@ bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
   // using that transient pointer as the thread id silently strands the user's
   // selection on the old scene. Keep the real component in event metadata,
   // but give known scene-stable dialogue sources an engine-level identity.
+  // A stable source may still carry a role key (Unity Mono per-glyph message
+  // framework: the body and the name plate are two objects of one class and
+  // must not share a lane) that survives the component being recreated.
   const uint64_t component_identity =
       stable_across_components
-          ? 0
+          ? stable_identity_key
           : reinterpret_cast<uint64_t>(text_component);
   const uint64_t thread_id = fushi_voice_hook::NativeTextThreadIdFrom(
       component_identity, hook_code, hook_name);
