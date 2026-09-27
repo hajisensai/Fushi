@@ -217,4 +217,27 @@ void main() {
       expect(parseFfprobeFacts('').audioLanguages, isEmpty);
     });
   });
+
+  group('subtitleLanguageNativeName', () {
+    test('主码 / 三字母码 → 母语名', () {
+      expect(subtitleLanguageNativeName('ja'), '日本語');
+      expect(subtitleLanguageNativeName('jpn'), '日本語');
+      expect(subtitleLanguageNativeName('fr'), 'Français');
+    });
+
+    test('地区码保留后缀：简繁中文、巴葡欧葡分得开', () {
+      expect(subtitleLanguageNativeName('zh-cn'), '中文 (CN)');
+      expect(subtitleLanguageNativeName('zh-tw'), '中文 (TW)');
+      expect(
+        subtitleLanguageNativeName('zh-tw'),
+        isNot(subtitleLanguageNativeName('zh-cn')),
+      );
+      expect(subtitleLanguageNativeName('pt_BR'), 'Português (BR)');
+    });
+
+    test('表外回退原码大写', () {
+      expect(subtitleLanguageNativeName('gsw-ch'), 'GSW-CH');
+      expect(subtitleLanguageNativeName('xx'), 'XX');
+    });
+  });
 }

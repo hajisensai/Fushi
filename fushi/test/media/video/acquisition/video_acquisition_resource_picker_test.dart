@@ -18,6 +18,7 @@ class _FakeCandidate extends VideoResourceCandidate {
     super.resolution,
     super.trusted,
     super.seeders,
+    super.sizeBytes,
   });
 }
 
@@ -442,6 +443,189 @@ void main() {
         ],
       );
       expect(availableResolutionsOf(groups), isEmpty);
+    });
+  });
+  group('best 画质 + 片源 / 码率偏好', () {
+    /// 一集发布，标题里带片源标签；每组一集足够（排序看组，不看集）。
+    _FakeCandidate tagged(
+      String group,
+      String resolution,
+      String sourceTag, {
+      int? sizeBytes,
+    }) => _FakeCandidate(
+      remoteId: 'r${_nextId++}',
+      title: '[$group] Show - 01 ($resolution $sourceTag)',
+      releaseGroup: group,
+      resolution: resolution,
+      trusted: true,
+      seeders: 10,
+      sizeBytes: sizeBytes,
+    );
+
+    const int gib = 1024 * 1024 * 1024;
+    final List<VideoResourceVersionGroup> groups =
+        _groupsOf(<VideoResourceCandidate>[
+          tagged('Web', '1080p', 'WEB-DL', sizeBytes: 1 * gib),
+          tagged('Tv', '1080p', 'HDTV', sizeBytes: 2 * gib),
+          tagged('Bd', '1080p', 'BDRip', sizeBytes: 4 * gib),
+          tagged('Remux', '1080p', 'BD Remux'),
+          tagged('Uhd', '2160p', 'WEB-DL', sizeBytes: 8 * gib),
+          tagged('Sd', '720p', 'WEBRip', sizeBytes: gib ~/ 2),
+        ]);
+
+    List<String?> rank({
+      VideoAcquisitionQuality quality = VideoAcquisitionQuality.p1080,
+      VideoAcquisitionSourcePref source = VideoAcquisitionSourcePref.any,
+      VideoAcquisitionBitratePref bitrate = VideoAcquisitionBitratePref.any,
+    }) {
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        groups,
+        mode: VideoAcquisitionMode.download,
+        quality: quality,
+        source: source,
+        bitrate: bitrate,
+      );
+      expect(outcome.reason, VideoAcquisitionResourceReason.ok);
+      return _groupNames(outcome.eligible);
+    }
+
+    test('best 不过滤：按分辨率降序排在最前，最高档用不了还能落到次高档', () {
+      expect(rank(quality: VideoAcquisitionQuality.best), <String>[
+        'Uhd',
+        'Web',
+        'Tv',
+        'Bd',
+        'Remux',
+        'Sd',
+      ]);
+    });
+
+    test('best 下最高档给不出这一集 → 逐卡落到次高档的计划', () {
+      final List<VideoResourceVersionGroup> mixed = _groupsOf(
+        <VideoResourceCandidate>[
+          _episode('Uhd', '2160p', 1),
+          _episode('Fhd', '1080p', 5),
+        ],
+      );
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        mixed,
+        mode: VideoAcquisitionMode.download,
+        quality: VideoAcquisitionQuality.best,
+      );
+      expect(_groupNames(outcome.eligible), <String>['Uhd', 'Fhd']);
+      final VideoAcquisitionResourcePlan? plan = outcome.eligible
+          .map(
+            (VideoResourceVersionGroup group) => planResourceFromGroup(
+              group,
+              mode: VideoAcquisitionMode.download,
+              kind: VideoMetadataMediaKind.tv,
+              episodes: const VideoAcquisitionSingleEpisode(5),
+            ),
+          )
+          .whereType<VideoAcquisitionResourcePlan>()
+          .firstOrNull;
+      expect(plan?.group.releaseGroup, 'Fhd');
+    });
+
+    test('best + 片源 best：同分辨率内再按片源', () {
+      expect(
+        rank(
+          quality: VideoAcquisitionQuality.best,
+          source: VideoAcquisitionSourcePref.best,
+        ),
+        <String>['Uhd', 'Remux', 'Bd', 'Web', 'Tv', 'Sd'],
+      );
+    });
+
+    test('best 在一张卡都解析不出分辨率时等同 any', () {
+      final List<VideoResourceVersionGroup> unknown = _groupsOf(
+        <VideoResourceCandidate>[
+          _episode('A', 'HD', 1),
+          _episode('B', 'SD', 1),
+        ],
+      );
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        unknown,
+        mode: VideoAcquisitionMode.download,
+        quality: VideoAcquisitionQuality.best,
+      );
+      expect(outcome.reason, VideoAcquisitionResourceReason.ok);
+      expect(outcome.eligible, hasLength(2));
+    });
+
+    test('两个偏好都是 any → 保持输入次序（旧行为）', () {
+      expect(rank(), <String>['Web', 'Tv', 'Bd', 'Remux']);
+    });
+
+    test('片源 best：Remux > 蓝光 > WEB-DL > TV', () {
+      expect(rank(source: VideoAcquisitionSourcePref.best), <String>[
+        'Remux',
+        'Bd',
+        'Web',
+        'Tv',
+      ]);
+    });
+
+    test('片源 bluray 只把蓝光提前，其余保持原序（排序不是过滤）', () {
+      expect(rank(source: VideoAcquisitionSourcePref.bluray), <String>[
+        'Bd',
+        'Remux',
+        'Web',
+        'Tv',
+      ]);
+    });
+
+    test('码率 high / low 按每集体积排，估不出的两个方向都殿后', () {
+      expect(rank(bitrate: VideoAcquisitionBitratePref.high), <String>[
+        'Bd',
+        'Tv',
+        'Web',
+        'Remux',
+      ]);
+      expect(rank(bitrate: VideoAcquisitionBitratePref.low), <String>[
+        'Web',
+        'Tv',
+        'Bd',
+        'Remux',
+      ]);
+    });
+
+    test('片源优先于码率：web + high 先 WEB，再按体积', () {
+      expect(
+        rank(
+          quality: VideoAcquisitionQuality.any,
+          source: VideoAcquisitionSourcePref.web,
+          bitrate: VideoAcquisitionBitratePref.high,
+        ),
+        <String>['Uhd', 'Web', 'Sd', 'Bd', 'Tv', 'Remux'],
+      );
+    });
+
+    test('每集体积只数单集发布，合集不参与估算', () {
+      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
+        _FakeCandidate(
+          remoteId: 'e1',
+          title: '[G] Show - 01 (1080p)',
+          releaseGroup: 'G',
+          resolution: '1080p',
+          sizeBytes: 100,
+        ),
+        _FakeCandidate(
+          remoteId: 'e2',
+          title: '[G] Show - 02 (1080p)',
+          releaseGroup: 'G',
+          resolution: '1080p',
+          sizeBytes: 300,
+        ),
+        _FakeCandidate(
+          remoteId: 'b',
+          title: '[G] Show (01-12) (Batch) (1080p)',
+          releaseGroup: 'G',
+          resolution: '1080p',
+          sizeBytes: 999999,
+        ),
+      ]);
+      expect(estimatedBytesPerEpisode(group), 200);
     });
   });
 }

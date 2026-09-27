@@ -22,8 +22,8 @@ import 'package:fushi_engine/media/video/download/video_download_backend_identit
     show VideoDownloadBackendUnavailable;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
-import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show jimakuLanguageLabel;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 
 class AiVideoAcquisitionPage extends StatefulWidget {
   const AiVideoAcquisitionPage({
@@ -273,9 +273,11 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
             ? t.ai_video_acquire_option_subscribe
             : t.ai_video_acquire_option_download,
       VideoAcquisitionSlot.quality =>
-        o.id == VideoAcquisitionQuality.any.storageKey
-            ? t.ai_video_download_quality_any
-            : o.id,
+        switch (VideoAcquisitionQuality.fromStorageKey(o.id)) {
+          VideoAcquisitionQuality.best => t.ai_video_download_quality_best,
+          VideoAcquisitionQuality.any => t.ai_video_download_quality_any,
+          _ => o.id,
+        },
       VideoAcquisitionSlot.subtitleLanguage => _languageLabel(o.id),
       VideoAcquisitionSlot.season => 'S${o.id}',
       _ => o.id,
@@ -286,7 +288,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     kVideoAcquisitionSubtitleOriginal =>
       t.ai_video_download_subtitle_language_original,
     kVideoAcquisitionSubtitleNone => t.ai_video_download_subtitle_language_none,
-    _ => jimakuLanguageLabel(code),
+    _ => subtitleLanguageNativeName(code),
   };
 
   String _evidenceLabel(String evidence) => switch (evidence) {

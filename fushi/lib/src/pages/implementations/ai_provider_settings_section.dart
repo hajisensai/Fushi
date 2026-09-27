@@ -139,6 +139,7 @@ class _AiProviderSettingsSectionState
             hint: t.ai_features_section_summary,
             icon: Icons.auto_fix_high_outlined,
           ),
+          _defaultProviderRow(),
           for (final AiFeature feature in AiFeature.values)
             if (_featureAvailableOnThisStore(feature)) _featureRow(feature),
         ],
@@ -443,58 +444,130 @@ class _AiProviderSettingsSectionState
   // 功能 → 提供商
   // ---------------------------------------------------------------------------
 
-  Widget _featureRow(AiFeature feature) {
-    // 只有「配全了」的提供商才进选项：让用户把功能指到一家没填 key 的提供商上，
-    // 等于把失败推迟到功能真跑的时候，那时既没有上下文也没有配置入口。
-    final List<AiProviderConfig> usable = <AiProviderConfig>[
-      for (final _AiProviderDraft draft in _drafts)
-        if (draft.toConfig() case final AiProviderConfig config)
-          if (config.isUsable) config,
-    ];
-    final String? assigned = _assignments.providerIdFor(feature);
+  /// 只有「配全了」的提供商才进选项：让用户把功能指到一家没填 key 的提供商上，
+  /// 等于把失败推迟到功能真跑的时候，那时既没有上下文也没有配置入口。
+  List<AiProviderConfig> _usableProviders() => <AiProviderConfig>[
+    for (final _AiProviderDraft draft in _drafts)
+      if (draft.toConfig() case final AiProviderConfig config)
+        if (config.isUsable) config,
+  ];
+
+  /// 默认提供商：没单独指派的功能都用它，配一家只要选这一次。
+  Widget _defaultProviderRow() {
+    final List<AiProviderConfig> usable = _usableProviders();
+    final String? assigned = _assignments.defaultProviderId;
     // 指向已删除/已失效的那家时回落到「未指定」，否则 DropdownButton 会因
     // value 不在 items 里直接断言失败。
     final String? current = usable.any((AiProviderConfig c) => c.id == assigned)
         ? assigned
         : null;
+    return _assignmentCard(
+      key: const ValueKey<String>('ai-feature-default'),
+      dropdownKey: const ValueKey<String>('ai-feature-default-provider'),
+      title: t.ai_feature_default_provider,
+      summary: t.ai_feature_default_provider_summary,
+      current: current,
+      items: <DropdownMenuItem<String?>>[
+        DropdownMenuItem<String?>(child: Text(t.ai_feature_unset)),
+        for (final AiProviderConfig config in usable) _providerItem(config),
+      ],
+      onChanged: _setDefault,
+    );
+  }
 
-    return FushiCard(
+  Widget _featureRow(AiFeature feature) {
+    final List<AiProviderConfig> usable = _usableProviders();
+    final String? assigned = _assignments.providerIdFor(feature);
+    // 显式指派的那家没配全 / 已停用：运行时 resolve 不会退回默认，所以这里也不能
+    // 把它显示成「跟随默认」——那等于告诉用户能用，实际点下去提示没配 AI。
+    // 删掉的那家已由 withoutProvider 清掉映射，走不到这里。
+    final bool assignedUnavailable =
+        assigned != null &&
+        assigned != kAiFeatureDisabled &&
+        !usable.any((AiProviderConfig c) => c.id == assigned) &&
+        _drafts.any((_AiProviderDraft d) => d.id == assigned);
+    final String? current =
+        assigned == kAiFeatureDisabled ||
+            assignedUnavailable ||
+            usable.any((AiProviderConfig c) => c.id == assigned)
+        ? assigned
+        : null;
+    final String? defaultName = usable
+        .where((AiProviderConfig c) => c.id == _assignments.defaultProviderId)
+        .map((AiProviderConfig c) => c.displayName)
+        .firstOrNull;
+
+    return _assignmentCard(
       key: ValueKey<String>('ai-feature-${feature.storageKey}'),
+      dropdownKey: ValueKey<String>(
+        'ai-feature-${feature.storageKey}-provider',
+      ),
+      title: _featureTitle(feature),
+      summary: _featureSummary(feature),
+      current: current,
+      items: <DropdownMenuItem<String?>>[
+        DropdownMenuItem<String?>(
+          child: Text(
+            defaultName == null
+                ? t.ai_feature_unset
+                : t.ai_feature_follow_default(name: defaultName),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        for (final AiProviderConfig config in usable) _providerItem(config),
+        if (assignedUnavailable)
+          DropdownMenuItem<String?>(
+            value: assigned,
+            child: Text(
+              t.ai_feature_assigned_unavailable,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        DropdownMenuItem<String?>(
+          value: kAiFeatureDisabled,
+          child: Text(t.ai_feature_disabled),
+        ),
+      ],
+      onChanged: (String? value) => _setAssignment(feature, value),
+    );
+  }
+
+  DropdownMenuItem<String?> _providerItem(AiProviderConfig config) =>
+      DropdownMenuItem<String?>(
+        value: config.id,
+        child: Text(config.displayName, overflow: TextOverflow.ellipsis),
+      );
+
+  Widget _assignmentCard({
+    required Key key,
+    required Key dropdownKey,
+    required String title,
+    required String summary,
+    required String? current,
+    required List<DropdownMenuItem<String?>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return FushiCard(
+      key: key,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Text(
-            _featureTitle(feature),
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
+          Text(title, style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 2),
-          Text(
-            _featureSummary(feature),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text(summary, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 10),
           DropdownButtonFormField<String?>(
-            key: ValueKey<String>('ai-feature-${feature.storageKey}-provider'),
+            key: dropdownKey,
             isExpanded: true,
             initialValue: current,
             decoration: const InputDecoration(
               isDense: true,
               border: OutlineInputBorder(),
             ),
-            items: <DropdownMenuItem<String?>>[
-              DropdownMenuItem<String?>(child: Text(t.ai_feature_unset)),
-              for (final AiProviderConfig config in usable)
-                DropdownMenuItem<String?>(
-                  value: config.id,
-                  child: Text(
-                    config.displayName,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: (String? value) => _setAssignment(feature, value),
+            items: items,
+            onChanged: onChanged,
           ),
         ],
       ),
@@ -536,6 +609,13 @@ class _AiProviderSettingsSectionState
   void _setAssignment(AiFeature feature, String? providerId) {
     setState(() {
       _assignments = _assignments.withAssignment(feature, providerId);
+    });
+    unawaited(_persistAssignments());
+  }
+
+  void _setDefault(String? providerId) {
+    setState(() {
+      _assignments = _assignments.withDefault(providerId);
     });
     unawaited(_persistAssignments());
   }

@@ -2056,6 +2056,10 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoAcquisitionService service = VideoAcquisitionService(
       defaults: VideoAcquisitionDefaults(
         qualityPref: prefs.aiVideoDownloadQuality,
+        sourcePref:
+            VideoAcquisitionSourcePref.parse(prefs.aiVideoDownloadSource),
+        bitratePref:
+            VideoAcquisitionBitratePref.parse(prefs.aiVideoDownloadBitrate),
         subtitleLanguagePref: prefs.aiVideoDownloadSubtitleLanguage,
         sources: <VideoAcquisitionSource>[
           for (final MediaSourceRow source in sources)

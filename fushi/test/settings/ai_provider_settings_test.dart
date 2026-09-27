@@ -29,6 +29,7 @@ import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/utils.dart' show t;
 
 import '../helpers/test_platform_services.dart';
 
@@ -447,6 +448,94 @@ void main() {
         prefs.aiFeatureAssignments.providerIdFor(AiFeature.galgameTextProcess),
         'p1',
       );
+    });
+
+    testWidgets('默认提供商选一次 → 所有没单独指定的功能都用它', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await pumpSection(tester);
+
+      await tapKey(tester, 'ai-feature-default-provider');
+      await tester.tap(find.text('Alpha').last);
+      await tester.pumpAndSettle();
+
+      final AiFeatureAssignments saved = prefs.aiFeatureAssignments;
+      expect(saved.defaultProviderId, 'p1');
+      for (final AiFeature feature in AiFeature.values) {
+        expect(
+          saved.resolve(feature, prefs.aiProviders)?.id,
+          'p1',
+          reason: feature.name,
+        );
+      }
+      // 功能行把「跟随默认」连同那家的名字一起显示出来，而不是「未指定」。
+      expect(find.textContaining('Alpha'), findsWidgets);
+    });
+
+    testWidgets('显式指派的那家没配全：显示「不可用」而不是「跟随默认」', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+        _config(id: 'p2', name: 'Beta', apiKey: ''),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(
+          defaultProviderId: 'p1',
+        ).withAssignment(AiFeature.galgameTextProcess, 'p2'),
+      );
+      await pumpSection(tester);
+
+      final Finder row = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}',
+        ),
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_assigned_unavailable),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_follow_default(name: 'Alpha')),
+        ),
+        findsNothing,
+      );
+      // 与运行时一致：显式那家失效不回退默认。
+      expect(
+        prefs.aiFeatureAssignments.resolve(
+          AiFeature.galgameTextProcess,
+          prefs.aiProviders,
+        ),
+        isNull,
+      );
+    });
+
+    testWidgets('功能行选「不使用 AI」压过默认', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(defaultProviderId: 'p1'),
+      );
+      await pumpSection(tester);
+
+      await tapKey(
+        tester,
+        'ai-feature-${AiFeature.galgameTextProcess.storageKey}-provider',
+      );
+      await tester.tap(find.text(t.ai_feature_disabled).last);
+      await tester.pumpAndSettle();
+
+      final AiFeatureAssignments saved = prefs.aiFeatureAssignments;
+      expect(
+        saved.resolve(AiFeature.galgameTextProcess, prefs.aiProviders),
+        isNull,
+      );
+      expect(saved.resolve(AiFeature.dictStyle, prefs.aiProviders)?.id, 'p1');
     });
 
     testWidgets('删一家：提供商与指向它的功能映射一起消失', (WidgetTester tester) async {

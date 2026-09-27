@@ -15,8 +15,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show jimakuLanguageLabel;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 
 import '../helpers/test_platform_services.dart';
 
@@ -122,8 +122,8 @@ void main() {
         language.options
             .firstWhere((SettingsSegmentOption<String> o) => o.value == code)
             .label,
-        jimakuLanguageLabel(code),
-        reason: '语言名复用字幕面板的母语写法',
+        subtitleLanguageNativeName(code),
+        reason: '语言名用母语写法',
       );
     }
     // 每个选项都能被类型化封装认出来（设置页给得出的值，对话流程一定读得回）。
@@ -187,6 +187,59 @@ void main() {
     await reloaded.loadFromDb();
     expect(reloaded.aiVideoDownloadQuality, kVideoAcquisitionPrefAsk);
     expect(reloaded.aiVideoDownloadSubtitleLanguage, 'none');
+  });
+
+  testWidgets('source / bitrate rows: options from enums, write through', (
+    WidgetTester tester,
+  ) async {
+    await pumpContext(tester);
+    final SettingsSegmentedItem<VideoAcquisitionSourcePref> source =
+        section().items.singleWhere(
+              (SettingsItem candidate) =>
+                  candidate.id == 'ai.video_download_source',
+            )
+            as SettingsSegmentedItem<VideoAcquisitionSourcePref>;
+    final SettingsSegmentedItem<VideoAcquisitionBitratePref> bitrate =
+        section().items.singleWhere(
+              (SettingsItem candidate) =>
+                  candidate.id == 'ai.video_download_bitrate',
+            )
+            as SettingsSegmentedItem<VideoAcquisitionBitratePref>;
+    expect(
+      source.options.map(
+        (SettingsSegmentOption<VideoAcquisitionSourcePref> o) => o.value,
+      ),
+      VideoAcquisitionSourcePref.values,
+    );
+    expect(
+      bitrate.options.map(
+        (SettingsSegmentOption<VideoAcquisitionBitratePref> o) => o.value,
+      ),
+      VideoAcquisitionBitratePref.values,
+    );
+    expect(source.selected(settingsContext), VideoAcquisitionSourcePref.any);
+    expect(bitrate.selected(settingsContext), VideoAcquisitionBitratePref.any);
+
+    await source.onChanged(settingsContext, VideoAcquisitionSourcePref.bluray);
+    await bitrate.onChanged(settingsContext, VideoAcquisitionBitratePref.high);
+    expect(prefs.aiVideoDownloadSource, 'bluray');
+    expect(prefs.aiVideoDownloadBitrate, 'high');
+
+    final PreferencesRepository reloaded = PreferencesRepository(db);
+    await reloaded.loadFromDb();
+    expect(
+      VideoAcquisitionSourcePref.parse(reloaded.aiVideoDownloadSource),
+      VideoAcquisitionSourcePref.bluray,
+    );
+    expect(
+      VideoAcquisitionBitratePref.parse(reloaded.aiVideoDownloadBitrate),
+      VideoAcquisitionBitratePref.high,
+    );
+    // 认不出的旧值 / 手改值等价于没设置。
+    expect(
+      VideoAcquisitionSourcePref.parse('dvd'),
+      VideoAcquisitionSourcePref.any,
+    );
   });
 
   testWidgets('section follows the downloads module gate', (

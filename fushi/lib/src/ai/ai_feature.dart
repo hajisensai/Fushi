@@ -55,10 +55,24 @@ enum AiFeature {
   }
 }
 
-/// 功能 → 提供商 id 的映射。不可变。
+/// 功能行显式选「不使用 AI」时存的值：压过默认提供商。
+///
+/// 提供商 id 形如 `ai-<微秒>`（见设置区 `_pickPresetAndAdd`），不会撞上这个串。
+const String kAiFeatureDisabled = 'off';
+
+/// JSON 里默认提供商的键。`_` 前缀不是任何 [AiFeature.storageKey]，旧版本读到时
+/// 按「认不出的功能」忽略——降级回旧版只是默认失效，不会误指派。
+const String _kDefaultKey = '_default';
+
+/// 功能 → 提供商 id 的映射 + 一个默认提供商。不可变。
+///
+/// 解析顺序（[resolve] 一处）：功能显式指派 > [kAiFeatureDisabled] 关掉 > 默认提供商。
+/// 默认提供商是用户**自己选**的那一家，不是「列表里第一家可用的」——后者才是
+/// 静默换人。有了它，配一家提供商只要选一次，不必把七个功能逐个指一遍。
 class AiFeatureAssignments {
   const AiFeatureAssignments({
     this.providerIdByFeature = const <AiFeature, String>{},
+    this.defaultProviderId,
   });
 
   factory AiFeatureAssignments.fromJson(String? raw) {
@@ -83,26 +97,44 @@ class AiFeatureAssignments {
         map[feature] = value;
       }
     });
+    final Object? rawDefault = decoded[_kDefaultKey];
     return AiFeatureAssignments(
       providerIdByFeature: Map<AiFeature, String>.unmodifiable(map),
+      defaultProviderId: rawDefault is String && rawDefault.trim().isNotEmpty
+          ? rawDefault
+          : null,
     );
   }
 
+  /// 功能的显式指派；值为 [kAiFeatureDisabled] 表示这个功能不用 AI。
   final Map<AiFeature, String> providerIdByFeature;
 
+  /// 没有显式指派的功能都用这一家；null = 没选默认。
+  final String? defaultProviderId;
+
+  /// 功能的**显式**指派（含 [kAiFeatureDisabled]）；null = 跟随默认。
   String? providerIdFor(AiFeature feature) => providerIdByFeature[feature];
+
+  /// 功能实际要用的提供商 id（显式 > 关掉 > 默认），不校验这家是否还在。
+  String? effectiveProviderIdFor(AiFeature feature) {
+    final String? explicit = providerIdByFeature[feature];
+    if (explicit == kAiFeatureDisabled) {
+      return null;
+    }
+    return explicit ?? defaultProviderId;
+  }
 
   /// 解析出这个功能**当前真能用**的提供商。
   ///
   /// 三种情况都退化成 null，由调用方统一提示「先去设置里配一家 AI」：
-  /// 没指派、指派的那家已被删掉、指派的那家没配全（[AiProviderConfig.isUsable]）。
-  /// 刻意**不**自动回退到「列表里第一家可用的」——静默换一家 AI 跑，用户既不知情
-  /// 也没法解释为什么结果变了。
+  /// 没指派（也没默认或被显式关掉）、指派的那家已被删掉、指派的那家没配全
+  /// （[AiProviderConfig.isUsable]）。显式指派的那家失效时**不**回退到默认——
+  /// 用户点名要这一家，静默换一家跑，结果变了也没法解释。
   AiProviderConfig? resolve(
     AiFeature feature,
     Iterable<AiProviderConfig> providers,
   ) {
-    final String? id = providerIdByFeature[feature];
+    final String? id = effectiveProviderIdFor(feature);
     if (id == null) {
       return null;
     }
@@ -114,6 +146,7 @@ class AiFeatureAssignments {
     return null;
   }
 
+  /// [providerId] 为 null / 空 = 跟随默认；[kAiFeatureDisabled] = 不用 AI。
   AiFeatureAssignments withAssignment(AiFeature feature, String? providerId) {
     final Map<AiFeature, String> next = Map<AiFeature, String>.of(
       providerIdByFeature,
@@ -125,10 +158,18 @@ class AiFeatureAssignments {
     }
     return AiFeatureAssignments(
       providerIdByFeature: Map<AiFeature, String>.unmodifiable(next),
+      defaultProviderId: defaultProviderId,
     );
   }
 
-  /// 删掉一家提供商后清理指向它的映射。
+  AiFeatureAssignments withDefault(String? providerId) => AiFeatureAssignments(
+    providerIdByFeature: providerIdByFeature,
+    defaultProviderId: providerId == null || providerId.trim().isEmpty
+        ? null
+        : providerId,
+  );
+
+  /// 删掉一家提供商后清理指向它的映射（含默认）。
   AiFeatureAssignments withoutProvider(String providerId) {
     final Map<AiFeature, String> next = <AiFeature, String>{
       for (final MapEntry<AiFeature, String> e in providerIdByFeature.entries)
@@ -136,11 +177,15 @@ class AiFeatureAssignments {
     };
     return AiFeatureAssignments(
       providerIdByFeature: Map<AiFeature, String>.unmodifiable(next),
+      defaultProviderId: defaultProviderId == providerId
+          ? null
+          : defaultProviderId,
     );
   }
 
   String toJson() => jsonEncode(<String, String>{
     for (final MapEntry<AiFeature, String> e in providerIdByFeature.entries)
       e.key.storageKey: e.value,
+    if (defaultProviderId != null) _kDefaultKey: defaultProviderId!,
   });
 }

@@ -100,8 +100,24 @@ void main() {
       );
     });
 
+    test('白名单扩到 OpenSubtitles 常见语言：fr / de / es 是固定值', () {
+      for (final String code in <String>['fr', 'de', 'es', 'pt', 'ru']) {
+        expect(
+          AiDownloadSubtitleLanguagePref.parse(code),
+          AiDownloadSubtitleLanguageFixed(code),
+          reason: code,
+        );
+      }
+    });
+
     test('非法值 → Unset（白名单外语言也算非法）', () {
-      for (final String raw in <String>['fr', 'de', '1080p', 'auto', 'x']) {
+      for (final String raw in <String>[
+        'xx',
+        'klingon',
+        '1080p',
+        'auto',
+        'x',
+      ]) {
         expect(
           AiDownloadSubtitleLanguagePref.parse(raw),
           AiDownloadSubtitleLanguagePref.unset,

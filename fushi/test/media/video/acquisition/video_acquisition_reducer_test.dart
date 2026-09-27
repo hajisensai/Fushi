@@ -175,7 +175,15 @@ void main() {
       expect(q.slot, VideoAcquisitionSlot.quality);
       expect(q.rememberToggle, isTrue);
       expect(q.rememberDefault, isTrue);
-      expect(s.optionIds, <String>['2160p', '1080p', '720p', '480p', 'any']);
+      expect(s.optionIds, <String>[
+        'best',
+        '2160p',
+        '1440p',
+        '1080p',
+        '720p',
+        '480p',
+        'any',
+      ]);
     });
 
     test("偏好 'ask' → 问且勾选框默认不勾", () {
@@ -228,7 +236,12 @@ void main() {
       expect(q.options.last.id, kVideoAcquisitionSubtitleNone);
       expect(q.rememberToggle, isTrue);
       expect(q.rememberDefault, isTrue);
-      expect(s.optionIds, <String>['original', 'ja', 'zh', 'en', 'ko', 'none']);
+      expect(s.optionIds, <String>[
+        'original',
+        ...kVideoAcquisitionSubtitleLanguageCodes,
+        'none',
+      ]);
+      expect(s.optionIds, containsAll(<String>['es', 'fr', 'de', 'ru']));
     });
 
     test("偏好 'ask' → 问且勾选默认 false", () {
