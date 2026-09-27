@@ -7,6 +7,7 @@ import 'package:googleapis/drive/v3.dart' as drive;
 import 'package:googleapis_auth/googleapis_auth.dart' as auth;
 import 'package:fushi/src/sync/google_drive_auth.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
@@ -121,6 +122,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   void clearCache() {
     super.clearCache();
     _cachedApi = null;
+    _fileSizes.clear();
   }
 
   // ── API client ────────────────────────────────────────────────────
@@ -746,6 +748,48 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
             debugPrint('[sync] failed to clean up temp file: $e'),
       );
     });
+  }
+
+  /// 文件字节数缓存（[openFileRange] 截区间用）。资产按 id 寻址、上传即新 id，
+  /// 同一 id 的大小不会变，缓存进程内即可。
+  final Map<String, int> _fileSizes = <String, int>{};
+
+  /// 按字节区间读 [fileId]（云盘视频流播：`files.get?alt=media` + `Range`）。
+  ///
+  /// 鉴权走同一个 [_call]：access token 过期时刷新后重试，`Authorization` 头只存在于
+  /// googleapis 客户端内部，不会交给播放内核、也不会进日志。
+  Future<SyncAssetRange> openFileRange(
+    String fileId, {
+    required int start,
+    int? end,
+  }) async {
+    final int total = _fileSizes[fileId] ??
+        await _call((api) async {
+          final metadata =
+              await api.files.get(fileId, $fields: 'size') as drive.File;
+          final int? size =
+              metadata.size == null ? null : int.tryParse(metadata.size!);
+          if (size == null) {
+            throw GoogleDriveError('No size for file $fileId');
+          }
+          return size;
+        });
+    _fileSizes[fileId] = total;
+    if (start >= total) throw SyncAssetRangeNotSatisfiable(total);
+    final int last = end == null || end >= total ? total - 1 : end;
+    final drive.Media media = await _call((api) async => await api.files.get(
+          fileId,
+          downloadOptions: drive.PartialDownloadOptions(
+            drive.ByteRange(start, last),
+          ),
+        ) as drive.Media);
+    return SyncAssetRange(
+      start: start,
+      end: last,
+      totalBytes: total,
+      contentType: media.contentType,
+      bytes: media.stream,
+    );
   }
 
   Future<SyncFileRef?> findContentFile(

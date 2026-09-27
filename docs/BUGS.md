@@ -29,10 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2517 条。点号进各自文件。
+> 共 2522 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2743](bugs/BUG-2743-ext-hover-resume-stuck-paused.md) | ✅ | ✅ | 扩展悬停查词离开后仍暂停、暂停续播反应不灵敏 |
+| [BUG-2742](bugs/BUG-2742-anki-dict-image-single-dimension.md) | ✅ | ✅ | 制卡词典图片只声明一维时尺寸与 Yomitan 不一致（小、居中、竖排） |
+| [BUG-2741](bugs/BUG-2741-stats-sheet-ios-too-tall.md) | ✅ | ✅ | 统计时段明细/会话 sheet 在 iOS 上过高（顶进状态栏） |
+| [BUG-2738](bugs/BUG-2738-audiobook-chapter-ticks.md) | ✅ | ✅ | 阅读器有声书面板进度条章节刻度与进度不对齐 |
+| [BUG-2737](bugs/BUG-2737-video-item-rescrape.md) | ✅ | ✅ | 视频卡长按菜单没有「重新刮削」入口（刮错的独立电影无法重刮） |
 | [BUG-2736](bugs/BUG-2736-mihon-http11-waf-403.md) | ✅ | ✅ | Miruro 视频源详情/剧集/取流全 403：扩展宿主钉死 HTTP/1.1 被 Cloudflare WAF 拦 |
 | [BUG-2735](bugs/BUG-2735-galgame-remove-cascades-sessions.md) | ✅ | ✅ | 从库移除游戏经 FK cascade 删光所有 Profile 的游玩会话 |
 | [BUG-2734](bugs/BUG-2734-video-lookup-popup-entrance-wheel.md) | ✅ | ✅ | 视频查词框弹出动画跳变、滚轮手感与 galgame 查词框不一致 |

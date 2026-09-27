@@ -68,6 +68,7 @@ import 'package:fushi/src/media/video/video_shader_manager.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/book_drag_target.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
@@ -420,6 +421,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   Map<int, MediaCollectionRow> _collectionsById =
       const <int, MediaCollectionRow>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
+
+  /// 视频来源行（id → 行），与 [_loadLibraryMaps] 同一次预取（目录分组策略本来就要
+  /// 这张表）。视频卡菜单用它同步判「重新刮削」画不画（[videoBookHasScrapePlan]），
+  /// 不为开菜单多一次查询。
+  Map<int, MediaSourceRow> _videoSourcesById = const <int, MediaSourceRow>{};
 
   /// UI v2 Phase B / v39：最近观看时间（watch-stats max(lastModified)），驱动
   /// 「继续观看 hero」排序与「上次观看」外显。v39 起按 bookUid 键控；迁移遗留
@@ -902,12 +908,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       mediaImagesF,
     ]);
     final List<MediaCollectionRow> collections = await collectionsF;
+    final List<MediaSourceRow> videoSources = await folderSourcesF;
     final Map<String, int> primaryMap = applyVideoFolderCollectionPolicy(
       primary: await primaryMapF,
       collections: collections,
       items: await collectionItemsF,
       books: await folderBooksF,
-      sources: await folderSourcesF,
+      sources: videoSources,
     );
     // 层次 C：条目在其主折叠合集里的 sortIndex（只记归属合集的行——一条目属多
     // 合集时行内序跟随折叠归属，与 primaryMap 同口径）。一次 [getAllCollectionItems]
@@ -1002,6 +1009,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         for (final MediaCollectionRow c in collections) c.id: c,
       };
       _primaryCollectionByEntry = primaryMap;
+      _videoSourcesById = <int, MediaSourceRow>{
+        for (final MediaSourceRow source in videoSources) source.id: source,
+      };
       _libraryMapsReady = true;
       _watchAtByUid = watchByUid;
       _legacyWatchAtByTitle = legacyByTitle;
@@ -1876,7 +1886,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 拖入 .torrent → 下载中心「添加任务」对话框预填种子，内容类型预填视频。
         // 与页头按钮同一入口：后端未配时同样弹引导，不在这里另写一套。下载中心
         // 关掉时给可见提示（与书架同一形态），不静默。
-        if (!appModel.moduleVisibility.isEnabled(ModuleId.downloads)) {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(t.module_disabled_hint)),
           );
@@ -2246,8 +2256,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     RemoteVideoInfo video, {
     List<RemoteVideoInfo>? collectionMembers,
     int startIndex = 0,
+    // 云盘视频的「播放（流播）」动作显式传入 [CloudStreamVideoClient]；缺省按当前源
+    // 的 live 能力（互联 / 媒体服务器）走。
+    RemoteVideoClient? streamClient,
   }) async {
-    final RemoteVideoClient? client = _remoteVideoClient;
+    final RemoteVideoClient? client = streamClient ?? _remoteVideoClient;
     if (client == null) {
       // #4：云后端视频无 live host、不能流播；短按 = 下载入库（对齐书侧短按=下载语义），
       // 而不是静默 return（占位卡点了像没反应）。仅当存在云 client 时分派；两者都无时
@@ -2774,6 +2787,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       embeddedSubtitleTrack: const Value<int?>(0),
       importedAt: Value(DateTime.now().millisecondsSinceEpoch),
     ));
+    await _adoptCloudStreamPosition(bookUid);
     await RemoteCollectionAdoptionService(appModelNoUpdate.database)
         .adoptVideo(video);
     // tags 稳健档：合并云清单携带的标签 LWW 时钟（删除/改名传播、防复活）。空则 no-op。
@@ -2818,6 +2832,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     } finally {
       coverLease.release();
     }
+  }
+
+  /// 流播过的云视频下载入库后接着看：流播断点落在按云端条目 uid 记的 prefs
+  /// （`videoRemotePositionEpisodePrefKey(uid, 0)`，见 [CloudStreamVideoClient]），
+  /// 本地行的 bookUid 就是同一个 uid，这里把它写进本地行的 `lastPositionMs`——同一
+  /// 视频不会变成两条进度各走各的记录（流播卡在下载后本就被去重隐藏）。
+  Future<void> _adoptCloudStreamPosition(String bookUid) async {
+    final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
+    final Object? rawPos = prefs.getPref(
+      videoRemotePositionEpisodePrefKey(bookUid, 0),
+      defaultValue: 0,
+    );
+    final int positionMs = rawPos is num ? rawPos.toInt() : 0;
+    if (positionMs <= 0) return;
+    final Object? rawAt = prefs.getPref(
+      videoRemotePositionEpisodeAtPrefKey(bookUid, 0),
+      defaultValue: 0,
+    );
+    final int at = rawAt is num ? rawAt.toInt() : 0;
+    await widget.repo.updatePosition(
+      bookUid,
+      positionMs,
+      playedAt: at > 0 ? at : null,
+    );
   }
 
   Future<CoverMetaStore?> _prepareAutoFrameCover(String bookUid) async {
@@ -3019,6 +3057,23 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
               onPressed: () {
                 Navigator.pop(dialogContext);
                 unawaited(_clearWatchProgress(book));
+              },
+            ),
+        ],
+        // 「重新刮削资料与封面」（BUG-2737）：与合集菜单同一形态（列表行）、同一份
+        // 文案——做成快捷 chip 的话这条最长的标签会把整格 chip 的列数压少。门与
+        // [planScrapeWorkForVideoBook] 同一判据 [videoBookHasScrapePlan]：没有
+        // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
+        // 画出来就一定定位得到作品单元。
+        listActions: <DialogListAction>[
+          if (widget.scrapeTaskController != null &&
+              videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
+            DialogListAction(
+              label: t.collection_rescrape,
+              icon: Icons.image_search,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_rescrapeVideo(book));
               },
             ),
         ],
@@ -6151,8 +6206,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onTap: widget.onOpenScrapeTasks!,
           ),
         ),
-      // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
-      // （downloads_page）里有完整入口，视频库页头只留库管理动作。
+      // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
+      // （browse_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
       if (widget.navigation == null)
@@ -6216,6 +6271,10 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   void _showRemoteVideoDialog(RemoteVideoInfo video) {
     final RemoteVideoClient? client = _remoteVideoClient;
     final bool canDelete = client is InterconnectSyncBackend;
+    // 云盘视频：后端能按 Range 读（OneDrive / Dropbox / Google Drive）时多给一个
+    // 「播放（流播）」，不下载直接看；短按卡片仍是下载入库（#4 语义不变）。
+    final CloudStreamVideoClient? cloudStream =
+        _cloudRemoteVideoClient?.streamingClient();
     showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => MediaItemDialogFrame(
@@ -6223,6 +6282,15 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         title: video.title,
         showLaunchAction: false,
         quickActions: <DialogQuickAction>[
+          if (cloudStream != null)
+            DialogQuickAction(
+              label: t.remote_video_stream_play,
+              icon: Icons.play_circle_outline,
+              onPressed: () {
+                Navigator.pop(dialogContext);
+                unawaited(_openRemote(video, streamClient: cloudStream));
+              },
+            ),
           DialogQuickAction(
             label: t.remote_video_download,
             icon: Icons.download_outlined,
@@ -6960,12 +7028,66 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 搜索种子：整个合集就是这一个作品时用合集名（成员标题可能是「S00E01」这种
     // 纯集号标签，拿它当种子等于让用户对着无意义的词搜）；合集里有多个作品时合
     // 集名描述的是整个播放列表，反而是选中成员自己的标题更贴。
+    await _rescrapePlannedWork(
+      controller,
+      chosen,
+      searchTitle: planned.length == 1 ? collection.name : chosen.work.title,
+    );
+  }
+
+  /// 视频卡「重新刮削资料与封面」（BUG-2737）：独立电影不在任何合集里，合集菜单
+  /// 那条入口够不着它，刮错了就只能整来源重刮。定位问计划器要包含这个视频的作品
+  /// 单元（[planScrapeWorkForVideoBook]），之后与合集入口走同一条手动指定管线。
+  Future<void> _rescrapeVideo(VideoBookRow book) async {
+    final VideoSourceScrapeTaskController? controller =
+        widget.scrapeTaskController;
+    if (controller == null) return;
+    // 菜单以 unawaited 发起：定位阶段（读库 + 跑计划器）的异常在这里接住，不能
+    // 变成无人处理的 Future 错误、让用户点完没有任何反馈。
+    final VideoPendingScrapeWork? planned;
+    try {
+      planned = await planScrapeWorkForVideoBook(
+        ref.read(appProvider).database,
+        book.bookUid,
+      );
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log('video.rescrapeVideo.plan', e, stack);
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.collection_rescrape_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    if (planned == null) {
+      FushiToast.show(
+        msg: t.video_item_rescrape_not_planned,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    await _rescrapePlannedWork(
+      controller,
+      planned,
+      searchTitle: planned.work.title,
+    );
+  }
+
+  /// 手动指定身份并重刮一个计划器作品单元：搜索弹窗 →
+  /// [VideoSourceScrapeTaskController.rescrapeWorkWithLookup]。合集与单视频两个
+  /// 入口共用，落库只有 `_store.apply` 这一条。
+  Future<void> _rescrapePlannedWork(
+    VideoSourceScrapeTaskController controller,
+    VideoPendingScrapeWork chosen, {
+    required String searchTitle,
+  }) async {
     final VideoSourceScrapeConfirmationCandidate? candidate =
         await showVideoSourceScrapeManualBindingDialog(
       context: context,
       controller: controller,
       source: chosen.source,
-      workTitle: planned.length == 1 ? collection.name : chosen.work.title,
+      workTitle: searchTitle,
       workStableKey: chosen.work.stableKey,
     );
     if (candidate == null || !mounted) return;
@@ -6984,7 +7106,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       // 用户在任务面板撤回了尚未执行的绑定，不是失败。
       return;
     } on Object catch (e, stack) {
-      ErrorLogService.instance.log('video.rescrapeCollection', e, stack);
+      ErrorLogService.instance.log('video.rescrapeWork', e, stack);
       if (!mounted) return;
       FushiToast.show(
         msg: t.collection_rescrape_failed,

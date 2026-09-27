@@ -20,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
@@ -968,6 +969,8 @@ class BackupService {
   /// it is a real file on disk and is packed like any other local video. Mirrors
   /// the merge engine's SQL predicate so export counts and import filtering stay
   /// aligned (TODO-1261).
+  /// Online video source episodes (`anime-source://`, re-fetched from the
+  /// extension at play time) are streaming rows as well.
   static bool _isStreamingVideoPath(String videoPath) =>
       isNetworkOnlyVideoPath(videoPath);
 

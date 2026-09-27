@@ -7,14 +7,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+
+import '../../../helpers/test_platform_services.dart';
 
 /// 视频源扩展的浏览 → 作品页 → 起播链路（播放页本体被 openPlayer 桩替换：widget
 /// 测试里起不了 libmpv）。
@@ -73,6 +82,16 @@ void main() {
 
   Future<MihonSourceContext> context() =>
       manager.contextForSource(manager.sources.single);
+
+  /// 作品页的库状态读写走真 DB（异步 IO）：在真时间里让它跑完再重建。
+  Future<void> settle(WidgetTester tester) async {
+    for (int i = 0; i < 5; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
 
   testWidgets('browse grid of an anime manager opens the anime detail page', (
     WidgetTester tester,
@@ -140,6 +159,7 @@ void main() {
       // 源给的是新集在前，页面按集号升序排。
       final Finder rows = find.byWidgetPredicate(
         (Widget w) =>
+            w is OnlineWorkItemTile &&
             w.key is ValueKey<String> &&
             (w.key! as ValueKey<String>).value.startsWith('anime_episode_'),
       );
@@ -240,6 +260,310 @@ void main() {
     },
   );
 
+  group('primary play button', () {
+    late PreferencesRepository prefs;
+    late _TestAppModel appModel;
+
+    setUp(() {
+      LocaleSettings.setLocale(AppLocale.en);
+      prefs = PreferencesRepository(database);
+      appModel = _TestAppModel(prefs, root, database);
+    });
+
+    String episodeId(String url) =>
+        '$kAnimeSourceVideoIdPrefix'
+        'eu.kanade.tachiyomi.animeextension.all.fixture:42:$url';
+
+    Future<List<(RemoteVideoInfo, int)>> pumpDetail(WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final List<(RemoteVideoInfo, int)> opened = <(RemoteVideoInfo, int)>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
+              openPlayer:
+                  (
+                    _,
+                    AnimeSourceVideoClient client,
+                    RemoteVideoInfo info,
+                    int index,
+                  ) async => opened.add((info, index)),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      return opened;
+    }
+
+    Finder playButton() =>
+        find.byKey(const ValueKey<String>('anime_source_play'));
+
+    String playLabel(WidgetTester tester) => tester
+        .widget<Text>(
+          find.descendant(of: playButton(), matching: find.byType(Text)),
+        )
+        .data!;
+
+    testWidgets('without any watch position it reads Play and plays the '
+        'first episode', (WidgetTester tester) async {
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      expect(find.text('Fixture Show (details)'), findsWidgets);
+      expect(playLabel(tester), t.play);
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 0);
+      expect(opened.single.$1.id, episodeId('/ep/1'));
+    });
+
+    Future<void> seedWatchedAt(
+      WidgetTester tester,
+      Map<String, int> atByEpisodeUrl,
+    ) => tester.runAsync(() async {
+      for (final MapEntry<String, int> entry in atByEpisodeUrl.entries) {
+        await prefs.setPref(
+          videoRemotePositionEpisodeAtPrefKey(episodeId(entry.key), 0),
+          entry.value,
+        );
+      }
+    });
+
+    testWidgets('continue watching lands on the episode watched most '
+        'recently (episode 2 newer than episode 1)', (
+      WidgetTester tester,
+    ) async {
+      await seedWatchedAt(tester, <String, int>{'/ep/1': 1000, '/ep/2': 2000});
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      final String label = playLabel(tester);
+      expect(label, contains(t.video_continue_watching));
+      expect(label, contains('Episode 2'));
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 1);
+      expect(opened.single.$1.id, episodeId('/ep/2'));
+    });
+
+    testWidgets('recency wins over list order: a later-watched episode 1 '
+        'beats an earlier-watched episode 2', (WidgetTester tester) async {
+      await seedWatchedAt(tester, <String, int>{'/ep/2': 1000, '/ep/1': 2000});
+      final List<(RemoteVideoInfo, int)> opened = await pumpDetail(tester);
+      expect(playLabel(tester), '${t.video_continue_watching} · Episode 1');
+      await tester.tap(playButton());
+      await tester.pump();
+      expect(opened.single.$2, 0);
+    });
+  });
+
+  group('media library', () {
+    late _TestAppModel appModel;
+
+    setUp(() {
+      LocaleSettings.setLocale(AppLocale.en);
+      appModel = _TestAppModel(PreferencesRepository(database), root, database);
+    });
+
+    Future<void> pumpDetail(
+      WidgetTester tester, {
+      GlobalKey<NavigatorState>? navigatorKey,
+    }) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(testPlatformServices()),
+            appProvider.overrideWith((Ref ref) => appModel),
+          ],
+          child: MaterialApp(
+            navigatorKey: navigatorKey,
+            home: AnimeSourceDetailPage(
+              manager: manager,
+              sourceContext: await context(),
+              anime: const MihonAnime(url: '/anime/1', title: 'Fixture Show'),
+              subtitleLanguageResolver: () => null,
+              openPlayer:
+                  (
+                    _,
+                    AnimeSourceVideoClient client,
+                    RemoteVideoInfo info,
+                    int index,
+                  ) async {},
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+    }
+
+    Finder addButton() =>
+        find.byKey(const ValueKey<String>('anime_source_library_add'));
+    Finder removeButton() =>
+        find.byKey(const ValueKey<String>('anime_source_library_remove'));
+
+    testWidgets('add writes one online row per episode and flips the button '
+        'to remove; remove deletes them again', (WidgetTester tester) async {
+      await pumpDetail(tester);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('anime_source_download_all')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'anime_download_$kAnimeSourceVideoIdPrefix'
+            'eu.kanade.tachiyomi.animeextension.all.fixture:42:/ep/1',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(addButton());
+      await settle(tester);
+
+      final List<VideoBookRow> rows = (await tester.runAsync(
+        database.allVideoBooks,
+      ))!;
+      expect(rows.length, 2);
+      expect(
+        rows.every((VideoBookRow r) => isAnimeSourceVideoPath(r.videoPath)),
+        isTrue,
+      );
+      expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+
+      expect((await tester.runAsync(database.allVideoBooks))!, isEmpty);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    String episodeId(String url) =>
+        '$kAnimeSourceVideoIdPrefix'
+        'eu.kanade.tachiyomi.animeextension.all.fixture:42:$url';
+
+    Future<void> seedRow(
+      WidgetTester tester,
+      String url, {
+      required bool downloaded,
+    }) => tester.runAsync(
+      () => database.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: episodeId(url),
+          title: 'Episode',
+          videoPath: downloaded
+              ? '${root.path}${Platform.pathSeparator}ep.mp4'
+              : 'anime-source://fixture/42/Fixture Show - E0',
+        ),
+      ),
+    );
+
+    Future<Map<String, String>> rowsByUid(WidgetTester tester) async =>
+        <String, String>{
+          for (final VideoBookRow row in (await tester.runAsync(
+            database.allVideoBooks,
+          ))!)
+            row.bookUid: row.videoPath,
+        };
+
+    testWidgets('a work with some episodes in the library and a new one '
+        'shows both remove and add; add fills in the new episode', (
+      WidgetTester tester,
+    ) async {
+      await seedRow(tester, '/ep/2', downloaded: false);
+      await pumpDetail(tester);
+      expect(removeButton(), findsOneWidget);
+      // 第 1 集还不在库里（刷新后多出来的新集）：仍能加入。
+      expect(addButton(), findsOneWidget);
+
+      await tester.tap(addButton());
+      await settle(tester);
+      final Map<String, String> rows = await rowsByUid(tester);
+      expect(rows.keys.toSet(), <String>{
+        episodeId('/ep/1'),
+        episodeId('/ep/2'),
+      });
+      expect(rows.values.every(isAnimeSourceVideoPath), isTrue);
+      expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('after downloading one episode the others can still be added '
+        'and nothing online can be removed yet', (WidgetTester tester) async {
+      await seedRow(tester, '/ep/1', downloaded: true);
+      await pumpDetail(tester);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+
+      await tester.tap(addButton());
+      await settle(tester);
+      final Map<String, String> rows = await rowsByUid(tester);
+      // 已下载的集保持本地文件，其余集补成在线行。
+      expect(isAnimeSourceVideoPath(rows[episodeId('/ep/1')]!), isFalse);
+      expect(isAnimeSourceVideoPath(rows[episodeId('/ep/2')]!), isTrue);
+      expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('remove deletes only the online rows and says so; the '
+        'downloaded episode stays', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigator = GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navigator;
+      await seedRow(tester, '/ep/1', downloaded: true);
+      await seedRow(tester, '/ep/2', downloaded: false);
+      await pumpDetail(tester, navigatorKey: navigator);
+      expect(removeButton(), findsOneWidget);
+      expect(addButton(), findsNothing);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+      expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/1')]);
+      expect(find.text(t.video_online_library_removed), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(addButton(), findsOneWidget);
+      // 让 toast 的消失计时器走完。
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('remove that deletes nothing (the online row was downloaded '
+        'meanwhile) does not claim it removed anything', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<NavigatorState> navigator = GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navigator;
+      await seedRow(tester, '/ep/2', downloaded: false);
+      await pumpDetail(tester, navigatorKey: navigator);
+      expect(removeButton(), findsOneWidget);
+      // 页面状态读出后，这一集在后台下载完成、成了本地行。
+      await seedRow(tester, '/ep/2', downloaded: true);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+      expect(find.text(t.video_online_library_removed), findsNothing);
+      expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/2')]);
+      expect(removeButton(), findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   testWidgets('an episode without streams still opens the player, '
       'which reports NO stream on load', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 1200));
@@ -323,6 +647,20 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+}
+
+/// 作品页经 `appProvider` 读远端断点时间戳：挂一份真 [PreferencesRepository]（同一个
+/// 内存 DB），其余 AppModel 初始化不跑。
+class _TestAppModel extends AppModel {
+  _TestAppModel(
+    PreferencesRepository prefs,
+    Directory root,
+    FushiDatabase database,
+  ) : super(testPlatformServices()) {
+    wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: root);
+    // 作品页读「本作品哪些集已在库 / 已下载」要用同一个库。
+    wireDatabaseForTesting(database);
+  }
 }
 
 class _AnimeRuntime extends MihonBridgeRuntime {

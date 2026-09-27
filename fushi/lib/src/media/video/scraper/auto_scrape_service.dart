@@ -26,6 +26,7 @@ import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// 自动刮削调度器。生命周期跟随视频页（initState 建 / dispose 销），无全局单例：
 /// 页面不在就没人需要刮削结果，跑着也是白跑。

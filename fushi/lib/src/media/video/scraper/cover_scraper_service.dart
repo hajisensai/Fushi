@@ -21,6 +21,7 @@ import 'package:fushi_engine/media/video/video_cover_extractor.dart'
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 sealed class ScrapeOutcome {
   const ScrapeOutcome();

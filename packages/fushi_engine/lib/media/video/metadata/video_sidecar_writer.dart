@@ -6,6 +6,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:path/path.dart' as p;
 
 /// MoviePilot 式单资产写入策略。
@@ -246,6 +247,11 @@ class VideoSidecarWriter {
         error: error,
       );
     }
+    // 同路径覆盖写后驱逐宿主的图片解码缓存（BUG-2737）：sidecar 图名只按图种派生
+    // （封面恒为 `poster.<ext>`），换身份重刮就是覆盖同一路径，而宿主缓存按路径 +
+    // 解码宽度键控——不驱逐的话卡片重新解析时命中的仍是旧身份的那张图。新建文件
+    // 没有旧解码可清；NFO 不在图片缓存里，驱逐是 no-op。
+    if (exists) await evictImageCacheForFile(targetFile);
 
     Object? artifactStoreError;
     try {

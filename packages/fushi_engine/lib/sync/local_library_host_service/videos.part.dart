@@ -20,7 +20,11 @@ mixin _LocalLibraryHostVideos
   /// [hasSubtitle] 当前视频文件旁能找到外挂字幕时为 true。
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），对端拿到
+    // 也放不了：不下发。
+    final List<VideoBookRow> rows = (await _db.allVideoBooks())
+        .where((VideoBookRow row) => !isAnimeSourceVideoPath(row.videoPath))
+        .toList();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
       final int? ta = a.importedAt;

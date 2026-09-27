@@ -129,6 +129,13 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.derivesPathOnly,
     '引擎侧三根目录抽象的定义处（videoCoversDirectory 等），只定义不落盘。',
   ),
+  'lib/src/media/video/online/anime_source_library.dart': (
+    CoverDeriverRole.writesViaService,
+    '在线视频源入库集（2026-09-27 浏览阶段 2b）：封面经扩展取回字节后，作品共用封面 / '
+        '合集封面的目的地在这里派生（animeSourceWorkCoverFileName / videoCoverFileName / '
+        'VideoStorage.coversDir），落盘一律经 MediaCoverService.applyCoverBytes，'
+        '本文件不裸写。',
+  ),
   'lib/src/media/torrent/anime_download_importer.dart': (
     CoverDeriverRole.derivesPathOnly,
     'BUG-1394 那条跨文件洞的派生半边：它算出目的地后交给 video_cover_extractor '

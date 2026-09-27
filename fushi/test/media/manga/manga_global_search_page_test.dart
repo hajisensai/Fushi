@@ -138,8 +138,9 @@ void main() {
     expect(find.text(t.manga_global_search_no_sources), findsOneWidget);
     expect(
       t.manga_global_search_no_sources,
-      contains(t.library_view_import),
-      reason: '空态文案必须点名用户真能找到的那个 tab（「导入」），不是「扩展」',
+      contains(t.nav_browse),
+      // 2026-09-27 起漫画来源在「浏览 › 来源」里装 / 启用（PR #1707 审查改文案）。
+      reason: '空态文案必须点名用户真能找到的那个 tab（「浏览」），不是「扩展」',
     );
     final Finder button =
         find.byKey(const ValueKey<String>('manga_global_search_open_sources'));

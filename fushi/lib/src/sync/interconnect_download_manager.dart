@@ -652,8 +652,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
     _notify();
   }
 
-  /// 放弃一个未完成（paused/failed）的任务并删掉已下载的半成品（`.part` 与
-  /// 续传清单）。返回是否真的删了文件。
+  /// 放弃一个未完成（paused/failed）的任务并删掉已下载的半成品（`.part` 及其
+  /// 侧车、HLS 分片流与断点记录、续传清单）。返回是否真的删了文件。
   Future<bool> discard(String id) async {
     final InterconnectDownloadTask? task = _tasks[id];
     final _DownloadSpec? spec = _specs[id];
@@ -664,6 +664,13 @@ class InterconnectDownloadManager extends ChangeNotifier {
     for (final File f in <File>[
       File('$destPath.part'),
       File('$destPath.part.etag'),
+      // 在线视频源（Aniyomi）集下载的半成品（见 anime_episode_downloader.dart 的
+      // animeEpisodeDownloadLeftovers，测试按那份清单比对）：直链验证器侧车、HLS
+      // 分片流 + 断点记录、转封装中间件。
+      File('$destPath.part.validator'),
+      File('$destPath.hls.part'),
+      File('$destPath.hls.progress'),
+      File('$destPath.remux.mp4'),
     ]) {
       try {
         if (await f.exists()) {

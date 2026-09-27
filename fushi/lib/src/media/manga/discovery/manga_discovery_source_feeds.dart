@@ -27,20 +27,35 @@ class MangaDiscoverySourceItem {
   final void Function(BuildContext context) open;
 }
 
-/// 一条来源热门行：加载失败/为空由页面决定整行隐藏。
+/// 来源热门的一页：条目 + 是否还有下一页。
+class MangaDiscoverySourcePage {
+  const MangaDiscoverySourcePage({required this.items, required this.hasMore});
+
+  final List<MangaDiscoverySourceItem> items;
+  final bool hasMore;
+}
+
+/// 一条来源热门行：空行由页面收起，失败汇总进页首的来源失败横幅。
 class MangaDiscoverySourceFeed {
   const MangaDiscoverySourceFeed({
     required this.id,
     required this.name,
     required this.language,
     required this.loadPopular,
+    this.loadPopularPage,
     this.openCatalog,
   });
 
   final String id;
   final String name;
   final String language;
+
+  /// 热门第 1 页（横滑行只要这一页）。
   final Future<List<MangaDiscoverySourceItem>> Function() loadPopular;
+
+  /// 按页取热门（页码从 1 起）；给定时单源网格滚到底自动翻页，为空时网格只有
+  /// [loadPopular] 那一页。
+  final Future<MangaDiscoverySourcePage> Function(int page)? loadPopularPage;
 
   /// 打开该来源的完整目录（行头「查看全部」）；为空时不出这个按钮。
   final void Function(BuildContext context)? openCatalog;
@@ -51,7 +66,7 @@ class MangaDiscoverySourceFeed {
 }
 
 /// 把全部已启用 Mihon 在线来源适配成热门行。每行首次可见才真正 getPopular
-/// 第 1 页；封面走 [MihonSourceImage]（带扩展拦截器/cookie），共享 [imageQueue]
+/// 第 1 页（单源网格再按 `hasNextPage` 往后翻）；封面走 [MihonSourceImage]（带扩展拦截器/cookie），共享 [imageQueue]
 /// 限并发。
 List<MangaDiscoverySourceFeed> mihonDiscoverySourceFeeds({
   required MihonManager manager,
@@ -63,7 +78,10 @@ List<MangaDiscoverySourceFeed> mihonDiscoverySourceFeeds({
         id: 'mihon:${row.extensionPackage}:${row.sourceId}',
         name: row.name,
         language: row.language,
-        loadPopular: () => _loadMihonPopular(manager, row, imageQueue),
+        loadPopular: () async =>
+            (await _loadMihonPopular(manager, row, imageQueue, 1)).items,
+        loadPopularPage: (int page) =>
+            _loadMihonPopular(manager, row, imageQueue, page),
         openCatalog: (BuildContext context) {
           Navigator.of(context).push(
             adaptivePageRoute<void>(
@@ -79,19 +97,20 @@ List<MangaDiscoverySourceFeed> mihonDiscoverySourceFeeds({
   ];
 }
 
-Future<List<MangaDiscoverySourceItem>> _loadMihonPopular(
+Future<MangaDiscoverySourcePage> _loadMihonPopular(
   MihonManager manager,
   MangaOnlineSourceRow row,
   MihonSourceImageLoadQueue imageQueue,
+  int pageNumber,
 ) async {
   final MihonSourceContext sourceContext = await manager.contextForSource(row);
   final MihonMangaPage page = await manager.runtime.getPopular(
     sourceContext.extension,
     sourceContext.source,
-    page: 1,
+    page: pageNumber,
     preferences: sourceContext.preferences,
   );
-  return <MangaDiscoverySourceItem>[
+  final List<MangaDiscoverySourceItem> items = <MangaDiscoverySourceItem>[
     for (final MihonManga manga in page.items)
       MangaDiscoverySourceItem(
         title: manga.title,
@@ -116,4 +135,5 @@ Future<List<MangaDiscoverySourceItem>> _loadMihonPopular(
         },
       ),
   ];
+  return MangaDiscoverySourcePage(items: items, hasMore: page.hasNextPage);
 }

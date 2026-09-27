@@ -1019,3 +1019,22 @@ class _StatHourlyLegendChip extends StatelessWidget {
     );
   }
 }
+
+/// 统计 sheet（时段明细 / 会话列表）的高度上限占屏高比例。
+const double kStatSheetMaxHeightFactor = 0.8;
+
+/// 给统计 sheet 的内容加高度上限。
+///
+/// [adaptiveModalSheet] 走 `isScrollControlled: true`、不开 `useSafeArea`：sheet 高度
+/// 只受内容约束，路由还会抹掉顶部安全区。时段 / 会话一多，sheet 就一路长到屏幕
+/// 最顶，拖动条压进状态栏 / 灵动岛下面（iOS 刘海屏最明显），既盖满页面又难以下拉
+/// 收起。内容少时照常按内容高度收缩，只在超出时截到 [kStatSheetMaxHeightFactor]
+/// 并在 sheet 内滚动。
+Widget statSheetHeightCap(BuildContext context, {required Widget child}) {
+  return ConstrainedBox(
+    constraints: BoxConstraints(
+      maxHeight: MediaQuery.sizeOf(context).height * kStatSheetMaxHeightFactor,
+    ),
+    child: child,
+  );
+}

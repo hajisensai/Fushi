@@ -331,7 +331,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     queue.remove(task);
   }
 
-  /// 生产队列。与漫画目录区同一道门：DownloadsPage 会在数据库打开前被轻量
+  /// 生产队列。与漫画目录区同一道门：BrowsePage 会在数据库打开前被轻量
   /// widget 测试 / AppModel 桩渲染，空的可选任务区不该在这个窗口里去拉组装点。
   static DiscoveryDownloadQueue? _appQueue(WidgetRef ref) {
     final AppModel appModel = ref.read(appProvider);

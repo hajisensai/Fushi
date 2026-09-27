@@ -8,13 +8,10 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
-import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_page.dart';
 import 'package:fushi/src/pages/implementations/module_settings_view.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
-import 'package:fushi/src/pages/implementations/video_discovery_page.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
 
@@ -34,10 +31,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onOpenScrapeTasks,
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
-    this.discoveryController,
-    this.discoveryActions = const VideoDiscoveryActions(),
     this.localLibraryPageBuilder,
-    this.discoveryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
     this.systemBackActive = true,
@@ -61,22 +55,12 @@ class VideoLibraryShell extends StatefulWidget {
   /// null = 不接线（宿主测试），视频页的待确认提醒条静默不显示。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingScrapeWorks;
 
-  /// 在线发现的数据端口。生产环境由发现聚合服务注入；null 时页面呈现可重试的空态。
-  final VideoDiscoveryController? discoveryController;
-
-  /// 详情页的资源、字幕、订阅和播放动作端口。
-  final VideoDiscoveryActions discoveryActions;
-
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
     BuildContext context,
     Widget navigation,
     VideoLibrarySection section,
   )? localLibraryPageBuilder;
-
-  /// 仅供宿主定制或 widget 测试注入发现页，不改变惰性构建/保活语义。
-  final Widget Function(BuildContext context, Widget navigation)?
-      discoveryPageBuilder;
 
   /// 「媒体服务器」分区的已登录服务器清单（生产由 HomePage 从 SyncRepository
   /// 装配）。null = 未接线（宿主测试），分区呈现空态。
@@ -99,7 +83,6 @@ class VideoLibraryShell extends StatefulWidget {
 class _VideoLibraryShellState extends State<VideoLibraryShell> {
   VideoLibrarySection _section = VideoLibrarySection.home;
   VideoLibrarySection _localSection = VideoLibrarySection.home;
-  bool _discoverVisited = false;
   bool _mediaServersVisited = false;
   bool _sourcesVisited = false;
   bool _settingsVisited = false;
@@ -122,7 +105,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value == VideoLibrarySection.allVideos) {
         _localSection = value;
       }
-      if (value == VideoLibrarySection.discover) _discoverVisited = true;
       if (value == VideoLibrarySection.mediaServers) {
         _mediaServersVisited = true;
       }
@@ -136,7 +118,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         VideoLibrarySection.series ||
         VideoLibrarySection.allVideos =>
           true,
-        VideoLibrarySection.discover ||
         VideoLibrarySection.mediaServers ||
         VideoLibrarySection.sources ||
         VideoLibrarySection.settings =>
@@ -178,24 +159,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           value: VideoLibrarySection.allVideos,
           label: t.video_library_all_videos,
         ),
-        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后、在线发现之前。
+        // 媒体服务器是用户自己的库（只是远端的），排在本地库视图之后、管理类分区之前。
+        // 在线发现 2026-09-27 起只住在顶层「浏览」模块（`browse_page.dart`）。
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.mediaServers,
           label: t.video_library_media_servers,
         ),
-        // 与书 / 漫画 / 游戏的发现视图同 key（同概念一词,原 video_discovery_tab 已删），
-        // **也同位**：本地库的各视图排完才是在线发现，最后才是管理类分区。此前发现夹在
-        // 首页与系列 / 全部视频之间，一排里「自己的库 → 推荐 → 自己的库」来回跳，是四个
-        // 模块里唯一的例外（2026-08-24 用户反馈）。
-        //
-        // iOS 上整段不声明（[StoreRestrictedCapability.externalDiscovery]）：发现页的
-        // 番剧条目全部通向资源索引器与种子获取，索引器不装配后它只剩空列表。分区不进
-        // tabs 列表，`_discoverVisited` 就永远是 false，下面 Stack 里那段也不会构建。
-        if (StoreRestrictedCapability.externalDiscovery.isAvailable)
-          LibrarySectionTab<VideoLibrarySection>(
-            value: VideoLibrarySection.discover,
-            label: t.library_view_browse,
-          ),
         LibrarySectionTab<VideoLibrarySection>(
           value: VideoLibrarySection.sources,
           label: t.library_view_import,
@@ -254,34 +223,6 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             ),
           ),
         ),
-        if (_discoverVisited)
-          Offstage(
-            offstage: _section != VideoLibrarySection.discover,
-            child: ExcludeFocus(
-              excluding: _section != VideoLibrarySection.discover,
-              child: TickerMode(
-                enabled: _section == VideoLibrarySection.discover,
-                child: _dropScoped(
-                  () => _section == VideoLibrarySection.discover,
-                  widget.discoveryPageBuilder?.call(
-                        context,
-                        _navigationFor(
-                          _section == VideoLibrarySection.discover,
-                          navigation,
-                        ),
-                      ) ??
-                      VideoDiscoveryPage(
-                        navigation: _navigationFor(
-                          _section == VideoLibrarySection.discover,
-                          navigation,
-                        ),
-                        controller: widget.discoveryController,
-                        actions: widget.discoveryActions,
-                      ),
-                ),
-              ),
-            ),
-          ),
         if (_mediaServersVisited)
           Offstage(
             offstage: _section != VideoLibrarySection.mediaServers,

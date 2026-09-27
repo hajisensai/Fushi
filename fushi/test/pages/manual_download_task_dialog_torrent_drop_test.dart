@@ -194,7 +194,7 @@ void main() {
 
     test('downloads page is itself a .torrent drop surface', () {
       final String src =
-          File('lib/src/pages/implementations/downloads_page.dart')
+          File('lib/src/pages/implementations/browse_page.dart')
               .readAsStringSync();
       expect(src.contains('FushiFileDropTarget('), isTrue,
           reason: 'downloads page must accept dropped torrents');

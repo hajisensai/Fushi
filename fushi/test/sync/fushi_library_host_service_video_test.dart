@@ -62,6 +62,42 @@ void main() {
       expect(list, isEmpty);
     });
 
+    test('在线视频源入库集（anime-source://）不下发给对端，也不能挂字幕', () async {
+      final File videoFile = File(p.join(tmp.path, 'local.mp4'))
+        ..writeAsBytesSync(List<int>.filled(16, 0));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/local',
+        title: 'Local',
+        videoPath: videoFile.path,
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'anime-source:pkg:42:/ep/1',
+        title: 'Episode 1',
+        videoPath: 'anime-source://pkg/42/Show - E01',
+        streamSpecJson: const Value<String?>('{"kind":"anime-source"}'),
+      ));
+      await db.upsertVideoBook(VideoBooksCompanion.insert(
+        bookUid: 'video/stream',
+        title: 'Stream',
+        videoPath: 'https://example.com/a.mp4',
+      ));
+
+      final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
+      final List<RemoteVideoInfo> list = await svc.listVideos();
+      expect(list.map((RemoteVideoInfo v) => v.id).toSet(),
+          <String>{'video/local', 'video/stream'});
+
+      final File subtitle = File(p.join(tmp.path, 'sub.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
+      await expectLater(
+        svc.importVideoSubtitle(subtitle,
+            id: 'anime-source:pkg:42:/ep/1', suffix: '.srt'),
+        throwsA(isA<StateError>().having((StateError e) => e.message,
+            'message', contains('no local file'))),
+      );
+      expect(await svc.resolveVideoFile('anime-source:pkg:42:/ep/1'), isNull);
+    });
+
     test('返回已插入的视频条目，字段正确', () async {
       // 建一个真实视频文件（内容任意）供 stat 拿大小
       final File videoFile = File(p.join(tmp.path, 'film.mp4'))

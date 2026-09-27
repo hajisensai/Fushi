@@ -514,6 +514,177 @@ void main() {
     expect(find.textContaining('T04:55'), findsNothing);
   });
 
+  // 阶段 3：与视频发现页同一套交互（共享件 discovery/discovery_widgets.dart）。
+  testWidgets('输入停顿 350ms 自动搜索，停顿前不发请求', (WidgetTester tester) async {
+    await pumpPage(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_search-only')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'wh',
+    );
+    await tester.pump(const Duration(milliseconds: 349));
+    // 停顿不足又改了一次：计时从头算。
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'white',
+    );
+    await tester.pump(const Duration(milliseconds: 349));
+    expect(searchOnly.searchCalls, 0, reason: '防抖期内一个请求都不发');
+
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
+    expect(searchOnly.searchCalls, 1);
+    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
+
+    // 回车立即搜，并吃掉尚未触发的防抖（不会过 350ms 再重复打一次）。
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'white album',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(searchOnly.searchCalls, 2);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(searchOnly.searchCalls, 2, reason: '提交后残留的防抖不得再补发一次');
+  });
+
+  testWidgets('滚到离底 600 以内自动加载下一页并接在尾部', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _PagedSource paged = _PagedSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[paged]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_paged')),
+    );
+    await tester.pumpAndSettle();
+    expect(paged.requestedPages, <int>[1]);
+    expect(find.text('paged-1-0'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('discovery-results-scroll')),
+      const Offset(0, -1500),
+    );
+    await tester.pumpAndSettle();
+    expect(paged.requestedPages, <int>[1, 2], reason: '不用点「加载更多」');
+
+    await tester.scrollUntilVisible(
+      find.text('paged-2-0'),
+      300,
+      scrollable: find.descendant(
+        of: find.byKey(const ValueKey<String>('discovery-results-scroll')),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    expect(find.text('paged-2-0'), findsOneWidget);
+    // 第 2 页 hasMore=false：继续滚到底也不再发请求。
+    await tester.drag(
+      find.byKey(const ValueKey<String>('discovery-results-scroll')),
+      const Offset(0, -5000),
+    );
+    await tester.pumpAndSettle();
+    expect(paged.requestedPages, <int>[1, 2]);
+  });
+
+  // PR #1707 审查：结果列表曾挂 PageStorageKey，非追加加载（新搜索 / 换来源）后的
+  // 新列表会恢复上一轮的偏移，书 / 游戏两域同路由同 key 还会互串。
+  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _PagedSource paged = _PagedSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[paged]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_paged')),
+    );
+    await tester.pumpAndSettle();
+    final Finder results =
+        find.byKey(const ValueKey<String>('discovery-results-scroll'));
+    ScrollPosition position() => tester
+        .state<ScrollableState>(
+          find.descendant(of: results, matching: find.byType(Scrollable)),
+        )
+        .position;
+
+    await tester.drag(results, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(position().pixels, greaterThan(0));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'paged',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(find.text('paged-1-0'), findsOneWidget);
+    expect(position().pixels, 0);
+  });
+
+  testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (
+    WidgetTester tester,
+  ) async {
+    final _FailingSource dead = _FailingSource();
+    service = MediaDiscoveryService(
+      sources: <MediaDiscoverySource>[searchOnly, dead],
+    );
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'x',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FushiListItem, 'search-only-hit'), findsOneWidget);
+    final Finder banner =
+        find.byKey(const ValueKey<String>('discovery_provider_warning'));
+    expect(banner, findsOneWidget);
+    expect(
+      find.descendant(of: banner, matching: find.text('Dead')),
+      findsOneWidget,
+      reason: '印来源展示名，不是接线 id',
+    );
+    expect(find.descendant(of: banner, matching: find.text('dead')), findsNothing);
+  });
+
+  testWidgets('唯一来源整个失败时可重试，重试真的重新请求', (WidgetTester tester) async {
+    final _FailingSource dead = _FailingSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[dead]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_dead')),
+    );
+    await tester.pumpAndSettle();
+    expect(dead.browseCalls, 1);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('discovery_sources_unavailable')),
+        matching: find.text('Dead'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('discovery_retry')));
+    await tester.pumpAndSettle();
+    expect(dead.browseCalls, 2);
+  });
+
   group('Nyaa 小说源：做种排序 / 隐藏无人做种 / 隐藏疑似漫画 / 过滤三态', () {
     late FushiDatabase db;
     late PreferencesRepository prefs;
@@ -936,6 +1107,57 @@ class _RecursiveSearchSource extends MediaDiscoverySource {
     return ProviderBatchResult<DiscoveryResultPage>.success(
       <DiscoveryResultPage>[
         DiscoveryResultPage(entries: items, page: 1, hasMore: false),
+      ],
+    );
+  }
+}
+
+/// 可翻页的目录型源：每页 30 条，只有第 1 页 hasMore。
+class _PagedSource extends MediaDiscoverySource {
+  final List<int> requestedPages = <int>[];
+
+  @override
+  String get id => 'paged';
+
+  @override
+  String get displayName => 'Paged';
+
+  @override
+  int get priority => 1;
+
+  @override
+  DiscoveryCapabilities get capabilities => DiscoveryCapabilities(
+        kinds: <DiscoveryMediaKind>{DiscoveryMediaKind.game},
+        supportsBrowse: true,
+      );
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> search(
+    DiscoveryRequest request,
+  ) =>
+      browse(request);
+
+  @override
+  Future<ProviderBatchResult<DiscoveryResultPage>> browse(
+    DiscoveryRequest request,
+  ) async {
+    requestedPages.add(request.page);
+    return ProviderBatchResult<DiscoveryResultPage>.success(
+      <DiscoveryResultPage>[
+        DiscoveryResultPage(
+          entries: <DiscoveryEntry>[
+            for (int i = 0; i < 30; i++)
+              DiscoveryResourceItem(
+                sourceId: id,
+                title: 'paged-${request.page}-$i',
+                id: 'paged-${request.page}-$i',
+                kind: request.kind,
+                payloadKind: DiscoveryPayloadKind.httpFile,
+              ),
+          ],
+          page: request.page,
+          hasMore: request.page < 2,
+        ),
       ],
     );
   }

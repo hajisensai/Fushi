@@ -79,6 +79,44 @@ class SyncObfuscator {
     return true;
   }
 
+  // ── 随机访问 API（Range 流播） ────────────────────────────────────────
+
+  /// 还原混淆正文里**从正文偏移 [bodyOffset] 起**的一段字节 [chunk]（不含 header）。
+  ///
+  /// keystream 与位置绑定、与分块无关，所以任意偏移起的一段都能单独还原——这正是
+  /// 云盘视频不下载、按 `Range` 流播（seek 到中间）所需的能力。
+  ///
+  /// 流播时这里跑在 UI isolate 上、每秒过几 MB，所以按 64 位字长 XOR（循环次数降到
+  /// 逐字节的 1/8）：从 [bodyOffset] 的相位起，keystream 每 8 字节一个字、4 个字一周期
+  /// （32 字节周期是 8 的倍数，`8w mod 32 == 8(w & 3)`）；不足 8 字节的尾巴逐字节补。
+  static Uint8List deobfuscateBodyAt(List<int> chunk, int bodyOffset) {
+    final int length = chunk.length;
+    final out = Uint8List(length)..setRange(0, length, chunk);
+    final int phase = bodyOffset % _period;
+    final Uint64List key = _keystreamWordsAtPhase[phase];
+    final int words = length >> 3;
+    // 新分配的 Uint8List 从 0 偏移起，8 字节对齐，可以直接开 64 位视图。
+    final Uint64List outWords = out.buffer.asUint64List(0, words);
+    for (var w = 0; w < words; w++) {
+      outWords[w] ^= key[w & 3];
+    }
+    for (var i = words << 3; i < length; i++) {
+      out[i] ^= _keystream[(phase + i) % _period];
+    }
+    return out;
+  }
+
+  /// keystream 的 32 种相位旋转，各以 4 个 64 位字存放：
+  /// `_keystreamWordsAtPhase[s]` 的字节 `j` = `_keystream[(s + j) % 32]`。
+  static final List<Uint64List> _keystreamWordsAtPhase =
+      List<Uint64List>.generate(_period, (int phase) {
+    final rotated = Uint8List(_period);
+    for (var j = 0; j < _period; j++) {
+      rotated[j] = _keystream[(phase + j) % _period];
+    }
+    return rotated.buffer.asUint64List();
+  });
+
   // ── 流式 API（content / 大文件 / 资产包） ─────────────────────────────
 
   /// 流式混淆：先发 [magicHeader]，再对每个分块逐字节 XOR（维护全局偏移）。
