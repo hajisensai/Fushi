@@ -66,6 +66,7 @@ P1 进展（2026-09-27，分支 `claude/galgame-p1`；样本一律经 Fushi 发�
 | KiriKiri Z · PARQUET 2021（ゆずソフトSOUR，msgwin 插件登记但不画正文） | ✅ EmbedKrkrZ | ✅ game_resource（opus/ogg） | ✅ | ✅ | BUG-2721 修复后宿主 accept4（物理像素坐标）过四条 + 真卡；样本已删 |
 | KiriKiri2 · 夏空カナタ（2008） | — | — | — | — | 下载包自带汉化补丁（正文乱码），不作样本；已删 |
 | RealLive · planetarian Kinetic Novel（2004，脚本打进 .pak，语音 NWK） | 待宿主 | ✅ 运行时导出 `Z0001.nwk_529.wav` | 缺几何 | 缺几何 | 新增结构识别 + NWK/NWA 解码（离线 856/856 条）；③④ 需 RealLive 字形几何 provider |
+| RealLive · 智代アフター 2005 日文原版（光盘直拷，x86，800x600） | ✅ Luna `RealLive · 0x415b00` 正文 context | ✅ BUG-2732 修复后 `matched/game_resource`（`Z0629.nwk_<id>.wav`），旁白/主人公行 pending | ❌ | ❌ | 修复前语音被 DirectSound 流（BGM）冒领、accept4 audio 误判 PASS；③④ 需 RealLive 字形几何 provider（进行中）；Luna 线程 key 跨启动不稳，记忆会恢复到名字线程（待办）；首启独占全屏会切桌面分辨率，须窗口模式 |
 | SiglusEngine · planetarian HD Steam | — | — | — | — | 下载包为汉化 + Steam 模拟器，无日文 Scene.pck，不适合；需另取日文 Siglus 样本 |
 | CMVS | — | — | — | — | BUG-2718：runner 白名单漏 id 16，精确布局 hit 被丢；已修并加三处镜像守卫，无样本未真机 |
 | Unity Mono · デスマッチラブコメ！ Steam 版（2020，MonoBleedingEdge，x86） | ✅ `Unity Mono Message.Mes` 整句（多行、剥 `%` 色标），adapter flags `0x011014d3` | 样本无语音（`resources.resource` 仅 53MB BGM/SE） | 缺几何 | 缺几何 | 需另取有语音的 Unity Mono 样本；③④ 需 Unity 运行时字形几何 provider（provider 7/8 尚无生产者） |
