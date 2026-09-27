@@ -247,7 +247,7 @@ void main() {
       );
       final String remoteImport = region(
         'Future<void> _pickAndImportRemoteSubtitle(',
-        'Future<void> _applyRemoteSubtitle(',
+        'Future<bool> _applyRemoteSubtitle(',
       );
       expect(
         remoteImport.contains('_registerImportedSubtitleSource(applyPath)'),

@@ -209,6 +209,24 @@ extension _FushiSyncServerVideo on FushiSyncServer {
         try {
           await request.read().forEach(sink.add);
           await sink.close();
+          // X-Hibiki-Subtitle-Default: 1 = 用户在远端播放时导入 / 重定时的字幕，要设成
+          // 这一集的默认字幕（后缀由 host 按自己的学习语言定，旧的高优先级 sidecar
+          // 改名让位，见 [VideoSubtitleDefaultHost]）。不支持该能力的 host 退回按
+          // client 报的后缀落盘；老 host 根本不认这个 header，行为同后者。
+          final bool asDefault =
+              _decodeHeaderValue(request, 'x-hibiki-subtitle-default') == '1';
+          if (asDefault && svc is VideoSubtitleDefaultHost) {
+            final String placed =
+                await (svc as VideoSubtitleDefaultHost).importDefaultVideoSubtitle(
+              tmp,
+              id: subtitleId,
+              format: p.extension(suffix),
+            );
+            return shelf.Response(
+              200,
+              headers: <String, String>{'x-hibiki-subtitle-suffix': placed},
+            );
+          }
           await svc.importVideoSubtitle(tmp, id: subtitleId, suffix: suffix);
           return shelf.Response(200);
         } on ArgumentError catch (e) {

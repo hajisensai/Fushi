@@ -5619,5 +5619,8 @@
   "download_interconnect_section_title": "从配对设备下载",
   "interconnect_download_notification_title": "正在从配对设备下载 $count 项",
   "download_keep_alive_multiple_title": "$count 项下载进行中",
-  "update_download_notification_title": "正在下载更新 $version"
+  "update_download_notification_title": "正在下载更新 $version",
+  "video_subtitle_remote_audio_fetching": "正在从服务端获取音轨…",
+  "video_subtitle_host_upload_done": "字幕已上传到服务端，设为这一集的默认字幕",
+  "video_subtitle_host_upload_failed": "字幕上传服务端失败，仅保存在本机"
 }

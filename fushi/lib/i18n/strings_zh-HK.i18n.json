@@ -5619,5 +5619,8 @@
   "download_interconnect_section_title": "從配對裝置下載",
   "interconnect_download_notification_title": "正在從配對裝置下載 $count 項",
   "download_keep_alive_multiple_title": "$count 項下載進行中",
-  "update_download_notification_title": "正在下載更新 $version"
+  "update_download_notification_title": "正在下載更新 $version",
+  "video_subtitle_remote_audio_fetching": "Fetching the audio track from the host…",
+  "video_subtitle_host_upload_done": "Subtitle uploaded to the host as this episode's default",
+  "video_subtitle_host_upload_failed": "Couldn't upload the subtitle to the host; it's only saved on this device"
 }

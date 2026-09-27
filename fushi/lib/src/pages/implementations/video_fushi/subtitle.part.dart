@@ -220,9 +220,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ),
       ),
       // 模型重定时：与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
-      // 只对本地视频出现——它要把整条音轨喂给设备端转录，远端模式手里只有一条流。
+      // 它要把整条音轨喂给设备端转录：本地视频直接用文件，互联远端视频由 host 在
+      // 本地裁出整集音轨回传（[_resolveSubtitleTimingAudio]）；其它远端流拿不到音轨。
       // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
-      if (!_isRemote && _currentVideoPath != null && isAsrSupported)
+      if (_canResolveSubtitleTimingAudio && isAsrSupported)
         ListTile(
           leading: const Icon(Icons.model_training_outlined),
           title: Text(t.video_subtitle_retime_action),
@@ -1335,12 +1336,60 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     // BUG-1861：与远端 Jimaku 下载同理，导入的档案要在字幕轨列表里有自己的行。
     _registerImportedSubtitleSource(applyPath);
-    await _applyRemoteSubtitle(controller, applyPath);
+    final bool applied = await _applyRemoteSubtitle(controller, applyPath);
+    // 用户给远端视频导入的字幕同步到 host，成为这一集在所有设备上的默认字幕。
+    if (applied) await _uploadRemoteSubtitleToHost(applyPath);
+  }
+
+  /// 互联 host 上当前远端视频的定位：`(后端, 视频 id, host 集下标)`。合集连播的成员各是
+  /// 独立单视频（集下标恒 0，与 [_loadRemoteEpisode] 同口径）；非互联远端（媒体服务器 /
+  /// 在线源 / 直链）返回 null——那些后端没有「host 本地裁音频」「收字幕」的端点。
+  (InterconnectSyncBackend, String, int)? _remoteHostVideoTarget() {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (client is! InterconnectSyncBackend || info == null) return null;
+    return (client, info.id, _isRemoteCollection ? 0 : _currentEpisode);
+  }
+
+  /// 把远端视频上用户导入 / 重定时得到的字幕 [path] 上传到互联 host，设为该集默认
+  /// 字幕（host 让位旧 sidecar，见 `VideoSubtitleDefaultHost`）。本机的应用与持久化
+  /// 已经完成，上传失败只提示、不回滚。host 的 sidecar 只能挂在主视频文件旁，
+  /// host 播放列表里的第 2 集起（集下标 > 0）没有落点，跳过。
+  Future<void> _uploadRemoteSubtitleToHost(String path) async {
+    final (InterconnectSyncBackend, String, int)? target =
+        _remoteHostVideoTarget();
+    if (target == null) return;
+    final (InterconnectSyncBackend backend, String id, int episode) = target;
+    if (episode > 0) return;
+    final String? suffix = defaultSidecarSubtitleSuffix(
+      p.extension(path),
+      langCode: _targetLangCode,
+    );
+    if (suffix == null) return;
+    bool uploaded;
+    try {
+      uploaded = await backend.putRemoteVideoSubtitle(
+        id,
+        File(path),
+        suffix: suffix,
+        asDefault: true,
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('video.uploadRemoteSubtitle', e, st);
+      uploaded = false;
+    }
+    if (!mounted) return;
+    _showOsd(
+      uploaded
+          ? t.video_subtitle_host_upload_done
+          : t.video_subtitle_host_upload_failed,
+      severity: uploaded ? ToastSeverity.success : ToastSeverity.warning,
+    );
   }
 
   /// 远端模式：把 [path] 字幕文件解析成 cue 并切到 overlay（仅内存，不写本地 DB）。
-  /// 解析空 cue（坏字幕 / 图形轨）时诚实告知失败、不切换。
-  Future<void> _applyRemoteSubtitle(
+  /// 解析空 cue（坏字幕 / 图形轨）时诚实告知失败、不切换。返回是否真的切换了。
+  Future<bool> _applyRemoteSubtitle(
     VideoPlayerController controller,
     String path, {
     String? selectedSource,
@@ -1354,17 +1403,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } finally {
       _hideSubtitleLoadingOverlay();
     }
-    if (!mounted) return;
+    if (!mounted) return false;
     if (cues.isEmpty) {
       _showOsd(
         t.video_subtitle_load_failed(label: displayLabel),
         severity: ToastSeverity.error,
       );
-      return;
+      return false;
     }
     controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
-    if (!mounted) return;
+    if (!mounted) return false;
     final String source = selectedSource ?? path;
     _rebuild(() => _currentSubtitleSource = source);
     // 持久化用户为该远端集的字幕选择（根因修复：远端字幕原本只进内存、退出即丢）。
@@ -1377,6 +1426,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
     _showOsd(t.video_subtitle_switched(label: displayLabel));
+    return true;
   }
 
   String _remoteEmbeddedSubtitleSource(
@@ -1844,8 +1894,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _retimeSubtitleWithSpeechModel(
     VideoPlayerController controller,
   ) async {
-    final String? videoPath = _currentVideoPath;
-    if (videoPath == null || videoPath.isEmpty) return;
     final List<AudioCue> cues = List<AudioCue>.of(controller.cues);
     if (cues.isEmpty) {
       _showOsd(
@@ -1854,9 +1902,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    if (audio == null || !mounted) return;
+    // 远端视频的音轨是 host 裁好的临时文件，名字没有意义；新档按片名命名。
+    final String baseName = _isRemote
+        ? (_title ?? _effectiveRemoteInfo?.title ?? 'subtitle')
+        : p.basename(audio.path);
     final String? transcriptSrt = await showAsrTranscribeSheet(
       context: context,
-      audioPaths: <String>[videoPath],
+      audioPaths: <String>[audio.path],
     );
     if (transcriptSrt == null || !mounted) return;
     _showOsd(
@@ -1870,7 +1924,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         subtitleCues: cues,
         transcriptSrtPath: transcriptSrt,
         outputDirectory: await AppPaths.videoSubtitlesDirectory(),
-        baseName: p.basename(videoPath),
+        baseName: baseName,
       );
     } catch (error) {
       debugPrint('[fushi-video] subtitle retiming failed: $error');
@@ -1883,7 +1937,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     // 落盘的新档走既有外挂字幕链路：拷进字幕目录（同目录时跳过）、选中、并入字幕轨
     // 列表。这条路径已经处理好持久化与「当场出现在列表里」（BUG-1329 / BUG-1861）。
-    await _importExternalSubtitle(controller, retimed.path);
+    // 远端视频走远端导入同一条链路（内存应用 + 按集记住选择），再上传给 host。
+    if (_isRemote) {
+      _registerImportedSubtitleSource(retimed.path);
+      if (await _applyRemoteSubtitle(controller, retimed.path)) {
+        unawaited(_uploadRemoteSubtitleToHost(retimed.path));
+      }
+    } else {
+      await _importExternalSubtitle(controller, retimed.path);
+    }
     if (!mounted) return;
     final ({int matched, int total, int percent, int medianShiftMs}) summary =
         retimedSubtitleSummary(retimed);
@@ -2342,6 +2404,117 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return newDelayMs;
   }
 
+  /// 字幕对轴 / 重定时有没有音源可用（同步判据，决定入口显不显示）：本地视频有文件，
+  /// 或互联远端视频能请 host 裁整集音轨。
+  bool get _canResolveSubtitleTimingAudio =>
+      (_controller?.videoPath?.isNotEmpty ?? false) ||
+      _remoteHostVideoTarget() != null;
+
+  /// 字幕对轴 / 重定时的音频输入。本地视频就是视频文件本身（带当前音轨下标）；互联
+  /// 远端视频请 host 在本地裁出**整集**当前音轨（复用制卡的 clipaudio 端点，老 host
+  /// 也有）落到本机临时文件——远端流本身 client ffmpeg 抓不动（自签 https / token，
+  /// BUG-891 / BUG-1004），而波形、互相关、设备端转录都要一个本地文件。产物是单音轨
+  /// 音频，下标不再适用。拿不到时返回 null（调用方各自降级）。
+  Future<_SubtitleTimingAudio?> _resolveSubtitleTimingAudio() async {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return null;
+    final String? videoPath = controller.videoPath;
+    if (videoPath != null && videoPath.isNotEmpty) {
+      return (
+        path: videoPath,
+        audioStreamIndex: controller.currentAudioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+      );
+    }
+    final (InterconnectSyncBackend, String, int)? target =
+        _remoteHostVideoTarget();
+    final int durationMs = controller.durationMs ?? 0;
+    if (target == null || durationMs <= 0) return null;
+    final (InterconnectSyncBackend backend, String id, int episode) = target;
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    final String key = '$id|$episode|${audioStreamIndex ?? '-'}';
+    final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
+      key,
+      () => _fetchRemoteTimingAudio(
+        backend,
+        id,
+        episode: episode,
+        durationMs: durationMs,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
+      ),
+    );
+    final String? path = await fetch;
+    if (path == null) {
+      // 失败不缓存：下次点入口重新请求（host 可能刚升级 / 网络刚恢复）。
+      if (identical(_remoteTimingAudioFetches[key], fetch)) {
+        _remoteTimingAudioFetches.remove(key);
+      }
+      return null;
+    }
+    return (path: path, audioStreamIndex: null, audioStreamCount: null);
+  }
+
+  Future<String?> _fetchRemoteTimingAudio(
+    InterconnectSyncBackend backend,
+    String id, {
+    required int episode,
+    required int durationMs,
+    required int? audioStreamIndex,
+    required int audioStreamCount,
+  }) async {
+    if (mounted) {
+      _showOsd(
+        t.video_subtitle_remote_audio_fetching,
+        icon: Icons.graphic_eq,
+        severity: ToastSeverity.info,
+      );
+    }
+    File? dest;
+    try {
+      final Directory dir = Directory(
+        p.join((await getTemporaryDirectory()).path, 'fushi_timing_audio'),
+      );
+      await dir.create(recursive: true);
+      dest = File(
+        p.join(dir.path, 'timing_${DateTime.now().microsecondsSinceEpoch}.aac'),
+      );
+      // 单声道 64k：与制卡压缩档同规格，波形 / 互相关 / 16 kHz 转录都绰绰有余，
+      // 24 分钟一集约 11 MB。
+      await backend.getRemoteVideoAudioClip(
+        id,
+        dest,
+        startMs: 0,
+        endMs: durationMs,
+        episodeIndex: episode,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+      );
+      if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
+    } catch (e, st) {
+      ErrorLogService.instance.log('video.remoteTimingAudio', e, st);
+    }
+    try {
+      if (dest != null && dest.existsSync()) dest.deleteSync();
+    } catch (_) {}
+    return null;
+  }
+
+  /// 退页时删掉为对轴 / 重定时拉下来的远端音轨临时文件。
+  void _discardRemoteTimingAudio() {
+    for (final Future<String?> fetch in _remoteTimingAudioFetches.values) {
+      unawaited(
+        fetch.then((String? path) {
+          if (path == null) return;
+          try {
+            File(path).deleteSync();
+          } catch (_) {}
+        }),
+      );
+    }
+    _remoteTimingAudioFetches.clear();
+  }
+
   /// TODO-701 阶段1：一键字幕自动对轴。抽当前视频的逐帧音频能量包络（[extractAudioEnergyEnvelope]
   /// 经 ffmpeg 抽象），与字幕 cue 时间轴栅格化后做互相关（[bestOffsetMsByCrossCorrelation]）
   /// 求**整体平移** offset，再走现有 [_setDelayMs] 写穿 `delayMs` 落盘（零新持久化）。
@@ -2358,9 +2531,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return null;
     final List<AudioCue> cues = controller.cues;
-    final String? videoPath = controller.videoPath;
     final int? durationMs = controller.durationMs;
-    if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
+    if (cues.isEmpty || !_canResolveSubtitleTimingAudio) {
       _showOsd(
         t.video_subtitle_auto_align_low_confidence,
         severity: ToastSeverity.warning,
@@ -2385,13 +2557,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
       severity: ToastSeverity.info,
     );
 
-    final List<double> rawRms = await extractAudioEnergyEnvelope(
-      videoPath: videoPath,
-      windowMs: kSubtitleAutoAlignBinMs,
-      audioStreamIndex: controller.currentAudioStreamIndex,
-      audioStreamCount: controller.realAudioStreamCount,
-      limitMs: kSubtitleAutoAlignProbeLimitMs,
-    );
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    if (!mounted) return null;
+    final List<double> rawRms = audio == null
+        ? const <double>[]
+        : await extractAudioEnergyEnvelope(
+            videoPath: audio.path,
+            windowMs: kSubtitleAutoAlignBinMs,
+            audioStreamIndex: audio.audioStreamIndex,
+            audioStreamCount: audio.audioStreamCount,
+            limitMs: kSubtitleAutoAlignProbeLimitMs,
+          );
     if (!mounted) return null;
 
     final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
@@ -2436,10 +2612,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 返回空列表，面板据此退化成纯 stepper（不崩不空白）。
   Future<List<double>> _loadSubtitleWaveformEnvelope() async {
     final VideoPlayerController? controller = _controller;
-    final String? videoPath = controller?.videoPath;
-    if (controller == null || videoPath == null || videoPath.isEmpty) {
-      return const <double>[];
-    }
+    if (controller == null) return const <double>[];
+    final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+    if (audio == null) return const <double>[];
+    final String videoPath = audio.path;
     // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
     // 快速设置面板或波形对轴视图时直接复用，不再重跑 ffmpeg（抽整轨对大 REMUX 要数十秒）。
     // 切视频或切音轨时 key 变化 → miss → 重抽（不显示旧音频波形），只缓存非空结果。
@@ -2451,8 +2627,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       () => extractAudioEnergyEnvelope(
         videoPath: videoPath,
         windowMs: kSubtitleWaveformWindowMs,
-        audioStreamIndex: controller.currentAudioStreamIndex,
-        audioStreamCount: controller.realAudioStreamCount,
+        audioStreamIndex: audio.audioStreamIndex,
+        audioStreamCount: audio.audioStreamCount,
         limitMs: kSubtitleAutoAlignProbeLimitMs,
       ),
     );
@@ -2470,8 +2646,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     final List<AudioCue> cues = controller.cues;
-    final String? videoPath = controller.videoPath;
-    if (cues.isEmpty || videoPath == null || videoPath.isEmpty) {
+    if (cues.isEmpty || !_canResolveSubtitleTimingAudio) {
       _showOsd(
         t.video_subtitle_waveform_unavailable,
         severity: ToastSeverity.warning,
@@ -2495,7 +2670,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         (durationMs > 0 && durationMs < kSubtitleAutoAlignProbeLimitMs)
         ? durationMs
         : kSubtitleAutoAlignProbeLimitMs;
-    final bool canAutoAlign = cues.isNotEmpty && videoPath.isNotEmpty;
+    final bool canAutoAlign = cues.isNotEmpty;
     if (!context.mounted) return;
     // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
     // （Esc / 点外部 / 抛异常）都必须归还——此前这里漏了归还，关掉弹窗后视频快捷键
@@ -2553,3 +2728,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
 /// = mpv 字幕延迟键 `z`/`x` 的 0.1s 惯例；与快速设置面板 ±50 / ±1000 步进正交（都经
 /// [_setDelayMs] 写穿同一权威 `_delayMs`）。
 const int _kSubtitleDelayNudgeMs = 100;
+
+/// 字幕对轴 / 重定时的音频输入（见 `_resolveSubtitleTimingAudio`）。
+typedef _SubtitleTimingAudio = ({
+  String path,
+  int? audioStreamIndex,
+  int? audioStreamCount,
+});

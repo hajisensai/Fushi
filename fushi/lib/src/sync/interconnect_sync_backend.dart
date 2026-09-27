@@ -1882,10 +1882,15 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 true = host 已接收；false = 老 host 无此端点（404/405），调用方据此
   /// 停止本轮后续字幕推送并提示升级 host（与合集端点缺失同纪律）。其余失败
   /// 照常抛（[WebDavOps.checkStatus]）。
+  ///
+  /// [asDefault]：用户在远端播放时导入 / 重定时的字幕，要成为 host 上这一集的默认
+  /// 字幕（host 按自己的学习语言定后缀、让位旧 sidecar，见 `VideoSubtitleDefaultHost`）。
+  /// 不支持该能力的 host 按 [suffix] 落盘，所以 [suffix] 仍要给出合理的默认形状。
   Future<bool> putRemoteVideoSubtitle(
     String id,
     File file, {
     required String suffix,
+    bool asDefault = false,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1896,6 +1901,7 @@ class InterconnectSyncBackend extends SyncBackend
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
     req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
+    if (asDefault) req.headers.set('X-Hibiki-Subtitle-Default', '1');
     await req.addStream(file.openRead());
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
