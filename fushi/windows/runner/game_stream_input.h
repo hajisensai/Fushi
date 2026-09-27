@@ -72,6 +72,13 @@ class GameStreamInput {
   static int WheelDelta(double notches, bool vertical);
 
  private:
+  // Test-only accessor, defined solely by
+  // tests/game_stream_input_release_test.cpp. Production never defines it.
+  // (A `#define private public` shim cannot be used: MSVC encodes member
+  // access in decorated names, so the test would reference symbols the
+  // production object never exports.)
+  friend struct GameStreamInputTestAccess;
+
   bool ValidateTarget(bool require_foreground, std::string* reason);
   bool CaptureProcessIdentity(DWORD pid);
   bool ProcessIdentityStillValid() const;

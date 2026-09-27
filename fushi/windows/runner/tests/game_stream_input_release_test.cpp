@@ -10,15 +10,54 @@
 #include <iostream>
 #include <vector>
 #include <flutter/encodable_value.h>
-// Seed the tracked held-input state without needing foreground ownership.
-// Include dependencies first so this access shim only affects the test target.
-#define private public
 #include "game_stream_input.h"
 #include "voice_hook_reader.h"
 #include "../../../native/galgame_hook/include/voice_hook_ipc.h"
-#undef private
 
 namespace fushi {
+// Seeds and inspects the tracked held-input state without needing foreground
+// ownership. Befriended by GameStreamInput; forwards only what the fixture
+// needs.
+struct GameStreamInputTestAccess {
+  static bool PostKey(GameStreamInput& input, UINT vk, bool down) {
+    return input.PostKey(vk, down);
+  }
+  static bool PostPointer(GameStreamInput& input, UINT message, WPARAM flags,
+                          double x, double y) {
+    return input.PostPointer(message, flags, x, y);
+  }
+  static bool PublishNativeButtons(GameStreamInput& input, uint32_t buttons,
+                                   uint32_t verify, bool wait_for_ack,
+                                   std::string* reason) {
+    return input.PublishNativeButtons(buttons, verify, wait_for_ack, reason);
+  }
+  static bool HasSgreNativeConfirmCapability(const GameStreamInput& input) {
+    return input.HasSgreNativeConfirmCapability();
+  }
+  static uint32_t NativeGamepadButton(const std::string& name) {
+    return GameStreamInput::NativeGamepadButton(name);
+  }
+  static auto& hwnd_(GameStreamInput& input) { return input.hwnd_; }
+  static auto& pid_(GameStreamInput& input) { return input.pid_; }
+  static auto& process_creation_time_(GameStreamInput& input) {
+    return input.process_creation_time_;
+  }
+  static auto& pressed_keys_(GameStreamInput& input) {
+    return input.pressed_keys_;
+  }
+  static auto& pointer_buttons_(GameStreamInput& input) {
+    return input.pointer_buttons_;
+  }
+  static auto& activate_for_test_(GameStreamInput& input) {
+    return input.activate_for_test_;
+  }
+  static auto& native_buttons_(GameStreamInput& input) {
+    return input.native_buttons_;
+  }
+  static auto& native_transaction_id_(GameStreamInput& input) {
+    return input.native_transaction_id_;
+  }
+};
 namespace {
 VoiceHookOpenError g_open_error = VoiceHookOpenError::kMappingNotFound;
 uint32_t g_publish_seq = 0;
@@ -61,6 +100,7 @@ VoiceHookGameStreamInputStatus VoiceHookReader::GameStreamInputStatus() {
 }  // namespace fushi
 
 namespace {
+using Access = fushi::GameStreamInputTestAccess;
 int checks = 0;
 int failures = 0;
 void Expect(bool ok, const char* label) {
@@ -120,10 +160,10 @@ void Set(flutter::EncodableMap& event, const char* key, double value) {
 void SeedHeldInput(fushi::GameStreamInput& input, HWND hwnd) {
   // Deliver only window-targeted messages to this isolated fixture. Seed the
   // bookkeeping directly so no foreground activation/global input is needed.
-  input.PostKey(VK_RETURN, true);
-  input.pressed_keys_.insert(VK_RETURN);
+  Access::PostKey(input, VK_RETURN, true);
+  Access::pressed_keys_(input).insert(VK_RETURN);
   PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, 0);
-  input.pointer_buttons_ = MK_LBUTTON;
+  Access::pointer_buttons_(input) = MK_LBUTTON;
   Count(hwnd, WM_KEYDOWN);
   Count(hwnd, WM_LBUTTONDOWN);
 }
@@ -138,7 +178,7 @@ void CheckAllowed(const char* label, int show) {
   input.Release();
   Expect(Count(hwnd, WM_KEYUP) == 1, label);
   Expect(Count(hwnd, WM_LBUTTONUP) == 1, "pointer released");
-  Expect(input.pressed_keys_.empty() && input.pointer_buttons_ == 0, "tracked state cleared");
+  Expect(Access::pressed_keys_(input).empty() && Access::pointer_buttons_(input) == 0, "tracked state cleared");
   input.Unbind();
   DestroyWindow(hwnd);
 }
@@ -148,12 +188,12 @@ void CheckRejected(const char* label, int mismatch) {
   fushi::GameStreamInput input;
   Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd)), "bind identity fixture");
   SeedHeldInput(input, hwnd);
-  if (mismatch == 0) input.pid_ ^= 0x40000000;
-  if (mismatch == 1) input.process_creation_time_.dwLowDateTime ^= 1;
+  if (mismatch == 0) Access::pid_(input) ^= 0x40000000;
+  if (mismatch == 1) Access::process_creation_time_(input).dwLowDateTime ^= 1;
   if (mismatch == 2) DestroyWindow(hwnd);
   input.Release();
   Expect(Count(hwnd, WM_KEYUP) == 0 && Count(hwnd, WM_LBUTTONUP) == 0, label);
-  Expect(input.pressed_keys_.empty() && input.pointer_buttons_ == 0, "invalid identity state cleared");
+  Expect(Access::pressed_keys_(input).empty() && Access::pointer_buttons_(input) == 0, "invalid identity state cleared");
   input.Unbind();
   if (mismatch != 2) DestroyWindow(hwnd);
 }
@@ -163,25 +203,25 @@ void CheckKeyMessageBits() {
   fushi::GameStreamInput input;
   Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd)), "bind keyboard fixture");
   MSG message{};
-  input.PostKey(VK_RETURN, true);
+  Access::PostKey(input, VK_RETURN, true);
   const bool down = PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
   const auto down_bits = static_cast<uint32_t>(message.lParam);
   Expect(down && (down_bits & 0xffff) == 1 && ((down_bits >> 16) & 0xff) != 0,
          "keydown carries repeat count and scan code");
   Expect((down_bits & 0xc0000000u) == 0, "first keydown has no prior or release bit");
-  input.pressed_keys_.insert(VK_RETURN);
-  input.PostKey(VK_RETURN, true);
+  Access::pressed_keys_(input).insert(VK_RETURN);
+  Access::PostKey(input, VK_RETURN, true);
   PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
   Expect((static_cast<uint32_t>(message.lParam) & 0xc0000000u) == 0x40000000u,
          "held keydown marks previous state");
-  input.PostKey(VK_RETURN, false);
+  Access::PostKey(input, VK_RETURN, false);
   const bool up = PeekMessageW(&message, hwnd, WM_KEYUP, WM_KEYUP, PM_REMOVE);
   const auto up_bits = static_cast<uint32_t>(message.lParam);
   Expect(up && (up_bits & 0xc0000000u) == 0xc0000000u,
          "keyup carries prior and release bits");
   Expect((up_bits & 0x00ffffffu) == (down_bits & 0x00ffffffu),
          "keyup preserves scan code and repeat count");
-  input.PostKey(VK_RIGHT, true);
+  Access::PostKey(input, VK_RIGHT, true);
   const bool arrow = PeekMessageW(&message, hwnd, WM_KEYDOWN, WM_KEYDOWN, PM_REMOVE);
   Expect(arrow && (static_cast<uint32_t>(message.lParam) & 0x01000000u) != 0,
          "direction key carries extended scan-code bit");
@@ -201,7 +241,7 @@ void CheckNativeConfirmRequiresMapping() {
   SetPropW(hwnd, fushi_voice_hook::kSgreDirectInputShieldReadyProperty,
            reinterpret_cast<HANDLE>(static_cast<uintptr_t>(
                fushi_voice_hook::kSgreDirectInputShieldReadyValue)));
-  Expect(input.HasSgreNativeConfirmCapability(),
+  Expect(Access::HasSgreNativeConfirmCapability(input),
          "native fixture advertises SGRE confirm capability");
   flutter::EncodableMap event;
   event[flutter::EncodableValue("kind")] = flutter::EncodableValue("gamepad");
@@ -216,7 +256,7 @@ void CheckNativeConfirmRequiresMapping() {
     // Foreground mode activates first; a failed activation keeps the reason.
     g_activate_calls = 0;
     g_activate_result = false;
-    input.activate_for_test_ = &FakeActivate;
+    Access::activate_for_test_(input) = &FakeActivate;
     flutter::EncodableMap fg = event;
     fg[flutter::EncodableValue("inputFocus")] =
         flutter::EncodableValue("foreground");
@@ -225,42 +265,42 @@ void CheckNativeConfirmRequiresMapping() {
     Expect(!input.Send(fg, &reason) && reason == "window_not_foreground" &&
                g_activate_calls == 1 && fushi::g_publish_seq == published,
            "foreground-mode native confirm activates before the DOWN");
-    input.activate_for_test_ = nullptr;
+    Access::activate_for_test_(input) = nullptr;
   }
-  input.hwnd_ = hwnd;
+  Access::hwnd_(input) = hwnd;
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
-  Expect(!input.PublishNativeButtons(kLeft, kLeft, true, &reason) &&
+  Expect(!Access::PublishNativeButtons(input, kLeft, kLeft, true, &reason) &&
              reason == "native_input_unavailable",
          "native confirm without hook mapping is a NACK");
   fushi::g_open_error = fushi::VoiceHookOpenError::kNone;
   reason.clear();
-  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
+  Expect(Access::PublishNativeButtons(input, kLeft, kLeft, true, &reason),
          "native confirm ACK requires injected sampled state");
-  Expect(input.native_buttons_ == kLeft,
+  Expect(Access::native_buttons_(input) == kLeft,
          "native confirm tracks held state after ACK");
   reason.clear();
-  Expect(input.PublishNativeButtons(0, 0, true, &reason),
+  Expect(Access::PublishNativeButtons(input, 0, 0, true, &reason),
          "native release ACK clears sampled state");
-  Expect(input.native_buttons_ == 0 && input.native_transaction_id_ == 0,
+  Expect(Access::native_buttons_(input) == 0 && Access::native_transaction_id_(input) == 0,
          "native release clears held state");
-  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
+  Expect(Access::PublishNativeButtons(input, kLeft, kLeft, true, &reason),
          "seed native held confirm before focus loss");
   event[flutter::EncodableValue("action")] = flutter::EncodableValue("up");
   Expect(GetForegroundWindow() != hwnd, "native release fixture stays background");
   Expect(input.Send(event, &reason),
          "held native confirm releases through Send while background");
-  Expect(input.native_buttons_ == 0 && fushi::g_status.active_buttons == 0,
+  Expect(Access::native_buttons_(input) == 0 && fushi::g_status.active_buttons == 0,
          "background confirm up publishes zero mask immediately");
   Expect(Count(hwnd, WM_KEYUP) == 0 && Count(hwnd, WM_LBUTTONUP) == 0,
          "native background release never posts desktop or pointer input");
-  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason),
+  Expect(Access::PublishNativeButtons(input, kLeft, kLeft, true, &reason),
          "seed native held confirm before identity mismatch");
   const uint32_t published = fushi::g_publish_seq;
-  input.pid_ ^= 0x40000000;
+  Access::pid_(input) ^= 0x40000000;
   Expect(!input.Send(event, &reason) && reason == "process_changed" &&
              fushi::g_publish_seq == published,
          "background native up still rejects another process identity");
-  input.pid_ ^= 0x40000000;
+  Access::pid_(input) ^= 0x40000000;
   input.Send(event, &reason);  // drop the held confirm seeded above
   {
     // SGRE polls DirectInput and hit-tests at the system cursor, so a tap is
@@ -348,7 +388,7 @@ void CheckNativeGamepadButtons() {
   bool all_need_foreground = true;
   for (const auto& button : buttons) {
     all_mapped = all_mapped &&
-                 fushi::GameStreamInput::NativeGamepadButton(button.name) ==
+                 Access::NativeGamepadButton(button.name) ==
                      button.bit &&
                  (button.bit & fushi_voice_hook::kGameStreamInputButtonMask) ==
                      button.bit;
@@ -375,12 +415,12 @@ void CheckNativeGamepadButtons() {
   const uint32_t up = fushi_voice_hook::kGameStreamInputButtonDpadUp;
   const uint32_t cancel = fushi_voice_hook::kGameStreamInputButtonCancel;
   reason.clear();
-  Expect(input.PublishNativeButtons(kLeft, kLeft, true, &reason) &&
-             input.PublishNativeButtons(kLeft | up, up, true, &reason) &&
+  Expect(Access::PublishNativeButtons(input, kLeft, kLeft, true, &reason) &&
+             Access::PublishNativeButtons(input, kLeft | up, up, true, &reason) &&
              fushi::g_status.active_buttons == (kLeft | up) &&
-             input.native_buttons_ == (kLeft | up),
+             Access::native_buttons_(input) == (kLeft | up),
          "held confirm and dpad publish one combined mask");
-  const uint64_t transaction = input.native_transaction_id_;
+  const uint64_t transaction = Access::native_transaction_id_(input);
 
   // Not observed (an older DLL masks the bit off, or the action is unbound):
   // the adapter ACKs the generation without the new bit. The press fails at
@@ -388,15 +428,15 @@ void CheckNativeGamepadButtons() {
   fushi::g_observable_buttons = ~cancel;
   reason.clear();
   const uint64_t started = GetTickCount64();
-  Expect(!input.PublishNativeButtons(kLeft | up | cancel, cancel, true,
+  Expect(!Access::PublishNativeButtons(input, kLeft | up | cancel, cancel, true,
                                      &reason) &&
              reason == "native_input_not_observed",
          "an unsampled SGRE action is a NACK, never a fake ACK");
   Expect(GetTickCount64() - started < 200,
          "the first ACK without the bit is final: no wait-window stall");
-  Expect(input.native_buttons_ == (kLeft | up) &&
+  Expect(Access::native_buttons_(input) == (kLeft | up) &&
              fushi::g_status.active_buttons == (kLeft | up) &&
-             input.native_transaction_id_ == transaction,
+             Access::native_transaction_id_(input) == transaction,
          "a failed press restores the held mask in the same transaction");
   fushi::g_observable_buttons = 0xffffffffu;
 
@@ -405,7 +445,7 @@ void CheckNativeGamepadButtons() {
   reason.clear();
   Expect(input.Send(release, &reason) &&
              fushi::g_status.active_buttons == kLeft &&
-             input.native_buttons_ == kLeft,
+             Access::native_buttons_(input) == kLeft,
          "background dpad release drops only that bit");
   reason.clear();
   const uint32_t published = fushi::g_publish_seq;
@@ -421,20 +461,20 @@ void CheckNativeGamepadButtons() {
   reason.clear();
   Expect(input.Send(pointer_up, &reason) &&
              fushi::g_status.active_buttons == 0 &&
-             input.native_buttons_ == 0 && input.native_transaction_id_ == 0,
+             Access::native_buttons_(input) == 0 && Access::native_transaction_id_(input) == 0,
          "pointer up releases a held native left on a minimised target");
   Expect(DrainMouse(hwnd).empty(),
          "native pointer release posts no window mouse messages");
 
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-  Expect(input.PublishNativeButtons(
+  Expect(Access::PublishNativeButtons(input,
              fushi_voice_hook::kGameStreamInputButtonShoulderRight,
              fushi_voice_hook::kGameStreamInputButtonShoulderRight, true,
              &reason),
          "seed a held shoulder before hiding");
   ShowWindow(hwnd, SW_HIDE);
   input.Release();
-  Expect(input.native_buttons_ == 0 && fushi::g_status.active_buttons == 0,
+  Expect(Access::native_buttons_(input) == 0 && fushi::g_status.active_buttons == 0,
          "Release() drops every held native button on a hidden target");
 
   fushi::g_open_error = fushi::VoiceHookOpenError::kMappingNotFound;
@@ -484,7 +524,7 @@ void CheckPointerDpiCoordinates() {
             << " sender " << sender_extent.width << "x" << sender_extent.height << "\n";
   const double points[][2] = {{0.0, 0.0}, {0.5, 0.5}, {1.0, 1.0}, {-1.0, 2.0}};
   for (const auto& point : points) {
-    Expect(input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, point[0], point[1]),
+    Expect(Access::PostPointer(input, WM_LBUTTONDOWN, MK_LBUTTON, point[0], point[1]),
            "post pointer in target DPI context");
     Expect(contexts_equal(get_context(), sender),
            "pointer post restores sender DPI context");
@@ -506,12 +546,12 @@ void CheckPointerDpiCoordinates() {
   SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
   set_context(sender);
-  Expect(!input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
+  Expect(!Access::PostPointer(input, WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
          "empty client pointer post rejected");
   Expect(contexts_equal(get_context(), sender),
          "early return restores sender DPI context");
   input.Unbind();
-  Expect(!input.PostPointer(WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
+  Expect(!Access::PostPointer(input, WM_LBUTTONDOWN, MK_LBUTTON, 1.0, 1.0),
          "unbound pointer post rejected");
   Expect(contexts_equal(get_context(), sender),
          "failed pointer post preserves sender DPI context");
@@ -535,10 +575,10 @@ void CheckBackgroundInputAccepted() {
   reason.clear();
   Expect(input.Send(key, &reason) && Count(hwnd, WM_KEYDOWN) == 1,
          "default (background) key down posts while not foreground");
-  Expect(input.pressed_keys_.count(VK_RETURN) == 1, "background key tracked");
+  Expect(Access::pressed_keys_(input).count(VK_RETURN) == 1, "background key tracked");
   Set(key, "action", "up");
   Expect(input.Send(key, &reason) && Count(hwnd, WM_KEYUP) == 1 &&
-             input.pressed_keys_.empty(),
+             Access::pressed_keys_(input).empty(),
          "background key up posts and clears");
   auto pad = Event("gamepad", "button");
   Set(pad, "button", "confirm");
@@ -573,11 +613,11 @@ void CheckBackgroundInputAccepted() {
   Expect(!input.Send(key, &reason) && reason == "window_hidden",
          "background mode still rejects a hidden window");
   ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-  input.pid_ ^= 0x40000000;
+  Access::pid_(input) ^= 0x40000000;
   reason.clear();
   Expect(!input.Send(key, &reason) && reason == "process_changed",
          "background mode still rejects another process identity");
-  input.pid_ ^= 0x40000000;
+  Access::pid_(input) ^= 0x40000000;
   input.Unbind();
   DestroyWindow(hwnd);
 }
@@ -589,7 +629,7 @@ void CheckForegroundMode() {
   std::string reason;
   Expect(input.Bind(reinterpret_cast<uintptr_t>(hwnd), &reason),
          "bind foreground-mode fixture");
-  input.activate_for_test_ = &FakeActivate;
+  Access::activate_for_test_(input) = &FakeActivate;
   g_activate_calls = 0;
   g_activate_result = false;
   auto key = Event("key", "down");
@@ -599,14 +639,14 @@ void CheckForegroundMode() {
   Expect(!input.Send(key, &reason) && reason == "window_not_foreground" &&
              g_activate_calls == 1,
          "foreground-mode key down activates and reports failure reason");
-  Expect(Count(hwnd, WM_KEYDOWN) == 0 && input.pressed_keys_.empty(),
+  Expect(Count(hwnd, WM_KEYDOWN) == 0 && Access::pressed_keys_(input).empty(),
          "failed activation posts nothing and tracks nothing");
   auto tap = Event("pointer", "down");
   Set(tap, "inputFocus", "foreground");
   reason.clear();
   Expect(!input.Send(tap, &reason) && reason == "window_not_foreground" &&
              g_activate_calls == 2 && DrainMouse(hwnd).empty() &&
-             input.pointer_buttons_ == 0,
+             Access::pointer_buttons_(input) == 0,
          "foreground-mode pointer down rejected before any post");
   Set(tap, "action", "move");
   Expect(input.Send(tap, &reason) && g_activate_calls == 2 &&
@@ -621,7 +661,7 @@ void CheckForegroundMode() {
   Expect(input.Send(key, &reason) && g_activate_calls == 3 &&
              Count(hwnd, WM_KEYDOWN) == 1,
          "foreground-mode key down posts after successful activation");
-  input.activate_for_test_ = nullptr;
+  Access::activate_for_test_(input) = nullptr;
   input.Release();
   Count(hwnd, WM_KEYUP);
   input.Unbind();
@@ -647,7 +687,7 @@ void CheckPointerButtons() {
              posted[1].message == WM_RBUTTONDOWN &&
              posted[1].wparam == MK_RBUTTON && posted[1].lparam == mid,
          "right down posts hover move then WM_RBUTTONDOWN at same point");
-  Expect(input.pointer_buttons_ == MK_RBUTTON, "right button tracked");
+  Expect(Access::pointer_buttons_(input) == MK_RBUTTON, "right button tracked");
   auto move = Event("pointer", "move");
   Set(move, "x", 1.0);
   Set(move, "y", 1.0);
@@ -677,7 +717,7 @@ void CheckPointerButtons() {
   posted = DrainMouse(hwnd);
   Expect(posted.size() == 1 && posted[0].message == WM_RBUTTONUP &&
              posted[0].wparam == (MK_LBUTTON | MK_MBUTTON) &&
-             input.pointer_buttons_ == (MK_LBUTTON | MK_MBUTTON),
+             Access::pointer_buttons_(input) == (MK_LBUTTON | MK_MBUTTON),
          "right up leaves remaining flags");
   Expect(input.Send(right, &reason), "right pressed again before release");
   DrainMouse(hwnd);
@@ -689,7 +729,7 @@ void CheckPointerButtons() {
              posted[1].wparam == MK_MBUTTON &&
              posted[2].message == WM_MBUTTONUP && posted[2].wparam == 0,
          "Release releases every held button");
-  Expect(input.pointer_buttons_ == 0, "Release clears pointer state");
+  Expect(Access::pointer_buttons_(input) == 0, "Release clears pointer state");
   auto bogus = Event("pointer", "down");
   Set(bogus, "button", "x1");
   reason.clear();
@@ -702,7 +742,7 @@ void CheckPointerButtons() {
                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
   reason.clear();
   Expect(!input.Send(right, &reason) && reason == "post_failed" &&
-             input.pointer_buttons_ == 0,
+             Access::pointer_buttons_(input) == 0,
          "failed down post does not mark the button held");
   input.Unbind();
   DestroyWindow(hwnd);
