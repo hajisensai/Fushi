@@ -10,8 +10,10 @@ import androidx.core.content.pm.ShortcutManagerCompat;
 import androidx.core.graphics.drawable.IconCompat;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /// 长按 app 图标弹出的动态快捷方式（Dart 门面 `lib/src/platform/app_shortcuts.dart`）。
 ///
@@ -24,11 +26,12 @@ public final class AppShortcutsHelper {
 
     private AppShortcutsHelper() {}
 
-    public static void setShortcuts(Context context, List<Map<String, String>> items) {
-        List<ShortcutInfoCompat> shortcuts = new ArrayList<>();
-        int max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context);
+    public static void setShortcuts(
+        Context context, List<Map<String, String>> items, String disabledMessage) {
+        // Dart 本次仍在提供的全部快捷方式（含因启动器上限进不了菜单的）：只有不在
+        // 这里的固定快捷方式才是「模块被关掉了」，也只有这里的才该被重新启用。
+        List<ShortcutInfoCompat> offered = new ArrayList<>();
         for (Map<String, String> item : items) {
-            if (shortcuts.size() >= max) break;
             String id = item.get("id");
             String title = item.get("title");
             String url = item.get("url");
@@ -36,19 +39,52 @@ public final class AppShortcutsHelper {
             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url))
                 .setClass(context, MainActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            shortcuts.add(new ShortcutInfoCompat.Builder(context, id)
+            offered.add(new ShortcutInfoCompat.Builder(context, id)
                 .setShortLabel(title)
                 .setLongLabel(title)
                 .setIcon(IconCompat.createWithResource(context, iconFor(id)))
                 .setIntent(intent)
-                .setRank(shortcuts.size())
+                .setRank(offered.size())
                 .build());
+        }
+        int max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context);
+        List<ShortcutInfoCompat> shortcuts =
+            new ArrayList<>(offered.subList(0, Math.min(max, offered.size())));
+        try {
+            // 模块重新打开：之前被置灰的固定快捷方式要先恢复，再随动态列表一起更新。
+            ShortcutManagerCompat.enableShortcuts(context, offered);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "enableShortcuts failed", e);
         }
         try {
             ShortcutManagerCompat.setDynamicShortcuts(context, shortcuts);
         } catch (RuntimeException e) {
             // 系统限流（后台频繁更新）或启动器不支持时只丢图标菜单，不影响 app。
             Log.w(TAG, "setDynamicShortcuts failed", e);
+        }
+        Set<String> offeredIds = new HashSet<>();
+        for (ShortcutInfoCompat shortcut : offered) offeredIds.add(shortcut.getId());
+        disableRemovedPinned(context, offeredIds, disabledMessage);
+    }
+
+    /// 被固定到桌面的快捷方式不受 setDynamicShortcuts 管：模块关掉后它还在桌面上，
+    /// 点下去会把用户送进一个已关的模块。置灰它，启动器点击时显示 [disabledMessage]
+    /// （空则用启动器默认文案）。Dart 侧 `runAppShortcut` 另有一道模块门兜底。
+    private static void disableRemovedPinned(
+        Context context, Set<String> offered, String disabledMessage) {
+        List<String> removed = new ArrayList<>();
+        try {
+            for (ShortcutInfoCompat pinned :
+                ShortcutManagerCompat.getShortcuts(context, ShortcutManagerCompat.FLAG_MATCH_PINNED)) {
+                if (!offered.contains(pinned.getId())) removed.add(pinned.getId());
+            }
+            if (removed.isEmpty()) return;
+            ShortcutManagerCompat.disableShortcuts(
+                context,
+                removed,
+                disabledMessage == null || disabledMessage.isEmpty() ? null : disabledMessage);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "disableShortcuts failed", e);
         }
     }
 
@@ -61,12 +97,8 @@ public final class AppShortcutsHelper {
             case "manga":
                 return R.drawable.ic_shortcut_manga;
             case "video":
-                return R.drawable.ic_shortcut_video;
-            case "games":
-                return R.drawable.ic_shortcut_games;
-            case "settings":
             default:
-                return R.drawable.ic_shortcut_settings;
+                return R.drawable.ic_shortcut_video;
         }
     }
 }

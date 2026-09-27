@@ -36,13 +36,24 @@ void main() {
       expect(AppShortcut.books.homeTab, HomeTab.books);
       expect(AppShortcut.manga.homeTab, HomeTab.manga);
       expect(AppShortcut.video.homeTab, HomeTab.video);
-      expect(AppShortcut.games.homeTab, HomeTab.games);
-      expect(AppShortcut.settings.homeTab, HomeTab.settings);
+    });
+
+    // 所有者 2026-09-27 拍板：只留查词 / 书 / 漫画 / 视频四条，两端一致。曾经发布
+    // 过的游戏库 / 设置 URL 不再解析（Android 固定的那两条由原生侧置灰）。
+    test('only lookup, books, manga and video exist', () {
+      expect(AppShortcut.values, [
+        AppShortcut.lookup,
+        AppShortcut.books,
+        AppShortcut.manga,
+        AppShortcut.video,
+      ]);
+      expect(AppShortcut.tryParse('fushi://shortcut/games'), isNull);
+      expect(AppShortcut.tryParse('fushi://shortcut/settings'), isNull);
     });
   });
 
   group('AppShortcut.available', () {
-    test('lookup first, settings last, games only where the module exists', () {
+    test('same four in the same order on iOS and Android', () {
       final List<AppShortcut> ios = AppShortcut.available(
         ModuleVisibility.all(
           isWindows: false,
@@ -56,7 +67,6 @@ void main() {
         AppShortcut.books,
         AppShortcut.manga,
         AppShortcut.video,
-        AppShortcut.settings,
       ]);
 
       final List<AppShortcut> android = AppShortcut.available(
@@ -72,16 +82,14 @@ void main() {
         AppShortcut.books,
         AppShortcut.manga,
         AppShortcut.video,
-        AppShortcut.games,
-        AppShortcut.settings,
       ]);
     });
 
-    test('modules the user turned off are not offered; settings always is', () {
+    test('modules the user turned off are not offered', () {
       final List<AppShortcut> shortcuts = AppShortcut.available(
         const ModuleVisibility(<ModuleId>{ModuleId.books}),
       );
-      expect(shortcuts, [AppShortcut.books, AppShortcut.settings]);
+      expect(shortcuts, [AppShortcut.books]);
     });
   });
 
@@ -110,25 +118,29 @@ void main() {
     String label(AppShortcut shortcut) => 'L-${shortcut.id}';
 
     test('sends id, title and url in order', () async {
-      AppShortcutsPublisher(platformSupported: true).sync(<AppShortcut>[
-        AppShortcut.lookup,
-        AppShortcut.settings,
-      ], labelOf: label);
+      AppShortcutsPublisher(platformSupported: true).sync(
+        <AppShortcut>[AppShortcut.lookup, AppShortcut.video],
+        labelOf: label,
+        disabledMessage: 'off',
+      );
       await pumpEventQueue();
       expect(calls, hasLength(1));
       expect(calls.single.method, 'setShortcuts');
-      expect(calls.single.arguments, <Map<String, String>>[
-        <String, String>{
-          'id': 'lookup',
-          'title': 'L-lookup',
-          'url': 'fushi://shortcut/lookup',
-        },
-        <String, String>{
-          'id': 'settings',
-          'title': 'L-settings',
-          'url': 'fushi://shortcut/settings',
-        },
-      ]);
+      expect(calls.single.arguments, <String, Object>{
+        'items': <Map<String, String>>[
+          <String, String>{
+            'id': 'lookup',
+            'title': 'L-lookup',
+            'url': 'fushi://shortcut/lookup',
+          },
+          <String, String>{
+            'id': 'video',
+            'title': 'L-video',
+            'url': 'fushi://shortcut/video',
+          },
+        ],
+        'disabledMessage': 'off',
+      });
     });
 
     test(
@@ -137,20 +149,40 @@ void main() {
         final AppShortcutsPublisher publisher = AppShortcutsPublisher(
           platformSupported: true,
         );
-        publisher.sync(<AppShortcut>[AppShortcut.books], labelOf: label);
-        publisher.sync(<AppShortcut>[AppShortcut.books], labelOf: label);
+        publisher.sync(
+          <AppShortcut>[AppShortcut.books],
+          labelOf: label,
+          disabledMessage: 'off',
+        );
+        publisher.sync(
+          <AppShortcut>[AppShortcut.books],
+          labelOf: label,
+          disabledMessage: 'off',
+        );
         await pumpEventQueue();
         expect(calls, hasLength(1));
 
-        publisher.sync(<AppShortcut>[
-          AppShortcut.books,
-        ], labelOf: (AppShortcut s) => 'Books (ja)');
-        publisher.sync(<AppShortcut>[
-          AppShortcut.books,
-          AppShortcut.video,
-        ], labelOf: label);
+        publisher.sync(
+          <AppShortcut>[AppShortcut.books],
+          labelOf: (AppShortcut s) => 'Books (ja)',
+          disabledMessage: 'off',
+        );
+        publisher.sync(
+          <AppShortcut>[AppShortcut.books, AppShortcut.video],
+          labelOf: label,
+          disabledMessage: 'off',
+        );
         await pumpEventQueue();
         expect(calls, hasLength(3));
+
+        // 界面语言变了、列表没变：置灰提示文案也要跟着重发。
+        publisher.sync(
+          <AppShortcut>[AppShortcut.books, AppShortcut.video],
+          labelOf: label,
+          disabledMessage: 'aus',
+        );
+        await pumpEventQueue();
+        expect(calls, hasLength(4));
       },
     );
 
@@ -159,10 +191,18 @@ void main() {
         platformSupported: true,
       );
       failWith = PlatformException(code: 'rate_limited');
-      publisher.sync(<AppShortcut>[AppShortcut.books], labelOf: label);
+      publisher.sync(
+        <AppShortcut>[AppShortcut.books],
+        labelOf: label,
+        disabledMessage: 'off',
+      );
       await pumpEventQueue();
       failWith = null;
-      publisher.sync(<AppShortcut>[AppShortcut.books], labelOf: label);
+      publisher.sync(
+        <AppShortcut>[AppShortcut.books],
+        labelOf: label,
+        disabledMessage: 'off',
+      );
       await pumpEventQueue();
       expect(calls, hasLength(2));
     });
@@ -170,7 +210,7 @@ void main() {
     test('unsupported platforms never touch the channel', () async {
       AppShortcutsPublisher(
         platformSupported: false,
-      ).sync(AppShortcut.values, labelOf: label);
+      ).sync(AppShortcut.values, labelOf: label, disabledMessage: 'off');
       await pumpEventQueue();
       expect(calls, isEmpty);
     });
@@ -203,5 +243,25 @@ void main() {
       contains('"/app_shortcuts"'),
     );
     expect(FushiChannels.appShortcuts.name, 'app.fushi.reader/app_shortcuts');
+  });
+
+  // 通道载荷是 {items, disabledMessage}：两端都得按这个形状取，Android 还要把
+  // 不再提供的固定快捷方式置灰（setDynamicShortcuts 删不掉它们）。
+  test('native sides read the {items, disabledMessage} payload', () {
+    final String activity = File(
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java',
+    ).readAsStringSync();
+    expect(activity, contains('call.argument("items")'));
+    expect(activity, contains('call.argument("disabledMessage")'));
+    final String helper = File(
+      'android/app/src/main/java/app/fushi/reader/AppShortcutsHelper.java',
+    ).readAsStringSync();
+    expect(helper, contains('ShortcutManagerCompat.disableShortcuts('));
+    expect(helper, contains('ShortcutManagerCompat.enableShortcuts('));
+    expect(helper, contains('FLAG_MATCH_PINNED'));
+    final String swift = File(
+      'ios/Runner/AppDelegate.swift',
+    ).readAsStringSync();
+    expect(swift, contains('args?["items"]'));
   });
 }

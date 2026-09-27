@@ -1130,8 +1130,10 @@ public class MainActivity extends AudioServiceActivity {
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ChannelNames.APP_SHORTCUTS)
             .setMethodCallHandler((call, result) -> {
                 if ("setShortcuts".equals(call.method)) {
-                    List<Map<String, String>> items = call.arguments();
-                    AppShortcutsHelper.setShortcuts(this, items == null ? new ArrayList<>() : items);
+                    List<Map<String, String>> items = call.argument("items");
+                    String disabledMessage = call.argument("disabledMessage");
+                    AppShortcutsHelper.setShortcuts(
+                        this, items == null ? new ArrayList<>() : items, disabledMessage);
                     result.success(null);
                 } else {
                     result.notImplemented();

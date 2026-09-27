@@ -1,10 +1,18 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 /// The current media page owns its shutdown. External navigation must await
 /// that shutdown instead of removing a route before its final writes finish.
 class ExternalMediaNavigation {
   ExternalMediaNavigation._();
   static final ExternalMediaNavigation instance = ExternalMediaNavigation._();
+
+  /// 测试专用的独立实例：[navigate] 的队列尾是跨调用存活的 future，单例在
+  /// testWidgets 之间复用时它属于上一个用例的 FakeAsync zone，后续用例 await 它
+  /// 永远等不到微任务。
+  @visibleForTesting
+  ExternalMediaNavigation.forTesting();
   Object? _owner;
   Future<bool> Function()? _close;
   String? Function()? _videoUid;
