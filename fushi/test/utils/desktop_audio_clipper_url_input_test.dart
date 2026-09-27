@@ -147,6 +147,11 @@ void main() {
       expect(isBilibiliCdnHost('XY.MCDN.BILIVIDEO.CN'), isTrue); // 大小写不敏感
       expect(isBilibiliCdnHost('bilivideo.com'), isTrue);
       expect(isBilibiliCdnHost('upos-hz-mirrorakam.akamaized.net'), isTrue);
+      // BUG-2730：B 站 PCDN 节点，实测不带 Referer 403。
+      expect(
+          isBilibiliCdnHost(
+              'b-baaaw79txv1hrw3c8upt73k9fsi.edge.mountaintoys.cn'),
+          isTrue);
       // 后缀必须过点：不能把 `notbilivideo.com` 当 B 站。
       expect(isBilibiliCdnHost('notbilivideo.com'), isFalse);
       // Akamai 是共享域名，非 upos- 前缀不认。

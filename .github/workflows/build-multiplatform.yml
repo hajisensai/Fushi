@@ -724,6 +724,15 @@ jobs:
         working-directory: fushi
         run: >-
           flutter build windows --debug
+      # BUG-2726: the game-stream input regression (SGRE native gamepad channel,
+      # releases that skip visibility checks) is excluded from the runner's
+      # default build because it touches real HWNDs; build and run it here with
+      # the MSVC tree `flutter build windows` just configured.
+      - name: Run game-stream input regression
+        shell: pwsh
+        run: |
+          cmake --build fushi\build\windows\x64 --config Debug --target fushi_windows_game_stream_input_gate
+          if ($LASTEXITCODE -ne 0) { throw "game-stream input regression failed ($LASTEXITCODE)" }
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |

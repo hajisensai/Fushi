@@ -5399,7 +5399,7 @@
   "game_stream_mine_snapshot_missing": "主机没有这句台词的画面，请对当前台词查词制卡",
   "game_stream_more": "更多",
   "game_stream_settings_adaptive": "自适应码率",
-  "game_stream_settings_adaptive_hint": "网络拥塞时自动降低码率",
+  "game_stream_settings_adaptive_hint": "从一半码率起步再逐步提升；关闭则直接以设定码率起步。两种方式在网络拥塞时都会降低码率",
   "game_stream_settings_apply_failed": "未能应用串流设置",
   "game_stream_settings_audio": "播放游戏声音",
   "game_stream_settings_bitrate": "码率",
@@ -5623,5 +5623,7 @@
   "video_subtitle_remote_audio_fetching": "正在从服务端获取音轨…",
   "video_subtitle_host_upload_done": "字幕已上传到服务端，设为这一集的默认字幕",
   "video_subtitle_host_upload_failed": "字幕上传服务端失败，仅保存在本机",
-  "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机"
+  "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机",
+  "video_setting_subtitle_auto_upload_to_host": "导入的字幕自动上传到服务端",
+  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。"
 }

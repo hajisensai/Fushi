@@ -10,7 +10,6 @@
 #include <iostream>
 #include <mmdeviceapi.h>
 #include <roapi.h>
-#include <timeapi.h>
 
 // ---------------------------------------------------------------------------
 // ApplicationLoopbackAudio API types
@@ -581,7 +580,10 @@ void ApplicationLoopbackCapturer::FeederThread() {
   fushi::AudioFeedClock clock(10000, 8, 300000);
 
   // Auto-reset waitable timer, every 5 ms. High resolution when available
-  // (Windows 10 1803+): it does not depend on the process timer resolution.
+  // (Windows 10 1803+): it does not depend on the process timer resolution,
+  // so no system-wide timeBeginPeriod(1) is requested. On the coarse
+  // fallback timer the clock still catches up by elapsed time — ticks only
+  // decide how often chunks are handed over, never how many.
 #ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
 #define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION 0x00000002
 #endif
@@ -594,8 +596,6 @@ void ApplicationLoopbackCapturer::FeederThread() {
   LARGE_INTEGER due = {};
   due.QuadPart = -50000LL;  // 5 ms initial delay (100-ns units)
   SetWaitableTimer(timer, &due, /*lPeriod_ms=*/5, nullptr, nullptr, FALSE);
-
-  timeBeginPeriod(1);
 
   while (running_) {
     if (WaitForSingleObject(timer, /*timeout_ms=*/40) == WAIT_FAILED) break;
@@ -643,7 +643,6 @@ void ApplicationLoopbackCapturer::FeederThread() {
 
   CancelWaitableTimer(timer);
   CloseHandle(timer);
-  timeEndPeriod(1);
   if (task) AvRevertMmThreadCharacteristics(task);
   CoUninitialize();
 }

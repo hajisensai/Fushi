@@ -71,6 +71,8 @@ import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
+import 'package:fushi/src/platform/app_shortcuts.dart';
+import 'package:fushi/src/platform/app_shortcut_router.dart';
 import 'package:fushi/src/platform/windows_ime_guard.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
@@ -718,6 +720,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
 
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
+
+  /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
+  /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
+  /// 重置成启动 tab，所以先排队，等 home 挂载后的首帧再落地。
+  late final AppShortcutQueue _appShortcuts = AppShortcutQueue(
+    isActive: () => mounted,
+    run: _runAppShortcut,
+  );
   StreamSubscription<String>? _sourceUrlSubscription;
   bool _sourceNavigationScheduled = false;
   bool _sourceNavigationRunning = false;
@@ -1179,6 +1189,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueCardSourceUrl(data);
       return true;
     }
+    final AppShortcut? shortcut = AppShortcut.tryParse(data);
+    if (shortcut != null) {
+      _queueAppShortcut(shortcut);
+      return true;
+    }
     final String normalized = data.toLowerCase();
     if (normalized.startsWith('fushi://auth/')) {
       await _handleOAuthRedirect(data);
@@ -1193,6 +1208,26 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       return true;
     }
     return false;
+  }
+
+  void _queueAppShortcut(AppShortcut shortcut) {
+    final bool ready = mounted && ref.read(appProvider).isInitialised;
+    _appShortcuts.enqueue(shortcut, ready: ready);
+    // 未初始化：初始化完成后的根 build 会调 [AppShortcutQueue.schedule]。
+    if (mounted && !ready) setState(() {});
+  }
+
+  Future<void> _runAppShortcut(AppShortcut shortcut) {
+    final AppModel appModel = ref.read(appProvider);
+    return runAppShortcut(
+      shortcut,
+      visibility: appModel.moduleVisibility,
+      onboardingCompleted: appModel.onboardingCompleted,
+      navigator: appModel.navigatorKey.currentState,
+      selectHomeTab: (HomeTab tab) => homeShellTabNotifier.value = tab,
+      // 用户点「查词」就是要打字：送进搜索框。
+      openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
+    );
   }
 
   void _queueCardSourceUrl(String url) {
@@ -2008,6 +2043,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     _scheduleCardSourceNavigation();
+    _appShortcuts.schedule();
+    // 长按图标菜单跟着模块开关与界面语言走：两者一变根 build 就重跑（模块开关
+    // notifyListeners / 语言切换重建整树），发布器按签名去重，平时不过通道。
+    AppShortcutsPublisher.instance.sync(
+      AppShortcut.available(appModel.moduleVisibility),
+      labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
+      disabledMessage: t.module_disabled_hint,
+    );
 
     // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
     // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。
