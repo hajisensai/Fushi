@@ -776,6 +776,18 @@ void FlutterPeerConnection::RtpSenderReplaceTrack(
   result_ptr->Success();
 }
 
+// Fushi patch: Dart ints arrive as int32/int64 and doubles as double; the
+// upstream GetValue<int>/<double> calls threw on the other representation.
+// Returns 0 when the value is absent or not numeric.
+static double FushiEncodingNumber(const EncodableValue& value) {
+  if (const auto* d = std::get_if<double>(&value)) return *d;
+  if (const auto* i = std::get_if<int32_t>(&value)) return *i;
+  if (const auto* l = std::get_if<int64_t>(&value)) {
+    return static_cast<double>(*l);
+  }
+  return 0;
+}
+
 scoped_refptr<RTCRtpParameters> FlutterPeerConnection::updateRtpParameters(
     EncodableMap newParameters,
     scoped_refptr<RTCRtpParameters> parameters) {
@@ -793,30 +805,36 @@ scoped_refptr<RTCRtpParameters> FlutterPeerConnection::updateRtpParameters(
       // encodings are written back (below), echoing them makes libwebrtc
       // reject the whole call as a read-only modification — and a uint32 SSRC
       // round-tripped through GetValue<int> is not even the same value.
+      // Fushi patch: the getter reports unset fields as 0 / "" (see
+      // rtpParametersToMap), and Dart sends the whole map back. Written back
+      // verbatim those are invalid values — an empty scalabilityMode or zero
+      // temporal layers makes libwebrtc reject the entire setParameters — so
+      // only values that are actually set are applied.
       value = findEncodableValue(map, "maxBitrate");
-      if (!value.IsNull()) {
-        param->set_max_bitrate_bps(GetValue<int>(value));
+      if (FushiEncodingNumber(value) > 0) {
+        param->set_max_bitrate_bps(static_cast<int>(FushiEncodingNumber(value)));
       }
 
       value = findEncodableValue(map, "minBitrate");
-      if (!value.IsNull()) {
-        param->set_min_bitrate_bps(GetValue<int>(value));
+      if (FushiEncodingNumber(value) > 0) {
+        param->set_min_bitrate_bps(static_cast<int>(FushiEncodingNumber(value)));
       }
 
       value = findEncodableValue(map, "maxFramerate");
-      if (!value.IsNull()) {
-        param->set_max_framerate(GetValue<int>(value));
+      if (FushiEncodingNumber(value) > 0) {
+        param->set_max_framerate(static_cast<int>(FushiEncodingNumber(value)));
       }
       value = findEncodableValue(map, "numTemporalLayers");
-      if (!value.IsNull()) {
-        param->set_num_temporal_layers(GetValue<int>(value));
+      if (FushiEncodingNumber(value) > 0) {
+        param->set_num_temporal_layers(
+            static_cast<int>(FushiEncodingNumber(value)));
       }
       value = findEncodableValue(map, "scaleResolutionDownBy");
-      if (!value.IsNull()) {
-        param->set_scale_resolution_down_by(GetValue<double>(value));
+      if (FushiEncodingNumber(value) >= 1.0) {
+        param->set_scale_resolution_down_by(FushiEncodingNumber(value));
       }
       value = findEncodableValue(map, "scalabilityMode");
-      if (!value.IsNull()) {
+      if (TypeIs<std::string>(value) && !GetValue<std::string>(value).empty()) {
         param->set_scalability_mode(GetValue<std::string>(value));
       }
       value = findEncodableValue(map, "priority");
