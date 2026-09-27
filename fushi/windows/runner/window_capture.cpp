@@ -197,6 +197,7 @@ namespace WGDXD3D = ABI::Windows::Graphics::DirectX::Direct3D11;
 using wgc::GetActivationFactory;
 using wgc::IDxgiInterfaceAccessLocal;
 using wgc::CloseIfClosable;
+using wgc::SuppressCaptureBorder;
 
 std::string WideToUtf8(const std::wstring& w) {
   if (w.empty()) {
@@ -1518,9 +1519,19 @@ void CaptureCore(HWND hwnd, WindowCaptureResult* out,
                      "build 19041+); WGC cursor NOT suppressed",
                      SUCCEEDED(cursor_qi) ? E_POINTER : cursor_qi);
   }
-  ComPtr<WGC::IGraphicsCaptureSession3> session3;
-  if (SUCCEEDED(session.As(&session3))) {
-    session3->put_IsBorderRequired(false);
+  // 黄色捕获高亮框。单帧会话只存活到拿到一帧，去不掉也只是一闪，照常截；
+  // 但与光标同理把「没去掉」写进 diagnostics，用户机器上是否 Win10 由此可证。
+  const HRESULT border_hr = SuppressCaptureBorder(session.Get());
+  if (border_hr == E_NOINTERFACE) {
+    AppendDiagnostic(out,
+                     "IGraphicsCaptureSession3 unavailable (needs Windows "
+                     "build 20348+); WGC yellow border NOT suppressed",
+                     border_hr);
+  } else if (FAILED(border_hr)) {
+    AppendDiagnostic(out,
+                     "put_IsBorderRequired(false) failed; WGC yellow border "
+                     "NOT suppressed",
+                     border_hr);
   }
 
   std::atomic<bool> grabbed{false};
