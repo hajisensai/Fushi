@@ -22,6 +22,69 @@ int _runQuiet(
 }
 
 void main() {
+  // BUG-2731：平板实测局域网原画直传，一次横滑 seek 缓冲 3～4 秒 → 被判「撑不住」降成
+  // 转码并按 seek 前的旧位置重开，用户的滑动被抹掉。
+  group('seek 引起的缓冲不算网况（BUG-2731）', () {
+    test('原画直传 seek 后连续缓冲 4 拍：不降档', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: -1);
+      c.noteSeek();
+      for (int i = 0; i < 4; i++) {
+        expect(
+          c.tick(currentIndex: -1, buffering: true, cacheSeconds: 0),
+          isNull,
+          reason: '第 ${i + 1} 拍：seek 的缓冲不该触发降档',
+        );
+      }
+      expect(_runQuiet(c, 5, currentIndex: -1), -1);
+    });
+
+    test('seek 之后一直缓冲超过宽限：照常降档（真卡不被 seek 掩盖）', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: -1);
+      c.noteSeek();
+      AdaptiveQualityDecision? decision;
+      for (
+        int i = 0;
+        i < kAdaptiveSeekGraceTicks + kAdaptiveStallTicksToDrop;
+        i++
+      ) {
+        decision ??= c.tick(currentIndex: -1, buffering: true, cacheSeconds: 0);
+      }
+      expect(decision, isNotNull);
+      expect(decision!.reason, AdaptiveQualityReason.stall);
+    });
+
+    test('seek 落地起播后宽限立即结束，之后的卡顿照常计', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: 1, cacheSeconds: 1);
+      c.noteSeek();
+      expect(c.tick(currentIndex: 1, buffering: true, cacheSeconds: 0), isNull);
+      // 起播：宽限结束。
+      expect(
+        c.tick(currentIndex: 1, buffering: false, cacheSeconds: 1),
+        isNull,
+      );
+      AdaptiveQualityDecision? decision;
+      for (int i = 0; i < kAdaptiveStallTicksToDrop; i++) {
+        decision ??= c.tick(currentIndex: 1, buffering: true, cacheSeconds: 0);
+      }
+      expect(decision?.targetIndex, 2);
+    });
+
+    test('reset 清掉未用完的 seek 宽限', () {
+      final AdaptiveQualityController c = AdaptiveQualityController();
+      c.noteSeek();
+      c.reset();
+      _runQuiet(c, kAdaptiveCooldownTicks, currentIndex: 1, cacheSeconds: 1);
+      AdaptiveQualityDecision? decision;
+      for (int i = 0; i < kAdaptiveStallTicksToDrop; i++) {
+        decision ??= c.tick(currentIndex: 1, buffering: true, cacheSeconds: 0);
+      }
+      expect(decision, isNotNull);
+    });
+  });
+
   group('降档（卡了）', () {
     test('冷却期内不换档——一次网络抖动不该连降三档', () {
       final AdaptiveQualityController c = AdaptiveQualityController();

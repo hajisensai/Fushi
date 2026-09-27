@@ -257,7 +257,23 @@ inline constexpr uint32_t kLeafAquaplusSampledInputButtonMask = 0x7u;
 inline constexpr uint32_t kGameStreamInputRequestWriteInProgress = 0x80000000u;
 inline constexpr uint32_t kGameStreamInputRequestSequenceMask = 0x7fffffffu;
 inline constexpr uint32_t kGameStreamInputButtonLeft = 0x1u;
-inline constexpr uint32_t kGameStreamInputButtonMask = kGameStreamInputButtonLeft;
+// Engine-neutral remote gamepad actions (BUG-2726). The host publishes what the
+// remote player holds; each adapter maps an action to whatever its engine
+// actually samples (SGRE: the DirectInput keyboard key the engine binds to that
+// action). The layout of the request block is unchanged, so this stays v25: an
+// older injected DLL masks these bits off, reports them as not observed, and the
+// host fails closed with `native_input_not_observed` instead of guessing.
+inline constexpr uint32_t kGameStreamInputButtonDpadUp = 0x100u;
+inline constexpr uint32_t kGameStreamInputButtonDpadDown = 0x200u;
+inline constexpr uint32_t kGameStreamInputButtonDpadLeft = 0x400u;
+inline constexpr uint32_t kGameStreamInputButtonDpadRight = 0x800u;
+inline constexpr uint32_t kGameStreamInputButtonCancel = 0x1000u;
+inline constexpr uint32_t kGameStreamInputButtonShoulderLeft = 0x2000u;
+inline constexpr uint32_t kGameStreamInputButtonShoulderRight = 0x4000u;
+inline constexpr uint32_t kGameStreamInputButtonMenu = 0x8000u;
+inline constexpr uint32_t kGameStreamInputGamepadButtonMask = 0xff00u;
+inline constexpr uint32_t kGameStreamInputButtonMask =
+    kGameStreamInputButtonLeft | kGameStreamInputGamepadButtonMask;
 inline constexpr uint32_t kGameStreamInputStatusUnknown = 0u;
 inline constexpr uint32_t kGameStreamInputStatusApplied = 1u;
 inline constexpr uint32_t kGameStreamInputStatusRejectedTarget = 2u;

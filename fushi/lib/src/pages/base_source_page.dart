@@ -14,6 +14,7 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
@@ -92,6 +93,8 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       _closeForSourceReturn,
       returnToReading: SourceReviewScope.read(context)?.onReturnToReading,
       isSourceReview: () => SourceReviewScope.read(context)?.isReview ?? false,
+      ownsRoute: (Route<dynamic> route) =>
+          mounted && identical(ModalRoute.of(context), route),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -299,13 +302,41 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     return true;
   }
 
+  bool _sourceExitClaimed = false;
+
+  /// 退出单飞门：页内退出（PopScope 回调 / 退出按钮）与外部导航收页
+  /// （[_closeForSourceReturn]，经 [ExternalMediaNavigation.closeActive]）共用。
+  /// 返回 false = 已经有一条退出在跑，调用方不得再跑第二遍——否则
+  /// [onSourcePagePop]（落盘、停表）、closeMedia、自动同步都会并发执行两次。
+  /// 只上不下：退出一旦发起就无条件出栈（[exitAfterPersist]），本页随之销毁。
+  /// 自带单飞门的子类（阅读器的 `_popInProgress`）覆写成同一把锁。
+  @protected
+  bool claimSourceExit() {
+    if (_sourceExitClaimed) return false;
+    _sourceExitClaimed = true;
+    return true;
+  }
+
   Future<bool> _closeForSourceReturn() async {
     if (!mounted) return true;
     final ModalRoute<dynamic>? route = ModalRoute.of(context);
     if (route == null || !route.isCurrent) return false;
+    // 页面自己的退出已在跑（用户同时按了返回）：它会无条件出栈，等它结束即可。
+    if (!claimSourceExit()) {
+      await route.completed;
+      return true;
+    }
     final NavigatorState navigator = Navigator.of(context);
-    if (!await onWillPop()) return false;
-    if (mounted && route.isCurrent) navigator.pop();
+    // BUG-2119 口径（与页内返回同一原语）：同步发起落库后立即出栈，不 await
+    // onWillPop。drift 写请求已排进队列，外部导航随后对同一行的读排在它之后；
+    // 而 await 一条没有上界的写会把 ExternalMediaNavigation 的共享队列永久卡死。
+    exitAfterPersist(
+      persist: onWillPop,
+      exit: navigator.pop,
+      onPersistError: (Object error, StackTrace stack) => ErrorLogService
+          .instance
+          .log('BaseSourcePage.externalClose', error, stack),
+    );
     await route.completed;
     return true;
   }

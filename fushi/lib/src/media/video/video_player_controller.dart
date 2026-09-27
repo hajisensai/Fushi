@@ -320,6 +320,26 @@ class VideoPlayerController extends ChangeNotifier
   /// （慢设备 / 永不落定）也放行真实位置，绝不永久把字幕钉在旧目标上。
   int _plainSeekGraceTicksLeft = 0;
 
+  /// 最近一次 seek 的目标位置，**直到真实位置落到它附近才清**（BUG-2731）。
+  ///
+  /// 与 [_plainSeekTargetMs] 不同：那一个只管字幕、播放态最多保 2 秒；这一个服务
+  /// 「按当前位置重开流」的调用方（换画质 / 换音轨 / 自适应降档），不设拍数上限。
+  /// 远端流一次 seek 要重新发 Range 请求，缓冲几秒很常见，这期间 mpv 吐的 position
+  /// 还是 seek 之前的旧值——拿它重开，用户刚滑到的位置就被抹掉，看着像「没滑」。
+  int? _pendingSeekLandingMs;
+
+  /// 落地判据：真实位置进入目标 ±这个窗口即算 seek 已落定。
+  ///
+  /// 用双向窗口而不是「≥ 目标」：往回 seek 时滞后的旧位置本来就大于目标，单向判据
+  /// 会在 seek 刚发出就误判落地。窗口外的旧位置都是「还没落地」。
+  static const int _kSeekLandingWindowMs = 1500;
+
+  /// 每发出一次 seek 就 +1（[seekMs] / [notifyExternalSeek] / [skipToCue] 等全部入口）。
+  ///
+  /// 给「按采样判断网况」的消费者（互联自适应画质）区分「这段缓冲是用户 seek 引起的」
+  /// 与「网络真的跟不上」（BUG-2731）。
+  int _seekGeneration = 0;
+
   /// 音画延迟（毫秒）：正值表示"视频比文字先播"，查 cue 时把位置往回拨。
   int _delayMs = 0;
 
@@ -749,6 +769,29 @@ class VideoPlayerController extends ChangeNotifier
       _debugPositionOverride ??
       _externalPositionMs ??
       _player?.state.position.inMilliseconds;
+
+  /// 「按当前位置重开流」该用的位置：有未落地的 seek 时取它的目标，否则取 [positionMs]。
+  ///
+  /// 见 [_pendingSeekLandingMs]（BUG-2731）。
+  int? get resumePositionMs => _pendingSeekLandingMs ?? positionMs;
+
+  /// 见 [_seekGeneration]。
+  int get seekGeneration => _seekGeneration;
+
+  /// 登记一次已发出的 seek：计数 +1，并记下目标等它落地（见 [_pendingSeekLandingMs]）。
+  void _noteSeekIssued(int targetMs) {
+    _seekGeneration++;
+    _pendingSeekLandingMs = targetMs;
+  }
+
+  /// 按 tick 读到的真实位置判定未落地的 seek 是否已落定。
+  void _checkSeekLanded(int rawPosMs) {
+    final int? target = _pendingSeekLandingMs;
+    if (target == null) return;
+    if ((rawPosMs - target).abs() <= _kSeekLandingWindowMs) {
+      _pendingSeekLandingMs = null;
+    }
+  }
 
   /// 测试可注入的播放位置（毫秒）：widget 测试无真实 [Player]（[positionMs] 恒 null），
   /// 无法驱动 `\fad`/`\fade` 按位置逐帧求不透明度。置非 null 时覆盖 [positionMs]（并经
@@ -1945,6 +1988,8 @@ class VideoPlayerController extends ChangeNotifier
     // 换片同样要复位：上一片的「已打开」不能给新片背书，否则新片 open 失败时旧
     // 证据仍让三个位置写入点放行、把 0 写进新片的进度。
     _mediaOpened = false;
+    // 上一片没落地的 seek 目标不属于这一片（重开本身就带着起点，见 [resumePositionMs]）。
+    _pendingSeekLandingMs = null;
     _bookUid = bookUid;
     // 蓝光播放列表：`videoPath` 指向 `BDMV/PLAYLIST/*.mpls` 时，先把它解析成内核吃
     // 得下的东西——单段完整覆盖给 `STREAM/*.m2ts` 真实路径，多段/需截取给 `edl://`
@@ -2760,6 +2805,7 @@ class VideoPlayerController extends ChangeNotifier
   /// 5. 命中下标与 [_currentCueIndex] 相同时不重复 [notifyListeners]。
   /// 6. 否则更新当前 cue 并通知。
   void updateCueForPosition(int posMs) {
+    _checkSeekLanded(posMs);
     // 普通 seek 在途：把 tick 读到的滞后旧 position 调和成跳转目标位置（见
     // [_plainSeekTargetMs] / [_reconcileSeekInFlightPosition]），避免旧字幕被反复确认。
     _syncCueForPosition(_reconcileSeekInFlightPosition(posMs),
@@ -3023,6 +3069,7 @@ class VideoPlayerController extends ChangeNotifier
     final int clampedMs = targetMs.clamp(0, 1 << 30);
     _clearSeekTargetSnap();
     _beginPlainSeekInFlight(clampedMs);
+    _noteSeekIssued(clampedMs);
     _syncCueForPosition(clampedMs, persistPosition: false);
   }
 
@@ -3764,6 +3811,7 @@ class VideoPlayerController extends ChangeNotifier
     // 用户主动改变播放位置 = 放弃「只播这一句就停」的意图（[_oneShotHoldCueIndex]）。
     _oneShotHoldCueIndex = null;
     _beginPlainSeekInFlight(clampedMs);
+    _noteSeekIssued(clampedMs);
     // 权威同步：直接按目标位置算一次字幕（不经 tick 的位置调和），gap 则立即清空。
     _syncCueForPosition(clampedMs, persistPosition: false);
     await _player?.seek(Duration(milliseconds: clampedMs));
@@ -3780,7 +3828,9 @@ class VideoPlayerController extends ChangeNotifier
     // [replayCue] 是唯一例外——它在本方法**之后**才置自己的一次性 hold，与
     // [skipToCue] 置 [_seekTargetCueIndex] 的顺序契约完全同构，故不会被自清。
     _oneShotHoldCueIndex = null;
-    await _player?.seek(Duration(milliseconds: positionMs.clamp(0, 1 << 30)));
+    final int clampedMs = positionMs.clamp(0, 1 << 30);
+    _noteSeekIssued(clampedMs);
+    await _player?.seek(Duration(milliseconds: clampedMs));
   }
 
   /// 相对当前位置 seek（±[deltaMs]，如 ±10 秒），clamp 到 [0, duration]。

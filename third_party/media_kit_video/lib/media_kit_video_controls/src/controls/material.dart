@@ -926,6 +926,10 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
         Duration.zero,
         controller(context).player.state.duration,
       );
+      // Hibiki patch (BUG-2731): surface the committed target like the seek
+      // bars do (BUG-796 follow-up), so the host knows where playback is headed
+      // while the seek is still in flight. See PATCHES.md.
+      _theme(context).onSeekEnd?.call(newPosition);
       controller(context).player.seek(newPosition);
     }
 
@@ -1646,6 +1650,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                               .state
                                               .duration,
                                         );
+                                        // Hibiki patch (BUG-2731): see
+                                        // onHorizontalDragEnd.
+                                        _theme(context).onSeekEnd?.call(result);
                                         controller(context).player.seek(result);
                                       },
                                     ),
@@ -1702,6 +1709,9 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                               .state
                                               .duration,
                                         );
+                                        // Hibiki patch (BUG-2731): see
+                                        // onHorizontalDragEnd.
+                                        _theme(context).onSeekEnd?.call(result);
                                         controller(context).player.seek(result);
                                       },
                                     ),

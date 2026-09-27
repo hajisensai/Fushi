@@ -361,4 +361,65 @@ void main() {
       },
     );
   });
+
+  group('BUG-2731: swipe / double-tap seeks report onSeekEnd(target)', () {
+    test('horizontal swipe commit reports the target before seeking', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      final int start = source.indexOf('void onHorizontalDragEnd()');
+      expect(start, isNonNegative);
+      final String body = source.substring(start, start + 1200);
+      final int notify = body.indexOf(
+        '_theme(context).onSeekEnd?.call(newPosition);',
+      );
+      final int seek = body.indexOf(
+        'controller(context).player.seek(newPosition);',
+      );
+      expect(
+        notify,
+        isNonNegative,
+        reason:
+            'swipe seek must tell the host its target (BUG-2731); '
+            'otherwise a quality reload during the in-flight seek reopens '
+            'the stream at the stale pre-swipe position.',
+      );
+      expect(seek, greaterThan(notify));
+    });
+
+    test('both double-tap seek indicators report the target', () {
+      final String source = File(mobileControlsPath).readAsStringSync();
+      final RegExp pair = RegExp(
+        r'_theme\(context\)\.onSeekEnd\?\.call\(result\);\s*'
+        r'controller\(context\)\.player\.seek\(result\);',
+      );
+      expect(
+        pair.allMatches(source).length,
+        2,
+        reason:
+            'backward and forward double-tap seeks must both report '
+            'onSeekEnd(result) right before player.seek (BUG-2731).',
+      );
+    });
+
+    test('video page reloads resume from resumePositionMs, and adaptive '
+        'quality treats seeks as seeks', () {
+      final String quality = File(
+        'lib/src/pages/implementations/video_fushi/quality.part.dart',
+      ).readAsStringSync();
+      expect(
+        quality.contains('positionMs ?? 0'),
+        isFalse,
+        reason:
+            'reload-at-position sites must use resumePositionMs so an '
+            'in-flight seek target wins over the lagging player position '
+            '(BUG-2731).',
+      );
+      expect(
+        quality.contains('_adaptiveQuality.noteSeek()'),
+        isTrue,
+        reason:
+            'adaptive sampling must tell the controller about seeks, or '
+            'seek re-buffering is read as a network stall (BUG-2731).',
+      );
+    });
+  });
 }

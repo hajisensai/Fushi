@@ -657,6 +657,130 @@ bool IsSgreDirectInputShieldOperational() {
          IsSgreDirectInputShieldReadyPublished(game);
 }
 
+// A game-stream request may drive this game only while it targets the exact
+// admitted main window of this process, that window owns the foreground (the
+// runtime acquires its devices DISCL_FOREGROUND) and the host lease is live.
+bool SgreGameStreamTargetAccepts(
+    const fushi_voice_hook::GameStreamInputRequestSnapshot& request, HWND game,
+    uint64_t now_tick) {
+  DWORD game_pid = 0;
+  if (game != nullptr && IsWindow(game)) {
+    GetWindowThreadProcessId(game, &game_pid);
+  }
+  return request.valid &&
+         request.target_hwnd == reinterpret_cast<uint64_t>(game) &&
+         game != nullptr && IsWindow(game) &&
+         game_pid == GetCurrentProcessId() && GetForegroundWindow() == game &&
+         now_tick <= request.deadline_tick_ms;
+}
+
+// BUG-2726 - remote gamepad actions reach SGRE only through the keyboard
+// device it samples (see ApplySgreGameStreamRemoteKeys). Both slots are
+// engine globals in the admitted image resolved by corroborated signatures;
+// they are published only after the GetDeviceState detour is installed.
+std::atomic<void* const*> g_sgre_keyboard_device_slot{nullptr};
+std::atomic<const uintptr_t*> g_sgre_keyboard_binding_slot{nullptr};
+// (request seq << 32) | observed gamepad bits of the last keyboard sample. The
+// input update polls the keyboard before the mouse in the same frame; the mouse
+// sample publishes the ACK and folds this in only for the same request seq.
+std::atomic<uint64_t> g_sgre_game_stream_keyboard_observation{0};
+
+bool IsSgreRemoteKeyboardDevice(const void* device) {
+  void* const* const slot =
+      g_sgre_keyboard_device_slot.load(std::memory_order_acquire);
+  return slot != nullptr && device != nullptr && *slot == device;
+}
+
+bool ReadSgreKeyboardBindings(const uint8_t** bindings, size_t* count) {
+  *bindings = nullptr;
+  *count = 0;
+  const uintptr_t* const slot =
+      g_sgre_keyboard_binding_slot.load(std::memory_order_acquire);
+  if (slot == nullptr) return false;
+  const uintptr_t begin = slot[0];
+  const uintptr_t end = slot[1];
+  if (begin == 0 || end < begin ||
+      (end - begin) % fushi_voice_hook::kSgreKeyboardBindingStride != 0) {
+    return false;
+  }
+  const size_t entries =
+      (end - begin) / fushi_voice_hook::kSgreKeyboardBindingStride;
+  if (entries == 0 ||
+      entries > fushi_voice_hook::kSgreKeyboardBindingMaxEntries ||
+      !fushi_voice_hook::exact_lookup::IsReadableSpan(
+          reinterpret_cast<const void*>(begin), end - begin)) {
+    return false;
+  }
+  *bindings = reinterpret_cast<const uint8_t*>(begin);
+  *count = entries;
+  return true;
+}
+
+void ApplySgreGameStreamKeyboardSample(uint8_t* bytes, size_t state_bytes) {
+  const auto request = fushi_voice_hook::ReadGameStreamInputRequest(g_header);
+  if (!request.valid ||
+      (request.active_buttons &
+       fushi_voice_hook::kGameStreamInputGamepadButtonMask) == 0) {
+    g_sgre_game_stream_keyboard_observation.store(0,
+                                                  std::memory_order_release);
+    return;
+  }
+  const HWND game =
+      g_sgre_direct_input_game_window.load(std::memory_order_acquire);
+  // Keys are refused while a lookup card is up, exactly like the remote
+  // confirm: the card owns the player's attention, not the scenario.
+  const HWND direct_popup =
+      GetValidPublishedSgreDirectInputShieldPopup(game);
+  const bool shield_active =
+      (direct_popup != nullptr && IsSgreDirectInputShieldReadyPublished(game)) ||
+      IsLookupOverlayInputShieldVisible();
+  const uint8_t* bindings = nullptr;
+  size_t binding_count = 0;
+  const bool allowed =
+      !shield_active &&
+      SgreGameStreamTargetAccepts(request, game, GetTickCount64()) &&
+      ReadSgreKeyboardBindings(&bindings, &binding_count);
+  const uint32_t observed = fushi_voice_hook::ApplySgreGameStreamRemoteKeys(
+      allowed, request.active_buttons, bindings, binding_count, bytes,
+      state_bytes);
+  g_sgre_game_stream_keyboard_observation.store(
+      (static_cast<uint64_t>(request.seq) << 32) | observed,
+      std::memory_order_release);
+}
+
+uint32_t SgreGameStreamKeyboardObservedFor(uint32_t request_seq) {
+  const uint64_t packed =
+      g_sgre_game_stream_keyboard_observation.load(std::memory_order_acquire);
+  return static_cast<uint32_t>(packed >> 32) == request_seq
+             ? static_cast<uint32_t>(packed)
+             : 0u;
+}
+
+// Request seq whose first mouse-side ACK was held back for a keyboard sample.
+// Only the (single-threaded) GetDeviceState callsite writes it; shutdown
+// resets it from the worker, hence atomic.
+std::atomic<uint32_t> g_sgre_game_stream_ack_deferred_seq{0};
+
+bool SgreGameStreamAckWaitsForKeyboard(
+    const fushi_voice_hook::GameStreamInputRequestSnapshot& request) {
+  if (!request.valid) return false;
+  void* const* const slot =
+      g_sgre_keyboard_device_slot.load(std::memory_order_acquire);
+  const uint64_t packed =
+      g_sgre_game_stream_keyboard_observation.load(std::memory_order_acquire);
+  uint32_t deferred =
+      g_sgre_game_stream_ack_deferred_seq.load(std::memory_order_acquire);
+  const bool defer = fushi_voice_hook::DeferSgreGameStreamAckForKeyboard(
+      request.seq, request.active_buttons,
+      slot != nullptr && *slot != nullptr, static_cast<uint32_t>(packed >> 32),
+      &deferred);
+  if (defer) {
+    g_sgre_game_stream_ack_deferred_seq.store(deferred,
+                                              std::memory_order_release);
+  }
+  return defer;
+}
+
 HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
                                                     DWORD state_bytes,
                                                     LPVOID state) {
@@ -672,6 +796,16 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
     if (device == current_device && g_sgre_lookup_click_gesture.active) {
       g_sgre_lookup_click_gesture.cancelled = true;
     }
+    return result;
+  }
+  // The keyboard device shares this dinput8 implementation with the mouse, so
+  // its per-frame poll arrives here too. Only the admitted engine keyboard
+  // slot with the c_dfDIKeyboard layout is touched.
+  if (state != nullptr &&
+      state_bytes == fushi_voice_hook::kSgreDirectInputKeyboardStateBytes &&
+      IsSgreRemoteKeyboardDevice(device)) {
+    ApplySgreGameStreamKeyboardSample(static_cast<uint8_t*>(state),
+                                      state_bytes);
     return result;
   }
   if (state == nullptr ||
@@ -709,17 +843,8 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   const auto game_stream_request =
       fushi_voice_hook::ReadGameStreamInputRequest(g_header);
   const uint64_t now_tick = GetTickCount64();
-  DWORD game_pid = 0;
-  if (game != nullptr && IsWindow(game)) {
-    GetWindowThreadProcessId(game, &game_pid);
-  }
   const bool game_stream_target_ok =
-      game_stream_request.valid &&
-      game_stream_request.target_hwnd ==
-          reinterpret_cast<uint64_t>(game) &&
-      game != nullptr && IsWindow(game) &&
-      game_pid == GetCurrentProcessId() && GetForegroundWindow() == game &&
-      now_tick <= game_stream_request.deadline_tick_ms;
+      SgreGameStreamTargetAccepts(game_stream_request, game, now_tick);
   const bool lookup_allowed =
       g_sgre_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
       fushi_voice_hook::g_geometry_provider_registry.OwnsReadyProvider(
@@ -815,8 +940,12 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
   const uint32_t game_stream_observed =
       fushi_voice_hook::ApplySgreGameStreamRemoteButtons(
           game_stream_target_ok && !shield_active,
-          game_stream_request.active_buttons, bytes, state_bytes);
-  if (game_stream_request.valid) {
+          game_stream_request.active_buttons, bytes, state_bytes) |
+      (game_stream_request.valid
+           ? SgreGameStreamKeyboardObservedFor(game_stream_request.seq)
+           : 0u);
+  if (game_stream_request.valid &&
+      !SgreGameStreamAckWaitsForKeyboard(game_stream_request)) {
     const uint32_t status =
         now_tick > game_stream_request.deadline_tick_ms
             ? fushi_voice_hook::kGameStreamInputStatusExpired
@@ -1058,12 +1187,27 @@ bool InstallSgreDirectInputShield() {
     g_sgre_get_device_state_target = target;
   }
   g_sgre_mouse_device.store(mouse_device, std::memory_order_release);
+  if (g_sgre_anchors.remote_keyboard_available()) {
+    const uintptr_t base = reinterpret_cast<uintptr_t>(executable);
+    g_sgre_keyboard_binding_slot.store(
+        reinterpret_cast<const uintptr_t*>(
+            base + g_sgre_anchors.keyboard_binding_vector.rva),
+        std::memory_order_release);
+    g_sgre_keyboard_device_slot.store(
+        reinterpret_cast<void* const*>(
+            base + g_sgre_anchors.direct_input_keyboard_device.rva),
+        std::memory_order_release);
+  }
   return PublishSgreDirectInputShieldReady();
 }
 
 void ShutdownSgreDirectInputShield() {
   g_sgre_lookup_click_runtime_enabled.store(false,
                                             std::memory_order_release);
+  g_sgre_keyboard_device_slot.store(nullptr, std::memory_order_release);
+  g_sgre_keyboard_binding_slot.store(nullptr, std::memory_order_release);
+  g_sgre_game_stream_keyboard_observation.store(0, std::memory_order_release);
+  g_sgre_game_stream_ack_deferred_seq.store(0, std::memory_order_release);
   InvalidateSgreLookupClickTarget();
   DiscardPendingSgreLookupClickSubmits();
   g_sgre_lookup_scenario_surface.store(nullptr, std::memory_order_release);

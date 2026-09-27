@@ -5028,6 +5028,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // leaves that layer first and keeps the current WebView/page intact.
         if (await _exitOwnedFullscreenBeforePop()) return;
         if (!mounted) return;
+        // 上面那次 await 期间外部导航（长按图标快捷方式 / 卡片来源回跳）可能已经
+        // 经 closeActive 收页；也可能连按两次返回。退出流程只许跑一遍。
+        if (!claimSourceExit()) return;
         // BUG-2119 口径（视频页 / 小说页 / PDF 页同此）：**退出不等落库**。
         // onWillPop 是位置 flush + closeMedia 两笔 drift 写，而一条 SQLITE_BUSY 后
         // 未 reset 的写语句能让整条连接上每次 COMMIT 都抛错（2026-09-04 真机）；

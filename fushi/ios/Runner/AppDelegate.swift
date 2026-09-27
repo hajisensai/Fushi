@@ -142,7 +142,10 @@ import Flutter
     appShortcutsChannel.setMethodCallHandler { (call, result) in
       switch call.method {
       case "setShortcuts":
-        let items = (call.arguments as? [[String: String]]) ?? []
+        // Dart 发 {items, disabledMessage}；后者只给 Android 置灰固定快捷方式用，
+        // iOS 的 quick actions 整表替换即可，不存在「固定」的残留。
+        let args = call.arguments as? [String: Any]
+        let items = (args?["items"] as? [[String: String]]) ?? []
         UIApplication.shared.shortcutItems = items.compactMap { item in
           guard let id = item["id"], let title = item["title"],
             let url = item["url"]
@@ -235,8 +238,6 @@ import Flutter
     case "books": return "book"
     case "manga": return "photo.on.rectangle"
     case "video": return "film"
-    case "games": return "gamecontroller"
-    case "settings": return "gearshape"
     default: return "app"
     }
   }
