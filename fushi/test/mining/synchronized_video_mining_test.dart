@@ -95,9 +95,29 @@ void main() {
     expect(repo.updatedId, 7);
   });
 
-  test('encoder failure aborts without silently exporting a mute image',
+  // 片段模式是默认值：导出失败（源没有视频轨、远端流超时…）退回动图阶梯并保留句子
+  // 音频照常出卡，但**不声称同步**——改默认之前这些卡走 gif 模式本来就能出。
+  test('export failure degrades to an animated cover + separate audio',
       () async {
+    final List<String> gifCalls = <String>[];
     final ImmersionMiningResult result = await ImmersionMiningEngine(
+      gifExtractor: ({
+        required String inputPath,
+        required int startMs,
+        required int endMs,
+        required String outputPath,
+        int fps = 8,
+        int width = 320,
+        MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+        bool diagnosticOnly = false,
+        FfmpegFailureReporter? onFailure,
+        String? tlsPinSha256,
+        Map<String, String> httpHeaders = const <String, String>{},
+      }) async {
+        gifCalls.add(outputPath);
+        await File(outputPath).writeAsBytes(<int>[0x47, 0x49, 0x46, 0x38]);
+        return outputPath;
+      },
       synchronizedVideoExtractor: (
               {required String videoPath,
               required String audioPath,
@@ -114,10 +134,19 @@ void main() {
         compression: MiningMediaCompression.compressed,
         tempDir: temp.path,
         repo: repo);
-    expect(result.aborted, true);
-    expect(result.abortReason, contains('H264 encoder unavailable'));
-    expect(repo.context, isNull);
-    expect(temp.listSync().whereType<Directory>(), isEmpty);
+    expect(result.aborted, false);
+    expect(gifCalls, hasLength(1));
+    expect(repo.context!.synchronizedVideo, false);
+    expect(repo.context!.coverPath, endsWith('.gif'));
+    expect(repo.context!.sentenceAudioPath, isNot(repo.context!.coverPath));
+    expect(repo.context!.sentenceAudioPath, isNotNull);
+    // 导出临时目录已清理，不留半截片段。
+    expect(
+      temp.listSync().whereType<Directory>().where(
+            (Directory d) => d.path.contains('synced_video_'),
+          ),
+      isEmpty,
+    );
   });
 
   test('recorded audible MP4 does not require a second audio file', () async {
@@ -196,7 +225,10 @@ void main() {
           required Map<String, String> httpHeaders,
           required MiningClipFormat format}) async {
         tried.add(format);
-        expect(outputPath, endsWith('immersion_video.${format.fileExtension}'));
+        expect(
+          outputPath,
+          endsWith('immersion_video-${format.wireName}.${format.fileExtension}'),
+        );
         if (format.playsInline) {
           return const VideoClipExportResult.failure(
               VideoClipExportFailure.ffmpegFailed,

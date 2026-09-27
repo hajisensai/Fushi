@@ -162,14 +162,22 @@ List<String> synchronizedClipAudioArgs(MiningClipFormat format) =>
         '48000',
       ];
 
-/// 按 [format] 的 [MiningClipFormat.encodeAttempts] 逐个尝试 [attempt]，产物落在
-/// `$outputStem.<扩展名>`，返回首个成功的结果（其 `outputPath` 的扩展名即实际编成的
-/// 格式）。捆绑 ffmpeg 缺 VP9/Opus/AV1 编码器（旧二进制、用户自带精简 ffmpeg、移动端
+/// 一次带降级的片段导出结果：[result] 是首个成功（或全失败时首个失败）的那次尝试，
+/// [format] 是那次尝试的格式——调用方拿它拼文件名、判渲染方式，不从扩展名反推（AV1 与
+/// VP9 同为 `.webm`）。
+typedef ClipFormatExport = ({
+  VideoClipExportResult result,
+  MiningClipFormat format,
+});
+
+/// 按 [format] 的 [MiningClipFormat.encodeAttempts] 逐个尝试 [attempt]，每次尝试的产物
+/// 落在各自的 `$outputStem-<wireName>.<扩展名>`（互不覆盖：上一次超时残留的文件不会让
+/// 下一次撞上「输出已存在」而被跳过），返回首个成功的那次。捆绑 ffmpeg 缺 VP9/Opus/AV1 编码器（旧二进制、用户自带精简 ffmpeg、移动端
 /// ffmpeg-kit 无 SVT-AV1）时降级到下一个格式，而不是让整张卡失败。全失败返回**首个**
 /// 失败（最接近根因——后面的多是它的连锁反应）。
 ///
 /// [onDegrade] 在一次非末位尝试失败时收到 `(失败格式, 结果)`，供调用方写诊断日志。
-Future<VideoClipExportResult> exportWithClipFormatFallback({
+Future<ClipFormatExport> exportWithClipFormatFallback({
   required MiningClipFormat format,
   required String outputStem,
   required Future<VideoClipExportResult> Function(
@@ -180,15 +188,15 @@ Future<VideoClipExportResult> exportWithClipFormatFallback({
   void Function(MiningClipFormat format, VideoClipExportResult result)?
   onDegrade,
 }) async {
-  VideoClipExportResult? firstFailure;
+  ClipFormatExport? firstFailure;
   final List<MiningClipFormat> attempts = format.encodeAttempts;
   for (final MiningClipFormat candidate in attempts) {
     final VideoClipExportResult result = await attempt(
       candidate,
-      '$outputStem.${candidate.fileExtension}',
+      '$outputStem-${candidate.wireName}.${candidate.fileExtension}',
     );
-    if (result.isSuccess) return result;
-    firstFailure ??= result;
+    if (result.isSuccess) return (result: result, format: candidate);
+    firstFailure ??= (result: result, format: candidate);
     if (candidate != attempts.last) onDegrade?.call(candidate, result);
   }
   return firstFailure!;

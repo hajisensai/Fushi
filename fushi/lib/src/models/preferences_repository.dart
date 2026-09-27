@@ -2141,11 +2141,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
           getPref('video_mining_image_mode', defaultValue: null) as String?);
 
   void setVideoMiningImageMode(VideoMiningImageMode mode) async {
-    // 先钉格式再写模式：格式没显式设过时的默认值由「旧模式是不是 video_clip」推导
-    // （见 [_miningClipFormat]），写模式之后再推会把新选片段模式的用户误判成老 MP4 用户。
-    await _pinClipFormatBeforeModeChange(
+    await _setImageModePinningClipFormat(
         'video_mining_clip_format', 'video_mining_image_mode', mode);
-    await setPref('video_mining_image_mode', mode.wireName);
     notifyListeners();
   }
 
@@ -2169,9 +2166,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
           getPref('gal_mining_image_mode', defaultValue: null) as String?);
 
   void setGalMiningImageMode(VideoMiningImageMode mode) async {
-    await _pinClipFormatBeforeModeChange(
+    await _setImageModePinningClipFormat(
         'gal_mining_clip_format', 'gal_mining_image_mode', mode);
-    await setPref('gal_mining_image_mode', mode.wireName);
     notifyListeners();
   }
 
@@ -2259,15 +2255,23 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     );
   }
 
-  /// 切到片段模式、而格式从没显式设过时，把**切换前**推导出的格式写死。
-  Future<void> _pinClipFormatBeforeModeChange(
+  /// 写封面模式；格式从没显式设过时，把**切换前**推导出的格式与新模式一起写死。
+  ///
+  /// - 任何一次切换都钉（不只是切到片段模式）：老 MP4 片段用户先切走再切回来时，推导
+  ///   依据已经不是 video_clip，不钉就会被悄悄换成 WebM。
+  /// - 与模式同一次 [setPrefs]：缓存在第一个 await 之前同步更新，调用方紧接着读到的就是
+  ///   新值；两次快速切换按调用顺序落盘（分两次 await 写会让先发的那次后落盘）。
+  Future<void> _setImageModePinningClipFormat(
     String formatKey,
     String modeKey,
     VideoMiningImageMode mode,
-  ) async {
-    if (!mode.isVideoClip) return;
-    if (getPref(formatKey, defaultValue: null) != null) return;
-    await setPref(formatKey, _miningClipFormat(formatKey, modeKey).wireName);
+  ) {
+    final Map<String, dynamic> values = <String, dynamic>{
+      if (getPref(formatKey, defaultValue: null) == null)
+        formatKey: _miningClipFormat(formatKey, modeKey).wireName,
+      modeKey: mode.wireName,
+    };
+    return setPrefs(values);
   }
 
   // 制卡句子音频的头/尾 padding（毫秒）。对齐 asbplayer 的 audio padding：字幕 cue 的

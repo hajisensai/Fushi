@@ -8,6 +8,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show MiningClipFormat;
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart'
     show
+        ClipFormatExport,
         exportWithClipFormatFallback,
         synchronizedClipAudioArgs,
         synchronizedClipVideoArgs;
@@ -343,7 +344,7 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
       listPath,
     ).writeAsString(buildGalWindowConcatList(plan), flush: true);
     final String? sentencePath = audioPath;
-    final VideoClipExportResult produced = await exportWithClipFormatFallback(
+    final ClipFormatExport produced = await exportWithClipFormatFallback(
       format: format,
       outputStem: p.join(workDir.path, 'clip'),
       onDegrade: (MiningClipFormat failed, VideoClipExportResult r) =>
@@ -373,18 +374,17 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
         return VideoClipExportResult.success(outputPath);
       },
     );
-    if (!produced.isSuccess) {
+    if (!produced.result.isSuccess) {
       ErrorLogService.instance.log(
         'buildGalWindowVideoClip',
-        'clip encode failed: ${produced.detail}',
+        'clip encode failed: ${produced.result.detail}',
         StackTrace.current,
       );
       return null;
     }
-    final String outputPath = produced.outputPath!;
     return (
-      bytes: await File(outputPath).readAsBytes(),
-      extension: p.extension(outputPath).substring(1),
+      bytes: await File(produced.result.outputPath!).readAsBytes(),
+      extension: produced.format.fileExtension,
       hasAudio: sentencePath != null,
     );
   } catch (e, stack) {

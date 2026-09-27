@@ -373,7 +373,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     final int endMs = durationMs > 0 ? durationMs : 6000;
     if (imageMode == VideoMiningImageMode.videoClip) {
       // 首选格式编不出来按 encodeAttempts 降级；实际格式经 clipFormat 带回给文件名。
-      final VideoClipExportResult video = await exportWithClipFormatFallback(
+      final ClipFormatExport exported = await exportWithClipFormatFallback(
         format: clipFormat,
         outputStem: '${dir.path}/clip_out',
         attempt: (MiningClipFormat format, String outputPath) => videoExporter(
@@ -386,19 +386,17 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
           format: format,
         ),
       );
+      final VideoClipExportResult video = exported.result;
       if (!video.isSuccess) {
         return ImmersionCaptureResult(
           error: 'synchronized video transcode failed: '
               '${video.detail ?? video.failure?.name}',
         );
       }
-      final String produced = video.outputPath!;
       return ImmersionCaptureResult(
-        gifBytes: await File(produced).readAsBytes(),
+        gifBytes: await File(video.outputPath!).readAsBytes(),
         coverIsVideo: true,
-        clipFormat: MiningClipFormat.values.firstWhere(
-          (MiningClipFormat f) => produced.endsWith('.${f.fileExtension}'),
-        ),
+        clipFormat: exported.format,
       );
     }
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确

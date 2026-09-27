@@ -216,6 +216,38 @@ void main() {
       restored.dispose();
     });
 
+    test('老 MP4 用户切走再切回来，仍是 MP4（任何一次切换都钉格式）', () async {
+      await db.setPref(
+        'video_mining_image_mode',
+        PrefCodec.encode(VideoMiningImageMode.videoClip.wireName),
+      );
+      final PreferencesRepository legacy = PreferencesRepository(db);
+      await legacy.loadFromDb();
+      legacy.setVideoMiningImageMode(VideoMiningImageMode.gif);
+      legacy.setVideoMiningImageMode(VideoMiningImageMode.videoClip);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(legacy.videoMiningClipFormat, MiningClipFormat.mp4H264);
+      legacy.dispose();
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningClipFormat, MiningClipFormat.mp4H264);
+      restored.dispose();
+    });
+
+    test('切换模式同步生效，连续两次按调用顺序落盘', () async {
+      repo.setVideoMiningImageMode(VideoMiningImageMode.gif);
+      // 不 await：设置页调用后紧接着 setState 读值，必须已是新值。
+      expect(repo.videoMiningImageMode, VideoMiningImageMode.gif);
+      repo.setVideoMiningImageMode(VideoMiningImageMode.videoClip);
+      repo.setVideoMiningImageMode(VideoMiningImageMode.currentFrame);
+      expect(repo.videoMiningImageMode, VideoMiningImageMode.currentFrame);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningImageMode, VideoMiningImageMode.currentFrame);
+      restored.dispose();
+    });
+
     test('显式设过的格式写穿 Drift 且优先于推导', () async {
       repo.setVideoMiningClipFormat(MiningClipFormat.webmAv1);
       repo.setGalMiningClipFormat(MiningClipFormat.mp4H264);

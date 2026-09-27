@@ -139,16 +139,42 @@ String inlineVideoCoverHtml(String mediaName) =>
     '$_inlineVideoPlayVisibleJs'
     '},0);})();</script>';
 
-/// 内嵌片段的句子音频字段：一个重播按钮（点它 = 片段回到开头音画一起重播）。
+/// 页面上**没有**内嵌片段时，改用句子音频字段里的隐藏 `<audio>` 播放同一个片段文件的
+/// 声音（单行、无反斜杠 / 反引号 / `${`）。
+const String _inlineAudioPlayJs =
+    "var a=document.querySelector('audio.fushi-inline-audio');"
+    'if(a){a.currentTime=0;var q=a.play();if(q&&q.catch){q.catch(function(){});}}';
+
+/// 内嵌片段的句子音频字段：重播按钮 + 一个隐藏 `<audio>`（同一个片段文件）。
+///
+/// - 按钮：页面上有内嵌片段 → 片段回到开头音画一起重播；没有（Lapis「音频卡」正面只
+///   渲染 `{{SentenceAudio}}`、自定义模板把 Picture 放在另一面）→ 播隐藏 `<audio>`。
+/// - `<audio>` 的 `oncanplay`：页面上**没有**内嵌片段时自动播放一次（音频卡正面照旧
+///   自动出声）；有片段时什么都不做（画面那边的脚本负责播，不能叠音）。
+///
+/// 为什么用内联事件属性而不是 `<script>`：Lapis 背面把 `{{SentenceAudio}}` 插进一个
+/// `<script>` 块里的 JS 模板字面量，字段里出现 `</script>` 会让 HTML 解析器提前结束那个
+/// 脚本块，整张卡背面脚本失效。守卫见 `inline_video_cover_test.dart`。
 ///
 /// 带 `replay-button` 类：内置 Lapis 的「点例句重播」逻辑查找
-/// `.fushi-sentence-audio .replay-button` 并 `click()`，于是点例句同样重播片段，不必
-/// 改模板；带 `fushi-synced-video-replay` 类：Lapis 靠它判断这张卡是同步片段卡。
-const String inlineVideoReplayHtml =
+/// `.fushi-sentence-audio .replay-button` 并 `click()`，于是点例句同样重播，不必改模板；
+/// 带 `fushi-synced-video-replay` 类：Lapis 靠它判断这张卡是同步片段卡。
+String inlineVideoSentenceAudioHtml(String mediaName) =>
     '<button type="button" class="replay-button fushi-synced-video-replay '
     'fushi-inline-video-replay" aria-label="Replay video" '
-    'onclick="event.stopPropagation();$_inlineVideoPlayVisibleJs'
-    'return false;">&#9654;</button>';
+    'onclick="event.stopPropagation();'
+    "if(document.querySelector('video.fushi-inline-video')){"
+    '$_inlineVideoPlayVisibleJs}else{$_inlineAudioPlayJs}'
+    'return false;">&#9654;</button>'
+    '<audio class="fushi-inline-audio" '
+    'src="${const HtmlEscape().convert(mediaName)}" preload="auto" '
+    'oncanplay="'
+    "if(document.querySelector('video.fushi-inline-video')||"
+    "document.querySelector('audio.fushi-inline-audio[data-fushi-started]'))"
+    'return;'
+    "this.setAttribute('data-fushi-started','1');"
+    'var q=this.play();if(q&&q.catch){q.catch(function(){});}'
+    '"></audio>';
 
 /// Replay the native sentence video without adding a second autoplay entry.
 /// Uses client-created buttons instead of undocumented client URL schemes.
@@ -1066,6 +1092,24 @@ abstract class BaseAnkiRepository {
     );
   }
 
+  /// 从 [inlineVideoCoverHtml] 渲染出的封面引用里取回媒体库文件名（`src` 反转义）；
+  /// 不是内嵌片段引用时 null。
+  static String? _inlineVideoMediaName(String? coverRef) {
+    if (coverRef == null) return null;
+    final RegExpMatch? m = RegExp(
+      r'^<video class="fushi-inline-video" src="([^"]*)"',
+    ).firstMatch(coverRef);
+    if (m == null) return null;
+    return m
+        .group(1)!
+        .replaceAll('&quot;', '"')
+        .replaceAll('&#39;', "'")
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&#47;', '/')
+        .replaceAll('&amp;', '&');
+  }
+
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
   ///
   /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联
@@ -1092,16 +1136,16 @@ abstract class BaseAnkiRepository {
     // after ExpressionAudio and its already-rendered replay buttons are copied.
     //
     // 内嵌片段（WebM）反过来：画面本身就在 Picture 的 `<video>` 里播，句子音频字段只放
-    // 一个重播按钮（[inlineVideoReplayHtml]），不再有任何 `[sound:]`——否则 Anki 原生
+    // 重播按钮 + 隐藏 <audio>（[inlineVideoSentenceAudioHtml]），不再有任何 `[sound:]`——否则 Anki 原生
     // 队列会把同一段声音再放一遍。
+    final String? inlineVideoName = _inlineVideoMediaName(coverRef);
     if (context.synchronizedVideo &&
-        coverRef != null &&
+        inlineVideoName != null &&
         isAnkiInlineVideoCover(context.coverPath)) {
-      sentenceAudioRef =
-          AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
-            settings.fieldMappings,
-          )
-          ? inlineVideoReplayHtml
+      sentenceAudioRef = AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+        settings.fieldMappings,
+      )
+          ? inlineVideoSentenceAudioHtml(inlineVideoName)
           : null;
     } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(

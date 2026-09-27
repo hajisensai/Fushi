@@ -5682,5 +5682,5 @@
   "mining_clip_format_webm_vp9": "WebM · VP9 (plays inside the card, recommended)",
   "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card, smallest, slower to encode)",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki's own player; use for AnkiMobile)",
-  "mining_clip_format_hint": "If the chosen format cannot be encoded on this device, Fushi falls back to WebM VP9, then MP4."
+  "mining_clip_format_hint": "WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4."
 }
