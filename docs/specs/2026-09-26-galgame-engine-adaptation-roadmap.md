@@ -69,7 +69,8 @@ P1 进展（2026-09-27，分支 `claude/galgame-p1`；样本一律经 Fushi 发�
 | SiglusEngine · planetarian HD Steam | — | — | — | — | 下载包为汉化 + Steam 模拟器，无日文 Scene.pck，不适合；需另取日文 Siglus 样本 |
 | CMVS | — | — | — | — | BUG-2718：runner 白名单漏 id 16，精确布局 hit 被丢；已修并加三处镜像守卫，无样本未真机 |
 | Unity Mono · デスマッチラブコメ！ Steam 版（2020，MonoBleedingEdge，x86） | ✅ `Unity Mono Message.Mes` 整句（多行、剥 `%` 色标），adapter flags `0x011014d3` | 样本无语音（`resources.resource` 仅 53MB BGM/SE） | 缺几何 | 缺几何 | 需另取有语音的 Unity Mono 样本；③④ 需 Unity 运行时字形几何 provider（provider 7/8 尚无生产者） |
-| BGI / CatSystem2 / Artemis | — | — | — | — | 已选样本（放課後しっぽデイズ / グリザイアの有閑 / アマナツ PE）；三者 ③④ 需各自的引擎字形几何 provider（Artemis 进行中） |
+| Artemis · アマナツ Perfect Edition Ver2.0.0（x64，PF8） | ✅ Luna 0x14018d260 | ✅ game_resource `222273750_fem_kog_00019.ogg` | ✅ 引擎精确字形 provider（kind 2 id 17） | ✅ 帧级按键表清零 | 宿主 accept4 `verdict=full` + 真卡（ffd072e0f6d）；manifest 几何门（200 正探针等）未跑，仍 `implemented_unverified`；单样本，需第二个 Artemis 版本 |
+| BGI / CatSystem2 | — | — | — | — | 已选样本（放課後しっぽデイズ / グリザイアの有閑）；③④ 需各自的引擎字形几何 provider |
 
 取样注意：本机网络为 Clash TUN（fake-ip），UDP tracker 与 DHT 全部超时，Fushi 内置 torrent 引擎拿不到元数据（Sukebei 四个种子均停在 metadata 0%）；日文原版改走真红小站 HTTP 源（有「[日期][品牌] 原名.rar」原版包）。
 
