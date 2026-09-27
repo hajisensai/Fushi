@@ -5687,5 +5687,16 @@
   "ai_web_knowledge_custom_endpoint": "API 地址",
   "ai_web_knowledge_custom_endpoint_hint": "站点的 api.php，例如 https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "请填写以 https:// 开头、以 api.php 结尾的地址",
-  "ai_web_knowledge_custom_remove": "删除站点"
+  "ai_web_knowledge_custom_remove": "删除站点",
+  "plex_settings_hint": "用 Plex 账号登录，或填写服务器地址与 X-Plex-Token 直连。播放直接串流原文件（direct play），不使用 Plex 转码。",
+  "plex_account_sign_in": "使用 Plex 账号登录",
+  "plex_pin_waiting": "等待在浏览器中授权 Fushi…",
+  "plex_pin_link_hint": "如果浏览器没有自动打开，请复制这个链接：",
+  "plex_pin_expired": "登录请求已过期，请重试。",
+  "plex_servers_none_reachable": "这个账号下没有找到可连接的 Plex 服务器。",
+  "plex_servers_added": "已添加 $n 台 Plex 服务器",
+  "plex_manual_title": "手动连接",
+  "plex_token_label": "X-Plex-Token",
+  "plex_manual_connect": "连接",
+  "plex_sign_in_failed": "Plex 登录失败"
 }
