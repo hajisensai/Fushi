@@ -181,6 +181,9 @@ async function resolveCachedAudioUrl(expression, reading, entryIndex) {
 let currentAudio = null;
 let lastSelection = '';
 let currentDictionaryMedia = null;
+// 制卡导出用的图片真实像素尺寸（key 见 exportImageSizeKey）。与 currentDictionaryMedia
+// 同款：由 buildMinePayload 开启和关闭，不跨制卡存活。
+let currentExportImageSizes = null;
 const selectedDictionaries = {};
 
 // TODO-270 D: tri-state mine button — "overwrite the latest mined card".
@@ -1018,11 +1021,17 @@ function applyTableStyles(html) {
     .replace(/<td(?=[>\s])/g, `<td style="${cellStyle}"`);
 }
 
-function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSized = false) {
+// containerFontSize 决定容器 `${usedWidth}em` 的 1em 有多大。Yomitan 导出到 Anki 时把
+// ext/data/structured-content-style.json 内联进卡片：`.gloss-image-container{font-size:1px}`，
+// 只有 `.gloss-image-link[data-size-units=em] .gloss-image-container` 再覆盖成 `1em`——
+// 即非 em 图是 usedWidth 个 px，em 图才是 usedWidth 个卡片字号（用户库里 Yomitan 真卡
+// 逐条核对过：明鏡 `font-size:1px;width:150em`，語彙力 `font-size:1px;font-size:1em;
+// width:8.57143em`）。
+function applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, containerFontSize, naturalSized = false) {
     // .gloss-image-link
     node.style.cssText += 'display:inline-block;position:relative;line-height:1;max-width:100%;';
     // .gloss-image-container
-    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:1em;`;
+    imageContainer.style.cssText += `display:inline-block;white-space:nowrap;max-width:100%;max-height:100vh;position:relative;vertical-align:top;line-height:0;overflow:hidden;font-size:${containerFontSize};`;
     if (naturalSized) {
         // BUG-1676：词典没声明尺寸时，<img> 自己就是布局盒（容器 width:auto）。此时
         // 绝对定位的 img 会把容器塌成 0×0（sizer 也已关掉），整张图消失，所以这两条
@@ -1705,6 +1714,134 @@ function constructPitchCategories(pitches, reading, rules) {
     return categories.join(',');
 }
 
+// 词典原始 JSON 声明的图片尺寸。Yomitan 导入时把这两个数存成 preferredWidth /
+// preferredHeight，另把 width/height 换成媒体文件的真实像素尺寸
+// （dictionary-importer.js `_createImageData`）；本仓直接吃原始 JSON，所以这里的
+// width/height 就是 Yomitan 的 preferred*，真实尺寸要另外探（probeExportImageSizes）。
+function declaredImageSize(data) {
+    return {
+        width: typeof data.width === 'number' ? data.width : null,
+        height: typeof data.height === 'number' ? data.height : null,
+    };
+}
+
+// 两维都声明了就用不上真实尺寸；无尺寸 SVG 走外字分支（1.2em 行内框），也用不上。
+function exportImageNeedsNaturalSize(data) {
+    const declared = declaredImageSize(data);
+    if (declared.width !== null && declared.height !== null) return false;
+    return !(declared.width === null && declared.height === null && /\.svg$/i.test(data.path));
+}
+
+// 逐行对齐 Yomitan structured-content-generator.js `createDefinitionImage` 的尺寸算法
+// （preferred* = 词典声明值，width/height = 真实像素尺寸）。返回 null 表示算不出：
+// 只声明了一维（或都没声明）而真实尺寸没探到，宽高比无从得知。
+//
+// 用户报的「语彙力」插图就栽在这里：词典只写 `height: 10, sizeUnits: 'em'`。以前缺的
+// 宽度回落到 `width = 100`，宽高比成了 10/100，导出一个 100em × 10em 的扁盒子；被
+// max-width:100% 压到卡片宽后 object-fit:contain 把图缩成一小块、居中、各占一行。
+// Yomitan 用图的真实 180×210 算出 `width: 8.57143em`（高 10em），图按原比例并排左对齐。
+function resolveExportImageGeometry(data, naturalSize) {
+    const {width: preferredWidth, height: preferredHeight} = declaredImageSize(data);
+    const hasPreferredWidth = preferredWidth !== null;
+    const hasPreferredHeight = preferredHeight !== null;
+    if (!(hasPreferredWidth && hasPreferredHeight) && !naturalSize) {
+        return null;
+    }
+    const invAspectRatio = (
+                            hasPreferredWidth && hasPreferredHeight ?
+                            preferredHeight / preferredWidth :
+                            naturalSize.height / naturalSize.width
+                            );
+    const usedWidth = (
+                       hasPreferredWidth ?
+                       preferredWidth :
+                       (hasPreferredHeight ? preferredHeight / invAspectRatio : naturalSize.width)
+                       );
+    // sizeUnits 只在词典声明了尺寸时生效（Yomitan 同条件）。
+    const useEmUnits = data.sizeUnits === 'em' && (hasPreferredWidth || hasPreferredHeight);
+    return { invAspectRatio, usedWidth, useEmUnits };
+}
+
+// 与 getMediaFilename 同一个 key：词典名 + 归一化 path。
+function exportImageSizeKey(dictionary, path) {
+    return `${dictionary}\n${normalizeDictMediaPath(path)}`;
+}
+
+// 与 renderStructuredContent 的图片判据同一条（`tag === 'img' || type === 'image'`）。
+function collectDefinitionImageNodes(node, out) {
+    if (Array.isArray(node)) {
+        node.forEach(child => collectDefinitionImageNodes(child, out));
+    } else if (node && typeof node === 'object') {
+        if (node.tag === 'img' || node.type === 'image') {
+            out.push(node);
+        } else {
+            collectDefinitionImageNodes(node.content, out);
+        }
+    }
+}
+
+// 探不到（缺图 / 宿主太慢）就放弃这一张，导出退回让 <img> 自己定宽高比，
+// 不让一张图卡住整次制卡。
+const EXPORT_IMAGE_PROBE_TIMEOUT_MS = 3000;
+
+function probeImageNaturalSize(url) {
+    return new Promise(resolve => {
+        const img = new Image();
+        let timer = null;
+        const finish = (size) => {
+            clearTimeout(timer);
+            img.onload = null;
+            img.onerror = null;
+            resolve(size);
+        };
+        timer = setTimeout(() => finish(null), EXPORT_IMAGE_PROBE_TIMEOUT_MS);
+        img.onload = () => finish(img.naturalWidth > 0 && img.naturalHeight > 0 ?
+                                  { width: img.naturalWidth, height: img.naturalHeight } :
+                                  null);
+        img.onerror = () => finish(null);
+        img.src = url;
+    });
+}
+
+// Yomitan 在导入时就把每张图的真实尺寸存进库；本仓的库里没有，只能在制卡前从同一个
+// 媒体 URL 量（弹窗刚显示过这些图，基本命中缓存）。只量真正需要的图。
+async function probeExportImageSizes(entryIndex) {
+    const sizes = new Map();
+    const entry = window.lookupEntries?.[entryIndex];
+    if (!entry || typeof Image !== 'function') {
+        return sizes;
+    }
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+    const seen = new Set();
+    const probes = [];
+    entry.glossaries.forEach(g => {
+        if (hiddenDictionaryNames.includes(g.dictionary)) return;
+        let content = g.content;
+        if (typeof content === 'string') {
+            try {
+                content = JSON.parse(content);
+            } catch {
+                return;
+            }
+        }
+        const images = [];
+        collectDefinitionImageNodes(content, images);
+        images.forEach(image => {
+            if (typeof image.path !== 'string' || !exportImageNeedsNaturalSize(image)) return;
+            const key = exportImageSizeKey(g.dictionary, image.path);
+            if (seen.has(key)) return;
+            seen.add(key);
+            const url = rewriteDictionaryMediaPath(image.path, g.dictionary);
+            if (url === null) return;
+            probes.push(probeImageNaturalSize(url).then(size => {
+                if (size) sizes.set(key, size);
+            }));
+        });
+    });
+    await Promise.all(probes);
+    return sizes;
+}
+
 // https://github.com/yomidevs/yomitan/blob/d810b2f0842536d24ab82b6cd75d00841710e57b/ext/js/display/structured-content-generator.js#L64
 function createDefinitionImage(data, dictionary, exporting = false) {
     const {
@@ -1730,24 +1867,31 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     const hasPreferredWidth = (typeof preferredWidth === 'number');
     const hasPreferredHeight = (typeof preferredHeight === 'number');
     const hasDimensions = (hasPreferredWidth || hasPreferredHeight || typeof data.width === 'number' || typeof data.height === 'number');
-    const invAspectRatio = (
+    const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
+    const isSvg = /\.svg$/i.test(path);
+    const svgWithoutDimensions = !hasDimensions && isSvg;
+    // 制卡导出按 Yomitan 的尺寸算法定盒子（resolveExportImageGeometry，真实尺寸由
+    // buildMinePayload 事先量好）；弹窗仍走下面的原算法，缺的真实尺寸由 img.onload 用
+    // naturalWidth/naturalHeight 纠正。
+    const exportGeometry = exporting && !svgWithoutDimensions ?
+        resolveExportImageGeometry(data, currentExportImageSizes?.get(exportImageSizeKey(dictionary, path)) || null) :
+        null;
+    const invAspectRatio = exportGeometry ? exportGeometry.invAspectRatio : (
                             hasPreferredWidth && hasPreferredHeight ?
                             preferredHeight / preferredWidth :
                             height / width
                             );
-    const usedWidth = (
+    const usedWidth = exportGeometry ? exportGeometry.usedWidth : (
                        hasPreferredWidth ?
                        preferredWidth :
                        (hasPreferredHeight ? preferredHeight / invAspectRatio : width)
                        );
-    const effectiveSizeUnits = typeof sizeUnits === 'string' ? sizeUnits : null;
-    const isSvg = /\.svg$/i.test(path);
-    const useEmUnits = effectiveSizeUnits === 'em';
-    // BUG-1676：词典没声明尺寸的位图。上面的 `width = 100, height = 100` 是兜底值，
+    const useEmUnits = exportGeometry ? exportGeometry.useEmUnits : effectiveSizeUnits === 'em';
+    // BUG-1676：真实尺寸没量到时，上面的 `width = 100, height = 100` 只是兜底值，
     // 既不是这张图的真实尺寸也不是它的宽高比。弹窗端能在 img.onload 里用
     // naturalWidth/naturalHeight 纠正（见下面的 load 分支），导出端没有加载事件，
     // 只能把布局交给 <img> 自己 —— 这两条路径拿到的信息量不同，分流是本质不是特例。
-    const naturalSizedExport = exporting && !useEmUnits && !hasDimensions && !isSvg;
+    const naturalSizedExport = exporting && !exportGeometry && !svgWithoutDimensions;
 
     const node = document.createElement(exporting ? 'span' : 'a');
     node.classList.add('gloss-image-link');
@@ -1794,9 +1938,21 @@ function createDefinitionImage(data, dictionary, exporting = false) {
     if (window.__fushiPopupDebug) {
         console.log('[IMG_CREATE]', path, 'dims=' + hasDimensions, 'svg=' + isSvg, usedWidth + 'x' + (usedWidth * invAspectRatio) + (useEmUnits ? 'em' : 'px'));
     }
-    if (useEmUnits) {
+    if (exportGeometry) {
+        // Yomitan 导出时容器宽恒为 `${usedWidth}em`，1em 多大由容器字号决定（见 applyImageStyles）。
         imageContainer.style.width = `${usedWidth}em`;
-    } else if (!hasDimensions && isSvg) {
+    } else if (naturalSizedExport) {
+        // 凭空写 `100em`（= 100 × 卡片正文字号 ≈ 2000px）会把 400×300 的插图放成
+        // 2000×2000 并按 1:1 摆位；再加上 structured-content 的 `table-layout:auto`
+        // 表格不理会百分比 max-width，整张卡就被撑到屏幕右外（BUG-1676）。
+        // 交给浏览器：容器 width:auto、关掉 aspect-ratio sizer，<img> 按真实自然尺寸和
+        // 真实宽高比布局，`max-width:100%` 负责不超出卡片。
+        node.dataset.hasAspectRatio = 'false';
+        imageContainer.style.width = 'auto';
+        aspectRatioSizer.style.display = 'none';
+    } else if (useEmUnits) {
+        imageContainer.style.width = `${usedWidth}em`;
+    } else if (svgWithoutDimensions) {
         node.dataset.hasAspectRatio = 'false';
         imageContainer.style.width = 'auto';
         const isGaiji = nodeData?.class === 'gaiji' || Object.prototype.hasOwnProperty.call(nodeData || {}, 'gaiji');
@@ -1810,23 +1966,10 @@ function createDefinitionImage(data, dictionary, exporting = false) {
         imageContainer.style.lineHeight = '0';
         imageContainer.style.overflow = 'visible';
         aspectRatioSizer.style.display = 'none';
-    } else if (naturalSizedExport) {
-        // 凭空写 `100em`（= 100 × 卡片正文字号 ≈ 2000px）会把 400×300 的插图放成
-        // 2000×2000 并按 1:1 摆位；再加上 structured-content 的 `table-layout:auto`
-        // 表格不理会百分比 max-width，整张卡就被撑到屏幕右外（BUG-1676）。
-        // 交给浏览器：容器 width:auto、关掉 aspect-ratio sizer，<img> 按真实自然尺寸和
-        // 真实宽高比布局，`max-width:100%` 负责不超出卡片。
-        node.dataset.hasAspectRatio = 'false';
-        imageContainer.style.width = 'auto';
-        aspectRatioSizer.style.display = 'none';
     } else {
-        // 导出（制卡）与弹窗的尺寸语义不同：Yomitan 的 structured-content-generator 永远写
-        // `${usedWidth}em`，弹窗端再由它自己的 CSS
-        // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))}) 把 1em 压成 1px；
-        // Anki 卡片上没有那份 CSS，em 按卡片正文字号解析，所以 Yomitan 的卡片图才是
-        // 「宽度数值 x 卡片字号」。这里若把导出也折算成物理 px，卡片图就比 Yomitan 小一个
-        // 字号的倍数（BUG-1062）。故导出保留 em 语义，弹窗维持 px。
-        imageContainer.style.width = exporting ? `${usedWidth}em` : `${usedWidth}px`;
+        // 只剩弹窗：它自带把 1em 压成 1px 的 CSS
+        // (.gloss-image-container{font-size:calc(1em/var(--font-size-no-units))})，px 在这里才对。
+        imageContainer.style.width = `${usedWidth}px`;
     }
     if (typeof title === 'string') {
         imageContainer.title = title;
@@ -1912,7 +2055,19 @@ function createDefinitionImage(data, dictionary, exporting = false) {
                 image.width = usedWidth;
                 image.height = image.width * invAspectRatio;
             }
-            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, naturalSizedExport);
+            // 无尺寸 SVG 外字的 1.2em 行内框要跟正文字号走，1px 会把它压成 1.2px。
+            const containerFontSize = useEmUnits || svgWithoutDimensions ? '1em' : '1px';
+            applyImageStyles(node, imageContainer, aspectRatioSizer, imageBackground, image, filename, appearance, containerFontSize, naturalSizedExport);
+            if (naturalSizedExport) {
+                // 真实尺寸没量到：只把词典声明的那一维落到 <img> 上（em 按容器字号解析），
+                // 另一维交给图片自己的宽高比。
+                const declared = declaredImageSize(data);
+                if (declared.width !== null) {
+                    image.style.width = `${declared.width}em`;
+                } else if (declared.height !== null) {
+                    image.style.height = `${declared.height}em`;
+                }
+            }
         }
         imageContainer.appendChild(image);
     }
@@ -2034,6 +2189,7 @@ function getFrequencyHarmonicRank(frequencies) {
 async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
+    currentExportImageSizes = await probeExportImageSizes(idx);
     currentDictionaryMedia = new Map();
     currentSelectionHighlights = 0;
     const glossary = constructGlossaryHtml(idx);
@@ -2042,6 +2198,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const singleGlossaries = constructSingleGlossaryHtml(idx);
     const dictionaryMedia = currentDictionaryMedia;
     currentDictionaryMedia = null;
+    currentExportImageSizes = null;
     // 选中段已经在释义里被 <mark> 标出来了，就不要再产出一份重复的 SelectionText。
     // 选中的释义段已经作为 <mark> 进了导出的释义树。此时把同一段文本再原样塞进
     // SelectionText 字段是否合适，**取决于用户的笔记类型和字段映射**——而这一层
