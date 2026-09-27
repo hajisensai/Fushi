@@ -5702,5 +5702,7 @@
   "anki_pending_mines_unreachable": "Anki can't be reached right now. The remaining cards stay in the queue.",
   "anki_pending_mines_ankimobile_hint": "Each card opens AnkiMobile briefly. Fushi sends the next one when you come back, then asks AnkiMobile to sync.",
   "anki_pending_mines_status_failed": "Failed: $error",
-  "anki_pending_mines_flush_result": "Sent $delivered, failed $failed, remaining $remaining"
+  "anki_pending_mines_flush_result": "Sent $delivered, failed $failed, remaining $remaining",
+  "anki_pending_mine_landing_title": "Deliver cards from other devices",
+  "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage or interconnect) and are added to Anki on this device. Only one device does this at a time."
 }

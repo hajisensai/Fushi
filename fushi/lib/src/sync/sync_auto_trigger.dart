@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter/material.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
@@ -365,13 +367,22 @@ Future<SyncRunReport?> _runSyncChannelInner({
   // BUG-988：互联通道读互联专属上传开关，云备份通道读原共享开关（两通道互不牵连）。
   final ChannelSyncFlags flags = await resolveChannelSyncFlags(repo,
       isInterconnect: channel.isInterconnect);
+  final String deviceId = await repo.getOrCreateDeviceId();
   final SyncOrchestrator orchestrator = SyncOrchestrator(
     db: db,
     backend: backend,
     dictionaryResourceRoot: dictionaryResourceRoot,
     audioDatabaseRoot: audioDatabaseRoot,
     tempDir: tempDir,
-    deviceId: await repo.getOrCreateDeviceId(),
+    deviceId: deviceId,
+    // 待发制卡跨设备中转：只在完整 sweep 里跑（轻量路径不带）。没有任何设备认领
+    // 落地时它只读一次 landing.json，不上传任何卡。
+    pendingMineRelay: PendingMineRelay(
+      store: PendingMineStore.atSupportRoot(() => db),
+      deviceId: deviceId,
+      deviceName: Platform.localHostname,
+      landingClaimedAt: await repo.getPendingMineLandingClaimedAt(),
+    ),
     syncStats: flags.syncStats,
     syncFavorites: flags.syncFavorites,
     syncAudioBookPosition: flags.syncAudioBookPosition,

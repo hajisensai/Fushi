@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show PlatformException;
@@ -16,8 +14,6 @@ import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dar
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/storage/app_paths.dart';
-import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi_engine/utils/net/url_input_normalizer.dart';
 import 'package:fushi/utils.dart';
@@ -620,15 +616,8 @@ BaseAnkiRepository _withPendingQueue(Ref ref, BaseAnkiRepository repo) {
 }
 
 /// 本机的待发制卡队列存储（`<support>/pending_mine_queue`）。
-PendingMineStore pendingMineStoreFor(AppModel appModel) => PendingMineStore(
-      db: () => appModel.database,
-      root: () async => Directory(
-        p.join(
-          (await AppPaths.supportRootDirectory()).path,
-          PendingMineStore.dirName,
-        ),
-      ),
-    );
+PendingMineStore pendingMineStoreFor(AppModel appModel) =>
+    PendingMineStore.atSupportRoot(() => appModel.database);
 
 /// 给 [repo] 套上「制卡后自动重排新卡」。
 ///

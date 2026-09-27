@@ -195,6 +195,10 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
               ),
             ),
             const SettingsSearchTarget(
+              id: 'card_creation.anki.pending_mine_landing',
+              child: PendingMineLandingSwitchRow(),
+            ),
+            const SettingsSearchTarget(
               id: 'card_creation.anki.pending_mines',
               child: PendingMinesEntryRow(),
             ),

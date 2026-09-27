@@ -525,6 +525,8 @@ mixin DictionaryPageMixin {
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
+    // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（同 base_source_page）。
+    MinePopupResult? minedNew;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -536,6 +538,7 @@ mixin DictionaryPageMixin {
         final res = await onMineEntry(
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
+        minedNew = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
@@ -545,6 +548,7 @@ mixin DictionaryPageMixin {
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
+    if (minedNew?.queued ?? false) return minedNew!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 

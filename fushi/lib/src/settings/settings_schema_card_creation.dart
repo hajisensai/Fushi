@@ -100,6 +100,11 @@ SettingsDestination buildCardCreationDestination() {
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mine_landing',
+        title: t.anki_pending_mine_landing_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.pending_mines',
         title: t.anki_pending_mines_title,
         hasRevealTarget: true,

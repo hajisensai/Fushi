@@ -216,8 +216,8 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(5),
-      reason: '常用开关（批量制卡 + 标签）直接可见，维护开关属于独立子页',
+      findsNWidgets(6),
+      reason: '常用开关（批量制卡 + 落地设备 + 标签）直接可见，维护开关属于独立子页',
     );
     expect(
       find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),

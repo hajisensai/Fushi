@@ -7,6 +7,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/storage/app_paths.dart';
+
 /// 设备端「待发制卡」队列的存储：一行元数据（`pending_mine_queue`）+ 一个载荷
 /// 文件（`<root>/<id>.json`，[ForwardedMinePayload] 的 JSON，媒体字节已内联）。
 ///
@@ -24,6 +26,16 @@ class PendingMineStore {
   }) : _dbOf = db,
        _root = root,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
+
+  /// 本机的待发队列：载荷在 `<support>/pending_mine_queue`。制卡链路（仓库 provider）
+  /// 与跨设备中转（同步触发器）共用这一处定位。
+  factory PendingMineStore.atSupportRoot(FushiDatabase Function() db) =>
+      PendingMineStore(
+        db: db,
+        root: () async => Directory(
+          p.join((await AppPaths.supportRootDirectory()).path, dirName),
+        ),
+      );
 
   /// 载荷目录名（`<support>/pending_mine_queue`）。
   static const String dirName = 'pending_mine_queue';
@@ -68,6 +80,49 @@ class PendingMineStore {
     );
     return id;
   }
+
+  /// 收下另一台设备经跨设备中转发来的卡（本机是落地设备）：沿用对方的 id 与入队
+  /// 时刻，记下来源设备。已经有这一行（上一轮收过）时什么都不做。
+  Future<bool> insertRemote({
+    required String id,
+    required int createdAt,
+    required String expression,
+    required String reading,
+    required String originDeviceId,
+    required String payloadJson,
+  }) async {
+    if (await byId(id) != null) return false;
+    await _writeRecord(
+      id,
+      payloadJson,
+      PendingMineQueueCompanion.insert(
+        id: id,
+        createdAt: createdAt,
+        expression: expression,
+        reading: Value<String>(reading),
+        originDeviceId: Value<String?>(originDeviceId),
+      ),
+    );
+    return true;
+  }
+
+  /// 本机的卡已上传到跨设备中转命名空间。
+  Future<void> markUploaded(String id) =>
+      _update(id, const PendingMineQueueCompanion(uploaded: Value<bool>(true)));
+
+  /// 载荷原文（跨设备中转上传用）；读不到返回 null。
+  Future<String?> readPayloadJson(String id) async {
+    try {
+      final File file = await _payloadFile(id);
+      return file.existsSync() ? await file.readAsString() : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 用户删掉一张待发卡。远端中转命名空间里还有它（上传过 / 来自其他设备）时不能
+  /// 直接删行——下一轮中转要靠这一行去清掉远端，否则落地设备照样会把它落进 Anki。
+  Future<void> discard(PendingMineRow row) => markDelivered(row);
 
   /// 「写载荷文件 → 插行」与 [sweepOrphanPayloads] 共用的进程内锁：清理绝不能看到
   /// 「文件已写、行还没插」的中间态，把刚入队的卡当孤儿删掉。跨实例，所以是静态的。

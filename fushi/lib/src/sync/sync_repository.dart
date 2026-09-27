@@ -852,6 +852,20 @@ class SyncRepository {
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
   static const _keyDeviceId = 'sync_device_id';
+
+  /// 「本机作为制卡落地设备」开关打开的时刻（毫秒）；0 = 关。跨设备中转按它与远端
+  /// 认领比大小决定谁是落地设备（后打开者胜），见 `PendingMineRelay`。设备本地。
+  static const _keyPendingMineLandingClaimedAt =
+      'sync_pending_mine_landing_claimed_at';
+
+  Future<int> getPendingMineLandingClaimedAt() =>
+      _db.getPrefTyped<int>(_keyPendingMineLandingClaimedAt, 0);
+
+  /// 打开时记下此刻（作为新的认领），关闭写 0。
+  Future<void> setPendingMineLanding(bool enabled) => _db.setPrefTyped<int>(
+    _keyPendingMineLandingClaimedAt,
+    enabled ? DateTime.now().millisecondsSinceEpoch : 0,
+  );
   static const _keyLanRequiresPin = 'sync_lan_requires_pin';
   static const _keyServerTlsEnabled = 'sync_server_tls_enabled';
 
@@ -1341,6 +1355,9 @@ class SyncRepository {
     // 「允许配对设备远程启动游戏」是本机安全开关：从另一台电脑恢复备份不得替
     // 这台电脑打开远程起进程的门。
     kGameStreamRemoteLaunchPrefKey,
+    // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
+    // 同一张卡被两边各落一次。
+    _keyPendingMineLandingClaimedAt,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

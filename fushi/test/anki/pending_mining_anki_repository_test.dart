@@ -25,6 +25,13 @@ class _FakeBackend implements BaseAnkiRepository {
 
   /// 收到这些词时违约抛异常（MineOutcome 契约本是永不抛）。
   final Set<String> throwFor;
+
+  /// 后端「认得」的词（AnkiMobile 上就是本机账本）。
+  final Set<String> inAnki = <String>{};
+
+  @override
+  Future<bool> isDuplicate(String expression, String reading) async =>
+      inAnki.contains(expression);
   final List<String> expressions = <String>[];
   final List<String?> coverContents = <String?>[];
 
@@ -356,5 +363,63 @@ void main() {
         .toList();
     final String keepId = (await store.all()).single.id;
     expect(names, <String>['$keepId.json']);
+  });
+
+  test('AnkiMobile：切过去期间 Fushi 被杀、回跳冷启动，照样确认出队', () async {
+    await mine(
+      repoOver(_FakeBackend(batchMining: true, switchesApp: true)),
+      'k1',
+    );
+    await repoOver(_FakeBackend(switchesApp: true)).flush(interactive: true);
+
+    // 进程重启：内存里什么都没了，只剩库里那张 sending。
+    PendingMiningAnkiRepository.debugReset();
+    final PendingMiningAnkiRepository fresh = repoOver(
+      _FakeBackend(switchesApp: true),
+    );
+    await fresh.confirmAnkiMobileDelivery('k1');
+
+    expect(await store.count(), 0);
+    expect(opened, <Uri>[ankiMobileSyncUri]);
+  });
+
+  test('AnkiMobile：残留的 sending 卡若后端已认得（回跳没送达），「全部发送」时直接出队', () async {
+    await mine(
+      repoOver(_FakeBackend(batchMining: true, switchesApp: true)),
+      'seen',
+    );
+    await repoOver(_FakeBackend(switchesApp: true)).flush(interactive: true);
+
+    final _FakeBackend mobile = _FakeBackend(switchesApp: true)
+      ..inAnki.add('seen');
+    await repoOver(mobile).flush(interactive: true);
+
+    expect(mobile.expressions, isEmpty, reason: '已在 Anki 里就不能再拉起一次');
+    expect(await store.count(), 0);
+  });
+
+  test('AnkiMobile：连发链中途断了（下一张失败），已确认的那张照样请求同步', () async {
+    final PendingMiningAnkiRepository offline = repoOver(
+      _FakeBackend(batchMining: true, switchesApp: true),
+    );
+    await mine(offline, 'a1');
+    await mine(offline, 'a2');
+
+    final _FakeBackend mobile = _FakeBackend(
+      switchesApp: true,
+      outcomes: <MineOutcome>[
+        const MineOutcome.success(),
+        MineOutcome.failure('AnkiMobile is not installed'),
+      ],
+    );
+    final PendingMiningAnkiRepository repo = repoOver(mobile);
+    await repo.flush(interactive: true);
+    await repo.confirmAnkiMobileDelivery('a1');
+
+    expect(mobile.expressions, <String>['a1', 'a2']);
+    expect(opened, <Uri>[ankiMobileSyncUri]);
+    final PendingMineRow left = (await store.all()).single;
+    expect(left.expression, 'a2');
+    expect(left.status, PendingMineStatus.failed);
   });
 }

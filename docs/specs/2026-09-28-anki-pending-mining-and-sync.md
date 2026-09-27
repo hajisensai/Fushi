@@ -47,6 +47,11 @@
   用户在 AnkiMobile 里取消（没有回跳）卡不丢，下次「全部发送」重发它。回前台对 AnkiMobile 不做任何事。
 - 互联转发（`mineForward`）只有「确定没送到」（无已配对设备 / 全部候选建连失败）才返回 null 进而入队；
   对端回过话或请求发出后超时抛 `RemoteMineOutcomeUnknown`（主机可能已落卡），按失败报给用户。
+  互联客户端设 10 s 建连超时（`kInterconnectConnectTimeout`）：对端关机时快速以建连失败收尾（可入队），
+  而不是吃满 60 s 整次超时后被当成「可能已送达」。残余风险：请求发出后连接被重置仍会被当成没送到，由主机端 Anki 查重兜底。
+- AnkiMobile「正在等哪张」只看库里的 `sending` 行（不靠内存）：Fushi 被 iOS 杀掉、回跳冷启动照样确认；
+  「全部发送」先核对残留 `sending` 行——后端认得（账本记过）即出队，否则退回 pending；连发链结束（发完或下一张拉不起）
+  且本次确认过至少一张时打开 sync。词条为空的卡回跳不带参数、无法确认，只能手动删。
 - 补发中任何意外（载荷丢失、后端违约抛异常）把该卡标 `failed`，不挡住后续卡；补发前清理孤儿载荷与半截 `.tmp`（与入队共用一把 I/O 锁）。
 - 入队后弹窗按钮走 `MinePopupResult.queued()`（画 ✓、不回查 Anki），视频页与「看完再制卡」队列同口径。
 - 实现：仓库层装饰器 `PendingMiningAnkiRepository`（最外层，包住自动重排），公共委派基类 `DelegatingAnkiRepository`
@@ -58,10 +63,23 @@
 
 ## 第 2 期：队列接入现有同步 + 落地设备
 
-- 待发记录作为聚合快照中的新记录类型经既有 `SyncBackend`（Google Drive / OneDrive / Dropbox / WebDAV / FTP / SFTP / 互联）同步；媒体经 `SyncAssetStore` 按内容哈希上传。
-- 记录不可变，合并 = 并集 + 墓碑优先，无冲突。送达后写墓碑（落地设备、Anki note id 或「重复跳过」），新增 `SyncTombstoneKind`。
-- 「本机作为制卡落地设备」设置：同一时间只允许一台；落地前再用 Anki 自身查重兜底。
-- 兼容性前置验证：旧版本客户端遇到未知记录类型须原样保留，不得在合并时丢弃。
+**不进聚合快照**（调研结论：旧端按类型化字段重序列化会丢未知段，经旧互联 host 的记录传不出去；
+快照每台设备全量上传合并后的并集，载荷会被复制 N 份且每次变化全量重传）。改走 `SyncAssetStore` 的独立命名空间
+`__pending_mines__`（云与互联同一套资产层），全部是**写一次**的文件、没有合并逻辑，旧端根本不碰这个命名空间：
+
+- `landing.json`：落地设备认领 `{deviceId, deviceName, claimedAt}`；只有一份，`claimedAt` 大者胜（后打开「本机落地」的设备胜）。
+  设置存 `SyncRepository` 的设备本地偏好 `sync_pending_mine_landing_claimed_at`（登记进 `deviceLocalPrefKeys`，随备份换设备会出现两台落地设备）。
+- `<id>.json`：一张待发卡 `{id, createdAt, expression, reading, originDeviceId, payload}`（payload 即 `ForwardedMinePayload` JSON），由制卡设备写。
+  **没有任何设备认领落地时不上传**——没人要的卡不外流，每轮同步只多一次 `listChildren`。
+- `<id>.landed.json`：落地回执，落地设备交给 Anki 后写，并撤掉 `<id>.json`；制卡设备看到回执删本地行与回执。
+- 本地表：`originDeviceId`（null = 本机制的）、`uploaded`、状态 `landed`（已交给 Anki / 用户已删，但远端还有记录待清理，不在待发列表显示）。
+  交给 Anki 时：本机制且没上传过的直接出队；否则标 `landed` 由下一轮中转清远端。用户删除已上传的卡同理（`discard`）。
+- 制卡设备自己先把卡交给了本机 Anki：下一轮撤远端记录；落地设备发现记录已撤就删掉手上那份，不再落。
+- 挂载点：`SyncOrchestrator` 完整 sweep 在删除墓碑之后跑 `PendingMineRelay.run(backend)`，失败只记 `report.errors`。
+  落地设备收到新卡经进程级广播 `PendingMineRelay.arrivals` 通知根组件（持有 Riverpod ref）补发。
+- 重复落地兜底：落地后、写回执前进程被杀会再落一次，由落地设备 Anki 查重判重复、按已送达出队。
+- 已知小泄漏：制卡设备在回执写出前已删掉该行时，回执无人清理（几十字节，可接受）。
+- 落地的卡按**落地设备自己的** Anki 配置（牌组 / 笔记类型 / 字段映射）渲染。
 
 ## 第 3 期：Fushi 作为 Anki 同步客户端（官方 rslib）
 

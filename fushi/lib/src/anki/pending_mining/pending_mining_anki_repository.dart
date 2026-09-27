@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show PendingMineRow;
+import 'package:fushi_core/fushi_core.dart'
+    show PendingMineRow, PendingMineStatus;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
@@ -23,6 +24,7 @@ class PendingFlushReport {
     this.remaining = 0,
     this.unreachable = false,
     this.skipped = false,
+    this.awaitingConfirmation = false,
   });
 
   /// 送进 Anki（或 Anki 说已经有了）的张数。
@@ -39,6 +41,9 @@ class PendingFlushReport {
 
   /// 这一轮根本没跑（例如 AnkiMobile 上的自动触发）。
   final bool skipped;
+
+  /// 已拉起 AnkiMobile，正等它加完卡回跳确认（那张仍在队列里）。
+  final bool awaitingConfirmation;
 }
 
 /// 这次失败是不是「确定没送到」——只有这种才能放心入队、之后原样重发。
@@ -86,13 +91,9 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 的自动补发与用户点的「全部发送」各读一遍同一批行，同一张卡会被送两次。
   static Future<void> _tail = Future<void>.value();
 
-  /// AnkiMobile 已拉起、正等 `x-success` 回跳确认的那张卡。跨实例，理由同 [_tail]。
-  static String? _ankiMobileAwaitingId;
-
   /// 测试用：复位跨实例的静态状态。
   static void debugReset() {
     _tail = Future<void>.value();
-    _ankiMobileAwaitingId = null;
   }
 
   @override
@@ -185,23 +186,26 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         : _flushAll(),
   );
 
-  /// AnkiMobile 加完卡回跳（`fushi://ankiSuccess?expression=…`）：确认正在等的那张
-  /// 已进 Anki、出队；还有就发下一张，发完了请 AnkiMobile 同步一次。
+  /// AnkiMobile 加完卡回跳（`fushi://ankiSuccess?expression=…`）：确认那张已进 Anki、
+  /// 出队；还有就拉起下一张。连发链到此为止（发完了，或下一张没能拉起）时请 AnkiMobile
+  /// 同步一次——此刻至少这一张确实已经存进 AnkiMobile。
   ///
-  /// 回跳的词条对不上正在等的那张（例如这次回跳来自一张直接制的卡）时什么都不做。
+  /// 「正在等哪张」只看库里的 `sending` 行，不靠内存：切到 AnkiMobile 期间 Fushi 被
+  /// iOS 杀掉、由回跳冷启动时照样能确认。对不上任何 `sending` 行的回跳（来自一张
+  /// 直接制的卡）什么都不做。
   Future<void> confirmAnkiMobileDelivery(String expression) =>
       _serialized<void>(() async {
-        final String? awaiting = _ankiMobileAwaitingId;
-        if (awaiting == null) return;
-        final PendingMineRow? row = await _store.byId(awaiting);
-        if (row == null || row.expression != expression.trim()) return;
-        _ankiMobileAwaitingId = null;
+        final String key = expression.trim();
+        final PendingMineRow? row = (await _store.rows())
+            .where(
+              (PendingMineRow r) =>
+                  r.status == PendingMineStatus.sending && r.expression == key,
+            )
+            .firstOrNull;
+        if (row == null) return;
         await _store.markDelivered(row);
-        if ((await _store.sendable()).isEmpty) {
-          await _openUrl?.call(ankiMobileSyncUri);
-          return;
-        }
-        await _sendNextToAnkiMobile();
+        final PendingFlushReport next = await _sendNextToAnkiMobile();
+        if (!next.awaitingConfirmation) await _openUrl?.call(ankiMobileSyncUri);
       });
 
   Future<T> _serialized<T>(Future<T> Function() body) {
@@ -249,38 +253,38 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
     );
   }
 
-  /// 用户点「全部发送」：上一张若还在等回跳（用户在 AnkiMobile 里取消了、手动切回），
-  /// 它仍在队列里，按普通待发卡重发；然后发一张。
+  /// 用户点「全部发送」。还停在 `sending` 的卡（用户在 AnkiMobile 里取消后手动切回、
+  /// 或回跳没送达）先核对一次：后端认得它（AnkiMobile 的本机账本记过这个词）就算已
+  /// 送达出队，否则退回 `pending` 重发。然后拉起一张。
   Future<PendingFlushReport> _startAnkiMobileSend({
     required bool interactive,
   }) async {
     if (!interactive) return const PendingFlushReport(skipped: true);
-    final String? stale = _ankiMobileAwaitingId;
-    if (stale != null) {
-      _ankiMobileAwaitingId = null;
-      await _store.markPending(stale);
+    for (final PendingMineRow row in await _store.rows()) {
+      if (row.status != PendingMineStatus.sending) continue;
+      if (await inner.isDuplicate(row.expression, row.reading)) {
+        await _store.markDelivered(row);
+      } else {
+        await _store.markPending(row.id);
+      }
     }
     return _sendNextToAnkiMobile();
   }
 
+  /// 按顺序找下一张能拉起的卡拉起它（行停在 `sending` 等回跳）。
   Future<PendingFlushReport> _sendNextToAnkiMobile() async {
     int failed = 0;
     for (final PendingMineRow row in await _store.sendable()) {
-      final _SendResult r = await _sendOne(row);
-      switch (r) {
+      switch (await _sendOne(row)) {
         case _SendResult.opened:
-          // AnkiMobile 已拉起：行停在 sending，等 x-success 回跳再出队。
-          _ankiMobileAwaitingId = row.id;
           return PendingFlushReport(
             failed: failed,
             remaining: (await _store.sendable()).length,
+            awaitingConfirmation: true,
           );
         case _SendResult.delivered:
-          return PendingFlushReport(
-            delivered: 1,
-            failed: failed,
-            remaining: (await _store.sendable()).length,
-          );
+          // Anki 判重复：已在库里，看下一张。
+          continue;
         case _SendResult.failed:
           failed++;
         case _SendResult.unreachable:

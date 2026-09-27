@@ -8,8 +8,10 @@ import 'package:fushi_core/fushi_core.dart'
 
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/utils.dart';
 
 /// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
@@ -74,6 +76,55 @@ class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
           builder: (BuildContext context) => const PendingMinesPage(),
         ),
       ),
+    );
+  }
+}
+
+/// 「本机负责落地其他设备的卡片」开关（跨设备中转的落地设备，见
+/// [PendingMineRelay]）。写同步域的设备本地偏好，下一轮同步时生效。
+class PendingMineLandingSwitchRow extends ConsumerStatefulWidget {
+  const PendingMineLandingSwitchRow({super.key});
+
+  @override
+  ConsumerState<PendingMineLandingSwitchRow> createState() =>
+      _PendingMineLandingSwitchRowState();
+}
+
+class _PendingMineLandingSwitchRowState
+    extends ConsumerState<PendingMineLandingSwitchRow> {
+  bool _enabled = false;
+
+  SyncRepository get _repo => SyncRepository(ref.read(appProvider).database);
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    try {
+      final bool enabled = await _repo.getPendingMineLandingClaimedAt() > 0;
+      if (mounted) setState(() => _enabled = enabled);
+    } catch (_) {
+      // 未初始化的最小宿主（widget 测试）没有库：当关。
+    }
+  }
+
+  Future<void> _set(bool enabled) async {
+    setState(() => _enabled = enabled);
+    await _repo.setPendingMineLanding(enabled);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsSwitchRow(
+      icon: Icons.move_to_inbox_outlined,
+      showIcon: true,
+      title: t.anki_pending_mine_landing_title,
+      subtitle: t.anki_pending_mine_landing_hint,
+      value: _enabled,
+      onChanged: (bool v) => unawaited(_set(v)),
     );
   }
 }
@@ -143,7 +194,7 @@ class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
         ],
       ),
     );
-    if (confirmed == true) await store.remove(row.id);
+    if (confirmed == true) await store.discard(row);
   }
 
   String _statusText(PendingMineRow row) => switch (row.status) {

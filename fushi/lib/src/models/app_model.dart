@@ -22,6 +22,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -206,6 +207,8 @@ import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
+import 'package:fushi/src/sync/interconnect_post_transport.dart'
+    show kInterconnectConnectTimeout;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
@@ -8067,8 +8070,9 @@ class AppModel with ChangeNotifier {
   // 避免每次查词都新建 client + 重做 DNS/TCP/TLS 握手）。SyncRepository 每次
   // 现读 URL/token，所以服务器配置变更无需失效此 client；进程退出在 dispose 关。
   http.Client? _remoteLookupHttpClient;
-  http.Client get _remoteLookupClient =>
-      _remoteLookupHttpClient ??= http.Client();
+  http.Client get _remoteLookupClient => _remoteLookupHttpClient ??= IOClient(
+    HttpClient()..connectionTimeout = kInterconnectConnectTimeout,
+  );
 
   Future<String?> lookupRemoteAudio(
     String expression,

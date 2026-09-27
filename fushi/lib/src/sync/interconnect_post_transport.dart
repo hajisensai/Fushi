@@ -56,6 +56,13 @@ Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
 /// （TODO-961 gap①：注入的 keep-alive client 不得旁路证书钉扎）。
 ///
 /// 现在新增一个互联端点 = 调一次 [post]，不再复制传输代码。
+///
+/// 互联请求的**建连**超时。不设时，建连阶段也吃整次请求的超时（制卡 60 s）：对端
+/// 关机 / 走 Tailscale 或公网地址时 SYN 石沉大海，要等满整次超时，而且以
+/// `TimeoutException` 收尾——与「请求已发出、等应答超时」混在一起，被当成「可能已
+/// 送达」，卡就进不了待发队列。设了之后建连失败以 SocketException 快速返回。
+const Duration kInterconnectConnectTimeout = Duration(seconds: 10);
+
 class InterconnectPostTransport {
   InterconnectPostTransport({
     required SyncRepository repo,
@@ -77,7 +84,10 @@ class InterconnectPostTransport {
   final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
+      createPinnedHttpPackageClient(
+        expectedFingerprint: expectedFingerprint,
+        connectionTimeout: kInterconnectConnectTimeout,
+      );
 
   /// 向所有已启用候选按序 POST [body] 到 [path]，返回第一个拿到的可用 JSON 响应。
   ///

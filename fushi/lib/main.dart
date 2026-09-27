@@ -69,6 +69,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
@@ -730,6 +731,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     run: _runAppShortcut,
   );
   StreamSubscription<String>? _sourceUrlSubscription;
+  /// 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
+  StreamSubscription<int>? _pendingMineArrivals;
   bool _sourceNavigationScheduled = false;
   bool _sourceNavigationRunning = false;
   String? _openingCardSourceUrl;
@@ -817,6 +820,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    _pendingMineArrivals =
+        PendingMineRelay.arrivals.listen((_) => _flushPendingMines());
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
     // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。
@@ -1158,6 +1163,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   @override
   void dispose() {
     _sourceUrlSubscription?.cancel();
+    _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
