@@ -333,8 +333,9 @@ class VideoAcquisitionService {
     Object? firstError;
     StackTrace? firstStack;
     final String? code = effect.subtitleLanguageCode;
+    // 页面在提交途中被关掉（dispose）也跑完：用户已经确认了整张清单，截断成前
+    // 半截且没有任何提示，比多花几秒更糟。端口都是组合根的闭包，不依赖页面。
     for (final VideoAcquisitionFranchiseEntry entry in effect.entries) {
-      if (_disposed) return;
       final VideoAcquisitionResourcePlan plan = entry.plan!;
       try {
         if (code != null) {

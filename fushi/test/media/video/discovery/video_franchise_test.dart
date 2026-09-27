@@ -156,6 +156,74 @@ void main() {
     expect(franchise.series.single.reference.providerId, 'mal');
   });
 
+  test('同名剧集要同类别、同原语言：别国同名剧不收', () async {
+    VideoDiscoveryItem tv(String id, String language) => VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'tmdb',
+        mediaId: id,
+        mediaKind: VideoMetadataMediaKind.tv,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: 'Monster',
+        year: 2004,
+      ),
+      metadataWork: VideoMetadataWork(
+        provider: VideoMetadataProviderKind.tmdb,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Monster',
+        originalLanguage: language,
+      ),
+    );
+    final VideoDiscoveryItem anchor = tv('1', 'ja');
+    final _FakeSource source = _FakeSource(
+      series: <String, List<VideoDiscoveryItem>>{
+        'Monster': <VideoDiscoveryItem>[
+          anchor,
+          tv('2', 'ko'),
+          _item('3', 'Monster', kind: VideoMetadataMediaKind.tv, year: 1990),
+        ],
+      },
+    );
+    final VideoFranchise franchise = (await resolveVideoFranchise(
+      source,
+      anchor,
+    ))!;
+    expect(
+      franchise.series.map((VideoDiscoveryItem e) => e.reference.mediaId),
+      <String>['3', '1'],
+      reason: '韩剧 Monster 被原语言挡掉；原语言未知的照收',
+    );
+  });
+
+  test('锚点名占满时 collection 系列名仍拿去搜剧集', () async {
+    final VideoDiscoveryItem anchor = VideoDiscoveryItem(
+      reference: VideoMediaReference(
+        providerId: 'mal',
+        mediaId: '9',
+        mediaKind: VideoMetadataMediaKind.movie,
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        title: 'Name A',
+        originalTitle: 'Name B',
+        aliases: <String>['Name C', 'Name D'],
+      ),
+    );
+    final _FakeSource source = _FakeSource(
+      hits: <String, List<TmdbCollectionHit>>{
+        'Name A': const <TmdbCollectionHit>[
+          TmdbCollectionHit(id: 5, name: 'Name A Collection'),
+        ],
+      },
+      collections: <int, TmdbCollection>{
+        5: TmdbCollection(
+          id: 5,
+          name: 'Franchise Collection',
+          movies: <VideoDiscoveryItem>[],
+        ),
+      },
+    );
+    await resolveVideoFranchise(source, anchor);
+    expect(source.seriesQueries, contains('Franchise'));
+  });
+
   test('来源不可用 → null', () async {
     expect(
       await resolveVideoFranchise(
@@ -179,10 +247,12 @@ void main() {
       expect(matches('Detective Conan Collection', 'Detective Conan'), isTrue);
     });
 
-    test('短名字只认相等，无关系列不收', () {
+    test('只认去后缀后完全相等：前缀相同的别的系列不收', () {
       expect(matches('Superman Collection', 'Up'), isFalse);
       expect(matches('Up Collection', 'Up'), isTrue);
       expect(matches('Crayon Shin-chan Collection', 'Doraemon'), isFalse);
+      expect(matches('Air Bud Collection', 'Air'), isFalse);
+      expect(matches('Monster High Collection', 'Monster'), isFalse);
     });
   });
 }

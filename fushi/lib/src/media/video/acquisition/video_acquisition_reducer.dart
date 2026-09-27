@@ -25,7 +25,9 @@ library;
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
@@ -173,6 +175,9 @@ VideoAcquisitionReduction _onAiIntent(
     case VideoAcquisitionIntentKind.confirm:
       if (idle.stage == VideoAcquisitionStage.awaitingResourceConfirm) {
         return _submit(idle, defaults);
+      }
+      if (idle.stage == VideoAcquisitionStage.awaitingFranchiseConfirm) {
+        return _submitFranchise(idle);
       }
       return _unclear(idle);
     case VideoAcquisitionIntentKind.choose:
@@ -1102,6 +1107,7 @@ VideoAcquisitionReduction _applyChoice(
         kVideoAcquisitionOptionConfirm => _submit(state, defaults),
         kVideoAcquisitionOptionNext => _nextGroup(state),
         kVideoAcquisitionOptionLatest => _onlyLatestEpisode(state),
+        kVideoAcquisitionOptionAll => _allEpisodesAgain(state),
         kVideoAcquisitionOptionCancel => _cancel(state),
         _ => (state, _noEffects),
       };
@@ -1403,11 +1409,16 @@ VideoAcquisitionState _presentPlan(
           },
         ),
       );
-  final bool canPickLatest =
+  final bool episodic =
       state.slots.mode == VideoAcquisitionMode.download &&
-      state.reference?.mediaKind == VideoMetadataMediaKind.tv &&
+      state.reference?.mediaKind == VideoMetadataMediaKind.tv;
+  final bool canPickLatest =
+      episodic &&
       state.slots.episodes is VideoAcquisitionAllEpisodes &&
       plan.group.episodes.length > 1;
+  // 点过「只下最新一集」后给回头路：否则只能打字改回全部。
+  final bool canPickAll =
+      episodic && state.slots.episodes is VideoAcquisitionSingleEpisode;
   return _ask(
     next,
     VideoAcquisitionQuestion(
@@ -1419,6 +1430,8 @@ VideoAcquisitionState _presentPlan(
           VideoAcquisitionOption(id: '$kVideoAcquisitionOptionAltPrefix$alt'),
         if (canPickLatest)
           const VideoAcquisitionOption(id: kVideoAcquisitionOptionLatest),
+        if (canPickAll)
+          const VideoAcquisitionOption(id: kVideoAcquisitionOptionAll),
         const VideoAcquisitionOption(id: kVideoAcquisitionOptionNext),
         const VideoAcquisitionOption(id: kVideoAcquisitionOptionCancel),
       ],
@@ -1556,6 +1569,11 @@ VideoAcquisitionReduction _onFailed(
 }
 
 VideoAcquisitionReduction _cancel(VideoAcquisitionState state) {
+  // 提交在飞时取消不了：入队 / 建订阅已经在做，这时说「已取消」而结果随后照样
+  // 落地（且 Submitted 事件会因终态被丢），界面就与事实相反。提交完成后自然结束。
+  if (state.stage == VideoAcquisitionStage.submitting) {
+    return (state, _noEffects);
+  }
   final VideoAcquisitionState next = state
       .copyWith(stage: VideoAcquisitionStage.cancelled, busy: false)
       .say(const VideoAcquisitionSay(VideoAcquisitionSayKind.cancelled));
@@ -1760,6 +1778,19 @@ VideoAcquisitionReduction _onlyLatestEpisode(VideoAcquisitionState state) {
   return (_presentPlan(narrowed, state.groupCursor, plan), _noEffects);
 }
 
+/// 撤销「只下最新一集」：集选择回到全部，重算当前卡。
+VideoAcquisitionReduction _allEpisodesAgain(VideoAcquisitionState state) {
+  final VideoAcquisitionState widened = state.copyWith(
+    slots: state.slots.copyWith(episodes: const VideoAcquisitionAllEpisodes()),
+  );
+  final VideoAcquisitionResourcePlan? plan = _planAt(
+    widened,
+    state.groupCursor,
+  );
+  if (plan == null) return (state, _noEffects);
+  return (_presentPlan(widened, state.groupCursor, plan), _noEffects);
+}
+
 // ---------------------------------------------------------------------------
 // 整套下载
 // ---------------------------------------------------------------------------
@@ -1884,11 +1915,33 @@ VideoAcquisitionReduction _onFranchiseEntryResolved(
       index >= state.franchiseEntries.length) {
     return (state, _noEffects);
   }
+  // 同一颗种子只归一部：没写年份的剧场版合集包能通过每一部的年份过滤，不排除
+  // 就会被几部同时选中——第二部入队时撞重复种子失败，第一部又把整包当单部入库。
+  final Set<String> used = <String>{
+    for (final VideoAcquisitionFranchiseEntry entry in state.franchiseEntries)
+      for (final VideoResourceCandidate pick
+          in entry.plan?.picks ?? const <VideoResourceCandidate>[])
+        pick.identityKey,
+  };
+  final VideoAcquisitionFranchiseEntry target = state.franchiseEntries[index];
   final VideoAcquisitionFranchiseEntry resolved = planFranchiseEntry(
-    state.franchiseEntries[index],
-    event,
+    target,
+    VideoAcquisitionFranchiseEntryResolvedEvent(
+      index: event.index,
+      work: event.work,
+      presence: event.presence,
+      alreadySubscribed: event.alreadySubscribed,
+      items: <VideoResourceCandidate>[
+        for (final VideoResourceCandidate item in event.items)
+          if (!used.contains(item.identityKey)) item,
+      ],
+    ),
     quality: state.slots.quality ?? VideoAcquisitionQuality.best,
     defaults: defaults,
+    // 同名剧集（哆啦A梦 1979 / 2005）靠标题搜到的是同一批发布：清单里有同名
+    // 剧集时按年份排除写了别的年份的发布。独一份的长寿剧不排（逐集发布常带
+    // 播出年份，按首播年排会误杀）。
+    filterSeriesByYear: _hasSameTitledSeries(state.franchiseEntries, target),
   );
   final List<VideoAcquisitionFranchiseEntry> entries =
       List<VideoAcquisitionFranchiseEntry>.of(state.franchiseEntries);
@@ -1938,6 +1991,7 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
   VideoAcquisitionFranchiseEntryResolvedEvent event, {
   required VideoAcquisitionQuality quality,
   required VideoAcquisitionDefaults defaults,
+  bool filterSeriesByYear = false,
 }) {
   final VideoMediaReference reference = entry.item.reference;
   final VideoMetadataMediaKind kind = reference.mediaKind;
@@ -1953,7 +2007,7 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
         cleanResourceCandidates(
           event.items,
           skipExtras: defaults.skipExtras,
-          movieYear: kind == VideoMetadataMediaKind.movie
+          movieYear: kind == VideoMetadataMediaKind.movie || filterSeriesByYear
               ? reference.year
               : null,
         ),
@@ -2006,6 +2060,21 @@ VideoAcquisitionFranchiseEntry planFranchiseEntry(
     plan: found.plan,
     selected: !owned,
     owned: owned,
+  );
+}
+
+bool _hasSameTitledSeries(
+  List<VideoAcquisitionFranchiseEntry> entries,
+  VideoAcquisitionFranchiseEntry target,
+) {
+  final VideoMediaReference reference = target.item.reference;
+  if (reference.mediaKind != VideoMetadataMediaKind.tv) return false;
+  final String title = TitleNormalizer.normalize(reference.title);
+  return entries.any(
+    (VideoAcquisitionFranchiseEntry other) =>
+        !identical(other, target) &&
+        other.item.reference.mediaKind == VideoMetadataMediaKind.tv &&
+        TitleNormalizer.normalize(other.item.reference.title) == title,
   );
 }
 

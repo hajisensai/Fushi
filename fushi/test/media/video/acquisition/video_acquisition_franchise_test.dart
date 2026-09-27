@@ -308,6 +308,106 @@ void main() {
       expect(s.said.last, VideoAcquisitionSayKind.franchiseSubmitted);
     });
 
+    test('同一颗种子只归一部：前一部已选的发布不再给后一部', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(VideoAcquisitionFranchiseLoadedEvent(_franchise));
+      final _Resource pack = _Resource(
+        remoteId: 'pack',
+        title: '[G] Doraemon Movie Pack [1080p]',
+        releaseGroup: 'G',
+      );
+      s.feed(
+        VideoAcquisitionFranchiseEntryResolvedEvent(
+          index: 0,
+          items: <VideoResourceCandidate>[pack],
+        ),
+      );
+      s.feed(
+        VideoAcquisitionFranchiseEntryResolvedEvent(
+          index: 1,
+          items: <VideoResourceCandidate>[pack],
+        ),
+      );
+      expect(
+        s.state.franchiseEntries[0].status,
+        VideoAcquisitionFranchiseEntryStatus.ready,
+      );
+      expect(
+        s.state.franchiseEntries[1].status,
+        VideoAcquisitionFranchiseEntryStatus.noResource,
+      );
+    });
+
+    test('同名剧集按年份分开：1979 那部不拿写着 2005 的发布', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s, scope: VideoAcquisitionScope.franchiseSeries);
+      final VideoDiscoveryItem old = _work(
+        id: 'tv0',
+        title: 'Doraemon',
+        year: 1979,
+        status: 'Ended',
+      );
+      s.feed(
+        VideoAcquisitionFranchiseLoadedEvent(
+          VideoFranchise(
+            name: 'Doraemon',
+            series: <VideoDiscoveryItem>[old, _show],
+            movies: const <VideoDiscoveryItem>[],
+          ),
+        ),
+      );
+      s.feed(
+        VideoAcquisitionFranchiseEntryResolvedEvent(
+          index: 0,
+          items: <VideoResourceCandidate>[
+            _Resource(
+              remoteId: 'new',
+              title: '[G] Doraemon (2005) - 01 (1080p)',
+              releaseGroup: 'G',
+            ),
+          ],
+        ),
+      );
+      expect(
+        s.state.franchiseEntries[0].status,
+        VideoAcquisitionFranchiseEntryStatus.noResource,
+      );
+    });
+
+    test('提交在飞时取消不生效；清单态打字「确认」= 全部提交', () {
+      final _Session s = _Session(_defaults);
+      _reachFranchise(s);
+      s.feed(VideoAcquisitionFranchiseLoadedEvent(_franchise));
+      s.feed(
+        VideoAcquisitionFranchiseEntryResolvedEvent(
+          index: 0,
+          items: <VideoResourceCandidate>[
+            _Resource(
+              remoteId: 'r',
+              title: '[G] Nobita no Kyouryuu (1980) [1080p]',
+              releaseGroup: 'G',
+            ),
+          ],
+        ),
+      );
+      s.feed(const VideoAcquisitionFranchiseEntryResolvedEvent(index: 1));
+      s.feed(const VideoAcquisitionUserTextEvent('好的'));
+      final List<VideoAcquisitionEffect> effects = s.feed(
+        const VideoAcquisitionAiIntentEvent(
+          VideoAcquisitionIntent(
+            VideoAcquisitionIntentKind.confirm,
+            VideoAcquisitionIntentPatch(),
+          ),
+          utterance: '好的',
+        ),
+      );
+      expect(effects.single, isA<VideoAcquisitionSubmitFranchiseEffect>());
+      expect(s.state.stage, VideoAcquisitionStage.submitting);
+      expect(s.feed(const VideoAcquisitionCancelEvent()), isEmpty);
+      expect(s.state.stage, VideoAcquisitionStage.submitting);
+    });
+
     test('一部都没勾就提交 → 说明原因并留在清单', () {
       final _Session s = _Session(_defaults);
       _reachFranchise(s);
@@ -513,7 +613,7 @@ void main() {
       expect(submit.plan.group.releaseGroup, 'C');
     });
 
-    test('只下最新一集 → 计划收成最大集号那一条', () {
+    test('只下最新一集 → 计划收成最大集号那一条；「全部」撤销', () {
       final _Session s = _Session(_defaults);
       presented(s);
       s.feed(
@@ -524,6 +624,15 @@ void main() {
       );
       expect(s.state.plan!.picks.single.remoteId, 'A3');
       expect(s.optionIds, isNot(contains(kVideoAcquisitionOptionLatest)));
+      expect(s.optionIds, contains(kVideoAcquisitionOptionAll));
+      s.feed(
+        const VideoAcquisitionChipChosenEvent(
+          slot: VideoAcquisitionSlot.resource,
+          optionId: kVideoAcquisitionOptionAll,
+        ),
+      );
+      expect(s.state.plan!.picks, hasLength(3));
+      expect(s.state.slots.episodes, isA<VideoAcquisitionAllEpisodes>());
     });
   });
 

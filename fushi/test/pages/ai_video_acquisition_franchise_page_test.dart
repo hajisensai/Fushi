@@ -222,6 +222,24 @@ void main() {
     );
   });
 
+  testWidgets('提交在飞：取消按钮禁用', (WidgetTester tester) async {
+    final VideoAcquisitionService service = VideoAcquisitionService(
+      ports: _Ports().build(),
+      defaults: _defaults,
+      initial: const VideoAcquisitionState(
+        stage: VideoAcquisitionStage.submitting,
+        busy: true,
+      ),
+    );
+    addTearDown(service.dispose);
+    await tester.pumpWidget(harness(service));
+    await tester.pump();
+    final IconButton cancel = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('ai-video-acquire-cancel')),
+    );
+    expect(cancel.onPressed, isNull);
+  });
+
   testWidgets('入口带入的文字直接当第一句话发出', (WidgetTester tester) async {
     final _Ports ports = _Ports();
     final VideoAcquisitionService service = VideoAcquisitionService(

@@ -453,79 +453,86 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     final bool finished =
         _state.stage == VideoAcquisitionStage.done ||
         _state.stage == VideoAcquisitionStage.cancelled;
-    return Scaffold(
-      appBar: AppBar(title: Text(t.ai_video_acquire_title)),
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            Expanded(
-              child: ListView(
-                key: const ValueKey<String>('ai-video-acquire-transcript'),
-                controller: _scroll,
-                padding: EdgeInsets.symmetric(
-                  horizontal: tokens.spacing.page,
-                  vertical: tokens.spacing.gap,
+    final bool submitting = _state.stage == VideoAcquisitionStage.submitting;
+    // 提交在飞时不许退出：返回会让用户以为「没下」，而入队仍在后台继续。
+    return PopScope(
+      canPop: !submitting,
+      child: Scaffold(
+        appBar: AppBar(title: Text(t.ai_video_acquire_title)),
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              Expanded(
+                child: ListView(
+                  key: const ValueKey<String>('ai-video-acquire-transcript'),
+                  controller: _scroll,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tokens.spacing.page,
+                    vertical: tokens.spacing.gap,
+                  ),
+                  children: <Widget>[
+                    if (_state.transcript.isEmpty)
+                      _assistantBubble(
+                        context,
+                        Text(t.ai_video_acquire_greeting),
+                      ),
+                    for (final VideoAcquisitionMessage message
+                        in _state.transcript)
+                      switch (message) {
+                        VideoAcquisitionUserMessage(:final String text) =>
+                          _userBubble(context, text),
+                        VideoAcquisitionAssistantMessage(
+                          :final VideoAcquisitionSay say,
+                          question: final VideoAcquisitionQuestion? q,
+                        ) =>
+                          _assistantBubble(
+                            context,
+                            Text(
+                              q != null &&
+                                      say.kind ==
+                                          VideoAcquisitionSayKind.question
+                                  ? _questionText(q)
+                                  : _sayText(say),
+                            ),
+                          ),
+                      },
+                    if (_state.franchiseEntries.isNotEmpty)
+                      _franchiseCard(context),
+                    if (question != null && !finished)
+                      _questionChips(context, question),
+                    if (videoAcquisitionWorkActions(_state).isNotEmpty)
+                      _workActions(context),
+                    if (finished)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: ActionChip(
+                            key: const ValueKey<String>(
+                              'ai-video-acquire-restart',
+                            ),
+                            avatar: const Icon(Icons.add_rounded, size: 16),
+                            label: Text(t.ai_video_acquire_restart),
+                            onPressed: () =>
+                                unawaited(widget.service.restart()),
+                          ),
+                        ),
+                      ),
+                    if (_state.busy)
+                      Padding(
+                        padding: EdgeInsets.only(top: tokens.spacing.gap),
+                        child: const LinearProgressIndicator(
+                          key: ValueKey<String>('ai-video-acquire-busy'),
+                        ),
+                      ),
+                  ],
                 ),
-                children: <Widget>[
-                  if (_state.transcript.isEmpty)
-                    _assistantBubble(
-                      context,
-                      Text(t.ai_video_acquire_greeting),
-                    ),
-                  for (final VideoAcquisitionMessage message
-                      in _state.transcript)
-                    switch (message) {
-                      VideoAcquisitionUserMessage(:final String text) =>
-                        _userBubble(context, text),
-                      VideoAcquisitionAssistantMessage(
-                        :final VideoAcquisitionSay say,
-                        question: final VideoAcquisitionQuestion? q,
-                      ) =>
-                        _assistantBubble(
-                          context,
-                          Text(
-                            q != null &&
-                                    say.kind == VideoAcquisitionSayKind.question
-                                ? _questionText(q)
-                                : _sayText(say),
-                          ),
-                        ),
-                    },
-                  if (_state.franchiseEntries.isNotEmpty)
-                    _franchiseCard(context),
-                  if (question != null && !finished)
-                    _questionChips(context, question),
-                  if (videoAcquisitionWorkActions(_state).isNotEmpty)
-                    _workActions(context),
-                  if (finished)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: ActionChip(
-                          key: const ValueKey<String>(
-                            'ai-video-acquire-restart',
-                          ),
-                          avatar: const Icon(Icons.add_rounded, size: 16),
-                          label: Text(t.ai_video_acquire_restart),
-                          onPressed: () => unawaited(widget.service.restart()),
-                        ),
-                      ),
-                    ),
-                  if (_state.busy)
-                    Padding(
-                      padding: EdgeInsets.only(top: tokens.spacing.gap),
-                      child: const LinearProgressIndicator(
-                        key: ValueKey<String>('ai-video-acquire-busy'),
-                      ),
-                    ),
-                ],
               ),
-            ),
-            const Divider(height: 1),
-            // 结束后照样能打字：直接说下一部就是「再下一部」。
-            _composer(context, enabled: !_state.busy),
-          ],
+              const Divider(height: 1),
+              // 结束后照样能打字：直接说下一部就是「再下一部」。
+              _composer(context, enabled: !_state.busy),
+            ],
+          ),
         ),
       ),
     );
@@ -749,11 +756,13 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           IconButton(
             key: const ValueKey<String>('ai-video-acquire-cancel'),
             tooltip: t.cancel,
-            onPressed:
-                _state.stage == VideoAcquisitionStage.done ||
-                    _state.stage == VideoAcquisitionStage.cancelled
-                ? () => Navigator.of(context).maybePop()
-                : () => unawaited(widget.service.cancel()),
+            onPressed: switch (_state.stage) {
+              // 提交在飞：取消不了（reducer 同样不接），按钮禁用而不是假装取消。
+              VideoAcquisitionStage.submitting => null,
+              VideoAcquisitionStage.done || VideoAcquisitionStage.cancelled =>
+                () => Navigator.of(context).maybePop(),
+              _ => () => unawaited(widget.service.cancel()),
+            },
             icon: const Icon(Icons.close_rounded),
           ),
         ],

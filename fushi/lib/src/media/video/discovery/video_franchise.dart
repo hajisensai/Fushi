@@ -118,13 +118,17 @@ Future<VideoFranchise?> resolveVideoFranchise(
   ];
   final _WorkSet series = _WorkSet();
   if (reference.mediaKind == VideoMetadataMediaKind.tv) series.add(anchor);
+  // 配额 = 锚点名 + 每个 collection 一个：锚点名占满时，最有用的 collection 系列名
+  // 也必须搜得到。
+  final int queryBudget = names.length + collections.length;
   final Set<String> seenQueries = <String>{};
   for (final String query in seriesNames) {
+    if (seenQueries.length >= queryBudget) break;
     if (!seenQueries.add(TitleNormalizer.normalize(query))) continue;
-    if (seenQueries.length > kVideoFranchiseMaxNames) break;
     for (final VideoDiscoveryItem item in await source.searchSeries(query)) {
       if (item.reference.mediaKind == VideoMetadataMediaKind.tv &&
-          _titleEqualsAny(item.reference, seriesNames)) {
+          _titleEqualsAny(item.reference, seriesNames) &&
+          _compatibleWith(anchor, item)) {
         series.add(item);
       }
     }
@@ -139,24 +143,39 @@ Future<VideoFranchise?> resolveVideoFranchise(
   );
 }
 
-/// collection 名与作品名是否同一个系列：去掉「系列 / Collection」后缀后完全相等，
-/// 或 collection 名以作品名开头（`Doraemon Collection` ⊃ `Doraemon`）。作品名短于
-/// 3 个字符时只认完全相等——`Up` 不能吃进 `Superman Collection`。
+/// collection 名与作品名是否同一个系列：去掉「系列 / Collection」后缀后**完全相等**。
+///
+/// 不认前缀：`Air` ⊂ `Air Bud Collection`、`Monster` ⊂ `Monster High Collection`
+/// 都是别的系列，而这里一旦误收，清单里就是几十部默认勾选的错作品。
 bool videoFranchiseCollectionMatches(
   TmdbCollectionHit hit,
   List<String> names,
 ) {
   for (final String raw in names) {
     final String name = TitleNormalizer.normalize(raw);
-    if (name.length < 2) continue;
+    if (name.isEmpty) continue;
     for (final String? candidate in <String?>[hit.name, hit.originalName]) {
-      if (candidate == null) continue;
-      final String normalized = TitleNormalizer.normalize(candidate);
-      if (_stripCollectionSuffix(candidate) == name) return true;
-      if (name.length >= 3 && normalized.startsWith('$name ')) return true;
+      if (candidate != null && _stripCollectionSuffix(candidate) == name) {
+        return true;
+      }
     }
   }
   return false;
+}
+
+/// 同名剧集是不是同一个系列的：类别（动画 / 真人剧）一致，原语言都已知时一致。
+/// 泛名作品（`Monster`、`Nana`）在别国有同名剧，标题相等不够。
+bool _compatibleWith(VideoDiscoveryItem anchor, VideoDiscoveryItem candidate) {
+  if (anchor.reference.discoveryCategory !=
+      candidate.reference.discoveryCategory) {
+    return false;
+  }
+  final String? a = anchor.metadataWork?.originalLanguage?.trim().toLowerCase();
+  final String? b = candidate.metadataWork?.originalLanguage
+      ?.trim()
+      .toLowerCase();
+  if (a == null || a.isEmpty || b == null || b.isEmpty) return true;
+  return a == b;
 }
 
 List<String> _anchorNames(VideoMediaReference reference) {
@@ -228,21 +247,25 @@ class _WorkSet {
   void add(VideoDiscoveryItem item) {
     final VideoMediaReference reference = item.reference;
     final String providerKey = '${reference.providerId}:${reference.mediaId}';
-    final String titleKey =
-        '${TitleNormalizer.normalize(reference.title)}|${reference.year}';
-    final String? originalKey = reference.originalTitle == null
-        ? null
-        : '${TitleNormalizer.normalize(reference.originalTitle!)}|'
-              '${reference.year}';
-    if (_keys.contains(providerKey) ||
-        _keys.contains(titleKey) ||
-        (originalKey != null && _keys.contains(originalKey))) {
-      return;
+    final List<String> titles = <String>[
+      TitleNormalizer.normalize(reference.title),
+      if (reference.originalTitle != null)
+        TitleNormalizer.normalize(reference.originalTitle!),
+    ];
+    // 年份 ±1：MAL 与 TMDB 对同一部剧的首播年常差一年（首播日跨年 / 时区）。
+    final int? year = reference.year;
+    final List<String> probes = <String>[
+      for (final String title in titles)
+        if (year == null)
+          '$title|null'
+        else
+          for (int y = year - 1; y <= year + 1; y++) '$title|$y',
+    ];
+    if (_keys.contains(providerKey) || probes.any(_keys.contains)) return;
+    _keys.add(providerKey);
+    for (final String title in titles) {
+      _keys.add('$title|$year');
     }
-    _keys
-      ..add(providerKey)
-      ..add(titleKey);
-    if (originalKey != null) _keys.add(originalKey);
     _items.add(item);
   }
 

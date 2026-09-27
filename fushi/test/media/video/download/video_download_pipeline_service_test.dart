@@ -2854,6 +2854,148 @@ void main() {
           reason: '不落全选文件行，保持既有非选择性路径');
     });
 
+    test('自动跳过特典的任务丢了后端任务：磁力整颗重加，下一轮补写 skip 优先级', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'extras-rewind-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await observeOnce(environment, jobId);
+      expect(backend.priorities.keys.toSet(), <int>{2, 3});
+
+      // 内置引擎快速恢复丢失：后端里没有这颗 torrent 了。
+      backend.snapshots.clear();
+      backend.priorities.clear();
+      backend.beforeAdd = () async {
+        backend.snapshots.add(_downloadingSnapshot(progress: 0.1));
+      };
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.enqueue && row.claimedBy == null,
+      );
+
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      environment.service.wake();
+      final VideoDownloadJobRow readded = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.download &&
+            row.claimedBy == null,
+      );
+      expect(readded.lifecycle, VideoDownloadJobLifecycle.active,
+          reason: '${readded.lastError}');
+      expect(backend.addCalls, 1, reason: '磁力走普通整颗添加，不要求 .torrent 元数据');
+
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        2: TorrentFilePriority.skip,
+        3: TorrentFilePriority.skip,
+      });
+      final List<VideoDownloadJobFileRow> rows =
+          await environment.database.getVideoDownloadJobFiles(jobId);
+      expect(rows.length, 4, reason: '不重复写行');
+
+      // 本进程已补写过：后续轮询不再重复写。
+      backend.priorities.clear();
+      await observeOnce(environment, jobId);
+      expect(backend.priorities, isEmpty);
+    });
+
+    test('自动跳过特典的任务删除时整颗连文件删', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.4)],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'extras-delete-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await observeOnce(environment, jobId);
+      expect(
+        (await environment.database.getVideoDownloadJobFiles(jobId))
+            .where((VideoDownloadJobFileRow row) => !row.selected)
+            .map((VideoDownloadJobFileRow row) => row.kind)
+            .toSet(),
+        <String>{'extra'},
+      );
+
+      await environment.service.deleteJob(jobId, deleteFiles: true);
+
+      expect(backend.removeDeleteFiles, <bool>[true]);
+      expect(await environment.database.getVideoDownloadJob(jobId), isNull);
+    });
+
+    test('用户亲手选文件的任务仍走选择性路径（重投要元数据、删除不连合集）', () async {
+      final _FakeDetailTorrentBackend backend = _FakeDetailTorrentBackend(
+        snapshots: <TorrentSnapshot>[],
+        files: mixedFiles(),
+      );
+      final _PipelineEnvironment environment = await createEnvironment(
+        backend,
+        skipDownloadExtras: () => true,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'user-selection-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.enqueue,
+      );
+      final int now = DateTime.now().millisecondsSinceEpoch;
+      for (final TorrentFileEntry file in mixedFiles()) {
+        await environment.database.upsertVideoDownloadJobFile(
+          VideoDownloadJobFilesCompanion.insert(
+            jobId: jobId,
+            backendFileIndex: Value<int?>(file.index),
+            originalRelativePath: file.name,
+            currentRelativePath: file.name,
+            kind: const Value<String>('other'),
+            selected: Value<bool>(file.index == 0),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+      }
+
+      environment.service.wake();
+      final VideoDownloadJobRow job = await _waitForJob(
+        environment.database,
+        jobId,
+        (VideoDownloadJobRow row) =>
+            row.lifecycle == VideoDownloadJobLifecycle.needsAttention,
+      );
+      expect(job.lastError, contains('single-file selection'));
+      expect(backend.addCalls, 0);
+
+      await environment.service.deleteJob(jobId, deleteFiles: true);
+      expect(backend.removeDeleteFiles, <bool>[false]);
+    });
+
     test('开关未装配或关闭时行为不变', () async {
       for (final bool Function()? toggle in <bool Function()?>[
         null,
@@ -3528,7 +3670,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
 
 /// 带文件优先级能力的 fake：记录每次写入的优先级与被改名的文件序号。
 class _FakeDetailTorrentBackend extends _FakeTorrentBackend
-    implements TorrentDetailBackend {
+    implements TorrentDetailBackend, TorrentRemovalBackend {
   _FakeDetailTorrentBackend({
     required List<TorrentSnapshot> snapshots,
     required List<TorrentFileEntry> files,
@@ -3537,6 +3679,16 @@ class _FakeDetailTorrentBackend extends _FakeTorrentBackend
   bool priorityResult = true;
   final Map<int, TorrentFilePriority> priorities = <int, TorrentFilePriority>{};
   final List<int> renamedIndexes = <int>[];
+
+  /// 每次 removeTorrent 的 deleteFiles 参数。
+  final List<bool> removeDeleteFiles = <bool>[];
+
+  @override
+  Future<bool> removeTorrent(String torrentId,
+      {bool deleteFiles = false}) async {
+    removeDeleteFiles.add(deleteFiles);
+    return true;
+  }
 
   @override
   bool get detailAvailable => true;
