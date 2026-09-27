@@ -369,6 +369,36 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
 assert_nonempty "$WORK/clip.mp4"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip.mp4" -f null -
 
+echo "[ffmpeg-min-smoke] verifying WebM synchronized mining clips (VP9/AV1 + Opus)"
+# 制卡「音画同步片段」默认 WebM：Anki 桌面 Qt WebEngine 没有 H.264/AAC，卡片内
+# <video> 只能放 VP9/AV1 + Opus。参数形态与 synchronized_video_exporter.dart 一致。
+for want in libvpx-vp9 libopus; do
+  if ! grep -qw -- "$want" "$WORK/encoders2.txt"; then
+    echo "MISSING ENCODER (need $want for WebM synchronized mining clips):"
+    cat "$WORK/encoders2.txt"
+    exit 1
+  fi
+done
+if ! grep -qw webm "$WORK/muxers2.txt"; then
+  echo "MISSING MUXER (need webm for synchronized mining clips):"
+  cat "$WORK/muxers2.txt"
+  exit 1
+fi
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map 1:a:0 -vf "setpts=PTS,scale=w='trunc(min(960,iw)/2)*2':h=-2,fps=24,format=yuv420p" \
+  -c:v libvpx-vp9 -deadline good -cpu-used 5 -row-mt 1 -crf 34 -b:v 0 \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-vp9.webm"
+assert_nonempty "$WORK/clip-vp9.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-vp9.webm" -f null -
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
+  -map 0:v:0 -map 0:a:0 -vf "scale=w='trunc(min(960,iw)/2)*2':h=-2,fps=24,format=yuv420p" \
+  -c:v libsvtav1 -preset 8 -crf 36 \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-av1.webm"
+assert_nonempty "$WORK/clip-av1.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-av1.webm" -f null -
+
 echo "[ffmpeg-min-smoke] verifying mpegts muxer for interconnect HLS transcode segments (BUG-2630)"
 # 互联 host 按档转码：一段一个短命 ffmpeg，输入侧 -ss/-to 切段、libx264 + aac 编码、
 # 以 MPEG-TS 写到 stdout，-output_ts_offset 把段内时间轴平移到片中绝对位置（这正是
