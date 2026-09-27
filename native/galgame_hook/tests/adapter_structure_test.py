@@ -431,7 +431,7 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(9, len(publishers), publishers)
+        self.assertEqual(10, len(publishers), publishers)
         self.assertIn("artemis_lookup.inc", publishers)
         self.assertIn("cmvs_lookup.inc", publishers)
         self.assertIn("hunex_gge_lookup_runtime.inc", publishers)
@@ -490,7 +490,7 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(9, len(seen), seen)
+        self.assertEqual(10, len(seen), seen)
         self.assertEqual("kLookupCoordinateSpaceClientPhysicalPixels", seen["cmvs_lookup.inc"])
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["artemis_lookup.inc"]
@@ -1990,8 +1990,17 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("MatchesRealliveProfile(", identity)
         self.assertIn("IsSiglusEngine()", identity)
         self.assertIn("DirectoryLooksLikeSiglusOnDisk(", identity)
-        for forbidden in ("Sha256", "SHA256", "BCrypt", "Kinetic", "planetarian"):
-            self.assertNotIn(forbidden, adapter)
+        # 身份判据不得用 exe 摘要 / 标题；查词站点解析同理。适配器把宿主 exe 摘要写进
+        # lookupAdmission 报告只是诊断输出（与 Artemis 同），不是判据。
+        lookup_core = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "reallive_lookup_core.h").read_text(
+                encoding="utf-8"
+            )
+        )
+        for forbidden in ("Sha256", "SHA256", "BCrypt", "Kinetic", "planetarian",
+                          "tomoyo", "GetModuleFileName"):
+            self.assertNotIn(forbidden, identity.replace("GetModuleFileNameW", ""))
+            self.assertNotIn(forbidden.lower(), lookup_core.lower())
         # 测量失败不得直接写永久否定缓存。
         unmeasured = identity.index("if (!inputs.image_measured && !inputs.reallive_directory)")
         self.assertLess(

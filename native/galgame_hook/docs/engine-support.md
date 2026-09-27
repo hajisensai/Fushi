@@ -41,7 +41,7 @@
 | `tyrano_nwjs` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `unity_il2cpp` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `elf_ai6` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
-| `reallive` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
+| `reallive` | engine_exact_layout、attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `bgi_ethornell` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `catsystem2` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
 | `malie_libp` | attached_calibrated | `implemented_unverified` | `implemented_unverified` | `implemented_unverified` |
@@ -71,7 +71,7 @@
 - `elf_ai6` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
-- `reallive` geometry：The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine.
+- `reallive` geometry：Engine-exact glyph provider (kLookupGeometryProviderIdReallive). Sites resolve only from structure: the TextRender body (glyph-cache lookup, cache-hit jump, GetGlyphOutlineA rasteriser) and the join both paths reach, where the font-size global and the pen (x, y) become the bitmap origin; the per-pass GetKeyboardState key-table join and its focused-window global; the compositor's call into the generic blitter. LunaHook's RealLive entry patch is never touched. A glyph is visible iff the last blit into the presented 800x600 screen buffer that covered its cell came from its own text surface; at press time its opaque surface pixels must also appear in the presented buffer. The selected LunaHook line must equal the render-order suffix of the visible glyphs. The screen buffer is presented 1:1 at the client origin in windowed and exclusive-fullscreen modes. A claimed press masks VK_LBUTTON in the engine's key table from press to release. Offline: x86/x64 build and fushi_reallive_lookup_test. Runtime host evidence is recorded separately when measured.
   - verified shield：The generic standard-surface shield is present, without the required real-build transaction corpus.
   - risky left click：Risk is accepted unconditionally (BUG-2154 removed the per-executable consent gate, which was unsatisfiable: the generic shield can never reach Verified); allow_risk still crosses the IPC contract, but no measured real-build click-leak rate is recorded.
 - `bgi_ethornell` geometry：The calibrated fallback is implemented offline; positioned GDI/DWrite lineage has not been admitted for this engine.

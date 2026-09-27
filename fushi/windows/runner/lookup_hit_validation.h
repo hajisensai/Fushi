@@ -89,7 +89,7 @@ inline bool IsProductionProviderPair(uint32_t kind, uint32_t id) {
     return id == 1u || id == 2u || id == 6u || id == 7u || id == 8u;
   case 2u: // build-pinned exact engine layout
     return id == 3u || id == 4u || id == 5u || id == 14u || id == 15u ||
-           id == 16u || id == 17u;
+           id == 16u || id == 17u || id == 18u;
   case 3u: // positioned GDI/DirectWrite
     return id == 9u || id == 10u;
   default:

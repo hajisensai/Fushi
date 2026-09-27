@@ -12,7 +12,11 @@
 //   Forget（CloseHandle）：无锁摘表（BUG-2046 纪律）。
 // 索引解析、成员读取、NWA 解码与 WAV 落盘全部在 HookWorker（Poll → ProcessPendingEvents）。
 // reallive_nwk.h / siglus_launch_win32.h 由 dll_main.cpp 在匿名命名空间之外引入。
+//
+// 游戏内查词（字形几何 + 点击认领）在 reallive_lookup.inc，结构判据与纯逻辑在
+// reallive_lookup_core.h（同样由 dll_main.cpp 在顶层引入）。
 #include "reallive_profile.h"
+#include "reallive_lookup.inc"
 
 constexpr size_t kRealliveNwkPathChars = 520;
 constexpr int kRealliveNwkHandleSlots = 8;
@@ -341,6 +345,9 @@ class RealliveAdapter final : public fushi_voice_hook::EngineAdapter {
   bool probe() const override { return IsRealliveEngine(); }
   bool install() override {
     if (installed_ || !probe()) return installed_;
+    // 查词站点只来自 exe 自身结构、毫秒级解析完：放在语音 broker 之前，好让它的
+    // inline hook 尽量落在注入器仍挂起游戏的窗口里。结构不符的映像一个钩子也不装。
+    InstallRealliveLookup();
     // 共享 KernelBase broker（幂等）；RealLive 身份成立后才武装 NWK 入队。
     if (!TryHookSiglusOvk()) return false;
     MarkRealliveFlag(kRealliveFlagFileHooksReady);
@@ -353,6 +360,24 @@ class RealliveAdapter final : public fushi_voice_hook::EngineAdapter {
   void ProcessPendingEvents() {
     if (!installed_ && g_capture_enabled) install();
     ProcessRealliveNwkTasks();
+    ProcessRealliveLookupTick();
+  }
+  fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
+    fushi_voice_hook::LookupAdmissionReport report;
+    if (RealliveLookupSensorInstalled()) {
+      report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
+      return report;
+    }
+    // Sites were resolved and rejected: terminal for this executable, so the
+    // host gets the digest to report instead of waiting for a gate.
+    if (RealliveLookupSitesRejected()) {
+      report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
+      strncpy_s(report.executable_sha256,
+                fushi_voice_hook::HostExecutableSha256Hex(), _TRUNCATE);
+      return report;
+    }
+    report.state = fushi_voice_hook::kLookupAdmissionIdentityAccepted;
+    return report;
   }
   fushi_voice_hook::AdapterCapability capabilities() const override {
     return fushi_voice_hook::AdapterCapability::kText |
@@ -363,6 +388,7 @@ class RealliveAdapter final : public fushi_voice_hook::EngineAdapter {
     // File APIs are installed at startup; module notifications remain a profile extension seam.
   }
   void shutdown() override {
+    ShutdownRealliveLookup();
     InterlockedExchange(&g_reallive_capture_armed, 0);
     installed_ = false;
   }

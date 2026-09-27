@@ -89,6 +89,8 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/artemis_profile.h"
   "hook/adapters/artemis_lookup.inc"
   "hook/adapters/artemis_lookup_core.h"
+  "hook/adapters/reallive_lookup.inc"
+  "hook/adapters/reallive_lookup_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
@@ -947,6 +949,22 @@ target_compile_definitions(fushi_artemis_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_artemis_lookup_test
   COMMAND fushi_artemis_lookup_test)
+
+# RealLive in-game lookup core: structural site resolution on a synthetic x86
+# image (text-render path -> glyph join -> frame epilogue -> GetGlyphOutlineA
+# rasteriser, key-poll join -> Focused() window global, compositor call ->
+# blitter) with every fail-closed branch, Shift_JIS glyph codes, the
+# glyph/composite visibility tracker, suffix mapping, projection, the
+# presented-pixel proof and the left-button claim reducer.
+add_executable(fushi_reallive_lookup_test
+  "tests/reallive_lookup_test.cpp"
+)
+target_include_directories(fushi_reallive_lookup_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_reallive_lookup_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_reallive_lookup_test
+  COMMAND fushi_reallive_lookup_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")

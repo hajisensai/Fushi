@@ -106,8 +106,8 @@
         "engine_id": "reallive",
         "geometry": {
           "status": "implemented_unverified",
-          "providers": ["attached_calibrated"],
-          "evidence": "The calibrated fallback is implemented offline; positioned GDI lineage has not been admitted for this engine."
+          "providers": ["engine_exact_layout", "attached_calibrated"],
+          "evidence": "Engine-exact glyph provider (kLookupGeometryProviderIdReallive). Sites resolve only from structure: the TextRender body (glyph-cache lookup, cache-hit jump, GetGlyphOutlineA rasteriser) and the join both paths reach, where the font-size global and the pen (x, y) become the bitmap origin; the per-pass GetKeyboardState key-table join and its focused-window global; the compositor's call into the generic blitter. LunaHook's RealLive entry patch is never touched. A glyph is visible iff the last blit into the presented 800x600 screen buffer that covered its cell came from its own text surface; at press time its opaque surface pixels must also appear in the presented buffer. The selected LunaHook line must equal the render-order suffix of the visible glyphs. The screen buffer is presented 1:1 at the client origin in windowed and exclusive-fullscreen modes. A claimed press masks VK_LBUTTON in the engine's key table from press to release. Offline: x86/x64 build and fushi_reallive_lookup_test. Runtime host evidence is recorded separately when measured."
         },
         "verified_shield": {
           "status": "implemented_unverified",

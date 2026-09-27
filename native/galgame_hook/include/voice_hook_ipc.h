@@ -879,6 +879,8 @@ constexpr uint32_t kLookupGeometryProviderIdSmashFzmedia = 15u;
 constexpr uint32_t kLookupGeometryProviderIdCmvs = 16u;
 // Artemis Engine glyph-node exact layout provider (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdArtemis = 17u;
+// RealLive text-surface exact layout provider (append-only id).
+constexpr uint32_t kLookupGeometryProviderIdReallive = 18u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
