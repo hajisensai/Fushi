@@ -22,6 +22,8 @@ import 'dart:async';
 import 'package:fushi/src/media/video/scraper/cover_scraper_service.dart';
 import 'package:fushi/src/media/video/scraper/member_cover_cleanup.dart'
     show runMemberCoverCleanup;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
 
@@ -154,12 +156,13 @@ class VideoScrapeAutoService {
             b,
       ]);
 
-  /// 本地文件视频判据：与 [CoverScraperService] 一致（http/https = 远端/流媒体）。
+  /// 本地文件视频判据：与 [CoverScraperService] 一致——网络流地址（http(s) 与
+  /// IPTV 频道的 rtsp / rtmp / udp …，[isNetworkOnlyVideoPath]）是远端/流媒体。
+  /// 本地 `.strm` 流指针照常算本地：Kodi / Jellyfin 的 `.strm` 库常在同目录带
+  /// 同名 NFO / 海报 sidecar，这里只找 sidecar、不读媒体本体。
   static bool _isLocal(VideoBookRow book) {
     final String path = book.videoPath;
-    return path.isNotEmpty &&
-        !path.startsWith('http://') &&
-        !path.startsWith('https://');
+    return path.isNotEmpty && !isNetworkOnlyVideoPath(path);
   }
 
   /// 忘掉某本的「本进程已尝试」记录，并丢弃缓存的本地封面 service。

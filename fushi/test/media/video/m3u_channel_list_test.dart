@@ -6,6 +6,7 @@
 // - strm_file：目标行、分类、路径判据；封面回填不碰 rtsp / .strm。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/strm_file.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show isLocalFrameExtractableVideoSource;
@@ -104,6 +105,94 @@ void main() {
       expect(channels.single.title, 'Ch 1');
       expect(channels.single.url, 'https://host.example/iptv/ch1/live.m3u8');
       expect(channels.single.toPlaylistEntry().path, channels.single.url);
+    });
+
+    test('远端列表：本地 / UNC / file:// 条目一条都不产出，标题不串位', () {
+      final List<M3uChannel> channels = parseM3uChannels(
+        content: '#EXTM3U\n'
+            '#EXTINF:-1,UNC\n\\\\evil\\share\\a.mkv\n'
+            '#EXTINF:-1,UNC slash\n//evil/share/b.mkv\n'
+            '#EXTINF:-1,Drive\nC:\\Users\\victim\\secret.mkv\n'
+            '#EXTINF:-1,Drive slash\nD:/data/c.mkv\n'
+            '#EXTINF:-1,Posix\n/data/local/d.mkv\n'
+            '#EXTINF:-1,File URL\nfile:///etc/passwd\n'
+            '#EXTINF:-1,File UNC\nfile://evil/share/e.mkv\n'
+            '#EXTINF:-1,SMB\nsmb://evil/share/f.mkv\n'
+            '#EXTINF:-1 group-title="G",Good\nrtsp://cam.example/1\n'
+            '#EXTINF:-1,Relative\nlive/x.m3u8\n',
+        baseDir: 'https://lists.example/iptv',
+      );
+      expect(channels.map((M3uChannel c) => c.url).toList(), <String>[
+        'rtsp://cam.example/1',
+        'https://lists.example/iptv/live/x.m3u8',
+      ]);
+      expect(channels.map((M3uChannel c) => c.title).toList(),
+          <String>['Good', 'Relative']);
+      // 被拒条目的分组不串到下一个频道上。
+      expect(channels.last.groupTitle, isNull);
+    });
+
+    test('本地列表：本地相对 / 绝对条目行为不变', () {
+      final p.Context ctx = p.context;
+      final List<M3uChannel> channels = parseM3uChannels(
+        content: '#EXTINF:-1,Rel\nsub/a.mkv\n#EXTINF:-1,Net\nhttp://h/b\n',
+        baseDir: ctx.join('lists', 'tv'),
+      );
+      expect(channels.map((M3uChannel c) => c.url).toList(), <String>[
+        ctx.normalize(ctx.join('lists', 'tv', 'sub', 'a.mkv')),
+        'http://h/b',
+      ]);
+      expect(
+        resolveM3uEntryPath(r'\\nas\share\a.mkv', r'D:\lists',
+            context: p.windows),
+        r'\\nas\share\a.mkv',
+      );
+      expect(resolveM3uEntryPath('/srv/a.mkv', '/lists', context: p.posix),
+          '/srv/a.mkv');
+    });
+  });
+
+  group('resolveM3uEntryPath：远端基址', () {
+    const String base = 'https://lists.example/iptv';
+    test('本地形状与非网络协议一律拒收（空串）', () {
+      for (final String entry in <String>[
+        r'\\evil\share\a.mkv',
+        '//evil/share',
+        r'C:\Users\a.mkv',
+        'C:/Users/a.mkv',
+        '/data/a.mkv',
+        'file:///etc/passwd',
+        'file://evil/share/a.mkv',
+        'smb://evil/share/a.mkv',
+        'ftp://evil/a.mkv',
+      ]) {
+        expect(resolveM3uEntryPath(entry, base, context: p.windows), '',
+            reason: entry);
+        expect(resolveM3uEntryPath(entry, base, context: p.posix), '',
+            reason: entry);
+      }
+    });
+
+    test('网络流原样、相对条目按 URL 解析', () {
+      expect(resolveM3uEntryPath('rtmp://live.example/app', base),
+          'rtmp://live.example/app');
+      expect(resolveM3uEntryPath('udp://@239.0.0.1:1234', base),
+          'udp://@239.0.0.1:1234');
+      expect(resolveM3uEntryPath('ch 1/index.m3u8', base),
+          'https://lists.example/iptv/ch%201/index.m3u8');
+      expect(resolveM3uEntryPath('../../../x.ts', base),
+          'https://lists.example/x.ts');
+    });
+
+    test('parseM3u8（WebDAV 清单同一解析层）同样丢弃远端清单里的本地条目', () {
+      final List<PlaylistEntry> entries = parseM3u8(
+        content: '#EXTINF:-1,Bad\n\\\\evil\\share\\a.mkv\n'
+            '#EXTINF:-1,Ep1\nep1.mkv\n',
+        baseDir: 'https://dav.example/show',
+      );
+      expect(entries.map((PlaylistEntry e) => e.path).toList(),
+          <String>['https://dav.example/show/ep1.mkv']);
+      expect(entries.single.title, 'Ep1');
     });
   });
 

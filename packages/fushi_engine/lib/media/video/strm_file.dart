@@ -47,6 +47,52 @@ bool isNetworkStreamUrl(String url) {
   return uri.host.isNotEmpty;
 }
 
+/// 纯函数：视频行的 `videoPath` 是不是「只在网络上」的——http(s) 以及
+/// [kNetworkStreamSchemes] 里其它直播协议（rtsp / rtmp / udp …）的地址：本机没有
+/// 这个路径对应的文件可以 stat、抽帧、刮削、哈希、打包进备份或经互联下发。
+///
+/// 只看 `scheme://` 前缀（大小写不敏感、容忍首尾空白），不要求 host 非空：
+/// 判据的用途是「别把它当本地路径去碰文件系统」，宁可多认。
+///
+/// 与 PR #1707 的同名判据是**同一概念**（那边额外认 `anime-source://` 在线源集），
+/// 两边合并时取并集。`.strm` 不在其内：本地 `.strm` 是磁盘上真实存在的文件
+/// （同目录 NFO / 海报 sidecar 照常可用），只是**没有媒体字节**——需要媒体字节的
+/// 门用 [lacksLocalMediaFile]。
+bool isNetworkOnlyVideoPath(String? path) {
+  if (path == null) return false;
+  final String trimmed = path.trim();
+  final int sep = trimmed.indexOf('://');
+  if (sep <= 0) return false;
+  return kNetworkStreamSchemes
+      .contains(trimmed.substring(0, sep).toLowerCase());
+}
+
+/// 纯函数：这一行视频在本机**没有可读的媒体字节**——网络流
+/// （[isNetworkOnlyVideoPath]）或 `.strm` 流指针（[isStrmPath]，本地那份只是一行
+/// 地址）。ED2K 哈希、抽帧、规格探测、互联上传 / 下发视频文件这类要读媒体本体的
+/// 门用它；只需要「本地目录里找 sidecar」的门（封面 / NFO）用
+/// [isNetworkOnlyVideoPath]。
+bool lacksLocalMediaFile(String? path) =>
+    path != null && (isNetworkOnlyVideoPath(path) || isStrmPath(path));
+
+/// Apple 平台（iOS / macOS）不放行的流协议：随包 libmpv 在 Apple 上的 TLS 走
+/// Mbed TLS，https 由应用内中继终结 TLS 规避了握手段错误，但 rtsps / rtmps / rtmpe
+/// 由 native 协议栈自己握手、绕不过中继，起播有闪退风险——起播前拒绝并提示。
+const Set<String> kAppleUnsupportedStreamSchemes = <String>{
+  'rtsps',
+  'rtmps',
+  'rtmpe',
+};
+
+/// 纯函数：[url] 的协议是否在 [kAppleUnsupportedStreamSchemes] 里（调用方再判平台）。
+bool isAppleUnsupportedStreamUrl(String url) {
+  final String trimmed = url.trim();
+  final int sep = trimmed.indexOf('://');
+  if (sep <= 0) return false;
+  return kAppleUnsupportedStreamSchemes
+      .contains(trimmed.substring(0, sep).toLowerCase());
+}
+
 /// 纯函数：[path] 是否指向一个 `.strm` 文件。本地路径与来源库网络条目（WebDAV /
 /// AList 的 http(s) 地址）都认；URL 只看路径段，忽略 query / fragment。
 bool isStrmPath(String path) {

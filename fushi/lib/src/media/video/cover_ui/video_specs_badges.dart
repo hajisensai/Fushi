@@ -20,7 +20,7 @@ import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkStreamUrl, isStrmPath;
+    show lacksLocalMediaFile;
 
 /// 压在封面左下角的规格角标条。规格未知时**整个不占位**（返回 SizedBox.shrink）。
 class VideoSpecsBadgeStrip extends StatefulWidget {
@@ -119,10 +119,7 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
 /// 放在这里而不是 service 里：service 拿到什么探什么，「这条路径值不值得探」是调用
 /// 侧的判断。流地址 ffprobe 理论上能探，但那会在滚动列表时对每个远端条目发起网络
 /// 请求——库页绝不做这种事。
-bool isProbableStreamUrl(String path) {
-  final String lower = path.trim().toLowerCase();
-  if (lower.startsWith('http://') || lower.startsWith('https://')) return true;
-  // IPTV 频道（rtsp / rtmp / udp …）与 `.strm` 流指针同属「不值得在库页探」：
-  // 前者是网络直播，后者是一行文本，真正的流要起播时才读出来。
-  return isNetworkStreamUrl(path) || isStrmPath(path);
-}
+bool isProbableStreamUrl(String path) =>
+    // http(s)、IPTV 频道（rtsp / rtmp / udp …）与 `.strm` 流指针同属「不值得在
+    // 库页探」：前两者是网络流，后者是一行文本，真正的流要起播时才读出来。
+    lacksLocalMediaFile(path);

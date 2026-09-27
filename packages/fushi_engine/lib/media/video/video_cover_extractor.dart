@@ -34,7 +34,7 @@ import 'package:fushi_engine/media/metadata/image_download.dart'
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
-    show isNetworkStreamUrl, isStrmPath;
+    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
@@ -180,12 +180,13 @@ bool isPlaylistManifestPath(String path) =>
 /// - 其它网络流协议（rtsp / rtmp / udp …，IPTV 频道）：同 http(s)，且直播流
 ///   ffmpeg 抽帧会一直等到超时；
 /// - `.strm` 流指针（[isStrmPath]）：文本文件，真正的流在起播时才读出来。
+///
+/// 网络流与 `.strm` 两类统一走 [lacksLocalMediaFile]（与哈希识别、互联下发、同步
+/// 上传同一判据）。
 bool isLocalFrameExtractableVideoSource(String videoPath) {
   final String path = videoPath.trim();
   if (path.isEmpty) return false;
-  if (path.startsWith('http://') || path.startsWith('https://')) return false;
-  if (isNetworkStreamUrl(path)) return false;
-  if (isStrmPath(path)) return false;
+  if (lacksLocalMediaFile(path)) return false;
   if (isPlaylistManifestPath(path)) return false;
   return true;
 }

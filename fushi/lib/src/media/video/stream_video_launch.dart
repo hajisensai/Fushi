@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/bounded_read.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是网络流地址，或 `.strm` 流指针。
 ///
@@ -95,36 +97,71 @@ Future<String> _readStrmContent(
   required StreamUrlResolver? urlResolver,
   required http.Client? httpClient,
 }) async {
+  // 读取一律边读边计数（[readBoundedBytes]）：误命名成 `.strm` 的大文件 / 指向
+  // 大文件的网络条目在越过 [kStrmMaxBytes] 那一刻就停，不先整份读进内存。
   if (!isNetworkStreamUrl(strmPath)) {
     final File file = File(strmPath);
     if (!await file.exists()) {
       throw StrmResolveException(
           StrmResolveFailure.unreadable, strmPath, 'not found');
     }
-    if (await file.length() > kStrmMaxBytes) {
-      throw StrmResolveException(
-          StrmResolveFailure.unreadable, strmPath, 'too large');
-    }
-    return utf8.decode(await file.readAsBytes(), allowMalformed: true);
+    return utf8.decode(
+      await _readStrmBounded(file.openRead(), strmPath),
+      allowMalformed: true,
+    );
   }
   final String url =
       urlResolver == null ? strmPath : await urlResolver.resolve(strmPath);
   final http.Client client = httpClient ?? createAppHttpIoClient();
+  const Duration timeout = Duration(seconds: 15);
   try {
-    final http.Response res = await client
-        .get(Uri.parse(url), headers: headers.isEmpty ? null : headers)
-        .timeout(const Duration(seconds: 15));
+    final http.Request request = http.Request('GET', Uri.parse(url));
+    request.headers.addAll(headers);
+    final http.StreamedResponse res =
+        await client.send(request).timeout(timeout);
     if (res.statusCode < 200 || res.statusCode >= 300) {
+      unawaited(res.stream.listen(null).cancel());
       throw StrmResolveException(
           StrmResolveFailure.unreadable, strmPath, 'HTTP ${res.statusCode}');
     }
-    if (res.bodyBytes.length > kStrmMaxBytes) {
-      throw StrmResolveException(
-          StrmResolveFailure.unreadable, strmPath, 'too large');
-    }
-    return utf8.decode(res.bodyBytes, allowMalformed: true);
+    return utf8.decode(
+      await _readStrmBounded(res.stream, strmPath).timeout(timeout),
+      allowMalformed: true,
+    );
   } finally {
     if (httpClient == null) client.close();
+  }
+}
+
+Future<List<int>> _readStrmBounded(
+  Stream<List<int>> stream,
+  String strmPath,
+) async {
+  try {
+    return await readBoundedBytes(stream, kStrmMaxBytes);
+  } on BodyTooLargeException {
+    throw StrmResolveException(
+        StrmResolveFailure.unreadable, strmPath, 'too large');
+  }
+}
+
+/// 起播前拒绝的流协议（见 [kAppleUnsupportedStreamSchemes]）。
+class UnsupportedStreamProtocolException implements Exception {
+  const UnsupportedStreamProtocolException(this.url);
+
+  final String url;
+
+  @override
+  String toString() => 'UnsupportedStreamProtocolException($url)';
+}
+
+/// Apple 平台（iOS / macOS）不放行 rtsps / rtmps / rtmpe：随包 libmpv 在 Apple 上
+/// 由 native 协议栈自行做 TLS 握手，绕不过终结 TLS 的应用内中继，有闪退风险。
+/// [isApplePlatform] 是测试注入口（默认按当前平台）。
+void ensureStreamProtocolSupported(String url, {bool? isApplePlatform}) {
+  final bool apple = isApplePlatform ?? (Platform.isIOS || Platform.isMacOS);
+  if (apple && isAppleUnsupportedStreamUrl(url)) {
+    throw UnsupportedStreamProtocolException(url);
   }
 }
 
@@ -194,8 +231,13 @@ Future<({UrlStreamVideoClient client, RemoteVideoInfo info})>
   // 签名直链（source_stream_headers.dart 的 resolveSourceStreamUrlResolver）。
   // 仅直链分支消费。
   StreamUrlResolver? sourceUrlResolver,
+  // 测试注入口：是否按 Apple 平台拒绝 rtsps / rtmps / rtmpe
+  // （[ensureStreamProtocolSupported]）；null = 当前平台。
+  bool? isApplePlatform,
 }) async {
   final String url = book.videoPath;
+  // 直链分支会把地址原样交给播放内核；Apple 上不放行 native 自握手的加密协议。
+  ensureStreamProtocolSupported(url, isApplePlatform: isApplePlatform);
   final StreamVideoSpec spec =
       StreamVideoSpec.fromStorageJson(book.streamSpecJson);
   final UrlStreamVideoClient client;

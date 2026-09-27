@@ -85,7 +85,8 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         final IptvPlaylistSource source = localPath != null
             ? await readLocalIptvPlaylist(localPath)
             : await fetchRemoteIptvPlaylist(url);
-        switch (classifyM3uPlaylist(source.content)) {
+        // 与导入同一基址判：远端列表里被解析层拒收的本地条目不算频道。
+        switch (classifyM3uPlaylist(source.content, baseDir: source.baseDir)) {
           case M3uPlaylistKind.hlsStream:
             if (!mounted) return;
             Navigator.pop(
@@ -111,7 +112,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         final IptvPlaylistImportResult result = await importIptvChannels(
           db: appModel.database,
           repo: widget.repo,
-          listName: source.listName,
+          source: source,
           channels: channels,
         );
         final String? firstUid = result.firstBookUid;
@@ -122,9 +123,14 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
           );
         }
         // 台标封面是 best-effort 的后台增强：几百个频道逐个下载不该挡住关窗。
+        // 同一列表再导入时取消上一路还没跑完的台标任务（beginIptvLogoJob）。
         unawaited(
-          applyIptvChannelLogos(repo: widget.repo, channels: channels)
-              .catchError((Object e) {
+          applyIptvChannelLogos(
+            repo: widget.repo,
+            source: source,
+            channels: channels,
+            cancelToken: beginIptvLogoJob(source.sourceKey),
+          ).catchError((Object e) {
             debugPrint('[iptv-import] channel logos failed: $e');
             return 0;
           }),

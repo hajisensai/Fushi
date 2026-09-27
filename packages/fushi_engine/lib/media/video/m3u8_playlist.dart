@@ -5,6 +5,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/video/external_video.dart'
     show decodedSourceBasename;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkStreamUrl;
 
 /// **纯函数**：从 `VideoBooks.playlistJson` 解析出集数；空 / 非播放列表 / 解析失败
 /// 返回 0。供视频库卡片角标与「单视频 vs 播放列表」区分用——返回 ≥2 即播放列表。
@@ -139,6 +141,13 @@ String? nextPlaylistPathToPrewarm({
 /// [context] is a test seam to inject a fixed [p.Context] (windows/posix) for
 /// deterministic assertions; production uses the host `p.context`, byte-for-byte
 /// identical to the old parseM3u8 relative-path resolution.
+///
+/// **远端清单（[playlistDir] 带 `scheme://`）只产出网络流地址**：清单作者不可信，
+/// 它写的 UNC `\\host\share\a.mkv` / `//host/share`、盘符 `C:\…`、POSIX `/…`、
+/// `file://`、`smb://` 等条目若原样落成本地路径入库，书架封面补齐 / 互联 host 列清单 /
+/// 同步上传会无交互地 stat 它（Windows 上即 SMB 连接、泄 NTLM 哈希），合集删除框还会
+/// 把它列成「同时删除本地文件」的候选。这些条目一律返回空串（调用方跳过）；绝对 URL
+/// 条目只放行 [isNetworkStreamUrl]；相对条目按 URL 语义解析（仍在远端）。
 String resolveM3uEntryPath(
   String entryRaw,
   String playlistDir, {
@@ -147,9 +156,14 @@ String resolveM3uEntryPath(
   final p.Context ctx = context ?? p.context;
   final String entry = entryRaw.trim();
   if (entry.isEmpty) return entry;
+  final bool remoteList = _isRemotePlaylistBase(playlistDir);
   // 绝对 URL 条目（HLS/直链清单的 http(s)，IPTV 频道列表的 rtsp / rtmp / udp …）：
   // 原样直通。此前会落进下面的「相对」分支被 join 到 playlistDir 上，纯属误判。
-  if (_hasUrlScheme(entry)) return entry;
+  // 远端清单里只认网络流协议：`file://` / `smb://` 等指回本机或内网文件系统的一律丢。
+  if (_hasUrlScheme(entry)) {
+    return !remoteList || isNetworkStreamUrl(entry) ? entry : '';
+  }
+  if (remoteList && _isAbsoluteM3uEntryPath(entry)) return '';
   if (_isAbsoluteM3uEntryPath(entry)) {
     // Absolute: normalize only; never join playlistDir (would break drive/UNC).
     return ctx.normalize(entry);
@@ -174,6 +188,8 @@ String resolveM3uEntryPath(
     }
     return base.join('/');
   }
+  // 非 http(s) 的远端基址没有可用的相对解析语义：丢弃，绝不回落成本地 join。
+  if (remoteList) return '';
   // Relative: normalize both separators to `/`, resolve against the m3u8 dir.
   final String rel = entry.replaceAll('\\', '/');
   return ctx.normalize(ctx.join(playlistDir, rel));
@@ -184,6 +200,13 @@ final RegExp _urlSchemePrefix = RegExp(r'^[A-Za-z][A-Za-z0-9+.\-]*://');
 /// 纯字符串判「带 scheme 的绝对 URL」（`xxx://`）。Windows 盘符路径 `C:\` / `C:/`
 /// 没有 `//`，不会误中。
 bool _hasUrlScheme(String s) => _urlSchemePrefix.hasMatch(s);
+
+/// 纯字符串判清单基址是不是远端 URL（`scheme://`，scheme 至少两个字符——单字母
+/// 是盘符 `D://…` 这类手写的本地路径，不当远端）。
+bool _isRemotePlaylistBase(String dir) {
+  final Match? m = _urlSchemePrefix.firstMatch(dir.trim());
+  return m != null && m.end - '://'.length >= 2;
+}
 
 /// 纯字符串判 http(s) URL（不经 Uri.parse，空串/畸形不抛）。
 bool _isHttpUrl(String s) =>
@@ -260,6 +283,11 @@ List<PlaylistEntry> parseM3u8({
 
     // 非注释非空行 = 视频相对/绝对路径。
     final String absPath = resolveM3uEntryPath(line, baseDir);
+    // 解析层拒收的条目（远端清单里的本地 / UNC / file:// 等）：连同它的标题一起丢。
+    if (absPath.isEmpty) {
+      pendingTitle = null;
+      continue;
+    }
     // 标题回退用解码 basename：URL 条目的 %20 之类不渗进集标题。
     final String title = (pendingTitle != null && pendingTitle.isNotEmpty)
         ? pendingTitle
@@ -364,6 +392,17 @@ class M3uChannel {
   PlaylistEntry toPlaylistEntry() => PlaylistEntry(title: title, path: url);
 }
 
+/// IPTV 频道列表导入建出的频道行的 bookUid 命名空间前缀：
+/// `video/iptv/<列表来源摘要>-<频道地址摘要>`（派生规则在 app 侧
+/// `iptv_playlist_import.dart`）。与 `video/<文件名>` / `video/stream/…` /
+/// `video/playlist/…` 命名族不撞（文件名里不可能有 `/`）。
+const String kIptvChannelBookUidPrefix = 'video/iptv/';
+
+/// 纯函数：[bookUid] 是否是 IPTV 频道行（直播频道）——按条目来源判定，
+/// 不看地址长什么样。
+bool isIptvChannelBookUid(String bookUid) =>
+    bookUid.startsWith(kIptvChannelBookUidPrefix);
+
 String? _nonEmpty(String? s) {
   final String? t = s?.trim();
   return (t == null || t.isEmpty) ? null : t;
@@ -386,7 +425,7 @@ List<M3uChannel> parseM3uChannels({
   M3uExtinf? pending;
   String? pendingGroup;
   String text = content;
-  if (text.startsWith('﻿')) text = text.substring(1);
+  if (text.startsWith('\uFEFF')) text = text.substring(1);
   for (final String rawLine in text.split('\n')) {
     final String line = rawLine.trim();
     if (line.isEmpty) continue;
@@ -399,7 +438,13 @@ List<M3uChannel> parseM3uChannels({
       continue;
     }
     final String url = resolveM3uEntryPath(line, baseDir);
-    if (url.isEmpty) continue;
+    if (url.isEmpty) {
+      // 解析层拒收（远端列表里的本地 / UNC / file:// 条目）：它的 #EXTINF 不能
+      // 串到下一个频道头上。
+      pending = null;
+      pendingGroup = null;
+      continue;
+    }
     final Map<String, String> attrs =
         pending?.attributes ?? const <String, String>{};
     final String? tvgName = _nonEmpty(attrs['tvg-name']);

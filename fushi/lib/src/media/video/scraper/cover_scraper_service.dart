@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.da
 import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/scraper/sidecar_scanner.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
@@ -192,6 +194,8 @@ class CoverScraperService {
     return finalPath;
   }
 
-  static bool _isRemotePath(String path) =>
-      path.startsWith('http://') || path.startsWith('https://');
+  /// 远端/流媒体路径：网络流地址（http(s) 与 IPTV 频道的 rtsp / rtmp / udp …，
+  /// [isNetworkOnlyVideoPath]）没有本地目录可找 sidecar。本地 `.strm` 流指针不算
+  /// 远端——它是磁盘上的真实文件，同目录海报照常采用。
+  static bool _isRemotePath(String path) => isNetworkOnlyVideoPath(path);
 }

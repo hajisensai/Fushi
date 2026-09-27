@@ -5697,5 +5697,6 @@
   "video_iptv_pick_file": "选择本地 .m3u / .m3u8 文件",
   "video_iptv_import_hint": "每个频道作为一条流入库，并按 group-title 分组成合集；HLS 流播放列表会作为单个视频导入。",
   "video_iptv_list_empty": "列表里没有找到频道。",
-  "video_iptv_imported": "已导入 ${count} 个频道"
+  "video_iptv_imported": "已导入 ${count} 个频道",
+  "video_stream_protocol_unsupported_apple": "iOS 与 macOS 暂不支持这种流协议（rtsps / rtmps / rtmpe）。"
 }

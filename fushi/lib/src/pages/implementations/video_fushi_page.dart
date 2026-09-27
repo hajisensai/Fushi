@@ -3727,17 +3727,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // → 下次打开从头播放。近起点不算有效进度，跳过不写即可。
     const int kMeaningfulRemoteWatchMs = 5000;
     if (clamped < kMeaningfulRemoteWatchMs) return;
-    // 直播流（IPTV 频道 / 直播 `.strm`）没有总时长：它的 position 只是「开播至今」，
-    // 写下去下次会带着 start=<旧位置> 起播、跳出直播窗口。见 [shouldPersistStreamPosition]。
-    if (!shouldPersistStreamPosition(durationMs: _controller?.durationMs)) {
-      return;
-    }
     // TODO-885 / 合集连播：按当前集 key 落库 + 上报。合集模式键 = (当前成员 id, 0)（成员天然
     // 隔离，与 host 按成员带回的 positionMs 对齐）；单视频/host-playlist = (widget.bookUid,
     // _currentEpisode)（此时 keyUid==uid，行为零变化）。传入的 [uid] 恒是 widget.bookUid。
     final (String keyUid, int episodeIndex) = _remotePositionKeyForIndex(
       _currentEpisode,
     );
+    // 直播频道（IPTV 频道列表导入的频道行，按条目来源判定）报不出总时长：它的
+    // position 只是「开播至今」，写下去下次会带着 start=<旧位置> 起播、跳出直播窗口。
+    // 其它远端（互联转码 / Jellyfin 渐进式 …）mpv 暂时报不出时长也照常写与上报。
+    // 见 [shouldPersistStreamPosition]。
+    if (!shouldPersistStreamPosition(
+      isLiveChannel:
+          isIptvChannelBookUid(keyUid) || isIptvChannelBookUid(widget.bookUid),
+      durationMs: _controller?.durationMs,
+    )) {
+      return;
+    }
     await appModel.prefsRepo.setPref(
       videoRemotePositionEpisodePrefKey(keyUid, episodeIndex),
       clamped,
@@ -9105,6 +9111,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           t.video_strm_target_unsupported,
         StrmResolveFailure.unreadable => t.video_strm_file_unreadable,
       };
+    }
+    // Apple 上不放行 native 自握手的加密流协议（rtsps / rtmps / rtmpe）。
+    if (error is UnsupportedStreamProtocolException) {
+      return t.video_stream_protocol_unsupported_apple;
     }
     // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
     // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。

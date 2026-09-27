@@ -4,7 +4,8 @@
 //   解析器换直链；本地路径 / 空文件 / 未知协议给类型化失败；
 // - 读 `.strm` 的认证头只用于 `.strm` 本身，不外溢到目标地址（由调用方按目标
 //   地址重新解析，见 video_fushi_page 的 STRM 分支）；
-// - shouldPersistStreamPosition：直播（无时长）不写断点。
+// - shouldPersistStreamPosition：只有直播频道（IPTV 频道行）无时长时不写断点；
+// - Apple 上拒绝 rtsps / rtmps / rtmpe；`.strm` 读取边读边计数。
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -15,6 +16,9 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/m3u8_playlist.dart'
+    show isIptvChannelBookUid;
+import 'package:fushi_engine/media/video/strm_file.dart' show kStrmMaxBytes;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
@@ -151,9 +155,90 @@ void main() {
     expect(launch.info.id, strmRow.bookUid);
   });
 
-  test('shouldPersistStreamPosition：直播（时长未知 / 0）不写断点', () {
-    expect(shouldPersistStreamPosition(durationMs: null), isFalse);
-    expect(shouldPersistStreamPosition(durationMs: 0), isFalse);
-    expect(shouldPersistStreamPosition(durationMs: 1), isTrue);
+  test('shouldPersistStreamPosition：只对直播频道看时长，其它远端照常写', () {
+    // 直播频道（IPTV 频道行）：时长未知 / 0 不写断点。
+    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: null),
+        isFalse);
+    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: 0),
+        isFalse);
+    expect(shouldPersistStreamPosition(isLiveChannel: true, durationMs: 1),
+        isTrue);
+    // 互联转码 / Jellyfin 渐进式这类点播 mpv 暂时报不出时长：断点照写。
+    expect(shouldPersistStreamPosition(isLiveChannel: false, durationMs: null),
+        isTrue);
+    expect(shouldPersistStreamPosition(isLiveChannel: false, durationMs: 0),
+        isTrue);
+    // 「直播频道」按条目来源（频道行 uid 命名空间）判定，不看地址形状。
+    expect(
+        isIptvChannelBookUid('video/iptv/0123456789ab-ba9876543210'), isTrue);
+    expect(isIptvChannelBookUid('video/stream/0123456789ab'), isFalse);
+    expect(isIptvChannelBookUid('video/index'), isFalse);
+  });
+
+  group('Apple 上拒绝 native 自握手的加密流协议', () {
+    test('rtsps / rtmps / rtmpe 在 Apple 上抛，其它平台与其它协议放行', () {
+      for (final String url in <String>[
+        'rtsps://cam.example/1',
+        'RTMPS://live.example/app/key',
+        'rtmpe://live.example/app/key',
+      ]) {
+        expect(() => ensureStreamProtocolSupported(url, isApplePlatform: true),
+            throwsA(isA<UnsupportedStreamProtocolException>()),
+            reason: url);
+        ensureStreamProtocolSupported(url, isApplePlatform: false);
+      }
+      ensureStreamProtocolSupported('rtsp://cam.example/1',
+          isApplePlatform: true);
+      ensureStreamProtocolSupported('https://a.example/v.m3u8',
+          isApplePlatform: true);
+    });
+
+    test('buildStreamVideoLaunch 在建客户端前拒绝', () async {
+      final FushiDatabase db =
+          FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final VideoBookRow row = await _row(db, 'rtmps://live.example/app/key');
+      await expectLater(
+        buildStreamVideoLaunch(row, isApplePlatform: true),
+        throwsA(isA<UnsupportedStreamProtocolException>()),
+      );
+    });
+  });
+
+  group('.strm 读取边读边计数', () {
+    test('远端正文超过上限：unreadable（超限即停，不读完整份正文）', () async {
+      int served = 0;
+      final MockClient client =
+          MockClient.streaming((http.BaseRequest req, _) async {
+        final Stream<List<int>> body = Stream<List<int>>.fromIterable(
+          Iterable<List<int>>.generate(1024, (_) {
+            served++;
+            return List<int>.filled(16 * 1024, 0x61);
+          }),
+        ); // 最多 16 MiB，远超 64 KiB 上限。
+        return http.StreamedResponse(body, 200);
+      });
+      await expectLater(
+        resolveStrmStreamTarget('https://nas.example/big.strm',
+            httpClient: client),
+        throwsA(isA<StrmResolveException>().having(
+            (StrmResolveException e) => e.failure,
+            'failure',
+            StrmResolveFailure.unreadable)),
+      );
+      expect(served, lessThan(1024), reason: '超限后应当停止读取');
+    });
+
+    test('本地文件超过上限：unreadable', () async {
+      final File f = File(p.join(tmp.path, 'huge.strm'))
+        ..writeAsBytesSync(List<int>.filled(kStrmMaxBytes + 1, 0x61));
+      await expectLater(
+        resolveStrmStreamTarget(f.path),
+        throwsA(isA<StrmResolveException>().having(
+            (StrmResolveException e) => e.failure,
+            'failure',
+            StrmResolveFailure.unreadable)),
+      );
+    });
   });
 }
