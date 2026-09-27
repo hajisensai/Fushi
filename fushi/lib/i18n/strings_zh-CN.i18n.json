@@ -4840,7 +4840,7 @@
   "reader_gallery_relock": "恢复遮罩",
   "audiobook_follow_audio": "跟随音频",
   "reader_floating_ball": "悬浮球",
-  "reader_floating_ball_hint": "半透明小球停靠在页面边缘。点击后按钮环绕小球展开，再点收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。",
+  "reader_floating_ball_hint": "半透明小球停靠在页面边缘。点击后按钮在小球上方竖排一列展开（小球在最下方），再点小球收起；可拖动上下移动或换边。放哪些按钮在上方的按钮布局编辑器里拖选。",
   "reader_control_item_play_pause": "播放 / 暂停",
   "reader_control_item_seek_back": "快退 10 秒",
   "reader_control_item_seek_forward": "快进 10 秒",

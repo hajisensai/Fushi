@@ -29,11 +29,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2502 条。点号进各自文件。
+> 共 2506 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2728](bugs/BUG-2728-remote-video-subtitle-timing.md) | ✅ | ✅ | 远端视频缺波形对轴与重定时，导入字幕不上传服务端 |
+| [BUG-2724](bugs/BUG-2724-ios-furigana-gap.md) | ✅ | ✅ | iOS 振假名离本行远、贴近上一行/上一列 |
+| [BUG-2723](bugs/BUG-2723-gallery-header-overflow.md) | ✅ | ✅ | 插图册顶栏在手机竖屏挤爆：计数被压成 0 宽、英文等长文案整行溢出 |
+| [BUG-2722](bugs/BUG-2722-gallery-toc-sections.md) | ✅ | ✅ | 插图册按 spine 章分节：同文件多话的插图归错话、连续插图页拆成多个同名节 |
+| [BUG-2720](bugs/BUG-2720-emby-secondary-subtitle.md) | ✅ | ✅ | Emby 兼容层上副字幕选内嵌轨必失败 |
+| [BUG-2719](bugs/BUG-2719-home-body-layout-switch-remount.md) | ✅ | ✅ | 关掉视频后视频库回到「首页」分区而不是上次的分区 |
 | [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
 | [BUG-2716](bugs/BUG-2716-kirikiri-sticky-tail-after-midloop-attach.md) | ✅ | ✅ | KiriKiri 循环音效中途附着时 P P T 粘尾不剥，整段游戏内查词被拒 |
 | [BUG-2715](bugs/BUG-2715-selection-longpress-null-crash.md) | ✅ | ✅ | 日志面板内容变化或视口变高后长按空白处选区端点空断言崩溃 |

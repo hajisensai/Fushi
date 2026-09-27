@@ -208,11 +208,25 @@ class ReaderContentStyles {
   /// 结果逐字节相同），留余量给 normal 行高更大的字体。Blink 本就不长高，且旧版
   /// Android WebView 的 ruby 实现不同，故仍**按平台门控**只发给 Apple 端；
   /// `-webkit-line-box-contain` 在任何平台都不再发出（BUG-611 / BUG-2482 两道守卫）。
+  ///
+  /// BUG-2724：WebKit 把注音盒的**边框盒底**贴在基字的「内容区」顶（竖排是右缘），
+  /// 而 Hiragino 的 ascent 比汉字墨迹高出一截，注音盒自己又带 `line-height: normal`
+  /// 的半行距（WebKit 不理会 rt 上的 line-height）——两截空白全落在注音与本行之间，
+  /// 注音看起来离本行远、贴近上一行/上一列。iOS 26.5 模拟器 Safari 实拍（真阅读器
+  /// CSS、22px、行高 1.65）：注音墨迹离本行 3.3px、离上一行 5.3px（竖排 3.0 / 4.7）。
+  /// WebKit 的 ruby 布局里注音边框盒底 = 基字顶 − `margin-block-end`，所以负的
+  /// `margin-block-end` 正好把注音朝基字方向挪（横排向下、竖排向左，逻辑属性一条
+  /// 通吃两种书写方向）；`position: relative` + `inset-block-start` 对 ruby-text 盒
+  /// 无效（实测 1em 也纹丝不动），`margin-block-start` 只改流中高度、不动位置。
+  /// 取 −0.2em（以注音字号计，随字号缩放）：本行 1.3 / 上一行 7.3px（竖排 1.0 /
+  /// 6.7），40px Hiragino Sans 与行高 2.2 下本行仍 1.0–1.7px、不压基字。它同时让
+  /// 注音在流中的高度再少 0.2em，与上面的抵消同向，不会让行盒重新长高。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
         TargetPlatform.iOS || TargetPlatform.macOS => '''
-/* BUG-2472 / BUG-2482: WebKit only — see _webKitRubyAnnotationCss. */
+/* BUG-2472 / BUG-2482 / BUG-2724: WebKit only — see _webKitRubyAnnotationCss. */
 ruby > rt, ruby > rtc {
   margin-block-start: -2em !important;
+  margin-block-end: -0.2em !important;
 }
 ''',
         _ => '',

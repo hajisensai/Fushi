@@ -4840,7 +4840,7 @@
   "reader_gallery_relock": "Re-hide this illustration",
   "audiobook_follow_audio": "Follow audio",
   "reader_floating_ball": "Floating ball",
-  "reader_floating_ball_hint": "A translucent ball docked at the edge of the page. Tap it to fan its buttons out around it, tap again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.",
+  "reader_floating_ball_hint": "A translucent ball docked at the edge of the page. Tap it to stack its buttons in a column above it, tap the ball again to collapse; drag to move it or switch sides. Choose its buttons in the button layout editor above.",
   "reader_control_item_play_pause": "Play / Pause",
   "reader_control_item_seek_back": "Rewind 10 seconds",
   "reader_control_item_seek_forward": "Forward 10 seconds",

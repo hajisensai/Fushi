@@ -762,6 +762,21 @@ Map<String, String> buildGraphicSubtitleVisibilityProperties() {
   };
 }
 
+/// 副字幕交给 libmpv「只解码不画」的属性 map（远端直出容器、服务器抽不出的内嵌
+/// 文本轨作副字幕，[VideoPlayerController.selectEmbeddedSecondaryTextTrackViaPlayer]）。
+/// 纯函数。
+///
+/// `secondary-sub-visibility` **必须排在** `secondary-sid` 前面：
+/// [applySubtitleMpvPropertiesToPlayer] 按 map 顺序逐条下发，先选轨会让 libmpv 把
+/// 副字幕画进画面一瞬。它默认 `yes`，且与主字幕的 `sub-visibility` 各管各的——
+/// 主字幕的抑制（[buildSubtitleSuppressionProperties]）盖不到副字幕槽。
+Map<String, String> buildSecondarySubtitleDecodeProperties(String trackId) {
+  return <String, String>{
+    'secondary-sub-visibility': 'no',
+    'secondary-sid': trackId,
+  };
+}
+
 /// 构建图形字幕调轴用的 libmpv `sub-delay` 属性 map（`属性名→值`）。纯函数。
 ///
 /// 文本字幕走可点 overlay（cue 同步），其偏移由 [effectiveSubtitlePositionMs] 在

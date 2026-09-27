@@ -125,3 +125,47 @@ int? resolveCurrentTocEntry(
   }
   return resolved;
 }
+
+/// 插图 [image] 归在目录的哪一条（BUG-2722）：不晚于它的最后一条，与
+/// [resolveCurrentTocEntry] 同一个 floor 口径（先比章号，同章比
+/// [TtuTocEntry.charOffsetInChapter]），插图册按它分节、取节名。
+///
+/// 只多一条平局规则：同章锚点与插图落在同一字符偏移时，字符数分不出先后——
+/// `…正文<img/><h2 id="a7">`（插图收尾上一话）与 `<div id="a7"><img/><h2>…`
+/// （插图开启 a7 这一话）偏移完全相同。这时看文档顺序：只有出现在
+/// [EpubImageRef.leadingAnchorIds] 里（在图之前打开）的锚点才算不晚于它。
+/// 锚点偏移未知（[TtuTocEntry.anchorCharOffset] 为 null，按章首处理）的条目
+/// 不参与平局判断，保持章首语义。
+///
+/// 未被正文引用的 OPF 封面（负章号）与早于第一条目录项的插图返回 null。
+int? resolveTocEntryForImage(List<TtuTocEntry> toc, EpubImageRef image) {
+  final int chapter = image.chapterIndex;
+  if (chapter < 0) return null;
+  int? resolved;
+  for (int i = 0; i < toc.length; i++) {
+    final TtuTocEntry entry = toc[i];
+    if (entry.isHeader || entry.index > chapter) continue;
+    if (entry.index == chapter) {
+      final int offset = entry.charOffsetInChapter;
+      if (offset > image.charOffset) continue;
+      final String? fragment = entry.fragment;
+      if (offset == image.charOffset &&
+          entry.anchorCharOffset != null &&
+          fragment != null &&
+          !image.leadingAnchorIds.contains(fragment)) {
+        continue;
+      }
+    }
+    if (resolved == null) {
+      resolved = i;
+      continue;
+    }
+    final TtuTocEntry best = toc[resolved];
+    if (entry.index > best.index ||
+        (entry.index == best.index &&
+            entry.charOffsetInChapter > best.charOffsetInChapter)) {
+      resolved = i;
+    }
+  }
+  return resolved;
+}
