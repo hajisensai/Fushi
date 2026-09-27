@@ -385,6 +385,7 @@ constexpr uint32_t kDiagSiglusExactTextHookReady = 0x00004000u;
 constexpr uint32_t kDiagSiglusExactTextObserved = 0x00008000u;
 constexpr uint32_t kDiagFfmpegResourceHooksReady = 0x00010000u;
 constexpr uint32_t kDiagFfmpegResourceCaptured = 0x00020000u;
+// VisualArts 语音归档（Siglus OVK / RealLive NWK）在身份认定后真被打开：宿主据此切 gameResource。
 constexpr uint32_t kDiagVisualArtsOvkHooksReady = 0x00040000u;
 constexpr uint32_t kDiagVisualArtsOvkCaptured = 0x00080000u;
 constexpr uint32_t kDiagKirikiriVorbisOpenHookReady = 0x00100000u;

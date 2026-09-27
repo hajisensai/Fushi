@@ -77,7 +77,16 @@ void RememberRealliveNwk(HANDLE handle, const wchar_t* path) {
       g_reallive_nwk_handles, handle, [path](RealliveNwkHandle& slot) {
         wcsncpy_s(slot.path, path, _TRUNCATE);
       });
-  if (remembered) MarkRealliveFlag(kRealliveFlagNwkHandleTracked);
+  if (!remembered) return;
+  MarkRealliveFlag(kRealliveFlagNwkHandleTracked);
+  // 与 Siglus OVK 同一就绪语义：身份已认定且真打开了 VisualArts 语音归档，宿主才把会话切到
+  // gameResource；否则 NWK 导出的 .wav 永远等不到配对，台词会被 DirectSound 流（BGM）冒领。
+  // 只置 HooksReady，不置 Captured：NWA 解码出的 WAV 与源条目并非同字节。
+  if (InterlockedCompareExchange(&g_reallive_capture_armed, 0, 0) != 0 &&
+      g_header != nullptr) {
+    InterlockedOr(reinterpret_cast<volatile LONG*>(&g_header->hook_diagnostics),
+                  static_cast<LONG>(fushi_voice_hook::kDiagVisualArtsOvkHooksReady));
+  }
 }
 
 bool CopyRealliveNwkPath(HANDLE handle, wchar_t* out, size_t out_chars) {

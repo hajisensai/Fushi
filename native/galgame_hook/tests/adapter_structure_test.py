@@ -1955,6 +1955,24 @@ class AdapterStructureTest(unittest.TestCase):
         remember = remember.split("void ForgetSiglusOvk", 1)[0]
         self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
 
+    def test_reallive_nwk_publishes_visual_arts_voice_ready_only_when_armed(
+        self,
+    ) -> None:
+        """NWK 导出的 .wav 要能配对，宿主必须看到 VisualArts 语音归档就绪位；
+        但共享 broker 对任何进程都会登记 .nwk，所以这一位必须挂在身份门后。"""
+        adapter = self._strip_comments(
+            (ROOT / "hook" / "adapters" / "reallive_adapter.inc").read_text(
+                encoding="utf-8"
+            )
+        )
+        remember = self._function_body(adapter, "void RememberRealliveNwk(")
+        self.assertIn("kDiagVisualArtsOvkHooksReady", remember)
+        self.assertLess(remember.index("g_reallive_capture_armed"),
+                        remember.index("kDiagVisualArtsOvkHooksReady"))
+        # 解码出的 WAV 不是源条目的同字节载荷，不得冒认 Captured。
+        self.assertNotIn("kDiagVisualArtsOvkCaptured", adapter)
+        self.assertNotIn("kXAudioDiagGameResourcePublished", adapter)
+
     def test_reallive_nwk_capture_is_identity_gated_and_worker_owned(self) -> None:
         """RealLive NWK：身份只取结构判据；游戏线程回调只做固定检查 + 有界入队。"""
         adapter = self._strip_comments(
