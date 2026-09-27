@@ -32,6 +32,10 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
+    show isPlaylistManifestPath;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -1914,6 +1918,10 @@ class VideoSourceScrapeCoordinator
       // 主循环按既有路径处理（哈希照做、但不决定身份、更不改合集归属）。
       if (await _hasAuthoritativeIdentity(work, source)) continue;
       final VideoBookRow member = work.members.single;
+      // 没有媒体字节的文件（`.strm` / 清单 / 网络流，见 [_isHashableMediaPath]）
+      // 不哈希：原样留给主循环按标题识别，也不进 [_preIdentified]——主循环的
+      // [_identifyWork] 同样跳过它，不会指望这里留下结果。
+      if (!_isHashableMediaPath(member.videoPath)) continue;
       token.throwIfCancelled();
       final AnidbHashIdentityResult result =
           await hashIdentityService.identifyFile(
@@ -2121,12 +2129,28 @@ class VideoSourceScrapeCoordinator
   static const String _hashDisabledNotice =
       'AniDB 哈希识别已关闭（设置 → 在线服务 → AniDB），本批只按标题识别。';
 
+  /// [path] 能不能拿去算 ED2K 哈希、问 AniDB 文件身份：只有本机真实的媒体文件能。
+  /// 网络流（http(s) / rtsp 频道 …）本机没有字节；`.strm` 只是一行流地址、
+  /// `.m3u` / `.m3u8` 清单是文本——哈希它们只会拿文本的哈希去撞 AniDB，白白消耗
+  /// UDP 限流配额，还在每个文件上留一条「未登记」的误导日志。这些成员一律交给
+  /// 标题识别。
+  static bool _isHashableMediaPath(String path) =>
+      !lacksLocalMediaFile(path) && !isPlaylistManifestPath(path);
+
   Future<_HashWorkEvidence> _identifyWork(
     VideoSourceScrapeWork work,
     List<SourceScrapeIssue> warnings,
     VideoSourceScrapeCancellationToken token,
     void Function(String, int, int) onProgress,
   ) async {
+    // 没有媒体字节的成员（[_isHashableMediaPath]）不哈希、不问 AniDB、不记日志。
+    // 全员都是这种（IPTV 频道 / `.strm` 库）时等价于「没有哈希证据」，连「哈希
+    // 已关闭 / 未配置」的提示也不出——这一单元本来就没有可哈希的文件。
+    final List<VideoBookRow> hashableMembers = <VideoBookRow>[
+      for (final VideoBookRow member in work.members)
+        if (_isHashableMediaPath(member.videoPath)) member,
+    ];
+    if (hashableMembers.isEmpty) return const _HashWorkEvidence();
     if (!hashIdentityService.enabled) {
       // 一批只提一次：用户排障时得看得出「没开」和「没配好」不是一回事。
       if (!warnings.any(
@@ -2148,7 +2172,7 @@ class VideoSourceScrapeCoordinator
     final Set<String> titles = <String>{};
     final Map<String, AnidbFileIdentity> identities =
         <String, AnidbFileIdentity>{};
-    for (final VideoBookRow member in work.members) {
+    for (final VideoBookRow member in hashableMembers) {
       token.throwIfCancelled();
       // 合并预处理（[_mergeStandaloneByAnidbWork]）已经识别过的文件直接复用，
       // 一个文件一批只识别一次；没经过预处理的（合集单元成员）照常现场识别。

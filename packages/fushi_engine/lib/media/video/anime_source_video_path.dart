@@ -14,6 +14,11 @@ library;
 
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 
+// 「只在网络上」的判据（http(s)、IPTV 直播协议、本 scheme）只有一份，定义在
+// strm_file.dart；这里转出，老的 import 路径照常可用、不会出现两个同名声明。
+export 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath;
+
 /// 自定义 scheme（不带 `://`）。
 const String kAnimeSourceVideoPathScheme = 'anime-source';
 
@@ -35,14 +40,4 @@ String animeSourceVideoPath({
 }) {
   final String safe = safeWindowsFileName(label).trim();
   return '$_prefix$extensionPackage/$sourceId/${safe.isEmpty ? 'episode' : safe}';
-}
-
-/// 视频行是不是「只在网络上」的（http/https 流或在线视频源集）：没有本地文件可以
-/// stat、抽帧、刮削或经互联下发。
-bool isNetworkOnlyVideoPath(String? path) {
-  if (path == null) return false;
-  final String lower = path.trimLeft().toLowerCase();
-  return lower.startsWith('http://') ||
-      lower.startsWith('https://') ||
-      isAnimeSourceVideoPath(path);
 }

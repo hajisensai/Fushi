@@ -5714,5 +5714,16 @@
   "video_online_downloaded": "Sudah diunduh",
   "onboarding_feature_browse_hint": "Sumber online, ekstensi, penemuan, dan unduhan",
   "browse_moved_notice_title": "Penemuan dan sumber online dipindahkan ke ${browse}",
-  "browse_moved_notice_body": "Halaman penemuan serta sumber online untuk manga, video, dan novel kini ada di tab ${browse}, yang dimatikan di perangkat ini. Untuk menggunakannya, aktifkan ${browse} di ${settings} › ${appearance} › ${modules}."
+  "browse_moved_notice_body": "Halaman penemuan serta sumber online untuk manga, video, dan novel kini ada di tab ${browse}, yang dimatikan di perangkat ini. Untuk menggunakannya, aktifkan ${browse} di ${settings} › ${appearance} › ${modules}.",
+  "video_strm_target_local": "This .strm file points to a local file path, which isn't supported. Put the video file in a source library directly.",
+  "video_strm_target_unsupported": "This .strm file has no playable stream address (http, https, rtsp, …).",
+  "video_strm_file_unreadable": "Couldn't read the .strm file.",
+  "video_iptv_import_action": "Import IPTV list",
+  "video_iptv_import_title": "Import M3U / IPTV channel list",
+  "video_iptv_url_field": "Channel list URL",
+  "video_iptv_pick_file": "Choose a local .m3u / .m3u8 file",
+  "video_iptv_import_hint": "Each channel is added as a stream and grouped into collections by group-title. An HLS stream playlist is imported as a single video.",
+  "video_iptv_list_empty": "No channels found in this list.",
+  "video_iptv_imported": "Imported ${count} channels",
+  "video_stream_protocol_unsupported_apple": "This stream protocol (rtsps / rtmps / rtmpe) isn't supported on iOS or macOS yet."
 }

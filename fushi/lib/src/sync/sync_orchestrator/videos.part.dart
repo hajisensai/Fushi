@@ -5,18 +5,17 @@ part of '../sync_orchestrator.dart';
 extension _SyncOrchestratorVideos on SyncOrchestrator {
   /// 一条 `VideoBooks` 行是否是可作为单文件上传的**本地**视频（[syncVideoAssets] 用）。
   ///
-  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为 http(s) URL）——无本地字节
-  /// 可传；多集播放列表（`playlistJson` 非空）——单文件资产模型装不下多集（多集上传
-  /// 是后续批的接缝，见 §2.6 seam）。
+  /// 排除：流媒体（`streamSpecJson` 非空 / `videoPath` 为网络流地址——http(s) 与
+  /// IPTV 频道的 rtsp / rtmp / udp …）——无本地字节可传；`.strm` 流指针——本地那份
+  /// 只是一行地址，传给对端会被当视频下发、播不了（两者合起来就是
+  /// [lacksLocalMediaFile]）；多集播放列表（`playlistJson` 非空）——单文件资产模型
+  /// 装不下多集（多集上传是后续批的接缝，见 §2.6 seam）。
   bool _isUploadableLocalVideo(VideoBookRow v) {
     if (v.streamSpecJson != null) return false;
     if (v.playlistJson != null) return false;
     final String path = v.videoPath;
     if (path.isEmpty) return false;
-    final String lower = path.toLowerCase();
-    if (lower.startsWith('http://') || lower.startsWith('https://')) {
-      return false;
-    }
+    if (lacksLocalMediaFile(path)) return false;
     return true;
   }
 

@@ -5714,5 +5714,16 @@
   "video_online_downloaded": "已下载",
   "onboarding_feature_browse_hint": "在线来源、扩展、发现与下载",
   "browse_moved_notice_title": "发现与在线来源已移到「${browse}」",
-  "browse_moved_notice_body": "发现页，以及漫画 / 视频 / 小说的在线来源，已经移到「${browse}」页签；它在本机目前是关闭的。要使用它们，请到「${settings} › ${appearance} › ${modules}」打开「${browse}」。"
+  "browse_moved_notice_body": "发现页，以及漫画 / 视频 / 小说的在线来源，已经移到「${browse}」页签；它在本机目前是关闭的。要使用它们，请到「${settings} › ${appearance} › ${modules}」打开「${browse}」。",
+  "video_strm_target_local": "该 .strm 文件指向本机文件路径，暂不支持。请直接把视频文件放进来源库。",
+  "video_strm_target_unsupported": "该 .strm 文件里没有可播放的流地址（http、https、rtsp 等）。",
+  "video_strm_file_unreadable": "无法读取 .strm 文件。",
+  "video_iptv_import_action": "导入 IPTV 频道列表",
+  "video_iptv_import_title": "导入 M3U / IPTV 频道列表",
+  "video_iptv_url_field": "频道列表地址",
+  "video_iptv_pick_file": "选择本地 .m3u / .m3u8 文件",
+  "video_iptv_import_hint": "每个频道作为一条流入库，并按 group-title 分组成合集；HLS 流播放列表会作为单个视频导入。",
+  "video_iptv_list_empty": "列表里没有找到频道。",
+  "video_iptv_imported": "已导入 ${count} 个频道",
+  "video_stream_protocol_unsupported_apple": "iOS 与 macOS 暂不支持这种流协议（rtsps / rtmps / rtmpe）。"
 }

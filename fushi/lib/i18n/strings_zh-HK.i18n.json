@@ -5714,5 +5714,16 @@
   "video_online_downloaded": "已下載",
   "onboarding_feature_browse_hint": "線上來源、擴展、發現與下載",
   "browse_moved_notice_title": "發現與線上來源已移到「${browse}」",
-  "browse_moved_notice_body": "發現頁，以及漫畫／影片／小說的線上來源，已經移到「${browse}」分頁；它在本機目前是關閉的。要使用它們，請到「${settings} › ${appearance} › ${modules}」開啟「${browse}」。"
+  "browse_moved_notice_body": "發現頁，以及漫畫／影片／小說的線上來源，已經移到「${browse}」分頁；它在本機目前是關閉的。要使用它們，請到「${settings} › ${appearance} › ${modules}」開啟「${browse}」。",
+  "video_strm_target_local": "This .strm file points to a local file path, which isn't supported. Put the video file in a source library directly.",
+  "video_strm_target_unsupported": "This .strm file has no playable stream address (http, https, rtsp, …).",
+  "video_strm_file_unreadable": "Couldn't read the .strm file.",
+  "video_iptv_import_action": "Import IPTV list",
+  "video_iptv_import_title": "Import M3U / IPTV channel list",
+  "video_iptv_url_field": "Channel list URL",
+  "video_iptv_pick_file": "Choose a local .m3u / .m3u8 file",
+  "video_iptv_import_hint": "Each channel is added as a stream and grouped into collections by group-title. An HLS stream playlist is imported as a single video.",
+  "video_iptv_list_empty": "No channels found in this list.",
+  "video_iptv_imported": "Imported ${count} channels",
+  "video_stream_protocol_unsupported_apple": "This stream protocol (rtsps / rtmps / rtmpe) isn't supported on iOS or macOS yet."
 }

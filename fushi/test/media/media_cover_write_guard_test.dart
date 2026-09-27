@@ -175,6 +175,11 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
     CoverDeriverRole.writesViaService,
     '导入弹窗重取封面，字节走 applyCover*。',
   ),
+  'lib/src/media/video/iptv_playlist_import.dart': (
+    CoverDeriverRole.writesViaService,
+    'IPTV 频道台标（tvg-logo）补封面：派生 <video_covers>/<uid> 目的地，字节经引擎 '
+        'writeCoverBytesAtomically 收口写盘，本文件自己不裸写。',
+  ),
   '../packages/fushi_engine/lib/media/video/video_storage.dart': (
     CoverDeriverRole.derivesPathOnly,
     '路径派生的定义处之一，自身不落盘。',
