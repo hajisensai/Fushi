@@ -787,8 +787,9 @@ mixin DictionaryPageMixin {
       // BUG-797 / BUG-1040：任何「必须盖住弹窗」的 Flutter 对话框（选择句子上下文 /
       // 已制卡动作 / 打开卡片选择）期间把弹窗停靠屏外，否则原生平台视图盖住对话框。
       visible: entry.visible && _popupHidingDialogDepth == 0,
-      // 接替已画出的搜索占位卡时不再从 0 淡入（占位卡已淡入过）。
-      fadeIn: !entry.revealedOverSearchPlaceholder,
+      // 接替已画出的搜索占位卡时，接着占位卡的淡入进度淡完（不从 0 重来、也不跳满）。
+      entranceStartProgress:
+          popupEntranceProgressAfter(entry.searchPlaceholderShownFor),
       screen: screen,
       child: _wrapPopupContent(
           wrapContent,

@@ -393,7 +393,7 @@ Widget parkedPopupLayer({
   required bool visible,
   required Size screen,
   required Widget child,
-  bool fadeIn = true,
+  double entranceStartProgress = 0.0,
 }) {
   return Positioned(
     key: key,
@@ -407,10 +407,14 @@ Widget parkedPopupLayer({
       maintainAnimation: true,
       maintainSize: true,
       // TODO-890 姊妹项：入场淡入。四表面共用此收口，一处补齐全部。
-      // [fadeIn]=false：本层接替已在屏上的搜索占位卡翻出，占位卡已经淡入过，
-      // 再从 0 淡入会在两者交接处露出一段透底空框（见
-      // DictionaryPopupEntry.revealedOverSearchPlaceholder）。
-      child: _PopupEntranceFade(visible: visible, fadeIn: fadeIn, child: child),
+      // [entranceStartProgress]>0：本层接替已在屏上的搜索占位卡翻出，从占位卡当前的
+      // 淡入进度接着淡；从 0 重来会在交接处露出一段透底空框（见
+      // DictionaryPopupEntry.searchPlaceholderShownFor）。
+      child: _PopupEntranceFade(
+        visible: visible,
+        startProgress: entranceStartProgress,
+        child: child,
+      ),
     ),
   );
 }
@@ -481,6 +485,53 @@ List<Widget> parkedRealmPopupLayers({
   ];
 }
 
+/// 把 WebView 布局得比可见区高 [overflowHeight]、顶端对齐并裁掉超出部分（见
+/// [DictionaryPopupLayer.webViewOverflowHeight]），并把可见高度交给 [builder]
+/// （裁剪时为可见区高度，不裁剪为 null）——popup.js 的浮层定位据此避开被裁掉的区域。
+///
+/// 结构**恒定**：无论溢出多少，WebView 都在同一个 LayoutBuilder / ClipRect /
+/// OverflowBox 之下，溢出为 0 时 OverflowBox 取原高。若溢出归零就直接返回 WebView，
+/// 它会在两种树深度之间搬家，只靠 GlobalKey 保住 State，移动端平台视图有重建闪烁风险。
+Widget popupWebViewOverflow({
+  required double overflowHeight,
+  required Widget Function(double? visibleHeight) builder,
+}) {
+  final double extra =
+      overflowHeight.isFinite && overflowHeight > 0 ? overflowHeight : 0.0;
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final bool bounded = constraints.hasBoundedHeight;
+      final double? height = bounded ? constraints.maxHeight + extra : null;
+      return ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: height,
+          maxHeight: height,
+          child: builder(bounded && extra > 0 ? constraints.maxHeight : null),
+        ),
+      );
+    },
+  );
+}
+
+/// 入场淡入在 [elapsed] 时刻走到的进度（0..1，线性时间轴；透明度 = easeOut(进度)）。
+///
+/// 真弹窗接替搜索占位卡时从占位卡当前进度接着淡（[DictionaryPopupEntry.searchPlaceholderShownFor]）：
+/// 直接满不透明会让快速查词从半透明「跳」到满不透明，从 0 重来又会在交接处露底。
+double popupEntranceProgressAfter(Duration? elapsed) {
+  if (elapsed == null) return 0.0;
+  final double t =
+      elapsed.inMicroseconds / _kSlideDuration.inMicroseconds.toDouble();
+  if (!t.isFinite || t <= 0) return 0.0;
+  return t >= 1 ? 1.0 : t;
+}
+
+/// 搜索期加载占位卡的入场淡入：与 [parkedPopupLayer] 同一个 [_PopupEntranceFade]
+/// （同时长 / 曲线 / 墨水屏归零），占位卡每次插入 Stack 都是新 State，故每次查词淡入
+/// 一次。接替它的真弹窗用 [popupEntranceProgressAfter] 接着这条时间轴淡完。
+Widget popupEntranceFade({required Widget child}) =>
+    _PopupEntranceFade(visible: true, child: child);
+
 /// TODO-890 姊妹项：查词弹窗**入场淡入**收口。app 外覆盖窗靠注入 CSS
 /// `transition:opacity 200ms ease-out` + 双 gate 翻 `opacity 0→1` 做平滑淡入；app 内
 /// 各表面（阅读器 / 视频 / 首页 / 安卓独立窗）此前经 [parkedPopupLayer] 的 [Visibility]
@@ -490,61 +541,39 @@ List<Widget> parkedRealmPopupLayers({
 ///
 /// 关键：[ImplicitlyAnimatedWidget] 首帧取目标值不补间，故不能只写
 /// `AnimatedOpacity(opacity: visible ? 1 : 0)`——首次挂载即 `visible:true` 的
-/// 视频 / 首页 / 独立窗会跳过淡入。这里用「首帧强制 0 + post-frame 翻 1」保证每次进入
-/// 可见态都淡入（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal gate 齐才翻 1」。
-/// 把 [webView] 布局得比可见区高 [overflowHeight]、顶端对齐并裁掉超出部分
-/// （见 [DictionaryPopupLayer.webViewOverflowHeight]）。≤0 / 非有限值原样返回。
-Widget popupWebViewOverflow({
-  required double overflowHeight,
-  required Widget webView,
-}) {
-  if (!overflowHeight.isFinite || overflowHeight <= 0) return webView;
-  return LayoutBuilder(
-    builder: (BuildContext context, BoxConstraints constraints) {
-      if (!constraints.hasBoundedHeight) return webView;
-      final double height = constraints.maxHeight + overflowHeight;
-      return ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.topCenter,
-          minHeight: height,
-          maxHeight: height,
-          child: webView,
-        ),
-      );
-    },
-  );
-}
-
-/// 搜索期加载占位卡的入场淡入：与 [parkedPopupLayer] 同一个 [_PopupEntranceFade]
-/// （同时长 / 曲线 / 墨水屏归零），占位卡每次插入 Stack 都是新 State，故每次查词淡入
-/// 一次。占位卡一旦画出，接替它的真弹窗就以 `fadeIn: false` 直接满不透明显示。
-Widget popupEntranceFade({required Widget child}) =>
-    _PopupEntranceFade(visible: true, child: child);
-
+/// 视频 / 首页 / 独立窗会跳过淡入。这里用显式 [AnimationController]：每次进入可见态把
+/// 进度置到起点再 forward（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal
+/// gate 齐才翻 1」；起点可非 0，好让接替占位卡的真弹窗接着占位卡的进度淡（BUG-2734）。
 class _PopupEntranceFade extends StatefulWidget {
   const _PopupEntranceFade({
     required this.visible,
     required this.child,
-    this.fadeIn = true,
+    this.startProgress = 0.0,
   });
 
   final bool visible;
   final Widget child;
 
-  /// false：进入可见态时直接满不透明（不补间）。
-  final bool fadeIn;
+  /// 进入可见态时从这个进度（0..1，见 [popupEntranceProgressAfter]）开始淡入。
+  final double startProgress;
 
   @override
   State<_PopupEntranceFade> createState() => _PopupEntranceFadeState();
 }
 
-class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
-  /// 入场淡入是否已触发（[AnimatedOpacity] 目标翻 1）。隐藏态复位，下次可见重新淡入。
-  bool _revealed = false;
+class _PopupEntranceFadeState extends State<_PopupEntranceFade>
+    with SingleTickerProviderStateMixin {
+  // 在 initState 里建，不能写成 `late final` 懒初始化：停在屏外、从没可见过的层
+  // （热槽 / 停驻 realm）会拖到 dispose 才第一次建 controller，那时已不能查祖先
+  // （TickerMode），直接断言失败。
+  late final AnimationController _progress;
+  late final Animation<double> _opacity;
 
   @override
   void initState() {
     super.initState();
+    _progress = AnimationController(vsync: this, duration: _kSlideDuration);
+    _opacity = CurvedAnimation(parent: _progress, curve: Curves.easeOut);
     if (widget.visible) _enterVisible();
   }
 
@@ -552,43 +581,34 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
   void didUpdateWidget(_PopupEntranceFade oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.visible && !oldWidget.visible) {
-      _revealed = false; // 重新进入可见态：复位以再次淡入。
-      _enterVisible();
+      _enterVisible(); // 重新进入可见态：再淡入一次。
     } else if (!widget.visible && oldWidget.visible) {
-      _revealed = false; // 隐藏即复位，避免下次瞬间满不透明。
+      _progress.value = 0.0; // 隐藏即复位，避免下次瞬间满不透明。
     }
   }
 
-  /// 进入可见态：要淡入就排下一帧翻 [_revealed]；不淡入就同帧翻（配合 build 里
-  /// 的零时长，首个可见帧即满不透明）。
+  /// 从 [_PopupEntranceFade.startProgress] 接着往 1 走；首个可见帧就是这个进度，
+  /// 剩余时长按比例缩短（AnimationController.forward 自带）。
   void _enterVisible() {
-    if (widget.fadeIn) {
-      _scheduleReveal();
-    } else {
-      _revealed = true;
-    }
+    final double start = widget.startProgress;
+    _progress.value = start.isFinite ? start.clamp(0.0, 1.0).toDouble() : 0.0;
+    if (_progress.value < 1.0) _progress.forward();
   }
 
-  /// 下一帧把 [_revealed] 翻 true，使 [AnimatedOpacity] 从首帧的 0 补间到 1
-  /// （同帧内 0→1 会被隐式动画当作初值直接取 1、不补间）。
-  void _scheduleReveal() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.visible && !_revealed) {
-        setState(() => _revealed = true);
-      }
-    });
+  @override
+  void dispose() {
+    _progress.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedOpacity(
+    return FadeTransition(
       // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
       // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
-      opacity: widget.visible && _revealed ? 1.0 : 0.0,
-      duration: isEinkTheme(context) || !widget.fadeIn
-          ? Duration.zero
-          : _kSlideDuration,
-      curve: Curves.easeOut,
+      opacity: !widget.visible
+          ? kAlwaysDismissedAnimation
+          : (isEinkTheme(context) ? kAlwaysCompleteAnimation : _opacity),
       child: widget.child,
     );
   }
@@ -1360,8 +1380,9 @@ class DictionaryPopupLayer extends StatelessWidget {
         children: [
           popupWebViewOverflow(
               overflowHeight: webViewOverflowHeight,
-              webView: DictionaryPopupWebView(
+              builder: (double? visibleHeight) => DictionaryPopupWebView(
             key: webViewKey,
+            visibleViewportHeight: visibleHeight,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
             restoreScrollTop: restoreScrollTop,

@@ -6,7 +6,10 @@
   3. **滚轮一格一大跳、比 galgame 快得多**：fork `packages/flutter_inappwebview_windows/windows/in_app_webview/in_app_webview.cpp` `InAppWebView::sendScroll` 写死 `delta * 6 * dpr`，前提「Flutter 一档 delta≈20 逻辑像素」。现行引擎（3.44 `flutter_window.cc` `UpdateScrollOffsetMultiplier` + `WM_MOUSEWHEEL`）一档发 `行数×100/3` 物理像素（默认 100），框架再除以 dpr；于是一档到 WebView2 = 600 = 5 个 WHEEL_DELTA，而 galgame 覆盖窗（`global_lookup_window.cpp`）原样转发系统 120。`popup.js` 收到 5 倍 deltaY，被单步上限 `POPUP_WHEEL_MAX_VISUAL_STEP` 截成一格 120px 的硬跳。阅读器 / 漫画等其它 app 内 WebView 同受影响（一档 5 倍）。
 - **[x] ① 已修复** —
   - ① WebView 按「外壳取用户最大高度」时的正文高度布局、顶端对齐、超出裁剪（`DictionaryPopupLayer.webViewOverflowHeight` / `popupWebViewOverflow`）；自适应高度只改裁剪框，原生表面尺寸不随内容变，JS 上报的视口对应 `fullPopupHeight`。
-  - ② 控制器记录 `DictionaryPopupEntry.revealedOverSearchPlaceholder`（`revealRendered` / 兜底强制翻 / `show` 三条翻可见路径统一判定）；接替占位卡时 `parkedPopupLayer(fadeIn: false)` 直接满不透明，占位卡自身改为入场淡入（`popupEntranceFade`）。
-  - ③ `sendScroll` 按引擎同一公式（`SPI_GETWHEELSCROLLLINES`、`行数*100.0/3.0`、int 截断）逆算回原生 WHEEL_DELTA；整页滚动 / 0 行回落默认倍率。
-- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_popup_entrance_and_overflow_test.dart`（占位卡标记四态、`fadeIn` 首帧不透明度、占位卡淡入、WebView 溢出布局与裁剪）；`fushi/test/build/popup_wheel_native_residual_guard_test.dart` 新增「按引擎倍率逆算」源码守卫组；`fushi/integration_test/webview_wheel_units_itest.dart`（Windows 真 WebView2：一档滚轮进 DOM 的 deltaY 与原生 WHEEL_DELTA 同量）。
-- **备注**：触控板 pan-zoom 走同一入口，修正后为 1:1（此前同样 5 倍）；习惯了旧速度并调过「滚轮速度」偏好的用户会感到变慢，这是回到与原生窗口一致的尺度。
+    - WebView 始终在同一层 LayoutBuilder / ClipRect / OverflowBox 之下（溢出为 0 时取原高），不在两种树深度间搬家。
+    - 可见高度经 `DictionaryPopupWebView.visibleViewportHeight` → popup.js `__fushiSetVisibleViewportHeight` 注入；grammar tooltip / 按钮提示 / 图片灯箱改用 `__fushiVisibleViewportHeight()`（= min(innerHeight, 可见高)），收矮时不再落进被裁掉的区域（PR #1700 审查发现的回归）。
+    - 裁剪模式下 popup.js 用 ResizeObserver 观察 `#entries-container`，内容在两次渲染之间变高即经 `popupContentResized` 复报，宿主重算外壳高度；否则多出的部分被裁掉且滚不到。
+  - ② 控制器在 `beginSearchUi` 起表，翻可见时记下 `DictionaryPopupEntry.searchPlaceholderShownFor`（`revealRendered` / 兜底强制翻 / `show` 三条路径统一判定）；真弹窗接替占位卡时按 `popupEntranceProgressAfter` 接着占位卡的淡入进度淡完——不从 0 重来（露底），也不直接跳满（快速查词会「跳」一下）。占位卡自身改为入场淡入。
+  - ③ `sendScroll` 按引擎同一公式（`SPI_GETWHEELSCROLLLINES`、`行数*100.0/3.0`、int 截断）逆算回原生 WHEEL_DELTA；整页滚动 / 0 行回落默认倍率。行数进程内只读一次，与引擎「建窗时读一次」一致（运行中改设置不会两边失配）。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_popup_entrance_and_overflow_test.dart`（占位卡时长四态、淡入续播 / 复位 / 隐藏层卸载、占位卡淡入、溢出布局与裁剪与结构恒定、mixin 接线守卫）；`tools/browser-extension/grammar-tooltip-single-surface.test.js` + `tools/browser-extension/popup-visible-viewport.test.js`（收矮时 tooltip / 按钮提示 / 灯箱落在可见区内、内容尺寸复报）；`fushi/test/build/popup_wheel_native_residual_guard_test.dart` 新增「按引擎倍率逆算」源码守卫组；`fushi/integration_test/webview_wheel_units_itest.dart`（Windows 真 WebView2：一档滚轮进 DOM 的 deltaY 与原生 WHEEL_DELTA 同量）。
+- **备注**：**滚轮尺度对齐原生是所有者的决定**（2026-09-27，经 PR #1700 审查确认）：Windows 上所有 app 内 WebView 每档滚动降到原来的 1/5——阅读器连续模式每档约 500px → 100px，与 Chrome 一致；触控板 pan-zoom 也从 5 倍回到 1:1。不给阅读器补倍率，想要更快用「滚轮速度」设置调。

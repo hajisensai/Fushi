@@ -2074,10 +2074,17 @@ namespace flutter_inappwebview_plugin
     // BUG-1065（按 dpr 还原被框架除掉的倍率）仍然成立，体现在 `* dprScale` 上。
     const double dprScale =
       (deviceScaleFactor_ > 0.0f) ? static_cast<double>(deviceScaleFactor_) : 1.0;
-    UINT linesPerScroll = 3;
-    if (!SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &linesPerScroll, 0)) {
-      linesPerScroll = 3;
-    }
+    // 引擎只在建窗时读一次行数（FlutterWindow 构造里 UpdateScrollOffsetMultiplier，
+    // 之后不响应 WM_SETTINGCHANGE），运行中改「一次滚动行数」引擎仍用旧倍率。这里若每个
+    // 事件重读，改设置后两边就失配——所以同样只读一次（进程内首个滚轮事件，Flutter 窗口
+    // 早已建好，读到的就是引擎用的那个值）。
+    static const UINT linesPerScroll = [] {
+      UINT lines = 3;
+      if (!SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, &lines, 0)) {
+        lines = 3;
+      }
+      return lines;
+    }();
     // 与引擎同一公式、同一截断：引擎算 `float(行数) * 100.0 / 3.0` 后以 **int** 传给
     // SendScroll（1 行 = 33 而非 33.3），这里逐位照抄才能逆得严丝合缝。「整页滚动」
     // （WHEEL_PAGESCROLL）与 0 行都不是像素语义，回落系统默认 3 行（=100），绝不除零。
