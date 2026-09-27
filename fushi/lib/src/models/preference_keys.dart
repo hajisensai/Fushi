@@ -44,8 +44,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `[{id: 'custom:…', label, endpoint: 'https://…/api.php'}]`。只是公开网址，
   // 非凭据、跨设备。
   'ai_web_knowledge_custom_sites',
-  // String：AI 联网资料启用的站点 id，逗号分隔（内置 `wikipedia_zh` 等 + 自定义
-  // `custom:…`）。从未写过 = 全开；`''` = 用户全关。非凭据、跨设备。
+  // String：AI 联网资料**关掉**的站点 id，逗号分隔（内置 `moegirl` 等 + 自定义
+  // `custom:…`）。从未写过 = 全开（或按旧键迁移）；新增的内置站默认开。非凭据、跨设备。
+  'ai_web_knowledge_disabled_sites',
+  // String：旧版（只有三个维基时）启用的站点 id。只读迁移用，新版不再写。
   'ai_web_knowledge_sources',
   'app_locale',
   'app_ui_scale',

@@ -10,6 +10,7 @@ import 'package:fushi/src/ai/web_knowledge.dart'
         WebKnowledgeSite,
         encodeWebKnowledgeCustomSites,
         kBuiltinWebKnowledgeSites,
+        kLegacyWebKnowledgeSiteIds,
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
@@ -1918,28 +1919,45 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 启用的站点 id（内置 + 自定义）。从未写过 = 全开；写过 `''` = 用户全关——两者
-  /// 必须分得开，所以读时默认值给 null（缺键哨兵），不能给 `''`。
-  Set<String> get aiWebKnowledgeEnabledSiteIds =>
-      parseWebKnowledgeEnabledIds(
-        getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
-      ) ??
-      <String>{
-        for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites) site.id,
-        for (final WebKnowledgeSite site in aiWebKnowledgeCustomSites) site.id,
-      };
+  /// 启用的站点 id（内置 + 自定义）。
+  ///
+  /// 落盘记的是**关掉了哪些**（`ai_web_knowledge_disabled_sites`），不是开了哪些：
+  /// 记「开了哪些」时，以后新增的内置站对任何动过开关的用户都默认关；旧版客户端
+  /// 经同步写回它认识的 id 子集，还会把新站一起关掉。记「关了哪些」，新站默认开、
+  /// 旧客户端不认识的 id 也不会被它抹掉。
+  ///
+  /// 迁移：还没有新键时读旧键 `ai_web_knowledge_sources`（只可能含三个维基 id）——
+  /// 旧键里没列的维基视为关掉，其余一律开。
+  Set<String> get aiWebKnowledgeEnabledSiteIds {
+    final Set<String> all = <String>{
+      for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites) site.id,
+      for (final WebKnowledgeSite site in aiWebKnowledgeCustomSites) site.id,
+    };
+    final Set<String>? disabled = parseWebKnowledgeEnabledIds(
+      getPref('ai_web_knowledge_disabled_sites', defaultValue: null)
+          as String?,
+    );
+    if (disabled != null) return all.difference(disabled);
+    final Set<String>? legacyEnabled = parseWebKnowledgeEnabledIds(
+      getPref('ai_web_knowledge_sources', defaultValue: null) as String?,
+    );
+    if (legacyEnabled == null) return all;
+    return all.difference(
+      kLegacyWebKnowledgeSiteIds.difference(legacyEnabled),
+    );
+  }
 
   Future<void> setAiWebKnowledgeEnabledSiteIds(Set<String> ids) async {
-    // 按「内置顺序 + 自定义顺序」写出，同一组选择写出的值恒相同；已删掉的站点 id
-    // 顺手清掉，不在偏好里越攒越多。
-    final List<String> ordered = <String>[
+    // 按「内置顺序 + 自定义顺序」写出关掉的那些，同一组选择写出的值恒相同；已删掉
+    // 的站点 id 顺手清掉，不在偏好里越攒越多。
+    final List<String> disabled = <String>[
       for (final WebKnowledgeSite site in <WebKnowledgeSite>[
         ...kBuiltinWebKnowledgeSites,
         ...aiWebKnowledgeCustomSites,
       ])
-        if (ids.contains(site.id)) site.id,
+        if (!ids.contains(site.id)) site.id,
     ];
-    await setPref('ai_web_knowledge_sources', ordered.join(','));
+    await setPref('ai_web_knowledge_disabled_sites', disabled.join(','));
     notifyListeners();
   }
 

@@ -705,10 +705,29 @@ void main() {
       );
     });
 
-    test('旧版存下的 CSV 原样生效（新增的内置站不自动打开）', () async {
+    test('旧版 CSV 迁移：没列的维基视为关掉，新增的内置站默认开', () async {
       await db.setPref('ai_web_knowledge_sources', 's:wikipedia_ja');
       final PreferencesRepository fresh = await reloaded();
-      expect(fresh.aiWebKnowledgeSites, <WebKnowledgeSite>[_ja]);
+      expect(
+        fresh.aiWebKnowledgeSites.map((WebKnowledgeSite s) => s.id),
+        <String>['wikipedia_ja', 'moegirl', 'ann', 'tvmaze'],
+      );
+    });
+
+    test('落盘记关掉的站：以后新增的内置站对动过开关的用户也默认开', () async {
+      await prefs.setAiWebKnowledgeEnabledSiteIds(<String>{'wikipedia_ja'});
+      // 模拟一个新版本多出来的内置站：它不在关闭列表里，所以是开的。
+      final String disabled =
+          prefs.getPref('ai_web_knowledge_disabled_sites') as String;
+      expect(disabled.split(','), isNot(contains('some_future_site')));
+      expect(disabled.split(','), contains('ann'));
+      // 旧键不再写：旧版客户端经同步写回它认识的子集，不会影响新版。
+      await db.setPref('ai_web_knowledge_sources', 's:wikipedia_zh');
+      final PreferencesRepository fresh = await reloaded();
+      expect(
+        fresh.aiWebKnowledgeSites.map((WebKnowledgeSite s) => s.id),
+        <String>['wikipedia_ja'],
+      );
     });
 
     test('写空集 = 全关，重载后仍是全关（不回落默认）', () async {
@@ -725,11 +744,56 @@ void main() {
         'custom:gone',
         'unknown',
       });
-      expect(prefs.getPref('ai_web_knowledge_sources'), 'ann,custom:1');
+      expect(
+        prefs.getPref('ai_web_knowledge_disabled_sites'),
+        'wikipedia_zh,wikipedia_ja,wikipedia_en,moegirl,tvmaze',
+      );
       expect((await reloaded()).aiWebKnowledgeSites, <WebKnowledgeSite>[
         _ann,
         custom,
       ]);
     });
+  });
+
+  test('自定义站 id 只收 custom: + 安全字符（带逗号会拆坏开关列表）', () {
+    expect(
+      WebKnowledgeSite.custom(
+        id: 'custom:a,b',
+        label: 'x',
+        endpoint: 'https://example.org/api.php',
+      ),
+      isNull,
+    );
+    expect(
+      WebKnowledgeSite.custom(
+        id: 'custom:abc_1-2',
+        label: 'x',
+        endpoint: 'https://example.org/api.php',
+      ),
+      isNotNull,
+    );
+  });
+
+  test('不跟重定向：3xx 按该站失败处理（https 不会被 302 到 http 绕过）', () async {
+    final List<http.BaseRequest> requests = <http.BaseRequest>[];
+    final WebKnowledgeClient client = WebKnowledgeClient(
+      sites: <WebKnowledgeSite>[
+        WebKnowledgeSite.custom(
+          id: 'custom:r',
+          label: 'R',
+          endpoint: 'https://example.org/api.php',
+        )!,
+      ],
+      client: MockClient((http.Request request) async {
+        requests.add(request);
+        return http.Response(
+          '',
+          302,
+          headers: <String, String>{'location': 'http://example.org/api.php'},
+        );
+      }),
+    );
+    expect(await client.search('x'), isEmpty);
+    expect(requests.single.followRedirects, isFalse);
   });
 }

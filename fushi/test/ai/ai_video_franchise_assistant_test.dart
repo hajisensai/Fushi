@@ -29,14 +29,20 @@ class _FakeWeb extends WebKnowledgeClient {
   }
 }
 
-WebKnowledgePage _page(String title, String text, {bool isList = false}) =>
-    WebKnowledgePage(
-      site: kBuiltinWebKnowledgeSites.first,
-      title: title,
-      url: Uri.parse('https://zh.wikipedia.org/wiki/$title'),
-      text: text,
-      isList: isList,
-    );
+WebKnowledgePage _page(
+  String title,
+  String text, {
+  bool isList = false,
+  String siteId = 'wikipedia_zh',
+}) => WebKnowledgePage(
+  site: kBuiltinWebKnowledgeSites.firstWhere(
+    (WebKnowledgeSite site) => site.id == siteId,
+  ),
+  title: title,
+  url: Uri.parse('https://example.org/$siteId/$title'),
+  text: text,
+  isList: isList,
+);
 
 VideoDiscoveryItem _item(
   String id,
@@ -81,30 +87,33 @@ void main() {
     });
   });
 
-  test('pickFranchisePages：列表类条目排前、去重、截断', () {
+  test('pickFranchisePages：列表类条目排前、每站一页、截断', () {
     final List<WebKnowledgePage> picked = pickFranchisePages(<WebKnowledgePage>[
-      _page('哆啦A梦', 'x' * 20000),
+      _page('哆啦A梦', 'x' * 20000, siteId: 'wikipedia_ja'),
       _page('哆啦A梦电影作品列表', 'list'),
-      _page('哆啦A梦电影作品列表', 'list'),
+      _page('哆啦A梦（系列）', 'other page of the same site'),
     ]);
-    expect(picked.first.title, '哆啦A梦电影作品列表');
-    expect(picked, hasLength(2));
+    expect(picked.map((WebKnowledgePage p) => p.title), <String>[
+      '哆啦A梦电影作品列表',
+      '哆啦A梦',
+    ]);
     expect(picked.last.text.length, kAiFranchiseMaxCharsPerPage);
   });
 
-  test('pickFranchisePages：清单型站点（isList）排在「作品列表」条目之前，同档保持原序', () {
+  test('pickFranchisePages：百科作品列表与 ANN 清单同档；TVmaze 降一档，不挤掉作品列表', () {
     final List<WebKnowledgePage> picked = pickFranchisePages(<WebKnowledgePage>[
-      _page('哆啦A梦', 'plain'),
+      _page('哆啦A梦', 'plain', siteId: 'moegirl'),
+      _page('TVmaze: 哆啦A梦', 'tvmaze', isList: true, siteId: 'tvmaze'),
       _page('哆啦A梦电影作品列表', 'list'),
-      _page('Anime News Network: 哆啦A梦', 'ann', isList: true),
-      _page('TVmaze: 哆啦A梦', 'tvmaze', isList: true),
+      _page('Anime News Network: 哆啦A梦', 'ann', isList: true, siteId: 'ann'),
+      _page('Anime News Network: ドラえもん', 'ann2', isList: true, siteId: 'ann'),
+      _page('List of Doraemon films', 'en', siteId: 'wikipedia_en'),
     ]);
     expect(picked.map((WebKnowledgePage p) => p.title), <String>[
-      'Anime News Network: 哆啦A梦',
-      'TVmaze: 哆啦A梦',
       '哆啦A梦电影作品列表',
+      'Anime News Network: 哆啦A梦',
+      'List of Doraemon films',
     ]);
-    expect(picked.first.isList, isTrue);
   });
 
   group('aiFranchiseWorkMatches', () {

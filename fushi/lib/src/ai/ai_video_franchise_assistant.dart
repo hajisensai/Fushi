@@ -144,19 +144,29 @@ List<WebKnowledgePage> pickFranchisePages(List<WebKnowledgePage> pages) {
     r'(list of|films|filmography|作品列表|列表|剧场版|劇場版|映画|一覧|シリーズ)',
     caseSensitive: false,
   );
-  int rank(WebKnowledgePage page) => page.isList
-      ? 2
-      : listLike.hasMatch(page.title)
-      ? 1
-      : 0;
+  // 百科的「作品列表」条目与 ANN 清单同档最优先；TVmaze 只收剧集、且是模糊搜索，
+  // 对剧场版系列帮不上，降一档——否则它会把维基的 `List of … films` 挤出名额。
+  int rank(WebKnowledgePage page) {
+    if (page.site.kind == WebKnowledgeSiteKind.tvMaze) return 1;
+    if (page.isList || listLike.hasMatch(page.title)) return 2;
+    return 0;
+  }
+
   // 稳定排序：同档内保持站点顺序（用户启用的站点顺序即优先级）。
   final List<WebKnowledgePage> ordered = unique.values.toList();
   mergeSort(
     ordered,
     compare: (WebKnowledgePage a, WebKnowledgePage b) => rank(b) - rank(a),
   );
+  // 每个站最多一页：两次查询（系列名 + 原名）会让同一个站出两页清单，名额被
+  // 一个站吃掉。
+  final Set<String> seenSites = <String>{};
+  final List<WebKnowledgePage> picked = <WebKnowledgePage>[
+    for (final WebKnowledgePage page in ordered)
+      if (seenSites.add(page.site.id)) page,
+  ];
   return <WebKnowledgePage>[
-    for (final WebKnowledgePage page in ordered.take(kAiFranchiseMaxPages))
+    for (final WebKnowledgePage page in picked.take(kAiFranchiseMaxPages))
       WebKnowledgePage(
         site: page.site,
         title: page.title,

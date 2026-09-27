@@ -67,10 +67,7 @@ class WebKnowledgeSite {
     required String endpoint,
   }) {
     final Uri? uri = validateWebKnowledgeEndpoint(endpoint);
-    if (uri == null || !id.startsWith(kWebKnowledgeCustomIdPrefix)) {
-      return null;
-    }
-    if (id.length == kWebKnowledgeCustomIdPrefix.length) return null;
+    if (uri == null || !_customIdPattern.hasMatch(id)) return null;
     final String name = label.trim();
     return WebKnowledgeSite(
       id: id,
@@ -113,6 +110,17 @@ class WebKnowledgeSite {
 }
 
 const String kWebKnowledgeCustomIdPrefix = 'custom:';
+
+/// 自定义站 id 的合法形态：`custom:` + 字母数字 `_-`。id 进启用 / 关闭列表的
+/// CSV，带 `,` 的 id（同步来的或手改的 JSON）会把那份 CSV 拆坏。
+final RegExp _customIdPattern = RegExp(r'^custom:[A-Za-z0-9_-]+$');
+
+/// 只有三个维基时的旧偏好里可能出现的 id（迁移用）。
+const Set<String> kLegacyWebKnowledgeSiteIds = <String>{
+  'wikipedia_zh',
+  'wikipedia_ja',
+  'wikipedia_en',
+};
 
 /// 内置站。顺序即默认检索 / 结果排列顺序；id 与旧版 `WebKnowledgeSource.storageKey`
 /// 逐字相同，已存的偏好值不用迁移。
@@ -510,7 +518,10 @@ class WebKnowledgeClient {
       _read(uri, accept).timeout(requestTimeout);
 
   Future<String> _read(Uri uri, String accept) async {
+    // 不跟重定向：自定义站只允许 https，被 302 到 http:// 就绕过了这条校验；
+    // 几个内置接口本身也不重定向。3xx 按非 200 失败处理。
     final http.Request request = http.Request('GET', uri)
+      ..followRedirects = false
       ..headers['User-Agent'] = fushiUserAgent('web-knowledge')
       ..headers['Accept'] = accept;
     final http.StreamedResponse response = await _client.send(request);
