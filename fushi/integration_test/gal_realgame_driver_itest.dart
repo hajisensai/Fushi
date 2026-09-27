@@ -349,9 +349,15 @@ void main() {
           switch (op) {
             case 'launch':
             case 'launchoff':
-              // launch <exe> 走 auto 转区档；launchoff <exe> 走 off（用户库里除 9-nine
-              // 外都是 off，复现原始路径必须按库里的档位来）。
-              final bool localeOff = op == 'launchoff';
+            case 'launchon':
+              // launch <exe> 走缺省档（kGalDefaultJapaneseLocaleMode，现为 off）；
+              // launchoff <exe> 显式 off；launchon <exe> 显式 on = 用户在游戏右键菜单
+              // 打开「日文转区」（BGI 等在非日语系统上按 GetSystemDefaultLangID 静默退出）。
+              final GalJapaneseLocaleMode localeMode = switch (op) {
+                'launchoff' => GalJapaneseLocaleMode.off,
+                'launchon' => GalJapaneseLocaleMode.on,
+                _ => kGalDefaultJapaneseLocaleMode,
+              };
               final String exe = cmd.substring(op.length).trim();
               final bool is32 =
                   await EngineHookGalAudioSource.exeIs32Bit(exe) ?? false;
@@ -361,9 +367,7 @@ void main() {
                 exe,
                 workdir: p.dirname(exe),
                 gameTitle: p.basenameWithoutExtension(exe),
-                japaneseLocaleMode: localeOff
-                    ? GalJapaneseLocaleMode.off
-                    : kGalDefaultJapaneseLocaleMode,
+                japaneseLocaleMode: localeMode,
               );
               out('#$seq launch launched=${result.launched} result=$result');
               out('#$seq ${describeState()}');
