@@ -187,6 +187,23 @@ protection as `seekMs` (authoritative cue re-sync + suppress the lagging positio
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor`).
 
+## BUG-2731: swipe / double-tap seeks also report their target (`onSeekEnd`)
+
+`lib/media_kit_video_controls/src/controls/material.dart`, `onHorizontalDragEnd`
+and the two double-tap seek indicators' `onSubmitted`.
+
+These three commit points call `controller(context).player.seek(...)` directly, so
+the host never learned where playback was headed. On a remote stream a seek
+re-buffers for seconds while `player.state.position` still reports the **old**
+position; the host's interconnect auto-quality then read that buffering as a
+network stall, downgraded, and reopened the stream at the stale position — the
+swipe was silently undone ("滑动一下会变成没滑动"). Each commit point now calls
+`_theme(context).onSeekEnd?.call(target)` right before `player.seek`, exactly like
+the seek bars, so the host's `notifyExternalSeek` records the in-flight target.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-2731: swipe / double-tap seeks report onSeekEnd(target)`).
+
 ## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart`,
