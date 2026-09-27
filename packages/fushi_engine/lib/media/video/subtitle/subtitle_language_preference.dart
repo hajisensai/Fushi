@@ -36,8 +36,10 @@ import 'package:fushi_engine/models/content_language.dart';
 /// 脏 token（`chs` / `简体` / `ja[cc]`），这个的输入是**声明过的语言标签**。两者
 /// 产出同一套码，所以结果可以直接比。
 String? normalizeSubtitleLanguageCode(String? tag) {
-  final String normalized =
-      (tag ?? '').trim().toLowerCase().replaceAll('_', '-');
+  final String normalized = (tag ?? '').trim().toLowerCase().replaceAll(
+    '_',
+    '-',
+  );
   if (normalized.isEmpty) return null;
   final String base = normalized.split('-').first;
   if (base.isEmpty) return null;
@@ -75,6 +77,40 @@ String? normalizeSubtitleLanguageCode(String? tag) {
   // 两字母主标签直接用；三字母且不在别名表里也原样返回（比丢弃信息强）。
   return base;
 }
+
+/// 字幕语言主码 → 母语写法显示名；表外回退原码大写。
+///
+/// 母语写法与界面语言无关（找「Español」的人认得这个词），故不走 i18n。键域是
+/// [normalizeSubtitleLanguageCode] 的输出，所以 `ja-JP` / `jpn` 先归一再查。
+String subtitleLanguageNativeName(String code) {
+  final String? normalized = normalizeSubtitleLanguageCode(code);
+  return _kSubtitleLanguageNativeNames[normalized] ??
+      (normalized ?? code).toUpperCase();
+}
+
+const Map<String, String> _kSubtitleLanguageNativeNames = <String, String>{
+  'ja': '日本語',
+  'zh': '中文',
+  'en': 'English',
+  'ko': '한국어',
+  'es': 'Español',
+  'pt': 'Português',
+  'fr': 'Français',
+  'de': 'Deutsch',
+  'it': 'Italiano',
+  'ru': 'Русский',
+  'ar': 'العربية',
+  'hi': 'हिन्दी',
+  'th': 'ไทย',
+  'vi': 'Tiếng Việt',
+  'id': 'Bahasa Indonesia',
+  'ms': 'Bahasa Melayu',
+  'tr': 'Türkçe',
+  'nl': 'Nederlands',
+  'pl': 'Polski',
+  'uk': 'Українська',
+  'sv': 'Svenska',
+};
 
 /// 解析自动下字幕的**首选语言**；无法确定返回 null（= 不表态，保持旧行为）。
 ///

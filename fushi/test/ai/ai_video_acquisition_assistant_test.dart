@@ -119,13 +119,39 @@ void main() {
     test('枚举越界逐字段丢弃：quality "4k" 丢、mode 留', () {
       final VideoAcquisitionIntent intent = _parse(
         '{"intent": "provide", "quality": "4k", "mode": "download", '
-        '"category": "ova", "subtitleLanguage": "fr"}',
+        '"category": "ova", "subtitleLanguage": "xx"}',
       );
       expect(intent.kind, VideoAcquisitionIntentKind.provide);
       expect(intent.patch.quality, isNull);
       expect(intent.patch.category, isNull);
-      expect(intent.patch.subtitleLanguage, isNull, reason: 'fr 不在白名单');
+      expect(intent.patch.subtitleLanguage, isNull, reason: 'xx 不在白名单');
       expect(intent.patch.mode, VideoAcquisitionMode.download);
+    });
+
+    test('字幕语言白名单覆盖 OpenSubtitles 常见语言（fra / es-ES 归一）', () {
+      expect(
+        _parse(
+          '{"intent": "provide", "subtitleLanguage": "fra"}',
+        ).patch.subtitleLanguage,
+        'fr',
+      );
+      expect(
+        _parse(
+          '{"intent": "provide", "subtitleLanguage": "es-ES"}',
+        ).patch.subtitleLanguage,
+        'es',
+      );
+    });
+
+    test('quality "best" / "1440p" 是合法档位', () {
+      expect(
+        _parse('{"intent": "provide", "quality": "best"}').patch.quality,
+        VideoAcquisitionQuality.best,
+      );
+      expect(
+        _parse('{"intent": "provide", "quality": "1440p"}').patch.quality,
+        VideoAcquisitionQuality.p1440,
+      );
     });
 
     test('枚举比对忽略大小写；quality 走 fromStorageKey', () {

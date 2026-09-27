@@ -1850,7 +1850,8 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   }
 
   /// 「AI 下视频」的默认画质。三态：`''` 未设置（对话里第一次问、按「以后默认」
-  /// 勾选写回）/ `ask` 每次询问 / 固定档（`2160p` `1080p` `720p` `480p` `any`）。
+  /// 勾选写回）/ `ask` 每次询问 / 固定档（`best` `2160p` `1440p` `1080p` `720p`
+  /// `480p` `any`）。
   /// 类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadQuality =>
       getPref('ai_video_download_quality', defaultValue: '') as String;
@@ -1860,8 +1861,29 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 「AI 下视频」的片源偏好（只排序不过滤）：`''` 不限 / `best` / `bluray` / `web`。
+  /// 类型化读法 `VideoAcquisitionSourcePref.parse`。
+  String get aiVideoDownloadSource =>
+      getPref('ai_video_download_source', defaultValue: '') as String;
+
+  Future<void> setAiVideoDownloadSource(String value) async {
+    await setPref('ai_video_download_source', value);
+    notifyListeners();
+  }
+
+  /// 「AI 下视频」的码率偏好（只排序不过滤）：`''` 不限 / `high` / `low`。
+  /// 类型化读法 `VideoAcquisitionBitratePref.parse`。
+  String get aiVideoDownloadBitrate =>
+      getPref('ai_video_download_bitrate', defaultValue: '') as String;
+
+  Future<void> setAiVideoDownloadBitrate(String value) async {
+    await setPref('ai_video_download_bitrate', value);
+    notifyListeners();
+  }
+
   /// 「AI 下视频」的字幕语言。取值：`''` 未设置（第一次问、按勾选写回）/ `ask`
-  /// 每次询问 / `original` 跟随作品语言 / 语言码（`ja` `zh` `en` `ko`）/
+  /// 每次询问 / `original` 跟随作品语言 / 语言码（见
+  /// `kVideoAcquisitionSubtitleLanguageCodes`）/
   /// `none` 不配字幕。与 [jimakuDefaultLanguage] 分开：那是字幕面板的全局默认，
   /// 这是 AI 对话流程自己的默认。类型化读法见 `ai_video_acquisition_preferences.dart`。
   String get aiVideoDownloadSubtitleLanguage =>

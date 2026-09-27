@@ -28,7 +28,12 @@ enum VideoAcquisitionMode { download, subscribe }
 
 /// 画质档位。`storageKey` 同时是偏好值与对话补丁里的枚举串。
 enum VideoAcquisitionQuality {
+  /// 最高可用：取结果里能解析出的最高分辨率那一档（永不触发「没有这档」追问）；
+  /// 一张都解析不出分辨率时等同 [any]。
+  best('best', null),
+
   p2160('2160p', 2160),
+  p1440('1440p', 1440),
   p1080('1080p', 1080),
   p720('720p', 720),
   p480('480p', 480),
@@ -50,8 +55,9 @@ enum VideoAcquisitionQuality {
   }
 
   /// 候选 / 版本卡的 `resolution` 串（`1080p` / `1080P` / `1080`）是否就是本档。
+  /// [best] 依赖整批结果，单条判不了，由 `filterResourceGroups` 先换算成具体档。
   bool matchesResolution(String? resolution) {
-    if (this == any) return true;
+    if (this == any || this == best) return true;
     final int? parsed = parseResolutionHeight(resolution);
     return parsed != null && parsed == height;
   }
@@ -65,6 +71,60 @@ enum VideoAcquisitionQuality {
   }
 }
 
+/// 片源偏好（`ai_video_download_source`）。只**排序**不过滤：偏好的片源排到前面，
+/// 没有就照常用其它版本——片源标签在发布标题里经常缺省（很多 WEB 源不写 WEB），
+/// 硬过滤会把「有版本」变成「没版本」。
+enum VideoAcquisitionSourcePref {
+  /// 不限：保持版本卡的相关度次序（旧行为）。
+  any(''),
+
+  /// 最佳：Remux > 蓝光 > WEB-DL > WEBRip > TV > DVD > 未标注。
+  best('best'),
+
+  /// 蓝光（BDRip / BDMV / Remux）优先。
+  bluray('bluray'),
+
+  /// 网络源（WEB-DL / WEBRip）优先。
+  web('web');
+
+  const VideoAcquisitionSourcePref(this.storageKey);
+
+  final String storageKey;
+
+  /// 认不出 → [any]（等价于没设置）。
+  static VideoAcquisitionSourcePref parse(String? raw) {
+    final String key = raw?.trim().toLowerCase() ?? '';
+    for (final VideoAcquisitionSourcePref value in values) {
+      if (value.storageKey == key) return value;
+    }
+    return any;
+  }
+}
+
+/// 码率偏好（`ai_video_download_bitrate`）。按每集体积估算，同样只排序不过滤。
+enum VideoAcquisitionBitratePref {
+  /// 不限（旧行为）。
+  any(''),
+
+  /// 高码率（每集体积大）优先。
+  high('high'),
+
+  /// 小体积优先。
+  low('low');
+
+  const VideoAcquisitionBitratePref(this.storageKey);
+
+  final String storageKey;
+
+  static VideoAcquisitionBitratePref parse(String? raw) {
+    final String key = raw?.trim().toLowerCase() ?? '';
+    for (final VideoAcquisitionBitratePref value in values) {
+      if (value.storageKey == key) return value;
+    }
+    return any;
+  }
+}
+
 /// 偏好值 `ask`：每次都问（画质 / 字幕语言两个偏好共用）。
 const String kVideoAcquisitionPrefAsk = 'ask';
 
@@ -75,12 +135,33 @@ const String kVideoAcquisitionSubtitleOriginal = 'original';
 /// 字幕语言偏好值 / 槽位值 `none`：不自动配字幕（入队时字幕策略 = none）。
 const String kVideoAcquisitionSubtitleNone = 'none';
 
-/// 用户可选的具体字幕语言码（与 `kJimakuLanguageCodes` 同值域，按 UI 顺序）。
+/// 用户可选的具体字幕语言码（按 UI 顺序；显示名见 `subtitleLanguageNativeName`）。
+///
+/// 不再只跟 Jimaku 的四种走：字幕阶段还会问 OpenSubtitles（上百种语言），只给
+/// 四种等于把西语、法语、俄语……用户挡在门外。值域必须是
+/// `normalizeSubtitleLanguageCode` 的输出（两字母主码），否则偏好解析认不出。
 const List<String> kVideoAcquisitionSubtitleLanguageCodes = <String>[
   'ja',
   'zh',
   'en',
   'ko',
+  'es',
+  'pt',
+  'fr',
+  'de',
+  'it',
+  'ru',
+  'ar',
+  'hi',
+  'th',
+  'vi',
+  'id',
+  'ms',
+  'tr',
+  'nl',
+  'pl',
+  'uk',
+  'sv',
 ];
 
 /// 对话里会问到的槽位。
@@ -691,6 +772,8 @@ class VideoAcquisitionSource {
 class VideoAcquisitionDefaults {
   const VideoAcquisitionDefaults({
     this.qualityPref = '',
+    this.sourcePref = VideoAcquisitionSourcePref.any,
+    this.bitratePref = VideoAcquisitionBitratePref.any,
     this.subtitleLanguagePref = '',
     this.sources = const <VideoAcquisitionSource>[],
     this.defaultSourceId,
@@ -699,6 +782,12 @@ class VideoAcquisitionDefaults {
 
   /// `ai_video_download_quality`：`''` 未设置 / `ask` / 固定档。
   final String qualityPref;
+
+  /// `ai_video_download_source`：版本排序时偏好的片源。
+  final VideoAcquisitionSourcePref sourcePref;
+
+  /// `ai_video_download_bitrate`：版本排序时偏好的码率。
+  final VideoAcquisitionBitratePref bitratePref;
 
   /// `ai_video_download_subtitle_language`：`''` 未设置 / `ask` / `original` /
   /// 语言码 / `none`。

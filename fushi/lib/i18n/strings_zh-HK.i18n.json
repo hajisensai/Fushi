@@ -5628,5 +5628,21 @@
   "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
   "delete_statistics_book_desc": "該書的閱讀時長、閱讀字數與查詞/製卡計數將從統計中移除，並同步到其他裝置",
   "delete_statistics_manga_desc": "該漫畫的閱讀時長、字數、頁數與查詞/製卡計數將從統計中移除，並同步到其他裝置",
-  "delete_statistics_game_desc": "該遊戲的遊玩時長與文字字數將從本機統計中移除"
+  "delete_statistics_game_desc": "該遊戲的遊玩時長與文字字數將從本機統計中移除",
+  "ai_feature_default_provider": "Default provider",
+  "ai_feature_default_provider_summary": "Every feature below uses this provider unless you pick another one for it",
+  "ai_feature_follow_default": "Use default (${name})",
+  "ai_feature_disabled": "Don't use AI",
+  "ai_video_download_quality_best": "Best available",
+  "ai_video_download_source": "Preferred source",
+  "ai_video_download_source_hint": "Versions from this source are tried first; others are still used when it is missing. Blu-ray includes BDRip and Remux.",
+  "ai_video_download_source_any": "Any",
+  "ai_video_download_source_best": "Best (Remux > Blu-ray > WEB-DL > WEBRip > TV > DVD)",
+  "ai_video_download_source_bluray": "Blu-ray (BD)",
+  "ai_video_download_source_web": "Web (WEB-DL / WEBRip)",
+  "ai_video_download_bitrate": "Bitrate",
+  "ai_video_download_bitrate_hint": "Estimated from the size per episode; ranks versions that already match the quality and source.",
+  "ai_video_download_bitrate_any": "Any",
+  "ai_video_download_bitrate_high": "Highest bitrate",
+  "ai_video_download_bitrate_low": "Smallest size"
 }

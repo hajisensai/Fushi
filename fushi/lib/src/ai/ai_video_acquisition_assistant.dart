@@ -186,7 +186,8 @@ Rules:
   the list empty when no work is mentioned.
 - "mode": "download" for "download / get / grab it now"; "subscribe" for
   "follow / subscribe / keep getting new episodes".
-- "quality": map "4K" / "2160" to "2160p", "1080" / "full HD" to "1080p",
+- "quality": map "best / highest / as good as possible" to "best", "4K" /
+  "2160" to "2160p", "2K" / "1440" to "1440p", "1080" / "full HD" to "1080p",
   "720" to "720p", "480" / "SD" / "small" to "480p", "any / whatever" to "any".
 - "subtitleLanguage": "original" when the user wants subtitles in the work's
   own language; a language code for an explicit language; "none" when the

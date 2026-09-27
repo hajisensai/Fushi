@@ -6,6 +6,7 @@
 /// 是 service 层可选的一步。
 library;
 
+import 'package:fushi_engine/media/torrent/anime_release_descriptor.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
@@ -43,8 +44,9 @@ class VideoAcquisitionResourceOutcome {
   final List<String> availableResolutions;
 }
 
-/// 画质精确过滤（`quality.matchesResolution`），`any` 不过滤；订阅模式再剔除
-/// `deriveStrictVideoSubscriptionFilter(representative) == null` 的卡。
+/// 画质精确过滤（`quality.matchesResolution`），`any` 不过滤，`best` 先换算成结果里
+/// 最高的那一档；订阅模式再剔除 `deriveStrictVideoSubscriptionFilter(representative)
+/// == null` 的卡；最后按片源 / 码率偏好**稳定**重排（都是 `any` 时保持输入次序）。
 ///
 /// 画质不命中时**不静默降级**：返回 `resolutionMismatch` + 可用分辨率，让对话层去问
 /// 「没有 1080p，只有 720p / 2160p，要吗？」。
@@ -52,6 +54,8 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   List<VideoResourceVersionGroup> groups, {
   required VideoAcquisitionMode mode,
   required VideoAcquisitionQuality quality,
+  VideoAcquisitionSourcePref source = VideoAcquisitionSourcePref.any,
+  VideoAcquisitionBitratePref bitrate = VideoAcquisitionBitratePref.any,
 }) {
   if (groups.isEmpty) {
     return const VideoAcquisitionResourceOutcome(
@@ -60,9 +64,16 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
     );
   }
   final List<String> available = availableResolutionsOf(groups);
+  final int? bestHeight = quality == VideoAcquisitionQuality.best
+      ? _maxHeightOf(groups)
+      : null;
   final List<VideoResourceVersionGroup> byQuality = <VideoResourceVersionGroup>[
     for (final VideoResourceVersionGroup group in groups)
-      if (quality.matchesResolution(group.resolution)) group,
+      if (bestHeight == null
+          ? quality.matchesResolution(group.resolution)
+          : VideoAcquisitionQuality.parseResolutionHeight(group.resolution) ==
+                bestHeight)
+        group,
   ];
   if (byQuality.isEmpty) {
     return VideoAcquisitionResourceOutcome(
@@ -73,7 +84,7 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   }
   if (mode == VideoAcquisitionMode.download) {
     return VideoAcquisitionResourceOutcome(
-      eligible: List<VideoResourceVersionGroup>.unmodifiable(byQuality),
+      eligible: rankResourceGroups(byQuality, source: source, bitrate: bitrate),
       reason: VideoAcquisitionResourceReason.ok,
       availableResolutions: available,
     );
@@ -92,10 +103,120 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
     );
   }
   return VideoAcquisitionResourceOutcome(
-    eligible: List<VideoResourceVersionGroup>.unmodifiable(subscribable),
+    eligible: rankResourceGroups(
+      subscribable,
+      source: source,
+      bitrate: bitrate,
+    ),
     reason: VideoAcquisitionResourceReason.ok,
     availableResolutions: available,
   );
+}
+
+int? _maxHeightOf(List<VideoResourceVersionGroup> groups) {
+  int? best;
+  for (final VideoResourceVersionGroup group in groups) {
+    final int? height = VideoAcquisitionQuality.parseResolutionHeight(
+      group.resolution,
+    );
+    if (height != null && (best == null || height > best)) best = height;
+  }
+  return best;
+}
+
+/// 按片源、再按码率偏好**稳定**重排；两个偏好都是 `any` 时原样返回输入次序
+/// （= 版本卡的相关度次序，见 `buildVideoResourceVersionGroups`）。
+///
+/// 码率拿不到（没有体积、只有整季合集）的卡排在有估值的卡后面，两个方向都一样——
+/// 「不知道」既不算大也不算小。
+List<VideoResourceVersionGroup> rankResourceGroups(
+  List<VideoResourceVersionGroup> groups, {
+  required VideoAcquisitionSourcePref source,
+  required VideoAcquisitionBitratePref bitrate,
+}) {
+  final List<
+    ({int index, VideoResourceVersionGroup group, int source, int? bytes})
+  >
+  keyed =
+      <({int index, VideoResourceVersionGroup group, int source, int? bytes})>[
+        for (int i = 0; i < groups.length; i++)
+          (
+            index: i,
+            group: groups[i],
+            source: _sourceScore(groups[i], source),
+            bytes: bitrate == VideoAcquisitionBitratePref.any
+                ? null
+                : estimatedBytesPerEpisode(groups[i]),
+          ),
+      ];
+  keyed.sort((a, b) {
+    final int bySource = b.source.compareTo(a.source);
+    if (bySource != 0) return bySource;
+    final int byBytes = _compareBytes(a.bytes, b.bytes, bitrate);
+    if (byBytes != 0) return byBytes;
+    return a.index.compareTo(b.index);
+  });
+  return List<VideoResourceVersionGroup>.unmodifiable(
+    <VideoResourceVersionGroup>[for (final entry in keyed) entry.group],
+  );
+}
+
+int _compareBytes(int? a, int? b, VideoAcquisitionBitratePref bitrate) {
+  if (bitrate == VideoAcquisitionBitratePref.any || a == b) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  return bitrate == VideoAcquisitionBitratePref.high
+      ? b.compareTo(a)
+      : a.compareTo(b);
+}
+
+/// 片源分数，越大越靠前。判据只用 [parseAnimeReleaseDescriptor]（订阅规则也用它），
+/// 不在这里另写一套正则。
+int _sourceScore(
+  VideoResourceVersionGroup group,
+  VideoAcquisitionSourcePref pref,
+) {
+  if (pref == VideoAcquisitionSourcePref.any) return 0;
+  final AnimeVideoSource source = parseAnimeReleaseDescriptor(
+    group.representative.title,
+  ).videoSource;
+  return switch (pref) {
+    VideoAcquisitionSourcePref.any => 0,
+    VideoAcquisitionSourcePref.bluray =>
+      source == AnimeVideoSource.bluRay || source == AnimeVideoSource.remux
+          ? 1
+          : 0,
+    VideoAcquisitionSourcePref.web =>
+      source == AnimeVideoSource.webDl || source == AnimeVideoSource.webRip
+          ? 1
+          : 0,
+    VideoAcquisitionSourcePref.best => switch (source) {
+      AnimeVideoSource.remux => 6,
+      AnimeVideoSource.bluRay => 5,
+      AnimeVideoSource.webDl => 4,
+      AnimeVideoSource.webRip => 3,
+      AnimeVideoSource.television => 2,
+      AnimeVideoSource.dvd => 1,
+      AnimeVideoSource.unknown => 0,
+    },
+  };
+}
+
+/// 每集平均体积（码率的代理量）；估不出返回 null。
+///
+/// 只数**单集**发布：整季合集的体积要除以集数，而合集标题里的集数范围本就不可靠
+/// （见 `episodeNumberFromReleaseTitle` 的注释），除错了比不估更糟。电影没有
+/// 合集之分，全部成员都算。
+int? estimatedBytesPerEpisode(VideoResourceVersionGroup group) {
+  int total = 0;
+  int count = 0;
+  for (final VideoResourceCandidate member in group.members) {
+    final int size = member.sizeBytes ?? 0;
+    if (size <= 0 || isLikelyBatchVideoRelease(member.title)) continue;
+    total += size;
+    count++;
+  }
+  return count == 0 ? null : total ~/ count;
 }
 
 /// 一张卡在当前模式 / 集选择下的落地计划；null = 这张卡给不出（进下一张）。

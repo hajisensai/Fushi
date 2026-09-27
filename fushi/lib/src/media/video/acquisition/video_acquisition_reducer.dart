@@ -83,7 +83,11 @@ VideoAcquisitionReduction reduceVideoAcquisition(
       e,
       defaults,
     ),
-    VideoAcquisitionResourcesLoadedEvent e => _onResourcesLoaded(state, e),
+    VideoAcquisitionResourcesLoadedEvent e => _onResourcesLoaded(
+      state,
+      e,
+      defaults,
+    ),
     VideoAcquisitionSubmittedEvent e => _onSubmitted(state, e),
     VideoAcquisitionFailedEvent e => _onFailed(state, e),
     VideoAcquisitionCancelEvent _ => _cancel(state),
@@ -231,7 +235,7 @@ VideoAcquisitionReduction _resumeAfterPatch(
           patch.episode != null ||
           patch.episodeRange != null ||
           patch.allEpisodes != null;
-      if (refilter) return _refilter(state);
+      if (refilter) return _refilter(state, defaults);
       return (_reask(state), _noEffects);
     case VideoAcquisitionStage.idle:
     case VideoAcquisitionStage.resolvingWork:
@@ -1050,6 +1054,7 @@ VideoAcquisitionReduction _applyChoice(
         state.copyWith(
           slots: state.slots.copyWith(quality: _qualityForResolution(optionId)),
         ),
+        defaults,
       );
     case VideoAcquisitionSlot.subscribeFallback:
       if (optionId == kVideoAcquisitionOptionCancel) return _cancel(state);
@@ -1060,6 +1065,7 @@ VideoAcquisitionReduction _applyChoice(
         state.copyWith(
           slots: state.slots.copyWith(mode: VideoAcquisitionMode.download),
         ),
+        defaults,
       );
   }
 }
@@ -1161,6 +1167,7 @@ VideoAcquisitionQuality _qualityForResolution(String resolution) {
   for (final VideoAcquisitionQuality quality
       in VideoAcquisitionQuality.values) {
     if (quality != VideoAcquisitionQuality.any &&
+        quality != VideoAcquisitionQuality.best &&
         quality.matchesResolution(resolution)) {
       return quality;
     }
@@ -1175,6 +1182,7 @@ VideoAcquisitionQuality _qualityForResolution(String resolution) {
 VideoAcquisitionReduction _onResourcesLoaded(
   VideoAcquisitionState state,
   VideoAcquisitionResourcesLoadedEvent event,
+  VideoAcquisitionDefaults defaults,
 ) {
   if (state.stage != VideoAcquisitionStage.resolvingResources) {
     return (state, _noEffects);
@@ -1183,17 +1191,23 @@ VideoAcquisitionReduction _onResourcesLoaded(
     groups: buildVideoResourceVersionGroups(event.items),
     busy: false,
   );
-  return _refilter(next);
+  return _refilter(next, defaults);
 }
 
-/// 用当前 mode / quality 重过滤 `groups`，并展示第一张给得出计划的卡。
-VideoAcquisitionReduction _refilter(VideoAcquisitionState state) {
+/// 用当前 mode / quality 重过滤 `groups`（再按片源 / 码率偏好排序），并展示第一张
+/// 给得出计划的卡。
+VideoAcquisitionReduction _refilter(
+  VideoAcquisitionState state,
+  VideoAcquisitionDefaults defaults,
+) {
   final VideoAcquisitionMode mode = state.slots.mode!;
   final VideoAcquisitionQuality quality = state.slots.quality!;
   final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
     state.groups,
     mode: mode,
     quality: quality,
+    source: defaults.sourcePref,
+    bitrate: defaults.bitratePref,
   );
   final VideoAcquisitionState base = state.copyWith(
     eligibleGroups: outcome.eligible,
