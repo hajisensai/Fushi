@@ -887,14 +887,18 @@ void main() {
     expect(repo.minedContext!.coverPath, endsWith('immersion_shot.jpg'));
   });
 
-  // wireName 往返 + 未知值回退 gif（持久化契约，向后兼容）。
-  test('VideoMiningImageMode.fromWireName round-trips and defaults to gif', () {
+  // wireName 往返 + 未设/未知值回退默认 videoClip（用户拍板：所有能拿到画面的来源默认
+  // 出音画一体片段；显式选过的值原样保留）。
+  test('VideoMiningImageMode.fromWireName round-trips and defaults to videoClip',
+      () {
     for (final VideoMiningImageMode mode in VideoMiningImageMode.values) {
       expect(VideoMiningImageMode.fromWireName(mode.wireName), mode);
     }
-    expect(VideoMiningImageMode.fromWireName(null), VideoMiningImageMode.gif);
+    expect(VideoMiningImageMode.fromWireName(null),
+        VideoMiningImageMode.videoClip);
     expect(VideoMiningImageMode.fromWireName('nonsense'),
-        VideoMiningImageMode.gif);
+        VideoMiningImageMode.videoClip);
+    expect(VideoMiningImageMode.fromWireName('gif'), VideoMiningImageMode.gif);
     expect(VideoMiningImageMode.gif.isStill, false);
     expect(VideoMiningImageMode.currentFrame.isStill, true);
     expect(VideoMiningImageMode.subtitleStart.isStill, true);

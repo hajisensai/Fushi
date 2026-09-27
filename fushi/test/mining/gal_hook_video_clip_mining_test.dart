@@ -7,7 +7,7 @@ import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, VideoMiningImageMode;
+    show MiningAnimatedFormat, MiningClipFormat, VideoMiningImageMode;
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -137,11 +137,14 @@ void main() {
           Uint8List? audioBytes,
           required String audioExtension,
           required Directory workDir,
+          required MiningClipFormat format,
         }) async {
           events.add('build');
           buildCalls.add(_BuildCall(fromTickMs, toTickMs, audioBytes));
           expect(audioExtension, isNotEmpty);
-          return clipSucceeds ? (bytes: mp4Bytes, extension: 'mp4') : null;
+          return clipSucceeds
+              ? (bytes: mp4Bytes, extension: 'mp4', hasAudio: audioBytes != null)
+              : null;
         },
         captureGif: ({
           required int hwnd,

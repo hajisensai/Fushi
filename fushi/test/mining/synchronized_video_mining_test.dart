@@ -69,7 +69,8 @@ void main() {
           required int endMs,
           required String outputPath,
           required String? tlsPinSha256,
-          required Map<String, String> httpHeaders}) async {
+          required Map<String, String> httpHeaders,
+          required MiningClipFormat format}) async {
         expect(videoPath, 'https://video.example/video');
         expect(File(audioPath).readAsBytesSync(), <int>[1, 2, 3]);
         expect(startMs, 850);
@@ -104,7 +105,8 @@ void main() {
               required int endMs,
               required String outputPath,
               required String? tlsPinSha256,
-              required Map<String, String> httpHeaders}) async =>
+              required Map<String, String> httpHeaders,
+              required MiningClipFormat format}) async =>
           const VideoClipExportResult.failure(
               VideoClipExportFailure.ffmpegFailed,
               detail: 'H264 encoder unavailable'),
@@ -154,5 +156,130 @@ void main() {
         repo: repo);
     expect(result.aborted, true);
     expect(repo.context, isNull);
+  });
+
+  // videoClip 是默认模式：没有字幕时间窗（无 cue）的视频制卡不能因此整张失败，按动图
+  // 模式的阶梯降级到当前帧，且不声称同步。
+  test('no sentence window degrades to a still card instead of aborting',
+      () async {
+    final ImmersionMiningResult result = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+            fields: const <String, String>{},
+            source: AnkiMiningSource.video,
+            clipStartMs: 0,
+            clipEndMs: 0,
+            sentence: 'テスト',
+            imageMode: VideoMiningImageMode.videoClip,
+            clipFormat: MiningClipFormat.webmVp9,
+            stillFallback: () async =>
+                Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xD9])),
+        compression: MiningMediaCompression.compressed,
+        tempDir: temp.path,
+        repo: repo);
+    expect(result.aborted, false);
+    expect(result.degradedToStill, false);
+    expect(repo.context!.synchronizedVideo, false);
+    expect(repo.context!.coverPath, endsWith('immersion_shot.jpg'));
+  });
+
+  test('WebM encoder missing falls back to MP4; cover follows produced format',
+      () async {
+    final List<MiningClipFormat> tried = <MiningClipFormat>[];
+    final ImmersionMiningEngine engine = ImmersionMiningEngine(
+      synchronizedVideoExtractor: (
+          {required String videoPath,
+          required String audioPath,
+          required int startMs,
+          required int endMs,
+          required String outputPath,
+          required String? tlsPinSha256,
+          required Map<String, String> httpHeaders,
+          required MiningClipFormat format}) async {
+        tried.add(format);
+        expect(outputPath, endsWith('immersion_video.${format.fileExtension}'));
+        if (format.playsInline) {
+          return const VideoClipExportResult.failure(
+              VideoClipExportFailure.ffmpegFailed,
+              detail: "Unknown encoder 'libsvtav1'");
+        }
+        await File(outputPath).writeAsBytes(<int>[9, 8, 7]);
+        return VideoClipExportResult.success(outputPath);
+      },
+    );
+    final ImmersionMiningResult result = await engine.mine(
+        ImmersionMiningRequest(
+          fields: const <String, String>{'expression': '走る'},
+          source: AnkiMiningSource.video,
+          mediaSource: 'https://video.example/video',
+          clipStartMs: 1000,
+          clipEndMs: 3000,
+          sentence: '走り出した。',
+          imageMode: VideoMiningImageMode.videoClip,
+          clipFormat: MiningClipFormat.webmAv1,
+          providedAudioBytes: Uint8List.fromList(<int>[1, 2, 3]),
+          providedAudioName: 'selected.aac',
+        ),
+        compression: MiningMediaCompression.compressed,
+        tempDir: temp.path,
+        repo: repo);
+    expect(result.aborted, false);
+    expect(tried, <MiningClipFormat>[
+      MiningClipFormat.webmAv1,
+      MiningClipFormat.webmVp9,
+      MiningClipFormat.mp4H264,
+    ]);
+    expect(repo.context!.synchronizedVideo, true);
+    expect(repo.context!.coverPath, endsWith('.mp4'));
+  });
+
+  // galgame 窗口录制片段已混进句子音频：必须按同步片段落卡（句子音频 = 片段本身），
+  // 否则卡上同一句语音播两遍——WebM 内嵌时更是两路同时响。
+  test('game source: a provided audible WebM clip is a synchronized clip',
+      () async {
+    final ImmersionMiningResult result = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+            fields: const <String, String>{},
+            source: AnkiMiningSource.game,
+            clipStartMs: 0,
+            clipEndMs: 0,
+            sentence: 'テスト',
+            imageMode: VideoMiningImageMode.videoClip,
+            providedCoverBytes:
+                Uint8List.fromList(<int>[0x1A, 0x45, 0xDF, 0xA3]),
+            providedCoverName: 'external_window.webm',
+            providedAudioBytes: Uint8List.fromList(<int>[1, 2, 3]),
+            providedAudioName: 'galgame_audio.aac',
+            requireAudio: true),
+        compression: MiningMediaCompression.compressed,
+        tempDir: temp.path,
+        repo: repo);
+    expect(result.aborted, false);
+    expect(repo.context!.synchronizedVideo, true);
+    expect(repo.context!.coverPath, endsWith('external_window.webm'));
+    expect(repo.context!.sentenceAudioPath, repo.context!.coverPath);
+  });
+
+  test('game source: a GIF cover (clip fell back) stays a plain cover',
+      () async {
+    final ImmersionMiningResult result = await ImmersionMiningEngine().mine(
+        ImmersionMiningRequest(
+            fields: const <String, String>{},
+            source: AnkiMiningSource.game,
+            clipStartMs: 0,
+            clipEndMs: 0,
+            sentence: 'テスト',
+            imageMode: VideoMiningImageMode.videoClip,
+            providedCoverBytes:
+                Uint8List.fromList(<int>[0x47, 0x49, 0x46, 0x38]),
+            providedCoverName: 'external_window.gif',
+            providedAudioBytes: Uint8List.fromList(<int>[1, 2, 3]),
+            providedAudioName: 'galgame_audio.aac',
+            requireAudio: true),
+        compression: MiningMediaCompression.compressed,
+        tempDir: temp.path,
+        repo: repo);
+    expect(result.aborted, false);
+    expect(repo.context!.synchronizedVideo, false);
+    expect(repo.context!.sentenceAudioPath, endsWith('galgame_audio.aac'));
   });
 }
