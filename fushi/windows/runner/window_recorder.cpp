@@ -44,6 +44,7 @@ namespace WGDX = ABI::Windows::Graphics::DirectX;
 namespace WGDXD3D = ABI::Windows::Graphics::DirectX::Direct3D11;
 using ABI::Windows::Graphics::SizeInt32;
 using wgc::CloseIfClosable;
+using wgc::SuppressCaptureBorder;
 using wgc::GetActivationFactory;
 using wgc::IDxgiInterfaceAccessLocal;
 using window_recorder_ring::DownscaleBgraToBgr24;
@@ -397,15 +398,19 @@ std::string SetupCapture() {
           g_state.item.Get(), g_state.session.GetAddressOf()))) {
     return "capture session create failed";
   }
-  // 与单帧截图同款：关掉 WGC 合成光标、去掉黄色捕获边框（两者 API 缺失时静默保持
-  // 默认——录制是持续过程，单帧那套 diagnostics 在这里没有回传通道）。
+  // 与单帧截图同款：关掉 WGC 合成光标（API 缺失时静默保持默认——录制是持续过程，
+  // 单帧那套 diagnostics 在这里没有回传通道）。
   ComPtr<WGC::IGraphicsCaptureSession2> session2;
   if (SUCCEEDED(g_state.session.As(&session2)) && session2) {
     session2->put_IsCursorCaptureEnabled(false);
   }
-  ComPtr<WGC::IGraphicsCaptureSession3> session3;
-  if (SUCCEEDED(g_state.session.As(&session3)) && session3) {
-    session3->put_IsBorderRequired(false);
+  // 黄色捕获边框去不掉就**不录**：录制在整局 hook 会话里常驻（与制卡媒体设置无关），
+  // Windows 10（build 20348 以前没有 IsBorderRequired）上会让游戏窗口四周一直挂着
+  // 一圈黄线（用户反馈）。滚动录制只服务「视频片段」卡，起不来时制卡自动退回
+  // 动图 / 静图阶梯（gal_hook_mining_coordinator.dart），代价远小于盖在游戏上的框。
+  if (FAILED(SuppressCaptureBorder(g_state.session.Get()))) {
+    return "capture border cannot be suppressed (IsBorderRequired needs "
+           "Windows build 20348+)";
   }
 
   // 免线程（agile）委托：FreeThreaded 帧池会在任意线程池线程回调 FrameArrived

@@ -251,6 +251,17 @@ class MaterialDesktopVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Duration)? onSeekEnd;
 
+  /// Hibiki patch (BUG-2731 follow-up): fires right after a **committed** seek
+  /// has been handed to `player.seek`, with that call's [Future]. `player.seek`
+  /// first waits on the player's internal lock (and video-controller
+  /// initialisation) before the mpv command is actually issued; until then the
+  /// old content keeps playing normally. Hibiki waits on this future before it
+  /// starts treating "playing, not buffering, advancing" as evidence that the
+  /// seek has finished, so a slow dispatch can't clear the in-flight target
+  /// early. Null (upstream default) = no callback, behaviour identical to
+  /// pub.dev. See third_party/media_kit_video/PATCHES.md.
+  final void Function(Future<void> seek)? onSeekDispatched;
+
   // SEEK BAR HOVER POSITION (Hibiki patch)
 
   /// Optional callback fired with the current hover position (fraction `[0,1]`
@@ -319,6 +330,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.wakeSignal,
     this.onSeekStart,
     this.onSeekEnd,
+    this.onSeekDispatched,
     this.onHoverPosition,
   });
 
@@ -366,6 +378,7 @@ class MaterialDesktopVideoControlsThemeData {
     Listenable? wakeSignal,
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
+    void Function(Future<void> seek)? onSeekDispatched,
     void Function(double? fraction)? onHoverPosition,
   }) {
     return MaterialDesktopVideoControlsThemeData(
@@ -427,6 +440,7 @@ class MaterialDesktopVideoControlsThemeData {
       wakeSignal: wakeSignal ?? this.wakeSignal,
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
+      onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
     );
   }
@@ -1231,7 +1245,10 @@ class MaterialDesktopSeekBarState extends State<MaterialDesktopSeekBar> {
       click = false;
       position = duration * slider;
     });
-    controller(context).player.seek(duration * slider);
+    // Hibiki patch (BUG-2731 follow-up): hand the dispatch future to the host.
+    final Future<void> seek =
+        controller(context).player.seek(duration * slider);
+    _theme(context).onSeekDispatched?.call(seek);
   }
 
   void onHover(PointerHoverEvent e, BoxConstraints constraints) {
