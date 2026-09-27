@@ -347,6 +347,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 全部准确率所在（外部 id / 原名 / 季集号怎么传给 provider）。
   'video/Auto-fetch subtitles after scraping':
       'test/media/video/scraped_subtitle_targets_test.dart',
+  // BUG-2728 自动上传的开关（默认开）。写 prefsRepo（changed=true），生效点是视频页
+  // _uploadRemoteSubtitleToHost 的进场门（关=不发 PUT、不提示），只在互联远端视频
+  // 导入 / 重定时字幕时触发——harness 里没有视频页、没有已配对 host，无适用探针。
+  // 偏好默认值 / 往返由 pref 测试咬住，「关 → 不调 putRemoteVideoSubtitleAsDefault」
+  // 由源码守卫咬住。
+  'video/Auto-upload imported subtitles to host':
+      'test/media/video/video_subtitle_auto_upload_pref_test.dart + '
+          'test/sync/interconnect_video_default_subtitle_test.dart',
   // Jimaku 默认字幕语言（BUG-1189/1190 那批「Jimaku 设置统一到设置页」）。写
   // prefsRepo（changed=true），生效点是三个 Jimaku 界面打开时的语言预选（没有该
   // 系列的语言记忆时用它兜底），不在 reader CSS / 主题树里，无适用探针；由专项

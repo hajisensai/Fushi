@@ -5623,5 +5623,7 @@
   "video_subtitle_remote_audio_fetching": "正在从服务端获取音轨…",
   "video_subtitle_host_upload_done": "字幕已上传到服务端，设为这一集的默认字幕",
   "video_subtitle_host_upload_failed": "字幕上传服务端失败，仅保存在本机",
-  "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机"
+  "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机",
+  "video_setting_subtitle_auto_upload_to_host": "导入的字幕自动上传到服务端",
+  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。"
 }

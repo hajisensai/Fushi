@@ -1891,6 +1891,22 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
+  /// 远端（互联 host）视频上导入 / 重定时得到的字幕是否自动上传到 host 并设为该集
+  /// 默认字幕（BUG-2728 的自动上传）。上传会改掉**所有** peer 在这一集看到的默认
+  /// 字幕，所以给用户一个开关；关掉时字幕只在本机应用与记忆，不发任何上传请求。
+  ///
+  /// 为什么默认开：BUG-2728 是所有者本人报的「字幕导入应该自动上传到服务端」，
+  /// PR #1688 按此默认上传后合入；开关是 2026-09-27 所有者追加的「加开关」，没有
+  /// 要求改默认。默认开让已在用的行为不因升级而静默变化。
+  bool get videoSubtitleAutoUploadToHost =>
+      getPref('video_subtitle_auto_upload_to_host', defaultValue: true)
+          as bool;
+
+  Future<void> setVideoSubtitleAutoUploadToHost(bool enabled) async {
+    await setPref('video_subtitle_auto_upload_to_host', enabled);
+    notifyListeners();
+  }
+
   /// AJATT 日语字幕库（`subtitles.ajatt.top`，kitsunekko 镜像）是否参与字幕搜索。
   ///
   /// 零配置：无 API key、无配额，所以只有这一个开关（不像 Jimaku / OpenSubtitles

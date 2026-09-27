@@ -1127,6 +1127,17 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ChannelNames.APP_SHORTCUTS)
+            .setMethodCallHandler((call, result) -> {
+                if ("setShortcuts".equals(call.method)) {
+                    List<Map<String, String>> items = call.arguments();
+                    AppShortcutsHelper.setShortcuts(this, items == null ? new ArrayList<>() : items);
+                    result.success(null);
+                } else {
+                    result.notImplemented();
+                }
+            });
+
         // TODO-057: window-level screen brightness for the video player's
         // left-half vertical drag. We set THIS WINDOW's brightness override
         // (WindowManager.LayoutParams.screenBrightness in 0..1); it never

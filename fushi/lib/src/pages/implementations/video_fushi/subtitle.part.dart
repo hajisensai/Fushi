@@ -1355,7 +1355,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 字幕（host 让位旧 sidecar，见 `VideoSubtitleDefaultHost`）。本机的应用与持久化
   /// 已经完成，上传失败只提示、不回滚。host 的 sidecar 只能挂在主视频文件旁，
   /// host 播放列表里的第 2 集起（集下标 > 0）没有落点，跳过。
+  ///
+  /// 设置「导入的字幕自动上传到服务端」（`video_subtitle_auto_upload_to_host`）关掉
+  /// 时直接返回：不发请求、不提示，字幕只在本机生效——上传会改掉所有 peer 在这一
+  /// 集看到的默认字幕。
   Future<void> _uploadRemoteSubtitleToHost(String path) async {
+    if (!appModel.videoSubtitleAutoUploadToHost) return;
     final (InterconnectSyncBackend, String, int)? target =
         _remoteHostVideoTarget();
     if (target == null) return;
