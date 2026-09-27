@@ -9423,6 +9423,9 @@ class _AppModelRemoteLookupService
           // 只解析音轨：封面走 providedCoverBytes（扩展的解码帧）。
           mediaSource: null,
           audioSource: bi.audioSource,
+          // B 站 CDN 防盗链：流解析层声明的 Referer 随请求下发给 ffmpeg，不靠按 host 猜
+          // （PCDN 域名会轮换，白名单漏一个就 403 → required audio missing）。
+          mediaSourceHttpHeaders: bi.httpHeaders,
           clipStartMs: bi.clipStartMs,
           clipEndMs: bi.clipEndMs,
           sentence: bi.sentence,
