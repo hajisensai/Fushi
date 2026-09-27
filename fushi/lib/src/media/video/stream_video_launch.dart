@@ -6,14 +6,19 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// 流媒体书判据（TODO-1157）：`videoPath` 是可播 http/https 流 URL。
 ///
 /// 「粘贴 URL 导入」的流媒体书 [VideoBookRow.videoPath] 存原始 URL（YouTube=watch URL，
 /// 直链/HLS=直链）；本地文件视频 videoPath 是文件路径 → false。判据唯一、不依赖额外
 /// 标记列（[VideoBooks.streamSpecJson] 只在有外挂字幕/防盗链 header 时非空，不当判据）。
+///
+/// 在线视频源（Aniyomi）入库集（[isAnimeSourceVideoPath]）也是流媒体书：没有本地文件，
+/// 起播时向扩展重新取流（见 `anime_source_library.dart`）。
 bool isStreamVideoBook(VideoBookRow book) =>
-    isPlayableStreamUrl(book.videoPath);
+    isPlayableStreamUrl(book.videoPath) ||
+    isAnimeSourceVideoPath(book.videoPath);
 
 /// TODO-1314：缓存命中后确认流 URL 未失效的 liveness 探测签名。生产走 1 字节 Range GET，
 /// 测试注入假件。返回 true=存活（用缓存）/ false=失效（invalidate + 重解析）。

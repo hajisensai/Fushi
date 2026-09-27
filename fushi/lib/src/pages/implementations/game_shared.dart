@@ -20,8 +20,9 @@ enum GameSection {
   diagnostics,
   settings,
   importGames,
-  // 发现（在线源浏览/下载）。后补，只能追加在尾部（IndexedStack 索引即枚举序）。
-  discover,
+  // 曾经尾部还有「发现」（在线源浏览 / 下载）；2026-09-27 起它只住在顶层「浏览」
+  // 模块（`browse_page.dart`），枚举值随之删除。它在最尾，删掉不移动其它子区的
+  // IndexedStack 索引。
 }
 
 /// App 级游戏页子区导航。默认停在游戏首页（[GameSection.dashboard]）；原生 Hook
@@ -128,14 +129,12 @@ String formatGameClockTime(DateTime value) {
 
 /// 游戏页签的**视觉序**（[GameSectionTabs] 与 [HomeGamePage] 的横滑切区共用同
 /// 一份真相；枚举序只管 IndexedStack 索引，显示顺序在这里）：
-/// * 「发现」与书 / 漫画 / 视频库页的发现视图同名同位（同概念一词）；
 /// * 「导入」紧挨「设置」之前——与书 / 漫画 / 视频库页的分段顺序一致
 ///   （三者的「导入」视图都在「设置」前一位），肌肉记忆全 app 同构；
 /// * 诊断不设页签（从「设置」进入），所以不在此序里。
 const List<GameSection> kGameSectionTabOrder = <GameSection>[
   GameSection.dashboard,
   GameSection.library,
-  GameSection.discover,
   GameSection.monitor,
   GameSection.importGames,
   GameSection.settings,
@@ -178,8 +177,6 @@ class GameSectionTabs extends StatelessWidget {
   static String _labelFor(GameSection section) => switch (section) {
         GameSection.dashboard => t.game_dashboard,
         GameSection.library => t.game_library,
-        // 与书 / 漫画 / 视频库页的发现视图同名同 key（同概念一词）。
-        GameSection.discover => t.library_view_browse,
         // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
         // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
         GameSection.monitor => t.game_capture_workbench_tab,
@@ -201,9 +198,6 @@ class GameSectionTabs extends StatelessWidget {
           return;
         case GameSection.library:
           onSelectLibrary();
-          return;
-        case GameSection.discover:
-          gameSectionNotifier.value = GameSection.discover;
           return;
         case GameSection.importGames:
           gameSectionNotifier.value = GameSection.importGames;

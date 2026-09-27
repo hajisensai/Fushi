@@ -1467,8 +1467,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
       case OnboardingFeature.games:
         return Icons.videogame_asset_outlined;
       // 有 tab 的两个模块图标取底栏真值，与底栏/侧栏同一份。
-      case OnboardingFeature.downloads:
-        return homeNavItemFor(HomeTab.downloads).icon;
+      case OnboardingFeature.browse:
+        return homeNavItemFor(HomeTab.browse).icon;
       case OnboardingFeature.lookup:
         return homeNavItemFor(HomeTab.dictionaries).icon;
       case OnboardingFeature.listening:
@@ -1510,8 +1510,8 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
         return t.onboarding_feature_games;
       // 新增的六个模块**零新增 i18n**：有 tab 的取底栏标签（同一真值），没 tab 的
       // 取它在设置页一级分类的标题 / 摘要。
-      case OnboardingFeature.downloads:
-        return homeNavItemFor(HomeTab.downloads).label;
+      case OnboardingFeature.browse:
+        return homeNavItemFor(HomeTab.browse).label;
       case OnboardingFeature.lookup:
         return homeNavItemFor(HomeTab.dictionaries).label;
       case OnboardingFeature.listening:
@@ -1558,9 +1558,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                 GamesModuleForm.streamClient
             ? t.game_stream_module_hint
             : t.onboarding_feature_games_hint;
-      // 同上：一句话说明直接复用各自设置分类的 summary，不新增 key。
-      case OnboardingFeature.downloads:
-        return t.download_settings;
+      // 浏览不是一个设置分类（来源 / 扩展 / 发现 / 下载），用自己的一句话说明；
+      // 其余复用各自设置分类的 summary，不新增 key。
+      case OnboardingFeature.browse:
+        return t.onboarding_feature_browse_hint;
       case OnboardingFeature.lookup:
         return t.dictionary_settings;
       case OnboardingFeature.listening:

@@ -22,7 +22,7 @@ ModuleVisibility _visibility({
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,
   if (games) ModuleId.games,
-  if (downloads) ModuleId.downloads,
+  if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
   if (browserExtension) ModuleId.browserExtension,
 });
@@ -63,7 +63,7 @@ void main() {
     );
     final int video = tabs.indexOf(HomeTab.video);
     final int games = tabs.indexOf(HomeTab.games);
-    final int downloads = tabs.indexOf(HomeTab.downloads);
+    final int downloads = tabs.indexOf(HomeTab.browse);
     final int dict = tabs.indexOf(HomeTab.dictionaries);
     final int ext = tabs.indexOf(HomeTab.browserExtension);
     final int settings = tabs.indexOf(HomeTab.settings);

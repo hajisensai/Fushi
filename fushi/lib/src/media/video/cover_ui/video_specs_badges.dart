@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/media/video/video_specs_display.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/utils/components/cover_badge.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// 压在封面左下角的规格角标条。规格未知时**整个不占位**（返回 SizedBox.shrink）。
 class VideoSpecsBadgeStrip extends StatefulWidget {
@@ -117,7 +118,4 @@ class _VideoSpecsBadgeStripState extends State<VideoSpecsBadgeStrip> {
 /// 放在这里而不是 service 里：service 拿到什么探什么，「这条路径值不值得探」是调用
 /// 侧的判断。流地址 ffprobe 理论上能探，但那会在滚动列表时对每个远端条目发起网络
 /// 请求——库页绝不做这种事。
-bool isProbableStreamUrl(String path) {
-  final String lower = path.trim().toLowerCase();
-  return lower.startsWith('http://') || lower.startsWith('https://');
-}
+bool isProbableStreamUrl(String path) => isNetworkOnlyVideoPath(path.trim());

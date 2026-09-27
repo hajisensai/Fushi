@@ -9,17 +9,17 @@ import 'package:fushi/src/media/novel/online/lnreader_fetch_bridge.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_novel_detail_page.dart';
+import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/utils.dart';
 
-enum _BrowseMode { popular, latest, search }
-
 /// 一个小说源（LNReader 插件）的浏览页：热门 / 最新 / 搜索 + 筛选 + 封面网格。
 ///
-/// 版式与漫画 / 视频的 `MihonSourceBrowsePage` 一致（页头搜索框 + 筛选按钮、
-/// 热门 / 最新分段、2~8 列封面网格、末尾「加载更多」格）。差别只在筛选语义：
-/// LNReader 的筛选作用在 `popularNovels` 上（搜索只收关键词），所以应用筛选会
-/// 回到「热门」并带上筛选值，而不是像 Mihon 那样切到搜索。
+/// 页面本体是三域共用的 [OnlineSourceBrowsePage]（2026-09-27「浏览」阶段 2）；
+/// 这里只剩 LNReader 的差异（[_LnReaderCatalog]）：筛选作用在 `popularNovels` 上
+/// （搜索只收关键词），所以应用筛选会回到「热门」并带上筛选值，而不是像 Mihon
+/// 那样切到搜索；插件不报「还有下一页」，按「这一页有新条目」推断；被 Cloudflare
+/// 拦下时插件多半只回空列表，所以空结果也给验证入口。
 class LnReaderSourceBrowsePage extends StatefulWidget {
   const LnReaderSourceBrowsePage({
     required this.manager,
@@ -36,111 +36,71 @@ class LnReaderSourceBrowsePage extends StatefulWidget {
 }
 
 class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
-  final TextEditingController _searchController = TextEditingController();
+  late final _LnReaderCatalog _catalog = _LnReaderCatalog(
+    manager: widget.manager,
+    plugin: widget.plugin,
+  );
+
+  @override
+  Widget build(BuildContext context) =>
+      OnlineSourceBrowsePage<LnReaderNovelItem>(catalog: _catalog);
+}
+
+class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
+  _LnReaderCatalog({required this.manager, required this.plugin});
+
+  static const String _popular = 'popular';
+  static const String _latest = 'latest';
+
+  final LnReaderManager manager;
+  final LnReaderInstalledPlugin plugin;
   LnReaderPluginInfo? _info;
   List<LnReaderFilter> _filters = const <LnReaderFilter>[];
-  bool _filtersTouched = false;
-  List<LnReaderNovelItem> _items = const <LnReaderNovelItem>[];
-  _BrowseMode _mode = _BrowseMode.popular;
-  bool _loading = true;
-  bool _hasNextPage = false;
-  int _page = 1;
-  int _generation = 0;
-  Object? _error;
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_initialise());
+  String get title => plugin.name;
+
+  @override
+  String get searchHint => t.novel_source_search_hint;
+
+  @override
+  String get keyPrefix => 'novel_browse';
+
+  @override
+  String get emptyText => t.novel_source_no_results;
+
+  /// LNReader 插件的「筛选」就是筛选（作用在热门列表上），不是源偏好。
+  @override
+  String get filtersTooltip => t.novel_source_filters_title;
+
+  @override
+  bool get verifyOnEmpty => true;
+
+  @override
+  bool get searchRequiresQuery => true;
+
+  @override
+  bool get clearQueryOnListingChange => true;
+
+  @override
+  Future<void> prepare() async {
+    final LnReaderPluginInfo info = await manager.load(plugin);
+    _info = info;
+    _filters = info.filters;
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  List<OnlineBrowseListing> get listings => <OnlineBrowseListing>[
+    OnlineBrowseListing(id: _popular, label: t.mihon_source_popular),
+    OnlineBrowseListing(id: _latest, label: t.mihon_source_latest),
+  ];
 
-  Future<void> _initialise() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final LnReaderPluginInfo info = await widget.manager.load(widget.plugin);
-      if (!mounted) return;
-      _info = info;
-      _filters = info.filters;
-      await _load(reset: true);
-    } on Object catch (error) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = error;
-        });
-      }
-    }
-  }
+  @override
+  bool get hasFilters => _filters.isNotEmpty;
 
-  Future<void> _load({required bool reset}) async {
-    if (_info == null) return;
-    if (!reset && (_loading || !_hasNextPage)) return;
-    final int generation = reset ? ++_generation : _generation;
-    final int page = reset ? 1 : _page + 1;
-    final _BrowseMode mode = _mode;
-    final String query = _searchController.text.trim();
-    final Map<String, Object?>? filterValues = _filtersTouched
-        ? lnReaderFilterValues(_filters)
-        : null;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final List<LnReaderNovelItem> response = switch (mode) {
-        _BrowseMode.search => await widget.manager.runtime.search(
-          widget.plugin.id,
-          query: query,
-          page: page,
-        ),
-        _BrowseMode.popular ||
-        _BrowseMode.latest => await widget.manager.runtime.popular(
-          widget.plugin.id,
-          page: page,
-          latest: mode == _BrowseMode.latest,
-          filters: filterValues,
-        ),
-      };
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        final List<LnReaderNovelItem> previous = reset
-            ? const <LnReaderNovelItem>[]
-            : _items;
-        final Set<String> seen = previous
-            .map((LnReaderNovelItem item) => item.path)
-            .toSet();
-        final List<LnReaderNovelItem> additions = response
-            .where((LnReaderNovelItem item) => seen.add(item.path))
-            .toList(growable: false);
-        _items = <LnReaderNovelItem>[...previous, ...additions];
-        _page = page;
-        // LNReader 插件不报「还有下一页」：一页有新条目就认为可能还有。
-        _hasNextPage = additions.isNotEmpty;
-        _loading = false;
-      });
-    } on Object catch (error) {
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _loading = false;
-        _error = error;
-      });
-      if (_items.isNotEmpty) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    }
-  }
-
-  Future<void> _showFilters() async {
-    if (_filters.isEmpty) return;
+  @override
+  Future<OnlineBrowseFilterTarget?> editFilters(BuildContext context) async {
+    if (_filters.isEmpty) return null;
     final List<LnReaderFilter>? updated =
         await showAppDialog<List<LnReaderFilter>>(
           context: context,
@@ -149,21 +109,63 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
             defaults: _info?.filters ?? const <LnReaderFilter>[],
           ),
         );
-    if (updated == null || !mounted) return;
+    if (updated == null) return null;
     _filters = updated;
-    _filtersTouched = true;
-    _searchController.clear();
-    _mode = _BrowseMode.popular;
-    await _load(reset: true);
+    return OnlineBrowseFilterTarget.firstListing;
   }
 
-  void _openDetails(LnReaderNovelItem item) {
+  @override
+  Future<OnlineBrowsePageResult<LnReaderNovelItem>> fetch(
+    OnlineBrowseQuery query,
+    int page,
+  ) async {
+    final List<LnReaderNovelItem> response = query.isSearch
+        ? await manager.runtime.search(plugin.id, query: query.text, page: page)
+        : await manager.runtime.popular(
+            plugin.id,
+            page: page,
+            latest: query.listingId == _latest,
+            // 只在用户动过筛选后才带：没动过时让插件用它自己的默认值。
+            filters: query.filtered ? lnReaderFilterValues(_filters) : null,
+          );
+    return (items: response, hasNextPage: true);
+  }
+
+  /// LNReader 插件不报「还有下一页」：一页有新条目就认为可能还有。
+  @override
+  bool resolveHasNextPage({
+    required bool reported,
+    required bool reset,
+    required int received,
+    required int added,
+  }) => added > 0;
+
+  @override
+  String keyOf(LnReaderNovelItem item) => item.path;
+
+  @override
+  String titleOf(LnReaderNovelItem item) => item.name;
+
+  @override
+  Widget buildCover(BuildContext context, LnReaderNovelItem item) =>
+      LnReaderCover(
+        url: item.cover,
+        site: plugin.site,
+        pluginHeaders: _info?.imageHeaders ?? const <String, String>{},
+        cloudflare: manager.cloudflare,
+      );
+
+  @override
+  void Function(BuildContext, LnReaderNovelItem)? get openDetail =>
+      _openDetails;
+
+  void _openDetails(BuildContext context, LnReaderNovelItem item) {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => LnReaderNovelDetailPage(
-          manager: widget.manager,
-          plugin: widget.plugin,
+          manager: manager,
+          plugin: plugin,
           item: item,
           imageHeaders: _info?.imageHeaders ?? const <String, String>{},
         ),
@@ -172,179 +174,15 @@ class _LnReaderSourceBrowsePageState extends State<LnReaderSourceBrowsePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return FushiPageScaffold(
-      title: widget.plugin.name,
-      headerBottom: Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: TextField(
-                key: const ValueKey<String>('novel_browse_search_field'),
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: t.novel_source_search_hint,
-                  prefixIcon: const Icon(Icons.search),
-                ),
-                onSubmitted: (String value) {
-                  if (value.trim().isEmpty) return;
-                  _mode = _BrowseMode.search;
-                  unawaited(_load(reset: true));
-                },
-              ),
-            ),
-            if (_filters.isNotEmpty) ...<Widget>[
-              const SizedBox(width: 8),
-              IconButton(
-                key: const ValueKey<String>('novel_browse_filters'),
-                tooltip: t.novel_source_filters_title,
-                onPressed: _showFilters,
-                icon: const Icon(Icons.tune),
-              ),
-            ],
-          ],
-        ),
-      ),
-      body: Column(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: SegmentedButton<_BrowseMode>(
-              segments: <ButtonSegment<_BrowseMode>>[
-                ButtonSegment<_BrowseMode>(
-                  value: _BrowseMode.popular,
-                  label: Text(t.mihon_source_popular),
-                ),
-                ButtonSegment<_BrowseMode>(
-                  value: _BrowseMode.latest,
-                  label: Text(t.mihon_source_latest),
-                ),
-              ],
-              selected: <_BrowseMode>{
-                _mode == _BrowseMode.latest
-                    ? _BrowseMode.latest
-                    : _BrowseMode.popular,
-              },
-              onSelectionChanged: (Set<_BrowseMode> value) {
-                _mode = value.first;
-                _searchController.clear();
-                unawaited(_load(reset: true));
-              },
-            ),
-          ),
-          Expanded(child: _buildResults()),
-        ],
-      ),
-    );
-  }
-
-  Widget _cloudflareAction() => LnReaderCloudflareAction(
-    cloudflare: widget.manager.cloudflare,
-    pluginId: widget.plugin.id,
-    onVerified: () =>
-        unawaited(_info == null ? _initialise() : _load(reset: true)),
+  Widget buildVerifyAction(
+    BuildContext context, {
+    required Object? error,
+    required Future<void> Function() onVerified,
+  }) => LnReaderCloudflareAction(
+    cloudflare: manager.cloudflare,
+    pluginId: plugin.id,
+    onVerified: () => unawaited(onVerified()),
   );
-
-  Widget _buildResults() {
-    if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
-    }
-    if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$_error', textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () => unawaited(
-                  _info == null ? _initialise() : _load(reset: true),
-                ),
-                icon: const Icon(Icons.refresh),
-                label: Text(t.refresh),
-              ),
-              const SizedBox(height: 8),
-              _cloudflareAction(),
-            ],
-          ),
-        ),
-      );
-    }
-    if (_items.isEmpty) {
-      // 被 Cloudflare 拦下的插件多半不抛错、只回空列表（fetchText 吞掉 403）。
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.novel_source_no_results),
-            const SizedBox(height: 12),
-            _cloudflareAction(),
-          ],
-        ),
-      );
-    }
-    final Map<String, String> pluginHeaders =
-        _info?.imageHeaders ?? const <String, String>{};
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return GridView.builder(
-          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 0.62,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: _items.length + (_hasNextPage ? 1 : 0),
-          itemBuilder: (BuildContext context, int index) {
-            if (index == _items.length) {
-              return Center(
-                child: _loading
-                    ? adaptiveIndicator(context: context)
-                    : IconButton(
-                        key: const ValueKey<String>('novel_browse_more'),
-                        onPressed: () => unawaited(_load(reset: false)),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-              );
-            }
-            final LnReaderNovelItem item = _items[index];
-            return FushiCard(
-              key: ValueKey<String>('novel_browse_item_${item.path}'),
-              padding: EdgeInsets.zero,
-              onTap: () => _openDetails(item),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(
-                    child: LnReaderCover(
-                      url: item.cover,
-                      site: widget.plugin.site,
-                      pluginHeaders: pluginHeaders,
-                      cloudflare: widget.manager.cloudflare,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Text(
-                      item.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 }
 
 /// 小说封面：插件给的封面地址，请求头按 [lnReaderImageHeaders] 装配（浏览器 UA +

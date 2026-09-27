@@ -12,6 +12,7 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart';
 import 'package:fushi/src/pages/implementations/discovery_header.dart';
 import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi/utils.dart';
@@ -27,6 +28,12 @@ import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
 /// torrent → `pushGenericMagnet`（既有 torrent 后端 + 自动入库），
 /// http 直链 → `AppModel.discoveryDownloadQueue`（下载完自动入库）。
 /// 单源失败亮徽标不拖垮整页（`DiscoveryAggregateResult` 部分成功语义）。
+///
+/// 交互口径与视频发现页一致（`docs/specs/2026-09-27-browse-module.md` 阶段 3，
+/// 共享件在 `discovery/discovery_widgets.dart`）：输入停顿 350ms 自动搜索、回车
+/// 立即搜索；结果滚到离底 600 以内自动翻页（「加载更多」按钮留作键盘 / 手柄与
+/// 首页不满一屏时的兜底）；部分来源失败是一条点名来源的横幅，全部失败 / 异常是
+/// 可重试的整块提示。
 ///
 /// **构建期零 provider 依赖**：游戏页 IndexedStack 急切构建全部子区，本页
 /// 在无 ProviderScope 的 widget 测试里也会被 build——容器只在首帧后加载与
@@ -327,6 +334,23 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   /// 竞态哨兵：晚到的旧请求结果不覆盖新状态。
   int _loadSeq = 0;
 
+  /// 搜索框输入防抖：停顿后按「提交」语义发请求（见 [_scheduleSearch]）。
+  final DiscoverySearchDebouncer _searchDebounce = DiscoverySearchDebouncer();
+
+  /// 本轮（首页 + 已追加的各页）累计的来源失败，去重后喂横幅。
+  List<ExternalProviderFailure> _failures = const <ExternalProviderFailure>[];
+
+  /// 追加页失败：保留已有条目，页尾换成重试，且不再自动翻页（否则每滚一下就
+  /// 重打一次坏掉的那页）。下一轮非追加加载时复位。
+  bool _loadMoreFailed = false;
+
+  /// 结果列表的滚动：state 自己持有，不进 PageStorage（`keepScrollOffset: false`）。
+  /// 书 / 游戏两域在同一路由下挂同一个页面类，PageStorageKey 会让两域互串偏移，
+  /// 还会让每次非追加加载（换来源 / 新搜索）后的新列表恢复旧偏移；页面状态本身
+  /// 靠宿主 Offstage 保活，不需要 PageStorage。
+  final ScrollController _resultsScroll =
+      ScrollController(keepScrollOffset: false);
+
   @override
   void initState() {
     super.initState();
@@ -338,8 +362,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   @override
   void dispose() {
+    _searchDebounce.dispose();
     _queryCtrl.dispose();
     _searchFocus.dispose();
+    _resultsScroll.dispose();
     super.dispose();
   }
 
@@ -371,6 +397,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         _page = 1;
         _entries.clear();
         _result = null;
+        _failures = const <ExternalProviderFailure>[];
+        _loadMoreFailed = false;
       });
       return;
     }
@@ -381,6 +409,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final String? path = _pathStack.isNotEmpty ? _pathStack.last.$1 : null;
     final String? query = path == null && _query.isNotEmpty ? _query : null;
     final int seq = ++_loadSeq;
+    // 新一轮（非追加）结果从顶部开始，不停在上一轮列表的位置。
+    if (!append && _resultsScroll.hasClients) _resultsScroll.jumpTo(0);
     setState(() {
       _loading = true;
       _error = null;
@@ -389,6 +419,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         _entries.clear();
         _result = null;
         _revealHidden = false;
+        _failures = const <ExternalProviderFailure>[];
+        _loadMoreFailed = false;
       }
     });
     try {
@@ -415,6 +447,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
                 if (!mounted || seq != _loadSeq) return;
                 setState(() {
                   _result = partial;
+                  _failures = deduplicateDiscoveryFailures(partial.failures);
                   _entries
                     ..clear()
                     ..addAll(partial.entries);
@@ -424,6 +457,10 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       if (!mounted || seq != _loadSeq) return;
       setState(() {
         _result = result;
+        _failures = deduplicateDiscoveryFailures(<ExternalProviderFailure>[
+          if (append) ..._failures,
+          ...result.failures,
+        ]);
         _entries
           ..clear()
           ..addAll(base)
@@ -434,9 +471,31 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       if (!mounted || seq != _loadSeq) return;
       setState(() {
         _loading = false;
-        _error = e;
+        if (append) {
+          // 追加页失败不推翻已经显示的结果：页码退回、页尾给重试。
+          _page--;
+          _loadMoreFailed = true;
+        } else {
+          _error = e;
+        }
       });
     }
+  }
+
+  /// 翻下一页（滚到底自动触发 / 页尾按钮）。在途请求、没有下一页、上一次追加
+  /// 失败未重试时都不发。
+  void _loadMore() {
+    final DiscoveryAggregateResult? result = _result;
+    if (_loading || _loadMoreFailed || result == null || !result.hasMore) {
+      return;
+    }
+    _page++;
+    unawaited(_load(append: true));
+  }
+
+  void _retryLoadMore() {
+    setState(() => _loadMoreFailed = false);
+    _loadMore();
   }
 
   void _selectKind(DiscoveryMediaKind kind) {
@@ -467,8 +526,23 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     unawaited(_load());
   }
 
+  /// 输入中：停顿 [kDiscoverySearchDebounce] 后按 [_submitSearch] 语义自动搜索。
+  ///
+  /// 输入一变就作废在途请求（与视频发现页 `_scheduleSearch` 同一条纪律）：等防抖
+  /// 触发才作废的话，上一个关键词晚到的结果会在用户已经在打下一个词时顶掉列表。
+  void _scheduleSearch(String _) {
+    _loadSeq++;
+    _searchDebounce.schedule(() {
+      if (mounted) _submitSearch();
+    });
+  }
+
   /// 提交搜索/清空搜索：把草稿提交成 [_query]，路径栈属于上一轮浏览，必须先清掉。
+  ///
+  /// 防抖触发、回车、清空三条路都走这里，所以「输入停顿自动搜」同样会清路径栈
+  /// （BUG-1768：搜索词与目录路径互斥）。
   void _submitSearch() {
+    _searchDebounce.cancel();
     setState(() {
       _query = _queryCtrl.text.trim();
       _pathStack.clear();
@@ -606,6 +680,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       searchController: _queryCtrl,
       searchFocusNode: _searchFocus,
       searchHintText: t.discovery_search_hint,
+      onSearchChanged: _scheduleSearch,
       onSearchSubmitted: (String _) => _submitSearch(),
       onSearchCleared: () {
         _queryCtrl.clear();
@@ -942,16 +1017,15 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     }
 
     if (_error != null) {
-      return Center(
-        child: Text(
-          t.discovery_partial_failure,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.error),
-        ),
+      return FushiPlaceholderMessage(
+        key: const ValueKey<String>('discovery_load_error'),
+        icon: Icons.cloud_off_outlined,
+        message: t.discovery_partial_failure,
+        action: _retryButton(),
       );
     }
     if (_loading && _entries.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(child: adaptiveIndicator(context: context));
     }
     final DiscoveryAggregateResult? result = _result;
     if (_entries.isEmpty) {
@@ -962,23 +1036,22 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       // `object not found`（搜索仍可用），点进任何目录都只看到「无结果」。
       // 判据用模型层早就有的 `isTotalFailure`（successfulSourceCount==0 && 有失败）。
       if (result != null && result.isTotalFailure) {
-        return Center(
-          child: Text(
-            '${t.discovery_sources_unavailable} '
-            '(${result.failures.map((ExternalProviderFailure f) => f.providerId).toSet().join(', ')})',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium
-                ?.copyWith(color: theme.colorScheme.error),
-          ),
+        return FushiPlaceholderMessage(
+          key: const ValueKey<String>('discovery_sources_unavailable'),
+          icon: Icons.cloud_off_outlined,
+          message: t.discovery_sources_unavailable,
+          // 印来源展示名而不是接线 id（与视频发现页横幅同一条，BUG-2430）。
+          detail: <String>{
+            for (final ExternalProviderFailure f in result.failures)
+              _sourceDisplayName(service, f.providerId),
+          }.join(' · '),
+          action: _retryButton(),
         );
       }
       // 空查询的两种引导态已在上面分流：能走到这里的空列表就是真·无结果。
-      return Center(
-        child: Text(
-          t.discovery_empty,
-          style: theme.textTheme.bodyMedium
-              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-        ),
+      return FushiPlaceholderMessage(
+        icon: Icons.search_off_rounded,
+        message: t.discovery_empty,
       );
     }
 
@@ -987,105 +1060,149 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       int hiddenZeroSeeders,
       int hiddenManga
     }) visible = _visible;
+    final List<ExternalProviderFailure> failures = _failures;
     return AnimatedBuilder(
       animation: EngineListenable(queue),
-      builder: (BuildContext context, Widget? _) => ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
-            _buildHiddenNotice(
-              context,
-              visible.hiddenZeroSeeders,
-              visible.hiddenManga,
-            ),
-          if (result != null && result.hasFailures)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                '${t.discovery_partial_failure} '
-                '(${result.failures.map((ExternalProviderFailure f) => f.providerId).toSet().join(', ')})',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
-            ),
-          for (final DiscoveryEntry entry in visible.entries)
-            switch (entry) {
-              DiscoveryFolder() => FushiListItem(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: Text(entry.title),
-                  // 目录条目不带来源名，用户看不出这是哪个站的目录。
-                  subtitle: Text(
-                    <String>[
-                      service.sourceById(entry.sourceId)?.displayName ??
-                          entry.sourceId,
-                      if (entry.note?.trim().isNotEmpty == true) entry.note!,
-                      if (entry.itemCount != null)
-                        t.media_source_count_manga(n: entry.itemCount!),
-                    ].join(' · '),
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openFolder(entry),
+      builder: (BuildContext context, Widget? _) =>
+          NotificationListener<ScrollNotification>(
+        onNotification: (ScrollNotification notification) {
+          if (discoveryShouldLoadMore(notification.metrics)) _loadMore();
+          return false;
+        },
+        child: CustomScrollView(
+          key: const ValueKey<String>('discovery-results-scroll'),
+          controller: _resultsScroll,
+          slivers: <Widget>[
+            if (failures.isNotEmpty)
+              SliverToBoxAdapter(
+                child: DiscoveryProviderWarningBanner(
+                  key: const ValueKey<String>('discovery_provider_warning'),
+                  failures: failures,
+                  displayNameFor: (String id) =>
+                      _sourceDisplayName(service, id),
                 ),
-              // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
-              DiscoveryResourceItem() => Opacity(
-                  key: ValueKey<String>(
-                    'discovery_item_${entry.sourceId}_${entry.id}',
-                  ),
-                  opacity: entry.seeders == 0 ? 0.5 : 1,
-                  child: FushiListItem(
-                    leading: Icon(
-                      entry.payloadKind == DiscoveryPayloadKind.torrent
-                          ? Icons.link
-                          : Icons.insert_drive_file_outlined,
+              ),
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverList.list(
+                children: <Widget>[
+                  if (visible.hiddenZeroSeeders + visible.hiddenManga > 0)
+                    _buildHiddenNotice(
+                      context,
+                      visible.hiddenZeroSeeders,
+                      visible.hiddenManga,
                     ),
-                    title: _buildResourceTitle(context, entry),
-                    // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
-                    // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
-                    // 切掉，用户分不出哪一卷。
-                    titleMaxLines: null,
-                    subtitle: Text(_subtitleFor(entry, service)),
-                    trailing: _resolvingTorrentIds.contains(
-                              '${entry.sourceId}\u0000${entry.id}',
-                            ) ||
-                            queue.isPending(entry)
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : entry.isDownloadable
-                            ? FushiIconButton(
-                                icon: Icons.download_outlined,
-                                tooltip: t.anime_download_generic_download,
-                                label: t.anime_download_generic_download,
-                                onTap: () => unawaited(_download(entry)),
-                              )
-                            : null,
-                    onTap: entry.isDownloadable
-                        ? () => unawaited(_download(entry))
-                        : null,
-                  ),
-                ),
-            },
-          if (result != null && result.hasMore)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Center(
-                child: _loading
-                    ? const CircularProgressIndicator()
-                    : TextButton(
-                        onPressed: () {
-                          _page++;
-                          unawaited(_load(append: true));
-                        },
-                        child: Text(t.discovery_load_more),
+                  for (final DiscoveryEntry entry in visible.entries)
+                    switch (entry) {
+                      DiscoveryFolder() => FushiListItem(
+                          leading: const Icon(Icons.folder_outlined),
+                          title: Text(entry.title),
+                          // 目录条目不带来源名，用户看不出这是哪个站的目录。
+                          subtitle: Text(
+                            <String>[
+                              service.sourceById(entry.sourceId)?.displayName ??
+                                  entry.sourceId,
+                              if (entry.note?.trim().isNotEmpty == true)
+                                entry.note!,
+                              if (entry.itemCount != null)
+                                t.media_source_count_manga(n: entry.itemCount!),
+                            ].join(' · '),
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _openFolder(entry),
+                        ),
+                      // 未隐藏时 0 做种条目灰显：死种能看到，但一眼分得出。
+                      DiscoveryResourceItem() => Opacity(
+                          key: ValueKey<String>(
+                            'discovery_item_${entry.sourceId}_${entry.id}',
+                          ),
+                          opacity: entry.seeders == 0 ? 0.5 : 1,
+                          child: FushiListItem(
+                            leading: Icon(
+                              entry.payloadKind == DiscoveryPayloadKind.torrent
+                                  ? Icons.link
+                                  : Icons.insert_drive_file_outlined,
+                            ),
+                            title: _buildResourceTitle(context, entry),
+                            // 不限行：同系列书名只在末尾差卷号（OPDS 的「…惰眠を
+                            // むさぼるまで 3」），两行 ellipsis 恰好把唯一的区分信息
+                            // 切掉，用户分不出哪一卷。
+                            titleMaxLines: null,
+                            subtitle: Text(_subtitleFor(entry, service)),
+                            trailing: _resolvingTorrentIds.contains(
+                                      '${entry.sourceId}\u0000${entry.id}',
+                                    ) ||
+                                    queue.isPending(entry)
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : entry.isDownloadable
+                                    ? FushiIconButton(
+                                        icon: Icons.download_outlined,
+                                        tooltip:
+                                            t.anime_download_generic_download,
+                                        label:
+                                            t.anime_download_generic_download,
+                                        onTap: () =>
+                                            unawaited(_download(entry)),
+                                      )
+                                    : null,
+                            onTap: entry.isDownloadable
+                                ? () => unawaited(_download(entry))
+                                : null,
+                          ),
+                        ),
+                    },
+                  if (_loadMoreFailed)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Center(
+                        child: TextButton.icon(
+                          key: const ValueKey<String>(
+                              'discovery_load_more_retry'),
+                          onPressed: _retryLoadMore,
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: Text(t.retry),
+                        ),
                       ),
+                    )
+                  else if (result != null && result.hasMore)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Center(
+                        // 自动翻页之外的兜底：键盘 / 手柄焦点走到页尾、或首页不满一屏
+                        // 没有滚动事件可等时，仍能手动拉下一页。
+                        child: _loading
+                            ? adaptiveIndicator(context: context)
+                            : TextButton(
+                                key: const ValueKey<String>(
+                                    'discovery_load_more'),
+                                onPressed: _loadMore,
+                                child: Text(t.discovery_load_more),
+                              ),
+                      ),
+                    ),
+                ],
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  String _sourceDisplayName(MediaDiscoveryService service, String sourceId) =>
+      service.sourceById(sourceId)?.displayName ?? sourceId;
+
+  Widget _retryButton() => FilledButton.icon(
+        key: const ValueKey<String>('discovery_retry'),
+        onPressed: () => unawaited(_load()),
+        icon: const Icon(Icons.refresh_rounded),
+        label: Text(t.retry),
+      );
 
   @override
   Widget build(BuildContext context) {
