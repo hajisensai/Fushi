@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2591 条。点号进各自文件。
+> 共 2592 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -109,6 +109,7 @@
 | [BUG-2735](bugs/BUG-2735-galgame-remove-cascades-sessions.md) | ✅ | ✅ | 从库移除游戏经 FK cascade 删光所有 Profile 的游玩会话 |
 | [BUG-2734](bugs/BUG-2734-video-lookup-popup-entrance-wheel.md) | ✅ | ✅ | 视频查词框弹出动画跳变、滚轮手感与 galgame 查词框不一致 |
 | [BUG-2733](bugs/BUG-2733-gal-wgc-yellow-border.md) | ✅ | ✅ | galgame 全屏时游戏窗口四周常驻一圈黄线（WGC 捕获框） |
+| [BUG-2732](bugs/BUG-2732-reallive-nwk-voice-ready.md) | ✅ | ✅ | RealLive NWK 语音已导出却被 DirectSound 流（BGM）冒领配对 |
 | [BUG-2731](bugs/BUG-2731-video-swipe-seek-undone.md) | ✅ | ✅ | 移动端横滑跳转后被自适应画质重开流抹回原位 |
 | [BUG-2730](bugs/BUG-2730-bilibili-pcdn-referer.md) | ✅ | ✅ | B 站网页制卡 PCDN 节点 403：按 host 推 Referer 追不上域名轮换 |
 | [BUG-2729](bugs/BUG-2729-game-stream-weak-network.md) | ✅ | ✅ | 串流弱网：码率下限卡死拥塞控制、默认值被固化 |
