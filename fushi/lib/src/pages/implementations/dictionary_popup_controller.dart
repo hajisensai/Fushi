@@ -76,6 +76,15 @@ class DictionaryPopupEntry {
   /// WebView 已预热渲染就绪，立即可见无白屏。[revealRendered] 命中后清回 false。
   bool revealOnRender = false;
 
+  /// 本层这一次翻可见时，屏上是否正画着它的搜索期加载占位卡。
+  ///
+  /// 占位卡已经是「弹窗出现」本身（它自带入场淡入）；真弹窗接替它时若再从透明度 0
+  /// 淡入，占位卡同一帧撤掉、真弹窗还半透明，中间就露出一段透底的空框——视频页换词时
+  /// 用户看到的「先闪一个半透明空壳」。为真时宿主直接满不透明显示本层。每次翻可见
+  /// （[DictionaryPopupController.revealRendered] / 兜底强制翻 / [DictionaryPopupController.show]）
+  /// 都重新判定，不跨查词沿用。
+  bool revealedOverSearchPlaceholder = false;
+
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 
@@ -317,6 +326,13 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   Rect? get pendingRect => isSearchingUi ? _pendingRectRaw : null;
+
+  /// 上一帧屏上是否画着 [e] 的搜索期加载占位卡（翻可见前判定，见
+  /// [DictionaryPopupEntry.revealedOverSearchPlaceholder]）。读原始字段而非派生的
+  /// [pendingRect]：空结果路径先 [fillResult] 清掉 `isSearching` 再 [show]，那一刻
+  /// 派生值已落 false，可占位卡要到这次重建才撤。
+  bool _isSearchPlaceholderFor(DictionaryPopupEntry e) =>
+      identical(_searchTarget, e) && _pendingRectRaw != null;
 
   void beginSearchUi(Rect rect, DictionaryPopupEntry target) {
     _searchTarget = target;
@@ -619,6 +635,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
   void show(DictionaryPopupEntry e) {
     _cancelRevealTimer(e);
+    e.revealedOverSearchPlaceholder = _isSearchPlaceholderFor(e);
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
@@ -670,6 +687,7 @@ class DictionaryPopupController extends ChangeNotifier {
       // 到时仍挂起（没收到 popupRendered，也没被显示/裁掉）→ 强制翻可见。
       _revealFailsafeTimers.remove(e);
       if (!e.revealOnRender || !_entries.contains(e)) return;
+      e.revealedOverSearchPlaceholder = _isSearchPlaceholderFor(e);
       e.visible = true;
       e.revealOnRender = false;
       // 诊断（2026-09-22）：走到这里就是用户说的那个「闪」——渲染信号没在兜底超时内
@@ -711,6 +729,7 @@ class DictionaryPopupController extends ChangeNotifier {
   bool revealRendered(DictionaryPopupEntry e) {
     if (!e.revealOnRender) return false;
     _cancelRevealTimer(e);
+    e.revealedOverSearchPlaceholder = _isSearchPlaceholderFor(e);
     e.visible = true;
     e.revealOnRender = false;
     LookupPerfTrace.current?.mark('reveal');

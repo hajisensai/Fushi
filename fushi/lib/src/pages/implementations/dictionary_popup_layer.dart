@@ -393,6 +393,7 @@ Widget parkedPopupLayer({
   required bool visible,
   required Size screen,
   required Widget child,
+  bool fadeIn = true,
 }) {
   return Positioned(
     key: key,
@@ -406,7 +407,10 @@ Widget parkedPopupLayer({
       maintainAnimation: true,
       maintainSize: true,
       // TODO-890 姊妹项：入场淡入。四表面共用此收口，一处补齐全部。
-      child: _PopupEntranceFade(visible: visible, child: child),
+      // [fadeIn]=false：本层接替已在屏上的搜索占位卡翻出，占位卡已经淡入过，
+      // 再从 0 淡入会在两者交接处露出一段透底空框（见
+      // DictionaryPopupEntry.revealedOverSearchPlaceholder）。
+      child: _PopupEntranceFade(visible: visible, fadeIn: fadeIn, child: child),
     ),
   );
 }
@@ -488,11 +492,47 @@ List<Widget> parkedRealmPopupLayers({
 /// `AnimatedOpacity(opacity: visible ? 1 : 0)`——首次挂载即 `visible:true` 的
 /// 视频 / 首页 / 独立窗会跳过淡入。这里用「首帧强制 0 + post-frame 翻 1」保证每次进入
 /// 可见态都淡入（含首帧即可见），镜像 app 外「shell 默认 opacity:0，reveal gate 齐才翻 1」。
+/// 把 [webView] 布局得比可见区高 [overflowHeight]、顶端对齐并裁掉超出部分
+/// （见 [DictionaryPopupLayer.webViewOverflowHeight]）。≤0 / 非有限值原样返回。
+Widget popupWebViewOverflow({
+  required double overflowHeight,
+  required Widget webView,
+}) {
+  if (!overflowHeight.isFinite || overflowHeight <= 0) return webView;
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      if (!constraints.hasBoundedHeight) return webView;
+      final double height = constraints.maxHeight + overflowHeight;
+      return ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minHeight: height,
+          maxHeight: height,
+          child: webView,
+        ),
+      );
+    },
+  );
+}
+
+/// 搜索期加载占位卡的入场淡入：与 [parkedPopupLayer] 同一个 [_PopupEntranceFade]
+/// （同时长 / 曲线 / 墨水屏归零），占位卡每次插入 Stack 都是新 State，故每次查词淡入
+/// 一次。占位卡一旦画出，接替它的真弹窗就以 `fadeIn: false` 直接满不透明显示。
+Widget popupEntranceFade({required Widget child}) =>
+    _PopupEntranceFade(visible: true, child: child);
+
 class _PopupEntranceFade extends StatefulWidget {
-  const _PopupEntranceFade({required this.visible, required this.child});
+  const _PopupEntranceFade({
+    required this.visible,
+    required this.child,
+    this.fadeIn = true,
+  });
 
   final bool visible;
   final Widget child;
+
+  /// false：进入可见态时直接满不透明（不补间）。
+  final bool fadeIn;
 
   @override
   State<_PopupEntranceFade> createState() => _PopupEntranceFadeState();
@@ -505,7 +545,7 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
   @override
   void initState() {
     super.initState();
-    if (widget.visible) _scheduleReveal();
+    if (widget.visible) _enterVisible();
   }
 
   @override
@@ -513,9 +553,19 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
     super.didUpdateWidget(oldWidget);
     if (widget.visible && !oldWidget.visible) {
       _revealed = false; // 重新进入可见态：复位以再次淡入。
-      _scheduleReveal();
+      _enterVisible();
     } else if (!widget.visible && oldWidget.visible) {
       _revealed = false; // 隐藏即复位，避免下次瞬间满不透明。
+    }
+  }
+
+  /// 进入可见态：要淡入就排下一帧翻 [_revealed]；不淡入就同帧翻（配合 build 里
+  /// 的零时长，首个可见帧即满不透明）。
+  void _enterVisible() {
+    if (widget.fadeIn) {
+      _scheduleReveal();
+    } else {
+      _revealed = true;
     }
   }
 
@@ -535,7 +585,9 @@ class _PopupEntranceFadeState extends State<_PopupEntranceFade> {
       // 墨水屏模式：淡入归零为瞬时显示——慢刷新屏上 0→1 补间是一段灰阶残影，
       // 且弹窗「先出壳后出内容」的观感在 e-ink 上尤其糟。
       opacity: widget.visible && _revealed ? 1.0 : 0.0,
-      duration: isEinkTheme(context) ? Duration.zero : _kSlideDuration,
+      duration: isEinkTheme(context) || !widget.fadeIn
+          ? Duration.zero
+          : _kSlideDuration,
       curve: Curves.easeOut,
       child: widget.child,
     );
@@ -697,6 +749,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.overrideFillColor,
     this.showBorder = true,
     this.bottomDocked = false,
+    this.webViewOverflowHeight = 0,
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
     this.onClose,
@@ -883,6 +936,19 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 「全宽没铺满」。为真时把圆角摊平成直角，让 surface 真正边到边（BUG-2439）。跟随
   /// 选区的普通弹窗四周都有留白，保持既有圆角。
   final bool bottomDocked;
+
+  /// WebView 比正文可见区**多**布局出来的高度（逻辑像素，≥0），多出部分裁掉。
+  ///
+  /// 自适应高度（BUG-1651）的宿主把外壳收到内容高度，但让 WebView 始终按「外壳取
+  /// 用户最大高度」时的正文高度布局、顶端对齐、超出部分裁剪。这样内容增减（换词、
+  /// 分页追加词条）只改裁剪框，原生 WebView 表面尺寸不变：Windows 上 WebView2 表面
+  /// 改尺寸要重建 WGC 帧池、新尺寸的帧晚于 Flutter 布局到达，那几帧旧帧被 [Texture]
+  /// 拉伸到新矩形里——用户看到的「查词框内容先放大一帧再缩回」「高度一格一格撑开」。
+  /// app 外覆盖窗在 DOM 内改卡片高度，本来就没有这个问题。
+  ///
+  /// 前提：外壳比最大高度矮时，内容本就完整落在可见区内（外壳 = 内容高度），被裁掉的
+  /// 只是空白；外壳顶到最大高度时本值为 0，与改前逐字节一致。0 = 不裁剪（默认）。
+  final double webViewOverflowHeight;
 
   /// TODO-406/407：滑动关闭是否生效——平台/偏好开关（[enableSwipeToClose]）与调用方
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
@@ -1292,7 +1358,9 @@ class DictionaryPopupLayer extends StatelessWidget {
     if (hasRenderableResults || isSearching || keepWebViewWarm) {
       return Stack(
         children: [
-          DictionaryPopupWebView(
+          popupWebViewOverflow(
+              overflowHeight: webViewOverflowHeight,
+              webView: DictionaryPopupWebView(
             key: webViewKey,
             transparentDocumentBackground: transparentDocumentBackground,
             result: result ?? kPopupSearchingPlaceholderResult,
@@ -1320,7 +1388,7 @@ class DictionaryPopupLayer extends StatelessWidget {
             onRenderError: onRenderError,
             inputSpec: inputSpec,
             onHostInputToken: onHostInputToken,
-          ),
+          )),
           // 搜索期且还没有词条时，用一层不透明主题色盖板（带进度条）盖住 WebView。
           // 视频（mixin reuseWarmSlot）会在结果就绪前就把热槽设为可见，此刻 WebView
           // 是空载——Windows 的 inappwebview fork 不完全尊重 transparentBackground，
