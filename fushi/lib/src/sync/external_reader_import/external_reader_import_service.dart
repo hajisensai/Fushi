@@ -226,7 +226,7 @@ class ExternalReaderImportService {
       target: ExternalReaderSegmentTarget(
         mediaKey: bookKey,
         title: row?.title ?? book.title,
-        format: row?.format ?? 'epub',
+        format: row?.format ?? BookFormat.epub.dbValue,
         profileId: profileId,
         profileName: profileName,
       ),

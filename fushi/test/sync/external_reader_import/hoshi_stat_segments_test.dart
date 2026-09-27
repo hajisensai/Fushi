@@ -139,7 +139,7 @@ void main() {
       expect(row.deviceId.value, kExternalReaderImportDeviceId);
       expect(row.mediaKind.value, kActivityMediaBook);
       expect(row.mediaKey.value, 'book-key');
-      expect(row.format.value, 'epub');
+      expect(row.format.value, BookFormat.epub.dbValue);
       expect(row.profileId.value, 7);
       expect(row.dateKey.value, '2026-09-01');
       expect(row.hour.value, 2);

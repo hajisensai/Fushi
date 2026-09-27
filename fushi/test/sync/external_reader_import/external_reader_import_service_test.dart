@@ -190,7 +190,7 @@ void main() {
         (StudySegmentRow r) =>
             r.deviceId == kExternalReaderImportDeviceId &&
             r.profileId == profileId &&
-            r.format == 'epub',
+            BookFormat.parseOrEpub(r.format) == BookFormat.epub,
       ),
       isTrue,
     );
