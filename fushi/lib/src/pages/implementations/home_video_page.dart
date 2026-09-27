@@ -1885,7 +1885,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // 拖入 .torrent → 下载中心「添加任务」对话框预填种子，内容类型预填视频。
         // 与页头按钮同一入口：后端未配时同样弹引导，不在这里另写一套。下载中心
         // 关掉时给可见提示（与书架同一形态），不静默。
-        if (!appModel.moduleVisibility.isEnabled(ModuleId.downloads)) {
+        if (!appModel.moduleVisibility.isEnabled(ModuleId.browse)) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(t.module_disabled_hint)),
           );
@@ -6177,8 +6177,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onTap: widget.onOpenScrapeTasks!,
           ),
         ),
-      // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
-      // （downloads_page）里有完整入口，视频库页头只留库管理动作。
+      // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
+      // （browse_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
       if (widget.navigation == null)

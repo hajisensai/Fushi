@@ -30,7 +30,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
   HomeTab.books => ModuleId.books,
   HomeTab.manga => ModuleId.manga,
   HomeTab.video => ModuleId.video,
-  HomeTab.downloads => ModuleId.downloads,
+  HomeTab.browse => ModuleId.browse,
   HomeTab.dictionaries => ModuleId.lookup,
   HomeTab.games => ModuleId.games,
   HomeTab.browserExtension => ModuleId.browserExtension,
@@ -47,7 +47,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.books => HomeTab.books,
   ModuleId.manga => HomeTab.manga,
   ModuleId.video => HomeTab.video,
-  ModuleId.downloads => HomeTab.downloads,
+  ModuleId.browse => HomeTab.browse,
   ModuleId.lookup => HomeTab.dictionaries,
   ModuleId.games => HomeTab.games,
   ModuleId.browserExtension => HomeTab.browserExtension,
@@ -86,7 +86,7 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
-  SettingsDestinationId.downloads => ModuleId.downloads,
+  SettingsDestinationId.downloads => ModuleId.browse,
   SettingsDestinationId.game => ModuleId.games,
   // 在线服务与媒体追踪同属「第三方服务」一个开关：追踪本就是靠在线服务的
   // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。

@@ -221,7 +221,7 @@ void main() {
       '游戏': 'lib/src/pages/implementations/game_shared.dart',
       // 下载页也是顶层 tab、也切四个独立目的地，同属这条收敛（它页内还有
       // TabBarView，走 controlled 形态共用同一个 TabController）。
-      '下载': 'lib/src/pages/implementations/downloads_page.dart',
+      '下载': 'lib/src/pages/implementations/browse_page.dart',
     };
     for (final MapEntry<String, String> entry in topBarSources.entries) {
       final String src = File(entry.value).readAsStringSync();

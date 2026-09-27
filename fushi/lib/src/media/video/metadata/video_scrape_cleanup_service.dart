@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 typedef VideoScrapeArtifactQuarantinedCallback =
     Future<void> Function(String originalPath, String quarantinePath);
@@ -1093,6 +1094,7 @@ class VideoScrapeCleanupService {
   }
 
   static bool _isRemotePath(String value) {
+    if (isAnimeSourceVideoPath(value)) return true;
     final Uri? uri = Uri.tryParse(value);
     return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
   }

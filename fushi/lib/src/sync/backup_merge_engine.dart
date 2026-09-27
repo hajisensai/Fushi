@@ -6,6 +6,7 @@ import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -100,7 +101,10 @@ class BackupMergeEngine {
   /// streaming only. Callers append this to the row's own NOT EXISTS guard.
   String get _reachableVideoPredicate {
     final StringBuffer buf = StringBuffer(
-      "(s.video_path LIKE 'http://%' OR s.video_path LIKE 'https://%'",
+      // 与 BackupService._isStreamingVideoPath 同一判据（[isNetworkOnlyVideoPath]）：
+      // http/https 流 + 在线视频源入库集，两处计数才对得上。
+      "(s.video_path LIKE 'http://%' OR s.video_path LIKE 'https://%' "
+      "OR s.video_path LIKE '$kAnimeSourceVideoPathScheme://%'",
     );
     if (_carriedVideoSourcePaths.isNotEmpty) {
       final String placeholders =

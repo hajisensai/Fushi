@@ -12,9 +12,10 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subscription.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/download_subscriptions_panel.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 
 import '../helpers/test_platform_services.dart';
 
@@ -123,6 +124,18 @@ class _FakeAppModel extends AppModel {
   @override
   FushiDatabase get database =>
       testDatabase ??= FushiDatabase.forTesting(NativeDatabase.memory());
+
+  /// 测试直接给定可见模块（浏览页的页签随它增减）。
+  ModuleVisibility? visibilityOverride;
+
+  @override
+  ModuleVisibility get moduleVisibility =>
+      visibilityOverride ?? super.moduleVisibility;
+
+  void setVisibility(ModuleVisibility visibility) {
+    visibilityOverride = visibility;
+    notifyListeners();
+  }
 }
 
 void main() {
@@ -244,7 +257,7 @@ void main() {
   });
 
   testWidgets(
-      'downloads page switches between resources, tasks and subscriptions',
+      'browse page downloads tab switches between tasks and subscriptions',
       (WidgetTester tester) async {
     final _MemorySubscriptionStore store = _MemorySubscriptionStore();
     final _MemoryPlanStore planStore = _MemoryPlanStore();
@@ -263,20 +276,137 @@ void main() {
           appProvider.overrideWith((ref) => appModel),
         ],
         child: TranslationProvider(
-          child: const MaterialApp(home: DownloadsPage()),
+          child: const MaterialApp(
+            home: BrowsePage(initialTab: BrowseTab.downloads),
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(t.download_resources_tab), findsOneWidget);
-    await tester.tap(find.text(t.download_tasks_tab));
-    await tester.pumpAndSettle();
+    expect(find.text(t.nav_downloads), findsOneWidget);
+    // 任务是「下载」页签的默认段。
+    expect(find.text(t.download_tasks_tab), findsOneWidget);
     expect(find.text(t.anime_download_no_tasks), findsOneWidget);
 
     await tester.tap(find.text(t.download_subscriptions_tab));
     await tester.pumpAndSettle();
     expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    service.checking.dispose();
+    store.revision.dispose();
+    await appModel.testDatabase?.close();
+  });
+
+  // PR #1707 审查：首页保活浏览页后，「管理订阅」等跳转要原地切到目标段，
+  // 不再靠换 key 整页重建（那会丢掉各页签的搜索与结果）。
+  testWidgets('navigation request switches a mounted browse page in place',
+      (WidgetTester tester) async {
+    final _MemorySubscriptionStore store = _MemorySubscriptionStore();
+    final _MemoryPlanStore planStore = _MemoryPlanStore();
+    final AnimeDownloadSubscriptionService service =
+        AnimeDownloadSubscriptionService(
+      store: store,
+      planStore: planStore,
+      configProvider: () => const QbConnectionConfig(),
+      backendFactory: (_) => _NoopBackend(),
+      search: (_) async => const [],
+    );
+    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
+      ..visibilityOverride =
+          const ModuleVisibility(<ModuleId>{ModuleId.browse});
+    BrowseNavigationRequest? request;
+    late StateSetter setHost;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: StatefulBuilder(
+              builder: (BuildContext context, StateSetter setState) {
+                setHost = setState;
+                return BrowsePage(
+                  initialTab: BrowseTab.downloads,
+                  navigationRequest: request,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+    final State<StatefulWidget> mounted = tester.state(find.byType(BrowsePage));
+
+    setHost(() {
+      request = BrowseNavigationRequest(
+        BrowseTab.downloads,
+        downloadsSection: BrowseDownloadsSection.subscriptions,
+      );
+    });
+    await tester.pumpAndSettle();
+    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+    expect(identical(tester.state(find.byType(BrowsePage)), mounted), isTrue,
+        reason: '跳转是原地切段，不是重建整页');
+
+    // 宿主用后即清（传 null）不得把页面拽回别的段。
+    setHost(() => request = null);
+    await tester.pumpAndSettle();
+    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    service.checking.dispose();
+    store.revision.dispose();
+    await appModel.testDatabase?.close();
+  });
+
+  // PR #1707 审查：页签随模块开关增减时按页签 id 保留选中，DefaultTabController
+  // 只保留下标——前面多出来源 / 扩展 / 发现三个页签，旧实现会从「下载」静默
+  // 落到「来源」。
+  testWidgets('browse page keeps the selected tab by id when tabs change',
+      (WidgetTester tester) async {
+    final _MemorySubscriptionStore store = _MemorySubscriptionStore();
+    final _MemoryPlanStore planStore = _MemoryPlanStore();
+    final AnimeDownloadSubscriptionService service =
+        AnimeDownloadSubscriptionService(
+      store: store,
+      planStore: planStore,
+      configProvider: () => const QbConnectionConfig(),
+      backendFactory: (_) => _NoopBackend(),
+      search: (_) async => const [],
+    );
+    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
+      ..visibilityOverride =
+          const ModuleVisibility(<ModuleId>{ModuleId.browse});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: const MaterialApp(home: BrowsePage()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+
+    appModel.setVisibility(
+      const ModuleVisibility(<ModuleId>{ModuleId.browse, ModuleId.books}),
+    );
+    await tester.pumpAndSettle();
+    // 页签确实变多了（前面多出来源 / 扩展 / 发现），选中仍是「下载」。
+    expect(find.text(t.library_view_discover), findsOneWidget);
+    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+    // 来源 / 扩展是否出现取决于测试宿主平台的在线宿主门，「发现」一定出现；
+    // 「下载」恒在最后。
+    final TabBarView view = tester.widget<TabBarView>(find.byType(TabBarView));
+    expect(view.children.length, greaterThan(1));
+    expect(view.controller!.index, view.children.length - 1);
     expect(tester.takeException(), isNull);
 
     service.checking.dispose();

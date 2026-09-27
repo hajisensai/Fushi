@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,6 +11,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -502,15 +504,132 @@ void main() {
         positionMs: 0,
         updatedAtMs: 0,
       ));
+      // 整片下载现在可用（浏览阶段 2b）：源这一集没有可播流时如实报 NO_VIDEOS。
       await expectLater(
         () => c.downloadRemoteVideo(
           c.remoteVideos.first.id,
           File('${root.path}/x'),
         ),
-        throwsA(isA<UnsupportedError>()),
+        throwsA(
+          isA<MihonRuntimeException>().having(
+            (MihonRuntimeException e) => e.code,
+            'code',
+            'NO_VIDEOS',
+          ),
+        ),
       );
     },
   );
+
+  group('downloadRemoteVideo', () {
+    AnimeSourceVideoClient downloadingClient(_RecordingDownloader d) =>
+        AnimeSourceVideoClient(
+          manager: manager,
+          context: _context,
+          anime: anime,
+          episodes: sortEpisodesForPlayback(episodes),
+          httpClient: MockClient((_) async => http.Response('', 404)),
+          subtitleLanguageResolver: () => null,
+          downloader: d,
+        );
+
+    test('re-resolves the stream every run and hands url + headers to the '
+        'downloader', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep1.m3u8',
+          'quality': '1080p',
+          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      final _RecordingDownloader d = _RecordingDownloader();
+      final AnimeSourceVideoClient c = downloadingClient(d);
+      final String id = c.remoteVideos.first.id;
+      final File dest = File('${root.path}/ep1.mp4');
+      final Completer<void> cancel = Completer<void>();
+      await c.downloadRemoteVideo(id, dest, cancelSignal: cancel.future);
+      await c.downloadRemoteVideo(id, dest);
+      // 签名链接短 TTL：每次（重）跑都重新问扩展（BUG-2617）。
+      expect(runtime.videoListCalls, 2);
+      expect(runtime.lastEpisodeUrl, '/ep/1');
+      expect(d.calls.length, 2);
+      expect(d.calls.first.url, 'https://cdn.example/ep1.m3u8');
+      expect(d.calls.first.headers, <String, String>{
+        'Referer': 'https://site.example/',
+      });
+      expect(d.calls.first.dest.path, dest.path);
+      expect(d.calls.first.cancelSignal, same(cancel.future));
+      // 下载选中的流记为当前流：默认字幕文件名跟着这一集。
+      expect(await c.defaultSubtitleFileName(id), 'episode_1.日本語.vtt');
+      expect(await c.defaultSubtitleFileName(c.remoteVideos[1].id), isNull);
+    });
+
+    test('a pinned line is downloaded instead of the default', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/1080.mp4',
+          'quality': '1080p',
+        },
+        <Object?, Object?>{
+          'url': 'https://cdn.example/480.mp4',
+          'quality': '480p',
+        },
+      ];
+      final _RecordingDownloader d = _RecordingDownloader();
+      final AnimeSourceVideoClient c = downloadingClient(d);
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      c.streamVariantIndex = 1;
+      await c.downloadRemoteVideo(id, File('${root.path}/ep1.mp4'));
+      expect(d.calls.single.url, 'https://cdn.example/480.mp4');
+    });
+
+    test('an unknown id is rejected before asking the extension', () async {
+      final _RecordingDownloader d = _RecordingDownloader();
+      final AnimeSourceVideoClient c = downloadingClient(d);
+      await expectLater(
+        () => c.downloadRemoteVideo(
+          'anime-source:nope',
+          File('${root.path}/x'),
+        ),
+        throwsArgumentError,
+      );
+      expect(runtime.videoListCalls, 0);
+      expect(d.calls, isEmpty);
+    });
+  });
+
+  test('episodeIds from library rows override the derived ids', () {
+    final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+      manager: manager,
+      context: _context,
+      anime: anime,
+      episodes: sortEpisodesForPlayback(episodes),
+      httpClient: MockClient((_) async => http.Response('', 404)),
+      episodeIds: const <String>['row-1', 'row-2'],
+    );
+    expect(c.remoteVideos.map((RemoteVideoInfo v) => v.id), <String>[
+      'row-1',
+      'row-2',
+    ]);
+    expect(c.episodeForVideoId('row-2')?.url, '/ep/2');
+    // 长度对不上时不采用（回落派生 id），不会张冠李戴。
+    final AnimeSourceVideoClient mismatched = AnimeSourceVideoClient(
+      manager: manager,
+      context: _context,
+      anime: anime,
+      episodes: sortEpisodesForPlayback(episodes),
+      httpClient: MockClient((_) async => http.Response('', 404)),
+      episodeIds: const <String>['only-one'],
+    );
+    expect(mismatched.remoteVideos.first.id, endsWith(':42:/ep/1'));
+  });
 
   test('audioTracks are dub alternatives, never exposed as audioStreamUrl',
       () async {
@@ -679,4 +798,30 @@ class _VideoRuntime extends MihonBridgeRuntime {
 
   @override
   Future<void> dispose() async {}
+}
+
+class _DownloadCall {
+  const _DownloadCall(this.url, this.headers, this.dest, this.cancelSignal);
+
+  final String url;
+  final Map<String, String> headers;
+  final File dest;
+  final Future<void>? cancelSignal;
+}
+
+class _RecordingDownloader extends AnimeEpisodeDownloader {
+  final List<_DownloadCall> calls = <_DownloadCall>[];
+
+  @override
+  Future<void> download({
+    required String url,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    calls.add(_DownloadCall(url, headers, dest, cancelSignal));
+    onProgress?.call(1.0);
+  }
 }

@@ -45,12 +45,11 @@ enum MihonExtensionsSection {
 /// 次筛选卡几秒」。外层滚动容器换成 `CustomScrollView` 后，这里用 `SliverList`
 /// 只建可见的那十几行。
 ///
-/// [sections] 决定内嵌时渲染哪几节：宿主「导入」视图顶部有分段选择器
-/// （`ImportPageSegmentBar`），「仓库」段只要 [MihonExtensionsSection.stores]、
-/// 「扩展」段只要 [MihonExtensionsSection.catalog]。传空集渲染空 sliver——宿主
-/// 在其它段仍把本 widget 留在树里同一位置，为的是筛选 / 折叠 / 批量安装进度这些
-/// 状态跨段切换不丢（批量安装的进度框还握着本 State 的 notifier，切个段就把
-/// State 拆掉是不行的）。
+/// [sections] 决定内嵌时渲染哪几节：「浏览 › 扩展」页签只要
+/// [MihonExtensionsSection.catalog]，它的「仓库」动作 push 出的仓库页只要
+/// [MihonExtensionsSection.stores]（两处各是一个实例）。传空集渲染空 sliver。
+/// 扩展目录那个实例由浏览页按域保活（Offstage），筛选 / 折叠 / 批量安装进度这些
+/// State 切页签域不丢（批量安装的进度框还握着本 State 的 notifier）。
 class MihonExtensionsPage extends ConsumerStatefulWidget {
   const MihonExtensionsPage({
     super.key,
