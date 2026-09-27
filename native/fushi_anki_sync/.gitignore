@@ -1,0 +1,3 @@
+# Official Anki checkout fetched and patched by build.ps1 / build.sh.
+/.anki-src/
+/target/

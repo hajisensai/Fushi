@@ -1,0 +1,42 @@
+diff --git a/rslib/src/version.rs b/rslib/src/version.rs
+index 29f8403..413bc41 100644
+--- a/rslib/src/version.rs
++++ b/rslib/src/version.rs
+@@ -12,12 +12,23 @@ pub fn buildhash() -> &'static str {
+     option_env!("BUILDHASH").unwrap_or("dev").trim()
+ }
+ 
++/// Version of the Fushi helper that links this library (set at build time).
++fn fushi_version() -> &'static str {
++    option_env!("FUSHI_ANKI_SYNC_VERSION").unwrap_or("dev").trim()
++}
++
++/// The client identity sent to sync servers, exposed so the Fushi helper can report it.
++pub fn fushi_sync_client_version() -> &'static str {
++    sync_client_version()
++}
++
+ pub(crate) fn sync_client_version() -> &'static str {
+     static VER: LazyLock<String> = LazyLock::new(|| {
+         format!(
+-            "anki,{version} ({buildhash}),{platform}",
++            // Fushi: identify honestly as a third-party client, not as official Anki.
++            "fushi,{fushi} (anki {version}),{platform}",
++            fushi = fushi_version(),
+             version = version(),
+-            buildhash = buildhash(),
+             platform = env::var("PLATFORM").unwrap_or_else(|_| env::consts::OS.to_string())
+         )
+     });
+@@ -27,9 +38,9 @@ pub(crate) fn sync_client_version() -> &'static str {
+ pub(crate) fn sync_client_version_short() -> &'static str {
+     static VER: LazyLock<String> = LazyLock::new(|| {
+         format!(
+-            "{version},{buildhash},{platform}",
++            "fushi-{fushi},{version},{platform}",
++            fushi = fushi_version(),
+             version = version(),
+-            buildhash = buildhash(),
+             platform = env::consts::OS
+         )
+     });
