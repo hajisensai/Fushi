@@ -56,7 +56,7 @@ void main() {
       await tester.pump();
       await binding.takeScreenshot('mobile-book-library');
 
-      HomePage.debugSelectTab!(HomeTab.downloads);
+      HomePage.debugSelectTab!(HomeTab.browse);
       for (int i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }

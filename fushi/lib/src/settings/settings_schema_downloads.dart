@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/models/module_registry.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
@@ -289,8 +289,10 @@ SettingsDestination buildDownloadsDestination() => SettingsDestination(
           subtitle: t.settings_downloads_open_page_hint,
           icon: Icons.download_outlined,
           showIcon: true,
-          onTap: (SettingsContext context) =>
-              pushSettingsPage(context, (_) => const DownloadsPage()),
+          onTap: (SettingsContext context) => pushSettingsPage(
+            context,
+            (_) => const BrowsePage(initialTab: BrowseTab.downloads),
+          ),
         ),
         buildOpenServicesItem('downloads.online_services'),
       ],

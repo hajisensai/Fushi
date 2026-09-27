@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath, kNetworkStreamSchemes;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -87,9 +90,10 @@ class BackupMergeEngine {
   /// Source-device absolute video paths whose file actually travelled inside the
   /// backup (= `BackupMeta.videoFiles.keys`). A merged `video_books` row is only
   /// materialised when it is REACHABLE on this device: either a streaming book
-  /// (its `video_path` is an `http(s)` URL, self-contained — re-opens by URL) or
-  /// a local-file book whose file is in this set (so `_copyTreeIfAbsent` lands it
-  /// and `_rebaseVideoPaths` re-points it). A local video whose file never
+  /// (its `video_path` is a network stream URL — http(s) / rtsp … —
+  /// self-contained, re-opens by URL) or a local-file book whose file is in this
+  /// set (so `_copyTreeIfAbsent` lands it and `_rebaseVideoPaths` re-points
+  /// it). A local video whose file never
   /// travelled would otherwise import as a dead "empty video" shell that can
   /// never play (TODO-1261). The preview counter applies the SAME predicate so
   /// the confirm dialog's "will add N" matches what the merge actually inserts.
@@ -99,9 +103,7 @@ class BackupMergeEngine {
   /// streaming URLs plus local files carried by the backup. Empty carried set →
   /// streaming only. Callers append this to the row's own NOT EXISTS guard.
   String get _reachableVideoPredicate {
-    final StringBuffer buf = StringBuffer(
-      "(s.video_path LIKE 'http://%' OR s.video_path LIKE 'https://%'",
-    );
+    final StringBuffer buf = StringBuffer('($_networkOnlyVideoPathSql');
     if (_carriedVideoSourcePaths.isNotEmpty) {
       final String placeholders =
           List<String>.filled(_carriedVideoSourcePaths.length, '?').join(', ');
@@ -110,6 +112,19 @@ class BackupMergeEngine {
     buf.write(')');
     return buf.toString();
   }
+
+  /// 「网络流视频行」的 SQL 片段（src 别名 `s`）：[kNetworkStreamSchemes] 每个协议一条
+  /// `s.video_path LIKE '<scheme>://%'`，OR 起来。与导出侧
+  /// `BackupService._isStreamingVideoPath`（= [isNetworkOnlyVideoPath]）是**同一判据**
+  /// ——http(s) 之外，IPTV 频道的 rtsp / rtmp / udp … 地址同样自包含、按 URL 重开，
+  /// 不需要随包文件；本地 `.strm` 是磁盘上的真实文件，照常走「随包文件」分支。
+  /// SQLite 的 LIKE 对 ASCII 大小写不敏感，与 Dart 侧的小写化比较一致。协议集是
+  /// 编译期常量、只含小写字母，直接拼进 SQL 不涉及转义（`_` / `%` 都不出现）。
+  /// 在线视频源入库集（`anime-source://`，起播时向扩展取流）同属网络行。
+  static final String _networkOnlyVideoPathSql = <String>[
+    ...kNetworkStreamSchemes,
+    kAnimeSourceVideoPathScheme,
+  ].map((String scheme) => "s.video_path LIKE '$scheme://%'").join(' OR ');
 
   /// Positional args matching the `?` placeholders in [_reachableVideoPredicate]
   /// (the carried local-file paths, in a stable order). Same order as the set is
@@ -554,7 +569,8 @@ class BackupMergeEngine {
 
   /// Inserts every backup `video_books` row the target lacks, but ONLY when it
   /// is REACHABLE on this device ([_reachableVideoPredicate]): a streaming book
-  /// (self-contained http(s) URL) or a local file the backup actually carried.
+  /// (self-contained network stream URL) or a local file the backup actually
+  /// carried.
   /// A local-file video whose file never travelled is skipped so it never lands
   /// as a dead "empty video" shell that can't play (TODO-1261). `video_books`
   /// has no autoincrement id (PK is `book_uid`), so every column travels.

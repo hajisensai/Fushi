@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/sync/google_drive_auth.dart';
 import 'package:fushi/src/sync/google_drive_handler.dart';
 import 'package:fushi/src/sync/google_drive_sync_space.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
@@ -13,7 +14,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 
 class GoogleDriveSyncBackend extends SyncBackend
-    implements RemoteListingCapable {
+    implements RemoteListingCapable, SyncAssetRangeReader {
   GoogleDriveSyncBackend._();
   static final GoogleDriveSyncBackend instance = GoogleDriveSyncBackend._();
 
@@ -309,6 +310,15 @@ class GoogleDriveSyncBackend extends SyncBackend
             destination: destination,
             onProgress: onProgress,
           ));
+
+  // 云盘视频流播：区间读（appDataFolder 内资产，drive.appdata 授权即可读）。
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) =>
+      _wrapErrors(() => _drive.openFileRange(assetId, start: start, end: end));
 
   @override
   Future<Object?> getJsonAsset(String assetId) =>

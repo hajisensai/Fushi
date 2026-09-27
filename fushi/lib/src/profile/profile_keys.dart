@@ -56,6 +56,9 @@ class ProfileKeys {
     'first_time_setup',
     // 新手引导完成标志与 first_time_setup 同族：描述本安装的状态，不随 Profile 切换。
     'onboarding_completed',
+    // 「下载 → 浏览」一次性搬迁提示的已处理标记：同族。进快照的话，切到一个
+    // 标记落地前建的老 Profile 会把它删掉，关着浏览的用户又被提示一遍。
+    'browse_moved_notice_handled',
     kVideoOnlineServicesSetupDismissedPref,
     'current_home_tab_index',
     'startup_default_dictionary_tab',

@@ -40,6 +40,9 @@ void main() {
         reason: '视频 tab 必须保活（远端视频列表 + 封面无持久缓存）');
     expect(literal.contains('HomeTab.games'), isTrue,
         reason: '游戏 tab 必须保活（切换导航不能 dispose 正在进行的 Hook 会话）');
+    expect(literal.contains('HomeTab.browse'), isTrue,
+        reason: '浏览 tab 必须保活（来源 / 发现页签挂载即对全部来源联网，'
+            '切回不能丢搜索与结果再重拉；PR #1707 审查）');
     expect(literal.contains('HomeTab.dictionaries'), isFalse,
         reason: '查词 tab 不得保活：靠 re-mount 消费桌面悬浮字幕 pending（TODO-376）');
     expect(literal.contains('HomeTab.settings'), isFalse,

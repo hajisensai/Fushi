@@ -1566,6 +1566,15 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     await setPref('torrent_upload_intro_shown', true);
   }
 
+  /// 「下载」改名「浏览」（2026-09-27）的一次性搬迁提示是否已处理：弹过，或首次
+  /// 启动新版时判定本安装不需要弹（全新安装 / 升级前开着下载）。默认 false。
+  bool get browseMovedNoticeHandled =>
+      getPref('browse_moved_notice_handled', defaultValue: false) as bool;
+
+  Future<void> setBrowseMovedNoticeHandled() async {
+    await setPref('browse_moved_notice_handled', true);
+  }
+
   /// 弹幕样式（字号/不透明度/速度/显示区域，JSON；见 [VideoDanmakuStyle]，TODO-1376）。
   /// 读盘经 [VideoDanmakuStyle.decode] 已 clamp 到合法区间。
   VideoDanmakuStyle get videoDanmakuStyle => VideoDanmakuStyle.decode(

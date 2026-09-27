@@ -464,12 +464,17 @@ String redactVideoDiagSecrets(String text) {
     _kSecretTokenAttr,
     (Match m) => '${m.group(1)}[redacted]${m.group(2)}',
   );
+  out = out.replaceAllMapped(
+    _kPresignedPathSecret,
+    (Match m) => '${m.group(1)}[redacted]',
+  );
   return out;
 }
 
 final RegExp _kSecretQueryParam = RegExp(
   r'([?&](?:api_key|apikey|token|access_token|auth|authorization|password|'
-  r'passwd|pwd|x-emby-token|x-mediabrowser-token|x-plex-token)=)[^&\s"<>]+',
+  r'passwd|pwd|x-emby-token|x-mediabrowser-token|x-plex-token|'
+  r'tempauth)=)[^&\s"<>]+',
   caseSensitive: false,
 );
 
@@ -477,6 +482,17 @@ final RegExp _kSecretHeader = RegExp(
   r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization|'
   r'x-plex-token)'
   r'\s*[:=]\s*)[^\r\n]+',
+  caseSensitive: false,
+);
+
+/// 云盘预签名直链里「路径即凭据」的段（云盘视频流播）：Dropbox temporary link
+/// `…dl.dropboxusercontent.com/cd/0/get/<签名>/file`、OneDrive 个人版 downloadUrl
+/// `…files.1drv.com/<签名>/…`。OneDrive 商业版的 `tempauth=` 走查询参数那条。
+/// 流播本身只把 loopback 中继地址交给 libmpv，这里是防御纵深：任何途径把直链写进
+/// 诊断日志，导出时也不带签名。
+final RegExp _kPresignedPathSecret = RegExp(
+  r'((?:dl\.dropboxusercontent\.com/cd/0/[a-z_]+|\.files\.1drv\.com)/)'
+  r'[^/\s"<>?]+',
   caseSensitive: false,
 );
 

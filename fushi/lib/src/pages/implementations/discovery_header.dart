@@ -40,6 +40,7 @@ class DiscoveryHeaderControls extends StatelessWidget {
     required this.onSearchSubmitted,
     super.key,
     this.leading,
+    this.trailing = const <Widget>[],
     this.onSearchChanged,
     this.onSearchCleared,
     this.searchFocusId = const FushiFocusId('discovery-search'),
@@ -66,6 +67,9 @@ class DiscoveryHeaderControls extends StatelessWidget {
 
   /// 控件行之上的附加行（如媒体域分段按钮）。
   final Widget? leading;
+
+  /// 搜索框之后、同一行的附加按钮（页头不渲染时页头动作挪到这里，如刷新）。
+  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +140,10 @@ class DiscoveryHeaderControls extends StatelessWidget {
                   onClear: onSearchCleared,
                 ),
               ),
+              for (final Widget action in trailing) ...<Widget>[
+                SizedBox(width: tokens.spacing.gap),
+                action,
+              ],
             ],
           ),
         ],
