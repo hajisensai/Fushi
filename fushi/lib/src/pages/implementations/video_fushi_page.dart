@@ -1272,6 +1272,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 复用，不再重跑 ffmpeg（切视频/切音轨时 key 变化自动失效，见 [WaveformEnvelopeCache]）。
   final WaveformEnvelopeCache _subtitleWaveformCache = WaveformEnvelopeCache();
 
+  /// 互联远端视频的对轴 / 重定时音轨：host 在本地裁出整集音轨，落到本机临时文件后喂给
+  /// 波形 / 自动对轴 / 语音模型重定时（远端流本身 ffmpeg 抓不动，见 BUG-1004）。按
+  /// `视频 id|集|音轨` 记住进行中与已完成的下载，失败的条目会被移除以便重试；退页时删文件。
+  final Map<String, Future<String?>> _remoteTimingAudioFetches =
+      <String, Future<String?>>{};
+
   /// 进度条 hover 缩略图预览调度器（TODO-669，方案 A）。仅桌面本地文件视频时创建；
   /// 移动端 / 远端流为 null（不取帧，仅经 [_onSeekBarHover] 走 timestampOnly）。
   /// 换集（视频路径变）时重建（绑新离屏取帧器），页面 dispose 时一并销毁。
@@ -4852,6 +4858,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();
+    _discardRemoteTimingAudio();
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
@@ -8565,11 +8572,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSetSecondaryDelay: _setSecondaryDelayMs,
       hasSecondarySubtitle: () =>
           _controller?.secondaryCues.isNotEmpty ?? false,
-      // TODO-701 阶段1：仅当当前有字幕 cue + 视频本地路径时给自动对轴按钮（否则
-      // 无可对齐对象/无音频源），否则置 null 让面板不显示该按钮。
+      // TODO-701 阶段1：仅当当前有字幕 cue + 有对轴音源（本地视频路径，或互联 host
+      // 能裁整集音轨）时给自动对轴按钮，否则置 null 让面板不显示该按钮。
       onAutoAlign:
           (_controller?.cues.isNotEmpty ?? false) &&
-              (_controller?.videoPath?.isNotEmpty ?? false)
+              _canResolveSubtitleTimingAudio
           ? _autoAlignSubtitle
           : null,
       // 「上/下一句对齐到当前时间」按钮：与键盘 Ctrl+Shift+←/→ 同一执行体。只要有
@@ -8578,13 +8585,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onSnapDelayToCue: (_controller?.cues.isNotEmpty ?? false)
           ? _snapSubtitleDelayToCue
           : null,
-      // TODO-1051 阶段B：字幕对轴波形面板输入。有 cue + 本地视频路径时给波形抽取回调
+      // TODO-1051 阶段B：字幕对轴波形面板输入。有 cue + 对轴音源时给波形抽取回调
       // （否则 null，面板不显示）；面板拖动预览、松手才经 onSetDelay(_setDelayMs) 落盘。
       subtitleWaveformCues: _controller?.cues ?? const <AudioCue>[],
       videoDurationMs: _controller?.durationMs ?? 0,
       loadSubtitleWaveform:
           (_controller?.cues.isNotEmpty ?? false) &&
-              (_controller?.videoPath?.isNotEmpty ?? false)
+              _canResolveSubtitleTimingAudio
           ? _loadSubtitleWaveformEnvelope
           : null,
       subtitlePositionListenable: _controller,

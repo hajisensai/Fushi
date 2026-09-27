@@ -166,6 +166,15 @@ class RemoteVideoMetadataUnsupported implements Exception {
   String toString() => 'RemoteVideoMetadataUnsupported';
 }
 
+/// [InterconnectSyncBackend.putRemoteVideoSubtitleAsDefault] 的结果。
+enum RemoteSubtitleDefaultUpload {
+  /// host 已按新语义落盘并设为这一集的默认字幕（旧 sidecar 已备份让位）。
+  applied,
+
+  /// host 不支持「设为默认」（老 host / 库服务未实现）：**没有上传**，字幕只在本机。
+  hostUnsupported,
+}
+
 class InterconnectSyncBackend extends SyncBackend
     with
         SyncFolderCache,
@@ -1882,10 +1891,72 @@ class InterconnectSyncBackend extends SyncBackend
   /// 返回 true = host 已接收；false = 老 host 无此端点（404/405），调用方据此
   /// 停止本轮后续字幕推送并提示升级 host（与合集端点缺失同纪律）。其余失败
   /// 照常抛（[WebDavOps.checkStatus]）。
+  ///
+  /// 这条是 live push 的镜像语义：host 按 [suffix] 落盘，**同名旧文件直接被覆盖**。
+  /// 用户在远端播放时导入 / 重定时的字幕要走 [putRemoteVideoSubtitleAsDefault]。
   Future<bool> putRemoteVideoSubtitle(
     String id,
     File file, {
     required String suffix,
+  }) async {
+    final HttpClientResponse res = await _sendVideoSubtitle(
+      id,
+      file,
+      suffix: suffix,
+      asDefault: false,
+    );
+    await res.drain<void>();
+    if (res.statusCode == 404 || res.statusCode == 405) return false;
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/subtitle');
+    return true;
+  }
+
+  /// 把用户在远端播放时导入 / 重定时的字幕 [file] 推给 host，设为视频 [id] 这一集的
+  /// 默认字幕：host 按**自己的**学习语言定后缀，压过它的旧 sidecar 改名 `.fushi-bak`
+  /// 让位（见 `VideoSubtitleDefaultHost`）。[suffix] 只用来告诉 host 字幕格式。
+  ///
+  /// BUG-2728：先看 host 的能力位 `liveLibrary.videoSubtitleDefault`
+  /// （[hostSupportsVideoSubtitleDefault]），不支持就**不发请求**、返回
+  /// [RemoteSubtitleDefaultUpload.hostUnsupported]。老 host 不认
+  /// `X-Hibiki-Subtitle-Default`，会走 live push 旧路径按 [suffix] 落盘，
+  /// `rename` 直接覆盖 host 上同名的旧字幕、不留备份——宁可只留本机。
+  ///
+  /// 只有 host 回了实际落盘后缀（响应头 `x-hibiki-subtitle-suffix`，新语义才有）才算
+  /// [RemoteSubtitleDefaultUpload.applied]。网络 / 其余 HTTP 失败照常抛。
+  Future<RemoteSubtitleDefaultUpload> putRemoteVideoSubtitleAsDefault(
+    String id,
+    File file, {
+    required String suffix,
+  }) async {
+    if (!await hostSupportsVideoSubtitleDefault()) {
+      return RemoteSubtitleDefaultUpload.hostUnsupported;
+    }
+    final HttpClientResponse res = await _sendVideoSubtitle(
+      id,
+      file,
+      suffix: suffix,
+      asDefault: true,
+    );
+    final String? placed = res.headers.value('x-hibiki-subtitle-suffix');
+    await res.drain<void>();
+    // 404/405：没有上传端点；409：新 host 的库服务不支持默认字幕（server 侧第二道门，
+    // 已拒绝、未落盘）。
+    if (res.statusCode == 404 ||
+        res.statusCode == 405 ||
+        res.statusCode == 409) {
+      return RemoteSubtitleDefaultUpload.hostUnsupported;
+    }
+    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/subtitle');
+    return placed == null || placed.isEmpty
+        ? RemoteSubtitleDefaultUpload.hostUnsupported
+        : RemoteSubtitleDefaultUpload.applied;
+  }
+
+  Future<HttpClientResponse> _sendVideoSubtitle(
+    String id,
+    File file, {
+    required String suffix,
+    required bool asDefault,
   }) async {
     await _ensureResolved();
     final HttpClientRequest req = await _ops!.buildRequest(
@@ -1896,12 +1967,43 @@ class InterconnectSyncBackend extends SyncBackend
     req.headers.set('Content-Type', 'application/octet-stream');
     req.headers.set('Content-Length', '$length');
     req.headers.set('X-Hibiki-Subtitle-Suffix', Uri.encodeComponent(suffix));
+    if (asDefault) req.headers.set('X-Hibiki-Subtitle-Default', '1');
     await req.addStream(file.openRead());
-    final HttpClientResponse res = await req.close();
-    await res.drain<void>();
-    if (res.statusCode == 404 || res.statusCode == 405) return false;
-    _ops!.checkStatus(res.statusCode, 'PUT /api/library/videos/$id/subtitle');
-    return true;
+    // 流式上传，不走 _sendBounded（BUG-1567 白名单，见 interconnect_request_timeout_test）。
+    return await req.close();
+  }
+
+  /// [hostSupportsVideoSubtitleDefault] 的缓存：按 host 基址分槽（后端是进程级单例，
+  /// 换 host / 换链路就重探）。探测失败（网络 / 超时）不入缓存，下次再探。
+  String? _subtitleDefaultCapabilityScope;
+  bool? _subtitleDefaultCapability;
+
+  /// host 的 `/api/capabilities` 是否声明 `liveLibrary.videoSubtitleDefault == true`。
+  /// 老 host 没有该字段（或整个端点 404）→ false。同一 host 基址只探一次。
+  Future<bool> hostSupportsVideoSubtitleDefault() async {
+    await _ensureResolved();
+    final String scope = _apiBase;
+    final bool? cached = _subtitleDefaultCapability;
+    if (cached != null && _subtitleDefaultCapabilityScope == scope) {
+      return cached;
+    }
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/capabilities',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    bool supported = false;
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+    } else {
+      _ops!.checkStatus(res.statusCode, 'GET /api/capabilities');
+      final Object? decoded = jsonDecode(await _readBodyBounded(res));
+      final Object? live = decoded is Map ? decoded['liveLibrary'] : null;
+      supported = live is Map && live['videoSubtitleDefault'] == true;
+    }
+    _subtitleDefaultCapabilityScope = scope;
+    _subtitleDefaultCapability = supported;
+    return supported;
   }
 
   // ── 画质档（弱网可用）────────────────────────────────────────────────────

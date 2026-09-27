@@ -7,7 +7,12 @@ import 'package:fushi_engine/models/local_audio_db_entry.dart';
 import 'package:fushi_engine/media/video/video_library_import.dart'
     show parseSubtitleCues;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show findSidecarSubtitle, isSidecarSubtitleSuffix, pickSidecar;
+    show
+        defaultSidecarSubtitleSuffix,
+        findSidecarSubtitle,
+        isSidecarSubtitleSuffix,
+        pickSidecar,
+        sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
@@ -116,6 +121,7 @@ abstract class _LocalLibraryHostBase
         VideoDeletionHost,
         VideoPlaybackSyncHost,
         AudiobookDelayHost,
+        VideoSubtitleDefaultHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,
