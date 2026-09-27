@@ -1,11 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/painting.dart' show PaintingBinding;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/cover_image.dart';
+import 'package:fushi_engine/foundation/engine_platform_hooks.dart';
 import 'package:fushi_engine/media/video/metadata/video_sidecar_writer.dart';
 import 'package:path/path.dart' as p;
+import 'package:transparent_image/transparent_image.dart';
+
+import '../../../helpers/cover_cache_test_helpers.dart';
 
 class _MemoryArtifactStore implements SidecarArtifactHashStore {
   final Map<String, SidecarArtifactRecord> records =
@@ -36,10 +43,17 @@ void main() {
   late _MemoryArtifactStore store;
   late VideoSidecarWriter writer;
 
+  // 宿主写后驱逐钩子：默认记录调用（本文件大多数用例是纯文件语义，不挂
+  // painting binding）；真走 app 双键驱逐的那条用例自己换回真实现。
+  final Future<void> Function(File) hostEvict = evictImageCacheForFile;
+  late List<String> evicted;
+
   Uint8List bytes(String value) => Uint8List.fromList(utf8.encode(value));
   String hash(String value) => sha256.convert(utf8.encode(value)).toString();
 
   setUp(() async {
+    evicted = <String>[];
+    evictImageCacheForFile = (File file) async => evicted.add(file.path);
     temporary = await Directory.systemTemp.createTemp('fushi_writer_');
     source = await Directory(p.join(temporary.path, 'source')).create();
     store = _MemoryArtifactStore();
@@ -51,6 +65,7 @@ void main() {
   });
 
   tearDown(() async {
+    evictImageCacheForFile = hostEvict;
     if (await temporary.exists()) {
       await temporary.delete(recursive: true);
     }
@@ -283,4 +298,81 @@ void main() {
     expect(result.error, isA<StateError>());
     expect(await File(target).readAsString(), 'old');
   });
+
+  group('覆盖写后驱逐宿主图片解码缓存（BUG-2737）', () {
+    test('覆盖写驱逐目标路径；新建 / 字节不变 / 被保护都不打扰宿主', () async {
+      final String poster = p.join(source.path, 'poster.jpg');
+      final SidecarWriteResult created = await writer.write(
+        SidecarWriteRequest(targetPath: poster, bytes: bytes('old identity')),
+      );
+      expect(created.status, SidecarWriteStatus.written);
+      expect(evicted, isEmpty, reason: '新建文件没有旧解码可清');
+
+      final SidecarWriteResult same = await writer.write(SidecarWriteRequest(
+        targetPath: poster,
+        bytes: bytes('old identity'),
+        policy: SidecarWritePolicy.overwrite,
+      ));
+      expect(same.status, SidecarWriteStatus.unchanged);
+      expect(evicted, isEmpty, reason: '字节没变，缓存里的就是对的图');
+
+      // 换身份重刮：图名只按图种派生，封面恒是同一个 poster 路径。
+      final SidecarWriteResult replaced =
+          await writer.write(SidecarWriteRequest(
+        targetPath: poster,
+        bytes: bytes('new identity'),
+        policy: SidecarWritePolicy.overwrite,
+      ));
+      expect(replaced.status, SidecarWriteStatus.written);
+      expect(evicted, <String>[poster]);
+
+      final String thirdParty = p.join(source.path, 'banner.jpg');
+      await File(thirdParty).writeAsString('third-party');
+      final SidecarWriteResult protectedResult =
+          await writer.write(SidecarWriteRequest(
+        targetPath: thirdParty,
+        bytes: bytes('generated'),
+        policy: SidecarWritePolicy.overwrite,
+      ));
+      expect(protectedResult.status, SidecarWriteStatus.protectedExisting);
+      expect(evicted, <String>[poster], reason: '没写的文件不驱逐');
+    });
+
+    test('app 装配下覆盖写把裸 FileImage 键与降采样键一起清掉', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      // 与 installEngineHostBindings 装的是同一份双键驱逐（守卫
+      // media_cover_write_guard_test 钉着那一行绑定）。
+      evictImageCacheForFile = (File file) => evictLocalCoverCache(file.path);
+      PaintingBinding.instance.imageCache.clear();
+      final String poster = p.join(source.path, 'poster.png');
+      await writer.write(
+        SidecarWriteRequest(targetPath: poster, bytes: kTransparentImage),
+      );
+      await populateBothCoverKeys(poster);
+
+      final SidecarWriteResult replaced =
+          await writer.write(SidecarWriteRequest(
+        targetPath: poster,
+        bytes: await _solidPng(),
+        policy: SidecarWritePolicy.overwrite,
+      ));
+
+      expect(replaced.status, SidecarWriteStatus.written);
+      await expectBothCoverKeysEvicted(poster);
+      PaintingBinding.instance.imageCache.clear();
+    });
+  });
+}
+
+/// 与 [kTransparentImage] 字节不同的另一张可解码 PNG（2×2 纯色）。
+Future<Uint8List> _solidPng() async {
+  final ui.PictureRecorder recorder = ui.PictureRecorder();
+  ui.Canvas(recorder).drawRect(
+    const ui.Rect.fromLTWH(0, 0, 2, 2),
+    ui.Paint()..color = const ui.Color(0xFF3366FF),
+  );
+  final ui.Image image = await recorder.endRecording().toImage(2, 2);
+  final ByteData? png = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  return png!.buffer.asUint8List();
 }

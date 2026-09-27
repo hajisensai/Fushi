@@ -448,7 +448,7 @@ bool videoDiagEnabledFor(String category, VideoDiagLevel level) =>
     VideoDiagLog.instance.isLoggable(category, level);
 
 /// 导出前的脱敏（纯函数）：native 代理口令、URL 查询参数里的令牌 / 密码、
-/// `Authorization` / `X-Emby-Token` 这类头、以及 `MediaBrowser … Token="…"` 属性。
+/// `Authorization` / `X-Emby-Token` / `X-Plex-Token` 这类头、以及 `MediaBrowser … Token="…"` 属性。
 /// 只抹值不抹键，host + path 原样保留——排障要看得出是哪台服务器的哪条流。
 String redactVideoDiagSecrets(String text) {
   String out = redactAppNativeProxySecrets(text);
@@ -473,12 +473,14 @@ String redactVideoDiagSecrets(String text) {
 
 final RegExp _kSecretQueryParam = RegExp(
   r'([?&](?:api_key|apikey|token|access_token|auth|authorization|password|'
-  r'passwd|pwd|x-emby-token|x-mediabrowser-token|tempauth)=)[^&\s"<>]+',
+  r'passwd|pwd|x-emby-token|x-mediabrowser-token|x-plex-token|'
+  r'tempauth)=)[^&\s"<>]+',
   caseSensitive: false,
 );
 
 final RegExp _kSecretHeader = RegExp(
-  r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization)'
+  r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization|'
+  r'x-plex-token)'
   r'\s*[:=]\s*)[^\r\n]+',
   caseSensitive: false,
 );

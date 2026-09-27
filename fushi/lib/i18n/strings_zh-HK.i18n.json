@@ -5688,5 +5688,17 @@
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
   "ai_web_knowledge_custom_remove": "Remove site",
+  "video_item_rescrape_not_planned": "這個影片不在任何本機影片來源的刮削計劃裡",
+  "plex_settings_hint": "Sign in with your Plex account, or connect to a server with its address and X-Plex-Token. Playback streams the original file (direct play); Plex transcoding is not used.",
+  "plex_account_sign_in": "Sign in with Plex",
+  "plex_pin_waiting": "Waiting for you to approve Fushi in the browser…",
+  "plex_pin_link_hint": "If the browser did not open, copy this link:",
+  "plex_pin_expired": "The sign-in request expired. Try again.",
+  "plex_servers_none_reachable": "No reachable Plex server was found for this account.",
+  "plex_servers_added": "Added $n Plex server(s)",
+  "plex_manual_title": "Connect manually",
+  "plex_token_label": "X-Plex-Token",
+  "plex_manual_connect": "Connect",
+  "plex_sign_in_failed": "Plex sign-in failed",
   "remote_video_stream_play": "播放（串流）"
 }
