@@ -1,0 +1,6 @@
+## BUG-2719 · 关掉视频后视频库回到「首页」分区而不是上次的分区
+- **报告**：2026-09-27（用户：「视频关掉后只会跳转回首页而不是上次打开的标签页」）
+- **真实性**：✅ 真 bug。视频库的分区选择（首页 / 系列 / 全部视频 / 媒体服务器 / 发现 / 导入 / 设置）只存在 `_VideoLibraryShellState._section`（`fushi/lib/src/pages/implementations/video_library_shell.dart`），第一个分区的标签就是 `t.nav_home`「首页」。`HomePage.build` 的 `LayoutBuilder`（`fushi/lib/src/pages/implementations/home_page.dart` 选布局处）按宽度在 `_buildMobileLayout()`（<600，正文挂在 `Scaffold.body > SafeArea > FocusTraversalGroup` 下）与 `_buildDesktopLayout()`（≥600，挂在 `Scaffold.body > SafeArea > Row > Expanded > FocusTraversalGroup` 下）之间二选一，`_bodyWithMiniBar()` 没有 GlobalKey，于是宽度一越过断点整棵 tab 正文被卸载重建。手机竖屏点开视频 → 播放页转横屏 → 被盖住的首页随 MediaQuery 变宽换成侧栏布局（重挂一次）→ 退出视频转回竖屏再换回底栏（又重挂一次），`VideoLibraryShell` 回到初始的「首页」分区。顶层 `_currentTab` 在 `LayoutBuilder` 之上所以没丢——症状正是「还在视频 tab，但分区回到首页」。桌面窗口宽度跨 600 同理，且书架 / 漫画库页的视图、各页滚动位置也一起丢。
+- **[x] ① 已修复**（本提交，`fix(home): keep tab body state across layout breakpoint`）— `_HomePageState` 持有 `_homeBodyKey`（`GlobalKey`），挂在 `_bodyWithMiniBar()` 返回的 `Column` 上：三套布局同一时刻只构建其一，换布局变成同一子树换父节点，所有 tab 的 State 保留。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/home_body_layout_switch_state_test.dart`：挂真 `HomePage`，400 宽（底栏）→ 900 宽（侧栏，断言 `NavRailBrandButton` 出现以证明布局真换了）→ 400 宽，断言 tab 页面是同一个 State。修复前红在「换布局必须把正文整棵挪到新父节点下」。
+- **备注**：未上真机复测（本机无安卓真机会话）；widget 测试直接驱动了与转屏同一条的宽度变化路径。
