@@ -67,6 +67,17 @@ const int kAdaptiveHeadroomQuietTicks = 90;
 /// 判断富余会永远判不出来。缓冲深度才如实反映「拉得比放得快」。
 const double kAdaptiveHeadroomCacheSeconds = 25;
 
+/// 用户 seek 之后最多这么多拍的缓冲**不算卡顿**（BUG-2731）。
+///
+/// seek 在远端流上要断开旧连接、重新发 Range 请求，平板实测一次就缓冲 3～4 秒——
+/// 正好越过 [kAdaptiveStallTicksToDrop]，于是局域网原画直传被当成「撑不住」降成
+/// 转码，再按 seek 之前的旧位置重开，用户看到的就是「滑一下又回去了」。这段缓冲
+/// 反映的是 seek 的代价，不是网况。
+///
+/// 宽限是**有上限**的：seek 之后一直缓冲超过 10 秒，那就是真的跟不上了，照常计入。
+/// 一出现不缓冲的一拍（seek 已落地起播）宽限立即结束。
+const int kAdaptiveSeekGraceTicks = 10;
+
 /// 「自动」档的自适应控制器。
 ///
 /// 只在用户选了「自动」时才该被喂采样；用户显式选了某一档就是选定了，不该被自动
@@ -89,12 +100,21 @@ class AdaptiveQualityController {
   /// 距上次换档的拍数；初值给足冷却，避免起播头 30 秒就急着动。
   int _ticksSinceSwitch = 0;
 
+  /// seek 宽限剩余拍数（见 [kAdaptiveSeekGraceTicks]）。
+  int _seekGraceTicksLeft = 0;
+
   /// 起播/换集后重置：新的一条流，过去的观察不再作数。
   void reset() {
     _stalls.clear();
     _quietTicks = 0;
     _healthyCacheTicks = 0;
     _ticksSinceSwitch = 0;
+    _seekGraceTicksLeft = 0;
+  }
+
+  /// 用户发起了一次 seek：随后的缓冲先按 seek 代价处理（见 [kAdaptiveSeekGraceTicks]）。
+  void noteSeek() {
+    _seekGraceTicksLeft = kAdaptiveSeekGraceTicks;
   }
 
   /// 喂一拍（1 Hz）。
@@ -110,7 +130,18 @@ class AdaptiveQualityController {
   }) {
     _ticksSinceSwitch++;
 
-    _stalls.add(buffering);
+    // seek 引起的缓冲不是网况：宽限内不入卡顿窗口；一旦起播（不缓冲）宽限立即结束。
+    bool stalled = buffering;
+    if (_seekGraceTicksLeft > 0) {
+      if (buffering) {
+        _seekGraceTicksLeft--;
+        stalled = false;
+      } else {
+        _seekGraceTicksLeft = 0;
+      }
+    }
+
+    _stalls.add(stalled);
     while (_stalls.length > kAdaptiveStallWindowTicks) {
       _stalls.removeAt(0);
     }

@@ -2173,6 +2173,42 @@ void main() {
     });
   });
 
+  // BUG-2731：远端流 seek 缓冲几秒，这期间 position 仍是 seek 前的旧值；换画质 / 自适应
+  // 降档拿它重开流，用户刚滑到的位置就被抹掉。
+  group('resumePositionMs：seek 未落地时取目标，不取滞后旧位置（BUG-2731）', () {
+    test('往回 seek：旧位置恒大于目标也不误判落地，超过字幕 2 秒宽限仍取目标', () {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetIsPlayingForTesting(true);
+      c.debugSetPositionForTesting(718760);
+      expect(c.resumePositionMs, 718760);
+
+      final int generation = c.seekGeneration;
+      c.notifyExternalSeek(705000);
+      expect(c.seekGeneration, generation + 1);
+      // 40 拍 = 5 秒，远超字幕在途保护的 2 秒宽限。
+      for (var i = 0; i < 40; i++) {
+        c.debugUpdateCueForPosition(718760);
+        expect(c.resumePositionMs, 705000, reason: '第 $i 拍：seek 还没落地');
+      }
+
+      c.debugSetPositionForTesting(705120);
+      c.debugUpdateCueForPosition(705120);
+      expect(c.resumePositionMs, 705120, reason: '落地后回到真实位置');
+    });
+
+    test('seekMs 同样登记在途目标与计数', () async {
+      final c = VideoPlayerController();
+      addTearDown(c.dispose);
+      c.debugSetPositionForTesting(10000);
+      final int generation = c.seekGeneration;
+      await c.seekMs(40000);
+      expect(c.seekGeneration, generation + 1);
+      c.debugUpdateCueForPosition(10000);
+      expect(c.resumePositionMs, 40000);
+    });
+  });
+
   // BUG-2441：媒体没被打开时（libmpv `open` 失败 / VO 建不出来），position 恒 0——那
   // 不是「用户停在片头」，是「没东西可播」。三个位置写入点此前无法区分这两种 0，于是
   // 重开失败后的第一个 125ms tick 就把 0 写库，抹掉用户上一程的真实进度（现场实测：

@@ -2168,6 +2168,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final AdaptiveQualityController _adaptiveQuality = AdaptiveQualityController();
   Timer? _adaptiveQualityTimer;
 
+  /// 上一拍看到的 [VideoPlayerController.seekGeneration]；变了 = 这期间用户 seek 过，
+  /// 随后的缓冲按 seek 代价处理，不算网况（BUG-2731）。
+  int _adaptiveSeenSeekGeneration = 0;
+
   /// 自适应正在换档（重取流是异步的，期间不再喂采样，免得一次卡顿被连算两次）。
   bool _adaptiveQualitySwitching = false;
   int _hlsDetectSeq = 0;

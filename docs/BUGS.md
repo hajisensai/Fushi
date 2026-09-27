@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2510 条。点号进各自文件。
+> 共 2511 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2731](bugs/BUG-2731-video-swipe-seek-undone.md) | ✅ | ✅ | 移动端横滑跳转后被自适应画质重开流抹回原位 |
 | [BUG-2728](bugs/BUG-2728-remote-video-subtitle-timing.md) | ✅ | ✅ | 远端视频缺波形对轴与重定时，导入字幕不上传服务端 |
 | [BUG-2727](bugs/BUG-2727-game-stream-low-resolution.md) | ✅ | ✅ | 串流码率卡在 2.5 Mbps、分辨率被压到 720p 以下 |
 | [BUG-2726](bugs/BUG-2726-game-stream-sgre-touch.md) | ✅ | ✅ | 串流触屏在 SGRE 上一律「输入未送达」 |
