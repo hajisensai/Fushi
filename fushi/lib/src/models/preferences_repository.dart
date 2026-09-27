@@ -111,8 +111,10 @@ const String kDownloadExecutionHostPrefKey = 'download_execution_host';
 /// 备份把这扇门带到另一台电脑上。
 const String kGameStreamRemoteLaunchPrefKey = 'game_stream_remote_launch';
 
-/// 接收端的串流参数（分辨率 / 帧率 / 码率 / 编码等，JSON）。
-const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_settings';
+/// 接收端的串流参数，只存与默认值不同的字段（`toOverridesJson`）：没动过的
+/// 字段一律跟随当前默认，默认值改了对所有人生效。旧键 `game_stream_video_settings`
+/// 存的是整张表（连隐式默认一起固化），已弃用不读。
+const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 
 class PreferencesRepository extends ChangeNotifier implements PrefStore {
   PreferencesRepository(this._db);
@@ -3462,7 +3464,10 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   Future<void> setGameStreamVideoSettings(
     GameStreamVideoSettings value,
   ) async {
-    await setPref(kGameStreamVideoSettingsPrefKey, jsonEncode(value.toJson()));
+    await setPref(
+      kGameStreamVideoSettingsPrefKey,
+      jsonEncode(value.toOverridesJson()),
+    );
     notifyListeners();
   }
 

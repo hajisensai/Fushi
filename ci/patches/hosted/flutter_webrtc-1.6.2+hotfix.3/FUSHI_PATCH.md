@@ -37,3 +37,26 @@ file for desktop start/state events. It records no media or signaling.
 Remove this override when upstream exposes client-area WGC capture with correct
 stride/dimensions, deterministic disposal, and startup failure propagation; rerun
 the PMv2 real-window capture spike before changing the backend.
+
+## Other whole-file overrides in this directory
+
+- `windows/application_loopback_capturer.cc` (BUG-2725): the feeder thread
+  wakes on a 5 ms high-resolution waitable timer and hands WebRTC every 10 ms
+  chunk real time owes (`fushi/windows/runner/game_stream_audio_feed_clock.h`,
+  bounded bursts, re-anchor after long stalls) instead of exactly one chunk per
+  tick of a periodic timer that runs slow; prebuffer 100 ms. No
+  `timeBeginPeriod`: the high-resolution timer does not depend on the process
+  timer resolution, and on the coarse fallback timer the clock still catches
+  up by elapsed time. Covered by
+  `fushi/windows/runner/tests/game_stream_audio_feed_clock_test.cpp`.
+- `common/cpp/src/flutter_peerconnection.cc` (BUG-2727):
+  `updateRtpParameters` writes the edited encodings back with
+  `set_encodings()` (upstream edited a copy, so every `setParameters` limit was
+  dropped), and applies only values that are actually set — positive
+  bitrates / frame rate / layer count, `scaleResolutionDownBy >= 1`, non-empty
+  `scalabilityMode` — accepting Dart ints as int32 or int64. The getter
+  reports unset fields as 0 / "" and Dart sends the whole map back; written
+  verbatim those make libwebrtc reject the entire call.
+
+Both are whole-file copies of 1.6.2+hotfix.3; move or drop them together with
+this version directory when upgrading flutter_webrtc.
