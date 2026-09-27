@@ -5,11 +5,33 @@
 // - readBoundedBytes：超限即停，不读完整个流。
 import 'dart:async';
 
+import 'package:fushi_engine/media/video/anime_source_video_path.dart' as anime;
 import 'package:fushi_engine/media/video/strm_file.dart';
 import 'package:fushi_engine/utils/net/bounded_read.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('isNetworkOnlyVideoPath 是全仓唯一一份判据', () {
+    test('在线视频源入库集（anime-source://）也算网络行', () {
+      expect(
+        isNetworkOnlyVideoPath('anime-source://pkg/42/Show - E01'),
+        isTrue,
+      );
+      expect(
+        isNetworkOnlyVideoPath('  ANIME-SOURCE://pkg/42/Show - E02'),
+        isTrue,
+      );
+      expect(lacksLocalMediaFile('anime-source://pkg/42/Show - E01'), isTrue);
+    });
+
+    test('老路径 anime_source_video_path.dart 转出的是同一个函数', () {
+      expect(
+        identical(anime.isNetworkOnlyVideoPath, isNetworkOnlyVideoPath),
+        isTrue,
+      );
+    });
+  });
+
   group('isNetworkOnlyVideoPath', () {
     test('http(s) 与直播协议（大小写 / 首尾空白不敏感）', () {
       for (final String path in <String>[
