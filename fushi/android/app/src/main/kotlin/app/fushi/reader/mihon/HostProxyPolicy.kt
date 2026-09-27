@@ -5,10 +5,12 @@ import okhttp3.Authenticator
 import okhttp3.Credentials
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
-import okhttp3.Protocol
+import okhttp3.Route
+import okhttp3.internal.connection.RealConnection
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetSocketAddress
+import java.net.ProtocolException
 import java.net.Proxy
 import java.net.ProxySelector
 import java.net.SocketAddress
@@ -72,14 +74,22 @@ object HostProxyPolicy : ProxySelector() {
 
     fun configureClient(builder: OkHttpClient.Builder, selector: ProxySelector = this): OkHttpClient.Builder = builder
         .connectionPool(ConnectionPool(0, 1, TimeUnit.NANOSECONDS))
-        .protocols(listOf(Protocol.HTTP_1_1))
         .proxySelector(selector)
         .proxyAuthenticator(authenticator)
         .addNetworkInterceptor { chain ->
             val request = chain.request()
+            val route = chain.connection()?.route()
+            // HTTP/2 stays negotiable: Cloudflare WAF rules on some sources (Miruro's
+            // /api/secure/pipe) block every HTTP/1.1 request outright. The price is that
+            // a live HTTP/2 connection takes new streams without asking the selector, so
+            // the route is re-checked here, per exchange, instead of per connection.
+            if (route != null && !routeAllowedByCurrentPolicy(route, request.url.toUri())) {
+                (chain.connection() as? RealConnection)?.noNewExchanges()
+                throw StaleProxyRouteException()
+            }
             // A redirect can retain the authenticator's header while changing
             // to a DIRECT route. Never deliver proxy credentials to the origin.
-            val proxy = chain.connection()?.route()?.proxy
+            val proxy = route?.proxy
             val address = proxy?.address() as? InetSocketAddress
             val scope = request.tag(CredentialScope::class.java)
             val credentialRouteMatches = proxy?.type() == Proxy.Type.HTTP && address != null && scope != null &&
@@ -89,6 +99,36 @@ object HostProxyPolicy : ProxySelector() {
             } else request
             chain.proceed(outbound)
         }
+
+    /**
+     * Whether [route] is still one its client's own selector picks for [uri] right now.
+     *
+     * A client pinned to an explicit proxy is not policy-managed. A selector that fails, or
+     * answers with a different route, means the connection was opened under a policy the
+     * host no longer holds: the exchange must not ride it (that would leak past a proxy the
+     * user just enabled, or keep using one they just removed).
+     */
+    internal fun routeAllowedByCurrentPolicy(route: Route, uri: URI): Boolean {
+        if (route.address.proxy != null) return true
+        val allowed = runCatching { route.address.proxySelector.select(uri) }.getOrNull() ?: return false
+        // OkHttp routes an empty answer DIRECT; compare against what it would have used.
+        return allowed.ifEmpty { listOf(Proxy.NO_PROXY) }.any { sameRoute(it, route.proxy) }
+    }
+
+    private fun sameRoute(a: Proxy, b: Proxy): Boolean {
+        if (a.type() != b.type()) return false
+        if (a.type() == Proxy.Type.DIRECT) return true
+        val x = a.address() as? InetSocketAddress ?: return false
+        val y = b.address() as? InetSocketAddress ?: return false
+        return x.hostString.equals(y.hostString, ignoreCase = true) && x.port == y.port
+    }
+
+    /**
+     * A [ProtocolException] on purpose: OkHttp treats it as unrecoverable. Any other
+     * IOException sends the call into its route retry, which reconnects over the very route
+     * this check just rejected.
+     */
+    internal class StaleProxyRouteException : ProtocolException("Proxy policy changed since this connection was routed")
 
     val authenticator = authenticatorFor(::lookup)
 
