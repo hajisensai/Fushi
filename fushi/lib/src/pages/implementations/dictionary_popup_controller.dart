@@ -76,6 +76,17 @@ class DictionaryPopupEntry {
   /// WebView 已预热渲染就绪，立即可见无白屏。[revealRendered] 命中后清回 false。
   bool revealOnRender = false;
 
+  /// 本层这一次翻可见时，屏上正画着的搜索期加载占位卡已经显示了多久；null = 翻可见时
+  /// 没有占位卡（嵌套查词等）。
+  ///
+  /// 占位卡已经是「弹窗出现」本身（它自带入场淡入）；真弹窗接替它时若再从透明度 0
+  /// 淡入，占位卡同一帧撤掉、真弹窗还半透明，中间就露出一段透底的空框——视频页换词时
+  /// 用户看到的「先闪一个半透明空壳」；直接满不透明又会让快速查词「跳」一下。宿主据此
+  /// 让本层接着占位卡的淡入进度淡完（`popupEntranceProgressAfter`）。每次翻可见
+  /// （[DictionaryPopupController.revealRendered] / 兜底强制翻 / [DictionaryPopupController.show]）
+  /// 都重新判定，不跨查词沿用。
+  Duration? searchPlaceholderShownFor;
+
   /// 该层是否正在（增量/分页）搜索中。
   bool isSearching = false;
 
@@ -318,9 +329,24 @@ class DictionaryPopupController extends ChangeNotifier {
 
   Rect? get pendingRect => isSearchingUi ? _pendingRectRaw : null;
 
+  /// 上一帧屏上若画着 [e] 的搜索期加载占位卡，返回它已显示多久，否则 null（翻可见前
+  /// 判定，见 [DictionaryPopupEntry.searchPlaceholderShownFor]）。读原始字段而非派生的
+  /// [pendingRect]：空结果路径先 [fillResult] 清掉 `isSearching` 再 [show]，那一刻
+  /// 派生值已落 false，可占位卡要到这次重建才撤。
+  Duration? _searchPlaceholderElapsedFor(DictionaryPopupEntry e) =>
+      identical(_searchTarget, e) && _pendingRectRaw != null
+          ? _searchUiClock.elapsed
+          : null;
+
+  /// [beginSearchUi] 起表：占位卡（及其入场淡入）从那一刻开始画。
+  final Stopwatch _searchUiClock = Stopwatch();
+
   void beginSearchUi(Rect rect, DictionaryPopupEntry target) {
     _searchTarget = target;
     _pendingRectRaw = rect;
+    _searchUiClock
+      ..reset()
+      ..start();
     notifyListeners();
   }
 
@@ -619,6 +645,7 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 显示 [e]（搜索→就绪才显示路径在 [fillResult] 后调用）。
   void show(DictionaryPopupEntry e) {
     _cancelRevealTimer(e);
+    e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
     e.visible = true;
     e.revealOnRender = false;
     notifyListeners();
@@ -670,6 +697,7 @@ class DictionaryPopupController extends ChangeNotifier {
       // 到时仍挂起（没收到 popupRendered，也没被显示/裁掉）→ 强制翻可见。
       _revealFailsafeTimers.remove(e);
       if (!e.revealOnRender || !_entries.contains(e)) return;
+      e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
       e.visible = true;
       e.revealOnRender = false;
       // 诊断（2026-09-22）：走到这里就是用户说的那个「闪」——渲染信号没在兜底超时内
@@ -711,6 +739,7 @@ class DictionaryPopupController extends ChangeNotifier {
   bool revealRendered(DictionaryPopupEntry e) {
     if (!e.revealOnRender) return false;
     _cancelRevealTimer(e);
+    e.searchPlaceholderShownFor = _searchPlaceholderElapsedFor(e);
     e.visible = true;
     e.revealOnRender = false;
     LookupPerfTrace.current?.mark('reveal');

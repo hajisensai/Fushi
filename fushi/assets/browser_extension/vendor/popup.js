@@ -18,6 +18,16 @@ function __fushiRootNode(){ return window.__fushiRoot || document; }
 function __fushiContainer(){ var r = window.__fushiRoot; return r ? r.querySelector('#entries-container') : document.getElementById('entries-container'); }
 function __fushiViewportWidth(){ var w = Number(window.__fushiPopupViewportWidth); return (isFinite(w) && w > 0) ? w : (window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth || 0); }
 function __fushiOverlayParent(){ return window.__fushiRoot || document.body; }
+/* BUG-2734：app 内查词框（视频 / 首页 / texthooker）让 WebView 按外壳**最大**高度布局、
+   外壳只做裁剪（内容增减不再改原生表面尺寸，免得 Windows 上旧帧被拉伸），于是
+   window.innerHeight 大于用户实际看得见的高度。宿主经 __fushiSetVisibleViewportHeight
+   注入可见高度（视觉 px，与 innerHeight 同单位）；所有「下方放不放得下」的浮层定位都走
+   本函数，否则会落进被裁掉、也滚不到的区域。未注入（浏览器扩展 / 其它宿主）= innerHeight。 */
+function __fushiVisibleViewportHeight(){
+    var h = window.innerHeight || document.documentElement.clientHeight || 0;
+    var v = Number(window.__fushiVisibleViewportHeight);
+    return (isFinite(v) && v > 0 && (h <= 0 || v < h)) ? v : h;
+}
 /* 词典改名（v95）：把**真名**翻成用户起的显示名，只用于渲染给人看的文本。
    宿主在 popup_settings_injection 注入 window.dictionaryDisplayNames = {真名: 显示名}，
    只含真正改过名的条目；没改过 / 表不存在 → 原样返回真名。
@@ -820,7 +830,7 @@ function showGrammarTooltip(element, pinned) {
     const z = __fushiPopupContentZoom();
     const margin = 8;
     const viewportWidth = __fushiViewportWidth();
-    const viewportHeight = window.innerHeight;
+    const viewportHeight = __fushiVisibleViewportHeight();
 
     /* 先按视口收窄再量：窄屏（原 `.overlay` 铺满弹窗的唯一理由）由这条自适应承担。 */
     const maxWidth = Math.max(160, Math.min(460, viewportWidth - 2 * margin));
@@ -1114,6 +1124,14 @@ function openImageLightbox(imageUrl, alt) {
     // 只有四周 16px 边距能关＝「关不掉」（BUG-107）。预览无任何图内交互，故让整个
     // 灯箱统一 tap-to-close。
     overlay.addEventListener('click', () => closeImageLightbox());
+
+    // BUG-2734：灯箱是 fixed inset:0，铺的是整个布局视口；外壳被收矮时视口下半截被裁掉，
+    // 居中的图只露上半截。收到可见高度内（style 是 layout px，要除以内容 zoom）。
+    const visibleHeight = __fushiVisibleViewportHeight();
+    if (visibleHeight > 0 && visibleHeight < (window.innerHeight || 0)) {
+        overlay.style.bottom = 'auto';
+        overlay.style.height = (visibleHeight / __fushiPopupContentZoom()) + 'px';
+    }
 
     __fushiOverlayParent().appendChild(overlay);
 }
@@ -3245,7 +3263,7 @@ function __fushiShowButtonTip(button) {
     let left = btnRect.left + btnRect.width / 2 - tipRect.width / 2;
     left = Math.max(4, Math.min(left, __fushiViewportWidth() - tipRect.width - 4));
     let top = btnRect.bottom + 6;
-    if (top + tipRect.height > window.innerHeight - 4) {
+    if (top + tipRect.height > __fushiVisibleViewportHeight() - 4) {
         top = btnRect.top - tipRect.height - 6;
     }
     __fushiBtnTipEl.style.left = left + 'px';
@@ -4981,6 +4999,41 @@ function __fushiPopupContentZoom(){
     var z = parseFloat(raw);
     return (Number.isFinite(z) && z > 0) ? z : 1;
 }
+// BUG-2734：宿主注入可见高度（null = 撤销，回到 innerHeight）。注入了可见高度说明外壳
+// 在裁剪 WebView：内容在两次渲染之间变高（<details> 展开、图片载入、masonry 重排之外的
+// 任何重排）时，若不复报，多出来的部分会落进被裁掉、且滚不到的区域——WebView 视口比
+// 内容高，根本不出滚动条。所以这种模式下观察内容容器尺寸，变化即复报给宿主重算外壳高度。
+// 走独立的 popupContentResized 而不是 popupRendered：后者带渲染 token 语义、会驱动 reveal
+// 与宿主的「渲染完成」后续动作，重排不是一次渲染。
+var __fushiContentResizeObserver = null;
+var __fushiContentResizeRaf = 0;
+var __fushiLastContentResizeReport = -1;
+window.__fushiSetVisibleViewportHeight = function(height){
+    var v = Number(height);
+    window.__fushiVisibleViewportHeight = (height != null && isFinite(v) && v > 0) ? v : null;
+    if (window.__fushiVisibleViewportHeight != null) __fushiObserveContentResize();
+};
+function __fushiObserveContentResize(){
+    if (__fushiContentResizeObserver || typeof ResizeObserver !== 'function') return;
+    if (!window.flutter_inappwebview || typeof window.flutter_inappwebview.callHandler !== 'function') return;
+    var target = __fushiContainer() || document.body;
+    if (!target) return;
+    __fushiContentResizeObserver = new ResizeObserver(function(){
+        if (__fushiContentResizeRaf) return;
+        __fushiContentResizeRaf = requestAnimationFrame(function(){
+            __fushiContentResizeRaf = 0;
+            var h = __fushiReportedContentHeight();
+            if (Math.abs(h - __fushiLastContentResizeReport) < 1) return;
+            __fushiLastContentResizeReport = h;
+            try {
+                window.flutter_inappwebview.callHandler('popupContentResized', h,
+                    window.innerHeight || document.documentElement.clientHeight || 0);
+            } catch (_) { /* 复报失败只是少一次伸缩，绝不阻断弹窗 */ }
+        });
+    });
+    __fushiContentResizeObserver.observe(target);
+}
+
 // popupRendered 的 args[0]：内容高度，host CSS px。Math.ceil 只防子像素短一格
 // （z=1 时 scrollHeight 本就是整数，换算逐字节等价于换算前）。
 function __fushiReportedContentHeight(){
