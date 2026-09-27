@@ -2385,6 +2385,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       imageMode: model.galMiningImageMode,
       animatedFormat: model.galMiningAnimatedFormat,
       stillFormat: model.galMiningStillFormat,
+      clipFormat: model.galMiningClipFormat,
       captureLeaseFactory: captureLeaseFactory,
     );
     if (result.aborted) {

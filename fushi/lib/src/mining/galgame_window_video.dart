@@ -4,14 +4,28 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart'
     show FfmpegBackend, FfmpegRunResult, resolveFfmpegBackend;
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
+import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart'
+    show
+        exportWithClipFormatFallback,
+        synchronizedClipAudioArgs,
+        synchronizedClipVideoArgs;
+import 'package:fushi_engine/media/video/video_clip_exporter.dart'
+    show VideoClipExportFailure, VideoClipExportResult;
 import 'package:fushi/src/mining/window_capture_channel.dart'
     show WindowRecordingExport, WindowRecordingFrame;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
-/// galgame 场景卡「视频片段」产物：mp4 字节 + 扩展名（恒 `mp4`，带出来是让调用方
-/// 与动图 / 静图那两条链同一手法拼文件名——**扩展名跟随实际产物**，不由调用方猜）。
-typedef GalWindowVideoClip = ({Uint8List bytes, String extension});
+/// galgame 场景卡「视频片段」产物：片段字节 + 扩展名（[MiningClipFormat.fileExtension]，
+/// 首选格式编不出来会降级，带出来是让调用方与动图 / 静图那两条链同一手法拼文件名——
+/// **扩展名跟随实际产物**，不由调用方猜）。[hasAudio] = 片段里混进了句子音频。
+typedef GalWindowVideoClip = ({
+  Uint8List bytes,
+  String extension,
+  bool hasAudio,
+});
 
 /// 视频起点相对台词到达时刻的提前量：台词文本 hook 到达与画面切换之间有渲染延迟，
 /// 提前 300ms 把「上一句结束 → 这句出现」的切换也收进片段。
@@ -56,11 +70,10 @@ List<GalWindowVideoFrameEntry> planGalWindowVideoFrames({
 }) {
   if (toTickMs < fromTickMs) return const <GalWindowVideoFrameEntry>[];
   final List<WindowRecordingFrame> sorted =
-      List<WindowRecordingFrame>.of(frames)
-        ..sort(
-          (WindowRecordingFrame a, WindowRecordingFrame b) =>
-              a.tickMs.compareTo(b.tickMs),
-        );
+      List<WindowRecordingFrame>.of(frames)..sort(
+        (WindowRecordingFrame a, WindowRecordingFrame b) =>
+            a.tickMs.compareTo(b.tickMs),
+      );
 
   final List<({String path, int tickMs})> picked =
       <({String path, int tickMs})>[];
@@ -126,18 +139,42 @@ String buildGalWindowConcatList(List<GalWindowVideoFrameEntry> entries) {
   return buffer.toString();
 }
 
-/// 纯函数：「concat 帧列表（+ 句子音频）→ H.264/AAC mp4」的 ffmpeg 参数表（可单测）。
+/// 纯函数：「concat 帧列表（+ 句子音频）→ 片段」的 ffmpeg 参数表（可单测）。
 ///
+/// [format] 为 [MiningClipFormat.mp4H264]（默认）时与改动前逐字相同：
 /// - `libx264 veryfast crf 26 yuv420p`：Anki 桌面（mpv）与 AnkiDroid（VideoView →
-///   MediaCodec）都只保证 H.264 + yuv420p 可播；
-/// - `scale=trunc(iw/2)*2:trunc(ih/2)*2`：libx264 yuv420p 要求偶数维度，窗口尺寸任意；
+///   MediaCodec）原生播放器都保证 H.264 + yuv420p 可播；
 /// - `aac 128k`：句子音频（ADTS `.aac` / `.m4a`）重封装进 mp4；
 /// - `+faststart`：moov 前置，播放器不必读完整个文件才能起播。
+///
+/// WebM 两档（卡片内 `<video>` 播放）改用 [synchronizedClipVideoArgs] /
+/// [synchronizedClipAudioArgs]（与视频页同步片段同一套编码参数），无 faststart。
+/// `scale=trunc(iw/2)*2:trunc(ih/2)*2` 各档都要：yuv420p 要求偶数维度，窗口尺寸任意。
 List<String> buildGalWindowVideoArgs({
   required String listPath,
   required String outputPath,
   String? audioPath,
+  MiningClipFormat format = MiningClipFormat.mp4H264,
 }) {
+  if (format != MiningClipFormat.mp4H264) {
+    return <String>[
+      '-y',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      listPath,
+      if (audioPath != null) ...<String>['-i', audioPath],
+      ...synchronizedClipVideoArgs(format),
+      '-vf',
+      'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      if (audioPath != null) ...synchronizedClipAudioArgs(format),
+      '-f',
+      format.fileExtension,
+      outputPath,
+    ];
+  }
   return <String>[
     '-y',
     '-f',
@@ -239,8 +276,9 @@ int fallbackGalWindowVideoFromTick({
 }
 
 /// galgame「视频片段」封面：把会话录制导出的 JPEG 帧（[export]，按 tick 升序）按真实
-/// 时间轴拼成 H.264 mp4，并把句子音频 [audioBytes]（已封装的 AAC/m4a 容器字节，扩展名
-/// [audioExtension]）混流进去。
+/// 时间轴拼成 [format] 的片段（首选编不出来按 [MiningClipFormat.encodeAttempts] 降级），
+/// 并把句子音频 [audioBytes]（已封装的 AAC/m4a 容器字节，扩展名 [audioExtension]）
+/// 混流进去。
 ///
 /// [fromTickMs] 为 null 表示没有 hook 台词时间戳，起点按
 /// [fallbackGalWindowVideoFromTick] 从终点倒推；[toTickMs] `<= 0` 表示「现在」
@@ -258,6 +296,7 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
   required Directory workDir,
   FfmpegBackend? backend,
   Duration encodeTimeout = kGalWindowVideoEncodeTimeout,
+  MiningClipFormat format = MiningClipFormat.mp4H264,
 }) async {
   try {
     if (!export.ok) {
@@ -279,7 +318,8 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
       audioDurationMs = await probeGalWindowAudioDurationMs(ffmpeg, audioPath);
     }
 
-    final int from = fromTickMs ??
+    final int from =
+        fromTickMs ??
         fallbackGalWindowVideoFromTick(
           toTickMs: to,
           audioDurationMs: audioDurationMs,
@@ -302,27 +342,51 @@ Future<GalWindowVideoClip?> buildGalWindowVideoClip({
     await File(
       listPath,
     ).writeAsString(buildGalWindowConcatList(plan), flush: true);
-    final String outputPath = p.join(workDir.path, 'clip.mp4');
-    final FfmpegRunResult result = await ffmpeg.run(
-      buildGalWindowVideoArgs(
-        listPath: listPath,
-        audioPath: audioPath,
-        outputPath: outputPath,
-      ),
-      encodeTimeout,
+    final String? sentencePath = audioPath;
+    final VideoClipExportResult produced = await exportWithClipFormatFallback(
+      format: format,
+      outputStem: p.join(workDir.path, 'clip'),
+      onDegrade: (MiningClipFormat failed, VideoClipExportResult r) =>
+          ErrorLogService.instance.logDiagnostic(
+            'buildGalWindowVideoClip',
+            '${failed.wireName} encode failed, degrading: ${r.detail}',
+          ),
+      attempt: (MiningClipFormat attempt, String outputPath) async {
+        final FfmpegRunResult result = await ffmpeg.run(
+          buildGalWindowVideoArgs(
+            listPath: listPath,
+            audioPath: sentencePath,
+            outputPath: outputPath,
+            format: attempt,
+          ),
+          encodeTimeout,
+        );
+        final File output = File(outputPath);
+        if (result.returnCode != 0 ||
+            !output.existsSync() ||
+            output.lengthSync() == 0) {
+          return VideoClipExportResult.failure(
+            VideoClipExportFailure.ffmpegFailed,
+            detail: result.failureSummary,
+          );
+        }
+        return VideoClipExportResult.success(outputPath);
+      },
     );
-    final File output = File(outputPath);
-    if (result.returnCode != 0 ||
-        !output.existsSync() ||
-        output.lengthSync() == 0) {
+    if (!produced.isSuccess) {
       ErrorLogService.instance.log(
         'buildGalWindowVideoClip',
-        'mp4 encode failed: ${result.failureSummary}',
+        'clip encode failed: ${produced.detail}',
         StackTrace.current,
       );
       return null;
     }
-    return (bytes: await output.readAsBytes(), extension: 'mp4');
+    final String outputPath = produced.outputPath!;
+    return (
+      bytes: await File(outputPath).readAsBytes(),
+      extension: p.extension(outputPath).substring(1),
+      hasAudio: sentencePath != null,
+    );
   } catch (e, stack) {
     ErrorLogService.instance.log('buildGalWindowVideoClip', e, stack);
     return null;

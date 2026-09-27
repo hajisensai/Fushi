@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -58,7 +59,11 @@ import 'package:fushi_engine/utils/net/app_proxy.dart'
         kProxyModeManual,
         normalizeUserProxyHostPort;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
+    show
+        MiningAnimatedFormat,
+        MiningClipFormat,
+        MiningStillFormat,
+        VideoMiningImageMode;
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression;
@@ -2128,13 +2133,18 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  // 视频制卡封面图片模式（GIF 动图 / 制卡时当前帧 / 字幕开头帧）。默认 gif=现状零破坏。
-  // 存稳定字符串键（[VideoMiningImageMode.wireName]），解析未知值回退 gif（向后兼容）。
+  // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。默认
+  // videoClip（见 [VideoMiningImageMode] 文档：有意的现状变更）。存稳定字符串键
+  // （[VideoMiningImageMode.wireName]），解析未知值回退默认。
   VideoMiningImageMode get videoMiningImageMode =>
       VideoMiningImageMode.fromWireName(
           getPref('video_mining_image_mode', defaultValue: null) as String?);
 
   void setVideoMiningImageMode(VideoMiningImageMode mode) async {
+    // 先钉格式再写模式：格式没显式设过时的默认值由「旧模式是不是 video_clip」推导
+    // （见 [_miningClipFormat]），写模式之后再推会把新选片段模式的用户误判成老 MP4 用户。
+    await _pinClipFormatBeforeModeChange(
+        'video_mining_clip_format', 'video_mining_image_mode', mode);
     await setPref('video_mining_image_mode', mode.wireName);
     notifyListeners();
   }
@@ -2151,14 +2161,16 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
   // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
-  // 个开关会逼用户为一边将就另一边。默认 gif=现状零破坏；galgame 没有「字幕区间」，
-  // 故只在 gif / currentFrame 两档间取值，其余值按 [VideoMiningImageMode.isStill]
-  // 归入静态截图。
+  // 个开关会逼用户为一边将就另一边。默认 videoClip（同视频项）；galgame 没有「字幕
+  // 区间」，故只在 gif / currentFrame / videoClip 三档间取值，其余值按
+  // [VideoMiningImageMode.isStill] 归入静态截图。
   VideoMiningImageMode get galMiningImageMode =>
       VideoMiningImageMode.fromWireName(
           getPref('gal_mining_image_mode', defaultValue: null) as String?);
 
   void setGalMiningImageMode(VideoMiningImageMode mode) async {
+    await _pinClipFormatBeforeModeChange(
+        'gal_mining_clip_format', 'gal_mining_image_mode', mode);
     await setPref('gal_mining_image_mode', mode.wireName);
     notifyListeners();
   }
@@ -2212,6 +2224,50 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   void setGalMiningAnimatedFormat(MiningAnimatedFormat format) async {
     await setPref('gal_mining_animated_format', format.wireName);
     notifyListeners();
+  }
+
+  // 音画同步片段的容器/编码（见 [MiningClipFormat]），视频与 gal 分开存（同上两轴）。
+  //
+  // 没显式设过时的默认值**不是常量**，而是从旧偏好推导（同 [miningAudioQuality] 的迁移
+  // 手法）：此前「带声音的视频片段」只有 MP4 一种形态、走 Anki 原生播放器——显式选过它
+  // 的老用户（多为要在 iPhone 上复习的）升级后必须仍是 MP4，否则新卡变成 AnkiMobile 放不了
+  // 的 WebM（Never break userspace）。其余人（含从没设过模式、吃新默认 videoClip 的）取
+  // 平台默认：iOS MP4，其余 WebM VP9。
+  MiningClipFormat get videoMiningClipFormat =>
+      _miningClipFormat('video_mining_clip_format', 'video_mining_image_mode');
+
+  void setVideoMiningClipFormat(MiningClipFormat format) async {
+    await setPref('video_mining_clip_format', format.wireName);
+    notifyListeners();
+  }
+
+  MiningClipFormat get galMiningClipFormat =>
+      _miningClipFormat('gal_mining_clip_format', 'gal_mining_image_mode');
+
+  void setGalMiningClipFormat(MiningClipFormat format) async {
+    await setPref('gal_mining_clip_format', format.wireName);
+    notifyListeners();
+  }
+
+  MiningClipFormat _miningClipFormat(String formatKey, String modeKey) {
+    final String? legacyMode = getPref(modeKey, defaultValue: null) as String?;
+    return MiningClipFormat.fromWireName(
+      getPref(formatKey, defaultValue: null) as String?,
+      fallback: legacyMode == VideoMiningImageMode.videoClip.wireName
+          ? MiningClipFormat.mp4H264
+          : MiningClipFormat.defaultFor(isIOS: Platform.isIOS),
+    );
+  }
+
+  /// 切到片段模式、而格式从没显式设过时，把**切换前**推导出的格式写死。
+  Future<void> _pinClipFormatBeforeModeChange(
+    String formatKey,
+    String modeKey,
+    VideoMiningImageMode mode,
+  ) async {
+    if (!mode.isVideoClip) return;
+    if (getPref(formatKey, defaultValue: null) != null) return;
+    await setPref(formatKey, _miningClipFormat(formatKey, modeKey).wireName);
   }
 
   // 制卡句子音频的头/尾 padding（毫秒）。对齐 asbplayer 的 audio padding：字幕 cue 的

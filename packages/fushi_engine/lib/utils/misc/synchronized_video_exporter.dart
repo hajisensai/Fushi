@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show buildFfmpegRemoteInputArgs;
 
-/// One MP4 timeline for the selected picture and sentence sound. A pre-trimmed
+/// One timeline for the selected picture and sentence sound, in the container /
+/// codecs of [format] (see [MiningClipFormat]). A pre-trimmed
 /// sentence file must pass [audioStartMs] = 0; original audio defaults to [startMs].
 /// Each stream is decoded at its own precise seek point, never keyframe-copied.
 List<String> buildSynchronizedVideoClipArgs({
@@ -24,6 +27,7 @@ List<String> buildSynchronizedVideoClipArgs({
   Map<String, String> audioHeaders = const <String, String>{},
   String? tlsPinSha256,
   String? audioTlsPinSha256,
+  MiningClipFormat format = MiningClipFormat.mp4H264,
 }) {
   final String soundPath = audioPath ?? videoPath;
   // FFmpeg normalizes a source's start time and seek for both streams. Keep
@@ -79,18 +83,119 @@ List<String> buildSynchronizedVideoClipArgs({
         "scale=w='trunc(min($maxWidth,iw)/2)*2':h=-2,"
         'fps=$fps,format=yuv420p',
     '-af', 'asetpts=$pts',
-    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
-    '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000',
+    ...synchronizedClipCodecArgs(format),
     '-sn', '-dn', '-map_metadata', '-1',
     '-t', duration, '-shortest',
-    ...buildClipFaststartArgs(outputPath),
-    '-f', 'mp4', outputPath,
+    if (format == MiningClipFormat.mp4H264)
+      ...buildClipFaststartArgs(outputPath),
+    '-f', format.fileExtension, outputPath,
   ];
 }
 
-/// Uses the same injected desktop/mobile backend and H.264 encoder as video
-/// clip export. Failure is explicit: callers must not label a mute fallback as
+/// 各 [MiningClipFormat] 的编码器参数（视频 + 音频）。
+///
+/// - MP4：H.264 + AAC，改动前的唯一形态，逐字节不变。
+/// - WebM：视频 VP9 / AV1 + 音频 Opus——Anki 桌面 Qt WebEngine 无 H.264/AAC 解码器，
+///   卡片内 `<video>` 只能放这一族。
+List<String> synchronizedClipCodecArgs(MiningClipFormat format) => <String>[
+  ...synchronizedClipVideoArgs(format),
+  ...synchronizedClipAudioArgs(format),
+];
+
+/// 各格式的视频编码参数。
+///
+/// VP9 用 `-deadline good -cpu-used 5 -row-mt 1`（短片求快，实测 1080p 源 3.6 秒窗
+/// < 1 秒）；`-b:v 0` 让 `-crf` 走恒定质量。AV1 与动图 AVIF 同一个 SVT-AV1 编码器与
+/// preset。
+List<String> synchronizedClipVideoArgs(MiningClipFormat format) =>
+    switch (format) {
+      MiningClipFormat.mp4H264 => const <String>[
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-pix_fmt',
+        'yuv420p',
+      ],
+      MiningClipFormat.webmVp9 => const <String>[
+        '-c:v',
+        'libvpx-vp9',
+        '-deadline',
+        'good',
+        '-cpu-used',
+        '5',
+        '-row-mt',
+        '1',
+        '-crf',
+        '34',
+        '-b:v',
+        '0',
+        '-pix_fmt',
+        'yuv420p',
+      ],
+      MiningClipFormat.webmAv1 => const <String>[
+        '-c:v',
+        'libsvtav1',
+        '-preset',
+        '8',
+        '-crf',
+        '36',
+        '-pix_fmt',
+        'yuv420p',
+      ],
+    };
+
+/// 各格式的音频编码参数：MP4 → AAC 128k，WebM → Opus 96k（WebM 只容纳 Opus/Vorbis）。
+List<String> synchronizedClipAudioArgs(MiningClipFormat format) =>
+    format == MiningClipFormat.mp4H264
+    ? const <String>['-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000']
+    : const <String>[
+        '-c:a',
+        'libopus',
+        '-b:a',
+        '96k',
+        '-ac',
+        '2',
+        '-ar',
+        '48000',
+      ];
+
+/// 按 [format] 的 [MiningClipFormat.encodeAttempts] 逐个尝试 [attempt]，产物落在
+/// `$outputStem.<扩展名>`，返回首个成功的结果（其 `outputPath` 的扩展名即实际编成的
+/// 格式）。捆绑 ffmpeg 缺 VP9/Opus/AV1 编码器（旧二进制、用户自带精简 ffmpeg、移动端
+/// ffmpeg-kit 无 SVT-AV1）时降级到下一个格式，而不是让整张卡失败。全失败返回**首个**
+/// 失败（最接近根因——后面的多是它的连锁反应）。
+///
+/// [onDegrade] 在一次非末位尝试失败时收到 `(失败格式, 结果)`，供调用方写诊断日志。
+Future<VideoClipExportResult> exportWithClipFormatFallback({
+  required MiningClipFormat format,
+  required String outputStem,
+  required Future<VideoClipExportResult> Function(
+    MiningClipFormat format,
+    String outputPath,
+  )
+  attempt,
+  void Function(MiningClipFormat format, VideoClipExportResult result)?
+  onDegrade,
+}) async {
+  VideoClipExportResult? firstFailure;
+  final List<MiningClipFormat> attempts = format.encodeAttempts;
+  for (final MiningClipFormat candidate in attempts) {
+    final VideoClipExportResult result = await attempt(
+      candidate,
+      '$outputStem.${candidate.fileExtension}',
+    );
+    if (result.isSuccess) return result;
+    firstFailure ??= result;
+    if (candidate != attempts.last) onDegrade?.call(candidate, result);
+  }
+  return firstFailure!;
+}
+
+/// Uses the same injected desktop/mobile backend as video clip export; codecs
+/// follow [format]. Failure is explicit: callers must not label a mute fallback as
 /// synchronized. [outputPath] is a new file owned by this export.
 Future<VideoClipExportResult> exportSynchronizedVideoClip({
   required String videoPath,
@@ -108,6 +213,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
   Map<String, String> audioHeaders = const <String, String>{},
   String? tlsPinSha256,
   String? audioTlsPinSha256,
+  MiningClipFormat format = MiningClipFormat.mp4H264,
   FfmpegBackend? backend,
   Duration timeout = const Duration(minutes: 2),
 }) async {
@@ -157,6 +263,7 @@ Future<VideoClipExportResult> exportSynchronizedVideoClip({
             audioHeaders: audioHeaders,
             tlsPinSha256: tlsPinSha256,
             audioTlsPinSha256: audioTlsPinSha256,
+            format: format,
           ),
           timeout,
         );

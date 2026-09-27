@@ -309,6 +309,13 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           visible: (_) => Platform.isWindows,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_clip_format',
+          title: t.gal_mining_clip_format,
+          subtitle: t.mining_clip_format_hint,
+          hasRevealTarget: true,
+          visible: (_) => Platform.isWindows,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_animated_format',
           title: t.gal_mining_animated_format,
           hasRevealTarget: true,
@@ -383,6 +390,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           id: 'card_creation.anki.video_mining_image_mode',
           hasRevealTarget: true,
           title: t.video_mining_image_mode,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_mining_clip_format',
+          hasRevealTarget: true,
+          title: t.video_mining_clip_format,
+          subtitle: t.mining_clip_format_hint,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_still_format',

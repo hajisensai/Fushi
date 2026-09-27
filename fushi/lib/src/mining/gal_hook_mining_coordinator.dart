@@ -49,7 +49,8 @@ typedef GalHookRecordingExport =
       required String directory,
     });
 
-/// 录制帧 + 句子音频 → mp4。生产指向 [buildGalWindowVideoClip]；测试注入假编码器。
+/// 录制帧 + 句子音频 → 片段（格式见 [MiningClipFormat]）。生产指向
+/// [buildGalWindowVideoClip]；测试注入假编码器。
 typedef GalHookVideoClipBuilder =
     Future<GalWindowVideoClip?> Function({
       required WindowRecordingExport export,
@@ -58,6 +59,7 @@ typedef GalHookVideoClipBuilder =
       Uint8List? audioBytes,
       required String audioExtension,
       required Directory workDir,
+      required MiningClipFormat format,
     });
 
 /// Host-owned screenshot frozen while this exact line was current.
@@ -189,6 +191,7 @@ class GalHookMiningCoordinator {
     Uint8List? audioBytes,
     required String audioExtension,
     required Directory workDir,
+    required MiningClipFormat format,
   }) => buildGalWindowVideoClip(
     export: export,
     fromTickMs: fromTickMs,
@@ -196,6 +199,7 @@ class GalHookMiningCoordinator {
     audioBytes: audioBytes,
     audioExtension: audioExtension,
     workDir: workDir,
+    format: format,
   );
 
   static Future<Directory> _defaultCreateTempDirectory() =>
@@ -253,6 +257,8 @@ class GalHookMiningCoordinator {
     // 静图编码格式。缺省 jpg = 旧行为（BUG-1473 起 gal 截图就走降采样重编码 JPEG）；
     // 调用方透传 [AppModel.galMiningStillFormat]。
     MiningStillFormat stillFormat = MiningStillFormat.jpg,
+    // 音画同步片段格式。缺省 mp4 = 旧行为；调用方透传 [AppModel.galMiningClipFormat]。
+    MiningClipFormat clipFormat = MiningClipFormat.mp4H264,
     // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
@@ -272,6 +278,7 @@ class GalHookMiningCoordinator {
         imageMode: imageMode,
         animatedFormat: animatedFormat,
         stillFormat: stillFormat,
+        clipFormat: clipFormat,
         captureLeaseFactory: captureLeaseFactory,
         providedLineScreenshot: providedLineScreenshot,
       ),
@@ -297,6 +304,7 @@ class GalHookMiningCoordinator {
     required VideoMiningImageMode imageMode,
     required MiningAnimatedFormat animatedFormat,
     required MiningStillFormat stillFormat,
+    required MiningClipFormat clipFormat,
     required GalHookLineScreenshot? providedLineScreenshot,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
   }) async {
@@ -415,6 +423,8 @@ class GalHookMiningCoordinator {
     String coverName = 'external_window.gif';
     bool degradedToStill = false;
     bool degradedToAnimated = false;
+    // 封面是混进了句子音频的片段 → 引擎按音画同步片段落卡（不另挂句子音频）。
+    bool coverIsSynchronizedClip = false;
     if (providedLineScreenshot != null) {
       // Remote mining must never recapture a later scene, including through
       // the GIF/video fallback ladder. Only the host's frozen line frame enters.
@@ -445,10 +455,12 @@ class GalHookMiningCoordinator {
         toTickMs: _historicalLineEndTickMs(entry, liveEntries),
         audioBytes: earlyAudio,
         audioExtension: audioExtension,
+        format: clipFormat,
       );
       if (clip != null) {
         coverBytes = clip.bytes;
         coverName = 'external_window.${clip.extension}';
+        coverIsSynchronizedClip = clip.hasAudio;
       }
       // 片段没做出来（录制未启动 / 帧不足 / ffmpeg 失败）：退回既有动图 → 静图阶梯。
     }
@@ -581,6 +593,7 @@ class GalHookMiningCoordinator {
               : null,
           updateNoteId: updateNoteId,
           stillFormat: stillFormat,
+          synchronizedClip: coverIsSynchronizedClip,
         ),
         compression: compression,
         tempDir: jobDirectory.path,
@@ -659,6 +672,7 @@ class GalHookMiningCoordinator {
     required int toTickMs,
     required Uint8List? audioBytes,
     required String audioExtension,
+    required MiningClipFormat format,
   }) async {
     final int? lineTickMs = _lineTimestampLookup(lineId);
     final int? fromTickMs = lineTickMs == null
@@ -679,6 +693,7 @@ class GalHookMiningCoordinator {
         audioBytes: audioBytes,
         audioExtension: audioExtension,
         workDir: recordingDir,
+        format: format,
       );
     } catch (error, stack) {
       ErrorLogService.instance.log(

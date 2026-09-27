@@ -407,6 +407,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MiningAnimatedFormat animatedFormat =
         appModel.videoMiningAnimatedFormat;
     final MiningStillFormat stillFormat = appModel.videoMiningStillFormat;
+    final MiningClipFormat clipFormat = appModel.videoMiningClipFormat;
     final String? bookTitleTag = appModel.autoAddBookNameToTags
         ? BaseAnkiRepository.sanitizeTitleTag(_title)
         : null;
@@ -606,8 +607,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: collectionTag,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
-        // 用户在 Anki 设置里选的封面图片模式（GIF / 制卡时当前帧 / 字幕开头帧）；
-        // 默认 gif=现状。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
+        // 用户在 Anki 设置里选的封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧）；
+        // 默认 videoClip。静态模式引擎不置 degradedToStill，故不弹「降级为静态」OSD。
         imageMode: imageMode,
         // 动图编码格式（默认 AVIF）。引擎在编码失败时会自动降级 GIF 重试一次——旧版本
         // 包捆绑的 ffmpeg 没有 libsvtav1/libwebp，靠这条保证不会因换默认格式而制不出卡。
@@ -615,6 +616,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 静图编码格式（默认 JPG）：两种截图档与动图抽取失败后的静帧降级都走它。
         // 选 PNG 而捕绑 ffmpeg 缺编码器时引擎自动退回 JPG，不会因换格式而丢封面。
         stillFormat: stillFormat,
+        // 音画同步片段格式（默认 WebM VP9，卡片内嵌播放）：编不出来按 AV1→VP9→MP4 降级。
+        clipFormat: clipFormat,
         // 在线视频的本地缓冲副本（拿不到就是 null，引擎远端抽取）。
         cachedMediaSnapshot: cachedSnapshot,
         // 看完再制卡：备好媒体后暂存，不落卡。

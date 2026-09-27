@@ -28,10 +28,10 @@ import 'lapis_preset.dart';
 @immutable
 class AudioFetchOutcome {
   const AudioFetchOutcome._({this.ref, this.failureReason})
-      : assert(
-          ref == null || failureReason == null,
-          'A successful audio fetch (ref) cannot also carry a failure reason.',
-        );
+    : assert(
+        ref == null || failureReason == null,
+        'A successful audio fetch (ref) cannot also carry a failure reason.',
+      );
 
   /// 成功：拿到裸媒体引用 [ref]。
   const AudioFetchOutcome.stored(String ref) : this._(ref: ref);
@@ -64,28 +64,91 @@ class RenderedMinedFields {
   final String? audioWarning;
 }
 
-/// 封面媒体扩展名里会被渲染成 `[sound:]` 而非 `<img>` 的那几种（视频片段）。
+/// 封面媒体扩展名里属于**视频片段**的那几种（不渲染成 `<img>`）。
 const Set<String> kAnkiVideoCoverExtensions = <String>{'mp4', 'webm'};
+
+/// 视频片段里在卡片内 `<video>` **内嵌**播放的扩展名（其余视频走 `[sound:]`）。
+///
+/// 只有 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有 AAC**，
+/// `<video>` 放 MP4 会失败；VP9/AV1 + Opus 的 WebM 在 Anki 桌面与 AnkiDroid WebView 都
+/// 能内嵌解码。Anki 的媒体检查认 `<video src>`（rslib `text.rs` 的媒体标签正则含
+/// `video`），不会把片段当成未使用媒体删掉。
+const Set<String> kAnkiInlineVideoCoverExtensions = <String>{'webm'};
+
+String _lowerExtension(String name) {
+  final int dot = name.lastIndexOf('.');
+  return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
+}
+
+/// 路径 / 文件名是否为卡片内嵌播放的视频片段（见 [kAnkiInlineVideoCoverExtensions]）。
+bool isAnkiInlineVideoCover(String? pathOrName) =>
+    pathOrName != null &&
+    kAnkiInlineVideoCoverExtensions.contains(_lowerExtension(pathOrName));
 
 /// 纯函数：把已写入 Anki 媒体库的封面文件名 [mediaName] 渲染成卡片字段里的引用串。
 ///
 /// - 图片（jpg / png / gif / webp / avif…）→ `<img src="name">`（`src` 做 HTML 转义；
 ///   文件名由内容哈希定，实际不含特殊字符，转义只是守底线）；
-/// - 视频（[kAnkiVideoCoverExtensions]：galgame 视频片段 mp4）→ `[sound:name]`——
-///   Anki 桌面对 `[sound:]` 里的视频文件用 mpv 弹窗播放，AnkiDroid 用内置 VideoView；
-///   而 `<video>` 标签在 Anki 桌面的 Qt WebEngine 里**没有 H.264 解码器**，不可用。
+/// - 内嵌视频（[kAnkiInlineVideoCoverExtensions]：WebM 音画同步片段）→
+///   [inlineVideoCoverHtml]，翻面自动播放一次、带播放条；
+/// - 其余视频（MP4）→ `[sound:name]`——Anki 桌面用 mpv 弹窗播放，AnkiDroid 用内置
+///   VideoView（`<video>` 在 Anki 桌面没有 H.264 解码器，见上）。
 ///
 /// AnkiConnect 与 AnkiDroid 两个 backend 必须都经这里出引用串，杜绝一边会播视频、
-/// 另一边把 mp4 塞进 `<img>` 变成坏图。
+/// 另一边把视频塞进 `<img>` 变成坏图。
 String coverMediaRef(String mediaName) {
-  final int dot = mediaName.lastIndexOf('.');
-  final String extension =
-      dot < 0 ? '' : mediaName.substring(dot + 1).toLowerCase();
+  final String extension = _lowerExtension(mediaName);
+  if (kAnkiInlineVideoCoverExtensions.contains(extension)) {
+    return inlineVideoCoverHtml(mediaName);
+  }
   if (kAnkiVideoCoverExtensions.contains(extension)) {
     return '[sound:$mediaName]';
   }
   return '<img src="${const HtmlEscape().convert(mediaName)}">';
 }
+
+/// 在所有内嵌片段里挑**可见**的那一个从头播放、其余暂停的 JS（单行、无反斜杠 /
+/// 反引号 / `${`）。
+///
+/// 为什么要挑：Lapis 背面把 `{{Picture}}` 渲染三次，由 CSS 按布局只显示一处——三个
+/// `<video>` 都在 DOM 里，写 `autoplay` 属性会让隐藏的两个也出声（三重叠音）。
+///
+/// 为什么禁那三种字符：句子音频字段里的重播按钮会被 Lapis 插进一个 JS 模板字面量
+/// （`addAudioButtons` 里的 `` `{{ExpressionAudio}}…{{SentenceAudio}}` ``），反引号 /
+/// `${` / 反斜杠都会改写或截断那段字面量。守卫见 `inline_video_cover_test.dart`。
+const String _inlineVideoPlayVisibleJs =
+    "var vs=Array.prototype.slice.call(document.querySelectorAll('video.fushi-inline-video'));"
+    'var v=vs.filter(function(e){return e.offsetParent!==null;})[0]||vs[0];'
+    'vs.forEach(function(e){if(e!==v){e.pause();}});'
+    'if(v){v.currentTime=0;var p=v.play();if(p&&p.catch){p.catch(function(){});}}';
+
+/// 内嵌片段的卡片 HTML：`<video>`（无 `autoplay` 属性，理由见
+/// [_inlineVideoPlayVisibleJs]）+ 翻面时只播可见那一个的脚本。
+///
+/// 脚本随字段渲染几次就执行几次，靠 `data-fushi-started` 只让第一次生效；`setTimeout 0`
+/// 等整张卡插入 DOM、CSS 生效后再判可见性。`play()` 被拒（卡组关了自动播放 → Anki 恢复
+/// 「播放需要用户手势」）时静默吞掉，留播放条给用户手动点。
+String inlineVideoCoverHtml(String mediaName) =>
+    '<video class="fushi-inline-video" '
+    'src="${const HtmlEscape().convert(mediaName)}" '
+    'preload="auto" playsinline controls style="max-width:100%"></video>'
+    '<script>(function(){setTimeout(function(){'
+    "var vs=document.querySelectorAll('video.fushi-inline-video');"
+    "if(!vs.length||vs[0].getAttribute('data-fushi-started'))return;"
+    "for(var i=0;i<vs.length;i++){vs[i].setAttribute('data-fushi-started','1');}"
+    '$_inlineVideoPlayVisibleJs'
+    '},0);})();</script>';
+
+/// 内嵌片段的句子音频字段：一个重播按钮（点它 = 片段回到开头音画一起重播）。
+///
+/// 带 `replay-button` 类：内置 Lapis 的「点例句重播」逻辑查找
+/// `.fushi-sentence-audio .replay-button` 并 `click()`，于是点例句同样重播片段，不必
+/// 改模板；带 `fushi-synced-video-replay` 类：Lapis 靠它判断这张卡是同步片段卡。
+const String inlineVideoReplayHtml =
+    '<button type="button" class="replay-button fushi-synced-video-replay '
+    'fushi-inline-video-replay" aria-label="Replay video" '
+    'onclick="event.stopPropagation();$_inlineVideoPlayVisibleJs'
+    'return false;">&#9654;</button>';
 
 /// Replay the native sentence video without adding a second autoplay entry.
 /// Uses client-created buttons instead of undocumented client URL schemes.
@@ -196,7 +259,8 @@ abstract class BaseAnkiRepository {
     if (mappings is! Map) return null;
     if (mappings['MiscInfo'] != _legacyMiscInfoMapping &&
         mappings['MiscInfo'] != _miscInfoMappingWithClipTime &&
-        mappings['MiscInfo'] != _miscInfoMappingWithSource) return null;
+        mappings['MiscInfo'] != _miscInfoMappingWithSource)
+      return null;
     mappings['MiscInfo'] = _miscInfoMappingWithLinkedTitle;
     return jsonEncode(decoded);
   }
@@ -253,10 +317,9 @@ abstract class BaseAnkiRepository {
     required int noteId,
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure(
-        'This Anki backend does not support overwriting a mined card.',
-      );
+  }) async => MineOutcome.failure(
+    'This Anki backend does not support overwriting a mined card.',
+  );
 
   /// TODO-614：按「与查重同一条件」反查一张可被覆写的**已存在** note id。
   ///
@@ -271,8 +334,7 @@ abstract class BaseAnkiRepository {
   Future<int?> findOverwriteTargetNoteId(
     String expression,
     String reading,
-  ) async =>
-      null;
+  ) async => null;
 
   /// TODO-1007/1008：按「与查重同一条件」（第一字段=expression）反查 Anki 中**所有**
   /// 已存在的同词卡，返回它们的 [MinedNoteRef]（noteId + 一行预览），**不受
@@ -288,8 +350,7 @@ abstract class BaseAnkiRepository {
   Future<List<MinedNoteRef>> findMatchingNotes(
     String expression,
     String reading,
-  ) async =>
-      const <MinedNoteRef>[];
+  ) async => const <MinedNoteRef>[];
 
   /// 这个后端能不能回读 Anki、核对「某张卡现在到底还在不在」。
   ///
@@ -353,8 +414,7 @@ abstract class BaseAnkiRepository {
   Future<Map<String, String>> prepareSourceNoteFields({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      throw UnsupportedError('Source note editing is unavailable');
+  }) async => throw UnsupportedError('Source note editing is unavailable');
 
   /// Candidate notes whose fields contain the source ID substring (see
   /// [CardSourceLink.searchQueryForSourceId]). Must propagate backend failure
@@ -376,8 +436,7 @@ abstract class BaseAnkiRepository {
   Future<void> writeSourceNoteFields(
     int noteId,
     Map<String, String> fields,
-  ) async =>
-      throw UnsupportedError('Source note editing is unavailable');
+  ) async => throw UnsupportedError('Source note editing is unavailable');
 
   /// Resolve the single note carrying [sourceId] in a `fushi://source` href.
   /// A substring candidate that parses to a different (or no) source link is
@@ -385,16 +444,18 @@ abstract class BaseAnkiRepository {
   /// Backend failures propagate: "could not ask" is never reported as "gone".
   Future<AnkiSourceNote?> readSourceNote(String sourceId) async {
     CardSourceLink.validateSourceId(sourceId);
-    final Set<int> candidates =
-        (await findSourceNoteCandidates(sourceId)).toSet();
+    final Set<int> candidates = (await findSourceNoteCandidates(
+      sourceId,
+    )).toSet();
     final Map<int, Map<String, String>> matches = <int, Map<String, String>>{};
     for (final int noteId in candidates) {
       if (noteId <= 0) throw StateError('Invalid source note candidate');
       final Map<String, String>? fields = await sourceNoteFields(noteId);
       if (fields == null) continue;
       final bool carriesSource = fields.values.any(
-        (String field) => CardSourceLink.fromHtml(field)
-            .any((CardSourceLink link) => link.sourceId == sourceId),
+        (String field) => CardSourceLink.fromHtml(
+          field,
+        ).any((CardSourceLink link) => link.sourceId == sourceId),
       );
       if (carriesSource) matches[noteId] = fields;
     }
@@ -473,8 +534,10 @@ abstract class BaseAnkiRepository {
     String reading,
   ) async {
     if (expression.isEmpty) return AnkiOpenWordOutcome.failed;
-    final List<MinedNoteRef> matches =
-        await findMatchingNotes(expression, reading);
+    final List<MinedNoteRef> matches = await findMatchingNotes(
+      expression,
+      reading,
+    );
     if (matches.isEmpty) return AnkiOpenWordOutcome.noMatch;
     final int newest = matches
         .map((MinedNoteRef m) => m.noteId)
@@ -523,8 +586,7 @@ abstract class BaseAnkiRepository {
   /// （调用方决定提示还是静默跳过）。**默认实现 = 优雅降级**：返回 `null`。
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
     String modelName,
-  ) async =>
-      null;
+  ) async => null;
 
   /// 覆写 [modelName] 的 styling（CSS）。返回 `false` = 后端不支持（默认
   /// 降级）；成功返回 `true`；后端失败照抛。
@@ -537,8 +599,7 @@ abstract class BaseAnkiRepository {
   Future<bool> updateNoteTypeTemplates(
     String modelName,
     List<AnkiCardTemplate> templates,
-  ) async =>
-      false;
+  ) async => false;
 
   // ── 媒体存储优化（字节级去重，见 anki_media_dedup.dart）────────────────
 
@@ -587,8 +648,7 @@ abstract class BaseAnkiRepository {
     Future<void> Function(Map<String, dynamic> entry)? onJournal,
     AnkiMediaDedupOnProgress? onProgress,
     bool Function()? shouldCancel,
-  }) async =>
-      null;
+  }) async => null;
 
   // ── 卡组新卡按词频重排 ───────────────────────────────────────────────────
 
@@ -801,8 +861,10 @@ abstract class BaseAnkiRepository {
     // 块级标签承担换行分词，直接删空会把相邻词粘连成一个词；字幕行内标签则
     // 紧贴正文、删空才不会在日文句中引入假空格。两份实现不强并（G11）。
     final String noTags = value.replaceAll(RegExp(r'<[^>]*>'), ' ');
-    final String collapsed =
-        noTags.replaceAll('&nbsp;', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    final String collapsed = noTags
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     if (collapsed.length <= maxLen) return collapsed;
     return '${collapsed.substring(0, maxLen)}…';
   }
@@ -1028,7 +1090,20 @@ abstract class BaseAnkiRepository {
     // A muxed video owns sentence playback. Keep only one native sound tag:
     // Lapis renders Picture three times, but SentenceAudio is interpolated once
     // after ExpressionAudio and its already-rendered replay buttons are copied.
-    if (context.synchronizedVideo && coverRef != null) {
+    //
+    // 内嵌片段（WebM）反过来：画面本身就在 Picture 的 `<video>` 里播，句子音频字段只放
+    // 一个重播按钮（[inlineVideoReplayHtml]），不再有任何 `[sound:]`——否则 Anki 原生
+    // 队列会把同一段声音再放一遍。
+    if (context.synchronizedVideo &&
+        coverRef != null &&
+        isAnkiInlineVideoCover(context.coverPath)) {
+      sentenceAudioRef =
+          AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
+            settings.fieldMappings,
+          )
+          ? inlineVideoReplayHtml
+          : null;
+    } else if (context.synchronizedVideo && coverRef != null) {
       if (AnkiHandlebarOptions.anyFieldConsumesSentenceAudio(
         settings.fieldMappings,
       )) {

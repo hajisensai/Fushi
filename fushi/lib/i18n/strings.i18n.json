@@ -1811,7 +1811,7 @@
   "go_to_chapter": "Chapter $n",
   "handlebar_audio": "Audio",
   "handlebar_book_cover": "Book cover",
-  "handlebar_card_image": "Card image (cover / GIF)",
+  "handlebar_card_image": "Card image (cover / clip)",
   "handlebar_clip_timestamp": "Clip timestamp",
   "handlebar_cue_sentence": "Cue sentence",
   "handlebar_deprecated_label": "${label} (deprecated)",
@@ -4792,7 +4792,6 @@
   "reader_volume_peek_failed": "Could not read this volume",
   "web_video_player_unavailable": "The built-in web page player is temporarily disabled; this address cannot be played inside the app for now.",
   "video_mining_image_mode_video_clip": "Video clip with sound",
-  "video_mining_image_mode_video_clip_hint": "Export picture and sentence sound together in one MP4. Anki plays it through its media player; autoplay follows the card settings. Playback may open in a separate player depending on the client.",
   "reader_gallery_title": "Illustrations",
   "reader_gallery_unlocked_count": "Unlocked $unlocked / $total",
   "reader_gallery_filter_unlocked": "Unlocked",
@@ -5676,5 +5675,12 @@
   "ai_web_knowledge_section_hint": "Fushi itself fetches article text from the selected sources and hands it to the AI (used when AI video download lists the works of a franchise and when identifying video works). Your AI provider does not need web access. The AI can only cite what was fetched, and every listed work is still checked against the metadata source one by one.",
   "ai_web_knowledge_wikipedia_zh": "Wikipedia (中文)",
   "ai_web_knowledge_wikipedia_ja": "Wikipedia (日本語)",
-  "ai_web_knowledge_wikipedia_en": "Wikipedia (English)"
+  "ai_web_knowledge_wikipedia_en": "Wikipedia (English)",
+  "video_mining_image_mode_video_clip_inline_hint": "Picture and sentence audio are saved as one clip, so they always stay in sync. WebM plays inside the card (auto-plays when the card is shown; tap the sentence to replay); MP4 opens in Anki's own player.",
+  "video_mining_clip_format": "Video clip format",
+  "gal_mining_clip_format": "Game clip format",
+  "mining_clip_format_webm_vp9": "WebM · VP9 (plays inside the card, recommended)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card, smallest, slower to encode)",
+  "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki's own player; use for AnkiMobile)",
+  "mining_clip_format_hint": "If the chosen format cannot be encoded on this device, Fushi falls back to WebM VP9, then MP4."
 }

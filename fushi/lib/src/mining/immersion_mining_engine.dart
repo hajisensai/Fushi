@@ -95,6 +95,7 @@ typedef SynchronizedVideoExtractor = Future<VideoClipExportResult> Function({
   required String outputPath,
   required String? tlsPinSha256,
   required Map<String, String> httpHeaders,
+  required MiningClipFormat format,
 });
 typedef FrameExtractor = Future<String?> Function({
   required String inputPath,
@@ -309,8 +310,10 @@ class ImmersionMiningEngine {
     required String outputPath,
     required String? tlsPinSha256,
     required Map<String, String> httpHeaders,
+    required MiningClipFormat format,
   }) =>
       exportSynchronizedVideoClip(
+        format: format,
         videoPath: videoPath,
         audioPath: audioPath,
         audioStartMs: 0,
@@ -453,8 +456,15 @@ class ImmersionMiningEngine {
         abortReason: 'Video source identity could not be verified: $error',
       );
     }
-    final bool synchronizedVideo =
-        req.source == AnkiMiningSource.video && req.imageMode.isVideoClip;
+    // 同步片段要「可裁的视频 + 句子时间窗」，或外部已给好的片段文件（Netflix 录制）；
+    // 两者都没有（无字幕 cue、浏览器只给截图）时按动图模式的阶梯降级（下方 switch 的
+    // videoClip 分支），不中止也不声称同步——videoClip 是默认模式，拿不到画面的来源
+    // 不能因此整张卡失败。
+    // galgame（source: game）只会以「外部已给好的片段」进来（窗口录制 + 语音混流），
+    // 它没有可裁的源（hasRange 恒 false），所以下面的判据自然只认 providedVideo。
+    final bool wantsSynchronizedVideo = req.imageMode.isVideoClip &&
+        (req.source == AnkiMiningSource.video ||
+            req.source == AnkiMiningSource.game);
     // 抽取用的是媒体文件自己的时间轴：缓冲副本的 0 点是播放器轴上的某一刻
     // （[ImmersionMiningRequest.mediaTimeOffsetMs]），远端流 / 本地文件为 0。
     // 卡面的 clip 窗（下方 AnkiMiningContext）仍写播放器轴原值。
@@ -504,16 +514,11 @@ class ImmersionMiningEngine {
     // 变体，见 [ffmpegRemoteInputFor]）；本地路径与未登记的地址原样。
     final String? src =
         req.mediaSource == null ? null : ffmpegRemoteInputFor(req.mediaSource!);
-    final bool providedVideo = synchronizedVideo &&
+    final bool providedVideo = wantsSynchronizedVideo &&
         coverPath != null &&
-        coverPath.toLowerCase().endsWith('.mp4');
-    if (synchronizedVideo && !providedVideo && !req.hasRange) {
-      return const ImmersionMiningResult(
-        aborted: true,
-        abortReason:
-            'synchronized video requires a video source and sentence range',
-      );
-    }
+        isMiningClipPath(coverPath);
+    final bool synchronizedVideo =
+        wantsSynchronizedVideo && (providedVideo || req.hasRange);
 
     // 三种封面来源封成本地闭包（各自带前置守卫，源不可用即返 null）。三个 [VideoMiningImageMode]
     // 只是它们的不同优先级排列，把原来手写的三段 `if (coverPath == null && ...)` 阶梯归一成
@@ -665,15 +670,29 @@ class ImmersionMiningEngine {
       }
       exportedVideoDir = await Directory(tempDir).createTemp('synced_video_');
       final VideoClipExportResult video;
+      final String trimmedAudio = audioPath;
       try {
-        video = await _synchronizedVideo(
-          videoPath: src!,
-          audioPath: audioPath,
-          startMs: extractStartMs,
-          endMs: extractEndMs,
-          outputPath: '${exportedVideoDir.path}/immersion_video.mp4',
-          tlsPinSha256: req.mediaSourceTlsPinSha256,
-          httpHeaders: req.mediaSourceHttpHeaders,
+        // 首选格式编不出来（捆绑 ffmpeg 缺 VP9/Opus/AV1）按 encodeAttempts 降级，
+        // 卡上扩展名跟随实际编成的格式。
+        video = await exportWithClipFormatFallback(
+          format: req.clipFormat,
+          outputStem: '${exportedVideoDir.path}/immersion_video',
+          onDegrade: (MiningClipFormat failed, VideoClipExportResult r) =>
+              engineLog.logDiagnostic(
+            'Anki.synchronizedVideo.degrade',
+            '${failed.wireName}: ${r.detail ?? r.failure?.name}',
+          ),
+          attempt: (MiningClipFormat format, String outputPath) =>
+              _synchronizedVideo(
+            videoPath: src!,
+            audioPath: trimmedAudio,
+            startMs: extractStartMs,
+            endMs: extractEndMs,
+            outputPath: outputPath,
+            tlsPinSha256: req.mediaSourceTlsPinSha256,
+            httpHeaders: req.mediaSourceHttpHeaders,
+            format: format,
+          ),
         );
       } catch (_) {
         await _cleanupSynchronizedVideo(exportedVideoDir);

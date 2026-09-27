@@ -783,6 +783,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           imageMode: mixinAppModel.galMiningImageMode,
           animatedFormat: mixinAppModel.galMiningAnimatedFormat,
           stillFormat: mixinAppModel.galMiningStillFormat,
+          clipFormat: mixinAppModel.galMiningClipFormat,
         );
     if (result.aborted) {
       FushiToast.showMine(

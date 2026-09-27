@@ -113,6 +113,7 @@ class ImmersionCaptureResult {
     this.coverIsStill = false,
     this.coverIsVideo = false,
     this.stillFormat = MiningStillFormat.jpg,
+    this.clipFormat = MiningClipFormat.mp4H264,
   });
 
   /// 动图封面字节。字段名与 MethodChannel 的 wire key `gifBytes` 一样是历史名，**不代表
@@ -139,8 +140,13 @@ class ImmersionCaptureResult {
   /// [animatedFormat] 在本值为 true 时不参与文件名（改由 [stillFormat] 参与）。
   final bool coverIsStill;
 
-  /// The legacy cover byte channel contains one MP4 with its sentence audio.
+  /// 封面字节通道里装的是**一个音画同步片段**（含句子声音），格式见 [clipFormat]。
   final bool coverIsVideo;
+
+  /// [coverIsVideo] 为 true 时片段**实际被编码成的**格式（首选编不出来会降级，
+  /// 见 [MiningClipFormat.encodeAttempts]）。与 [animatedFormat] 同一理由：文件名必须
+  /// 跟随真实字节——`.webm` 内嵌播放、`.mp4` 走原生播放器，拼错扩展名渲染方式就错。
+  final MiningClipFormat clipFormat;
 
   /// [coverIsStill] 为 true 时，[gifBytes] 里那张静态帧**实际被编码成的**格式。
   ///
@@ -192,12 +198,15 @@ ImmersionMiningRequest buildImmersionRequest(
   VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
 }) {
   final bool useCapture = cap.ok;
-  final bool synchronizedVideo = imageMode == VideoMiningImageMode.videoClip;
-  final Uint8List? cover = synchronizedVideo
-      ? (useCapture && cap.coverIsVideo ? cap.gifBytes : null)
-      : useCapture
-          ? (cap.gifBytes ?? p.screenshotBytes)
-          : p.screenshotBytes;
+  // 同步片段只在捕获**真的**给出了音画片段时成立。片段模式是默认值：没录到片段的来源
+  // （后台软解动图、2A 截图）照常用手上的封面出卡，不声称同步，也不丢封面。
+  final bool synchronizedVideo = imageMode == VideoMiningImageMode.videoClip &&
+      useCapture &&
+      cap.coverIsVideo &&
+      cap.gifBytes != null;
+  final Uint8List? cover = useCapture
+      ? (cap.gifBytes ?? p.screenshotBytes)
+      : p.screenshotBytes;
   final bool coverFromCapture = useCapture && cap.gifBytes != null;
   final bool coverIsAnimated = coverFromCapture && !cap.coverIsStill;
   // 媒体临时文件名的前缀 = **这份字节哪来的**（[ImmersionMiningEngine] 文件头把
@@ -212,7 +221,7 @@ ImmersionMiningRequest buildImmersionRequest(
   // 这张卡的封面是哪条路产出的。片段里抽的静态帧跟随 [ImmersionCaptureResult.stillFormat]
   // （用户偏好，降级后为实际格式）；2A 截图是扩展直接给的字节、不经我们编码，恒 JPEG。
   final String coverName = synchronizedVideo
-      ? '${origin}_clip.mp4'
+      ? '${origin}_clip.${cap.clipFormat.fileExtension}'
       : coverIsAnimated
           ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
           : coverFromCapture
@@ -281,6 +290,7 @@ typedef CaptureVideoExporter = Future<VideoClipExportResult> Function({
   required String outputPath,
   bool decodeFromStart,
   String? cropFilter,
+  MiningClipFormat format,
 });
 
 Future<ImmersionCaptureResult> transcodeClipToCapture(
@@ -291,6 +301,7 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
   MiningAnimatedFormat format = MiningAnimatedFormat.gif,
   MiningStillFormat stillFormat = MiningStillFormat.jpg,
+  MiningClipFormat clipFormat = MiningClipFormat.mp4H264,
   ClipStillTarget? stillTarget,
   ClipCropFraction? crop,
   GifExtractor gifExtractor = extractClipGifViaFfmpeg,
@@ -361,13 +372,19 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     await clip.writeAsBytes(clipBytes, flush: true);
     final int endMs = durationMs > 0 ? durationMs : 6000;
     if (imageMode == VideoMiningImageMode.videoClip) {
-      final VideoClipExportResult video = await videoExporter(
-        videoPath: clip.path,
-        startMs: 0,
-        endMs: endMs,
-        outputPath: '${dir.path}/clip.mp4',
-        decodeFromStart: true,
-        cropFilter: cropFilter,
+      // 首选格式编不出来按 encodeAttempts 降级；实际格式经 clipFormat 带回给文件名。
+      final VideoClipExportResult video = await exportWithClipFormatFallback(
+        format: clipFormat,
+        outputStem: '${dir.path}/clip_out',
+        attempt: (MiningClipFormat format, String outputPath) => videoExporter(
+          videoPath: clip.path,
+          startMs: 0,
+          endMs: endMs,
+          outputPath: outputPath,
+          decodeFromStart: true,
+          cropFilter: cropFilter,
+          format: format,
+        ),
       );
       if (!video.isSuccess) {
         return ImmersionCaptureResult(
@@ -375,9 +392,13 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
               '${video.detail ?? video.failure?.name}',
         );
       }
+      final String produced = video.outputPath!;
       return ImmersionCaptureResult(
-        gifBytes: await File(video.outputPath!).readAsBytes(),
+        gifBytes: await File(produced).readAsBytes(),
         coverIsVideo: true,
+        clipFormat: MiningClipFormat.values.firstWhere(
+          (MiningClipFormat f) => produced.endsWith('.${f.fileExtension}'),
+        ),
       );
     }
     // 静态帧模式：片段内定点抽一帧，**不进** extractAnimatedClipWithFallback（既是行为正确
