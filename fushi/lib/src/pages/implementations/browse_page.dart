@@ -1,4 +1,5 @@
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart'
@@ -54,6 +55,7 @@ class BrowsePage extends ConsumerStatefulWidget {
     super.key,
     this.initialTab,
     this.initialDownloadsSection = BrowseDownloadsSection.tasks,
+    this.navigationRequest,
     this.videoDiscoveryController,
     this.videoDiscoveryActions = const VideoDiscoveryActions(),
   });
@@ -63,6 +65,11 @@ class BrowsePage extends ConsumerStatefulWidget {
 
   /// 「下载」页签里先显示任务还是订阅（发现详情「管理订阅」等入口直落订阅）。
   final BrowseDownloadsSection initialDownloadsSection;
+
+  /// 宿主（首页）把**已挂载**的浏览页切到某页签 / 下载段的请求：首页保活本页，
+  /// 跳转不再靠换 key 整页重建（那会丢掉各页签的搜索词、结果与滚动）。按 identity
+  /// 判新请求；首次挂载时它优先于 [initialTab]。
+  final BrowseNavigationRequest? navigationRequest;
 
   /// 与视频模块共用同一套生产发现服务，避免下载页另起网络生命周期。
   final VideoDiscoveryController? videoDiscoveryController;
@@ -81,7 +88,32 @@ enum BrowseTab { sources, extensions, discover, downloads }
 /// 「下载」页签里的两段。
 enum BrowseDownloadsSection { tasks, subscriptions }
 
-class _BrowsePageState extends ConsumerState<BrowsePage> {
+/// 一次「切到浏览某页签」的请求（见 [BrowsePage.navigationRequest]）。构造器刻意
+/// 不是 const：每次跳转都是新对象，同一页签连续请求两次也能被识别成两次。
+class BrowseNavigationRequest {
+  BrowseNavigationRequest(
+    this.tab, {
+    this.downloadsSection = BrowseDownloadsSection.tasks,
+  });
+
+  final BrowseTab tab;
+  final BrowseDownloadsSection downloadsSection;
+}
+
+class _BrowsePageState extends ConsumerState<BrowsePage>
+    with TickerProviderStateMixin {
+  /// 页签控制器由本页持有（不用 DefaultTabController）：页签随平台 / 模块开关增减
+  /// 时要**按页签 id** 落回原来选中的页签——DefaultTabController 只保留下标，前面
+  /// 少一个页签就静默落到相邻页签上。
+  TabController? _tabController;
+
+  /// [_tabController] 对应的页签序列。
+  List<BrowseTab> _controllerTabs = const <BrowseTab>[];
+
+  /// 当前选中的页签（按 id 记）；首次挂载时是跳转请求 / [BrowsePage.initialTab]。
+  late BrowseTab? _selectedTab =
+      widget.navigationRequest?.tab ?? widget.initialTab;
+
   /// 来源 / 扩展两个页签共用的内容域选择（在两页签之间来回切不丢选择）。
   OnlineSourcesDomain _onlineDomain = OnlineSourcesDomain.novel;
 
@@ -93,6 +125,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
       };
 
   late BrowseDownloadsSection _downloadsSection =
+      widget.navigationRequest?.downloadsSection ??
       widget.initialDownloadsSection;
 
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
@@ -123,10 +156,61 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
     if (onlineDomains.isNotEmpty) _onlineDomain = onlineDomains.first;
   }
 
+  @override
+  void didUpdateWidget(BrowsePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final BrowseNavigationRequest? request = widget.navigationRequest;
+    if (request == null || identical(request, oldWidget.navigationRequest)) {
+      return;
+    }
+    // 已挂载时的跳转：原地切页签 / 下载段，不重建整页。
+    _downloadsSection = request.downloadsSection;
+    _selectedTab = request.tab;
+    final int index = _controllerTabs.indexOf(request.tab);
+    if (index >= 0) _tabController?.index = index;
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  /// 按此刻可见的页签对齐 [_tabController]：页签序列没变就沿用；变了（模块 /
+  /// 平台门增减页签）就按 [_selectedTab] 的 id 重新定位，已不可见时落第一个页签。
+  TabController _syncTabController(List<BrowseTab> tabs) {
+    final TabController? current = _tabController;
+    if (current != null && listEquals(tabs, _controllerTabs)) return current;
+    final BrowseTab? wanted = _selectedTab;
+    final int found = wanted == null ? -1 : tabs.indexOf(wanted);
+    final int index = found < 0 ? 0 : found;
+    final TabController next = TabController(
+      length: tabs.length,
+      initialIndex: index,
+      // eink：TabBarView 的 300ms 横滑 = 整页一串局部刷新的残影，归零。
+      animationDuration: einkSafeDuration(context, kTabScrollDuration),
+      vsync: this,
+    );
+    next.addListener(() {
+      if (identical(next, _tabController)) {
+        _selectedTab = _controllerTabs[next.index];
+      }
+    });
+    _tabController = next;
+    _controllerTabs = List<BrowseTab>.unmodifiable(tabs);
+    _selectedTab = tabs[index];
+    // 旧控制器还挂在本帧之前的 TabBar / TabBarView 上：等这一帧换绑完再释放。
+    if (current != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => current.dispose());
+    }
+    return next;
+  }
+
   /// 此刻可见的页签，顺序即页头顺序。
   ///
-  /// 来源 / 扩展两页签只在至少一个域有在线宿主时出现（Linux 没有 Mihon 与
-  /// headless WebView，就只剩发现与下载）；发现页签跟四个库模块走；下载恒在。
+  /// 来源 / 扩展两页签只在至少一个域有在线来源时出现（漫画域有内置 mokuro.moe，
+  /// 不依赖扩展宿主；三个库模块全关时就只剩发现与下载）；发现页签跟四个库模块
+  /// 走；下载恒在。
   List<BrowseTab> _visibleTabs(AppModel appModel) {
     final bool online = _visibleOnlineDomains(
       appModel.moduleVisibility,
@@ -248,12 +332,17 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
                       offstage: domain != selected,
                       child: TickerMode(
                         enabled: domain == selected,
-                        child: BrowseOnlineSourcesView(
-                          key: ValueKey<String>(
-                            'browse-${tab.name}-${domain.name}',
+                        // Offstage 只关绘制与命中，不关焦点：隐藏域不排除出焦点
+                        // 遍历，Tab / 方向键会走进看不见的域。
+                        child: ExcludeFocus(
+                          excluding: domain != selected,
+                          child: BrowseOnlineSourcesView(
+                            key: ValueKey<String>(
+                              'browse-${tab.name}-${domain.name}',
+                            ),
+                            domain: domain,
+                            section: section,
                           ),
-                          domain: domain,
-                          section: section,
                         ),
                       ),
                     ),
@@ -350,6 +439,28 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
     });
   }
 
+  /// 漫画发现（「发现」页签里）的「管理来源」去处：回到本页并切到「来源 › 漫画」。
+  /// 漫画域此刻不可见时为 null（空态只给文案、不给点了没反应的按钮）。
+  ///
+  /// 以本页自己的路由为界弹掉上面压着的路由（全源搜索页、详情页），与压了几层
+  /// 无关——与库页壳 `MediaLibraryShell` 的「回到壳」同一口径。
+  VoidCallback? _mangaSourcesAction() {
+    final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+      ref.read(appProvider).moduleVisibility,
+    );
+    if (!domains.contains(OnlineSourcesDomain.manga)) return null;
+    return () {
+      final ModalRoute<Object?>? route = ModalRoute.of(context);
+      if (route != null && !route.isCurrent) {
+        Navigator.of(context).popUntil((Route<dynamic> above) => above == route);
+      }
+      final int index = _controllerTabs.indexOf(BrowseTab.sources);
+      if (index < 0) return;
+      setState(() => _onlineDomain = OnlineSourcesDomain.manga);
+      _tabController?.animateTo(index);
+    };
+  }
+
   Widget _buildResourceDomain(_DownloadsResourceDomain domain) =>
       switch (domain) {
         _DownloadsResourceDomain.books => const MediaDiscoveryPage(
@@ -358,8 +469,9 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
               DiscoveryMediaKind.audiobook,
             ],
           ),
-        _DownloadsResourceDomain.manga => const MangaDiscoveryPage(
+        _DownloadsResourceDomain.manga => MangaDiscoveryPage(
             embedded: true,
+            onOpenSources: _mangaSourcesAction(),
           ),
         _DownloadsResourceDomain.games => const MediaDiscoveryPage(
             kinds: <DiscoveryMediaKind>[DiscoveryMediaKind.game],
@@ -421,11 +533,15 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
                       offstage: domain != selected,
                       child: TickerMode(
                         enabled: domain == selected,
-                        child: KeyedSubtree(
-                          key: ValueKey<String>(
-                            'downloads-resource-${domain.name}',
+                        // 隐藏域排除出焦点遍历（Offstage 不管焦点）。
+                        child: ExcludeFocus(
+                          excluding: domain != selected,
+                          child: KeyedSubtree(
+                            key: ValueKey<String>(
+                              'downloads-resource-${domain.name}',
+                            ),
+                            child: _buildResourceDomain(domain),
                           ),
-                          child: _buildResourceDomain(domain),
                         ),
                       ),
                     ),
@@ -483,11 +599,10 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
   ///
   /// 页头动作只在「下载」页签出现（「添加任务」+ 下载设置）：它们不是来源 / 扩展 /
   /// 发现的动作。
-  Widget _buildHeader(BuildContext tabContext, List<BrowseTab> tabs) {
+  Widget _buildHeader(TabController controller, List<BrowseTab> tabs) {
     // 下拉框会临时 push PopupRoute；只看本页自己的 PageRoute，避免展开菜单时
     // 左上角凭空出现返回键。
     final bool showBackButton = ModalRoute.of(context)?.isFirst == false;
-    final TabController controller = DefaultTabController.of(tabContext);
     return AnimatedBuilder(
       animation: controller,
       builder: (BuildContext context, Widget? child) {
@@ -737,54 +852,91 @@ class _BrowsePageState extends ConsumerState<BrowsePage> {
   @override
   Widget build(BuildContext context) {
     final List<BrowseTab> tabs = _visibleTabs(ref.watch(appProvider));
-    final int initialIndex = widget.initialTab == null
-        ? 0
-        : tabs.indexOf(widget.initialTab!).clamp(0, tabs.length - 1);
+    // 初始页签：跳转请求 / initialTab 播种进 [_selectedTab]，此刻不可见就落第一个
+    // 页签（见 [_syncTabController]）。
+    final TabController controller = _syncTabController(tabs);
     // 整页是 .torrent 的落点（桌面拖放）；移动端 FushiFileDropTarget 直接透传。
     return FushiFileDropTarget(
       debugLabel: 'downloads',
       onDrop: _handleDownloadsDrop,
-      child: DefaultTabController(
-        initialIndex: initialIndex,
-        length: tabs.length,
-        // eink：TabBarView 的 300ms 横滑 = 整页一串局部刷新的残影，归零。
-        animationDuration: einkSafeDuration(context, kTabScrollDuration),
-        child: Builder(
-          builder: (BuildContext tabContext) => Scaffold(
-            // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
-            // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
-            // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
-            // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
-            // 本就不看），顶部输入框保持可见、布局不反流。
-            resizeToAvoidBottomInset: false,
-            // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
-            // 进来（设置入口）时的状态栏避让，双层无副作用。
-            body: SafeArea(
-              bottom: false,
-              child: Column(
-                children: <Widget>[
-                  if (!isCupertinoPlatform(context))
-                    _buildHeader(tabContext, tabs),
-                  Expanded(
-                    child: TabBarView(
-                      children: <Widget>[
-                        for (final BrowseTab tab in tabs)
-                          switch (tab) {
+      child: Scaffold(
+        // BUG-1003：内联下载流程把 apikey/搜番等输入框全放在页面上半部，下载
+        // 任务折叠区贴底、中段结果列表是唯一的 Expanded。默认
+        // resizeToAvoidBottomInset:true 时，手机软键盘弹出会压掉 body 高度、
+        // 顶掉贴底任务区。关掉 inset 让键盘只覆盖下半部结果/任务区（打字时
+        // 本就不看），顶部输入框保持可见、布局不反流。
+        resizeToAvoidBottomInset: false,
+        // 作为 home tab 时外层已有 SafeArea，这里的 SafeArea 兜的是独立 push
+        // 进来（设置入口）时的状态栏避让，双层无副作用。
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            children: <Widget>[
+              if (!isCupertinoPlatform(context))
+                _buildHeader(controller, tabs),
+              Expanded(
+                // 只在选中页签变化时重建（controller 的 notifyListeners 只在下标
+                // 变化时触发），用来给隐藏页签关焦点。
+                child: AnimatedBuilder(
+                  animation: controller,
+                  builder: (BuildContext context, Widget? _) => TabBarView(
+                    // 页签序列一变就整个换新：旧 TabBarView 的 PageController 停在
+                    // 旧下标上，换绑新控制器的那一帧会先把旧下标处（多半是新插进来
+                    // 的「来源」）建出来再跳走——白建一个页签还被保活。
+                    key: ValueKey<String>(
+                      tabs.map((BrowseTab tab) => tab.name).join(','),
+                    ),
+                    controller: controller,
+                    children: <Widget>[
+                      for (final BrowseTab tab in tabs)
+                        _BrowseTabKeepAlive(
+                          key: ValueKey<BrowseTab>(tab),
+                          active: tabs[controller.index] == tab,
+                          child: switch (tab) {
                             BrowseTab.sources ||
                             BrowseTab.extensions => _buildOnlineTab(tab),
                             BrowseTab.discover => _buildResourceHub(),
                             BrowseTab.downloads => _buildDownloadsTab(),
                           },
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),
     );
+  }
+}
+
+/// [TabBarView] 的页签外壳：横滑离开的页签**保活**（TabBarView 默认把离屏页签
+/// dispose 掉，回来时发现页重拉网络、在线来源丢搜索与滚动）；未选中的页签排除出
+/// 焦点遍历——保活的离屏页签仍在树上，不排除的话 Tab / 方向键会走进看不见的页签。
+class _BrowseTabKeepAlive extends StatefulWidget {
+  const _BrowseTabKeepAlive({
+    required this.active,
+    required this.child,
+    super.key,
+  });
+
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_BrowseTabKeepAlive> createState() => _BrowseTabKeepAliveState();
+}
+
+class _BrowseTabKeepAliveState extends State<_BrowseTabKeepAlive>
+    with AutomaticKeepAliveClientMixin<_BrowseTabKeepAlive> {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return ExcludeFocus(excluding: !widget.active, child: widget.child);
   }
 }
 

@@ -131,9 +131,10 @@ const Map<String, (CoverDeriverRole, String)> kCoverPathDerivers =
   ),
   'lib/src/media/video/online/anime_source_library.dart': (
     CoverDeriverRole.writesViaService,
-    '在线视频源入库集（2026-09-27 浏览阶段 2b）：封面经扩展取回字节后，每集 / 合集的'
-        '目的地在这里派生（videoCoverFileName / VideoStorage.coversDir），落盘一律经 '
-        'MediaCoverService.applyCoverBytes，本文件不裸写。',
+    '在线视频源入库集（2026-09-27 浏览阶段 2b）：封面经扩展取回字节后，作品共用封面 / '
+        '合集封面的目的地在这里派生（animeSourceWorkCoverFileName / videoCoverFileName / '
+        'VideoStorage.coversDir），落盘一律经 MediaCoverService.applyCoverBytes，'
+        '本文件不裸写。',
   ),
   'lib/src/media/torrent/anime_download_importer.dart': (
     CoverDeriverRole.derivesPathOnly,

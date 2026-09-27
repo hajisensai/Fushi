@@ -18,6 +18,10 @@ import 'package:fushi/utils.dart';
 /// 作品页封面尺寸（视频源作品页的原尺寸）。
 const Size kOnlineWorkCoverSize = Size(120, 170);
 
+/// 头部可用宽度（逻辑像素，按界面缩放折算）低于它时，主操作区挪到封面行下方
+/// 占满整宽横排（见 [OnlineWorkHeader]）。
+const double kOnlineWorkActionsBelowWidth = 560;
+
 /// 把源给的「类型」字段拆成标签：扩展 / 插件多半给逗号分隔的一串。
 List<String> splitOnlineWorkGenres(String? raw) {
   if (raw == null) return const <String>[];
@@ -61,8 +65,27 @@ class OnlineWorkHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          _buildForWidth(context, constraints.maxWidth),
+    );
+  }
+
+  Widget _buildForWidth(BuildContext context, double width) {
     final ThemeData theme = Theme.of(context);
     final String? summary = description?.trim();
+    // 窄屏（手机竖屏）封面右边只剩一百多像素：主操作区放在那里，每个按钮都会
+    // 独占一行、竖着堆成一长条。窄宽时把操作区挪到封面行下方、占满整宽横排。
+    final bool actionsBelow =
+        width * FushiAppUiScale.of(context) < kOnlineWorkActionsBelowWidth;
+    final Widget? actionBar = actions.isEmpty
+        ? null
+        : Wrap(
+            key: const ValueKey<String>('online_work_actions'),
+            spacing: 8,
+            runSpacing: 8,
+            children: actions,
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -96,15 +119,19 @@ class OnlineWorkHeader extends StatelessWidget {
                       ],
                     ),
                   ],
-                  if (actions.isNotEmpty) ...<Widget>[
+                  if (actionBar != null && !actionsBelow) ...<Widget>[
                     const SizedBox(height: 12),
-                    Wrap(spacing: 8, runSpacing: 8, children: actions),
+                    actionBar,
                   ],
                 ],
               ),
             ),
           ],
         ),
+        if (actionBar != null && actionsBelow) ...<Widget>[
+          const SizedBox(height: 12),
+          actionBar,
+        ],
         if (summary != null && summary.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 16),

@@ -59,7 +59,9 @@ void main() {
       reason: '任务 / 订阅分段条必须有稳定 key，便于焦点导航与行为验证',
     );
 
-    expect(identifierCall('DefaultTabController').hasMatch(structural), isTrue);
+    // 页签控制器由本页持有（按页签 id 落回选中，PR #1707 审查），同一个控制器
+    // 驱动页头页签与 TabBarView。
+    expect(identifierCall('TabController').hasMatch(structural), isTrue);
     expect(identifierCall('TabBarView').hasMatch(structural), isTrue);
     expect(
       identifierCall('VideoDownloadJobsPanel').hasMatch(structural),
@@ -92,28 +94,41 @@ void main() {
     final String source = _read(_downloadsPath);
     final String code = compactCode(source);
 
+    // PR #1707 审查：页签控制器改由本页持有、按页签 id（不是下标）定位——
+    // 初始页签从跳转请求 / initialTab 播种进 _selectedTab，控制器按它找下标。
     expect(
       code,
       contains(
-        'finalintinitialIndex=widget.initialTab==null?0:'
-        'tabs.indexOf(widget.initialTab!).clamp(0,tabs.length-1);',
+        'lateBrowseTab?_selectedTab='
+        'widget.navigationRequest?.tab??widget.initialTab;',
       ),
       reason: '外部入口参数不得再降级为 no-op 兼容参数',
     );
+    final String sync = compactCode(
+      methodBody(source, 'TabController _syncTabController('),
+    );
+    expect(sync, contains('tabs.indexOf(wanted)'));
     final EnclosingCall controller = enclosingCallOf(
       source,
-      'initialIndex: initialIndex',
+      'initialIndex: index',
     );
-    expect(controller.name, 'DefaultTabController');
+    expect(controller.name, 'TabController');
     expect(compactCode(controller.text), contains('length:tabs.length'));
     expect(
       code,
       contains(
         'lateBrowseDownloadsSection_downloadsSection='
+        'widget.navigationRequest?.downloadsSection??'
         'widget.initialDownloadsSection;',
       ),
       reason: '「管理订阅」等入口要能直落订阅段',
     );
+    // 已挂载（首页保活）时的跳转：原地切页签与下载段，不换 key 整页重建。
+    final String update = compactCode(
+      methodBody(source, 'void didUpdateWidget('),
+    );
+    expect(update, contains('_downloadsSection=request.downloadsSection;'));
+    expect(update, contains('_controllerTabs.indexOf(request.tab)'));
   });
 
   test('BUG-1905：返回键只看本页 ModalRoute，不被下拉框 PopupRoute 干扰', () {

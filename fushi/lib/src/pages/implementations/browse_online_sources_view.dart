@@ -5,7 +5,6 @@ import 'package:fushi/src/media/manga/manga_online_sources_view.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
-import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
 import 'package:fushi/src/media/novel/online/lnreader_extensions_section.dart';
 import 'package:fushi/src/media/novel/online/lnreader_installed_sources_section.dart';
@@ -38,13 +37,17 @@ enum OnlineSourcesDomain { novel, manga, video }
 /// [domain] 在当前平台上是否有在线来源宿主。
 ///
 /// 判据只是把各域既有的门拼起来，不另写平台判断：小说 = LNReader 门，视频 =
-/// Aniyomi 门，漫画 = 合规门 + Mihon 宿主门（Aidoku 当前无任何平台宿主）。
+/// Aniyomi 门，漫画 = 合规门。
+///
+/// 漫画域**不**再叠 Mihon 宿主门：内置的 mokuro.moe 是个网站、不需要扩展宿主，
+/// 它的启停开关就在漫画域的「来源」里——叠了宿主门，Linux（没有 Mihon 宿主）上
+/// 整个漫画域消失，mokuro.moe 开关随之没有任何入口。没有宿主时扩展相关的节由
+/// [MangaOnlineSourcesView] 自己换成「本平台不可用」的说明。
 bool isOnlineSourcesDomainAvailable(OnlineSourcesDomain domain) =>
     switch (domain) {
       OnlineSourcesDomain.novel => isNovelOnlineSourcesAvailable,
       OnlineSourcesDomain.manga =>
-        StoreRestrictedCapability.onlineMangaSource.isAvailable &&
-            MihonRuntimeFactory.isSupported,
+        StoreRestrictedCapability.onlineMangaSource.isAvailable,
       OnlineSourcesDomain.video => isVideoOnlineSourcesAvailable,
     };
 

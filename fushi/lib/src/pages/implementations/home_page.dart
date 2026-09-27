@@ -85,6 +85,8 @@ import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart
 import 'package:fushi/src/pages/implementations/video_discovery_page.dart'
     show VideoDiscoveryController;
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
+import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
+    show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
     show MediaServerEntry;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
@@ -413,10 +415,8 @@ class _HomePageState extends BasePageState<HomePage>
   VideoDiscoveryService? _videoDiscoveryService;
   VideoDiscoveryController? _videoDiscoveryController;
   String? _videoDiscoveryConfigFingerprint;
-  BrowseTab? _browseInitialTab;
-  BrowseDownloadsSection _browseInitialDownloadsSection =
-      BrowseDownloadsSection.tasks;
-  int _browseGeneration = 0;
+  /// 待送达浏览页的跳转请求：只在跳转那一帧非空，送达后即清（见 [_openBrowseTab]）。
+  BrowseNavigationRequest? _browseRequest;
 
   /// 定时后台同步：app 存活期每隔 [_periodicSyncInterval] 重跑一次 app-open 语义的全量
   /// sweep，让「手机一直开着、电脑那边改了数据」这种没有任何事件触发的场景也能自动拉到
@@ -471,6 +471,9 @@ class _HomePageState extends BasePageState<HomePage>
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
+      // 在下面任何分支改写 first_time_setup 之前取：「下载 → 浏览」搬迁提示要据此
+      // 区分全新安装与升级（见 browse_moved_notice.dart）。
+      final bool freshInstall = appModelNoUpdate.isFirstTimeSetup;
       final RecommendedPackTutorialState tutorialState =
           RecommendedPackTutorialState(appModelNoUpdate.appDirectory);
       if (await tutorialState.shouldPrompt) {
@@ -517,6 +520,17 @@ class _HomePageState extends BasePageState<HomePage>
           ),
         );
         await appModel.setOnboardingCompleted(value: true);
+      }
+
+      // 「下载」改名「浏览」：升级前关着下载的用户照旧关着，但一次性告诉他们发现与
+      // 在线来源搬到了哪里、在哪里打开（所有者 2026-09-28 拍板）。排在新手引导之后、
+      // 更新弹窗之前，与它们串行，不抢同一帧。
+      if (mounted) {
+        await maybeShowBrowseMovedNotice(
+          context: context,
+          appModel: appModelNoUpdate,
+          freshInstall: freshInstall,
+        );
       }
 
       if (mounted) {
@@ -1533,6 +1547,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// 游戏页也必须保活：捕获工作台拥有文本订阅、音频源与轮询会话，切去查词或设置时
   /// 只能隐藏，不能因 dispose 停止正在进行的 Hook。
   ///
+  /// 浏览页也保活：它的来源 / 发现页签每次挂载都要对全部来源联网拉一遍（热门 /
+  /// 发现列表），切去别的 tab 再回来不该丢掉搜索词、结果与滚动再重拉；跨页跳转
+  /// 改走 [BrowsePage.navigationRequest] 原地切页签。
+  ///
   /// 其余 tab（词典 / 设置）**故意不保活**、按需重建，以保留其依赖
   /// `initState` 挂载的语义——尤其 [HomeDictionaryPage] 靠切到查词 tab 时 re-mount
   /// 消费桌面悬浮字幕的 pending 查词（TODO-376，见 [_onHomeDictionaryTabRequested]）；
@@ -1542,6 +1560,7 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.manga,
     HomeTab.video,
     HomeTab.games,
+    HomeTab.browse,
   };
 
   /// 用户已实际打开过至少一次的保活 tab。惰性构建：没进过的视频/书架 tab 不预建，
@@ -1784,10 +1803,9 @@ class _HomePageState extends BasePageState<HomePage>
   /// 猜成「没配下载后端」（下载页在 BUG-1706 已把原因拆开，这里漏改）。
   /// 返回空表 = 用户取消或加完仍为空，调用方直接返回。
   ///
-  /// **重读仍为空必须给回一句提示**：本条路径上没有可停留的空态门（下载页有，
-  /// `downloads_page.dart` 的 `_addVideoSource` 关掉对话框后重算前置条件、空态门
-  /// 继续留在页面上说明缺什么），静默返回等于整个流程无声消失——比修前那句 snackbar
-  /// 还糟。`promptManagedVideoSourceSetup` 返回 true 只表示用户走进了来源对话框，
+  /// **重读仍为空必须给回一句提示**：本条路径上没有可停留的空态门（有空态门的页面
+  /// 关掉对话框后会重算前置条件、空态门继续留在页面上说明缺什么），静默返回等于
+  /// 整个流程无声消失——比修前那句 snackbar 还糟。`promptManagedVideoSourceSetup` 返回 true 只表示用户走进了来源对话框，
   /// 不表示真加成了。
   Future<List<MediaSourceRow>> _managedVideoDownloadSourcesOrPrompt(
     BuildContext context,
@@ -2358,12 +2376,18 @@ class _HomePageState extends BasePageState<HomePage>
     BrowseTab tab, {
     BrowseDownloadsSection downloadsSection = BrowseDownloadsSection.tasks,
   }) {
+    // 浏览页是保活 tab：跳转是一条送给已挂载页面的请求（它原地切页签），不再换
+    // key 整页重建——那会丢掉来源 / 发现 / 下载各页签的搜索词、结果与滚动。
     setState(() {
-      _browseInitialTab = tab;
-      _browseInitialDownloadsSection = downloadsSection;
-      _browseGeneration++;
+      _browseRequest = BrowseNavigationRequest(
+        tab,
+        downloadsSection: downloadsSection,
+      );
     });
     _selectTab(HomeTab.browse);
+    // 用后即清：请求随本帧送达一次；之后的无关重建传 null，不会把用户已切走的
+    // 页签拽回来，模块开关重建出的新浏览页也不会落在这次过期的页签上。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _browseRequest = null);
   }
 
   Stream<VideoDiscoveryAcquisitionState> _watchVideoDiscoveryStatus(
@@ -3040,9 +3064,7 @@ class _HomePageState extends BasePageState<HomePage>
           systemBackActive: _visibleTab == HomeTab.video,
         ),
       HomeTab.browse => BrowsePage(
-          key: ValueKey<String>('browse-$_browseGeneration'),
-          initialTab: _browseInitialTab,
-          initialDownloadsSection: _browseInitialDownloadsSection,
+          navigationRequest: _browseRequest,
           videoDiscoveryController: _productionVideoDiscoveryController,
           videoDiscoveryActions: _productionVideoDiscoveryActions,
         ),

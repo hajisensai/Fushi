@@ -6151,8 +6151,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             onTap: widget.onOpenScrapeTasks!,
           ),
         ),
-      // 「番剧下载」不再占页头：它是下载子系统的入口，在「下载」页
-      // （downloads_page）里有完整入口，视频库页头只留库管理动作。
+      // 「番剧下载」不再占页头：它是下载子系统的入口，在「浏览 › 下载」页签
+      // （browse_page）里有完整入口，视频库页头只留库管理动作。
       // 「管理来源」在库页导航壳里已是一等视图（[MediaSourcesPage]），页头再放一个
       // 按钮就是同一件事的两个入口。只有本页被独立使用（无导航条）时才保留按钮。
       if (widget.navigation == null)

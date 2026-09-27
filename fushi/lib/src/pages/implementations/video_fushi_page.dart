@@ -230,6 +230,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';
@@ -2869,6 +2870,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (isAnimeSourceVideoPath(row.videoPath)) {
         _setLoadingPhase(_VideoLoadPhase.connecting);
         try {
+          // 合规门 + 运行时平台门（iOS 不带在线源宿主、Linux 没有 Mihon 宿主）：
+          // 取 animeMihonManager 之前先问门——门外取用会在不该有宿主的平台上起宿主
+          // （或直接抛 UnsupportedError）。不可用走下面「扩展不可用」的失败提示。
+          if (!isVideoOnlineSourcesAvailable) {
+            throw const AnimeSourceLaunchUnavailable(
+              'online video sources are unavailable on this platform',
+            );
+          }
           final ({
             AnimeSourceVideoClient client,
             RemoteVideoInfo info,

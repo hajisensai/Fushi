@@ -66,6 +66,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
+  // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
+  'browse_moved_notice_handled',
   'builtInTagsSeeded',
   'clipboard_panel_block_capture',
   'collapse_dictionaries',

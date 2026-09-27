@@ -5304,7 +5304,7 @@ class AppModel with ChangeNotifier {
       resourceRegistry: resources,
       enqueue: pipeline.enqueue,
     )..start();
-    // DownloadsPage may have rendered while this fire-and-forget runtime was
+    // BrowsePage may have rendered while this fire-and-forget runtime was
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
@@ -7388,6 +7388,11 @@ class AppModel with ChangeNotifier {
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
   Future<void> setTorrentUploadIntroShown() =>
       prefsRepo.setTorrentUploadIntroShown();
+
+  /// 「下载」改名「浏览」的一次性搬迁提示是否已处理（见 `browse_moved_notice.dart`）。
+  bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
+  Future<void> setBrowseMovedNoticeHandled() =>
+      prefsRepo.setBrowseMovedNoticeHandled();
 
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);

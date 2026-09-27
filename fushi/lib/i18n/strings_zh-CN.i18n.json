@@ -1119,7 +1119,6 @@
   "download_open_settings": "去设置",
   "download_rate_limit_lan_exempt": "不作用于局域网；局域网内的传输始终全速进行。",
   "download_rate_limit_lan_included": "同时作用于局域网内的传输。",
-  "download_resources_tab": "资源",
   "download_save_root_change": "更改目录",
   "download_save_root_create_failed": "无法创建该目录，请检查磁盘与权限。",
   "download_save_root_fallback_warning": "配置的下载目录当前不可用，已回退到默认目录。",
@@ -1966,7 +1965,6 @@
   "keep_screen_awake": "阅读时防止息屏",
   "library_empty_go_import": "去导入",
   "library_search": "搜索库",
-  "library_view_browse": "发现",
   "library_view_discover": "发现",
   "library_view_import": "导入",
   "library_view_media": "媒体库",
@@ -2027,8 +2025,8 @@
   "manga_discovery_source_popular": "${source} · 热门",
   "manga_discovery_sources_browse": "浏览来源",
   "manga_global_search_hint": "搜索所有已启用来源",
-  "manga_global_search_no_sources": "还没有已启用的漫画来源，去「导入」添加一个。",
-  "manga_global_search_open_sources": "去导入",
+  "manga_global_search_no_sources": "还没有已启用的漫画来源，去「浏览」添加一个。",
+  "manga_global_search_open_sources": "去浏览",
   "manga_global_search_prompt": "输入书名，一次搜索所有已启用的漫画来源。",
   "manga_global_search_title": "搜索全部来源",
   "manga_google_lens_disclosure_accept": "同意并开始识别",
@@ -5700,5 +5698,8 @@
   "ai_web_knowledge_custom_endpoint": "API 地址",
   "ai_web_knowledge_custom_endpoint_hint": "站点的 api.php，例如 https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "请填写以 https:// 开头、以 api.php 结尾的地址",
-  "ai_web_knowledge_custom_remove": "删除站点"
+  "ai_web_knowledge_custom_remove": "删除站点",
+  "onboarding_feature_browse_hint": "在线来源、扩展、发现与下载",
+  "browse_moved_notice_title": "发现与在线来源已移到「${browse}」",
+  "browse_moved_notice_body": "发现页，以及漫画 / 视频 / 小说的在线来源，已经移到「${browse}」页签；它在本机目前是关闭的。要使用它们，请到「${settings} › ${appearance} › ${modules}」打开「${browse}」。"
 }

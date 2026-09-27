@@ -22,6 +22,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
@@ -40,6 +41,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 在线视频源入库集的重开规格（落 `VideoBooks.streamSpecJson`）。
 @immutable
@@ -110,35 +112,76 @@ String animeSourceEpisodeLabel(MihonAnime anime, MihonEpisode episode) {
   return '${anime.title} - $suffix';
 }
 
+/// 一集在线播放留下的断点（播放页合集模式按 `(成员 id, 0)` 落 prefs 的位置与时刻，
+/// 见 `videoRemotePositionEpisodePrefKey` / `videoRemotePositionEpisodeAtPrefKey`）。
+typedef AnimeOnlinePosition = ({int positionMs, int playedAt});
+
+/// 读一集的在线断点；没有返回 null。由调用方注入（prefs 在 app 层，本类不碰）。
+typedef AnimeOnlinePositionReader =
+    AnimeOnlinePosition? Function(String episodeId);
+
+/// 本作品各集在媒体库里的状态（一次遍历读出）。三个集合互斥。
+@immutable
+class AnimeSourceEpisodeStatus {
+  const AnimeSourceEpisodeStatus({
+    required this.online,
+    required this.downloaded,
+    required this.missing,
+  });
+
+  /// 有在线行（`anime-source://`）的集：「移出媒体库」删的就是它们。
+  final Set<String> online;
+
+  /// 已下载成本地视频行的集（普通本地视频，移出不动它们）。
+  final Set<String> downloaded;
+
+  /// 库里一行都没有的集：「加入媒体库」补的就是它们（含刷新后多出来的新集）。
+  final Set<String> missing;
+
+  /// 还有集没进库：显示「加入媒体库」（与 [canRemove] 可以同时成立）。
+  bool get canAdd => missing.isNotEmpty;
+
+  /// 有在线行可删：显示「移出媒体库」。
+  bool get canRemove => online.isNotEmpty;
+}
+
 /// 在线作品的入库 / 移出 / 下载后入库。
 class AnimeSourceLibrary {
-  AnimeSourceLibrary({required this.database, VideoBookRepository? repository})
-    : repository = repository ?? VideoBookRepository(database);
+  AnimeSourceLibrary({
+    required this.database,
+    VideoBookRepository? repository,
+    this.onlinePositionReader,
+  }) : repository = repository ?? VideoBookRepository(database);
 
   final FushiDatabase database;
   final VideoBookRepository repository;
 
-  /// 本作品已在媒体库里的集 id（在线行与已下载行都算）。
-  Future<Set<String>> libraryEpisodeIds(AnimeSourceVideoClient client) async {
-    final Set<String> present = <String>{};
-    for (final RemoteVideoInfo info in client.remoteVideos) {
-      if (await repository.getByBookUid(info.id) != null) present.add(info.id);
-    }
-    return present;
-  }
+  /// 下载完登记成本地行时，把在线播放留下的断点接到行上（本地播放读
+  /// `VideoBooks.lastPositionMs`，不读在线断点的 prefs）。为空时不接。
+  final AnimeOnlinePositionReader? onlinePositionReader;
 
-  /// 本作品已下载到本机的集 id（行的 `videoPath` 已是本地文件）。
-  Future<Set<String>> downloadedEpisodeIds(
+  /// 本作品各集的入库状态：有在线行 / 已下载 / 库里没有。
+  Future<AnimeSourceEpisodeStatus> episodeStatus(
     AnimeSourceVideoClient client,
   ) async {
+    final Set<String> online = <String>{};
     final Set<String> downloaded = <String>{};
+    final Set<String> missing = <String>{};
     for (final RemoteVideoInfo info in client.remoteVideos) {
       final VideoBookRow? row = await repository.getByBookUid(info.id);
-      if (row != null && !isNetworkOnlyVideoPath(row.videoPath)) {
+      if (row == null) {
+        missing.add(info.id);
+      } else if (isAnimeSourceVideoPath(row.videoPath)) {
+        online.add(info.id);
+      } else if (!isNetworkOnlyVideoPath(row.videoPath)) {
         downloaded.add(info.id);
       }
     }
-    return downloaded;
+    return AnimeSourceEpisodeStatus(
+      online: online,
+      downloaded: downloaded,
+      missing: missing,
+    );
   }
 
   /// 加入媒体库：每集一行在线行，归进作品合集。已在库的集跳过（刷新后只补新集，
@@ -197,7 +240,7 @@ class AnimeSourceLibrary {
   }
 
   /// 下载完成：把 [file] 登记成本地视频行（同 bookUid 覆盖在线行），归进作品合集，
-  /// 补封面与默认字幕。
+  /// 补封面与默认字幕，并把在线播放留下的断点接过来（见 [onlinePositionReader]）。
   Future<void> registerDownloaded(
     AnimeSourceVideoClient client,
     RemoteVideoInfo info,
@@ -206,6 +249,18 @@ class AnimeSourceLibrary {
     final VideoBookRow? existing = await repository.getByBookUid(info.id);
     final ({String? source, String? format}) subtitle =
         await _downloadDefaultSubtitle(client, info, file);
+    final bool hasSubtitle = subtitle.source != null;
+    // 在线看过的断点（prefs）比行上的新就接到行上：没进库时在作品页在线看、或进库
+    // 后仍从作品页在线看，进度只落 prefs，行上是 0 / 更旧的值——本地播放只读行。
+    final AnimeOnlinePosition? online = onlinePositionReader?.call(info.id);
+    final AnimeOnlinePosition? adopted =
+        online != null &&
+            online.positionMs > 0 &&
+            (existing == null ||
+                existing.lastPositionMs <= 0 ||
+                (existing.lastPlayedAt ?? 0) < online.playedAt)
+        ? online
+        : null;
     await repository.saveVideoBook(
       VideoBooksCompanion(
         bookUid: Value<String>(info.id),
@@ -213,8 +268,20 @@ class AnimeSourceLibrary {
         videoPath: Value<String>(file.path),
         // 已是本地文件：不再是流媒体书，重开规格清掉。
         streamSpecJson: const Value<String?>(null),
-        subtitleSource: Value<String?>(subtitle.source),
-        subtitleFormat: Value<String?>(subtitle.format),
+        // 源没有默认字幕轨时保留行上原有的字幕（用户在线时挂的外挂字幕等），
+        // 不拿 null 盖掉。
+        subtitleSource: hasSubtitle
+            ? Value<String?>(subtitle.source)
+            : const Value<String?>.absent(),
+        subtitleFormat: hasSubtitle
+            ? Value<String?>(subtitle.format)
+            : const Value<String?>.absent(),
+        lastPositionMs: adopted != null
+            ? Value<int>(adopted.positionMs)
+            : const Value<int>.absent(),
+        lastPlayedAt: adopted != null && adopted.playedAt > 0
+            ? Value<int?>(adopted.playedAt)
+            : const Value<int?>.absent(),
         importedAt: Value<int?>(
           existing?.importedAt ?? DateTime.now().millisecondsSinceEpoch,
         ),
@@ -263,39 +330,99 @@ class AnimeSourceLibrary {
     }
   }
 
-  /// 作品封面经扩展取（防盗链站点裸 GET 是空图），写成每集自己的封面文件 + 合集
-  /// 封面。每集各一份而不是共用一个路径：删行时会回收它自己的 coverPath 文件，
-  /// 共用会把别的集的封面一起删掉。取不到封面不算失败（库页退回占位）。
+  /// 作品封面经扩展取（防盗链站点裸 GET 是空图），**每部作品落一份**
+  /// （[animeSourceWorkCoverFileName]），本作品各集行的 `coverPath` 都指向它；合集
+  /// 还没有自有封面时再拷一份给合集。作品封面已在盘上就不再联网取、只回写新行的指针。
+  ///
+  /// 共用一个文件是安全的：删行回收（`VideoBookRepository.deleteVideoBooksAndReclaimAssets`
+  /// → `VideoStorage.deleteBookAssets`）只删**不再被任何幸存行引用**的封面路径，孤儿
+  /// GC（`VideoStorage.gcOrphanCovers`）也保留全库仍引用的路径——作品里还剩一集行，
+  /// 文件就在；最后一集的行删掉才回收。用户给某一集手选封面落的是那一集自己的
+  /// 路径，不动共用文件。
+  ///
+  /// 文件名按作品身份哈希定长（作品 URL 可以很长，拼进文件名会撞 Windows 路径上限）。
+  /// 写文件与回写各行指针在 [VideoCoverMutationGate] 里一起做：与删行回收 / 孤儿 GC
+  /// 互斥，GC 不会在「文件已写、指针未落」的窗口把新图当孤儿收走；联网取图在门外。
+  /// 取不到 / 写不进封面都不算入库失败（库页退回占位），失败记错误日志。
   Future<void> _applyCovers(
     AnimeSourceVideoClient client,
     List<String> bookUids,
   ) async {
     final String? coverUrl = client.anime.coverUrl;
-    if (coverUrl == null || coverUrl.isEmpty) return;
-    final Uint8List bytes;
+    if (coverUrl == null || coverUrl.isEmpty || bookUids.isEmpty) return;
     try {
-      bytes = await client.fetchRemoteCover(coverUrl);
-    } on Object catch (error) {
-      debugPrint('[anime-library] cover fetch failed: $error');
-      return;
+      final Directory covers = await VideoStorage.coversDir();
+      final String workCover = p.join(
+        covers.path,
+        animeSourceWorkCoverFileName(client),
+      );
+      // 已有作品封面：只回写指针。没有（或刚被回收）才联网取一次再写。
+      if (await _pointAtWorkCover(client, bookUids, workCover)) return;
+      final Uint8List bytes = await client.fetchRemoteCover(coverUrl);
+      if (bytes.isEmpty) return;
+      await _pointAtWorkCover(client, bookUids, workCover, bytes: bytes);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('AnimeSourceLibrary.cover', error, stack);
     }
-    if (bytes.isEmpty) return;
-    final Directory covers = await VideoStorage.coversDir();
-    await covers.create(recursive: true);
-    for (final String uid in bookUids) {
-      final String path = p.join(covers.path, videoCoverFileName(uid));
-      await MediaCoverService.applyCoverBytes(bytes: bytes, destPath: path);
-      await repository.updateCover(uid, path);
-    }
-    final MediaCollectionRow? collection = await database
-        .getMediaCollectionByNaturalKey(client.anime.title, 'playlist');
-    if (collection == null || collection.coverPath != null) return;
-    final Directory collectionCovers = await VideoStorage.collectionCoversDir();
-    await collectionCovers.create(recursive: true);
-    final String path = p.join(collectionCovers.path, '${collection.id}.jpg');
-    await MediaCoverService.applyCoverBytes(bytes: bytes, destPath: path);
-    await repository.updateMediaCollectionCoverPath(collection.id, path);
   }
+
+  /// 在封面写锁里：有 [bytes] 就先写作品封面文件；文件不在（且没有字节可写）返回
+  /// false 交给调用方联网取。随后回写 [bookUids] 的指针，合集没有自有封面时拷一份。
+  Future<bool> _pointAtWorkCover(
+    AnimeSourceVideoClient client,
+    List<String> bookUids,
+    String workCover, {
+    Uint8List? bytes,
+  }) async {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease == null) throw StateError('视频刮削资料正在清理');
+    try {
+      return await VideoCoverMutationGate.runExclusive(() async {
+        if (bytes != null) {
+          await Directory(p.dirname(workCover)).create(recursive: true);
+          await MediaCoverService.applyCoverBytes(
+            bytes: bytes,
+            destPath: workCover,
+          );
+        } else if (!await File(workCover).exists()) {
+          return false;
+        }
+        for (final String uid in bookUids) {
+          await repository.updateCover(uid, workCover);
+        }
+        final MediaCollectionRow? collection = await database
+            .getMediaCollectionByNaturalKey(client.anime.title, 'playlist');
+        if (collection != null && collection.coverPath == null) {
+          final Directory collectionCovers =
+              await VideoStorage.collectionCoversDir();
+          await collectionCovers.create(recursive: true);
+          final String path = p.join(
+            collectionCovers.path,
+            videoCoverFileName('${collection.id}'),
+          );
+          await MediaCoverService.applyCoverFile(
+            source: File(workCover),
+            destPath: path,
+          );
+          await repository.updateMediaCollectionCoverPath(collection.id, path);
+        }
+        return true;
+      });
+    } finally {
+      lease.release();
+    }
+  }
+}
+
+/// 一部在线作品的共用封面文件名：`anime_source_<sha1(扩展包|源|作品 URL)>.jpg`。
+/// 定长（作品 URL 可以很长）、按作品身份稳定（同一部作品重复入库落同一个文件）。
+String animeSourceWorkCoverFileName(AnimeSourceVideoClient client) {
+  final String identity =
+      '${client.context.source.extensionPackage}\n'
+      '${client.context.source.id}\n'
+      '${client.anime.url}';
+  return 'anime_source_${sha1.convert(utf8.encode(identity))}.jpg';
 }
 
 /// 从媒体库重开一集在线行：按行里的规格重建 [AnimeSourceVideoClient]（不联网拉剧集），
@@ -356,7 +483,10 @@ buildAnimeSourceLaunch({
       ..clear()
       ..add((bookUid: row.bookUid, episode: spec.episode));
   }
-  await manager.initialise();
+  // 起播只要本地已装的扩展与源行：只读库（reload），不走 initialise()——那条会
+  // 联网刷新仓库索引（慢网 / 仓库站点不通时一挂就是几十秒），扩展装没装跟它无关。
+  // 真实 app 里 manager 首次取用时已在后台跑 initialise，这里不等它。
+  await manager.reload();
   MangaOnlineSourceRow? sourceRow;
   for (final MangaOnlineSourceRow candidate in manager.sources) {
     if (candidate.extensionPackage == spec.extensionPackage &&
@@ -437,7 +567,9 @@ String animeEpisodeDownloadFileName(
 /// 仍在推进）。串行下载：同一个源站并发拉多集既慢又容易被限流。
 ///
 /// 下载用**专属的** client 副本：作品页退出时会释放自己的 client，下载不能跟着断。
-/// 副本在这一批全部结束后释放。已在跑的集跳过。
+/// 副本在这一批全部结束后释放。已在跑的集跳过；已经下完的集（落点文件已在——
+/// 管理器里任务已完成、只是作品页的库状态还没刷新，或上次下完还没来得及登记进程
+/// 就被杀了）不重下，只在库里还不是本地行时补登记。
 Future<void> startAnimeEpisodeDownloads({
   required InterconnectDownloadManager manager,
   required AnimeSourceLibrary library,
@@ -463,6 +595,22 @@ Future<void> startAnimeEpisodeDownloads({
         final File dest = File(
           p.join(dir.path, animeEpisodeDownloadFileName(client, info)),
         );
+        // 落点只在下载成功时由 `.part` / 分片流换名而来：它在就是这一集已经下完。
+        if (await dest.exists()) {
+          try {
+            final VideoBookRow? row = await library.repository.getByBookUid(id);
+            if (row == null || isNetworkOnlyVideoPath(row.videoPath)) {
+              await library.registerDownloaded(client, info, dest);
+            }
+          } on Object catch (error, stack) {
+            ErrorLogService.instance.log(
+              'startAnimeEpisodeDownloads.register',
+              error,
+              stack,
+            );
+          }
+          continue;
+        }
         try {
           await manager.startVideoDownload(
             id: id,

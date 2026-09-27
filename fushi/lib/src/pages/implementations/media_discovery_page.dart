@@ -344,6 +344,13 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   /// 重打一次坏掉的那页）。下一轮非追加加载时复位。
   bool _loadMoreFailed = false;
 
+  /// 结果列表的滚动：state 自己持有，不进 PageStorage（`keepScrollOffset: false`）。
+  /// 书 / 游戏两域在同一路由下挂同一个页面类，PageStorageKey 会让两域互串偏移，
+  /// 还会让每次非追加加载（换来源 / 新搜索）后的新列表恢复旧偏移；页面状态本身
+  /// 靠宿主 Offstage 保活，不需要 PageStorage。
+  final ScrollController _resultsScroll =
+      ScrollController(keepScrollOffset: false);
+
   @override
   void initState() {
     super.initState();
@@ -358,6 +365,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     _searchDebounce.dispose();
     _queryCtrl.dispose();
     _searchFocus.dispose();
+    _resultsScroll.dispose();
     super.dispose();
   }
 
@@ -401,6 +409,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     final String? path = _pathStack.isNotEmpty ? _pathStack.last.$1 : null;
     final String? query = path == null && _query.isNotEmpty ? _query : null;
     final int seq = ++_loadSeq;
+    // 新一轮（非追加）结果从顶部开始，不停在上一轮列表的位置。
+    if (!append && _resultsScroll.hasClients) _resultsScroll.jumpTo(0);
     setState(() {
       _loading = true;
       _error = null;
@@ -1060,7 +1070,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           return false;
         },
         child: CustomScrollView(
-          key: const PageStorageKey<String>('discovery-results-scroll'),
+          key: const ValueKey<String>('discovery-results-scroll'),
+          controller: _resultsScroll,
           slivers: <Widget>[
             if (failures.isNotEmpty)
               SliverToBoxAdapter(

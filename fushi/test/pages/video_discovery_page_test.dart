@@ -89,6 +89,7 @@ Widget _harness(
   ValueChanged<discovery.VideoDiscoveryItem>? onOpenItem,
   double scale = 1,
   VideoDiscoveryActions actions = const VideoDiscoveryActions(),
+  bool embedded = false,
 }) {
   return TranslationProvider(
     child: MaterialApp(
@@ -103,6 +104,7 @@ Widget _harness(
           controller: controller,
           actions: actions,
           onOpenItem: onOpenItem,
+          embedded: embedded,
         ),
       ),
     ),
@@ -141,6 +143,37 @@ void main() {
     await tester.pump();
     expect(opened, 1);
   });
+
+  // PR #1707 审查：浏览页以 embedded 挂视频发现，页头不渲染；放送日历入口原本只在
+  // 页头，嵌进浏览后全仓再没有能打开日历的地方。三种宽度（手机 / 中宽 / 桌面）下
+  // embedded 都必须能找到可点的日历入口，独立页面时只在页头出现一次。
+  for (final double width in <double>[500, 800, 1280]) {
+    testWidgets('embedded 时放送日历入口在搜索行可达（宽 $width）',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final _FakeDiscoveryController controller = _FakeDiscoveryController(
+        (_) async => _result(<discovery.VideoDiscoveryItem>[]),
+      );
+      const ValueKey<String> calendarKey =
+          ValueKey<String>('video-discovery-open-calendar');
+
+      await tester.pumpWidget(_harness(controller, embedded: true));
+      await tester.pumpAndSettle();
+      expect(find.text('video navigation'), findsNothing);
+      final Finder entry = find.byKey(calendarKey);
+      expect(entry, findsOneWidget);
+      final IconButton button = tester.widget<IconButton>(entry);
+      expect(button.onPressed, isNotNull);
+      expect(tester.getRect(entry).right, lessThanOrEqualTo(width));
+
+      await tester.pumpWidget(_harness(controller));
+      await tester.pumpAndSettle();
+      expect(find.byKey(calendarKey), findsOneWidget);
+    });
+  }
 
   testWidgets('默认同时加载热门、本季动漫和全部作品', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1000);

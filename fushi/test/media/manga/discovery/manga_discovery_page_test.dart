@@ -529,4 +529,79 @@ void main() {
     expect(calls, 2, reason: '刷新让各热门行重新挂载、重新拉取');
     expect(find.text('作品 2'), findsOneWidget);
   });
+
+  // PR #1707 审查：嵌进「浏览 › 发现」时页头不渲染，刷新曾随页头一起消失；
+  // 「管理来源」引导只认库页壳，浏览页里空态没有去处。
+  testWidgets('embedded 时刷新挪进搜索行，仍能重新拉取', (WidgetTester tester) async {
+    int calls = 0;
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      embedded: true,
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        MangaDiscoverySourceFeed(
+          id: 'ok',
+          name: '好源',
+          language: 'ja',
+          loadPopular: () async {
+            calls++;
+            return <MangaDiscoverySourceItem>[_item('作品 $calls')];
+          },
+        ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+    expect(find.text(t.library_view_discover), findsNothing);
+
+    final Finder refresh =
+        find.byKey(const ValueKey<String>('manga_discovery_refresh'));
+    expect(refresh, findsOneWidget);
+    await tester.tap(refresh);
+    await tester.pumpAndSettle();
+    expect(calls, 2);
+  });
+
+  testWidgets('宿主给了「管理来源」去处时空态出按钮并调用它', (WidgetTester tester) async {
+    int opened = 0;
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      embedded: true,
+      onOpenSources: () => opened++,
+      catalogOverride: const MangaSourceCatalog(),
+      sourceFeedsOverride: const <MangaDiscoverySourceFeed>[],
+    )));
+    await tester.pumpAndSettle();
+
+    final Finder action =
+        find.byKey(const ValueKey<String>('manga_discovery_open_sources'));
+    expect(action, findsOneWidget);
+    await tester.tap(action);
+    await tester.pump();
+    expect(opened, 1);
+  });
+
+  // PR #1707 审查：每行一个 SliverToBoxAdapter 会在进入本页时把全部来源的行一次
+  // 建出来，对所有来源同时并发 loadPopular；行必须按可见范围懒建。
+  testWidgets('热门行按可见范围懒建，不在进入时拉全部来源', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final Set<String> loaded = <String>{};
+    await tester.pumpWidget(wrap(MangaDiscoveryPage(
+      sourceFeedsOverride: <MangaDiscoverySourceFeed>[
+        for (int i = 0; i < 30; i++)
+          MangaDiscoverySourceFeed(
+            id: 'feed$i',
+            name: '源 $i',
+            language: 'ja',
+            loadPopular: () async {
+              loaded.add('feed$i');
+              return <MangaDiscoverySourceItem>[_item('源 $i 的作品')];
+            },
+          ),
+      ],
+    )));
+    await tester.pumpAndSettle();
+
+    expect(loaded, contains('feed0'));
+    expect(loaded.length, lessThan(30), reason: '屏外的行不该在进入时就拉取');
+  });
 }

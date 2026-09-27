@@ -6,8 +6,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/net/hls_relay_normalizer.dart'
     show kTransportStreamPacketLength;
 import 'package:path/path.dart' as p;
@@ -225,11 +227,14 @@ void main() {
 
     HttpClient plainClient() => HttpClient()..findProxy = (_) => 'DIRECT';
 
-    AnimeEpisodeDownloader downloader(FfmpegBackend ffmpeg) =>
-        AnimeEpisodeDownloader(
-          httpClientFactory: plainClient,
-          ffmpeg: () => ffmpeg,
-        );
+    AnimeEpisodeDownloader downloader(
+      FfmpegBackend ffmpeg, {
+      Duration stallTimeout = kAnimeEpisodeStallTimeout,
+    }) => AnimeEpisodeDownloader(
+      httpClientFactory: plainClient,
+      ffmpeg: () => ffmpeg,
+      stallTimeout: stallTimeout,
+    );
 
     test('direct file download writes the body and forwards headers', () async {
       final Uint8List body = Uint8List.fromList(
@@ -259,6 +264,24 @@ void main() {
       expect(ffmpeg.calls, isEmpty);
     });
 
+    const String mediaText =
+        '#EXTM3U\n'
+        '#EXT-X-TARGETDURATION:4\n'
+        '#EXT-X-MEDIA-SEQUENCE:7\n'
+        '#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n'
+        '#EXTINF:4,\n'
+        'seg1.ts\n'
+        '#EXT-X-KEY:METHOD=NONE\n'
+        '#EXTINF:4,\n'
+        'seg2.png\n'
+        '#EXT-X-ENDLIST\n';
+
+    /// [installHls] 那条流的指纹（与下载器按同一个函数算）。
+    String installedFingerprint({String mediaPath = '/hls/media.m3u8'}) {
+      final Uri uri = Uri.parse(server.url(mediaPath));
+      return hlsStreamFingerprint(uri, parseHlsMediaPlaylist(mediaText, uri));
+    }
+
     /// master → media → 两个分片：第一片 AES-128（IV = 媒体序号），第二片 PNG 伪装。
     Uint8List installHls({String mediaPath = '/hls/media.m3u8'}) {
       final Uint8List key = Uint8List.fromList(
@@ -273,18 +296,7 @@ void main() {
         '#EXT-X-STREAM-INF:BANDWIDTH=2400000\n'
         'media.m3u8\n',
       );
-      server.routes[mediaPath] = _text(
-        '#EXTM3U\n'
-        '#EXT-X-TARGETDURATION:4\n'
-        '#EXT-X-MEDIA-SEQUENCE:7\n'
-        '#EXT-X-KEY:METHOD=AES-128,URI="key.bin"\n'
-        '#EXTINF:4,\n'
-        'seg1.ts\n'
-        '#EXT-X-KEY:METHOD=NONE\n'
-        '#EXTINF:4,\n'
-        'seg2.png\n'
-        '#EXT-X-ENDLIST\n',
-      );
+      server.routes[mediaPath] = _text(mediaText);
       final String dir = p.url.dirname(mediaPath);
       server.routes['$dir/key.bin'] = _bytes(key);
       server.routes['$dir/seg1.ts'] = _bytes(
@@ -322,12 +334,23 @@ void main() {
         isTrue,
       );
       expect(progress, <double>[0.5, 1.0]);
-      // TS → mp4：-c copy + ADTS 转换。
+      // TS → mp4：-c copy + ADTS 转换；只映射音视频（TS 里的 ID3 / SCTE-35 数据流
+      // mp4 装不下，-map 0 会让整次转封装失败）。
       final List<String> args = ffmpeg.calls.single;
       expect(args, containsAllInOrder(<String>['-c', 'copy']));
+      expect(
+        args,
+        containsAllInOrder(<String>['-map', '0:v?', '-map', '0:a?']),
+      );
+      expect(args, isNot(contains('0')));
       expect(args, contains('aac_adtstoasc'));
       expect(args[args.indexOf('-i') + 1], '${dest.path}.hls.part');
       expect(args.last, '${dest.path}.remux.mp4');
+      // 转封装失败不当下载失败，但要进错误日志（用户拿到的是 TS 不是 mp4）。
+      expect(
+        ErrorLogService.instance.entries.map((ErrorLogEntry e) => e.source),
+        contains('AnimeEpisodeDownloader.remux'),
+      );
     });
 
     test('successful remux replaces dest with the remuxed file', () async {
@@ -373,9 +396,13 @@ void main() {
         await File(
           '${dest.path}.hls.part',
         ).writeAsBytes(<int>[...first, ...List<int>.filled(100, 0xEE)]);
-        await File(
-          '${dest.path}.hls.progress',
-        ).writeAsString('1,${first.length}');
+        await File('${dest.path}.hls.progress').writeAsString(
+          HlsDownloadProgress(
+            stream: installedFingerprint(),
+            segments: 1,
+            bytes: first.length,
+          ).encode(),
+        );
         final List<double> progress = <double>[];
         await downloader(_FakeFfmpeg.failing()).download(
           url: server.url('/hls/master.m3u8'),
@@ -437,11 +464,348 @@ void main() {
       cancel.complete();
       await expectLater(run, throwsA(isA<RemoteDownloadCancelled>()));
       expect(await dest.exists(), isFalse);
-      expect(
+      final HlsDownloadProgress record = HlsDownloadProgress.tryParse(
         await File('${dest.path}.hls.progress').readAsString(),
-        '1,${188 * 4}',
-      );
+      )!;
+      expect(record.stream, installedFingerprint());
+      expect(record.segments, 1);
+      expect(record.bytes, 188 * 4);
       expect(await File('${dest.path}.hls.part').length(), 188 * 4);
+    });
+
+    /// 下到第二片时暂停：留下「第一片已写完」的 part 与断点记录。
+    Future<File> cancelAtSecondSegment() async {
+      final Completer<void> seg2Arrived = Completer<void>();
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      final _Handler seg2 = server.routes['/hls/seg2.png']!;
+      server.routes['/hls/seg2.png'] = (HttpRequest request) async {
+        seg2Arrived.complete();
+        await release.future;
+        await request.response.close();
+      };
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      final Completer<void> cancel = Completer<void>();
+      final Future<void> run = downloader(_FakeFfmpeg.failing()).download(
+        url: server.url('/hls/master.m3u8'),
+        headers: const <String, String>{},
+        dest: dest,
+        cancelSignal: cancel.future,
+      );
+      await seg2Arrived.future;
+      cancel.complete();
+      await expectLater(run, throwsA(isA<RemoteDownloadCancelled>()));
+      server.routes['/hls/seg2.png'] = seg2;
+      server.requests.clear();
+      return dest;
+    }
+
+    test('resuming the same stream after a pause fetches only the missing '
+        'segment', () async {
+      final Uint8List expected = installHls();
+      final File dest = await cancelAtSecondSegment();
+      await downloader(_FakeFfmpeg.failing()).download(
+        url: server.url('/hls/master.m3u8'),
+        headers: const <String, String>{},
+        dest: dest,
+      );
+      expect(await dest.readAsBytes(), expected);
+      expect(server.requests.map((_Req r) => r.path), <String>[
+        '/hls/master.m3u8',
+        '/hls/media.m3u8',
+        '/hls/seg2.png',
+      ]);
+    });
+
+    test('the extension handing out another stream after a pause restarts '
+        'from zero instead of splicing two streams', () async {
+      installHls();
+      final File dest = await cancelAtSecondSegment();
+      // 这次取流拿到的是另一条线路：master 指向另一个媒体播放列表、另一组分片。
+      final Uint8List other1 = _tsPackets(3, seed: 11);
+      final Uint8List other2 = _tsPackets(2, seed: 13);
+      server.routes['/hls/master.m3u8'] = _text(
+        '#EXTM3U\n'
+        '#EXT-X-STREAM-INF:BANDWIDTH=2400000\n'
+        'alt/media.m3u8\n',
+      );
+      server.routes['/hls/alt/media.m3u8'] = _text(
+        '#EXTM3U\n#EXTINF:4,\na.ts\n#EXTINF:4,\nb.ts\n#EXT-X-ENDLIST\n',
+      );
+      server.routes['/hls/alt/a.ts'] = _bytes(other1);
+      server.routes['/hls/alt/b.ts'] = _bytes(other2);
+      await downloader(_FakeFfmpeg.failing()).download(
+        url: server.url('/hls/master.m3u8'),
+        headers: const <String, String>{},
+        dest: dest,
+      );
+      // 从 0 下：旧流的第一片一个字节都不留。
+      expect(await dest.readAsBytes(), <int>[...other1, ...other2]);
+      expect(server.requests.map((_Req r) => r.path), <String>[
+        '/hls/master.m3u8',
+        '/hls/alt/media.m3u8',
+        '/hls/alt/a.ts',
+        '/hls/alt/b.ts',
+      ]);
+      expect(await File('${dest.path}.hls.progress').exists(), isFalse);
+    });
+
+    test('a progress record of another stream, or a legacy one without a '
+        'fingerprint, restarts from zero', () async {
+      final Uint8List expected = installHls();
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      final Uint8List first = Uint8List.sublistView(expected, 0, 188 * 4);
+      for (final String record in <String>[
+        HlsDownloadProgress(
+          stream: installedFingerprint(mediaPath: '/hls/other.m3u8'),
+          segments: 1,
+          bytes: first.length,
+        ).encode(),
+        '1,${first.length}',
+      ]) {
+        // part 里是「别的流」的字节：续上去就是坏片。
+        await File(
+          '${dest.path}.hls.part',
+        ).writeAsBytes(List<int>.filled(first.length, 0x47));
+        await File('${dest.path}.hls.progress').writeAsString(record);
+        if (await dest.exists()) await dest.delete();
+        server.requests.clear();
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/hls/master.m3u8'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), expected, reason: record);
+        expect(
+          server.requests.map((_Req r) => r.path),
+          contains('/hls/seg1.ts'),
+          reason: record,
+        );
+      }
+    });
+
+    test('a stalled segment fails with TimeoutException and keeps the '
+        'resume record', () async {
+      installHls();
+      final Completer<void> release = Completer<void>();
+      addTearDown(() {
+        if (!release.isCompleted) release.complete();
+      });
+      server.routes['/hls/seg2.png'] = (HttpRequest request) async {
+        await release.future;
+        await request.response.close();
+      };
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      await expectLater(
+        downloader(
+          _FakeFfmpeg.failing(),
+          stallTimeout: const Duration(milliseconds: 300),
+        ).download(
+          url: server.url('/hls/master.m3u8'),
+          headers: const <String, String>{},
+          dest: dest,
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      expect(
+        HlsDownloadProgress.tryParse(
+          await File('${dest.path}.hls.progress').readAsString(),
+        )!.segments,
+        1,
+      );
+    });
+
+    group('direct resume', () {
+      final Uint8List body = Uint8List.fromList(
+        List<int>.generate(300000, (int i) => (i * 7) & 0xff),
+      );
+      const int half = 150000;
+
+      /// 第一趟：服务器发完前一半就不动了，客户端收到一半时暂停。
+      Future<File> pauseHalfway() async {
+        final Completer<void> release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        server.routes['/video.mp4'] = (HttpRequest request) async {
+          request.response.headers.set(HttpHeaders.etagHeader, '"v1"');
+          request.response.contentLength = body.length;
+          request.response.add(Uint8List.sublistView(body, 0, half));
+          await request.response.flush();
+          await release.future;
+          await request.response.close();
+        };
+        final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+        final Completer<void> cancel = Completer<void>();
+        await expectLater(
+          downloader(_FakeFfmpeg.failing()).download(
+            url: server.url('/video.mp4'),
+            headers: const <String, String>{},
+            dest: dest,
+            onBytes: (int received, int? total) {
+              if (received >= half && !cancel.isCompleted) cancel.complete();
+            },
+            cancelSignal: cancel.future,
+          ),
+          throwsA(isA<RemoteDownloadCancelled>()),
+        );
+        expect(await File('${dest.path}.part').length(), half);
+        server.requests.clear();
+        return dest;
+      }
+
+      test('the same ETag continues from the part with If-Range', () async {
+        final File dest = await pauseHalfway();
+        expect(
+          await File('${dest.path}$kAnimeDirectValidatorSuffix').exists(),
+          isTrue,
+        );
+        server.routes['/video.mp4'] = _rangeFile(body, etag: '"v1"');
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), body);
+        final _Req request = server.requests.single;
+        expect(request.range, 'bytes=$half-');
+        expect(request.ifRange, '"v1"');
+        expect(await File('${dest.path}.part').exists(), isFalse);
+        expect(
+          await File('${dest.path}$kAnimeDirectValidatorSuffix').exists(),
+          isFalse,
+        );
+      });
+
+      test('a changed ETag makes the server answer 200 and the download '
+          'restarts from zero', () async {
+        final File dest = await pauseHalfway();
+        final Uint8List changed = Uint8List.fromList(
+          List<int>.generate(260000, (int i) => (i * 3 + 1) & 0xff),
+        );
+        server.routes['/video.mp4'] = _rangeFile(changed, etag: '"v2"');
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), changed);
+        expect(server.requests.single.ifRange, '"v1"');
+      });
+
+      test('a server ignoring If-Range whose file length changed is caught '
+          'by the validator and restarted from zero', () async {
+        final File dest = await pauseHalfway();
+        final Uint8List changed = Uint8List.fromList(
+          List<int>.generate(280000, (int i) => (i * 5 + 2) & 0xff),
+        );
+        // 不发 ETag、无视 If-Range，照回 206：只剩总长能看出换了文件。
+        server.routes['/video.mp4'] = _rangeFile(changed, honorIfRange: false);
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), changed);
+        // 第一次带 Range 拿到 206 被作废，第二次不带 Range 从 0 下。
+        expect(server.requests.map((_Req r) => r.range), <String?>[
+          'bytes=$half-',
+          null,
+        ]);
+      });
+
+      test('a part without a validator sidecar is not resumed', () async {
+        final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+        await File(
+          '${dest.path}.part',
+        ).writeAsBytes(List<int>.filled(half, 0xEE));
+        server.routes['/video.mp4'] = _rangeFile(body, etag: '"v1"');
+        await downloader(_FakeFfmpeg.failing()).download(
+          url: server.url('/video.mp4'),
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), body);
+        expect(server.requests.single.range, isNull);
+      });
+
+      test('a stalled body fails with TimeoutException and keeps the part '
+          'and its validator for a resume', () async {
+        final Completer<void> release = Completer<void>();
+        addTearDown(() {
+          if (!release.isCompleted) release.complete();
+        });
+        server.routes['/video.mp4'] = (HttpRequest request) async {
+          request.response.headers.set(HttpHeaders.etagHeader, '"v1"');
+          request.response.contentLength = body.length;
+          request.response.add(Uint8List.sublistView(body, 0, half));
+          await request.response.flush();
+          await release.future;
+          await request.response.close();
+        };
+        final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+        await expectLater(
+          downloader(
+            _FakeFfmpeg.failing(),
+            stallTimeout: const Duration(milliseconds: 300),
+          ).download(
+            url: server.url('/video.mp4'),
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsA(isA<TimeoutException>()),
+        );
+        expect(await File('${dest.path}.part').length(), half);
+        final DirectStreamValidator validator = DirectStreamValidator.tryParse(
+          await File('${dest.path}$kAnimeDirectValidatorSuffix').readAsString(),
+        )!;
+        expect(validator.etag, '"v1"');
+        expect(validator.totalBytes, body.length);
+      });
+    });
+
+    test('discarding a failed episode download in the download center '
+        'removes every leftover next to its destination', () async {
+      final File dest = File(p.join(tmp.path, 'ep1.mp4'));
+      final List<File> leftovers = animeEpisodeDownloadLeftovers(dest);
+      expect(
+        leftovers.map((File f) => p.basename(f.path)),
+        containsAll(<String>[
+          'ep1.mp4.part',
+          'ep1.mp4$kAnimeDirectValidatorSuffix',
+          'ep1.mp4.hls.part',
+          'ep1.mp4.hls.progress',
+          'ep1.mp4.remux.mp4',
+        ]),
+      );
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      await expectLater(
+        manager.startVideoDownload(
+          id: 'anime-source:x:1:/ep/1',
+          title: 'Episode 1',
+          dest: dest,
+          run:
+              (
+                File target, {
+                void Function(double progress)? onProgress,
+                void Function(int received, int? total)? onBytes,
+                Future<void>? cancelSignal,
+              }) async {
+                for (final File f in leftovers) {
+                  await f.writeAsBytes(<int>[1]);
+                }
+                throw const HttpException('HTTP 403');
+              },
+        ),
+        throwsA(isA<HttpException>()),
+      );
+      expect(await manager.discard('anime-source:x:1:/ep/1'), isTrue);
+      for (final File f in leftovers) {
+        expect(await f.exists(), isFalse, reason: f.path);
+      }
     });
 
     test('HTTP errors on a segment surface as failures, not cancels', () async {
@@ -520,11 +884,43 @@ _Handler _bytes(Uint8List body) => (HttpRequest request) async {
   await request.response.close();
 };
 
+/// 支持 `Range: bytes=N-` 的静态文件。[honorIfRange] 为真时按 RFC 9110 处理
+/// `If-Range`（验证器不符就回 200 全量）；为假时模拟无视 `If-Range` 的服务器。
+_Handler _rangeFile(Uint8List body, {String? etag, bool honorIfRange = true}) =>
+    (HttpRequest request) async {
+      final HttpResponse response = request.response;
+      if (etag != null) response.headers.set(HttpHeaders.etagHeader, etag);
+      final String? range = request.headers.value(HttpHeaders.rangeHeader);
+      final String? ifRange = request.headers.value(HttpHeaders.ifRangeHeader);
+      final RegExpMatch? match = range == null
+          ? null
+          : RegExp(r'^bytes=(\d+)-$').firstMatch(range);
+      final bool partial =
+          match != null &&
+          (!honorIfRange || ifRange == null || ifRange == etag);
+      if (partial) {
+        final int start = int.parse(match.group(1)!);
+        response.statusCode = HttpStatus.partialContent;
+        response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes $start-${body.length - 1}/${body.length}',
+        );
+        response.contentLength = body.length - start;
+        response.add(Uint8List.sublistView(body, start));
+      } else {
+        response.contentLength = body.length;
+        response.add(body);
+      }
+      await response.close();
+    };
+
 class _Req {
-  const _Req(this.path, this.referer);
+  const _Req(this.path, this.referer, {this.range, this.ifRange});
 
   final String path;
   final String? referer;
+  final String? range;
+  final String? ifRange;
 }
 
 class _FixtureServer {
@@ -534,6 +930,8 @@ class _FixtureServer {
         _Req(
           request.uri.path,
           request.headers.value(HttpHeaders.refererHeader),
+          range: request.headers.value(HttpHeaders.rangeHeader),
+          ifRange: request.headers.value(HttpHeaders.ifRangeHeader),
         ),
       );
       final _Handler? handler = routes[request.uri.path];

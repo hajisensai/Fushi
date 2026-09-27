@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -84,6 +85,23 @@ void main() {
     expect(query.isSearch, isFalse);
     expect(query.filtered, isTrue);
     expect(tester.widget<TextField>(field()).controller!.text, isEmpty);
+  });
+
+  // PR #1707 审查：合并成共用页后小说筛选按钮的提示变成了 Mihon 的「来源偏好」。
+  testWidgets('筛选按钮的提示由适配器给出', (WidgetTester tester) async {
+    final _FakeCatalog catalog = _FakeCatalog();
+    await pumpPage(tester, catalog);
+    final IconButton button = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('fake_filters')),
+    );
+    expect(button.tooltip, 'Fake filters');
+    expect(
+      File(
+        'lib/src/media/novel/online/lnreader_source_browse_page.dart',
+      ).readAsStringSync().replaceAll(RegExp(r'\s+'), ''),
+      contains('StringgetfiltersTooltip=>t.novel_source_filters_title;'),
+      reason: 'LNReader 的筛选按钮提示是「筛选」，不是 Mihon 的「来源偏好」。',
+    );
   });
 
   testWidgets('筛选落到搜索时切成搜索查询并保留搜索词', (WidgetTester tester) async {
@@ -275,6 +293,9 @@ class _FakeCatalog extends OnlineSourceCatalog<String> {
 
   @override
   bool get hasFilters => true;
+
+  @override
+  String get filtersTooltip => 'Fake filters';
 
   @override
   Future<OnlineBrowseFilterTarget?> editFilters(BuildContext context) async {

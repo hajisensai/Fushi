@@ -69,6 +69,10 @@ class _LnReaderCatalog extends OnlineSourceCatalog<LnReaderNovelItem> {
   @override
   String get emptyText => t.novel_source_no_results;
 
+  /// LNReader 插件的「筛选」就是筛选（作用在热门列表上），不是源偏好。
+  @override
+  String get filtersTooltip => t.novel_source_filters_title;
+
   @override
   bool get verifyOnEmpty => true;
 

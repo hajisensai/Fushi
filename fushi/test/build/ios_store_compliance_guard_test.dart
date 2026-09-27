@@ -344,9 +344,11 @@ void main() {
         ),
         contains(
           'OnlineSourcesDomain.manga=>'
-          'StoreRestrictedCapability.onlineMangaSource.isAvailable&&'
-          'MihonRuntimeFactory.isSupported,',
+          'StoreRestrictedCapability.onlineMangaSource.isAvailable,',
         ),
+        // 漫画域只问合规门、不再叠 Mihon 宿主门：内置 mokuro.moe 不需要扩展宿主，
+        // Linux 上它的开关要有入口（PR #1707 审查）；没有宿主时扩展相关的节由
+        // MangaOnlineSourcesView 自己换成「不可用」说明（上面几条断言钉的就是它）。
         reason: '浏览页签是否出现漫画域也问同一道合规门。',
       );
     });
@@ -398,6 +400,52 @@ void main() {
         isNot(contains('Platform.isIOS')),
         reason: '消费端不得各自写平台判断，只问 StoreRestrictedCapability。',
       );
+    });
+
+    test('播放页从媒体库重开在线源集时，取 animeMihonManager 挂在同一道门后', () {
+      // 媒体库里的在线源行（anime-source://）会经备份 / 同步出现在任何平台上；播放页
+      // 重开它时若在门外取 animeMihonManager，iOS 上就会起在线源宿主（Linux 上直接
+      // 抛 UnsupportedError）。门不过时抛 AnimeSourceLaunchUnavailable，走原有的
+      // 「扩展不可用」失败提示。
+      final String page = compactCode(
+        read('lib/src/pages/implementations/video_fushi_page.dart'),
+      );
+      const String gate =
+          'if(!isVideoOnlineSourcesAvailable){'
+          'throwconstAnimeSourceLaunchUnavailable(';
+      const String use = 'manager:appModel.animeMihonManager,';
+      expect(page, contains(gate));
+      expect(page, contains(use));
+      expect(
+        'animeMihonManager'.allMatches(page).length,
+        1,
+        reason: '播放页只许这一处取 animeMihonManager，且它在门后。',
+      );
+      final int gateAt = page.indexOf(gate);
+      final int useAt = page.indexOf(use);
+      expect(gateAt, lessThan(useAt), reason: '门必须先于取用。');
+      expect(
+        page.substring(gateAt, useAt),
+        allOf(
+          contains('launch=awaitbuildAnimeSourceLaunch('),
+          isNot(contains('}catch(')),
+        ),
+        reason: '门与取用在同一个 try 里紧挨着：门不过就不会走到取用。',
+      );
+      final List<File> parts =
+          Directory('lib/src/pages/implementations/video_fushi')
+              .listSync()
+              .whereType<File>()
+              .where((File f) => f.path.endsWith('.dart'))
+              .toList();
+      expect(parts, isNotEmpty);
+      for (final File part in parts) {
+        expect(
+          compactCode(part.readAsStringSync()),
+          isNot(contains('animeMihonManager')),
+          reason: '${part.path}：播放页的 part 不得绕开门取 animeMihonManager。',
+        );
+      }
     });
 
     test('小说源三段（LNReader，浏览模块）由 onlineNovelSource 门控', () {

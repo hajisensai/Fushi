@@ -1119,7 +1119,6 @@
   "download_open_settings": "Open settings",
   "download_rate_limit_lan_exempt": "Does not apply within your local network; LAN transfers always run at full speed.",
   "download_rate_limit_lan_included": "Also applies within your local network.",
-  "download_resources_tab": "Resources",
   "download_save_root_change": "Change folder",
   "download_save_root_create_failed": "Cannot create that folder. Check the drive and permissions.",
   "download_save_root_fallback_warning": "The configured download folder is unavailable, so the default folder is being used.",
@@ -1966,7 +1965,6 @@
   "keep_screen_awake": "Keep screen awake",
   "library_empty_go_import": "Go to import",
   "library_search": "Search library",
-  "library_view_browse": "Discover",
   "library_view_discover": "Discover",
   "library_view_import": "Import",
   "library_view_media": "Library",
@@ -2027,8 +2025,8 @@
   "manga_discovery_source_popular": "Popular on ${source}",
   "manga_discovery_sources_browse": "Browse a source",
   "manga_global_search_hint": "Search every enabled source",
-  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Import tab.",
-  "manga_global_search_open_sources": "Go to Import",
+  "manga_global_search_no_sources": "No enabled manga sources yet. Add one in the Browse tab.",
+  "manga_global_search_open_sources": "Go to Browse",
   "manga_global_search_prompt": "Type a title to search every enabled manga source at once.",
   "manga_global_search_title": "Search all sources",
   "manga_google_lens_disclosure_accept": "Agree and start OCR",
@@ -5700,5 +5698,8 @@
   "ai_web_knowledge_custom_endpoint": "API address",
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
-  "ai_web_knowledge_custom_remove": "Remove site"
+  "ai_web_knowledge_custom_remove": "Remove site",
+  "onboarding_feature_browse_hint": "Online sources, extensions, discovery and downloads",
+  "browse_moved_notice_title": "Discovery and online sources moved to ${browse}",
+  "browse_moved_notice_body": "Discovery and the online sources for manga, video and novels now live in the ${browse} tab, which is turned off on this device. To use them, turn on ${browse} in ${settings} › ${appearance} › ${modules}."
 }

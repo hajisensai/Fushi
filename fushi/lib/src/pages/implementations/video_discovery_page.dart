@@ -345,13 +345,17 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
+          if (_headerVisible) _buildHeader(),
           _buildControls(),
           Expanded(child: _buildBody()),
         ],
       ),
     );
   }
+
+  /// 页头只在独立页面（非 embedded、非 Cupertino）渲染；不渲染时页头上的入口
+  /// （放送日历）改放进搜索行，否则浏览页里的视频发现就没有日历入口了。
+  bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
 
   /// 放送日历（2026-08-21 迁入发现页）：条目直达发现详情，同一套 actions。
   void _openCalendar() {
@@ -449,14 +453,34 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                       onPressed: () => onAiAcquire(_searchController.text),
                       icon: const Icon(Icons.auto_awesome_outlined),
                     );
+              // 放送日历：页头不渲染时（embedded 于浏览页 / Cupertino）页头那颗
+              // 按钮看不见，同一个 key 挪到搜索行，三种宽度下都可达。
+              final Widget? calendarEntry = _headerVisible
+                  ? null
+                  : IconButton.filledTonal(
+                      constraints: const BoxConstraints(
+                        minWidth: kFushiSearchFieldHeight,
+                        minHeight: kFushiSearchFieldHeight,
+                      ),
+                      key: const ValueKey<String>(
+                        'video-discovery-open-calendar',
+                      ),
+                      tooltip: t.download_airing_calendar_title,
+                      onPressed: _openCalendar,
+                      icon: const Icon(Icons.calendar_month_outlined),
+                    );
+              final List<Widget> trailing = <Widget>[
+                for (final Widget entry in <Widget?>[calendarEntry, aiEntry]
+                    .whereType<Widget>()) ...<Widget>[
+                  SizedBox(width: tokens.spacing.gap),
+                  entry,
+                ],
+              ];
               if (compact) {
                 return Row(
                   children: <Widget>[
                     Expanded(child: search),
-                    if (aiEntry != null) ...<Widget>[
-                      SizedBox(width: tokens.spacing.gap),
-                      aiEntry,
-                    ],
+                    ...trailing,
                     SizedBox(width: tokens.spacing.gap),
                     IconButton.filledTonal(
                       // 与同一行的搜索框等高：搜索框已统一为
@@ -484,12 +508,11 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                 );
               }
               if (width < 900) {
-                if (aiEntry == null) return search;
+                if (trailing.isEmpty) return search;
                 return Row(
                   children: <Widget>[
                     Expanded(child: search),
-                    SizedBox(width: tokens.spacing.gap),
-                    aiEntry,
+                    ...trailing,
                   ],
                 );
               }
@@ -505,10 +528,7 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
                   _buildGenreMenu(),
                   SizedBox(width: tokens.spacing.gap),
                   _buildSortMenu(),
-                  if (aiEntry != null) ...<Widget>[
-                    SizedBox(width: tokens.spacing.gap),
-                    aiEntry,
-                  ],
+                  ...trailing,
                 ],
               );
             },

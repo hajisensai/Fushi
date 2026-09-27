@@ -1558,9 +1558,10 @@ class _OnboardingWizardPageState extends BasePageState<OnboardingWizardPage>
                 GamesModuleForm.streamClient
             ? t.game_stream_module_hint
             : t.onboarding_feature_games_hint;
-      // 同上：一句话说明直接复用各自设置分类的 summary，不新增 key。
+      // 浏览不是一个设置分类（来源 / 扩展 / 发现 / 下载），用自己的一句话说明；
+      // 其余复用各自设置分类的 summary，不新增 key。
       case OnboardingFeature.browse:
-        return t.download_settings;
+        return t.onboarding_feature_browse_hint;
       case OnboardingFeature.lookup:
         return t.dictionary_settings;
       case OnboardingFeature.listening:

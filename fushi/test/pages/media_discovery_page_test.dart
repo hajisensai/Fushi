@@ -570,7 +570,7 @@ void main() {
     expect(find.text('paged-1-0'), findsOneWidget);
 
     await tester.drag(
-      find.byKey(const PageStorageKey<String>('discovery-results-scroll')),
+      find.byKey(const ValueKey<String>('discovery-results-scroll')),
       const Offset(0, -1500),
     );
     await tester.pumpAndSettle();
@@ -580,18 +580,57 @@ void main() {
       find.text('paged-2-0'),
       300,
       scrollable: find.descendant(
-        of: find.byKey(const PageStorageKey<String>('discovery-results-scroll')),
+        of: find.byKey(const ValueKey<String>('discovery-results-scroll')),
         matching: find.byType(Scrollable),
       ),
     );
     expect(find.text('paged-2-0'), findsOneWidget);
     // 第 2 页 hasMore=false：继续滚到底也不再发请求。
     await tester.drag(
-      find.byKey(const PageStorageKey<String>('discovery-results-scroll')),
+      find.byKey(const ValueKey<String>('discovery-results-scroll')),
       const Offset(0, -5000),
     );
     await tester.pumpAndSettle();
     expect(paged.requestedPages, <int>[1, 2]);
+  });
+
+  // PR #1707 审查：结果列表曾挂 PageStorageKey，非追加加载（新搜索 / 换来源）后的
+  // 新列表会恢复上一轮的偏移，书 / 游戏两域同路由同 key 还会互串。
+  testWidgets('新一轮搜索的结果从顶部开始，不恢复上一轮列表的偏移', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _PagedSource paged = _PagedSource();
+    service = MediaDiscoveryService(sources: <MediaDiscoverySource>[paged]);
+    appModel = _FakeAppModel(service);
+    await pumpPage(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('discovery_source_pick_paged')),
+    );
+    await tester.pumpAndSettle();
+    final Finder results =
+        find.byKey(const ValueKey<String>('discovery-results-scroll'));
+    ScrollPosition position() => tester
+        .state<ScrollableState>(
+          find.descendant(of: results, matching: find.byType(Scrollable)),
+        )
+        .position;
+
+    await tester.drag(results, const Offset(0, -400));
+    await tester.pumpAndSettle();
+    expect(position().pixels, greaterThan(0));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('discovery_search_field')),
+      'paged',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await tester.pumpAndSettle();
+    expect(find.text('paged-1-0'), findsOneWidget);
+    expect(position().pixels, 0);
   });
 
   testWidgets('部分来源失败：结果照常显示，横幅点名失败来源的展示名', (

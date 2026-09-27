@@ -81,9 +81,10 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
   /// 最近看过的一集（按远端断点时间戳取最新）；-1 = 一集都没看过。
   int _resumeIndex = -1;
 
-  /// 本作品已在媒体库里的集 / 已下载到本机的集（集 id）。
-  Set<String> _libraryIds = const <String>{};
-  Set<String> _downloadedIds = const <String>{};
+  /// 本作品各集的入库状态（有在线行 / 已下载 / 库里没有）；读出来之前为 null。
+  AnimeSourceEpisodeStatus? _libraryStatus;
+  Set<String> get _downloadedIds =>
+      _libraryStatus?.downloaded ?? const <String>{};
   bool _libraryBusy = false;
   bool _loading = true;
   Object? _error;
@@ -157,18 +158,38 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     return AnimeSourceLibrary(
       database: appModel.database,
       repository: widget.repositoryOverride,
+      // 下载完登记本地行时把在线断点接过去。闭包只抓 appModel（不抓 ref）：下载
+      // 可能在本页退出后才完成。
+      onlinePositionReader: (String id) => _readOnlinePosition(appModel, id),
+    );
+  }
+
+  /// 一集的在线断点：与播放页合集模式落盘同一把键 `(成员 id, 0)`（见
+  /// `VideoFushiPage._remotePositionKeyForIndex`）。没有 / 近起点返回 null。
+  static AnimeOnlinePosition? _readOnlinePosition(
+    AppModel appModel,
+    String id,
+  ) {
+    int readInt(String key) {
+      final Object? raw = appModel.prefsRepo.getPref(key, defaultValue: 0);
+      return raw is num ? raw.toInt() : int.tryParse('${raw ?? ''}') ?? 0;
+    }
+
+    final int positionMs = readInt(videoRemotePositionEpisodePrefKey(id, 0));
+    if (positionMs <= 0) return null;
+    return (
+      positionMs: positionMs,
+      playedAt: readInt(videoRemotePositionEpisodeAtPrefKey(id, 0)),
     );
   }
 
   Future<void> _reloadLibraryState() async {
     final AnimeSourceVideoClient? client = _client;
-    final Set<String> inLibrary;
-    final Set<String> downloaded;
+    final AnimeSourceEpisodeStatus status;
     try {
       final AnimeSourceLibrary? library = _libraryOrNull();
       if (client == null || library == null) return;
-      inLibrary = await library.libraryEpisodeIds(client);
-      downloaded = await library.downloadedEpisodeIds(client);
+      status = await library.episodeStatus(client);
     } on Object catch (error, stack) {
       // 入库状态只决定按钮是「加入」还是「移出」、哪些集已下载：读不到时页面照常
       // 在线可用，记日志而不是让它变成未捕获的异步错误。
@@ -180,13 +201,15 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
       return;
     }
     if (!mounted || !identical(client, _client)) return;
-    setState(() {
-      _libraryIds = inLibrary;
-      _downloadedIds = downloaded;
-    });
+    setState(() => _libraryStatus = status);
   }
 
-  bool get _inLibrary => _libraryIds.isNotEmpty;
+  /// 「加入媒体库」：还有集不在库里（没入过库 / 只下载过其中几集 / 刷新后多了新集）
+  /// 就显示。状态还没读出来时也显示（按钮本身在剧集加载完前是禁用的）。
+  bool get _canAddToLibrary => _libraryStatus?.canAdd ?? true;
+
+  /// 「移出媒体库」：有在线行可删才显示。已下载的集是普通本地视频，不算。
+  bool get _canRemoveFromLibrary => _libraryStatus?.canRemove ?? false;
 
   /// 「加入媒体库」：每集一行流媒体书，归进作品合集（刷新后再点只补新集）。
   Future<void> _addToLibrary() async {
@@ -217,8 +240,11 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
     if (client == null || library == null || _libraryBusy) return;
     setState(() => _libraryBusy = true);
     try {
-      await library.removeFromLibrary(client);
-      FushiToast.show(msg: t.video_online_library_removed);
+      // 一行都没删（状态过期：别处已经移出 / 这些集刚下载完成了本地行）就不报
+      // 「已移出」——下面重读状态后按钮自己会更新。
+      if (await library.removeFromLibrary(client) > 0) {
+        FushiToast.show(msg: t.video_online_library_removed);
+      }
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'AnimeSourceDetailPage.remove',
@@ -445,18 +471,9 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     : t.play,
               ),
             ),
-            // 同一个位置、同一个按钮：不在库是「加入」，在库是「移出」（与漫画 / 小说
-            // 作品页同一口径）。
-            if (_inLibrary)
-              OutlinedButton.icon(
-                key: const ValueKey<String>('anime_source_library_remove'),
-                onPressed: _libraryBusy
-                    ? null
-                    : () => unawaited(_removeFromLibrary()),
-                icon: const Icon(Icons.video_library),
-                label: Text(t.video_online_library_remove),
-              )
-            else
+            // 「加入」与「移出」各按各的判据，可以同时出现：下载过其中几集后其余集
+            // 仍能加入、已入库的作品刷新出新集仍能补；「移出」只删在线行。
+            if (_canAddToLibrary)
               OutlinedButton.icon(
                 key: const ValueKey<String>('anime_source_library_add'),
                 onPressed: !canPlay || _libraryBusy
@@ -464,6 +481,15 @@ class _AnimeSourceDetailPageState extends ConsumerState<AnimeSourceDetailPage> {
                     : () => unawaited(_addToLibrary()),
                 icon: const Icon(Icons.video_library_outlined),
                 label: Text(t.video_online_library_add),
+              ),
+            if (_canRemoveFromLibrary)
+              OutlinedButton.icon(
+                key: const ValueKey<String>('anime_source_library_remove'),
+                onPressed: _libraryBusy
+                    ? null
+                    : () => unawaited(_removeFromLibrary()),
+                icon: const Icon(Icons.video_library),
+                label: Text(t.video_online_library_remove),
               ),
             OutlinedButton.icon(
               key: const ValueKey<String>('anime_source_download_all'),

@@ -127,6 +127,10 @@ abstract class OnlineSourceCatalog<T> {
 
   String get emptyText => t.mihon_source_no_results;
 
+  /// 筛选按钮的提示（各源沿用自己原来的叫法：Mihon 叫「来源偏好」，LNReader 叫
+  /// 「筛选」）。
+  String get filtersTooltip => t.mihon_source_preferences;
+
   void dispose() {}
 }
 
@@ -332,7 +336,7 @@ class _OnlineSourceBrowsePageState<T> extends State<OnlineSourceBrowsePage<T>> {
               const SizedBox(width: 8),
               IconButton(
                 key: ValueKey<String>('${prefix}_filters'),
-                tooltip: t.mihon_source_preferences,
+                tooltip: _catalog.filtersTooltip,
                 onPressed: _showFilters,
                 icon: const Icon(Icons.tune),
               ),

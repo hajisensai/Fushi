@@ -67,6 +67,7 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
     super.key,
     this.navigation,
     this.embedded = false,
+    this.onOpenSources,
     this.sourceFeedsOverride,
     this.catalogOverride,
   });
@@ -74,9 +75,14 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   /// 库页视图导航条（由 `MediaLibraryShell` 传入，作为页头主内容）。
   final Widget? navigation;
 
-  /// 嵌入下载资源聚合页时，外层已经提供「资源」页头，这里只渲染
-  /// 漫画来源筛选、搜索与结果，避免再画一行「发现」。
+  /// 嵌入「浏览 › 发现」时，外层已经提供页头，这里只渲染漫画来源筛选、搜索与
+  /// 结果，避免再画一行「发现」；页头上的刷新随之挪进搜索行。
   final bool embedded;
+
+  /// 「管理来源」的去处（空态与全源搜索页的引导按钮）。嵌在浏览页时由宿主给出
+  /// （切到「来源 › 漫画」）；为 null 时退回库页壳的「来源」视图，都没有就只给
+  /// 文案不给按钮。
+  final VoidCallback? onOpenSources;
 
   /// 测试注入：给定时跳过平台来源发现，直接渲染这些来源热门行。
   final List<MangaDiscoverySourceFeed>? sourceFeedsOverride;
@@ -226,13 +232,26 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     );
   }
 
-  /// 「去『来源』视图装来源」的去处；本页不在库页壳里、或壳没有「来源」视图时为
+  /// 「去『来源』装来源」的去处：宿主给的 [MangaDiscoveryPage.onOpenSources]
+  /// 优先（浏览页不是库页壳，壳作用域在那里不存在）；否则问库页壳。都没有时为
   /// null，空态只给文案不给按钮。
   ///
-  /// 判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
+  /// 壳的判据是「壳**有** sources 视图」而不是「壳在」：[MediaLibraryShellScope.select]
   /// 对不存在的视图静默忽略，拿后者当判据就会渲染一个点了什么都不发生的按钮。
-  VoidCallback? _openSourcesAction() => MediaLibraryShellScope.maybeOf(context)
-      ?.actionFor(MediaLibraryViewKind.sources);
+  VoidCallback? _openSourcesAction() =>
+      widget.onOpenSources ??
+      MediaLibraryShellScope.maybeOf(context)
+          ?.actionFor(MediaLibraryViewKind.sources);
+
+  /// 页头只在独立 / 库页壳里渲染；不渲染时（embedded、Cupertino）刷新挪进搜索行。
+  bool get _headerVisible => !widget.embedded && !isCupertinoPlatform(context);
+
+  Widget _refreshButton() => IconButton(
+        key: const ValueKey<String>('manga_discovery_refresh'),
+        tooltip: t.refresh,
+        onPressed: _refresh,
+        icon: const Icon(Icons.refresh),
+      );
 
   void _openMokuro() {
     final AppModel appModel = ref.read(appProvider);
@@ -342,14 +361,7 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
   /// 页头。与 `MangaSourcesPage` 同一范式：导航条存在时即页头主位，不再另渲染一个
   /// 页面大标题。全源搜索不在这里——它是下面的搜索框。
   Widget _buildHeader() {
-    final List<Widget> actions = <Widget>[
-      IconButton(
-        key: const ValueKey<String>('manga_discovery_refresh'),
-        tooltip: t.refresh,
-        onPressed: _refresh,
-        icon: const Icon(Icons.refresh),
-      ),
-    ];
+    final List<Widget> actions = <Widget>[_refreshButton()];
     final Widget? navigation = widget.navigation;
     if (navigation != null) {
       return FushiPageHeader.customTitle(title: navigation, actions: actions);
@@ -372,10 +384,11 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!widget.embedded && !isCupertinoPlatform(context)) _buildHeader(),
+          if (_headerVisible) _buildHeader(),
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: DiscoveryHeaderControls(
+              trailing: <Widget>[if (!_headerVisible) _refreshButton()],
               sources: options,
               selectedSourceId: selected,
               onSourceSelected: (String id) => setState(() {
@@ -460,17 +473,23 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
         SliverToBoxAdapter(child: catalogSection),
         // 条目直接来自已启用来源，点开即可读。空行整行收起；失败行也收起，
         // 失败汇总到上面的横幅（或下面全部失败的整块提示）。
-        for (final MangaDiscoverySourceFeed feed in feeds)
-          SliverToBoxAdapter(
-            child: MangaDiscoverySourceRow(
-              key: ValueKey<String>(
-                'manga_discovery_source_${feed.id}#$generation',
+        //
+        // 一个 SliverList 懒建（只建可见范围 + 缓存区）：每行挂载即拉该源第 1 页，
+        // 一行一个 SliverToBoxAdapter 会在进入本页时把全部来源的行一次性建出来，
+        // 对二十几个源同时并发 loadPopular（PR #1707 审查）。
+        SliverList.list(
+          children: <Widget>[
+            for (final MangaDiscoverySourceFeed feed in feeds)
+              MangaDiscoverySourceRow(
+                key: ValueKey<String>(
+                  'manga_discovery_source_${feed.id}#$generation',
+                ),
+                feed: feed,
+                onResult: (Object? error) =>
+                    _onRowResult(generation, feed.id, error),
               ),
-              feed: feed,
-              onResult: (Object? error) =>
-                  _onRowResult(generation, feed.id, error),
-            ),
-          ),
+          ],
+        ),
         if (allFailed)
           SliverToBoxAdapter(
             child: FushiPlaceholderMessage(
@@ -497,7 +516,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
 
   /// 一个来源都没有：整页引导空态。有扩展宿主时补一句「先装扩展」，没有宿主
   /// 的平台（Linux 等）这句只会误导，那里本来就装不了扩展；「管理来源」按钮只在
-  /// 库页壳真有「来源」视图时出现。
+  /// 真有去处时出现（宿主给了 [MangaDiscoveryPage.onOpenSources]，或库页壳真有
+  /// 「来源」视图）。
   Widget _buildEmpty() {
     final VoidCallback? openSources = _openSourcesAction();
     return CustomScrollView(

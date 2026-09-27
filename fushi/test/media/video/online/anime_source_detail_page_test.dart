@@ -21,6 +21,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 import '../../../helpers/test_platform_services.dart';
 
@@ -371,7 +372,10 @@ void main() {
       appModel = _TestAppModel(PreferencesRepository(database), root, database);
     });
 
-    Future<void> pumpDetail(WidgetTester tester) async {
+    Future<void> pumpDetail(
+      WidgetTester tester, {
+      GlobalKey<NavigatorState>? navigatorKey,
+    }) async {
       await tester.binding.setSurfaceSize(const Size(1000, 1200));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpWidget(
@@ -381,6 +385,7 @@ void main() {
             appProvider.overrideWith((Ref ref) => appModel),
           ],
           child: MaterialApp(
+            navigatorKey: navigatorKey,
             home: AnimeSourceDetailPage(
               manager: manager,
               sourceContext: await context(),
@@ -447,23 +452,115 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('an episode already in the library shows remove on open', (
+    String episodeId(String url) =>
+        '$kAnimeSourceVideoIdPrefix'
+        'eu.kanade.tachiyomi.animeextension.all.fixture:42:$url';
+
+    Future<void> seedRow(
+      WidgetTester tester,
+      String url, {
+      required bool downloaded,
+    }) => tester.runAsync(
+      () => database.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: episodeId(url),
+          title: 'Episode',
+          videoPath: downloaded
+              ? '${root.path}${Platform.pathSeparator}ep.mp4'
+              : 'anime-source://fixture/42/Fixture Show - E0',
+        ),
+      ),
+    );
+
+    Future<Map<String, String>> rowsByUid(WidgetTester tester) async =>
+        <String, String>{
+          for (final VideoBookRow row in (await tester.runAsync(
+            database.allVideoBooks,
+          ))!)
+            row.bookUid: row.videoPath,
+        };
+
+    testWidgets('a work with some episodes in the library and a new one '
+        'shows both remove and add; add fills in the new episode', (
       WidgetTester tester,
     ) async {
-      await tester.runAsync(
-        () => database.upsertVideoBook(
-          VideoBooksCompanion.insert(
-            bookUid:
-                '$kAnimeSourceVideoIdPrefix'
-                'eu.kanade.tachiyomi.animeextension.all.fixture:42:/ep/2',
-            title: 'Episode 2',
-            videoPath: 'anime-source://fixture/42/Fixture Show - E02',
-          ),
-        ),
-      );
+      await seedRow(tester, '/ep/2', downloaded: false);
       await pumpDetail(tester);
       expect(removeButton(), findsOneWidget);
+      // 第 1 集还不在库里（刷新后多出来的新集）：仍能加入。
+      expect(addButton(), findsOneWidget);
+
+      await tester.tap(addButton());
+      await settle(tester);
+      final Map<String, String> rows = await rowsByUid(tester);
+      expect(rows.keys.toSet(), <String>{
+        episodeId('/ep/1'),
+        episodeId('/ep/2'),
+      });
+      expect(rows.values.every(isAnimeSourceVideoPath), isTrue);
       expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('after downloading one episode the others can still be added '
+        'and nothing online can be removed yet', (WidgetTester tester) async {
+      await seedRow(tester, '/ep/1', downloaded: true);
+      await pumpDetail(tester);
+      expect(addButton(), findsOneWidget);
+      expect(removeButton(), findsNothing);
+
+      await tester.tap(addButton());
+      await settle(tester);
+      final Map<String, String> rows = await rowsByUid(tester);
+      // 已下载的集保持本地文件，其余集补成在线行。
+      expect(isAnimeSourceVideoPath(rows[episodeId('/ep/1')]!), isFalse);
+      expect(isAnimeSourceVideoPath(rows[episodeId('/ep/2')]!), isTrue);
+      expect(addButton(), findsNothing);
+      expect(removeButton(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('remove deletes only the online rows and says so; the '
+        'downloaded episode stays', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navigator = GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navigator;
+      await seedRow(tester, '/ep/1', downloaded: true);
+      await seedRow(tester, '/ep/2', downloaded: false);
+      await pumpDetail(tester, navigatorKey: navigator);
+      expect(removeButton(), findsOneWidget);
+      expect(addButton(), findsNothing);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+      expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/1')]);
+      expect(find.text(t.video_online_library_removed), findsOneWidget);
+      expect(removeButton(), findsNothing);
+      expect(addButton(), findsOneWidget);
+      // 让 toast 的消失计时器走完。
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('remove that deletes nothing (the online row was downloaded '
+        'meanwhile) does not claim it removed anything', (
+      WidgetTester tester,
+    ) async {
+      final GlobalKey<NavigatorState> navigator = GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navigator;
+      await seedRow(tester, '/ep/2', downloaded: false);
+      await pumpDetail(tester, navigatorKey: navigator);
+      expect(removeButton(), findsOneWidget);
+      // 页面状态读出后，这一集在后台下载完成、成了本地行。
+      await seedRow(tester, '/ep/2', downloaded: true);
+
+      await tester.tap(removeButton());
+      await settle(tester);
+      expect(find.text(t.video_online_library_removed), findsNothing);
+      expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/2')]);
+      expect(removeButton(), findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+      expect(tester.takeException(), isNull);
     });
   });
 
