@@ -57,6 +57,128 @@ double gameStreamResolutionScale({
   );
 }
 
+/// How long [FushiGameStreamHost.start] waits for a bound window to appear
+/// in the capturer's source list, and how often it re-checks.
+const Duration kGameStreamWindowSourceWait = Duration(seconds: 8);
+const Duration kGameStreamWindowSourcePoll = Duration(milliseconds: 300);
+
+/// Opt-in private diagnostics file shared with the native WGC capture.
+final String? _kCaptureTracePath = () {
+  final String? path = Platform.environment['FUSHI_GAME_STREAM_CAPTURE_TRACE'];
+  return path == null || path.isEmpty ? null : path;
+}();
+
+/// Sender-side counters from one `getStats` call: enough to tell whether a
+/// low frame rate comes from the encoder (qualityLimitationReason `cpu`,
+/// long encode times), the network (`bandwidth`, retransmits, RTT) or the
+/// capture feeding it too few frames.
+@immutable
+class GameStreamSenderStats {
+  const GameStreamSenderStats({
+    required this.at,
+    this.framesSent = 0,
+    this.framesEncoded = 0,
+    this.totalEncodeTime = 0,
+    this.bytesSent = 0,
+    this.audioPacketsSent = 0,
+    this.retransmittedBytes = 0,
+    this.frameWidth,
+    this.frameHeight,
+    this.limitation,
+    this.encoder,
+    this.targetBitrate,
+    this.rttMs,
+    this.availableOutgoingKbps,
+  });
+
+  factory GameStreamSenderStats.fromReports(
+    List<StatsReport> reports, {
+    required DateTime at,
+  }) {
+    Map<dynamic, dynamic>? video;
+    Map<dynamic, dynamic>? audio;
+    Map<dynamic, dynamic>? pair;
+    for (final StatsReport report in reports) {
+      final Map<dynamic, dynamic> values = report.values;
+      if (report.type == 'outbound-rtp') {
+        final Object? kind = values['kind'] ?? values['mediaType'];
+        if (kind == 'video') video = values;
+        if (kind == 'audio') audio = values;
+      } else if (report.type == 'candidate-pair' &&
+          (values['nominated'] == true || values['state'] == 'succeeded') &&
+          values['currentRoundTripTime'] != null) {
+        pair = values;
+      }
+    }
+    num? number(Map<dynamic, dynamic>? map, String key) {
+      final Object? value = map?[key];
+      return value is num ? value : num.tryParse('$value');
+    }
+
+    final num? rtt = number(pair, 'currentRoundTripTime');
+    final num? available = number(pair, 'availableOutgoingBitrate');
+    return GameStreamSenderStats(
+      at: at,
+      framesSent: number(video, 'framesSent')?.toInt() ?? 0,
+      framesEncoded: number(video, 'framesEncoded')?.toInt() ?? 0,
+      totalEncodeTime: number(video, 'totalEncodeTime')?.toDouble() ?? 0,
+      bytesSent: number(video, 'bytesSent')?.toInt() ?? 0,
+      audioPacketsSent: number(audio, 'packetsSent')?.toInt() ?? 0,
+      retransmittedBytes: number(video, 'retransmittedBytesSent')?.toInt() ?? 0,
+      frameWidth: number(video, 'frameWidth')?.toInt(),
+      frameHeight: number(video, 'frameHeight')?.toInt(),
+      limitation: video?['qualityLimitationReason']?.toString(),
+      encoder: video?['encoderImplementation']?.toString(),
+      targetBitrate: number(video, 'targetBitrate')?.toInt(),
+      rttMs: rtt == null ? null : (rtt * 1000).round(),
+      availableOutgoingKbps: available == null ? null : available ~/ 1000,
+    );
+  }
+
+  final DateTime at;
+  final int framesSent;
+  final int framesEncoded;
+  final double totalEncodeTime;
+  final int bytesSent;
+  final int audioPacketsSent;
+  final int retransmittedBytes;
+  final int? frameWidth;
+  final int? frameHeight;
+  final String? limitation;
+  final String? encoder;
+  final int? targetBitrate;
+  final int? rttMs;
+  final int? availableOutgoingKbps;
+
+  /// One trace line; rates are over the window since [since].
+  String describe({GameStreamSenderStats? since}) {
+    final double seconds = since == null
+        ? 0
+        : at.difference(since.at).inMicroseconds / 1e6;
+    String rate(int now, int? before) => seconds <= 0 || before == null
+        ? '-'
+        : ((now - before) / seconds).toStringAsFixed(1);
+    final int encoded = framesEncoded - (since?.framesEncoded ?? 0);
+    final double encodeMs = since == null || encoded <= 0
+        ? 0
+        : (totalEncodeTime - since.totalEncodeTime) * 1000 / encoded;
+    final String kbps = seconds <= 0 || since == null
+        ? '-'
+        : ((bytesSent - since.bytesSent) * 8 / seconds / 1000)
+              .round()
+              .toString();
+    return 'size=${frameWidth ?? '-'}x${frameHeight ?? '-'} '
+        'sent=${rate(framesSent, since?.framesSent)}fps '
+        'encoded=${rate(framesEncoded, since?.framesEncoded)}fps '
+        'encode=${encodeMs.toStringAsFixed(2)}ms '
+        'limit=${limitation ?? '-'} encoder=${encoder ?? '-'} '
+        'kbps=$kbps target=${targetBitrate == null ? '-' : targetBitrate! ~/ 1000} '
+        'avail=${availableOutgoingKbps ?? '-'} rtt=${rttMs ?? '-'}ms '
+        'rtx=${since == null ? '-' : retransmittedBytes - since.retransmittedBytes}B '
+        'audio=${rate(audioPacketsSent, since?.audioPacketsSent)}pps';
+  }
+}
+
 const Set<String> _kVideoSdpHelperCodecs = <String>{
   'rtx',
   'red',
@@ -177,6 +299,9 @@ class FushiGameStreamHost extends ChangeNotifier {
   bool _starting = false;
   bool _pumping = false;
   bool _connected = false;
+  bool _tracingStats = false;
+  DateTime _lastStatsTrace = DateTime.fromMillisecondsSinceEpoch(0);
+  GameStreamSenderStats? _lastSenderStats;
   DateTime _lastPump = DateTime.fromMillisecondsSinceEpoch(0);
   bool _sendingTexts = false;
   bool _disposed = false;
@@ -276,20 +401,42 @@ class FushiGameStreamHost extends ChangeNotifier {
         }
       }
       _requireGeneration(generation);
-      final List<DesktopCapturerSource> sources = await desktopCapturer
-          .getSources(
-            types: <SourceType>[SourceType.Window],
-            thumbnailSize: ThumbnailSize(1, 1),
-          );
-      _requireGeneration(generation);
-      // Upstream Windows source IDs are HWND decimal strings. Never fall back
-      // to another window or the desktop if this source disappeared.
-      final List<DesktopCapturerSource> matches = sources
-          .where(
-            (DesktopCapturerSource source) => int.tryParse(source.id) == hwnd,
-          )
-          .toList();
-      if (matches.length != 1) throw StateError('Game window unavailable');
+      // A freshly launched game is bound as soon as its top-level window
+      // exists, but the capturer lists it only once it is shown and uncloaked
+      // (SGRE measured ~3 s behind the bind while switching to fullscreen).
+      // Wait for that state, bounded, instead of failing the launch.
+      List<DesktopCapturerSource> sources = <DesktopCapturerSource>[];
+      List<DesktopCapturerSource> matches = <DesktopCapturerSource>[];
+      final DateTime sourceDeadline = DateTime.now().add(
+        kGameStreamWindowSourceWait,
+      );
+      while (true) {
+        sources = await desktopCapturer.getSources(
+          types: <SourceType>[SourceType.Window],
+          thumbnailSize: ThumbnailSize(1, 1),
+        );
+        _requireGeneration(generation);
+        // Upstream Windows source IDs are HWND decimal strings. Never fall
+        // back to another window or the desktop if this source disappeared.
+        matches = sources
+            .where(
+              (DesktopCapturerSource source) => int.tryParse(source.id) == hwnd,
+            )
+            .toList();
+        if (matches.isNotEmpty || DateTime.now().isAfter(sourceDeadline)) {
+          break;
+        }
+        await Future<void>.delayed(kGameStreamWindowSourcePoll);
+        _requireGeneration(generation);
+      }
+      if (matches.length != 1) {
+        // Name the HWND and what the capturer actually listed: "unavailable"
+        // alone cannot tell a stale bind from a hidden or duplicated source.
+        throw StateError(
+          'Game window unavailable (hwnd=$hwnd, matches=${matches.length}, '
+          'sources=${sources.map((DesktopCapturerSource s) => s.id).take(24).join(',')})',
+        );
+      }
       final Map<String, Object?> info = await GameStreamInputChannel.inspect();
       _requireGeneration(generation);
       if (info['alive'] != true ||
@@ -440,6 +587,7 @@ class FushiGameStreamHost extends ChangeNotifier {
       _requireGeneration(generation);
       _timer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
         final DateTime now = DateTime.now();
+        _maybeTraceSenderStats(now);
         if (_connected &&
             now.difference(_lastPump) < kGameStreamConnectedPoll) {
           return;
@@ -603,6 +751,24 @@ class FushiGameStreamHost extends ChangeNotifier {
         throw StateError('Video encoding limits were rejected');
       }
     }
+    final String? trace = _kCaptureTracePath;
+    if (trace != null) {
+      unawaited(
+        File(trace)
+            .writeAsString(
+              '[fushi_settings] captureHeight=$_captureHeight '
+              'maxHeight=${settings.maxHeight} maxFps=${settings.maxFps} '
+              'bitrateKbps=${settings.bitrateKbps} '
+              'adaptive=${settings.adaptiveBitrate} '
+              'minBps=${rates.min} maxBps=${rates.max} '
+              'degradation=${settings.degradation.name} '
+              'codec=${settings.codec.name}\n',
+              mode: FileMode.append,
+              flush: true,
+            )
+            .then((_) {}, onError: (Object _) {}),
+      );
+    }
   }
 
   Future<void> _receiveControl(String text) async {
@@ -658,6 +824,41 @@ class FushiGameStreamHost extends ChangeNotifier {
     }
   }
 
+  /// Appends a sender-side stats line to the opt-in
+  /// `FUSHI_GAME_STREAM_CAPTURE_TRACE` file (the native capture writes its
+  /// per-stage timings there too), so a stutter report can be split into
+  /// capture, encoder and network causes without a debugger.
+  void _maybeTraceSenderStats(DateTime now) {
+    final String? path = _kCaptureTracePath;
+    final RTCPeerConnection? connection = _connection;
+    if (path == null || connection == null || !_connected || _tracingStats) {
+      return;
+    }
+    if (now.difference(_lastStatsTrace) < const Duration(seconds: 2)) return;
+    _lastStatsTrace = now;
+    _tracingStats = true;
+    unawaited(() async {
+      try {
+        final List<StatsReport> reports = await connection.getStats();
+        final GameStreamSenderStats sample = GameStreamSenderStats.fromReports(
+          reports,
+          at: now,
+        );
+        final String line = sample.describe(since: _lastSenderStats);
+        _lastSenderStats = sample;
+        await File(path).writeAsString(
+          '[fushi_sender] $line\n',
+          mode: FileMode.append,
+          flush: true,
+        );
+      } catch (_) {
+        // Diagnostics only: never let a stats read disturb the session.
+      } finally {
+        _tracingStats = false;
+      }
+    }());
+  }
+
   Future<void> stop({String reason = 'stopped'}) {
     final Future<void>? active = _stopping;
     if (active != null) return active;
@@ -674,6 +875,7 @@ class FushiGameStreamHost extends ChangeNotifier {
     _connected = false;
     _timer?.cancel();
     _timer = null;
+    _lastSenderStats = null;
     final GameStreamSession? current = session;
     if (current != null && !current.state.isTerminal) {
       service.stop(sessionId: current.sessionId, reason: reason);
