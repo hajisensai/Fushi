@@ -48,6 +48,15 @@ final RegExp _kNegativeRtMarginBlockStart = RegExp(
 /// 具体数值，Apple 端换值时这条不会跟着退化成恒真空壳。
 final RegExp _kAnyNegativeMarginBlockStart = RegExp(r'margin-block-start:\s*-');
 
+/// BUG-2724：「含 `rt` 的选择器块里带一个负的 `margin-block-end`」——WebKit
+/// 注音贴回本行的不变式，同样不钉数值与写法。
+final RegExp _kNegativeRtMarginBlockEnd = RegExp(
+    r'rt\b[^{}]*\{[^}]*margin-block-end:\s*-\s*[\d.]+[a-z]+',
+    dotAll: true);
+
+/// 非 Apple 端：压根没有负的 `margin-block-end`。
+final RegExp _kAnyNegativeMarginBlockEnd = RegExp(r'margin-block-end:\s*-');
+
 void main() {
   group('BUG-611 竖排 ruby 不被 -webkit-line-box-contain 抹掉标注预留', () {
     test(
@@ -114,6 +123,48 @@ void main() {
               reason: '$p：Blink 本就不为注音长高，负 margin 只发给 WebKit。'
                   '钉「任何负 margin-block-start 都不得出现」而不是钉某个数值——'
                   '否则 Apple 端一改数值，这条就退化成恒真空壳');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2724：Apple 端（WebKit）给注音盒负 margin-block-end，把注音贴回本行'
+        '（横排）/本列（竖排）；Android / Windows / Linux 不发', () async {
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          debugDefaultTargetPlatformOverride = p;
+          try {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: wm, viewMode: 'paginated'));
+            expect(
+                css,
+                matches(_kNegativeRtMarginBlockEnd),
+                reason: '$p/$wm：WebKit 把注音边框盒底贴在基字内容区顶，Hiragino 的 '
+                    'ascent 空白 + 注音半行距全落在注音与本行之间，注音贴近上一行'
+                    '（iOS 实拍本行 3.3px / 上一行 5.3px）。注音盒底 = 基字顶 − '
+                    'margin-block-end，负值才能把注音挪回基字。钉「注音选择器块里'
+                    '有负的 margin-block-end」这条不变式，不钉数值');
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(_kAnyNegativeMarginBlockEnd)),
+              reason: '$p：Blink 的注音本就紧贴基字，这条 WebKit 位置补偿不得发给它');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }

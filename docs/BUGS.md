@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2503 条。点号进各自文件。
+> 共 2504 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2724](bugs/BUG-2724-ios-furigana-gap.md) | ✅ | ✅ | iOS 振假名离本行远、贴近上一行/上一列 |
 | [BUG-2720](bugs/BUG-2720-emby-secondary-subtitle.md) | ✅ | ✅ | Emby 兼容层上副字幕选内嵌轨必失败 |
 | [BUG-2719](bugs/BUG-2719-home-body-layout-switch-remount.md) | ✅ | ✅ | 关掉视频后视频库回到「首页」分区而不是上次的分区 |
 | [BUG-2717](bugs/BUG-2717-interconnect-host-sync-lock.md) | ✅ | ✅ | 互联 host 的对端聚合/合集写排在本机整轮同步后面，手机每轮 15s 超时 |
