@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "เรียกดู",
   "novel_detail_library_remove": "นำออกจากชั้นหนังสือ",
   "novel_detail_library_remove_confirm": "นำนิยายเรื่องนี้ออกจากชั้นหนังสือ? ตอนที่แคชไว้และความคืบหน้าการอ่านจะถูกลบ",

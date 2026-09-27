@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "Explorar",
   "novel_detail_library_remove": "Quitar de la estantería",
   "novel_detail_library_remove_confirm": "¿Quitar esta novela de la estantería? Se eliminarán los capítulos en caché y el progreso de lectura.",

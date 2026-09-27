@@ -193,7 +193,10 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncAuthError, SyncPeerUnreachableError;
+import 'package:fushi/src/sync/sync_error_messages.dart'
+    show friendlySyncAuthFailure;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -9137,6 +9140,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
     // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
     if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;
+    // 云盘流播起播前的预读撞上登录失效（refresh token 过期 / 被吊销）：可操作项是
+    // 重新登录，不是「视频不可用」。按类型分派，措辞与同步设置页同一套。
+    if (error is SyncAuthError) {
+      return friendlySyncAuthFailure(error.kind, error.serverReason);
+    }
     // 视频源扩展明确回答「这一集没有可播的流」：既不是网络故障也不是站点拒绝，
     // 作品页已不再预解析拦这一层（点集直接进播放器），失败态得把原因说清。
     if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {

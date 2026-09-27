@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "播放（串流）",
   "nav_browse": "瀏覽",
   "novel_detail_library_remove": "移出書架",
   "novel_detail_library_remove_confirm": "把這部小說移出書架？已快取的章節和閱讀進度會一併刪除。",

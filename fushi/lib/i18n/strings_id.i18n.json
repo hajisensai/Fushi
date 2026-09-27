@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "Jelajah",
   "novel_detail_library_remove": "Hapus dari rak buku",
   "novel_detail_library_remove_confirm": "Hapus novel ini dari rak buku? Bab yang tersimpan dan progres membaca akan dihapus.",

@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "Navegar",
   "novel_detail_library_remove": "Remover da estante",
   "novel_detail_library_remove_confirm": "Remover este romance da estante? Os capítulos em cache e o progresso de leitura serão apagados.",

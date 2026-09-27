@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "탐색",
   "novel_detail_library_remove": "책장에서 제거",
   "novel_detail_library_remove_confirm": "이 소설을 책장에서 제거할까요? 캐시된 챕터와 읽기 진행 상황이 삭제됩니다.",

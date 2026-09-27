@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "Göz at",
   "novel_detail_library_remove": "Kitaplıktan kaldır",
   "novel_detail_library_remove_confirm": "Bu roman kitaplıktan kaldırılsın mı? Önbelleğe alınan bölümler ve okuma ilerlemesi silinecek.",

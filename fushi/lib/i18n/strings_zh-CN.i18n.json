@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "连接",
   "plex_sign_in_failed": "Plex 登录失败",
+  "remote_video_stream_play": "播放（流播）",
   "nav_browse": "浏览",
   "novel_detail_library_remove": "移出书架",
   "novel_detail_library_remove_confirm": "把这部小说移出书架？已缓存的章节和阅读进度会一并删除。",

@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "تصفح",
   "novel_detail_library_remove": "إزالة من رف الكتب",
   "novel_detail_library_remove_confirm": "إزالة هذه الرواية من رف الكتب؟ سيتم حذف الفصول المخزنة وتقدم القراءة.",

@@ -5697,6 +5697,7 @@
   "plex_token_label": "X-Plex-Token",
   "plex_manual_connect": "Connect",
   "plex_sign_in_failed": "Plex sign-in failed",
+  "remote_video_stream_play": "Play (stream)",
   "nav_browse": "ブラウズ",
   "novel_detail_library_remove": "本棚から削除",
   "novel_detail_library_remove_confirm": "この小説を本棚から削除しますか？キャッシュ済みの章と読書進捗も削除されます。",
