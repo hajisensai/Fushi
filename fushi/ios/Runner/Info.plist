@@ -7,7 +7,7 @@
 		<key>NSAppleMusicUsageDescription</key>
 		<string>Fushi accesses your media library to import audio files for audiobooks and Anki cards.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>Fushi uses the camera to capture images to add to your Anki cards.</string>
+		<string>Fushi uses the camera to capture images to add to your Anki cards and to scan pairing QR codes from your other devices.</string>
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Fushi accesses your photo library to pick images to add to your Anki cards.</string>
 		<key>NSLocalNetworkUsageDescription</key>

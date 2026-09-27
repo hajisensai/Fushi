@@ -12,6 +12,10 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- 互联配对链接写 NFC 贴纸（普通权限，不弹运行时授权框）。required=false：
+         没有 NFC 的设备照常能装，入口按 NfcAdapter 可用性自行降级。 -->
+    <uses-permission android:name="android.permission.NFC"/>
+    <uses-feature android:name="android.hardware.nfc" android:required="false"/>
     <application
         android:label="Fushi"
         android:name="${applicationName}"
@@ -60,6 +64,21 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="fushi" android:host="source" />
+            </intent-filter>
+            <!-- Interconnect pairing links (fushi://pair?…): QR codes scanned by the
+                 system camera, copied links, and NFC stickers all land here and go
+                 through the same confirm-then-pair flow
+                 (docs/specs/2026-09-28-interconnect-remote-reach.md §4). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fushi" android:host="pair" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.nfc.action.NDEF_DISCOVERED" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="fushi" android:host="pair" />
             </intent-filter>
         </activity>
 

@@ -23,6 +23,7 @@ import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -741,6 +742,18 @@ class FushiSyncServerController extends ChangeNotifier {
     if (persistDisabled) await _repo.setServerEnabled(false);
     notifyListeners();
   }
+
+  /// 扫码配对：签发一次性票据并组装二维码 / 复制链接用的配对链接
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。host 没在跑 → null。
+  /// 重新调用即作废上一张票据（同时只有一张）。
+  Future<FushiPairLink?> createPairLink() async {
+    final FushiSyncServer? server = _server;
+    if (server == null) return null;
+    return server.buildPairLink(ticket: server.issuePairTicket());
+  }
+
+  /// 二维码窗口关闭：票据立即作废。
+  void revokePairTicket() => _server?.revokePairTicket();
 
   /// Bounce the server so a freshly-persisted token / port takes effect.
   Future<FushiServerStartOutcome> restart() async {

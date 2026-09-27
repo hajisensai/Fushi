@@ -130,6 +130,51 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       ..setHasClientConnection(urls.isNotEmpty);
   }
 
+  /// 扫码或粘贴链接 → 共享的链接配对流程。列表由候选列表变更广播自动重载。
+  Future<void> _pairFromLink({required bool scan}) async {
+    final FushiPairLink? link = scan
+        ? await scanInterconnectPairQr(context)
+        : await promptInterconnectPairLinkPaste(context);
+    if (link == null || !mounted) return;
+    setState(() => _pairingManual = true);
+    try {
+      final bool paired = await runInterconnectLinkPairingFlow(
+        context,
+        widget.settingsContext.appModel,
+        link,
+      );
+      if (paired) _syncSettings(widget.settingsContext).reloadClientConfig();
+    } finally {
+      if (mounted) setState(() => _pairingManual = false);
+    }
+  }
+
+  /// 把某台已配对 host 的地址（不含票据）写进 NFC 贴纸。多台时让用户挑。
+  Future<void> _writeNfcSticker() async {
+    final List<FushiClientUrl> hosts = interconnectPeerRepresentatives(_urls)
+        .where((FushiClientUrl u) => u.hostId != null)
+        .toList(growable: false);
+    if (hosts.isEmpty) return;
+    FushiClientUrl? host = hosts.length == 1 ? hosts.single : null;
+    host ??= await showAppDialog<FushiClientUrl>(
+      context: context,
+      builder: (BuildContext ctx) => SimpleDialog(
+        title: Text(t.sync_pair_nfc_write),
+        children: <Widget>[
+          for (final FushiClientUrl h in hosts)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, h),
+              child: Text(h.deviceName ?? h.url),
+            ),
+        ],
+      ),
+    );
+    if (host == null || !mounted) return;
+    final FushiPairLink? link = interconnectStickerLinkFor(_urls, host);
+    if (link == null) return;
+    await writeInterconnectPairNfcTag(context, link);
+  }
+
   Future<void> _persistUrls() async {
     // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
     // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
@@ -579,22 +624,50 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                 ),
               ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: (lockedByServer || _pairingManual)
-                  ? null
-                  : () => _addOrEditUrl(),
-              icon: _pairingManual
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child:
-                          adaptiveIndicator(context: context, strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add, size: 18),
-              label: Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: <Widget>[
+              TextButton.icon(
+                onPressed: (lockedByServer || _pairingManual)
+                    ? null
+                    : () => _addOrEditUrl(),
+                icon: _pairingManual
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: adaptiveIndicator(
+                            context: context, strokeWidth: 2),
+                      )
+                    : const Icon(Icons.add, size: 18),
+                label:
+                    Text(_pairingManual ? t.sync_pair_pairing : t.dialog_add),
+              ),
+              // 扫码 / 粘贴链接：地址 + 证书指纹 + 一次性票据一次到手，不必同网段、
+              // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+              if (interconnectPairQrScanSupported)
+                TextButton.icon(
+                  onPressed: (lockedByServer || _pairingManual)
+                      ? null
+                      : () => _pairFromLink(scan: true),
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: Text(t.sync_pair_scan),
+                ),
+              TextButton.icon(
+                onPressed: (lockedByServer || _pairingManual)
+                    ? null
+                    : () => _pairFromLink(scan: false),
+                icon: const Icon(Icons.link, size: 18),
+                label: Text(t.sync_pair_link_paste),
+              ),
+              if (interconnectPairNfcWriteSupported &&
+                  _urls.any((FushiClientUrl u) => u.hostId != null))
+                TextButton.icon(
+                  onPressed: _writeNfcSticker,
+                  icon: const Icon(Icons.nfc, size: 18),
+                  label: Text(t.sync_pair_nfc_write),
+                ),
+            ],
           ),
           const SizedBox(height: 12),
           // TODO-1330 ④（改）：客户端令牌在配对成功后由 host 自动签发并填入，值是 host 按
@@ -935,177 +1008,20 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
     }
   }
 
-  /// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
-  /// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
-  /// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
-  String _pairV2FailureMessage(String reason) {
-    switch (reason) {
-      case 'pin':
-        return t.sync_pair_pin_wrong;
-      case 'declined':
-        return t.sync_pair_denied;
-      case 'unavailable':
-        return t.sync_pair_unavailable;
-      case 'rate_limited':
-        return t.sync_pair_rate_limited;
-      case 'tls':
-        return t.sync_pair_tls_failed;
-      case 'timeout':
-        return t.sync_pair_timeout;
-      case 'expired':
-        // BUG-1556：会话超时与「对端拒绝」不是一回事——前者重试就行，
-        // 后者再试多少次都白搭。
-        return t.sync_pair_expired;
-      default:
-        return t.sync_pair_failed;
-    }
-  }
+  String _pairV2FailureMessage(String reason) =>
+      interconnectPairFailureMessage(reason);
 
-  /// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹），让用户核对后再继续。
   Future<bool> _confirmPairIdentity({
     String? deviceName,
     String? fingerprint,
-  }) async {
-    final bool? ok = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 460,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: FushiModalSheetFrame(
-            title: t.sync_pair_confirm_identity_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_confirm_identity_body(
-                  device: (deviceName != null && deviceName.trim().isNotEmpty)
-                      ? deviceName
-                      : t.sync_pair_unknown_device,
-                )),
-                if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
-                  SizedBox(height: tokens.spacing.gap),
-                  Text(t.sync_pair_fingerprint_label,
-                      style: Theme.of(ctx).textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  SelectableText(
-                    fingerprint,
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          fontFamily: 'monospace',
-                        ),
-                  ),
-                ],
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    return ok ?? false;
-  }
+  }) =>
+      confirmInterconnectPairIdentity(
+        context,
+        deviceName: deviceName,
+        fingerprint: fingerprint,
+      );
 
-  /// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
-  Future<String?> _promptPairPinInput() async {
-    final TextEditingController pinController = TextEditingController();
-    final String? pin = await showAppDialog<String>(
-      context: context,
-      builder: (BuildContext ctx) {
-        final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-        return FushiDialogFrame(
-          maxWidth: 420,
-          insetPadding: EdgeInsets.symmetric(
-            horizontal: tokens.spacing.card,
-            vertical: tokens.spacing.card,
-          ),
-          scrollable: false,
-          child: FushiModalSheetFrame(
-            title: t.sync_pair_enter_pin_title,
-            scrollable: true,
-            bodyPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              0,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            footerPadding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.card,
-            ),
-            body: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.sync_pair_enter_pin_body),
-                SizedBox(height: tokens.spacing.gap),
-                FushiTextField(
-                  controller: pinController,
-                  labelText: t.sync_pair_enter_pin_title,
-                  keyboardType: TextInputType.number,
-                ),
-              ],
-            ),
-            footer: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                adaptiveDialogAction(
-                  context: ctx,
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(t.dialog_cancel),
-                ),
-                adaptiveDialogAction(
-                  context: ctx,
-                  isDefaultAction: true,
-                  onPressed: () =>
-                      Navigator.pop(ctx, pinController.text.trim()),
-                  child: Text(t.sync_pair_continue),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-    pinController.dispose();
-    return pin;
-  }
+  Future<String?> _promptPairPinInput() => promptInterconnectPairPin(context);
 
   /// This device's own advertised name, sent to the host so its approval prompt
   /// (and later its paired-devices list) can identify who is asking. Sourced
@@ -1135,6 +1051,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   bool _tlsEnabled = false;
   String? _token;
   late final TextEditingController _portController;
+
+  /// 公网 / 反代 / DDNS 地址（每行一个），经 /api/host/addresses 公布给已配对设备。
+  late final TextEditingController _publicUrlsController;
   bool _loaded = false;
 
   // TODO-961 M1b: 已配对设备（per-peer token 表 fushi_paired_peers 的行）。开启
@@ -1151,6 +1070,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
   void initState() {
     super.initState();
     _portController = TextEditingController(text: '$_port');
+    _publicUrlsController = TextEditingController();
     _serverController.addListener(_onServerChanged);
     // Rebuild when the client-connection flag flips so the toggle re-gates.
     _syncSettings(widget.settingsContext)
@@ -1166,6 +1086,7 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         .roleRevision
         .removeListener(_onRoleRevision);
     _portController.dispose();
+    _publicUrlsController.dispose();
     // NOTE: do NOT stop the server here. It is owned app-wide by AppModel now
     // (BUG-085); leaving this settings page must not kill the running host.
     super.dispose();
@@ -1197,7 +1118,9 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
     // TODO-961 M1b: 预取已配对设备（server 开启时才展示列表，但不阻塞开关加载）。
     final List<FushiPairedPeerRow> peers =
         await _serverController.pairedPeers();
+    final List<String> publicUrls = await repo.getInterconnectPublicUrls();
     if (mounted) {
+      _publicUrlsController.text = publicUrls.join('\n');
       setState(() {
         _enabled = enabled;
         _tlsEnabled = tlsEnabled;
@@ -1217,6 +1140,12 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
         _applyStartOutcome(await _serverController.startIfEnabled());
       }
     }
+  }
+
+  /// 公网地址每次 capabilities / 地址集请求实时读，改完不必重启互联服务。
+  Future<void> _setPublicUrls(String raw) async {
+    await SyncRepository(widget.settingsContext.appModel.database)
+        .setInterconnectPublicUrls(raw.split(RegExp(r'[\r\n]+')));
   }
 
   /// Persist an edited port (no live restart — the new port applies next time
@@ -1391,6 +1320,28 @@ class _ServerModeWidgetState extends State<_ServerModeWidget> {
               subtitle: t.sync_server_tls_repair_hint,
               value: _tlsEnabled,
               onChanged: (bool v) => _setTlsEnabled(v),
+            ),
+            // 扫码配对：一次性票据 + 地址集 + 证书指纹，另一台设备不必同网段、
+            // 不必手输（docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+            if (running)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () =>
+                      showInterconnectPairQrDialog(context, _serverController),
+                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  label: Text(t.sync_pair_qr_show),
+                ),
+              ),
+            const SizedBox(height: 8),
+            FushiTextField(
+              controller: _publicUrlsController,
+              labelText: t.sync_server_public_urls,
+              hintText: t.sync_server_public_urls_hint,
+              keyboardType: TextInputType.multiline,
+              maxLines: 3,
+              minLines: 1,
+              onChanged: _setPublicUrls,
             ),
             const SizedBox(height: 12),
             Text(t.sync_server_token,
@@ -2061,4 +2012,195 @@ class _InterconnectBackupBackendWidgetState
       ),
     );
   }
+}
+
+// ── 配对弹窗（手动 IP / LAN 发现 / 扫码 / 深链共用）────────────────────
+
+/// BUG-1553：把 client 的机器可读 reason 翻成人话。此前只认三个 reason，
+/// 限速 / TLS 指纹不符 / 超时统统落进 default 的「配对失败」——用户被 host 锁了
+/// 15 分钟却看不出来，只会一遍遍重试；证书不符这种安全事件也说成一样的话。
+String interconnectPairFailureMessage(String reason) {
+  switch (reason) {
+    case 'pin':
+      return t.sync_pair_pin_wrong;
+    case 'declined':
+      return t.sync_pair_denied;
+    case 'unavailable':
+      return t.sync_pair_unavailable;
+    case 'rate_limited':
+      return t.sync_pair_rate_limited;
+    case 'tls':
+      return t.sync_pair_tls_failed;
+    case 'timeout':
+      return t.sync_pair_timeout;
+    case 'expired':
+      // BUG-1556：会话超时与「对端拒绝」不是一回事——前者重试就行，
+      // 后者再试多少次都白搭。
+      return t.sync_pair_expired;
+    case 'unreachable':
+      // 链接配对：链接里没有一条地址可达，或可达的不是链接里那台 host。
+      return t.sync_pair_link_unreachable;
+    case 'fingerprint_changed':
+      return t.sync_pair_fingerprint_changed;
+    default:
+      return t.sync_pair_failed;
+  }
+}
+
+/// 第一重确认弹窗：展示要连接的设备身份（名 + 指纹 + 可选地址），让用户核对后再
+/// 继续。设置页手动配对与扫码 / 深链配对共用（深链可能来自任何网页，必须确认）。
+Future<bool> confirmInterconnectPairIdentity(
+  BuildContext context, {
+  String? deviceName,
+  String? fingerprint,
+  String? address,
+}) async {
+  final bool? ok = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext ctx) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+      return FushiDialogFrame(
+        maxWidth: 460,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.sync_pair_confirm_identity_title,
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.sync_pair_confirm_identity_body(
+                device: (deviceName != null && deviceName.trim().isNotEmpty)
+                    ? deviceName
+                    : t.sync_pair_unknown_device,
+              )),
+              if (address != null && address.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                SelectableText(
+                  address,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+              if (fingerprint != null && fingerprint.isNotEmpty) ...<Widget>[
+                SizedBox(height: tokens.spacing.gap),
+                Text(t.sync_pair_fingerprint_label,
+                    style: Theme.of(ctx).textTheme.labelSmall),
+                const SizedBox(height: 4),
+                SelectableText(
+                  fingerprint,
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+            ],
+          ),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(t.sync_pair_continue),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  return ok ?? false;
+}
+
+/// 第二重确认弹窗：收 host 屏幕显示的 6 位 PIN。返回 null=取消；空串=免 PIN 继续。
+Future<String?> promptInterconnectPairPin(BuildContext context) async {
+  final TextEditingController pinController = TextEditingController();
+  final String? pin = await showAppDialog<String>(
+    context: context,
+    builder: (BuildContext ctx) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
+      return FushiDialogFrame(
+        maxWidth: 420,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: tokens.spacing.card,
+          vertical: tokens.spacing.card,
+        ),
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: t.sync_pair_enter_pin_title,
+          scrollable: true,
+          bodyPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            0,
+            tokens.spacing.card,
+            tokens.spacing.gap,
+          ),
+          footerPadding: EdgeInsets.fromLTRB(
+            tokens.spacing.card,
+            tokens.spacing.gap,
+            tokens.spacing.card,
+            tokens.spacing.card,
+          ),
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.sync_pair_enter_pin_body),
+              SizedBox(height: tokens.spacing.gap),
+              FushiTextField(
+                controller: pinController,
+                labelText: t.sync_pair_enter_pin_title,
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          footer: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              adaptiveDialogAction(
+                context: ctx,
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t.dialog_cancel),
+              ),
+              adaptiveDialogAction(
+                context: ctx,
+                isDefaultAction: true,
+                onPressed: () =>
+                    Navigator.pop(ctx, pinController.text.trim()),
+                child: Text(t.sync_pair_continue),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+  pinController.dispose();
+  return pin;
 }

@@ -26,6 +26,9 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/pages.dart';
 import 'package:fushi/popup_main.dart' as popup_entrypoint;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show runInterconnectLinkPairingFlow;
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/onedrive_sync_backend.dart';
@@ -116,6 +119,11 @@ String? _pendingExternalVideoPath;
 String? _pendingLookupDeepLinkWord;
 final List<String> _pendingCardSourceUrls = <String>[];
 
+/// `fushi://pair?…` 配对链接（扫码 / NFC 贴纸 / 系统相机 / 协议启动）。app 初始化
+/// 完成前到达的先暂存，首帧后逐条弹确认框再配对
+/// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。
+final List<String> _pendingPairLinks = <String>[];
+
 /// 外部打开新视频时的自动封面锁边界。maintenance 已开始时 [action] 仍可按
 /// `allowAutoCover == false` 建立无封面的媒体行，但不得产生自动封面文件。
 Future<T> _runExternalVideoCoverMutation<T>(
@@ -184,6 +192,10 @@ void main([List<String> args = const <String>[]]) {
     for (final String arg in args) {
       if (SourceUrlChannel.isSourceUrl(arg)) {
         _pendingCardSourceUrls.add(arg);
+        break;
+      }
+      if (FushiPairLink.tryParse(arg) != null) {
+        _pendingPairLinks.add(arg);
         break;
       }
       final String? word = lookupWordFromDeepLink(arg);
@@ -1189,6 +1201,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueCardSourceUrl(data);
       return true;
     }
+    if (FushiPairLink.tryParse(data) != null) {
+      _queuePairLink(data);
+      return true;
+    }
     final AppShortcut? shortcut = AppShortcut.tryParse(data);
     if (shortcut != null) {
       _queueAppShortcut(shortcut);
@@ -1228,6 +1244,57 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       // 用户点「查词」就是要打字：送进搜索框。
       openLookup: () => appModel.requestHomeDictionaryTab(focusSearch: true),
     );
+  }
+
+  bool _pairLinkScheduled = false;
+  bool _pairLinkRunning = false;
+
+  void _queuePairLink(String url) {
+    if (!_pendingPairLinks.contains(url)) _pendingPairLinks.add(url);
+    if (!mounted) return;
+    if (!ref.read(appProvider).isInitialised) {
+      setState(() {});
+      return;
+    }
+    _schedulePairLinks();
+  }
+
+  void _schedulePairLinks() {
+    if (_pairLinkScheduled || _pairLinkRunning || _pendingPairLinks.isEmpty) {
+      return;
+    }
+    _pairLinkScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pairLinkScheduled = false;
+      if (mounted) unawaited(_drainPairLinks());
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  /// 逐条弹「连接到 <设备>？」确认框再配对：链接可能来自任何网页，绝不静默配对。
+  Future<void> _drainPairLinks() async {
+    if (_pairLinkRunning) return;
+    _pairLinkRunning = true;
+    try {
+      while (mounted && _pendingPairLinks.isNotEmpty) {
+        final FushiPairLink? link =
+            FushiPairLink.tryParse(_pendingPairLinks.removeAt(0));
+        final AppModel appModel = ref.read(appProvider);
+        final BuildContext? navContext =
+            appModel.navigatorKey.currentContext;
+        if (link == null || navContext == null || !navContext.mounted) {
+          continue;
+        }
+        try {
+          await runInterconnectLinkPairingFlow(navContext, appModel, link);
+        } catch (error, stackTrace) {
+          ErrorLogService.instance.log('PairLink.open', error, stackTrace);
+          FushiToast.show(msg: t.sync_pair_failed);
+        }
+      }
+    } finally {
+      _pairLinkRunning = false;
+    }
   }
 
   void _queueCardSourceUrl(String url) {
@@ -1400,6 +1467,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (videoPath.isEmpty) return null;
     if (SourceUrlChannel.isSourceUrl(videoPath)) {
       _queueCardSourceUrl(videoPath);
+      return null;
+    }
+    if (FushiPairLink.tryParse(videoPath) != null) {
+      _queuePairLink(videoPath);
       return null;
     }
     // BUG-1666：单实例转交的是「候选 argv 字符串」，不只视频路径——Anki 卡片上的
@@ -2043,6 +2114,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     }
 
     _scheduleCardSourceNavigation();
+    _schedulePairLinks();
     _appShortcuts.schedule();
     // 长按图标菜单跟着模块开关与界面语言走：两者一变根 build 就重跑（模块开关
     // notifyListeners / 语言切换重建整树），发布器按签名去重，平时不过通道。
