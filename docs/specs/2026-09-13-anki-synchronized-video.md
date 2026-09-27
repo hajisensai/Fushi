@@ -28,3 +28,22 @@
 AnkiConnect/AnkiDroid 媒体渲染、AnkiMobile 裸 URL 与媒体快照由自动化测试覆盖。三端安装版「生成卡片 → 同步 → 自动播放 → 点击例句重播」仍需设备验收，不以单元测试或浏览器按钮模拟代替真机结论。
 
 依据：[Anki 媒体手册](https://docs.ankiweb.net/media.html) 推荐 MP4 为通用视频格式；[官方论坛关于 MP4 嵌入](https://forums.ankiweb.net/t/how-to-embed-mp4-files/264/) 说明原生 `[sound:]` 路径。
+
+## 2026-09-27 更新：默认内嵌 WebM + 多格式
+
+用户拍板：所有能拿到画面的制卡来源（应用内视频 / YouTube / Netflix 录制片段 / galgame 窗口录制）默认出**音画一体片段**，格式可选，默认最好的那种。
+
+- **默认模式**：`VideoMiningImageMode.fromWireName(null)` 由 `gif` 改为 `videoClip`（视频与 gal 两个偏好）。显式选过的值原样保留；`ImmersionMiningRequest.imageMode` 值对象默认仍是 `gif`，不读偏好的调用方不变。
+- **格式轴** `MiningClipFormat`（偏好 `video_mining_clip_format` / `gal_mining_clip_format`）：
+  | 格式 | 卡片里怎么播 |
+  |---|---|
+  | `webm_vp9`（非 iOS 默认） | `<video>` 内嵌，翻面自动播放一次、点例句重播 |
+  | `webm_av1` | 同上，体积最小、编码更慢 |
+  | `mp4_h264`（iOS 默认） | `[sound:]` 交给 Anki 原生播放器（本文上半部分的形态） |
+  为什么内嵌只能是 WebM：Anki 桌面 Qt WebEngine 无 H.264 / AAC 解码器。渲染方式由产物扩展名决定（`coverMediaRef`），转发 / 草稿 / 队列不加 wire 字段。编码失败按 AV1 → VP9 → MP4 降级，卡上扩展名跟随实际产物。
+- **老用户不破坏**：格式没显式设过时从旧偏好推导——显式选过 `video_clip`（MP4 时代）的用户保持 MP4；切换到片段模式时先把推导值钉进格式偏好，避免新用户被误判。
+- **Lapis 三处 Picture**：`<video>` 不写 `autoplay` 属性，由字段内脚本只播**可见**的那一个（隐藏副本照样会出声）；句子音频字段是带 `replay-button` 类的重播按钮，内置 Lapis 的「点例句重播」直接可用，模板不改。字段 JS 无反引号 / `${` / 反斜杠（Lapis 把 `{{SentenceAudio}}` 插进 JS 模板字面量）。Anki 媒体检查认 `<video src>`。
+- **拿不到画面的来源降级而不报错**：无字幕时间窗 → 动图阶梯（最终静帧）；bilibili（只给音轨）/ Netflix 后台软解 / 网页截图 → 照常用手上的封面出卡，不声称同步。只有「录到了片段却导出失败」仍是硬错误。
+- **galgame**：窗口录制片段混进了句子音频时按同步片段落卡（句子音频 = 片段本身），修掉此前「MP4 里一份 + 另挂一份」同一句播两遍的问题；引擎同步判据接受 `source: game` 的外部片段。
+- **ffmpeg**：桌面 `ffmpeg-min` 加 `libvpx-vp9` / `libopus` 编码器与 `webm` muxer（macOS 静态自编，BUG-1443 规矩）。移动端 ffmpeg-kit **尚未重编**（构建机离线），移动端 WebM 尝试失败后自动出 MP4；重编需在 `build_x264_{android,ios}.sh` 加 `--enable-libvpx --enable-opus` 并同步 `ffmpeg_kit_mobile_recipe_guard_test.dart`。
+- **已知限制**：卡片同时有单词音频时，单词音频（Anki 原生队列）与视频同时开始，不做「先单词后视频」的排队；Anki 的 R 键重播只重播 `[sound:]`，不重播内嵌视频（点例句或播放条即可）。
