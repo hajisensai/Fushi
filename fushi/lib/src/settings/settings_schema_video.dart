@@ -866,6 +866,21 @@ SettingsDestination buildVideoDestination() {
                   .setVideoSubtitleBackfillAfterScrape(value);
             },
           ),
+          // BUG-2728 的自动上传：远端（互联 host）视频上导入 / 重定时的字幕上传到
+          // host 并设为该集默认——会改掉所有 peer 看到的默认字幕，所以要能关。
+          // 关掉时字幕只在本机生效（见 _uploadRemoteSubtitleToHost 的进场门）。
+          SettingsSwitchItem(
+            id: 'video.subtitle.auto_upload_to_host',
+            title: t.video_setting_subtitle_auto_upload_to_host,
+            subtitle: t.video_setting_subtitle_auto_upload_to_host_hint,
+            icon: Icons.cloud_upload_outlined,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoSubtitleAutoUploadToHost,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel
+                  .setVideoSubtitleAutoUploadToHost(value);
+            },
+          ),
           // ── 在线字幕来源 → 「在线服务」分区 ─────────────────────────────
           // Jimaku / OpenSubtitles 曾在这里与下载页各挂一份同一组件（BUG-1712 的
           // 「一个能力两个家」修法是双挂载——那是把症状固化）。第三方凭据现在只

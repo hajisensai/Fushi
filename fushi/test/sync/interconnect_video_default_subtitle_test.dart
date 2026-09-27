@@ -10,7 +10,8 @@
 ///    capabilities 声明 `liveLibrary.videoSubtitleDefault`。
 /// 3b. 混版本（BUG-2728）：假老 host 如实模拟「按后缀覆盖、无备份」，client 探到能力位
 ///    缺失 / false / 端点 404 时一个 PUT 都不发，host 原字幕字节不变，能力位只探一次。
-/// 4. 源码守卫：视频页远端导入会上传、对轴 / 重定时入口不再只认本地文件。
+/// 4. 源码守卫：视频页远端导入会上传、设置「导入的字幕自动上传到服务端」关掉时
+///    不上传也不提示、对轴 / 重定时入口不再只认本地文件。
 library;
 
 import 'dart:convert';
@@ -442,6 +443,32 @@ void main() {
           contains('video_subtitle_host_upload_done'));
       expect(upload.substring(unsupported),
           contains('video_subtitle_host_upload_unsupported'));
+    });
+
+    test('开关关掉时不上传：进场门在任何上传调用之前', () {
+      final String upload =
+          body(part, 'Future<void> _uploadRemoteSubtitleToHost(');
+      const String gate =
+          'if (!appModel.videoSubtitleAutoUploadToHost) return;';
+      final int gateAt = upload.indexOf(gate);
+      expect(gateAt, isNonNegative, reason: '「导入的字幕自动上传到服务端」关掉时必须直接返回');
+      expect(gateAt, lessThan(upload.indexOf('_remoteHostVideoTarget()')));
+      expect(
+          gateAt, lessThan(upload.indexOf('putRemoteVideoSubtitleAsDefault(')));
+      // 门之前不许有任何提示：关掉时既不上传也不提示「已设为默认」。
+      expect(upload.substring(0, gateAt), isNot(contains('_showOsd(')));
+      // 页面里只有这一处调上传入口，导入与重定时两条路径都经过同一道门。
+      final String pageSources = Directory('lib/src/pages/implementations')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((File f) => f.path.endsWith('.dart'))
+          .map((File f) => f.readAsStringSync())
+          .join('\n');
+      expect(
+          RegExp(r'\.putRemoteVideoSubtitleAsDefault\(')
+              .allMatches(pageSources)
+              .length,
+          1);
     });
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {
