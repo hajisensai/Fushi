@@ -17,6 +17,8 @@ public final class ChannelNames {
     public static final String FONTS = PREFIX + "/fonts";
     public static final String SAF = PREFIX + "/saf";
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
+    // 长按 app 图标的动态快捷方式，实现见 AppShortcutsHelper。
+    public static final String APP_SHORTCUTS = PREFIX + "/app_shortcuts";
     public static final String SCREEN_BRIGHTNESS = PREFIX + "/screen_brightness";
     public static final String SELECTION_ACTIONS = PREFIX + "/selection_actions";
     public static final String CLOUDFLARE_PROXY_BROWSER = PREFIX + "/cloudflare_proxy_browser";
