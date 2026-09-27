@@ -374,21 +374,21 @@ void main() {
     expect(readerSource, contains('chapterLabel: _currentChapterLabel()'));
   });
 
-  test('all platforms share side sheets while audiobook adapts its container',
-      () {
+  test('all platforms share side sheets, audiobook panel included', () {
     final String source = readReaderPageSource();
     final String route = _between(
       source,
       '  Future<void> _showAppearanceSheet(',
       '  Widget _buildQuickSettingsSheet(',
     );
-    expect(route, contains('readerAudiobookUsesSideSheet('));
+    // 2026-09-27：手机的有声书面板也走右侧侧栏，不再有底部抽屉分支。
+    expect(route, isNot(contains('readerAudiobookUsesSideSheet(')));
     expect(route, contains('showReaderSideSheet<void>('));
     expect(route, contains('ReaderSideSheetSide.left'));
     expect(route, contains('ReaderSideSheetSide.right'));
     expect(route, isNot(contains('ReaderQuickSettingsPresentation.sheet')));
     expect(route, isNot(contains('FushiDialogFrame(')));
-    expect(route, contains('adaptiveModalSheet<void>'));
+    expect(route, isNot(contains('adaptiveModalSheet<void>')));
   });
 
   test('reader quick settings no longer has a master-detail wide layout', () {
@@ -401,7 +401,7 @@ void main() {
 
     // 桌面端与平板宽窗在到达本面板之前就被路由到左右抽屉；面板内的宽窗左右
     // master-detail（左父菜单 + 右详情）已删除，共享外壳的 wideBuilder 只兜底铺窄窗内容。
-    expect(chrome, contains('readerAudiobookUsesSideSheet('));
+    expect(chrome, contains('showReaderSideSheet<void>('));
     expect(source, contains('FushiMasterDetailSettingsSheet('));
     expect(source, contains('wideBuilder:'));
     expect(source, isNot(contains('MaterialSupportingPaneLayout(')));
