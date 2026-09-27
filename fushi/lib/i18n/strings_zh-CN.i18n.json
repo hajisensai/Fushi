@@ -5692,5 +5692,6 @@
   "video_subtitle_reference_sync_apply": "应用",
   "video_subtitle_reference_sync_restore_title": "这条字幕下载时已自动对齐",
   "video_subtitle_reference_sync_restore_body": "下载时已按内嵌字幕轨调整过时间轴。要把原始时间轴恢复成一份新字幕吗？",
-  "video_subtitle_reference_sync_restore": "恢复原始字幕"
+  "video_subtitle_reference_sync_restore": "恢复原始字幕",
+  "video_subtitle_reference_sync_failed": "字幕文件读写失败"
 }

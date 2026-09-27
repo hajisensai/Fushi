@@ -45,6 +45,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -3084,11 +3085,6 @@ class VideoDownloadPipelineService {
         final VideoSubtitleDownload download =
             verified?.download ?? await subtitleRegistry!.download(candidate);
         _ensureLeaseHeld();
-        final AutomaticSubtitleAligner? aligner = subtitleAligner;
-        final Uint8List subtitleBytes = aligner == null
-            ? download.bytes
-            : await aligner(download.bytes, video.path);
-        _ensureLeaseHeld();
         // 打包源（SubDL 的 zip）的候选名只是下载前的猜测 `<release>.srt`，真实扩展名
         // 要解包后才知道：sidecar 扩展名以 `download.fileName` 为准（空才回退候选名），
         // 否则 ASS/VTT 会被装成 `.srt`——时轴校验按内容解析、拦不住这个。
@@ -3105,6 +3101,12 @@ class VideoDownloadPipelineService {
                 '${p.basenameWithoutExtension(video.path)}'
                 '.$language$resolvedExtension',
               );
+        final Uint8List subtitleBytes = await _sidecarBytes(
+          download.bytes,
+          videoPath: video.path,
+          initialTarget: resolvedInitialTarget,
+        );
+        _ensureLeaseHeld();
         final String selectedTarget = await _selectSidecarTarget(
           bytes: subtitleBytes,
           initialTarget: resolvedInitialTarget,
@@ -3537,28 +3539,56 @@ class VideoDownloadPipelineService {
     );
   }
 
+  /// sidecar 的候选落点：原名，再 `<stem>.fushiN<ext>`（N = 1..99）。
+  Iterable<String> _sidecarTargetCandidates(String initialTarget) sync* {
+    yield initialTarget;
+    final String extension = p.extension(initialTarget);
+    final String stem = p.basenameWithoutExtension(initialTarget);
+    for (int suffix = 1; suffix < 100; suffix++) {
+      yield p.join(p.dirname(initialTarget), '$stem.fushi$suffix$extension');
+    }
+  }
+
   Future<String> _selectSidecarTarget({
     required List<int> bytes,
     required String initialTarget,
   }) async {
-    String target = initialTarget;
     final Digest incoming = sha256.convert(bytes);
-    for (int suffix = 0; suffix < 100; suffix++) {
+    for (final String target in _sidecarTargetCandidates(initialTarget)) {
       final File existing = File(target);
       if (!await existing.exists()) return target;
       if (sha256.convert(await existing.readAsBytes()) == incoming) {
         return target;
       }
-      final String extension = p.extension(initialTarget);
-      final String stem = p.basenameWithoutExtension(initialTarget);
-      target = p.join(
-        p.dirname(initialTarget),
-        '$stem.fushi${suffix + 1}$extension',
-      );
     }
     throw const VideoDownloadPipelineActionRequired(
       'No conflict-free subtitle target is available',
     );
+  }
+
+  /// 要装的 sidecar 字节。没装对齐器 = 下载原样。装了则先认领上一轮写下的那份：
+  /// 内容等于原稿，或能经对齐备份反查到原稿——续跑的产物只取决于首跑落盘，而对齐
+  /// 本身还取决于开关与这一轮抽轨成败；重新对齐一旦结果不同，按内容认领的哈希就
+  /// 对不上，会在视频旁多写一份 `.fushiN`。
+  Future<Uint8List> _sidecarBytes(
+    Uint8List raw, {
+    required String videoPath,
+    required String initialTarget,
+  }) async {
+    final AutomaticSubtitleAligner? aligner = subtitleAligner;
+    if (aligner == null) return raw;
+    final Digest rawDigest = sha256.convert(raw);
+    for (final String target in _sidecarTargetCandidates(initialTarget)) {
+      final File existing = File(target);
+      if (!await existing.exists()) break;
+      final Uint8List content = await existing.readAsBytes();
+      if (sha256.convert(content) == rawDigest) return raw;
+      final Uint8List? original = await findSubtitleAlignmentOriginal(content);
+      if (original != null && sha256.convert(original) == rawDigest) {
+        return content;
+      }
+    }
+    return aligner(raw, videoPath);
   }
 
   Future<String> _installSidecarAtTargetAtomically({

@@ -2073,6 +2073,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _alignSubtitleToEmbeddedTracks(
     VideoPlayerController controller,
   ) async {
+    // 抽轨可能要几十秒（大容器整片 demux），期间连点不重入。
+    if (_referenceSyncRunning) return;
     final String? videoPath = _currentVideoPath;
     final String? subtitlePath = _currentExternalSubtitlePath();
     if (videoPath == null || subtitlePath == null) {
@@ -2082,6 +2084,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
+    _referenceSyncRunning = true;
+    try {
+      await _alignSubtitleFileToEmbeddedTracks(
+        controller,
+        videoPath,
+        subtitlePath,
+      );
+    } catch (error, stack) {
+      // 读写字幕文件失败（文件中途被删 / 字幕目录不可写）：说出来，不静默。
+      debugPrint('[fushi-video] reference sync failed: $error\n$stack');
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_reference_sync_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      _referenceSyncRunning = false;
+    }
+  }
+
+  Future<void> _alignSubtitleFileToEmbeddedTracks(
+    VideoPlayerController controller,
+    String videoPath,
+    String subtitlePath,
+  ) async {
     final Uint8List bytes = await File(subtitlePath).readAsBytes();
     final Uint8List? original = await findSubtitleAlignmentOriginal(bytes);
     if (original != null) {
@@ -2208,7 +2236,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
         false;
   }
 
-  /// 把 [bytes] 另存为 `<原名>.<tag><扩展名>` 进字幕目录，走既有外挂字幕链路选中。
+  /// 把 [bytes] 另存为 `<原名>.<tag>-<视频键><扩展名>` 进字幕目录，走既有外挂字幕
+  /// 链路选中。字幕目录是扁平池：不带视频键时，不同目录下同名的 `01.ja.srt` 会互相
+  /// 覆盖，而另一个视频持久化的字幕源正指着那个文件。
   Future<void> _importSubtitleVariant(
     VideoPlayerController controller,
     String subtitlePath,
@@ -2216,9 +2246,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String tag,
   ) async {
     final Directory dir = await AppPaths.videoSubtitlesDirectory();
+    final String videoKey = sha256
+        .convert(utf8.encode(_currentVideoPath ?? subtitlePath))
+        .toString()
+        .substring(0, 8);
     final String target = p.join(
       dir.path,
-      '${p.basenameWithoutExtension(subtitlePath)}.$tag'
+      '${p.basenameWithoutExtension(subtitlePath)}.$tag-$videoKey'
       '${p.extension(subtitlePath)}',
     );
     await File(target).writeAsBytes(bytes, flush: true);

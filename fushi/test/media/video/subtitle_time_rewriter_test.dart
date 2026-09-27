@@ -185,6 +185,56 @@ void main() {
       expect(decoded, contains('こんにちは'));
     });
 
+    test('缺空行的 SRT：删首条只删它自己（审查实测：旧实现输出为空）', () {
+      const String srt =
+          '1\n00:00:01,000 --> 00:00:02,000\nA\n'
+          '2\n00:00:10,000 --> 00:00:11,000\nB\n'
+          '3\n00:00:20,000 --> 00:00:21,000\nC\n';
+      final SubtitleRetimeOutcome out = retimeSubtitleBytes(
+        _ascii(srt),
+        _shift(-5),
+      );
+      expect(
+        String.fromCharCodes(out.bytes),
+        '2\n00:00:05,000 --> 00:00:06,000\nB\n'
+        '3\n00:00:15,000 --> 00:00:16,000\nC\n',
+      );
+      expect(out.droppedCount, 1);
+    });
+
+    test('ASS：0 时刻的 Comment 模板行不删，只截到 0', () {
+      const String ass =
+          '[Events]\n'
+          'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
+          'Comment: 0,0:00:00.00,0:00:00.00,Default,,0,0,0,template line,code\n'
+          'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,gone\n'
+          'Dialogue: 0,0:00:10.00,0:00:11.00,Default,,0,0,0,,kept\n';
+      final SubtitleRetimeOutcome out = retimeSubtitleBytes(
+        _ascii(ass),
+        _shift(-5),
+      );
+      final String text = String.fromCharCodes(out.bytes);
+      expect(text, contains('Comment: 0,0:00:00.00,0:00:00.00,Default'));
+      expect(text, isNot(contains('gone')));
+      expect(text, contains('0:00:05.00,0:00:06.00,Default,,0,0,0,,kept'));
+    });
+
+    test('UTF-8 BOM + 无序号 SRT：首条能解析；首条被删时 BOM 保留', () {
+      final Uint8List bytes = Uint8List.fromList(<int>[
+        0xef,
+        0xbb,
+        0xbf,
+        ...utf8.encode(
+          '00:00:01,000 --> 00:00:02,000\nA\n\n'
+          '00:00:10,000 --> 00:00:11,000\nB\n',
+        ),
+      ]);
+      expect(alignableCueStartSeconds(bytes), <double>[1.0, 10.0]);
+      final Uint8List out = retimeSubtitleBytes(bytes, _shift(-5)).bytes;
+      expect(out.sublist(0, 3), <int>[0xef, 0xbb, 0xbf]);
+      expect(utf8.decode(out.sublist(3)), '00:00:05,000 --> 00:00:06,000\nB\n');
+    });
+
     test('UTF-8 字节原样', () {
       final Uint8List bytes = Uint8List.fromList(
         utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n日本語\n'),

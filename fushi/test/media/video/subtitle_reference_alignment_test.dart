@@ -177,6 +177,72 @@ void main() {
     });
   });
 
+  group('CM 断点两侧逐句落位（审查实测：断点前最后一句曾被推迟 / 删除）', () {
+    // 断点紧前、紧后各硬塞一句，正是被错放的位置。
+    List<double> speechAround(List<double> base) =>
+        (<double>[...base.where((double t) => t < 596 || t > 640), 598.5, 641.0]
+          ..sort());
+
+    test('正跳变：视频多出 30s（字幕缺这段）→ 每句都回到真时间', () {
+      final List<double> video = speechAround(
+        truth,
+      ).where((double t) => t < 600 || t >= 630).toList();
+      double subOf(double t) => t < 600 ? t : t - 30;
+      final List<double> ref = _track(video, seed: 16);
+      final List<double> sub = <double>[for (final double t in video) subOf(t)];
+      final SubtitleReferenceFit fit = fitSubtitleToReference(
+        ref,
+        uniqueCueStarts(sub),
+        durationSeconds: 1440,
+      );
+      expect(fit.segments, hasLength(2));
+      for (final double t in video) {
+        final double s = subOf(t);
+        expect(alignmentIsRemoved(fit.segments, s), isFalse, reason: 't=$t');
+        expect(
+          s + alignmentOffsetAt(fit.segments, s),
+          closeTo(t, 0.5),
+          reason: 't=$t',
+        );
+      }
+    });
+
+    test('负跳变：字幕多出 30s CM → 每句回到真时间，CM 里的行被删', () {
+      // 视频里断点两侧只是正常的台词间隔（3.5s）；被删区间宽度恒等于 CM 长度，
+      // 位置由这个间隔约束——间隔越大，CM 里靠边的行越说不清归属（本就无解）。
+      final List<double> video = (<double>[
+        ...truth.where((double t) => t < 596 || t > 604),
+        598.5,
+        602.0,
+      ]..sort());
+      double subOf(double t) => t < 600 ? t : t + 30;
+      final List<double> ref = _track(video, seed: 17);
+      const List<double> cmLines = <double>[606, 618, 626];
+      final List<double> sub = <double>[
+        for (final double t in video) subOf(t),
+        ...cmLines,
+      ];
+      final SubtitleReferenceFit fit = fitSubtitleToReference(
+        ref,
+        uniqueCueStarts(sub),
+        durationSeconds: 1440,
+      );
+      expect(fit.segments, hasLength(2));
+      for (final double t in video) {
+        final double s = subOf(t);
+        expect(alignmentIsRemoved(fit.segments, s), isFalse, reason: 't=$t');
+        expect(
+          s + alignmentOffsetAt(fit.segments, s),
+          closeTo(t, 0.5),
+          reason: 't=$t',
+        );
+      }
+      for (final double s in cmLines) {
+        expect(alignmentIsRemoved(fit.segments, s), isTrue, reason: 'cm=$s');
+      }
+    });
+  });
+
   group('alignment mapping', () {
     const List<AlignmentSegment> segments = <AlignmentSegment>[
       AlignmentSegment(splitSeconds: 100, offsetSeconds: 10),

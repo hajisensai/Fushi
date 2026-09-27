@@ -160,6 +160,7 @@ class SubtitleTimedLine {
     required this.blockStart,
     required this.blockEnd,
     required this.alignable,
+    required this.droppable,
   });
 
   final SubtitleTimestamp startStamp;
@@ -172,6 +173,21 @@ class SubtitleTimedLine {
   /// 能否当对齐证据（写回时不论如何都照样平移）。不算的只有三类，见 [_isEvidence]：
   /// 注释行 / 绘图 / 空文本，以及只持续一两帧的逐帧特效事件。
   final bool alignable;
+
+  /// 平移后无处安放时能否整条删掉。ASS 的 Comment 行（Aegisub 卡拉 OK 模板等代码）
+  /// 与原时长为 0 的行永远不删，只把时间截到 0。
+  final bool droppable;
+
+  SubtitleTimedLine _withBlockStartAtLeast(int floor) => blockStart >= floor
+      ? this
+      : SubtitleTimedLine(
+          startStamp: startStamp,
+          endStamp: endStamp,
+          blockStart: floor,
+          blockEnd: blockEnd,
+          alignable: alignable,
+          droppable: droppable,
+        );
 
   int get startMs => startStamp.ms;
   int get endMs => endStamp.ms;
@@ -208,7 +224,23 @@ List<SubtitleTimedLine> scanSubtitleTimedLines(String text) {
     caseSensitive: false,
     multiLine: true,
   ).hasMatch(text);
-  return isAss ? _scanAss(text, lines) : _scanArrowCues(text, lines);
+  final List<SubtitleTimedLine> found = isAss
+      ? _scanAss(text, lines)
+      : _scanArrowCues(text, lines);
+  // 删首条 cue 时不能连带删掉开头的 BOM。
+  final int bom = _bomLength(text);
+  return <SubtitleTimedLine>[
+    for (final SubtitleTimedLine l in found) l._withBlockStartAtLeast(bom),
+  ];
+}
+
+/// 字节透明视图里 UTF-8 BOM 是三个字符 `\u00ef\u00bb\u00bf`；UTF-16 解码后是一个 U+FEFF。
+const String _latin1Utf8Bom = '\u00ef\u00bb\u00bf';
+
+int _bomLength(String text, [int at = 0]) {
+  if (text.startsWith(_latin1Utf8Bom, at)) return at + 3;
+  if (text.startsWith('\ufeff', at)) return at + 1;
+  return at;
 }
 
 /// 短于它（毫秒）的事件不当对齐证据：逐帧特效字（一个招牌动画拆成几百个一帧长的
@@ -322,6 +354,7 @@ SubtitleTimedLine? _scanAssEvent(String text, _Line line, _AssColumns columns) {
     blockStart: line.start,
     blockEnd: line.next,
     alignable: _isEvidence(dialogue && _assTextAlignable(body), start, end),
+    droppable: dialogue && end.ms > start.ms,
   );
 }
 
@@ -332,19 +365,59 @@ final RegExp _markupTag = RegExp(r'<[^>]*>|\{[^}]*\}');
 bool _isBlank(String text, _Line l) =>
     text.substring(l.start, l.end).trim().isEmpty;
 
+bool _isArrowLine(String text, _Line l) {
+  final int arrow = text.indexOf('-->', l.start);
+  return arrow >= 0 && arrow < l.end;
+}
+
+final RegExp _digitsOnly = RegExp(r'^\s*\d+\s*$');
+
+/// 按**时间戳行**切 cue，不靠空行：缺空行的 SRT（实测有）按空行切会让一个块吞掉
+/// 整个文件，删一条就清空（审查实测：3 条无空行 cue、偏移 -5s → 输出为空）。
 List<SubtitleTimedLine> _scanArrowCues(String text, List<_Line> lines) {
+  final List<int> arrows = <int>[
+    for (int i = 0; i < lines.length; i++)
+      if (_isArrowLine(text, lines[i])) i,
+  ];
+  final List<int> firsts = <int>[
+    for (int j = 0; j < arrows.length; j++)
+      _cueFirstLine(text, lines, arrows[j], j == 0 ? 0 : arrows[j - 1] + 1),
+  ];
   final List<SubtitleTimedLine> out = <SubtitleTimedLine>[];
-  for (int i = 0; i < lines.length; i++) {
-    final SubtitleTimedLine? cue = _scanArrowCue(text, lines, i);
+  for (int j = 0; j < arrows.length; j++) {
+    final int limit = j + 1 < arrows.length ? firsts[j + 1] : lines.length;
+    final SubtitleTimedLine? cue = _scanArrowCue(
+      text,
+      lines,
+      arrows[j],
+      firsts[j],
+      limit,
+    );
     if (cue != null) out.add(cue);
   }
   return out;
 }
 
-SubtitleTimedLine? _scanArrowCue(String text, List<_Line> lines, int i) {
+/// cue 块的首行：时间戳行，或紧挨其上的序号行（纯数字）/ 独立成段的 VTT 标识行。
+int _cueFirstLine(String text, List<_Line> lines, int arrow, int floor) {
+  final int prev = arrow - 1;
+  if (prev < floor || _isBlank(text, lines[prev])) return arrow;
+  final bool index = _digitsOnly.hasMatch(
+    text.substring(lines[prev].start, lines[prev].end),
+  );
+  final bool standsAlone = prev == 0 || _isBlank(text, lines[prev - 1]);
+  return index || standsAlone ? prev : arrow;
+}
+
+SubtitleTimedLine? _scanArrowCue(
+  String text,
+  List<_Line> lines,
+  int i,
+  int first,
+  int limit,
+) {
   final _Line line = lines[i];
   final int arrow = text.indexOf('-->', line.start);
-  if (arrow < 0 || arrow >= line.end) return null;
   final SubtitleTimestamp? start = _trimmedStamp(text, line.start, arrow);
   int e = arrow + 3;
   while (e < line.end && text.codeUnitAt(e) == 0x20) {
@@ -358,18 +431,14 @@ SubtitleTimedLine? _scanArrowCue(String text, List<_Line> lines, int i) {
   }
   final SubtitleTimestamp? end = SubtitleTimestamp.parse(text, e, f);
   if (start == null || end == null) return null;
-  int first = i;
-  while (first > 0 && !_isBlank(text, lines[first - 1])) {
-    first--;
-  }
   int last = i;
   final StringBuffer body = StringBuffer();
-  while (last + 1 < lines.length && !_isBlank(text, lines[last + 1])) {
+  while (last + 1 < limit && !_isBlank(text, lines[last + 1])) {
     last++;
     body.writeln(text.substring(lines[last].start, lines[last].end));
   }
   int after = last + 1;
-  while (after < lines.length && _isBlank(text, lines[after])) {
+  while (after < limit && _isBlank(text, lines[after])) {
     after++;
   }
   return SubtitleTimedLine(
@@ -382,12 +451,13 @@ SubtitleTimedLine? _scanArrowCue(String text, List<_Line> lines, int i) {
       start,
       end,
     ),
+    droppable: end.ms > start.ms,
   );
 }
 
 SubtitleTimestamp? _trimmedStamp(String text, int s, int e) {
-  while (s < e &&
-      (text.codeUnitAt(s) == 0x20 || text.codeUnitAt(s) == 0xfeff)) {
+  s = _bomLength(text, s);
+  while (s < e && text.codeUnitAt(s) == 0x20) {
     s++;
   }
   while (e > s && text.codeUnitAt(e - 1) == 0x20) {
@@ -426,6 +496,17 @@ class SubtitleRetimeOutcome {
   final int droppedCount;
 }
 
+bool _blocksDisjoint(List<SubtitleTimedLine> lines) {
+  for (int i = 0; i < lines.length; i++) {
+    final SubtitleTimedLine l = lines[i];
+    if (l.blockStart > l.startStamp.start || l.endStamp.end > l.blockEnd) {
+      return false;
+    }
+    if (i > 0 && l.blockStart < lines[i - 1].blockEnd) return false;
+  }
+  return true;
+}
+
 bool _isIdentity(List<AlignmentSegment> segments) =>
     segments.every((AlignmentSegment s) => s.offsetSeconds.abs() < 0.0005);
 
@@ -447,28 +528,31 @@ SubtitleRetimeOutcome retimeSubtitleBytes(
   final List<({double lo, double hi})> removed = alignmentRemovedSpans(
     segments,
   );
+  final List<SubtitleTimedLine> lines = scanSubtitleTimedLines(text);
+  // 扫描保证块互不重叠；万一某种畸形输入打破了它，整份原样返回——宁可不改。
+  if (!_blocksDisjoint(lines)) {
+    return SubtitleRetimeOutcome(
+      bytes: bytes,
+      shiftedCount: 0,
+      droppedCount: 0,
+    );
+  }
   final StringBuffer out = StringBuffer();
   int cursor = 0;
   int shifted = 0;
   int dropped = 0;
-  for (final SubtitleTimedLine l in scanSubtitleTimedLines(text)) {
-    // 不规范的 SRT（cue 之间缺空行）会让相邻块重叠：前一块若已整块删掉，
-    // 这条就在被删的范围里，不能再往回写。
-    if (l.startStamp.start < cursor) {
-      dropped++;
-      continue;
-    }
+  for (final SubtitleTimedLine l in lines) {
     final double startSec = l.startMs / 1000.0;
     final int delta = (alignmentOffsetAt(segments, startSec) * 1000).round();
     final bool gone =
-        l.endMs + delta <= 0 ||
-        removed.any(
-          (({double lo, double hi}) r) => r.lo <= startSec && startSec < r.hi,
-        );
+        l.droppable &&
+        (l.endMs + delta <= 0 ||
+            removed.any(
+              (({double lo, double hi}) r) =>
+                  r.lo <= startSec && startSec < r.hi,
+            ));
     if (gone) {
-      out.write(
-        text.substring(cursor, l.blockStart < cursor ? cursor : l.blockStart),
-      );
+      out.write(text.substring(cursor, l.blockStart));
       cursor = l.blockEnd;
       dropped++;
       continue;

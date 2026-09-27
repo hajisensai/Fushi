@@ -440,9 +440,9 @@ List<double>? _earnsItself(
   return rates;
 }
 
-/// 断点位置：与最优只差不超过 [_tieSlack] 次命中的切点都算平手（断点落在 OP 静音里，
-/// 静音里每个位置得分相同），取最早的那个，同时报告整段不确定区间。
-({double at, double lo, double hi}) _boundaryTime(
+/// 断点的不确定区间（只报告，不决定切点）：与最优只差不超过 [_tieSlack] 次命中的
+/// 切点都算平手（断点落在 OP 静音里，静音里每个位置得分相同）。
+({double lo, double hi}) _breakSpan(
   List<double> ref,
   List<Int32List> prefix,
   int i0,
@@ -475,9 +475,51 @@ List<double>? _earnsItself(
   final List<int> ks = ties.where((int k) => k > 0 && k < ref.length).toList();
   if (ks.isEmpty) {
     final double t = ref[fallbackCut.clamp(0, ref.length - 1)];
-    return (at: t, lo: t, hi: t);
+    return (lo: t, hi: t);
   }
-  return (at: ref[ks.first], lo: ref[ks.first], hi: ref[ks.last]);
+  return (lo: ref[ks.first], hi: ref[ks.last]);
+}
+
+/// 断点在**参考时间**上的位置 t*，由最优切点 [cut]（参考 cue `ref[cut]` 是后段第一条）
+/// 两侧的 cue 与两段偏移决定。
+///
+/// 不能取平手区间里最早的那个：那会让 t* 恰好落在前段最后一条参考 cue 上，换算到
+/// 字幕时间后前段最后一句被判进后段——正跳变被推迟一整段 CM、负跳变落进被删区间
+/// （审查实测：600s 处 30s CM，597.6s 那句被推迟 30s / 被删）。
+///
+/// 可行区间：前段最后一句要留在前段 ⇒ t* > ref[first-1]；后段第一句不能被归到前段、
+/// 也不能落进被删区间 ⇒ t* ≤ ref[last] − max(0, 后段偏移 − 前段偏移)。first / last 是
+/// 命中数**恰好**等于最优的切点范围——夹在中间的参考 cue 在两个偏移下都对不上
+/// （只有参考那边有的句子），不提供任何信息，不能拿它当边界。取中点，给两侧的抖动
+/// （±[kAlignMatchTolerance]）都留余量；区间退化时取上界。
+double _breakTime(
+  List<double> ref,
+  List<Int32List> prefix,
+  int i0,
+  int i1,
+  int c1,
+  int c2,
+  double before,
+  double after,
+) {
+  int total(int k) =>
+      prefix[c1][k] - prefix[c1][i0] + prefix[c2][i1] - prefix[c2][k];
+  int best = -1;
+  int first = i0 + 1;
+  int last = i0 + 1;
+  for (int k = i0 + 1; k < i1; k++) {
+    final int t = total(k);
+    if (t > best) {
+      best = t;
+      first = k;
+      last = k;
+    } else if (t == best) {
+      last = k;
+    }
+  }
+  final double lo = ref[first - 1];
+  final double hi = ref[last] - math.max(0.0, after - before);
+  return hi > lo ? (lo + hi) / 2 : hi;
 }
 
 /// 用真实目标函数在 ±0.6s 上逐 0.01s 精修一段的偏移，取平台中心。
@@ -786,30 +828,44 @@ SubtitleReferenceFit _assembleFit(
 ) {
   final List<int> bounds = split.bounds;
   final List<int> labels = split.labels;
-  final List<AlignmentSegment> segments = <AlignmentSegment>[];
-  final List<({double lo, double hi})> spans = <({double lo, double hi})>[];
-  for (int i = 0; i < labels.length; i++) {
-    final double offset = _refineSegment(
-      ref.sublist(bounds[i], bounds[i + 1]),
-      sub,
-      cands[labels[i]],
-    );
-    if (i == labels.length - 1) {
-      segments.add(AlignmentSegment(splitSeconds: null, offsetSeconds: offset));
-      continue;
-    }
-    final ({double at, double lo, double hi}) t = _boundaryTime(
-      ref,
-      prefix,
-      bounds[i],
-      bounds[i + 2],
-      labels[i],
-      labels[i + 1],
-      bounds[i + 1],
-    );
-    segments.add(AlignmentSegment(splitSeconds: t.at, offsetSeconds: offset));
-    spans.add((lo: t.lo, hi: t.hi));
-  }
+  final List<double> offsets = <double>[
+    for (int i = 0; i < labels.length; i++)
+      _refineSegment(
+        ref.sublist(bounds[i], bounds[i + 1]),
+        sub,
+        cands[labels[i]],
+      ),
+  ];
+  final List<AlignmentSegment> segments = <AlignmentSegment>[
+    for (int i = 0; i < labels.length; i++)
+      AlignmentSegment(
+        splitSeconds: i == labels.length - 1
+            ? null
+            : _breakTime(
+                ref,
+                prefix,
+                bounds[i],
+                bounds[i + 2],
+                labels[i],
+                labels[i + 1],
+                offsets[i],
+                offsets[i + 1],
+              ),
+        offsetSeconds: offsets[i],
+      ),
+  ];
+  final List<({double lo, double hi})> spans = <({double lo, double hi})>[
+    for (int i = 0; i < labels.length - 1; i++)
+      _breakSpan(
+        ref,
+        prefix,
+        bounds[i],
+        bounds[i + 2],
+        labels[i],
+        labels[i + 1],
+        bounds[i + 1],
+      ),
+  ];
   final ({List<AlignmentBucket> rows, List<AlignmentBucket> failing}) walk =
       _walkBuckets(ref, hits, cands, bounds, labels, chance);
   return SubtitleReferenceFit(

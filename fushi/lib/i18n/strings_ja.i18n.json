@@ -5692,5 +5692,6 @@
   "video_subtitle_reference_sync_apply": "Apply",
   "video_subtitle_reference_sync_restore_title": "Already auto-aligned",
   "video_subtitle_reference_sync_restore_body": "It was retimed to the embedded subtitle tracks when it was downloaded. Restore the original timing as a new subtitle file?",
-  "video_subtitle_reference_sync_restore": "Restore original"
+  "video_subtitle_reference_sync_restore": "Restore original",
+  "video_subtitle_reference_sync_failed": "Couldn't read or save the subtitle file"
 }

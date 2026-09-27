@@ -1,5 +1,6 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
+import 'dart:convert' show utf8;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -177,6 +178,7 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
@@ -1432,6 +1434,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
+
+  /// 「按内嵌字幕对齐」进行中：抽轨可能要几十秒，期间再点不重入。
+  bool _referenceSyncRunning = false;
 
   /// BUG-1863：本页在前台期间是否真的进过后台（`paused` / `hidden`，**不含**
   /// `inactive`）。回前台时据它决定要不要重建视频解码链，见
