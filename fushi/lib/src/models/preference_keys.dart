@@ -274,6 +274,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
   // 设备本地键：值是本库自增 id，不进 Profile 快照、不随备份 / 分享出境。
   'stats_legacy_profile_id',
+  // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
+  // （embedded_reference_subtitle_sync.dart）。
+  'subtitle_reference_sync_enabled',
   'sync_backend_type',
   'texthooker_enabled',
   'texthooker_urls',
