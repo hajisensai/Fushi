@@ -478,7 +478,7 @@ AiVideoIdentityDecider createPreferencesVideoAcquisitionIdentityDecider(
   final AiChatClient client = clientFactory?.call() ?? AiChatClient();
   final WebKnowledgeClient web =
       webFactory?.call() ??
-      WebKnowledgeClient(sources: prefsRepo.aiWebKnowledgeSources);
+      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
   try {
     return await requestAiVideoAcquisitionIdentity(
       client: client,

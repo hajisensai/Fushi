@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:fushi/src/models/preferences_repository.dart'
     show kDownloadExecutionHostPrefKey, kGameStreamRemoteLaunchPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -951,41 +953,47 @@ class SyncRepository {
     return id;
   }
 
-  // ── Jellyfin / Emby 媒体服务器 ───────────────────────────────────
+  // ── 媒体服务器（Jellyfin / Emby / Plex） ─────────────────────────────
 
   /// v1 单服务器键（一条 [JellyfinServerConfig] JSON）。只在 [getJellyfinServers]
   /// 的一次性迁移里读，此后不再写；常量保留是为了黑名单与迁移代码引用同一字面量。
   static const _keyJellyfinServer = 'sync_jellyfin_server';
 
-  /// v2 多服务器键：JSON 数组，每项 [JellyfinServerConfig.toJson]。列表顺序 =
-  /// 用户添加顺序（视频页「媒体服务器」栏目一台一张卡片按此排）。
+  /// v2 多服务器键：JSON 数组，每项 [MediaServerConfig.toJson]。列表顺序 =
+  /// 用户添加顺序（视频页「媒体服务器」栏目一台一张卡片按此排）。键名带
+  /// `jellyfin` 是历史名（冻结）：Plex 等其它类型也落在这个数组里，按 `kind`
+  /// 字段区分，缺字段 = Jellyfin。
   static const _keyJellyfinServers = 'sync_jellyfin_servers';
 
-  /// 已登录的全部 Jellyfin/Emby 服务器（按添加顺序）；未配置 → 空列表。
+  /// 已登录的全部媒体服务器（Jellyfin 家族 + Plex，按添加顺序）；未配置 → 空列表。
+  ///
+  /// 与 Jellyfin 共用 [_keyJellyfinServers]（键名冻结不改）：每项按
+  /// `kind` 字段经 [decodeMediaServerConfig] 分发，**缺字段按 Jellyfin 读**
+  /// （存量数据全是它）。认不出的 `kind` 与脏项逐项丢弃。
   ///
   /// **旧单值键迁移在读路径完成**：列表键不存在而 [_keyJellyfinServer] 存在时，把
   /// 旧值包成单元素列表写进列表键并删旧键。不走 schema migration——这只是 prefs
   /// 表里一行 JSON 的形状变化，读一次就收敛，且旧键脏 JSON 时同样删旧键（它本来
   /// 也读成「未配置」，留着只会让每次读都重跑一遍迁移）。
   ///
-  /// 脏项（非 Map / 缺 serverUrl、userId、accessToken）逐项丢弃，不整列表作废：
-  /// 一台服务器的配置坏了不该把其它几台一起登出。
-  Future<List<JellyfinServerConfig>> getJellyfinServers() async {
+  /// 脏项（非 Map / 缺必填字段）逐项丢弃，不整列表作废：一台服务器的配置坏了
+  /// 不该把其它几台一起登出。
+  Future<List<MediaServerConfig>> getMediaServers() async {
     final String? raw = await _getStringOrNull(_keyJellyfinServers);
-    if (raw != null) return _decodeJellyfinServers(raw);
+    if (raw != null) return _decodeMediaServers(raw);
     final String? legacy = await _getStringOrNull(_keyJellyfinServer);
-    if (legacy == null) return const <JellyfinServerConfig>[];
+    if (legacy == null) return const <MediaServerConfig>[];
     final JellyfinServerConfig? migrated = _decodeJellyfinServer(legacy);
-    final List<JellyfinServerConfig> servers = <JellyfinServerConfig>[
+    final List<MediaServerConfig> servers = <MediaServerConfig>[
       if (migrated != null) migrated,
     ];
-    await setJellyfinServers(servers);
+    await setMediaServers(servers);
     await _deleteKey(_keyJellyfinServer);
     return servers;
   }
 
   /// 整表覆盖；空列表 = 删键（全部登出）。
-  Future<void> setJellyfinServers(List<JellyfinServerConfig> servers) async {
+  Future<void> setMediaServers(List<MediaServerConfig> servers) async {
     if (servers.isEmpty) {
       await _deleteKey(_keyJellyfinServers);
       return;
@@ -993,9 +1001,64 @@ class SyncRepository {
     await _setString(
       _keyJellyfinServers,
       jsonEncode(<Map<String, Object?>>[
-        for (final JellyfinServerConfig s in servers) s.toJson(),
+        for (final MediaServerConfig s in servers) s.toJson(),
       ]),
     );
+  }
+
+  /// 按 [MediaServerConfig.sourceId] 身份替换（原位，不打乱用户排好的顺序）或追加。
+  Future<void> upsertMediaServer(MediaServerConfig config) async {
+    final List<MediaServerConfig> servers = await getMediaServers();
+    final int index = servers.indexWhere(
+      (MediaServerConfig s) => s.sourceId == config.sourceId,
+    );
+    final List<MediaServerConfig> next = List<MediaServerConfig>.of(servers);
+    if (index < 0) {
+      next.add(config);
+    } else {
+      next[index] = config;
+    }
+    await setMediaServers(next);
+  }
+
+  /// 只登出一台（按 [MediaServerConfig.sourceId]）；不在列表里 = no-op。
+  Future<void> removeMediaServer(String sourceId) async {
+    final List<MediaServerConfig> servers = await getMediaServers();
+    final List<MediaServerConfig> next = <MediaServerConfig>[
+      for (final MediaServerConfig s in servers)
+        if (s.sourceId != sourceId) s,
+    ];
+    if (next.length == servers.length) return;
+    await setMediaServers(next);
+  }
+
+  /// 已登录的全部 Jellyfin/Emby 服务器（按添加顺序）；未配置 → 空列表。
+  /// = [getMediaServers] 里 [MediaServerKind.jellyfin] 的那些（Plex 不在其中）。
+  Future<List<JellyfinServerConfig>> getJellyfinServers() async =>
+      <JellyfinServerConfig>[
+        for (final MediaServerConfig s in await getMediaServers())
+          if (s is JellyfinServerConfig) s,
+      ];
+
+  /// 覆盖全部 Jellyfin 家族服务器；**其它类型（Plex）原样保留**在原位。空列表 =
+  /// 只登出全部 Jellyfin 家族服务器（整表空了才删键）。
+  ///
+  /// 保序口径：旧表里 Jellyfin 项的槽位按顺序由 [servers] 依次填入，多出来的
+  /// 追加到末尾、少了的槽位删掉；非 Jellyfin 项位置不动。
+  Future<void> setJellyfinServers(List<JellyfinServerConfig> servers) async {
+    final List<MediaServerConfig> current = await getMediaServers();
+    final Iterator<JellyfinServerConfig> replacements = servers.iterator;
+    final List<MediaServerConfig> next = <MediaServerConfig>[
+      for (final MediaServerConfig s in current)
+        if (s is! JellyfinServerConfig)
+          s
+        else if (replacements.moveNext())
+          replacements.current,
+    ];
+    while (replacements.moveNext()) {
+      next.add(replacements.current);
+    }
+    await setMediaServers(next);
   }
 
   /// 按 `(serverUrl, userId)` 身份替换或追加一台服务器。
@@ -1003,53 +1066,17 @@ class SyncRepository {
   /// 身份键走 [JellyfinVideoClient.sourceIdFor]（= 远端清单缓存槽的身份），同一
   /// 账号重复登录只是换令牌 / 改库选择，列表里不会出现第二张同服务器卡片；替换
   /// 保持原位，不把用户排好的顺序打乱。
-  Future<void> upsertJellyfinServer(JellyfinServerConfig config) async {
-    final String id = JellyfinVideoClient.sourceIdFor(
-      serverUrl: config.serverUrl,
-      userId: config.userId,
-    );
-    final List<JellyfinServerConfig> servers = await getJellyfinServers();
-    final int index = servers.indexWhere(
-      (JellyfinServerConfig s) =>
-          JellyfinVideoClient.sourceIdFor(
-            serverUrl: s.serverUrl,
-            userId: s.userId,
-          ) ==
-          id,
-    );
-    final List<JellyfinServerConfig> next = List<JellyfinServerConfig>.of(
-      servers,
-    );
-    if (index < 0) {
-      next.add(config);
-    } else {
-      next[index] = config;
-    }
-    await setJellyfinServers(next);
-  }
+  Future<void> upsertJellyfinServer(JellyfinServerConfig config) =>
+      upsertMediaServer(config);
 
   /// 只登出一台（按 `(serverUrl, userId)` 身份）；不在列表里 = no-op。
   Future<void> removeJellyfinServer({
     required String serverUrl,
     required String userId,
-  }) async {
-    final String id = JellyfinVideoClient.sourceIdFor(
-      serverUrl: serverUrl,
-      userId: userId,
-    );
-    final List<JellyfinServerConfig> servers = await getJellyfinServers();
-    final List<JellyfinServerConfig> next = <JellyfinServerConfig>[
-      for (final JellyfinServerConfig s in servers)
-        if (JellyfinVideoClient.sourceIdFor(
-              serverUrl: s.serverUrl,
-              userId: s.userId,
-            ) !=
-            id)
-          s,
-    ];
-    if (next.length == servers.length) return;
-    await setJellyfinServers(next);
-  }
+  }) =>
+      removeMediaServer(
+        JellyfinVideoClient.sourceIdFor(serverUrl: serverUrl, userId: userId),
+      );
 
   /// 过渡口径：**列表第一项**（多服务器化之前只有一台，「第一台」就是那一台）。
   /// 单远端源架构的消费端（home_video_page `_resolveJellyfinVideoClient`）在改成
@@ -1060,24 +1087,24 @@ class SyncRepository {
     return servers.isEmpty ? null : servers.first;
   }
 
-  /// 过渡口径：`null` = 清空全部（旧的「登出 = 删键」语义，多台时等于全部登出）；
-  /// 非 null = [upsertJellyfinServer]。新代码用 [upsertJellyfinServer] /
-  /// [removeJellyfinServer] 点名操作。
+  /// 过渡口径：`null` = 清空全部 Jellyfin 家族服务器（旧的「登出 = 删键」语义，
+  /// 多台时等于全部登出；Plex 不受影响）；非 null = [upsertJellyfinServer]。新代码
+  /// 用 [upsertJellyfinServer] / [removeJellyfinServer] 点名操作。
   @Deprecated('Use upsertJellyfinServer / removeJellyfinServer')
   Future<void> setJellyfinServer(JellyfinServerConfig? config) => config == null
       ? setJellyfinServers(const <JellyfinServerConfig>[])
       : upsertJellyfinServer(config);
 
-  static List<JellyfinServerConfig> _decodeJellyfinServers(String raw) {
-    if (raw.isEmpty) return const <JellyfinServerConfig>[];
+  static List<MediaServerConfig> _decodeMediaServers(String raw) {
+    if (raw.isEmpty) return const <MediaServerConfig>[];
     try {
       final Object? decoded = jsonDecode(raw);
       if (decoded is List) {
-        return <JellyfinServerConfig>[
+        return <MediaServerConfig>[
           for (final Object? item in decoded)
             if (item is Map<String, dynamic>)
-              if (JellyfinServerConfig.fromJson(item)
-                  case final JellyfinServerConfig config)
+              if (decodeMediaServerConfig(item)
+                  case final MediaServerConfig config)
                 config,
         ];
       }
@@ -1085,7 +1112,7 @@ class SyncRepository {
       // Best-effort: 脏 JSON 一律当「未配置」（下面返回空表），不弹错也不抛——
       // 这条只是读缓存里的服务器配置，设置页会让用户重新登录。
     }
-    return const <JellyfinServerConfig>[];
+    return const <MediaServerConfig>[];
   }
 
   static JellyfinServerConfig? _decodeJellyfinServer(String raw) {

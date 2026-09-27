@@ -25,6 +25,9 @@ const Set<String> kCredentialQueryParams = <String>{
   // 在有效期内直下该文件，照样不进可上传日志。
   'sign',
   'api_key',
+  // Plex：流 / 封面 / 字幕直链把令牌放在 `X-Plex-Token` 查询参数里（播放器与
+  // 图片解码器没有头通道）。比较按小写。
+  'x-plex-token',
   'apikey',
   'key',
   'access_token',
