@@ -31,6 +31,7 @@ class FushiPairSession {
     required this.remoteAddress,
     required this.createdAt,
     this.clientDeviceId,
+    this.ticketId,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -62,6 +63,11 @@ class FushiPairSession {
 
   /// 会话创建时刻（TTL 判定基准，TTL 加固在 M3，本阶段先记录）。
   final DateTime createdAt;
+
+  /// 本会话凭 host 签发的一次性配对票据（扫码 / 复制链接）发起时的票据 id；
+  /// 此时 [pin] 是票据 secret，host 屏上打开二维码即视为已批准，不再弹审批框。
+  /// null = 普通 PIN / LAN 配对。
+  final String? ticketId;
 
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
   /// 防 nonce 重放。

@@ -89,6 +89,19 @@ extension _FushiSyncServerPairing on FushiSyncServer {
             : null;
     final String? remote = _remoteAddress(request);
 
+    // 扫码 / 复制链接配对：凭 host 签发的一次性票据
+    // （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。老 client 不带此字段。
+    final String? ticketRef = body?['ticket']?.toString().trim();
+    if (ticketRef != null && ticketRef.isNotEmpty) {
+      return _startTicketPairSession(
+        ticketRef: ticketRef,
+        clientNonce: clientNonce,
+        deviceName: deviceName,
+        remote: remote,
+        clientDeviceId: clientDeviceId,
+      );
+    }
+
     final bool isLanPeer = FushiPairingProtocol.isPrivateLanAddress(remote);
     final bool lanRequiresPin =
         await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
@@ -166,6 +179,50 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
+  /// 票据配对会话：票据 secret 代替 PIN（`pinRequired` 恒 true，confirm 路径与 PIN
+  /// 会话逐字相同），host 屏上打开二维码即视为已批准——不弹审批框、不生成屏显 PIN。
+  /// 票据不符或过期一律回 'expired'：client 只需说「二维码已失效，请在主机上重新
+  /// 打开」，不必区分「被刷新掉了」与「超时了」。
+  shelf.Response _startTicketPairSession({
+    required String ticketRef,
+    required String clientNonce,
+    required String? deviceName,
+    required String? remote,
+    required String? clientDeviceId,
+  }) {
+    final FushiPairTicket? ticket = _pairTicket;
+    if (ticket == null ||
+        !FushiPairingProtocol.constantTimeEquals(ticket.id, ticketRef)) {
+      return _pairDenied('expired');
+    }
+    if (!ticket.isValidAt(_now())) {
+      _pairTicket = null;
+      return _pairDenied('expired');
+    }
+    _prunePairSessions();
+    _enforcePairSessionCap();
+    _pinRateLimiter.prune(_now());
+    final String sessionId = FushiPairingProtocol.generateNonce();
+    final String hostNonce = FushiPairingProtocol.generateNonce();
+    _pairSessions[sessionId] = FushiPairSession(
+      sessionId: sessionId,
+      clientNonce: clientNonce,
+      hostNonce: hostNonce,
+      pin: ticket.secret,
+      pinRequired: true,
+      deviceName: deviceName,
+      remoteAddress: remote,
+      createdAt: _now(),
+      clientDeviceId: clientDeviceId,
+      ticketId: ticket.id,
+    );
+    return jsonResponse(<String, dynamic>{
+      'sessionId': sessionId,
+      'pinRequired': true,
+      'hostNonce': hostNonce,
+    });
+  }
+
   /// TODO-961 M1: POST /api/pair/v2/confirm {sessionId, pinProof} → 200 {token,
   /// hostFingerprint}。校验 pinProof（双 nonce HMAC），通过后 **仍** 需 host 人工
   /// 点允许（双重确认）才派 token。同一 sessionId 二次 confirm（重放）一律拒。
@@ -211,7 +268,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 的 PIN（用它算了 proof），host 那个常驻 PIN 弹窗就该收起——无论本次 proof 对错
     // （PIN 已一次性消费，重试要走新会话拿新 PIN）。在此单点触发，避开后面多个 return
     // 分支各自补一遍。免 PIN 会话没有常驻弹窗，不触发。
-    if (session.pinRequired) onPairSessionResolved?.call();
+    // 票据会话没有屏显 PIN 弹窗可收（收了反而会误关同时进行的另一次 PIN 配对）。
+    if (session.pinRequired && session.ticketId == null) {
+      onPairSessionResolved?.call();
+    }
 
     // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
     // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的
@@ -267,6 +327,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);
+    // 一次性票据：配成一台就作废（二维码被别人再扫一次也没用）。
+    if (session.ticketId != null && _pairTicket?.id == session.ticketId) {
+      _pairTicket = null;
+    }
 
     // TODO-961 M1b：per-peer token 派发。仅当 host 接线了落库回调（onPeerPaired）
     // **且** client 上报了稳定 deviceId 时，才生成本设备专属 token 并写库、回给该

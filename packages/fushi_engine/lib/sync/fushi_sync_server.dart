@@ -39,6 +39,7 @@ import 'package:fushi_engine/sync/host_jobs/host_job_routes.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -392,6 +393,39 @@ class FushiSyncServer {
   /// 测试缝：替换网卡枚举。
   @visibleForTesting
   Future<List<NetworkInterface>> Function()? interfaceLister;
+
+  /// 当前有效的一次性配对票据（同时只有一张：重新打开二维码即作废旧的）。
+  FushiPairTicket? _pairTicket;
+
+  /// 签发一次性配对票据（host 屏上显示二维码 / 复制链接时调用），旧票据随之作废。
+  /// secret 为 24 字节随机数（192 bit），代替 PIN 进 HMAC，不可爆破。
+  FushiPairTicket issuePairTicket({Duration ttl = const Duration(minutes: 5)}) {
+    final FushiPairTicket ticket = FushiPairTicket(
+      id: FushiPairingProtocol.generateNonce(),
+      secret: FushiPairingProtocol.generateNonce(),
+      expiresAt: _now().add(ttl),
+    );
+    _pairTicket = ticket;
+    return ticket;
+  }
+
+  /// 关掉二维码时调用：票据立即作废。
+  void revokePairTicket() => _pairTicket = null;
+
+  /// 组装配对链接（二维码 / 复制链接 / NFC 贴纸共用）。[ticket] 为 null 时是不带
+  /// 票据的长期链接（贴纸）。没有 hostId 的 host 无从被分组，抛 [StateError]。
+  Future<FushiPairLink> buildPairLink({FushiPairTicket? ticket}) async {
+    final String? id = hostId;
+    if (id == null) throw StateError('host id not configured');
+    return FushiPairLink(
+      hostId: id,
+      addresses: await _hostAddresses(),
+      deviceName: _deviceName,
+      fingerprint: _hostFingerprint,
+      ticketId: ticket?.id,
+      ticketSecret: ticket?.secret,
+    );
+  }
 
   /// 本 host 当前可公布的地址集。只在 LAN 开放时有意义——仅本机监听时公布网卡
   /// 地址等于告诉 client 一堆连不上的地址。
