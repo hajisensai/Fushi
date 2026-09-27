@@ -18,12 +18,17 @@ retain extension cookies, interceptors and connection behavior while obtaining
 the current per-URL policy. A failed request must not terminate the shared JVM
 and interrupt unrelated searches.
 
-Mihon shared clients use HTTP/1.1 and no idle connection reuse. Evicting only idle
-connections on a policy change is insufficient: an active HTTP/2 connection can
-accept new streams, and an active HTTP/1 connection can return to the old pool
-later. This trades extra connection handshakes for deterministic routing without
-aborting in-flight downloads. A future optimization requires policy-isolated
-connection pools, including clients derived by third-party extensions.
+Mihon shared clients keep no idle connections, so an HTTP/1 connection never
+returns to the pool under an old policy. HTTP/2 must stay negotiable: some
+sources sit behind Cloudflare WAF rules that block every HTTP/1.1 request (Miruro,
+BUG-2736). An active HTTP/2 connection accepts new streams without consulting the
+selector, so routing is enforced per exchange rather than per connection: the
+shared network interceptor asks the connection's own selector again and refuses
+an exchange whose route the current policy no longer lists. The refusal is a
+`ProtocolException`, which OkHttp does not retry (any other `IOException` would
+reconnect over the rejected route), and the stale connection takes no further
+exchanges. In-flight downloads are not aborted. Clients pinned to an explicit
+proxy are not policy-managed and skip the check.
 
 ## Security boundary
 

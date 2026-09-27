@@ -144,4 +144,38 @@ void main() {
       );
     }
   });
+
+  test('两端宿主都能协商 HTTP/2、逐次交换复核代理路由、解 brotli（BUG-2736）', () {
+    // Miruro 的 Cloudflare WAF 对 HTTP/1.1 的 /api/secure/pipe 一律 403；扩展
+    // 又在自己的网络拦截器里把 Accept-Encoding 改成含 br，解压只能靠宿主。
+    for (final String path in <String>[
+      '../third_party/m_extension_server/overlay/server/src/main/kotlin/'
+          'mextensionserver/impl/HostProxyPolicy.kt',
+      'android/app/src/main/kotlin/app/fushi/reader/mihon/HostProxyPolicy.kt',
+    ]) {
+      final String code = read(path);
+      expect(
+        code.contains('Protocol.HTTP_1_1'),
+        isFalse,
+        reason: '$path 又把扩展客户端钉回 HTTP/1.1 了',
+      );
+      expect(
+        code.contains(
+          'routeAllowedByCurrentPolicy(route, request.url.toUri())',
+        ),
+        isTrue,
+        reason: '$path 放开 HTTP/2 后必须逐次交换复核路由，否则复用的连接绕过代理策略',
+      );
+    }
+    for (final String path in <String>[
+      '$sidecarNetwork/NetworkHelper.kt',
+      '$androidNetwork/NetworkHelper.kt',
+    ]) {
+      expect(
+        read(path).contains('.addInterceptor(BrotliInterceptor)'),
+        isTrue,
+        reason: '$path 没装 BrotliInterceptor，br 响应会原样交给扩展',
+      );
+    }
+  });
 }
