@@ -404,6 +404,14 @@ class DropboxSyncBackend extends SyncBackend
   final PresignedLinkCache _temporaryLinks =
       PresignedLinkCache(ttl: const Duration(hours: 3));
 
+  /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号——
+  /// 资产 id 就是路径，换了账号同一路径是另一个文件——与文件夹缓存一起作废。
+  @override
+  void clearCache() {
+    super.clearCache();
+    _temporaryLinks.clear();
+  }
+
   @override
   Future<SyncAssetRange> openAssetRange(
     String assetId, {

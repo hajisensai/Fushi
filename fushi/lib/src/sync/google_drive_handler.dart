@@ -122,6 +122,7 @@ class GoogleDriveHandler with SyncFolderCache, SyncBackendFileTrioMixin {
   void clearCache() {
     super.clearCache();
     _cachedApi = null;
+    _fileSizes.clear();
   }
 
   // ── API client ────────────────────────────────────────────────────

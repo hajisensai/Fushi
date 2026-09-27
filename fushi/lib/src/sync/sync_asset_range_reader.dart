@@ -203,6 +203,11 @@ class PresignedLinkCache {
 
   /// 作废 [assetId] 的缓存直链（上游已拒绝它）。
   void invalidate(String assetId) => _entries.remove(assetId);
+
+  /// 清空全部缓存直链。直链属于签发它的账号：退出登录 / 换账号（后端的
+  /// `clearCache()`）后不能再拿旧账号的直链去读同一个 id——Dropbox 的资产 id 就是
+  /// 路径，新账号同一路径上是另一个文件。
+  void clear() => _entries.clear();
 }
 
 /// 上游对直链的这些状态码 = 链接过期 / 被吊销 / 签名失效，值得现取一条再试一次。
@@ -217,6 +222,12 @@ bool isPresignedLinkRejected(int statusCode) =>
 /// 直链经 [cache] 取；上游拒绝（[isPresignedLinkRejected]）时作废缓存、现取一条再
 /// 试**一次**，仍失败就抛 [SyncBackendError]。错误信息只带状态码，**不带 URL**
 /// （预签名 URL 本身就是凭据）。
+///
+/// 传输层失败同样不许带 URL：`package:http` 的 `ClientException.toString()` 是
+/// `'ClientException: <message>, uri=<完整 URL>'`，连接被拒 / 中途断开时原样冒上去，
+/// Dropbox `/cd/0/get/<签名>`、OneDrive `tempauth=` 就会随中继 / 播放页的日志进
+/// DebugLogService 与 logcat。这里（发请求与读响应体两处）把它换成只带 message 的
+/// [SyncBackendError]。
 Future<SyncAssetRange> openPresignedAssetRange({
   required http.Client client,
   required PresignedLinkCache cache,
@@ -229,12 +240,18 @@ Future<SyncAssetRange> openPresignedAssetRange({
     final Uri url = await cache.link(assetId, fetchLink);
     final http.Request request = http.Request('GET', url)
       ..headers['Range'] = 'bytes=$start-${end ?? ''}';
-    final http.StreamedResponse response = await client.send(request);
+    final http.StreamedResponse response;
+    try {
+      response = await client.send(request);
+    } on http.ClientException catch (e) {
+      throw _linkFreeTransportError(e);
+    }
+    final Stream<List<int>> body = _withLinkFreeErrors(response.stream);
     final int status = response.statusCode;
     if (status == 206 || status == 200) {
-      return _rangeFromResponse(response, start: start, end: end);
+      return _rangeFromResponse(response, body, start: start, end: end);
     }
-    await response.stream.drain<void>();
+    await body.drain<void>();
     if (status == 416) {
       throw SyncAssetRangeNotSatisfiable(
         _unsatisfiedTotal(response.headers['content-range']),
@@ -252,8 +269,25 @@ Future<SyncAssetRange> openPresignedAssetRange({
   }
 }
 
+/// 传输层失败的无链接版本：只留 `ClientException.message`（连接被拒 / 重置 / 中途
+/// 断开之类），丢掉 `uri`。
+SyncBackendError _linkFreeTransportError(http.ClientException error) =>
+    SyncBackendError(
+      'cloud asset range read failed: ${error.message}',
+      isRetryable: true,
+    );
+
+/// 响应体流里的 `ClientException`（读到一半连接断了）同样换成 [_linkFreeTransportError]。
+Stream<List<int>> _withLinkFreeErrors(Stream<List<int>> body) =>
+    body.handleError(
+      (Object error) =>
+          throw _linkFreeTransportError(error as http.ClientException),
+      test: (Object? error) => error is http.ClientException,
+    );
+
 SyncAssetRange _rangeFromResponse(
-  http.StreamedResponse response, {
+  http.StreamedResponse response,
+  Stream<List<int>> body, {
   required int start,
   int? end,
 }) {
@@ -261,23 +295,33 @@ SyncAssetRange _rangeFromResponse(
   if (response.statusCode == 206) {
     final ({int start, int end, int? total})? range =
         parseContentRange(response.headers['content-range']);
-    if (range != null) {
-      return SyncAssetRange(
-        start: range.start,
-        end: range.end,
-        totalBytes: range.total ?? range.end + 1,
-        contentType: type,
-        bytes: response.stream,
+    if (range == null) {
+      // 206 却给不出可解析的 Content-Range：不知道这段字节落在文件哪儿。不能落进下面
+      // 的 200 分支——那里把 Content-Length（只是这一段的长度）当总长、再按 [start]
+      // 跳前段，交出去的是错位的字节。
+      unawaited(body.listen(null).cancel());
+      throw SyncBackendError(
+        'cloud asset range read failed: HTTP 206 without a parsable '
+        'Content-Range',
       );
     }
+    return SyncAssetRange(
+      start: range.start,
+      end: range.end,
+      totalBytes: range.total ?? range.end + 1,
+      contentType: type,
+      bytes: body,
+    );
   }
   // 200：上游忽略了 Range，回的是整文件——自己跳过前段、截掉尾段。
   final int? total = response.contentLength;
   if (total == null) {
+    unawaited(body.listen(null).cancel());
     throw SyncBackendError('cloud asset range read failed: unknown length');
   }
   if (start >= total) {
-    unawaited(response.stream.drain<void>());
+    // 回的是整个文件：取消而不是 drain，免得为一个越界请求把整文件下完。
+    unawaited(body.listen(null).cancel());
     throw SyncAssetRangeNotSatisfiable(total);
   }
   final int last = end == null || end >= total ? total - 1 : end;
@@ -286,8 +330,7 @@ SyncAssetRange _rangeFromResponse(
     end: last,
     totalBytes: total,
     contentType: type,
-    bytes:
-        sliceByteStream(response.stream, skip: start, take: last - start + 1),
+    bytes: sliceByteStream(body, skip: start, take: last - start + 1),
   );
 }
 

@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/diagnostics/video_diag_log.dart'
+    show redactVideoDiagSecrets;
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show parseRelayRange;
 import 'package:fushi/src/sync/sync_asset_range_reader.dart';
@@ -64,8 +67,23 @@ class CloudVideoStreamRelay {
     return relay;
   }
 
+  /// 登记表上限。每条只是一个 reader 引用 + 资产身份，要防的是「只增不删」：视频页
+  /// 每次刷新都会新建 client / reader，同一资产被反复登记。超出时淘汰最久没用过的
+  /// 一条；在播的流每个 `Range` 请求都会把自己挪到最新，不会被挤掉。
+  static const int maxEntries = 64;
+
+  /// 每写出这么多字节就等一次 [HttpResponse.flush]，见 [_stream] 的背压说明。
+  static const int flushThresholdBytes = 1024 * 1024;
+
   final HttpServer _server;
-  final Map<String, _CloudRelayEntry> _entries = <String, _CloudRelayEntry>{};
+
+  /// token → 登记项；插入序即「最近使用」序（登记 / 请求都会挪到末尾）。
+  final LinkedHashMap<String, _CloudRelayEntry> _entries =
+      LinkedHashMap<String, _CloudRelayEntry>();
+
+  /// `(source, assetId)` → token：同一云盘的同一资产无论经哪个 reader 实例登记，
+  /// 都复用同一个本地地址。
+  final Map<String, String> _tokensByAsset = <String, String>{};
   final Random _random = Random.secure();
   bool _closed = false;
 
@@ -73,26 +91,49 @@ class CloudVideoStreamRelay {
 
   int get port => _server.port;
 
-  /// 登记一个云端资产，返回交给播放内核的本地地址。同一 reader + 资产重复登记复用
-  /// 同一 token。[fileName] 只用于地址末段（带扩展名，便于内核按后缀猜格式）。
+  /// 当前登记项数（测试用）。
+  @visibleForTesting
+  int get entryCount => _entries.length;
+
+  /// 登记一个云端资产，返回交给播放内核的本地地址。
+  ///
+  /// [source] 是云盘身份（如 `cloud:oneDrive`，见 `cloudRemoteLibrarySourceId`）：
+  /// 同一 [source] + [assetId] 重复登记复用同一 token，并把登记项的 reader 换成这次
+  /// 传入的（最新的 reader 带着最新的账号状态）。不能按 reader 实例去重——视频页每次
+  /// 刷新都会新建 reader，那样去重永远落空、登记表只增不删。
+  ///
+  /// [fileName] 只用于地址末段（带扩展名，便于内核按后缀猜格式）。
   Uri register({
     required SyncAssetRangeReader reader,
+    required String source,
     required String assetId,
     required String fileName,
   }) {
-    for (final MapEntry<String, _CloudRelayEntry> e in _entries.entries) {
-      if (identical(e.value.reader, reader) && e.value.assetId == assetId) {
-        return _localUri(e.key, e.value.fileName);
-      }
-    }
-    final String token = base64Url
-        .encode(List<int>.generate(18, (int _) => _random.nextInt(256)));
+    final String assetKey = '$source\n$assetId';
+    final String token = _tokensByAsset[assetKey] ??
+        base64Url
+            .encode(List<int>.generate(18, (int _) => _random.nextInt(256)));
+    _tokensByAsset[assetKey] = token;
+    _entries.remove(token);
     _entries[token] = _CloudRelayEntry(
       reader: reader,
+      assetKey: assetKey,
       assetId: assetId,
       fileName: fileName,
     );
+    while (_entries.length > maxEntries) {
+      final String oldest = _entries.keys.first;
+      final _CloudRelayEntry evicted = _entries.remove(oldest)!;
+      _tokensByAsset.remove(evicted.assetKey);
+    }
     return _localUri(token, fileName);
+  }
+
+  /// 取 [token] 的登记项并把它标成最近使用。
+  _CloudRelayEntry? _touch(String token) {
+    final _CloudRelayEntry? entry = _entries.remove(token);
+    if (entry != null) _entries[token] = entry;
+    return entry;
   }
 
   Uri _localUri(String token, String fileName) => Uri(
@@ -113,7 +154,7 @@ class CloudVideoStreamRelay {
       final List<String> segments = request.uri.pathSegments;
       final _CloudRelayEntry? entry =
           segments.length >= 2 && segments.first == 'cloud'
-              ? _entries[segments[1]]
+              ? _touch(segments[1])
               : null;
       if (entry == null) {
         response.statusCode = HttpStatus.notFound;
@@ -135,8 +176,13 @@ class CloudVideoStreamRelay {
       }
       await _stream(request, entry, range, ranged: rangeHeader != null);
     } on Object catch (error) {
-      // 只记异常类型与消息：区间读的错误信息按约定不带直链 / 凭据。
-      debugPrint('[cloud-stream-relay] ${request.method} failed: $error');
+      // 区间读的错误按约定不带直链 / 凭据（见 openPresignedAssetRange）；这里再兜一道
+      // 脱敏，任何漏网的预签名 URL（`tempauth=`、Dropbox `/cd/0/get/<签名>`、OneDrive
+      // 个人版路径签名）都不会原样进 DebugLogService / logcat。
+      debugPrint(
+        '[cloud-stream-relay] ${request.method} failed: '
+        '${redactVideoDiagSecrets('$error')}',
+      );
       await _abort(response);
     }
   }
@@ -196,9 +242,33 @@ class CloudVideoStreamRelay {
       (_) => clientGone = true,
       onError: (Object _) => clientGone = true,
     ));
+    // 背压：`HttpResponse.add` 只往一个同步 controller 里塞字节，socket 写不动时暂停
+    // 的是那个 controller 的订阅，controller 自己的缓冲没有上限，上游订阅也从不暂停
+    // （dart:io `_HttpOutgoing.addStream`）。libmpv / ffmpeg 发的是开区间
+    // `bytes=N-`，前向缓存满了（移动端 32MiB）就不再读，不加背压的话中继会继续全速
+    // 把整个文件的剩余部分拉下来、解混淆、堆进 Dart 堆——iOS jetsam / Android LMK、
+    // 流量等于整文件、逐字节 XOR 占着 UI isolate。
+    //
+    // 所以每写出约 [flushThresholdBytes] 就 `await flush()`：它要等已写的字节被
+    // socket 收下才返回，内核不读时就一直挂着；`await for` 的循环体在 await 期间会
+    // 暂停上游订阅 → 上游 HTTP 响应停读 → TCP 流控传回云盘。选它而不是按 2MiB 分块
+    // 重新请求上游，理由：
+    // - 一次内核请求仍只对应一次上游请求，吞吐等于直连（分块每块多一次 RTT，高码率
+    //   远程流会被拖慢）；上游忽略 Range 回 200 整文件时也仍是线性的（分块会让每块都
+    //   从文件头重下一遍）。
+    // - 暂停太久被云盘掐掉的上游连接，恢复读时表现为中途出错 → 下面断开内核连接；
+    //   libmpv 对 http 默认开着 ffmpeg 的 `reconnect`，会从断点带 `Range` 重新请求，
+    //   那一次又经 reader 现取直链 / 现刷 token——过期续上的语义不变。
+    int unflushed = 0;
     await for (final List<int> chunk in upstream.bytes) {
       if (clientGone) return;
       response.add(chunk);
+      unflushed += chunk.length;
+      if (unflushed >= flushThresholdBytes) {
+        unflushed = 0;
+        await response.flush();
+        if (clientGone) return;
+      }
     }
     if (clientGone) return;
     await response.close();
@@ -227,11 +297,15 @@ class CloudVideoStreamRelay {
 class _CloudRelayEntry {
   const _CloudRelayEntry({
     required this.reader,
+    required this.assetKey,
     required this.assetId,
     required this.fileName,
   });
 
   final SyncAssetRangeReader reader;
+
+  /// `_tokensByAsset` 的键（淘汰时一并删）。
+  final String assetKey;
   final String assetId;
   final String fileName;
 }

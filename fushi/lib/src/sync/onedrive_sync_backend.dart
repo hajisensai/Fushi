@@ -458,6 +458,14 @@ class OneDriveSyncBackend extends SyncBackend
   final PresignedLinkCache _downloadLinks =
       PresignedLinkCache(ttl: const Duration(minutes: 15));
 
+  /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号，
+  /// 与文件夹缓存一起作废。
+  @override
+  void clearCache() {
+    super.clearCache();
+    _downloadLinks.clear();
+  }
+
   @override
   Future<SyncAssetRange> openAssetRange(
     String assetId, {

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show DebugPrintCallback, debugPrint;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/cloud_video_stream_relay.dart';
@@ -280,9 +282,14 @@ void main() {
       );
     }
 
+    Uri register([SyncAssetRangeReader? other]) => relay.register(
+        reader: other ?? reader,
+        source: 'cloud:oneDrive',
+        assetId: 'asset-1',
+        fileName: 'vid1.mkv');
+
     test('无 Range → 200 整个明文；地址是 loopback，不含上游信息', () async {
-      final Uri url = relay.register(
-          reader: reader, assetId: 'asset-1', fileName: 'vid1.mkv');
+      final Uri url = register();
       expect(url.host, '127.0.0.1');
       expect(url.pathSegments.last, 'vid1.mkv');
       expect(url.toString(), isNot(contains('asset-1')));
@@ -295,8 +302,7 @@ void main() {
     });
 
     test('seek（Range）→ 206 + Content-Range，字节是明文', () async {
-      final Uri url = relay.register(
-          reader: reader, assetId: 'asset-1', fileName: 'vid1.mkv');
+      final Uri url = register();
       final r = await get(url, range: 'bytes=4000-');
       expect(r.status, 206);
       expect(r.headers['content-range'], 'bytes 4000-4999/${plain.length}');
@@ -306,8 +312,7 @@ void main() {
     });
 
     test('HEAD 只报总长；越界 Range → 416；未知 token → 404', () async {
-      final Uri url = relay.register(
-          reader: reader, assetId: 'asset-1', fileName: 'vid1.mkv');
+      final Uri url = register();
       final head = await get(url, method: 'HEAD');
       expect(head.status, 200);
       expect(head.headers['content-length'], '${plain.length}');
@@ -320,11 +325,227 @@ void main() {
     });
 
     test('同一资产重复登记复用同一地址', () {
-      final Uri a = relay.register(
-          reader: reader, assetId: 'asset-1', fileName: 'vid1.mkv');
-      final Uri b = relay.register(
-          reader: reader, assetId: 'asset-1', fileName: 'vid1.mkv');
+      final Uri a = register();
+      final Uri b = register();
       expect(a, b);
+    });
+
+    test('每次刷新新建 reader 也复用同一地址、登记表不增长，且改用最新 reader', () async {
+      // 视频页每次刷新都新建 CloudRemoteVideoClient → 新的 reader 实例。按 reader
+      // 实例去重会让同一资产每刷一次多一条登记（只增不删）。
+      final Uri first = register();
+      final _MemoryRangeReader fresh =
+          _MemoryRangeReader(<String, List<int>>{'asset-1': obfuscated});
+      Uri? last;
+      for (int i = 0; i < 10; i++) {
+        last = register(DeobfuscatingAssetRangeReader(fresh));
+      }
+      expect(last, first);
+      expect(relay.entryCount, 1);
+      expect((await get(first, range: 'bytes=0-9')).body, plain.sublist(0, 10));
+      expect(fresh.opens, greaterThan(0), reason: '请求走的是最后登记的 reader');
+
+      // 另一个云盘上的同 id 资产是另一条登记。
+      final Uri other = relay.register(
+          reader: reader,
+          source: 'cloud:dropbox',
+          assetId: 'asset-1',
+          fileName: 'vid1.mkv');
+      expect(other, isNot(first));
+      expect(relay.entryCount, 2);
+    });
+
+    test('登记表有上限：淘汰最久没用的，在播的（刚被请求过的）留着', () async {
+      final Uri playing = register();
+      Uri? oldest;
+      for (int i = 0; i < CloudVideoStreamRelay.maxEntries - 1; i++) {
+        final Uri u = relay.register(
+            reader: reader,
+            source: 'cloud:oneDrive',
+            assetId: 'filler-$i',
+            fileName: 'f$i.mkv');
+        oldest ??= u;
+      }
+      expect(relay.entryCount, CloudVideoStreamRelay.maxEntries);
+      // 在播的流每个 Range 请求都会把自己挪到最新。
+      expect((await get(playing, range: 'bytes=0-9')).status, 206);
+      relay.register(
+          reader: reader,
+          source: 'cloud:oneDrive',
+          assetId: 'one-more',
+          fileName: 'x.mkv');
+      expect(relay.entryCount, CloudVideoStreamRelay.maxEntries);
+      expect((await get(oldest!, range: 'bytes=0-9')).status, 404,
+          reason: '最久没用的那条被淘汰');
+      expect((await get(playing, range: 'bytes=0-9')).status, 206,
+          reason: '刚请求过的在播流不被淘汰');
+    });
+
+    test('背压：内核停止读取后，上游只被拉走几 MiB，而不是整个文件', () async {
+      // libmpv 发开区间 `bytes=0-`，前向缓存满了就不再读。中继若不背压，会把
+      // 64MiB 全部拉下来堆进 Dart 堆。
+      const int total = 64 * 1024 * 1024;
+      final _CountingRangeReader counting = _CountingRangeReader(total);
+      final Uri url = relay.register(
+          reader: counting,
+          source: 'cloud:oneDrive',
+          assetId: 'big',
+          fileName: 'big.mkv');
+      final Socket socket =
+          await Socket.connect(InternetAddress.loopbackIPv4, url.port);
+      addTearDown(socket.destroy);
+      socket.write('GET ${url.path} HTTP/1.1\r\n'
+          'Host: 127.0.0.1:${url.port}\r\n'
+          'Range: bytes=0-\r\n\r\n');
+      await socket.flush();
+      int received = 0;
+      final Completer<void> gotSome = Completer<void>();
+      late final StreamSubscription<Uint8List> sub;
+      sub = socket.listen((Uint8List data) {
+        received += data.length;
+        if (received >= 64 * 1024 && !gotSome.isCompleted) {
+          sub.pause(); // 客户端读了几十 KB 后不再消费。
+          gotSome.complete();
+        }
+      }, onError: (Object _) {});
+      addTearDown(sub.cancel);
+      await gotSome.future.timeout(const Duration(seconds: 10));
+      // 给中继足够时间：不背压的话这段时间里它会把 64MiB 全部拉完。
+      int settled = -1;
+      for (int i = 0; i < 40 && settled != counting.pulledBytes; i++) {
+        settled = counting.pulledBytes;
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      expect(counting.pulledBytes, lessThan(16 * 1024 * 1024),
+          reason: '上游被拉走 ${counting.pulledBytes} 字节（总 $total）');
+      expect(counting.pulledBytes, greaterThanOrEqualTo(received - 1024));
+
+      // 客户端走掉（mpv seek / 关闭）→ 中继停止上游。
+      socket.destroy();
+      for (int i = 0; i < 100 && !counting.cancelled; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(counting.cancelled, isTrue, reason: '客户端断开后上游订阅被取消');
+      expect(counting.pulledBytes, lessThan(16 * 1024 * 1024));
+    });
+  });
+
+  group('直链不进日志（传输层异常映射 + 中继脱敏）', () {
+    late _FakeCloud cloud;
+    late http.Client client;
+
+    setUp(() async {
+      cloud = await _FakeCloud.start(obfuscated);
+      client = http.Client();
+    });
+
+    tearDown(() async {
+      client.close();
+      await cloud.close();
+    });
+
+    Future<SyncAssetRange> openVia(Future<Uri> Function() link,
+            {int start = 0, int? end}) =>
+        openPresignedAssetRange(
+          client: client,
+          cache: PresignedLinkCache(ttl: const Duration(minutes: 15)),
+          assetId: 'item1',
+          fetchLink: link,
+          start: start,
+          end: end,
+        );
+
+    test('连接失败：SyncBackendError 只带原因，不带 uri', () async {
+      final ServerSocket closed =
+          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final int port = closed.port;
+      await closed.close();
+      Object? error;
+      try {
+        await openVia(() async => Uri.parse(
+            'http://127.0.0.1:$port/cd/0/get/PATHSECRET/file?tempauth=QSECRET'));
+      } on Object catch (e) {
+        error = e;
+      }
+      expect(error, isA<SyncBackendError>());
+      expect('$error', isNot(contains('PATHSECRET')));
+      expect('$error', isNot(contains('QSECRET')));
+      expect('$error', isNot(contains('uri=')));
+    });
+
+    test('上游中途断开：流错误是 SyncBackendError，不带 uri', () async {
+      cloud.dropMidStream = true;
+      final SyncAssetRange range =
+          await openVia(() async => Uri.parse(cloud.signedLinkForTest()));
+      Object? error;
+      try {
+        await _collect(range.bytes);
+      } on Object catch (e) {
+        error = e;
+      }
+      expect(error, isA<SyncBackendError>());
+      expect('$error', isNot(contains('tempauth')));
+      expect('$error', isNot(contains('/content/')));
+    });
+
+    test('上游中途断开时中继打印的内容不含直链', () async {
+      final List<String> logs = <String>[];
+      final DebugPrintCallback original = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) logs.add(message);
+      };
+      addTearDown(() => debugPrint = original);
+
+      cloud.dropMidStream = true;
+      final CloudVideoStreamRelay relay = await CloudVideoStreamRelay.start();
+      addTearDown(relay.close);
+      final Uri url = relay.register(
+        reader: _PresignedReader(
+          client,
+          () async => Uri.parse(cloud.signedLinkForTest()),
+        ),
+        source: 'cloud:oneDrive',
+        assetId: 'item1',
+        fileName: 'v.mkv',
+      );
+      final HttpClient c = HttpClient();
+      addTearDown(() => c.close(force: true));
+      final HttpClientRequest req = await c.getUrl(url);
+      req.headers.set(HttpHeaders.rangeHeader, 'bytes=0-');
+      final HttpClientResponse resp = await req.close();
+      expect(resp.statusCode, 206);
+      await expectLater(_collect(resp), throwsA(anything),
+          reason: '中继把上游的中途断开传成断连');
+      for (int i = 0; i < 100 && logs.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      final String relayLogs =
+          logs.where((String l) => l.contains('cloud-stream-relay')).join('\n');
+      expect(relayLogs, isNotEmpty);
+      expect(relayLogs, isNot(contains('tempauth')));
+      expect(relayLogs, isNot(contains('SIG')));
+      expect(relayLogs, isNot(contains('/content/')));
+    });
+
+    test('206 但 Content-Range 解析不了：报错，不按 200 整文件裁剪', () async {
+      cloud.malformedContentRange = true;
+      await expectLater(
+        openVia(() async => Uri.parse(cloud.signedLinkForTest()),
+            start: 1000, end: 1099),
+        throwsA(isA<SyncBackendError>()),
+      );
+    });
+
+    test('PresignedLinkCache.clear()（退出登录）后现取新直链', () async {
+      final PresignedLinkCache cache =
+          PresignedLinkCache(ttl: const Duration(hours: 3));
+      int fetches = 0;
+      Future<Uri> fetch() async =>
+          Uri.parse('https://example.com/${++fetches}');
+      expect(await cache.link('a', fetch), Uri.parse('https://example.com/1'));
+      expect(await cache.link('a', fetch), Uri.parse('https://example.com/1'));
+      cache.clear();
+      expect(await cache.link('a', fetch), Uri.parse('https://example.com/2'));
     });
   });
 
@@ -390,6 +611,33 @@ void main() {
       await streaming.putRemoteVideoPosition('cloud/vid1', 42000, 1);
     });
 
+    test('视频页每次刷新新建 client：同一资产仍是同一地址，登记表不增长', () async {
+      final Set<String> urls = <String>{};
+      for (int i = 0; i < 5; i++) {
+        final CloudStreamVideoClient streaming = CloudRemoteVideoClient(
+          backend: store,
+          backendType: SyncBackendType.oneDrive,
+          relay: () async => relay,
+        ).streamingClient()!;
+        urls.add(
+            (await streaming.remoteVideoStreamUrls('cloud/vid1')).streamUrl);
+      }
+      expect(urls, hasLength(1));
+      expect(relay.entryCount, 1);
+    });
+
+    test('登录失效：起播前的预读把 SyncAuthError 原样抛给播放页，不交出中继地址', () async {
+      store.failWith = SyncAuthError('Token refresh failed: 400');
+      final CloudStreamVideoClient streaming = CloudRemoteVideoClient(
+        backend: store,
+        backendType: SyncBackendType.dropbox,
+        relay: () async => relay,
+      ).streamingClient()!;
+      await expectLater(streaming.remoteVideoStreamUrls('cloud/vid1'),
+          throwsA(isA<SyncAuthError>()));
+      expect(relay.entryCount, 0, reason: '读不了就不登记');
+    });
+
     test('清单里没有的 uid → SyncBackendError', () async {
       final CloudStreamVideoClient streaming = CloudRemoteVideoClient(
         backend: store,
@@ -453,9 +701,69 @@ class _MemoryRangeReader implements SyncAssetRangeReader {
   }
 }
 
+/// 按被拉取量计数的合成大文件（全零字节，惰性逐块生成）：[pulledBytes] 只统计
+/// 下游真正拉走的块，用来断言中继有没有背压。
+class _CountingRangeReader implements SyncAssetRangeReader {
+  _CountingRangeReader(this.totalBytes);
+
+  final int totalBytes;
+  int pulledBytes = 0;
+  bool cancelled = false;
+  final Uint8List _block = Uint8List(64 * 1024);
+
+  @override
+  Future<SyncAssetRange> openAssetRange(String assetId,
+      {required int start, int? end}) async {
+    final int last = end == null || end >= totalBytes ? totalBytes - 1 : end;
+    return SyncAssetRange(
+      start: start,
+      end: last,
+      totalBytes: totalBytes,
+      bytes: _generate(start, last),
+    );
+  }
+
+  Stream<List<int>> _generate(int start, int last) async* {
+    try {
+      for (int offset = start; offset <= last; offset += _block.length) {
+        final int n = min(_block.length, last - offset + 1);
+        pulledBytes += n;
+        yield n == _block.length ? _block : Uint8List.sublistView(_block, 0, n);
+      }
+    } finally {
+      cancelled = true;
+    }
+  }
+}
+
+/// 走真实 [openPresignedAssetRange] 的区间读（形同 OneDrive / Dropbox 后端）。
+class _PresignedReader implements SyncAssetRangeReader {
+  _PresignedReader(this._client, this._fetchLink);
+
+  final http.Client _client;
+  final Future<Uri> Function() _fetchLink;
+  final PresignedLinkCache _cache =
+      PresignedLinkCache(ttl: const Duration(minutes: 15));
+
+  @override
+  Future<SyncAssetRange> openAssetRange(String assetId,
+          {required int start, int? end}) =>
+      openPresignedAssetRange(
+        client: _client,
+        cache: _cache,
+        assetId: assetId,
+        fetchLink: _fetchLink,
+        start: start,
+        end: end,
+      );
+}
+
 /// 同时是资产库与区间读的假云盘（形同 OneDrive / Dropbox 后端）。
 class _RangeAssetStore extends FakeAssetStore implements SyncAssetRangeReader {
   final Map<String, List<int>> _bytes = <String, List<int>>{};
+
+  /// 非 null 时区间读一律抛它（模拟 refresh token 失效等）。
+  Exception? failWith;
 
   @override
   Future<void> putAsset(String namespaceId, String name, File file,
@@ -466,9 +774,12 @@ class _RangeAssetStore extends FakeAssetStore implements SyncAssetRangeReader {
 
   @override
   Future<SyncAssetRange> openAssetRange(String assetId,
-          {required int start, int? end}) =>
-      _MemoryRangeReader(_bytes)
-          .openAssetRange(assetId, start: start, end: end);
+      {required int start, int? end}) async {
+    final Exception? failure = failWith;
+    if (failure != null) throw failure;
+    return _MemoryRangeReader(_bytes)
+        .openAssetRange(assetId, start: start, end: end);
+  }
 }
 
 /// 假云盘：一个 API 主机（Graph item 元数据 / Dropbox get_temporary_link，签发
@@ -491,6 +802,12 @@ class _FakeCloud {
   int rejected = 0;
   bool ignoreRange = false;
   bool rejectAll = false;
+
+  /// 回 206 + 完整 Content-Length，但只发一半正文就断开连接。
+  bool dropMidStream = false;
+
+  /// 回 206，但 Content-Range 是解析不了的垃圾。
+  bool malformedContentRange = false;
   final List<String> rangeHeaders = <String>[];
 
   Uri get api => Uri.parse('http://127.0.0.1:${_server.port}');
@@ -498,6 +815,9 @@ class _FakeCloud {
   void expireLinks() => _generation++;
 
   Future<void> close() => _server.close(force: true);
+
+  /// 直接签发一条当前代数的直链（不经 API 路由）。
+  String signedLinkForTest() => _signedLink();
 
   String _signedLink() {
     linkFetches++;
@@ -555,6 +875,24 @@ class _FakeCloud {
       final int end = m.group(2)!.isEmpty
           ? _content.length - 1
           : int.parse(m.group(2)!).clamp(start, _content.length - 1);
+      if (dropMidStream) {
+        final Socket socket = await response.detachSocket(writeHeaders: false);
+        socket.add(utf8.encode('HTTP/1.1 206 Partial Content\r\n'
+            'Content-Range: bytes $start-$end/${_content.length}\r\n'
+            'Content-Length: ${end - start + 1}\r\n\r\n'));
+        socket.add(_content.sublist(start, start + (end - start + 1) ~/ 2));
+        await socket.flush();
+        socket.destroy();
+        return;
+      }
+      if (malformedContentRange) {
+        response.statusCode = HttpStatus.partialContent;
+        response.headers.set(HttpHeaders.contentRangeHeader, 'bytes garbage');
+        response.contentLength = end - start + 1;
+        response.add(_content.sublist(start, end + 1));
+        await response.close();
+        return;
+      }
       response.statusCode = HttpStatus.partialContent;
       response.headers.set(HttpHeaders.contentRangeHeader,
           'bytes $start-$end/${_content.length}');

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show DebugPrintCallback;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +23,8 @@ import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_asset_range_reader.dart';
-import 'package:fushi/src/sync/sync_backend.dart' show SyncBackendType;
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncAuthError, SyncBackendType;
 import 'package:fushi/src/sync/sync_orchestrator.dart'
     show kSyncVideosNamespace, kSyncVideosManifestName;
 import 'package:fushi/src/sync/video_manifest.dart';
@@ -324,13 +326,87 @@ void main() {
     expect(find.text(t.remote_video_download), findsOneWidget,
         reason: '流播是新增动作，「下载」保留');
 
-    await tester.tap(find.text(t.remote_video_stream_play));
-    for (int i = 0; i < 20 && store.lookedUp.isEmpty; i++) {
-      await tester.pump(const Duration(milliseconds: 50));
+    // 播放页交给播放内核的地址会在 controller.load 开头打一行 `[video-load] … uri=…`，
+    // 用它钉住「真正 load 的是本机回环中继地址」，而不只是「client 被问过」。
+    final List<String> logs = <String>[];
+    final DebugPrintCallback originalDebugPrint = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) logs.add(message);
+    };
+    try {
+      await tester.tap(find.text(t.remote_video_stream_play));
+      for (int i = 0;
+          i < 40 && !logs.any((String l) => l.contains('[video-load]'));
+          i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    } finally {
+      debugPrint = originalDebugPrint;
     }
     expect(store.lookedUp, contains(entry.videoAsset),
         reason: '播放页经流播 client 取流（解析云端视频资产）');
     expect(cloud.downloadedUids, isEmpty, reason: '流播不触发整文件下载');
+    final String loadLine = logs
+        .firstWhere((String l) => l.contains('[video-load]'), orElse: () => '');
+    expect(
+      loadLine,
+      contains('uri=http://127.0.0.1:${relay.port}/cloud/'),
+      reason: '播放内核拿到的是本机回环中继地址（直链 / 凭据不出 Dart 层）',
+    );
+    expect(loadLine, endsWith('/${entry.videoAsset}'));
+  });
+
+  testWidgets('云盘登录失效时流播失败页提示重新登录，而不是通用失败', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const RemoteVideoManifestEntry entry = RemoteVideoManifestEntry(
+      uid: 'cloud/vid1',
+      title: 'Cloud Vid',
+      videoAsset: 'cloud_vid1.mp4',
+      sizeBytes: 3,
+    );
+    final _RangeAssetStore store = _RangeAssetStore();
+    await tester.runAsync(() async {
+      final String ns = await store.ensureNamespace(kSyncVideosNamespace);
+      await store.putJsonAsset(
+          ns,
+          kSyncVideosManifestName,
+          const RemoteVideoManifest(videos: <RemoteVideoManifestEntry>[entry])
+              .toJson());
+      final File blob = File('${pathProviderDir.path}/cloud_blob_auth')
+        ..writeAsBytesSync(<int>[0, 0, 0]);
+      await store.putAsset(ns, entry.videoAsset, blob);
+    });
+    // refresh token 已失效：区间读前的刷新失败。
+    store.failWith = SyncAuthError('Token refresh failed: 400');
+    final _FakeCloudRemoteVideoClient cloud = _FakeCloudRemoteVideoClient(
+      entries: <RemoteVideoManifestEntry>[entry],
+      streaming: CloudRemoteVideoClient(
+        backend: store,
+        backendType: SyncBackendType.dropbox,
+        relay: () async => relay,
+      ).streamingClient(),
+    );
+    await tester.pumpWidget(buildApp(cloud));
+    await tester.pumpAndSettle();
+
+    await tester.longPress(
+      find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.remote_video_stream_play));
+    for (int i = 0;
+        i < 40 && find.text(t.sync_err_auth_expired).evaluate().isEmpty;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text(t.sync_err_auth_expired), findsOneWidget,
+        reason: '登录失效要说「请重新登录」');
+    expect(find.text(t.video_load_failed_generic), findsNothing);
+    expect(cloud.downloadedUids, isEmpty);
   });
 
   testWidgets('只能整文件下载的云盘（WebDAV 等）面板不出现「播放（流播）」', (WidgetTester tester) async {
@@ -474,6 +550,9 @@ class _RangeAssetStore extends FakeAssetStore implements SyncAssetRangeReader {
   final Map<String, List<int>> _bytes = <String, List<int>>{};
   final List<String> lookedUp = <String>[];
 
+  /// 非 null 时区间读一律抛它（模拟 refresh token 失效）。
+  Exception? failWith;
+
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) {
     lookedUp.add(name);
@@ -490,6 +569,8 @@ class _RangeAssetStore extends FakeAssetStore implements SyncAssetRangeReader {
   @override
   Future<SyncAssetRange> openAssetRange(String assetId,
       {required int start, int? end}) async {
+    final Exception? failure = failWith;
+    if (failure != null) throw failure;
     final List<int> bytes = _bytes[assetId]!;
     final int last =
         end == null || end >= bytes.length ? bytes.length - 1 : end;

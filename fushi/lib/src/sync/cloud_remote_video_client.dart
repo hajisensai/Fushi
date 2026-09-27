@@ -220,13 +220,31 @@ class CloudStreamVideoClient extends RemoteVideoClient {
     int episodeIndex = 0,
   }) async {
     final AssetEntry asset = await _videoAsset(id);
+    await _preflight(asset.id);
     final CloudVideoStreamRelay relay = await _relay();
     final Uri url = relay.register(
       reader: _reader,
+      source: remoteLibrarySourceId,
       assetId: asset.id,
       fileName: asset.name,
     );
     return RemoteVideoStreamUrls(streamUrl: url.toString());
+  }
+
+  /// 起播前先真读一个字节。
+  ///
+  /// 登录失效（refresh token 过期 / 被吊销）这类「根本读不了」的失败要在这里以原类型
+  /// （[SyncAuthError] 等）抛给播放页，播放页才能说「请重新登录」；否则它们只会在中继
+  /// 里变成一个 502，libmpv 报「打不开」，用户看到的是通用失败。顺带把直链 / token /
+  /// 混淆探测预热进缓存，内核的首个请求直接复用，不多一轮 API 往返。
+  Future<void> _preflight(String assetId) async {
+    final SyncAssetRange head;
+    try {
+      head = await _reader.openAssetRange(assetId, start: 0, end: 0);
+    } on SyncAssetRangeNotSatisfiable {
+      return; // 空文件：交给中继照常回 416，这里不替它判。
+    }
+    await head.bytes.drain<void>();
   }
 
   Future<AssetEntry> _videoAsset(String uid) async {
