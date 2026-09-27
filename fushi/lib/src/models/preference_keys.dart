@@ -40,6 +40,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String：「AI 下视频」的字幕语言。`''` 未设置 / `ask` 每次询问 / `original`
   // 跟随作品语言 / `ja` 等语言码 / `none` 不配字幕。非凭据、跨设备。
   'ai_video_download_subtitle_language',
+  // String：AI 联网资料启用的来源，逗号分隔的 WebKnowledgeSource.storageKey。
+  // 从未写过 = 默认全开；`''` = 用户全关。非凭据、跨设备。
+  'ai_web_knowledge_sources',
   'app_locale',
   'app_ui_scale',
   'asr_transcribe_language',

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
+import 'package:fushi/src/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -136,6 +137,55 @@ void main() {
       expect(synopsis, endsWith('…'));
     });
 
+    test('联网资料挂在 reference 下；不带时与原提示一致', () {
+      final AiVideoIdentityQuery query = _query();
+      final Map<String, Object?> plain =
+          jsonDecode(buildAiVideoIdentityUserPrompt(query))
+              as Map<String, Object?>;
+      expect(plain.containsKey('reference'), isFalse);
+      final Map<String, Object?> withRef =
+          jsonDecode(
+                buildAiVideoIdentityUserPrompt(
+                  query,
+                  references: <WebKnowledgePage>[
+                    WebKnowledgePage(
+                      source: WebKnowledgeSource.wikipediaJa,
+                      title: 'ドラえもん (2005年のテレビアニメ)',
+                      url: Uri.parse('https://ja.wikipedia.org/wiki/x'),
+                      text: '2005年4月から放送',
+                    ),
+                  ],
+                ),
+              )
+              as Map<String, Object?>;
+      final List<Object?> reference = withRef['reference']! as List<Object?>;
+      expect(reference.single, containsPair('text', '2005年4月から放送'));
+      expect(
+        buildAiVideoIdentitySystemPrompt(locale: 'zh-CN'),
+        contains('"reference"'),
+      );
+    });
+
+    test('fetchAiIdentityReferences：没开来源不请求；按第一个本地标题搜，最多 3 页', () async {
+      expect(await fetchAiIdentityReferences(null, _query()), isEmpty);
+      final _FakeWeb web = _FakeWeb(<WebKnowledgePage>[
+        for (int i = 0; i < 5; i++)
+          WebKnowledgePage(
+            source: WebKnowledgeSource.wikipediaZh,
+            title: 'p$i',
+            url: Uri.parse('https://zh.wikipedia.org/wiki/p$i'),
+            text: 't',
+          ),
+      ]);
+      final List<WebKnowledgePage> pages = await fetchAiIdentityReferences(
+        web,
+        _query(),
+      );
+      expect(web.queries, <String>['ドラえもん 2005']);
+      expect(web.maxChars, kAiIdentityReferenceMaxChars);
+      expect(pages, hasLength(kAiIdentityReferenceMaxPages));
+    });
+
     test('系统提示要求只回 JSON、说明 null 规则、带上 locale', () {
       final String prompt = buildAiVideoIdentitySystemPrompt(locale: 'ja');
       expect(prompt, contains('"key"'));
@@ -238,4 +288,24 @@ void main() {
       expect(parseVideoScrapeAiIdentityNote('ai:matched'), isNull);
     });
   });
+}
+
+class _FakeWeb extends WebKnowledgeClient {
+  _FakeWeb(this.pages)
+    : super(sources: <WebKnowledgeSource>{WebKnowledgeSource.wikipediaZh});
+
+  final List<WebKnowledgePage> pages;
+  final List<String> queries = <String>[];
+  int? maxChars;
+
+  @override
+  Future<List<WebKnowledgePage>> search(
+    String query, {
+    int pagesPerSource = 1,
+    int maxCharsPerPage = 12000,
+  }) async {
+    queries.add(query);
+    maxChars = maxCharsPerPage;
+    return pages;
+  }
 }

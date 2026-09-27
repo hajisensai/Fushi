@@ -1,15 +1,23 @@
 /// 「整套下载」的系列解析：给一部作品，找出同系列的全部剧集与剧场版。
 ///
-/// 数据来源只有 TMDB：collection（`/collection/{id}`）一次给出有序的全部电影，
-/// 是长寿系列（哆啦A梦 40+ 部剧场版、名侦探柯南）唯一可靠的全表。TMDB 的
-/// collection **只收电影**，剧集那半按系列名另搜 `/search/tv`，只收标题**完全相等**
-/// 的——宁可少列一部让用户补一句，也不把同名不同作的东西塞进一次几十条的下载。
+/// 三个来源，各管一段、结果合并去重（[mergeVideoFranchises]）：
 ///
-/// MAL / AniDB 的关系链（Sequel / Side story）不在这里用：Jikan 限流、AniDB 要注册
-/// client 身份，拉 40 部要几分钟；且 MAL 的「Other」对长寿作品噪声大。
+/// * **TMDB collection**（[resolveVideoFranchise]）：`/collection/{id}` 一次给出有序的
+///   全部电影，是长寿系列（哆啦A梦 40+ 部剧场版、名侦探柯南）最全的电影表；剧集
+///   那半按系列名另搜 `/search/tv`，只收标题**完全相等**、类别与原语言一致的。
+///   要 TMDB key。
+/// * **MAL 关联链**（[resolveMalFranchise]）：不要 key。沿 Jikan `relations` 的
+///   续作 / 前传 / 母篇 / 外传 / 重制走一遍，动画的季、剧场版都能串起来。不走
+///   「Other」「Spin-off」「Character」——长寿作品在这几类上挂满联动与客串。
+/// * **联网资料 + AI**（`ai_video_franchise_assistant.dart`）：维基百科条目交 AI 列作品，
+///   逐部回资料源核对，核对不上的不进清单。
+///
+/// AniDB 不用：要注册 client 身份，限流拉几十部太慢。
 library;
 
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
+    show MalRelatedWorks, MalRelation;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 
@@ -138,6 +146,136 @@ Future<VideoFranchise?> resolveVideoFranchise(
     name: collections.isEmpty
         ? reference.title
         : (_displayBase(collections.first.name) ?? reference.title),
+    series: series.sortedByYear(),
+    movies: movies.sortedByYear(),
+  );
+}
+
+/// MAL 关联链要的能力（生产实现包 `MalVideoMetadataProvider`；测试注入假的）。
+abstract interface class VideoFranchiseRelationSource {
+  Future<MalRelatedWorks?> fetchRelatedWorks(String malId);
+
+  /// 按标题搜 MAL 动画（锚点没有 MAL 身份时找它）。
+  Future<List<VideoMetadataWork>> searchAnime(String title);
+}
+
+/// 沿 MAL 关联最多走几部（Jikan 闸门约 1.1 秒一个请求：60 部 ≈ 1 分钟）。
+const int kVideoFranchiseMaxMalWorks = 60;
+
+/// 沿着走的 MAL 关系（小写）。「Other」「Spin-off」「Character」「Summary」不走：
+/// 长寿作品在这几类上挂满联动、客串与总集篇。
+const Set<String> kVideoFranchiseMalRelations = <String>{
+  'sequel',
+  'prequel',
+  'parent story',
+  'full story',
+  'side story',
+  'alternative version',
+  'alternative setting',
+};
+
+/// MAL `type` → 系列里的哪一段；null = 不收（OVA / Special / PV / CM / Music——
+/// 这些是特典或番外，不是「全部季 + 全部剧场版」）。
+VideoMetadataMediaKind? _malFranchiseKind(String? malType) =>
+    switch (malType?.trim().toLowerCase()) {
+      'movie' => VideoMetadataMediaKind.movie,
+      'tv' || 'ona' => VideoMetadataMediaKind.tv,
+      _ => null,
+    };
+
+/// MAL 关联链展开的系列；锚点既没有 MAL 身份、按标题也搜不到时返回 null。
+Future<VideoFranchise?> resolveMalFranchise(
+  VideoFranchiseRelationSource source,
+  VideoDiscoveryItem anchor, {
+  int maxWorks = kVideoFranchiseMaxMalWorks,
+}) async {
+  final String? start = await _anchorMalId(source, anchor);
+  if (start == null) return null;
+  final _WorkSet series = _WorkSet();
+  final _WorkSet movies = _WorkSet();
+  final Set<int> visited = <int>{};
+  final List<int> queue = <int>[int.parse(start)];
+  String? name;
+  while (queue.isNotEmpty && visited.length < maxWorks) {
+    final int id = queue.removeAt(0);
+    if (!visited.add(id)) continue;
+    final MalRelatedWorks? related = await source.fetchRelatedWorks('$id');
+    if (related == null) continue;
+    name ??= related.work.title;
+    final VideoMetadataMediaKind? kind = _malFranchiseKind(related.malType);
+    if (kind != null) {
+      final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
+        work: related.work.kind == kind
+            ? related.work
+            : related.work.copyWith(kind: kind),
+        discoveryCategory: VideoDiscoveryCategory.anime,
+        externalId: '$id',
+      );
+      (kind == VideoMetadataMediaKind.movie ? movies : series).add(item);
+    }
+    for (final MalRelation relation in related.relations) {
+      if (kVideoFranchiseMalRelations.contains(
+            relation.relation.trim().toLowerCase(),
+          ) &&
+          !visited.contains(relation.malId)) {
+        queue.add(relation.malId);
+      }
+    }
+  }
+  return VideoFranchise(
+    name: name ?? anchor.reference.title,
+    series: series.sortedByYear(),
+    movies: movies.sortedByYear(),
+  );
+}
+
+Future<String?> _anchorMalId(
+  VideoFranchiseRelationSource source,
+  VideoDiscoveryItem anchor,
+) async {
+  final VideoMediaReference reference = anchor.reference;
+  final String direct =
+      (reference.externalIds['mal'] ??
+              (reference.providerId == 'mal' ? reference.mediaId : ''))
+          .trim();
+  if (int.tryParse(direct) != null) return direct;
+  final List<String> names = _anchorNames(reference);
+  final Set<String> wanted = <String>{
+    for (final String name in names) TitleNormalizer.normalize(name),
+  };
+  for (final String name in names) {
+    for (final VideoMetadataWork work in await source.searchAnime(name)) {
+      final bool same =
+          <String?>[work.title, work.originalTitle, ...work.aliases].any(
+            (String? value) =>
+                value != null &&
+                wanted.contains(TitleNormalizer.normalize(value)),
+          );
+      if (!same) continue;
+      for (final VideoMetadataId id in work.ids) {
+        if (id.type == 'mal') return id.value;
+      }
+    }
+  }
+  return null;
+}
+
+/// 合并几份系列清单：按标题 + 年份去重，剧集 / 剧场版各自按年份排；名字取第一份
+/// 非空的（TMDB collection 名比 MAL 的首部标题更像系列名）。
+VideoFranchise? mergeVideoFranchises(Iterable<VideoFranchise?> parts) {
+  final List<VideoFranchise> present = <VideoFranchise>[
+    for (final VideoFranchise? part in parts)
+      if (part != null) part,
+  ];
+  if (present.isEmpty) return null;
+  final _WorkSet series = _WorkSet();
+  final _WorkSet movies = _WorkSet();
+  for (final VideoFranchise part in present) {
+    part.series.forEach(series.add);
+    part.movies.forEach(movies.add);
+  }
+  return VideoFranchise(
+    name: present.first.name,
     series: series.sortedByYear(),
     movies: movies.sortedByYear(),
   );
