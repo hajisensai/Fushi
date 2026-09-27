@@ -306,6 +306,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_danmaku_style',
   'video_download_backend_path_mappings',
   'video_download_embedded_installation_id',
+  // bool：下载进受管视频来源时跳过特典（PV / CM / NCOP / NCED / 菜单…）——管线
+  // 拿到种子文件表后把特典文件设为不下载；AI 下视频选版本时也丢掉只有特典的发布。
+  // 默认 false（旧行为：整颗种子全下）。非凭据、跨设备。
+  'video_download_skip_extras',
   'video_download_target_source_id',
   'video_fit_mode',
   'video_immersive_mode',

@@ -185,6 +185,7 @@ class _Ports {
           ],
         ),
         loadDetails: (VideoDiscoveryItem item) async => item.metadataWork,
+        loadFranchise: (_) async => null,
         queryPresence: (_) async => VideoLibraryPresence.none,
         isSubscribed: (_) async => false,
         searchResources: (_) async =>

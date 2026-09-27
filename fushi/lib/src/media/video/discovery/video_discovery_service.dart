@@ -1,5 +1,6 @@
 library;
 
+import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
@@ -255,6 +256,18 @@ class VideoDiscoveryService {
           : _supplementDetails(merged, supplement);
     }
     return merged;
+  }
+
+  /// 「整套下载」：[item] 所在系列的全部剧集与剧场版（见 `video_franchise.dart`）。
+  /// 没有可用的系列来源（TMDB 未配置 / iOS 不装配发现源）返回 null。
+  Future<VideoFranchise?> loadFranchise(VideoDiscoveryItem item) async {
+    if (_closed) return null;
+    for (final VideoDiscoveryProvider provider in _providers) {
+      if (provider is VideoFranchiseSource) {
+        return resolveVideoFranchise(provider as VideoFranchiseSource, item);
+      }
+    }
+    return null;
   }
 
   List<VideoMetadataLookup> _detailLookups(VideoDiscoveryItem item) {

@@ -303,10 +303,17 @@ class VideoDownloadOrganizer {
     required TorrentBackend backend,
     required VideoOrganizationRequest request,
     VideoOrganizationFileCommitted? onFileCommitted,
+    Set<int> excludedFileIndexes = const <int>{},
   }) async {
-    final List<TorrentFileEntry> backendFiles = await backend.listFiles(
-      request.torrentId,
-    );
+    // 被跳过（没下载 / 只下了半截）的文件不参与排布：改名落位它们只会把
+    // 残缺文件伪装成已整理的正片或特典。
+    final List<TorrentFileEntry> backendFiles =
+        (await backend.listFiles(request.torrentId))
+            .where(
+              (TorrentFileEntry file) =>
+                  !excludedFileIndexes.contains(file.index),
+            )
+            .toList(growable: false);
     final VideoOrganizationPlan planned;
     try {
       planned = plan(request, backendFiles);
@@ -541,6 +548,39 @@ class VideoDownloadOrganizer {
     ];
   }
 }
+
+/// 整理器眼里的「视频文件」（扩展名判据与 [VideoDownloadOrganizer.plan] 同一份）。
+bool isVideoDownloadVideoFile(String relativePath) =>
+    VideoDownloadOrganizer._isVideo(relativePath);
+
+/// 整理器计算 Extras 判据时用的共享发布根：只看**视频文件**、所有视频共享的
+/// 第一段目录；平铺种子返回 null。与 [VideoDownloadOrganizer.plan] 同一算法——
+/// 调用方拿整个种子的文件列表调它，再把结果传给 [isVideoDownloadExtraFile]，
+/// 判出来的才与整理阶段一致（发布根名恰好叫 `Extras` / `PV` 时不会被当特典目录）。
+String? videoDownloadSharedRoot(List<TorrentFileEntry> files) =>
+    VideoDownloadOrganizer._sharedRootSegment(
+      files
+          .where(
+            (TorrentFileEntry file) =>
+                VideoDownloadOrganizer._isVideo(file.name),
+          )
+          .toList(growable: false),
+    );
+
+/// 种子内某个文件是不是整理器会当「特典」处理的附件：躺在发布组划的特典目录
+/// （`SPs/` `PV/` `Menu/` `特典/` …）里，或文件名本身是 NCOP / NCED / PV /
+/// Trailer 等严格附件名。判据就是整理器的 `_isExplicitExtra`，不另写词表。
+///
+/// [sharedRoot] 应传 [videoDownloadSharedRoot] 对**同一种子全部文件**的结果：
+/// 单根种子的第一段是发布目录名，不参与特典目录判定；不传（null）时第一段也
+/// 当普通目录判，只在调用方确实拿不到完整文件列表时才这样用。
+///
+/// 对非视频文件同样适用（特典目录里的扫图 / CD 音轨也是特典）。
+bool isVideoDownloadExtraFile(String relativePath, {String? sharedRoot}) =>
+    VideoDownloadOrganizer._isExplicitExtra(
+      relativePath,
+      sharedRoot: sharedRoot,
+    );
 
 /// 一趟排布的产物：目标计划 + 认出的正片集数。
 ///

@@ -140,6 +140,18 @@ SettingsDestination buildAiDestination() {
                   value.storageKey,
                 ),
           ),
+          // 跳过特典：对所有下载进视频来源的任务生效（管线现读偏好），放在这一段是
+          // 因为「带不带 PV」是用户在配 AI 下视频时提的；键是全局下载偏好。
+          SettingsSwitchItem(
+            id: 'ai.video_download_skip_extras',
+            title: t.ai_video_download_skip_extras,
+            subtitle: t.ai_video_download_skip_extras_hint,
+            icon: Icons.movie_filter_outlined,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.videoDownloadSkipExtras,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setVideoDownloadSkipExtras(value),
+          ),
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_subtitle_language',
             dropdown: true,

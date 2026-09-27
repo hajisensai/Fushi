@@ -2025,7 +2025,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// 前置按顺序逐个引导，配完即继续：AI 提供商未指派 → 推 AI 设置页；后端 runtime
   /// 没起 → 配置引导；没有受管视频来源 → 补来源引导。页面本身不挂 Riverpod，所有
   /// 能力按闭包注入，AI 提供商每次调用时现解析。
-  Future<void> _openAiVideoAcquisition() async {
+  Future<void> _openAiVideoAcquisition([String? initialQuery]) async {
     final BuildContext context = this.context;
     if (resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) == null) {
       _showVideoDiscoveryMessage(context, t.ai_assist_no_provider);
@@ -2067,6 +2067,7 @@ class _HomePageState extends BasePageState<HomePage>
         ],
         defaultSourceId: (defaultSourceId ?? 0) == 0 ? null : defaultSourceId,
         locale: appModelNoUpdate.appLocale.toLanguageTag(),
+        skipExtras: prefs.videoDownloadSkipExtras,
       ),
       ports: VideoAcquisitionPorts(
         searchWorks: discovery.load,
@@ -2077,6 +2078,8 @@ class _HomePageState extends BasePageState<HomePage>
             (await _matchingVideoDiscoverySubscriptions(reference))
                 .any((VideoDownloadSubscriptionRow row) => row.enabled),
         searchResources: registry.search,
+        loadFranchise: (VideoDiscoveryItem item) async =>
+            discoveryService?.loadFranchise(item),
         parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
         decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
         persistPreference:
@@ -2166,6 +2169,7 @@ class _HomePageState extends BasePageState<HomePage>
         MaterialPageRoute<void>(
           builder: (_) => AiVideoAcquisitionPage(
             service: service,
+            initialQuery: initialQuery,
             onConfigureBackend: _promptDownloadBackendSetup,
           ),
         ),
