@@ -1629,6 +1629,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     } catch (e, stack) {
       ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
       if (!mounted) return;
+      // 与主字幕同一条回落（BUG-2590 / 2648）：兼容层 Emby 没有字幕抽取端点，但直出的
+      // 原始容器里就有这条轨——交给 libmpv 副轨槽只解码不画、回流成副 cue。此前副字幕
+      // 没有这条回落，主字幕能用、副字幕一选就「加载失败」。
+      final bool shown = await _showRemoteEmbeddedSecondaryTrackViaPlayer(
+        controller,
+        track,
+        label: label,
+      );
+      if (shown || !mounted) return;
       _showOsd(
         t.video_subtitle_load_failed(label: label),
         severity: ToastSeverity.error,
@@ -1642,6 +1651,44 @@ extension _VideoSubtitle on _VideoFushiPageState {
       selectedSource: _remoteEmbeddedSubtitleSource(track),
       label: label,
     );
+  }
+
+  /// [_showRemoteEmbeddedTrackViaPlayer] 的**副字幕**版：服务器抽不出的内嵌文本轨交给
+  /// libmpv `secondary-sid` 解码、回流成副 cue
+  /// （[VideoPlayerController.selectEmbeddedSecondaryTextTrackViaPlayer]），选中即按远端
+  /// uid 持久化 `embedded:<n>`（重进由 [_restoreRemoteSecondarySubtitle] 走同一回落）。
+  ///
+  /// 返回 false 的条件与主字幕版相同（转码流不带轨 / 外挂文件轨 / 轨未就绪 / 越界）。
+  Future<bool> _showRemoteEmbeddedSecondaryTrackViaPlayer(
+    VideoPlayerController controller,
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    required String label,
+  }) async {
+    if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
+    final int seq = _episodeLoadSeq;
+    final bool shown = await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
+      track.containerTrackOrdinal ?? track.streamIndex,
+    );
+    if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
+    final String source = _remoteEmbeddedSubtitleSource(track);
+    _rebuild(() => _currentSecondarySubtitleSource = source);
+    final (String uid, _) = _remotePositionKeyForIndex(_currentEpisode);
+    unawaited(() async {
+      final int nowMs = await _stampRemoteStringPref(
+        videoRemoteSecondarySubtitlePrefKey(uid),
+        videoRemoteSecondarySubtitleAtPrefKey(uid),
+        source,
+      );
+      _pushRemotePlayback(
+        uid,
+        VideoPlaybackSyncState(
+          secondarySubtitleSource: source,
+          secondarySubtitleAt: nowMs,
+        ),
+      );
+    }());
+    _showOsd(t.video_subtitle_remote_player_decoded(label: label));
+    return true;
   }
 
   /// 远端模式：文件选择器挑字幕作**副字幕**。复制到 video_subtitles/ 持久目录再
@@ -1737,6 +1784,20 @@ extension _VideoSubtitle on _VideoFushiPageState {
         cues = await _loadExternalSubtitleCues(subtitle.path, widget.bookUid);
       } catch (e) {
         debugPrint('[VideoFushiPage] secondary embedded replay failed: $e');
+        // 兼容层抽不出（BUG-2590 同款）：恢复也走 libmpv 副轨解码回落，静默。
+        final RemoteVideoEmbeddedSubtitleTrack? track =
+            _remoteEmbeddedTrackByStreamIndex(streamIndex);
+        if (track == null ||
+            !track.isText ||
+            !_remoteStreamIsOriginalContainer ||
+            track.isExternalFile ||
+            !mounted ||
+            _controller != controller) {
+          return;
+        }
+        await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
+          track.containerTrackOrdinal ?? track.streamIndex,
+        );
         return;
       }
     } else if (File(persisted).existsSync()) {
