@@ -5704,5 +5704,5 @@
   "anki_pending_mines_status_failed": "Failed: $error",
   "anki_pending_mines_flush_result": "Sent $delivered, failed $failed, remaining $remaining",
   "anki_pending_mine_landing_title": "Deliver cards from other devices",
-  "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage or interconnect) and are added to Anki on this device. Only one device does this at a time."
+  "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage, or interconnect when this device syncs to a host) and are added to Anki on this device. Only one device does this at a time. An interconnect host can't do this yet."
 }

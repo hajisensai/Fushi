@@ -254,17 +254,15 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   }
 
   /// 用户点「全部发送」。还停在 `sending` 的卡（用户在 AnkiMobile 里取消后手动切回、
-  /// 或回跳没送达）先核对一次：后端认得它（AnkiMobile 的本机账本记过这个词）就算已
-  /// 送达出队，否则退回 `pending` 重发。然后拉起一张。
+  /// 或回跳没送达）一律退回 `pending` 重发，由 AnkiMobile 自己查重兜底。不拿本机账本
+  /// 判「已送达」：账本只按词记，同一个词以前制过卡，这张被取消的就会被静默当成已进
+  /// Anki 丢掉。然后拉起一张。
   Future<PendingFlushReport> _startAnkiMobileSend({
     required bool interactive,
   }) async {
     if (!interactive) return const PendingFlushReport(skipped: true);
     for (final PendingMineRow row in await _store.rows()) {
-      if (row.status != PendingMineStatus.sending) continue;
-      if (await inner.isDuplicate(row.expression, row.reading)) {
-        await _store.markDelivered(row);
-      } else {
+      if (row.status == PendingMineStatus.sending) {
         await _store.markPending(row.id);
       }
     }

@@ -164,7 +164,10 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncAggregateNamespace ||
     name == kSyncCollectionsNamespace ||
     name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace;
+    name == kSyncTombstonesNamespace ||
+    // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
+    // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
+    name == PendingMineRelay.namespace;
 
 /// Delete a dictionary's package from the remote `__dictionaries__` staging
 /// namespace, so deleting a dictionary locally also removes its remote copy

@@ -229,18 +229,27 @@ class PendingMineStore {
 
   /// 这张卡已交给 Anki。本机制的、从没上传过的直接出队；上传过的或来自其他设备的
   /// 远端还有一份记录，标 `landed` 等跨设备中转清理远端后再删——否则落地设备会再落一次。
+  ///
+  /// 判据读**库里此刻**的行，不信调用方手上的快照：补发与跨设备中转并发时，快照里
+  /// 的 `uploaded` 可能已经过期——按过期的 false 直接删行，远端那份就没人撤了。
   Future<void> markDelivered(PendingMineRow row) async {
-    if (row.originDeviceId == null && !row.uploaded) {
-      await remove(row.id);
-      return;
-    }
-    await _update(
-      row.id,
-      const PendingMineQueueCompanion(
-        status: Value<String>(PendingMineStatus.landed),
-        lastError: Value<String?>(null),
-      ),
-    );
+    final bool remoteCopy = await _db.transaction(() async {
+      final PendingMineRow? now = await byId(row.id);
+      if (now == null) return false;
+      final bool remote = now.originDeviceId != null || now.uploaded;
+      if (remote) {
+        await (_db.update(
+          _db.pendingMineQueue,
+        )..where(($PendingMineQueueTable t) => t.id.equals(row.id))).write(
+          const PendingMineQueueCompanion(
+            status: Value<String>(PendingMineStatus.landed),
+            lastError: Value<String?>(null),
+          ),
+        );
+      }
+      return remote;
+    });
+    if (!remoteCopy) await remove(row.id);
   }
 
   /// 送达（或确认重复）/ 用户删除：先删行，再删载荷。

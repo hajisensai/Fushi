@@ -383,19 +383,22 @@ void main() {
     expect(opened, <Uri>[ankiMobileSyncUri]);
   });
 
-  test('AnkiMobile：残留的 sending 卡若后端已认得（回跳没送达），「全部发送」时直接出队', () async {
+  test('AnkiMobile：残留的 sending 卡即使本机账本记过这个词，也退回重发（不静默丢卡）', () async {
     await mine(
       repoOver(_FakeBackend(batchMining: true, switchesApp: true)),
       'seen',
     );
     await repoOver(_FakeBackend(switchesApp: true)).flush(interactive: true);
 
+    // 账本里有这个词（例如以前制过卡），但这次被取消了。
     final _FakeBackend mobile = _FakeBackend(switchesApp: true)
       ..inAnki.add('seen');
     await repoOver(mobile).flush(interactive: true);
 
-    expect(mobile.expressions, isEmpty, reason: '已在 Anki 里就不能再拉起一次');
-    expect(await store.count(), 0);
+    expect(mobile.expressions, <String>[
+      'seen',
+    ], reason: '重新拉起，由 AnkiMobile 查重');
+    expect(await store.count(), 1, reason: '没有回跳确认就不出队');
   });
 
   test('AnkiMobile：连发链中途断了（下一张失败），已确认的那张照样请求同步', () async {
