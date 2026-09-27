@@ -187,6 +187,60 @@ protection as `seekMs` (authoritative cue re-sync + suppress the lagging positio
 Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
 (group `BUG-796 follow-up: seek-bar onSeekEnd(target) patch survives re-vendor`).
 
+## BUG-2731: swipe / double-tap seeks also report their target (`onSeekEnd`)
+
+`lib/media_kit_video_controls/src/controls/material.dart`, `onHorizontalDragEnd`
+and the two double-tap seek indicators' `onSubmitted`.
+
+These three commit points call `controller(context).player.seek(...)` directly, so
+the host never learned where playback was headed. On a remote stream a seek
+re-buffers for seconds while `player.state.position` still reports the **old**
+position; the host's interconnect auto-quality then read that buffering as a
+network stall, downgraded, and reopened the stream at the stale position — the
+swipe was silently undone ("滑动一下会变成没滑动"). Each commit point now calls
+`_theme(context).onSeekEnd?.call(target)` right before `player.seek`, exactly like
+the seek bars, so the host's `notifyExternalSeek` records the in-flight target.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-2731: swipe / double-tap seeks report onSeekEnd(target)`).
+
+## BUG-2731 follow-up: relative seeks measure from the pending target (`relativeSeekBasePosition`)
+
+`lib/media_kit_video_controls/src/controls/material.dart`, new theme field
+`MaterialVideoControlsThemeData.relativeSeekBasePosition` (+ `copyWith`) and the
+state helper `_relativeSeekBase(context)`, used by `onHorizontalDragUpdate`
+(both the `horizontalSeekResolver` `position:` argument and the upstream
+fallback formula), `onHorizontalDragEnd`, and the two double-tap indicators'
+`onSubmitted`.
+
+Upstream computes every relative seek as `player.state.position ± delta`. On a
+remote stream the first seek re-buffers for seconds while `state.position`
+still reports the pre-seek value, so a second swipe / double-tap during that
+window lands at "old position + delta2" and the first displacement is lost
+(the user-visible form: the HUD keeps showing ±0:00 and only small nudges seem
+to work). The host returns its in-flight seek target when one is pending (Hibiki
+wires `VideoPlayerController.resumePositionMs`), else the live position. Null
+keeps upstream behaviour.
+
+One drag measures from one base: `onHorizontalDragUpdate` snapshots
+`_relativeSeekBase` into `_swipeBase` on the drag's first event and
+`_currentSwipeBase` reads that snapshot until `onHorizontalDragEnd` clears it,
+so the HUD / preview never jumps mid-drag when the host's in-flight target lands
+or clears. `MaterialSeekBar` gained `deltaBase`; the swipe-preview seek bar adds
+its delta to that same base instead of `player.state.position`.
+
+Committed seeks also hand their `player.seek` future to the host through the new
+theme field `onSeekDispatched` (both `material.dart` and `material_desktop.dart`):
+the mobile `_dispatchSeek` helper (swipe end + both double-tap indicators) and
+both seek bars' `onPointerUp`. `Player.seek` first waits on the player's internal
+lock and video-controller initialisation before issuing `mpv_command_async`;
+the old content keeps playing meanwhile, so the host only starts counting
+"playing, not buffering, advancing" as "the seek is over" after that future
+completes.
+
+Source-guard test: `fushi/test/third_party/media_kit_video_seekbar_guard_test.dart`
+(group `BUG-2731 follow-up: relative seeks measure from the pending target`).
+
 ## BUG-374: play/pause on `onTap` (arena-respecting), not `onTapDown`
 
 `lib/media_kit_video_controls/src/controls/material_desktop.dart`,

@@ -599,6 +599,9 @@ mixin _FushiDbStatistics
   /// galgame_sessions 按 (game_id, date_key) 的时长合计（秒）：喂统一事实面
   /// （日明细按游戏分节、热力图游戏时长）。
   /// v105：只取 [profileId]（null = 当前激活 Profile）的会话。
+  ///
+  /// v113：游戏已从库移除的孤儿会话照样计入；[getGalgameSessionTitles] 给它们的
+  /// 显示名快照。
   Future<List<(String gameId, String dateKey, int totalSeconds)>>
       getGalgameDailySecondsByGame({int? profileId}) async {
     final int scope = profileId ?? await resolveActiveProfileId();
@@ -616,6 +619,20 @@ mixin _FushiDbStatistics
           row.read<int>('s'),
         ),
     ];
+  }
+
+  /// v113：游玩会话行上的游戏显示名快照（`game_id -> game_title`，只含非空快照，
+  /// 即已从库移除的游戏）。统计读取端在库内反查不到游戏时用它显示名字。
+  Future<Map<String, String>> getGalgameSessionTitles() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT game_id, MAX(game_title) AS title FROM galgame_sessions '
+      "WHERE game_title != '' GROUP BY game_id",
+      readsFrom: {galgameSessions},
+    ).get();
+    return <String, String>{
+      for (final QueryRow row in rows)
+        row.read<String>('game_id'): row.read<String>('title'),
+    };
   }
 
   // upsertStudySegmentTombstone 住 _FushiDbContentMisc（deleteStudySegmentsForMedia /
@@ -643,9 +660,23 @@ mixin _FushiDbStatistics
   Future<void> upsertGalgame(GalgamesCompanion entry) =>
       into(galgames).insertOnConflictUpdate(entry);
 
-  /// 删除一条游戏。`galgame_sources` / `galgame_sessions` 经 FK cascade 连带清理；
-  /// 标签映射 v77 起是逻辑外键，同事务显式清。
-  Future<int> deleteGalgame(String id) => transaction(() async {
+  /// 删除一条游戏。`galgame_sources` 经 FK cascade 连带清理；标签映射 v77 起是
+  /// 逻辑外键，同事务显式清。
+  ///
+  /// `galgame_sessions`（游玩时长）v113 起**不**随游戏删：会话属于统计，只有
+  /// [deleteGameStatisticsForId] / 统计页的显式删除才删。这里同事务把显示名快照进
+  /// 该游戏全部 Profile 的会话行（`game_title`），游戏行没了统计页仍有名字可显示。
+  /// [sessionTitle] 是调用方握着的当前显示名（含用户改名 / 刮削名覆盖层）；为空
+  /// 时回落 `galgames.name`（exe 推导的本地默认名）。
+  Future<int> deleteGalgame(String id, {String? sessionTitle}) =>
+      transaction(() async {
+        final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
+            ? (await getGalgame(id))?.name
+            : sessionTitle;
+        if (fallback != null && fallback.isNotEmpty) {
+          await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
+              .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
+        }
         await deleteTagAssignmentsForHost(TagHostKind.game, id);
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });

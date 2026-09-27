@@ -2168,6 +2168,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final AdaptiveQualityController _adaptiveQuality = AdaptiveQualityController();
   Timer? _adaptiveQualityTimer;
 
+  /// 上一拍看到的 [VideoPlayerController.seekGeneration]；变了 = 这期间用户 seek 过，
+  /// 随后的缓冲按 seek 代价处理，不算网况（BUG-2731）。
+  int _adaptiveSeenSeekGeneration = 0;
+
   /// 自适应正在换档（重取流是异步的，期间不再喂采样，免得一次卡顿被连算两次）。
   bool _adaptiveQualitySwitching = false;
   int _hlsDetectSeq = 0;
@@ -5999,7 +6003,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isSourceReview: () => _sourceReviewActive,
       returnToReading: (_sourceReviewSession ?? widget.sourceReviewSession)
           ?.onReturnToReading,
+      ownsRoute: _ownsRouteForExternalNavigation,
     );
+  }
+
+  /// 本页路由，或全屏时 media_kit 压在它上面的全屏路由——两者都由
+  /// [_closeForExternalNavigation] 收掉。
+  bool _ownsRouteForExternalNavigation(Route<dynamic> route) {
+    if (!mounted) return false;
+    if (identical(ModalRoute.of(context), route)) return true;
+    final BuildContext? controlsContext = _videoControlsContext;
+    return controlsContext != null &&
+        controlsContext.mounted &&
+        identical(ModalRoute.of(controlsContext), route);
   }
 
   Future<bool> _closeForExternalNavigation() async {

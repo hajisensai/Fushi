@@ -162,8 +162,9 @@ class GalgameRepository extends ChangeNotifier {
 
   /// 整表覆写（旧 `AppModel.setGalgames` 语义：调用方组装好整列表后写入）。
   ///
-  /// 列表里没有的 id 视为删除（`galgame_sources` / `galgame_sessions` 经 FK cascade
-  /// 连带清理）；其余整行 upsert。一个事务里做完，中途失败不留半套。
+  /// 列表里没有的 id 视为删除（`galgame_sources` 经 FK cascade 连带清理；游玩会话
+  /// v113 起保留、快照显示名，见 [FushiDatabase.deleteGalgame]）；其余整行 upsert。
+  /// 一个事务里做完，中途失败不留半套。
   Future<void> setGames(List<GalgameEntry> next) async {
     final Set<String> keep = <String>{
       for (final GalgameEntry game in next) game.id,
@@ -172,7 +173,10 @@ class GalgameRepository extends ChangeNotifier {
     await _db.transaction(() async {
       for (final GalgameRow row in await _db.getAllGalgames()) {
         if (!keep.contains(row.id)) {
-          await _db.deleteGalgame(row.id);
+          await _db.deleteGalgame(
+            row.id,
+            sessionTitle: byId(row.id)?.displayName,
+          );
           removed.add(row.id);
         }
       }
@@ -206,11 +210,16 @@ class GalgameRepository extends ChangeNotifier {
     await load();
   }
 
-  /// 删除一条。除本体行（源快照/会话经 FK cascade 连带）外，还主动清其全部
+  /// 删除一条。除本体行（源快照经 FK cascade 连带）外，还主动清其全部
   /// 合集引用（`media_collection_items.entryKey` 是逻辑外键无 DB cascade，
   /// 对齐 #346 删除传播惯例）；被清空的合集随之自删，不留孤儿成员。
+  ///
+  /// 游玩会话**不删**（v113）：那是统计，删不删由调用方的「同时删除统计数据」
+  /// 决定（[FushiDatabase.deleteGameStatisticsForId]）。这里把当前显示名（含用户
+  /// 改名 / 刮削名）交给 [FushiDatabase.deleteGalgame] 快照进会话行，统计页照常
+  /// 显示名字。
   Future<void> remove(String id) async {
-    await _db.deleteGalgame(id);
+    await _db.deleteGalgame(id, sessionTitle: byId(id)?.displayName);
     await _db.removeEntryFromAllCollections(MediaKind.game, id);
     await load();
   }

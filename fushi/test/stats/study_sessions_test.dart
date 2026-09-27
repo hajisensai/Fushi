@@ -122,6 +122,7 @@ void main() {
       durationSeconds: 3600,
       dateKey: '2026-09-08',
       profileId: 0,
+      gameTitle: '',
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
@@ -152,6 +153,7 @@ void main() {
       durationSeconds: 3600,
       dateKey: '2026-09-08',
       profileId: 0,
+      gameTitle: '',
     );
     final List<StudySession> out = deriveStudySessions(
       segments: <StudySegmentRow>[
@@ -199,6 +201,7 @@ void main() {
           durationSeconds: 60,
           dateKey: '2026-09-08',
           profileId: 0,
+          gameTitle: '',
         ),
       ],
     );

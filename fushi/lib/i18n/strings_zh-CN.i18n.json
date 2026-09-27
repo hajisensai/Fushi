@@ -5625,5 +5625,8 @@
   "video_subtitle_host_upload_failed": "字幕上传服务端失败，仅保存在本机",
   "video_subtitle_host_upload_unsupported": "服务端 Fushi 版本过旧，不接收字幕，仅保存在本机",
   "video_setting_subtitle_auto_upload_to_host": "导入的字幕自动上传到服务端",
-  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。"
+  "video_setting_subtitle_auto_upload_to_host_hint": "播放互联服务端上的视频时，导入或重定时的字幕会上传并设为该集默认字幕，所有设备都会看到。关闭后字幕只在本机生效。",
+  "delete_statistics_book_desc": "该书的阅读时长、阅读字数与查词/制卡计数将从统计中移除，并同步到其他设备",
+  "delete_statistics_manga_desc": "该漫画的阅读时长、字数、页数与查词/制卡计数将从统计中移除，并同步到其他设备",
+  "delete_statistics_game_desc": "该游戏的游玩时长与文本字数将从本机统计中移除"
 }

@@ -737,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 112;
+  int get schemaVersion => 113;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3426,6 +3426,34 @@ class FushiDatabase extends _$FushiDatabase
                   ),
                   mode: InsertMode.insertOrIgnore,
                 );
+              }
+            }
+          }
+          if (from < 113) {
+            // v113：galgame_sessions.game_id 去掉 `REFERENCES galgames ON DELETE
+            // CASCADE`（改逻辑外键），并加 game_title 快照列。此前从库移除游戏会经
+            // cascade 删光它在**所有 Profile** 下的游玩会话——不勾「同时删除统计数据」
+            // 也丢游玩时长。内联 FK 约束 SQLite 不能单独 DROP，走 alterTable 按当前
+            // Dart 定义重建 + 按列名拷贝（v110 先例），`id` 原值保留，表上既有索引
+            // 由 alterTable 按 sqlite_master 原文重建；存量会话的游戏都还在库里（旧
+            // cascade 保证没有孤儿），game_title 取默认空串即可。
+            // 没有表引用 galgame_sessions，FK OFF/ON 夹住只是沿用重建惯例。幂等
+            // 守卫：只在还挂着 FK 或缺 game_title 时重建，mid-ladder 由 createTable
+            // fresh 建出的表已是新 shape 直接短路。
+            if (await _tableExists('galgame_sessions') &&
+                (await _hasForeignKeys('galgame_sessions') ||
+                    !await _columnExists('galgame_sessions', 'game_title'))) {
+              final bool foreignKeysWereOn = await _foreignKeysEnabled();
+              await customStatement('PRAGMA foreign_keys = OFF');
+              try {
+                await m.alterTable(TableMigration(
+                  galgameSessions,
+                  newColumns: [galgameSessions.gameTitle],
+                ));
+              } finally {
+                if (foreignKeysWereOn) {
+                  await customStatement('PRAGMA foreign_keys = ON');
+                }
               }
             }
           }

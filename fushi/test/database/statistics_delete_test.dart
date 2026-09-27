@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi_engine/stats/study_sessions.dart';
 
 /// TODO-1204 后续：统计页长按删除某本书/视频的统计 + 防同步复活墓碑。
 ///
@@ -474,6 +476,186 @@ void main() {
           tombstones
               .map((StudySegmentTombstoneRow t) => (t.mediaKind, t.mediaKey)),
           <(String, String)>[(kActivityMediaVideo, 'uid-1')]);
+    });
+  });
+
+  group('deleteGameStatisticsForId（删除游戏时「同时删除统计数据」）', () {
+    Future<void> seedGame(FushiDatabase db, String id) async {
+      await db.upsertGalgame(GalgamesCompanion.insert(
+        id: id,
+        name: id,
+        exePath: '/g/$id.exe',
+        workdir: '/g',
+        addedAt: 0,
+      ));
+      await db.insertGalgameSession(GalgameSessionsCompanion.insert(
+        gameId: id,
+        startMs: 0,
+        endMs: 60000,
+        durationSeconds: 60,
+        dateKey: '2026-07-05',
+      ));
+      await _seedSegment(db,
+          mediaKind: kActivityMediaGame, mediaKey: id, title: id);
+      await db.into(db.activityEvents).insert(ActivityEventsCompanion.insert(
+            eventType: kActivityGame,
+            mediaType: kActivityMediaGame,
+            title: id,
+            mediaKey: Value(id),
+            dateKey: '2026-07-05',
+            timestampMs: 1,
+            charsDelta: const Value(120),
+          ));
+    }
+
+    test('清该游戏的段（立按身份碑）/ 游玩会话 / legacy 字数行，别的游戏不动', () async {
+      final FushiDatabase db = await _openDb();
+      await seedGame(db, 'g1');
+      await seedGame(db, 'g2');
+
+      await db.deleteGameStatisticsForId('g1');
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g1'),
+          isEmpty);
+      expect(await db.getGalgameSessions('g1'), isEmpty);
+      expect(await db.getGalgame('g1'), isNotNull,
+          reason: '只清统计，游戏本体行由调用方随后自己删');
+      final List<ActivityEventRow> events =
+          await db.select(db.activityEvents).get();
+      expect(events.map((ActivityEventRow e) => e.mediaKey), <String?>['g2']);
+      expect(
+          (await db.getStudySegmentTombstones())
+              .map((StudySegmentTombstoneRow t) => (t.mediaKind, t.mediaKey)),
+          <(String, String)>[(kActivityMediaGame, 'g1')]);
+
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g2'),
+          hasLength(1));
+      expect(await db.getGalgameSessions('g2'), hasLength(1));
+    });
+  });
+
+  group('v113：从库移除游戏默认保留游玩会话（所有者 2026-09-27「保留会话」）', () {
+    // 与生产开库（`_openWithRecovery`）一样打开外键：不开的话 v112 的 cascade
+    // 本来就不生效，「会话保留」断言测的是一个 app 里不存在的行为。
+    Future<FushiDatabase> openFkDb() async {
+      final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory(
+        setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
+      ));
+      addTearDown(db.close);
+      return db;
+    }
+
+    /// 一个游戏 + 两个 Profile 下各一条会话（0 = 当前激活，7 = 另一个 Profile）。
+    Future<void> seedGameWithTwoProfiles(FushiDatabase db, String id) async {
+      await db.upsertGalgame(GalgamesCompanion.insert(
+        id: id,
+        name: 'exe-$id',
+        exePath: '/g/$id.exe',
+        workdir: '/g',
+        addedAt: 0,
+      ));
+      for (final int profileId in <int>[0, 7]) {
+        await db.insertGalgameSession(GalgameSessionsCompanion.insert(
+          gameId: id,
+          startMs: 0,
+          endMs: 60000,
+          durationSeconds: 60,
+          dateKey: '2026-07-05',
+          profileId: Value(profileId),
+        ));
+      }
+      await _seedSegment(db,
+          mediaKind: kActivityMediaGame, mediaKey: id, title: id);
+    }
+
+    test('不勾统计：删游戏行后所有 Profile 的会话都在，显示名快照进会话行', () async {
+      final FushiDatabase db = await openFkDb();
+      await seedGameWithTwoProfiles(db, 'g1');
+
+      await db.deleteGalgame('g1', sessionTitle: '用户改过的名字');
+
+      expect(await db.getGalgame('g1'), isNull);
+      final List<GalgameSessionRow> active = await db.getGalgameSessions('g1');
+      final List<GalgameSessionRow> other =
+          await db.getGalgameSessions('g1', profileId: 7);
+      expect(active, hasLength(1), reason: 'v112 的 FK cascade 会把它删掉');
+      expect(other, hasLength(1), reason: '跨 Profile 同样保留');
+      expect(active.single.gameTitle, '用户改过的名字');
+      expect(other.single.gameTitle, '用户改过的名字');
+      expect(await db.getGalgameSessionTitles(),
+          <String, String>{'g1': '用户改过的名字'});
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g1'),
+          hasLength(1),
+          reason: 'hook 字数段同样是统计，不勾就不动');
+      expect(await db.getAllGalgameDailyTotals(),
+          <String, (int, int)>{'2026-07-05': (60, 1)},
+          reason: '孤儿会话仍计入统计页的游戏时长');
+    });
+
+    test('调用方没给显示名时快照回落 galgames.name', () async {
+      final FushiDatabase db = await openFkDb();
+      await seedGameWithTwoProfiles(db, 'g1');
+
+      await db.deleteGalgame('g1');
+
+      expect((await db.getGalgameSessions('g1')).single.gameTitle, 'exe-g1');
+    });
+
+    test('勾统计：先 deleteGameStatisticsForId 再删行——只删当前 Profile 的会话与段',
+        () async {
+      final FushiDatabase db = await openFkDb();
+      await seedGameWithTwoProfiles(db, 'g1');
+      await seedGameWithTwoProfiles(db, 'g2');
+
+      await db.deleteGameStatisticsForId('g1');
+      await db.deleteGalgame('g1', sessionTitle: 'G1');
+
+      expect(await db.getGalgameSessions('g1'), isEmpty);
+      expect(
+          await db.getStudySegmentsForMedia(
+              mediaKind: kActivityMediaGame, mediaKey: 'g1'),
+          isEmpty);
+      expect(await db.getGalgameSessions('g1', profileId: 7), hasLength(1),
+          reason: '别的 Profile 的游玩史不是本 Profile 的统计，不跟着删');
+      expect(await db.getGalgameSessions('g2'), hasLength(1));
+      expect(await db.getGalgameSessions('g2', profileId: 7), hasLength(1));
+    });
+
+    test('统计事实面对已移除游戏的会话显示快照名（日面 + 会话流）', () async {
+      final FushiDatabase db = await openFkDb();
+      await seedGameWithTwoProfiles(db, 'g1');
+      await seedGameWithTwoProfiles(db, 'live');
+
+      await db.deleteGalgame('g1', sessionTitle: '已移除的游戏');
+
+      final StatFacts facts = await loadStatFacts(db, activityLimit: 0);
+      final List<StatFact> removed = <StatFact>[
+        for (final StatFact f in facts.dailyGames)
+          if (f.mediaKey == 'g1' && f.ms > 0) f,
+      ];
+      expect(removed.single.title, '已移除的游戏');
+      expect(removed.single.ms, 60000);
+      final StatFact live = facts.dailyGames
+          .firstWhere((StatFact f) => f.mediaKey == 'live' && f.ms > 0);
+      expect(live.title, isEmpty, reason: '库内游戏仍由展示层按 id 反查当前显示名');
+      final List<StudySession> sessions = <StudySession>[
+        for (final StudySession s in facts.sessions)
+          if (s.isGame) s,
+      ];
+      expect(
+          sessions
+              .firstWhere((StudySession s) => s.mediaKey == 'g1')
+              .title,
+          '已移除的游戏');
+      expect(
+          sessions.firstWhere((StudySession s) => s.mediaKey == 'live').title,
+          'exe-live');
     });
   });
 
