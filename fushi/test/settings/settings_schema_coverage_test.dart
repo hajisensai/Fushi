@@ -301,6 +301,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
           'test/media/video/metadata/anidb_app_client_test.dart（默认关）+ '
           'test/media/video/anidb_hash_identity_service_test.dart'
           '（disabled 直接 skip file hashing）',
+  // 下载字幕按内嵌字幕轨自动对齐。写 prefsRepo（changed=true），生效点在各下载路径
+  // 写盘前的对齐钩子（AppModel.alignDownloadedSubtitle = gatedAutomaticSubtitleAligner，
+  // 每次调用现读开关）——要下载 + 真视频内嵌轨，不是 reader CSS / 主题树，无适用
+  // 探针；由专项测试咬住（关=原样返回且不调用对齐器、运行中改开关下一次即生效）。
+  'video/Auto-align downloaded subtitles':
+      'test/media/video/embedded_reference_subtitle_sync_test.dart'
+          '（gatedAutomaticSubtitleAligner：开关每次现读）',
   // 字幕遮蔽的「暂停 / 悬停时显形」开关（BUG-2256「暂停 / 查词的自动显形并入
   // 显形总闸」新增）。写 prefsRepo（changed=true），生效点在
   // VideoSubtitleOverlay 的显形门：关掉之后**所有**显形来源都不再揭开被遮蔽的
