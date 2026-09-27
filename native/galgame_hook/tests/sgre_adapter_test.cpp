@@ -56,6 +56,12 @@ void TestAnchorResolution() {
          SgreAnchorSource::kSignatureMissing);
   assert(known.text_draw.rva == 0 && known.scenario_text_vtable.rva == 0 &&
          known.direct_input_mouse_device.rva == 0);
+  // The remote keyboard channel is signature-only (no hash row) and optional.
+  assert(!known.remote_keyboard_available());
+  assert(known.direct_input_keyboard_device.source ==
+         SgreAnchorSource::kSignatureMissing);
+  assert(known.keyboard_binding_vector.source ==
+         SgreAnchorSource::kSignatureMissing);
 
   // Unknown and unhashed builds take the same proof path. Published signatures
   // are non-empty, but an empty mapped image has no evidence to resolve.
@@ -233,7 +239,314 @@ void TestAnchorResolution() {
                      "signature_missing") == 0);
 }
 
+// BUG-2726: the keyboard device slot and the key-binding vector are found the
+// way the mouse slot is -- two independent code sites that must decode the
+// same writable global -- and each site's second operand is pinned too (the
+// CreateDevice GUID, the vector end = begin + 8). Anything else is "missing".
+void PutRipTarget(uint8_t* text, size_t site, size_t disp_offset,
+                  size_t instr_end, uintptr_t text_rva, uintptr_t target_rva) {
+  const int32_t disp = static_cast<int32_t>(target_rva) -
+                       static_cast<int32_t>(text_rva + site + instr_end);
+  std::memcpy(text + site + disp_offset, &disp, sizeof(disp));
+}
+
+struct KeyboardAnchorImage {
+  uint8_t text[0x200] = {};
+  uint8_t rdata[0x40] = {};
+  uint8_t data[0x100] = {};
+  fushi_voice_hook::SgreImageView image;
+  static constexpr uintptr_t kKeyboardRva = 0x3010;
+  static constexpr uintptr_t kBindingsRva = 0x3040;
+  static constexpr uintptr_t kGuidRva = 0x2010;
+
+  KeyboardAnchorImage() {
+    using namespace fushi_voice_hook;
+    image.image_base = 0x10000000u;
+    image.section_count = 3;
+    std::memcpy(image.sections[0].name, ".text", 6);
+    image.sections[0].rva = 0x1000;
+    image.sections[0].size = sizeof(text);
+    image.sections[0].bytes = text;
+    image.sections[0].executable = true;
+    std::memcpy(image.sections[1].name, ".rdata", 7);
+    image.sections[1].rva = 0x2000;
+    image.sections[1].size = sizeof(rdata);
+    image.sections[1].bytes = rdata;
+    std::memcpy(image.sections[2].name, ".data", 6);
+    image.sections[2].rva = 0x3000;
+    image.sections[2].size = sizeof(data);
+    image.sections[2].bytes = data;
+    image.sections[2].writable = true;
+
+    const struct {
+      const SgreAnchorSignature* signature;
+      size_t site;
+    } sites[] = {
+        {&kSgreDirectInputKeyboardDeviceSignature, 0x00},
+        {&kSgreDirectInputKeyboardDeviceCorroborationSignature, 0x40},
+        {&kSgreKeyboardBindingVectorSignature, 0x80},
+        {&kSgreKeyboardBindingVectorCorroborationSignature, 0xC0},
+    };
+    for (const auto& entry : sites) {
+      SgrePatternByte bytes[kSgreSignatureMaxBytes];
+      const size_t count = ParseSgreSignaturePattern(
+          entry.signature->pattern, bytes, kSgreSignatureMaxBytes);
+      assert(count != 0 && count <= 0x40);
+      for (size_t i = 0; i < count; ++i) {
+        text[entry.site + i] = bytes[i].wildcard ? 0x00 : bytes[i].value;
+      }
+    }
+    std::memcpy(rdata + (kGuidRva - 0x2000), kSgreGuidSysKeyboard,
+                sizeof(kSgreGuidSysKeyboard));
+    PutRipTarget(text, 0x00, 18, 22, 0x1000, kKeyboardRva);
+    PutRipTarget(text, 0x00, 28, 32, 0x1000, kGuidRva);
+    PutRipTarget(text, 0x40, 3, 7, 0x1000, kKeyboardRva);
+    PutRipTarget(text, 0x80, 3, 7, 0x1000, kBindingsRva);
+    PutRipTarget(text, 0x80, 10, 14, 0x1000, kBindingsRva + 8);
+    PutRipTarget(text, 0xC0, 3, 7, 0x1000, kBindingsRva);
+    PutRipTarget(text, 0xC0, 10, 14, 0x1000, kBindingsRva + 8);
+  }
+};
+
+void TestRemoteKeyboardAnchors() {
+  using namespace fushi_voice_hook;
+  {
+    KeyboardAnchorImage fixture;
+    const SgreResolvedAnchor keyboard =
+        ResolveSgreDirectInputKeyboardDevice(fixture.image);
+    const SgreResolvedAnchor bindings =
+        ResolveSgreKeyboardBindingVector(fixture.image);
+    assert(keyboard.source == SgreAnchorSource::kSignature &&
+           keyboard.rva == KeyboardAnchorImage::kKeyboardRva);
+    assert(bindings.source == SgreAnchorSource::kSignature &&
+           bindings.rva == KeyboardAnchorImage::kBindingsRva);
+    SgreAnchorSet set;
+    set.direct_input_keyboard_device = keyboard;
+    set.keyboard_binding_vector = bindings;
+    assert(set.remote_keyboard_available() &&
+           ValidateSgreRemoteKeyboardAnchorStructure(set, fixture.image));
+    // Remote keys never make the lookup/shield anchor set complete.
+    assert(!set.complete());
+
+    // A keyboard slot inside the vector's begin/end pair, or equal to the
+    // mouse slot, is not the input update this channel was built against.
+    set.direct_input_keyboard_device.rva =
+        KeyboardAnchorImage::kBindingsRva + sizeof(uintptr_t);
+    assert(!ValidateSgreRemoteKeyboardAnchorStructure(set, fixture.image));
+    set.direct_input_keyboard_device.rva = KeyboardAnchorImage::kKeyboardRva;
+    set.direct_input_mouse_device = {KeyboardAnchorImage::kKeyboardRva,
+                                     SgreAnchorSource::kSignature};
+    assert(!ValidateSgreRemoteKeyboardAnchorStructure(set, fixture.image));
+    set.direct_input_mouse_device = {0x3018, SgreAnchorSource::kSignature};
+    assert(ValidateSgreRemoteKeyboardAnchorStructure(set, fixture.image));
+  }
+  {
+    // The two keyboard sites disagreeing is not a unique intersection.
+    KeyboardAnchorImage fixture;
+    PutRipTarget(fixture.text, 0x40, 3, 7, 0x1000, 0x3018);
+    assert(ResolveSgreDirectInputKeyboardDevice(fixture.image).source ==
+           SgreAnchorSource::kStructureRejected);
+  }
+  {
+    // CreateDevice with another device GUID (here GUID_SysMouse) is not the
+    // keyboard creation site at all.
+    KeyboardAnchorImage fixture;
+    fixture.rdata[KeyboardAnchorImage::kGuidRva - 0x2000] = 0x60;
+    assert(ResolveSgreDirectInputKeyboardDevice(fixture.image).source ==
+           SgreAnchorSource::kSignatureMissing);
+    // Same for a GUID operand that points outside the image.
+    KeyboardAnchorImage outside;
+    PutRipTarget(outside.text, 0x00, 28, 32, 0x1000, 0x9000);
+    assert(ResolveSgreDirectInputKeyboardDevice(outside.image).source ==
+           SgreAnchorSource::kSignatureMissing);
+  }
+  {
+    // A DI8 keyboard CreateDevice sequence whose slot is polled with the mouse
+    // layout GetDeviceState(0x14) has no keyboard corroboration: missing.
+    KeyboardAnchorImage fixture;
+    const uint8_t mouse_poll[] = {0xBA, 0x14, 0x00, 0x00, 0x00};
+    std::memcpy(fixture.text + 0x40 + 10, mouse_poll, sizeof(mouse_poll));
+    assert(ResolveSgreDirectInputKeyboardDevice(fixture.image).source ==
+           SgreAnchorSource::kSignatureMissing);
+  }
+  {
+    // The vector's end operand must be begin + 8 at both sites.
+    KeyboardAnchorImage fixture;
+    PutRipTarget(fixture.text, 0x80, 10, 14, 0x1000,
+                 KeyboardAnchorImage::kBindingsRva + 16);
+    assert(ResolveSgreKeyboardBindingVector(fixture.image).source ==
+           SgreAnchorSource::kSignatureMissing);
+    KeyboardAnchorImage corroboration;
+    PutRipTarget(corroboration.text, 0xC0, 10, 14, 0x1000,
+                 KeyboardAnchorImage::kBindingsRva);
+    assert(ResolveSgreKeyboardBindingVector(corroboration.image).source ==
+           SgreAnchorSource::kSignatureMissing);
+  }
+}
+
+struct BindingRecord {
+  uint32_t dik;
+  uint32_t action;
+  uint32_t alt;
+};
+
+// Builds {u32 dik, u32 action, u32 alt} records like the engine's binding
+// vector.
+std::vector<uint8_t> MakeBindings(const std::vector<BindingRecord>& records) {
+  std::vector<uint8_t> out(records.size() *
+                           fushi_voice_hook::kSgreKeyboardBindingStride);
+  for (size_t i = 0; i < records.size(); ++i) {
+    std::memcpy(out.data() + i * fushi_voice_hook::kSgreKeyboardBindingStride,
+                &records[i], sizeof(BindingRecord));
+  }
+  return out;
+}
+
+void TestGameStreamRemoteKeys() {
+  using namespace fushi_voice_hook;
+  static_assert(sizeof(BindingRecord) == kSgreKeyboardBindingStride,
+                "binding record layout");
+  // The runtime's default keyboard bindings (DIK -> action / alt): arrows ->
+  // up/down/left/right, Z/Space -> a, X -> b, C -> l1, D -> r1, Esc -> back.
+  // Only the bits matter here, not the game.
+  const std::vector<uint8_t> defaults = MakeBindings({
+      {0xC8, kSgreEngineActionUp, kSgreEngineAltUp},
+      {0xD0, kSgreEngineActionDown, kSgreEngineAltDown},
+      {0xCB, kSgreEngineActionLeft, kSgreEngineAltLeft},
+      {0xCD, kSgreEngineActionRight, kSgreEngineAltRight},
+      {0x2C, 0x1u, 0x1000u},
+      {0x2D, kSgreEngineActionB, kSgreEngineAltB},
+      {0x2E, kSgreEngineActionL1, kSgreEngineAltL1},
+      {0x20, kSgreEngineActionR1, kSgreEngineAltR1},
+      {0x39, 0x1u, 0x1000u},
+      {0x01, kSgreEngineActionBack, kSgreEngineAltBack},
+  });
+  const size_t count = defaults.size() / kSgreKeyboardBindingStride;
+  const struct {
+    uint32_t button;
+    uint32_t dik;
+  } expected[] = {
+      {kGameStreamInputButtonDpadUp, 0xC8},
+      {kGameStreamInputButtonDpadDown, 0xD0},
+      {kGameStreamInputButtonDpadLeft, 0xCB},
+      {kGameStreamInputButtonDpadRight, 0xCD},
+      {kGameStreamInputButtonCancel, 0x2D},
+      {kGameStreamInputButtonShoulderLeft, 0x2E},
+      {kGameStreamInputButtonShoulderRight, 0x20},
+      {kGameStreamInputButtonMenu, 0x01},
+  };
+  for (const auto& entry : expected) {
+    uint8_t state[kSgreDirectInputKeyboardStateBytes] = {};
+    const uint32_t observed = ApplySgreGameStreamRemoteKeys(
+        true, entry.button, defaults.data(), count, state, sizeof(state));
+    assert(observed == entry.button);
+    for (size_t dik = 0; dik < sizeof(state); ++dik) {
+      assert(state[dik] == (dik == entry.dik ? 0x80u : 0u));
+    }
+  }
+
+  // Held together: one pass presses every bound key and reads each back. The
+  // left mouse bit is not a keyboard action and never touches this state.
+  uint8_t state[kSgreDirectInputKeyboardStateBytes] = {};
+  state[0x1E] = 0x80;  // a real key held by the local player survives.
+  const uint32_t held = kGameStreamInputButtonLeft |
+                        kGameStreamInputButtonDpadUp |
+                        kGameStreamInputButtonCancel;
+  assert(ApplySgreGameStreamRemoteKeys(true, held, defaults.data(), count,
+                                       state, sizeof(state)) ==
+         (kGameStreamInputButtonDpadUp | kGameStreamInputButtonCancel));
+  assert(state[0xC8] == 0x80 && state[0x2D] == 0x80 && state[0x1E] == 0x80);
+
+  // Refused (target not accepted / lookup card up): nothing is pressed and
+  // nothing is reported, but real keys are never cleared either.
+  std::memset(state, 0, sizeof(state));
+  state[0x2D] = 0x80;
+  assert(ApplySgreGameStreamRemoteKeys(false, kGameStreamInputButtonCancel,
+                                       defaults.data(), count, state,
+                                       sizeof(state)) == 0);
+  assert(state[0x2D] == 0x80 && state[0xC8] == 0);
+
+  // The live vector is authoritative: a rebound action follows its key, an
+  // action without an exact binding fails closed, and a record that would
+  // press another action too -- through either word -- is never used.
+  const std::vector<uint8_t> rebound = MakeBindings({
+      {0x30, kSgreEngineActionB, kSgreEngineAltB},
+      {0x31, kSgreEngineActionL1 | kSgreEngineActionR1, kSgreEngineAltL1},
+      {0x32, kSgreEngineActionUp, kSgreEngineAltDown},
+      {0x33, kSgreEngineActionDown, 0},
+  });
+  const size_t rebound_count = rebound.size() / kSgreKeyboardBindingStride;
+  std::memset(state, 0, sizeof(state));
+  assert(ApplySgreGameStreamRemoteKeys(
+             true,
+             kGameStreamInputButtonCancel | kGameStreamInputButtonShoulderLeft |
+                 kGameStreamInputButtonDpadUp |
+                 kGameStreamInputButtonDpadDown,
+             rebound.data(), rebound_count, state, sizeof(state)) ==
+         (kGameStreamInputButtonCancel | kGameStreamInputButtonDpadDown));
+  assert(state[0x30] == 0x80 && state[0x31] == 0 && state[0x32] == 0 &&
+         state[0x33] == 0x80 && state[0x2D] == 0);
+  assert(FindSgreKeyboardBindingDik(rebound.data(), rebound_count,
+                                    kSgreEngineActionL1,
+                                    kSgreEngineAltL1) == 0);
+  assert(FindSgreKeyboardBindingDik(rebound.data(), rebound_count,
+                                    kSgreEngineActionUp,
+                                    kSgreEngineAltUp) == 0);
+  assert(FindSgreKeyboardBindingDik(rebound.data(), rebound_count,
+                                    kSgreEngineActionDown,
+                                    kSgreEngineAltDown) == 0x33);
+
+  // Unknown layouts and implausible vectors are strict no-ops.
+  uint8_t short_state[16] = {};
+  assert(ApplySgreGameStreamRemoteKeys(true, kGameStreamInputButtonDpadUp,
+                                       defaults.data(), count, short_state,
+                                       sizeof(short_state)) == 0);
+  std::memset(state, 0, sizeof(state));
+  assert(ApplySgreGameStreamRemoteKeys(true, kGameStreamInputButtonDpadUp,
+                                       defaults.data(),
+                                       kSgreKeyboardBindingMaxEntries + 1,
+                                       state, sizeof(state)) == 0);
+  assert(ApplySgreGameStreamRemoteKeys(true, kGameStreamInputButtonDpadUp,
+                                       nullptr, 0, state, sizeof(state)) == 0);
+  const std::vector<uint8_t> out_of_range = MakeBindings(
+      {{0x100, kSgreEngineActionUp, 0}, {0, kSgreEngineActionUp, 0}});
+  assert(FindSgreKeyboardBindingDik(out_of_range.data(), 2,
+                                    kSgreEngineActionUp, kSgreEngineAltUp) ==
+         0);
+  for (const uint8_t value : state) assert(value == 0);
+
+  // The IPC mask carries every mapped action; the left button stays the mouse.
+  for (const auto& entry : kSgreGameStreamKeyActions) {
+    assert((entry.game_stream_button & kGameStreamInputGamepadButtonMask) ==
+           entry.game_stream_button);
+    assert((entry.game_stream_button & kGameStreamInputButtonMask) ==
+           entry.game_stream_button);
+  }
+  assert((kGameStreamInputButtonLeft & kGameStreamInputGamepadButtonMask) == 0);
+
+  // ACK deferral: at most one mouse sample per request, only for gamepad bits
+  // with a live keyboard slot and no keyboard observation for that seq yet.
+  uint32_t deferred = 0;
+  const uint32_t pad = kGameStreamInputButtonDpadUp;
+  assert(DeferSgreGameStreamAckForKeyboard(7, pad, true, 6, &deferred) &&
+         deferred == 7);
+  assert(!DeferSgreGameStreamAckForKeyboard(7, pad, true, 6, &deferred));
+  deferred = 0;
+  assert(!DeferSgreGameStreamAckForKeyboard(7, pad, true, 7, &deferred) &&
+         deferred == 0);
+  assert(!DeferSgreGameStreamAckForKeyboard(
+      7, kGameStreamInputButtonLeft, true, 6, &deferred));
+  assert(!DeferSgreGameStreamAckForKeyboard(7, pad, false, 6, &deferred));
+  assert(!DeferSgreGameStreamAckForKeyboard(0, pad, true, 6, &deferred));
+  assert(!DeferSgreGameStreamAckForKeyboard(7, pad, true, 6, nullptr));
+  assert(deferred == 0);
+  assert(DeferSgreGameStreamAckForKeyboard(8, pad, true, 7, &deferred) &&
+         deferred == 8);
+}
+
 int main() {
+  TestRemoteKeyboardAnchors();
+  TestGameStreamRemoteKeys();
   assert(fushi_voice_hook::MatchesSgreExecutableHash(
       fushi_voice_hook::kSgreExecutableSha256.data(),
       fushi_voice_hook::kSgreExecutableSha256.size()));

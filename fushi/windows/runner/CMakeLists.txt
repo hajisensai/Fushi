@@ -481,3 +481,29 @@ add_executable(fushi_update_launcher WIN32
 apply_standard_settings(fushi_update_launcher)
 target_compile_definitions(fushi_update_launcher PRIVATE "NOMINMAX")
 target_link_libraries(fushi_update_launcher PRIVATE shell32)
+
+# BUG-2726: game-stream input regression (window-targeted input, SGRE native
+# gamepad channel, release-without-visibility). Unlike the gates above it is
+# not a build dependency of the runner: it creates real HWNDs and reads the
+# system cursor, which a developer moving the mouse during a local build could
+# disturb. CI builds and runs it explicitly after `flutter build windows`
+# (cmake --build ... --target fushi_windows_game_stream_input_gate); locally use
+# tool/run_game_stream_input_test.ps1.
+add_executable(fushi_windows_game_stream_input_test EXCLUDE_FROM_ALL
+  "game_stream_input.cpp"
+  "tests/game_stream_input_release_test.cpp"
+)
+target_compile_features(fushi_windows_game_stream_input_test PRIVATE cxx_std_17)
+target_compile_options(fushi_windows_game_stream_input_test PRIVATE /EHsc)
+target_compile_definitions(fushi_windows_game_stream_input_test PRIVATE
+  "NOMINMAX" "UNICODE" "_UNICODE")
+# Header-only use of flutter::EncodableValue; nothing links the engine DLL.
+target_include_directories(fushi_windows_game_stream_input_test PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}"
+  "$<TARGET_PROPERTY:flutter_wrapper_app,INTERFACE_INCLUDE_DIRECTORIES>")
+target_link_libraries(fushi_windows_game_stream_input_test PRIVATE user32)
+add_custom_target(fushi_windows_game_stream_input_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_game_stream_input_test>"
+  DEPENDS fushi_windows_game_stream_input_test
+  VERBATIM
+)

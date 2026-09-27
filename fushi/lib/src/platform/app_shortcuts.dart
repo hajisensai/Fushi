@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart';
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 长按 app 图标弹出的系统快捷方式（Android launcher shortcuts / iOS Home Screen
@@ -18,27 +18,29 @@ import 'package:fushi/src/utils/misc/channel_constants.dart';
 /// 列表是**动态**发布的（而不是 Android `shortcuts.xml` / iOS Info.plist 静态
 /// 声明），因为它要跟着两样东西走：用户在「功能模块」里关掉的模块不该出现在
 /// 图标菜单里；标签要跟 app 内语言设置（不是系统语言）一致。
+///
+/// 只有查词与三个媒体库页四条，两端一致（所有者 2026-09-27 拍板；iOS 图标菜单
+/// 本就只显示前 4 条）。游戏库 / 设置曾发布过：Android 上被固定到桌面的会被原生
+/// 侧置灰，旧 URL 在这里解析为 `null` 按「未处理」放行。
 enum AppShortcut {
   lookup(HomeTab.dictionaries, ModuleId.lookup),
   books(HomeTab.books, ModuleId.books),
   manga(HomeTab.manga, ModuleId.manga),
-  video(HomeTab.video, ModuleId.video),
-  games(HomeTab.games, ModuleId.games),
-  settings(HomeTab.settings, null);
+  video(HomeTab.video, ModuleId.video);
 
   const AppShortcut(this.homeTab, this.module);
 
   /// 点下去要落到的首页 tab。
   final HomeTab homeTab;
 
-  /// 门控模块；`null` = 恒在（设置页没有开关）。
-  final ModuleId? module;
+  /// 门控模块：用户在「功能模块」里关掉它，快捷方式就不发布、也不落地。
+  final ModuleId module;
 
   static const String _scheme = 'fushi';
   static const String _host = 'shortcut';
 
   /// 两端原生侧只认这个 id（选图标用），改名要同步 `AppShortcutsHelper.java`
-  /// 与 `SceneDelegate.swift`。
+  /// 与 `AppDelegate.swift`（`appShortcutSymbol`）。
   String get id => name;
 
   String get url => '$_scheme://$_host/$id';
@@ -60,11 +62,10 @@ enum AppShortcut {
     return null;
   }
 
-  /// 本平台此刻该发布的快捷方式（按展示顺序）。iOS 图标菜单最多显示前 4 条，
-  /// 所以顺序即优先级：查词 > 各库页 > 设置。
+  /// 本平台此刻该发布的快捷方式（按展示顺序）：查词 > 书 > 漫画 > 视频。
   static List<AppShortcut> available(ModuleVisibility visibility) => [
     for (final AppShortcut shortcut in values)
-      if (visibility.isEnabledOrUngated(shortcut.module)) shortcut,
+      if (visibility.isEnabled(shortcut.module)) shortcut,
   ];
 }
 
@@ -87,9 +88,16 @@ class AppShortcutsPublisher {
 
   String? _lastSignature;
 
+  /// Android 上已被固定到桌面、这次不再发布的快捷方式会被原生侧置灰
+  /// （`setDynamicShortcuts` 删不掉固定快捷方式）。置灰提示分两种：
+  /// - 仍是 [AppShortcut] 但模块被关掉了（载荷 `moduleDisabledIds`）：用户点它时
+  ///   启动器显示 [disabledMessage]（「此功能模块已关闭」）。
+  /// - 已不再是快捷方式的旧 id（曾发布过的游戏库 / 设置）：不是模块关闭，给启动器
+  ///   默认文案。
   void sync(
     List<AppShortcut> shortcuts, {
     required String Function(AppShortcut shortcut) labelOf,
+    required String disabledMessage,
   }) {
     if (!platformSupported) return;
     final List<Map<String, String>> payload = [
@@ -100,17 +108,27 @@ class AppShortcutsPublisher {
           'url': shortcut.url,
         },
     ];
-    final String signature = payload
-        .map((Map<String, String> item) => '${item['id']}=${item['title']}')
-        .join('\n');
+    final List<String> moduleDisabledIds = [
+      for (final AppShortcut shortcut in AppShortcut.values)
+        if (!shortcuts.contains(shortcut)) shortcut.id,
+    ];
+    final String signature = [
+      for (final Map<String, String> item in payload)
+        '${item['id']}=${item['title']}',
+      disabledMessage,
+    ].join('\n');
     if (signature == _lastSignature) return;
     _lastSignature = signature;
-    _channel.invokeMethod<void>('setShortcuts', payload).catchError((
-      Object error,
-    ) {
-      // 发布失败只影响图标菜单，不影响 app 本身；清掉签名让下次重建重试。
-      _lastSignature = null;
-      debugPrint('AppShortcutsPublisher: setShortcuts failed: $error');
-    });
+    _channel
+        .invokeMethod<void>('setShortcuts', <String, Object>{
+          'items': payload,
+          'disabledMessage': disabledMessage,
+          'moduleDisabledIds': moduleDisabledIds,
+        })
+        .catchError((Object error) {
+          // 发布失败只影响图标菜单，不影响 app 本身；清掉签名让下次重建重试。
+          _lastSignature = null;
+          debugPrint('AppShortcutsPublisher: setShortcuts failed: $error');
+        });
   }
 }
