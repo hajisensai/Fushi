@@ -112,8 +112,19 @@ class _IllustrationsViewerPageState extends State<IllustrationsViewerPage> {
       // 目录锚点的章内偏移：一个 xhtml 装好几话的书，插图靠它分到各话、节头
       // 才叫得对（缺了就全按章首算，整文件的插图都挂在第一话名下）。与阅读器
       // 同一个计算入口，同样放 isolate——一章可能几万字。
-      final Map<String, int> anchorOffsets =
-          await compute(computeTocAnchorCharOffsets, book);
+      // 算不出锚点偏移不该让整个插图册打不开：记下原因、退回空表（节头回到
+      // 按章分），与阅读器那条后台计算同一处理。
+      Map<String, int> anchorOffsets;
+      try {
+        anchorOffsets = await compute(computeTocAnchorCharOffsets, book);
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'IllustrationsViewer.tocAnchorOffsets',
+          e,
+          stack,
+        );
+        anchorOffsets = const <String, int>{};
+      }
       final ReaderPosition? position = await positionFuture;
       final Set<String> revealed = await revealedFuture;
       if (!mounted) return;

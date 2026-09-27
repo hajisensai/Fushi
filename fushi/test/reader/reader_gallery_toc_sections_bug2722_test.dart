@@ -194,6 +194,34 @@ void main() {
     expect(resolveTocEntryForImage(toc, open), 2);
   });
 
+  test('拉丁文压缩 XHTML：图片偏移与同位置锚点同一把尺子（跨节点词串不重复计数）', () {
+    // 标签之间没有空白：逐节点计数会把 `abc` + `def` 数成 2 个词，拼接后数是 1。
+    // 图片若按逐节点累加，每经过一处这种接缝就比同位置锚点多算 1，收尾上一节的
+    // 图会被归到下一节的标题下。
+    final EpubBook book = EpubBook(
+      title: 'T',
+      chapters: <EpubChapter>[
+        EpubChapter(
+          id: 'c0',
+          href: 'ch0.xhtml',
+          mediaType: 'application/xhtml+xml',
+          html: '<html><body><h2>One</h2><p>abc</p><p>def</p><p>ghi</p>'
+              '<img src="close.png"/><h2 id="n2">Two</h2><p>jkl</p>'
+              '</body></html>',
+        ),
+      ],
+      toc: <EpubTocItem>[
+        EpubTocItem(label: 'One', href: 'ch0.xhtml'),
+        EpubTocItem(label: 'Two', href: 'ch0.xhtml#n2'),
+      ],
+    );
+    final List<TtuTocEntry> toc = _tocOf(book);
+    final EpubImageRef close = book.images.single;
+    expect(close.charOffset, toc[1].anchorCharOffset,
+        reason: '图与紧随其后的锚点同一偏移，才轮得到平局规则');
+    expect(resolveTocEntryForImage(toc, close), 0, reason: '收尾第一节的图不得被归到第二节');
+  });
+
   test('锚点偏移未知时退回章首语义，不因平局规则丢掉', () {
     final List<TtuTocEntry> toc = <TtuTocEntry>[
       TtuTocEntry(index: 0, label: 'A'),

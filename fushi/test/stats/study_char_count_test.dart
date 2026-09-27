@@ -97,4 +97,37 @@ void main() {
       expect(countStudyChars('これは Hello World です'), 3 + 1 + 1 + 2);
     });
   });
+
+  group('StudyCharCounter 可续算', () {
+    test('任意切段后逐段 add，结果恒等于整段 countStudyChars', () {
+      const List<String> samples = <String>[
+        'abcdef',
+        "don't stop",
+        'これは Hello World です',
+        '第一話abc。def',
+        'café au lait',
+        'Привет мир',
+        '',
+      ];
+      for (final String text in samples) {
+        final List<String> runes =
+            text.runes.map((int r) => String.fromCharCode(r)).toList();
+        for (int cut = 0; cut <= runes.length; cut++) {
+          final StudyCharCounter counter = StudyCharCounter()
+            ..add(runes.sublist(0, cut).join())
+            ..add(runes.sublist(cut).join());
+          expect(counter.count, countStudyChars(text),
+              reason: '「$text」在第 $cut 个码点处切开');
+        }
+      }
+    });
+
+    test('跨段延续的词串只计一次（逐段相加会多算）', () {
+      final StudyCharCounter counter = StudyCharCounter()
+        ..add('abc')
+        ..add('def');
+      expect(counter.count, 1);
+      expect(countStudyChars('abc') + countStudyChars('def'), 2);
+    });
+  });
 }

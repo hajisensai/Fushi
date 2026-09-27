@@ -409,6 +409,13 @@ class EpubBook {
   /// ruler as a stored reader position.
   static _ChapterImageScan _scanChapterImages(html_dom.Element? body) {
     final List<_ChapterImageHit> hits = <_ChapterImageHit>[];
+    // One running counter over the concatenated text, not a per-node sum:
+    // [countStudyChars] counts a Latin run as one unit, so `<p>abc</p><p>def</p>`
+    // is 2 per node but 1 concatenated — and [chapterAnchorCharOffsets] (like the
+    // reader's reported position) counts the concatenated prefix. Summing per
+    // node drifts the image offsets past same-position anchors, one per such
+    // seam, which files an image that ends one section under the next heading.
+    final StudyCharCounter counter = StudyCharCounter();
     int chars = 0;
     // Ids of the elements opened since the last study character, in document
     // order: at a given character count they are exactly the anchors that
@@ -417,9 +424,9 @@ class EpubBook {
 
     void visit(html_dom.Node node) {
       if (node is html_dom.Text) {
-        final int added = countStudyChars(node.text);
-        if (added > 0) {
-          chars += added;
+        counter.add(node.data);
+        if (counter.count > chars) {
+          chars = counter.count;
           idsAtCount = <String>[];
         }
         return;
