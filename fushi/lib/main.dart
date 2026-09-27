@@ -1224,12 +1224,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _appShortcutScheduled = false;
       final AppShortcut? shortcut = _pendingAppShortcut;
       _pendingAppShortcut = null;
-      if (mounted && shortcut != null) _runAppShortcut(shortcut);
+      if (mounted && shortcut != null) unawaited(_runAppShortcut(shortcut));
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
-  void _runAppShortcut(AppShortcut shortcut) {
+  Future<void> _runAppShortcut(AppShortcut shortcut) async {
     final AppModel appModel = ref.read(appProvider);
     if (shortcut == AppShortcut.lookup) {
       // 用户点「查词」就是要打字：送进搜索框。阅读器 / 播放器压在上面时
@@ -1237,13 +1237,31 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       appModel.requestHomeDictionaryTab(focusSearch: true);
       return;
     }
-    // 各库页 / 设置是首页 tab：先退回首页根路由，否则 tab 切了也被上层页面挡住。
-    // 目标模块已被关掉时 HomePage._selectTab 会忽略这次请求（旧版本固定到桌面
-    // 的快捷方式仍可能指向它）。
-    appModel.navigatorKey.currentState?.popUntil(
-      (Route<dynamic> route) => route.isFirst,
-    );
+    // 各库页 / 设置是首页 tab：先切 tab（目标模块已被关掉时 HomePage._selectTab
+    // 会忽略——旧版本固定到桌面的快捷方式仍可能指向它），再退回首页根路由，
+    // 否则 tab 切了也被上层页面挡住。
     homeShellTabNotifier.value = shortcut.homeTab;
+    // 新手引导是压在首页上的路由，关掉（任何方式）即记为完成：此时不退栈，
+    // 让用户走完引导后落在目标 tab 上，而不是被快捷方式永久跳过引导。
+    if (!appModel.onboardingCompleted) return;
+    final NavigatorState? navigator = appModel.navigatorKey.currentState;
+    if (navigator == null) return;
+    // 逐层 maybePop（等同按返回键）而不是 popUntil：阅读器 / 编辑页的 PopScope
+    // 要有机会存进度或拦下未保存的改动；某层拒绝出栈就停在那里。
+    while (mounted && navigator.canPop()) {
+      final Route<dynamic>? before = _topRoute(navigator);
+      await navigator.maybePop();
+      if (identical(_topRoute(navigator), before)) break;
+    }
+  }
+
+  static Route<dynamic>? _topRoute(NavigatorState navigator) {
+    Route<dynamic>? top;
+    navigator.popUntil((Route<dynamic> route) {
+      top = route;
+      return true;
+    });
+    return top;
   }
 
   void _queueCardSourceUrl(String url) {
