@@ -5687,5 +5687,20 @@
   "ai_web_knowledge_custom_endpoint": "API address",
   "ai_web_knowledge_custom_endpoint_hint": "The site's api.php, e.g. https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "Enter an https:// address ending in api.php",
-  "ai_web_knowledge_custom_remove": "Remove site"
+  "ai_web_knowledge_custom_remove": "Remove site",
+  "anki_pending_mine_queued": "Saved to pending cards. It will be sent to Anki later.",
+  "anki_batch_mining_title": "Batch mining",
+  "anki_batch_mining_hint": "Save cards on this device first and send them to Anki together later, instead of one at a time.",
+  "anki_pending_mines_title": "Pending cards",
+  "anki_pending_mines_hint": "Cards saved while Anki was unreachable or while batch mining was on",
+  "anki_pending_mines_empty": "No pending cards",
+  "anki_pending_mines_send_all": "Send all",
+  "anki_pending_mines_delete": "Delete",
+  "anki_pending_mines_delete_confirm": "Delete this pending card? It has not been sent to Anki yet.",
+  "anki_pending_mines_status_pending": "Waiting to send",
+  "anki_pending_mines_status_sending": "Sending",
+  "anki_pending_mines_unreachable": "Anki can't be reached right now. The remaining cards stay in the queue.",
+  "anki_pending_mines_ankimobile_hint": "Each card opens AnkiMobile briefly. Fushi sends the next one when you come back, then asks AnkiMobile to sync.",
+  "anki_pending_mines_status_failed": "Failed: $error",
+  "anki_pending_mines_flush_result": "Sent $delivered, failed $failed, remaining $remaining"
 }

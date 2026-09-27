@@ -212,6 +212,7 @@ import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -8948,6 +8949,8 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
       );
     case MineResult.duplicate:
     case MineResult.notConfigured:
+    // 主机端落卡用本机原始仓库（不套待发队列），不会产生 queued；列出只为穷尽。
+    case MineResult.queued:
       return RemoteMineResult(result: outcome.result.name);
   }
 }
@@ -9049,6 +9052,9 @@ class _AppModelRemoteLookupService
         repo.prepareSourceNoteFields(rawPayloadJson: raw, context: context),
   );
 
+  /// 互联「制卡到服务端」：客户端已把未渲染的 rawPayloadJson + context 文本 + 全部本地
+  /// 媒体字节发来。还原成本机文件后走与 app 内本地制卡**完全同一**的 repo.mineEntry
+  /// 渲染链路（服务端用自己的字段映射/牌组）。
   Future<T> _withForwardedMiningContext<T>(
     ForwardedMinePayload payload,
     Future<T> Function(
@@ -9057,114 +9063,13 @@ class _AppModelRemoteLookupService
       AnkiMiningContext context,
     )
     action,
-  ) async {
-    // 互联「制卡到服务端」：客户端已把未渲染的 rawPayloadJson + context 文本 + 全部本地
-    // 媒体字节发来。这里把字节落成本机临时文件 / 词典缓存、重建 AnkiMiningContext，再走
-    // 与 app 内本地制卡**完全同一**的 repo.mineEntry 渲染链路（服务端用自己的字段映射/牌组）。
+  ) {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('fushi_fwd_mine_');
-    try {
-      // ① 封面 → 临时文件 → context.coverPath
-      String? coverPath;
-      if (payload.coverBytes != null) {
-        final File f = File('${tmp.path}/cover.${payload.coverExt ?? 'bin'}');
-        await f.writeAsBytes(payload.coverBytes!, flush: true);
-        coverPath = f.path;
-      }
-      // ② 句子音频 → 临时文件 → context.sasayakiAudioPath
-      String? sentenceAudioPath = payload.synchronizedVideo ? coverPath : null;
-      if (payload.sentenceAudioBytes != null && !payload.synchronizedVideo) {
-        final File f = File(
-            '${tmp.path}/sentence_audio.${payload.sentenceAudioExt ?? 'bin'}');
-        await f.writeAsBytes(payload.sentenceAudioBytes!, flush: true);
-        sentenceAudioPath = f.path;
-      }
-      // ③ 单词音频（本地文件）→ 临时文件 → 改写 rawPayloadJson 的 audio 字段为本机路径
-      String rawPayloadJson = payload.rawPayloadJson;
-      if (payload.wordAudioBytes != null) {
-        final File f =
-            File('${tmp.path}/word_audio.${payload.wordAudioExt ?? 'bin'}');
-        await f.writeAsBytes(payload.wordAudioBytes!, flush: true);
-        rawPayloadJson = _rewriteForwardedAudioField(rawPayloadJson, f.path);
-      }
-      // ④ 词典外字 → 落到 repo 会读取的共享缓存目录（按 path 派生同名，与 repo 读取对齐）
-      await _materializeForwardedDictionaryMedia(payload.dictionaryMedia);
-      // ⑤ 重建 context 后走本地渲染链路落卡
-      final AnkiMiningContext context = AnkiMiningContext(
-        sentence: payload.sentence,
-        cueSentence: payload.cueSentence,
-        documentTitle: payload.documentTitle,
-        coverPath: coverPath,
-        sentenceAudioPath: sentenceAudioPath,
-        synchronizedVideo: payload.synchronizedVideo,
-        sentenceOffset: payload.sentenceOffset,
-        source: _forwardedSourceFromName(payload.source),
-        sourceLink: payload.sourceLink,
-        bookTitleTag: payload.bookTitleTag,
-        collectionTag: payload.collectionTag,
-        charPositionTag: payload.charPositionTag,
-        // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
-        // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
-        // 转发两端为 null，渲染成空串。
-        clipStartMs: payload.clipStartMs,
-        clipEndMs: payload.clipEndMs,
-      );
-      return await action(repo, rawPayloadJson, context);
-    } finally {
-      // 临时封面/音频在 mineEntry 落卡（读+storeMedia）完成后回收；词典缓存目录是共享的
-      // （与本地 writeDictionaryMediaCache 同址），下次覆盖即可，不在此删。
-      try {
-        tmp.deleteSync(recursive: true);
-      } catch (_) {}
-    }
-  }
-
-  /// 把 rawPayloadJson 里的 `audio` 字段改写成本机临时文件路径（客户端单词音频是本地文件时）。
-  String _rewriteForwardedAudioField(String rawJson, String newAudioPath) {
-    try {
-      final Map<String, dynamic> map =
-          jsonDecode(rawJson) as Map<String, dynamic>;
-      map['audio'] = newAudioPath;
-      return jsonEncode(map);
-    } catch (_) {
-      return rawJson;
-    }
-  }
-
-  /// 把转发来的词典外字字节落到 [ankiDictionaryMediaCacheDirPath]，命名与 repo 读取对齐
-  /// （[ankiDictionaryMediaCacheFilename]）。服务端未必装同款词典，故必须用客户端字节。
-  Future<void> _materializeForwardedDictionaryMedia(
-      List<ForwardedDictMedia> media) async {
-    if (media.isEmpty) return;
-    final Directory dir = Directory(ankiDictionaryMediaCacheDirPath());
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    for (final ForwardedDictMedia m in media) {
-      final bytes = m.bytes;
-      if (bytes == null || bytes.isEmpty || m.path.isEmpty) continue;
-      final String fname =
-          ankiDictionaryMediaCacheFilename(m.dictionary, m.path);
-      // 防御：文件名扩展名派生自 client 提供的 path，理论上可含分隔符（`ankiDictionary…`
-      // 未过滤 ext）。落在缓存目录之外/嵌套子目录是不可接受的——直接跳过该条（外字缺失即
-      // 降级，与其它媒体一致），绝不写出目录。SHA-1 前缀已让路径不可上溯，这里再堵横向。
-      if (fname.contains('/') || fname.contains('\\')) continue;
-      final File f = File('${dir.path}/$fname');
-      await f.writeAsBytes(bytes, flush: true);
-    }
-  }
-
-  AnkiMiningSource? _forwardedSourceFromName(String? name) {
-    switch (name) {
-      case 'book':
-        return AnkiMiningSource.book;
-      case 'video':
-        return AnkiMiningSource.video;
-      case 'game':
-        return AnkiMiningSource.game;
-      default:
-        return null;
-    }
+    return withMaterializedMiningContext<T>(
+      payload,
+      (String raw, AnkiMiningContext context) => action(repo, raw, context),
+    );
   }
 
   // ── 互联 Lapis 客制化：客户端（手机等）经互联读写本机 Anki 的 note type。

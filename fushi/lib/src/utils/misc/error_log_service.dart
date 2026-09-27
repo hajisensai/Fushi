@@ -662,6 +662,16 @@ String? localizeAnkiMineError(String? code) {
         record: false,
         status: MineToastStatus.failed,
       );
+    case MineResult.queued:
+      // 卡已经冻结进待发队列（媒体都拷走了），对用户而言「收下了」：清草稿、画 ✓、
+      // 计入制卡统计与句子历史，与成功同待遇；toast 用蓝色说明它还没进 Anki。
+      // 代价：补发时若被 Anki 判重复，统计会多算这一张——可接受。
+      return (
+        message: t.anki_pending_mine_queued,
+        success: true,
+        record: !overwrite,
+        status: MineToastStatus.queued,
+      );
     case MineResult.error:
       return (
         message: logMineFailure(outcome),

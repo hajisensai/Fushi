@@ -5687,5 +5687,20 @@
   "ai_web_knowledge_custom_endpoint": "API 地址",
   "ai_web_knowledge_custom_endpoint_hint": "站点的 api.php，例如 https://onepiece.fandom.com/api.php",
   "ai_web_knowledge_custom_endpoint_invalid": "请填写以 https:// 开头、以 api.php 结尾的地址",
-  "ai_web_knowledge_custom_remove": "删除站点"
+  "ai_web_knowledge_custom_remove": "删除站点",
+  "anki_pending_mine_queued": "已存入待发卡片，稍后发送到 Anki",
+  "anki_batch_mining_title": "批量制卡",
+  "anki_batch_mining_hint": "制卡先存在本机，之后一次性发送到 Anki，而不是每张单独发送",
+  "anki_pending_mines_title": "待发卡片",
+  "anki_pending_mines_hint": "连不上 Anki 或开着批量制卡时存下的卡片",
+  "anki_pending_mines_empty": "没有待发卡片",
+  "anki_pending_mines_send_all": "全部发送",
+  "anki_pending_mines_delete": "删除",
+  "anki_pending_mines_delete_confirm": "删除这张待发卡片？它还没有发送到 Anki。",
+  "anki_pending_mines_status_pending": "等待发送",
+  "anki_pending_mines_status_sending": "发送中",
+  "anki_pending_mines_unreachable": "现在连不上 Anki，剩下的卡片继续留在队列里",
+  "anki_pending_mines_ankimobile_hint": "每张卡会短暂打开 AnkiMobile，回到 Fushi 后自动发送下一张，全部发完后让 AnkiMobile 同步一次",
+  "anki_pending_mines_status_failed": "失败：$error",
+  "anki_pending_mines_flush_result": "已发送 $delivered 张，失败 $failed 张，剩余 $remaining 张"
 }

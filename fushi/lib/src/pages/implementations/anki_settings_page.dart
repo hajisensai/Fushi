@@ -24,6 +24,7 @@ import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -175,6 +176,27 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             SettingsSearchTarget(
               id: 'card_creation.anki.create_lapis',
               child: _buildCreateLapisTile(uiState, vm),
+            ),
+          ],
+        ),
+        // 待发制卡队列：不受「Anki 已配置」门控——恰恰是连不上 Anki 的时候卡会
+        // 攒在这里，用户必须能看到、能处理。
+        AdaptiveSettingsSection(
+          children: [
+            SettingsSearchTarget(
+              id: 'card_creation.anki.batch_mining',
+              child: AdaptiveSettingsSwitchRow(
+                icon: Icons.inventory_2_outlined,
+                showIcon: true,
+                title: t.anki_batch_mining_title,
+                subtitle: t.anki_batch_mining_hint,
+                value: settings.batchMiningEnabled,
+                onChanged: (bool v) => vm.setBatchMiningEnabled(v),
+              ),
+            ),
+            const SettingsSearchTarget(
+              id: 'card_creation.anki.pending_mines',
+              child: PendingMinesEntryRow(),
             ),
           ],
         ),

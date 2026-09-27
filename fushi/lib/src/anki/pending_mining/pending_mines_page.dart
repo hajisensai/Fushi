@@ -1,0 +1,210 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show PendingMineRow, PendingMineStatus;
+
+import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/utils.dart';
+
+/// 订阅待发队列：表一变就重读一次（行数 / 行列表）。
+mixin _PendingMineQueueListener<W extends ConsumerStatefulWidget>
+    on ConsumerState<W> {
+  late final PendingMineStore store = pendingMineStoreFor(
+    ref.read(appProvider),
+  );
+  StreamSubscription<void>? _changes;
+
+  /// 表有变化（以及首帧）时调用。
+  Future<void> reload();
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = store.changes().listen((_) => unawaited(reload()));
+    unawaited(reload());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes?.cancel());
+    super.dispose();
+  }
+}
+
+/// Anki 设置页里的「待发卡片」入口行：显示张数，点进列表页。
+class PendingMinesEntryRow extends ConsumerStatefulWidget {
+  const PendingMinesEntryRow({super.key});
+
+  @override
+  ConsumerState<PendingMinesEntryRow> createState() =>
+      _PendingMinesEntryRowState();
+}
+
+class _PendingMinesEntryRowState extends ConsumerState<PendingMinesEntryRow>
+    with _PendingMineQueueListener<PendingMinesEntryRow> {
+  int _count = 0;
+
+  @override
+  Future<void> reload() async {
+    try {
+      final int n = await store.count();
+      if (mounted) setState(() => _count = n);
+    } catch (_) {
+      // 未初始化的最小宿主（widget 测试）没有库：当 0。
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AdaptiveSettingsRow(
+      icon: Icons.outbox_outlined,
+      showIcon: true,
+      title: t.anki_pending_mines_title,
+      subtitle: t.anki_pending_mines_hint,
+      trailing: Text('$_count'),
+      onTap: () => Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (BuildContext context) => const PendingMinesPage(),
+        ),
+      ),
+    );
+  }
+}
+
+/// 待发卡片列表：全部发送 / 单条重试 / 删除。
+class PendingMinesPage extends ConsumerStatefulWidget {
+  const PendingMinesPage({super.key});
+
+  @override
+  ConsumerState<PendingMinesPage> createState() => _PendingMinesPageState();
+}
+
+class _PendingMinesPageState extends ConsumerState<PendingMinesPage>
+    with _PendingMineQueueListener<PendingMinesPage> {
+  List<PendingMineRow> _rows = const <PendingMineRow>[];
+  bool _sending = false;
+
+  @override
+  Future<void> reload() async {
+    final List<PendingMineRow> rows = await store.all();
+    if (mounted) setState(() => _rows = rows);
+  }
+
+  PendingMiningAnkiRepository? get _repo {
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    return repo is PendingMiningAnkiRepository ? repo : null;
+  }
+
+  Future<void> _sendAll() async {
+    final PendingMiningAnkiRepository? repo = _repo;
+    if (repo == null || _sending) return;
+    setState(() => _sending = true);
+    try {
+      final PendingFlushReport report = await repo.flush(interactive: true);
+      if (!mounted || repo.switchesAppPerNote) return;
+      FushiToast.show(
+        msg: report.unreachable
+            ? t.anki_pending_mines_unreachable
+            : t.anki_pending_mines_flush_result(
+                delivered: report.delivered,
+                failed: report.failed,
+                remaining: report.remaining,
+              ),
+        severity: report.unreachable || report.failed > 0
+            ? ToastSeverity.warning
+            : ToastSeverity.success,
+      );
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _delete(PendingMineRow row) async {
+    final bool? confirmed = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        content: Text(t.anki_pending_mines_delete_confirm),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t.anki_pending_mines_delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await store.remove(row.id);
+  }
+
+  String _statusText(PendingMineRow row) => switch (row.status) {
+    PendingMineStatus.sending => t.anki_pending_mines_status_sending,
+    PendingMineStatus.failed => t.anki_pending_mines_status_failed(
+      error: row.lastError ?? '',
+    ),
+    _ =>
+      row.lastError == null
+          ? t.anki_pending_mines_status_pending
+          : '${t.anki_pending_mines_status_pending} · ${row.lastError}',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final bool switchesApp = _repo?.switchesAppPerNote ?? false;
+    return Scaffold(
+      appBar: AppBar(title: Text(t.anki_pending_mines_title)),
+      body: _rows.isEmpty
+          ? Center(child: Text(t.anki_pending_mines_empty))
+          : ListView(
+              children: <Widget>[
+                if (switchesApp)
+                  AdaptiveSettingsRow(
+                    icon: Icons.info_outline,
+                    showIcon: true,
+                    title: t.anki_pending_mines_ankimobile_hint,
+                    titleMaxLines: 4,
+                  ),
+                for (final PendingMineRow row in _rows)
+                  AdaptiveSettingsRow(
+                    title: row.reading.isEmpty
+                        ? row.expression
+                        : '${row.expression}【${row.reading}】',
+                    subtitle: _statusText(row),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        if (row.status == PendingMineStatus.failed)
+                          IconButton(
+                            tooltip: t.retry,
+                            icon: const Icon(Icons.refresh),
+                            onPressed: () => store.retry(row.id),
+                          ),
+                        IconButton(
+                          tooltip: t.anki_pending_mines_delete,
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _delete(row),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+      floatingActionButton: _rows.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _sending ? null : _sendAll,
+              icon: const Icon(Icons.send),
+              label: Text(t.anki_pending_mines_send_all),
+            ),
+    );
+  }
+}

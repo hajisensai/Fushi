@@ -304,6 +304,14 @@ abstract class BaseAnkiRepository {
   /// [forgetMinedCard] 接住用户的答案。
   bool get canVerifyExistingCards => true;
 
+  /// 这个后端每加一张卡是不是都要**切到另一个 app**（AnkiMobile 的
+  /// `anki://x-callback-url/addnote`：拉起 AnkiMobile，加完再 `x-success` 跳回）。
+  ///
+  /// 待发制卡队列据此决定补发方式：`false` 的后端可以在后台自动、连续补发；
+  /// `true` 的后端绝不能自动补发（用户只是切回 Fushi，就会被莫名其妙拉去
+  /// AnkiMobile），只能由用户显式点「全部发送」，并且一次只发一张、等跳回再发下一张。
+  bool get switchesAppPerNote => false;
+
   /// 用户声明「这张卡我已经在 Anki 里删了」→ 划掉本地的「已制卡」记录，让 ✓ 变回 +。
   ///
   /// 只有 [canVerifyExistingCards] 为 `false` 的后端需要它（也只有它们覆写）：能回读

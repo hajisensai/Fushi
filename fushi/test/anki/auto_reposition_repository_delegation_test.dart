@@ -3,13 +3,14 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
-// `AutoRepositionAnkiRepository` 的委派完整性守卫。
+// `DelegatingAnkiRepository` 的委派完整性守卫。
 //
-// 那个类的语义是「行为与被包装的仓库完全一致，只在 mineEntry 成功后多一个副作用」。
-// 它靠**逐个方法手写委派**做到这点——而 Dart 没有自动转发，漏掉一个方法不会报错：
+// 仓库层装饰器（`AutoRepositionAnkiRepository`、`PendingMiningAnkiRepository`）都继承
+// 这个基类，语义是「行为与被包装的仓库完全一致，只在 mineEntry 上多做一件事」。
+// 基类靠**逐个方法手写委派**做到这点——而 Dart 没有自动转发，漏掉一个方法不会报错：
 // 调用会静默掉回 `BaseAnkiRepository` 的降级默认（`supportsNoteTypeEditing` 变
 // false、`noteFields` 恒返回 null、`listNewCards` 恒返回空……）。表现出来就是
-// 「打开自动重排以后某个不相干的功能坏了」，而且不可能有人一眼看出关联。
+// 「打开自动重排 / 批量制卡以后某个不相干的功能坏了」，而且不可能有人一眼看出关联。
 //
 // 所以这里把不变式钉死：**基类里凡是被任一后端实现覆盖过的实例成员，装饰器
 // 都必须覆盖**。以后给基类加方法、或某个后端新覆盖一个方法，忘了同步装饰器
@@ -43,7 +44,7 @@ void main() {
   final Directory appLib = Directory('lib');
   final Directory packagesDir = Directory(p.join('..', 'packages'));
   final File decoratorFile =
-      File(p.join('lib', 'src', 'anki', 'auto_reposition_anki_repository.dart'));
+      File(p.join('lib', 'src', 'anki', 'delegating_anki_repository.dart'));
   final File baseFile = File(p.join(
     '..',
     'packages',
@@ -94,10 +95,10 @@ void main() {
     expect(
       missing,
       isEmpty,
-      reason: '这些成员被某个后端覆盖过，但 AutoRepositionAnkiRepository 没有委派：'
+      reason: '这些成员被某个后端覆盖过，但 DelegatingAnkiRepository 没有委派：'
           '$missing\n'
           '漏委派不会报错，只会让调用静默掉回基类降级默认。'
-          '请在 auto_reposition_anki_repository.dart 里补上纯委派实现。',
+          '请在 delegating_anki_repository.dart 里补上纯委派实现。',
     );
   });
 }

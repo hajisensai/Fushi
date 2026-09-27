@@ -752,6 +752,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   @override
   bool get canVerifyExistingCards => false;
 
+  /// 每张卡都经 `anki://x-callback-url/addnote` 拉起 AnkiMobile。
+  @override
+  bool get switchesAppPerNote => true;
+
   /// 用户说「这张卡我已经在 Anki 里删了」——账本是 iOS 上唯一的真值来源，只能由他
   /// 来纠正（[AnkiMobileMinedLedger.forget] 会顺带广播刷新，✓ 立刻变回 +）。
   @override

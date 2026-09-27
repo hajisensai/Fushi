@@ -95,6 +95,16 @@ SettingsDestination buildCardCreationDestination() {
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       SettingsBodySearchEntry(
+        id: 'card_creation.anki.batch_mining',
+        title: t.anki_batch_mining_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mines',
+        title: t.anki_pending_mines_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
         id: 'card_creation.anki.duplicate_scope',
         title: t.anki_duplicate_scope,
         hasRevealTarget: true,

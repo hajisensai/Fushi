@@ -69,6 +69,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/app_shortcuts.dart';
@@ -923,10 +924,21 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return swallowEngineDeepLinkRoute(routeInformation);
   }
 
+  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
+  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
+  void _flushPendingMines() {
+    if (!ref.read(appProvider).isInitialised) return;
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
+    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      _flushPendingMines();
       if (Platform.isIOS) {
         unawaited(_consumeAnkiMobileInfoReturn(
           AnkiMobileInfoReturnTrigger.appResumed,

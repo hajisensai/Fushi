@@ -216,8 +216,13 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(4),
-      reason: '常用标签开关直接可见，维护开关属于独立子页',
+      findsNWidgets(5),
+      reason: '常用开关（批量制卡 + 标签）直接可见，维护开关属于独立子页',
+    );
+    expect(
+      find.widgetWithText(AdaptiveSettingsSwitchRow, 'Batch mining'),
+      findsOneWidget,
+      reason: '批量制卡不受「Anki 已配置」门控：连不上 Anki 时正需要它',
     );
     expect(find.byType(AdaptiveSettingsSliderRow), findsNothing);
     expect(

@@ -1667,6 +1667,9 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v103：漫画下载队列。任务指向的是本机磁盘上的章目录（半成品），另一台
       // 设备既没有那份目录也不该替它续跑，合并进来只会造一堆永远跑不完的任务。
       'manga_download_jobs',
+      // v114：设备端待发制卡队列。载荷文件只在本机 <support>/pending_mine_queue/，
+      // 补发目标也是本机配置的后端——合并进来只会造出没有载荷、发不出去的空行。
+      'pending_mine_queue',
     ]);
 
 /// Read-only summary of what a backup MERGE import would change on this device
