@@ -1366,25 +1366,38 @@ extension _VideoSubtitle on _VideoFushiPageState {
       langCode: _targetLangCode,
     );
     if (suffix == null) return;
-    bool uploaded;
+    // BUG-2728：老 host 不认「设为默认」，会按 [suffix] 覆盖它同名的旧字幕且不留
+    // 备份——backend 先看 host 能力位，不支持就不上传，字幕只留本机。只有 host 确认
+    // 按新语义落盘（回了实际后缀）才提示「已设为默认」。
+    RemoteSubtitleDefaultUpload? result;
     try {
-      uploaded = await backend.putRemoteVideoSubtitle(
+      result = await backend.putRemoteVideoSubtitleAsDefault(
         id,
         File(path),
         suffix: suffix,
-        asDefault: true,
       );
     } catch (e, st) {
       ErrorLogService.instance.log('video.uploadRemoteSubtitle', e, st);
-      uploaded = false;
+      result = null;
     }
     if (!mounted) return;
-    _showOsd(
-      uploaded
-          ? t.video_subtitle_host_upload_done
-          : t.video_subtitle_host_upload_failed,
-      severity: uploaded ? ToastSeverity.success : ToastSeverity.warning,
-    );
+    switch (result) {
+      case RemoteSubtitleDefaultUpload.applied:
+        _showOsd(
+          t.video_subtitle_host_upload_done,
+          severity: ToastSeverity.success,
+        );
+      case RemoteSubtitleDefaultUpload.hostUnsupported:
+        _showOsd(
+          t.video_subtitle_host_upload_unsupported,
+          severity: ToastSeverity.warning,
+        );
+      case null:
+        _showOsd(
+          t.video_subtitle_host_upload_failed,
+          severity: ToastSeverity.warning,
+        );
+    }
   }
 
   /// 远端模式：把 [path] 字幕文件解析成 cue 并切到 overlay（仅内存，不写本地 DB）。

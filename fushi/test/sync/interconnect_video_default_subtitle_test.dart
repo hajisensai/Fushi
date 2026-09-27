@@ -6,10 +6,14 @@
 /// 2. host [LocalLibraryHostService.importDefaultVideoSubtitle]：按 host 学习语言定
 ///    后缀、压过它的旧 sidecar 改名 `.fushi-bak` 让位（原始文件只备份一次）、落库。
 /// 3. 端到端（真实 server/host/client）：client 带 `asDefault` 上传后 host 首选字幕
-///    就是它；不带时仍按 client 报的后缀落盘（live push 旧语义不变）。
+///    就是它；不带时仍按 client 报的后缀落盘（live push 旧语义不变）；新 host 的
+///    capabilities 声明 `liveLibrary.videoSubtitleDefault`。
+/// 3b. 混版本（BUG-2728）：假老 host 如实模拟「按后缀覆盖、无备份」，client 探到能力位
+///    缺失 / false / 端点 404 时一个 PUT 都不发，host 原字幕字节不变，能力位只探一次。
 /// 4. 源码守卫：视频页远端导入会上传、对轴 / 重定时入口不再只认本地文件。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -233,7 +237,31 @@ void main() {
       if (work.existsSync()) await work.delete(recursive: true);
     });
 
-    test('asDefault：host 按自己的学习语言定后缀并成为首选字幕', () async {
+    test('新 host 的 capabilities 声明 liveLibrary.videoSubtitleDefault', () async {
+      final HttpClient http = HttpClient();
+      try {
+        final HttpClientRequest req =
+            await http.getUrl(Uri.parse('$base/api/capabilities'));
+        req.headers.set(HttpHeaders.authorizationHeader,
+            'Basic ${base64Encode(utf8.encode('fushi:$token'))}');
+        final HttpClientResponse res = await req.close();
+        final String body = await res.transform(utf8.decoder).join();
+        expect(res.statusCode, 200, reason: body);
+        final Map<String, dynamic> json =
+            jsonDecode(body) as Map<String, dynamic>;
+        expect(
+            (json['liveLibrary']
+                as Map<String, dynamic>)['videoSubtitleDefault'],
+            isTrue);
+      } finally {
+        http.close(force: true);
+      }
+      final InterconnectSyncBackend backend =
+          await _clientBackend(base: base, token: token);
+      expect(await backend.hostSupportsVideoSubtitleDefault(), isTrue);
+    });
+
+    test('asDefault：host 按自己的学习语言定后缀、旧档备份让位并成为首选字幕', () async {
       final File oldJa = File(p.join(vidDir.path, 'movie.ja.srt'))
         ..writeAsStringSync(_srtOriginal);
       final InterconnectSyncBackend backend =
@@ -243,14 +271,16 @@ void main() {
 
       // client 的学习语言（en）与 host（ja）不同：后缀以 host 为准。
       expect(
-          await backend.putRemoteVideoSubtitle('video/movie', sub,
-              suffix: '.en.srt', asDefault: true),
-          isTrue);
+          await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
+              suffix: '.en.srt'),
+          RemoteSubtitleDefaultUpload.applied);
 
       expect(oldJa.readAsStringSync(), _srtUploaded);
       expect(File(p.join(vidDir.path, 'movie.en.srt')).existsSync(), isFalse);
-      expect(File('${oldJa.path}$kDisplacedSidecarBackupSuffix').existsSync(),
-          isTrue);
+      expect(
+          File('${oldJa.path}$kDisplacedSidecarBackupSuffix')
+              .readAsStringSync(),
+          _srtOriginal);
       final VideoBookRow row =
           (await hostDb.getVideoBookByBookUid('video/movie'))!;
       expect(row.subtitleSource, oldJa.path);
@@ -266,6 +296,115 @@ void main() {
               suffix: '.en.srt'),
           isTrue);
       expect(File(p.join(vidDir.path, 'movie.en.srt')).existsSync(), isTrue);
+    });
+  });
+
+  // BUG-2728 混版本：老 host 不认 X-Hibiki-Subtitle-Default，PUT 走 live push 旧路径
+  // 按 client 报的后缀 `rename` 覆盖同名旧字幕、不留备份。假 host 如实模拟这个覆盖
+  // 语义，client 必须先看能力位、不支持就一个 PUT 都不发。
+  group('老 host（无 videoSubtitleDefault 能力位）', () {
+    late Directory work;
+    late HttpServer fake;
+    late File hostJa;
+    late String base;
+    late int capabilityProbes;
+    late int subtitlePuts;
+    // null = /api/capabilities 整个端点 404（更老的 host）。
+    Map<String, dynamic>? capabilities;
+
+    setUp(() async {
+      work = await Directory.systemTemp.createTemp('default_subtitle_old_');
+      hostJa = File(p.join(work.path, 'movie.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      capabilityProbes = 0;
+      subtitlePuts = 0;
+      fake = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      fake.listen((HttpRequest req) async {
+        final HttpResponse res = req.response;
+        if (req.uri.path == '/api/capabilities') {
+          capabilityProbes++;
+          final Map<String, dynamic>? caps = capabilities;
+          if (caps == null) {
+            res.statusCode = 404;
+          } else {
+            res.headers.contentType = ContentType.json;
+            res.write(jsonEncode(caps));
+          }
+        } else if (req.method == 'PUT' && req.uri.path.endsWith('/subtitle')) {
+          subtitlePuts++;
+          // 老 host 的 importVideoSubtitle：按 client 报的后缀直接覆盖，无备份。
+          final String suffix = Uri.decodeComponent(
+              req.headers.value('x-hibiki-subtitle-suffix') ?? '');
+          final List<int> body = <int>[];
+          await req.forEach(body.addAll);
+          File(p.join(work.path, 'movie$suffix')).writeAsBytesSync(body);
+        } else {
+          res.statusCode = 404;
+        }
+        await res.close();
+      });
+      base = 'http://127.0.0.1:${fake.port}';
+    });
+
+    tearDown(() async {
+      await fake.close(force: true);
+      if (work.existsSync()) await work.delete(recursive: true);
+    });
+
+    for (final (String label, Map<String, dynamic>? caps)
+        in <(String, Map<String, dynamic>?)>[
+      (
+        '能力位缺失',
+        <String, dynamic>{
+          'liveLibrary': <String, dynamic>{'videos': true},
+        },
+      ),
+      (
+        '能力位为 false',
+        <String, dynamic>{
+          'liveLibrary': <String, dynamic>{
+            'videos': true,
+            'videoSubtitleDefault': false,
+          },
+        },
+      ),
+      ('capabilities 端点 404', null),
+    ]) {
+      test('$label：不发上传请求，host 原字幕字节不变', () async {
+        capabilities = caps;
+        final List<int> before = hostJa.readAsBytesSync();
+        final InterconnectSyncBackend backend =
+            await _clientBackend(base: base, token: 'old-host-token');
+        final File sub = File(p.join(work.path, 'picked.srt'))
+          ..writeAsStringSync(_srtUploaded);
+
+        for (int i = 0; i < 2; i++) {
+          expect(
+              await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
+                  suffix: '.ja.srt'),
+              RemoteSubtitleDefaultUpload.hostUnsupported);
+        }
+
+        expect(subtitlePuts, 0, reason: '老 host 会按 .ja.srt 覆盖旧字幕，一个 PUT 都不能发');
+        expect(hostJa.readAsBytesSync(), before);
+        expect(capabilityProbes, 1, reason: '同一 host 基址的能力位只探一次（缓存）');
+      });
+    }
+
+    test('能力位为 true 时才上传（假 host 的覆盖语义证明门确实在 PUT 之前）', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{'videoSubtitleDefault': true},
+      };
+      final InterconnectSyncBackend backend =
+          await _clientBackend(base: base, token: 'old-host-token');
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      // 假 host 回 200 但没有 x-hibiki-subtitle-suffix：不能报「已设为默认」。
+      expect(
+          await backend.putRemoteVideoSubtitleAsDefault('video/movie', sub,
+              suffix: '.ja.srt'),
+          RemoteSubtitleDefaultUpload.hostUnsupported);
+      expect(subtitlePuts, 1);
     });
   });
 
@@ -287,8 +426,22 @@ void main() {
     test('远端导入字幕在应用成功后上传 host', () {
       expect(body(part, 'Future<void> _pickAndImportRemoteSubtitle('),
           contains('_uploadRemoteSubtitleToHost('));
-      expect(body(part, 'Future<void> _uploadRemoteSubtitleToHost('),
-          contains('asDefault: true'));
+      final String upload =
+          body(part, 'Future<void> _uploadRemoteSubtitleToHost(');
+      // BUG-2728：必须走带能力位门的 AsDefault 入口，不能直接调 live push 的
+      // putRemoteVideoSubtitle（老 host 上会覆盖同名旧字幕）。
+      expect(upload, contains('putRemoteVideoSubtitleAsDefault('));
+      expect(upload, isNot(contains('putRemoteVideoSubtitle(')));
+      // 「已设为默认」只在 host 确认新语义生效时提示；不支持时如实说只留本机。
+      final int applied = upload.indexOf('RemoteSubtitleDefaultUpload.applied');
+      final int unsupported =
+          upload.indexOf('RemoteSubtitleDefaultUpload.hostUnsupported');
+      expect(applied, isNonNegative);
+      expect(unsupported, greaterThan(applied));
+      expect(upload.substring(applied, unsupported),
+          contains('video_subtitle_host_upload_done'));
+      expect(upload.substring(unsupported),
+          contains('video_subtitle_host_upload_unsupported'));
     });
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {

@@ -215,8 +215,10 @@ abstract interface class AudiobookDelayHost {
 
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
-/// 测试 fake 全量补桩；server 用 `is` 探测，不实现就退回
-/// [FushiLibraryHostService.importVideoSubtitle] 按 client 报的后缀落盘。
+/// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
+/// `liveLibrary.videoSubtitleDefault`；不实现时带 `X-Hibiki-Subtitle-Default` 的 PUT
+/// 回 409、不落盘——**不能**退回 [FushiLibraryHostService.importVideoSubtitle]，那条
+/// 按 client 报的后缀覆盖同名旧字幕且不留备份（BUG-2728）。
 ///
 /// 和 `importVideoSubtitle` 的区别在**谁定后缀**：那条是 live push 把 client 本地
 /// sidecar 原名镜像过去；这条是用户在远端播放时明确选了一份字幕，意图是「这一集

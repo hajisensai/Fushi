@@ -211,13 +211,23 @@ extension _FushiSyncServerVideo on FushiSyncServer {
           await sink.close();
           // X-Hibiki-Subtitle-Default: 1 = 用户在远端播放时导入 / 重定时的字幕，要设成
           // 这一集的默认字幕（后缀由 host 按自己的学习语言定，旧的高优先级 sidecar
-          // 改名让位，见 [VideoSubtitleDefaultHost]）。不支持该能力的 host 退回按
-          // client 报的后缀落盘；老 host 根本不认这个 header，行为同后者。
+          // 改名让位，见 [VideoSubtitleDefaultHost]）。本 host 的库服务不支持该能力时
+          // 回 409、**不落盘**：退回 importVideoSubtitle 会按 client 报的后缀覆盖同名
+          // 旧字幕且不留备份（BUG-2728）。client 本该先看 capabilities 的
+          // `liveLibrary.videoSubtitleDefault` 再上传（老 host 不认这个 header，只能靠
+          // client 那一侧的门），这里是新 host 的第二道门。
           final bool asDefault =
               _decodeHeaderValue(request, 'x-hibiki-subtitle-default') == '1';
-          if (asDefault && svc is VideoSubtitleDefaultHost) {
-            final String placed =
-                await (svc as VideoSubtitleDefaultHost).importDefaultVideoSubtitle(
+          if (asDefault) {
+            if (svc is! VideoSubtitleDefaultHost) {
+              return shelf.Response(
+                409,
+                body: 'Default subtitle import unsupported',
+              );
+            }
+            final VideoSubtitleDefaultHost host =
+                svc as VideoSubtitleDefaultHost;
+            final String placed = await host.importDefaultVideoSubtitle(
               tmp,
               id: subtitleId,
               format: p.extension(suffix),
