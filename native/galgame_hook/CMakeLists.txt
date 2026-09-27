@@ -95,6 +95,7 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/reallive_lookup_core.h"
   "hook/adapters/catsystem2_lookup.inc"
   "hook/adapters/catsystem2_lookup_core.h"
+  "hook/adapters/catsystem2_voice_core.h"
   "hook/adapters/catsystem2_adapter.inc"
   "hook/adapters/catsystem2_profile.h"
   "hook/adapters/malie_adapter.inc"
@@ -998,6 +999,21 @@ target_compile_definitions(fushi_catsystem2_lookup_test PRIVATE
   UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_catsystem2_lookup_test
   COMMAND fushi_catsystem2_lookup_test)
+
+# CatSystem2 per-line voice core: structural ReadEntry resolution on a
+# synthetic x86 image (kcBigFile::Read forwarder -> ReadEntry prologue ->
+# plain-path block with the SetFilePointer / ReadFile import slots) with every
+# fail-closed branch, entry plausibility, member range assembly, Ogg page CRC
+# scanning, the complete / partial / reject verdicts and the published name.
+add_executable(fushi_catsystem2_voice_test
+  "tests/catsystem2_voice_test.cpp"
+)
+target_include_directories(fushi_catsystem2_voice_test PRIVATE
+  "hook/adapters")
+target_compile_definitions(fushi_catsystem2_voice_test PRIVATE
+  UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_catsystem2_voice_test
+  COMMAND fushi_catsystem2_voice_test)
 
 add_executable(fushi_siglus_text_owner_test "tests/siglus_text_owner_test.cpp")
 target_include_directories(fushi_siglus_text_owner_test PRIVATE "include")

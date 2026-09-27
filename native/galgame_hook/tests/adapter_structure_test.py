@@ -2017,6 +2017,99 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertIn("Cs2ShieldActive(", eligible)
         self.assertIn("GetForegroundWindow()", eligible)
 
+    def test_catsystem2_engine_voice_is_structural_bounded_and_decrypts_nothing(
+        self,
+    ) -> None:
+        """CatSystem2 引擎通道语音：站点只来自结构；只拷引擎自己解密后交给解码器的明文。
+
+        * 站点：kcBigFile::Read 转发器（参数顺序）→ ReadEntry 序言（参数绑寄存器）→
+          明文路径块（条目字段 + SetFilePointer / ReadFile 导入槽），任一缺失或不唯一
+          fail closed；不读哈希 / 文件名 / 标题，不实现任何解密或密钥推导。
+        * 游戏线程（ReadEntry detour，主线程 + 音频流线程）只做字段读、表查找、有界
+          拷贝与入队：不分配、不做文件 IO、不写日志、不转码、不查文件名。
+        * worker 才做句柄分类（GetFinalPathNameByHandleW）、Ogg 页 CRC 校验与落盘；
+          落盘必须经过 DecideMember 判定；就绪位只在语音归档真被登记后置位，引擎通道
+          不冒认「与源条目同字节」的 Captured 位（明文不是归档里存的字节）。
+        * 两条通道互斥：索引通道认领的归档永不进引擎通道。
+        """
+        adapters = ROOT / "hook" / "adapters"
+        core = self._strip_comments(
+            (adapters / "catsystem2_voice_core.h").read_text(encoding="utf-8")
+        )
+        adapter = self._strip_comments(
+            (adapters / "catsystem2_adapter.inc").read_text(encoding="utf-8")
+        )
+        for forbidden in ("sha256", "bcrypt", "grisaia", "getmodulefilename",
+                          "cs2.exe", "cs2_open", "blowfish", "__key__"):
+            self.assertNotIn(forbidden, core.lower())
+        engine_lane = adapter[adapter.index("constexpr LONG kCs2FlagIndexLane"):
+                              adapter.index("bool TryHookCatSystem2PcmVoice()")]
+        for forbidden in ("sha256", "grisaia", "blowfish", "__key__",
+                          "isencryptionkey"):
+            self.assertNotIn(forbidden, engine_lane.lower())
+        resolve = self._function_body(core, "inline VoiceSiteResult ResolveVoiceSites(")
+        for proof in ("kBigReadBytes", "kReadEntryPrologueBytes",
+                      "kPlainBlockBytes", "DecodeRel32CallTarget",
+                      "imports.set_file_pointer", "imports.read_file",
+                      "OperandNamesSlot("):
+            self.assertIn(proof, resolve)
+        hook = self._function_body(adapter, "bool TryHookCatSystem2EngineVoice()")
+        self.assertIn("ResolveVoiceSites(image, imports, &sites)", hook)
+        self.assertIn('FindImportSlotRva(\n        image, "kernel32.dll", "SetFilePointer")',
+                      hook)
+        self.assertLess(hook.index("ResolveVoiceSites("), hook.index("HookFn("))
+        # Game threads: bounded field reads, table lookups and chunk copies.
+        for name in ("int32_t __fastcall Cs2ReadEntryDetour(",
+                     "bool ProbeCs2VoiceRead(",
+                     "bool AdmitCs2UnclassifiedRead(",
+                     "void QueueCs2VoiceBytes(",
+                     "bool Cs2ChunkPending(",
+                     "void NoteCatSystem2UnknownArchive(",
+                     "void ForgetCatSystem2EngineArchive(HANDLE handle) {"):
+            body = self._function_body(adapter, name)
+            for forbidden in ("Cs2LookupLog(", "CreateFile", "WriteFile",
+                              "WriteVoiceOggAt(", "malloc(", "calloc(",
+                              "std::wstring", "GetFinalPathNameByHandle",
+                              "MultiByteToWideChar", "EnterCriticalSection",
+                              "DecideMember(", "ScanOggPages("):
+                self.assertNotIn(forbidden, body, name)
+        detour = self._function_body(adapter, "int32_t __fastcall Cs2ReadEntryDetour(")
+        self.assertLess(detour.index("ProbeCs2VoiceRead("),
+                        detour.index("g_cs2_read_entry_original("))
+        self.assertLess(detour.index("g_cs2_read_entry_original("),
+                        detour.index("QueueCs2VoiceBytes("))
+        self.assertIn("PlausibleRead(", detour)
+        # Worker owns classification, verification and publication.
+        classify = self._function_body(adapter, "void ClassifyCatSystem2UnknownArchives()")
+        self.assertIn("GetFinalPathNameByHandleW(", classify)
+        self.assertIn("HasCatSystem2PcmArchiveName(path)", classify)
+        self.assertIn("!IsCatSystem2IndexLaneHandle(handle)", classify)
+        settle = self._function_body(adapter, "void SettleCs2Member(")
+        self.assertLess(settle.index("DecideMember("), settle.index("PublishCs2Member("))
+        publish = self._function_body(adapter, "void PublishCs2Member(")
+        self.assertIn("WriteVoiceOggAt(", publish)
+        self.assertIn("BuildVoiceStorageName(", publish)
+        self.assertNotIn("kDiagCatSystem2PcmVoiceCaptured", engine_lane)
+        # Ready only after a voice archive is really registered on the lane.
+        remember = self._function_body(
+            adapter,
+            "void RememberCatSystem2EngineArchive(HANDLE handle, const wchar_t* path) {")
+        self.assertLess(remember.index("g_cs2_engine_armed"),
+                        remember.index("RememberTrackedHandle("))
+        self.assertLess(remember.index("RememberTrackedHandle("),
+                        remember.index("kDiagCatSystem2PcmHooksReady"))
+        # Lanes are exclusive: an index-lane archive never reaches the engine lane.
+        route = self._function_body(adapter, "void RememberCatSystem2Pcm(")
+        self.assertLess(route.index("FindCatSystem2ArchiveByPath(path)"),
+                        route.index("RememberCatSystem2EngineArchive(handle, path)"))
+        # Text binding direction keys on Luna's hook identity only.
+        order = self._function_body(core, "inline LineOrder SelectedLineOrder(")
+        self.assertIn('"EmbedCS2"', order)
+        bind = self._function_body(adapter, "bool ResolveCatSystem2VoiceText(")
+        self.assertIn("ResolvePrecedingSelectedText(", bind)
+        self.assertIn("ResolveFollowingSelectedText(", bind)
+        self.assertIn("SelectedLineOrder(hook_name)", bind)
+
     def test_unity_mono_lookup_is_structural_and_callbacks_stay_bounded(
         self,
     ) -> None:
