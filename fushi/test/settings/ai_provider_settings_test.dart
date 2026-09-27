@@ -473,6 +473,47 @@ void main() {
       expect(find.textContaining('Alpha'), findsWidgets);
     });
 
+    testWidgets('显式指派的那家没配全：显示「不可用」而不是「跟随默认」', (WidgetTester tester) async {
+      await prefs.setAiProviders(<AiProviderConfig>[
+        _config(id: 'p1', name: 'Alpha'),
+        _config(id: 'p2', name: 'Beta', apiKey: ''),
+      ]);
+      await prefs.setAiFeatureAssignments(
+        const AiFeatureAssignments(
+          defaultProviderId: 'p1',
+        ).withAssignment(AiFeature.galgameTextProcess, 'p2'),
+      );
+      await pumpSection(tester);
+
+      final Finder row = find.byKey(
+        ValueKey<String>(
+          'ai-feature-${AiFeature.galgameTextProcess.storageKey}',
+        ),
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_assigned_unavailable),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.ai_feature_follow_default(name: 'Alpha')),
+        ),
+        findsNothing,
+      );
+      // 与运行时一致：显式那家失效不回退默认。
+      expect(
+        prefs.aiFeatureAssignments.resolve(
+          AiFeature.galgameTextProcess,
+          prefs.aiProviders,
+        ),
+        isNull,
+      );
+    });
+
     testWidgets('功能行选「不使用 AI」压过默认', (WidgetTester tester) async {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(id: 'p1', name: 'Alpha'),

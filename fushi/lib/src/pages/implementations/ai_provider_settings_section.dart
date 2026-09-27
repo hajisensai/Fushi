@@ -478,8 +478,17 @@ class _AiProviderSettingsSectionState
   Widget _featureRow(AiFeature feature) {
     final List<AiProviderConfig> usable = _usableProviders();
     final String? assigned = _assignments.providerIdFor(feature);
+    // 显式指派的那家没配全 / 已停用：运行时 resolve 不会退回默认，所以这里也不能
+    // 把它显示成「跟随默认」——那等于告诉用户能用，实际点下去提示没配 AI。
+    // 删掉的那家已由 withoutProvider 清掉映射，走不到这里。
+    final bool assignedUnavailable =
+        assigned != null &&
+        assigned != kAiFeatureDisabled &&
+        !usable.any((AiProviderConfig c) => c.id == assigned) &&
+        _drafts.any((_AiProviderDraft d) => d.id == assigned);
     final String? current =
         assigned == kAiFeatureDisabled ||
+            assignedUnavailable ||
             usable.any((AiProviderConfig c) => c.id == assigned)
         ? assigned
         : null;
@@ -506,6 +515,14 @@ class _AiProviderSettingsSectionState
           ),
         ),
         for (final AiProviderConfig config in usable) _providerItem(config),
+        if (assignedUnavailable)
+          DropdownMenuItem<String?>(
+            value: assigned,
+            child: Text(
+              t.ai_feature_assigned_unavailable,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         DropdownMenuItem<String?>(
           value: kAiFeatureDisabled,
           child: Text(t.ai_feature_disabled),

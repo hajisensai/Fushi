@@ -489,8 +489,52 @@ void main() {
       return _groupNames(outcome.eligible);
     }
 
-    test('best = 结果里最高的那一档，不触发「没有这档」', () {
-      expect(rank(quality: VideoAcquisitionQuality.best), <String>['Uhd']);
+    test('best 不过滤：按分辨率降序排在最前，最高档用不了还能落到次高档', () {
+      expect(rank(quality: VideoAcquisitionQuality.best), <String>[
+        'Uhd',
+        'Web',
+        'Tv',
+        'Bd',
+        'Remux',
+        'Sd',
+      ]);
+    });
+
+    test('best 下最高档给不出这一集 → 逐卡落到次高档的计划', () {
+      final List<VideoResourceVersionGroup> mixed = _groupsOf(
+        <VideoResourceCandidate>[
+          _episode('Uhd', '2160p', 1),
+          _episode('Fhd', '1080p', 5),
+        ],
+      );
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        mixed,
+        mode: VideoAcquisitionMode.download,
+        quality: VideoAcquisitionQuality.best,
+      );
+      expect(_groupNames(outcome.eligible), <String>['Uhd', 'Fhd']);
+      final VideoAcquisitionResourcePlan? plan = outcome.eligible
+          .map(
+            (VideoResourceVersionGroup group) => planResourceFromGroup(
+              group,
+              mode: VideoAcquisitionMode.download,
+              kind: VideoMetadataMediaKind.tv,
+              episodes: const VideoAcquisitionSingleEpisode(5),
+            ),
+          )
+          .whereType<VideoAcquisitionResourcePlan>()
+          .firstOrNull;
+      expect(plan?.group.releaseGroup, 'Fhd');
+    });
+
+    test('best + 片源 best：同分辨率内再按片源', () {
+      expect(
+        rank(
+          quality: VideoAcquisitionQuality.best,
+          source: VideoAcquisitionSourcePref.best,
+        ),
+        <String>['Uhd', 'Remux', 'Bd', 'Web', 'Tv', 'Sd'],
+      );
     });
 
     test('best 在一张卡都解析不出分辨率时等同 any', () {

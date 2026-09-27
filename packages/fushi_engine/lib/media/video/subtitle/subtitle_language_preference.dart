@@ -78,14 +78,20 @@ String? normalizeSubtitleLanguageCode(String? tag) {
   return base;
 }
 
-/// 字幕语言主码 → 母语写法显示名；表外回退原码大写。
+/// 字幕语言码 → 母语写法显示名；表外回退原码大写。
 ///
-/// 母语写法与界面语言无关（找「Español」的人认得这个词），故不走 i18n。键域是
-/// [normalizeSubtitleLanguageCode] 的输出，所以 `ja-JP` / `jpn` 先归一再查。
+/// 母语写法与界面语言无关（找「Español」的人认得这个词），故不走 i18n。先按
+/// [normalizeSubtitleLanguageCode] 取主码查表（`jpn` → 日本語），**地区子码原样括注**
+/// （`zh-tw` → `中文 (TW)`、`pt-br` → `Português (BR)`）：OpenSubtitles 报的就是带地区
+/// 的码，同一集的简体 / 繁体两版要是都叫「中文」，用户就没法挑了。
 String subtitleLanguageNativeName(String code) {
-  final String? normalized = normalizeSubtitleLanguageCode(code);
-  return _kSubtitleLanguageNativeNames[normalized] ??
-      (normalized ?? code).toUpperCase();
+  final String trimmed = code.trim().replaceAll('_', '-');
+  final String? base = normalizeSubtitleLanguageCode(trimmed);
+  final String? name = _kSubtitleLanguageNativeNames[base];
+  if (name == null) return trimmed.toUpperCase();
+  final int dash = trimmed.indexOf('-');
+  final String region = dash < 0 ? '' : trimmed.substring(dash + 1);
+  return region.isEmpty ? name : '$name (${region.toUpperCase()})';
 }
 
 const Map<String, String> _kSubtitleLanguageNativeNames = <String, String>{

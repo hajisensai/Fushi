@@ -5644,5 +5644,6 @@
   "ai_video_download_bitrate_hint": "按每集文件体积估算码率，在已符合画质与片源的版本之间排序。",
   "ai_video_download_bitrate_any": "不限",
   "ai_video_download_bitrate_high": "高码率优先",
-  "ai_video_download_bitrate_low": "小体积优先"
+  "ai_video_download_bitrate_low": "小体积优先",
+  "ai_feature_assigned_unavailable": "所选提供商不可用（未配置完整或已停用）"
 }

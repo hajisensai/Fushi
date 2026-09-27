@@ -44,8 +44,9 @@ class VideoAcquisitionResourceOutcome {
   final List<String> availableResolutions;
 }
 
-/// 画质精确过滤（`quality.matchesResolution`），`any` 不过滤，`best` 先换算成结果里
-/// 最高的那一档；订阅模式再剔除 `deriveStrictVideoSubscriptionFilter(representative)
+/// 画质精确过滤（`quality.matchesResolution`），`any` / `best` 不过滤——`best` 改成按
+/// 分辨率降序排在最前，最高档给不出计划（缺集、推不出订阅规则）时逐卡自然落到
+/// 次高档，而不是整条流程失败；订阅模式再剔除 `deriveStrictVideoSubscriptionFilter(representative)
 /// == null` 的卡；最后按片源 / 码率偏好**稳定**重排（都是 `any` 时保持输入次序）。
 ///
 /// 画质不命中时**不静默降级**：返回 `resolutionMismatch` + 可用分辨率，让对话层去问
@@ -64,16 +65,10 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
     );
   }
   final List<String> available = availableResolutionsOf(groups);
-  final int? bestHeight = quality == VideoAcquisitionQuality.best
-      ? _maxHeightOf(groups)
-      : null;
+  final bool highestFirst = quality == VideoAcquisitionQuality.best;
   final List<VideoResourceVersionGroup> byQuality = <VideoResourceVersionGroup>[
     for (final VideoResourceVersionGroup group in groups)
-      if (bestHeight == null
-          ? quality.matchesResolution(group.resolution)
-          : VideoAcquisitionQuality.parseResolutionHeight(group.resolution) ==
-                bestHeight)
-        group,
+      if (quality.matchesResolution(group.resolution)) group,
   ];
   if (byQuality.isEmpty) {
     return VideoAcquisitionResourceOutcome(
@@ -84,7 +79,12 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   }
   if (mode == VideoAcquisitionMode.download) {
     return VideoAcquisitionResourceOutcome(
-      eligible: rankResourceGroups(byQuality, source: source, bitrate: bitrate),
+      eligible: rankResourceGroups(
+        byQuality,
+        highestFirst: highestFirst,
+        source: source,
+        bitrate: bitrate,
+      ),
       reason: VideoAcquisitionResourceReason.ok,
       availableResolutions: available,
     );
@@ -105,6 +105,7 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   return VideoAcquisitionResourceOutcome(
     eligible: rankResourceGroups(
       subscribable,
+      highestFirst: highestFirst,
       source: source,
       bitrate: bitrate,
     ),
@@ -113,43 +114,38 @@ VideoAcquisitionResourceOutcome filterResourceGroups(
   );
 }
 
-int? _maxHeightOf(List<VideoResourceVersionGroup> groups) {
-  int? best;
-  for (final VideoResourceVersionGroup group in groups) {
-    final int? height = VideoAcquisitionQuality.parseResolutionHeight(
-      group.resolution,
-    );
-    if (height != null && (best == null || height > best)) best = height;
-  }
-  return best;
-}
-
-/// 按片源、再按码率偏好**稳定**重排；两个偏好都是 `any` 时原样返回输入次序
-/// （= 版本卡的相关度次序，见 `buildVideoResourceVersionGroups`）。
+/// 按分辨率（仅 [highestFirst]）→ 片源 → 码率偏好**稳定**重排；全都不要求时原样
+/// 返回输入次序（= 版本卡的相关度次序，见 `buildVideoResourceVersionGroups`）。
+/// 解析不出分辨率的卡在 [highestFirst] 下殿后。
 ///
 /// 码率拿不到（没有体积、只有整季合集）的卡排在有估值的卡后面，两个方向都一样——
 /// 「不知道」既不算大也不算小。
 List<VideoResourceVersionGroup> rankResourceGroups(
   List<VideoResourceVersionGroup> groups, {
+  bool highestFirst = false,
   required VideoAcquisitionSourcePref source,
   required VideoAcquisitionBitratePref bitrate,
 }) {
-  final List<
-    ({int index, VideoResourceVersionGroup group, int source, int? bytes})
-  >
-  keyed =
-      <({int index, VideoResourceVersionGroup group, int source, int? bytes})>[
-        for (int i = 0; i < groups.length; i++)
-          (
-            index: i,
-            group: groups[i],
-            source: _sourceScore(groups[i], source),
-            bytes: bitrate == VideoAcquisitionBitratePref.any
-                ? null
-                : estimatedBytesPerEpisode(groups[i]),
-          ),
-      ];
-  keyed.sort((a, b) {
+  final List<_RankKey> keyed = <_RankKey>[
+    for (int i = 0; i < groups.length; i++)
+      (
+        index: i,
+        group: groups[i],
+        height: highestFirst
+            ? VideoAcquisitionQuality.parseResolutionHeight(
+                    groups[i].resolution,
+                  ) ??
+                  0
+            : 0,
+        source: _sourceScore(groups[i], source),
+        bytes: bitrate == VideoAcquisitionBitratePref.any
+            ? null
+            : estimatedBytesPerEpisode(groups[i]),
+      ),
+  ];
+  keyed.sort((_RankKey a, _RankKey b) {
+    final int byHeight = b.height.compareTo(a.height);
+    if (byHeight != 0) return byHeight;
     final int bySource = b.source.compareTo(a.source);
     if (bySource != 0) return bySource;
     final int byBytes = _compareBytes(a.bytes, b.bytes, bitrate);
@@ -160,6 +156,14 @@ List<VideoResourceVersionGroup> rankResourceGroups(
     <VideoResourceVersionGroup>[for (final entry in keyed) entry.group],
   );
 }
+
+typedef _RankKey = ({
+  int index,
+  VideoResourceVersionGroup group,
+  int height,
+  int source,
+  int? bytes,
+});
 
 int _compareBytes(int? a, int? b, VideoAcquisitionBitratePref bitrate) {
   if (bitrate == VideoAcquisitionBitratePref.any || a == b) return 0;

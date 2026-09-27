@@ -128,7 +128,7 @@ class AiDownloadSubtitleLanguageNone extends AiDownloadSubtitleLanguagePref {
 class AiDownloadSubtitleLanguageFixed extends AiDownloadSubtitleLanguagePref {
   const AiDownloadSubtitleLanguageFixed(this.code);
 
-  /// 已归一的语言码（`ja` / `zh` / `en` / `ko`）。
+  /// 已归一的语言码（`kVideoAcquisitionSubtitleLanguageCodes` 里的一个）。
   final String code;
 
   @override

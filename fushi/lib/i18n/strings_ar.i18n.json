@@ -5644,5 +5644,6 @@
   "ai_video_download_bitrate_hint": "Estimated from the size per episode; ranks versions that already match the quality and source.",
   "ai_video_download_bitrate_any": "Any",
   "ai_video_download_bitrate_high": "Highest bitrate",
-  "ai_video_download_bitrate_low": "Smallest size"
+  "ai_video_download_bitrate_low": "Smallest size",
+  "ai_feature_assigned_unavailable": "Selected provider unavailable (incomplete or disabled)"
 }
