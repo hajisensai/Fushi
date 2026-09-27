@@ -756,6 +756,31 @@ uint32_t SgreGameStreamKeyboardObservedFor(uint32_t request_seq) {
              : 0u;
 }
 
+// Request seq whose first mouse-side ACK was held back for a keyboard sample.
+// Only the (single-threaded) GetDeviceState callsite writes it; shutdown
+// resets it from the worker, hence atomic.
+std::atomic<uint32_t> g_sgre_game_stream_ack_deferred_seq{0};
+
+bool SgreGameStreamAckWaitsForKeyboard(
+    const fushi_voice_hook::GameStreamInputRequestSnapshot& request) {
+  if (!request.valid) return false;
+  void* const* const slot =
+      g_sgre_keyboard_device_slot.load(std::memory_order_acquire);
+  const uint64_t packed =
+      g_sgre_game_stream_keyboard_observation.load(std::memory_order_acquire);
+  uint32_t deferred =
+      g_sgre_game_stream_ack_deferred_seq.load(std::memory_order_acquire);
+  const bool defer = fushi_voice_hook::DeferSgreGameStreamAckForKeyboard(
+      request.seq, request.active_buttons,
+      slot != nullptr && *slot != nullptr, static_cast<uint32_t>(packed >> 32),
+      &deferred);
+  if (defer) {
+    g_sgre_game_stream_ack_deferred_seq.store(deferred,
+                                              std::memory_order_release);
+  }
+  return defer;
+}
+
 HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
                                                     DWORD state_bytes,
                                                     LPVOID state) {
@@ -919,7 +944,8 @@ HRESULT STDMETHODCALLTYPE SgreGetDeviceStateDetour(void* device,
       (game_stream_request.valid
            ? SgreGameStreamKeyboardObservedFor(game_stream_request.seq)
            : 0u);
-  if (game_stream_request.valid) {
+  if (game_stream_request.valid &&
+      !SgreGameStreamAckWaitsForKeyboard(game_stream_request)) {
     const uint32_t status =
         now_tick > game_stream_request.deadline_tick_ms
             ? fushi_voice_hook::kGameStreamInputStatusExpired
@@ -1181,6 +1207,7 @@ void ShutdownSgreDirectInputShield() {
   g_sgre_keyboard_device_slot.store(nullptr, std::memory_order_release);
   g_sgre_keyboard_binding_slot.store(nullptr, std::memory_order_release);
   g_sgre_game_stream_keyboard_observation.store(0, std::memory_order_release);
+  g_sgre_game_stream_ack_deferred_seq.store(0, std::memory_order_release);
   InvalidateSgreLookupClickTarget();
   DiscardPendingSgreLookupClickSubmits();
   g_sgre_lookup_scenario_surface.store(nullptr, std::memory_order_release);

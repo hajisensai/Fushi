@@ -19,3 +19,11 @@
   - host：原生通道泛化为按住掩码（同一事务）；ACK 缺位时在 250ms 内等后续帧（键盘先于鼠标采样），失败回滚到先前掩码。审查建议一并处理：持有原生左键时指针 up 走提前释放，不经 `ValidateTarget` 可见性检查（按住期间最小化不再残留）。
 - **[x] ④ 已加自动化测试** — `native/galgame_hook/tests/sgre_adapter_test.cpp`（`TestRemoteKeyboardAnchors` 合成镜像解析/互证/槽位碰撞拒绝；`TestGameStreamRemoteKeys` 八个动作到默认 DIK、改键跟随、多动作记录不用、拒绝时不清真实按键、非法布局空操作）；`fushi/windows/runner/tests/game_stream_input_release_test.cpp` 的 `CheckNativeGamepadButtons`（每个手柄键都有原生位且后台按下拒绝而非 unsupported、不回落窗口消息、组合掩码、未观测 NACK 并回滚、最小化目标上指针 up 释放原生左键、隐藏目标 Release 清空）。
 - **未验证**：`implemented_unverified`——没有在真机 SGRE 上按下远端方向键/B/L/R 看游戏响应；`menu→back` 的游戏内语义未确认；按住超过 750ms 租约仍会被释放（与确认键同一既有限制）。
+
+### 审查跟进（PR #1693）
+
+- **绑定条目第三字段 alt 的语义**（`0x4f4823..0x4f4854`）：每帧开头把两个动作字清零（`0xA96DFC` 与 `0xA96E20`，`0x4f47ab/0x4f47b1`）；命中的条目把 `action` OR 进 `0xA96DFC`，把 `alt` OR 进 `0xA96E20`（VK 表同样把 +4/+8 分别 OR 进两个字，`0x4f4888..0x4f4894`）。所以 alt 会生效，而且是**另一套动作位**：`.data` 命名表第二列就是同一个动作在第二套里的值（up 0x40/0x1，down 0x80/0x2，left 0x20/0x4，right 0x10/0x8，b 0x2/0x2000，l1 0x200/0x100，r1 0x100/0x200，back 0x100000/0）。默认绑定的 alt 全部等于对应动作在命名表里的第二列。因此查找改为：`action` 必须等于目标动作，并且 `alt` 为 0 或等于该动作在第二套里的值；否则跳过，免得多按出别的动作。
+- **VK 表**：输入更新里另有一张 VK 表，逐条用 `user32!GetKeyState` 采样（IAT `0x5BD848`；默认 Enter→a（按住 Alt 时不算）、右键→b、Ctrl→r1）。代码注释已改准确。远端通道不走这条路：GetKeyState 跟随的是线程输入队列，只有真实输入或全局 SendInput 能更新它。
+- **ACK 一次定论**：原先 host 在 UI 线程上最多忙等 250ms 去等后续帧，现已移除。hook 侧改为：请求带手柄位、键盘槽存在、而本 seq 还没有键盘观测时，鼠标采样先不发布 ACK，最多延后一个鼠标采样（`DeferSgreGameStreamAckForKeyboard`）。host 恢复为拿到第一份 ACK 就定论；旧 DLL 会掩掉新位，所以立即返回 `native_input_not_observed`。
+- **锚点加强**：键盘 CreateDevice 签名要求 `lea rdx` 指向 GUID_SysKeyboard；绑定向量两处签名都要求 end 操作数等于 begin+8。不符的一律算作「缺失」（本来就不是这处调用）。补了负向用例：GUID 不符、GUID 指到镜像外、键盘槽只配了 `GetDeviceState(0x14)`、end≠begin+8。真实 exe 仍解析出 `0xA96E10` / `0xA96EE8`。
+- **CI**：`game_stream_input_release_test.cpp` 接进 runner CMake，目标是 `fushi_windows_game_stream_input_gate`（EXCLUDE_FROM_ALL，不进本地默认构建，因为它会读系统光标、创建真实窗口）。`build-multiplatform.yml` 的 windows job 在 `flutter build windows` 之后显式构建并运行它。

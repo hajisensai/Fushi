@@ -390,12 +390,10 @@ bool GameStreamInput::PublishNativeButtons(uint32_t buttons, uint32_t verify,
     return true;
   }
 
-  // The adapter republishes the ACK on every sampled frame. SGRE samples the
-  // keyboard before the mouse within one input update, so the first ACK of a
-  // new generation can come from a frame whose keyboard poll predates it; an
-  // Applied ACK that does not yet show the pressed bit is therefore not final
-  // until the wait window closes.
-  bool applied_without_observation = false;
+  // The first ACK for this generation is final: the adapter withholds it until
+  // the sample it reports covers every requested source (the SGRE keyboard is
+  // polled before the mouse that publishes the ACK), and a DLL that does not
+  // know a bit masks it off, so a missing bit is an immediate NACK.
   const uint64_t wait_deadline = GetTickCount64() + 250;
   while (GetTickCount64() <= wait_deadline) {
     const VoiceHookGameStreamInputStatus status =
@@ -408,20 +406,19 @@ bool GameStreamInput::PublishNativeButtons(uint32_t buttons, uint32_t verify,
           CommitNativeButtons(buttons);
           return true;
         }
-        applied_without_observation = true;
+        SetReason(reason, "native_input_not_observed");
       } else {
         SetReason(reason, status.status ==
                                   fushi_voice_hook::kGameStreamInputStatusExpired
                               ? "native_input_timeout"
                               : "native_input_rejected");
-        PublishNativeButtons(previous, 0, false, nullptr);
-        return false;
       }
+      PublishNativeButtons(previous, 0, false, nullptr);
+      return false;
     }
     Sleep(4);
   }
-  SetReason(reason, applied_without_observation ? "native_input_not_observed"
-                                                : "native_input_timeout");
+  SetReason(reason, "native_input_timeout");
   PublishNativeButtons(previous, 0, false, nullptr);
   return false;
 }

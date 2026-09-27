@@ -382,8 +382,9 @@ void CheckNativeGamepadButtons() {
          "held confirm and dpad publish one combined mask");
   const uint64_t transaction = input.native_transaction_id_;
 
-  // Not observed: the adapter ACKs the generation but its sampled state lacks
-  // the new bit. The press fails and the previous mask is restored.
+  // Not observed (an older DLL masks the bit off, or the action is unbound):
+  // the adapter ACKs the generation without the new bit. The press fails at
+  // once and the previous mask is restored.
   fushi::g_observable_buttons = ~cancel;
   reason.clear();
   const uint64_t started = GetTickCount64();
@@ -391,8 +392,8 @@ void CheckNativeGamepadButtons() {
                                      &reason) &&
              reason == "native_input_not_observed",
          "an unsampled SGRE action is a NACK, never a fake ACK");
-  Expect(GetTickCount64() - started >= 200,
-         "an ACK without the bit is not final until the wait window closes");
+  Expect(GetTickCount64() - started < 200,
+         "the first ACK without the bit is final: no wait-window stall");
   Expect(input.native_buttons_ == (kLeft | up) &&
              fushi::g_status.active_buttons == (kLeft | up) &&
              input.native_transaction_id_ == transaction,
