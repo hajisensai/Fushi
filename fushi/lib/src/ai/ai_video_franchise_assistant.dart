@@ -1,4 +1,4 @@
-/// 「整套下载」的联网补全：app 抓维基百科条目正文 → AI 从正文里列出系列作品 →
+/// 「整套下载」的联网补全：app 抓资料站（维基百科 / ANN / TVmaze …）条目正文 → AI 从正文里列出系列作品 →
 /// 逐部回资料源（TMDB / MAL 发现搜索）核对 → 核对上的并进清单。
 ///
 /// 边界与其它 AI 功能一致：**AI 只出候选，不决定下什么**。
@@ -13,6 +13,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:fushi/src/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_reply_json.dart';
@@ -131,8 +132,10 @@ String _cleanTitle(Object? raw) {
   return value.length > 160 ? '' : value;
 }
 
-/// 挑喂给 AI 的正文：标题像「作品列表」的排前面（`List of … films` /
-/// `…剧场版` / `…一覧`），去重后最多 [kAiFranchiseMaxPages] 页。
+/// 挑喂给 AI 的正文，按「像作品清单」的程度排序后去重取前 [kAiFranchiseMaxPages] 页：
+/// 清单型站点的整页清单（ANN / TVmaze，[WebKnowledgePage.isList]）最前；其次是
+/// 标题像「作品列表」的百科条目（`List of … films` / `…剧场版` / `…一覧`）；最后
+/// 是普通条目。
 List<WebKnowledgePage> pickFranchisePages(List<WebKnowledgePage> pages) {
   final Map<String, WebKnowledgePage> unique = <String, WebKnowledgePage>{
     for (final WebKnowledgePage page in pages) page.url.toString(): page,
@@ -141,19 +144,35 @@ List<WebKnowledgePage> pickFranchisePages(List<WebKnowledgePage> pages) {
     r'(list of|films|filmography|作品列表|列表|剧场版|劇場版|映画|一覧|シリーズ)',
     caseSensitive: false,
   );
-  final List<WebKnowledgePage> ordered = unique.values.toList()
-    ..sort(
-      (WebKnowledgePage a, WebKnowledgePage b) =>
-          (listLike.hasMatch(b.title) ? 1 : 0) -
-          (listLike.hasMatch(a.title) ? 1 : 0),
-    );
+  // 百科的「作品列表」条目与 ANN 清单同档最优先；TVmaze 只收剧集、且是模糊搜索，
+  // 对剧场版系列帮不上，降一档——否则它会把维基的 `List of … films` 挤出名额。
+  int rank(WebKnowledgePage page) {
+    if (page.site.kind == WebKnowledgeSiteKind.tvMaze) return 1;
+    if (page.isList || listLike.hasMatch(page.title)) return 2;
+    return 0;
+  }
+
+  // 稳定排序：同档内保持站点顺序（用户启用的站点顺序即优先级）。
+  final List<WebKnowledgePage> ordered = unique.values.toList();
+  mergeSort(
+    ordered,
+    compare: (WebKnowledgePage a, WebKnowledgePage b) => rank(b) - rank(a),
+  );
+  // 每个站最多一页：两次查询（系列名 + 原名）会让同一个站出两页清单，名额被
+  // 一个站吃掉。
+  final Set<String> seenSites = <String>{};
+  final List<WebKnowledgePage> picked = <WebKnowledgePage>[
+    for (final WebKnowledgePage page in ordered)
+      if (seenSites.add(page.site.id)) page,
+  ];
   return <WebKnowledgePage>[
-    for (final WebKnowledgePage page in ordered.take(kAiFranchiseMaxPages))
+    for (final WebKnowledgePage page in picked.take(kAiFranchiseMaxPages))
       WebKnowledgePage(
-        source: page.source,
+        site: page.site,
         title: page.title,
         url: page.url,
         text: truncateWebKnowledgeText(page.text, kAiFranchiseMaxCharsPerPage),
+        isList: page.isList,
       ),
   ];
 }
@@ -300,7 +319,7 @@ createPreferencesVideoFranchiseLoader(
   final AiChatClient client = clientFactory?.call() ?? AiChatClient();
   final WebKnowledgeClient web =
       webFactory?.call() ??
-      WebKnowledgeClient(sources: prefs.aiWebKnowledgeSources);
+      WebKnowledgeClient(sites: prefs.aiWebKnowledgeSites);
   final bool anime =
       item.reference.discoveryCategory == VideoDiscoveryCategory.anime;
   try {
