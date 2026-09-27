@@ -33,6 +33,16 @@ double gameStreamResolutionScale({
     ? 1
     : captureHeight / maxHeight;
 
+/// Lowest encoder bitrate either mode allows, in bits per second.
+///
+/// libwebrtc turns the encoder's `minBitrate` into the congestion
+/// controller's floor: the bandwidth estimate is never reported below it and
+/// the pacer keeps sending at least that much. A floor above what the link
+/// carries therefore does not keep quality up — it queues packets until the
+/// picture lags by seconds and then loses them. The floor only has to keep a
+/// 360p picture alive; everything above it is congestion control's call.
+const int kGameStreamCongestionFloorBps = 150000;
+
 /// Encoder bitrate bounds in bits per second.
 ///
 /// WebRTC's own congestion controller (GCC) already keeps the encoder under
@@ -40,21 +50,131 @@ double gameStreamResolutionScale({
 /// estimate back into `maxBitrate`: doing that capped the probe ceiling, the
 /// estimate followed the cap down and a steady LAN ratcheted to the floor —
 /// most visibly on still visual-novel screens, whose tiny send rate keeps the
-/// estimate low. [max] is the receiver's target; [start] skips libwebrtc's
-/// 300 kbps default ramp so the first seconds are not blurry. Adaptive keeps a
-/// floor of at most 1 Mbps; fixed pins all three to the target (Moonlight's
-/// fixed-bitrate behaviour).
+/// estimate low. [max] is the receiver's target.
+///
+/// Both modes share [kGameStreamCongestionFloorBps] as [min], so a weak link
+/// can always pull the rate down. They differ in how the rate gets to the
+/// target: adaptive starts at half of it and lets the estimate climb, fixed
+/// (the user's explicit choice) starts at the full target and stays there
+/// for as long as the network carries it. Pinning [min] to the target as
+/// before would not make "fixed" any steadier: on a link below the target it
+/// only disabled congestion control and turned bandwidth loss into delay.
 ({int min, int start, int max}) gameStreamBitrateWindow({
   required int targetBps,
   required bool adaptive,
 }) {
-  if (!adaptive) return (min: targetBps, start: targetBps, max: targetBps);
-  final int floor = math.min(1000000, targetBps);
+  final int floor = math.min(kGameStreamCongestionFloorBps, targetBps);
   return (
     min: floor,
-    start: (targetBps ~/ 2).clamp(floor, targetBps),
+    start: adaptive ? (targetBps ~/ 2).clamp(floor, targetBps) : targetBps,
     max: targetBps,
   );
+}
+
+/// Lowest bitrate (kbps) at which a picture [height] pixels tall is still
+/// worth sending at a reduced frame rate. Below it the host steps the
+/// resolution down rather than let the frame rate collapse to a slideshow.
+int gameStreamMinimumUsableKbps(int height) => switch (height) {
+  <= 360 => 250,
+  <= 480 => 400,
+  <= 720 => 700,
+  <= 1080 => 1200,
+  <= 1440 => 2000,
+  _ => 3500,
+};
+
+/// Sustained time below [gameStreamMinimumUsableKbps] before a step down.
+const Duration kGameStreamLadderDownAfter = Duration(seconds: 4);
+
+/// Sustained headroom before a step back up. Longer than the way down, and
+/// the headroom is twice the upper step's minimum, so a link hovering at one
+/// threshold does not flip the resolution back and forth.
+const Duration kGameStreamLadderUpAfter = Duration(seconds: 10);
+
+/// Weak-network resolution ladder for [GameStreamDegradation.
+/// maintainResolution], the default.
+///
+/// That preference keeps text sharp: as the bandwidth estimate falls,
+/// libwebrtc lets the frame rate go first (frame dropping) and never touches
+/// the resolution. On a link too weak even for a reduced frame rate that
+/// ends in a slideshow, so the host takes over the one step libwebrtc will
+/// not: once the estimate stays below [gameStreamMinimumUsableKbps] of the
+/// current height it lowers the height one [GameStreamVideoSettings.
+/// heightChoices] step, and it climbs back one step at a time once the
+/// estimate has held twice the upper step's minimum.
+///
+/// It is driven by the congestion controller's estimate
+/// (`availableOutgoingBitrate`), never by the encoder's output rate: a still
+/// visual-novel screen encodes to a few hundred kbps on a fast LAN, and
+/// judging by that is exactly what made libwebrtc's `balanced` mode shrink
+/// the picture (BUG-2727).
+class GameStreamResolutionLadder {
+  GameStreamResolutionLadder({required int ceilingHeight})
+    : _ceiling = ceilingHeight,
+      _height = ceilingHeight;
+
+  int _ceiling;
+  int _height;
+  DateTime? _belowSince;
+  DateTime? _aboveSince;
+
+  /// Height the encoder should currently produce, at most the ceiling.
+  int get height => _height;
+
+  /// Starts over from [ceilingHeight] (a new session or new settings).
+  void reset(int ceilingHeight) {
+    _ceiling = ceilingHeight;
+    _height = ceilingHeight;
+    _belowSince = null;
+    _aboveSince = null;
+  }
+
+  int? get _lower {
+    for (final int choice in GameStreamVideoSettings.heightChoices.reversed) {
+      if (choice < _height) return choice;
+    }
+    return null;
+  }
+
+  int? get _upper {
+    if (_height >= _ceiling) return null;
+    for (final int choice in GameStreamVideoSettings.heightChoices) {
+      if (choice > _height && choice < _ceiling) return choice;
+    }
+    return _ceiling;
+  }
+
+  /// Feeds one bandwidth estimate taken [at]; returns whether [height]
+  /// changed. A missing estimate says nothing about the link and clears the
+  /// pending timers instead of counting toward either direction.
+  bool observe({required DateTime at, required int? availableKbps}) {
+    if (availableKbps == null || availableKbps <= 0) {
+      _belowSince = null;
+      _aboveSince = null;
+      return false;
+    }
+    final int? lower = _lower;
+    if (lower != null && availableKbps < gameStreamMinimumUsableKbps(_height)) {
+      _aboveSince = null;
+      final DateTime since = _belowSince ??= at;
+      if (at.difference(since) < kGameStreamLadderDownAfter) return false;
+      _height = lower;
+      _belowSince = null;
+      return true;
+    }
+    _belowSince = null;
+    final int? upper = _upper;
+    if (upper != null &&
+        availableKbps >= 2 * gameStreamMinimumUsableKbps(upper)) {
+      final DateTime since = _aboveSince ??= at;
+      if (at.difference(since) < kGameStreamLadderUpAfter) return false;
+      _height = upper;
+      _aboveSince = null;
+      return true;
+    }
+    _aboveSince = null;
+    return false;
+  }
 }
 
 /// How long [FushiGameStreamHost.start] waits for a bound window to appear
@@ -299,8 +419,11 @@ class FushiGameStreamHost extends ChangeNotifier {
   bool _starting = false;
   bool _pumping = false;
   bool _connected = false;
-  bool _tracingStats = false;
-  DateTime _lastStatsTrace = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _samplingStats = false;
+  DateTime _lastStatsSample = DateTime.fromMillisecondsSinceEpoch(0);
+  final GameStreamResolutionLadder _ladder = GameStreamResolutionLadder(
+    ceilingHeight: const GameStreamVideoSettings().maxHeight,
+  );
   GameStreamSenderStats? _lastSenderStats;
   DateTime _lastPump = DateTime.fromMillisecondsSinceEpoch(0);
   bool _sendingTexts = false;
@@ -321,6 +444,14 @@ class FushiGameStreamHost extends ChangeNotifier {
 
   /// Parameters in effect for the current session.
   GameStreamVideoSettings get settings => _settings;
+
+  /// Height the encoder produces: the receiver's cap, lowered by the
+  /// weak-network ladder under maintain-resolution. Under the other
+  /// preferences libwebrtc scales the resolution itself.
+  int get _encodedHeight =>
+      _settings.degradation == GameStreamDegradation.maintainResolution
+      ? math.min(_settings.maxHeight, _ladder.height)
+      : _settings.maxHeight;
 
   ({int min, int start, int max}) get _bitrates => gameStreamBitrateWindow(
     targetBps: _settings.bitrateKbps * 1000,
@@ -583,11 +714,12 @@ class FushiGameStreamHost extends ChangeNotifier {
       });
       if (generation != _generation) throw StateError('Capture cancelled');
       _started = true;
+      _ladder.reset(math.min(_settings.maxHeight, _captureHeight));
       await _setVideoParameters();
       _requireGeneration(generation);
       _timer = Timer.periodic(kGameStreamNegotiationPoll, (_) {
         final DateTime now = DateTime.now();
-        _maybeTraceSenderStats(now);
+        _sampleSenderStats(now);
         if (_connected &&
             now.difference(_lastPump) < kGameStreamConnectedPoll) {
           return;
@@ -714,6 +846,7 @@ class FushiGameStreamHost extends ChangeNotifier {
       maxFps: math.min(requested.maxFps, ceiling.maxFps),
     );
     _settings = effective;
+    _ladder.reset(effective.maxHeight);
     if (_started) await _setVideoParameters();
     notifyListeners();
     return effective;
@@ -737,7 +870,7 @@ class FushiGameStreamHost extends ChangeNotifier {
         encoding.maxFramerate = settings.maxFps;
         encoding.scaleResolutionDownBy = gameStreamResolutionScale(
           captureHeight: _captureHeight,
-          maxHeight: settings.maxHeight,
+          maxHeight: _encodedHeight,
         );
       }
       parameters.degradationPreference = switch (settings.degradation) {
@@ -757,7 +890,8 @@ class FushiGameStreamHost extends ChangeNotifier {
         File(trace)
             .writeAsString(
               '[fushi_settings] captureHeight=$_captureHeight '
-              'maxHeight=${settings.maxHeight} maxFps=${settings.maxFps} '
+              'maxHeight=${settings.maxHeight} '
+              'encodedHeight=$_encodedHeight maxFps=${settings.maxFps} '
               'bitrateKbps=${settings.bitrateKbps} '
               'adaptive=${settings.adaptiveBitrate} '
               'minBps=${rates.min} maxBps=${rates.max} '
@@ -824,39 +958,81 @@ class FushiGameStreamHost extends ChangeNotifier {
     }
   }
 
-  /// Appends a sender-side stats line to the opt-in
-  /// `FUSHI_GAME_STREAM_CAPTURE_TRACE` file (the native capture writes its
-  /// per-stage timings there too), so a stutter report can be split into
-  /// capture, encoder and network causes without a debugger.
-  void _maybeTraceSenderStats(DateTime now) {
-    final String? path = _kCaptureTracePath;
+  /// Reads the sender's stats every 2 s while connected. The congestion
+  /// controller's estimate drives the resolution ladder; with
+  /// `FUSHI_GAME_STREAM_CAPTURE_TRACE` set the sample is also appended to
+  /// that file (the native capture writes its per-stage timings there too),
+  /// so a stutter report can be split into capture, encoder and network
+  /// causes without a debugger.
+  void _sampleSenderStats(DateTime now) {
     final RTCPeerConnection? connection = _connection;
-    if (path == null || connection == null || !_connected || _tracingStats) {
-      return;
-    }
-    if (now.difference(_lastStatsTrace) < const Duration(seconds: 2)) return;
-    _lastStatsTrace = now;
-    _tracingStats = true;
+    if (connection == null || !_connected || _samplingStats) return;
+    if (now.difference(_lastStatsSample) < const Duration(seconds: 2)) return;
+    _lastStatsSample = now;
+    _samplingStats = true;
+    final int generation = _generation;
+    final String? trace = _kCaptureTracePath;
     unawaited(() async {
       try {
-        final List<StatsReport> reports = await connection.getStats();
-        final GameStreamSenderStats sample = GameStreamSenderStats.fromReports(
-          reports,
-          at: now,
-        );
-        final String line = sample.describe(since: _lastSenderStats);
+        final GameStreamSenderStats sample;
+        try {
+          sample = GameStreamSenderStats.fromReports(
+            await connection.getStats(),
+            at: now,
+          );
+        } on Object catch (error) {
+          // A missing sample carries no bandwidth estimate: the ladder holds
+          // its step and restarts its timers, exactly as for a report without
+          // `availableOutgoingBitrate`. The stream itself is unaffected.
+          _ladder.observe(at: now, availableKbps: null);
+          if (trace != null) await _appendTrace(trace, '[fushi_sender] $error');
+          return;
+        }
+        if (generation != _generation) return;
+        final GameStreamSenderStats? previous = _lastSenderStats;
         _lastSenderStats = sample;
-        await File(path).writeAsString(
-          '[fushi_sender] $line\n',
-          mode: FileMode.append,
-          flush: true,
+        final bool stepped = _ladder.observe(
+          at: now,
+          availableKbps: sample.availableOutgoingKbps,
         );
-      } catch (_) {
-        // Diagnostics only: never let a stats read disturb the session.
+        if (trace != null) {
+          await _appendTrace(
+            trace,
+            '[fushi_sender] ${sample.describe(since: previous)}',
+          );
+        }
+        if (!stepped ||
+            _settings.degradation != GameStreamDegradation.maintainResolution) {
+          return;
+        }
+        if (trace != null) {
+          await _appendTrace(
+            trace,
+            '[fushi_ladder] height=${_ladder.height} '
+            'avail=${sample.availableOutgoingKbps}',
+          );
+        }
+        await _setVideoParameters();
+        notifyListeners();
+      } on Object catch (error) {
+        if (generation == _generation) {
+          _error = '$error';
+          await stop(reason: 'stream_failed');
+        }
       } finally {
-        _tracingStats = false;
+        _samplingStats = false;
       }
     }());
+  }
+
+  Future<void> _appendTrace(String path, String line) async {
+    try {
+      await File(
+        path,
+      ).writeAsString('$line\n', mode: FileMode.append, flush: true);
+    } on FileSystemException {
+      // Diagnostics only: an unwritable trace file must not end the session.
+    }
   }
 
   Future<void> stop({String reason = 'stopped'}) {

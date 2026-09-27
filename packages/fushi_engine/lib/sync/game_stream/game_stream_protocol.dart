@@ -171,13 +171,14 @@ class GameStreamVideoSettings {
   });
 
   factory GameStreamVideoSettings.fromJson(Object? raw) {
-    if (raw is! Map) return const GameStreamVideoSettings();
+    const GameStreamVideoSettings defaults = GameStreamVideoSettings();
+    if (raw is! Map) return defaults;
     int integer(Object? value, int fallback) =>
         value is num && value.isFinite ? value.round() : fallback;
     return GameStreamVideoSettings(
-      maxHeight: integer(raw['maxHeight'], 1080),
-      maxFps: integer(raw['maxFps'], 60),
-      bitrateKbps: integer(raw['bitrateKbps'], 20000),
+      maxHeight: integer(raw['maxHeight'], defaults.maxHeight),
+      maxFps: integer(raw['maxFps'], defaults.maxFps),
+      bitrateKbps: integer(raw['bitrateKbps'], defaults.bitrateKbps),
       adaptiveBitrate: raw['adaptiveBitrate'] != false,
       degradation: GameStreamDegradation.parse(raw['degradation']),
       codec: GameStreamCodec.parse(raw['codec']),
@@ -271,6 +272,19 @@ class GameStreamVideoSettings {
     'inputFocus': inputFocus.name,
     'audio': audio,
   };
+
+  /// Only the fields that differ from the defaults, for local persistence.
+  /// A field the user never changed is left out, so it follows the current
+  /// default instead of freezing whatever the default was when some other
+  /// field was saved. [fromJson] fills the missing fields back in.
+  Map<String, Object?> toOverridesJson() {
+    final Map<String, Object?> defaults = const GameStreamVideoSettings()
+        .toJson();
+    return <String, Object?>{
+      for (final MapEntry<String, Object?> entry in toJson().entries)
+        if (defaults[entry.key] != entry.value) entry.key: entry.value,
+    };
+  }
 
   @override
   bool operator ==(Object other) =>
