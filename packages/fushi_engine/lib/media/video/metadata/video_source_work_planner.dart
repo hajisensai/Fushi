@@ -49,6 +49,16 @@ class VideoSourceScrapeWork {
   );
 }
 
+/// [VideoSourceWorkPlanner.plan] 会不会为 [source] 产出作品单元：只有视频来源，
+/// 且不是目录分组模式（目录模式按导入目录组织，不按作品识别）。
+bool videoSourcePlansScrapeWorks(SourceLibraryRow source) =>
+    source.mediaKind == 'video' && source.videoGroupingMode != 'folder';
+
+/// [VideoSourceWorkPlanner.plan] 会不会把 [book] 放进某个作品单元：NCOP/NCED/
+/// 预告/花絮仍是 VideoBook，但不是可独立识别的作品。
+bool videoBookJoinsScrapePlan(VideoBookRow book) =>
+    classifyLocalVideoExtra(book.videoPath) == null;
+
 /// 从已入库的 `sourceId` 与合集成员关系生成按作品去重的刮削计划。
 class VideoSourceWorkPlanner {
   const VideoSourceWorkPlanner(this._database);
@@ -56,7 +66,7 @@ class VideoSourceWorkPlanner {
   final FushiDatabase _database;
 
   Future<List<VideoSourceScrapeWork>> plan(SourceLibraryRow source) async {
-    if (source.mediaKind != 'video' || source.videoGroupingMode == 'folder') {
+    if (!videoSourcePlansScrapeWorks(source)) {
       return const <VideoSourceScrapeWork>[];
     }
 
@@ -84,7 +94,7 @@ class VideoSourceWorkPlanner {
     for (final VideoBookRow book in sourceBooks) {
       // NCOP/NCED/预告/花絮仍是 VideoBook，继续出现在“全部视频”；但它们不是
       // 可独立识别的作品，不能让一次来源刮削多出四个必失败任务。
-      if (classifyLocalVideoExtra(book.videoPath) != null) continue;
+      if (!videoBookJoinsScrapePlan(book)) continue;
       final int? collectionId = primaryCollections[book.bookUid];
       final VideoNameInfo parsed =
           parseVideoFilename(p.basename(book.videoPath));

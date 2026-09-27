@@ -5,7 +5,6 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/import/import_page_segments.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extension_store_client.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
@@ -14,16 +13,15 @@ import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 「导入」视图分段化（2026-09-19，视频与漫画两页统一）的三块共享部件：
+/// 在线来源面（2026-09-27 起住在「浏览」模块）的两块共享部件：
 ///
-/// 1. [ImportPageSegmentBar]：段按给定顺序渲染、点选回调、窄屏只画文字；
-/// 2. [MihonExtensionsPage] 的 `sections`：「仓库」段只有仓库卡与仓库动作，
+/// 1. [MihonExtensionsPage] 的 `sections`：「仓库」段只有仓库卡与仓库动作，
 ///    「扩展」段只有扩展目录与导入 APK，空集渲染空 sliver 且不抛；
-/// 3. [MihonInstalledSourcesSection]：源行真渲染、搜索真过滤、开关真写穿 DB、
+/// 2. [MihonInstalledSourcesSection]：源行真渲染、搜索真过滤、开关真写穿 DB、
 ///    点行走 `onOpenSource`。
 ///
-/// 两个宿主页（`MediaSourcesPage` / `MangaSourcesPage`）都从 `appProvider` 拿整个
-/// `AppModel`，挂起来测的是环境不是接线，接线由源码守卫
+/// 宿主（`BrowseOnlineSourcesView` / `MangaOnlineSourcesView`）都从 `appProvider`
+/// 拿整个 `AppModel`，挂起来测的是环境不是接线，接线由源码守卫
 /// `test/pages/import_page_unification_guard_test.dart` 守。
 void main() {
   late Directory root;
@@ -80,72 +78,6 @@ void main() {
     );
     await tester.pump();
   }
-
-  group('ImportPageSegmentBar', () {
-    testWidgets('按给定顺序渲染段、点选回调、已选段不回调', (WidgetTester tester) async {
-      final List<ImportPageSegment> changes = <ImportPageSegment>[];
-      await tester.binding.setSurfaceSize(const Size(1000, 600));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData.light(useMaterial3: true),
-          home: Scaffold(
-            body: ImportPageSegmentBar(
-              segments: const <ImportPageSegment>[
-                ImportPageSegment.local,
-                ImportPageSegment.stores,
-                ImportPageSegment.sources,
-              ],
-              selected: ImportPageSegment.local,
-              onChanged: changes.add,
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      expect(find.text(t.media_import_segment_local), findsOneWidget);
-      expect(find.text(t.media_import_segment_stores), findsOneWidget);
-      expect(find.text(t.media_import_segment_sources), findsOneWidget);
-      // 没传的段不出现：书的导入页只有「本地」时整条选择器都不该挂。
-      expect(find.text(t.media_import_segment_extensions), findsNothing);
-      // 宽屏带图标。
-      expect(find.byIcon(Icons.hub_outlined), findsOneWidget);
-
-      await tester.tap(find.text(t.media_import_segment_stores));
-      await tester.pump();
-      expect(changes, <ImportPageSegment>[ImportPageSegment.stores]);
-
-      await tester.tap(find.text(t.media_import_segment_local));
-      await tester.pump();
-      expect(changes.length, 1, reason: '点已选中的段不该再回调');
-      expect(tester.takeException(), null);
-    });
-
-    testWidgets('窄屏只画文字，不带图标', (WidgetTester tester) async {
-      await tester.binding.setSurfaceSize(const Size(360, 640));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData.light(useMaterial3: true),
-          home: Scaffold(
-            body: ImportPageSegmentBar(
-              segments: ImportPageSegment.values,
-              selected: ImportPageSegment.extensions,
-              onChanged: (_) {},
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-      for (final ImportPageSegment segment in ImportPageSegment.values) {
-        expect(find.text(importPageSegmentLabel(segment)), findsOneWidget);
-      }
-      expect(find.byIcon(Icons.hub_outlined), findsNothing);
-      expect(find.byIcon(Icons.extension_outlined), findsNothing);
-      expect(tester.takeException(), null, reason: '四段在 360 宽不得溢出');
-    });
-  });
 
   group('MihonExtensionsPage.sections', () {
     testWidgets('「仓库」段：仓库卡 + 刷新 / 添加仓库，没有扩展目录与导入 APK', (

@@ -118,3 +118,37 @@ widget。把 `media_collection_detail_page.dart` 里的纯视觉部分抽成
 - 若要让下载回来的远端视频归属到来源，需给 `VideoBooks` 加统一来源引用
   （`sourceKind` + `sourceId`），把本地扫描根与远端源在「来源」概念上打通——独立议题。
 - 7 个平行 Kind 值域已漂移（漫画不在 `MediaKind` 里），加新媒体类型前先补齐漫画的登记。
+
+## Plex 与服务器类型泛化（2026-09-27，对齐 SenPlayer）
+
+- **类型**：`MediaServerKind { jellyfin, plex }`（`media_server_config.dart`）。按「客户端协议家族」分，
+  不按品牌：Jellyfin / Emby / 飞牛一直是同一个 `JellyfinVideoClient` 运行期兼容，没有按品牌分支。
+- **存储**：仍是 `sync_jellyfin_servers` 列表键（键名冻结），每项 JSON 带 `kind`；**缺字段 = Jellyfin**，
+  Jellyfin 产出 JSON 继续不写 `kind`（与旧版本逐字相同）。Plex 项刻意不含 `serverUrl` / `userId` /
+  `accessToken`，旧版本按 Jellyfin 解析会当脏项丢弃，不会拿 Plex token 打 Jellyfin 端点。
+  `SyncRepository.getMediaServers / upsertMediaServer / removeMediaServer` 是通用入口；旧的
+  Jellyfin API 变成只作用于 Jellyfin 项的视图，**不会删掉或挪动 Plex 项**。
+- **工厂**：JSON→配置的唯一分发点 `media_server_registry.dart`（`decodeMediaServerConfig`）；
+  配置自己 `buildBrowser()`，视频页分区只认 `MediaServerBrowser`，不散落 `if plex`。
+- **Plex 协议层**（纯 Dart，`packages/fushi_engine/lib/media/video/media_server/plex/`）：
+  `plex_api.dart`（`Accept: application/json` + `X-Plex-*` 身份头 + `X-Plex-Token`；
+  `/library/sections`、`/library/sections/{key}/all`、`/library/metadata/{id}/children`
+  （`excludeAllLeaves=1`）、`/allLeaves`、`/hubs/continueWatching/items` → `/library/onDeck` 回退、
+  `/hubs/home/onDeck`、`/library/recentlyAdded`、`/hubs/search`、`/:/timeline`、`/:/scrobble`、
+  `/:/unscrobble`、`/photo/:/transcode`）；`plex_tv_auth.dart`（strong PIN → `app.plex.tv/auth#?` →
+  轮询 → `clients.plex.tv/api/v2/resources`，连接按 局域网 → 公网 → relay 排序后逐条探测 `/identity`）。
+  `X-Plex-Client-Identifier` 用本机 per-install id（`getOrCreateDeviceId`）。
+- **app 适配**：`PlexVideoClient`（`MediaServerBrowser` + `RemoteVideoClient` + 封面 / 详情 / 播放会话）。
+  库 id 带 `lib:` 前缀（库 key 与条目 ratingKey 两个 id 空间会撞）；搜索 `/hubs/search` 不分页，
+  客户端仍按 `rankMediaServerSearchHits` 把关。
+- **v1 边界**：取流只 direct play（`Part.key` + token，libmpv 直解），**不走 PMS 转码**，所以没有画质档；
+  外挂字幕经 `/library/streams/{id}` 下载，容器内文本轨 PMS 不出文件 → 抛出后由播放页交给 libmpv 解码；
+  进度走 `/:/timeline`（10 秒一档心跳 + 暂停 / 停止即时），停止位置过 90% 显式 scrobble；
+  库封面（服务器拼图）不取，页面用库内条目回退；Plex 不参与「混排进视频库」。
+- **安全**：token 在查询参数里（播放器 / 图片解码器没有头通道）；`credential_redaction.dart` 与
+  `video_diag_log.dart` 两套脱敏都已登记 `x-plex-token`（查询参数 + 请求头）。token 与 Jellyfin 令牌
+  同款落 prefs，列表键在设备本地黑名单里，不随备份 / Profile 出境。
+- **设置入口**：设置 › 在线服务 › 媒体服务器 › Plex（PIN 登录 + 手动地址 / token 两种）。
+- **未验证**：未对真 Plex Media Server 与真 plex.tv 账号跑通（全部是 MockClient 协议测试）；
+  `/library/metadata/{id}/thumb` 不带时间戳的图片路径、`rating:desc` 排序、旧版 PMS 缺新 hub 的回退，
+  都按公开文档与第三方客户端惯例实现，需真服务器确认。

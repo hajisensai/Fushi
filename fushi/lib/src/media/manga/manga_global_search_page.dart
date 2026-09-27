@@ -37,10 +37,11 @@ class MangaGlobalSearchPage extends StatefulWidget {
   /// Mihon 宿主。不支持的平台传 `null`（此时 [mihonSources] 必为空）。
   final MihonManager? mihonManager;
 
-  /// 一个源都没有时空态按钮的去处：把用户带到漫画库的「导入」视图（来源都在那里
-  /// 装 / 启用）。**弹掉本页这一步由壳自己做**（[MediaLibraryShellScope.select]），
-  /// 本页不碰导航栈——本页上面可能还压着别的路由，也可能是别人推的第二个入口。
-  /// 为 null 时只显示文案不显示按钮：调用方不在库页壳里，或壳压根没有「导入」视图。
+  /// 一个源都没有时空态按钮的去处：把用户带到「浏览 › 来源 › 漫画」（2026-09-27
+  /// 起来源都在那里装 / 启用）。**弹掉本页这一步由宿主自己做**（浏览页 /
+  /// 库页壳各自以自己的路由为界 popUntil），本页不碰导航栈——本页上面可能还压着
+  /// 别的路由，也可能是别人推的第二个入口。为 null 时只显示文案不显示按钮：
+  /// 调用方没有可去的「来源」。
   final VoidCallback? onOpenSources;
 
   /// 已启用、且扩展也启用的 Mihon 在线源。

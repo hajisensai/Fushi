@@ -94,7 +94,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'appearance/Manga': 'test/pages/home_page_tabs_test.dart',
   'appearance/Video': 'test/pages/home_page_tabs_test.dart',
   'appearance/Game': 'test/pages/home_page_tabs_test.dart',
-  'appearance/Downloads': 'test/pages/home_page_tabs_test.dart',
+  'appearance/Browse': 'test/pages/home_page_tabs_test.dart',
   'appearance/Lookup': 'test/pages/home_page_tabs_test.dart',
   'appearance/Extension': 'test/pages/home_page_tabs_test.dart',
   // 「功能模块」后加的四个横切开关（听书/制卡/在线服务/同步备份）。它们**没有底栏
@@ -1064,9 +1064,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/ai_video_download_settings_test.dart + '
           'test/media/video/download/video_download_pipeline_service_test.dart + '
           'test/media/video/acquisition/video_acquisition_resource_picker_test.dart',
-  // 联网资料来源开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
-  // 来源集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
-  // 测试咬住「未启用的来源不发请求」。
+  // 联网资料内置站开关：生效点是 AI 下视频 / 视频识别构造 WebKnowledgeClient 时读的
+  // 站点集合，harness 里没有那条链路。窄测试咬住写穿 + 空集不回落默认，客户端
+  // 测试咬住「只请求传入的站点」。
   'ai/Wikipedia (中文)':
       'test/settings/ai_web_knowledge_settings_test.dart + '
           'test/ai/web_knowledge_test.dart',
@@ -1074,6 +1074,15 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/ai_web_knowledge_settings_test.dart + '
           'test/ai/web_knowledge_test.dart',
   'ai/Wikipedia (English)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Moegirlpedia (萌娘百科)':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/Anime News Network':
+      'test/settings/ai_web_knowledge_settings_test.dart + '
+          'test/ai/web_knowledge_test.dart',
+  'ai/TVmaze':
       'test/settings/ai_web_knowledge_settings_test.dart + '
           'test/ai/web_knowledge_test.dart',
 };

@@ -163,4 +163,48 @@ void main() {
     expect(meta!.bookCount, 2); // two usable (streaming) videos, not 0
     expect(meta.statsCount >= 1, true); // video watch stat counted
   });
+
+  test(
+      'anime-source rows (online video source episodes) are reachable like '
+      'streams: exported, counted, previewed and merged', () async {
+    final curDir = await _tempDir('vr_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    addTearDown(cur.close);
+
+    final srcDir = await _tempDir('vr_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.upsertVideoBook(_video('local-vid', '/fake/missing.mp4'));
+    await src.upsertVideoBook(_video(
+        'anime-source:pkg:42:/ep/1', 'anime-source://pkg/42/Show - E01'));
+    await src.upsertVideoBook(_video(
+        'anime-source:pkg:42:/ep/2', 'ANIME-SOURCE://pkg/42/Show - E02'));
+    final zipDir = await _tempDir('vr_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    final meta = await BackupRestoreService.validateBackup(zip);
+    expect(meta!.bookCount, 2); // both online episodes, not the dead local
+
+    final preview = await BackupRestoreService.previewMergeRestore(
+      liveDb: cur,
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
+    expect(preview!.newVideoBooks, 2);
+    await cur.close();
+
+    await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path, zipPath: zip);
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final uids = (await after.allVideoBooks()).map((v) => v.bookUid).toSet();
+    expect(uids, <String>{
+      'anime-source:pkg:42:/ep/1',
+      'anime-source:pkg:42:/ep/2',
+    });
+  });
 }

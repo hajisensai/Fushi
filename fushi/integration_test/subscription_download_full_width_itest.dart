@@ -1,5 +1,5 @@
 // Windows 真 runner 的下载中心宽屏验收：在隔离数据库播种稳定任务/订阅，
-// 逐页断言任务、订阅、设置占满内容区，并抓取 Flutter 图层证据；最后推入
+// 逐页断言浏览 › 下载的任务、订阅段与下载设置页占满内容区，并抓取 Flutter 图层证据；最后推入
 // 发现订阅独立路由，确认它与资源搜索一样是全屏页面而非居中弹窗。
 
 import 'package:drift/drift.dart' show Value;
@@ -13,7 +13,7 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart'
     show HomePage, HomeTab;
 import 'package:fushi/src/pages/implementations/torrent_settings_section.dart';
@@ -142,15 +142,19 @@ void main() {
       await _seedDownloadRows(model);
 
       expect(HomePage.debugSelectTab, isNotNull);
-      HomePage.debugSelectTab!(HomeTab.downloads);
+      HomePage.debugSelectTab!(HomeTab.browse);
       await _pumpFrames(tester);
 
-      final Size downloadsSize = tester.getSize(find.byType(DownloadsPage));
+      final Size downloadsSize = tester.getSize(find.byType(BrowsePage));
       expect(downloadsSize.width, greaterThan(900));
-      final Finder tabs = find.byType(Tab);
-      expect(tabs, findsNWidgets(4));
-
-      await _activateTab(tester, focus, tabs.at(1));
+      // 浏览页签随平台在线宿主增减（来源/扩展/发现/下载），按标签找「下载」页签，
+      // 不按下标。任务段是下载页签的默认段。
+      final Finder downloadsTab = find.ancestor(
+        of: find.text(t.nav_downloads),
+        matching: find.byType(Tab),
+      );
+      expect(downloadsTab, findsOneWidget);
+      await _activateTab(tester, focus, downloadsTab);
       final Finder jobCard = find.byKey(
         const ValueKey<String>('video-download-job-full-width-itest-job'),
       );
@@ -166,7 +170,16 @@ void main() {
       );
       await _expectShot(tester, 'subscription-download-full-width-tasks');
 
-      await _activateTab(tester, focus, tabs.at(2));
+      await _activateTab(
+        tester,
+        focus,
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('browse-downloads-section-picker'),
+          ),
+          matching: find.text(t.download_subscriptions_tab),
+        ),
+      );
       final Finder subscriptionCard = find.byKey(
         const ValueKey<String>(
           'video-subscription-card-full-width-itest-subscription',
@@ -182,7 +195,12 @@ void main() {
         'subscription-download-full-width-subscriptions',
       );
 
-      await _activateTab(tester, focus, tabs.at(3));
+      // 下载设置不再是页签：「下载」页签页头齿轮 push 独立页。
+      await _activateTab(
+        tester,
+        focus,
+        find.byKey(const ValueKey<String>('browse-download-settings')),
+      );
       final Finder settings = find.byType(TorrentSettingsSection);
       expect(settings, findsOneWidget);
       expect(
@@ -190,6 +208,8 @@ void main() {
         greaterThan(downloadsSize.width * 0.9),
       );
       await _expectShot(tester, 'subscription-download-full-width-settings');
+      Navigator.of(tester.element(settings)).pop();
+      await _pumpFrames(tester);
 
       final NavigatorState navigator =
           tester.state<NavigatorState>(find.byType(Navigator).first);

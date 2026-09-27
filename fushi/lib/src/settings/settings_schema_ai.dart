@@ -5,6 +5,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
+import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/utils.dart';
@@ -42,30 +43,36 @@ SettingsDestination buildAiDestination() {
     bodyBeforeSections: true,
     sections: <SettingsSection>[
       // 联网资料：app 自己抓条目正文喂给 AI，与提供商有没有联网工具无关，所以不另设
-      // 门控——整页已经过 AI 模块门，这一段跟着页面走。
+      // 门控——整页已经过 AI 模块门，这一段跟着页面走。内置站是声明式开关；自定义
+      // MediaWiki 站点是可增删的记录列表，走 custom 行（同提供商列表的切法）。
       SettingsSection(
         id: 'ai.web_knowledge',
         title: t.ai_web_knowledge_section,
         footer: t.ai_web_knowledge_section_hint,
         items: <SettingsItem>[
-          for (final WebKnowledgeSource source in WebKnowledgeSource.values)
+          for (final WebKnowledgeSite site in kBuiltinWebKnowledgeSites)
             SettingsSwitchItem(
-              id: 'ai.web_knowledge.${source.storageKey}',
-              title: _webKnowledgeSourceLabel(source),
+              id: 'ai.web_knowledge.${site.id}',
+              title: webKnowledgeSiteDisplayLabel(site),
               icon: Icons.public,
-              value: (SettingsContext c) =>
-                  c.appModel.prefsRepo.aiWebKnowledgeSources.contains(source),
-              onChanged: (SettingsContext c, bool value) {
-                final Set<WebKnowledgeSource> next =
-                    c.appModel.prefsRepo.aiWebKnowledgeSources;
-                if (value) {
-                  next.add(source);
-                } else {
-                  next.remove(source);
-                }
-                return c.appModel.prefsRepo.setAiWebKnowledgeSources(next);
-              },
+              value: (SettingsContext c) => c
+                  .appModel
+                  .prefsRepo
+                  .aiWebKnowledgeEnabledSiteIds
+                  .contains(site.id),
+              onChanged: (SettingsContext c, bool value) =>
+                  setWebKnowledgeSiteEnabled(
+                    c.appModel.prefsRepo,
+                    site.id,
+                    enabled: value,
+                  ),
             ),
+          SettingsCustomItem(
+            id: 'ai.web_knowledge.custom',
+            searchTitle: t.ai_web_knowledge_custom_title,
+            builder: (SettingsContext c) =>
+                const AiWebKnowledgeCustomSitesSection(),
+          ),
         ],
       ),
       SettingsSection(
@@ -77,7 +84,7 @@ SettingsDestination buildAiDestination() {
         visible: (SettingsContext c) =>
             StoreRestrictedCapability.downloads.isAvailable &&
             StoreRestrictedCapability.externalDiscovery.isAvailable &&
-            c.appModel.moduleVisibility.isEnabled(ModuleId.downloads),
+            c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
         items: <SettingsItem>[
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',
@@ -231,10 +238,3 @@ SettingsDestination buildAiDestination() {
     ],
   );
 }
-
-/// 来源的开关文案：站点名 + 语种用母语写（与字幕语言下拉同一思路），不随界面语言变。
-String _webKnowledgeSourceLabel(WebKnowledgeSource source) => switch (source) {
-  WebKnowledgeSource.wikipediaZh => t.ai_web_knowledge_wikipedia_zh,
-  WebKnowledgeSource.wikipediaJa => t.ai_web_knowledge_wikipedia_ja,
-  WebKnowledgeSource.wikipediaEn => t.ai_web_knowledge_wikipedia_en,
-};
