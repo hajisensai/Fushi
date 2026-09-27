@@ -88,12 +88,15 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
   }
 
   /// [RemoteVideoSource] 视图的下载入口；云盘就是整文件重下（无 Range 续传），
-  /// 实现委托给既有的 [getRemoteVideo]。
+  /// 实现委托给既有的 [getRemoteVideo]。云盘资产接口只报比例进度、没有中止
+  /// 缝，[onBytes] / [cancelSignal] 不生效（契约允许忽略）。
   @override
   Future<void> downloadRemoteVideo(
     String id,
     File dest, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
   }) =>
       getRemoteVideo(id, dest, onProgress: onProgress);
 

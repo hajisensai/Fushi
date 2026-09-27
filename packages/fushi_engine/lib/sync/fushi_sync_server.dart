@@ -795,11 +795,17 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// （epub/词典/有声书/本地音频）断点续传的正确性前提：`export*` 重打包不保证
 /// 字节稳定，续传必须钉在同一份缓存文件上（见 [FushiSyncServer._exportCache]）。
 ///
+/// [ifRangeRequired]（默认 true，上面的导出包语义）：带 Range 却**缺** `If-Range`
+/// 时同样降级 200。源文件原地的视频流传 false——播放器（mpv）的 seek Range 不带
+/// `If-Range`，必须照常 206；而带了 `If-Range` 的下载续传仍按验证器精确匹配，
+/// 不匹配（host 上文件已被替换）照样 200 全量（RFC 7233 §3.2 的原本语义）。
+///
 /// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
 Future<shelf.Response> serveFileWithRange(
   File file,
   shelf.Request request, {
   String? etag,
+  bool ifRangeRequired = true,
 }) async {
   if (!file.existsSync()) {
     return shelf.Response.notFound('File not found');
@@ -810,12 +816,13 @@ Future<shelf.Response> serveFileWithRange(
   String? rangeHeader = request.headers['range'];
   if (etag != null && rangeHeader != null) {
     final String? ifRange = request.headers['if-range'];
-    if (ifRange != etag) {
+    if (ifRange == null ? ifRangeRequired : ifRange != etag) {
       // 验证器不匹配或缺失：client 手里的 .part 可能属于上一代字节（导出缓存
       // 过期重打包），忽略 Range 整包 200 重发（client 侧 ResumableDownloader
       // 收到 200 会丢弃旧 part 从 0 重写）。带 etag 的调用方声明「字节可能
       // 换代」，故续传**必须**验证器精确匹配——缺 If-Range 的盲 Range 也拒绝，
-      // 正确性优先于续传收益（etag == null 的调用方如视频流不受影响）。
+      // 正确性优先于续传收益（[ifRangeRequired] 为 false 的视频流对盲 Range
+      // 照常 206，见函数文档）。
       rangeHeader = null;
     }
   }
@@ -859,6 +866,16 @@ Future<shelf.Response> serveFileWithRange(
       if (etag != null) 'ETag': etag,
     },
   );
+}
+
+/// 视频源文件的强验证器（`"vid-<size>-<mtimeMs>"`），给 `/stream` 的 ETag /
+/// `If-Range` 用：host 上同一路径的文件被替换（换版本、重新压制）时 size 或 mtime
+/// 必变，client 手里的 `.part` 续传因验证器不匹配降级 200 全量，不会把两份文件
+/// 拼成坏片。与导出包的 `pkg-` 验证器（[ExportPackageCache.etagFor]）刻意分开：
+/// 那边钉的是进程内缓存的代数，这里钉的是用户库里的原文件。纯 ASCII。
+String videoFileEtag(File file) {
+  final int mtime = file.lastModifiedSync().millisecondsSinceEpoch;
+  return '"vid-${file.lengthSync()}-$mtime"';
 }
 
 /// 导出包进程级缓存：包端点（epub/词典/有声书/本地音频）Range 续传的字节稳定性

@@ -5615,5 +5615,9 @@
   "video_mine_queue_committing": "正在写入 $done/$total…",
   "video_mine_queue_committed": "已写入 $ok 张，失败 $failed 张",
   "video_mine_queue_failed": "写入失败：$reason",
-  "video_mine_queue_remove": "移除"
+  "video_mine_queue_remove": "移除",
+  "download_interconnect_section_title": "从配对设备下载",
+  "interconnect_download_notification_title": "正在从配对设备下载 $count 项",
+  "download_keep_alive_multiple_title": "$count 项下载进行中",
+  "update_download_notification_title": "正在下载更新 $version"
 }
