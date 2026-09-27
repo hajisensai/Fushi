@@ -24,6 +24,13 @@ class _NativeHost {
   bool allocationPending = false;
   int controlCount = 0;
 
+  /// `getSenders` payload; empty unless a test needs encoder writes.
+  List<Object?> senders = <Object?>[];
+
+  /// `availableOutgoingBitrate` (bps) reported on the selected pair.
+  int? availableBps;
+  bool setParametersResult = true;
+
   Future<Object?> rtc(MethodCall call) async {
     rtcCalls.add(call);
     if (call.method == delayedMethod) {
@@ -75,9 +82,33 @@ class _NativeHost {
       case 'createOffer':
         return <String, Object?>{'sdp': 'test-offer', 'type': 'offer'};
       case 'getSenders':
-        return <String, Object?>{'senders': <Object?>[]};
+        return <String, Object?>{'senders': senders};
+      case 'rtpSenderSetParameters':
+        return <String, Object?>{'result': setParametersResult};
       case 'getStats':
-        return <String, Object?>{'stats': <Object?>[]};
+        final int? available = availableBps;
+        return <String, Object?>{
+          'stats': <Object?>[
+            if (available != null) ...<Object?>[
+              <String, Object?>{
+                'id': 'T',
+                'type': 'transport',
+                'timestamp': 0,
+                'values': <String, Object?>{'selectedCandidatePairId': 'CP'},
+              },
+              <String, Object?>{
+                'id': 'CP',
+                'type': 'candidate-pair',
+                'timestamp': 0,
+                'values': <String, Object?>{
+                  'nominated': true,
+                  'currentRoundTripTime': 0.002,
+                  'availableOutgoingBitrate': available,
+                },
+              },
+            ],
+          ],
+        };
       default:
         throw StateError('Unexpected WebRTC call after cancellation: $call');
     }
@@ -109,6 +140,29 @@ class _NativeHost {
         throw StateError('Unexpected input call: $call');
     }
   }
+
+  static Map<String, Object?> get videoSender => <String, Object?>{
+    'senderId': 'video-sender',
+    'track': _track('video'),
+    'ownsTrack': false,
+    'rtpParameters': <String, Object?>{
+      'encodings': <Object?>[
+        <String, Object?>{'active': true},
+      ],
+      'headerExtensions': <Object?>[],
+      'codecs': <Object?>[],
+      'rtcp': <String, Object?>{'reducedSize': false},
+    },
+  };
+
+  /// `scaleResolutionDownBy` of every encoder write so far.
+  List<Object?> get writtenScales => <Object?>[
+    for (final MethodCall call in rtcCalls)
+      if (call.method == 'rtpSenderSetParameters')
+        ((((call.arguments as Map)['parameters'] as Map)['encodings'] as List)
+                .single
+            as Map)['scaleResolutionDownBy'],
+  ];
 
   static Map<String, Object?> get capture => <String, Object?>{
     'streamId': 'late-capture',
@@ -313,6 +367,121 @@ void main() {
           hasLength(1),
         );
         await stop();
+      } finally {
+        await stop();
+        host.dispose();
+        service.dispose();
+        await tester.pump(const Duration(milliseconds: 1));
+        for (final MethodChannel channel in channels) {
+          messenger.setMockMethodCallHandler(channel, null);
+        }
+      }
+    },
+    skip: !Platform.isWindows,
+  );
+
+  testWidgets(
+    'weak-network ladder lowers the encoded height, survives a refused step '
+    'and stops sampling with the session',
+    (WidgetTester tester) async {
+      final _NativeHost native = _NativeHost('never-delayed')
+        ..senders = <Object?>[_NativeHost.videoSender];
+      final TestDefaultBinaryMessenger messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      const MethodChannel rtc = MethodChannel('FlutterWebRTC.Method');
+      const MethodChannel input = MethodChannel('app.fushi/game_stream_input');
+      const MethodChannel peerEvents = MethodChannel(
+        'FlutterWebRTC/peerConnectionEvent$_peerId',
+      );
+      final List<MethodChannel> channels = <MethodChannel>[
+        rtc,
+        input,
+        const MethodChannel('FlutterWebRTC.Event'),
+        peerEvents,
+        const MethodChannel(
+          'FlutterWebRTC/dataChannelEvent${_peerId}control-1',
+        ),
+      ];
+      messenger.setMockMethodCallHandler(rtc, native.rtc);
+      messenger.setMockMethodCallHandler(input, native.input);
+      for (final MethodChannel channel in channels.skip(2)) {
+        messenger.setMockMethodCallHandler(channel, (_) async => null);
+      }
+      Duration now = Duration.zero;
+      final FushiRemoteGameStreamService service =
+          FushiRemoteGameStreamService();
+      final FushiGameStreamHost host = FushiGameStreamHost(
+        service: service,
+        monotonicClock: () => now,
+      );
+      Future<void> stop() async {
+        bool stopped = false;
+        final Future<void> stopping = host.stop().then<void>(
+          (_) => stopped = true,
+        );
+        await _flushUntil(tester, () => stopped);
+        await stopping;
+      }
+
+      int statsCalls() => native.rtcCalls
+          .where((MethodCall c) => c.method == 'getStats')
+          .length;
+      Future<void> advance(Duration total) async {
+        for (
+          Duration step = Duration.zero;
+          step < total;
+          step += const Duration(milliseconds: 100)
+        ) {
+          now += const Duration(milliseconds: 100);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      try {
+        GameStreamSession? session;
+        final Future<void> starting = host
+            .start(hwnd: _hwnd)
+            .then<void>((GameStreamSession value) => session = value);
+        await _flushUntil(tester, () => session != null);
+        await starting;
+        // The start-up write: 1080p capture at the 1080p cap.
+        expect(native.writtenScales, <Object?>[1.0]);
+        service.joinSession(sessionId: session!.sessionId, clientId: 'client');
+        await messenger.handlePlatformMessage(
+          peerEvents.name,
+          const StandardMethodCodec().encodeSuccessEnvelope(<String, Object?>{
+            'event': 'peerConnectionState',
+            'state': 'connected',
+          }),
+          (_) {},
+        );
+        await tester.pump();
+
+        // 800 kbps cannot carry 1080p (1200 kbps minimum): after the
+        // sustained window the encoder is told to scale 1080 -> 720.
+        native.availableBps = 800000;
+        await advance(const Duration(seconds: 6));
+        expect(host.debugLadderHeight, 720);
+        expect(native.writtenScales.last, 1.5);
+
+        // 300 kbps is short of 720p too, but the encoder refuses the next
+        // step: the stream keeps running and the ladder stays at the height
+        // the encoder actually has.
+        native
+          ..availableBps = 300000
+          ..setParametersResult = false;
+        final int writesBefore = native.writtenScales.length;
+        await advance(const Duration(seconds: 6));
+        expect(native.writtenScales.length, greaterThan(writesBefore));
+        expect(native.writtenScales.last, 2.25, reason: 'the refused 480p');
+        expect(host.debugLadderHeight, 720);
+        expect(host.started, isTrue);
+        expect(session!.state.isTerminal, isFalse);
+
+        await stop();
+        final int callsAtStop = statsCalls();
+        await advance(const Duration(seconds: 5));
+        expect(statsCalls(), callsAtStop);
       } finally {
         await stop();
         host.dispose();

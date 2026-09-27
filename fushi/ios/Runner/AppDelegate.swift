@@ -133,6 +133,36 @@ import Flutter
       }
     }
 
+    // 长按 app 图标的 Home Screen quick actions（Dart 门面
+    // lib/src/platform/app_shortcuts.dart）。点击由 SceneDelegate 换成
+    // `fushi://shortcut/<id>` 走下面的 url_events，不另起投递通道。
+    let appShortcutsChannel = FlutterMethodChannel(
+      name: "app.fushi.reader/app_shortcuts",
+      binaryMessenger: binaryMessenger)
+    appShortcutsChannel.setMethodCallHandler { (call, result) in
+      switch call.method {
+      case "setShortcuts":
+        // Dart 发 {items, disabledMessage}；后者只给 Android 置灰固定快捷方式用，
+        // iOS 的 quick actions 整表替换即可，不存在「固定」的残留。
+        let args = call.arguments as? [String: Any]
+        let items = (args?["items"] as? [[String: String]]) ?? []
+        UIApplication.shared.shortcutItems = items.compactMap { item in
+          guard let id = item["id"], let title = item["title"],
+            let url = item["url"]
+          else { return nil }
+          return UIApplicationShortcutItem(
+            type: Self.appShortcutType(id),
+            localizedTitle: title,
+            localizedSubtitle: nil,
+            icon: UIApplicationShortcutIcon(systemImageName: Self.appShortcutSymbol(id)),
+            userInfo: ["url": url as NSString])
+        }
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     let urlEventChannel = FlutterEventChannel(
       name: "app.fushi.reader/url_events/stream",
       binaryMessenger: binaryMessenger)
@@ -194,6 +224,32 @@ import Flutter
     deliverUrl(url.absoluteString)
     let handled = super.application(application, open: url, options: options)
     return handled || url.scheme == "fushi"
+  }
+
+  private static let appShortcutTypePrefix = "app.fushi.reader.shortcut."
+
+  private static func appShortcutType(_ id: String) -> String {
+    return appShortcutTypePrefix + id
+  }
+
+  private static func appShortcutSymbol(_ id: String) -> String {
+    switch id {
+    case "lookup": return "magnifyingglass"
+    case "books": return "book"
+    case "manga": return "photo.on.rectangle"
+    case "video": return "film"
+    default: return "app"
+    }
+  }
+
+  /// 把快捷方式点击交给 Dart。返回 false = 不是本 app 发布的快捷方式。
+  @discardableResult
+  func deliverShortcut(_ item: UIApplicationShortcutItem) -> Bool {
+    guard item.type.hasPrefix(Self.appShortcutTypePrefix) else { return false }
+    let url = (item.userInfo?["url"] as? String)
+      ?? "fushi://shortcut/" + item.type.dropFirst(Self.appShortcutTypePrefix.count)
+    deliverUrl(url)
+    return true
   }
 
   func deliverUrl(_ url: String) {

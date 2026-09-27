@@ -7,9 +7,11 @@
 /// 非截屏。两半合起来，这条链上没有任何一处经过「录」。
 ///
 /// 与 YouTube 那条的两点差异（都已实测，不是推测）：
-///   · **不需要 Referer**：mcdn/upos 直链对 ffmpeg 直接放行，带不带 Referer 都成功（各跑
-///     两次，产出逐字节一致）。曾经出现的 `-138` 是瞬时 connect 超时，被既有的
-///     `-reconnect_on_network_error` 兜住，与鉴权无关。
+///   · **必须带 Referer**（BUG-2574 / BUG-2730）：`upos-sz-*.bilivideo.com` 与 PCDN
+///     `*.edge.mountaintoys.cn` 节点不带 `Referer: https://www.bilibili.com/` 一律 403，
+///     只有 `*.mcdn.bilivideo.cn` 宽松放行。同一个 playurl 每次解析落到哪类节点是随机的，
+///     且 PCDN 域名会轮换——所以 Referer 由本层随请求**显式声明**（[BilibiliClipRequest.httpHeaders]），
+///     不靠 ffmpeg 那侧按 host 白名单去猜。
 ///   · **不需要 range 物化**：googlevideo 那套 `range=` 查询参数分片是为绕开它的 SABR 限速，
 ///     B 站没有这个限速，ffmpeg 对 URL 直接 `-ss/-t` 稳定出片（3 秒片段约 1 秒）。见
 ///     `audioSourceNeedsRangeMaterialization`。
@@ -22,6 +24,8 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show kBilibiliCdnReferer;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
 
@@ -75,10 +79,15 @@ class BilibiliClipRequest {
     required this.sentence,
     required this.cueSentence,
     required this.documentTitle,
+    this.httpHeaders = kBilibiliMediaHttpHeaders,
   });
 
   /// 句子音频的 ffmpeg 输入（audio-only DASH URL）。
   final String audioSource;
+
+  /// 取 [audioSource] 时必须带的请求头（防盗链 Referer），经
+  /// `ImmersionMiningRequest.mediaSourceHttpHeaders` 下发给 ffmpeg。
+  final Map<String, String> httpHeaders;
   final int clipStartMs;
   final int clipEndMs;
   final Map<String, String> fields;
@@ -181,8 +190,15 @@ BilibiliPlayStreams? _playStreamsFrom(Map<Object?, Object?> payload) {
   );
 }
 
-/// B 站接口要求带浏览器 UA；不带会被部分节点拒。与 playurl 的 Referer 无关（见类注释：
-/// 音轨直链本身不校验 Referer，这里的 UA 是给 **API** 用的）。
+/// B 站媒体直链（DASH m4s）的防盗链请求头。BUG-2730：按 host 白名单推 Referer 追不上
+/// PCDN 域名轮换（实测 `*.edge.mountaintoys.cn:4483` 不在白名单 → ffmpeg 不带 Referer →
+/// 403 → required audio missing），所以 B 站这条链自己声明，与节点落在哪个域名无关。
+const Map<String, String> kBilibiliMediaHttpHeaders = <String, String>{
+  'Referer': kBilibiliCdnReferer,
+};
+
+/// B 站接口要求带浏览器 UA；不带会被部分节点拒。这里的 UA 是给 **API** 用的；媒体直链的
+/// 防盗链头见 [kBilibiliMediaHttpHeaders]。
 const String kBilibiliApiUserAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';

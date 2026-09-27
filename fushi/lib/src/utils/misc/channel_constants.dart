@@ -33,6 +33,11 @@ abstract final class FushiChannels {
   static const MethodChannel downloadKeepAlive =
       MethodChannel('$_prefix/download_keep_alive');
   static const MethodChannel iconSwitch = MethodChannel('$_prefix/icon_switch');
+
+  /// 长按 app 图标的系统快捷方式（Android launcher shortcuts / iOS quick
+  /// actions）。Dart 门面 `lib/src/platform/app_shortcuts.dart`。
+  static const MethodChannel appShortcuts =
+      MethodChannel('$_prefix/app_shortcuts');
   static const MethodChannel clipboardImage =
       MethodChannel('$_prefix/clipboard_image');
   static const MethodChannel screenBrightness =
