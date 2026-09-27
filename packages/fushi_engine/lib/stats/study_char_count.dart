@@ -92,31 +92,45 @@ const String _kScriptExtensionsPrefix = r'\p{Script_Extensions=';
 String _scriptClass(String script) => '$_kScriptExtensionsPrefix$script}';
 
 /// 一段文本的学习单位数。纯函数；口径见库注释。
-int countStudyChars(String text) {
-  int count = 0;
-  bool inWord = false;
-  for (final int rune in text.runes) {
-    final String char = String.fromCharCode(rune);
-    if (kStudyTransparentPattern.hasMatch(char)) {
-      continue; // 不计数、不断词
-    }
-    if (kStudyLetterOrNumberPattern.hasMatch(char)) {
-      if (kStudyNoSpaceScriptPattern.hasMatch(char)) {
-        if (inWord) {
-          count++;
-          inWord = false;
-        }
-        count++;
-      } else {
-        inWord = true;
+int countStudyChars(String text) => (StudyCharCounter()..add(text)).count;
+
+/// [countStudyChars] 的可续算版本：按顺序 [add] 多段文本，[count] 恒等于
+/// `countStudyChars(所有段拼接)`。
+///
+/// 存在的理由是连续词串（拉丁等）跨段：逐段 `countStudyChars` 再相加，会把
+/// `<p>abc</p><p>def</p>`（标签之间没有空白）数成 2，而拼接后数是 1——DOM
+/// 遍历里「逐文本节点计数再相加」与「拼接前文再计数」（阅读器回报的位置、目录
+/// 锚点偏移都是后者）因此不在同一把尺子上。需要在遍历中途读偏移的地方用它。
+class StudyCharCounter {
+  int _count = 0;
+  bool _inWord = false;
+
+  /// 接着已加入的文本继续计数（词串可以跨段延续）。
+  void add(String text) {
+    for (final int rune in text.runes) {
+      final String char = String.fromCharCode(rune);
+      if (kStudyTransparentPattern.hasMatch(char)) {
+        continue; // 不计数、不断词
       }
-      continue;
-    }
-    if (inWord) {
-      count++;
-      inWord = false;
+      if (kStudyLetterOrNumberPattern.hasMatch(char)) {
+        if (kStudyNoSpaceScriptPattern.hasMatch(char)) {
+          if (_inWord) {
+            _count++;
+            _inWord = false;
+          }
+          _count++;
+        } else {
+          _inWord = true;
+        }
+        continue;
+      }
+      if (_inWord) {
+        _count++;
+        _inWord = false;
+      }
     }
   }
-  if (inWord) count++;
-  return count;
+
+  /// 目前为止的学习单位数（未收尾的词串按 1 计，与 [countStudyChars] 结尾一致）。
+  int get count => _count + (_inWord ? 1 : 0);
 }
