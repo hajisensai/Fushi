@@ -25562,9 +25562,6 @@ class $GalgameSessionsTable extends GalgameSessions
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES galgames (id) ON DELETE CASCADE',
-    ),
   );
   static const VerificationMeta _startMsMeta = const VerificationMeta(
     'startMs',
@@ -25620,6 +25617,18 @@ class $GalgameSessionsTable extends GalgameSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _gameTitleMeta = const VerificationMeta(
+    'gameTitle',
+  );
+  @override
+  late final GeneratedColumn<String> gameTitle = GeneratedColumn<String>(
+    'game_title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -25629,6 +25638,7 @@ class $GalgameSessionsTable extends GalgameSessions
     durationSeconds,
     dateKey,
     profileId,
+    gameTitle,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -25694,6 +25704,12 @@ class $GalgameSessionsTable extends GalgameSessions
         profileId.isAcceptableOrUnknown(data['profile_id']!, _profileIdMeta),
       );
     }
+    if (data.containsKey('game_title')) {
+      context.handle(
+        _gameTitleMeta,
+        gameTitle.isAcceptableOrUnknown(data['game_title']!, _gameTitleMeta),
+      );
+    }
     return context;
   }
 
@@ -25731,6 +25747,10 @@ class $GalgameSessionsTable extends GalgameSessions
         DriftSqlType.int,
         data['${effectivePrefix}profile_id'],
       )!,
+      gameTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_title'],
+      )!,
     );
   }
 
@@ -25744,7 +25764,10 @@ class GalgameSessionRow extends DataClass
     implements Insertable<GalgameSessionRow> {
   final int id;
 
-  /// 所属游戏。删游戏 cascade 清本表。
+  /// 所属游戏（`galgames.id`）。自 v113 起是**逻辑外键**：从库移除游戏不再
+  /// cascade 清本表——会话是用户攒下的游玩时长，只有删除框勾了「同时删除统计数据」
+  /// （`deleteGameStatisticsForId`）或统计页显式删除时才删。游戏移除后会话成为孤儿，
+  /// 靠 [gameTitle] 快照继续在统计页显示名字。
   final String gameId;
 
   /// 会话起始毫秒戳。
@@ -25765,6 +25788,11 @@ class GalgameSessionRow extends DataClass
   /// 时写下的行，只在纯 DB 测试里出现）。统计按 Profile 隔离的分区键，与
   /// [StudySegments.profileId] 同律；写入时由 DAO 从 `active_profile_id` 偏好盖戳。
   final int profileId;
+
+  /// v113：游戏被从库移除时快照下的显示名（`deleteGalgame` 同事务写入）。游戏还在库
+  /// 里时恒为空串、读取端一律以库内当前显示名为准；游戏移除后 [gameId] 反查不到
+  /// 行，统计页 / 会话流靠它显示名字而不是裸 id。
+  final String gameTitle;
   const GalgameSessionRow({
     required this.id,
     required this.gameId,
@@ -25773,6 +25801,7 @@ class GalgameSessionRow extends DataClass
     required this.durationSeconds,
     required this.dateKey,
     required this.profileId,
+    required this.gameTitle,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -25784,6 +25813,7 @@ class GalgameSessionRow extends DataClass
     map['duration_seconds'] = Variable<int>(durationSeconds);
     map['date_key'] = Variable<String>(dateKey);
     map['profile_id'] = Variable<int>(profileId);
+    map['game_title'] = Variable<String>(gameTitle);
     return map;
   }
 
@@ -25796,6 +25826,7 @@ class GalgameSessionRow extends DataClass
       durationSeconds: Value(durationSeconds),
       dateKey: Value(dateKey),
       profileId: Value(profileId),
+      gameTitle: Value(gameTitle),
     );
   }
 
@@ -25812,6 +25843,7 @@ class GalgameSessionRow extends DataClass
       durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       profileId: serializer.fromJson<int>(json['profileId']),
+      gameTitle: serializer.fromJson<String>(json['gameTitle']),
     );
   }
   @override
@@ -25825,6 +25857,7 @@ class GalgameSessionRow extends DataClass
       'durationSeconds': serializer.toJson<int>(durationSeconds),
       'dateKey': serializer.toJson<String>(dateKey),
       'profileId': serializer.toJson<int>(profileId),
+      'gameTitle': serializer.toJson<String>(gameTitle),
     };
   }
 
@@ -25836,6 +25869,7 @@ class GalgameSessionRow extends DataClass
     int? durationSeconds,
     String? dateKey,
     int? profileId,
+    String? gameTitle,
   }) => GalgameSessionRow(
     id: id ?? this.id,
     gameId: gameId ?? this.gameId,
@@ -25844,6 +25878,7 @@ class GalgameSessionRow extends DataClass
     durationSeconds: durationSeconds ?? this.durationSeconds,
     dateKey: dateKey ?? this.dateKey,
     profileId: profileId ?? this.profileId,
+    gameTitle: gameTitle ?? this.gameTitle,
   );
   GalgameSessionRow copyWithCompanion(GalgameSessionsCompanion data) {
     return GalgameSessionRow(
@@ -25856,6 +25891,7 @@ class GalgameSessionRow extends DataClass
           : this.durationSeconds,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       profileId: data.profileId.present ? data.profileId.value : this.profileId,
+      gameTitle: data.gameTitle.present ? data.gameTitle.value : this.gameTitle,
     );
   }
 
@@ -25868,7 +25904,8 @@ class GalgameSessionRow extends DataClass
           ..write('endMs: $endMs, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('dateKey: $dateKey, ')
-          ..write('profileId: $profileId')
+          ..write('profileId: $profileId, ')
+          ..write('gameTitle: $gameTitle')
           ..write(')'))
         .toString();
   }
@@ -25882,6 +25919,7 @@ class GalgameSessionRow extends DataClass
     durationSeconds,
     dateKey,
     profileId,
+    gameTitle,
   );
   @override
   bool operator ==(Object other) =>
@@ -25893,7 +25931,8 @@ class GalgameSessionRow extends DataClass
           other.endMs == this.endMs &&
           other.durationSeconds == this.durationSeconds &&
           other.dateKey == this.dateKey &&
-          other.profileId == this.profileId);
+          other.profileId == this.profileId &&
+          other.gameTitle == this.gameTitle);
 }
 
 class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
@@ -25904,6 +25943,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
   final Value<int> durationSeconds;
   final Value<String> dateKey;
   final Value<int> profileId;
+  final Value<String> gameTitle;
   const GalgameSessionsCompanion({
     this.id = const Value.absent(),
     this.gameId = const Value.absent(),
@@ -25912,6 +25952,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     this.durationSeconds = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.profileId = const Value.absent(),
+    this.gameTitle = const Value.absent(),
   });
   GalgameSessionsCompanion.insert({
     this.id = const Value.absent(),
@@ -25921,6 +25962,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     required int durationSeconds,
     required String dateKey,
     this.profileId = const Value.absent(),
+    this.gameTitle = const Value.absent(),
   }) : gameId = Value(gameId),
        startMs = Value(startMs),
        endMs = Value(endMs),
@@ -25934,6 +25976,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     Expression<int>? durationSeconds,
     Expression<String>? dateKey,
     Expression<int>? profileId,
+    Expression<String>? gameTitle,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -25943,6 +25986,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (dateKey != null) 'date_key': dateKey,
       if (profileId != null) 'profile_id': profileId,
+      if (gameTitle != null) 'game_title': gameTitle,
     });
   }
 
@@ -25954,6 +25998,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     Value<int>? durationSeconds,
     Value<String>? dateKey,
     Value<int>? profileId,
+    Value<String>? gameTitle,
   }) {
     return GalgameSessionsCompanion(
       id: id ?? this.id,
@@ -25963,6 +26008,7 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       dateKey: dateKey ?? this.dateKey,
       profileId: profileId ?? this.profileId,
+      gameTitle: gameTitle ?? this.gameTitle,
     );
   }
 
@@ -25990,6 +26036,9 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
     if (profileId.present) {
       map['profile_id'] = Variable<int>(profileId.value);
     }
+    if (gameTitle.present) {
+      map['game_title'] = Variable<String>(gameTitle.value);
+    }
     return map;
   }
 
@@ -26002,7 +26051,8 @@ class GalgameSessionsCompanion extends UpdateCompanion<GalgameSessionRow> {
           ..write('endMs: $endMs, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('dateKey: $dateKey, ')
-          ..write('profileId: $profileId')
+          ..write('profileId: $profileId, ')
+          ..write('gameTitle: $gameTitle')
           ..write(')'))
         .toString();
   }
@@ -55252,13 +55302,6 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     ),
     WritePropagation(
       on: TableUpdateQuery.onTableName(
-        'galgames',
-        limitUpdateKind: UpdateKind.delete,
-      ),
-      result: [TableUpdate('galgame_sessions', kind: UpdateKind.delete)],
-    ),
-    WritePropagation(
-      on: TableUpdateQuery.onTableName(
         'media_collections',
         limitUpdateKind: UpdateKind.delete,
       ),
@@ -72242,27 +72285,6 @@ final class $$GalgamesTableReferences
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
-
-  static MultiTypedResultKey<$GalgameSessionsTable, List<GalgameSessionRow>>
-  _galgameSessionsRefsTable(_$FushiDatabase db) =>
-      MultiTypedResultKey.fromTable(
-        db.galgameSessions,
-        aliasName: 'galgames__id__galgame_sessions__game_id',
-      );
-
-  $$GalgameSessionsTableProcessedTableManager get galgameSessionsRefs {
-    final manager = $$GalgameSessionsTableTableManager(
-      $_db,
-      $_db.galgameSessions,
-    ).filter((f) => f.gameId.id.sqlEquals($_itemColumn<String>('id')!));
-
-    final cache = $_typedResult.readTableOrNull(
-      _galgameSessionsRefsTable($_db),
-    );
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: cache),
-    );
-  }
 }
 
 class $$GalgamesTableFilterComposer
@@ -72365,31 +72387,6 @@ class $$GalgamesTableFilterComposer
           }) => $$GalgameSourcesTableFilterComposer(
             $db: $db,
             $table: $db.galgameSources,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
-
-  Expression<bool> galgameSessionsRefs(
-    Expression<bool> Function($$GalgameSessionsTableFilterComposer f) f,
-  ) {
-    final $$GalgameSessionsTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameSessions,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameSessionsTableFilterComposer(
-            $db: $db,
-            $table: $db.galgameSessions,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -72577,31 +72574,6 @@ class $$GalgamesTableAnnotationComposer
     );
     return f(composer);
   }
-
-  Expression<T> galgameSessionsRefs<T extends Object>(
-    Expression<T> Function($$GalgameSessionsTableAnnotationComposer a) f,
-  ) {
-    final $$GalgameSessionsTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.id,
-      referencedTable: $db.galgameSessions,
-      getReferencedColumn: (t) => t.gameId,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgameSessionsTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgameSessions,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return f(composer);
-  }
 }
 
 class $$GalgamesTableTableManager
@@ -72617,10 +72589,7 @@ class $$GalgamesTableTableManager
           $$GalgamesTableUpdateCompanionBuilder,
           (GalgameRow, $$GalgamesTableReferences),
           GalgameRow,
-          PrefetchHooks Function({
-            bool galgameSourcesRefs,
-            bool galgameSessionsRefs,
-          })
+          PrefetchHooks Function({bool galgameSourcesRefs})
         > {
   $$GalgamesTableTableManager(_$FushiDatabase db, $GalgamesTable table)
     : super(
@@ -72713,63 +72682,37 @@ class $$GalgamesTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback:
-              ({galgameSourcesRefs = false, galgameSessionsRefs = false}) {
-                return PrefetchHooks(
-                  db: db,
-                  explicitlyWatchedTables: [
-                    if (galgameSourcesRefs) db.galgameSources,
-                    if (galgameSessionsRefs) db.galgameSessions,
-                  ],
-                  addJoins: null,
-                  getPrefetchedDataCallback: (items) async {
-                    return [
-                      if (galgameSourcesRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameSourceRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameSourcesRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameSourcesRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                      if (galgameSessionsRefs)
-                        await $_getPrefetchedData<
-                          GalgameRow,
-                          $GalgamesTable,
-                          GalgameSessionRow
-                        >(
-                          currentTable: table,
-                          referencedTable: $$GalgamesTableReferences
-                              ._galgameSessionsRefsTable(db),
-                          managerFromTypedResult: (p0) =>
-                              $$GalgamesTableReferences(
-                                db,
-                                table,
-                                p0,
-                              ).galgameSessionsRefs,
-                          referencedItemsForCurrentItem:
-                              (item, referencedItems) => referencedItems.where(
-                                (e) => e.gameId == item.id,
-                              ),
-                          typedResults: items,
-                        ),
-                    ];
-                  },
-                );
+          prefetchHooksCallback: ({galgameSourcesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (galgameSourcesRefs) db.galgameSources,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (galgameSourcesRefs)
+                    await $_getPrefetchedData<
+                      GalgameRow,
+                      $GalgamesTable,
+                      GalgameSourceRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$GalgamesTableReferences
+                          ._galgameSourcesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$GalgamesTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).galgameSourcesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.gameId == item.id),
+                      typedResults: items,
+                    ),
+                ];
               },
+            );
+          },
         ),
       );
 }
@@ -72786,10 +72729,7 @@ typedef $$GalgamesTableProcessedTableManager =
       $$GalgamesTableUpdateCompanionBuilder,
       (GalgameRow, $$GalgamesTableReferences),
       GalgameRow,
-      PrefetchHooks Function({
-        bool galgameSourcesRefs,
-        bool galgameSessionsRefs,
-      })
+      PrefetchHooks Function({bool galgameSourcesRefs})
     >;
 typedef $$GalgameSourcesTableCreateCompanionBuilder =
     GalgameSourcesCompanion Function({
@@ -73169,6 +73109,7 @@ typedef $$GalgameSessionsTableCreateCompanionBuilder =
       required int durationSeconds,
       required String dateKey,
       Value<int> profileId,
+      Value<String> gameTitle,
     });
 typedef $$GalgameSessionsTableUpdateCompanionBuilder =
     GalgameSessionsCompanion Function({
@@ -73179,38 +73120,8 @@ typedef $$GalgameSessionsTableUpdateCompanionBuilder =
       Value<int> durationSeconds,
       Value<String> dateKey,
       Value<int> profileId,
+      Value<String> gameTitle,
     });
-
-final class $$GalgameSessionsTableReferences
-    extends
-        BaseReferences<
-          _$FushiDatabase,
-          $GalgameSessionsTable,
-          GalgameSessionRow
-        > {
-  $$GalgameSessionsTableReferences(
-    super.$_db,
-    super.$_table,
-    super.$_typedResult,
-  );
-
-  static $GalgamesTable _gameIdTable(_$FushiDatabase db) =>
-      db.galgames.createAlias('galgame_sessions__game_id__galgames__id');
-
-  $$GalgamesTableProcessedTableManager get gameId {
-    final $_column = $_itemColumn<String>('game_id')!;
-
-    final manager = $$GalgamesTableTableManager(
-      $_db,
-      $_db.galgames,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_gameIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-}
 
 class $$GalgameSessionsTableFilterComposer
     extends Composer<_$FushiDatabase, $GalgameSessionsTable> {
@@ -73223,6 +73134,11 @@ class $$GalgameSessionsTableFilterComposer
   });
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -73251,28 +73167,10 @@ class $$GalgameSessionsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  $$GalgamesTableFilterComposer get gameId {
-    final $$GalgamesTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableFilterComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  ColumnFilters<String> get gameTitle => $composableBuilder(
+    column: $table.gameTitle,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$GalgameSessionsTableOrderingComposer
@@ -73286,6 +73184,11 @@ class $$GalgameSessionsTableOrderingComposer
   });
   ColumnOrderings<int> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -73314,28 +73217,10 @@ class $$GalgameSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  $$GalgamesTableOrderingComposer get gameId {
-    final $$GalgamesTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableOrderingComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  ColumnOrderings<String> get gameTitle => $composableBuilder(
+    column: $table.gameTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GalgameSessionsTableAnnotationComposer
@@ -73349,6 +73234,9 @@ class $$GalgameSessionsTableAnnotationComposer
   });
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
 
   GeneratedColumn<int> get startMs =>
       $composableBuilder(column: $table.startMs, builder: (column) => column);
@@ -73367,28 +73255,8 @@ class $$GalgameSessionsTableAnnotationComposer
   GeneratedColumn<int> get profileId =>
       $composableBuilder(column: $table.profileId, builder: (column) => column);
 
-  $$GalgamesTableAnnotationComposer get gameId {
-    final $$GalgamesTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.gameId,
-      referencedTable: $db.galgames,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$GalgamesTableAnnotationComposer(
-            $db: $db,
-            $table: $db.galgames,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
+  GeneratedColumn<String> get gameTitle =>
+      $composableBuilder(column: $table.gameTitle, builder: (column) => column);
 }
 
 class $$GalgameSessionsTableTableManager
@@ -73402,9 +73270,16 @@ class $$GalgameSessionsTableTableManager
           $$GalgameSessionsTableAnnotationComposer,
           $$GalgameSessionsTableCreateCompanionBuilder,
           $$GalgameSessionsTableUpdateCompanionBuilder,
-          (GalgameSessionRow, $$GalgameSessionsTableReferences),
+          (
+            GalgameSessionRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $GalgameSessionsTable,
+              GalgameSessionRow
+            >,
+          ),
           GalgameSessionRow,
-          PrefetchHooks Function({bool gameId})
+          PrefetchHooks Function()
         > {
   $$GalgameSessionsTableTableManager(
     _$FushiDatabase db,
@@ -73428,6 +73303,7 @@ class $$GalgameSessionsTableTableManager
                 Value<int> durationSeconds = const Value.absent(),
                 Value<String> dateKey = const Value.absent(),
                 Value<int> profileId = const Value.absent(),
+                Value<String> gameTitle = const Value.absent(),
               }) => GalgameSessionsCompanion(
                 id: id,
                 gameId: gameId,
@@ -73436,6 +73312,7 @@ class $$GalgameSessionsTableTableManager
                 durationSeconds: durationSeconds,
                 dateKey: dateKey,
                 profileId: profileId,
+                gameTitle: gameTitle,
               ),
           createCompanionCallback:
               ({
@@ -73446,6 +73323,7 @@ class $$GalgameSessionsTableTableManager
                 required int durationSeconds,
                 required String dateKey,
                 Value<int> profileId = const Value.absent(),
+                Value<String> gameTitle = const Value.absent(),
               }) => GalgameSessionsCompanion.insert(
                 id: id,
                 gameId: gameId,
@@ -73454,58 +73332,12 @@ class $$GalgameSessionsTableTableManager
                 durationSeconds: durationSeconds,
                 dateKey: dateKey,
                 profileId: profileId,
+                gameTitle: gameTitle,
               ),
           withReferenceMapper: (p0) => p0
-              .map(
-                (e) => (
-                  e.readTable(table),
-                  $$GalgameSessionsTableReferences(db, table, e),
-                ),
-              )
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
               .toList(),
-          prefetchHooksCallback: ({gameId = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (gameId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.gameId,
-                                referencedTable:
-                                    $$GalgameSessionsTableReferences
-                                        ._gameIdTable(db),
-                                referencedColumn:
-                                    $$GalgameSessionsTableReferences
-                                        ._gameIdTable(db)
-                                        .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
-              getPrefetchedDataCallback: (items) async {
-                return [];
-              },
-            );
-          },
+          prefetchHooksCallback: null,
         ),
       );
 }
@@ -73520,9 +73352,16 @@ typedef $$GalgameSessionsTableProcessedTableManager =
       $$GalgameSessionsTableAnnotationComposer,
       $$GalgameSessionsTableCreateCompanionBuilder,
       $$GalgameSessionsTableUpdateCompanionBuilder,
-      (GalgameSessionRow, $$GalgameSessionsTableReferences),
+      (
+        GalgameSessionRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $GalgameSessionsTable,
+          GalgameSessionRow
+        >,
+      ),
       GalgameSessionRow,
-      PrefetchHooks Function({bool gameId})
+      PrefetchHooks Function()
     >;
 typedef $$MangaExtensionStoresTableCreateCompanionBuilder =
     MangaExtensionStoresCompanion Function({

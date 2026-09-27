@@ -240,7 +240,7 @@ CREATE TABLE profiles (
     expect(await userVersionOf(db), db.schemaVersion);
   });
 
-  test('删游戏经 FK cascade 连带清掉 sources 与 sessions', () async {
+  test('删游戏经 FK cascade 连带清掉 sources；sessions 自 v113 起保留（逻辑外键）', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     await db.customStatement('PRAGMA foreign_keys = ON');
@@ -279,6 +279,10 @@ CREATE TABLE profiles (
     await db.deleteGalgame('g1');
 
     expect(await db.getGalgameSources('g1'), isEmpty);
-    expect(await db.getGalgameSessions('g1'), isEmpty);
+    // v113（PR #1697 审查，所有者「保留会话」）：游玩会话是统计，从库移除游戏
+    // 不再 cascade 删掉它；显示名快照进会话行。
+    final List<GalgameSessionRow> kept = await db.getGalgameSessions('g1');
+    expect(kept, hasLength(1));
+    expect(kept.single.gameTitle, 'G1');
   });
 }

@@ -24,6 +24,18 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return row.read<int>('foreign_keys') == 1;
   }
 
+  /// 表上是否还挂着任何外键约束（`PRAGMA foreign_key_list` 非空）。迁移里去掉
+  /// 内联 FK 要重建表，用它做幂等守卫。
+  Future<bool> _hasForeignKeys(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+          tableName, 'tableName', 'not a valid identifier');
+    }
+    final List<QueryRow> rows =
+        await customSelect('PRAGMA foreign_key_list($tableName)').get();
+    return rows.isNotEmpty;
+  }
+
   /// 表上是否还有一条**只**覆盖 [columnName] 的唯一索引（列级 `.unique()` 生成
   /// 的 `sqlite_autoindex_*` 也算）。迁移里去掉列级 UNIQUE 要重建表，用它做幂等
   /// 守卫：fresh 建出的新 shape 没有这条索引就短路。

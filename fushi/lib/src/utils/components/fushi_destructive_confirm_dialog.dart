@@ -133,6 +133,17 @@ class _FushiDestructiveConfirmDialogState
       widget.statisticsSubtitle != null &&
       (widget.checkboxLabel == null || _checked);
 
+  /// 勾选态叠加后的披露：两个二级勾选各自把对应条目从「保留」翻到「删除」，
+  /// 与 `ReaderHistoryDeleteDialog` / 视频删除框同一叠加顺序（幂等、可交换）。
+  DeletionDisclosure _shownDisclosure(DeletionDisclosure base) {
+    DeletionDisclosure shown = base;
+    if (_deleteLocalFiles) shown = shown.withLocalFilesDeleted();
+    if (_statisticsOffered && _deleteStatistics) {
+      shown = shown.withStatisticsDeleted();
+    }
+    return shown;
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -210,11 +221,10 @@ class _FushiDestructiveConfirmDialogState
               if (_checked && widget.checkedDisclosure != null) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
                 DeletionDisclosureView(
-                  // 勾了「同时删除本地文件」时披露必须跟着翻面，否则又回到
-                  // BUG-1305 那种「正文说保留、代码在删」的说反话状态。
-                  disclosure: _deleteLocalFiles
-                      ? widget.checkedDisclosure!.withLocalFilesDeleted()
-                      : widget.checkedDisclosure!,
+                  // 勾了「同时删除本地文件」/「同时删除统计数据」时披露必须跟着
+                  // 翻面，否则又回到 BUG-1305 那种「正文说保留、代码在删」的说
+                  // 反话状态。
+                  disclosure: _shownDisclosure(widget.checkedDisclosure!),
                 ),
               ],
             ],

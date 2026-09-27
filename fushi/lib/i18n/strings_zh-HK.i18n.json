@@ -5628,5 +5628,5 @@
   "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
   "delete_statistics_book_desc": "該書的閱讀時長、閱讀字數與查詞/製卡計數將從統計中移除，並同步到其他裝置",
   "delete_statistics_manga_desc": "該漫畫的閱讀時長、字數、頁數與查詞/製卡計數將從統計中移除，並同步到其他裝置",
-  "delete_statistics_game_desc": "該遊戲的遊玩時長與文字字數將從統計中移除，並同步到其他裝置"
+  "delete_statistics_game_desc": "該遊戲的遊玩時長與文字字數將從本機統計中移除"
 }

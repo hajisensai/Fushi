@@ -1978,13 +1978,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 appModel: appModel,
                 deleteStatistics: deleteStatistics,
               );
-            } else if (deleteStatistics) {
-              await ReaderFushiSource.deleteBookStatistics(
-                db: appModel.database,
-                title: book.title,
-                mediaKeys: <String>[book.uid],
-              );
             }
+            // 纯字幕书（bookKey 空）刻意不删统计：它的 legacy 统计与墓碑只能按
+            // title 定位，会连坐同名 EPUB 的统计（与书架单删 / 批删同一边界）。
             await repo.delete(m.entryKey);
           }
         case MediaKind.video:

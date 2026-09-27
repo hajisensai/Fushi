@@ -5628,5 +5628,5 @@
   "video_setting_subtitle_auto_upload_to_host_hint": "When playing a video from a connected host, subtitles you import or retime are uploaded and set as that episode's default for every device. Turn off to keep them on this device only.",
   "delete_statistics_book_desc": "Reading time, characters read and lookup/mining counts for this book are removed from statistics on every device",
   "delete_statistics_manga_desc": "Reading time, characters, pages and lookup/mining counts for this manga are removed from statistics on every device",
-  "delete_statistics_game_desc": "Play time and text characters for this game are removed from statistics on every device"
+  "delete_statistics_game_desc": "Play time and text characters for this game are removed from statistics on this device"
 }

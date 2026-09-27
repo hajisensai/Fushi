@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/sync/deletion_disclosure.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
 
 void main() {
@@ -11,6 +12,7 @@ void main() {
     WidgetTester tester, {
     String? checkboxLabel,
     String? statisticsSubtitle,
+    DeletionDisclosure? checkedDisclosure,
   }) async {
     dialogResult = null;
     await tester.pumpWidget(MaterialApp(
@@ -25,6 +27,7 @@ void main() {
                   message: '此操作不可撤销。',
                   checkboxLabel: checkboxLabel,
                   statisticsSubtitle: statisticsSubtitle,
+                  checkedDisclosure: checkedDisclosure,
                 ),
               );
             },
@@ -221,6 +224,42 @@ void main() {
       await tester.tap(find.text('连同本体删除'));
       await tester.pumpAndSettle();
       expect(find.text(t.delete_statistics), findsOneWidget);
+    });
+
+    testWidgets('合集删除：勾「同时删除统计数据」后披露把「阅读统计」翻到会被删除', (
+      WidgetTester tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(800, 1400);
+      addTearDown(tester.view.reset);
+      await openDialog(
+        tester,
+        checkboxLabel: '连同其中的书一起删除',
+        statisticsSubtitle: '统计口径',
+        checkedDisclosure: buildDeletionDisclosure(
+          target: DeletionDisclosureTarget.shelfBook,
+        ),
+      );
+      await tester.tap(find.text('连同其中的书一起删除'));
+      await tester.pumpAndSettle();
+      DeletionDisclosure shown() => tester
+          .widget<DeletionDisclosureView>(find.byType(DeletionDisclosureView))
+          .disclosure;
+      expect(shown().willKeep, contains(t.delete_disclosure_stats_kept));
+      expect(
+          shown().willDelete, isNot(contains(t.delete_disclosure_stats_kept)));
+
+      await tester.tap(find.text(t.delete_statistics));
+      await tester.pumpAndSettle();
+      expect(shown().willDelete, contains(t.delete_disclosure_stats_kept));
+      expect(shown().willKeep, isNot(contains(t.delete_disclosure_stats_kept)),
+          reason: '勾了删统计还把它列在「会被保留」就是在说反话（BUG-1305 同型）');
+
+      await tester.tap(find.text('DELETE'));
+      await tester.pumpAndSettle();
+      final FushiDestructiveConfirmResult value = (await dialogResult)!;
+      expect(value.checked, isTrue);
+      expect(value.deleteStatistics, isTrue);
     });
   });
 }

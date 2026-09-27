@@ -927,6 +927,15 @@ class ReaderFushiSource extends ReaderMediaSource {
     }
   }
 
+  /// 删除这本字幕书时能否提供「同时删除统计数据」。
+  ///
+  /// 只有配对了 EPUB 的字幕书（bookKey 非空，走 [deleteBook]）能安全删统计。纯字幕书
+  /// （bookKey 空）不行：它的 legacy `reading_statistics` / book 类查词制卡计数与
+  /// `(title, 'book')` 墓碑只能按 title 定位，同名 EPUB 的统计会被连坐删掉（PR #1697
+  /// 审查阻断 2）。书架单删 / 批删 / 合集连删共用这一条判据：不摆勾选、执行时跳过。
+  static bool srtBookOffersStatisticsDeletion(SrtBook book) =>
+      book.bookKey.isNotEmpty;
+
   /// Delete a book and all of its associated data.
   ///
   /// Pass [appModel] to also clear the override thumbnail file (it is needed to
