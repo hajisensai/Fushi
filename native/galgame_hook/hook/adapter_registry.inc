@@ -624,6 +624,7 @@ class AdapterRegistry {
     smash_fzmedia_.ProcessPendingEvents();
     cmvs_.ProcessPendingEvents();
     reallive_.ProcessPendingEvents();
+    unity_mono_.ProcessPendingEvents();
     // These retry budgets and ordering intentionally match the old HookWorker. onModuleLoaded is
     // the stable seam; P3 can replace this bounded poll with real module events without changing
     // individual adapter contracts.

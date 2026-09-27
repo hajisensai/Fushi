@@ -58,6 +58,7 @@ add_library(fushi_voice_hook SHARED
   "hook/voice_resource_writer.inc"
   "hook/adapter_registry.inc"
   "hook/adapters/unity_adapter.inc"
+  "hook/adapters/unity_mono_text.h"
   "hook/adapters/windows_audio_adapter.inc"
   "hook/adapters/siglus_adapter.inc"
   "hook/adapters/exact_lookup_signature.h"
@@ -902,6 +903,9 @@ add_test(NAME fushi_aos_sfa_adapter_test COMMAND fushi_aos_sfa_adapter_test)
 add_executable(fushi_unity_mono_adapter_test "tests/unity_mono_adapter_test.cpp")
 target_include_directories(fushi_unity_mono_adapter_test PRIVATE "hook")
 add_test(NAME fushi_unity_mono_adapter_test COMMAND fushi_unity_mono_adapter_test)
+add_executable(fushi_unity_mono_text_test "tests/unity_mono_text_test.cpp")
+target_include_directories(fushi_unity_mono_text_test PRIVATE "hook")
+add_test(NAME fushi_unity_mono_text_test COMMAND fushi_unity_mono_text_test)
 
 add_executable(fushi_engine_identity_layout_test
   "tests/engine_identity_layout_test.cpp")

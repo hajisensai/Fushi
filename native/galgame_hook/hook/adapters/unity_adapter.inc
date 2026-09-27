@@ -279,16 +279,14 @@ void PublishUnityText(uint64_t thread_id, void* text_component,
                       hook_code, fushi_voice_hook::kTextEventLine);
 }
 
-void RecordUnityTmpText(void* text_component, void* string_object,
-                        const char* hook_name, const wchar_t* hook_code,
-                        bool stable_across_components = false) {
-  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
-      g_il2cpp_string_length == nullptr) {
-    return;
-  }
-  const wchar_t* chars = g_il2cpp_string_chars(string_object);
-  const int source_length = g_il2cpp_string_length(string_object);
-  if (chars == nullptr || source_length <= 0) return;
+// 与脚本运行时无关的发布入口：IL2CPP（il2cpp_string_*）与 Mono（mono_string_*，
+// unity_mono_adapter.inc）各自把托管字符串解成 UTF-16 指针 + 长度后都走这里，所以两条
+// 路径的富文本剥离、UI 伪影门和线程身份口径完全一致。返回是否真的发布了一行。
+bool RecordUnityTextChars(void* text_component, const wchar_t* chars,
+                          int source_length, const char* hook_name,
+                          const wchar_t* hook_code,
+                          bool stable_across_components = false) {
+  if (chars == nullptr || source_length <= 0) return false;
 
   // TMP 富文本标签不显示为正文；移除 <...> 后保存用户实际看到的文本。保留换行与标点，
   // 由 component 指针充当线程 id，让 UI 像 Luna 一样选择“正文 TextMeshPro 组件”。
@@ -314,7 +312,9 @@ void RecordUnityTmpText(void* text_component, void* string_object,
       if (c >= 0x3000) has_cjk = true;
     }
   }
-  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) return;
+  if (length == 0 || meaningful == 0 || (!has_cjk && meaningful < 2)) {
+    return false;
+  }
   // Most Unity text components are independent UI fields, so their object
   // identity must remain part of the selectable thread. Naninovel recreates
   // its main RevealableText component when loading/switching scenes, though:
@@ -329,6 +329,19 @@ void RecordUnityTmpText(void* text_component, void* string_object,
       component_identity, hook_code, hook_name);
   PublishUnityText(thread_id, text_component, clean, length, true, hook_name,
                    hook_code);
+  return true;
+}
+
+void RecordUnityTmpText(void* text_component, void* string_object,
+                        const char* hook_name, const wchar_t* hook_code,
+                        bool stable_across_components = false) {
+  if (string_object == nullptr || g_il2cpp_string_chars == nullptr ||
+      g_il2cpp_string_length == nullptr) {
+    return;
+  }
+  RecordUnityTextChars(text_component, g_il2cpp_string_chars(string_object),
+                       g_il2cpp_string_length(string_object), hook_name,
+                       hook_code, stable_across_components);
 }
 
 void FlushUnityTextMeshLine() {

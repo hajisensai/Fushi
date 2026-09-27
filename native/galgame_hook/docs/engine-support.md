@@ -28,7 +28,7 @@
 | `sgre` | M2 wind3d11 runtime (STEINS;GATE RE:BOOT) | `implemented_unverified` | ingame_lookup_geometry (implemented_unverified)；ingame_lookup_directinput_shield (implemented_unverified) | engine_archive_resource (implemented_unverified) | 0 |
 | `unreal_iostore` | Unreal Engine (IoStore) | `implemented_unverified` | luna_pc_hooks (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 | `aos_sfa` | AOS / SFA (Princess Sugar, Atelier Kaguya family) | `implemented_unverified` | — | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
-| `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
+| `unity_mono` | Unity (Mono runtime) | `implemented_unverified` | luna_hook (implemented_unverified)；unity_mono_managed_text_events (implemented_unverified) | xaudio2_or_directsound_pcm (implemented_unverified)；process_loopback (implemented_unverified) | 0 |
 
 ## 无 OCR 内嵌查词矩阵
 
@@ -994,6 +994,7 @@ Tests：`tests/aos_sfa_adapter_test.cpp`、`../../fushi/test/mining/aos_sfa_pair
 文本能力：
 
 - `luna_hook`：`implemented_unverified` — LunaHook connected and produced output on the real sample (luna_active 1, LunaOutputObserved, text_events 7) but only title-screen strings were seen; no dialogue line was traversed and no thread was selected.
+- `unity_mono_managed_text_events`：`implemented_unverified` — Offline only (2026-09-27). UnityMonoAdapter resolves managed text setters through the Mono embedding API exported by mono.dll / mono-2.0-{bdwgc,sgen}.dll (mono_assembly_foreach, mono_class_from_name, exact-signature method match, mono_compile_method on a temporarily attached HookWorker thread after Assembly-CSharp is loaded and a top-level window exists) and MinHook-detours the JIT entries of TMPro.TMP_Text.set_text + SetText(string,bool), UnityEngine.UI.Text.set_text and UnityEngine.TextMesh.set_text -- the same setters the IL2CPP path hooks -- publishing through the shared RecordUnityTextChars (same rich-text stripping, artifact gate and thread identity as IL2CPP). Detours use the Mono managed ABI (x86 cdecl with this first, x64 Win64; no trailing MethodInfo*) and read MonoString only via mono_string_length/mono_string_chars. For per-glyph TextMesh message frameworks, identified structurally in Assembly-CSharp by an instance `string Message.Mes(string, bool)` plus a static 8-parameter `Game.NewText(..., string str @3, ...)` glyph factory, the whole plain message is taken from Mes's return value and TextMesh.set_text is not hooked. Static metadata of デスマッチラブコメ！ (Unity 2019.2.15f1 x86) shows exactly that shape: no TMP or UI.Text references, TextMesh.set_text called only from Game.NewText/NewText_Center, and Message.Mes building LastMes. Covered by tests/unity_mono_text_test.cpp and adapter_structure_test; no runtime session has exercised any Mono detour.
 - codepage：932
 - 线程提示：Unmeasured. Only title-screen strings have been observed.
 
@@ -1012,11 +1013,12 @@ Tests：`tests/aos_sfa_adapter_test.cpp`、`../../fushi/test/mining/aos_sfa_pair
 - The 2017+ MonoBleedingEdge generation (デスマッチラブコメ！ x86, 2026-09-27) was unclaimed before the criterion accepted MonoBleedingEdge/EmbedRuntime/mono-2.0-{bdwgc,sgen}.dll; that session showed text only on generic MultiByteToWideChar LunaHook threads and audio fell back to process loopback (engine_pcm_unavailable). The widened identity is implemented_unverified: it has not been re-run on the sample. Unlike the 5.x generation, this generation ships UnityPlayer.dll, so the injector's LooksLikeUnityRuntime() already matches it (UnityPlayer.dll + <stem>_Data/Managed) and auto-enables LunaHook PC hooks; the identity change does not alter that.
 - Per-line voice resources are Unity AudioClip assets; unity_events stayed 0 on the sample, so the existing Unity resource extractor produces nothing here. No resource layer is implemented and none is claimed.
 - Only title-screen strings were observed. text_thread_selected, paired and card_e2e are all not_run.
+- The Mono managed text hooks (unity_mono_managed_text_events) are offline-only: runtime gates (unity_mono adapter flags ScriptAssemblyReady / HookInstalled / DetourFired, and a text event whose hook code starts with `Mono:`) have not been observed on any game. The detours are native frames called directly from JIT code; a managed exception thrown by the original setter and caught above the detour is not unwound through them, which has not been exercised. The Message.Mes framework shape is backed by one title's static metadata only.
 - In-game lookup sensor is not implemented; lookupAdmission stays EngineUnsupported.
 
 Fixtures：`tests/fixtures/unity_mono_replay.json`
 
-Tests：`tests/unity_mono_adapter_test.cpp`、`../../fushi/test/mining/unity_mono_pairing_test.dart`
+Tests：`tests/unity_mono_adapter_test.cpp`、`tests/unity_mono_text_test.cpp`、`../../fushi/test/mining/unity_mono_pairing_test.dart`
 
 ## 状态定义
 

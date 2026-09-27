@@ -1556,6 +1556,76 @@ class AdapterStructureTest(unittest.TestCase):
             shutdown.index("g_capture_enabled = false;"),
         )
 
+    def test_unity_mono_text_hooks_are_gated_and_detours_stay_light(self) -> None:
+        adapter = (
+            ROOT / "hook" / "adapters" / "unity_mono_adapter.inc"
+        ).read_text(encoding="utf-8")
+        install = adapter.split("void TryInstallManagedTextHooks()", 1)[1]
+        # 身份门 → 运行时模块 → 可见窗口 → API 完整 → 根域 → attach → 解析，严格先后。
+        order = [
+            "if (!installed_) return;",
+            "FindLoadedUnityMonoRuntime()",
+            "HasCurrentProcessTopLevelWindow()",
+            "LoadUnityMonoEmbeddingApi(runtime)",
+            "api.get_root_domain()",
+            "MonoAttachedThreadScope managed_thread(api, domain)",
+            "ResolveUnityMonoTextMethods(api)",
+            "PlanUnityMonoTextHooks(resolution)",
+            "api.compile_method(",
+            "HookFn(",
+        ]
+        positions = [install.index(marker) for marker in order]
+        self.assertEqual(positions, sorted(positions))
+        # attach 作用域在 HookFn 之前结束（MH_EnableHook 挂起全部线程，不以托管线程身份做）。
+        scope = install.split("MonoAttachedThreadScope managed_thread", 1)[1]
+        scope = scope.split("text_done_ = true;", 1)[0]
+        self.assertNotIn("HookFn(", scope)
+        # 字符串 accessor 在第一个 hook 生效前就位。
+        self.assertLess(
+            install.index("g_unity_mono_string_chars = api.string_chars;"),
+            install.index("HookFn("),
+        )
+        # 有界重试：预算耗尽即停。
+        self.assertIn("kMaxResolveAttempts", install)
+        self.assertIn("kUnityMonoFlagResolveExhausted", install)
+        # detour 与记录函数只做有界视图 + 共用发布；不 attach / 编译 / 取址 / IO / 等待。
+        detours = adapter.split("void RecordUnityMonoText(", 1)[1]
+        detours = detours.split("struct UnityMonoDetourBinding", 1)[0]
+        for forbidden in (
+            "thread_attach",
+            "compile_method",
+            "runtime_invoke",
+            "GetProcAddress",
+            "LoadLibrary",
+            "CreateFile",
+            "Sleep(",
+            "WaitFor",
+            "EnumWindows",
+            "HookFn(",
+        ):
+            self.assertNotIn(forbidden, detours, forbidden)
+        self.assertIn("ReadMonoStringBounded(", detours)
+        self.assertIn("RecordUnityTextChars(", detours)
+        # Mono 托管签名没有 IL2CPP 的尾随 MethodInfo*。
+        self.assertNotIn("const void* method", detours)
+        self.assertEqual(detours.count("FUSHI_MONO_MANAGED_CALL Detour_"), 5)
+        # IL2CPP 与 Mono 共用同一发布入口，过滤口径不分叉。
+        unity = (
+            ROOT / "hook" / "adapters" / "unity_adapter.inc"
+        ).read_text(encoding="utf-8")
+        tmp = unity.split("void RecordUnityTmpText(", 1)[1]
+        tmp = tmp.split("void FlushUnityTextMeshLine()", 1)[0]
+        self.assertIn("RecordUnityTextChars(", tmp)
+        registry = (
+            ROOT / "hook" / "adapter_registry.inc"
+        ).read_text(encoding="utf-8")
+        self.assertIn("unity_mono_.ProcessPendingEvents();", registry)
+        dll = (ROOT / "hook" / "dll_main.cpp").read_text(encoding="utf-8")
+        self.assertLess(
+            dll.index('#include "adapters/unity_mono_text.h"'),
+            dll.index("namespace {"),
+        )
+
     def test_unity_resource_observation_is_not_gated_by_pcm_helpers(self) -> None:
         source = (
             ROOT / "hook" / "adapters" / "unity_adapter.inc"

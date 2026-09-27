@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "adapters/unity_mono_text.h"
 #include "adapter.h"
 #include "module_settle.h"
 #include "host_executable_digest.h"
