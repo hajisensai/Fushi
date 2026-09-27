@@ -129,7 +129,7 @@ void main() {
       });
     }
 
-    test('clearImageLateAnchor 清掉全部三种锚（不留半个活锚）', () {
+    test('clearImageLateAnchor 清掉全部锚（不留半个活锚）', () {
       final String body = bodyBetween(
           paginated, 'clearImageLateAnchor: function', '_isContinuousShell:');
       for (final String field in <String>[
@@ -137,6 +137,8 @@ void main() {
         '__imgReanchorCharOffset',
         '__imgReanchorCharOffsetEnd',
         '__imgReanchorFragment',
+        // BUG-2744：程序化揭示登记的目标锚。
+        '__imgReanchorTarget',
       ]) {
         expect(body.contains(field), isTrue, reason: '$field 必须被清');
       }

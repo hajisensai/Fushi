@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2520 条。点号进各自文件。
+> 共 2521 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2744](bugs/BUG-2744-reader-late-image-anchor-yank.md) | ✅ | ✅ | 横排听书跨插图时视口被拽回开章落点（插图闪动被跳过） |
 | [BUG-2741](bugs/BUG-2741-stats-sheet-ios-too-tall.md) | ✅ | ✅ | 统计时段明细/会话 sheet 在 iOS 上过高（顶进状态栏） |
 | [BUG-2738](bugs/BUG-2738-audiobook-chapter-ticks.md) | ✅ | ✅ | 阅读器有声书面板进度条章节刻度与进度不对齐 |
 | [BUG-2737](bugs/BUG-2737-video-item-rescrape.md) | ✅ | ✅ | 视频卡长按菜单没有「重新刮削」入口（刮错的独立电影无法重刮） |

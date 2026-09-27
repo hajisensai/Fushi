@@ -1214,6 +1214,13 @@ window.__fushiInstallShell = function(C) {
   // 语义锚重算一次**：终态与「图片本来就在」等价。仅在恢复落地后、用户尚未翻页的窗口内
   // 有效（paginate 清资格），且只由真正改变几何的 block 图 load 触发。重锚是程序化滚动，
   // 走既有 onReaderScroll 通道把**修正后**的位置落库（既有 >=0.99 章末重锚同一条路）。
+  //
+  // BUG-2744：锚是「阅读器**当前**正在展示的语义目标」，不是「本章打开时的落点」。程序化
+  // 揭示（有声书跟读 highlightSentenceAudioCue → revealElement、跨插图暂停
+  // __fushiRevealTarget、搜索命中）一旦把视口带到新目标，目标就换了——分页 scrollToRange /
+  // 连续 scrollToTarget 在这里登记 {target}（Range 或元素），替换恢复锚。否则跟读翻过几页后
+  // 前方懒图才 load，重锚把视口拽回开章那页（横排听书「插图位置闪一下、图被跳过」）；跨图
+  // 暂停时滚到尚未 load 的插图（0 尺寸占位），load 后又对齐回那张图而不是停在错页。
   registerImageLateAnchor: function(anchor) {
     this.clearImageLateAnchor();
     if (!anchor) return;
@@ -1224,6 +1231,11 @@ window.__fushiInstallShell = function(C) {
       this.__imgReanchorProgress = anchor.progress;
     } else if (anchor.fragment) {
       this.__imgReanchorFragment = anchor.fragment;
+    } else if (anchor.target) {
+      // Range 是活的（DOM 变动后边界自动跟随，懒图 load 被包进 .block-img-wrapper 后仍选中
+      // 那张图），复制一份避免与调用方共用（搜索把同一个 Range 交给了 CSS.highlights）。
+      this.__imgReanchorTarget = typeof anchor.target.cloneRange === 'function'
+        ? anchor.target.cloneRange() : anchor.target;
     }
   },
   clearImageLateAnchor: function() {
@@ -1231,6 +1243,7 @@ window.__fushiInstallShell = function(C) {
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
     this.__imgReanchorFragment = null;
+    this.__imgReanchorTarget = null;
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -1238,6 +1251,14 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // BUG-2744：程序化揭示的目标——对齐回这个目标本身（分页落到它起始边所在页；连续按
+    // 跟读同一套安全带判据滚回可见），绝不回退到开章落点。
+    var target = this.__imgReanchorTarget;
+    if (target) {
+      if (this._isContinuousShell()) this.scrollToTarget(target);
+      else this._alignRangeToPage(target);
+      return true;
+    }
     var co = this.__imgReanchorCharOffset;
     if (typeof co === 'number' && co > 0) {
       if (this._isContinuousShell()) {
@@ -2557,6 +2578,13 @@ $_sharedJs
     return Math.abs(currentScroll - nearestPage) <= 1 ? nearestPage : currentScroll;
   },
   scrollToRange: function(range) {
+    // BUG-2744：揭示的目标即阅读器此刻的语义落点，替换恢复锚（见 registerImageLateAnchor）。
+    // 不论这次是否真的翻页都要登记：跨图暂停滚到尚未 load 的插图时，0 尺寸占位常还在当前
+    // 页（不翻），load 撑开后插图才挪到下一页，得靠这个锚把视口带过去。
+    this.registerImageLateAnchor({target: range});
+    return this._alignRangeToPage(range);
+  },
+  _alignRangeToPage: function(range) {
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
@@ -3444,6 +3472,9 @@ $_sharedJs
   // reveal 分支）武装 _reanchorClearedAt 让 B-3 窗覆盖这条平滑滚动的落定尾沿，从源头消除二次
   // 反弹——动画保留，闪烁靠 settle 窗治住。分页模式 reveal（scrollToRange）走另一路不受影响。
   scrollToTarget: function(target) {
+    // BUG-2744：跟读 / 跨图 / 搜索揭示的目标替换恢复锚，迟到懒图 load 后按它重对齐，
+    // 而不是把视口拽回开章落点（与分页 scrollToRange 同一不变量）。
+    this.registerImageLateAnchor({target: target});
     var rect = this.getRect(target);
     var margin = 0.15;
     var wm = window.getComputedStyle(document.body).writingMode;
