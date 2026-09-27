@@ -344,6 +344,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 零配置源，没有 key 门控；默认开是因为它是没填 Jimaku/OpenSubtitles key 的
   // 用户唯一能用的源。
   'video_subtitle_ajatt_enabled',
+  // bool（默认 true）：远端（互联 host）视频上导入 / 重定时得到的字幕，是否自动上传到
+  // host 并设为该集默认字幕（所有 peer 都会看到）。关掉则字幕只在本机生效。
+  // 见 PreferencesRepository.videoSubtitleAutoUploadToHost。
+  'video_subtitle_auto_upload_to_host',
   'video_subtitle_backfill_after_scrape',
   'video_subtitle_blur',
   'video_subtitle_list_auto_scroll',
