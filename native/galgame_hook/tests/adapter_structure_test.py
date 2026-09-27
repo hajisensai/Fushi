@@ -169,7 +169,8 @@ class AdapterStructureTest(unittest.TestCase):
         demote = source[source.index("global.fushiLookupDemoteInertMsgwin = function()"):]
         demote = demote[:demote.index("global.fushiLookupRestoreActiveMsgwin = function()")]
         self.assertIn("!global.fushiLookupMsgwinVoidSeen || global.fushiLookupMsgwinYielded", demote)
-        self.assertIn("renders.count > 0) return;", demote)
+        self.assertIn("renders.count > 0)", demote)
+        self.assertIn("global.fushiLookupMsgwinDemoteExit = 4;", demote)
         self.assertIn("if(global.fushiLookupSweepLayerRenderers() == 0)", demote)
         self.assertIn("global.fushiLookupClassicSource = global.fushiLookupClassicSource | 1;", demote)
         restore = source[source.index("global.fushiLookupRestoreActiveMsgwin = function()"):]

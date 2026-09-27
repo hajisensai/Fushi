@@ -855,6 +855,9 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupCoordTrace = "";
 			global.fushiLookupCoordTraceSeq = 0;
 			global.fushiLookupCoordTraceBudget = 4;
+			// 标题画面上没有字形的点击会先耗光预算；registry 第一次出现字形时补满一次，
+			// 让真正点在台词上的前几击也有 trace。
+			global.fushiLookupCoordTraceRefilled = false;
 			// Capture 已产出字形、却没有发布可命中 entry 时，用这一条 bounded trace
 			// 区分「无 drawCh 分组 / span 不匹配 / 宿主不可见 / 锚点未解析」。只记录
 			// 数量、布尔状态与跨度，不读取或拼接台词/字形内容。
@@ -950,6 +953,12 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			global.fushiLookupMsgwinVoidSeen = false;
 			global.fushiLookupMsgwinYielded = false;
 			global.fushiLookupMsgwinInert = false;
+			// 降级检查最近一次的退出点（诊断）：0 未跑,1 已降级,2 未见 void/已产出,3 无插件,
+			// 4 renders 非空,5 本次降级,6 异常。
+			global.fushiLookupMsgwinDemoteExit = 0;
+			// classic 实例包装触发计数（诊断）：processCh / drawText。
+			global.fushiLookupClassicProcessChCalls = 0;
+			global.fushiLookupClassicDrawTextCalls = 0;
 			// Registry entry 本身会被 8 槽 LRU 复用。lease 把一次 renderer→entry
 			// 绑定与 entry 对象地址分开；迟到回调即使仍持有旧 entry 引用，也不能在
 			// 复用后改写另一个 renderer 的 slot。
@@ -3250,6 +3259,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				layer.drawText = function(x, y, text, color, opacity, antialiased)
 				{
 					var result = (this.fushiLookupOriginalDrawText incontextof this)(...);
+					global.fushiLookupClassicDrawTextCalls++;
 					if((global.fushiLookupClassicSource & 1) != 0)
 						global.fushiLookupCaptureDrawText(this, x, y, text);
 					return result;
@@ -3287,6 +3297,7 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 							var gap = global.fushiLookupNumOr(this, "lineSpacing");
 							if(gap !== void && gap > 0) py += gap;
 						}
+						global.fushiLookupClassicProcessChCalls++;
 						var result = (this.fushiLookupOriginalProcessCh incontextof this)(...);
 						// 与 drawText 路共用同一条采集：它本来就按 text.length == 1 处理
 						// 单字（影/边重绘去重那条判据），逐字符喂正合它的形状。
@@ -3708,6 +3719,16 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 				var lx = primary.cursorX;
 				var ly = primary.cursorY;
 				var registry = global.fushiLookupRegistry;
+				if(submit && !global.fushiLookupCoordTraceRefilled)
+				{
+					for(var ri = 0; ri < registry.count; ri++)
+					{
+						if(registry[ri].glyphs.count == 0) continue;
+						global.fushiLookupCoordTraceRefilled = true;
+						global.fushiLookupCoordTraceBudget = 32;
+						break;
+					}
+				}
 				var traceOn = submit && global.fushiLookupCoordTraceBudget > 0;
 				var trace = "";
 				var traced = 0;
@@ -4619,6 +4640,24 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 
 )TJS" LR"TJS(
 
+			global.fushiLookupRegistryShape = function()
+			{
+				var records = 0, glyphs = 0;
+				try
+				{
+					var registry = global.fushiLookupRegistry;
+					for(var i = 0; i < registry.count; i++)
+					{
+						var entry = registry[i];
+						if(entry === void || entry.glyphs === void) continue;
+						if(entry.glyphs.count > 0) records++;
+						glyphs += entry.glyphs.count;
+					}
+				}
+				catch(e) { return "x"; }
+				return records + "/" + glyphs;
+			};
+
 			global.fushiLookupAuditInstanceShape = function()
 			{
 				var flags = 0, count = -1, seen = 0, textRender = 0;
@@ -4683,7 +4722,15 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 					global.fushiLookupInstanceRejectMixed + "/" +
 					global.fushiLookupInstanceRejectFull + ",rm=" +
 					global.fushiLookupInstanceRejectMembers + ",gm=" +
-					global.fushiLookupInstanceGetRenderMembers + ",base=" +
+					global.fushiLookupInstanceGetRenderMembers + ",in=" +
+					(global.fushiLookupMsgwinInert ? 1 : 0) + ",vs=" +
+					(global.fushiLookupMsgwinVoidSeen ? 1 : 0) + ",y=" +
+					(global.fushiLookupMsgwinYielded ? 1 : 0) + ",dx=" +
+					global.fushiLookupMsgwinDemoteExit + ",cs=" +
+					global.fushiLookupClassicSource + ",pc=" +
+					global.fushiLookupClassicProcessChCalls + "/" +
+					global.fushiLookupClassicDrawTextCalls + ",rg=" +
+					global.fushiLookupRegistryShape() + ",base=" +
 					global.fushiLookupInstanceAlreadyClass;
 				if(shape != global.fushiLookupInstanceShapeLast)
 				{
@@ -4741,16 +4788,29 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 			// 产出有效实例就恢复 msgwin 主导并关掉 classic 位 0，实例包装随之只透传。
 			global.fushiLookupDemoteInertMsgwin = function()
 			{
-				if(global.fushiLookupMsgwinInert) return;
-				if(!global.fushiLookupMsgwinVoidSeen || global.fushiLookupMsgwinYielded) return;
+				if(global.fushiLookupMsgwinInert) { global.fushiLookupMsgwinDemoteExit = 1; return; }
+				if(!global.fushiLookupMsgwinVoidSeen || global.fushiLookupMsgwinYielded)
+				{
+					global.fushiLookupMsgwinDemoteExit = 2;
+					return;
+				}
 				try
 				{
 					var plugin = global.fushiLookupResolveMsgwinPlugin();
-					if(plugin === void || plugin === null || !isvalid plugin) return;
+					if(plugin === void || plugin === null || !isvalid plugin)
+					{
+						global.fushiLookupMsgwinDemoteExit = 3;
+						return;
+					}
 					var renders = global.fushiLookupField(plugin, "renders");
 					if(typeof renders == "Object" && renders !== null && isvalid renders &&
-						renders.count > 0) return;
+						renders.count > 0)
+					{
+						global.fushiLookupMsgwinDemoteExit = 4;
+						return;
+					}
 					global.fushiLookupMsgwinInert = true;
+					global.fushiLookupMsgwinDemoteExit = 5;
 					global.fushiLookupNoteError("instance.msgwin",
 						%[message:"inert: getRender void, no renders; classic fallback"]);
 					if(global.fushiLookupSweepLayerRenderers() == 0)
@@ -4759,7 +4819,11 @@ if(typeof global.fushiLookupBootstrap == "undefined")
 						global.fushiLookupSweepClassicLayers();
 					}
 				}
-				catch(e) { global.fushiLookupFault(); }
+				catch(e)
+				{
+					global.fushiLookupMsgwinDemoteExit = 6;
+					global.fushiLookupNoteError("instance.msgwin", e);
+				}
 			};
 
 			global.fushiLookupRestoreActiveMsgwin = function()
