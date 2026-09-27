@@ -5,8 +5,10 @@
 // 而 PCM 一直在流（voice_clips 981）。
 //
 // 首版只做两件事，且全部 implemented_unverified：
-//   * 身份：unity_mono_profile.h 的「Managed\Assembly-CSharp.dll + Mono\mono.dll，且同级
-//     无 GameAssembly.dll」结构判据（最后一条是与 unity_il2cpp 的显式互斥门）；
+//   * 身份：unity_mono_profile.h 的「Managed\Assembly-CSharp.dll + Mono 运行时（5.x 的
+//     `_Data\Mono\mono.dll` 或 2017+ 的 exe 同级 `MonoBleedingEdge\EmbedRuntime\
+//     mono-2.0-{bdwgc,sgen}.dll`），且同级无 GameAssembly.dll」结构判据（最后一条是与
+//     unity_il2cpp 的显式互斥门）；
 //   * 文本 + 音频：都不自带 hook。文本走 LunaHook（真机实测 luna_active=1、text_events=7，
 //     标题画面），音频走 GenericWindowsAudioAdapter 的源 PCM（voice_clips 981，非静音）。
 //
