@@ -158,9 +158,10 @@ void main() {
         mangaOnline,
         contains(r"ValueKey<String>('manga_mihon_extensions_${section.name}')"),
       );
-      expect(browse, contains('_visitedOnlineDomains'));
+      // 各域是可横滑的 TabBarView 页，经 _BrowseTabKeepAlive 保活（离屏不丢状态）。
+      expect(browse, contains('_BrowseSwipeSections<OnlineSourcesDomain>('));
       expect(browse, contains(r"'browse-${tab.name}-${domain.name}'"));
-      expect(browse, contains('offstage: domain != selected'));
+      expect(browse, contains('bool get wantKeepAlive => true;'));
     });
 
     test('漫画在线源与小说 / 视频一样点行进源（mokuro.moe 行进目录）', () {
@@ -178,9 +179,14 @@ void main() {
       expect(browse, isNot(contains('FushiSegmentedStrip')));
       expect(browse, isNot(contains('ButtonSegment<')));
       expect(
-        'secondary: true'.allMatches(browse),
+        RegExp(r'_BrowseSwipeSections<\w+>\(').allMatches(browse),
         hasLength(3),
         reason: '来源 / 扩展共用一处 + 发现 + 下载，共三处二级标签条',
+      );
+      expect(
+        'secondary: true'.allMatches(browse),
+        hasLength(1),
+        reason: '三处二级标签条共用 _BrowseSwipeSections 里同一份 secondary tabs',
       );
       for (final String key in <String>[
         r"'browse-${tab.name}-domain-picker'",

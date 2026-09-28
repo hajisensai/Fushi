@@ -103,6 +103,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required ValueChanged<T> this.onChanged,
     required this.focusIdPrefix,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : controller = null;
 
@@ -119,6 +120,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required TabController this.controller,
     required this.focusIdPrefix,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -129,6 +131,11 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// 再分小说 / 漫画 / 视频）。与 primary 同一套焦点、滚动与投影契约，只换
   /// 呈现（指示条横贯整个 tab、选中文案不着主色），层级一眼可辨。
   final bool secondary;
+
+  /// 摆得下时铺满整行（各段等分可用宽度、不滚动）；摆不下（窄窗 / 界面缩放 /
+  /// 长译文）自动退回贴左可滚动的常规形态，不会把段挤到截字。用于页面内的
+  /// 二级分区（如「浏览」各页签里的小说 / 漫画 / 视频），顶栏页签不用。
+  final bool fill;
 
   /// 仅自持形态；[LibrarySectionTabs.controlled] 下为 null（真相在 [controller]）。
   final T? selected;
@@ -169,6 +176,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           selected: selectedValue,
           onChanged: onSelect,
           secondary: secondary,
+          fill: fill,
         ),
       );
     }
@@ -190,6 +198,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
             tabs: tabs,
             controller: host,
             secondary: secondary,
+            fill: fill,
           ),
         );
       },
@@ -210,6 +219,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required T this.selected,
     required ValueChanged<T> this.onChanged,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : controller = null;
 
@@ -219,6 +229,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required this.tabs,
     required TabController this.controller,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -230,6 +241,9 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
   /// 见 [LibrarySectionTabs.secondary]。
   final bool secondary;
+
+  /// 见 [LibrarySectionTabs.fill]。
+  final bool fill;
 
   @override
   State<FushiSectionTabBar<T>> createState() => _FushiSectionTabBarState<T>();
@@ -430,7 +444,14 @@ class _FushiSectionTabBarState<T extends Object>
       onNotification: _handleScrollMetrics,
       child: NotificationListener<ScrollNotification>(
         onNotification: _handleScroll,
-        child: HorizontalDragScrollable(child: _buildTabBar()),
+        child: widget.fill
+            ? LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    _fitsWidth(context, constraints.maxWidth)
+                    ? _buildTabBar(fillWidth: true)
+                    : HorizontalDragScrollable(child: _buildTabBar()),
+              )
+            : HorizontalDragScrollable(child: _buildTabBar()),
       ),
     );
     return Stack(
@@ -461,7 +482,17 @@ class _FushiSectionTabBarState<T extends Object>
     );
   }
 
-  Widget _buildTabBar() {
+  /// 全部段按自然宽排开是否摆得进 [maxWidth]（与页头「摆不摆得下」同一张字宽表）。
+  bool _fitsWidth(BuildContext context, double maxWidth) =>
+      maxWidth.isFinite &&
+      estimateSectionTabBarWidth(context, <String>[
+            for (final LibrarySectionTab<T> tab in widget.tabs) tab.label,
+          ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding) <=
+          maxWidth;
+
+  /// [fillWidth]：本行摆得下全部段时铺满整行（不滚动、等分宽度），见
+  /// [FushiSectionTabBar.fill]。铺满形态没有可滚动内容，不包拖滚。
+  Widget _buildTabBar({bool fillWidth = false}) {
     // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
     // TabBarView 跟着走，中间不该再插一手。
     final ValueChanged<int>? onTap = _hostControlled
@@ -478,6 +509,25 @@ class _FushiSectionTabBarState<T extends Object>
     // 可滚动 TabBar 默认留 52px 起始缩进（[TabAlignment.startOffset]）；首段必须
     // 与页头标题 / 页面内容左缘对齐，故贴左。MD3 的 tab 分隔线会横贯整条
     // TabBar，而这里 TabBar 旁边还有动作区——画出来是条半截线，故去掉。
+    if (fillWidth) {
+      return widget.secondary
+          ? TabBar.secondary(
+              controller: _controller,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              dividerHeight: 0,
+              onTap: onTap,
+              tabs: tabs,
+            )
+          : TabBar(
+              controller: _controller,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              dividerHeight: 0,
+              onTap: onTap,
+              tabs: tabs,
+            );
+    }
     if (widget.secondary) {
       return TabBar.secondary(
         controller: _controller,
