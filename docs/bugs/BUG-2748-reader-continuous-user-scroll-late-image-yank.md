@@ -1,0 +1,9 @@
+## BUG-2748 · 连续模式用户滚走后懒图加载把视口拽回
+- **报告**：2026-09-28（用户：修 BUG-2744 时列为同类未修风险，要求一并解决）
+- **真实性**：✅ 真 bug。根因与 BUG-2744 同源，在「迟到图片语义重锚」的锚生命周期（`fushi/lib/src/reader/reader_pagination_scripts.dart` `_sharedJs`：`registerImageLateAnchor` / `reapplyImageLateAnchor`，以及 BUG-2652 的恢复锚 `_setRestoreCharAnchor`）：
+  - 恢复落点与程序化揭示（有声书跟读 / 跨图暂停 / 搜索）登记锚，之后每张 block 懒图 load 完都 `reapplyImageLateAnchor()` 把视口对齐回锚。锚只由用户翻页 `paginate` 作废（分页 `:2987`、连续 `:3646`）。
+  - 分页模式的用户输入全部汇进 `paginate`；**连续模式的视口靠原生滚动驱动，没有单一入口**：滚轮由 webview 层 wheel 处理器自己 `window.scrollBy`（`reader_fushi/webview.part.dart` 连续分支）、手机原生触摸滚动、拖可见的滚动条（`reader_content_styles.dart` 主题滚动条）、WebView 持焦时方向 / 翻页键的原生滚动、查词弹窗遮罩把滚轮 / 拖动转给正文的 Dart 裸 `scrollBy`（`reader_fushi_page.dart` `_evaluateScrollForward`）——这些都不作废锚。用户滚远后前方懒图 load，视口被拽回最近一次揭示 / 恢复的目标；恢复锚还会让 BUG-2652 的 `beginRestoreReanchor` 按过时字符锚落定。
+  - TODO-798 的 `userDriven` 因果门已在 TODO-718 整套删除（真机恒真），没有现成的「这次 scroll 是用户发起的」判据可复用。
+- **[x] ① 已修复** — （提交哈希见本分支）`_sharedJs` 新增 `noteUserScroll()`，语义与连续 `paginate` 一致：作废迟到图片锚与恢复锚。连续 shell 末尾装一组捕获阶段、passive 的输入意图监听（每文档一次，按 `fushiReader` 当下是否连续 shell 判定）：`wheel`、`touchmove`、按在根元素上的 `pointerdown`（滚动条）、方向 / PageUp / PageDown / Home / End 键——只记意图、不改任何既有手势；不含 Space（它被桥接成播放 / 暂停或翻页）与点在正文上的按下（查词点击不该丢锚）。Dart 转发出口 `_evaluateScrollForward` 先调 `noteUserScroll()` 再滚（裸 `scrollBy` 不产生 DOM 输入事件，JS 监听看不见）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_continuous_user_scroll_anchor_behavior_test.dart`（驱动同名 `.js`）：Node 真执行连续 / 分页 shell 对象与连续 shell 的意图监听 IIFE，派发输入事件：滚轮 / 触摸滚动 / 按滚动条 / PageDown / 方向键之后两个锚都作废、懒图 load 不再重锚；揭示目标同样作废；点正文 / Space / 字母键不动锚；分页 shell 下监听不介入；每文档只装一次。另一条源码守卫钉住 `_evaluateScrollForward` 先 `noteUserScroll` 再执行转发、且弹窗转发只经这一个出口。变异验证：`noteUserScroll` 置空红在「continuous: a wheel tick must retire the restore anchor」，删 Dart 调用红在「forward must call noteUserScroll」。
+- **备注**：Windows 真 app 端到端见下方记录（真书《無職転生》第 1 卷，隔离数据根）。
