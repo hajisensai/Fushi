@@ -7,7 +7,7 @@
     `fields['glossary'] ?? ''` 恒为空；app 外覆盖窗（`lookup/overlay_stat_source.dart`）写死 `glossary: ''`。
   - 上下文为空：`favorite_words` 表（`packages/fushi_core/lib/src/database/tables.dart`）只有
     词形 / 读音 / 释义 / 归属书，根本没有原句与定位列，收藏那一刻宿主手上的查词句被丢掉。
-- **[x] ① 已修复** — commit `<本轮>`：
+- **[x] ① 已修复** — commit `870c6b5148c`：
   - popup.js 收藏时按词典分段取纯文本释义快照（`favoriteGlossaryText`，与制卡同一过滤：隐藏词典 /
     重定向条目不进）随桥带回；覆盖窗桥透传释义与捕获句。
   - schema v114：`favorite_words` 加 `sentence` + `section_index` / `norm_char_offset` /

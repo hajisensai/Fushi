@@ -6,7 +6,7 @@
   `video_fushi/lookup_favorite.part.dart` `_toggleFavoriteSentenceForVideo`），写入的
   `FavoriteSentence`（`packages/fushi_audio/lib/src/audiobook/favorite_sentence_repository.dart`）
   没有任何「查的是哪个词」的字段，收藏夹只能显示句子。
-- **[x] ① 已修复** — commit `<本轮>`：`FavoriteSentence` 加可选 `expression` / `reading`（JSON 字段，
+- **[x] ① 已修复** — commit `870c6b5148c`：`FavoriteSentence` 加可选 `expression` / `reading`（JSON 字段，
   旧条目缺键为 null，不升 schema）；从弹窗顶栏 ★ 收藏时记下顶层查词结果的首个词头（嵌套层不算），
   划选 / 右键菜单收藏没有查词对象不记。收藏夹在句子上方以强调色显示该词，详情显示词与读音；
   带词的收藏句可进批量制卡。
