@@ -4711,6 +4711,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? _buildSpreadsFor(payload, nextMode)
         : _spreads;
     if (modeChanged) _readLedger.rebaseOnNextArrive();
+    // 会话缩放（捏合 / 滚轮）与默认缩放是两份状态（BUG-2754）：只有默认缩放
+    // 本身被改了才跟过去，改背景、点击区这类无关项不能把缩放跳回默认值。
+    final bool zoomStartChanged =
+        prefs.zoomStart != _readerPreferences.zoomStart;
     setState(() {
       _readerPreferences = prefs;
       _showOcrBoxes = prefs.showOcrBoxes;
@@ -4719,10 +4723,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : MangaPageAnimation.none;
       _spreadDirection = prefs.direction == 'ltr' ? 'ltr' : 'rtl';
       _background = MangaBackgroundKey.fromKey(prefs.background);
-      _zoomPercent = prefs.zoomStart.clamp(
-        kMangaZoomMinPercent,
-        kMangaZoomMaxPercent,
-      );
+      if (zoomStartChanged) {
+        _zoomPercent = prefs.zoomStart.clamp(
+          kMangaZoomMinPercent,
+          kMangaZoomMaxPercent,
+        );
+      }
       _tapZoneLayout = switch (prefs.tapZones) {
         MangaTapZonePreset.defaultZones => MangaTapZoneLayout.defaultZones,
         MangaTapZonePreset.lShaped => MangaTapZoneLayout.lShaped,

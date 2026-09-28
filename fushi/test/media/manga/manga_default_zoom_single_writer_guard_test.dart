@@ -43,4 +43,15 @@ void main() {
     expect(body, isNot(contains('Persist')));
     expect(body, isNot(contains('setMangaZoomPercent')));
   });
+
+  test('改无关阅读设置不把会话缩放跳回默认值', () {
+    final String page = File(
+      'lib/src/media/manga/reader/manga_fushi_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final RegExp reset = RegExp(r'_zoomPercent = prefs\.zoomStart');
+    expect(reset.allMatches(page), hasLength(1));
+    final int at = page.indexOf(reset);
+    final String guard = page.substring(at - 60, at);
+    expect(guard, contains('if (zoomStartChanged) {'));
+  });
 }
