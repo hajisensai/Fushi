@@ -8274,6 +8274,20 @@ class AppModel with ChangeNotifier {
   /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser)`）。
   Future<void> Function()? browserLookupProfileApplier;
 
+  /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条
+  /// 装饰器链里）。AppModel 不在 Riverpod 图里，由 main.dart 在根容器建好后注入。
+  BaseAnkiRepository Function()? ankiRepositoryReader;
+
+  /// **本机用户**在 app 外的制卡入口（Windows 查词浮窗 / gal 浮窗 / Android 原生悬浮窗）
+  /// 用的仓库——必须与 app 内入口是同一条装饰器链，否则 Anki 没开时卡直接丢、
+  /// 不自动重排、「制卡到互联主机」不生效。
+  ///
+  /// 替**别的设备**制卡的入口（互联主机收转发、浏览器扩展、游戏串流）不走这里：
+  /// 对端有自己的待发队列，主机侧再排一次会让「送没送到」变得不确定。
+  /// 未注入（测试、弹窗 / 悬浮词典引擎）时退回裸后端，与注入前行为一致。
+  BaseAnkiRepository get miningAnkiRepository =>
+      ankiRepositoryReader?.call() ?? platformServices.createAnkiRepository();
+
   // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
   // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。
   bool _browserProfileApplyInFlight = false;
@@ -8643,7 +8657,7 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
-        final BaseAnkiRepository repo = platformServices.createAnkiRepository();
+        final BaseAnkiRepository repo = miningAnkiRepository;
         final Map<String, String> fields = <String, String>{
           'expression': word,
           'reading': reading,

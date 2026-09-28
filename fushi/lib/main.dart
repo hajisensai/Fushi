@@ -540,6 +540,7 @@ void main([List<String> args = const <String>[]]) {
     appModel.browserLookupProfileApplier = () => container
         .read(profileViewModelProvider.notifier)
         .autoApplyBinding(mediaType: ProfileMediaKind.browser);
+    appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
