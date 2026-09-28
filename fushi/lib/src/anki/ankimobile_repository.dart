@@ -191,6 +191,19 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
   }
 }
 
+/// 制卡最终落在**本机** AnkiMobile 上吗？只拆装饰器；已经转发到互联主机的
+/// （[RemoteMiningAnkiRepository]）不算——那种情况卡写在主机的 Anki 里。
+///
+/// 与 [resolveAnkiMobileRepository] 的区别：那个要找回本地仓库去收 x-callback，
+/// 所以连互联包装一起拆；这个回答的是「卡落在哪」。
+bool minesOnLocalAnkiMobile(BaseAnkiRepository repo) {
+  BaseAnkiRepository current = repo;
+  while (current is DelegatingAnkiRepository) {
+    current = current.inner;
+  }
+  return current is AnkiMobileRepository;
+}
+
 String _encodeAnkiMobileQueryComponent(String value) =>
     Uri.encodeComponent(value);
 

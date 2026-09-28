@@ -201,7 +201,16 @@ void main() {
       final String engine = File(
         'lib/src/mining/immersion_mining_engine.dart',
       ).readAsStringSync();
-      expect(engine, contains('atSeconds: req.stillFrameAnchorMs / 1000.0'));
+      // 减 mediaTimeOffsetMs 是缓冲副本的时间换算（a3452a1c28），锚点仍是
+      // stillFrameAnchorMs，不是音频窗起点。
+      expect(
+        engine,
+        contains('atSeconds: (req.stillFrameAnchorMs - offsetMs) / 1000.0'),
+      );
+      expect(
+        engine,
+        isNot(contains('req.clipStartMs - offsetMs) / 1000.0')),
+      );
       expect(
         engine,
         isNot(contains('atSeconds: req.clipStartMs / 1000.0')),

@@ -401,6 +401,45 @@ void main() {
       );
     });
 
+    // card_source_router 的判据：装饰器链里是本机 AnkiMobile 才改走互联主机；
+    // 已经转发到主机的不能再包一层。
+    test('minesOnLocalAnkiMobile 只拆装饰器、遇到互联转发停下', () {
+      final local = AnkiMobileRepository(
+        openUrl: (_) async => true,
+        readInfoForAddingJson: () async =>
+            const AnkiMobilePasteboardRead.empty(),
+        infoReturnCoordinator: AnkiMobileInfoReturnCoordinator(),
+      );
+      AutoRepositionAnkiRepository wrap(BaseAnkiRepository inner) =>
+          AutoRepositionAnkiRepository(
+            inner: inner,
+            scheduler: AnkiAutoRepositionScheduler(
+              runner: AnkiDeckRepositionRunner(inner),
+              loadSettings: inner.loadSettings,
+            ),
+          );
+      PendingMiningAnkiRepository queue(BaseAnkiRepository inner) =>
+          PendingMiningAnkiRepository(
+            inner: inner,
+            store: PendingMineStore(
+              db: () => throw StateError('判据不应碰数据库'),
+              root: () async => Directory.systemTemp,
+            ),
+          );
+
+      expect(minesOnLocalAnkiMobile(local), isTrue);
+      expect(minesOnLocalAnkiMobile(queue(wrap(local))), isTrue);
+      expect(
+        minesOnLocalAnkiMobile(
+          queue(wrap(RemoteMiningAnkiRepository(
+            local: local,
+            client: _NoopMineSender(),
+          ))),
+        ),
+        isFalse,
+      );
+    });
+
     // 源码守卫：lib/src/anki 下每个「包着另一个 BaseAnkiRepository」的包装类都必须
     // 在解包器里登记，否则新加一层包装就会把 iOS 回传链再次静默切断。
     test('每个仓库包装类都在 resolveAnkiMobileRepository 里登记', () {
