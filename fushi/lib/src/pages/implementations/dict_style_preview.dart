@@ -256,6 +256,8 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // 预览是固定尺寸的 WebView，不按内容高度裁剪（生产弹窗见 dictionary_popup_webview）。
+  'popupContentResized',
   'popupRendered',
   'reportJsError',
   'resolveWordAudio',

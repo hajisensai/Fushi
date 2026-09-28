@@ -201,7 +201,12 @@ void main() {
       final String engine = File(
         'lib/src/mining/immersion_mining_engine.dart',
       ).readAsStringSync();
-      expect(engine, contains('atSeconds: req.stillFrameAnchorMs / 1000.0'));
+      // offsetMs = 缓冲副本（在线视频）0 点在播放器轴上的位置，本地文件恒 0；锚点仍是
+      // 未 pad 的字幕起点，只是换算到媒体文件自己的时间轴（a3452a1c28）。
+      expect(
+        engine,
+        contains('atSeconds: (req.stillFrameAnchorMs - offsetMs) / 1000.0'),
+      );
       expect(
         engine,
         isNot(contains('atSeconds: req.clipStartMs / 1000.0')),
