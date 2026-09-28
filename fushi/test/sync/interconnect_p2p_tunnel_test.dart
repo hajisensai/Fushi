@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:http/http.dart' as http;
 
 import 'temp_dir_cleanup.dart';
@@ -34,9 +35,9 @@ void main() {
           )
           ..hostId = 'HOST-P2P'
           ..onPairRequest = ((FushiPairRequest r) async {
-        approvalRemotes.add(r.remoteAddress);
-        return true;
-      })
+            approvalRemotes.add(r.remoteAddress);
+            return true;
+          })
           ..lanRequiresPinProvider = (() async => false)
           ..interfaceLister = (() async => <NetworkInterface>[]);
     await server.start();
@@ -51,6 +52,34 @@ void main() {
     expect(resp.statusCode, 200);
     return (jsonDecode(resp.body) as Map<String, dynamic>)['pinRequired']
         as bool;
+  }
+
+  /// 经 [port] 开一个 PIN 会话并用错 PIN confirm，返回 confirm 的状态码。
+  Future<int> wrongPinVia(int port, String nonce, {String? deviceId}) async {
+    final http.Response start = await http.post(
+      Uri.parse('http://127.0.0.1:$port/api/pair/v2'),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'clientNonce': nonce,
+        if (deviceId != null) 'clientDeviceId': deviceId,
+      }),
+    );
+    expect(start.statusCode, 200);
+    final Map<String, dynamic> body =
+        jsonDecode(start.body) as Map<String, dynamic>;
+    final http.Response confirm = await http.post(
+      Uri.parse('http://127.0.0.1:$port/api/pair/v2/confirm'),
+      headers: <String, String>{'Content-Type': 'application/json'},
+      body: jsonEncode(<String, String>{
+        'sessionId': body['sessionId'] as String,
+        'pinProof': FushiPairingProtocol.computePinProof(
+          pin: '000000',
+          clientNonce: nonce,
+          hostNonce: body['hostNonce'] as String,
+        ),
+      }),
+    );
+    return confirm.statusCode;
   }
 
   group('信任区（不需要原生库）', () {
@@ -69,10 +98,36 @@ void main() {
       final int tunnelPort = await server.startP2pListener();
       approvalRemotes.clear();
       expect(await pinRequiredVia(tunnelPort), isTrue);
-      expect(approvalRemotes, <String?>[kFushiP2pRemoteAddress],
-          reason: '审批框里如实标成隧道，而不是看似本机的 127.0.0.1');
+      expect(approvalRemotes, <String?>[
+        kFushiP2pRemoteAddress,
+      ], reason: '审批框里如实标成隧道，而不是看似本机的 127.0.0.1');
       expect(await server.startP2pListener(), tunnelPort, reason: '幂等');
       await server.stopP2pListener();
+    });
+
+    test('隧道对端按 NodeId 分桶限流：一个人撞 PIN 不会把别人锁在外面', () async {
+      String? peer = 'NODE-A';
+      server.p2pPeerResolver = (int _) => peer;
+      final int tunnelPort = await server.startP2pListener();
+      final List<int> a = <int>[
+        for (int i = 0; i < 5; i++)
+          await wrongPinVia(tunnelPort, 'a$i', deviceId: 'victim-device'),
+      ];
+      expect(a.last, 429, reason: 'A 撞满阈值被锁');
+      peer = 'NODE-B';
+      expect(
+        await wrongPinVia(tunnelPort, 'b0', deviceId: 'victim-device'),
+        401,
+        reason: 'B 是另一个隧道对端：不受 A 的锁影响，且自报 deviceId 不参与分桶',
+      );
+    });
+
+    test('查不到隧道对端身份时所有隧道会话共用一个桶（宁可误伤不放开）', () async {
+      final int tunnelPort = await server.startP2pListener();
+      for (int i = 0; i < 5; i++) {
+        await wrongPinVia(tunnelPort, 'x$i', deviceId: 'dev-$i');
+      }
+      expect(await wrongPinVia(tunnelPort, 'y', deviceId: 'fresh'), 429);
     });
 
     test('主机停了就不再开隧道监听口（不留孤儿口）', () async {
@@ -111,9 +166,11 @@ void main() {
     late InterconnectP2pRuntime hostRuntime;
     late FushiDatabase db;
     late SyncRepository repo;
+    final List<String?> resolvedPeers = <String?>[];
 
     setUp(() async {
       if (!available) return;
+      resolvedPeers.clear();
       resetInterconnectRaceCache();
       await startHost();
       String? hostSecret;
@@ -123,7 +180,13 @@ void main() {
         loadRelayUrls: () async => const <String>[],
       );
       final InterconnectP2pNode node = (await hostRuntime.ensure())!;
-      node.hostListen(await server.startP2pListener());
+      final int tunnelPort = await server.startP2pListener();
+      server.p2pPeerResolver = (int p) {
+        final String? id = hostRuntime.current?.hostPeer(p);
+        resolvedPeers.add(id);
+        return id;
+      };
+      node.hostListen(tunnelPort);
       server.extraAddressesProvider = () =>
           hostRuntime.hostAddresses(tls: false);
       db = FushiDatabase(dir.path);
@@ -168,6 +231,11 @@ void main() {
           await pinRequiredVia(first.port),
           isTrue,
           reason: '隧道流量落在信任区，配对强制 PIN',
+        );
+        expect(
+          resolvedPeers.last,
+          currentAppInterconnectP2pRuntime!.current!.nodeId,
+          reason: 'host 从连接源端口查出的对端就是客户端端点的 NodeId',
         );
       },
       skip: available ? false : 'fushi_p2p 原生库不可用',

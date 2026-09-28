@@ -88,6 +88,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
             ? reportedDeviceId
             : null;
     final String? remote = _remoteAddress(request);
+    final String? tunnelPeer = request.context[kFushiP2pPeer] as String?;
 
     // 扫码 / 复制链接配对：凭 host 签发的一次性票据
     // （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。老 client 不带此字段。
@@ -99,6 +100,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         deviceName: deviceName,
         remote: remote,
         clientDeviceId: clientDeviceId,
+        tunnelPeer: tunnelPeer,
       );
     }
 
@@ -123,6 +125,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       remoteAddress: remote,
       createdAt: _now(),
       clientDeviceId: clientDeviceId,
+      tunnelPeer: tunnelPeer,
     );
     // 先 prune 过期会话 + 守上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
     // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
@@ -168,6 +171,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       remoteAddress: remote,
       createdAt: _now(),
       clientDeviceId: clientDeviceId,
+      tunnelPeer: tunnelPeer,
     );
     _pairSessions[sessionId] = stored;
 
@@ -189,6 +193,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     required String? deviceName,
     required String? remote,
     required String? clientDeviceId,
+    required String? tunnelPeer,
   }) {
     final FushiPairTicket? ticket = _pairTicket;
     if (ticket == null ||
@@ -219,6 +224,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       createdAt: _now(),
       clientDeviceId: clientDeviceId,
       ticketId: ticket.id,
+      tunnelPeer: tunnelPeer,
     );
     return jsonResponse(<String, dynamic>{
       'sessionId': sessionId,
@@ -528,7 +534,14 @@ const int _maxPairSessions = 64;
 /// TODO-961 M3：本会话在 PIN 爆破限速里的来源标识。优先 client 自报的稳定
 /// deviceId（同一物理设备换 IP 也锁得住），回退请求来源 IP。二者都缺（无稳定身份）
 /// 时返回 null → 调用方退化为不限速的单会话路径（已由 consumed 单次消费保护）。
+///
+/// 隧道会话例外：一律按对端 NodeId 分桶，**不认**自报 deviceId。deviceId 谁都能
+/// 冒报（报成受害者的就能把受害者锁在外面），NodeId 是隧道握手证明过的密钥；而
+/// 来源 IP 恒为 127.0.0.1 毫无区分度。查不到 NodeId（解析器未接线）时所有这类
+/// 会话共用一个桶——宁可误伤也不放开。
 String? _pinRateLimitSourceKey(FushiPairSession session) {
+  if (session.tunnelPeer != null) return 'p2p:${session.tunnelPeer}';
+  if (session.remoteAddress == kFushiP2pRemoteAddress) return 'p2p:?';
   final String? deviceId = session.clientDeviceId?.trim();
   if (deviceId != null && deviceId.isNotEmpty) return 'dev:$deviceId';
   final String? remote = session.remoteAddress?.trim();

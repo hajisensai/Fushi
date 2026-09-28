@@ -90,6 +90,11 @@ class InterconnectP2pNode {
 
   void hostStop() => _endpoint.hostStop();
 
+  /// 作为 host：信任区监听口上对端端口 [remotePort] 对应的隧道对端 NodeId
+  /// （装配成 `FushiSyncServer.p2pPeerResolver`）。已关闭 → null。
+  String? hostPeer(int remotePort) =>
+      _closed ? null : _endpoint.hostPeer(remotePort);
+
   /// 本端点当前信息（home relay / 直连地址，供地址集捎带拨号提示）。
   FushiP2pInfo info() => _endpoint.info();
 

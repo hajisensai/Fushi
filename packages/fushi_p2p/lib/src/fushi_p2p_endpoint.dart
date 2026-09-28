@@ -235,6 +235,16 @@ class FushiP2pEndpoint {
     }
   }
 
+  /// 主机侧：本地 HTTP 服务器看到的对端端口 [remotePort]（= 隧道转发连接的本地
+  /// 源端口）属于哪个隧道对端。不是隧道连接、或流已结束 → null。端点已关闭也返回
+  /// null：关闭后隧道里不会再有新请求，已在途的按「身份未知」处理。
+  String? hostPeer(int remotePort) {
+    if (_handle == nullptr) return null;
+    _checkPort(remotePort, allowZero: false);
+    final Object? id = _call(_b.fp2p_host_peer(_h, remotePort))['nodeId'];
+    return id is String ? id : null;
+  }
+
   /// 关闭端点并释放原生资源（同步）。可重复调用。
   ///
   /// iroh 会等对端确认连接关闭：有过连接时实测 0.8~2 秒、上限约 4 秒，

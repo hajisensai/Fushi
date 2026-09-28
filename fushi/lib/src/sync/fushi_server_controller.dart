@@ -778,6 +778,9 @@ class FushiSyncServerController extends ChangeNotifier {
           await server.stopP2pListener();
           return;
         }
+        // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
+        // 而不是捕获这一个——换中继会重建端点。
+        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
         node.hostListen(port);
         server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
       });
@@ -785,6 +788,7 @@ class FushiSyncServerController extends ChangeNotifier {
   Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
         currentAppInterconnectP2pRuntime?.current?.hostStop();
         server.extraAddressesProvider = null;
+        server.p2pPeerResolver = null;
         await server.stopP2pListener();
       });
 

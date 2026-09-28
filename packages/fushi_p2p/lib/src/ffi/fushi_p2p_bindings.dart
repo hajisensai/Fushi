@@ -74,6 +74,9 @@ class FushiP2pBindings {
       fp2p_conn_status = lib.lookupFunction<_StatusC, _StatusC>(
         'fp2p_conn_status',
       ),
+      fp2p_host_peer = lib.lookupFunction<_PortC, _PortDart>(
+        'fp2p_host_peer',
+      ),
       fp2p_endpoint_close = lib.lookupFunction<_CloseC, _CloseDart>(
         'fp2p_endpoint_close',
       );
@@ -124,6 +127,10 @@ class FushiP2pBindings {
     ffi.Pointer<ffi.Char>,
   )
   fp2p_conn_status;
+
+  /// 主机侧：本地源端口 → 隧道对端 {"nodeId":hex|null}。
+  final ffi.Pointer<ffi.Char> Function(ffi.Pointer<Fp2pEndpoint>, int)
+  fp2p_host_peer;
 
   /// 关闭并释放句柄。
   final void Function(ffi.Pointer<Fp2pEndpoint>) fp2p_endpoint_close;

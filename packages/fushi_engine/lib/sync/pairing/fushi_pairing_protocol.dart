@@ -32,6 +32,7 @@ class FushiPairSession {
     required this.createdAt,
     this.clientDeviceId,
     this.ticketId,
+    this.tunnelPeer,
   });
 
   /// 不透明会话 id（client 在 confirm 时回传以定位本会话）。
@@ -68,6 +69,11 @@ class FushiPairSession {
   /// 此时 [pin] 是票据 secret，host 屏上打开二维码即视为已批准，不再弹审批框。
   /// null = 普通 PIN / LAN 配对。
   final String? ticketId;
+
+  /// 经 P2P 隧道进来的会话：对端的 iroh NodeId（密码学身份，不可冒用）。直连会话
+  /// 为 null。限流按它分桶——隧道请求在 TCP 层一律来自 127.0.0.1，没有它就只能
+  /// 所有隧道对端共用一个桶，一个人撞 PIN 就把其他人全锁在外面。
+  final String? tunnelPeer;
 
   /// 单次消费标志：一旦 confirm（无论成功/失败）即置位，第二次 confirm 直接拒，
   /// 防 nonce 重放。

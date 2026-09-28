@@ -11,6 +11,18 @@
 //! - 返回的 `char*` 一律由调用方用 `fp2p_string_free` 释放。
 //! - 复杂返回值是 JSON：成功 `{"ok":true,...}`，失败 `{"ok":false,"error":"..."}`。
 //! - `fp2p_endpoint_create` 失败返回 NULL，原因用 `fp2p_last_error()` 取（线程局部）。
+//!
+//! 主机侧资源上限（NodeId 不花钱就能生成，只按对端限等于没限，必须有全局上限）：
+//! - 每条连接最多 [MAX_STREAMS_PER_CONN] 条并发双向流，由 QUIC 流控在协议层强制
+//!   （对端根本开不出第 N+1 条，而不是开出来再被拒）；单向流一律为 0。
+//! - 同一 NodeId 只保留最新的一条入站连接（客户端本就每个对端只缓存一条，断了才重拨）。
+//! - 入站连接总数 ≤ [MAX_INCOMING_CONNS]，超出直接 refuse。
+//! - 转发到本地的流总数 ≤ [MAX_HOST_STREAMS]，超出立刻 reset（快速失败，不排队）。
+//!
+//! 对端身份：主机把每条隧道流转发成一条到 `127.0.0.1:port` 的 TCP 连接，并登记
+//! 「这条 TCP 连接的本地源端口 → 对端 NodeId」。Dart 侧 HTTP 服务器从连接信息里拿到
+//! 对端端口（= 这个源端口），用 `fp2p_host_peer` 查出是哪个 NodeId——隧道请求的限流与
+//! 审批据此按真实（密码学）身份区分，而不是全部挤成同一个 127.0.0.1。
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -23,12 +35,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
-use iroh::endpoint::{presets, Connection, RecvStream, SendStream, VarInt};
+use iroh::endpoint::{presets, Connection, QuicTransportConfig, RecvStream, SendStream, VarInt};
 use iroh::{Endpoint, EndpointAddr, EndpointId, RelayMap, RelayMode, RelayUrl, SecretKey, TransportAddr};
 use serde_json::{json, Value};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::runtime::Runtime;
+use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
 
 /// 隧道协议的 ALPN。改了就是不兼容的新协议，必须换版本号。
@@ -46,6 +59,22 @@ const PUMP_BUF: usize = 64 * 1024;
 
 /// QUIC 应用错误码：泵出错时 reset/stop 流用。
 const ERR_PUMP: u32 = 1;
+
+/// QUIC 应用错误码：主机资源已满（流 reset / 连接关闭时用）。
+const ERR_BUSY: u32 = 2;
+
+/// QUIC 应用错误码：同一对端来了更新的连接，旧连接让位。
+const ERR_SUPERSEDED: u32 = 3;
+
+/// 每条连接的并发双向流上限。一次 HTTP 请求一条流；32 足够一个客户端并行拉列表 +
+/// 封面 + 一路视频，同时把单连接最坏内存压在 32 × 流窗口。
+pub const MAX_STREAMS_PER_CONN: u32 = 32;
+
+/// 主机同时接受的入站连接上限（不同 NodeId）。
+pub const MAX_INCOMING_CONNS: usize = 64;
+
+/// 主机同时转发到本地端口的流总数上限。
+pub const MAX_HOST_STREAMS: usize = 256;
 
 thread_local! {
     static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -73,8 +102,24 @@ struct Shared {
     conns: Mutex<HashMap<EndpointId, Connection>>,
     /// 每个远端一把拨号锁：并发的首批本地连接只拨一次号。
     dial_locks: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
-    /// 入站连接（主机侧），给 `fp2p_conn_status` 查对端路径用。
+    /// 入站连接（主机侧），给 `fp2p_conn_status` 查对端路径用；同一 NodeId 只留最新一条。
     incoming: Mutex<HashMap<EndpointId, Connection>>,
+    /// 主机转发流的全局配额（[MAX_HOST_STREAMS]）。
+    host_streams: Arc<Semaphore>,
+    /// 转发到本地的 TCP 连接的本地源端口 → 对端 NodeId（见模块文档「对端身份」）。
+    host_peers: Mutex<HashMap<u16, EndpointId>>,
+}
+
+/// 登记一条「源端口 → NodeId」，析构时撤销——流无论正常结束、出错还是被取消都不留残项。
+struct HostPeerEntry<'a> {
+    shared: &'a Shared,
+    port: u16,
+}
+
+impl Drop for HostPeerEntry<'_> {
+    fn drop(&mut self) {
+        self.shared.host_peers.lock().unwrap().remove(&self.port);
+    }
 }
 
 pub struct P2p {
@@ -112,10 +157,15 @@ impl P2p {
         };
         let relay_mode = parse_relay_mode(relay_urls)?;
         let rt = build_runtime()?;
+        let transport = QuicTransportConfig::builder()
+            .max_concurrent_bidi_streams(VarInt::from_u32(MAX_STREAMS_PER_CONN))
+            .max_concurrent_uni_streams(VarInt::from_u32(0))
+            .build();
         let endpoint = rt.block_on(async {
             let builder = Endpoint::builder(presets::N0)
                 .secret_key(secret)
-                .relay_mode(relay_mode);
+                .relay_mode(relay_mode)
+                .transport_config(transport);
             #[cfg(feature = "dht")]
             let builder = builder
                 .address_lookup(iroh_mainline_address_lookup::DhtAddressLookup::builder());
@@ -128,6 +178,8 @@ impl P2p {
             conns: Mutex::new(HashMap::new()),
             dial_locks: Mutex::new(HashMap::new()),
             incoming: Mutex::new(HashMap::new()),
+            host_streams: Arc::new(Semaphore::new(MAX_HOST_STREAMS)),
+            host_peers: Mutex::new(HashMap::new()),
         });
         Ok(P2p {
             rt,
@@ -221,6 +273,11 @@ impl P2p {
                 "directPaths": 0, "relayPaths": 0,
             }),
         })
+    }
+
+    /// 主机侧：本地源端口 [port] 的转发连接属于哪个对端。
+    fn host_peer(&self, port: u16) -> Option<EndpointId> {
+        self.shared.host_peers.lock().unwrap().get(&port).copied()
     }
 
     fn close(self) {
@@ -339,6 +396,12 @@ fn path_status(c: &Connection) -> Value {
 
 async fn host_accept_loop(shared: Arc<Shared>) {
     while let Some(incoming) = shared.endpoint.accept().await {
+        // 握手前就拒：连接数封顶，握手本身也要花 CPU。已登记的连接才计数，握手中的
+        // 不计——最坏多出一批并发握手，由 QUIC 自己的握手限流兜住。
+        if shared.incoming.lock().unwrap().len() >= MAX_INCOMING_CONNS {
+            incoming.refuse();
+            continue;
+        }
         let shared = shared.clone();
         tokio::spawn(async move {
             let Ok(accepting) = incoming.accept() else { return };
@@ -350,13 +413,17 @@ async fn host_accept_loop(shared: Arc<Shared>) {
 
 async fn host_serve_connection(shared: Arc<Shared>, conn: Connection) {
     let remote = conn.remote_id();
-    shared.incoming.lock().unwrap().insert(remote, conn.clone());
+    let superseded = shared.incoming.lock().unwrap().insert(remote, conn.clone());
+    if let Some(old) = superseded.filter(|c| c.stable_id() != conn.stable_id()) {
+        // 同一对端只留最新一条：客户端只在旧连接死掉后才重拨，旧的留着只会占配额。
+        old.close(VarInt::from_u32(ERR_SUPERSEDED), b"superseded");
+    }
     loop {
         match conn.accept_bi().await {
             Ok((send, recv)) => {
                 let shared = shared.clone();
                 tokio::spawn(async move {
-                    let _ = host_serve_stream(&shared, send, recv).await;
+                    let _ = host_serve_stream(&shared, remote, send, recv).await;
                 });
             }
             Err(_) => break, // 连接关闭。
@@ -368,13 +435,23 @@ async fn host_serve_connection(shared: Arc<Shared>, conn: Connection) {
     }
 }
 
-async fn host_serve_stream(shared: &Shared, mut send: SendStream, mut recv: RecvStream) -> Result<()> {
+async fn host_serve_stream(
+    shared: &Shared,
+    remote: EndpointId,
+    mut send: SendStream,
+    mut recv: RecvStream,
+) -> Result<()> {
     let mut magic = [0u8; 4];
     if recv.read_exact(&mut magic).await.is_err() || &magic != STREAM_MAGIC {
         let _ = send.reset(VarInt::from_u32(ERR_PUMP));
         let _ = recv.stop(VarInt::from_u32(ERR_PUMP));
         bail!("bad stream magic");
     }
+    let Ok(_permit) = shared.host_streams.clone().try_acquire_owned() else {
+        let _ = send.reset(VarInt::from_u32(ERR_BUSY));
+        let _ = recv.stop(VarInt::from_u32(ERR_BUSY));
+        bail!("host stream quota exhausted");
+    };
     let port = shared.forward_port.load(Ordering::SeqCst);
     let tcp = if port == 0 {
         None
@@ -386,6 +463,11 @@ async fn host_serve_stream(shared: &Shared, mut send: SendStream, mut recv: Recv
         let _ = recv.stop(VarInt::from_u32(ERR_PUMP));
         bail!("forward target unavailable");
     };
+    // 在泵第一个字节之前登记：本地 HTTP 服务器要读到请求字节才会处理请求，那时
+    // 这条映射一定已经在了。
+    let local_port = tcp.local_addr()?.port();
+    shared.host_peers.lock().unwrap().insert(local_port, remote);
+    let _entry = HostPeerEntry { shared, port: local_port };
     pump(tcp, send, recv).await
 }
 
@@ -632,6 +714,16 @@ pub unsafe extern "C" fn fp2p_conn_status(h: *mut P2p, node_id: *const c_char) -
     guard_json(|| {
         let node = opt_str(node_id)?.ok_or_else(|| anyhow!("node_id is null"))?;
         handle(h)?.conn_status(node)
+    })
+}
+
+/// 主机侧：本地源端口 `port` 的那条转发 TCP 连接属于哪个对端。
+/// 返回 `{"ok":true,"nodeId":"<hex>"|null}`；null = 不是（或已不是）隧道转发连接。
+#[no_mangle]
+pub unsafe extern "C" fn fp2p_host_peer(h: *mut P2p, port: u16) -> *mut c_char {
+    guard_json(|| {
+        let peer = handle(h)?.host_peer(port).map(|id| id.to_string());
+        Ok(json!({"ok": true, "nodeId": peer}))
     })
 }
 

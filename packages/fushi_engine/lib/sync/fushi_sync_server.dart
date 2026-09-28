@@ -82,6 +82,10 @@ const String kFushiRequestZone = 'fushi.zone';
 /// P2P 隧道请求在配对审批 / 已配对设备列表里显示的来源（而不是 127.0.0.1）。
 const String kFushiP2pRemoteAddress = 'P2P tunnel';
 
+/// 请求上下文里隧道对端 NodeId 的键（只在 [kFushiRequestZone] 为 `'p2p'` 且
+/// [FushiSyncServer.p2pPeerResolver] 查得到时存在）。
+const String kFushiP2pPeer = 'fushi.p2p.peer';
+
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
 class FushiPairRequest {
@@ -518,6 +522,19 @@ class FushiSyncServer {
 
   Future<int>? _p2pStarting;
 
+  /// 隧道监听口上一条连接的对端端口 → 隧道对端 NodeId。原生隧道把每条流转发成
+  /// 一条到本监听口的 TCP 连接并登记其源端口（`fp2p_host_peer`）；装配方（app 的
+  /// controller / 无头 host）起 P2P 时接上，停时置 null。
+  String? Function(int remotePort)? p2pPeerResolver;
+
+  /// 本请求的隧道对端 NodeId（查不到 → null）。
+  String? _resolveTunnelPeer(shelf.Request request) {
+    final String? Function(int remotePort)? resolve = p2pPeerResolver;
+    final Object? info = request.context['shelf.io.connection_info'];
+    if (resolve == null || info is! HttpConnectionInfo) return null;
+    return resolve(info.remotePort);
+  }
+
   /// 主机已停就拒绝；bind 期间主机被停（[stop] 在 await 之间落地）就把刚绑上的
   /// 口立刻关掉——否则留下一个挂着完整 handler 的孤儿监听口，iroh 继续把公网流量
   /// 转进来，「主机已关闭」之后对端仍能访问库（审查问题 5）。
@@ -525,9 +542,15 @@ class FushiSyncServer {
     if (_server == null) throw StateError('sync server is not running');
     final shelf.Handler inner = _buildHandler();
     final HttpServer server = await shelf_io.serve(
-      (shelf.Request request) => inner(
-        request.change(context: <String, Object>{kFushiRequestZone: 'p2p'}),
-      ),
+      (shelf.Request request) {
+        final String? peer = _resolveTunnelPeer(request);
+        return inner(
+          request.change(context: <String, Object>{
+            kFushiRequestZone: 'p2p',
+            if (peer != null) kFushiP2pPeer: peer,
+          }),
+        );
+      },
       InternetAddress.loopbackIPv4,
       0,
       securityContext: _securityContext,
