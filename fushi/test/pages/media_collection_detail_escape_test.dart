@@ -161,21 +161,24 @@ void main() {
     );
   }
 
-  /// 故障形态 (b)「双失效态」：零受管目标的页面上走真实回收链路
-  /// （[FushiFocusController.ensureFocus] 的「无目标 → fallbackNode
-  /// .requestFocus()」分支，TODO-900 回收范式），primaryFocus 也被 park 到
-  /// Navigator 之上——两个候选都解析不出路由。
+  /// 故障形态 (b)「双失效态」：primaryFocus 被 park 到 Navigator 之上的
+  /// fallbackNode——两个候选都解析不出路由。
+  ///
+  /// BUG-2749 之后 [FushiFocusController.ensureFocus] 只在当前路由**连一个可聚焦
+  /// 控件都没有**时才回收到 fallbackNode；本详情页虽零受管目标，却有原生控件
+  /// （AppBar 返回键等），被动修复会把焦点留在路由 scope 上。这种「park 在兜底
+  /// 节点」的状态在纯展示路由上仍真实存在，所以这里直接把焦点放上去，钉住的
+  /// 仍是 Esc 在该状态下能退页。
   Future<void> parkFocusOnFallback(
     WidgetTester tester,
     FushiFocusController controller,
   ) async {
-    controller.ensureFocus();
+    controller.fallbackNode.requestFocus();
     await tester.pump();
     expect(
       FocusManager.instance.primaryFocus,
       same(controller.fallbackNode),
-      reason: '前置：焦点必须真的被回收到 Navigator 之上的 fallbackNode（本页必须'
-          '零受管目标，否则 ensureFocus 会落到真实目标上）',
+      reason: '前置：焦点必须真的 park 在 Navigator 之上的 fallbackNode',
     );
     final BuildContext? activeContext = controller.activeContext;
     expect(activeContext, isNotNull);
