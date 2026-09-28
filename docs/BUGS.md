@@ -29,11 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2527 条。点号进各自文件。
+> 共 2528 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2749](bugs/BUG-2749-gamepad-focus-native-controls.md) | ✅ | ✅ | 手柄方向导航看不见原生控件、对话框里焦点被拽走 |
+| [BUG-2748](bugs/BUG-2748-reader-continuous-user-scroll-late-image-yank.md) | ✅ | ✅ | 连续模式用户滚走后懒图加载把视口拽回 |
 | [BUG-2747](bugs/BUG-2747-gal-popup-click-dismissed-by-shield.md) | ✅ | ✅ | 点击游戏内查词弹窗的按钮会关闭弹窗且随后数秒无法查词 |
 | [BUG-2746](bugs/BUG-2746-kirikiri-dinput-wheel-over-host-popup.md) | 🚧 | 🚧 | KiriKiri 查词弹窗上滚动滚轮会让游戏翻到下一句 |
 | [BUG-2745](bugs/BUG-2745-kirikiri-early-sensor-script-exception.md) | ✅ | ✅ | KiriKiri 启动并捕获时游戏弹出未处理脚本异常 CS_Timer |

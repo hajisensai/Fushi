@@ -1257,6 +1257,14 @@ window.__fushiInstallShell = function(C) {
     this.__restoreCharOffset = typeof charOffset === 'number' ? charOffset : null;
     this.__restoreCharOffsetEnd = endCharOffset;
   },
+  // BUG-2748：用户亲手挪了视口（连续模式的滚轮 / 触摸原生滚动 / 拖滚动条 / 方向与翻页键
+  // 原生滚动 / 查词弹窗遮罩转发的滚动），与 paginate 同一语义：放弃迟到图片锚与恢复锚。
+  // 否则滚远后前方懒图 load，reapplyImageLateAnchor 把视口拽回最近一次揭示 / 恢复的目标。
+  // 连续 shell 的输入监听见 continuousShellSource 末尾；Dart 转发见 _evaluateScrollForward。
+  noteUserScroll: function() {
+    this.clearImageLateAnchor();
+    this._setRestoreCharAnchor(null);
+  },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
   _isContinuousShell: function() {
@@ -4137,6 +4145,35 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
   // 边界手势只保留触摸(touchstart/touchend)给手机。鼠标拖动选词到边界不再误跨章。
+})();
+// BUG-2748：连续模式用户滚动的输入入口统一在这里认领，调 noteUserScroll（语义见 _sharedJs）。
+// 连续模式的视口由原生滚动驱动，没有分页那种单一 paginate 入口：滚轮（webview 层的 wheel
+// 处理器自己 scrollBy）、手机原生触摸滚动、拖滚动条（按下点落在根元素上）、WebView 持焦时
+// 方向 / 翻页键的原生滚动。捕获阶段 + passive，只记意图、不改任何既有手势行为。按键里不含
+// Space（它被桥接成播放 / 暂停或翻页，翻页已由 paginate 清锚）。一个文档只装一次；切到分页
+// shell 后监听仍在，所以按 fushiReader 当下是不是连续 shell 判断。
+(function() {
+  if (window.__fushiUserScrollIntentInstalled) return;
+  window.__fushiUserScrollIntentInstalled = true;
+  var SCROLL_KEYS = {
+    ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
+    PageUp: 1, PageDown: 1, Home: 1, End: 1
+  };
+  function note() {
+    var r = window.fushiReader;
+    if (r && r._isContinuousShell && r._isContinuousShell() && r.noteUserScroll) {
+      r.noteUserScroll();
+    }
+  }
+  var opts = {capture: true, passive: true};
+  document.addEventListener('wheel', note, opts);
+  document.addEventListener('touchmove', note, opts);
+  document.addEventListener('pointerdown', function(e) {
+    if (e.target === document.documentElement) note();
+  }, opts);
+  document.addEventListener('keydown', function(e) {
+    if (SCROLL_KEYS[e.key]) note();
+  }, opts);
 })();
 $_sharedInitBoot
 };
