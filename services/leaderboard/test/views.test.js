@@ -337,3 +337,21 @@ describe('游标分页、缓存键与快照（审查修复回归）', () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM rank_snapshots WHERE win = 'all' AND metric = 'book'").get().n).toBe(1);
   }, 60000);
 });
+
+describe('用户卡片的关系字段', () => {
+  it('self / outgoing / incoming / friend / 匿名 null', async () => {
+    const env = makeEnv();
+    const a = await registerUser(env, 'a', { now: NOW });
+    const b = await registerUser(env, 'b', { now: NOW });
+    const card = async (viewer, target) => (await call(env, 'GET', `/v1/users/${target.id}`,
+      viewer ? { key: viewer.key, account: viewer.id, now: NOW } : { now: NOW })).data.relation;
+    expect(await card(null, a)).toBeNull();
+    expect(await card(a, a)).toBe('self');
+    expect(await card(a, b)).toBeNull();
+    await call(env, 'POST', `/v1/friends/${b.id}`, { key: a.key, account: a.id, now: NOW });
+    expect(await card(a, b)).toBe('outgoing');
+    expect(await card(b, a)).toBe('incoming');
+    await call(env, 'POST', `/v1/friends/${a.id}`, { key: b.key, account: b.id, now: NOW });
+    expect(await card(a, b)).toBe('friend');
+  });
+});

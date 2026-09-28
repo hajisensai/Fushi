@@ -182,6 +182,22 @@ function canSeeShelf(account, viewerId, rel) {
   return account.visibility === 'public' || account.id === viewerId || rel.friends.has(account.id);
 }
 
+/**
+ * 观看者与该账户的关系（用户页按钮状态用；匿名 = null）：
+ * 'self' | 'friend' | 'outgoing'（我发出、待对方接受）| 'incoming'（对方发来、待我接受）| null。
+ */
+async function relationTo(env, accountId, viewerId, rel) {
+  if (!viewerId) return null;
+  if (accountId === viewerId) return 'self';
+  if (rel.friends.has(accountId)) return 'friend';
+  const [a, b] = [accountId, viewerId].sort();
+  const pending = await env.DB.prepare(
+    "SELECT requester FROM friends WHERE a = ?1 AND b = ?2 AND state = 'pending'",
+  ).bind(a, b).first();
+  if (!pending) return null;
+  return pending.requester === viewerId ? 'outgoing' : 'incoming';
+}
+
 export async function userCard(env, id, viewer, now) {
   const viewerId = viewer ? viewer.id : '';
   const acc = await loadVisibleAccount(env, id, viewerId);
@@ -204,6 +220,7 @@ export async function userCard(env, id, viewer, now) {
     visibility: acc.visibility,
     shelfVisible: canSeeShelf(acc, viewerId, rel),
     rankComputedAt: snap.computedAt,
+    relation: await relationTo(env, acc.id, viewerId, rel),
     stats,
   };
 }
