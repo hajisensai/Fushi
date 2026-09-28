@@ -78,7 +78,9 @@ import 'test_helpers.dart';
 /// Run (PowerShell, from fushi/, interactive desktop session):
 ///   powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 `
 ///     integration_test/reader_audiobook_real_book_image_itest.dart `
-///     -DartDefine @('FUSHI_ITEST_REAL_BOOK_DIR=D:\smb\...\[24巻] ...')
+///     -DartDefine @('FUSHI_ITEST_REAL_BOOK_DIR=<书目录>')
+/// runner 的参数转义带不过含空格 / 方括号 / 非 ASCII 的路径（会被 flutter 当成测试文件
+/// 路径报 Illegal character in path），这种目录先建一个纯 ASCII 的 junction 指过去。
 /// 可选 dart-define：
 ///   FUSHI_ITEST_REAL_BOOK_VARIANTS  要跑的变体（默认 ABCDE）
 ///   FUSHI_ITEST_REAL_BOOK_SPEED     播放速率（默认 2.0）
