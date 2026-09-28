@@ -40,10 +40,19 @@ import io.flutter.plugin.common.MethodChannel;
  *   <li>{@code disableReaderMode} 在 Activity 不在前台时会抛 IllegalStateException；
  *       收尾时吞掉它是安全的——系统在 Activity 暂停时本就会撤掉读卡模式。</li>
  * </ol>
+ *
+ * <p>{@code lock=true} 时写后把贴纸设为只读（不可撤销，防止别人改写成恶意链接）。
+ * 返回值是字符串三态：{@code "locked"} 写入并已锁定、{@code "written"} 只写入（没要求
+ * 锁定，或芯片不支持只读）、{@code "failed"}。「要锁没锁上」必须区分开回给 Dart，
+ * 不能让用户以为贴纸已经防改写。
  */
 public final class NfcTagWriterChannelHandler {
     private static final String METHOD_WRITE_URI = "writeUri";
     private static final String ARG_URI = "uri";
+    private static final String ARG_LOCK = "lock";
+    private static final String RESULT_LOCKED = "locked";
+    private static final String RESULT_WRITTEN = "written";
+    private static final String RESULT_FAILED = "failed";
     private static final long TIMEOUT_MS = 30_000L;
     private static final int READER_FLAGS = NfcAdapter.FLAG_READER_NFC_A
             | NfcAdapter.FLAG_READER_NFC_B
@@ -74,7 +83,8 @@ public final class NfcTagWriterChannelHandler {
         created.setMethodCallHandler((call, result) -> {
             if (METHOD_WRITE_URI.equals(call.method)) {
                 final String uri = call.argument(ARG_URI);
-                start(uri, result);
+                final Boolean lock = call.argument(ARG_LOCK);
+                start(uri, Boolean.TRUE.equals(lock), result);
                 return;
             }
             result.notImplemented();
@@ -84,60 +94,66 @@ public final class NfcTagWriterChannelHandler {
 
     /** MainActivity 的 onDestroy 调用：收尾待决写入并断开 channel。 */
     public void destroy() {
-        finish(false);
+        finish(RESULT_FAILED);
         if (channel != null) {
             channel.setMethodCallHandler(null);
             channel = null;
         }
     }
 
-    private void start(@Nullable String uri, @NonNull MethodChannel.Result result) {
+    private void start(
+            @Nullable String uri, boolean lock, @NonNull MethodChannel.Result result) {
         final NfcAdapter adapter = NfcAdapter.getDefaultAdapter(activity);
         if (uri == null || uri.isEmpty() || adapter == null || !adapter.isEnabled()) {
-            result.success(false);
+            result.success(RESULT_FAILED);
             return;
         }
-        finish(false); // 旧的待决写入按失败收尾（见类注释第 2 条）。
+        finish(RESULT_FAILED); // 旧的待决写入按失败收尾（见类注释第 2 条）。
         pending = result;
         final int mine = ++generation;
-        final Runnable onTimeout = () -> finishIfCurrent(mine, false);
+        final Runnable onTimeout = () -> finishIfCurrent(mine, RESULT_FAILED);
         timeout = onTimeout;
         mainHandler.postDelayed(onTimeout, TIMEOUT_MS);
         try {
             adapter.enableReaderMode(
                     activity,
                     (Tag tag) -> {
-                        final boolean ok = write(tag, uri);
-                        mainHandler.post(() -> finishIfCurrent(mine, ok));
+                        final String outcome = write(tag, uri, lock);
+                        mainHandler.post(() -> finishIfCurrent(mine, outcome));
                     },
                     READER_FLAGS,
                     null);
         } catch (IllegalStateException e) {
             // Activity 不在前台：直接按失败收尾，超时回调随之撤销，不会二次回复。
-            finish(false);
+            finish(RESULT_FAILED);
         }
     }
 
     /** 只有仍是第 [mine] 次请求时才收尾；旧请求的回调 / 超时落空。 */
-    private void finishIfCurrent(int mine, boolean ok) {
+    private void finishIfCurrent(int mine, @NonNull String outcome) {
         if (mine == generation) {
-            finish(ok);
+            finish(outcome);
         }
     }
 
-    private static boolean write(@NonNull Tag tag, @NonNull String uri) {
+    @NonNull
+    private static String write(@NonNull Tag tag, @NonNull String uri, boolean lock) {
         final NdefMessage message = new NdefMessage(NdefRecord.createUri(uri));
         final Ndef ndef = Ndef.get(tag);
         if (ndef != null) {
             try {
                 ndef.connect();
                 if (!ndef.isWritable() || ndef.getMaxSize() < message.getByteArrayLength()) {
-                    return false;
+                    return RESULT_FAILED;
                 }
                 ndef.writeNdefMessage(message);
-                return true;
+                if (!lock || !ndef.canMakeReadOnly()) {
+                    return RESULT_WRITTEN;
+                }
+                // 已写入的内容不会因锁定失败而回滚：锁不上就如实报「只写入」。
+                return ndef.makeReadOnly() ? RESULT_LOCKED : RESULT_WRITTEN;
             } catch (IOException | FormatException | SecurityException e) {
-                return false;
+                return RESULT_FAILED;
             } finally {
                 closeQuietly(ndef);
             }
@@ -146,18 +162,22 @@ public final class NfcTagWriterChannelHandler {
         if (formatable != null) {
             try {
                 formatable.connect();
+                if (lock) {
+                    formatable.formatReadOnly(message);
+                    return RESULT_LOCKED;
+                }
                 formatable.format(message);
-                return true;
+                return RESULT_WRITTEN;
             } catch (IOException | FormatException | SecurityException e) {
-                return false;
+                return RESULT_FAILED;
             } finally {
                 closeQuietly(formatable);
             }
         }
-        return false;
+        return RESULT_FAILED;
     }
 
-    private void finish(boolean ok) {
+    private void finish(@NonNull String outcome) {
         if (timeout != null) {
             mainHandler.removeCallbacks(timeout);
             timeout = null;
@@ -175,7 +195,7 @@ public final class NfcTagWriterChannelHandler {
                 // Activity 已不在前台：系统暂停时本就撤掉了读卡模式（类注释第 3 条）。
             }
         }
-        result.success(ok);
+        result.success(outcome);
     }
 
     private static void closeQuietly(@NonNull android.nfc.tech.TagTechnology tech) {

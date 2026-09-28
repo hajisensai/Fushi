@@ -175,20 +175,31 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     await writeInterconnectPairNfcTag(context, link);
   }
 
-  Future<void> _persistUrls() async {
-    // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
-    // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
-    // 冒充新测）。收在这里而不是各调用点：所有 URL 变更都必经本方法（见下），
-    // 单点清理消除「哪个入口忘了清」的特例。
-    _reachable.removeWhere(
-        (String url, bool _) => !_urls.any((FushiClientUrl u) => u.url == url));
-    await _repo.setFushiClientUrls(_urls);
+  /// 所有列表改动的唯一入口。[transform] 作用在**库里最新的**列表上（经
+  /// [SyncRepository.updateFushiClientUrls] 与后台地址学习、链接配对串行），而不是
+  /// 本页手里的快照——弹窗 / 拖动期间学习器插进来的 learned 条目不会被覆盖掉。
+  /// 因此变换一律按 URL / hostId 定位，不按下标。结果以库为准回写 [_urls]。
+  Future<void> _mutateUrls(
+    List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
+  ) async {
+    final List<FushiClientUrl> stored = await _repo.updateFushiClientUrls(
+      transform,
+    );
+    if (!mounted) return;
+    setState(() {
+      _urls = stored;
+      // BUG-1693：连通性结果按 URL 键控，URL 集合一变（删除/改址）就把不再对应任何
+      // 列表行的结果清掉——否则删掉再重加同一地址会立刻显示上一轮的 ✓/✗（陈旧结果
+      // 冒充新测）。收在这里：所有 URL 变更都必经本方法。
+      _reachable.removeWhere(
+          (String url, bool _) => !stored.any((FushiClientUrl u) => u.url == url));
+    });
     // Keep the role lock honest: deleting the last URL must release the server
     // toggle; adding one must lock it. Every URL mutation routes through here.
     // 主页「配对与设备」入口行的已配对数也从这里刷新（C2）。
     _syncSettings(widget.settingsContext)
-      ..peerCount = interconnectPeerRepresentatives(_urls).length
-      ..setHasClientConnection(_urls.isNotEmpty);
+      ..peerCount = interconnectPeerRepresentatives(stored).length
+      ..setHasClientConnection(stored.isNotEmpty);
   }
 
   Future<void> _saveToken() async {
@@ -287,44 +298,42 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // 只在 added==true 时配对，导致「重加一个列表里已存在的地址」被去重守卫吞成 added=false
     // → 不再发起配对 → 点「添加」毫无反应。去重只应防列表出现重复条目，不该拦住重新配对
     // （尤其首次配对失败后用户想靠再点「添加」重试）。
-    bool shouldPair = false;
-    final int? editIndex = editingUrl == null
-        ? null
-        : _urls.indexWhere((FushiClientUrl u) => u.url == editingUrl);
-    if (editIndex != null && editIndex < 0) return; // 那一行已被删 / 被学习替换。
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      final int? index = editIndex;
-      if (index != null) {
-        final bool dupElsewhere = copy.asMap().entries.any(
-            (MapEntry<int, FushiClientUrl> e) =>
-                e.key != index && e.value.url == normalizedResult);
-        if (!dupElsewhere) {
-          final FushiClientUrl edited = copy[index];
-          // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
-          // 大小写）才保留已铉扎的指纹；改指另一台机器时旧指纹就是一把开不了
-          // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
-          // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
-          copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
-              // 用户亲手改过的条目从此归用户所有：不再随 host 地址集自动增删。
-              ? edited.copyWith(url: normalizedResult, learned: false)
-              : FushiClientUrl(
-                  url: normalizedResult,
-                  enabled: edited.enabled,
-                  deviceName: edited.deviceName,
-                  token: edited.token,
-                );
-        }
-      } else {
+    final bool shouldPair = editingUrl == null;
+    if (editingUrl != null &&
+        !_urls.any((FushiClientUrl u) => u.url == editingUrl)) {
+      return; // 那一行已被删 / 被学习替换。
+    }
+    await _mutateUrls((List<FushiClientUrl> current) {
+      final List<FushiClientUrl> copy = <FushiClientUrl>[...current];
+      if (editingUrl == null) {
         // 新地址才加进列表（去重防重复条目）；已存在则不重复加，但仍会在下方发起配对。
         if (!copy.any((FushiClientUrl u) => u.url == normalizedResult)) {
           copy.add(FushiClientUrl(url: normalizedResult));
         }
-        shouldPair = true;
+        return copy;
       }
-      _urls = copy;
+      final int index =
+          copy.indexWhere((FushiClientUrl u) => u.url == editingUrl);
+      final bool dupElsewhere = copy.asMap().entries.any(
+          (MapEntry<int, FushiClientUrl> e) =>
+              e.key != index && e.value.url == normalizedResult);
+      if (index < 0 || dupElsewhere) return current;
+      final FushiClientUrl edited = copy[index];
+      // BUG-1557：只有「还是同一个端点」（scheme+host+port 未变，只是补斜杠/改
+      // 大小写）才保留已铉扎的指纹；改指另一台机器时旧指纹就是一把开不了
+      // 新锁的旧钥匙，https 握手次次失败而 UI 里无处清除——那条地址就此死掉。
+      // 清指纹后下次配对重新 TOFU；令牌不动（同一台 host 换 IP 时它仍有效）。
+      copy[index] = isSameInterconnectEndpoint(edited.url, normalizedResult)
+          // 用户亲手改过的条目从此归用户所有：不再随 host 地址集自动增删。
+          ? edited.copyWith(url: normalizedResult, learned: false)
+          : FushiClientUrl(
+              url: normalizedResult,
+              enabled: edited.enabled,
+              deviceName: edited.deviceName,
+              token: edited.token,
+            );
+      return copy;
     });
-    await _persistUrls();
 
     // TODO-963 M2: 新增/重加地址后走「探测 → 配对」。手动输入 IP 也能发起配对（不再只挂
     // mDNS 发现设备）：ping 探测可达 + 取指纹做 TOFU → 双确认 → pair/v2 → 自动落
@@ -390,7 +399,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
             return;
           }
         }
-        // 手动路径：地址在 [_addOrEditUrl] 里已经 `_persistUrls()` 落库了，
+        // 手动路径：地址在 [_addOrEditUrl] 里已经 `_mutateUrls` 落库了，
         // 「已保存该地址」这句后半句成立。
         _showSnackBar(
           context,
@@ -426,45 +435,43 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   }
 
   Future<void> _toggleUrl(int index) async {
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      final FushiClientUrl u = copy[index];
-      // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
-      // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
-      copy[index] = u.copyWith(enabled: !u.enabled);
-      _urls = copy;
-    });
-    await _persistUrls();
+    final String url = _urls[index].url;
+    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
+          for (final FushiClientUrl u in current)
+            // TODO-961 gap②：copyWith 保留指纹/展示名（对齐编辑路径）；裸构造会把已
+            // TOFU 钉扎的 fingerprintSha256 静默清掉，回明文降级。
+            u.url == url ? u.copyWith(enabled: !u.enabled) : u,
+        ]);
   }
 
   /// 带 hostId 的条目删的是**那台 host**：同组其余地址都带着它的 token，只删一行
   /// 等于没解绑（剩下的照常同步，被删的 learned 地址 10 分钟内还会被学回来，
   /// 审查问题 8）。老条目（无 hostId）仍只删那一行，行为不变。
   Future<void> _deleteUrl(int index) async {
+    final String url = _urls[index].url;
     final String? hostId = _urls[index].hostId;
-    setState(() {
-      _urls = hostId == null
-          ? (<FushiClientUrl>[..._urls]..removeAt(index))
-          : <FushiClientUrl>[
-              for (final FushiClientUrl u in _urls)
-                if (u.hostId != hostId) u,
-            ];
-    });
-    await _persistUrls();
+    await _mutateUrls((List<FushiClientUrl> current) => <FushiClientUrl>[
+          for (final FushiClientUrl u in current)
+            if (u.url != url && (hostId == null || u.hostId != hostId)) u,
+        ]);
   }
 
   /// [newIndex] 是**最终下标**（FushiReorderableColumn 语义），不是 SDK
   /// `ReorderableListView` 的「移除前下标」——故这里没有 `newIndex--` 修正。
   /// 上/下移按钮同样按最终下标传（下移传 index+1）。
+  ///
+  /// 落库时按 URL 表达成「把 X 挪到 Y 前面」，在库里最新的列表上执行：期间被
+  /// 学习器插入的条目保持原位，不会因为本页快照过期而丢失或乱序。
   Future<void> _reorderUrls(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
-    setState(() {
-      final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
-      final FushiClientUrl item = copy.removeAt(oldIndex);
-      copy.insert(newIndex, item);
-      _urls = copy;
-    });
-    await _persistUrls();
+    final List<FushiClientUrl> view = <FushiClientUrl>[..._urls];
+    final FushiClientUrl moved = view.removeAt(oldIndex);
+    view.insert(newIndex, moved);
+    final String? beforeUrl =
+        newIndex + 1 < view.length ? view[newIndex + 1].url : null;
+    setState(() => _urls = view); // 拖动手感：先按本页顺序显示，再以库为准。
+    await _mutateUrls((List<FushiClientUrl> current) =>
+        moveInterconnectUrlBefore(current, moved.url, beforeUrl));
   }
 
   Future<void> _testAll() async {
@@ -987,7 +994,7 @@ mixin _PairingV2FlowMixin<T extends StatefulWidget> on State<T> {
   /// 换了的机器说「这里没有设备」，用户的排查方向从第一步就是错的。
   ///
   /// [addressSaved] 由调用点显式声明「本条路径此刻是否已经把地址落进候选列表」：
-  /// 手动输入 IP 的 [_addOrEditUrl] 在探测**之前**就 `_persistUrls()` 了，所以
+  /// 手动输入 IP 的 [_addOrEditUrl] 在探测**之前**就 `_mutateUrls` 了，所以
   /// `sync_pair_not_fushi` 那句「已保存该地址」是实话；而发现列表的
   /// [_connectToDevice] 在同一分型上直接 return，一个字都没写进库。两条路径的
   /// 后半句正好相反，共用一句就必然有一边在说谎——所以这里**没有默认值**，

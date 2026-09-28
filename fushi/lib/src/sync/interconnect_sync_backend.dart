@@ -508,7 +508,9 @@ class InterconnectSyncBackend extends SyncBackend
     _sessionResolved = false;
     // 登出后配置身份归零，下次 restoreAuth 必然重探测（BUG-1183）。
     _configSignature = null;
-    await repo.setFushiClientUrls(const <FushiClientUrl>[]);
+    await repo.updateFushiClientUrls(
+      (List<FushiClientUrl> _) => const <FushiClientUrl>[],
+    );
     // Also wipe the legacy single-url key, else getFushiClientUrls would
     // migrate it back on the next read.
     // ignore: deprecated_member_use_from_same_package

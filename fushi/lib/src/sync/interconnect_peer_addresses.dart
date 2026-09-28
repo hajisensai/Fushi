@@ -343,6 +343,25 @@ int interconnectUrlRank(String url) {
   return 3;
 }
 
+/// 把 [url] 挪到 [beforeUrl] 前面（[beforeUrl] 为 null 或已不在列表 → 挪到末尾）。
+/// 设置页的拖动排序在**库里最新的**列表上按 URL 执行它：其余条目（包括拖动期间
+/// 学习器新插入的）保持相对顺序。[url] 已不在列表 → 原样返回同一实例（不写盘）。
+List<FushiClientUrl> moveInterconnectUrlBefore(
+  List<FushiClientUrl> urls,
+  String url,
+  String? beforeUrl,
+) {
+  final int from = urls.indexWhere((FushiClientUrl u) => u.url == url);
+  if (from < 0 || url == beforeUrl) return urls;
+  final List<FushiClientUrl> out = <FushiClientUrl>[...urls];
+  final FushiClientUrl moved = out.removeAt(from);
+  final int to = beforeUrl == null
+      ? -1
+      : out.indexWhere((FushiClientUrl u) => u.url == beforeUrl);
+  out.insert(to < 0 ? out.length : to, moved);
+  return out;
+}
+
 /// 把 host 公布的地址集合并进候选列表（纯函数，便于单测）。
 ///
 /// - [anchorUrl] 是本次拿到地址集时用的那条地址；它被标上 [hostId]。列表里找不

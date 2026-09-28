@@ -5709,5 +5709,9 @@
   "sync_p2p_enable": "Allow remote connections over a P2P tunnel",
   "sync_p2p_enable_hint": "For when neither side has a public IP. Uses iroh's relay and discovery servers, which can see this device's IP address. Video may be slow when the connection goes through a relay.",
   "sync_p2p_relay_urls": "Self-hosted relays (optional)",
-  "sync_p2p_relay_urls_hint": "One iroh-relay URL per line. Leave empty to use iroh's public relays."
+  "sync_p2p_relay_urls_hint": "One iroh-relay URL per line. Leave empty to use iroh's public relays.",
+  "sync_pair_nfc_lock": "Lock the sticker after writing",
+  "sync_pair_nfc_lock_hint": "Locking can't be undone. Nobody can rewrite the sticker into a malicious link, but if this device's address or certificate changes you can't update it either — you'll need a new sticker.",
+  "sync_pair_nfc_written_locked": "Written and locked",
+  "sync_pair_nfc_lock_unsupported": "Written, but this sticker can't be locked"
 }
