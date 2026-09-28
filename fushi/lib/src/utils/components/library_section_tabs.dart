@@ -440,18 +440,33 @@ class _FushiSectionTabBarState<T extends Object>
     // 而 TabBar 的内部 controller 取不到。两侧渐隐则不能省——即使 tabs 比旧等宽段窄，
     // 窄窗、界面缩放与长译文仍会把尾部页签完整裁到视口外，用户实报看不出后面还有
     // 内容（BUG-1971）。通过冒泡的 scroll metrics 动态显示渐隐，不需要拿 controller。
+    if (!widget.fill) return _buildScrollableWithCues();
+    // 铺满形态没有 Scrollable，也就没有滚动通知来收回渐隐：窗口先窄（出了尾部
+    // 渐隐）再拉宽进入铺满时，旧的 cue 会一直盖在最后一段上。所以渐隐只挂在可滚动
+    // 分支里；进入铺满时顺手把残留状态清零，免得再退回可滚动的第一帧先闪一下旧值
+    // （新 Scrollable 的首条 metrics 通知随后给出真值）。这里只改字段不 setState：
+    // 它们只被可滚动分支读取，而那一支正是本 builder 下次要建的东西。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!_fitsWidth(context, constraints.maxWidth)) {
+          return _buildScrollableWithCues();
+        }
+        _showLeadingOverflowCue = false;
+        _showTrailingOverflowCue = false;
+        _pendingLeadingOverflowCue = false;
+        _pendingTrailingOverflowCue = false;
+        return _buildTabBar(fillWidth: true);
+      },
+    );
+  }
+
+  /// 可滚动形态：拖滚 + 由冒泡滚动通知驱动的两侧渐隐。
+  Widget _buildScrollableWithCues() {
     final Widget tabs = NotificationListener<ScrollMetricsNotification>(
       onNotification: _handleScrollMetrics,
       child: NotificationListener<ScrollNotification>(
         onNotification: _handleScroll,
-        child: widget.fill
-            ? LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) =>
-                    _fitsWidth(context, constraints.maxWidth)
-                    ? _buildTabBar(fillWidth: true)
-                    : HorizontalDragScrollable(child: _buildTabBar()),
-              )
-            : HorizontalDragScrollable(child: _buildTabBar()),
+        child: HorizontalDragScrollable(child: _buildTabBar()),
       ),
     );
     return Stack(
@@ -482,13 +497,24 @@ class _FushiSectionTabBarState<T extends Object>
     );
   }
 
-  /// 全部段按自然宽排开是否摆得进 [maxWidth]（与页头「摆不摆得下」同一张字宽表）。
-  bool _fitsWidth(BuildContext context, double maxWidth) =>
-      maxWidth.isFinite &&
-      estimateSectionTabBarWidth(context, <String>[
-            for (final LibrarySectionTab<T> tab in widget.tabs) tab.label,
-          ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding) <=
-          maxWidth;
+  /// 铺满形态下每段都摆得下吗（与页头「摆不摆得下」同一张字宽表）。
+  ///
+  /// 判据是 `段数 × 最宽段 <= maxWidth`，**不是**各段自然宽之和：
+  /// `TabBar(isScrollable: false, tabAlignment: fill)` 给每段包 Expanded，每段
+  /// 只分到 `maxWidth / n`（含两侧 labelPadding），而 Tab 文字不换行、溢出渐隐。
+  /// 一段长其余短时（德 / 俄译文、大字号）总和摆得下，长段照样被截——所以要让
+  /// 最宽那段在等分格里也放得下。每段宽口径与估算一致：文字进距 + 两侧内边距。
+  bool _fitsWidth(BuildContext context, double maxWidth) {
+    if (!maxWidth.isFinite || widget.tabs.isEmpty) return false;
+    double widest = 0.0;
+    for (final LibrarySectionTab<T> tab in widget.tabs) {
+      final double width = estimateSectionTabBarWidth(context, <String>[
+        tab.label,
+      ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding);
+      if (width > widest) widest = width;
+    }
+    return widest * widget.tabs.length <= maxWidth;
+  }
 
   /// [fillWidth]：本行摆得下全部段时铺满整行（不滚动、等分宽度），见
   /// [FushiSectionTabBar.fill]。铺满形态没有可滚动内容，不包拖滚。

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/library_section_tabs.dart';
 
@@ -68,5 +69,82 @@ void main() {
 
     expect(find.byKey(_leadingCue), findsOneWidget);
     expect(find.byKey(_trailingCue), findsNothing, reason: '到达末尾后右缘提示必须消失');
+  });
+
+  Future<void> pumpFillTabs(
+    WidgetTester tester, {
+    required double width,
+    required List<String> labels,
+  }) async {
+    await tester.binding.setSurfaceSize(Size(width, 180));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: width,
+              child: FushiSectionTabBar<int>(
+                tabs: <LibrarySectionTab<int>>[
+                  for (int i = 0; i < labels.length; i++)
+                    LibrarySectionTab<int>(value: i, label: labels[i]),
+                ],
+                selected: 0,
+                onChanged: (_) {},
+                secondary: true,
+                fill: true,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('fill 判据按最宽段：长短文案混排总宽够也不许铺满截字', (WidgetTester tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const String long = 'Einstellungen für Downloads';
+    // 各段自然宽之和摆得进 480，但 fill 每段只分到 480 / 3 = 160，长段会被截断渐隐。
+    await pumpFillTabs(tester, width: 480, labels: <String>['小说', '漫画', long]);
+
+    expect(
+      tester.widget<TabBar>(find.byType(TabBar)).isScrollable,
+      isTrue,
+      reason: '最宽段放不进等分格时必须退回可滚动形态',
+    );
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.text(long),
+    );
+    expect(
+      paragraph.size.width,
+      greaterThanOrEqualTo(
+        paragraph.getMaxIntrinsicWidth(double.infinity) - 0.5,
+      ),
+      reason: '长段文字必须完整排下，不能被截',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('先窄出尾部渐隐、再放宽进入 fill 后渐隐必须消失', (WidgetTester tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const List<String> labels = <String>['首页', '系列', '全部视频', '发现', '来源', '设置'];
+
+    await pumpFillTabs(tester, width: 240, labels: labels);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue);
+    expect(find.byKey(_trailingCue), findsOneWidget, reason: '窄窗溢出时应有尾部渐隐');
+
+    await pumpFillTabs(tester, width: 1200, labels: labels);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    expect(find.byKey(_leadingCue), findsNothing);
+    expect(
+      find.byKey(_trailingCue),
+      findsNothing,
+      reason: '铺满形态没有离屏内容，残留渐隐会盖在最后一段上',
+    );
+
+    // 再窄回去：新 Scrollable 的首条 metrics 通知重新给出真值。
+    await pumpFillTabs(tester, width: 240, labels: labels);
+    expect(find.byKey(_trailingCue), findsOneWidget);
   });
 }
