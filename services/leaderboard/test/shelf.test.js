@@ -70,6 +70,20 @@ describe('跨用户作品匹配', () => {
     expect(rc.data.works[0].workId).toBe(al['book|isbn:9784040000001']);
   });
 
+  it('两个键分别指向不同作品时，按上报顺序（优先级）取第一个', async () => {
+    const env = makeEnv();
+    const a = await registerUser(env, 'a', { now: NOW });
+    const b = await registerUser(env, 'b', { now: NOW });
+    const c = await registerUser(env, 'c', { now: NOW });
+    const [byIsbn] = await upload(env, a, [entry('book', ['isbn:9780000000002'], 'x')]).then((r) => r.data.works);
+    const [byTitle] = await upload(env, b, [entry('book', ['t:x|'], 'x')]).then((r) => r.data.works);
+    expect(byIsbn.workId).not.toBe(byTitle.workId);
+    const [resolved] = await upload(env, c, [entry('book', ['isbn:9780000000002', 't:x|'], 'x')]).then((r) => r.data.works);
+    expect(resolved.workId).toBe(byIsbn.workId);
+    // 已存在的键不被改挂。
+    expect(aliases(env)['book|t:x|']).toBe(byTitle.workId);
+  });
+
   it('同一个键在不同 kind 下是不同作品', async () => {
     const env = makeEnv();
     const a = await registerUser(env, 'a', { now: NOW });
