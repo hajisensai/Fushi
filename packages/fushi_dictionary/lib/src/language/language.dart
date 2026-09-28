@@ -554,12 +554,17 @@ DictionarySearchResult buildResultFromLookup({
   final List<({DictionaryEntry entry, int headword})> collected =
       <({DictionaryEntry entry, int headword})>[];
   bool truncated = false;
+  // BUG-2753：空读音的 simple dict 行并入同表记唯一的显式读音组。
+  final Map<String, String> soleReadings = soleExplicitReadings(results);
   outer:
   for (final r in results) {
     if (r.matched.length > bestLength) {
       bestLength = r.matched.length;
     }
-    final String headword = lookupHeadwordKey(r);
+    final String headword = lookupHeadwordKey(r, soleReadings: soleReadings);
+    // entry 上也写补全后的读音：buildLookupEntriesJson 按 entry.reading 再分组，
+    // 制卡 / 音频 / 振假名 / Anki 查重也都读它。
+    final String reading = resolvedLookupReading(r, soleReadings);
     if (!headwords.containsKey(headword) && headwords.length >= maximumTerms) {
       truncated = true;
       break outer;
@@ -571,7 +576,7 @@ DictionarySearchResult buildResultFromLookup({
         entry: DictionaryEntry(
           dictionaryName: g.dictName,
           word: r.term.expression,
-          reading: r.term.reading,
+          reading: reading,
           meaning: g.glossary,
           extra: buildLookupEntryExtra(r, g),
         ),
@@ -599,10 +604,49 @@ DictionarySearchResult buildResultFromLookup({
 /// BUG-791：空读音按 Yomitan 约定等价于「读音同表记」，分组前必须归一，否则同一个
 /// 假名词（reading 有的显式给、有的留空）会被拆成两个词头。只归一分组 key，不改
 /// 存储的 display reading（空读音仍无注音）。
-String lookupHeadwordKey(FushiLookupResult r) {
-  final String effectiveReading =
-      r.term.reading.isEmpty ? r.term.expression : r.term.reading;
+///
+/// BUG-2753：[soleReadings] 来自 [soleExplicitReadings]，空读音行按它先补上该表记
+/// 唯一的显式读音再分组（见 [resolvedLookupReading]）。
+String lookupHeadwordKey(
+  FushiLookupResult r, {
+  Map<String, String> soleReadings = const <String, String>{},
+}) {
+  final String reading = resolvedLookupReading(r, soleReadings);
+  final String effectiveReading = reading.isEmpty ? r.term.expression : reading;
   return '${r.term.expression}\n$effectiveReading';
+}
+
+/// 每个表记在本次结果里**唯一**的显式（非空）读音；有多个不同读音的表记不收。
+///
+/// BUG-2753：MDX / StarDict / DSL 这类 simple dict 只有「词头 → 释义」，导入时读音
+/// 恒空（importer.cpp 写 reading_len = 0）。同一个 `取り戻す`，Yomitan 行是
+/// `取り戻す／とりもどす`、MDX 行是 `取り戻す／（空）`，BUG-791 的归一只把空读音
+/// 等同于表记本身，于是两者分组 key 不同、被拆成上下两张卡。
+///
+/// 只在读音**无歧义**时并入：同表记只有一个显式读音 → 空读音行就是它；同表记有
+/// 多个读音（辛い＝つらい／からい）→ 不猜，空读音行保持自成一组（BUG-791 边界）。
+Map<String, String> soleExplicitReadings(List<FushiLookupResult> results) {
+  final Map<String, Set<String>> readings = <String, Set<String>>{};
+  for (final FushiLookupResult r in results) {
+    if (r.term.reading.isEmpty) continue;
+    readings
+        .putIfAbsent(r.term.expression, () => <String>{})
+        .add(r.term.reading);
+  }
+  return <String, String>{
+    for (final MapEntry<String, Set<String>> e in readings.entries)
+      if (e.value.length == 1) e.key: e.value.single,
+  };
+}
+
+/// 该行用于分组与展示的读音：显式读音原样返回；空读音补上 [soleReadings] 里该
+/// 表记的唯一读音（没有则仍为空）。见 [soleExplicitReadings]。
+String resolvedLookupReading(
+  FushiLookupResult r,
+  Map<String, String> soleReadings,
+) {
+  if (r.term.reading.isNotEmpty) return r.term.reading;
+  return soleReadings[r.term.expression] ?? '';
 }
 
 String buildPopupJsonFromLookup({
@@ -634,9 +678,11 @@ String buildPopupJsonFromLookup({
 
   // BUG-1472：与 [buildResultFromLookup] 同一处根因——预算按词头算，不按 glossary
   // 注释行算。这里本来就是按 key 分组的，所以「已有几个词头」= groupKeys.length。
+  // BUG-2753：与 [buildResultFromLookup] 同一口径补全空读音。
+  final Map<String, String> soleReadings = soleExplicitReadings(results);
   outer:
   for (final r in results) {
-    final key = lookupHeadwordKey(r);
+    final key = lookupHeadwordKey(r, soleReadings: soleReadings);
     if (!groupExpression.containsKey(key) && groupKeys.length >= maximumTerms) {
       break outer;
     }
@@ -656,7 +702,8 @@ String buildPopupJsonFromLookup({
       if (!groupExpression.containsKey(key)) {
         groupKeys.add(key);
         groupExpression[key] = r.term.expression;
-        groupReading[key] = r.term.reading;
+        // 空读音行可能先于显式读音行建组（词典顺序在 MDX 前）：取补全后的读音。
+        groupReading[key] = resolvedLookupReading(r, soleReadings);
         groupMatched[key] = r.matched;
         groupDeinflected[key] = r.deinflected;
         groupTrace[key] = r.trace;
