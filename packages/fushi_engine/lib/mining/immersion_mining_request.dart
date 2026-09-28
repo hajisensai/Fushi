@@ -59,7 +59,7 @@ class VideoMiningHistorySnapshot {
   final String dateKey;
 }
 
-/// 视频制卡的封面模式（用户在 Anki 设置里选择，默认 [videoClip]）：
+/// 视频制卡的封面模式（用户在 Anki 设置里选择；全新安装默认 [videoClip]，存量用户 [gif]）：
 /// - [gif]：字幕区间动图（`extractClipGifViaFfmpeg`）。抽取失败按旧阶梯降级为
 ///   静态帧，并弹「降级为静态帧」OSD。
 /// - [currentFrame]：制卡那一刻的当前解码帧（`controller.screenshot`，点词已自动暂停）。
@@ -75,8 +75,10 @@ class VideoMiningHistorySnapshot {
 ///
 /// 持久化用 [wireName]（存进偏好的字符串），解析用 [fromWireName]。
 ///
-/// ⚠️ 默认值（null / 未知）是 [videoClip]，不是改动前的 [gif]：这是**有意的现状变更**
-/// （用户拍板：所有能拿到画面的来源默认出音画一体片段）。用户显式选过的值原样保留。
+/// ⚠️ [fromWireName] 对 null / 未知返回 [videoClip]，但偏好层**不直接**拿它当默认：
+/// 所有者 2026-09-28 拍板「存量用户不翻、新装才用片段」——没显式设过封面模式时，全新
+/// 安装取 [videoClip]，升级上来的存量用户取改动前的 [gif]（见 app 侧
+/// `PreferencesRepository.settleMiningImageModeInstallDefault`）。用户显式选过的值原样保留。
 /// [ImmersionMiningRequest.imageMode] 的值对象默认仍是 [gif]——不读偏好的调用方
 /// （内置网页视频页等）行为不变。
 enum VideoMiningImageMode {
@@ -113,7 +115,7 @@ enum VideoMiningImageMode {
 /// | 格式 | 卡片里怎么播 | 取舍 |
 /// |---|---|---|
 /// | [webmVp9]（默认） | `<video>` 内嵌，翻面自动播放、点例句重播 | Anki 桌面 Qt WebEngine / AnkiDroid WebView 都能解 |
-/// | [webmAv1] | 同上 | 同画质体积最小；编码更慢，移动端 ffmpeg-kit 无 SVT-AV1 → 降级 VP9 |
+/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；移动端 ffmpeg-kit 无 SVT-AV1 → 降级 VP9 |
 /// | [mp4H264] | `[sound:]` 交给 Anki 原生播放器（Windows 弹独立窗口） | 兼容兜底；iOS 默认 |
 ///
 /// 为什么内嵌只能是 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有
@@ -153,6 +155,13 @@ enum MiningClipFormat {
       MiningClipFormat.mp4H264,
     ],
   };
+
+  /// 本平台随包的 ffmpeg 能否编出本格式。iOS 的 ffmpeg-kit xcframework 只带 x264，没有
+  /// libvpx / SVT-AV1 / libopus，两档 WebM 在 iOS 上必然按 [encodeAttempts] 退回 MP4——
+  /// 设置页据此在 iOS 上不把它们标成推荐，而是写明会退回 MP4。桌面 ffmpeg-min 与
+  /// Android ffmpeg-kit 都带 libvpx + libopus（Android 无 SVT-AV1，AV1 退 VP9，仍可内嵌）。
+  bool encodableOn({required bool isIOS}) =>
+      !isIOS || this == MiningClipFormat.mp4H264;
 
   /// 平台默认值：iOS → [mp4H264]（AnkiMobile 靠导入裸 URL 拿媒体、iOS 播不了 WebM），
   /// 其余 → [webmVp9]。纯逻辑带 [isIOS] 参数，测试宿主上 `Platform.isIOS` 恒 false。

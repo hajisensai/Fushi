@@ -29,6 +29,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/mining/immersion_mining_request.dart'
+    show MiningClipFormat;
 
 /// 移动端 configure 里必须出现的独立开关。
 ///
@@ -40,6 +42,16 @@ const List<String> _requiredMobileFlags = <String>[
   '--enable-gpl',
   '--enable-libx264',
   '--enable-openssl',
+];
+
+/// 只有 Android 要求的开关：制卡「音画同步片段」默认 WebM(VP9 + Opus)，卡片里用
+/// `<video>` 内嵌播放。缺 libvpx / libopus → 真机 `Unknown encoder 'libvpx-vp9'`，
+/// 每张片段卡都先失败一次再退回 MP4（synchronized_video_exporter.dart 的降级链）。
+/// iOS 刻意不带（所有者 2026-09-28：iOS 不重编），Dart 侧由
+/// `MiningClipFormat.encodableOn(isIOS: true)` 声明 iOS 编不出 WebM——见下方 iOS 负向断言。
+const List<String> _requiredAndroidOnlyFlags = <String>[
+  '--enable-libvpx',
+  '--enable-libopus',
 ];
 
 /// 从当前 cwd 向上找含 vendored ffmpeg-kit 的仓库根。
@@ -120,6 +132,33 @@ void main() {
         expect(codec.contains('x264 - core'), isTrue,
             reason: '$abi 缺 x264 自身的版本串，说明链接的不是真正的 x264 库');
       });
+
+      test('$abi: WebM 片段编码器（libvpx-vp9 / libopus）真链进 libavcodec', () {
+        final String configuration =
+            _embeddedConfiguration(soBytes(abi, 'libavutil.so'), '$abi libavutil.so');
+        for (final String flag in _requiredAndroidOnlyFlags) {
+          expect(
+            configuration.contains(flag),
+            isTrue,
+            reason: '$abi 的 configure 串里没有 $flag —— 入库 AAR 比 Dart 侧契约旧，'
+                '需跑 .github/workflows/ffmpeg-kit-android.yml（或构建机 '
+                'build_x264_android.sh）并重新 vendor',
+          );
+        }
+        // ffmpeg 的编码器注册名（`-c:v libvpx-vp9` / `-c:a libopus`）以独立字符串
+        // 留在 libavcodec 里；再加 libvpx 自身的版本串，证明不是只写了 configure。
+        final String codec = _asSearchableText(soBytes(abi, 'libavcodec.so'));
+        expect(codec.contains('libvpx-vp9\x00'), isTrue,
+            reason: '$abi libavcodec.so 里没有 libvpx-vp9 编码器');
+        expect(codec.contains('libopus\x00'), isTrue,
+            reason: '$abi libavcodec.so 里没有 libopus 编码器');
+        expect(codec.contains('WebM Project VP9 Encoder'), isTrue,
+            reason: '$abi 缺 libvpx 自身的编码器接口串，说明没真链上 libvpx');
+        expect(aar.findFile('res/raw/license_libvpx.txt'), isNotNull,
+            reason: 'libvpx 的许可文件必须随产物分发');
+        expect(aar.findFile('res/raw/license_opus.txt'), isNotNull,
+            reason: 'opus 的许可文件必须随产物分发');
+      });
     }
 
     test('BUG-891 未回退：TLS 后端与证书指纹钉扎补丁仍在', () {
@@ -193,6 +232,26 @@ void main() {
   // 错误实现（比如路径读错读成了别的文件、或 latin1 解码出一堆巧合）同样会全绿。
   // 这里断言几个**确定不该出现**的东西，把判据本身钉住。
   group('负向对照：判据本身没有失真', () {
+    test('iOS 不带 libvpx / libopus，与 Dart 侧 encodableOn(isIOS) 一致', () {
+      // iOS 刻意不重编（所有者 2026-09-28）。设置页据 encodableOn 不在 iOS 上把两档
+      // WebM 标成推荐；哪天 iOS 真带上了 libvpx，这条红，提醒把 encodableOn 放开。
+      final File util = File(
+        '${root.path}/third_party/ffmpeg_kit_flutter/ios/Frameworks/'
+        'libavutil.xcframework/ios-arm64_arm64e/libavutil.framework/libavutil',
+      );
+      final String configuration =
+          _embeddedConfiguration(util.readAsBytesSync(), 'iOS libavutil');
+      final bool iosHasWebmEncoders =
+          configuration.contains('--enable-libvpx') &&
+              configuration.contains('--enable-libopus');
+      expect(iosHasWebmEncoders, isFalse,
+          reason: 'iOS 已带 WebM 编码器——请同步放开 MiningClipFormat.encodableOn');
+      expect(MiningClipFormat.webmVp9.encodableOn(isIOS: true),
+          iosHasWebmEncoders);
+      // Android 一侧由上面的正向断言钉住：AAR 带 libvpx / libopus ⇔ 非 iOS 可编 VP9。
+      expect(MiningClipFormat.webmVp9.encodableOn(isIOS: false), isTrue);
+    });
+
     test('硬件编码器确实未编入（当前配方明确关闭）', () {
       final File aarFile = File(
         '${root.path}/third_party/ffmpeg_kit_flutter/android/libs/'

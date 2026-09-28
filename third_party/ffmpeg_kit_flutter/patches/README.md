@@ -7,7 +7,17 @@
 
 ## 重编 ffmpeg-kit（TODO-2357 起：必须带 x264）
 
-当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl`**。
+当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl`**，
+Android 另加 **`--enable-libvpx --enable-opus`**（2026-09-28，制卡「音画同步片段」默认
+WebM = VP9 + Opus；iOS 按所有者决定不重编，Dart 侧 `MiningClipFormat.encodableOn`
+声明 iOS 编不出 WebM、自动退回 MP4）。
+
+**Android 可在 CI 上复现**：`.github/workflows/ffmpeg-kit-android.yml`（ubuntu runner，
+ffmpeg-kit v6.0 + arthenica/FFmpeg n6.0 先打 cert-pin 补丁 + NDK 25.2.9519653 + api 24，
+与构建机同一条 `build_x264_android.sh`）。推改了配方 / 补丁 / workflow 的分支即触发，
+约 14 分钟出 `ffmpeg-kit-android-aar` artifact，下载替换 `../android/libs/ffmpeg-kit.aar`。
+2026-09-28 那次产物 28.95 MB（加 libvpx + opus 前 26.17 MB），Java API（`javap -p`
+全量对比）与构建机产物逐字一致，configure 串只多出 `--enable-libvpx --enable-libopus`。
 
 - **为什么要 x264**：片段导出全平台统一 H.264。此前移动端退到 libavcodec 原生 `mpeg4`
   （MPEG-4 Part 2），其 Simple/ASP 规格上限远低于导出用的 1080×1920，libavcodec 既不
@@ -29,6 +39,7 @@
 
 ```bash
 ./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl \
+                          #   --enable-libvpx --enable-opus \
                           #   --disable-x86 --disable-x86-64 --api-level=24
 ./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --xcframework
 ```
