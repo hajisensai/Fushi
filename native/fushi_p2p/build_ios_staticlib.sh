@@ -39,7 +39,9 @@ build_target() {
   log="$(mktemp)"
   cargo clean --release --target "$target" -p fushi_p2p
   echo "==> cargo rustc --release --lib --target $target --crate-type staticlib (IPHONEOS_DEPLOYMENT_TARGET=$IPHONEOS_DEPLOYMENT_TARGET)"
-  cargo rustc --release --lib --target "$target" --crate-type staticlib \
+  # --color never：CI 设了 CARGO_TERM_COLOR=always，rustc 的 note 行会带 ANSI 转义，
+  # 抠出来的 `-lm` 变成 `-lm\e[0m`，Xcode 链接时报 Library 'm…' not found。
+  cargo rustc --color never --release --lib --target "$target" --crate-type staticlib \
     -- --print native-static-libs 2>&1 | tee "$log"
   local libs
   libs="$(sed -n 's/.*native-static-libs: //p' "$log" | tail -n 1)"
@@ -48,6 +50,18 @@ build_target() {
     echo "rustc did not report native-static-libs for $target" >&2
     exit 1
   fi
+  # 这串原样进 OTHER_LDFLAGS：只允许 -l<name> / -framework <name>，别的一律当场失败，
+  # 而不是等 Xcode 链接时才冒出一个莫名其妙的库名。
+  local prev="" tok
+  for tok in $libs; do
+    if [[ "$prev" == "-framework" ]]; then
+      [[ "$tok" =~ ^[A-Za-z0-9_]+$ ]] || { echo "bad framework name in native-static-libs: $tok" >&2; exit 1; }
+    elif [[ "$tok" != "-framework" && ! "$tok" =~ ^-l[A-Za-z0-9_+.-]+$ ]]; then
+      echo "unexpected token in native-static-libs: $(printf '%q' "$tok")" >&2
+      exit 1
+    fi
+    prev="$tok"
+  done
   printf '%s\n' "$libs" > "$libs_out"
   [[ -f "target/$target/release/libfushi_p2p.a" ]] || { echo "missing target/$target/release/libfushi_p2p.a" >&2; exit 1; }
 }

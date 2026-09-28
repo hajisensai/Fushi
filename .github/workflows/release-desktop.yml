@@ -1341,7 +1341,8 @@ jobs:
           set -euo pipefail
           dylib="fushi/build/macos/Build/Products/Release/fushi.app/Contents/Frameworks/libfushi_p2p.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
-          test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libfushi_p2p.dylib"
+          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
           # 发布包是 universal，两个切片都得在，否则另一种 Mac 上 P2P 静默不可用。
           archs=" $(lipo -archs "$dylib") "
           for arch in arm64 x86_64; do

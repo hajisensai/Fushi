@@ -597,7 +597,8 @@ jobs:
           app_dir="build/macos/Build/Products/Debug/fushi.app"
           dylib="$app_dir/Contents/Frameworks/libfushi_p2p.dylib"
           test -f "$dylib" || { echo "::error::$dylib missing — the Runner 'Bundle fushi_p2p dylib' phase did not copy it"; exit 1; }
-          test "$(otool -D "$dylib" | tail -n +2)" = "@rpath/libfushi_p2p.dylib"
+          # universal dylib：otool -D 按架构各打一段「path (architecture x):」+ id，逐段核对。
+          test "$(otool -D "$dylib" | grep -v ':$' | sort -u)" = "@rpath/libfushi_p2p.dylib"
           lipo -info "$dylib"
           otool -L "$dylib"
           bash ../native/fushi_p2p/verify_abi.sh "$dylib" nm
