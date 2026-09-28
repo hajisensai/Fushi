@@ -387,7 +387,7 @@ fi
 run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" -ss 0.100 -t 1.000 -i "$MP4_FIXTURE" \
   -map 0:v:0 -map 1:a:0 -vf "setpts=PTS,scale=w='trunc(min(960,iw)/2)*2':h=-2,fps=24,format=yuv420p" \
-  -c:v libvpx-vp9 -deadline good -cpu-used 5 -row-mt 1 -crf 34 -b:v 0 \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 34 -b:v 0 \
   -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-vp9.webm"
 assert_nonempty "$WORK/clip-vp9.webm"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-vp9.webm" -f null -
@@ -398,6 +398,38 @@ run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
   -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/clip-av1.webm"
 assert_nonempty "$WORK/clip-av1.webm"
 run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/clip-av1.webm" -f null -
+
+echo "[ffmpeg-min-smoke] verifying gal window recording clips (concat demuxer, WebM + MP4)"
+# galgame 窗口录像制卡：逐帧 JPEG 按真实时间戳排成 ffconcat 列表，`-f concat -safe 0`
+# 读入后编码。`-safe` 是 concat demuxer 的私有选项，缺 concat 时报 "Unrecognized
+# option 'safe'"。参数形态与 galgame_window_video.dart buildGalWindowVideoArgs 一致
+# （WebM 档 = synchronizedClipVideoArgs/AudioArgs + 960 宽上限；MP4 档逐字相同）。
+mkdir -p "$WORK/gal"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -y -i "$MP4_FIXTURE" \
+  -vf fps=4 -frames:v 4 -q:v 3 "$WORK/gal/frame_%05d.jpg"
+for i in 1 2 3 4; do assert_nonempty "$WORK/gal/frame_0000$i.jpg"; done
+{
+  echo "ffconcat version 1.0"
+  for i in 1 2 3 4; do
+    echo "file 'frame_0000$i.jpg'"
+    echo "duration 0.250"
+  done
+  echo "file 'frame_00004.jpg'"
+} > "$WORK/gal/frames.ffconcat"
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -f concat -safe 0 -i "$WORK/gal/frames.ffconcat" -i "$MP4_FIXTURE.aac" \
+  -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 -crf 34 -b:v 0 -pix_fmt yuv420p \
+  -vf "scale=w='trunc(min(960,iw)/2)*2':h=-2" \
+  -c:a libopus -b:a 96k -ac 2 -ar 48000 -f webm "$WORK/gal/clip.webm"
+assert_nonempty "$WORK/gal/clip.webm"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/gal/clip.webm" -f null -
+run "$FFMPEG_MIN" -hide_banner -loglevel error -y \
+  -f concat -safe 0 -i "$WORK/gal/frames.ffconcat" -i "$MP4_FIXTURE.aac" \
+  -c:v libx264 -preset veryfast -crf 26 -pix_fmt yuv420p \
+  -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" \
+  -c:a aac -b:a 128k -movflags +faststart "$WORK/gal/clip.mp4"
+assert_nonempty "$WORK/gal/clip.mp4"
+run "$FIXTURE_FFMPEG" -hide_banner -loglevel error -i "$WORK/gal/clip.mp4" -f null -
 
 echo "[ffmpeg-min-smoke] verifying mpegts muxer for interconnect HLS transcode segments (BUG-2630)"
 # 互联 host 按档转码：一段一个短命 ffmpeg，输入侧 -ss/-to 切段、libx264 + aac 编码、

@@ -276,7 +276,12 @@ cd "$SRC"
 # 被当成未知格式 → AVERROR_INVALIDDATA（exit -1094995529），制卡中止在
 # `required audio missing`（BUG-2642）。依赖的 mpegts/mov/aac/ac3/eac3/webvtt demuxer
 # 与 http/https/crypto（AES-128）协议上面已全开。
-DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls"
+# concat：galgame 窗口录像制卡（galgame_window_video.dart buildGalWindowVideoArgs）把
+# 录下的逐帧 JPEG 按真实时间戳排成 `ffconcat` 列表，`-f concat -safe 0 -i list` 喂给编码。
+# `-safe` 是 concat demuxer 的私有选项：缺 concat 时 ffmpeg 报 "Unrecognized option
+# 'safe'" 直接退出，gal 片段（WebM / MP4 两档）在正式版全挂、只能靠调用方降级成动图。
+# 列表里的每一帧再经上面的 image2（按扩展名）+ mjpeg 解码器读入。LGPL，体积增量近零。
+DEMUXERS="matroska,mov,mpegts,mpegps,mpegvideo,avi,flv,rm,asf,srt,ass,webvtt,aac,ac3,eac3,mp3,flac,wav,ogg,m4v,image2,image2pipe,hls,concat"
 # libdav1d（而不是原生 `av1`）：FFmpeg 自带的 `av1` 解码器**只是 hwaccel 挂钩壳**
 # （libavcodec/av1dec.c，allcodecs.c 里注明 "hwaccel hooks only, so prefer external
 # decoders"），本 build `--disable-everything` 后一个 hwaccel 都没有，于是任何 AV1 源
