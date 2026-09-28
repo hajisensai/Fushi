@@ -5760,5 +5760,10 @@
   "hoshi_import_result_stats": "统计：会话 $sessions 次、按天 $days 天 · 阅读位置 $positions 个",
   "hoshi_import_result_legacy_skipped": "跳过 $count 条记录：同一本书同一天的数据早先已经同步进来过",
   "hoshi_import_result_deleted_skipped": "有 $count 段统计未恢复：你曾在 Fushi 里删除过这些书的统计",
-  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）："
+  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）：",
+  "ai_video_acquire_remote_executor": "在 $device 上执行",
+  "ai_video_acquire_failure_remote_unavailable": "与执行设备的连接中断，请确认它在线后重试。",
+  "ai_video_acquire_remote_unsupported": "$device 不支持 AI 下视频，请更新那台设备上的 Fushi。",
+  "ai_video_acquire_remote_no_provider": "$device 还没有给「AI 下视频」指派 AI 提供商，请在那台设备的「设置 › AI」里指派。",
+  "ai_video_acquire_remote_not_ready": "$device 的下载还没配好（下载后端或受管视频来源）。"
 }

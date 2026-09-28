@@ -14,6 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_feature.dart';
 import 'package:fushi/src/ai/ai_provider_config.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
@@ -115,7 +116,7 @@ void main() {
     );
     for (int i = 0; i < 240; i++) {
       await tester.pump(const Duration(milliseconds: 500));
-      final VideoAcquisitionState state = page.service.state;
+      final VideoAcquisitionView state = page.service.view;
       if (state.question != null ||
           state.stage == VideoAcquisitionStage.idle && i > 4 ||
           state.stage == VideoAcquisitionStage.awaitingResourceConfirm) {
@@ -123,18 +124,18 @@ void main() {
       }
     }
     debugPrint(
-      '[ai-acquire-probe] stage=${page.service.state.stage.name} '
-      'question=${page.service.state.question?.slot.name} '
-      'transcript=${page.service.state.transcript.whereType<VideoAcquisitionAssistantMessage>().map((VideoAcquisitionAssistantMessage m) => m.say.kind.name).join(",")}',
+      '[ai-acquire-probe] stage=${page.service.view.stage.name} '
+      'question=${page.service.view.question?.slot.name} '
+      'transcript=${page.service.view.transcript.whereType<VideoAcquisitionAssistantMessage>().map((VideoAcquisitionAssistantMessage m) => m.say.kind.name).join(",")}',
     );
     await captureFlutterFrame(tester, '02-after-first-utterance');
 
     // 逐个问题用焦点驱动点第一个 chip（Tab 到 ActionChip → Enter），最多 6 轮。
     final FocusDriver driver = FocusDriver(tester);
     for (int round = 0; round < 6; round++) {
-      final VideoAcquisitionQuestion? question = page.service.state.question;
+      final VideoAcquisitionQuestion? question = page.service.view.question;
       if (question == null ||
-          page.service.state.stage ==
+          page.service.view.stage ==
               VideoAcquisitionStage.awaitingResourceConfirm) {
         break;
       }
@@ -156,7 +157,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       for (int i = 0; i < 120; i++) {
         await tester.pump(const Duration(milliseconds: 500));
-        final VideoAcquisitionState state = page.service.state;
+        final VideoAcquisitionView state = page.service.view;
         if (!state.busy &&
             (state.question != question ||
                 state.stage == VideoAcquisitionStage.awaitingResourceConfirm)) {
@@ -166,12 +167,11 @@ void main() {
       await captureFlutterFrame(
           tester, '0${3 + round}-after-${question.slot.name}');
     }
-    final VideoAcquisitionState finalState = page.service.state;
+    final VideoAcquisitionView finalState = page.service.view;
     debugPrint(
       '[ai-acquire-probe] final stage=${finalState.stage.name} '
       'question=${finalState.question?.slot.name} '
-      'plan=${finalState.plan?.picks.length} '
-      'eligible=${finalState.eligibleGroups.length} '
+      'eligible=${finalState.alternativeLabels.length} '
       'transcript=${finalState.transcript.whereType<VideoAcquisitionAssistantMessage>().map((VideoAcquisitionAssistantMessage m) => m.say.kind.name).join(",")}',
     );
     await captureFlutterFrame(tester, '09-final');

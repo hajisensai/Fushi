@@ -167,6 +167,7 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService;
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
@@ -638,6 +639,9 @@ class AppModel with ChangeNotifier {
     },
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
+    // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
+    assistantFactory: () => createAppAssistantHost(this),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,

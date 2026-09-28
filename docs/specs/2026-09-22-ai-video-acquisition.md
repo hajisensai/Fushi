@@ -80,4 +80,4 @@
 
 - **每系列记忆而非 job 级列**：零 schema；代价是「这次要英文」等价于「这部作品以后都用英文」，摘要里明说「已记为本作品偏好」。
 - **不移除 `AiFeature.videoSearch`**：后台补字幕重排仍用它；只删两个页面的「AI 排序 / 补词」按钮。
-- **不做**：互联 host 远端订阅走 AI 流程、`fushi_server` WebUI、tie-break 之外的 AI 排序。
+- **不做**：`fushi_server` WebUI、tie-break 之外的 AI 排序。（「互联 host 远端走 AI 流程」已在 2026-09-28 落地：手机经「下载执行设备」把整场对话交给电脑，见 `2026-09-28-remote-ai-assistant.md`。）

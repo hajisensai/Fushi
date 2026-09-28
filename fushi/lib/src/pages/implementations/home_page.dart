@@ -38,23 +38,25 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_subscription_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/app_assistant_host.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/media/torrent/magnet_utils.dart'
     show magnetUriFromInfoHash;
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/discovery/video_discovery_service.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
+import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
+import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
-import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_video_acquisition_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
-import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
-import 'package:fushi_engine/media/video/download/video_library_presence.dart';
 import 'package:fushi_engine/media/video/download/video_media_reference_codec.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi/src/media/drag_drop/drop_surface_scope.dart';
@@ -71,7 +73,6 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
-import 'package:fushi/src/ai/ai_video_franchise_assistant.dart';
 import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/ai/ai_video_identity_assistant.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
@@ -1574,12 +1575,8 @@ class _HomePageState extends BasePageState<HomePage>
       _videoRepo ??= VideoBookRepository(appModel.database);
 
   VideoDiscoveryController get _productionVideoDiscoveryController {
-    final String configuredTmdbKey = appModelNoUpdate.prefsRepo
-        .getPref(kVideoScraperTmdbApiKeyPref, defaultValue: '') as String;
-    final VideoSourceScrapeGlobalConfig config =
-        VideoSourceScrapeGlobalConfig.fromPreferences(
+    final VideoSourceScrapeGlobalConfig config = videoDiscoveryScrapeConfig(
       appModelNoUpdate.prefsRepo,
-      resolvedTmdbApiKey: resolveTmdbApiKey(configuredTmdbKey),
       uiLocaleTag: appModelNoUpdate.appLocale.toLanguageTag(),
     );
     final String fingerprint = config.runtimeFingerprint;
@@ -2060,6 +2057,30 @@ class _HomePageState extends BasePageState<HomePage>
   /// 能力按闭包注入，AI 提供商每次调用时现解析。
   Future<void> _openAiVideoAcquisition([String? initialQuery]) async {
     final BuildContext context = this.context;
+    // 「下载执行设备」指向已配对的电脑时，整场对话交给那台电脑：用它的 AI 指派、
+    // 资源搜索与下载管线（手机这边既不需要 AI 提供商也不需要下载后端）。点名的设备
+    // 连不上 / 不支持时如实报，不悄悄退回本机——与四个下载入口同一口径。
+    final DownloadExecutionResolution execution =
+        await resolveDownloadExecution(appModelNoUpdate);
+    if (!context.mounted) return;
+    switch (execution) {
+      case DownloadExecutionUnreachable():
+        _showVideoDiscoveryMessage(
+          context,
+          t.download_execution_host_unreachable,
+        );
+        return;
+      case DownloadExecutionRemote(:final HostDownloadTarget target):
+        await _openRemoteAiVideoAcquisition(
+          context,
+          target.baseUrl,
+          initialQuery,
+        );
+        return;
+      case DownloadExecutionLocal():
+        break;
+    }
+    if (!context.mounted) return;
     if (resolveVideoAcquireAiProvider(appModelNoUpdate.prefsRepo) == null) {
       _showVideoDiscoveryMessage(context, t.ai_assist_no_provider);
       await _pushAiSettings(context);
@@ -2079,129 +2100,14 @@ class _HomePageState extends BasePageState<HomePage>
     final List<MediaSourceRow> sources =
         await _managedVideoDownloadSourcesOrPrompt(context);
     if (!context.mounted || sources.isEmpty) return;
-    final PreferencesRepository prefs = appModelNoUpdate.prefsRepo;
-    final VideoDiscoveryController discovery =
-        _productionVideoDiscoveryController;
-    final VideoDiscoveryService? discoveryService = _videoDiscoveryService;
-    final int? defaultSourceId = prefs.videoDownloadTargetSourceId;
-    MediaSourceRow sourceById(int id) =>
-        sources.firstWhere((MediaSourceRow source) => source.id == id);
-    final VideoAcquisitionService service = VideoAcquisitionService(
-      defaults: VideoAcquisitionDefaults(
-        qualityPref: prefs.aiVideoDownloadQuality,
-        sourcePref:
-            VideoAcquisitionSourcePref.parse(prefs.aiVideoDownloadSource),
-        bitratePref:
-            VideoAcquisitionBitratePref.parse(prefs.aiVideoDownloadBitrate),
-        subtitleLanguagePref: prefs.aiVideoDownloadSubtitleLanguage,
-        sources: <VideoAcquisitionSource>[
-          for (final MediaSourceRow source in sources)
-            VideoAcquisitionSource(id: source.id, label: source.label),
-        ],
-        defaultSourceId: (defaultSourceId ?? 0) == 0 ? null : defaultSourceId,
-        locale: appModelNoUpdate.appLocale.toLanguageTag(),
-        skipExtras: prefs.videoDownloadSkipExtras,
-      ),
-      ports: VideoAcquisitionPorts(
-        searchWorks: discovery.load,
-        loadDetails: (VideoDiscoveryItem item) async =>
-            discoveryService?.loadDetails(item),
-        queryPresence: _resolveAiAcquisitionPresence,
-        isSubscribed: (VideoMediaReference reference) async =>
-            (await _matchingVideoDiscoverySubscriptions(reference))
-                .any((VideoDownloadSubscriptionRow row) => row.enabled),
-        searchResources: registry.search,
-        // 资料源（TMDB collection + MAL 关联）+ 联网资料补全（维基 → AI 列作品 →
-        // 逐部回资料源核对），见 ai_video_franchise_assistant.dart。
-        loadFranchise: createPreferencesVideoFranchiseLoader(
-          prefs,
-          base: (VideoDiscoveryItem item) async =>
-              discoveryService?.loadFranchise(item),
-          searchWorks: discovery.load,
-        ),
-        parseIntent: createPreferencesVideoAcquisitionIntentParser(prefs),
-        decideIdentity: createPreferencesVideoAcquisitionIdentityDecider(prefs),
-        persistPreference:
-            (VideoAcquisitionPreference preference, String value) =>
-                switch (preference) {
-          VideoAcquisitionPreference.quality =>
-            prefs.setAiVideoDownloadQuality(value),
-          VideoAcquisitionPreference.subtitleLanguage =>
-            prefs.setAiVideoDownloadSubtitleLanguage(value),
-        },
-        // 键与导入落库的合集名同源（videoDownloadSeriesKey），管线字幕阶段按同一把
-        // 钥匙读回来。
-        setSeriesSubtitleLanguage:
-            (VideoMediaReference reference, String code) =>
-                appModelNoUpdate.setJimakuPreferredLanguage(
-          videoDownloadSeriesKey(
-            title: reference.title,
-            year: reference.year,
-          ),
-          code,
-        ),
-        submitDownload: (VideoAcquisitionSubmitDownloadEffect effect) async {
-          final VideoDownloadBackendTarget target =
-              await appModelNoUpdate.currentVideoDownloadBackendTarget();
-          final MediaSourceRow source = sourceById(effect.targetSourceId);
-          // 串行入队、首条失败直接抛（后端 / 落地问题对整批成立）、后续失败只记数：
-          // 与资源搜索页的批量提交同一口径。
-          int queued = 0;
-          for (int i = 0; i < effect.plan.picks.length; i++) {
-            try {
-              await enqueueLocalVideoDownload(
-                pipeline: pipeline,
-                coverUrl: effect.item.posterUrl,
-                selection: VideoDiscoveryDownloadSelection(
-                  media: effect.item.reference,
-                  resource: effect.plan.picks[i],
-                  source: source,
-                  subtitlePolicy: effect.installSubtitles
-                      ? VideoDownloadSubtitlePolicy.bestEffort
-                      : VideoDownloadSubtitlePolicy.none,
-                ),
-                target: target,
-              );
-              queued++;
-            } on Object catch (error, stackTrace) {
-              if (i == 0) rethrow;
-              debugPrint(
-                '[ai-acquire] batch enqueue failed: $error\n$stackTrace',
-              );
-            }
-          }
-          return queued;
-        },
-        submitSubscription:
-            (VideoAcquisitionSubmitSubscriptionEffect effect) async {
-          final VideoDownloadBackendTarget target =
-              await appModelNoUpdate.currentVideoDownloadBackendTarget();
-          final StrictVideoSubscriptionFilter? filter = effect.plan.filter;
-          if (filter == null) {
-            throw StateError('subscription plan without a strict filter');
-          }
-          await createLocalVideoDownloadSubscription(
-            database: appModelNoUpdate.database,
-            reference: effect.item.reference,
-            coverUrl: effect.item.posterUrl,
-            selection: VideoDiscoverySubscriptionSelection(
-              download: VideoDiscoveryDownloadSelection(
-                media: effect.item.reference,
-                resource: effect.plan.picks.first,
-                source: sourceById(effect.targetSourceId),
-                subtitlePolicy: effect.installSubtitles
-                    ? VideoDownloadSubtitlePolicy.bestEffort
-                    : VideoDownloadSubtitlePolicy.none,
-              ),
-              filter: filter,
-              startAfterEpisode: effect.plan.startAfterEpisode,
-            ),
-            target: target,
-            checkNow: () async =>
-                appModelNoUpdate.videoDownloadSubscriptionService?.checkNow(),
-          );
-        },
-      ),
+    final VideoAcquisitionService service = createAppVideoAcquisitionService(
+      appModel: appModelNoUpdate,
+      searchWorks: _productionVideoDiscoveryController.load,
+      discoveryService: _videoDiscoveryService,
+      registry: registry,
+      pipeline: pipeline,
+      sources: sources,
+      locale: appModelNoUpdate.appLocale.toLanguageTag(),
     );
     try {
       await Navigator.of(context).push<void>(
@@ -2218,32 +2124,100 @@ class _HomePageState extends BasePageState<HomePage>
     }
   }
 
-  /// 「这部作品在不在库」：按 provider:mediaId 与全部跨源 id 逐对查
-  /// [resolveVideoLibraryPresence]（单身份语义），首个命中即返回；都不命中回第一次
-  /// 的空答案（非 null，让对话层知道「查过了、没有」）。
-  Future<VideoLibraryPresence?> _resolveAiAcquisitionPresence(
-    VideoMediaReference reference,
+  /// 电脑代办：在「下载执行设备」那台 host 上开一场 AI 下视频会话，手机只渲染。
+  /// host 开不了时按它给的短码说清楚缺什么（那台设备上没指派 AI / 下载没配好 /
+  /// 版本太老），而不是笼统的「失败」。
+  Future<void> _openRemoteAiVideoAcquisition(
+    BuildContext context,
+    String hostUrl,
+    String? initialQuery,
   ) async {
-    final List<(String, String)> identities = <(String, String)>[
-      (reference.providerId, reference.mediaId),
-      for (final MapEntry<String, String> entry
-          in reference.externalIds.entries)
-        (entry.key, entry.value),
-    ];
-    VideoLibraryPresence? first;
-    for (final (String provider, String externalId) in identities) {
-      final VideoLibraryPresence presence = await resolveVideoLibraryPresence(
-        appModelNoUpdate.database,
-        metadataProvider: provider,
-        externalId: externalId,
-        mediaKind: reference.mediaKind,
+    final InterconnectAssistantClient client = InterconnectAssistantClient(
+      repo: SyncRepository(appModelNoUpdate.database),
+    );
+    final HostAssistantTarget? target = await client.probeUrl(hostUrl);
+    if (!context.mounted) return;
+    if (target == null) {
+      _showVideoDiscoveryMessage(
+        context,
+        t.download_execution_host_unreachable,
       );
-      if (presence.inLibrary || presence.managedEpisodeKeys.isNotEmpty) {
-        return presence;
-      }
-      first ??= presence;
+      return;
     }
-    return first;
+    if (!target.supports(kHostAssistantFeatureVideoAcquire)) {
+      _showRemoteAiAcquisitionBlocked(
+        context,
+        target,
+        target.reason ?? kHostAssistantReasonUnsupported,
+      );
+      return;
+    }
+    final RemoteVideoAcquisitionSession session;
+    try {
+      session = await RemoteVideoAcquisitionSession.open(
+        client: client,
+        target: target,
+        locale: appModelNoUpdate.appLocale.toLanguageTag(),
+      );
+    } on HostAssistantException catch (error) {
+      if (!context.mounted) return;
+      if (error.code == 'http_409') {
+        _showRemoteAiAcquisitionBlocked(
+          context,
+          target,
+          error.detail ?? kAppAssistantReasonNotReady,
+        );
+      } else {
+        _showVideoDiscoveryMessage(
+          context,
+          t.download_execution_host_unreachable,
+        );
+      }
+      return;
+    } on Object {
+      if (context.mounted) {
+        _showVideoDiscoveryMessage(
+          context,
+          t.download_execution_host_unreachable,
+        );
+      }
+      return;
+    }
+    if (!context.mounted) {
+      session.dispose();
+      return;
+    }
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => AiVideoAcquisitionPage(
+            service: session,
+            initialQuery: initialQuery,
+            executorLabel: target.label,
+          ),
+        ),
+      );
+    } finally {
+      session.dispose();
+    }
+  }
+
+  /// host 开不了会话：按短码说清楚缺什么。
+  void _showRemoteAiAcquisitionBlocked(
+    BuildContext context,
+    HostAssistantTarget target,
+    String reason,
+  ) {
+    _showVideoDiscoveryMessage(
+      context,
+      switch (reason) {
+        kAppAssistantReasonNoProvider =>
+          t.ai_video_acquire_remote_no_provider(device: target.label),
+        kAppAssistantReasonNotReady =>
+          t.ai_video_acquire_remote_not_ready(device: target.label),
+        _ => t.ai_video_acquire_remote_unsupported(device: target.label),
+      },
+    );
   }
 
   Future<void> _openVideoDiscoverySubtitleSearch(
@@ -2528,42 +2502,18 @@ class _HomePageState extends BasePageState<HomePage>
   Future<List<VideoDownloadSubscriptionRow>>
       _matchingVideoDiscoverySubscriptions(
     VideoMediaReference reference,
-  ) async =>
-          (await appModelNoUpdate.database.getVideoDownloadSubscriptions())
-              .where(
-                (VideoDownloadSubscriptionRow row) => _discoveryIdentityMatches(
-                  reference,
-                  row.metadataProvider,
-                  row.externalId,
-                ),
-              )
-              .toList(growable: false);
+  ) =>
+          matchingVideoDiscoverySubscriptions(
+            appModelNoUpdate.database,
+            reference,
+          );
 
   bool _discoveryIdentityMatches(
     VideoMediaReference reference,
     String? provider,
     String? externalId,
-  ) {
-    final String normalizedProvider = provider?.trim().toLowerCase() ?? '';
-    final String normalizedId = externalId?.trim().toLowerCase() ?? '';
-    if (normalizedProvider.isEmpty || normalizedId.isEmpty) return false;
-    if (normalizedProvider == reference.providerId.trim().toLowerCase() &&
-        normalizedId == reference.mediaId.trim().toLowerCase()) {
-      return true;
-    }
-    return switch (normalizedProvider) {
-      'tmdb' => normalizedId == reference.tmdbId?.toString(),
-      'anilist' => normalizedId == reference.anilistId?.toString(),
-      'bangumi' => normalizedId == reference.bangumiId?.toString(),
-      'imdb' => normalizedId == reference.imdbId?.trim().toLowerCase(),
-      'tvdb' => normalizedId == reference.tvdbId?.toString(),
-      _ => reference.externalIds.entries.any(
-          (MapEntry<String, String> entry) =>
-              entry.key.trim().toLowerCase() == normalizedProvider &&
-              entry.value.trim().toLowerCase() == normalizedId,
-        ),
-    };
-  }
+  ) =>
+      videoDiscoveryIdentityMatches(reference, provider, externalId);
 
   /// 「这条发现条目在本地对应什么」的**单一**解析。
   ///

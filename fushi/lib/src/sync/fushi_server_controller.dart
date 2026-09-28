@@ -15,6 +15,7 @@ import 'package:fushi/src/sync/game_stream_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
@@ -79,6 +80,7 @@ class FushiSyncServerController extends ChangeNotifier {
     Future<HostJobManager> Function()? hostJobsFactory,
     HostDownloadHost Function()? downloadsFactory,
     HostSubscriptionHost Function()? subscriptionsFactory,
+    HostAssistantProvider Function()? assistantFactory,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   })  : _navigatorKey = navigatorKey,
@@ -92,6 +94,7 @@ class FushiSyncServerController extends ChangeNotifier {
         _hostJobsFactory = hostJobsFactory,
         _downloadsFactory = downloadsFactory,
         _subscriptionsFactory = subscriptionsFactory,
+        _assistantFactory = assistantFactory,
         _prefsStore = prefsStore,
         // Headless/test construction without an injected service falls back to
         // the desktop (machine-hostname) source; production wires the real
@@ -121,6 +124,9 @@ class FushiSyncServerController extends ChangeNotifier {
   final Future<HostJobManager> Function()? _hostJobsFactory;
   final HostDownloadHost Function()? _downloadsFactory;
   final HostSubscriptionHost Function()? _subscriptionsFactory;
+
+  /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
+  final HostAssistantProvider Function()? _assistantFactory;
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
   final PrefStore Function()? _prefsStore;
@@ -628,6 +634,7 @@ class FushiSyncServerController extends ChangeNotifier {
       hostJobs: hostJobs,
       downloads: _downloadsFactory?.call(),
       subscriptions: _subscriptionsFactory?.call(),
+      assistant: _assistantFactory?.call(),
       securityContext: securityContext,
       hostFingerprint: hostFingerprint,
       deviceName: deviceName,
