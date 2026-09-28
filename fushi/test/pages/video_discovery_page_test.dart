@@ -280,6 +280,76 @@ void main() {
     );
   });
 
+  testWidgets('BUG-2750 搜索默认按相关度，显式选的排序才覆盖，清空回落热度',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _FakeDiscoveryController controller = _FakeDiscoveryController(
+      (discovery.VideoDiscoveryRequest request) =>
+          Future<ProviderBatchResult<discovery.VideoDiscoveryPage>>.value(
+        _result(const <discovery.VideoDiscoveryItem>[]),
+      ),
+    );
+
+    await tester.pumpWidget(_harness(controller));
+    await tester.pumpAndSettle();
+    expect(
+      controller.requests.map((discovery.VideoDiscoveryRequest r) => r.sort),
+      everyElement(discovery.VideoDiscoverySort.popularity),
+      reason: '没有关键词时按热度浏览',
+    );
+
+    final Finder editable = find.descendant(
+      of: find.byKey(const ValueKey<String>('video-discovery-search')),
+      matching: find.byType(EditableText),
+    );
+    await tester.enterText(editable, 'Frieren');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(controller.requests.last.query, 'Frieren');
+    expect(
+      controller.requests.last.sort,
+      discovery.VideoDiscoverySort.relevance,
+      reason: '搜索按热度重排会把沾边的热门作品顶到精确命中前面',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-filter-sort')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.video_discovery_sort_rating).last);
+    await tester.pumpAndSettle();
+    expect(controller.requests.last.query, 'Frieren');
+    expect(
+      controller.requests.last.sort,
+      discovery.VideoDiscoverySort.rating,
+      reason: '用户显式选的排序必须原样下发',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-discovery-filter-sort')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.search).last);
+    await tester.pumpAndSettle();
+    expect(
+      controller.requests.last.sort,
+      discovery.VideoDiscoverySort.relevance,
+    );
+
+    await tester.enterText(editable, '');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(controller.requests.last.query, isEmpty);
+    expect(
+      controller.requests.last.sort,
+      discovery.VideoDiscoverySort.popularity,
+      reason: '相关度只对搜索有意义，清空关键词后回落热度',
+    );
+  });
+
   testWidgets('搜索框保留回车提交语义且不丢焦点', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1100, 900);
     tester.view.devicePixelRatio = 1;

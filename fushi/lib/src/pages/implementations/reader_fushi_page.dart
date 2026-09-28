@@ -4554,7 +4554,13 @@ $liveConfigJs
     final InAppWebViewController? controller = _controller;
     if (controller == null) return;
     try {
-      await controller.evaluateJavascript(source: js);
+      // BUG-2748：这是用户滚动（弹窗遮罩收下的滚轮 / 拖动转给正文），先让阅读器放弃
+      // 迟到图片锚与恢复锚——裸 scrollBy 不产生 DOM 输入事件，JS 侧的意图监听看不见。
+      await controller.evaluateJavascript(
+        source:
+            '(function(){var r=window.fushiReader;'
+            'if(r&&r.noteUserScroll)r.noteUserScroll();})();$js',
+      );
     } catch (e, s) {
       ErrorLogService.instance.log('ReaderFushi.scrollDismissForward', e, s);
     }
