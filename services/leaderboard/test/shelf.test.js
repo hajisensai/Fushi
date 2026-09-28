@@ -466,6 +466,10 @@ describe('并发、上传设备与边界（审查修复回归）', () => {
       expect([200, 409]).toContain(statuses[1]);
       const loser = [r1, r2].find((r) => r.status === 409);
       if (loser) expect(loser.data.error).toBe('conflict');
+      // 竞争刚结束就核对（之后的并发删除若同样漂移会把误差抵消掉，只在最后核对抓不住）。
+      const db0 = env.DB.raw;
+      expect(db0.prepare('SELECT readers FROM works').get().readers, `round ${round} readers after put race`).toBe(1);
+      expect(db0.prepare('SELECT shelf_count FROM accounts').get().shelf_count, `round ${round} shelf_count`).toBe(1);
       const w = env.DB.raw.prepare('SELECT id FROM works').get().id;
       const [x1, x2] = await Promise.all([delta(env, a, { remove: [w] }), delta(env, a, { remove: [w] })]);
       expect([x1.status, x2.status]).toContain(200);

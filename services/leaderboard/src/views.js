@@ -88,7 +88,7 @@ async function viewerRelations(env, viewerId) {
   if (!viewerId) return { blocked: new Set(), friends: new Set() };
   const blocks = await env.DB.prepare(
     `SELECT blocked_id AS id FROM blocks WHERE account_id = ?1
-     UNION SELECT account_id AS id FROM blocks WHERE blocked_id = ?1`,
+     UNION ALL SELECT account_id AS id FROM blocks WHERE blocked_id = ?1`, // 去重交给下面的 Set（UNION 会建临时 B 树）
   ).bind(viewerId).all();
   const friends = await env.DB.prepare(
     `SELECT CASE WHEN a = ?1 THEN b ELSE a END AS id FROM friends

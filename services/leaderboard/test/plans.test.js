@@ -38,7 +38,7 @@ function badPlanLines(db, sql, args) {
   }
   return plan
     .map((r) => r.detail)
-    .filter((d) => (/^SCAN /.test(d) && !/VIRTUAL TABLE|subquery|CO-ROUTINE|json_each/i.test(d)) || /TEMP B-TREE FOR ORDER BY/.test(d));
+    .filter((d) => (/^SCAN /.test(d) && !/VIRTUAL TABLE|subquery|CO-ROUTINE|json_each/i.test(d)) || /TEMP B-TREE/.test(d)); // 含 'FOR RIGHT PART OF / LAST TERM OF ORDER BY' 等变体
 }
 
 describe('查询计划：读接口不全表扫描', () => {
