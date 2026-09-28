@@ -30,9 +30,16 @@ class AnkiSyncMeta {
 
 /// [FushiAnkiSyncClient.findNotes] 的一条命中。
 class AnkiSyncNoteHit {
-  const AnkiSyncNoteHit({required this.noteId, required this.preview});
+  const AnkiSyncNoteHit({
+    required this.noteId,
+    required this.preview,
+    this.guid = '',
+  });
 
   final int noteId;
+
+  /// 笔记的 guid（跨同步不变）。
+  final String guid;
 
   /// 去 HTML 后的第一字段。
   final String preview;
@@ -54,6 +61,7 @@ class AnkiSyncResult {
     this.fullDownload = false,
     this.newEndpoint,
     this.serverMessage,
+    this.mediaError,
   });
 
   final AnkiSyncStatus status;
@@ -64,6 +72,9 @@ class AnkiSyncResult {
   /// 服务器通知换地址（308），调用方应持久化。
   final String? newEndpoint;
   final String? serverMessage;
+
+  /// 牌组集合已同步好，但媒体同步失败（下次同步再补）。集合同步的结果照常有效。
+  final String? mediaError;
 }
 
 /// Anki 官方 rslib 的子进程封装（`native/fushi_anki_sync`）：加卡、同步到用户自建的
@@ -97,8 +108,10 @@ class FushiAnkiSyncClient {
       stdin: p.stdin,
       stdout: p.stdout,
       exitCode: p.exitCode,
-    );
+    ).._process = p;
   }
+
+  Process? _process;
 
   final IOSink _stdin;
   late final StreamSubscription<String> _lines;
@@ -185,12 +198,16 @@ class FushiAnkiSyncClient {
       for (final Object? n in r['notes'] as List)
         AnkiSyncNoteHit(
           noteId: ((n as Map)['note_id'] as num).toInt(),
+          guid: n['guid']?.toString() ?? '',
           preview: n['preview']?.toString() ?? '',
         ),
     ];
   }
 
-  /// [notes]（note id, 首字段）里此刻确实在本地库、且首字段（去 HTML 后）对得上的 id。
+  /// [notes]（note id, guid）里此刻确实在本地库、且 guid 对得上的 id。
+  ///
+  /// 按 guid 而不是字段内容核对：rslib 写库时会规范化字段（去控制字符、NFC），内容
+  /// 比较会把确实在库里的卡认成不在。
   Future<Set<int>> existingNotes(List<(int, String)> notes) async {
     if (notes.isEmpty) return <int>{};
     final Map<Object?, Object?> r =
@@ -206,28 +223,29 @@ class FushiAnkiSyncClient {
     };
   }
 
-  /// 加一张卡，返回 note id。[media] 为（期望文件名, 本地源路径）。
-  Future<int> addNote({
+  /// 加一张卡，返回（note id, guid）。[media] 为（期望文件名, 本地源路径）。
+  Future<(int, String)> addNote({
     required String notetype,
     required String deck,
     required List<String> fields,
     List<String> tags = const <String>[],
     List<(String, String)> media = const <(String, String)>[],
-  }) async =>
-      ((await _call(<String, Object?>{
-                    'cmd': 'add_note',
-                    'notetype': notetype,
-                    'deck': deck,
-                    'fields': fields,
-                    'tags': tags,
-                    'media': <List<String>>[
-                      for (final (String name, String path) in media)
-                        <String>[name, path],
-                    ],
-                  })
-                  as Map)['note_id']
-              as num)
-          .toInt();
+  }) async {
+    final Map<Object?, Object?> r =
+        await _call(<String, Object?>{
+              'cmd': 'add_note',
+              'notetype': notetype,
+              'deck': deck,
+              'fields': fields,
+              'tags': tags,
+              'media': <List<String>>[
+                for (final (String name, String path) in media)
+                  <String>[name, path],
+              ],
+            })
+            as Map;
+    return ((r['note_id']! as num).toInt(), r['guid']?.toString() ?? '');
+  }
 
   Future<AnkiSyncResult> sync({required String hkey, String? endpoint}) async {
     final Map<Object?, Object?> r =
@@ -245,6 +263,7 @@ class FushiAnkiSyncClient {
       fullDownload: r['full_download'] == true,
       newEndpoint: r['new_endpoint'] as String?,
       serverMessage: r['server_message'] as String?,
+      mediaError: r['media_error'] as String?,
     );
   }
 
@@ -256,14 +275,25 @@ class FushiAnkiSyncClient {
         'endpoint': endpoint,
       });
 
-  /// 关库、关闭 helper 的 stdin（helper 读到 EOF 后自行退出）。
+  /// 结束 helper。空闲时发 `close` 让它关库、读到 EOF 自行退出；有请求在飞（同步 /
+  /// 整库下载可能要很久）时直接结束进程——不排在它们后面。杀进程不会损坏数据：
+  /// 整库下载是先下到临时文件再原子替换，加卡在 SQLite 事务里。
   Future<void> dispose() async {
-    try {
-      await close();
-    } catch (_) {
-      // 没开库 / helper 已经退出：没有东西要关，照样往下关管道。
+    if (_pending.isNotEmpty) {
+      _process?.kill();
+      _failAll('fushi-anki-sync disposed');
+    } else {
+      try {
+        await close();
+      } catch (_) {
+        // 没开库 / helper 已经退出：没有东西要关，照样往下关管道。
+      }
     }
-    await _stdin.close();
+    try {
+      await _stdin.close();
+    } catch (_) {
+      // 进程已经没了，管道早断了。
+    }
     await _lines.cancel();
     _failAll('fushi-anki-sync disposed');
   }
@@ -277,8 +307,14 @@ class FushiAnkiSyncClient {
       }
       final int id = _nextId++;
       _pending[id] = done;
-      _stdin.writeln(jsonEncode(<String, Object?>{'id': id, ...request}));
-      await _stdin.flush();
+      try {
+        _stdin.writeln(jsonEncode(<String, Object?>{'id': id, ...request}));
+        await _stdin.flush();
+      } catch (e) {
+        // helper 刚退出、退出事件还没到：管道已断。整条队列都要失败，不能卡死。
+        _failAll('fushi-anki-sync exited ($e)');
+        return;
+      }
       try {
         await done.future;
       } catch (_) {

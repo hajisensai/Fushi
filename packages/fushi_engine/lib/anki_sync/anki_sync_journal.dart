@@ -70,6 +70,7 @@ class AnkiSyncJournalEntry {
     required this.createdAt,
     required this.note,
     this.noteId,
+    this.guid,
     this.lastError,
   });
 
@@ -81,6 +82,7 @@ class AnkiSyncJournalEntry {
           (json['note']! as Map).cast<String, Object?>(),
         ),
         noteId: (json['noteId'] as num?)?.toInt(),
+        guid: json['guid'] as String?,
         lastError: json['lastError'] as String?,
       );
 
@@ -92,6 +94,10 @@ class AnkiSyncJournalEntry {
   /// 是否在库里每次都向 helper 核对（`existing_notes`）；null = 还没写进去。
   final int? noteId;
 
+  /// 那张笔记的 guid（跨同步不变）。核对「还在不在」按 (note id, guid)：
+  /// 字段内容会被 rslib 规范化，不能拿来比。
+  final String? guid;
+
   /// 最近一次写进本地库失败的原因（下次打开 / 同步时再试）。
   final String? lastError;
 
@@ -102,6 +108,7 @@ class AnkiSyncJournalEntry {
     'createdAt': createdAt,
     'note': note.toJson(),
     if (noteId != null) 'noteId': noteId,
+    if (guid != null) 'guid': guid,
     if (lastError != null) 'lastError': lastError,
   };
 }
@@ -149,17 +156,19 @@ class AnkiSyncJournal {
     return entry;
   });
 
-  /// 写进了本地库，note id 为 [noteId]。
-  Future<void> markAdded(AnkiSyncJournalEntry entry, int noteId) => _locked(
-    () => _write(
-      AnkiSyncJournalEntry(
-        id: entry.id,
-        createdAt: entry.createdAt,
-        note: entry.note,
-        noteId: noteId,
-      ),
-    ),
-  );
+  /// 写进了本地库（或查到库里已有同词卡），笔记为 [noteId] / [guid]。
+  Future<void> markAdded(AnkiSyncJournalEntry entry, int noteId, String guid) =>
+      _locked(
+        () => _write(
+          AnkiSyncJournalEntry(
+            id: entry.id,
+            createdAt: entry.createdAt,
+            note: entry.note,
+            noteId: noteId,
+            guid: guid,
+          ),
+        ),
+      );
 
   /// 写进本地库失败：记下原因，条目留着下次再试。
   Future<void> markFailed(AnkiSyncJournalEntry entry, String error) => _locked(
@@ -169,6 +178,7 @@ class AnkiSyncJournal {
         createdAt: entry.createdAt,
         note: entry.note,
         noteId: entry.noteId,
+        guid: entry.guid,
         lastError: error,
       ),
     ),

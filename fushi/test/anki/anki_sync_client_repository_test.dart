@@ -15,8 +15,8 @@ class _FakeHelper implements FushiAnkiSyncClient {
 
   @override
   Future<Set<int>> existingNotes(List<(int, String)> notes) async => <int>{
-    for (final (int id, String first) in notes)
-      if (id >= 1 && id <= local.length && local[id - 1].first == first) id,
+    for (final (int id, String guid) in notes)
+      if (id >= 1 && id <= local.length && guid == 'g$id') id,
   };
 
   final List<List<String>> local = <List<String>>[];
@@ -72,7 +72,7 @@ class _FakeHelper implements FushiAnkiSyncClient {
   ];
 
   @override
-  Future<int> addNote({
+  Future<(int, String)> addNote({
     required String notetype,
     required String deck,
     required List<String> fields,
@@ -87,7 +87,7 @@ class _FakeHelper implements FushiAnkiSyncClient {
       media: media,
     ));
     local.add(fields);
-    return local.length;
+    return (local.length, 'g${local.length}');
   }
 
   @override

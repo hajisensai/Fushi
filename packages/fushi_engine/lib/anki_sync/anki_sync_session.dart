@@ -313,9 +313,9 @@ class AnkiSyncSession {
   /// 同步 / 下载进行中只写日志、返回 null（卡没丢，同步结束时补进本地库）。
   /// 写本地库失败时回滚日志条目并抛出——调用方告诉用户「没制成」，日志里也就没有它。
   Future<int?> addNote(AnkiSyncNote note) async {
-    if (_changingAccount || await account() == null) {
-      throw const AnkiSyncNotSignedIn();
-    }
+    final bool signedIn = await account() != null;
+    // 在 await 之后同步地判断：换账号可能恰好在上面那次 await 期间开始。
+    if (_changingAccount || !signedIn) throw const AnkiSyncNotSignedIn();
     if (_long) {
       await (await _journal()).append(note);
       await refresh();
@@ -327,14 +327,15 @@ class AnkiSyncSession {
       final FushiAnkiSyncClient client = await _ensureOpen();
       final AnkiSyncJournal journal = await _journal();
       final AnkiSyncJournalEntry entry = await journal.append(note);
-      final int noteId;
+      final (int, String) added;
       try {
-        noteId = await _guard(_add(client, entry.note));
+        added = await _guard(_add(client, entry.note));
       } catch (_) {
         await journal.remove(<String>[entry.id]);
         rethrow;
       }
-      await journal.markAdded(entry, noteId);
+      final (int noteId, String guid) = added;
+      await journal.markAdded(entry, noteId, guid);
       await _publish(_idleOr());
       return noteId;
     });
@@ -368,27 +369,33 @@ class AnkiSyncSession {
     try {
       final FushiAnkiSyncClient client = await _ensureOpen();
       String? serverMessage;
+
       for (int round = 0; round < 2; round++) {
         await _reconcile(client, write: true);
         final AnkiSyncResult r = await _guard(
           client.sync(hkey: acct!.hkey, endpoint: acct.endpoint),
         );
         acct = await _adoptEndpoint(acct, r);
-        serverMessage = r.serverMessage;
+        // 牌组集合同步好了；媒体失败只作提示，下次同步再补。
+        serverMessage = r.mediaError ?? r.serverMessage;
         if (r.status == AnkiSyncStatus.fullSyncBlocked) {
           _long = false;
           await _publish(AnkiSyncPhase.blocked, message: r.serverMessage);
           return _state;
         }
         // 同步成功：此刻本地库里的一切都在服务器上。
-        final Set<String> confirmed = await _reconcile(client, write: false);
+        final Set<String> confirmed = (await _reconcile(
+          client,
+          write: false,
+        )).present;
         await (await _journal()).remove(confirmed);
         _lastSyncAt = _clock();
         // 整库下载冲掉的卡：下一轮写回去再推。
         if (!r.fullDownload) break;
       }
       // 同步期间只进了日志的卡：补进本地库，下一轮推上去。
-      if (await _reconcileAdded(client) > 0) scheduleSync();
+      final int written = (await _reconcile(client, write: true)).added;
+      if (written > 0) scheduleSync();
       _long = false;
       await _publish(AnkiSyncPhase.idle, message: serverMessage);
       return _state;
@@ -473,11 +480,13 @@ class AnkiSyncSession {
     return client;
   }
 
-  /// 核对日志与本地库：返回「note id 此刻确实在本地库里」的条目 id。
+  /// 核对日志与本地库：[present] 是「note id + guid 此刻确实在本地库里」的条目 id，
+  /// [added] 是这次新写进本地库的条数。
   ///
-  /// [write] 为 true 时把不在的写进去（查重兜底：同词卡已经在库里就只记 id；用户明确要
-  /// 重复卡的不查）。单条失败只标这一条；helper 死了才整体中断。
-  Future<Set<String>> _reconcile(
+  /// [write] 为 true 时把不在的写进去。没有 note id 的（撞上同步只进了日志、写日志后
+  /// 进程被杀）先查重：同词卡已经在库里就只记 id；用户明确要重复卡的不查。有 note id
+  /// 却不在的（整库下载冲掉了）直接重写。单条失败只标这一条；helper 死了才整体中断。
+  Future<({Set<String> present, int added})> _reconcile(
     FushiAnkiSyncClient client, {
     required bool write,
   }) async {
@@ -486,10 +495,11 @@ class AnkiSyncSession {
     final Set<int> existing = await _guard(
       client.existingNotes(<(int, String)>[
         for (final AnkiSyncJournalEntry e in entries)
-          if (e.noteId != null) (e.noteId!, e.firstField),
+          if (e.noteId != null && e.guid != null) (e.noteId!, e.guid!),
       ]),
     );
     final Set<String> present = <String>{};
+    int added = 0;
     for (final AnkiSyncJournalEntry e in entries) {
       if (e.noteId != null && existing.contains(e.noteId)) {
         present.add(e.id);
@@ -497,7 +507,7 @@ class AnkiSyncSession {
       }
       if (!write) continue;
       try {
-        if (!e.note.allowDuplicate) {
+        if (e.noteId == null && !e.note.allowDuplicate) {
           final List<AnkiSyncNoteHit> hits = await _guard(
             client.findNotes(
               notetype: e.note.notetype,
@@ -505,35 +515,24 @@ class AnkiSyncSession {
             ),
           );
           if (hits.isNotEmpty) {
-            await journal.markAdded(e, hits.first.noteId);
+            await journal.markAdded(e, hits.first.noteId, hits.first.guid);
             present.add(e.id);
             continue;
           }
         }
-        await journal.markAdded(e, await _guard(_add(client, e.note)));
+        final (int noteId, String guid) = await _guard(_add(client, e.note));
+        await journal.markAdded(e, noteId, guid);
         present.add(e.id);
+        added++;
       } catch (err) {
         if (client.isDead) rethrow;
         await journal.markFailed(e, '$err');
       }
     }
-    return present;
+    return (present: present, added: added);
   }
 
-  /// [_reconcile] 写入模式，返回这次新写进本地库的条数。
-  Future<int> _reconcileAdded(FushiAnkiSyncClient client) async {
-    final AnkiSyncJournal journal = await _journal();
-    final int before = (await journal.entries())
-        .where((AnkiSyncJournalEntry e) => e.noteId != null)
-        .length;
-    await _reconcile(client, write: true);
-    final int after = (await journal.entries())
-        .where((AnkiSyncJournalEntry e) => e.noteId != null)
-        .length;
-    return after - before;
-  }
-
-  Future<int> _add(FushiAnkiSyncClient client, AnkiSyncNote note) =>
+  Future<(int, String)> _add(FushiAnkiSyncClient client, AnkiSyncNote note) =>
       client.addNote(
         notetype: note.notetype,
         deck: note.deck,

@@ -75,8 +75,8 @@ class _FakeHelper implements FushiAnkiSyncClient {
 
   @override
   Future<Set<int>> existingNotes(List<(int, String)> notes) async => <int>{
-    for (final (int id, String first) in notes)
-      if (local[id] == first) id,
+    for (final (int id, String guid) in notes)
+      if (local.containsKey(id) && guid == 'g$id') id,
   };
 
   @override
@@ -85,7 +85,8 @@ class _FakeHelper implements FushiAnkiSyncClient {
     required String firstField,
   }) async => <AnkiSyncNoteHit>[
     for (final MapEntry<int, String> e in local.entries)
-      if (e.value == firstField) AnkiSyncNoteHit(noteId: e.key, preview: ''),
+      if (e.value == firstField)
+        AnkiSyncNoteHit(noteId: e.key, guid: 'g${e.key}', preview: ''),
   ];
 
   @override
@@ -95,7 +96,7 @@ class _FakeHelper implements FushiAnkiSyncClient {
   }) async => local.containsValue(firstField);
 
   @override
-  Future<int> addNote({
+  Future<(int, String)> addNote({
     required String notetype,
     required String deck,
     required List<String> fields,
@@ -113,7 +114,7 @@ class _FakeHelper implements FushiAnkiSyncClient {
     }
     final int id = _nextId++;
     local[id] = fields.first;
-    return id;
+    return (id, 'g$id');
   }
 
   @override
@@ -135,6 +136,12 @@ class _FakeHelper implements FushiAnkiSyncClient {
         return const AnkiSyncResult(
           status: AnkiSyncStatus.ok,
           fullDownload: true,
+        );
+      case 'mediaFail':
+        server.notes.addAll(local);
+        return const AnkiSyncResult(
+          status: AnkiSyncStatus.ok,
+          mediaError: 'media sync failed',
         );
       case 'fullDownloadThenFail':
         // helper 已经换掉本地库，之后媒体同步失败：Dart 只看到一个错误。
@@ -272,6 +279,19 @@ void main() {
     expect(await unsynced(), 1);
 
     await session.syncNow();
+    expect(onServer('猫'), 1);
+    expect(await unsynced(), 0);
+  });
+
+  // 复审 3 重要 2：集合同步好了、媒体失败——卡已在服务器上，必须照常出日志，
+  // 否则之后在别的设备删掉 / 改掉这张卡，Fushi 会把它复活。
+  test('媒体同步失败但集合已同步：卡照常出日志，失败原因进状态', () async {
+    await session.signIn(username: 'u', password: 'pw');
+    await session.addNote(_note('猫'));
+    server.nextSync = 'mediaFail';
+    final AnkiSyncState s = await session.syncNow();
+    expect(s.phase, AnkiSyncPhase.idle);
+    expect(s.message, contains('media'));
     expect(onServer('猫'), 1);
     expect(await unsynced(), 0);
   });

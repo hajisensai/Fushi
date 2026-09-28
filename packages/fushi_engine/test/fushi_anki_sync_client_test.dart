@@ -50,6 +50,7 @@ void main() {
         'open' => _ok(<String, Object?>{'created': true}),
         'add_note' => _ok(<String, Object?>{
           'note_id': 1700000000000,
+          'guid': 'G',
           'media': <String>[],
         }),
         _ => _ok(<String, Object?>{}),
@@ -70,7 +71,7 @@ void main() {
         tags: <String>['fushi'],
         media: <(String, String)>[('a.jpg', '/tmp/a.jpg')],
       ),
-      1700000000000,
+      (1700000000000, 'G'),
     );
 
     expect(h.requests.map((Map<String, Object?> r) => r['id']), <int>[0, 1, 2]);
@@ -137,6 +138,26 @@ void main() {
     await expectLater(c.version(), throwsA(isA<FushiAnkiSyncException>()));
   });
 
+  // 复审 3 重要 3：同步 / 整库下载可能跑很久，关闭不能排在它后面。
+  test('有请求在飞时 dispose：立刻返回，在途请求失败', () async {
+    final _FakeHelper h = _FakeHelper((_) => null); // 永远不回
+    final FushiAnkiSyncClient c = h.client();
+    final Future<AnkiSyncResult> inFlight = c.sync(hkey: 'h');
+    final Future<void> fails = expectLater(
+      inFlight,
+      throwsA(isA<FushiAnkiSyncException>()),
+    );
+    await Future<void>.delayed(Duration.zero);
+    await c.dispose().timeout(const Duration(seconds: 2));
+    await fails;
+    expect(c.isDead, isTrue);
+    expect(
+      h.requests.map((Map<String, Object?> r) => r['cmd']),
+      isNot(contains('close')),
+      reason: '不发排在同步后面的 close',
+    );
+  });
+
   // 真实二进制：设 FUSHI_ANKI_SYNC_BIN 指向 native/fushi_anki_sync 的构建产物才跑。
   final String? bin = Platform.environment['FUSHI_ANKI_SYNC_BIN'];
   test(
@@ -174,12 +195,12 @@ void main() {
       final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
       try {
         await c.open('${tmp.path}/collection.anki2');
-        final int a = await c.addNote(
+        final (int a, String ga) = await c.addNote(
           notetype: 'Basic',
           deck: 'Mining',
           fields: <String>['<b>猫_*</b>', 'x'],
         );
-        final int b = await c.addNote(
+        final (int b, String gb) = await c.addNote(
           notetype: 'Basic',
           deck: 'Mining',
           fields: <String>['猫_*', 'y'],
@@ -190,13 +211,17 @@ void main() {
           deck: 'Mining',
           fields: <String>['猫又', 'z'],
         );
+        expect(ga, isNotEmpty);
+        expect(ga, isNot(gb));
 
         final List<AnkiSyncNoteHit> hits = await c.findNotes(
           notetype: 'Basic',
           firstField: '猫_*',
         );
-        expect(hits.map((AnkiSyncNoteHit h) => h.noteId), <int>[b, a],
-            reason: '两张都命中，新卡在前');
+        expect(hits.map((AnkiSyncNoteHit h) => h.noteId), <int>[
+          b,
+          a,
+        ], reason: '两张都命中，新卡在前');
         expect(hits.first.preview, '猫_*');
         expect(
           await c.findNotes(notetype: 'Basic', firstField: '猫'),
@@ -207,25 +232,43 @@ void main() {
           await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'),
           isTrue,
         );
-        // existing_notes：id 在库里且首字段（去 HTML 后）对得上才算。
+        // existing_notes：id 在库里且 guid 对得上才算。
         expect(
           await c.existingNotes(<(int, String)>[
-            (a, '猫_*'),
-            (b, '别的词'),
-            (1, '猫_*'),
+            (a, ga),
+            (b, 'not-its-guid'),
+            (1, ga),
           ]),
           <int>{a},
         );
+        // 复审 3 重要 1：rslib 写库时规范化字段（删 \r 等控制字符、NFC）。按内容核对
+        // 会把这张确实在库里的卡永远认成不在；按 guid 不受影响。
+        final (int crlf, String gCrlf) = await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['行一\r\n行二', 'x'],
+        );
+        final (int nfd, String gNfd) = await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['Tie\u0302\u0301ng Vie\u0323\u0302t', 'x'],
+        );
+        expect(
+          await c.existingNotes(<(int, String)>[(crlf, gCrlf), (nfd, gNfd)]),
+          <int>{crlf, nfd},
+        );
         // HTML 把词切开：原始字段里不连续包含「食べる」，按去 HTML 后比较才命中
         // （与 is_duplicate 同口径；旧的字段子串筛选会漏）。
-        final int eat = await c.addNote(
+        final (int eat, String _) = await c.addNote(
           notetype: 'Basic',
           deck: 'Mining',
           fields: <String>['<b>食</b>べる', 'x'],
         );
         expect(
-          (await c.findNotes(notetype: 'Basic', firstField: '食べる'))
-              .map((AnkiSyncNoteHit h) => h.noteId),
+          (await c.findNotes(
+            notetype: 'Basic',
+            firstField: '食べる',
+          )).map((AnkiSyncNoteHit h) => h.noteId),
           <int>[eat],
         );
         expect(

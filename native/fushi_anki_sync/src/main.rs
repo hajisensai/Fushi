@@ -50,7 +50,7 @@ enum Cmd {
         notetype: String,
         first_field: String,
     },
-    /// Which of these (note id, first field) pairs are in the open collection right now.
+    /// Which of these (note id, guid) pairs are in the open collection right now.
     ExistingNotes {
         notes: Vec<(i64, String)>,
     },
@@ -185,24 +185,24 @@ fn find_notes(c: &mut Collection, notetype: &str, first: &str) -> Result<Value> 
             continue;
         };
         let preview = strip_html_preserving_media_filenames(&note.fields()[0]).into_owned();
-        notes.push(json!({"note_id": nid.0, "preview": preview}));
+        notes.push(json!({"note_id": nid.0, "guid": note.guid, "preview": preview}));
     }
     Ok(json!({ "notes": notes }))
 }
 
-/// Note ids from `notes` that exist in this collection **and** still carry the given
-/// first field (HTML stripped, media names kept). The caller's journal keeps a card
-/// until its id is confirmed here after a successful sync; the first-field check
-/// guards against an unrelated note that happens to reuse the id after a full download.
+/// Note ids from `notes` (id, guid) that exist in this collection with that guid.
+/// The caller's journal keeps a card until it is confirmed here right after a
+/// successful sync. id + guid survive syncs unchanged, and unlike field text they are
+/// not rewritten by rslib's field normalisation (control chars, NFC), so a card that
+/// is in the collection is always recognised; an unrelated note that happens to reuse
+/// the id after a full download has a different guid.
 fn existing_notes(c: &mut Collection, notes: &[(i64, String)]) -> Result<Value> {
     let mut existing = vec![];
-    for (id, first) in notes {
-        let Some(note) = c.storage.get_note(NoteId(*id))? else {
-            continue;
-        };
-        let head = strip_html_preserving_media_filenames(&note.fields()[0]);
-        if head == strip_html_preserving_media_filenames(first) {
-            existing.push(*id);
+    for (id, guid) in notes {
+        if let Some(note) = c.storage.get_note_without_fields(NoteId(*id))? {
+            if &note.guid == guid {
+                existing.push(*id);
+            }
         }
     }
     Ok(json!({ "existing": existing }))
@@ -228,7 +228,7 @@ fn add_note(
     note.tags = tags.to_vec();
     let did = c.get_or_create_normal_deck(deck)?.id;
     c.add_note(&mut note, did)?;
-    Ok(json!({"note_id": note.id.0, "media": names}))
+    Ok(json!({"note_id": note.id.0, "guid": note.guid, "media": names}))
 }
 
 fn sync(st: &mut State, a: SyncAuth) -> Result<Value> {
@@ -255,12 +255,20 @@ fn sync(st: &mut State, a: SyncAuth) -> Result<Value> {
     let c = st.col.as_mut().or_invalid("collection not open")?;
     let mgr = c.media()?;
     let progress = c.new_progress_handler::<MediaSyncProgress>();
-    st.rt.block_on(mgr.sync_media(progress, a, http, None))?;
+    // The collection is in sync at this point. A media failure must not hide that
+    // (the caller confirms its journal against the collection right now), so it is
+    // reported alongside a successful result instead of failing the whole command.
+    let media_error = st
+        .rt
+        .block_on(mgr.sync_media(progress, a, http, None))
+        .err()
+        .map(|e| e.to_string());
     Ok(json!({
         "status": "ok",
         "full_download": full_download,
         "new_endpoint": out.new_endpoint,
         "server_message": out.server_message,
+        "media_error": media_error,
     }))
 }
 
