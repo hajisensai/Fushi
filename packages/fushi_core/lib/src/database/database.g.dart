@@ -12880,6 +12880,51 @@ class $FavoriteWordsTable extends FavoriteWords
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sentenceMeta = const VerificationMeta(
+    'sentence',
+  );
+  @override
+  late final GeneratedColumn<String> sentence = GeneratedColumn<String>(
+    'sentence',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _sectionIndexMeta = const VerificationMeta(
+    'sectionIndex',
+  );
+  @override
+  late final GeneratedColumn<int> sectionIndex = GeneratedColumn<int>(
+    'section_index',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharOffsetMeta = const VerificationMeta(
+    'normCharOffset',
+  );
+  @override
+  late final GeneratedColumn<int> normCharOffset = GeneratedColumn<int>(
+    'norm_char_offset',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _normCharLengthMeta = const VerificationMeta(
+    'normCharLength',
+  );
+  @override
+  late final GeneratedColumn<int> normCharLength = GeneratedColumn<int>(
+    'norm_char_length',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -12891,6 +12936,10 @@ class $FavoriteWordsTable extends FavoriteWords
     title,
     dateKey,
     createdAt,
+    sentence,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -12963,6 +13012,39 @@ class $FavoriteWordsTable extends FavoriteWords
     } else if (isInserting) {
       context.missing(_createdAtMeta);
     }
+    if (data.containsKey('sentence')) {
+      context.handle(
+        _sentenceMeta,
+        sentence.isAcceptableOrUnknown(data['sentence']!, _sentenceMeta),
+      );
+    }
+    if (data.containsKey('section_index')) {
+      context.handle(
+        _sectionIndexMeta,
+        sectionIndex.isAcceptableOrUnknown(
+          data['section_index']!,
+          _sectionIndexMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_offset')) {
+      context.handle(
+        _normCharOffsetMeta,
+        normCharOffset.isAcceptableOrUnknown(
+          data['norm_char_offset']!,
+          _normCharOffsetMeta,
+        ),
+      );
+    }
+    if (data.containsKey('norm_char_length')) {
+      context.handle(
+        _normCharLengthMeta,
+        normCharLength.isAcceptableOrUnknown(
+          data['norm_char_length']!,
+          _normCharLengthMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -13012,6 +13094,22 @@ class $FavoriteWordsTable extends FavoriteWords
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
       )!,
+      sentence: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sentence'],
+      )!,
+      sectionIndex: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}section_index'],
+      ),
+      normCharOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_offset'],
+      ),
+      normCharLength: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}norm_char_length'],
+      ),
     );
   }
 
@@ -13031,6 +13129,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
   final String title;
   final String dateKey;
   final int createdAt;
+  final String sentence;
+  final int? sectionIndex;
+  final int? normCharOffset;
+  final int? normCharLength;
   const FavoriteWordRow({
     required this.id,
     required this.expression,
@@ -13041,6 +13143,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     required this.title,
     required this.dateKey,
     required this.createdAt,
+    required this.sentence,
+    this.sectionIndex,
+    this.normCharOffset,
+    this.normCharLength,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -13056,6 +13162,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     map['title'] = Variable<String>(title);
     map['date_key'] = Variable<String>(dateKey);
     map['created_at'] = Variable<int>(createdAt);
+    map['sentence'] = Variable<String>(sentence);
+    if (!nullToAbsent || sectionIndex != null) {
+      map['section_index'] = Variable<int>(sectionIndex);
+    }
+    if (!nullToAbsent || normCharOffset != null) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset);
+    }
+    if (!nullToAbsent || normCharLength != null) {
+      map['norm_char_length'] = Variable<int>(normCharLength);
+    }
     return map;
   }
 
@@ -13072,6 +13188,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: Value(title),
       dateKey: Value(dateKey),
       createdAt: Value(createdAt),
+      sentence: Value(sentence),
+      sectionIndex: sectionIndex == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sectionIndex),
+      normCharOffset: normCharOffset == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharOffset),
+      normCharLength: normCharLength == null && nullToAbsent
+          ? const Value.absent()
+          : Value(normCharLength),
     );
   }
 
@@ -13090,6 +13216,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: serializer.fromJson<String>(json['title']),
       dateKey: serializer.fromJson<String>(json['dateKey']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
+      sentence: serializer.fromJson<String>(json['sentence']),
+      sectionIndex: serializer.fromJson<int?>(json['sectionIndex']),
+      normCharOffset: serializer.fromJson<int?>(json['normCharOffset']),
+      normCharLength: serializer.fromJson<int?>(json['normCharLength']),
     );
   }
   @override
@@ -13105,6 +13235,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       'title': serializer.toJson<String>(title),
       'dateKey': serializer.toJson<String>(dateKey),
       'createdAt': serializer.toJson<int>(createdAt),
+      'sentence': serializer.toJson<String>(sentence),
+      'sectionIndex': serializer.toJson<int?>(sectionIndex),
+      'normCharOffset': serializer.toJson<int?>(normCharOffset),
+      'normCharLength': serializer.toJson<int?>(normCharLength),
     };
   }
 
@@ -13118,6 +13252,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     String? title,
     String? dateKey,
     int? createdAt,
+    String? sentence,
+    Value<int?> sectionIndex = const Value.absent(),
+    Value<int?> normCharOffset = const Value.absent(),
+    Value<int?> normCharLength = const Value.absent(),
   }) => FavoriteWordRow(
     id: id ?? this.id,
     expression: expression ?? this.expression,
@@ -13128,6 +13266,14 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     title: title ?? this.title,
     dateKey: dateKey ?? this.dateKey,
     createdAt: createdAt ?? this.createdAt,
+    sentence: sentence ?? this.sentence,
+    sectionIndex: sectionIndex.present ? sectionIndex.value : this.sectionIndex,
+    normCharOffset: normCharOffset.present
+        ? normCharOffset.value
+        : this.normCharOffset,
+    normCharLength: normCharLength.present
+        ? normCharLength.value
+        : this.normCharLength,
   );
   FavoriteWordRow copyWithCompanion(FavoriteWordsCompanion data) {
     return FavoriteWordRow(
@@ -13144,6 +13290,16 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
       title: data.title.present ? data.title.value : this.title,
       dateKey: data.dateKey.present ? data.dateKey.value : this.dateKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      sentence: data.sentence.present ? data.sentence.value : this.sentence,
+      sectionIndex: data.sectionIndex.present
+          ? data.sectionIndex.value
+          : this.sectionIndex,
+      normCharOffset: data.normCharOffset.present
+          ? data.normCharOffset.value
+          : this.normCharOffset,
+      normCharLength: data.normCharLength.present
+          ? data.normCharLength.value
+          : this.normCharLength,
     );
   }
 
@@ -13158,7 +13314,11 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentence: $sentence, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength')
           ..write(')'))
         .toString();
   }
@@ -13174,6 +13334,10 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
     title,
     dateKey,
     createdAt,
+    sentence,
+    sectionIndex,
+    normCharOffset,
+    normCharLength,
   );
   @override
   bool operator ==(Object other) =>
@@ -13187,7 +13351,11 @@ class FavoriteWordRow extends DataClass implements Insertable<FavoriteWordRow> {
           other.bookKey == this.bookKey &&
           other.title == this.title &&
           other.dateKey == this.dateKey &&
-          other.createdAt == this.createdAt);
+          other.createdAt == this.createdAt &&
+          other.sentence == this.sentence &&
+          other.sectionIndex == this.sectionIndex &&
+          other.normCharOffset == this.normCharOffset &&
+          other.normCharLength == this.normCharLength);
 }
 
 class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
@@ -13200,6 +13368,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
   final Value<String> title;
   final Value<String> dateKey;
   final Value<int> createdAt;
+  final Value<String> sentence;
+  final Value<int?> sectionIndex;
+  final Value<int?> normCharOffset;
+  final Value<int?> normCharLength;
   const FavoriteWordsCompanion({
     this.id = const Value.absent(),
     this.expression = const Value.absent(),
@@ -13210,6 +13382,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.title = const Value.absent(),
     this.dateKey = const Value.absent(),
     this.createdAt = const Value.absent(),
+    this.sentence = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
   });
   FavoriteWordsCompanion.insert({
     this.id = const Value.absent(),
@@ -13221,6 +13397,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     this.title = const Value.absent(),
     required String dateKey,
     required int createdAt,
+    this.sentence = const Value.absent(),
+    this.sectionIndex = const Value.absent(),
+    this.normCharOffset = const Value.absent(),
+    this.normCharLength = const Value.absent(),
   }) : expression = Value(expression),
        sourceType = Value(sourceType),
        dateKey = Value(dateKey),
@@ -13235,6 +13415,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Expression<String>? title,
     Expression<String>? dateKey,
     Expression<int>? createdAt,
+    Expression<String>? sentence,
+    Expression<int>? sectionIndex,
+    Expression<int>? normCharOffset,
+    Expression<int>? normCharLength,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -13246,6 +13430,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       if (title != null) 'title': title,
       if (dateKey != null) 'date_key': dateKey,
       if (createdAt != null) 'created_at': createdAt,
+      if (sentence != null) 'sentence': sentence,
+      if (sectionIndex != null) 'section_index': sectionIndex,
+      if (normCharOffset != null) 'norm_char_offset': normCharOffset,
+      if (normCharLength != null) 'norm_char_length': normCharLength,
     });
   }
 
@@ -13259,6 +13447,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     Value<String>? title,
     Value<String>? dateKey,
     Value<int>? createdAt,
+    Value<String>? sentence,
+    Value<int?>? sectionIndex,
+    Value<int?>? normCharOffset,
+    Value<int?>? normCharLength,
   }) {
     return FavoriteWordsCompanion(
       id: id ?? this.id,
@@ -13270,6 +13462,10 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
       title: title ?? this.title,
       dateKey: dateKey ?? this.dateKey,
       createdAt: createdAt ?? this.createdAt,
+      sentence: sentence ?? this.sentence,
+      sectionIndex: sectionIndex ?? this.sectionIndex,
+      normCharOffset: normCharOffset ?? this.normCharOffset,
+      normCharLength: normCharLength ?? this.normCharLength,
     );
   }
 
@@ -13303,6 +13499,18 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
+    if (sentence.present) {
+      map['sentence'] = Variable<String>(sentence.value);
+    }
+    if (sectionIndex.present) {
+      map['section_index'] = Variable<int>(sectionIndex.value);
+    }
+    if (normCharOffset.present) {
+      map['norm_char_offset'] = Variable<int>(normCharOffset.value);
+    }
+    if (normCharLength.present) {
+      map['norm_char_length'] = Variable<int>(normCharLength.value);
+    }
     return map;
   }
 
@@ -13317,7 +13525,11 @@ class FavoriteWordsCompanion extends UpdateCompanion<FavoriteWordRow> {
           ..write('bookKey: $bookKey, ')
           ..write('title: $title, ')
           ..write('dateKey: $dateKey, ')
-          ..write('createdAt: $createdAt')
+          ..write('createdAt: $createdAt, ')
+          ..write('sentence: $sentence, ')
+          ..write('sectionIndex: $sectionIndex, ')
+          ..write('normCharOffset: $normCharOffset, ')
+          ..write('normCharLength: $normCharLength')
           ..write(')'))
         .toString();
   }
@@ -64869,6 +65081,10 @@ typedef $$FavoriteWordsTableCreateCompanionBuilder =
       Value<String> title,
       required String dateKey,
       required int createdAt,
+      Value<String> sentence,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
     });
 typedef $$FavoriteWordsTableUpdateCompanionBuilder =
     FavoriteWordsCompanion Function({
@@ -64881,6 +65097,10 @@ typedef $$FavoriteWordsTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String> dateKey,
       Value<int> createdAt,
+      Value<String> sentence,
+      Value<int?> sectionIndex,
+      Value<int?> normCharOffset,
+      Value<int?> normCharLength,
     });
 
 class $$FavoriteWordsTableFilterComposer
@@ -64934,6 +65154,26 @@ class $$FavoriteWordsTableFilterComposer
 
   ColumnFilters<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -64991,6 +65231,26 @@ class $$FavoriteWordsTableOrderingComposer
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get sentence => $composableBuilder(
+    column: $table.sentence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FavoriteWordsTableAnnotationComposer
@@ -65032,6 +65292,24 @@ class $$FavoriteWordsTableAnnotationComposer
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get sentence =>
+      $composableBuilder(column: $table.sentence, builder: (column) => column);
+
+  GeneratedColumn<int> get sectionIndex => $composableBuilder(
+    column: $table.sectionIndex,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharOffset => $composableBuilder(
+    column: $table.normCharOffset,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get normCharLength => $composableBuilder(
+    column: $table.normCharLength,
+    builder: (column) => column,
+  );
 }
 
 class $$FavoriteWordsTableTableManager
@@ -65080,6 +65358,10 @@ class $$FavoriteWordsTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String> dateKey = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
+                Value<String> sentence = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
               }) => FavoriteWordsCompanion(
                 id: id,
                 expression: expression,
@@ -65090,6 +65372,10 @@ class $$FavoriteWordsTableTableManager
                 title: title,
                 dateKey: dateKey,
                 createdAt: createdAt,
+                sentence: sentence,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
               ),
           createCompanionCallback:
               ({
@@ -65102,6 +65388,10 @@ class $$FavoriteWordsTableTableManager
                 Value<String> title = const Value.absent(),
                 required String dateKey,
                 required int createdAt,
+                Value<String> sentence = const Value.absent(),
+                Value<int?> sectionIndex = const Value.absent(),
+                Value<int?> normCharOffset = const Value.absent(),
+                Value<int?> normCharLength = const Value.absent(),
               }) => FavoriteWordsCompanion.insert(
                 id: id,
                 expression: expression,
@@ -65112,6 +65402,10 @@ class $$FavoriteWordsTableTableManager
                 title: title,
                 dateKey: dateKey,
                 createdAt: createdAt,
+                sentence: sentence,
+                sectionIndex: sectionIndex,
+                normCharOffset: normCharOffset,
+                normCharLength: normCharLength,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

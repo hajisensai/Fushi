@@ -14,6 +14,7 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
@@ -1542,6 +1543,17 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   @protected
   ({String? bookKey, String? title})? get lookupBookIdentity => null;
 
+  /// 收藏词时的上下文（原句 + 定位锚点，口径见 [FavoriteLookupContext]）。阅读器 /
+  /// 有声书覆写返回查词所在句；默认取当前媒体源的当前句（无锚点），首页查词等没有
+  /// 句子的场景为 null。此前弹窗 ☆ 只落词形，收藏夹里的词没有释义也没有上下文。
+  @protected
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text.trim() ?? '';
+    if (sentence.isEmpty) return null;
+    return FavoriteLookupContext(sentence: sentence);
+  }
+
   /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
   /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。best-effort，
   /// 失败吞掉并记日志（与 [addMiningCount] 记账同容错口径）。
@@ -1601,6 +1613,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     // TODO-1252：把当前书身份（阅读器 / 有声书覆写 lookupBookIdentity）随收藏落库，
     // 供统计页 per-book tile 聚合「收藏 N」；无书来源为 null / '' → 只进汇总。
     final ({String? bookKey, String? title})? favIdentity = lookupBookIdentity;
+    final FavoriteLookupContext? favContext = favoriteLookupContext;
     await db.addFavoriteWord(
       expression: expression,
       reading: reading,
@@ -1609,6 +1622,10 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       dateKey: statTodayKey(),
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
+      sentence: favContext?.sentence ?? '',
+      sectionIndex: favContext?.sectionIndex,
+      normCharOffset: favContext?.normCharOffset,
+      normCharLength: favContext?.normCharLength,
     );
     FushiToast.show(
       msg: t.word_favorite_added,
@@ -1640,6 +1657,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
 
   DictionarySearchResult? get currentResult =>
       _lastVisiblePopup(_popup.entries)?.result;
+
+  /// 顶层（从正文点出来的那一层）查词结果。收藏句时用它的首个词头记下「为哪个词
+  /// 收藏的这句」；嵌套层是在释义里再查的词，不代表原文里的那个词。
+  DictionarySearchResult? get rootLookupResult =>
+      _popup.entries.isEmpty ? null : _popup.entries.first.result;
 
   @protected
   void prunePopupStack(int keepCount) {
