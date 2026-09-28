@@ -78,6 +78,9 @@ void main() {
       const Map<String, int> allowed = <String, int>{
         // OCR 字符词表校验：只对单个 Unicode 字母/数字施加重复生成上限，非学习计数。
         'packages/fushi_engine/lib/ocr/baberu_ocr_recognizer.dart': 1,
+        // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
+        'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart': 1,
+        'lib/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart': 1,
         // galgame 校准 OCR：判断一个 CTC token / 墨迹单元是否恰好是单个码点（能否
         // 与源文本逐字对齐），是对齐校验不是记账。
         'lib/src/ocr/gal_lookup_calibration_ocr.dart': 1,
