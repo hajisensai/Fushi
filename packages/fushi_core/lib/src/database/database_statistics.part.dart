@@ -27,7 +27,7 @@ const String kStatDayResetHourPrefKey = 'stats_day_reset_hour';
 /// `galgames.play_status` 里「玩过」的值（Bangumi 收藏 type 2，见 [Galgames.playStatus]）。
 const int kGalgamePlayStatusPlayed = 2;
 
-/// v114：`galgames.completed_at` 的**唯一**判据（排行榜「读完时刻」）。
+/// v115：`galgames.completed_at` 的**唯一**判据（排行榜「读完时刻」）。
 ///
 /// - 从非「玩过」变成「玩过」→ [now]（新行按上一状态 0 处理）；
 /// - 保持「玩过」→ 原值不动（含 null：迁移回填不出日期的存量「玩过」保持日期未知，
@@ -681,7 +681,7 @@ mixin _FushiDbStatistics
 
   /// 新增或整行覆盖一条游戏。
   ///
-  /// v114：`completedAt` 不由调用方给——[entry] 带了 `playStatus` 时经
+  /// v115：`completedAt` 不由调用方给——[entry] 带了 `playStatus` 时经
   /// [resolveGalgameCompletedAt] 按库内旧行重算（调用方携带的 `completedAt` 一律被
   /// 覆盖）；没带 `playStatus` 时整列不动。
   Future<void> upsertGalgame(GalgamesCompanion entry) => transaction(() async {
@@ -727,7 +727,7 @@ mixin _FushiDbStatistics
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
   ///
-  /// v114：同事务按 [resolveGalgameCompletedAt] 维护 `completedAt`。[now] 只给测试
+  /// v115：同事务按 [resolveGalgameCompletedAt] 维护 `completedAt`。[now] 只给测试
   /// 钉时刻用，生产取当前时刻。
   Future<int> setGalgamePlayStatus(String id, int status, {int? now}) =>
       transaction(() async {
@@ -1104,6 +1104,10 @@ mixin _FushiDbStatistics
     required String dateKey,
     String? bookKey,
     String title = '',
+    String sentence = '',
+    int? sectionIndex,
+    int? normCharOffset,
+    int? normCharLength,
   }) =>
       transaction(() async {
         final existing = await (select(favoriteWords)
@@ -1129,6 +1133,11 @@ mixin _FushiDbStatistics
             sourceType: sourceType,
             bookKey: Value(bookKey),
             title: Value(title),
+            // v114：收藏上下文（原句 + 定位锚点），口径见 [FavoriteWords.sentence]。
+            sentence: Value(sentence),
+            sectionIndex: Value(sectionIndex),
+            normCharOffset: Value(normCharOffset),
+            normCharLength: Value(normCharLength),
             dateKey: dateKey,
             createdAt: DateTime.now().millisecondsSinceEpoch,
           ),

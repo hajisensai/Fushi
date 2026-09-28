@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
-/// v114：给 `epub_books.isbn` 为空的存量 EPUB 回填 ISBN，返回本次写入的书数。
+/// v115：给 `epub_books.isbn` 为空的存量 EPUB 回填 ISBN，返回本次写入的书数。
 ///
 /// 只读每本书**已解压目录**（`epub_books.extract_dir`，绝对路径——数据根迁移会
 /// rebase 它）里的 container.xml + OPF，经 [EpubParser.readIsbnFromExtracted] 解析

@@ -6,7 +6,8 @@ import '../helpers/source_guard.dart';
 
 /// 三个域统计页同一骨架（用户 2026-09-08「统计全改成游戏那种」）的源码守卫：
 ///
-///   时段卡 `_buildSummaryCards()` → 每日图 `buildStatDailyDurationChartSection(`
+///   时段卡 `_buildSummaryCards()` → 范围区块 `_buildRangeSection()`（范围条 →
+///   学习日历 → 范围时长图 → 所选范围卡，2026-09-28 取代写死的近 30 天图）
 ///   → 最近会话 `buildStatSessionSection(` → 按媒体列表（每行 `buildStatMediaRow(`）。
 ///
 /// 阅读页额外在会话之后挂目标卡与「分析」折叠（`StatAnalysisFold(`），视频页把小时分布
@@ -40,15 +41,32 @@ void main() {
       );
       final String content = methodBody(src, 'Widget _buildContent()');
 
-      test('骨架顺序：时段卡 → 每日图 → 最近会话 → 按媒体列表', () {
+      test('骨架顺序：时段卡 → 范围区块 → 最近会话 → 按媒体列表', () {
         final int cards = content.indexOf('_buildSummaryCards()');
-        final int daily = content.indexOf('buildStatDailyDurationChartSection(');
+        final int daily = content.indexOf('_buildRangeSection()');
         final int sessions = content.indexOf('buildStatSessionSection(');
         final int list = content.indexOf('SliverList(');
         expect(cards, isNonNegative);
         expect(daily, greaterThan(cards));
         expect(sessions, greaterThan(daily));
         expect(list, greaterThan(sessions));
+      });
+
+      test('范围区块齐全：范围条 / 学习日历 / 范围时长图 / 所选范围卡；不再写死近 30 天', () {
+        final String range = methodBody(src, 'Widget _buildRangeSection()');
+        for (final String block in <String>[
+          'StatRangeBar(',
+          'buildStatRangeCalendarSection(',
+          'buildStatRangeChartSection(',
+          'buildStatRangeSummary(',
+        ]) {
+          expect(range.contains(block), isTrue, reason: '${e.key} 缺 $block');
+        }
+        expect(
+          src.contains('lastDayKeys(30)'),
+          isFalse,
+          reason: '${e.key} 又写死了近 30 天窗口，图表必须跟随范围',
+        );
       });
 
       test('按媒体一行走共享 buildStatMediaRow，不再手搓进度条排行', () {

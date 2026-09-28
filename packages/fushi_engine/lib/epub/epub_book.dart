@@ -27,7 +27,7 @@ class EpubBook {
   final String? author;
   final String? language;
 
-  /// v114：OPF `dc:identifier` 里解析出的 ISBN，已规范化成 ISBN-13
+  /// v115：OPF `dc:identifier` 里解析出的 ISBN，已规范化成 ISBN-13
   /// （`normalizeIsbn13`）；包里没有合法 ISBN 时为 null。
   final String? isbn;
 

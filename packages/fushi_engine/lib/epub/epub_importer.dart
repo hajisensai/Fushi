@@ -193,7 +193,7 @@ class EpubImporter {
           language: book.language != null && book.language!.trim().isNotEmpty
               ? Value(book.language!.trim())
               : const Value.absent(),
-          // v114：OPF dc:identifier 里校验通过的 ISBN（已规范成 ISBN-13），排行榜
+          // v115：OPF dc:identifier 里校验通过的 ISBN（已规范成 ISBN-13），排行榜
           // 作品匹配的强 ID。没有合法 ISBN → NULL。
           isbn: book.isbn != null ? Value(book.isbn) : const Value.absent(),
         ),

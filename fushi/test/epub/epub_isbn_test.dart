@@ -15,7 +15,7 @@ import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/epub/isbn.dart';
 import 'package:path/path.dart' as p;
 
-/// v114：`epub_books.isbn`——OPF `dc:identifier` → 规范化 ISBN-13 → 导入落库 /
+/// v115：`epub_books.isbn`——OPF `dc:identifier` → 规范化 ISBN-13 → 导入落库 /
 /// 存量回填。
 
 const String _container = '''

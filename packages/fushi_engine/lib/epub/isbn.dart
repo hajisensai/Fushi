@@ -1,4 +1,4 @@
-/// ISBN 规范化的**唯一口径**（schema v114 `epub_books.isbn`，排行榜作品匹配）。
+/// ISBN 规范化的**唯一口径**（schema v115 `epub_books.isbn`，排行榜作品匹配）。
 ///
 /// 输入是 OPF `dc:identifier` 的原文或用户输入：容忍 `urn:isbn:` / `ISBN` /
 /// `ISBN-13:` 前缀、连字符与空白；只接受校验位正确的 ISBN-10 或 978/979 开头的

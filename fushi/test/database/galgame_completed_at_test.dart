@@ -6,7 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 
-/// v114：`galgames.completed_at`（排行榜「读完时刻」）只由 DB 层一处判据
+/// v115：`galgames.completed_at`（排行榜「读完时刻」）只由 DB 层一处判据
 /// [resolveGalgameCompletedAt] 维护：进入「玩过」写当前时刻、保持不动、离开清空。
 void main() {
   group('resolveGalgameCompletedAt（纯函数）', () {

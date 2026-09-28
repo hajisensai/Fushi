@@ -737,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 114;
+  int get schemaVersion => 115;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3458,7 +3458,25 @@ class FushiDatabase extends _$FushiDatabase
             }
           }
           if (from < 114) {
-            // v114（排行榜的两个本地事实）：
+            // v114：favorite_words 加收藏上下文（原句 + 定位锚点四列）。存量行
+            // 取默认 '' / null——旧收藏本来就没记，不回填。幂等守卫同 v111。
+            if (await _tableExists('favorite_words')) {
+              if (!await _columnExists('favorite_words', 'sentence')) {
+                await m.addColumn(favoriteWords, favoriteWords.sentence);
+              }
+              if (!await _columnExists('favorite_words', 'section_index')) {
+                await m.addColumn(favoriteWords, favoriteWords.sectionIndex);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_offset')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharOffset);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_length')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharLength);
+              }
+            }
+          }
+          if (from < 115) {
+            // v115（排行榜的两个本地事实；原定 v114，被并行合入的收藏上下文占用后顺延）：
             // ① epub_books.isbn——OPF dc:identifier 规范化后的 ISBN-13。存量书不在
             //   迁移里读文件（慢且解压目录可能不在），由引擎侧 backfillEpubIsbns
             //   只读 OPF 回填；这里只加列。

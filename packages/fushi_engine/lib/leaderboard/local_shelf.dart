@@ -830,7 +830,7 @@ Future<List<LocalShelfEntry>> _gameEntries(
       coverUrl: meta.coverUrl,
       nsfw: meta.nsfw,
       finished: finished,
-      // 「玩过」但没有时刻（v114 前玩过且无会话）= 读完日期未知，只进总榜。
+      // 「玩过」但没有时刻（v115 前玩过且无会话）= 读完日期未知，只进总榜。
       finishedAt: finished ? g.completedAt : null,
       chars: chars,
       ms: ms,

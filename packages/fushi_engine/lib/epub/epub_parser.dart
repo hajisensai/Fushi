@@ -79,7 +79,7 @@ class EpubParser {
     return loose;
   }
 
-  /// v114：只读**已解压**目录里的 container.xml + OPF，返回规范化后的 ISBN-13
+  /// v115：只读**已解压**目录里的 container.xml + OPF，返回规范化后的 ISBN-13
   /// （见 [normalizeIsbn13]）；不解析 spine / 目录、不读正文。给存量书回填
   /// `epub_books.isbn` 用（`backfillEpubIsbns`）。缺 container / OPF 或包里没有
   /// 合法 ISBN 返回 null；XML 本身坏了照常抛，由调用方决定记日志还是跳过。
@@ -574,7 +574,7 @@ class EpubParser {
     return null;
   }
 
-  // ── ISBN (v114) ────────────────────────────────────────────────────────────
+  // ── ISBN (v115) ────────────────────────────────────────────────────────────
 
   /// OPF `dc:identifier` 里的 ISBN，规范化成 ISBN-13。
   ///

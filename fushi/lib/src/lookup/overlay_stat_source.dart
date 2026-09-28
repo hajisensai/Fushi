@@ -71,6 +71,8 @@ Future<bool> overlayToggleOrCheckFavoriteWord({
   required String reading,
   required String addSourceType,
   required String dateKey,
+  String glossary = '',
+  String sentence = '',
 }) async {
   // ① 跨源判定。
   final bool inBook = await db.isFavoriteWord(
@@ -106,12 +108,15 @@ Future<bool> overlayToggleOrCheckFavoriteWord({
     return false;
   }
   // ③ 只写当前源。
+  // 释义快照来自 popup.js，原句是覆盖窗捕获的前台句（剪贴板全文 / Hook 台词）；
+  // app 外表面没有章节 / cue 锚点，定位列留 null。
   await db.addFavoriteWord(
     expression: expression,
     reading: reading,
-    glossary: '',
+    glossary: glossary,
     sourceType: addSourceType,
     dateKey: dateKey,
+    sentence: sentence,
   );
   return true;
 }

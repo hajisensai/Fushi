@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 114);
-    expect(db.schemaVersion, 114);
+    expect(version.read<int>('user_version'), 115);
+    expect(db.schemaVersion, 115);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -208,9 +208,9 @@ void main() {
             reason: 'v75 必须给 galgames 加出该列');
         // v87（内容语言字体链）同样在这条阶梯上合法 ADD COLUMN language。
         expect(after, contains('language'), reason: 'v87 必须给 galgames 加出该列');
-        // v114（排行榜读完时刻）同样在这条阶梯上合法 ADD COLUMN completed_at。
+        // v115（排行榜读完时刻）同样在这条阶梯上合法 ADD COLUMN completed_at。
         expect(after, contains('completed_at'),
-            reason: 'v114 必须给 galgames 加出该列');
+            reason: 'v115 必须给 galgames 加出该列');
         final String stripped = after
             .replaceAll(
               RegExp(r',\s*"?japanese_locale_mode"?[^,)]*'),
@@ -225,7 +225,7 @@ void main() {
               '',
             );
         expect(stripped, entry.value,
-            reason: '除 v75 / v87 / v114 那三列外，galgames 的形状必须逐字节不变'
+            reason: '除 v75 / v87 / v115 那三列外，galgames 的形状必须逐字节不变'
                 '（v63 只能删行，不得 ALTER/DROP/rebuild）');
         continue;
       }
@@ -327,7 +327,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 114);
+    expect(version.read<int>('user_version'), 115);
   });
 
   test(
@@ -358,7 +358,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 114);
+      expect(probe.select('PRAGMA user_version').first.values.first, 115);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

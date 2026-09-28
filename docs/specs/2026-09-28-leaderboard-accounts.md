@@ -89,10 +89,10 @@ ShelfEntry {
 | 字数 | 窗口内 `sum(DailyChars.chars)` |
 | 作品人气 | 窗口内读完该 work 的不同账户数（「読書ランキング」对应物） |
 
-### 3.5 本地 schema 变更（v114，两列）
+### 3.5 本地 schema 变更（v115，两列）
 
 - `EpubBooks.isbn`（text 可空，统一存 ISBN-13，校验位不对不存；规范化唯一口径 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`）：新导入时由 `EpubParser` 解析 OPF `dc:identifier` 写入；存量书在排行首次开启时调 `backfillEpubIsbns(db)` 后台重扫 OPF 回填（只读 OPF，不重新导入）。
-- `Galgames.completedAt`（int 毫秒，可空），schema v113→v114（判据只在 DB 层 `resolveGalgameCompletedAt` 一处，经 `setGalgamePlayStatus` / `upsertGalgame` 写入；离开「玩过」清空）：`playStatus` 变为 2（玩过）时写入；迁移回填 = 该游戏 `galgame_sessions` 最后一次会话结束时刻，没有会话则留空（展示「日期未知」，不计入周/月榜，计入总榜）。
+- `Galgames.completedAt`（int 毫秒，可空），schema v113→v115（判据只在 DB 层 `resolveGalgameCompletedAt` 一处，经 `setGalgamePlayStatus` / `upsertGalgame` 写入；离开「玩过」清空）：`playStatus` 变为 2（玩过）时写入；迁移回填 = 该游戏 `galgame_sessions` 最后一次会话结束时刻，没有会话则留空（展示「日期未知」，不计入周/月榜，计入总榜）。
 
 ### 3.6 D1 / R2
 
@@ -147,7 +147,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 | 期 | 内容 | 验证 |
 |---|---|---|
 | P1 | `services/leaderboard/` Worker + D1 + R2：签名校验、注册/资料/头像、书架 upsert、WorkRef 别名合并、各榜 SQL、删除账户 | vitest：签名/重放/上限/幂等/别名合并/窗口 |
-| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；v114（`EpubBooks.isbn` + `Galgames.completedAt`；develop 当时已是 v113）+ ISBN 解析 | Dart 单测 + 跨语言签名测试向量；迁移测试 |
+| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；v115（`EpubBooks.isbn` + `Galgames.completedAt`；develop 当时已是 v113）+ ISBN 解析 | Dart 单测 + 跨语言签名测试向量；迁移测试 |
 | P3 | 统计中心「排行」tab、同意弹窗、设置段、上传调度 | widget 测试；真机开页截图 |
 | P4 | 用户详情页、作品页、作品人气榜 | widget 测试 |
 | P5 | 好友 / 屏蔽 / 可见性 / 举报 | Worker + widget 测试 |
@@ -160,7 +160,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 ## 10. 破坏性分析
 
-- 本地 schema 变更只有 v114 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填；游戏的回填值是**最后一次游玩会话的结束时刻**，不是真实通关时刻），其余新增全在 D1/R2；密钥在本机文件（见 3.1）。
+- 本地 schema 变更只有 v115 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填；游戏的回填值是**最后一次游玩会话的结束时刻**，不是真实通关时刻），其余新增全在 D1/R2；密钥在本机文件（见 3.1）。
 - 统计中心加 tab：tab 索引若被持久化/测试钉死需一起更新（P3 开工先查）。
 - 默认关闭：不开启排行的用户零网络请求、零行为变化。
 

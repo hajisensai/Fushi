@@ -70,7 +70,7 @@ bool maybeHandleOverlayDeferredBridge({
     case 'favoriteEntry':
     case 'favoriteCheck':
       unawaited(_handleFavoriteBridge(
-          model, handler! as String, message, resolveBridge));
+          model, handler! as String, message, resolveBridge, sentenceContext));
       return true;
     case 'mineEntry':
       unawaited(_handleMineBridge(
@@ -247,6 +247,7 @@ Future<void> _handleFavoriteBridge(
   String handler,
   Map<String, Object?> message,
   OverlayBridgeResolver resolveBridge,
+  String sentenceContext,
 ) async {
   final int? id = _bridgeIdOf(message);
   bool reply = false;
@@ -260,6 +261,8 @@ Future<void> _handleFavoriteBridge(
         toggle: handler == 'favoriteEntry',
         expression: expression,
         reading: reading,
+        glossary: data['glossary']?.toString() ?? '',
+        sentence: sentenceContext,
       );
     }
   } catch (e, st) {
@@ -287,6 +290,8 @@ Future<bool> _toggleOrCheckFavorite(
   required bool toggle,
   required String expression,
   required String reading,
+  required String glossary,
+  required String sentence,
 }) =>
     overlayToggleOrCheckFavoriteWord(
       db: model.database,
@@ -295,6 +300,8 @@ Future<bool> _toggleOrCheckFavorite(
       reading: reading,
       addSourceType: overlayStatSourceType(),
       dateKey: statTodayKey(),
+      glossary: glossary,
+      sentence: sentence,
     );
 
 /// TODO-1188 follow-up — resolves a DEFERRED mineEntry bridge call and pushes

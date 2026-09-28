@@ -172,7 +172,7 @@ mixin _FushiDbContentMisc
     return rows.map((TypedResult row) => row.read(epubBooks.bookKey)!).toSet();
   }
 
-  /// v114：还没有 ISBN 的 EPUB（`format='epub'` 且 `isbn IS NULL`）的
+  /// v115：还没有 ISBN 的 EPUB（`format='epub'` 且 `isbn IS NULL`）的
   /// `(bookKey, extractDir)`，供引擎侧 `backfillEpubIsbns` 只读 OPF 回填。PDF /
   /// 漫画不在内：前者没有 OPF，后者的解压树是页图 + manga.json。
   Future<List<({String bookKey, String extractDir})>>
@@ -195,7 +195,7 @@ mixin _FushiDbContentMisc
     ];
   }
 
-  /// v114：只写一本书的 ISBN（调用方负责传已规范化的 ISBN-13）。只在列仍为空时
+  /// v115：只写一本书的 ISBN（调用方负责传已规范化的 ISBN-13）。只在列仍为空时
   /// 写入——回填与用户/导入已写的值并发时不覆盖先到的值。返回受影响行数。
   Future<int> setEpubBookIsbnIfMissing(String bookKey, String isbn) =>
       (update(epubBooks)

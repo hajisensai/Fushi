@@ -6,14 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
-/// v114（排行榜的两个本地事实）：
+/// v115（排行榜的两个本地事实）：
 ///  ① `epub_books.isbn`（可空）——迁移只加列，存量回填走引擎侧 `backfillEpubIsbns`；
 ///  ② `galgames.completed_at`（可空毫秒）——存量「玩过」(play_status=2) 用该游戏
 ///     最后一次游玩会话的 `end_ms` 回填（跨 Profile 取最大），没有会话留 NULL；
 ///     非「玩过」一律 NULL。
 void main() {
-  test('v113 → v114 adds both columns and backfills completed_at', () async {
-    final Directory directory = Directory.systemTemp.createTempSync('v114');
+  test('v113 → v115 adds both columns and backfills completed_at', () async {
+    final Directory directory = Directory.systemTemp.createTempSync('v115');
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = '${directory.path}/test.db';
 
@@ -74,11 +74,11 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 114);
+    expect(migrated.schemaVersion, 115);
     final QueryRow version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 114);
+    expect(version.read<int>('user_version'), 115);
 
     Future<Set<String>> columnsOf(String table) async => <String>{
       for (final QueryRow row
@@ -111,10 +111,10 @@ void main() {
     expect(await migrated.getEpubBooksMissingIsbn(), hasLength(1));
   });
 
-  test('fresh v114 schema has both columns', () async {
+  test('fresh v115 schema has both columns', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    expect(db.schemaVersion, 114);
+    expect(db.schemaVersion, 115);
     final Set<String> epubCols = <String>{
       for (final QueryRow row
           in await db.customSelect("PRAGMA table_info('epub_books')").get())
