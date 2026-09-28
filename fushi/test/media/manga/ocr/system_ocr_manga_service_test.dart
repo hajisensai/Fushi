@@ -9,7 +9,10 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_page_tiling.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
 /// 系统 OCR 的可测面分两层：
@@ -34,6 +37,7 @@ class _FakePlatform implements SystemOcrPlatform {
   Future<SystemOcrPageResult> recognize(
     Uint8List imageBytes, {
     required String language,
+    List<Rect> tiles = const <Rect>[],
   }) async {
     requestSizes.add(imageBytes.length);
     // fake 图片字节的首字节当页号用，让每页拿到不同结果。
@@ -45,6 +49,49 @@ class _FakePlatform implements SystemOcrPlatform {
     );
   }
 }
+
+/// 模拟支持切片的平台（iOS 26 / macOS 26 的 Vision）：记下收到的切片，回放
+/// 预置的逐片行。
+class _TiledFakePlatform implements SystemOcrPlatform {
+  _TiledFakePlatform(this.lines);
+
+  final List<SystemOcrTextLine> lines;
+  final List<List<Rect>> requestTiles = <List<Rect>>[];
+
+  @override
+  Future<bool> isAvailable() async => true;
+
+  @override
+  Future<SystemOcrPageResult> recognize(
+    Uint8List imageBytes, {
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) async {
+    requestTiles.add(tiles);
+    return SystemOcrPageResult(
+      lines: lines,
+      imageWidth: 1000,
+      imageHeight: 1600,
+    );
+  }
+}
+
+/// BUG-2767 真实输出：macOS 27 的 `RecognizeDocumentsRequest` 把一列竖排台词
+/// 在切线处读成两截（上片、下片各一截，重叠区里「という」读了两遍）。
+const List<SystemOcrTextLine> _kSplitColumn = <SystemOcrTextLine>[
+  SystemOcrTextLine(
+    text: '繰り返しているという',
+    rect: Rect.fromLTRB(213.8, 273.5, 245.8, 583.0),
+    isVertical: true,
+    tile: 0,
+  ),
+  SystemOcrTextLine(
+    text: 'というの！？',
+    rect: Rect.fromLTRB(211.8, 480.0, 243.8, 646.0),
+    isVertical: true,
+    tile: 1,
+  ),
+];
 
 void main() {
   group('平台契约 parseSystemOcrPayload', () {
@@ -196,6 +243,137 @@ void main() {
       });
       expect(result.imageWidth, 800);
       expect(result.lines.single.rect.right, 30);
+    });
+
+    test('切片下标 tile 原样落地；整页识别的行不带下标', () {
+      final SystemOcrPageResult result =
+          parseSystemOcrPayload(<Object?, Object?>{
+        'width': 800,
+        'height': 1200,
+        'lines': <Object?>[
+          <Object?, Object?>{
+            'text': 'かた',
+            'left': 1,
+            'top': 2,
+            'right': 30,
+            'bottom': 140,
+            'tile': 2,
+          },
+          <Object?, Object?>{
+            'text': 'まる',
+            'left': 1,
+            'top': 2,
+            'right': 30,
+            'bottom': 140,
+          },
+        ],
+      });
+      expect(result.lines[0].tile, 2);
+      expect(result.lines[1].tile, isNull);
+    });
+
+    test('切片随 recognize 下发给平台（整页像素 [l, t, r, b]），没切就不带键',
+        () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      const MethodChannel channel = MethodChannel('test.fushi/system_ocr_tiles');
+      final List<Map<Object?, Object?>> calls = <Map<Object?, Object?>>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall call) async {
+        calls.add(call.arguments as Map<Object?, Object?>);
+        return <String, Object?>{
+          'width': 100,
+          'height': 100,
+          'lines': <Object?>[],
+        };
+      });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+      });
+
+      const MethodChannelSystemOcr platform =
+          MethodChannelSystemOcr(channel: channel);
+      await platform.recognize(
+        Uint8List.fromList(<int>[1]),
+        language: 'ja',
+        tiles: const <Rect>[
+          Rect.fromLTRB(0, 0, 100, 60),
+          Rect.fromLTRB(0, 40, 100, 100),
+        ],
+      );
+      await platform.recognize(Uint8List.fromList(<int>[1]), language: 'ja');
+      expect(calls[0]['tiles'], <List<double>>[
+        <double>[0, 0, 100, 60],
+        <double>[0, 40, 100, 100],
+      ]);
+      expect(calls[1].containsKey('tiles'), isFalse,
+          reason: '不切片时不发空列表，旧平台实现收到的参数与从前逐字一致');
+    });
+  });
+
+  group('切片（BUG-2767）', () {
+    test('按页图原始像素尺寸规划切片；认不出的字节不切', () {
+      final Uint8List jpeg =
+          img.encodeJpg(img.Image(width: 1000, height: 1600));
+      expect(
+        planSystemOcrTiles(jpeg).map((OcrRect t) => <double>[t.top, t.bottom]),
+        <List<double>>[
+          <double>[0, 587],
+          <double>[480, 1120],
+          <double>[1013, 1600],
+        ],
+      );
+      expect(planSystemOcrTiles(Uint8List.fromList(<int>[0x30, 1, 2, 3])),
+          isEmpty);
+    });
+
+    test('平台忽略切片（行不带下标）时原样返回，Android 行为不变', () {
+      const SystemOcrPageResult untiled = SystemOcrPageResult(
+        lines: <SystemOcrTextLine>[
+          SystemOcrTextLine(
+            text: 'だよな',
+            rect: Rect.fromLTRB(0, 0, 30, 90),
+            isVertical: true,
+          ),
+          SystemOcrTextLine(
+            text: 'だよな',
+            rect: Rect.fromLTRB(0, 0, 30, 90),
+            isVertical: true,
+          ),
+        ],
+        imageWidth: 1000,
+        imageHeight: 1600,
+      );
+      expect(
+        mergeSystemOcrTiles(untiled, planOcrPageTiles(1000, 1600)),
+        same(untiled),
+      );
+    });
+
+    test('整卷：切片下发给平台，跨切线的两截拼回一整列再成块', () async {
+      final Directory dir =
+          Directory.systemTemp.createTempSync('system_ocr_tiles_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      File(p.join(dir.path, 'p000.jpg')).writeAsBytesSync(
+          img.encodeJpg(img.Image(width: 1000, height: 1600)));
+      final _TiledFakePlatform platform = _TiledFakePlatform(_kSplitColumn);
+
+      final List<MangaOcrVolumeEvent> events = await SystemOcrMangaService(
+        platform: platform,
+      ).ocrFolder(imageDirPath: dir.path, language: 'ja').toList();
+
+      expect(platform.requestTiles.single, hasLength(3));
+      final MokuroPayload payload =
+          parseMangaJson(File(events.last.mangaJsonPath!).readAsStringSync());
+      final MokuroBlock block = payload.images.single.blocks.single;
+      expect(block.lines, <String>['繰り返しているというの！？']);
+      expect(block.isVertical, isTrue);
+      expect(block.rectangle.top, closeTo(273.5, 0.01));
+      expect(block.rectangle.bottom, closeTo(646.0, 0.01));
+    });
+
+    test('签名换代：切片前的旧缓存（Apple 上只认出一成不到的字）不再命中', () {
+      expect(systemOcrEngineSignature('ja'), 'system_ocr_v2_ja');
     });
   });
 
