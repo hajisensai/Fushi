@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
+    show configuredDictionaryFontPaths;
+import 'package:fushi/src/pages/implementations/reader_fushi_page.dart'
+    show isValidFontData;
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/font_download_service.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -154,6 +159,38 @@ class BrowserExtensionFontCatalog implements ExtensionFontApi {
     );
     _commitTail = commit.then((_) {}, onError: (Object _) {});
     return ExtensionFontDownloadOutcome.ok(await commit);
+  }
+
+  @override
+  Future<ExtensionFontEntry?> findDictionaryFont(String path) async {
+    final String? safePath = ReaderCustomFontCss.safeFontPath(
+      path,
+      allowedRoots: <String>[customFontsDirectory(_appModel.appDirectory).path],
+    );
+    if (safePath == null) return null;
+    if (!configuredDictionaryFontPaths(_appModel)
+        .contains(p.canonicalize(safePath))) {
+      return null;
+    }
+    final File file = File(safePath);
+    if (!await file.exists()) return null;
+    final RandomAccessFile raf = await file.open();
+    final Uint8List header;
+    try {
+      header = await raf.read(4);
+    } finally {
+      await raf.close();
+    }
+    if (!isValidFontData(header)) return null;
+    final String ext = p.extension(safePath).toLowerCase();
+    final String name = p.basenameWithoutExtension(safePath);
+    return ExtensionFontEntry(
+      id: '',
+      name: name,
+      family: ReaderCustomFontCss.normalizedFontFamilyName(name),
+      ext: ext.startsWith('.') ? ext.substring(1) : ext,
+      path: safePath,
+    );
   }
 
   /// 读目录 → 追加行 → 持久化，返回新增行对应的条目（带分配好的 id）。

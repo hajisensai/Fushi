@@ -53,6 +53,8 @@ import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
+    show ExtensionDictionaryFont, browserExtensionDictionaryFont;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
@@ -3655,12 +3657,16 @@ class AppModel with ChangeNotifier {
     // 词典改名（v95）：必须一并进下面的缓存判定——否则改完名命中旧实例、
     // revision 不变，扩展永远拉不到新名。
     final Map<String, String> displayNames = dictionaryDisplayNameOverrides;
+    // 词典字体：与 in-app 弹窗同一份「词典字体」设置（按指纹 memo，未变时返回同一实例）。
+    final ExtensionDictionaryFont font = browserExtensionDictionaryFont(this);
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
         cached.globalDictCss == globalCss &&
         _sameStringMap(cached.customDictCss, customCss) &&
-        _sameStringMap(cached.dictionaryDisplayNames, displayNames)) {
+        _sameStringMap(cached.dictionaryDisplayNames, displayNames) &&
+        identical(cached.dictionaryFontFaces, font.faces) &&
+        cached.dictionaryFontCss == font.css) {
       return cached;
     }
     return _browserExtensionPopupCss = RemotePopupDictionaryCss(
@@ -3668,6 +3674,9 @@ class AppModel with ChangeNotifier {
       globalDictCss: globalCss,
       customDictCss: customCss,
       dictionaryDisplayNames: displayNames,
+      dictionaryFontFaces: font.faces,
+      dictionaryFontCss: font.css,
+      dictionaryLanguages: font.languages,
     );
   }
 

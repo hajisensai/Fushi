@@ -121,6 +121,11 @@ abstract class ExtensionFontApi {
   /// 按目录 id 找字体；不在目录或文件不存在时 null。**只按 id**，不接受路径。
   Future<ExtensionFontEntry?> findFont(String id);
 
+  /// 扩展查词弹窗的「词典字体」：按查词响应里下发的路径取字节。与 in-app 弹窗的
+  /// `/dictfonts/` 拦截器同三道校验——落在 app 字体目录内、**此刻启用在词典字体里**、
+  /// 字节是字体魔数；任一不过返回 null。只认这份白名单，所以不是任意路径读取口。
+  Future<ExtensionFontEntry?> findDictionaryFont(String path);
+
   /// 下载推荐表里的 [name]（已装则直接回已有条目）。同名并发调用必须串行去重。
   Future<ExtensionFontDownloadOutcome> downloadRecommended(String name);
 }

@@ -233,7 +233,13 @@ async function diagnoseConnectionCapped(base, timeoutMs = 750) {
 // 响应拿。但它体量大（实测整库 285 KB，单本 OALDPE 就 210 KB），不能每次 hover 查词都传，
 // 故走 revision 门控：请求里带上已缓存的 revision，server 只在指纹变了（用户导入/删词典、
 // 改自定义 CSS）时才回全量，其余时候只回指纹。SW 被回收后缓存清空，下次查词自动重取一次。
-let fushiPopupCss = { revision: null, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
+// 词典字体（dictionaryFontFaces / dictionaryFontCss / dictionaryLanguages）与 CSS 三件套同属弹窗
+// 旁路数据，走同一条 revision 门控：用户在 app 里换词典字体 → 指纹变 → 下次查词全量重取。
+const FUSHI_EMPTY_POPUP_CSS_BODY = Object.freeze({
+  dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {},
+  dictionaryFontFaces: [], dictionaryFontCss: '', dictionaryLanguages: {},
+});
+let fushiPopupCss = { revision: null, ...FUSHI_EMPTY_POPUP_CSS_BODY };
 
 // 把服务端这次查词响应里的 CSS 尾段并进缓存，并把**完整**尾段回填进 data，
 // 让 content.js / side-panel.js 无论命中缓存与否都能拿到同一份可直接赋给 window.* 的值。
@@ -254,15 +260,22 @@ function fushiMergePopupCss(data) {
       dictionaryDisplayNames:
         (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
           ? data.dictionaryDisplayNames : {},
+      dictionaryFontFaces: Array.isArray(data.dictionaryFontFaces) ? data.dictionaryFontFaces : [],
+      dictionaryFontCss: typeof data.dictionaryFontCss === 'string' ? data.dictionaryFontCss : '',
+      dictionaryLanguages: (data.dictionaryLanguages && typeof data.dictionaryLanguages === 'object')
+        ? data.dictionaryLanguages : {},
     };
   } else if (fushiPopupCss.revision !== revision) {
     // 指纹变了但这次响应没带正文（不该发生；真发生时宁可清空也不能用陈旧样式）。
-    fushiPopupCss = { revision, dictionaryStyles: {}, globalDictCSS: '', customDictCSS: {}, dictionaryDisplayNames: {} };
+    fushiPopupCss = { revision, ...FUSHI_EMPTY_POPUP_CSS_BODY };
   }
   data.dictionaryStyles = fushiPopupCss.dictionaryStyles;
   data.globalDictCSS = fushiPopupCss.globalDictCSS;
   data.customDictCSS = fushiPopupCss.customDictCSS;
   data.dictionaryDisplayNames = fushiPopupCss.dictionaryDisplayNames;
+  data.dictionaryFontFaces = fushiPopupCss.dictionaryFontFaces;
+  data.dictionaryFontCss = fushiPopupCss.dictionaryFontCss;
+  data.dictionaryLanguages = fushiPopupCss.dictionaryLanguages;
   return data;
 }
 
