@@ -53,6 +53,7 @@ dependencies:
   image: ^4.3.0
   meta: ^1.9.0
   path: ^1.8.2
+  pointycastle: ^3.9.1
   shelf: ^1.4.0
   xml: ^6.3.0
   youtube_explode_dart: ^2.3.6
