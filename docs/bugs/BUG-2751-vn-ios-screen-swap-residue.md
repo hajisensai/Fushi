@@ -1,0 +1,10 @@
+## BUG-2751 · iOS VN 翻屏后旧屏高亮列残留、新列被切半
+- **报告**：2026-09-28（用户：iOS 竖排 VN + 有声书跟随，7 张截图，「vn 模式还是会出现这种翻页残留」——翻到新屏后，上一屏的句高亮蓝条在列左侧留下细竖条或整段残影，残影里夹着被切掉一半的字；新屏的列左侧也会缺一条，要等无关重绘才补全）
+- **真实性**：✅ 真 bug，BUG-2638（macOS fixed 舞台）修完后的另一条 WebKit 重绘失效路径。根因是 BUG-2711 的墨迹居中 `centerScreenInk`（`fushi/lib/src/reader/reader_visual_novel_scripts.dart:2602`）给 `.fushi-vn-content` 挂 `transform: translateX(d)`（修前 `:2630`）。iOS WebKit 在竖排（vertical-rl 翻转块方向）文档里给带绘制期偏移的盒算失效矩形时把偏移镜像了，差出 2×d：`renderScreen` 换屏移除旧内容时，旧高亮列一侧 2×d 宽的竖条不在失效区里、擦不掉（用户看到的残留蓝条 / 半个字）；新屏同侧一条不重画（列被切半）。
+  - **iOS 模拟器 Safari 真 WebKit 像素探针**（iOS 26.5 / FushiProbe）：页面 = 生产 `engineShell(vnMode: true)` + `debugDefaultTargetPlatformOverride = iOS` 下的生产 CSS（竖排 34px）+ 带 ruby 的正文 + 按固定长度切的有声书 cue；页面轮询本地服务器执行动作（cue 跟随 16 步 + 前进 4 屏 + 回翻 4 屏），每步 `simctl io screenshot` 取屏上实际像素，再把舞台 `display:none` 两帧后恢复（重建渲染树与合成层）取真值，逐像素比。修前同一装置 9 轮里 8 轮复现，缺的竖条宽 44–48 物理像素 ≈ 15–16 CSS px ≈ 2×`translateX(-7.98px)`。
+  - **二分**：去掉居中偏移 → 消失；偏移改 `position: relative; left` → 照旧（不是 transform 特有，是绘制期偏移）；`.fushi-vn-screen` 加 `will-change: transform` / 舞台 `translateZ(0)` / `contain: paint` / 根元素改横排 / 高亮 span 加 `position: relative`、`box-decoration-break: clone`、`line-height: normal`、透明 `box-shadow` → 都无效。第一版「屏加 `will-change`」曾被旧真值手段（加删全屏遮罩只重绘根层、碰不到屏自己的合成层）骗成 0/24，换成重建舞台后确认无效。
+- **[x] ① 已修复** — `centerScreenInk` 改用布局平移：内容一侧 `margin = d`、对侧 `= -d`（竖排 left/right，横排 top/bottom），每次先清掉上一屏留下的 margin 与旧 transform。两侧 margin 和为 0，flex 计算尺寸用的可用空间不变，内容盒尺寸与换列不变，只是边框盒挪 d。iOS 模拟器上修后 4 轮 0 残留；修后与修前（transform）真值帧 24/24 逐像素一致（同一内容盒 `75,0,236,714`），BUG-2711 的居中效果不变。否掉的替代方案：挪整个 `.fushi-vn-screen`（屏溢出视口后竖排根文档被 Safari 横向滚回 8px，平移被抵消，探针实测 `sl=0`）。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/vn_screen_ink_centering_test.dart`（BUG-2711 伪 DOM 跑生产函数体）改为断言平移写成对边等量 margin、内容上不再出现 `transform`，且进入时清掉上一屏的四个 margin 与 transform；修前代码上该用例红（拿到的是 `translateX(14.55px)`）。像素层行为只能在真 WebKit 合成上验（CI 没有）。
+- **备注**：
+  - 同一探针还看到一种**与本修复无关、修前修后都有**的现象：同屏内 `<ruby>` 之后的文字在首次加高亮 / 渐显补完后偶尔不重画（例：「その正体がまさか」后面的「叔父であるバーディ…」、「闘神鎧」后面的「か。」），重建后正常。用户截图里没有这种形态，未修，另开跟进。
+  - 未在 Fushi app 本体的 iOS 真机上复测（app 内 `captureReaderWebView` 走 `takeSnapshot` 会重新渲染，看不到这类失效），由用户在 iOS 上确认。

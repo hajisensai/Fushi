@@ -148,7 +148,7 @@ void main() {
 
     expect(
       RegExp(
-        r'LibrarySectionTabs\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
+        r'_BrowseSwipeSections\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
       ).allMatches(downloadsStructural),
       hasLength(1),
       reason: '资源页只能有一个外层内容域标签条（二级 tabs）',
@@ -200,9 +200,11 @@ void main() {
       isFalse,
       reason: '四个固定内容域应直接可见，不得退回无标签的表单型下拉框',
     );
-    expect(code, contains('_visitedResourceDomains'));
-    expect(identifierCall('Offstage').hasMatch(downloadsStructural), isTrue);
+    // 各域是可横滑的 TabBarView 页：首次到达后保活（不丢搜索词 / 结果 / 滚动），
+    // 离屏页关 ticker、排除出焦点遍历。
+    expect(code, contains('bool get wantKeepAlive => true;'));
     expect(identifierCall('TickerMode').hasMatch(downloadsStructural), isTrue);
+    expect(identifierCall('ExcludeFocus').hasMatch(downloadsStructural), isTrue);
     expect(
       downloads,
       isNot(contains('DownloadsGlobalResourceSearchSurface')),

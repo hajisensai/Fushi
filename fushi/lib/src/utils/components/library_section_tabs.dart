@@ -103,6 +103,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required ValueChanged<T> this.onChanged,
     required this.focusIdPrefix,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : controller = null;
 
@@ -119,6 +120,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required TabController this.controller,
     required this.focusIdPrefix,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -129,6 +131,11 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
   /// 再分小说 / 漫画 / 视频）。与 primary 同一套焦点、滚动与投影契约，只换
   /// 呈现（指示条横贯整个 tab、选中文案不着主色），层级一眼可辨。
   final bool secondary;
+
+  /// 摆得下时铺满整行（各段等分可用宽度、不滚动）；摆不下（窄窗 / 界面缩放 /
+  /// 长译文）自动退回贴左可滚动的常规形态，不会把段挤到截字。用于页面内的
+  /// 二级分区（如「浏览」各页签里的小说 / 漫画 / 视频），顶栏页签不用。
+  final bool fill;
 
   /// 仅自持形态；[LibrarySectionTabs.controlled] 下为 null（真相在 [controller]）。
   final T? selected;
@@ -169,6 +176,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           selected: selectedValue,
           onChanged: onSelect,
           secondary: secondary,
+          fill: fill,
         ),
       );
     }
@@ -190,6 +198,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
             tabs: tabs,
             controller: host,
             secondary: secondary,
+            fill: fill,
           ),
         );
       },
@@ -210,6 +219,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required T this.selected,
     required ValueChanged<T> this.onChanged,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : controller = null;
 
@@ -219,6 +229,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required this.tabs,
     required TabController this.controller,
     this.secondary = false,
+    this.fill = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -230,6 +241,9 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
 
   /// 见 [LibrarySectionTabs.secondary]。
   final bool secondary;
+
+  /// 见 [LibrarySectionTabs.fill]。
+  final bool fill;
 
   @override
   State<FushiSectionTabBar<T>> createState() => _FushiSectionTabBarState<T>();
@@ -426,6 +440,28 @@ class _FushiSectionTabBarState<T extends Object>
     // 而 TabBar 的内部 controller 取不到。两侧渐隐则不能省——即使 tabs 比旧等宽段窄，
     // 窄窗、界面缩放与长译文仍会把尾部页签完整裁到视口外，用户实报看不出后面还有
     // 内容（BUG-1971）。通过冒泡的 scroll metrics 动态显示渐隐，不需要拿 controller。
+    if (!widget.fill) return _buildScrollableWithCues();
+    // 铺满形态没有 Scrollable，也就没有滚动通知来收回渐隐：窗口先窄（出了尾部
+    // 渐隐）再拉宽进入铺满时，旧的 cue 会一直盖在最后一段上。所以渐隐只挂在可滚动
+    // 分支里；进入铺满时顺手把残留状态清零，免得再退回可滚动的第一帧先闪一下旧值
+    // （新 Scrollable 的首条 metrics 通知随后给出真值）。这里只改字段不 setState：
+    // 它们只被可滚动分支读取，而那一支正是本 builder 下次要建的东西。
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (!_fitsWidth(context, constraints.maxWidth)) {
+          return _buildScrollableWithCues();
+        }
+        _showLeadingOverflowCue = false;
+        _showTrailingOverflowCue = false;
+        _pendingLeadingOverflowCue = false;
+        _pendingTrailingOverflowCue = false;
+        return _buildTabBar(fillWidth: true);
+      },
+    );
+  }
+
+  /// 可滚动形态：拖滚 + 由冒泡滚动通知驱动的两侧渐隐。
+  Widget _buildScrollableWithCues() {
     final Widget tabs = NotificationListener<ScrollMetricsNotification>(
       onNotification: _handleScrollMetrics,
       child: NotificationListener<ScrollNotification>(
@@ -461,7 +497,28 @@ class _FushiSectionTabBarState<T extends Object>
     );
   }
 
-  Widget _buildTabBar() {
+  /// 铺满形态下每段都摆得下吗（与页头「摆不摆得下」同一张字宽表）。
+  ///
+  /// 判据是 `段数 × 最宽段 <= maxWidth`，**不是**各段自然宽之和：
+  /// `TabBar(isScrollable: false, tabAlignment: fill)` 给每段包 Expanded，每段
+  /// 只分到 `maxWidth / n`（含两侧 labelPadding），而 Tab 文字不换行、溢出渐隐。
+  /// 一段长其余短时（德 / 俄译文、大字号）总和摆得下，长段照样被截——所以要让
+  /// 最宽那段在等分格里也放得下。每段宽口径与估算一致：文字进距 + 两侧内边距。
+  bool _fitsWidth(BuildContext context, double maxWidth) {
+    if (!maxWidth.isFinite || widget.tabs.isEmpty) return false;
+    double widest = 0.0;
+    for (final LibrarySectionTab<T> tab in widget.tabs) {
+      final double width = estimateSectionTabBarWidth(context, <String>[
+        tab.label,
+      ], horizontalPaddingPerTab: _kSectionTabHorizontalPadding);
+      if (width > widest) widest = width;
+    }
+    return widest * widget.tabs.length <= maxWidth;
+  }
+
+  /// [fillWidth]：本行摆得下全部段时铺满整行（不滚动、等分宽度），见
+  /// [FushiSectionTabBar.fill]。铺满形态没有可滚动内容，不包拖滚。
+  Widget _buildTabBar({bool fillWidth = false}) {
     // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
     // TabBarView 跟着走，中间不该再插一手。
     final ValueChanged<int>? onTap = _hostControlled
@@ -478,6 +535,25 @@ class _FushiSectionTabBarState<T extends Object>
     // 可滚动 TabBar 默认留 52px 起始缩进（[TabAlignment.startOffset]）；首段必须
     // 与页头标题 / 页面内容左缘对齐，故贴左。MD3 的 tab 分隔线会横贯整条
     // TabBar，而这里 TabBar 旁边还有动作区——画出来是条半截线，故去掉。
+    if (fillWidth) {
+      return widget.secondary
+          ? TabBar.secondary(
+              controller: _controller,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              dividerHeight: 0,
+              onTap: onTap,
+              tabs: tabs,
+            )
+          : TabBar(
+              controller: _controller,
+              isScrollable: false,
+              tabAlignment: TabAlignment.fill,
+              dividerHeight: 0,
+              onTap: onTap,
+              tabs: tabs,
+            );
+    }
     if (widget.secondary) {
       return TabBar.secondary(
         controller: _controller,
