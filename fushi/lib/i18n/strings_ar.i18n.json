@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "مزامنة ملفات الصوت وحزم الترجمة للكتب الصوتية على هذا الجهاز إلى نظير الترابط (كبير).",
   "interconnect_upload_content": "رفع ملفات الكتب",
   "interconnect_upload_content_hint": "مزامنة كتب ومحتوى القراءة على هذا الجهاز إلى نظير الترابط.",
-  "interconnect_upload_dictionary": "رفع القواميس",
-  "interconnect_upload_dictionary_hint": "مزامنة قواميس هذا الجهاز إلى نظير الترابط.",
   "interconnect_upload_section": "الرفع إلى نظير الترابط",
   "interconnect_upload_section_footer": "اختر ما يرفعه هذا الجهاز إلى الجهاز المقترن. مستقل عن مفاتيح النسخ الاحتياطي السحابي ومُعطّل افتراضياً. تنطبق هذه المفاتيح فقط عندما يكون الربط البيني مُفعّلاً: تعطيله يوقف جميع عمليات الرفع هنا.",
   "interconnect_upload_video_files": "رفع ملفات الفيديو",

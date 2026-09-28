@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "Đồng bộ tệp âm thanh và gói phụ đề sách nói của thiết bị này lên thiết bị ghép nối (dung lượng lớn).",
   "interconnect_upload_content": "Tải lên tệp sách",
   "interconnect_upload_content_hint": "Đồng bộ sách và nội dung đọc của thiết bị này lên thiết bị ghép nối.",
-  "interconnect_upload_dictionary": "Tải lên từ điển",
-  "interconnect_upload_dictionary_hint": "Đồng bộ từ điển của thiết bị này lên thiết bị ghép nối.",
   "interconnect_upload_section": "Tải lên thiết bị ghép nối",
   "interconnect_upload_section_footer": "Chọn nội dung thiết bị này tải lên thiết bị đối tác đã kết nối. Độc lập với các công tắc sao lưu đám mây và mặc định tắt. Các công tắc này chỉ áp dụng khi Bật kết nối liên thiết bị đang bật: tắt kết nối liên thiết bị sẽ dừng mọi tải lên ở đây.",
   "interconnect_upload_video_files": "Tải lên tệp video",

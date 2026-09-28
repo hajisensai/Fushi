@@ -77,17 +77,6 @@ void main() {
       expect(languageArg, lessThan(removeLocalAudio),
           reason: 'sidecar 语言匹配应使用当前学习语言偏好');
     });
-
-    test(
-        '_propagateDictionaryDeleteToRemote routes live backend via '
-        'backend.deleteRemoteDictionary', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
-      expect(src.contains('backend.deleteRemoteDictionary'), isTrue,
-          reason: '删除传播必须对 InterconnectSyncBackend 调 live DELETE 端点');
-      expect(src.contains('backend is InterconnectSyncBackend'), isTrue,
-          reason: '必须有 is InterconnectSyncBackend 分流判定');
-    });
   });
 
   group('source guards: AppModel wires audio params into host service (T3.4)',

@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "把本設備的有聲書音頻+字幕包上傳同步到互聯對端（體積較大）。",
   "interconnect_upload_content": "上傳書籍檔案",
   "interconnect_upload_content_hint": "把本設備的書籍/閱讀內容上傳同步到互聯對端。",
-  "interconnect_upload_dictionary": "上傳詞典",
-  "interconnect_upload_dictionary_hint": "把本設備的詞典上傳同步到互聯對端。",
   "interconnect_upload_section": "上傳到互聯對端",
   "interconnect_upload_section_footer": "選擇本設備要把哪些內容上傳給已連接的互聯對端。與雲備份的同名開關互不影響，且預設全部關閉。本組開關只在「啟用互聯」打開時生效：關掉互聯，這裡的上傳全部停止。",
   "interconnect_upload_video_files": "上傳影片檔案",

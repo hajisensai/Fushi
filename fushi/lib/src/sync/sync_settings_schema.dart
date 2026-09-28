@@ -596,25 +596,11 @@ SettingsDestination buildInterconnectDestination() {
               ).setInterconnectSyncContentEnabled(value);
             },
           ),
-          SettingsSwitchItem(
-            id: 'interconnect.upload_dictionary',
-            title: t.interconnect_upload_dictionary,
-            subtitle: t.interconnect_upload_dictionary_hint,
-            icon: Icons.menu_book_outlined,
-            value: (SettingsContext ctx) =>
-                _syncSettings(ctx).interconnectSyncDictionary,
-            onChanged: (SettingsContext ctx, bool value) async {
-              _syncSettings(ctx).interconnectSyncDictionary = value;
-              await SyncRepository(
-                ctx.appModel.database,
-              ).setInterconnectSyncDictionaryEnabled(value);
-            },
-          ),
-          // BUG-2494：互联页没有任何「把对端的词典拉下来」的入口——上面那个开关虽然
-          // 实际驱动的是双向 union，但文案是「上传」，用户不会把它当成下载；云备份页
-          // 那行「词典 · 传输 ▾」在同步方式=互联时被藏掉、且 runManualAssetTransfer
-          // 显式跳过互联通道。这里给互联通道自己一行显式的上传/下载动作，跑在
+          // BUG-2494：互联通道自己一行显式的上传/下载动作，跑在
           // SyncAssetChannelScope.interconnect 上，只碰互联对端、不碰云盘。
+          // BUG-2762：这一行是互联页词典的**唯一**入口。以前上面还有一个「上传词典」
+          // 自动同步开关，与本行在同一组里并排成两个「词典」，且开关实际驱动的是双向
+          // union、文案却是「上传」；现在与云备份页同形——词典只由显式动作搬。
           SettingsCustomItem(
             id: 'interconnect.dictionary_transfer',
             searchTitle: t.sync_asset_dictionary,
@@ -1037,7 +1023,6 @@ class _SyncSettingsState {
   bool syncVideoFiles = false;
   // BUG-988：互联通道专属的「上传内容到对端」开关，独立于上面的云备份 sync* 开关。
   bool interconnectSyncContent = false;
-  bool interconnectSyncDictionary = false;
   bool interconnectSyncAudioBookFiles = false;
   bool interconnectSyncVideoFiles = false;
   // 互联专属的「共享统计 / 共享收藏夹」（双向合并，非上传）。默认 true = 拆开关前
@@ -1147,8 +1132,6 @@ class _SyncSettingsState {
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();
       syncVideoFiles = await _repo.isSyncVideoFilesEnabled();
       interconnectSyncContent = await _repo.isInterconnectSyncContentEnabled();
-      interconnectSyncDictionary = await _repo
-          .isInterconnectSyncDictionaryEnabled();
       interconnectSyncAudioBookFiles = await _repo
           .isInterconnectSyncAudioBookFilesEnabled();
       interconnectSyncVideoFiles = await _repo

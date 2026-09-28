@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "このデバイスのオーディオブックの音声と字幕パッケージをインターコネクトピアに同期します（大容量）。",
   "interconnect_upload_content": "書籍ファイルをアップロード",
   "interconnect_upload_content_hint": "このデバイスの書籍と読書コンテンツをインターコネクトピアに同期します。",
-  "interconnect_upload_dictionary": "辞書",
-  "interconnect_upload_dictionary_hint": "このデバイスの辞書をインターコネクトピアに同期します。",
   "interconnect_upload_section": "インターコネクトピアにアップロード",
   "interconnect_upload_section_footer": "このデバイスが接続されたピアにアップロードする内容を選択します。クラウドバックアップのスイッチとは独立しており、デフォルトではオフです。これらのスイッチは「インターコネクトを有効にする」がオンの場合にのみ適用されます。インターコネクトをオフにすると、ここのすべてのアップロードが停止します。",
   "interconnect_upload_video_files": "動画ファイルをアップロード",

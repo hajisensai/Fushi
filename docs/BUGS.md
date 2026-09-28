@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2532 条。点号进各自文件。
+> 共 2533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2762](bugs/BUG-2762-interconnect-dictionary-duplicate.md) | ✅ | ✅ | 互联页「上传到互联对端」里词典出现两次 |
 | [BUG-2753](bugs/BUG-2753-mdx-empty-reading-split-headword.md) | ✅ | ✅ | MDX词典与Yomitan词典同一词条被拆成两张卡 |
 | [BUG-2752](bugs/BUG-2752-sync-dict-refresh-empties-cache.md) | ✅ | ✅ | 互联下载服务器词典后本地词典全部消失 |
 | [BUG-2751](bugs/BUG-2751-vn-ios-screen-swap-residue.md) | ✅ | ✅ | iOS VN 翻屏后旧屏高亮列残留、新列被切半 |

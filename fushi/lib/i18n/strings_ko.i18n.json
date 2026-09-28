@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "이 기기의 오디오북 음성 및 자막 패키지를 인터커넥트 피어로 동기화합니다 (대용량).",
   "interconnect_upload_content": "도서 파일 업로드",
   "interconnect_upload_content_hint": "이 기기의 도서 및 읽기 콘텐츠를 인터커넥트 피어로 동기화합니다.",
-  "interconnect_upload_dictionary": "사전 업로드",
-  "interconnect_upload_dictionary_hint": "이 기기의 사전을 인터커넥트 피어로 동기화합니다.",
   "interconnect_upload_section": "인터커넥트 피어로 업로드",
   "interconnect_upload_section_footer": "이 기기가 연결된 상대에게 업로드할 항목을 선택하세요. 클라우드 백업 스위치와 독립적이며 기본값은 꺼짐입니다. 이 스위치는 인터커넥트 활성화가 켜져 있을 때만 적용됩니다: 인터커넥트를 끄면 여기의 모든 업로드가 중지됩니다.",
   "interconnect_upload_video_files": "동영상 파일 업로드",
