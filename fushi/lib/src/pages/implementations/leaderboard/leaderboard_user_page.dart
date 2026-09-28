@@ -15,7 +15,8 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_work_pag
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
-/// 观看者与该用户的好友关系（取服务端用户卡的 `relation`；缺字段时由 `friends()` 推出）。
+/// 观看者与该用户的好友关系（取服务端用户卡的 `relation`；只有字段缺失——旧服务端——
+/// 时才由 `friends()` 推出）。
 enum LeaderboardRelation { self, none, outgoing, incoming, friends }
 
 /// 书架筛选：读完 / 在读（线上 `status` 值）。
@@ -85,10 +86,13 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     }
   }
 
-  /// 服务端用户卡直接带观看者关系（签名请求时）；缺字段（旧服务端 / 匿名）返回 null，
-  /// 由 [_loadRelation] 退回按好友列表推断。
+  /// 服务端用户卡直接带观看者关系（签名请求时，陌生人是 `none`）；缺字段（旧服务端 /
+  /// 匿名）返回 null，由 [_loadRelation] 退回按好友列表推断。未知的新值按无关系处理，
+  /// 同样不再去拉好友列表。
   LeaderboardRelation? _relationFromCard(UserCard card) {
     switch (card.relation) {
+      case 'none':
+        return LeaderboardRelation.none;
       case 'self':
         return LeaderboardRelation.self;
       case 'friend':

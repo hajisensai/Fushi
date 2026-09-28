@@ -14,7 +14,7 @@ class LeaderboardLocalAccount {
   const LeaderboardLocalAccount({
     required this.recoveryCode,
     required this.accountId,
-    required this.consentAt,
+    this.consentAt,
     this.uploadEnabled = true,
     this.serverUrl,
     this.syncState = LeaderboardSyncState.empty,
@@ -32,8 +32,9 @@ class LeaderboardLocalAccount {
   /// 本机钥匙推出来的设备 id。
   final String accountId;
 
-  /// 用户在同意弹窗里同意公开的时刻（毫秒）。
-  final int consentAt;
+  /// 用户同意公开（注册 / 登录 / 导入恢复码时勾选，或之后打开上传开关时确认）的时刻
+  /// （毫秒）；null = 没同意过，此时 [uploadEnabled] 必为 false。
+  final int? consentAt;
 
   /// 上传开关：关掉后不再上报书架（账户仍在）。
   final bool uploadEnabled;
@@ -54,6 +55,7 @@ class LeaderboardLocalAccount {
   final bool uploadBlockedByOtherDevice;
 
   LeaderboardLocalAccount copyWith({
+    int? consentAt,
     bool? uploadEnabled,
     LeaderboardSyncState? syncState,
     int? lastSyncAt,
@@ -62,7 +64,7 @@ class LeaderboardLocalAccount {
   }) => LeaderboardLocalAccount(
     recoveryCode: recoveryCode,
     accountId: accountId,
-    consentAt: consentAt,
+    consentAt: consentAt ?? this.consentAt,
     uploadEnabled: uploadEnabled ?? this.uploadEnabled,
     serverUrl: serverUrl,
     syncState: syncState ?? this.syncState,
@@ -97,7 +99,7 @@ class LeaderboardLocalAccount {
         code.isEmpty ||
         account is! String ||
         account.isEmpty ||
-        consent is! num) {
+        (consent != null && consent is! num)) {
       throw const FormatException('not a leaderboard account file');
     }
     LeaderboardSyncState sync = LeaderboardSyncState.empty;
@@ -113,8 +115,9 @@ class LeaderboardLocalAccount {
     return LeaderboardLocalAccount(
       recoveryCode: code,
       accountId: account,
-      consentAt: consent.toInt(),
-      uploadEnabled: j['uploadEnabled'] != false,
+      consentAt: (consent as num?)?.toInt(),
+      // 没同意过就不能开着上传（旧文件都带 consentAt，行为不变）。
+      uploadEnabled: consent != null && j['uploadEnabled'] != false,
       serverUrl: server is String && server.isNotEmpty ? server : null,
       syncState: sync,
       lastSyncAt: (j['lastSyncAt'] as num?)?.toInt(),

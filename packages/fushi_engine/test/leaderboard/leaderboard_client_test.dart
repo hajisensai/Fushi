@@ -694,6 +694,115 @@ void main() {
     });
   });
 
+  group('设备', () {
+    test('devices / removeDevice：路径、签名与解析', () async {
+      final _Harness h = _Harness((http.Request r) async {
+        if (r.method == 'DELETE') return http.Response('', 204);
+        return _json(<String, dynamic>{
+          'devices': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'keyId': 'KeyA000000000001',
+              'createdAt': 10,
+              'lastUsedAt': null,
+              'current': true,
+            },
+            <String, dynamic>{
+              'keyId': 'KeyB000000000002',
+              'createdAt': 20,
+              'lastUsedAt': 30,
+              'current': false,
+            },
+          ],
+        });
+      }, identity: _id);
+      final List<LeaderboardDevice> devices = await h.client.devices();
+      expect(devices.map((LeaderboardDevice d) => d.keyId), <String>[
+        'KeyA000000000001',
+        'KeyB000000000002',
+      ]);
+      expect(devices.first.current, isTrue);
+      expect(devices.first.lastUsedAt, isNull);
+      expect(devices.last.lastUsedAt, 30);
+      await h.client.removeDevice('KeyB000000000002');
+      expect(
+        h.requests.map((http.Request r) => '${r.method} ${r.url.path}'),
+        <String>[
+          'GET /v1/me/devices',
+          'DELETE /v1/me/devices/KeyB000000000002',
+        ],
+      );
+      expect(
+        h.requests.every((http.Request r) => _verifySigned(r, _id)),
+        isTrue,
+      );
+      expect(() => h.client.removeDevice('../me'), throwsArgumentError);
+    });
+
+    test('解绑当前设备：400 cannot_remove_current 透出', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'cannot_remove_current'}, 400),
+        identity: _id,
+      );
+      await expectLater(
+        h.client.removeDevice('KeyA000000000001'),
+        throwsA(
+          isA<LeaderboardApiException>().having(
+            (LeaderboardApiException e) => e.code,
+            'code',
+            'cannot_remove_current',
+          ),
+        ),
+      );
+    });
+  });
+
+  group('账户失效回调', () {
+    LeaderboardClient gone(
+      List<LeaderboardApiException> seen, {
+      String code = 'unknown_account',
+      int status = 401,
+    }) => LeaderboardClient(
+      baseUrl: Uri.parse('https://rank.example'),
+      identity: _id,
+      httpClientFactory: () async => MockClient(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': code}, status),
+      ),
+      onAccountGone: seen.add,
+    );
+
+    test('签名请求 401 unknown_account：先回调、再抛给调用方', () async {
+      final List<LeaderboardApiException> seen = <LeaderboardApiException>[];
+      final LeaderboardClient c = gone(seen);
+      await expectLater(c.me(), throwsA(isA<LeaderboardApiException>()));
+      await expectLater(c.rank(), throwsA(isA<LeaderboardApiException>()));
+      expect(seen, hasLength(2));
+      expect(seen.first.code, kLeaderboardAccountGoneCode);
+    });
+
+    test('其它 401、非 401、注册 / 登录（不带 X-Fushi-Account）都不回调', () async {
+      final List<LeaderboardApiException> seen = <LeaderboardApiException>[];
+      await expectLater(
+        gone(seen, code: 'bad_signature').me(),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await expectLater(
+        gone(seen, status: 404).me(),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await expectLater(
+        gone(seen).login(email: 'a@b.cd', code: '1'),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await expectLater(
+        gone(seen).requestEmailCode(email: 'a@b.cd', purpose: 'login'),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      expect(seen, isEmpty);
+    });
+  });
+
   group('UserCard.relation', () {
     test('签名请求带 relation；缺失（匿名 / 旧服务端）为 null', () {
       Map<String, dynamic> card([String? relation]) => <String, dynamic>{
@@ -706,6 +815,7 @@ void main() {
         if (relation != null) 'relation': relation,
       };
       expect(UserCard.fromJson(card('incoming')).relation, 'incoming');
+      expect(UserCard.fromJson(card('none')).relation, 'none');
       expect(UserCard.fromJson(card()).relation, isNull);
       expect(UserCard.fromJson(card('friend')).toJson()['relation'], 'friend');
     });

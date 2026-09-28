@@ -75,6 +75,9 @@ class LeaderboardServerClock {
   }
 }
 
+/// 签名请求的设备钥匙在服务端不存在（401）：账户已删除或本设备已被解绑。
+const String kLeaderboardAccountGoneCode = 'unknown_account';
+
 /// 默认请求整体超时。
 const Duration kLeaderboardRequestTimeout = Duration(seconds: 30);
 
@@ -112,13 +115,20 @@ class LeaderboardClient {
     LeaderboardServerClock? serverClock,
     Duration requestTimeout = kLeaderboardRequestTimeout,
     Duration uploadTimeout = kLeaderboardUploadTimeout,
+    void Function(LeaderboardApiException error)? onAccountGone,
   }) : _baseUrl = baseUrl,
        _httpClientFactory = httpClientFactory,
        _identity = identity,
        _clockMs = clockMs ?? _systemClockMs,
        serverClock = serverClock ?? LeaderboardServerClock(),
        _requestTimeout = requestTimeout,
-       _uploadTimeout = uploadTimeout;
+       _uploadTimeout = uploadTimeout,
+       _onAccountGone = onAccountGone;
+
+  /// 带 X-Fushi-Account 的签名请求收到 401 [kLeaderboardAccountGoneCode]（设备钥匙在服务端
+  /// 已不存在：账户在别的设备删了，或本设备被解绑）时，在异常抛给调用方**之前**同步调用。
+  /// 不论请求是从哪条路径发出的（同步 / 读榜 / 好友），持有者都在这一处得知本机账户已失效。
+  final void Function(LeaderboardApiException error)? _onAccountGone;
 
   final Uri _baseUrl;
   final Future<http.Client> Function() _httpClientFactory;
@@ -236,6 +246,26 @@ class LeaderboardClient {
   Future<void> deleteAccount() async {
     _requireIdentity();
     await _send('DELETE', '/v1/me');
+  }
+
+  /// 本账户已绑定的设备（本机标 `current`）。
+  Future<List<LeaderboardDevice>> devices() async {
+    _requireIdentity();
+    final JsonMap j = await _sendJson('GET', '/v1/me/devices');
+    return List<LeaderboardDevice>.unmodifiable(
+      ((j['devices'] as List<Object?>?) ?? const <Object?>[]).map(
+        (Object? e) => LeaderboardDevice.fromJson(
+          (e as Map<Object?, Object?>).cast<String, dynamic>(),
+        ),
+      ),
+    );
+  }
+
+  /// 解绑一台设备（204）。不能解绑本机（400 `cannot_remove_current`）；解绑的若是上传
+  /// 设备，服务端清空上传设备。
+  Future<void> removeDevice(String keyId) async {
+    _requireIdentity();
+    await _send('DELETE', '/v1/me/devices/${_segment(keyId)}');
   }
 
   /// 上传头像（客户端已裁成小 JPEG），返回 `/img/...` 相对路径。
@@ -595,6 +625,13 @@ class LeaderboardClient {
           timeout: timeout ?? _requestTimeout,
         );
       } on LeaderboardApiException catch (e) {
+        if (signs &&
+            withAccount &&
+            e.status == 401 &&
+            e.code == kLeaderboardAccountGoneCode) {
+          _onAccountGone?.call(e);
+          rethrow;
+        }
         if (!signs ||
             attempt > 0 ||
             e.status != 401 ||

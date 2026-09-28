@@ -23,6 +23,9 @@ String leaderboardErrorText(Object error) {
   if (error is LeaderboardUploadOwnedElsewhere) {
     return t.leaderboard_sync_owned_elsewhere;
   }
+  if (error is LeaderboardConsentRequired) {
+    return t.leaderboard_error_consent_required;
+  }
   if (error is ArgumentError) return t.leaderboard_error_bad_email;
   if (error is FormatException) return t.leaderboard_error_bad_recovery;
   if (error is StateError) return t.leaderboard_error_not_enabled;
@@ -66,8 +69,14 @@ String _apiErrorText(LeaderboardApiException e) {
       return t.leaderboard_error_no_account;
     case 'too_many_devices':
       return t.leaderboard_error_too_many_devices;
-    case 'unknown_account':
+    case kLeaderboardAccountGoneCode:
       return t.leaderboard_error_unknown_account;
+    case 'cannot_remove_current':
+      return t.leaderboard_error_cannot_remove_current;
+    case 'retry':
+      return t.leaderboard_error_nickname_retry;
+    case kLeaderboardNotConfiguredCode:
+      return t.leaderboard_error_not_configured;
     case 'bad_time':
     case 'stale_time':
       return t.leaderboard_error_clock;
@@ -88,14 +97,160 @@ String _apiErrorText(LeaderboardApiException e) {
   return t.leaderboard_error_unknown(detail: '${e.status} ${e.code}');
 }
 
-/// 同步失败的提示：429 / 503 一律是「今天的额度用完了」（服务端日预算熔断 / 每小时
-/// 上传次数），同步会在下次自动续上，不必让用户以为坏了。
+/// 服务端缺配置（503 `not_configured`：排行服务还没部署好）——不是额度问题。
+const String kLeaderboardNotConfiguredCode = 'not_configured';
+
+/// 同步失败的提示：429 / 503 是「今天的额度用完了」（服务端日预算熔断 / 每小时上传
+/// 次数），同步会在下次自动续上，不必让用户以为坏了；503 `not_configured`（服务还没
+/// 部署）除外，照实说。
 String leaderboardSyncErrorText(Object error) {
   if (error is LeaderboardApiException &&
+      error.code != kLeaderboardNotConfiguredCode &&
       (error.status == 429 || error.status == 503)) {
     return t.leaderboard_sync_quota;
   }
   return leaderboardErrorText(error);
+}
+
+/// 「会公开 / 不会上传」清单（说明卡、注册 / 登录页、恢复码导入、打开上传的确认框共用
+/// 同一份，文案与实际上传内容一一对应：见 engine `ShelfEntryUpload` / `DailyCharsUpload`）。
+class LeaderboardPublicDataList extends StatelessWidget {
+  const LeaderboardPublicDataList({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    Widget bullets(String title, List<String> items, IconData icon) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(title, style: tokens.type.listTitle),
+        SizedBox(height: tokens.spacing.gap / 2),
+        for (final String item in items)
+          Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(icon, size: 18),
+                SizedBox(width: tokens.spacing.gap),
+                Expanded(child: Text(item, style: tokens.type.listSubtitle)),
+              ],
+            ),
+          ),
+      ],
+    );
+    return Column(
+      key: const ValueKey<String>('leaderboard-public-data'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        bullets(t.leaderboard_intro_public_title, <String>[
+          t.leaderboard_intro_public_profile,
+          t.leaderboard_intro_public_works,
+          t.leaderboard_intro_public_work_stats,
+          t.leaderboard_intro_public_chars,
+        ], Icons.public),
+        SizedBox(height: tokens.spacing.gap),
+        bullets(t.leaderboard_intro_private_title, <String>[
+          t.leaderboard_intro_private_position,
+          t.leaderboard_intro_private_mining,
+          t.leaderboard_intro_private_files,
+          t.leaderboard_intro_private_device,
+        ], Icons.lock_outline),
+        SizedBox(height: tokens.spacing.gap),
+        Text(t.leaderboard_intro_email_note, style: tokens.type.metadata),
+      ],
+    );
+  }
+}
+
+/// 同意勾选行：整行是**一个**可聚焦控件（Enter / 手柄 A / 点击都切换）；复选框只是
+/// 状态显示，不单独占焦点位。
+class LeaderboardConsentTile extends StatelessWidget {
+  const LeaderboardConsentTile({
+    required this.value,
+    required this.label,
+    required this.onChanged,
+    super.key,
+  });
+
+  final bool value;
+  final String label;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiListItem(
+      leading: ExcludeFocus(
+        child: Checkbox(
+          value: value,
+          onChanged: (bool? v) => onChanged(v ?? false),
+        ),
+      ),
+      title: Text(label),
+      titleMaxLines: null,
+      onTap: () => onChanged(!value),
+    );
+  }
+}
+
+/// 打开上传前的同意确认（本机账户还没同意过时）：列出公开清单，确认返回 true。
+Future<bool> showLeaderboardUploadConsentDialog(BuildContext context) async =>
+    await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(dialogContext);
+        return FushiDialogFrame(
+          child: FushiModalSheetFrame(
+            title: t.leaderboard_upload_consent_title,
+            leadingIcon: Icons.public,
+            bodyPadding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              0,
+              tokens.spacing.card,
+              tokens.spacing.gap,
+            ),
+            body: const LeaderboardPublicDataList(),
+            footer: Wrap(
+              alignment: WrapAlignment.end,
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                adaptiveDialogAction(
+                  context: dialogContext,
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: Text(t.dialog_cancel),
+                ),
+                KeyedSubtree(
+                  key: const ValueKey<String>('leaderboard-upload-consent-ok'),
+                  child: adaptiveDialogAction(
+                    context: dialogContext,
+                    isDefaultAction: true,
+                    onPressed: () => Navigator.pop(dialogContext, true),
+                    child: Text(t.leaderboard_upload_consent_action),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ) ??
+    false;
+
+/// 跑一个需要「已同意公开」的上传操作：本机账户没同意过时先弹确认框，确认后带
+/// `consent: true` 调 [op]；取消返回 false 且不调。
+Future<bool> runWithLeaderboardUploadConsent(
+  BuildContext context,
+  LeaderboardService service,
+  Future<void> Function(bool consent) op,
+) async {
+  bool consent = false;
+  if (!service.hasConsent) {
+    consent = await showLeaderboardUploadConsentDialog(context);
+    if (!consent) return false;
+  }
+  await op(consent);
+  return true;
 }
 
 String _two(int v) => v.toString().padLeft(2, '0');
@@ -531,6 +686,7 @@ class _RecoveryImportDialog extends ConsumerStatefulWidget {
 class _RecoveryImportDialogState extends ConsumerState<_RecoveryImportDialog> {
   final TextEditingController _code = TextEditingController();
   bool _busy = false;
+  bool _consent = false;
   String? _error;
 
   @override
@@ -547,7 +703,9 @@ class _RecoveryImportDialogState extends ConsumerState<_RecoveryImportDialog> {
       _error = null;
     });
     try {
-      await ref.read(leaderboardServiceProvider).importRecoveryCode(code);
+      await ref
+          .read(leaderboardServiceProvider)
+          .importRecoveryCode(code, consent: _consent);
       if (mounted) Navigator.pop(context, true);
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.importRecoveryCode', e, st);
@@ -588,6 +746,14 @@ class _RecoveryImportDialogState extends ConsumerState<_RecoveryImportDialog> {
               autofocus: true,
               hintText: 'FUSHI1-…',
               onSubmitted: (String _) => unawaited(_submit()),
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            const LeaderboardPublicDataList(),
+            LeaderboardConsentTile(
+              key: const ValueKey<String>('leaderboard-recovery-consent'),
+              value: _consent,
+              label: t.leaderboard_signin_consent_login,
+              onChanged: (bool v) => setState(() => _consent = v),
             ),
             if (_error != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),

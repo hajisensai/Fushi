@@ -80,25 +80,9 @@ class LeaderboardIntroView extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    Widget bullets(String title, List<String> items, IconData icon) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(title, style: tokens.type.listTitle),
-        SizedBox(height: tokens.spacing.gap / 2),
-        for (final String item in items)
-          Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap / 2),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Icon(icon, size: 18),
-                SizedBox(width: tokens.spacing.gap),
-                Expanded(child: Text(item, style: tokens.type.listSubtitle)),
-              ],
-            ),
-          ),
-      ],
-    );
+    final bool accountGone = ref
+        .watch(leaderboardServiceProvider)
+        .accountGoneNotice;
     return ListView(
       key: const ValueKey<String>('leaderboard-intro'),
       padding: withBottomSafeInset(
@@ -106,6 +90,16 @@ class LeaderboardIntroView extends ConsumerWidget {
         EdgeInsets.all(tokens.spacing.card),
       ),
       children: <Widget>[
+        if (accountGone) ...<Widget>[
+          Text(
+            t.leaderboard_error_unknown_account,
+            key: const ValueKey<String>('leaderboard-intro-account-gone'),
+            style: tokens.type.listSubtitle.copyWith(
+              color: Theme.of(context).colorScheme.error,
+            ),
+          ),
+          SizedBox(height: tokens.spacing.card),
+        ],
         FushiCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -114,20 +108,7 @@ class LeaderboardIntroView extends ConsumerWidget {
               SizedBox(height: tokens.spacing.gap),
               Text(t.leaderboard_intro_body, style: tokens.type.listSubtitle),
               SizedBox(height: tokens.spacing.card),
-              bullets(t.leaderboard_intro_public_title, <String>[
-                t.leaderboard_intro_public_profile,
-                t.leaderboard_intro_public_works,
-                t.leaderboard_intro_public_chars,
-              ], Icons.public),
-              SizedBox(height: tokens.spacing.gap),
-              bullets(t.leaderboard_intro_private_title, <String>[
-                t.leaderboard_intro_private_position,
-                t.leaderboard_intro_private_mining,
-                t.leaderboard_intro_private_files,
-                t.leaderboard_intro_private_device,
-              ], Icons.lock_outline),
-              SizedBox(height: tokens.spacing.gap),
-              Text(t.leaderboard_intro_email_note, style: tokens.type.metadata),
+              const LeaderboardPublicDataList(),
             ],
           ),
         ),
@@ -364,12 +345,19 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
           ),
         );
     if (ok == null || !mounted) return;
+    final LeaderboardService service = ref.read(leaderboardServiceProvider);
+    // 登录 / 导入时没同意公开的本机账户：接管前先确认公开清单。
+    final bool consent =
+        !service.hasConsent &&
+        await showLeaderboardUploadConsentDialog(context);
+    if (!service.hasConsent && !consent) return;
+    if (!mounted) return;
     setState(() {
       _syncing = true;
       _syncError = null;
     });
     try {
-      await ref.read(leaderboardServiceProvider).claimUploadDevice();
+      await service.claimUploadDevice(consent: consent);
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.claimUploadDevice', e, st);
       if (mounted) setState(() => _syncError = e);

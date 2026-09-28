@@ -85,6 +85,66 @@ void main() {
         ),
       );
 
+  Future<void> extension(String pkg, int warning, {String kind = 'manga'}) => db
+      .into(db.mangaExtensions)
+      .insert(
+        MangaExtensionsCompanion.insert(
+          packageName: pkg,
+          name: pkg,
+          versionCode: 1,
+          versionName: '1',
+          libVersion: '1.4',
+          language: 'ja',
+          contentWarning: Value<int>(warning),
+          apkPath: '$pkg.apk',
+          apkSha256: 'x',
+          signerSha256: 'y',
+          installedAt: 0,
+          mediaKind: Value<String>(kind),
+        ),
+      );
+
+  String onlineManga(String pkg, String key) => jsonEncode(<String, Object?>{
+    'type': 'hibiki-online-manga',
+    'version': 3,
+    'runtime': 'mihon',
+    'extensionPackage': pkg,
+    'sourceId': '1',
+    'series': <String, Object?>{'key': key, 'title': key},
+    'chapters': <Object?>[],
+  });
+
+  Future<int> scrapedMovie(
+    String bookUid, {
+    String? contentRating,
+    String provider = 'anidb',
+  }) async {
+    final int w = await db
+        .into(db.videoMetadataWorks)
+        .insert(
+          VideoMetadataWorksCompanion.insert(
+            bookUid: Value<String?>(bookUid),
+            mediaType: 'movie',
+            title: 'T $bookUid',
+            contentRating: Value<String?>(contentRating),
+            updatedAt: 0,
+          ),
+        );
+    await db
+        .into(db.videoMetadataProviderIdentities)
+        .insert(
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$w:$provider',
+            workId: Value<int?>(w),
+            provider: provider,
+            externalId: 'id_$bookUid',
+            isPrimary: const Value<bool>(true),
+            updatedAt: 0,
+          ),
+        );
+    return w;
+  }
+
   Map<String, LocalShelfEntry> byKey(LocalShelf s) => <String, LocalShelfEntry>{
     for (final LocalShelfEntry e in s.entries) e.localKey: e,
   };
@@ -213,6 +273,90 @@ void main() {
         shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
         <String>['2026-09-01=100', '2026-09-02=57'],
       );
+    });
+  });
+
+  group('nsfw', () {
+    test('在线漫画：所属扩展仓库分级 NSFW（≥3）才算；MIXED / 未装 / 普通书为 false', () async {
+      await extension('pkg.nsfw', 3);
+      await extension('pkg.mixed', 2);
+      final DateTime done = DateTime(2026, 9, 1, 12);
+      await book(
+        'Adult',
+        format: 'manga',
+        completedAt: done,
+        sourceMetadata: onlineManga('pkg.nsfw', '/a'),
+      );
+      await book(
+        'Mixed',
+        format: 'manga',
+        completedAt: done,
+        sourceMetadata: onlineManga('pkg.mixed', '/m'),
+      );
+      await book(
+        'Gone',
+        format: 'manga',
+        completedAt: done,
+        sourceMetadata: onlineManga('pkg.uninstalled', '/g'),
+      );
+      await book('Plain', completedAt: done);
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(m['book:Adult']!.upload.nsfw, isTrue);
+      expect(m['book:Mixed']!.upload.nsfw, isFalse);
+      expect(m['book:Gone']!.upload.nsfw, isFalse);
+      expect(m['book:Plain']!.upload.nsfw, isFalse);
+    });
+
+    test('视频：刮削分级成人向（R18+ / Rx）或 Aniyomi 扩展 NSFW 为 true；R+ 不算', () async {
+      final DateTime done = DateTime(2026, 8, 1, 12);
+      await extension('anime.nsfw', 3, kind: 'anime');
+      for (final String uid in <String>['r18', 'rx', 'rplus', 'ext', 'safe']) {
+        await video(uid, completedAt: done);
+      }
+      await (db.update(
+        db.videoBooks,
+      )..where(($VideoBooksTable v) => v.bookUid.equals('ext'))).write(
+        VideoBooksCompanion(
+          streamSpecJson: Value<String?>(
+            jsonEncode(<String, Object?>{
+              'kind': 'anime-source',
+              'extensionPackage': 'anime.nsfw',
+              'sourceId': '1',
+              'anime': <String, Object?>{},
+              'episode': <String, Object?>{},
+            }),
+          ),
+        ),
+      );
+      await scrapedMovie('r18', contentRating: 'R18+');
+      await scrapedMovie('rx', contentRating: 'Rx - Hentai', provider: 'mal');
+      await scrapedMovie(
+        'rplus',
+        contentRating: 'R+ - Mild Nudity',
+        provider: 'mal',
+      );
+      await scrapedMovie('ext');
+      await scrapedMovie('safe', contentRating: 'PG-13', provider: 'mal');
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      bool nsfw(String uid) => m['video:b$uid']!.upload.nsfw;
+      expect(nsfw('r18'), isTrue);
+      expect(nsfw('rx'), isTrue);
+      expect(nsfw('rplus'), isFalse);
+      expect(nsfw('ext'), isTrue);
+      expect(nsfw('safe'), isFalse);
+    });
+
+    test('isAdultVideoContentRating 与刮削协调器同口径', () {
+      expect(isAdultVideoContentRating('R18+'), isTrue);
+      expect(isAdultVideoContentRating(' rx - hentai'), isTrue);
+      expect(isAdultVideoContentRating('R+ - Mild Nudity'), isFalse);
+      expect(isAdultVideoContentRating(null), isFalse);
     });
   });
 
@@ -556,6 +700,19 @@ void main() {
               fetchedAt: 0,
             ),
           );
+      for (final String id in <String>['g2', 'g3', 'g5']) {
+        await db
+            .into(db.galgameSources)
+            .insert(
+              GalgameSourcesCompanion.insert(
+                gameId: id,
+                source: 'vndb',
+                externalId: Value<String?>('v_$id'),
+                dataJson: '{}',
+                fetchedAt: 0,
+              ),
+            );
+      }
       await db
           .into(db.galgameSessions)
           .insert(
@@ -589,11 +746,47 @@ void main() {
       final ShelfEntryUpload g2 = m['game:g2']!.upload;
       expect(g2.finished, isTrue);
       expect(g2.finishedAt, isNull, reason: '玩过但日期未知');
-      expect(g2.title, 'exe_g2');
+      // 刮削资料没有名字：用资料源键占位，绝不用本地库名（exe 推出来的）。
+      expect(g2.title, 'vndb:v_g2');
 
       expect(m['game:g3']!.upload.finished, isFalse);
       expect(m['game:g5']!.upload.ms, 60000);
     });
+  });
+
+  test('游戏：没有 bgm / vndb 身份（未刮削）的不上报，哪怕玩过或有自定义名', () async {
+    Future<void> game(String id, {String? custom}) => db
+        .into(db.galgames)
+        .insert(
+          GalgamesCompanion.insert(
+            id: id,
+            name: 'local_$id',
+            exePath: 'C:/g/$id.exe',
+            workdir: 'C:/g',
+            addedAt: 0,
+            playStatus: const Value<int>(2),
+            customDataJson: Value<String?>(custom),
+          ),
+        );
+    await game('plain');
+    await game('custom', custom: '{"name":"自定义名"}');
+    await game('scraped');
+    await db
+        .into(db.galgameSources)
+        .insert(
+          GalgameSourcesCompanion.insert(
+            gameId: 'scraped',
+            source: 'bgm',
+            externalId: const Value<String?>('77'),
+            dataJson: jsonEncode(<String, Object?>{'name': 'スクレイプ'}),
+            fetchedAt: 0,
+          ),
+        );
+    final Map<String, LocalShelfEntry> m = byKey(
+      await buildLocalShelf(db, profileId: profile),
+    );
+    expect(m.keys, <String>['game:scraped']);
+    expect(m['game:scraped']!.upload.title, 'スクレイプ');
   });
 
   test('每日字数只保留服务端窗口：UTC now − 3649 天到 now + 36 小时', () async {

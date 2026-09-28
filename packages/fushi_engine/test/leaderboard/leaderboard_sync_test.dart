@@ -18,6 +18,7 @@ LocalShelfEntry _e(
   int? finishedAt,
   int? lastActiveAt,
   String? cover,
+  bool nsfw = false,
 }) => LocalShelfEntry(
   localKey: key,
   localCoverPath: cover,
@@ -26,6 +27,7 @@ LocalShelfEntry _e(
     kind: LeaderboardKind.book,
     refs: <String>['t:${title ?? key}|'],
     title: title ?? key,
+    nsfw: nsfw,
     finished: finishedAt != null,
     finishedAt: finishedAt,
     finishedDate: finishedAt == null ? null : '2026-09-01',
@@ -555,6 +557,27 @@ void main() {
       expect(s.neverSynced, isFalse);
       expect(out.coverError, isNull);
       expect(out.droppedForShelfLimit, 0);
+    });
+
+    test('nsfw 条目从不补传本地封面：直接移出 pendingCovers，其余照常补', () async {
+      needsCover = (int i) => true;
+      final List<String> thumbed = <String>[];
+      final ShelfSyncOutcome out = await syncShelf(
+        client(),
+        _shelf(<LocalShelfEntry>[
+          _e('book:a', cover: '/c/a.jpg', nsfw: true),
+          _e('book:b', cover: '/c/b.jpg'),
+        ]),
+        LeaderboardSyncState.empty,
+        coverThumb: (LocalShelfEntry e) async {
+          thumbed.add(e.localKey);
+          return Uint8List.fromList(<int>[1, 2, 3]);
+        },
+      );
+      expect(coverUploads, <String>['W_book_b']);
+      expect(thumbed, <String>['book:b'], reason: 'nsfw 的本地封面连缩略图都不生成');
+      expect(out.state.pendingCovers, isEmpty);
+      expect(out.coverError, isNull);
     });
 
     test('计数一致：本地全删的作品 put 前先 remove；改落别处的旧作品最后 remove', () async {

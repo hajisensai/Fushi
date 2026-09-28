@@ -787,13 +787,17 @@ class _ShelfSyncRun {
 
   /// 按作品补传 pendingCovers 的封面。遇到第一个 429 / 5xx / 网络错误立即停止，剩下的
   /// 留待下次；其余失败（本地缩略图出错、4xx）放弃该作品。返回第一个错误。
+  ///
+  /// nsfw 条目**从不**补传本地封面（服务端虽会模糊 nsfw 封面，但宁可不传）：它们直接从
+  /// pendingCovers 里丢掉。
   Future<(Object?, StackTrace?)> _uploadCovers() async {
     final Future<Uint8List?> Function(LocalShelfEntry entry)? thumb =
         coverThumb;
     if (thumb == null || current.pendingCovers.isEmpty) return (null, null);
     final Set<String> pending = <String>{
       for (final String k in current.pendingCovers)
-        if (byKey.containsKey(k) && current.entries.containsKey(k)) k,
+        if (current.entries.containsKey(k) && !(byKey[k]?.upload.nsfw ?? true))
+          k,
     };
     final Map<String, List<LocalShelfEntry>> byWork =
         <String, List<LocalShelfEntry>>{};

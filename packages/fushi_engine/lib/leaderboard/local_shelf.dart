@@ -8,7 +8,14 @@
 //   再无则单个视频；读完 = 单位内全部成员都有 completedAt。**只上报经外部资料源刮削过
 //   的作品**（作品上有非 local 的 provider 身份）：否则标题只能是文件名 / 合集名，既会
 //   当公开标题泄露，弱键 `t:` 又会把所有人的「Season 1」并成一部。
-// - 游戏：`galgames`，playStatus 2 = 玩过（读完），3 = 在玩。
+// - 游戏：`galgames`，playStatus 2 = 玩过（读完），3 = 在玩。与视频同口径**只上报刮削过
+//   的游戏**（有 bgm / vndb 身份）：否则标题只能是本地 exe 推出来的库名。
+//
+// nsfw（服务端据此模糊封面；nsfw 条目也不补传本地封面缩略图，见 leaderboard_sync）只用
+// 本机真实存了的信号：游戏 = 覆盖层 / bgm / vndb 的 `nsfw`；在线漫画 / 在线视频 = 所属
+// Mihon / Aniyomi 扩展的 `manga_extensions.contentWarning`（仓库索引给的，3 = NSFW；
+// 只有扩展级、没有源级分级）；刮削视频 = 作品 `contentRating` 成人向（AniDB restricted →
+// `R18+`、MAL `Rx - Hentai`）。拿不到信号的条目为 false。
 //
 // 书 / 视频 / 游戏的库表本身不分 Profile（与库页口径一致），只有统计按 Profile 隔离。
 // Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时只上传
@@ -94,6 +101,7 @@ Future<LocalShelf> buildLocalShelf(
     totals: _Totals.fromFacts(facts.daily),
     nowMs: at.millisecondsSinceEpoch,
     requireFacts: (await db.select(db.profiles).get()).length > 1,
+    nsfwExtensions: await _nsfwExtensionPackages(db),
   );
   final List<LocalShelfEntry> entries =
       <LocalShelfEntry>[
@@ -170,12 +178,32 @@ String sanitizeShelfText(String s, int max) {
   return t.substring(0, end).trim();
 }
 
-/// 一次汇总的共享上下文：统计汇总、服务器时刻、Profile 口径与被丢弃条目的记账。
+/// 仓库索引的扩展分级「NSFW」（`mihon_extension_store_client` 的 contentWarning 口径：
+/// 0 未知 / 1 SAFE / 2 MIXED / 3 NSFW；扩展页同样按 ≥ 3 判 NSFW）。
+const int kMangaExtensionContentWarningNsfw = 3;
+
+/// 刮削作品分级是否成人向：MAL / Jikan `Rx - Hentai`、AniDB `restricted` 映射的 `R18+`；
+/// `R+ - Mild Nudity` 不算。与 `VideoSourceScrapeCoordinator.isAdultContentRating` 同口径
+/// （那边标了 @visibleForTesting，不能从这里调用）。
+bool isAdultVideoContentRating(String? contentRating) {
+  final String rating = (contentRating ?? '').trim().toUpperCase();
+  return rating.startsWith('RX') || rating.startsWith('R18');
+}
+
+/// 分级为 NSFW 的已装扩展包名（漫画 / 视频扩展共表）。
+Future<Set<String>> _nsfwExtensionPackages(FushiDatabase db) async => <String>{
+  for (final MangaExtensionRow e in await db.getMangaExtensions())
+    if (e.contentWarning >= kMangaExtensionContentWarningNsfw) e.packageName,
+};
+
+/// 一次汇总的共享上下文：统计汇总、服务器时刻、Profile 口径、NSFW 扩展与被丢弃条目的
+/// 记账。
 class _ShelfBuild {
   _ShelfBuild({
     required this.totals,
     required this.nowMs,
     required this.requireFacts,
+    required this.nsfwExtensions,
   });
 
   final _Totals totals;
@@ -183,6 +211,12 @@ class _ShelfBuild {
 
   /// 有多个 Profile：只收本 Profile 有学习记录的作品。
   final bool requireFacts;
+
+  /// 分级为 NSFW 的扩展包名。
+  final Set<String> nsfwExtensions;
+
+  bool isNsfwExtension(String? packageName) =>
+      packageName != null && nsfwExtensions.contains(packageName);
 
   final List<String> _skipped = <String>[];
 
@@ -362,26 +396,36 @@ const String _legacyMihonMarker = 'hibiki-mihon';
 /// 不是跨用户可比的源内身份，不产 `src:` 键。
 const String _interconnectRuntime = 'interconnect';
 
-/// `sourceMetadata` → (`src:` 键体, 远端封面 URL)。
+/// `sourceMetadata` 里排行榜要用的三样：`src:` 键体、远端封面 URL、所属扩展包名。
+typedef _SourceInfo = ({String? ref, String? cover, String? extensionPackage});
+
+const _SourceInfo _noSource = (ref: null, cover: null, extensionPackage: null);
+
+/// `sourceMetadata` → [_SourceInfo]。
 ///
 /// - 在线漫画：`<sourceId>:<series.key>`（v2/v3 描述符；v1 旧 Mihon 描述符为
-///   `<sourceId>:<manga.url>`），封面取 series.coverUrl / manga.thumbnail_url；
-/// - LNReader 在线小说：`<pluginId>:<novelPath>`，无远端封面。
-/// 其余（普通导入书、描述符损坏）返回 (null, null)。
-(String?, String?) _sourceRefAndCover(String? sourceMetadata) {
+///   `<sourceId>:<manga.url>`），封面取 series.coverUrl / manga.thumbnail_url，扩展包名
+///   取 `extensionPackage`（Aidoku 描述符的包不在扩展表里，查不到分级 → 不算 nsfw）；
+/// - LNReader 在线小说：`<pluginId>:<novelPath>`，无远端封面、无扩展。
+/// 其余（普通导入书、描述符损坏）全为 null。互联对端当漫画源时没有 `src:` 键。
+_SourceInfo _sourceInfo(String? sourceMetadata) {
   final Map<String, Object?>? j = _jsonObject(sourceMetadata);
-  if (j == null) return (null, null);
+  if (j == null) return _noSource;
   final Object? type = j['type'];
   if (type == kLnReaderOnlineBookMarker) {
     final String? plugin = _nonEmpty(j['pluginId']?.toString());
     final String? path = _nonEmpty(j['novelPath']?.toString());
-    return (plugin == null || path == null ? null : '$plugin:$path', null);
+    return (
+      ref: plugin == null || path == null ? null : '$plugin:$path',
+      cover: null,
+      extensionPackage: null,
+    );
   }
   final Object? series = type == _onlineMangaMarker
       ? j['series']
       : (type == _legacyMihonMarker ? j['manga'] : null);
-  if (series is! Map<Object?, Object?>) return (null, null);
-  if (j['runtime']?.toString() == _interconnectRuntime) return (null, null);
+  if (series is! Map<Object?, Object?>) return _noSource;
+  if (j['runtime']?.toString() == _interconnectRuntime) return _noSource;
   final String? sourceId = _nonEmpty(j['sourceId']?.toString());
   final String? key = _nonEmpty(
     (type == _onlineMangaMarker ? series['key'] : series['url'])?.toString(),
@@ -389,7 +433,11 @@ const String _interconnectRuntime = 'interconnect';
   final String? cover = _httpUrl(
     (series['coverUrl'] ?? series['thumbnail_url'])?.toString(),
   );
-  return (sourceId == null || key == null ? null : '$sourceId:$key', cover);
+  return (
+    ref: sourceId == null || key == null ? null : '$sourceId:$key',
+    cover: cover,
+    extensionPackage: _nonEmpty(j['extensionPackage']?.toString()),
+  );
 }
 
 Future<List<LocalShelfEntry>> _bookEntries(
@@ -426,9 +474,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
     }
     final String title = _nonEmpty(row.read(t.title)) ?? bookKey;
     final String author = _nonEmpty(row.read(t.author)) ?? '';
-    final (String? sourceRef, String? coverUrl) = _sourceRefAndCover(
-      row.read(t.sourceMetadata),
-    );
+    final _SourceInfo source = _sourceInfo(row.read(t.sourceMetadata));
     final int? subject = bangumi[bookKey];
     final LocalShelfEntry? e = _entry(
       build,
@@ -439,13 +485,14 @@ Future<List<LocalShelfEntry>> _bookEntries(
       refs: buildWorkRefs(
         bgmSubjectId: subject == null ? null : '$subject',
         isbn: row.read(t.isbn),
-        sourceRef: sourceRef,
+        sourceRef: source.ref,
         title: title,
         author: author,
       ),
       title: title,
       author: author,
-      coverUrl: coverUrl,
+      coverUrl: source.cover,
+      nsfw: build.isNsfwExtension(source.extensionPackage),
       finished: completedAt != null,
       finishedAt: completedAt?.millisecondsSinceEpoch,
       chars: chars,
@@ -594,6 +641,12 @@ Future<List<LocalShelfEntry>> _videoEntries(
       // 刮削作品没有标题时用它的资料源键占位（服务端按众数取别人的标题展示）。
       title: scrapedTitle ?? ids.fallbackTitle,
       coverUrl: work == null ? null : posters[work.id],
+      nsfw:
+          isAdultVideoContentRating(work?.contentRating) ||
+          unit.members.any(
+            (VideoBookRow m) =>
+                build.isNsfwExtension(_animeSourceExtension(m.streamSpecJson)),
+          ),
       finished: finished,
       finishedAt: finished ? finishedAt : null,
       chars: chars,
@@ -614,6 +667,16 @@ Future<List<LocalShelfEntry>> _videoEntries(
   }
   return out;
 }
+
+/// Aniyomi 在线视频（`anime-source://`）重开规格里的扩展包名；不是这种规格为 null。
+/// 键名与 app 侧 `AnimeSourceBookSpec`（kind `anime-source`）是同一份持久化形状。
+String? _animeSourceExtension(String? streamSpecJson) {
+  final Map<String, Object?>? j = _jsonObject(streamSpecJson);
+  if (j == null || j['kind'] != _animeSourceSpecKind) return null;
+  return _nonEmpty(j['extensionPackage']?.toString());
+}
+
+const String _animeSourceSpecKind = 'anime-source';
 
 int? _maxOrNull(Iterable<int?> values) {
   int? out;
@@ -750,6 +813,8 @@ Future<List<LocalShelfEntry>> _gameEntries(
       g,
       sources[g.id] ?? const <GalgameSourceRow>[],
     );
+    // 没刮削过（无 bgm / vndb 身份）：标题只能是本地库名，不上报（与视频同口径）。
+    if (!meta.scraped) continue;
     final LocalShelfEntry? e = _entry(
       build,
       localKey: 'game:${g.id}',
@@ -778,9 +843,10 @@ Future<List<LocalShelfEntry>> _gameEntries(
 }
 
 /// 游戏展示元数据：与 app 侧 `mergeDrafts`（契约 §2.4）同优先级的最小子集——
-/// 标题 custom → bgm → vndb → 本地名；开发商 custom → vndb → bgm；成人向 custom →
-/// bgm → vndb；封面 custom.coverSource → bgm → vndb。标题取原名而非中文名：排行榜
-/// 跨语言共享，原名才是各地用户的公约数。
+/// 标题 custom → bgm → vndb → 资料源键占位（**不用本地库名**：它由 exe 推出，不能当公开
+/// 标题）；开发商 custom → vndb → bgm；成人向 custom → bgm → vndb；封面
+/// custom.coverSource → bgm → vndb。标题取原名而非中文名：排行榜跨语言共享，原名才是
+/// 各地用户的公约数。
 class _GameMeta {
   const _GameMeta({
     required this.title,
@@ -819,13 +885,14 @@ class _GameMeta {
       'vndb' => vndb,
       _ => const <String, Object?>{},
     };
+    final String? bgmId = _nonEmpty(bgmRow?.externalId);
+    final String? vndbId = _nonEmpty(vndbRow?.externalId);
     return _GameMeta(
       title:
           str(custom, 'name') ??
           str(bgm, 'name') ??
           str(vndb, 'name') ??
-          _nonEmpty(g.name) ??
-          g.id,
+          (bgmId != null ? 'bgm:$bgmId' : 'vndb:${vndbId ?? ''}'),
       developer:
           str(custom, 'developer') ??
           str(vndb, 'developer') ??
@@ -837,10 +904,13 @@ class _GameMeta {
             str(bgm, 'coverUrl') ??
             str(vndb, 'coverUrl'),
       ),
-      bgmId: _nonEmpty(bgmRow?.externalId),
-      vndbId: _nonEmpty(vndbRow?.externalId),
+      bgmId: bgmId,
+      vndbId: vndbId,
     );
   }
+
+  /// 经 bgm / vndb 刮削过（有外部身份）。
+  bool get scraped => bgmId != null || vndbId != null;
 
   final String title;
   final String developer;

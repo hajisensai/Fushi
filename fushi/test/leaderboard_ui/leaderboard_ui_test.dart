@@ -8,11 +8,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_account_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_share_card.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_user_page.dart';
+import 'package:fushi/utils.dart' show FushiDestructiveConfirmDialog;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -45,6 +47,12 @@ class _FakeServer {
   int? rankComputedAt = 1790000000000;
   bool shelfPrivate = true;
 
+  /// 用户卡的 `relation`；null = 旧服务端（没有这个字段）。
+  String? otherRelation;
+
+  /// 带 X-Fushi-Account 的请求一律 401 unknown_account（账户已在别处删除）。
+  bool accountGone = false;
+
   http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
     utf8.encode(jsonEncode(body)),
     status,
@@ -66,6 +74,31 @@ class _FakeServer {
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
+    if (accountGone && r.headers.containsKey('X-Fushi-Account')) {
+      return _json(<String, dynamic>{'error': 'unknown_account'}, 401);
+    }
+    if (path == '/v1/login') return _json(_self());
+    if (path == '/v1/me/devices') {
+      return _json(<String, dynamic>{
+        'devices': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'keyId': 'KeyHere000000001',
+            'createdAt': 1700000000000,
+            'lastUsedAt': 1790000000000,
+            'current': true,
+          },
+          <String, dynamic>{
+            'keyId': 'KeyOld0000000002',
+            'createdAt': 1700000000000,
+            'lastUsedAt': null,
+            'current': false,
+          },
+        ],
+      });
+    }
+    if (path.startsWith('/v1/me/devices/') && r.method == 'DELETE') {
+      return http.Response('', 204);
+    }
     if (path == '/v1/email/code') {
       final (int, String)? e = codeError;
       return e == null
@@ -121,6 +154,7 @@ class _FakeServer {
           'book': <String, dynamic>{'value': 12, 'rank': 3},
           'chars': <String, dynamic>{'value': 50000, 'rank': null},
         },
+        if (otherRelation != null) 'relation': otherRelation,
       });
     }
     if (path == '/v1/users/$_otherId/shelf') {
@@ -197,6 +231,24 @@ void main() {
   /// 服务的 `load()` future 是在 runAsync（真实 zone）里建的：对已完成 future 的
   /// `.then` 回调排在它自己的 zone 的微任务队列上，fake zone 的 pump 冲不到，所以
   /// 每轮先让真实 zone 转一圈。
+  /// 表单页（注册 / 登录 / 账户）比默认 800x600 高：ListView 懒构建，屏外的行不存在。
+  /// 把测试视口拉高，整页都建出来。
+  void tallView(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1000, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
+
+  /// 同 [settle]，但每轮给真实 zone 留出落盘时间（账户文件读写是真 IO）。
+  Future<void> settleIo(WidgetTester tester) async {
+    for (int i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+  }
+
   Future<void> settle(WidgetTester tester) async {
     for (int i = 0; i < 10; i++) {
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
@@ -219,6 +271,11 @@ void main() {
         'bad_nickname': t.leaderboard_error_bad_nickname,
         'no_account': t.leaderboard_error_no_account,
         'shelf_private': t.leaderboard_user_shelf_private,
+        'retry': t.leaderboard_error_nickname_retry,
+        'not_configured': t.leaderboard_error_not_configured,
+        'cannot_remove_current': t.leaderboard_error_cannot_remove_current,
+        'too_many_devices': t.leaderboard_error_too_many_devices,
+        'unknown_account': t.leaderboard_error_unknown_account,
       };
       for (final MapEntry<String, String> e in expected.entries) {
         expect(
@@ -252,6 +309,17 @@ void main() {
         leaderboardSyncErrorText(const LeaderboardUploadOwnedElsewhere()),
         t.leaderboard_sync_owned_elsewhere,
       );
+      // 503 not_configured 是「服务还没部署」，不是额度。
+      expect(
+        leaderboardSyncErrorText(
+          const LeaderboardApiException(503, 'not_configured'),
+        ),
+        t.leaderboard_error_not_configured,
+      );
+      expect(
+        leaderboardErrorText(const LeaderboardConsentRequired()),
+        t.leaderboard_error_consent_required,
+      );
     });
   });
 
@@ -266,6 +334,13 @@ void main() {
       findsOneWidget,
     );
     expect(find.text(t.leaderboard_intro_public_works), findsOneWidget);
+    // 如实列出：每部作品的字数与时长、每日字数（按日期）都会公开。
+    expect(find.text(t.leaderboard_intro_public_work_stats), findsOneWidget);
+    expect(find.text(t.leaderboard_intro_public_chars), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('leaderboard-intro-account-gone')),
+      findsNothing,
+    );
     expect(find.text(t.leaderboard_intro_private_position), findsOneWidget);
     expect(find.text(t.leaderboard_intro_email_note), findsOneWidget);
     for (final String key in <String>[
@@ -279,6 +354,7 @@ void main() {
   });
 
   testWidgets('注册流程：发码失败、验证码错、邮箱已注册都就地显示人话', (WidgetTester tester) async {
+    tallView(tester);
     final LeaderboardService service = buildService();
     await tester.runAsync(service.load);
     await tester.pumpWidget(
@@ -340,6 +416,7 @@ void main() {
     await tester.tap(byKey('leaderboard-signin-submit'));
     await settle(tester);
     expect(errorText(), t.leaderboard_error_email_taken);
+    expect(byKey('leaderboard-signin-to-login'), findsOneWidget);
 
     server.registerError = (400, 'nickname_crowded');
     await tester.tap(byKey('leaderboard-signin-submit'));
@@ -562,5 +639,305 @@ void main() {
     expect(data.monthChars, 777);
     expect(data.monthLabel, '2026-09');
     expect(data.accountTag, 'Me#0042');
+  });
+
+  Finder byKey(String k) => find.byKey(ValueKey<String>(k));
+  Finder editable(String k) =>
+      find.descendant(of: byKey(k), matching: find.byType(EditableText));
+
+  testWidgets('登录页：展示公开清单；不勾同意也能登录，但本机上传默认关闭', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(service.load);
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardSignInPage(mode: LeaderboardSignInMode.login),
+      ),
+    );
+    await settle(tester);
+
+    expect(byKey('leaderboard-public-data'), findsOneWidget);
+    expect(find.text(t.leaderboard_signin_consent_login), findsOneWidget);
+
+    await tester.enterText(editable('leaderboard-signin-email'), 'a@b.cd');
+    await tester.tap(byKey('leaderboard-signin-send'));
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-code'), '123456');
+    await tester.pump();
+    final FilledButton submit = tester.widget<FilledButton>(
+      byKey('leaderboard-signin-submit'),
+    );
+    expect(submit.onPressed, isNotNull, reason: '登录不强制勾同意');
+    await tester.tap(byKey('leaderboard-signin-submit'));
+    await settleIo(tester);
+    expect(service.status, LeaderboardStatus.active);
+    final LeaderboardLocalAccount? saved = await tester
+        .runAsync<LeaderboardLocalAccount?>(
+          () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
+        );
+    expect(saved!.uploadEnabled, isFalse);
+    expect(saved.consentAt, isNull);
+    await tester.pump(const Duration(seconds: 61));
+  });
+
+  testWidgets('登录页勾了同意：本机上传开', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(service.load);
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardSignInPage(mode: LeaderboardSignInMode.login),
+      ),
+    );
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-email'), 'a@b.cd');
+    await tester.tap(byKey('leaderboard-signin-send'));
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-code'), '123456');
+    await tester.tap(byKey('leaderboard-signin-consent'));
+    await tester.pump();
+    await tester.tap(byKey('leaderboard-signin-submit'));
+    await settleIo(tester);
+    final LeaderboardLocalAccount? saved = await tester
+        .runAsync<LeaderboardLocalAccount?>(
+          () => LeaderboardStore(supportRoot: root, profileId: 1).read(),
+        );
+    expect(saved!.uploadEnabled, isTrue);
+    expect(saved.consentAt, now);
+    await tester.pump(const Duration(seconds: 61));
+  });
+
+  testWidgets('走错路径：登录发码后「去注册」、注册 email_taken「改为登录」，邮箱都带过去', (
+    WidgetTester tester,
+  ) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(service.load);
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardSignInPage(mode: LeaderboardSignInMode.login),
+      ),
+    );
+    await settle(tester);
+    String email() => tester
+        .widget<EditableText>(editable('leaderboard-signin-email'))
+        .controller
+        .text;
+
+    expect(byKey('leaderboard-signin-to-register'), findsNothing);
+    await tester.enterText(editable('leaderboard-signin-email'), 'a@b.cd');
+    await tester.tap(byKey('leaderboard-signin-send'));
+    await settle(tester);
+    expect(find.text(t.leaderboard_signin_login_code_hint), findsOneWidget);
+    await tester.tap(byKey('leaderboard-signin-to-register'));
+    await settle(tester);
+    expect(find.text(t.leaderboard_signin_register_title), findsWidgets);
+    expect(byKey('leaderboard-signin-nickname'), findsOneWidget);
+    expect(email(), 'a@b.cd');
+    expect(
+      tester.widget<FilledButton>(byKey('leaderboard-signin-send')).onPressed,
+      isNotNull,
+      reason: '登录码不能拿来注册：切换后可以立刻发注册码',
+    );
+
+    server.registerError = (409, 'email_taken');
+    await tester.tap(byKey('leaderboard-signin-send'));
+    await settle(tester);
+    await tester.enterText(editable('leaderboard-signin-code'), '123456');
+    await tester.enterText(editable('leaderboard-signin-nickname'), 'Neko');
+    await tester.tap(byKey('leaderboard-signin-consent'));
+    await tester.pump();
+    await tester.tap(byKey('leaderboard-signin-submit'));
+    await settle(tester);
+    await tester.tap(byKey('leaderboard-signin-to-login'));
+    await settle(tester);
+    expect(byKey('leaderboard-signin-nickname'), findsNothing);
+    expect(find.text(t.leaderboard_signin_login_title), findsWidgets);
+    expect(email(), 'a@b.cd');
+    await tester.pump(const Duration(seconds: 61));
+  });
+
+  testWidgets('同意勾选行只占一个焦点位（复选框不单独可聚焦）', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(service.load);
+    await tester.pumpWidget(
+      wrap(
+        service,
+        const LeaderboardSignInPage(mode: LeaderboardSignInMode.register),
+      ),
+    );
+    await settle(tester);
+    final Element tile = byKey('leaderboard-signin-consent').evaluate().single;
+    bool insideTile(FocusNode n) {
+      final BuildContext? ctx = n.context;
+      if (ctx == null) return false;
+      if (identical(ctx, tile)) return true;
+      bool found = false;
+      ctx.visitAncestorElements((Element a) {
+        found = identical(a, tile);
+        return !found;
+      });
+      return found;
+    }
+
+    final int focusable = FocusManager.instance.rootScope.traversalDescendants
+        .where(insideTile)
+        .length;
+    expect(focusable, 1);
+  });
+
+  testWidgets('账户页：self 晚到时昵称框补上；用户改过的不覆盖', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = await activeService(tester);
+    expect(service.self, isNull);
+    await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
+    await settle(tester);
+    Finder nickField() => find.descendant(
+      of: find.byType(LeaderboardAccountPage),
+      matching: find.byType(EditableText),
+    );
+    String nick() =>
+        tester.widget<EditableText>(nickField().first).controller.text;
+    expect(nick(), '');
+
+    await tester.runAsync(service.refreshSelf);
+    await tester.pump();
+    expect(nick(), 'Me');
+
+    await tester.enterText(nickField().first, 'Edited');
+    await tester.runAsync(service.refreshSelf);
+    await tester.pump();
+    expect(nick(), 'Edited', reason: '用户已编辑，不被服务端值覆盖');
+  });
+
+  testWidgets('账户页：已登录设备列表，本机标注、其余二次确认后解绑', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
+    await settle(tester);
+
+    await tester.scrollUntilVisible(
+      byKey('leaderboard-device-KeyOld0000000002'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(byKey('leaderboard-device-KeyHere000000001'), findsOneWidget);
+    expect(
+      find.textContaining(t.leaderboard_account_device_current),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: byKey('leaderboard-device-KeyHere000000001'),
+        matching: find.byType(TextButton),
+      ),
+      findsNothing,
+      reason: '本机不能在这里解绑',
+    );
+    await tester.tap(
+      find.descendant(
+        of: byKey('leaderboard-device-KeyOld0000000002'),
+        matching: find.byType(TextButton),
+      ),
+    );
+    await settle(tester);
+    expect(
+      server.requests.where((http.Request r) => r.method == 'DELETE'),
+      isEmpty,
+      reason: '先确认',
+    );
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(FushiDestructiveConfirmDialog),
+            matching: find.text(t.leaderboard_account_device_remove),
+          )
+          .last,
+    );
+    await settle(tester);
+    expect(
+      server.requests
+          .where((http.Request r) => r.method == 'DELETE')
+          .map((http.Request r) => r.url.path),
+      <String>['/v1/me/devices/KeyOld0000000002'],
+    );
+    await tester.pump(const Duration(seconds: 4));
+  });
+
+  testWidgets('账户页：未同意的账户打开上传先弹公开清单确认', (WidgetTester tester) async {
+    tallView(tester);
+    final LeaderboardService service = buildService();
+    await tester.runAsync(() async {
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: LeaderboardIdentity.generate().toRecoveryCode(),
+          accountId: _selfId,
+          uploadEnabled: false,
+        ),
+      );
+      await service.load();
+    });
+    await tester.pumpWidget(wrap(service, const LeaderboardAccountPage()));
+    await settle(tester);
+    await tester.tap(byKey('leaderboard-account-upload'));
+    await settle(tester);
+    expect(byKey('leaderboard-public-data'), findsOneWidget);
+    await tester.tap(byKey('leaderboard-upload-consent-ok'));
+    await settleIo(tester);
+    expect(service.account!.uploadEnabled, isTrue);
+    expect(service.account!.consentAt, now);
+  });
+
+  testWidgets('账户已在别处删除：榜单请求 401 后自动回到说明页并提示原因', (WidgetTester tester) async {
+    final LeaderboardService service = await activeService(tester);
+    server.accountGone = true;
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+    await settle(tester);
+    expect(service.status, LeaderboardStatus.disabled);
+    expect(byKey('leaderboard-intro'), findsOneWidget);
+    expect(byKey('leaderboard-intro-account-gone'), findsOneWidget);
+    expect(find.text(t.leaderboard_error_unknown_account), findsOneWidget);
+  });
+
+  testWidgets('用户页：服务端给 relation none 时不再拉好友列表；缺字段才回退', (
+    WidgetTester tester,
+  ) async {
+    Future<void> open() async {
+      final LeaderboardService service = await activeService(tester);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            leaderboardServiceProvider.overrideWith((Ref _) => service),
+          ],
+          child: const MaterialApp(
+            home: LeaderboardUserPage(accountId: _otherId),
+          ),
+        ),
+      );
+      await settle(tester);
+    }
+
+    server.otherRelation = 'none';
+    await open();
+    expect(
+      server.requests.where((http.Request r) => r.url.path == '/v1/friends'),
+      isEmpty,
+    );
+    expect(byKey('leaderboard-user-add-friend'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    server.otherRelation = null;
+    server.requests.clear();
+    await open();
+    expect(
+      server.requests.where((http.Request r) => r.url.path == '/v1/friends'),
+      hasLength(1),
+      reason: '旧服务端没有 relation 字段：回退按好友列表推断',
+    );
   });
 }

@@ -27,6 +27,19 @@ const String kLeaderboardDefaultBaseUrl = 'https://rank.fushi.moe';
 /// 后台同步的最小间隔。
 const Duration kLeaderboardBackgroundSyncInterval = Duration(minutes: 30);
 
+/// 存量 EPUB 的 ISBN 回填重跑间隔（新导入的书导入时就解析了；这是给「导入后才补了
+/// OPF」之类的少数情况兜底）。
+const Duration kLeaderboardIsbnBackfillInterval = Duration(days: 7);
+
+/// 要打开上传，但本机账户还没同意公开（登录 / 导入恢复码时没勾选）：UI 须先展示公开
+/// 清单、用户确认后带 `consent: true` 重试。
+class LeaderboardConsentRequired implements Exception {
+  const LeaderboardConsentRequired();
+
+  @override
+  String toString() => 'LeaderboardConsentRequired';
+}
+
 /// 头像边长（正方形 JPEG）。
 const int kLeaderboardAvatarSize = 128;
 
@@ -112,6 +125,7 @@ class LeaderboardService extends ChangeNotifier {
   LeaderboardLocalAccount? _account;
   LeaderboardClient? _client;
   LeaderboardSelf? _self;
+  bool _accountGone = false;
   bool _disposed = false;
 
   LeaderboardStatus get status =>
@@ -129,6 +143,10 @@ class LeaderboardService extends ChangeNotifier {
   /// 最近一次同步因服务端书架上限（8000 部）而没有上传的本地作品数；本进程还没同步过
   /// 为 null，0 = 没有丢弃。UI 在 > 0 时提示。
   int? get droppedForShelfLimit => _droppedForShelfLimit;
+
+  /// 本机账户因服务端 401 `unknown_account`（账户已在其它设备删除，或本设备已被解绑）
+  /// 被自动退出。UI 在未开启页显示原因；再次注册 / 登录 / 导入后清掉。
+  bool get accountGoneNotice => _accountGone;
 
   /// 读取本 Profile 的账户文件（幂等；其余方法会先等它）。失败（如数据目录还没就绪）
   /// 不缓存，下次调用重试。
@@ -180,7 +198,8 @@ class LeaderboardService extends ChangeNotifier {
     );
   }
 
-  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘（同意时刻 = 现在）。
+  /// 首次开启：生成本机钥匙 → 邮箱验证码注册 → 存盘（同意时刻 = 现在）。注册页必须
+  /// 勾选同意才能提交，所以这里恒为已同意。
   Future<void> enable({
     required String nickname,
     required String email,
@@ -191,32 +210,35 @@ class LeaderboardService extends ChangeNotifier {
     final LeaderboardSelf self = await _clientFor(
       identity,
     ).register(nickname: nickname, email: email, code: code);
-    await _adopt(identity, self);
+    await _adopt(identity, self, consent: true);
   }
 
   /// 换设备：生成本机新钥匙 → 邮箱验证码登录（服务端把这把钥匙绑到已有账户）→ 存盘。
-  /// 同步状态清空，下次同步 reset 全量对账。
+  /// 同步状态清空，下次同步 reset 全量对账。[consent] = 用户在登录页勾选了同意公开；
+  /// 没勾选时本机上传默认关闭（`uploadEnabled=false`、不记同意时刻），之后在账户页打开
+  /// 上传时再确认。
   Future<void> loginWithEmail({
     required String email,
     required String code,
+    required bool consent,
   }) async {
     await load();
     final LeaderboardIdentity identity = LeaderboardIdentity.generate();
     final LeaderboardSelf self = await _clientFor(
       identity,
     ).login(email: email, code: code);
-    await _adopt(identity, self);
+    await _adopt(identity, self, consent: consent);
   }
 
   /// 备用的换设备方式：导入恢复码。先经 `me()` 确认账户在服务端存在再存盘；同步状态
-  /// 清空以触发对账。恢复码格式错抛 [FormatException]。
-  Future<void> importRecoveryCode(String code) async {
+  /// 清空以触发对账。恢复码格式错抛 [FormatException]。[consent] 同 [loginWithEmail]。
+  Future<void> importRecoveryCode(String code, {required bool consent}) async {
     await load();
     final LeaderboardIdentity identity = LeaderboardIdentity.fromRecoveryCode(
       code,
     );
     final LeaderboardSelf self = await _clientFor(identity).me();
-    await _adopt(identity, self);
+    await _adopt(identity, self, consent: consent);
   }
 
   /// 导出本机恢复码（含私钥）。未开启抛 [StateError]。
@@ -224,12 +246,14 @@ class LeaderboardService extends ChangeNotifier {
 
   Future<void> _adopt(
     LeaderboardIdentity identity,
-    LeaderboardSelf self,
-  ) async {
+    LeaderboardSelf self, {
+    required bool consent,
+  }) async {
     final LeaderboardLocalAccount account = LeaderboardLocalAccount(
       recoveryCode: identity.toRecoveryCode(),
       accountId: self.account.id,
-      consentAt: _clockMs(),
+      consentAt: consent ? _clockMs() : null,
+      uploadEnabled: consent,
       serverUrl: _account?.serverUrl,
     );
     final LeaderboardStore store = _requireStore();
@@ -238,10 +262,18 @@ class LeaderboardService extends ChangeNotifier {
       await store.write(account);
       _activate(account, identity);
       _self = self;
-      _uploadAccepted = false;
-      _droppedForShelfLimit = null;
+      _resetSessionState();
       _notify();
     });
+  }
+
+  /// 换号 / 退出时清掉只属于上一个账户的进程内状态（含后台同步节流：新账户不该被旧
+  /// 账户的失败尝试挡 30 分钟）。
+  void _resetSessionState() {
+    _uploadAccepted = false;
+    _droppedForShelfLimit = null;
+    _lastBackgroundAttemptAt = null;
+    _accountGone = false;
   }
 
   // ---- 资料 ----
@@ -273,12 +305,41 @@ class LeaderboardService extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> setUploadEnabled(bool enabled) async {
+  /// 本机账户是否已同意公开（未开启为 false）。
+  bool get hasConsent => _account?.consentAt != null;
+
+  /// 开关本机上传。打开时本机账户必须已同意公开，或本次带 [consent]（UI 刚展示过公开
+  /// 清单并确认），否则抛 [LeaderboardConsentRequired]。打开后立即在后台跑一次同步
+  /// （不等它；失败只记日志，后台节流照常兜底）。
+  Future<void> setUploadEnabled(bool enabled, {bool consent = false}) async {
     await load();
-    _requireAccount();
+    final LeaderboardLocalAccount account = _requireAccount();
+    if (enabled) _requireConsent(account, consent);
     await _update(
-      (LeaderboardLocalAccount a) => a.copyWith(uploadEnabled: enabled),
+      (LeaderboardLocalAccount a) => a.copyWith(
+        uploadEnabled: enabled,
+        consentAt: enabled && a.consentAt == null ? _clockMs() : null,
+      ),
     );
+    if (!enabled) return;
+    _lastBackgroundAttemptAt = null;
+    unawaited(
+      syncNow().catchError((Object e, StackTrace st) {
+        if (e is! LeaderboardUploadOwnedElsewhere) {
+          ErrorLogService.instance.log(
+            'LeaderboardService.syncOnEnable',
+            e,
+            st,
+          );
+        }
+      }),
+    );
+  }
+
+  void _requireConsent(LeaderboardLocalAccount account, bool consent) {
+    if (account.consentAt == null && !consent) {
+      throw const LeaderboardConsentRequired();
+    }
   }
 
   // ---- 同步 ----
@@ -296,13 +357,15 @@ class LeaderboardService extends ChangeNotifier {
 
   /// 由本设备接管本账户的书架上传：清空本机同步状态、清掉「被另一台挡住」标记 →
   /// reset + claim 全量同步。接管即表示要从本机上传，上传开关一并打开。标记在开始时就
-  /// 清：接管中途失败（如 429）也不能让后台同步永久停下，下一轮会从断点续传。
-  Future<void> claimUploadDevice() async {
+  /// 清：接管中途失败（如 429）也不能让后台同步永久停下，下一轮会从断点续传。同意语义
+  /// 同 [setUploadEnabled]（[consent]）。
+  Future<void> claimUploadDevice({bool consent = false}) async {
     await load();
-    _requireAccount();
+    _requireConsent(_requireAccount(), consent);
     return _runExclusive(() async {
       await _update(
         (LeaderboardLocalAccount a) => a.copyWith(
+          consentAt: a.consentAt ?? _clockMs(),
           uploadEnabled: true,
           syncState: LeaderboardSyncState.empty,
           uploadBlockedByOtherDevice: false,
@@ -411,9 +474,10 @@ class LeaderboardService extends ChangeNotifier {
 
   /// 启动 / 空闲时的后台同步（首页周期定时器每分钟探一次）：已开启、上传开着、本机没被
   /// 另一台上传设备挡住、距上次成功同步与上次后台尝试都 ≥ 30 分钟才跑——失败的尝试同样
-  /// 计入节流，429 / 断网时不会每分钟重打服务端；首次先回填存量 EPUB 的 ISBN（只读
-  /// OPF）。上传设备是另一台时静默停止（状态记在账户文件里供 UI 显示），不抛。未开启时
-  /// 零网络。
+  /// 计入节流，429 / 断网时不会每分钟重打服务端；距上次 ≥ 7 天时先回填存量 EPUB 的
+  /// ISBN（只读 OPF；失败只记日志，不挡同步）。上传设备是另一台时静默停止（状态记在
+  /// 账户文件里供 UI 显示），不抛；账户在服务端已不存在（401 `unknown_account`）时本机
+  /// 已自动退出，同样不抛。未开启时零网络。
   Future<void> maybeSyncInBackground() async {
     await load();
     final LeaderboardLocalAccount? account = _account;
@@ -431,17 +495,36 @@ class LeaderboardService extends ChangeNotifier {
       if (last != null && now - last < interval) return;
     }
     _lastBackgroundAttemptAt = now;
-    if (account.isbnBackfilledAt == null) {
-      await _isbnBackfill(_database());
-      await _update(
-        (LeaderboardLocalAccount a) => a.copyWith(isbnBackfilledAt: _clockMs()),
-      );
-    }
+    await _maybeBackfillIsbns(account, now);
     try {
       await syncNow();
     } on LeaderboardUploadOwnedElsewhere {
       // 已记进账户状态；后台路径不打扰用户。
+    } on LeaderboardApiException catch (e) {
+      // 账户已失效：客户端回调里已退出本机账户（下一轮直接 no-op）。
+      if (e.code != kLeaderboardAccountGoneCode) rethrow;
     }
+  }
+
+  /// 距上次回填 ≥ [kLeaderboardIsbnBackfillInterval] 才跑。成败都记下时刻：回填是本地
+  /// 全库扫 OPF，坏掉的书不该让它每 30 分钟重扫一遍；异常只记日志。
+  Future<void> _maybeBackfillIsbns(
+    LeaderboardLocalAccount account,
+    int now,
+  ) async {
+    final int? last = account.isbnBackfilledAt;
+    if (last != null &&
+        now - last < kLeaderboardIsbnBackfillInterval.inMilliseconds) {
+      return;
+    }
+    try {
+      await _isbnBackfill(_database());
+    } catch (e, st) {
+      ErrorLogService.instance.log('LeaderboardService.isbnBackfill', e, st);
+    }
+    await _update(
+      (LeaderboardLocalAccount a) => a.copyWith(isbnBackfilledAt: _clockMs()),
+    );
   }
 
   // ---- 退出 / 删除 ----
@@ -456,15 +539,33 @@ class LeaderboardService extends ChangeNotifier {
   /// 只删本机账户文件（服务端账户保留，可用邮箱或恢复码重新登录）。
   Future<void> signOutLocally() async {
     await load();
+    await _clearLocal();
+  }
+
+  /// 删本机账户文件并清内存状态。**同步地**把写入排进队列（不先 await 别的），所以
+  /// 从客户端回调里调用时，它排在触发它的那次同步的任何收尾写入之前。
+  Future<void> _clearLocal({bool accountGone = false}) {
     final LeaderboardStore store = _requireStore();
-    await _serialWrite(() async {
+    return _serialWrite(() async {
       await store.delete();
       _account = null;
       _client = null;
       _self = null;
-      _droppedForShelfLimit = null;
+      _resetSessionState();
+      _accountGone = accountGone;
       _notify();
     });
+  }
+
+  /// 客户端收到 401 `unknown_account`：只有发请求的仍是**当前**客户端才退出本机账户
+  /// （导入恢复码时的临时客户端、已被换掉的旧客户端都不牵连当前账户）。
+  void _onAccountGone(LeaderboardClient client) {
+    if (_disposed || !identical(client, _client)) return;
+    unawaited(
+      _clearLocal(accountGone: true).catchError((Object e, StackTrace st) {
+        ErrorLogService.instance.log('LeaderboardService.accountGone', e, st);
+      }),
+    );
   }
 
   // ---- 内部 ----
@@ -479,16 +580,20 @@ class LeaderboardService extends ChangeNotifier {
     return override == null ? _defaultBaseUrl : Uri.parse(override);
   }
 
-  LeaderboardClient _clientFor(LeaderboardIdentity identity) =>
-      LeaderboardClient(
-        baseUrl: _baseUrl,
-        httpClientFactory: _httpClientFactory,
-        identity: identity,
-        clockMs: _clockMs,
-        serverClock: _serverClock,
-        requestTimeout: _requestTimeout,
-        uploadTimeout: _uploadTimeout,
-      );
+  LeaderboardClient _clientFor(LeaderboardIdentity identity) {
+    late final LeaderboardClient client;
+    client = LeaderboardClient(
+      baseUrl: _baseUrl,
+      httpClientFactory: _httpClientFactory,
+      identity: identity,
+      clockMs: _clockMs,
+      serverClock: _serverClock,
+      requestTimeout: _requestTimeout,
+      uploadTimeout: _uploadTimeout,
+      onAccountGone: (LeaderboardApiException _) => _onAccountGone(client),
+    );
+    return client;
+  }
 
   LeaderboardClient _anonymousClient() => LeaderboardClient(
     baseUrl: _baseUrl,

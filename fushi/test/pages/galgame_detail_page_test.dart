@@ -260,6 +260,32 @@ void main() {
     await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
   });
 
+  // 终审疑点：编辑 tab 保存用页面打开时的 playStatus 整行覆写，会不会把「玩过」的
+  // completedAt 改写成保存时刻？真实路径上不会：保存携带的状态与库内一致（玩过 → 玩过），
+  // DB 层唯一判据 resolveGalgameCompletedAt 保持原值。这条钉住真实调用路径。
+  testWidgets('编辑 tab 保存「玩过」的游戏不改写完成时刻', (WidgetTester tester) async {
+    final AppModel appModel = await buildModel();
+    final int doneAt = DateTime(2026, 7, 3, 21).millisecondsSinceEpoch;
+    await appModel.database.setGalgamePlayStatus('g1', 2, now: doneAt);
+    await appModel.galgameRepo.load();
+    await pumpPage(tester, appModel, initialTab: 2);
+
+    await tester.enterText(editField('name'), '改个名');
+    await tester.dragUntilVisible(
+      find.text(t.game_edit_save),
+      find.byType(ListView),
+      const Offset(0, 120),
+    );
+    await tester.tap(find.text(t.game_edit_save));
+    await tester.pumpAndSettle();
+
+    final GalgameRow row = (await appModel.database.getGalgame('g1'))!;
+    expect(row.playStatus, 2);
+    expect(row.completedAt, doneAt);
+    expect(appModel.galgameRepo.byId('g1')!.displayName, '改个名');
+    await tester.pump(const Duration(seconds: 4)); // 放掉桌面 toast 计时器
+  });
+
   testWidgets('编辑 tab 拒绝半截发行日', (WidgetTester tester) async {
     final AppModel appModel = await buildModel();
     await pumpPage(tester, appModel, initialTab: 2);

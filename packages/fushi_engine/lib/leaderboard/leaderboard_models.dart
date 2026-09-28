@@ -374,8 +374,8 @@ class UserCard {
   final Map<String, UserStanding> stats;
 
   /// 观看者与此用户的关系（只有签名请求才有值）：`self` | `friend` | `outgoing`
-  /// （我发出的好友申请待对方接受）| `incoming`（对方申请待我接受）；null = 无关系 /
-  /// 匿名 / 旧服务端。
+  /// （我发出的好友申请待对方接受）| `incoming`（对方申请待我接受）| `none`（无关系）；
+  /// null = 匿名 / 旧服务端（没有这个字段）。
   final String? relation;
 
   /// 取某指标（缺失 = 值 0、未上榜）。
@@ -703,6 +703,38 @@ class DailyCharsUpload {
   final int chars;
 
   JsonMap toJson() => <String, dynamic>{'date': date, 'chars': chars};
+}
+
+/// GET /v1/me/devices 的一行：本账户绑定的一把设备钥匙。[current] = 发请求的本机。
+class LeaderboardDevice {
+  const LeaderboardDevice({
+    required this.keyId,
+    required this.createdAt,
+    this.lastUsedAt,
+    required this.current,
+  });
+
+  factory LeaderboardDevice.fromJson(JsonMap j) => LeaderboardDevice(
+    keyId: _str(j['keyId']),
+    createdAt: _int(j['createdAt']),
+    lastUsedAt: _intOrNull(j['lastUsedAt']),
+    current: j['current'] == true,
+  );
+
+  /// 设备钥匙 id（sha256(spki) 前 16 位，同 X-Fushi-Account）。
+  final String keyId;
+  final int createdAt;
+
+  /// 最近一次用这把钥匙签名的时刻；服务端没记过为 null。
+  final int? lastUsedAt;
+  final bool current;
+
+  JsonMap toJson() => <String, dynamic>{
+    'keyId': keyId,
+    'createdAt': createdAt,
+    'lastUsedAt': lastUsedAt,
+    'current': current,
+  };
 }
 
 String _canonicalJson(Object? v) => jsonEncode(_sortKeys(v));

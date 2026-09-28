@@ -46,6 +46,10 @@ class _FakeServer {
   /// 本账户的上传设备是另一台（直到有请求带 claim 接管）。
   bool ownedElsewhere = false;
 
+  /// 账户已在别处删除 / 本设备已被解绑：带 X-Fushi-Account 的请求一律 401
+  /// unknown_account。
+  bool accountGone = false;
+
   List<http.Request> at(String path) =>
       requests.where((http.Request r) => r.url.path == path).toList();
 
@@ -76,6 +80,9 @@ class _FakeServer {
   Future<http.Response> handle(http.Request r) async {
     requests.add(r);
     final String path = r.url.path;
+    if (accountGone && r.headers.containsKey('X-Fushi-Account')) {
+      return _json(<String, dynamic>{'error': 'unknown_account'}, 401);
+    }
     if (path == '/v1/email/code') {
       return _json(<String, dynamic>{'sent': true}, 202);
     }
@@ -158,6 +165,7 @@ void main() {
   late _FakeServer server;
   late int now;
   late int backfills;
+  late bool backfillThrows;
   late LocalShelf shelf;
   late List<DateTime> builtAt;
 
@@ -167,6 +175,7 @@ void main() {
     server = _FakeServer();
     now = 1700000000000;
     backfills = 0;
+    backfillThrows = false;
     shelf = _shelf(2);
     builtAt = <DateTime>[];
   });
@@ -193,6 +202,7 @@ void main() {
     },
     isbnBackfill: (FushiDatabase _) async {
       backfills++;
+      if (backfillThrows) throw StateError('broken OPF');
       return 0;
     },
     avatarEncoder: (String path) async =>
@@ -268,7 +278,7 @@ void main() {
 
   test('loginWithEmail：新本机钥匙，存服务端账户 id，同步状态清空', () async {
     final LeaderboardService s = service();
-    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
     final LeaderboardLocalAccount saved = (await store().read())!;
     final LeaderboardIdentity device = LeaderboardIdentity.fromRecoveryCode(
       saved.recoveryCode,
@@ -306,7 +316,7 @@ void main() {
     now += const Duration(minutes: 25).inMilliseconds;
     shelf = _shelf(3);
     await s.maybeSyncInBackground();
-    expect(backfills, 1, reason: 'ISBN 回填只跑一次');
+    expect(backfills, 1, reason: 'ISBN 回填 7 天内不重跑');
     final List<http.Request> second = server.at('/v1/shelf');
     final Map<Object?, Object?> body =
         jsonDecode(utf8.decode(second.single.bodyBytes))
@@ -341,7 +351,7 @@ void main() {
   test('导入恢复码：me() 确认后存盘；坏码抛 FormatException 且不落盘', () async {
     final LeaderboardService s = service();
     await expectLater(
-      s.importRecoveryCode('FUSHI1-nope'),
+      s.importRecoveryCode('FUSHI1-nope', consent: true),
       throwsFormatException,
     );
     expect(await store().read(), isNull);
@@ -349,7 +359,7 @@ void main() {
     final String code = LeaderboardIdentity.generate(
       random: Random(9),
     ).toRecoveryCode();
-    await s.importRecoveryCode(code);
+    await s.importRecoveryCode(code, consent: true);
     expect(server.at('/v1/me'), hasLength(1));
     final LeaderboardLocalAccount saved = (await store().read())!;
     expect(saved.recoveryCode, code);
@@ -442,7 +452,7 @@ void main() {
   test('上传设备是另一台：后台同步静默停止并记状态，syncNow 抛专门异常', () async {
     final LeaderboardService s = service();
     server.ownedElsewhere = true;
-    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
     expect(s.isUploadDevice, isFalse, reason: 'login 响应里 uploadDevice=false');
     server.requests.clear();
 
@@ -482,7 +492,7 @@ void main() {
   test('接管中途 429：「被另一台挡住」标记已清，后台同步从断点续传', () async {
     final LeaderboardService s = service();
     server.ownedElsewhere = true;
-    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
     await s.maybeSyncInBackground();
     expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
 
@@ -514,7 +524,7 @@ void main() {
   test('接管第一批就 429：标记在接管开始时已清（后台同步不会因此永久停下）', () async {
     final LeaderboardService s = service();
     server.ownedElsewhere = true;
-    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
     await s.maybeSyncInBackground();
     expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
 
@@ -532,7 +542,7 @@ void main() {
   test('被挡住后手动同步：只要有一批被接受就清掉标记（部分失败也算）', () async {
     final LeaderboardService s = service();
     server.ownedElsewhere = true;
-    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
     await s.maybeSyncInBackground();
     expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
 
@@ -639,5 +649,175 @@ void main() {
     server.failShelf = false;
     await s.maybeSyncInBackground();
     expect(server.at('/v1/shelf'), hasLength(1));
+  });
+  group('同意（登录 / 导入恢复码）', () {
+    test('登录不勾同意：上传默认关闭、不记同意时刻；后台同步零书架请求', () async {
+      final LeaderboardService s = service();
+      await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: false);
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.uploadEnabled, isFalse);
+      expect(saved.consentAt, isNull);
+      expect(s.hasConsent, isFalse);
+      server.requests.clear();
+      await s.maybeSyncInBackground();
+      await s.syncNow();
+      expect(server.at('/v1/shelf'), isEmpty);
+    });
+
+    test('登录勾了同意：上传开、同意时刻 = 现在', () async {
+      final LeaderboardService s = service();
+      await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.uploadEnabled, isTrue);
+      expect(saved.consentAt, now);
+    });
+
+    test('导入恢复码不勾同意：同样默认不上传', () async {
+      final LeaderboardService s = service();
+      final String code = LeaderboardIdentity.generate(
+        random: Random(11),
+      ).toRecoveryCode();
+      await s.importRecoveryCode(code, consent: false);
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.uploadEnabled, isFalse);
+      expect(saved.consentAt, isNull);
+    });
+
+    test('未同意时打开上传：不带 consent 抛 LeaderboardConsentRequired，接管同理', () async {
+      final LeaderboardService s = service();
+      await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: false);
+      await expectLater(
+        s.setUploadEnabled(true),
+        throwsA(isA<LeaderboardConsentRequired>()),
+      );
+      await expectLater(
+        s.claimUploadDevice(),
+        throwsA(isA<LeaderboardConsentRequired>()),
+      );
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.uploadEnabled, isFalse);
+      expect(saved.consentAt, isNull);
+      expect(server.at('/v1/shelf'), isEmpty);
+    });
+
+    test('确认同意后打开上传：记同意时刻，并立即触发一次同步', () async {
+      final LeaderboardService s = service();
+      await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: false);
+      server.requests.clear();
+      await s.setUploadEnabled(true, consent: true);
+      final LeaderboardLocalAccount saved = (await store().read())!;
+      expect(saved.uploadEnabled, isTrue);
+      expect(saved.consentAt, now);
+      for (int i = 0; i < 50 && server.at('/v1/shelf').isEmpty; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(server.at('/v1/shelf'), hasLength(1));
+      // 排空在途同步（它收尾还要写账户文件）；无变化的增量同步不再发书架请求。
+      await s.syncNow();
+      expect(server.at('/v1/shelf'), hasLength(1));
+      expect((await store().read())!.lastSyncAt, now);
+    });
+  });
+
+  group('账户在服务端已失效（401 unknown_account）', () {
+    test('后台同步：本机自动退出、记提示、不抛；之后不再每 30 分钟失败', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.accountGone = true;
+      await s.maybeSyncInBackground(); // 不抛
+      expect(s.status, LeaderboardStatus.disabled);
+      expect(s.accountGoneNotice, isTrue);
+      expect(await store().read(), isNull);
+
+      now += const Duration(hours: 1).inMilliseconds;
+      server.requests.clear();
+      await s.maybeSyncInBackground();
+      expect(server.requests, isEmpty);
+    });
+
+    test('UI 读榜（签名读请求）同样触发退出；syncNow 把错误抛给调用方', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.accountGone = true;
+      await expectLater(
+        s.client!.rank(),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await s.load();
+      for (int i = 0; i < 20 && s.status == LeaderboardStatus.active; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(s.status, LeaderboardStatus.disabled);
+      expect(s.accountGoneNotice, isTrue);
+
+      // 重新登录清掉提示。
+      server.accountGone = false;
+      await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
+      expect(s.accountGoneNotice, isFalse);
+      expect(s.status, LeaderboardStatus.active);
+    });
+
+    test('同步中途失效：收尾不把旧状态写回（文件保持已删）', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      server.accountGone = true;
+      await expectLater(s.syncNow(), throwsA(isA<LeaderboardApiException>()));
+      for (int i = 0; i < 20 && s.status == LeaderboardStatus.active; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(await store().read(), isNull);
+    });
+
+    test('导入他人恢复码失败（401）：不牵连当前已登录账户', () async {
+      final LeaderboardService s = service();
+      await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+      final String other = LeaderboardIdentity.generate(
+        random: Random(21),
+      ).toRecoveryCode();
+      server.accountGone = true;
+      await expectLater(
+        s.importRecoveryCode(other, consent: true),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(s.status, LeaderboardStatus.active);
+      expect(await store().read(), isNotNull);
+    });
+  });
+
+  test('后台节流随换号重置：旧账户刚失败，新登录的账户立即可后台同步', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    server.failShelf = true;
+    await expectLater(
+      s.maybeSyncInBackground(),
+      throwsA(isA<LeaderboardApiException>()),
+    );
+    server.failShelf = false;
+    await s.signOutLocally();
+    await s.loginWithEmail(email: 'a@b.cd', code: '1', consent: true);
+    server.requests.clear();
+    now += const Duration(minutes: 1).inMilliseconds;
+    await s.maybeSyncInBackground();
+    expect(server.at('/v1/shelf'), hasLength(1));
+  });
+
+  test('ISBN 回填：抛错只记日志不挡同步；7 天后才重跑', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    backfillThrows = true;
+    await s.maybeSyncInBackground();
+    expect(backfills, 1);
+    expect(server.at('/v1/shelf'), hasLength(1), reason: '回填失败不挡同步');
+    expect((await store().read())!.isbnBackfilledAt, now);
+
+    backfillThrows = false;
+    now += const Duration(days: 6).inMilliseconds;
+    await s.maybeSyncInBackground();
+    expect(backfills, 1);
+
+    now += const Duration(days: 1).inMilliseconds;
+    await s.maybeSyncInBackground();
+    expect(backfills, 2);
   });
 }
