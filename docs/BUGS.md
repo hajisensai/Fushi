@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2534 条。点号进各自文件。
+> 共 2535 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2764](bugs/BUG-2764-coreaudio-pack-multi-volume.md) | ✅ | ✅ | CoreAudio 有声书同一合集连点多卷下载，第二卷报「无法创建下载」 |
 | [BUG-2757](bugs/BUG-2757-favorite-sentence-no-word.md) | ✅ | ✅ | 查词弹窗顶栏收藏句子后收藏夹看不到对应的单词 |
 | [BUG-2756](bugs/BUG-2756-favorite-word-no-context.md) | ✅ | ✅ | 收藏夹里的收藏词只有词形，没有释义和上下文 |
 | [BUG-2753](bugs/BUG-2753-mdx-empty-reading-split-headword.md) | ✅ | ✅ | MDX词典与Yomitan词典同一词条被拆成两张卡 |
