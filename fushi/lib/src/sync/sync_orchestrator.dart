@@ -17,6 +17,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         isMangaPackage,
         repackageMangaBook;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
+import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
@@ -43,6 +44,7 @@ import 'package:path/path.dart' as p;
 
 part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
+part 'sync_orchestrator/tags.part.dart';
 part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
@@ -251,6 +253,11 @@ class SyncRunReport {
   /// 故计入 [needsLocalLibraryRefresh]。
   int collectionsUpdated = 0;
 
+  /// 本轮互联标签同步在本地改动了标签的宿主数（书 / 漫画 / 字幕书 / 视频 / 合集 /
+  /// 游戏，`tag_sync.dart`）。>0 时各库页的标签筛选与卡片标签要刷新，计入
+  /// [needsLocalLibraryRefresh]。
+  int tagsUpdated = 0;
+
   /// 7c：本轮从互联 host 落到本地的视频刮削元数据作品数（`applyRemoteVideoMetadata`）。
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
@@ -311,6 +318,7 @@ class SyncRunReport {
       localAudioImported > 0 ||
       localBookProgressPulled > 0 ||
       collectionsUpdated > 0 ||
+      tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
       serviceConfigsImported > 0;
 
@@ -328,6 +336,7 @@ class SyncRunReport {
     localBookProgressPulled += other.localBookProgressPulled;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
+    tagsUpdated += other.tagsUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
     errors.addAll(other.errors);
@@ -719,6 +728,8 @@ class SyncOrchestrator {
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
+      // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
+      await _syncTagsLive(report, b);
       // 7c：刮削元数据紧跟合集之后（合集级作品按自然键解析刚同步出来的合集行）。
       await _syncVideoMetadataLive(report, b);
     } else {
@@ -778,8 +789,10 @@ class SyncOrchestrator {
     final SyncRunReport report = SyncRunReport();
     final SyncBackend b = _backend;
     if (b is InterconnectSyncBackend) {
-      // 合集防抖轻量路径只同步合集；刮削元数据整库拉取留给完整 sweep（审查 #4）。
+      // 合集防抖轻量路径同步合集 + 标签（标签增删同一个观察者触发，见
+      // installCollectionsSyncWatcher）；刮削元数据整库拉取留给完整 sweep（审查 #4）。
       await _syncCollectionsLive(report, b);
+      await _syncTagsLive(report, b);
     } else {
       // 云路径的 ensureNamespace 依赖同步根已解析（与 [run] 开头一致）。
       await _backend.findOrCreateRootFolder();
@@ -940,6 +953,14 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) =>
       _syncVideoMetadataLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncTagsLive]。
+  @visibleForTesting
+  Future<void> syncTagsLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) =>
+      _syncTagsLive(report, backend);
 
   /// 测试入口：直接调用 [_syncCollectionsLive]（private 方法对测试文件不可见）。
   @visibleForTesting

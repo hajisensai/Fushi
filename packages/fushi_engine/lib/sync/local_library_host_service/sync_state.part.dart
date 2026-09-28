@@ -152,6 +152,24 @@ mixin _LocalLibraryHostSyncState
     return merged;
   }
 
+  // ── 标签清单（互联标签同步，tag_sync.dart）────────────────────────────────
+
+  @override
+  Future<TagManifest> getTagManifest() => loadLocalTagManifest(_db);
+
+  /// 把 client 上报的标签清单按 LWW 并入 host DB，返回并入后的 host 清单。按名
+  /// 合并与顺序无关、重放幂等，所以不需要合集那样的因果基线；与本机出站同步的
+  /// 标签落库经 [_runSyncStateExclusive] 串行，避免读-改-写交错。
+  @override
+  Future<TagManifest> mergeTagManifest(TagManifest incoming) async {
+    late TagManifest merged;
+    await _runSyncStateExclusive(() async {
+      await applyTagManifest(_db, incoming);
+      merged = await loadLocalTagManifest(_db);
+    });
+    return merged;
+  }
+
   @override
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
       listDeletionTombstones() async {

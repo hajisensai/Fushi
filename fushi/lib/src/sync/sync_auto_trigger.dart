@@ -1078,6 +1078,10 @@ void installCollectionsSyncWatcher({
         db.mediaCollections,
         db.mediaCollectionItems,
         db.collectionMemberTombstones,
+        // 标签增删 / 改名同样只跑轻量路径（互联通道里合集之后接着同步标签）。
+        db.bookTags,
+        db.tagAssignments,
+        db.bookTagMembershipTombstones,
       ]))
       .listen((_) => _scheduleCollectionsSync(db));
 }

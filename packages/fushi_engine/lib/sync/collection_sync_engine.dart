@@ -673,12 +673,9 @@ Future<int> applyCollectionLocalChanges(
               id, localMembers[i].mediaType, localMembers[i].entryKey, i);
         }
         await db.setCollectionOrderUpdatedAt(id, e.orderUpdatedAt);
-        // 合集标签只增不删（同步语义）：按名 getOrCreate + addTagToCollection。
-        for (final String tagName in e.tagNames) {
-          if (tagName.isEmpty) continue;
-          final int tagId = await db.getOrCreateTagByName(tagName);
-          await db.addTagToCollection(id, tagId);
-        }
+        // 合集清单里的标签名没有时钟：弱并入（addedAt=1），本机移除过的不复活；
+        // 增删 / 改名的真实传播走互联标签清单（tag_sync.dart）的 LWW 时钟。
+        await db.mergeRemoteCollectionTagNames(id, e.tagNames);
       }
       // v83：墓碑镜像零换算——本地墓碑表 entryKey 冻结在 bookKey 域（= wire 域），
       // 合集级删除哨兵 '' 同样原样镜像，绝不过 localEntryKey。
