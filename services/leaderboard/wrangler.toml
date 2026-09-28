@@ -1,0 +1,31 @@
+name = "fushi-leaderboard"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+
+# 域名由部署方决定（建议 rank.fushi.moe）；取消注释并改成实际域名。
+# routes = [
+#   { pattern = "rank.fushi.moe", custom_domain = true },
+# ]
+
+# 部署前：
+#   wrangler d1 create fushi-leaderboard            → 把 database_id 填到下面
+#   wrangler d1 migrations apply fushi-leaderboard --remote
+#   wrangler r2 bucket create fushi-leaderboard-media
+#   wrangler secret put ADMIN_USER / ADMIN_PASS
+[[d1_databases]]
+binding = "DB"
+database_name = "fushi-leaderboard"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "fushi-leaderboard-media"
+
+# 每天清一次过期限流窗口。
+[triggers]
+crons = ["17 3 * * *"]
+
+# 可选：逗号分隔的昵称屏蔽词（不入库维护词表）。
+# [vars]
+# BANNED_WORDS = ""

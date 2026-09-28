@@ -1,6 +1,6 @@
 # 排行榜 + Fushi 账户（设计与分期计划）
 
-状态：**待用户确认**（2026-09-28）。确认前不写实现代码。
+状态：**已确认**（2026-09-28），按 P1→P6 逐期实施，每期一个 PR。
 
 ## 0. 用户已拍板的决定（2026-09-28）
 
@@ -12,6 +12,10 @@
 | 第一期范围 | 周/月/总榜 + 个人主页 + **好友榜 + 分享卡片** |
 | 追加 1 | 榜单/主页显示对应书/视频/游戏的**作品名与封面** |
 | 追加 2 | 萌メーター式**用户详情页**：读完的作品、作者、读完时间、多少人读过、谁读过 |
+| 书匹配 | **两者都做**：导入时解析 EPUB ISBN（新列）+ 标题/作者归一化 + 举报纠正 |
+| 可见性 | **默认公开**；只有注册（生成账户）后才会上传 |
+| iOS | 与其他平台**一样全开放**（合规项照做，不加 StoreRestrictedCapability） |
+| 推进 | P1→P6 逐期，每期一个 PR，审查后再做下一期 |
 
 ## 1. 现状（调研事实）
 
@@ -69,8 +73,9 @@ ShelfEntry {
 |---|---|---|
 | 1 | `bgm:<subjectId>` | `MediaTrackingMappings.subjectId` / `GalgameSources(bgm)` / `VideoScrapeMeta(bangumi)` |
 | 2 | `vndb:v<id>` / `tmdb:tv|movie:<id>` / `anidb:<aid>` | `GalgameSources` / `VideoMetadataProviderIdentities` / `AnidbFileIdentities` |
+| 1.5 | `isbn:<13位>` | `EpubBooks.isbn`（新列，导入时解析 OPF `dc:identifier`，ISBN-10 统一转 13） |
 | 3 | `src:<pluginId>:<key>` | 在线漫画/小说 `sourceMetadata` |
-| 4 | `t:<kind>:<norm(title)>|<norm(author)>` | 归一化：NFKC、去空白/括号内文库名、全角半角统一、小写 |
+| 4 | `t:<norm(title)>\|<norm(author)>` | 归一化：NFKC、去空白/括号内文库名、全角半角统一、小写 |
 
 服务端 `works` 表以 WorkRef 为主键；同一作品有多个键时由**别名表**合并（客户端上传全部可得键，服务端发现任一键已存在即归入同一 work）。展示元数据取「最多用户一致的标题/作者 + 首个可用封面」。误配靠举报+管理端手动拆分/合并。
 
@@ -82,8 +87,9 @@ ShelfEntry {
 | 字数 | 窗口内 `sum(DailyChars.chars)` |
 | 作品人气 | 窗口内读完该 work 的不同账户数（「読書ランキング」对应物） |
 
-### 3.5 本地 schema 变更（唯一一处）
+### 3.5 本地 schema 变更（v112，两列）
 
+- `EpubBooks.isbn`（text 可空）：新导入时写入；存量书在排行首次开启时后台重扫 OPF 回填（只读 OPF，不重新导入）。
 - `Galgames.completedAt`（int 毫秒，可空），schema v111→v112：`playStatus` 变为 2（玩过）时写入；迁移回填 = 该游戏 `galgame_sessions` 最后一次会话结束时刻，没有会话则留空（展示「日期未知」，不计入周/月榜，计入总榜）。
 
 ### 3.6 D1 / R2
@@ -129,16 +135,16 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 - **App Store 5.1.1(v)**：有账户注册就必须能在 App 内删除账户 → 已含「删除账户」。
 - **App Store 1.2（UGC）**：昵称属于用户生成内容 → 必须有举报、屏蔽、过滤 → 已含。
-- **R18 封面**：galgame（及部分书）封面可能是成人内容。Worker 对 VNDB 给出 `image.sexual ≥ 1` 的作品、以及用户举报的封面，统一以模糊占位展示；iOS 端恒模糊。
+- **R18 封面**：galgame（及部分书）封面可能是成人内容。Worker 对 VNDB 给出 `image.sexual ≥ 1` 的作品、以及用户举报的封面，统一以模糊占位展示，全平台同一规则（可点开查看）。
 - 封面缩略图版权：只存 ≤300px 缩略图作识别用途（与読書メーター等同类服务一致），权利人投诉可按作品下架。
-- 若你不想在 iOS 上承担这部分审核风险，可以像在线源一样加一条 `StoreRestrictedCapability.leaderboard`，iOS 首期不开放。**默认：不加限制，按上面做满合规项。**
+- 用户拍板 iOS 全开放：不加 `StoreRestrictedCapability`。残余风险 = 审核员仍可能以 UGC/成人封面为由拒审，届时再议。
 
 ## 8. 分期（每期可独立合并、独立验证）
 
 | 期 | 内容 | 验证 |
 |---|---|---|
 | P1 | `services/leaderboard/` Worker + D1 + R2：签名校验、注册/资料/头像、书架 upsert、WorkRef 别名合并、各榜 SQL、删除账户 | vitest：签名/重放/上限/幂等/别名合并/窗口 |
-| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；`Galgames.completedAt`（v112） | Dart 单测 + 跨语言签名测试向量；迁移测试 |
+| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；v112（`EpubBooks.isbn` + `Galgames.completedAt`）+ ISBN 解析 | Dart 单测 + 跨语言签名测试向量；迁移测试 |
 | P3 | 统计中心「排行」tab、同意弹窗、设置段、上传调度 | widget 测试；真机开页截图 |
 | P4 | 用户详情页、作品页、作品人气榜 | widget 测试 |
 | P5 | 好友 / 屏蔽 / 可见性 / 举报 | Worker + widget 测试 |
@@ -151,6 +157,6 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 ## 10. 破坏性分析
 
-- 本地唯一 schema 变更是 `Galgames.completedAt`（v112，可空列 + 回填），其余新增全在 D1/R2；密钥进偏好表。
+- 本地 schema 变更只有 v112 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填），其余新增全在 D1/R2；密钥进偏好表。
 - 统计中心加 tab：tab 索引若被持久化/测试钉死需一起更新（P3 开工先查）。
 - 默认关闭：不开启排行的用户零网络请求、零行为变化。

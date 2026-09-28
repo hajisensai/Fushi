@@ -1,0 +1,90 @@
+// 头像 / 作品封面缩略图：客户端先缩好再传（头像 128px、封面 ≤300px），服务端只验魔数与大小。
+// R2 key 带时间戳版本号（a/<account>-<ts>.jpg），出图可设 immutable 长缓存，换图即换 key。
+
+import { HttpError, randomId } from './util.js';
+
+/**
+ * 对象 key：<前缀>/<属主>-<随机>-<时刻>.<ext>。随机段不能省——同一毫秒两人抢传同一作品
+ * 封面时 key 会相同，竞态输家「删掉自己的对象」会把赢家的删掉。
+ */
+function objectKey(prefix, owner, now, ext) {
+  return `${prefix}/${owner}-${randomId(8)}-${now}.${ext}`;
+}
+
+export const AVATAR_MAX_BYTES = 128 * 1024;
+export const COVER_MAX_BYTES = 160 * 1024;
+
+/** 按魔数判图片类型；不认识返回 null。 */
+export function sniffImage(bytes) {
+  const b = bytes;
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { ext: 'jpg', type: 'image/jpeg' };
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
+    return { ext: 'png', type: 'image/png' };
+  }
+  if (
+    b.length >= 12 &&
+    String.fromCharCode(b[0], b[1], b[2], b[3]) === 'RIFF' &&
+    String.fromCharCode(b[8], b[9], b[10], b[11]) === 'WEBP'
+  ) {
+    return { ext: 'webp', type: 'image/webp' };
+  }
+  return null;
+}
+
+export function requireImage(bytes) {
+  const kind = sniffImage(bytes);
+  if (!kind) throw new HttpError(415, 'not_an_image');
+  return kind;
+}
+
+export async function putImage(env, key, bytes, kind) {
+  await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: kind.type } });
+}
+
+export async function setAvatar(env, account, bytes, now) {
+  const kind = requireImage(bytes);
+  const key = objectKey('a', account.id, now, kind.ext);
+  await putImage(env, key, bytes, kind);
+  await env.DB.prepare('UPDATE accounts SET avatar_key = ?2 WHERE id = ?1').bind(account.id, key).run();
+  if (account.avatar_key) await env.MEDIA.delete(account.avatar_key);
+  return key;
+}
+
+export async function clearAvatar(env, account) {
+  await env.DB.prepare('UPDATE accounts SET avatar_key = NULL WHERE id = ?1').bind(account.id).run();
+  if (account.avatar_key) await env.MEDIA.delete(account.avatar_key);
+}
+
+/**
+ * 作品封面：只有书架上有这部作品的人能传，且作品还没有任何封面（先到先得）。
+ * 用条件 UPDATE 抢占，竞态下只有一个请求写入 key，输家删掉自己的对象。
+ */
+export async function setWorkCover(env, account, workId, bytes, now) {
+  const kind = requireImage(bytes);
+  const owns = await env.DB.prepare('SELECT 1 AS ok FROM shelf WHERE account_id = ?1 AND work_id = ?2')
+    .bind(account.id, workId).first();
+  if (!owns) throw new HttpError(403, 'not_on_shelf');
+  const key = objectKey('c', workId, now, kind.ext);
+  await putImage(env, key, bytes, kind);
+  const res = await env.DB.prepare(
+    'UPDATE works SET cover_key = ?2 WHERE id = ?1 AND cover_key IS NULL AND cover_url IS NULL',
+  ).bind(workId, key).run();
+  if (res.meta.changes !== 1) {
+    await env.MEDIA.delete(key);
+    throw new HttpError(409, 'cover_exists');
+  }
+  return key;
+}
+
+export async function serveImage(env, key) {
+  if (!/^[ac]\/[A-Za-z0-9_-]+-\d+\.(jpg|png|webp)$/.test(key)) throw new HttpError(404, 'not_found');
+  const obj = await env.MEDIA.get(key);
+  if (!obj) throw new HttpError(404, 'not_found');
+  return new Response(obj.body, {
+    headers: {
+      'Content-Type': (obj.httpMetadata && obj.httpMetadata.contentType) || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
+}
