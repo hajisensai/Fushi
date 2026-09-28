@@ -86,7 +86,8 @@
   单张卡读取 / 上传 / 删除失败只记错误不打断本轮；单张卡超过 9 MB（各后端 JSON 读取上限 10 MB）不走中转并标 failed 说明原因。
 - 落地设备易主：新落地设备认领的那一轮就收下远端记录；老落地设备下一轮交出手上还没交的卡。
   这两轮之间两边都持有同一张卡，若恰好都补发会各落一次，由 Anki 查重兜底。
-- **互联主机暂时不能当落地设备**（互联同步只在客户端跑中转）；主机直接读自己文件箱的落地放在第 3 期。
+- **桌面 app 当互联主机时不当落地设备**（见第 3b 期「为什么 app 主机不做目录落地」）；与它配对的手机改用
+  「制卡到 Fushi 互联服务端」（主机不在线时卡先进手机的待发队列，连上自动补发）。无头服务端可以当（第 3b 期）。
 - 落地的卡按**落地设备自己的** Anki 配置（牌组 / 笔记类型 / 字段映射）渲染。
 
 ## 第 3 期：Fushi 作为 Anki 同步客户端（官方 rslib）
@@ -112,8 +113,41 @@
 - **坑 2**：本地有未推送的卡时遇到整库同步，`full_download` 会静默丢弃这些卡（已复现）。
   所以卡片真相源必须是 Fushi 的待发队列：只有同步成功后才出队；整库下载后重放未出队的卡。
 
+### 第 3b 期（已做）
+
+- **app「Anki 同步客户端」后端**（`AnkiSyncClientRepository`，桌面、本机带 helper 时出现）：Anki 设置 › 连接面板
+  「Anki 同步（无需安装 Anki）」开关 + 登录（自建地址或留空为 AnkiWeb，AnkiWeb 先弹条款风险确认）。
+  凭据（hkey，不存密码）只落 `<support>/anki_sync/account.json`，不进偏好 / 备份 / 跨设备同步；数据目录跟着用户可配的数据根走。
+  切换后端不清牌组 / 字段映射（两边是同一份库、写卡只认名字），刷新后按名字对回。
+- **未同步日志**（`fushi_engine/anki_sync/anki_sync_journal.dart`）：先写日志再写本地库；同步成功才出日志；
+  整库下载后按日志重放，重放前用 `find_notes`（与 Anki 查重同一判据）兜底避免重复；媒体复制进日志目录，不依赖临时文件。
+  有未同步的卡时拒绝换账号 / 退出。加卡后 5 秒去抖同步；启动与回前台补一次。
+- **helper 新命令 `find_notes`**：`findMatchingNotes`（点 ✓ 反查）可用，不再因「查不到」误判卡已删而重复制卡。
+- **渲染零 Flutter 化**：`BaseAnkiRepository` 的渲染整段搬进 `AnkiNoteComposer` mixin，媒体命名搬进 `anki_media_naming.dart`，
+  都进 `fushi_anki_core`；同步客户端的「渲染 → 查重 → 写库」是 `AnkiSyncMiner`，app 后端与服务端共用一份。
+- **无头服务端当落地设备**（`fushi_server/lib/src/anki_landing.dart`）：`PendingMineStore` / `PendingMineRelay` 搬进
+  fushi_engine；`LocalDirectoryAssetStore` 让服务端直接对自己磁盘上的 `<sync-data>/fushi-data/__pending_mines__/`
+  跑**同一份**中转协议（认领 / 收卡 / 回执 / 易主零新协议代码），收下的卡还原媒体后经 `AnkiSyncMiner` 写库、同步。
+  WebDAV PUT 非原子：读到半截 JSON 当不存在、下一轮再读。字段映射空时卡留着等（不标失败）。关落地立刻撤认领
+  （主机从不制卡，中转层不会顺带撤）。WebUI 新增 Anki 页；admin API `/api/admin/anki*`。
+- **CI**：composite action 装钉版 Rust 1.97.1 + protoc v31.1（SHA-256 校验）；Windows / macOS（universal）app、
+  Linux / Windows 服务端随包 `fushi-anki-sync` + AGPL `fushi-anki-sync.SOURCE.txt`；PR 检查三平台 debug 构建。
+
+#### 为什么 app 主机不做目录落地
+
+中转层收尾时，对本机收下的每张别人的卡检查「当前这个 store 里记录还在不在」，不在就当制卡设备已撤回、删行。
+桌面 app 若同时是互联主机、又经云盘等后端同步，两路中转共用同一张待发表：从主机目录收下的卡在云盘那一路看来
+「记录不在」，会在落地前被删。要支持得给行记来源通道（schema 改动）。而 app 主机的场景已被
+「制卡到 Fushi 互联服务端」+ 待发队列覆盖（主机不在线时卡在手机上等），所以不做。无头服务端只有目录这一路，没有这个问题。
+
 ## 验证
 
 - 第 1 期：队列仓储单测（入队/出队/状态迁移/媒体复制）、后端不可达自动入队的 widget/单元测试、Drift 迁移测试。
 - 第 2 期：合并与墓碑单测、旧客户端保留未知记录的兼容测试。
 - 第 3 期：对本机官方 `anki-sync-server` 的端到端：登录 → 首次整库下载 → 加卡 → 增量同步 → 官方客户端可见。
+  **已做**（`packages/fushi_engine/test/anki_sync_e2e_test.dart`，正式代码 + 真实 helper + 官方 anki-sync-server 26.09.3）：
+  设备 A 登录 → 整库下载 → 带媒体加卡 → 同步；设备 B 从零登录拉到同一张卡与媒体。服务器日志里客户端身份为
+  `fushi-0.1.0,26.09.3,windows`。
+- 第 3b 期：会话日志 / 重放 / 整库上传被拦的单测（假 helper，含变异实测）；app 后端渲染单测；
+  服务端落地的「手机上传 → 主机落地 → 回执 → 手机出队」集成测试（真实 store + relay，本地目录资产层）；
+  服务端 `ServerAnkiLanding` 单测（映射为空不标失败，经变异实测）。未做：真机、CI 上的实际构建（workflow 未在 CI 跑过）。

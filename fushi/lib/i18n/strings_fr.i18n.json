@@ -5704,7 +5704,6 @@
   "anki_pending_mines_status_failed": "Failed: $error",
   "anki_pending_mines_flush_result": "Sent $delivered, failed $failed, remaining $remaining",
   "anki_pending_mine_landing_title": "Deliver cards from other devices",
-  "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage, or interconnect when this device syncs to a host) and are added to Anki on this device. Only one device does this at a time. An interconnect host can't do this yet.",
   "anki_error_sync_signed_out": "Sign in to your Anki sync server first (Anki settings › Anki sync).",
   "anki_error_sync_unavailable": "This device doesn't have fushi-anki-sync, so it can't sync to Anki directly.",
   "anki_sync_client_section_title": "Anki sync (no Anki needed)",
@@ -5729,5 +5728,6 @@
   "anki_sync_client_ankiweb_body": "AnkiWeb's terms only allow the official Anki apps to sync. Fushi identifies itself honestly as Fushi, so AnkiWeb may refuse it or take action on your account. Self-hosted sync servers have no such restriction.",
   "anki_sync_client_ankiweb_confirm": "Use AnkiWeb anyway",
   "anki_sync_client_has_unsynced": "$count card(s) haven't synced yet. Sync them before switching account or signing out.",
-  "anki_sync_client_sign_in_failed": "Sign-in failed: $error"
+  "anki_sync_client_sign_in_failed": "Sign-in failed: $error",
+  "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage, or interconnect when this device syncs to a host) and are added to Anki on this device. Only one device does this at a time. A computer acting as an interconnect host doesn't take this role: phones paired with it should turn on Mine to Fushi Interconnect server instead (cards wait on the phone while the computer is off). A Fushi server can take this role."
 }

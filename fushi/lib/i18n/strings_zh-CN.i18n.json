@@ -5704,7 +5704,6 @@
   "anki_pending_mines_status_failed": "失败：$error",
   "anki_pending_mines_flush_result": "已发送 $delivered 张，失败 $failed 张，剩余 $remaining 张",
   "anki_pending_mine_landing_title": "本机负责落地其他设备的卡片",
-  "anki_pending_mine_landing_hint": "没装 Anki 的设备存下的卡片，经你配置的同步（云盘，或本机作为互联客户端时的互联）送到这台设备，由这里的 Anki 加卡。同一时间只有一台设备负责。互联主机暂时不能担任。",
   "anki_error_sync_signed_out": "请先登录 Anki 同步服务器（Anki 设置 › Anki 同步）。",
   "anki_error_sync_unavailable": "本机没有 fushi-anki-sync，无法直接同步到 Anki。",
   "anki_sync_client_section_title": "Anki 同步（无需安装 Anki）",
@@ -5729,5 +5728,6 @@
   "anki_sync_client_ankiweb_body": "AnkiWeb 的服务条款只允许官方 Anki 客户端同步。Fushi 会如实表明自己是 Fushi，因此 AnkiWeb 可能拒绝连接，或对你的账号采取措施。自建同步服务器没有这项限制。",
   "anki_sync_client_ankiweb_confirm": "仍然使用 AnkiWeb",
   "anki_sync_client_has_unsynced": "还有 $count 张卡没有同步，请先同步再切换账号或退出登录。",
-  "anki_sync_client_sign_in_failed": "登录失败：$error"
+  "anki_sync_client_sign_in_failed": "登录失败：$error",
+  "anki_pending_mine_landing_hint": "没装 Anki 的设备存下的卡片，经你配置的同步（云盘，或本机作为互联客户端时的互联）送到这台设备，由这里的 Anki 加卡。同一时间只有一台设备负责。作为互联主机的电脑不担任这个角色：与它配对的手机请改开「制卡到 Fushi 互联服务端」（电脑关机时卡片先存在手机上）。Fushi 服务端可以担任。"
 }
