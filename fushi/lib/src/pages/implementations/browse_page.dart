@@ -85,6 +85,18 @@ class BrowsePage extends ConsumerStatefulWidget {
 /// （视频发现详情「管理订阅」等）若按下标就会在页签少一个时静默落错页。
 enum BrowseTab { sources, extensions, discover, downloads }
 
+/// 顶层页签接力（二级标签越界横滑）时，目标页签的二级标签要不要按衔接方向
+/// 重新落端（往后落首段、往前落末段）。
+///
+/// 来源 ↔ 扩展之间**不**落端：两者共用同一份内容域选择（来回切不丢选择），
+/// 改它就等于在拖动途中改被拖那一页的二级下标，标签条与页面错位（PR #1735）。
+/// 其余页签各持自己的二级状态，照常落端。
+bool browseHandOffRealignsSections(BrowseTab from, BrowseTab to) {
+  bool isOnline(BrowseTab tab) =>
+      tab == BrowseTab.sources || tab == BrowseTab.extensions;
+  return !(isOnline(from) && isOnline(to));
+}
+
 /// 「下载」页签里的两段。
 enum BrowseDownloadsSection { tasks, subscriptions }
 
@@ -117,24 +129,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 来源 / 扩展两个页签共用的内容域选择（在两页签之间来回切不丢选择）。
   OnlineSourcesDomain _onlineDomain = OnlineSourcesDomain.novel;
 
-  /// 已访问过的在线域，按页签分开记（首次访问后保持挂载，来回切不丢搜索与滚动）。
-  final Map<BrowseTab, Set<OnlineSourcesDomain>> _visitedOnlineDomains =
-      <BrowseTab, Set<OnlineSourcesDomain>>{
-        BrowseTab.sources: <OnlineSourcesDomain>{},
-        BrowseTab.extensions: <OnlineSourcesDomain>{},
-      };
-
   late BrowseDownloadsSection _downloadsSection =
       widget.navigationRequest?.downloadsSection ??
       widget.initialDownloadsSection;
 
   _DownloadsResourceDomain _resourceDomain = _DownloadsResourceDomain.books;
-
-  /// 已访问过的资源域（首次访问后保持挂载，来回切不丢搜索词/结果/滚动位置）。
-  /// 初始项在 [initState] 按可见域播种——硬编码 books 会在 books 模块关掉时把一个
-  /// 不可见域的发现页挂起来。
-  final Set<_DownloadsResourceDomain> _visitedResourceDomains =
-      <_DownloadsResourceDomain>{};
 
   @override
   void initState() {
@@ -149,7 +148,6 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       gamesForm: initialAppModel.gamesModuleForm,
     );
     if (domains.isNotEmpty) _resourceDomain = domains.first;
-    _visitedResourceDomains.add(_resourceDomain);
     final List<OnlineSourcesDomain> onlineDomains = _visibleOnlineDomains(
       initialAppModel.moduleVisibility,
     );
@@ -268,9 +266,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     );
   }
 
-  /// 来源 / 扩展页签：内容域选择条 + 各域保活的在线来源面。
+  /// 来源 / 扩展页签：内容域选择条 + 各域可横滑、保活的在线来源面。
   Widget _buildOnlineTab(BrowseTab tab) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
     final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
       appModel.moduleVisibility,
@@ -279,79 +276,83 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final OnlineSourcesDomain selected = domains.contains(_onlineDomain)
         ? _onlineDomain
         : domains.first;
-    final Set<OnlineSourcesDomain> visited = _visitedOnlineDomains[tab]!
-      ..add(selected);
     final OnlineSourcesSection section = tab == BrowseTab.sources
         ? OnlineSourcesSection.sources
         : OnlineSourcesSection.extensions;
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
+    return _BrowseSwipeSections<OnlineSourcesDomain>(
+      pickerKey: ValueKey<String>('browse-${tab.name}-domain-picker'),
+      tabs: <LibrarySectionTab<OnlineSourcesDomain>>[
+        for (final OnlineSourcesDomain domain in domains)
+          LibrarySectionTab<OnlineSourcesDomain>(
+            value: domain,
+            label: _onlineDomainLabel(domain),
           ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: LibrarySectionTabs<OnlineSourcesDomain>(
-                  key: ValueKey<String>('browse-${tab.name}-domain-picker'),
-                  tabs: <LibrarySectionTab<OnlineSourcesDomain>>[
-                    for (final OnlineSourcesDomain domain in domains)
-                      LibrarySectionTab<OnlineSourcesDomain>(
-                        value: domain,
-                        label: _onlineDomainLabel(domain),
-                      ),
-                  ],
-                  selected: selected,
-                  onChanged: _selectOnlineDomain,
-                  focusIdPrefix: 'browse-${tab.name}-domain',
-                  secondary: true,
-                ),
-              ),
-              if (tab == BrowseTab.extensions)
-                FushiIconButton(
-                  key: const ValueKey<String>('browse-extensions-stores'),
-                  icon: Icons.hub_outlined,
-                  tooltip: t.media_import_segment_stores,
-                  label: t.media_import_segment_stores,
-                  onTap: () => _openStores(selected),
-                ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: Stack(
-            children: <Widget>[
-              for (final OnlineSourcesDomain domain in domains)
-                if (visited.contains(domain))
-                  Positioned.fill(
-                    child: Offstage(
-                      offstage: domain != selected,
-                      child: TickerMode(
-                        enabled: domain == selected,
-                        // Offstage 只关绘制与命中，不关焦点：隐藏域不排除出焦点
-                        // 遍历，Tab / 方向键会走进看不见的域。
-                        child: ExcludeFocus(
-                          excluding: domain != selected,
-                          child: BrowseOnlineSourcesView(
-                            key: ValueKey<String>(
-                              'browse-${tab.name}-${domain.name}',
-                            ),
-                            domain: domain,
-                            section: section,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-            ],
-          ),
-        ),
       ],
+      selected: selected,
+      onChanged: _selectOnlineDomain,
+      focusIdPrefix: 'browse-${tab.name}-domain',
+      onEdgeOverscroll: (int delta) => _handOffFrom(tab, delta),
+      trailing: tab == BrowseTab.extensions
+          ? FushiIconButton(
+              key: const ValueKey<String>('browse-extensions-stores'),
+              icon: Icons.hub_outlined,
+              tooltip: t.media_import_segment_stores,
+              label: t.media_import_segment_stores,
+              onTap: () => _openStores(selected),
+            )
+          : null,
+      pageBuilder: (OnlineSourcesDomain domain) => BrowseOnlineSourcesView(
+        key: ValueKey<String>('browse-${tab.name}-${domain.name}'),
+        domain: domain,
+        section: section,
+      ),
     );
+  }
+
+  /// 二级标签横滑越过首 / 尾段时，把手势交给相邻的顶层页签：从 [from] 往 [delta]
+  /// 方向（+1 下一个 / -1 上一个）切过去，并让目标页签的二级标签落在衔接的那一端
+  /// （往后落首段、往前落末段）——四个页签的二级标签连成一条可一路滑过去的带子。
+  void _handOffFrom(BrowseTab from, int delta) {
+    final TabController? controller = _tabController;
+    if (controller == null || controller.indexIsChanging) return;
+    final int index = _controllerTabs.indexOf(from);
+    final int target = index + delta;
+    if (index < 0 || index != controller.index) return;
+    if (target < 0 || target >= _controllerTabs.length) return;
+    // 来源 / 扩展共用同一份内容域：两者之间接力只切顶层页签、落在同一个域上。
+    // 若按「往后首段 / 往前末段」去改共享域，被拖的那一页的二级控制器会在拖动
+    // 途中被改下标（TabBarView 拖动中不跟随跳页），标签条与页面就此错位。
+    if (!browseHandOffRealignsSections(from, _controllerTabs[target])) {
+      controller.animateTo(target);
+      return;
+    }
+    final bool toFirst = delta > 0;
+    final AppModel appModel = ref.read(appProvider);
+    setState(() {
+      switch (_controllerTabs[target]) {
+        case BrowseTab.sources || BrowseTab.extensions:
+          final List<OnlineSourcesDomain> domains = _visibleOnlineDomains(
+            appModel.moduleVisibility,
+          );
+          if (domains.isNotEmpty) {
+            _onlineDomain = toFirst ? domains.first : domains.last;
+          }
+        case BrowseTab.discover:
+          final List<_DownloadsResourceDomain> domains =
+              _visibleResourceDomains(
+            appModel.moduleVisibility,
+            gamesForm: appModel.gamesModuleForm,
+          );
+          if (domains.isNotEmpty) {
+            _resourceDomain = toFirst ? domains.first : domains.last;
+          }
+        case BrowseTab.downloads:
+          _downloadsSection = toFirst
+              ? BrowseDownloadsSection.values.first
+              : BrowseDownloadsSection.values.last;
+      }
+    });
+    controller.animateTo(target);
   }
 
   /// 「补对齐文件」：把已下完的孤立音频直接喂进统一导入对话框。
@@ -433,10 +434,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   void _selectResourceDomain(_DownloadsResourceDomain domain) {
     if (domain == _resourceDomain) return;
-    setState(() {
-      _resourceDomain = domain;
-      _visitedResourceDomains.add(domain);
-    });
+    setState(() => _resourceDomain = domain);
   }
 
   /// 漫画发现（「发现」页签里）的「管理来源」去处：回到本页并切到「来源 › 漫画」。
@@ -481,17 +479,17 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   /// 二级标签页只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
   /// 自己的生产发现页。四个固定目的地直接可见，避免无标签的表单型下拉框
-  /// 单独悬在搜索区上方。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
+  /// 单独悬在搜索区上方。域页可横滑切换，首次访问后保持挂载，来回切换不丢
+  /// 搜索词、结果和滚动位置。
   Widget _buildResourceHub() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 模块门控：四个域分属 books / manga / games / video，关掉的模块不出段，
-    // 它的发现页也一并从保活 Stack 里剪掉（隐藏域不该继续挂在树上跑网络）。
+    // 它的发现页也一并不建（隐藏域不该继续挂在树上跑网络）。
     final AppModel appModel = ref.watch(appProvider);
     final List<_DownloadsResourceDomain> domains = _visibleResourceDomains(
       appModel.moduleVisibility,
       gamesForm: appModel.gamesModuleForm,
     );
-    // 四个域全关：整块资源分区不渲染——空的标签条 + 空 Stack 是「渲染出来但点不
+    // 四个域全关：整块资源分区不渲染——空的标签条 + 空页面是「渲染出来但点不
     // 出任何东西」，正是要消灭的形态。
     if (domains.isEmpty) return const SizedBox.shrink();
     // 当前域在渲染期回落到第一个可见域：用户在设置里关掉当前域后本页可能仍挂着
@@ -499,57 +497,23 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final _DownloadsResourceDomain selected = domains.contains(_resourceDomain)
         ? _resourceDomain
         : domains.first;
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
+    return _BrowseSwipeSections<_DownloadsResourceDomain>(
+      pickerKey: const ValueKey<String>('downloads-resource-type-picker'),
+      tabs: <LibrarySectionTab<_DownloadsResourceDomain>>[
+        for (final _DownloadsResourceDomain domain in domains)
+          LibrarySectionTab<_DownloadsResourceDomain>(
+            value: domain,
+            label: _resourceDomainLabel(domain),
           ),
-          child: LibrarySectionTabs<_DownloadsResourceDomain>(
-            key: const ValueKey<String>('downloads-resource-type-picker'),
-            tabs: <LibrarySectionTab<_DownloadsResourceDomain>>[
-              for (final _DownloadsResourceDomain domain in domains)
-                LibrarySectionTab<_DownloadsResourceDomain>(
-                  value: domain,
-                  label: _resourceDomainLabel(domain),
-                ),
-            ],
-            selected: selected,
-            onChanged: _selectResourceDomain,
-            focusIdPrefix: 'browse-discover-domain',
-            secondary: true,
-          ),
-        ),
-        Expanded(
-          child: Stack(
-            children: <Widget>[
-              for (final _DownloadsResourceDomain domain in domains)
-                if (_visitedResourceDomains.contains(domain))
-                  Positioned.fill(
-                    child: Offstage(
-                      offstage: domain != selected,
-                      child: TickerMode(
-                        enabled: domain == selected,
-                        // 隐藏域排除出焦点遍历（Offstage 不管焦点）。
-                        child: ExcludeFocus(
-                          excluding: domain != selected,
-                          child: KeyedSubtree(
-                            key: ValueKey<String>(
-                              'downloads-resource-${domain.name}',
-                            ),
-                            child: _buildResourceDomain(domain),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-            ],
-          ),
-        ),
       ],
+      selected: selected,
+      onChanged: _selectResourceDomain,
+      focusIdPrefix: 'browse-discover-domain',
+      onEdgeOverscroll: (int delta) => _handOffFrom(BrowseTab.discover, delta),
+      pageBuilder: (_DownloadsResourceDomain domain) => KeyedSubtree(
+        key: ValueKey<String>('downloads-resource-${domain.name}'),
+        child: _buildResourceDomain(domain),
+      ),
     );
   }
 
@@ -647,47 +611,31 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     );
   }
 
-  /// 「下载」页签：任务 / 订阅两段。
+  /// 「下载」页签：任务 / 订阅两段（可横滑切换）。
   Widget _buildDownloadsTab() {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Column(
-      children: <Widget>[
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.gap,
-          ),
-          child: LibrarySectionTabs<BrowseDownloadsSection>(
-            key: const ValueKey<String>('browse-downloads-section-picker'),
-            tabs: <LibrarySectionTab<BrowseDownloadsSection>>[
-              LibrarySectionTab<BrowseDownloadsSection>(
-                value: BrowseDownloadsSection.tasks,
-                label: t.download_tasks_tab,
-              ),
-              LibrarySectionTab<BrowseDownloadsSection>(
-                value: BrowseDownloadsSection.subscriptions,
-                label: t.download_subscriptions_tab,
-              ),
-            ],
-            selected: _downloadsSection,
-            onChanged: (BrowseDownloadsSection value) =>
-                setState(() => _downloadsSection = value),
-            focusIdPrefix: 'browse-downloads-section',
-            secondary: true,
-          ),
+    return _BrowseSwipeSections<BrowseDownloadsSection>(
+      pickerKey: const ValueKey<String>('browse-downloads-section-picker'),
+      tabs: <LibrarySectionTab<BrowseDownloadsSection>>[
+        LibrarySectionTab<BrowseDownloadsSection>(
+          value: BrowseDownloadsSection.tasks,
+          label: t.download_tasks_tab,
         ),
-        Expanded(
-          child: IndexedStack(
-            index: _downloadsSection.index,
-            children: <Widget>[
-              _buildTasks(),
-              const VideoDownloadSubscriptionsPanel(),
-            ],
-          ),
+        LibrarySectionTab<BrowseDownloadsSection>(
+          value: BrowseDownloadsSection.subscriptions,
+          label: t.download_subscriptions_tab,
         ),
       ],
+      selected: _downloadsSection,
+      onChanged: (BrowseDownloadsSection value) =>
+          setState(() => _downloadsSection = value),
+      focusIdPrefix: 'browse-downloads-section',
+      onEdgeOverscroll: (int delta) =>
+          _handOffFrom(BrowseTab.downloads, delta),
+      pageBuilder: (BrowseDownloadsSection section) => switch (section) {
+        BrowseDownloadsSection.tasks => _buildTasks(),
+        BrowseDownloadsSection.subscriptions =>
+          const VideoDownloadSubscriptionsPanel(),
+      },
     );
   }
 
@@ -911,9 +859,195 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   }
 }
 
+/// 页面内一排二级标签 + 可横滑的对应页面（MD3 secondary tabs + [TabBarView]），
+/// 「浏览」四个页签共用：来源 / 扩展的内容域、发现的内容域、下载的任务 / 订阅。
+///
+/// * 标签条铺满整行（[LibrarySectionTabs.fill]），摆不下时退回可滚动。
+/// * 页面可左右横滑（移动端触屏；桌面鼠标不拖页，走标签 / 方向键），首次滑到 /
+///   点到的页面保活，来回切不丢搜索词、结果与滚动位置。
+/// * 横滑越过首 / 尾段时经 [onEdgeOverscroll] 把手势交给宿主切顶层页签：内层
+///   [TabBarView] 在手势竞技场里恒先于外层胜出，不接力的话滑到末段就再也滑不到
+///   下一个顶层页签。
+///
+/// 选中值的真相在宿主（[selected] / [onChanged]），本组件的 [TabController] 是它的
+/// 投影：宿主改值（跳转请求、接力落端）时就地跟过去。
+class _BrowseSwipeSections<T extends Object> extends StatefulWidget {
+  const _BrowseSwipeSections({
+    required this.pickerKey,
+    required this.tabs,
+    required this.selected,
+    required this.onChanged,
+    required this.focusIdPrefix,
+    required this.pageBuilder,
+    required this.onEdgeOverscroll,
+    this.trailing,
+    super.key,
+  });
+
+  /// 标签条的稳定 key（焦点导航与行为验证用）。
+  final Key pickerKey;
+  final List<LibrarySectionTab<T>> tabs;
+  final T selected;
+  final ValueChanged<T> onChanged;
+  final String focusIdPrefix;
+  final Widget Function(T value) pageBuilder;
+
+  /// 越过首段（-1）/ 末段（+1）继续横滑时回调（每次拖动手势至多一次）。
+  final ValueChanged<int> onEdgeOverscroll;
+
+  /// 标签条右侧的动作（如扩展页签的「仓库」）。
+  final Widget? trailing;
+
+  @override
+  State<_BrowseSwipeSections<T>> createState() =>
+      _BrowseSwipeSectionsState<T>();
+}
+
+/// 越界横滑累计到这个距离（逻辑像素）才接力给顶层页签：边缘的轻微误拖不该把
+/// 整页切走。
+const double _kSectionEdgeHandOffDistance = 48.0;
+
+class _BrowseSwipeSectionsState<T extends Object>
+    extends State<_BrowseSwipeSections<T>> with TickerProviderStateMixin {
+  TabController? _controller;
+
+  /// [_controller] 对应的段值序列。
+  List<T> _controllerValues = <T>[];
+
+  double _edgeOverscroll = 0;
+  bool _handedOff = false;
+
+  int get _selectedIndex {
+    final int index = widget.tabs.indexWhere(
+      (LibrarySectionTab<T> tab) => tab.value == widget.selected,
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  /// 段序列变了（模块开关增减内容域）才换控制器；否则沿用，并把下标对齐到宿主
+  /// 的 [_BrowseSwipeSections.selected]。
+  TabController _syncController() {
+    final List<T> values = <T>[
+      for (final LibrarySectionTab<T> tab in widget.tabs) tab.value,
+    ];
+    final TabController? current = _controller;
+    if (current != null && listEquals(values, _controllerValues)) {
+      final int index = _selectedIndex;
+      if (!current.indexIsChanging && current.index != index) {
+        // 宿主改了选中值（跳转请求 / 顶层接力落端）：此刻多半不在屏上，直接跳。
+        current.index = index;
+      }
+      return current;
+    }
+    final TabController next = TabController(
+      length: values.length,
+      initialIndex: _selectedIndex,
+      // eink：横滑动画 = 一串局部刷新的残影，归零。
+      animationDuration: einkSafeDuration(context, kTabScrollDuration),
+      vsync: this,
+    );
+    next.addListener(() {
+      if (!identical(next, _controller)) return;
+      final T value = _controllerValues[next.index];
+      if (value != widget.selected) widget.onChanged(value);
+    });
+    _controller = next;
+    _controllerValues = List<T>.unmodifiable(values);
+    // 旧控制器还挂在本帧之前的标签条 / TabBarView 上：等这一帧换绑完再释放。
+    if (current != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => current.dispose());
+    }
+    return next;
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  bool _handleScroll(ScrollNotification notification) {
+    // 只看本层 TabBarView 的横向翻页；页面里的列表 / 横排封面自己的滚动不算。
+    if (notification.depth != 0 ||
+        notification.metrics.axis != Axis.horizontal) {
+      return false;
+    }
+    if (notification is ScrollStartNotification) {
+      _edgeOverscroll = 0;
+      _handedOff = false;
+    } else if (notification is OverscrollNotification &&
+        notification.dragDetails != null &&
+        !_handedOff) {
+      // 只接力手指拖动的越界；惯性滑到头的越界不算（那不是「还要往下一个滑」）。
+      _edgeOverscroll += notification.overscroll;
+      if (_edgeOverscroll.abs() >= _kSectionEdgeHandOffDistance) {
+        _handedOff = true;
+        widget.onEdgeOverscroll(_edgeOverscroll > 0 ? 1 : -1);
+      }
+    }
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TabController controller = _syncController();
+    return Column(
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.gap,
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: LibrarySectionTabs<T>.controlled(
+                  key: widget.pickerKey,
+                  tabs: widget.tabs,
+                  controller: controller,
+                  focusIdPrefix: widget.focusIdPrefix,
+                  secondary: true,
+                  fill: true,
+                ),
+              ),
+              if (widget.trailing != null) widget.trailing!,
+            ],
+          ),
+        ),
+        Expanded(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handleScroll,
+            // 只在选中段变化时重建，用来给离屏段关焦点与 ticker。
+            child: AnimatedBuilder(
+              animation: controller,
+              builder: (BuildContext context, Widget? _) => TabBarView(
+                // 段序列一变就整个换新（同顶层页签的理由）。
+                key: ValueKey<String>(_controllerValues.join(',')),
+                controller: controller,
+                children: <Widget>[
+                  for (final T value in _controllerValues)
+                    _BrowseTabKeepAlive(
+                      key: ValueKey<T>(value),
+                      active: _controllerValues[controller.index] == value,
+                      child: widget.pageBuilder(value),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// [TabBarView] 的页签外壳：横滑离开的页签**保活**（TabBarView 默认把离屏页签
 /// dispose 掉，回来时发现页重拉网络、在线来源丢搜索与滚动）；未选中的页签排除出
-/// 焦点遍历——保活的离屏页签仍在树上，不排除的话 Tab / 方向键会走进看不见的页签。
+/// 焦点遍历——保活的离屏页签仍在树上，不排除的话 Tab / 方向键会走进看不见的页签；
+/// 也关掉它的 ticker（离屏页的转圈 / 动画不该继续跑）。
 class _BrowseTabKeepAlive extends StatefulWidget {
   const _BrowseTabKeepAlive({
     required this.active,
@@ -936,7 +1070,10 @@ class _BrowseTabKeepAliveState extends State<_BrowseTabKeepAlive>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return ExcludeFocus(excluding: !widget.active, child: widget.child);
+    return TickerMode(
+      enabled: widget.active,
+      child: ExcludeFocus(excluding: !widget.active, child: widget.child),
+    );
   }
 }
 

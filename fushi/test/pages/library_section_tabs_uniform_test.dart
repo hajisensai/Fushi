@@ -214,6 +214,49 @@ void main() {
     expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
   });
 
+  testWidgets('fill 形态摆得下时铺满整行、摆不下时退回可滚动',
+      (WidgetTester tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    // 「浏览」各页签的二级标签（小说 / 漫画 / 视频）要铺满整行，而不是挤在左边。
+    Future<void> pumpFill(double width) async {
+      await tester.binding.setSurfaceSize(Size(width, 600));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LibrarySectionTabs<int>(
+              tabs: const <LibrarySectionTab<int>>[
+                LibrarySectionTab<int>(value: 0, label: '小说'),
+                LibrarySectionTab<int>(value: 1, label: '漫画'),
+                LibrarySectionTab<int>(value: 2, label: '视频'),
+              ],
+              selected: 0,
+              onChanged: (int _) {},
+              focusIdPrefix: 'fill-test',
+              secondary: true,
+              fill: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpFill(900);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isFalse);
+    // 三段等分整行：相邻两段中心距 = 行宽 / 3，末段中心在 5/6 处（贴左形态下
+    // 三段全挤在左边一两百像素内）。
+    expect(centerGap(tester, '小说', '漫画'), closeTo(300, 1));
+    expect(
+      tester.getRect(find.widgetWithText(Tab, '视频')).center.dx,
+      closeTo(750, 1),
+    );
+
+    await pumpFill(120);
+    expect(tester.widget<TabBar>(find.byType(TabBar)).isScrollable, isTrue,
+        reason: '摆不下时必须退回可滚动，不能把段挤到截字');
+    expect(tester.takeException(), isNull);
+  });
+
   test('顶层页分区导航收敛到 LibrarySectionTabs（不许各写一份）', () {
     const Map<String, String> topBarSources = <String, String>{
       '书架/漫画': 'lib/src/pages/implementations/media_library_shell.dart',
