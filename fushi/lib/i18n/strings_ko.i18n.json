@@ -5760,5 +5760,7 @@
   "hoshi_import_result_stats": "Statistics: $sessions sessions, $days days · reading positions: $positions",
   "hoshi_import_result_legacy_skipped": "$count records skipped because the same book and day was already synced earlier",
   "hoshi_import_result_deleted_skipped": "$count statistics segments were not restored because you deleted those books’ statistics in Fushi",
-  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):"
+  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):",
+  "manga_import_ios_mokuro_needs_folder": "On iOS a single .mokuro can't bring its page images along. Pick the whole volume folder (the .mokuro plus its image folder), or a .zip/.cbz of it.",
+  "import_folder_copy_failed": "Couldn't copy the folder into the app: $error"
 }

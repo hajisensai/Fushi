@@ -5760,5 +5760,7 @@
   "hoshi_import_result_stats": "统计：会话 $sessions 次、按天 $days 天 · 阅读位置 $positions 个",
   "hoshi_import_result_legacy_skipped": "跳过 $count 条记录：同一本书同一天的数据早先已经同步进来过",
   "hoshi_import_result_deleted_skipped": "有 $count 段统计未恢复：你曾在 Fushi 里删除过这些书的统计",
-  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）："
+  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）：",
+  "manga_import_ios_mokuro_needs_folder": "iOS 上单选 .mokuro 带不上它的页图。请选整卷文件夹（含 .mokuro 和它的页图文件夹），或把整卷打包成 .zip/.cbz 再导入。",
+  "import_folder_copy_failed": "无法把文件夹复制进应用：$error"
 }

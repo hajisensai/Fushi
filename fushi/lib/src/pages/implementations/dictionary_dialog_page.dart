@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:path/path.dart' as path;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/media.dart';
@@ -1401,9 +1402,15 @@ class _DictionaryDialogPageState extends BasePageState {
 
   static const _safChannel = FushiChannels.saf;
 
+  /// 选词典目录。安卓与 iOS 都走原生 `pickAndCopyDirectory`：整目录拷进
+  /// [tempDir] 再导入、导完即删。iOS 上 file_picker 的 `getDirectoryPath()` 交回的
+  /// 沙盒外路径 `dart:io` 读不了（BUG-2756），只能在安全作用域访问窗口内拷进来。
+  ///
+  /// 必须用原生**返回的**路径：安卓把目录内容直接拷进 [tempDir]（返回它本身），
+  /// iOS 拷成 `tempDir/<文件夹名>`（返回那一层）。清理永远删 [tempDir]。
   Future<({Directory directory, Directory? cleanupDir})?>
       _pickDictionaryImportDirectory() async {
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid || Platform.isIOS) {
       final Directory tempDir = Directory(
         '${appModel.dictionaryResourceDirectory.path}/saf_import_temp',
       );
@@ -1412,7 +1419,7 @@ class _DictionaryDialogPageState extends BasePageState {
         {'destPath': tempDir.path},
       );
       if (result == null) return null;
-      return (directory: tempDir, cleanupDir: tempDir);
+      return (directory: Directory(result), cleanupDir: tempDir);
     }
 
     final String? selectedPath = await FilePicker.platform.getDirectoryPath();
@@ -1429,8 +1436,18 @@ class _DictionaryDialogPageState extends BasePageState {
       debugPrint('[Dictionary Import] ${progressNotifier.value}');
     });
 
-    final ({Directory? cleanupDir, Directory directory})? pickedDirectory =
-        await _pickDictionaryImportDirectory();
+    final ({Directory? cleanupDir, Directory directory})? pickedDirectory;
+    try {
+      pickedDirectory = await _pickDictionaryImportDirectory();
+    } on PlatformException catch (e) {
+      // 原生拷贝失败（COPY_FAILED / SAF_ERROR / BUSY）不是取消，必须让用户看见。
+      debugPrint('[Dictionary Import] folder pick failed: $e');
+      FushiToast.show(
+        msg: t.import_folder_copy_failed(error: e.message ?? e.code),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (pickedDirectory == null) return;
 
     if (mounted) {

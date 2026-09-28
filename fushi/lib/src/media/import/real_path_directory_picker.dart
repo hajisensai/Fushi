@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, immutable, kDebugMode, visibleForTesting;
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/utils.dart';
 import 'package:path/path.dart' as p;
@@ -25,7 +28,12 @@ String? debugRealDirectoryPathOverride;
 /// 目录选择器（`ACTION_OPEN_DOCUMENT_TREE`，原生 handler 见 MainActivity 的
 /// `pickRealDirectory`）→ 原生用 `DocumentsContract` 把 tree URI 解析回真实绝对
 /// 路径。app 持全文件访问，`dart:io` 可直接读该真实路径，下游全部不变。
-/// **桌面 / iOS 维持 `getDirectoryPath()`**（它们本就返回真实路径）。
+/// **桌面维持 `getDirectoryPath()`**（本就返回真实路径）。
+///
+/// 🔴 **iOS 上这里交回的路径 `dart:io` 读不了**（BUG-2756）：file_picker 的
+/// `getDirectoryPath()` 返回沙盒外的安全作用域路径，却从不调
+/// `startAccessingSecurityScopedResource()`，列目录直接被拒。要**读目录内容**
+/// 的导入入口一律改走 [pickImportDirectory]（iOS 在访问窗口内整卷拷进 app 容器）。
 ///
 /// 只有 externalstorage provider（设备存储/SD 卡）能映射出真实路径；云盘/虚拟
 /// provider 无真实路径 → 原生返回 null → 这里取消（与旧自绘浏览器同样不可达，无退化）。
@@ -44,7 +52,8 @@ Future<String?> pickRealDirectoryPath({
   if (kDebugMode && debugRealDirectoryPathOverride != null) {
     return debugRealDirectoryPathOverride;
   }
-  // 桌面（Windows/macOS/Linux）与 iOS：`getDirectoryPath()` 已返回真实路径。
+  // 桌面（Windows/macOS/Linux）：`getDirectoryPath()` 已返回真实路径。
+  // iOS 也走这里，但交回的是读不了的安全作用域路径——见函数注释与 [pickImportDirectory]。
   if (defaultTargetPlatform != TargetPlatform.android) {
     return FilePicker.platform.getDirectoryPath(
       dialogTitle: dialogTitle,
@@ -71,6 +80,106 @@ Future<String?> pickRealDirectoryPath({
   });
 }
 
+/// 一次「为导入而选目录」的结果（BUG-2756）。
+///
+/// [path] 是**要读的那棵树的根**——调用方只能用它，不许自己拼：Android / 桌面是用户
+/// 原始位置的真实路径；iOS 是拷进 app 容器后的 `<暂存根>/<文件夹名>`（保留卷名，
+/// 标题派生照旧取目录名）。
+///
+/// [stagingRoot] 非 null = 这是一份**暂存拷贝**，导入结束（成功或失败）后调用方必须
+/// 用 [discardStaging] 删掉；null = 原位路径，不许删。
+@immutable
+class PickedImportDirectory {
+  const PickedImportDirectory({required this.path, this.stagingRoot});
+
+  /// 要导入的目录树根（绝对路径，`dart:io` 可直接读）。
+  final String path;
+
+  /// 暂存拷贝的根；null = [path] 是用户原位目录。
+  final Directory? stagingRoot;
+
+  /// 删掉暂存拷贝（原位目录时什么都不做）。
+  ///
+  /// 删除失败只记诊断不抛：暂存在系统临时目录下，系统会回收；把一次已经成功的导入
+  /// 因为清理失败报成失败才是错的。
+  Future<void> discardStaging() async {
+    final Directory? root = stagingRoot;
+    if (root == null) return;
+    try {
+      if (await root.exists()) await root.delete(recursive: true);
+    } on FileSystemException catch (e) {
+      debugPrint('[fushi-import] staging cleanup failed: ${root.path}: $e');
+    }
+  }
+}
+
+/// iOS 目录导入的整卷拷贝失败（原生报错 / 原生半边缺失）。
+///
+/// 与「用户取消」必须区分（同 BUG-446 的纪律）：取消静默返回 null，这个要让用户看见。
+class DirectoryImportCopyException implements Exception {
+  const DirectoryImportCopyException(this.message);
+
+  /// 原生侧给出的原因（诊断用）。
+  final String message;
+
+  @override
+  String toString() => 'DirectoryImportCopyException($message)';
+}
+
+/// 暂存根所在的子目录名（在 app 临时目录下）。
+const String kImportStagingDirName = 'import_staging';
+
+/// 「选一个目录来**导入**（读内容）」的统一入口（BUG-2756）。
+///
+/// 与 [pickRealDirectoryPath] 的区别只在 iOS：那边交回的沙盒外路径 `dart:io` 读不了，
+/// 这里改调原生 `pickAndCopyDirectory`（`ios/Runner/FushiDirectoryImport.swift`）——
+/// 在安全作用域访问窗口内把整个文件夹拷到 `<临时目录>/import_staging/<stagingName>/`，
+/// 交回拷贝后的根。`.mokuro` + 同级页图文件夹因此能一起过来。
+///
+/// 其它平台原样委托 [pickRealDirectoryPath]（`stagingRoot` 为 null）；集成测试的
+/// [debugRealDirectoryPathOverride] 在任何平台都优先生效（同样不产生暂存）。
+///
+/// 返回 null = 用户取消；拷贝失败抛 [DirectoryImportCopyException]。
+/// [stagingName] 每个导入入口一个固定名（如 `manga`）：同一入口的上一次残留在下次
+/// 选择时由原生先删后建，不会越积越多。
+Future<PickedImportDirectory?> pickImportDirectory({
+  required BuildContext context,
+  required AppModel appModel,
+  required String stagingName,
+  String? dialogTitle,
+  String? initialDirectory,
+}) async {
+  if (defaultTargetPlatform != TargetPlatform.iOS ||
+      (kDebugMode && debugRealDirectoryPathOverride != null)) {
+    final String? path = await pickRealDirectoryPath(
+      context: context,
+      appModel: appModel,
+      dialogTitle: dialogTitle,
+      initialDirectory: initialDirectory,
+    );
+    return path == null ? null : PickedImportDirectory(path: path);
+  }
+
+  final Directory tempRoot = await AppPaths.tempRootDirectory();
+  final Directory staging = Directory(
+    p.join(tempRoot.path, kImportStagingDirName, stagingName),
+  );
+  final String? copiedRoot;
+  try {
+    copiedRoot = await FushiChannels.saf.invokeMethod<String>(
+      'pickAndCopyDirectory',
+      <String, Object?>{'destPath': staging.path},
+    );
+  } on PlatformException catch (e) {
+    throw DirectoryImportCopyException('${e.code}: ${e.message ?? ''}');
+  } on MissingPluginException catch (e) {
+    // 原生半边没注册 = 这条功能在本构建里不存在，不是用户取消。
+    throw DirectoryImportCopyException('$e');
+  }
+  if (copiedRoot == null) return null;
+  return PickedImportDirectory(path: copiedRoot, stagingRoot: staging);
+}
+
 /// 「选一个**文件**并返回它的真实文件系统绝对路径」的统一入口（board 1112）。
 ///
 /// 与 [pickRealDirectoryPath] 同源同哲学，只是叶子是文件而非目录：安卓上
@@ -87,8 +196,10 @@ Future<String?> pickRealDirectoryPath({
 /// 进应用持久存储；本入口只丢弃出处，不承诺返回路径可长期引用。
 ///
 /// **降级逃生口**：安卓未授予全文件访问时，回退到 `FilePicker.pickFiles()`（仍复制到
-/// cache，但功能可用）——不硬性要求授权。**桌面 / iOS 维持 `pickFiles()`**（它们本就
-/// 返回真实路径、不复制）。
+/// cache，但功能可用）——不硬性要求授权。**桌面维持 `pickFiles()`**（本就返回真实
+/// 路径、不复制）。**iOS 也走 `pickFiles()`，但那是 import 模式**：选中的文件被挪进
+/// `NSTemporaryDirectory()`，只有这一个文件、没有同级兄弟（BUG-2756），出处如实标
+/// `isRealPath: false`。
 ///
 /// [allowedExtensions] 为不带点的小写扩展名集（如 `{'srt','ass'}`）；null = 不过滤
 /// （任意文件，用于视频）。原生 SAF 选到的文件若带过滤集，则按扩展名在 Dart 端校验。
@@ -140,11 +251,13 @@ class PickedFilePath {
   /// 选中文件的绝对路径。
   final String path;
 
-  /// true = 用户原始位置的真实路径，可被长期引用（桌面 / iOS 的 `pickFiles()`、
+  /// true = 用户原始位置的真实路径，可被长期引用（桌面的 `pickFiles()`、
   /// 安卓 SAF 成功解析到原始位置）。全文件访问权限不保证 provider 能解析真实路径。
   ///
-  /// false = 安卓 SAF 或 file_picker 复制出来的 **app cache 临时副本**
-  /// （SAF 用 `getCacheDir()/saf_pick/`，file_picker 用 `getCacheDir()/file_picker/`）。
+  /// false = 平台复制出来的**临时副本**：安卓 SAF / file_picker 的 app cache
+  /// （SAF 用 `getCacheDir()/saf_pick/`，file_picker 用 `getCacheDir()/file_picker/`），
+  /// 以及 iOS file_picker 的 import 模式（文件被挪进 `NSTemporaryDirectory()`，
+  /// 只有被选中的那一个文件，同级兄弟不跟过来——BUG-2756）。
   /// 清缓存即失效，**只能立刻复制消费，不能作为长期引用落库**。
   final bool isRealPath;
 }
@@ -157,12 +270,14 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
   required AppModel appModel,
   Set<String>? allowedExtensions,
 }) async {
-  // 桌面（Windows/macOS/Linux）与 iOS：`pickFiles()` 已返回真实路径、不复制。
+  // 桌面（Windows/macOS/Linux）：`pickFiles()` 返回真实路径、不复制。
+  // iOS：file_picker 用 import 模式，交回的是 `NSTemporaryDirectory()` 里的临时副本
+  // （BUG-2756），出处必须如实标 false。
   if (defaultTargetPlatform != TargetPlatform.android) {
     return _detailedFallback(
       context: context,
       allowedExtensions: allowedExtensions,
-      isRealPath: true,
+      isRealPath: defaultTargetPlatform != TargetPlatform.iOS,
     );
   }
 
@@ -268,7 +383,8 @@ Future<PickedFilePath?> _pickFileViaSaf() async {
 /// 因此这类文件维持系统文件选择器：用户熟悉，且能触达 Downloads / 云盘 / 最近文件等
 /// 位置（board 1360——用户报「导入选字幕文件的选择器变了」）。
 ///
-/// 安卓不需要 `MANAGE_EXTERNAL_STORAGE`（SAF 自带授权），桌面 / iOS 本就返回真实路径。
+/// 安卓不需要 `MANAGE_EXTERNAL_STORAGE`（SAF 自带授权）；桌面返回真实路径，iOS 返回
+/// 临时副本——当场消费的语义下两者都够用。
 /// [allowedExtensions] 为不带点的小写扩展名集；iOS 的 `.srt` 等 UTI 解析问题由
 /// [_fallbackPickFile] 内部统一处理（先 `FileType.any` 打开 Files，再按扩展名校验）。
 Future<String?> pickSystemFilePath({
