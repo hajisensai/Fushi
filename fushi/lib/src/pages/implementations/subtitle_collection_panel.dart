@@ -26,6 +26,7 @@ import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
@@ -138,8 +139,12 @@ class SubtitleCollectionPanel extends StatefulWidget {
     this.httpClientFactory,
     this.onCancel,
     this.showTitle = true,
+    this.subtitleAligner,
     super.key,
   });
+
+  /// 每集落盘前按该集视频的内嵌字幕轨对时间轴；null = 不对齐。
+  final AutomaticSubtitleAligner? subtitleAligner;
 
   final FushiDatabase database;
   final MediaCollectionRow collection;
@@ -654,6 +659,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         targets: _targets(),
         saveDirectory: widget.saveDirectory,
         preferredLanguage: _effectiveLanguage,
+        subtitleAligner: widget.subtitleAligner,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);

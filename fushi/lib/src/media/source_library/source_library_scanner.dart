@@ -69,6 +69,7 @@ import 'package:fushi_engine/media/video/external_video.dart'
     show normalizeVideoPath, sourceEntryBasename;
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
+import 'package:fushi_engine/media/video/strm_file.dart' show kStrmExtension;
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
@@ -429,7 +430,10 @@ ScanPlan planScanFromFileList(
       ));
       continue;
     }
-    if (kVideoExtensions.contains('.$ext')) {
+    // `.strm` 流指针按普通视频入库（videoPath = `.strm` 自身）：标题取文件名、
+    // 照常参与分组 / 刮削 / 同名字幕关联；指向的流地址在起播时现读
+    // （stream_video_launch.dart 的 resolveStrmStreamTarget）。
+    if (kVideoExtensions.contains('.$ext') || ext == kStrmExtension) {
       final String dir = p.dirname(e.path);
       final List<String> siblings = namesByDir[dir] ?? const <String>[];
       final ({String? subtitle, List<String> audio}) sel = selectSidecarNames(
@@ -1300,6 +1304,7 @@ class SourceLibraryScanner {
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
     Directory? playlistTmp;
+    final List<ScanVideoItem> hlsStreams = <ScanVideoItem>[];
     try {
       int count = 0;
       for (final ScanPlaylistItem item in plan.playlists) {
@@ -1319,6 +1324,12 @@ class SourceLibraryScanner {
         final String baseDir = fs.isLocal
             ? p.dirname(item.playlistPath)
             : _remoteParentDir(item.playlistPath);
+        // HLS 媒体 / master 播放列表是**一条流**，不是分集清单：按行拆会把 `.ts`
+        // 分片（或码率档）当成一集一集入库。整份清单按单个视频入库，交给播放内核。
+        if (isHlsStreamPlaylist(content)) {
+          hlsStreams.add(ScanVideoItem(videoPath: item.playlistPath));
+          continue;
+        }
         final List<PlaylistEntry> entries =
             parseM3u8(content: content, baseDir: baseDir);
         // 空 / 不可解析清单：跳过（不当成「清单变空 → 清光成员」，避免读盘瞬时失败
@@ -1373,6 +1384,16 @@ class SourceLibraryScanner {
         // 各集都是带真实路径的本地行，书架的封面补齐产线会逐个补上（那条产线本来
         // 就是为「拆集导入只有首集有封面」写的，见 `_maybeBackfillCovers` 文档）。
         count++;
+      }
+      if (hlsStreams.isNotEmpty) {
+        // 与散装视频同一条入库路径（重扫按路径去重、网络来源原地流播）。
+        final ({
+          List<String> createdPaths,
+          List<String> failedPaths,
+          Object? firstError,
+        }) imported =
+            await _importVideos(ScanPlan(videos: hlsStreams), sourceId, fs);
+        count += imported.createdPaths.length;
       }
       return count;
     } finally {

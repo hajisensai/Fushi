@@ -154,6 +154,7 @@ Fushi builds on the following projects and ecosystem:
 | [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | Android native Japanese reader |
 | [hoshidicts](https://github.com/Manhhao/hoshidicts) | C++ dictionary engine |
 | [Sasayaki](https://github.com/Manhhao/Hoshi-Reader/blob/develop/SASAYAKI.md) | Audiobook sync solution |
+| [Tsubasa](https://github.com/SonicSandbox/Tsubasa-sync) | Subtitle-to-reference timing alignment algorithm (GPL-3.0); basis for auto-aligning downloaded subtitles to embedded tracks |
 | [Yomitan](https://github.com/yomidevs/yomitan) | Dictionary format, transformation tables, and lookup experience reference |
 | [Lapis](https://github.com/donkuri/lapis) | Anki note type |
 | [AnkiDroid](https://github.com/ankidroid/Anki-Android) | Android card creation integration |

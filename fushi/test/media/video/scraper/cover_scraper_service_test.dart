@@ -129,6 +129,39 @@ void main() {
     );
   });
 
+  test('IPTV 直播频道（rtsp）同样不参与 sidecar 扫描', () async {
+    await writePoster();
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/channel'),
+        title: Value<String>('channel'),
+        videoPath: Value<String>('rtsp://10.0.0.1:554/live/1'),
+      ),
+    );
+    final VideoBookRow book = (await repo.getByBookUid('video/channel'))!;
+
+    expect(
+      await build().applySidecarCover(book),
+      isA<ScrapeNotEligible>(),
+    );
+    final List<BatchScrapeProgress> batch =
+        await build().scrapeLibrary(<VideoBookRow>[book]).toList();
+    expect(batch.single.outcome, isA<ScrapeNotEligible>());
+  });
+
+  test('本地 .strm 流指针照常采用同目录 sidecar 海报', () async {
+    final VideoBookRow book = await seed(
+      bookUid: 'video/strm',
+      fileName: 'channel.strm',
+    );
+    await writePoster();
+
+    final ScrapeApplied outcome =
+        await build().applySidecarCover(book) as ScrapeApplied;
+    expect(await File(outcome.coverPath).readAsBytes(), kTransparentImage);
+    expect((await coverMeta.get(book.bookUid))!.origin, CoverOrigin.sidecar);
+  });
+
   test('没有 sidecar 时不写封面或来源记录', () async {
     final VideoBookRow book = await seed(
       bookUid: 'video/none',

@@ -134,9 +134,10 @@ void main() {
     // 注释本身也会被 dart format 折行，锚点同样走归一化。
     final int iConnect =
         _flat(pageSrc).indexOf(_flat('// TODO-1307：把「正在连接视频流…」阶段反馈提前'));
-    // 画质目标加参后调用折行：锚到 `(row` 前缀（不含收尾括号）。
+    // 画质目标加参后调用折行；`.strm` 书先换成目标地址行（launchRow）再建客户端，
+    // 故只锚调用本身（不含实参）。
     final int iBuild =
-        _flat(pageSrc).indexOf(_flat('await buildStreamVideoLaunch(row'));
+        _flat(pageSrc).indexOf(_flat('await buildStreamVideoLaunch('));
     expect(iConnect, greaterThan(0),
         reason: 'stream book 分支必须提前置 connecting 阶段反馈');
     expect(iBuild, greaterThan(0));

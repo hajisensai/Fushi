@@ -29,13 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2525 条。点号进各自文件。
+> 共 2526 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-2747](bugs/BUG-2747-gal-popup-click-dismissed-by-shield.md) | ✅ | ✅ | 点击游戏内查词弹窗的按钮会关闭弹窗且随后数秒无法查词 |
 | [BUG-2746](bugs/BUG-2746-kirikiri-dinput-wheel-over-host-popup.md) | 🚧 | 🚧 | KiriKiri 查词弹窗上滚动滚轮会让游戏翻到下一句 |
 | [BUG-2745](bugs/BUG-2745-kirikiri-early-sensor-script-exception.md) | ✅ | ✅ | KiriKiri 启动并捕获时游戏弹出未处理脚本异常 CS_Timer |
+| [BUG-2744](bugs/BUG-2744-reader-late-image-anchor-yank.md) | ✅ | ✅ | 横排听书跨插图时视口被拽回开章落点（插图闪动被跳过） |
 | [BUG-2743](bugs/BUG-2743-ext-hover-resume-stuck-paused.md) | ✅ | ✅ | 扩展悬停查词离开后仍暂停、暂停续播反应不灵敏 |
 | [BUG-2742](bugs/BUG-2742-anki-dict-image-single-dimension.md) | ✅ | ✅ | 制卡词典图片只声明一维时尺寸与 Yomitan 不一致（小、居中、竖排） |
 | [BUG-2741](bugs/BUG-2741-stats-sheet-ios-too-tall.md) | ✅ | ✅ | 统计时段明细/会话 sheet 在 iOS 上过高（顶进状态栏） |
