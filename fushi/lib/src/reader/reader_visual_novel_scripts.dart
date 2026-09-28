@@ -2592,9 +2592,21 @@ $sharedInitViewport
   // 把尺子（墨迹）沿 block 轴把本屏摆正：判据已保证墨迹装得下，平移后不会越出内容盒。
   // 含图片/媒体的屏交回 flex 居中（图片晚加载会改几何，这里算的偏移会过期）；墨迹本身
   // 就比内容盒宽的（不可拆的溢出屏）不动，否则会把屏首也推出裁切区。
+  //
+  // BUG-2751：平移走**布局**——内容的一侧 margin = d、对侧 = -d——不再挂 transform。
+  // iOS WebKit 在竖排（vertical-rl 翻转块方向）文档里给带绘制期偏移（transform /
+  // position: relative 都一样）的盒算失效矩形时把偏移镜像了，差出 2×d：切屏移除旧屏
+  // 时旧高亮列一侧 2×d 宽的竖条擦不掉（残留蓝条 / 半个字），新屏同侧一条画不出来
+  // （列被切半），直到无关重绘才补上。两侧 margin 和为 0：flex 算尺寸用的可用空间
+  // 不变，内容盒尺寸与换列完全不变，只是边框盒挪 d（iOS 模拟器真值帧与 transform 版
+  // 逐像素一致）。不能改挪整个屏盒：屏溢出视口后竖排根文档会被滚回去抵消平移。
   centerScreenInk: function(content) {
     if (!content || !this.screen || !content.style || !document.createRange) return;
     content.style.removeProperty('transform');
+    content.style.removeProperty('margin-left');
+    content.style.removeProperty('margin-right');
+    content.style.removeProperty('margin-top');
+    content.style.removeProperty('margin-bottom');
     if (content.querySelector && content.querySelector('img, svg, video, canvas, iframe')) return;
     var vertical = this.isVertical();
     var screenRect = this.screen.getBoundingClientRect();
@@ -2627,10 +2639,8 @@ $sharedInitViewport
     if (inkEnd - inkStart > boxEnd - boxStart + 2) return;
     var offset = ((boxStart + boxEnd) - (inkStart + inkEnd)) / 2;
     if (Math.abs(offset) < 1) return;
-    content.style.setProperty(
-      'transform',
-      (vertical ? 'translateX(' : 'translateY(') + offset + 'px)'
-    );
+    content.style.setProperty(vertical ? 'margin-left' : 'margin-top', offset + 'px');
+    content.style.setProperty(vertical ? 'margin-right' : 'margin-bottom', (-offset) + 'px');
   },
   hideCurrentScreenForReveal: function() {
     this.revealSegments = [];
