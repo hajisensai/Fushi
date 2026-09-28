@@ -30,6 +30,8 @@ String? resolveFushiAnkiSyncExecutable({
       '$dir${Platform.pathSeparator}${fushiAnkiSyncFileName(isWindows: isWindows)}',
     );
     if (bundled.existsSync()) return bundled.path;
-  } catch (_) {}
+  } catch (_) {
+    // resolvedExecutable 取不到（极少数嵌入宿主）：当作没带 helper。
+  }
   return null;
 }

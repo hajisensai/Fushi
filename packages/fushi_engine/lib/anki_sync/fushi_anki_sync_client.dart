@@ -241,7 +241,9 @@ class FushiAnkiSyncClient {
   Future<void> dispose() async {
     try {
       await close();
-    } catch (_) {}
+    } catch (_) {
+      // 没开库 / helper 已经退出：没有东西要关，照样往下关管道。
+    }
     await _stdin.close();
     await _lines.cancel();
     _failAll('fushi-anki-sync disposed');

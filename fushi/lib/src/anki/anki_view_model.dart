@@ -628,7 +628,7 @@ BaseAnkiRepository _withPendingQueue(Ref ref, BaseAnkiRepository repo) {
 
 /// 本机的待发制卡队列存储（`<support>/pending_mine_queue`）。
 PendingMineStore pendingMineStoreFor(AppModel appModel) =>
-    PendingMineStore.atSupportRoot(() => appModel.database);
+    pendingMineStoreAtSupportRoot(() => appModel.database);
 
 /// 给 [repo] 套上「制卡后自动重排新卡」。
 ///

@@ -378,7 +378,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     // 待发制卡跨设备中转：只在完整 sweep 里跑（轻量路径不带）。没有任何设备认领
     // 落地时它只读一次 landing.json，不上传任何卡。
     pendingMineRelay: PendingMineRelay(
-      store: PendingMineStore.atSupportRoot(() => db),
+      store: pendingMineStoreAtSupportRoot(() => db),
       deviceId: deviceId,
       deviceName: Platform.localHostname,
       landingClaimedAt: await repo.getPendingMineLandingClaimedAt(),

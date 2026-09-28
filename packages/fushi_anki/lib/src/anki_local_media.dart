@@ -2,8 +2,7 @@ import 'dart:io';
 
 import 'anki_models.dart';
 import 'anki_remote_media_http.dart';
-import 'ankiconnect/ankiconnect_repository.dart'
-    show fushiAnkiMediaFilenameForBytesAsync;
+import 'anki_media_naming.dart';
 
 /// 单词音频引用落成本地文件的结果：[file] 为 null 时 [failureReason] 说明原因
 /// （都为 null = 这张卡没有单词音频）。文件名按内容哈希（`fushi_audio_<sha>.ext`），
