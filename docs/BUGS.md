@@ -29,10 +29,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2532 条。点号进各自文件。
+> 共 2536 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2757](bugs/BUG-2757-ios-manga-ocr-tap-blank-popup.md) | 🚧 | 🚧 | iOS 漫画 OCR 后点字只弹出空白框 |
+| [BUG-2756](bugs/BUG-2756-ios-mokuro-import-sidecar-images-missing.md) | 🚧 | 🚧 | iOS 上导入 .mokuro 文件必失败（选单文件只拷进来 .mokuro、选文件夹无沙盒外读权限） |
+| [BUG-2755](bugs/BUG-2755-manga-ocr-wide-vertical-bubble-routed-horizontal.md) | ✅ | ✅ | 两列竖排气泡（宽 ≥ 高）被当横排识别、落库也标横排 |
+| [BUG-2754](bugs/BUG-2754-manga-gesture-zoom-overwrites-default.md) | ✅ | ✅ | 漫画页内缩放回写「默认缩放」，16:10 笔记本「适应屏幕」装不下整页 |
 | [BUG-2753](bugs/BUG-2753-mdx-empty-reading-split-headword.md) | ✅ | ✅ | MDX词典与Yomitan词典同一词条被拆成两张卡 |
 | [BUG-2752](bugs/BUG-2752-sync-dict-refresh-empties-cache.md) | ✅ | ✅ | 互联下载服务器词典后本地词典全部消失 |
 | [BUG-2751](bugs/BUG-2751-vn-ios-screen-swap-residue.md) | ✅ | ✅ | iOS VN 翻屏后旧屏高亮列残留、新列被切半 |

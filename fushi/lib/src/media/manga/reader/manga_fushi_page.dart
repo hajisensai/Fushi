@@ -57,7 +57,6 @@ import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
-import 'package:fushi/src/media/manga/reader/manga_zoom_preference_debouncer.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show contextMenuButtonNumberMatches;
@@ -988,7 +987,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _currentPage = 0;
   double _currentFraction = 0;
   Timer? _progressDebounce;
-  MangaZoomPreferenceDebouncer? _zoomPreferenceDebouncer;
   int _lastSavedPage = -1;
   double _lastSavedFraction = -1;
 
@@ -1348,10 +1346,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _progressDebounce?.cancel();
     unawaited(_downloadWatch?.cancel());
     _downloadWatch = null;
-    final MangaZoomPreferenceDebouncer? zoomDebouncer =
-        _zoomPreferenceDebouncer;
-    _zoomPreferenceDebouncer = null;
-    if (zoomDebouncer != null) unawaited(zoomDebouncer.dispose());
     _dictionaryTurnDismissTimer?.cancel();
     // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
@@ -4445,6 +4439,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 页内缩放（右键菜单 ± / 捏合 / 滚轮 / 双击）只是本次阅读的会话状态。
+  ///
+  /// BUG-2754：此前它们都回写「默认缩放」偏好（`manga_zoom_percent`），笔记本
+  /// 触控板随手一捏就把 110% 钉成以后每本漫画的起始缩放，「适应屏幕」看起来
+  /// 装不下整页。默认缩放只归设置项写。
   Future<void> _setZoomPercent(int value) async {
     final int normalized = value.clamp(
       kMangaZoomMinPercent,
@@ -4452,19 +4451,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     );
     if (_zoomPercent == normalized) return;
     setState(() => _zoomPercent = normalized);
-    _zoomPreferenceDebouncer?.discard();
-    await appModel.setMangaZoomPercent(normalized);
     await _controller?.evaluateJavascript(
       source:
           'window.__mangaSetZoom && '
           'window.__mangaSetZoom($normalized);',
     );
-  }
-
-  void _queueZoomPreferencePersist(int value) {
-    (_zoomPreferenceDebouncer ??= MangaZoomPreferenceDebouncer(
-      persist: appModel.setMangaZoomPercent,
-    )).queue(value);
   }
 
   Future<void> _jumpToPage(int oneBasedPage) async {
@@ -5891,6 +5882,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
         );
         controller.addJavaScriptHandler(
+          // 只同步会话状态，不写默认缩放偏好（BUG-2754）。
           handlerName: 'onMangaZoomChanged',
           callback: (List<dynamic> args) {
             if (args.isEmpty) return;
@@ -5910,7 +5902,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             } else {
               _zoomPercent = normalized;
             }
-            _queueZoomPreferencePersist(normalized);
           },
         );
         // webtoon 滚动报告：更新 fraction/页码（绝不重载）。

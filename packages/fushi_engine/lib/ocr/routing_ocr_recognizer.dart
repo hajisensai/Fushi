@@ -13,15 +13,22 @@
 /// 所以路由判据只有一条：**块比它高还宽 → 横排路径**，其余原样。竖排块的路径
 /// 与本类出现前逐字节等价，存量表现零变化。
 ///
-/// 横排路径：块内 PP det 切行 → 振假名过滤 → 阅读顺序 → 竖行仍喂 manga-ocr、
-/// 横行走 PP rec → 拼接。PP 什么都没检到 / 拼出来是空串 → 回落整块 manga-ocr
-/// （宁可幻觉也不丢块：块在 manga.json 里没了用户连点都点不到）。
+/// 横排路径：块内 PP det 切行 → 振假名过滤 → **按行投票定块方向** →
+/// 横行占多数才逐行识别（竖行仍喂 manga-ocr、横行走 PP rec）→ 拼接。PP 什么都
+/// 没检到 / 拼出来是空串 → 回落整块 manga-ocr（宁可幻觉也不丢块：块在
+/// manga.json 里没了用户连点都点不到）。
+///
+/// 竖行占多数 = 宽 ≥ 高的**多列竖排**（两列台词的气泡常常比高还宽）：整块交
+/// manga-ocr，与竖长块同一条已验证路径；逐列切反而会被 PP 切断、短列误判成
+/// 横行（BUG-2755）。块方向由这里一次决定并经 [OrientedOcrRecognizer] 交回
+/// pipeline，不再由 pipeline 按长宽比另猜。
 library;
 
 import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
 
+import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -34,7 +41,7 @@ const int kRoutingLinePadding = 4;
 /// （「は？」「宮城！」这类短句）继续走 manga-ocr。
 bool routesToHorizontalPath(OcrRect box) => box.width >= box.height;
 
-class RoutingOcrRecognizer implements OcrRecognizer {
+class RoutingOcrRecognizer implements OrientedOcrRecognizer {
   factory RoutingOcrRecognizer({
     required OcrRecognizer mangaOcr,
     required PpOcrLineDetector lineDetector,
@@ -69,18 +76,32 @@ class RoutingOcrRecognizer implements OcrRecognizer {
   final PpOcrLineRecognizer _lineRecognizer;
 
   @override
-  Future<String> recognize(img.Image page, OcrRect box) async {
-    if (!routesToHorizontalPath(box)) {
-      return _mangaOcr.recognize(page, box);
-    }
-    final String routed = await _recognizeHorizontalBlock(page, box);
-    if (routed.isNotEmpty) {
-      return routed;
-    }
-    return _mangaOcr.recognize(page, box);
+  Future<String> recognize(img.Image page, OcrRect box) async =>
+      (await _recognizeOne(page, box)).text;
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  ) async => <OcrRecognition>[
+    for (final OcrRect box in boxes) await _recognizeOne(page, box),
+  ];
+
+  Future<OcrRecognition> _recognizeOne(img.Image page, OcrRect box) async {
+    final OcrRecognition routed = await _routeBlock(page, box);
+    if (routed.text.isNotEmpty) return routed;
+    return OcrRecognition(
+      text: await _mangaOcr.recognize(page, box),
+      vertical: routed.vertical,
+    );
   }
 
-  Future<String> _recognizeHorizontalBlock(img.Image page, OcrRect box) async {
+  /// 定块方向，横排块顺带逐行识别。返回空 `text` = 整块交 manga-ocr，
+  /// `vertical` 恒为该块的方向结论。
+  Future<OcrRecognition> _routeBlock(img.Image page, OcrRect box) async {
+    if (!routesToHorizontalPath(box)) {
+      return OcrRecognition(text: '', vertical: isVerticalBlock(box));
+    }
     final OcrRect clamped = box.clamp(
       page.width.toDouble(),
       page.height.toDouble(),
@@ -90,12 +111,16 @@ class RoutingOcrRecognizer implements OcrRecognizer {
     final int w = math.min(math.max(1, clamped.width.ceil()), page.width - x);
     final int h = math.min(math.max(1, clamped.height.ceil()), page.height - y);
     if (w <= 0 || h <= 0) {
-      return '';
+      return const OcrRecognition(text: '', vertical: false);
     }
     final img.Image crop = img.copyCrop(page, x: x, y: y, width: w, height: h);
-    final List<PpTextLine> lines = orderLinesForReading(
-      filterThinLines(await _lineDetector.detect(crop)),
+    final List<PpTextLine> detected = filterThinLines(
+      await _lineDetector.detect(crop),
     );
+    if (linesAreVerticalMajority(detected)) {
+      return const OcrRecognition(text: '', vertical: true);
+    }
+    final List<PpTextLine> lines = orderLinesForReading(detected);
     final StringBuffer out = StringBuffer();
     for (final PpTextLine line in lines) {
       final OcrRect r = line.rect.clamp(w.toDouble(), h.toDouble());
@@ -128,7 +153,7 @@ class RoutingOcrRecognizer implements OcrRecognizer {
       );
       out.write(await _lineRecognizer.recognizeLine(lineCrop));
     }
-    return out.toString();
+    return OcrRecognition(text: out.toString(), vertical: false);
   }
 }
 
@@ -149,20 +174,22 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
   Future<List<String>> recognizeBatch(
     img.Image page,
     List<OcrRect> boxes,
+  ) async => <String>[
+    for (final OcrRecognition r in await recognizeOriented(page, boxes)) r.text,
+  ];
+
+  @override
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
   ) async {
-    final List<String> results = List<String>.filled(boxes.length, '');
-    final List<int> mangaIndices = <int>[];
-    for (int index = 0; index < boxes.length; index++) {
-      final OcrRect box = boxes[index];
-      if (routesToHorizontalPath(box)) {
-        final String routed = await _recognizeHorizontalBlock(page, box);
-        if (routed.isNotEmpty) {
-          results[index] = routed;
-          continue;
-        }
-      }
-      mangaIndices.add(index);
-    }
+    final List<OcrRecognition> results = <OcrRecognition>[
+      for (final OcrRect box in boxes) await _routeBlock(page, box),
+    ];
+    final List<int> mangaIndices = <int>[
+      for (int index = 0; index < results.length; index++)
+        if (results[index].text.isEmpty) index,
+    ];
     if (mangaIndices.isEmpty) return results;
     final List<String> mangaResults = await _batchMangaOcr.recognizeBatch(
       page,
@@ -175,7 +202,11 @@ class _BatchRoutingOcrRecognizer extends RoutingOcrRecognizer
       );
     }
     for (int index = 0; index < mangaIndices.length; index++) {
-      results[mangaIndices[index]] = mangaResults[index];
+      final int slot = mangaIndices[index];
+      results[slot] = OcrRecognition(
+        text: mangaResults[index],
+        vertical: results[slot].vertical,
+      );
     }
     return results;
   }
