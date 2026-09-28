@@ -11,7 +11,7 @@
   | 同上 + 按行切 3 片 + 跨片合并（本修复） | **87.1%** | **68.6%** | ~500 ms |
 
   「快但漏」正是老请求的特征：它根本没在读竖排，调阈值、放大、旋转都救不回来。Lens 基准里含振假名，真实上限约 85%。
-- **[x] ① 已修复** — 本提交。
+- **[x] ① 已修复** — `8bd70b95962`。
   - Apple 原生（`FushiSystemOcr.swift`）：iOS 26 / macOS 26 起改走 `RecognizeDocumentsRequest`（`#if compiler(>=6.2)` + `#available` 双门控，同 `FushiSpeechTranscriber.swift`），按 Dart 下发的 `tiles` 逐片裁剪识别，行坐标加回片左上角、带 `tile` 下标；更早的系统保留老路径并忽略切片（对老请求几乎无收益、耗时三倍）。
   - 平台无关的切片层 `packages/fushi_engine/lib/ocr/ocr_page_tiling.dart`：`planOcrPageTiles`（按目标片高 768 / 片宽 1536 规划、10% 且 ≥48px 重叠、至多 12 片）+ `mergeTiledOcrLines`（截断行让位给别片完整版 → 跨切线两截按「前尾 = 后头」拼接，容忍切边上各 2 个读错的字，对不上按重叠区中线切 → 全局去重）。对不带 `tile` 的结果恒等，所以 Android（ML Kit 暂未实现切片）行为不变。
   - Dart 装配：`system_ocr_channel.dart` 契约加 `tiles` / `tile`、抽出唯一竖排判据 `inferSystemOcrVertical`；`system_ocr_manga_service.dart` 按页图**原始像素**尺寸（只读文件头）规划切片、识别后合并再组页；引擎签名换代 `system_ocr_v2_*`，旧的劣质逐页缓存不再命中。
