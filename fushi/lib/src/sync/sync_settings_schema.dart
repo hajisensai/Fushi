@@ -43,7 +43,8 @@ import 'package:fushi/src/sync/interconnect_link_pairing.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_engine/sync/interconnect_p2p.dart'
-    show InterconnectP2pRuntime;
+    show InterconnectP2pRuntime, parseInterconnectP2pUrl;
+import 'package:fushi/src/sync/interconnect_p2p_path_badge.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';

@@ -5713,5 +5713,8 @@
   "sync_pair_nfc_lock": "写入后锁定贴纸",
   "sync_pair_nfc_lock_hint": "锁定不可撤销。别人无法把贴纸改写成恶意链接，但本机地址或证书变了之后你也无法更新它，只能换一张新贴纸。",
   "sync_pair_nfc_written_locked": "已写入并锁定",
-  "sync_pair_nfc_lock_unsupported": "已写入，但这张贴纸不支持锁定"
+  "sync_pair_nfc_lock_unsupported": "已写入，但这张贴纸不支持锁定",
+  "sync_p2p_path_direct": "P2P 直连 · $rtt 毫秒",
+  "sync_p2p_path_relay": "P2P 经中继 · $rtt 毫秒",
+  "sync_p2p_relay_only_hint": "一直在走中继（较慢）。任一端开着 Clash TUN、全局 VPN 等会改写 UDP 端口的工具时打洞通常会失败——把 Fushi 或 UDP 流量加进它的直连规则。"
 }

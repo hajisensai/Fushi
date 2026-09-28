@@ -175,6 +175,24 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     await writeInterconnectPairNfcTag(context, link);
   }
 
+  /// 地址行副标题：连通性测试结果；`p2p://` 地址另挂隧道路径（直连 / 中继）。
+  Widget? _urlRowSubtitle(ThemeData theme, String url, bool? ok) {
+    final Widget? reach = ok == null
+        ? null
+        : Text(
+            ok ? t.sync_connection_success : t.sync_connection_failed,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: ok ? theme.colorScheme.primary : theme.colorScheme.error,
+            ),
+          );
+    if (parseInterconnectP2pUrl(url) == null) return reach;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[?reach, InterconnectP2pPathBadge(url: url)],
+    );
+  }
+
   /// 所有列表改动的唯一入口。[transform] 作用在**库里最新的**列表上（经
   /// [SyncRepository.updateFushiClientUrls] 与后台地址学习、链接配对串行），而不是
   /// 本页手里的快照——弹窗 / 拖动期间学习器插进来的 learned 条目不会被覆盖掉。
@@ -577,18 +595,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
                             : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    subtitle: ok == null
-                        ? null
-                        : Text(
-                            ok
-                                ? t.sync_connection_success
-                                : t.sync_connection_failed,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: ok
-                                  ? theme.colorScheme.primary
-                                  : theme.colorScheme.error,
-                            ),
-                          ),
+                    subtitle: _urlRowSubtitle(theme, u.url, ok),
                     onTap: lockedByServer
                         ? null
                         : () => _addOrEditUrl(index: index),

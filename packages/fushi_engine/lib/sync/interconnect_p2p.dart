@@ -4,6 +4,9 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_p2p/fushi_p2p.dart';
 
+export 'package:fushi_p2p/fushi_p2p.dart'
+    show FushiP2pConnStatus, FushiP2pPathKind;
+
 /// 互联 P2P 隧道（iroh，dumbpipe 形态）的进程级运行时
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §6）。
 ///
@@ -54,6 +57,28 @@ parseInterconnectP2pUrl(String url) {
     relayUrl: (relay == null || relay.isEmpty) ? null : relay,
     directAddrs: q['addr'] ?? const <String>[],
   );
+}
+
+/// iroh 建连总是先走中继、几秒内打洞成功再升级直连；持续这么久仍只有中继路径，
+/// 才算「打洞失败」。
+const Duration kInterconnectRelayOnlyAfter = Duration(seconds: 20);
+
+/// 跟踪到某个对端的路径，判断是否「一直走中继」。最常见的原因是任一端开着
+/// Clash TUN / 全局 VPN 等改写 UDP 源端口的工具（对称 NAT 化），打洞必败——
+/// 连得上但慢，用户完全不知道为什么，所以要在界面上说出来。
+class InterconnectP2pPathTracker {
+  DateTime? _relaySince;
+
+  /// 喂一次状态，返回此刻是否已持续走中继满 [kInterconnectRelayOnlyAfter]。
+  /// 断开 / 直连 / 混合路径都会重新计时。
+  bool observe(FushiP2pConnStatus status, DateTime now) {
+    if (!status.connected || status.path != FushiP2pPathKind.relay) {
+      _relaySince = null;
+      return false;
+    }
+    final DateTime since = _relaySince ??= now;
+    return now.difference(since) >= kInterconnectRelayOnlyAfter;
+  }
 }
 
 /// 当前进程开着的本地转发口（`127.0.0.1:<port>`）。这些口在字面上是回环地址，

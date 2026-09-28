@@ -5713,5 +5713,8 @@
   "sync_pair_nfc_lock": "Lock the sticker after writing",
   "sync_pair_nfc_lock_hint": "Locking can't be undone. Nobody can rewrite the sticker into a malicious link, but if this device's address or certificate changes you can't update it either — you'll need a new sticker.",
   "sync_pair_nfc_written_locked": "Written and locked",
-  "sync_pair_nfc_lock_unsupported": "Written, but this sticker can't be locked"
+  "sync_pair_nfc_lock_unsupported": "Written, but this sticker can't be locked",
+  "sync_p2p_path_direct": "P2P direct · $rtt ms",
+  "sync_p2p_path_relay": "P2P via relay · $rtt ms",
+  "sync_p2p_relay_only_hint": "Stuck on the relay (slower). Hole punching usually fails when Clash TUN, a global VPN or a similar tool rewrites UDP ports on either device — add Fushi or UDP traffic to its direct rules."
 }
