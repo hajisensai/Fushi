@@ -1590,7 +1590,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentEpisode,
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
-    _showOsd(t.video_subtitle_remote_player_decoded(label: label));
+    _showOsd(
+      t.video_subtitle_remote_player_decoded(label: label),
+    );
     return true;
   }
 
@@ -1745,10 +1747,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
-    final bool shown = await controller
-        .selectEmbeddedSecondaryTextTrackViaPlayer(
-          track.containerTrackOrdinal ?? track.streamIndex,
-        );
+    final bool shown = await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
+      track.containerTrackOrdinal ?? track.streamIndex,
+    );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     final String source = _remoteEmbeddedSubtitleSource(track);
     _rebuild(() => _currentSecondarySubtitleSource = source);

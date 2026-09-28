@@ -835,18 +835,14 @@ class AnimeDownloadService {
     // sidecar 自动发现字幕）。
     if (videos.isNotEmpty) {
       resolved = await _resolveSubtitles(plan, videos);
-      final bool needsAlignment =
+      // 暂存字幕谁产出谁置 pending（resolver 这一轮配上 / 订阅发现期下好），这里
+      // 只认这个事实。边下边播那一轮视频还残缺，抽参考轨只会读到半截——原样放、
+      // pending 留着，等真正完成那一轮再对（B1）。
+      if (!keepDownloading &&
           resolved.subtitleStatus == AnimeDownloadPlan.subtitleResolved &&
-              (!identical(resolved, plan) || plan.subtitleAlignPending);
-      if (needsAlignment) {
-        if (keepDownloading) {
-          // 边下边播：视频文件还残缺，抽参考轨只会读到半截——先原样放，等真正
-          // 完成那一轮再对（B1）。
-          resolved = resolved.copyWith(subtitleAlignPending: true);
-        } else {
-          await _alignStagedSubtitles(videos, resolved.subtitles);
-          resolved = resolved.copyWith(subtitleAlignPending: false);
-        }
+          resolved.subtitleAlignPending) {
+        await _alignStagedSubtitles(videos, resolved.subtitles);
+        resolved = resolved.copyWith(subtitleAlignPending: false);
       }
       await _placeSidecars(videos, resolved.subtitles);
       if (!plan.importedEarly) {
@@ -1001,6 +997,7 @@ class AnimeDownloadService {
       return attempted.copyWith(
         subtitles: result.subtitles,
         subtitleStatus: AnimeDownloadPlan.subtitleResolved,
+        subtitleAlignPending: true,
       );
     } catch (e) {
       return attempted.copyWith(
@@ -1036,12 +1033,11 @@ class AnimeDownloadService {
     // 重试只发生在已入库、种子仍在后端的计划上；视频没下完（边下边播后还在下）
     // 时同样先不对，交给完成那一轮。
     AnimeDownloadPlan next = resolved;
-    if (resolved.subtitleStatus == AnimeDownloadPlan.subtitleResolved) {
-      if (info.isComplete) {
-        await _alignStagedSubtitles(videos, resolved.subtitles);
-      } else {
-        next = resolved.copyWith(subtitleAlignPending: true);
-      }
+    if (info.isComplete &&
+        resolved.subtitleStatus == AnimeDownloadPlan.subtitleResolved &&
+        resolved.subtitleAlignPending) {
+      await _alignStagedSubtitles(videos, resolved.subtitles);
+      next = resolved.copyWith(subtitleAlignPending: false);
     }
     await _placeSidecars(videos, next.subtitles);
     await store.save(next);

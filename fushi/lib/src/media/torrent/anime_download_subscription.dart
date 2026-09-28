@@ -618,6 +618,9 @@ class AnimeDownloadSubscriptionService {
                   : (current.jimakuEntryId != null
                       ? AnimeDownloadPlan.subtitlePending
                       : AnimeDownloadPlan.subtitleNone),
+              // 发现期下好的字幕还没见过视频：交给下载完成那一轮按内嵌轨对齐
+              // （与完成时反查配上的字幕同一条路）。
+              subtitleAlignPending: subtitles.isNotEmpty,
             );
             await planStore.save(plan);
             queued = await backend.addTorrent(
