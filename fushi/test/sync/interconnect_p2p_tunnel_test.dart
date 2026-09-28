@@ -135,6 +135,59 @@ void main() {
       await expectLater(server.startP2pListener(), throwsStateError);
     });
 
+    test('直连提示剔除 TUN / fake-ip、回环、链路本地与未指定地址', () {
+      for (final String bad in <String>[
+        '198.18.0.1:5000', // Clash / FlClash TUN 网卡（实测 iroh 会报出来）
+        '198.19.255.2:5000',
+        '127.0.0.1:5000',
+        '169.254.3.4:5000',
+        '0.0.0.0:5000',
+        '[::1]:5000',
+        '[fe80::1]:5000',
+        'not-an-ip:5000',
+        'nocolon',
+      ]) {
+        expect(isInterconnectP2pDialableAddr(bad), isFalse, reason: bad);
+      }
+      for (final String good in <String>[
+        '192.168.1.5:5000',
+        '120.7.30.20:5000',
+        '198.20.0.1:5000',
+        '[2408:8207::5]:5000',
+      ]) {
+        expect(isInterconnectP2pDialableAddr(good), isTrue, reason: good);
+      }
+    });
+
+    test('没有中继也没有可路由直连地址时不公布 p2p 地址', () {
+      expect(
+        interconnectP2pPublishableUrl(
+          'node',
+          tls: false,
+          relayUrl: null,
+          directAddrs: <String>['198.18.0.1:1', '127.0.0.1:1'],
+        ),
+        isNull,
+        reason: '只能靠发现去拨——新 host 要 10–50 秒才查得到，约一半失败',
+      );
+      final String? relayOnly = interconnectP2pPublishableUrl(
+        'node',
+        tls: false,
+        relayUrl: 'https://relay.example/',
+        directAddrs: <String>['198.18.0.1:1'],
+      );
+      expect(parseInterconnectP2pUrl(relayOnly!)!.directAddrs, isEmpty);
+      final String? directOnly = interconnectP2pPublishableUrl(
+        'node',
+        tls: true,
+        relayUrl: null,
+        directAddrs: <String>['198.18.0.1:1', '192.168.1.5:1'],
+      );
+      expect(parseInterconnectP2pUrl(directOnly!)!.directAddrs, <String>[
+        '192.168.1.5:1',
+      ]);
+    });
+
     test('p2p 地址编解码：tls 与拨号提示往返', () {
       final String url = interconnectP2pUrl(
         'nodeabc',

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show InternetAddress, InternetAddressType;
 
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
@@ -227,7 +228,7 @@ class InterconnectP2pRuntime {
 
   Future<void> dispose() => restart();
 
-  /// host 地址集里本机的 P2P 地址（端点未启动 → 空）。
+  /// host 地址集里本机的 P2P 地址（端点未启动 / 还没有任何可用拨号提示 → 空）。
   List<InterconnectHostAddress> hostAddresses({required bool tls}) {
     final InterconnectP2pNode? node = _node;
     if (node == null) return const <InterconnectHostAddress>[];
@@ -237,16 +238,62 @@ class InterconnectP2pRuntime {
     } on Object catch (e) {
       engineLog.logDiagnostic('InterconnectP2p.info', e);
     }
+    final String? url = interconnectP2pPublishableUrl(
+      node.nodeId,
+      tls: tls,
+      relayUrl: info?.relayUrl,
+      directAddrs: info?.directAddrs ?? const <String>[],
+    );
+    if (url == null) return const <InterconnectHostAddress>[];
     return <InterconnectHostAddress>[
-      InterconnectHostAddress(
-        url: interconnectP2pUrl(
-          node.nodeId,
-          tls: tls,
-          relayUrl: info?.relayUrl,
-          directAddrs: info?.directAddrs ?? const <String>[],
-        ),
-        kind: InterconnectAddressKind.p2p,
-      ),
+      InterconnectHostAddress(url: url, kind: InterconnectAddressKind.p2p),
     ];
   }
+}
+
+/// host 该不该公布、公布成什么样的 `p2p://` 地址（纯函数，便于单测）。
+///
+/// 实测（docs/specs/2026-09-28-interconnect-remote-reach.md §9）：新上线的 host 要
+/// 10–50 秒才能被 n0 DNS 发现，这段时间只凭 NodeId 拨号约一半失败；而端点连上
+/// home relay 前（最长约 15 秒）`relayUrl` 为空。client 学到的地址要到下次学习才
+/// 刷新，所以**只公布不经发现就能拨通的地址**：带中继，或至少一个可路由的直连
+/// 地址。两样都没有 → null（先不公布，下次地址集请求时再算）。
+String? interconnectP2pPublishableUrl(
+  String nodeId, {
+  required bool tls,
+  required String? relayUrl,
+  required List<String> directAddrs,
+}) {
+  final List<String> dialable =
+      directAddrs.where(isInterconnectP2pDialableAddr).toList(growable: false);
+  final bool hasRelay = relayUrl != null && relayUrl.isNotEmpty;
+  if (!hasRelay && dialable.isEmpty) return null;
+  return interconnectP2pUrl(
+    nodeId,
+    tls: tls,
+    relayUrl: relayUrl,
+    directAddrs: dialable,
+  );
+}
+
+/// iroh 报出的直连地址（`ip:port` / `[v6]:port`）对远端是否有拨号价值。
+///
+/// 剔除：`198.18.0.0/15`（RFC 2544 基准网段，Clash / FlClash 等 TUN 与 fake-ip
+/// 恰好用它——实测 iroh 会把 TUN 网卡地址 198.18.0.1 当本机地址报出来）、回环、
+/// 链路本地、未指定地址。这些发给对端只会白白多拨几次。
+bool isInterconnectP2pDialableAddr(String hostPort) {
+  final int colon = hostPort.lastIndexOf(':');
+  if (colon <= 0) return false;
+  String host = hostPort.substring(0, colon);
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.substring(1, host.length - 1);
+  }
+  final InternetAddress? ip = InternetAddress.tryParse(host);
+  if (ip == null || ip.isLoopback || ip.isLinkLocal) return false;
+  final List<int> b = ip.rawAddress;
+  if (b.every((int x) => x == 0)) return false;
+  if (ip.type == InternetAddressType.IPv4) {
+    if (b[0] == 198 && (b[1] == 18 || b[1] == 19)) return false;
+  }
+  return true;
 }

@@ -119,7 +119,6 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - 隧道请求在审批框里标「P2P tunnel」而不是看似本机的 127.0.0.1；隧道监听口单飞启动，server 停后拒绝开口、不留孤儿口。
 - 客户端地址列表的读改写经 `SyncRepository.updateFushiClientUrls` 串行，写后广播 `fushiClientUrlsRevision`，设置页据此重载。
 
-
 第二轮根治（2026-09-28，均已落地并有测试）：
 - **隧道主机资源封顶**（`native/fushi_p2p`）：QUIC 层每连接并发双向流 ≤ 32、单向流 0（协议层流控，对端开不出第 33 条，客户端表现为背压而非失败）；同一 NodeId 只留最新入站连接；入站连接总数 ≤ 64、转发流总数 ≤ 256，超出 refuse / reset 快速失败。NodeId 不花钱就能生成，只按对端限等于没限，所以全局上限是必需的。
 - **隧道请求按真实身份限流**：Rust 登记「转发 TCP 连接的本地源端口 → 对端 NodeId」（`fp2p_host_peer`），`FushiSyncServer.p2pPeerResolver` 据连接的对端端口查出 NodeId 挂进请求 context（`fushi.p2p.peer`），配对会话记 `tunnelPeer`。PIN 限流对隧道会话按 `p2p:<NodeId>` 分桶、**不认**自报 deviceId（可冒报成受害者的把人锁外）；查不到身份时共用一个桶（收紧而非放开）。
@@ -131,4 +130,9 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 
 仍需外部条件：
 1. **macOS / iOS 构建链路**本机编不了，以 CI 首跑为准（iroh 在 aarch64-apple-ios 上的编译、rustc 报出的系统库清单、`-force_load` 与其它静态库是否撞符号）。
-2. **真实网络实测**：NETPROBE_PLACEHOLDER
+2. **真实网络实测**：本机实测（Windows，**开着 FlClash TUN**，公网 IPv4/IPv6 全被接管，所以测不到真实公网打洞率；局域网 Mac 当时离线，跨机未测）：
+   - home relay 可达 20/20，上线耗时中位数约 3.6 秒、最长 15.5 秒（流量经代理出口到 aps1 / euc1 中继）。
+   - 只凭 NodeId 发现：新上线的 host 要 10–50 秒才能被 n0 DNS 查到（pkarr 记录发布中位数约 23 秒），期间首拨约一半失败；host 已上线 40 秒以上时正常（首字节 < 1 秒）。→ 已落地：`p2p://` 地址**只在带中继或可路由直连提示时才公布**（`interconnectP2pPublishableUrl`），客户端不依赖发现。
+   - iroh 会把 TUN 网卡地址 `198.18.0.1` 与代理出口当本机地址报出来。→ 已落地：直连提示剔除 `198.18.0.0/15`、回环、链路本地、未指定地址（`isInterconnectP2pDialableAddr`）。代理出口地址无法可靠识别，仍会随提示发出（只是多拨一次）。
+   - 同机两进程：先走中继，约 1 秒内升级直连，直连约 1.5–2 Gbit/s，20 秒内不回退。强制只走中继：7–13 Mbit/s，传输中 RTT 约 1 秒——API 与同步够用，视频边下边播吃力，面向国内用户应推荐自建中继。
+   - 未测、仍需真机：跨运营商 / 蜂窝网络的打洞率；不开 TUN 时的表现。脚本与原始日志在本次任务的临时目录（不入库）。
