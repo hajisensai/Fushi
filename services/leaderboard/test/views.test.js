@@ -107,6 +107,15 @@ describe('榜单', () => {
     expect((await rank(env, 'metric=book&window=all')).data.rows[0].value).toBe(70);
   });
 
+  it('隐藏第一名后，后面的人名次顶上来（快照本身排除隐藏账户，而不只是展示时过滤）', async () => {
+    const { env, b } = await seed();
+    const { setAccountHidden } = await import('../src/admin.js');
+    await setAccountHidden(env, b.id, true, NOW);
+    const r = await rank(env, 'metric=book&window=week');
+    expect(r.data.total).toBe(1);
+    expect(r.data.rows.map((x) => [x.rank, x.account.nickname])).toEqual([[1, 'alice']]);
+  });
+
   it('被管理员隐藏的账户不上榜；屏蔽双方互相看不到', async () => {
     const { env, a, b } = await seed();
     env.DB.raw.prepare('INSERT INTO blocks (account_id, blocked_id, created_at) VALUES (?1, ?2, 0)').run(a.id, b.id);
@@ -186,6 +195,11 @@ describe('用户主页 / 书架 / 作品页', () => {
     const anon = await call(env, 'GET', `/v1/works/${workId}`, { now: NOW });
     expect(anon.data.readers).toBe(4);
     expect(anon.data.rows.map((x) => x.account.nickname).sort()).toEqual(['r2', 'r3', 'tom']);
+    // 读者墙同一规则：仅好友可见的 r1 不出现在陌生人看到的 tom 书架读者墙里，好友能看到。
+    const anonWall = await call(env, 'GET', `/v1/users/${tom.id}/shelf`, { now: NOW });
+    expect(anonWall.data.rows[0].wall.map((x) => x.nickname).sort()).toEqual(['r2', 'r3']);
+    const friendWall = await call(env, 'GET', `/v1/users/${tom.id}/shelf`, { key: r2.key, account: r2.id, now: NOW });
+    expect(friendWall.data.rows[0].wall.map((x) => x.nickname)).toContain('r1');
     const friendView = await call(env, 'GET', `/v1/works/${workId}`, { key: r2.key, account: r2.id, now: NOW });
     // 作品页读者列表沿索引按读完时间倒序（有界分页）；仅好友可见的 r1 只对好友出现。
     expect(friendView.data.rows.map((x) => x.account.nickname).sort()).toEqual(['r1', 'r2', 'r3', 'tom']);

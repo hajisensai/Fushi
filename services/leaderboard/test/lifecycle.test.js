@@ -62,6 +62,8 @@ describe('删除账户', () => {
     expect(count('SELECT COUNT(*) n FROM friends')).toBe(0);
     expect(env.MEDIA.store.size).toBe(0);
     expect(env.DB.raw.prepare('SELECT title FROM works').all().map((w) => w.title)).toEqual(['shared']);
+    // 共享作品的读者数随删除减一（增量维护，不现场 COUNT）。
+    expect(env.DB.raw.prepare('SELECT readers FROM works').get().readers).toBe(1);
     // 删除后同一把钥匙的签名请求失效。
     expect((await call(env, 'GET', '/v1/me', { key: a.key, account: a.id, now: NOW })).status).toBe(401);
   });

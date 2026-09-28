@@ -63,6 +63,17 @@ describe('注册（邮箱验证码）', () => {
     expect(late.status).toBe(410);
   });
 
+  it('验证码用过即作废：同一个码不能再用第二次', async () => {
+    const env = makeEnv();
+    const k1 = await newKey();
+    const k2 = await newKey();
+    const { code } = await codeFor(env, 'once@example.com');
+    const body = (k, nickname) => ({ pubkey: k.pubkey, nickname, email: 'once@example.com', code });
+    expect((await call(env, 'POST', '/v1/register', { key: k1, body: body(k1, 'a'), now: NOW })).status).toBe(201);
+    const again = await call(env, 'POST', '/v1/register', { key: k2, body: body(k2, 'b'), now: NOW });
+    expect(again.data.error).toBe('bad_code'); // 不是 email_taken：码已被消费，根本走不到占用检查
+  });
+
   it('同一邮箱只能注册一个账户', async () => {
     const env = makeEnv();
     await registerUser(env, 'first', { email: 'dup@example.com', now: NOW });
