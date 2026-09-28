@@ -33,7 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-2754](bugs/BUG-2754-video-batch-delete-extras-fk.md) | 🚧 | 🚧 | 视频批量删除：本地花絮外键冲突删不掉且逐条回收慢 |
+| [BUG-2754](bugs/BUG-2754-video-batch-delete-extras-fk.md) | ✅ | ✅ | 视频批量删除：本地花絮外键冲突删不掉且逐条回收慢 |
 | [BUG-2753](bugs/BUG-2753-mdx-empty-reading-split-headword.md) | ✅ | ✅ | MDX词典与Yomitan词典同一词条被拆成两张卡 |
 | [BUG-2752](bugs/BUG-2752-sync-dict-refresh-empties-cache.md) | ✅ | ✅ | 互联下载服务器词典后本地词典全部消失 |
 | [BUG-2751](bugs/BUG-2751-vn-ios-screen-swap-residue.md) | ✅ | ✅ | iOS VN 翻屏后旧屏高亮列残留、新列被切半 |
