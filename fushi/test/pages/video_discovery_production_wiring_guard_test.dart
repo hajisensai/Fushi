@@ -9,13 +9,20 @@ void main() {
     ).readAsStringSync();
 
     expect(source, contains('VideoDiscoveryService.production('));
+    // 2026-09-27 起视频发现只住在「浏览」模块的「发现」页签：生产发现端口只注入
+    // BrowsePage，视频库页（VideoLibraryShell）不再接发现端口。
     expect(
       source,
-      contains('discoveryController: _productionVideoDiscoveryController'),
+      contains('videoDiscoveryController: _productionVideoDiscoveryController'),
     );
     expect(
       source,
-      contains('discoveryActions: _productionVideoDiscoveryActions'),
+      contains('videoDiscoveryActions: _productionVideoDiscoveryActions'),
+    );
+    expect(
+      source,
+      isNot(contains(' discoveryController: _productionVideoDiscoveryController')),
+      reason: '视频库页不再有发现分区，不得再把发现端口接给它',
     );
     expect(source, contains('loadDetails: _loadVideoDiscoveryDetails'));
     expect(
@@ -87,9 +94,9 @@ void main() {
     expect(source, contains('_videoDiscoveryService?.close()'));
   });
 
-  test('downloads resources reuse the four production discovery surfaces', () {
+  test('browse discover tab reuses the four production discovery surfaces', () {
     final String source = File(
-      'lib/src/pages/implementations/downloads_page.dart',
+      'lib/src/pages/implementations/browse_page.dart',
     ).readAsStringSync();
     final String home = File(
       'lib/src/pages/implementations/home_page.dart',
@@ -97,9 +104,11 @@ void main() {
 
     // 首段的**承载形态**换过三次：`Tab(text: …)` → PR#820 与库页同构的
     // `ButtonSegment(value: 0, label: Text(…))` → 2026-08-24 库页改走 MD3 tabs 后的
-    // `LibrarySectionTab(value: 0, label: …)`。本条守的**行为**三次都没变：第一段
-    // 必须是「资源」，不是第二个 discovery 页。
-    expect(source, contains('value: 0, label: t.download_resources_tab'));
+    // `LibrarySectionTab(value: 0, label: …)`。2026-09-27 起「下载」改名「浏览」，
+    // 原「资源」页签就是「发现」页签（BrowseTab 枚举，不再按下标），本条守的**行为**
+    // 没变：这个页签只是四个模块生产发现页的 hub，不是另写的第二个 discovery 页。
+    expect(source, contains('BrowseTab.discover => t.library_view_discover,'));
+    expect(source, contains('BrowseTab.discover => _buildResourceHub(),'));
     // 承载形态第四次变化：下拉框 → 与库页同构的 FushiSegmentedStrip（#1097）。
     // 判据按**泛型参数**认，与控件形态无关；再显式钉住「只有一个」——reason 里
     // 「唯一」二字原来其实没被测到，contains 有一个就过。

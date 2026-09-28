@@ -468,6 +468,26 @@ def find_global_monkey_patches(source: MaskedSource) -> list[str]:
     return hits
 
 
+KAG_SEAM_CONTEXT_REBIND_RE = re.compile(
+    r"fushiLookupOrig_\w+\s+incontextof\b"
+)
+
+
+def find_kag_seam_context_rebinds(source: MaskedSource) -> list[str]:
+    """kag 实例接缝转发原方法时不得改写它自带的上下文。
+
+    `kag.onMouseMove` 等可能是游戏换上的闭包，绑定在游戏自己的对象上（真机
+    《王様恋愛》：logo/标题阶段的鼠标处理引用该对象的 `CS_Timer`）。
+    `(orig incontextof this)` 把它强行改绑到 kag，第一次鼠标移动就抛
+    `Member "CS_Timer" does not exist`——游戏弹未处理异常框后退出（BUG-2745）。
+    按成员调用 `this.fushiLookupOrig_x(...)`，TJS 保留闭包原有上下文。
+    """
+    return [
+        f"{ADAPTER.name}:{source.line_of(m.start())} {m.group(0)}"
+        for m in KAG_SEAM_CONTEXT_REBIND_RE.finditer(source.text)
+    ]
+
+
 # 逐实例补丁的形状：给某个**变量**（实例）而不是 global.Layer 赋 drawText。
 INSTANCE_DRAWTEXT_PATCH_RE = re.compile(
     r"(?<![\w.])(?!global\.)(\w+)\.drawText\s*=(?!=)\s*function"
@@ -3239,6 +3259,9 @@ class RealAdapterTest(unittest.TestCase):
             "只允许留在默认关闭的探测分支里；经典 KAG3 走逐实例补丁。",
         )
 
+    def test_kag_seams_keep_the_original_closure_context(self) -> None:
+        self.assertEqual([], find_kag_seam_context_rebinds(self.source))
+
     def test_exe_direct_exporter_probe_waits_for_engine_main_window(self) -> None:
         self.assertEqual(
             [],
@@ -4469,14 +4492,14 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupLeftClickHook(); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onPrimaryClick incontextof this)(...);
+      return this.fushiLookupOrig_onPrimaryClick(...);
     } incontextof global.kag)) seams = seams | 0x2;
   if(global.fushiLookupWrapKagSeam("onMouseMove",
     function(x, y)
     {
       try { global.fushiLookupMouseMoveHook(x, y); }
       catch(e) { global.fushiLookupFault(); }
-      return (this.fushiLookupOrig_onMouseMove incontextof this)(...);
+      return this.fushiLookupOrig_onMouseMove(...);
     } incontextof global.kag)) seams = seams | 0x4;
   if(global.fushiLookupWrapKagSeam("onMouseWheel",
     function(shift, delta, x, y)
@@ -4485,7 +4508,7 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupMouseWheelHook(shift, delta, x, y); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onMouseWheel incontextof this)(...);
+      return this.fushiLookupOrig_onMouseWheel(...);
     } incontextof global.kag)) seams = seams | 0x8;
   if(global.fushiLookupWrapKagSeam("onKeyDown",
     function(key, shift)
@@ -4494,7 +4517,7 @@ global.fushiLookupInstallKagSeams = function()
       try { consumed = global.fushiLookupKeyDownHook(key, shift); }
       catch(e) { global.fushiLookupFault(); }
       if(consumed) return true;
-      return (this.fushiLookupOrig_onKeyDown incontextof this)(...);
+      return this.fushiLookupOrig_onKeyDown(...);
     } incontextof global.kag)) seams = seams | 0x10;
   global.fushiLookupKagSeams = seams;
 };
@@ -4882,6 +4905,20 @@ class MutationSelfTest(unittest.TestCase):
             [], find_main_window_criteria_copied_into_overlay(DIRTY_OVERLAY_COPY)
         )
 
+    def test_kag_seam_rebinding_original_context_is_red(self) -> None:
+        clean = MaskedSource(
+            "function(x, y)\n{\n"
+            "  return this.fushiLookupOrig_onMouseMove(...);\n"
+            "} incontextof global.kag\n"
+        )
+        self.assertEqual([], find_kag_seam_context_rebinds(clean))
+        dirty = MaskedSource(
+            "function(x, y)\n{\n"
+            "  return (this.fushiLookupOrig_onMouseMove incontextof this)(...);\n"
+            "} incontextof global.kag\n"
+        )
+        self.assertNotEqual([], find_kag_seam_context_rebinds(dirty))
+
     def test_clean_sample_passes_every_rule(self) -> None:
         self.assertEqual([], find_dynamic_tjs_concatenations(self.clean))
         self.assertEqual([], find_network_debris(self.clean))
@@ -4891,6 +4928,7 @@ class MutationSelfTest(unittest.TestCase):
         self.assertEqual([], find_unguarded_bitmap_copies(self.clean))
         self.assertEqual([], find_ownerless_card_dismissals(self.clean))
         self.assertEqual([], find_classic_sweep_missing(self.clean))
+        self.assertEqual([], find_kag_seam_context_rebinds(self.clean))
         self.assertEqual([], find_ungated_exe_exporter_probe(self.clean))
         # 干净样本里确实有 exe 直取探针，否则 BUG-2118 这条规则在自测里根本没被走到。
         self.assertIn("ObtainExporter()", CLEAN_SAMPLE)

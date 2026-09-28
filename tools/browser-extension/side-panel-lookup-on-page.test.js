@@ -256,6 +256,9 @@ test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与
   const left = host.style.left, top = host.style.top;
   const root = h.sandbox.window.__fushiRoot;
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8'), h.sandbox);
+  // 真实 selection.js 先把选区存进 fushiSelection.selection 再发 textSelected：这次选的是弹窗
+  // ShadowRoot 里释义正文的字。
+  h.selection.selection = { startNode: { nodeType: 3, textContent: '計画', parentNode: root }, ranges: [], text: '計画' };
   await h.sandbox.window.flutter_inappwebview.callHandler('textSelected', '計画', { x: 20, y: 20 });
   assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').at(-1).term, '計画');
   assert.strictEqual(findById(h.body, 'hibiki-popup-host'), host);
@@ -265,6 +268,24 @@ test('正文 textSelected 经真实桥打开子层，保留父层字幕来源与
   assert.strictEqual(host.style.top, top);
   assert.strictEqual(vm.runInContext('fushiPendingCueWindow.text', h.sandbox), '世界です');
   assert.strictEqual(h.sent.some((m) => m.type === 'fushiSidePanelLookupGone'), false);
+});
+
+test('页面正文上的选词（Shift 悬停扫描 / 悬浮字幕自动查词）发出的 textSelected 不开子层', async () => {
+  // 扩展里页面与弹窗共用同一个 window.fushiSelection：页面扫描调 selectFromPosition 同样会发
+  // textSelected。根弹窗在场时若照开子层，按住 Shift 在同一个词上挪几像素就叠出一层同词子层，
+  // 悬停离开判定被「子层在场」永远否决，视频一直停着。
+  const h = loadContent();
+  h.sandbox.window.fushiShowLookupFromSidePanel('世界', null);
+  h.runPlacement(400, 300);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'bridge-shim.js'), 'utf8'), h.sandbox);
+  const lookupsBefore = h.sent.filter((m) => m.type === 'lookup').length;
+  const pageParagraph = { tagName: 'P', parentNode: h.body };
+  h.selection.selection = { startNode: { nodeType: 3, textContent: '世界です', parentNode: pageParagraph }, ranges: [], text: '世界' };
+  await h.sandbox.window.flutter_inappwebview.callHandler('textSelected', '世界', { x: 20, y: 20 });
+  assert.strictEqual(h.sent.filter((m) => m.type === 'lookup').length, lookupsBefore,
+    '页面选词不是弹窗内选词：不得为子层再发一笔查词请求');
+  assert.strictEqual(h.body.children.filter(node => node.tagName === 'IFRAME').length, 0,
+    '页面选词不得叠出子层');
 });
 
 test('没带位置信息时弹窗贴视口右上（紧邻侧栏那侧，不压底部字幕）', () => {

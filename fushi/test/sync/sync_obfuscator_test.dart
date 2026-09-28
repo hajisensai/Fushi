@@ -140,4 +140,42 @@ void main() {
       expect(back, Uint8List.fromList(tiny));
     });
   });
+
+  group('SyncObfuscator random access (deobfuscateBodyAt)', () {
+    // 按 64 位字长 XOR 的实现必须与整文件逐字节还原逐字节一致：覆盖全部 32 种
+    // 相位、8 字节边界两侧的长度，以及非 Uint8List 的输入（网络分块可能是普通 List）。
+    final plain = Uint8List.fromList(
+        List<int>.generate(4096 + 77, (i) => (i * 131 + 17) & 0xFF));
+    final body = SyncObfuscator.obfuscateBytes(plain)
+        .sublist(SyncObfuscator.magicHeaderLength);
+
+    test('any offset / length restores the plaintext slice', () {
+      for (var offset = 0; offset < 64; offset++) {
+        for (final length in [0, 1, 7, 8, 9, 31, 32, 33, 63, 64, 65, 1000]) {
+          final chunk = body.sublist(offset, offset + length);
+          expect(
+            SyncObfuscator.deobfuscateBodyAt(chunk, offset),
+            plain.sublist(offset, offset + length),
+            reason: 'offset=$offset length=$length',
+          );
+          expect(
+            SyncObfuscator.deobfuscateBodyAt(List<int>.of(chunk), offset),
+            plain.sublist(offset, offset + length),
+            reason: 'plain List input, offset=$offset length=$length',
+          );
+        }
+      }
+      expect(
+        SyncObfuscator.deobfuscateBodyAt(body.sublist(3000), 3000),
+        plain.sublist(3000),
+      );
+    });
+
+    test('does not mutate the input chunk', () {
+      final chunk = body.sublist(5, 105);
+      final copy = Uint8List.fromList(chunk);
+      SyncObfuscator.deobfuscateBodyAt(chunk, 5);
+      expect(chunk, copy);
+    });
+  });
 }

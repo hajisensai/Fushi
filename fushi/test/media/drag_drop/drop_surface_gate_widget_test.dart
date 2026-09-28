@@ -211,7 +211,7 @@ void main() {
     });
   }, skip: !_desktopHost);
 
-  group('VideoLibraryShell：停在发现子页时本地库不接', () {
+  group('VideoLibraryShell：停在媒体服务器子页时本地库不接', () {
     late FushiDatabase database;
     late VideoSourceScrapeTaskController scrapeController;
     late ChangeNotifier refreshSignal;
@@ -229,7 +229,7 @@ void main() {
       await database.close();
     });
 
-    testWidgets('切到发现分区后拖入文件夹，本地库不得登记扫描根', (WidgetTester tester) async {
+    testWidgets('切到媒体服务器分区后拖入文件夹，本地库不得登记扫描根', (WidgetTester tester) async {
       _pinViewport(tester);
       final List<String> dropped = <String>[];
       await tester.pumpWidget(TranslationProvider(
@@ -251,10 +251,10 @@ void main() {
                   Expanded(child: _leaf('local', dropped)),
                 ],
               ),
-              discoveryPageBuilder: (_, Widget navigation) => Column(
+              mediaServerPageBuilder: (_, Widget navigation) => Column(
                 children: <Widget>[
                   navigation,
-                  Expanded(child: _leaf('discover', dropped)),
+                  Expanded(child: _leaf('media-servers', dropped)),
                 ],
               ),
             ),
@@ -271,12 +271,12 @@ void main() {
           .widget<FushiSectionTabBar<VideoLibrarySection>>(
             find.byType(FushiSectionTabBar<VideoLibrarySection>),
           )
-          .onChanged!(VideoLibrarySection.discover);
+          .onChanged!(VideoLibrarySection.mediaServers);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
-      expect(dropped, <String>['discover'],
-          reason: '用户停在发现子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
+      expect(dropped, <String>['media-servers'],
+          reason: '用户停在媒体服务器子页，隐藏的 HomeVideoPage 不许把文件夹登记成常驻扫描根');
     });
   }, skip: !_desktopHost);
 

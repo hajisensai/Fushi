@@ -22,10 +22,15 @@
 //   A. setChromeInsets with unchanged insets + image box neither samples nor
 //      re-anchors (both shells), and leaves the paged metrics cache alone;
 //   B. setChromeInsets with a real inset change still samples and re-anchors;
-//   C. beginRestoreReanchor takes the registered char anchor (and the sentence
+//   C. beginRestoreReanchor takes the restore's char anchor (and the sentence
 //      end) without sampling, and commitUiScaleReanchor scrolls to it;
 //   D. without a precise char anchor (progress restore) it falls back to the
-//      sampling begin, and the UI-scale path still passes no sentence end.
+//      sampling begin, and the UI-scale path still passes no sentence end;
+//   E. (BUG-2744 review) an audiobook follow reveal (scrollToTarget) that runs
+//      BEFORE beginRestoreReanchor — the order Dart's _onRestoreComplete uses
+//      while playing — replaces the image late-load anchor but NOT the restore
+//      char anchor, so the re-anchor still does not sample;
+//   F. a page turn or the next restore clears the restore char anchor.
 //
 // Run: node fushi/test/reader/restore_reanchor_transient_viewport_behavior_test.js <payload.json>
 // (driven from restore_reanchor_transient_viewport_behavior_test.dart inside `flutter test`).
@@ -60,6 +65,7 @@ function instantiate(shellSource) {
   const cs = {
     writingMode: 'vertical-rl', columnWidth: 'auto',
     paddingTop: '0px', paddingBottom: '0px', paddingLeft: '0px', paddingRight: '0px',
+    getPropertyValue: () => '',
   };
   const getComputedStyle = () => cs;
   window.getComputedStyle = getComputedStyle;
@@ -68,7 +74,9 @@ function instantiate(shellSource) {
     scrollingElement: null,
     body: { clientWidth: 402, clientHeight: 874 },
     caretRangeFromPoint: () => null,
+    fonts: { ready: Promise.resolve() },
   };
+  window.scrollBy = () => {};
   const Node = { TEXT_NODE: 3 };
   new Function('window', data.studyUnits)(window);
   const C = { perfTraceEnabled: false };
@@ -87,6 +95,12 @@ function instantiate(shellSource) {
   // Paged-only geometry used for the hint; harmless on the continuous shell.
   reader.getScrollContext = () => ({ vertical: true, pageSize: 874 });
   reader.getPagePosition = () => 874;
+  // Restore entry points: the chapter holds every char offset used below, and the
+  // settle / notify timers are irrelevant to which anchor the re-anchor reads.
+  reader.charOffsetInRange = () => true;
+  reader._settleAndNotify = () => {};
+  reader.scrollToChapterStart = () => {};
+  reader.scrollToProgressContinuous = () => {};
 
   // What initialize() leaves behind: the insets and image box of this layout.
   rootStyle.setProperty('--chrome-top-inset', '62px');
@@ -137,10 +151,12 @@ for (const [label, source] of [['paged', data.paged], ['continuous', data.contin
   }
 }
 
+async function main() {
 // C. restore re-anchor takes the restore's own anchor.
 {
   const { reader, calls } = instantiate(data.continuous);
-  reader.registerImageLateAnchor({ charOffset: 663, endCharOffset: -1 });
+  await reader.restoreToCharOffset(663, -1);
+  calls.scrollTo.length = 0;
   assert.strictEqual(reader.beginRestoreReanchor(), 663,
     'restore re-anchor must return the restore char anchor');
   assert.strictEqual(calls.sample, 0,
@@ -153,15 +169,16 @@ for (const [label, source] of [['paged', data.paged], ['continuous', data.contin
   assert.notStrictEqual(reader._reanchorPending, true, 'commit must clear the flag');
 
   // Favourite-sentence restore keeps its sentence end (BUG-461 whole-sentence alignment).
-  reader.registerImageLateAnchor({ charOffset: 100, endCharOffset: 140 });
+  await reader.restoreToCharOffset(100, 140);
+  calls.scrollTo.length = 0;
   assert.strictEqual(reader.beginRestoreReanchor(), 100);
   reader.commitUiScaleReanchor();
-  assert.deepStrictEqual(calls.scrollTo[1].slice(0, 2), [100, 140],
+  assert.deepStrictEqual(calls.scrollTo[0].slice(0, 2), [100, 140],
     'commit must carry the restore sentence end');
 
   // An in-flight re-anchor keeps ownership.
+  await reader.restoreToCharOffset(200);
   reader._reanchorPending = true;
-  reader.registerImageLateAnchor({ charOffset: 200 });
   assert.strictEqual(reader.beginRestoreReanchor(), -1,
     'an in-flight re-anchor must keep ownership');
   reader._reanchorPending = false;
@@ -170,17 +187,64 @@ for (const [label, source] of [['paged', data.paged], ['continuous', data.contin
 // D. no precise anchor → sampling fallback; UI-scale path passes no sentence end.
 {
   const { reader, calls } = instantiate(data.continuous);
-  reader.registerImageLateAnchor({ progress: 0.4 });
+  await reader.restoreToCharOffset(663, -1);
+  // A later progress restore replaces the precise anchor.
+  await reader.restoreProgress(0.4);
   assert.strictEqual(reader.beginRestoreReanchor(), 0,
     'a progress restore falls back to the sampling begin');
   assert.strictEqual(calls.sample, 1, 'the fallback samples once');
   reader.commitUiScaleReanchor();
 
-  reader.clearImageLateAnchor();
   reader.beginUiScaleReanchor();
   reader.commitUiScaleReanchor();
   assert.strictEqual(calls.scrollTo[calls.scrollTo.length - 1][1], undefined,
     'the UI-scale re-anchor must not inherit a sentence end');
 }
 
+// E. BUG-2744 review: restore completes while the audiobook is playing. Dart's
+// _onRestoreComplete sends the follow reveal (AudiobookBridge.highlight →
+// scrollToTarget) BEFORE beginRestoreReanchor, and the reveal replaces the image
+// late-load anchor with {target}. The restore re-anchor must still take the
+// restore char anchor instead of sampling the unsettled (reads-as-0) viewport.
+{
+  const { reader, calls } = instantiate(data.continuous);
+  await reader.restoreToCharOffset(663, 700);
+  calls.scrollTo.length = 0;
+  const sentence = { tag: 'cue-sentence' };
+  reader.getRect = () => ({ left: -2000, right: -1960, top: 0, bottom: 400, width: 40, height: 400 });
+  reader.scrollToTarget(sentence);
+  assert.strictEqual(reader.__imgReanchorTarget, sentence,
+    'the follow reveal must still own the image late-load anchor (BUG-2744)');
+  assert.strictEqual(reader.beginRestoreReanchor(), 663,
+    'a follow reveal before begin must not drop the restore char anchor');
+  assert.strictEqual(calls.sample, 0,
+    'a follow reveal before begin must not make the restore re-anchor sample');
+  reader.commitUiScaleReanchor();
+  assert.deepStrictEqual(calls.scrollTo[0].slice(0, 2), [663, 700],
+    'commit must scroll to the restore anchor with its sentence end');
+}
+
+// F. the restore window ends with the user's page turn or the next restore: a
+// later restore re-anchor samples instead of yanking back to the stale anchor.
+{
+  const { reader, calls } = instantiate(data.continuous);
+  await reader.restoreToCharOffset(663);
+  reader.paginate('forward');
+  assert.strictEqual(reader.beginRestoreReanchor(), 0,
+    'a page turn must drop the restore char anchor (begin falls back to sampling)');
+  assert.strictEqual(calls.sample, 1);
+  reader.commitUiScaleReanchor();
+
+  await reader.restoreToCharOffset(663);
+  reader.alignToFragmentTarget = () => true;
+  await reader.jumpToFragment('ch2');
+  assert.strictEqual(reader.beginRestoreReanchor(), 0,
+    'a fragment restore replaces the previous restore char anchor');
+  assert.strictEqual(calls.sample, 2);
+  reader.commitUiScaleReanchor();
+}
+
 console.log('all assertions passed');
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });

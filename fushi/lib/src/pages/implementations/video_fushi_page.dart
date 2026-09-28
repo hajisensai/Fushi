@@ -1,5 +1,6 @@
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
+import 'dart:convert' show utf8;
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -53,6 +54,7 @@ import 'package:fushi/src/media/video/danmaku_manual_match_panel.dart';
 import 'package:fushi/src/media/source_library/source_stream_headers.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
+import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart'
     show showAsrTranscribeSheet;
@@ -177,6 +179,12 @@ import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:crypto/crypto.dart' show sha256;
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show probeVideoDurationMs;
 import 'package:fushi/src/media/video/video_volume_overlays.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
@@ -193,7 +201,10 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/sync/interconnect_adaptive_quality.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
-import 'package:fushi/src/sync/sync_backend.dart' show SyncPeerUnreachableError;
+import 'package:fushi/src/sync/sync_backend.dart'
+    show SyncAuthError, SyncPeerUnreachableError;
+import 'package:fushi/src/sync/sync_error_messages.dart'
+    show friendlySyncAuthFailure;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
@@ -226,6 +237,11 @@ import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
+import 'package:fushi/src/media/video/online/anime_source_library.dart';
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 
 part 'video_fushi/danmaku.part.dart';
 part 'video_fushi/clip_export.part.dart';
@@ -1428,6 +1444,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<SubtitleSource> _subtitleMenuSources = const <SubtitleSource>[];
   bool _subtitleMenuLoading = false;
 
+  /// 「按内嵌字幕对齐」进行中：抽轨可能要几十秒，期间再点不重入。
+  bool _referenceSyncRunning = false;
+
   /// BUG-1863：本页在前台期间是否真的进过后台（`paused` / `hidden`，**不含**
   /// `inactive`）。回前台时据它决定要不要重建视频解码链，见
   /// [_refreshDecodeAfterResumeIfNeeded]。
@@ -2141,7 +2160,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 当前选中的字幕源持久化值（外挂路径 / `embedded:<n>` / `off:`=用户显式关闭哨兵
   /// （[SubtitleSource.offSentinel]，TODO-818） / null=无偏好或远端清字幕）；用于字幕
   /// 源菜单高亮当前项。
-  String? _currentSubtitleSource;
+  ///
+  /// 每次改写都顺带重算「当前档是不是对齐产物 → 调轴归零」
+  /// （[_refreshPrimarySubtitleAlignment]）：选源入口散在十来处，挂在写入点上才
+  /// 一处不漏。
+  String? get _currentSubtitleSource => _currentSubtitleSourceValue;
+  set _currentSubtitleSource(String? value) {
+    _currentSubtitleSourceValue = value;
+    unawaited(_refreshPrimarySubtitleAlignment(value));
+  }
+
+  String? _currentSubtitleSourceValue;
 
   /// 当前选中的副字幕源持久化值（TODO-857 / TODO-1312 视频双字幕）：与
   /// [_currentSubtitleSource] 同款四态编码（外挂路径 / `embedded:<n>` / `off:` /
@@ -2205,7 +2234,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   int _clipExportGeneration = 0;
 
   /// 音画延迟（毫秒）：字幕 cue 同步偏移，跨重启保留；换集复用同一值。
+  ///
+  /// 这是**生效值**。当前主字幕是按内嵌轨对齐的产物时（[_primarySubtitleAligned]）
+  /// 它从 0 起算、改动只在本次会话生效不落盘，持久化的调轴暂存在
+  /// [_delayBeforeAlignedSubtitleMs]，换回别的字幕档时恢复。
   int _delayMs = 0;
+
+  /// 当前主字幕档是不是按内嵌字幕轨对齐写下的产物（subtitle_alignment_backup.dart
+  /// 的登记），由 [_refreshPrimarySubtitleAlignment] 维护。
+  bool _primarySubtitleAligned = false;
+
+  /// 对齐产物生效期间暂存的持久化调轴（系列级 / 本集）。
+  int _delayBeforeAlignedSubtitleMs = 0;
+
+  /// 「是不是对齐产物」异步检查的代次：只认最后一次，旧的回来直接丢。
+  int _subtitleAlignmentCheckGeneration = 0;
 
   /// 副字幕独立调轴（毫秒，TODO-2837 主副字幕分开调轴）：null = 未单独设置 =
   /// 跟随 [_delayMs]（v86 前「主副共用一个 offset」行为）；非 null = 副轨独立偏移
@@ -2349,7 +2392,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 让流媒体书像本地视频一样从书架点开，却复用与「导入即播」完全一致的远端播放路径
   /// （prefs 断点、无本地文件），行为与旧临时流播放一致（Never break userspace）。
   RemoteVideoInfo? _resolvedStreamInfo;
-  UrlStreamVideoClient? _resolvedStreamClient;
+  RemoteVideoClient? _resolvedStreamClient;
+
+  /// 在线视频源（Aniyomi）入库集重开时，同一作品合集里的在线行（连播成员）与起播
+  /// 下标（见 `buildAnimeSourceLaunch`）。其它流媒体书恒 null。
+  List<RemoteVideoInfo>? _resolvedStreamMembers;
+  int? _resolvedStreamStartIndex;
+
+  /// 本页为在线视频源入库集建的 client：持有 http 客户端，退出时释放。
+  AnimeSourceVideoClient? _ownedAnimeClient;
 
   /// 客户端互联视频合集播放：有序远端合集成员（来自 widget.remoteCollectionMembers）。
   /// `length > 1` = 合集连播模式；单视频 / host-playlist 恒空。
@@ -2852,6 +2903,59 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
         return;
       }
+      // 在线视频源（Aniyomi）入库集：按行里的规格重建扩展 client（起播时向扩展
+      // 取流），合集里同一作品的在线行作连播成员。
+      if (isAnimeSourceVideoPath(row.videoPath)) {
+        _setLoadingPhase(_VideoLoadPhase.connecting);
+        try {
+          // 合规门 + 运行时平台门（iOS 不带在线源宿主、Linux 没有 Mihon 宿主）：
+          // 取 animeMihonManager 之前先问门——门外取用会在不该有宿主的平台上起宿主
+          // （或直接抛 UnsupportedError）。不可用走下面「扩展不可用」的失败提示。
+          if (!isVideoOnlineSourcesAvailable) {
+            throw const AnimeSourceLaunchUnavailable(
+              'online video sources are unavailable on this platform',
+            );
+          }
+          final ({
+            AnimeSourceVideoClient client,
+            RemoteVideoInfo info,
+            List<RemoteVideoInfo> members,
+            int startIndex,
+          }) launch = await buildAnimeSourceLaunch(
+            row: row,
+            database: appModel.database,
+            repository: widget.repo,
+            manager: appModel.animeMihonManager,
+            playlistCollectionId: widget.playlistCollectionId,
+            subtitleLanguageResolver: () => resolveSubtitleDownloadLanguage(
+              explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+              globalDefaultContentLanguage: appModel.defaultContentLanguage,
+            ),
+          );
+          if (!mounted) {
+            launch.client.dispose();
+            return;
+          }
+          _ownedAnimeClient = launch.client;
+          _resolvedStreamClient = launch.client;
+          _resolvedStreamInfo = launch.info;
+          _resolvedStreamMembers = launch.members;
+          _resolvedStreamStartIndex = launch.startIndex;
+        } catch (e) {
+          debugPrint('[VideoFushiPage] anime-source launch failed: $e');
+          if (mounted) {
+            setState(() {
+              _failed = true;
+              _failReason = e is AnimeSourceLaunchUnavailable
+                  ? t.video_online_extension_unavailable
+                  : _describeLoadFailure(e);
+            });
+          }
+          return;
+        }
+        await _initRemote();
+        return;
+      }
       // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上交给内置网页播放器：
       // 站点自己的播放器播，Fushi 复用字幕面板 / 查词 / 进度登记。在这里分流而非各
       // push 点：书架 / 首页 / 合集 / 作品页 / app 外打开 8 处入口全部自动覆盖。
@@ -2876,6 +2980,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 解析 getManifest 有网络往返、慢网仍可数秒）之前，避免解析期页面裸转圈「点了没动静」。
       _setLoadingPhase(_VideoLoadPhase.connecting);
       try {
+        // `.strm` 流指针：videoPath 是 `.strm` 自身（本地或来源根内的网络条目），
+        // 起播时现读出它指向的流地址，之后整条链路按**目标地址**走——认证头
+        // 只用于读 `.strm` 本身（它在来源根内），目标多为第三方主机，下面按目标
+        // 地址重新解析、自然拿不到来源凭据。
+        VideoBookRow launchRow = row;
+        if (isStrmPath(row.videoPath)) {
+          final StreamUrlResolver? strmResolver =
+              await resolveSourceStreamUrlResolver(
+                db: appModel.database,
+                sourceId: row.sourceId,
+              );
+          try {
+            final String strmTarget = await resolveStrmStreamTarget(
+              row.videoPath,
+              strmHttpHeaders: await resolveSourceStreamHeaders(
+                db: appModel.database,
+                sourceId: row.sourceId,
+                targetUrl: row.videoPath,
+              ),
+              urlResolver: strmResolver,
+            );
+            launchRow = row.copyWith(videoPath: strmTarget);
+          } finally {
+            strmResolver?.close();
+          }
+        }
         // 来源库网络视频（WebDAV）：认证头按 sourceId 现解析（凭据不落行级
         // spec——改来源密码一处生效）；非来源书解析为空 map，零分支。
         // targetUrl 传本行真实流地址：来源根下的 m3u8 清单可以指向第三方主机，
@@ -2885,7 +3015,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             await resolveSourceStreamHeaders(
               db: appModel.database,
               sourceId: row.sourceId,
-              targetUrl: row.videoPath,
+              targetUrl: launchRow.videoPath,
             );
         // AList / OpenList 来源：条目地址不能直接播，起播前经 fs/get 换临期签名
         // 直链；非该来源解析为 null，零分支。
@@ -2896,7 +3026,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             );
         final ({UrlStreamVideoClient client, RemoteVideoInfo info}) launch =
             await buildStreamVideoLaunch(
-              row,
+              launchRow,
               youtubeTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
               sourceHttpHeaders: sourceHeaders,
               sourceUrlResolver: sourceUrlResolver,
@@ -2923,6 +3053,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _currentSubtitleSource = row.subtitleSource;
     _currentSecondarySubtitleSource = row.secondarySubtitleSource;
     _currentAudioTrackId = row.audioTrackId;
+    // 下面按持久化值重设 _delayMs：先作废「对齐产物 → 调轴归零」的旧结论与在途检查，
+    // 由 _applyLoad 按本次实际选中的字幕档重算（否则在途检查可能在系列级调轴赋值
+    // 之前回来，把系列值当成生效值留下）。
+    _primarySubtitleAligned = false;
+    _subtitleAlignmentCheckGeneration++;
     _delayMs = row.delayMs;
     // TODO-2837：副字幕独立调轴（null = 跟随主字幕）。
     _secondaryDelayMs = row.secondaryDelayMs;
@@ -3014,7 +3149,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 客户端合集连播：有序成员列表（>1 才成合集）。起播成员 = 首页点的那个（widget.remoteInfo，
     // 其下标 = initialEpisodeIndex）。
     _remoteMembers =
-        widget.remoteCollectionMembers ?? const <RemoteVideoInfo>[];
+        widget.remoteCollectionMembers ??
+        _resolvedStreamMembers ??
+        const <RemoteVideoInfo>[];
     _activeRemoteMember = null;
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     _currentSubtitleSource = null;
@@ -3054,6 +3191,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           (widget.sourceReview?.episodeIndex ??
                   _remoteLastAttemptedEpisode ??
                   widget.initialEpisodeIndex ??
+                  _resolvedStreamStartIndex ??
                   0)
               .clamp(0, _remoteMembers.length - 1);
       _episodes = <_PlaylistEpisodeRef>[
@@ -3706,6 +3844,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final (String keyUid, int episodeIndex) = _remotePositionKeyForIndex(
       _currentEpisode,
     );
+    // 直播频道（IPTV 频道列表导入的频道行，按条目来源判定）报不出总时长：它的
+    // position 只是「开播至今」，写下去下次会带着 start=<旧位置> 起播、跳出直播窗口。
+    // 其它远端（互联转码 / Jellyfin 渐进式 …）mpv 暂时报不出时长也照常写与上报。
+    // 见 [shouldPersistStreamPosition]。
+    if (!shouldPersistStreamPosition(
+      isLiveChannel:
+          isIptvChannelBookUid(keyUid) || isIptvChannelBookUid(widget.bookUid),
+      durationMs: _controller?.durationMs,
+    )) {
+      return;
+    }
     await appModel.prefsRepo.setPref(
       videoRemotePositionEpisodePrefKey(keyUid, episodeIndex),
       clamped,
@@ -3718,12 +3867,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 只写 prefs 会让书架的「继续观看 / 在看筛选 / 合集续播选集」对它全部失明——那些
     // 读的是 `lastPositionMs` / `lastPlayedAt`。与本地 [_persistPosition] 对齐补写 DB 行
     // （resume 仍走上面的 prefs LWW，两者读写路径互不干扰）。互联远端无行，保持原样。
+    //
+    // 合集连播（在线视频源入库集）时当前成员就是它自己那一行：写 keyUid，不是起播
+    // 那一集的 widget.bookUid——否则换集后的进度全写进第一集的行。
     if (_bookRow != null) {
-      await widget.repo.updatePosition(
-        widget.bookUid,
-        clamped,
-        playedAt: nowMs,
-      );
+      final String rowUid = _isRemoteCollection ? keyUid : widget.bookUid;
+      await widget.repo.updatePosition(rowUid, clamped, playedAt: nowMs);
     }
     final RemoteVideoClient? client = _effectiveRemoteClient;
     if (client == null) return;
@@ -4372,6 +4521,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (detectHls) {
       unawaited(_detectHlsVariantsForLoad(mediaUri));
     }
+    // 当前主字幕是对齐产物时调轴归零（换集 / 首开都按本次实际选中的档算）。
+    await _refreshPrimarySubtitleAlignment(
+      externalSubtitlePath ?? _currentSubtitleSource,
+    );
     // 应用持久化的音画延迟（换集复用同一值；load 不重置 delay）。
     controller.setDelayMs(_delayMs);
     // TODO-2837：副字幕独立调轴同步应用（null = 跟随主字幕，controller 侧回退）。
@@ -4863,6 +5016,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。
     _frameProbe.stop();
     _discardRemoteTimingAudio();
+    _ownedAnimeClient?.dispose();
     videoDiag(VideoDiagCategory.video, VideoDiagLevel.info, 'page close');
     _disposedDuringSourceReview = _sourceReviewActive;
     ExternalMediaNavigation.instance.unregister(this);
@@ -7981,6 +8135,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 让用户在不打开快速设置面板时也能看到字幕同步已调整、调多少。
     final String signed = clamped >= 0 ? '+$clamped' : '$clamped';
     _showOsd(t.video_subtitle_delay_osd(ms: signed), icon: Icons.sync_outlined);
+    // 对齐产物生效期间的微调只在本次会话生效：落盘会写进系列级调轴，把同系列其它
+    // 没对齐的集一起推歪；而对齐产物重进时本来就按 0 起算。
+    if (_primarySubtitleAligned) {
+      if (mounted) setState(() {});
+      return;
+    }
     // 同系列调轴记忆（schema v52）：合集内调轴写系列级，全系列共享（换集/从书架重进
     // 任一集都读到同一值）；单文件视频（无合集）仍走 per-book，行为与旧版一致。所有
     // 调轴入口（z/x 微调、asbplayer 对齐、面板滑条/输入/自动对轴）都汇聚到此，写入
@@ -9064,9 +9224,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通用文案。纯字符串判据（异常类型 + 消息关键词），best-effort、绝不抛。
   String _describeLoadFailure(Object? error) {
     if (error is TimeoutException) return t.video_load_failed_timeout;
+    // `.strm` 流指针读不出可播地址：原因明确，不走下面的子串阶梯。
+    if (error is StrmResolveException) {
+      return switch (error.failure) {
+        StrmResolveFailure.localTarget => t.video_strm_target_local,
+        StrmResolveFailure.empty ||
+        StrmResolveFailure.unsupportedTarget =>
+          t.video_strm_target_unsupported,
+        StrmResolveFailure.unreadable => t.video_strm_file_unreadable,
+      };
+    }
+    // Apple 上不放行 native 自握手的加密流协议（rtsps / rtmps / rtmpe）。
+    if (error is UnsupportedStreamProtocolException) {
+      return t.video_stream_protocol_unsupported_apple;
+    }
     // BUG-1693：互联对端一台都探不到（对端未运行 Fushi / 离线）有类型可依，
     // 优先分派——它既不是「视频不可用」也不是「本机网络故障」。
     if (error is SyncPeerUnreachableError) return t.sync_err_peer_unreachable;
+    // 云盘流播起播前的预读撞上登录失效（refresh token 过期 / 被吊销）：可操作项是
+    // 重新登录，不是「视频不可用」。按类型分派，措辞与同步设置页同一套。
+    if (error is SyncAuthError) {
+      return friendlySyncAuthFailure(error.kind, error.serverReason);
+    }
     // 视频源扩展明确回答「这一集没有可播的流」：既不是网络故障也不是站点拒绝，
     // 作品页已不再预解析拦这一层（点集直接进播放器），失败态得把原因说清。
     if (error is MihonRuntimeException && error.code == 'NO_VIDEOS') {

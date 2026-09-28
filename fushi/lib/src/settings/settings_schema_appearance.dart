@@ -20,7 +20,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
   ModuleId.manga => 'system.module_manga',
   ModuleId.video => 'system.module_video',
   ModuleId.games => 'system.module_games',
-  ModuleId.downloads => 'system.module_downloads',
+  ModuleId.browse => 'system.module_downloads',
   ModuleId.lookup => 'system.module_lookup',
   ModuleId.browserExtension => 'system.module_browser_extension',
   ModuleId.listening => 'system.module_listening',
@@ -65,7 +65,7 @@ String _moduleItemId(ModuleId module) => switch (module) {
     ModuleId.manga ||
     ModuleId.video ||
     ModuleId.games ||
-    ModuleId.downloads ||
+    ModuleId.browse ||
     ModuleId.lookup ||
     ModuleId.browserExtension => throw StateError(
       '$module 有对应 HomeTab，标识应走 homeNavItemFor',

@@ -1214,6 +1214,13 @@ window.__fushiInstallShell = function(C) {
   // 语义锚重算一次**：终态与「图片本来就在」等价。仅在恢复落地后、用户尚未翻页的窗口内
   // 有效（paginate 清资格），且只由真正改变几何的 block 图 load 触发。重锚是程序化滚动，
   // 走既有 onReaderScroll 通道把**修正后**的位置落库（既有 >=0.99 章末重锚同一条路）。
+  //
+  // BUG-2744：锚是「阅读器**当前**正在展示的语义目标」，不是「本章打开时的落点」。程序化
+  // 揭示（有声书跟读 highlightSentenceAudioCue → revealElement、跨插图暂停
+  // __fushiRevealTarget、搜索命中）一旦把视口带到新目标，目标就换了——分页 scrollToRange /
+  // 连续 scrollToTarget 在这里登记 {target}（Range 或元素），替换恢复锚。否则跟读翻过几页后
+  // 前方懒图才 load，重锚把视口拽回开章那页（横排听书「插图位置闪一下、图被跳过」）；跨图
+  // 暂停时滚到尚未 load 的插图（0 尺寸占位），load 后又对齐回那张图而不是停在错页。
   registerImageLateAnchor: function(anchor) {
     this.clearImageLateAnchor();
     if (!anchor) return;
@@ -1224,6 +1231,11 @@ window.__fushiInstallShell = function(C) {
       this.__imgReanchorProgress = anchor.progress;
     } else if (anchor.fragment) {
       this.__imgReanchorFragment = anchor.fragment;
+    } else if (anchor.target) {
+      // Range 是活的（DOM 变动后边界自动跟随，懒图 load 被包进 .block-img-wrapper 后仍选中
+      // 那张图），复制一份避免与调用方共用（搜索把同一个 Range 交给了 CSS.highlights）。
+      this.__imgReanchorTarget = typeof anchor.target.cloneRange === 'function'
+        ? anchor.target.cloneRange() : anchor.target;
     }
   },
   clearImageLateAnchor: function() {
@@ -1231,6 +1243,19 @@ window.__fushiInstallShell = function(C) {
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
     this.__imgReanchorFragment = null;
+    this.__imgReanchorTarget = null;
+  },
+  // BUG-2744 审查：**恢复锚**（BUG-2652 连续 beginRestoreReanchor 读的那一个）与上面的迟到
+  // 图片锚分开存。图片锚会被程序化揭示替换（跟读 / 跨图 / 搜索的 {target}），而「播放中恢复
+  // 完成」时 Dart 先同步下发跟读揭示（_onRestoreComplete → _updateCurrentCue → highlight
+  // evaluateJavascript），之后才调 beginRestoreReanchor——两次 JS 按 FIFO，揭示总是先到。
+  // 共用一个字段时揭示把字符锚换成 {target}，begin 退回现场采样，iOS 同一 WKWebView
+  // 头几帧 scroll 读 0 → 采到章首 → commit 钉回章首并落库（BUG-2652 回归）。
+  // 不变量：只由恢复入口（restoreToCharOffset 精确锚写入；restoreProgress / jumpToFragment /
+  // 越界回退写 null）与用户翻页 paginate（写 null）改写；揭示、迟到图片重锚都不碰它。
+  _setRestoreCharAnchor: function(charOffset, endCharOffset) {
+    this.__restoreCharOffset = typeof charOffset === 'number' ? charOffset : null;
+    this.__restoreCharOffsetEnd = endCharOffset;
   },
   // 连续 shell 独有 scrollToChapterEnd —— 与既有重锚回调同一条判别（不能用
   // scrollToProgressPaged，那是 _sharedJs 两 shell 都有的，连续会误走分页分支）。
@@ -1238,6 +1263,14 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // BUG-2744：程序化揭示的目标——对齐回这个目标本身（分页落到它起始边所在页；连续按
+    // 跟读同一套安全带判据滚回可见），绝不回退到开章落点。
+    var target = this.__imgReanchorTarget;
+    if (target) {
+      if (this._isContinuousShell()) this.scrollToTarget(target);
+      else this._alignRangeToPage(target);
+      return true;
+    }
     var co = this.__imgReanchorCharOffset;
     if (typeof co === 'number' && co > 0) {
       if (this._isContinuousShell()) {
@@ -2557,6 +2590,13 @@ $_sharedJs
     return Math.abs(currentScroll - nearestPage) <= 1 ? nearestPage : currentScroll;
   },
   scrollToRange: function(range) {
+    // BUG-2744：揭示的目标即阅读器此刻的语义落点，替换恢复锚（见 registerImageLateAnchor）。
+    // 不论这次是否真的翻页都要登记：跨图暂停滚到尚未 load 的插图时，0 尺寸占位常还在当前
+    // 页（不翻），load 撑开后插图才挪到下一页，得靠这个锚把视口带过去。
+    this.registerImageLateAnchor({target: range});
+    return this._alignRangeToPage(range);
+  },
+  _alignRangeToPage: function(range) {
     var context = this.getScrollContext();
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
@@ -3444,6 +3484,9 @@ $_sharedJs
   // reveal 分支）武装 _reanchorClearedAt 让 B-3 窗覆盖这条平滑滚动的落定尾沿，从源头消除二次
   // 反弹——动画保留，闪烁靠 settle 窗治住。分页模式 reveal（scrollToRange）走另一路不受影响。
   scrollToTarget: function(target) {
+    // BUG-2744：跟读 / 跨图 / 搜索揭示的目标替换恢复锚，迟到懒图 load 后按它重对齐，
+    // 而不是把视口拽回开章落点（与分页 scrollToRange 同一不变量）。
+    this.registerImageLateAnchor({target: target});
     var rect = this.getRect(target);
     var margin = 0.15;
     var wm = window.getComputedStyle(document.body).writingMode;
@@ -3543,6 +3586,8 @@ $_sharedJs
   restoreProgress: async function(progress) {
     await document.fonts.ready;
     var self = this;
+    // 新的恢复覆盖上一次的精确恢复锚：progress 落点没有字符锚，begin 走采样。
+    this._setRestoreCharAnchor(null);
     if (progress <= 0) {
       // BUG-1140 第二轮：章首也登记。内容向下增长不移动 scroll 0，重锚
       // scrollToChapterStart 幂等；但章首之前若有前导插图（合并注入 / 封面），图 load
@@ -3588,6 +3633,7 @@ $_sharedJs
   },
   jumpToFragment: async function(fragment) {
     await document.fonts.ready;
+    this._setRestoreCharAnchor(null);
     if (!this.alignToFragmentTarget(fragment)) {
       this.clearImageLateAnchor();
       this.notifyRestoreComplete();
@@ -3601,6 +3647,7 @@ $_sharedJs
     // TODO-1349（续）：用户翻页即放弃 late-load 重锚资格（镜像分页 paginate），
     // 避免图 load 回调把用户已翻走的位置拽回恢复锚。
     this.clearImageLateAnchor();
+    this._setRestoreCharAnchor(null);
     var vertical = this.isVertical();
     var root = document.scrollingElement || document.documentElement;
     var before = vertical ? window.scrollX : root.scrollTop;
@@ -3784,6 +3831,7 @@ $_sharedJs
     if (charOffset <= 0) {
       this.scrollToChapterStart();
       this.registerImageLateAnchor({progress: 0});
+      this._setRestoreCharAnchor(null);
     } else {
       // BUG-492 (TODO-1053 Bug A) 越界兜底：护住旧脏收藏记录。写入端曾把某句错记成
       // 相邻章 sectionIndex（_currentChapter 漂移），恢复端忠实加载该错章 DOM 后，本 charOffset
@@ -3794,11 +3842,14 @@ $_sharedJs
       if (!this.charOffsetInRange(charOffset)) {
         this.scrollToChapterStart();
         this.registerImageLateAnchor({progress: 0});
+        this._setRestoreCharAnchor(null);
       } else {
         this.scrollToCharOffset(charOffset, endCharOffset);
         // BUG-1140 第二轮：精确字符锚登记重锚资格（理由见分页版 restoreToCharOffset）。
         this.registerImageLateAnchor(
             {charOffset: charOffset, endCharOffset: endCharOffset});
+        // BUG-2744 审查：恢复锚另存一份给 beginRestoreReanchor（见 _setRestoreCharAnchor）。
+        this._setRestoreCharAnchor(charOffset, endCharOffset);
       }
     }
     this._settleAndNotify();
@@ -3861,15 +3912,17 @@ $_sharedJs
   // 滚动树里仍是 -1047，这之间没有任何 JS 写入）。此刻 getFirstVisibleCharOffset 采到章首，
   // commit 就 scrollToChapterStart——位置被永久钉回章首并落库，而新开书（全新
   // WebView）没有这个瞬时态，所以只在「书内切换」时坏、退出重进又好。
-  // 恢复锚就是 registerImageLateAnchor 登记的那一个（恢复落地到用户首次翻页之间有效，
-  // 此刻用户还碰不到正文）；只有精确字符锚能这样取，progress / fragment 恢复仍走采样。
+  // 恢复锚是 restoreToCharOffset 另存的 __restoreCharOffset（_setRestoreCharAnchor），**不是**
+  // 迟到图片锚：后者会被跟读揭示替换，而播放中恢复完成时揭示先于本入口执行（BUG-2744 审查）。
+  // 恢复落地到用户首次翻页之间有效，此刻用户还碰不到正文；只有精确字符锚能这样取，
+  // progress / fragment 恢复仍走采样。
   beginRestoreReanchor: function() {
-    var co = this.__imgReanchorCharOffset;
+    var co = this.__restoreCharOffset;
     if (typeof co !== 'number' || co <= 0) return this.beginUiScaleReanchor();
     if (this._reanchorPending === true) return -1;
     this._setReanchorPending(true);
     this._uiScaleReanchorOffset = co;
-    this._uiScaleReanchorEnd = this.__imgReanchorCharOffsetEnd;
+    this._uiScaleReanchorEnd = this.__restoreCharOffsetEnd;
     this._uiScaleReanchorScroll = this._readContinuousScroll();
     return co;
   },

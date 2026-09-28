@@ -12,6 +12,8 @@ import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/online/online_shelf_removal.dart';
+import 'package:fushi/src/media/online/online_work_detail.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
@@ -28,12 +30,6 @@ import 'package:fushi/src/media/manga/reader/manga_fushi_page.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
-    show ReaderHistoryDeleteDialog;
-import 'package:fushi/src/sync/deletion_disclosure.dart';
-import 'package:fushi/src/sync/deletion_prompt_preferences.dart';
-import 'package:fushi/src/sync/deletion_propagation_availability.dart';
-import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_details_dialog.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
@@ -1156,33 +1152,15 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     }
   }
 
-  /// 与书架长按删除同一个确认框（披露 + 「同步删除」范围 + 记住选择），删除
-  /// 传播语义因此一致：用户选了同步删除，对端也跟着删。
-  Future<DeleteDecision?> _confirmRemoveFromLibrary(AppModel appModel) async {
-    final bool canSyncEverywhere = await hasDeletionPropagationChannel(
-      SyncRepository(appModel.database),
-    );
-    final DeletePromptPreferenceStore preferenceStore =
-        DeletePromptPreferenceStore(appModel.database);
-    final DeletePromptRememberedChoices? rememberedChoices =
-        await preferenceStore.load();
-    if (!mounted) return null;
-    return showAppDialog<DeleteDecision>(
-      context: context,
-      builder: (BuildContext ctx) => ReaderHistoryDeleteDialog(
+  /// 与书架长按删除同一个确认框（[confirmRemoveOnlineWorkFromShelf]）。
+  Future<DeleteDecision?> _confirmRemoveFromLibrary(AppModel appModel) =>
+      confirmRemoveOnlineWorkFromShelf(
+        context: context,
+        appModel: appModel,
         title: t.manga_series_remove_from_bookshelf,
         message: t.manga_series_remove_confirm,
-        disclosure: buildDeletionDisclosure(
-          target: DeletionDisclosureTarget.shelfBook,
-        ),
-        showSyncScope: canSyncEverywhere,
         statisticsSubtitle: t.delete_statistics_manga_desc,
-        rememberedChoices: rememberedChoices,
-        onPersistChoices: preferenceStore.write,
-        onConfirm: (DeleteDecision d) => Navigator.pop(ctx, d),
-      ),
-    );
-  }
+      );
 
   /// 「继续阅读」落到哪一章。
   int get _resumeIndex {
@@ -1479,8 +1457,6 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           const SizedBox(height: 12),
         ],
         _buildHeader(context),
-        const SizedBox(height: 16),
-        _buildActions(context),
         const SizedBox(height: 24),
         if (ocrBanner != null) ...<Widget>[
           ocrBanner,
@@ -1692,50 +1668,17 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
+  /// 作品页头部：三域共用的 [OnlineWorkHeader]（2026-09-27「浏览」阶段 2，版式以
+  /// 视频源作品页为准）——封面 + 标题 / 元信息 / 类型标签 + 主操作区，简介在下。
   Widget _buildHeader(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
     final OnlineMangaSeries? series = _entry?.series;
-    final String? description = series?.description?.trim();
-    final List<String> genres = series?.genreLabels ?? const <String>[];
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        SizedBox(
-          width: 150,
-          height: 220,
-          child: ClipRRect(
-            borderRadius: FushiBorderRadius.poster,
-            child: _buildCover(context),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              if (series?.byline != null)
-                Text(series!.byline!, style: theme.textTheme.bodyMedium),
-              if (_isLocal && _row?.author != null)
-                Text(_row!.author!, style: theme.textTheme.bodyMedium),
-              if (genres.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: <Widget>[
-                    for (final String genre in genres.take(8))
-                      FushiTagChip(label: genre),
-                  ],
-                ),
-              ],
-              if (description != null && description.isNotEmpty) ...<Widget>[
-                const SizedBox(height: 12),
-                Text(description, style: theme.textTheme.bodySmall),
-              ],
-            ],
-          ),
-        ),
-      ],
+    return OnlineWorkHeader(
+      cover: _buildCover(context),
+      title: series?.title ?? _row?.title ?? t.manga_library,
+      lines: <String?>[series?.byline, if (_isLocal) _row?.author],
+      genres: series?.genreLabels ?? const <String>[],
+      description: series?.description,
+      actions: _buildActions(context),
     );
   }
 
@@ -1783,34 +1726,27 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
     );
   }
 
-  Widget _buildActions(BuildContext context) {
+  List<Widget> _buildActions(BuildContext context) {
     final OnlineMangaLibraryEntry? entry = _entry;
     final bool inLibrary = _row != null;
     if (_isLocal) {
-      return Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        children: <Widget>[
-          FilledButton.icon(
-            key: const ValueKey<String>('manga_series_open_local'),
-            onPressed: _busy ? null : () => unawaited(_openLocalBook()),
-            icon: const Icon(Icons.play_arrow),
-            label: Text(t.book_continue_reading),
-          ),
-          // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
-          _ocrSettingsButton(),
-        ],
-      );
+      return <Widget>[
+        FilledButton.icon(
+          key: const ValueKey<String>('manga_series_open_local'),
+          onPressed: _busy ? null : () => unawaited(_openLocalBook()),
+          icon: const Icon(Icons.play_arrow),
+          label: Text(t.book_continue_reading),
+        ),
+        // 没有「开始 OCR」：进入阅读器即自动整卷识别（manga_reader_auto_ocr.dart）。
+        _ocrSettingsButton(),
+      ];
     }
     final int resumeIndex = _resumeIndex;
     final OnlineMangaChapter? resumeChapter =
         entry != null && resumeIndex >= 0 && resumeIndex < entry.chapters.length
         ? entry.chapters[resumeIndex]
         : null;
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      children: <Widget>[
+    return <Widget>[
         FilledButton.icon(
           key: const ValueKey<String>('manga_series_continue'),
           onPressed: resumeChapter == null || _busy
@@ -1862,8 +1798,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           ),
           _ocrSettingsButton(),
         ],
-      ],
-    );
+    ];
   }
 
   /// 「OCR 设置」：作品页是阅读器外触发 OCR 的入口（BUG-2461），引擎偏好 / 模型

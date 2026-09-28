@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_search_seed.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
@@ -79,6 +80,9 @@ abstract interface class SubtitleWorkbenchHost {
   String? get defaultContentLanguage;
   FushiDatabase get database;
   Future<void> persistRemoteSubtitle(String bookUid, String path);
+
+  /// 下载落盘前按视频内嵌字幕轨对时间轴；null = 不对齐。
+  AutomaticSubtitleAligner? get subtitleAligner;
 }
 
 /// 生产宿主：全部转发到 [AppModel]。
@@ -122,6 +126,11 @@ class AppSubtitleWorkbenchHost implements SubtitleWorkbenchHost {
   @override
   Future<void> persistRemoteSubtitle(String bookUid, String path) =>
       appModel.setRemoteSubtitleSource(bookUid, 0, path);
+
+  /// 开关在 [AppModel.alignDownloadedSubtitle] 里每次现读。
+  @override
+  AutomaticSubtitleAligner? get subtitleAligner =>
+      appModel.alignDownloadedSubtitle;
 }
 
 class SubtitleWorkbenchPage extends StatefulWidget {
@@ -201,6 +210,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
       showTitle: false,
       seed: spec.seed,
       videoPath: spec.videoPath,
+      subtitleAligner: host.subtitleAligner,
       initialQuery: spec.initialQuery,
       initialEpisode: spec.episode,
       initialSeason: spec.season,
@@ -236,6 +246,7 @@ class _SubtitleWorkbenchPageState extends State<SubtitleWorkbenchPage> {
           host.setPreferredLanguage(spec.seriesKey, lang),
       globalDefaultContentLanguage: host.defaultContentLanguage,
       onRemoteSubtitlePersist: host.persistRemoteSubtitle,
+      subtitleAligner: host.subtitleAligner,
     );
   }
 

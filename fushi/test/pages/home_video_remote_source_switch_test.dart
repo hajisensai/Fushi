@@ -416,4 +416,7 @@ class _FakeCloudVideoSource implements CloudRemoteVideoClient {
     void Function(double progress)? onProgress,
   }) async =>
       false;
+
+  @override
+  CloudStreamVideoClient? streamingClient() => null;
 }

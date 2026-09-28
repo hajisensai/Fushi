@@ -15,8 +15,6 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
 import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
-import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show readerAudiobookUsesSideSheet;
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -318,32 +316,13 @@ void main() {
   });
 
   // BUG-2166 批：桌面 ッツ 形态把书内设置从「宽窗 master-detail」改成了左右
-  // 抽屉。路由真相源是 readerAudiobookUsesSideSheet（reader_desktop_chrome.dart），它
-  // 与 master-detail 外壳判宽用的是**同一对阈值** 560×440 —— 所以窗口一旦够宽
-  // 就走抽屉，sheet 形态永远到不了宽窗分支（代码注释里也写明「宽窗不再有
-  // master-detail」）。原来这两条测试是直接 pump ReaderQuickSettingsSheet
-  // 绕过路由、硬造了一个生产里不存在的组合。
+  // 抽屉（2026-09-27 起有声书面板在手机上也走侧栏，路由由
+  // reader_quick_settings_sheet_static_test 的源码守卫钉住）。原来这两条测试是
+  // 直接 pump ReaderQuickSettingsSheet 绕过路由、硬造了一个生产里不存在的组合。
   //
-  // 这里把它们换成对**新形态**的覆盖（此前 sideSheet* 在 test/ 下零覆盖），
-  // 并加一条纯函数断言把路由真相源钉住。BUG-096 的「固定头 + 可滚内容」原
+  // 这里把它们换成对**新形态**的覆盖（此前 sideSheet* 在 test/ 下零覆盖）。BUG-096 的「固定头 + 可滚内容」原
   // 不变式另有 master_detail_settings_sheet_test 与
   // video_player_settings_master_detail_guard_test 两处仍在守。
-  test('有声书面板容器独立于各平台共用的设置抽屉', () {
-    // 有声书宽窗 → 右侧侧栏；窄窗 → bottom sheet，保持手机的空间利用。
-    expect(
-        readerAudiobookUsesSideSheet(
-            desktop: false, window: const Size(1000, 800)),
-        isTrue);
-    expect(
-        readerAudiobookUsesSideSheet(
-            desktop: false, window: const Size(420, 1600)),
-        isFalse);
-    // 桌面端有声书恒走侧栏。
-    expect(
-        readerAudiobookUsesSideSheet(desktop: true, window: const Size(420, 400)),
-        isTrue);
-  });
-
   testWidgets('桌面「设置」抽屉：三组标签页同屏、无 push 返回箭头', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1000, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));

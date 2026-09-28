@@ -16,6 +16,9 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/sync/jellyfin_settings_widget.dart';
+import 'package:fushi/src/sync/plex_settings_widget.dart';
+import 'package:fushi/src/sync/plex_video_client.dart' show PlexServerConfig;
+import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
@@ -406,13 +409,19 @@ SettingsDestination buildServicesDestination() {
       ),
       SettingsSection(
         id: 'services.media',
-        title: t.jellyfin_settings_title,
+        title: t.video_library_media_servers,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: 'services.media_server.jellyfin',
             searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
             builder: (SettingsContext c) =>
                 _JellyfinSettingsLink(settingsContext: c),
+          ),
+          SettingsCustomItem(
+            id: 'services.media_server.plex',
+            searchTitle: 'Plex · ${t.video_library_media_servers}',
+            builder: (SettingsContext c) =>
+                _PlexSettingsLink(settingsContext: c),
           ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
@@ -583,5 +592,67 @@ class _JellyfinSettingsLinkState extends State<_JellyfinSettingsLink> {
                   : t.settings_service_configured,
               onTap: _open,
             ),
+  );
+}
+
+/// Plex 入口行：与 [_JellyfinSettingsLink] 同形，只读本地配置判「已配置」。
+class _PlexSettingsLink extends StatefulWidget {
+  const _PlexSettingsLink({required this.settingsContext});
+  final SettingsContext settingsContext;
+
+  @override
+  State<_PlexSettingsLink> createState() => _PlexSettingsLinkState();
+}
+
+class _PlexSettingsLinkState extends State<_PlexSettingsLink> {
+  late Future<bool> _configured;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    _configured = SyncRepository(widget.settingsContext.appModel.database)
+        .getMediaServers()
+        .then(
+          (List<MediaServerConfig> servers) =>
+              servers.any((MediaServerConfig s) => s is PlexServerConfig),
+        );
+  }
+
+  Future<void> _open() async {
+    // 与 Jellyfin 入口同理必须走 `.subPage`（BUG-2485）。
+    await pushSettingsPage(
+      widget.settingsContext,
+      (_) => SettingsDetailPage.subPage(
+        () => SettingsDestination(
+          id: SettingsDestinationId.services,
+          title: 'Plex',
+          icon: Icons.cloud_outlined,
+          sections: const <SettingsSection>[],
+          body: (SettingsContext c) => PlexConfigWidget(settingsContext: c),
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(_load);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _configured,
+    builder: (BuildContext context, AsyncSnapshot<bool> snapshot) =>
+        AdaptiveSettingsNavigationRow(
+          title: 'Plex',
+          subtitle: snapshot.connectionState != ConnectionState.done
+              ? t.video_library_media_servers
+              : snapshot.data == true
+              ? t.settings_service_configured
+              : t.settings_service_not_configured,
+          onTap: _open,
+        ),
   );
 }

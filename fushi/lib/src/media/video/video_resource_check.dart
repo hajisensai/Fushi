@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 /// 纯函数（TODO-897）：判断 [videoPath] 是否需要做「本地文件存在性校验」。
 ///
@@ -21,6 +22,8 @@ bool videoResourceRequiresLocalCheck(String? videoPath) {
   final String trimmed = videoPath.trim();
   if (trimmed.isEmpty) return false;
   if (isPlayableStreamUrl(trimmed)) return false;
+  // 在线视频源入库集：起播时向扩展取流，没有本地文件可校验。
+  if (isAnimeSourceVideoPath(trimmed)) return false;
   return true;
 }
 

@@ -100,45 +100,67 @@ void main() {
   });
 
   /// 2026-09-19 用户口径：「统一一下视频和动画的导入页，重新设计一下对源和仓库的
-  /// UI，上下拖动感觉可以在上面弄个多段选择器不同类型信息分开」。
+  /// UI」——当时落地为两页顶部同一条分段选择器（本地 / 仓库 / 扩展 / 在线源）。
   ///
-  /// 落地形态：两页顶部同一条 `ImportPageSegmentBar`（本地 / 仓库 / 扩展 /
-  /// 在线源），正文只渲染当前段；视频源扩展（Aniyomi）不再是入口卡 push 出去的
-  /// 独立页，而是与漫画共用 `MihonExtensionsPage` + `MihonInstalledSourcesSection`
-  /// 内嵌在同一页里。
-  group('视频与漫画导入页统一为分段选择器', () {
-    test('两页都挂同一条分段选择器，本地段都是快速导入 + 常驻来源', () {
+  /// 2026-09-27 起在线来源 / 扩展 / 仓库整体搬进顶层「浏览」模块（Mihon Browse
+  /// 形态，`browse_page.dart` 的来源 / 扩展页签 + `browse_online_sources_view.dart`），
+  /// 导入页只剩本地来源。本组钉的是这次收拢不被回退：导入页不再长出在线入口，
+  /// 在线来源面只有浏览模块一份。
+  group('导入页只剩本地来源，在线源 / 扩展只住在浏览模块', () {
+    final String online = _read(
+      'lib/src/pages/implementations/browse_online_sources_view.dart',
+    );
+    final String mangaOnline =
+        _read('lib/src/media/manga/manga_online_sources_view.dart');
+    final String browse =
+        _read('lib/src/pages/implementations/browse_page.dart');
+
+    test('两页本地段都是快速导入 + 常驻来源，不再挂分段选择器', () {
       for (final String source in <String>[page, manga]) {
-        expect(source, contains('ImportPageSegmentBar('));
+        expect(source, isNot(contains('ImportPageSegmentBar(')));
         expect(source, contains('Widget _buildLocalSegment()'));
         final String local =
             _methodSlice(source, 'Widget _buildLocalSegment()');
         expect(local, contains('QuickImportSection('));
         expect(local, contains('MediaSourcesView('));
-        // 切段滚动回顶：各段内容互不相干，沿用上一段的偏移会停在半截。
-        expect(source, contains('_scrollController.jumpTo(0)'));
       }
     });
 
-    test('视频源扩展内嵌在视频导入页里，独立页与入口卡已删', () {
-      expect(page, contains('MihonExtensionsPage('));
-      expect(page, contains('MihonInstalledSourcesSection('));
-      expect(page, contains('onOpenSource: _openAnimeSource'));
-      expect(page, isNot(contains('VideoOnlineSourcesPage')));
-      expect(page, isNot(contains('video_online_sources_entry')));
+    test('导入页不再挂扩展 / 在线源组件', () {
+      for (final String source in <String>[page, manga]) {
+        expect(source, isNot(contains('MihonExtensionsPage(')));
+        expect(source, isNot(contains('MihonInstalledSourcesSection(')));
+        expect(source, isNot(contains('LnReaderExtensionsSection(')));
+        expect(source, isNot(contains('LnReaderInstalledSourcesSection(')));
+      }
+    });
+
+    test('视频源扩展内嵌在浏览模块里，独立页与入口卡已删', () {
+      expect(online, contains('MihonExtensionsPage('));
+      expect(online, contains('MihonInstalledSourcesSection('));
+      expect(online, contains('onOpenSource: _openAnimeSource'));
+      expect(online, isNot(contains('VideoOnlineSourcesPage')));
+      expect(online, isNot(contains('video_online_sources_entry')));
       expect(
         File('lib/src/media/video/online/video_online_sources_page.dart')
             .existsSync(),
         isFalse,
-        reason: '独立页已并入导入页；再长出来就是又分叉了',
+        reason: '独立页已并入浏览模块；再长出来就是又分叉了',
       );
     });
 
-    test('扩展节 widget 在两页都常驻树里（key 固定），切段不丢状态', () {
-      expect(page, contains("ValueKey<String>('video_mihon_extensions')"));
-      expect(manga, contains("ValueKey<String>('manga_mihon_extensions')"));
-      expect(page, contains('sections: mihonSections'));
-      expect(manga, contains('sections: mihonSections'));
+    test('扩展节 widget key 固定、浏览页按域保活，切页签 / 切域不丢状态', () {
+      expect(
+        online,
+        contains(r"ValueKey<String>('video_mihon_extensions_${widget.section.name}')"),
+      );
+      expect(
+        mangaOnline,
+        contains(r"ValueKey<String>('manga_mihon_extensions_${section.name}')"),
+      );
+      expect(browse, contains('_visitedOnlineDomains'));
+      expect(browse, contains(r"'browse-${tab.name}-${domain.name}'"));
+      expect(browse, contains('offstage: domain != selected'));
     });
   });
 

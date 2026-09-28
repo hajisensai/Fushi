@@ -10,13 +10,15 @@ import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/utils.dart';
 
 /// Catalog browser for one installed Aidoku source.
 ///
-/// It deliberately follows the same page/header/search/grid shape as
-/// `MihonSourceBrowsePage`; only the runtime adapter differs.
+/// 页面本体是三域共用的 [OnlineSourceBrowsePage]（2026-09-27「浏览」阶段 2）；
+/// 这里只剩 Aidoku 的差异（[_AidokuCatalog]）：浏览列表是包自己声明的 listing，
+/// 没有筛选，封面带源站 Referer。
 class AidokuSourceBrowsePage extends StatefulWidget {
   const AidokuSourceBrowsePage({
     required this.package,
@@ -32,135 +34,113 @@ class AidokuSourceBrowsePage extends StatefulWidget {
 }
 
 class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
-  final TextEditingController _searchController = TextEditingController();
-  late final AidokuRuntime _runtime =
-      widget.runtime ?? AidokuRuntimeFactory.create();
+  late final _AidokuCatalog _catalog = _AidokuCatalog(
+    package: widget.package,
+    runtime: widget.runtime ?? AidokuRuntimeFactory.create(),
+  );
+
+  @override
+  Widget build(BuildContext context) =>
+      OnlineSourceBrowsePage<Map<String, Object?>>(catalog: _catalog);
+}
+
+class _AidokuCatalog extends OnlineSourceCatalog<Map<String, Object?>> {
+  _AidokuCatalog({required this.package, required this.runtime});
+
+  final AidokuInstalledPackage package;
+  final AidokuRuntime runtime;
   List<AidokuListing> _listings = const <AidokuListing>[];
-  AidokuListing? _listing;
-  List<Map<String, Object?>> _items = const <Map<String, Object?>>[];
-  bool _loading = true;
-  bool _hasNextPage = false;
-  bool _searching = false;
-  int _page = 1;
-  int _generation = 0;
-  Object? _error;
   String? _sourceBaseUrl;
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_initialise());
+  String get title => package.name;
+
+  @override
+  String get searchHint => t.mihon_source_search;
+
+  @override
+  String get keyPrefix => 'aidoku_source';
+
+  @override
+  Future<void> prepare() async {
+    final AidokuPackageInspection inspection = await runtime.inspect(
+      package.packagePath,
+    );
+    _listings = inspection.listings;
+    _sourceBaseUrl = (inspection.sourceInfo['urls'] as List<Object?>?)
+        ?.map((Object? value) => value.toString())
+        .where((String value) => Uri.tryParse(value)?.isScheme('https') == true)
+        .firstOrNull;
+  }
+
+  /// listing 没有稳定 id，用声明序做身份（同一个包的 listing 顺序固定）。
+  @override
+  List<OnlineBrowseListing> get listings => <OnlineBrowseListing>[
+    for (int index = 0; index < _listings.length; index++)
+      OnlineBrowseListing(id: '$index', label: _listings[index].name),
+  ];
+
+  @override
+  bool get hasFilters => false;
+
+  @override
+  Future<OnlineBrowseFilterTarget?> editFilters(BuildContext context) async =>
+      null;
+
+  @override
+  Future<OnlineBrowsePageResult<Map<String, Object?>>> fetch(
+    OnlineBrowseQuery query,
+    int page,
+  ) async {
+    final int? listingIndex = int.tryParse(query.listingId ?? '');
+    final Map<String, Object?> result =
+        listingIndex == null ||
+            listingIndex < 0 ||
+            listingIndex >= _listings.length
+        ? await runtime.search(
+            package.packagePath,
+            query: query.text,
+            page: page,
+          )
+        : await runtime.browse(
+            package.packagePath,
+            _listings[listingIndex],
+            page: page,
+          );
+    final List<Map<String, Object?>> entries =
+        (result['entries'] as List<Object?>? ?? const <Object?>[])
+            .whereType<Map<Object?, Object?>>()
+            .map((Map<Object?, Object?> value) => value.cast<String, Object?>())
+            .where(
+              (Map<String, Object?> value) =>
+                  (value['key']?.toString().isNotEmpty ?? false),
+            )
+            .toList(growable: false);
+    return (items: entries, hasNextPage: result['has_next_page'] == true);
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  String keyOf(Map<String, Object?> item) => item['key'].toString();
 
-  Future<void> _initialise() async {
-    try {
-      final AidokuPackageInspection inspection =
-          await _runtime.inspect(widget.package.packagePath);
-      if (!mounted) return;
-      _listings = inspection.listings;
-      _sourceBaseUrl = (inspection.sourceInfo['urls'] as List<Object?>?)
-          ?.map((Object? value) => value.toString())
-          .where(
-              (String value) => Uri.tryParse(value)?.isScheme('https') == true)
-          .firstOrNull;
-      _listing = _listings.firstOrNull;
-      _searching = _listing == null;
-      await _load(reset: true);
-    } on Object catch (error) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = error;
-        });
-      }
-    }
-  }
+  @override
+  String titleOf(Map<String, Object?> item) =>
+      item['title']?.toString() ?? item['key'].toString();
 
-  Future<void> _load({required bool reset}) async {
-    if (!reset && (_loading || !_hasNextPage)) return;
-    final int generation = reset ? ++_generation : _generation;
-    final int requestedPage = reset ? 1 : _page + 1;
-    final bool searching = _searching;
-    final AidokuListing? listing = _listing;
-    final String query = _searchController.text.trim();
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final Map<String, Object?> result = searching || listing == null
-          ? await _runtime.search(
-              widget.package.packagePath,
-              query: query,
-              page: requestedPage,
-            )
-          : await _runtime.browse(
-              widget.package.packagePath,
-              listing,
-              page: requestedPage,
-            );
-      final List<Map<String, Object?>> entries = (result['entries']
-                  as List<Object?>? ??
-              const <Object?>[])
-          .whereType<Map<Object?, Object?>>()
-          .map((Map<Object?, Object?> value) => value.cast<String, Object?>())
-          .where((Map<String, Object?> value) =>
-              (value['key']?.toString().isNotEmpty ?? false))
-          .toList(growable: false);
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        final List<Map<String, Object?>> previous =
-            reset ? const <Map<String, Object?>>[] : _items;
-        final Set<String> seen = previous
-            .map((Map<String, Object?> item) => item['key'].toString())
-            .toSet();
-        final List<Map<String, Object?>> additions = entries
-            .where(
-                (Map<String, Object?> item) => seen.add(item['key'].toString()))
-            .toList(growable: false);
-        _items = <Map<String, Object?>>[...previous, ...additions];
-        _page = requestedPage;
-        _hasNextPage = result['has_next_page'] == true &&
-            entries.isNotEmpty &&
-            (reset || additions.isNotEmpty);
-        _loading = false;
-      });
-    } on Object catch (error) {
-      if (!mounted || generation != _generation) return;
-      setState(() {
-        _loading = false;
-        _error = error;
-      });
-      if (_items.isNotEmpty) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    }
-  }
+  @override
+  Widget buildCover(BuildContext context, Map<String, Object?> item) =>
+      AidokuCoverImage(url: item['cover']?.toString(), referer: _sourceBaseUrl);
 
-  void _search() {
-    _searching = true;
-    unawaited(_load(reset: true));
-  }
+  @override
+  void Function(BuildContext, Map<String, Object?>)? get openDetail =>
+      _openDetails;
 
-  void _selectListing(AidokuListing listing) {
-    _listing = listing;
-    _searching = false;
-    unawaited(_load(reset: true));
-  }
-
-  void _openDetails(Map<String, Object?> manga) {
+  void _openDetails(BuildContext context, Map<String, Object?> manga) {
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => AidokuMangaDetailPage(
-          package: widget.package,
-          runtime: _runtime,
+          package: package,
+          runtime: runtime,
           manga: manga,
           sourceBaseUrl: _sourceBaseUrl,
         ),
@@ -168,120 +148,16 @@ class _AidokuSourceBrowsePageState extends State<AidokuSourceBrowsePage> {
     );
   }
 
+  /// Aidoku 的无头运行时解不了 Cloudflare 挑战（见 [aidokuErrorMessage]），
+  /// 没有可点的验证入口。
   @override
-  Widget build(BuildContext context) => FushiPageScaffold(
-        title: widget.package.name,
-        automaticallyImplyLeading: false,
-        headerCompact: true,
-        leading: BackButton(
-          key: const ValueKey<String>('aidoku_source_back'),
-          onPressed: () => Navigator.of(context).maybePop(),
-        ),
-        actions: <Widget>[
-          if (_listings.isNotEmpty)
-            DropdownButton<AidokuListing>(
-              key: const ValueKey<String>('aidoku_source_listing'),
-              value: _searching ? null : _listing,
-              hint: Text(t.mihon_source_search),
-              items: <DropdownMenuItem<AidokuListing>>[
-                for (final AidokuListing listing in _listings)
-                  DropdownMenuItem<AidokuListing>(
-                    value: listing,
-                    child: Text(listing.name),
-                  ),
-              ],
-              onChanged: (AidokuListing? value) {
-                if (value != null) _selectListing(value);
-              },
-            ),
-        ],
-        headerBottom: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: TextField(
-            key: const ValueKey<String>('aidoku_source_search'),
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: t.mihon_source_search,
-              prefixIcon: const Icon(Icons.search),
-            ),
-            onSubmitted: (_) => _search(),
-          ),
-        ),
-        body: Column(
-          children: <Widget>[
-            Expanded(child: _buildResults()),
-          ],
-        ),
-      );
-
-  Widget _buildResults() {
-    if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
-    }
-    if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(aidokuErrorMessage(_error), textAlign: TextAlign.center),
-        ),
-      );
-    }
-    if (_items.isEmpty) return Center(child: Text(t.mihon_source_no_results));
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return GridView.builder(
-          // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
-          // 补出手势条那一段，否则静止时被压住点不到。
-          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 0.62,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: _items.length + (_hasNextPage ? 1 : 0),
-          itemBuilder: (BuildContext context, int index) {
-            if (index == _items.length) {
-              return Center(
-                child: _loading
-                    ? adaptiveIndicator(context: context)
-                    : IconButton(
-                        onPressed: () => unawaited(_load(reset: false)),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-              );
-            }
-            final Map<String, Object?> manga = _items[index];
-            return FushiCard(
-              padding: EdgeInsets.zero,
-              onTap: () => _openDetails(manga),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(
-                    child: AidokuCoverImage(
-                      url: manga['cover']?.toString(),
-                      referer: _sourceBaseUrl,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Text(
-                      manga['title']?.toString() ?? manga['key'].toString(),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
+  Widget buildVerifyAction(
+    BuildContext context, {
+    required Object? error,
+    required Future<void> Function() onVerified,
+  }) => error == null
+      ? const SizedBox.shrink()
+      : Text(aidokuErrorMessage(error), textAlign: TextAlign.center);
 }
 
 /// 源浏览里的作品页入口。

@@ -16,8 +16,11 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
 import 'package:fushi_audio/fushi_audio_core.dart'
     show AudioCue, AudiobookStorage, readTextWithEncoding;
 import 'package:fushi_engine/media/media_pref_keys.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show PlaylistEntry;
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath, lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart'
     show VideoPendingScrapeWork, planScrapeWorksForCollection;
 import 'package:fushi_engine/media/video/metadata/video_metadata_database_store.dart';

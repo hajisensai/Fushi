@@ -49,8 +49,11 @@ function run({ rect, writingMode, eink, innerWidth = 400, innerHeight = 800 }) {
       name === '--fushi-reader-eink-mode' ? (eink ? '1' : '') : '',
   });
   vm.createContext(ctx);
+  // registerImageLateAnchor：BUG-2744 起揭示目标登记为迟到图片重锚锚（行为由
+  // reader_follow_reveal_late_image_anchor_behavior_test.js 覆盖），这里只看滚动方式。
   const engine = vm.runInContext(
-    `({ getRect: function() { return ${JSON.stringify(rect)}; }, ${method} })`,
+    `({ getRect: function() { return ${JSON.stringify(rect)}; }, ` +
+      `registerImageLateAnchor: function() {}, ${method} })`,
     ctx,
   );
   const scrolled = engine.scrollToTarget({});

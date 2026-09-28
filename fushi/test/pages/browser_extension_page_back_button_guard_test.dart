@@ -10,7 +10,7 @@ import '../helpers/source_guard.dart';
 /// `MaterialPageRoute`（此时侧栏被整个盖住）。BUG-1658 把顶层 tab 页头统一成
 /// `FushiPageHeader` 大标题时只写了前一半，于是从设置进来的用户没有任何返回控件。
 ///
-/// 同仓 `DownloadsPage` 是完全同构的双身份页。本守卫钉死「扩展页也必须按身份分流给
+/// 同仓 `BrowsePage` 是完全同构的双身份页。本守卫钉死「扩展页也必须按身份分流给
 /// leading」这个不变式。
 ///
 /// BUG-1954：分流判据是**本页自己所在的 PageRoute 是不是首个**

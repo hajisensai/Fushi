@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth_backend_mixin.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_http.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -26,7 +27,8 @@ class OneDriveSyncBackend extends SyncBackend
         SyncFolderCache,
         SyncBackendFileTrioMixin,
         SyncAssetStoreDefaults,
-        PkceOAuthBackendMixin {
+        PkceOAuthBackendMixin
+    implements SyncAssetRangeReader {
   OneDriveSyncBackend._();
   static final OneDriveSyncBackend instance = OneDriveSyncBackend._();
 
@@ -448,6 +450,48 @@ class OneDriveSyncBackend extends SyncBackend
     // （网络/权限/协议）必须自然抛出，否则 UI 会把真实失败误报为「已删除」。
     await _deleteItem(id);
   }
+
+  // ── SyncAssetRangeReader（云盘视频流播） ──────────────────────────
+
+  /// Graph 的 `@microsoft.graph.downloadUrl` 是免鉴权的预签名直链，官方只说「短时
+  /// 有效」（通常约 1 小时）。本地只信 15 分钟，过期或被拒即现取；绝不落库。
+  final PresignedLinkCache _downloadLinks =
+      PresignedLinkCache(ttl: const Duration(minutes: 15));
+
+  /// 退出登录 / 换账号走这里（`signOut` 与设置页都会调）：直链属于签发它的账号，
+  /// 与文件夹缓存一起作废。
+  @override
+  void clearCache() {
+    super.clearCache();
+    _downloadLinks.clear();
+  }
+
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) async =>
+      openPresignedAssetRange(
+        client: await obtainSyncHttpClient(),
+        cache: _downloadLinks,
+        assetId: assetId,
+        fetchLink: () => _fetchDownloadLink(assetId),
+        start: start,
+        end: end,
+      );
+
+  Future<Uri> _fetchDownloadLink(String itemId) =>
+      retryAfterAuthRefresh(refreshAuth, () async {
+        // 与 [downloadContentFile] 同一取法：item 元数据默认就带 downloadUrl。
+        final resp = await _graphGet('/me/drive/items/$itemId');
+        final meta = jsonDecode(resp.body) as Map<String, dynamic>;
+        final downloadUrl = meta['@microsoft.graph.downloadUrl'] as String?;
+        if (downloadUrl == null) {
+          throw SyncBackendError('No download URL for item $itemId');
+        }
+        return Uri.parse(downloadUrl);
+      });
 
   // ── Cache ─────────────────────────────────────────────────────────
   //

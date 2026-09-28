@@ -426,6 +426,13 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
             SliderTheme(
               data: SliderTheme.of(context).copyWith(
                 trackHeight: 3,
+                // 章节刻度画在 slider 自己的轨道上：刻度与拇指共用同一个
+                // trackRect（左右内缩由 thumb / overlay 尺寸决定），任何内缩
+                // 变化下刻度都与进度对齐。
+                trackShape: ReaderAudiobookChapterTrackShape(
+                  fractions: ticks,
+                  tickColor: theme.colorScheme.onSurfaceVariant,
+                ),
                 thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
                 overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               ),
@@ -458,25 +465,6 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
                     : null,
               ),
             ),
-            // 章节刻度：每章首句在全书时间轴上的位置（控制器按章缓存）。
-            if (ticks.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: SizedBox(
-                  height: 4,
-                  child: CustomPaint(
-                    key: const ValueKey<String>(
-                      'fushi_audiobook_chapter_ticks',
-                    ),
-                    painter: _ChapterTickPainter(
-                      fractions: ticks,
-                      color: theme.colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.6,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             Row(
               children: <Widget>[
                 Text(_formatDuration(pos), style: timeStyle),
@@ -666,27 +654,97 @@ class _ReaderAudiobookPanelState extends State<ReaderAudiobookPanel>
   }
 }
 
-/// 进度条下方的章节刻度（每章首句位置的竖线）。
-class _ChapterTickPainter extends CustomPainter {
-  const _ChapterTickPainter({required this.fractions, required this.color});
+/// 全书进度条的轨道：先画默认圆角轨道，再在**同一个 trackRect** 上画章节刻度
+/// （每章首句在全书时间轴上的位置）。
+///
+/// 刻度曾是 slider 下方单独一条 `CustomPaint`，左右硬写 24px 内缩；而 slider 的
+/// 轨道内缩是 `max(overlay, thumb) / 2`（本面板 overlayRadius 12 → 12px），两者
+/// 对不上，刻度整体被往中间压、离两端越远偏得越多，拇指走到章首时和刻度错开。
+/// 非离散 slider 的拇指中心就是 `trackRect.left + value * trackRect.width`，刻度
+/// 用同一公式即与进度恒对齐。
+class ReaderAudiobookChapterTrackShape extends SliderTrackShape {
+  const ReaderAudiobookChapterTrackShape({
+    required this.fractions,
+    required this.tickColor,
+    this.inner = const RoundedRectSliderTrackShape(),
+  });
 
+  /// 章首在全书时间轴上的位置（0~1，已去掉两端）。
   final List<double> fractions;
-  final Color color;
+  final Color tickColor;
+  final SliderTrackShape inner;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint paint = Paint()
-      ..color = color
-      ..strokeWidth = 1;
-    for (final double f in fractions) {
-      final double x = f * size.width;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
+  /// 刻度 x 坐标：与非离散 slider 的拇指中心同一公式。
+  static double tickX(Rect trackRect, double fraction, TextDirection dir) {
+    final double f = dir == TextDirection.rtl ? 1 - fraction : fraction;
+    return trackRect.left + f * trackRect.width;
   }
 
   @override
-  bool shouldRepaint(covariant _ChapterTickPainter old) =>
-      old.color != color || old.fractions != fractions;
+  bool get isRounded => inner.isRounded;
+
+  @override
+  Rect getPreferredRect({
+    required RenderBox parentBox,
+    Offset offset = Offset.zero,
+    required SliderThemeData sliderTheme,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+  }) =>
+      inner.getPreferredRect(
+        parentBox: parentBox,
+        offset: offset,
+        sliderTheme: sliderTheme,
+        isEnabled: isEnabled,
+        isDiscrete: isDiscrete,
+      );
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isEnabled = false,
+    bool isDiscrete = false,
+    required TextDirection textDirection,
+  }) {
+    inner.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+      textDirection: textDirection,
+    );
+    if (fractions.isEmpty) return;
+    final Rect trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final double half = trackRect.height / 2 + 3;
+    final Paint paint = Paint()
+      ..color = tickColor
+      ..strokeWidth = 1.5;
+    for (final double f in fractions) {
+      final double x = tickX(trackRect, f, textDirection);
+      context.canvas.drawLine(
+        Offset(x, trackRect.center.dy - half),
+        Offset(x, trackRect.center.dy + half),
+        paint,
+      );
+    }
+  }
 }
 
 extension _Let<T> on T {

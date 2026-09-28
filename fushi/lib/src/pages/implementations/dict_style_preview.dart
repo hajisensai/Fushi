@@ -256,6 +256,9 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // 裁剪模式（宿主调 __fushiSetVisibleViewportHeight）才会复报内容高度；预览
+  // WebView 占满自身区域、不裁剪，也没有外壳高度可重算，与 popupRendered 同样 no-op。
+  'popupContentResized',
   'popupRendered',
   'reportJsError',
   'resolveWordAudio',
