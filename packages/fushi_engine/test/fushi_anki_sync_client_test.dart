@@ -166,4 +166,56 @@ void main() {
     },
     skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false,
   );
+
+  test(
+    '真实 helper：find_notes 与查重同一判据（去 HTML、通配符按字面、不做子串匹配）',
+    () async {
+      final Directory tmp = await Directory.systemTemp.createTemp('anki_sync');
+      final FushiAnkiSyncClient c = await FushiAnkiSyncClient.start(bin!);
+      try {
+        await c.open('${tmp.path}/collection.anki2');
+        final int a = await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['<b>猫_*</b>', 'x'],
+        );
+        final int b = await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['猫_*', 'y'],
+          tags: <String>['fushi'],
+        );
+        await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['猫又', 'z'],
+        );
+
+        final List<AnkiSyncNoteHit> hits = await c.findNotes(
+          notetype: 'Basic',
+          firstField: '猫_*',
+        );
+        expect(hits.map((AnkiSyncNoteHit h) => h.noteId), <int>[b, a],
+            reason: '两张都命中，新卡在前');
+        expect(hits.first.preview, '猫_*');
+        expect(
+          await c.findNotes(notetype: 'Basic', firstField: '猫'),
+          isEmpty,
+          reason: '「猫」不能命中「猫_*」「猫又」',
+        );
+        expect(
+          await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'),
+          isTrue,
+        );
+        expect(
+          await c.isDuplicate(notetype: 'Basic', firstField: '猫'),
+          isFalse,
+        );
+      } finally {
+        await c.dispose();
+        await tmp.delete(recursive: true);
+      }
+    },
+    skip: bin == null ? 'FUSHI_ANKI_SYNC_BIN 未设置' : false,
+  );
 }

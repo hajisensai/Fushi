@@ -724,6 +724,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
 
+  /// 初始化完成后补发一次待发制卡 / 补一次 Anki 同步（桌面冷启动不一定有
+  /// resumed 生命周期事件）。只触发一次。
+  bool _startupPendingMinesFlushed = false;
+
   /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
   /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
   /// 重置成启动 tab，所以先排队，等 home 挂载后的首帧再落地。
@@ -934,6 +938,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
   void _flushPendingMines() {
     if (!ref.read(appProvider).isInitialised) return;
+    // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，
+    // 回到前台补一次。没登录时 syncNow 在读账号那一步就停，不会拉起 helper。
+    final PlatformServices platform = ref.read(platformServicesProvider);
+    if (platform.useAnkiSyncClient) platform.ankiSyncSession?.scheduleSync();
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
     if (repo is! PendingMiningAnkiRepository) return;
     // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
@@ -2078,6 +2086,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
       disabledMessage: t.module_disabled_hint,
     );
+
+    if (!_startupPendingMinesFlushed) {
+      _startupPendingMinesFlushed = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _flushPendingMines());
+    }
 
     // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
     // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。

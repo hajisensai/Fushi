@@ -28,6 +28,16 @@ class AnkiSyncMeta {
   final List<AnkiSyncNotetype> notetypes;
 }
 
+/// [FushiAnkiSyncClient.findNotes] 的一条命中。
+class AnkiSyncNoteHit {
+  const AnkiSyncNoteHit({required this.noteId, required this.preview});
+
+  final int noteId;
+
+  /// 去 HTML 后的第一字段。
+  final String preview;
+}
+
 /// 一次同步的结局。
 enum AnkiSyncStatus {
   /// 同步完成（含必要时的整库下载与媒体同步）。
@@ -154,6 +164,28 @@ class FushiAnkiSyncClient {
           })
           as Map)['duplicate'] ==
       true;
+
+  /// 与 [isDuplicate] 同一判据（去 HTML、保留媒体名后第一字段相等）命中的卡，
+  /// 新卡在前。
+  Future<List<AnkiSyncNoteHit>> findNotes({
+    required String notetype,
+    required String firstField,
+  }) async {
+    final Map<Object?, Object?> r =
+        await _call(<String, Object?>{
+              'cmd': 'find_notes',
+              'notetype': notetype,
+              'first_field': firstField,
+            })
+            as Map;
+    return <AnkiSyncNoteHit>[
+      for (final Object? n in r['notes'] as List)
+        AnkiSyncNoteHit(
+          noteId: ((n as Map)['note_id'] as num).toInt(),
+          preview: n['preview']?.toString() ?? '',
+        ),
+    ];
+  }
 
   /// 加一张卡，返回 note id。[media] 为（期望文件名, 本地源路径）。
   Future<int> addNote({

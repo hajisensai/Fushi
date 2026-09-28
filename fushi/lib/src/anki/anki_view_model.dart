@@ -486,6 +486,17 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
 
   /// 打开/关闭「批量制卡」：制卡一律先存进待发队列，之后一次性发送。
   /// 待发队列装饰器每次制卡都重新读这个值，所以改完立即生效。
+  /// 切到 / 切离「Anki 同步客户端」后端。两边看到的是用户同一份库、同样的牌组与
+  /// 笔记类型名，而两个后端写卡都只认**名字**——所以什么都不清，只翻开关。
+  /// 「刷新」后 [BaseAnkiRepository.selectDeckAfterFetch] 按 id 落空、按名字对回，
+  /// 字段映射（含 Lapis 判定）照旧。库不是同一份时写卡报「找不到笔记类型」，刷新即可。
+  Future<void> updateUseAnkiSyncClient(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(useAnkiSyncClient: value),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> setBatchMiningEnabled(bool enabled) async {
     final updated = await _repository
         .updateSettings((s) => s.copyWith(batchMiningEnabled: enabled));

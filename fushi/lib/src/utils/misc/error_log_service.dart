@@ -601,6 +601,10 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_field_mapping_mismatch;
     case AnkiErrorCode.firstFieldEmpty:
       return t.anki_error_first_field_empty;
+    case AnkiErrorCode.syncClientSignedOut:
+      return t.anki_error_sync_signed_out;
+    case AnkiErrorCode.syncClientUnavailable:
+      return t.anki_error_sync_unavailable;
     default:
       return null;
   }

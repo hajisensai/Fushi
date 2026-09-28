@@ -25,6 +25,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankiconnect_port_repair.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_client_section.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
     show kMiningPadMaxMs;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -373,6 +374,22 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   Widget _buildConnectionPanel(AnkiUiState uiState, AnkiViewModel vm) {
     final AnkiSettings settings = uiState.settings;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        // 不装 Anki、由 Fushi 直接同步到 AnkiWeb / 自建服务器；本机没带
+        // fushi-anki-sync 时这一节不渲染。
+        const AnkiSyncClientSection(),
+        _buildAnkiConnectSection(uiState, vm, settings),
+      ],
+    );
+  }
+
+  Widget _buildAnkiConnectSection(
+    AnkiUiState uiState,
+    AnkiViewModel vm,
+    AnkiSettings settings,
+  ) {
     return AdaptiveSettingsSection(
       title: 'AnkiConnect',
       children: [

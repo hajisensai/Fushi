@@ -4,6 +4,9 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_platform/fushi_platform.dart';
 
 import 'package:fushi/src/anki/ankimobile_repository.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_client_repository.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
+import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi/src/platform/android/android_directory_service.dart';
 import 'package:fushi/src/platform/android/android_lifecycle_service.dart';
 import 'package:fushi/src/platform/android/android_clipboard_service.dart';
@@ -39,6 +42,10 @@ class PlatformServices {
   /// 没有这条支路。
   final bool _isMobile;
   bool _useAnkiConnectOnMobile = false;
+
+  /// 「Anki 同步客户端」会话（全 app 一份）；null = 本机没有 `fushi-anki-sync`。
+  final AnkiSyncSession? Function() _ankiSyncSession;
+  bool _useAnkiSyncClient = false;
 
   /// Typed reference to the Android clipboard impl, when running on Android.
   /// Holding the concrete type here (rather than an `is`/`as` downcast in
@@ -87,7 +94,9 @@ class PlatformServices {
     bool? isDesktop,
     bool? isIOS,
     bool? isAndroid,
-  })  : isWindows = isWindows ?? Platform.isWindows,
+    AnkiSyncSession? Function()? ankiSyncSession,
+  })  : _ankiSyncSession = ankiSyncSession ?? (() => sharedAnkiSyncSession),
+        isWindows = isWindows ?? Platform.isWindows,
         isDesktop = isDesktop ??
             (Platform.isWindows || Platform.isMacOS || Platform.isLinux),
         isIOS = isIOS ?? Platform.isIOS,
@@ -104,6 +113,9 @@ class PlatformServices {
   /// Creates the active Anki backend. 移动端保留各自的原生后端（AnkiDroid /
   /// AnkiMobile）作为升级安全的默认值，但可显式改用一台可达的 AnkiConnect。
   BaseAnkiRepository createAnkiRepository() {
+    if (_useAnkiSyncClient) {
+      return AnkiSyncClientRepository(session: _ankiSyncSession());
+    }
     if (_isMobile && _useAnkiConnectOnMobile) {
       return _createMobileAnkiConnectRepository!();
     }
@@ -114,6 +126,19 @@ class PlatformServices {
 
   /// 本平台是否提供「改用 AnkiConnect」这个选项（设置页据此显示开关）。
   bool get offersMobileAnkiConnectChoice => _isMobile;
+
+  /// 本机带了 `fushi-anki-sync`，可以用「Anki 同步客户端」后端（设置页据此显示）。
+  bool get offersAnkiSyncClient => _ankiSyncSession() != null;
+
+  AnkiSyncSession? get ankiSyncSession => _ankiSyncSession();
+
+  bool get useAnkiSyncClient => _useAnkiSyncClient;
+
+  /// 运行时后端选择。本机没有 helper 时恒为 false：存储里记着 true 也不会把
+  /// 制卡路由到一个起不来的后端（换到没带 helper 的设备上恢复备份就是这种情况）。
+  void setUseAnkiSyncClient(bool value) {
+    _useAnkiSyncClient = value && offersAnkiSyncClient;
+  }
 
   /// 运行时后端选择。判据只有 [AnkiSettings.ankiConnectUsableOnMobile] 一份——
   /// 这里不再自己写一遍 `value && apiKey.isNotEmpty`，否则与 UI 门控、启动期修复
@@ -135,9 +160,10 @@ class PlatformServices {
   /// after all services are constructed.
   Future<void> init() async {
     await _androidClipboard?.init();
+    final AnkiSettings settings =
+        await _createDefaultAnkiRepository().loadSettings();
+    setUseAnkiSyncClient(settings.useAnkiSyncClient);
     if (_isMobile) {
-      final AnkiSettings settings =
-          await _createDefaultAnkiRepository().loadSettings();
       setUseAnkiConnectOnMobile(
         settings.useAnkiConnectOnMobile,
         apiKey: settings.ankiConnectApiKey,

@@ -224,6 +224,7 @@ class AnkiSettings {
     this.repositionRareFirst = false,
     this.autoRepositionEnabled = false,
     this.batchMiningEnabled = false,
+    this.useAnkiSyncClient = false,
   });
 
   factory AnkiSettings.fromJson(Map<String, dynamic> json) => AnkiSettings(
@@ -291,6 +292,7 @@ class AnkiSettings {
     autoRepositionEnabled: json['autoRepositionEnabled'] as bool? ?? false,
     // 缺键 = 老装置：制卡照旧直接送 Anki。
     batchMiningEnabled: json['batchMiningEnabled'] as bool? ?? false,
+    useAnkiSyncClient: json['useAnkiSyncClient'] as bool? ?? false,
   );
   final int? selectedDeckId;
   final String? selectedDeckName;
@@ -424,6 +426,11 @@ class AnkiSettings {
   /// 给「每张卡都要切到 AnkiMobile」的 iOS、切 app 很慢的墨水屏准备。默认关。
   final bool batchMiningEnabled;
 
+  /// 用「Anki 同步客户端」后端：不经 AnkiConnect，由 Fushi 写本地库再同步到
+  /// AnkiWeb / 自建 Anki 同步服务器（本机要带 `fushi-anki-sync`，目前只有桌面）。
+  /// 默认关。
+  final bool useAnkiSyncClient;
+
   bool get isConfigured => selectedDeckId != null && selectedNoteTypeId != null;
 
   /// BUG-2380：不需要真卡内容就能下的结论——当前选中的牌组 + 笔记类型 + 字段映射，
@@ -506,6 +513,7 @@ class AnkiSettings {
     bool? repositionRareFirst,
     bool? autoRepositionEnabled,
     bool? batchMiningEnabled,
+    bool? useAnkiSyncClient,
   }) => AnkiSettings(
     selectedDeckId: clearSelectedDeck
         ? null
@@ -561,6 +569,7 @@ class AnkiSettings {
     repositionRareFirst: repositionRareFirst ?? this.repositionRareFirst,
     autoRepositionEnabled: autoRepositionEnabled ?? this.autoRepositionEnabled,
     batchMiningEnabled: batchMiningEnabled ?? this.batchMiningEnabled,
+    useAnkiSyncClient: useAnkiSyncClient ?? this.useAnkiSyncClient,
   );
 
   Map<String, dynamic> toJson() => {
@@ -602,6 +611,7 @@ class AnkiSettings {
     'repositionRareFirst': repositionRareFirst,
     'autoRepositionEnabled': autoRepositionEnabled,
     'batchMiningEnabled': batchMiningEnabled,
+    'useAnkiSyncClient': useAnkiSyncClient,
   };
 }
 
@@ -1643,6 +1653,13 @@ class AnkiErrorCode {
   /// 牌组/笔记类型」：那会把用户自己的牌组当成 Lapis 选中、套上 Lapis 的字段映射，
   /// 还照样报「创建成功」。用户看到的就是「点了创建，选中的却是我自己的牌组」。
   static const String lapisSetupMissing = 'ANKI_LAPIS_SETUP_MISSING';
+
+  /// 「Anki 同步客户端」后端（Fushi 自己写本地库再同步到 AnkiWeb / 自建服务器）
+  /// 还没登录同步服务器。
+  static const String syncClientSignedOut = 'ANKI_SYNC_SIGNED_OUT';
+
+  /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
+  static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
 
 sealed class AnkiFetchResult {

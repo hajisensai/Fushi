@@ -5,6 +5,7 @@ export 'fushi_anki_core.dart';
 
 // 以下依赖 Flutter（foundation / services / shared_preferences），只供 app 使用。
 export 'src/base_anki_repository.dart';
+export 'src/anki_local_media.dart';
 export 'src/ankidroid/anki_repository.dart';
 export 'src/ankiconnect/anki_desktop_foreground.dart';
 export 'src/ankiconnect/ankiconnect_installer.dart';

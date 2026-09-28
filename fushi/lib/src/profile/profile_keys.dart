@@ -197,48 +197,39 @@ class ProfileKeys {
     AnkiSettings current,
   ) {
     int? parseInt(String? v) => v == null || v.isEmpty ? null : int.tryParse(v);
+    String? nonEmpty(String? v) => v?.isNotEmpty == true ? v : null;
 
-    return AnkiSettings(
-      selectedDeckId: parseInt(m['selectedDeckId']),
-      selectedDeckName: m['selectedDeckName']?.isNotEmpty == true
-          ? m['selectedDeckName']
-          : null,
-      selectedNoteTypeId: parseInt(m['selectedNoteTypeId']),
-      selectedNoteTypeName: m['selectedNoteTypeName']?.isNotEmpty == true
-          ? m['selectedNoteTypeName']
-          : null,
-      availableDecks: current.availableDecks,
-      availableNoteTypes: current.availableNoteTypes,
-      fieldMappings:
+    // 只覆盖快照拥有的字段（[ankiSettingsToMap] 那几项），其余一律保留当前值：
+    // 连接状态与后端选择（设备本地）、Lapis 样式、媒体去重、自动重排、批量制卡……
+    // 在 JSON 层合并而不是逐个列字段——此前这里从头构造一个新 AnkiSettings，
+    // 没列到的字段在切 Profile 时静默回默认值（Lapis 自定义 CSS、自动重排开关都会丢），
+    // 以后新加的字段也会重蹈覆辙。
+    return AnkiSettings.fromJson(<String, dynamic>{
+      ...current.toJson(),
+      'selectedDeckId': parseInt(m['selectedDeckId']),
+      'selectedDeckName': nonEmpty(m['selectedDeckName']),
+      'selectedNoteTypeId': parseInt(m['selectedNoteTypeId']),
+      'selectedNoteTypeName': nonEmpty(m['selectedNoteTypeName']),
+      'fieldMappings':
           _parseFieldMappings(m['fieldMappings'], current.fieldMappings),
-      tags: m['tags'] ?? '',
-      tagIncludeHibiki: m.containsKey('tagIncludeHibiki')
+      'tags': m['tags'] ?? '',
+      'tagIncludeHibiki': m.containsKey('tagIncludeHibiki')
           ? m['tagIncludeHibiki'] == 'true'
           : true,
-      tagIncludeCategory: m.containsKey('tagIncludeCategory')
+      'tagIncludeCategory': m.containsKey('tagIncludeCategory')
           ? m['tagIncludeCategory'] == 'true'
           : true,
-      allowDupes: m['allowDupes'] == 'true',
-      compactGlossaries: m['compactGlossaries'] == 'true',
-      embedMedia:
+      'allowDupes': m['allowDupes'] == 'true',
+      'compactGlossaries': m['compactGlossaries'] == 'true',
+      'embedMedia':
           m.containsKey('embedMedia') ? m['embedMedia'] == 'true' : true,
       // 旧快照没有这两个键 → 保留当前值（而不是回默认），否则一次切
       // Profile 就把用户已选的范围抹掉。
-      overwriteScope: m.containsKey('overwriteScope')
-          ? ankiOverwriteScopeFromName(m['overwriteScope'])
-          : current.overwriteScope,
-      duplicateScope: m.containsKey('duplicateScope')
-          ? ankiDuplicateScopeFromName(m['duplicateScope'])
-          : current.duplicateScope,
-      // Endpoint and API key are device-local connection state, not Profile
-      // content. Applying a Profile must not reset the active backend or its
-      // credentials while PlatformServices still routes to the old value.
-      ankiConnectHost: current.ankiConnectHost,
-      ankiConnectPort: current.ankiConnectPort,
-      ankiConnectApiKey: current.ankiConnectApiKey,
-      ankiConnectUseHttps: current.ankiConnectUseHttps,
-      useAnkiConnectOnMobile: current.useAnkiConnectOnMobile,
-    );
+      if (m.containsKey('overwriteScope'))
+        'overwriteScope': m['overwriteScope'],
+      if (m.containsKey('duplicateScope'))
+        'duplicateScope': m['duplicateScope'],
+    });
   }
 
   /// Parses the stored fieldMappings JSON defensively. The value comes from the

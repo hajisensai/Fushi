@@ -16,6 +16,8 @@ use std::io::{BufRead, Write};
 
 use anki::collection::CollectionBuilder;
 use anki::prelude::*;
+use anki::search::{FieldSearchMode, JoinSearches, SearchBuilder, SearchNode};
+use anki::text::strip_html_preserving_media_filenames;
 use anki::sync::collection::normal::SyncActionRequired;
 use anki::sync::login::{sync_login, SyncAuth};
 use anki::sync::media::progress::MediaSyncProgress;
@@ -40,6 +42,11 @@ enum Cmd {
     Close,
     ListMeta,
     IsDuplicate {
+        notetype: String,
+        first_field: String,
+    },
+    /// Notes whose first field matches, with the same rule as `IsDuplicate`.
+    FindNotes {
         notetype: String,
         first_field: String,
     },
@@ -152,6 +159,55 @@ fn is_duplicate(c: &mut Collection, notetype: &str, first: &str) -> Result<bool>
     Ok(c.note_fields_check(&note)? == NoteFieldsState::Duplicate)
 }
 
+/// Backslash-escape Anki search wildcards (`*`, `_`, `\`) in literal text.
+fn escape_wildcards(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if matches!(ch, '\\' | '*' | '_') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Notes of `notetype` whose first field equals `first` under Anki's duplicate rule
+/// (HTML stripped, media file names kept). The field search only narrows the
+/// candidates; the stripped comparison decides. Newest first.
+fn find_notes(c: &mut Collection, notetype: &str, first: &str) -> Result<Value> {
+    let nt = c
+        .get_notetype_by_name(notetype)?
+        .or_not_found(notetype.to_string())?;
+    let want = strip_html_preserving_media_filenames(first).into_owned();
+    let Some(field) = nt.fields.first().map(|f| f.name.clone()) else {
+        return Ok(json!({"notes": []}));
+    };
+    if want.trim().is_empty() {
+        return Ok(json!({"notes": []}));
+    }
+    let search = SearchBuilder::from(SearchNode::from(nt.id)).and(SearchNode::SingleField {
+        field,
+        text: format!("*{}*", escape_wildcards(&want)),
+        mode: FieldSearchMode::Normal,
+    });
+    let mut hits = vec![];
+    for nid in c.search_notes_unordered(search)? {
+        let Some(note) = c.storage.get_note(nid)? else {
+            continue;
+        };
+        let head = strip_html_preserving_media_filenames(&note.fields()[0]).into_owned();
+        if head == want {
+            hits.push((nid.0, head));
+        }
+    }
+    hits.sort_by(|a, b| b.0.cmp(&a.0));
+    let notes: Vec<Value> = hits
+        .into_iter()
+        .map(|(id, preview)| json!({"note_id": id, "preview": preview}))
+        .collect();
+    Ok(json!({ "notes": notes }))
+}
+
 fn add_note(
     c: &mut Collection,
     notetype: &str,
@@ -238,6 +294,10 @@ fn handle(st: &mut State, cmd: Cmd) -> Result<Value> {
             notetype,
             first_field,
         } => Ok(json!({"duplicate": is_duplicate(st.col()?, &notetype, &first_field)?})),
+        Cmd::FindNotes {
+            notetype,
+            first_field,
+        } => find_notes(st.col()?, &notetype, &first_field),
         Cmd::AddNote {
             notetype,
             deck,
