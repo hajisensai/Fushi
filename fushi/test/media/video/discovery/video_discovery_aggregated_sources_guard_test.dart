@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 
-/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL 搜索 + AniList + TMDB），
+/// BUG-1538 守卫：发现页无论走不走代理都用同一份聚合来源（MAL / AniList / TMDB 搜索与推荐），
 /// 来源选择不随代理状态分叉降级。
 ///
 /// 两层钉法：
@@ -42,15 +42,23 @@ void main() {
       contains(VideoMetadataProviderKind.anidb),
       reason: '生产 registry 里确有 AniDB，发现页是主动排除而不是恰好没装',
     );
+    // BUG-2750：AniList（发现域来源，不进刮削 registry）也是搜索源——只靠 MAL
+    // 时 Jikan 一 504、TMDB 又没配 key，发现页搜索就一条都出不来。
     expect(
       service.searchProviderIdsForTesting,
-      catalog.providers
-          .where((VideoMetadataProvider p) =>
-              VideoDiscoveryService.isDiscoverySearchKind(p.providerKind))
-          .map((VideoMetadataProvider p) => p.providerKind.name)
-          .toSet(),
+      <String>{
+        ...catalog.providers
+            .where((VideoMetadataProvider p) =>
+                VideoDiscoveryService.isDiscoverySearchKind(p.providerKind))
+            .map((VideoMetadataProvider p) => p.providerKind.name),
+        'anilist',
+      },
     );
-    expect(service.searchProviderIdsForTesting, isNot(contains('anilist')));
+    expect(
+      catalog.providers.map((VideoMetadataProvider p) => p.providerKind),
+      isNot(contains(VideoMetadataProviderKind.anilist)),
+      reason: 'AniList 只作发现搜索源，不得进入刮削 registry',
+    );
     expect(service.searchProviderIdsForTesting, isNot(contains('anidb')));
   });
 

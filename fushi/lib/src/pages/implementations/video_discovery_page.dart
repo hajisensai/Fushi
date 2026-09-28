@@ -100,7 +100,9 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   bool _totalFailure = false;
 
   discovery.VideoDiscoveryCategory? _category;
-  discovery.VideoDiscoverySort _sort = discovery.VideoDiscoverySort.popularity;
+
+  /// 用户在排序菜单里显式选的排序；null = 跟随默认（见 [_sort]）。
+  discovery.VideoDiscoverySort? _pickedSort;
   int _year = 0;
   String _region = '';
   String _genre = '';
@@ -116,8 +118,27 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
   VideoDiscoveryController get _controller =>
       widget.controller ?? const EmptyVideoDiscoveryController();
 
+  bool get _searching => _searchController.text.trim().isNotEmpty;
+
+  /// 没搜索时默认按热度浏览；一旦输入关键词，默认改按相关度——各来源按热度重排
+  /// 搜索结果会把「沾边但热门」的作品顶到精确命中前面（AniList 走
+  /// `POPULARITY_DESC` 而不是 `SEARCH_MATCH`，TMDB 按 popularity 重排多页结果）。
+  /// 相关度只对搜索有意义，清空关键词后自动回落到热度。
+  discovery.VideoDiscoverySort get _defaultSort => _searching
+      ? discovery.VideoDiscoverySort.relevance
+      : discovery.VideoDiscoverySort.popularity;
+
+  discovery.VideoDiscoverySort get _sort {
+    final discovery.VideoDiscoverySort? picked = _pickedSort;
+    if (picked == null ||
+        (picked == discovery.VideoDiscoverySort.relevance && !_searching)) {
+      return _defaultSort;
+    }
+    return picked;
+  }
+
   bool get _hasActiveSearchOrFilter =>
-      _searchController.text.trim().isNotEmpty ||
+      _searching ||
       _category != null ||
       _sort != discovery.VideoDiscoverySort.popularity ||
       _year != 0 ||
@@ -767,14 +788,13 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
       initialValue: _sort,
       onSelected: (discovery.VideoDiscoverySort value) {
-        setState(() => _sort = value);
+        setState(() => _pickedSort = value);
         unawaited(_reload());
       },
       itemBuilder: (_) => <PopupMenuEntry<discovery.VideoDiscoverySort>>[
         for (final discovery.VideoDiscoverySort sort
             in discovery.VideoDiscoverySort.values)
-          if (sort != discovery.VideoDiscoverySort.relevance ||
-              _searchController.text.trim().isNotEmpty)
+          if (sort != discovery.VideoDiscoverySort.relevance || _searching)
             PopupMenuItem<discovery.VideoDiscoverySort>(
               value: sort,
               child: Text(_sortLabel(sort)),
@@ -786,16 +806,14 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
               height: 48,
               child: Icon(
                 Icons.sort_rounded,
-                color: _sort == discovery.VideoDiscoverySort.popularity
+                color: _sort == _defaultSort
                     ? null
                     : Theme.of(context).colorScheme.primary,
               ),
             )
           : _filterButton(
-              label: _sort == discovery.VideoDiscoverySort.popularity
-                  ? t.sort_by
-                  : _sortLabel(_sort),
-              active: _sort != discovery.VideoDiscoverySort.popularity,
+              label: _sort == _defaultSort ? t.sort_by : _sortLabel(_sort),
+              active: _sort != _defaultSort,
             ),
     );
   }

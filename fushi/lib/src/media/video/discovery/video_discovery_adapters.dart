@@ -655,6 +655,9 @@ class TmdbVideoDiscoveryProvider
   }
 }
 
+/// [AniListVideoDiscoveryProvider.id]；生产搜索源清单按它登记。
+const String kAniListDiscoveryProviderId = 'anilist';
+
 /// AniList 的真实季度、趋势、筛选与搜索适配器。
 class AniListVideoDiscoveryProvider implements VideoDiscoveryProvider {
   AniListVideoDiscoveryProvider({
@@ -723,7 +726,7 @@ query Discovery(
   final String endpoint;
 
   @override
-  String get id => 'anilist';
+  String get id => kAniListDiscoveryProviderId;
 
   @override
   String get displayName => 'AniList';

@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2750](bugs/BUG-2750-video-discovery-search-empty.md) | ✅ | ✅ | 浏览视频发现搜索为空且结果不准 |
 | [BUG-2749](bugs/BUG-2749-gamepad-focus-native-controls.md) | ✅ | ✅ | 手柄方向导航看不见原生控件、对话框里焦点被拽走 |
 | [BUG-2748](bugs/BUG-2748-reader-continuous-user-scroll-late-image-yank.md) | ✅ | ✅ | 连续模式用户滚走后懒图加载把视口拽回 |
 | [BUG-2747](bugs/BUG-2747-gal-popup-click-dismissed-by-shield.md) | ✅ | ✅ | 点击游戏内查词弹窗的按钮会关闭弹窗且随后数秒无法查词 |
