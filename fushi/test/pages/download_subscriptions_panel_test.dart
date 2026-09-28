@@ -299,6 +299,82 @@ void main() {
     await appModel.testDatabase?.close();
   });
 
+  // 二级标签页可横滑切段；滑过首 / 末段继续滑时交给相邻的顶层页签（内层
+  // TabBarView 在手势竞技场里恒先胜出，不接力就永远滑不出当前页签）。
+  testWidgets(
+      'browse sub-tabs swipe and hand off to the adjacent top-level tab',
+      (WidgetTester tester) async {
+    final _MemorySubscriptionStore store = _MemorySubscriptionStore();
+    final _MemoryPlanStore planStore = _MemoryPlanStore();
+    final AnimeDownloadSubscriptionService service =
+        AnimeDownloadSubscriptionService(
+      store: store,
+      planStore: planStore,
+      configProvider: () => const QbConnectionConfig(),
+      backendFactory: (_) => _NoopBackend(),
+      search: (_) async => const [],
+    );
+    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
+      ..visibilityOverride =
+          const ModuleVisibility(<ModuleId>{ModuleId.browse, ModuleId.books});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[
+          appProvider.overrideWith((ref) => appModel),
+        ],
+        child: TranslationProvider(
+          child: const MaterialApp(
+            home: BrowsePage(initialTab: BrowseTab.downloads),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    TabController outer() =>
+        tester.widget<TabBarView>(find.byType(TabBarView).first).controller!;
+    final int downloadsIndex = outer().index;
+    expect(outer().length, greaterThan(1));
+    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+
+    // 左滑：任务 → 订阅（仍在「下载」页签）。
+    await tester.drag(
+      find.text(t.anime_download_no_tasks),
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+    expect(outer().index, downloadsIndex);
+
+    // 订阅是最后一个页签的末段：再往左滑没有下一个页签，原地不动。
+    await tester.drag(
+      find.text(t.download_subscription_empty_title),
+      const Offset(-500, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(outer().index, downloadsIndex);
+    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+
+    // 右滑回任务；在首段继续右滑 → 交给上一个顶层页签（「发现」）。
+    await tester.drag(
+      find.text(t.download_subscription_empty_title),
+      const Offset(500, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+    expect(outer().index, downloadsIndex);
+    await tester.drag(
+      find.text(t.anime_download_no_tasks),
+      const Offset(500, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(outer().index, downloadsIndex - 1);
+    expect(tester.takeException(), isNull);
+
+    service.checking.dispose();
+    store.revision.dispose();
+    await appModel.testDatabase?.close();
+  });
+
   // PR #1707 审查：首页保活浏览页后，「管理订阅」等跳转要原地切到目标段，
   // 不再靠换 key 整页重建（那会丢掉各页签的搜索与结果）。
   testWidgets('navigation request switches a mounted browse page in place',
@@ -404,7 +480,9 @@ void main() {
     expect(find.text(t.anime_download_no_tasks), findsOneWidget);
     // 来源 / 扩展是否出现取决于测试宿主平台的在线宿主门，「发现」一定出现；
     // 「下载」恒在最后。
-    final TabBarView view = tester.widget<TabBarView>(find.byType(TabBarView));
+    // 最外层是顶层页签的 TabBarView，每个页签里还有自己的二级 TabBarView。
+    final TabBarView view =
+        tester.widget<TabBarView>(find.byType(TabBarView).first);
     expect(view.children.length, greaterThan(1));
     expect(view.controller!.index, view.children.length - 1);
     expect(tester.takeException(), isNull);
