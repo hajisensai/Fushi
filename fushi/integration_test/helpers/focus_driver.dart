@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
-import 'package:flutter/material.dart' show MaterialApp;
+import 'package:flutter/material.dart'
+    show MaterialApp, Tab, TabBar, TabController;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -292,6 +293,35 @@ class FocusDriver {
     for (int i = 0; i < steps.abs(); i++) {
       await _key(key);
     }
+  }
+
+  /// 在 `LibrarySectionTabs`（MD3 [TabBar] 外包 `FushiAdjustableSegmented`）里
+  /// 切到 [tab] 所在的那一段。
+  ///
+  /// 整排 tab 是**单个**焦点停靠点：各个 [Tab] 被外壳的 ExcludeFocus 移出遍历，
+  /// Enter 不切段，只有左/右方向键原地加减。所以先把焦点移进外壳（[tab] 在其
+  /// 子树内即命中），再按「目标段下标 − 当前段下标」发方向键。当前段读最近那条
+  /// [TabBar] 的 controller（自持与宿主持有两种形态都把 controller 交给它）。
+  /// 返回 controller 是否最终落在目标段。
+  Future<bool> selectTab(Finder tab, {int maxSettleFrames = 8}) async {
+    final Tab tabWidget = tester.widget<Tab>(tab);
+    final Finder bar =
+        find.ancestor(of: tab, matching: find.byType(TabBar)).first;
+    final TabBar tabBar = tester.widget<TabBar>(bar);
+    final int target = tabBar.tabs.indexOf(tabWidget);
+    if (target < 0 || tabBar.controller == null) return false;
+    if (!await focusWidget(tab)) return false;
+    await adjust(steps: target - tester.widget<TabBar>(bar).controller!.index);
+    for (int i = 0; i < maxSettleFrames; i++) {
+      final TabController? controller = tester.widget<TabBar>(bar).controller;
+      if (controller != null &&
+          controller.index == target &&
+          !controller.indexIsChanging) {
+        return true;
+      }
+      await tester.pump(_settle);
+    }
+    return tester.widget<TabBar>(bar).controller?.index == target;
   }
 
   /// 全局返回一层。
