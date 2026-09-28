@@ -1,6 +1,9 @@
 ﻿# 用 cargo-ndk 构建 Android 版 libfushi_p2p.so。
 #
 # 前提：rustup target add aarch64-linux-android x86_64-linux-android；cargo install cargo-ndk。
+# 默认只编 arm64-v8a / x86_64（本机调试够用）；要与 split-per-abi APK 对齐时加
+# -Abis arm64-v8a,armeabi-v7a,x86_64（另需 rustup target add armv7-linux-androideabi），
+# 发布流水线走 build_android_so.sh 的同一组 ABI。
 # NDK 版本与 fushi/android/app/build.gradle 的 ndkVersion 对齐（28.2.13676358），
 # 平台 API = minSdk 24。
 #

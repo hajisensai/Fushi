@@ -49,7 +49,12 @@ class FushiP2p {
   /// 2. 环境变量 `FUSHI_P2P_LIB`；
   /// 3. 可执行文件同级（Windows / Linux 桌面包）；
   /// 4. `bin/../lib/<name>`（无头服务端 `dart build cli` bundle）；
-  /// 5. 裸名（系统搜索路径；Android 从 APK 的 native lib 目录加载即走这条）。
+  /// 5. 裸名（系统搜索路径）。Android 从 APK 的 native lib 目录、macOS 从
+  ///    `Contents/Frameworks`（Runner 的 `@executable_path/../Frameworks` rpath）、
+  ///    Linux 桌面从 `bundle/lib/`（`$ORIGIN/lib`）加载都走这条——与
+  ///    fushidicts 的 `DynamicLibrary.open('libfushidicts_ffi.*')` 同一条已发布路径。
+  ///
+  /// iOS 不走候选：静态库链进主二进制，见 [tryLoad]。
   static List<String> libraryCandidates({
     String? libraryPath,
     Map<String, String>? environment,

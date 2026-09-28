@@ -28,7 +28,8 @@
 #   fushi_server-<version>-<seq>-windows-x64.zip    同上
 # lib/ 里随包：sqlite3（dart build native asset）、内置 torrent 引擎（Linux 静态链
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
-# CPU 版。目标机不需要任何 libtorrent / ssl 运行库（README「安装」）。
+# CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）。目标机不需要任何
+# libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
 on:
@@ -221,6 +222,24 @@ jobs:
           chmod +x native/fushi_torrent/build_linux_so.sh
           bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
           bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+      # 互联 P2P 隧道（iroh）.so：服务端按 bin/../lib/libfushi_p2p.so 定位。只依赖
+      # glibc（Rust 静态链其余一切），在本 job 的 ubuntu-22.04 上编即继承同一条 glibc 下限。
+      # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺库的服务端包。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-linux-x64-ubuntu22
+      - name: Build fushi_p2p (Linux x64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_p2p/build_linux_so.sh
+          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
       - name: Build fushi_server bundle
         shell: bash
         run: |
@@ -228,6 +247,7 @@ jobs:
           dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_linux
           mkdir -p build/fushi_server_linux/bundle/lib
           cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
+          cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
           curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
             "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
@@ -262,6 +282,23 @@ jobs:
           curl -fsS -H 'Authorization: Bearer ci-smoke-token' http://127.0.0.1:48780/api/admin/subscriptions | grep -q '"supported":true' \
             || { echo "::error::subscriptions capability not reported"; exit 1; }
           kill $pid; wait $pid || true
+      # 用 **bundle 里那一份** .so 跑 packages/fushi_p2p 的真隧道测试（同进程两端点经直连
+      # 地址互拨，不依赖外网）：验的是要发出去的文件能 dlopen、与 Dart 绑定的 ABI 对得上。
+      # 库加载失败时测试整组 skip 且退出码 0，所以还要断言 skip 原因没出现。
+      - name: fushi_p2p FFI tests against the bundled .so
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}/build/fushi_server_linux/bundle/lib/libfushi_p2p.so
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_P2P_LIB" || { echo "::error::$FUSHI_P2P_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: bash
         env:
@@ -332,6 +369,22 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_torrent/build_windows_dll.ps1 -VcpkgRoot "$env:VCPKG_INSTALLATION_ROOT"
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
+      # 互联 P2P 隧道（iroh）DLL：服务端按 bin/../lib/fushi_p2p.dll 定位。失败即 job 失败。
+      - name: Set up Rust (fushi_p2p)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Rust build (fushi_p2p)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/fushi_p2p -> target
+          key: fushi-p2p-windows-x64
+      - name: Build fushi_p2p DLL
+        shell: pwsh
+        run: |
+          powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
       - name: Build fushi_server bundle
         shell: pwsh
         run: |
@@ -340,6 +393,7 @@ jobs:
           $lib = "build/fushi_server_win/bundle/lib"
           New-Item -ItemType Directory -Force $lib | Out-Null
           Copy-Item native/fushi_torrent/prebuilt/windows-x64/*.dll $lib -Force
+          Copy-Item native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll $lib -Force
           $zip = "$env:RUNNER_TEMP/ort.zip"
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
@@ -376,6 +430,21 @@ jobs:
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
+      # 同 linux job：拿 bundle 里那一份 DLL 跑真隧道测试，并断言没有整组 skip。
+      - name: fushi_p2p FFI tests against the bundled DLL
+        shell: bash
+        working-directory: packages/fushi_p2p
+        env:
+          FUSHI_P2P_LIB: ${{ github.workspace }}\build\fushi_server_win\bundle\lib\fushi_p2p.dll
+        run: |
+          set -euo pipefail
+          test -f "$FUSHI_P2P_LIB" || { echo "::error::$FUSHI_P2P_LIB missing"; exit 1; }
+          dart pub get
+          dart test --reporter expanded 2>&1 | tee "$RUNNER_TEMP/fushi_p2p_test.log"
+          if grep -q 'native library not found' "$RUNNER_TEMP/fushi_p2p_test.log"; then
+            echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
+            exit 1
+          fi
       - name: Package
         shell: pwsh
         env:

@@ -266,6 +266,7 @@
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
 				B20100000000000000000001 /* Build FushiDicts FFI */,
+				B20100000000000000000002 /* Bundle fushi_p2p dylib */,
 				6BD9B3C08D0CCB6379299F3A /* [CP] Embed Pods Frameworks */,
 				9B7ACE8C08531AD7CBBD7799 /* [CP] Copy Pods Resources */,
 			);
@@ -492,6 +493,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "set -euo pipefail\n\n: \"${FUSHIDICTS_SOURCE_DIR:?FUSHIDICTS_SOURCE_DIR is not set}\"\n: \"${FUSHIDICTS_BUILD_DIR:?FUSHIDICTS_BUILD_DIR is not set}\"\n: \"${FUSHIDICTS_DYLIB_NAME:=libfushidicts_ffi.dylib}\"\n\ncmake_archs=\"${ARCHS:-`uname -m`}\"\ncmake_archs=\"${cmake_archs// /;}\"\n\ncmake -S \"$FUSHIDICTS_SOURCE_DIR\" -B \"$FUSHIDICTS_BUILD_DIR\" \\\n  -DCMAKE_BUILD_TYPE=\"$CONFIGURATION\" \\\n  -DCMAKE_OSX_ARCHITECTURES=\"$cmake_archs\" \\\n  -DCMAKE_OSX_DEPLOYMENT_TARGET=\"${MACOSX_DEPLOYMENT_TARGET:-13.4}\"\ncmake --build \"$FUSHIDICTS_BUILD_DIR\" --target fushidicts_ffi --config \"$CONFIGURATION\"\n\nbuilt_dylib=\"`find \"$FUSHIDICTS_BUILD_DIR\" -type f -name \"$FUSHIDICTS_DYLIB_NAME\" | head -n 1`\"\nif [[ -z \"$built_dylib\" ]]; then\n  echo \"error: $FUSHIDICTS_DYLIB_NAME was not produced under $FUSHIDICTS_BUILD_DIR\" >&2\n  exit 1\nfi\n\ndestination_dir=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\ndestination=\"$destination_dir/$FUSHIDICTS_DYLIB_NAME\"\nmkdir -p \"$destination_dir\"\ncp -f \"$built_dylib\" \"$destination\"\n\ninstall_name_tool -id \"@rpath/$FUSHIDICTS_DYLIB_NAME\" \"$destination\"\n\nif [[ \"${CODE_SIGNING_ALLOWED:-}\" != \"NO\" ]] && command -v codesign >/dev/null 2>&1; then\n  sign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:-}}\"\n  if [[ -z \"$sign_identity\" ]]; then\n    sign_identity=\"-\"\n  fi\n  codesign --force --sign \"$sign_identity\" --timestamp=none \"$destination\"\nfi\n";
+		};
+		B20100000000000000000002 /* Bundle fushi_p2p dylib */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bundle fushi_p2p dylib";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "/bin/bash \"$PROJECT_DIR/bundle_fushi_p2p.sh\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

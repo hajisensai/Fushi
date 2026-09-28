@@ -2,8 +2,11 @@
 # CI（Linux/macOS）版 Android .so 构建：与 build_android_so.ps1 同一套流程/产物布局。
 #
 # 用法: build_android_so.sh <ndk-root> [abi ...]
-#   abi 缺省 arm64-v8a x86_64。产物: prebuilt/android/<abi>/libfushi_p2p.so
-# 前提: rustup target add aarch64-linux-android x86_64-linux-android; cargo install cargo-ndk
+#   abi 缺省 arm64-v8a x86_64（本机调试够用）。发布（release.yml）与 PR 门
+#   （native-p2p-gate.yml）传 arm64-v8a armeabi-v7a x86_64，与 split-per-abi APK 对齐。
+#   产物: prebuilt/android/<abi>/libfushi_p2p.so
+# 前提: rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android;
+#       cargo install cargo-ndk（CI 钉 4.1.2）
 set -euo pipefail
 
 NDK_ROOT="${1:?usage: build_android_so.sh <ndk-root> [abi ...]}"

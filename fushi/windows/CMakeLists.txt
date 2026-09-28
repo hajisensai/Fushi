@@ -161,8 +161,11 @@ endforeach()
 # === 互联 P2P 隧道（iroh，可选）===
 # native/fushi_p2p/build_windows_dll.ps1 产出 prebuilt/windows-x64/fushi_p2p.dll，
 # 存在则随包。缺失时 P2P 能力判不可用（设置里不出现开关），其余互联照常——故意
-# 不像 libtorrent 那样在 Release 强制：发布流水线接上 Rust 构建之前不能卡死出包
-# （docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+# 不像 libtorrent 那样在 Release 强制：P2P 缺库是可降级的（能力整块隐藏，不会像
+# 内置 torrent 那样「宣称有后端却打不开」），没装 Rust 的开发机照样能出 Release 包。
+# 发布包的保证在流水线侧：release-desktop.yml 先跑 build_windows_dll.ps1（失败即红），
+# 出包后再核对 bundle 里确有 fushi_p2p.dll
+# （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §9）。
 set(FUSHI_P2P_DLL
   "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_p2p/prebuilt/windows-x64/fushi_p2p.dll")
 if(EXISTS "${FUSHI_P2P_DLL}")
