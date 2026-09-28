@@ -31,6 +31,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   AnkiSyncAccount? _account;
   bool _switching = false;
 
+  /// 已登录时点了「重新登录」（凭据过期 / 改了密码）：显示预填好的登录表单。
+  bool _relogin = false;
+
   AnkiSyncSession? get _session =>
       ref.read(platformServicesProvider).ankiSyncSession;
 
@@ -53,7 +56,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     setState(() {
       _account = account;
       if (account != null && _username.text.isEmpty) {
-        _server.text = account.endpoint ?? '';
+        _server.text = account.server ?? '';
         _username.text = account.username;
       }
     });
@@ -102,7 +105,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
                   )
                 : null,
           ),
-          if (_account == null)
+          if (_account == null || _relogin)
             ..._signInRows(busy)
           else
             ..._signedInRows(busy),
@@ -150,6 +153,12 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       onTap: busy ? null : _syncNow,
     ),
     AdaptiveSettingsRow(
+      title: t.anki_sync_client_relogin,
+      icon: Icons.key,
+      showIcon: true,
+      onTap: busy ? null : () => setState(() => _relogin = true),
+    ),
+    AdaptiveSettingsRow(
       title: t.anki_sync_client_sign_out,
       icon: Icons.logout,
       showIcon: true,
@@ -162,7 +171,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
     if (account == null) return t.anki_sync_client_status_signed_out;
     return t.anki_sync_client_status_signed_in(
       user: account.username,
-      server: account.endpoint ?? 'AnkiWeb',
+      server: account.server ?? 'AnkiWeb',
     );
   }
 
@@ -224,6 +233,7 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         password: _password.text,
       );
       _password.clear();
+      if (mounted) setState(() => _relogin = false);
       await _loadAccount();
       // 登录后库在本地了：顺手刷新牌组 / 笔记类型，设置页的选择器立刻可用。
       unawaited(ref.read(ankiViewModelProvider.notifier).fetchConfiguration());
@@ -243,12 +253,36 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
   }
 
   Future<void> _signOut() async {
+    final AnkiSyncSession? session = _session;
+    if (session == null) return;
     try {
-      await _session?.signOut();
-      await _loadAccount();
+      await session.signOut();
     } on AnkiSyncHasUnsyncedNotes catch (e) {
-      _toast(t.anki_sync_client_has_unsynced(count: e.count));
+      // 退出会丢掉这些卡：只有用户明确确认放弃才继续。
+      if (!await _confirmDiscard(e.count)) return;
+      await session.signOut(discardUnsynced: true);
     }
+    await _loadAccount();
+  }
+
+  Future<bool> _confirmDiscard(int count) async {
+    final bool? ok = await showAppDialog<bool>(
+      context: context,
+      builder: (BuildContext ctx) => AlertDialog(
+        content: Text(t.anki_sync_client_discard_confirm(count: count)),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(t.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(t.anki_sync_client_discard_action),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   Future<bool> _confirmAnkiWeb() async {

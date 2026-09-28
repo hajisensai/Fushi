@@ -10,6 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 假 helper：只记录收到的加卡请求，库内容 = [local]。
 class _FakeHelper implements FushiAnkiSyncClient {
+  @override
+  bool isDead = false;
+
   final List<List<String>> local = <List<String>>[];
   final List<
     ({

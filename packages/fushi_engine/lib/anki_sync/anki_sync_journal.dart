@@ -70,6 +70,8 @@ class AnkiSyncJournalEntry {
     required this.createdAt,
     required this.note,
     this.noteId,
+    this.generation,
+    this.lastError,
   });
 
   factory AnkiSyncJournalEntry.fromJson(Map<String, Object?> json) =>
@@ -80,30 +82,47 @@ class AnkiSyncJournalEntry {
           (json['note']! as Map).cast<String, Object?>(),
         ),
         noteId: (json['noteId'] as num?)?.toInt(),
+        generation: json['generation'] as String?,
+        lastError: json['lastError'] as String?,
       );
 
   final String id;
   final int createdAt;
   final AnkiSyncNote note;
 
-  /// 本地库里对应的 note id；null = 写日志后还没写进本地库（进程在两步之间退出）。
+  /// 写进本地库后的 note id。只在 [generation] 与本地库当前代号一致时才有意义。
   final int? noteId;
+
+  /// 写进的是哪一「代」本地库（每次整库下载换一代）。与当前代号不一致 / null =
+  /// 这张卡不在当前本地库里（还没写、写失败、或被整库下载冲掉了），必须重放。
+  /// 只有与当前代号一致的条目，同步成功后才能出日志。
+  final String? generation;
+
+  /// 最近一次写进本地库失败的原因（下次打开 / 同步时再试）。
+  final String? lastError;
+
+  bool inGeneration(String? current) =>
+      current != null && generation == current && noteId != null;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'createdAt': createdAt,
     'note': note.toJson(),
     if (noteId != null) 'noteId': noteId,
+    if (generation != null) 'generation': generation,
+    if (lastError != null) 'lastError': lastError,
   };
 }
 
 /// 「未同步的卡」日志：Fushi 这边的真相源。
 ///
 /// 本地 collection 不可信——服务器要求整库同步时，整库下载会**静默丢掉**本地还没推上去
-/// 的卡。所以每张卡先进日志、再进本地库；只有同步成功后才出日志；整库下载后按日志重放。
+/// 的卡。所以每张卡先进日志、再进本地库；只有确认在当前这一代本地库里、且同步成功后
+/// 才出日志；换代（整库下载）后按日志重放。
 ///
 /// 一条一个文件（`<dir>/<id>.json`，`.tmp` → rename 原子写），媒体复制进
 /// `<dir>/media/`（内容哈希名，天然去重），不依赖制卡时那些临时文件还在不在。
+/// 写条目与清理媒体互斥（[_locked]），清理不会删掉正在写入的条目的媒体。
 class AnkiSyncJournal {
   AnkiSyncJournal(this.dir, {int Function()? clock})
     : _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -111,11 +130,12 @@ class AnkiSyncJournal {
   final Directory dir;
   final int Function() _clock;
   static final Random _random = Random.secure();
+  Future<void> _tail = Future<void>.value();
 
   Directory get _mediaDir => Directory(p.join(dir.path, 'media'));
 
-  /// 写一条。媒体先复制进日志目录，条目里的路径随之改指那里。
-  Future<AnkiSyncJournalEntry> append(AnkiSyncNote note) async {
+  /// 写一条（还不在任何一代本地库里）。媒体先复制进日志目录，条目里的路径随之改指那里。
+  Future<AnkiSyncJournalEntry> append(AnkiSyncNote note) => _locked(() async {
     await _mediaDir.create(recursive: true);
     final List<(String, String)> media = <(String, String)>[];
     for (final (String name, String source) in note.media) {
@@ -134,14 +154,30 @@ class AnkiSyncJournal {
     );
     await _write(entry);
     return entry;
-  }
+  });
 
-  Future<void> markAdded(AnkiSyncJournalEntry entry, int noteId) => _write(
+  /// 已写进第 [generation] 代本地库，note id 为 [noteId]。
+  Future<void> markAdded(
+    AnkiSyncJournalEntry entry,
+    int noteId,
+    String generation,
+  ) => _write(
     AnkiSyncJournalEntry(
       id: entry.id,
       createdAt: entry.createdAt,
       note: entry.note,
       noteId: noteId,
+      generation: generation,
+    ),
+  );
+
+  /// 写进本地库失败：记下原因，条目留着下次再试。
+  Future<void> markFailed(AnkiSyncJournalEntry entry, String error) => _write(
+    AnkiSyncJournalEntry(
+      id: entry.id,
+      createdAt: entry.createdAt,
+      note: entry.note,
+      lastError: error,
     ),
   );
 
@@ -170,8 +206,8 @@ class AnkiSyncJournal {
 
   Future<int> count() async => (await entries()).length;
 
-  /// 同步成功后出日志，再清掉没有条目引用的媒体。
-  Future<void> remove(Iterable<String> ids) async {
+  /// 出日志（同步确认 / 加卡失败回滚 / 用户放弃），再清掉没有条目引用的媒体。
+  Future<void> remove(Iterable<String> ids) => _locked(() async {
     for (final String id in ids) {
       final File f = File(p.join(dir.path, '$id.json'));
       if (f.existsSync()) await f.delete();
@@ -184,6 +220,12 @@ class AnkiSyncJournal {
     for (final FileSystemEntity f in _mediaDir.listSync()) {
       if (f is File && !kept.contains(p.basename(f.path))) await f.delete();
     }
+  });
+
+  Future<T> _locked<T>(Future<T> Function() action) {
+    final Future<T> run = _tail.then((_) => action());
+    _tail = run.then((_) {}, onError: (Object _) {});
+    return run;
   }
 
   Future<void> _write(AnkiSyncJournalEntry entry) async {

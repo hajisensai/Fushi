@@ -207,6 +207,22 @@ void main() {
           await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'),
           isTrue,
         );
+        // HTML 把词切开：原始字段里不连续包含「食べる」，按去 HTML 后比较才命中
+        // （与 is_duplicate 同口径；旧的字段子串筛选会漏）。
+        final int eat = await c.addNote(
+          notetype: 'Basic',
+          deck: 'Mining',
+          fields: <String>['<b>食</b>べる', 'x'],
+        );
+        expect(
+          (await c.findNotes(notetype: 'Basic', firstField: '食べる'))
+              .map((AnkiSyncNoteHit h) => h.noteId),
+          <int>[eat],
+        );
+        expect(
+          await c.isDuplicate(notetype: 'Basic', firstField: '食べる'),
+          isTrue,
+        );
         expect(
           await c.isDuplicate(notetype: 'Basic', firstField: '猫'),
           isFalse,

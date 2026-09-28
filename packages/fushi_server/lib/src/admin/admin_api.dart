@@ -144,7 +144,12 @@ class AdminApi {
       case ('POST', '/api/admin/anki/login'):
         return _ankiLogin(await _body(request));
       case ('POST', '/api/admin/anki/logout'):
-        await _ankiSession().signOut();
+        final Map<String, dynamic> body = await _body(request);
+        try {
+          await _ankiSession().signOut(discardUnsynced: body['discardUnsynced'] == true);
+        } on AnkiSyncHasUnsyncedNotes catch (e) {
+          return _err(409, 'unsynced:${e.count}');
+        }
         return _json(const <String, Object?>{'ok': true});
       case ('POST', '/api/admin/anki/sync'):
         final AnkiSyncState synced = await _ankiSession().syncNow();
@@ -567,7 +572,11 @@ class AdminApi {
       'available': anki.available,
       'account': account == null
           ? null
-          : <String, Object?>{'endpoint': account.endpoint, 'username': account.username},
+          : <String, Object?>{
+              'server': account.server,
+              'endpoint': account.endpoint,
+              'username': account.username,
+            },
       'sync': state == null
           ? null
           : <String, Object?>{
@@ -643,7 +652,15 @@ class AdminApi {
       final AnkiNoteType? t =
           current.availableNoteTypes.where((AnkiNoteType x) => x.name == noteType).firstOrNull;
       if (t == null) throw FormatException('unknown note type $noteType');
-      next = next.copyWith(selectedNoteTypeId: t.id, selectedNoteTypeName: t.name);
+      next = next.copyWith(
+        selectedNoteTypeId: t.id,
+        selectedNoteTypeName: t.name,
+        // 换了笔记类型：只保留新类型里还有的字段的映射，旧字段名不带过去。
+        fieldMappings: <String, String>{
+          for (final MapEntry<String, String> e in next.fieldMappings.entries)
+            if (t.fields.contains(e.key)) e.key: e.value,
+        },
+      );
     }
     final Object? mappings = body['fieldMappings'];
     if (mappings is Map) {

@@ -74,8 +74,13 @@ class AnkiBoxLanding {
   Future<void> _tail = Future<void>.value();
 
   /// 跑一轮。多次并发调用会排队串行（定时器与「立即同步」按钮可能撞在一起）。
-  Future<AnkiBoxLandingReport> runOnce() {
-    final Future<AnkiBoxLandingReport> run = _tail.then((_) => _run());
+  Future<AnkiBoxLandingReport> runOnce() => _queued(_run);
+
+  /// 排在所有已提交操作之后完成（停机时等在跑的那一轮落完）。
+  Future<void> get idle => _tail;
+
+  Future<T> _queued<T>(Future<T> Function() action) {
+    final Future<T> run = _tail.then((_) => action());
     _tail = run.then((_) {}, onError: (Object _) {});
     return run;
   }
@@ -120,14 +125,17 @@ class AnkiBoxLanding {
   ///
   /// 中转层只在本机有卡要中转时才顺带撤认领（客户端迟早会有卡）；主机自己从不制卡，
   /// 不显式撤的话认领会一直挂着，别的设备就一直把卡传给一台已经不收卡的主机。
-  Future<void> revokeClaim() async {
+  ///
+  /// 与 [runOnce] 同一条队列：正在跑的那一轮开头会写认领，撤销必须排在它后面，
+  /// 否则认领被写回去、再也没人撤。
+  Future<void> revokeClaim() => _queued(() async {
     final String ns = await _assets.ensureNamespace(PendingMineRelay.namespace);
     final AssetEntry? mine = await _assets.findAsset(
       ns,
       'landing.$_deviceId.json',
     );
     if (mine != null) await _assets.deleteAsset(mine.id);
-  }
+  });
 
   PendingMineRelay _relay() => PendingMineRelay(
     store: _store,

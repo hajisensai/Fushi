@@ -291,6 +291,7 @@ async function loadModels(){
 // ── Anki ──
 const ANKI_PHASE = {signedOut:'未登录', idle:'空闲', busy:'同步中…', blocked:'被拦：服务器要求整库上传（Fushi 不做）。请先在官方 Anki 里同步一次。', failed:'上次同步失败'};
 let ankiFormKey = null;
+let ankiRelogin = false;
 async function loadAnki(){
   const a = await api('anki');
   const L = a.landing, S = a.sync;
@@ -309,24 +310,38 @@ async function loadAnki(){
   $('#anki-landing').disabled = !a.available;
 
   // 表单只在账号 / 可选项变了时重画，否则 2.5 秒一次的轮询会冲掉正在输入的内容。
-  const key = JSON.stringify([a.available, a.account, a.settings.decks, a.settings.noteTypes, a.settings.noteType]);
+  const key = JSON.stringify([a.available, a.account, ankiRelogin, a.settings.decks, a.settings.noteTypes, a.settings.noteType]);
   if (key === ankiFormKey) return;
   ankiFormKey = key;
   if (!a.available) { $('#anki-account').innerHTML = '<p class="muted">此服务端包没有 fushi-anki-sync。</p>'; $('#anki-config').innerHTML=''; return; }
-  $('#anki-account').innerHTML = a.account
-    ? `<p>已登录：${esc(a.account.username)} <span class="muted">（${esc(a.account.endpoint || 'AnkiWeb')}）</span></p>
-       <div class="row"><button class="b" id="btn-anki-sync">立即同步</button><button class="b sec" id="btn-anki-refresh">刷新牌组 / 笔记类型</button><button class="b danger" id="btn-anki-logout">退出登录</button></div>`
+  const showLogin = !a.account || ankiRelogin;
+  $('#anki-account').innerHTML = !showLogin
+    ? `<p>已登录：${esc(a.account.username)} <span class="muted">（${esc(a.account.server || 'AnkiWeb')}）</span></p>
+       <div class="row"><button class="b" id="btn-anki-sync">立即同步</button><button class="b sec" id="btn-anki-refresh">刷新牌组 / 笔记类型</button><button class="b sec" id="btn-anki-relogin">重新登录</button><button class="b danger" id="btn-anki-logout">退出登录</button></div>`
     : `<div class="grid">
-       <label class="f">同步服务器（自建服务器地址，如 http://nas:8080/；留空为 AnkiWeb）<input id="anki-endpoint"></label>
-       <label class="f">用户名<input id="anki-user"></label>
+       <label class="f">同步服务器（自建服务器地址，如 http://nas:8080/；留空为 AnkiWeb）<input id="anki-endpoint" value="${esc(a.account ? (a.account.server || '') : '')}"></label>
+       <label class="f">用户名<input id="anki-user" value="${esc(a.account ? a.account.username : '')}"></label>
        <label class="f">密码<input type="password" id="anki-pass"></label></div>
-       <div class="row" style="margin-top:12px"><button class="b" id="btn-anki-login">登录并下载牌组集合</button></div>
-       <p class="small muted">密码只用来换取同步凭据，不保存。</p>`;
-  if (a.account) {
+       <div class="row" style="margin-top:12px"><button class="b" id="btn-anki-login">登录并下载牌组集合</button>${a.account ? '<button class="b sec" id="btn-anki-relogin-cancel">取消</button>' : ''}</div>
+       <p class="small muted">密码只用来换取同步凭据，不保存。同一服务器与用户名重新登录只换凭据，本机的牌组集合与未同步的卡都保留。</p>`;
+  if (!showLogin) {
     $('#btn-anki-sync').onclick = guard(async()=>{ await post('anki/sync'); toast('已同步'); ankiFormKey=null; loadAnki(); });
     $('#btn-anki-refresh').onclick = guard(async()=>{ await post('anki/refresh'); toast('已刷新'); ankiFormKey=null; loadAnki(); });
-    $('#btn-anki-logout').onclick = guard(async()=>{ if(!confirm('退出登录会删掉本机的牌组集合副本（未同步的卡会拒绝退出）。继续？')) return; await post('anki/logout'); ankiFormKey=null; loadAnki(); });
+    $('#btn-anki-relogin').onclick = ()=>{ ankiRelogin=true; ankiFormKey=null; loadAnki(); };
+    $('#btn-anki-logout').onclick = guard(async()=>{
+      if(!confirm('退出登录会删掉本机的牌组集合副本。继续？')) return;
+      try { await post('anki/logout'); }
+      catch(e){
+        const m = /^unsynced:(\d+)$/.exec(e.message);
+        if (!m) throw e;
+        if (!confirm('还有 ' + m[1] + ' 张卡没有同步到 Anki。放弃这些卡并退出？（放弃后无法找回）')) return;
+        await post('anki/logout', {discardUnsynced: true});
+      }
+      ankiFormKey=null; loadAnki();
+    });
   } else {
+    const cancel = $('#btn-anki-relogin-cancel');
+    if (cancel) cancel.onclick = ()=>{ ankiRelogin=false; ankiFormKey=null; loadAnki(); };
     $('#btn-anki-login').onclick = guard(async()=>{
       const endpoint = $('#anki-endpoint').value.trim();
       let acceptAnkiWeb = false;
@@ -335,7 +350,7 @@ async function loadAnki(){
         acceptAnkiWeb = true;
       }
       await post('anki/login', {endpoint, username: $('#anki-user').value, password: $('#anki-pass').value, acceptAnkiWeb});
-      toast('已登录'); ankiFormKey=null; loadAnki();
+      toast('已登录'); ankiRelogin=false; ankiFormKey=null; loadAnki();
     });
   }
 

@@ -119,10 +119,13 @@ class ServerAnkiLanding {
     _schedule(Duration.zero);
   }
 
+  /// 停机：停定时器，等在跑的那一轮落完，再关 helper（反过来的话那一轮会在关掉
+  /// 之后又拉起一个没人管的 helper、还去碰即将关闭的数据库）。
   Future<void> stop() async {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
+    await _landing.idle;
     await session?.close();
   }
 
@@ -130,6 +133,7 @@ class ServerAnkiLanding {
     if (_stopped) return;
     _timer?.cancel();
     _timer = Timer(delay, () async {
+      if (_stopped) return;
       if (landingEnabled) await runNow();
       _schedule(_interval);
     });
@@ -137,7 +141,7 @@ class ServerAnkiLanding {
 
   /// 立刻跑一轮落地（收卡 → 写进 Anki → 写回执），之后排一次同步。
   Future<AnkiBoxLandingReport?> runNow() async {
-    if (!landingEnabled) return null;
+    if (_stopped || !landingEnabled) return null;
     try {
       final AnkiBoxLandingReport r = await _landing.runOnce();
       lastReport = r;
@@ -201,8 +205,13 @@ class ServerAnkiLanding {
       );
     }
     final AnkiSettings current = settings;
-    // 字段映射没配：卡一张都渲染不出来。算「没配置」（留着等），不算失败。
-    if (current.fieldMappings.values.every((String v) => v.trim().isEmpty)) {
+    // 所选笔记类型的字段一个都没映射（刚登录、或刚换了笔记类型而旧映射的字段名对不上）：
+    // 卡一张都渲染不出来。算「没配置」（留着等配置），不算失败。
+    final AnkiNoteType? noteType = miner.selectedNoteType(current);
+    if (noteType == null ||
+        noteType.fields.every(
+          (String f) => (current.fieldMappings[f] ?? '').trim().isEmpty,
+        )) {
       return const MineOutcome.notConfigured();
     }
     return miner.mine(settings: current, rawPayloadJson: raw, context: context);

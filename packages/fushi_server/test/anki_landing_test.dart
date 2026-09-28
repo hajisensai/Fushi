@@ -13,6 +13,9 @@ import 'package:test/test.dart';
 
 /// 内存里的 helper：本地库 = [local]，服务器 = [server]。
 class _FakeHelper implements FushiAnkiSyncClient {
+  @override
+  bool isDead = false;
+
   final List<List<String>> local = <List<String>>[];
   final List<List<String>> server = <List<String>>[];
 
@@ -212,6 +215,23 @@ void main() {
     expect(r!.waiting, 1);
     expect(r.failed, 0);
     expect(helper.local, isEmpty);
+  });
+
+  // 审查第 9 项：映射里只有旧笔记类型的字段名（换了笔记类型没清）——「映射全空」
+  // 判断会被旧键骗过，卡被标成失败要手动重试。按所选笔记类型的字段判断。
+  test('映射只有别的笔记类型的字段：同样按没配置处理，不标失败', () async {
+    await anki.setLandingEnabled(true);
+    await session.signIn(endpoint: 'http://nas/', username: 'u', password: 'p');
+    await anki.refreshMeta();
+    await anki.saveSettings(
+      anki.settings.copyWith(
+        fieldMappings: const <String, String>{'Front': '{expression}'},
+      ),
+    );
+    phoneUploads('a1', '猫');
+    final r = await anki.runNow();
+    expect(r!.waiting, 1);
+    expect(r.failed, 0);
   });
 
   test('关落地：立刻撤认领', () async {

@@ -107,6 +107,9 @@ class FushiAnkiSyncClient {
   Future<void> _tail = Future<void>.value();
   String? _dead;
 
+  /// helper 已退出 / 已 dispose：之后每个请求都会立刻失败，调用方应换一个新进程。
+  bool get isDead => _dead != null;
+
   /// 上报给同步服务器的客户端身份（例如 `fushi,0.1.0 (anki 26.09.3),windows`）。
   Future<String> version() async =>
       (await _call(<String, Object?>{'cmd': 'version'}) as Map)['client']

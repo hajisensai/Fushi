@@ -138,7 +138,8 @@ class AnkiSyncMiner with AnkiNoteComposer {
       return const MineOutcome.duplicate();
     }
 
-    final int noteId = await session.addNote(
+    // null = 撞上同步进行中，卡只进了日志（同步结束时补进本地库）。
+    final int? noteId = await session.addNote(
       AnkiSyncNote(
         notetype: noteType.name,
         deck: deck.name,

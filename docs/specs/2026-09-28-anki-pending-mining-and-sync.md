@@ -119,10 +119,18 @@
   「Anki 同步（无需安装 Anki）」开关 + 登录（自建地址或留空为 AnkiWeb，AnkiWeb 先弹条款风险确认）。
   凭据（hkey，不存密码）只落 `<support>/anki_sync/account.json`，不进偏好 / 备份 / 跨设备同步；数据目录跟着用户可配的数据根走。
   切换后端不清牌组 / 字段映射（两边是同一份库、写卡只认名字），刷新后按名字对回。
-- **未同步日志**（`fushi_engine/anki_sync/anki_sync_journal.dart`）：先写日志再写本地库；同步成功才出日志；
-  整库下载后按日志重放，重放前用 `find_notes`（与 Anki 查重同一判据）兜底避免重复；媒体复制进日志目录，不依赖临时文件。
-  有未同步的卡时拒绝换账号 / 退出。加卡后 5 秒去抖同步；启动与回前台补一次。
-- **helper 新命令 `find_notes`**：`findMatchingNotes`（点 ✓ 反查）可用，不再因「查不到」误判卡已删而重复制卡。
+- **未同步日志**（`fushi_engine/anki_sync/anki_sync_journal.dart`）+ **本地库代号**（审查返工后的规则）：
+  - 先写日志再写本地库；加卡失败回滚日志条目。
+  - 本地库目录里的 `generation` 只在整库下载成功后写；没有代号的库（新建 / 下载失败留下的空库）一律先整库下载。
+  - 条目记着写进的是哪一代；**只有在当前代里的条目，同步成功后才出日志**。服务器触发整库下载时先落新代号、
+    再按日志重放——重放中途失败的条目（`lastError`）留着下次再补，不会被当成已落地删掉。
+  - 同步前落 `sync.inflight`：同步中途进程被杀，下次打开时换代，所有条目查重后重放。
+  - 重放前用 `find_notes`（`dupe:` 搜索，与 Anki 查重同一判据）兜底避免重复；媒体复制进日志目录，不依赖临时文件。
+  - 同步 / 下载进行中（首次可能要拉整个媒体库）：查重直接放行、加卡只进日志，结束时补进本地库再同步。
+  - helper 死了自动换新进程；账号分开存「用户填的服务器」与「当前分片地址」（AnkiWeb 308），同账号重登只换凭据。
+  - 有未同步的卡时拒绝换账号；退出要用户确认放弃这些卡。加卡后 5 秒去抖同步；启动与回前台补一次。
+  - 已知：本地库会镜像服务器上的完整媒体目录（官方客户端同样如此），首次同步可能很慢、占空间。
+- **helper 新命令 `find_notes`**（`dupe:` 搜索）：`findMatchingNotes`（点 ✓ 反查）可用，首字段带 HTML 也能命中。
 - **渲染零 Flutter 化**：`BaseAnkiRepository` 的渲染整段搬进 `AnkiNoteComposer` mixin，媒体命名搬进 `anki_media_naming.dart`，
   都进 `fushi_anki_core`；同步客户端的「渲染 → 查重 → 写库」是 `AnkiSyncMiner`，app 后端与服务端共用一份。
 - **无头服务端当落地设备**（`fushi_server/lib/src/anki_landing.dart`）：`PendingMineStore` / `PendingMineRelay` 搬进
