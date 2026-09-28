@@ -2647,25 +2647,82 @@ mixin _FushiDbVideoDomain
   /// 删除视频书：标签映射（v77 起逻辑外键）与 audio_cues 的 bookKey 都不是 DB
   /// 外键（cue 的 owner key 对有声书/SRT/视频共用一个字符串，无法挂 FK），必须
   /// 在同一事务里显式清（BUG-276：否则删视频后 cue 行永久残留）。
-  Future<void> deleteVideoBook(String bookUid) => transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookKey.equals(bookUid))).go();
+  ///
+  /// 单条删是 [deleteVideoBooks] 的一元特例（不动合集成员——合集引用由调用方
+  /// 决定是否清，保持本方法一贯语义）。
+  Future<void> deleteVideoBook(String bookUid) =>
+      deleteVideoBooks(<String>[bookUid], removeFromCollections: false);
+
+  /// 在**一个事务**里批量删视频书（BUG-2754），返回删前快照的行（不存在的 uid
+  /// 不在返回值里）。
+  ///
+  /// 覆盖单条删的全部清理：audio_cues、shelf_entry、标签映射、规格缓存
+  /// （v95，按主视频 + 播放列表各集路径）、**本地花絮行**、行本身；
+  /// [removeFromCollections] 为真时再同事务清合集成员（等价
+  /// [removeEntriesFromAllCollections]，被清空的合集随之删除）。
+  ///
+  /// 本地花絮必须先删：`video_metadata_extras.book_uid` 的外键是 `SET NULL`，
+  /// 而 CHECK 要求 `source_kind='local'` 的行 `book_uid` 非空——让 FK 去置空，
+  /// CHECK 当场失败、整个删除事务回滚（BUG-2754：被扫描器挂成 `Extras/` 花絮的
+  /// 视频永远删不掉）。本地花絮就是这条视频本身，视频没了它也该没；在线花絮
+  /// 不挂 book_uid，不受影响。
+  ///
+  /// 所有 `IN (...)` 按 [_kVideoDeleteChunkSize] 分块，避开旧 SQLite 的 999 绑定
+  /// 变量上限（全选几千条是真实场景）。
+  Future<List<VideoBookRow>> deleteVideoBooks(
+    Iterable<String> bookUids, {
+    bool removeFromCollections = true,
+  }) {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    if (uids.isEmpty) return Future<List<VideoBookRow>>.value(<VideoBookRow>[]);
+    return transaction(() async {
+      final List<List<String>> uidChunks =
+          _chunkForSqlVariables<String>(uids, _kVideoDeleteChunkSize);
+      // v95：规格缓存以**文件路径**为键、与 book 无 FK，不在这里清就永远不会被
+      // 清——`video_file_specs` 会随「每个曾经扫描过的文件」单调增长，删片子也
+      // 不缩。路径须在删行前取（主视频 + 播放列表里的每一集）。
+      final List<VideoBookRow> rows = <VideoBookRow>[];
+      for (final List<String> chunk in uidChunks) {
+        rows.addAll(await (select(videoBooks)
+              ..where((t) => t.bookUid.isIn(chunk)))
+            .get());
+      }
+      for (final List<String> chunk in uidChunks) {
+        // cue 的 owner key 对有声书/SRT/视频共用，无法挂 FK（BUG-276）。
+        await (delete(audioCues)..where((t) => t.bookKey.isIn(chunk))).go();
         // TODO-616：同事务清 shelf_entry（mediaType='video'、entryKey=bookUid）。
-        await deleteShelfEntry(MediaKind.video, bookUid);
-        await deleteTagAssignmentsForHost(TagHostKind.video, bookUid);
-        // v95：同事务清该书涉及的规格缓存。缓存以**文件路径**为键、与 book 无 FK，
-        // 不在这里清就永远不会被清——`video_file_specs` 会随「每个曾经扫描过的文件」
-        // 单调增长，删片子也不缩。取主视频 + 播放列表里的每一集。
-        final VideoBookRow? row = await (select(videoBooks)
-              ..where((t) => t.bookUid.equals(bookUid)))
-            .getSingleOrNull();
-        if (row != null) {
-          for (final String path in videoBookFilePaths(row)) {
-            await deleteVideoFileSpec(path);
-          }
-        }
-        await (delete(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
+        await (delete(shelfEntries)
+              ..where((t) =>
+                  t.mediaType.equals(MediaKind.video.dbValue) &
+                  t.entryKey.isIn(chunk)))
             .go();
-      });
+        await (delete(tagAssignments)
+              ..where((t) =>
+                  t.mediaKind.equals(TagHostKind.video.dbValue) &
+                  t.entryKey.isIn(chunk)))
+            .go();
+        await (delete(videoMetadataExtras)
+              ..where((t) =>
+                  t.sourceKind.equals('local') & t.bookUid.isIn(chunk)))
+            .go();
+      }
+      final List<String> filePaths = <String>{
+        for (final VideoBookRow row in rows) ...videoBookFilePaths(row),
+      }.toList(growable: false);
+      for (final List<String> chunk
+          in _chunkForSqlVariables<String>(filePaths, _kVideoDeleteChunkSize)) {
+        await (delete(videoFileSpecs)..where((t) => t.filePath.isIn(chunk)))
+            .go();
+      }
+      if (removeFromCollections) {
+        await removeEntriesFromAllCollections(MediaKind.video, uids);
+      }
+      for (final List<String> chunk in uidChunks) {
+        await (delete(videoBooks)..where((t) => t.bookUid.isIn(chunk))).go();
+      }
+      return rows;
+    });
+  }
 
   // ── video_file_specs（v95 规格探测缓存）────────────────────────────
 
@@ -2781,4 +2838,19 @@ List<String> videoBookFilePaths(VideoBookRow row) {
     }
   }
   return List<String>.unmodifiable(out);
+}
+
+/// 批量删除类 `IN (...)` 每块的绑定变量数。低于旧 SQLite（Android 老系统库）
+/// 999 的上限并给同条语句里其余谓词留余量，与 sidecar ledger 清理同一口径。
+const int _kVideoDeleteChunkSize = 400;
+
+/// 把 [items] 切成至多 [size] 个一块（最后一块可以更短；空输入返回空列表）。
+List<List<T>> _chunkForSqlVariables<T>(List<T> items, int size) {
+  final List<List<T>> chunks = <List<T>>[];
+  for (int offset = 0; offset < items.length; offset += size) {
+    final int end =
+        offset + size < items.length ? offset + size : items.length;
+    chunks.add(items.sublist(offset, end));
+  }
+  return chunks;
 }

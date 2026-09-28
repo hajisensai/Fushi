@@ -5760,5 +5760,7 @@
   "hoshi_import_result_stats": "Statistics: $sessions sessions, $days days · reading positions: $positions",
   "hoshi_import_result_legacy_skipped": "$count records skipped because the same book and day was already synced earlier",
   "hoshi_import_result_deleted_skipped": "$count statistics segments were not restored because you deleted those books’ statistics in Fushi",
-  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):"
+  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):",
+  "video_library_delete_rows_failed": "Could not delete $n video(s); they are still in the library.",
+  "video_library_delete_failed": "Delete failed: $reason"
 }

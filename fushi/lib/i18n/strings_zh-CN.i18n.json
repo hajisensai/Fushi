@@ -5760,5 +5760,7 @@
   "hoshi_import_result_stats": "统计：会话 $sessions 次、按天 $days 天 · 阅读位置 $positions 个",
   "hoshi_import_result_legacy_skipped": "跳过 $count 条记录：同一本书同一天的数据早先已经同步进来过",
   "hoshi_import_result_deleted_skipped": "有 $count 段统计未恢复：你曾在 Fushi 里删除过这些书的统计",
-  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）："
+  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）：",
+  "video_library_delete_rows_failed": "$n 个视频删除失败，仍保留在媒体库中。",
+  "video_library_delete_failed": "删除失败：$reason"
 }

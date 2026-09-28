@@ -1052,32 +1052,50 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 合集随之删除。
   Future<void> removeEntryFromAllCollections(
           MediaKind mediaType, String entryKey) =>
+      removeEntriesFromAllCollections(mediaType, <String>[entryKey]);
+
+  /// [removeEntryFromAllCollections] 的批量版（BUG-2754：批量删视频一次清完，
+  /// 不再每条一个事务）。语义逐条等价：先删这些条目的全部成员行，再把因此变空
+  /// 的合集连同其标签映射删掉。`IN (...)` 按块走，避开 999 绑定变量上限。
+  Future<void> removeEntriesFromAllCollections(
+          MediaKind mediaType, Iterable<String> entryKeys) =>
       transaction(() async {
-        final List<MediaCollectionItemRow> affected =
-            await (select(mediaCollectionItems)
-                  ..where((t) =>
-                      t.mediaType.equals(mediaType.dbValue) &
-                      t.entryKey.equals(entryKey)))
-                .get();
-        if (affected.isEmpty) return;
-        final Set<int> ids =
-            affected.map((MediaCollectionItemRow e) => e.collectionId).toSet();
-        await (delete(mediaCollectionItems)
-              ..where((t) =>
-                  t.mediaType.equals(mediaType.dbValue) &
-                  t.entryKey.equals(entryKey)))
-            .go();
-        for (final int cid in ids) {
-          final List<MediaCollectionItemRow> rem =
+        final List<String> keys = entryKeys.toSet().toList(growable: false);
+        if (keys.isEmpty) return;
+        final Set<int> ids = <int>{};
+        for (final List<String> chunk
+            in _chunkForSqlVariables<String>(keys, _kVideoDeleteChunkSize)) {
+          final List<MediaCollectionItemRow> affected =
               await (select(mediaCollectionItems)
-                    ..where((t) => t.collectionId.equals(cid)))
+                    ..where((t) =>
+                        t.mediaType.equals(mediaType.dbValue) &
+                        t.entryKey.isIn(chunk)))
                   .get();
-          if (rem.isEmpty) {
-            await deleteTagAssignmentsForHost(
-                TagHostKind.collection, collectionTagEntryKey(cid));
-            await (delete(mediaCollections)..where((t) => t.id.equals(cid)))
-                .go();
-          }
+          if (affected.isEmpty) continue;
+          ids.addAll(
+              affected.map((MediaCollectionItemRow e) => e.collectionId));
+          await (delete(mediaCollectionItems)
+                ..where((t) =>
+                    t.mediaType.equals(mediaType.dbValue) &
+                    t.entryKey.isIn(chunk)))
+              .go();
+        }
+        if (ids.isEmpty) return;
+        final Set<int> stillPopulated = <int>{};
+        for (final List<int> chunk in _chunkForSqlVariables<int>(
+            ids.toList(growable: false), _kVideoDeleteChunkSize)) {
+          final List<MediaCollectionItemRow> remaining =
+              await (select(mediaCollectionItems)
+                    ..where((t) => t.collectionId.isIn(chunk)))
+                  .get();
+          stillPopulated.addAll(
+              remaining.map((MediaCollectionItemRow e) => e.collectionId));
+        }
+        for (final int cid in ids.difference(stillPopulated)) {
+          await deleteTagAssignmentsForHost(
+              TagHostKind.collection, collectionTagEntryKey(cid));
+          await (delete(mediaCollections)..where((t) => t.id.equals(cid)))
+              .go();
         }
       });
 

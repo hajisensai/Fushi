@@ -73,8 +73,9 @@ void main() {
         reason: '找不到删除入口实现体的结尾（下一个同级成员）');
     final String impl = repo.substring(implAt, implEnd);
     for (final String step in <String>[
-      'deleteVideoBook(',
-      '_reclaimDeletedVideoBookAssetsUnlocked(',
+      // BUG-2754：删行收成单事务批量 deleteVideoBooks、回收收成批量版。
+      'deleteVideoBooks(',
+      '_reclaimDeletedVideoBooksAssetsUnlocked(',
       'compactAfterVideoDeleteBestEffort(',
     ]) {
       expect(impl.contains(step), isTrue,

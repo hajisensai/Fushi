@@ -46,7 +46,6 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
-import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
@@ -1742,19 +1741,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 目标集在确认框弹出前就定死（[targetUids]），删除时不重新读 `_selectedUids`
     // ——否则删除量与用户刚点头的数字对不上。
     final Set<String> toDelete = targetUids;
-    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
-      repo: widget.repo,
-      database: db,
-      pipeline: appModel.videoDownloadPipelineService,
-      bookUids: toDelete,
-      decision: decision,
-      afterDeleteBeforeReclaim: () async {
-        if (!mounted) return;
-        _exitSelectionMode();
-        _refreshAfterTagChange();
-        await _waitForVideoCardsToUnmount();
-      },
-    );
+    final VideoLibraryDeleteResult result;
+    try {
+      result = await deleteVideoBooksWithDecision(
+        repo: widget.repo,
+        database: db,
+        pipeline: appModel.videoDownloadPipelineService,
+        bookUids: toDelete,
+        decision: decision,
+        afterDeleteBeforeReclaim: () async {
+          if (!mounted) return;
+          _exitSelectionMode();
+          _refreshAfterTagChange();
+          await _waitForVideoCardsToUnmount();
+        },
+      );
+    } catch (e, stack) {
+      // BUG-2754：整批删除抛出（如刮削清理占着操作闸门）不能半截中断、无提示、
+      // 卡在多选里——退出多选、刷新到库里真实状态，并把原因告诉用户。逐条失败
+      // 不走这里（它们汇总在 result.failed 里，由下方统一提示）。
+      ErrorLogService.instance.log('HomeVideoPage.batchDelete', e, stack);
+      if (!mounted) return;
+      _exitSelectionMode();
+      _refreshAfterTagChange();
+      FushiToast.show(
+        msg: t.video_library_delete_failed(reason: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     final int deleted = result.deleted;
     // 纯解散合集时上面的视频删除集合为空，仍需刷新页面。
     if (toDelete.isEmpty && mounted) {
@@ -1774,14 +1789,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : collectionCount == 0
                 ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    FushiToast.show(
-      msg: successMsg,
-      severity: deleted > 0 || dissolved > 0
-          ? ToastSeverity.success
-          : ToastSeverity.warning,
-    );
-    reportLocalFileDeleteFailures(
-      result.localFiles,
+    // 全部失败时只报失败（下方 reportVideoLibraryDeleteFailures），不再叠一条
+    // 「已删除 0 个」。
+    if (deleted > 0 || dissolved > 0 || result.failed.isEmpty) {
+      FushiToast.show(
+        msg: successMsg,
+        severity: deleted > 0 || dissolved > 0
+            ? ToastSeverity.success
+            : ToastSeverity.warning,
+      );
+    }
+    reportVideoLibraryDeleteFailures(
+      result,
       source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
   }
@@ -3388,21 +3407,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       statisticsSubtitle: t.delete_statistics_video_desc,
     );
     if (decision == null || !mounted) return;
-    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
-      repo: widget.repo,
-      database: appModel.database,
-      pipeline: appModel.videoDownloadPipelineService,
-      bookUids: <String>[book.bookUid],
-      decision: decision,
-      afterDeleteBeforeReclaim: () async {
-        if (!mounted) return;
-        _refreshAfterTagChange();
-        await _waitForVideoCardsToUnmount();
-      },
-    );
+    final VideoLibraryDeleteResult result;
+    try {
+      result = await deleteVideoBooksWithDecision(
+        repo: widget.repo,
+        database: appModel.database,
+        pipeline: appModel.videoDownloadPipelineService,
+        bookUids: <String>[book.bookUid],
+        decision: decision,
+        afterDeleteBeforeReclaim: () async {
+          if (!mounted) return;
+          _refreshAfterTagChange();
+          await _waitForVideoCardsToUnmount();
+        },
+      );
+    } catch (e, stack) {
+      // BUG-2754：删除抛出不能无声无息——刷新到真实状态并告知原因。
+      ErrorLogService.instance.log('HomeVideoPage.deleteVideo', e, stack);
+      if (!mounted) return;
+      _refreshAfterTagChange();
+      FushiToast.show(
+        msg: t.video_library_delete_failed(reason: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
-    reportLocalFileDeleteFailures(
-      result.localFiles,
+    reportVideoLibraryDeleteFailures(
+      result,
       source: 'HomeVideoPage.deleteLocalFiles',
     );
   }
@@ -6884,8 +6916,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             deleteStatistics: deleteStatistics,
           ),
         );
-        reportLocalFileDeleteFailures(
-          result.localFiles,
+        reportVideoLibraryDeleteFailures(
+          result,
           source: 'HomeVideoPage.deleteCollectionMembers',
         );
       },
@@ -7598,8 +7630,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 deleteStatistics: deleteStatistics,
               ),
             );
-            reportLocalFileDeleteFailures(
-              result.localFiles,
+            reportVideoLibraryDeleteFailures(
+              result,
               source: 'VideoWorkDetailPage.deleteCollectionMembers',
             );
           },
