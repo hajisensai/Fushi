@@ -25,7 +25,7 @@ import 'package:fushi/src/utils/components/nav_rail_brand_button.dart';
 import 'package:fushi/src/utils/misc/build_version.dart';
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
-import 'package:fushi/src/pages/implementations/module_settings_view.dart';
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart';
 import 'package:fushi/src/pages/implementations/managed_video_source_prompt.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -2333,37 +2333,8 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 推一页独立的「设置 › AI」（提供商 + 功能指派），返回即回到原入口。
-  Future<void> _pushAiSettings(BuildContext context) {
-    return Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (BuildContext context) => Scaffold(
-          body: SafeArea(
-            child: ModuleSettingsView(
-              destinationId: SettingsDestinationId.ai,
-              navigation: Row(
-                children: <Widget>[
-                  FushiIconButton(
-                    icon: Icons.arrow_back,
-                    tooltip: t.back,
-                    onTap: () => Navigator.of(context).maybePop(),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      t.ai_settings_title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Future<void> _pushAiSettings(BuildContext context) =>
+      pushAiSettingsPage(context);
 
   void _showVideoDiscoveryMessage(BuildContext context, String message) {
     if (!context.mounted) return;

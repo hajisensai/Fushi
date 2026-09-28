@@ -125,6 +125,14 @@ class _FakeAppModel extends AppModel {
   FushiDatabase get database =>
       testDatabase ??= FushiDatabase.forTesting(NativeDatabase.memory());
 
+  /// 发现排第一后，「下载」左邻在有小说在线源的平台上是「扩展」页签，它会建
+  /// LNReader 管理器（根目录在数据库目录下）；给一个临时目录让它建得起来。
+  Directory? testDatabaseDirectory;
+
+  @override
+  Directory get databaseDirectory => testDatabaseDirectory ??=
+      Directory.systemTemp.createTempSync('fushi_browse_test_');
+
   /// 测试直接给定可见模块（浏览页的页签随它增减）。
   ModuleVisibility? visibilityOverride;
 
@@ -354,7 +362,8 @@ void main() {
     expect(outer().index, downloadsIndex);
     expect(find.text(t.download_subscription_empty_title), findsOneWidget);
 
-    // 右滑回任务；在首段继续右滑 → 交给上一个顶层页签（「发现」）。
+    // 右滑回任务；在首段继续右滑 → 交给上一个顶层页签（发现排第一后，
+    // 有在线源的平台上是「扩展」，没有时是「发现」）。
     await tester.drag(
       find.text(t.download_subscription_empty_title),
       const Offset(500, 0),

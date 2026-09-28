@@ -89,6 +89,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -3066,6 +3067,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
         // 画出来就一定定位得到作品单元。
         listActions: <DialogListAction>[
+          // 右键 / 长按反查这一集的观看统计（身份 = bookUid）。
+          DialogListAction(
+            label: t.media_stats_action,
+            icon: Icons.insights_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(
+                showMediaItemStatsDialog(
+                  context,
+                  database: appModelNoUpdate.database,
+                  target: MediaItemStatsTarget(
+                    mediaKind: kActivityMediaVideo,
+                    mediaKeys: <String>{book.bookUid},
+                    title: book.title,
+                  ),
+                ),
+              );
+            },
+          ),
           if (widget.scrapeTaskController != null &&
               videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
             DialogListAction(
