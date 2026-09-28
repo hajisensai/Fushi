@@ -5773,6 +5773,15 @@
   "favorites_batch_mine_render_failed": "The dictionary popup did not load",
   "favorites_batch_mine_text_only": "No sentence media — text-only card",
   "favorites_batch_mine_skipped": "Skipped",
+  "stat_range_mode_day": "Day",
+  "stat_range_mode_week": "Week",
+  "stat_range_mode_month": "Month",
+  "stat_range_mode_year": "Year",
+  "stat_range_previous": "Previous period",
+  "stat_range_next": "Next period",
+  "stat_range_summary": "Selected range",
+  "stat_range_active_days": "Active days",
+  "stat_range_calendar": "Study calendar",
   "manga_import_ios_mokuro_needs_folder": "On iOS a single .mokuro can't bring its page images along. Pick the whole volume folder (the .mokuro plus its image folder), or a .zip/.cbz of it.",
   "import_folder_copy_failed": "Couldn't copy the folder into the app: $error"
 }

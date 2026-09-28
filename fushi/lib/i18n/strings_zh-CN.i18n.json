@@ -5773,6 +5773,15 @@
   "favorites_batch_mine_render_failed": "查词弹窗没有加载出来",
   "favorites_batch_mine_text_only": "没有可用的句子媒体，已制成纯文字卡",
   "favorites_batch_mine_skipped": "已跳过",
+  "stat_range_mode_day": "日",
+  "stat_range_mode_week": "周",
+  "stat_range_mode_month": "月",
+  "stat_range_mode_year": "年",
+  "stat_range_previous": "上一段",
+  "stat_range_next": "下一段",
+  "stat_range_summary": "所选范围",
+  "stat_range_active_days": "活跃天数",
+  "stat_range_calendar": "学习日历",
   "manga_import_ios_mokuro_needs_folder": "iOS 上单选 .mokuro 带不上它的页图。请选整卷文件夹（含 .mokuro 和它的页图文件夹），或把整卷打包成 .zip/.cbz 再导入。",
   "import_folder_copy_failed": "无法把文件夹复制进应用：$error"
 }
