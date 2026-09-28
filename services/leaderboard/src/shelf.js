@@ -1,40 +1,53 @@
-// 公开书架上报：整份上报、整份替换、幂等。
+// 公开书架上报：**增量协议**，幂等。
+//
+//   POST /v1/shelf { reset?, put: [条目 ≤ 500], remove: [workId ≤ 500], daily: [{date, chars} ≤ 400] }
+//   reset = 先清空本账户书架与每日计分（首次同步 / 对账失败时用，随后分批 put）。
+//   put   = 每部作品覆盖写（客户端发该作品合并后的完整值）；remove = 删除这些作品的行；
+//   daily = 按日期覆盖当天字数（chars = 0 即清零）。
+//
+// 成本模型：D1 按读/写行数计量，所以一次请求的读写行数只随这一批的大小变化，与总用户数、
+// 作品读者数无关——计数全部增量维护（accounts.shelf_count、works.readers、stat_days、
+// account_totals），不做现场 COUNT / 全表扫描；众数只看每部作品最近 200 位读者。
+// 写入前按估算行数扣全局日预算（budget.js）与每账户日上限。
 //
 // 作品身份：条目带一组按优先级排列的匹配键 refs（bgm:/isbn:/vndb:/tmdb:/anidb:/src:/t:），
-// 每个命名空间至多一个；存储时统一加 '<kind>|' 前缀。
-//
-// 解析在 JS 里一次算完（resolveUpload，纯函数），SQL 只做线性的批量写：
-//   1. 一次查询取出本次所有键里已存在的别名，再一次查询取出这些作品已有的命名空间；
+// 每个命名空间至多一个；存储时统一加 '<kind>|' 前缀。解析在 JS 里一次算完（resolveUpload）：
+//   1. 一次查询取出本批所有键里已存在的别名，再一次查询取出这些作品已有的命名空间；
 //   2. 每条目：第一个已存在别名指向的作品；没有的条目按「共用新键」union-find 成组，
 //      组内跟随第一个已解析成员，否则整组共建一部新作品；
 //   3. 新键挂到「第一个带它的条目」解析出的作品上——但强 ID 命名空间（bgm/isbn/…）
 //      已有键的作品不再挂同命名空间的新键（防止一条 [bgm:1, bgm:2…] 把无关作品抢注合并）；
-//   4. 同一作品的多条目在 JS 里合并成一行书架；
-//   5. 建作品 / 挂别名 / 换书架 / 回写众数 / 封面 / 每日字数 / 清孤儿，全在一个 batch（事务）里。
-//
-// 为什么不在 SQL 里解析：相关子查询让每部作品重扫整份 JSON，耗时随条目数平方增长
-// （实测 5000 条 47 秒，超过 D1 单查询时限），且组内共用新键时会留下幽灵作品。
+//   4. 同一作品的多条目在 JS 里合并成一行书架。
 //
 // 已知竞态：两人在同一瞬间首次上报同一部全新作品，各建一部、后者的新键 INSERT OR IGNORE
 // 落空 → 同一作品被拆成两部，由管理员合并。概率极低，不值得为它加锁。
 
 import { HttpError, clampInt, randomId, utcDateKey } from './util.js';
+import { spend } from './budget.js';
+import { DAY, LIMITS, hit } from './ratelimit.js';
 
 export const KINDS = ['book', 'manga', 'video', 'game'];
-/** 书架条目上限。受 D1 单参数约 2MB 约束（见 MAX_PARAM_BYTES），不是随意取的。 */
-export const MAX_ENTRIES = 8000;
-export const MAX_DAILY = 5000;
+export const MAX_PUT = 500;
+export const MAX_REMOVE = 500;
+export const MAX_DAILY = 400;
+/** 单账户书架行数上限（也受 D1 单参数约 2MB 约束——reset 时要一次读出全部旧行）。 */
+export const MAX_SHELF_ROWS = 8000;
 export const DAILY_CHARS_CAP = 400000;
-export const MAX_SHELF_BODY = 4 * 1024 * 1024;
+export const MAX_SHELF_BODY = 1024 * 1024;
 /** 单个绑定参数（JSON 串）的字节上限；D1 线上约 2MB，node:sqlite 不限，所以必须自己查。 */
 export const MAX_PARAM_BYTES = 1900 * 1024;
+/** 计分规则：同一账户同一天最多计 30 部（批量补标历史作品照常入架，只是不刷分）。 */
+export const DAILY_FINISH_CAP = 30;
+/** 众数投票只看每部作品最近这么多位读者（有界读取）。 */
+export const META_VOTERS = 200;
+const ID_RE = /^[A-Za-z0-9_-]{1,32}$/;
 
-export const NAMESPACES = ['bgm', 'isbn', 'vndb', 'tmdb', 'anidb', 'src', 't'];
+export const NAMESPACES = ['bgm', 'isbn', 'vndb', 'anidb', 'mal', 'tmdb', 'src', 't'];
 /** 强 ID：同一作品同命名空间只认第一个键。't'（标题+作者）是弱键，译名/变体可以挂多个。 */
-export const STRONG_NAMESPACES = new Set(['bgm', 'isbn', 'vndb', 'tmdb', 'anidb', 'src']);
+export const STRONG_NAMESPACES = new Set(['bgm', 'isbn', 'vndb', 'anidb', 'mal', 'tmdb', 'src']);
 export const MAX_REFS = NAMESPACES.length;
 
-const REF_RE = /^(bgm|isbn|vndb|tmdb|anidb|src|t):[^\u0000-\u001f]{1,256}$/;
+const REF_RE = /^(bgm|isbn|vndb|anidb|mal|tmdb|src|t):[^\u0000-\u001f]{1,256}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EARLIEST_MS = Date.UTC(2000, 0, 1);
 const DAY_MS = 24 * 3600 * 1000;
@@ -135,17 +148,26 @@ export function normalizeDaily(d, i, now) {
 }
 
 export function normalizeUpload(body, now) {
-  if (!body || !Array.isArray(body.entries)) throw new HttpError(400, 'bad_upload');
-  if (body.entries.length > MAX_ENTRIES) throw new HttpError(413, 'too_many_entries');
-  const daily = Array.isArray(body.daily) ? body.daily : [];
-  if (daily.length > MAX_DAILY) throw new HttpError(413, 'too_many_daily');
-  const entries = body.entries.map((e, i) => normalizeEntry(e, i, now));
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'bad_upload');
+  const put = body.put === undefined ? [] : body.put;
+  const remove = body.remove === undefined ? [] : body.remove;
+  const daily = body.daily === undefined ? [] : body.daily;
+  if (!Array.isArray(put) || !Array.isArray(remove) || !Array.isArray(daily)) throw new HttpError(400, 'bad_upload');
+  if (put.length > MAX_PUT || remove.length > MAX_REMOVE || daily.length > MAX_DAILY) {
+    throw new HttpError(413, 'batch_too_large');
+  }
+  for (const id of remove) if (typeof id !== 'string' || !ID_RE.test(id)) throw new HttpError(400, 'bad_remove');
   const dailyMap = new Map();
   daily.forEach((d, i) => {
     const n = normalizeDaily(d, i, now);
     dailyMap.set(n.date, n.chars); // 同日重复取后者
   });
-  return { entries, daily: [...dailyMap].map(([date, chars]) => ({ date, chars })) };
+  return {
+    reset: body.reset === true,
+    put: put.map((e, i) => normalizeEntry(e, i, now)),
+    remove: [...new Set(remove)],
+    daily: [...dailyMap].map(([date, chars]) => ({ date, chars })),
+  };
 }
 
 function finishRank(at) {
@@ -253,6 +275,8 @@ function jsonParam(value) {
   return s;
 }
 
+const J = (p) => `json_extract(value, '$.${p}')`;
+
 /**
  * 「这些作品若已无人在架就删掉」的两条语句（别名 + 作品，后者 RETURNING cover_key 供删 R2）。
  * 判据写在删除语句自身里、并与其它写入同处一个事务——先查孤儿再另发删除会误删别人刚上架的作品。
@@ -273,49 +297,171 @@ export function orphanPurgeStatements(db, idsJson) {
   ];
 }
 
-export async function deleteCoverObjects(env, purgeResult) {
-  const keys = ((purgeResult && purgeResult.results) || []).map((r) => r.cover_key).filter(Boolean);
-  if (keys.length) await env.MEDIA.delete(keys);
+export function coverKeysOf(purgeResult) {
+  return ((purgeResult && purgeResult.results) || []).map((r) => r.cover_key).filter(Boolean);
 }
 
-/** 作品展示字段 = 未隐藏读者上报的众数（管理员锁定的作品除外）。 */
-export function recomputeMetaStatement(db, idsJson) {
-  const mode = (col) => `(SELECT s.${col} FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
-                          WHERE s.work_id = works.id
-                          GROUP BY s.${col} ORDER BY COUNT(*) DESC, MIN(s.updated_at) ASC LIMIT 1)`;
+/**
+ * 作品展示字段 = 最近 META_VOTERS 位未隐藏读者上报的众数（管理员锁定的除外；作者只数非空票）。
+ * 有界：沿 idx_shelf_work 取最近的读者，不随作品总读者数增长。idSubquery 选出要重算的作品 id。
+ */
+export function recomputeMetaStatementWhere(db, idSubquery) {
+  const voters = `SELECT s.title, s.author FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
+                  WHERE s.work_id = works.id ORDER BY s.finished_at DESC LIMIT ${META_VOTERS}`;
   return db.prepare(
-    `UPDATE works SET title = COALESCE(${mode('title')}, title), author = COALESCE(${mode('author')}, author)
-     WHERE locked = 0 AND id IN (SELECT value FROM json_each(?1))`,
-  ).bind(idsJson);
+    `UPDATE works SET
+       title = COALESCE((SELECT title FROM (${voters}) GROUP BY title ORDER BY COUNT(*) DESC, title LIMIT 1), title),
+       author = COALESCE((SELECT author FROM (${voters}) WHERE author != ''
+                          GROUP BY author ORDER BY COUNT(*) DESC, author LIMIT 1), '')
+     WHERE locked = 0 AND id IN (${idSubquery})`,
+  );
 }
 
-/** 执行整份上报。返回每条上报条目（按下标）对应的作品 id 与是否缺封面。 */
-export async function replaceShelf(env, accountId, upload, now) {
-  const db = env.DB;
-  const allRefs = [...new Set(upload.entries.flatMap((e) => e.refs))];
-  const found = await db.prepare(
-    `SELECT a.ref, a.work_id FROM work_aliases a JOIN works w ON w.id = a.work_id
-     WHERE a.ref IN (SELECT value FROM json_each(?1))`,
-  ).bind(jsonParam(allRefs)).all();
-  const existing = new Map(found.results.map((r) => [r.ref, r.work_id]));
-  const knownWorks = [...new Set(existing.values())];
-  const nsRows = await db.prepare(
-    'SELECT work_id, ref FROM work_aliases WHERE work_id IN (SELECT value FROM json_each(?1))',
-  ).bind(jsonParam(knownWorks)).all();
-  const workNs = new Map();
-  for (const r of nsRows.results) {
-    if (!workNs.has(r.work_id)) workNs.set(r.work_id, new Set());
-    workNs.get(r.work_id).add(refNamespace(r.ref));
+/** 按 id 列表（JSON）重算众数。 */
+export function recomputeMetaStatement(db, idsJson) {
+  return recomputeMetaStatementWhere(db, 'SELECT value FROM json_each(?1)').bind(idsJson);
+}
+
+/**
+ * 重算一个账户若干天（dates JSON；null = 全部天）的计分行与总计。读取只涉及该账户自己的行。
+ * 返回语句数组（放进调用方的事务）。
+ */
+export function accountStatsStatements(db, accountId, datesJson) {
+  const dateFilter = datesJson === null ? '' : 'AND date_key IN (SELECT value FROM json_each(?2))';
+  const shelfDateFilter = datesJson === null ? '' : 'AND s.finished_date IN (SELECT value FROM json_each(?2))';
+  const cap = (k) => `MIN(SUM(w.kind = '${k}'), ${DAILY_FINISH_CAP})`;
+  const binds = datesJson === null ? [accountId] : [accountId, datesJson];
+  const unknown = (k) => `(SELECT COUNT(*) FROM shelf s JOIN works w ON w.id = s.work_id
+                           WHERE s.account_id = ?1 AND s.finished_at = 0 AND w.kind = '${k}')`;
+  return [
+    db.prepare(
+      `UPDATE stat_days SET book = 0, manga = 0, video = 0, game = 0 WHERE account_id = ?1 ${dateFilter}`,
+    ).bind(...binds),
+    db.prepare(
+      `INSERT INTO stat_days (account_id, date_key, book, manga, video, game)
+       SELECT ?1, s.finished_date, ${cap('book')}, ${cap('manga')}, ${cap('video')}, ${cap('game')}
+       FROM shelf s JOIN works w ON w.id = s.work_id
+       WHERE s.account_id = ?1 AND s.finished_at > 0 ${shelfDateFilter}
+       GROUP BY s.finished_date
+       ON CONFLICT (account_id, date_key) DO UPDATE SET
+         book = excluded.book, manga = excluded.manga, video = excluded.video, game = excluded.game`,
+    ).bind(...binds),
+    db.prepare(
+      `DELETE FROM stat_days WHERE account_id = ?1 ${dateFilter}
+         AND book = 0 AND manga = 0 AND video = 0 AND game = 0 AND chars = 0`,
+    ).bind(...binds),
+    db.prepare(
+      `INSERT INTO account_totals (account_id, book, manga, video, game, chars)
+       SELECT ?1,
+              COALESCE(SUM(book), 0) + ${unknown('book')}, COALESCE(SUM(manga), 0) + ${unknown('manga')},
+              COALESCE(SUM(video), 0) + ${unknown('video')}, COALESCE(SUM(game), 0) + ${unknown('game')},
+              COALESCE(SUM(chars), 0)
+       FROM stat_days WHERE account_id = ?1
+       ON CONFLICT (account_id) DO UPDATE SET
+         book = excluded.book, manga = excluded.manga, video = excluded.video,
+         game = excluded.game, chars = excluded.chars`,
+    ).bind(accountId),
+  ];
+}
+
+/** 作品读者数增量：deltas = [{id, d}]。 */
+export function readersDeltaStatement(db, deltasJson) {
+  return db.prepare(
+    `UPDATE works SET readers = MAX(0, works.readers + j.d)
+     FROM (SELECT ${J('id')} AS id, SUM(${J('d')}) AS d FROM json_each(?1) GROUP BY 1) AS j
+     WHERE works.id = j.id AND j.d != 0`,
+  ).bind(deltasJson);
+}
+
+const isFinished = (at) => at !== null && at !== undefined;
+
+/**
+ * 纯函数：本批之后的新旧差。对每个被触及的作品只用一条规则——
+ *   之后存在 = 在 put 里，或（非 reset 且旧行存在且不在 remove 里）；
+ *   之后读完 = put 的看新值，否则沿用旧值；
+ *   书架行数差 / 读者数差 = 之后 − 之前。
+ * @param oldRows Map<workId, {finished_at, finished_date}>（reset 时是本账户全部旧行）
+ * @param putRows resolveUpload().rows
+ */
+export function shelfDiff({ reset, remove, oldRows, putRows }) {
+  const put = new Map(putRows.map((r) => [r.workId, r]));
+  const removeSet = new Set(remove);
+  const ids = new Set([...oldRows.keys(), ...put.keys(), ...remove]);
+  let countDelta = 0;
+  const readerDeltas = [];
+  const dates = new Set();
+  const gone = [];
+  for (const id of ids) {
+    const o = oldRows.get(id);
+    const p = put.get(id);
+    const existedBefore = o !== undefined;
+    const existsAfter = p !== undefined || (!reset && existedBefore && !removeSet.has(id));
+    const finishedBefore = existedBefore && isFinished(o.finished_at);
+    const finishedAfter = p !== undefined ? isFinished(p.finishedAt) : existsAfter && finishedBefore;
+    countDelta += (existsAfter ? 1 : 0) - (existedBefore ? 1 : 0);
+    const d = (finishedAfter ? 1 : 0) - (finishedBefore ? 1 : 0);
+    if (d !== 0) readerDeltas.push({ id, d });
+    if (existedBefore && !existsAfter) gone.push(id);
+    const changed = p !== undefined || !existsAfter;
+    if (changed && o && o.finished_date) dates.add(o.finished_date);
+    if (p && p.finishedDate) dates.add(p.finishedDate);
   }
-  const prev = await db.prepare('SELECT work_id FROM shelf WHERE account_id = ?1').bind(accountId).all();
+  return { countDelta, readerDeltas, dates, gone };
+}
 
-  const res = resolveUpload(upload.entries, existing, workNs);
-  const myWorks = jsonParam(res.rows.map((r) => r.workId));
+/** 执行一批增量上报。返回 put 条目（按下标）对应的作品与是否缺封面、服务端书架行数、待删 R2 key。 */
+export async function applyShelfDelta(env, account, upload, now) {
+  const db = env.DB;
+  const accountId = account.id;
+
+  // 1. 解析本批 put 的作品（读取量 ≈ 本批键数）。
+  let res = { entryWork: [], newWorks: [], newAliases: [], rows: [] };
+  if (upload.put.length) {
+    const allRefs = [...new Set(upload.put.flatMap((e) => e.refs))];
+    const found = await db.prepare(
+      `SELECT a.ref, a.work_id FROM work_aliases a JOIN works w ON w.id = a.work_id
+       WHERE a.ref IN (SELECT value FROM json_each(?1))`,
+    ).bind(jsonParam(allRefs)).all();
+    const existing = new Map(found.results.map((r) => [r.ref, r.work_id]));
+    const nsRows = await db.prepare(
+      'SELECT work_id, ref FROM work_aliases WHERE work_id IN (SELECT value FROM json_each(?1))',
+    ).bind(jsonParam([...new Set(existing.values())])).all();
+    const workNs = new Map();
+    for (const r of nsRows.results) {
+      if (!workNs.has(r.work_id)) workNs.set(r.work_id, new Set());
+      workNs.get(r.work_id).add(refNamespace(r.ref));
+    }
+    res = resolveUpload(upload.put, existing, workNs);
+  }
+
+  // 2. 被触及的旧行（reset = 本账户全部旧行；否则只按 PK 取本批涉及的作品）。
+  const putIds = res.rows.map((r) => r.workId);
+  const old = upload.reset
+    ? await db.prepare('SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1')
+      .bind(accountId).all()
+    : await db.prepare(
+      `SELECT work_id, finished_at, finished_date FROM shelf
+       WHERE account_id = ?1 AND work_id IN (SELECT value FROM json_each(?2))`,
+    ).bind(accountId, jsonParam([...new Set([...putIds, ...upload.remove])])).all();
+  const oldRows = new Map(old.results.map((r) => [r.work_id, r]));
+
+  // 3. 新旧差（纯函数）。
+  const diff = shelfDiff({ reset: upload.reset, remove: upload.remove, oldRows, putRows: res.rows });
+  const newCount = (upload.reset ? old.results.length : account.shelf_count) + diff.countDelta;
+  if (newCount > MAX_SHELF_ROWS) throw new HttpError(413, 'shelf_full');
+  for (const d of upload.daily) diff.dates.add(d.date);
+  // 被隐藏的账户不计入任何作品的读者数，也不参与众数。
+  const readerDeltas = account.hidden ? [] : diff.readerDeltas;
+
+  // 4. 预算：按估算写入行数扣本账户日上限与全局日预算。
+  const estRows = res.newWorks.length + res.newAliases.length + res.rows.length * 2 + diff.gone.length * 2 +
+    diff.dates.size * 2 + readerDeltas.length + 8;
+  await hit(env, `rows:${accountId}`, DAY, LIMITS.shelfRowsPerAccountDay, now, estRows);
+  await spend(env, 'write_rows', estRows, now);
+
+  // 5. 一个事务写完。
   const rowsJson = jsonParam(res.rows.map((r) => ({ ...r, refs: JSON.stringify(r.refs) })));
-  const prevJson = jsonParam(prev.results.map((r) => r.work_id));
-  const J = (p) => `json_extract(value, '$.${p}')`;
-
-  const results = await db.batch([
+  const stmts = [
     db.prepare(
       `INSERT INTO works (id, kind, title, author, created_at)
        SELECT ${J('id')}, ${J('kind')}, ${J('title')}, ${J('author')}, ?2 FROM json_each(?1)`,
@@ -324,14 +470,29 @@ export async function replaceShelf(env, accountId, upload, now) {
       `INSERT OR IGNORE INTO work_aliases (ref, work_id)
        SELECT ${J('ref')}, ${J('workId')} FROM json_each(?1)`,
     ).bind(jsonParam(res.newAliases)),
-    db.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(accountId),
+  ];
+  if (upload.reset) {
+    stmts.push(
+      db.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(accountId),
+      db.prepare('DELETE FROM stat_days WHERE account_id = ?1').bind(accountId),
+    );
+  } else if (diff.gone.length) {
+    stmts.push(db.prepare(
+      'DELETE FROM shelf WHERE account_id = ?1 AND work_id IN (SELECT value FROM json_each(?2))',
+    ).bind(accountId, jsonParam(diff.gone)));
+  }
+  stmts.push(
     db.prepare(
       `INSERT INTO shelf (account_id, work_id, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
        SELECT ?2, ${J('workId')}, ${J('refs')}, ${J('title')}, ${J('author')}, ${J('finishedAt')},
               ${J('finishedDate')}, ${J('chars')}, ${J('ms')}, ?3
-       FROM json_each(?1)`,
+       FROM json_each(?1) WHERE 1
+       ON CONFLICT (account_id, work_id) DO UPDATE SET
+         refs = excluded.refs, title = excluded.title, author = excluded.author,
+         finished_at = excluded.finished_at, finished_date = excluded.finished_date,
+         chars = excluded.chars, ms = excluded.ms, updated_at = excluded.updated_at`,
     ).bind(rowsJson, accountId, now),
-    recomputeMetaStatement(db, myWorks),
+    readersDeltaStatement(db, jsonParam(readerDeltas)),
     // 远端封面先到先得（已有上传缩略图的不覆盖）；nsfw 只升不降（降级只能管理员做）。
     db.prepare(
       `UPDATE works SET
@@ -340,19 +501,41 @@ export async function replaceShelf(env, accountId, upload, now) {
        FROM (SELECT ${J('workId')} AS id, ${J('coverUrl')} AS cover, ${J('nsfw')} AS nsfw FROM json_each(?1)) AS j
        WHERE works.id = j.id`,
     ).bind(rowsJson),
-    db.prepare('DELETE FROM daily_chars WHERE account_id = ?1').bind(accountId),
     db.prepare(
-      `INSERT INTO daily_chars (account_id, date_key, chars)
-       SELECT ?2, ${J('date')}, ${J('chars')} FROM json_each(?1) WHERE ${J('chars')} > 0`,
+      `INSERT INTO stat_days (account_id, date_key, chars)
+       SELECT ?2, ${J('date')}, ${J('chars')} FROM json_each(?1) WHERE 1
+       ON CONFLICT (account_id, date_key) DO UPDATE SET chars = excluded.chars`,
     ).bind(jsonParam(upload.daily), accountId),
-    ...orphanPurgeStatements(db, prevJson),
-  ]);
-  await deleteCoverObjects(env, results[results.length - 1]);
+    ...accountStatsStatements(db, accountId, upload.reset ? null : jsonParam([...diff.dates])),
+    db.prepare('UPDATE accounts SET shelf_count = ?2 WHERE id = ?1').bind(accountId, newCount),
+  );
+  if (!account.hidden) stmts.push(metaIfChangedStatement(db, rowsJson));
+  stmts.push(...orphanPurgeStatements(db, jsonParam(diff.gone)));
+  const results = await db.batch(stmts);
+  const coverKeys = coverKeysOf(results[results.length - 1]);
 
   const covers = await db.prepare(
     `SELECT id, (cover_url IS NULL AND cover_key IS NULL) AS needs_cover FROM works
      WHERE id IN (SELECT value FROM json_each(?1))`,
-  ).bind(myWorks).all();
+  ).bind(jsonParam(putIds)).all();
   const needs = new Map(covers.results.map((r) => [r.id, r.needs_cover === 1]));
-  return res.entryWork.map((workId, i) => ({ i, workId, needsCover: needs.get(workId) === true }));
+  return {
+    coverKeys,
+    works: res.entryWork.map((workId, i) => ({ i, workId, needsCover: needs.get(workId) === true })),
+    shelfCount: newCount,
+  };
+}
+
+/**
+ * 众数只在「上报的标题 / 非空作者」与作品现值不同时重算：热门作品绝大多数上报都与现值一致，
+ * 这样常态下一行都不用读。
+ */
+function metaIfChangedStatement(db, rowsJson) {
+  return recomputeMetaStatementWhere(
+    db,
+    `SELECT j.id FROM (SELECT ${J('workId')} AS id, ${J('title')} AS title, ${J('author')} AS author
+                       FROM json_each(?1)) AS j
+     JOIN works w2 ON w2.id = j.id
+     WHERE w2.title != j.title OR (j.author != '' AND w2.author != j.author)`,
+  ).bind(rowsJson);
 }

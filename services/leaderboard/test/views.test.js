@@ -7,7 +7,7 @@ const NOW = Date.UTC(2026, 8, 30, 12);
 const at = (date) => ({ finishedAt: Date.parse(`${date}T10:00:00Z`), finishedDate: date });
 
 async function upload(env, u, entries, daily = []) {
-  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { entries, daily }, now: NOW });
+  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { reset: true, put: entries, daily }, now: NOW });
   if (r.status !== 200) throw new Error(JSON.stringify(r.data));
   return r.data.works;
 }
@@ -187,7 +187,28 @@ describe('用户主页 / 书架 / 作品页', () => {
     expect(anon.data.readers).toBe(4);
     expect(anon.data.rows.map((x) => x.account.nickname).sort()).toEqual(['r2', 'r3', 'tom']);
     const friendView = await call(env, 'GET', `/v1/works/${workId}`, { key: r2.key, account: r2.id, now: NOW });
-    expect(friendView.data.rows[0].account.nickname).toBe('r1'); // 好友优先
+    // 作品页读者列表沿索引按读完时间倒序（有界分页）；仅好友可见的 r1 只对好友出现。
+    expect(friendView.data.rows.map((x) => x.account.nickname).sort()).toEqual(['r1', 'r2', 'r3', 'tom']);
+  });
+
+  it('读者墙好友优先', async () => {
+    const env = makeEnv();
+    const owner = await registerUser(env, 'owner', { now: NOW });
+    const viewer = await registerUser(env, 'viewer', { now: NOW });
+    const others = [];
+    for (let i = 0; i < 9; i++) others.push(await registerUser(env, `o${i}`, { now: NOW }));
+    const friend = await registerUser(env, 'friend', { now: NOW });
+    const e = (date) => entry('book', ['t:wall|'], 'wall', at(date));
+    await upload(env, owner, [e('2026-09-20')]);
+    await upload(env, friend, [e('2026-09-01')]); // 最早读完：不靠好友优先就挤不进前 8
+    for (const o of others) await upload(env, o, [e('2026-09-25')]);
+    befriend(env, viewer, friend);
+    const shelf = await call(env, 'GET', `/v1/users/${owner.id}/shelf`, { key: viewer.key, account: viewer.id, now: NOW });
+    const wall = shelf.data.rows[0].wall.map((a) => a.nickname);
+    expect(wall).toHaveLength(8);
+    expect(wall[0]).toBe('friend');
+    const anon = await call(env, 'GET', `/v1/users/${owner.id}/shelf`, { now: NOW });
+    expect(anon.data.rows[0].wall.map((a) => a.nickname)).not.toContain('friend');
   });
 
   it('被隐藏或互相屏蔽的主页 404', async () => {

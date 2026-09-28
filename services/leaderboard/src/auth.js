@@ -58,6 +58,8 @@ async function checkSig(request, publicKey, time, bodyBytes) {
 
 /**
  * 校验已注册账户的签名请求，返回账户行。
+ * X-Fushi-Account 是**设备钥匙 id**（一个账户可绑多台设备，见 device_keys）；首台设备的钥匙 id
+ * 恰好等于账户 id，其它设备不等——账户 id 以返回的账户行为准。
  * - `optional`：没带 X-Fushi-Account 时返回 null（匿名读）；带了就必须验过。
  * - `mutating`：登记签名串，同一签名串第二次到达即 401 replayed。
  */
@@ -68,22 +70,24 @@ export async function authenticate(request, env, bodyBytes, now, { optional = fa
     throw new HttpError(401, 'auth_required');
   }
   const time = readTime(request, now);
-  const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(id).first();
+  const key = await env.DB.prepare('SELECT account_id, pubkey FROM device_keys WHERE key_id = ?1').bind(id).first();
+  if (!key) throw new HttpError(401, 'unknown_account');
+  const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(key.account_id).first();
   if (!account) throw new HttpError(401, 'unknown_account');
-  const spki = b64urlDecode(account.pubkey);
+  const spki = b64urlDecode(key.pubkey);
   const msg = await checkSig(request, await importPublicKey(spki), time, bodyBytes);
   if (mutating) {
-    const key = hex(await sha256(new TextEncoder().encode(msg)));
+    const dedup = hex(await sha256(new TextEncoder().encode(msg)));
     const res = await env.DB
       .prepare('INSERT OR IGNORE INTO used_sigs (account_id, sig, time) VALUES (?1, ?2, ?3)')
-      .bind(id, key, time)
+      .bind(id, dedup, time)
       .run();
     if (!res.meta || res.meta.changes !== 1) throw new HttpError(401, 'replayed');
   }
   return account;
 }
 
-/** 注册请求：公钥在 body，签名用同一把钥匙（证明持有私钥）。返回 {spki, pubkeyB64, id, time}。 */
+/** 注册 / 登录请求：公钥在 body，签名用同一把钥匙（证明持有私钥）。返回 {spki, pubkeyB64, id(=key_id), time}。 */
 export async function verifyRegistration(request, pubkeyB64, bodyBytes, now) {
   const spki = b64urlDecode(pubkeyB64);
   if (!spki || spki.length < 60 || spki.length > 120) throw new HttpError(400, 'bad_pubkey');

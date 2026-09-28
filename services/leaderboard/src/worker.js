@@ -4,13 +4,15 @@
 // secrets：ADMIN_USER / ADMIN_PASS；可选 vars：BANNED_WORDS。
 //
 // API（JSON；签名见 auth.js）：
-//   POST   /v1/register                 {pubkey, nickname}      注册（幂等）
+//   POST   /v1/email/code               {email, purpose, lang?} 发邮箱验证码（email.js；永远 202）
+//   POST   /v1/register                 {pubkey, nickname, email, code} 注册（验证码；幂等）
+//   POST   /v1/login                    {pubkey, email, code}   新设备登录（绑定本机钥匙）
 //   GET    /v1/me                        [签名]                  自己的账户
 //   PATCH  /v1/me                        [签名] {nickname?, visibility?}
 //   DELETE /v1/me                        [签名]                  删除账户与全部数据
 //   PUT    /v1/me/avatar                 [签名] 图片字节
 //   DELETE /v1/me/avatar                 [签名]
-//   POST   /v1/shelf                     [签名] {entries, daily} 整份替换书架
+//   POST   /v1/shelf                     [签名] {reset?, put, remove, daily} 增量上报书架（shelf.js）
 //   PUT    /v1/works/:id/cover           [签名] 图片字节          缺封面的作品补缩略图
 //   GET    /v1/rank?metric&window&scope&limit&offset   [可选签名]
 //   GET    /v1/works/popular?window&kind&limit&offset
@@ -27,13 +29,19 @@
 //   GET    /img/<key>                                    R2 出图
 //
 // 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window
+//
+// 成本控制（防 Cloudflare 超额计费）：读接口读快照 + 边缘缓存 + READ_LIMITER 按 IP 限流；
+// 写接口增量、按账户限流、扣全局日预算（budget.js）；定时任务每 30 分钟刷新快照。
 
 import { HttpError, errorResponse, json, parseJsonBytes, readBodyBytes } from './util.js';
 import { SIG_WINDOW_MS, authenticate } from './auth.js';
 import { LIMITS, hit, purgeRateLimits } from './ratelimit.js';
-import { MAX_SHELF_BODY, normalizeUpload, replaceShelf } from './shelf.js';
+import { MAX_SHELF_BODY, applyShelfDelta, normalizeUpload } from './shelf.js';
+import { deleteMedia, purgeBudgets } from './budget.js';
+import { refreshSnapshots } from './snapshots.js';
 import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, setWorkCover } from './media.js';
-import { deleteAccount, register, selfView, updateProfile } from './account.js';
+import { deleteAccount, login, register, selfView, updateProfile } from './account.js';
+import { purgeEmailCodes, requestCode } from './email.js';
 import { leaderboard, popularWorks, userCard, userShelf, workPage } from './views.js';
 import { handleAdmin } from './admin.js';
 import { listBlocks, listFriends, matchSocialWrite } from './social.js';
@@ -103,7 +111,7 @@ async function route(request, env, now, ctx) {
   let m;
 
   if (method === 'GET' && path === '/v1/health') return json({ ok: true });
-  if (method === 'GET' && path.startsWith('/img/')) return serveImage(env, path.slice(5));
+  if (method === 'GET' && path.startsWith('/img/')) return serveImage(env, path.slice(5), request, ctx);
 
   if (path.startsWith('/admin/api/')) {
     const bytes = method === 'POST' ? await readBodyBytes(request, JSON_BODY_MAX) : new Uint8Array();
@@ -111,6 +119,16 @@ async function route(request, env, now, ctx) {
     return handleAdmin(env, request, path, body, now);
   }
 
+  if (method === 'POST' && path === '/v1/email/code') {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    await requestCode(env, clientIp(request), parseJsonBytes(bytes), now);
+    return json({ sent: true }, 202);
+  }
+  if (method === 'POST' && path === '/v1/login') {
+    await hit(env, `login:${clientIp(request)}`, HOUR, LIMITS.registerPerIpHour * 4, now);
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    return json(await login(env, request, parseJsonBytes(bytes), bytes, now));
+  }
   if (method === 'POST' && path === '/v1/register') {
     await hit(env, `register:${clientIp(request)}`, HOUR, LIMITS.registerPerIpHour, now);
     const bytes = await readBodyBytes(request, JSON_BODY_MAX);
@@ -140,7 +158,9 @@ async function route(request, env, now, ctx) {
     const account = await authenticate(request, env, bytes, now, { mutating: true });
     await hit(env, `shelf:${account.id}`, HOUR, LIMITS.shelfUploadPerHour, now);
     const upload = normalizeUpload(parseJsonBytes(bytes), now);
-    return json({ works: await replaceShelf(env, account.id, upload, now) });
+    const res = await applyShelfDelta(env, account, upload, now);
+    await deleteMedia(env, res.coverKeys);
+    return json({ works: res.works, shelfCount: res.shelfCount });
   }
   if (path === '/v1/me/avatar' && (method === 'PUT' || method === 'DELETE')) {
     const bytes = await readBodyBytes(request, AVATAR_MAX_BYTES);
@@ -188,7 +208,10 @@ export default {
   },
   async scheduled(_event, env) {
     const now = Date.now();
+    await refreshSnapshots(env, now);
     await purgeRateLimits(env, now - 2 * 24 * HOUR, now - 2 * SIG_WINDOW_MS);
+    await purgeBudgets(env, now);
+    await purgeEmailCodes(env, now);
   },
 };
 

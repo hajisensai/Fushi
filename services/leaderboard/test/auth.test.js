@@ -1,21 +1,78 @@
 import { describe, expect, it } from 'vitest';
-import { call, makeEnv, newKey, registerUser } from './harness.js';
+import { call, lastCode, makeEnv, newKey, nextIp, registerUser } from './harness.js';
 import { normalizeNickname } from '../src/nickname.js';
 
 const NOW = Date.UTC(2026, 8, 30, 12);
 
-describe('注册', () => {
-  it('首次 201，同一把钥匙重复注册返回同一账户 200', async () => {
+describe('注册（邮箱验证码）', () => {
+  async function codeFor(env, email, purpose = 'register', ip = nextIp()) {
+    const r = await call(env, 'POST', '/v1/email/code', {
+      body: { email, purpose, lang: 'zh' },
+      headers: { 'CF-Connecting-IP': ip },
+      now: NOW,
+    });
+    return { status: r.status, code: lastCode(env, email) };
+  }
+
+  it('验证码注册 201；同一把钥匙重复注册返回同一账户 200（不再要验证码）', async () => {
     const env = makeEnv();
     const key = await newKey();
-    const body = { pubkey: key.pubkey, nickname: 'tom' };
+    const { status, code } = await codeFor(env, 'Tom@Example.com ');
+    expect(status).toBe(202);
+    expect(env.sent[0].to).toBe('tom@example.com');
+    expect(env.sent[0].subject).toBe('Fushi 验证码');
+    const body = { pubkey: key.pubkey, nickname: 'tom', email: 'tom@example.com', code };
     const a = await call(env, 'POST', '/v1/register', { key, body, now: NOW });
     expect(a.status).toBe(201);
-    expect(a.data.nickname).toBe('tom');
+    expect(a.data).toMatchObject({ nickname: 'tom', emailVerified: true });
     expect(a.data.id).toHaveLength(16);
-    const b = await call(env, 'POST', '/v1/register', { key, body, now: NOW + 10 });
+    const b = await call(env, 'POST', '/v1/register', { key, body: { ...body, code: '000000' }, now: NOW + 10 });
     expect(b.status).toBe(200);
     expect(b.data.id).toBe(a.data.id);
+  });
+
+  it('不存邮箱明文', async () => {
+    const env = makeEnv();
+    await registerUser(env, 'tom', { email: 'secret.person@example.com', now: NOW });
+    const dump = JSON.stringify(env.DB.raw.prepare('SELECT * FROM accounts').all())
+      + JSON.stringify(env.DB.raw.prepare('SELECT * FROM email_codes').all());
+    expect(dump).not.toContain('secret.person');
+  });
+
+  it('错码累计 5 次后作废；过期 410；验证码只能用一次', async () => {
+    const env = makeEnv();
+    const key = await newKey();
+    const { code } = await codeFor(env, 'a@example.com');
+    // 每次换 IP：注册入口按 IP 限流（本身就是防暴力猜码的一道），这里要测的是验证码自己的次数上限。
+    const reg = (c, now = NOW) => call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'a', email: 'a@example.com', code: c }, now,
+      headers: { 'CF-Connecting-IP': nextIp() },
+    });
+    const wrong = code === '111111' ? '222222' : '111111';
+    for (let i = 0; i < 5; i++) expect((await reg(wrong)).data.error).toBe('bad_code');
+    expect((await reg(code)).data.error).toBe('too_many_attempts'); // 第 6 次即便对也作废
+    expect((await reg(code)).data.error).toBe('bad_code');
+
+    const env2 = makeEnv();
+    const k2 = await newKey();
+    const c2 = (await codeFor(env2, 'b@example.com')).code;
+    const late = await call(env2, 'POST', '/v1/register', {
+      key: k2, body: { pubkey: k2.pubkey, nickname: 'b', email: 'b@example.com', code: c2 },
+      now: NOW + 11 * 60 * 1000, time: NOW + 11 * 60 * 1000,
+    });
+    expect(late.status).toBe(410);
+  });
+
+  it('同一邮箱只能注册一个账户', async () => {
+    const env = makeEnv();
+    await registerUser(env, 'first', { email: 'dup@example.com', now: NOW });
+    const key = await newKey();
+    const { code } = await codeFor(env, 'dup@example.com');
+    const r = await call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'second', email: 'dup@example.com', code }, now: NOW,
+    });
+    expect(r.status).toBe(409);
+    expect(r.data.error).toBe('email_taken');
   });
 
   it('用别人的公钥注册（签名对不上）→ 401', async () => {
@@ -24,7 +81,7 @@ describe('注册', () => {
     const attacker = await newKey();
     const r = await call(env, 'POST', '/v1/register', {
       key: attacker,
-      body: { pubkey: victim.pubkey, nickname: 'x' },
+      body: { pubkey: victim.pubkey, nickname: 'x', email: 'x@example.com', code: '123456' },
       now: NOW,
     });
     expect(r.status).toBe(401);
@@ -41,20 +98,79 @@ describe('注册', () => {
     expect(seen.size).toBe(5);
   });
 
-  it('注册按 IP 限流', async () => {
+  it('发码按 IP / 按邮箱限流，并受全局日预算约束', async () => {
     const env = makeEnv();
+    const ipStatuses = [];
+    for (let i = 0; i < 6; i++) ipStatuses.push((await codeFor(env, `ip${i}@example.com`, 'register', '1.2.3.4')).status);
+    expect(ipStatuses).toEqual([202, 202, 202, 202, 202, 429]);
+    const addrStatuses = [];
+    for (let i = 0; i < 4; i++) addrStatuses.push((await codeFor(env, 'same@example.com')).status);
+    expect(addrStatuses).toEqual([202, 202, 202, 429]);
+
+    const tight = makeEnv({ BUDGET_EMAIL: '2' });
+    const b = [];
+    for (let i = 0; i < 3; i++) b.push((await codeFor(tight, `b${i}@example.com`)).status);
+    expect(b).toEqual([202, 202, 503]);
+    expect(tight.sent).toHaveLength(2);
+  });
+
+  it('没配置发信 / pepper → 503 fail-closed', async () => {
+    const env = makeEnv({ EMAIL_SENDER: undefined });
+    expect((await codeFor(env, 'x@example.com')).status).toBe(503);
+    const env2 = makeEnv({ EMAIL_PEPPER: '' });
+    expect((await codeFor(env2, 'x@example.com')).status).toBe(503);
+  });
+});
+
+describe('新设备登录', () => {
+  it('邮箱验证码把新设备的钥匙绑到已有账户，之后能以该账户身份写', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { email: 'tom@example.com', now: NOW });
+    const phone = await newKey();
+    await call(env, 'POST', '/v1/email/code', { body: { email: 'tom@example.com', purpose: 'login' }, headers: { 'CF-Connecting-IP': nextIp() }, now: NOW });
+    const r = await call(env, 'POST', '/v1/login', {
+      key: phone, body: { pubkey: phone.pubkey, email: 'tom@example.com', code: lastCode(env, 'tom@example.com') }, now: NOW,
+    });
+    expect(r.status).toBe(200);
+    expect(r.data.id).toBe(u.id);
+    const { accountIdFromSpki } = await import('../src/auth.js');
+    const phoneKeyId = await accountIdFromSpki(phone.spki);
+    expect(phoneKeyId).not.toBe(u.id);
+    const patch = await call(env, 'PATCH', '/v1/me', { key: phone, account: phoneKeyId, body: { nickname: 'tom2' }, now: NOW });
+    expect(patch.status).toBe(200);
+    expect(patch.data.id).toBe(u.id);
+    expect(patch.data.nickname).toBe('tom2');
+  });
+
+  it('防探测：没账户的邮箱申请登录码也回 202，但不发信，登录必然 bad_code', async () => {
+    const env = makeEnv();
+    const r = await call(env, 'POST', '/v1/email/code', { body: { email: 'ghost@example.com', purpose: 'login' }, headers: { 'CF-Connecting-IP': nextIp() }, now: NOW });
+    expect(r.status).toBe(202);
+    expect(env.sent).toHaveLength(0);
+    const key = await newKey();
+    const l = await call(env, 'POST', '/v1/login', {
+      key, body: { pubkey: key.pubkey, email: 'ghost@example.com', code: '123456' }, now: NOW,
+    });
+    expect(l.data.error).toBe('bad_code');
+  });
+
+  it('一个账户最多 10 台设备', async () => {
+    const env = makeEnv();
+    await registerUser(env, 'tom', { email: 'many@example.com', now: NOW });
     const statuses = [];
-    for (let i = 0; i < 6; i++) {
-      const key = await newKey();
-      const r = await call(env, 'POST', '/v1/register', {
-        key,
-        body: { pubkey: key.pubkey, nickname: `n${i}` },
-        headers: { 'CF-Connecting-IP': '1.2.3.4' },
-        now: NOW,
+    for (let i = 0; i < 10; i++) {
+      const k = await newKey();
+      // 隔天申请：同一邮箱每天最多 10 封。
+      const t = NOW + (i + 1) * 24 * 3600 * 1000;
+      await call(env, 'POST', '/v1/email/code', { body: { email: 'many@example.com', purpose: 'login' }, headers: { 'CF-Connecting-IP': nextIp() }, now: t });
+      const r = await call(env, 'POST', '/v1/login', {
+        key: k, body: { pubkey: k.pubkey, email: 'many@example.com', code: lastCode(env, 'many@example.com') }, now: t,
+        headers: { 'CF-Connecting-IP': nextIp() },
       });
-      statuses.push(r.status);
+      statuses.push(r.status === 200 ? 200 : r.data.error);
     }
-    expect(statuses).toEqual([201, 201, 201, 201, 201, 429]);
+    expect(statuses.slice(0, 9).every((s) => s === 200)).toBe(true);
+    expect(statuses[9]).toBe('too_many_devices');
   });
 });
 

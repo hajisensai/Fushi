@@ -5,7 +5,7 @@ const NOW = Date.UTC(2026, 8, 30, 12);
 const done = { finishedAt: NOW - 1000, finishedDate: '2026-09-30' };
 
 async function upload(env, u, entries) {
-  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { entries }, now: NOW });
+  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { reset: true, put: entries }, now: NOW });
   return r.data.works;
 }
 

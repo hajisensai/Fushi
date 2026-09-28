@@ -1,18 +1,46 @@
 -- Fushi 排行榜 / 公开书架 D1 schema（设计见 docs/specs/2026-09-28-leaderboard-accounts.md）。
 -- 部署：wrangler d1 migrations apply fushi-leaderboard --remote
+--
+-- 成本模型（Cloudflare D1 按读/写行数计量）：任何请求的读写行数都必须有界、与总用户数无关。
+-- 所以榜单不现场扫描，而是读定时生成的快照（rank_snapshots / popular_snapshots）；
+-- 计数一律增量维护（accounts.shelf_count、works.readers、stat_days、account_totals）；
+-- 上传是增量协议（每批 ≤ 500 条）。全局日预算见 budgets。
 
--- 账户 = 设备公钥。id = base64url(sha256(spki))[0..16]，同时是好友码。
+-- 账户：经邮箱验证码注册。id = 注册时那把设备钥匙的 key_id，同时是好友码。
+-- 邮箱只存 HMAC（email_hash），不存明文（见 src/email.js）。
 CREATE TABLE IF NOT EXISTS accounts (
   id             TEXT PRIMARY KEY,
-  pubkey         TEXT NOT NULL UNIQUE,   -- base64url(SPKI DER)，ECDSA P-256
+  email_hash     TEXT NOT NULL UNIQUE,
   nickname       TEXT NOT NULL,
   discriminator  INTEGER NOT NULL,       -- 0..9999，与 nickname 组合唯一
   avatar_key     TEXT,                   -- R2 key；NULL = 无头像
   visibility     TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'friends')),
   hidden         INTEGER NOT NULL DEFAULT 0,  -- 管理员隐藏：不进任何榜、主页 404
+  shelf_count    INTEGER NOT NULL DEFAULT 0,  -- 书架行数（增量维护，上限检查与客户端对账用）
   created_at     INTEGER NOT NULL,
   UNIQUE (nickname, discriminator)
 );
+
+-- 设备钥匙：一个账户可绑多台设备（新设备用邮箱验证码登录时绑定，上限 10）。
+-- key_id = base64url(sha256(spki))[0..16]，即请求头 X-Fushi-Account。
+CREATE TABLE IF NOT EXISTS device_keys (
+  key_id     TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  pubkey     TEXT NOT NULL,                -- base64url(SPKI DER)，ECDSA P-256
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_device_keys_account ON device_keys (account_id);
+
+-- 待验证的邮箱验证码（只存 HMAC；10 分钟过期；最多 5 次尝试）。
+CREATE TABLE IF NOT EXISTS email_codes (
+  email_hash TEXT NOT NULL,
+  purpose    TEXT NOT NULL CHECK (purpose IN ('register', 'login')),
+  code_hash  TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (email_hash, purpose)
+);
+CREATE INDEX IF NOT EXISTS idx_email_codes_expires ON email_codes (expires_at);
 
 -- 跨用户作品。展示字段由 shelf 上报众数回写（见 shelf.js recomputeWorkMeta）。
 CREATE TABLE IF NOT EXISTS works (
@@ -24,8 +52,10 @@ CREATE TABLE IF NOT EXISTS works (
   cover_key  TEXT,                       -- R2 上传缩略图
   nsfw       INTEGER NOT NULL DEFAULT 0, -- 1 = 封面模糊展示
   locked     INTEGER NOT NULL DEFAULT 0, -- 1 = 管理员改过标题/作者，不再按众数回写
+  readers    INTEGER NOT NULL DEFAULT 0, -- 读完它的未隐藏账户数（增量维护，不现场 COUNT）
   created_at INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_works_readers ON works (readers DESC);
 
 -- 作品别名：一个作品可有多个跨用户匹配键（bgm:/isbn:/vndb:/tmdb:/anidb:/src:/t:）。
 -- ref 统一存成 '<kind>|<键>'：同一个键在不同 kind 下永远是不同作品（书与漫画同名不串）。
@@ -35,7 +65,7 @@ CREATE TABLE IF NOT EXISTS work_aliases (
 );
 CREATE INDEX IF NOT EXISTS idx_work_aliases_work ON work_aliases (work_id);
 
--- 公开书架。整份上报、整份替换。finished_date = 客户端本地日 'YYYY-MM-DD'，切周/月窗用。
+-- 公开书架（增量上报）。finished_date = 客户端本地日 'YYYY-MM-DD'；finished_at = 0 表示读完但日期未知。
 CREATE TABLE IF NOT EXISTS shelf (
   account_id    TEXT NOT NULL,
   work_id       TEXT NOT NULL,
@@ -53,14 +83,63 @@ CREATE INDEX IF NOT EXISTS idx_shelf_work ON shelf (work_id, finished_at);
 CREATE INDEX IF NOT EXISTS idx_shelf_account_finished ON shelf (account_id, finished_at DESC);
 CREATE INDEX IF NOT EXISTS idx_shelf_finished_date ON shelf (finished_date);
 
--- 按天字数（字数榜周/月切窗）。
-CREATE TABLE IF NOT EXISTS daily_chars (
+-- 每账户每天的计分：各类读完数（已按每日 30 部上限截断）+ 当天字数。周/月榜只扫这张表的窗口段。
+CREATE TABLE IF NOT EXISTS stat_days (
   account_id TEXT NOT NULL,
   date_key   TEXT NOT NULL,
-  chars      INTEGER NOT NULL,
+  book       INTEGER NOT NULL DEFAULT 0,
+  manga      INTEGER NOT NULL DEFAULT 0,
+  video      INTEGER NOT NULL DEFAULT 0,
+  game       INTEGER NOT NULL DEFAULT 0,
+  chars      INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (account_id, date_key)
 );
-CREATE INDEX IF NOT EXISTS idx_daily_chars_date ON daily_chars (date_key);
+CREATE INDEX IF NOT EXISTS idx_stat_days_date ON stat_days (date_key);
+
+-- 每账户总计（总榜与用户卡片）：stat_days 之和 + 日期未知的读完（各计 1）。
+CREATE TABLE IF NOT EXISTS account_totals (
+  account_id TEXT PRIMARY KEY,
+  book       INTEGER NOT NULL DEFAULT 0,
+  manga      INTEGER NOT NULL DEFAULT 0,
+  video      INTEGER NOT NULL DEFAULT 0,
+  game       INTEGER NOT NULL DEFAULT 0,
+  chars      INTEGER NOT NULL DEFAULT 0
+);
+
+-- 榜单快照（定时任务生成）。data = JSON [[account_id, value, rank], ...]，按名次排好。
+CREATE TABLE IF NOT EXISTS rank_snapshots (
+  win         TEXT NOT NULL,
+  metric      TEXT NOT NULL,
+  from_key    TEXT,
+  computed_at INTEGER NOT NULL,
+  data        TEXT NOT NULL,
+  PRIMARY KEY (win, metric)
+);
+
+-- 作品人气快照。kind = 'all' 或具体 kind；data = JSON [[work_id, readers, rank], ...]（前 100）。
+CREATE TABLE IF NOT EXISTS popular_snapshots (
+  win         TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  from_key    TEXT,
+  computed_at INTEGER NOT NULL,
+  data        TEXT NOT NULL,
+  PRIMARY KEY (win, kind)
+);
+
+-- 全局日预算（防 Cloudflare 超额计费的熔断器）。kind：write_rows / media / register。
+CREATE TABLE IF NOT EXISTS budgets (
+  day  TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  used INTEGER NOT NULL,
+  PRIMARY KEY (day, kind)
+);
+
+-- R2 已用字节（单行）。超过 MEDIA_QUOTA_BYTES 拒收新图片，保证存储不越过免费额度。
+CREATE TABLE IF NOT EXISTS media_usage (
+  id    INTEGER PRIMARY KEY CHECK (id = 1),
+  bytes INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO media_usage (id, bytes) VALUES (1, 0);
 
 -- 好友（有序对 a<b，requester 记发起方；见 src/social.js）。
 -- created_at：pending = 申请时刻，accepted = 成为好友的时刻。

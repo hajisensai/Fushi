@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import worker from '../src/worker.js';
 import { signingString } from '../src/auth.js';
 import { b64urlEncode } from '../src/util.js';
+import { clearSnapshotMemo, refreshSnapshots } from '../src/snapshots.js';
 
 // vite 会剥掉 'node:' 前缀，而 sqlite 只能以 'node:sqlite' 加载 → 走 require 绕开 vite 解析。
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite');
@@ -81,14 +82,43 @@ export function makeR2() {
       if (!o) return null;
       return { body: o.bytes, httpMetadata: o.httpMetadata };
     },
+    async head(key) {
+      const o = store.get(key);
+      return o ? { size: o.bytes.length } : null;
+    },
     async delete(keys) {
       for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
     },
   };
 }
 
+/**
+ * 测试 env。sent = 假发信器收到的邮件；autoSnapshot = 每个成功的写请求后立刻刷新榜单快照
+ * （生产由定时任务每 30 分钟刷新；测快照滞后语义的用例把它关掉）。
+ */
 export function makeEnv(over = {}) {
-  return { DB: makeD1(), MEDIA: makeR2(), ADMIN_USER: 'admin', ADMIN_PASS: 'pw', ...over };
+  clearSnapshotMemo();
+  const sent = [];
+  return {
+    DB: makeD1(),
+    MEDIA: makeR2(),
+    ADMIN_USER: 'admin',
+    ADMIN_PASS: 'pw',
+    EMAIL_PEPPER: 'test-pepper',
+    EMAIL_SENDER: async (to, subject, text) => {
+      sent.push({ to, subject, text });
+    },
+    sent,
+    autoSnapshot: true,
+    ...over,
+  };
+}
+
+/** 最近一封发给 email 的验证码。 */
+export function lastCode(env, email) {
+  const mail = [...env.sent].reverse().find((m) => m.to === email.trim().toLowerCase());
+  if (!mail) return null;
+  return /\b(\d{6})\b/.exec(mail.text)[1];
 }
 
 export async function newKey() {
@@ -112,7 +142,8 @@ let lastTime = 0;
 export async function call(env, method, path, opts = {}) {
   const now = opts.now ?? Date.now();
   // 真客户端的签名时刻单调递增（写请求防重放要求）；测试同一 now 下连发也照此。
-  const time = opts.time ?? (lastTime = Math.max(now, lastTime + 1));
+  // 只在离 now 一分钟内递增——否则把「服务器时刻推到未来」的用例后面的调用全部拖成 stale_time。
+  const time = opts.time ?? (lastTime = lastTime >= now && lastTime - now < 60000 ? lastTime + 1 : now);
   let bytes = new Uint8Array();
   const headers = { ...(opts.headers || {}) };
   if (opts.body instanceof Uint8Array) {
@@ -140,6 +171,7 @@ export async function call(env, method, path, opts = {}) {
   Date.now = () => now;
   try {
     const res = await worker.fetch(req, env);
+    if (env.autoSnapshot && method !== 'GET' && res.status < 300) await refreshSnapshots(env, now);
     const text = res.status === 204 ? '' : await res.text();
     let data = null;
     try {
@@ -153,18 +185,34 @@ export async function call(env, method, path, opts = {}) {
   }
 }
 
-/** 注册一个用户，返回 {key, id, ...account}。每次用不同的 CF-Connecting-IP 绕开注册限流。 */
+/**
+ * 走完整的邮箱验证码流程注册一个用户，返回 {key, email, id, ...account}。
+ * 每次用不同的 CF-Connecting-IP 与邮箱，绕开按 IP / 邮箱的限流。
+ */
 let ipSeq = 0;
+let mailSeq = 0;
+export function nextIp() {
+  ipSeq += 1;
+  return `10.${(ipSeq >> 16) & 255}.${(ipSeq >> 8) & 255}.${ipSeq & 255}`;
+}
 export async function registerUser(env, nickname, opts = {}) {
-  const key = await newKey();
+  const key = opts.key ?? (await newKey());
+  const email = opts.email ?? `user${++mailSeq}@example.com`;
+  const ip = nextIp();
+  const sent = await call(env, 'POST', '/v1/email/code', {
+    body: { email, purpose: 'register' },
+    headers: { 'CF-Connecting-IP': ip },
+    now: opts.now,
+  });
+  if (sent.status !== 202) throw new Error(`email code failed ${sent.status} ${JSON.stringify(sent.data)}`);
   const r = await call(env, 'POST', '/v1/register', {
     key,
-    body: { pubkey: key.pubkey, nickname },
-    headers: { 'CF-Connecting-IP': `10.0.0.${++ipSeq}` },
+    body: { pubkey: key.pubkey, nickname, email, code: lastCode(env, email) },
+    headers: { 'CF-Connecting-IP': ip },
     now: opts.now,
   });
   if (r.status !== 201) throw new Error(`register failed ${r.status} ${JSON.stringify(r.data)}`);
-  return { key, ...r.data };
+  return { key, email, ...r.data };
 }
 
 export function entry(kind, refs, title, extra = {}) {

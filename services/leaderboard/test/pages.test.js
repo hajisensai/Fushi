@@ -7,7 +7,7 @@ const done = (date) => ({ finishedAt: Date.parse(`${date}T10:00:00Z`), finishedD
 const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
 
 async function upload(env, u, entries, daily = []) {
-  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { entries, daily }, now: NOW });
+  const r = await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { reset: true, put: entries, daily }, now: NOW });
   if (r.status !== 200) throw new Error(JSON.stringify(r.data));
   return r.data.works;
 }

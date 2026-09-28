@@ -61,7 +61,7 @@ describe('好友', () => {
   it('接受后成为好友：好友榜与 friends 可见书架立刻生效', async () => {
     const { env, a, b } = await three();
     await as(env, b, 'PATCH', '/v1/me', { visibility: 'friends' });
-    await as(env, b, 'POST', '/v1/shelf', { entries: [entry('book', ['t:x|'], 'x', { finishedAt: NOW - 1, finishedDate: '2026-09-30' })] });
+    await as(env, b, 'POST', '/v1/shelf', { reset: true, put: [entry('book', ['t:x|'], 'x', { finishedAt: NOW - 1, finishedDate: '2026-09-30' })] });
     expect((await as(env, a, 'GET', `/v1/users/${b.id}/shelf`)).status).toBe(403);
     await as(env, a, 'POST', `/v1/friends/${b.id}`);
     await as(env, b, 'POST', `/v1/friends/${a.id}`);
@@ -183,7 +183,7 @@ describe('屏蔽', () => {
 describe('举报', () => {
   it('举报账户与作品 → 201 {id}；同一目标未处理举报去重，处理后可再举报', async () => {
     const { env, a, b } = await three();
-    const [w] = (await as(env, b, 'POST', '/v1/shelf', { entries: [entry('book', ['t:x|'], 'x')] })).data.works;
+    const [w] = (await as(env, b, 'POST', '/v1/shelf', { reset: true, put: [entry('book', ['t:x|'], 'x')] })).data.works;
     const r1 = await as(env, a, 'POST', '/v1/reports', { targetKind: 'account', targetId: b.id, reason: '昵称冒犯' });
     expect(r1.status).toBe(201);
     expect(typeof r1.data.id).toBe('number');

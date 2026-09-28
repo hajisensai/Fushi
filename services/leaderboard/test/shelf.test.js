@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { call, entry, makeEnv, registerUser } from './harness.js';
-import { acceptCoverUrl, normalizeUpload } from '../src/shelf.js';
+import { acceptCoverUrl, normalizeUpload, shelfDiff } from '../src/shelf.js';
+import { LIMITS } from '../src/ratelimit.js';
 
 const NOW = Date.UTC(2026, 8, 30, 12);
 const DAY = 24 * 3600 * 1000;
 
+/** 整份替换（reset + put），沿用旧用例的语义。 */
 async function upload(env, u, entries, daily = []) {
-  return call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { entries, daily }, now: NOW });
+  return call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { reset: true, put: entries, daily }, now: NOW });
+}
+
+/** 增量一批。 */
+async function delta(env, u, body, now = NOW) {
+  return call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body, now });
 }
 
 function works(env) {
@@ -19,19 +26,19 @@ function aliases(env) {
 
 describe('上报校验', () => {
   it('非法 kind / ref / 未来的读完时刻 → 400 并带下标', () => {
-    expect(() => normalizeUpload({ entries: [entry('novel', ['t:x'], 'x')] }, NOW)).toThrow(/0: kind/);
-    expect(() => normalizeUpload({ entries: [entry('book', ['foo:x'], 'x')] }, NOW)).toThrow(/0: ref/);
-    expect(() => normalizeUpload({ entries: [entry('book', ['t:x\ny'], 'x')] }, NOW)).toThrow(/0: ref/);
+    expect(() => normalizeUpload({ reset: true, put: [entry('novel', ['t:x'], 'x')] }, NOW)).toThrow(/0: kind/);
+    expect(() => normalizeUpload({ reset: true, put: [entry('book', ['foo:x'], 'x')] }, NOW)).toThrow(/0: ref/);
+    expect(() => normalizeUpload({ reset: true, put: [entry('book', ['t:x\ny'], 'x')] }, NOW)).toThrow(/0: ref/);
     expect(() =>
-      normalizeUpload({ entries: [entry('book', ['t:x'], 'x', { finishedAt: NOW + DAY, finishedDate: '2026-10-01' })] }, NOW),
+      normalizeUpload({ reset: true, put: [entry('book', ['t:x'], 'x', { finishedAt: NOW + DAY, finishedDate: '2026-10-01' })] }, NOW),
     ).toThrow(/finishedAt/);
     expect(() =>
-      normalizeUpload({ entries: [entry('book', ['t:x'], 'x', { finishedAt: NOW })] }, NOW),
+      normalizeUpload({ reset: true, put: [entry('book', ['t:x'], 'x', { finishedAt: NOW })] }, NOW),
     ).toThrow(/finishedDate/);
   });
 
   it('finishedDate 必须与 finishedAt 的 UTC 日期相差一天以内（防摊到未来日期刷周榜）', () => {
-    const ok = (d) => normalizeUpload({ entries: [entry('book', ['t:x'], 'x', { finishedAt: NOW, finishedDate: d })] }, NOW);
+    const ok = (d) => normalizeUpload({ reset: true, put: [entry('book', ['t:x'], 'x', { finishedAt: NOW, finishedDate: d })] }, NOW);
     expect(() => ok('2026-09-29')).not.toThrow();
     expect(() => ok('2026-10-01')).not.toThrow();
     expect(() => ok('2031-01-01')).toThrow(/finishedDate/);
@@ -39,18 +46,25 @@ describe('上报校验', () => {
   });
 
   it('同一条目同一命名空间只能有一个键', () => {
-    expect(() => normalizeUpload({ entries: [entry('book', ['bgm:1', 'bgm:2'], 'x')] }, NOW)).toThrow(/duplicate_namespace/);
+    expect(() => normalizeUpload({ reset: true, put: [entry('book', ['bgm:1', 'bgm:2'], 'x')] }, NOW)).toThrow(/duplicate_namespace/);
   });
 
   it('三态：在读 / 读完日期未知 / 读完有日期', () => {
-    const { entries } = normalizeUpload({
-      entries: [
+    const { put } = normalizeUpload({
+      put: [
         entry('game', ['vndb:v1'], 'a'),
         entry('game', ['vndb:v2'], 'b', { finished: true }),
         entry('game', ['vndb:v3'], 'c', { finishedAt: NOW, finishedDate: '2026-09-30' }),
       ],
     }, NOW);
-    expect(entries.map((e) => [e.finishedAt, e.finishedDate])).toEqual([[null, null], [0, null], [NOW, '2026-09-30']]);
+    expect(put.map((e) => [e.finishedAt, e.finishedDate])).toEqual([[null, null], [0, null], [NOW, '2026-09-30']]);
+  });
+
+  it('单批上限 500 / 500 / 400，remove 只收作品 id 形状', () => {
+    const many = (n) => Array.from({ length: n }, (_, i) => entry('book', [`t:${i}|`], `${i}`));
+    expect(() => normalizeUpload({ put: many(501) }, NOW)).toThrow(/batch_too_large/);
+    expect(() => normalizeUpload({ remove: Array(501).fill('abc') }, NOW)).toThrow(/batch_too_large/);
+    expect(() => normalizeUpload({ remove: ['../x'] }, NOW)).toThrow(/bad_remove/);
   });
 
   it('封面 URL 只收白名单主机的 https', () => {
@@ -61,7 +75,7 @@ describe('上报校验', () => {
   });
 
   it('每日字数超上限被夹到 400000', () => {
-    const { daily } = normalizeUpload({ entries: [], daily: [{ date: '2026-09-30', chars: 9_000_000 }] }, NOW);
+    const { daily } = normalizeUpload({ reset: true, put: [], daily: [{ date: '2026-09-30', chars: 9_000_000 }] }, NOW);
     expect(daily).toEqual([{ date: '2026-09-30', chars: 400000 }]);
   });
 });
@@ -166,8 +180,11 @@ describe('跨用户作品匹配', () => {
     expect(works(env)[0].title).toBe('Real');
   });
 
-  it('上限规模（8000 条）一次上传是线性的：几秒内完成，且只有常数条语句', async () => {
-    const env = makeEnv();
+  it('上限规模（8000 条，分 16 批）线性完成；每批语句数为常数；满了再加 413', async () => {
+    // 这里只测复杂度：放宽预算与每账户日上限（真实部署下 8000 条首次同步要分两三天续传，见 LIMITS 注释）。
+    const env = makeEnv({ autoSnapshot: false, BUDGET_WRITE_ROWS: '10000000' });
+    const savedRows = LIMITS.shelfRowsPerAccountDay;
+    LIMITS.shelfRowsPerAccountDay = 10000000;
     const a = await registerUser(env, 'big', { now: NOW });
     let prepared = 0;
     const realPrepare = env.DB.prepare;
@@ -175,26 +192,31 @@ describe('跨用户作品匹配', () => {
       prepared++;
       return realPrepare(sql);
     };
-    const entries = [];
+    const all = [];
     for (let i = 0; i < 8000; i++) {
-      entries.push(entry(i % 2 ? 'book' : 'video', [`isbn:97800000${String(i).padStart(5, '0')}`, `t:title ${i}|author`], `title ${i}`, {
+      all.push(entry(i % 2 ? 'book' : 'video', [`isbn:97800000${String(i).padStart(5, '0')}`, `t:title ${i}|author`], `title ${i}`, {
         finishedAt: NOW - i * 60000, finishedDate: new Date(NOW - i * 60000).toISOString().slice(0, 10), chars: 100,
         coverUrl: i % 3 ? null : 'https://image.tmdb.org/t/p/w300/x.jpg',
       }));
     }
     const t0 = Date.now();
-    const r = await upload(env, a, entries);
-    const first = Date.now() - t0;
-    expect(r.status).toBe(200);
-    expect(r.data.works).toHaveLength(8000);
-    const t1 = Date.now();
-    expect((await upload(env, a, entries)).status).toBe(200); // 二次上报走「全已存在」路径
-    const second = Date.now() - t1;
-    console.log(`8000 entries: first ${first}ms, second ${second}ms, statements ${prepared}`);
-    expect(first).toBeLessThan(10000);
-    expect(second).toBeLessThan(10000);
-    expect(prepared).toBeLessThan(60);
-  }, 60000);
+    for (let b = 0; b < 16; b++) {
+      const r = await delta(env, a, { reset: b === 0, put: all.slice(b * 500, b * 500 + 500) });
+      expect(r.status).toBe(200);
+      expect(r.data.shelfCount).toBe((b + 1) * 500);
+    }
+    const elapsed = Date.now() - t0;
+    const perBatch = prepared / 16;
+    console.log(`8000 entries in 16 batches: ${elapsed}ms, ${perBatch} statements/batch`);
+    expect(elapsed).toBeLessThan(20000);
+    expect(perBatch).toBeLessThan(40);
+    const full = await delta(env, a, { put: [entry('book', ['t:one more|'], 'one more')] });
+    expect(full.status).toBe(413);
+    expect(full.data.error).toBe('shelf_full');
+    // 改已有作品不增加行数，照常接受。
+    expect((await delta(env, a, { put: [all[1]] })).status).toBe(200);
+    LIMITS.shelfRowsPerAccountDay = savedRows;
+  }, 120000);
 
   it('两条在读条目合并后仍是在读（NULL，不是 -1）', async () => {
     const env = makeEnv();
@@ -224,14 +246,17 @@ describe('整份替换与孤儿清理', () => {
     expect(env.MEDIA.store.has(`c/${mine}-1.jpg`)).toBe(false);
   });
 
-  it('每日字数整份替换', async () => {
+  it('每日字数：reset 整份替换；增量按日期覆盖，0 删除', async () => {
     const env = makeEnv();
     const a = await registerUser(env, 'a', { now: NOW });
+    const days = () => env.DB.raw.prepare('SELECT date_key, chars FROM stat_days ORDER BY date_key').all().map((r) => ({ ...r }));
     await upload(env, a, [], [{ date: '2026-09-29', chars: 100 }, { date: '2026-09-30', chars: 200 }]);
-    await upload(env, a, [], [{ date: '2026-09-30', chars: 50 }]);
-    expect(env.DB.raw.prepare('SELECT date_key, chars FROM daily_chars').all().map((r) => ({ ...r }))).toEqual([
-      { date_key: '2026-09-30', chars: 50 },
-    ]);
+    await delta(env, a, { daily: [{ date: '2026-09-30', chars: 50 }] });
+    expect(days()).toEqual([{ date_key: '2026-09-29', chars: 100 }, { date_key: '2026-09-30', chars: 50 }]);
+    await delta(env, a, { daily: [{ date: '2026-09-29', chars: 0 }] });
+    expect(days()).toEqual([{ date_key: '2026-09-30', chars: 50 }]);
+    await upload(env, a, [], [{ date: '2026-09-28', chars: 7 }]);
+    expect(days()).toEqual([{ date_key: '2026-09-28', chars: 7 }]);
   });
 
   it('远端封面先到先得，并回报哪些作品还缺封面', async () => {
@@ -245,11 +270,159 @@ describe('整份替换与孤儿清理', () => {
   });
 
   it('上传按账户限流', async () => {
-    const env = makeEnv();
+    const env = makeEnv({ autoSnapshot: false });
     const a = await registerUser(env, 'a', { now: NOW });
     const statuses = [];
-    for (let i = 0; i < 13; i++) statuses.push((await upload(env, a, [])).status);
-    expect(statuses.slice(0, 12).every((s) => s === 200)).toBe(true);
-    expect(statuses[12]).toBe(429);
+    for (let i = 0; i <= LIMITS.shelfUploadPerHour; i++) statuses.push((await delta(env, a, {})).status);
+    expect(statuses.slice(0, LIMITS.shelfUploadPerHour).every((s) => s === 200)).toBe(true);
+    expect(statuses[LIMITS.shelfUploadPerHour]).toBe(429);
+  });
+});
+
+describe('增量协议与增量计数', () => {
+  const done = (date) => ({ finishedAt: Date.parse(`${date}T10:00:00Z`), finishedDate: date });
+
+  it('shelfDiff：存在 / 读完的前后差只有一条规则', () => {
+    const oldRows = new Map([
+      ['w1', { finished_at: 1, finished_date: '2026-09-01' }],
+      ['w2', { finished_at: null, finished_date: null }],
+      ['w3', { finished_at: 5, finished_date: '2026-09-03' }],
+    ]);
+    const putRows = [
+      { workId: 'w2', finishedAt: 9, finishedDate: '2026-09-09' }, // 在读 → 读完
+      { workId: 'w4', finishedAt: null, finishedDate: null }, // 新增在读
+    ];
+    const d = shelfDiff({ reset: false, remove: ['w3', 'wX'], oldRows, putRows });
+    expect(d.countDelta).toBe(0); // +w4 −w3
+    expect(d.readerDeltas.sort((x, y) => (x.id < y.id ? -1 : 1))).toEqual([{ id: 'w2', d: 1 }, { id: 'w3', d: -1 }]);
+    expect(d.gone).toEqual(['w3']);
+    expect([...d.dates].sort()).toEqual(['2026-09-03', '2026-09-09']);
+    const r = shelfDiff({ reset: true, remove: [], oldRows, putRows: [{ workId: 'w1', finishedAt: 1, finishedDate: '2026-09-01' }] });
+    expect(r.countDelta).toBe(-2);
+    expect(r.readerDeltas).toEqual([{ id: 'w3', d: -1 }]);
+    expect(r.gone.sort()).toEqual(['w2', 'w3']);
+  });
+
+  it('remove 删行、读者数与书架行数随之变化；无人在架的作品被清理', async () => {
+    const env = makeEnv();
+    const a = await registerUser(env, 'a', { now: NOW });
+    const b = await registerUser(env, 'b', { now: NOW });
+    const [w] = (await delta(env, a, { reset: true, put: [entry('book', ['t:x|'], 'x', done('2026-09-29'))] })).data.works;
+    await delta(env, b, { reset: true, put: [entry('book', ['t:x|'], 'x', done('2026-09-29'))] });
+    const readers = () => env.DB.raw.prepare('SELECT readers FROM works WHERE id = ?1').get(w.workId)?.readers;
+    expect(readers()).toBe(2);
+    const r = await delta(env, a, { remove: [w.workId] });
+    expect(r.data.shelfCount).toBe(0);
+    expect(readers()).toBe(1);
+    await delta(env, b, { put: [entry('book', ['t:x|'], 'x')] }); // 读完 → 在读
+    expect(readers()).toBe(0);
+    await delta(env, b, { remove: [w.workId] });
+    expect(readers()).toBeUndefined();
+  });
+
+  it('对拍：任意增量操作序列之后，增量维护的计数 == 从零精确重算', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const users = [];
+    for (let i = 0; i < 4; i++) users.push(await registerUser(env, `u${i}`, { now: NOW }));
+    // mulberry32：线性同余的低位周期太短，rnd(4)/rnd(5) 会高度相关（总挑同一个用户）。
+    let seed = 42;
+    const rnd = (n) => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = seed;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) % n;
+    };
+    const kinds = ['book', 'manga', 'video', 'game'];
+    const dates = ['2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29'];
+    const mk = (k) => {
+      const kind = kinds[k % 4];
+      const f = rnd(3);
+      const extra = f === 0 ? {} : f === 1 ? { finished: true } : done(dates[rnd(4)]);
+      return entry(kind, [`t:work${k}|`], `w${k}`, { ...extra, chars: rnd(1000) });
+    };
+    for (let step = 0; step < 60; step++) {
+      const now = NOW + step * 90 * 1000; // 每步 90 秒，免得撞上每小时上传次数限流
+      const up = (u, body) => delta(env, u, body, now);
+      const u = users[rnd(4)];
+      const op = rnd(5);
+      if (op === 0) {
+        const ks = Array.from({ length: 1 + rnd(5) }, () => rnd(12));
+        const r = await up(u, { reset: true, put: ks.map(mk), daily: [{ date: dates[rnd(4)], chars: rnd(500) }] });
+        expect(r.status).toBe(200);
+      } else if (op <= 2) {
+        const ks = Array.from({ length: 1 + rnd(4) }, () => rnd(12));
+        const r = await up(u, { put: ks.map(mk), daily: [{ date: dates[rnd(4)], chars: rnd(500) }] });
+        expect(r.status).toBe(200);
+      } else if (op === 3) {
+        const mine = env.DB.raw.prepare('SELECT work_id FROM shelf WHERE account_id = ?1').all(u.id).map((x) => x.work_id);
+        if (mine.length) expect((await up(u, { remove: [mine[rnd(mine.length)]] })).status).toBe(200);
+      } else {
+        const hidden = rnd(2) === 1;
+        const { setAccountHidden } = await import('../src/admin.js');
+        await setAccountHidden(env, u.id, hidden, now);
+      }
+      const db = env.DB.raw;
+      const drift = db.prepare(
+        `SELECT w.id, w.readers, (SELECT COUNT(*) FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
+                                  WHERE s.work_id = w.id AND s.finished_at IS NOT NULL) AS exact
+         FROM works w`,
+      ).all().filter((r) => r.readers !== r.exact);
+      expect(drift, `step ${step} readers drift`).toEqual([]);
+      const countDrift = db.prepare(
+        `SELECT a.id, a.shelf_count, (SELECT COUNT(*) FROM shelf s WHERE s.account_id = a.id) AS exact FROM accounts a`,
+      ).all().filter((r) => r.shelf_count !== r.exact);
+      expect(countDrift, `step ${step} shelf_count drift`).toEqual([]);
+      for (const kind of kinds) {
+        const totals = db.prepare(`SELECT account_id, ${kind} AS v FROM account_totals`).all();
+        for (const t of totals) {
+          const exact = db.prepare(
+            `SELECT COALESCE(SUM(c), 0) AS v FROM (
+               SELECT MIN(COUNT(*), 30) AS c FROM shelf s JOIN works w ON w.id = s.work_id
+               WHERE s.account_id = ?1 AND w.kind = ?2 AND s.finished_at IS NOT NULL
+               GROUP BY COALESCE(s.finished_date, s.work_id))`,
+          ).get(t.account_id, kind).v;
+          expect(t.v, `step ${step} ${kind} total of ${t.account_id}`).toBe(exact);
+        }
+      }
+      const orphans = db.prepare('SELECT id FROM works w WHERE NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = w.id)').all();
+      expect(orphans, `step ${step} orphan works`).toEqual([]);
+    }
+  }, 120000);
+
+  it('全局写入预算用尽 → 503 daily_budget；每账户日上限 → 429', async () => {
+    const env = makeEnv({ BUDGET_WRITE_ROWS: '30' });
+    const a = await registerUser(env, 'a', { now: NOW });
+    const many = Array.from({ length: 20 }, (_, i) => entry('book', [`t:b${i}|`], `b${i}`));
+    const r = await delta(env, a, { reset: true, put: many });
+    expect(r.status).toBe(503);
+    expect(r.data.error).toBe('daily_budget');
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM shelf').get().n).toBe(0); // 预算检查在写入之前
+
+    const saved = LIMITS.shelfRowsPerAccountDay;
+    LIMITS.shelfRowsPerAccountDay = 30;
+    try {
+      const env2 = makeEnv();
+      const b = await registerUser(env2, 'b', { now: NOW });
+      expect((await delta(env2, b, { reset: true, put: many })).status).toBe(429);
+    } finally {
+      LIMITS.shelfRowsPerAccountDay = saved;
+    }
+  });
+
+  it('榜单读快照：新上报在下次刷新（定时任务）之前不可见', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const a = await registerUser(env, 'a', { now: NOW });
+    const rank = () => call(env, 'GET', '/v1/rank?metric=book&window=all', { now: NOW });
+    expect((await rank()).data.rows).toEqual([]); // 首次读现场生成空快照
+    await delta(env, a, { reset: true, put: [entry('book', ['t:x|'], 'x', done('2026-09-29'))] });
+    expect((await rank()).data.rows).toEqual([]);
+    const worker = (await import('../src/worker.js')).default;
+    await worker.scheduled({}, env);
+    const { clearSnapshotMemo } = await import('../src/snapshots.js');
+    clearSnapshotMemo();
+    const after = await rank();
+    expect(after.data.rows.map((r) => r.value)).toEqual([1]);
+    expect(typeof after.data.computedAt).toBe('number');
   });
 });
