@@ -45,10 +45,16 @@ function createWorld() {
   });
   win.document.querySelector("video").currentTime = 4.2;
   win.fushiActiveFullTrack = () => ({ lang: "ja", cues: TRACK });
-  for (const f of ["subtitle-adapters.js", "vendor/dict-media.js", "popup-size.js",
-    "subtitle-providers.js", "content.js"]) {
+  // content.js 的界面文案走 i18n.js（fushiT）；没装 i18n 时 fushiTr 退回键名，断言就会拿到
+  // 'ctx_box_empty' 这类键（ccd982b579 多语言化之后）。按 manifest 的顺序把 locales/en.js +
+  // i18n.js 放在 content.js 之前，再用 i18n.js 留给测试的同步入口装入真实的 zh-CN 语言包
+  // ——下面断言的中文文案来自正式语言包，而不是另抄一份。
+  for (const f of ["subtitle-adapters.js", "popup-size.js", "locales/en.js", "i18n.js",
+    "vendor/dict-media.js", "subtitle-providers.js"]) {
     win.eval(src(f));
   }
+  win.fushiI18n.setLocale("zh-CN", JSON.parse(src("locales/zh-CN.json")));
+  win.eval(src("content.js"));
   return win;
 }
 
