@@ -112,6 +112,19 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - P2P 地址捎 home relay 与直连地址作拨号提示，不依赖 n0 DNS 发现（发现服务在某些网络里解析不了）。
 - `fushi://pair` 深链一律先弹「连接到 <设备>？」确认框：链接可能来自任何网页。
 
+代码审查后的修正（2026-09-28，均已落地并有测试）：
+- **只学密码学认证过的地址**：hostId 是公开的、证明不了身份，所以 learned 地址只收 `https://`（继承钉扎指纹）与 `p2p://`（节点公钥即身份）；地址集只经已钉扎的 https 锚点拉取。明文 host 只绑 IPv4、不公布网卡明文地址。
+- 链接配对：链接冒用已配对 host 的 hostId 但指纹不符时，新地址另起一组，不并入、不删改真 host 的组。
+- 票据在**建会话时**即消耗（拍到二维码的人不能预开会话）；关闭二维码连带作废已凭票开出、未 confirm 的会话。
+- 隧道请求在审批框里标「P2P tunnel」而不是看似本机的 127.0.0.1；隧道监听口单飞启动，server 停后拒绝开口、不留孤儿口。
+- 客户端地址列表的读改写经 `SyncRepository.updateFushiClientUrls` 串行，写后广播 `fushiClientUrlsRevision`，设置页据此重载。
+
+审查指出、尚未处理：
+- Rust 侧未限制单个对端的并发流数。
+- NFC 贴纸写入后未 `makeReadOnly`（贴纸可被他人改写成恶意链接，靠确认框兜底）。
+- 无 deviceId 的隧道请求共享同一个限流桶。
+- 设置页的直接写入（编辑/删除）没走 `updateFushiClientUrls` 的锁。
+
 遗留（需要决策或外部条件）：
 1. **发布流水线未接 Rust 构建**：`native/fushi_p2p` 目前只在本机编（Windows DLL / Android `.so` 已验证可编）。CI 装 Rust 工具链 + cargo-ndk、各平台产出预编译库并随包之前，发布包里 P2P 能力不可用（开关不出现），其余功能不受影响。iOS 需 staticlib 链入 + `DynamicLibrary.process()`，未做。
 2. **国内真实网络的打洞率与 n0 公共中继可达性未实测**（需两台不同网络的真机）。
