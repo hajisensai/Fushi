@@ -1404,7 +1404,7 @@ class _DictionaryDialogPageState extends BasePageState {
 
   /// 选词典目录。安卓与 iOS 都走原生 `pickAndCopyDirectory`：整目录拷进
   /// [tempDir] 再导入、导完即删。iOS 上 file_picker 的 `getDirectoryPath()` 交回的
-  /// 沙盒外路径 `dart:io` 读不了（BUG-2756），只能在安全作用域访问窗口内拷进来。
+  /// 沙盒外路径 `dart:io` 读不了（BUG-2762），只能在安全作用域访问窗口内拷进来。
   ///
   /// 必须用原生**返回的**路径：安卓把目录内容直接拷进 [tempDir]（返回它本身），
   /// iOS 拷成 `tempDir/<文件夹名>`（返回那一层）。清理永远删 [tempDir]。

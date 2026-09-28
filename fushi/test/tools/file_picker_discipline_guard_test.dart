@@ -45,7 +45,7 @@ const String kPickerImpl =
 /// 只有一条，且是**刻意**不走统一入口的：词典目录导入在安卓与 iOS 都走原生
 /// `pickAndCopyDirectory` 分支（整目录复制进临时目录后导入，导完即删），压根不需要
 /// 真实路径（iOS 上 `getDirectoryPath()` 交回的沙盒外路径 `dart:io` 读不了，
-/// BUG-2756）；裸 `getDirectoryPath()` 只在桌面这条腿上跑，语义与统一入口一致。
+/// BUG-2762）；裸 `getDirectoryPath()` 只在桌面这条腿上跑，语义与统一入口一致。
 /// 若哪天那条原生分支被拿掉，这一条也要跟着收回。
 const Map<String, String> kDirectoryPickerAllowlist = <String, String>{
   'lib/src/pages/implementations/dictionary_dialog_page.dart':

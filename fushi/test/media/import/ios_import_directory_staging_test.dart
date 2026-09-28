@@ -1,4 +1,4 @@
-/// BUG-2756：iOS 上导入目录必须「在安全作用域访问窗口内整卷拷进 app 容器」。
+/// BUG-2762：iOS 上导入目录必须「在安全作用域访问窗口内整卷拷进 app 容器」。
 ///
 /// file_picker 的 `getDirectoryPath()` 在 iOS 返回沙盒外路径、从不
 /// `startAccessingSecurityScopedResource()`，`dart:io` 列目录直接被拒；`pickFiles()`

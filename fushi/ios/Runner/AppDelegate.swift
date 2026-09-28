@@ -91,7 +91,7 @@ import Flutter
         .flatMap { $0.windows }
         .first { $0.isKeyWindow }?.rootViewController
     }
-    // 目录导入（BUG-2756）：iOS 上沙盒外文件夹只能在安全作用域访问窗口内整卷拷进来。
+    // 目录导入（BUG-2762）：iOS 上沙盒外文件夹只能在安全作用域访问窗口内整卷拷进来。
     // 呈现者必须是最顶层的 VC——导入对话框本身就是 Flutter 路由，但若此刻上面还压着
     // 别的原生表单，从 root 直接 present 会被 UIKit 拒掉（静默不弹）。
     directoryImport = FushiDirectoryImport(binaryMessenger: binaryMessenger) {

@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// iOS 半边的 `app.fushi.reader/saf` channel：「选一个文件夹，把整棵树拷进 app 自己的
-/// 容器再交回」（BUG-2756）。
+/// 容器再交回」（BUG-2762）。
 ///
 /// 为什么不能直接用 file_picker 的 `getDirectoryPath()`：它返回的是沙盒**外**的路径，
 /// 插件从不调 `startAccessingSecurityScopedResource()`，`dart:io` 列目录直接被拒。而
