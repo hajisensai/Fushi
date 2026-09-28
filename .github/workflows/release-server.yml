@@ -211,7 +211,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/vcpkg/archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded torrent bridge (static)
         shell: bash
         env:
@@ -324,7 +329,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:

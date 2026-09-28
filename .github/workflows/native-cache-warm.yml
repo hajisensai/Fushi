@@ -1,0 +1,93 @@
+# 把 Linux 版 libtorrent（vcpkg，x64-linux-fpic）的二进制缓存预热到 develop 上。
+#
+# 病灶（run 36365037668 实测）：build-multiplatform.yml 的 linux job 只在 PR 上跑
+# （push 只挂 main），GitHub 缓存又按 ref 分桶 —— PR 只能读 base 分支和默认分支的
+# 缓存，读不到别的 PR 的。于是 develop 上从来没有这份缓存，每个 PR 都
+# `Restored 0 package(s)` 从 openssl 冷编 577 s，再在自己的 refs/pull/N/merge 里存
+# 一份谁也用不上的副本（同一 key 三条 330 MB）。Windows / Android 没这个问题，
+# 因为 release-desktop.yml / release.yml 在 develop push 上跑，缓存自然落在 develop。
+#
+# 本 workflow 只做一件事：develop 每次 push 先 lookup-only 探一下 key，命中就结束
+# （不下载，~20 s）；未命中（vcpkg manifest 变了，或 runner 换了新镜像）才真编一遍并
+# 存到 develop 桶，此后所有 PR 直接命中。不跑 schedule：默认分支是 main，定时任务
+# 只读 main 上的 workflow 文件，而 main 只在正式发布时同步。
+#
+# 环境、镜像身份计算、key 必须与 build-multiplatform.yml linux job 逐字一致：编译器
+# 与工具链决定 vcpkg 每个包的 ABI hash，差一点存下来的归档就一个都对不上。
+#
+# 本 workflow 不发布任何东西：只构建、只写 Actions 缓存。
+name: native-cache-warm
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['develop']
+
+permissions:
+  contents: read
+
+# 冷编约 10~40 min；排队而不取消，免得连续 push 把正在存的缓存掐掉。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  libtorrent-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve vcpkg cache identity
+        id: vcpkg_cache_id
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="${ImageVersion:-unknown-image}"
+          image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
+          echo "vcpkg cache identity (runner ImageVersion): $image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+      - name: Probe vcpkg binary archives (libtorrent linux)
+        id: probe
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          lookup-only: true
+      - name: Install Linux build deps
+        if: steps.probe.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build clang cmake pkg-config \
+            gcc-14 g++-14 libstdc++-14-dev \
+            libgtk-3-dev libkeybinder-3.0-dev libmpv-dev liblzma-dev
+      - name: Cache vcpkg source distfiles (libtorrent linux)
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg-downloads
+            !${{ runner.temp }}/vcpkg-downloads/tools
+          key: ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
+      - name: Cache vcpkg binary archives (libtorrent linux)
+        if: steps.probe.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-linux-fpic-v1-${{ steps.vcpkg_cache_id.outputs.image }}
+      - name: Build embedded torrent bridge (Linux, static)
+        if: steps.probe.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
+        run: |
+          set -euo pipefail
+          chmod +x native/fushi_torrent/build_linux_so.sh
+          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"

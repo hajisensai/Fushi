@@ -141,10 +141,12 @@ jobs:
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
+      # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.44.0'
-          cache: true
+          cache: false
+          pub-cache: true
       - name: Resolve desktop release channel
         id: channel
         shell: bash
@@ -399,8 +401,9 @@ jobs:
       # 所以根因不是「vcpkg 的重试判定写错了」——那是外部缺陷、我们改不了——而是
       # 这条路径本来就不该下载任何东西：key 带上 ImageVersion 后两种镜像各占一个
       # 条目，都走 `Restored 72` 的零下载路径，取件抖动面归零、顺带每次省 ~18 min。
-      # 二进制缓存故意不留 restore-keys：前缀命中回来的是另一镜像的归档，实测
-      # `Restored 0`，纯白下 81MB，还会连同新归档一起回存、越滚越大。
+      # 二进制缓存的 restore-keys 只回退到**同一镜像**（前缀含 ImageVersion）：跨镜像
+      # 前缀命中回来的是另一镜像的归档，实测 `Restored 0`，纯白下 81MB，还会连同新归档
+      # 一起回存、越滚越大。
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: pwsh
@@ -439,7 +442,12 @@ jobs:
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
           # 一个都用不上；不 bump 的话 actions/cache 命中即不回存，会每次冷编
           # （TODO-2668 记的同一处病灶）。
-          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
+          # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+          # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+          # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+          key: ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
         shell: pwsh
         env:
@@ -498,15 +506,35 @@ jobs:
             fushi/build/windows/x64/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
           retention-days: 14
+      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
+      # 下面 Sign Windows bundle binaries 签的是拷进 bundle 的副本，缓存里保持未签原样。
+      - name: Restore pinned Mihon desktop runtime
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
-          .\tool\mihon\build_desktop_runtime.ps1 `
-            -OutputDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge" `
-            -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
-          if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
-          .\tool\mihon\verify_desktop_runtime.ps1 `
-            -RuntimeDirectory "fushi\build\windows\x64\runner\Release\mihon_bridge"
+          $built = "$env:RUNNER_TEMP\mihon-runtime"
+          if ('${{ steps.mihon_runtime_cache.outputs.cache-hit }}' -ne 'true') {
+            .\tool\mihon\build_desktop_runtime.ps1 `
+              -OutputDirectory $built `
+              -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
+            if ($LASTEXITCODE -ne 0) { throw "Mihon desktop runtime build failed ($LASTEXITCODE)" }
+          }
+          $runtime = "fushi\build\windows\x64\runner\Release\mihon_bridge"
+          if (Test-Path -LiteralPath $runtime) { Remove-Item -LiteralPath $runtime -Recurse -Force }
+          Copy-Item -LiteralPath $built -Destination $runtime -Recurse
+          .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
+      # 缓存理由与 key 契约见 build-multiplatform.yml windows job 同名步骤（key 逐字一致）。
+      - name: Restore galgame helper archives
+        id: galgame_helper_cache
+        uses: actions/cache@v4
+        with:
+          path: native/galgame_hook/dist
+          key: ${{ runner.os }}-galgame-helper-v1-${{ hashFiles('native/galgame_hook/**') }}
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -518,8 +546,10 @@ jobs:
           # 但这份正确性完全依赖「后面没有第二条 native 命令」：任何人在下方插入
           # 一条 git / 7z / certutil，`-RunTests` 里双架构 22 个 ctest 的判决就会
           # 被静默顶掉。显式断言后这个隐性前提消失。
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
-          if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          if ('${{ steps.galgame_helper_cache.outputs.cache-hit }}' -ne 'true') {
+            powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
+            if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
+          }
           # BUG-1449：把 helper 作为**普通文件**直接装进 bundle 的 voice_hook\<arch>\，
           # 不再随包发 zip 让运行时解压。zip + 侧车 + 运行时安装那套是 helper 还走网络
           # 下载时的设计；随包之后它只剩一个后果——磁盘上多出一份需要与本体保持同步的
@@ -1286,14 +1316,27 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+      # 缓存理由与 key 契约见 build-multiplatform.yml macos job 同名步骤（key 逐字一致）。
+      # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
+      - name: Restore pinned Mihon desktop runtimes
+        id: mihon_runtime_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mihon-runtime
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x tool/mihon/build_desktop_runtime.sh
+          built="$RUNNER_TEMP/mihon-runtime"
+          if [[ "${{ steps.mihon_runtime_cache.outputs.cache-hit }}" != "true" ]]; then
+            chmod +x tool/mihon/build_desktop_runtime.sh
+            tool/mihon/build_desktop_runtime.sh "$built" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          fi
           app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
           runtime_dir="$app_dir/Contents/Resources/mihon_bridge"
-          tool/mihon/build_desktop_runtime.sh "$runtime_dir" "$RUNNER_TEMP/hibiki-mihon-downloads"
+          rm -rf -- "$runtime_dir"
+          ditto "$built" "$runtime_dir"
           while IFS= read -r candidate; do
             if file "$candidate" | grep -q 'Mach-O'; then
               codesign --force --sign - --timestamp=none "$candidate"
