@@ -129,7 +129,7 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - **持续走中继提示**：设置页 `p2p://` 地址行显示「P2P 直连 / 经中继 · RTT」；连上后持续 20 秒仍只有中继路径（iroh 先走中继再升级，刚连上不误报）时，说明任一端开着 Clash TUN / 全局 VPN 等改写 UDP 端口的工具会让打洞失败及处理办法。
 
 仍需外部条件：
-1. **macOS / iOS 构建链路**本机编不了，以 CI 首跑为准（iroh 在 aarch64-apple-ios 上的编译、rustc 报出的系统库清单、`-force_load` 与其它静态库是否撞符号）。
+1. ~~macOS / iOS 构建链路以 CI 首跑为准~~ → **已由 PR #1734 的 CI 验证**：iOS 静态库编译、`-force_load` 链进 Runner 且 `fp2p_*` 符号在（未被 dead-strip），macOS universal dylib 进 `Contents/Frameworks` 并过冒烟；Linux / Windows 用新编的库跑了真隧道 FFI 测试，Android 三 ABI 交叉编译通过。首跑暴露并已修的两处：rustc 的 native-static-libs 行在 `CARGO_TERM_COLOR=always` 下带 ANSI 转义（链接报 `Library 'm…' not found`，脚本改 `--color never` 并校验 token）；universal dylib 的 `otool -D` 按架构分段输出（核对改为逐段）。iOS 真机运行时（端点能否在 iOS 后台 / 蜂窝下保持）未测。
 2. **真实网络实测**：本机实测（Windows，**开着 FlClash TUN**，公网 IPv4/IPv6 全被接管，所以测不到真实公网打洞率；局域网 Mac 当时离线，跨机未测）：
    - home relay 可达 20/20，上线耗时中位数约 3.6 秒、最长 15.5 秒（流量经代理出口到 aps1 / euc1 中继）。
    - 只凭 NodeId 发现：新上线的 host 要 10–50 秒才能被 n0 DNS 查到（pkarr 记录发布中位数约 23 秒），期间首拨约一半失败；host 已上线 40 秒以上时正常（首字节 < 1 秒）。→ 已落地：`p2p://` 地址**只在带中继或可路由直连提示时才公布**（`interconnectP2pPublishableUrl`），客户端不依赖发现。
