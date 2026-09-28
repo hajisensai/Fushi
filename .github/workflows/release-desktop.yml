@@ -513,7 +513,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle pinned Mihon desktop runtime
         shell: pwsh
         run: |
@@ -534,7 +534,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: native/galgame_hook/dist
-          key: ${{ runner.os }}-galgame-helper-v1-${{ hashFiles('native/galgame_hook/**') }}
+          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
@@ -1323,7 +1323,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and sign pinned Mihon desktop runtimes
         shell: bash
         run: |

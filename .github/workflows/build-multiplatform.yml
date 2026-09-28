@@ -495,7 +495,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and verify pinned Mihon desktop runtimes
         shell: bash
         run: |
@@ -762,8 +762,9 @@ jobs:
         run: |
           cmake --build fushi\build\windows\x64 --config Debug --target fushi_windows_game_stream_input_gate
           if ($LASTEXITCODE -ne 0) { throw "game-stream input regression failed ($LASTEXITCODE)" }
-      # Mihon runtime 完全由 vendored 源码 + 构建脚本决定（JDK / 服务端 commit 均在脚本里
-      # 钉死）：输入没变就复用上次产物，省掉 gradle + jlink 的 150~220 s。产物先落缓存目录
+      # Mihon runtime 完全由 vendored 源码（m_extension_server + 离线 jogamp 仓库）+ 构建
+      # 脚本决定（JDK / 服务端 commit 均在脚本里钉死；脚本再多读仓库里别的目录，必须同步
+      # 加进 key）：输入没变就复用上次产物，省掉 gradle + jlink 的 150~220 s。产物先落缓存目录
       # 再拷进 bundle，签名/校验只动 bundle 里的副本，缓存永远是原始构建输出。
       # key 与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
       - name: Restore pinned Mihon desktop runtime
@@ -771,7 +772,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'tool/mihon/**') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |
@@ -797,9 +798,10 @@ jobs:
             }
           }
           .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
-      # helper 双架构 cmake + ctest 每次 270~400 s。key = native/galgame_hook 全树哈希
-      # （**含测试**：只改 ctest 用例也必须 miss 重跑，所以不能拿只覆盖出包输入的
-      # helper_source_fingerprint 当 key）。actions/cache 只在 job 成功时回存，所以命中
+      # helper 双架构 cmake + ctest 每次 270~400 s。key = runner 镜像 + native/galgame_hook
+      # 全树哈希。镜像决定 MSVC / CMake / 自带 .NET 运行时，工具链一变就重编并重跑 ctest；
+      # 树哈希**含测试**：只改 ctest 用例也必须 miss 重跑，所以不能拿只覆盖出包输入的
+      # helper_source_fingerprint 当 key。actions/cache 只在 job 成功时回存，所以命中
       # = 这棵树已经完整编译并通过过 -RunTests，跳过是重复劳动而不是跳过门。
       # install_into_bundle.ps1 仍会按当前源码指纹复核 dist，缓存串号在那里 fail-closed。
       # 本步必须排在 build_distribution.ps1 之前：此时 build/ 与 dist/ 还不存在，哈希只
@@ -810,7 +812,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: native/galgame_hook/dist
-          key: ${{ runner.os }}-galgame-helper-v1-${{ hashFiles('native/galgame_hook/**') }}
+          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
