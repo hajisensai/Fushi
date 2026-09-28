@@ -134,6 +134,8 @@ class AdminApi {
         return _settings();
       case ('PUT', '/api/admin/settings'):
         return _putSettings(await _body(request));
+      case ('GET', '/api/admin/p2p'):
+        return _json(ctx.host.p2pStatus());
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
@@ -186,6 +188,7 @@ class AdminApi {
             },
       'uploadUsedBytes': await uploads.used(),
       'uploadQuotaBytes': ctx.config.uploadQuotaBytes,
+      'p2p': ctx.host.p2pStatus(),
     });
   }
 
@@ -431,6 +434,11 @@ class AdminApi {
           'listen': ctx.config.torrentListen,
           'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
         },
+        // 远程可达三项：保存即生效，不在 restartRequiredKeys 里。
+        'publicUrls': ctx.config.publicUrls,
+        'p2p': ctx.config.p2p,
+        'p2pRelays': ctx.config.p2pRelays,
+        'p2pStatus': ctx.host.p2pStatus(),
         'restartRequiredKeys': const <String>['port', 'bind', 'tls', 'adminPort', 'qbittorrent', 'torrent', 'onnxruntimeLibrary', 'ffmpeg', 'ffprobe'],
       });
 
@@ -443,6 +451,18 @@ class AdminApi {
         engine != ServerConfig.torrentEngineEmbedded &&
         engine != ServerConfig.torrentEngineQbittorrent) {
       throw FormatException('torrent.engine must be auto / embedded / qbittorrent, got "$engine"');
+    }
+    final List<String>? publicUrls = _remoteUrls(body, 'publicUrls');
+    final List<String>? p2pRelays = _remoteUrls(body, 'p2pRelays');
+    final Object? p2pRaw = body['p2p'];
+    if (p2pRaw != null && p2pRaw is! bool) throw const FormatException('p2p must be a boolean');
+    final bool? p2p = p2pRaw as bool?;
+    // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
+    if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
+      return _json(<String, Object?>{
+        'error': 'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+        'reason': 'p2p_unavailable',
+      }, status: 409);
     }
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
@@ -463,9 +483,30 @@ class AdminApi {
       torrentEngine: engine,
       torrentLibraryPath: torrent?['library']?.toString(),
       torrentListen: (torrent?['listen'] ?? '').toString().isEmpty ? null : torrent!['listen'].toString(),
+      publicUrls: publicUrls,
+      p2p: p2p,
+      p2pRelays: p2pRelays,
     );
     await ctx.updateConfig(next);
     return _settings();
+  }
+
+  /// `publicUrls` / `p2pRelays`：缺省 = 不改；否则必须是字符串数组，逐条去空白、
+  /// 去空行、去重，任一条不合法整个请求 400（不落半截）。
+  static List<String>? _remoteUrls(Map<String, dynamic> body, String key) {
+    final Object? raw = body[key];
+    if (raw == null) return null;
+    if (raw is! List) throw FormatException('$key must be an array of URLs');
+    final List<String> urls = <String>[];
+    for (final Object? item in raw) {
+      if (item is! String) throw FormatException('$key must be an array of URLs');
+      final String url = item.trim();
+      if (url.isEmpty || urls.contains(url)) continue;
+      final String? problem = ServerConfig.remoteUrlProblem(url);
+      if (problem != null) throw FormatException('$key: "$url" $problem');
+      urls.add(url);
+    }
+    return urls;
   }
 
   // ── 上传 ─────────────────────────────────────────────────────────────

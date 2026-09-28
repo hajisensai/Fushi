@@ -285,6 +285,20 @@ class ServerConfig {
     );
   }
 
+  /// `public_urls` / `p2p_relays` 单条 URL 的校验：必须 http / https 且带主机名
+  /// （iroh `RelayUrl` 就是一条普通 URL，scheme + host 是它能用的最低要求）。
+  /// 合法 → null，否则返回原因。只在 WebUI / admin API 写入口用；yaml 解析保持
+  /// 宽松，不因手写的一条旧值拒绝启动。
+  static String? remoteUrlProblem(String url) {
+    final Uri? uri = Uri.tryParse(url);
+    if (uri == null) return '不是合法 URL';
+    if (uri.scheme != 'http' && uri.scheme != 'https') {
+      return '只支持 http:// 或 https://';
+    }
+    if (uri.host.isEmpty) return '缺少主机名';
+    return null;
+  }
+
   static List<String> _strings(Object? v) => <String>[
         if (v is List)
           for (final Object? e in v)
