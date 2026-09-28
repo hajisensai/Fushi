@@ -5932,5 +5932,6 @@
   "leaderboard_share_title": "Share this month",
   "leaderboard_share_card_month": "${month} on Fushi",
   "leaderboard_share_card_finished": "Finished ${n} this month",
-  "leaderboard_share_card_chars": "${n} characters read"
+  "leaderboard_share_card_chars": "${n} characters read",
+  "leaderboard_sync_shelf_limit": "Your shelf is over the ${limit}-work limit: ${count} works were not uploaded (finished works go first)"
 }

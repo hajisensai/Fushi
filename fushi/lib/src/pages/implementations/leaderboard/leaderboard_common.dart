@@ -158,10 +158,10 @@ String? leaderboardMediaUrl(WidgetRef ref, String? path) {
   }
 }
 
-/// 可分享链接的服务地址前缀（`resolveMedia('/')` = 服务根）。
+/// 可分享链接的服务地址前缀。
 Uri? leaderboardShareBase(WidgetRef ref) {
   final LeaderboardClient? client = ref.read(leaderboardServiceProvider).client;
-  return client?.resolveMedia('/');
+  return client?.baseUrl;
 }
 
 /// 圆形头像：有图走应用代理的磁盘缓存图片，没图 / 加载失败退回昵称首字。

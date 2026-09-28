@@ -569,6 +569,17 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
                 label: Text(t.leaderboard_sync_claim_action),
               ),
             ],
+            if ((service.droppedForShelfLimit ?? 0) > 0) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                t.leaderboard_sync_shelf_limit(
+                  limit: kLeaderboardMaxShelfRows,
+                  count: service.droppedForShelfLimit!,
+                ),
+                key: const ValueKey<String>('leaderboard-sync-shelf-limit'),
+                style: tokens.type.listSubtitle,
+              ),
+            ],
             if (_syncError != null) ...<Widget>[
               SizedBox(height: tokens.spacing.gap),
               Text(

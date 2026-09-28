@@ -5932,5 +5932,6 @@
   "leaderboard_share_title": "分享本月",
   "leaderboard_share_card_month": "${month} · Fushi",
   "leaderboard_share_card_finished": "本月读完 ${n} 部",
-  "leaderboard_share_card_chars": "阅读 ${n} 字"
+  "leaderboard_share_card_chars": "阅读 ${n} 字",
+  "leaderboard_sync_shelf_limit": "书架超过 ${limit} 部上限：有 ${count} 部未上传（优先上传读完的作品）"
 }

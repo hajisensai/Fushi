@@ -15,7 +15,7 @@ import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_work_pag
 import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/utils.dart';
 
-/// 观看者与该用户的好友关系（由 `friends()` 推出；服务端用户卡不带这个字段）。
+/// 观看者与该用户的好友关系（取服务端用户卡的 `relation`；缺字段时由 `friends()` 推出）。
 enum LeaderboardRelation { self, none, outgoing, incoming, friends }
 
 /// 书架筛选：读完 / 在读（线上 `status` 值）。
@@ -72,7 +72,8 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     setState(() => _cardError = null);
     try {
       final UserCard card = await client.user(widget.accountId);
-      final LeaderboardRelation relation = await _loadRelation(client);
+      final LeaderboardRelation relation =
+          _relationFromCard(card) ?? await _loadRelation(client);
       if (!mounted) return;
       setState(() {
         _card = card;
@@ -81,6 +82,25 @@ class _LeaderboardUserPageState extends ConsumerState<LeaderboardUserPage> {
     } catch (e, st) {
       ErrorLogService.instance.log('Leaderboard.user', e, st);
       if (mounted) setState(() => _cardError = e);
+    }
+  }
+
+  /// 服务端用户卡直接带观看者关系（签名请求时）；缺字段（旧服务端 / 匿名）返回 null，
+  /// 由 [_loadRelation] 退回按好友列表推断。
+  LeaderboardRelation? _relationFromCard(UserCard card) {
+    switch (card.relation) {
+      case 'self':
+        return LeaderboardRelation.self;
+      case 'friend':
+        return LeaderboardRelation.friends;
+      case 'outgoing':
+        return LeaderboardRelation.outgoing;
+      case 'incoming':
+        return LeaderboardRelation.incoming;
+      case null:
+        return widget.accountId == _selfId ? LeaderboardRelation.self : null;
+      default:
+        return LeaderboardRelation.none;
     }
   }
 
