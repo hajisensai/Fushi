@@ -5760,5 +5760,14 @@
   "hoshi_import_result_stats": "统计：会话 $sessions 次、按天 $days 天 · 阅读位置 $positions 个",
   "hoshi_import_result_legacy_skipped": "跳过 $count 条记录：同一本书同一天的数据早先已经同步进来过",
   "hoshi_import_result_deleted_skipped": "有 $count 段统计未恢复：你曾在 Fushi 里删除过这些书的统计",
-  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）："
+  "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）：",
+  "stat_range_mode_day": "日",
+  "stat_range_mode_week": "周",
+  "stat_range_mode_month": "月",
+  "stat_range_mode_year": "年",
+  "stat_range_previous": "上一段",
+  "stat_range_next": "下一段",
+  "stat_range_summary": "所选范围",
+  "stat_range_active_days": "活跃天数",
+  "stat_range_calendar": "学习日历"
 }

@@ -5760,5 +5760,14 @@
   "hoshi_import_result_stats": "Statistics: $sessions sessions, $days days · reading positions: $positions",
   "hoshi_import_result_legacy_skipped": "$count records skipped because the same book and day was already synced earlier",
   "hoshi_import_result_deleted_skipped": "$count statistics segments were not restored because you deleted those books’ statistics in Fushi",
-  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):"
+  "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):",
+  "stat_range_mode_day": "Day",
+  "stat_range_mode_week": "Week",
+  "stat_range_mode_month": "Month",
+  "stat_range_mode_year": "Year",
+  "stat_range_previous": "Previous period",
+  "stat_range_next": "Next period",
+  "stat_range_summary": "Selected range",
+  "stat_range_active_days": "Active days",
+  "stat_range_calendar": "Study calendar"
 }

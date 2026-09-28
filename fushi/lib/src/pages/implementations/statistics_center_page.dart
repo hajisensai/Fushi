@@ -19,6 +19,8 @@ import 'package:fushi/src/pages/implementations/stat_session_list.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
+import 'package:fushi/src/pages/implementations/stat_range_bar.dart';
+import 'package:fushi/src/stats/stat_range.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 import 'package:fushi/utils.dart';
@@ -49,6 +51,18 @@ class StatisticsCenterPage extends BasePage {
 }
 
 class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
+  /// 四个 tab 共享的范围选择（Niratan 式「Range」）：切 tab 不丢范围，各 tab 按
+  /// 自己域的最早日解析成 [StatRange]。只活在本页（不持久化），重进统计中心回到
+  /// 默认「本月」。
+  final ValueNotifier<StatRangeSelection> _rangeSelection =
+      ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+
+  @override
+  void dispose() {
+    _rangeSelection.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     // v105：统计按 Profile 隔离——页头点明当前看的是哪个 Profile 的数字，否则
@@ -88,11 +102,20 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
             ),
             Expanded(
               child: TabBarView(
-                children: const <Widget>[
-                  _StatsOverviewTab(),
-                  ReadingStatisticsPage(embedded: true),
-                  VideoStatisticsPage(embedded: true),
-                  GameStatisticsPage(embedded: true),
+                children: <Widget>[
+                  _StatsOverviewTab(rangeSelection: _rangeSelection),
+                  ReadingStatisticsPage(
+                    embedded: true,
+                    rangeSelection: _rangeSelection,
+                  ),
+                  VideoStatisticsPage(
+                    embedded: true,
+                    rangeSelection: _rangeSelection,
+                  ),
+                  GameStatisticsPage(
+                    embedded: true,
+                    rangeSelection: _rangeSelection,
+                  ),
                 ],
               ),
             ),
@@ -107,7 +130,10 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
 /// 取完整日面；目标口径与首页/阅读统计页同函数（[studyGoalCharsForDay]，
 /// BUG-1993）。
 class _StatsOverviewTab extends ConsumerStatefulWidget {
-  const _StatsOverviewTab();
+  const _StatsOverviewTab({required this.rangeSelection});
+
+  /// 统计中心共享的范围选择（见 [StatRangeBar]）。
+  final ValueNotifier<StatRangeSelection> rangeSelection;
 
   @override
   ConsumerState<_StatsOverviewTab> createState() => _StatsOverviewTabState();
@@ -135,11 +161,39 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
   StatActivityBuckets _favorited = StatActivityBuckets();
   StatActivityBuckets _favoritedSentences = StatActivityBuckets();
 
+  /// 本轮加载时的统计窗口（「今日」只有一个，BUG-2219）。
+  StatWindow _window = StatWindow(DateTime.now());
+
+  /// 跨域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
+  Map<String, StatDayData> _byDay = <String, StatDayData>{};
+
+  /// 跨域查词 / 制卡事件（dateKey, 次数），所选范围卡按范围求和。
+  List<(String, int)> _lookupEvents = const <(String, int)>[];
+  List<(String, int)> _minedEvents = const <(String, int)>[];
+
   @override
   void initState() {
     super.initState();
+    widget.rangeSelection.addListener(_onRangeChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
   }
+
+  @override
+  void dispose() {
+    widget.rangeSelection.removeListener(_onRangeChanged);
+    super.dispose();
+  }
+
+  void _onRangeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 当前范围：共享选择 × 本 tab 的今日 × 跨域最早有数据的一天。
+  StatRange get _range => StatRange.resolve(
+    widget.rangeSelection.value,
+    todayKey: _window.todayKey,
+    earliestKey: earliestStatDateKey(_byDay.keys),
+  );
 
   Future<void> _load() async {
     try {
@@ -151,11 +205,15 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
         includeCounters: true,
       );
       _daily = facts.daily;
+      _byDay = sumStatDaysByKey(_daily);
       _sessions = facts.sessions;
       // 跨域 = 不传 source（三个域 tab 各传自己的那一个），所以总览的四个数字
       // 恒等于三个 tab 之和：同一批行、同一个分桶函数，没有第二条口径。
       final DateTime now = DateTime.now();
+      _window = StatWindow(now);
       final StatCounterFacts counters = facts.counters;
+      _lookupEvents = counters.lookupEvents().toList();
+      _minedEvents = counters.minedEvents().toList();
       _lookup = bucketActivityByDateKey(counters.lookupEvents(), now);
       _mined = bucketActivityByDateKey(counters.minedEvents(), now);
       _favorited = bucketActivityByDateKey(counters.favoriteWordEvents(), now);
@@ -226,7 +284,8 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (_error != null) {
       return Center(child: Text(_error!, style: tokens.type.metadata));
     }
-    final StatWindow w = StatWindow(DateTime.now());
+    final StatWindow w = _window;
+    final StatRange range = _range;
     return ListView(
       // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，tab 内容末尾自己让开
       // home indicator / 手势条（三个域 tab 走 [buildStatTailSliver]）。
@@ -237,7 +296,31 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
       children: <Widget>[
         _buildGoalCard(tokens, w),
         _buildSummaryCards(w),
-        buildStatDailyDurationChartSection(context, _dailyChartData(w)),
+        StatRangeBar(range: range, onChanged: _selectRange),
+        buildStatRangeCalendarSection(
+          context,
+          byDay: _byDay,
+          now: w.now,
+          onDaySelected: _selectDay,
+        ),
+        buildStatRangeChartSection(context, range, _byDay),
+        buildStatRangeSummary(
+          context,
+          range,
+          _byDay,
+          extraLines: <StatSummaryLine>[
+            if (statBookCphOf(_daily, range.contains) case final String cph)
+              StatSummaryLine(label: t.stat_reading_speed, value: cph),
+            StatSummaryLine(
+              label: t.stat_lookup,
+              value: '${sumStatEventsInRange(_lookupEvents, range)}',
+            ),
+            StatSummaryLine(
+              label: t.stat_mined,
+              value: '${sumStatEventsInRange(_minedEvents, range)}',
+            ),
+          ],
+        ),
         buildStatSessionSection(
           context,
           sessions: _sessions,
@@ -258,24 +341,12 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     if (saved && mounted) setState(() {});
   }
 
-  /// 最近 30 天跨域时长柱面：把完整日面 [_daily] 按 dateKey 折成图表点，再按
-  /// `lastDayKeys(30)` 补齐空日期——与三个域 tab 的同名图表同一口径（本 tab 之前
-  /// 没有这张图，数据其实一直是齐的）。
-  List<StatDayData> _dailyChartData(StatWindow w) {
-    final Map<String, StatDayData> byKey = <String, StatDayData>{};
-    for (final StatFact f in _daily) {
-      final StatDayData day = byKey.putIfAbsent(
-        f.dateKey,
-        () => StatDayData(dateKey: f.dateKey),
-      );
-      day.chars += f.chars;
-      day.ms += f.ms;
-    }
-    return <StatDayData>[
-      for (final String key in w.lastDayKeys(30))
-        byKey[key] ?? StatDayData(dateKey: key),
-    ];
-  }
+  void _selectRange(StatRangeSelection selection) =>
+      widget.rangeSelection.value = selection;
+
+  /// 日历点某天 → 范围切到那一天（Niratan 同款：日历是范围的锚点选择器）。
+  void _selectDay(String dateKey) => widget.rangeSelection.value =
+      StatRangeSelection(mode: StatRangeMode.day, anchorKey: dateKey);
 
   /// 会话行展示名：与时段明细的 [_entryTitle] 同判据（游戏走库内显示名、书走
   /// override 书名），只是输入是会话而非事实行。
