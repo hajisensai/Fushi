@@ -5,17 +5,20 @@
 ///
 /// **宁可不改，不能改坏**：没有可用参考、证据不足、互相矛盾，一律原样返回，
 /// 调用方拿到的字节与现在的行为完全一样。
+///
+/// 算法（对齐判定与保字节改写）住在上游 `fushi_asr_subtitles`
+/// （hajisensai/fushi-subtitles）；本文件只是装配：ffmpeg 抽参考轨、isolate 调度、
+/// 原稿备份。改算法去上游改。
 library;
 
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:fushi_asr_subtitles/asr_subtitles.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
-import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
-import 'package:fushi_engine/media/video/subtitle/subtitle_time_rewriter.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
