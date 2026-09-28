@@ -1235,6 +1235,54 @@ JSON.stringify((function(){
     }
   }
 
+  /// 收藏夹一键制卡：在**当前已渲染的结果**里为 [expression] / [reading] 挑词条，取回
+  /// 与手动点「+」逐字段相同的制卡 payload（popup.js `fushiPopupBuildMinePayloadFor`
+  /// → `buildMinePayload`）。不点按钮、不走 `mineEntry` 桥、不画任何 UI——落卡与句子
+  /// 媒体由调用方负责（调用方还须先 [writeDictionaryMediaCache] 落外字字节）。
+  ///
+  /// 没有词条 / WebView 已摘 / JS 抛错 / 超时 → null（失败原因写 [ErrorLogService]）。
+  /// 值一律折成字符串，与 `mineEntry` 桥交给宿主的字段形状一致（null → 空串）。
+  Future<Map<String, String>?> buildMinePayloadFor({
+    required String expression,
+    required String reading,
+    Duration timeout = _kMineRoundTripTimeout,
+  }) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return null;
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            // 参数经 jsonEncode 内联成 JS 字面量（与本文件其余注入同法），不依赖各平台
+            // `arguments` 通道的实现差异。
+            functionBody: 'return await (window.fushiPopupBuildMinePayloadFor'
+                ' ? window.fushiPopupBuildMinePayloadFor('
+                '${jsonEncode(expression)}, ${jsonEncode(reading)})'
+                ' : null);',
+          )
+          .timeout(timeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.buildMinePayloadFor',
+          'popup.js threw while building the payload: ${result!.error}',
+          StackTrace.current,
+        );
+        return null;
+      }
+      final Object? raw = result?.value;
+      if (raw is! Map) return null;
+      return raw.map<String, String>(
+        (dynamic k, dynamic v) => MapEntry<String, String>(
+          k.toString(),
+          v == null ? '' : v.toString(),
+        ),
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance
+          .log('DictPopupWebview.buildMinePayloadFor', e, stack);
+      return null;
+    }
+  }
+
   Future<void> caretRefresh() async {
     await _controller?.evaluateJavascript(
         source: ReaderCaretScripts.refreshInvocation());

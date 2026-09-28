@@ -3518,17 +3518,67 @@ function createAudioButton(expression, reading, entryIndex) {
     return button;
 }
 
+// 收藏词的释义快照（纯文本）：按词典分段「【词典名】释义」，跳过隐藏词典与重定向
+// 条目（与制卡 constructGlossaryHtml 同一过滤口径）。收藏夹只做展示用，故取纯文本
+// 并截断——完整 HTML 释义在批量制卡时由 Dart 侧重新查词生成，不靠这份快照。
+const FAVORITE_GLOSSARY_MAX_CHARS = 2000;
+function favoriteGlossaryText(entryIndex) {
+    const entry = window.lookupEntries?.[entryIndex];
+    if (!entry || !Array.isArray(entry.glossaries)) return '';
+    const hiddenDictionaryNames = window.hiddenDictionaryNames || [];
+    const sections = [];
+    let lastDict = null;
+    let current = [];
+    const flush = () => {
+        if (lastDict !== null && current.length) {
+            sections.push(`【${lastDict}】${current.join('; ')}`);
+        }
+        current = [];
+    };
+    for (const g of entry.glossaries) {
+        if (hiddenDictionaryNames.includes(g.dictionary)) continue;
+        if (isRedirectGlossary(g)) continue;
+        if (g.dictionary !== lastDict) {
+            flush();
+            lastDict = g.dictionary;
+        }
+        const tempDiv = document.createElement('div');
+        try {
+            const content = typeof g.content === 'string' ? JSON.parse(g.content) : g.content;
+            renderStructuredContent(tempDiv, content, dictionaryLanguageOf(g.dictionary), g.dictionary, true);
+        } catch {
+            renderStructuredContent(tempDiv, g.content, dictionaryLanguageOf(g.dictionary), g.dictionary, true);
+        }
+        const text = (tempDiv.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text) current.push(text);
+    }
+    flush();
+    const joined = sections.join('\n');
+    return joined.length > FAVORITE_GLOSSARY_MAX_CHARS
+        ? `${joined.slice(0, FAVORITE_GLOSSARY_MAX_CHARS)}…`
+        : joined;
+}
+
 // 收藏按钮（☆/★）：切换收藏当前词条。书内阅读与视频共用同一套弹窗，故两表面
 // 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
-function createFavoriteButton(expression, reading) {
+// 带上释义快照：此前只传 {expression, reading}，收藏夹里的词只剩词形。原句与
+// 定位锚点由宿主（阅读器 / 视频页）在 Dart 侧补，JS 不知道当前句。
+function createFavoriteButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'inline-action-button favorite-button',
         onclick: async () => {
             invalidateEntryStateCheck(button);
             button.disabled = true;
             try {
+                let glossary = '';
+                try {
+                    glossary = favoriteGlossaryText(entryIndex);
+                } catch (e) {
+                    // 释义快照只是展示用，渲染失败不能挡住收藏本身。
+                    console.error('favorite button: glossary snapshot failed', e);
+                }
                 const nowFav = await window.flutter_inappwebview.callHandler(
-                    'favoriteEntry', { expression, reading });
+                    'favoriteEntry', { expression, reading, glossary });
                 setButtonIcon(button, nowFav ? 'favorited' : 'favorite');
                 button.classList.toggle('favorited', !!nowFav);
             } catch (e) {
@@ -3694,7 +3744,7 @@ function createEntryHeader(entry, idx) {
         buttonsContainer.appendChild(createAudioButton(expression, reading, idx));
     }
 
-    buttonsContainer.appendChild(createFavoriteButton(expression, reading));
+    buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
 
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
     // DETECTED AT LOOKUP TIME and reflects Anki's REAL card existence.
@@ -4278,6 +4328,44 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
     const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
     return Promise.resolve(result).then(() => true);
+};
+
+// 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，
+// 产出与手动点「+」**逐字段相同**的制卡 payload（释义 HTML / 单词典释义 / 频率 / 音调 /
+// 单词音频 / 外字媒体），但**不点任何按钮、不画任何 UI、不走桥**——落卡由 Dart 批量
+// 流程自己做（它还要配句子音频 / 视频片段）。
+//
+// 选词条（下标是 lookupEntries 下标，与 buildMinePayload 的 entryIndex 同一套）：
+//   ① 表记 + 读音都相同；② 仅表记相同；③ 第一条。每一档都优先「至少有一本未隐藏词典
+//   给了释义」的词条——被隐藏词典过滤空了的词条弹窗里根本不渲染，拿它制卡是一张空卡。
+// 没有任何词条时回 null（Dart 据此把这一条记为「词典里没有这个词」）。
+window.fushiPopupBuildMinePayloadFor = async function(expression, reading) {
+    const entries = window.lookupEntries;
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const hidden = window.hiddenDictionaryNames || [];
+    const hasVisibleGlossary = (entry) => Array.isArray(entry && entry.glossaries)
+        && entry.glossaries.some(g => !hidden.includes(g.dictionary));
+    const wantExpression = String(expression || '');
+    const wantReading = String(reading || '');
+    const tiers = [
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading,
+        (e) => e.expression === wantExpression,
+        () => true,
+    ];
+    let idx = -1;
+    for (const matches of tiers) {
+        idx = entries.findIndex(e => e && matches(e) && hasVisibleGlossary(e));
+        if (idx < 0) idx = entries.findIndex(e => e && matches(e));
+        if (idx >= 0) break;
+    }
+    if (idx < 0) return null;
+    const entry = entries[idx];
+    const payload = await buildMinePayload(
+        entry.expression, entry.reading, entry.frequencies, entry.pitches,
+        entry.rules, entry.matched, idx, '');
+    payload.entryIndex = idx;
+    return payload;
 };
 
 // TODO-1325 #5 part1：多词条焦点导航（上/下一条词条跳转）。一次查询可能返回多个词条

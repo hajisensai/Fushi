@@ -171,6 +171,11 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       );
       return;
     }
+    // 顶栏 ★ 收藏时记下当时查的那个词（顶层结果首个词头），收藏夹在句子旁显示、
+    // 批量制卡以它为词条。
+    final ({String expression, String reading})? headword = leadingHeadwordOf(
+      _popup.entries.isEmpty ? null : _popup.entries.first.result,
+    );
     await repo.add(
       FavoriteSentence(
         // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
@@ -186,6 +191,8 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
             : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
         source: kFavoriteSentenceSourceVideo,
         dateKey: statTodayKey(),
+        expression: headword?.expression,
+        reading: headword?.reading,
       ),
     );
     if (mounted) {

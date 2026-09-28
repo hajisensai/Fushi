@@ -163,6 +163,7 @@ void main() {
           reading: 'r$i',
           glossary: '',
           sourceType: 'video',
+          sentence: '',
           bookKey: key,
           title: title,
           dateKey: '2026-06-06',

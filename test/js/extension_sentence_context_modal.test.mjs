@@ -45,6 +45,10 @@ function createWorld() {
   });
   win.document.querySelector("video").currentTime = 4.2;
   win.fushiActiveFullTrack = () => ({ lang: "ja", cues: TRACK });
+  // 模态文案走 fushiTr → window.fushiT（i18n.js）；没装时退回键名。这里按真实
+  // zh-CN 语言包解析，断言的中文标签与扩展实际显示一致（缺 key 时同样退回键名，照样暴露）。
+  const zh = JSON.parse(src("locales/zh-CN.json"));
+  win.fushiT = (key) => (typeof zh[key] === "string" ? zh[key] : key);
   for (const f of ["subtitle-adapters.js", "vendor/dict-media.js", "popup-size.js",
     "subtitle-providers.js", "content.js"]) {
     win.eval(src(f));
