@@ -45,6 +45,7 @@ abstract interface class TorrentMetainfoBackend implements TorrentBackend {
   Future<bool> addTorrentMetainfo(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   });
@@ -57,6 +58,7 @@ abstract interface class TorrentPausedMetainfoBackend
   Future<bool> addTorrentMetainfoPaused(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
   });
 }
 
@@ -244,9 +246,14 @@ abstract interface class TorrentBackend {
   ///
   /// [sequential] 开顺序下载、[firstLastPiecePrio] 开首尾块优先：两者齐开时
   /// 视频文件从下载初期就可顺序播放（边下边播的前置条件）。
+  ///
+  /// [savePath] 是**后端视角**的保存目录（远程下载器已经过路径映射换算）。
+  /// 非 null 时优先于分类默认目录：受管视频任务直接落进目标来源下的隐藏暂存
+  /// 目录（BUG-2755），不再先落全局下载根再跨盘搬。null = 沿用分类默认目录。
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   });

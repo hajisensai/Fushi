@@ -44,6 +44,7 @@ class _FakeBackend implements TorrentBackend {
   @override
   Future<bool> addTorrent(String magnetOrUrl,
           {required String category,
+          String? savePath,
           bool sequential = false,
           bool firstLastPiecePrio = false}) async =>
       true;

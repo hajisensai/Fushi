@@ -3315,6 +3315,363 @@ void main() {
       );
     });
   });
+
+  group('BUG-2755 download save path follows the target source', () {
+    String incomingOf(String root) =>
+        p.normalize(p.absolute(p.join(root, '.fushi-incoming', 'fushi-video')));
+
+    Future<void> failJob(
+      _PipelineEnvironment environment,
+      String jobId, {
+      String lifecycle = VideoDownloadJobLifecycle.needsAttention,
+      int? targetSourceId,
+      bool clearTarget = false,
+    }) =>
+        environment.database.updateVideoDownloadJob(
+          jobId,
+          VideoDownloadJobsCompanion(
+            lifecycle: Value<String>(lifecycle),
+            lastError: const Value<String?>(
+              'The managed video source no longer exists',
+            ),
+            targetSourceId: clearTarget
+                ? const Value<int?>(null)
+                : targetSourceId == null
+                    ? const Value<int?>.absent()
+                    : Value<int?>(targetSourceId),
+          ),
+        );
+
+    Future<int> insertSource(
+      _PipelineEnvironment environment,
+      String name, {
+      bool create = true,
+    }) async {
+      final Directory directory =
+          Directory(p.join(environment.root.path, name));
+      if (create) await directory.create(recursive: true);
+      return environment.database.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: name,
+          mediaKind: 'video',
+          rootPath: directory.path,
+          createdAt: 2,
+        ),
+      );
+    }
+
+    Future<void> insertSubscription(
+      _PipelineEnvironment environment, {
+      required int targetSourceId,
+      required String jobId,
+    }) async {
+      await environment.database.upsertVideoDownloadSubscription(
+        VideoDownloadSubscriptionsCompanion.insert(
+          subscriptionId: 'sub-2755',
+          resourceProvider: 'nyaa:test-instance',
+          mediaKind: 'tv',
+          title: 'Show',
+          searchQuery: 'Show',
+          backendKind: 'embedded',
+          fingerprint: _expectedIdentity.fingerprint,
+          targetSourceId: Value<int?>(targetSourceId),
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      );
+      await environment.database.upsertVideoDownloadSubscriptionItem(
+        VideoDownloadSubscriptionItemsCompanion.insert(
+          subscriptionId: 'sub-2755',
+          logicalItemKey: 's1e1',
+          resourceProvider: 'nyaa:test-instance',
+          selectedResourceId: 'release-1',
+          title: 'Show - 01',
+          jobId: Value<String?>(jobId),
+          discoveredAt: 1,
+          updatedAt: 1,
+        ),
+      );
+    }
+
+    test('managed enqueue downloads straight into the source staging dir',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+
+      await environment.service.enqueue(environment.enqueueRequest());
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(
+          backend.addSavePaths, <String?>[incomingOf(environment.root.path)]);
+    });
+
+    test('a job without a usable source falls back to the global download root',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final int missingSource =
+          await insertSource(environment, 'gone', create: false);
+      await environment.insertJob(
+        jobId: 'missing-source-job',
+        stage: VideoDownloadJobStage.enqueue,
+      );
+      await environment.database.updateVideoDownloadJob(
+        'missing-source-job',
+        VideoDownloadJobsCompanion(
+          targetSourceId: Value<int?>(missingSource),
+        ),
+      );
+
+      environment.service.wake();
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(backend.addSavePaths, <String?>[null]);
+    });
+
+    test('remote backends receive the path-mapped staging dir', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      late _PipelineEnvironment environment;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/media',
+              localRoot: environment.root.path,
+            ),
+          ],
+        ),
+      );
+      addTearDown(environment.close);
+
+      await environment.service.enqueue(environment.enqueueRequest());
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(
+        backend.addSavePaths,
+        <String?>['/media/.fushi-incoming/fushi-video'],
+      );
+    });
+
+    test('a source outside every mapping falls back instead of guessing',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final Directory elsewhere =
+          await Directory.systemTemp.createTemp('fushi-pipeline-unmapped-');
+      addTearDown(() => elsewhere.delete(recursive: true));
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+        backend: backend,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+          pathMappings: <VideoDownloadPathMapping>[
+            VideoDownloadPathMapping(
+              remoteRoot: '/downloads',
+              localRoot: elsewhere.path,
+            ),
+          ],
+        ),
+      );
+      addTearDown(environment.close);
+
+      await environment.service.enqueue(environment.enqueueRequest());
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(backend.addSavePaths, <String?>[null]);
+    });
+
+    test('retry rebinds an orphaned job to its subscription source', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.3)],
+      );
+      late _PipelineEnvironment environment;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        defaultTargetSourceId: () async => environment.sourceId,
+      );
+      addTearDown(environment.close);
+      final int subscriptionSource = await insertSource(environment, 'series');
+      const String jobId = 'orphaned-subscription-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await failJob(environment, jobId, clearTarget: true);
+      await insertSubscription(
+        environment,
+        targetSourceId: subscriptionSource,
+        jobId: jobId,
+      );
+
+      await environment.service.retryJob(jobId);
+
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(jobId))!;
+      expect(job.targetSourceId, subscriptionSource);
+      expect(job.lifecycle, isNot(VideoDownloadJobLifecycle.needsAttention));
+    });
+
+    test('retry falls back to the default source without a subscription',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.3)],
+      );
+      late _PipelineEnvironment environment;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        defaultTargetSourceId: () async => environment.sourceId,
+      );
+      addTearDown(environment.close);
+      const String jobId = 'orphaned-manual-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.organize,
+        withoutTargetSource: true,
+      );
+      await failJob(environment, jobId);
+
+      await environment.service.retryJob(jobId);
+
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(jobId))!;
+      expect(job.targetSourceId, environment.sourceId);
+    });
+
+    test('retry leaves a job whose source is still usable untouched', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.3)],
+      );
+      late _PipelineEnvironment environment;
+      late int other;
+      environment = await _PipelineEnvironment.create(
+        backend: backend,
+        defaultTargetSourceId: () async => other,
+      );
+      addTearDown(environment.close);
+      other = await insertSource(environment, 'other');
+      const String jobId = 'healthy-source-job';
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await failJob(environment, jobId);
+
+      await environment.service.retryJob(jobId);
+
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(jobId))!;
+      expect(job.targetSourceId, environment.sourceId);
+    });
+
+    test('re-enqueueing a torrent revives the orphaned job into the new source',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(
+        snapshots: <TorrentSnapshot>[_downloadingSnapshot(progress: 0.3)],
+      );
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String oldJobId = 'orphaned-same-hash-job';
+      await environment.insertJob(
+        jobId: oldJobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await failJob(environment, oldJobId, clearTarget: true);
+
+      final String jobId =
+          await environment.service.enqueue(environment.enqueueRequest());
+
+      expect(jobId, oldJobId);
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(jobId))!;
+      expect(job.targetSourceId, environment.sourceId);
+      expect(job.lifecycle, isNot(VideoDownloadJobLifecycle.needsAttention));
+      expect(await environment.database.getVideoDownloadJobs(), hasLength(1));
+    });
+
+    test('a same-hash job whose source still exists keeps blocking', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend();
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      const String oldJobId = 'healthy-same-hash-job';
+      await environment.insertJob(
+        jobId: oldJobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await failJob(environment, oldJobId);
+
+      await expectLater(
+        environment.service.enqueue(environment.enqueueRequest()),
+        throwsA(anything),
+      );
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(oldJobId))!;
+      expect(job.lifecycle, VideoDownloadJobLifecycle.needsAttention);
+    });
+
+    test('a hash learned at enqueue time takes over an orphaned duplicate',
+        () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      // 新任务的 hash 入队时还不知道（行上没有 torrent_hash），直到物化 payload
+      // 才对上旧任务——这正是旧任务把它拦成「already managed」的那条路。先插它
+      // 再清 hash，否则与旧任务撞 (fingerprint, torrent_hash) 唯一索引。
+      const String newJobId = 'new-owner-job';
+      await environment.insertJob(
+        jobId: newJobId,
+        stage: VideoDownloadJobStage.enqueue,
+      );
+      await environment.database.updateVideoDownloadJob(
+        newJobId,
+        const VideoDownloadJobsCompanion(
+          torrentHash: Value<String?>(null),
+          backendTaskId: Value<String?>(null),
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.cancelled),
+        ),
+      );
+      const String oldJobId = 'orphaned-duplicate-job';
+      await environment.insertJob(
+        jobId: oldJobId,
+        stage: VideoDownloadJobStage.download,
+      );
+      await failJob(environment, oldJobId, clearTarget: true);
+      await insertSubscription(
+        environment,
+        targetSourceId: environment.sourceId,
+        jobId: oldJobId,
+      );
+      await environment.database.updateVideoDownloadJob(
+        newJobId,
+        const VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.active),
+        ),
+      );
+
+      environment.service.wake();
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(await environment.database.getVideoDownloadJob(oldJobId), isNull);
+      final VideoDownloadJobRow job =
+          (await environment.database.getVideoDownloadJob(newJobId))!;
+      expect(job.torrentHash, _torrentHash);
+      final VideoDownloadSubscriptionItemRow item = (await environment.database
+              .getVideoDownloadSubscriptionItems('sub-2755'))
+          .single;
+      expect(item.jobId, newJobId);
+      expect(
+          backend.addSavePaths, <String?>[incomingOf(environment.root.path)]);
+    });
+  });
 }
 
 /// 与 torrent_metainfo_test 同款的最小 v1 metainfo（单文件 name=test）。
@@ -3400,6 +3757,7 @@ class _PipelineEnvironment {
     VideoCoverExtractor? coverExtractor,
     bool Function()? skipDownloadExtras,
     AutomaticSubtitleAligner? subtitleAligner,
+    Future<int?> Function()? defaultTargetSourceId,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -3451,6 +3809,7 @@ class _PipelineEnvironment {
       coverExtractor: coverExtractor,
       videoCoversDirectory: Directory(p.join(root.path, 'covers')),
       skipDownloadExtras: skipDownloadExtras,
+      defaultTargetSourceId: defaultTargetSourceId,
     );
     return _PipelineEnvironment._(
       database: database,
@@ -3806,6 +4165,7 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   int prepareCategoryCalls = 0;
   final List<String> preparedCategories = <String>[];
   int addCalls = 0;
+  final List<String?> addSavePaths = <String?>[];
   int listTorrentsCalls = 0;
   int listFilesCalls = 0;
   int pauseCalls = 0;
@@ -3842,10 +4202,12 @@ class _FakeTorrentBackend implements TorrentPauseBackend {
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async {
     addCalls += 1;
+    addSavePaths.add(savePath);
     await beforeAdd?.call();
     if (!addEntered.isCompleted) addEntered.complete();
     return await _addGate?.future ?? true;

@@ -243,7 +243,9 @@ class _VideoDownloadSubscriptionsPanelState
     );
     if (result == null || !mounted) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await appModel.database.updateVideoDownloadSubscription(
+    // 改了目标来源时，该订阅已派出、还没进整理的任务一起改过去（BUG-2755），
+    // 否则它们下载完照旧整理进旧来源。
+    await appModel.database.updateVideoDownloadSubscriptionRetargetingJobs(
       subscription.subscriptionId,
       VideoDownloadSubscriptionsCompanion(
         searchQuery: Value<String>(result.searchQuery),
@@ -259,6 +261,7 @@ class _VideoDownloadSubscriptionsPanelState
         lastError: const Value<String?>(null),
         updatedAt: Value<int>(now),
       ),
+      nowAt: now,
     );
     await appModel.videoDownloadSubscriptionService?.checkNow();
   }

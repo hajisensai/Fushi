@@ -9,6 +9,7 @@ class TorrentAddCoordinator {
   Future<bool> add(
     TorrentAddPayload payload, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) {
@@ -16,12 +17,14 @@ class TorrentAddCoordinator {
       TorrentMagnetPayload magnet => backend.addTorrent(
           magnet.magnetUri,
           category: category,
+          savePath: savePath,
           sequential: sequential,
           firstLastPiecePrio: firstLastPiecePrio,
         ),
       TorrentMetainfoPayload metainfo => _addMetainfo(
           metainfo,
           category: category,
+          savePath: savePath,
           sequential: sequential,
           firstLastPiecePrio: firstLastPiecePrio,
         ),
@@ -31,6 +34,7 @@ class TorrentAddCoordinator {
   Future<bool> _addMetainfo(
     TorrentMetainfoPayload payload, {
     required String category,
+    required String? savePath,
     required bool sequential,
     required bool firstLastPiecePrio,
   }) {
@@ -39,6 +43,7 @@ class TorrentAddCoordinator {
     return current.addTorrentMetainfo(
       payload,
       category: category,
+      savePath: savePath,
       sequential: sequential,
       firstLastPiecePrio: firstLastPiecePrio,
     );

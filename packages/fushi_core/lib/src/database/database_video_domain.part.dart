@@ -2201,6 +2201,101 @@ mixin _FushiDbVideoDomain
                 t.subscriptionId.equals(subscriptionId)))
           .go();
 
+  /// 改订阅并把它派生、尚未进整理的任务一起改到新目标来源（BUG-2755）。
+  ///
+  /// 只改订阅行时，已经派出去的集还固化着旧 `targetSourceId`，下载完照样整理进
+  /// 旧来源——用户看到的是「改了来源仍在旧位置下载」。这里在同一事务里经
+  /// `subscription_items.job_id` 找到该订阅的任务，把未完成且仍在
+  /// [kVideoDownloadPreOrganizeStages] 的改写过去。已交给下载器的种子不强制搬：
+  /// 整理阶段会把它移进新来源。[patch] 未带 `targetSourceId` 时等同
+  /// [updateVideoDownloadSubscription]。返回被改写的任务数。
+  Future<int> updateVideoDownloadSubscriptionRetargetingJobs(
+    String subscriptionId,
+    VideoDownloadSubscriptionsCompanion patch, {
+    required int nowAt,
+  }) =>
+      transaction(() async {
+        final int changed =
+            await updateVideoDownloadSubscription(subscriptionId, patch);
+        final int? target =
+            patch.targetSourceId.present ? patch.targetSourceId.value : null;
+        if (changed == 0 || target == null) return 0;
+        final List<String> jobIds = await (selectOnly(
+          videoDownloadSubscriptionItems,
+          distinct: true,
+        )
+              ..addColumns(<Expression<Object>>[
+                videoDownloadSubscriptionItems.jobId,
+              ])
+              ..where(videoDownloadSubscriptionItems.subscriptionId
+                      .equals(subscriptionId) &
+                  videoDownloadSubscriptionItems.jobId.isNotNull()))
+            .map((TypedResult row) =>
+                row.read(videoDownloadSubscriptionItems.jobId)!)
+            .get();
+        if (jobIds.isEmpty) return 0;
+        return (update(videoDownloadJobs)
+              ..where(($VideoDownloadJobsTable t) =>
+                  t.jobId.isIn(jobIds) &
+                  t.lifecycle
+                      .equals(VideoDownloadJobLifecycle.completed)
+                      .not() &
+                  t.stage.isIn(kVideoDownloadPreOrganizeStages)))
+            .write(VideoDownloadJobsCompanion(
+          targetSourceId: Value<int?>(target),
+          updatedAt: Value<int>(nowAt),
+        ));
+      });
+
+  /// 认领任务 [jobId] 的订阅（经 `subscription_items.job_id`）；非订阅任务为 null。
+  Future<VideoDownloadSubscriptionRow?> getVideoDownloadSubscriptionForJob(
+    String jobId,
+  ) async {
+    final VideoDownloadSubscriptionItemRow? item =
+        await (select(videoDownloadSubscriptionItems)
+              ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                  t.jobId.equals(jobId))
+              ..orderBy(<OrderingTerm Function(
+                  $VideoDownloadSubscriptionItemsTable)>[
+                ($VideoDownloadSubscriptionItemsTable t) =>
+                    OrderingTerm.desc(t.updatedAt),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
+    if (item == null) return null;
+    return getVideoDownloadSubscription(item.subscriptionId);
+  }
+
+  /// 同 torrent 的新任务接管一条来源已失效的旧任务（BUG-2755）。
+  ///
+  /// `(fingerprint, torrent_hash)` 唯一：旧任务停在 failed / needsAttention、目标
+  /// 来源又被删了时，同一集重新入队会被它永远拦成「already managed」。这里在一个
+  /// 事务里把认领旧任务的订阅条目改指 [byJobId]，再删掉旧任务行（文件行随 FK
+  /// 级联删除，后端里的种子不动——新任务按同 hash 接着用）。只接管文件还没落进
+  /// 来源的旧任务（[kVideoDownloadSourceRebindableStages]）；条件不满足返回 false。
+  Future<bool> supersedeVideoDownloadJob({
+    required String supersededJobId,
+    required String byJobId,
+  }) =>
+      transaction(() async {
+        if (supersededJobId == byJobId) return false;
+        final VideoDownloadJobRow? old =
+            await getVideoDownloadJob(supersededJobId);
+        if (old == null ||
+            (old.lifecycle != VideoDownloadJobLifecycle.failed &&
+                old.lifecycle != VideoDownloadJobLifecycle.needsAttention) ||
+            !kVideoDownloadSourceRebindableStages.contains(old.stage)) {
+          return false;
+        }
+        await (update(videoDownloadSubscriptionItems)
+              ..where(($VideoDownloadSubscriptionItemsTable t) =>
+                  t.jobId.equals(supersededJobId)))
+            .write(VideoDownloadSubscriptionItemsCompanion(
+          jobId: Value<String?>(byJobId),
+        ));
+        return await deleteVideoDownloadJob(supersededJobId) == 1;
+      });
+
   /// 原子领取一个到期订阅检查。订阅没有 job lifecycle/stage；enabled、nextCheckAt
   /// 与 lease 正交表达「是否调度 / 何时调度 / 谁正在调度」。
   Future<VideoDownloadSubscriptionRow?> claimNextVideoDownloadSubscription({

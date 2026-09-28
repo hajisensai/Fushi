@@ -5762,5 +5762,7 @@
   "hoshi_import_result_deleted_skipped": "有 $count 段统计未恢复：你曾在 Fushi 里删除过这些书的统计",
   "hoshi_import_result_failed": "有 $count 本书没能导入（它们的统计仍已导入）：",
   "video_library_delete_rows_failed": "$n 个视频删除失败，仍保留在媒体库中。",
-  "video_library_delete_failed": "删除失败：$reason"
+  "video_library_delete_failed": "删除失败：$reason",
+  "media_source_remove_download_refs": "有 $subscriptions 个下载订阅和 $jobs 个未完成的下载保存到此来源。迁移到：",
+  "media_source_remove_download_keep": "不迁移（暂停这些订阅）"
 }

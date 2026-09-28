@@ -1105,6 +1105,7 @@ class _MaterializingBackend implements TorrentBackend {
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async => true;
@@ -1133,6 +1134,7 @@ class _FakeBackend implements TorrentBackend {
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async => true;

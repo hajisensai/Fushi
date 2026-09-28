@@ -2090,6 +2090,21 @@ abstract final class VideoDownloadJobStage {
   static const String scrape = 'scrape';
 }
 
+/// 文件还没进受管来源的阶段：种子排队中或下载中（BUG-2755）。改订阅目标来源时
+/// 只带走这些任务——已进整理的任务可能已把文件改名进旧来源，中途换根会拆散它。
+const List<String> kVideoDownloadPreOrganizeStages = <String>[
+  VideoDownloadJobStage.enqueue,
+  VideoDownloadJobStage.download,
+];
+
+/// 目标来源失效时仍可重绑到别的来源的阶段（BUG-2755）：整理没做完，文件还没
+/// 最终落进来源目录；来源都没了，整理只能在新来源里重来。
+const List<String> kVideoDownloadSourceRebindableStages = <String>[
+  VideoDownloadJobStage.enqueue,
+  VideoDownloadJobStage.download,
+  VideoDownloadJobStage.organize,
+];
+
 /// 网页播放器自动制卡队列（schema v93）。
 ///
 /// 观看网页流媒体（Netflix 等）时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主

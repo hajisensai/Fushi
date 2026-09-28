@@ -18,6 +18,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/download_save_root.dart'
+    show sourceIncomingCategoryPath;
 import 'package:fushi_engine/media/torrent/magnet_utils.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart' show kNyaaTrackers;
 import 'package:fushi_engine/media/torrent/public_trackers.dart'
@@ -142,6 +144,27 @@ DiscoveryMediaKind? downloadOnlyKindOfOrganizationPolicy(String policy) {
     kManualDownloadOnlyPolicyPrefix.length,
   )];
 }
+
+/// 任务是否走「整理进受管视频来源」的流程（legacy 与按域入库/仅下载都不走）。
+bool videoDownloadJobUsesManagedSource(VideoDownloadJobRow job) =>
+    job.organizationPolicy != 'legacy' &&
+    discoveryKindOfOrganizationPolicy(job.organizationPolicy) == null &&
+    downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy) == null;
+
+/// 目标来源失效时这条任务还能不能改绑到别的来源（BUG-2755）：受管任务、未完成、
+/// 文件还没最终落进来源（[kVideoDownloadSourceRebindableStages]）。
+bool videoDownloadJobTargetSourceRebindable(VideoDownloadJobRow job) =>
+    videoDownloadJobUsesManagedSource(job) &&
+    job.lifecycle != VideoDownloadJobLifecycle.completed &&
+    kVideoDownloadSourceRebindableStages.contains(job.stage);
+
+/// 受管视频来源此刻是否可用：存在、视频、本地、根目录可访问。与整理阶段的
+/// 校验同一判据，只是不抛异常。
+bool isUsableManagedVideoSource(MediaSourceRow? source) =>
+    source != null &&
+    source.mediaKind == 'video' &&
+    source.transport == 'local' &&
+    Directory(source.rootPath).existsSync();
 
 /// 手动添加任务（磁力链接 / .torrent 文件）。[magnetUri] 与 [metainfo] 恰好
 /// 传一个。[discoveryKind] 为 null 表示视频任务（走完整 organize/subtitle/
@@ -832,6 +855,7 @@ class VideoDownloadPipelineService {
     VideoCoverExtractor? coverExtractor,
     this.videoCoversDirectory,
     this.skipDownloadExtras,
+    this.defaultTargetSourceId,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
@@ -905,6 +929,10 @@ class VideoDownloadPipelineService {
   /// （重新投递、进程重启后的首次观察），skip 优先级不会跟着回来，所以
   /// 不在这个集合里的、带自动跳过特典行的任务，观察时要重写一次。
   final Set<String> _extrasSkipAppliedJobIds = <String>{};
+  /// 当前默认的受管视频来源（app = 用户选的下载来源，没选取第一个可用的；服务端
+  /// = 它自己的下载来源）。任务目标来源被删后重试时用来重绑（BUG-2755）；null =
+  /// 装配方不提供，重试只能改绑到订阅的当前来源。
+  final Future<int?> Function()? defaultTargetSourceId;
 
   final VideoBookRepository _videoRepository;
   final VideoDownloadOrganizer _organizer = const VideoDownloadOrganizer();
@@ -923,6 +951,8 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
+    final String? revivedJobId = await _reviveOrphanedJobForRequest(request);
+    if (revivedJobId != null) return revivedJobId;
     final int now = DateTime.now().millisecondsSinceEpoch;
     final String jobId = generateVideoDownloadInstallationId();
     await database.upsertVideoDownloadJob(
@@ -967,6 +997,43 @@ class VideoDownloadPipelineService {
     wake();
     return jobId;
   }
+
+  /// 同一 torrent 的旧任务停在 failed / needsAttention、目标来源又已失效时，
+  /// 把它改绑到本次请求的来源并按用户重试恢复，返回它的 jobId（BUG-2755）。
+  ///
+  /// `(fingerprint, torrent_hash)` 唯一：不这样做，新任务行一插就撞唯一索引，
+  /// 这一集改了来源也永远下不回来。旧任务的来源还可用、还在跑或文件已落进来源
+  /// 时返回 null，照常新建（撞索引的老行为不变）。
+  Future<String?> _reviveOrphanedJobForRequest(
+    VideoDownloadEnqueueRequest request,
+  ) async {
+    final String? hash = request.resource.infoHash?.trim().toLowerCase();
+    if (hash == null || hash.isEmpty) return null;
+    final VideoDownloadJobRow? existing = await database
+        .findVideoDownloadJobByFingerprintAndTorrentHash(
+          request.backendTarget.fingerprint,
+          hash,
+        );
+    if (existing == null || !await _isOrphanedFromSource(existing)) {
+      return null;
+    }
+    await database.updateVideoDownloadJob(
+      existing.jobId,
+      VideoDownloadJobsCompanion(
+        targetSourceId: Value<int?>(request.targetSourceId),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await retryJob(existing.jobId);
+    return existing.jobId;
+  }
+
+  /// 任务停在 failed / needsAttention、文件还没落进来源、而目标来源已失效。
+  Future<bool> _isOrphanedFromSource(VideoDownloadJobRow job) async =>
+      videoDownloadJobTargetSourceRebindable(job) &&
+      (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+          job.lifecycle == VideoDownloadJobLifecycle.needsAttention) &&
+      await _usableSourceId(job.targetSourceId) == null;
 
   /// 手动添加任务：与搜索出的资源同走本管线（同任务列表、同优先级/重试/删除
   /// 操作）。视频任务走完整 organize/subtitle/import 流程；[DiscoveryMediaKind]
@@ -1230,6 +1297,10 @@ class VideoDownloadPipelineService {
         job.backendKind == QbConnectionConfig.backendEmbedded &&
         job.stage == VideoDownloadJobStage.download &&
         (job.lastError ?? '').contains(videoDownloadMissingBackendTaskError);
+    if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+        job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
+      await _rebindUnusableTargetSource(job);
+    }
     final bool changed = await database.retryVideoDownloadJobByUser(
       jobId: jobId,
       nowAt: DateTime.now().millisecondsSinceEpoch,
@@ -1241,6 +1312,36 @@ class VideoDownloadPipelineService {
       );
     }
     wake();
+  }
+
+  /// 目标来源已被删 / 不可用的任务改绑到订阅的当前来源，没有订阅（或订阅的来源
+  /// 也不可用）时改绑到默认来源（BUG-2755）。否则重试只会在整理阶段再撞一次
+  /// 「managed video source no longer exists」。来源仍可用、或文件已落进来源的
+  /// 任务不动。
+  Future<void> _rebindUnusableTargetSource(VideoDownloadJobRow job) async {
+    if (!videoDownloadJobTargetSourceRebindable(job)) return;
+    if (await _usableSourceId(job.targetSourceId) != null) return;
+    final VideoDownloadSubscriptionRow? subscription = await database
+        .getVideoDownloadSubscriptionForJob(job.jobId);
+    int? replacement = await _usableSourceId(subscription?.targetSourceId);
+    final Future<int?> Function()? fallback = defaultTargetSourceId;
+    if (replacement == null && fallback != null) {
+      replacement = await _usableSourceId(await fallback());
+    }
+    if (replacement == null) return;
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        targetSourceId: Value<int?>(replacement),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  Future<int?> _usableSourceId(int? sourceId) async {
+    if (sourceId == null) return null;
+    final MediaSourceRow? source = await database.getMediaSourceById(sourceId);
+    return isUsableManagedVideoSource(source) ? sourceId : null;
   }
 
   /// Resumes a user-paused durable job and its exact backend task.
@@ -1842,11 +1943,17 @@ class VideoDownloadPipelineService {
     }
     final VideoDownloadJobRow? duplicate = await database
         .findVideoDownloadJobByFingerprintAndTorrentHash(job.fingerprint, hash);
-    if (duplicate != null && duplicate.jobId != job.jobId) {
+    if (duplicate != null &&
+        duplicate.jobId != job.jobId &&
+        !await _supersedeOrphanedDuplicate(duplicate, job)) {
       throw VideoDownloadPipelineActionRequired(
         'This torrent is already managed by job ${duplicate.jobId}',
       );
     }
+    _ensureLeaseHeld();
+    // BUG-2755：受管任务直接下载进目标来源的暂存目录，不再先落全局下载根。
+    final String? savePath = await _incomingSavePath(job, binding, category);
+    _ensureLeaseHeld();
     // Persist the exact hash before the enqueue side effect.
     await database.updateVideoDownloadJob(
       job.jobId,
@@ -1862,12 +1969,13 @@ class VideoDownloadPipelineService {
         backend: binding.backend,
         payload: payload,
         category: category,
+        savePath: savePath,
         torrentId: hash,
       );
     } else {
       final bool added = await TorrentAddCoordinator(
         binding.backend,
-      ).add(payload, category: category);
+      ).add(payload, category: category, savePath: savePath);
       _ensureLeaseHeld();
       if (!added) {
         final List<TorrentSnapshot> current = await binding.backend
@@ -1902,6 +2010,56 @@ class VideoDownloadPipelineService {
     );
   }
 
+  /// 同 hash 的旧任务停在 failed / needsAttention、目标来源又已失效时，让 [job]
+  /// 接管它（BUG-2755）。否则同一集改了来源重新入队会被它永远拦成「already
+  /// managed」。旧任务的来源还在、还在跑、或文件已落进来源时不接管。
+  Future<bool> _supersedeOrphanedDuplicate(
+    VideoDownloadJobRow duplicate,
+    VideoDownloadJobRow job,
+  ) async {
+    if (!await _isOrphanedFromSource(duplicate)) return false;
+
+    _ensureLeaseHeld();
+    final bool superseded = await database.supersedeVideoDownloadJob(
+      supersededJobId: duplicate.jobId,
+      byJobId: job.jobId,
+    );
+    if (superseded) {
+      engineLog.logDiagnostic(
+        'VideoDownloadPipeline',
+        'job ${job.jobId} took over torrent of job ${duplicate.jobId} '
+            'whose target source no longer exists',
+      );
+    }
+    return superseded;
+  }
+
+  /// 受管任务在下载器里的落点：`<来源根>/.fushi-incoming/<category>`，经路径映射
+  /// 换成后端视角（BUG-2755）。非受管任务、没有来源、来源不可用、或来源不在任何
+  /// 映射里时返回 null，后端回退到自己的分类默认目录（全局下载根）。
+  ///
+  /// 没配映射 = 下载器与本机同盘同视角（与整理阶段 [_effectivePathMappings] 的
+  /// identity 假设一致），直接用本机路径。
+  Future<String?> _incomingSavePath(
+    VideoDownloadJobRow job,
+    VideoDownloadBackendBinding binding,
+    String category,
+  ) async {
+    if (!videoDownloadJobUsesManagedSource(job)) return null;
+    final int? sourceId = job.targetSourceId;
+    if (sourceId == null) return null;
+    final MediaSourceRow? source = await database.getMediaSourceById(sourceId);
+    if (!isUsableManagedVideoSource(source)) return null;
+    final String local = p.normalize(
+      p.absolute(sourceIncomingCategoryPath(source!.rootPath, category)),
+    );
+    if (binding.pathMappings.isEmpty) return local;
+    return _mappingForLocalPath(
+      binding.pathMappings,
+      local,
+    )?.localToRemote(local);
+  }
+
   /// 选择下载必须在产生任何网络副作用前确认能力，并拒绝接管后端中已有的同
   /// hash 任务。后端以暂停态添加后才写优先级；失败时任务最多残留为暂停态，
   /// 不会静默开始整包下载。
@@ -1910,6 +2068,7 @@ class VideoDownloadPipelineService {
     required TorrentBackend backend,
     required TorrentAddPayload payload,
     required String category,
+    required String? savePath,
     required String torrentId,
   }) async {
     if (payload is! TorrentMetainfoPayload ||
@@ -1938,7 +2097,9 @@ class VideoDownloadPipelineService {
     final bool added = await pausedBackend.addTorrentMetainfoPaused(
       payload,
       category: category,
+      savePath: savePath,
     );
+
     _ensureLeaseHeld();
     if (!added) {
       throw StateError('download backend rejected the paused torrent');

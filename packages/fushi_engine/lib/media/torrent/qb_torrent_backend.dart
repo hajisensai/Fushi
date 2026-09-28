@@ -73,12 +73,14 @@ class QbTorrentBackend
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async {
     final bool added = await _client.addTorrents(
       <String>[magnetOrUrl],
       category: category,
+      savePath: savePath,
       sequentialDownload: sequential,
       firstLastPiecePrio: firstLastPiecePrio,
     );
@@ -94,6 +96,7 @@ class QbTorrentBackend
   Future<bool> addTorrentMetainfo(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async {
@@ -101,6 +104,7 @@ class QbTorrentBackend
       payload.bytes,
       fileName: payload.fileName,
       category: category,
+      savePath: savePath,
       sequentialDownload: sequential,
       firstLastPiecePrio: firstLastPiecePrio,
     );
@@ -115,11 +119,13 @@ class QbTorrentBackend
   Future<bool> addTorrentMetainfoPaused(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
   }) async {
     final bool added = await _client.addTorrentFile(
       payload.bytes,
       fileName: payload.fileName,
       category: category,
+      savePath: savePath,
       startPaused: true,
     );
     if (added && payload.torrentId != null) {

@@ -31,6 +31,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/alist/alist_source_url.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
+import 'package:fushi/src/media/source_library/source_library_removal.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
@@ -1278,31 +1279,141 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   }
 
   Future<void> _remove(SourceLibraryRow row) async {
-    final bool? confirmed = await showAppDialog<bool>(
+    // BUG-2755：视频来源可能还挂着下载订阅 / 未整理完的下载任务。FK 删来源时只会
+    // 把它们的目标来源静默清空，订阅从此每轮失败、在途任务整理时报来源不存在，
+    // 所以有引用时让用户在同一个确认框里选迁移目标（或不迁移、暂停订阅）。
+    final ({int subscriptions, int pendingJobs}) refs = row.mediaKind == 'video'
+        ? await _db.countVideoDownloadReferencesToSource(row.id)
+        : (subscriptions: 0, pendingJobs: 0);
+    final bool hasDownloadRefs = refs.subscriptions > 0 || refs.pendingJobs > 0;
+    final List<MediaSourceRow> targets = hasDownloadRefs
+        ? (await _appModel.getManagedVideoDownloadSources())
+            .where((MediaSourceRow source) => source.id != row.id)
+            .toList(growable: false)
+        : const <MediaSourceRow>[];
+    if (!mounted) return;
+    final _SourceRemovalChoice? choice =
+        await showAppDialog<_SourceRemovalChoice>(
       context: context,
-      builder: (BuildContext ctx) => AlertDialog.adaptive(
-        title: Text(t.media_source_remove),
-        content: Text(t.media_source_remove_keeps_media),
-        actions: <Widget>[
-          adaptiveDialogAction(
-            context: ctx,
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(t.dialog_cancel),
-          ),
-          adaptiveDialogAction(
-            context: ctx,
-            isDestructiveAction: true,
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(t.media_source_remove),
-          ),
-        ],
+      builder: (BuildContext ctx) => _SourceRemovalDialog(
+        subscriptions: refs.subscriptions,
+        pendingJobs: refs.pendingJobs,
+        showDownloadMigration: hasDownloadRefs,
+        targets: targets,
       ),
     );
-    if (!mounted || confirmed != true) return;
-    await _db.deleteMediaSource(row.id);
-    // 网络来源凭据随行清除（本地来源无凭据，deleteSecret 幂等无副作用）。
-    await SourceLibraryCredentialStore(_db).deleteSecret(row.id);
+    if (!mounted || choice == null) return;
+    await removeSourceLibrary(
+      database: _db,
+      prefs: _appModel.prefsRepo,
+      sourceId: row.id,
+      migrateVideoDownloadsTo: choice.migrateVideoDownloadsTo,
+      disableVideoDownloadSubscriptions:
+          hasDownloadRefs && choice.migrateVideoDownloadsTo == null,
+    );
     await _load();
+  }
+}
+
+/// 移除来源确认框的结果；[migrateVideoDownloadsTo] 为 null = 不迁移下载引用。
+class _SourceRemovalChoice {
+  const _SourceRemovalChoice(this.migrateVideoDownloadsTo);
+
+  final int? migrateVideoDownloadsTo;
+}
+
+/// 移除来源的确认框。来源还被下载订阅 / 未整理完的任务引用时，额外给一个迁移
+/// 目标下拉（默认选第一个可用来源；可选「不迁移」）。
+class _SourceRemovalDialog extends StatefulWidget {
+  const _SourceRemovalDialog({
+    required this.subscriptions,
+    required this.pendingJobs,
+    required this.showDownloadMigration,
+    required this.targets,
+  });
+
+  final int subscriptions;
+  final int pendingJobs;
+  final bool showDownloadMigration;
+  final List<MediaSourceRow> targets;
+
+  @override
+  State<_SourceRemovalDialog> createState() => _SourceRemovalDialogState();
+}
+
+class _SourceRemovalDialogState extends State<_SourceRemovalDialog> {
+  /// 0 = 不迁移（来源 id 恒为正的自增值）。
+  late int _target = widget.targets.firstOrNull?.id ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog.adaptive(
+      title: Text(t.media_source_remove),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(t.media_source_remove_keeps_media),
+          if (widget.showDownloadMigration) ...<Widget>[
+            const SizedBox(height: 16),
+            Text(
+              t.media_source_remove_download_refs(
+                subscriptions: widget.subscriptions,
+                jobs: widget.pendingJobs,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Material(
+              type: MaterialType.transparency,
+              child: DropdownButton<int>(
+                key: const ValueKey<String>('media-source-remove-migrate'),
+                isExpanded: true,
+                value: _target,
+                items: <DropdownMenuItem<int>>[
+                  for (final MediaSourceRow source in widget.targets)
+                    DropdownMenuItem<int>(
+                      value: source.id,
+                      child: Text(
+                        source.label,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  DropdownMenuItem<int>(
+                    value: 0,
+                    child: Text(
+                      t.media_source_remove_download_keep,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+                onChanged: (int? value) {
+                  if (value == null) return;
+                  setState(() => _target = value);
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+      actions: <Widget>[
+        adaptiveDialogAction(
+          context: context,
+          onPressed: () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
+        adaptiveDialogAction(
+          context: context,
+          isDestructiveAction: true,
+          onPressed: () => Navigator.pop(
+            context,
+            _SourceRemovalChoice(
+              widget.showDownloadMigration && _target > 0 ? _target : null,
+            ),
+          ),
+          child: Text(t.media_source_remove),
+        ),
+      ],
+    );
   }
 }
 

@@ -5762,5 +5762,7 @@
   "hoshi_import_result_deleted_skipped": "$count statistics segments were not restored because you deleted those books’ statistics in Fushi",
   "hoshi_import_result_failed": "Could not import $count books (their statistics were still imported):",
   "video_library_delete_rows_failed": "Could not delete $n video(s); they are still in the library.",
-  "video_library_delete_failed": "Delete failed: $reason"
+  "video_library_delete_failed": "Delete failed: $reason",
+  "media_source_remove_download_refs": "$subscriptions download subscriptions and $jobs unfinished downloads save into this source. Move them to:",
+  "media_source_remove_download_keep": "Don't move (pause those subscriptions)"
 }
