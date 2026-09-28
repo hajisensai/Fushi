@@ -2,6 +2,9 @@ name = "fushi-leaderboard"
 main = "src/worker.js"
 compatibility_date = "2024-11-01"
 
+# 防计费：请把本 Worker 留在 Workers Free 计划——Free 计划超额只会报错（429/503），不会扣费。
+# 服务端另有全局日预算（src/budget.js）与 R2 配额，默认都低于免费额度。详见 README「成本」。
+
 # 域名由部署方决定（建议 rank.fushi.moe）；取消注释并改成实际域名。
 # routes = [
 #   { pattern = "rank.fushi.moe", custom_domain = true },
@@ -11,7 +14,7 @@ compatibility_date = "2024-11-01"
 #   wrangler d1 create fushi-leaderboard            → 把 database_id 填到下面
 #   wrangler d1 migrations apply fushi-leaderboard --remote
 #   wrangler r2 bucket create fushi-leaderboard-media
-#   wrangler secret put ADMIN_USER / ADMIN_PASS
+#   wrangler secret put ADMIN_USER / ADMIN_PASS / EMAIL_PEPPER / RESEND_API_KEY
 [[d1_databases]]
 binding = "DB"
 database_name = "fushi-leaderboard"
@@ -22,10 +25,23 @@ migrations_dir = "migrations"
 binding = "MEDIA"
 bucket_name = "fushi-leaderboard-media"
 
-# 每天清一次过期限流窗口。
-[triggers]
-crons = ["17 3 * * *"]
+# 读接口按 IP 限流（Workers Rate Limiting binding，不占 D1）：每 IP 每分钟 120 次。
+[[unsafe.bindings]]
+name = "READ_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
 
+# 每 30 分钟刷新榜单快照，顺带清理过期的限流计数、防重放记录、预算行与验证码。
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+# Resend 上已验证域名的发件地址。
+EMAIL_FROM = "Fushi <no-reply@fushi.moe>"
 # 可选：逗号分隔的昵称屏蔽词（不入库维护词表）。
-# [vars]
-# BANNED_WORDS = ""
+BANNED_WORDS = ""
+# 可选：覆盖每日预算（默认 write_rows 80000 / media 3000 / register 2000 / email 90）与 R2 配额（字节，默认 8 GiB）。
+# BUDGET_WRITE_ROWS = "80000"
+# BUDGET_EMAIL = "90"
+# MEDIA_QUOTA_BYTES = "8589934592"

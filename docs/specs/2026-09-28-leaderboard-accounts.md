@@ -15,7 +15,9 @@
 | 书匹配 | **两者都做**：导入时解析 EPUB ISBN（新列）+ 标题/作者归一化 + 举报纠正 |
 | 可见性 | **默认公开**；只有注册（生成账户）后才会上传 |
 | iOS | 与其他平台**一样全开放**（合规项照做，不加 StoreRestrictedCapability） |
-| 推进 | P1→P6 逐期，每期一个 PR，审查后再做下一期 |
+| 推进 | ~~P1→P6 逐期~~ → 用户改为「全部做完」：P2–P6 叠在同一分支，统一在 PR #1745 审查 |
+| 防计费（追加 3） | 「做点基础限流，别让我 CF 计费」→ 见第 11 节：Workers Free 计划 + 服务端全局日预算 / R2 配额 + 增量上报 + 榜单快照 |
+| 邮箱（追加 4） | 「注册要发邮件和验证码」→ 推翻「无邮箱」：邮箱验证码注册，新设备用邮箱验证码登录（绑定新钥匙）；服务端只存邮箱 HMAC；发信用 Resend 免费档 |
 
 ## 1. 现状（调研事实）
 
@@ -39,6 +41,8 @@
 ## 3. 数据结构（先定这个，其它都是它的派生）
 
 ### 3.1 身份
+
+> **2026-09-28 更新**：注册改为邮箱验证码（见第 12 节）。下面「钥匙 = 账户」改为「钥匙 = 设备凭据，一个账户可绑多把」；私钥存本机文件 `<support>/leaderboard/profile_<id>.json`（不进偏好表 / 备份）。
 
 - 首次开启时为**当前 Profile** 生成 ECDSA P-256 密钥对（`pointycastle`，不新增依赖）。**账户 = 公钥**，`account_id = base64url(sha256(pubkey))[0..16]`，同时是**好友码**。
 - 昵称 1–24 字符可改，展示 `昵称#1234`（服务端分配判别码）；可选头像（客户端裁成 128px JPEG 上传 R2）。
@@ -158,3 +162,22 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 - 本地 schema 变更只有 v112 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填），其余新增全在 D1/R2；密钥进偏好表。
 - 统计中心加 tab：tab 索引若被持久化/测试钉死需一起更新（P3 开工先查）。
 - 默认关闭：不开启排行的用户零网络请求、零行为变化。
+
+## 11. 成本控制（2026-09-28 追加）
+
+用户要求「别让我 CF 计费」。P1 初版在规模上会烧钱（整份替换一次写 8000+ 行；榜单每请求全表扫描；图片走会扣费的 R2），改为：
+
+- **部署在 Workers Free 计划**：超额只报错不扣费——这是最硬的保证，写进 README 与 wrangler.toml 注释。
+- **有界读写**：书架增量上报（每批 ≤ 500）；作品读者数 `works.readers`、账户书架行数 `accounts.shelf_count`、每日计分 `stat_days`、总计 `account_totals` 全部增量维护；榜单 / 人气 / 名次读定时快照（每 30 分钟，`rank_snapshots` / `popular_snapshots`）+ isolate 内 60 秒内存缓存；读者墙每作品沿索引取前 8；分页 offset 有上限。
+- **全局日预算熔断**（`budgets` 表）：write_rows 8 万 / media 3000 / register 2000 / email 90，超了 503、次日恢复；每账户每天 2 万行；R2 总配额 8 GiB（`media_usage`）。
+- **限流**：READ_LIMITER（每 IP 每分钟 120 次，不占 D1）；上传 40 次/小时；媒体 60 次/小时；社交写 120 次/小时；发码按 IP / 邮箱。
+- **代价**：超大书架首次同步要分两三天续传；榜单最多滞后 30 分钟。
+- 正确性由对拍测试兜底：任意增量操作序列后，增量计数 == 从零精确重算。
+
+## 12. 邮箱验证码（2026-09-28 追加）
+
+- `POST /v1/email/code {email, purpose, lang}` → 永远 202（防探测：登录用途且邮箱无账户时不发信）；6 位均匀随机码，只存 HMAC，10 分钟过期，原子地最多试 5 次，一次性。
+- `POST /v1/register {pubkey, nickname, email, code}`：验证码通过才建账户；同一邮箱只能注册一个账户（409 email_taken）。
+- `POST /v1/login {pubkey, email, code}`：新设备把本机钥匙绑到已有账户（≤ 10 台）。请求头 `X-Fushi-Account` 是**设备钥匙 id**，账户 id 以服务端返回为准。
+- 服务端只存 `HMAC(EMAIL_PEPPER, 规范化邮箱)`；发信 Resend（免费 100 封/天），缺配置 fail-closed 503。
+- 需要维护者：注册 Resend、验证发件域名、设置 `EMAIL_PEPPER` / `RESEND_API_KEY` / `EMAIL_FROM`。

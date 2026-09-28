@@ -111,9 +111,12 @@ describe('榜单', () => {
     const { env, b } = await seed();
     const { setAccountHidden } = await import('../src/admin.js');
     await setAccountHidden(env, b.id, true, NOW);
-    const r = await rank(env, 'metric=book&window=week');
-    expect(r.data.total).toBe(1);
-    expect(r.data.rows.map((x) => [x.rank, x.account.nickname])).toEqual([[1, 'alice']]);
+    // 周/月榜读 stat_days、总榜读 account_totals：两条查询都要排除隐藏账户。
+    for (const window of ['week', 'all']) {
+      const r = await rank(env, `metric=book&window=${window}`);
+      expect(r.data.total, window).toBe(1);
+      expect(r.data.rows.map((x) => [x.rank, x.account.nickname]), window).toEqual([[1, 'alice']]);
+    }
   });
 
   it('被管理员隐藏的账户不上榜；屏蔽双方互相看不到', async () => {
