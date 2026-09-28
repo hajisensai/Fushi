@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -74,6 +76,59 @@ void main() {
     );
     expect(find.byIcon(Icons.chevron_right), findsNothing);
     expect(find.byType(Text), findsNWidgets(3));
+  });
+
+  testWidgets('media row：有封面画封面、没封面画域图标，两者占同一个 2:3 槽', (
+    WidgetTester tester,
+  ) async {
+    // 1×1 透明 PNG。
+    final MemoryImage cover = MemoryImage(
+      Uint8List.fromList(<int>[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+        0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+      ]),
+    );
+    await _pump(
+      tester,
+      Builder(
+        builder: (BuildContext context) => Column(
+          children: <Widget>[
+            buildStatMediaRow(
+              context,
+              icon: Icons.menu_book,
+              cover: cover,
+              title: 'WITH',
+              meta: 'M',
+              trailing: '1 min',
+            ),
+            buildStatMediaRow(
+              context,
+              icon: Icons.movie,
+              title: 'WITHOUT',
+              meta: 'M',
+              trailing: '1 min',
+            ),
+          ],
+        ),
+      ),
+    );
+    final Finder image = find.byWidgetPredicate(
+      (Widget w) => w is Image && w.image == cover,
+    );
+    expect(image, findsOneWidget);
+    expect(find.byIcon(Icons.movie), findsOneWidget);
+    expect(find.byIcon(Icons.menu_book), findsNothing, reason: '有封面不再画占位图标');
+    final Size slot = tester.getSize(image);
+    expect(slot, const Size(kStatMediaCoverWidth, kStatMediaCoverWidth * 1.4));
+    // 两行标题左缘对齐（封面槽定宽）。
+    expect(
+      tester.getTopLeft(find.text('WITH')).dx,
+      tester.getTopLeft(find.text('WITHOUT')).dx,
+    );
   });
 
   testWidgets('analysis fold：默认收起，点标题展开，再点收起', (WidgetTester tester) async {

@@ -349,9 +349,13 @@ class StatBarChartPainter extends CustomPainter {
     this.valueOf = statCharsValue,
     this.axisScaleOf = statCountAxisScale,
     this.labelOf = statDayLabel,
+    this.labelEvery = 5,
   });
 
   final List<StatDayData> data;
+
+  /// 每隔几根柱标一个横轴标签（末柱恒标）。范围图表按柱数稀疏到约 7 个。
+  final int labelEvery;
   final Color barColor;
   final Radius barRadius;
   final Color labelColor;
@@ -429,7 +433,7 @@ class StatBarChartPainter extends CustomPainter {
         canvas.drawRRect(rect, paint);
       }
 
-      if (i % 5 == 0 || i == data.length - 1) {
+      if (i % labelEvery == 0 || i == data.length - 1) {
         final tp = TextPainter(
           text: TextSpan(
             text: labelOf(d),
@@ -454,7 +458,8 @@ class StatBarChartPainter extends CustomPainter {
       labelStyle != oldDelegate.labelStyle ||
       valueOf != oldDelegate.valueOf ||
       axisScaleOf != oldDelegate.axisScaleOf ||
-      labelOf != oldDelegate.labelOf;
+      labelOf != oldDelegate.labelOf ||
+      labelEvery != oldDelegate.labelEvery;
 }
 
 /// 折线图的一条线：值序列 + 颜色 + 线宽 + 是否描点。值与 [StatLineChartPainter]

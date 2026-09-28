@@ -5772,5 +5772,14 @@
   "favorites_batch_mine_no_entry": "词典中没有找到这个词",
   "favorites_batch_mine_render_failed": "查词弹窗没有加载出来",
   "favorites_batch_mine_text_only": "没有可用的句子媒体，已制成纯文字卡",
-  "favorites_batch_mine_skipped": "已跳过"
+  "favorites_batch_mine_skipped": "已跳过",
+  "stat_range_mode_day": "日",
+  "stat_range_mode_week": "周",
+  "stat_range_mode_month": "月",
+  "stat_range_mode_year": "年",
+  "stat_range_previous": "上一段",
+  "stat_range_next": "下一段",
+  "stat_range_summary": "所选范围",
+  "stat_range_active_days": "活跃天数",
+  "stat_range_calendar": "学习日历"
 }
