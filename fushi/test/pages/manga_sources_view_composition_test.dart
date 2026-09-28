@@ -118,9 +118,9 @@ void main() {
     // BUG-1431，用户口径：「mokuro 不应该单独显示，应该和漫画扩展同一层级」。
     // 它此前是「本地扫描根」一节里的一行（和 Hibiki 互联并排），但它是个网站。
     test('mokuro.moe 归「漫画源」一节，不再挂在本地扫描根下', () {
-      expect(online, contains('MokuroMoeSourceRow()'));
+      expect(online, contains('MokuroMoeSourceRow('));
       expect(
-        online.indexOf('MokuroMoeSourceRow()'),
+        online.indexOf('MokuroMoeSourceRow('),
         greaterThan(
           online.indexOf('if (section == OnlineSourcesSection.sources)'),
         ),

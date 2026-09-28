@@ -405,6 +405,10 @@ void main() {
       final AnimeDownloadPlan plan = (await planStore.loadAll()).single;
       expect(plan.subtitles.single.episode, 2);
       expect(plan.subtitles.single.language, 'ja');
+      expect(plan.subtitleStatus, AnimeDownloadPlan.subtitleResolved);
+      expect(plan.subtitleAlignPending, isTrue,
+          reason: '发现期下好的字幕还没见过视频：必须交给下载完成那一轮按内嵌轨对齐，'
+              '否则订阅这条路下的字幕永远不对齐');
       expect(
         (await subscriptionStore.loadAll()).single.processedEpisodes,
         <int>{2},
@@ -458,6 +462,8 @@ void main() {
             '落 none 等于宣告这一集永远没字幕',
       );
       expect(plan.jimakuEntryId, 77, reason: '重试要靠它找回来源');
+      expect(plan.subtitleAlignPending, isFalse,
+          reason: '没有暂存字幕就没有要对齐的东西；由完成时反查配上后再置');
       // 用户仍然被告知这一集的字幕还没到。
       expect(updated.lastError, contains('subtitle not yet available'));
       service.stop();

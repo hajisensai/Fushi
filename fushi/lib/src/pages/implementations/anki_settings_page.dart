@@ -52,24 +52,15 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
 
-/// 片段格式选项的文案。本平台编不出的格式（iOS 上的两档 WebM，见
-/// [MiningClipFormat.encodableOn]）换成「编不出、会退回 MP4」的文案，不再挂着
-/// 「推荐 / 体积最小」——选了它实际拿到的是 MP4。
+/// 片段格式选项的文案。五端随包 ffmpeg 都带 libvpx-vp9 + libopus（桌面 ffmpeg-min、
+/// Android AAR、iOS xcframework），两档 WebM 在各端都能内嵌；AV1 只有桌面有 SVT-AV1，
+/// 移动端按 [MiningClipFormat.encodeAttempts] 降级 VP9——文案本身已写明「仅桌面端」。
 @visibleForTesting
-String miningClipFormatLabel(MiningClipFormat format, {required bool isIOS}) {
-  final bool encodable = format.encodableOn(isIOS: isIOS);
-  return switch (format) {
-    MiningClipFormat.webmVp9 =>
-      encodable
-          ? t.mining_clip_format_webm_vp9
-          : t.mining_clip_format_webm_vp9_unsupported,
-    MiningClipFormat.webmAv1 =>
-      encodable
-          ? t.mining_clip_format_webm_av1
-          : t.mining_clip_format_webm_av1_unsupported,
-    MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
-  };
-}
+String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
+  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
+  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
+  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
+};
 
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
@@ -1057,7 +1048,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         for (final MiningClipFormat format in MiningClipFormat.values)
           AdaptiveSettingsPickerOption<MiningClipFormat>(
             value: format,
-            label: miningClipFormatLabel(format, isIOS: Platform.isIOS),
+            label: miningClipFormatLabel(format),
           ),
       ],
       onChanged: (MiningClipFormat format) {

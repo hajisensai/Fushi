@@ -5748,7 +5748,5 @@
   "mining_clip_format_webm_vp9": "WebM · VP9（卡片内播放，推荐）",
   "mining_clip_format_webm_av1": "WebM · AV1（卡片内播放；体积最小，编码耗时约为 VP9 的 2 倍；仅桌面端）",
   "mining_clip_format_mp4_h264": "MP4 · H.264（Anki 自带播放器；AnkiMobile 用这个）",
-  "mining_clip_format_hint": "WebM 在卡片内播放，但 iPhone 上的 AnkiMobile 放不了——在 iPhone 复习请选 MP4。WebM 在本机编不出来时自动退回 MP4。",
-  "mining_clip_format_webm_vp9_unsupported": "WebM · VP9（本机编不出，会自动退回 MP4）",
-  "mining_clip_format_webm_av1_unsupported": "WebM · AV1（本机编不出，会自动退回 MP4）"
+  "mining_clip_format_hint": "WebM 在卡片内播放，但 iPhone 上的 AnkiMobile 放不了——在 iPhone 复习请选 MP4。WebM 在本机编不出来时自动退回 MP4。"
 }

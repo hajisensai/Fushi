@@ -7,17 +7,17 @@
 
 ## 重编 ffmpeg-kit（TODO-2357 起：必须带 x264）
 
-当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl`**，
-Android 另加 **`--enable-libvpx --enable-opus`**（2026-09-28，制卡「音画同步片段」默认
-WebM = VP9 + Opus；iOS 按所有者决定不重编，Dart 侧 `MiningClipFormat.encodableOn`
-声明 iOS 编不出 WebM、自动退回 MP4）。
+当前入库产物的 configure 关键开关：**`--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus`**
+（后两个 2026-09-28 加入：制卡音画同步片段默认 WebM(VP9 + Opus)，卡片内 `<video>` 播放）。
 
-**Android 可在 CI 上复现**：`.github/workflows/ffmpeg-kit-android.yml`（ubuntu runner，
-ffmpeg-kit v6.0 + arthenica/FFmpeg n6.0 先打 cert-pin 补丁 + NDK 25.2.9519653 + api 24，
-与构建机同一条 `build_x264_android.sh`）。推改了配方 / 补丁 / workflow 的分支即触发，
-约 14 分钟出 `ffmpeg-kit-android-aar` artifact，下载替换 `../android/libs/ffmpeg-kit.aar`。
-2026-09-28 那次产物 28.95 MB（加 libvpx + opus 前 26.17 MB），Java API（`javap -p`
-全量对比）与构建机产物逐字一致，configure 串只多出 `--enable-libvpx --enable-libopus`。
+**首选重编方式：CI**（`.github/workflows/ffmpeg-kit-mobile.yml`，`workflow_dispatch`，或 push 到
+`ci/ffmpeg-kit-mobile` 分支）。它 clone arthenica ffmpeg-kit v6.0、用 `prepare_ffmpeg_src.sh` 预取
+FFmpeg n6.0 并打本目录的 cert-pin 补丁（ffmpeg-kit 对非空 `src/ffmpeg` 跳过重新下载），再跑下面两个
+脚本，用 `verify_mobile_outputs.py` 校验后把 AAR / xcframework zip 作为 artifact 上传。下载后替换
+`../android/libs/ffmpeg-kit.aar` 与 `../ios/Frameworks/*.xcframework`（先删旧目录再解压），跑
+`fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart`。iOS 显式关掉 Mac Catalyst，只出
+`ios-arm64_arm64e` + `ios-arm64_x86_64-simulator` 两个切片（与入库形态一致）。
+首个 CI 产物：run 36369238562（Android 14m35s、iOS 19m52s，一次通过）。
 
 - **为什么要 x264**：片段导出全平台统一 H.264。此前移动端退到 libavcodec 原生 `mpeg4`
   （MPEG-4 Part 2），其 Simple/ASP 规格上限远低于导出用的 1080×1920，libavcodec 既不
@@ -38,10 +38,9 @@ ffmpeg-kit v6.0 + arthenica/FFmpeg n6.0 先打 cert-pin 补丁 + NDK 25.2.951965
 现成脚本（构建机 `~/ffmpegkit-build/`，内容与本目录下入库副本一致）：
 
 ```bash
-./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl \
-                          #   --enable-libvpx --enable-opus \
+./build_x264_android.sh   # android.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus \
                           #   --disable-x86 --disable-x86-64 --api-level=24
-./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --xcframework
+./build_x264_ios.sh       # ios.sh --enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus --xcframework
 ```
 
 ⚠️ **iOS 需要 `nasm`**：x86_64 模拟器切片的 x264 用 x86 SIMD 汇编，缺 nasm 会在

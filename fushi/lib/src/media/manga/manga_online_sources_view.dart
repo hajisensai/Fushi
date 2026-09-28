@@ -13,11 +13,14 @@ import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_installed_sources_section.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
+import 'package:fushi/src/media/manga/mihon/mihon_source_browse_page.dart';
+import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_source_row.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_core/fushi_core.dart' show MangaOnlineSourceRow;
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 
 /// 「浏览」模块里漫画域的在线来源面：扩展仓库 / 扩展目录 / 在线源三节之一
@@ -32,7 +35,8 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 /// - [OnlineSourcesSection.extensions]：可装扩展目录 + 已装扩展启停 / 卸载 +
 ///   导入本地 APK / `.aix`；
 /// - [OnlineSourcesSection.sources]：内置 mokuro.moe 与扩展提供的源并列（启停 /
-///   排序 / 偏好 / 清数据 / 置顶，[MihonInstalledSourcesSection]）。
+///   排序 / 偏好 / 清数据 / 置顶，[MihonInstalledSourcesSection]）；点已启用的
+///   行进该源的浏览页，与小说 / 视频域同一交互。
 ///
 /// 🔴 mokuro.moe 归「在线源」（BUG-1431）：它是个网站，不是本地扫描根。
 ///
@@ -123,6 +127,36 @@ class _MangaOnlineSourcesViewState
 
   void _changed() {
     if (mounted) setState(() {});
+  }
+
+  /// 点已启用的漫画源进它的浏览页（热门 / 最新 / 搜索），与小说 / 视频源同一
+  /// 交互：来源页签的一行就是进源的入口，不必绕到「发现」。
+  void _openMihonSource(MangaOnlineSourceRow source) {
+    final MihonManager? manager = _manager;
+    if (manager == null) return;
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => MihonSourceBrowsePage(
+          manager: manager,
+          target: MihonInstalledTarget(source),
+        ),
+      ),
+    );
+  }
+
+  /// 点内置的 mokuro.moe 行进它的目录（与漫画发现页的入口同一个视图）。
+  void _openMokuro() {
+    final AppModel appModel = ref.read(appProvider);
+    Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (BuildContext context) => FushiPageScaffold(
+          title: t.mihon_source_browse_mokuro,
+          body: MokuroMoeCatalogView(db: appModel.database, embedded: true),
+        ),
+      ),
+    );
   }
 
   Future<void> _importAidoku() async {
@@ -831,14 +865,18 @@ class _MangaOnlineSourcesViewState
             manager: manager,
             // 内置在线源与扩展提供的源同节同级：mokuro.moe 是个网站，不是本地
             // 扫描根（BUG-1431）。
-            leading: const <Widget>[MokuroMoeSourceRow(), SizedBox(height: 8)],
+            leading: <Widget>[
+              MokuroMoeSourceRow(onOpen: _openMokuro),
+              const SizedBox(height: 8),
+            ],
+            onOpenSource: _openMihonSource,
           )
         else if (onlineSourcesAvailable)
           SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                const MokuroMoeSourceRow(),
+                MokuroMoeSourceRow(onOpen: _openMokuro),
                 const SizedBox(height: 8),
                 _unavailableNote(),
               ],

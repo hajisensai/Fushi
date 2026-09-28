@@ -1265,6 +1265,78 @@ void main() {
           expect(saved.subtitleAlignPending, isFalse);
         });
 
+        test('订阅发现期就暂存好的字幕（计划一建出来就是 resolved）同样在下完那一轮对齐',
+            () async {
+          // 订阅形态：字幕在发现期下好，计划建出来就是 resolved + pending，
+          // resolver 这一轮原样返回同一个计划。旧判据靠「resolver 这一轮换了对象」
+          // 推断没对齐，这条路因此永远不对齐。
+          final Directory subsDir = store.subsDirFor(_kHash)
+            ..createSync(recursive: true);
+          staged = p.join(subsDir.path, 'Show 01.ja.srt');
+          File(staged).writeAsStringSync('raw');
+          await store.save(
+            _plan().copyWith(
+              jimakuEntryId: 7,
+              subtitleStatus: AnimeDownloadPlan.subtitleResolved,
+              subtitleAlignPending: true,
+              subtitles: <PlanSubtitle>[
+                PlanSubtitle(
+                  episode: 1,
+                  fileName: 'Show 01.ja.srt',
+                  stagedPath: staged,
+                  language: 'ja',
+                ),
+              ],
+            ),
+          );
+          final String sidecar = p.join(savePath, 'Show 01.ja.srt');
+          final AnimeDownloadService service = buildService(
+            subtitleAligner: fakeAligner,
+          );
+
+          setTorrent(complete: false);
+          expect(await service.importNow(_kHash), isTrue);
+          expect(alignerCalls, isEmpty, reason: '视频还残缺：绝不抽轨');
+          expect(File(sidecar).readAsStringSync(), 'raw');
+          expect((await store.loadAll()).single.subtitleAlignPending, isTrue);
+
+          setTorrent(complete: true);
+          await service.tick();
+          expect(alignerCalls, <String>[p.join(savePath, 'Show 01.mkv')]);
+          expect(File(sidecar).readAsStringSync(), 'aligned:raw');
+          final AnimeDownloadPlan saved = (await store.loadAll()).single;
+          expect(saved.status, AnimeDownloadPlan.statusImported);
+          expect(saved.subtitleAlignPending, isFalse);
+          expect(subtitleResolverCalls, isEmpty, reason: '已 resolved 的计划不重取');
+        });
+
+        test('resolved 但 pending=false（老计划 / 已对过）：不再对齐', () async {
+          final Directory subsDir = store.subsDirFor(_kHash)
+            ..createSync(recursive: true);
+          staged = p.join(subsDir.path, 'Show 01.ja.srt');
+          File(staged).writeAsStringSync('raw');
+          await store.save(
+            _plan().copyWith(
+              subtitleStatus: AnimeDownloadPlan.subtitleResolved,
+              subtitles: <PlanSubtitle>[
+                PlanSubtitle(
+                  episode: 1,
+                  fileName: 'Show 01.ja.srt',
+                  stagedPath: staged,
+                  language: 'ja',
+                ),
+              ],
+            ),
+          );
+          setTorrent(complete: true);
+          await buildService(subtitleAligner: fakeAligner).tick();
+          expect(alignerCalls, isEmpty);
+          expect(
+            File(p.join(savePath, 'Show 01.ja.srt')).readAsStringSync(),
+            'raw',
+          );
+        });
+
         test('subtitleAlignPending 随计划 JSON 落盘往返；老计划缺字段 = false', () {
           final AnimeDownloadPlan plan = _plan().copyWith(
             subtitleAlignPending: true,

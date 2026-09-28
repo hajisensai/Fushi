@@ -1,0 +1,233 @@
+# 在 CI 里重编**移动端** ffmpeg-kit（arthenica ffmpeg-kit v6.0）：Android AAR + iOS xcframework。
+#
+# 背景：third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar 与 ios/Frameworks/*.xcframework
+# 原本只在维护者局域网 Mac 构建机上手工编好再拷进仓库（见 third_party/ffmpeg_kit_flutter/patches/README.md）。
+# 本 workflow 把同一份配方（patches/build_x264_{android,ios}.sh）搬到 GitHub-hosted runner。
+#
+# 配方（两端一致）：--enable-gpl --enable-x264 --enable-openssl --enable-libvpx --enable-opus
+#   + FFmpeg 源码先打 patches/ffmpeg-tls-pin-sha256.patch（BUG-891 证书指纹钉扎）。
+#   Android 另加 --disable-x86 --disable-x86-64 --api-level=24；iOS 另加 --xcframework 并关掉
+#   Mac Catalyst（入库产物只有 ios-arm64_arm64e + ios-arm64_x86_64-simulator 两个切片）。
+#
+# 产物只作 artifact，**不会**自动写回仓库。刷新入库二进制：下载 artifact → 替换
+# third_party/ffmpeg_kit_flutter/{android/libs/ffmpeg-kit.aar, ios/Frameworks/*.xcframework}
+# → 跑 fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart（Dart 守卫才是入库门）。
+name: ffmpeg-kit-mobile
+
+on:
+  # 新 workflow 在默认分支上不存在时 workflow_dispatch 会 404；push 到专用分支即可触发一次构建。
+  push:
+    branches: ["ci/ffmpeg-kit-mobile"]
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: "Build Android AAR"
+        type: boolean
+        default: true
+      build_ios:
+        description: "Build iOS xcframeworks"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  FFMPEG_KIT_REPO: https://github.com/arthenica/ffmpeg-kit
+  FFMPEG_KIT_REF: v6.0
+  # v6.0 是轻量 tag，直接指向该 commit（2026-09-28 经 git upload-pack refs 核实）。
+  FFMPEG_KIT_SHA: d6be56d7aec286eb3c292d6b23ff07a6b70d8693
+  # 与 ffmpeg-kit v6.0 scripts/source.sh:34-38 一致。
+  FFMPEG_REPO: https://github.com/arthenica/FFmpeg
+  FFMPEG_REF: n6.0
+  FFMPEG_SHA: ea3d24bbe3c58b171e55fe2151fc7ffaca3ab3d2
+  PATCH_DIR: third_party/ffmpeg_kit_flutter/patches
+
+jobs:
+  android:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_android }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      NDK_VERSION: 25.2.9519653
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install host tools
+        # 覆盖本配方用到的库：x264/openssl/opus（autotools）、libvpx（自带 configure + perl）、
+        # cpu-features（cmake，走下面私有 SDK 里的 cmake 3.22.1）。
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf automake libtool pkg-config nasm yasm gperf texinfo autopoint \
+            build-essential perl python3 unzip curl git
+
+      - name: Private Android SDK (NDK r25c + cmake 3.22.1 only)
+        # 为什么用私有 SDK 根：ffmpeg-kit 的 android_ndk_cmake 取
+        # `find $ANDROID_SDK_ROOT/cmake -path */bin/cmake -print -quit`（scripts/function-android.sh:994），
+        # runner 自带 SDK 里若有多个 cmake 版本，选中哪个取决于目录遍历顺序；cpu_features v0.8.0 的
+        # cmake_minimum_required(VERSION 3.0) 在 CMake ≥ 4 上直接报错。私有 SDK 只装 3.22.1，
+        # 与构建机（~/ffmpegkit-build/sdk/cmake/3.22.1）一致，结果确定。
+        run: |
+          set -euo pipefail
+          SDK="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER" || { echo "sdkmanager not found at $SDKMANAGER"; ls "$ANDROID_HOME/cmdline-tools" || true; exit 1; }
+          yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses > /dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK" --install \
+            "ndk;${NDK_VERSION}" "cmake;3.22.1" "platforms;android-33" "build-tools;33.0.1" "platform-tools"
+          got="$(grep -E '^Pkg.Revision' "$SDK/ndk/${NDK_VERSION}/source.properties" | sed 's/.*= *//')"
+          echo "NDK Pkg.Revision=$got"
+          test "$got" = "${NDK_VERSION}"
+          ls "$SDK/cmake"
+          {
+            echo "ANDROID_SDK_ROOT=$SDK"
+            echo "ANDROID_HOME=$SDK"
+            echo "ANDROID_NDK_ROOT=$SDK/ndk/${NDK_VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Clone ffmpeg-kit ${{ env.FFMPEG_KIT_REF }}
+        # 必须是 git clone：android.sh 用 `git describe --tags --always` 取版本，
+        # 取不到就退出（android.sh:35, 146-149）。
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$FFMPEG_KIT_REF" "$FFMPEG_KIT_REPO" "$RUNNER_TEMP/ffmpeg-kit"
+          test "$(git -C "$RUNNER_TEMP/ffmpeg-kit" rev-parse HEAD)" = "$FFMPEG_KIT_SHA"
+          echo "FFMPEG_KIT_DIR=$RUNNER_TEMP/ffmpeg-kit" >> "$GITHUB_ENV"
+
+      - name: Align AGP ndkVersion with the installed NDK
+        # tools/android/build.gradle 写死 ndkVersion "22.1.7171670"（android.sh:38-39 把它拷成模块
+        # build.gradle）。私有 SDK 里没有 22.1，AGP 会去装或报找不到 NDK；改成实际使用的 r25c，
+        # 让 AAR 打包阶段与 native 编译用同一套 NDK。
+        run: |
+          set -euo pipefail
+          f="$FFMPEG_KIT_DIR/tools/android/build.gradle"
+          grep -n 'ndkVersion' "$f"
+          sed -i "s/ndkVersion \"[0-9.]*\"/ndkVersion \"${NDK_VERSION}\"/" "$f"
+          grep -q "ndkVersion \"${NDK_VERSION}\"" "$f"
+
+      - name: Pre-fetch FFmpeg ${{ env.FFMPEG_REF }} and apply cert-pin patch
+        run: |
+          set -euo pipefail
+          FFMPEG_REPO="$FFMPEG_REPO" FFMPEG_REF="$FFMPEG_REF" \
+            bash "$PATCH_DIR/prepare_ffmpeg_src.sh" "$FFMPEG_KIT_DIR"
+          test "$(git -C "$FFMPEG_KIT_DIR/src/ffmpeg" rev-parse HEAD)" = "$FFMPEG_SHA"
+          grep -c ff_tls_check_cert_pin "$FFMPEG_KIT_DIR/src/ffmpeg/libavformat/tls.c"
+
+      - name: Build (android.sh) + verify
+        run: bash "$PATCH_DIR/build_x264_android.sh"
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$FFMPEG_KIT_DIR/build.log" || true
+
+      - name: Upload AAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-kit-android-aar
+          path: ${{ env.FFMPEG_KIT_DIR }}/prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-kit-android-build-log
+          path: ${{ env.FFMPEG_KIT_DIR }}/build.log
+          if-no-files-found: ignore
+
+  ios:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_ios }}
+    runs-on: macos-15
+    timeout-minutes: 330
+    env:
+      # 现入库 xcframework 由 Xcode 16.4 / iPhoneOS18.5.sdk 编出（内嵌 configure 串的 --sysroot 可见）。
+      XCODE_APP: /Applications/Xcode_16.4.app
+      HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "::error::$XCODE_APP not on this runner image; available:"; ls -d /Applications/Xcode*.app; exit 1
+          fi
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install host tools
+        # nasm：x264 的 x86_64 模拟器切片（scripts/apple/x264.sh:10-15）；
+        # yasm：libvpx 传 --as=yasm（scripts/apple/libvpx.sh:62）；
+        # libtool 的 gnubin 提供 GNU libtoolize（opus v1.4 git 源码无 configure，要 autoreconf）。
+        run: |
+          set -euo pipefail
+          brew install autoconf automake libtool pkg-config nasm yasm
+          echo "$(brew --prefix libtool)/libexec/gnubin" >> "$GITHUB_PATH"
+
+      - name: Clone ffmpeg-kit ${{ env.FFMPEG_KIT_REF }}
+        # ios.sh 同样要求 git 工作树（ios.sh:41-45）。
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$FFMPEG_KIT_REF" "$FFMPEG_KIT_REPO" "$RUNNER_TEMP/ffmpeg-kit"
+          test "$(git -C "$RUNNER_TEMP/ffmpeg-kit" rev-parse HEAD)" = "$FFMPEG_KIT_SHA"
+          echo "FFMPEG_KIT_DIR=$RUNNER_TEMP/ffmpeg-kit" >> "$GITHUB_ENV"
+
+      - name: Pre-fetch FFmpeg ${{ env.FFMPEG_REF }} and apply cert-pin patch
+        run: |
+          set -euo pipefail
+          FFMPEG_REPO="$FFMPEG_REPO" FFMPEG_REF="$FFMPEG_REF" \
+            bash "$PATCH_DIR/prepare_ffmpeg_src.sh" "$FFMPEG_KIT_DIR"
+          test "$(git -C "$FFMPEG_KIT_DIR/src/ffmpeg" rev-parse HEAD)" = "$FFMPEG_SHA"
+          grep -c ff_tls_check_cert_pin "$FFMPEG_KIT_DIR/src/ffmpeg/libavformat/tls.c"
+
+      - name: Build (ios.sh --xcframework) + verify
+        run: bash "$PATCH_DIR/build_x264_ios.sh"
+
+      - name: Architecture check (lipo)
+        run: |
+          set -euo pipefail
+          XCF="$FFMPEG_KIT_DIR/prebuilt/bundle-apple-xcframework-ios"
+          for fw in ffmpegkit libavcodec libavdevice libavfilter libavformat libavutil libswresample libswscale; do
+            dev="$(lipo -archs "$XCF/$fw.xcframework/ios-arm64_arm64e/$fw.framework/$fw")"
+            sim="$(lipo -archs "$XCF/$fw.xcframework/ios-arm64_x86_64-simulator/$fw.framework/$fw")"
+            echo "$fw: device=[$dev] simulator=[$sim]"
+            for want in arm64 arm64e; do case " $dev " in *" $want "*) ;; *) echo "::error::$fw device slice lacks $want"; exit 1;; esac; done
+            for want in arm64 x86_64; do case " $sim " in *" $want "*) ;; *) echo "::error::$fw simulator slice lacks $want"; exit 1;; esac; done
+          done
+
+      - name: build.log tail on failure
+        if: failure()
+        run: tail -n 400 "$FFMPEG_KIT_DIR/build.log" || true
+
+      - name: Zip xcframeworks (same 8-framework set as the repo vendors)
+        run: |
+          set -euo pipefail
+          cd "$FFMPEG_KIT_DIR/prebuilt/bundle-apple-xcframework-ios"
+          zip -r -y -q "$RUNNER_TEMP/ffmpeg-kit-ios-xcframeworks.zip" \
+            ffmpegkit.xcframework libavcodec.xcframework libavdevice.xcframework libavfilter.xcframework \
+            libavformat.xcframework libavutil.xcframework libswresample.xcframework libswscale.xcframework
+          ls -la "$RUNNER_TEMP/ffmpeg-kit-ios-xcframeworks.zip"
+
+      - name: Upload xcframeworks
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-kit-ios-xcframeworks
+          path: ${{ runner.temp }}/ffmpeg-kit-ios-xcframeworks.zip
+          if-no-files-found: error
+
+      - name: Upload build.log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ffmpeg-kit-ios-build-log
+          path: ${{ env.FFMPEG_KIT_DIR }}/build.log
+          if-no-files-found: ignore

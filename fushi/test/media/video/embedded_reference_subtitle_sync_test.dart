@@ -3,11 +3,10 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_asr_subtitles/asr_subtitles.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
-import 'package:fushi_engine/media/video/subtitle/subtitle_reference_alignment.dart';
-import 'package:fushi_engine/media/video/subtitle/subtitle_time_rewriter.dart';
 
 /// 一集里的开口时刻（间隔 1.5–6 秒）。
 List<double> _speech(int seed) {
@@ -138,6 +137,32 @@ void main() {
         );
     expect(r.status, EmbeddedReferenceSyncStatus.noReference);
     expect(r.bytesForAutomaticPath, same(original));
+  });
+
+  // 算法本身的用例在上游 fushi_asr_subtitles；这两条测的是本仓装配层的结局分类。
+  test('syncSubtitleBytesToReferences：外挂字幕解析不出时间 → subtitleUnreadable，原样', () {
+    final Uint8List bytes = Uint8List.fromList('not a subtitle'.codeUnits);
+    final EmbeddedReferenceSyncResult r = syncSubtitleBytesToReferences(
+      subtitleBytes: bytes,
+      references: <SubtitleReferenceTrack>[
+        SubtitleReferenceTrack(
+          label: 'eng',
+          starts: uniqueCueStarts(refStarts),
+        ),
+      ],
+    );
+    expect(r.status, EmbeddedReferenceSyncStatus.subtitleUnreadable);
+    expect(r.bytesForAutomaticPath, same(bytes));
+  });
+
+  test('syncSubtitleBytesToReferences：没有可用参考 → noReference，原样', () {
+    final Uint8List bytes = _srt(truth);
+    final EmbeddedReferenceSyncResult r = syncSubtitleBytesToReferences(
+      subtitleBytes: bytes,
+      references: const <SubtitleReferenceTrack>[],
+    );
+    expect(r.status, EmbeddedReferenceSyncStatus.noReference);
+    expect(r.bytesForAutomaticPath, same(bytes));
   });
 
   test('开关：每次调用现读，关着原样返回且不调用对齐器', () async {

@@ -61,34 +61,20 @@ void main() {
       );
     });
 
-    test('encodableOn：iOS 只编得出 MP4，其余平台三档都在', () {
-      for (final MiningClipFormat f in MiningClipFormat.values) {
-        expect(f.encodableOn(isIOS: false), isTrue, reason: f.wireName);
-      }
-      expect(MiningClipFormat.mp4H264.encodableOn(isIOS: true), isTrue);
-      expect(MiningClipFormat.webmVp9.encodableOn(isIOS: true), isFalse);
-      expect(MiningClipFormat.webmAv1.encodableOn(isIOS: true), isFalse);
-    });
-
-    test('设置页文案：iOS 上两档 WebM 不标推荐，写明会退回 MP4', () {
+    test('设置页文案：五端都编得出 VP9（标推荐），AV1 写明仅桌面端', () {
+      // 所有者 #1717 b94ecd1a1ed 起 iOS xcframework 也带 libvpx-vp9 + libopus，两档 WebM
+      // 不再有「本机编不出、退回 MP4」的平台分支；AV1 在移动端（无 SVT-AV1）降级 VP9，
+      // 仍内嵌播放，文案里的「desktop only」就是它的全部平台差异。
       LocaleSettings.setLocale(AppLocale.en);
       expect(
-        miningClipFormatLabel(MiningClipFormat.webmVp9, isIOS: false),
+        miningClipFormatLabel(MiningClipFormat.webmVp9),
         contains('recommended'),
       );
-      for (final MiningClipFormat f in <MiningClipFormat>[
-        MiningClipFormat.webmVp9,
-        MiningClipFormat.webmAv1,
-      ]) {
-        final String label = miningClipFormatLabel(f, isIOS: true);
-        expect(label, isNot(contains('recommended')), reason: f.wireName);
-        expect(label, isNot(contains('smallest')), reason: f.wireName);
-        expect(label, contains('MP4'), reason: f.wireName);
-      }
       expect(
-        miningClipFormatLabel(MiningClipFormat.mp4H264, isIOS: true),
-        miningClipFormatLabel(MiningClipFormat.mp4H264, isIOS: false),
+        miningClipFormatLabel(MiningClipFormat.webmAv1),
+        contains('desktop only'),
       );
+      expect(miningClipFormatLabel(MiningClipFormat.mp4H264), contains('MP4'));
     });
 
     test('fromWireName 往返，未知/null → fallback', () {

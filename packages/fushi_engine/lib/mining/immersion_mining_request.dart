@@ -115,7 +115,7 @@ enum VideoMiningImageMode {
 /// | 格式 | 卡片里怎么播 | 取舍 |
 /// |---|---|---|
 /// | [webmVp9]（默认） | `<video>` 内嵌，翻面自动播放、点例句重播 | Anki 桌面 Qt WebEngine / AnkiDroid WebView 都能解 |
-/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；移动端 ffmpeg-kit 无 SVT-AV1 → 降级 VP9 |
+/// | [webmAv1] | 同上 | 体积最小（约为 VP9 的 60%），编码耗时约为 VP9 的 2 倍；移动端 ffmpeg-kit（Android / iOS）无 SVT-AV1 → 降级 VP9，仍内嵌 |
 /// | [mp4H264] | `[sound:]` 交给 Anki 原生播放器（Windows 弹独立窗口） | 兼容兜底；iOS 默认 |
 ///
 /// 为什么内嵌只能是 WebM：Anki 桌面的 Qt WebEngine 不带专利编解码器，**没有 H.264 也没有
@@ -155,13 +155,6 @@ enum MiningClipFormat {
       MiningClipFormat.mp4H264,
     ],
   };
-
-  /// 本平台随包的 ffmpeg 能否编出本格式。iOS 的 ffmpeg-kit xcframework 只带 x264，没有
-  /// libvpx / SVT-AV1 / libopus，两档 WebM 在 iOS 上必然按 [encodeAttempts] 退回 MP4——
-  /// 设置页据此在 iOS 上不把它们标成推荐，而是写明会退回 MP4。桌面 ffmpeg-min 与
-  /// Android ffmpeg-kit 都带 libvpx + libopus（Android 无 SVT-AV1，AV1 退 VP9，仍可内嵌）。
-  bool encodableOn({required bool isIOS}) =>
-      !isIOS || this == MiningClipFormat.mp4H264;
 
   /// 平台默认值：iOS → [mp4H264]（AnkiMobile 靠导入裸 URL 拿媒体、iOS 播不了 WebM），
   /// 其余 → [webmVp9]。纯逻辑带 [isIOS] 参数，测试宿主上 `Platform.isIOS` 恒 false。
