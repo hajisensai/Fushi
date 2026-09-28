@@ -232,9 +232,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
         ),
-      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。只对本地文件——参考轨
-      // 要从容器里抽。当前不是外挂字幕时点了会说明原因，不隐藏入口。
-      if (!_isRemote && _currentVideoPath != null)
+      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。参考轨要从本机容器文件里
+      // 抽，判据就是「有没有本机视频文件」：远端 / 流视频的 _currentVideoPath 恒为 null
+      // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
+      // 字幕时点了会说明原因，不隐藏入口。
+      if (_currentVideoPath != null)
         ListTile(
           leading: const Icon(Icons.sync_alt_outlined),
           title: Text(t.video_subtitle_reference_sync_action),
@@ -1588,9 +1590,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       _currentEpisode,
     );
     unawaited(appModel.setRemoteSubtitleSource(subUid, subEp, source));
-    _showOsd(
-      t.video_subtitle_remote_player_decoded(label: label),
-    );
+    _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
 
@@ -1745,9 +1745,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) async {
     if (!_remoteStreamIsOriginalContainer || track.isExternalFile) return false;
     final int seq = _episodeLoadSeq;
-    final bool shown = await controller.selectEmbeddedSecondaryTextTrackViaPlayer(
-      track.containerTrackOrdinal ?? track.streamIndex,
-    );
+    final bool shown = await controller
+        .selectEmbeddedSecondaryTextTrackViaPlayer(
+          track.containerTrackOrdinal ?? track.streamIndex,
+        );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     final String source = _remoteEmbeddedSubtitleSource(track);
     _rebuild(() => _currentSecondarySubtitleSource = source);
