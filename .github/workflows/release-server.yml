@@ -233,6 +233,17 @@ jobs:
           tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
           cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
           ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+      # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
+      # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
+      # fushi-anki-sync.SOURCE.txt（commit 取 hibiki checkout 的 HEAD——这里 GITHUB_SHA
+      # 是调用方仓库的）并对装好的副本跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
       - name: Smoke (serve + embedded engine + models)
         shell: bash
         run: |
@@ -345,6 +356,14 @@ jobs:
           Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
           Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
           Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
+      # fushi-anki-sync：同 linux job，放 bundle\bin\ 与 fushi_server.exe 同级。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\build\fushi_server_win\bundle\bin"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       - name: Smoke (serve + embedded engine)
         shell: pwsh
         run: |

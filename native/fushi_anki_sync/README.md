@@ -34,7 +34,15 @@ applies `patches/*.patch` idempotently, then `cargo build --release`. `Cargo.tom
 `[patch]` points `anki` and `anki_proto` at that checkout (both must, or `anki_proto`
 resolves twice and its types do not match).
 
-Requirements: a Rust toolchain (tested with 1.97.1) and `protoc` (upstream pins v31.1;
+`--install-dir DIR` (`-InstallDirectory DIR` on Windows) also copies the binary plus its
+AGPL source notice `fushi-anki-sync.SOURCE.txt` (generated from `SOURCE.txt.in` with the
+checkout's commit) into `DIR` and smoke-tests the copy with a `version` request.
+`--universal` (macOS) builds arm64 + x86_64 and `lipo`s them. CI
+(`.github/actions/setup-fushi-anki-sync` + the desktop / server release workflows) uses
+these to put the helper next to `fushi.exe`, inside `fushi.app/Contents/MacOS/` (notice in
+`Contents/Resources/`), and in the server's `bundle/bin/`.
+
+Requirements: a Rust toolchain (pinned to 1.97.1 by `rust-toolchain.toml`) and `protoc` (upstream pins v31.1;
 set `PROTOC`/`PROTOC_BINARY` or put it on `PATH`). No Python / Node needed. The release
 binary is ~14 MB (Windows x64).
 

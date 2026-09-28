@@ -5,8 +5,14 @@
 # 2. Verify the checkout is the pinned commit (a moved tag must not slip through).
 # 3. Apply patches/*.patch idempotently (honest "fushi" sync client identity).
 # 4. cargo build --release. Requires `protoc` (set $env:PROTOC or put it on PATH).
+# 5. With -InstallDirectory: copy fushi-anki-sync.exe and its AGPL source notice
+#    (fushi-anki-sync.SOURCE.txt) there and smoke-test the installed copy. CI uses this
+#    to bundle the helper next to fushi.exe / fushi_server.exe.
 [CmdletBinding()]
-param([switch]$DebugBuild)
+param(
+    [switch]$DebugBuild,
+    [string]$InstallDirectory
+)
 
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -68,3 +74,49 @@ try {
 } finally {
     Pop-Location
 }
+
+if (-not $InstallDirectory) { exit 0 }
+
+$profileDir = if ($DebugBuild) { 'debug' } else { 'release' }
+$bin = Join-Path $Here "target\$profileDir\fushi-anki-sync.exe"
+New-Item -ItemType Directory -Force -Path $InstallDirectory | Out-Null
+# [IO.File] resolves relative paths against the process cwd, not the PowerShell location.
+$InstallDirectory = (Resolve-Path -LiteralPath $InstallDirectory).Path
+$installed = Join-Path $InstallDirectory 'fushi-anki-sync.exe'
+Copy-Item -LiteralPath $bin -Destination $installed -Force
+
+# AGPL: every shipped binary carries where its exact source lives. The commit is the
+# checkout being built (in a reusable workflow GITHUB_SHA is the caller's repo, not ours).
+$commit = $env:FUSHI_SOURCE_COMMIT
+if (-not $commit) { $commit = (& git -C $Here rev-parse HEAD).Trim() }
+if ($LASTEXITCODE -ne 0 -or -not $commit) { throw 'git rev-parse HEAD failed' }
+$repo = $env:FUSHI_SOURCE_REPO
+if (-not $repo) { $repo = 'hajisensai/Fushi' }
+$notice = [IO.File]::ReadAllText((Join-Path $Here 'SOURCE.txt.in'))
+$notice = $notice.Replace('@VERSION@', $version).Replace('@ANKI_TAG@', $AnkiTag)
+$notice = $notice.Replace('@ANKI_COMMIT@', $AnkiCommit).Replace('@REPO@', $repo).Replace('@COMMIT@', $commit)
+[IO.File]::WriteAllText((Join-Path $InstallDirectory 'fushi-anki-sync.SOURCE.txt'), $notice)
+
+# Smoke the installed copy: it must start, answer the protocol and report the honest
+# "fushi,<version> (anki <tag>)" identity (proves the version patch was applied).
+# Not `'...' | & $installed`: PowerShell 5.1 on a UTF-8 console prepends a BOM to what it
+# pipes into a native command (measured: EF BB BF even with $OutputEncoding = ASCII), and
+# the helper rightly rejects that as invalid JSON. Start-Process hands the file over as
+# the raw stdin handle, byte for byte.
+$smokeDir = Join-Path ([IO.Path]::GetTempPath()) ('fushi-anki-sync-smoke-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+$request = Join-Path $smokeDir 'request.jsonl'
+$response = Join-Path $smokeDir 'response.jsonl'
+[IO.File]::WriteAllBytes($request, [Text.Encoding]::ASCII.GetBytes('{"id":1,"cmd":"version"}' + "`n"))
+$proc = Start-Process -FilePath $installed -RedirectStandardInput $request `
+    -RedirectStandardOutput $response -NoNewWindow -Wait -PassThru
+$code = $proc.ExitCode
+$reply = [IO.File]::ReadAllText($response)
+Remove-Item -LiteralPath $smokeDir -Recurse -Force
+Write-Host "fushi-anki-sync version reply: $reply"
+$expected = '"client":"fushi,' + $version + ' (anki ' + $AnkiTag + '),'
+if ($code -ne 0 -or -not $reply.Contains($expected)) {
+    throw "fushi-anki-sync smoke failed (exit $code): expected $expected"
+}
+Get-Item -LiteralPath $installed, (Join-Path $InstallDirectory 'fushi-anki-sync.SOURCE.txt') |
+    Select-Object FullName, Length | Format-Table -AutoSize | Out-Host
