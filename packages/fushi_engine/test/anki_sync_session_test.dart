@@ -493,6 +493,45 @@ void main() {
     session = newSession(); // tearDown 关的是这个
   });
 
+  test('旧格式条目（有 note id、没有 guid）：先查重，不盲写出重复卡', () async {
+    await session.signIn(username: 'u', password: 'pw');
+    await session.addNote(_note('猫'));
+    // 把条目改写成没有 guid 的旧格式。
+    final AnkiSyncJournalEntry e = (await journal().entries()).single;
+    File(p.join(root.path, 'journal', '${e.id}.json')).writeAsStringSync(
+      '{"id":"${e.id}","createdAt":${e.createdAt},"noteId":${e.noteId},'
+      '"note":{"notetype":"Basic","deck":"Mining","fields":["猫","meaning"],'
+      '"tags":[],"media":[],"allowDuplicate":false}}',
+    );
+    await session.close();
+    session = newSession();
+    await session.syncNow();
+    expect(helper.calls.where((String c) => c == 'add:猫'), hasLength(1));
+    expect(onServer('猫'), 1);
+    expect(await unsynced(), 0);
+  });
+
+  test('登录已调用、还在排队：这期间制卡一律拒绝', () async {
+    await session.signIn(username: 'u', password: 'pw');
+    helper.holdSync = Completer<void>();
+    final Future<AnkiSyncState> running = session.syncNow();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    // 换到另一个账号：排在同步后面，还没开始。
+    final Future<void> switching = session.signIn(
+      username: 'u',
+      password: 'pw',
+    );
+    await expectLater(
+      session.addNote(_note('猫')),
+      throwsA(isA<AnkiSyncNotSignedIn>()),
+    );
+    helper.holdSync!.complete();
+    helper.holdSync = null;
+    await running;
+    await switching;
+    expect(await unsynced(), 0);
+  });
+
   test('密码错：不写账号文件', () async {
     await expectLater(
       session.signIn(username: 'u', password: 'wrong'),

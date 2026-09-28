@@ -161,6 +161,10 @@ class AnkiSyncSession {
   bool _opened = false;
   bool _long = false;
   bool _changingAccount = false;
+
+  /// 已调用、还没结束的 [signIn] 数（调用时同步 +1）：它可能还排在队列里没开始，
+  /// 这期间制的卡也不能收——登录完成时库可能已经换成另一个账号的了。
+  int _signInPending = 0;
   bool _closed = false;
   Future<void> _tail = Future<void>.value();
   Timer? _syncTimer;
@@ -203,6 +207,19 @@ class AnkiSyncSession {
   /// 地址；换到另一个服务器 / 账号时本地库整个换掉——那时日志里还有卡就拒绝
   /// （[AnkiSyncHasUnsyncedNotes]）。
   Future<void> signIn({
+    String? endpoint,
+    required String username,
+    required String password,
+  }) {
+    _signInPending++;
+    return _signInSerial(
+      endpoint: endpoint,
+      username: username,
+      password: password,
+    ).whenComplete(() => _signInPending--);
+  }
+
+  Future<void> _signInSerial({
     String? endpoint,
     required String username,
     required String password,
@@ -313,9 +330,11 @@ class AnkiSyncSession {
   /// 同步 / 下载进行中只写日志、返回 null（卡没丢，同步结束时补进本地库）。
   /// 写本地库失败时回滚日志条目并抛出——调用方告诉用户「没制成」，日志里也就没有它。
   Future<int?> addNote(AnkiSyncNote note) async {
-    final bool signedIn = await account() != null;
-    // 在 await 之后同步地判断：换账号可能恰好在上面那次 await 期间开始。
-    if (_changingAccount || !signedIn) throw const AnkiSyncNotSignedIn();
+    final AnkiSyncAccount? owner = await account();
+    // 在 await 之后同步地判断：换账号 / 登录可能恰好在上面那次 await 期间开始。
+    if (_changingAccount || _signInPending > 0 || owner == null) {
+      throw const AnkiSyncNotSignedIn();
+    }
     if (_long) {
       await (await _journal()).append(note);
       await refresh();
@@ -324,6 +343,11 @@ class AnkiSyncSession {
       return null;
     }
     final int id = await _serial(() async {
+      // 排队期间账号换了：这张卡属于调用时那个账号，不能写进新账号的库。
+      final AnkiSyncAccount? now = await account();
+      if (now == null || !now.sameServerAndUser(owner.server, owner.username)) {
+        throw const AnkiSyncNotSignedIn();
+      }
       final FushiAnkiSyncClient client = await _ensureOpen();
       final AnkiSyncJournal journal = await _journal();
       final AnkiSyncJournalEntry entry = await journal.append(note);
@@ -507,7 +531,8 @@ class AnkiSyncSession {
       }
       if (!write) continue;
       try {
-        if (e.noteId == null && !e.note.allowDuplicate) {
+        // 没有 (note id, guid) 就没法确认它在不在库里：先查重，别盲写出重复卡。
+        if ((e.noteId == null || e.guid == null) && !e.note.allowDuplicate) {
           final List<AnkiSyncNoteHit> hits = await _guard(
             client.findNotes(
               notetype: e.note.notetype,

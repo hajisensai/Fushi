@@ -33,7 +33,7 @@ class AnkiSyncNoteHit {
   const AnkiSyncNoteHit({
     required this.noteId,
     required this.preview,
-    this.guid = '',
+    required this.guid,
   });
 
   final int noteId;
@@ -198,7 +198,7 @@ class FushiAnkiSyncClient {
       for (final Object? n in r['notes'] as List)
         AnkiSyncNoteHit(
           noteId: ((n as Map)['note_id'] as num).toInt(),
-          guid: n['guid']?.toString() ?? '',
+          guid: _requireGuid(n['guid']),
           preview: n['preview']?.toString() ?? '',
         ),
     ];
@@ -244,7 +244,7 @@ class FushiAnkiSyncClient {
               ],
             })
             as Map;
-    return ((r['note_id']! as num).toInt(), r['guid']?.toString() ?? '');
+    return ((r['note_id']! as num).toInt(), _requireGuid(r['guid']));
   }
 
   Future<AnkiSyncResult> sync({required String hkey, String? endpoint}) async {
@@ -322,6 +322,16 @@ class FushiAnkiSyncClient {
       }
     });
     return done.future;
+  }
+
+  /// guid 是「这张卡还在不在库里」的唯一凭据：缺了不能拿空串顶上（空串永远核对不上，
+  /// 卡会被每轮同步重写一次）。缺了说明 helper 与这份代码版本不配套，直接报错。
+  static String _requireGuid(Object? raw) {
+    if (raw is String && raw.isNotEmpty) return raw;
+    throw const FushiAnkiSyncException(
+      'fushi-anki-sync did not return a note guid; the helper binary is '
+      'older than this version of Fushi',
+    );
   }
 
   void _onLine(String line) {

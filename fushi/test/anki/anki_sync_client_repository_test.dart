@@ -68,7 +68,7 @@ class _FakeHelper implements FushiAnkiSyncClient {
   }) async => <AnkiSyncNoteHit>[
     for (int i = local.length - 1; i >= 0; i--)
       if (local[i].first == firstField)
-        AnkiSyncNoteHit(noteId: i + 1, preview: firstField),
+        AnkiSyncNoteHit(noteId: i + 1, preview: firstField, guid: 'g${i + 1}'),
   ];
 
   @override

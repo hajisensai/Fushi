@@ -138,6 +138,24 @@ void main() {
     await expectLater(c.version(), throwsA(isA<FushiAnkiSyncException>()));
   });
 
+  // 缺 guid = helper 与代码版本不配套：不能拿空串顶上（永远核对不上，卡会被每轮重写）。
+  test('add_note 回包缺 guid：报协议不匹配，不返回空 guid', () async {
+    final _FakeHelper h = _FakeHelper(
+      (Map<String, Object?> req) => _ok(<String, Object?>{'note_id': 1}),
+    );
+    final FushiAnkiSyncClient c = h.client();
+    await expectLater(
+      c.addNote(notetype: 'Basic', deck: 'D', fields: <String>['x']),
+      throwsA(
+        isA<FushiAnkiSyncException>().having(
+          (FushiAnkiSyncException e) => e.message,
+          'message',
+          contains('guid'),
+        ),
+      ),
+    );
+  });
+
   // 复审 3 重要 3：同步 / 整库下载可能跑很久，关闭不能排在它后面。
   test('有请求在飞时 dispose：立刻返回，在途请求失败', () async {
     final _FakeHelper h = _FakeHelper((_) => null); // 永远不回
