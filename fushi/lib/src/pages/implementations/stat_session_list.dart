@@ -346,44 +346,47 @@ Future<bool> showStatSessionsSheet(
     context: context,
     builder: (BuildContext sheetContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(sheetContext);
-      return SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(tokens.spacing.card),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(title, style: tokens.type.sectionLabel),
-                  ),
-                  if (sessions.isNotEmpty)
-                    _StatSessionsClearAllButton(
-                      sessions: sessions,
-                      onClearAll: (List<StudySession> batch) async {
-                        touched = true;
-                        await onClearAll(batch);
-                        if (sheetContext.mounted) {
-                          Navigator.of(sheetContext).pop();
-                        }
-                      },
+      return statSheetHeightCap(
+        sheetContext,
+        child: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.all(tokens.spacing.card),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Text(title, style: tokens.type.sectionLabel),
                     ),
-                ],
-              ),
-              SizedBox(height: tokens.spacing.gap / 2),
-              if (sessions.isEmpty)
-                Text(t.stat_sessions_empty, style: tokens.type.metadata)
-              else
-                StatSessionList(
-                  sessions: sessions,
-                  titleOf: titleOf,
-                  collectionOf: collectionOf,
-                  onDelete: onDelete,
-                  onEdit: onEdit,
-                  onDeleted: () => touched = true,
+                    if (sessions.isNotEmpty)
+                      _StatSessionsClearAllButton(
+                        sessions: sessions,
+                        onClearAll: (List<StudySession> batch) async {
+                          touched = true;
+                          await onClearAll(batch);
+                          if (sheetContext.mounted) {
+                            Navigator.of(sheetContext).pop();
+                          }
+                        },
+                      ),
+                  ],
                 ),
-            ],
+                SizedBox(height: tokens.spacing.gap / 2),
+                if (sessions.isEmpty)
+                  Text(t.stat_sessions_empty, style: tokens.type.metadata)
+                else
+                  StatSessionList(
+                    sessions: sessions,
+                    titleOf: titleOf,
+                    collectionOf: collectionOf,
+                    onDelete: onDelete,
+                    onEdit: onEdit,
+                    onDeleted: () => touched = true,
+                  ),
+              ],
+            ),
           ),
         ),
       );

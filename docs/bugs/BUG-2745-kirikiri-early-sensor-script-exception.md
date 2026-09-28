@@ -1,0 +1,6 @@
+## BUG-2745 · KiriKiri 启动并捕获时游戏弹出未处理脚本异常 CS_Timer
+- **报告**：2026-09-27（用户：《王様恋愛》Ver1.00 / KiriKiri Z，从 Fushi「启动并捕获」一打开一两秒就弹 `Script exception raised / Member "CS_Timer" does not exist`，点确定游戏退出；先开游戏再附着大多正常，也有人反馈附着后同样报错。多人遇到）
+- **真实性**：✅ 真 bug（诊断 trace 确认）。用户对照实验：同一启动路径关闭内嵌查词不报错、打开后一两秒报错。临时接管 `System.exceptionHandler` 的诊断版复现一次，同步落盘的记录为 `message=Member "CS_Timer" does not exist`、`trace=anonymous@…(3315)[(function expression) (anonymous)] <-- immediate event`，距传感器装好仅 14 ms。把 bootstrap 各字面量按运行期拼接还原后，第 3315 行正是 `kirikiri_adapter.inc` 输入接缝里 `onMouseMove` 包装的 `return (this.fushiLookupOrig_onMouseMove incontextof this)(...);`。根因：四个 kag 实例接缝（onPrimaryClick / onMouseMove / onMouseWheel / onKeyDown）转发原方法时用 `incontextof this` 把它**强行改绑到 kag**；游戏在 logo/标题阶段把 `kag.onMouseMove` 换成绑定在自有对象上的闭包，该闭包引用自有对象的 `CS_Timer`，改绑后在 kag 上找不到，第一次鼠标移动即抛。启动并捕获装得早正好落在这个阶段；附着通常在游戏阶段，原方法本就绑定 kag，所以多数不出错，在标题画面附着同样会撞上。同社《フタマタ恋愛》的同名报错（[BUG-2116](BUG-2116-gal-classic-kag3-class-patch-invisible-to-instances.md)「失败的修复尝试」③）与此同形。
+- **[x] ① 已修复** — `kirikiri_adapter.inc`：四个接缝改为按成员调用 `this.fushiLookupOrig_x(...)`，TJS 保留原闭包自带的上下文（类方法取出时本就绑定 kag，行为不变）。定位用的异常观察与安装快照诊断在根因确认后已移除，不随修复提交。
+- **[x] ② 已加自动化测试** — `native/galgame_hook/tests/kirikiri_lookup_source_guard_test.py` `find_kag_seam_context_rebinds`：真实适配器里任何 `fushiLookupOrig_* incontextof` 都判红；变异自测确认改回旧写法会红。
+- **备注**：用户已在原始路径（启动并捕获、内嵌查词打开）实机确认不再报错闪退。

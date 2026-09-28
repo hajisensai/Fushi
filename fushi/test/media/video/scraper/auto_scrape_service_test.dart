@@ -112,6 +112,33 @@ void main() {
     expect(factoryCalls, 0);
   });
 
+  test('IPTV 直播频道不进 sidecar 检查；本地 .strm 照常采用同目录 sidecar', () async {
+    final VideoBookRow rtsp = await seed(
+      bookUid: 'rtsp',
+      videoPath: 'rtsp://10.0.0.1:554/live/1',
+    );
+    final VideoBookRow udp = await seed(
+      bookUid: 'udp',
+      videoPath: 'UDP://@239.0.0.1:1234',
+    );
+    // Kodi / Jellyfin 的 `.strm` 库：同目录常带海报 sidecar，`.strm` 本身是磁盘上
+    // 的真实文件，照常检查。
+    final File strm = File(p.join(library.path, 'pointer.strm'));
+    await strm.writeAsString('https://example.com/live.m3u8\n');
+    final VideoBookRow pointer =
+        await seed(bookUid: 'pointer', videoPath: strm.path);
+    await writePoster();
+    final VideoScrapeAutoService auto = build();
+
+    await auto.sweep(<VideoBookRow>[rtsp, udp, pointer]);
+
+    expect(auto.attemptedCount, 1, reason: '只有 .strm 进 sidecar 检查');
+    expect((await repo.getByBookUid('rtsp'))!.coverPath, isNull);
+    expect((await repo.getByBookUid('udp'))!.coverPath, isNull);
+    expect((await repo.getByBookUid('pointer'))!.coverPath, isNotNull);
+    expect((await coverMeta.get('pointer'))!.origin, CoverOrigin.sidecar);
+  });
+
   test('历史资料行不阻止采用用户后来添加的 sidecar', () async {
     final VideoBookRow book = await seedLocal('done');
     await db.upsertVideoScrapeMeta(

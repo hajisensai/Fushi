@@ -102,6 +102,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required T this.selected,
     required ValueChanged<T> this.onChanged,
     required this.focusIdPrefix,
+    this.secondary = false,
     super.key,
   }) : controller = null;
 
@@ -117,11 +118,17 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     required this.tabs,
     required TabController this.controller,
     required this.focusIdPrefix,
+    this.secondary = false,
     super.key,
   }) : selected = null,
        onChanged = null;
 
   final List<LibrarySectionTab<T>> tabs;
+
+  /// MD3 secondary tabs：页面内、primary tabs 之下的二级分区（如「浏览」页签里
+  /// 再分小说 / 漫画 / 视频）。与 primary 同一套焦点、滚动与投影契约，只换
+  /// 呈现（指示条横贯整个 tab、选中文案不着主色），层级一眼可辨。
+  final bool secondary;
 
   /// 仅自持形态；[LibrarySectionTabs.controlled] 下为 null（真相在 [controller]）。
   final T? selected;
@@ -161,6 +168,7 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
           tabs: tabs,
           selected: selectedValue,
           onChanged: onSelect,
+          secondary: secondary,
         ),
       );
     }
@@ -178,7 +186,11 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
             );
             if (target >= 0 && target != host.index) host.animateTo(target);
           },
-          child: FushiSectionTabBar<T>.controlled(tabs: tabs, controller: host),
+          child: FushiSectionTabBar<T>.controlled(
+            tabs: tabs,
+            controller: host,
+            secondary: secondary,
+          ),
         );
       },
     );
@@ -197,6 +209,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
     required this.tabs,
     required T this.selected,
     required ValueChanged<T> this.onChanged,
+    this.secondary = false,
     super.key,
   }) : controller = null;
 
@@ -205,6 +218,7 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
   const FushiSectionTabBar.controlled({
     required this.tabs,
     required TabController this.controller,
+    this.secondary = false,
     super.key,
   }) : selected = null,
        onChanged = null;
@@ -213,6 +227,9 @@ class FushiSectionTabBar<T extends Object> extends StatefulWidget {
   final T? selected;
   final ValueChanged<T>? onChanged;
   final TabController? controller;
+
+  /// 见 [LibrarySectionTabs.secondary]。
+  final bool secondary;
 
   @override
   State<FushiSectionTabBar<T>> createState() => _FushiSectionTabBarState<T>();
@@ -445,29 +462,39 @@ class _FushiSectionTabBarState<T extends Object>
   }
 
   Widget _buildTabBar() {
+    // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
+    // TabBarView 跟着走，中间不该再插一手。
+    final ValueChanged<int>? onTap = _hostControlled
+        ? null
+        : (int index) {
+            widget.onChanged!(widget.tabs[index].value);
+            // TabBar 已把指示器移过去了；宿主若不接受这次切换（不改 selected、
+            // 也不 rebuild），得靠这次校正把它拉回来。
+            _scheduleProjection();
+          };
+    final List<Widget> tabs = <Widget>[
+      for (final LibrarySectionTab<T> tab in widget.tabs) Tab(text: tab.label),
+    ];
+    // 可滚动 TabBar 默认留 52px 起始缩进（[TabAlignment.startOffset]）；首段必须
+    // 与页头标题 / 页面内容左缘对齐，故贴左。MD3 的 tab 分隔线会横贯整条
+    // TabBar，而这里 TabBar 旁边还有动作区——画出来是条半截线，故去掉。
+    if (widget.secondary) {
+      return TabBar.secondary(
+        controller: _controller,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        dividerHeight: 0,
+        onTap: onTap,
+        tabs: tabs,
+      );
+    }
     return TabBar(
       controller: _controller,
       isScrollable: true,
-      // 可滚动 TabBar 默认留 52px 起始缩进（[TabAlignment.startOffset]）；顶栏里
-      // 首段必须与页头标题左缘对齐，故贴左。
       tabAlignment: TabAlignment.start,
-      // MD3 的 tab 分隔线会横贯整条 TabBar，而这里 TabBar 只占页头标题槽、右边还有
-      // 动作区——画出来是条半截线，故去掉；页头自身的留白已经分隔了内容。
       dividerHeight: 0,
-      // 宿主持有形态不接管点击：TabBar 自己 animateTo 那一个 controller，页内的
-      // TabBarView 跟着走，中间不该再插一手。
-      onTap: _hostControlled
-          ? null
-          : (int index) {
-              widget.onChanged!(widget.tabs[index].value);
-              // TabBar 已把指示器移过去了；宿主若不接受这次切换（不改 selected、
-              // 也不 rebuild），得靠这次校正把它拉回来。
-              _scheduleProjection();
-            },
-      tabs: <Widget>[
-        for (final LibrarySectionTab<T> tab in widget.tabs)
-          Tab(text: tab.label),
-      ],
+      onTap: onTap,
+      tabs: tabs,
     );
   }
 }

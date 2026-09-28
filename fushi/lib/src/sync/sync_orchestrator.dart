@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 import 'package:fushi/src/models/local_audio_manager.dart';

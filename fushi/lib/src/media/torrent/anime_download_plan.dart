@@ -53,6 +53,7 @@ class AnimeDownloadPlan {
     this.subtitleStatus = subtitleNone,
     this.subtitleNote,
     this.subtitleAttempts = 0,
+    this.subtitleAlignPending = false,
     this.subtitleLastAttemptAtMs,
   });
 
@@ -188,6 +189,15 @@ class AnimeDownloadPlan {
   /// 上次反查字幕的时刻（epoch 毫秒）；null = 还没试过。
   final int? subtitleLastAttemptAtMs;
 
+  /// [subtitles] 里的暂存字幕还没按视频内嵌字幕轨对过时间轴。
+  ///
+  /// 由产出暂存字幕的一方置 true：下载完成时 resolver 按包内文件名配上的，以及订阅
+  /// 在发现期就下好的（`AnimeDownloadSubscriptionService`）。视频**真正下载完成**
+  /// 那一轮看到它为 true 才对齐、随即清掉——「边下边播」提前入库那一轮视频还残缺
+  /// （稀疏文件已存在但内容没下完），抽参考轨只会读到半截，所以那一轮不对、留着。
+  /// 旧计划缺字段时默认 false（不补对齐，与此前行为一致）。
+  final bool subtitleAlignPending;
+
   /// 自动重试**还有没有机会**（与「现在是否该重试」不同：这里不看时间）。
   ///
   /// UI 用它区分两种完全不同的处境：还会自动重试 = 用户什么都不用做；重试用完了
@@ -235,6 +245,7 @@ class AnimeDownloadPlan {
     String? subtitleNote,
     int? subtitleAttempts,
     int? subtitleLastAttemptAtMs,
+    bool? subtitleAlignPending,
   }) {
     return AnimeDownloadPlan(
       id: id ?? this.id,
@@ -260,6 +271,7 @@ class AnimeDownloadPlan {
       subtitleAttempts: subtitleAttempts ?? this.subtitleAttempts,
       subtitleLastAttemptAtMs:
           subtitleLastAttemptAtMs ?? this.subtitleLastAttemptAtMs,
+      subtitleAlignPending: subtitleAlignPending ?? this.subtitleAlignPending,
     );
   }
 }
@@ -297,6 +309,7 @@ Map<String, dynamic> encodeAnimeDownloadPlan(AnimeDownloadPlan plan) {
     'subtitleNote': plan.subtitleNote,
     'subtitleAttempts': plan.subtitleAttempts,
     'subtitleLastAttemptAtMs': plan.subtitleLastAttemptAtMs,
+    'subtitleAlignPending': plan.subtitleAlignPending,
   };
 }
 
@@ -378,6 +391,7 @@ AnimeDownloadPlan? decodeAnimeDownloadPlan(Map<dynamic, dynamic> raw) {
       subtitleLastAttemptAtMs: raw['subtitleLastAttemptAtMs'] is int
           ? raw['subtitleLastAttemptAtMs'] as int
           : null,
+      subtitleAlignPending: raw['subtitleAlignPending'] == true,
     );
   } catch (_) {
     return null;

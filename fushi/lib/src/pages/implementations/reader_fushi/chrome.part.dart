@@ -2009,12 +2009,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
 
       if (!mounted) return;
 
-      // 所有平台共用左侧导航与右侧设置；有声书面板桌面/宽窗同走右侧侧栏，
-      // 手机保留全高 bottom sheet。
-      final bool useAudiobookSideSheet = readerAudiobookUsesSideSheet(
-        desktop: isDesktopPlatform,
-        window: MediaQuery.sizeOf(context),
-      );
+      // 所有平台共用左侧导航与右侧设置；有声书面板也一律走右侧侧栏（手机同样，
+      // 用户 2026-09-27 拍板：不再用底部抽屉）。
       final bool audiobookPanel =
           initialSubPage == 'audiobook' && _audiobookController != null;
       final ReaderQuickSettingsPresentation presentation = audiobookPanel
@@ -2034,7 +2030,6 @@ extension _ReaderChrome on _ReaderFushiPageState {
         () => _presentQuickSettings(
           sheetContent: sheetContent,
           presentation: presentation,
-          useAudiobookSideSheet: useAudiobookSideSheet,
         ),
       );
 
@@ -2048,27 +2043,15 @@ extension _ReaderChrome on _ReaderFushiPageState {
     }
   }
 
-  /// [_showAppearanceSheet] 的呈现分派（移动端有声书 sheet / 其余一律左右侧栏），
-  /// 返回的 Future 在面板关闭后完成。
+  /// [_showAppearanceSheet] 的呈现分派（各平台一律左右侧栏），返回的 Future 在
+  /// 面板关闭后完成。
   Future<void> _presentQuickSettings({
     required Widget sheetContent,
     required ReaderQuickSettingsPresentation presentation,
-    required bool useAudiobookSideSheet,
   }) async {
-    if (presentation == ReaderQuickSettingsPresentation.audiobookPanel &&
-        !useAudiobookSideSheet) {
-      // 手机：全高 bottom sheet 承载面板（面板内部 Flexible 需要有界高度）。
-      await adaptiveModalSheet<void>(
-        context: context,
-        builder: (BuildContext ctx) => SizedBox(
-          height: MediaQuery.sizeOf(ctx).height * 0.9,
-          child: sheetContent,
-        ),
-      );
-      return;
-    }
     // 有声书面板曾是 680px 居中对话框（FushiDialogFrame）；用户 2026-09-13 拍板
-    // 「和设置一样」——与导航 / 设置共用同一条右侧侧栏路由。
+    // 「和设置一样」——与导航 / 设置共用同一条右侧侧栏路由。手机曾保留全高底部
+    // 抽屉，2026-09-27 起同样走侧栏（侧栏全高有界，面板的钉住 / 整块滚判据照常）。
     await _presentSideSheet(
       // ッツ 形态：导航 / 章节贴左，外观设置 / 有声书贴右。
       side: presentation == ReaderQuickSettingsPresentation.sideSheetNavigation

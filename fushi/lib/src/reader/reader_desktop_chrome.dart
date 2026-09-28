@@ -20,9 +20,6 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 
-import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show kFushiSettingsWideMinHeight, kFushiSettingsWideThreshold;
-
 /// 顶部工具栏视觉高度 == 挤压态预留高（chrome 铁律：同一真相源，见
 /// reader_chrome_floating.dart 文件头）。
 const double kReaderDesktopHeaderHeight = 48;
@@ -36,17 +33,6 @@ const double kReaderDesktopHeaderTitleFontSize = 14;
 
 /// 右侧抽屉宽度（逻辑 px）。窄窗口下由 [showReaderSideSheet] 收窄到留出 48px 空白。
 const double kReaderSideSheetWidth = 400;
-
-/// 有声书面板的容器按可用空间选择：桌面/宽窗走右侧侧栏（与设置侧栏同一容器
-/// [showReaderSideSheet]，用户 2026-09-13 拍板：不再弹居中对话框），手机保留全高
-/// 底部面板（面板内部 `Flexible` 需要有界高度，bottom sheet 给得起）。
-bool readerAudiobookUsesSideSheet({
-  required bool desktop,
-  required Size window,
-}) =>
-    desktop ||
-    (window.width >= kFushiSettingsWideThreshold &&
-        window.height >= kFushiSettingsWideMinHeight);
 
 /// 导航抽屉打开时是否把焦点直接放进「书内搜索」输入框。
 ///

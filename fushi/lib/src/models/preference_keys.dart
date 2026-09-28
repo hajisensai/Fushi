@@ -66,6 +66,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',
+  // bool：「下载」改名「浏览」的一次性搬迁提示已处理（弹过，或判定本安装不需要
+  // 弹）。描述本安装的状态，与 first_time_setup 同族、不随 Profile 走。
+  'browse_moved_notice_handled',
   'builtInTagsSeeded',
   'clipboard_panel_block_capture',
   'collapse_dictionaries',
@@ -281,6 +284,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （升级那一刻激活的 Profile），fushi_core 侧常量 `kStatLegacyProfileIdPrefKey`。
   // 设备本地键：值是本库自增 id，不进 Profile 快照、不随备份 / 分享出境。
   'stats_legacy_profile_id',
+  // bool，默认 true：自动下载的外挂字幕按视频内嵌字幕轨对时间轴
+  // （embedded_reference_subtitle_sync.dart）。
+  'subtitle_reference_sync_enabled',
   'sync_backend_type',
   'texthooker_enabled',
   'texthooker_urls',

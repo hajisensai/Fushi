@@ -171,16 +171,23 @@ class VideoBookRepository {
       final List<VideoBookRow> existingBooks = await listAll();
       final Set<String> taken =
           existingBooks.map((VideoBookRow r) => r.bookUid).toSet();
+      // 归一路径 → 行，只建一次（与 [reconcileSplitPlaylist] 的 existingByPath
+      // 同形）。旧实现对每一集线性扫全库并逐行重算 normalizeVideoPath，几千集的
+      // 频道列表 × 几千行视频库是 O(N·M) 次路径归一。同一路径多行时保留**第一行**，
+      // 与旧的「扫到第一个就 break」逐字节一致。
+      final Map<String, VideoBookRow> existingByPath = <String, VideoBookRow>{};
+      if (reuseExistingPaths) {
+        for (final VideoBookRow row in existingBooks) {
+          existingByPath.putIfAbsent(
+            normalizeVideoPath(row.videoPath),
+            () => row,
+          );
+        }
+      }
       for (final PlaylistEntry e in entries) {
         if (reuseExistingPaths) {
-          VideoBookRow? existing;
-          final String normalized = normalizeVideoPath(e.path);
-          for (final VideoBookRow row in existingBooks) {
-            if (normalizeVideoPath(row.videoPath) == normalized) {
-              existing = row;
-              break;
-            }
-          }
+          final VideoBookRow? existing =
+              existingByPath[normalizeVideoPath(e.path)];
           if (existing != null) {
             epUids.add(existing.bookUid);
             if (sourceId != null && existing.sourceId == null) {
@@ -210,7 +217,12 @@ class VideoBookRepository {
           sourceId: sourceId,
         );
         if (reuseExistingPaths) {
-          existingBooks.add((await _db.getVideoBookByBookUid(uid))!);
+          // 同一份清单里同一路径出现两次：第二次复用本次刚建的那行。
+          final VideoBookRow created = (await _db.getVideoBookByBookUid(uid))!;
+          existingByPath.putIfAbsent(
+            normalizeVideoPath(created.videoPath),
+            () => created,
+          );
         }
       }
       collectionId = await _db.createMediaCollection(

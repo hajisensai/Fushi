@@ -201,16 +201,34 @@ void main() {
       final String engine = File(
         'lib/src/mining/immersion_mining_engine.dart',
       ).readAsStringSync();
-      // offsetMs = 缓冲副本（在线视频）0 点在播放器轴上的位置，本地文件恒 0；锚点仍是
-      // 未 pad 的字幕起点，只是换算到媒体文件自己的时间轴（a3452a1c28）。
+      // PR #1669（a3452a1c280）起抽取输入可能是播放器缓冲副本（dump-cache），它的 0 点
+      // 是播放器轴上的 mediaTimeOffsetMs：封面锚点与音频窗必须按**同一个** offsetMs
+      // 换算到输入文件时间轴，锚点本身仍是未 pad 的 stillFrameAnchorMs。
+      expect(engine, contains('final int offsetMs = req.mediaTimeOffsetMs;'));
+      expect(
+        engine,
+        contains('final int extractStartMs = req.clipStartMs - offsetMs;'),
+        reason: '音频窗起点按 offsetMs 换算到输入时间轴',
+      );
       expect(
         engine,
         contains('atSeconds: (req.stillFrameAnchorMs - offsetMs) / 1000.0'),
+        reason: '封面锚点 = 未 pad 的锚点，与音频窗同口径减 offsetMs',
       );
       expect(
         engine,
         isNot(contains('atSeconds: req.clipStartMs / 1000.0')),
         reason: '静态帧不能再直接取音频窗起点',
+      );
+      expect(
+        engine,
+        isNot(contains('atSeconds: extractStartMs / 1000.0')),
+        reason: '静态帧不能取（换算后的）音频窗起点：那含头 padding',
+      );
+      expect(
+        engine,
+        isNot(contains('atSeconds: req.stillFrameAnchorMs / 1000.0')),
+        reason: '缓冲副本输入下不减 offsetMs 会在错误时刻取帧',
       );
     });
 

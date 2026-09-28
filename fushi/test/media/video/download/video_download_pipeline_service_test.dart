@@ -27,6 +27,9 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_alignment_backup.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
@@ -1214,6 +1217,127 @@ void main() {
             entity is File && p.extension(entity.path) == '.srt')
         .toList(growable: false);
     expect(sidecars, hasLength(1));
+    final List<MediaCollectionRow> collections =
+        await environment.database.getAllMediaCollections();
+    expect(collections.single.name, 'Show (2026)');
+  });
+
+  test(
+      'restart adopts a previously aligned sidecar even if alignment would now differ',
+      () async {
+    final Uint8List subtitleBytes = Uint8List.fromList(<int>[49, 10, 50, 10]);
+    final _FakeSubtitleProvider subtitleProvider = _FakeSubtitleProvider(
+      bytes: subtitleBytes,
+    );
+    // 首跑写下的是对齐版（原稿登记在对齐备份里）；这一轮的对齐器给出不同结果
+    // （开关变了 / 抽轨临时失败）。续跑必须认领首跑那份，不能另写 .fushiN。
+    final Uint8List firstRunAligned = Uint8List.fromList(<int>[50, 10, 51, 10]);
+    int alignerCalls = 0;
+    final EnginePaths savedPaths = enginePaths;
+    final Directory pathsRoot =
+        await Directory.systemTemp.createTemp('fushi-align-backup-');
+    enginePaths = FixedEnginePaths(
+      documents: pathsRoot,
+      support: pathsRoot,
+      temp: pathsRoot,
+    );
+    addTearDown(() async {
+      enginePaths = savedPaths;
+      await pathsRoot.delete(recursive: true);
+    });
+    await saveSubtitleAlignmentOriginal(
+      original: subtitleBytes,
+      aligned: firstRunAligned,
+    );
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      subtitleProvider: subtitleProvider,
+      subtitleAligner: (Uint8List bytes, String videoPath) async {
+        alignerCalls++;
+        return Uint8List.fromList(<int>[57, 10]);
+      },
+    );
+    addTearDown(environment.close);
+    const String jobId = 'subtitle-rename-crash-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.subtitle,
+    );
+    final Directory season = Directory(
+      p.join(environment.root.path, 'Show (2026)', 'Season 01'),
+    );
+    await season.create(recursive: true);
+    final File video = File(
+      p.join(season.path, 'Show (2026) - S01E02.mkv'),
+    );
+    await video.writeAsBytes(<int>[0, 1, 2, 3], flush: true);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: p.basename(video.path),
+        currentRelativePath: p.basename(video.path),
+        targetRelativePath: Value<String?>(p.basename(video.path)),
+        finalAbsolutePath: Value<String?>(video.path),
+        kind: const Value<String>('video'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        sizeBytes: Value<int?>(await video.length()),
+        status: const Value<String>(VideoDownloadJobFileStatus.organized),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    final VideoDownloadJobFileRow jobFile =
+        (await environment.database.getVideoDownloadJobFiles(jobId)).single;
+    final File installed = File(
+      p.join(season.path, 'Show (2026) - S01E02.zh-cn.srt'),
+    );
+    await installed.writeAsBytes(firstRunAligned, flush: true);
+    await environment.database.upsertVideoDownloadJobSubtitle(
+      VideoDownloadJobSubtitlesCompanion.insert(
+        subtitleId: '$jobId:auto',
+        jobId: jobId,
+        jobFileId: Value<int?>(jobFile.id),
+        provider: 'opensubtitles',
+        selectedSubtitleId: const Value<String?>('subtitle-42'),
+        language: const Value<String?>('zh-cn'),
+        season: const Value<int?>(1),
+        episode: const Value<int?>(2),
+        originalFileName: const Value<String?>('Show.zh.srt'),
+        stagedPath: Value<String?>('${installed.path}.$jobId.fushi.tmp'),
+        finalPath: Value<String?>(installed.path),
+        status: const Value<String>(
+          VideoDownloadJobSubtitleStatus.resolving,
+        ),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    // P1 契约：无 MAL/TMDB 身份 → import 后直接完成，字幕落位断言不受影响。
+    await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    final VideoDownloadJobSubtitleRow subtitle =
+        (await environment.database.getVideoDownloadJobSubtitles(jobId)).single;
+    expect(subtitle.status, VideoDownloadJobSubtitleStatus.placed);
+    expect(subtitle.finalPath, installed.path);
+    expect(subtitleProvider.searchCalls, 1);
+    expect(subtitleProvider.downloadCalls, 1);
+    final List<FileSystemEntity> sidecars = (await season.list().toList())
+        .where((FileSystemEntity entity) =>
+            entity is File && p.extension(entity.path) == '.srt')
+        .toList(growable: false);
+    expect(sidecars, hasLength(1));
+    expect(await installed.readAsBytes(), firstRunAligned);
+    expect(alignerCalls, 0);
     final List<MediaCollectionRow> collections =
         await environment.database.getAllMediaCollections();
     expect(collections.single.name, 'Show (2026)');
@@ -3172,6 +3296,7 @@ class _PipelineEnvironment {
     UpdateFeedPublisher? updateFeed,
     VideoCoverExtractor? coverExtractor,
     bool Function()? skipDownloadExtras,
+    AutomaticSubtitleAligner? subtitleAligner,
   }) async {
     final FushiDatabase database =
         FushiDatabase.forTesting(NativeDatabase.memory());
@@ -3206,6 +3331,7 @@ class _PipelineEnvironment {
       database: database,
       resourceRegistry: resourceRegistry,
       subtitleRegistry: subtitleRegistry,
+      subtitleAligner: subtitleAligner,
       subtitleLanguageResolver: subtitleLanguageResolver,
       preferredSubtitleLanguages: preferredSubtitleLanguages,
       backendResolver: backendResolver ??

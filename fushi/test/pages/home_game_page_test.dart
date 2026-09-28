@@ -163,17 +163,7 @@ void main() {
     );
 
     final FocusDriver driver = FocusDriver(tester);
-    // 库后一位是「发现」（与书/漫画库页「浏览紧跟书架」同构）。
-    await driver.adjust(steps: 1);
-    expect(find.byKey(HomeGamePage.discoverKey), findsOneWidget);
-    expect(
-      controller.requestById(
-        const FushiFocusId('game-discover-tab-sections'),
-      ),
-      isTrue,
-      reason: '切到发现页后，新的稳定分段 ID 必须可聚焦',
-    );
-    await tester.pump();
+    // 库后一位是「捕获」（在线发现 2026-09-27 起只住在顶层「浏览」模块）。
     await driver.adjust(steps: 1);
     expect(find.byKey(HomeGamePage.monitorKey), findsOneWidget);
 
@@ -240,17 +230,7 @@ void main() {
       isTrue,
     );
     await tester.pump();
-    // 库 → 发现 → 捕获（「发现」插在库后，见 GameSectionTabs 的顺序注释）。
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pump();
-    expect(find.byKey(HomeGamePage.discoverKey), findsOneWidget);
-    expect(
-      controller.requestById(
-        const FushiFocusId('game-discover-tab-sections'),
-      ),
-      isTrue,
-    );
-    await tester.pump();
+    // 库 → 捕获（在线发现已移到顶层「浏览」模块）。
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pump();
 

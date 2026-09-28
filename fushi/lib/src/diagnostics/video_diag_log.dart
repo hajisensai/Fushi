@@ -448,7 +448,7 @@ bool videoDiagEnabledFor(String category, VideoDiagLevel level) =>
     VideoDiagLog.instance.isLoggable(category, level);
 
 /// 导出前的脱敏（纯函数）：native 代理口令、URL 查询参数里的令牌 / 密码、
-/// `Authorization` / `X-Emby-Token` 这类头、以及 `MediaBrowser … Token="…"` 属性。
+/// `Authorization` / `X-Emby-Token` / `X-Plex-Token` 这类头、以及 `MediaBrowser … Token="…"` 属性。
 /// 只抹值不抹键，host + path 原样保留——排障要看得出是哪台服务器的哪条流。
 String redactVideoDiagSecrets(String text) {
   String out = redactAppNativeProxySecrets(text);
@@ -464,18 +464,35 @@ String redactVideoDiagSecrets(String text) {
     _kSecretTokenAttr,
     (Match m) => '${m.group(1)}[redacted]${m.group(2)}',
   );
+  out = out.replaceAllMapped(
+    _kPresignedPathSecret,
+    (Match m) => '${m.group(1)}[redacted]',
+  );
   return out;
 }
 
 final RegExp _kSecretQueryParam = RegExp(
   r'([?&](?:api_key|apikey|token|access_token|auth|authorization|password|'
-  r'passwd|pwd|x-emby-token|x-mediabrowser-token)=)[^&\s"<>]+',
+  r'passwd|pwd|x-emby-token|x-mediabrowser-token|x-plex-token|'
+  r'tempauth)=)[^&\s"<>]+',
   caseSensitive: false,
 );
 
 final RegExp _kSecretHeader = RegExp(
-  r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization)'
+  r'((?:authorization|x-emby-token|x-mediabrowser-token|x-emby-authorization|'
+  r'x-plex-token)'
   r'\s*[:=]\s*)[^\r\n]+',
+  caseSensitive: false,
+);
+
+/// 云盘预签名直链里「路径即凭据」的段（云盘视频流播）：Dropbox temporary link
+/// `…dl.dropboxusercontent.com/cd/0/get/<签名>/file`、OneDrive 个人版 downloadUrl
+/// `…files.1drv.com/<签名>/…`。OneDrive 商业版的 `tempauth=` 走查询参数那条。
+/// 流播本身只把 loopback 中继地址交给 libmpv，这里是防御纵深：任何途径把直链写进
+/// 诊断日志，导出时也不带签名。
+final RegExp _kPresignedPathSecret = RegExp(
+  r'((?:dl\.dropboxusercontent\.com/cd/0/[a-z_]+|\.files\.1drv\.com)/)'
+  r'[^/\s"<>?]+',
   caseSensitive: false,
 );
 
