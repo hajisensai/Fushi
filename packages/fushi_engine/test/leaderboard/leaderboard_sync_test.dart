@@ -11,17 +11,27 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:test/test.dart';
 
-LocalShelfEntry _e(String key, {int chars = 0, String? title}) =>
-    LocalShelfEntry(
-      localKey: key,
-      upload: ShelfEntryUpload(
-        kind: LeaderboardKind.book,
-        refs: <String>['t:${title ?? key}|'],
-        title: title ?? key,
-        finished: false,
-        chars: chars,
-      ),
-    );
+LocalShelfEntry _e(
+  String key, {
+  int chars = 0,
+  String? title,
+  int? finishedAt,
+  int? lastActiveAt,
+  String? cover,
+}) => LocalShelfEntry(
+  localKey: key,
+  localCoverPath: cover,
+  lastActiveAt: lastActiveAt,
+  upload: ShelfEntryUpload(
+    kind: LeaderboardKind.book,
+    refs: <String>['t:${title ?? key}|'],
+    title: title ?? key,
+    finished: finishedAt != null,
+    finishedAt: finishedAt,
+    finishedDate: finishedAt == null ? null : '2026-09-01',
+    chars: chars,
+  ),
+);
 
 DailyCharsUpload _d(String date, int chars) =>
     DailyCharsUpload(date: date, chars: chars);
@@ -51,6 +61,11 @@ String _date(int i) =>
     '2026-${(i ~/ 28 % 12 + 1).toString().padLeft(2, '0')}-'
     '${(i % 28 + 1).toString().padLeft(2, '0')}';
 
+String _k(int i) => 'book:${i.toString().padLeft(4, '0')}';
+
+List<String> _keys(ShelfSyncBatch b) =>
+    b.put.map((LocalShelfEntry e) => e.localKey).toList();
+
 void main() {
   group('planShelfSync', () {
     test('首次全量：reset 只在第一批，全部条目与非零日期', () {
@@ -66,10 +81,7 @@ void main() {
       expect(plan.reset, isTrue);
       expect(plan.batches, hasLength(1));
       expect(plan.batches.single.reset, isTrue);
-      expect(
-        plan.batches.single.put.map((ShelfSyncItem e) => e.localKey),
-        <String>['book:a', 'book:b'],
-      );
+      expect(_keys(plan.batches.single), <String>['book:a', 'book:b']);
       expect(plan.batches.single.daily.single.chars, 10);
       expect(plan.droppedLocalKeys, isEmpty);
     });
@@ -85,7 +97,7 @@ void main() {
       expect(plan.batches.single.put, isEmpty);
     });
 
-    test('增量：只 put hash 变了 / 新增的条目；没变化就没有批次', () {
+    test('增量：变了的已同步条目一批、新条目单独成批且不带 daily；没变化就没有批次', () {
       final LocalShelfEntry a = _e('book:a', chars: 1);
       final LocalShelfEntry b = _e('book:b', chars: 1);
       final LeaderboardSyncState state = _synced(
@@ -101,18 +113,23 @@ void main() {
         isEmpty,
       );
       final ShelfSyncPlan plan = planShelfSync(
-        _shelf(<LocalShelfEntry>[a, _e('book:b', chars: 2), _e('book:c')]),
+        _shelf(
+          <LocalShelfEntry>[a, _e('book:b', chars: 2), _e('book:c')],
+          <DailyCharsUpload>[_d('2026-09-01', 3)],
+        ),
         state,
         reset: false,
       );
-      expect(plan.batches.single.reset, isFalse);
-      expect(
-        plan.batches.single.put.map((ShelfSyncItem e) => e.localKey),
-        <String>['book:b', 'book:c'],
-      );
+      expect(plan.batches, hasLength(2));
+      expect(_keys(plan.batches[0]), <String>['book:b']);
+      expect(plan.batches[0].daily, hasLength(1));
+      expect(plan.batches[0].newEntriesOnly, isFalse);
+      expect(_keys(plan.batches[1]), <String>['book:c']);
+      expect(plan.batches[1].daily, isEmpty);
+      expect(plan.batches[1].newEntriesOnly, isTrue);
     });
 
-    test('删除：本地消失的 localKey 进 droppedLocalKeys（remove 由孤儿规则算）', () {
+    test('删除：本地消失的 localKey 进 droppedLocalKeys；全员消失的作品 put 前先删', () {
       final LocalShelfEntry a = _e('book:a');
       final LocalShelfEntry b = _e('book:b');
       final ShelfSyncPlan plan = planShelfSync(
@@ -125,6 +142,7 @@ void main() {
       );
       expect(plan.batches, isEmpty);
       expect(plan.droppedLocalKeys, <String>['book:b']);
+      expect(plan.preRemoveWorkIds, <String>['W2']);
     });
 
     test('daily：只发变了的日期，消失的日期发 0', () {
@@ -153,7 +171,7 @@ void main() {
 
     test('分批边界：500 条 put 一批、501 条两批；daily 按 400 独立切', () {
       List<LocalShelfEntry> many(int n) => <LocalShelfEntry>[
-        for (int i = 0; i < n; i++) _e('book:${i.toString().padLeft(4, '0')}'),
+        for (int i = 0; i < n; i++) _e(_k(i)),
       ];
       expect(
         planShelfSync(
@@ -191,72 +209,71 @@ void main() {
         1,
       ]);
     });
-    test('合并：已知同 workId 的条目合成一条（读完取最晚、字数时长相加、refs 取第一个）', () {
-      LocalShelfEntry entry(
-        String key, {
-        int? at,
-        int chars = 0,
-        String? cover,
-      }) => LocalShelfEntry(
-        localKey: key,
-        localCoverPath: cover,
-        upload: ShelfEntryUpload(
-          kind: LeaderboardKind.book,
-          refs: <String>['t:$key|'],
-          title: key,
-          finished: at != null,
-          finishedAt: at,
-          finishedDate: at == null ? null : '2026-09-0$at',
-          chars: chars,
-          ms: chars * 10,
-        ),
-      );
-      final LocalShelf local = _shelf(<LocalShelfEntry>[
-        entry('book:a', at: 3, chars: 1),
-        entry('book:b', chars: 2, cover: '/c/b.jpg'),
-        entry('book:c', at: 5, chars: 4),
-        entry('book:d'),
-      ]);
-      const LeaderboardSyncState state = LeaderboardSyncState(
-        entries: <String, SyncedEntry>{
-          'book:a': SyncedEntry(hash: 'x', workId: 'W1'),
-          'book:b': SyncedEntry(hash: 'x', workId: 'W1'),
-          'book:c': SyncedEntry(hash: 'x', workId: 'W1'),
-        },
-        shelfCount: 1,
-      );
-      final List<ShelfSyncItem> items = groupShelfEntries(local, state);
-      expect(items, hasLength(2));
-      final ShelfSyncItem merged = items.first;
-      expect(merged.localKeys, <String>['book:a', 'book:b', 'book:c']);
-      expect(merged.localKey, 'book:a');
-      expect(merged.entry.upload.refs, <String>['t:book:a|']);
-      expect(merged.entry.upload.finished, isTrue);
-      expect(merged.entry.upload.finishedAt, 5);
-      expect(merged.entry.upload.finishedDate, '2026-09-05');
-      expect(merged.entry.upload.chars, 7);
-      expect(merged.entry.upload.ms, 70);
-      expect(merged.entry.localCoverPath, '/c/b.jpg');
-      expect(items.last.localKeys, <String>['book:d'], reason: '未知映射各自成组');
 
-      // 已按合并后的 hash 记账：再规划时这一组不再 put。
-      final String h = merged.entry.upload.contentHash();
-      final ShelfSyncPlan again = planShelfSync(
-        local,
-        LeaderboardSyncState(
-          entries: <String, SyncedEntry>{
-            for (final String k in merged.localKeys)
-              k: SyncedEntry(hash: h, workId: 'W1'),
-            'book:d': SyncedEntry(
-              hash: items.last.entry.upload.contentHash(),
-              workId: 'W2',
-            ),
-          },
-          shelfCount: 2,
+    test('不预合并：同 workId 的成员任一变了，整组各带自己的 refs 进同一批', () {
+      final LocalShelfEntry a = _e('book:a', chars: 1);
+      final LocalShelfEntry b = _e('book:b', chars: 2);
+      final LocalShelfEntry c = _e('book:c', chars: 4);
+      final LocalShelfEntry d = _e('book:d', chars: 8);
+      final LeaderboardSyncState state = _synced(
+        <LocalShelfEntry>[a, b, c, d],
+        <String, String>{
+          'book:a': 'W1',
+          'book:b': 'W1',
+          'book:c': 'W1',
+          'book:d': 'W2',
+        },
+      );
+      final ShelfSyncPlan plan = planShelfSync(
+        _shelf(<LocalShelfEntry>[_e('book:a', chars: 9), b, c, d]),
+        state,
+        reset: false,
+      );
+      final ShelfSyncBatch batch = plan.batches.single;
+      expect(_keys(batch), <String>['book:a', 'book:b', 'book:c']);
+      expect(
+        batch.put.map((LocalShelfEntry e) => e.upload.refs.single),
+        <String>['t:book:a|', 't:book:b|', 't:book:c|'],
+      );
+      expect(batch.put.map((LocalShelfEntry e) => e.upload.chars), <int>[
+        9,
+        2,
+        4,
+      ]);
+    });
+
+    test('组员本地没了：剩下的成员整组重发（服务端那行要去掉它的字数）', () {
+      final LocalShelfEntry a = _e('book:a', chars: 1);
+      final LocalShelfEntry b = _e('book:b', chars: 2);
+      final ShelfSyncPlan plan = planShelfSync(
+        _shelf(<LocalShelfEntry>[a]),
+        _synced(
+          <LocalShelfEntry>[a, b],
+          <String, String>{'book:a': 'W1', 'book:b': 'W1'},
         ),
         reset: false,
       );
-      expect(again.batches, isEmpty);
+      expect(_keys(plan.batches.single), <String>['book:a']);
+      expect(plan.preRemoveWorkIds, isEmpty, reason: 'W1 仍有 a 映射');
+      expect(plan.droppedLocalKeys, <String>['book:b']);
+    });
+
+    test('reset 不按旧 state 分组：每条单独上报', () {
+      final LocalShelfEntry a = _e('book:a', chars: 1);
+      final LocalShelfEntry b = _e('book:b', chars: 2);
+      final ShelfSyncPlan plan = planShelfSync(
+        _shelf(<LocalShelfEntry>[a, b]),
+        _synced(
+          <LocalShelfEntry>[a, b],
+          <String, String>{'book:a': 'W1', 'book:b': 'W1'},
+        ),
+        reset: true,
+      );
+      expect(_keys(plan.batches.single), <String>['book:a', 'book:b']);
+      expect(
+        plan.batches.single.put.map((LocalShelfEntry e) => e.upload.chars),
+        <int>[1, 2],
+      );
     });
 
     test('daily 窗口：早于 dailyFrom 的旧日期不发删除', () {
@@ -278,6 +295,56 @@ void main() {
         ),
         <String>['2016-09-29=0'],
       );
+    });
+
+    test('书架上限：读完优先、其次最近活动；超出的计入 droppedForShelfLimit', () {
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a', lastActiveAt: 10),
+        _e('book:b', finishedAt: 1000),
+        _e('book:c', lastActiveAt: 50),
+        _e('book:d', finishedAt: 5),
+        _e('book:e', lastActiveAt: 30),
+      ];
+      final ShelfSyncPlan plan = planShelfSync(
+        _shelf(entries),
+        LeaderboardSyncState.empty,
+        reset: true,
+        maxShelfRows: 3,
+      );
+      expect(plan.droppedForShelfLimit, 2);
+      expect(_keys(plan.batches.single), <String>[
+        'book:b',
+        'book:c',
+        'book:d',
+      ]);
+
+      // 已同步的在读条目被新读完的挤出去：它的作品在 put 之前先删，腾出行数。
+      final ShelfSyncPlan inc = planShelfSync(
+        _shelf(entries),
+        _synced(
+          <LocalShelfEntry>[entries[0], entries[1], entries[2]],
+          <String, String>{'book:a': 'WA', 'book:b': 'WB', 'book:c': 'WC'},
+        ),
+        reset: false,
+        maxShelfRows: 3,
+      );
+      expect(inc.preRemoveWorkIds, <String>['WA']);
+      expect(inc.batches.single.newEntriesOnly, isTrue);
+      expect(_keys(inc.batches.single), <String>['book:d']);
+      expect(capShelfEntries(entries, max: 10).$2, 0);
+    });
+  });
+
+  group('packShelfGroups', () {
+    test('组不跨批；超过单批的大组才拆开', () {
+      List<LocalShelfEntry> g(String p, int n) => <LocalShelfEntry>[
+        for (int i = 0; i < n; i++) _e('$p$i'),
+      ];
+      final List<List<LocalShelfEntry>> out = packShelfGroups(
+        <List<LocalShelfEntry>>[g('a', 3), g('b', 3), g('c', 1), g('d', 7)],
+        5,
+      );
+      expect(out.map((List<LocalShelfEntry> b) => b.length), <int>[3, 4, 5, 2]);
     });
   });
 
@@ -325,13 +392,14 @@ void main() {
   });
 
   group('LeaderboardSyncState JSON', () {
-    test('往返', () {
+    test('往返（含待补封面）', () {
       const LeaderboardSyncState s = LeaderboardSyncState(
         entries: <String, SyncedEntry>{
           'book:a': SyncedEntry(hash: 'h1', workId: 'W1'),
         },
         daily: <String, int>{'2026-09-01': 3},
         shelfCount: 1,
+        pendingCovers: <String>{'book:a'},
       );
       final LeaderboardSyncState back = LeaderboardSyncState.fromJson(
         (jsonDecode(jsonEncode(s.toJson())) as Map<Object?, Object?>)
@@ -340,8 +408,13 @@ void main() {
       expect(back.entries, s.entries);
       expect(back.daily, s.daily);
       expect(back.shelfCount, 1);
+      expect(back.pendingCovers, <String>{'book:a'});
       expect(back.neverSynced, isFalse);
       expect(LeaderboardSyncState.empty.neverSynced, isTrue);
+      expect(
+        LeaderboardSyncState.fromJson(<String, dynamic>{}).pendingCovers,
+        isEmpty,
+      );
     });
 
     test('坏形状 → FormatException', () {
@@ -365,6 +438,9 @@ void main() {
     late bool? uploadDevice;
     late List<(int, String)> shelfErrors;
     late int shelfCalls;
+    late bool Function(Map<String, dynamic> body)? shelfFullWhen;
+    late bool Function(int i)? needsCover;
+    late List<int> coverStatuses;
 
     setUp(() {
       uploadDevice = null;
@@ -375,6 +451,9 @@ void main() {
       serverShelfCount = 0;
       failOnShelfCall = -1;
       workIdByTitle = <String, String>{};
+      shelfFullWhen = null;
+      needsCover = null;
+      coverStatuses = <int>[];
     });
 
     String workIdFor(String title) =>
@@ -385,6 +464,11 @@ void main() {
       status,
       headers: <String, String>{'content-type': 'application/json'},
     );
+
+    List<String> putTitles(Map<String, dynamic> body) => <String>[
+      for (final Object? p in body['put'] as List<Object?>)
+        (p as Map<Object?, Object?>)['title'] as String,
+    ];
 
     LeaderboardClient client() => LeaderboardClient(
       baseUrl: Uri.parse('https://rank.example'),
@@ -415,17 +499,19 @@ void main() {
           final Map<String, dynamic> body =
               (jsonDecode(utf8.decode(r.bodyBytes)) as Map<Object?, Object?>)
                   .cast<String, dynamic>();
+          if (shelfFullWhen?.call(body) ?? false) {
+            shelfBodies.add(<String, dynamic>{'shelfFull': true, ...body});
+            return json(<String, dynamic>{'error': 'shelf_full'}, 413);
+          }
           shelfBodies.add(body);
-          final List<Object?> put = body['put'] as List<Object?>;
+          final List<String> titles = putTitles(body);
           return json(<String, dynamic>{
             'works': <Map<String, dynamic>>[
-              for (int i = 0; i < put.length; i++)
+              for (int i = 0; i < titles.length; i++)
                 <String, dynamic>{
                   'i': i,
-                  'workId': workIdFor(
-                    (put[i] as Map<Object?, Object?>)['title'] as String,
-                  ),
-                  'needsCover': i == 0,
+                  'workId': workIdFor(titles[i]),
+                  'needsCover': needsCover?.call(i) ?? i == 0,
                 },
             ],
             'shelfCount': serverShelfCount,
@@ -433,33 +519,45 @@ void main() {
         }
         if (r.url.path.endsWith('/cover')) {
           coverUploads.add(r.url.pathSegments[2]);
+          final int status = coverStatuses.isEmpty
+              ? 200
+              : coverStatuses.removeAt(0);
+          if (status != 200) {
+            return json(<String, dynamic>{'error': 'e$status'}, status);
+          }
           return json(<String, dynamic>{'cover': '/img/x'});
         }
         return json(<String, dynamic>{'error': 'not_found'}, 404);
       }),
     );
 
-    test('首次：不查 me，reset 全量；needsCover 调 coverThumb 补传', () async {
-      final LeaderboardSyncState s = await syncShelf(
+    Future<Uint8List?> thumb(LocalShelfEntry e) async =>
+        Uint8List.fromList(<int>[1, 2, 3]);
+
+    test('首次：不查 me，reset 全量；needsCover 补传封面', () async {
+      final ShelfSyncOutcome out = await syncShelf(
         client(),
         _shelf(
           <LocalShelfEntry>[_e('book:a'), _e('book:b')],
           <DailyCharsUpload>[_d('2026-09-01', 4)],
         ),
         LeaderboardSyncState.empty,
-        coverThumb: (LocalShelfEntry e) async =>
-            Uint8List.fromList(<int>[1, 2, 3]),
+        coverThumb: thumb,
       );
+      final LeaderboardSyncState s = out.state;
       expect(shelfBodies.single['reset'], isTrue);
       // 桩只对每批第 0 条回 needsCover。
       expect(coverUploads, <String>['W_book_a']);
       expect(s.entries['book:a']!.workId, 'W_book_a');
       expect(s.entries['book:b']!.workId, 'W_book_b');
       expect(s.daily, <String, int>{'2026-09-01': 4});
+      expect(s.pendingCovers, isEmpty);
       expect(s.neverSynced, isFalse);
+      expect(out.coverError, isNull);
+      expect(out.droppedForShelfLimit, 0);
     });
 
-    test('计数一致：增量 put；本地删除与 workId 变更的孤儿最后 remove', () async {
+    test('计数一致：本地全删的作品 put 前先 remove；改落别处的旧作品最后 remove', () async {
       final LocalShelfEntry a = _e('book:a', chars: 1);
       final LocalShelfEntry b = _e('book:b', chars: 1);
       final LocalShelfEntry c = _e('book:c', chars: 1);
@@ -468,21 +566,23 @@ void main() {
         <String, String>{'book:a': 'WA', 'book:b': 'WB', 'book:c': 'WA'},
       );
       serverShelfCount = 2; // WA、WB
-      // a、c 已知同属 WA → 合并成一条 put；a 变了，服务端这次把这组落到 WN（别名合并
+      // a、c 同属 WA → 整组重发（各带自己的值）；服务端这次把两条都落到 WN（别名合并
       // 改判）；b 本地删了。
       workIdByTitle['book:a'] = 'WN';
-      final LeaderboardSyncState s = await syncShelf(
+      workIdByTitle['book:c'] = 'WN';
+      final LeaderboardSyncState s = (await syncShelf(
         client(),
         _shelf(<LocalShelfEntry>[_e('book:a', chars: 9), c]),
         state,
-      );
-      expect(shelfBodies, hasLength(2));
-      expect(shelfBodies[0]['reset'], isFalse);
-      expect((shelfBodies[0]['put'] as List<Object?>), hasLength(1));
-      expect(shelfBodies[0]['remove'], isEmpty);
-      // WA 已无人映射（a、c 都改落 WN），WB 本地删了：两个都删。
-      expect(shelfBodies[1]['remove'], <String>['WA', 'WB']);
-      expect(shelfBodies[1]['put'], isEmpty);
+      )).state;
+      expect(shelfBodies, hasLength(3));
+      expect(shelfBodies[0]['remove'], <String>['WB']);
+      expect(shelfBodies[0]['put'], isEmpty);
+      expect(shelfBodies[1]['reset'], isFalse);
+      expect(putTitles(shelfBodies[1]), <String>['book:a', 'book:c']);
+      expect(shelfBodies[1]['remove'], isEmpty);
+      expect(shelfBodies[2]['remove'], <String>['WA']);
+      expect(shelfBodies[2]['put'], isEmpty);
       expect(s.entries.keys, unorderedEquals(<String>['book:a', 'book:c']));
       expect(s.entries['book:a']!.workId, 'WN');
       expect(s.entries['book:c']!.workId, 'WN');
@@ -503,8 +603,7 @@ void main() {
 
     test('中途失败：抛 LeaderboardSyncException，partialState 含已成功的批', () async {
       final List<LocalShelfEntry> entries = <LocalShelfEntry>[
-        for (int i = 0; i < 501; i++)
-          _e('book:${i.toString().padLeft(4, '0')}'),
+        for (int i = 0; i < 501; i++) _e(_k(i)),
       ];
       failOnShelfCall = 1; // 第二批失败
       Object? caught;
@@ -513,16 +612,17 @@ void main() {
       } on LeaderboardSyncException catch (e) {
         caught = e;
         expect(e.partialState.entries, hasLength(500));
+        expect(e.anyBatchAccepted, isTrue);
         expect(e.error, isA<LeaderboardApiException>());
         // 续传：用 partialState 再跑，服务端计数与 state 一致时只补剩下那条。
         serverShelfCount = 500;
         failOnShelfCall = -1;
         shelfBodies.clear();
-        final LeaderboardSyncState s = await syncShelf(
+        final LeaderboardSyncState s = (await syncShelf(
           client(),
           _shelf(entries),
           e.partialState,
-        );
+        )).state;
         expect(shelfBodies.single['reset'], isFalse);
         expect(shelfBodies.single['put'], hasLength(1));
         expect(s.entries, hasLength(501));
@@ -530,36 +630,136 @@ void main() {
       expect(caught, isNotNull);
     });
 
-    test('封面补传失败：书架照常完成，条目 hash 置空待重传，最后报错', () async {
-      Object? caught;
-      try {
-        await syncShelf(
-          client(),
-          _shelf(<LocalShelfEntry>[_e('book:a')]),
-          LeaderboardSyncState.empty,
-          coverThumb: (LocalShelfEntry e) async => throw StateError('disk'),
-        );
-      } on LeaderboardSyncException catch (e) {
-        caught = e;
-        expect(e.error, isA<StateError>());
-        expect(e.partialState.entries['book:a']!.hash, '');
-        expect(e.partialState.entries['book:a']!.workId, 'W_book_a');
-        final ShelfSyncPlan next = planShelfSync(
-          _shelf(<LocalShelfEntry>[_e('book:a')]),
-          e.partialState,
-          reset: false,
-        );
-        expect(next.batches.single.put.single.localKey, 'book:a');
-      }
-      expect(caught, isNotNull);
+    test('新条目落到已有作品上：该作品整组补发一轮（服务端那行不能只剩新条目）', () async {
+      final LocalShelfEntry a = _e('book:a', chars: 1);
+      serverShelfCount = 1;
+      workIdByTitle['book:a'] = 'W1';
+      workIdByTitle['book:n'] = 'W1';
+      final LeaderboardSyncState s = (await syncShelf(
+        client(),
+        _shelf(<LocalShelfEntry>[a, _e('book:n', chars: 5)]),
+        _synced(<LocalShelfEntry>[a], <String, String>{'book:a': 'W1'}),
+      )).state;
+      expect(shelfBodies, hasLength(2));
+      expect(putTitles(shelfBodies[0]), <String>['book:n']);
+      expect(putTitles(shelfBodies[1]), <String>['book:a', 'book:n']);
+      expect(s.entries['book:a']!.workId, 'W1');
+      expect(s.entries['book:n']!.workId, 'W1');
+      expect(s.entries['book:n']!.hash, isNotEmpty);
     });
+
+    test('reset 分批劈开同一作品：补发一轮把整组放进同一批', () async {
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        for (int i = 0; i < 501; i++) _e(_k(i)),
+      ];
+      workIdByTitle[_k(0)] = 'WS';
+      workIdByTitle[_k(500)] = 'WS';
+      final LeaderboardSyncState s = (await syncShelf(
+        client(),
+        _shelf(entries),
+        LeaderboardSyncState.empty,
+      )).state;
+      expect(shelfBodies, hasLength(3));
+      expect(putTitles(shelfBodies[2]), <String>[_k(0), _k(500)]);
+      expect(s.entries[_k(0)]!.workId, 'WS');
+    });
+
+    test('书架满（413 shelf_full）：只丢新条目，已同步条目的更新与 daily 照常', () async {
+      final LocalShelfEntry a = _e('book:a', chars: 1);
+      serverShelfCount = 1;
+      shelfFullWhen = (Map<String, dynamic> body) =>
+          putTitles(body).contains('book:new1');
+      final ShelfSyncOutcome out = await syncShelf(
+        client(),
+        _shelf(
+          <LocalShelfEntry>[
+            _e('book:a', chars: 2),
+            _e('book:new1'),
+            _e('book:new2'),
+          ],
+          <DailyCharsUpload>[_d('2026-09-01', 7)],
+        ),
+        _synced(<LocalShelfEntry>[a], <String, String>{'book:a': 'W_book_a'}),
+      );
+      expect(putTitles(shelfBodies[0]), <String>['book:a']);
+      expect(shelfBodies[0]['daily'], hasLength(1));
+      expect(shelfBodies[1]['shelfFull'], isTrue);
+      expect(out.droppedForShelfLimit, 2);
+      expect(out.state.entries.keys, <String>['book:a']);
+      expect(out.state.daily, <String, int>{'2026-09-01': 7});
+      expect(
+        out.state.entries['book:a']!.hash,
+        _e('book:a', chars: 2).upload.contentHash(),
+      );
+    });
+
+    test('封面：第一个 429 立即停下，剩余留待补；hash 不清空，下次只补封面不重 put', () async {
+      needsCover = (int i) => true;
+      coverStatuses = <int>[429];
+      final List<LocalShelfEntry> entries = <LocalShelfEntry>[
+        _e('book:a'),
+        _e('book:b'),
+        _e('book:c'),
+      ];
+      final ShelfSyncOutcome out = await syncShelf(
+        client(),
+        _shelf(entries),
+        LeaderboardSyncState.empty,
+        coverThumb: thumb,
+      );
+      expect(coverUploads, <String>['W_book_a'], reason: '429 后不再补');
+      expect(out.coverError, isA<LeaderboardApiException>());
+      expect(out.state.pendingCovers, <String>{'book:a', 'book:b', 'book:c'});
+      for (final LocalShelfEntry e in entries) {
+        expect(out.state.entries[e.localKey]!.hash, e.upload.contentHash());
+      }
+
+      // 下次：书架没变 → 不 put；只补封面。
+      serverShelfCount = 3;
+      shelfBodies.clear();
+      coverUploads.clear();
+      final ShelfSyncOutcome next = await syncShelf(
+        client(),
+        _shelf(entries),
+        out.state,
+        coverThumb: thumb,
+      );
+      expect(shelfBodies, isEmpty);
+      expect(coverUploads, <String>['W_book_a', 'W_book_b', 'W_book_c']);
+      expect(next.state.pendingCovers, isEmpty);
+      expect(next.coverError, isNull);
+    });
+
+    test('封面：5xx 同样停下；4xx 与本地缩略图失败只放弃该作品、继续后面的', () async {
+      needsCover = (int i) => true;
+      coverStatuses = <int>[400, 503];
+      final ShelfSyncOutcome out = await syncShelf(
+        client(),
+        _shelf(<LocalShelfEntry>[
+          _e('book:a'),
+          _e('book:b'),
+          _e('book:c'),
+          _e('book:d'),
+        ]),
+        LeaderboardSyncState.empty,
+        coverThumb: (LocalShelfEntry e) async {
+          if (e.localKey == 'book:a') throw StateError('disk');
+          return Uint8List.fromList(<int>[1]);
+        },
+      );
+      // a 本地失败放弃；b 400 放弃；c 503 停下；d 没轮到。
+      expect(coverUploads, <String>['W_book_b', 'W_book_c']);
+      expect(out.coverError, isA<StateError>());
+      expect(out.state.pendingCovers, <String>{'book:c', 'book:d'});
+    });
+
     test('409 conflict：原样重发该批（最多 3 次），成功即继续', () async {
       shelfErrors = <(int, String)>[(409, 'conflict'), (409, 'conflict')];
-      final LeaderboardSyncState s = await syncShelf(
+      final LeaderboardSyncState s = (await syncShelf(
         client(),
         _shelf(<LocalShelfEntry>[_e('book:a')]),
         LeaderboardSyncState.empty,
-      );
+      )).state;
       expect(shelfCalls, 3);
       expect(shelfBodies.single['reset'], isTrue);
       expect(s.entries['book:a']!.workId, 'W_book_a');
@@ -589,11 +789,17 @@ void main() {
           LeaderboardSyncState.empty,
         ),
         throwsA(
-          isA<LeaderboardSyncException>().having(
-            (LeaderboardSyncException e) => e.partialState.neverSynced,
-            'partialState.neverSynced',
-            isTrue,
-          ),
+          isA<LeaderboardSyncException>()
+              .having(
+                (LeaderboardSyncException e) => e.partialState.neverSynced,
+                'partialState.neverSynced',
+                isTrue,
+              )
+              .having(
+                (LeaderboardSyncException e) => e.anyBatchAccepted,
+                'anyBatchAccepted',
+                isFalse,
+              ),
         ),
       );
       expect(shelfCalls, 1, reason: '429 不重试');
@@ -632,10 +838,7 @@ void main() {
       uploadDevice = false;
       await syncShelf(
         client(),
-        _shelf(<LocalShelfEntry>[
-          for (int i = 0; i < 501; i++)
-            _e('book:${i.toString().padLeft(4, '0')}'),
-        ]),
+        _shelf(<LocalShelfEntry>[for (int i = 0; i < 501; i++) _e(_k(i))]),
         _synced(<LocalShelfEntry>[a], <String, String>{'book:a': 'W1'}),
         claim: true,
       );
@@ -646,12 +849,12 @@ void main() {
       expect(shelfBodies[1].containsKey('claim'), isFalse);
     });
 
-    test('已知同 workId 的条目合并后只 put 一条，workId 记到每个 localKey', () async {
+    test('已知同 workId 的条目各自上报（服务端合并），workId 记到每个 localKey', () async {
       final LocalShelfEntry a = _e('book:a', title: 'T');
       final LocalShelfEntry b = _e('book:b', title: 'T');
       serverShelfCount = 1;
       workIdByTitle['T'] = 'WT';
-      final LeaderboardSyncState s = await syncShelf(
+      final LeaderboardSyncState s = (await syncShelf(
         client(),
         _shelf(<LocalShelfEntry>[
           _e('book:a', chars: 5, title: 'T'),
@@ -661,12 +864,15 @@ void main() {
           <LocalShelfEntry>[a, b],
           <String, String>{'book:a': 'WT', 'book:b': 'WT'},
         ),
-      );
+      )).state;
       final List<Object?> put = shelfBodies.single['put'] as List<Object?>;
-      expect(put, hasLength(1));
-      expect((put.single as Map<Object?, Object?>)['chars'], 12);
-      expect(s.entries['book:a'], s.entries['book:b']);
+      expect(put, hasLength(2));
+      expect(
+        put.map((Object? p) => (p as Map<Object?, Object?>)['chars']),
+        <int>[5, 7],
+      );
       expect(s.entries['book:a']!.workId, 'WT');
+      expect(s.entries['book:b']!.workId, 'WT');
     });
   });
 }

@@ -9,8 +9,15 @@
 //
 // 出站 http.Client 由调用方注入（app 侧必须经全应用代理装配），每个请求取一个、用完即关。
 // 非 2xx 抛 [LeaderboardApiException]；网络层异常原样透出，由调用方决定是否下次再传。
+//
+// 每个请求有整体超时（默认 30 秒，书架 / 封面上传 60 秒）：到点关掉 http.Client 并抛
+// [LeaderboardTimeoutException]。签名时刻 = 本地时钟 + [LeaderboardServerClock] 记下的
+// 服务器偏移（取自每个响应的 `Date` 头）；服务端判 401 `stale_time`（|偏移| > 5 分钟）时
+// 用该响应刚校准的偏移重签、重发一次。
 
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -34,10 +41,53 @@ class LeaderboardApiException implements Exception {
       'LeaderboardApiException($status $code${detail == null ? '' : ': $detail'})';
 }
 
+/// 请求整体超时（[LeaderboardClient] 到点关闭连接后抛出）。继承 [TimeoutException]，
+/// 调用方按「网络问题」处理即可。
+class LeaderboardTimeoutException extends TimeoutException {
+  LeaderboardTimeoutException(this.method, this.path, Duration timeout)
+    : super('leaderboard $method $path timed out', timeout);
+
+  final String method;
+  final String path;
+}
+
+/// 服务器时钟偏移（毫秒，服务器 − 本地）。取自响应的 `Date` 头（秒精度），同一服务的
+/// 多个 [LeaderboardClient] 共用一个实例，换账户 / 重建客户端时不丢校准。
+class LeaderboardServerClock {
+  int _offsetMs = 0;
+
+  int get offsetMs => _offsetMs;
+
+  /// 本地时刻 [localMs] 对应的服务器时刻。
+  int serverNow(int localMs) => localMs + _offsetMs;
+
+  /// 用响应的 `Date` 头校准；头缺失或格式不对时不变。返回是否校准了。
+  bool observe(String? dateHeader, int localMs) {
+    if (dateHeader == null || dateHeader.isEmpty) return false;
+    final DateTime server;
+    try {
+      server = HttpDate.parse(dateHeader);
+    } on Object {
+      return false;
+    }
+    _offsetMs = server.millisecondsSinceEpoch - localMs;
+    return true;
+  }
+}
+
+/// 默认请求整体超时。
+const Duration kLeaderboardRequestTimeout = Duration(seconds: 30);
+
+/// 书架批 / 封面上传的整体超时。
+const Duration kLeaderboardUploadTimeout = Duration(seconds: 60);
+
 /// 增量上报单批上限（与服务端一致；分批由调用方做）。
 const int kLeaderboardMaxPut = 500;
 const int kLeaderboardMaxRemove = 500;
 const int kLeaderboardMaxDaily = 400;
+
+/// 单账户服务端书架行数上限（shelf.js `MAX_SHELF_ROWS`；超了整批 413 `shelf_full`）。
+const int kLeaderboardMaxShelfRows = 8000;
 
 /// 游标分页接口（用户书架 / 作品读者）单页上限。
 const int kLeaderboardMaxPageLimit = 50;
@@ -59,20 +109,37 @@ class LeaderboardClient {
     required Future<http.Client> Function() httpClientFactory,
     LeaderboardIdentity? identity,
     int Function()? clockMs,
+    LeaderboardServerClock? serverClock,
+    Duration requestTimeout = kLeaderboardRequestTimeout,
+    Duration uploadTimeout = kLeaderboardUploadTimeout,
   }) : _baseUrl = baseUrl,
        _httpClientFactory = httpClientFactory,
        _identity = identity,
-       _clockMs = clockMs ?? _systemClockMs;
+       _clockMs = clockMs ?? _systemClockMs,
+       serverClock = serverClock ?? LeaderboardServerClock(),
+       _requestTimeout = requestTimeout,
+       _uploadTimeout = uploadTimeout;
 
   final Uri _baseUrl;
   final Future<http.Client> Function() _httpClientFactory;
   final LeaderboardIdentity? _identity;
   final int Function() _clockMs;
+  final Duration _requestTimeout;
+  final Duration _uploadTimeout;
   int _lastSignedAt = 0;
+
+  /// 服务器时钟偏移（签名时刻与书架「读完时刻」上界都按它算）。
+  final LeaderboardServerClock serverClock;
 
   static int _systemClockMs() => DateTime.now().millisecondsSinceEpoch;
 
   LeaderboardIdentity? get identity => _identity;
+
+  /// 服务地址（拼分享链接 [shareUserUrl] / [shareWorkUrl] 用）。
+  Uri get baseUrl => _baseUrl;
+
+  /// 按已校准偏移估计的服务器当前时刻（毫秒）。
+  int serverNowMs() => serverClock.serverNow(_clockMs());
 
   // ---- 账户 ----
 
@@ -221,6 +288,7 @@ class LeaderboardClient {
         'remove': remove,
         'daily': daily.map((DailyCharsUpload d) => d.toJson()).toList(),
       },
+      timeout: _uploadTimeout,
     );
     return ShelfUploadResult.fromJson(j);
   }
@@ -238,6 +306,7 @@ class LeaderboardClient {
         '/v1/works/${_segment(workId)}/cover',
         bytes: bytes,
         contentType: contentType,
+        timeout: _uploadTimeout,
       );
       return j['cover'] as String?;
     } on LeaderboardApiException catch (e) {
@@ -466,7 +535,7 @@ class LeaderboardClient {
       _join(_baseUrl, path, query);
 
   int _nextSignTime() {
-    final int t = max(_clockMs(), _lastSignedAt + 1);
+    final int t = max(serverNowMs(), _lastSignedAt + 1);
     _lastSignedAt = t;
     return t;
   }
@@ -482,6 +551,7 @@ class LeaderboardClient {
     Uint8List? bytes,
     String? contentType,
     bool withAccount = true,
+    Duration? timeout,
   }) async {
     final http.Response res = await _send(
       method,
@@ -490,6 +560,7 @@ class LeaderboardClient {
       bytes: body != null ? _encodeJson(body) : bytes,
       contentType: body != null ? _json : contentType,
       withAccount: withAccount,
+      timeout: timeout,
     );
     try {
       final Object? decoded = jsonDecode(utf8.decode(res.bodyBytes));
@@ -499,6 +570,7 @@ class LeaderboardClient {
     }
   }
 
+  /// 发一个请求；签名请求遇 401 `stale_time` 时按该响应校准过的服务器偏移重签重发一次。
   Future<http.Response> _send(
     String method,
     String path, {
@@ -507,6 +579,44 @@ class LeaderboardClient {
     String? contentType,
     bool withAccount = true,
     bool signed = true,
+    Duration? timeout,
+  }) async {
+    final bool signs = signed && _identity != null;
+    for (int attempt = 0; ; attempt++) {
+      try {
+        return await _sendOnce(
+          method,
+          path,
+          query: query,
+          bytes: bytes,
+          contentType: contentType,
+          withAccount: withAccount,
+          signed: signed,
+          timeout: timeout ?? _requestTimeout,
+        );
+      } on LeaderboardApiException catch (e) {
+        if (!signs ||
+            attempt > 0 ||
+            e.status != 401 ||
+            e.code != 'stale_time') {
+          rethrow;
+        }
+        // 偏移刚由这个 401 的 Date 头校准；单调下界是按旧偏移推出来的，钟快时它仍停在
+        // 未来，丢掉它。被判 stale 的请求服务端没有登记，不会与重签撞重放。
+        _lastSignedAt = 0;
+      }
+    }
+  }
+
+  Future<http.Response> _sendOnce(
+    String method,
+    String path, {
+    required Map<String, String>? query,
+    required Uint8List? bytes,
+    required String? contentType,
+    required bool withAccount,
+    required bool signed,
+    required Duration timeout,
   }) async {
     final Uri url = _endpoint(path, query);
     final List<int> body = bytes ?? const <int>[];
@@ -532,14 +642,22 @@ class LeaderboardClient {
     }
     final http.Client client = await _httpClientFactory();
     try {
-      final http.Response res = await http.Response.fromStream(
-        await client.send(req),
-      );
+      final http.Response res;
+      try {
+        res = await Future<http.Response>(
+          () async => http.Response.fromStream(await client.send(req)),
+        ).timeout(timeout);
+      } on TimeoutException {
+        throw LeaderboardTimeoutException(method, path, timeout);
+      }
+      final String? date = res.headers['date'];
+      if (date != null) serverClock.observe(date, _clockMs());
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw _apiError(res);
       }
       return res;
     } finally {
+      // 超时时关掉 client 同时中止还挂着的连接。
       client.close();
     }
   }

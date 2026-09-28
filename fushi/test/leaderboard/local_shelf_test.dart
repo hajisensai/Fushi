@@ -331,15 +331,8 @@ void main() {
       final Map<String, LocalShelfEntry> m = byKey(
         await buildLocalShelf(db, profileId: profile),
       );
-      expect(
-        m.keys,
-        unorderedEquals(<String>[
-          'video:c$c1',
-          'video:bmovie',
-          'video:c$c2',
-          'video:bsolo',
-        ]),
-      );
+      // 播放列表 c2 与孤片 solo 没刮削过：标题只能是合集名 / 文件名，不上报。
+      expect(m.keys, unorderedEquals(<String>['video:c$c1', 'video:bmovie']));
 
       final LocalShelfEntry show = m['video:c$c1']!;
       expect(show.upload.title, 'ぼっち・ざ・ろっく！');
@@ -361,12 +354,153 @@ void main() {
       expect(movie.upload.refs.first, 'tmdb:movie:555');
       expect(movie.upload.finished, isTrue);
       expect(movie.localCoverPath, '/c/movie.jpg');
+    });
 
-      final ShelfEntryUpload playlist = m['video:c$c2']!.upload;
-      expect(playlist.finished, isFalse, reason: 'p2 没看完');
-      expect(playlist.title, '播放列表');
+    test('没刮削过的视频不上报：本地索引的临时作品（provider local）同样不算', () async {
+      await video('a1', completedAt: DateTime(2026, 8, 1, 12));
+      await video('b1', completedAt: DateTime(2026, 8, 1, 12));
+      Future<int> collection(String name) => db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: name, createdAt: 0));
+      final int local = await collection('Season 1');
+      final int scraped = await collection('[Group] Show S01 1080p');
+      for (final (int c, String uid) in <(int, String)>[
+        (local, 'a1'),
+        (scraped, 'b1'),
+      ]) {
+        await db
+            .into(db.mediaCollectionItems)
+            .insert(
+              MediaCollectionItemsCompanion.insert(
+                collectionId: c,
+                mediaType: 'video',
+                entryKey: uid,
+              ),
+            );
+      }
+      Future<void> work(int c, String title, String provider, String id) async {
+        final int w = await db
+            .into(db.videoMetadataWorks)
+            .insert(
+              VideoMetadataWorksCompanion.insert(
+                collectionId: Value<int?>(c),
+                mediaType: 'tv',
+                title: title,
+                updatedAt: 0,
+              ),
+            );
+        await db
+            .into(db.videoMetadataProviderIdentities)
+            .insert(
+              VideoMetadataProviderIdentitiesCompanion.insert(
+                identityKey: 'work:$w:$provider',
+                workId: Value<int?>(w),
+                provider: provider,
+                externalId: id,
+                isPrimary: const Value<bool>(true),
+                updatedAt: 0,
+              ),
+            );
+      }
 
-      expect(m['video:bsolo']!.upload.finished, isFalse);
+      // 本地索引出的临时作品：标题就是文件夹名。
+      await work(local, 'Season 1', 'local', 'Season 1');
+      // 刮削过但没有强 ID（历史资料源）：作品标题来自资料源，照常上报。
+      await work(scraped, '葬送のフリーレン', 'douban', '36014526');
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(m.keys, <String>['video:c$scraped']);
+      expect(m['video:c$scraped']!.upload.title, '葬送のフリーレン');
+      expect(m['video:c$scraped']!.upload.refs, <String>['t:葬送のフリーレン|']);
+    });
+  });
+
+  group('服务端同口径', () {
+    test('越界读完时刻降级为「读完、日期未知」；控制字符标题丢弃；其余条目不受连累', () async {
+      final DateTime now = DateTime.utc(2026, 9, 28, 12);
+      await book('Ancient', completedAt: DateTime(1990, 1, 1));
+      await book(
+        'Future',
+        completedAt: now.add(const Duration(days: 1)).toLocal(),
+      );
+      await book('Fine', completedAt: DateTime(2026, 9, 1, 12));
+      await book('\u0001', completedAt: DateTime(2026, 9, 1, 12));
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile, now: now),
+      );
+      expect(
+        m.keys,
+        unorderedEquals(<String>['book:Ancient', 'book:Future', 'book:Fine']),
+      );
+      for (final String k in <String>['book:Ancient', 'book:Future']) {
+        final ShelfEntryUpload u = m[k]!.upload;
+        expect(u.finished, isTrue, reason: k);
+        expect(u.finishedAt, isNull, reason: k);
+        expect(u.finishedDate, isNull, reason: k);
+      }
+      expect(
+        m['book:Fine']!.upload.finishedAt,
+        DateTime(2026, 9, 1, 12).millisecondsSinceEpoch,
+      );
+    });
+
+    test('标题 / 作者按服务端上限截断', () async {
+      await book(
+        'Long',
+        author: 'a' * 250,
+        completedAt: DateTime(2026, 9, 1, 12),
+      );
+      await db.customStatement(
+        "UPDATE epub_books SET title = ? WHERE book_key = 'Long'",
+        <Object>['t' * 400],
+      );
+      final ShelfEntryUpload u = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      )['book:Long']!.upload;
+      expect(u.title, hasLength(300));
+      expect(u.author, hasLength(200));
+    });
+  });
+
+  group('Profile 口径', () {
+    Future<void> profiles(int n) async {
+      for (int i = 0; i < n; i++) {
+        await db.insertProfile(
+          ProfilesCompanion.insert(name: 'p$i', createdAt: 0, updatedAt: 0),
+        );
+      }
+    }
+
+    test('多个 Profile：只上报本 Profile 有学习记录的作品', () async {
+      await profiles(2);
+      await book('Mine', completedAt: DateTime(2026, 9, 1, 12));
+      await book('Theirs', completedAt: DateTime(2026, 9, 1, 12));
+      await book('NoFacts', completedAt: DateTime(2026, 9, 1, 12));
+      await segment('book', 'Mine', date: '2026-09-01', chars: 5);
+      await segment(
+        'book',
+        'Theirs',
+        date: '2026-09-01',
+        chars: 5,
+        profileId: 2,
+      );
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(m.keys, <String>['book:Mine']);
+      expect(m['book:Mine']!.lastActiveAt, isNotNull);
+    });
+
+    test('只有一个 Profile：读完的全部上报（有没有学习记录都算）', () async {
+      await profiles(1);
+      await book('A', completedAt: DateTime(2026, 9, 1, 12));
+      await book('B', completedAt: DateTime(2026, 9, 1, 12));
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(m.keys, unorderedEquals(<String>['book:A', 'book:B']));
     });
   });
 
@@ -462,20 +596,22 @@ void main() {
     });
   });
 
-  test('每日字数只保留服务端窗口：最近 10 年到明天', () async {
-    await segment('book', 'x', date: '2016-09-28', chars: 1); // 超过 10 年
-    await segment('book', 'x', date: '2016-09-30', chars: 2);
-    await segment('book', 'x', date: '2026-09-29', chars: 3); // 明天（本地日可能早于 UTC）
-    await segment('book', 'x', date: '2026-10-01', chars: 4); // 坏时钟写下的未来日期
+  test('每日字数只保留服务端窗口：UTC now − 3649 天到 now + 36 小时', () async {
+    // 服务端下界 = UTC(now − 3650 天) = 2016-09-30；「年 − 10」会得到 2016-09-29（整批 400）。
+    await segment('book', 'x', date: '2016-09-29', chars: 1);
+    await segment('book', 'x', date: '2016-09-30', chars: 2); // 离下界只差一天：留余量
+    await segment('book', 'x', date: '2016-10-01', chars: 3);
+    await segment('book', 'x', date: '2026-09-30', chars: 4); // 本地日可能比 UTC 快
+    await segment('book', 'x', date: '2026-10-01', chars: 5); // 坏时钟写下的未来日期
     final LocalShelf shelf = await buildLocalShelf(
       db,
       profileId: profile,
-      now: DateTime(2026, 9, 28, 12),
+      now: DateTime.utc(2026, 9, 28, 12),
     );
-    expect(shelf.dailyFrom, '2016-09-29');
+    expect(shelf.dailyFrom, '2016-10-01');
     expect(
       shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
-      <String>['2016-09-30=2', '2026-09-29=3'],
+      <String>['2016-10-01=3', '2026-09-30=4'],
     );
   });
 }

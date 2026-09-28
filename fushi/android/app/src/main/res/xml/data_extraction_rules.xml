@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+（API 31+）的备份 / 设备迁移规则；API ≤ 30 走 backup_rules.xml，两份必须同步。
+  只有 exclude、没有 include：其余文件照旧备份 / 迁移，只排除下面这些。
+
+  排行榜账户文件 <support>/leaderboard/profile_<id>.json 里是设备私钥（等同密码），
+  既不上云备份也不随设备迁移。<support> = getApplicationSupportDirectory() =
+  Context.getFilesDir()，即 domain="file" 的根。见 fushi/lib/src/leaderboard/leaderboard_store.dart。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="leaderboard/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="leaderboard/" />
+    </device-transfer>
+</data-extraction-rules>

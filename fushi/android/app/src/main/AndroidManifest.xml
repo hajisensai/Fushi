@@ -17,6 +17,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">

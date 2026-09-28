@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpDate;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -688,6 +690,189 @@ void main() {
         ).toString(),
         'https://rank.fushi.moe/w/w1',
       );
+      expect(c.baseUrl.toString(), 'https://host.example/lb/');
     });
   });
+
+  group('UserCard.relation', () {
+    test('签名请求带 relation；缺失（匿名 / 旧服务端）为 null', () {
+      Map<String, dynamic> card([String? relation]) => <String, dynamic>{
+        'account': _account('u1'),
+        'createdAt': 1,
+        'firstRecordDate': null,
+        'visibility': 'public',
+        'shelfVisible': true,
+        'stats': <String, dynamic>{},
+        if (relation != null) 'relation': relation,
+      };
+      expect(UserCard.fromJson(card('incoming')).relation, 'incoming');
+      expect(UserCard.fromJson(card()).relation, isNull);
+      expect(UserCard.fromJson(card('friend')).toJson()['relation'], 'friend');
+    });
+  });
+
+  group('超时', () {
+    test(
+      '请求整体超时：抛 LeaderboardTimeoutException（是 TimeoutException）并关闭连接',
+      () async {
+        int closed = 0;
+        final LeaderboardClient c = LeaderboardClient(
+          baseUrl: Uri.parse('https://rank.example'),
+          identity: _id,
+          requestTimeout: const Duration(milliseconds: 50),
+          uploadTimeout: const Duration(milliseconds: 80),
+          httpClientFactory: () async => _ClosingClient(
+            MockClient((http.Request r) => Completer<http.Response>().future),
+            () => closed++,
+          ),
+        );
+        await expectLater(
+          c.me(),
+          throwsA(
+            isA<LeaderboardTimeoutException>()
+                .having(
+                  (LeaderboardTimeoutException e) => e.path,
+                  'path',
+                  '/v1/me',
+                )
+                .having(
+                  (LeaderboardTimeoutException e) => e.duration,
+                  'duration',
+                  const Duration(milliseconds: 50),
+                ),
+          ),
+        );
+        expect(closed, 1);
+        await expectLater(
+          c.uploadShelfDelta(),
+          throwsA(
+            isA<TimeoutException>().having(
+              (TimeoutException e) => e.duration,
+              'duration',
+              const Duration(milliseconds: 80),
+            ),
+          ),
+        );
+        expect(closed, 2);
+      },
+    );
+  });
+
+  group('服务器时钟', () {
+    Map<String, dynamic> self() => <String, dynamic>{
+      ..._account(_id.accountId),
+      'visibility': 'public',
+      'createdAt': 1,
+    };
+
+    test('按响应 Date 头校准偏移，签名时刻 = 本地 + 偏移', () async {
+      const int local = 1790000000000;
+      final DateTime server = DateTime.fromMillisecondsSinceEpoch(
+        local + 3600 * 1000,
+        isUtc: true,
+      );
+      final _Harness h = _Harness(
+        (http.Request r) async => http.Response.bytes(
+          utf8.encode(jsonEncode(self())),
+          200,
+          headers: <String, String>{
+            'content-type': 'application/json',
+            'date': HttpDate.format(server),
+          },
+        ),
+        identity: _id,
+        clock: () => local,
+      );
+      await h.client.me();
+      expect(h.requests[0].headers['X-Fushi-Time'], '$local');
+      expect(h.client.serverClock.offsetMs, 3600 * 1000);
+      expect(h.client.serverNowMs(), local + 3600 * 1000);
+      await h.client.me();
+      expect(h.requests[1].headers['X-Fushi-Time'], '${local + 3600 * 1000}');
+    });
+
+    test('401 stale_time：用该响应的 Date 重签重发一次；再 stale 就报错', () async {
+      const int local = 1790000000000;
+      final String serverDate = HttpDate.format(
+        DateTime.fromMillisecondsSinceEpoch(local - 7200 * 1000, isUtc: true),
+      );
+      int stale = 1;
+      final _Harness h = _Harness(
+        (http.Request r) async {
+          final Map<String, String> headers = <String, String>{
+            'content-type': 'application/json',
+            'date': serverDate,
+          };
+          if (stale-- > 0) {
+            return http.Response.bytes(
+              utf8.encode(jsonEncode(<String, dynamic>{'error': 'stale_time'})),
+              401,
+              headers: headers,
+            );
+          }
+          return http.Response.bytes(
+            utf8.encode(jsonEncode(self())),
+            200,
+            headers: headers,
+          );
+        },
+        identity: _id,
+        clock: () => local,
+      );
+      await h.client.me();
+      expect(h.requests, hasLength(2));
+      expect(h.requests[0].headers['X-Fushi-Time'], '$local');
+      expect(
+        h.requests[1].headers['X-Fushi-Time'],
+        '${local - 7200 * 1000}',
+        reason: '钟快两小时：重签必须回到服务器时刻，不能被单调下界卡在旧值之后',
+      );
+      expect(_verifySigned(h.requests[1], _id), isTrue);
+
+      stale = 2;
+      h.requests.clear();
+      await expectLater(
+        h.client.me(),
+        throwsA(
+          isA<LeaderboardApiException>().having(
+            (LeaderboardApiException e) => e.code,
+            'code',
+            'stale_time',
+          ),
+        ),
+      );
+      expect(h.requests, hasLength(2), reason: '只重试一次');
+    });
+
+    test('未签名请求（验证码）遇 401 不重试', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'stale_time'}, 401),
+        identity: _id,
+      );
+      await expectLater(
+        h.client.requestEmailCode(email: 'a@b.cd', purpose: 'login'),
+        throwsA(isA<LeaderboardApiException>()),
+      );
+      expect(h.requests, hasLength(1));
+    });
+  });
+}
+
+/// 记下 close 次数的 http.Client 包装。
+class _ClosingClient extends http.BaseClient {
+  _ClosingClient(this._inner, this._onClose);
+
+  final http.Client _inner;
+  final void Function() _onClose;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) =>
+      _inner.send(request);
+
+  @override
+  void close() {
+    _onClose();
+    _inner.close();
+  }
 }

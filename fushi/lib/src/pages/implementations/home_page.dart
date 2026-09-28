@@ -598,13 +598,13 @@ class _HomePageState extends BasePageState<HomePage>
         unawaited(_backfillVideoMetadataWorks());
       }
       // 首帧同步之后挂定时轮询，让静止不动的设备也能周期性拉到远端改动（见
-      // [_periodicSyncInterval] 注释）。dispose 时 cancel。
-      if (startupModules.isEnabled(ModuleId.sync)) {
-        _periodicSyncTimer = Timer.periodic(
-          _periodicSyncInterval,
-          (_) => _triggerFullAutoSync(),
-        );
-      }
+      // [_periodicSyncInterval] 注释）。dispose 时 cancel。排行榜书架同步挂在同一个
+      // 定时器上（它自己有 30 分钟节流），所以定时器不再只随同步模块开启。
+      final bool periodicAutoSync = startupModules.isEnabled(ModuleId.sync);
+      _periodicSyncTimer = Timer.periodic(_periodicSyncInterval, (_) {
+        if (periodicAutoSync) _triggerFullAutoSync();
+        _maybeSyncLeaderboard();
+      });
 
       // Lapis 模板启动自动迁移：Hibiki 基线/客制化变了且 Anki 端仍是 Hibiki
       // 已知产物时，自动备份后推送新 styling（手改内容绝不自动覆盖，Anki 未
@@ -628,15 +628,19 @@ class _HomePageState extends BasePageState<HomePage>
         }));
       }
 
-      // 排行榜书架后台同步：未开启 / 上传关闭 / 30 分钟内同步过都是 no-op；失败只记日志。
-      if (mounted) {
-        unawaited(Future<void>(
-          () => ref.read(leaderboardServiceProvider).maybeSyncInBackground(),
-        ).catchError((Object e, StackTrace s) {
-          ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
-        }));
-      }
+      _maybeSyncLeaderboard();
     });
+  }
+
+  /// 排行榜书架后台同步：启动时一次，此后随 [_periodicSyncTimer] 每分钟探一次。未开启 /
+  /// 上传关闭 / 30 分钟内同步或尝试过都是 no-op（节流在服务里）；失败只记日志。
+  void _maybeSyncLeaderboard() {
+    if (!mounted) return;
+    unawaited(Future<void>(
+      () => ref.read(leaderboardServiceProvider).maybeSyncInBackground(),
+    ).catchError((Object e, StackTrace s) {
+      ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
+    }));
   }
 
   /// 启动期自动处理一轮 Anki 媒体去重的 UI 侧收尾：报结果，或提示 + 等确认。

@@ -53,8 +53,11 @@ class LeaderboardService extends ChangeNotifier {
     int Function()? clockMs,
     Future<Uint8List?> Function(LocalShelfEntry entry)? coverThumb,
     Future<Uint8List> Function(String path)? avatarEncoder,
-    Future<LocalShelf> Function(FushiDatabase db, int profileId)? shelfBuilder,
+    Future<LocalShelf> Function(FushiDatabase db, int profileId, DateTime now)?
+    shelfBuilder,
     Future<int> Function(FushiDatabase db)? isbnBackfill,
+    Duration requestTimeout = kLeaderboardRequestTimeout,
+    Duration uploadTimeout = kLeaderboardUploadTimeout,
   }) : _database = database,
        _supportRoot = supportRoot,
        _profileId = profileId,
@@ -65,7 +68,9 @@ class LeaderboardService extends ChangeNotifier {
        _coverThumb = coverThumb ?? leaderboardCoverThumb,
        _avatarEncoder = avatarEncoder ?? encodeLeaderboardAvatar,
        _shelfBuilder = shelfBuilder ?? _defaultShelfBuilder,
-       _isbnBackfill = isbnBackfill ?? backfillEpubIsbns;
+       _isbnBackfill = isbnBackfill ?? backfillEpubIsbns,
+       _requestTimeout = requestTimeout,
+       _uploadTimeout = uploadTimeout;
 
   final FushiDatabase Function() _database;
   final Future<Directory> Function() _supportRoot;
@@ -75,20 +80,33 @@ class LeaderboardService extends ChangeNotifier {
   final int Function() _clockMs;
   final Future<Uint8List?> Function(LocalShelfEntry entry) _coverThumb;
   final Future<Uint8List> Function(String path) _avatarEncoder;
-  final Future<LocalShelf> Function(FushiDatabase db, int profileId)
+  final Future<LocalShelf> Function(
+    FushiDatabase db,
+    int profileId,
+    DateTime now,
+  )
   _shelfBuilder;
   final Future<int> Function(FushiDatabase db) _isbnBackfill;
+  final Duration _requestTimeout;
+  final Duration _uploadTimeout;
+
+  /// 服务器时钟偏移：本服务建的所有客户端共用，换账户 / 重建客户端不丢校准。
+  final LeaderboardServerClock _serverClock = LeaderboardServerClock();
 
   static int _systemClockMs() => DateTime.now().millisecondsSinceEpoch;
 
   static Future<LocalShelf> _defaultShelfBuilder(
     FushiDatabase db,
     int profileId,
-  ) => buildLocalShelf(db, profileId: profileId);
+    DateTime now,
+  ) => buildLocalShelf(db, profileId: profileId, now: now);
 
   Future<void>? _loading;
   Future<void>? _syncing;
+  Future<void> _writes = Future<void>.value();
   int? _resolvedProfileId;
+  int? _lastBackgroundAttemptAt;
+  int? _droppedForShelfLimit;
   bool _uploadAccepted = false;
   LeaderboardStore? _store;
   LeaderboardLocalAccount? _account;
@@ -107,6 +125,10 @@ class LeaderboardService extends ChangeNotifier {
 
   /// 本机账户（上传开关 / 上次同步时刻等）；未开启为 null。
   LeaderboardLocalAccount? get account => _account;
+
+  /// 最近一次同步因服务端书架上限（8000 部）而没有上传的本地作品数；本进程还没同步过
+  /// 为 null，0 = 没有丢弃。UI 在 > 0 时提示。
+  int? get droppedForShelfLimit => _droppedForShelfLimit;
 
   /// 读取本 Profile 的账户文件（幂等；其余方法会先等它）。失败（如数据目录还没就绪）
   /// 不缓存，下次调用重试。
@@ -210,11 +232,16 @@ class LeaderboardService extends ChangeNotifier {
       consentAt: _clockMs(),
       serverUrl: _account?.serverUrl,
     );
-    await _requireStore().write(account);
-    _activate(account, identity);
-    _self = self;
-    _uploadAccepted = false;
-    _notify();
+    final LeaderboardStore store = _requireStore();
+    await _serialWrite(() async {
+      if (_disposed) return;
+      await store.write(account);
+      _activate(account, identity);
+      _self = self;
+      _uploadAccepted = false;
+      _droppedForShelfLimit = null;
+      _notify();
+    });
   }
 
   // ---- 资料 ----
@@ -248,7 +275,10 @@ class LeaderboardService extends ChangeNotifier {
 
   Future<void> setUploadEnabled(bool enabled) async {
     await load();
-    await _save(_requireAccount().copyWith(uploadEnabled: enabled));
+    _requireAccount();
+    await _update(
+      (LeaderboardLocalAccount a) => a.copyWith(uploadEnabled: enabled),
+    );
   }
 
   // ---- 同步 ----
@@ -264,17 +294,22 @@ class LeaderboardService extends ChangeNotifier {
     return _runExclusive(() => _sync(claim: false));
   }
 
-  /// 由本设备接管本账户的书架上传：清空本机同步状态 → reset + claim 全量同步。
-  /// 接管即表示要从本机上传，上传开关一并打开。
+  /// 由本设备接管本账户的书架上传：清空本机同步状态、清掉「被另一台挡住」标记 →
+  /// reset + claim 全量同步。接管即表示要从本机上传，上传开关一并打开。标记在开始时就
+  /// 清：接管中途失败（如 429）也不能让后台同步永久停下，下一轮会从断点续传。
   Future<void> claimUploadDevice() async {
     await load();
-    await _save(
-      _requireAccount().copyWith(
-        uploadEnabled: true,
-        syncState: LeaderboardSyncState.empty,
-      ),
-    );
-    return _runExclusive(() => _sync(claim: true));
+    _requireAccount();
+    return _runExclusive(() async {
+      await _update(
+        (LeaderboardLocalAccount a) => a.copyWith(
+          uploadEnabled: true,
+          syncState: LeaderboardSyncState.empty,
+          uploadBlockedByOtherDevice: false,
+        ),
+      );
+      await _sync(claim: true);
+    });
   }
 
   /// 本机是否为本账户的上传设备：同步被拒记过为 false；本进程里上传成功过为 true；
@@ -304,44 +339,81 @@ class LeaderboardService extends ChangeNotifier {
     }
   }
 
+  /// 一次同步。开始时记下账户（客户端）与账户文件（Profile）的身份，收尾写回前逐一
+  /// 比对：同步期间退出 / 换号 / 本实例因切 Profile 被废弃时丢弃结果，绝不把旧账户的
+  /// 进度写进新账户或新实例的文件。
   Future<void> _sync({required bool claim}) async {
     final LeaderboardLocalAccount account = _requireAccount();
     if (!account.uploadEnabled) return;
     final LeaderboardClient client = _requireClient();
+    final LeaderboardStore store = _requireStore();
+    bool sameOwner() =>
+        !_disposed && identical(_client, client) && identical(_store, store);
     final LocalShelf shelf = await _shelfBuilder(
       _database(),
       _resolvedProfileId ?? await _profileId(),
+      DateTime.fromMillisecondsSinceEpoch(client.serverNowMs()),
     );
     try {
-      final LeaderboardSyncState next = await syncShelf(
+      final ShelfSyncOutcome out = await syncShelf(
         client,
         shelf,
         account.syncState,
         claim: claim,
         coverThumb: _coverThumb,
       );
-      await _save(
-        _requireAccount().copyWith(
-          syncState: next,
+      if (!sameOwner()) return;
+      final Object? coverError = out.coverError;
+      if (coverError != null) {
+        // 封面补传失败不算同步失败：没补上的留在 pendingCovers，下次只补封面。
+        ErrorLogService.instance.log(
+          'LeaderboardService.coverUpload',
+          coverError,
+          out.coverStackTrace,
+        );
+      }
+      _droppedForShelfLimit = out.droppedForShelfLimit;
+      _uploadAccepted = true;
+      await _update(
+        (LeaderboardLocalAccount a) => a.copyWith(
+          syncState: out.state,
           lastSyncAt: _clockMs(),
           uploadBlockedByOtherDevice: false,
         ),
+        stillValid: sameOwner,
       );
-      _uploadAccepted = true;
-      _notify();
     } on LeaderboardUploadOwnedElsewhere {
-      _uploadAccepted = false;
-      await _save(_requireAccount().copyWith(uploadBlockedByOtherDevice: true));
+      if (sameOwner()) {
+        _uploadAccepted = false;
+        await _update(
+          (LeaderboardLocalAccount a) =>
+              a.copyWith(uploadBlockedByOtherDevice: true),
+          stillValid: sameOwner,
+        );
+      }
       rethrow;
     } on LeaderboardSyncException catch (e) {
-      await _save(_requireAccount().copyWith(syncState: e.partialState));
+      if (sameOwner()) {
+        _droppedForShelfLimit = e.droppedForShelfLimit;
+        // 有批次被接受 = 本机就是上传设备：旧的「被另一台挡住」标记作废。
+        if (e.anyBatchAccepted) _uploadAccepted = true;
+        await _update(
+          (LeaderboardLocalAccount a) => a.copyWith(
+            syncState: e.partialState,
+            uploadBlockedByOtherDevice: e.anyBatchAccepted ? false : null,
+          ),
+          stillValid: sameOwner,
+        );
+      }
       Error.throwWithStackTrace(e.error, e.stackTrace);
     }
   }
 
-  /// 启动 / 空闲时的后台同步：已开启、上传开着、本机没被另一台上传设备挡住、距上次成功
-  /// 同步 ≥ 30 分钟才跑；首次先回填存量 EPUB 的 ISBN（只读 OPF）。上传设备是另一台时
-  /// 静默停止（状态记在账户文件里供 UI 显示），不抛。未开启时零网络。
+  /// 启动 / 空闲时的后台同步（首页周期定时器每分钟探一次）：已开启、上传开着、本机没被
+  /// 另一台上传设备挡住、距上次成功同步与上次后台尝试都 ≥ 30 分钟才跑——失败的尝试同样
+  /// 计入节流，429 / 断网时不会每分钟重打服务端；首次先回填存量 EPUB 的 ISBN（只读
+  /// OPF）。上传设备是另一台时静默停止（状态记在账户文件里供 UI 显示），不抛。未开启时
+  /// 零网络。
   Future<void> maybeSyncInBackground() async {
     await load();
     final LeaderboardLocalAccount? account = _account;
@@ -350,14 +422,20 @@ class LeaderboardService extends ChangeNotifier {
         account.uploadBlockedByOtherDevice) {
       return;
     }
-    final int? last = account.lastSyncAt;
-    if (last != null &&
-        _clockMs() - last < kLeaderboardBackgroundSyncInterval.inMilliseconds) {
-      return;
+    final int now = _clockMs();
+    final int interval = kLeaderboardBackgroundSyncInterval.inMilliseconds;
+    for (final int? last in <int?>[
+      account.lastSyncAt,
+      _lastBackgroundAttemptAt,
+    ]) {
+      if (last != null && now - last < interval) return;
     }
+    _lastBackgroundAttemptAt = now;
     if (account.isbnBackfilledAt == null) {
       await _isbnBackfill(_database());
-      await _save(_requireAccount().copyWith(isbnBackfilledAt: _clockMs()));
+      await _update(
+        (LeaderboardLocalAccount a) => a.copyWith(isbnBackfilledAt: _clockMs()),
+      );
     }
     try {
       await syncNow();
@@ -378,11 +456,15 @@ class LeaderboardService extends ChangeNotifier {
   /// 只删本机账户文件（服务端账户保留，可用邮箱或恢复码重新登录）。
   Future<void> signOutLocally() async {
     await load();
-    await _requireStore().delete();
-    _account = null;
-    _client = null;
-    _self = null;
-    _notify();
+    final LeaderboardStore store = _requireStore();
+    await _serialWrite(() async {
+      await store.delete();
+      _account = null;
+      _client = null;
+      _self = null;
+      _droppedForShelfLimit = null;
+      _notify();
+    });
   }
 
   // ---- 内部 ----
@@ -403,25 +485,42 @@ class LeaderboardService extends ChangeNotifier {
         httpClientFactory: _httpClientFactory,
         identity: identity,
         clockMs: _clockMs,
+        serverClock: _serverClock,
+        requestTimeout: _requestTimeout,
+        uploadTimeout: _uploadTimeout,
       );
 
   LeaderboardClient _anonymousClient() => LeaderboardClient(
     baseUrl: _baseUrl,
     httpClientFactory: _httpClientFactory,
     clockMs: _clockMs,
+    serverClock: _serverClock,
+    requestTimeout: _requestTimeout,
+    uploadTimeout: _uploadTimeout,
   );
 
-  Future<void> _save(LeaderboardLocalAccount account) async {
-    // 退出 / 删除账户与同步并发时：同步收尾不得把已删的账户文件写回来。
-    if (_account == null) return;
-    await _requireStore().write(account);
-    if (_account == null) {
-      await _requireStore().delete();
-      return;
-    }
-    _account = account;
-    _notify();
+  /// 账户文件的写 / 删一律排队串行：「检查仍有效 → 写」在队列里原子地完成，退出 / 换号
+  /// 与同步收尾交错时，不会出现旧账户的写落在新账户之后。
+  Future<void> _serialWrite(Future<void> Function() job) {
+    final Future<void> next = _writes.then((_) => job());
+    _writes = next.then<void>((_) {}, onError: (Object _) {});
+    return next;
   }
+
+  /// 在写队列里读当前账户 → [update] → 落盘。未开启、实例已废弃、或 [stillValid] 判
+  /// 失效（同步期间换号 / 退出）时什么都不写。
+  Future<void> _update(
+    LeaderboardLocalAccount Function(LeaderboardLocalAccount current) update, {
+    bool Function()? stillValid,
+  }) => _serialWrite(() async {
+    final LeaderboardLocalAccount? current = _account;
+    if (_disposed || current == null) return;
+    if (stillValid != null && !stillValid()) return;
+    final LeaderboardLocalAccount next = update(current);
+    await _requireStore().write(next);
+    _account = next;
+    _notify();
+  });
 
   LeaderboardStore _requireStore() {
     final LeaderboardStore? s = _store;

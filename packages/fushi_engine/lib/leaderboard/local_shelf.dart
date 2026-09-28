@@ -5,16 +5,24 @@
 //   legacy 无身份行（mediaKey 为空）不归入任何作品，只进每日字数。
 // - 书 / 漫画：`epub_books`（format manga → 漫画），读完 = completedAt 非空。
 // - 视频：作品单位 = 刮削作品（剧 = collectionId，电影 = bookUid），无作品则按主合集，
-//   再无则单个视频；读完 = 单位内全部成员都有 completedAt。
+//   再无则单个视频；读完 = 单位内全部成员都有 completedAt。**只上报经外部资料源刮削过
+//   的作品**（作品上有非 local 的 provider 身份）：否则标题只能是文件名 / 合集名，既会
+//   当公开标题泄露，弱键 `t:` 又会把所有人的「Season 1」并成一部。
 // - 游戏：`galgames`，playStatus 2 = 玩过（读完），3 = 在玩。
 //
 // 书 / 视频 / 游戏的库表本身不分 Profile（与库页口径一致），只有统计按 Profile 隔离。
+// Profile 口径：只有一个 Profile 时上传全部读完 / 在读的作品；有多个 Profile 时只上传
+// **本 Profile 有学习记录（stat facts）**的作品——别的 Profile 读完的书不算到本账户上。
+//
+// 服务端 normalizeEntry 对单条坏数据会 400 拒掉**整批**，所以这里按同一口径先把形状
+// 修好或丢掉（[sanitizeFinishedAt] / [sanitizeShelfText]），丢掉的记日志。
 
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
 import 'package:fushi_engine/leaderboard/work_refs.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
@@ -27,6 +35,7 @@ class LocalShelfEntry {
     required this.localKey,
     required this.upload,
     this.localCoverPath,
+    this.lastActiveAt,
   });
 
   final String localKey;
@@ -34,6 +43,10 @@ class LocalShelfEntry {
 
   /// 本地封面文件（服务端缺封面时据此生成缩略图补传）。
   final String? localCoverPath;
+
+  /// 本 Profile 最后一次学习活动的时刻（毫秒）；没有记录为 null。书架超过服务端上限时
+  /// 按它（与读完时刻）取舍。
+  final int? lastActiveAt;
 }
 
 class LocalShelf {
@@ -48,7 +61,7 @@ class LocalShelf {
     daily: <DailyCharsUpload>[],
   );
 
-  /// 服务端接受的最早日期（含，`YYYY-MM-DD`；服务端只收最近 10 年）。[daily] 已按它
+  /// 服务端接受的最早日期（含，`YYYY-MM-DD`；服务端只收最近 3650 天）。[daily] 已按它
   /// 过滤；同步时早于它的旧日期不发删除（会被 400），只从本地状态里忘掉。null = 不限。
   final String? dailyFrom;
 
@@ -61,43 +74,41 @@ class LocalShelf {
 
 /// 汇总 [profileId] 的本机书架。
 ///
-/// 每日字数只保留服务端接受的窗口：最近 10 年（留一天余量）到明天（本地日可能比 UTC
-/// 快一天；更晚的是坏时钟写下的数据，服务端判 future 拒收整批）。[now] 只给测试注入。
+/// [now] 应是**服务器时刻**（app 传按 `Date` 头校准过的时钟；测试注入）：读完时刻的上界
+/// 与每日字数窗口都按它算。每日字数只保留服务端接受的窗口 [leaderboardDailyFrom] ..
+/// [leaderboardDailyTo]（更早的服务端判 too_old、更晚的判 future，都会拒收整批）。
 Future<LocalShelf> buildLocalShelf(
   FushiDatabase db, {
   required int profileId,
   DateTime? now,
 }) async {
-  final DateTime today = now ?? DateTime.now();
-  final String dailyFrom = _dateKey(
-    DateTime(
-      today.year - kLeaderboardDailyWindowYears,
-      today.month,
-      today.day + 1,
-    ),
-  );
-  final String dailyTo = _dateKey(
-    DateTime(today.year, today.month, today.day + 1),
-  );
+  final DateTime at = now ?? DateTime.now();
+  final String dailyFrom = leaderboardDailyFrom(at);
+  final String dailyTo = leaderboardDailyTo(at);
   final StatFacts facts = await loadStatFacts(
     db,
     activityLimit: 0,
     profileId: profileId,
   );
-  final _Totals totals = _Totals.fromFacts(facts.daily);
+  final _ShelfBuild build = _ShelfBuild(
+    totals: _Totals.fromFacts(facts.daily),
+    nowMs: at.millisecondsSinceEpoch,
+    requireFacts: (await db.select(db.profiles).get()).length > 1,
+  );
   final List<LocalShelfEntry> entries =
       <LocalShelfEntry>[
-        ...await _bookEntries(db, totals),
-        ...await _videoEntries(db, totals),
-        ...await _gameEntries(db, totals),
+        ...await _bookEntries(db, build),
+        ...await _videoEntries(db, build),
+        ...await _gameEntries(db, build),
       ]..sort(
         (LocalShelfEntry a, LocalShelfEntry b) =>
             a.localKey.compareTo(b.localKey),
       );
+  build.logSkipped();
   return LocalShelf(
     entries: List<LocalShelfEntry>.unmodifiable(entries),
     daily: List<DailyCharsUpload>.unmodifiable(
-      totals.dailyUploads().where(
+      build.totals.dailyUploads().where(
         (DailyCharsUpload d) =>
             d.date.compareTo(dailyFrom) >= 0 && d.date.compareTo(dailyTo) <= 0,
       ),
@@ -106,8 +117,92 @@ Future<LocalShelf> buildLocalShelf(
   );
 }
 
-/// 服务端每日字数只收最近这么多年。
-const int kLeaderboardDailyWindowYears = 10;
+/// 服务端每日字数只收最近这么多天（shelf.js `DAILY_WINDOW_DAYS`）。
+const int kLeaderboardDailyWindowDays = 3650;
+
+/// 服务端读完时刻的下界（shelf.js `EARLIEST_MS`，2000-01-01 UTC）。
+final int kLeaderboardEarliestFinishMs = DateTime.utc(
+  2000,
+).millisecondsSinceEpoch;
+
+/// 服务端读完时刻比服务器时刻最多超前这么多（shelf.js `now + 5 分钟`）。
+const Duration kLeaderboardFinishSkew = Duration(minutes: 5);
+
+/// 单条匹配键个数上限（shelf.js `MAX_REFS` = 命名空间数）。
+const int kLeaderboardMaxRefs = 8;
+
+/// 标题 / 作者上限（shelf.js `str(e.title, 300)` / `str(e.author, 200)`）。
+const int kLeaderboardMaxTitle = 300;
+const int kLeaderboardMaxAuthor = 200;
+
+/// 服务端接受的最早每日字数日期：UTC 的 now − 3649 天（比服务端的 3650 天少一天，
+/// 给请求在途与时钟误差留余量；按天数算，闰年不会让窗口多出一两天）。
+String leaderboardDailyFrom(DateTime now) => _dateKey(
+  now.toUtc().subtract(const Duration(days: kLeaderboardDailyWindowDays - 1)),
+);
+
+/// 服务端接受的最晚每日字数日期：UTC 的 now + 36 小时所在日（shelf.js 同口径；本地日
+/// 最多比 UTC 快一天，总落在其内）。
+String leaderboardDailyTo(DateTime now) =>
+    _dateKey(now.toUtc().add(const Duration(hours: 36)));
+
+/// 读完时刻按服务端口径校验：早于 2000-01-01 或晚于 [nowMs] + 5 分钟（坏时钟 / 坏数据）
+/// 返回 null——调用方降级为「读完、日期未知」（只进总榜），绝不能让它 400 掉整批。
+int? sanitizeFinishedAt(int? finishedAt, int nowMs) {
+  if (finishedAt == null) return null;
+  if (finishedAt < kLeaderboardEarliestFinishMs ||
+      finishedAt > nowMs + kLeaderboardFinishSkew.inMilliseconds) {
+    return null;
+  }
+  return finishedAt;
+}
+
+final RegExp _serverControlChars = RegExp(r'[\u0000-\u001f]');
+
+/// 标题 / 作者按服务端 `str()` 同口径规范：控制字符换空格、去首尾空白、截到 [max] 个
+/// UTF-16 码元（不劈开代理对）。结果为空时标题会被服务端 400，调用方据此丢弃条目。
+String sanitizeShelfText(String s, int max) {
+  final String t = s.replaceAll(_serverControlChars, ' ').trim();
+  if (t.length <= max) return t;
+  int end = max;
+  final int last = t.codeUnitAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end--;
+  return t.substring(0, end).trim();
+}
+
+/// 一次汇总的共享上下文：统计汇总、服务器时刻、Profile 口径与被丢弃条目的记账。
+class _ShelfBuild {
+  _ShelfBuild({
+    required this.totals,
+    required this.nowMs,
+    required this.requireFacts,
+  });
+
+  final _Totals totals;
+  final int nowMs;
+
+  /// 有多个 Profile：只收本 Profile 有学习记录的作品。
+  final bool requireFacts;
+
+  final List<String> _skipped = <String>[];
+
+  /// 本 Profile 是否有这部作品（的任一成员）的学习记录。
+  bool hasFacts(String mediaKind, Iterable<String> mediaKeys) =>
+      mediaKeys.any((String k) => totals.has(mediaKind, k));
+
+  void skip(String localKey, String reason) =>
+      _skipped.add('$localKey($reason)');
+
+  void logSkipped() {
+    if (_skipped.isEmpty) return;
+    engineLog.logDiagnostic(
+      'buildLocalShelf',
+      'skipped ${_skipped.length} shelf entries the server would reject: '
+          '${_skipped.take(20).join(', ')}'
+          '${_skipped.length > 20 ? ', …' : ''}',
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 统计汇总
@@ -115,10 +210,11 @@ const int kLeaderboardDailyWindowYears = 10;
 final RegExp _dateKeyShape = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
 class _Totals {
-  _Totals._(this._byMedia, this._charsByDate);
+  _Totals._(this._byMedia, this._lastActive, this._charsByDate);
 
   factory _Totals.fromFacts(List<StatFact> facts) {
     final Map<String, (int, int)> byMedia = <String, (int, int)>{};
+    final Map<String, int> lastActive = <String, int>{};
     final Map<String, int> charsByDate = <String, int>{};
     for (final StatFact f in facts) {
       if (f.chars > 0) {
@@ -128,11 +224,15 @@ class _Totals {
       final String key = '${f.mediaKind}|${f.mediaKey}';
       final (int chars, int ms) old = byMedia[key] ?? (0, 0);
       byMedia[key] = (old.$1 + f.chars, old.$2 + f.ms);
+      if (f.lastActiveMs > (lastActive[key] ?? 0)) {
+        lastActive[key] = f.lastActiveMs;
+      }
     }
-    return _Totals._(byMedia, charsByDate);
+    return _Totals._(byMedia, lastActive, charsByDate);
   }
 
   final Map<String, (int, int)> _byMedia;
+  final Map<String, int> _lastActive;
   final Map<String, int> _charsByDate;
 
   /// (chars, ms)；负值（坏数据）夹到 0。
@@ -140,6 +240,14 @@ class _Totals {
     final (int chars, int ms) v = _byMedia['$mediaKind|$mediaKey'] ?? (0, 0);
     return (v.$1 < 0 ? 0 : v.$1, v.$2 < 0 ? 0 : v.$2);
   }
+
+  /// 有没有这件媒体的学习记录（哪怕字数 / 时长为 0）。
+  bool has(String mediaKind, String mediaKey) =>
+      _byMedia.containsKey('$mediaKind|$mediaKey');
+
+  /// 这件媒体最后活跃时刻（毫秒）；没有记录为 null。
+  int? lastActive(String mediaKind, String mediaKey) =>
+      _lastActive['$mediaKind|$mediaKey'];
 
   List<DailyCharsUpload> dailyUploads() {
     final List<String> dates =
@@ -192,9 +300,11 @@ Map<String, Object?>? _jsonObject(String? raw) {
   }
 }
 
-/// 组装一条上报；refs 为空（标题归一化后为空且无任何强 ID）时返回 null——
-/// 服务端必拒的形状不上报。
-LocalShelfEntry? _entry({
+/// 组装一条上报，形状按服务端 normalizeEntry 同口径修正：标题 / 作者去控制字符并截断，
+/// 越界的读完时刻降级为「读完、日期未知」。refs 为空或标题规范后为空（服务端必 400）
+/// 时返回 null 并记账。
+LocalShelfEntry? _entry(
+  _ShelfBuild build, {
   required String localKey,
   required LeaderboardKind kind,
   required List<String> refs,
@@ -207,21 +317,33 @@ LocalShelfEntry? _entry({
   required int chars,
   required int ms,
   String? localCoverPath,
+  int? lastActiveAt,
 }) {
-  if (refs.isEmpty) return null;
+  final String cleanTitle = sanitizeShelfText(title, kLeaderboardMaxTitle);
+  if (refs.isEmpty || refs.length > kLeaderboardMaxRefs) {
+    build.skip(localKey, 'refs');
+    return null;
+  }
+  if (cleanTitle.isEmpty) {
+    build.skip(localKey, 'title');
+    return null;
+  }
+  final int? at = sanitizeFinishedAt(finishedAt, build.nowMs);
+  if (at != finishedAt) build.skip(localKey, 'finishedAt→unknown');
   return LocalShelfEntry(
     localKey: localKey,
     localCoverPath: _nonEmpty(localCoverPath),
+    lastActiveAt: lastActiveAt,
     upload: ShelfEntryUpload(
       kind: kind,
       refs: refs,
-      title: title.trim(),
-      author: author.trim(),
+      title: cleanTitle,
+      author: sanitizeShelfText(author, kLeaderboardMaxAuthor),
       coverUrl: coverUrl,
       nsfw: nsfw,
       finished: finished,
-      finishedAt: finishedAt,
-      finishedDate: finishedAt == null ? null : _localDate(finishedAt),
+      finishedAt: at,
+      finishedDate: at == null ? null : _localDate(at),
       chars: chars,
       ms: ms,
     ),
@@ -272,8 +394,9 @@ const String _interconnectRuntime = 'interconnect';
 
 Future<List<LocalShelfEntry>> _bookEntries(
   FushiDatabase db,
-  _Totals totals,
+  _ShelfBuild build,
 ) async {
+  final _Totals totals = build.totals;
   final $EpubBooksTable t = db.epubBooks;
   final List<TypedResult> rows =
       await (db.selectOnly(t)..addColumns(<Expression<Object>>[
@@ -297,6 +420,10 @@ Future<List<LocalShelfEntry>> _bookEntries(
     final DateTime? completedAt = row.read(t.completedAt);
     final (int chars, int ms) = totals.of(kActivityMediaBook, bookKey);
     if (completedAt == null && chars <= 0 && ms <= 0) continue;
+    if (build.requireFacts &&
+        !build.hasFacts(kActivityMediaBook, <String>[bookKey])) {
+      continue;
+    }
     final String title = _nonEmpty(row.read(t.title)) ?? bookKey;
     final String author = _nonEmpty(row.read(t.author)) ?? '';
     final (String? sourceRef, String? coverUrl) = _sourceRefAndCover(
@@ -304,6 +431,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
     );
     final int? subject = bangumi[bookKey];
     final LocalShelfEntry? e = _entry(
+      build,
       localKey: 'book:$bookKey',
       kind: row.read(t.format) == BookFormat.manga.dbValue
           ? LeaderboardKind.manga
@@ -323,6 +451,7 @@ Future<List<LocalShelfEntry>> _bookEntries(
       chars: chars,
       ms: ms,
       localCoverPath: row.read(t.coverPath),
+      lastActiveAt: totals.lastActive(kActivityMediaBook, bookKey),
     );
     if (e != null) out.add(e);
   }
@@ -362,8 +491,9 @@ class _VideoUnit {
 
 Future<List<LocalShelfEntry>> _videoEntries(
   FushiDatabase db,
-  _Totals totals,
+  _ShelfBuild build,
 ) async {
+  final _Totals totals = build.totals;
   final List<VideoBookRow> videos = await db.select(db.videoBooks).get();
   if (videos.isEmpty) return const <LocalShelfEntry>[];
   final List<VideoMetadataWorkRow> works = await db.getAllVideoMetadataWorks();
@@ -430,22 +560,28 @@ Future<List<LocalShelfEntry>> _videoEntries(
     }
     final bool finished = finishedAt != null;
     if (!finished && chars <= 0 && ms <= 0) continue;
+    if (build.requireFacts &&
+        !build.hasFacts(
+          kActivityMediaVideo,
+          unit.members.map((VideoBookRow m) => m.bookUid),
+        )) {
+      continue;
+    }
     final VideoMetadataWorkRow? work = unit.work;
-    final MediaCollectionRow? collection = unit.collectionId == null
-        ? null
-        : collections[unit.collectionId];
-    final String title =
-        _nonEmpty(work?.title) ??
-        _nonEmpty(collection?.name) ??
-        _nonEmpty(unit.members.first.title) ??
-        unit.localKey;
     final _VideoRefs ids = _VideoRefs.of(
       work,
       work == null
           ? const <VideoMetadataProviderIdentityRow>[]
           : identities[work.id] ?? const <VideoMetadataProviderIdentityRow>[],
     );
+    // 没刮削过（无作品，或只有本地索引出的临时作品）：标题只能是文件名 / 合集名，不上报。
+    if (!ids.scraped) continue;
+    final String? scrapedTitle = _nonEmpty(work?.title);
+    final MediaCollectionRow? collection = unit.collectionId == null
+        ? null
+        : collections[unit.collectionId];
     final LocalShelfEntry? e = _entry(
+      build,
       localKey: unit.localKey,
       kind: LeaderboardKind.video,
       refs: buildWorkRefs(
@@ -453,9 +589,10 @@ Future<List<LocalShelfEntry>> _videoEntries(
         anidbAid: ids.anidb,
         malId: ids.mal,
         tmdbRef: ids.tmdb,
-        title: title,
+        title: scrapedTitle ?? '',
       ),
-      title: title,
+      // 刮削作品没有标题时用它的资料源键占位（服务端按众数取别人的标题展示）。
+      title: scrapedTitle ?? ids.fallbackTitle,
       coverUrl: work == null ? null : posters[work.id],
       finished: finished,
       finishedAt: finished ? finishedAt : null,
@@ -467,14 +604,33 @@ Future<List<LocalShelfEntry>> _videoEntries(
               .map((VideoBookRow m) => _nonEmpty(m.coverPath))
               .whereType<String>()
               .firstOrNull,
+      lastActiveAt: _maxOrNull(
+        unit.members.map(
+          (VideoBookRow m) => totals.lastActive(kActivityMediaVideo, m.bookUid),
+        ),
+      ),
     );
     if (e != null) out.add(e);
   }
   return out;
 }
 
+int? _maxOrNull(Iterable<int?> values) {
+  int? out;
+  for (final int? v in values) {
+    if (v != null && (out == null || v > out)) out = v;
+  }
+  return out;
+}
+
 class _VideoRefs {
-  const _VideoRefs({this.bgm, this.anidb, this.mal, this.tmdb});
+  const _VideoRefs({
+    this.bgm,
+    this.anidb,
+    this.mal,
+    this.tmdb,
+    this.scraped = false,
+  });
 
   /// 作品级 provider 身份 → 各命名空间键体。TMDB 的 tv / movie 是两个 id 空间，
   /// 按作品的 mediaType 区分。
@@ -496,6 +652,10 @@ class _VideoRefs {
       tmdb: tmdb == null || (mediaType != 'tv' && mediaType != 'movie')
           ? null
           : '$mediaType:$tmdb',
+      scraped: rows.any(
+        (VideoMetadataProviderIdentityRow r) =>
+            r.provider != _localProvider && _nonEmpty(r.externalId) != null,
+      ),
     );
   }
 
@@ -503,7 +663,23 @@ class _VideoRefs {
   final String? anidb;
   final String? mal;
   final String? tmdb;
+
+  /// 作品经外部资料源刮削过（有非 local 的 provider 身份；强 ID 必然属于这种）。
+  final bool scraped;
+
+  /// 刮削作品缺标题时的占位：第一个强 ID 键（不含任何本地文件名信息）。
+  String get fallbackTitle =>
+      <String?>[
+        if (bgm != null) 'bgm:$bgm',
+        if (anidb != null) 'anidb:$anidb',
+        if (mal != null) 'mal:$mal',
+        if (tmdb != null) 'tmdb:$tmdb',
+      ].whereType<String>().firstOrNull ??
+      '';
 }
+
+/// 本地索引（未刮削）作品的 provider 名（`VideoMetadataProviderKind.local.name`）。
+const String _localProvider = 'local';
 
 Future<Map<int, List<VideoMetadataProviderIdentityRow>>> _videoWorkIdentities(
   FushiDatabase db,
@@ -552,8 +728,9 @@ const int _playStatusPlaying = 3;
 
 Future<List<LocalShelfEntry>> _gameEntries(
   FushiDatabase db,
-  _Totals totals,
+  _ShelfBuild build,
 ) async {
+  final _Totals totals = build.totals;
   final List<GalgameRow> games = await db.getAllGalgames();
   if (games.isEmpty) return const <LocalShelfEntry>[];
   final Map<String, List<GalgameSourceRow>> sources = await db
@@ -565,11 +742,16 @@ Future<List<LocalShelfEntry>> _gameEntries(
     final bool reading =
         g.playStatus == _playStatusPlaying || chars > 0 || ms > 0;
     if (!finished && !reading) continue;
+    if (build.requireFacts &&
+        !build.hasFacts(kActivityMediaGame, <String>[g.id])) {
+      continue;
+    }
     final _GameMeta meta = _GameMeta.of(
       g,
       sources[g.id] ?? const <GalgameSourceRow>[],
     );
     final LocalShelfEntry? e = _entry(
+      build,
       localKey: 'game:${g.id}',
       kind: LeaderboardKind.game,
       refs: buildWorkRefs(
@@ -588,6 +770,7 @@ Future<List<LocalShelfEntry>> _gameEntries(
       chars: chars,
       ms: ms,
       localCoverPath: g.coverPath,
+      lastActiveAt: totals.lastActive(kActivityMediaGame, g.id),
     );
     if (e != null) out.add(e);
   }

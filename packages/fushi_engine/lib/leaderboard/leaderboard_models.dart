@@ -344,6 +344,7 @@ class UserCard {
     required this.shelfVisible,
     this.rankComputedAt,
     required this.stats,
+    this.relation,
   });
 
   factory UserCard.fromJson(JsonMap j) => UserCard(
@@ -359,6 +360,7 @@ class UserCard {
       ).entries)
         e.key: UserStanding.fromJson(_map(e.value)),
     }),
+    relation: j['relation'] as String?,
   );
 
   final LeaderboardAccount account;
@@ -370,6 +372,11 @@ class UserCard {
   /// [stats] 里名次所依据的榜单快照时刻；null = 快照还没生成（名次都为 null）。
   final int? rankComputedAt;
   final Map<String, UserStanding> stats;
+
+  /// 观看者与此用户的关系（只有签名请求才有值）：`self` | `friend` | `outgoing`
+  /// （我发出的好友申请待对方接受）| `incoming`（对方申请待我接受）；null = 无关系 /
+  /// 匿名 / 旧服务端。
+  final String? relation;
 
   /// 取某指标（缺失 = 值 0、未上榜）。
   UserStanding standing(LeaderboardMetric metric) =>
@@ -386,6 +393,7 @@ class UserCard {
       for (final MapEntry<String, UserStanding> e in stats.entries)
         e.key: e.value.toJson(),
     },
+    if (relation != null) 'relation': relation,
   };
 }
 

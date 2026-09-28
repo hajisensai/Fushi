@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -21,8 +22,26 @@ import 'package:image/image.dart' as img;
 class _FakeServer {
   final List<http.Request> requests = <http.Request>[];
   String accountId = 'ServerAccount001';
-  int shelfCount = 0;
+  final Set<String> shelfWorks = <String>{};
   bool failShelf = false;
+
+  /// 依次消费的书架请求状态码（空 = 正常处理）。
+  final List<int> shelfStatuses = <int>[];
+
+  /// 非 reset 且带 put 的书架请求一律回 413 shelf_full。
+  bool shelfFull = false;
+
+  /// 非空时书架请求到达后等它完成才回（模拟慢请求）；[shelfArrived] 在请求到达时完成。
+  Completer<void>? shelfGate;
+  Completer<void> shelfArrived = Completer<void>();
+
+  /// 书架请求永不回（模拟网络挂死）。
+  bool hangShelf = false;
+
+  /// 非空时每个响应带 `Date` 头 = 本地时钟 + 该偏移。
+  int Function()? serverNowMs;
+
+  int get shelfCount => shelfWorks.length;
 
   /// 本账户的上传设备是另一台（直到有请求带 claim 接管）。
   bool ownedElsewhere = false;
@@ -33,7 +52,13 @@ class _FakeServer {
   http.Response _json(Object body, [int status = 200]) => http.Response.bytes(
     utf8.encode(jsonEncode(body)),
     status,
-    headers: <String, String>{'content-type': 'application/json'},
+    headers: <String, String>{
+      'content-type': 'application/json',
+      if (serverNowMs != null)
+        'date': HttpDate.format(
+          DateTime.fromMillisecondsSinceEpoch(serverNowMs!(), isUtc: true),
+        ),
+    },
   );
 
   Map<String, dynamic> _self() => <String, dynamic>{
@@ -64,7 +89,17 @@ class _FakeServer {
       return _json(<String, dynamic>{'avatar': '/img/avatars/x.jpg'});
     }
     if (path == '/v1/shelf') {
+      if (!shelfArrived.isCompleted) shelfArrived.complete();
+      if (hangShelf) return Completer<http.Response>().future;
+      final Completer<void>? gate = shelfGate;
+      if (gate != null) await gate.future;
       if (failShelf) return _json(<String, dynamic>{'error': 'boom'}, 500);
+      if (shelfStatuses.isNotEmpty) {
+        final int status = shelfStatuses.removeAt(0);
+        if (status != 200) {
+          return _json(<String, dynamic>{'error': 'e$status'}, status);
+        }
+      }
       final Map<String, dynamic> body =
           (jsonDecode(utf8.decode(r.bodyBytes)) as Map<Object?, Object?>)
               .cast<String, dynamic>();
@@ -77,11 +112,21 @@ class _FakeServer {
         ownedElsewhere = false;
       }
       final List<Object?> put = body['put'] as List<Object?>;
-      shelfCount = (body['reset'] == true ? 0 : shelfCount) + put.length;
+      if (shelfFull && body['reset'] != true && put.isNotEmpty) {
+        return _json(<String, dynamic>{'error': 'shelf_full'}, 413);
+      }
+      if (body['reset'] == true) shelfWorks.clear();
+      shelfWorks.removeAll((body['remove'] as List<Object?>).cast<String>());
+      String workOf(Object? e) => 'W_${(e! as Map<Object?, Object?>)['title']}';
+      shelfWorks.addAll(put.map(workOf));
       return _json(<String, dynamic>{
         'works': <Map<String, dynamic>>[
           for (int i = 0; i < put.length; i++)
-            <String, dynamic>{'i': i, 'workId': 'W$i', 'needsCover': false},
+            <String, dynamic>{
+              'i': i,
+              'workId': workOf(put[i]),
+              'needsCover': false,
+            },
         ],
         'shelfCount': shelfCount,
       });
@@ -114,6 +159,7 @@ void main() {
   late int now;
   late int backfills;
   late LocalShelf shelf;
+  late List<DateTime> builtAt;
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('lb_service_');
@@ -122,20 +168,29 @@ void main() {
     now = 1700000000000;
     backfills = 0;
     shelf = _shelf(2);
+    builtAt = <DateTime>[];
   });
   tearDown(() async {
     await db.close();
     root.deleteSync(recursive: true);
   });
 
-  LeaderboardService service({int profileId = 1}) => LeaderboardService(
+  LeaderboardService service({
+    int profileId = 1,
+    Duration timeout = kLeaderboardRequestTimeout,
+  }) => LeaderboardService(
     database: () => db,
     supportRoot: () async => root,
     profileId: () async => profileId,
     httpClientFactory: () async => MockClient(server.handle),
     defaultBaseUrl: Uri.parse('https://rank.example'),
     clockMs: () => now,
-    shelfBuilder: (FushiDatabase _, int __) async => shelf,
+    requestTimeout: timeout,
+    uploadTimeout: timeout,
+    shelfBuilder: (FushiDatabase _, int __, DateTime at) async {
+      builtAt.add(at);
+      return shelf;
+    },
     isbnBackfill: (FushiDatabase _) async {
       backfills++;
       return 0;
@@ -422,5 +477,167 @@ void main() {
     expect(saved.syncState.entries, hasLength(2));
     expect(saved.lastSyncAt, now);
     expect(s.isUploadDevice, isTrue);
+  });
+
+  test('接管中途 429：「被另一台挡住」标记已清，后台同步从断点续传', () async {
+    final LeaderboardService s = service();
+    server.ownedElsewhere = true;
+    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.maybeSyncInBackground();
+    expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
+
+    shelf = _shelf(501); // 两批：第一批（claim）成功，第二批 429
+    server.shelfStatuses.addAll(<int>[200, 429]);
+    await expectLater(
+      s.claimUploadDevice(),
+      throwsA(isA<LeaderboardApiException>()),
+    );
+    LeaderboardLocalAccount saved = (await store().read())!;
+    expect(saved.uploadBlockedByOtherDevice, isFalse);
+    expect(saved.syncState.entries, hasLength(500));
+
+    now += const Duration(hours: 1).inMilliseconds;
+    server.requests.clear();
+    await s.maybeSyncInBackground();
+    final List<http.Request> shelfReqs = server.at('/v1/shelf');
+    expect(shelfReqs, hasLength(1));
+    final Map<Object?, Object?> body =
+        jsonDecode(utf8.decode(shelfReqs.single.bodyBytes))
+            as Map<Object?, Object?>;
+    expect(body['reset'], isFalse);
+    expect(body['put'], hasLength(1));
+    saved = (await store().read())!;
+    expect(saved.syncState.entries, hasLength(501));
+    expect(saved.lastSyncAt, now);
+  });
+
+  test('接管第一批就 429：标记在接管开始时已清（后台同步不会因此永久停下）', () async {
+    final LeaderboardService s = service();
+    server.ownedElsewhere = true;
+    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.maybeSyncInBackground();
+    expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
+
+    server.shelfStatuses.add(429);
+    await expectLater(
+      s.claimUploadDevice(),
+      throwsA(isA<LeaderboardApiException>()),
+    );
+    final LeaderboardLocalAccount saved = (await store().read())!;
+    expect(saved.uploadBlockedByOtherDevice, isFalse);
+    expect(saved.uploadEnabled, isTrue);
+    expect(saved.syncState.neverSynced, isTrue);
+  });
+
+  test('被挡住后手动同步：只要有一批被接受就清掉标记（部分失败也算）', () async {
+    final LeaderboardService s = service();
+    server.ownedElsewhere = true;
+    await s.loginWithEmail(email: 'a@b.cd', code: '1');
+    await s.maybeSyncInBackground();
+    expect((await store().read())!.uploadBlockedByOtherDevice, isTrue);
+
+    server.ownedElsewhere = false; // 另一台已放手
+    shelf = _shelf(501);
+    server.shelfStatuses.addAll(<int>[200, 503]);
+    await expectLater(s.syncNow(), throwsA(isA<LeaderboardApiException>()));
+    expect((await store().read())!.uploadBlockedByOtherDevice, isFalse);
+    expect(s.isUploadDevice, isTrue);
+  });
+
+  test('书架满：新条目不上传，droppedForShelfLimit 暴露给 UI，同步不算失败', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    expect(s.droppedForShelfLimit, isNull);
+    await s.syncNow();
+    expect(s.droppedForShelfLimit, 0);
+
+    shelf = _shelf(4);
+    server.shelfFull = true;
+    now += 1000;
+    await s.syncNow();
+    expect(s.droppedForShelfLimit, 2);
+    final LeaderboardLocalAccount saved = (await store().read())!;
+    expect(saved.lastSyncAt, now);
+    expect(saved.syncState.entries, hasLength(2));
+  });
+
+  test('请求超时：syncNow 抛 TimeoutException，之后还能重新同步（_syncing 已清）', () async {
+    final LeaderboardService s = service(
+      timeout: const Duration(milliseconds: 50),
+    );
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    server.hangShelf = true;
+    await expectLater(s.syncNow(), throwsA(isA<TimeoutException>()));
+    server.hangShelf = false;
+    server.requests.clear();
+    await s.syncNow();
+    expect(server.at('/v1/shelf'), hasLength(1));
+    expect((await store().read())!.lastSyncAt, now);
+  });
+
+  test('同步期间退出并换号：旧同步的结果不写进新账户', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    final Completer<void> gate = Completer<void>();
+    server.shelfGate = gate;
+    final Future<void> sync = s.syncNow();
+    await server.shelfArrived.future;
+    await s.signOutLocally();
+    await s.enable(nickname: 'M', email: 'b@b.cd', code: '2');
+    final String newCode = s.exportRecoveryCode();
+    gate.complete();
+    await sync;
+    final LeaderboardLocalAccount saved = (await store().read())!;
+    expect(saved.recoveryCode, newCode);
+    expect(saved.syncState.neverSynced, isTrue);
+    expect(saved.lastSyncAt, isNull);
+  });
+
+  test('实例已废弃（切 Profile）：在途同步收尾不写账户文件', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    final Completer<void> gate = Completer<void>();
+    server.shelfGate = gate;
+    final Future<void> sync = s.syncNow();
+    await server.shelfArrived.future;
+    s.dispose();
+    gate.complete();
+    await sync;
+    final LeaderboardLocalAccount saved = (await store().read())!;
+    expect(saved.syncState.neverSynced, isTrue);
+    expect(saved.lastSyncAt, isNull);
+  });
+
+  test('服务器时钟：按 Date 头校准，书架汇总与签名都用服务器时刻', () async {
+    const int skew = 3600 * 1000;
+    server.serverNowMs = () => now + skew;
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    server.requests.clear();
+    await s.syncNow();
+    expect(builtAt.single.millisecondsSinceEpoch, now + skew);
+    expect(
+      server.at('/v1/shelf').single.headers['X-Fushi-Time'],
+      '${now + skew}',
+    );
+  });
+
+  test('后台同步失败也节流：30 分钟内不重试', () async {
+    final LeaderboardService s = service();
+    await s.enable(nickname: 'N', email: 'a@b.cd', code: '1');
+    server.failShelf = true;
+    await expectLater(
+      s.maybeSyncInBackground(),
+      throwsA(isA<LeaderboardApiException>()),
+    );
+    now += const Duration(minutes: 1).inMilliseconds;
+    server.requests.clear();
+    await s.maybeSyncInBackground();
+    expect(server.requests, isEmpty);
+
+    now += const Duration(minutes: 30).inMilliseconds;
+    server.failShelf = false;
+    await s.maybeSyncInBackground();
+    expect(server.at('/v1/shelf'), hasLength(1));
   });
 }
