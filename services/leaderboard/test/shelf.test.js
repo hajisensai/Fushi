@@ -456,7 +456,8 @@ describe('并发、上传设备与边界（审查修复回归）', () => {
   const done = (date) => ({ finishedAt: Date.parse(`${date}T10:00:00Z`), finishedDate: date });
 
   it('同账户并发两批：一批成功、另一批 409 conflict 且整批无副作用；计数不漂移', async () => {
-    const env = makeEnv({ autoSnapshot: false });
+    // 每次 D1 往返等 3ms：两批都在对方提交前读到旧状态（没有 CAS 时读者数会被 +2）。
+    const env = makeEnv({ autoSnapshot: false, d1DelayMs: 3 });
     const a = await registerUser(env, 'a', { now: NOW });
     const e = entry('book', ['t:race|'], 'race', done('2026-09-29'));
     for (let round = 0; round < 5; round++) {

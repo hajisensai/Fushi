@@ -22,7 +22,12 @@ function checkBind(v) {
   return v;
 }
 
-export function makeD1() {
+/**
+ * delayMs > 0：每次 D1 往返前真实等待（setTimeout），模拟线上网络往返——同步的 node:sqlite
+ * 否则复现不出「两个并发请求都在对方提交前读到旧状态」的竞争窗口。
+ */
+export function makeD1({ delayMs = 0 } = {}) {
+  const pause = () => (delayMs > 0 ? new Promise((r) => setTimeout(r, delayMs)) : null);
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(MIGRATION, 'utf8'));
   const plain = (r) => (r ? { ...r } : null);
@@ -32,13 +37,16 @@ export function makeD1() {
       args,
       bind: (...a) => stmt(sql, a.map(checkBind)),
       async first(col) {
+        await pause();
         const r = plain(db.prepare(sql).get(...args));
         return r && col ? r[col] : r;
       },
       async all() {
+        await pause();
         return { results: db.prepare(sql).all(...args).map(plain) };
       },
       async run() {
+        await pause();
         const r = db.prepare(sql).run(...args);
         return { success: true, meta: { changes: Number(r.changes) } };
       },
@@ -48,6 +56,7 @@ export function makeD1() {
     raw: db,
     prepare: (sql) => stmt(sql, []),
     async batch(stmts) {
+      await pause();
       db.exec('BEGIN');
       try {
         const out = [];
@@ -57,7 +66,8 @@ export function makeD1() {
             const rows = db.prepare(s.sql).all(...s.args).map(plain);
             out.push({ success: true, results: rows, meta: { changes: rows.length } });
           } else {
-            out.push({ ...(await s.run()), results: [] });
+            const r = db.prepare(s.sql).run(...s.args);
+            out.push({ success: true, meta: { changes: Number(r.changes) }, results: [] });
           }
         }
         db.exec('COMMIT');
@@ -100,7 +110,7 @@ export function makeEnv(over = {}) {
   clearSnapshotMemo();
   const sent = [];
   return {
-    DB: makeD1(),
+    DB: makeD1({ delayMs: over.d1DelayMs ?? 0 }),
     MEDIA: makeR2(),
     ADMIN_USER: 'admin',
     ADMIN_PASS: 'pw',
