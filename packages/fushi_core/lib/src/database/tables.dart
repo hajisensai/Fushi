@@ -492,6 +492,12 @@ class EpubBooks extends Table {
       .nullable()
       .references(MediaSources, #id, onDelete: KeyAction.setNull)();
 
+  /// v114（排行榜作品匹配）：OPF `dc:identifier` 里解析出的 ISBN，**统一存 ISBN-13**
+  /// （ISBN-10 转换后存），校验位不对的一律不存。null = 包里没有合法 ISBN、或是
+  /// v114 前导入且尚未回填（`backfillEpubIsbns` 只读 OPF 回填，不重新导入）。
+  /// 规范化唯一口径见 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`。
+  TextColumn get isbn => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {bookKey};
 }
@@ -2534,6 +2540,15 @@ class Galgames extends Table {
 
   /// 手动排序位（预留，M1 不做拖拽排序）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+
+  /// v114（排行榜「读完时刻」）：[playStatus] 进入 2（玩过）的毫秒戳；null = 不是
+  /// 「玩过」，或是 v114 前就已玩过但一条游玩会话都没有（日期未知）。
+  ///
+  /// 只由 DB 层一处判据维护（`resolveGalgameCompletedAt`，经 `setGalgamePlayStatus`
+  /// / `upsertGalgame` 写入）：从非 2 变成 2 时写当前时刻，保持 2 时原值不动，
+  /// 离开 2 时清空。调用方不直接写本列。v114 迁移用该游戏最后一次会话的
+  /// `end_ms` 回填存量「玩过」。
+  IntColumn get completedAt => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

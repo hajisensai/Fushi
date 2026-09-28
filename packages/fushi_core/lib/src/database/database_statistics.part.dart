@@ -24,6 +24,29 @@ String videoWatchCoverageEpisodePrefKey(String bookUid, int episodeIndex) =>
 /// [FushiDatabase.statDayResetHour]。
 const String kStatDayResetHourPrefKey = 'stats_day_reset_hour';
 
+/// `galgames.play_status` 里「玩过」的值（Bangumi 收藏 type 2，见 [Galgames.playStatus]）。
+const int kGalgamePlayStatusPlayed = 2;
+
+/// v114：`galgames.completed_at` 的**唯一**判据（排行榜「读完时刻」）。
+///
+/// - 从非「玩过」变成「玩过」→ [now]（新行按上一状态 0 处理）；
+/// - 保持「玩过」→ 原值不动（含 null：迁移回填不出日期的存量「玩过」保持日期未知，
+///   不能因为用户随手重存一次就被盖成今天）；
+/// - 离开「玩过」→ null。
+///
+/// 只有 [FushiDatabase.setGalgamePlayStatus] 与 [FushiDatabase.upsertGalgame] 调它；
+/// 调用方不直接写 `completedAt`。
+int? resolveGalgameCompletedAt({
+  required int previousStatus,
+  required int? previousCompletedAt,
+  required int nextStatus,
+  required int now,
+}) {
+  if (nextStatus != kGalgamePlayStatusPlayed) return null;
+  if (previousStatus == kGalgamePlayStatusPlayed) return previousCompletedAt;
+  return now;
+}
+
 /// 激活 Profile 的偏好键（与 fushi 层 `ProfileRepository` 同一把 key）。统计
 /// 分区键 `profile_id` 的写入时来源，见 [FushiDatabase.resolveActiveProfileId]。
 const String kActiveProfileIdPrefKey = 'active_profile_id';
@@ -657,8 +680,29 @@ mixin _FushiDbStatistics
       (select(galgames)..where((t) => t.id.equals(id))).getSingleOrNull();
 
   /// 新增或整行覆盖一条游戏。
-  Future<void> upsertGalgame(GalgamesCompanion entry) =>
-      into(galgames).insertOnConflictUpdate(entry);
+  ///
+  /// v114：`completedAt` 不由调用方给——[entry] 带了 `playStatus` 时经
+  /// [resolveGalgameCompletedAt] 按库内旧行重算（调用方携带的 `completedAt` 一律被
+  /// 覆盖）；没带 `playStatus` 时整列不动。
+  Future<void> upsertGalgame(GalgamesCompanion entry) => transaction(() async {
+        GalgamesCompanion row = entry;
+        if (entry.playStatus.present) {
+          final GalgameRow? previous = await getGalgame(entry.id.value);
+          row = entry.copyWith(
+            completedAt: Value<int?>(
+              resolveGalgameCompletedAt(
+                previousStatus: previous?.playStatus ?? 0,
+                previousCompletedAt: previous?.completedAt,
+                nextStatus: entry.playStatus.value,
+                now: DateTime.now().millisecondsSinceEpoch,
+              ),
+            ),
+          );
+        } else if (entry.completedAt.present) {
+          row = entry.copyWith(completedAt: const Value<int?>.absent());
+        }
+        await into(galgames).insertOnConflictUpdate(row);
+      });
 
   /// 删除一条游戏。`galgame_sources` 经 FK cascade 连带清理；标签映射 v77 起是
   /// 逻辑外键，同事务显式清。
@@ -682,9 +726,27 @@ mixin _FushiDbStatistics
       });
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
-  Future<int> setGalgamePlayStatus(String id, int status) =>
-      (update(galgames)..where((t) => t.id.equals(id)))
-          .write(GalgamesCompanion(playStatus: Value<int>(status)));
+  ///
+  /// v114：同事务按 [resolveGalgameCompletedAt] 维护 `completedAt`。[now] 只给测试
+  /// 钉时刻用，生产取当前时刻。
+  Future<int> setGalgamePlayStatus(String id, int status, {int? now}) =>
+      transaction(() async {
+        final GalgameRow? previous = await getGalgame(id);
+        if (previous == null) return 0;
+        return (update(galgames)..where((t) => t.id.equals(id))).write(
+          GalgamesCompanion(
+            playStatus: Value<int>(status),
+            completedAt: Value<int?>(
+              resolveGalgameCompletedAt(
+                previousStatus: previous.playStatus,
+                previousCompletedAt: previous.completedAt,
+                nextStatus: status,
+                now: now ?? DateTime.now().millisecondsSinceEpoch,
+              ),
+            ),
+          ),
+        );
+      });
 
   /// 只改用户覆盖层 JSON（null = 清空全部自定义，展示回落到刮削值/本地默认名）。
   Future<int> setGalgameCustomData(String id, String? json) =>

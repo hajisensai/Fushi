@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:xml/xml.dart';
 
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/epub/isbn.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 /// Pure Dart EPUB parser — no native FFI, no WebView, no IndexedDB.
@@ -78,6 +79,21 @@ class EpubParser {
     return loose;
   }
 
+  /// v114：只读**已解压**目录里的 container.xml + OPF，返回规范化后的 ISBN-13
+  /// （见 [normalizeIsbn13]）；不解析 spine / 目录、不读正文。给存量书回填
+  /// `epub_books.isbn` 用（`backfillEpubIsbns`）。缺 container / OPF 或包里没有
+  /// 合法 ISBN 返回 null；XML 本身坏了照常抛，由调用方决定记日志还是跳过。
+  static String? readIsbnFromExtracted(String extractDir) {
+    final File? containerFile = _findContainerXml(extractDir);
+    if (containerFile == null) return null;
+    final String? rootfilePath =
+        _findRootfilePath(XmlDocument.parse(_readText(containerFile)));
+    if (rootfilePath == null) return null;
+    final File opfFile = File(p.join(extractDir, rootfilePath));
+    if (!opfFile.existsSync()) return null;
+    return _parseIsbn(XmlDocument.parse(_readText(opfFile)));
+  }
+
   /// Parse an already-extracted EPUB directory.
   static EpubBook parseFromExtracted(String extractDir) {
     final File? containerFile = _findContainerXml(extractDir);
@@ -111,6 +127,7 @@ class EpubParser {
         p.basenameWithoutExtension(extractDir);
     final String? author = _parseMetadata(opfXml, 'creator');
     final String? language = _parseMetadata(opfXml, 'language');
+    final String? isbn = _parseIsbn(opfXml);
     final String? coverHref =
         _parseCoverHref(opfXml, manifest, opfDir, extractDir);
     final List<EpubTocItem> toc =
@@ -137,6 +154,7 @@ class EpubParser {
       title: title,
       author: author,
       language: language,
+      isbn: isbn,
       chapters: chapters,
       toc: toc,
       coverHref: coverHref,
@@ -551,6 +569,42 @@ class EpubParser {
       final String text = el.innerText.trim();
       if (text.isNotEmpty) {
         return text;
+      }
+    }
+    return null;
+  }
+
+  // ── ISBN (v114) ────────────────────────────────────────────────────────────
+
+  /// OPF `dc:identifier` 里的 ISBN，规范化成 ISBN-13。
+  ///
+  /// 两轮：先看**明确标成 ISBN** 的标识（EPUB 2 `opf:scheme="ISBN"`、`urn:isbn:` /
+  /// `ISBN` 前缀、EPUB 3 `<meta refines="#id" property="identifier-type">` 的
+  /// ONIX 码 02/15），再看裸数字标识（出版社常把 ISBN 直接写成 `978-…`，只有
+  /// 校验位正确且 978/979 开头的才会被 [normalizeIsbn13] 接受，UUID / 自编号过不去）。
+  /// 同一轮内按文档顺序取第一个合法值。
+  static String? _parseIsbn(XmlDocument opf) {
+    final Set<String> isbnTypedIds = <String>{
+      for (final XmlElement meta in _elements(opf, 'meta'))
+        if (meta.getAttribute('property') == 'identifier-type' &&
+            const <String>{'02', '15'}.contains(meta.innerText.trim()))
+          (meta.getAttribute('refines') ?? '').replaceFirst('#', ''),
+    };
+    final List<XmlElement> identifiers =
+        _elements(opf, 'identifier').toList(growable: false);
+    bool isExplicit(XmlElement el) {
+      final String text = el.innerText.trim().toLowerCase();
+      return _attribute(el, 'scheme')?.trim().toLowerCase() == 'isbn' ||
+          text.startsWith('urn:isbn') ||
+          text.startsWith('isbn') ||
+          isbnTypedIds.contains(el.getAttribute('id'));
+    }
+
+    for (final bool explicitPass in const <bool>[true, false]) {
+      for (final XmlElement el in identifiers) {
+        if (isExplicit(el) != explicitPass) continue;
+        final String? isbn = normalizeIsbn13(el.innerText);
+        if (isbn != null) return isbn;
       }
     }
     return null;

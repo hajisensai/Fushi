@@ -84,10 +84,10 @@ ShelfEntry {
 | 字数 | 窗口内 `sum(DailyChars.chars)` |
 | 作品人气 | 窗口内读完该 work 的不同账户数（「読書ランキング」对应物） |
 
-### 3.5 本地 schema 变更（v112，两列）
+### 3.5 本地 schema 变更（v114，两列）
 
-- `EpubBooks.isbn`（text 可空）：新导入时写入；存量书在排行首次开启时后台重扫 OPF 回填（只读 OPF，不重新导入）。
-- `Galgames.completedAt`（int 毫秒，可空），schema v111→v112：`playStatus` 变为 2（玩过）时写入；迁移回填 = 该游戏 `galgame_sessions` 最后一次会话结束时刻，没有会话则留空（展示「日期未知」，不计入周/月榜，计入总榜）。
+- `EpubBooks.isbn`（text 可空，统一存 ISBN-13，校验位不对不存；规范化唯一口径 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`）：新导入时由 `EpubParser` 解析 OPF `dc:identifier` 写入；存量书在排行首次开启时调 `backfillEpubIsbns(db)` 后台重扫 OPF 回填（只读 OPF，不重新导入）。
+- `Galgames.completedAt`（int 毫秒，可空），schema v113→v114（判据只在 DB 层 `resolveGalgameCompletedAt` 一处，经 `setGalgamePlayStatus` / `upsertGalgame` 写入；离开「玩过」清空）：`playStatus` 变为 2（玩过）时写入；迁移回填 = 该游戏 `galgame_sessions` 最后一次会话结束时刻，没有会话则留空（展示「日期未知」，不计入周/月榜，计入总榜）。
 
 ### 3.6 D1 / R2
 
