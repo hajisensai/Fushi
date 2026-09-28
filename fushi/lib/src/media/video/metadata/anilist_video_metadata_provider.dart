@@ -210,6 +210,8 @@ query ($id: Int!) {
         for (final Object? synonym in metadataList(item['synonyms']))
           metadataString(synonym),
       ]).where((String alias) => alias != title).toList(),
+      romajiTitle: romaji,
+      englishTitle: english,
       year: metadataYear(premiered),
       premiered: premiered,
       plot: metadataStripHtml(metadataString(item['description'])),

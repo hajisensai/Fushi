@@ -53,6 +53,8 @@ VideoMetadataWork supplementVideoMetadata(
       <String>[...primary.aliases, if (titleReplaced) primary.title],
       supplement.aliases,
     ).where((String alias) => alias != title).toList(),
+    romajiTitle: primary.romajiTitle ?? supplement.romajiTitle,
+    englishTitle: primary.englishTitle ?? supplement.englishTitle,
     year: primary.year ?? supplement.year,
     premiered: primary.premiered ?? supplement.premiered,
     endDate: primary.endDate ?? supplement.endDate,
