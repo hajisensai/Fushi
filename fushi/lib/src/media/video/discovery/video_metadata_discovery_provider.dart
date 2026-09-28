@@ -90,12 +90,13 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
         ],
       );
     }
-    final List<VideoMetadataWork> works = <VideoMetadataWork>[];
+    final List<List<VideoMetadataWork>> worksByKind =
+        <List<VideoMetadataWork>>[];
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
     int successfulSearches = 0;
     for (final VideoMetadataMediaKind kind in kinds) {
       try {
-        works.addAll(
+        worksByKind.add(
           await _provider.search(
             VideoMetadataSearchRequest(
               title: query,
@@ -121,7 +122,7 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
 
     final Map<String, VideoDiscoveryItem> items =
         <String, VideoDiscoveryItem>{};
-    for (final VideoMetadataWork work in works) {
+    for (final VideoMetadataWork work in _interleave(worksByKind)) {
       final VideoDiscoveryItem item = VideoDiscoveryItem.fromMetadataWork(
         work: work,
         discoveryCategory: _categoryForWork(request, work),
@@ -143,6 +144,22 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
     );
   }
 
+  /// 各类型的搜索各自按来源相关度排好；直接首尾相接会让第一种类型（剧场版）的
+  /// 整页模糊命中全排在 TV 正片前面，所以按名次交错。
+  static List<VideoMetadataWork> _interleave(
+    List<List<VideoMetadataWork>> lists,
+  ) {
+    final List<VideoMetadataWork> result = <VideoMetadataWork>[];
+    for (int index = 0;
+        lists.any((List<VideoMetadataWork> list) => index < list.length);
+        index++) {
+      for (final List<VideoMetadataWork> list in lists) {
+        if (index < list.length) result.add(list[index]);
+      }
+    }
+    return result;
+  }
+
   List<VideoMetadataMediaKind> _requestedKinds(VideoDiscoveryRequest request) {
     final VideoDiscoveryCategory? requested = request.category;
     if (requested != null && !capabilities.categories.contains(requested)) {
@@ -159,7 +176,10 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
         case VideoDiscoveryCategory.tv:
           kinds.add(VideoMetadataMediaKind.tv);
         case VideoDiscoveryCategory.anime:
-          kinds.addAll(VideoMetadataMediaKind.values);
+          // TV 在前：交错时同名次先给正片，再给剧场版。
+          kinds
+            ..add(VideoMetadataMediaKind.tv)
+            ..add(VideoMetadataMediaKind.movie);
       }
     }
     return List<VideoMetadataMediaKind>.unmodifiable(kinds);
