@@ -1,0 +1,83 @@
+# 重编 Android ffmpeg-kit AAR（third_party/ffmpeg_kit_flutter/android/libs/ffmpeg-kit.aar）。
+#
+# 以前 AAR 只能在构建机（Mac，`~/ffmpegkit-build/`）手工编；配方在
+# third_party/ffmpeg_kit_flutter/patches/build_x264_android.sh，本 workflow 在 Linux runner
+# 上复现同一条配方：ffmpeg-kit v6.0 + arthenica/FFmpeg n6.0（先打 cert-pin 补丁，ffmpeg-kit
+# 发现 src/ffmpeg 已存在就不再下载）+ NDK 25.2.9519653（与构建机同版）+ api 24。
+#
+# 产物只作 artifact，不自动入库：下载后替换 android/libs/ffmpeg-kit.aar，再跑
+# fushi/test/tools/ffmpeg_kit_mobile_recipe_guard_test.dart（它静态核对 configure 串与
+# 链进 libavcodec 的编码器）。iOS xcframework 不在此 workflow 范围内。
+name: ffmpeg-kit-android
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - third_party/ffmpeg_kit_flutter/patches/build_x264_android.sh
+      - third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch
+      - .github/workflows/ffmpeg-kit-android.yml
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build tools
+        # ffmpeg-kit Android 的前置清单（其 README「Prerequisites」）。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config curl git doxygen \
+            nasm cmake gcc gperf texinfo yasm bison autogen wget autopoint meson \
+            ninja-build ragel groff gtk-doc-tools libtasn1-bin
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install NDK 25.2.9519653
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653" > /dev/null
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/25.2.9519653" >> "$GITHUB_ENV"
+
+      - name: Fetch ffmpeg-kit v6.0 and patched FFmpeg n6.0
+        run: |
+          KIT="$RUNNER_TEMP/ffmpeg-kit"
+          git clone --depth 1 --branch v6.0 https://github.com/arthenica/ffmpeg-kit.git "$KIT"
+          git clone --depth 1 --branch n6.0 https://github.com/arthenica/FFmpeg.git "$KIT/src/ffmpeg"
+          git -C "$KIT/src/ffmpeg" apply --verbose \
+            "$GITHUB_WORKSPACE/third_party/ffmpeg_kit_flutter/patches/ffmpeg-tls-pin-sha256.patch"
+          echo "FFMPEG_KIT_DIR=$KIT" >> "$GITHUB_ENV"
+
+      - name: Build AAR
+        run: bash third_party/ffmpeg_kit_flutter/patches/build_x264_android.sh
+
+      - name: Inspect AAR
+        run: |
+          AAR="$FFMPEG_KIT_DIR/prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar"
+          ls -l "$AAR"
+          mkdir -p "$RUNNER_TEMP/aar" && cd "$RUNNER_TEMP/aar" && unzip -q "$AAR"
+          ls -l jni/*/
+          for abi in arm64-v8a armeabi-v7a; do
+            echo "== $abi"
+            strings "jni/$abi/libavutil.so" | grep -m1 -- '--target-os' | tr ' ' '\n' | grep -E 'libvpx|libopus|libx264|openssl|gpl'
+            strings "jni/$abi/libavcodec.so" | grep -E '^(libvpx-vp9|libopus)$' | sort -u
+          done
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-kit-android-build-log
+          path: ${{ env.FFMPEG_KIT_DIR }}/build.log
+          if-no-files-found: ignore
+
+      - name: Upload AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-kit-android-aar
+          path: ${{ env.FFMPEG_KIT_DIR }}/prebuilt/bundle-android-aar/ffmpeg-kit/ffmpeg-kit.aar
+          if-no-files-found: error
