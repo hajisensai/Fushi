@@ -109,11 +109,12 @@ void main() {
     // 没变：这个页签只是四个模块生产发现页的 hub，不是另写的第二个 discovery 页。
     expect(source, contains('BrowseTab.discover => t.library_view_discover,'));
     expect(source, contains('BrowseTab.discover => _buildResourceHub(),'));
-    // 承载形态第四次变化：下拉框 → 与库页同构的 FushiSegmentedStrip（#1097）。
+    // 承载形态第四次变化：下拉框 → 与库页同构的 FushiSegmentedStrip（#1097）；
+    // 第五次：分段条 → 二级标签页 LibrarySectionTabs(secondary: true)。
     // 判据按**泛型参数**认，与控件形态无关；再显式钉住「只有一个」——reason 里
     // 「唯一」二字原来其实没被测到，contains 有一个就过。
     final Iterable<RegExpMatch> domainSelectors = RegExp(
-      r'Fushi\w+<_DownloadsResourceDomain>\(',
+      r'(?:Fushi\w+|LibrarySectionTabs)<_DownloadsResourceDomain>\(',
     ).allMatches(source);
     expect(
       domainSelectors.length,

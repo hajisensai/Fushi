@@ -11,9 +11,10 @@ import 'package:fushi/utils.dart';
 /// 小说插件（LNReader）的「仓库」段与「扩展」段正文，嵌在书的「导入」视图里。
 ///
 /// 与视频 / 漫画那套 `MihonExtensionsPage(embedded: true)` 同构：顶部一行动作
-/// 按钮 → 加载条 → 仓库卡片 / 语言 + 搜索筛选 + 扩展行。扩展行、筛选行直接复用
-/// 共享的 [MangaExtensionManagementTile] / [MangaExtensionFilters]，外观逐像素
-/// 一致；不复用 Mihon 页面本体是因为那套绑死了 APK 签名 / 信任 / 预览管线，
+/// 按钮 → 加载条 → 仓库卡片 / 语言 + 搜索筛选 + 批量动作 + 按仓库分组（可折叠）
+/// 的扩展行。扩展行、筛选行、仓库表头直接复用共享的
+/// [MangaExtensionManagementTile] / [MangaExtensionFilters] /
+/// [ExtensionStoreGroupHeader]，外观逐像素一致；不复用 Mihon 页面本体是因为那套绑死了 APK 签名 / 信任 / 预览管线，
 /// LNReader 插件是纯 JS、一个插件就是一个源，没有这些环节。
 ///
 /// `build` 返回 **sliver**，由外层 `CustomScrollView` 消费。
@@ -38,6 +39,12 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String _language = '*';
+
+  /// 用户手动点过的仓库分组展开态（indexUrl → 展开）；没点过的按条数自适应。
+  final Map<String, bool> _storeExpansionOverrides = <String, bool>{};
+
+  /// 「一键更新」进行中：按钮置灰，防止连点重复排队。
+  bool _updatingAll = false;
 
   @override
   void initState() {
@@ -222,13 +229,18 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     }
     int updated = 0;
     int failed = 0;
-    for (final LnReaderRepoPlugin plugin in targets) {
-      try {
-        await manager.install(plugin);
-        updated++;
-      } on Object {
-        failed++;
+    setState(() => _updatingAll = true);
+    try {
+      for (final LnReaderRepoPlugin plugin in targets) {
+        try {
+          await manager.install(plugin);
+          updated++;
+        } on Object {
+          failed++;
+        }
       }
+    } finally {
+      if (mounted) setState(() => _updatingAll = false);
     }
     if (!mounted) return;
     FushiToast.show(
@@ -241,7 +253,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     );
   }
 
-  List<Widget> _actions({required bool stores, required bool catalog}) {
+  List<Widget> _actions({required bool stores}) {
     final LnReaderManager manager = widget.manager;
     return <Widget>[
       FushiIconButton(
@@ -252,13 +264,6 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
             ? null
             : () => unawaited(manager.refreshStores()),
       ),
-      if (catalog)
-        FushiIconButton(
-          tooltip: t.mihon_extension_update_all,
-          label: t.mihon_extension_update_all,
-          icon: Icons.system_update_alt,
-          onTap: manager.loading ? null : () => unawaited(_updateAll()),
-        ),
       if (stores)
         FushiIconButton(
           tooltip: t.mihon_store_add,
@@ -282,7 +287,7 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           child: Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: _actions(stores: stores, catalog: catalog),
+            children: _actions(stores: stores),
           ),
         ),
         if (widget.manager.loading)
@@ -362,6 +367,64 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
     );
   }
 
+  /// 某个仓库当前是否展开：搜索态一律展开；用户点过表头就听用户的；否则按
+  /// 条数自适应（与漫画 / 视频扩展目录同一判据）。
+  bool _storeExpanded(String indexUrl, int count) {
+    if (_searchQuery.trim().isNotEmpty) return true;
+    return _storeExpansionOverrides[indexUrl] ??
+        count <= kExtensionStoreAutoCollapseThreshold;
+  }
+
+  void _toggleStore(String indexUrl, int count) {
+    setState(() {
+      _storeExpansionOverrides[indexUrl] = !_storeExpanded(indexUrl, count);
+    });
+  }
+
+  Widget _buildPluginTile(LnReaderRepoPlugin plugin) {
+    final LnReaderManager manager = widget.manager;
+    final LnReaderInstalledPlugin? installed = manager.installedById(plugin.id);
+    final bool update = manager.hasUpdate(plugin);
+    final bool busy = manager.isBusy(plugin.id);
+    return MangaExtensionManagementTile(
+      key: ValueKey<String>('novel_extension_${plugin.id}'),
+      title: plugin.name,
+      iconUrl: plugin.iconUrl,
+      busy: busy,
+      subtitle: Text(
+        mangaSourceMetaLine(<String?>[
+          plugin.lang,
+          update && installed != null
+              ? '${installed.version} → ${plugin.version}'
+              : plugin.version,
+          mangaSourceHostLabel(plugin.site),
+        ]),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      enabled: installed?.enabled,
+      onEnabledChanged: installed == null
+          ? null
+          : (bool value) => unawaited(manager.setEnabled(installed, value)),
+      secondaryLabel: installed != null && update
+          ? t.mihon_extension_uninstall
+          : null,
+      onSecondary: installed != null && update
+          ? () => unawaited(_uninstall(installed))
+          : null,
+      primaryLabel: installed == null
+          ? t.mihon_extension_install
+          : update
+          ? t.mihon_extension_update
+          : t.mihon_extension_uninstall,
+      onPrimary: busy
+          ? null
+          : installed == null || update
+          ? () => unawaited(_install(plugin))
+          : () => unawaited(_uninstall(installed)),
+    );
+  }
+
   List<Widget> _buildCatalog() {
     final LnReaderManager manager = widget.manager;
     final List<String> languages =
@@ -377,6 +440,11 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
       query: _searchQuery,
       isInstalled: (LnReaderRepoPlugin plugin) =>
           manager.installedById(plugin.id) != null,
+    );
+    final List<LnReaderCatalogRow> rows = buildLnReaderGroupedRows(
+      stores: manager.stores,
+      plugins: visible,
+      expanded: _storeExpanded,
     );
     // 已装但仓库目录里已经没有的插件（仓库删了 / 下架了）：仍要能卸载。
     final Set<String> availableIds = manager.available
@@ -418,54 +486,42 @@ class _LnReaderExtensionsSectionState extends State<LnReaderExtensionsSection> {
           ),
         ),
       ),
-      const SliverToBoxAdapter(child: SizedBox(height: 8)),
-      SliverList.builder(
-        itemCount: visible.length,
-        itemBuilder: (BuildContext context, int index) {
-          final LnReaderRepoPlugin plugin = visible[index];
-          final LnReaderInstalledPlugin? installed = manager.installedById(
-            plugin.id,
-          );
-          final bool update = manager.hasUpdate(plugin);
-          final bool busy = manager.isBusy(plugin.id);
-          return MangaExtensionManagementTile(
-            key: ValueKey<String>('novel_extension_${plugin.id}'),
-            title: plugin.name,
-            iconUrl: plugin.iconUrl,
-            busy: busy,
-            subtitle: Text(
-              mangaSourceMetaLine(<String?>[
-                plugin.lang,
-                update && installed != null
-                    ? '${installed.version} → ${plugin.version}'
-                    : plugin.version,
-                mangaSourceHostLabel(plugin.site),
-              ]),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      SliverToBoxAdapter(
+        child: Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: <Widget>[
+            OutlinedButton.icon(
+              key: const ValueKey<String>('novel_extension_update_all'),
+              onPressed: manager.loading || _updatingAll
+                  ? null
+                  : () => unawaited(_updateAll()),
+              icon: const Icon(Icons.system_update_alt),
+              label: Text(t.mihon_extension_update_all),
             ),
-            enabled: installed?.enabled,
-            onEnabledChanged: installed == null
-                ? null
-                : (bool value) =>
-                      unawaited(manager.setEnabled(installed, value)),
-            secondaryLabel: installed != null && update
-                ? t.mihon_extension_uninstall
-                : null,
-            onSecondary: installed != null && update
-                ? () => unawaited(_uninstall(installed))
-                : null,
-            primaryLabel: installed == null
-                ? t.mihon_extension_install
-                : update
-                ? t.mihon_extension_update
-                : t.mihon_extension_uninstall,
-            onPrimary: busy
-                ? null
-                : installed == null || update
-                ? () => unawaited(_install(plugin))
-                : () => unawaited(_uninstall(installed)),
-          );
+          ],
+        ),
+      ),
+      const SliverToBoxAdapter(child: SizedBox(height: 16)),
+      SliverList.builder(
+        itemCount: rows.length,
+        itemBuilder: (BuildContext context, int index) {
+          final LnReaderCatalogRow row = rows[index];
+          return switch (row) {
+            LnReaderStoreHeaderRow() => ExtensionStoreGroupHeader(
+              keyPrefix: 'novel',
+              indexUrl: row.indexUrl,
+              label: row.label,
+              count: row.count,
+              expanded: row.expanded,
+              // 搜索态是强制展开的，这时点表头没有意义（点了也还是展开）。
+              onTap: _searchQuery.trim().isNotEmpty
+                  ? null
+                  : () => _toggleStore(row.indexUrl, row.count),
+            ),
+            LnReaderPluginRow() => _buildPluginTile(row.plugin),
+          };
         },
       ),
       SliverList.builder(
@@ -537,4 +593,73 @@ List<LnReaderRepoPlugin> visibleLnReaderCatalog(
           ? lang
           : a.name.toLowerCase().compareTo(b.name.toLowerCase());
     });
+}
+
+/// 扩展目录按仓库分组压平后的一行：仓库表头或一个插件（与漫画 / 视频目录的
+/// `buildMihonGroupedRows` 同构，整表仍交给 [SliverList.builder] 懒建）。
+sealed class LnReaderCatalogRow {
+  const LnReaderCatalogRow();
+}
+
+class LnReaderStoreHeaderRow extends LnReaderCatalogRow {
+  const LnReaderStoreHeaderRow({
+    required this.indexUrl,
+    required this.label,
+    required this.count,
+    required this.expanded,
+  });
+
+  final String indexUrl;
+  final String label;
+  final int count;
+  final bool expanded;
+}
+
+class LnReaderPluginRow extends LnReaderCatalogRow {
+  const LnReaderPluginRow(this.plugin);
+
+  final LnReaderRepoPlugin plugin;
+}
+
+/// 把 [plugins]（已按 [visibleLnReaderCatalog] 筛选、排好序）按仓库分组：先按
+/// [stores] 的顺序发，再兜底发仓库表里已经没有的孤儿分组（仓库刚被删，条目不能
+/// 凭空消失）；收起的仓库只贡献一行表头。组内保持传入顺序。纯函数，便于测试。
+List<LnReaderCatalogRow> buildLnReaderGroupedRows({
+  required List<LnReaderStore> stores,
+  required List<LnReaderRepoPlugin> plugins,
+  required bool Function(String indexUrl, int count) expanded,
+}) {
+  final Map<String, List<LnReaderRepoPlugin>> byStore =
+      <String, List<LnReaderRepoPlugin>>{};
+  for (final LnReaderRepoPlugin plugin in plugins) {
+    byStore
+        .putIfAbsent(plugin.storeUrl, () => <LnReaderRepoPlugin>[])
+        .add(plugin);
+  }
+  final List<LnReaderCatalogRow> rows = <LnReaderCatalogRow>[];
+  void emit(String indexUrl, String label) {
+    final List<LnReaderRepoPlugin>? group = byStore.remove(indexUrl);
+    if (group == null || group.isEmpty) return;
+    final bool isExpanded = expanded(indexUrl, group.length);
+    rows.add(
+      LnReaderStoreHeaderRow(
+        indexUrl: indexUrl,
+        label: label,
+        count: group.length,
+        expanded: isExpanded,
+      ),
+    );
+    if (!isExpanded) return;
+    for (final LnReaderRepoPlugin plugin in group) {
+      rows.add(LnReaderPluginRow(plugin));
+    }
+  }
+
+  for (final LnReaderStore store in stores) {
+    emit(store.indexUrl, store.name.isEmpty ? store.indexUrl : store.name);
+  }
+  for (final String orphan in byStore.keys.toList(growable: false)) {
+    emit(orphan, orphan);
+  }
+  return rows;
 }

@@ -163,6 +163,102 @@ void main() {
     expect(find.text('royalroad'), findsOneWidget);
   });
 
+  testWidgets('扩展段：与漫画 / 视频同形态——按仓库分组可折叠，一键更新在筛选区', (
+    WidgetTester tester,
+  ) async {
+    manager.debugSetAvailable(<LnReaderRepoPlugin>[
+      for (int i = 0; i <= kExtensionStoreAutoCollapseThreshold; i++)
+        repoPlugin('plugin$i', '日本語'),
+    ]);
+    await pumpSlivers(tester, <Widget>[
+      LnReaderExtensionsSection(
+        manager: manager,
+        showStores: false,
+        showCatalog: true,
+      ),
+    ]);
+    final Finder header = find.byKey(
+      const ValueKey<String>('novel-store-group-$builtin'),
+    );
+    expect(header, findsOneWidget);
+    expect(
+      find.byType(ExtensionStoreGroupHeader),
+      findsOneWidget,
+      reason: '仓库表头与漫画 / 视频扩展目录共用同一个组件',
+    );
+    // 超过阈值的仓库默认收起：只剩表头，组内插件行一条都不建。
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is MangaExtensionManagementTile && w.title.startsWith('plugin'),
+      ),
+      findsNothing,
+    );
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+    expect(find.text('plugin0'), findsOneWidget);
+
+    expect(
+      find.byKey(const ValueKey<String>('novel_extension_update_all')),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate(
+        (Widget w) =>
+            w is FushiIconButton && w.label == t.mihon_extension_update_all,
+      ),
+      findsNothing,
+      reason: '一键更新与漫画 / 视频一样放在筛选区，不在顶部动作行',
+    );
+  });
+
+  test('buildLnReaderGroupedRows：按仓库表顺序分组，孤儿仓库兜底，收起只留表头', () {
+    const String other = 'https://other.example/plugins.min.json';
+    const String orphan = 'https://gone.example/plugins.min.json';
+    LnReaderRepoPlugin at(String id, String store) => LnReaderRepoPlugin(
+      id: id,
+      name: id,
+      site: 'https://$id.example/',
+      lang: 'English',
+      version: '1.0.0',
+      url: 'https://$id.example/p.js',
+      iconUrl: '',
+      storeUrl: store,
+    );
+    final List<LnReaderCatalogRow> rows = buildLnReaderGroupedRows(
+      stores: const <LnReaderStore>[
+        LnReaderStore(indexUrl: other, name: 'Other'),
+        LnReaderStore(indexUrl: builtin, name: 'Builtin'),
+      ],
+      plugins: <LnReaderRepoPlugin>[
+        at('a', builtin),
+        at('b', orphan),
+        at('c', other),
+        at('d', builtin),
+      ],
+      expanded: (String indexUrl, int count) => indexUrl != other,
+    );
+    expect(
+      rows
+          .map(
+            (LnReaderCatalogRow row) => switch (row) {
+              LnReaderStoreHeaderRow() =>
+                'H:${row.label}:${row.count}:${row.expanded}',
+              LnReaderPluginRow() => row.plugin.id,
+            },
+          )
+          .toList(),
+      <String>[
+        'H:Other:1:false',
+        'H:Builtin:2:true',
+        'a',
+        'd',
+        'H:$orphan:1:true',
+        'b',
+      ],
+    );
+  });
+
   testWidgets('在线源段：开关真写穿，点行进源，停用的行不可点', (WidgetTester tester) async {
     final List<String> opened = <String>[];
     await pumpSlivers(tester, <Widget>[
