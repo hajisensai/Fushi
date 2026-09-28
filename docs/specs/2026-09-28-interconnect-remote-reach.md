@@ -119,14 +119,16 @@ fushi://pair?v=1&h=<hostId>&n=<展示名>&fp=<证书指纹>&k=<ticketId>.<secret
 - 隧道请求在审批框里标「P2P tunnel」而不是看似本机的 127.0.0.1；隧道监听口单飞启动，server 停后拒绝开口、不留孤儿口。
 - 客户端地址列表的读改写经 `SyncRepository.updateFushiClientUrls` 串行，写后广播 `fushiClientUrlsRevision`，设置页据此重载。
 
-审查指出、尚未处理：
-- Rust 侧未限制单个对端的并发流数。
-- NFC 贴纸写入后未 `makeReadOnly`（贴纸可被他人改写成恶意链接，靠确认框兜底）。
-- 无 deviceId 的隧道请求共享同一个限流桶。
-- 设置页的直接写入（编辑/删除）没走 `updateFushiClientUrls` 的锁。
 
-遗留（需要决策或外部条件）：
-1. **发布流水线未接 Rust 构建**：`native/fushi_p2p` 目前只在本机编（Windows DLL / Android `.so` 已验证可编）。CI 装 Rust 工具链 + cargo-ndk、各平台产出预编译库并随包之前，发布包里 P2P 能力不可用（开关不出现），其余功能不受影响。iOS 需 staticlib 链入 + `DynamicLibrary.process()`，未做。
-2. **国内真实网络的打洞率与 n0 公共中继可达性未实测**（需两台不同网络的真机）。
-3. 无头服务端的 WebUI 暂无公网地址 / P2P 的表单项，改 `fushi_server.yaml`。
-4. 桌面开 Clash TUN 等改写 UDP 源端口的环境会长期走中继；`FushiP2pEndpoint.status` 已能读路径类型，UI 提示尚未做。
+第二轮根治（2026-09-28，均已落地并有测试）：
+- **隧道主机资源封顶**（`native/fushi_p2p`）：QUIC 层每连接并发双向流 ≤ 32、单向流 0（协议层流控，对端开不出第 33 条，客户端表现为背压而非失败）；同一 NodeId 只留最新入站连接；入站连接总数 ≤ 64、转发流总数 ≤ 256，超出 refuse / reset 快速失败。NodeId 不花钱就能生成，只按对端限等于没限，所以全局上限是必需的。
+- **隧道请求按真实身份限流**：Rust 登记「转发 TCP 连接的本地源端口 → 对端 NodeId」（`fp2p_host_peer`），`FushiSyncServer.p2pPeerResolver` 据连接的对端端口查出 NodeId 挂进请求 context（`fushi.p2p.peer`），配对会话记 `tunnelPeer`。PIN 限流对隧道会话按 `p2p:<NodeId>` 分桶、**不认**自报 deviceId（可冒报成受害者的把人锁外）；查不到身份时共用一个桶（收紧而非放开）。
+- **地址列表所有读改写串行**：设置页增删改排序改成在库里最新列表上按 URL 执行的变换（排序表达为 `moveInterconnectUrlBefore`）；`SyncRepository` 内 TOFU 落指纹、落 per-peer token、清 token、清指纹、登出清表全部走同一把静态锁。守卫测试钉住 `lib/` 不许再直接 `setFushiClientUrls`。
+- **NFC 贴纸可选写后锁定**：写入前问「写入后锁定」，默认关（锁定不可撤销，本机地址或证书一变贴纸就作废）；原生返回 `locked` / `written` / `failed` 三态，要求锁定而芯片不支持只读时如实提示。
+- **CI / 发布接入 Rust 构建**：Android 三 ABI、Windows DLL、macOS universal dylib（进 `Contents/Frameworks`）、iOS 静态库（`-force_load`，出包查符号防 dead-strip）、Linux 桌面与无头服务端 `.so`；构建失败即 job 失败（与内置 libtorrent 同口径），出包后核对库确实进包，真隧道测试额外核日志无 skip 防缺库伪绿。iOS 出口合规维持 `ITSAppUsesNonExemptEncryption=false`：iroh 走标准 TLS 1.3（rustls），与互联既有的自签 TLS 同属标准协议加密。
+- **无头服务端 WebUI**：「远程访问」卡片管理公网地址 / P2P 开关 / 自建中继，admin API 同名字段，改完即生效（`HeadlessHost.applyConfig`，配置不再是启动快照）；P2P 起停与换中继串行。
+- **持续走中继提示**：设置页 `p2p://` 地址行显示「P2P 直连 / 经中继 · RTT」；连上后持续 20 秒仍只有中继路径（iroh 先走中继再升级，刚连上不误报）时，说明任一端开着 Clash TUN / 全局 VPN 等改写 UDP 端口的工具会让打洞失败及处理办法。
+
+仍需外部条件：
+1. **macOS / iOS 构建链路**本机编不了，以 CI 首跑为准（iroh 在 aarch64-apple-ios 上的编译、rustc 报出的系统库清单、`-force_load` 与其它静态库是否撞符号）。
+2. **真实网络实测**：NETPROBE_PLACEHOLDER

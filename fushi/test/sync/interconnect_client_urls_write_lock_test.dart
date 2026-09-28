@@ -6,6 +6,8 @@ import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 客户端候选地址列表（`sync_hibiki_client_urls`）的所有读改写都必须经
 /// [SyncRepository.updateFushiClientUrls] 串行：后台地址学习、链接配对、设置页编辑
 /// 与 TOFU 落指纹会并发改同一个键，任何一处直接「读 → 改 → set」都会拿过期快照
@@ -108,14 +110,11 @@ void main() {
       'lib',
     ).listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
-      final List<String> lines = e.readAsLinesSync();
+      // 注释里提到 setFushiClientUrls 不算；块注释 / 行尾注释一并剥掉。
+      final List<String> lines = maskComments(e.readAsStringSync()).split('\n');
       for (int i = 0; i < lines.length; i++) {
         final String line = lines[i];
         if (!line.contains('setFushiClientUrls(')) continue;
-        if (line.trimLeft().startsWith('///') ||
-            line.trimLeft().startsWith('//')) {
-          continue;
-        }
         // 定义处与 updateFushiClientUrls 内部那一次调用是唯一允许的两处。
         if (line.contains('Future<void> setFushiClientUrls(') ||
             line.contains('await setFushiClientUrls(after)')) {
