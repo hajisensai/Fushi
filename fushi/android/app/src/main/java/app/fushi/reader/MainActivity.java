@@ -246,6 +246,7 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel.setMethodCallHandler(null);
             floatingDictChannel = null;
         }
+        FloatingBallChannel.detach(getFlutterEngine());
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -607,6 +608,9 @@ public class MainActivity extends AudioServiceActivity {
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
+        // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
+        // 都要从 Activity 起，不必再补 NEW_TASK。
+        FloatingBallChannel.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);

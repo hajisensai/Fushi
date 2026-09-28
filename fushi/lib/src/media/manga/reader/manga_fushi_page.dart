@@ -89,7 +89,8 @@ import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
-    show ReaderSideSheetSide, showReaderSideSheet;
+    show ReaderHeaderAction, ReaderSideSheetSide, showReaderSideSheet;
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
@@ -171,6 +172,7 @@ enum _MangaReaderInputSource {
   volumeKey,
   gamepad,
   mouse,
+  floatingBall,
 }
 
 /// 漫画页 **Flutter 侧**鼠标通道的解析阶梯：只有 manga 自己的 scope。
@@ -5093,6 +5095,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     bottom: _chromeBottomInset,
                     child: _buildBody(),
                   ),
+                  // 全局悬浮球的场景按钮（零尺寸，见 [_buildMangaFloatingBallScene]）。
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    width: 0,
+                    height: 0,
+                    child: _buildMangaFloatingBallScene(),
+                  ),
                   if (_sourceReviewSession
                       case final SourceReviewSession session)
                     Positioned(
@@ -5532,6 +5542,73 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           ),
       ],
     ];
+  }
+
+  /// 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）的漫画场景按钮：上 / 下
+  /// 一页、识别框开关、整卷 OCR（手动 / 重跑，与顶栏同条件）、章节目录（仅书架在线
+  /// 条目）。翻页走与键盘 / 手柄同一个 [_executeReaderInputAction]；其余与顶栏
+  /// 同名按钮同一执行体。正文没就绪时不给按钮（与顶栏动作组同一判据）。
+  ///
+  /// 全局模式关闭时宿主不渲染，这里无条件挂载也无副作用。
+  Widget _buildMangaFloatingBallScene() {
+    if (!_chromeActionsEnabled) {
+      return const FloatingBallScene(actions: <ReaderHeaderAction>[]);
+    }
+    final bool rtl = _spreadDirection == 'rtl';
+    return FloatingBallScene(
+      actions: <ReaderHeaderAction>[
+        ReaderHeaderAction(
+          key: const ValueKey<String>('manga_floating_ball_previous'),
+          icon: rtl ? Icons.chevron_right : Icons.chevron_left,
+          label: t.shortcut_action_manga_page_backward,
+          onPressed: () => _executeReaderInputAction(
+            MangaReaderInputAction.previous,
+            source: _MangaReaderInputSource.floatingBall,
+          ),
+        ),
+        ReaderHeaderAction(
+          key: const ValueKey<String>('manga_floating_ball_next'),
+          icon: rtl ? Icons.chevron_left : Icons.chevron_right,
+          label: t.shortcut_action_manga_page_forward,
+          onPressed: () => _executeReaderInputAction(
+            MangaReaderInputAction.next,
+            source: _MangaReaderInputSource.floatingBall,
+          ),
+        ),
+        ReaderHeaderAction(
+          key: const ValueKey<String>('manga_floating_ball_ocr_boxes'),
+          icon: _showOcrBoxes
+              ? Icons.highlight_alt
+              : Icons.highlight_alt_outlined,
+          label: t.manga_ocr_boxes_toggle,
+          onPressed: () => unawaited(_toggleOcrBoxes()),
+        ),
+        if (_showManualVolumeOcrAction)
+          ReaderHeaderAction(
+            key: const ValueKey<String>('manga_floating_ball_ocr_volume'),
+            icon: Icons.document_scanner_outlined,
+            label: t.manga_reader_ocr_volume,
+            onPressed: () =>
+                unawaited(_maybeStartVolumeOcr(userInitiated: true)),
+          ),
+        if (_showRerunVolumeOcrAction)
+          ReaderHeaderAction(
+            key: const ValueKey<String>('manga_floating_ball_ocr_rerun'),
+            icon: Icons.document_scanner_outlined,
+            label: t.manga_reader_ocr_rerun,
+            onPressed: () => unawaited(_rerunVolumeOcr()),
+          ),
+        if (_shelfEntry != null)
+          ReaderHeaderAction(
+            key: const ValueKey<String>('manga_floating_ball_chapters'),
+            icon: Icons.list_alt_outlined,
+            label: t.manga_series_chapters_action,
+            onPressed: _switchingChapter
+                ? null
+                : () => unawaited(_showChapterPicker()),
+          ),
+      ],
+    );
   }
 
   IconData get _spreadPreferenceIcon {

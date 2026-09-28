@@ -154,7 +154,22 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
     _isClosing = false;
     final String trimmed = widget.searchTerm.trim();
-    if (trimmed.isEmpty || !appModel.isInitialised) return;
+    if (trimmed.isEmpty) {
+      // 悬浮球「查词」/ 剪贴板为空：宿主有意推来空词，常驻热页回到只有搜索栏的
+      // 初始态（隐藏上一次的结果、清空搜索框与源文本条），否则用户看到的是上一个词。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || widget.searchTerm.trim().isNotEmpty) return;
+        setState(() {
+          _popup.dismissAt(0);
+          _searchController.clear();
+          _sourceLookupText = '';
+          _sourceHighlight = null;
+          _sourceHighlightGeneration++;
+        });
+      });
+      return;
+    }
+    if (!appModel.isInitialised) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _pushSearch(trimmed, Rect.zero, reuseWarmSlot: true);

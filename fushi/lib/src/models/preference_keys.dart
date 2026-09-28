@@ -111,6 +111,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'extension_popup_max_height',
   'extension_popup_max_width',
   'first_time_setup',
+  // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）。
+  'floating_ball.actions',
+  'floating_ball.dock',
+  'floating_ball.mode',
+  'floating_ball.y',
   'floating_lyric_bg_opacity',
   'floating_lyric_button_bg_opacity',
   'floating_lyric_click_lookup',

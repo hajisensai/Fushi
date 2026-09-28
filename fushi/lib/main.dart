@@ -79,6 +79,8 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -1194,6 +1196,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _queueAppShortcut(shortcut);
       return true;
     }
+    // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
+    // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
+    // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
+    final String? lookupWord = lookupWordFromDeepLink(data);
+    if (lookupWord != null) {
+      deliverExternalLookup(lookupWord);
+      return true;
+    }
     final String normalized = data.toLowerCase();
     if (normalized.startsWith('fushi://auth/')) {
       await _handleOAuthRedirect(data);
@@ -2096,7 +2106,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           // lit by keyboard/gamepad navigation on one page is not carried onto the
           // freshly-entered page (BUG-398).
           navigatorObservers: <NavigatorObserver>[
-            appModel.focusHighlightObserver
+            appModel.focusHighlightObserver,
+            floatingBallRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -2178,9 +2189,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
                           // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
                           // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）
+                          // 在查词宿主之下：球点出的查词弹窗要盖在球上。
                           child: Stack(
                             children: <Widget>[
                               child!,
+                              const AppFloatingBallHost(),
                               const FloatingLyricLookupHost(),
                             ],
                           ),

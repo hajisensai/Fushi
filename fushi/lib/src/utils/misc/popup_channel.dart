@@ -26,14 +26,16 @@ class PopupChannel {
           Rect? anchor,
           Rect? subtitle
         }) parsed = _parseProcessTextArgs(call.arguments);
-        if (parsed.text.trim().isNotEmpty) {
-          _onNewProcessText!(
-            parsed.text,
-            parsed.charIndex,
-            parsed.anchor,
-            parsed.subtitle,
-          );
-        }
+        // 空词也放行：原生侧只在入口**有意**打开空查词窗时才推空词（悬浮球「查词」、
+        // 剪贴板为空，见 PopupEngineHolder.pushProcessText 的 allowBlank），热页据此
+        // 清掉上一次的结果、回到只有搜索栏的初始态。系统 PROCESS_TEXT 的偶发空选区
+        // 在原生侧就被丢掉了，到不了这里。
+        _onNewProcessText!(
+          parsed.text,
+          parsed.charIndex,
+          parsed.anchor,
+          parsed.subtitle,
+        );
       }
     });
     if (_onNewProcessText != null) {

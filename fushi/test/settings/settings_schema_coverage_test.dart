@@ -421,6 +421,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // charOffset 不变/spread 优先由专项纯函数测试守住，渲染效果需真机验。
   'reading/Merge illustration pages into text':
       'test/epub/epub_spread_map_test.dart: mergeImagePages absorb/spread-priority/charOffset (reader layout effect needs live WebView, DEVICE for render)',
+  // 全局悬浮球模式：宿主按模式画 / 不画球、全局按钮开关，由宿主 widget 测试钉住
+  // （系统常驻要 Android 原生服务，设备验收见 docs/specs/2026-09-28-floating-ball.md）。
+  'lookup/Floating ball': 'test/floating_ball/app_floating_ball_host_test.dart',
   'lookup/Popup max width': 'test/pages/dictionary_popup_layer_test.dart',
   'lookup/Popup max height': 'test/pages/dictionary_popup_layer_test.dart',
   // TODO-776: 查词弹窗「词典最多列数（自动填充）」（实验性）。PR#83 语义收敛后文案

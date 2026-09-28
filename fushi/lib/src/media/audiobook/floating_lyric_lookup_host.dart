@@ -8,10 +8,18 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 悬浮字幕「点词查词」的一次请求（文本 + 命中字符 index）。
 class FloatingLyricLookupRequest {
-  const FloatingLyricLookupRequest({required this.text, required this.index});
+  const FloatingLyricLookupRequest({
+    required this.text,
+    required this.index,
+    this.selectionRect,
+  });
 
   final String text;
   final int index;
+
+  /// 被点文字在屏幕上的矩形（逻辑像素）；null = 没有可定位的选区，弹窗落在
+  /// 屏幕中央。悬浮球的截屏识字会带上被点字符的框。
+  final Rect? selectionRect;
 }
 
 /// 进程级悬浮字幕查词请求总线（单例 [ChangeNotifier]）。
@@ -36,9 +44,13 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
   FloatingLyricLookupRequest? get pending => _pending;
 
   /// 推一次点词请求（app 级默认 handler 调）。空白文本忽略。
-  void requestLookup(String text, int index) {
+  void requestLookup(String text, int index, {Rect? selectionRect}) {
     if (text.trim().isEmpty) return;
-    _pending = FloatingLyricLookupRequest(text: text, index: index);
+    _pending = FloatingLyricLookupRequest(
+      text: text,
+      index: index,
+      selectionRect: selectionRect,
+    );
     notifyListeners();
   }
 
@@ -159,11 +171,12 @@ class _FloatingLyricLookupHostState
     // 无 WebView 选区可定位，用屏幕中心 1×1 选区兜底（与 reader 的
     // _lookupFromFloatingLyric / 歌词模式同款）；底部固定模式时 mixin 自走 dock。
     final Size screen = MediaQuery.sizeOf(context);
-    final Rect selectionRect = Rect.fromCenter(
-      center: Offset(screen.width / 2, screen.height / 2),
-      width: 1,
-      height: 1,
-    );
+    final Rect selectionRect = req.selectionRect ??
+        Rect.fromCenter(
+          center: Offset(screen.width / 2, screen.height / 2),
+          width: 1,
+          height: 1,
+        );
     pushNestedPopup(
       query: searchTerm,
       selectionRect: selectionRect,

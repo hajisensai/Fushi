@@ -14,6 +14,7 @@ import 'package:fushi/src/ai/web_knowledge.dart'
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
+import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -691,6 +692,43 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
   Future<void> setLookupImeLanguage(String value) async {
     await setPref('lookup.ime_language', value);
     notifyListeners();
+  }
+
+  /// 全局悬浮球模式（`docs/specs/2026-09-28-floating-ball.md`）。默认关：
+  /// 阅读器旧的内置球（`reader_floating_ball`）照旧按自己的开关工作。
+  FloatingBallMode get floatingBallMode => FloatingBallMode.fromStorage(
+      getPref('floating_ball.mode', defaultValue: '') as String);
+
+  Future<void> setFloatingBallMode(FloatingBallMode mode) async {
+    await setPref('floating_ball.mode', mode.storageValue);
+    notifyListeners();
+  }
+
+  /// 每个页面都有的全局按钮；从没设过 = 全开。
+  List<FloatingBallGlobalAction> get floatingBallActions =>
+      FloatingBallGlobalAction.decodeList(
+          getPref('floating_ball.actions', defaultValue: '') as String);
+
+  Future<void> setFloatingBallActions(
+      Iterable<FloatingBallGlobalAction> actions) async {
+    await setPref(
+        'floating_ball.actions', FloatingBallGlobalAction.encodeList(actions));
+    notifyListeners();
+  }
+
+  /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。与阅读器内置球的
+  /// `reader_floating_ball_dock` / `_y` 分开存：两者的活动范围不同（全屏 vs 正文视口）。
+  String get floatingBallDock =>
+      getPref('floating_ball.dock', defaultValue: 'right') as String;
+
+  double get floatingBallVerticalFraction =>
+      (getPref('floating_ball.y', defaultValue: 0.62) as num).toDouble();
+
+  Future<void> setFloatingBallPosition(String dock, double fraction) async {
+    await setPref('floating_ball.dock', dock);
+    await setPref('floating_ball.y', fraction);
+    // 不 notifyListeners：位置只在松手时落库，球自己已持有新值，广播只会让
+    // 宿主多重建一次。
   }
 
   /// 防截屏（桌面查词浮窗，Windows）—— 覆盖窗设 SetWindowDisplayAffinity
