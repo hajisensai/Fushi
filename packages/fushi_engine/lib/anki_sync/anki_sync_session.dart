@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:path/path.dart' as p;
 
@@ -79,6 +78,8 @@ class AnkiSyncState {
   const AnkiSyncState({
     required this.phase,
     this.unsynced = 0,
+    this.failing = 0,
+    this.lastError,
     this.lastSyncAt,
     this.message,
   });
@@ -87,6 +88,12 @@ class AnkiSyncState {
 
   /// 还在日志里、没被同步确认的卡数。
   final int unsynced;
+
+  /// 其中写进本地库失败、在等下次重试的卡数（例如服务器上的笔记类型被删了）。
+  final int failing;
+
+  /// 最早那张写入失败的卡的原因。
+  final String? lastError;
 
   /// 最近一次同步成功的时刻（毫秒）。
   final int? lastSyncAt;
@@ -118,21 +125,21 @@ class AnkiSyncHasUnsyncedNotes implements Exception {
 ///
 /// 目录布局（`<root>` 跟着应用数据根走）：
 /// - `account.json`：[AnkiSyncAccount]
-/// - `collection/`：本地库（可以随时删掉重新下载）+ `generation`（本地库代号）
-///   + `sync.inflight`（同步进行中标记）
+/// - `collection/`：本地库（可以随时删掉重新下载）+ `downloaded`（整库下载完成标记）
 /// - `journal/`：[AnkiSyncJournal]，真相源
 ///
 /// 数据安全规则（docs/specs/2026-09-28-anki-pending-mining-and-sync.md）：
 /// - 永不整库上传（helper 保证）。
-/// - 本地库**代号**：只有整库下载成功才写 `generation`；没有代号的库（新建、或上次
-///   下载失败留下的空库）一律先整库下载。每次整库下载换一个新代号，并且**先落盘代号、
-///   再重放**。日志条目记着自己写进的是哪一代；只有「在当前代里」的条目，同步成功后
-///   才出日志，其余的都要重放——整库下载冲掉的卡、重放中途失败的卡都不会被误删。
-/// - 同步前先落 `sync.inflight`：同步中途进程被杀（helper 可能已经整库下载了），
-///   下次打开时把所有条目当成「不确定在不在」，查重后重放。
-/// - 单条重放 / 加卡失败只标这一条（`lastError`），不挡住会话；加卡失败回滚日志条目。
+/// - 没有 `downloaded` 标记的本地库（新建、或上次下载失败留下的空库）先整库下载。
+/// - **出日志的唯一判据**：一次同步成功之后，立刻向 helper 核对这张卡的 note id（连同
+///   首字段）确实在本地库里——同步成功意味着本地库里的一切都已在服务器上（或本来就是从
+///   服务器拉下来的）。不在的（被整库下载冲掉、helper 中途出错、从没写进去）一律重新
+///   写进本地库再同步；不靠「我以为写进去了」的记账。
+/// - 同步出错（包括 helper 已经整库下载、之后媒体同步才失败）：什么都不出日志，并把
+///   本地库当成「需要重开核对」。
+/// - 单条写入失败只标这一条（`lastError`），不挡住会话；加卡失败回滚日志条目。
 /// - helper 死了（panic / 被杀）自动丢弃，下次重新拉起。
-/// - 同步 / 登录 / 下载进行中（可能要拉几个 GB 媒体）：查重直接放行、加卡只写日志，
+/// - 同步 / 登录 / 下载进行中（首次可能要拉整个媒体库）：查重直接放行、加卡只写日志，
 ///   结束时补进本地库再同步——查词和制卡不排队等同步。
 class AnkiSyncSession {
   AnkiSyncSession({
@@ -149,12 +156,11 @@ class AnkiSyncSession {
   final Future<FushiAnkiSyncClient> Function() _startClient;
   final Duration _syncDelay;
   final int Function() _clock;
-  static final Random _random = Random.secure();
 
   FushiAnkiSyncClient? _client;
   bool _opened = false;
-  String? _generation;
   bool _long = false;
+  bool _changingAccount = false;
   bool _closed = false;
   Future<void> _tail = Future<void>.value();
   Timer? _syncTimer;
@@ -182,8 +188,9 @@ class AnkiSyncSession {
   /// 读盘刷新 [state]。**不排队**：同步 / 下载可能要很久，设置页与服务端 WebUI 的
   /// 状态轮询不能被它堵住。
   Future<AnkiSyncState> refresh() async {
-    await _publish(
-      (await account()) == null
+    final bool signedIn = await account() != null;
+    await _publishWith(
+      () => !signedIn
           ? AnkiSyncPhase.signedOut
           : (_long ? AnkiSyncPhase.busy : _idleOr()),
     );
@@ -208,8 +215,10 @@ class AnkiSyncSession {
     if (pending.isNotEmpty && !sameAccount) {
       throw AnkiSyncHasUnsyncedNotes(pending.length);
     }
-    await _publish(AnkiSyncPhase.busy);
     _long = true;
+    // 换账号期间制的卡不能进日志：它们会被重放进新账号的库。
+    _changingAccount = !sameAccount;
+    await _publish(AnkiSyncPhase.busy);
     try {
       final FushiAnkiSyncClient client = await _ensureClient();
       final String hkey = await _guard(
@@ -228,9 +237,13 @@ class AnkiSyncSession {
           hkey: hkey,
         ),
       );
+      _changingAccount = false;
       await _ensureOpen();
+      _long = false;
       await _publish(AnkiSyncPhase.idle);
     } catch (e) {
+      _long = false;
+      _changingAccount = false;
       await _publish(
         (await account()) == null
             ? AnkiSyncPhase.signedOut
@@ -238,8 +251,6 @@ class AnkiSyncSession {
         message: '$e',
       );
       rethrow;
-    } finally {
-      _long = false;
     }
     if ((await (await _journal()).entries()).isNotEmpty) scheduleSync();
   });
@@ -302,10 +313,14 @@ class AnkiSyncSession {
   /// 同步 / 下载进行中只写日志、返回 null（卡没丢，同步结束时补进本地库）。
   /// 写本地库失败时回滚日志条目并抛出——调用方告诉用户「没制成」，日志里也就没有它。
   Future<int?> addNote(AnkiSyncNote note) async {
-    if (await account() == null) throw const AnkiSyncNotSignedIn();
+    if (_changingAccount || await account() == null) {
+      throw const AnkiSyncNotSignedIn();
+    }
     if (_long) {
       await (await _journal()).append(note);
-      await _publish(_state.phase);
+      await refresh();
+      // 正在跑的那一轮结束时会补进本地库；万一它已经过了补的那一步，这里兜一次。
+      scheduleSync();
       return null;
     }
     final int id = await _serial(() async {
@@ -319,7 +334,7 @@ class AnkiSyncSession {
         await journal.remove(<String>[entry.id]);
         rethrow;
       }
-      await journal.markAdded(entry, noteId, _generation!);
+      await journal.markAdded(entry, noteId);
       await _publish(_idleOr());
       return noteId;
     });
@@ -342,80 +357,60 @@ class AnkiSyncSession {
     }
   }
 
-  /// 立即同步。
-  ///
-  /// 先把不在当前代里的条目补进本地库；同步成功后，只有同步前就确认在当前代里的
-  /// 条目出日志。服务器要求整库下载时（helper 在同一条命令里下载）：先换代落盘，
-  /// 再按日志重放、再同步一次。要求整库上传时停在 [AnkiSyncPhase.blocked]。
+  /// 立即同步：先把日志里不在本地库的卡写进去，同步，成功后出日志「确实在本地库里」
+  /// 的那些。服务器触发了整库下载时，被冲掉的卡再写一次、再同步一次。要求整库上传时
+  /// 停在 [AnkiSyncPhase.blocked]。
   Future<AnkiSyncState> syncNow() => _serial(() async {
-    final AnkiSyncAccount? acct = await account();
+    AnkiSyncAccount? acct = await account();
     if (acct == null) throw const AnkiSyncNotSignedIn();
-    await _publish(AnkiSyncPhase.busy);
     _long = true;
+    await _publish(AnkiSyncPhase.busy);
     try {
       final FushiAnkiSyncClient client = await _ensureOpen();
-      await _replayStale(client);
-      final AnkiSyncJournal journal = await _journal();
-      List<String> confirmed = <String>[
-        for (final AnkiSyncJournalEntry e in await journal.entries())
-          if (e.inGeneration(_generation)) e.id,
-      ];
-      await _setInflight(true);
-      AnkiSyncResult r = await _guard(
-        client.sync(hkey: acct.hkey, endpoint: acct.endpoint),
-      );
-      AnkiSyncAccount current = await _adoptEndpoint(acct, r);
-      if (r.status == AnkiSyncStatus.ok && r.fullDownload) {
-        // 本地库已被整个换掉：先落新代号，任何条目都不再「在当前代里」。
-        await _newGeneration();
-        await _setInflight(false);
-        await _replayStale(client);
-        confirmed = <String>[
-          for (final AnkiSyncJournalEntry e in await journal.entries())
-            if (e.inGeneration(_generation)) e.id,
-        ];
-        await _setInflight(true);
-        r = await _guard(
-          client.sync(hkey: current.hkey, endpoint: current.endpoint),
+      String? serverMessage;
+      for (int round = 0; round < 2; round++) {
+        await _reconcile(client, write: true);
+        final AnkiSyncResult r = await _guard(
+          client.sync(hkey: acct!.hkey, endpoint: acct.endpoint),
         );
-        current = await _adoptEndpoint(current, r);
-        if (r.fullDownload) {
-          // 连着两次整库下载（极少见）：这一轮什么都不算确认，下次再来。
-          await _newGeneration();
-          await _setInflight(false);
-          await _publish(AnkiSyncPhase.failed, message: r.serverMessage);
+        acct = await _adoptEndpoint(acct, r);
+        serverMessage = r.serverMessage;
+        if (r.status == AnkiSyncStatus.fullSyncBlocked) {
+          _long = false;
+          await _publish(AnkiSyncPhase.blocked, message: r.serverMessage);
           return _state;
         }
+        // 同步成功：此刻本地库里的一切都在服务器上。
+        final Set<String> confirmed = await _reconcile(client, write: false);
+        await (await _journal()).remove(confirmed);
+        _lastSyncAt = _clock();
+        // 整库下载冲掉的卡：下一轮写回去再推。
+        if (!r.fullDownload) break;
       }
-      await _setInflight(false);
-      if (r.status == AnkiSyncStatus.fullSyncBlocked) {
-        await _publish(AnkiSyncPhase.blocked, message: r.serverMessage);
-        return _state;
-      }
-      await journal.remove(confirmed);
-      _lastSyncAt = _clock();
-      // 同步期间只进了日志的卡：现在补进本地库，下一轮同步推上去。
-      if (await _replayStale(client) > 0) scheduleSync();
-      await _publish(AnkiSyncPhase.idle, message: r.serverMessage);
+      // 同步期间只进了日志的卡：补进本地库，下一轮推上去。
+      if (await _reconcileAdded(client) > 0) scheduleSync();
+      _long = false;
+      await _publish(AnkiSyncPhase.idle, message: serverMessage);
       return _state;
     } catch (e) {
+      // helper 可能已经换掉了本地库、甚至没能重新打开它：下次重开、重新核对。
+      _opened = false;
+      _long = false;
       await _publish(AnkiSyncPhase.failed, message: '$e');
       rethrow;
-    } finally {
-      _long = false;
     }
   });
 
-  /// 关 helper。未同步的卡留在日志里，下次打开时还在。
-  Future<void> close() {
+  /// 关 helper（立即，不排在长同步后面）。未同步的卡留在日志里，下次打开时还在；
+  /// 正在进行的同步随 helper 退出而失败，什么都不会出日志。
+  Future<void> close() async {
     _closed = true;
     _syncTimer?.cancel();
-    return _serial(() async {
-      final FushiAnkiSyncClient? client = _client;
-      _client = null;
-      _opened = false;
-      await client?.dispose();
-    });
+    final FushiAnkiSyncClient? client = _client;
+    _client = null;
+    _opened = false;
+    await client?.dispose();
+    await _states.close();
   }
 
   Future<AnkiSyncAccount> _adoptEndpoint(
@@ -450,9 +445,8 @@ class AnkiSyncSession {
     }
   }
 
-  /// 打开本地库。没有代号（新库 / 上次下载失败留下的空库）先整库下载并落代号；
-  /// 上次同步中途被打断就换代（所有条目都要查重后重放）。之后把不在当前代里的条目
-  /// 补进本地库。
+  /// 打开本地库。没有 `downloaded` 标记（新库 / 上次下载失败留下的空库）先整库下载；
+  /// 之后把日志里不在本地库的卡写进去。
   Future<FushiAnkiSyncClient> _ensureOpen() async {
     final AnkiSyncAccount? acct = await account();
     if (acct == null) throw const AnkiSyncNotSignedIn();
@@ -461,8 +455,8 @@ class AnkiSyncSession {
     final File collection = await _collectionFile();
     await collection.parent.create(recursive: true);
     await _guard(client.open(collection.path));
-    _generation = await _readGeneration();
-    if (_generation == null) {
+    final File downloaded = await _downloadedFile();
+    if (!downloaded.existsSync()) {
       final bool wasLong = _long;
       _long = true;
       try {
@@ -472,49 +466,71 @@ class AnkiSyncSession {
       } finally {
         _long = wasLong;
       }
-      await _newGeneration();
-      await _setInflight(false);
-    } else if (await _inflight()) {
-      await _newGeneration();
-      await _setInflight(false);
+      await downloaded.writeAsString('1', flush: true);
     }
     _opened = true;
-    await _replayStale(client);
+    await _reconcile(client, write: true);
     return client;
   }
 
-  /// 把不在当前代里的条目写进本地库，返回写进去的条数。查重兜底：库里已经有（上次
-  /// 其实写进去了、或已同步过来）就只记 id；用户明确要重复卡的条目不查。单条失败只
-  /// 标这一条；helper 死了才整体中断。
-  Future<int> _replayStale(FushiAnkiSyncClient client) async {
-    final String generation = _generation!;
+  /// 核对日志与本地库：返回「note id 此刻确实在本地库里」的条目 id。
+  ///
+  /// [write] 为 true 时把不在的写进去（查重兜底：同词卡已经在库里就只记 id；用户明确要
+  /// 重复卡的不查）。单条失败只标这一条；helper 死了才整体中断。
+  Future<Set<String>> _reconcile(
+    FushiAnkiSyncClient client, {
+    required bool write,
+  }) async {
     final AnkiSyncJournal journal = await _journal();
-    int added = 0;
-    for (final AnkiSyncJournalEntry e in await journal.entries()) {
-      if (e.inGeneration(generation)) continue;
+    final List<AnkiSyncJournalEntry> entries = await journal.entries();
+    final Set<int> existing = await _guard(
+      client.existingNotes(<(int, String)>[
+        for (final AnkiSyncJournalEntry e in entries)
+          if (e.noteId != null) (e.noteId!, e.firstField),
+      ]),
+    );
+    final Set<String> present = <String>{};
+    for (final AnkiSyncJournalEntry e in entries) {
+      if (e.noteId != null && existing.contains(e.noteId)) {
+        present.add(e.id);
+        continue;
+      }
+      if (!write) continue;
       try {
-        final String first = e.note.fields.isEmpty ? '' : e.note.fields.first;
         if (!e.note.allowDuplicate) {
           final List<AnkiSyncNoteHit> hits = await _guard(
-            client.findNotes(notetype: e.note.notetype, firstField: first),
+            client.findNotes(
+              notetype: e.note.notetype,
+              firstField: e.firstField,
+            ),
           );
           if (hits.isNotEmpty) {
-            await journal.markAdded(e, hits.first.noteId, generation);
+            await journal.markAdded(e, hits.first.noteId);
+            present.add(e.id);
             continue;
           }
         }
-        await journal.markAdded(
-          e,
-          await _guard(_add(client, e.note)),
-          generation,
-        );
-        added++;
+        await journal.markAdded(e, await _guard(_add(client, e.note)));
+        present.add(e.id);
       } catch (err) {
         if (client.isDead) rethrow;
         await journal.markFailed(e, '$err');
       }
     }
-    return added;
+    return present;
+  }
+
+  /// [_reconcile] 写入模式，返回这次新写进本地库的条数。
+  Future<int> _reconcileAdded(FushiAnkiSyncClient client) async {
+    final AnkiSyncJournal journal = await _journal();
+    final int before = (await journal.entries())
+        .where((AnkiSyncJournalEntry e) => e.noteId != null)
+        .length;
+    await _reconcile(client, write: true);
+    final int after = (await journal.entries())
+        .where((AnkiSyncJournalEntry e) => e.noteId != null)
+        .length;
+    return after - before;
   }
 
   Future<int> _add(FushiAnkiSyncClient client, AnkiSyncNote note) =>
@@ -528,9 +544,10 @@ class AnkiSyncSession {
 
   Future<void> _discardCollection() async {
     final FushiAnkiSyncClient? client = _client;
-    if (_opened && client != null && !client.isDead) await client.close();
+    // 不看 _opened：下载失败时 helper 已经打开了库、_opened 却是 false，不关的话
+    // Windows 上删不掉目录。helper 的 close 对没开库是空操作。
+    if (client != null && !client.isDead) await client.close();
     _opened = false;
-    _generation = null;
     final Directory dir = (await _collectionFile()).parent;
     if (dir.existsSync()) await dir.delete(recursive: true);
   }
@@ -541,12 +558,29 @@ class AnkiSyncSession {
     _ => AnkiSyncPhase.idle,
   };
 
-  Future<void> _publish(AnkiSyncPhase phase, {String? message}) async {
+  Future<void> _publish(AnkiSyncPhase phase, {String? message}) =>
+      _publishWith(() => phase, message: message);
+
+  /// 先把要 await 的都读完，再**同步地**决定阶段并写入——并发的发布者不会拿一个
+  /// await 之前算好的旧阶段覆盖别人刚写的新阶段。
+  Future<void> _publishWith(
+    AnkiSyncPhase Function() phase, {
+    String? message,
+  }) async {
+    final List<AnkiSyncJournalEntry> entries = await (await _journal())
+        .entries();
+    final List<AnkiSyncJournalEntry> failing = <AnkiSyncJournalEntry>[
+      for (final AnkiSyncJournalEntry e in entries)
+        if (e.lastError != null) e,
+    ];
+    final AnkiSyncPhase next = phase();
     _state = AnkiSyncState(
-      phase: phase,
-      unsynced: await (await _journal()).count(),
+      phase: next,
+      unsynced: entries.length,
+      failing: failing.length,
+      lastError: failing.isEmpty ? null : failing.first.lastError,
       lastSyncAt: _lastSyncAt,
-      message: message ?? (phase == _state.phase ? _state.message : null),
+      message: message ?? (next == _state.phase ? _state.message : null),
     );
     if (!_states.isClosed) _states.add(_state);
   }
@@ -569,42 +603,8 @@ class AnkiSyncSession {
   Future<File> _collectionFile() async =>
       File(p.join((await _root()).path, 'collection', 'collection.anki2'));
 
-  Future<File> _generationFile() async =>
-      File(p.join((await _collectionFile()).parent.path, 'generation'));
-
-  Future<File> _inflightFile() async =>
-      File(p.join((await _collectionFile()).parent.path, 'sync.inflight'));
-
-  Future<String?> _readGeneration() async {
-    final File f = await _generationFile();
-    if (!f.existsSync()) return null;
-    final String v = (await f.readAsString()).trim();
-    return v.isEmpty ? null : v;
-  }
-
-  /// 换一代并落盘（整库下载成功之后、重放之前）。
-  Future<void> _newGeneration() async {
-    final StringBuffer b = StringBuffer();
-    for (int i = 0; i < 8; i++) {
-      b.write(_random.nextInt(256).toRadixString(16).padLeft(2, '0'));
-    }
-    final File f = await _generationFile();
-    final File tmp = File('${f.path}.tmp');
-    await tmp.writeAsString(b.toString(), flush: true);
-    await tmp.rename(f.path);
-    _generation = b.toString();
-  }
-
-  Future<bool> _inflight() async => (await _inflightFile()).existsSync();
-
-  Future<void> _setInflight(bool on) async {
-    final File f = await _inflightFile();
-    if (on) {
-      await f.writeAsString('1', flush: true);
-    } else if (f.existsSync()) {
-      await f.delete();
-    }
-  }
+  Future<File> _downloadedFile() async =>
+      File(p.join((await _collectionFile()).parent.path, 'downloaded'));
 
   Future<File> _accountFile() async =>
       File(p.join((await _root()).path, 'account.json'));

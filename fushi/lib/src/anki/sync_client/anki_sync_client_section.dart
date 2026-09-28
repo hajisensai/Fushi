@@ -143,6 +143,13 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       showIcon: true,
       onTap: busy ? null : _signIn,
     ),
+    if (_account != null)
+      AdaptiveSettingsRow(
+        title: t.cancel,
+        icon: Icons.close,
+        showIcon: true,
+        onTap: () => setState(() => _relogin = false),
+      ),
   ];
 
   List<Widget> _signedInRows(bool busy) => <Widget>[
@@ -191,6 +198,11 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       },
       if (state.phase != AnkiSyncPhase.idle && state.unsynced > 0)
         t.anki_sync_client_status_unsynced(count: state.unsynced),
+      if (state.failing > 0)
+        t.anki_sync_client_status_failing(
+          count: state.failing,
+          error: state.lastError ?? '',
+        ),
       if (state.lastSyncAt != null)
         t.anki_sync_client_status_last_sync(
           time: _formatTime(state.lastSyncAt!),

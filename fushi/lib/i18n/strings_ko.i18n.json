@@ -5732,5 +5732,6 @@
   "anki_pending_mine_landing_hint": "Cards saved on devices without Anki travel through your sync service (cloud storage, or interconnect when this device syncs to a host) and are added to Anki on this device. Only one device does this at a time. A computer acting as an interconnect host doesn't take this role: phones paired with it should turn on Mine to Fushi Interconnect server instead (cards wait on the phone while the computer is off). A Fushi server can take this role.",
   "anki_sync_client_relogin": "Sign in again",
   "anki_sync_client_discard_confirm": "$count card(s) haven't synced to Anki yet. Discard them and sign out? They can't be recovered.",
-  "anki_sync_client_discard_action": "Discard and sign out"
+  "anki_sync_client_discard_action": "Discard and sign out",
+  "anki_sync_client_status_failing": "$count card(s) couldn't be written to the collection and will be retried: $error"
 }

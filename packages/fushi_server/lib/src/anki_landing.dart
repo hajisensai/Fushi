@@ -119,14 +119,15 @@ class ServerAnkiLanding {
     _schedule(Duration.zero);
   }
 
-  /// 停机：停定时器，等在跑的那一轮落完，再关 helper（反过来的话那一轮会在关掉
-  /// 之后又拉起一个没人管的 helper、还去碰即将关闭的数据库）。
+  /// 停机：停定时器，先关会话（立即结束 helper，在跑的同步随之失败、什么都不出日志；
+  /// 关闭后的会话不会再拉起 helper），再等在跑的那一轮收尾——不被几 GB 的媒体同步拖住，
+  /// 也不会在数据库关闭后还去碰它。
   Future<void> stop() async {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
-    await _landing.idle;
     await session?.close();
+    await _landing.idle;
   }
 
   void _schedule(Duration delay) {
@@ -214,6 +215,14 @@ class ServerAnkiLanding {
         )) {
       return const MineOutcome.notConfigured();
     }
-    return miner.mine(settings: current, rawPayloadJson: raw, context: context);
+    final MineOutcome outcome = await miner.mine(
+      settings: current,
+      rawPayloadJson: raw,
+      context: context,
+    );
+    // 停机把 helper 关了：这张卡没落下去不是它的错，退回待发、下次开机再落。
+    return _stopped && outcome.result == MineResult.error
+        ? const MineOutcome.queued()
+        : outcome;
   }
 }

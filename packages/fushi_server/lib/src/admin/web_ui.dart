@@ -304,6 +304,7 @@ async function loadAnki(){
     ['未同步的卡', S ? S.unsynced : '—'],
     ['上次同步', S && S.lastSyncAt ? fmtTime(S.lastSyncAt) : '—'],
   ];
+  if (S && S.failing) kv.push(['写入失败（会自动重试）', S.failing + ' 张：' + (S.lastError || '')]);
   if (L.lastError) kv.push(['落地错误', L.lastError]);
   $('#anki-status').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
   $('#anki-landing').checked = !!L.enabled;

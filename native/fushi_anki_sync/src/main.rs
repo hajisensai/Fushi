@@ -50,6 +50,10 @@ enum Cmd {
         notetype: String,
         first_field: String,
     },
+    /// Which of these (note id, first field) pairs are in the open collection right now.
+    ExistingNotes {
+        notes: Vec<(i64, String)>,
+    },
     AddNote {
         notetype: String,
         deck: String,
@@ -186,6 +190,24 @@ fn find_notes(c: &mut Collection, notetype: &str, first: &str) -> Result<Value> 
     Ok(json!({ "notes": notes }))
 }
 
+/// Note ids from `notes` that exist in this collection **and** still carry the given
+/// first field (HTML stripped, media names kept). The caller's journal keeps a card
+/// until its id is confirmed here after a successful sync; the first-field check
+/// guards against an unrelated note that happens to reuse the id after a full download.
+fn existing_notes(c: &mut Collection, notes: &[(i64, String)]) -> Result<Value> {
+    let mut existing = vec![];
+    for (id, first) in notes {
+        let Some(note) = c.storage.get_note(NoteId(*id))? else {
+            continue;
+        };
+        let head = strip_html_preserving_media_filenames(&note.fields()[0]);
+        if head == strip_html_preserving_media_filenames(first) {
+            existing.push(*id);
+        }
+    }
+    Ok(json!({ "existing": existing }))
+}
+
 fn add_note(
     c: &mut Collection,
     notetype: &str,
@@ -276,6 +298,7 @@ fn handle(st: &mut State, cmd: Cmd) -> Result<Value> {
             notetype,
             first_field,
         } => find_notes(st.col()?, &notetype, &first_field),
+        Cmd::ExistingNotes { notes } => existing_notes(st.col()?, &notes),
         Cmd::AddNote {
             notetype,
             deck,

@@ -5732,5 +5732,6 @@
   "anki_pending_mine_landing_hint": "没装 Anki 的设备存下的卡片，经你配置的同步（云盘，或本机作为互联客户端时的互联）送到这台设备，由这里的 Anki 加卡。同一时间只有一台设备负责。作为互联主机的电脑不担任这个角色：与它配对的手机请改开「制卡到 Fushi 互联服务端」（电脑关机时卡片先存在手机上）。Fushi 服务端可以担任。",
   "anki_sync_client_relogin": "重新登录",
   "anki_sync_client_discard_confirm": "还有 $count 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。",
-  "anki_sync_client_discard_action": "放弃并退出"
+  "anki_sync_client_discard_action": "放弃并退出",
+  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error"
 }

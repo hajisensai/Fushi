@@ -13,6 +13,12 @@ class _FakeHelper implements FushiAnkiSyncClient {
   @override
   bool isDead = false;
 
+  @override
+  Future<Set<int>> existingNotes(List<(int, String)> notes) async => <int>{
+    for (final (int id, String first) in notes)
+      if (id >= 1 && id <= local.length && local[id - 1].first == first) id,
+  };
+
   final List<List<String>> local = <List<String>>[];
   final List<
     ({

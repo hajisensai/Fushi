@@ -190,6 +190,22 @@ class FushiAnkiSyncClient {
     ];
   }
 
+  /// [notes]（note id, 首字段）里此刻确实在本地库、且首字段（去 HTML 后）对得上的 id。
+  Future<Set<int>> existingNotes(List<(int, String)> notes) async {
+    if (notes.isEmpty) return <int>{};
+    final Map<Object?, Object?> r =
+        await _call(<String, Object?>{
+              'cmd': 'existing_notes',
+              'notes': <List<Object>>[
+                for (final (int id, String first) in notes) <Object>[id, first],
+              ],
+            })
+            as Map;
+    return <int>{
+      for (final Object? id in r['existing'] as List) (id! as num).toInt(),
+    };
+  }
+
   /// 加一张卡，返回 note id。[media] 为（期望文件名, 本地源路径）。
   Future<int> addNote({
     required String notetype,

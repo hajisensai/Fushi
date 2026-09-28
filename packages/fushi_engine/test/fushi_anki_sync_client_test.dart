@@ -207,6 +207,15 @@ void main() {
           await c.isDuplicate(notetype: 'Basic', firstField: '猫_*'),
           isTrue,
         );
+        // existing_notes：id 在库里且首字段（去 HTML 后）对得上才算。
+        expect(
+          await c.existingNotes(<(int, String)>[
+            (a, '猫_*'),
+            (b, '别的词'),
+            (1, '猫_*'),
+          ]),
+          <int>{a},
+        );
         // HTML 把词切开：原始字段里不连续包含「食べる」，按去 HTML 后比较才命中
         // （与 is_duplicate 同口径；旧的字段子串筛选会漏）。
         final int eat = await c.addNote(

@@ -582,6 +582,8 @@ class AdminApi {
           : <String, Object?>{
               'phase': state.phase.name,
               'unsynced': state.unsynced,
+              'failing': state.failing,
+              'lastError': state.lastError,
               'lastSyncAt': state.lastSyncAt,
               'message': state.message,
             },
