@@ -2527,6 +2527,13 @@ class VideoDownloadPipelineService {
     } on FormatException catch (error) {
       throw VideoDownloadPipelineActionRequired(error.message.toString());
     }
+    // 整理器把「电影身份 + 多集合集包」改判成了剧集（BUG-2760）：任务本身也
+    // 必须跟着变成剧集，否则导入仍按电影逐文件建条目、字幕只配主片。先落任务
+    // 形态、再落文件计划——崩溃重放时两者不会一新一旧。
+    if (planned.kind == VideoOrganizationKind.episodic &&
+        request.kind == VideoOrganizationKind.movie) {
+      job = await _reclassifyMovieJobAsEpisodic(job);
+    }
     await _persistOrganizationIntent(job, planned, backendFiles);
     _ensureLeaseHeld();
     final VideoOrganizationResult result = await _organizer.organize(
@@ -2775,6 +2782,38 @@ class VideoDownloadPipelineService {
       );
     }
     await _advance(job, VideoDownloadJobStage.subtitle);
+  }
+
+  /// 把电影任务改成剧集任务（BUG-2760，整理器判定种子是多集合集包）。
+  ///
+  /// 身份快照里的 TMDB / IMDb id 属于**电影**命名空间，不能拿去当剧集身份；
+  /// 这里不改写快照，而是由 [_mediaReference] 在「快照 kind ≠ 任务 kind」时丢弃
+  /// 这些 id（刮削改走媒体库自动识别）。旧行没有快照时先按改判前的形态补写一份，
+  /// 让这条判据对它同样成立。
+  Future<VideoDownloadJobRow> _reclassifyMovieJobAsEpisodic(
+    VideoDownloadJobRow job,
+  ) async {
+    _ensureLeaseHeld();
+    fushiDebugPrint(
+      '[download-organize] ${job.jobId}: movie job holds a multi-episode '
+      'pack, reclassifying as tv',
+    );
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        mediaKind: Value<String>(VideoMetadataMediaKind.tv.name),
+        discoveryCategory:
+            job.discoveryCategory == VideoDiscoveryCategory.movie.name
+                ? Value<String?>(VideoDiscoveryCategory.tv.name)
+                : const Value<String?>.absent(),
+        identityJson: job.identityJson == null
+            ? Value<String?>(encodeVideoMediaReference(_mediaReference(job)))
+            : const Value<String?>.absent(),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    _ensureLeaseHeld();
+    return await database.getVideoDownloadJob(job.jobId) ?? job;
   }
 
   Future<void> _persistOrganizationIntent(
@@ -4236,8 +4275,15 @@ class VideoDownloadPipelineService {
     final VideoMediaReference? stored =
         decodeVideoMediaReference(job.identityJson);
     if (stored != null) {
+      // 任务形态被整理器改判过（BUG-2760：电影身份配上多集合集包）：TMDB 的
+      // /movie 与 /tv 是两个 id 空间，IMDb 的电影条目也不是剧集条目。这些 id
+      // 描述的是**另一部作品**，带着它们刮削/搜字幕只会绑错，丢掉交给自动识别；
+      // MAL / AniDB 等不分形态的 id 照旧保留。
+      final bool kindDrifted = stored.mediaKind != mediaKind;
+      final bool tmdbIdentity = stored.providerId.toLowerCase() == 'tmdb';
       return VideoMediaReference(
-        providerId: stored.providerId,
+        providerId:
+            kindDrifted && tmdbIdentity ? 'unknown' : stored.providerId,
         mediaId: stored.mediaId,
         mediaKind: mediaKind,
         discoveryCategory: category,
@@ -4246,13 +4292,21 @@ class VideoDownloadPipelineService {
         aliases: stored.aliases,
         year: job.year ?? stored.year,
         season: job.season ?? stored.season,
-        tmdbId: stored.tmdbId,
-        imdbId: stored.imdbId,
+        tmdbId: kindDrifted ? null : stored.tmdbId,
+        imdbId: kindDrifted ? null : stored.imdbId,
         tvdbId: stored.tvdbId,
         anidbId: stored.anidbId,
         anilistId: stored.anilistId,
         bangumiId: stored.bangumiId,
-        externalIds: stored.externalIds,
+        externalIds: kindDrifted
+            ? <String, String>{
+                for (final MapEntry<String, String> entry
+                    in stored.externalIds.entries)
+                  if (entry.key.toLowerCase() != 'tmdb' &&
+                      entry.key.toLowerCase() != 'imdb')
+                    entry.key: entry.value,
+              }
+            : stored.externalIds,
       );
     }
     final String provider = job.metadataProvider ?? 'unknown';

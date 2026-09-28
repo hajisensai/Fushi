@@ -220,6 +220,38 @@ void main() {
       expect(plan.missingEpisodes, isEmpty);
     });
 
+    test('movie 身份下代表条是多集合集包 → 整包下、标 usesBatch（BUG-2760）', () {
+      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
+        _batch('Karin', '1080p', seeders: 50),
+      ]);
+      final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
+        group,
+        mode: VideoAcquisitionMode.download,
+        kind: VideoMetadataMediaKind.movie,
+        episodes: const VideoAcquisitionAllEpisodes(),
+      );
+      expect(plan, isNotNull);
+      expect(_titles(plan!), <String>['[Karin] Show (01-12) (Batch) (1080p)']);
+      expect(plan.usesBatch, isTrue);
+    });
+
+    test('movie 身份下逐集发布的剧集卡给不出计划，不拿一集冒充电影（BUG-2760）', () {
+      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
+        _episode('SubsPlease', '1080p', 1, seeders: 30),
+        _episode('SubsPlease', '1080p', 2, seeders: 90),
+        _episode('SubsPlease', '1080p', 3, seeders: 20),
+      ]);
+      expect(
+        planResourceFromGroup(
+          group,
+          mode: VideoAcquisitionMode.download,
+          kind: VideoMetadataMediaKind.movie,
+          episodes: const VideoAcquisitionAllEpisodes(),
+        ),
+        isNull,
+      );
+    });
+
     test('tv All 有合集 → 只取做种最多的合集，usesBatch', () {
       final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
         _episode('SubsPlease', '1080p', 1, seeders: 300),

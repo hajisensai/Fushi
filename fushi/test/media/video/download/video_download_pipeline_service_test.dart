@@ -2191,6 +2191,109 @@ void main() {
     expect(job.lastError?.toLowerCase(), contains('mal'));
   });
 
+  test(
+      'a movie job holding a multi-episode pack is reclassified to tv and '
+      'imported as one collection with per-episode titles (BUG-2760)',
+      () async {
+    // 用户生产库原样：TMDB 电影身份 + 12 集合集包（这里取 3 集足以复现）。
+    // 修前：最大一集成「电影正片」，其余进 Extras、不入库。
+    final List<TorrentFileEntry> pack = <TorrentFileEntry>[
+      for (int episode = 1; episode <= 3; episode++)
+        TorrentFileEntry(
+          name: '[Karin] Yanisuu - 0$episode '
+              '[ABEMA Early Release][WEB-DL 1080p AVC-8bit AAC].mkv',
+          size: episode == 2 ? 900 : 700,
+          progress: 1,
+          index: episode - 1,
+        ),
+    ];
+    final _FakeTorrentBackend backend = _FakeTorrentBackend(files: pack);
+    late _PipelineEnvironment environment;
+    late Directory downloadDirectory;
+    environment = await _PipelineEnvironment.create(
+      backend: backend,
+      backendResolver: (_) async => VideoDownloadBackendBinding(
+        backend: backend,
+        identity: _expectedIdentity,
+        pathMappings: <VideoDownloadPathMapping>[
+          VideoDownloadPathMapping(
+            remoteRoot: '/downloads',
+            localRoot: downloadDirectory.path,
+          ),
+          VideoDownloadPathMapping(
+            remoteRoot: '/media',
+            localRoot: environment.root.path,
+          ),
+        ],
+      ),
+    );
+    addTearDown(environment.close);
+    downloadDirectory = Directory(p.join(environment.root.path, 'incoming'));
+    await downloadDirectory.create(recursive: true);
+    const String jobId = 'movie-identity-episode-pack-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.organize,
+      observedSavePath: '/downloads',
+      subtitlePolicy: VideoDownloadSubtitlePolicy.none,
+      mediaKind: VideoMetadataMediaKind.movie.name,
+      identityJson: encodeVideoMediaReference(
+        VideoMediaReference(
+          providerId: 'tmdb',
+          mediaId: '1749852',
+          mediaKind: VideoMetadataMediaKind.movie,
+          discoveryCategory: VideoDiscoveryCategory.movie,
+          title: 'Show',
+          year: 2026,
+          tmdbId: 1749852,
+        ),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final TorrentFileEntry file in pack) {
+      await environment.database.upsertVideoDownloadJobFile(
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: jobId,
+          backendFileIndex: Value<int?>(file.index),
+          originalRelativePath: file.name,
+          currentRelativePath: file.name,
+          sizeBytes: Value<int?>(file.size),
+          status: const Value<String>(VideoDownloadJobFileStatus.downloaded),
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+    }
+
+    environment.service.wake();
+    // 电影命名空间的 TMDB id 不能当剧集身份：改判后丢弃，任务 import 后直接
+    // 完成（交给媒体库自动识别），而不是拿 /tv/1749852 去刮一部别的剧。
+    final VideoDownloadJobRow completed = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.completed,
+    );
+
+    expect(completed.mediaKind, VideoMetadataMediaKind.tv.name);
+    expect(completed.collectionId, isNotNull);
+    final List<VideoDownloadJobFileRow> files =
+        await environment.database.getVideoDownloadJobFiles(jobId);
+    expect(
+      files.map((VideoDownloadJobFileRow row) => row.kind),
+      everyElement('video'),
+    );
+    expect(
+      files.map((VideoDownloadJobFileRow row) => row.targetRelativePath),
+      everyElement(contains('/Season 01/')),
+    );
+    final List<VideoBookRow> books = await environment.database.allVideoBooks();
+    expect(
+      books.map((VideoBookRow book) => book.title).toSet(),
+      <String>{'Show - S01E01', 'Show - S01E02', 'Show - S01E03'},
+    );
+  });
+
   test('retry resets an actionable job and wakes the persisted stage',
       () async {
     final _FakeTorrentBackend backend = _FakeTorrentBackend(
