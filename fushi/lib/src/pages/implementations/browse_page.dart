@@ -85,6 +85,18 @@ class BrowsePage extends ConsumerStatefulWidget {
 /// （视频发现详情「管理订阅」等）若按下标就会在页签少一个时静默落错页。
 enum BrowseTab { sources, extensions, discover, downloads }
 
+/// 顶层页签接力（二级标签越界横滑）时，目标页签的二级标签要不要按衔接方向
+/// 重新落端（往后落首段、往前落末段）。
+///
+/// 来源 ↔ 扩展之间**不**落端：两者共用同一份内容域选择（来回切不丢选择），
+/// 改它就等于在拖动途中改被拖那一页的二级下标，标签条与页面错位（PR #1735）。
+/// 其余页签各持自己的二级状态，照常落端。
+bool browseHandOffRealignsSections(BrowseTab from, BrowseTab to) {
+  bool isOnline(BrowseTab tab) =>
+      tab == BrowseTab.sources || tab == BrowseTab.extensions;
+  return !(isOnline(from) && isOnline(to));
+}
+
 /// 「下载」页签里的两段。
 enum BrowseDownloadsSection { tasks, subscriptions }
 
@@ -307,6 +319,13 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     final int target = index + delta;
     if (index < 0 || index != controller.index) return;
     if (target < 0 || target >= _controllerTabs.length) return;
+    // 来源 / 扩展共用同一份内容域：两者之间接力只切顶层页签、落在同一个域上。
+    // 若按「往后首段 / 往前末段」去改共享域，被拖的那一页的二级控制器会在拖动
+    // 途中被改下标（TabBarView 拖动中不跟随跳页），标签条与页面就此错位。
+    if (!browseHandOffRealignsSections(from, _controllerTabs[target])) {
+      controller.animateTo(target);
+      return;
+    }
     final bool toFirst = delta > 0;
     final AppModel appModel = ref.read(appProvider);
     setState(() {
