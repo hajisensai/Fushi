@@ -171,6 +171,13 @@ class _FushiIconButtonState extends State<FushiIconButton> {
     enabled = widget.enabled;
   }
 
+  /// 交给底层 [InkWell] / [IconButton] 的点击回调。装饰性图标（[FushiIconButton.onTap]
+  /// 为 null）必须给 null：带着一个空转的回调，Material 控件就认为自己 enabled、
+  /// 可聚焦——Tab / 手柄方向键会停在一个按了没反应的图标上，还会冒涟漪。
+  /// [_focusable] 对装饰图标不登记焦点目标，这里让原生层也同口径。
+  VoidCallback? get _tapHandler =>
+      enabled && widget.onTap != null ? _handleTap : null;
+
   /// HBK-AUDIT-151: single busy-guard tap handler shared by both the
   /// [IconButton] (wide tap area) and [InkWell] branches, replacing the two
   /// previously byte-identical inline closures.
@@ -227,7 +234,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
         child: InkWell(
           enableFeedback: enabled,
           customBorder: const StadiumBorder(),
-          onTap: enabled ? _handleTap : null,
+          onTap: _tapHandler,
           onTapDown: widget.onTapDown,
           child: Container(
             padding: EdgeInsets.symmetric(
@@ -270,7 +277,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
             color: enabled ? enabledColor : disabledColor,
             size: widget.size,
           ),
-          onPressed: enabled ? _handleTap : null,
+          onPressed: _tapHandler,
         ),
       );
       return _focusable(context, _withTooltip(button));
@@ -300,7 +307,7 @@ class _FushiIconButtonState extends State<FushiIconButton> {
       child: InkWell(
         enableFeedback: enabled,
         customBorder: widget.shapeBorder,
-        onTap: enabled ? _handleTap : null,
+        onTap: _tapHandler,
         onTapDown: widget.onTapDown,
         child: touchTarget,
       ),

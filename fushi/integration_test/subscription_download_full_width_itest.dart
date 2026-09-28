@@ -108,6 +108,17 @@ Future<void> _activateTab(
   await _pumpFrames(tester);
 }
 
+/// 浏览页的顶层页签与「下载」里的任务/订阅段都是 LibrarySectionTabs：整排一个
+/// 焦点停靠点、Enter 不切段，只能在外壳上按左右方向键。
+Future<void> _selectSectionTab(
+  WidgetTester tester,
+  FocusDriver focus,
+  Finder tab,
+) async {
+  expect(await focus.selectTab(tab), isTrue);
+  await _pumpFrames(tester);
+}
+
 VideoDiscoveryItem _discoveryItem() => VideoDiscoveryItem(
       reference: VideoMediaReference(
         providerId: 'anilist',
@@ -154,7 +165,7 @@ void main() {
         matching: find.byType(Tab),
       );
       expect(downloadsTab, findsOneWidget);
-      await _activateTab(tester, focus, downloadsTab);
+      await _selectSectionTab(tester, focus, downloadsTab);
       final Finder jobCard = find.byKey(
         const ValueKey<String>('video-download-job-full-width-itest-job'),
       );
@@ -170,14 +181,17 @@ void main() {
       );
       await _expectShot(tester, 'subscription-download-full-width-tasks');
 
-      await _activateTab(
+      await _selectSectionTab(
         tester,
         focus,
-        find.descendant(
-          of: find.byKey(
-            const ValueKey<String>('browse-downloads-section-picker'),
+        find.ancestor(
+          of: find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('browse-downloads-section-picker'),
+            ),
+            matching: find.text(t.download_subscriptions_tab),
           ),
-          matching: find.text(t.download_subscriptions_tab),
+          matching: find.byType(Tab),
         ),
       );
       final Finder subscriptionCard = find.byKey(

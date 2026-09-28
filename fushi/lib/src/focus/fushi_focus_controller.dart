@@ -70,12 +70,39 @@ class FushiFocusTargetEntry {
   bool get canFocus => enabled && focusNode.canRequestFocus;
 }
 
+/// 方向导航的一个候选落点。
+///
+/// 手柄焦点重写（2026-09-28）：方向引擎不再只认 [FushiFocusTarget] 登记过的
+/// 目标，而是在**当前焦点作用域**（页面路由 / 对话框 / 菜单）里所有可聚焦的叶子
+/// 节点上做几何选择。登记只负责**增强**：稳定 id（方向锚点、[requestById]）、
+/// `autoHome`、以及正确的几何锚点 context。未登记的原生 Material 控件
+/// （TextButton / ListTile / Switch / 对话框按钮……）用它自己的 [FocusNode.context]
+/// 算几何——此前它们对引擎不可见，手柄会直接跳过它们或从陈旧的受管位置出发。
+@immutable
+class _FocusCandidate {
+  const _FocusCandidate({
+    required this.node,
+    required this.context,
+    this.entry,
+  });
+
+  final FocusNode node;
+
+  /// 画框 / 几何 / 滚动共用的边界：受管目标用登记的锚点，原生节点用自身 context。
+  final BuildContext context;
+
+  /// 非 null = 受管目标。
+  final FushiFocusTargetEntry? entry;
+
+  bool get autoHome => entry?.autoHome ?? true;
+}
+
 class FushiFocusController extends ChangeNotifier {
   FushiFocusController()
-      : fallbackNode = FocusNode(
-          debugLabel: 'hibiki-focus-fallback',
-          skipTraversal: true,
-        );
+    : fallbackNode = FocusNode(
+        debugLabel: 'hibiki-focus-fallback',
+        skipTraversal: true,
+      );
 
   final FocusNode fallbackNode;
   final LinkedHashMap<FushiFocusId, FushiFocusTargetEntry> _entries =
@@ -106,7 +133,7 @@ class FushiFocusController extends ChangeNotifier {
   bool _repairDeferredWhileBackgrounded = false;
 
   BuildContext? get activeContext {
-    final FushiFocusTargetEntry? active = _currentEntry();
+    final _FocusCandidate? active = _currentCandidate(_candidates());
     if (active != null && active.context.mounted) return active.context;
     return fallbackNode.context ?? _rootContext;
   }
@@ -122,7 +149,7 @@ class FushiFocusController extends ChangeNotifier {
   /// Unmanaged focus nodes keep their native context as the fallback.
   /// 几何**刻意不看** `canFocus`：这里回答的是「该画在哪个矩形上」，被 disable
   /// 的控件矩形依然有效。其余 4 处按节点身份找 entry 的地方（
-  /// [primaryFocusIsManagedTarget] / `_currentEntry` / `_isUsablePrimary` /
+  /// [primaryFocusIsManagedTarget] / `_currentCandidate` / `_isUsablePrimary` /
   /// `_handleFocusChange`）问的是「还能不能聚焦」，所以走 `_entryCanFocus`。
   /// 两个问题不同，判据不同是有意的，别顺手"统一"过来。
   BuildContext? geometryContextFor(FocusNode? focusNode) {
@@ -170,19 +197,35 @@ class FushiFocusController extends ChangeNotifier {
   /// 滚动」仲裁在零目标时根本不该调 [move]——纯展示页（统计 / 日志）上 ↑/↓ 必须
   /// 落到滚动，且不能顺手把持焦的页面 sink 废掉（页面快捷键从此收不到键），这个
   /// getter 就是那道门。
-  bool get hasFocusableTargets => _focusableEntries().isNotEmpty;
+  ///
+  /// 手柄焦点重写后，「目标」包括当前焦点作用域里未登记的原生控件（见
+  /// [_FocusCandidate]）：只有原生按钮的对话框同样算有目标，方向键归焦点引擎。
+  bool get hasFocusableTargets => _candidates().isNotEmpty;
+
+  /// 当前主焦点是否停在方向引擎认得的一个落点上（受管目标或当前作用域里的原生
+  /// 叶子控件）。键盘方向键的全局仲裁用它决定要不要接管：与手柄 D-pad 走同一个
+  /// 候选集，键盘与手柄在混排页上不再各跑一套引擎。
+  bool get primaryFocusIsNavigable {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    if (primary == null) return false;
+    for (final _FocusCandidate candidate in _candidates()) {
+      if (identical(candidate.node, primary)) return true;
+    }
+    return false;
+  }
 
   bool get activeIsOnlyFocusableInNearestScrollable {
-    final FushiFocusTargetEntry? active = _currentEntry();
+    final List<_FocusCandidate> candidates = _candidates();
+    final _FocusCandidate? active = _currentCandidate(candidates);
     if (active == null || !active.context.mounted) return false;
     final ScrollableState? activeScrollable = Scrollable.maybeOf(
       active.context,
     );
     if (activeScrollable == null) return false;
-    for (final FushiFocusTargetEntry entry in _entries.values) {
-      if (identical(entry, active) || !_entryCanFocus(entry)) continue;
-      if (!entry.context.mounted) continue;
-      if (identical(Scrollable.maybeOf(entry.context), activeScrollable)) {
+    for (final _FocusCandidate candidate in candidates) {
+      if (identical(candidate.node, active.node)) continue;
+      if (!candidate.context.mounted) continue;
+      if (identical(Scrollable.maybeOf(candidate.context), activeScrollable)) {
         return false;
       }
     }
@@ -213,8 +256,9 @@ class FushiFocusController extends ChangeNotifier {
   void detach() {
     if (_attached) {
       FocusManager.instance.removeListener(_handleFocusChange);
-      mainWindowForegroundNotifier
-          .removeListener(_onMainWindowForegroundChanged);
+      mainWindowForegroundNotifier.removeListener(
+        _onMainWindowForegroundChanged,
+      );
       _attached = false;
     }
     _entries.clear();
@@ -310,46 +354,200 @@ class FushiFocusController extends ChangeNotifier {
   bool requestById(FushiFocusId id) {
     final FushiFocusTargetEntry? entry = _entries[id];
     if (entry == null || !_entryCanFocus(entry)) return false;
-    entry.focusNode.requestFocus();
+    return _focusCandidate(
+      _FocusCandidate(
+        node: entry.focusNode,
+        context: entry.context,
+        entry: entry,
+      ),
+    );
+  }
+
+  /// 显式输入（方向键 / 手柄 / 鼠标点选）把焦点落到 [candidate]：无条件 reveal，
+  /// 这次输入本身就是可见焦点光标。
+  bool _focusCandidate(_FocusCandidate candidate) {
+    candidate.node.requestFocus();
+    final FushiFocusId? id = candidate.entry?.id;
     _activeId = id;
-    _scheduleReveal(entry);
-    notifyListeners();
+    _scheduleReveal(candidate.context, candidate.node);
+    if (id != null) notifyListeners();
     return true;
   }
 
   bool move(FushiFocusDirection direction) {
-    final List<FushiFocusTargetEntry> targets = _focusableEntries();
+    final List<_FocusCandidate> targets = _candidates();
     if (targets.isEmpty) {
       ensureFocus();
       return fallbackNode.hasPrimaryFocus;
     }
 
-    final FushiFocusTargetEntry? active = _currentEntry();
-    final int currentIndex = active == null ? -1 : targets.indexOf(active);
-    if (active != null) {
-      // Explicit directional anchor wins over geometry (see _directionalAnchors).
-      // requestById reveals the target if it scrolled off-screen.
-      final FushiFocusTargetEntry? anchored =
-          _anchoredTarget(active.id, direction);
-      if (anchored != null) return requestById(anchored.id);
-      final _GeometricMoveResult geometric =
-          _geometricTarget(active, targets, direction);
-      if (!geometric.hasGeometry) {
-        return _moveByReadingOrder(
-          currentIndex: currentIndex,
-          direction: direction,
-          targets: targets,
-        );
-      }
-      final FushiFocusTargetEntry? target = geometric.target;
-      return target != null && requestById(target.id);
+    final _FocusCandidate? active = _currentCandidate(targets);
+    if (active == null) {
+      // 焦点不在任何落点上（刚进页 / 对话框刚弹出、主焦点停在路由 scope 或兜底
+      // 节点上）：任意方向都落到阅读顺序的首个 autoHome 目标。旧实现取的是登记
+      // 表的**插入顺序**首项且不看方向——首页上就是侧栏 rail 第一项。
+      return _focusCandidate(_readOrderHome(targets));
     }
 
-    return _moveByReadingOrder(
-      currentIndex: currentIndex,
-      direction: direction,
-      targets: targets,
+    final FushiFocusTargetEntry? activeEntry = active.entry;
+    if (activeEntry != null) {
+      // Explicit directional anchor wins over geometry (see _directionalAnchors).
+      // requestById reveals the target if it scrolled off-screen.
+      final FushiFocusTargetEntry? anchored = _anchoredTarget(
+        activeEntry.id,
+        direction,
+      );
+      if (anchored != null) return requestById(anchored.id);
+    }
+    final _GeometricMoveResult geometric = _geometricTarget(
+      active,
+      targets,
+      direction,
     );
+    if (!geometric.hasGeometry) {
+      return _moveByReadingOrder(
+        active: active,
+        direction: direction,
+        targets: targets,
+      );
+    }
+    final _FocusCandidate? target = geometric.target;
+    return target != null && _focusCandidate(target);
+  }
+
+  /// 方向引擎的候选集：当前焦点作用域里所有可聚焦叶子，受管目标带上登记信息。
+  ///
+  /// 作用域取主焦点所在的最近 [FocusScopeNode]（页面路由 / 对话框路由 / 菜单
+  /// overlay / 页内面板），与 Flutter 自己的方向遍历同一边界：菜单打开时 D-pad
+  /// 不会穿到菜单背后的页面行。主焦点不在可用节点上（null / 兜底节点 / 根 scope）
+  /// 时取最顶层当前路由的 scope。
+  ///
+  /// 过滤规则：
+  ///   · 受管目标：只看 [_entryCanFocus]（与改动前一致，含 disable / 非当前路由）；
+  ///   · 原生节点：可聚焦、非 skipTraversal、祖先链允许遍历、在当前路由、有布局
+  ///     过的非空矩形；
+  ///   · 受管目标**内部**的原生节点丢弃——复合控件由登记的那一个节点代表；
+  ///   · 自己还包着其它候选的原生节点（整页 / 整区键事件 sink）丢弃——它的矩形
+  ///     覆盖整片区域，当成落点会把焦点「吸」到一个没有焦点环意义的容器上。
+  List<_FocusCandidate> _candidates() {
+    final FocusScopeNode? scope = _containmentScope();
+    final Map<FocusNode, FushiFocusTargetEntry> managed =
+        <FocusNode, FushiFocusTargetEntry>{};
+    for (final FushiFocusTargetEntry entry in _entries.values) {
+      if (_entryCanFocus(entry)) managed[entry.focusNode] = entry;
+    }
+    if (scope == null) {
+      return <_FocusCandidate>[
+        for (final FushiFocusTargetEntry entry in managed.values)
+          _FocusCandidate(
+            node: entry.focusNode,
+            context: entry.context,
+            entry: entry,
+          ),
+      ];
+    }
+
+    final List<_FocusCandidate> result = <_FocusCandidate>[];
+    for (final FocusNode node in scope.descendants) {
+      final FushiFocusTargetEntry? entry = managed[node];
+      if (entry != null) {
+        result.add(
+          _FocusCandidate(node: node, context: entry.context, entry: entry),
+        );
+        continue;
+      }
+      if (!_isNativeCandidate(node, scope, managed)) continue;
+      result.add(_FocusCandidate(node: node, context: node.context!));
+    }
+
+    // 丢掉包着其它候选的原生容器节点。
+    final Set<FocusNode> containers = <FocusNode>{};
+    for (final _FocusCandidate candidate in result) {
+      for (final FocusNode ancestor in candidate.node.ancestors) {
+        if (identical(ancestor, scope)) break;
+        containers.add(ancestor);
+      }
+    }
+    if (containers.isEmpty) return result;
+    return result
+        .where(
+          (_FocusCandidate candidate) =>
+              candidate.entry != null || !containers.contains(candidate.node),
+        )
+        .toList(growable: false);
+  }
+
+  bool _isNativeCandidate(
+    FocusNode node,
+    FocusScopeNode scope,
+    Map<FocusNode, FushiFocusTargetEntry> managed,
+  ) {
+    if (node is FocusScopeNode) return false;
+    if (identical(node, fallbackNode)) return false;
+    if (!node.canRequestFocus || node.skipTraversal) return false;
+    final BuildContext? context = node.context;
+    if (context == null || !_isCurrentRoute(context)) return false;
+    for (final FocusNode ancestor in node.ancestors) {
+      if (identical(ancestor, scope)) break;
+      if (!ancestor.descendantsAreTraversable) return false;
+      // 受管复合控件内部的节点（例如 FushiFocusTarget 里包着的 Material 按钮自带
+      // 的节点）由外层登记节点代表，不单独成为落点。
+      if (managed.containsKey(ancestor)) return false;
+    }
+    final Rect? rect = globalRectOfContext(context);
+    return rect != null && !rect.isEmpty;
+  }
+
+  /// 方向引擎的作用域边界，见 [_candidates]。
+  FocusScopeNode? _containmentScope() {
+    final FocusNode? primary = FocusManager.instance.primaryFocus;
+    FocusScopeNode? scope;
+    if (primary != null && !identical(primary, fallbackNode)) {
+      scope = primary is FocusScopeNode ? primary : primary.enclosingScope;
+    }
+    if (scope == null ||
+        identical(scope, FocusManager.instance.rootScope) ||
+        scope.context == null ||
+        !_isCurrentRoute(scope.context!)) {
+      scope = _topRouteScope();
+    }
+    return scope;
+  }
+
+  /// 最顶层（最深一层 Navigator 的）当前路由的 [FocusScopeNode]。非当前路由的
+  /// scope 由框架设为 skipTraversal、其 [ModalRoute.isCurrent] 为 false，都会被
+  /// 滤掉；同一路由内的嵌套 scope（页内面板）取最外层那个。
+  FocusScopeNode? _topRouteScope() {
+    final Map<ModalRoute<dynamic>, FocusScopeNode> firstScopeOfRoute =
+        <ModalRoute<dynamic>, FocusScopeNode>{};
+    ModalRoute<dynamic>? lastRoute;
+    for (final FocusNode node in FocusManager.instance.rootScope.descendants) {
+      if (node is! FocusScopeNode) continue;
+      final BuildContext? context = node.context;
+      if (context == null || !context.mounted) continue;
+      final ModalRoute<dynamic>? route = ModalRoute.of(context);
+      if (route == null || !route.isCurrent) continue;
+      firstScopeOfRoute.putIfAbsent(route, () => node);
+      lastRoute = route;
+    }
+    return lastRoute == null ? null : firstScopeOfRoute[lastRoute];
+  }
+
+  _FocusCandidate _readOrderHome(List<_FocusCandidate> targets) {
+    final List<_FocusCandidate> ordered = _sortedByReadOrder(targets);
+    return ordered.firstWhere(
+      (_FocusCandidate candidate) => candidate.autoHome,
+      orElse: () => ordered.first,
+    );
+  }
+
+  List<_FocusCandidate> _sortedByReadOrder(List<_FocusCandidate> targets) {
+    final List<_FocusCandidate> ordered = List<_FocusCandidate>.of(targets);
+    ordered.sort(
+      (_FocusCandidate a, _FocusCandidate b) =>
+          _compareContextsByReadOrder(a.context, b.context),
+    );
+    return ordered;
   }
 
   void ensureFocus() {
@@ -377,11 +575,11 @@ class FushiFocusController extends ChangeNotifier {
       return;
     }
 
-    final FushiFocusTargetEntry? active = _currentEntry();
-    if (active != null && _entryCanFocus(active)) {
+    final FushiFocusTargetEntry? active = _staleActiveEntry();
+    if (active != null) {
       active.focusNode.requestFocus();
       _activeId = active.id;
-      _maybeRevealOnRepair(active);
+      _maybeRevealOnRepair(active.context, active.focusNode);
       return;
     }
 
@@ -398,8 +596,22 @@ class FushiFocusController extends ChangeNotifier {
       );
       landing.focusNode.requestFocus();
       _activeId = landing.id;
-      _maybeRevealOnRepair(landing);
+      _maybeRevealOnRepair(landing.context, landing.focusNode);
       notifyListeners();
+      return;
+    }
+
+    // 手柄焦点重写：主焦点停在一个有落点的当前路由 / 菜单 scope 上（典型：只有
+    // 原生按钮的对话框刚弹出、框架没 autofocus 任何按钮）时**原地不动**。旧实现
+    // 在这里把焦点拽到 Navigator 之上的兜底节点——焦点被拖出对话框，此后 A 键
+    // 的 ActivateIntent 无人处理、D-pad 从根 scope 乱跳。被动修复也不替用户选
+    // 对话框按钮（Enter 误触发首个按钮比没焦点更糟）；第一次方向输入由 [move]
+    // 按阅读顺序落到首个控件。
+    if (primary is FocusScopeNode &&
+        !identical(primary, FocusManager.instance.rootScope) &&
+        primary.context != null &&
+        _isCurrentRoute(primary.context!) &&
+        _candidates().isNotEmpty) {
       return;
     }
 
@@ -408,10 +620,10 @@ class FushiFocusController extends ChangeNotifier {
     }
   }
 
-  void _scheduleReveal(FushiFocusTargetEntry entry) {
+  void _scheduleReveal(BuildContext context, FocusNode node) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (entry.context.mounted && entry.focusNode.hasFocus) {
-        FushiFocusScroll.ensureVisible(entry.context);
+      if (context.mounted && node.hasFocus) {
+        FushiFocusScroll.ensureVisible(context);
       }
     });
   }
@@ -426,11 +638,11 @@ class FushiFocusController extends ChangeNotifier {
   // yank the page down on open. Explicit gamepad/keyboard navigation
   // (requestById/move) still reveals unconditionally — that input IS the
   // traditional-mode cursor.
-  void _maybeRevealOnRepair(FushiFocusTargetEntry entry) {
+  void _maybeRevealOnRepair(BuildContext context, FocusNode node) {
     if (FocusManager.instance.highlightMode != FocusHighlightMode.traditional) {
       return;
     }
-    _scheduleReveal(entry);
+    _scheduleReveal(context, node);
   }
 
   void scheduleRepair() {
@@ -453,16 +665,35 @@ class FushiFocusController extends ChangeNotifier {
     });
   }
 
-  FushiFocusTargetEntry? _currentEntry() {
+  /// 真实主焦点对应的落点。
+  ///
+  /// 只有主焦点**不在任何可用节点上**（null / 兜底节点 / 路由 scope）时，才回退
+  /// 到上一次的受管目标 [_activeId]。旧实现无条件回退：用户把焦点移到一个未登记
+  /// 的原生控件后，方向键仍从上一个受管目标出发计算——按 ↑ 跳到倒数第二行、
+  /// 打开下拉菜单按 D-pad 跳到菜单背后的页面行。
+  _FocusCandidate? _currentCandidate(List<_FocusCandidate> candidates) {
     final FocusNode? primary = FocusManager.instance.primaryFocus;
-    for (final FushiFocusTargetEntry entry in _entries.values) {
-      if (_entryCanFocus(entry) && identical(entry.focusNode, primary)) {
-        _activeId = entry.id;
-        return entry;
+    for (final _FocusCandidate candidate in candidates) {
+      if (identical(candidate.node, primary)) {
+        final FushiFocusId? id = candidate.entry?.id;
+        if (id != null) _activeId = id;
+        return candidate;
       }
     }
-    if (_activeId == null) return null;
-    final FushiFocusTargetEntry? active = _entries[_activeId!];
+    if (_isUsablePrimary(primary)) return null;
+    final FushiFocusTargetEntry? stale = _staleActiveEntry();
+    if (stale == null) return null;
+    for (final _FocusCandidate candidate in candidates) {
+      if (identical(candidate.entry, stale)) return candidate;
+    }
+    return null;
+  }
+
+  /// 上一次的受管目标，仍可聚焦才返回。
+  FushiFocusTargetEntry? _staleActiveEntry() {
+    final FushiFocusId? id = _activeId;
+    if (id == null) return null;
+    final FushiFocusTargetEntry? active = _entries[id];
     if (active == null || !_entryCanFocus(active)) return null;
     return active;
   }
@@ -482,9 +713,11 @@ class FushiFocusController extends ChangeNotifier {
   int _compareEntriesByReadOrder(
     FushiFocusTargetEntry a,
     FushiFocusTargetEntry b,
-  ) {
-    final Rect? aRect = globalRectOfContext(a.context);
-    final Rect? bRect = globalRectOfContext(b.context);
+  ) => _compareContextsByReadOrder(a.context, b.context);
+
+  int _compareContextsByReadOrder(BuildContext a, BuildContext b) {
+    final Rect? aRect = globalRectOfContext(a);
+    final Rect? bRect = globalRectOfContext(b);
     if (aRect == null || bRect == null) {
       if (aRect == null && bRect == null) return 0;
       return aRect == null ? 1 : -1;
@@ -528,8 +761,8 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   _GeometricMoveResult _geometricTarget(
-    FushiFocusTargetEntry active,
-    List<FushiFocusTargetEntry> targets,
+    _FocusCandidate active,
+    List<_FocusCandidate> targets,
     FushiFocusDirection direction,
   ) {
     final Rect? activeRect = globalRectOfContext(active.context);
@@ -540,11 +773,12 @@ class FushiFocusController extends ChangeNotifier {
     // 面板（Down/Up 不会从内容/chrome 误入 rail）。同一 group 内再用非空
     // Scrollable 细分：宽屏设置主从布局里导航栏与详情各是独立 ListView，没有这条
     // 细分，详情里「设计系统」段控按 Down 会被纵向更近的左侧导航项「阅读」抢走。
-    final ScrollableState? activeScrollable =
-        Scrollable.maybeOf(active.context);
+    final ScrollableState? activeScrollable = Scrollable.maybeOf(
+      active.context,
+    );
     final Element? activeGroup = _nearestTraversalGroup(active.context);
     final Offset activeCenter = activeRect.center;
-    FushiFocusTargetEntry? best;
+    _FocusCandidate? best;
     int bestSamePane = -1;
     int bestClears = -1;
     int bestBeam = -1;
@@ -552,8 +786,8 @@ class FushiFocusController extends ChangeNotifier {
     double bestCross = double.infinity;
     const double epsilon = 2;
 
-    for (final FushiFocusTargetEntry target in targets) {
-      if (identical(target, active)) continue;
+    for (final _FocusCandidate target in targets) {
+      if (identical(target.node, active.node)) continue;
       final Rect? targetRect = globalRectOfContext(target.context);
       if (targetRect == null) continue;
       final bool samePane = _isSamePane(
@@ -583,32 +817,48 @@ class FushiFocusController extends ChangeNotifier {
           ahead = dy < -epsilon;
           along = -dy;
           cross = dx.abs();
-          beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
-              targetRect.right);
+          beam = _overlap(
+            activeRect.left,
+            activeRect.right,
+            targetRect.left,
+            targetRect.right,
+          );
           clears = targetRect.bottom <= activeRect.top + epsilon;
           break;
         case FushiFocusDirection.down:
           ahead = dy > epsilon;
           along = dy;
           cross = dx.abs();
-          beam = _overlap(activeRect.left, activeRect.right, targetRect.left,
-              targetRect.right);
+          beam = _overlap(
+            activeRect.left,
+            activeRect.right,
+            targetRect.left,
+            targetRect.right,
+          );
           clears = targetRect.top >= activeRect.bottom - epsilon;
           break;
         case FushiFocusDirection.left:
           ahead = dx < -epsilon;
           along = -dx;
           cross = dy.abs();
-          beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
-              targetRect.bottom);
+          beam = _overlap(
+            activeRect.top,
+            activeRect.bottom,
+            targetRect.top,
+            targetRect.bottom,
+          );
           clears = targetRect.right <= activeRect.left + epsilon;
           break;
         case FushiFocusDirection.right:
           ahead = dx > epsilon;
           along = dx;
           cross = dy.abs();
-          beam = _overlap(activeRect.top, activeRect.bottom, targetRect.top,
-              targetRect.bottom);
+          beam = _overlap(
+            activeRect.top,
+            activeRect.bottom,
+            targetRect.top,
+            targetRect.bottom,
+          );
           clears = targetRect.left >= activeRect.right - epsilon;
           break;
       }
@@ -638,7 +888,8 @@ class FushiFocusController extends ChangeNotifier {
       //  2. `along` — the immediately-next row/column wins even if cross-offset.
       //  3. `beam` — perpendicular overlap breaks an `along` tie.
       //  4. `cross` — centre offset breaks any remaining tie.
-      final bool better = best == null ||
+      final bool better =
+          best == null ||
           clearsScore > bestClears ||
           (clearsScore == bestClears &&
               (samePaneScore > bestSamePane ||
@@ -695,16 +946,20 @@ class FushiFocusController extends ChangeNotifier {
   }
 
   bool _moveByReadingOrder({
-    required int currentIndex,
+    required _FocusCandidate active,
     required FushiFocusDirection direction,
-    required List<FushiFocusTargetEntry> targets,
+    required List<_FocusCandidate> targets,
   }) {
+    final List<_FocusCandidate> ordered = _sortedByReadOrder(targets);
+    final int currentIndex = ordered.indexWhere(
+      (_FocusCandidate candidate) => identical(candidate.node, active.node),
+    );
     final int nextIndex = _nextIndex(
       currentIndex: currentIndex,
       direction: direction,
-      count: targets.length,
+      count: ordered.length,
     );
-    return requestById(targets[nextIndex].id);
+    return _focusCandidate(ordered[nextIndex]);
   }
 
   static bool _overlap(double aStart, double aEnd, double bStart, double bEnd) {
@@ -774,16 +1029,11 @@ class _AnchorKey {
 
 @immutable
 class _GeometricMoveResult {
-  const _GeometricMoveResult({
-    required this.target,
-    required this.hasGeometry,
-  });
+  const _GeometricMoveResult({required this.target, required this.hasGeometry});
 
-  const _GeometricMoveResult.noGeometry()
-      : target = null,
-        hasGeometry = false;
+  const _GeometricMoveResult.noGeometry() : target = null, hasGeometry = false;
 
-  final FushiFocusTargetEntry? target;
+  final _FocusCandidate? target;
   final bool hasGeometry;
 }
 
@@ -799,8 +1049,8 @@ class FushiFocusRoot extends StatefulWidget {
   final bool enabled;
 
   static FushiFocusController controllerOf(BuildContext context) {
-    final _FushiFocusScope? scope =
-        context.dependOnInheritedWidgetOfExactType<_FushiFocusScope>();
+    final _FushiFocusScope? scope = context
+        .dependOnInheritedWidgetOfExactType<_FushiFocusScope>();
     assert(scope?.controller != null, 'No FushiFocusRoot found in context');
     return scope!.controller!;
   }
@@ -840,14 +1090,19 @@ class _FushiFocusRootState extends State<FushiFocusRoot> {
 
   @override
   Widget build(BuildContext context) {
-    // 结构恒定（Focus → scope → child），enabled 只影响 scope 暴露的控制器：
+    // 结构恒定（scope → Focus → child），enabled 只影响 scope 暴露的控制器：
     // 禁用时消费方拿到 null，走原生遍历路径；控制器实例保活，重新启用即恢复。
-    return Focus(
-      focusNode: _controller.fallbackNode,
-      canRequestFocus: widget.enabled,
-      skipTraversal: true,
-      child: _FushiFocusScope(
-        controller: widget.enabled ? _controller : null,
+    //
+    // scope 必须包在兜底 Focus **外面**：兜底节点的 context 就是这个 Focus 的
+    // element，scope 若在它里面，主焦点落在兜底节点上时 `maybeControllerOf`
+    // 返回 null——D-pad 于是走「无控制器」分支从根 scope 盲跳 nextFocus，绕过
+    // 当前路由过滤，焦点可能跳到对话框背后的页面上。
+    return _FushiFocusScope(
+      controller: widget.enabled ? _controller : null,
+      child: Focus(
+        focusNode: _controller.fallbackNode,
+        canRequestFocus: widget.enabled,
+        skipTraversal: true,
         child: widget.child,
       ),
     );
@@ -855,10 +1110,8 @@ class _FushiFocusRootState extends State<FushiFocusRoot> {
 }
 
 class _FushiFocusScope extends InheritedNotifier<FushiFocusController> {
-  const _FushiFocusScope({
-    required this.controller,
-    required super.child,
-  }) : super(notifier: controller);
+  const _FushiFocusScope({required this.controller, required super.child})
+    : super(notifier: controller);
 
   /// null = 焦点导航禁用（FushiFocusRoot.enabled == false）。
   final FushiFocusController? controller;

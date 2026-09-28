@@ -129,6 +129,8 @@ void main() {
       expect(idsOf(dest.sections[4]), <String>[
         'sync.backup_export',
         'sync.backup_import',
+        // 第三方阅读器（Hoshi Reader）书库备份导入：五端都有。
+        'sync.hoshi_import',
       ]);
     });
 

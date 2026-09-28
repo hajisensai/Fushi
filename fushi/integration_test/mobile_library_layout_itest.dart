@@ -64,13 +64,13 @@ void main() {
           find.byKey(const ValueKey<String>('downloads-resource-type-picker'));
       debugPrint(
           '[mobile-layout] resource picker visible=${picker.evaluate().length}');
+      // 资源域是 LibrarySectionTabs(secondary)：整排一个焦点停靠点，只认左右方向键。
       final Finder videoSegment = find.ancestor(
         of: find.descendant(of: picker, matching: find.text(t.nav_video)),
-        matching: find.byType(TextButton),
+        matching: find.byType(Tab),
       );
-      expect(await driver.focusWidget(videoSegment), isTrue,
-          reason: 'video resource segment must receive focus');
-      await driver.activate();
+      expect(await driver.selectTab(videoSegment), isTrue,
+          reason: 'video resource segment must be selectable by arrow keys');
       for (int i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 250));
       }
