@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/collections_page.dart';
+import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -98,6 +99,96 @@ void main() {
     // 副标题包含读音 + 释义（用 textContaining，因副标题还拼了日期）。
     expect(find.textContaining('かいこう'), findsOneWidget);
     expect(find.textContaining('chance meeting'), findsOneWidget);
+  });
+
+  testWidgets('收藏词带上收藏时的原句：列表行显示原句，详情显示释义与原句',
+      (WidgetTester tester) async {
+    await db.addFavoriteWord(
+      expression: 'normie',
+      reading: '',
+      glossary: '【Wiktionary】a normal person',
+      sourceType: 'book',
+      dateKey: '2026-09-28',
+      sentence: 'She could be described as a normie.',
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+
+    expect(find.text('normie'), findsOneWidget);
+    expect(find.text('She could be described as a normie.'), findsOneWidget,
+        reason: '收藏词行必须显示收藏时所在的原句（此前只剩词形）');
+    expect(find.textContaining('a normal person'), findsOneWidget);
+
+    await tester.longPress(find.text('normie'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text('【Wiktionary】a normal person'),
+      ),
+      findsOneWidget,
+      reason: '详情必须显示释义',
+    );
+    expect(
+      find.descendant(
+        of: find.byType(Dialog),
+        matching: find.text('She could be described as a normie.'),
+      ),
+      findsOneWidget,
+      reason: '详情必须显示原句',
+    );
+  });
+
+  testWidgets('顶栏 ★ 收藏的句子旁显示当时查的词', (WidgetTester tester) async {
+    await FavoriteSentenceRepository(db).add(
+      FavoriteSentence(
+        text: 'She could be described as a normie.',
+        bookTitle: 'Book',
+        createdAt: DateTime(2026, 9, 28),
+        expression: 'normie',
+        reading: '',
+      ),
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+
+    expect(find.text('She could be described as a normie.'), findsOneWidget);
+    expect(find.text('normie'), findsOneWidget,
+        reason: '句子收藏必须显示对应的单词（用户报：收藏了句子却看不到单词）');
+  });
+
+  testWidgets('分类筛选：只看单词时隐藏收藏句', (WidgetTester tester) async {
+    await seedWord(
+      expression: '邂逅',
+      reading: 'かいこう',
+      glossary: 'chance meeting',
+    );
+    await FavoriteSentenceRepository(db).add(
+      FavoriteSentence(
+        text: '一期一会の邂逅だった。',
+        bookTitle: 'Book',
+        createdAt: DateTime(2026, 9, 28),
+      ),
+    );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
+
+    await tester.tap(
+      find.widgetWithText(ChoiceChip, t.collection_word),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('邂逅'), findsOneWidget);
+    expect(find.text('一期一会の邂逅だった。'), findsNothing);
+
+    await tester.tap(
+      find.widgetWithText(ChoiceChip, t.collection_filter_all),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
   });
 
   testWidgets('无任何收藏时收藏列表显示空占位（收藏词不误造空集）', (WidgetTester tester) async {

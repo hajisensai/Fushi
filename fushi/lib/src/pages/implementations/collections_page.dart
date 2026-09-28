@@ -16,6 +16,8 @@ import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
+import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -215,6 +217,10 @@ class _CollectionItem {
     this.wordReading,
     this.wordSourceType,
     this.source = kFavoriteSentenceSourceBook,
+    this.glossary,
+    this.contextSentence,
+    this.headword,
+    this.headwordReading,
   });
 
   final _CollectionType type;
@@ -233,8 +239,34 @@ class _CollectionItem {
 
   /// 收藏词的振假名读音（[_CollectionType.word] 专用）。删除按 (expression, reading,
   /// sourceType) 复合唯一键匹配 [FushiDatabase.removeFavoriteWord]，故读音/来源都要留存。
-  /// 这里 [text] 复用为 expression（词形），[chapterLabel] 复用为 glossary（释义）。
+  /// 这里 [text] 复用为 expression（词形）。
   final String? wordReading;
+
+  /// 收藏词的释义快照（[_CollectionType.word] 专用，弹窗 ☆ 收藏时由 popup.js 按词典
+  /// 分段取的纯文本）。存量行 / app 外来源可能为空。
+  final String? glossary;
+
+  /// 收藏词被收藏时所在的原句（v114 起记录）。与 [sectionIndex] / [normCharOffset] /
+  /// [normCharLength] 一起构成和收藏句同口径的锚点，词行因此也能跳回原文、播原句音频。
+  final String? contextSentence;
+
+  /// 收藏句是在查哪个词时收藏的（弹窗顶栏 ★，[_CollectionType.sentence] 专用），与
+  /// 读音；划选收藏 / 旧条目为 null。
+  final String? headword;
+  final String? headwordReading;
+
+  bool get isWord => type == _CollectionType.word;
+
+  /// 词行是否带可定位的收藏上下文（有归属 + 章节或偏移锚点）。存量词行没有锚点，
+  /// 仍不可跳转、不播音频——拿词形去匹配音频会命中错句。
+  bool get hasWordAnchor =>
+      isWord &&
+      (bookKey?.isNotEmpty ?? false) &&
+      (sectionIndex != null || normCharOffset != null);
+
+  /// 锚点对应的原文句子：词行是收藏上下文句，句 / 制卡行就是正文本身。音频匹配与
+  /// 视频 cue 文本回退匹配都用它，不能拿词形去匹配。
+  String? get anchorText => isWord ? contextSentence : text;
 
   /// 收藏词来源（'book' / 'video'，[_CollectionType.word] 专用），同上供删除匹配。
   final String? wordSourceType;
@@ -260,6 +292,14 @@ class CollectionsPage extends BasePage {
 class _CollectionsPageState extends BasePageState<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
+
+  /// 分类筛选（null = 全部）。收藏夹同时装着收藏词 / 收藏句 / 制卡句三类、书 / 视频 /
+  /// 有声书多来源，全部混排时找词很难——顶部筛选条按类型收窄。
+  _CollectionType? _typeFilter;
+
+  List<_CollectionItem> get _visibleItems => _typeFilter == null
+      ? _items
+      : _items.where((_CollectionItem i) => i.type == _typeFilter).toList();
   Map<String, String> _bookTitleMap = {};
   Map<String, List<AudioCue>> _cueMap = {};
   Map<String, List<File>> _audioFileMap = {};
@@ -370,6 +410,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           normCharLength: fav.normCharLength,
           favoriteId: fav.id,
           source: fav.source,
+          headword: fav.expression,
+          headwordReading: fav.reading,
         ),
       );
     }
@@ -399,14 +441,19 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         _CollectionItem(
           type: _CollectionType.word,
           createdAt: DateTime.fromMillisecondsSinceEpoch(w.createdAt),
-          // text=词形（标题行）、chapterLabel=释义（副标题行）。bookKey/bookTitle
+          // text=词形（标题行）、glossary=释义（副标题行）。bookKey/bookTitle
           // 是「首次收藏时的归属快照」（唯一键不含 bookKey，跨书重复收藏只留首
           // 次）——阶段 3 起用于按合集/媒体分节；仍无原文定位，跳转判据按类型
           // 排除 word。删除复合键由 wordReading/wordSourceType 保留。
           bookTitle: w.title.isNotEmpty ? w.title : null,
           bookKey: w.bookKey,
           text: w.expression,
-          chapterLabel: w.glossary.isNotEmpty ? w.glossary : null,
+          glossary: w.glossary.isNotEmpty ? w.glossary : null,
+          // v114：收藏上下文（原句 + 与收藏句同口径的锚点）。
+          contextSentence: w.sentence.isNotEmpty ? w.sentence : null,
+          sectionIndex: w.sectionIndex,
+          normCharOffset: w.normCharOffset,
+          normCharLength: w.normCharLength,
           wordReading: w.reading,
           wordSourceType: w.sourceType,
           source: w.sourceType,
@@ -429,6 +476,18 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         allBookKeys.add(m.bookKey!);
       }
     }
+    // v114：带收藏上下文锚点的收藏词也能播原句音频，一并解析其书 / 视频。
+    final List<FavoriteWordRow> anchoredWords = <FavoriteWordRow>[
+      for (final FavoriteWordRow w in allWords)
+        if ((w.bookKey?.isNotEmpty ?? false) &&
+            (w.sectionIndex != null || w.normCharOffset != null))
+          w,
+    ];
+    for (final FavoriteWordRow w in anchoredWords) {
+      if (w.sourceType != kFavoriteSentenceSourceVideo) {
+        allBookKeys.add(w.bookKey!);
+      }
+    }
 
     // 视频来源收藏句的 bookUid（按需查 VideoBooks 表）。视频句的 bookKey 是视频
     // bookUid，既不在 SrtBooks 也不在 Audiobooks 里，故单独解析。
@@ -445,6 +504,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
           m.bookKey != null &&
           m.bookKey!.isNotEmpty) {
         videoBookUids.add(m.bookKey!);
+      }
+    }
+    for (final FavoriteWordRow w in anchoredWords) {
+      if (w.sourceType == kFavoriteSentenceSourceVideo) {
+        videoBookUids.add(w.bookKey!);
       }
     }
     final videoRepo = VideoBookRepository(db);
@@ -616,8 +680,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
     // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
     // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
+    // v114：带上下文锚点的收藏词与收藏句同口径（锚点就是收藏时那句）。
     final bool isSentenceJump = item.type == _CollectionType.sentence ||
-        item.type == _CollectionType.mined;
+        item.type == _CollectionType.mined ||
+        item.hasWordAnchor;
     final Bookmark? bookmark = item.sectionIndex != null
         ? Bookmark(
             sectionIndex: item.sectionIndex!,
@@ -698,7 +764,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       return null;
     }
     if (item.normCharOffset != null) return item.normCharOffset;
-    final String? text = item.text?.trim();
+    final String? text = item.anchorText?.trim();
     final String? bookUid = item.bookKey;
     if (text == null || text.isEmpty || bookUid == null || bookUid.isEmpty) {
       return null;
@@ -796,7 +862,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       sectionIndex: item.sectionIndex,
       normCharOffset: item.normCharOffset,
       normCharLength: item.normCharLength,
-      text: item.text,
+      text: item.anchorText,
     );
     if (range == null) {
       FushiToast.show(
@@ -1329,7 +1395,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 不出 chevron / 不出「阅读·视频」按钮，点行改开条目菜单（播放/复制/删除仍在），
   /// 手柄也仍能停焦点。
   bool _canNavigateTo(_CollectionItem item) {
-    if (item.type == _CollectionType.word) return false;
+    // 收藏词只有带收藏上下文锚点（v114 起）才能跳回原文；存量词行没有定位。
+    if (item.isWord && !item.hasWordAnchor) return false;
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return false;
     return appModel.moduleVisibility.isEnabled(
@@ -1338,6 +1405,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   bool _hasAudio(_CollectionItem item) {
+    // 无锚点的收藏词没有「原句」可播。
+    if (item.isWord && !item.hasWordAnchor) return false;
     // 视频来源句：有该视频的 row 且收藏自带可用 cue 时间窗即可抽音（不进 _cueMap）。
     if (item.source == kFavoriteSentenceSourceVideo) {
       final VideoBookRow? row = _videoRowMap[item.bookKey];
@@ -1367,23 +1436,62 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // 就成了「这行怎么点不动」的黑盒。
     final bool blockedByModule =
         !canNavigate &&
-        item.type != _CollectionType.word &&
+        (!item.isWord || item.hasWordAnchor) &&
         (item.bookKey?.isNotEmpty ?? false);
+    final FavoriteMiningItem? miningItem = _miningItemOf(item);
+    final bool canMine = miningItem != null && _cardCreationEnabled;
     final hasAudio = _hasAudio(item);
     final displayTitle = item.text ?? '';
     // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
     final String? bookDisplayTitle = _itemDisplayBookTitle(item);
     final cs = Theme.of(context).colorScheme;
 
+    // 词行：读音 + 释义 + 原句；句行：当时查的词。此前详情里只有词形和书名。
+    final String? reading =
+        item.isWord ? item.wordReading : item.headwordReading;
+    final String? headword = item.isWord ? null : item.headword;
+    final String? glossary = item.isWord ? item.glossary : null;
+    final String? contextSentence = item.isWord ? item.contextSentence : null;
+    final List<Widget> details = <Widget>[
+      if (headword != null && headword.isNotEmpty)
+        SelectableText(
+          (reading != null && reading.isNotEmpty && reading != headword)
+              ? '$headword【$reading】'
+              : headword,
+          style: textTheme.titleMedium?.copyWith(color: cs.primary),
+        ),
+      if (item.isWord &&
+          reading != null &&
+          reading.isNotEmpty &&
+          reading != item.text)
+        SelectableText(reading, style: textTheme.titleSmall),
+      if (glossary != null && glossary.isNotEmpty)
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 240),
+          child: SingleChildScrollView(
+            child: SelectableText(glossary, style: textTheme.bodyMedium),
+          ),
+        ),
+      if (contextSentence != null && contextSentence.isNotEmpty)
+        SelectableText(
+          contextSentence,
+          style: textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic),
+        ),
+    ];
+
     await showAppDialog<void>(
       context: context,
       builder: (ctx) => CollectionItemDialogFrame(
         title: SelectableText(displayTitle, maxLines: 3),
-        content: bookDisplayTitle != null || blockedByModule
+        content: details.isNotEmpty || bookDisplayTitle != null || blockedByModule
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
+                  for (final Widget detail in details) ...<Widget>[
+                    detail,
+                    const SizedBox(height: 8),
+                  ],
                   if (bookDisplayTitle != null)
                     Text(bookDisplayTitle, style: textTheme.bodyMedium),
                   if (blockedByModule)
@@ -1421,6 +1529,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: item.text!));
                 Navigator.pop(ctx);
+              },
+            ),
+          if (canMine)
+            TextButton.icon(
+              icon: const Icon(Icons.style_outlined, size: 18),
+              label: Text(t.collection_mine_card),
+              onPressed: () {
+                Navigator.pop(ctx);
+                showFavoriteBatchMining(context, <FavoriteMiningItem>[
+                  miningItem,
+                ]);
               },
             ),
           TextButton.icon(
@@ -1475,6 +1594,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             icon: Icons.share_outlined,
             onTap: _openExportSheet,
           ),
+        // 批量制卡：收藏词 / 记着查词对象的收藏句可一键制卡（含视频 / 有声书音频）。
+        if (!_loading && _cardCreationEnabled && _mineableItems.isNotEmpty)
+          FushiIconButton(
+            tooltip: t.collection_batch_mine,
+            icon: Icons.style_outlined,
+            onTap: _openBatchMineSheet,
+          ),
         // 只要列表非空就显示「清空」；点开可选范围面板（书签/收藏句/制卡句/收藏词），
         // 按勾选批量清空。取代旧的「仅制卡句才显示、只清制卡」特例。
         if (!_loading && _items.isNotEmpty)
@@ -1509,7 +1635,21 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                     message: t.no_collections,
                   ),
                 )
-              : _buildGroupedListView(),
+              : Column(
+                  children: <Widget>[
+                    _buildTypeFilterBar(),
+                    Expanded(
+                      child: _visibleItems.isEmpty
+                          ? Center(
+                              child: FushiPlaceholderMessage(
+                                icon: Icons.collections_bookmark_outlined,
+                                message: t.no_collections,
+                              ),
+                            )
+                          : _buildGroupedListView(),
+                    ),
+                  ],
+                ),
     );
   }
 
@@ -1519,7 +1659,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final List<CollectionGroupRow<_CollectionItem>> rows = groupCollectionItems(
-      items: _items,
+      items: _visibleItems,
       collectionIdOf: _collectionIdForItem,
       // 媒体键：有 bookKey 按身份分组；legacy 无身份行按标题快照回退；两者皆无
       // 不出媒体头（平铺）。前缀区分两个键空间，杜绝 bookKey 与标题恰好同串。
@@ -1624,6 +1764,160 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     );
   }
 
+  /// 「制卡」模块关掉时批量 / 单条制卡入口整颗不出现（与弹窗 + 按钮同一判据）。
+  bool get _cardCreationEnabled =>
+      appModel.moduleVisibility.isEnabled(ModuleId.cardCreation);
+
+  /// 收藏行 → 批量制卡输入。收藏词以词条本身制卡、原句作例句；收藏句只有记着查词
+  /// 对象（顶栏 ★ 收藏）时才有词可制；制卡句本来就是制过的卡，不再进。
+  FavoriteMiningItem? _miningItemOf(_CollectionItem item) {
+    switch (item.type) {
+      case _CollectionType.word:
+        final String expression = item.text ?? '';
+        if (expression.isEmpty) return null;
+        return FavoriteMiningItem(
+          expression: expression,
+          reading: item.wordReading ?? '',
+          sentence: item.contextSentence ?? '',
+          source: item.wordSourceType ?? kFavoriteSentenceSourceBook,
+          bookKey: item.bookKey,
+          bookTitle: _itemDisplayBookTitle(item),
+          sectionIndex: item.sectionIndex,
+          normCharOffset: item.normCharOffset,
+          normCharLength: item.normCharLength,
+        );
+      case _CollectionType.sentence:
+        final String? headword = item.headword;
+        if (headword == null || headword.isEmpty) return null;
+        return FavoriteMiningItem(
+          expression: headword,
+          reading: item.headwordReading ?? '',
+          sentence: item.text ?? '',
+          source: item.source,
+          bookKey: item.bookKey,
+          bookTitle: _itemDisplayBookTitle(item),
+          sectionIndex: item.sectionIndex,
+          normCharOffset: item.normCharOffset,
+          normCharLength: item.normCharLength,
+        );
+      case _CollectionType.mined:
+        return null;
+    }
+  }
+
+  /// 当前筛选下可制卡的收藏行。
+  List<_CollectionItem> get _mineableItems => _visibleItems
+      .where((_CollectionItem i) => _miningItemOf(i) != null)
+      .toList();
+
+  /// 批量制卡：勾选要制卡的收藏（默认全选当前筛选下全部可制卡条目），逐条串行
+  /// 写进 Anki。视频 / 有声书来源自动带该句音频（与截图）。
+  Future<void> _openBatchMineSheet() async {
+    final List<_CollectionItem> candidates = _mineableItems;
+    if (candidates.isEmpty) {
+      FushiToast.show(
+        msg: t.collection_batch_mine_empty,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final List<_CollectionItem>? picked =
+        await showModalBottomSheet<List<_CollectionItem>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (BuildContext ctx) => _BatchMineSheet(
+        candidates: candidates,
+        titleOf: (_CollectionItem i) =>
+            i.isWord ? (i.text ?? '') : (i.headword ?? ''),
+        subtitleOf: (_CollectionItem i) =>
+            i.isWord ? i.contextSentence : i.text,
+      ),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    await showFavoriteBatchMining(context, <FavoriteMiningItem>[
+      for (final _CollectionItem i in picked) _miningItemOf(i)!,
+    ]);
+    // 制卡成功会写制卡历史（制卡句），重载让它们出现在列表里。
+    if (mounted) await _load();
+  }
+
+  Widget _buildTypeFilterBar() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    Widget chip(_CollectionType? type, String label) => Padding(
+          padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
+          child: ChoiceChip(
+            label: Text(label),
+            selected: _typeFilter == type,
+            onSelected: (_) => setState(() => _typeFilter = type),
+          ),
+        );
+    return HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap / 2,
+          tokens.spacing.card,
+          tokens.spacing.gap / 2,
+        ),
+        child: Row(
+          children: <Widget>[
+            chip(null, t.collection_filter_all),
+            chip(_CollectionType.word, t.collection_word),
+            chip(_CollectionType.sentence, t.collection_sentence),
+            chip(_CollectionType.mined, t.collection_mined),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 释义快照的列表预览：只取第一段（第一部词典），换行压成空格。
+  String? _glossaryPreview(String? glossary) {
+    if (glossary == null || glossary.isEmpty) return null;
+    final int newline = glossary.indexOf('\n');
+    return newline < 0 ? glossary : glossary.substring(0, newline);
+  }
+
+  /// 收藏行标题：句行若记着查的词，词以强调色标在句子上方；词行在词形下方补一行
+  /// 收藏时的原句。
+  Widget _buildItemTitle({
+    required _CollectionItem item,
+    required String title,
+    required String? secondLine,
+  }) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final String? headword = item.headword;
+    final bool hasHeadword = headword != null && headword.isNotEmpty;
+    final bool hasSecondLine = secondLine != null && secondLine.isNotEmpty;
+    if (!hasHeadword && !hasSecondLine) {
+      return Text(title, maxLines: 2, overflow: TextOverflow.ellipsis);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (hasHeadword)
+          Text(
+            headword,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.labelLarge?.copyWith(color: scheme.primary),
+          ),
+        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        if (hasSecondLine)
+          Text(
+            secondLine,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+      ],
+    );
+  }
+
   Widget _buildItem(_CollectionItem item) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool isMined = item.type == _CollectionType.mined;
@@ -1645,18 +1939,25 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     // BUG-1120：句子/制卡行的来源枚举（旧 isVideoSentence bool 把 audiobook/lyrics
     // 归并进书，来源前缀丢失）。收藏词行的 source 是 wordSourceType 值域，不进
     // kind 展示路径，按书路径兜底（词行无 bookKey，实际不可跳转）。
-    final SentenceSourceKind kind =
-        isWord ? SentenceSourceKind.book : item.sourceKind;
+    // 带上下文锚点的收藏词（v114）按自身来源跳转；存量词行不可跳转，按书兜底。
+    final SentenceSourceKind kind = isWord && !item.hasWordAnchor
+        ? SentenceSourceKind.book
+        : item.sourceKind;
 
+    // 行标题下的第二行：收藏词 = 收藏时所在的原句；收藏句 = 当时查的那个词。此前
+    // 词行只有词形、句行看不出是为哪个词收藏的。
+    final String? secondLine;
     if (isWord) {
-      // BUG-462：收藏词标题=词形，副标题=读音 · 释义（无原文定位，不显示书名/章节）。
+      // BUG-462：收藏词标题=词形，副标题=读音 · 释义首行。
       title = item.text ?? '';
+      secondLine = item.contextSentence;
       subtitle = [
         if (item.wordReading != null && item.wordReading!.isNotEmpty)
           item.wordReading,
-        item.chapterLabel,
+        _glossaryPreview(item.glossary),
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     } else {
+      secondLine = null;
       // 非书来源标注来源前缀（视频/有声书/歌词），与书内来源区分；书来源无前缀
       // （复用现有 i18n 键 nav_video / section_audiobook / lyrics_mode）。
       final String? sourcePrefix = switch (kind) {
@@ -1731,7 +2032,11 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                   ),
                 ],
               ),
-              title: Text(title, maxLines: 2, overflow: TextOverflow.ellipsis),
+              title: _buildItemTitle(
+                item: item,
+                title: title,
+                secondLine: secondLine,
+              ),
               // BUG-469：副标题=可截断的元数据（书名/章节/来源） + **恒可见**的收藏日期。
               // 旧实现把两者用 ' · ' 拼成一个 Text(maxLines:1, ellipsis)，窄屏（如 12.4"
               // 平板横向空间不足）时书名+章节占满整行，排在末尾的日期被省略号吃掉看不见。
@@ -2372,5 +2677,121 @@ class _ClearSheetState extends State<_ClearSheet> {
         ),
       ),
     );
+  }
+}
+
+/// 批量制卡勾选面板：列出当前筛选下可制卡的收藏（词 + 原句预览），默认全选。
+class _BatchMineSheet extends StatefulWidget {
+  const _BatchMineSheet({
+    required this.candidates,
+    required this.titleOf,
+    required this.subtitleOf,
+  });
+
+  final List<_CollectionItem> candidates;
+  final String Function(_CollectionItem item) titleOf;
+  final String? Function(_CollectionItem item) subtitleOf;
+
+  @override
+  State<_BatchMineSheet> createState() => _BatchMineSheetState();
+}
+
+class _BatchMineSheetState extends State<_BatchMineSheet> {
+  late final Set<_CollectionItem> _selected =
+      Set<_CollectionItem>.identity()..addAll(widget.candidates);
+
+  bool get _allSelected => _selected.length == widget.candidates.length;
+
+  void _toggle(_CollectionItem item, bool on) {
+    setState(() {
+      if (on) {
+        _selected.add(item);
+      } else {
+        _selected.remove(item);
+      }
+    });
+  }
+
+  void _toggleAll() {
+    setState(() {
+      if (_allSelected) {
+        _selected.clear();
+      } else {
+        _selected.addAll(widget.candidates);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiModalSheetFrame(
+      title: t.collection_batch_mine,
+      maxHeightFactor: 0.85,
+      scrollable: true,
+      bodyPadding: EdgeInsets.fromLTRB(
+        0,
+        tokens.spacing.gap,
+        0,
+        tokens.spacing.gap,
+      ),
+      footerPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        tokens.spacing.gap,
+        tokens.spacing.card,
+        tokens.spacing.card,
+      ),
+      body: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          FushiListItem(
+            onTap: _toggleAll,
+            leading: Checkbox(
+              value: _allSelected,
+              onChanged: (_) => _toggleAll(),
+            ),
+            title: Text(t.batch_select_all),
+          ),
+          for (final _CollectionItem item in widget.candidates)
+            FushiListItem(
+              selected: _selected.contains(item),
+              onTap: () => _toggle(item, !_selected.contains(item)),
+              leading: Checkbox(
+                value: _selected.contains(item),
+                onChanged: (bool? v) => _toggle(item, v ?? false),
+              ),
+              title: Text(
+                widget.titleOf(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: _subtitle(item),
+            ),
+        ],
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: FilledButton.icon(
+          icon: const Icon(Icons.style_outlined, size: 18),
+          label: Text(t.collection_batch_mine_start(n: _selected.length)),
+          onPressed: _selected.isEmpty
+              ? null
+              : () => Navigator.pop(
+                    context,
+                    <_CollectionItem>[
+                      for (final _CollectionItem i in widget.candidates)
+                        if (_selected.contains(i)) i,
+                    ],
+                  ),
+        ),
+      ),
+    );
+  }
+
+  Widget? _subtitle(_CollectionItem item) {
+    final String? text = widget.subtitleOf(item);
+    if (text == null || text.isEmpty) return null;
+    return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
