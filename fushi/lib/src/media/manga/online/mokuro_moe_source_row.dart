@@ -28,17 +28,23 @@ bool isMokuroMoeSourceEnabled(AppModel appModel) =>
 
 /// 见文件头：与 `_buildOnlineSource` 同构的一行，放在「漫画源」一节最前。
 class MokuroMoeSourceRow extends ConsumerWidget {
-  const MokuroMoeSourceRow({super.key});
+  const MokuroMoeSourceRow({super.key, this.onOpen});
+
+  /// 点行进 mokuro.moe 的目录；为 null 时行不可点。与扩展源行同一口径：
+  /// 关掉的源不可点。
+  final VoidCallback? onOpen;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AppModel appModel = ref.watch(appProvider);
     final bool ready = appModel.isPreferencesReady;
+    final bool enabled = isMokuroMoeSourceEnabled(appModel);
     return FushiCard(
       padding: EdgeInsets.zero,
       child: FushiListItem(
+        onTap: enabled ? onOpen : null,
         leading: Switch.adaptive(
-          value: isMokuroMoeSourceEnabled(appModel),
+          value: enabled,
           onChanged: ready
               ? (bool value) =>
                   unawaited(appModel.setMangaOnlineCatalogEnabled(value))

@@ -20,7 +20,11 @@ mixin _LocalLibraryHostVideos
   /// [hasSubtitle] 当前视频文件旁能找到外挂字幕时为 true。
   @override
   Future<List<RemoteVideoInfo>> listVideos() async {
-    final List<VideoBookRow> rows = await _db.allVideoBooks();
+    // 在线视频源入库集只在装了那个扩展的本机可播（起播时向扩展取流），对端拿到
+    // 也放不了：不下发。
+    final List<VideoBookRow> rows = (await _db.allVideoBooks())
+        .where((VideoBookRow row) => !isAnimeSourceVideoPath(row.videoPath))
+        .toList();
     // 按 importedAt 降序（null 排最后）
     rows.sort((VideoBookRow a, VideoBookRow b) {
       final int? ta = a.importedAt;
@@ -94,7 +98,11 @@ mixin _LocalLibraryHostVideos
     bool hasSubtitle = false;
     String? subtitleFileName;
 
-    if (videoPath.isNotEmpty) {
+    // 网络流（http(s) / rtsp …）与 `.strm` 流指针在本机没有媒体字节
+    // （[lacksLocalMediaFile]）：`.strm` 的 stat 只会拿到一行地址的文本大小冒充
+    // 视频体积，host 也下发不了它（[resolveVideoFile] 恒 null），sidecar 字幕同样
+    // 无从服务——整段不碰文件系统，sizeBytes 留 null、hasSubtitle 为 false。
+    if (videoPath.isNotEmpty && !lacksLocalMediaFile(videoPath)) {
       final File f = File(videoPath);
       if (f.existsSync()) {
         try {
@@ -280,10 +288,14 @@ mixin _LocalLibraryHostVideos
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
   ///
   /// **只查 DB**，不接受外部文件路径。文件不存在或 id 未知时返回 null。
+  /// 网络流（rtsp 频道等）与 `.strm` 流指针（[lacksLocalMediaFile]）没有可下发的
+  /// 媒体字节，同样返回 null——本地 `.strm` 虽然磁盘上存在，下发出去的只是一行
+  /// 地址文本，对端会当视频去播。
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async {
     final String? path = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (path == null || path.isEmpty) return null;
+    if (lacksLocalMediaFile(path)) return null;
     final File f = File(path);
     return f.existsSync() ? f : null;
   }
@@ -300,6 +312,9 @@ mixin _LocalLibraryHostVideos
   }) async {
     final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
     if (videoPath == null || videoPath.isEmpty) return null;
+    // 只碰同目录 sidecar：网络流地址（[isNetworkOnlyVideoPath]）没有本地目录可扫；
+    // 本地 `.strm` 的同目录字幕是真实文件，照常可找。
+    if (isNetworkOnlyVideoPath(videoPath)) return null;
     final String effectiveLangCode =
         langCode.isEmpty ? _videoSubtitleLangCode : langCode;
     final String? subPath =
@@ -747,14 +762,14 @@ mixin _LocalLibraryHostVideos
   }
 
   /// [id] 对应、且视频是 host 本地文件的库行；否则抛 [StateError]（端点映射 404）。
+  /// 网络流（http(s) / rtsp …）与 `.strm` 流指针（[lacksLocalMediaFile]）都不算：
+  /// 它们在 host 上没有可下发的视频本体（[resolveVideoFile] 恒 null），对端推来的
+  /// 字幕落过去也没有播放端会读。
   Future<VideoBookRow> _videoRowWithLocalFile(String id) async {
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     if (row == null) throw StateError('unknown video: $id');
     final String videoPath = row.videoPath;
-    final String lower = videoPath.toLowerCase();
-    if (videoPath.isEmpty ||
-        lower.startsWith('http://') ||
-        lower.startsWith('https://')) {
+    if (videoPath.isEmpty || lacksLocalMediaFile(videoPath)) {
       throw StateError('video has no local file: $id');
     }
     return row;

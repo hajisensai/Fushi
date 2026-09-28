@@ -152,6 +152,7 @@ import 'package:fushi/src/media/video/scraper/tmdb_default_key.dart';
 import 'package:fushi/src/media/video/subtitle/configured_subtitle_providers.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
+import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
@@ -3319,7 +3320,7 @@ class AppModel with ChangeNotifier {
       //
       // 门只加在调用点：[startAnimeDownloadService] 函数体内部顺序敏感（懒建 session、
       // resume 剪枝哨兵），守卫测试按源码顺序扫它，绝不能把判断插进函数中段。
-      if (modules.isEnabled(ModuleId.downloads)) {
+      if (modules.isEnabled(ModuleId.browse)) {
         unawaited(
             startAnimeDownloadService().catchError((Object e, StackTrace s) {
           ErrorLogService.instance
@@ -4096,6 +4097,20 @@ class AppModel with ChangeNotifier {
 
   Future<void> setVideoSlimProgressBar(bool value) =>
       prefsRepo.setVideoSlimProgressBar(value);
+
+  /// 自动下载的外挂字幕按视频内嵌字幕轨对时间轴（默认开）。
+  bool get subtitleReferenceSyncEnabled =>
+      prefsRepo.subtitleReferenceSyncEnabled;
+
+  Future<void> setSubtitleReferenceSyncEnabled(bool value) =>
+      prefsRepo.setSubtitleReferenceSyncEnabled(value);
+
+  /// 各自动下载路径共用的对齐钩子（开关每次调用现读，见
+  /// [gatedAutomaticSubtitleAligner]）。
+  late final AutomaticSubtitleAligner alignDownloadedSubtitle =
+      gatedAutomaticSubtitleAligner(
+    () => isPreferencesReady && prefsRepo.subtitleReferenceSyncEnabled,
+  );
 
   /// 视频条目自动刮削开关（落 Drift preferences，默认开）。
   bool get videoAutoScrape => prefsRepo.videoAutoScrape;
@@ -4985,6 +5000,8 @@ class AppModel with ChangeNotifier {
         stagingDirFor: store.subsDirFor,
         defaultContentLanguageProvider: () => prefsRepo.defaultContentLanguage,
       ).resolve,
+      // 对时间轴在视频真正下完后做（边下边播那一轮视频还残缺）。
+      subtitleAligner: alignDownloadedSubtitle,
       backendFactory: _torrentBackendFor,
       onTick: () {
         _embeddedTorrentHost?.sweepAntiLeech();
@@ -5241,6 +5258,7 @@ class AppModel with ChangeNotifier {
     final String preferredLanguage = prefsRepo.jimakuDefaultLanguage.trim();
     _videoSubtitleBackfillService = VideoSubtitleBackfillService(
       registry: subtitles,
+      subtitleAligner: alignDownloadedSubtitle,
       preferredLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
@@ -5276,6 +5294,7 @@ class AppModel with ChangeNotifier {
       database: database,
       resourceRegistry: resources,
       subtitleRegistry: subtitles,
+      subtitleAligner: alignDownloadedSubtitle,
       preferredSubtitleLanguages: <String>[
         if (preferredLanguage.isNotEmpty) preferredLanguage,
       ],
@@ -5304,7 +5323,7 @@ class AppModel with ChangeNotifier {
       resourceRegistry: resources,
       enqueue: pipeline.enqueue,
     )..start();
-    // DownloadsPage may have rendered while this fire-and-forget runtime was
+    // BrowsePage may have rendered while this fire-and-forget runtime was
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
@@ -7388,6 +7407,11 @@ class AppModel with ChangeNotifier {
   bool get torrentUploadIntroShown => prefsRepo.torrentUploadIntroShown;
   Future<void> setTorrentUploadIntroShown() =>
       prefsRepo.setTorrentUploadIntroShown();
+
+  /// 「下载」改名「浏览」的一次性搬迁提示是否已处理（见 `browse_moved_notice.dart`）。
+  bool get browseMovedNoticeHandled => prefsRepo.browseMovedNoticeHandled;
+  Future<void> setBrowseMovedNoticeHandled() =>
+      prefsRepo.setBrowseMovedNoticeHandled();
 
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);

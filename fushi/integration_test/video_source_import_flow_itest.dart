@@ -68,9 +68,9 @@ void main() {
           driver,
           navigation,
           expected: const <VideoLibrarySection>[
-            VideoLibrarySection.discover,
             VideoLibrarySection.series,
             VideoLibrarySection.allVideos,
+            VideoLibrarySection.mediaServers,
             VideoLibrarySection.sources,
           ],
           delta: 1,
@@ -117,9 +117,9 @@ void main() {
           driver,
           navigation,
           expected: const <VideoLibrarySection>[
+            VideoLibrarySection.mediaServers,
             VideoLibrarySection.allVideos,
             VideoLibrarySection.series,
-            VideoLibrarySection.discover,
             VideoLibrarySection.home,
           ],
           delta: -1,
@@ -141,9 +141,9 @@ void main() {
           driver,
           navigation,
           expected: const <VideoLibrarySection>[
-            VideoLibrarySection.discover,
             VideoLibrarySection.series,
             VideoLibrarySection.allVideos,
+            VideoLibrarySection.mediaServers,
             VideoLibrarySection.sources,
           ],
           delta: 1,

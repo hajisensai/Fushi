@@ -15,10 +15,9 @@ import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart'
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
+import 'package:fushi/src/media/online/online_source_browse_page.dart';
 import 'package:fushi/src/media/video/online/anime_source_detail_page.dart';
 import 'package:fushi/utils.dart';
-
-enum _MihonBrowseMode { popular, latest, search }
 
 /// 浏览页要浏览的那「一个源」从哪来。
 ///
@@ -73,215 +72,192 @@ class MihonSourceBrowsePage extends StatefulWidget {
 }
 
 class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
-  final TextEditingController _searchController = TextEditingController();
+  late final _MihonCatalog _catalog = _MihonCatalog(
+    manager: widget.manager,
+    target: widget.target,
+  );
+
+  @override
+  Widget build(BuildContext context) =>
+      OnlineSourceBrowsePage<MihonCatalogueEntry>(
+        catalog: _catalog,
+        footer: widget.footer,
+      );
+}
+
+/// Mihon（漫画 + 视频扩展）在共用源浏览页里的差异：热门 / 最新两个列表、筛选只作用在
+/// 搜索上、封面经扩展 imageProxy 取（共享 4 并发闸门）、按条目类型进漫画 / 视频作品页。
+class _MihonCatalog extends OnlineSourceCatalog<MihonCatalogueEntry> {
+  _MihonCatalog({required this.manager, required this.target});
+
+  static const String _popular = 'popular';
+  static const String _latest = 'latest';
+
+  final MihonManager manager;
+  final MihonBrowseTarget target;
   final MihonSourceImageLoadQueue _imageLoadQueue = MihonSourceImageLoadQueue(
     maxConcurrent: 4,
   );
   MihonSourceContext? _sourceContext;
-  List<MihonCatalogueEntry> _items = const <MihonCatalogueEntry>[];
   List<MihonFilter> _filters = const <MihonFilter>[];
-  _MihonBrowseMode _mode = _MihonBrowseMode.popular;
-  bool _loading = true;
-  bool _hasNextPage = false;
-  int _page = 1;
-  int _loadGeneration = 0;
-  Object? _error;
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_initialise());
+  String get title => switch (target) {
+    MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
+    MihonPreviewTarget(:final MihonSource source) => source.name,
+  };
+
+  @override
+  String get searchHint => t.mihon_source_search;
+
+  @override
+  String get keyPrefix => 'mihon_browse';
+
+  @override
+  Future<void> prepare() async {
+    final MihonSourceContext context = switch (target) {
+      MihonInstalledTarget(:final MangaOnlineSourceRow row) =>
+        await manager.contextForSource(row),
+      MihonPreviewTarget(
+        :final MihonPreviewSession session,
+        :final MihonSource source,
+      ) =>
+        session.contextFor(source),
+    };
+    _filters = switch (manager.kind) {
+      MihonMediaKind.manga => await manager.runtime.getFilters(
+        context.extension,
+        context.source,
+        preferences: context.preferences,
+      ),
+      MihonMediaKind.anime => await manager.animeRuntime.getAnimeFilters(
+        context.extension,
+        context.source,
+        preferences: context.preferences,
+      ),
+    };
+    _sourceContext = context;
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  List<OnlineBrowseListing> get listings => <OnlineBrowseListing>[
+    OnlineBrowseListing(id: _popular, label: t.mihon_source_popular),
+    OnlineBrowseListing(id: _latest, label: t.mihon_source_latest),
+  ];
 
-  /// 预览态只读：封面不可点，也没有详情页可去。
-  bool get _readOnly => widget.target is MihonPreviewTarget;
+  @override
+  bool get hasFilters => _filters.isNotEmpty;
 
-  Future<void> _initialise() async {
-    try {
-      final MihonSourceContext context = switch (widget.target) {
-        MihonInstalledTarget(:final MangaOnlineSourceRow row) =>
-          await widget.manager.contextForSource(row),
-        MihonPreviewTarget(
-          :final MihonPreviewSession session,
-          :final MihonSource source,
-        ) =>
-          session.contextFor(source),
-      };
-      final List<MihonFilter> filters = switch (widget.manager.kind) {
-        MihonMediaKind.manga => await widget.manager.runtime.getFilters(
-          context.extension,
-          context.source,
-          preferences: context.preferences,
-        ),
-        MihonMediaKind.anime =>
-          await widget.manager.animeRuntime.getAnimeFilters(
-            context.extension,
-            context.source,
-            preferences: context.preferences,
-          ),
-      };
-      if (!mounted) return;
-      _sourceContext = context;
-      _filters = filters;
-      await _load(reset: true);
-    } on Object catch (error) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = error;
-        });
-      }
-    }
-  }
-
-  Future<void> _load({required bool reset}) async {
-    final MihonSourceContext? context = _sourceContext;
-    if (context == null) return;
-    if (!reset && (_loading || !_hasNextPage)) return;
-    final int generation = reset ? ++_loadGeneration : _loadGeneration;
-    final int requestedPage = reset ? 1 : _page + 1;
-    final _MihonBrowseMode requestedMode = _mode;
-    final String requestedQuery = _searchController.text.trim();
-    final List<MihonFilter> requestedFilters = List<MihonFilter>.of(_filters);
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final ({List<MihonCatalogueEntry> items, bool hasNextPage}) response =
-          await _fetchPage(
-            context,
-            mode: requestedMode,
-            page: requestedPage,
-            query: requestedQuery,
-            filters: requestedFilters,
-          );
-      if (!mounted || generation != _loadGeneration) return;
-      setState(() {
-        final List<MihonCatalogueEntry> previous = reset
-            ? const <MihonCatalogueEntry>[]
-            : _items;
-        final Set<String> seen = previous
-            .map((MihonCatalogueEntry item) => item.url)
-            .toSet();
-        final List<MihonCatalogueEntry> additions = response.items
-            .where((MihonCatalogueEntry item) => seen.add(item.url))
-            .toList(growable: false);
-        _items = <MihonCatalogueEntry>[...previous, ...additions];
-        _page = requestedPage;
-        _hasNextPage =
-            response.hasNextPage &&
-            response.items.isNotEmpty &&
-            (reset || additions.isNotEmpty);
-        _loading = false;
-      });
-    } on Object catch (error) {
-      if (!mounted || generation != _loadGeneration) return;
-      setState(() {
-        _loading = false;
-        _error = error;
-      });
-      if (_items.isNotEmpty) {
-        FushiToast.show(msg: '$error', severity: ToastSeverity.error);
-      }
-    }
-  }
-
-  /// 一页结果：按 manager 的生态分派到漫画 / 视频调用面，网格只吃
-  /// [MihonCatalogueEntry]。
-  Future<({List<MihonCatalogueEntry> items, bool hasNextPage})> _fetchPage(
-    MihonSourceContext context, {
-    required _MihonBrowseMode mode,
-    required int page,
-    required String query,
-    required List<MihonFilter> filters,
-  }) async {
-    switch (widget.manager.kind) {
-      case MihonMediaKind.manga:
-        final MihonRuntime runtime = widget.manager.runtime;
-        final MihonMangaPage response = switch (mode) {
-          _MihonBrowseMode.popular => await runtime.getPopular(
-            context.extension,
-            context.source,
-            page: page,
-            preferences: context.preferences,
-          ),
-          _MihonBrowseMode.latest => await runtime.getLatest(
-            context.extension,
-            context.source,
-            page: page,
-            preferences: context.preferences,
-          ),
-          _MihonBrowseMode.search => await runtime.search(
-            context.extension,
-            context.source,
-            page: page,
-            query: query,
-            filters: filters,
-            preferences: context.preferences,
-          ),
-        };
-        return (items: response.items, hasNextPage: response.hasNextPage);
-      case MihonMediaKind.anime:
-        final AnimeMihonRuntime runtime = widget.manager.animeRuntime;
-        final MihonAnimePage response = switch (mode) {
-          _MihonBrowseMode.popular => await runtime.getPopularAnime(
-            context.extension,
-            context.source,
-            page: page,
-            preferences: context.preferences,
-          ),
-          _MihonBrowseMode.latest => await runtime.getLatestAnime(
-            context.extension,
-            context.source,
-            page: page,
-            preferences: context.preferences,
-          ),
-          _MihonBrowseMode.search => await runtime.searchAnime(
-            context.extension,
-            context.source,
-            page: page,
-            query: query,
-            filters: filters,
-            preferences: context.preferences,
-          ),
-        };
-        return (items: response.items, hasNextPage: response.hasNextPage);
-    }
-  }
-
-  Future<void> _showFilters() async {
-    if (_filters.isEmpty) return;
+  @override
+  Future<OnlineBrowseFilterTarget?> editFilters(BuildContext context) async {
+    if (_filters.isEmpty) return null;
     final List<MihonFilter>? updated = await showAppDialog<List<MihonFilter>>(
       context: context,
       builder: (BuildContext dialogContext) =>
           _MihonFilterDialog(initial: _filters),
     );
-    if (updated == null || !mounted) return;
+    if (updated == null) return null;
     _filters = updated;
-    _mode = _MihonBrowseMode.search;
-    await _load(reset: true);
+    return OnlineBrowseFilterTarget.search;
   }
 
-  void _openDetails(MihonCatalogueEntry entry) {
+  /// 一页结果：按 manager 的生态分派到漫画 / 视频调用面，网格只吃
+  /// [MihonCatalogueEntry]。
+  @override
+  Future<OnlineBrowsePageResult<MihonCatalogueEntry>> fetch(
+    OnlineBrowseQuery query,
+    int page,
+  ) async {
+    final MihonSourceContext context = _sourceContext!;
+    final List<MihonFilter> filters = List<MihonFilter>.of(_filters);
+    switch (manager.kind) {
+      case MihonMediaKind.manga:
+        final MihonRuntime runtime = manager.runtime;
+        final MihonMangaPage response = switch (query.listingId) {
+          null => await runtime.search(
+            context.extension,
+            context.source,
+            page: page,
+            query: query.text,
+            filters: filters,
+            preferences: context.preferences,
+          ),
+          _latest => await runtime.getLatest(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _ => await runtime.getPopular(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+        };
+        return (items: response.items, hasNextPage: response.hasNextPage);
+      case MihonMediaKind.anime:
+        final AnimeMihonRuntime runtime = manager.animeRuntime;
+        final MihonAnimePage response = switch (query.listingId) {
+          null => await runtime.searchAnime(
+            context.extension,
+            context.source,
+            page: page,
+            query: query.text,
+            filters: filters,
+            preferences: context.preferences,
+          ),
+          _latest => await runtime.getLatestAnime(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+          _ => await runtime.getPopularAnime(
+            context.extension,
+            context.source,
+            page: page,
+            preferences: context.preferences,
+          ),
+        };
+        return (items: response.items, hasNextPage: response.hasNextPage);
+    }
+  }
+
+  @override
+  String keyOf(MihonCatalogueEntry item) => item.url;
+
+  @override
+  String titleOf(MihonCatalogueEntry item) => item.title;
+
+  @override
+  Widget buildCover(BuildContext context, MihonCatalogueEntry item) =>
+      MihonSourceImage(
+        runtime: manager.runtime,
+        cache: manager.coverCache,
+        context: _sourceContext!,
+        url: item.coverUrl,
+        loadQueue: _imageLoadQueue,
+      );
+
+  /// 预览态只读：封面不可点，也没有详情页可去。
+  @override
+  void Function(BuildContext, MihonCatalogueEntry)? get openDetail =>
+      target is MihonPreviewTarget ? null : _openDetails;
+
+  void _openDetails(BuildContext context, MihonCatalogueEntry entry) {
     final MihonSourceContext sourceContext = _sourceContext!;
     Navigator.of(context).push(
       adaptivePageRoute<void>(
         context: context,
         builder: (BuildContext context) => switch (entry) {
           MihonManga() => MihonMangaDetailPage(
-            manager: widget.manager,
+            manager: manager,
             sourceContext: sourceContext,
             manga: entry,
           ),
           MihonAnime() => AnimeSourceDetailPage(
-            manager: widget.manager,
+            manager: manager,
             sourceContext: sourceContext,
             anime: entry,
           ),
@@ -292,177 +268,15 @@ class _MihonSourceBrowsePageState extends State<MihonSourceBrowsePage> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return FushiPageScaffold(
-      title: switch (widget.target) {
-        MihonInstalledTarget(:final MangaOnlineSourceRow row) => row.name,
-        MihonPreviewTarget(:final MihonSource source) => source.name,
-      },
-      headerBottom: Padding(
-        padding: const EdgeInsets.only(top: 8),
-        child: Row(
-          children: <Widget>[
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                decoration: InputDecoration(
-                  hintText: t.mihon_source_search,
-                  prefixIcon: const Icon(Icons.search),
-                ),
-                onSubmitted: (String _) {
-                  _mode = _MihonBrowseMode.search;
-                  unawaited(_load(reset: true));
-                },
-              ),
-            ),
-            if (_filters.isNotEmpty) ...<Widget>[
-              const SizedBox(width: 8),
-              IconButton(
-                tooltip: t.mihon_source_preferences,
-                onPressed: _showFilters,
-                icon: const Icon(Icons.tune),
-              ),
-            ],
-          ],
-        ),
-      ),
-      body: Column(
-        children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: SegmentedButton<_MihonBrowseMode>(
-              segments: <ButtonSegment<_MihonBrowseMode>>[
-                ButtonSegment<_MihonBrowseMode>(
-                  value: _MihonBrowseMode.popular,
-                  label: Text(t.mihon_source_popular),
-                ),
-                ButtonSegment<_MihonBrowseMode>(
-                  value: _MihonBrowseMode.latest,
-                  label: Text(t.mihon_source_latest),
-                ),
-              ],
-              selected: <_MihonBrowseMode>{
-                _mode == _MihonBrowseMode.latest
-                    ? _MihonBrowseMode.latest
-                    : _MihonBrowseMode.popular,
-              },
-              onSelectionChanged: (Set<_MihonBrowseMode> value) {
-                _mode = value.first;
-                unawaited(_load(reset: true));
-              },
-            ),
-          ),
-          if (_error != null && _items.isNotEmpty)
-            MihonCloudflareAction(
-              runtime: widget.manager.runtime,
-              error: _error,
-              onVerified: () => _load(reset: false),
-            ),
-          // BUG-2440：scaffold 的 body 不再扣底部安全区。有 footer 时那段归 footer
-          // 自己的 SafeArea 认领，先从网格的 MediaQuery 里摘掉，免得网格底部和
-          // footer 各补一次、在动作条上方多顶出一条空白。
-          Expanded(
-            child: widget.footer == null
-                ? _buildResults()
-                : MediaQuery.removePadding(
-                    context: context,
-                    removeBottom: true,
-                    child: _buildResults(),
-                  ),
-          ),
-          if (widget.footer != null) widget.footer!,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResults() {
-    if (_loading && _items.isEmpty) {
-      return Center(child: adaptiveIndicator(context: context));
-    }
-    if (_error != null && _items.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text('$_error', textAlign: TextAlign.center),
-              MihonCloudflareAction(
-                runtime: widget.manager.runtime,
-                error: _error,
-                onVerified: () =>
-                    _sourceContext == null ? _initialise() : _load(reset: true),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    if (_items.isEmpty) {
-      return Center(child: Text(t.mihon_source_no_results));
-    }
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int columns = (constraints.maxWidth / 180).floor().clamp(2, 8);
-        return GridView.builder(
-          // BUG-2440：scaffold 的 body 不再扣底部安全区，网格最后一行要靠这里
-          // 补出手势条那一段。有 footer 时上面已把这段从 MediaQuery 摘掉，这里
-          // 自动退回纯 16。
-          padding: withBottomSafeInset(context, const EdgeInsets.all(16)),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            childAspectRatio: 0.62,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: _items.length + (_hasNextPage ? 1 : 0),
-          itemBuilder: (BuildContext context, int index) {
-            if (index == _items.length) {
-              return Center(
-                child: _loading
-                    ? adaptiveIndicator(context: context)
-                    : IconButton(
-                        onPressed: () => unawaited(_load(reset: false)),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-              );
-            }
-            final MihonCatalogueEntry entry = _items[index];
-            return FushiCard(
-              padding: EdgeInsets.zero,
-              onTap: _readOnly ? null : () => _openDetails(entry),
-              // FushiCard 内部已用 Material(clipBehavior: antiAlias) 按同一
-              // 圆角 token 裁剪，这里不再多包一层 ClipRRect。
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Expanded(
-                    child: MihonSourceImage(
-                      runtime: widget.manager.runtime,
-                      cache: widget.manager.coverCache,
-                      context: _sourceContext!,
-                      url: entry.coverUrl,
-                      loadQueue: _imageLoadQueue,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Text(
-                      entry.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
+  Widget buildVerifyAction(
+    BuildContext context, {
+    required Object? error,
+    required Future<void> Function() onVerified,
+  }) => MihonCloudflareAction(
+    runtime: manager.runtime,
+    error: error,
+    onVerified: onVerified,
+  );
 }
 
 /// 源浏览里的作品页入口。

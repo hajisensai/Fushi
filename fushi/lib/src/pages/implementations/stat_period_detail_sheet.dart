@@ -162,11 +162,14 @@ Future<bool> showStatPeriodDetailSheet(
   final _DeletedFlag deleted = _DeletedFlag();
   await adaptiveModalSheet<void>(
     context: context,
-    builder: (BuildContext sheetContext) => _PeriodDetailSheetBody(
-      periodLabel: periodLabel,
-      entries: entries,
-      resolvers: resolvers,
-      deleted: deleted,
+    builder: (BuildContext sheetContext) => statSheetHeightCap(
+      sheetContext,
+      child: _PeriodDetailSheetBody(
+        periodLabel: periodLabel,
+        entries: entries,
+        resolvers: resolvers,
+        deleted: deleted,
+      ),
     ),
   );
   return deleted.value;

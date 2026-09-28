@@ -45,12 +45,11 @@ enum MihonExtensionsSection {
 /// 次筛选卡几秒」。外层滚动容器换成 `CustomScrollView` 后，这里用 `SliverList`
 /// 只建可见的那十几行。
 ///
-/// [sections] 决定内嵌时渲染哪几节：宿主「导入」视图顶部有分段选择器
-/// （`ImportPageSegmentBar`），「仓库」段只要 [MihonExtensionsSection.stores]、
-/// 「扩展」段只要 [MihonExtensionsSection.catalog]。传空集渲染空 sliver——宿主
-/// 在其它段仍把本 widget 留在树里同一位置，为的是筛选 / 折叠 / 批量安装进度这些
-/// 状态跨段切换不丢（批量安装的进度框还握着本 State 的 notifier，切个段就把
-/// State 拆掉是不行的）。
+/// [sections] 决定内嵌时渲染哪几节：「浏览 › 扩展」页签只要
+/// [MihonExtensionsSection.catalog]，它的「仓库」动作 push 出的仓库页只要
+/// [MihonExtensionsSection.stores]（两处各是一个实例）。传空集渲染空 sliver。
+/// 扩展目录那个实例由浏览页按域保活（Offstage），筛选 / 折叠 / 批量安装进度这些
+/// State 切页签域不丢（批量安装的进度框还握着本 State 的 notifier）。
 class MihonExtensionsPage extends ConsumerStatefulWidget {
   const MihonExtensionsPage({
     super.key,
@@ -824,7 +823,8 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
         itemBuilder: (BuildContext context, int index) {
           final MihonExtensionListRow entry = groupedRows[index];
           if (entry is MihonStoreHeaderRow) {
-            return _StoreGroupHeader(
+            return ExtensionStoreGroupHeader(
+              keyPrefix: 'mihon',
               indexUrl: entry.indexUrl,
               label: entry.label,
               count: entry.count,
@@ -1298,13 +1298,9 @@ class _MihonExtensionsPageState extends ConsumerState<MihonExtensionsPage> {
 /// （[MihonAvailableExtension.sources] 的名字 + 域名）和 NSFW 标记，以前这些数据
 /// 只喂给搜索匹配，一个字都没显示，用户只能靠扩展名猜。安装前能看清装的是什么，
 /// 是「预览」的第一层——不需要跑任何代码，也没有任何网络请求。
-/// 超过这个条数的仓库默认收起。
-///
-/// 不是拍脑袋的魔数，编码的是一条产品规则：**一眼扫得完的分组就没必要收起**。
-/// 装了三五个扩展的自建仓库全收起来只会让用户多点一下；而 keiyoushi 一家就
-/// 1900+ 个扩展，铺开时这一页除了滚动什么也做不了（用户「这里支持下根据仓库
-/// 折叠」）。收起态下表头仍显示扩展条数，不会让人以为列表空了。
-const int kMihonStoreAutoCollapseThreshold = 20;
+/// 超过这个条数的仓库默认收起，见 [kExtensionStoreAutoCollapseThreshold]。
+const int kMihonStoreAutoCollapseThreshold =
+    kExtensionStoreAutoCollapseThreshold;
 
 /// 按公开下载量降序排一个仓库内的扩展；没有下载量数据的排在所有有数据的后面，
 /// 同一档内按名字（大小写不敏感）稳定排序。
@@ -1406,47 +1402,6 @@ class MihonExtensionEntryRow extends MihonExtensionListRow {
   const MihonExtensionEntryRow(this.extension);
 
   final MihonAvailableExtension extension;
-}
-
-/// 仓库分组表头：名字 + 扩展条数 + 展开箭头。
-///
-/// 条数不是装饰：收起态下这是「这个仓库到底有没有东西」的唯一线索，没有它
-/// 折叠就等于让列表看起来空了。
-class _StoreGroupHeader extends StatelessWidget {
-  const _StoreGroupHeader({
-    required this.indexUrl,
-    required this.label,
-    required this.count,
-    required this.expanded,
-    required this.onTap,
-  });
-
-  /// key 用 indexUrl 而不是显示名：页面顶部的仓库**管理**卡也画着同一个 name，
-  /// 按名字定位会撞上那张卡（它没有 onTap，点了什么都不会发生）。
-  final String indexUrl;
-  final String label;
-  final int count;
-  final bool expanded;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      child: FushiListItem(
-        key: ValueKey<String>('mihon-store-group-$indexUrl'),
-        onTap: onTap,
-        leading: AnimatedRotation(
-          turns: expanded ? 0.25 : 0,
-          duration: const Duration(milliseconds: 150),
-          child: const Icon(Icons.chevron_right),
-        ),
-        title: Text(label, style: theme.textTheme.titleSmall),
-        subtitle: Text(t.mihon_store_extension_count(count: count)),
-      ),
-    );
-  }
 }
 
 class _AvailableExtensionTile extends StatefulWidget {

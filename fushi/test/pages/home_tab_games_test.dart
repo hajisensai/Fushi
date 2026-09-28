@@ -22,7 +22,7 @@ ModuleVisibility _visibility({
   if (manga) ModuleId.manga,
   if (video) ModuleId.video,
   if (games) ModuleId.games,
-  if (downloads) ModuleId.downloads,
+  if (downloads) ModuleId.browse,
   if (lookup) ModuleId.lookup,
   if (browserExtension) ModuleId.browserExtension,
 });
@@ -53,7 +53,7 @@ void main() {
     );
     final int video = tabs.indexOf(HomeTab.video);
     final int games = tabs.indexOf(HomeTab.games);
-    final int downloads = tabs.indexOf(HomeTab.downloads);
+    final int downloads = tabs.indexOf(HomeTab.browse);
     expect(games, equals(video + 1));
     expect(downloads, equals(games + 1));
   });
@@ -64,7 +64,7 @@ void main() {
     );
     final int manga = tabs.indexOf(HomeTab.manga);
     final int games = tabs.indexOf(HomeTab.games);
-    final int downloads = tabs.indexOf(HomeTab.downloads);
+    final int downloads = tabs.indexOf(HomeTab.browse);
     expect(games, equals(manga + 1));
     expect(downloads, equals(games + 1));
   });

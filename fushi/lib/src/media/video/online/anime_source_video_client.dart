@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -30,8 +31,9 @@ const String kAnimeSourceVideoIdPrefix = 'anime-source:';
 /// 扩展的 `getVideoList`，选出的候选连同它的防盗链头一起记在本对象上，播放页紧
 /// 接着的 load 经 [RemoteVideoStreamHeaders] 读到。
 ///
-/// 浏览态零入库：本 client 只活在「作品页 → 播放」这一段，不进库页的远端清单缓存
-/// （[listRemoteVideos] 只列本作品的集）。收藏入库是二期。
+/// 本 client 不进库页的远端清单缓存（[listRemoteVideos] 只列本作品的集）。加入媒体库
+/// 走 `anime_source_library.dart`（每集一行流媒体书，重开时按行里的规格重建本
+/// client），整片下载走 [downloadRemoteVideo]。
 class AnimeSourceVideoClient
     implements
         RemoteVideoClient,
@@ -48,11 +50,20 @@ class AnimeSourceVideoClient
     http.Client? httpClient,
     MihonVideo Function(List<MihonVideo> candidates)? chooseVideo,
     String? Function()? subtitleLanguageResolver,
+    AnimeEpisodeDownloader? downloader,
+    List<String>? episodeIds,
   }) : _subtitleLanguageResolver = subtitleLanguageResolver,
+       _downloader = downloader ?? AnimeEpisodeDownloader(),
        episodes = List<MihonEpisode>.unmodifiable(episodes),
        _httpClient = httpClient ?? createAppHttpIoClient(),
        _chooseVideo = chooseVideo ?? chooseBestAnimeVideo {
-    _episodeIds = _buildEpisodeIds();
+    // [episodeIds]：从媒体库重开时用各行的 bookUid（入库时就是这里派生的 id）。
+    // 重开只拿得到在线行这个子集，撞车去重的后缀依赖整份列表，按子集重算可能与
+    // 入库时不同——id 一变断点 / 字幕记忆 / 行都对不上，所以直接沿用行上的身份。
+    _episodeIds =
+        episodeIds != null && episodeIds.length == this.episodes.length
+        ? List<String>.unmodifiable(episodeIds)
+        : _buildEpisodeIds();
   }
 
   final MihonManager manager;
@@ -63,6 +74,9 @@ class AnimeSourceVideoClient
   final List<MihonEpisode> episodes;
   final http.Client _httpClient;
   final MihonVideo Function(List<MihonVideo> candidates) _chooseVideo;
+
+  /// 整片下载（直链 / HLS 分片），见 [downloadRemoteVideo]。
+  final AnimeEpisodeDownloader _downloader;
 
   /// 默认字幕轨的首选语言码（`resolveSubtitleDownloadLanguage` 的产物，可空）。
   ///
@@ -154,6 +168,24 @@ class AnimeSourceVideoClient
       for (int i = 0; i < ids.length; i++)
         counts[ids[i]]! > 1 ? '${ids[i]}/$i' : ids[i],
     ];
+  }
+
+  /// 下载用的独立副本：同一作品、同一份集 id（重开时沿用的行身份也跟着走），带上
+  /// 用户在播放器里钉住的线路——下载拿到的就是他换过的那条。作品页退出时释放自己
+  /// 的 client，下载不能跟着断，所以不共用。
+  AnimeSourceVideoClient copyForDownload() {
+    final AnimeSourceVideoClient copy = AnimeSourceVideoClient(
+      manager: manager,
+      context: context,
+      anime: anime,
+      episodes: episodes,
+      episodeIds: _episodeIds,
+      subtitleLanguageResolver: _subtitleLanguageResolver,
+      chooseVideo: _chooseVideo,
+      downloader: _downloader,
+    );
+    copy._pinnedVideos.addAll(_pinnedVideos);
+    return copy;
   }
 
   MihonEpisode? episodeForVideoId(String id) {
@@ -458,7 +490,12 @@ class AnimeSourceVideoClient
     onProgress?.call(1.0);
   }
 
-  /// 在线源的整片下载是二期（直链可下、HLS 要分片合并）；本期与粘贴 URL 流同口径。
+  /// 下载一集到 [dest]：每次（重）跑都**重新向扩展取流**（签名链接短 TTL，重放旧
+  /// URL 必然失败，BUG-2617），挑法与起播同一套（钉住的线路 > 扩展排好的默认）。
+  /// 选中的候选记为当前流，随后 [getRemoteVideoSubtitle] 下的就是这条流的默认字幕。
+  ///
+  /// 扩展要求 mpv 专属参数（[MihonVideo.mpvArgs]）的流没有下载器等价物：照常尝试，
+  /// 失败如实报错。
   @override
   Future<void> downloadRemoteVideo(
     String id,
@@ -467,7 +504,48 @@ class AnimeSourceVideoClient
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
   }) async {
-    throw UnsupportedError('anime source stream not downloadable');
+    final MihonEpisode? episode = episodeForVideoId(id);
+    if (episode == null) {
+      throw ArgumentError.value(id, 'id', 'not an episode of this anime');
+    }
+    final List<MihonVideo> candidates = await resolveVideos(
+      episode,
+      refresh: true,
+    );
+    if (candidates.isEmpty) {
+      throw const MihonRuntimeException(
+        'NO_VIDEOS',
+        'Source did not return any playable video for this episode',
+      );
+    }
+    final MihonVideo chosen =
+        _matchPinned(_pinnedVideos[id], candidates) ?? _chooseVideo(candidates);
+    _currentVideo = chosen;
+    _currentEpisodeId = id;
+    _defaultSubtitleLanguage = preferredSubtitleLanguage;
+    await _downloader.download(
+      url: chosen.resolvedUrl,
+      headers: chosen.headers,
+      dest: dest,
+      onProgress: onProgress,
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
+    );
+  }
+
+  /// 当前流（[id] 最近一次取流 / 下载选中的那条）默认字幕轨的落盘文件名；没有
+  /// 字幕轨或当前流不是这一集时返回 null。
+  Future<String?> defaultSubtitleFileName(String id) async {
+    final MihonVideo? video = _currentVideo;
+    final MihonEpisode? episode = episodeForVideoId(id);
+    if (video == null || episode == null || _currentEpisodeId != id) {
+      return null;
+    }
+    final MihonVideoTrack? track = defaultSubtitleTrack(
+      video.subtitleTracks,
+      _defaultSubtitleLanguage,
+    );
+    return track == null ? null : subtitleFileNameFor(track, episode);
   }
 
   /// 源站没有断点端点：断点走本地 prefs（播放页按 id 落），这里恒 (0, 0)。

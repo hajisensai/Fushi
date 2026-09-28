@@ -29,7 +29,7 @@ import 'package:fushi/src/pages/implementations/download_actions.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi/src/pages/implementations/download_backend_setup_dialog.dart';
-import 'package:fushi/src/pages/implementations/downloads_page.dart';
+import 'package:fushi/src/pages/implementations/browse_page.dart';
 import 'package:fushi/src/pages/implementations/torrent_detail_dialog.dart';
 import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
     show showDownloadTaskDeleteConfirm;
@@ -1301,7 +1301,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (BuildContext context) =>
-            const DownloadsPage(initialShowSettings: true),
+            const BrowseDownloadSettingsPage(),
       ),
     );
   }

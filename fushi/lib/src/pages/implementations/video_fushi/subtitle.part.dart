@@ -232,6 +232,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
               ? null
               : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
         ),
+      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。参考轨要从本机容器文件里
+      // 抽，判据就是「有没有本机视频文件」：远端 / 流视频的 _currentVideoPath 恒为 null
+      // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
+      // 字幕时点了会说明原因，不隐藏入口。
+      if (_currentVideoPath != null)
+        ListTile(
+          leading: const Icon(Icons.sync_alt_outlined),
+          title: Text(t.video_subtitle_reference_sync_action),
+          enabled: !_subtitleLoadingShown,
+          onTap: _subtitleLoadingShown
+              ? null
+              : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
+        ),
       const Divider(height: 1),
       ListTile(
         leading: const Icon(Icons.subtitles_off),
@@ -2052,6 +2065,249 @@ extension _VideoSubtitle on _VideoFushiPageState {
       icon: Icons.model_training_outlined,
       severity: ToastSeverity.success,
     );
+  }
+
+  /// 按视频自带的文本字幕轨给当前外挂字幕对时间轴（embedded_reference_subtitle_sync.dart）。
+  ///
+  /// 与自动下载路径同一套判定，多一档：证据不足以自动写（needsConfirmation）时弹窗
+  /// 让用户定。结果另存新档，原档不动（与 [_retimeSubtitleWithSpeechModel] 同理）。
+  /// 当前这份若是下载时自动对齐写下的，改为提供「恢复原始时间轴」。
+  Future<void> _alignSubtitleToEmbeddedTracks(
+    VideoPlayerController controller,
+  ) async {
+    // 抽轨可能要几十秒（大容器整片 demux），期间连点不重入。
+    if (_referenceSyncRunning) return;
+    final String? videoPath = _currentVideoPath;
+    final String? subtitlePath = _currentExternalSubtitlePath();
+    if (videoPath == null || subtitlePath == null) {
+      _showOsd(
+        t.video_subtitle_reference_sync_need_external,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    _referenceSyncRunning = true;
+    try {
+      await _alignSubtitleFileToEmbeddedTracks(
+        controller,
+        videoPath,
+        subtitlePath,
+      );
+    } catch (error, stack) {
+      // 读写字幕文件失败（文件中途被删 / 字幕目录不可写）：说出来，不静默。
+      debugPrint('[fushi-video] reference sync failed: $error\n$stack');
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_reference_sync_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      _referenceSyncRunning = false;
+    }
+  }
+
+  Future<void> _alignSubtitleFileToEmbeddedTracks(
+    VideoPlayerController controller,
+    String videoPath,
+    String subtitlePath,
+  ) async {
+    final Uint8List bytes = await File(subtitlePath).readAsBytes();
+    final Uint8List? original = await findSubtitleAlignmentOriginal(bytes);
+    if (original != null) {
+      await _offerRestoreSubtitleOriginal(
+        controller,
+        videoPath,
+        subtitlePath,
+        original,
+      );
+      return;
+    }
+    _showOsd(
+      t.video_subtitle_reference_sync_running,
+      icon: Icons.sync_alt_outlined,
+      severity: ToastSeverity.info,
+    );
+    final EmbeddedReferenceSyncResult result =
+        await syncSubtitleToEmbeddedReferences(
+          subtitleBytes: bytes,
+          videoPath: videoPath,
+          videoDurationMs: await probeVideoDurationMs(videoPath),
+        );
+    // 抽轨要几十秒：这期间换了集，结果是给上一集算的，不能落到新集上。
+    if (!_stillOnVideo(videoPath)) return;
+    final String? problem = _referenceSyncProblem(result);
+    if (problem != null) {
+      _showOsd(problem, severity: ToastSeverity.warning);
+      return;
+    }
+    final SubtitleSyncDecision decision = result.decision!;
+    final String offsets = formatAlignmentOffsets(decision.segments);
+    if (decision.kind == SubtitleSyncDecisionKind.needsConfirmation &&
+        !await _confirmReferenceSync(
+          title: t.video_subtitle_reference_sync_confirm_title,
+          body: t.video_subtitle_reference_sync_confirm_body(
+            offset: offsets,
+            excess: decision.chosen!.judgement.fit.excess.toStringAsFixed(1),
+            groups: decision.agreeingGroups,
+          ),
+          action: t.video_subtitle_reference_sync_apply,
+        )) {
+      return;
+    }
+    // 确认弹窗期间同样可能换集。
+    if (!_stillOnVideo(videoPath)) return;
+    final Uint8List aligned = result.retime!.bytes;
+    // 与自动路径同一份登记：新档由此被认作「对齐产物」——播放页据此让调轴归零
+    // （[_refreshPrimarySubtitleAlignment]），菜单再点也能提供「恢复原始时间轴」。
+    await saveSubtitleAlignmentOriginal(original: bytes, aligned: aligned);
+    await _importSubtitleVariant(controller, subtitlePath, aligned, 'aligned');
+    if (!_stillOnVideo(videoPath)) return;
+    // 对齐后的时间轴已经贴着视频：系列级 / 本集的旧调轴是给没对齐的字幕调的，
+    // 叠上去只会再推歪。确定性地按新选中的档重算一次（归零），不等选源的异步检查。
+    await _refreshPrimarySubtitleAlignment(_currentSubtitleSource);
+    if (!mounted) return;
+    _showOsd(
+      t.video_subtitle_reference_sync_done(offset: offsets),
+      icon: Icons.sync_alt_outlined,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 当前选中的外挂字幕文件路径；内嵌轨 / 关闭 / 文件已不在时为 null。
+  String? _currentExternalSubtitlePath() {
+    final String? source = _currentSubtitleSource;
+    if (source == null ||
+        SubtitleSource.isOff(source) ||
+        SubtitleSource.isEmbeddedPersisted(source) ||
+        !File(source).existsSync()) {
+      return null;
+    }
+    return source;
+  }
+
+  /// 不能应用的结局 → 给用户的一句话；能应用返回 null。
+  String? _referenceSyncProblem(EmbeddedReferenceSyncResult result) {
+    switch (result.status) {
+      case EmbeddedReferenceSyncStatus.noReference:
+        return t.video_subtitle_reference_sync_no_reference;
+      case EmbeddedReferenceSyncStatus.subtitleUnreadable:
+        return t.video_subtitle_reference_sync_unreadable;
+      case EmbeddedReferenceSyncStatus.decided:
+        if (result.kind == SubtitleSyncDecisionKind.refused) {
+          return t.video_subtitle_reference_sync_refused;
+        }
+        return result.changesTiming
+            ? null
+            : t.video_subtitle_reference_sync_in_sync;
+    }
+  }
+
+  Future<void> _offerRestoreSubtitleOriginal(
+    VideoPlayerController controller,
+    String videoPath,
+    String subtitlePath,
+    Uint8List original,
+  ) async {
+    if (!await _confirmReferenceSync(
+      title: t.video_subtitle_reference_sync_restore_title,
+      body: t.video_subtitle_reference_sync_restore_body,
+      action: t.video_subtitle_reference_sync_restore,
+    )) {
+      return;
+    }
+    if (!_stillOnVideo(videoPath)) return;
+    await _importSubtitleVariant(
+      controller,
+      subtitlePath,
+      original,
+      'original',
+    );
+  }
+
+  Future<bool> _confirmReferenceSync({
+    required String title,
+    required String body,
+    required String action,
+  }) async {
+    if (!mounted) return false;
+    // guardOverlay：确认弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
+    // （确定 / 取消 / Esc / 点外部）都要归还（docs/agent/focus-ownership.md）。
+    final bool? confirmed = await _focusOwnership.guardOverlay(
+      () => showAppDialog<bool>(
+        context: context,
+        builder: (BuildContext ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(t.dialog_cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(action),
+            ),
+          ],
+        ),
+      ),
+    );
+    return confirmed ?? false;
+  }
+
+  /// 异步操作回来后当前页是否还在放 [videoPath]（没卸载、没换集）。
+  bool _stillOnVideo(String videoPath) =>
+      mounted && _currentVideoPath == videoPath;
+
+  /// 按当前主字幕档重算「对齐产物 → 调轴归零」（见 [_primarySubtitleAligned]）。
+  ///
+  /// 当前档是按内嵌轨对齐写下的产物（subtitle_alignment_backup.dart 登记过）时，
+  /// 有效调轴从 0 起算：系列级 / 本集持久化的调轴是给没对齐的字幕调的，对齐后的
+  /// 时间轴已经贴着视频，再叠上去只会推歪。换回别的档时恢复原调轴。持久化值本身
+  /// 不动——系列级调轴对同系列其它没对齐的集仍然有效。
+  Future<void> _refreshPrimarySubtitleAlignment(String? source) async {
+    final int generation = ++_subtitleAlignmentCheckGeneration;
+    final bool aligned =
+        !_isRemote &&
+        source != null &&
+        !SubtitleSource.isOff(source) &&
+        !SubtitleSource.isEmbeddedPersisted(source) &&
+        await isSubtitleAlignmentProduct(source);
+    if (!mounted || generation != _subtitleAlignmentCheckGeneration) return;
+    if (aligned == _primarySubtitleAligned) return;
+    _primarySubtitleAligned = aligned;
+    if (aligned) {
+      _delayBeforeAlignedSubtitleMs = _delayMs;
+      _delayMs = 0;
+    } else {
+      _delayMs = _delayBeforeAlignedSubtitleMs;
+    }
+    _controller?.setDelayMs(_delayMs);
+    _rebuild(() {});
+  }
+
+  /// 把 [bytes] 另存为 `<原名>.<tag>-<视频键><扩展名>` 进字幕目录，走既有外挂字幕
+  /// 链路选中。字幕目录是扁平池：不带视频键时，不同目录下同名的 `01.ja.srt` 会互相
+  /// 覆盖，而另一个视频持久化的字幕源正指着那个文件。
+  Future<void> _importSubtitleVariant(
+    VideoPlayerController controller,
+    String subtitlePath,
+    Uint8List bytes,
+    String tag,
+  ) async {
+    final Directory dir = await AppPaths.videoSubtitlesDirectory();
+    final String videoKey = sha256
+        .convert(utf8.encode(_currentVideoPath ?? subtitlePath))
+        .toString()
+        .substring(0, 8);
+    final String target = p.join(
+      dir.path,
+      '${p.basenameWithoutExtension(subtitlePath)}.$tag-$videoKey'
+      '${p.extension(subtitlePath)}',
+    );
+    await File(target).writeAsBytes(bytes, flush: true);
+    if (!mounted) return;
+    await _importExternalSubtitle(controller, target);
   }
 
   Future<void> _importExternalSubtitle(

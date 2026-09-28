@@ -84,7 +84,7 @@ SettingsDestination buildAiDestination() {
         visible: (SettingsContext c) =>
             StoreRestrictedCapability.downloads.isAvailable &&
             StoreRestrictedCapability.externalDiscovery.isAvailable &&
-            c.appModel.moduleVisibility.isEnabled(ModuleId.downloads),
+            c.appModel.moduleVisibility.isEnabled(ModuleId.browse),
         items: <SettingsItem>[
           SettingsSegmentedItem<String>(
             id: 'ai.video_download_quality',

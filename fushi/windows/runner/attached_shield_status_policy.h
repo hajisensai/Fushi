@@ -7,6 +7,7 @@ namespace fushi::attached_shield_status_policy {
 
 inline constexpr uint32_t kOwnerNativeGlyph = 1u;
 inline constexpr uint32_t kOwnerAttachedGlyph = 2u;
+inline constexpr uint32_t kOwnerPopup = 3u;
 inline constexpr uint32_t kStatusTransactionActive = 0x00000020u;
 
 struct Epoch {
@@ -78,6 +79,28 @@ inline Attribution ClassifyAttachedAfterHandshake(
       handshake.target_hwnd != current_target_hwnd || !status.available ||
       status.owner_kind != kOwnerAttachedGlyph ||
       status.target_hwnd != current_target_hwnd || status.request_seq == 0) {
+    return Attribution::kForeign;
+  }
+  return status.applied_seq == status.request_seq ? Attribution::kAcknowledged
+                                                  : Attribution::kPending;
+}
+
+// A click on any host overlay registered for this game (lookup popup, hook
+// toolbar, floating lyric) publishes a Popup-owner down/release on the same
+// single request slot so the game cannot see that click. After the
+// exact challenge was acknowledged it is this host's input, not a lost
+// handshake: treating it as foreign suspended the surface, dismissed the popup
+// being clicked, and kept lookup rejected until the game next sampled the
+// button and let the release tail retire (seconds on KiriKiri).
+inline Attribution ClassifyPopupAfterHandshake(
+    const StatusIdentity &status, bool handshake_established,
+    const HandshakeIdentity &handshake, const Epoch &current_epoch,
+    uint64_t current_target_hwnd) {
+  if (!handshake_established || !SameEpoch(handshake.epoch, current_epoch) ||
+      handshake.target_hwnd != current_target_hwnd || !status.available ||
+      status.owner_kind != kOwnerPopup ||
+      status.target_hwnd != current_target_hwnd || status.request_seq == 0 ||
+      status.allow_risk) {
     return Attribution::kForeign;
   }
   return status.applied_seq == status.request_seq ? Attribution::kAcknowledged

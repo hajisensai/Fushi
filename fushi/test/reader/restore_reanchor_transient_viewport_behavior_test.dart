@@ -20,7 +20,9 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 ///
 /// 这里在 `flutter test` 内用 Node 真执行分页 / 连续两个 shell 对象，采样器恒答
 /// 「章首」模拟未落定的视口，断言：inset 无变化时不采样、不重锚；有变化时照旧；
-/// `beginRestoreReanchor` 取恢复锚（含句尾锚）不采样，无精确锚时退回采样。撤掉修复，
+/// `beginRestoreReanchor` 取恢复锚（含句尾锚）不采样，无精确锚时退回采样；播放中
+/// 恢复完成时跟读揭示（`scrollToTarget`）先于 begin 执行，也不得让 begin 丢掉恢复锚
+/// （BUG-2744 审查：恢复锚与迟到图片锚分开存）。撤掉修复，
 /// Node 断言失败、本 Dart 守卫转红。没有 node 的环境自动 skip。
 void main() {
   test(

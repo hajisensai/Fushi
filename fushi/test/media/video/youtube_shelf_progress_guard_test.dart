@@ -46,11 +46,15 @@ void main() {
     expect(
       // dart format 会按行宽折行，**并在拆行时补尾随逗号**——所以归一化要同时
       // 压掉空白和把 `,)` 收成 `)`，否则「差一个逗号」就让守卫假红（实测过一次）。
-      _flat(slice).contains(
-          'widget.repo.updatePosition(widget.bookUid,clamped,playedAt:nowMs)'),
+      // PR #1707（9036953d68b）：在线视频源入库集合集连播时写当前成员自己那一行
+      // （keyUid），非合集仍写 widget.bookUid——两路都必须落在 _bookRow 门内。
+      _flat(slice).contains('if(_bookRow!=null){'
+          'finalStringrowUid=_isRemoteCollection?keyUid:widget.bookUid;'
+          'awaitwidget.repo.updatePosition(rowUid,clamped,playedAt:nowMs);'),
       isTrue,
       reason: '书架流媒体书必须把断点写穿 VideoBooks（lastPositionMs/lastPlayedAt），'
-          '否则书架「继续观看/在看筛选/合集续播」对流媒体书失明',
+          '否则书架「继续观看/在看筛选/合集续播」对流媒体书失明；'
+          '非合集写 widget.bookUid，合集写当前成员行',
     );
     // DB 写必须在「真观看」阈值之后（BUG-996 同款考虑：近起点假进度不落 DB）。
     final int iThreshold = slice.indexOf('kMeaningfulRemoteWatchMs');

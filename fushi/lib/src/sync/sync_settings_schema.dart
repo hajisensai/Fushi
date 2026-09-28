@@ -14,6 +14,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/migration_page.dart';
 import 'package:fushi/src/pages/implementations/game_stream_join_page.dart';
 import 'package:fushi/src/pages/implementations/migration_import_page.dart';
+import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/migration/migration_target_channel.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart' show pushSettingsPage;
@@ -374,6 +375,18 @@ SettingsDestination buildSyncBackupDestination() {
             icon: Icons.download_outlined,
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
+          ),
+          // 第三方阅读器（Hoshi Reader iOS / Android）的 `.hoshi` 书库备份：
+          // 书 + 阅读位置 + 统计。五端都给——备份文件本身跨端通用。
+          SettingsActionItem(
+            id: 'sync.hoshi_import',
+            title: t.hoshi_import_entry,
+            subtitle: t.hoshi_import_entry_subtitle,
+            icon: Icons.move_to_inbox_outlined,
+            onTap: (SettingsContext ctx) => pushSettingsPage(
+              ctx,
+              (_) => ExternalReaderImportPage(appModel: ctx.appModel),
+            ),
           ),
           // Hibiki→Fushi 跨包名迁移入口（改名迁移计划 P1-3/P2-2）；仅 Android——
           // 桌面端数据目录可直接搬迁，不走导出/导入通道。同一份代码按**运行时

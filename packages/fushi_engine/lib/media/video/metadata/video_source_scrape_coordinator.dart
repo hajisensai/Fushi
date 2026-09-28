@@ -32,6 +32,10 @@ import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dar
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show lacksLocalMediaFile;
+import 'package:fushi_engine/media/video/video_cover_extractor.dart'
+    show isPlaylistManifestPath;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -852,6 +856,10 @@ class VideoSourceScrapeCoordinator
             settings: settings,
             cancellationToken: cancellationToken,
             episodeOverrides: resolved.episodeOverrides,
+            // 只认调用方给的已确认身份（手动指定 / 下载导入），不认途中按 AniDB
+            // 拆出来的子单元：前者是「这部就是它」的明确意图，旧产物理应换掉。
+            replaceOwnArtifacts:
+                confirmedLookups.containsKey(localWork.stableKey),
           );
           nfoWritten += sidecars.nfoWritten;
           imagesWritten += sidecars.imagesWritten;
@@ -1910,6 +1918,10 @@ class VideoSourceScrapeCoordinator
       // 主循环按既有路径处理（哈希照做、但不决定身份、更不改合集归属）。
       if (await _hasAuthoritativeIdentity(work, source)) continue;
       final VideoBookRow member = work.members.single;
+      // 没有媒体字节的文件（`.strm` / 清单 / 网络流，见 [_isHashableMediaPath]）
+      // 不哈希：原样留给主循环按标题识别，也不进 [_preIdentified]——主循环的
+      // [_identifyWork] 同样跳过它，不会指望这里留下结果。
+      if (!_isHashableMediaPath(member.videoPath)) continue;
       token.throwIfCancelled();
       final AnidbHashIdentityResult result =
           await hashIdentityService.identifyFile(
@@ -2117,12 +2129,28 @@ class VideoSourceScrapeCoordinator
   static const String _hashDisabledNotice =
       'AniDB 哈希识别已关闭（设置 → 在线服务 → AniDB），本批只按标题识别。';
 
+  /// [path] 能不能拿去算 ED2K 哈希、问 AniDB 文件身份：只有本机真实的媒体文件能。
+  /// 网络流（http(s) / rtsp 频道 …）本机没有字节；`.strm` 只是一行流地址、
+  /// `.m3u` / `.m3u8` 清单是文本——哈希它们只会拿文本的哈希去撞 AniDB，白白消耗
+  /// UDP 限流配额，还在每个文件上留一条「未登记」的误导日志。这些成员一律交给
+  /// 标题识别。
+  static bool _isHashableMediaPath(String path) =>
+      !lacksLocalMediaFile(path) && !isPlaylistManifestPath(path);
+
   Future<_HashWorkEvidence> _identifyWork(
     VideoSourceScrapeWork work,
     List<SourceScrapeIssue> warnings,
     VideoSourceScrapeCancellationToken token,
     void Function(String, int, int) onProgress,
   ) async {
+    // 没有媒体字节的成员（[_isHashableMediaPath]）不哈希、不问 AniDB、不记日志。
+    // 全员都是这种（IPTV 频道 / `.strm` 库）时等价于「没有哈希证据」，连「哈希
+    // 已关闭 / 未配置」的提示也不出——这一单元本来就没有可哈希的文件。
+    final List<VideoBookRow> hashableMembers = <VideoBookRow>[
+      for (final VideoBookRow member in work.members)
+        if (_isHashableMediaPath(member.videoPath)) member,
+    ];
+    if (hashableMembers.isEmpty) return const _HashWorkEvidence();
     if (!hashIdentityService.enabled) {
       // 一批只提一次：用户排障时得看得出「没开」和「没配好」不是一回事。
       if (!warnings.any(
@@ -2144,7 +2172,7 @@ class VideoSourceScrapeCoordinator
     final Set<String> titles = <String>{};
     final Map<String, AnidbFileIdentity> identities =
         <String, AnidbFileIdentity>{};
-    for (final VideoBookRow member in work.members) {
+    for (final VideoBookRow member in hashableMembers) {
       token.throwIfCancelled();
       // 合并预处理（[_mergeStandaloneByAnidbWork]）已经识别过的文件直接复用，
       // 一个文件一批只识别一次；没经过预处理的（合集单元成员）照常现场识别。
@@ -3790,6 +3818,7 @@ class VideoSourceScrapeCoordinator
     required _EffectiveSourceSettings settings,
     required VideoSourceScrapeCancellationToken cancellationToken,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
+    bool replaceOwnArtifacts = false,
   }) async {
     if (!settings.writeNfo && !settings.writeImages) {
       return const _SidecarOutcome();
@@ -3852,16 +3881,27 @@ class VideoSourceScrapeCoordinator
       int? episodeId,
       String? remoteUrl,
     }) {
+      // 用户手动指定身份重刮（BUG-2737）：默认「只补缺失」会原样留着旧身份写下的
+      // poster / NFO——库页封面与目录里的资料都还是刮错的那部。这里只把
+      // missingOnly 升成 overwrite，且**不带**危险覆盖授权：第三方文件与用户改过的
+      // Fushi 生成物仍由 writer 的所有权账本保护（protectedExisting /
+      // protectedModified），换掉的只有 Fushi 自己写下、未被改动过的旧产物；
+      // skip 仍是 skip。
+      final bool replaceOwn =
+          replaceOwnArtifacts && policy == SidecarWritePolicy.missingOnly;
+      final SidecarWritePolicy effectivePolicy =
+          replaceOwn ? SidecarWritePolicy.overwrite : policy;
       final _PlannedArtifact value = _PlannedArtifact(
         request: SidecarWriteRequest(
           targetPath: path,
           bytes: bytes,
-          policy: policy,
-          allowProtectedOverwrite: settings.allowExternalOverwrite,
+          policy: effectivePolicy,
+          allowProtectedOverwrite:
+              !replaceOwn && settings.allowExternalOverwrite,
         ),
         context: VideoSidecarArtifactContext(
           artifactKind: kind,
-          writePolicy: policy.name,
+          writePolicy: effectivePolicy.name,
           workId:
               seasonId == null && episodeId == null ? persisted.workId : null,
           seasonId: episodeId == null ? seasonId : null,

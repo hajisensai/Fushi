@@ -1,4 +1,4 @@
-/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/downloads 常驻、
+/// 顶层 tab 的逻辑身份（取代写死的整数索引 0/1/2）。条件 tab（video/browse 常驻、
 /// games 仅 Windows）用枚举身份而非位置来切换/路由——插入条件 tab 不会再打乱「设置/词典」
 /// 的索引（消除 `==2` / `case 1/2` / `%3` 这类特殊情况）。底栏/侧栏只在渲染层把身份映射
 /// 成位置。games（galgame 库）紧跟在 video 之后。顶层 texthooker tab 已删（galgame 捕获
@@ -11,7 +11,9 @@ enum HomeTab {
   books,
   manga,
   video,
-  downloads,
+
+  /// 浏览（Mihon 的 Browse：来源 / 扩展 / 发现 / 下载），2026-09-27 由「下载」改名。
+  browse,
   dictionaries,
   games,
   browserExtension,

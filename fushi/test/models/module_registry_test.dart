@@ -39,7 +39,7 @@ void main() {
       expect(ModuleId.manga.prefKey, 'module_manga_enabled');
       expect(ModuleId.video.prefKey, 'module_video_enabled');
       expect(ModuleId.games.prefKey, 'module_games_enabled');
-      expect(ModuleId.downloads.prefKey, 'module_downloads_enabled');
+      expect(ModuleId.browse.prefKey, 'module_downloads_enabled');
       expect(ModuleId.lookup.prefKey, 'module_dictionaries_enabled');
       expect(
         ModuleId.browserExtension.prefKey,
@@ -107,7 +107,7 @@ void main() {
       // 下载中心：唯一一条不是「这个平台做不做得到」的判据。完整边界与它的
       // 兄弟能力（发现源 / 在线漫画源）见 test/build/ios_store_compliance_guard_test.dart。
       expect(
-        ModuleId.downloads.availableOn(
+        ModuleId.browse.availableOn(
           isWindows: false,
           isDesktop: false,
           isIOS: true,

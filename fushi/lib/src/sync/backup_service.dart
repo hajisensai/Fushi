@@ -8,6 +8,8 @@ import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/models/audio_source_config.dart';
 import 'package:fushi_engine/media/override_title_key.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkOnlyVideoPath;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/sync/backup_merge_engine.dart';
@@ -18,6 +20,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
 part 'backup_service/fs_retry.part.dart';
 part 'backup_service/path_rebase.part.dart';
@@ -959,12 +962,17 @@ class BackupService {
 
   String get _dbPath => p.join(_dbDirectory, _dbName);
 
-  /// A streaming (URL) video book — its `video_path` is an http(s) URL and it is
-  /// self-contained (re-opens by URL, needs no packed file). Mirrors the merge
-  /// engine's SQL predicate so export counts and import filtering stay aligned
-  /// (TODO-1261).
+  /// A streaming (URL) video book — its `video_path` is a network stream
+  /// address ([isNetworkOnlyVideoPath]: http(s) and the live protocols such as
+  /// rtsp / rtmp / udp used by IPTV channels) and it is self-contained (re-opens
+  /// by URL, needs no packed file). A local `.strm` pointer is NOT streaming here:
+  /// it is a real file on disk and is packed like any other local video. Mirrors
+  /// the merge engine's SQL predicate so export counts and import filtering stay
+  /// aligned (TODO-1261).
+  /// Online video source episodes (`anime-source://`, re-fetched from the
+  /// extension at play time) are streaming rows as well.
   static bool _isStreamingVideoPath(String videoPath) =>
-      videoPath.startsWith('http://') || videoPath.startsWith('https://');
+      isNetworkOnlyVideoPath(videoPath);
 
   /// COUNT(*) of a table on the live DB (used to report honest export totals).
   Future<int> _countRows(String table) async {
@@ -1371,9 +1379,10 @@ class BackupService {
       // that will travel usably, not just EPUBs. A video book travels usably iff
       // it is selected (video category on + not filtered out by [videoKeys]) AND
       // either its file was packed (in [videoFiles]) or it is a streaming book
-      // (http(s) URL, self-contained) — the SAME reachability the merge/preview
-      // enforce, so a video-only backup no longer reports "0 books" while 19
-      // videos land, and an unticked/deselected video is not counted.
+      // (network stream URL — http(s) / rtsp …, self-contained) — the SAME
+      // reachability the merge/preview enforce, so a video-only backup no
+      // longer reports "0 books" while 19 videos land, and an
+      // unticked/deselected video is not counted.
       bool videoTravels(VideoBookRow v) {
         if (!includeVideos) return false;
         if (videoKeys != null && !videoKeys.contains(v.bookUid)) return false;

@@ -131,6 +131,8 @@ class JimakuPlanSubtitleResolver {
     final Map<String, String> stagedByUrl = <String, String>{};
     final List<PlanSubtitle> out = <PlanSubtitle>[];
     // 每个视频只探一次时长（同一 URL 的字幕会配给多个视频，但校验是按视频算的）。
+    // 按内嵌字幕轨对时间轴不在这里做：边下边播时视频还残缺，由
+    // AnimeDownloadService 在视频真正下完后对暂存字幕统一补做。
     final Map<String, int?> durationByVideo = <String, int?>{};
     for (final ResolvedSubtitleMatch match in matches) {
       String? staged = stagedByUrl[match.file.url];
