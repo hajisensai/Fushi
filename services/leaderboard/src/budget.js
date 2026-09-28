@@ -35,6 +35,15 @@ export async function spend(env, kind, amount, now) {
   if (row.used > budgetLimit(env, kind)) throw new HttpError(503, 'daily_budget', kind);
 }
 
+/** 按实际用量校正今天的预算（delta 可为负；不做超限判断——判断在写入之前的 spend 里）。 */
+export async function adjustSpend(env, kind, delta, now) {
+  if (!delta) return;
+  await env.DB.prepare(
+    `INSERT INTO budgets (day, kind, used) VALUES (?1, ?2, MAX(0, ?3))
+     ON CONFLICT (day, kind) DO UPDATE SET used = MAX(0, used + ?3)`,
+  ).bind(utcDateKey(now), kind, delta).run();
+}
+
 /** 预占 R2 字节；超过配额抛 507 media_quota（条件 UPDATE，原子）。 */
 export async function reserveMediaBytes(env, bytes) {
   const res = await env.DB.prepare(

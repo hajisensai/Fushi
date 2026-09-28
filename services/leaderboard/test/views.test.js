@@ -246,3 +246,94 @@ describe('用户主页 / 书架 / 作品页', () => {
     ]);
   });
 });
+
+describe('游标分页、缓存键与快照（审查修复回归）', () => {
+  it('用户书架游标分页：逐页取完、不重不漏；kind 过滤走同一游标', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'pager', { now: NOW });
+    const entries = [];
+    for (let i = 0; i < 23; i++) {
+      const date = `2026-09-${String(1 + (i % 28)).padStart(2, '0')}`;
+      entries.push(entry(i % 3 ? 'book' : 'manga', [`t:p${i}|`], `p${i}`, at(date)));
+    }
+    await upload(env, u, entries);
+    const seen = [];
+    let cursor = null;
+    for (let guard = 0; guard < 10; guard++) {
+      const q = cursor ? `?limit=10&cursor=${cursor}` : '?limit=10';
+      const r = await call(env, 'GET', `/v1/users/${u.id}/shelf${q}`, { now: NOW });
+      expect(r.status).toBe(200);
+      seen.push(...r.data.rows.map((x) => x.work.title));
+      cursor = r.data.next;
+      if (!cursor) break;
+    }
+    expect(seen).toHaveLength(23);
+    expect(new Set(seen).size).toBe(23);
+    const manga = await call(env, 'GET', `/v1/users/${u.id}/shelf?kind=manga&limit=50`, { now: NOW });
+    expect(manga.data.rows).toHaveLength(8);
+    expect(manga.data.next).toBeNull();
+    expect((await call(env, 'GET', `/v1/users/${u.id}/shelf?cursor=bad`, { now: NOW })).status).toBe(400);
+  });
+
+  it('作品读者游标分页', async () => {
+    const env = makeEnv();
+    const users = [];
+    for (let i = 0; i < 7; i++) users.push(await registerUser(env, `r${i}`, { now: NOW }));
+    let workId = null;
+    for (const [i, u] of users.entries()) {
+      const r = await upload(env, u, [entry('book', ['t:w|'], 'w', at(`2026-09-0${1 + i}`))]);
+      workId = r[0].workId;
+    }
+    const first = await call(env, 'GET', `/v1/works/${workId}?limit=4`, { now: NOW });
+    const second = await call(env, 'GET', `/v1/works/${workId}?limit=4&cursor=${first.data.next}`, { now: NOW });
+    const names = [...first.data.rows, ...second.data.rows].map((x) => x.account.nickname);
+    expect(names).toEqual(['r6', 'r5', 'r4', 'r3', 'r2', 'r1', 'r0']);
+    expect(second.data.next).toBeNull();
+  });
+
+  it('缓存键只保留白名单参数；IPv6 按 /64 聚合', async () => {
+    const { canonicalReadUrl, clientIp } = await import('../src/worker.js');
+    const u = canonicalReadUrl(new URL('https://x/v1/rank?x=1&window=week&metric=book&junk=2'));
+    expect(u.toString()).toBe('https://x/v1/rank?metric=book&window=week');
+    const req = (ip) => new Request('https://x/', { headers: { 'CF-Connecting-IP': ip } });
+    expect(clientIp(req('2001:db8:1:2:3:4:5:6'))).toBe(clientIp(req('2001:db8:1:2:ffff::1')));
+    expect(clientIp(req('2001:db8:1:2:3:4:5:6'))).not.toBe(clientIp(req('2001:db8:1:3::1')));
+    expect(clientIp(req('1.2.3.4'))).toBe('1.2.3.4');
+  });
+
+  it('快照缺失时返回空榜（computedAt = null），不在请求里现场生成', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const u = await registerUser(env, 'a', { now: NOW });
+    await upload(env, u, [entry('book', ['t:x|'], 'x', at('2026-09-29'))]);
+    const r = await rank(env, 'metric=book&window=week');
+    expect(r.data.rows).toEqual([]);
+    expect(r.data.computedAt).toBeNull();
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM rank_snapshots').get().n).toBe(0);
+  });
+
+  it('快照分块：超过一块的榜单完整读回', async () => {
+    const snaps = await import('../src/snapshots.js');
+    const env = makeEnv({ autoSnapshot: false });
+    const db = env.DB.raw;
+    const n = snaps.SNAPSHOT_CHUNK + 5;
+    db.exec('BEGIN');
+    const insA = db.prepare("INSERT INTO accounts (id, email_hash, nickname, discriminator, created_at) VALUES (?1, ?1, ?1, 0, 0)");
+    const insT = db.prepare('INSERT INTO account_totals (account_id, book) VALUES (?1, ?2)');
+    for (let i = 0; i < n; i++) {
+      const id = `acct${String(i).padStart(6, '0')}`;
+      insA.run(id);
+      insT.run(id, 1 + (i % 50));
+    }
+    db.exec('COMMIT');
+    await snaps.refreshSnapshots(env, NOW);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM rank_snapshots WHERE win = 'all' AND metric = 'book'").get().n).toBe(2);
+    snaps.clearSnapshotMemo();
+    const snap = await snaps.rankSnapshot(env, 'all', 'book', NOW);
+    expect(snap.list).toHaveLength(n);
+    expect(snap.list[0][1]).toBe(50);
+    // 缩回一块时，多出来的旧块被删掉
+    db.exec("DELETE FROM account_totals WHERE account_id > 'acct000100'");
+    await snaps.refreshSnapshots(env, NOW);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM rank_snapshots WHERE win = 'all' AND metric = 'book'").get().n).toBe(1);
+  }, 60000);
+});

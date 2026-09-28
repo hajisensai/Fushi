@@ -109,20 +109,48 @@ describe('注册（邮箱验证码）', () => {
     expect(seen.size).toBe(5);
   });
 
-  it('发码按 IP / 按邮箱限流，并受全局日预算约束', async () => {
+  it('发码：按 IP 限流是显式 429；按邮箱限流与预算耗尽一律静默（照样 202，只是不发）', async () => {
     const env = makeEnv();
     const ipStatuses = [];
     for (let i = 0; i < 6; i++) ipStatuses.push((await codeFor(env, `ip${i}@example.com`, 'register', '1.2.3.4')).status);
     expect(ipStatuses).toEqual([202, 202, 202, 202, 202, 429]);
+    const before = env.sent.length;
     const addrStatuses = [];
     for (let i = 0; i < 4; i++) addrStatuses.push((await codeFor(env, 'same@example.com')).status);
-    expect(addrStatuses).toEqual([202, 202, 202, 429]);
+    expect(addrStatuses).toEqual([202, 202, 202, 202]);
+    expect(env.sent.length - before).toBe(3);
 
     const tight = makeEnv({ BUDGET_EMAIL: '2' });
     const b = [];
     for (let i = 0; i < 3; i++) b.push((await codeFor(tight, `b${i}@example.com`)).status);
-    expect(b).toEqual([202, 202, 503]);
+    expect(b).toEqual([202, 202, 202]);
     expect(tight.sent).toHaveLength(2);
+  });
+
+  it('防探测：预算耗尽时已注册 / 未注册邮箱的登录发码响应完全一致', async () => {
+    const env = makeEnv({ BUDGET_EMAIL: '1' });
+    await registerUser(env, 'known', { email: 'known@example.com', now: NOW }); // 用掉唯一的 1 封
+    const known = await codeFor(env, 'known@example.com', 'login');
+    const ghost = await codeFor(env, 'ghost@example.com', 'login');
+    expect([known.status, ghost.status]).toEqual([202, 202]);
+    expect(env.sent).toHaveLength(1);
+  });
+
+  it('同一邮箱每天累计猜错 10 次后，跨重发也不再接受任何码', async () => {
+    const env = makeEnv();
+    const key = await newKey();
+    const reg = (c) => call(env, 'POST', '/v1/register', {
+      key, body: { pubkey: key.pubkey, nickname: 'a', email: 'cap@example.com', code: c }, now: NOW,
+      headers: { 'CF-Connecting-IP': nextIp() },
+    });
+    let code = null;
+    for (let round = 0; round < 3; round++) {
+      code = (await codeFor(env, 'cap@example.com')).code;
+      const wrong = code === '111111' ? '222222' : '111111';
+      for (let i = 0; i < 4; i++) await reg(wrong);
+    }
+    // 已猜错 12 次 > 10：拿着最新的正确码也被拒。
+    expect((await reg(code)).data.error).toBe('too_many_attempts');
   });
 
   it('没配置发信 / pepper → 503 fail-closed', async () => {

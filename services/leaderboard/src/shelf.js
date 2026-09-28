@@ -23,7 +23,8 @@
 // 落空 → 同一作品被拆成两部，由管理员合并。概率极低，不值得为它加锁。
 
 import { HttpError, clampInt, randomId, utcDateKey } from './util.js';
-import { spend } from './budget.js';
+import { adjustSpend, spend } from './budget.js';
+import { accountPeriodsStatements, periodContributions, periodsOf, workPeriodsDeltaStatements } from './periods.js';
 import { DAY, LIMITS, hit } from './ratelimit.js';
 
 export const KINDS = ['book', 'manga', 'video', 'game'];
@@ -33,6 +34,8 @@ export const MAX_DAILY = 400;
 /** 单账户书架行数上限（也受 D1 单参数约 2MB 约束——reset 时要一次读出全部旧行）。 */
 export const MAX_SHELF_ROWS = 8000;
 export const DAILY_CHARS_CAP = 400000;
+/** 每日字数只收最近这么多天（见 normalizeDaily）。 */
+export const DAILY_WINDOW_DAYS = 3650;
 export const MAX_SHELF_BODY = 1024 * 1024;
 /** 单个绑定参数（JSON 串）的字节上限；D1 线上约 2MB，node:sqlite 不限，所以必须自己查。 */
 export const MAX_PARAM_BYTES = 1900 * 1024;
@@ -142,8 +145,10 @@ export function normalizeDaily(d, i, now) {
   if (!d || typeof d.date !== 'string' || !DATE_RE.test(d.date)) {
     throw new HttpError(400, 'bad_daily', `${i}`);
   }
-  // 客户端本地日可能比 UTC 快一天。
+  // 客户端本地日可能比 UTC 快一天；下限 10 年：更早的日期没有真实用途，却能无限刷字数总榜、
+  // 也会让每次上传都要重算的 account_totals 读量没有上界。
   if (d.date > utcDateKey(now + 36 * 3600 * 1000)) throw new HttpError(400, 'bad_daily', `${i}: future`);
+  if (d.date < utcDateKey(now - DAILY_WINDOW_DAYS * DAY_MS)) throw new HttpError(400, 'bad_daily', `${i}: too_old`);
   return { date: d.date, chars: clampInt(d.chars, 0, DAILY_CHARS_CAP, 0) };
 }
 
@@ -162,8 +167,10 @@ export function normalizeUpload(body, now) {
     const n = normalizeDaily(d, i, now);
     dailyMap.set(n.date, n.chars); // 同日重复取后者
   });
+  if (body.claim === true && body.reset !== true) throw new HttpError(400, 'claim_requires_reset');
   return {
     reset: body.reset === true,
+    claim: body.claim === true,
     put: put.map((e, i) => normalizeEntry(e, i, now)),
     remove: [...new Set(remove)],
     daily: [...dailyMap].map(([date, chars]) => ({ date, chars })),
@@ -379,7 +386,7 @@ const isFinished = (at) => at !== null && at !== undefined;
  * 纯函数：本批之后的新旧差。对每个被触及的作品只用一条规则——
  *   之后存在 = 在 put 里，或（非 reset 且旧行存在且不在 remove 里）；
  *   之后读完 = put 的看新值，否则沿用旧值；
- *   书架行数差 / 读者数差 = 之后 − 之前。
+ *   书架行数差 / 读者数差 / 周期读者数差 = 之后 − 之前。
  * @param oldRows Map<workId, {finished_at, finished_date}>（reset 时是本账户全部旧行）
  * @param putRows resolveUpload().rows
  */
@@ -389,6 +396,7 @@ export function shelfDiff({ reset, remove, oldRows, putRows }) {
   const ids = new Set([...oldRows.keys(), ...put.keys(), ...remove]);
   let countDelta = 0;
   const readerDeltas = [];
+  const periodDeltas = [];
   const dates = new Set();
   const gone = [];
   for (const id of ids) {
@@ -403,16 +411,68 @@ export function shelfDiff({ reset, remove, oldRows, putRows }) {
     if (d !== 0) readerDeltas.push({ id, d });
     if (existedBefore && !existsAfter) gone.push(id);
     const changed = p !== undefined || !existsAfter;
-    if (changed && o && o.finished_date) dates.add(o.finished_date);
-    if (p && p.finishedDate) dates.add(p.finishedDate);
+    if (changed && o) {
+      if (o.finished_date) dates.add(o.finished_date);
+      periodDeltas.push(...periodContributions(id, o.finished_at, o.finished_date, -1));
+    }
+    if (changed && existsAfter) {
+      const after = p !== undefined ? { at: p.finishedAt, date: p.finishedDate } : { at: o.finished_at, date: o.finished_date };
+      if (after.date) dates.add(after.date);
+      periodDeltas.push(...periodContributions(id, after.at, after.date, 1));
+    }
   }
-  return { countDelta, readerDeltas, dates, gone };
+  return { countDelta, readerDeltas, periodDeltas, dates, gone };
 }
 
-/** 执行一批增量上报。返回 put 条目（按下标）对应的作品与是否缺封面、服务端书架行数、待删 R2 key。 */
-export async function applyShelfDelta(env, account, upload, now) {
+/**
+ * 乐观锁：本批只有在账户书架版本仍是 rev 时才生效。版本不符时第一条语句向 cas_guard 插 NULL，
+ * NOT NULL 约束让整个 batch（一个事务）回滚；第二条语句把版本 +1。
+ * 所有改本账户书架 / 计数的写路径（上传、隐藏、删号、管理合并拆分）都走它或递增同一版本。
+ */
+export function casStatements(db, accountId, rev) {
+  return [
+    db.prepare(
+      'INSERT INTO cas_guard (ok) SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE id = ?1 AND shelf_rev = ?2)',
+    ).bind(accountId, rev),
+    db.prepare('UPDATE accounts SET shelf_rev = shelf_rev + 1 WHERE id = ?1').bind(accountId),
+  ];
+}
+
+export function isCasConflict(e) {
+  return /cas_guard/.test(String(e && e.message));
+}
+
+/** 跑一个带 CAS 的 batch；版本冲突转成 409 conflict（整批已回滚，无副作用，客户端重读后重试）。 */
+export async function casBatch(db, stmts) {
+  try {
+    return await db.batch(stmts);
+  } catch (e) {
+    if (isCasConflict(e)) throw new HttpError(409, 'conflict');
+    throw e;
+  }
+}
+
+/** D1 每写一行、每个受影响索引另计一行；估算按表的索引数放大（shelf 有 4 个索引 + works 回写）。 */
+export function estimateWriteRows({ newWorks, newAliases, rows, gone, dates, periods, readerDeltas, periodDeltas }) {
+  return newWorks * 3 + newAliases * 3 + rows * 7 + gone * 7 + dates * 4 + periods * 3 +
+    readerDeltas * 3 + periodDeltas * 4 + 16;
+}
+
+/**
+ * 执行一批增量上报。keyId = 发起请求的设备钥匙。返回 put 条目（按下标）对应的作品与是否缺封面、
+ * 服务端书架行数、待删 R2 key、D1 实际写入行数（若可得）。
+ */
+export async function applyShelfDelta(env, account, keyId, upload, now) {
   const db = env.DB;
   const accountId = account.id;
+
+  // 0. 事务外先读版本（此后任何并发改动都会让本批的 CAS 失败）与上传设备。
+  const acc = await db.prepare('SELECT shelf_rev, shelf_count, hidden, upload_key FROM accounts WHERE id = ?1')
+    .bind(accountId).first();
+  if (!acc) throw new HttpError(401, 'unknown_account');
+  if (acc.upload_key !== null && acc.upload_key !== keyId) {
+    if (!(upload.claim && upload.reset)) throw new HttpError(409, 'upload_owned_by_other_device');
+  }
 
   // 1. 解析本批 put 的作品（读取量 ≈ 本批键数）。
   let res = { entryWork: [], newWorks: [], newAliases: [], rows: [] };
@@ -433,6 +493,7 @@ export async function applyShelfDelta(env, account, upload, now) {
     }
     res = resolveUpload(upload.put, existing, workNs);
   }
+  const kindOf = new Map(res.rows.map((r, i) => [r.workId, upload.put[res.entryWork.indexOf(r.workId)].kind]));
 
   // 2. 被触及的旧行（reset = 本账户全部旧行；否则只按 PK 取本批涉及的作品）。
   const putIds = res.rows.map((r) => r.workId);
@@ -447,21 +508,27 @@ export async function applyShelfDelta(env, account, upload, now) {
 
   // 3. 新旧差（纯函数）。
   const diff = shelfDiff({ reset: upload.reset, remove: upload.remove, oldRows, putRows: res.rows });
-  const newCount = (upload.reset ? old.results.length : account.shelf_count) + diff.countDelta;
+  const newCount = (upload.reset ? old.results.length : acc.shelf_count) + diff.countDelta;
   if (newCount > MAX_SHELF_ROWS) throw new HttpError(413, 'shelf_full');
   for (const d of upload.daily) diff.dates.add(d.date);
-  // 被隐藏的账户不计入任何作品的读者数，也不参与众数。
-  const readerDeltas = account.hidden ? [] : diff.readerDeltas;
+  const periods = [...new Set([...diff.dates].flatMap(periodsOf))];
+  // 被隐藏的账户不计入任何作品的读者数，也不参与众数（hidden 取本次读到的最新值）。
+  const readerDeltas = acc.hidden ? [] : diff.readerDeltas;
+  const periodDeltas = acc.hidden ? [] : diff.periodDeltas;
 
-  // 4. 预算：按估算写入行数扣本账户日上限与全局日预算。
-  const estRows = res.newWorks.length + res.newAliases.length + res.rows.length * 2 + diff.gone.length * 2 +
-    diff.dates.size * 2 + readerDeltas.length + 8;
+  // 4. 预算：按估算写入行数扣本账户日上限与全局日预算（都在写入之前）。
+  const estRows = estimateWriteRows({
+    newWorks: res.newWorks.length, newAliases: res.newAliases.length, rows: res.rows.length,
+    gone: diff.gone.length, dates: diff.dates.size, periods: periods.length,
+    readerDeltas: readerDeltas.length, periodDeltas: periodDeltas.length,
+  });
   await hit(env, `rows:${accountId}`, DAY, LIMITS.shelfRowsPerAccountDay, now, estRows);
   await spend(env, 'write_rows', estRows, now);
 
-  // 5. 一个事务写完。
-  const rowsJson = jsonParam(res.rows.map((r) => ({ ...r, refs: JSON.stringify(r.refs) })));
+  // 5. 一个事务写完：CAS 打头，版本不符整批回滚。
+  const rowsJson = jsonParam(res.rows.map((r) => ({ ...r, kind: kindOf.get(r.workId), refs: JSON.stringify(r.refs) })));
   const stmts = [
+    ...casStatements(db, accountId, acc.shelf_rev),
     db.prepare(
       `INSERT INTO works (id, kind, title, author, created_at)
        SELECT ${J('id')}, ${J('kind')}, ${J('title')}, ${J('author')}, ?2 FROM json_each(?1)`,
@@ -471,6 +538,9 @@ export async function applyShelfDelta(env, account, upload, now) {
        SELECT ${J('ref')}, ${J('workId')} FROM json_each(?1)`,
     ).bind(jsonParam(res.newAliases)),
   ];
+  if (acc.upload_key !== keyId) {
+    stmts.push(db.prepare('UPDATE accounts SET upload_key = ?2 WHERE id = ?1').bind(accountId, keyId));
+  }
   if (upload.reset) {
     stmts.push(
       db.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(accountId),
@@ -483,8 +553,8 @@ export async function applyShelfDelta(env, account, upload, now) {
   }
   stmts.push(
     db.prepare(
-      `INSERT INTO shelf (account_id, work_id, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
-       SELECT ?2, ${J('workId')}, ${J('refs')}, ${J('title')}, ${J('author')}, ${J('finishedAt')},
+      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
+       SELECT ?2, ${J('workId')}, ${J('kind')}, ${J('refs')}, ${J('title')}, ${J('author')}, ${J('finishedAt')},
               ${J('finishedDate')}, ${J('chars')}, ${J('ms')}, ?3
        FROM json_each(?1) WHERE 1
        ON CONFLICT (account_id, work_id) DO UPDATE SET
@@ -493,13 +563,15 @@ export async function applyShelfDelta(env, account, upload, now) {
          chars = excluded.chars, ms = excluded.ms, updated_at = excluded.updated_at`,
     ).bind(rowsJson, accountId, now),
     readersDeltaStatement(db, jsonParam(readerDeltas)),
-    // 远端封面先到先得（已有上传缩略图的不覆盖）；nsfw 只升不降（降级只能管理员做）。
+    ...workPeriodsDeltaStatements(db, jsonParam(periodDeltas)),
+    // 远端封面先到先得（已有上传缩略图的不覆盖）；nsfw 只升不降。只改真的会变的行（没变也算写入）。
     db.prepare(
       `UPDATE works SET
          cover_url = COALESCE(works.cover_url, CASE WHEN works.cover_key IS NULL THEN j.cover END),
          nsfw = MAX(works.nsfw, j.nsfw)
        FROM (SELECT ${J('workId')} AS id, ${J('coverUrl')} AS cover, ${J('nsfw')} AS nsfw FROM json_each(?1)) AS j
-       WHERE works.id = j.id`,
+       WHERE works.id = j.id
+         AND ((works.cover_url IS NULL AND works.cover_key IS NULL AND j.cover IS NOT NULL) OR j.nsfw > works.nsfw)`,
     ).bind(rowsJson),
     db.prepare(
       `INSERT INTO stat_days (account_id, date_key, chars)
@@ -507,12 +579,17 @@ export async function applyShelfDelta(env, account, upload, now) {
        ON CONFLICT (account_id, date_key) DO UPDATE SET chars = excluded.chars`,
     ).bind(jsonParam(upload.daily), accountId),
     ...accountStatsStatements(db, accountId, upload.reset ? null : jsonParam([...diff.dates])),
-    db.prepare('UPDATE accounts SET shelf_count = ?2 WHERE id = ?1').bind(accountId, newCount),
+    ...accountPeriodsStatements(db, accountId, upload.reset ? null : periods),
+    db.prepare('UPDATE accounts SET shelf_count = shelf_count + ?2 WHERE id = ?1')
+      .bind(accountId, upload.reset ? newCount - acc.shelf_count : diff.countDelta),
   );
-  if (!account.hidden) stmts.push(metaIfChangedStatement(db, rowsJson));
+  if (!acc.hidden) stmts.push(metaIfChangedStatement(db, rowsJson));
   stmts.push(...orphanPurgeStatements(db, jsonParam(diff.gone)));
-  const results = await db.batch(stmts);
+  const results = await casBatch(db, stmts);
   const coverKeys = coverKeysOf(results[results.length - 1]);
+  const written = results.reduce((n, r) => n + ((r && r.meta && r.meta.rows_written) || 0), 0);
+  // 用 D1 回报的真实写入行数校正预算（本地 SQLite 没有该字段时跳过）。
+  if (written > 0) await adjustSpend(env, 'write_rows', written - estRows, now);
 
   const covers = await db.prepare(
     `SELECT id, (cover_url IS NULL AND cover_key IS NULL) AS needs_cover FROM works

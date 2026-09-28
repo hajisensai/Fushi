@@ -8,26 +8,45 @@
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
 
 import { HttpError, json, randomId, timingSafeEqual } from './util.js';
-import { accountStatsStatements, readersDeltaStatement, recomputeMetaStatement } from './shelf.js';
+import {
+  accountStatsStatements,
+  casBatch,
+  casStatements,
+  readersDeltaStatement,
+  recomputeMetaStatement,
+} from './shelf.js';
+import { accountPeriodsStatements, exactWorkPeriodsStatements, periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia } from './budget.js';
 import { refreshSnapshots } from './snapshots.js';
 
 /**
- * 管理操作改了作品归属后的精确重算：作品读者数现场 COUNT、相关账户计分全量重算，再刷新快照。
- * 管理操作频率极低，这里用精确重算换正确性（常态上传路径是增量维护，见 shelf.js）。
+ * 管理操作改了作品归属后的精确重算语句（放进同一个事务）：作品读者数与周期读者数现场 COUNT，
+ * 给出的账户（只有「两边都在架」的账户计分会变）计分与周期全量重算。
+ * 读量 = 这些作品的读者数 + 这些账户的计分行；管理操作频率极低，用精确重算换正确性。
  */
-async function recountAfterRemap(env, workIds, accountIds, now) {
+function recountStatements(db, workIds, accountIds) {
+  const ids = JSON.stringify(workIds);
   const stmts = [
-    env.DB.prepare(
+    db.prepare(
       `UPDATE works SET readers = (
          SELECT COUNT(*) FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
          WHERE s.work_id = works.id AND s.finished_at IS NOT NULL)
        WHERE id IN (SELECT value FROM json_each(?1))`,
-    ).bind(JSON.stringify(workIds)),
+    ).bind(ids),
+    ...exactWorkPeriodsStatements(db, ids),
   ];
-  for (const acc of accountIds) stmts.push(...accountStatsStatements(env.DB, acc, null));
-  await env.DB.batch(stmts);
-  await refreshSnapshots(env, now);
+  for (const acc of accountIds) {
+    stmts.push(...accountStatsStatements(db, acc, null), ...accountPeriodsStatements(db, acc, null));
+  }
+  return stmts;
+}
+
+/** 这些作品的全部在架账户书架版本 +1：与之交错的上传 CAS 失败、重读后重试。 */
+function bumpRevStatement(db, workIds) {
+  return db.prepare(
+    `UPDATE accounts SET shelf_rev = shelf_rev + 1
+     WHERE id IN (SELECT account_id FROM shelf WHERE work_id IN (SELECT value FROM json_each(?1)))`,
+  ).bind(JSON.stringify(workIds));
 }
 
 export function checkBasicAuth(request, env) {
@@ -61,13 +80,17 @@ export async function mergeWorks(env, from, into, now) {
   if (both.results.length !== 2) throw new HttpError(404, 'not_found');
   if (both.results[0].kind !== both.results[1].kind) throw new HttpError(400, 'kind_mismatch');
   const fromRow = both.results.find((r) => r.id === from);
-  const affected = await env.DB.prepare('SELECT account_id FROM shelf WHERE work_id = ?1').bind(from).all();
+  // 只有两边都在架的账户计分会变（两行并成一行）；其余账户只是换了作品 id，计分不变。
+  const dup = await env.DB.prepare(
+    'SELECT account_id FROM shelf WHERE work_id = ?1 AND account_id IN (SELECT account_id FROM shelf WHERE work_id = ?2)',
+  ).bind(from, into).all();
   await env.DB.batch([
+    bumpRevStatement(env.DB, [from, into]),
     env.DB.prepare('UPDATE work_aliases SET work_id = ?2 WHERE work_id = ?1').bind(from, into),
     // 同一账户两边都有：与上报合并规则一致——读完时刻取较晚者，字数/时长累加。
     env.DB.prepare(
-      `INSERT INTO shelf (account_id, work_id, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
-       SELECT account_id, ?2, refs, title, author, finished_at, finished_date, chars, ms, updated_at
+      `INSERT INTO shelf (account_id, work_id, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
+       SELECT account_id, ?2, kind, refs, title, author, finished_at, finished_date, chars, ms, updated_at
        FROM shelf WHERE work_id = ?1
        ON CONFLICT (account_id, work_id) DO UPDATE SET
          finished_date = CASE WHEN COALESCE(excluded.finished_at, -1) > COALESCE(shelf.finished_at, -1)
@@ -87,11 +110,14 @@ export async function mergeWorks(env, from, into, now) {
        WHERE id = ?2`,
     ).bind(from, into),
     env.DB.prepare('DELETE FROM works WHERE id = ?1').bind(from),
+    ...recountStatements(env.DB, [from, into], dup.results.map((r) => r.account_id)),
+    env.DB.prepare('UPDATE accounts SET shelf_count = (SELECT COUNT(*) FROM shelf s WHERE s.account_id = accounts.id) WHERE id IN (SELECT value FROM json_each(?1))')
+      .bind(JSON.stringify(dup.results.map((r) => r.account_id))),
   ]);
   const kept = await env.DB.prepare('SELECT cover_key FROM works WHERE id = ?1').bind(into).first();
   if (fromRow.cover_key && kept.cover_key !== fromRow.cover_key) await deleteMedia(env, fromRow.cover_key);
   await recomputeMeta(env, into);
-  await recountAfterRemap(env, [into], affected.results.map((r) => r.account_id), now);
+  await refreshSnapshots(env, now);
 }
 
 /**
@@ -108,6 +134,7 @@ export async function splitWork(env, ref, now) {
     env.DB.prepare(
       'INSERT INTO works (id, kind, title, author, nsfw, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)',
     ).bind(newId, old.kind, old.title, old.author, old.nsfw, now),
+    bumpRevStatement(env.DB, [old.id]),
     env.DB.prepare('UPDATE work_aliases SET work_id = ?2 WHERE ref = ?1').bind(ref, newId),
     env.DB.prepare(
       `UPDATE shelf SET work_id = ?3
@@ -116,11 +143,12 @@ export async function splitWork(env, ref, now) {
          WHERE r.value = ?1 OR EXISTS (SELECT 1 FROM work_aliases a WHERE a.ref = r.value AND a.work_id = ?2)
          ORDER BY r.key LIMIT 1) = ?1`,
     ).bind(ref, old.id, newId),
+    // 拆分只是把行换个作品 id（同 kind、同读完时刻），账户计分不变，只重算两部作品。
+    ...recountStatements(env.DB, [newId, old.id], []),
   ]);
   await recomputeMeta(env, newId);
   await recomputeMeta(env, old.id);
-  const moved = await env.DB.prepare('SELECT account_id FROM shelf WHERE work_id = ?1').bind(newId).all();
-  await recountAfterRemap(env, [newId, old.id], moved.results.map((r) => r.account_id), now);
+  await refreshSnapshots(env, now);
   return newId;
 }
 
@@ -129,16 +157,21 @@ export async function splitWork(env, ref, now) {
  * 让它马上从 / 回到各榜单（不等 30 分钟的定时任务）。
  */
 export async function setAccountHidden(env, accountId, hidden, now) {
-  const acc = await env.DB.prepare('SELECT hidden FROM accounts WHERE id = ?1').bind(accountId).first();
+  const acc = await env.DB.prepare('SELECT hidden, shelf_rev FROM accounts WHERE id = ?1').bind(accountId).first();
   if (!acc) throw new HttpError(404, 'not_found');
   if ((acc.hidden === 1) === hidden) return;
   const finished = await env.DB.prepare(
-    'SELECT work_id FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL',
+    'SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1 AND finished_at IS NOT NULL',
   ).bind(accountId).all();
   const d = hidden ? -1 : 1;
-  await env.DB.batch([
+  // CAS：与本账户并发上传交错时整批回滚（409），管理员重试即可——否则上传用的旧 hidden 会让读者数重复计入。
+  await casBatch(env.DB, [
+    ...casStatements(env.DB, accountId, acc.shelf_rev),
     env.DB.prepare('UPDATE accounts SET hidden = ?2 WHERE id = ?1').bind(accountId, hidden ? 1 : 0),
     readersDeltaStatement(env.DB, JSON.stringify(finished.results.map((x) => ({ id: x.work_id, d })))),
+    ...workPeriodsDeltaStatements(env.DB, JSON.stringify(
+      finished.results.flatMap((x) => periodContributions(x.work_id, x.finished_at, x.finished_date, d)),
+    )),
   ]);
   await refreshSnapshots(env, now);
 }
@@ -155,6 +188,9 @@ export async function handleAdmin(env, request, path, body, now) {
   if ((r = m(/^\/admin\/api\/reports\/(\d+)\/resolve$/))) {
     await env.DB.prepare('UPDATE reports SET resolved = 1 WHERE id = ?1').bind(Number(r[1])).run();
     return json({ ok: true });
+  }
+  if (path === '/admin/api/snapshots/refresh') {
+    return json({ ok: true, rows: await refreshSnapshots(env, now) });
   }
   if (path === '/admin/api/works/merge') {
     await mergeWorks(env, body.from, body.into, now);

@@ -86,20 +86,36 @@ export async function sendEmail(env, to, subject, text) {
   if (!res.ok) throw new HttpError(502, 'email_failed', String(res.status));
 }
 
-/** POST /v1/email/code。永远 202（防探测），真实错误只有格式 / 限流 / 预算 / 未配置。 */
-export async function requestCode(env, ip, body, now) {
+/**
+ * POST /v1/email/code。前台只做与邮箱是否注册无关的事（格式校验、按 IP 限流），立刻 202；
+ * 其余（按邮箱限流、是否有账户、扣预算、写码、发信）全在后台做，任何一步不通过都静默丢弃——
+ * 否则「预算耗尽时已注册邮箱 503、未注册 202」或响应时长差都能用来探测邮箱是否注册。
+ */
+export async function requestCode(env, ip, body, now, ctx) {
   const email = normalizeEmail(body && body.email);
   if (!email) throw new HttpError(400, 'bad_email');
   const purpose = body.purpose;
   if (!PURPOSES.includes(purpose)) throw new HttpError(400, 'bad_purpose');
+  pepper(env); // 未配置在前台就 503（与邮箱无关，不泄露信息）
+  if (typeof env.EMAIL_SENDER !== 'function' && (!env.RESEND_API_KEY || !env.EMAIL_FROM)) {
+    throw new HttpError(503, 'email_not_configured');
+  }
   const lang = MESSAGES[body.lang] ? body.lang : 'en';
-  const hash = await emailHash(env, email);
   await hit(env, `email:ip:${ip}`, HOUR, EMAIL_LIMITS.perIpHour, now);
+  const work = deliverCode(env, email, purpose, lang, now).catch((e) => {
+    console.warn('email code dropped', e && e.code ? e.code : String(e));
+  });
+  if (ctx && ctx.waitUntil) ctx.waitUntil(work);
+  else await work;
+}
+
+async function deliverCode(env, email, purpose, lang, now) {
+  const hash = await emailHash(env, email);
   await hit(env, `email:addr:${hash}`, HOUR, EMAIL_LIMITS.perAddressHour, now);
   await hit(env, `email:addrday:${hash}`, DAY, EMAIL_LIMITS.perAddressDay, now);
   if (purpose === 'login') {
     const acc = await env.DB.prepare('SELECT 1 AS x FROM accounts WHERE email_hash = ?1').bind(hash).first();
-    if (!acc) return; // 没账户：不发信（外部表现与发了一致）
+    if (!acc) return; // 没账户：不发信
   }
   await spend(env, 'email', 1, now);
   const code = randomCode();
@@ -113,6 +129,9 @@ export async function requestCode(env, ip, body, now) {
   await sendEmail(env, email, m.subject, m.body(code));
 }
 
+/** 每个邮箱每天累计最多猜错这么多次（跨重发、跨用途）：重发会重置单码的 5 次，但不重置它。 */
+export const DAILY_FAILURES_PER_EMAIL = 10;
+
 /**
  * 核对并消费验证码。返回邮箱哈希。
  * 错码：尝试次数 +1（原子），第 5 次后作废；过期 410；成功即删（一次性）。
@@ -122,6 +141,11 @@ export async function consumeCode(env, rawEmail, purpose, code, now) {
   if (!email) throw new HttpError(400, 'bad_email');
   if (typeof code !== 'string' || !/^\d{6}$/.test(code)) throw new HttpError(400, 'bad_code');
   const hash = await emailHash(env, email);
+  const failBucket = `emailfail:${hash}`;
+  const failWindow = Math.floor(now / DAY) * DAY;
+  const fails = await env.DB.prepare('SELECT count FROM rate_limits WHERE bucket = ?1 AND window_start = ?2')
+    .bind(failBucket, failWindow).first();
+  if (fails && fails.count >= DAILY_FAILURES_PER_EMAIL) throw new HttpError(429, 'too_many_attempts');
   const del = () => env.DB.prepare('DELETE FROM email_codes WHERE email_hash = ?1 AND purpose = ?2')
     .bind(hash, purpose).run();
   // 先原子地占用一次尝试机会再比对：并发猜码也严格不超过 CODE_MAX_ATTEMPTS 次。
@@ -144,6 +168,10 @@ export async function consumeCode(env, rawEmail, purpose, code, now) {
     throw new HttpError(410, 'code_expired');
   }
   if (!timingSafeEqual(await codeHash(env, hash, purpose, code), row.code_hash)) {
+    await env.DB.prepare(
+      `INSERT INTO rate_limits (bucket, window_start, count) VALUES (?1, ?2, 1)
+       ON CONFLICT (bucket, window_start) DO UPDATE SET count = count + 1`,
+    ).bind(failBucket, failWindow).run();
     throw new HttpError(400, 'bad_code');
   }
   await del();

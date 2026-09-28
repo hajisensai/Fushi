@@ -37,7 +37,7 @@ import { HttpError, errorResponse, json, parseJsonBytes, readBodyBytes } from '.
 import { SIG_WINDOW_MS, authenticate } from './auth.js';
 import { LIMITS, hit, purgeRateLimits } from './ratelimit.js';
 import { MAX_SHELF_BODY, applyShelfDelta, normalizeUpload } from './shelf.js';
-import { deleteMedia, purgeBudgets } from './budget.js';
+import { deleteMedia, purgeBudgets, spend } from './budget.js';
 import { refreshSnapshots } from './snapshots.js';
 import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, setWorkCover } from './media.js';
 import { deleteAccount, login, register, selfView, updateProfile } from './account.js';
@@ -49,21 +49,51 @@ import { isPagePath, renderPage } from './pages.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
+/** 小写操作（资料 / 好友 / 屏蔽 / 举报）按估算行数扣全局写入预算（含索引与防重放、限流记录）。 */
+const SMALL_WRITE_ROWS = 8;
 const ID = '([A-Za-z0-9_-]{1,32})';
 
 function configMissing(env) {
   return !env.DB || !env.MEDIA;
 }
 
-function clientIp(request) {
-  return request.headers.get('CF-Connecting-IP') || 'unknown';
+/**
+ * 限流用的客户端键。IPv6 按 /64 聚合：一台机器通常就有整个 /64，逐地址计数等于没限。
+ */
+export function clientIp(request) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if (!ip.includes(':')) return ip;
+  const full = ip.includes('::')
+    ? (() => {
+      const [head, tail] = ip.split('::');
+      const h = head ? head.split(':') : [];
+      const t = tail ? tail.split(':') : [];
+      return [...h, ...Array(8 - h.length - t.length).fill('0'), ...t];
+    })()
+    : ip.split(':');
+  return `${full.slice(0, 4).map((x) => x.toLowerCase().replace(/^0+(?=.)/, '')).join(':')}::/64`;
 }
 
-/** 读接口按 IP 限流：部署了 CF Rate Limiting binding（READ_LIMITER）才生效。 */
-async function readLimit(env, request) {
-  if (!env.READ_LIMITER) return;
-  const { success } = await env.READ_LIMITER.limit({ key: clientIp(request) });
+/**
+ * Workers Rate Limiting binding（不占 D1）。读接口用 READ_LIMITER；未鉴权的写入口（发码 / 注册 / 登录）
+ * 先过 AUTH_LIMITER，通过了才碰 D1——否则换地址的请求每次都会在 D1 里新建一行限流计数，写入无上界。
+ */
+async function bindingLimit(limiter, request) {
+  if (!limiter) return;
+  const { success } = await limiter.limit({ key: clientIp(request) });
   if (!success) throw new HttpError(429, 'rate_limited');
+}
+
+/** 各读接口认的查询参数；缓存键与计算都只用这些（加无关参数绕不过边缘缓存）。 */
+const READ_PARAMS = ['metric', 'window', 'scope', 'kind', 'status', 'limit', 'offset', 'cursor'];
+
+export function canonicalReadUrl(url) {
+  const out = new URL(url.origin + url.pathname);
+  for (const k of READ_PARAMS) {
+    const v = url.searchParams.get(k);
+    if (v !== null) out.searchParams.set(k, v);
+  }
+  return out;
 }
 
 const READ_CACHE_SECONDS = 60;
@@ -75,17 +105,17 @@ const SELF_READS = {
   '/v1/blocks': listBlocks,
 };
 
-async function cachedRead(request, ctx, compute) {
+async function cachedRead(key, ctx, compute) {
   const cache = typeof caches !== 'undefined' ? caches.default : null;
   if (!cache) return compute();
-  const hitRes = await cache.match(request.url);
+  const hitRes = await cache.match(key);
   if (hitRes) return hitRes;
   const res = await compute();
   if (res.status === 200) {
     const stored = new Response(res.body, res);
     stored.headers.set('Cache-Control', `public, max-age=${READ_CACHE_SECONDS}`);
     const copy = stored.clone();
-    const put = cache.put(request.url, copy);
+    const put = cache.put(key, copy);
     if (ctx && ctx.waitUntil) ctx.waitUntil(put);
     else await put;
     return stored;
@@ -119,9 +149,12 @@ async function route(request, env, now, ctx) {
     return handleAdmin(env, request, path, body, now);
   }
 
+  if (method === 'POST' && (path === '/v1/email/code' || path === '/v1/login' || path === '/v1/register')) {
+    await bindingLimit(env.AUTH_LIMITER, request);
+  }
   if (method === 'POST' && path === '/v1/email/code') {
     const bytes = await readBodyBytes(request, JSON_BODY_MAX);
-    await requestCode(env, clientIp(request), parseJsonBytes(bytes), now);
+    await requestCode(env, clientIp(request), parseJsonBytes(bytes), now, ctx);
     return json({ sent: true }, 202);
   }
   if (method === 'POST' && path === '/v1/login') {
@@ -138,9 +171,10 @@ async function route(request, env, now, ctx) {
 
   // ---- 读接口：签名可选（带了就按观看者身份套好友/屏蔽规则） ----
   if (method === 'GET') {
-    await readLimit(env, request);
+    await bindingLimit(env.READ_LIMITER, request);
+    const canon = canonicalReadUrl(url);
     // 分享落地页：浏览器不签名，一律按匿名观看者渲染（带了签名头也忽略），同样走边缘缓存。
-    if (isPagePath(path)) return cachedRead(request, ctx, () => renderPage(env, url, now));
+    if (isPagePath(path)) return cachedRead(canon.toString(), ctx, () => renderPage(env, canon, now));
     const viewer = await authenticate(request, env, new Uint8Array(), now, { optional: true });
     const own = Object.hasOwn(SELF_READS, path) ? SELF_READS[path] : null;
     if (own) {
@@ -149,7 +183,9 @@ async function route(request, env, now, ctx) {
     }
     // 匿名读是同一份公开数据：边缘缓存一分钟，挡住反复刷榜单造成的全表扫描。
     // 带签名的请求结果随观看者变（好友 / 屏蔽 / 我的名次），不缓存。
-    return viewer ? readRoute(env, url, viewer, now) : cachedRead(request, ctx, () => readRoute(env, url, null, now));
+    return viewer
+      ? readRoute(env, canon, viewer, now)
+      : cachedRead(canon.toString(), ctx, () => readRoute(env, canon, null, now));
   }
 
   // ---- 写接口：一律签名 + 防重放 ----
@@ -158,18 +194,18 @@ async function route(request, env, now, ctx) {
     const account = await authenticate(request, env, bytes, now, { mutating: true });
     await hit(env, `shelf:${account.id}`, HOUR, LIMITS.shelfUploadPerHour, now);
     const upload = normalizeUpload(parseJsonBytes(bytes), now);
-    const res = await applyShelfDelta(env, account, upload, now);
+    const res = await applyShelfDelta(env, account, account.keyId, upload, now);
     await deleteMedia(env, res.coverKeys);
     return json({ works: res.works, shelfCount: res.shelfCount });
   }
   if (path === '/v1/me/avatar' && (method === 'PUT' || method === 'DELETE')) {
     const bytes = await readBodyBytes(request, AVATAR_MAX_BYTES);
     const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `media:${account.id}`, HOUR, LIMITS.mediaUploadPerHour, now);
     if (method === 'DELETE') {
       await clearAvatar(env, account);
       return json({ avatar: null });
     }
-    await hit(env, `media:${account.id}`, HOUR, LIMITS.mediaUploadPerHour, now);
     return json({ avatar: `/img/${await setAvatar(env, account, bytes, now)}` });
   }
   if (method === 'PUT' && (m = new RegExp(`^/v1/works/${ID}/cover$`).exec(path))) {
@@ -183,6 +219,7 @@ async function route(request, env, now, ctx) {
     const bytes = await readBodyBytes(request, JSON_BODY_MAX);
     const account = await authenticate(request, env, bytes, now, { mutating: true });
     await hit(env, `social:${account.id}`, HOUR, LIMITS.socialWritePerHour, now);
+    await spend(env, 'write_rows', SMALL_WRITE_ROWS, now);
     return social(env, account, bytes, now);
   }
   if (path === '/v1/me' && (method === 'PATCH' || method === 'DELETE')) {
@@ -192,6 +229,8 @@ async function route(request, env, now, ctx) {
       await deleteAccount(env, account);
       return new Response(null, { status: 204 });
     }
+    await hit(env, `social:${account.id}`, HOUR, LIMITS.socialWritePerHour, now);
+    await spend(env, 'write_rows', SMALL_WRITE_ROWS, now);
     return json(await updateProfile(env, account, parseJsonBytes(bytes)));
   }
   throw new HttpError(404, 'not_found');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { call, entry, makeEnv, registerUser } from './harness.js';
+import { call, entry, lastCode, makeEnv, newKey, nextIp, registerUser } from './harness.js';
 import { acceptCoverUrl, normalizeUpload, shelfDiff } from '../src/shelf.js';
 import { LIMITS } from '../src/ratelimit.js';
 
@@ -387,6 +387,31 @@ describe('增量协议与增量计数', () => {
       }
       const orphans = db.prepare('SELECT id FROM works w WHERE NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = w.id)').all();
       expect(orphans, `step ${step} orphan works`).toEqual([]);
+      // work_periods == 按 shelf 现场聚合（未隐藏、有日期的读完）
+      const wp = db.prepare('SELECT period, work_id, n FROM work_periods ORDER BY 1, 2').all().map((r) => ({ ...r }));
+      const wpExact = db.prepare(
+        `SELECT period, work_id, n FROM (
+           SELECT 'w:' || date(s.finished_date, '-6 days', 'weekday 1') AS period, s.work_id, COUNT(*) AS n
+           FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
+           WHERE s.finished_at > 0 GROUP BY 1, 2
+           UNION ALL
+           SELECT 'm:' || substr(s.finished_date, 1, 7), s.work_id, COUNT(*)
+           FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
+           WHERE s.finished_at > 0 GROUP BY 1, 2) ORDER BY 1, 2`,
+      ).all().map((r) => ({ ...r }));
+      expect(wp, `step ${step} work_periods drift`).toEqual(wpExact);
+      // account_periods == 按 stat_days 现场聚合
+      const ap = db.prepare('SELECT period, account_id, book, manga, video, game, chars FROM account_periods ORDER BY 1, 2').all().map((r) => ({ ...r }));
+      const apExact = db.prepare(
+        `SELECT * FROM (
+           SELECT 'w:' || date(date_key, '-6 days', 'weekday 1') AS period, account_id,
+                  SUM(book) AS book, SUM(manga) AS manga, SUM(video) AS video, SUM(game) AS game, SUM(chars) AS chars
+           FROM stat_days GROUP BY 1, 2
+           UNION ALL
+           SELECT 'm:' || substr(date_key, 1, 7), account_id, SUM(book), SUM(manga), SUM(video), SUM(game), SUM(chars)
+           FROM stat_days GROUP BY 1, 2) ORDER BY 1, 2`,
+      ).all().map((r) => ({ ...r }));
+      expect(ap, `step ${step} account_periods drift`).toEqual(apExact);
     }
   }, 120000);
 
@@ -424,5 +449,54 @@ describe('增量协议与增量计数', () => {
     const after = await rank();
     expect(after.data.rows.map((r) => r.value)).toEqual([1]);
     expect(typeof after.data.computedAt).toBe('number');
+  });
+});
+
+describe('并发、上传设备与边界（审查修复回归）', () => {
+  const done = (date) => ({ finishedAt: Date.parse(`${date}T10:00:00Z`), finishedDate: date });
+
+  it('同账户并发两批：一批成功、另一批 409 conflict 且整批无副作用；计数不漂移', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const a = await registerUser(env, 'a', { now: NOW });
+    const e = entry('book', ['t:race|'], 'race', done('2026-09-29'));
+    for (let round = 0; round < 5; round++) {
+      const [r1, r2] = await Promise.all([delta(env, a, { put: [e] }), delta(env, a, { put: [e] })]);
+      const statuses = [r1.status, r2.status].sort();
+      expect(statuses[0]).toBe(200);
+      expect([200, 409]).toContain(statuses[1]);
+      const loser = [r1, r2].find((r) => r.status === 409);
+      if (loser) expect(loser.data.error).toBe('conflict');
+      const w = env.DB.raw.prepare('SELECT id FROM works').get().id;
+      const [x1, x2] = await Promise.all([delta(env, a, { remove: [w] }), delta(env, a, { remove: [w] })]);
+      expect([x1.status, x2.status]).toContain(200);
+    }
+    const db = env.DB.raw;
+    expect(db.prepare('SELECT shelf_count FROM accounts').get().shelf_count).toBe(db.prepare('SELECT COUNT(*) AS n FROM shelf').get().n);
+    const readers = db.prepare('SELECT COALESCE(SUM(readers), 0) AS n FROM works').get().n;
+    expect(readers).toBe(db.prepare('SELECT COUNT(*) AS n FROM shelf WHERE finished_at IS NOT NULL').get().n);
+  });
+
+  it('上传设备：另一台设备上传 409；带 claim + reset 接管后原设备 409', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { email: 'tom@example.com', now: NOW });
+    expect((await delta(env, u, { reset: true, put: [entry('book', ['t:a|'], 'a')] })).status).toBe(200);
+    const phone = await newKey();
+    await call(env, 'POST', '/v1/email/code', { body: { email: 'tom@example.com', purpose: 'login' }, headers: { 'CF-Connecting-IP': nextIp() }, now: NOW });
+    await call(env, 'POST', '/v1/login', { key: phone, body: { pubkey: phone.pubkey, email: 'tom@example.com', code: lastCode(env, 'tom@example.com') }, now: NOW });
+    const { accountIdFromSpki } = await import('../src/auth.js');
+    const p = { key: phone, id: await accountIdFromSpki(phone.spki) };
+    const me = await call(env, 'GET', '/v1/me', { key: phone, account: p.id, now: NOW });
+    expect(me.data.uploadDevice).toBe(false);
+    const blocked = await delta(env, p, { put: [entry('book', ['t:b|'], 'b')] });
+    expect(blocked.data.error).toBe('upload_owned_by_other_device');
+    expect((await delta(env, p, { claim: true, put: [] })).data.error).toBe('claim_requires_reset');
+    expect((await delta(env, p, { reset: true, claim: true, put: [entry('book', ['t:b|'], 'b')] })).status).toBe(200);
+    expect((await delta(env, u, { put: [entry('book', ['t:c|'], 'c')] })).data.error).toBe('upload_owned_by_other_device');
+    expect((await call(env, 'GET', '/v1/me', { key: phone, account: p.id, now: NOW })).data.uploadDevice).toBe(true);
+  });
+
+  it('每日字数只收最近 10 年', () => {
+    expect(() => normalizeUpload({ daily: [{ date: '0001-01-01', chars: 1 }] }, NOW)).toThrow(/too_old/);
+    expect(() => normalizeUpload({ daily: [{ date: '2020-01-01', chars: 1 }] }, NOW)).not.toThrow();
   });
 });

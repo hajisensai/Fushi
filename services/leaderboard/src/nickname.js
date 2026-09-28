@@ -30,18 +30,25 @@ export function checkNickname(raw, env) {
   return nick;
 }
 
-/** 为 nickname 分配未占用的 0..9999 判别码；全满抛 409。rand 可注入（测试）。 */
+/** 一次只探这么多个随机候选：读取量有上界（旧实现读出全部同名账户，常见昵称可达 1 万行 / 次）。 */
+export const DISCRIMINATOR_PROBES = 20;
+
+/**
+ * 为 nickname 分配未占用的 0..9999 判别码：随机取 DISCRIMINATOR_PROBES 个候选，一次查询（走
+ * UNIQUE(nickname, discriminator) 索引）排除已占用的。全被占（同名极多）抛 409 nickname_crowded，
+ * 让用户换个昵称。rand 可注入（测试）。
+ */
 export async function allocateDiscriminator(env, nickname, exceptAccountId = '', rand = Math.random) {
+  const candidates = new Set();
+  while (candidates.size < DISCRIMINATOR_PROBES) candidates.add(Math.floor(rand() * 10000));
   const rows = await env.DB
-    .prepare('SELECT discriminator FROM accounts WHERE nickname = ?1 AND id != ?2')
-    .bind(nickname, exceptAccountId)
+    .prepare(
+      `SELECT discriminator FROM accounts
+       WHERE nickname = ?1 AND id != ?2 AND discriminator IN (SELECT value FROM json_each(?3))`,
+    )
+    .bind(nickname, exceptAccountId, JSON.stringify([...candidates]))
     .all();
   const used = new Set(rows.results.map((r) => r.discriminator));
-  if (used.size >= 10000) throw new HttpError(409, 'nickname_full');
-  for (let i = 0; i < 64; i++) {
-    const d = Math.floor(rand() * 10000);
-    if (!used.has(d)) return d;
-  }
-  for (let d = 0; d < 10000; d++) if (!used.has(d)) return d;
-  throw new HttpError(409, 'nickname_full');
+  for (const d of candidates) if (!used.has(d)) return d;
+  throw new HttpError(409, 'nickname_crowded');
 }

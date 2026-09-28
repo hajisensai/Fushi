@@ -84,7 +84,8 @@ export async function authenticate(request, env, bodyBytes, now, { optional = fa
       .run();
     if (!res.meta || res.meta.changes !== 1) throw new HttpError(401, 'replayed');
   }
-  return account;
+  // 发起请求的设备钥匙（上传设备判定、/v1/me 的 uploadDevice 用）。
+  return { ...account, keyId: id };
 }
 
 /** 注册 / 登录请求：公钥在 body，签名用同一把钥匙（证明持有私钥）。返回 {spki, pubkeyB64, id(=key_id), time}。 */

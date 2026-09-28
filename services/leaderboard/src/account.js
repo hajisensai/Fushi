@@ -4,7 +4,8 @@ import { HttpError } from './util.js';
 import { verifyRegistration } from './auth.js';
 import { allocateDiscriminator, checkNickname } from './nickname.js';
 import { consumeCode } from './email.js';
-import { coverKeysOf, orphanPurgeStatements, readersDeltaStatement } from './shelf.js';
+import { casBatch, casStatements, coverKeysOf, orphanPurgeStatements, readersDeltaStatement } from './shelf.js';
+import { periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia, spend } from './budget.js';
 import { publicAccount } from './views.js';
 
@@ -15,6 +16,8 @@ export function selfView(row) {
     createdAt: row.created_at,
     shelfCount: row.shelf_count,
     emailVerified: true,
+    // 本机是否为「上传设备」（还没有任何设备上传过时，第一台上传的就是）。
+    uploadDevice: row.upload_key === null || row.upload_key === undefined || row.upload_key === row.keyId,
   };
 }
 
@@ -74,11 +77,16 @@ export async function login(env, request, body, bodyBytes, now) {
   const hash = await consumeCode(env, body.email, 'login', body.code, now);
   const acc = await env.DB.prepare('SELECT * FROM accounts WHERE email_hash = ?1').bind(hash).first();
   if (!acc) throw new HttpError(404, 'no_account');
-  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM device_keys WHERE account_id = ?1').bind(acc.id).first();
-  if (n.n >= MAX_DEVICES) throw new HttpError(409, 'too_many_devices');
-  await env.DB.prepare(
-    'INSERT OR IGNORE INTO device_keys (key_id, account_id, pubkey, created_at) VALUES (?1, ?2, ?3, ?4)',
-  ).bind(reg.id, acc.id, reg.pubkeyB64, now).run();
+  // 计数与插入在同一条语句里：并发登录也不会越过上限。
+  const res = await env.DB.prepare(
+    `INSERT OR IGNORE INTO device_keys (key_id, account_id, pubkey, created_at)
+     SELECT ?1, ?2, ?3, ?4 WHERE (SELECT COUNT(*) FROM device_keys WHERE account_id = ?2) < ?5`,
+  ).bind(reg.id, acc.id, reg.pubkeyB64, now, MAX_DEVICES).run();
+  if (res.meta.changes !== 1) {
+    const again = await accountOfKey(env, reg.id);
+    if (again) return selfView(again);
+    throw new HttpError(409, 'too_many_devices');
+  }
   return selfView(acc);
 }
 
@@ -105,19 +113,25 @@ export async function updateProfile(env, account, body) {
     throw new HttpError(409, 'retry');
   }
   const row = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(account.id).first();
-  return selfView(row);
+  return selfView({ ...row, keyId: account.keyId });
 }
 
 export async function deleteAccount(env, account) {
   const id = account.id;
-  const prev = await env.DB.prepare('SELECT work_id, finished_at FROM shelf WHERE account_id = ?1').bind(id).all();
+  // 版本与旧行在同一次 CAS 保护下：与本账户的并发上传交错时整批回滚（409，客户端重试删除）。
+  const acc = await env.DB.prepare('SELECT shelf_rev, hidden FROM accounts WHERE id = ?1').bind(id).first();
+  const prev = await env.DB.prepare('SELECT work_id, finished_at, finished_date FROM shelf WHERE account_id = ?1')
+    .bind(id).all();
   const prevJson = JSON.stringify(prev.results.map((r) => r.work_id));
-  // 读完过的作品读者数减一（被隐藏的账户本来就没计入）。
-  const deltas = account.hidden ? [] : prev.results
-    .filter((r) => r.finished_at !== null)
-    .map((r) => ({ id: r.work_id, d: -1 }));
-  const results = await env.DB.batch([
+  // 读完过的作品读者数 / 周期读者数减一（被隐藏的账户本来就没计入）。
+  const finished = acc.hidden ? [] : prev.results.filter((r) => r.finished_at !== null);
+  const deltas = finished.map((r) => ({ id: r.work_id, d: -1 }));
+  const periodDeltas = finished.flatMap((r) => periodContributions(r.work_id, r.finished_at, r.finished_date, -1));
+  const results = await casBatch(env.DB, [
+    ...casStatements(env.DB, id, acc.shelf_rev),
     readersDeltaStatement(env.DB, JSON.stringify(deltas)),
+    ...workPeriodsDeltaStatements(env.DB, JSON.stringify(periodDeltas)),
+    env.DB.prepare('DELETE FROM account_periods WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM stat_days WHERE account_id = ?1').bind(id),
     env.DB.prepare('DELETE FROM account_totals WHERE account_id = ?1').bind(id),

@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   visibility     TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'friends')),
   hidden         INTEGER NOT NULL DEFAULT 0,  -- 管理员隐藏：不进任何榜、主页 404
   shelf_count    INTEGER NOT NULL DEFAULT 0,  -- 书架行数（增量维护，上限检查与客户端对账用）
+  shelf_rev      INTEGER NOT NULL DEFAULT 0,  -- 书架版本（乐观锁）：每次改动本账户书架 / 计数的事务都 CAS 递增
+  upload_key     TEXT,                        -- 唯一的「上传设备」钥匙 id；多设备共用账户时只有它能上报书架
   created_at     INTEGER NOT NULL,
   UNIQUE (nickname, discriminator)
 );
@@ -69,6 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_work_aliases_work ON work_aliases (work_id);
 CREATE TABLE IF NOT EXISTS shelf (
   account_id    TEXT NOT NULL,
   work_id       TEXT NOT NULL,
+  kind          TEXT NOT NULL,           -- 冗余自 works.kind：按类筛选的书架分页要走索引
   refs          TEXT NOT NULL,           -- 该用户上报的全部匹配键（JSON 数组，已带 kind| 前缀）；管理员拆分作品时据此重新归属
   title         TEXT NOT NULL,           -- 该用户上报的标题（作品众数的输入）
   author        TEXT NOT NULL DEFAULT '',
@@ -79,9 +82,15 @@ CREATE TABLE IF NOT EXISTS shelf (
   updated_at    INTEGER NOT NULL,
   PRIMARY KEY (account_id, work_id)
 );
-CREATE INDEX IF NOT EXISTS idx_shelf_work ON shelf (work_id, finished_at);
-CREATE INDEX IF NOT EXISTS idx_shelf_account_finished ON shelf (account_id, finished_at DESC);
-CREATE INDEX IF NOT EXISTS idx_shelf_finished_date ON shelf (finished_date);
+-- 索引与游标分页的排序逐列对齐（ORDER BY 不许出现临时 B 树）；每个索引都按行计写入，只留必要的。
+CREATE INDEX IF NOT EXISTS idx_shelf_work ON shelf (work_id, finished_at DESC, account_id DESC);
+CREATE INDEX IF NOT EXISTS idx_shelf_account_finished ON shelf (account_id, finished_at DESC, work_id DESC);
+CREATE INDEX IF NOT EXISTS idx_shelf_account_kind ON shelf (account_id, kind, finished_at DESC, work_id DESC);
+
+-- 乐观锁守卫：从不存行。CAS 语句在版本不符时向它插 NULL，NOT NULL 约束让整个 batch 回滚。
+CREATE TABLE IF NOT EXISTS cas_guard (
+  ok INTEGER NOT NULL
+);
 
 -- 每账户每天的计分：各类读完数（已按每日 30 部上限截断）+ 当天字数。周/月榜只扫这张表的窗口段。
 CREATE TABLE IF NOT EXISTS stat_days (
@@ -94,7 +103,6 @@ CREATE TABLE IF NOT EXISTS stat_days (
   chars      INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (account_id, date_key)
 );
-CREATE INDEX IF NOT EXISTS idx_stat_days_date ON stat_days (date_key);
 
 -- 每账户总计（总榜与用户卡片）：stat_days 之和 + 日期未知的读完（各计 1）。
 CREATE TABLE IF NOT EXISTS account_totals (
@@ -106,14 +114,40 @@ CREATE TABLE IF NOT EXISTS account_totals (
   chars      INTEGER NOT NULL DEFAULT 0
 );
 
--- 榜单快照（定时任务生成）。data = JSON [[account_id, value, rank], ...]，按名次排好。
+-- 每账户每周期计分（周 'w:<周一>'、月 'm:<YYYY-MM>'）：由 stat_days 按受影响周期增量重算。
+-- 周/月榜快照只读当期这一段，读量 = 当期活跃账户数，不扫历史。
+CREATE TABLE IF NOT EXISTS account_periods (
+  period     TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  book       INTEGER NOT NULL DEFAULT 0,
+  manga      INTEGER NOT NULL DEFAULT 0,
+  video      INTEGER NOT NULL DEFAULT 0,
+  game       INTEGER NOT NULL DEFAULT 0,
+  chars      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (period, account_id)
+);
+
+-- 每作品每周期读完人数（未隐藏账户、有日期的读完）：增量维护，周/月人气榜直接按索引取前 N。
+CREATE TABLE IF NOT EXISTS work_periods (
+  period  TEXT NOT NULL,
+  work_id TEXT NOT NULL,
+  kind    TEXT NOT NULL,
+  n       INTEGER NOT NULL,
+  PRIMARY KEY (period, work_id)
+);
+CREATE INDEX IF NOT EXISTS idx_work_periods_top ON work_periods (period, n DESC);
+CREATE INDEX IF NOT EXISTS idx_work_periods_kind_top ON work_periods (period, kind, n DESC);
+
+-- 榜单快照（定时任务生成）。data = JSON [[account_id, value, rank], ...]，按名次排好；
+-- 按 chunk 分块存（每块 ≤ SNAPSHOT_CHUNK 条），不受 D1 单行 2MB 限制。
 CREATE TABLE IF NOT EXISTS rank_snapshots (
   win         TEXT NOT NULL,
   metric      TEXT NOT NULL,
+  chunk       INTEGER NOT NULL,
   from_key    TEXT,
   computed_at INTEGER NOT NULL,
   data        TEXT NOT NULL,
-  PRIMARY KEY (win, metric)
+  PRIMARY KEY (win, metric, chunk)
 );
 
 -- 作品人气快照。kind = 'all' 或具体 kind；data = JSON [[work_id, readers, rank], ...]（前 100）。

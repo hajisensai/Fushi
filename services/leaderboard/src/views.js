@@ -241,6 +241,25 @@ async function readerWalls(env, workIds, viewerId, excludeId, perWork, rel) {
   return walls;
 }
 
+/**
+ * 游标：'<finished_at>.<id>'（在读用 'n.<id>'）。排序键与索引逐列对齐（finished_at DESC, id DESC），
+ * 每页只读 limit + 1 行，不论翻到第几页（offset 分页要先读掉前面所有行）。
+ */
+export function parseCursor(raw) {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const m = /^(n|-?\d{1,16})\.([A-Za-z0-9_-]{1,32})$/.exec(raw);
+  if (!m) throw new HttpError(400, 'bad_cursor');
+  return { at: m[1] === 'n' ? null : Number(m[1]), id: m[2] };
+}
+
+function makeCursor(at, id) {
+  return `${at === null || at === undefined ? 'n' : at}.${id}`;
+}
+
+function pageLimit(url) {
+  return clampInt(url.searchParams.get('limit'), 1, 50, 50);
+}
+
 export async function userShelf(env, id, url, viewer) {
   const viewerId = viewer ? viewer.id : '';
   const acc = await loadVisibleAccount(env, id, viewerId);
@@ -249,22 +268,35 @@ export async function userShelf(env, id, url, viewer) {
   const status = parseChoice(url.searchParams.get('status'), ['finished', 'reading'], 'finished', 'bad_status');
   const kind = url.searchParams.get('kind');
   if (kind != null && !KINDS.includes(kind)) throw new HttpError(400, 'bad_kind');
-  const { limit, offset } = parsePage(url, 50, 8000);
+  const limit = pageLimit(url);
+  const cursor = parseCursor(url.searchParams.get('cursor'));
   const q = params();
-  const rows = await env.DB.prepare(
+  const where = [`s.account_id = ${q.p(acc.id)}`];
+  if (kind != null) where.push(`s.kind = ${q.p(kind)}`);
+  if (status === 'finished') {
+    where.push('s.finished_at IS NOT NULL');
+    if (cursor) where.push(`(s.finished_at, s.work_id) < (${q.p(cursor.at ?? 0)}, ${q.p(cursor.id)})`);
+  } else {
+    where.push('s.finished_at IS NULL');
+    if (cursor) where.push(`s.work_id < ${q.p(cursor.id)}`);
+  }
+  const order = status === 'finished' ? 's.finished_at DESC, s.work_id DESC' : 's.work_id DESC';
+  const rows = (await env.DB.prepare(
     `SELECT w.*, s.finished_at, s.finished_date, s.chars AS my_chars, s.ms AS my_ms
      FROM shelf s JOIN works w ON w.id = s.work_id
-     WHERE s.account_id = ${q.p(acc.id)}
-       AND s.finished_at IS ${status === 'finished' ? 'NOT ' : ''}NULL
-       AND (${q.p(kind)} IS NULL OR w.kind = ${q.p(kind)})
-     ORDER BY s.finished_at DESC, s.updated_at DESC, w.id
-     LIMIT ${q.p(limit)} OFFSET ${q.p(offset)}`,
-  ).bind(...q.values).all();
-  const walls = await readerWalls(env, rows.results.map((r) => r.id), viewerId, acc.id, 8, rel);
+     WHERE ${where.join(' AND ')}
+     ORDER BY ${order}
+     LIMIT ${q.p(limit + 1)}`,
+  ).bind(...q.values).all()).results;
+  const more = rows.length > limit;
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  const walls = await readerWalls(env, page.map((r) => r.id), viewerId, acc.id, 8, rel);
   return {
     account: publicAccount(acc),
     status,
-    rows: rows.results.map((r) => ({
+    next: more ? makeCursor(status === 'finished' ? last.finished_at : null, last.id) : null,
+    rows: page.map((r) => ({
       work: publicWork(r),
       finishedAt: r.finished_at || null, // 0 = 读完日期未知 → null
       finishedDate: r.finished_date,
@@ -280,20 +312,26 @@ export async function workPage(env, id, url, viewer) {
   const viewerId = viewer ? viewer.id : '';
   const work = await env.DB.prepare('SELECT * FROM works WHERE id = ?1').bind(id).first();
   if (!work) throw new HttpError(404, 'not_found');
-  const { limit, offset } = parsePage(url, 50, 1000);
+  const limit = pageLimit(url);
+  const cursor = parseCursor(url.searchParams.get('cursor'));
   const q = params();
   const pv = q.p(viewerId);
-  const readers = await env.DB.prepare(
+  const after = cursor ? `AND (s.finished_at, s.account_id) < (${q.p(cursor.at ?? 0)}, ${q.p(cursor.id)})` : '';
+  const rows = (await env.DB.prepare(
     `SELECT a.id, a.nickname, a.discriminator, a.avatar_key, s.finished_at, s.finished_date
      FROM shelf s JOIN accounts a ON a.id = s.account_id
-     WHERE s.work_id = ${q.p(id)} AND s.finished_at IS NOT NULL AND ${visibleReaderSql('a', pv)}
-     ORDER BY s.finished_at DESC
-     LIMIT ${q.p(limit)} OFFSET ${q.p(offset)}`,
-  ).bind(...q.values).all();
+     WHERE s.work_id = ${q.p(id)} AND s.finished_at IS NOT NULL ${after} AND ${visibleReaderSql('a', pv)}
+     ORDER BY s.finished_at DESC, s.account_id DESC
+     LIMIT ${q.p(limit + 1)}`,
+  ).bind(...q.values).all()).results;
+  const more = rows.length > limit;
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
   return {
     work: publicWork(work),
     readers: work.readers,
-    rows: readers.results.map((r) => ({
+    next: more ? makeCursor(last.finished_at, last.id) : null,
+    rows: page.map((r) => ({
       account: publicAccount(r),
       finishedAt: r.finished_at || null,
       finishedDate: r.finished_date,
