@@ -256,6 +256,8 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'openMinedNote',
   'openSentenceContextModal',
   'overwriteTargetNoteId',
+  // BUG-2734 的内容尺寸复报：预览外壳不裁剪，不需要跟着改高。
+  'popupContentResized',
   'popupRendered',
   'reportJsError',
   'resolveWordAudio',
