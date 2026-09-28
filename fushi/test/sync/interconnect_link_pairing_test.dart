@@ -98,6 +98,9 @@ void main() {
               pinGenerated++;
               return '123456';
             })
+            // LAN 也要 PIN：这样「零审批、零 PIN 配上」只可能来自票据路径——
+            // 否则 127.0.0.1 会走 LAN 免 PIN，测试对票据是否生效毫无区分度。
+            ..lanRequiresPinProvider = (() async => true)
             ..interfaceLister = (() async => <NetworkInterface>[]);
       await server.start();
     });
@@ -152,6 +155,29 @@ void main() {
       expect(jsonDecode(again.body)['reason'], 'expired');
     });
 
+    test('一票一会话：建会话即消耗，拍到二维码的人无法预开会话', () async {
+      final FushiPairTicket ticket = server.issuePairTicket();
+      final http.Response first = await start(ticket.id);
+      expect(first.statusCode, 200);
+      final http.Response second = await start(ticket.id);
+      expect(second.statusCode, 403);
+      expect(jsonDecode(second.body)['reason'], 'expired');
+    });
+
+    test('关闭二维码：已凭票据开出、未 confirm 的会话一并作废', () async {
+      final FushiPairTicket ticket = server.issuePairTicket();
+      final Map<String, dynamic> body =
+          jsonDecode((await start(ticket.id)).body) as Map<String, dynamic>;
+      server.revokePairTicket();
+      final http.Response late = await confirm(
+        body['sessionId'] as String,
+        body['hostNonce'] as String,
+        ticket.secret,
+      );
+      expect(late.statusCode, 403);
+      expect(approvals, 0);
+    });
+
     test('错误 secret → 401，与 PIN 错同一条路', () async {
       final FushiPairTicket ticket = server.issuePairTicket();
       final Map<String, dynamic> body =
@@ -181,7 +207,7 @@ void main() {
       expect(approvals, 0);
     });
 
-    test('端到端：链接 → 选可达地址 → 配对 → 其余地址记为 learned', () async {
+    test('端到端：链接 → 跳过死地址 → 零审批配对；明文地址不记为 learned', () async {
       final FushiDatabase db = FushiDatabase(dir.path);
       addTearDown(db.close);
       final SyncRepository repo = SyncRepository(db);
@@ -225,12 +251,12 @@ void main() {
 
       expect(result, isA<InterconnectLinkPaired>());
       expect((result as InterconnectLinkPaired).baseUrl, live);
+      expect(approvals, 0, reason: '票据路径不弹审批');
+      expect(pinGenerated, 0);
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
-      expect(urls.map((FushiClientUrl u) => u.url).toSet(), <String>{
-        live,
-        'http://127.0.0.1:1',
-      });
-      expect(urls.every((FushiClientUrl u) => u.hostId == 'HOST-1'), isTrue);
+      expect(urls.map((FushiClientUrl u) => u.url), <String>[live],
+          reason: '死的明文地址不学（明文 learned 地址换网可能是别人的机器）');
+      expect(urls.single.hostId, 'HOST-1');
       expect(
         urls.firstWhere((FushiClientUrl u) => u.url == live).learned,
         isFalse,
@@ -241,6 +267,62 @@ void main() {
       );
       expect(await repo.isInterconnectEnabled(), isTrue);
       expect(interconnectPeerRepresentatives(urls).single.url, live);
+    });
+
+    test('恶意链接冒用已配对 host 的 hostId 但指纹不符 → 不并入那一组', () async {
+      final FushiDatabase db = FushiDatabase(dir.path);
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      // 已配对的真 host：同一个 hostId，带证书指纹。
+      await repo.setFushiClientUrls(const <FushiClientUrl>[
+        FushiClientUrl(
+          url: 'https://real.example',
+          hostId: 'HOST-1',
+          fingerprintSha256: 'aa:aa',
+          token: 'real-token',
+        ),
+        FushiClientUrl(
+          url: 'https://10.0.0.2:1',
+          hostId: 'HOST-1',
+          learned: true,
+          fingerprintSha256: 'aa:aa',
+          token: 'real-token',
+        ),
+      ]);
+      final FushiPairTicket ticket = server.issuePairTicket();
+      final InterconnectLinkPairingResult result =
+          await pairWithInterconnectLink(
+            repo: repo,
+            link: FushiPairLink(
+              hostId: 'HOST-1', // 冒用
+              fingerprint: 'bb:bb',
+              ticketId: ticket.id,
+              ticketSecret: ticket.secret,
+              addresses: <InterconnectHostAddress>[
+                InterconnectHostAddress(
+                  url: 'http://127.0.0.1:${server.port}',
+                  kind: InterconnectAddressKind.lan,
+                ),
+                const InterconnectHostAddress(
+                  url: 'https://evil.example',
+                  kind: InterconnectAddressKind.public,
+                ),
+              ],
+            ),
+            localDeviceName: 'Phone',
+            pinProvider: () async => null,
+          );
+      expect(result, isA<InterconnectLinkPaired>());
+      final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
+      expect(
+        urls
+            .where((FushiClientUrl u) => u.hostId == 'HOST-1')
+            .map((FushiClientUrl u) => u.url),
+        <String>['https://real.example', 'https://10.0.0.2:1'],
+        reason: '真 host 的组原封不动：没被删地址，也没混进冒名者的地址',
+      );
+      expect(urls.any((FushiClientUrl u) => u.url == 'https://evil.example'),
+          isFalse);
     });
 
     test('链接里的 host 身份与实际应答不符 → unreachable（不向冒名者配对）', () async {

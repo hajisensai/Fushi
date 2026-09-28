@@ -60,6 +60,8 @@ public final class NfcTagWriterChannelHandler {
     private MethodChannel.Result pending;
     @Nullable
     private Runnable timeout;
+    /** 每次写入请求一个代际：旧请求的读卡回调 post 回来时不许完成新请求。 */
+    private int generation;
 
     public NfcTagWriterChannelHandler(@NonNull Activity activity) {
         this.activity = activity;
@@ -97,17 +99,30 @@ public final class NfcTagWriterChannelHandler {
         }
         finish(false); // 旧的待决写入按失败收尾（见类注释第 2 条）。
         pending = result;
-        final Runnable onTimeout = () -> finish(false);
+        final int mine = ++generation;
+        final Runnable onTimeout = () -> finishIfCurrent(mine, false);
         timeout = onTimeout;
         mainHandler.postDelayed(onTimeout, TIMEOUT_MS);
-        adapter.enableReaderMode(
-                activity,
-                (Tag tag) -> {
-                    final boolean ok = write(tag, uri);
-                    mainHandler.post(() -> finish(ok));
-                },
-                READER_FLAGS,
-                null);
+        try {
+            adapter.enableReaderMode(
+                    activity,
+                    (Tag tag) -> {
+                        final boolean ok = write(tag, uri);
+                        mainHandler.post(() -> finishIfCurrent(mine, ok));
+                    },
+                    READER_FLAGS,
+                    null);
+        } catch (IllegalStateException e) {
+            // Activity 不在前台：直接按失败收尾，超时回调随之撤销，不会二次回复。
+            finish(false);
+        }
+    }
+
+    /** 只有仍是第 [mine] 次请求时才收尾；旧请求的回调 / 超时落空。 */
+    private void finishIfCurrent(int mine, boolean ok) {
+        if (mine == generation) {
+            finish(ok);
+        }
     }
 
     private static boolean write(@NonNull Tag tag, @NonNull String uri) {

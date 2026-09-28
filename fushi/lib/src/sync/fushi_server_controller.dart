@@ -751,26 +751,42 @@ class FushiSyncServerController extends ChangeNotifier {
   /// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）：用户开了
   /// 「允许经 P2P 隧道远程连接」且原生库可用时，起端点、开信任区监听口、把
   /// `p2p://<nodeId>` 加进地址集。失败只留痕，不影响 host 本身。
-  Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) async {
-    if (!InterconnectP2pRuntime.isAvailable) return;
-    if (!await _repo.isInterconnectP2pEnabled()) return;
-    final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
-    final InterconnectP2pNode? node = await runtime.ensure();
-    if (node == null || !identical(_server, server)) return;
-    try {
-      final int port = await server.startP2pListener();
-      node.hostListen(port);
-      server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
-    } on Object catch (e, st) {
-      ErrorLogService.instance.log('FushiServerController.attachP2p', e, st);
-    }
+  /// P2P 挂载 / 卸载 / 换中继一律串行（审查问题 5）：并发的「开了又立刻关」会让
+  /// 后到的 detach 先落空、先到的 attach 随后才挂上，偏好显示已关、隧道却对公网
+  /// 开着。每一步 await 之后都重核「偏好还开着 / 还是这台 server」。
+  Future<void> _p2pOps = Future<void>.value();
+
+  Future<void> _serializeP2p(Future<void> Function() op) {
+    final Future<void> next = _p2pOps.then((_) => op());
+    _p2pOps = next.then<void>((_) {}, onError: (Object e, StackTrace st) {
+      ErrorLogService.instance.log('FushiServerController.p2p', e, st);
+    });
+    return _p2pOps;
   }
 
-  Future<void> _detachP2p(FushiSyncServer server) async {
-    currentAppInterconnectP2pRuntime?.current?.hostStop();
-    server.extraAddressesProvider = null;
-    await server.stopP2pListener();
-  }
+  Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) =>
+      _serializeP2p(() async {
+        if (!InterconnectP2pRuntime.isAvailable) return;
+        bool stillWanted() => identical(_server, server);
+        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) return;
+        final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
+        final InterconnectP2pNode? node = await runtime.ensure();
+        if (node == null || !stillWanted()) return;
+        if (!await _repo.isInterconnectP2pEnabled()) return;
+        final int port = await server.startP2pListener();
+        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) {
+          await server.stopP2pListener();
+          return;
+        }
+        node.hostListen(port);
+        server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+      });
+
+  Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
+        currentAppInterconnectP2pRuntime?.current?.hostStop();
+        server.extraAddressesProvider = null;
+        await server.stopP2pListener();
+      });
 
   /// 切换「允许经 P2P 隧道远程连接」，host 正在跑时即时生效。
   Future<void> setP2pEnabled(bool enabled) async {
@@ -791,7 +807,9 @@ class FushiSyncServerController extends ChangeNotifier {
     await _repo.setInterconnectP2pRelayUrls(urls);
     final FushiSyncServer? server = _server;
     if (server != null) await _detachP2p(server);
-    await currentAppInterconnectP2pRuntime?.restart();
+    await _serializeP2p(
+      () async => currentAppInterconnectP2pRuntime?.restart(),
+    );
     if (server != null) await _attachP2p(server, tls: _serverUsesTls(server));
     notifyListeners();
   }

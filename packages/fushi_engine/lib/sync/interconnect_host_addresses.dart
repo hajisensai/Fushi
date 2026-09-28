@@ -52,6 +52,20 @@ enum InterconnectAddressKind {
   p2p,
 }
 
+/// 一条地址能否被自动学习 / 公布：**只收带密码学身份的传输**——`https://`
+/// （自签证书走指纹钉扎，公网反代走 CA 校验）与 `p2p://`（iroh 按 NodeId 公钥
+/// 认证对端）。
+///
+/// 明文 `http://` 一律不学：学到的 LAN 地址换个网络可能指向别人的机器，hostId
+/// 是公开值（LAN 广播 TXT、/api/ping 都有）挡不住冒名，Basic token 会被发过去；
+/// 公布全局 IPv6 的明文地址则等于让 token 与数据在公网上裸奔。用户手输的明文
+/// 地址不受影响（那是用户自己的决定，行为与升级前一致）
+/// （docs/specs/2026-09-28-interconnect-remote-reach.md §9，审查问题 1 / 2）。
+bool isInterconnectLearnableUrl(String url) {
+  final String lower = url.trim().toLowerCase();
+  return lower.startsWith('https://') || lower.startsWith('p2p://');
+}
+
 /// 同一台主机多条地址之间的优先级（小者优先）。LAN 两种同级。
 int interconnectAddressRank(InterconnectAddressKind kind) {
   switch (kind) {
@@ -204,6 +218,8 @@ List<InterconnectHostAddress> collectInterconnectHostAddresses({
   final List<InterconnectHostAddress> out = <InterconnectHostAddress>[];
   final Set<String> seen = <String>{};
   void add(InterconnectHostAddress a) {
+    // 只公布可学习的地址：未开 TLS 的 host 只剩 P2P（见 [isInterconnectLearnableUrl]）。
+    if (!isInterconnectLearnableUrl(a.url)) return;
     if (seen.add(a.url)) out.add(a);
   }
 

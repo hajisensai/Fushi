@@ -305,7 +305,10 @@ class InterconnectDownloadClient {
   Future<String?> _tokenForBaseUrl(String baseUrl) async {
     final String? fallbackToken = await _repo.getFushiClientToken();
     for (final FushiClientUrl u in await _repo.getFushiClientUrls()) {
-      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
+      if (u.url == interconnectPersistedUrl(baseUrl)) {
+        return interconnectTokenFor(u, fallbackToken);
+      }
     }
     return (fallbackToken != null && fallbackToken.isNotEmpty)
         ? fallbackToken

@@ -21,6 +21,7 @@ import 'temp_dir_cleanup.dart';
 void main() {
   late Directory dir;
   late FushiSyncServer server;
+  final List<String?> approvalRemotes = <String?>[];
 
   Future<void> startHost() async {
     dir = await Directory.systemTemp.createTemp('fushi_p2p_tunnel_test');
@@ -32,7 +33,10 @@ void main() {
             allowLan: true,
           )
           ..hostId = 'HOST-P2P'
-          ..onPairRequest = ((FushiPairRequest r) async => true)
+          ..onPairRequest = ((FushiPairRequest r) async {
+        approvalRemotes.add(r.remoteAddress);
+        return true;
+      })
           ..lanRequiresPinProvider = (() async => false)
           ..interfaceLister = (() async => <NetworkInterface>[]);
     await server.start();
@@ -63,9 +67,17 @@ void main() {
         reason: '对照：主监听口的 127.0.0.1 仍按本机免 PIN',
       );
       final int tunnelPort = await server.startP2pListener();
+      approvalRemotes.clear();
       expect(await pinRequiredVia(tunnelPort), isTrue);
+      expect(approvalRemotes, <String?>[kFushiP2pRemoteAddress],
+          reason: '审批框里如实标成隧道，而不是看似本机的 127.0.0.1');
       expect(await server.startP2pListener(), tunnelPort, reason: '幂等');
       await server.stopP2pListener();
+    });
+
+    test('主机停了就不再开隧道监听口（不留孤儿口）', () async {
+      await server.stop();
+      await expectLater(server.startP2pListener(), throwsStateError);
     });
 
     test('p2p 地址编解码：tls 与拨号提示往返', () {

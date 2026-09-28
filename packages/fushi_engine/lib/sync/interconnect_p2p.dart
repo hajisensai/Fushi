@@ -77,6 +77,11 @@ class InterconnectP2pNode {
   /// nodeId → 本地转发口（按对端缓存，一台 host 一个口，所有连接复用）。
   final Map<String, int> _forwards = <String, int>{};
 
+  /// nodeId → 建口时用的拨号提示。提示变了（host 换了 home relay / 重启换了
+  /// UDP 口）就重建：在发现服务解析不了的网络里，旧提示意味着隧道永远不通
+  /// （审查问题 11）。
+  final Map<String, String> _forwardHints = <String, String>{};
+
   bool _closed = false;
 
   /// 作为 host：入站隧道 → `127.0.0.1:[loopbackPort]`（信任区监听口，见
@@ -95,14 +100,21 @@ class InterconnectP2pNode {
     String? relayUrl,
     List<String> directAddrs = const <String>[],
   }) {
+    final String hints = '${relayUrl ?? ''}|${directAddrs.join(',')}';
     final int? existing = _forwards[remoteNodeId];
-    if (existing != null) return existing;
+    if (existing != null) {
+      if (_forwardHints[remoteNodeId] == hints) return existing;
+      _endpoint.stopForward(existing);
+      _tunnelPorts.remove(existing);
+      _forwards.remove(remoteNodeId);
+    }
     final int port = _endpoint.clientForward(
       remoteNodeId,
       relayUrl: relayUrl,
       directAddrs: directAddrs,
     );
     _forwards[remoteNodeId] = port;
+    _forwardHints[remoteNodeId] = hints;
     _tunnelPorts.add(port);
     return port;
   }
@@ -172,8 +184,12 @@ class InterconnectP2pRuntime {
     }
   }
 
-  /// 中继配置变了：关掉旧端点，下次 [ensure] 按新配置重建。
+  /// 中继配置变了：关掉旧端点，下次 [ensure] 按新配置重建。在飞的启动先落地
+  /// 再关——否则它随后把按旧配置建的端点写回 [_node]（审查问题 11）。旧端点
+  /// 关完（含等对端确认，最长数秒）才返回，新端点不会与它同 NodeId 双开。
   Future<void> restart() async {
+    final Future<InterconnectP2pNode?>? starting = _starting;
+    if (starting != null) await starting;
     final InterconnectP2pNode? node = _node;
     _node = null;
     await node?.close();

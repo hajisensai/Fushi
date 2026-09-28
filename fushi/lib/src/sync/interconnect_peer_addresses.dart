@@ -275,6 +275,11 @@ bool _isP2pUrl(String url) => url.startsWith('p2p://');
 /// 本地转发口 URL → 它代表的 `p2p://` 持久地址（选路结果回写缓存 / 组内去重用）。
 final Map<String, String> _p2pOrigins = <String, String>{};
 
+/// [url] 若是本进程的 P2P 本地转发口，换回它代表的持久 `p2p://` 地址；其余原样。
+/// 凡是「拿选路结果的 baseUrl 回候选列表里找那一行」（取凭据等）都必须先过它：
+/// 转发口只活在内存里，列表里存的是 `p2p://`（审查问题 6）。
+String interconnectPersistedUrl(String url) => _p2pOrigins[url] ?? url;
+
 /// `p2p://` 地址 → 本地转发口候选（隧道层没装 / 起不来 → null）；其余原样。
 Future<FushiClientUrl?> _resolveTransport(FushiClientUrl candidate) async {
   if (!_isP2pUrl(candidate.url)) return candidate;
@@ -301,6 +306,17 @@ void setInterconnectP2pResolver(
   _p2pResolver = resolver;
 }
 
+/// 一条已存条目的优先级：learned 条目用 host 标注的种类，其余按 URL 推断。
+int interconnectEntryRank(FushiClientUrl entry) {
+  final String? kind = entry.addressKind;
+  if (kind != null) {
+    for (final InterconnectAddressKind k in InterconnectAddressKind.values) {
+      if (k.name == kind) return interconnectAddressRank(k);
+    }
+  }
+  return interconnectUrlRank(entry.url);
+}
+
 /// 一条已存地址的优先级，由 URL 字面推断（存量条目没有记 kind）。与
 /// [interconnectAddressRank] 同一刻度：LAN 0、全局 v6 1、组网 2、公网/域名 3、P2P 4。
 int interconnectUrlRank(String url) {
@@ -319,6 +335,8 @@ int interconnectUrlRank(String url) {
     return 3;
   }
   if (host.contains(':')) {
+    // Tailscale 的 ULA 前缀 fd7a:115c:a1e0::/48 是组网，不是局域网。
+    if (host.startsWith('fd7a:115c:a1e0')) return 2;
     if (host.startsWith('fc') || host.startsWith('fd')) return 0;
     return 1;
   }
@@ -363,6 +381,9 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
   }
 
   for (final InterconnectHostAddress a in addresses) {
+    // 只学带密码学身份的地址（https / p2p）；明文地址一律不学，见
+    // [isInterconnectLearnableUrl]。
+    if (!isInterconnectLearnableUrl(a.url)) continue;
     if (a.kind == InterconnectAddressKind.p2p) {
       // P2P 地址只有装了隧道能力的 client 才用得上；由隧道层自己决定是否收。
       if (!_acceptP2pAddresses) continue;
@@ -379,6 +400,7 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
       token: anchor.token,
       hostId: hostId,
       learned: true,
+      addressKind: a.kind.name,
     );
     final int rank = interconnectAddressRank(a.kind);
     int insertAt = -1;
@@ -386,7 +408,7 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     for (int i = 0; i < out.length; i++) {
       if (out[i].hostId != hostId) continue;
       lastInGroup = i;
-      if (insertAt < 0 && interconnectUrlRank(out[i].url) > rank) insertAt = i;
+      if (insertAt < 0 && interconnectEntryRank(out[i]) > rank) insertAt = i;
     }
     out.insert(insertAt >= 0 ? insertAt : lastInGroup + 1, learned);
   }
@@ -423,13 +445,9 @@ class InterconnectAddressLearner {
   /// 按锚点地址记上次学习时刻（进程内；节流后台刷新）。
   static final Map<String, DateTime> _lastRefresh = <String, DateTime>{};
 
-  /// 串行化读-改-写：两次学习并发时后写者不会覆盖前者的结果。
-  static Future<void> _writeChain = Future<void>.value();
-
   @visibleForTesting
   static void resetForTest() {
     _lastRefresh.clear();
-    _writeChain = Future<void>.value();
   }
 
   static http.Client _defaultClient(String? fingerprint) =>
@@ -438,8 +456,12 @@ class InterconnectAddressLearner {
       : http.Client();
 
   /// 立即学习一次。返回候选列表是否因此改变。
+  ///
+  /// 只从经 TLS 认证的锚点学：明文锚点背后可能是冒名者，它公布的地址集（哪怕全是
+  /// https）会被带着本机 token 落库。
   Future<bool> refresh(FushiClientUrl anchor) async {
     _lastRefresh[anchor.url] = _now();
+    if (!anchor.url.toLowerCase().startsWith('https://')) return false;
     final String? token = interconnectTokenFor(
       anchor,
       await _repo.getFushiClientToken(),
@@ -449,27 +471,19 @@ class InterconnectAddressLearner {
     published = await _fetchPublished(anchor, token);
     if (published == null) return false;
 
-    final Completer<bool> changed = Completer<bool>();
-    _writeChain = _writeChain.then((_) async {
-      try {
-        final List<FushiClientUrl> before = await _repo.getFushiClientUrls();
-        final List<FushiClientUrl> after = mergeLearnedHostAddresses(
-          before,
-          anchorUrl: anchor.url,
-          hostId: published.hostId,
-          addresses: published.addresses,
-        );
-        if (_sameList(before, after)) {
-          changed.complete(false);
-          return;
-        }
-        await _repo.setFushiClientUrls(after);
-        changed.complete(true);
-      } catch (e, st) {
-        changed.completeError(e, st);
-      }
+    bool changed = false;
+    await _repo.updateFushiClientUrls((List<FushiClientUrl> before) {
+      final List<FushiClientUrl> after = mergeLearnedHostAddresses(
+        before,
+        anchorUrl: anchor.url,
+        hostId: published.hostId,
+        addresses: published.addresses,
+      );
+      if (_sameList(before, after)) return before;
+      changed = true;
+      return after;
     });
-    return changed.future;
+    return changed;
   }
 
   /// 后台学习（同一锚点 [_throttle] 内只跑一次）；失败只留痕。

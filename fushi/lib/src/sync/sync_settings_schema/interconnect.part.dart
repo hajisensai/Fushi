@@ -206,8 +206,11 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
   /// Add a new address, or edit the one at [index]. Reuses the URL field
   /// labels/actions that already exist in i18n (no new keys).
   Future<void> _addOrEditUrl({int? index}) async {
+    // 记 URL 不记下标：弹窗是个 async gap，期间后台地址学习可能往列表里插条目，
+    // 下标会指向另一行（审查问题 9）。关窗后按 URL 重新定位。
+    final String? editingUrl = index != null ? _urls[index].url : null;
     final TextEditingController controller = TextEditingController(
-      text: index != null ? _urls[index].url : '',
+      text: editingUrl ?? '',
     );
     final String? result = await showAppDialog<String>(
       context: context,
@@ -285,8 +288,13 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // → 不再发起配对 → 点「添加」毫无反应。去重只应防列表出现重复条目，不该拦住重新配对
     // （尤其首次配对失败后用户想靠再点「添加」重试）。
     bool shouldPair = false;
+    final int? editIndex = editingUrl == null
+        ? null
+        : _urls.indexWhere((FushiClientUrl u) => u.url == editingUrl);
+    if (editIndex != null && editIndex < 0) return; // 那一行已被删 / 被学习替换。
     setState(() {
       final List<FushiClientUrl> copy = <FushiClientUrl>[..._urls];
+      final int? index = editIndex;
       if (index != null) {
         final bool dupElsewhere = copy.asMap().entries.any(
             (MapEntry<int, FushiClientUrl> e) =>
@@ -429,9 +437,18 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     await _persistUrls();
   }
 
+  /// 带 hostId 的条目删的是**那台 host**：同组其余地址都带着它的 token，只删一行
+  /// 等于没解绑（剩下的照常同步，被删的 learned 地址 10 分钟内还会被学回来，
+  /// 审查问题 8）。老条目（无 hostId）仍只删那一行，行为不变。
   Future<void> _deleteUrl(int index) async {
+    final String? hostId = _urls[index].hostId;
     setState(() {
-      _urls = <FushiClientUrl>[..._urls]..removeAt(index);
+      _urls = hostId == null
+          ? (<FushiClientUrl>[..._urls]..removeAt(index))
+          : <FushiClientUrl>[
+              for (final FushiClientUrl u in _urls)
+                if (u.hostId != hostId) u,
+            ];
     });
     await _persistUrls();
   }

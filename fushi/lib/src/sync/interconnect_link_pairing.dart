@@ -34,6 +34,21 @@ final class InterconnectLinkPairingFailed
   final String reason;
 }
 
+/// 链接能否并入已有的同 hostId 组：组不存在 → 能；存在 → 双方都有证书指纹且
+/// 相等才能（指纹 = 那台 host 的私钥，冒名者给不出同一个）。
+bool _linkMayJoinHostGroup(List<FushiClientUrl> urls, FushiPairLink link) {
+  final Iterable<FushiClientUrl> group =
+      urls.where((FushiClientUrl u) => u.hostId == link.hostId);
+  if (group.isEmpty) return true;
+  final String? linkFp = link.fingerprint;
+  if (linkFp == null || linkFp.isEmpty) return false;
+  for (final FushiClientUrl u in group) {
+    final String? fp = u.fingerprintSha256;
+    if (fp != null && fp.isNotEmpty) return fingerprintEquals(fp, linkFp);
+  }
+  return false;
+}
+
 /// 把链接里的地址转成候选（https 的带上链接给的指纹；P2P 地址这里不参与——
 /// 配对必须经可直接 HTTP 到达的地址，隧道只在配对后作为已配对 host 的备用路径）。
 List<FushiClientUrl> interconnectLinkCandidates(FushiPairLink link) =>
@@ -103,14 +118,18 @@ Future<InterconnectLinkPairingResult> pairWithInterconnectLink({
         deviceName: link.deviceName,
       );
       await repo.setFushiClientTokenForUrl(chosen.url, token);
-      await repo.setFushiClientUrls(
-        mergeLearnedHostAddresses(
-          await repo.getFushiClientUrls(),
+      await repo.updateFushiClientUrls((List<FushiClientUrl> urls) {
+        // hostId 是公开值：链接可以随便声称自己是某台已配对 host。只有证书指纹
+        // 对得上（同一把私钥）才并入那一组；否则只按普通配对留下这一条地址——
+        // 不打 hostId、不学地址，更不删真 host 的地址（审查问题 7）。
+        if (!_linkMayJoinHostGroup(urls, link)) return urls;
+        return mergeLearnedHostAddresses(
+          urls,
           anchorUrl: chosen.url,
           hostId: link.hostId,
           addresses: link.addresses,
-        ),
-      );
+        );
+      });
       await repo.setInterconnectEnabled(true);
       // 链接里的地址是二维码生成那一刻的快照；配对后再从 host 学一次最新的。
       for (final FushiClientUrl u in await repo.getFushiClientUrls()) {

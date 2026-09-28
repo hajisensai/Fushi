@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
@@ -7,6 +8,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
+import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
+import 'package:http/http.dart' as http;
 
 import 'temp_dir_cleanup.dart';
 
@@ -160,11 +163,11 @@ void main() {
   group('mergeLearnedHostAddresses', () {
     const List<InterconnectHostAddress> published = <InterconnectHostAddress>[
       InterconnectHostAddress(
-        url: 'http://192.168.1.5:38765',
+        url: 'https://192.168.1.5:38765',
         kind: InterconnectAddressKind.lan,
       ),
       InterconnectHostAddress(
-        url: 'http://[2408::5]:38765',
+        url: 'https://[2408::5]:38765',
         kind: InterconnectAddressKind.ipv6,
       ),
       InterconnectHostAddress(
@@ -173,10 +176,14 @@ void main() {
       ),
     ];
 
-    test('锚点标 hostId；新地址按优先级插入，继承 token；p2p 默认不收', () {
+    test('锚点标 hostId；新地址按优先级插入，继承 token 与指纹；p2p 默认不收', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[
-          const FushiClientUrl(url: 'https://home.example', token: 'T'),
+          const FushiClientUrl(
+            url: 'https://home.example',
+            token: 'T',
+            fingerprintSha256: 'aa:bb',
+          ),
           url('http://other:1'),
         ],
         anchorUrl: 'https://home.example',
@@ -184,8 +191,8 @@ void main() {
         addresses: published,
       );
       expect(merged.map((FushiClientUrl u) => u.url), <String>[
-        'http://192.168.1.5:38765',
-        'http://[2408::5]:38765',
+        'https://192.168.1.5:38765',
+        'https://[2408::5]:38765',
         'https://home.example',
         'http://other:1',
       ]);
@@ -193,14 +200,35 @@ void main() {
       expect(merged[2].learned, isFalse);
       expect(merged[0].learned, isTrue);
       expect(merged[0].token, 'T');
-      expect(merged[0].fingerprintSha256, isNull, reason: '明文地址不带指纹');
+      expect(merged[0].fingerprintSha256, 'aa:bb');
+      expect(merged[0].addressKind, 'lan');
       expect(merged[3].hostId, isNull, reason: '别的 host 不受影响');
+    });
+
+    test('明文 http 地址一律不学（学到的 LAN 地址换网可能是别人的机器）', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[url('https://home.example')],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[
+          InterconnectHostAddress(
+            url: 'http://192.168.1.5:38765',
+            kind: InterconnectAddressKind.lan,
+          ),
+          InterconnectHostAddress(
+            url: 'http://[2408::5]:38765',
+            kind: InterconnectAddressKind.ipv6,
+          ),
+        ],
+      );
+      expect(merged.map((FushiClientUrl u) => u.url),
+          <String>['https://home.example']);
     });
 
     test('host 不再公布的 learned 地址被删；手输条目永不删', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[
-          url('http://10.0.0.9:38765', host: 'A', learned: true),
+          url('https://10.0.0.9:38765', host: 'A', learned: true),
           url('http://192.168.9.9:38765', host: 'A'),
           url('https://home.example', host: 'A'),
         ],
@@ -217,7 +245,7 @@ void main() {
     test('手输的同一地址被 host 公布 → 归入该组（不重复添加）', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
         <FushiClientUrl>[
-          url('http://192.168.1.5:38765'),
+          url('https://192.168.1.5:38765'),
           url('https://home.example'),
         ],
         anchorUrl: 'https://home.example',
@@ -253,6 +281,30 @@ void main() {
       );
       expect(merged.last.url, 'p2p://node');
     });
+
+    test('组网私网段按 host 标注的种类排在物理 LAN 之后', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          url('https://home.example'),
+        ],
+        anchorUrl: 'https://home.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[
+          InterconnectHostAddress(
+            url: 'https://10.147.17.3:1',
+            kind: InterconnectAddressKind.overlay,
+          ),
+          InterconnectHostAddress(
+            url: 'https://192.168.1.5:1',
+            kind: InterconnectAddressKind.lan,
+          ),
+        ],
+      );
+      expect(merged.map((FushiClientUrl u) => u.url).take(2), <String>[
+        'https://192.168.1.5:1',
+        'https://10.147.17.3:1',
+      ]);
+    });
   });
 
   group('真 host 端到端', () {
@@ -260,21 +312,33 @@ void main() {
     late FushiSyncServer server;
     late FushiDatabase db;
     late SyncRepository repo;
+    late String fingerprint;
 
-    setUp(() async {
+    Future<void> startHost({required bool tls}) async {
       dir = await Directory.systemTemp.createTemp('fushi_peer_addr_test');
-      server =
-          FushiSyncServer(
-              syncDataDir: dir.path,
-              port: 0,
-              token: 'shared-token',
-              allowLan: true,
-            )
-            ..hostId = 'HOST-1'
-            ..publicUrlsProvider = (() async => <String>[
+      SecurityContext? ctx;
+      if (tls) {
+        final FushiTlsIdentity id =
+            await FushiTlsIdentityStore(dataDir: dir.path).loadOrCreate();
+        fingerprint = id.fingerprintSha256;
+        ctx = SecurityContext()
+          ..useCertificateChainBytes(utf8.encode(id.certificatePem))
+          ..usePrivateKeyBytes(utf8.encode(id.privateKeyPem));
+      }
+      server = FushiSyncServer(
+        syncDataDir: dir.path,
+        port: 0,
+        token: 'shared-token',
+        allowLan: true,
+        securityContext: ctx,
+        hostFingerprint: tls ? fingerprint : null,
+      )
+        ..hostId = 'HOST-1'
+        ..publicUrlsProvider = (() async => <String>[
               'https://home.example',
+              'http://plain.example',
             ])
-            ..interfaceLister = (() async => <NetworkInterface>[
+        ..interfaceLister = (() async => <NetworkInterface>[
               _FakeNic('Ethernet', <InternetAddress>[
                 InternetAddress('192.168.77.5'),
                 InternetAddress('2408:8207::5'),
@@ -287,7 +351,7 @@ void main() {
       db = FushiDatabase(dir.path);
       repo = SyncRepository(db);
       InterconnectAddressLearner.resetForTest();
-    });
+    }
 
     tearDown(() async {
       await server.stop();
@@ -296,6 +360,7 @@ void main() {
     });
 
     test('ping 身份核对：hostId 相符才算可达', () async {
+      await startHost(tls: false);
       final FushiClientUrl self = FushiClientUrl(
         url: 'http://127.0.0.1:${server.port}',
       );
@@ -307,10 +372,15 @@ void main() {
       expect(await defaultInterconnectAddressProbe(self, null), isTrue);
     });
 
-    test('配对后学习：host 公布的地址集并入候选列表', () async {
-      final String anchor = 'http://127.0.0.1:${server.port}';
+    test('TLS host：经钉扎锚点学到 https 地址集，明文地址不公布', () async {
+      await startHost(tls: true);
+      final String anchor = 'https://127.0.0.1:${server.port}';
       await repo.setFushiClientUrls(<FushiClientUrl>[
-        FushiClientUrl(url: anchor, token: 'shared-token'),
+        FushiClientUrl(
+          url: anchor,
+          token: 'shared-token',
+          fingerprintSha256: fingerprint,
+        ),
       ]);
       final int revisionBefore = SyncRepository.fushiClientUrlsRevision.value;
 
@@ -322,12 +392,18 @@ void main() {
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       final int port = server.port;
       expect(urls.map((FushiClientUrl u) => u.url), <String>[
-        'http://192.168.77.5:$port',
-        'http://[2408:8207::5]:$port',
+        'https://192.168.77.5:$port',
+        'https://[2408:8207::5]:$port',
         anchor,
         'https://home.example',
-      ]);
+      ], reason: 'http://plain.example 与 docker 网桥都不公布');
       expect(urls.every((FushiClientUrl u) => u.hostId == 'HOST-1'), isTrue);
+      expect(
+        urls.firstWhere((FushiClientUrl u) => u.url.contains('77.5'))
+            .fingerprintSha256,
+        fingerprint,
+        reason: '同一张自签证书，learned 地址照样钉扎',
+      );
       expect(urls.where((FushiClientUrl u) => !u.learned).single.url, anchor);
       expect(
         SyncRepository.fushiClientUrlsRevision.value,
@@ -345,7 +421,40 @@ void main() {
       );
     });
 
+    test('明文 host：不公布明文地址；明文锚点根本不学', () async {
+      await startHost(tls: false);
+      final http.Response resp = await http.get(
+        Uri.parse('http://127.0.0.1:${server.port}/api/host/addresses'),
+        headers: <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:shared-token'))}',
+        },
+      );
+      expect(resp.statusCode, 200);
+      final List<dynamic> addresses =
+          (jsonDecode(resp.body) as Map<String, dynamic>)['addresses']
+              as List<dynamic>;
+      expect(
+        addresses.map((dynamic a) => (a as Map<String, dynamic>)['url']),
+        <String>['https://home.example'],
+        reason: '网卡上的明文地址与 http 公网地址都不公布',
+      );
+
+      final String anchor = 'http://127.0.0.1:${server.port}';
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: anchor, token: 'shared-token'),
+      ]);
+      expect(
+        await InterconnectAddressLearner(repo)
+            .refresh((await repo.getFushiClientUrls()).single),
+        isFalse,
+        reason: '明文锚点背后可能是冒名者，它公布的地址集会带着 token 落库',
+      );
+      expect((await repo.getFushiClientUrls()).single.hostId, isNull);
+    });
+
     test('无 token 的请求拿不到地址集（端点需鉴权）', () async {
+      await startHost(tls: false);
       final HttpClient client = HttpClient();
       addTearDown(client.close);
       final HttpClientResponse resp = await (await client.getUrl(
@@ -356,10 +465,15 @@ void main() {
     });
 
     test('没有 hostId 的 host 不公布地址集（404，client 不学）', () async {
+      await startHost(tls: true);
       server.hostId = null;
-      final String anchor = 'http://127.0.0.1:${server.port}';
+      final String anchor = 'https://127.0.0.1:${server.port}';
       await repo.setFushiClientUrls(<FushiClientUrl>[
-        FushiClientUrl(url: anchor, token: 'shared-token'),
+        FushiClientUrl(
+          url: anchor,
+          token: 'shared-token',
+          fingerprintSha256: fingerprint,
+        ),
       ]);
       expect(
         await InterconnectAddressLearner(

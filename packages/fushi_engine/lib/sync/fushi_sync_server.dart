@@ -79,6 +79,9 @@ part 'fushi_sync_server/game_stream.part.dart';
 /// 请求上下文里标记信任区的键：P2P 隧道监听口进来的请求为 `'p2p'`。
 const String kFushiRequestZone = 'fushi.zone';
 
+/// P2P 隧道请求在配对审批 / 已配对设备列表里显示的来源（而不是 127.0.0.1）。
+const String kFushiP2pRemoteAddress = 'P2P tunnel';
+
 /// A pairing attempt from a peer that POSTed /api/pair. Carries what the host
 /// UI needs to identify the requester in its confirmation prompt.
 class FushiPairRequest {
@@ -412,8 +415,13 @@ class FushiSyncServer {
     return ticket;
   }
 
-  /// 关掉二维码时调用：票据立即作废。
-  void revokePairTicket() => _pairTicket = null;
+  /// 关掉二维码时调用：票据立即作废，已凭票据开出、还没 confirm 的会话一并作废。
+  void revokePairTicket() {
+    _pairTicket = null;
+    _pairSessions.removeWhere(
+      (String _, FushiPairSession s) => s.ticketId != null,
+    );
+  }
 
   /// 组装配对链接（二维码 / 复制链接 / NFC 贴纸共用）。[ticket] 为 null 时是不带
   /// 票据的长期链接（贴纸）。没有 hostId 的 host 无从被分组，抛 [StateError]。
@@ -501,9 +509,20 @@ class FushiSyncServer {
   /// 配对判据会把它当「本机 / 局域网」免 PIN，任何拿到 NodeId 的人都能配上。
   /// 返回监听端口（重复调用返回同一个）。同样起 TLS：隧道里仍是端到端钉扎的
   /// 自签证书，与直连同一套信任。
-  Future<int> startP2pListener() async {
+  Future<int> startP2pListener() {
     final HttpServer? existing = _p2pServer;
-    if (existing != null) return existing.port;
+    if (existing != null) return Future<int>.value(existing.port);
+    return _p2pStarting ??=
+        _bindP2pListener().whenComplete(() => _p2pStarting = null);
+  }
+
+  Future<int>? _p2pStarting;
+
+  /// 主机已停就拒绝；bind 期间主机被停（[stop] 在 await 之间落地）就把刚绑上的
+  /// 口立刻关掉——否则留下一个挂着完整 handler 的孤儿监听口，iroh 继续把公网流量
+  /// 转进来，「主机已关闭」之后对端仍能访问库（审查问题 5）。
+  Future<int> _bindP2pListener() async {
+    if (_server == null) throw StateError('sync server is not running');
     final shelf.Handler inner = _buildHandler();
     final HttpServer server = await shelf_io.serve(
       (shelf.Request request) => inner(
@@ -513,11 +532,20 @@ class FushiSyncServer {
       0,
       securityContext: _securityContext,
     );
+    if (_server == null) {
+      await server.close(force: true);
+      throw StateError('sync server stopped while binding the P2P listener');
+    }
     _p2pServer = server;
     return server.port;
   }
 
   Future<void> stopP2pListener() async {
+    final Future<int>? starting = _p2pStarting;
+    if (starting != null) {
+      // 在飞的 bind 落地后再关，免得它在我们关完之后才把口挂上。
+      await starting.then<void>((_) {}, onError: (Object _) {});
+    }
     final HttpServer? server = _p2pServer;
     _p2pServer = null;
     await server?.close(force: true);
@@ -538,6 +566,16 @@ class FushiSyncServer {
         InternetAddress.loopbackIPv4,
         _requestedPort,
         securityContext: _securityContext,
+      );
+    }
+    // 明文 host 维持升级前的只监听 v4（在 NAT 之后）：双栈会让它在全局 IPv6 上
+    // 直接对公网可达，token 与数据明文跑在公网上，用户却没有任何开关。开了 TLS
+    // 才双栈——此时公网上的对端也只能经指纹钉扎的 TLS 进来。
+    if (_securityContext == null) {
+      return shelf_io.serve(
+        handler,
+        InternetAddress.anyIPv4,
+        _requestedPort,
       );
     }
     try {
@@ -566,9 +604,11 @@ class FushiSyncServer {
   final ExportPackageCache _exportCache = ExportPackageCache();
 
   Future<void> stop() async {
-    await stopP2pListener();
-    await _server?.close(force: true);
+    final HttpServer? main = _server;
+    // 先摘主句柄：在飞的隧道口 bind 落地时据此发现主机已停并自行关掉。
     _server = null;
+    await stopP2pListener();
+    await main?.close(force: true);
     _exportCache.dispose();
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();

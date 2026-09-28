@@ -198,7 +198,10 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     final String? fallbackToken = await _repo.getFushiClientToken();
     final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
     for (final FushiClientUrl u in urls) {
-      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
+      if (u.url == interconnectPersistedUrl(baseUrl)) {
+        return interconnectTokenFor(u, fallbackToken);
+      }
     }
     return (fallbackToken != null && fallbackToken.isNotEmpty)
         ? fallbackToken

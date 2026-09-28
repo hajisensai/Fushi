@@ -199,6 +199,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       _pairTicket = null;
       return _pairDenied('expired');
     }
+    // 一票一会话：建会话即消耗票据。否则拍到二维码的人（直播 / 屏幕共享）能在
+    // 5 分钟内预开任意多个会话，合法设备配完、二维码关掉之后照样逐个 confirm
+    // 拿 token（审查问题 3）。输错 secret 的合法设备重新打开二维码即可。
+    _pairTicket = null;
     _prunePairSessions();
     _enforcePairSessionCap();
     _pinRateLimiter.prune(_now());
@@ -541,6 +545,11 @@ bool _isLanPeerRequest(shelf.Request request, String? remote) =>
 /// Source IP of the request's TCP connection, or null when shelf_io did not
 /// attach connection info (e.g. some test harnesses).
 String? _remoteAddress(shelf.Request request) {
+  // P2P 隧道进来的连接在 TCP 层恒为 127.0.0.1：原样上屏会让 host 审批框里的公网
+  // 陌生人看起来像「本机」（审查问题 4）。如实标成隧道。
+  if (request.context[kFushiRequestZone] == 'p2p') {
+    return kFushiP2pRemoteAddress;
+  }
   final Object? info = request.context['shelf.io.connection_info'];
   if (info is HttpConnectionInfo) {
     return FushiPairingProtocol.unmapIPv4MappedAddress(

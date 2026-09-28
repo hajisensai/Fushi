@@ -187,7 +187,13 @@ class HeadlessHost {
       ..hostId = identity.deviceId
       ..publicUrlsProvider = (() async => config.publicUrls);
     await server.start();
-    await _attachP2p(server, tls: securityContext != null);
+    // P2P 挂不上只留痕：server 已经起来了，这里抛出去会让它没有拥有者（泄漏一个
+    // 在跑的 server，审查问题 12）。
+    try {
+      await _attachP2p(server, tls: securityContext != null);
+    } on Object catch (e, st) {
+      engineLog.log('HeadlessHost.attachP2p', e, st);
+    }
     _server = server;
 
     _advertiser = LanAdvertiser(
@@ -209,6 +215,8 @@ class HeadlessHost {
   /// 不进用户手改的配置文件）。失败只留痕，不影响互联本身。
   Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) async {
     if (!config.p2p) return;
+    // 只监听本机时地址集为空、对外不可达：开隧道等于给公网单开一扇门。
+    if (config.bind == '127.0.0.1' || config.bind == 'localhost') return;
     if (!InterconnectP2pRuntime.isAvailable) {
       engineLog.logDiagnostic(
         'HeadlessHost',

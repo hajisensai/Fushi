@@ -285,7 +285,7 @@ FushiPairLink? interconnectStickerLinkFor(
       for (final FushiClientUrl u in group)
         InterconnectHostAddress(
           url: u.url,
-          kind: _kindForRank(interconnectUrlRank(u.url)),
+          kind: _kindForRank(interconnectEntryRank(u)),
         ),
     ],
   );

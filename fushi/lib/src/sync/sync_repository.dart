@@ -41,6 +41,7 @@ class FushiClientUrl {
     this.token,
     this.hostId,
     this.learned = false,
+    this.addressKind,
   });
 
   final String url;
@@ -73,6 +74,11 @@ class FushiClientUrl {
   /// 刷新自动增删；手输条目永不被自动改动。
   final bool learned;
 
+  /// learned 条目由 host 标注的地址种类（`InterconnectAddressKind.name`）。组网
+  /// 网卡上的私网段（ZeroTier 10.x、Tailscale fd7a::）单看 URL 会被当成局域网，
+  /// 排序要用 host 的原始判断。手输条目为 null（按 URL 推断）。
+  final String? addressKind;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'url': url,
         'enabled': enabled,
@@ -81,6 +87,7 @@ class FushiClientUrl {
         if (token != null && token!.isNotEmpty) 'token': token,
         if (hostId != null) 'hostId': hostId,
         if (learned) 'learned': true,
+        if (addressKind != null) 'kind': addressKind,
       };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
@@ -91,6 +98,7 @@ class FushiClientUrl {
         token: json['token'] as String?,
         hostId: json['hostId'] as String?,
         learned: json['learned'] as bool? ?? false,
+        addressKind: json['kind'] as String?,
       );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
@@ -102,6 +110,7 @@ class FushiClientUrl {
     String? token,
     String? hostId,
     bool? learned,
+    String? addressKind,
   }) =>
       FushiClientUrl(
         url: url ?? this.url,
@@ -111,6 +120,7 @@ class FushiClientUrl {
         token: token ?? this.token,
         hostId: hostId ?? this.hostId,
         learned: learned ?? this.learned,
+        addressKind: addressKind ?? this.addressKind,
       );
 }
 
@@ -1224,6 +1234,25 @@ class SyncRepository {
   static final ValueNotifier<int> fushiClientUrlsRevision =
       ValueNotifier<int>(0);
 
+  /// 候选列表「读-改-写」的进程级串行化：后台地址学习、链接配对各自读-改-写，
+  /// 并发时后写者会把前者的结果（甚至用户刚删掉的 host 连同 token）写回来
+  /// （审查问题 10）。[transform] 返回同一个实例 = 不写盘。
+  static Future<void> _urlsWriteChain = Future<void>.value();
+
+  Future<List<FushiClientUrl>> updateFushiClientUrls(
+    List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
+  ) {
+    final Future<List<FushiClientUrl>> result =
+        _urlsWriteChain.then((_) async {
+      final List<FushiClientUrl> before = await getFushiClientUrls();
+      final List<FushiClientUrl> after = transform(before);
+      if (!identical(after, before)) await setFushiClientUrls(after);
+      return after;
+    });
+    _urlsWriteChain = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   Future<void> setFushiClientUrls(List<FushiClientUrl> urls) async {
     if (urls.isEmpty) {
       await _deleteKey(_keyFushiClientUrls);
@@ -1351,6 +1380,7 @@ class SyncRepository {
           deviceName: u.deviceName,
           hostId: u.hostId,
           learned: u.learned,
+          addressKind: u.addressKind,
         ),
     ]);
   }
@@ -1391,6 +1421,7 @@ class SyncRepository {
       token: existing.token,
       hostId: existing.hostId,
       learned: existing.learned,
+      addressKind: existing.addressKind,
     );
     await setFushiClientUrls(updated);
     return true;
