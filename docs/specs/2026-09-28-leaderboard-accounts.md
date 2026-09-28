@@ -43,10 +43,7 @@
 - 首次开启时为**当前 Profile** 生成 ECDSA P-256 密钥对（`pointycastle`，不新增依赖）。**账户 = 公钥**，`account_id = base64url(sha256(pubkey))[0..16]`，同时是**好友码**。
 - 昵称 1–24 字符可改，展示 `昵称#1234`（服务端分配判别码）；可选头像（客户端裁成 128px JPEG 上传 R2）。
 - 私钥存本机偏好（按 Profile）。换设备：「导出/导入恢复码」（私钥 base64url + 校验，可二维码）。不随备份外传。
-- 请求签名：`X-Fushi-Account` / `X-Fushi-Time` / `X-Fushi-Sig = ECDSA(sha256(method
-path
-time
-sha256(body)))`；服务端校验签名、±5 分钟、`time` 单调（防重放）。
+- 请求签名：`X-Fushi-Account` / `X-Fushi-Time` / `X-Fushi-Sig`；签名串 = `METHOD\npathWithQuery\ntime\nhex(sha256(body))`，ECDSA/SHA-256，P1363（r‖s）base64url。服务端校验签名、±5 分钟；写请求另按**签名串哈希**去重（`used_sigs`）防重放——不用签名值去重（ECDSA 可延展），也不要求时刻单调（客户端并发写会乱序到达）。跨语言测试向量在 `services/leaderboard/test/vectors/`。
 
 ### 3.2 唯一上传形状：书架条目
 
@@ -108,8 +105,9 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 ## 4. 防刷与滥用
 
-- 上限：单日 `chars ≤ 400,000`；单日新增读完 ≤ 30；`finishedAt` 不得晚于服务器时间；超限条目拒收并累计可疑分。
-- 限流：注册按 IP 5/小时；上传按账户 1 次/10 分钟、书架 ≤ 20,000 条、单次封面 ≤ 20 张；读接口按 IP（CF Rate Limiting binding）。
+- 上限：单日 `chars` 夹到 400,000；同一天读完**最多计 30 部**（不拒收，批量补标历史作品照常入架，只是不刷分；日期未知的各自成组）；`finishedAt` 不得晚于服务器时间 +5 分钟，`finishedDate` 必须与它的 UTC 日期相差一天以内。
+- 作品匹配防抢注：每条目每命名空间至多一个键；已有强 ID（bgm/isbn/vndb/tmdb/anidb/src）的作品不再挂同命名空间的新键。标题/作者众数只计未隐藏账户。
+- 限流：注册按 IP 5/小时；书架上传按账户 12 次/小时（客户端正常节奏 ≤ 1 次/10 分钟，余量给重试）；头像/封面 60 次/小时；书架 ≤ 8,000 条（D1 单参数约 2MB 的硬约束）；读接口：匿名请求边缘缓存 60 秒 + 可选 CF Rate Limiting binding `READ_LIMITER`，offset ≤ 10,000。
 - 举报 + 管理员隐藏账户 / 隐藏或拆分作品（不删数据）；管理端 Basic Auth 小页面。
 - 昵称：长度/字符白名单 + 敏感词表。头像与上传封面可被举报后下架。
 

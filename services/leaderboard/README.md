@@ -21,8 +21,19 @@ npx wrangler secret put ADMIN_PASS
 npx wrangler deploy
 ```
 
-读接口的限流交给 Cloudflare WAF 的 Rate Limiting 规则（按 IP，建议 `/v1/*` 每分钟 120 次）；
-注册与上传的限流在 Worker 内（`src/ratelimit.js`）。
+读接口：匿名请求在边缘缓存 60 秒；按 IP 限流用 Workers Rate Limiting binding（可选，不配就不限），在
+`wrangler.toml` 加：
+
+```toml
+[[unsafe.bindings]]
+name = "READ_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 120, period = 60 }
+```
+
+注册与上传的限流在 Worker 内（`src/ratelimit.js`，D1 计数）。书架上限 8000 条：D1 单个绑定参数约 2MB，
+超出时返回 413 `shelf_too_large`。
 
 ## 测试
 
