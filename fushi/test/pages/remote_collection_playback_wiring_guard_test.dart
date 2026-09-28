@@ -22,11 +22,18 @@ void main() {
         read('lib/src/pages/implementations/video_fushi_page.dart');
     expect(src.contains('bool get _isRemoteCollection'), true,
         reason: '应有合集连播模式判据 _isRemoteCollection');
+    // PR #1707（9036953d68b）起在线视频源入库集重开时成员来自 buildAnimeSourceLaunch
+    // （_resolvedStreamMembers）；widget 透传的成员仍优先，两者都无才是空列表。
+    // 压掉空白比对，format 折行不影响。
+    final String flat = src.replaceAll(RegExp(r'\s+'), '');
     expect(
-        src.contains(
-            'widget.remoteCollectionMembers ?? const <RemoteVideoInfo>[]'),
+        flat.contains('_remoteMembers=widget.remoteCollectionMembers??'
+            '_resolvedStreamMembers??const<RemoteVideoInfo>[];'),
         true,
-        reason: '_initRemote 应从 widget 取远端合集成员列表');
+        reason: '_initRemote 应优先从 widget 取远端合集成员列表，'
+            '其次在线源入库集重建的成员，都无才为空');
+    expect(src.contains('_resolvedStreamMembers = launch.members;'), true,
+        reason: '_resolvedStreamMembers 只来自在线源入库集的 launch');
     // 合集模式下用成员建 _episodes（每成员一个 _PlaylistEpisodeRef）。
     expect(
         RegExp(r'for \(final RemoteVideoInfo m in _remoteMembers\)')
