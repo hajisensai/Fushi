@@ -45,5 +45,5 @@ AnkiConnect/AnkiDroid 媒体渲染、AnkiMobile 裸 URL 与媒体快照由自动
 - **Lapis 三处 Picture**：`<video>` 不写 `autoplay` 属性，由字段内脚本只播**可见**的那一个（隐藏副本照样会出声）；句子音频字段是带 `replay-button` 类的重播按钮，内置 Lapis 的「点例句重播」直接可用，模板不改。字段 JS 无反引号 / `${` / 反斜杠（Lapis 把 `{{SentenceAudio}}` 插进 JS 模板字面量）。Anki 媒体检查认 `<video src>`。
 - **拿不到画面的来源降级而不报错**：无字幕时间窗 → 动图阶梯（最终静帧）；bilibili（只给音轨）/ Netflix 后台软解 / 网页截图 → 照常用手上的封面出卡，不声称同步。只有「录到了片段却导出失败」仍是硬错误。
 - **galgame**：窗口录制片段混进了句子音频时按同步片段落卡（句子音频 = 片段本身），修掉此前「MP4 里一份 + 另挂一份」同一句播两遍的问题；引擎同步判据接受 `source: game` 的外部片段。
-- **ffmpeg**：桌面 `ffmpeg-min` 加 `libvpx-vp9` / `libopus` 编码器与 `webm` muxer（macOS 静态自编，BUG-1443 规矩）。移动端 ffmpeg-kit **尚未重编**（构建机离线），移动端 WebM 尝试失败后自动出 MP4；重编需在 `build_x264_{android,ios}.sh` 加 `--enable-libvpx --enable-opus` 并同步 `ffmpeg_kit_mobile_recipe_guard_test.dart`。
+- **ffmpeg**：桌面 `ffmpeg-min` 加 `libvpx-vp9` / `libopus` 编码器与 `webm` muxer（macOS 静态自编，BUG-1443 规矩）。移动端 ffmpeg-kit 同样加 `--enable-libvpx --enable-opus`，改由 CI（`.github/workflows/ffmpeg-kit-mobile.yml`）重编并 vendor；移动端 ffmpeg-kit 没有 SVT-AV1，选 AV1 时降级 VP9。
 - **已知限制**：卡片同时有单词音频时，单词音频（Anki 原生队列）与视频同时开始，不做「先单词后视频」的排队；Anki 的 R 键重播只重播 `[sound:]`，不重播内嵌视频（点例句或播放条即可）。
