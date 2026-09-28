@@ -78,7 +78,9 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///
 /// 2. OWN directional focus movement for BOTH the press edge ([KeyDownEvent])
 ///    AND OS auto-repeat ([KeyRepeatEvent]) when NO text field is focused and
-///    focus rests on a real Hibiki-managed control (BUG-263). This is the single
+///    focus rests on a navigable control (BUG-263) — a registered target OR a
+///    native leaf focusable of the current focus scope; the same candidate set
+///    the D-pad uses (手柄焦点重写 2026-09-28). This is the single
 ///    arbiter for "arrow = focus traversal": press and repeat now go through the
 ///    SAME [gamepadMoveFocusInDirection] (panel-aware geometry + reading-order +
 ///    scroll-edge fallback) — the gamepad D-pad and the keyboard arrow reach the
@@ -93,7 +95,7 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///    before it can reach the framework's [DirectionalFocusAction], so exactly
 ///    one focus engine runs.
 ///
-///    The managed-target gate is what keeps this from hijacking an arrow on a
+///    The navigable-target gate is what keeps this from hijacking an arrow on a
 ///    surface that owns it for itself — the reader's reading content / page-turn
 ///    and char cursor (its FocusNode is not a managed target), the video player,
 ///    the WebView. Those surfaces also consume the arrow in their OWN nearer
@@ -116,12 +118,14 @@ KeyEventResult _handleGlobalArrowFocus(
 
   if (editable == null) {
     // Part 2: no field focused — move focus on the press edge AND every repeat,
-    // but ONLY while focus rests on a real Hibiki-managed control. The
-    // managed-target gate keeps this from hijacking an arrow on a surface that
-    // owns it (reader page-turn / char cursor, video seek, raw page sink); those
-    // surfaces are not managed targets and consume the arrow in their own nearer
-    // handler first. [arrowFocusMoveDirection] already returns non-null only for
-    // a KeyDown or KeyRepeat (never a KeyUp), so both edges flow through the
+    // but ONLY while focus rests on a navigable control (registered target or a
+    // native leaf of the current focus scope — the D-pad's candidate set). The
+    // gate keeps this from hijacking an arrow on a surface that owns it (reader
+    // page-turn / char cursor, video seek, raw page sink); those surfaces
+    // consume the arrow in their own nearer handler first, and a container sink
+    // that wraps other focusables is never a candidate.
+    // [arrowFocusMoveDirection] already returns non-null only for a KeyDown or
+    // KeyRepeat (never a KeyUp), so both edges flow through the
     // single shared move below — press and repeat can never diverge.
     //
     // Resolve the controller from the FOCUSED context (the FushiFocusRoot sits
@@ -133,7 +137,7 @@ KeyEventResult _handleGlobalArrowFocus(
     final FushiFocusController? controller = focusContext == null
         ? null
         : FushiFocusRoot.maybeControllerOf(focusContext, listen: false);
-    if (controller == null || !controller.primaryFocusIsManagedTarget) {
+    if (controller == null || !controller.primaryFocusIsNavigable) {
       return KeyEventResult.ignored;
     }
     return _moveFocusForArrow(navigatorKey, registry, event, dir);

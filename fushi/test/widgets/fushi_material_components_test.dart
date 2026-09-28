@@ -1066,7 +1066,13 @@ void main() {
 
     // Row order on mobile is [close] [field] [paste] [search]: the default test
     // platform is android, where the input suffix is now a one-tap paste button
-    // sitting between the field and the search button. Step right past it.
+    // sitting between the field and the search button. The (unregistered) field
+    // is a D-pad stop too — before the gamepad focus rewrite the engine only saw
+    // registered targets, so a controller could never reach the search field.
+    expect(controller.move(FushiFocusDirection.right), isTrue);
+    await tester.pump();
+    expect(fieldFocus.hasPrimaryFocus, isTrue,
+        reason: 'D-pad must be able to land on the search field');
     expect(controller.move(FushiFocusDirection.right), isTrue);
     await tester.pump();
     expect(controller.move(FushiFocusDirection.right), isTrue);
