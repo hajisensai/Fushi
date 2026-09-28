@@ -104,7 +104,8 @@ function parseChoice(v, allowed, fallback, code) {
 export function parsePage(url, maxLimit = 50) {
   return {
     limit: clampInt(url.searchParams.get('limit'), 1, maxLimit, 50),
-    offset: clampInt(url.searchParams.get('offset'), 0, 1_000_000, 0),
+    // offset 越大全表扫描越贵（D1 按读取行数计费）；再往后没有真实用途。
+    offset: clampInt(url.searchParams.get('offset'), 0, 10_000, 0),
   };
 }
 

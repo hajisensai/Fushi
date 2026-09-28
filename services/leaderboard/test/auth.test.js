@@ -113,18 +113,46 @@ describe('签名请求', () => {
     expect(r.data.error).toBe('bad_signature');
   });
 
-  it('写请求防重放：同一时刻或更早时刻被拒；读请求乱序到达照常放行', async () => {
+  it('写请求防重放：同一签名串第二次被拒；乱序到达的不同写请求照常放行', async () => {
     const env = makeEnv();
     const u = await registerUser(env, 'tom', { now: NOW });
     const w1 = await call(env, 'PATCH', '/v1/me', { key: u.key, account: u.id, body: { visibility: 'friends' }, time: NOW + 100, now: NOW });
     expect(w1.status).toBe(200);
     const replay = await call(env, 'PATCH', '/v1/me', { key: u.key, account: u.id, body: { visibility: 'friends' }, time: NOW + 100, now: NOW });
     expect(replay.data.error).toBe('replayed');
+    // 并发写乱序到达：时刻更早但内容不同 → 合法。
     const older = await call(env, 'PATCH', '/v1/me', { key: u.key, account: u.id, body: { visibility: 'public' }, time: NOW + 50, now: NOW });
-    expect(older.data.error).toBe('replayed');
-    const readOld = await call(env, 'GET', '/v1/me', { key: u.key, account: u.id, time: NOW + 10, now: NOW });
-    expect(readOld.status).toBe(200);
-    expect(readOld.data.visibility).toBe('friends');
+    expect(older.status).toBe(200);
+    expect(older.data.visibility).toBe('public');
+  });
+
+  it('ECDSA 延展签名 (r, n−s) 重放同一请求也被拒（去重键是签名串，不是签名值）', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { now: NOW });
+    const { signingString } = await import('../src/auth.js');
+    const { b64urlEncode } = await import('../src/util.js');
+    const body = new TextEncoder().encode(JSON.stringify({ visibility: 'friends' }));
+    const time = NOW + 500;
+    const msg = await signingString('PATCH', '/v1/me', time, body);
+    const sig = new Uint8Array(
+      await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, u.key.privateKey, new TextEncoder().encode(msg)),
+    );
+    // s' = n − s（P-256 群阶 n）。
+    const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    const toBig = (b) => BigInt('0x' + [...b].map((x) => x.toString(16).padStart(2, '0')).join(''));
+    const toBytes = (v) => Uint8Array.from((v.toString(16).padStart(64, '0').match(/../g)).map((h) => parseInt(h, 16)));
+    const flipped = new Uint8Array(64);
+    flipped.set(sig.slice(0, 32), 0);
+    flipped.set(toBytes(N - toBig(sig.slice(32))), 32);
+    const send = (s) => call(env, 'PATCH', '/v1/me', {
+      body,
+      headers: { 'X-Fushi-Account': u.id, 'X-Fushi-Time': String(time), 'X-Fushi-Sig': b64urlEncode(s), 'Content-Type': 'application/json' },
+      now: NOW,
+    });
+    expect((await send(sig)).status).toBe(200);
+    const replay = await send(flipped);
+    expect(replay.status).toBe(401);
+    expect(replay.data.error).toBe('replayed'); // 证明延展签名本身验签通过，是去重拦下的
   });
 
   it('改昵称重新分配判别码，visibility 只收两个值', async () => {

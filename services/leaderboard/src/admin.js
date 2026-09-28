@@ -8,6 +8,7 @@
 //   POST /admin/api/works/split   {ref}         把一个误挂的别名拆成新作品，上报过它的书架随之迁走
 
 import { HttpError, json, randomId, timingSafeEqual } from './util.js';
+import { recomputeMetaStatement } from './shelf.js';
 
 export function checkBasicAuth(request, env) {
   if (!env.ADMIN_USER || !env.ADMIN_PASS) throw new HttpError(503, 'admin_not_configured');
@@ -31,14 +32,7 @@ export function checkBasicAuth(request, env) {
 }
 
 async function recomputeMeta(env, workId) {
-  await env.DB.prepare(
-    `UPDATE works SET
-       title = COALESCE((SELECT s.title FROM shelf s WHERE s.work_id = works.id
-                         GROUP BY s.title ORDER BY COUNT(*) DESC, MIN(s.updated_at) LIMIT 1), title),
-       author = COALESCE((SELECT s.author FROM shelf s WHERE s.work_id = works.id
-                          GROUP BY s.author ORDER BY COUNT(*) DESC, MIN(s.updated_at) LIMIT 1), author)
-     WHERE id = ?1 AND locked = 0`,
-  ).bind(workId).run();
+  await recomputeMetaStatement(env.DB, JSON.stringify([workId])).run();
 }
 
 export async function mergeWorks(env, from, into) {
@@ -86,6 +80,7 @@ export async function splitWork(env, ref, now) {
   const alias = await env.DB.prepare('SELECT work_id FROM work_aliases WHERE ref = ?1').bind(ref).first();
   if (!alias) throw new HttpError(404, 'not_found');
   const old = await env.DB.prepare('SELECT * FROM works WHERE id = ?1').bind(alias.work_id).first();
+  if (!old) throw new HttpError(404, 'not_found');
   const newId = randomId(12);
   await env.DB.batch([
     env.DB.prepare(

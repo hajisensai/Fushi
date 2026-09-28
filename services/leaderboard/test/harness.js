@@ -50,7 +50,15 @@ export function makeD1() {
       db.exec('BEGIN');
       try {
         const out = [];
-        for (const s of stmts) out.push(await s.run());
+        // 与 D1 一致：batch 的每条结果都带 results（RETURNING 行）与 meta.changes。
+        for (const s of stmts) {
+          if (/\bRETURNING\b/i.test(s.sql)) {
+            const rows = db.prepare(s.sql).all(...s.args).map(plain);
+            out.push({ success: true, results: rows, meta: { changes: rows.length } });
+          } else {
+            out.push({ ...(await s.run()), results: [] });
+          }
+        }
         db.exec('COMMIT');
         return out;
       } catch (e) {

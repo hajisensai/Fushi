@@ -23,7 +23,10 @@ export async function hit(env, bucket, windowMs, limit, now) {
   if (row.count > limit) throw new HttpError(429, 'rate_limited');
 }
 
-/** 清掉早于 cutoff 的窗口（scheduled 里跑）。 */
-export async function purgeRateLimits(env, cutoff) {
-  await env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?1').bind(cutoff).run();
+/** 清掉早于 cutoff 的限流窗口，以及已超出签名时效的防重放记录（scheduled 里跑）。 */
+export async function purgeRateLimits(env, cutoff, sigCutoff) {
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM rate_limits WHERE window_start < ?1').bind(cutoff),
+    env.DB.prepare('DELETE FROM used_sigs WHERE time < ?1').bind(sigCutoff),
+  ]);
 }

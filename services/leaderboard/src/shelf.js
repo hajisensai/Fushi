@@ -1,26 +1,43 @@
 // 公开书架上报：整份上报、整份替换、幂等。
 //
-// D1 每次调用有查询条数上限（免费 50 / 付费 1000），所以书架**不能逐条写**：整份条目
-// 作为一个 JSON 参数，用 json_each 在少数几条集合 SQL 里完成「别名解析 → 建作品 →
-// 挂别名 → 替换书架 → 回写作品展示字段」，放进一个 batch（D1 batch = 一个事务）。
-//
 // 作品身份：条目带一组按优先级排列的匹配键 refs（bgm:/isbn:/vndb:/tmdb:/anidb:/src:/t:），
-// 存储时统一加 '<kind>|' 前缀。解析规则只有一条：取第一个已存在别名指向的作品；
-// 全都不存在就新建作品。新键一律挂到解析出的作品上——这就是 ISBN 与「标题+作者」
-// 两路匹配汇合的方式。误配由管理员拆分（admin.js，依据 shelf.refs）。
+// 每个命名空间至多一个；存储时统一加 '<kind>|' 前缀。
+//
+// 解析在 JS 里一次算完（resolveUpload，纯函数），SQL 只做线性的批量写：
+//   1. 一次查询取出本次所有键里已存在的别名，再一次查询取出这些作品已有的命名空间；
+//   2. 每条目：第一个已存在别名指向的作品；没有的条目按「共用新键」union-find 成组，
+//      组内跟随第一个已解析成员，否则整组共建一部新作品；
+//   3. 新键挂到「第一个带它的条目」解析出的作品上——但强 ID 命名空间（bgm/isbn/…）
+//      已有键的作品不再挂同命名空间的新键（防止一条 [bgm:1, bgm:2…] 把无关作品抢注合并）；
+//   4. 同一作品的多条目在 JS 里合并成一行书架；
+//   5. 建作品 / 挂别名 / 换书架 / 回写众数 / 封面 / 每日字数 / 清孤儿，全在一个 batch（事务）里。
+//
+// 为什么不在 SQL 里解析：相关子查询让每部作品重扫整份 JSON，耗时随条目数平方增长
+// （实测 5000 条 47 秒，超过 D1 单查询时限），且组内共用新键时会留下幽灵作品。
+//
+// 已知竞态：两人在同一瞬间首次上报同一部全新作品，各建一部、后者的新键 INSERT OR IGNORE
+// 落空 → 同一作品被拆成两部，由管理员合并。概率极低，不值得为它加锁。
 
-import { HttpError, clampInt, randomId } from './util.js';
+import { HttpError, clampInt, randomId, utcDateKey } from './util.js';
 
 export const KINDS = ['book', 'manga', 'video', 'game'];
-export const MAX_ENTRIES = 20000;
+/** 书架条目上限。受 D1 单参数约 2MB 约束（见 MAX_PARAM_BYTES），不是随意取的。 */
+export const MAX_ENTRIES = 8000;
 export const MAX_DAILY = 5000;
-export const MAX_REFS = 8;
 export const DAILY_CHARS_CAP = 400000;
-export const MAX_SHELF_BODY = 8 * 1024 * 1024;
+export const MAX_SHELF_BODY = 4 * 1024 * 1024;
+/** 单个绑定参数（JSON 串）的字节上限；D1 线上约 2MB，node:sqlite 不限，所以必须自己查。 */
+export const MAX_PARAM_BYTES = 1900 * 1024;
+
+export const NAMESPACES = ['bgm', 'isbn', 'vndb', 'tmdb', 'anidb', 'src', 't'];
+/** 强 ID：同一作品同命名空间只认第一个键。't'（标题+作者）是弱键，译名/变体可以挂多个。 */
+export const STRONG_NAMESPACES = new Set(['bgm', 'isbn', 'vndb', 'tmdb', 'anidb', 'src']);
+export const MAX_REFS = NAMESPACES.length;
 
 const REF_RE = /^(bgm|isbn|vndb|tmdb|anidb|src|t):[^\u0000-\u001f]{1,256}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EARLIEST_MS = Date.UTC(2000, 0, 1);
+const DAY_MS = 24 * 3600 * 1000;
 /** 「读完但不知道哪天」（如 v112 前就标为玩过的游戏）的 finished_at 取值。 */
 export const UNKNOWN_FINISH = 0;
 
@@ -35,6 +52,12 @@ export const COVER_HOSTS = new Set([
   'cdn-eu.anidb.net',
   'cdn-us.anidb.net',
 ]);
+
+/** 存储形态的 ref（'<kind>|<ns>:<id>'）的命名空间。 */
+export function refNamespace(storedRef) {
+  const body = storedRef.slice(storedRef.indexOf('|') + 1);
+  return body.slice(0, body.indexOf(':'));
+}
 
 export function acceptCoverUrl(raw) {
   if (typeof raw !== 'string' || raw.length > 512) return null;
@@ -59,10 +82,13 @@ export function normalizeEntry(e, i, now) {
   if (!KINDS.includes(e.kind)) throw bad('kind');
   if (!Array.isArray(e.refs) || e.refs.length < 1 || e.refs.length > MAX_REFS) throw bad('refs');
   const refs = [];
+  const seenNs = new Set();
   for (const r of e.refs) {
     if (typeof r !== 'string' || !REF_RE.test(r)) throw bad('ref');
-    const full = `${e.kind}|${r}`;
-    if (!refs.includes(full)) refs.push(full);
+    const ns = r.slice(0, r.indexOf(':'));
+    if (seenNs.has(ns)) throw bad('duplicate_namespace');
+    seenNs.add(ns);
+    refs.push(`${e.kind}|${r}`);
   }
   const title = str(e.title, 300);
   if (!title) throw bad('title');
@@ -74,8 +100,16 @@ export function normalizeEntry(e, i, now) {
     if (!Number.isSafeInteger(finishedAt) || finishedAt < EARLIEST_MS || finishedAt > now + 5 * 60 * 1000) {
       throw bad('finishedAt');
     }
-    if (typeof e.finishedDate !== 'string' || !DATE_RE.test(e.finishedDate)) throw bad('finishedDate');
-    finishedDate = e.finishedDate;
+    // 本地日期只能与读完时刻的 UTC 日期差一天以内（时区）——否则可以把几千部作品
+    // 摊到几千个未来日期上，绕开每日 30 部的计分上限、永久霸占周榜/月榜。
+    const d = e.finishedDate;
+    if (
+      typeof d !== 'string' || !DATE_RE.test(d) ||
+      d < utcDateKey(finishedAt - DAY_MS) || d > utcDateKey(finishedAt + DAY_MS)
+    ) {
+      throw bad('finishedDate');
+    }
+    finishedDate = d;
   }
   return {
     kind: e.kind,
@@ -96,8 +130,7 @@ export function normalizeDaily(d, i, now) {
     throw new HttpError(400, 'bad_daily', `${i}`);
   }
   // 客户端本地日可能比 UTC 快一天。
-  const maxKey = new Date(now + 36 * 3600 * 1000).toISOString().slice(0, 10);
-  if (d.date > maxKey) throw new HttpError(400, 'bad_daily', `${i}: future`);
+  if (d.date > utcDateKey(now + 36 * 3600 * 1000)) throw new HttpError(400, 'bad_daily', `${i}: future`);
   return { date: d.date, chars: clampInt(d.chars, 0, DAILY_CHARS_CAP, 0) };
 }
 
@@ -106,7 +139,7 @@ export function normalizeUpload(body, now) {
   if (body.entries.length > MAX_ENTRIES) throw new HttpError(413, 'too_many_entries');
   const daily = Array.isArray(body.daily) ? body.daily : [];
   if (daily.length > MAX_DAILY) throw new HttpError(413, 'too_many_daily');
-  const entries = body.entries.map((e, i) => ({ ...normalizeEntry(e, i, now), cand: randomId(12) }));
+  const entries = body.entries.map((e, i) => normalizeEntry(e, i, now));
   const dailyMap = new Map();
   daily.forEach((d, i) => {
     const n = normalizeDaily(d, i, now);
@@ -115,114 +148,211 @@ export function normalizeUpload(body, now) {
   return { entries, daily: [...dailyMap].map(([date, chars]) => ({ date, chars })) };
 }
 
-// 条目 e（json_each 行）的解析作品：第一个已存在别名指向的作品。
-const RESOLVE = `(SELECT a.work_id FROM json_each(json_extract(e.value, '$.refs')) r
-                  JOIN work_aliases a ON a.ref = r.value ORDER BY r.key LIMIT 1)`;
-const J = (path) => `json_extract(e.value, '$.${path}')`;
+function finishRank(at) {
+  return at === null ? -1 : at;
+}
 
-/** 构造整份替换的 batch 语句（纯函数，便于单测看 SQL 顺序）。 */
-export function shelfStatements(db, accountId, entriesJson, dailyJson, now) {
+/**
+ * 纯函数：把规范化后的条目解析成作品。
+ * @param entries      normalizeEntry 的结果（按上报顺序）
+ * @param existing     Map<ref, workId>：本次涉及的键里已存在的别名
+ * @param workNs       Map<workId, Set<namespace>>：这些已存在作品已有的命名空间
+ * @param newId        () => string：新作品 id 生成器（测试可注入）
+ * @returns {{ entryWork: string[], newWorks: object[], newAliases: object[], rows: object[] }}
+ */
+export function resolveUpload(entries, existing, workNs, newId = () => randomId(12)) {
+  const n = entries.length;
+  const own = entries.map((e) => {
+    for (const r of e.refs) if (existing.has(r)) return existing.get(r);
+    return null;
+  });
+
+  // 没解析到已有作品的条目，按共用的新键成组。
+  const parent = [...Array(n).keys()];
+  const find = (x) => {
+    while (parent[x] !== x) x = parent[x] = parent[parent[x]];
+    return x;
+  };
+  const firstWithRef = new Map();
+  entries.forEach((e, i) => {
+    for (const r of e.refs) {
+      if (existing.has(r)) continue;
+      if (firstWithRef.has(r)) parent[find(i)] = find(firstWithRef.get(r));
+      else firstWithRef.set(r, i);
+    }
+  });
+
+  // 组的作品：组内第一个自带解析的成员的作品；没有就整组共建一部新作品。
+  const groupWork = new Map();
+  const newWorks = [];
+  const ns = new Map([...workNs].map(([w, s]) => [w, new Set(s)]));
+  for (let i = 0; i < n; i++) {
+    const g = find(i);
+    if (!groupWork.has(g) && own[i] !== null) groupWork.set(g, own[i]);
+  }
+  const entryWork = entries.map((e, i) => {
+    if (own[i] !== null) return own[i];
+    const g = find(i);
+    if (!groupWork.has(g)) {
+      const id = newId();
+      groupWork.set(g, id);
+      ns.set(id, new Set());
+      newWorks.push({ id, kind: e.kind, title: e.title, author: e.author });
+    }
+    return groupWork.get(g);
+  });
+
+  // 新键挂到第一个带它的条目的作品上；强命名空间已占用则不挂。
+  const newAliases = [];
+  for (const [ref, i] of firstWithRef) {
+    const w = entryWork[i];
+    const space = refNamespace(ref);
+    const taken = ns.get(w) || new Set();
+    if (STRONG_NAMESPACES.has(space) && taken.has(space)) continue;
+    taken.add(space);
+    ns.set(w, taken);
+    newAliases.push({ ref, workId: w });
+  }
+
+  // 同一作品的多条目合并成一行：读完取最晚，字数/时长累加，refs 取并集（保持先后）。
+  const byWork = new Map();
+  entries.forEach((e, i) => {
+    const w = entryWork[i];
+    const row = byWork.get(w);
+    if (!row) {
+      byWork.set(w, {
+        workId: w,
+        refs: [...e.refs],
+        title: e.title,
+        author: e.author,
+        finishedAt: e.finishedAt,
+        finishedDate: e.finishedDate,
+        chars: e.chars,
+        ms: e.ms,
+        coverUrl: e.coverUrl,
+        nsfw: e.nsfw,
+      });
+      return;
+    }
+    for (const r of e.refs) if (!row.refs.includes(r)) row.refs.push(r);
+    if (finishRank(e.finishedAt) > finishRank(row.finishedAt)) {
+      row.finishedAt = e.finishedAt;
+      row.finishedDate = e.finishedDate;
+    }
+    row.chars += e.chars;
+    row.ms += e.ms;
+    row.coverUrl = row.coverUrl || e.coverUrl;
+    row.nsfw = Math.max(row.nsfw, e.nsfw);
+  });
+  return { entryWork, newWorks, newAliases, rows: [...byWork.values()] };
+}
+
+function jsonParam(value) {
+  const s = JSON.stringify(value);
+  if (new TextEncoder().encode(s).length > MAX_PARAM_BYTES) throw new HttpError(413, 'shelf_too_large');
+  return s;
+}
+
+/**
+ * 「这些作品若已无人在架就删掉」的两条语句（别名 + 作品，后者 RETURNING cover_key 供删 R2）。
+ * 判据写在删除语句自身里、并与其它写入同处一个事务——先查孤儿再另发删除会误删别人刚上架的作品。
+ */
+export function orphanPurgeStatements(db, idsJson) {
   return [
-    // 1. 所有键都没见过的条目：用候选 id 建新作品。
     db.prepare(
-      `INSERT INTO works (id, kind, title, author, cover_url, nsfw, created_at)
-       SELECT ${J('cand')}, ${J('kind')}, ${J('title')}, ${J('author')}, ${J('coverUrl')}, ${J('nsfw')}, ?2
-       FROM json_each(?1) e
-       WHERE NOT EXISTS (SELECT 1 FROM json_each(${J('refs')}) r JOIN work_aliases a ON a.ref = r.value)`,
-    ).bind(entriesJson, now),
-    // 2. 挂别名：每个键指向解析出的作品（新作品则为候选 id）；已存在的键不动。
-    db.prepare(
-      `INSERT OR IGNORE INTO work_aliases (ref, work_id)
-       SELECT r.value, COALESCE(${RESOLVE}, ${J('cand')})
-       FROM json_each(?1) e, json_each(${J('refs')}) r`,
-    ).bind(entriesJson),
-    // 3. 同一次上报里两条目共享一个新键时，后者的候选作品一个别名都没抢到 → 删掉孤儿。
+      `DELETE FROM work_aliases
+       WHERE work_id IN (SELECT value FROM json_each(?1))
+         AND NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = work_aliases.work_id)`,
+    ).bind(idsJson),
     db.prepare(
       `DELETE FROM works
-       WHERE id IN (SELECT json_extract(value, '$.cand') FROM json_each(?1))
-         AND NOT EXISTS (SELECT 1 FROM work_aliases a WHERE a.work_id = works.id)`,
-    ).bind(entriesJson),
-    // 4. 整份替换书架。
-    db.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(accountId),
-    db.prepare(
-      `INSERT INTO shelf (account_id, work_id, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
-       SELECT ?2, m.work_id, m.refs, m.title, m.author, m.finished_at, m.finished_date, m.chars, m.ms, ?3
-       FROM (SELECT ${RESOLVE} AS work_id, json(${J('refs')}) AS refs, ${J('title')} AS title,
-                    ${J('author')} AS author, ${J('finishedAt')} AS finished_at,
-                    ${J('finishedDate')} AS finished_date, ${J('chars')} AS chars, ${J('ms')} AS ms
-             FROM json_each(?1) e) m
-       WHERE m.work_id IS NOT NULL
-       ON CONFLICT (account_id, work_id) DO UPDATE SET
-         finished_date = CASE WHEN excluded.finished_at > COALESCE(shelf.finished_at, -1)
-                              THEN excluded.finished_date ELSE shelf.finished_date END,
-         finished_at = MAX(COALESCE(shelf.finished_at, -1), COALESCE(excluded.finished_at, -1)),
-         chars = shelf.chars + excluded.chars,
-         ms = shelf.ms + excluded.ms`,
-    ).bind(entriesJson, accountId, now),
-    // 上面 MAX(…, -1) 把「都在读」写成 -1，这里还原成 NULL。
-    db.prepare('UPDATE shelf SET finished_at = NULL, finished_date = NULL WHERE account_id = ?1 AND finished_at = -1')
-      .bind(accountId),
-    // 5. 作品展示字段 = 全体读者上报的众数（管理员锁定的作品除外）。
-    db.prepare(
-      `UPDATE works SET
-         title = (SELECT s.title FROM shelf s WHERE s.work_id = works.id
-                  GROUP BY s.title ORDER BY COUNT(*) DESC, MIN(s.updated_at) ASC LIMIT 1),
-         author = (SELECT s.author FROM shelf s WHERE s.work_id = works.id
-                   GROUP BY s.author ORDER BY COUNT(*) DESC, MIN(s.updated_at) ASC LIMIT 1)
-       WHERE locked = 0 AND id IN (SELECT work_id FROM shelf WHERE account_id = ?1)`,
-    ).bind(accountId),
-    // 6. 封面 URL 先到先得；nsfw 只升不降（降级只能管理员做）。
-    db.prepare(
-      `UPDATE works SET
-         cover_url = COALESCE(cover_url, CASE WHEN cover_key IS NULL THEN (
-           SELECT ${J('coverUrl')} FROM json_each(?1) e
-           WHERE ${J('coverUrl')} IS NOT NULL AND ${RESOLVE} = works.id LIMIT 1) END),
-         nsfw = MAX(nsfw, COALESCE((
-           SELECT MAX(${J('nsfw')}) FROM json_each(?1) e WHERE ${RESOLVE} = works.id), 0))
-       WHERE id IN (SELECT work_id FROM shelf WHERE account_id = ?2)`,
-    ).bind(entriesJson, accountId),
-    // 7. 按天字数整份替换。
-    db.prepare('DELETE FROM daily_chars WHERE account_id = ?1').bind(accountId),
-    db.prepare(
-      `INSERT INTO daily_chars (account_id, date_key, chars)
-       SELECT ?2, json_extract(value, '$.date'), json_extract(value, '$.chars')
-       FROM json_each(?1) WHERE json_extract(value, '$.chars') > 0`,
-    ).bind(dailyJson, accountId),
+       WHERE id IN (SELECT value FROM json_each(?1))
+         AND NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = works.id)
+       RETURNING cover_key`,
+    ).bind(idsJson),
   ];
 }
 
-/** 删除「本账户曾有、现在无人在架」的作品（含别名与 R2 缩略图）。previousIds 为替换前的作品集合。 */
-export async function purgeOrphanWorks(env, previousIds) {
-  if (previousIds.length === 0) return 0;
-  const ids = JSON.stringify(previousIds);
-  const orphans = await env.DB.prepare(
-    `SELECT id, cover_key FROM works
-     WHERE id IN (SELECT value FROM json_each(?1))
-       AND NOT EXISTS (SELECT 1 FROM shelf s WHERE s.work_id = works.id)`,
-  ).bind(ids).all();
-  if (orphans.results.length === 0) return 0;
-  const orphanIds = JSON.stringify(orphans.results.map((r) => r.id));
-  await env.DB.batch([
-    env.DB.prepare('DELETE FROM work_aliases WHERE work_id IN (SELECT value FROM json_each(?1))').bind(orphanIds),
-    env.DB.prepare('DELETE FROM works WHERE id IN (SELECT value FROM json_each(?1))').bind(orphanIds),
-  ]);
-  const keys = orphans.results.map((r) => r.cover_key).filter(Boolean);
-  if (keys.length && env.MEDIA) await env.MEDIA.delete(keys);
-  return orphans.results.length;
+export async function deleteCoverObjects(env, purgeResult) {
+  const keys = ((purgeResult && purgeResult.results) || []).map((r) => r.cover_key).filter(Boolean);
+  if (keys.length) await env.MEDIA.delete(keys);
+}
+
+/** 作品展示字段 = 未隐藏读者上报的众数（管理员锁定的作品除外）。 */
+export function recomputeMetaStatement(db, idsJson) {
+  const mode = (col) => `(SELECT s.${col} FROM shelf s JOIN accounts a ON a.id = s.account_id AND a.hidden = 0
+                          WHERE s.work_id = works.id
+                          GROUP BY s.${col} ORDER BY COUNT(*) DESC, MIN(s.updated_at) ASC LIMIT 1)`;
+  return db.prepare(
+    `UPDATE works SET title = COALESCE(${mode('title')}, title), author = COALESCE(${mode('author')}, author)
+     WHERE locked = 0 AND id IN (SELECT value FROM json_each(?1))`,
+  ).bind(idsJson);
 }
 
 /** 执行整份上报。返回每条上报条目（按下标）对应的作品 id 与是否缺封面。 */
 export async function replaceShelf(env, accountId, upload, now) {
-  const entriesJson = JSON.stringify(upload.entries);
-  const dailyJson = JSON.stringify(upload.daily);
-  const prev = await env.DB.prepare('SELECT work_id FROM shelf WHERE account_id = ?1').bind(accountId).all();
-  await env.DB.batch(shelfStatements(env.DB, accountId, entriesJson, dailyJson, now));
-  await purgeOrphanWorks(env, prev.results.map((r) => r.work_id));
-  const mapped = await env.DB.prepare(
-    `SELECT CAST(e.key AS INTEGER) AS i, w.id AS work_id,
-            (w.cover_url IS NULL AND w.cover_key IS NULL) AS needs_cover
-     FROM json_each(?1) e JOIN works w ON w.id = ${RESOLVE}
-     ORDER BY i`,
-  ).bind(entriesJson).all();
-  return mapped.results.map((r) => ({ i: r.i, workId: r.work_id, needsCover: r.needs_cover === 1 }));
+  const db = env.DB;
+  const allRefs = [...new Set(upload.entries.flatMap((e) => e.refs))];
+  const found = await db.prepare(
+    `SELECT a.ref, a.work_id FROM work_aliases a JOIN works w ON w.id = a.work_id
+     WHERE a.ref IN (SELECT value FROM json_each(?1))`,
+  ).bind(jsonParam(allRefs)).all();
+  const existing = new Map(found.results.map((r) => [r.ref, r.work_id]));
+  const knownWorks = [...new Set(existing.values())];
+  const nsRows = await db.prepare(
+    'SELECT work_id, ref FROM work_aliases WHERE work_id IN (SELECT value FROM json_each(?1))',
+  ).bind(jsonParam(knownWorks)).all();
+  const workNs = new Map();
+  for (const r of nsRows.results) {
+    if (!workNs.has(r.work_id)) workNs.set(r.work_id, new Set());
+    workNs.get(r.work_id).add(refNamespace(r.ref));
+  }
+  const prev = await db.prepare('SELECT work_id FROM shelf WHERE account_id = ?1').bind(accountId).all();
+
+  const res = resolveUpload(upload.entries, existing, workNs);
+  const myWorks = jsonParam(res.rows.map((r) => r.workId));
+  const rowsJson = jsonParam(res.rows.map((r) => ({ ...r, refs: JSON.stringify(r.refs) })));
+  const prevJson = jsonParam(prev.results.map((r) => r.work_id));
+  const J = (p) => `json_extract(value, '$.${p}')`;
+
+  const results = await db.batch([
+    db.prepare(
+      `INSERT INTO works (id, kind, title, author, created_at)
+       SELECT ${J('id')}, ${J('kind')}, ${J('title')}, ${J('author')}, ?2 FROM json_each(?1)`,
+    ).bind(jsonParam(res.newWorks), now),
+    db.prepare(
+      `INSERT OR IGNORE INTO work_aliases (ref, work_id)
+       SELECT ${J('ref')}, ${J('workId')} FROM json_each(?1)`,
+    ).bind(jsonParam(res.newAliases)),
+    db.prepare('DELETE FROM shelf WHERE account_id = ?1').bind(accountId),
+    db.prepare(
+      `INSERT INTO shelf (account_id, work_id, refs, title, author, finished_at, finished_date, chars, ms, updated_at)
+       SELECT ?2, ${J('workId')}, ${J('refs')}, ${J('title')}, ${J('author')}, ${J('finishedAt')},
+              ${J('finishedDate')}, ${J('chars')}, ${J('ms')}, ?3
+       FROM json_each(?1)`,
+    ).bind(rowsJson, accountId, now),
+    recomputeMetaStatement(db, myWorks),
+    // 远端封面先到先得（已有上传缩略图的不覆盖）；nsfw 只升不降（降级只能管理员做）。
+    db.prepare(
+      `UPDATE works SET
+         cover_url = COALESCE(works.cover_url, CASE WHEN works.cover_key IS NULL THEN j.cover END),
+         nsfw = MAX(works.nsfw, j.nsfw)
+       FROM (SELECT ${J('workId')} AS id, ${J('coverUrl')} AS cover, ${J('nsfw')} AS nsfw FROM json_each(?1)) AS j
+       WHERE works.id = j.id`,
+    ).bind(rowsJson),
+    db.prepare('DELETE FROM daily_chars WHERE account_id = ?1').bind(accountId),
+    db.prepare(
+      `INSERT INTO daily_chars (account_id, date_key, chars)
+       SELECT ?2, ${J('date')}, ${J('chars')} FROM json_each(?1) WHERE ${J('chars')} > 0`,
+    ).bind(jsonParam(upload.daily), accountId),
+    ...orphanPurgeStatements(db, prevJson),
+  ]);
+  await deleteCoverObjects(env, results[results.length - 1]);
+
+  const covers = await db.prepare(
+    `SELECT id, (cover_url IS NULL AND cover_key IS NULL) AS needs_cover FROM works
+     WHERE id IN (SELECT value FROM json_each(?1))`,
+  ).bind(myWorks).all();
+  const needs = new Map(covers.results.map((r) => [r.id, r.needs_cover === 1]));
+  return res.entryWork.map((workId, i) => ({ i, workId, needsCover: needs.get(workId) === true }));
 }

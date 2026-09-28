@@ -20,7 +20,7 @@
 //   GET    /img/<key>                                    R2 出图
 
 import { HttpError, errorResponse, json, parseJsonBytes, readBodyBytes } from './util.js';
-import { authenticate } from './auth.js';
+import { SIG_WINDOW_MS, authenticate } from './auth.js';
 import { LIMITS, hit, purgeRateLimits } from './ratelimit.js';
 import { MAX_SHELF_BODY, normalizeUpload, replaceShelf } from './shelf.js';
 import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, setWorkCover } from './media.js';
@@ -40,7 +40,45 @@ function clientIp(request) {
   return request.headers.get('CF-Connecting-IP') || 'unknown';
 }
 
-async function route(request, env, now) {
+/** 读接口按 IP 限流：部署了 CF Rate Limiting binding（READ_LIMITER）才生效。 */
+async function readLimit(env, request) {
+  if (!env.READ_LIMITER) return;
+  const { success } = await env.READ_LIMITER.limit({ key: clientIp(request) });
+  if (!success) throw new HttpError(429, 'rate_limited');
+}
+
+const READ_CACHE_SECONDS = 60;
+
+async function cachedRead(request, ctx, compute) {
+  const cache = typeof caches !== 'undefined' ? caches.default : null;
+  if (!cache) return compute();
+  const hitRes = await cache.match(request.url);
+  if (hitRes) return hitRes;
+  const res = await compute();
+  if (res.status === 200) {
+    const stored = new Response(res.body, res);
+    stored.headers.set('Cache-Control', `public, max-age=${READ_CACHE_SECONDS}`);
+    const copy = stored.clone();
+    const put = cache.put(request.url, copy);
+    if (ctx && ctx.waitUntil) ctx.waitUntil(put);
+    else await put;
+    return stored;
+  }
+  return res;
+}
+
+async function readRoute(env, url, viewer, now) {
+  const path = url.pathname;
+  let m;
+  if (path === '/v1/rank') return json(await leaderboard(env, url, viewer, now));
+  if (path === '/v1/works/popular') return json(await popularWorks(env, url, now));
+  if ((m = new RegExp(`^/v1/works/${ID}$`).exec(path))) return json(await workPage(env, m[1], url, viewer));
+  if ((m = new RegExp(`^/v1/users/${ID}$`).exec(path))) return json(await userCard(env, m[1], viewer, now));
+  if ((m = new RegExp(`^/v1/users/${ID}/shelf$`).exec(path))) return json(await userShelf(env, m[1], url, viewer));
+  throw new HttpError(404, 'not_found');
+}
+
+async function route(request, env, now, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -64,17 +102,15 @@ async function route(request, env, now) {
 
   // ---- 读接口：签名可选（带了就按观看者身份套好友/屏蔽规则） ----
   if (method === 'GET') {
+    await readLimit(env, request);
     const viewer = await authenticate(request, env, new Uint8Array(), now, { optional: true });
     if (path === '/v1/me') {
       if (!viewer) throw new HttpError(401, 'auth_required');
       return json(selfView(viewer));
     }
-    if (path === '/v1/rank') return json(await leaderboard(env, url, viewer, now));
-    if (path === '/v1/works/popular') return json(await popularWorks(env, url, now));
-    if ((m = new RegExp(`^/v1/works/${ID}$`).exec(path))) return json(await workPage(env, m[1], url, viewer));
-    if ((m = new RegExp(`^/v1/users/${ID}$`).exec(path))) return json(await userCard(env, m[1], viewer, now));
-    if ((m = new RegExp(`^/v1/users/${ID}/shelf$`).exec(path))) return json(await userShelf(env, m[1], url, viewer));
-    throw new HttpError(404, 'not_found');
+    // 匿名读是同一份公开数据：边缘缓存一分钟，挡住反复刷榜单造成的全表扫描。
+    // 带签名的请求结果随观看者变（好友 / 屏蔽 / 我的名次），不缓存。
+    return viewer ? readRoute(env, url, viewer, now) : cachedRead(request, ctx, () => readRoute(env, url, null, now));
   }
 
   // ---- 写接口：一律签名 + 防重放 ----
@@ -114,16 +150,17 @@ async function route(request, env, now) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (configMissing(env)) return json({ error: 'not_configured' }, 503);
     try {
-      return await route(request, env, Date.now());
+      return await route(request, env, Date.now(), ctx);
     } catch (e) {
       return errorResponse(e);
     }
   },
   async scheduled(_event, env) {
-    await purgeRateLimits(env, Date.now() - 2 * 24 * HOUR);
+    const now = Date.now();
+    await purgeRateLimits(env, now - 2 * 24 * HOUR, now - 2 * SIG_WINDOW_MS);
   },
 };
 

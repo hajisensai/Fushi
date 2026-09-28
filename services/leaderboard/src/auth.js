@@ -4,9 +4,9 @@
 // 签名：WebCrypto ECDSA/SHA-256，IEEE P1363 格式（r||s 各 32 字节），base64url。
 // 头：X-Fushi-Account（注册时省略，公钥在 body）、X-Fushi-Time（epoch ms）、X-Fushi-Sig。
 //
-// 时效：|now - time| ≤ 5 分钟。有副作用的请求另要求 time 严格大于该账户已接受的
-// 最大时刻（原子 UPDATE … WHERE last_seen_time < ?），挡重放；只读请求不做单调检查
-// ——客户端并发拉榜单/主页时请求会乱序到达，单调检查会把合法请求当重放拒掉。
+// 时效：|now - time| ≤ 5 分钟。有副作用的请求另要求「同一签名串只用一次」（used_sigs），
+// 挡重放；只读请求不去重。去重键是**签名串的哈希**而不是签名值：ECDSA 签名可延展
+// （(r, s) 与 (r, n−s) 同样有效），按签名值去重可被翻转 s 绕过。
 
 import { HttpError, b64urlDecode, b64urlEncode, hex, sha256 } from './util.js';
 
@@ -48,16 +48,18 @@ function readTime(request, now) {
   return time;
 }
 
+/** 验签，返回签名串（去重键的来源）。 */
 async function checkSig(request, publicKey, time, bodyBytes) {
   const msg = await signingString(request.method, pathWithQuery(request), time, bodyBytes);
   const ok = await verifySignature(publicKey, request.headers.get('X-Fushi-Sig') || '', msg);
   if (!ok) throw new HttpError(401, 'bad_signature');
+  return msg;
 }
 
 /**
  * 校验已注册账户的签名请求，返回账户行。
  * - `optional`：没带 X-Fushi-Account 时返回 null（匿名读）；带了就必须验过。
- * - `mutating`：推进 last_seen_time，挡重放。
+ * - `mutating`：登记签名串，同一签名串第二次到达即 401 replayed。
  */
 export async function authenticate(request, env, bodyBytes, now, { optional = false, mutating = false } = {}) {
   const id = request.headers.get('X-Fushi-Account');
@@ -69,11 +71,12 @@ export async function authenticate(request, env, bodyBytes, now, { optional = fa
   const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(id).first();
   if (!account) throw new HttpError(401, 'unknown_account');
   const spki = b64urlDecode(account.pubkey);
-  await checkSig(request, await importPublicKey(spki), time, bodyBytes);
+  const msg = await checkSig(request, await importPublicKey(spki), time, bodyBytes);
   if (mutating) {
+    const key = hex(await sha256(new TextEncoder().encode(msg)));
     const res = await env.DB
-      .prepare('UPDATE accounts SET last_seen_time = ?2 WHERE id = ?1 AND last_seen_time < ?2')
-      .bind(id, time)
+      .prepare('INSERT OR IGNORE INTO used_sigs (account_id, sig, time) VALUES (?1, ?2, ?3)')
+      .bind(id, key, time)
       .run();
     if (!res.meta || res.meta.changes !== 1) throw new HttpError(401, 'replayed');
   }

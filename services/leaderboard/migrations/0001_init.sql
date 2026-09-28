@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS accounts (
   avatar_key     TEXT,                   -- R2 key；NULL = 无头像
   visibility     TEXT NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'friends')),
   hidden         INTEGER NOT NULL DEFAULT 0,  -- 管理员隐藏：不进任何榜、主页 404
-  last_seen_time INTEGER NOT NULL DEFAULT 0,  -- 已接受的最大签名时刻（ms），防重放
   created_at     INTEGER NOT NULL,
   UNIQUE (nickname, discriminator)
 );
@@ -90,6 +89,17 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at  INTEGER NOT NULL,
   resolved    INTEGER NOT NULL DEFAULT 0
 );
+
+-- 写请求防重放：同一签名只能用一次。签名本身只在 ±5 分钟内有效，所以只需保留
+-- 最近 10 分钟的记录（scheduled 清理）。不用「时刻严格递增」是因为客户端并发写
+-- （封面并行上传、改资料与传头像同时）会乱序到达，时钟回拨后也会整段被拒。
+CREATE TABLE IF NOT EXISTS used_sigs (
+  account_id TEXT NOT NULL,
+  sig        TEXT NOT NULL,
+  time       INTEGER NOT NULL,
+  PRIMARY KEY (account_id, sig)
+);
+CREATE INDEX IF NOT EXISTS idx_used_sigs_time ON used_sigs (time);
 
 -- 固定窗口限流计数（注册按 IP、上传按账户）。
 CREATE TABLE IF NOT EXISTS rate_limits (
