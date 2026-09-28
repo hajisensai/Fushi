@@ -104,9 +104,18 @@ List<String> synchronizedClipCodecArgs(MiningClipFormat format) => <String>[
 
 /// 各格式的视频编码参数。
 ///
-/// VP9 用 `-deadline good -cpu-used 5 -row-mt 1`（短片求快，实测 1080p 源 3.6 秒窗
-/// < 1 秒）；`-b:v 0` 让 `-crf` 走恒定质量。AV1 与动图 AVIF 同一个 SVT-AV1 编码器与
-/// preset。
+/// VP9 用 `-deadline realtime -cpu-used 8 -row-mt 1`：制卡是用户在等的前台操作，速度
+/// 优先。捆绑 ffmpeg-min 实测（1080p30 实拍源、3.6 秒窗 → 960 宽 24fps，含两路解码）：
+///
+/// | 参数 | 耗时 | 体积 |
+/// |---|---|---|
+/// | VP9 `good` / cpu-used 5（旧值） | 10.2–11.7 s | 1.14 MB |
+/// | VP9 `realtime` / cpu-used 8 | 2.3–2.9 s | 1.44 MB |
+/// | AV1 SVT preset 8 | 5.0–5.5 s | 0.88 MB |
+/// | H.264 veryfast（MP4 档） | 2.7 s | 1.25 MB |
+///
+/// `good` 档慢 4 倍只省 20% 体积，不值得让用户多等 8 秒。`-b:v 0` 让 `-crf` 走恒定质量。
+/// AV1 与动图 AVIF 同一个 SVT-AV1 编码器与 preset。
 List<String> synchronizedClipVideoArgs(MiningClipFormat format) =>
     switch (format) {
       MiningClipFormat.mp4H264 => const <String>[
@@ -123,9 +132,9 @@ List<String> synchronizedClipVideoArgs(MiningClipFormat format) =>
         '-c:v',
         'libvpx-vp9',
         '-deadline',
-        'good',
+        'realtime',
         '-cpu-used',
-        '5',
+        '8',
         '-row-mt',
         '1',
         '-crf',
@@ -170,13 +179,43 @@ typedef ClipFormatExport = ({
   MiningClipFormat format,
 });
 
+/// ffmpeg 报「编不出这种格式」的日志特征（小写比对，覆盖 FFmpeg 6.0 / 7.x 两代措辞）：
+/// 缺编码器（`Unknown encoder 'libvpx-vp9'`、`Encoder not found`、`Default encoder for
+/// format webm (codec vp9) is probably disabled`、`Automatic encoder selection failed`）
+/// 与缺 muxer（6.0 `... is not a suitable output format`、7.x `Requested output format
+/// 'webm' is not known`）。
+const List<String> _kClipFormatUnsupportedMarkers = <String>[
+  'unknown encoder',
+  'encoder not found',
+  'is probably disabled',
+  'automatic encoder selection failed',
+  'not a suitable output format',
+  'requested output format',
+];
+
+/// 一次片段导出失败是否**因格式而起**：本机 ffmpeg 缺该格式的编码器或 muxer。
+///
+/// 只有这类失败换下一个格式才有意义。远端输入超时 / 打不开、区间越界、磁盘写不进、
+/// ffmpeg 本身不可用……与格式无关，换格式只会把同一个错误再撞一遍（远端输入还要
+/// 再拉一次流、再等一次超时），并把真实原因埋在最后一次尝试的报错后面。
+bool isClipFormatUnsupportedFailure(VideoClipExportResult result) {
+  if (result.failure != VideoClipExportFailure.ffmpegFailed) return false;
+  final String detail = (result.detail ?? '').toLowerCase();
+  return _kClipFormatUnsupportedMarkers.any(detail.contains);
+}
+
 /// 按 [format] 的 [MiningClipFormat.encodeAttempts] 逐个尝试 [attempt]，每次尝试的产物
 /// 落在各自的 `$outputStem-<wireName>.<扩展名>`（互不覆盖：上一次超时残留的文件不会让
-/// 下一次撞上「输出已存在」而被跳过），返回首个成功的那次。捆绑 ffmpeg 缺 VP9/Opus/AV1 编码器（旧二进制、用户自带精简 ffmpeg、移动端
-/// ffmpeg-kit 无 SVT-AV1）时降级到下一个格式，而不是让整张卡失败。全失败返回**首个**
-/// 失败（最接近根因——后面的多是它的连锁反应）。
+/// 下一次撞上「输出已存在」而被跳过），返回首个成功的那次。捆绑 ffmpeg 缺 VP9/Opus/AV1
+/// 编码器或 WebM muxer（旧二进制、用户自带精简 ffmpeg、iOS ffmpeg-kit 无 libvpx /
+/// SVT-AV1）时降级到下一个格式，而不是让整张卡失败。
 ///
-/// [onDegrade] 在一次非末位尝试失败时收到 `(失败格式, 结果)`，供调用方写诊断日志。
+/// 只在 [isClipFormatUnsupportedFailure] 时降级；其余失败（远端超时、输入打不开等）
+/// 立即返回，不再换格式重跑。全失败返回**首个**失败（最接近根因——后面的多是它的
+/// 连锁反应）。
+///
+/// [onDegrade] 在一次非末位尝试因格式失败、即将换下一个格式时收到 `(失败格式, 结果)`，
+/// 供调用方写诊断日志。
 Future<ClipFormatExport> exportWithClipFormatFallback({
   required MiningClipFormat format,
   required String outputStem,
@@ -197,6 +236,7 @@ Future<ClipFormatExport> exportWithClipFormatFallback({
     );
     if (result.isSuccess) return (result: result, format: candidate);
     firstFailure ??= (result: result, format: candidate);
+    if (!isClipFormatUnsupportedFailure(result)) break;
     if (candidate != attempts.last) onDegrade?.call(candidate, result);
   }
   return firstFailure!;

@@ -140,6 +140,9 @@ String buildGalWindowConcatList(List<GalWindowVideoFrameEntry> entries) {
   return buffer.toString();
 }
 
+/// gal 窗口录像 WebM 片段的最大宽度（与视频页同步片段 `maxWidth` 默认值一致）。
+const int kGalWindowClipMaxWidth = 960;
+
 /// 纯函数：「concat 帧列表（+ 句子音频）→ 片段」的 ffmpeg 参数表（可单测）。
 ///
 /// [format] 为 [MiningClipFormat.mp4H264]（默认）时与改动前逐字相同：
@@ -149,8 +152,12 @@ String buildGalWindowConcatList(List<GalWindowVideoFrameEntry> entries) {
 /// - `+faststart`：moov 前置，播放器不必读完整个文件才能起播。
 ///
 /// WebM 两档（卡片内 `<video>` 播放）改用 [synchronizedClipVideoArgs] /
-/// [synchronizedClipAudioArgs]（与视频页同步片段同一套编码参数），无 faststart。
-/// `scale=trunc(iw/2)*2:trunc(ih/2)*2` 各档都要：yuv420p 要求偶数维度，窗口尺寸任意。
+/// [synchronizedClipAudioArgs]（与视频页同步片段同一套编码参数），无 faststart，并与
+/// 视频页片段同样封顶 [kGalWindowClipMaxWidth] 宽（等比缩放、只缩不放）：窗口录像是
+/// 游戏原生分辨率（常见 1920 甚至 4K），VP9/AV1 按原尺寸编既慢又大，而卡片里的
+/// `<video>` 根本用不到那么宽。
+/// 偶数维度各档都要保证：yuv420p 要求偶数维度，窗口尺寸任意（MP4 档沿用
+/// `scale=trunc(iw/2)*2:trunc(ih/2)*2`，逐字不变）。
 List<String> buildGalWindowVideoArgs({
   required String listPath,
   required String outputPath,
@@ -169,7 +176,7 @@ List<String> buildGalWindowVideoArgs({
       if (audioPath != null) ...<String>['-i', audioPath],
       ...synchronizedClipVideoArgs(format),
       '-vf',
-      'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+      "scale=w='trunc(min($kGalWindowClipMaxWidth,iw)/2)*2':h=-2",
       if (audioPath != null) ...synchronizedClipAudioArgs(format),
       '-f',
       format.fileExtension,

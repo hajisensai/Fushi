@@ -3,9 +3,15 @@ import 'dart:io';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
+import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/anki_settings_page.dart'
+    show miningClipFormatLabel;
+import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi_engine/utils/misc/synchronized_video_exporter.dart';
 
@@ -16,6 +22,9 @@ FushiDatabase _testDb() =>
     FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 
 void main() {
+  // 设置页文案用例要切 slang 语言，slang_flutter 依赖 WidgetsBinding。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('MiningClipFormat', () {
     test('wireName 稳定、扩展名与内嵌判据', () {
       expect(MiningClipFormat.webmVp9.wireName, 'webm_vp9');
@@ -49,6 +58,36 @@ void main() {
       expect(
         MiningClipFormat.defaultFor(isIOS: false),
         MiningClipFormat.webmVp9,
+      );
+    });
+
+    test('encodableOn：iOS 只编得出 MP4，其余平台三档都在', () {
+      for (final MiningClipFormat f in MiningClipFormat.values) {
+        expect(f.encodableOn(isIOS: false), isTrue, reason: f.wireName);
+      }
+      expect(MiningClipFormat.mp4H264.encodableOn(isIOS: true), isTrue);
+      expect(MiningClipFormat.webmVp9.encodableOn(isIOS: true), isFalse);
+      expect(MiningClipFormat.webmAv1.encodableOn(isIOS: true), isFalse);
+    });
+
+    test('设置页文案：iOS 上两档 WebM 不标推荐，写明会退回 MP4', () {
+      LocaleSettings.setLocale(AppLocale.en);
+      expect(
+        miningClipFormatLabel(MiningClipFormat.webmVp9, isIOS: false),
+        contains('recommended'),
+      );
+      for (final MiningClipFormat f in <MiningClipFormat>[
+        MiningClipFormat.webmVp9,
+        MiningClipFormat.webmAv1,
+      ]) {
+        final String label = miningClipFormatLabel(f, isIOS: true);
+        expect(label, isNot(contains('recommended')), reason: f.wireName);
+        expect(label, isNot(contains('smallest')), reason: f.wireName);
+        expect(label, contains('MP4'), reason: f.wireName);
+      }
+      expect(
+        miningClipFormatLabel(MiningClipFormat.mp4H264, isIOS: true),
+        miningClipFormatLabel(MiningClipFormat.mp4H264, isIOS: false),
       );
     });
 
@@ -103,6 +142,8 @@ void main() {
     test('VP9 档：libvpx-vp9 + Opus，WebM 容器，无 faststart', () {
       final List<String> a = args(MiningClipFormat.webmVp9, '/o.webm');
       expect(a.join(' '), contains('-c:v libvpx-vp9'));
+      // 制卡是前台等待操作：realtime / cpu-used 8（实测比 good/5 快约 4 倍）。
+      expect(a.join(' '), contains('-deadline realtime -cpu-used 8 -row-mt 1'));
       expect(a.join(' '), contains('-b:v 0'));
       expect(a.join(' '), contains('-c:a libopus'));
       expect(a, isNot(contains('aac')));
@@ -147,7 +188,10 @@ void main() {
       );
       expect(withAudio.join(' '), contains('-c:v libvpx-vp9'));
       expect(withAudio.join(' '), contains('-c:a libopus'));
-      expect(withAudio, contains('scale=trunc(iw/2)*2:trunc(ih/2)*2'));
+      // 与视频页片段同样封顶 960 宽（窗口录像是游戏原生分辨率，按原尺寸编 VP9 既慢
+      // 又大），偶数维度靠 trunc(/2)*2 与 h=-2。
+      expect(withAudio, contains("scale=w='trunc(min(960,iw)/2)*2':h=-2"));
+      expect(withAudio, isNot(contains('scale=trunc(iw/2)*2:trunc(ih/2)*2')));
       expect(withAudio, isNot(contains('+faststart')));
       expect(withAudio.sublist(withAudio.length - 3), <String>[
         '-f',
@@ -160,6 +204,108 @@ void main() {
         format: MiningClipFormat.webmVp9,
       );
       expect(silent, isNot(contains('-c:a')));
+    });
+  });
+
+  group('exportWithClipFormatFallback 只在格式编不出时降级', () {
+    Future<(ClipFormatExport, List<MiningClipFormat>)> run(
+      VideoClipExportResult Function(MiningClipFormat) outcome,
+    ) async {
+      final List<MiningClipFormat> tried = <MiningClipFormat>[];
+      final ClipFormatExport produced = await exportWithClipFormatFallback(
+        format: MiningClipFormat.webmAv1,
+        outputStem: '/t/clip',
+        attempt: (MiningClipFormat f, String _) async {
+          tried.add(f);
+          return outcome(f);
+        },
+      );
+      return (produced, tried);
+    }
+
+    test('缺编码器 / muxer：沿 AV1 → VP9 → MP4 降级', () async {
+      for (final String detail in <String>[
+        "Unknown encoder 'libsvtav1'",
+        'Error opening output files: Encoder not found',
+        "Requested output format 'webm' is not known.",
+        "Requested output format 'webm' is not a suitable output format",
+        'Default encoder for format webm (codec vp9) is probably disabled.',
+      ]) {
+        final (
+          ClipFormatExport produced,
+          List<MiningClipFormat> tried,
+        ) = await run(
+          (MiningClipFormat f) => f == MiningClipFormat.mp4H264
+              ? const VideoClipExportResult.success('/t/clip-mp4_h264.mp4')
+              : VideoClipExportResult.failure(
+                  VideoClipExportFailure.ffmpegFailed,
+                  detail: 'returnCode=1; stderr=$detail',
+                ),
+        );
+        expect(tried, MiningClipFormat.webmAv1.encodeAttempts, reason: detail);
+        expect(produced.format, MiningClipFormat.mp4H264, reason: detail);
+        expect(produced.result.isSuccess, isTrue, reason: detail);
+      }
+    });
+
+    test('远端超时 / 输入打不开 / ffmpeg 不可用：不换格式，原样返回首个失败', () async {
+      for (final VideoClipExportResult failure in <VideoClipExportResult>[
+        const VideoClipExportResult.failure(
+          VideoClipExportFailure.ffmpegFailed,
+          detail: 'returnCode=timeout; stderr=Connection timed out',
+        ),
+        const VideoClipExportResult.failure(
+          VideoClipExportFailure.ffmpegFailed,
+          detail:
+              'returnCode=1; stderr=https://x/v.m3u8: '
+              'Server returned 403 Forbidden (access denied)',
+        ),
+        const VideoClipExportResult.failure(
+          VideoClipExportFailure.ffmpegUnavailable,
+          detail: 'No such file or directory',
+        ),
+        const VideoClipExportResult.failure(
+          VideoClipExportFailure.inputMissing,
+        ),
+      ]) {
+        final (ClipFormatExport produced, List<MiningClipFormat> tried) =
+            await run((MiningClipFormat _) => failure);
+        expect(tried, <MiningClipFormat>[
+          MiningClipFormat.webmAv1,
+        ], reason: failure.detail);
+        expect(produced.format, MiningClipFormat.webmAv1);
+        expect(produced.result.failure, failure.failure);
+        expect(produced.result.detail, failure.detail);
+      }
+    });
+
+    test('isClipFormatUnsupportedFailure 只认 ffmpegFailed + 缺编码器 / muxer', () {
+      expect(
+        isClipFormatUnsupportedFailure(
+          const VideoClipExportResult.failure(
+            VideoClipExportFailure.ffmpegFailed,
+            detail: "UNKNOWN ENCODER 'libvpx-vp9'",
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        isClipFormatUnsupportedFailure(
+          const VideoClipExportResult.failure(
+            VideoClipExportFailure.ffmpegUnavailable,
+            detail: "Unknown encoder 'libvpx-vp9'",
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isClipFormatUnsupportedFailure(
+          const VideoClipExportResult.failure(
+            VideoClipExportFailure.ffmpegFailed,
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -180,11 +326,92 @@ void main() {
       isIOS: Platform.isIOS,
     );
 
-    test('从没设过：模式默认 videoClip，格式取平台默认', () {
+    test('全新安装：模式默认 videoClip，格式取平台默认，不写模式键', () async {
+      await repo.settleMiningImageModeInstallDefault(freshInstall: true);
       expect(repo.videoMiningImageMode, VideoMiningImageMode.videoClip);
       expect(repo.galMiningImageMode, VideoMiningImageMode.videoClip);
       expect(repo.videoMiningClipFormat, platformDefault);
       expect(repo.galMiningClipFormat, platformDefault);
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningImageMode, VideoMiningImageMode.videoClip);
+      // 模式键没被写成显式 video_clip：否则格式推导会把新用户误判成老 MP4 用户。
+      expect(
+        restored.prefsSnapshot.containsKey('video_mining_image_mode'),
+        isFalse,
+      );
+      expect(
+        restored.prefsSnapshot.containsKey('gal_mining_image_mode'),
+        isFalse,
+      );
+      expect(restored.videoMiningClipFormat, platformDefault);
+      restored.dispose();
+    });
+
+    test('存量用户（从没设过）升级：落显式 gif，不翻成片段', () async {
+      await repo.settleMiningImageModeInstallDefault(freshInstall: false);
+      expect(repo.videoMiningImageMode, VideoMiningImageMode.gif);
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningImageMode, VideoMiningImageMode.gif);
+      expect(restored.galMiningImageMode, VideoMiningImageMode.gif);
+      expect(
+        restored.prefsSnapshot['video_mining_image_mode'],
+        PrefCodec.encode(VideoMiningImageMode.gif.wireName),
+      );
+      restored.dispose();
+      // 模式键被 Profile 快照删掉时，回落的是本安装默认 gif，不是全局 videoClip。
+      await db.deletePref('video_mining_image_mode');
+      final PreferencesRepository afterProfileSwitch = PreferencesRepository(
+        db,
+      );
+      await afterProfileSwitch.loadFromDb();
+      expect(afterProfileSwitch.videoMiningImageMode, VideoMiningImageMode.gif);
+      afterProfileSwitch.dispose();
+    });
+
+    test('存量用户显式设过的模式原样保留', () async {
+      await db.setPref(
+        'video_mining_image_mode',
+        PrefCodec.encode(VideoMiningImageMode.currentFrame.wireName),
+      );
+      final PreferencesRepository legacy = PreferencesRepository(db);
+      await legacy.loadFromDb();
+      await legacy.settleMiningImageModeInstallDefault(freshInstall: false);
+      expect(legacy.videoMiningImageMode, VideoMiningImageMode.currentFrame);
+      expect(legacy.galMiningImageMode, VideoMiningImageMode.gif);
+      legacy.dispose();
+    });
+
+    test('只落一次：之后再判成全新安装也不改（幂等）', () async {
+      await repo.settleMiningImageModeInstallDefault(freshInstall: false);
+      await repo.settleMiningImageModeInstallDefault(freshInstall: true);
+      expect(repo.miningImageModeInstallDefault, VideoMiningImageMode.gif);
+      await db.deletePref('video_mining_image_mode');
+      final PreferencesRepository restored = PreferencesRepository(db);
+      await restored.loadFromDb();
+      expect(restored.videoMiningImageMode, VideoMiningImageMode.gif);
+      restored.dispose();
+    });
+
+    test('还没落本安装默认（弹窗入口 / 迁移前）：按存量用户取 gif', () {
+      expect(repo.miningImageModeInstallDefault, VideoMiningImageMode.gif);
+      expect(repo.videoMiningImageMode, VideoMiningImageMode.gif);
+      expect(repo.galMiningImageMode, VideoMiningImageMode.gif);
+    });
+
+    test('本安装默认键登记为已知偏好，且不随 Profile 快照走', () {
+      expect(
+        kKnownPreferenceKeys,
+        contains(PreferencesRepository.miningImageModeInstallDefaultKey),
+      );
+      expect(
+        ProfileKeys.isExcludedPref(
+          PreferencesRepository.miningImageModeInstallDefaultKey,
+        ),
+        isTrue,
+      );
     });
 
     test('老用户显式选过 video_clip（MP4 时代）→ 格式保持 MP4', () async {

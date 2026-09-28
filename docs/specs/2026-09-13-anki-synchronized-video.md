@@ -47,3 +47,11 @@ AnkiConnect/AnkiDroid 媒体渲染、AnkiMobile 裸 URL 与媒体快照由自动
 - **galgame**：窗口录制片段混进了句子音频时按同步片段落卡（句子音频 = 片段本身），修掉此前「MP4 里一份 + 另挂一份」同一句播两遍的问题；引擎同步判据接受 `source: game` 的外部片段。
 - **ffmpeg**：桌面 `ffmpeg-min` 加 `libvpx-vp9` / `libopus` 编码器与 `webm` muxer（macOS 静态自编，BUG-1443 规矩）。移动端 ffmpeg-kit **尚未重编**（构建机离线），移动端 WebM 尝试失败后自动出 MP4；重编需在 `build_x264_{android,ios}.sh` 加 `--enable-libvpx --enable-opus` 并同步 `ffmpeg_kit_mobile_recipe_guard_test.dart`。
 - **已知限制**：卡片同时有单词音频时，单词音频（Anki 原生队列）与视频同时开始，不做「先单词后视频」的排队；Anki 的 R 键重播只重播 `[sound:]`，不重播内嵌视频（点例句或播放条即可）。
+
+## 2026-09-28 更新：接替 #1717 的所有者决定
+
+- **存量用户不翻、新装才用片段**：上一节「默认模式改 `videoClip`」只对**全新安装**生效。`AppModel.initialise()` 在首页首帧改写 `first_time_setup` 之前调 `PreferencesRepository.settleMiningImageModeInstallDefault(freshInstall: isFirstTimeSetup)`（判据同「下载 → 浏览」搬迁提示）：全新安装记本安装默认 `video_clip`；存量用户记 `gif`，并把没显式设过的 `video_mining_image_mode` / `gal_mining_image_mode` 显式写成 `gif`。本安装默认存在 `mining_image_mode_install_default`（登记 `kKnownPreferenceKeys`，`ProfileKeys` 排除——模式键被老 Profile 快照删掉时回落的仍是它）；键缺失（弹窗入口 / 迁移前）一律按存量取 `gif`。
+- **gal 片段要 concat demuxer**：`galgame_window_video.dart` 的 `-f concat -safe 0` 在旧 ffmpeg-min 上报 `Unrecognized option 'safe'`，gal 片段在正式版全挂。配方 `DEMUXERS` 加 `concat` 重编 vendor，`smoke-test.sh` 冒烟 gal WebM / MP4 两条参数，配方守卫单列断言。gal WebM 档加 960 宽上限（1080p 录像实测：旧参数 26.9 s / 6.9 MB → 1.3 s / 0.6 MB）。
+- **VP9 改 realtime**：`-deadline realtime -cpu-used 8`。1080p30 实拍源 3.6 秒窗（960 宽 24fps）：good/5 10.2–11.7 s / 1.14 MB → realtime/8 2.3–2.9 s / 1.44 MB；AV1 SVT p8 5.0–5.5 s / 0.88 MB；H.264 veryfast 2.7 s / 1.25 MB。AV1 文案据此改为「体积最小，编码耗时约为 VP9 的 2 倍；仅桌面端」。
+- **Android ffmpeg-kit 加 libvpx + opus**：`build_x264_android.sh` 加 `--enable-libvpx --enable-opus`，新增 `.github/workflows/ffmpeg-kit-android.yml` 在 CI 上复现构建（约 14 分钟）。AAR 26.17 MB → 28.95 MB；Java API 与旧产物逐字一致，configure 只多这两个开关。iOS 不重编：`MiningClipFormat.encodableOn(isIOS: true)` 对两档 WebM 为 false，设置页在 iOS 上换成「本机编不出、会自动退回 MP4」的文案，不标推荐。
+- **只在格式编不出时降级**：`exportWithClipFormatFallback` 只在 `isClipFormatUnsupportedFailure`（缺编码器 / muxer）时换下一个格式；远端超时、输入打不开、ffmpeg 不可用立即返回首个失败。

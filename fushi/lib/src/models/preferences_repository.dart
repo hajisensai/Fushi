@@ -2212,12 +2212,12 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。默认
-  // videoClip（见 [VideoMiningImageMode] 文档：有意的现状变更）。存稳定字符串键
-  // （[VideoMiningImageMode.wireName]），解析未知值回退默认。
+  // 视频制卡封面图片模式（音画同步片段 / 动图 / 制卡时当前帧 / 字幕开头帧）。没显式
+  // 设过时取**本安装的默认**（[miningImageModeInstallDefault]：全新安装 videoClip，
+  // 升级上来的存量用户 gif）。存稳定字符串键（[VideoMiningImageMode.wireName]），
+  // 解析未知值回退 videoClip（[VideoMiningImageMode.fromWireName]）。
   VideoMiningImageMode get videoMiningImageMode =>
-      VideoMiningImageMode.fromWireName(
-          getPref('video_mining_image_mode', defaultValue: null) as String?);
+      _miningImageMode('video_mining_image_mode');
 
   void setVideoMiningImageMode(VideoMiningImageMode mode) async {
     await _setImageModePinningClipFormat(
@@ -2237,12 +2237,66 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
 
   // galgame 场景卡封面模式，与视频**分开存**：视频的动图能拍出口型和动作，galgame
   // 画面在一句台词内基本静止，动图多半只是把同一帧存二十遍。两者的取舍不同，共用一
-  // 个开关会逼用户为一边将就另一边。默认 videoClip（同视频项）；galgame 没有「字幕
+  // 个开关会逼用户为一边将就另一边。默认同视频项（本安装默认）；galgame 没有「字幕
   // 区间」，故只在 gif / currentFrame / videoClip 三档间取值，其余值按
   // [VideoMiningImageMode.isStill] 归入静态截图。
   VideoMiningImageMode get galMiningImageMode =>
-      VideoMiningImageMode.fromWireName(
-          getPref('gal_mining_image_mode', defaultValue: null) as String?);
+      _miningImageMode('gal_mining_image_mode');
+
+  /// 记录「封面模式没显式设过时取什么」的本安装默认值（wireName）。
+  ///
+  /// 音画同步片段成为默认（PR #1717）只给**全新安装**；升级上来、从没显式选过封面模式
+  /// 的存量用户保持原行为 GIF + 独立句子音频（所有者 2026-09-28 拍板）。这个键描述本
+  /// 安装自身，同 `first_time_setup` 不随 Profile 走（`ProfileKeys` 排除）：封面模式键
+  /// 本身会进 Profile 快照，切到一个在迁移前建的老快照会把显式写下的 gif 删掉，那时回落
+  /// 的仍是这里记下的本安装默认，而不是全局 videoClip。
+  static const String miningImageModeInstallDefaultKey =
+      'mining_image_mode_install_default';
+
+  /// 本安装的封面模式默认值。键还没落（[settleMiningImageModeInstallDefault] 没跑过：
+  /// 弹窗词典等不经 `AppModel.initialise()` 的入口、或迁移前的读）一律按存量用户处理
+  /// 取 gif——宁可让新用户晚一步吃到新默认，也不能把老用户翻成片段。
+  VideoMiningImageMode get miningImageModeInstallDefault =>
+      getPref(miningImageModeInstallDefaultKey, defaultValue: null) ==
+              VideoMiningImageMode.videoClip.wireName
+          ? VideoMiningImageMode.videoClip
+          : VideoMiningImageMode.gif;
+
+  VideoMiningImageMode _miningImageMode(String key) {
+    final String? stored = getPref(key, defaultValue: null) as String?;
+    return stored == null
+        ? miningImageModeInstallDefault
+        : VideoMiningImageMode.fromWireName(stored);
+  }
+
+  /// 启动时（`AppModel.initialise()`，首页首帧改写 `first_time_setup` 之前）落一次本安装
+  /// 的封面模式默认值；已落过直接返回（幂等）。
+  ///
+  /// [freshInstall] 取自 `first_time_setup`（与「下载 → 浏览」搬迁提示同一判据，见
+  /// `browse_moved_notice.dart`）：全新安装记 videoClip；存量用户记 gif，并把视频 / gal
+  /// 两个**没显式设过**的封面模式键显式写成 gif（原行为落成显式值，此后与默认值怎么变
+  /// 都无关）。显式设过的值一律不碰。与标记同一次 [setPrefs] 落盘。
+  Future<void> settleMiningImageModeInstallDefault({
+    required bool freshInstall,
+  }) {
+    if (getPref(miningImageModeInstallDefaultKey, defaultValue: null) != null) {
+      return Future<void>.value();
+    }
+    final VideoMiningImageMode installDefault = freshInstall
+        ? VideoMiningImageMode.videoClip
+        : VideoMiningImageMode.gif;
+    final Map<String, dynamic> values = <String, dynamic>{
+      miningImageModeInstallDefaultKey: installDefault.wireName,
+      if (!freshInstall)
+        for (final String modeKey in const <String>[
+          'video_mining_image_mode',
+          'gal_mining_image_mode',
+        ])
+          if (getPref(modeKey, defaultValue: null) == null)
+            modeKey: VideoMiningImageMode.gif.wireName,
+    };
+    return setPrefs(values);
+  }
 
   void setGalMiningImageMode(VideoMiningImageMode mode) async {
     await _setImageModePinningClipFormat(

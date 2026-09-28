@@ -1810,7 +1810,7 @@
   "go_to_chapter": "第 $n 章",
   "handlebar_audio": "音訊",
   "handlebar_book_cover": "書籍封面",
-  "handlebar_card_image": "Card Image (Cover / GIF)",
+  "handlebar_card_image": "Card Image (Cover / Clip)",
   "handlebar_clip_timestamp": "片段時間",
   "handlebar_cue_sentence": "字幕例句",
   "handlebar_deprecated_label": "${label}（已棄用）",
@@ -5746,7 +5746,9 @@
   "video_mining_clip_format": "Video clip format",
   "gal_mining_clip_format": "Game clip format",
   "mining_clip_format_webm_vp9": "WebM · VP9 (plays inside the card, recommended)",
-  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card, smallest, slower to encode)",
+  "mining_clip_format_webm_av1": "WebM · AV1 (plays inside the card; smallest file, about 2× the encode time of VP9; desktop only)",
   "mining_clip_format_mp4_h264": "MP4 · H.264 (Anki's own player; use for AnkiMobile)",
-  "mining_clip_format_hint": "WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4."
+  "mining_clip_format_hint": "WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4.",
+  "mining_clip_format_webm_vp9_unsupported": "WebM · VP9 (can't be encoded on this device; falls back to MP4)",
+  "mining_clip_format_webm_av1_unsupported": "WebM · AV1 (can't be encoded on this device; falls back to MP4)"
 }

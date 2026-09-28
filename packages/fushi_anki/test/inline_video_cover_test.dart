@@ -71,20 +71,22 @@ void main() {
       );
     });
 
-    test('Picture 渲染三次只播可见那一个；无画面时退回句子音频（node 实跑）', () async {
-      final String cover = inlineVideoCoverHtml('clip.webm');
-      final String sentence = inlineVideoSentenceAudioHtml('clip.webm');
-      final String script = RegExp(
-        r'<script>(.*)</script>',
-      ).firstMatch(cover)!.group(1)!;
-      final String onclick = RegExp(
-        r'onclick="([^"]*)"',
-      ).firstMatch(sentence)!.group(1)!;
-      final String oncanplay = RegExp(
-        r'oncanplay="([^"]*)"',
-      ).firstMatch(sentence)!.group(1)!;
-      final String harness =
-          '''
+    test(
+      'Picture 渲染三次只播可见那一个；无画面时退回句子音频（node 实跑）',
+      () async {
+        final String cover = inlineVideoCoverHtml('clip.webm');
+        final String sentence = inlineVideoSentenceAudioHtml('clip.webm');
+        final String script = RegExp(
+          r'<script>(.*)</script>',
+        ).firstMatch(cover)!.group(1)!;
+        final String onclick = RegExp(
+          r'onclick="([^"]*)"',
+        ).firstMatch(sentence)!.group(1)!;
+        final String oncanplay = RegExp(
+          r'oncanplay="([^"]*)"',
+        ).firstMatch(sentence)!.group(1)!;
+        final String harness =
+            '''
 const assert = require('node:assert/strict');
 const timers = [];
 global.setTimeout = (fn) => timers.push(fn);
@@ -156,12 +158,18 @@ deniedAudio[0].play = () => Promise.reject(new Error('NotAllowedError'));
 page([], deniedAudio);
 canplay.call(deniedAudio[0]);
 ''';
-      final ProcessResult result = await Process.run('node', <String>[
-        '-e',
-        harness,
-      ]);
-      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    });
+        final ProcessResult result = await Process.run(
+          _nodeExecutable!,
+          <String>['-e', harness],
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      },
+      skip: _nodeExecutable == null ? 'node 不在 PATH 上：跳过实跑脚本的用例' : false,
+    );
   });
 
   group('AnkiConnect 同步 WebM 片段落卡', () {
@@ -301,3 +309,17 @@ class _ConfiguredAnkiConnectRepository extends AnkiConnectRepository {
   @override
   Future<AnkiSettings> loadSettings() async => settings;
 }
+
+/// PATH 上的 node 可执行文件；没有时返回 null，实跑脚本的用例据此 skip（与
+/// `fushi/test/anki/exported_glossary_anchor_deeplink_test.dart` 同一判法）。
+final String? _nodeExecutable = () {
+  final String exe = Platform.isWindows ? 'node.exe' : 'node';
+  final String pathEnv = Platform.environment['PATH'] ?? '';
+  final String separator = Platform.isWindows ? ';' : ':';
+  for (final String dir in pathEnv.split(separator)) {
+    if (dir.isEmpty) continue;
+    final File candidate = File('$dir${Platform.pathSeparator}$exe');
+    if (candidate.existsSync()) return candidate.path;
+  }
+  return null;
+}();

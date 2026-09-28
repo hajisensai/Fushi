@@ -3004,6 +3004,11 @@ class AppModel with ChangeNotifier {
         mediaHistoryRepo.loadFromDb(),
       ]);
       prefsRepo.addListener(notifyListeners);
+      // 音画同步片段成为封面模式默认（PR #1717）只给全新安装：升级上来、从没显式
+      // 选过的存量用户在这里落一次显式 GIF（原行为）。必须赶在首页首帧改写
+      // first_time_setup 之前——它是「全新安装」的唯一判据。
+      await prefsRepo.settleMiningImageModeInstallDefault(
+          freshInstall: prefsRepo.isFirstTimeSetup);
       // 偏好一装载就把折叠开关推给 TexthookerService（进程级单例、无 ref）。漏了这一步
       // 开关就只在「本次会话里手动改过」时才生效，重启后静默退回默认值。
       TexthookerService.instance.foldProgressiveLines =
@@ -7643,7 +7648,7 @@ class AppModel with ChangeNotifier {
   bool get mineToServerEnabled => _prefsRepo?.mineToServer ?? false;
   Future<void> setMineToServer(bool value) => prefsRepo.setMineToServer(value);
 
-  // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认 videoClip。
+  // 视频制卡封面图片模式（片段 / GIF / 制卡时当前帧 / 字幕开头帧，透传 prefsRepo）。默认：全新安装 videoClip、存量升级 gif。
   VideoMiningImageMode get videoMiningImageMode =>
       prefsRepo.videoMiningImageMode;
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
