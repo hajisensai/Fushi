@@ -17,7 +17,16 @@
 //   GET    /v1/works/:id?limit&offset                   [可选签名]
 //   GET    /v1/users/:id                                [可选签名]  用户卡片
 //   GET    /v1/users/:id/shelf?status&kind&limit&offset [可选签名]
+//   GET    /v1/friends                   [签名]                  好友 / 收到 / 发出的申请（social.js）
+//   POST   /v1/friends/:id               [签名]                  申请或接受
+//   DELETE /v1/friends/:id               [签名]                  删好友 / 撤回 / 拒绝
+//   GET    /v1/blocks                    [签名]
+//   POST   /v1/blocks/:id                [签名]                  屏蔽（同时删好友关系）
+//   DELETE /v1/blocks/:id                [签名]
+//   POST   /v1/reports                   [签名] {targetKind, targetId, reason}
 //   GET    /img/<key>                                    R2 出图
+//
+// 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window
 
 import { HttpError, errorResponse, json, parseJsonBytes, readBodyBytes } from './util.js';
 import { SIG_WINDOW_MS, authenticate } from './auth.js';
@@ -27,6 +36,8 @@ import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, 
 import { deleteAccount, register, selfView, updateProfile } from './account.js';
 import { leaderboard, popularWorks, userCard, userShelf, workPage } from './views.js';
 import { handleAdmin } from './admin.js';
+import { listBlocks, listFriends, matchSocialWrite } from './social.js';
+import { isPagePath, renderPage } from './pages.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -48,6 +59,13 @@ async function readLimit(env, request) {
 }
 
 const READ_CACHE_SECONDS = 60;
+
+/** 只属于签名者本人的读接口：必须签名，结果随人变，从不进边缘缓存。 */
+const SELF_READS = {
+  '/v1/me': async (_env, viewer) => selfView(viewer),
+  '/v1/friends': listFriends,
+  '/v1/blocks': listBlocks,
+};
 
 async function cachedRead(request, ctx, compute) {
   const cache = typeof caches !== 'undefined' ? caches.default : null;
@@ -103,10 +121,13 @@ async function route(request, env, now, ctx) {
   // ---- 读接口：签名可选（带了就按观看者身份套好友/屏蔽规则） ----
   if (method === 'GET') {
     await readLimit(env, request);
+    // 分享落地页：浏览器不签名，一律按匿名观看者渲染（带了签名头也忽略），同样走边缘缓存。
+    if (isPagePath(path)) return cachedRead(request, ctx, () => renderPage(env, url, now));
     const viewer = await authenticate(request, env, new Uint8Array(), now, { optional: true });
-    if (path === '/v1/me') {
+    const own = Object.hasOwn(SELF_READS, path) ? SELF_READS[path] : null;
+    if (own) {
       if (!viewer) throw new HttpError(401, 'auth_required');
-      return json(selfView(viewer));
+      return json(await own(env, viewer));
     }
     // 匿名读是同一份公开数据：边缘缓存一分钟，挡住反复刷榜单造成的全表扫描。
     // 带签名的请求结果随观看者变（好友 / 屏蔽 / 我的名次），不缓存。
@@ -136,6 +157,13 @@ async function route(request, env, now, ctx) {
     const account = await authenticate(request, env, bytes, now, { mutating: true });
     await hit(env, `media:${account.id}`, HOUR, LIMITS.mediaUploadPerHour, now);
     return json({ cover: `/img/${await setWorkCover(env, account, m[1], bytes, now)}` });
+  }
+  const social = matchSocialWrite(method, path);
+  if (social) {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `social:${account.id}`, HOUR, LIMITS.socialWritePerHour, now);
+    return social(env, account, bytes, now);
   }
   if (path === '/v1/me' && (method === 'PATCH' || method === 'DELETE')) {
     const bytes = await readBodyBytes(request, JSON_BODY_MAX);

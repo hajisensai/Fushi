@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS daily_chars (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_chars_date ON daily_chars (date_key);
 
--- 好友（P5 使用；有序对 a<b，requester 记发起方）。
+-- 好友（有序对 a<b，requester 记发起方；见 src/social.js）。
+-- created_at：pending = 申请时刻，accepted = 成为好友的时刻。
 CREATE TABLE IF NOT EXISTS friends (
   a          TEXT NOT NULL,
   b          TEXT NOT NULL,
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS blocks (
   created_at INTEGER NOT NULL,
   PRIMARY KEY (account_id, blocked_id)
 );
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks (blocked_id);
 
 CREATE TABLE IF NOT EXISTS reports (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,6 +91,9 @@ CREATE TABLE IF NOT EXISTS reports (
   created_at  INTEGER NOT NULL,
   resolved    INTEGER NOT NULL DEFAULT 0
 );
+-- 同一举报人对同一目标只有一条未处理举报（重复举报只刷新理由）；处理后可再次举报。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open
+  ON reports (reporter, target_kind, target_id) WHERE resolved = 0;
 
 -- 写请求防重放：同一签名只能用一次。签名本身只在 ±5 分钟内有效，所以只需保留
 -- 最近 10 分钟的记录（scheduled 清理）。不用「时刻严格递增」是因为客户端并发写
