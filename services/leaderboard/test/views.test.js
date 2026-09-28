@@ -347,7 +347,7 @@ describe('用户卡片的关系字段', () => {
       viewer ? { key: viewer.key, account: viewer.id, now: NOW } : { now: NOW })).data.relation;
     expect(await card(null, a)).toBeNull();
     expect(await card(a, a)).toBe('self');
-    expect(await card(a, b)).toBeNull();
+    expect(await card(a, b)).toBe('none'); // 签名请求：无关系是 'none'（只有匿名才是 null）
     await call(env, 'POST', `/v1/friends/${b.id}`, { key: a.key, account: a.id, now: NOW });
     expect(await card(a, b)).toBe('outgoing');
     expect(await card(b, a)).toBe('incoming');

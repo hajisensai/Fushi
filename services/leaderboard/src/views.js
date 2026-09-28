@@ -184,7 +184,7 @@ function canSeeShelf(account, viewerId, rel) {
 
 /**
  * 观看者与该账户的关系（用户页按钮状态用；匿名 = null）：
- * 'self' | 'friend' | 'outgoing'（我发出、待对方接受）| 'incoming'（对方发来、待我接受）| null。
+ * 'self' | 'friend' | 'outgoing'（我发出、待对方接受）| 'incoming'（对方发来、待我接受）| 'none'。
  */
 async function relationTo(env, accountId, viewerId, rel) {
   if (!viewerId) return null;
@@ -194,7 +194,7 @@ async function relationTo(env, accountId, viewerId, rel) {
   const pending = await env.DB.prepare(
     "SELECT requester FROM friends WHERE a = ?1 AND b = ?2 AND state = 'pending'",
   ).bind(a, b).first();
-  if (!pending) return null;
+  if (!pending) return 'none';
   return pending.requester === viewerId ? 'outgoing' : 'incoming';
 }
 

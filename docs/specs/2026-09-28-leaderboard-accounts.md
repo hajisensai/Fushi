@@ -7,7 +7,7 @@
 | 问题 | 决定 |
 |---|---|
 | 后端 | 新建独立 Cloudflare Worker + D1（与 `logs.wrds.xyz` 日志服务完全隔离） |
-| 账户 | 昵称 + 设备密钥：无邮箱、无密码、零个人信息 |
+| 账户 | ~~昵称 + 设备密钥：无邮箱、无密码~~ → 已被「追加 4」推翻：邮箱验证码注册 + 设备密钥（服务端只存邮箱 HMAC） |
 | 排名指标 | 书 / 视频 / 游戏 / 漫画的**作品数量**，以及**字数** |
 | 第一期范围 | 周/月/总榜 + 个人主页 + **好友榜 + 分享卡片** |
 | 追加 1 | 榜单/主页显示对应书/视频/游戏的**作品名与封面** |
@@ -46,7 +46,7 @@
 
 - 首次开启时为**当前 Profile** 生成 ECDSA P-256 密钥对（`pointycastle`，不新增依赖）。**账户 = 公钥**，`account_id = base64url(sha256(pubkey))[0..16]`，同时是**好友码**。
 - 昵称 1–24 字符可改，展示 `昵称#1234`（服务端分配判别码）；可选头像（客户端裁成 128px JPEG 上传 R2）。
-- 私钥存本机偏好（按 Profile）。换设备：「导出/导入恢复码」（私钥 base64url + 校验，可二维码）。不随备份外传。
+- 私钥存本机文件 `<support>/leaderboard/profile_<id>.json`（**不进偏好表**——偏好会随 Profile 快照与备份外传；Android 系统备份规则也排除该目录）。换设备：邮箱验证码登录绑定新钥匙（每账户 ≤ 10 台，可在账户页解绑旧设备）；恢复码（私钥 base64url + 校验）保留作备用。
 - 请求签名：`X-Fushi-Account` / `X-Fushi-Time` / `X-Fushi-Sig`；签名串 = `METHOD\npathWithQuery\ntime\nhex(sha256(body))`，ECDSA/SHA-256，P1363（r‖s）base64url。服务端校验签名、±5 分钟；写请求另按**签名串哈希**去重（`used_sigs`）防重放——不用签名值去重（ECDSA 可延展），也不要求时刻单调（客户端并发写会乱序到达）。跨语言测试向量在 `services/leaderboard/test/vectors/`。
 
 ### 3.2 唯一上传形状：书架条目
@@ -112,7 +112,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 - 上限：单日 `chars` 夹到 400,000；同一天读完**最多计 30 部**（不拒收，批量补标历史作品照常入架，只是不刷分；日期未知的各自成组）；`finishedAt` 不得晚于服务器时间 +5 分钟，`finishedDate` 必须与它的 UTC 日期相差一天以内。
 - 作品匹配防抢注：每条目每命名空间至多一个键；已有强 ID（bgm/isbn/vndb/tmdb/anidb/src）的作品不再挂同命名空间的新键。标题/作者众数只计未隐藏账户。
-- 限流：注册按 IP 5/小时；书架上传按账户 12 次/小时（客户端正常节奏 ≤ 1 次/10 分钟，余量给重试）；头像/封面 60 次/小时；书架 ≤ 8,000 条（D1 单参数约 2MB 的硬约束）；读接口：匿名请求边缘缓存 60 秒 + 可选 CF Rate Limiting binding `READ_LIMITER`，offset ≤ 10,000。
+- 限流：注册按 IP 5/小时；书架上传按账户 40 次/小时（首次同步 8000 条 = 16 批；客户端常态 ≤ 1 次/30 分钟）；头像/封面 60 次/小时；书架 ≤ 8,000 条（D1 单参数约 2MB 的硬约束）；读接口：匿名请求边缘缓存 60 秒 + 可选 CF Rate Limiting binding `READ_LIMITER`，offset ≤ 10,000。
 - 举报 + 管理员隐藏账户 / 隐藏或拆分作品（不删数据）；管理端 Basic Auth 小页面。
 - 昵称：长度/字符白名单 + 敏感词表。头像与上传封面可被举报后下架。
 
@@ -147,7 +147,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 | 期 | 内容 | 验证 |
 |---|---|---|
 | P1 | `services/leaderboard/` Worker + D1 + R2：签名校验、注册/资料/头像、书架 upsert、WorkRef 别名合并、各榜 SQL、删除账户 | vitest：签名/重放/上限/幂等/别名合并/窗口 |
-| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；v112（`EpubBooks.isbn` + `Galgames.completedAt`）+ ISBN 解析 | Dart 单测 + 跨语言签名测试向量；迁移测试 |
+| P2 | 引擎：密钥与恢复码、请求签名、WorkRef 解析、书架汇总；v114（`EpubBooks.isbn` + `Galgames.completedAt`；develop 当时已是 v113）+ ISBN 解析 | Dart 单测 + 跨语言签名测试向量；迁移测试 |
 | P3 | 统计中心「排行」tab、同意弹窗、设置段、上传调度 | widget 测试；真机开页截图 |
 | P4 | 用户详情页、作品页、作品人气榜 | widget 测试 |
 | P5 | 好友 / 屏蔽 / 可见性 / 举报 | Worker + widget 测试 |
@@ -160,7 +160,7 @@ R2 桶 `fushi-leaderboard-media`：`avatars/<account>.jpg`、`covers/<work>.jpg`
 
 ## 10. 破坏性分析
 
-- 本地 schema 变更只有 v112 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填），其余新增全在 D1/R2；密钥进偏好表。
+- 本地 schema 变更只有 v114 的两个可空列 `EpubBooks.isbn` / `Galgames.completedAt`（+ 回填；游戏的回填值是**最后一次游玩会话的结束时刻**，不是真实通关时刻），其余新增全在 D1/R2；密钥在本机文件（见 3.1）。
 - 统计中心加 tab：tab 索引若被持久化/测试钉死需一起更新（P3 开工先查）。
 - 默认关闭：不开启排行的用户零网络请求、零行为变化。
 

@@ -88,11 +88,11 @@ export async function setWorkCover(env, account, workId, bytes, now) {
  * 出图。key 带版本号、内容永不变，所以先查边缘缓存：命中就不碰 R2（省 B 类操作），
  * 未命中取一次 R2 后写回缓存。
  */
-export async function serveImage(env, key, request, ctx) {
+export async function serveImage(env, key, cacheKey, ctx) {
   if (!/^[ac]\/[A-Za-z0-9_-]+-\d+\.(jpg|png|webp)$/.test(key)) throw new HttpError(404, 'not_found');
   const cache = typeof caches !== 'undefined' ? caches.default : null;
-  if (cache && request) {
-    const hit = await cache.match(request.url);
+  if (cache && cacheKey) {
+    const hit = await cache.match(cacheKey);
     if (hit) return hit;
   }
   const obj = await env.MEDIA.get(key);
@@ -104,8 +104,8 @@ export async function serveImage(env, key, request, ctx) {
       'X-Content-Type-Options': 'nosniff',
     },
   });
-  if (cache && request) {
-    const put = cache.put(request.url, res.clone());
+  if (cache && cacheKey) {
+    const put = cache.put(cacheKey, res.clone());
     if (ctx && ctx.waitUntil) ctx.waitUntil(put);
     else await put;
   }

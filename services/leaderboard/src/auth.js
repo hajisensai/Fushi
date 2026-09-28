@@ -11,6 +11,7 @@
 import { HttpError, b64urlDecode, b64urlEncode, hex, sha256 } from './util.js';
 
 export const SIG_WINDOW_MS = 5 * 60 * 1000;
+const DEVICE_SEEN_GRANULARITY_MS = 24 * 3600 * 1000;
 const P256 = { name: 'ECDSA', namedCurve: 'P-256' };
 const ECDSA_SHA256 = { name: 'ECDSA', hash: 'SHA-256' };
 
@@ -61,19 +62,28 @@ async function checkSig(request, publicKey, time, bodyBytes) {
  * X-Fushi-Account 是**设备钥匙 id**（一个账户可绑多台设备，见 device_keys）；首台设备的钥匙 id
  * 恰好等于账户 id，其它设备不等——账户 id 以返回的账户行为准。
  * - `optional`：没带 X-Fushi-Account 时返回 null（匿名读）；带了就必须验过。
+ * - `unknownAsAnonymous`：钥匙不存在（该设备已被解绑 / 账户已在别处删除）时按匿名处理而不是 401——
+ *   公开读接口不该因此整个不可用；只属于本人的读写接口不开它，客户端据 401 unknown_account 退出本机登录。
  * - `mutating`：登记签名串，同一签名串第二次到达即 401 replayed。
  */
-export async function authenticate(request, env, bodyBytes, now, { optional = false, mutating = false } = {}) {
+export async function authenticate(
+  request, env, bodyBytes, now, { optional = false, mutating = false, unknownAsAnonymous = false } = {},
+) {
   const id = request.headers.get('X-Fushi-Account');
   if (!id) {
     if (optional) return null;
     throw new HttpError(401, 'auth_required');
   }
   const time = readTime(request, now);
-  const key = await env.DB.prepare('SELECT account_id, pubkey FROM device_keys WHERE key_id = ?1').bind(id).first();
-  if (!key) throw new HttpError(401, 'unknown_account');
-  const account = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(key.account_id).first();
-  if (!account) throw new HttpError(401, 'unknown_account');
+  const key = await env.DB.prepare('SELECT account_id, pubkey, last_used_at FROM device_keys WHERE key_id = ?1')
+    .bind(id).first();
+  const account = key
+    ? await env.DB.prepare('SELECT * FROM accounts WHERE id = ?1').bind(key.account_id).first()
+    : null;
+  if (!account) {
+    if (unknownAsAnonymous) return null;
+    throw new HttpError(401, 'unknown_account');
+  }
   const spki = b64urlDecode(key.pubkey);
   const msg = await checkSig(request, await importPublicKey(spki), time, bodyBytes);
   if (mutating) {
@@ -83,6 +93,10 @@ export async function authenticate(request, env, bodyBytes, now, { optional = fa
       .bind(id, dedup, time)
       .run();
     if (!res.meta || res.meta.changes !== 1) throw new HttpError(401, 'replayed');
+    // 设备最近使用时刻：最多一天写一次（每个写请求都更新就是白白多一行写入）。
+    if (!key.last_used_at || key.last_used_at < now - DEVICE_SEEN_GRANULARITY_MS) {
+      await env.DB.prepare('UPDATE device_keys SET last_used_at = ?2 WHERE key_id = ?1').bind(id, now).run();
+    }
   }
   // 发起请求的设备钥匙（上传设备判定、/v1/me 的 uploadDevice 用）。
   return { ...account, keyId: id };

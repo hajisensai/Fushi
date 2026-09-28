@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS device_keys (
   key_id     TEXT PRIMARY KEY,
   account_id TEXT NOT NULL,
   pubkey     TEXT NOT NULL,                -- base64url(SPKI DER)，ECDSA P-256
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  last_used_at INTEGER                     -- 最近一次写请求（最多一天更新一次），设备列表展示用
 );
 CREATE INDEX IF NOT EXISTS idx_device_keys_account ON device_keys (account_id);
 

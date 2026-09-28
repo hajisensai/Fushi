@@ -65,6 +65,35 @@ export async function register(env, request, body, bodyBytes, now) {
 
 export const MAX_DEVICES = 10;
 
+/** GET /v1/me/devices：本账户已登录的设备（钥匙）。 */
+export async function listDevices(env, viewer) {
+  const rows = await env.DB.prepare(
+    'SELECT key_id, created_at, last_used_at FROM device_keys WHERE account_id = ?1 ORDER BY created_at',
+  ).bind(viewer.id).all();
+  return {
+    devices: rows.results.map((r) => ({
+      keyId: r.key_id,
+      createdAt: r.created_at,
+      lastUsedAt: r.last_used_at,
+      current: r.key_id === viewer.keyId,
+    })),
+  };
+}
+
+/**
+ * DELETE /v1/me/devices/:keyId：解绑本账户的另一台设备（重装 / 丢机后腾出名额）。不能解绑当前设备
+ * （那是「仅本机退出」或删号）。解绑的若是上传设备，清空上传设备，下一台上传的设备自动接任。
+ */
+export async function removeDevice(env, account, keyId) {
+  if (keyId === account.keyId) throw new HttpError(400, 'cannot_remove_current');
+  const res = await env.DB.batch([
+    env.DB.prepare('DELETE FROM device_keys WHERE key_id = ?1 AND account_id = ?2').bind(keyId, account.id),
+    env.DB.prepare('UPDATE accounts SET upload_key = NULL WHERE id = ?1 AND upload_key = ?2').bind(account.id, keyId),
+    env.DB.prepare('DELETE FROM used_sigs WHERE account_id = ?1').bind(keyId),
+  ]);
+  if (res[0].meta.changes !== 1) throw new HttpError(404, 'not_found');
+}
+
 /**
  * POST /v1/login {pubkey, email, code}：新设备用邮箱验证码把自己的钥匙绑到已有账户上。
  * 邮箱没有账户时根本不会发码（email.js），这里必然 400 bad_code——外人分辨不出邮箱是否已注册。

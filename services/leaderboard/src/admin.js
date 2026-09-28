@@ -199,6 +199,14 @@ export async function handleAdmin(env, request, path, body, now) {
   if (path === '/admin/api/works/split') {
     return json({ ok: true, workId: await splitWork(env, String(body.ref || ''), now) });
   }
+  if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)\/devices\/clear$/))) {
+    // 用户设备名额满、自己又没有任何一台还登录着时的人工出口：清空后用邮箱验证码重新登录。
+    const res = await env.DB.batch([
+      env.DB.prepare('DELETE FROM device_keys WHERE account_id = ?1').bind(r[1]),
+      env.DB.prepare('UPDATE accounts SET upload_key = NULL WHERE id = ?1').bind(r[1]),
+    ]);
+    return json({ ok: true, removed: res[0].meta.changes });
+  }
   if ((r = m(/^\/admin\/api\/accounts\/([A-Za-z0-9_-]+)$/))) {
     await setAccountHidden(env, r[1], body.hidden === true, now);
     return json({ ok: true });

@@ -40,7 +40,7 @@ import { MAX_SHELF_BODY, applyShelfDelta, normalizeUpload } from './shelf.js';
 import { deleteMedia, purgeBudgets, spend } from './budget.js';
 import { refreshSnapshots } from './snapshots.js';
 import { AVATAR_MAX_BYTES, COVER_MAX_BYTES, clearAvatar, serveImage, setAvatar, setWorkCover } from './media.js';
-import { deleteAccount, login, register, selfView, updateProfile } from './account.js';
+import { deleteAccount, listDevices, login, register, removeDevice, selfView, updateProfile } from './account.js';
 import { purgeEmailCodes, requestCode } from './email.js';
 import { leaderboard, popularWorks, userCard, userShelf, workPage } from './views.js';
 import { handleAdmin } from './admin.js';
@@ -75,12 +75,16 @@ export function clientIp(request) {
 }
 
 /**
- * Workers Rate Limiting binding（不占 D1）。读接口用 READ_LIMITER；未鉴权的写入口（发码 / 注册 / 登录）
- * 先过 AUTH_LIMITER，通过了才碰 D1——否则换地址的请求每次都会在 D1 里新建一行限流计数，写入无上界。
+ * Workers Rate Limiting binding（不占 D1，在任何 D1 读写之前挡掉超额请求）：
+ *   READ_LIMITER   读接口，按 IP（IPv6 /64）；
+ *   AUTH_LIMITER   未鉴权写入口（发码 / 注册 / 登录），按 IP——压住单个来源的 D1 写入速率
+ *                  （全局上限仍靠 D1 日预算兜底：换大量 IP 的来源能绕过按 IP 的限流）；
+ *   ACCOUNT_LIMITER 签名写接口，按请求头里的设备钥匙 id——否则一个账户的超额请求在被 D1 计数
+ *                  拒掉之前已经各写了防重放 / 限流记录，写入放大没有上界。
  */
-async function bindingLimit(limiter, request) {
+async function bindingLimit(limiter, request, key = clientIp(request)) {
   if (!limiter) return;
-  const { success } = await limiter.limit({ key: clientIp(request) });
+  const { success } = await limiter.limit({ key });
   if (!success) throw new HttpError(429, 'rate_limited');
 }
 
@@ -103,6 +107,7 @@ const SELF_READS = {
   '/v1/me': async (_env, viewer) => selfView(viewer),
   '/v1/friends': listFriends,
   '/v1/blocks': listBlocks,
+  '/v1/me/devices': listDevices,
 };
 
 async function cachedRead(key, ctx, compute) {
@@ -141,7 +146,6 @@ async function route(request, env, now, ctx) {
   let m;
 
   if (method === 'GET' && path === '/v1/health') return json({ ok: true });
-  if (method === 'GET' && path.startsWith('/img/')) return serveImage(env, path.slice(5), request, ctx);
 
   if (path.startsWith('/admin/api/')) {
     const bytes = method === 'POST' ? await readBodyBytes(request, JSON_BODY_MAX) : new Uint8Array();
@@ -172,15 +176,18 @@ async function route(request, env, now, ctx) {
   // ---- 读接口：签名可选（带了就按观看者身份套好友/屏蔽规则） ----
   if (method === 'GET') {
     await bindingLimit(env.READ_LIMITER, request);
+    // 图片：缓存键只用路径（加查询串绕不过缓存直读 R2）。
+    if (path.startsWith('/img/')) return serveImage(env, path.slice(5), `${url.origin}${url.pathname}`, ctx);
     const canon = canonicalReadUrl(url);
     // 分享落地页：浏览器不签名，一律按匿名观看者渲染（带了签名头也忽略），同样走边缘缓存。
     if (isPagePath(path)) return cachedRead(canon.toString(), ctx, () => renderPage(env, canon, now));
-    const viewer = await authenticate(request, env, new Uint8Array(), now, { optional: true });
     const own = Object.hasOwn(SELF_READS, path) ? SELF_READS[path] : null;
     if (own) {
-      if (!viewer) throw new HttpError(401, 'auth_required');
-      return json(await own(env, viewer));
+      // 本人接口：钥匙不存在就 401 unknown_account，客户端据此退出本机登录。
+      return json(await own(env, await authenticate(request, env, new Uint8Array(), now)));
     }
+    // 公开读：钥匙已失效（设备被解绑 / 账户在别处删除）按匿名处理，别让榜单整个读不了。
+    const viewer = await authenticate(request, env, new Uint8Array(), now, { optional: true, unknownAsAnonymous: true });
     // 匿名读是同一份公开数据：边缘缓存一分钟，挡住反复刷榜单造成的全表扫描。
     // 带签名的请求结果随观看者变（好友 / 屏蔽 / 我的名次），不缓存。
     return viewer
@@ -188,7 +195,15 @@ async function route(request, env, now, ctx) {
       : cachedRead(canon.toString(), ctx, () => readRoute(env, canon, null, now));
   }
 
-  // ---- 写接口：一律签名 + 防重放 ----
+  // ---- 写接口：一律签名 + 防重放；先按设备钥匙过 ACCOUNT_LIMITER，再碰 D1 ----
+  await bindingLimit(env.ACCOUNT_LIMITER, request, `acct:${request.headers.get('X-Fushi-Account') || clientIp(request)}`);
+  if (method === 'DELETE' && (m = new RegExp(`^/v1/me/devices/${ID}$`).exec(path))) {
+    const bytes = await readBodyBytes(request, JSON_BODY_MAX);
+    const account = await authenticate(request, env, bytes, now, { mutating: true });
+    await hit(env, `social:${account.id}`, HOUR, LIMITS.socialWritePerHour, now);
+    await removeDevice(env, account, m[1]);
+    return new Response(null, { status: 204 });
+  }
   if (method === 'POST' && path === '/v1/shelf') {
     const bytes = await readBodyBytes(request, MAX_SHELF_BODY);
     const account = await authenticate(request, env, bytes, now, { mutating: true });

@@ -319,3 +319,65 @@ describe('签名请求', () => {
     expect(bad.data.error).toBe('bad_visibility');
   });
 });
+
+describe('设备管理与失效钥匙', () => {
+  async function loginNewDevice(env, email) {
+    const k = await newKey();
+    await call(env, 'POST', '/v1/email/code', { body: { email, purpose: 'login' }, headers: { 'CF-Connecting-IP': nextIp() }, now: NOW });
+    const r = await call(env, 'POST', '/v1/login', {
+      key: k, body: { pubkey: k.pubkey, email, code: lastCode(env, email) }, now: NOW,
+      headers: { 'CF-Connecting-IP': nextIp() },
+    });
+    expect(r.status).toBe(200);
+    const { accountIdFromSpki } = await import('../src/auth.js');
+    return { key: k, id: await accountIdFromSpki(k.spki) };
+  }
+
+  it('列出设备、解绑另一台（不能解绑自己）；解绑上传设备会清空上传设备', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { email: 'dev@example.com', now: NOW });
+    await call(env, 'POST', '/v1/shelf', { key: u.key, account: u.id, body: { reset: true, put: [] }, now: NOW });
+    const phone = await loginNewDevice(env, 'dev@example.com');
+    const list = await call(env, 'GET', '/v1/me/devices', { key: phone.key, account: phone.id, now: NOW });
+    expect(list.data.devices.map((d) => [d.keyId === phone.id, d.current])).toEqual([[false, false], [true, true]]);
+    const self = await call(env, 'DELETE', `/v1/me/devices/${phone.id}`, { key: phone.key, account: phone.id, now: NOW });
+    expect(self.data.error).toBe('cannot_remove_current');
+    const rm = await call(env, 'DELETE', `/v1/me/devices/${u.id}`, { key: phone.key, account: phone.id, now: NOW });
+    expect(rm.status).toBe(204);
+    expect(env.DB.raw.prepare('SELECT upload_key FROM accounts').get().upload_key).toBeNull();
+    // 被解绑的钥匙：公开读按匿名照常可用，本人接口 401 unknown_account。
+    expect((await call(env, 'GET', '/v1/rank?metric=book', { key: u.key, account: u.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', '/v1/me', { key: u.key, account: u.id, now: NOW })).data.error).toBe('unknown_account');
+  });
+
+  it('账户删除后，其它设备的公开读照常（匿名），本人接口 unknown_account', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { email: 'gone@example.com', now: NOW });
+    const phone = await loginNewDevice(env, 'gone@example.com');
+    expect((await call(env, 'DELETE', '/v1/me', { key: u.key, account: u.id, now: NOW })).status).toBe(204);
+    expect((await call(env, 'GET', '/v1/works/popular', { key: phone.key, account: phone.id, now: NOW })).status).toBe(200);
+    expect((await call(env, 'GET', '/v1/me', { key: phone.key, account: phone.id, now: NOW })).data.error).toBe('unknown_account');
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM device_keys').get().n).toBe(0);
+  });
+
+  it('管理端清空设备：之后用邮箱验证码重新登录', async () => {
+    const env = makeEnv();
+    const u = await registerUser(env, 'tom', { email: 'full@example.com', now: NOW });
+    const basic = { Authorization: `Basic ${btoa('admin:pw')}` };
+    const r = await call(env, 'POST', `/admin/api/accounts/${u.id}/devices/clear`, { headers: basic, now: NOW });
+    expect(r.data).toEqual({ ok: true, removed: 1 });
+    await loginNewDevice(env, 'full@example.com');
+  });
+
+  it('签名写请求先过 ACCOUNT_LIMITER（按设备钥匙），超额时不碰 D1', async () => {
+    let calls = 0;
+    const limiter = { limit: async () => ({ success: ++calls <= 1 }) };
+    const env = makeEnv({ ACCOUNT_LIMITER: limiter });
+    const u = await registerUser(env, 'tom', { now: NOW });
+    const sigsBefore = env.DB.raw.prepare('SELECT COUNT(*) AS n FROM used_sigs').get().n;
+    expect((await call(env, 'PATCH', '/v1/me', { key: u.key, account: u.id, body: { visibility: 'friends' }, now: NOW })).status).toBe(200);
+    const blocked = await call(env, 'PATCH', '/v1/me', { key: u.key, account: u.id, body: { visibility: 'public' }, now: NOW });
+    expect(blocked.status).toBe(429);
+    expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM used_sigs').get().n).toBe(sigsBefore + 1);
+  });
+});

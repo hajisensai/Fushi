@@ -48,6 +48,18 @@ npx wrangler deploy
 
 缺 `EMAIL_PEPPER` / `RESEND_API_KEY` 时发码与注册一律 503 `email_not_configured`（fail-closed）。
 
+部署后还要知道的：
+
+- **App 默认连 `https://rank.fushi.moe`**（`fushi/lib/src/leaderboard/leaderboard_service.dart` 的
+  `kLeaderboardDefaultBaseUrl`）。域名没配好之前，App 里的排行功能不可用（显示「排行服务尚未部署」）。
+  换域名就改这个常量。
+- **首次部署后立刻调一次 `POST /admin/api/snapshots/refresh`**（或等 30 分钟定时任务），否则榜单为空
+  （客户端显示「榜单生成中」）。
+- `READ_LIMITER` / `AUTH_LIMITER` / `ACCOUNT_LIMITER` 是 Workers Rate Limiting binding（`[[unsafe.bindings]]`
+  `type = "ratelimit"`）；部署前确认账户可用。不可用时代码会跳过这几道限流（其余 D1 计数限流与日预算照常），
+  但成本保护会变弱，**请以可用为准**。
+- 仓库 CI（`.github/workflows/leaderboard-worker.yml`）**只跑测试、不部署**；上线一律由维护者手动 `wrangler deploy`。
+
 ## API
 
 签名（`[签名]`）规则见 `src/auth.js` 文件头；标「写」的请求另做防重放（同一签名串只收一次）。
@@ -57,7 +69,9 @@ npx wrangler deploy
 | POST | `/v1/email/code` `{email, purpose: register\|login, lang?}` | — | 发 6 位验证码（永远 202，防探测；按 IP / 邮箱限流、扣 email 预算） |
 | POST | `/v1/register` `{pubkey, nickname, email, code}` | 自签 | 注册（验证码 10 分钟有效、最多试 5 次、一次性；同钥匙重复注册幂等） |
 | POST | `/v1/login` `{pubkey, email, code}` | 自签 | 新设备登录：把本机钥匙绑到该邮箱的账户（每账户 ≤ 10 台） |
-| GET | `/v1/me` | 签名 | 自己的账户 |
+| GET | `/v1/me` | 签名 | 自己的账户（含 `uploadDevice`、`shelfCount`） |
+| GET | `/v1/me/devices` | 签名 | 已登录设备 `{devices:[{keyId, createdAt, lastUsedAt, current}]}` |
+| DELETE | `/v1/me/devices/:keyId` | 签名·写 | 解绑另一台设备（不能解绑当前设备：400 `cannot_remove_current`；解绑上传设备会清空上传设备） |
 | PATCH | `/v1/me` `{nickname?, visibility?}` | 签名·写 | 改资料 |
 | DELETE | `/v1/me` | 签名·写 | 删除账户与全部数据 |
 | PUT / DELETE | `/v1/me/avatar` | 签名·写 | 上传 / 删除头像 |
@@ -100,5 +114,6 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/accounts/:id` `{hidden}` | 隐藏 / 恢复账户 |
 | POST | `/admin/api/works/:id` `{title?, author?, nsfw?, clearCover?}` | 改作品（改标题/作者即锁定） |
 | POST | `/admin/api/snapshots/refresh` | 立刻重算榜单快照（部署后第一次、或不想等定时任务时） |
+| POST | `/admin/api/accounts/:id/devices/clear` | 清空账户全部设备（用户设备名额满又没有一台还登录着时；之后用邮箱验证码重新登录） |
 | POST | `/admin/api/works/merge` `{from, into}` | 合并误拆的作品 |
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
