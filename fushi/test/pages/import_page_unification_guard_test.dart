@@ -162,6 +162,34 @@ void main() {
       expect(browse, contains(r"'browse-${tab.name}-${domain.name}'"));
       expect(browse, contains('offstage: domain != selected'));
     });
+
+    test('漫画在线源与小说 / 视频一样点行进源（mokuro.moe 行进目录）', () {
+      expect(mangaOnline, contains('MihonInstalledSourcesSection('));
+      expect(mangaOnline, contains('onOpenSource: _openMihonSource'));
+      expect(mangaOnline, contains('MihonSourceBrowsePage('));
+      expect(
+        'MokuroMoeSourceRow(onOpen: _openMokuro)'.allMatches(mangaOnline),
+        hasLength(2),
+        reason: '有 / 无 Mihon 宿主两条分支里的 mokuro.moe 行都要能点进目录',
+      );
+    });
+
+    test('来源 / 扩展 / 发现 / 下载的二级选择是标签页，不再是分段按钮', () {
+      expect(browse, isNot(contains('FushiSegmentedStrip')));
+      expect(browse, isNot(contains('ButtonSegment<')));
+      expect(
+        'secondary: true'.allMatches(browse),
+        hasLength(3),
+        reason: '来源 / 扩展共用一处 + 发现 + 下载，共三处二级标签条',
+      );
+      for (final String key in <String>[
+        r"'browse-${tab.name}-domain-picker'",
+        "'downloads-resource-type-picker'",
+        "'browse-downloads-section-picker'",
+      ]) {
+        expect(browse, contains(key), reason: '二级标签条保留稳定 key：$key');
+      }
+    });
   });
 
   group('术语统一：「本地扫描根」并入「常驻来源」', () {

@@ -296,19 +296,19 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
           child: Row(
             children: <Widget>[
               Expanded(
-                child: FushiSegmentedStrip<OnlineSourcesDomain>(
+                child: LibrarySectionTabs<OnlineSourcesDomain>(
                   key: ValueKey<String>('browse-${tab.name}-domain-picker'),
-                  segments: <ButtonSegment<OnlineSourcesDomain>>[
+                  tabs: <LibrarySectionTab<OnlineSourcesDomain>>[
                     for (final OnlineSourcesDomain domain in domains)
-                      ButtonSegment<OnlineSourcesDomain>(
+                      LibrarySectionTab<OnlineSourcesDomain>(
                         value: domain,
-                        label: Text(_onlineDomainLabel(domain)),
+                        label: _onlineDomainLabel(domain),
                       ),
                   ],
                   selected: selected,
                   onChanged: _selectOnlineDomain,
-                  minSegmentWidth: 72,
-                  alignment: Alignment.centerLeft,
+                  focusIdPrefix: 'browse-${tab.name}-domain',
+                  secondary: true,
                 ),
               ),
               if (tab == BrowseTab.extensions)
@@ -479,7 +479,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
         _DownloadsResourceDomain.video => _buildVideoResourceTab(),
       };
 
-  /// 分段条只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
+  /// 二级标签页只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
   /// 自己的生产发现页。四个固定目的地直接可见，避免无标签的表单型下拉框
   /// 单独悬在搜索区上方。首次访问后保持挂载，来回切换不丢搜索词、结果和滚动位置。
   Widget _buildResourceHub() {
@@ -491,11 +491,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       appModel.moduleVisibility,
       gamesForm: appModel.gamesModuleForm,
     );
-    // 四个域全关：整块资源分区不渲染——空的分段条 + 空 Stack 是「渲染出来但点不
+    // 四个域全关：整块资源分区不渲染——空的标签条 + 空 Stack 是「渲染出来但点不
     // 出任何东西」，正是要消灭的形态。
     if (domains.isEmpty) return const SizedBox.shrink();
     // 当前域在渲染期回落到第一个可见域：用户在设置里关掉当前域后本页可能仍挂着
-    // （保活 tab），选中值不在 segments 里会让分段控件直接 assert。
+    // （保活 tab），选中值不在标签里时标签条会落到错误的下标上。
     final _DownloadsResourceDomain selected = domains.contains(_resourceDomain)
         ? _resourceDomain
         : domains.first;
@@ -508,19 +508,19 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
             tokens.spacing.page,
             tokens.spacing.gap,
           ),
-          child: FushiSegmentedStrip<_DownloadsResourceDomain>(
+          child: LibrarySectionTabs<_DownloadsResourceDomain>(
             key: const ValueKey<String>('downloads-resource-type-picker'),
-            segments: <ButtonSegment<_DownloadsResourceDomain>>[
+            tabs: <LibrarySectionTab<_DownloadsResourceDomain>>[
               for (final _DownloadsResourceDomain domain in domains)
-                ButtonSegment<_DownloadsResourceDomain>(
+                LibrarySectionTab<_DownloadsResourceDomain>(
                   value: domain,
-                  label: Text(_resourceDomainLabel(domain)),
+                  label: _resourceDomainLabel(domain),
                 ),
             ],
             selected: selected,
             onChanged: _selectResourceDomain,
-            minSegmentWidth: 72,
-            alignment: Alignment.centerLeft,
+            focusIdPrefix: 'browse-discover-domain',
+            secondary: true,
           ),
         ),
         Expanded(
@@ -659,23 +659,23 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
             tokens.spacing.page,
             tokens.spacing.gap,
           ),
-          child: FushiSegmentedStrip<BrowseDownloadsSection>(
+          child: LibrarySectionTabs<BrowseDownloadsSection>(
             key: const ValueKey<String>('browse-downloads-section-picker'),
-            segments: <ButtonSegment<BrowseDownloadsSection>>[
-              ButtonSegment<BrowseDownloadsSection>(
+            tabs: <LibrarySectionTab<BrowseDownloadsSection>>[
+              LibrarySectionTab<BrowseDownloadsSection>(
                 value: BrowseDownloadsSection.tasks,
-                label: Text(t.download_tasks_tab),
+                label: t.download_tasks_tab,
               ),
-              ButtonSegment<BrowseDownloadsSection>(
+              LibrarySectionTab<BrowseDownloadsSection>(
                 value: BrowseDownloadsSection.subscriptions,
-                label: Text(t.download_subscriptions_tab),
+                label: t.download_subscriptions_tab,
               ),
             ],
             selected: _downloadsSection,
             onChanged: (BrowseDownloadsSection value) =>
                 setState(() => _downloadsSection = value),
-            minSegmentWidth: 72,
-            alignment: Alignment.centerLeft,
+            focusIdPrefix: 'browse-downloads-section',
+            secondary: true,
           ),
         ),
         Expanded(
@@ -1033,7 +1033,7 @@ ModuleId _moduleOfResourceDomain(_DownloadsResourceDomain domain) =>
       _DownloadsResourceDomain.video => ModuleId.video,
     };
 
-/// 此刻可见的资源域，顺序即分段条顺序（枚举声明序）。
+/// 此刻可见的资源域，顺序即标签顺序（枚举声明序）。
 ///
 /// games 域是「找 galgame 资源下到本机」，只对本机游戏库形态成立；Android 的
 /// games 模块是串流接收端（游戏装在 Windows 主机上），不出这个域。

@@ -56,7 +56,7 @@ void main() {
     expect(
       code,
       contains("'browse-downloads-section-picker'"),
-      reason: '任务 / 订阅分段条必须有稳定 key，便于焦点导航与行为验证',
+      reason: '任务 / 订阅标签条必须有稳定 key，便于焦点导航与行为验证',
     );
 
     // 页签控制器由本页持有（按页签 id 落回选中，PR #1707 审查），同一个控制器
@@ -148,15 +148,15 @@ void main() {
 
     expect(
       RegExp(
-        r'FushiSegmentedStrip\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
+        r'LibrarySectionTabs\s*<\s*_DownloadsResourceDomain\s*>\s*\(',
       ).allMatches(downloadsStructural),
       hasLength(1),
-      reason: '资源页只能有一个外层内容域分段条',
+      reason: '资源页只能有一个外层内容域标签条（二级 tabs）',
     );
     expect(
       code,
       contains("'downloads-resource-type-picker'"),
-      reason: '内容域分段条必须有稳定 key，便于焦点导航与行为验证',
+      reason: '内容域标签条必须有稳定 key，便于焦点导航与行为验证',
     );
     expect(
       code,

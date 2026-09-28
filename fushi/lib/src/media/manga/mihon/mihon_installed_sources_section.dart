@@ -33,7 +33,7 @@ class MihonInstalledSourcesSection extends StatefulWidget {
   /// 各自带底部间距。
   final List<Widget> leading;
 
-  /// 点行进该源的浏览页；为 null 时行不可点（漫画从「发现」进源，这里只管设置）。
+  /// 点行进该源的浏览页；为 null 时行不可点。小说 / 漫画 / 视频三域都传。
   final void Function(MangaOnlineSourceRow source)? onOpenSource;
 
   /// 一个扩展源都没有时的提示；为 null 不提示（有内置行的域列表不算空）。
