@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
@@ -378,6 +379,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   @override
   String get dictionarySourceType => kStatSourceVideo;
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.video;
 
   @override
   ShortcutScope? get dictionaryPopupInputScope => ShortcutScope.video;

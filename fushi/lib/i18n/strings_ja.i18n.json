@@ -5781,5 +5781,9 @@
   "stat_range_next": "次の期間",
   "stat_range_summary": "選択した期間",
   "stat_range_active_days": "活動日数",
-  "stat_range_calendar": "学習カレンダー"
+  "stat_range_calendar": "学習カレンダー",
+  "popup_bottom_docked_books": "Dock in novels",
+  "popup_bottom_docked_manga": "Dock in manga",
+  "popup_bottom_docked_video": "Dock in videos",
+  "popup_bottom_docked_games": "Dock in games"
 }

@@ -34,6 +34,7 @@ import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
@@ -2066,6 +2067,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   // 视频页的收藏/制卡计入视频统计（而非书籍统计）。
   @override
   String get dictionarySourceType => kStatSourceVideo;
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.video;
 
   /// TODO-1204：查词 / 制卡计数归属本视频——[title] 用 [_title]（剧集标题，与
   /// 视频统计 tile 的身份分组键对齐），[bookKey] 存

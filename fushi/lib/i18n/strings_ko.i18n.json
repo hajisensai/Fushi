@@ -5781,5 +5781,9 @@
   "stat_range_next": "다음 기간",
   "stat_range_summary": "선택한 기간",
   "stat_range_active_days": "활동 일수",
-  "stat_range_calendar": "학습 캘린더"
+  "stat_range_calendar": "학습 캘린더",
+  "popup_bottom_docked_books": "Dock in novels",
+  "popup_bottom_docked_manga": "Dock in manga",
+  "popup_bottom_docked_video": "Dock in videos",
+  "popup_bottom_docked_games": "Dock in games"
 }
