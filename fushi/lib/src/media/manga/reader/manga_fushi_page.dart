@@ -5945,6 +5945,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         await _syncAutoScrollPause();
       },
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_webViewDeathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(

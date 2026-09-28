@@ -6,6 +6,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import '_static_channel.dart';
+import 'trackpad_gesture_router.dart';
 
 const Map<String, SystemMouseCursor> _cursors = {
   'none': SystemMouseCursors.none,
@@ -334,6 +335,16 @@ class CustomPlatformViewController
     return _methodChannel.invokeMethod('setScrollDelta', [dx, dy]);
   }
 
+  /// 触控板捏合：发一条带 Ctrl 的滚轮，[wheelDelta] 是逻辑像素口径的 deltaY
+  /// （见 [TrackpadGestureRouter]）。
+  Future<void> _setPinchDelta(double wheelDelta) async {
+    if (_isDisposed) {
+      return;
+    }
+    assert(value.isInitialized);
+    return _methodChannel.invokeMethod('setPinchDelta', wheelDelta);
+  }
+
   /// Sets the surface size to the provided [size].
   Future<void> _setSize(Size size, double scaleFactor) async {
     if (_isDisposed) {
@@ -414,6 +425,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   int _mouseButtons = 0;
 
   PointerDeviceKind _pointerKind = PointerDeviceKind.unknown;
+  final TrackpadGestureRouter _trackpad = TrackpadGestureRouter();
 
   MouseCursor _cursor = SystemMouseCursors.basic;
 
@@ -596,9 +608,19 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
                             -signal.scrollDelta.dx, -signal.scrollDelta.dy);
                       }
                     },
+                    onPointerPanZoomStart: (_) => _trackpad.start(),
                     onPointerPanZoomUpdate: (ev) {
-                      _controller._setScrollDelta(
-                          ev.panDelta.dx, ev.panDelta.dy);
+                      final TrackpadGestureOutput out = _trackpad.update(
+                          panDelta: ev.panDelta, scale: ev.scale);
+                      switch (out.kind) {
+                        case TrackpadGestureKind.scroll:
+                          _controller._setScrollDelta(
+                              out.scrollDelta.dx, out.scrollDelta.dy);
+                        case TrackpadGestureKind.pinch:
+                          if (out.pinchWheelDelta != 0) {
+                            _controller._setPinchDelta(out.pinchWheelDelta);
+                          }
+                      }
                     },
                     child: MouseRegion(
                         cursor: _cursor,

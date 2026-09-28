@@ -2829,6 +2829,8 @@ updateLive: function(patch) {
       // `InAppWebViewClientCompat.onRenderProcessGone` 只有拿到非 null 回调才
       // `return true`；否则默认动作是把整个 app 进程一起杀掉。这里的处置刻意
       // **不重建**（见 [_webViewDeathGuard] 的注释：恢复锚陈旧会把进度写回退）。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_webViewDeathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(

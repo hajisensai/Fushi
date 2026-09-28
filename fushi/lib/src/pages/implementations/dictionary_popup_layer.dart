@@ -1352,10 +1352,13 @@ class DictionaryPopupLayer extends StatelessWidget {
     final bool hasRenderableResults = _hasRenderableResults;
     // 真实空结果（查过了、没词条）：热槽上用不透明「未找到」盖板盖住 WebView，
     // 非热槽层直接渲染同一占位（无 WebView）。
+    // BUG-2760：「查过了」按**不是空闲占位单例**判定，而不是「查询词非空」。点到
+    // ♡ / ♪ / ～ 这类纯符号时，查词前的清洗把它剥成空串，查询确实跑完了、只是没
+    // 东西可查；旧判据把它当成占位，于是露出一个空 WebView 的白框。
     final bool isRealEmptyResult = !isSearching &&
         !hasRenderableResults &&
         result != null &&
-        result!.searchTerm.isNotEmpty;
+        !identical(result, kPopupSearchingPlaceholderResult);
 
     // BUG-080: mount the WebView as soon as the lookup starts (while still
     // searching, before results arrive) so popup.html + JS + CSS cold-load in

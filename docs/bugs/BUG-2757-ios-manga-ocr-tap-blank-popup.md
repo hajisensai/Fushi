@@ -1,6 +1,8 @@
 ## BUG-2757 · iOS 漫画 OCR 后点字只弹出空白框
 - **报告**：2026-09-28（转述 iPhone 用户：跑完 OCR 后点任何字都只出一个空白框）
-- **真实性**：⚠ 未复现（没有 iPhone 现场）。代码路径排除项：没查到词时显示带图标的「无结果」占位（`fushi/lib/src/pages/implementations/dictionary_popup_layer.dart`），不是空白；选中文本为空时 `dispatchMangaSelection`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart`）直接 return、不弹框。所以「空白框」更像是 iOS 上弹窗 WebView 没渲染出来。候选：A）块被判成横排（Vision 只按单行 h > 1.6w 判竖排，见 BUG-2755 备注），弹窗贴在高句组上/下方，剩余高度过小只剩空壳；B）预热槽复用走 `_showPopupWaitingForRender`（`fushi/lib/src/pages/base_source_page.dart`），注释里记录过 macOS WKWebView「露出白色空 WebView」，iOS 同为 WKWebView。另：mokuro.moe 下载的卷自带站点 OCR，「重新识别本卷」会整本覆盖它且没有确认。
-- **[ ] ① 未修复** — 先要证据：请用户开「显示识别范围」截图 + 导出日志（`onMangaOcrHitDebug`、`MangaFushi.onTextSelected`、popupRendered 是否回调），再判 A / B。
-- **[ ] ② 未加自动化测试**
-- **备注**：同时要确认用户有没有装词典——没装词典时的表现也要对照。
+- **真实性**：✅ 真 bug（代码路径定位，未在 iPhone 上复现）。已排除：没查到词时显示「无结果」占位（`fushi/lib/src/pages/implementations/dictionary_popup_layer.dart`）；选中文本为空时 `dispatchMangaSelection`（`fushi/lib/src/media/manga/reader/manga_fushi_page.dart`）不弹框；未装词典时同样走「无结果」占位；系统 OCR 无逐字区域时会按行均分。根因拆成两条：
+  - 「点任何字都空白」→ **BUG-2759**：iOS WKWebView 内容进程在整卷 OCR 的内存峰值下被回收，全仓没人接 `onWebContentProcessDidTerminate`，常驻查词弹窗此后永久空白。
+  - 「点某些字空白」→ **BUG-2760**：点纯符号时查询词被清洗成空串，弹窗判据把真结果当成占位。
+- **[x] ① 已修复** — 见 BUG-2759、BUG-2760。
+- **[x] ② 已加自动化测试** — 见 BUG-2759、BUG-2760。
+- **备注**：mokuro.moe 下载的卷自带站点 OCR，「重新识别本卷」会整本覆盖且无确认——那位用户重跑 OCR 很可能把更好的结果盖掉了；此项未处理。用户侧快速自证：退出漫画再进（重建常驻 WebView），第一次点字恢复正常即坐实 BUG-2759。

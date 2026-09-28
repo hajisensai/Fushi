@@ -1872,6 +1872,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         unawaited(_js('window.__fushiWebVideo.replayCues()'));
         unawaited(_syncDomSubtitles());
       },
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_deathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(
