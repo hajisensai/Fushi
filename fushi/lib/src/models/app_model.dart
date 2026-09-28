@@ -953,11 +953,11 @@ class AppModel with ChangeNotifier {
     }
 
     if (report.dictionariesImported > 0) {
-      dictRepo.clearDictionariesCache();
-      await _rebuildDictPathsCacheAsync();
-      dictRepo.clearDictionaryResultsCache();
+      // BUG-2752：同步导入直接写 dictionary_metadata，内存缓存不知道新词典；
+      // 必须从 DB 整表重载再重建引擎。此前先 clearDictionariesCache() 再按
+      // （已空的）缓存重建，引擎被装成空集合——本地词典全部「消失」直到重启。
+      await reloadDictionariesFromDb();
       dictionaryMenuNotifier.notifyListeners();
-      dictionarySearchAgainNotifier.notifyListeners();
     }
 
     if (report.booksImported > 0 ||
