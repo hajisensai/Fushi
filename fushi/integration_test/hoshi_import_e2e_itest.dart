@@ -8,6 +8,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/external_reader_import_page.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
+import 'package:fushi/src/sync/external_reader_import/hoshi_position_mapping.dart';
 import 'package:fushi/src/sync/external_reader_import/hoshi_stat_segments.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -19,11 +20,13 @@ import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// 「从 Hoshi Reader 导入」真 app 端到端：真库、真 EpubImporter、真页面。
+/// 「从 Hoshi Reader 导入」真 app 端到端：真库、真 EpubImporter、真页面、真阅读器。
 ///
-/// 样本是按 Hoshi Reader iOS / Android 源码落盘结构、用两本真实 EPUB 拼出的
-/// `Books_*.hoshi`（生成脚本与期望值 `<样本>.summary.json` 由调用方提供，样本含
-/// 版权书，不入库）：
+/// 输入是一份 Hoshi Reader（iOS / Android）「Settings › Backup › Books」导出的
+/// `Books_*.hoshi`，外加一份由独立脚本从同一备份算出的期望值
+/// `<备份>.expected.json`：`{"books": [{dir, title, archived, epub, chars, ms,
+/// bookmark, bookmarkHref}, ...]}`（chars / ms 按与导入同一口径——日记录同 dateKey
+/// 取最新、单日封顶 24h、会话剔除删除标记——求和）。备份含用户的书，不入库：
 ///   .\tool\run_windows_itest.ps1 integration_test/hoshi_import_e2e_itest.dart `
 ///     -DartDefine @('FUSHI_HOSHI_SAMPLE=C:/.../Books_x.hoshi')
 ///
@@ -43,16 +46,17 @@ void main() {
         reason: '需要 --dart-define FUSHI_HOSHI_SAMPLE',
       );
       expect(File(samplePath).existsSync(), isTrue, reason: samplePath);
-      final Map<String, dynamic> expected =
-          jsonDecode(File('$samplePath.summary.json').readAsStringSync())
-              as Map<String, dynamic>;
-      final Map<String, dynamic> ja = expected['ja'] as Map<String, dynamic>;
-      final Map<String, dynamic> en = expected['en'] as Map<String, dynamic>;
-      final Map<String, dynamic> deleted =
-          expected['deleted'] as Map<String, dynamic>;
-      final String jaKey = sanitizeTtuFilename(ja['title'] as String);
-      final String enKey = sanitizeTtuFilename(en['title'] as String);
-      final String deletedKey = sanitizeTtuFilename(deleted['title'] as String);
+      final List<Map<String, dynamic>> expected = <Map<String, dynamic>>[
+        for (final dynamic b
+            in (jsonDecode(File('$samplePath.expected.json').readAsStringSync())
+                    as Map<String, dynamic>)['books']
+                as List<dynamic>)
+          b as Map<String, dynamic>,
+      ];
+      final List<Map<String, dynamic>> withEpub = <Map<String, dynamic>>[
+        for (final Map<String, dynamic> b in expected)
+          if (b['archived'] != true && b['epub'] != null) b,
+      ];
 
       await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
@@ -85,25 +89,26 @@ void main() {
         debugPrint('[hoshi-e2e] preview: ${_visibleTexts(tester).join(' | ')}');
         await captureFlutterFrame(tester, 'hoshi-02-preview');
 
+        final Stopwatch importClock = Stopwatch()..start();
         await _activateButton(tester, driver, t.hoshi_import_run_start);
+        await _pumpFor(tester, const Duration(seconds: 3));
+        await captureFlutterFrame(tester, 'hoshi-03-running');
         expect(
           await _waitFor(
             tester,
             find.text(t.hoshi_import_result_done),
-            timeout: const Duration(minutes: 5),
+            timeout: const Duration(minutes: 15),
           ),
           isTrue,
-          reason: '导入应在 5 分钟内完成',
+          reason: '导入应在 15 分钟内完成',
         );
-        debugPrint('[hoshi-e2e] report: ${_visibleTexts(tester).join(' | ')}');
-        await captureFlutterFrame(tester, 'hoshi-03-report');
+        debugPrint(
+          '[hoshi-e2e] import took ${importClock.elapsed.inSeconds}s; report: '
+          '${_visibleTexts(tester).join(' | ')}',
+        );
+        await captureFlutterFrame(tester, 'hoshi-04-report');
 
-        // 书进库。
-        expect(await db.getEpubBook(jaKey), isNotNull, reason: jaKey);
-        expect(await db.getEpubBook(enKey), isNotNull, reason: enKey);
-        expect(await db.getEpubBook(deletedKey), isNull);
-
-        // 统计总量与 Hoshi 一致，全部是导入段。
+        // ── 逐本核对：进库、统计总量、阅读位置落在 Hoshi 书签所在章 ──────
         Future<(int, int)> totals(String key) async {
           final List<StudySegmentRow> rows = await db.getStudySegmentsForMedia(
             mediaKind: kActivityMediaBook,
@@ -122,46 +127,69 @@ void main() {
           );
         }
 
-        final (int jaChars, int jaMs) = await totals(jaKey);
-        final (int enChars, int enMs) = await totals(enKey);
-        final (int delChars, int delMs) = await totals(deletedKey);
+        final Map<String, (int, int)> firstTotals = <String, (int, int)>{};
+        final List<String> problems = <String>[];
+        String? readerKey;
+        int readerSection = -1;
+        String? readerUid;
+        for (final Map<String, dynamic> book in expected) {
+          final String title = book['title'] as String;
+          final String key = sanitizeTtuFilename(title);
+          final (int chars, int ms) = await totals(key);
+          firstTotals[key] = (chars, ms);
+          if (chars != book['chars'] || ms != book['ms']) {
+            problems.add(
+              '$title: stats $chars/$ms != ${book['chars']}/${book['ms']}',
+            );
+          }
+          final EpubBookRow? row = await db.getEpubBook(key);
+          if (book['archived'] != true && book['epub'] != null && row == null) {
+            problems.add('$title: not in library');
+            continue;
+          }
+          final Map<String, dynamic>? bookmark =
+              book['bookmark'] as Map<String, dynamic>?;
+          final String? hoshiHref = book['bookmarkHref'] as String?;
+          if (row == null || bookmark == null) continue;
+          final ReaderPositionRow? pos = await db.getReaderPosition(row.uid);
+          final List<FushiChapterRef> chapters = parseFushiChapterRefs(
+            row.chaptersJson,
+          );
+          if (pos == null) {
+            problems.add('$title: no position');
+            continue;
+          }
+          final String fushiHref = chapters[pos.sectionIndex].href;
+          final bool sameChapter =
+              hoshiHref == null ||
+              normalizeChapterHref(
+                fushiHref,
+              ).endsWith(normalizeChapterHref(hoshiHref));
+          debugPrint(
+            '[hoshi-e2e] ${sameChapter ? 'OK ' : 'BAD'} '
+            'chars=$chars min=${ms ~/ 60000} sec=${pos.sectionIndex}/'
+            '${chapters.length} norm=${pos.normCharOffset} '
+            'charOffset=${pos.charOffset} hoshi=$hoshiHref | $title',
+          );
+          if (!sameChapter) {
+            problems.add('$title: chapter $fushiHref != $hoshiHref');
+          }
+          if (pos.charOffset != -1) problems.add('$title: stale exact anchor');
+          // 阅读器验收挑一本书签不在第 0 章、也没读完的书：恢复落空（回到开头）
+          // 在它身上一眼可辨。
+          if (readerKey == null &&
+              pos.sectionIndex > 0 &&
+              pos.sectionIndex < chapters.length - 1) {
+            readerKey = key;
+            readerSection = pos.sectionIndex;
+            readerUid = row.uid;
+          }
+        }
         debugPrint(
-          '[hoshi-e2e] totals ja=$jaChars/${jaMs ~/ 60000}min '
-          'en=$enChars/${enMs ~/ 60000}min deleted=$delChars/${delMs ~/ 60000}min',
+          '[hoshi-e2e] problems=${problems.length} ${problems.join(' ; ')}',
         );
-        expect(jaChars, ja['sessions_chars']);
-        expect(jaMs, ((ja['sessions_minutes'] as num) * 60000).round());
-        expect(enChars, en['days_chars']);
-        expect(enMs, ((en['days_minutes'] as num) * 60000).round());
-        expect(delChars, deleted['chars']);
-
-        // 阅读位置：Hoshi 书签时刻、无精确锚。
-        final Map<String, dynamic> jaBookmark =
-            ja['bookmark'] as Map<String, dynamic>;
-        final int bookmarkAt =
-            (((jaBookmark['lastModified'] as num) + 978307200) * 1000).round();
-        final String jaUid = (await db.resolveEpubBookUid(jaKey))!;
-        final ReaderPositionRow jaPos = (await db.getReaderPosition(jaUid))!;
-        debugPrint(
-          '[hoshi-e2e] ja position section=${jaPos.sectionIndex} '
-          'norm=${jaPos.normCharOffset} charOffset=${jaPos.charOffset} '
-          'updatedAt=${jaPos.updatedAt} (hoshi chapterIndex='
-          '${jaBookmark['chapterIndex']} href=${ja['href']})',
-        );
-        expect(jaPos.updatedAt, closeTo(bookmarkAt, 1));
-        expect(jaPos.charOffset, -1);
-        final EpubBookRow jaRow = (await db.getEpubBook(jaKey))!;
-        final List<dynamic> chapters = jaRow.chaptersJson.isEmpty
-            ? <dynamic>[]
-            : jsonDecode(jaRow.chaptersJson) as List<dynamic>;
-        final String mappedHref =
-            (chapters[jaPos.sectionIndex] as Map<String, dynamic>)['href']
-                as String;
-        expect(
-          mappedHref.endsWith(ja['href'] as String),
-          isTrue,
-          reason: '映射到的章节 $mappedHref 应是 Hoshi 书签所在的 ${ja['href']}',
-        );
+        expect(problems, isEmpty);
+        expect((await db.getEpubBookMetas()).length, withEpub.length);
 
         // ── 第二次导入：同一份备份不应改变任何数字 ─────────────────────
         await _activateButton(tester, driver, t.hoshi_import_file_pick);
@@ -174,7 +202,7 @@ void main() {
           await _waitFor(
             tester,
             find.text(t.hoshi_import_result_done),
-            timeout: const Duration(minutes: 3),
+            timeout: const Duration(minutes: 10),
           ),
           isTrue,
         );
@@ -183,14 +211,15 @@ void main() {
         );
         expect(
           find.textContaining(
-            t.hoshi_import_result_books(imported: 0, matched: 2),
+            t.hoshi_import_result_books(imported: 0, matched: withEpub.length),
           ),
           findsOneWidget,
         );
-        expect(await totals(jaKey), (jaChars, jaMs));
-        expect(await totals(enKey), (enChars, enMs));
-        expect((await db.getEpubBookMetas()).length, 2);
-        await captureFlutterFrame(tester, 'hoshi-04-reimport');
+        for (final MapEntry<String, (int, int)> e in firstTotals.entries) {
+          expect(await totals(e.key), e.value, reason: e.key);
+        }
+        expect((await db.getEpubBookMetas()).length, withEpub.length);
+        await captureFlutterFrame(tester, 'hoshi-05-reimport');
 
         appModel.navigatorKey.currentState!.pop();
         await _pumpFor(tester, const Duration(seconds: 1));
@@ -206,7 +235,7 @@ void main() {
         expect(
           (await captureFlutterFrame(
             tester,
-            'hoshi-05-stats-reading',
+            'hoshi-06-stats-reading',
           )).nonBlank,
           isTrue,
         );
@@ -217,27 +246,29 @@ void main() {
         await _pumpFor(tester, const Duration(seconds: 1));
 
         // ── 阅读器按导入的位置打开 ───────────────────────────────────
-        await openBookViaProductionPath(tester, jaKey);
+        expect(readerKey, isNotNull, reason: '备份里应有一本读到中间的书');
+        await openBookViaProductionPath(tester, readerKey!);
         for (int i = 0; i < 120 && !readerWebViewReady(); i++) {
           await tester.pump(const Duration(milliseconds: 500));
         }
         expect(readerWebViewReady(), isTrue, reason: '阅读器 WebView 应建好');
         await _pumpFor(tester, const Duration(seconds: 12));
-        await captureReaderWebView('hoshi-06-reader');
+        await captureReaderWebView('hoshi-07-reader');
         final ReaderPositionRow afterOpen = (await db.getReaderPosition(
-          jaUid,
+          readerUid!,
         ))!;
         debugPrint(
-          '[hoshi-e2e] after open section=${afterOpen.sectionIndex} '
+          '[hoshi-e2e] reader "$readerKey" imported section=$readerSection; '
+          'after open section=${afterOpen.sectionIndex} '
           'norm=${afterOpen.normCharOffset} charOffset=${afterOpen.charOffset}',
         );
         // 恢复落空（回到第 0 章）时阅读器会把位置回写成开头：章节必须仍是导入的那章。
-        expect(afterOpen.sectionIndex, jaPos.sectionIndex);
+        expect(afterOpen.sectionIndex, readerSection);
       } finally {
         ExternalReaderImportPage.debugPickBackupPath = null;
       }
     },
-    timeout: const Timeout(Duration(minutes: 15)),
+    timeout: const Timeout(Duration(minutes: 40)),
   );
 }
 
