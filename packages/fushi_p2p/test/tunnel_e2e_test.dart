@@ -105,7 +105,7 @@ void main() {
       );
       try {
         final ProcessResult r = await Process.run(
-          Platform.resolvedExecutable,
+          _dartExecutable(),
           <String>['run', 'test/fixtures/missing_lib_probe.dart', empty.path],
           environment: const <String, String>{kFushiP2pLibEnv: ''},
         );
@@ -331,5 +331,31 @@ void main() {
     },
     skip: skip,
     timeout: const Timeout(Duration(minutes: 2)),
+  );
+}
+
+/// 跑子进程探针用的 Dart VM。
+///
+/// 不能直接用 [Platform.resolvedExecutable]：`dart test` 下它是 dart，但 CI 的包测试
+/// 循环统一走 `flutter test`，那时它是 `flutter_tester`——`flutter_tester run …` 不是
+/// dart 命令，子进程挂到超时（CI 实测）。flutter_tester 在 Flutter SDK 的
+/// `bin/cache/artifacts/engine/<平台>/` 下，同一份 SDK 的 `bin/cache/dart-sdk/bin/dart`
+/// 就是配套的 VM，沿祖先目录找它。找不到就让测试失败并说明，不静默跳过。
+String _dartExecutable() {
+  final File self = File(Platform.resolvedExecutable);
+  final String name = self.uri.pathSegments.last.toLowerCase();
+  if (name == 'dart' || name == 'dart.exe') return self.path;
+  final String exe = Platform.isWindows ? 'dart.exe' : 'dart';
+  final String sep = Platform.pathSeparator;
+  for (
+    Directory dir = self.parent;
+    dir.parent.path != dir.path;
+    dir = dir.parent
+  ) {
+    final File candidate = File('${dir.path}${sep}dart-sdk${sep}bin$sep$exe');
+    if (candidate.existsSync()) return candidate.path;
+  }
+  throw StateError(
+    '找不到 Dart VM：${self.path} 既不是 dart，其祖先目录下也没有 dart-sdk/bin/$exe',
   );
 }
