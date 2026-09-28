@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_miner.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
@@ -23,16 +21,8 @@ class AnkiSyncClientRepository extends BaseAnkiRepository {
   final AnkiSyncSession? _session;
   final AnkiSyncMiner? _miner;
 
-  /// 由名字派生的稳定 id（FNV-1a 32 位）：helper 只给名字，按列表下标编号会在服务器
-  /// 上多一个牌组后整体错位，把卡写进别的牌组。
-  static int stableIdFor(String name) {
-    int hash = 0x811c9dc5;
-    for (final int byte in utf8.encode(name)) {
-      hash ^= byte;
-      hash = (hash * 0x01000193) & 0xffffffff;
-    }
-    return hash & 0x7fffffff;
-  }
+  /// 见 [AnkiSyncMiner.stableIdFor]。
+  static int stableIdFor(String name) => AnkiSyncMiner.stableIdFor(name);
 
   @override
   Future<AnkiFetchResult> fetchConfiguration() async {
@@ -45,35 +35,16 @@ class AnkiSyncClientRepository extends BaseAnkiRepository {
     }
     try {
       final AnkiSyncMeta meta = await session.meta();
-      final List<AnkiDeck> decks = <AnkiDeck>[
-        for (final String d in meta.decks)
-          AnkiDeck(id: stableIdFor(d), name: d),
-      ];
-      final List<AnkiNoteType> noteTypes = <AnkiNoteType>[
-        for (final AnkiSyncNotetype n in meta.notetypes)
-          AnkiNoteType(id: stableIdFor(n.name), name: n.name, fields: n.fields),
-      ];
-      if (decks.isEmpty || noteTypes.isEmpty) {
+      AnkiSettings? refreshed;
+      final AnkiSettings updated = await updateSettings((AnkiSettings current) {
+        refreshed = _miner!.applyMeta(current, meta);
+        return refreshed ?? current;
+      });
+      if (refreshed == null) {
         return const AnkiFetchResult.error(
           'No decks or note types in the synced collection.',
         );
       }
-      final AnkiSettings updated = await updateSettings((AnkiSettings current) {
-        final AnkiDeck deck = selectDeckAfterFetch(decks, current);
-        final AnkiNoteType noteType = selectNoteTypeAfterFetch(
-          noteTypes,
-          current,
-        );
-        return current.copyWith(
-          selectedDeckId: deck.id,
-          selectedDeckName: deck.name,
-          selectedNoteTypeId: noteType.id,
-          selectedNoteTypeName: noteType.name,
-          availableDecks: decks,
-          availableNoteTypes: noteTypes,
-          fieldMappings: fieldMappingsAfterFetch(noteType, current),
-        );
-      });
       return AnkiFetchResult.success(
         decks: updated.availableDecks,
         noteTypes: updated.availableNoteTypes,

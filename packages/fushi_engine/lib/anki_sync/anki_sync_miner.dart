@@ -6,6 +6,7 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 
 import 'package:fushi_engine/anki_sync/anki_sync_journal.dart';
 import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
+import 'package:fushi_engine/anki_sync/fushi_anki_sync_client.dart';
 
 /// 「Anki 同步客户端」的一次制卡：按 [AnkiSettings] 渲染字段（与 AnkiConnect /
 /// AnkiDroid 同一套 [AnkiNoteComposer]），查重，写进 [AnkiSyncSession]。
@@ -34,6 +35,41 @@ class AnkiSyncMiner with AnkiNoteComposer {
     } catch (e, stack) {
       return MineOutcome.failure('Anki sync: $e', error: e, stackTrace: stack);
     }
+  }
+
+  /// 由名字派生的稳定 id（FNV-1a 32 位）：helper 只给名字，按列表下标编号会在服务器
+  /// 上多一个牌组后整体错位，把卡写进别的牌组。
+  static int stableIdFor(String name) {
+    int hash = 0x811c9dc5;
+    for (final int byte in utf8.encode(name)) {
+      hash ^= byte;
+      hash = (hash * 0x01000193) & 0xffffffff;
+    }
+    return hash & 0x7fffffff;
+  }
+
+  /// 用本地库里的牌组 / 笔记类型刷新 [current]：选中项按 id → 名字对回，字段映射
+  /// 沿用（选中 Lapis 时补 Lapis 默认映射）。库里没有牌组或笔记类型返回 null。
+  AnkiSettings? applyMeta(AnkiSettings current, AnkiSyncMeta meta) {
+    final List<AnkiDeck> decks = <AnkiDeck>[
+      for (final String d in meta.decks) AnkiDeck(id: stableIdFor(d), name: d),
+    ];
+    final List<AnkiNoteType> noteTypes = <AnkiNoteType>[
+      for (final AnkiSyncNotetype n in meta.notetypes)
+        AnkiNoteType(id: stableIdFor(n.name), name: n.name, fields: n.fields),
+    ];
+    if (decks.isEmpty || noteTypes.isEmpty) return null;
+    final AnkiDeck deck = selectDeckAfterFetch(decks, current);
+    final AnkiNoteType noteType = selectNoteTypeAfterFetch(noteTypes, current);
+    return current.copyWith(
+      selectedDeckId: deck.id,
+      selectedDeckName: deck.name,
+      selectedNoteTypeId: noteType.id,
+      selectedNoteTypeName: noteType.name,
+      availableDecks: decks,
+      availableNoteTypes: noteTypes,
+      fieldMappings: fieldMappingsAfterFetch(noteType, current),
+    );
   }
 
   /// 按设置选中的笔记类型（id 优先、名字兜底）。
