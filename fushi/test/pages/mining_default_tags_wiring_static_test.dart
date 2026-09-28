@@ -30,8 +30,9 @@ void main() {
   });
 
   test('buildNoteTags 把来源映射成 book/video 分类标签（追加不覆盖）', () {
+    // 渲染与标签在 AnkiNoteComposer（BaseAnkiRepository 混入它）。
     final String src = File(
-      '../packages/fushi_anki/lib/src/base_anki_repository.dart',
+      '../packages/fushi_anki/lib/src/anki_note_composer.dart',
     ).readAsStringSync();
     expect(
         src,
