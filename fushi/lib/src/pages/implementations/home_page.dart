@@ -32,6 +32,7 @@ import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart'
     show ankiRepositoryProvider;
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -624,6 +625,15 @@ class _HomePageState extends BasePageState<HomePage>
         unawaited(
             _maybeAutoDedupAnkiMedia().catchError((Object e, StackTrace s) {
           ErrorLogService.instance.log('HomePage.ankiMediaDedupAuto', e, s);
+        }));
+      }
+
+      // 排行榜书架后台同步：未开启 / 上传关闭 / 30 分钟内同步过都是 no-op；失败只记日志。
+      if (mounted) {
+        unawaited(Future<void>(
+          () => ref.read(leaderboardServiceProvider).maybeSyncInBackground(),
+        ).catchError((Object e, StackTrace s) {
+          ErrorLogService.instance.log('HomePage.leaderboardSync', e, s);
         }));
       }
     });

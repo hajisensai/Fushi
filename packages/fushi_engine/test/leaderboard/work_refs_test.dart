@@ -26,28 +26,9 @@ void main() {
     });
   });
 
-  group('normalizeIsbn13', () {
-    test('ISBN-13 带连字符 / 前缀 / 全角数字', () {
-      expect(normalizeIsbn13('978-4-04-000001-5'), '9784040000015');
-      expect(normalizeIsbn13('urn:isbn:9784040000015'), '9784040000015');
-      expect(normalizeIsbn13('ISBN 978-4-04-000001-5'), '9784040000015');
-      expect(normalizeIsbn13('９７８４０４０００００１５'), '9784040000015');
-    });
-
-    test('ISBN-10（含 X 校验位）转 13 位', () {
-      expect(normalizeIsbn13('4-04-000001-3'), '9784040000015');
-      expect(normalizeIsbn13('0-8044-2957-X'), '9780804429573');
-      expect(normalizeIsbn13('080442957x'), '9780804429573');
-    });
-
-    test('校验位错 / 长度错 / 非 978·979 前缀 → null', () {
-      expect(normalizeIsbn13('9784040000011'), isNull);
-      expect(normalizeIsbn13('4-04-000001-5'), isNull);
-      expect(normalizeIsbn13('12345'), isNull);
-      expect(normalizeIsbn13('1234567890128'), isNull);
-      expect(normalizeIsbn13(''), isNull);
-      expect(normalizeIsbn13('abc9784040000011'), isNull);
-    });
+  test('normalizeIsbn13 是 epub/isbn.dart 那一份的 re-export（唯一口径）', () {
+    expect(normalizeIsbn13('978-4-04-000001-5'), '9784040000015');
+    expect(normalizeIsbn13('9784040000011'), isNull);
   });
 
   group('buildWorkRefs', () {
@@ -55,6 +36,7 @@ void main() {
       expect(
         buildWorkRefs(
           sourceRef: 'plugin:key',
+          malId: '77',
           anidbAid: '123',
           tmdbRef: 'tv:456',
           vndbId: '17',
@@ -67,12 +49,22 @@ void main() {
           'bgm:9',
           'isbn:9784040000015',
           'vndb:v17',
-          'tmdb:tv:456',
           'anidb:123',
+          'mal:77',
+          'tmdb:tv:456',
           'src:plugin:key',
           't:タイトル|作者名',
         ],
       );
+    });
+
+    test('ISBN 容忍全角数字与前缀，ISBN-10 转 13', () {
+      expect(buildWorkRefs(isbn: '９７８４０４０００００１５', title: ''), <String>[
+        'isbn:9784040000015',
+      ]);
+      expect(buildWorkRefs(isbn: 'ISBN 0-8044-2957-X', title: ''), <String>[
+        'isbn:9780804429573',
+      ]);
     });
 
     test('无效 ISBN / 空值被丢弃；vndb 已带 v 不重复加', () {

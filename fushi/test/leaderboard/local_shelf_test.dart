@@ -1,0 +1,481 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/leaderboard/leaderboard_models.dart';
+import 'package:fushi_engine/leaderboard/local_shelf.dart';
+
+/// 引擎 `buildLocalShelf`：本机库 + 统计事实面 → 排行榜书架（真内存库，flutter test
+/// 下才有 sqlite 原生库）。
+void main() {
+  late FushiDatabase db;
+  const int profile = 1;
+  int seq = 0;
+
+  setUp(() {
+    db = FushiDatabase.forTesting(NativeDatabase.memory());
+    seq = 0;
+  });
+  tearDown(() => db.close());
+
+  Future<void> segment(
+    String kind,
+    String key, {
+    required String date,
+    int chars = 0,
+    int ms = 0,
+    int profileId = profile,
+    String format = '',
+  }) => db.upsertStudySegment(
+    StudySegmentsCompanion.insert(
+      uid: 'seg${seq++}',
+      deviceId: 'd',
+      mediaKind: kind,
+      mediaKey: key,
+      format: Value<String>(format),
+      title: key,
+      startAt: 1000 + seq,
+      endAt: 2000 + seq,
+      dateKey: date,
+      hour: 10,
+      durationMs: Value<int>(ms),
+      chars: Value<int>(chars),
+      updatedAt: 1,
+      profileId: Value<int>(profileId),
+    ),
+  );
+
+  Future<void> book(
+    String key, {
+    String? author,
+    String format = 'epub',
+    DateTime? completedAt,
+    String? isbn,
+    String? sourceMetadata,
+    String? coverPath,
+  }) => db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: key,
+      title: key,
+      author: Value<String?>(author),
+      coverPath: Value<String?>(coverPath),
+      epubPath: '/x/$key.epub',
+      extractDir: '/x/$key',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 0,
+      format: Value<String>(format),
+      completedAt: Value<DateTime?>(completedAt),
+      isbn: Value<String?>(isbn),
+      sourceMetadata: Value<String?>(sourceMetadata),
+    ),
+  );
+
+  Future<void> video(String uid, {DateTime? completedAt, String? cover}) => db
+      .into(db.videoBooks)
+      .insert(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: 'file $uid',
+          videoPath: '/v/$uid.mkv',
+          completedAt: Value<DateTime?>(completedAt),
+          coverPath: Value<String?>(cover),
+        ),
+      );
+
+  Map<String, LocalShelfEntry> byKey(LocalShelf s) => <String, LocalShelfEntry>{
+    for (final LocalShelfEntry e in s.entries) e.localKey: e,
+  };
+
+  group('书 / 漫画', () {
+    test('读完或有活动才纳入；refs / 封面 / 读完日 / 字数时长', () async {
+      final DateTime done = DateTime(2026, 9, 3, 23, 30);
+      await book(
+        'Novel',
+        author: '作者',
+        completedAt: done,
+        isbn: '9784040000015',
+        coverPath: '/c/novel.jpg',
+      );
+      await book('Idle'); // 既没读完也没活动：不纳入。
+      await book(
+        'Online',
+        format: 'manga',
+        sourceMetadata: jsonEncode(<String, Object?>{
+          'type': 'hibiki-online-manga',
+          'version': 3,
+          'runtime': 'mihon',
+          'extensionPackage': 'pkg',
+          'sourceId': '123',
+          'series': <String, Object?>{
+            'key': '/manga/9',
+            'title': 'Online',
+            'coverUrl': 'https://img.example/9.jpg',
+            'raw': <String, Object?>{},
+          },
+          'chapters': <Object?>[],
+        }),
+      );
+      await book(
+        'Peer',
+        format: 'manga',
+        sourceMetadata: jsonEncode(<String, Object?>{
+          'type': 'hibiki-online-manga',
+          'version': 3,
+          'runtime': 'interconnect',
+          'sourceId': 'library',
+          'series': <String, Object?>{'key': 'k', 'title': 'Peer'},
+          'chapters': <Object?>[],
+        }),
+      );
+      await book(
+        'Web Novel',
+        sourceMetadata: jsonEncode(<String, Object?>{
+          'type': 'fushi-lnreader-online',
+          'version': 1,
+          'pluginId': 'syosetu',
+          'novelPath': 'n1234ab/',
+          'chapters': <Object?>[],
+        }),
+      );
+      await db
+          .into(db.mediaTrackingMappings)
+          .insert(
+            MediaTrackingMappingsCompanion.insert(
+              mediaType: 'book',
+              mediaKey: 'Novel',
+              mediaTitle: 'Novel',
+              kind: 'novel',
+              subjectId: 42,
+              subjectName: 'Novel',
+              progressMode: 'volume',
+              createdAt: 0,
+              updatedAt: 0,
+            ),
+          );
+      await segment('book', 'Novel', date: '2026-09-01', chars: 100, ms: 60);
+      await segment('book', 'Novel', date: '2026-09-02', chars: 50, ms: 40);
+      await segment(
+        'book',
+        'Online',
+        date: '2026-09-02',
+        ms: 5,
+        format: 'manga',
+      );
+      await segment('book', 'Peer', date: '2026-09-02', ms: 5, format: 'manga');
+      await segment('book', 'Web Novel', date: '2026-09-02', chars: 7);
+      // 另一个 Profile 的活动不计入。
+      await segment('book', 'Idle', date: '2026-09-02', chars: 9, profileId: 2);
+
+      final LocalShelf shelf = await buildLocalShelf(db, profileId: profile);
+      final Map<String, LocalShelfEntry> m = byKey(shelf);
+      expect(
+        m.keys,
+        unorderedEquals(<String>[
+          'book:Novel',
+          'book:Online',
+          'book:Peer',
+          'book:Web Novel',
+        ]),
+      );
+
+      final ShelfEntryUpload novel = m['book:Novel']!.upload;
+      expect(novel.kind, LeaderboardKind.book);
+      expect(novel.refs, <String>[
+        'bgm:42',
+        'isbn:9784040000015',
+        't:novel|作者',
+      ]);
+      expect(novel.finished, isTrue);
+      expect(novel.finishedAt, done.millisecondsSinceEpoch);
+      expect(novel.finishedDate, '2026-09-03');
+      expect(novel.chars, 150);
+      expect(novel.ms, 100);
+      expect(novel.author, '作者');
+      expect(m['book:Novel']!.localCoverPath, '/c/novel.jpg');
+
+      final ShelfEntryUpload online = m['book:Online']!.upload;
+      expect(online.kind, LeaderboardKind.manga);
+      expect(online.finished, isFalse);
+      expect(online.refs.first, 'src:123:/manga/9');
+      expect(online.coverUrl, 'https://img.example/9.jpg');
+      // 互联对端的作品 key 是对端本机身份，不产 src。
+      expect(
+        m['book:Peer']!.upload.refs.where((String r) => r.startsWith('src:')),
+        isEmpty,
+      );
+      expect(m['book:Web Novel']!.upload.refs.first, 'src:syosetu:n1234ab/');
+
+      // daily：全部种类按日求和（本 Profile）。
+      expect(
+        shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+        <String>['2026-09-01=100', '2026-09-02=57'],
+      );
+    });
+  });
+
+  group('视频', () {
+    test('作品单位：剧 = 刮削合集、电影 = 单片、无作品按主合集、再无按单片', () async {
+      final DateTime d1 = DateTime(2026, 8, 1, 12);
+      final DateTime d2 = DateTime(2026, 8, 5, 12);
+      // 剧：合集 c1 有刮削作品，两集都看完。
+      await video('e1', completedAt: d1);
+      await video('e2', completedAt: d2);
+      // 电影：单片有刮削作品。
+      await video('movie', completedAt: d1, cover: '/c/movie.jpg');
+      // 无作品的合集：一集看完一集没看完 → 在读。
+      await video('p1', completedAt: d1);
+      await video('p2');
+      // 孤片：有活动。
+      await video('solo');
+      // 无活动也没看完：不纳入。
+      await video('idle');
+      final int c1 = await db
+          .into(db.mediaCollections)
+          .insert(
+            MediaCollectionsCompanion.insert(
+              name: '剧合集',
+              createdAt: 0,
+              coverPath: const Value<String?>('/c/show.jpg'),
+            ),
+          );
+      final int c2 = await db
+          .into(db.mediaCollections)
+          .insert(MediaCollectionsCompanion.insert(name: '播放列表', createdAt: 0));
+      for (final (int c, String uid) in <(int, String)>[
+        (c1, 'e1'),
+        (c1, 'e2'),
+        (c2, 'p1'),
+        (c2, 'p2'),
+      ]) {
+        await db
+            .into(db.mediaCollectionItems)
+            .insert(
+              MediaCollectionItemsCompanion.insert(
+                collectionId: c,
+                mediaType: 'video',
+                entryKey: uid,
+              ),
+            );
+      }
+      final int showWork = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              collectionId: Value<int?>(c1),
+              mediaType: 'tv',
+              title: 'ぼっち・ざ・ろっく！',
+              updatedAt: 0,
+            ),
+          );
+      final int movieWork = await db
+          .into(db.videoMetadataWorks)
+          .insert(
+            VideoMetadataWorksCompanion.insert(
+              bookUid: const Value<String?>('movie'),
+              mediaType: 'movie',
+              title: '映画',
+              updatedAt: 0,
+            ),
+          );
+      for (final (int w, String provider, String id) in <(int, String, String)>[
+        (showWork, 'anidb', '17330'),
+        (showWork, 'tmdb', '119100'),
+        (showWork, 'mal', '47917'),
+        (showWork, 'bangumi', '328609'),
+        (movieWork, 'tmdb', '555'),
+      ]) {
+        await db
+            .into(db.videoMetadataProviderIdentities)
+            .insert(
+              VideoMetadataProviderIdentitiesCompanion.insert(
+                identityKey: 'work:$w:$provider',
+                workId: Value<int?>(w),
+                provider: provider,
+                externalId: id,
+                updatedAt: 0,
+              ),
+            );
+      }
+      await db
+          .into(db.videoMetadataImages)
+          .insert(
+            VideoMetadataImagesCompanion.insert(
+              workId: Value<int?>(showWork),
+              provider: 'tmdb',
+              kind: 'cover',
+              position: const Value<int>(1),
+              remoteUrl: 'https://image.tmdb.org/t/p/w500/b.jpg',
+              updatedAt: 0,
+            ),
+          );
+      await db
+          .into(db.videoMetadataImages)
+          .insert(
+            VideoMetadataImagesCompanion.insert(
+              workId: Value<int?>(showWork),
+              provider: 'tmdb',
+              kind: 'cover',
+              remoteUrl: 'https://image.tmdb.org/t/p/w500/a.jpg',
+              updatedAt: 0,
+            ),
+          );
+      await segment('video', 'e1', date: '2026-08-01', chars: 30, ms: 1000);
+      await segment('video', 'e2', date: '2026-08-05', chars: 20, ms: 500);
+      await segment('video', 'solo', date: '2026-08-06', ms: 10);
+      // 播放列表：p1 有活动 → 整个单位在读（p2 没看完，不算读完）。
+      await segment('video', 'p1', date: '2026-08-06', ms: 10);
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(
+        m.keys,
+        unorderedEquals(<String>[
+          'video:c$c1',
+          'video:bmovie',
+          'video:c$c2',
+          'video:bsolo',
+        ]),
+      );
+
+      final LocalShelfEntry show = m['video:c$c1']!;
+      expect(show.upload.title, 'ぼっち・ざ・ろっく！');
+      expect(show.upload.refs, <String>[
+        'bgm:328609',
+        'anidb:17330',
+        'mal:47917',
+        'tmdb:tv:119100',
+        't:ぼっち・ざ・ろっく!|',
+      ]);
+      expect(show.upload.finished, isTrue);
+      expect(show.upload.finishedAt, d2.millisecondsSinceEpoch);
+      expect(show.upload.chars, 50);
+      expect(show.upload.ms, 1500);
+      expect(show.upload.coverUrl, 'https://image.tmdb.org/t/p/w500/a.jpg');
+      expect(show.localCoverPath, '/c/show.jpg');
+
+      final LocalShelfEntry movie = m['video:bmovie']!;
+      expect(movie.upload.refs.first, 'tmdb:movie:555');
+      expect(movie.upload.finished, isTrue);
+      expect(movie.localCoverPath, '/c/movie.jpg');
+
+      final ShelfEntryUpload playlist = m['video:c$c2']!.upload;
+      expect(playlist.finished, isFalse, reason: 'p2 没看完');
+      expect(playlist.title, '播放列表');
+
+      expect(m['video:bsolo']!.upload.finished, isFalse);
+    });
+  });
+
+  group('游戏', () {
+    test('玩过 = 读完（日期可未知）、在玩或有活动 = 在读、其余不纳入', () async {
+      final int doneAt = DateTime(2026, 7, 7, 8).millisecondsSinceEpoch;
+      Future<void> game(String id, int status, {int? completedAt}) => db
+          .into(db.galgames)
+          .insert(
+            GalgamesCompanion.insert(
+              id: id,
+              name: 'exe_$id',
+              exePath: 'C:/g/$id.exe',
+              workdir: 'C:/g',
+              addedAt: 0,
+              playStatus: Value<int>(status),
+              completedAt: Value<int?>(completedAt),
+              coverPath: Value<String?>('/c/$id.jpg'),
+              customDataJson: id == 'g1'
+                  ? const Value<String?>('{"developer":"自定义社"}')
+                  : const Value<String?>(null),
+            ),
+          );
+      await game('g1', 2, completedAt: doneAt);
+      await game('g2', 2);
+      await game('g3', 3);
+      await game('g4', 1);
+      await game('g5', 0);
+      await db
+          .into(db.galgameSources)
+          .insert(
+            GalgameSourcesCompanion.insert(
+              gameId: 'g1',
+              source: 'bgm',
+              externalId: const Value<String?>('1234'),
+              dataJson: jsonEncode(<String, Object?>{
+                'name': 'ゲーム',
+                'developer': 'bgm社',
+                'nsfw': true,
+                'coverUrl': 'https://lain.bgm.tv/pic/cover/l/x.jpg',
+              }),
+              fetchedAt: 0,
+            ),
+          );
+      await db
+          .into(db.galgameSources)
+          .insert(
+            GalgameSourcesCompanion.insert(
+              gameId: 'g1',
+              source: 'vndb',
+              externalId: const Value<String?>('v99'),
+              dataJson: jsonEncode(<String, Object?>{'developer': 'vndb社'}),
+              fetchedAt: 0,
+            ),
+          );
+      await db
+          .into(db.galgameSessions)
+          .insert(
+            GalgameSessionsCompanion.insert(
+              gameId: 'g5',
+              startMs: 0,
+              endMs: 60000,
+              durationSeconds: 60,
+              dateKey: '2026-07-01',
+              profileId: const Value<int>(profile),
+            ),
+          );
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(
+        m.keys,
+        unorderedEquals(<String>['game:g1', 'game:g2', 'game:g3', 'game:g5']),
+      );
+      final ShelfEntryUpload g1 = m['game:g1']!.upload;
+      expect(g1.refs, <String>['bgm:1234', 'vndb:v99', 't:ゲーム|自定义社']);
+      expect(g1.title, 'ゲーム');
+      expect(g1.author, '自定义社');
+      expect(g1.nsfw, isTrue);
+      expect(g1.coverUrl, 'https://lain.bgm.tv/pic/cover/l/x.jpg');
+      expect(g1.finishedAt, doneAt);
+      expect(g1.finishedDate, '2026-07-07');
+      expect(m['game:g1']!.localCoverPath, '/c/g1.jpg');
+
+      final ShelfEntryUpload g2 = m['game:g2']!.upload;
+      expect(g2.finished, isTrue);
+      expect(g2.finishedAt, isNull, reason: '玩过但日期未知');
+      expect(g2.title, 'exe_g2');
+
+      expect(m['game:g3']!.upload.finished, isFalse);
+      expect(m['game:g5']!.upload.ms, 60000);
+    });
+  });
+
+  test('每日字数只保留服务端窗口：最近 10 年到明天', () async {
+    await segment('book', 'x', date: '2016-09-28', chars: 1); // 超过 10 年
+    await segment('book', 'x', date: '2016-09-30', chars: 2);
+    await segment('book', 'x', date: '2026-09-29', chars: 3); // 明天（本地日可能早于 UTC）
+    await segment('book', 'x', date: '2026-10-01', chars: 4); // 坏时钟写下的未来日期
+    final LocalShelf shelf = await buildLocalShelf(
+      db,
+      profileId: profile,
+      now: DateTime(2026, 9, 28, 12),
+    );
+    expect(shelf.dailyFrom, '2016-09-29');
+    expect(
+      shelf.daily.map((DailyCharsUpload d) => '${d.date}=${d.chars}'),
+      <String>['2016-09-30=2', '2026-09-29=3'],
+    );
+  });
+}

@@ -190,17 +190,71 @@ void main() {
     });
   });
 
-  group('register', () {
-    test('body 带公钥与昵称、不带 X-Fushi-Account、签名可验；201 成功', () async {
+  group('邮箱验证码 / 注册 / 登录', () {
+    test('requestEmailCode 不签名、body 形状、202 成功', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{'sent': true}, 202),
+        identity: _id,
+      );
+      await h.client.requestEmailCode(
+        email: ' a@b.example ',
+        purpose: 'register',
+        lang: 'ja',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.method, 'POST');
+      expect(r.url.path, '/v1/email/code');
+      expect(r.headers.containsKey('X-Fushi-Sig'), isFalse);
+      expect(r.headers.containsKey('X-Fushi-Account'), isFalse);
+      expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, dynamic>{
+        'email': 'a@b.example',
+        'purpose': 'register',
+        'lang': 'ja',
+      });
+    });
+
+    test('requestEmailCode 本机拒绝坏邮箱 / 坏 purpose，不发请求', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{'sent': true}, 202),
+      );
+      await expectLater(
+        h.client.requestEmailCode(email: 'nope', purpose: 'register'),
+        throwsArgumentError,
+      );
+      await expectLater(
+        h.client.requestEmailCode(email: 'a@b.cd', purpose: 'x'),
+        throwsArgumentError,
+      );
+      expect(h.requests, isEmpty);
+    });
+
+    test('isPlausibleLeaderboardEmail', () {
+      expect(isPlausibleLeaderboardEmail('a@b.cd'), isTrue);
+      expect(
+        isPlausibleLeaderboardEmail(' user.name+x@mail.example.org '),
+        isTrue,
+      );
+      expect(isPlausibleLeaderboardEmail('a@b'), isFalse);
+      expect(isPlausibleLeaderboardEmail('a b@c.de'), isFalse);
+      expect(isPlausibleLeaderboardEmail('@c.de'), isFalse);
+      expect(isPlausibleLeaderboardEmail(''), isFalse);
+    });
+
+    test('register：body 带公钥/昵称/邮箱/验证码、不带 X-Fushi-Account、签名可验', () async {
       final _Harness h = _Harness(
         (http.Request r) async => _json(<String, dynamic>{
           ..._account(_id.accountId),
           'visibility': 'public',
           'createdAt': 99,
+          'emailVerified': true,
         }, 201),
         identity: _id,
       );
-      final LeaderboardSelf s = await h.client.register('ユーザー');
+      final LeaderboardSelf s = await h.client.register(
+        nickname: 'ユーザー',
+        email: 'a@b.cd',
+        code: ' 123456 ',
+      );
       final http.Request r = h.requests.single;
       expect(r.method, 'POST');
       expect(r.url.path, '/v1/register');
@@ -209,10 +263,58 @@ void main() {
       expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, dynamic>{
         'pubkey': _id.pubkeyBase64Url,
         'nickname': 'ユーザー',
+        'email': 'a@b.cd',
+        'code': '123456',
       });
       expect(_verifySigned(r, _id), isTrue);
       expect(s.createdAt, 99);
       expect(s.shelfCount, isNull);
+      expect(s.emailVerified, isTrue);
+    });
+
+    test('login：新设备钥匙自签；返回的账户 id 可与本机钥匙 id 不同', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async => _json(<String, dynamic>{
+          ..._account('RealAccount12345'),
+          'visibility': 'friends',
+          'createdAt': 5,
+          'emailVerified': true,
+        }),
+        identity: _id,
+      );
+      final LeaderboardSelf s = await h.client.login(
+        email: 'a@b.cd',
+        code: '654321',
+      );
+      final http.Request r = h.requests.single;
+      expect(r.url.path, '/v1/login');
+      expect(r.headers.containsKey('X-Fushi-Account'), isFalse);
+      expect(jsonDecode(utf8.decode(r.bodyBytes)), <String, dynamic>{
+        'pubkey': _id.pubkeyBase64Url,
+        'email': 'a@b.cd',
+        'code': '654321',
+      });
+      expect(_verifySigned(r, _id), isTrue);
+      expect(s.account.id, 'RealAccount12345');
+      expect(s.account.id, isNot(_id.accountId));
+    });
+
+    test('login 错误码透出（404 no_account）', () async {
+      final _Harness h = _Harness(
+        (http.Request r) async =>
+            _json(<String, dynamic>{'error': 'no_account'}, 404),
+        identity: _id,
+      );
+      await expectLater(
+        h.client.login(email: 'a@b.cd', code: '1'),
+        throwsA(
+          isA<LeaderboardApiException>().having(
+            (LeaderboardApiException e) => e.code,
+            'code',
+            'no_account',
+          ),
+        ),
+      );
     });
   });
 
@@ -433,6 +535,7 @@ void main() {
                 'wall': <Map<String, dynamic>>[_account('u2')],
               },
             ],
+            'next': 'cur2',
           });
         }
         return _json(<String, dynamic>{
@@ -452,6 +555,7 @@ void main() {
               'finishedDate': '2026-09-21',
             },
           ],
+          'next': null,
         });
       }, identity: _id);
 
@@ -470,8 +574,18 @@ void main() {
       expect(shelf.rows.single.finishedAt, isNull);
       expect(shelf.rows.single.wall.single.id, 'u2');
       expect(shelf.rows.single.work.kind, LeaderboardKind.manga);
+      expect(h.requests[1].url.queryParameters.containsKey('cursor'), isFalse);
+      expect(h.requests[1].url.queryParameters.containsKey('offset'), isFalse);
+      expect(shelf.next, 'cur2');
+      await h.client.userShelf('u1', cursor: shelf.next);
+      expect(h.requests[2].url.queryParameters['cursor'], 'cur2');
 
-      final WorkPage work = await h.client.work('w1', limit: 5);
+      final WorkPage work = await h.client.work('w1', limit: 5, cursor: 'c9');
+      expect(h.requests[3].url.queryParameters['cursor'], 'c9');
+      expect(h.requests[3].url.queryParameters['limit'], '5');
+      expect(work.next, isNull);
+      expect(card.rankComputedAt, isNull);
+      expect(() => h.client.work('w1', limit: 51), throwsArgumentError);
       expect(work.readers, 4);
       expect(work.rows.single.finishedDate, '2026-09-21');
       expect(

@@ -112,12 +112,18 @@ class LeaderboardAccount {
 }
 
 /// 自己的账户（account.js `selfView`）。[shelfCount] 是服务端当前书架行数（旧服务端不给 = null）。
+///
+/// `account.id` 是**服务端账户 id**：换设备邮箱登录后它不再等于本机钥匙推出来的
+/// `LeaderboardIdentity.accountId`（后者只是设备钥匙 id）。分享链接与「是不是我」
+/// 一律用这里的 id。
 class LeaderboardSelf {
   const LeaderboardSelf({
     required this.account,
     required this.visibility,
     required this.createdAt,
     this.shelfCount,
+    this.emailVerified = false,
+    this.uploadDevice,
   });
 
   factory LeaderboardSelf.fromJson(JsonMap j) => LeaderboardSelf(
@@ -125,6 +131,8 @@ class LeaderboardSelf {
     visibility: _str(j['visibility']),
     createdAt: _int(j['createdAt']),
     shelfCount: _intOrNull(j['shelfCount']),
+    emailVerified: j['emailVerified'] == true,
+    uploadDevice: j['uploadDevice'] as bool?,
   );
 
   final LeaderboardAccount account;
@@ -133,12 +141,18 @@ class LeaderboardSelf {
   final String visibility;
   final int createdAt;
   final int? shelfCount;
+  final bool emailVerified;
+
+  /// 本机钥匙是否为本账户的「上传设备」（每账户只有一台能上传书架）；旧服务端不给 = null。
+  final bool? uploadDevice;
 
   JsonMap toJson() => <String, dynamic>{
     ...account.toJson(),
     'visibility': visibility,
     'createdAt': createdAt,
     if (shelfCount != null) 'shelfCount': shelfCount,
+    'emailVerified': emailVerified,
+    if (uploadDevice != null) 'uploadDevice': uploadDevice,
   };
 }
 
@@ -217,12 +231,15 @@ class RankRow {
 }
 
 /// GET /v1/rank。[from] = 窗口起始日 `YYYY-MM-DD`（总榜为 null）；[me] 只在带签名时有。
+/// [computedAt] = 榜单快照生成时刻（毫秒）；null = 快照还没生成（榜单为空），UI 显示
+/// 「榜单生成中」。
 class RankPage {
   const RankPage({
     required this.metric,
     required this.window,
     required this.scope,
     required this.from,
+    this.computedAt,
     required this.total,
     required this.me,
     required this.rows,
@@ -233,6 +250,7 @@ class RankPage {
     window: LeaderboardWindow.fromWire(j['window']),
     scope: LeaderboardScope.fromWire(j['scope']),
     from: j['from'] as String?,
+    computedAt: _intOrNull(j['computedAt']),
     total: _int(j['total']),
     me: j['me'] == null ? null : UserStanding.fromJson(_map(j['me'])),
     rows: _list(j['rows'], RankRow.fromJson),
@@ -242,6 +260,7 @@ class RankPage {
   final LeaderboardWindow window;
   final LeaderboardScope scope;
   final String? from;
+  final int? computedAt;
   final int total;
   final UserStanding? me;
   final List<RankRow> rows;
@@ -251,6 +270,7 @@ class RankPage {
     'window': window.wire,
     'scope': scope.wire,
     'from': from,
+    'computedAt': computedAt,
     'total': total,
     'me': me?.toJson(),
     'rows': rows.map((RankRow r) => r.toJson()).toList(),
@@ -281,12 +301,13 @@ class PopularWorkRow {
   };
 }
 
-/// GET /v1/works/popular。
+/// GET /v1/works/popular。[computedAt] 同 [RankPage.computedAt]（null = 生成中）。
 class PopularPage {
   const PopularPage({
     required this.window,
     required this.kind,
     required this.from,
+    this.computedAt,
     required this.rows,
   });
 
@@ -294,18 +315,21 @@ class PopularPage {
     window: LeaderboardWindow.fromWire(j['window']),
     kind: j['kind'] == null ? null : LeaderboardKind.fromWire(j['kind']),
     from: j['from'] as String?,
+    computedAt: _intOrNull(j['computedAt']),
     rows: _list(j['rows'], PopularWorkRow.fromJson),
   );
 
   final LeaderboardWindow window;
   final LeaderboardKind? kind;
   final String? from;
+  final int? computedAt;
   final List<PopularWorkRow> rows;
 
   JsonMap toJson() => <String, dynamic>{
     'window': window.wire,
     'kind': kind?.wire,
     'from': from,
+    'computedAt': computedAt,
     'rows': rows.map((PopularWorkRow r) => r.toJson()).toList(),
   };
 }
@@ -318,6 +342,7 @@ class UserCard {
     required this.firstRecordDate,
     required this.visibility,
     required this.shelfVisible,
+    this.rankComputedAt,
     required this.stats,
   });
 
@@ -327,6 +352,7 @@ class UserCard {
     firstRecordDate: j['firstRecordDate'] as String?,
     visibility: _str(j['visibility']),
     shelfVisible: j['shelfVisible'] == true,
+    rankComputedAt: _intOrNull(j['rankComputedAt']),
     stats: Map<String, UserStanding>.unmodifiable(<String, UserStanding>{
       for (final MapEntry<String, dynamic> e in _map(
         j['stats'] ?? const <String, dynamic>{},
@@ -340,6 +366,9 @@ class UserCard {
   final String? firstRecordDate;
   final String visibility;
   final bool shelfVisible;
+
+  /// [stats] 里名次所依据的榜单快照时刻；null = 快照还没生成（名次都为 null）。
+  final int? rankComputedAt;
   final Map<String, UserStanding> stats;
 
   /// 取某指标（缺失 = 值 0、未上榜）。
@@ -352,6 +381,7 @@ class UserCard {
     'firstRecordDate': firstRecordDate,
     'visibility': visibility,
     'shelfVisible': shelfVisible,
+    'rankComputedAt': rankComputedAt,
     'stats': <String, dynamic>{
       for (final MapEntry<String, UserStanding> e in stats.entries)
         e.key: e.value.toJson(),
@@ -401,28 +431,33 @@ class ShelfItem {
   };
 }
 
-/// GET /v1/users/:id/shelf。[status] = `finished` | `reading`。
+/// GET /v1/users/:id/shelf。[status] = `finished` | `reading`。[next] = 下一页游标
+/// （原样传回 `userShelf(cursor:)`）；null = 没有更多。
 class ShelfPage {
   const ShelfPage({
     required this.account,
     required this.status,
     required this.rows,
+    this.next,
   });
 
   factory ShelfPage.fromJson(JsonMap j) => ShelfPage(
     account: LeaderboardAccount.fromJson(_map(j['account'])),
     status: _str(j['status']),
     rows: _list(j['rows'], ShelfItem.fromJson),
+    next: j['next'] as String?,
   );
 
   final LeaderboardAccount account;
   final String status;
   final List<ShelfItem> rows;
+  final String? next;
 
   JsonMap toJson() => <String, dynamic>{
     'account': account.toJson(),
     'status': status,
     'rows': rows.map((ShelfItem r) => r.toJson()).toList(),
+    'next': next,
   };
 }
 
@@ -450,28 +485,33 @@ class WorkReader {
   };
 }
 
-/// GET /v1/works/:id。[readers] = 读完人数（全体未隐藏账户）；[rows] 只含观看者可见的读者。
+/// GET /v1/works/:id。[readers] = 读完人数（全体未隐藏账户）；[rows] 只含观看者可见的读者；
+/// [next] = 下一页游标，null = 没有更多。
 class WorkPage {
   const WorkPage({
     required this.work,
     required this.readers,
     required this.rows,
+    this.next,
   });
 
   factory WorkPage.fromJson(JsonMap j) => WorkPage(
     work: LeaderboardWork.fromJson(_map(j['work'])),
     readers: _int(j['readers']),
     rows: _list(j['rows'], WorkReader.fromJson),
+    next: j['next'] as String?,
   );
 
   final LeaderboardWork work;
   final int readers;
   final List<WorkReader> rows;
+  final String? next;
 
   JsonMap toJson() => <String, dynamic>{
     'work': work.toJson(),
     'readers': readers,
     'rows': rows.map((WorkReader r) => r.toJson()).toList(),
+    'next': next,
   };
 }
 

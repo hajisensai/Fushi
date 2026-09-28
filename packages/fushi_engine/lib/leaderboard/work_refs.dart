@@ -1,8 +1,14 @@
 // 跨用户作品匹配键 WorkRef（设计 §3.3；服务端解析见 services/leaderboard/src/shelf.js）。
 //
-// 一个条目上报一组键，按优先级 bgm → isbn → vndb → tmdb → anidb → src → t，每个命名空间
-// 至多一个。服务端任一键命中已有作品即归入同一 work，所以弱键 `t:`（标题|作者）
+// 一个条目上报一组键，按优先级 bgm → isbn → vndb → anidb → mal → tmdb → src → t，每个
+// 命名空间至多一个。服务端任一键命中已有作品即归入同一 work，所以弱键 `t:`（标题|作者）
 // 的归一化必须对「同一本书的常见写法差异」稳定，又不能把不同作品压成同一个键。
+//
+// ISBN 规范化只有一份（`fushi_engine/epub/isbn.dart`），这里 re-export 给调用方。
+
+import 'package:fushi_engine/epub/isbn.dart';
+
+export 'package:fushi_engine/epub/isbn.dart' show normalizeIsbn13;
 
 /// 服务端 REF_RE：`<ns>:<body>`，body 为 1–256 个 UTF-16 码元且不含 U+0000–U+001F。
 const int _maxRefBody = 256;
@@ -61,37 +67,6 @@ String normalizeWorkTitleKey(String s) {
   return t.toLowerCase().replaceAll(_whitespace, '');
 }
 
-/// ISBN-10 / ISBN-13（可带 `urn:isbn:` / `ISBN` 前缀、连字符、空格、全角数字）→ 13 位 ISBN。
-/// 校验位不对、长度不对或 13 位不是 978/979 开头时返回 null。
-String? normalizeIsbn13(String raw) {
-  String s = _foldFullwidthAscii(raw).trim().toLowerCase();
-  s = s.replaceFirst(RegExp(r'^(urn:)?isbn(-1[03])?:?'), '');
-  s = s.replaceAll(RegExp(r'[\s-]'), '').toUpperCase();
-  if (RegExp(r'^\d{13}$').hasMatch(s)) {
-    if (!s.startsWith('978') && !s.startsWith('979')) return null;
-    return _isbn13CheckDigit(s.substring(0, 12)) == s[12] ? s : null;
-  }
-  if (RegExp(r'^\d{9}[\dX]$').hasMatch(s)) {
-    int sum = 0;
-    for (int i = 0; i < 10; i++) {
-      final int d = s[i] == 'X' ? 10 : int.parse(s[i]);
-      sum += (10 - i) * d;
-    }
-    if (sum % 11 != 0) return null;
-    final String body = '978${s.substring(0, 9)}';
-    return '$body${_isbn13CheckDigit(body)}';
-  }
-  return null;
-}
-
-String _isbn13CheckDigit(String first12) {
-  int sum = 0;
-  for (int i = 0; i < 12; i++) {
-    sum += int.parse(first12[i]) * (i.isEven ? 1 : 3);
-  }
-  return '${(10 - sum % 10) % 10}';
-}
-
 /// `<ns>:<body>`；body 空、超长或含控制字符（服务端必 400）时返回 null。
 String? _ref(String ns, String? body) {
   final String v = (body ?? '').trim();
@@ -101,18 +76,22 @@ String? _ref(String ns, String? body) {
   return '$ns:$v';
 }
 
-/// 按优先级 bgm → isbn → vndb → tmdb → anidb → src → t 组装匹配键，每命名空间至多一个。
+/// 按优先级 bgm → isbn → vndb → anidb → mal → tmdb → src → t 组装匹配键，每命名空间
+/// 至多一个。
 ///
-/// - [isbn] 经 [normalizeIsbn13]，不合法的直接丢弃（错 ISBN 会把书并到别人的作品上）；
+/// - [isbn] 先把全角数字转半角，再经 [normalizeIsbn13]；不合法的直接丢弃（错 ISBN 会
+///   把书并到别人的作品上）；
 /// - [vndbId] 接受 `v123` 或 `123`，统一成 `v123`；
+/// - [malId] 是 MyAnimeList 作品 id（视频主源可选 MAL，Jikan 只是传输接口）；
 /// - [tmdbRef] 形如 `tv:123` / `movie:456`，原样使用；
 /// - `t:<norm(title)>|<norm(author)>`：标题归一化后为空则不产出。
 List<String> buildWorkRefs({
   String? bgmSubjectId,
   String? isbn,
   String? vndbId,
-  String? tmdbRef,
   String? anidbAid,
+  String? malId,
+  String? tmdbRef,
   String? sourceRef,
   required String title,
   String author = '',
@@ -128,15 +107,19 @@ List<String> buildWorkRefs({
   );
   return <String?>[
     _ref('bgm', bgmSubjectId),
-    _ref('isbn', isbn == null ? null : normalizeIsbn13(isbn)),
+    _ref(
+      'isbn',
+      isbn == null ? null : normalizeIsbn13(_foldFullwidthAscii(isbn)),
+    ),
     _ref(
       'vndb',
       vndb == null || vndb.isEmpty
           ? null
           : (vndb.startsWith('v') ? vndb : 'v$vndb'),
     ),
-    _ref('tmdb', tmdbRef),
     _ref('anidb', anidbAid),
+    _ref('mal', malId),
+    _ref('tmdb', tmdbRef),
     _ref('src', sourceRef),
     titleKey.isEmpty ? null : _ref('t', '$titleKey|$authorKey'),
   ].whereType<String>().toList(growable: false);

@@ -1,7 +1,9 @@
 // 排行榜 Worker 的 HTTP 客户端（路由表：services/leaderboard/src/worker.js 文件头）。
 //
 // 签名：有 [LeaderboardIdentity] 时，每个请求（读也签，服务端按观看者身份套好友 / 屏蔽 /
-// 「我的名次」）都带 X-Fushi-Account / X-Fushi-Time / X-Fushi-Sig；签名串见
+// 「我的名次」）都带 X-Fushi-Account / X-Fushi-Time / X-Fushi-Sig（例外：邮箱验证码请求
+// 不签；注册 / 登录自签但不带 X-Fushi-Account）。X-Fushi-Account 发的是本机**设备钥匙 id**
+// （sha256(spki) 前 16 位），服务端据此查所属账户——换设备登录后它与账户 id 不同。签名串见
 // leaderboard_signing.dart。写请求服务端按签名串哈希去重，所以同一客户端连发两个同内容
 // 请求必须错开时刻：签名时刻取 max(clock, 上次 + 1)，严格单调。
 //
@@ -37,7 +39,19 @@ const int kLeaderboardMaxPut = 500;
 const int kLeaderboardMaxRemove = 500;
 const int kLeaderboardMaxDaily = 400;
 
+/// 游标分页接口（用户书架 / 作品读者）单页上限。
+const int kLeaderboardMaxPageLimit = 50;
+
 const String _json = 'application/json; charset=utf-8';
+
+final RegExp _emailShape = RegExp(r'^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$');
+
+/// 客户端的基本邮箱形状校验（服务端另有权威校验）：`local@domain.tld`、无空白、
+/// 总长 ≤ 254。给 UI 做即时提示用，不做 DNS / 国际化域名细判。
+bool isPlausibleLeaderboardEmail(String email) {
+  final String e = email.trim();
+  return e.length <= 254 && _emailShape.hasMatch(e);
+}
 
 class LeaderboardClient {
   LeaderboardClient({
@@ -62,8 +76,38 @@ class LeaderboardClient {
 
   // ---- 账户 ----
 
-  /// 注册（幂等：同一把钥匙重复注册返回已有账户，200/201 都算成功）。
-  Future<LeaderboardSelf> register(String nickname) async {
+  /// 请求邮箱验证码（[purpose] = `register` | `login`；[lang] = `zh` | `en` | `ja`）。
+  /// 不签名；为防探测，服务端不论邮箱是否存在都回 202。邮箱形状不对抛 [ArgumentError]
+  /// （服务端同样校验，400 `bad_email`）。
+  Future<void> requestEmailCode({
+    required String email,
+    required String purpose,
+    String? lang,
+  }) async {
+    final String normalized = _requireEmail(email);
+    if (purpose != 'register' && purpose != 'login') {
+      throw ArgumentError.value(purpose, 'purpose', 'register | login');
+    }
+    await _send(
+      'POST',
+      '/v1/email/code',
+      bytes: _encodeJson(<String, dynamic>{
+        'email': normalized,
+        'purpose': purpose,
+        if (lang != null) 'lang': lang,
+      }),
+      contentType: _json,
+      signed: false,
+    );
+  }
+
+  /// 用邮箱验证码注册（幂等：同一把钥匙重复注册返回已有账户，200/201 都算成功）。
+  /// 用本机钥匙自签，不带 X-Fushi-Account（账户还不存在，公钥在 body 里）。
+  Future<LeaderboardSelf> register({
+    required String nickname,
+    required String email,
+    required String code,
+  }) async {
     final LeaderboardIdentity id = _requireIdentity();
     final JsonMap j = await _sendJson(
       'POST',
@@ -71,8 +115,29 @@ class LeaderboardClient {
       body: <String, dynamic>{
         'pubkey': id.pubkeyBase64Url,
         'nickname': nickname,
+        'email': _requireEmail(email),
+        'code': code.trim(),
       },
-      // 注册时账户还不存在：公钥在 body 里，不带 X-Fushi-Account。
+      withAccount: false,
+    );
+    return LeaderboardSelf.fromJson(j);
+  }
+
+  /// 换设备登录：把本机（新）钥匙绑到该邮箱的已有账户上。返回的 [LeaderboardSelf]
+  /// 的 `account.id` 是**真实账户 id**，不再等于本机钥匙推出来的 id。
+  Future<LeaderboardSelf> login({
+    required String email,
+    required String code,
+  }) async {
+    final LeaderboardIdentity id = _requireIdentity();
+    final JsonMap j = await _sendJson(
+      'POST',
+      '/v1/login',
+      body: <String, dynamic>{
+        'pubkey': id.pubkeyBase64Url,
+        'email': _requireEmail(email),
+        'code': code.trim(),
+      },
       withAccount: false,
     );
     return LeaderboardSelf.fromJson(j);
@@ -127,9 +192,14 @@ class LeaderboardClient {
 
   /// 增量上报。[reset] = 先清空本账户书架与每日字数；[put] 每条是该作品合并后的完整值；
   /// [remove] 是要删掉的 workId；[daily] 按日期覆盖（chars 0 = 删除该日）。
-  /// 超过单批上限抛 [ArgumentError]。
+  /// [claim] = 由本设备接管上传（必须同时 [reset]）。超过单批上限、或 claim 未带 reset
+  /// 抛 [ArgumentError]。
+  ///
+  /// 409 `upload_owned_by_other_device` = 上传设备是另一台；409 `conflict` = 并发写入
+  /// 改了书架版本、本批已整体回滚（可原样重发）。
   Future<ShelfUploadResult> uploadShelfDelta({
     bool reset = false,
+    bool claim = false,
     List<ShelfEntryUpload> put = const <ShelfEntryUpload>[],
     List<String> remove = const <String>[],
     List<DailyCharsUpload> daily = const <DailyCharsUpload>[],
@@ -138,11 +208,15 @@ class LeaderboardClient {
     _checkBatch('put', put.length, kLeaderboardMaxPut);
     _checkBatch('remove', remove.length, kLeaderboardMaxRemove);
     _checkBatch('daily', daily.length, kLeaderboardMaxDaily);
+    if (claim && !reset) {
+      throw ArgumentError.value(claim, 'claim', 'requires reset');
+    }
     final JsonMap j = await _sendJson(
       'POST',
       '/v1/shelf',
       body: <String, dynamic>{
         'reset': reset,
+        if (claim) 'claim': true,
         'put': put.map((ShelfEntryUpload e) => e.toJson()).toList(),
         'remove': remove,
         'daily': daily.map((DailyCharsUpload d) => d.toJson()).toList(),
@@ -218,12 +292,13 @@ class LeaderboardClient {
       UserCard.fromJson(await _sendJson('GET', '/v1/users/${_segment(id)}'));
 
   /// [status] = `finished` | `reading`。书架对观看者不可见时抛 403 `shelf_private`。
+  /// 游标分页：[cursor] 取上一页的 [ShelfPage.next]（首页省略），`next == null` = 没有更多。
   Future<ShelfPage> userShelf(
     String id, {
     String status = 'finished',
     LeaderboardKind? kind,
-    int limit = 50,
-    int offset = 0,
+    int limit = kLeaderboardMaxPageLimit,
+    String? cursor,
   }) async {
     final JsonMap j = await _sendJson(
       'GET',
@@ -231,18 +306,26 @@ class LeaderboardClient {
       query: <String, String>{
         'status': status,
         if (kind != null) 'kind': kind.wire,
-        'limit': '$limit',
-        'offset': '$offset',
+        'limit': '${_cursorLimit(limit)}',
+        if (cursor != null) 'cursor': cursor,
       },
     );
     return ShelfPage.fromJson(j);
   }
 
-  Future<WorkPage> work(String id, {int limit = 50, int offset = 0}) async {
+  /// 作品页（读者列表游标分页，同 [userShelf]）。
+  Future<WorkPage> work(
+    String id, {
+    int limit = kLeaderboardMaxPageLimit,
+    String? cursor,
+  }) async {
     final JsonMap j = await _sendJson(
       'GET',
       '/v1/works/${_segment(id)}',
-      query: <String, String>{'limit': '$limit', 'offset': '$offset'},
+      query: <String, String>{
+        'limit': '${_cursorLimit(limit)}',
+        if (cursor != null) 'cursor': cursor,
+      },
     );
     return WorkPage.fromJson(j);
   }
@@ -335,6 +418,21 @@ class LeaderboardClient {
     return id;
   }
 
+  static String _requireEmail(String email) {
+    final String e = email.trim();
+    if (!isPlausibleLeaderboardEmail(e)) {
+      throw ArgumentError.value(email, 'email', 'not an email address');
+    }
+    return e;
+  }
+
+  static int _cursorLimit(int limit) {
+    if (limit < 1 || limit > kLeaderboardMaxPageLimit) {
+      throw ArgumentError.value(limit, 'limit', '1..$kLeaderboardMaxPageLimit');
+    }
+    return limit;
+  }
+
   static void _checkBatch(String name, int n, int max) {
     if (n > max) {
       throw ArgumentError.value(n, name, 'at most $max per request');
@@ -408,6 +506,7 @@ class LeaderboardClient {
     Uint8List? bytes,
     String? contentType,
     bool withAccount = true,
+    bool signed = true,
   }) async {
     final Uri url = _endpoint(path, query);
     final List<int> body = bytes ?? const <int>[];
@@ -415,7 +514,7 @@ class LeaderboardClient {
     if (bytes != null) req.bodyBytes = bytes;
     if (contentType != null) req.headers['Content-Type'] = contentType;
     req.headers['Accept'] = 'application/json';
-    final LeaderboardIdentity? id = _identity;
+    final LeaderboardIdentity? id = signed ? _identity : null;
     if (id != null) {
       final int time = _nextSignTime();
       final String pathWithQuery = url.hasQuery

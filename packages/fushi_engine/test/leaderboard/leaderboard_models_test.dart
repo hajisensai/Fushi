@@ -127,6 +127,7 @@ void main() {
         'window': 'all',
         'scope': 'global',
         'from': null,
+        'computedAt': null,
         'total': 1,
         'me': null,
         'rows': <Map<String, dynamic>>[
@@ -144,6 +145,7 @@ void main() {
       };
       final RankPage p = RankPage.fromJson(j);
       expect(p.me, isNull);
+      expect(p.computedAt, isNull, reason: '快照还没生成 → UI 显示「榜单生成中」');
       expect(p.rows.single.account.tag, 'N#0007');
       expect(p.toJson(), j);
     });
@@ -166,6 +168,26 @@ void main() {
       });
       expect(s.shelfCount, isNull);
       expect(s.toJson().containsKey('shelfCount'), isFalse);
+      expect(s.emailVerified, isFalse);
+      expect(s.uploadDevice, isNull);
+    });
+
+    test('LeaderboardSelf：emailVerified 往返', () {
+      final Map<String, dynamic> j = <String, dynamic>{
+        'id': 'a',
+        'nickname': 'N',
+        'discriminator': 0,
+        'avatar': null,
+        'visibility': 'public',
+        'createdAt': 1,
+        'shelfCount': 2,
+        'emailVerified': true,
+        'uploadDevice': false,
+      };
+      final LeaderboardSelf s = LeaderboardSelf.fromJson(j);
+      expect(s.emailVerified, isTrue);
+      expect(s.uploadDevice, isFalse);
+      expect(s.toJson(), j);
     });
   });
 }

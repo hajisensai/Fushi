@@ -63,7 +63,7 @@ Uint8List _bigIntToBytes(BigInt value, int length) {
 
 bool _validScalar(BigInt d) => d > BigInt.zero && d < _p256.n;
 
-/// 一把排行榜账户钥匙。不可变；私钥只在内存里，持久化由调用方负责（按 Profile 存偏好）。
+/// 一把排行榜账户钥匙。不可变；私钥只在内存里，持久化由调用方负责（app 按 Profile 存数据目录下的本机文件，不进偏好表 / 备份）。
 class LeaderboardIdentity {
   LeaderboardIdentity._(this._d, this._spki);
 
