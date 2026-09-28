@@ -82,6 +82,18 @@ void main() {
       );
     });
 
+    test('第三方备份导入只在设置里，不进书的快速导入区', () {
+      // 用户 2026-09-28：`.hoshi` 等第三方书库备份导入只保留设置 › 同步与
+      // 备份的「第三方导入」入口，书的导入页不再并排一个按钮。
+      expect(page, isNot(contains('t.hoshi_import_entry')));
+      expect(page, isNot(contains('ExternalReaderImportPage')));
+      expect(
+        _read('lib/src/sync/sync_settings_schema.dart'),
+        contains('ExternalReaderImportPage'),
+        reason: '设置里的入口必须还在',
+      );
+    });
+
     test('漫画接同一个共享 importFolder 流程', () {
       expect(manga, contains('.importFolder()'));
     });

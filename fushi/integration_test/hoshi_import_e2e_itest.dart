@@ -20,7 +20,7 @@ import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// 「从 Hoshi Reader 导入」真 app 端到端：真库、真 EpubImporter、真页面、真阅读器。
+/// 「第三方导入」（Hoshi Reader `.hoshi` 备份）真 app 端到端：真库、真 EpubImporter、真页面、真阅读器。
 ///
 /// 输入是一份 Hoshi Reader（iOS / Android）「Settings › Backup › Books」导出的
 /// `Books_*.hoshi`，外加一份由独立脚本从同一备份算出的期望值
