@@ -1,7 +1,7 @@
 ## BUG-2755 · 删除/更换来源后视频下载仍落旧位置
 - **报告**：2026-09-28（用户：删掉来源后下载仍落在旧位置；把订阅改到新来源后仍在旧位置下载。用户拍板：下载直接进来源目录，不再先落全局下载根再搬）
 - **真实性**：✅ 真 bug（沿代码路径确认，见下「根因」；行号均为 develop `3d5d1608ed2`）
-- **[x] ① 已修复** — `bcf5a464c0e`（分支 claude/video-dl-source-savepath）
+- **[x] ① 已修复** — `9f33cca37f5`（PR 分支 `pr/video-delete-download-source`；`116f7307c90` 同步 `media_sources_dialog_test` 的偏好装配与凭据守卫扫描面）
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_download_pipeline_service_test.dart`（group `BUG-2755 download save path follows the target source`，10 条）、`fushi/test/media/source_library/source_library_removal_test.dart`（8 条）、`fushi/test/media/video/download/video_download_subscription_service_test.dart`（「目标来源失效的旧任务恢复前改绑到订阅的当前来源」）、`fushi/test/media/torrent/download_save_root_test.dart`（group `BUG-2755 来源暂存目录`）、`fushi/test/torrent/qbittorrent_client_test.dart`（savepath 带 `autoTMM=false`）
 - **备注**：未真机验证（内置 libtorrent 显式 savePath 与远程 qB 路径映射只有单测/代码审查覆盖）；fushi_server 的来源重建后孤儿订阅重绑留作后续，见下。
 
