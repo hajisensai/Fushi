@@ -5781,5 +5781,6 @@
   "stat_range_next": "下一段",
   "stat_range_summary": "所选范围",
   "stat_range_active_days": "活跃天数",
-  "stat_range_calendar": "学习日历"
+  "stat_range_calendar": "学习日历",
+  "download_selection_already_queued": "这一项已在下载队列中。"
 }
