@@ -15,8 +15,8 @@ Cloudflare Worker + D1 + R2。设计与分期见
 
 | 资源 | 免费额度 | 本服务的保护 |
 |---|---|---|
-| Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒；`READ_LIMITER` 每 IP 每分钟 120 次；图片走边缘缓存 |
-| D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次）；读者数、行数、计分全部增量维护；每个读接口的读行数有界，与用户总数无关 |
+| Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
+| D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树 |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行 |
 | R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；**总配额 8 GiB**（超了 507）；删除即归还 |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
@@ -61,12 +61,12 @@ npx wrangler deploy
 | PATCH | `/v1/me` `{nickname?, visibility?}` | 签名·写 | 改资料 |
 | DELETE | `/v1/me` | 签名·写 | 删除账户与全部数据 |
 | PUT / DELETE | `/v1/me/avatar` | 签名·写 | 上传 / 删除头像 |
-| POST | `/v1/shelf` `{reset?, put ≤500, remove ≤500, daily ≤400}` | 签名·写 | 增量上报书架 → `{works, shelfCount}` |
+| POST | `/v1/shelf` `{reset?, claim?, put ≤500, remove ≤500, daily ≤400}` | 签名·写 | 增量上报书架 → `{works, shelfCount}`。同账户并发写 → 409 `conflict`（整批已回滚，重试即可）；每账户只有一台上传设备，别的设备 → 409 `upload_owned_by_other_device`，`reset + claim` 接管 |
 | PUT | `/v1/works/:id/cover` | 签名·写 | 缺封面的作品补缩略图 |
 | GET | `/v1/rank?metric&window&scope&limit&offset` | 可选 | 榜单 |
 | GET | `/v1/works/popular?window&kind&limit&offset` | — | 作品人气 |
-| GET | `/v1/works/:id?limit&offset` | 可选 | 作品页 |
-| GET | `/v1/users/:id` / `/v1/users/:id/shelf?status&kind&limit&offset` | 可选 | 用户卡片 / 书架 |
+| GET | `/v1/works/:id?limit&cursor` | 可选 | 作品页（读者列表游标分页，响应带 `next`） |
+| GET | `/v1/users/:id` / `/v1/users/:id/shelf?status&kind&limit&cursor` | 可选 | 用户卡片 / 书架（游标分页，响应带 `next`） |
 | GET | `/v1/friends` | 签名 | `{friends:[{account, since}], incoming:[{account, at}], outgoing:[{account, at}]}` |
 | POST | `/v1/friends/:id` | 签名·写 | 对方已申请 → `accepted`，否则建 `pending`；返回 `{state}`。自己 400、不存在/隐藏 404、任一方屏蔽 403 `blocked` |
 | DELETE | `/v1/friends/:id` | 签名·写 | 删好友 / 撤回 / 拒绝，204（不存在也 204） |
@@ -99,5 +99,6 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/reports/:id/resolve` | 标记已处理 |
 | POST | `/admin/api/accounts/:id` `{hidden}` | 隐藏 / 恢复账户 |
 | POST | `/admin/api/works/:id` `{title?, author?, nsfw?, clearCover?}` | 改作品（改标题/作者即锁定） |
+| POST | `/admin/api/snapshots/refresh` | 立刻重算榜单快照（部署后第一次、或不想等定时任务时） |
 | POST | `/admin/api/works/merge` `{from, into}` | 合并误拆的作品 |
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
