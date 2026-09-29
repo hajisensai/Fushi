@@ -9,7 +9,8 @@
 ///     `FloatingBallService`，并把前后台状态告诉它（前台时原生球隐藏，应用内球
 ///     开着就由本球接管）。
 ///  3. 外部查词入口（iOS App Intent / `fushi://lookup` 深链）：排队到 app 初始化
-///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）同样排队。
+///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）与「拍照
+///     查词」（开相机）同样排队。
 ///  4. 系统球上点「关闭」= 用户关掉了应用外悬浮球：同步关掉设置里的「应用外」开关，
 ///     两边始终一致（否则下次回到 Fushi 又会按开关把球拉起来）。
 library;
@@ -17,10 +18,12 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
+import 'package:fushi/src/floating_ball/camera_ocr_photo.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
@@ -31,6 +34,7 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/utils.dart';
+import 'package:image_picker/image_picker.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
 /// 识别器同时认拉丁字母与汉字。
@@ -43,6 +47,9 @@ final ValueNotifier<String?> pendingExternalLookup = ValueNotifier<String?>(
 
 /// Android 系统球「查词」：Fushi 已被拉到前台，等 app 就绪后打开查词页。
 final ValueNotifier<bool> pendingOpenLookupPage = ValueNotifier<bool>(false);
+
+/// Android 系统球「拍照查词」：Fushi 已被拉到前台，等 app 就绪后开相机。
+final ValueNotifier<bool> pendingCameraOcr = ValueNotifier<bool>(false);
 
 /// 从应用外交来一个要查的词（iOS App Intent、`fushi://lookup?word=`）。
 void deliverExternalLookup(String word) {
@@ -60,6 +67,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
       t.floating_ball_action_clipboard,
   FloatingBallGlobalAction.screenOcr.storageValue:
       t.floating_ball_action_screen_ocr,
+  FloatingBallGlobalAction.cameraOcr.storageValue:
+      t.floating_ball_action_camera_ocr,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
   'notification': t.floating_ball_notification,
@@ -104,12 +113,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _registry.addListener(_onChanged);
     pendingExternalLookup.addListener(_onChanged);
     pendingOpenLookupPage.addListener(_onChanged);
+    pendingCameraOcr.addListener(_onChanged);
     if (Platform.isIOS || Platform.isAndroid) {
       unawaited(
         FloatingBallChannel.installHandler(
           onLookup: deliverExternalLookup,
           onScreenOcrFinished: _onScreenOcrFinished,
           onOpenLookupPage: () => pendingOpenLookupPage.value = true,
+          onOpenCameraOcr: () => pendingCameraOcr.value = true,
           onSystemBallClosedByUser: _onSystemBallClosedByUser,
         ),
       );
@@ -122,6 +133,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _registry.removeListener(_onChanged);
     pendingExternalLookup.removeListener(_onChanged);
     pendingOpenLookupPage.removeListener(_onChanged);
+    pendingCameraOcr.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
     super.dispose();
   }
@@ -230,6 +242,16 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     });
   }
 
+  /// 系统球「拍照查词」：app 就绪后开相机（识别要用已初始化的词典查词）。
+  void _flushCameraOcr() {
+    if (!pendingCameraOcr.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingCameraOcr.value) return;
+      pendingCameraOcr.value = false;
+      unawaited(_cameraOcr());
+    });
+  }
+
   /// 外部查词：app 就绪后才交给查词弹窗（弹窗要用已初始化的词典）。
   void _flushExternalLookup() {
     final String? word = pendingExternalLookup.value;
@@ -318,6 +340,43 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       _toast(t.floating_ball_ocr_failed);
       return;
     }
+    await _recognizeAndPick(bytes, fit: ScreenOcrImageFit.window);
+  }
+
+  /// 拍照查词（Android / iOS）：系统相机拍一张 → 转正方向 → 系统 OCR → 选取页。
+  /// 走系统拍照 intent / UIImagePickerController，Android 不需要 CAMERA 运行时
+  /// 权限（manifest 没声明它，见 `AppModel.requestExternalStoragePermissions`）。
+  Future<void> _cameraOcr() async {
+    final XFile? photo;
+    try {
+      photo = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        maxWidth: kCameraOcrMaxSide.toDouble(),
+        maxHeight: kCameraOcrMaxSide.toDouble(),
+      );
+    } on PlatformException catch (error, stack) {
+      // iOS 拒绝过相机权限（camera_access_denied）、没有相机等。
+      ErrorLogService.instance.log('floating_ball.camera_ocr', error, stack);
+      _toast(t.floating_ball_camera_unavailable);
+      return;
+    }
+    if (photo == null) return; // 用户在相机里取消。
+    final Uint8List? bytes = await compute(
+      normalizeCameraOcrPhoto,
+      await photo.readAsBytes(),
+    );
+    if (bytes == null) {
+      _toast(t.floating_ball_ocr_failed);
+      return;
+    }
+    await _recognizeAndPick(bytes, fit: ScreenOcrImageFit.contain);
+  }
+
+  /// 送检图 → 系统 OCR → 全屏选取页（点字查词）。截屏与拍照共用。
+  Future<void> _recognizeAndPick(
+    Uint8List bytes, {
+    required ScreenOcrImageFit fit,
+  }) async {
     final SystemOcrPageResult result;
     try {
       result = await const MethodChannelSystemOcr().recognize(
@@ -353,7 +412,11 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
                 BuildContext context,
                 Animation<double> animation,
                 Animation<double> secondaryAnimation,
-              ) => ScreenOcrPickerPage(imageBytes: bytes!, result: result),
+              ) => ScreenOcrPickerPage(
+                imageBytes: bytes,
+                result: result,
+                fit: fit,
+              ),
         ),
       ),
     );
@@ -385,6 +448,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.floating_ball_action_screen_ocr,
           onPressed: () => unawaited(_screenOcr()),
         ),
+        FloatingBallGlobalAction.cameraOcr => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_camera_ocr'),
+          icon: Icons.photo_camera_outlined,
+          label: t.floating_ball_action_camera_ocr,
+          onPressed: () => unawaited(_cameraOcr()),
+        ),
       };
 
   /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
@@ -409,6 +478,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _attachPrefs(prefs);
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
+    _flushCameraOcr();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
     if (!prefs.floatingBallInApp || scene.hidesBall || _capturing) {

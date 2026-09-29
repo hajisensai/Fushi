@@ -128,7 +128,7 @@ bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
   };
 }
 
-/// 全局按钮按平台能力出现（截屏识字只有 Android / iOS）；专属按钮恒可配。
+/// 全局按钮按平台能力出现（截屏识字 / 拍照查词只有 Android / iOS）；专属按钮恒可配。
 bool _buttonAvailable(String id) {
   final FloatingBallGlobalAction? global = FloatingBallGlobalAction.fromStorage(
     id,
@@ -156,6 +156,7 @@ String _buttonLabel(FloatingBallScope scope, String id) {
         t.floating_ball_action_popup_lookup,
       FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
+      FloatingBallGlobalAction.cameraOcr => t.floating_ball_action_camera_ocr,
     };
   }
   if (scope == FloatingBallScope.reader) {
@@ -191,6 +192,7 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
         Icons.picture_in_picture_alt_outlined,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+      FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
     };
   }
   if (scope == FloatingBallScope.reader) {
