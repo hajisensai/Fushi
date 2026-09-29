@@ -1850,53 +1850,21 @@ extension _ReaderChrome on _ReaderFushiPageState {
     );
   }
 
-  /// 阅读器悬浮球（用户开关，默认关）：半透明停靠在正文视口边缘，点开把布局
-  /// 编辑器里拖进 [ReaderControlSlot.floatingBall] 槽的按钮在球正上方竖排展开，
-  /// 视口太矮一列放不下时向屏幕中央换列（出厂是有声书的上一句 / 播放暂停 / 下一句）。
-  ///
-  /// 首章加载后才出现；槽里此刻一颗可渲染的按钮都没有（例如只放了传输键而书没挂
-  /// 有声书）就不画球。活动范围是扣掉顶栏 / 底栏 / 状态行预留后的正文视口，与焦点
-  /// 环用同一组 inset（[_readerTopOffset] / [_readerBottomReserve]），所以永远压
-  /// 不到 chrome。排在底栏之前挂载：悬浮底栏短暂唤出时盖在球上，词典弹层同理。
-  ///
-  /// 全局悬浮球开着时（docs/specs/2026-09-28-floating-ball.md）不画本球，改把
-  /// 同一槽里的按钮登记成场景按钮，由根上的全局球展示——同屏两颗球只会互相遮挡。
-  Widget _buildReaderFloatingBall() {
-    final ReaderFushiSource src = ReaderFushiSource.instance;
-    if (appModel.prefsRepo.floatingBallMode
-        .effectiveOn(isAndroid: Platform.isAndroid)
-        .showsInAppBall) {
-      return FloatingBallScene(
-        actions: _hasEverLoaded
-            ? _readerControlActionsIn(ReaderControlSlot.floatingBall)
-            : const <ReaderHeaderAction>[],
-      );
-    }
-    if (!_hasEverLoaded || !src.readerFloatingBall) {
-      return const SizedBox.shrink();
-    }
-    final List<ReaderHeaderAction> actions =
-        _readerControlActionsIn(ReaderControlSlot.floatingBall);
-    if (actions.isEmpty) return const SizedBox.shrink();
-    final Size window = MediaQuery.sizeOf(context);
-    final EdgeInsets viewPadding = MediaQuery.viewPaddingOf(context);
-    final Rect viewport = Rect.fromLTRB(
-      viewPadding.left,
-      _lyricsMode ? _lyricsTopReserve : _readerTopOffset,
-      window.width - viewPadding.right,
-      window.height - _readerBottomReserve,
-    );
-    return ReaderFloatingBall(
-      key: const ValueKey<String>('fushi_reader_floating_ball'),
-      viewport: viewport,
-      actions: actions,
-      dock: src.readerFloatingBallDock,
-      verticalFraction: src.readerFloatingBallVerticalFraction,
-      backgroundColor: _themeBackgroundColor(),
-      foregroundColor: _themeTextColor(),
-      animate: !appModel.einkMode,
-      onDockChanged: (ReaderFloatingBallDock dock, double fraction) =>
-          unawaited(src.setReaderFloatingBallPosition(dock, fraction)),
+  /// 悬浮球的阅读器场景按钮（docs/specs/2026-09-28-floating-ball.md）：按钮布局
+  /// 里的每颗按钮（书名除外）都能放进球，放哪几颗由 设置 → 悬浮球 → 阅读器 决定
+  /// （出厂是有声书的上一句 / 播放暂停 / 下一句），执行体与顶栏 / 底栏同一个
+  /// [_readerControlAction]。首章加载前不给按钮；此刻渲染不了的按钮（例如书没挂
+  /// 有声书时的传输键）不登记，宿主就跳过它。球本身画在根上的应用内悬浮球宿主里。
+  Widget _buildReaderFloatingBallScene() {
+    return FloatingBallScene(
+      scope: FloatingBallScope.reader,
+      actions: <String, ReaderHeaderAction>{
+        if (_hasEverLoaded)
+          for (final ReaderControlItem item in ReaderControlItem.values)
+            if (item != ReaderControlItem.title &&
+                _shouldRenderReaderControl(item))
+              item.storageValue: _readerControlAction(item),
+      },
     );
   }
 

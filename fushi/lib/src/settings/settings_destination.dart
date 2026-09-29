@@ -5,6 +5,9 @@ import 'package:fushi/src/settings/settings_context.dart';
 
 enum SettingsDestinationId {
   appearance,
+  // 「悬浮球」一级分类：应用内 / 应用外开关与各场景按钮的唯一入口
+  // （settings_schema_floating_ball.dart）。此前散在查词页与阅读页两处。
+  floatingBall,
   profiles,
   reading,
   // 「漫画」一级分类：漫画阅读器的观看偏好（方向/缩放/翻页）+ 漫画 OCR。原先

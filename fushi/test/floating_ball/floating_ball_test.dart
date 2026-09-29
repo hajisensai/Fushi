@@ -1,71 +1,87 @@
+import 'package:drift/drift.dart' show DatabaseConnection;
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
+import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
+import 'package:fushi_core/fushi_core.dart';
 
 ReaderHeaderAction _action(String label, {IconData icon = Icons.add}) =>
     ReaderHeaderAction(icon: icon, label: label, onPressed: () {});
 
+const List<String> _globals = <String>['lookup', 'clipboard', 'screen_ocr'];
+
 void main() {
-  group('FloatingBallMode', () {
-    test('未知 / 空值回退到关闭', () {
-      expect(FloatingBallMode.fromStorage(''), FloatingBallMode.off);
-      expect(FloatingBallMode.fromStorage('bogus'), FloatingBallMode.off);
-      expect(FloatingBallMode.fromStorage('system'), FloatingBallMode.system);
+  group('FloatingBallScope', () {
+    test('应用外只在 Android 可配', () {
+      expect(
+        FloatingBallScope.availableOn(isAndroid: false),
+        isNot(contains(FloatingBallScope.system)),
+      );
+      expect(
+        FloatingBallScope.availableOn(isAndroid: true),
+        FloatingBallScope.values,
+      );
     });
 
-    test('系统常驻只在 Android 可选，别处按应用内处理', () {
-      expect(FloatingBallMode.availableOn(isAndroid: false), <FloatingBallMode>[
-        FloatingBallMode.off,
-        FloatingBallMode.inApp,
+    test('出厂按钮：阅读器三颗有声书传输键，漫画 / 视频全部专属按钮，都带全局按钮', () {
+      expect(FloatingBallScope.reader.defaultButtons, <String>[
+        ReaderControlItem.audiobookPrev.storageValue,
+        ReaderControlItem.audiobookPlayPause.storageValue,
+        ReaderControlItem.audiobookNext.storageValue,
+        ..._globals,
+      ]);
+      expect(FloatingBallScope.video.defaultButtons, <String>[
+        ...kVideoFloatingBallButtons,
+        ..._globals,
+      ]);
+      expect(FloatingBallScope.manga.defaultButtons, <String>[
+        ...kMangaFloatingBallButtons,
+        ..._globals,
+      ]);
+      expect(FloatingBallScope.general.defaultButtons, _globals);
+      expect(FloatingBallScope.system.defaultButtons, _globals);
+    });
+
+    test('阅读器目录是按钮布局里除书名外的全部按钮', () {
+      expect(
+        FloatingBallScope.reader.sceneButtonIds,
+        isNot(contains(ReaderControlItem.title.storageValue)),
+      );
+      expect(
+        FloatingBallScope.reader.sceneButtonIds,
+        hasLength(ReaderControlItem.values.length - 1),
+      );
+    });
+
+    test('目录里的 id 在同一场景内不重复', () {
+      for (final FloatingBallScope scope in FloatingBallScope.values) {
+        expect(scope.catalog.toSet(), hasLength(scope.catalog.length));
+      }
+    });
+
+    test('从没设过 = 出厂；全关存成 - 且读回为空', () {
+      const FloatingBallScope scope = FloatingBallScope.video;
+      expect(scope.decodeButtons(''), scope.defaultButtons);
+      final String none = scope.encodeButtons(const <String>[]);
+      expect(none, '-');
+      expect(scope.decodeButtons(none), isEmpty);
+    });
+
+    test('保持目录顺序、丢掉未知值与别的场景的 id', () {
+      const FloatingBallScope scope = FloatingBallScope.video;
+      expect(scope.decodeButtons('lookup, nope ,favorite,chapters'), <String>[
+        'favorite',
+        'lookup',
       ]);
       expect(
-        FloatingBallMode.availableOn(isAndroid: true),
-        FloatingBallMode.values,
-      );
-      expect(
-        FloatingBallMode.system.effectiveOn(isAndroid: false),
-        FloatingBallMode.inApp,
-      );
-      expect(
-        FloatingBallMode.system.effectiveOn(isAndroid: true),
-        FloatingBallMode.system,
-      );
-      expect(FloatingBallMode.off.showsInAppBall, isFalse);
-      expect(FloatingBallMode.system.showsInAppBall, isTrue);
-    });
-  });
-
-  group('FloatingBallGlobalAction 列表编解码', () {
-    test('从没设过 = 全开；全关存成 - 且读回为空', () {
-      expect(
-        FloatingBallGlobalAction.decodeList(''),
-        FloatingBallGlobalAction.values,
-      );
-      final String none = FloatingBallGlobalAction.encodeList(
-        const <FloatingBallGlobalAction>[],
-      );
-      expect(none, '-');
-      expect(FloatingBallGlobalAction.decodeList(none), isEmpty);
-    });
-
-    test('保持枚举顺序、丢掉未知值', () {
-      expect(
-        FloatingBallGlobalAction.decodeList('screen_ocr, nope ,lookup'),
-        <FloatingBallGlobalAction>[
-          FloatingBallGlobalAction.lookup,
-          FloatingBallGlobalAction.screenOcr,
-        ],
-      );
-      expect(
-        FloatingBallGlobalAction.encodeList(<FloatingBallGlobalAction>[
-          FloatingBallGlobalAction.screenOcr,
-          FloatingBallGlobalAction.lookup,
-        ]),
-        'lookup,screen_ocr',
+        scope.encodeButtons(<String>['screen_ocr', 'play_pause']),
+        'play_pause,screen_ocr',
       );
     });
 
@@ -81,6 +97,75 @@ void main() {
         ),
         isTrue,
       );
+    });
+  });
+
+  group('悬浮球偏好', () {
+    late FushiDatabase db;
+    late PreferencesRepository prefs;
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
+      prefs = PreferencesRepository(db);
+      await prefs.loadFromDb();
+    });
+
+    tearDown(() => db.close());
+
+    test('出厂：应用内开、应用外关', () {
+      expect(prefs.floatingBallInApp, isTrue);
+      expect(prefs.floatingBallSystem, isFalse);
+    });
+
+    test('开关与按钮勾选读写往返', () async {
+      await prefs.setFloatingBallInApp(false);
+      await prefs.setFloatingBallSystem(true);
+      await prefs.setFloatingBallButtons(FloatingBallScope.reader, <String>[
+        'lookup',
+        ReaderControlItem.navigation.storageValue,
+      ]);
+      expect(prefs.floatingBallInApp, isFalse);
+      expect(prefs.floatingBallSystem, isTrue);
+      expect(prefs.floatingBallButtons(FloatingBallScope.reader), <String>[
+        ReaderControlItem.navigation.storageValue,
+        'lookup',
+      ]);
+      // 别的场景不受影响。
+      expect(
+        prefs.floatingBallButtons(FloatingBallScope.video),
+        FloatingBallScope.video.defaultButtons,
+      );
+    });
+
+    test('旧版三态模式迁移：显式关 → 应用内关；系统常驻 → 两个都开', () async {
+      await prefs.setPref('floating_ball.mode', 'off');
+      expect(prefs.floatingBallInApp, isFalse);
+      expect(prefs.floatingBallSystem, isFalse);
+      await prefs.setPref('floating_ball.mode', 'system');
+      expect(prefs.floatingBallInApp, isTrue);
+      expect(prefs.floatingBallSystem, isTrue);
+      // 新开关一旦写过就以新开关为准。
+      await prefs.setFloatingBallSystem(false);
+      expect(prefs.floatingBallSystem, isFalse);
+    });
+
+    test('旧版全局按钮勾选迁移到没单独设过的场景', () async {
+      await prefs.setPref('floating_ball.actions', 'clipboard');
+      expect(prefs.floatingBallButtons(FloatingBallScope.video), <String>[
+        ...kVideoFloatingBallButtons,
+        'clipboard',
+      ]);
+      await prefs.setPref('floating_ball.actions', '-');
+      expect(prefs.floatingBallButtons(FloatingBallScope.general), isEmpty);
+      // 单独设过的场景以自己的为准。
+      await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+        'lookup',
+      ]);
+      expect(prefs.floatingBallButtons(FloatingBallScope.general), <String>[
+        'lookup',
+      ]);
     });
   });
 
@@ -164,23 +249,28 @@ void main() {
         MaterialApp(
           navigatorKey: navigator,
           navigatorObservers: <NavigatorObserver>[floatingBallRouteObserver],
-          home: FloatingBallScene(actions: <ReaderHeaderAction>[_action('a')]),
+          home: FloatingBallScene(
+            scope: FloatingBallScope.video,
+            actions: <String, ReaderHeaderAction>{'a': _action('a')},
+          ),
         ),
       );
       await tester.pump();
-      expect(registry.current.actions.map((a) => a.label), <String>['a']);
+      expect(registry.current.actions.keys, <String>['a']);
+      expect(registry.current.scope, FloatingBallScope.video);
       expect(notifications, greaterThan(0));
 
       navigator.currentState!.push(
         MaterialPageRoute<void>(builder: (_) => const SizedBox()),
       );
       await tester.pumpAndSettle();
-      // 新页没有场景：底下那页还挂着，但不是当前路由。
+      // 新页没有场景：底下那页还挂着，但不是当前路由；按「其它页面」配置。
       expect(registry.current.actions, isEmpty);
+      expect(registry.current.scope, FloatingBallScope.general);
 
       navigator.currentState!.pop();
       await tester.pumpAndSettle();
-      expect(registry.current.actions.map((a) => a.label), <String>['a']);
+      expect(registry.current.actions.keys, <String>['a']);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
@@ -190,24 +280,38 @@ void main() {
     test('sameFloatingBallActions 只比外观不比闭包', () {
       expect(
         sameFloatingBallActions(
-          <ReaderHeaderAction>[_action('a')],
-          <ReaderHeaderAction>[_action('a')],
+          <String, ReaderHeaderAction>{'a': _action('a')},
+          <String, ReaderHeaderAction>{'a': _action('a')},
         ),
         isTrue,
       );
       expect(
         sameFloatingBallActions(
-          <ReaderHeaderAction>[_action('a', icon: Icons.play_arrow)],
-          <ReaderHeaderAction>[_action('a', icon: Icons.pause)],
+          <String, ReaderHeaderAction>{
+            'a': _action('a', icon: Icons.play_arrow),
+          },
+          <String, ReaderHeaderAction>{'a': _action('a', icon: Icons.pause)},
         ),
         isFalse,
       );
       expect(
         sameFloatingBallActions(
-          <ReaderHeaderAction>[_action('a')],
-          const <ReaderHeaderAction>[
-            ReaderHeaderAction(icon: Icons.add, label: 'a', onPressed: null),
-          ],
+          <String, ReaderHeaderAction>{'a': _action('a')},
+          const <String, ReaderHeaderAction>{
+            'a': ReaderHeaderAction(
+              icon: Icons.add,
+              label: 'a',
+              onPressed: null,
+            ),
+          },
+        ),
+        isFalse,
+      );
+      // 同一颗按钮换了 id（登记到别的槽位）也算变化。
+      expect(
+        sameFloatingBallActions(
+          <String, ReaderHeaderAction>{'a': _action('a')},
+          <String, ReaderHeaderAction>{'b': _action('a')},
         ),
         isFalse,
       );

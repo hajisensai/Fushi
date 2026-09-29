@@ -1,13 +1,13 @@
 /// 阅读器顶栏 / 底栏按钮的可视化布局模型（与视频页 `VideoControlLayout` 同一套
 /// 泛型骨架 `ControlLayout<S, I>`，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
 ///
-/// 七个可见槽位 + hidden：顶栏左 / 中 / 右、底栏左 / 中 / 右、悬浮球。顶栏中间只放
-/// 书名；书名也只能在顶栏中间（或移出）。返回与设置是必需项：任何平台都不能移出——
-/// 返回是退书的唯一可见入口（BUG-2230 同一口径），设置是其它所有面板的入口；它们
-/// 也不能进悬浮球——悬浮球有总开关，关掉后槽里的按钮整个不画，必需项会凭空消失。
+/// 六个可见槽位 + hidden：顶栏左 / 中 / 右、底栏左 / 中 / 右。顶栏中间只放书名；
+/// 书名也只能在顶栏中间（或移出）。返回与设置是必需项：任何平台都不能移出——返回是
+/// 退书的唯一可见入口（BUG-2230 同一口径），设置是其它所有面板的入口。
 ///
-/// 悬浮球槽（[ReaderControlSlot.floatingBall]）的按钮由 `ReaderFloatingBall` 在球正上方
-/// 竖排展开（一列放不下时向屏幕中央换列）；出厂放有声书的上一句 / 播放暂停 / 下一句三键。
+/// 悬浮球不是这里的槽：它的按钮在 设置 → 悬浮球 → 阅读器 里勾选
+/// （`docs/specs/2026-09-28-floating-ball.md`）。旧版布局 JSON 里的 `floatingBall`
+/// 槽解码时按未知槽丢弃，里面的按钮回落到出厂位置（有声书传输键在托盘）。
 ///
 /// 持久化键 `reader_control_layout`，JSON `{version:1, slots:{...}, removed:[...]}`
 /// （与视频 v3 同形；阅读器没有历史布局，不需要迁移）。
@@ -24,7 +24,6 @@ enum ReaderControlSlot implements ControlSlotSpec {
   bottomLeft('bottomLeft'),
   bottomCenter('bottomCenter'),
   bottomRight('bottomRight'),
-  floatingBall('floatingBall'),
   hidden('hidden');
 
   const ReaderControlSlot(this.storageValue);
@@ -42,7 +41,7 @@ enum ReaderControlSlot implements ControlSlotSpec {
       this == ReaderControlSlot.bottomCenter ||
       this == ReaderControlSlot.bottomRight;
 
-  /// 编辑器舞台上的七个槽位（不含 hidden，hidden 是编辑器自己的托盘）。
+  /// 编辑器舞台上的六个槽位（不含 hidden，hidden 是编辑器自己的托盘）。
   static const List<ReaderControlSlot> editableSlots = <ReaderControlSlot>[
     topLeft,
     topCenter,
@@ -50,7 +49,6 @@ enum ReaderControlSlot implements ControlSlotSpec {
     bottomLeft,
     bottomCenter,
     bottomRight,
-    floatingBall,
   ];
 }
 
@@ -86,26 +84,26 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
     recoverySlot: ReaderControlSlot.topRight,
   ),
 
-  // ── 有声书传输键（只在挂了有声书控制器时渲染）。出厂前三颗在悬浮球槽，
-  // ±10s / 跟随默认在托盘；都可以拖去顶栏 / 底栏。上一句 / 下一句跟随「跳转方式」
-  // 偏好（按句或按 N 秒），与底栏播放条同一语义。
-  audiobookPrev('audiobookPrev', recoverySlot: ReaderControlSlot.floatingBall),
+  // ── 有声书传输键（只在挂了有声书控制器时渲染）。出厂都在托盘（悬浮球出厂放
+  // 上一句 / 播放暂停 / 下一句，见 设置 → 悬浮球）；都可以拖去顶栏 / 底栏。上一句 /
+  // 下一句跟随「跳转方式」偏好（按句或按 N 秒），与底栏播放条同一语义。
+  audiobookPrev('audiobookPrev', recoverySlot: ReaderControlSlot.bottomCenter),
   audiobookPlayPause(
     'audiobookPlayPause',
-    recoverySlot: ReaderControlSlot.floatingBall,
+    recoverySlot: ReaderControlSlot.bottomCenter,
   ),
-  audiobookNext('audiobookNext', recoverySlot: ReaderControlSlot.floatingBall),
+  audiobookNext('audiobookNext', recoverySlot: ReaderControlSlot.bottomCenter),
   audiobookSeekBack(
     'audiobookSeekBack',
-    recoverySlot: ReaderControlSlot.floatingBall,
+    recoverySlot: ReaderControlSlot.bottomCenter,
   ),
   audiobookSeekForward(
     'audiobookSeekForward',
-    recoverySlot: ReaderControlSlot.floatingBall,
+    recoverySlot: ReaderControlSlot.bottomCenter,
   ),
   audiobookFollow(
     'audiobookFollow',
-    recoverySlot: ReaderControlSlot.floatingBall,
+    recoverySlot: ReaderControlSlot.bottomCenter,
   );
 
   const ReaderControlItem(
@@ -150,8 +148,6 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
     if (this == ReaderControlItem.title) {
       return target == ReaderControlSlot.topCenter;
     }
-    // 悬浮球可整体关掉，必需项进去会凭空消失。
-    if (target == ReaderControlSlot.floatingBall) return !pinnedRequired;
     return target != ReaderControlSlot.topCenter;
   }
 
@@ -202,8 +198,7 @@ class ReaderControlLayout {
       ReaderControlLayout._(core);
 
   /// 出厂布局 = 2026-09 之前硬编码的顶栏：左「← / 模式 / 目录 / 插图 / 统计」，
-  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；悬浮球「上一句 / 播放
-  /// 暂停 / 下一句」，±10s 与跟随留在托盘。
+  /// 中「书名」，右「有声书 / 全屏 / 设置」；底栏三槽为空；有声书传输键留在托盘。
   static final ReaderControlLayout defaults = ReaderControlLayout._(
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
@@ -222,11 +217,6 @@ class ReaderControlLayout {
           ReaderControlItem.audiobook,
           ReaderControlItem.fullscreen,
           ReaderControlItem.settings,
-        ],
-        ReaderControlSlot.floatingBall: <ReaderControlItem>[
-          ReaderControlItem.audiobookPrev,
-          ReaderControlItem.audiobookPlayPause,
-          ReaderControlItem.audiobookNext,
         ],
       },
     ),

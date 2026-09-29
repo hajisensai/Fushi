@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
-import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -23,7 +23,27 @@ class _ReadyAppModel extends AppModel {
 
   @override
   bool get isInitialised => true;
+
+  // 桩没有主题子系统；宿主读它决定球要不要动画。
+  @override
+  bool get einkMode => false;
 }
+
+ReaderHeaderAction _action(String key) => ReaderHeaderAction(
+  key: ValueKey<String>(key),
+  icon: Icons.play_arrow,
+  label: key,
+  onPressed: () {},
+);
+
+/// 视频场景：登记播放 / 暂停与收藏两颗专属按钮。
+Widget _videoScene() => FloatingBallScene(
+  scope: FloatingBallScope.video,
+  actions: <String, ReaderHeaderAction>{
+    'play_pause': _action('scene_play_pause'),
+    'favorite': _action('scene_favorite'),
+  },
+);
 
 void main() {
   late FushiDatabase db;
@@ -71,71 +91,96 @@ void main() {
   Finder ball() =>
       find.byKey(const ValueKey<String>('fushi_app_floating_ball'));
 
+  Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
   Future<void> expand(WidgetTester tester) async {
-    await tester.tap(
-      find.byKey(const ValueKey<String>('fushi_reader_floating_ball_icon')),
-    );
+    await tester.tap(byKey('fushi_reader_floating_ball_icon'));
     await tester.pumpAndSettle();
   }
 
-  testWidgets('默认关闭：不画全局球', (WidgetTester tester) async {
+  testWidgets('默认开着应用内悬浮球；没有场景的页面只有全局按钮', (WidgetTester tester) async {
     await pumpHost(tester);
-    expect(ball(), findsNothing);
-  });
-
-  testWidgets('应用内常驻：场景按钮排在全局按钮前面', (WidgetTester tester) async {
-    await prefs.setFloatingBallMode(FloatingBallMode.inApp);
-    await pumpHost(
-      tester,
-      home: FloatingBallScene(
-        actions: <ReaderHeaderAction>[
-          ReaderHeaderAction(
-            key: const ValueKey<String>('scene_action'),
-            icon: Icons.play_arrow,
-            label: 'Play',
-            onPressed: () {},
-          ),
-        ],
-      ),
-    );
-    await tester.pump();
     expect(ball(), findsOneWidget);
     await expand(tester);
-
-    final Finder scene = find.byKey(const ValueKey<String>('scene_action'));
-    final Finder lookup = find.byKey(
-      const ValueKey<String>('floating_ball_action_lookup'),
-    );
-    final Finder clipboard = find.byKey(
-      const ValueKey<String>('floating_ball_action_clipboard'),
-    );
-    expect(scene, findsOneWidget);
-    expect(lookup, findsOneWidget);
-    expect(clipboard, findsOneWidget);
-    // 竖排：列表里越靠前越在上面。
-    expect(tester.getCenter(scene).dy, lessThan(tester.getCenter(lookup).dy));
+    expect(byKey('floating_ball_action_lookup'), findsOneWidget);
+    expect(byKey('floating_ball_action_clipboard'), findsOneWidget);
     // 截屏识字只有 Android / iOS 有。
     expect(
-      find.byKey(const ValueKey<String>('floating_ball_action_screen_ocr')),
+      byKey('floating_ball_action_screen_ocr'),
       Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
     );
   });
 
-  testWidgets('关掉的全局按钮不出现', (WidgetTester tester) async {
-    await prefs.setFloatingBallMode(FloatingBallMode.inApp);
-    await prefs.setFloatingBallActions(<FloatingBallGlobalAction>[
-      FloatingBallGlobalAction.clipboard,
-    ]);
-    await pumpHost(tester);
+  testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {
+    await prefs.setFloatingBallInApp(false);
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    expect(ball(), findsNothing);
+  });
+
+  testWidgets('出厂：场景专属按钮排在全局按钮前面', (WidgetTester tester) async {
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
     await expand(tester);
-    expect(
-      find.byKey(const ValueKey<String>('floating_ball_action_lookup')),
-      findsNothing,
+    final Finder play = byKey('scene_play_pause');
+    final Finder lookup = byKey('floating_ball_action_lookup');
+    expect(play, findsOneWidget);
+    expect(byKey('scene_favorite'), findsOneWidget);
+    expect(lookup, findsOneWidget);
+    // 竖排：列表里越靠前越在上面。
+    expect(tester.getCenter(play).dy, lessThan(tester.getCenter(lookup).dy));
+  });
+
+  testWidgets('只显示为当前场景勾选的按钮', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.video, <String>[
+      'favorite',
+      'clipboard',
+    ]);
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    expect(byKey('scene_favorite'), findsOneWidget);
+    expect(byKey('floating_ball_action_clipboard'), findsOneWidget);
+    expect(byKey('scene_play_pause'), findsNothing);
+    expect(byKey('floating_ball_action_lookup'), findsNothing);
+  });
+
+  testWidgets('各场景的勾选互不影响', (WidgetTester tester) async {
+    // 「其它页面」只留查词，视频场景仍按出厂。
+    await prefs.setFloatingBallButtons(FloatingBallScope.general, <String>[
+      'lookup',
+    ]);
+    await pumpHost(tester, home: _videoScene());
+    await tester.pump();
+    await expand(tester);
+    expect(byKey('scene_play_pause'), findsOneWidget);
+    expect(byKey('floating_ball_action_clipboard'), findsOneWidget);
+  });
+
+  testWidgets('勾选了但页面此刻没提供的专属按钮跳过', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(FloatingBallScope.manga, <String>[
+      'chapters',
+      'next',
+    ]);
+    await pumpHost(
+      tester,
+      home: FloatingBallScene(
+        scope: FloatingBallScope.manga,
+        actions: <String, ReaderHeaderAction>{'next': _action('scene_next')},
+      ),
     );
-    expect(
-      find.byKey(const ValueKey<String>('floating_ball_action_clipboard')),
-      findsOneWidget,
+    await tester.pump();
+    await expand(tester);
+    expect(byKey('scene_next'), findsOneWidget);
+  });
+
+  testWidgets('一颗按钮都不剩就不画球', (WidgetTester tester) async {
+    await prefs.setFloatingBallButtons(
+      FloatingBallScope.general,
+      const <String>[],
     );
+    await pumpHost(tester);
+    expect(ball(), findsNothing);
   });
 
   testWidgets('剪贴板查词把剪贴板文字交给应用内查词弹窗', (WidgetTester tester) async {
@@ -151,12 +196,9 @@ void main() {
         null,
       ),
     );
-    await prefs.setFloatingBallMode(FloatingBallMode.inApp);
     await pumpHost(tester);
     await expand(tester);
-    await tester.tap(
-      find.byKey(const ValueKey<String>('floating_ball_action_clipboard')),
-    );
+    await tester.tap(byKey('floating_ball_action_clipboard'));
     await tester.pump();
     final FloatingLyricLookupRequest? request = FloatingLyricLookupNotifier
         .instance
@@ -167,7 +209,6 @@ void main() {
 
   testWidgets('球外的空白处点击照常落到底下页面', (WidgetTester tester) async {
     int taps = 0;
-    await prefs.setFloatingBallMode(FloatingBallMode.inApp);
     await pumpHost(
       tester,
       home: GestureDetector(
@@ -182,11 +223,11 @@ void main() {
   });
 
   testWidgets('场景要求隐藏时不画球', (WidgetTester tester) async {
-    await prefs.setFloatingBallMode(FloatingBallMode.inApp);
     await pumpHost(
       tester,
       home: const FloatingBallScene(
-        actions: <ReaderHeaderAction>[],
+        scope: FloatingBallScope.video,
+        actions: <String, ReaderHeaderAction>{},
         hideBall: true,
       ),
     );

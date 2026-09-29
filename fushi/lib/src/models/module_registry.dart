@@ -74,6 +74,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
 ///   让对应的合成面板整个消失。
 ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appearance => null,
+  SettingsDestinationId.floatingBall => null,
   SettingsDestinationId.profiles => null,
   SettingsDestinationId.reading => null,
   SettingsDestinationId.lookup => null,
