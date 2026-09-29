@@ -7583,6 +7583,15 @@ class $EpubBooksTable extends EpubBooks
       'REFERENCES media_sources (id) ON DELETE SET NULL',
     ),
   );
+  static const VerificationMeta _isbnMeta = const VerificationMeta('isbn');
+  @override
+  late final GeneratedColumn<String> isbn = GeneratedColumn<String>(
+    'isbn',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     bookKey,
@@ -7602,6 +7611,7 @@ class $EpubBooksTable extends EpubBooks
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -7746,6 +7756,12 @@ class $EpubBooksTable extends EpubBooks
         sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
       );
     }
+    if (data.containsKey('isbn')) {
+      context.handle(
+        _isbnMeta,
+        isbn.isAcceptableOrUnknown(data['isbn']!, _isbnMeta),
+      );
+    }
     return context;
   }
 
@@ -7823,6 +7839,10 @@ class $EpubBooksTable extends EpubBooks
         DriftSqlType.int,
         data['${effectivePrefix}source_id'],
       ),
+      isbn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}isbn'],
+      ),
     );
   }
 
@@ -7888,6 +7908,12 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
   final int? sourceId;
+
+  /// v115（排行榜作品匹配）：OPF `dc:identifier` 里解析出的 ISBN，**统一存 ISBN-13**
+  /// （ISBN-10 转换后存），校验位不对的一律不存。null = 包里没有合法 ISBN、或是
+  /// v115 前导入且尚未回填（`backfillEpubIsbns` 只读 OPF 回填，不重新导入）。
+  /// 规范化唯一口径见 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`。
+  final String? isbn;
   const EpubBookRow({
     required this.bookKey,
     required this.uid,
@@ -7906,6 +7932,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     this.mangaReadingMode,
     this.completedAt,
     this.sourceId,
+    this.isbn,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7942,6 +7969,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     }
     if (!nullToAbsent || sourceId != null) {
       map['source_id'] = Variable<int>(sourceId);
+    }
+    if (!nullToAbsent || isbn != null) {
+      map['isbn'] = Variable<String>(isbn);
     }
     return map;
   }
@@ -7981,6 +8011,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       sourceId: sourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceId),
+      isbn: isbn == null && nullToAbsent ? const Value.absent() : Value(isbn),
     );
   }
 
@@ -8007,6 +8038,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
+      isbn: serializer.fromJson<String?>(json['isbn']),
     );
   }
   @override
@@ -8030,6 +8062,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
+      'isbn': serializer.toJson<String?>(isbn),
     };
   }
 
@@ -8051,6 +8084,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     Value<String?> mangaReadingMode = const Value.absent(),
     Value<DateTime?> completedAt = const Value.absent(),
     Value<int?> sourceId = const Value.absent(),
+    Value<String?> isbn = const Value.absent(),
   }) => EpubBookRow(
     bookKey: bookKey ?? this.bookKey,
     uid: uid ?? this.uid,
@@ -8073,6 +8107,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         : this.mangaReadingMode,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     sourceId: sourceId.present ? sourceId.value : this.sourceId,
+    isbn: isbn.present ? isbn.value : this.isbn,
   );
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
@@ -8107,6 +8142,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? data.completedAt.value
           : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      isbn: data.isbn.present ? data.isbn.value : this.isbn,
     );
   }
 
@@ -8129,7 +8165,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
-          ..write('sourceId: $sourceId')
+          ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn')
           ..write(')'))
         .toString();
   }
@@ -8153,6 +8190,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   );
   @override
   bool operator ==(Object other) =>
@@ -8174,7 +8212,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.format == this.format &&
           other.mangaReadingMode == this.mangaReadingMode &&
           other.completedAt == this.completedAt &&
-          other.sourceId == this.sourceId);
+          other.sourceId == this.sourceId &&
+          other.isbn == this.isbn);
 }
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
@@ -8195,6 +8234,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> mangaReadingMode;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
+  final Value<String?> isbn;
   final Value<int> rowid;
   const EpubBooksCompanion({
     this.bookKey = const Value.absent(),
@@ -8214,6 +8254,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EpubBooksCompanion.insert({
@@ -8234,6 +8275,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : bookKey = Value(bookKey),
        title = Value(title),
@@ -8260,6 +8302,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? mangaReadingMode,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
+    Expression<String>? isbn,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8280,6 +8323,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
+      if (isbn != null) 'isbn': isbn,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8302,6 +8346,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Value<String?>? mangaReadingMode,
     Value<DateTime?>? completedAt,
     Value<int?>? sourceId,
+    Value<String?>? isbn,
     Value<int>? rowid,
   }) {
     return EpubBooksCompanion(
@@ -8322,6 +8367,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
+      isbn: isbn ?? this.isbn,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8380,6 +8426,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (sourceId.present) {
       map['source_id'] = Variable<int>(sourceId.value);
     }
+    if (isbn.present) {
+      map['isbn'] = Variable<String>(isbn.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8406,6 +8455,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -24510,6 +24560,17 @@ class $GalgamesTable extends Galgames
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _completedAtMeta = const VerificationMeta(
+    'completedAt',
+  );
+  @override
+  late final GeneratedColumn<int> completedAt = GeneratedColumn<int>(
+    'completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -24527,6 +24588,7 @@ class $GalgamesTable extends Galgames
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -24652,6 +24714,15 @@ class $GalgamesTable extends Galgames
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+        _completedAtMeta,
+        completedAt.isAcceptableOrUnknown(
+          data['completed_at']!,
+          _completedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -24721,6 +24792,10 @@ class $GalgamesTable extends Galgames
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      completedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}completed_at'],
+      ),
     );
   }
 
@@ -24804,6 +24879,15 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
 
   /// 手动排序位（预留，M1 不做拖拽排序）。
   final int sortOrder;
+
+  /// v115（排行榜「读完时刻」）：[playStatus] 进入 2（玩过）的毫秒戳；null = 不是
+  /// 「玩过」，或是 v115 前就已玩过但一条游玩会话都没有（日期未知）。
+  ///
+  /// 只由 DB 层一处判据维护（`resolveGalgameCompletedAt`，经 `setGalgamePlayStatus`
+  /// / `upsertGalgame` 写入）：从非 2 变成 2 时写当前时刻，保持 2 时原值不动，
+  /// 离开 2 时清空。调用方不直接写本列。v115 迁移用该游戏最后一次会话的
+  /// `end_ms` 回填存量「玩过」。
+  final int? completedAt;
   const GalgameRow({
     required this.id,
     required this.name,
@@ -24820,6 +24904,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     this.releaseDate,
     this.customDataJson,
     required this.sortOrder,
+    this.completedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -24849,6 +24934,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       map['custom_data_json'] = Variable<String>(customDataJson);
     }
     map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<int>(completedAt);
+    }
     return map;
   }
 
@@ -24879,6 +24967,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? const Value.absent()
           : Value(customDataJson),
       sortOrder: Value(sortOrder),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
     );
   }
 
@@ -24905,6 +24996,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       releaseDate: serializer.fromJson<String?>(json['releaseDate']),
       customDataJson: serializer.fromJson<String?>(json['customDataJson']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      completedAt: serializer.fromJson<int?>(json['completedAt']),
     );
   }
   @override
@@ -24926,6 +25018,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'releaseDate': serializer.toJson<String?>(releaseDate),
       'customDataJson': serializer.toJson<String?>(customDataJson),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'completedAt': serializer.toJson<int?>(completedAt),
     };
   }
 
@@ -24945,6 +25038,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     Value<String?> releaseDate = const Value.absent(),
     Value<String?> customDataJson = const Value.absent(),
     int? sortOrder,
+    Value<int?> completedAt = const Value.absent(),
   }) => GalgameRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -24965,6 +25059,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         ? customDataJson.value
         : this.customDataJson,
     sortOrder: sortOrder ?? this.sortOrder,
+    completedAt: completedAt.present ? completedAt.value : this.completedAt,
   );
   GalgameRow copyWithCompanion(GalgamesCompanion data) {
     return GalgameRow(
@@ -24997,6 +25092,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? data.customDataJson.value
           : this.customDataJson,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      completedAt: data.completedAt.present
+          ? data.completedAt.value
+          : this.completedAt,
     );
   }
 
@@ -25017,7 +25115,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('primarySource: $primarySource, ')
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt')
           ..write(')'))
         .toString();
   }
@@ -25039,6 +25138,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -25058,7 +25158,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.primarySource == this.primarySource &&
           other.releaseDate == this.releaseDate &&
           other.customDataJson == this.customDataJson &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.completedAt == this.completedAt);
 }
 
 class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
@@ -25077,6 +25178,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String?> releaseDate;
   final Value<String?> customDataJson;
   final Value<int> sortOrder;
+  final Value<int?> completedAt;
   final Value<int> rowid;
   const GalgamesCompanion({
     this.id = const Value.absent(),
@@ -25094,6 +25196,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GalgamesCompanion.insert({
@@ -25112,6 +25215,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -25134,6 +25238,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? releaseDate,
     Expression<String>? customDataJson,
     Expression<int>? sortOrder,
+    Expression<int>? completedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -25153,6 +25258,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (releaseDate != null) 'release_date': releaseDate,
       if (customDataJson != null) 'custom_data_json': customDataJson,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (completedAt != null) 'completed_at': completedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -25173,6 +25279,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Value<String?>? releaseDate,
     Value<String?>? customDataJson,
     Value<int>? sortOrder,
+    Value<int?>? completedAt,
     Value<int>? rowid,
   }) {
     return GalgamesCompanion(
@@ -25191,6 +25298,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       releaseDate: releaseDate ?? this.releaseDate,
       customDataJson: customDataJson ?? this.customDataJson,
       sortOrder: sortOrder ?? this.sortOrder,
+      completedAt: completedAt ?? this.completedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -25243,6 +25351,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<int>(completedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -25267,6 +25378,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -60327,6 +60439,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder =
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 typedef $$EpubBooksTableUpdateCompanionBuilder =
@@ -60348,6 +60461,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder =
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 
@@ -60459,6 +60573,11 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get isbn => $composableBuilder(
+    column: $table.isbn,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -60575,6 +60694,11 @@ class $$EpubBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get isbn => $composableBuilder(
+    column: $table.isbn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaSourcesTableOrderingComposer get sourceId {
     final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -60670,6 +60794,9 @@ class $$EpubBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get isbn =>
+      $composableBuilder(column: $table.isbn, builder: (column) => column);
+
   $$MediaSourcesTableAnnotationComposer get sourceId {
     final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -60739,6 +60866,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion(
                 bookKey: bookKey,
@@ -60758,6 +60886,7 @@ class $$EpubBooksTableTableManager
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -60779,6 +60908,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion.insert(
                 bookKey: bookKey,
@@ -60798,6 +60928,7 @@ class $$EpubBooksTableTableManager
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -72536,6 +72667,7 @@ typedef $$GalgamesTableCreateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 typedef $$GalgamesTableUpdateCompanionBuilder =
@@ -72555,6 +72687,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 
@@ -72662,6 +72795,11 @@ class $$GalgamesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -72774,6 +72912,11 @@ class $$GalgamesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GalgamesTableAnnotationComposer
@@ -72844,6 +72987,11 @@ class $$GalgamesTableAnnotationComposer
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
+  GeneratedColumn<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => column,
+  );
+
   Expression<T> galgameSourcesRefs<T extends Object>(
     Expression<T> Function($$GalgameSourcesTableAnnotationComposer a) f,
   ) {
@@ -72913,6 +73061,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion(
                 id: id,
@@ -72930,6 +73079,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -72949,6 +73099,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion.insert(
                 id: id,
@@ -72966,6 +73117,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

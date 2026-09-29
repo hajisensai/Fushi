@@ -1,0 +1,18 @@
+{
+  "producer": "js-webcrypto",
+  "jwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "d": "YG7vcjpfkc0cpV08wzlT5grZG1TD8rX_cEAbE6U0Jls",
+    "x": "qjJYTEw5pLXYrExQ6BdT8EM5I17t2ih8IJXBgNbMqlY",
+    "y": "aQQ76F9N4bdU7SbkOkdlB-6N0FEUE9gpZjtIg8wIr5A"
+  },
+  "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEqjJYTEw5pLXYrExQ6BdT8EM5I17t2ih8IJXBgNbMqlZpBDvoX03ht1TtJuQ6R2UH7o3QURQT2ClmO0iDzAivkA",
+  "accountId": "SM4J-mLcnI8x5DWa",
+  "method": "POST",
+  "path": "/v1/shelf?x=1",
+  "time": 1790000000000,
+  "body": "{\"entries\":[{\"kind\":\"book\",\"refs\":[\"isbn:9784040000011\"],\"title\":\"冴えない彼女の育てかた 11\"}]}",
+  "message": "POST\n/v1/shelf?x=1\n1790000000000\ndeeb944456515bd9ebc49516bd6d183f612365bc07b55d9173f867511c3557ed",
+  "signature": "yXTkvRDlYlzkkPrJERp9_Ld1iO5gy65vHXxs6mhbaauLSBT-88n5rckSNZ2uwMAalCLQ8I_TqJeoytNTKFou6g"
+}

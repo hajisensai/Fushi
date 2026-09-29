@@ -1,0 +1,18 @@
+{
+  "producer": "dart-pointycastle",
+  "jwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "d": "ks_FlmFZ5vcygnMcGKooFm_T4J33ENfJvHDz7tQvuco",
+    "x": "cTMilICV3UWJ6nxzF74KFl-zQx6yZj1_XoU2tXutXZg",
+    "y": "ziYv74HBmBBn_gmy0sAayvBwEYlu51209qZIXC2Dxp0"
+  },
+  "spki": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcTMilICV3UWJ6nxzF74KFl-zQx6yZj1_XoU2tXutXZjOJi_vgcGYEGf-CbLSwBrK8HARiW7nXbT2pkhcLYPGnQ",
+  "accountId": "pORryKQMUFs_pmej",
+  "method": "POST",
+  "path": "/v1/shelf?x=1",
+  "time": 1790000000000,
+  "body": "{\"put\":[{\"kind\":\"book\",\"refs\":[\"isbn:9784040000011\"],\"title\":\"冴えない彼女の育てかた 11\"}]}",
+  "message": "POST\n/v1/shelf?x=1\n1790000000000\nc4f661e6c19eff7883da470e7e4b2330bf4a0bf0ebf4c2c40699c8371a8d75aa",
+  "signature": "4oG3EIOgkjj_bVSlt8la__poWBJd77CWMCKNs9LJ0sVuqjWvG3bMVFjsUDSTwNDyhAmspEIrfSADuRWAWjx33g"
+}

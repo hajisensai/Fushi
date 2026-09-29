@@ -737,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 114;
+  int get schemaVersion => 115;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3473,6 +3473,34 @@ class FushiDatabase extends _$FushiDatabase
               if (!await _columnExists('favorite_words', 'norm_char_length')) {
                 await m.addColumn(favoriteWords, favoriteWords.normCharLength);
               }
+            }
+          }
+          if (from < 115) {
+            // v115（排行榜的两个本地事实；原定 v114，被并行合入的收藏上下文占用后顺延）：
+            // ① epub_books.isbn——OPF dc:identifier 规范化后的 ISBN-13。存量书不在
+            //   迁移里读文件（慢且解压目录可能不在），由引擎侧 backfillEpubIsbns
+            //   只读 OPF 回填；这里只加列。
+            // ② galgames.completed_at——进入「玩过」(play_status=2) 的毫秒戳。存量
+            //   「玩过」取该游戏最后一次游玩会话的 end_ms（跨全部 Profile；v113 起
+            //   会话不随游戏删，但此处按 game_id 关联的只会是仍在库的游戏）；一条
+            //   会话都没有的留 NULL（= 日期未知）。
+            // 幂等守卫：mid-ladder 由 createTable 按当前 Dart 定义建出的表已带列。
+            if (await _tableExists('epub_books') &&
+                !await _columnExists('epub_books', 'isbn')) {
+              await m.addColumn(epubBooks, epubBooks.isbn);
+            }
+            if (await _tableExists('galgames') &&
+                !await _columnExists('galgames', 'completed_at')) {
+              await m.addColumn(galgames, galgames.completedAt);
+            }
+            if (await _tableExists('galgames') &&
+                await _tableExists('galgame_sessions')) {
+              await customStatement(
+                'UPDATE galgames SET completed_at = '
+                '(SELECT MAX(s.end_ms) FROM galgame_sessions AS s '
+                'WHERE s.game_id = galgames.id) '
+                'WHERE play_status = 2 AND completed_at IS NULL',
+              );
             }
           }
         },

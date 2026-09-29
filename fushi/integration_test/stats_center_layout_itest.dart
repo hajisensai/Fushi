@@ -165,7 +165,7 @@ Future<void> _seedThreeDomains(AppModel appModel) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('统计中心四个 tab：布局统一、指标齐平、会话可改可清', (WidgetTester tester) async {
+  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (WidgetTester tester) async {
     // 启动期 FlutterError（离线更新检查的 Socket 异常等）先收着，否则 pending error
     // 会撞上后面的 expect()。范式同 observe_offscreen_test。
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
@@ -275,7 +275,29 @@ void main() {
         nav.pop();
         await tester.pump(const Duration(seconds: 1));
       }
-      debugPrint('[stats-layout] 四个 tab 各抓一帧完成，启动期错误 ${errors.length} 条');
+      // 第 5 个 tab「排行」（2026-09-28）：不是统计页，没有目标 / 刷新 / 清空三颗按钮与
+      // 会话区，所以不进上面的循环；隔离库里没有排行榜账户，必须落在未开启的说明卡上
+      // （且此时零网络请求）。
+      final NavigatorState nav = appModel.navigatorKey.currentState!;
+      unawaitedPush(nav, StatsCenterTab.leaderboard);
+      for (int f = 0; f < 20; f++) {
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+      final ObserveShot board = await captureFlutterFrame(
+        tester,
+        'stats-${StatsCenterTab.values.length}-leaderboard',
+      );
+      expect(board.saved, isTrue, reason: 'leaderboard tab 的帧应落盘');
+      expect(board.nonBlank, isTrue, reason: 'leaderboard tab 不应是白屏');
+      expect(
+        find.byKey(const ValueKey<String>('leaderboard-intro')),
+        findsOneWidget,
+        reason: '未开启排行榜时应显示同意说明卡',
+      );
+      nav.pop();
+      await tester.pump(const Duration(seconds: 1));
+      debugPrint('[stats-layout] ${StatsCenterTab.values.length} 个 tab 各抓一帧完成，'
+          '启动期错误 ${errors.length} 条');
     } finally {
       FlutterError.onError = oldHandler;
     }

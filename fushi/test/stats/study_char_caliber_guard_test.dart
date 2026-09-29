@@ -81,6 +81,9 @@ void main() {
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
+        // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
+        'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart': 1,
+        'lib/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart': 1,
         // galgame 校准 OCR：判断一个 CTC token / 墨迹单元是否恰好是单个码点（能否
         // 与源文本逐字对齐），是对齐校验不是记账。
         'lib/src/ocr/gal_lookup_calibration_ocr.dart': 1,
