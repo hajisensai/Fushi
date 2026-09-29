@@ -248,8 +248,12 @@ void main() {
       final ReaderSettings? injected =
           ReaderFushiSource.resolveEffectiveReaderSettings(appModel);
       expect(injected, isNotNull);
-      final ({String fontFamily, String fontFaces, List<String> families}) css =
-          DictionaryFontCss.build(
+      final ({
+        String fontFamily,
+        String fontFaces,
+        List<String> families,
+        List<({String family, String src, String format})> faceSources,
+      }) css = DictionaryFontCss.build(
         injected!.dictionaryFonts,
         allowedDirectories: <String>[allowed.path],
         fontUrlBuilder: dictionaryFontUrl,

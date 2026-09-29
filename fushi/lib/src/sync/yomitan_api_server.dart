@@ -350,6 +350,16 @@ class YomitanApiServer {
       }
       return _handleExtensionFontFile(request, headOnly: method == 'HEAD');
     }
+    if (path == '/api/extension/fonts/dictionary') {
+      if (method != 'GET' && method != 'HEAD') {
+        return shelf.Response(405, body: 'Method Not Allowed');
+      }
+      return _handleExtensionFontFile(
+        request,
+        headOnly: method == 'HEAD',
+        dictionary: true,
+      );
+    }
     if (method != 'POST') {
       return shelf.Response(405, body: 'Method Not Allowed');
     }
@@ -518,15 +528,22 @@ class YomitanApiServer {
 
   /// GET/HEAD `?id=<font_id>`：按**目录 id** 回字体字节（不接受任意路径）。
   /// `Access-Control-Allow-Origin: *`：网页里 `@font-face` 跨源加载必需。
+  ///
+  /// [dictionary] = 查词弹窗词典字体（`/api/extension/fonts/dictionary?path=`）：
+  /// 按 `path` 经 [ExtensionFontApi.findDictionaryFont] 的白名单解析。
   Future<shelf.Response> _handleExtensionFontFile(
     shelf.Request request, {
     required bool headOnly,
+    bool dictionary = false,
   }) async {
     final ExtensionFontApi? api = _fontApi;
     if (api == null) return shelf.Response.notFound('Not Found');
-    final String? id = request.url.queryParameters['id'];
+    final String key = dictionary ? 'path' : 'id';
+    final String? id = request.url.queryParameters[key];
     if (id == null || id.isEmpty) return shelf.Response.notFound('Not found');
-    final ExtensionFontEntry? font = await api.findFont(id);
+    final ExtensionFontEntry? font = dictionary
+        ? await api.findDictionaryFont(id)
+        : await api.findFont(id);
     if (font == null) return shelf.Response.notFound('Not found');
     final File file = File(font.path);
     if (!await file.exists()) return shelf.Response.notFound('Not found');
