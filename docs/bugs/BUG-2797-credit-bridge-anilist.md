@@ -13,6 +13,6 @@
 - **[x] ② 已加自动化测试** — 见下
   - `fushi/test/media/video/metadata/video_metadata_merge_test.dart` 组「BUG-2797 AniList 写法桥」7 条：三源合成一条（原名 / TMDB 照片 / mal+tmdb+anilist id 带齐）、交换补充源顺序结果不变、纯函数带桥、无桥维持现状（不重复也不挂 TMDB 照片）、同一声优两个角色按角色桥各归其位、罗马字同名两人不误并、同条目繁简 / 译名 + original_name 不算歧义。
   - `fushi/test/media/video/metadata/video_metadata_provider_contract_test.dart` AniList contract：查询含 `name { full native }`，声优 / 角色解析出罗马字 `name` + 原文 `originalName`，无 `full` 时退回 native。
-  - `fushi/test/media/video/discovery/video_discovery_service_test.dart`「BUG-2797 AniList bridges…」：`loadDetails` 端到端（MAL + AniList + TMDB，提供者声明顺序打乱）得到单条人物。
-  - 变异实测：`_CreditIdentity.of` 不再展开桥 → 新增合并测试与服务测试变红；还原后全绿。
+  - `fushi/test/media/video/discovery/video_discovery_service_test.dart`「BUG-2797 AniList bridges…」(anime / tv) 两例：`loadDetails` 端到端（MAL + AniList + TMDB）得到单条人物。tv 类排序是 TMDB → AniList → MAL，主条目只有汉字，只能靠合并前收齐的桥认出 MAL 那条。
+  - 变异实测（均已还原）：人名桥不展开 → 合并测试 4 条 + 服务 tv 例变红；`loadDetails` 不传桥 → 服务 tv 例变红；角色桥不展开 → 两角色用例变红；AniList `_name` 改回 `native ?? full` → contract 变红；去掉歧义判定 → 罗马字同名用例变红。
 - **备注**：AniList 作为发现详情主源（MAL 取不到时）时，人物显示名由原文变为罗马字，与 MAL 主源的显示一致。
