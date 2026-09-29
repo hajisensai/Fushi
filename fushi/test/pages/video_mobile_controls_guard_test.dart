@@ -100,12 +100,17 @@ void main() {
     // BUG-257：桌面 + 移动底栏合并为单一 [_centeredBottomControlBar]（按 desktop: 参数
     // 择 Material*/MaterialDesktop* 组件），故各按钮只出现一次，不再 per-theme 重复。
     expect(
-      src.contains('bool _hasRoomyVideoBottomBar() =>'),
+      src.contains('bool _hasRoomyVideoBottomBar(double barWidth) =>'),
       isTrue,
       reason: 'bottom bar width check should be shared, not mobile-only',
     );
-    expect(src.contains('MediaQuery.of(context).size.width >= 600'), isTrue,
-        reason: 'bottom bar should branch by available width');
+    // BUG-2792：按底栏自身宽度判，不再读整屏宽——右侧字幕列表打开后屏幕仍宽、
+    // 底栏却变窄，读屏宽会照样摆出带标注的 ±10s 把传输簇撑进右簇。
+    expect(
+        src.contains(
+            '_hasRoomyVideoBottomBar(double barWidth) => barWidth >= 600'),
+        isTrue,
+        reason: 'bottom bar should branch by its own width, not screen width');
     // 两套 controls 主题 bottomButtonBar 都委托同一个共享 helper。
     expect(
       'child: _centeredBottomControlBar('.allMatches(src).length,
@@ -119,7 +124,8 @@ void main() {
       'Widget _seekLabelButton(',
     );
     expect(
-      bar.contains('final bool roomyBottomBar = _hasRoomyVideoBottomBar();'),
+      bar.contains(
+          'final bool roomyBottomBar = _hasRoomyVideoBottomBar(barWidth);'),
       isTrue,
       reason: 'shared bottom bar should use the shared width predicate',
     );
