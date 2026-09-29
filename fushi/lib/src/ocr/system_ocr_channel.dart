@@ -29,6 +29,7 @@ class SystemOcrTextLine {
     required this.text,
     required this.rect,
     required this.isVertical,
+    this.tile,
   });
 
   final String text;
@@ -39,8 +40,13 @@ class SystemOcrTextLine {
   /// 平台判定的竖排。平台不给这个信息时由 Dart 侧按包围盒长宽比推断。
   final bool isVertical;
 
+  /// 产出该行的切片下标（对应 [SystemOcrPlatform.recognize] 的 `tiles`）。
+  /// 整页识别（没切、或平台忽略了切片请求）时为 null。
+  final int? tile;
+
   @override
-  String toString() => 'SystemOcrTextLine($text, $rect, vertical: $isVertical)';
+  String toString() =>
+      'SystemOcrTextLine($text, $rect, vertical: $isVertical, tile: $tile)';
 }
 
 /// 一次识别的结果。
@@ -79,9 +85,15 @@ abstract interface class SystemOcrPlatform {
   Future<bool> isAvailable();
 
   /// 识别一张图。[language] 是 BCP-47 主子标签（`ja`/`en`/`zh`…）。
+  ///
+  /// [tiles] 是可选的切片（整页像素坐标，见 `ocr_page_tiling.dart`）：平台逐片
+  /// 识别，回传的行仍是整页坐标，并用 [SystemOcrTextLine.tile] 标明出自哪片。
+  /// 平台可以忽略它（整页识别、行不带下标）——调用方的跨片合并对这种结果是
+  /// 恒等的。
   Future<SystemOcrPageResult> recognize(
     Uint8List imageBytes, {
     required String language,
+    List<Rect> tiles = const <Rect>[],
   });
 }
 
@@ -109,6 +121,7 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
   Future<SystemOcrPageResult> recognize(
     Uint8List imageBytes, {
     required String language,
+    List<Rect> tiles = const <Rect>[],
   }) async {
     final Map<Object?, Object?>? raw;
     try {
@@ -117,6 +130,11 @@ class MethodChannelSystemOcr implements SystemOcrPlatform {
         <String, Object?>{
           'bytes': imageBytes,
           'language': language,
+          if (tiles.isNotEmpty)
+            'tiles': <List<double>>[
+              for (final Rect tile in tiles)
+                <double>[tile.left, tile.top, tile.right, tile.bottom],
+            ],
         },
       );
     } on PlatformException catch (error) {
@@ -164,12 +182,12 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
       if (right <= left || bottom <= top) continue;
       final Rect rect = Rect.fromLTRB(left, top, right, bottom);
       final Object? vertical = entry['vertical'];
+      final Object? tile = entry['tile'];
       lines.add(SystemOcrTextLine(
         text: text,
         rect: rect,
-        // 平台不表态时按包围盒推断：高远大于宽的行就是竖排。漫画气泡里这条
-        // 启发式足够准，而且错了也只影响 writing-mode，不影响能不能查词。
-        isVertical: vertical is bool ? vertical : rect.height > rect.width * 1.6,
+        isVertical: vertical is bool ? vertical : inferSystemOcrVertical(rect),
+        tile: tile is num ? tile.toInt() : null,
       ));
     }
   }
@@ -179,6 +197,12 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
     imageHeight: height,
   );
 }
+
+/// 平台不表态时按包围盒推断竖排：高远大于宽的行就是竖排。漫画气泡里这条
+/// 启发式足够准，而且错了也只影响 writing-mode，不影响能不能查词。
+///
+/// 跨片拼接后的行也走这一条，所以单独抽出来——两处各写一遍就是两套判据。
+bool inferSystemOcrVertical(Rect rect) => rect.height > rect.width * 1.6;
 
 int _asInt(Object? value) {
   if (value is int) return value;
