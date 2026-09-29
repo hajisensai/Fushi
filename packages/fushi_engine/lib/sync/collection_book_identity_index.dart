@@ -3,9 +3,14 @@ import 'package:fushi_engine/sync/game_identity_index.dart';
 
 /// 合集专用双向身份索引；不改变阅读器的本地 bookKey 契约。
 ///
-/// 书（epub）走 uid ↔ wire bookKey；游戏（game）走本机 `galgames.id` ↔ 游戏跨端
-/// 身份（[GameIdentityIndex]），否则两台电脑各自入库的同一款游戏在合集里永远
-/// 对不上号。srt / video 的键本就跨端稳定，原样透传。
+/// 合集成员只有书（epub）换算：uid ↔ wire bookKey。srt / video 的键本就跨端
+/// 稳定，game 成员**维持裸 `galgames.id`**，都原样透传。
+///
+/// 游戏成员刻意不换成 [GameIdentityIndex] 的跨端身份：合集引擎按 wire 键逐字做
+/// 成员并集 / 墓碑裁决，成员不带别名；而跨端身份的主键会随刮削、同名入库漂移
+/// （同一款游戏今天发 `title:…`、刮削后发 `vndb:…`），升级前对端存的又是裸
+/// id——任何一次换键都会让新旧两键在并集里共存、移出时墓碑只压住其中一个、另
+/// 一个下一轮复活。游戏的跨端身份只用于标签清单（[games]，带别名解析）。
 class CollectionBookIdentityIndex {
   CollectionBookIdentityIndex._(
     this.uidByKey,
@@ -60,22 +65,12 @@ class CollectionBookIdentityIndex {
   }
 
   /// wire 键 → 本地成员键；对不上照抄透传（合集清单是跨端 union，本机没有的
-  /// 条目也要替对端转发归属）。
-  String localKey(String mediaType, String key) {
-    if (mediaType == MediaKind.epub.dbValue) return uidByKey[key] ?? key;
-    if (mediaType == MediaKind.game.dbValue) {
-      return games.resolve(<String>[key]) ?? key;
-    }
-    return key;
-  }
+  /// 条目也要替对端转发归属）。仅 epub 换算，game 等键原样（见类注释）。
+  String localKey(String mediaType, String key) =>
+      mediaType == MediaKind.epub.dbValue ? uidByKey[key] ?? key : key;
 
-  String wireKey(String mediaType, String key) {
-    if (mediaType == MediaKind.epub.dbValue) return wireKeyByKey[key] ?? key;
-    if (mediaType == MediaKind.game.dbValue) {
-      return games.wireIdentity(key).key;
-    }
-    return key;
-  }
+  String wireKey(String mediaType, String key) =>
+      mediaType == MediaKind.epub.dbValue ? wireKeyByKey[key] ?? key : key;
 
   /// wire 书键 → 本地 bookKey（标签宿主键）；本机没有这本书返回 null。
   String? localBookKey(String wireKey) {

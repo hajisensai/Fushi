@@ -279,30 +279,59 @@ void main() {
           reason: '一个键在本机映射到两款游戏就是歧义，宁可不对号');
     });
 
-    test('合集里的游戏成员按跨端身份对号（不再因 galgames.id 不同而永远对不上）', () async {
+    test('合集里的游戏成员维持裸 galgames.id 上 wire（成员无别名，换键会并存 / 复活）', () async {
       final FushiDatabase host = memDb();
-      final FushiDatabase client = memDb();
       await seedGame(host, 'h1', sources: <String, String>{'vndb': 'v11'});
-      await seedGame(client, 'c1', sources: <String, String>{'vndb': 'v11'});
       final int hc = await host.createMediaCollection('夏季');
       await host.addToCollection(hc, MediaKind.game, 'h1');
 
       final CollectionManifest remote = await loadLocalCollectionManifest(host);
-      expect(remote.collections.single.members.single.entryKey, 'vndb:v11',
-          reason: '游戏成员出 wire 前换成跨端身份');
-      final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
-        local: await loadLocalCollectionManifest(client),
-        remote: remote,
-        lastSyncedAtMs: 0,
-      );
-      await applyCollectionLocalChanges(client, outcome.changes);
-      final MediaCollectionRow? row =
-          await client.getMediaCollectionByNaturalKey('夏季', 'collection');
-      expect(
-          (await client.getCollectionItems(row!.id))
-              .map((MediaCollectionItemRow m) => m.entryKey),
-          <String>['c1'],
-          reason: '落地时换回本机 galgames.id');
+      expect(remote.collections.single.members.single.entryKey, 'h1',
+          reason: '游戏成员与升级前 wire 同形：裸 id，不换成 vndb:/exe:/title: 身份');
+    });
+
+    test('升级场景：host 存着旧裸 id 成员，同步后不重复；移出后再同步不复活', () async {
+      final FushiDatabase host = memDb();
+      final FushiDatabase client = memDb();
+      // client 的游戏已刮削（有唯一跨端身份 vndb:v11）；host 上是升级前由 client
+      // 推过去的裸 id 成员（host 没有这款游戏，透传保存）。
+      await seedGame(client, 'c1', sources: <String, String>{'vndb': 'v11'});
+      final int cc = await client.createMediaCollection('夏季');
+      await client.addToCollection(cc, MediaKind.game, 'c1');
+      final int hc = await host.createMediaCollection('夏季');
+      await host.addToCollection(hc, MediaKind.game, 'c1');
+
+      Future<void> round() async {
+        final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
+          local: await loadLocalCollectionManifest(client),
+          remote: await loadLocalCollectionManifest(host),
+          lastSyncedAtMs: 0,
+        );
+        await applyCollectionLocalChanges(client, outcome.changes);
+        // host 侧收下合并结果（与 client POST 回写同形）。
+        final CollectionSyncOutcome back = CollectionSyncEngine.merge(
+          local: await loadLocalCollectionManifest(host),
+          remote: outcome.merged,
+          lastSyncedAtMs: 0,
+        );
+        await applyCollectionLocalChanges(host, back.changes);
+      }
+
+      Future<List<String>> members(FushiDatabase db, int id) async =>
+          (await db.getCollectionItems(id))
+              .map((MediaCollectionItemRow m) => m.entryKey)
+              .toList();
+
+      await round();
+      expect(await members(client, cc), <String>['c1'], reason: '不出现第二个键');
+      expect(await members(host, hc), <String>['c1']);
+
+      await tick();
+      await client.removeFromCollection(cc, MediaKind.game, 'c1');
+      await round();
+      await round();
+      expect(await members(client, cc), isEmpty, reason: '移出不被 host 旧键并回来');
+      expect(await members(host, hc), isEmpty);
     });
 
     test('无任何唯一身份时退回裸 id，本机裸 id 仍能解析回自己', () async {
@@ -312,6 +341,54 @@ void main() {
       final GameIdentityIndex index = await GameIdentityIndex.load(db);
       expect(index.wireIdentity('g1').key, 'g1');
       expect(index.resolve(<String>['g1']), 'g1');
+    });
+  });
+
+  group('游戏对号的负向约束', () {
+    test('外部 id 冲突时拒绝对号，不退到标题 / exe', () async {
+      final FushiDatabase host = memDb();
+      final FushiDatabase client = memDb();
+      await seedGame(host, 'h1',
+          name: 'Clannad', sources: <String, String>{'vndb': 'v4'});
+      await host.addTagToGame('h1', await tagId(host, '原版'));
+      // 同名、同 exe 路径，但 vndb 条目不同（另一款作品 / 复刻）。
+      await seedGame(client, 'c1',
+          name: 'Clannad',
+          exe: r'Z:\vn\h1\h1.exe',
+          sources: <String, String>{'vndb': 'v999'});
+      await syncPair(client, host);
+      expect(await client.getAllTagAssignments(), isEmpty,
+          reason: '外部 id 是硬身份，冲突即不是同一款');
+      expect(
+          (await GameIdentityIndex.load(client)).resolve(
+              <String>['vndb:v4', 'exe:z:/vn/h1/h1.exe', 'title:clannad']),
+          isNull);
+    });
+
+    test('一边有外部 id、一边没有时仍可按标题对号（不算冲突）', () async {
+      final FushiDatabase host = memDb();
+      final FushiDatabase client = memDb();
+      await seedGame(host, 'h1',
+          name: 'Clannad', sources: <String, String>{'vndb': 'v4'});
+      await host.addTagToGame('h1', await tagId(host, '原版'));
+      await seedGame(client, 'c1', name: 'CLANNAD');
+      await syncPair(client, host);
+      expect(await names(client.getTagsForGame('c1')), <String>{'原版'});
+    });
+
+    test('未改名的默认名（= exe 文件名）不产 title 键、不参与对号', () async {
+      final FushiDatabase host = memDb();
+      final FushiDatabase client = memDb();
+      await seedGame(host, 'h1', name: 'game', exe: r'C:\A\game.exe');
+      await host.addTagToGame('h1', await tagId(host, 'A'));
+      await seedGame(client, 'c1', name: 'game', exe: r'D:\B\game.exe');
+      await syncPair(client, host);
+      expect(await client.getAllTagAssignments(), isEmpty,
+          reason: '两款不同游戏的启动器都叫 game.exe，不能按标题串号');
+
+      final GalgameRow row = (await host.getGalgame('h1'))!;
+      expect(GameIdentityIndex.candidateKeys(row, const <GalgameSourceRow>[]),
+          isNot(contains('title:game')));
     });
   });
 
