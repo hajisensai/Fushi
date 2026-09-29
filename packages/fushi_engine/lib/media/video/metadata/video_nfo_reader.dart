@@ -24,18 +24,7 @@ class VideoNfoReader {
     XmlDocument? workDocument;
     String? workPath;
     for (final String videoPath in videoPaths) {
-      final String stemNfo = p.setExtension(videoPath, '.nfo');
-      final List<String> candidates = <String>[stemNfo];
-      String directory = p.dirname(p.normalize(p.absolute(videoPath)));
-      while (_inside(root, directory)) {
-        candidates.add(p.join(directory, 'tvshow.nfo'));
-        candidates.add(p.join(directory, 'movie.nfo'));
-        if (p.equals(directory, root)) break;
-        final String parent = p.dirname(directory);
-        if (p.equals(parent, directory)) break;
-        directory = parent;
-      }
-      for (final String candidate in candidates) {
+      for (final String candidate in _workNfoCandidates(root, videoPath)) {
         final XmlDocument? document = await _readExternal(candidate);
         if (document == null) continue;
         final String rootName = document.rootElement.name.local.toLowerCase();
@@ -139,6 +128,46 @@ class VideoNfoReader {
         if (workPath != null) 'path': workPath,
       },
     );
+  }
+
+  /// [readForPaths] 可能读到的全部 NFO 里最新的修改时刻；一个都不存在返回 null。
+  ///
+  /// 只 stat、不解析、不算哈希：启动索引拿它判「NFO 自上次落库后改过没有」，
+  /// 没改过就不必每次启动都把每集 NFO 解析一遍再整部重写。
+  Future<DateTime?> newestModifiedAt({
+    required String sourceRoot,
+    required List<String> videoPaths,
+  }) async {
+    final String root = p.normalize(p.absolute(sourceRoot));
+    final Set<String> candidates = <String>{
+      for (final String videoPath in videoPaths)
+        ..._workNfoCandidates(root, videoPath),
+    };
+    DateTime? newest;
+    for (final String candidate in candidates) {
+      final FileStat stat = await FileStat.stat(candidate);
+      if (stat.type != FileSystemEntityType.file) continue;
+      if (newest == null || stat.modified.isAfter(newest)) {
+        newest = stat.modified;
+      }
+    }
+    return newest;
+  }
+
+  /// 同名 `.nfo`（作品级或 `episodedetails`）+ 自视频目录向上到来源根的
+  /// `tvshow.nfo` / `movie.nfo`。
+  static List<String> _workNfoCandidates(String root, String videoPath) {
+    final List<String> candidates = <String>[p.setExtension(videoPath, '.nfo')];
+    String directory = p.dirname(p.normalize(p.absolute(videoPath)));
+    while (_inside(root, directory)) {
+      candidates.add(p.join(directory, 'tvshow.nfo'));
+      candidates.add(p.join(directory, 'movie.nfo'));
+      if (p.equals(directory, root)) break;
+      final String parent = p.dirname(directory);
+      if (p.equals(parent, directory)) break;
+      directory = parent;
+    }
+    return candidates;
   }
 
   Future<XmlDocument?> _readExternal(String path) async {

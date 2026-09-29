@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -5,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -39,6 +41,24 @@ class _RecordingRunner implements VideoSourceScrapeRunner {
       totalWorks: plannedWorks?.length ?? 0,
       succeededWorks: plannedWorks?.length ?? 0,
     );
+  }
+}
+
+class _BlockingRunner implements VideoSourceScrapeRunner {
+  final Completer<void> release = Completer<void>();
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    await release.future;
+    return SourceScrapeReport(sourceIds: <int>[source.id]);
   }
 }
 
@@ -356,6 +376,126 @@ void main() {
     expect(runner.sourceIds, hasLength(2));
     // 第二轮只带新作品：老作品已经自动试过，不重复打 AniDB。
     expect(runner.plannedTitles.last, <String>['Fresh Download']);
+  });
+
+  group('补刮记账跨进程（每次打开 app 不再重刮 / 重哈希）', () {
+    late Directory temp;
+    late File ledgerFile;
+
+    setUp(() async {
+      temp = await Directory.systemTemp.createTemp('sweep_ledger_');
+      ledgerFile = File('${temp.path}/ledger.json');
+    });
+
+    tearDown(() async {
+      if (await temp.exists()) await temp.delete(recursive: true);
+    });
+
+    VideoLibraryScrapeSweep relaunch(
+      DateTime now, {
+      String fingerprint = 'cfg-a',
+      TmdbChangedTvIdsProbe? probe,
+    }) =>
+        VideoLibraryScrapeSweep(
+          database: db,
+          controller: controller,
+          now: () => now,
+          ledger: VideoScrapeSweepLedger(file: ledgerFile),
+          configFingerprint: fingerprint,
+          tmdbChangedTvIds: probe,
+        );
+
+    test('查无的作品重启后不再自动重刮；过了重试期、或配置变了才再试', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      final DateTime day0 = DateTime(2026, 9, 20, 12);
+
+      await relaunch(day0).sweepOnce();
+      expect(runner.sourceIds, hasLength(1));
+      expect(await ledgerFile.exists(), isTrue);
+
+      // 「重启」= 全新的 sweep 实例、只共享盘上的账本。旧实现记在内存里，
+      // 每次打开 app 都把它重新塞进批次、排 AniDB 限流队列。
+      await relaunch(day0.add(const Duration(hours: 1))).sweepOnce();
+      await relaunch(day0.add(const Duration(days: 3))).sweepOnce();
+      expect(runner.sourceIds, hasLength(1));
+
+      // 换了刮削配置（开了哈希 / 换主源）：上一套配置下的「没中」不作数。
+      await relaunch(day0.add(const Duration(days: 3)), fingerprint: 'cfg-b')
+          .sweepOnce();
+      expect(runner.sourceIds, hasLength(2));
+
+      // 过了重试期：再自动试一次。
+      await relaunch(day0.add(const Duration(days: 11)), fingerprint: 'cfg-b')
+          .sweepOnce();
+      expect(runner.sourceIds, hasLength(3));
+    });
+
+    test('刷新与 TMDB 变更探针的时刻也跨进程：间隔内重启不再重刷 / 重问', () async {
+      final int sourceId = await addSource('D:/A');
+      final DateTime now = DateTime(2026, 9, 20, 12);
+      await addVideo('show-a', 'D:/A/Changed Show (2020).mkv', sourceId,
+          title: 'Changed Show');
+      await seedIdentityForBook('show-a',
+          tmdbId: 30984,
+          updatedAt:
+              now.subtract(const Duration(days: 3)).millisecondsSinceEpoch);
+      int probes = 0;
+      Future<Set<int>> probe({required DateTime since}) async {
+        probes++;
+        return <int>{30984};
+      }
+
+      await relaunch(now, probe: probe).sweepOnce();
+      expect(probes, 1);
+      expect(runner.plannedTitles.single, <String>['Changed Show']);
+
+      await relaunch(now.add(const Duration(hours: 2)), probe: probe)
+          .sweepOnce();
+      expect(probes, 1, reason: '探针间隔跨进程生效');
+      expect(runner.sourceIds, hasLength(1), reason: '刚刷过的作品不重刷');
+    });
+
+    test('账本文件损坏时当作空账本，照常补刮', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+          title: 'Unscraped Movie');
+      await ledgerFile.writeAsString('{not json');
+
+      await relaunch(DateTime(2026, 9, 20)).sweepOnce();
+      expect(runner.sourceIds, hasLength(1));
+    });
+  });
+
+  test('批次在跑时重复触发直接回上一份清单，不重新规划也不发批次', () async {
+    final int sourceId = await addSource('D:/A');
+    await addVideo('movie-a', 'D:/A/Unscraped Movie (2020).mkv', sourceId,
+        title: 'Unscraped Movie');
+    final _BlockingRunner blocking = _BlockingRunner();
+    final VideoSourceScrapeTaskController busyController =
+        VideoSourceScrapeTaskController(blocking);
+    addTearDown(busyController.dispose);
+    final VideoLibraryScrapeSweep service = VideoLibraryScrapeSweep(
+      database: db,
+      controller: busyController,
+      isEnabled: () => false,
+    );
+    expect(await service.sweepAndListPending(), hasLength(1));
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final Future<SourceScrapeReport> batch =
+        busyController.scrapeSource(source);
+    expect(busyController.isBusy, isTrue);
+    // 批次期间新入库一部：清单先不重算（每次重算 = 全来源重新规划 + 逐作品
+    // 查身份，批次里每写一部就触发一次），批次结束后库页会再触发一轮。
+    await addVideo('movie-b', 'D:/A/Another Movie (2021).mkv', sourceId,
+        title: 'Another Movie');
+    expect(await service.sweepAndListPending(), hasLength(1));
+
+    blocking.release.complete();
+    await batch;
+    expect(await service.sweepAndListPending(), hasLength(2));
   });
 
   group('资料刷新（Shoko UpdateShow + /tv/changes 增量）', () {
