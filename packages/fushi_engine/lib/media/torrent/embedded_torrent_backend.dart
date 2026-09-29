@@ -110,11 +110,14 @@ class EmbeddedTorrentBackend
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async {
-    final String savePath = _categoryPath(category);
-    if (!await prepareCategory(category)) return false;
+    // 显式落点优先（受管视频任务直落目标来源的暂存目录，BUG-2755）；
+    // 没给才回退活动根下的分类目录。
+    final String? targetPath = await _prepareSavePath(category, savePath);
+    if (targetPath == null) return false;
     final bool isMagnet = magnetOrUrl.startsWith('magnet:');
     final bool isLocalTorrentFile =
         magnetOrUrl.toLowerCase().endsWith('.torrent') &&
@@ -132,12 +135,12 @@ class EmbeddedTorrentBackend
       result = isMagnet
           ? _session.addMagnet(
               magnetOrUrl,
-              savePath: savePath,
+              savePath: targetPath,
               sequential: sequential,
             )
           : _session.addTorrentFile(
               magnetOrUrl,
-              savePath: savePath,
+              savePath: targetPath,
               sequential: sequential,
             );
     } finally {
@@ -155,6 +158,20 @@ class EmbeddedTorrentBackend
       }
     }
     return true;
+  }
+
+  /// 解析并建好本次添加的保存目录；失败返回 null（与 [prepareCategory] 同契约）。
+  Future<String?> _prepareSavePath(String category, String? savePath) async {
+    final String? explicit = savePath?.trim();
+    if (explicit == null || explicit.isEmpty) {
+      return await prepareCategory(category) ? _categoryPath(category) : null;
+    }
+    try {
+      await Directory(explicit).create(recursive: true);
+      return explicit;
+    } on Object {
+      return null;
+    }
   }
 
   Future<List<String>> _subscriptionTrackers() async {
@@ -181,6 +198,7 @@ class EmbeddedTorrentBackend
   Future<bool> addTorrentMetainfo(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async {
@@ -197,6 +215,7 @@ class EmbeddedTorrentBackend
       return addTorrent(
         file.path,
         category: category,
+        savePath: savePath,
         sequential: sequential,
         firstLastPiecePrio: firstLastPiecePrio,
       );
@@ -217,6 +236,7 @@ class EmbeddedTorrentBackend
   Future<bool> addTorrentMetainfoPaused(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
   }) async {
     if (!pauseControlAvailable) return false;
     Directory? temporaryDirectory;
@@ -230,12 +250,12 @@ class EmbeddedTorrentBackend
         '${temporaryDirectory.path}${Platform.pathSeparator}$fileName',
       );
       await file.writeAsBytes(payload.bytes, flush: true);
-      final String savePath = _categoryPath(category);
-      if (!await prepareCategory(category)) return false;
+      final String? targetPath = await _prepareSavePath(category, savePath);
+      if (targetPath == null) return false;
       _beginNetworkWake?.call();
       final FtAddResult result;
       try {
-        result = _session.addTorrentFile(file.path, savePath: savePath);
+        result = _session.addTorrentFile(file.path, savePath: targetPath);
         if (!result.ok || result.id == null) return false;
         final bool paused =
             _pauseControl?.pause(result.id!) ??

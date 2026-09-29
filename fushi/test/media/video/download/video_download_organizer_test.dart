@@ -220,6 +220,202 @@ void main() {
     },
   );
 
+  group('movie identity holding a multi-episode pack (BUG-2760)', () {
+    VideoOrganizationRequest movieRequest(String root) =>
+        VideoOrganizationRequest(
+          torrentId: 'hash',
+          title: 'スーパーの裏でヤニ吸うふたり',
+          year: 2026,
+          kind: VideoOrganizationKind.movie,
+          sourceRoot: root,
+          pathMapping: VideoDownloadPathMapping(
+            remoteRoot: '/library',
+            localRoot: root,
+          ),
+        );
+
+    // 用户生产库原样：TMDB 电影身份 + [Karin] 12 集 ABEMA 先行合集包。
+    List<TorrentFileEntry> karinPack() => <TorrentFileEntry>[
+      for (int episode = 1; episode <= 12; episode++)
+        TorrentFileEntry(
+          name:
+              '[Karin] Yanisuu - ${episode.toString().padLeft(2, '0')} '
+              '[ABEMA Early Release][WEB-DL 1080p AVC-8bit AAC] '
+              '[${(0xA0B0C000 + episode).toRadixString(16).toUpperCase()}].mkv',
+          // 第 7 集最大：修前它会被抬成「电影正片」，其余 11 集进 Extras。
+          size: episode == 7 ? 900 : 700 + episode,
+          progress: 1,
+          index: episode - 1,
+        ),
+    ];
+
+    test('is organized as Season 01 episodes with no Extras', () async {
+      final Directory root = await Directory.systemTemp.createTemp(
+        'fushi-organizer-moviepack-',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      const String show = 'スーパーの裏でヤニ吸うふたり (2026)';
+
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        movieRequest(root.path),
+        karinPack(),
+      );
+
+      expect(plan.kind, VideoOrganizationKind.episodic);
+      expect(
+        plan.files.map(
+          (VideoOrganizationFilePlan file) => file.targetRelativePath,
+        ),
+        <String>[
+          for (int episode = 1; episode <= 12; episode++)
+            '$show/Season 01/$show - '
+                'S01E${episode.toString().padLeft(2, '0')}.mkv',
+        ],
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan file) => file.episodeNumber),
+        <int>[for (int episode = 1; episode <= 12; episode++) episode],
+      );
+      expect(
+        plan.files.map((VideoOrganizationFilePlan file) => file.seasonNumber),
+        everyElement(1),
+      );
+    });
+
+    test('a genuine movie with NCOP / PV extras keeps the movie layout', () {
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        movieRequest(_localRoot),
+        <TorrentFileEntry>[
+          const TorrentFileEntry(
+            name: 'Release/Some Film (2024) [BD 1080p].mkv',
+            size: 1000,
+            progress: 1,
+            index: 0,
+          ),
+          const TorrentFileEntry(
+            name: 'Release/Some Film NCOP.mkv',
+            size: 50,
+            progress: 1,
+            index: 1,
+          ),
+          const TorrentFileEntry(
+            name: 'Release/Some Film PV01.mkv',
+            size: 40,
+            progress: 1,
+            index: 2,
+          ),
+          const TorrentFileEntry(
+            name: 'Release/Some Film PV02.mkv',
+            size: 40,
+            progress: 1,
+            index: 3,
+          ),
+        ],
+      );
+
+      const String film = 'スーパーの裏でヤニ吸うふたり (2026)';
+      expect(plan.kind, VideoOrganizationKind.movie);
+      expect(
+        plan.files.map(
+          (VideoOrganizationFilePlan file) => file.targetRelativePath,
+        ),
+        <String>[
+          '$film/$film.mkv',
+          '$film/Extras/Some Film NCOP.mkv',
+          '$film/Extras/Some Film PV01.mkv',
+          '$film/Extras/Some Film PV02.mkv',
+        ],
+      );
+    });
+
+    test('an unnumbered main feature beside numbered bonus clips stays a '
+        'movie', () {
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+        movieRequest(_localRoot),
+        <TorrentFileEntry>[
+          const TorrentFileEntry(
+            name: 'Some Film (2024).mkv',
+            size: 1000,
+            progress: 1,
+            index: 0,
+          ),
+          const TorrentFileEntry(
+            name: 'Bonus Clip - 01.mkv',
+            size: 30,
+            progress: 1,
+            index: 1,
+          ),
+          const TorrentFileEntry(
+            name: 'Bonus Clip - 02.mkv',
+            size: 30,
+            progress: 1,
+            index: 2,
+          ),
+        ],
+      );
+
+      expect(plan.kind, VideoOrganizationKind.movie);
+      expect(
+        plan.files.first.targetRelativePath,
+        'スーパーの裏でヤニ吸うふたり (2026)/スーパーの裏でヤニ吸うふたり (2026).mkv',
+      );
+      expect(
+        plan.files.skip(1).map(
+          (VideoOrganizationFilePlan file) => file.targetRelativePath,
+        ),
+        everyElement(contains('/Extras/')),
+      );
+    });
+
+    test('looksLikeEpisodicPack is conservative', () {
+      expect(
+        looksLikeEpisodicPack(
+          karinPack()
+              .map((TorrentFileEntry file) => file.name)
+              .toList(growable: false),
+        ),
+        isTrue,
+      );
+      // 一集的两个版本不构成合集。
+      expect(
+        looksLikeEpisodicPack(<String>['Show - 01 [v1].mkv', 'Show - 01 [v2].mkv']),
+        isFalse,
+      );
+      // 单文件、没有集号的真电影。
+      expect(looksLikeEpisodicPack(<String>['Some Film (2024).mkv']), isFalse);
+      // 剧场版合集是多部电影，不是分集。
+      expect(
+        looksLikeEpisodicPack(<String>[
+          '[Group] Detective Conan Movie 01 [1080p].mkv',
+          '[Group] Detective Conan Movie 02 [1080p].mkv',
+          '[Group] Detective Conan Movie 03 [1080p].mkv',
+        ]),
+        isFalse,
+      );
+      // 特典目录里的编号文件不算分集。
+      expect(
+        looksLikeEpisodicPack(<String>[
+          'Film/Some Film (2024).mkv',
+          'Film/SPs/Making - 01.mkv',
+          'Film/SPs/Making - 02.mkv',
+        ]),
+        isFalse,
+      );
+      // 非视频文件不参与。
+      expect(
+        looksLikeEpisodicPack(<String>[
+          'Show - 01.mkv',
+          'Show - 02.mkv',
+          'Show - 01.ass',
+          'cover.jpg',
+        ]),
+        isTrue,
+      );
+    });
+  });
+
   test('episodic organizer routes unnumbered specials to Extras (BUG-1785)', () async {
     final Directory root = await Directory.systemTemp.createTemp(
       'fushi-organizer-extras-',
@@ -909,6 +1105,7 @@ class _MaterializingBackend implements TorrentBackend {
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async => true;
@@ -937,6 +1134,7 @@ class _FakeBackend implements TorrentBackend {
   Future<bool> addTorrent(
     String magnetOrUrl, {
     required String category,
+    String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
   }) async => true;

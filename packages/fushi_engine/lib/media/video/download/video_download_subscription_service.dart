@@ -644,6 +644,10 @@ class VideoDownloadSubscriptionService {
       // 死任务行，永不收敛。`needsAttention` 更糟：它是「需要用户处理的可恢复
       // 状态」，backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet
       // 的任务会让两条持久工作流指向同一个 infohash，各自 organize/import。
+      // BUG-2755：旧任务的目标来源被删了（FK 清空）或不可用时，恢复前先改绑到
+      // 订阅的当前来源，否则恢复后整理阶段照样撞「受管来源不存在」。
+      await _rebindUnusableJobSource(job, subscription);
+      _ensureLeaseHeld();
       final bool revived = await database.reviveVideoDownloadJobForSubscription(
         jobId: job.jobId,
         autoRetryBudget: autoRetryBudget,
@@ -716,7 +720,36 @@ class VideoDownloadSubscriptionService {
     }
   }
 
+  Future<void> _rebindUnusableJobSource(
+    VideoDownloadJobRow job,
+    VideoDownloadSubscriptionRow subscription,
+  ) async {
+    final int? target = subscription.targetSourceId;
+    if (target == null ||
+        target == job.targetSourceId ||
+        !videoDownloadJobTargetSourceRebindable(job)) {
+      return;
+    }
+    final int? current = job.targetSourceId;
+    if (current != null &&
+        isUsableManagedVideoSource(await database.getMediaSourceById(current))) {
+      return;
+    }
+    if (!isUsableManagedVideoSource(await database.getMediaSourceById(target))) {
+      return;
+    }
+    _ensureLeaseHeld();
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        targetSourceId: Value<int?>(target),
+        updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
   Future<void> _markItemQueued(int itemId, String jobId) async {
+
     _ensureLeaseHeld();
     await database.updateVideoDownloadSubscriptionItem(
       itemId,

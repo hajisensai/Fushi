@@ -5789,5 +5789,9 @@
   "ai_video_acquire_failure_remote_unavailable": "Lost connection to the device running this conversation. Check that it's online and try again.",
   "ai_video_acquire_remote_unsupported": "$device doesn't support AI video download. Update Fushi on that device.",
   "ai_video_acquire_remote_no_provider": "$device has no AI provider assigned to AI video download. Assign one in Settings › AI on that device.",
-  "ai_video_acquire_remote_not_ready": "$device isn't ready to download yet (download backend or managed video source not set up)."
+  "ai_video_acquire_remote_not_ready": "$device isn't ready to download yet (download backend or managed video source not set up).",
+  "video_library_delete_rows_failed": "Could not delete $n video(s); they are still in the library.",
+  "video_library_delete_failed": "Delete failed: $reason",
+  "media_source_remove_download_refs": "$subscriptions download subscriptions and $jobs unfinished downloads save into this source. Move them to:",
+  "media_source_remove_download_keep": "Don't move (pause those subscriptions)"
 }

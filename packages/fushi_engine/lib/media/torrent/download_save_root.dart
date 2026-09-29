@@ -7,6 +7,48 @@ import 'package:path/path.dart' as p;
 /// 无限增长没有收益，只会让每次过滤多做无谓比较。
 const int kMaxSaveRootHistory = 8;
 
+/// 受管视频来源下的下载暂存目录名（BUG-2755）。
+///
+/// 受管视频任务不再先落全局下载根、整理时再跨盘搬进来源，而是直接下载到
+/// `<来源根>/.fushi-incoming/<category>`，整理阶段变成同一目录树内的改名。
+/// 以 `.` 开头 + `fushi-` 前缀：来源扫描器据此跳过未完成的下载（见
+/// [isSourceIncomingPath]），也不会与用户自己的 `.incoming` 之类目录撞名。
+const String kSourceIncomingDirName = '.fushi-incoming';
+
+/// 受管来源 [sourceRoot] 下 [category] 的下载暂存目录（本机视角）。
+String sourceIncomingCategoryPath(String sourceRoot, String category) =>
+    p.join(sourceRoot, kSourceIncomingDirName, category);
+
+/// [path] 是否位于来源 [sourceRoot] 的下载暂存目录内（含目录本身）。
+bool isSourceIncomingPath(String sourceRoot, String path) {
+  final String incoming =
+      p.normalize(p.join(sourceRoot, kSourceIncomingDirName));
+  final String normalized = p.normalize(path);
+  return p.equals(incoming, normalized) || p.isWithin(incoming, normalized);
+}
+
+/// [savePath] 是否是某个来源下 [category] 的下载暂存目录（或其子目录）：
+/// 路径中存在 `.fushi-incoming/<category...>` 这一段。暂存目录散落在各个来源根
+/// 下，不在 [TorrentSaveRoots] 里，靠目录名本身认领（目录即真相）。
+bool isSourceIncomingCategoryPath(String savePath, String category) {
+  if (category.trim().isEmpty) return false;
+  final List<String> parts = p.split(p.normalize(savePath));
+  final List<String> categoryParts = p.split(p.normalize(category));
+  for (int i = 0; i < parts.length; i++) {
+    if (!p.equals(parts[i], kSourceIncomingDirName)) continue;
+    if (parts.length - i - 1 < categoryParts.length) continue;
+    bool matches = true;
+    for (int j = 0; j < categoryParts.length; j++) {
+      if (!p.equals(parts[i + 1 + j], categoryParts[j])) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) return true;
+  }
+  return false;
+}
+
 /// 内置 libtorrent 引擎的下载根集合。
 ///
 /// TODO-1961：下载根从硬编码 `<documents>/anime_downloads/content` 变成用户可配置
@@ -62,8 +104,12 @@ class TorrentSaveRoots {
   /// 除了 `<root>/<category>` 全等，还接受它的子目录：用户把下好的内容整理进分类
   /// 目录下的子文件夹（TODO-1961 ②，配合引擎侧 move_storage 才不掐做种）之后，
   /// savePath 仍落在分类目录内，任务不该从下载页蒸发。
+  ///
+  /// 受管视频任务直落来源暂存目录（BUG-2755），那些路径不在任何根下，按
+  /// [isSourceIncomingCategoryPath] 认领，否则下载阶段轮询会把它判成「引擎里丢了」。
   bool ownsCategoryPath(String savePath, String category) {
     final String normalized = p.normalize(savePath);
+    if (isSourceIncomingCategoryPath(normalized, category)) return true;
     for (final String root in all) {
       final String categoryPath = p.normalize(p.join(root, category));
       if (p.equals(normalized, categoryPath)) return true;

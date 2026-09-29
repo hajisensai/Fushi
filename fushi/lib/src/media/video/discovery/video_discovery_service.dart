@@ -7,6 +7,7 @@ import 'package:fushi/src/media/video/discovery/video_discovery_adapters.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/media/video/metadata/anilist_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_airing_status.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_merge.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
@@ -675,12 +676,21 @@ class _MergedDiscoveryItem {
 /// 集数才能判定谁对。而集数是可选字段、各 adapter 填充不对称（搜索摘要普遍不带
 /// 集数），所以集数缺失时必须承认「不知道」，不能默认成 TV —— 默认成 TV 会把本该
 /// 合并的单集作品重新拆成两张卡（BUG-1531 的反面）。未知与任何类型都不算冲突。
+///
+/// 唯一的例外是**正在放送**：电影没有「放送中」这个状态（TMDB 电影状态只有
+/// released / post production 等），一部 TV/ONA 正在逐集播出，就足以断定它是
+/// 剧集。修前集数未知的放送中动画会被同名同年的 TMDB 电影身份弱匹配吞掉，整组
+/// 按电影下载、整理（BUG-2760）。
 VideoMetadataMediaKind? _aggregationKind(VideoDiscoveryItem item) {
   if (item.reference.mediaKind == VideoMetadataMediaKind.movie) {
     return VideoMetadataMediaKind.movie;
   }
   if (item.reference.discoveryCategory == VideoDiscoveryCategory.anime) {
     final int? episodeCount = item.metadataWork?.episodeCount;
+    if (episodeCount == null &&
+        item.metadataWork?.airingStatus == VideoAiringStatus.airing) {
+      return item.reference.mediaKind;
+    }
     if (episodeCount == null) return null;
     if (episodeCount == 1) return VideoMetadataMediaKind.movie;
   }

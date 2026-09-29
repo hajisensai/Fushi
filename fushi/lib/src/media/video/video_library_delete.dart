@@ -31,12 +31,15 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show LocalVideoFileDeleteHooks;
 import 'package:fushi/src/startup/media_handle_registry.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/sync/local_file_delete_feedback.dart';
+import 'package:fushi/utils.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
-/// [deleteVideoBooksWithDecision] 的结果：删了几行 + 本机原件的逐条删除结果。
+/// [deleteVideoBooksWithDecision] 的结果：删了几行 + 没删掉的行（BUG-2754：某条
+/// 失败不拖累其余条，失败条目留在库里，由 UI 如实提示）+ 本机原件的逐条删除结果。
 typedef VideoLibraryDeleteResult = ({
   int deleted,
+  List<VideoBookDeleteFailure> failed,
   LocalFileDeleteReport localFiles,
 });
 
@@ -60,38 +63,70 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
       bookUids: bookUids,
     );
   }
-  final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
-    bookUids,
-    scope: decision.scope,
-    compactDatabase: compactDatabase,
-    deleteLocalFiles: decision.deleteLocalFiles,
-    localFileHooks: decision.deleteLocalFiles
-        ? LocalVideoFileDeleteHooks(
-            beforeDelete: (List<String> candidates) async {
-              // ① 正握着这些文件的播放器先放句柄（Windows 上不放就是 errno 32）。
-              await MediaHandleRegistry.instance.releaseHolding(candidates);
-              // ② 还在做种的文件先在后端标 skip，种子才不会因缺文件被停掉。
-              await prepareVideoDownloadJobsForLocalDelete(
-                database: database,
-                candidatePaths: candidates,
-                pipeline: pipeline,
-              );
-            },
-            afterDelete: (LocalFileDeleteReport result) async {
-              report = result;
-              if (result.removed.isEmpty) return;
-              await reconcileVideoDownloadJobsAfterLocalDelete(
-                database: database,
-                deletedPaths: result.removedSet,
-                pipeline: pipeline,
-              );
-              database.notifyVideoLibraryChanged();
-            },
-          )
-        : null,
-    afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
-  );
-  return (deleted: deleted, localFiles: report);
+  int deleted;
+  List<VideoBookDeleteFailure> failed = const <VideoBookDeleteFailure>[];
+  try {
+    deleted = await repo.deleteVideoBooksAndReclaimAssets(
+      bookUids,
+      scope: decision.scope,
+      compactDatabase: compactDatabase,
+      deleteLocalFiles: decision.deleteLocalFiles,
+      localFileHooks: decision.deleteLocalFiles
+          ? LocalVideoFileDeleteHooks(
+              beforeDelete: (List<String> candidates) async {
+                // ① 正握着这些文件的播放器先放句柄（Windows 上不放就是 errno 32）。
+                await MediaHandleRegistry.instance.releaseHolding(candidates);
+                // ② 还在做种的文件先在后端标 skip，种子才不会因缺文件被停掉。
+                await prepareVideoDownloadJobsForLocalDelete(
+                  database: database,
+                  candidatePaths: candidates,
+                  pipeline: pipeline,
+                );
+              },
+              afterDelete: (LocalFileDeleteReport result) async {
+                report = result;
+                if (result.removed.isEmpty) return;
+                await reconcileVideoDownloadJobsAfterLocalDelete(
+                  database: database,
+                  deletedPaths: result.removedSet,
+                  pipeline: pipeline,
+                );
+                database.notifyVideoLibraryChanged();
+              },
+            )
+          : null,
+      afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+    );
+  } on VideoBooksDeleteException catch (e) {
+    // 部分失败：成功的那些已删完、回收完（仓库层把尾活跑完才抛）；失败的逐条留痕。
+    deleted = e.deletedCount;
+    failed = e.failures;
+    for (final VideoBookDeleteFailure failure in e.failures) {
+      ErrorLogService.instance.log(
+        'VideoLibraryDelete.deleteRow',
+        failure.error,
+        failure.stackTrace,
+      );
+    }
+  }
+  return (deleted: deleted, failed: failed, localFiles: report);
+}
+
+/// 把一次视频库删除的失败告诉用户（BUG-2754）：有行没删掉就弹 warning toast
+/// 说清几条留在库里（逐条原因已在 [deleteVideoBooksWithDecision] 记进错误日志），
+/// 再交给 [reportLocalFileDeleteFailures] 报本机原件的删除失败。全部成功时什么都
+/// 不做——成功提示由调用方按自己的语境给。
+void reportVideoLibraryDeleteFailures(
+  VideoLibraryDeleteResult result, {
+  required String source,
+}) {
+  if (result.failed.isNotEmpty) {
+    FushiToast.show(
+      msg: t.video_library_delete_rows_failed(n: result.failed.length),
+      severity: ToastSeverity.warning,
+    );
+  }
+  reportLocalFileDeleteFailures(result.localFiles, source: source);
 }
 
 /// 删这些视频攒下的统计（「同时删除统计数据」勾选的落地）。

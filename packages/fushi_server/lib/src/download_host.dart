@@ -142,6 +142,8 @@ class ServerDownloadHost implements HostDownloadHost {
       scrapeCoordinator: scrape,
       manualTorrentDirectory: Directory(p.join(paths.support.path, 'manual_torrents')),
       workerId: 'fushi-server-${identity.deviceId}',
+      // 目标来源失效的任务重试时改绑到服务端自己的下载来源（BUG-2755）。
+      defaultTargetSourceId: () async => _sourceId,
     )..start();
     _pipeline = pipeline;
     // 内容订阅：host 自己抢租约、搜、投管线（与 app 同一个服务类）。

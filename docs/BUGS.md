@@ -29,7 +29,7 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2541 条。点号进各自文件。
+> 共 2544 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -40,8 +40,11 @@
 | [BUG-2763](bugs/BUG-2763-ext-nested-popup-zoom-gap.md) | ✅ | ✅ | 浏览器扩展嵌套查词子层内容只占外框 1/zoom，底部右侧留大块空白 |
 | [BUG-2762](bugs/BUG-2762-interconnect-dictionary-duplicate.md) | ✅ | ✅ | 互联页「上传到互联对端」里词典出现两次 |
 | [BUG-2761](bugs/BUG-2761-webkit-paginated-ruby-page-top-bleed.md) | ✅ | ✅ | Mac/iOS 分页每页首行振假名画到上一页底部 |
+| [BUG-2760](bugs/BUG-2760-ai-download-movie-pack-extras.md) | ✅ | ✅ | AI 下载多集合集包被判电影：整套进 Extras 只导入一集 |
 | [BUG-2757](bugs/BUG-2757-favorite-sentence-no-word.md) | ✅ | ✅ | 查词弹窗顶栏收藏句子后收藏夹看不到对应的单词 |
 | [BUG-2756](bugs/BUG-2756-favorite-word-no-context.md) | ✅ | ✅ | 收藏夹里的收藏词只有词形，没有释义和上下文 |
+| [BUG-2755](bugs/BUG-2755-download-savepath-follow-source.md) | ✅ | ✅ | 删除/更换来源后视频下载仍落旧位置 |
+| [BUG-2754](bugs/BUG-2754-video-batch-delete-extras-fk.md) | ✅ | ✅ | 视频批量删除：本地花絮外键冲突删不掉且逐条回收慢 |
 | [BUG-2753](bugs/BUG-2753-mdx-empty-reading-split-headword.md) | ✅ | ✅ | MDX词典与Yomitan词典同一词条被拆成两张卡 |
 | [BUG-2752](bugs/BUG-2752-sync-dict-refresh-empties-cache.md) | ✅ | ✅ | 互联下载服务器词典后本地词典全部消失 |
 | [BUG-2751](bugs/BUG-2751-vn-ios-screen-swap-residue.md) | ✅ | ✅ | iOS VN 翻屏后旧屏高亮列残留、新列被切半 |

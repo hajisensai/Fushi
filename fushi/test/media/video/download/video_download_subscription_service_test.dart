@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -497,6 +498,46 @@ void main() {
           reason: '后续每一轮都必须走「恢复既有任务」，不能再 enqueue 一份克隆');
       expect(await database.getVideoDownloadJobs(), hasLength(1),
           reason: '15 分钟一轮的持续故障不能每轮往面板堆一条死任务行');
+    });
+
+    // BUG-2755：旧任务的目标来源被删（FK 清空）后，订阅改到了新来源；恢复时
+    // 若不先改绑，任务回到 active 也只会在整理阶段再撞「受管来源不存在」。
+    test('目标来源失效的旧任务恢复前改绑到订阅的当前来源', () async {
+      final FushiDatabase database = await seed();
+      final List<String> enqueuedJobIds = <String>[];
+      await runRound(database, round: 0, enqueuedJobIds: enqueuedJobIds);
+      final int oldSource =
+          (await database.getVideoDownloadJob('job-1'))!.targetSourceId!;
+      final Directory newRoot =
+          await Directory.systemTemp.createTemp('fushi-sub-rebind-');
+      addTearDown(() => newRoot.delete(recursive: true));
+      final int newSource = await database.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'New videos',
+          mediaKind: 'video',
+          rootPath: newRoot.path,
+          createdAt: _nowAt,
+        ),
+      );
+      await database.updateVideoDownloadSubscription(
+        'anime',
+        VideoDownloadSubscriptionsCompanion(
+          targetSourceId: Value<int?>(newSource),
+        ),
+      );
+      await database.deleteMediaSource(oldSource);
+      await breakJob(
+          database, 'job-1', VideoDownloadJobLifecycle.needsAttention);
+      expect((await database.getVideoDownloadJob('job-1'))!.targetSourceId,
+          isNull);
+
+      await runRound(database, round: 1, enqueuedJobIds: enqueuedJobIds);
+
+      final VideoDownloadJobRow job =
+          (await database.getVideoDownloadJob('job-1'))!;
+      expect(enqueuedJobIds, <String>['job-1']);
+      expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+      expect(job.targetSourceId, newSource);
     });
 
     test('恢复的是既有任务：jobId 不变、生命周期回到 active', () async {

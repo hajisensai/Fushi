@@ -18,6 +18,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi_engine/media/torrent/download_save_root.dart'
+    show sourceIncomingCategoryPath;
 import 'package:fushi_engine/media/torrent/magnet_utils.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart' show kNyaaTrackers;
 import 'package:fushi_engine/media/torrent/public_trackers.dart'
@@ -142,6 +144,27 @@ DiscoveryMediaKind? downloadOnlyKindOfOrganizationPolicy(String policy) {
     kManualDownloadOnlyPolicyPrefix.length,
   )];
 }
+
+/// 任务是否走「整理进受管视频来源」的流程（legacy 与按域入库/仅下载都不走）。
+bool videoDownloadJobUsesManagedSource(VideoDownloadJobRow job) =>
+    job.organizationPolicy != 'legacy' &&
+    discoveryKindOfOrganizationPolicy(job.organizationPolicy) == null &&
+    downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy) == null;
+
+/// 目标来源失效时这条任务还能不能改绑到别的来源（BUG-2755）：受管任务、未完成、
+/// 文件还没最终落进来源（[kVideoDownloadSourceRebindableStages]）。
+bool videoDownloadJobTargetSourceRebindable(VideoDownloadJobRow job) =>
+    videoDownloadJobUsesManagedSource(job) &&
+    job.lifecycle != VideoDownloadJobLifecycle.completed &&
+    kVideoDownloadSourceRebindableStages.contains(job.stage);
+
+/// 受管视频来源此刻是否可用：存在、视频、本地、根目录可访问。与整理阶段的
+/// 校验同一判据，只是不抛异常。
+bool isUsableManagedVideoSource(MediaSourceRow? source) =>
+    source != null &&
+    source.mediaKind == 'video' &&
+    source.transport == 'local' &&
+    Directory(source.rootPath).existsSync();
 
 /// 手动添加任务（磁力链接 / .torrent 文件）。[magnetUri] 与 [metainfo] 恰好
 /// 传一个。[discoveryKind] 为 null 表示视频任务（走完整 organize/subtitle/
@@ -804,11 +827,7 @@ class VideoDownloadLeaseGuard {
       // 续期 UPDATE 拿到 SQLITE_BUSY 后就是在这里被静默吞掉的，那条挂起的写语句
       // 随后毒化了整条数据库连接（每次 COMMIT 都抛「SQL statements in progress」），
       // 错误日志里却看不到第一现场。
-      engineLog.log(
-        'VideoDownloadLeaseGuard.renew',
-        error,
-        stack,
-      );
+      engineLog.log('VideoDownloadLeaseGuard.renew', error, stack);
       renewed = false;
     }
     if (!renewed && !_released && !_stopped) markLost();
@@ -838,6 +857,7 @@ class VideoDownloadPipelineService {
     VideoCoverExtractor? coverExtractor,
     this.videoCoversDirectory,
     this.skipDownloadExtras,
+    this.defaultTargetSourceId,
   }) : preferredSubtitleLanguages = List<String>.unmodifiable(
          preferredSubtitleLanguages,
        ),
@@ -912,6 +932,11 @@ class VideoDownloadPipelineService {
   /// 不在这个集合里的、带自动跳过特典行的任务，观察时要重写一次。
   final Set<String> _extrasSkipAppliedJobIds = <String>{};
 
+  /// 当前默认的受管视频来源（app = 用户选的下载来源，没选取第一个可用的；服务端
+  /// = 它自己的下载来源）。任务目标来源被删后重试时用来重绑（BUG-2755）；null =
+  /// 装配方不提供，重试只能改绑到订阅的当前来源。
+  final Future<int?> Function()? defaultTargetSourceId;
+
   final VideoBookRepository _videoRepository;
   final VideoDownloadOrganizer _organizer = const VideoDownloadOrganizer();
 
@@ -929,6 +954,8 @@ class VideoDownloadPipelineService {
     if (request.maxAttempts <= 0) {
       throw ArgumentError.value(request.maxAttempts, 'maxAttempts');
     }
+    final String? revivedJobId = await _reviveOrphanedJobForRequest(request);
+    if (revivedJobId != null) return revivedJobId;
     final int now = DateTime.now().millisecondsSinceEpoch;
     final String jobId = generateVideoDownloadInstallationId();
     await database.upsertVideoDownloadJob(
@@ -973,6 +1000,43 @@ class VideoDownloadPipelineService {
     wake();
     return jobId;
   }
+
+  /// 同一 torrent 的旧任务停在 failed / needsAttention、目标来源又已失效时，
+  /// 把它改绑到本次请求的来源并按用户重试恢复，返回它的 jobId（BUG-2755）。
+  ///
+  /// `(fingerprint, torrent_hash)` 唯一：不这样做，新任务行一插就撞唯一索引，
+  /// 这一集改了来源也永远下不回来。旧任务的来源还可用、还在跑或文件已落进来源
+  /// 时返回 null，照常新建（撞索引的老行为不变）。
+  Future<String?> _reviveOrphanedJobForRequest(
+    VideoDownloadEnqueueRequest request,
+  ) async {
+    final String? hash = request.resource.infoHash?.trim().toLowerCase();
+    if (hash == null || hash.isEmpty) return null;
+    final VideoDownloadJobRow? existing = await database
+        .findVideoDownloadJobByFingerprintAndTorrentHash(
+          request.backendTarget.fingerprint,
+          hash,
+        );
+    if (existing == null || !await _isOrphanedFromSource(existing)) {
+      return null;
+    }
+    await database.updateVideoDownloadJob(
+      existing.jobId,
+      VideoDownloadJobsCompanion(
+        targetSourceId: Value<int?>(request.targetSourceId),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    await retryJob(existing.jobId);
+    return existing.jobId;
+  }
+
+  /// 任务停在 failed / needsAttention、文件还没落进来源、而目标来源已失效。
+  Future<bool> _isOrphanedFromSource(VideoDownloadJobRow job) async =>
+      videoDownloadJobTargetSourceRebindable(job) &&
+      (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+          job.lifecycle == VideoDownloadJobLifecycle.needsAttention) &&
+      await _usableSourceId(job.targetSourceId) == null;
 
   /// 手动添加任务：与搜索出的资源同走本管线（同任务列表、同优先级/重试/删除
   /// 操作）。视频任务走完整 organize/subtitle/import 流程；[DiscoveryMediaKind]
@@ -1299,6 +1363,10 @@ class VideoDownloadPipelineService {
         job.backendKind == QbConnectionConfig.backendEmbedded &&
         job.stage == VideoDownloadJobStage.download &&
         (job.lastError ?? '').contains(videoDownloadMissingBackendTaskError);
+    if (job.lifecycle == VideoDownloadJobLifecycle.failed ||
+        job.lifecycle == VideoDownloadJobLifecycle.needsAttention) {
+      await _rebindUnusableTargetSource(job);
+    }
     final bool changed = await database.retryVideoDownloadJobByUser(
       jobId: jobId,
       nowAt: DateTime.now().millisecondsSinceEpoch,
@@ -1310,6 +1378,36 @@ class VideoDownloadPipelineService {
       );
     }
     wake();
+  }
+
+  /// 目标来源已被删 / 不可用的任务改绑到订阅的当前来源，没有订阅（或订阅的来源
+  /// 也不可用）时改绑到默认来源（BUG-2755）。否则重试只会在整理阶段再撞一次
+  /// 「managed video source no longer exists」。来源仍可用、或文件已落进来源的
+  /// 任务不动。
+  Future<void> _rebindUnusableTargetSource(VideoDownloadJobRow job) async {
+    if (!videoDownloadJobTargetSourceRebindable(job)) return;
+    if (await _usableSourceId(job.targetSourceId) != null) return;
+    final VideoDownloadSubscriptionRow? subscription = await database
+        .getVideoDownloadSubscriptionForJob(job.jobId);
+    int? replacement = await _usableSourceId(subscription?.targetSourceId);
+    final Future<int?> Function()? fallback = defaultTargetSourceId;
+    if (replacement == null && fallback != null) {
+      replacement = await _usableSourceId(await fallback());
+    }
+    if (replacement == null) return;
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        targetSourceId: Value<int?>(replacement),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+  }
+
+  Future<int?> _usableSourceId(int? sourceId) async {
+    if (sourceId == null) return null;
+    final MediaSourceRow? source = await database.getMediaSourceById(sourceId);
+    return isUsableManagedVideoSource(source) ? sourceId : null;
   }
 
   /// Resumes a user-paused durable job and its exact backend task.
@@ -1927,10 +2025,16 @@ class VideoDownloadPipelineService {
         );
         return;
       }
-      throw VideoDownloadPipelineActionRequired(
-        'This torrent is already managed by job ${duplicate.jobId}',
-      );
+      if (!await _supersedeOrphanedDuplicate(duplicate, job)) {
+        throw VideoDownloadPipelineActionRequired(
+          'This torrent is already managed by job ${duplicate.jobId}',
+        );
+      }
     }
+    _ensureLeaseHeld();
+    // BUG-2755：受管任务直接下载进目标来源的暂存目录，不再先落全局下载根。
+    final String? savePath = await _incomingSavePath(job, binding, category);
+    _ensureLeaseHeld();
     // Persist the exact hash before the enqueue side effect.
     await database.updateVideoDownloadJob(
       job.jobId,
@@ -1946,12 +2050,13 @@ class VideoDownloadPipelineService {
         backend: binding.backend,
         payload: payload,
         category: category,
+        savePath: savePath,
         torrentId: hash,
       );
     } else {
       final bool added = await TorrentAddCoordinator(
         binding.backend,
-      ).add(payload, category: category);
+      ).add(payload, category: category, savePath: savePath);
       _ensureLeaseHeld();
       if (!added) {
         final List<TorrentSnapshot> current = await binding.backend
@@ -1986,6 +2091,56 @@ class VideoDownloadPipelineService {
     );
   }
 
+  /// 同 hash 的旧任务停在 failed / needsAttention、目标来源又已失效时，让 [job]
+  /// 接管它（BUG-2755）。否则同一集改了来源重新入队会被它永远拦成「already
+  /// managed」。旧任务的来源还在、还在跑、或文件已落进来源时不接管。
+  Future<bool> _supersedeOrphanedDuplicate(
+    VideoDownloadJobRow duplicate,
+    VideoDownloadJobRow job,
+  ) async {
+    if (!await _isOrphanedFromSource(duplicate)) return false;
+
+    _ensureLeaseHeld();
+    final bool superseded = await database.supersedeVideoDownloadJob(
+      supersededJobId: duplicate.jobId,
+      byJobId: job.jobId,
+    );
+    if (superseded) {
+      engineLog.logDiagnostic(
+        'VideoDownloadPipeline',
+        'job ${job.jobId} took over torrent of job ${duplicate.jobId} '
+            'whose target source no longer exists',
+      );
+    }
+    return superseded;
+  }
+
+  /// 受管任务在下载器里的落点：`<来源根>/.fushi-incoming/<category>`，经路径映射
+  /// 换成后端视角（BUG-2755）。非受管任务、没有来源、来源不可用、或来源不在任何
+  /// 映射里时返回 null，后端回退到自己的分类默认目录（全局下载根）。
+  ///
+  /// 没配映射 = 下载器与本机同盘同视角（与整理阶段 [_effectivePathMappings] 的
+  /// identity 假设一致），直接用本机路径。
+  Future<String?> _incomingSavePath(
+    VideoDownloadJobRow job,
+    VideoDownloadBackendBinding binding,
+    String category,
+  ) async {
+    if (!videoDownloadJobUsesManagedSource(job)) return null;
+    final int? sourceId = job.targetSourceId;
+    if (sourceId == null) return null;
+    final MediaSourceRow? source = await database.getMediaSourceById(sourceId);
+    if (!isUsableManagedVideoSource(source)) return null;
+    final String local = p.normalize(
+      p.absolute(sourceIncomingCategoryPath(source!.rootPath, category)),
+    );
+    if (binding.pathMappings.isEmpty) return local;
+    return _mappingForLocalPath(
+      binding.pathMappings,
+      local,
+    )?.localToRemote(local);
+  }
+
   /// 选择下载必须在产生任何网络副作用前确认能力，并拒绝接管后端中已有的同
   /// hash 任务。后端以暂停态添加后才写优先级；失败时任务最多残留为暂停态，
   /// 不会静默开始整包下载。
@@ -1994,6 +2149,7 @@ class VideoDownloadPipelineService {
     required TorrentBackend backend,
     required TorrentAddPayload payload,
     required String category,
+    required String? savePath,
     required String torrentId,
   }) async {
     if (payload is! TorrentMetainfoPayload ||
@@ -2022,7 +2178,9 @@ class VideoDownloadPipelineService {
     final bool added = await pausedBackend.addTorrentMetainfoPaused(
       payload,
       category: category,
+      savePath: savePath,
     );
+
     _ensureLeaseHeld();
     if (!added) {
       throw StateError('download backend rejected the paused torrent');
@@ -2612,6 +2770,13 @@ class VideoDownloadPipelineService {
     } on FormatException catch (error) {
       throw VideoDownloadPipelineActionRequired(error.message.toString());
     }
+    // 整理器把「电影身份 + 多集合集包」改判成了剧集（BUG-2760）：任务本身也
+    // 必须跟着变成剧集，否则导入仍按电影逐文件建条目、字幕只配主片。先落任务
+    // 形态、再落文件计划——崩溃重放时两者不会一新一旧。
+    if (planned.kind == VideoOrganizationKind.episodic &&
+        request.kind == VideoOrganizationKind.movie) {
+      job = await _reclassifyMovieJobAsEpisodic(job);
+    }
     await _persistOrganizationIntent(job, planned, backendFiles);
     _ensureLeaseHeld();
     final VideoOrganizationResult result = await _organizer.organize(
@@ -2862,6 +3027,38 @@ class VideoDownloadPipelineService {
     await _advance(job, VideoDownloadJobStage.subtitle);
   }
 
+  /// 把电影任务改成剧集任务（BUG-2760，整理器判定种子是多集合集包）。
+  ///
+  /// 身份快照里的 TMDB / IMDb id 属于**电影**命名空间，不能拿去当剧集身份；
+  /// 这里不改写快照，而是由 [_mediaReference] 在「快照 kind ≠ 任务 kind」时丢弃
+  /// 这些 id（刮削改走媒体库自动识别）。旧行没有快照时先按改判前的形态补写一份，
+  /// 让这条判据对它同样成立。
+  Future<VideoDownloadJobRow> _reclassifyMovieJobAsEpisodic(
+    VideoDownloadJobRow job,
+  ) async {
+    _ensureLeaseHeld();
+    fushiDebugPrint(
+      '[download-organize] ${job.jobId}: movie job holds a multi-episode '
+      'pack, reclassifying as tv',
+    );
+    await database.updateVideoDownloadJob(
+      job.jobId,
+      VideoDownloadJobsCompanion(
+        mediaKind: Value<String>(VideoMetadataMediaKind.tv.name),
+        discoveryCategory:
+            job.discoveryCategory == VideoDiscoveryCategory.movie.name
+            ? Value<String?>(VideoDiscoveryCategory.tv.name)
+            : const Value<String?>.absent(),
+        identityJson: job.identityJson == null
+            ? Value<String?>(encodeVideoMediaReference(_mediaReference(job)))
+            : const Value<String?>.absent(),
+        updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
+    _ensureLeaseHeld();
+    return await database.getVideoDownloadJob(job.jobId) ?? job;
+  }
+
   Future<void> _persistOrganizationIntent(
     VideoDownloadJobRow job,
     VideoOrganizationPlan plan,
@@ -3006,8 +3203,8 @@ class VideoDownloadPipelineService {
     // 字幕补齐链路（VideoSubtitleBackfillService）接手。
     final VideoDownloadJobFileRow? movieMain =
         job.mediaKind == VideoMetadataMediaKind.movie.name
-            ? _mainMovieRow(files)
-            : null;
+        ? _mainMovieRow(files)
+        : null;
     bool anyInstalled = false;
     for (final VideoDownloadJobFileRow file in files) {
       if (movieMain != null && file.id != movieMain.id) continue;
@@ -3943,8 +4140,8 @@ class VideoDownloadPipelineService {
     _ensureLeaseHeld();
     final MediaSourceRow source = await _managedSource(job);
     final VideoMetadataLookup? lookup = _confirmedMetadataLookup(job);
-    final VideoMetadataMediaKind? mediaKind =
-        VideoMetadataMediaKind.values.asNameMap()[job.mediaKind];
+    final VideoMetadataMediaKind? mediaKind = VideoMetadataMediaKind.values
+        .asNameMap()[job.mediaKind];
     if (lookup == null || mediaKind == null) {
       // 防御分支：import 阶段的闸已保证只有带 MAL/TMDB 身份的任务进到这里。
       // 万一（旧行重试/竞态）没有身份，按同一判据正常完成而不是卡死。
@@ -4070,12 +4267,12 @@ class VideoDownloadPipelineService {
       // 看到了却分在多个作品里且没有一个是本任务的合集。
       final String detail = pathMatches.isEmpty
           ? 'none of ${importedPaths.length} imported file(s) belong to a '
-              'scrapable work of source ${source.id} '
-              '(${works.length} work(s) planned)'
+                'scrapable work of source ${source.id} '
+                '(${works.length} work(s) planned)'
           : '${importedPaths.length} imported file(s) spread over '
-              '${pathMatches.length} works '
-              '(${pathMatches.map((VideoSourceScrapeWork value) => value.stableKey).join(', ')}), '
-              'none is collection ${job.collectionId}';
+                '${pathMatches.length} works '
+                '(${pathMatches.map((VideoSourceScrapeWork value) => value.stableKey).join(', ')}), '
+                'none is collection ${job.collectionId}';
       throw VideoDownloadPipelineActionRequired(
         'Imported media could not be mapped exactly back to its managed '
         'source: $detail',
@@ -4318,11 +4515,18 @@ class VideoDownloadPipelineService {
     // v94（BUG-2003）：身份面（原名/别名/全部外部 id）从入队快照恢复——字幕
     // 搜索从此拿得到日文原名与罗马字别名。任务列（title/year/season/kind）仍是
     // 用户可见与流程真值。旧行（NULL 快照）走修前的单 id 重建。
-    final VideoMediaReference? stored =
-        decodeVideoMediaReference(job.identityJson);
+    final VideoMediaReference? stored = decodeVideoMediaReference(
+      job.identityJson,
+    );
     if (stored != null) {
+      // 任务形态被整理器改判过（BUG-2760：电影身份配上多集合集包）：TMDB 的
+      // /movie 与 /tv 是两个 id 空间，IMDb 的电影条目也不是剧集条目。这些 id
+      // 描述的是**另一部作品**，带着它们刮削/搜字幕只会绑错，丢掉交给自动识别；
+      // MAL / AniDB 等不分形态的 id 照旧保留。
+      final bool kindDrifted = stored.mediaKind != mediaKind;
+      final bool tmdbIdentity = stored.providerId.toLowerCase() == 'tmdb';
       return VideoMediaReference(
-        providerId: stored.providerId,
+        providerId: kindDrifted && tmdbIdentity ? 'unknown' : stored.providerId,
         mediaId: stored.mediaId,
         mediaKind: mediaKind,
         discoveryCategory: category,
@@ -4331,13 +4535,21 @@ class VideoDownloadPipelineService {
         aliases: stored.aliases,
         year: job.year ?? stored.year,
         season: job.season ?? stored.season,
-        tmdbId: stored.tmdbId,
-        imdbId: stored.imdbId,
+        tmdbId: kindDrifted ? null : stored.tmdbId,
+        imdbId: kindDrifted ? null : stored.imdbId,
         tvdbId: stored.tvdbId,
         anidbId: stored.anidbId,
         anilistId: stored.anilistId,
         bangumiId: stored.bangumiId,
-        externalIds: stored.externalIds,
+        externalIds: kindDrifted
+            ? <String, String>{
+                for (final MapEntry<String, String> entry
+                    in stored.externalIds.entries)
+                  if (entry.key.toLowerCase() != 'tmdb' &&
+                      entry.key.toLowerCase() != 'imdb')
+                    entry.key: entry.value,
+              }
+            : stored.externalIds,
       );
     }
     final String provider = job.metadataProvider ?? 'unknown';
@@ -4404,7 +4616,8 @@ class VideoDownloadPipelineService {
     }
     return <int, String>{
       for (final int id in raw.keys)
-        id: parsed[id]!.isEmpty ||
+        id:
+            parsed[id]!.isEmpty ||
                 parsed[id] == mainTitle ||
                 hits[parsed[id]]! > 1
             ? raw[id]!
@@ -4450,8 +4663,9 @@ class VideoDownloadPipelineService {
     final List<UpdateFeedDraft> drafts = <UpdateFeedDraft>[];
     for (final String uid in result.createdEpisodeUids) {
       final int index = result.episodeUids.indexOf(uid);
-      final VideoDownloadJobFileRow? file =
-          index >= 0 && index < files.length ? files[index] : null;
+      final VideoDownloadJobFileRow? file = index >= 0 && index < files.length
+          ? files[index]
+          : null;
       final String? imagePath = await _episodeNotificationImage(
         bookUid: uid,
         videoPath: file?.finalAbsolutePath,
@@ -4497,8 +4711,9 @@ class VideoDownloadPipelineService {
     String? frame;
     // 与库内导入 / host 回填同一套门：维护动作（刮削清理）持锁期间不写封面，
     // 这轮就退作品海报。
-    final VideoScrapeOperationLease? lease =
-        videoPath == null ? null : VideoScrapeOperationGate.tryEnterOperation();
+    final VideoScrapeOperationLease? lease = videoPath == null
+        ? null
+        : VideoScrapeOperationGate.tryEnterOperation();
     if (lease != null) {
       try {
         frame = await VideoCoverMutationGate.runExclusive(() async {
@@ -4552,7 +4767,8 @@ class VideoDownloadPipelineService {
     final String? resolutionLabel = resolution?.group(1);
     // 首方括号是 hash 串（`[A1B2C3D4]`）或就是分辨率本身（`[1080p][Group]`）都
     // 不算字幕组——后者会把「1080p · 1080p」写进副标题。
-    final bool groupIsNoise = groupName == null ||
+    final bool groupIsNoise =
+        groupName == null ||
         groupName.isEmpty ||
         RegExp(r'^[0-9A-Fa-f]{6,}$').hasMatch(groupName) ||
         groupName.toLowerCase() == resolutionLabel?.toLowerCase();

@@ -5326,6 +5326,8 @@ class AppModel with ChangeNotifier {
       manualTorrentDirectory:
           Directory(path.join(appDirectory.path, 'manual_torrents')),
       updateFeed: updateFeedService,
+      // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
+      defaultTargetSourceId: _defaultVideoDownloadSourceId,
     )..start();
     _videoDownloadPipelineService = pipeline;
     _videoDownloadKeepAlive =

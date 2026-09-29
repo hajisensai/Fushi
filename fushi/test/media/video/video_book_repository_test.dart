@@ -28,14 +28,17 @@ class _PausingDeleteVideoBookRepository extends VideoBookRepository {
   final Completer<void> rowDeleted = Completer<void>();
   final Completer<void> allowReclaim = Completer<void>();
 
+  // 批量删除（BUG-2754）只经 [deleteVideoBooks] 落库，单条删也委托给它。
   @override
-  Future<void> deleteVideoBook(
-    String bookUid, {
+  Future<List<VideoBookRow>> deleteVideoBooks(
+    Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
-    await super.deleteVideoBook(bookUid, scope: scope);
+    final List<VideoBookRow> deleted =
+        await super.deleteVideoBooks(bookUids, scope: scope);
     rowDeleted.complete();
     await allowReclaim.future;
+    return deleted;
   }
 }
 

@@ -5789,5 +5789,9 @@
   "ai_video_acquire_failure_remote_unavailable": "与执行设备的连接中断，请确认它在线后重试。",
   "ai_video_acquire_remote_unsupported": "$device 不支持 AI 下视频，请更新那台设备上的 Fushi。",
   "ai_video_acquire_remote_no_provider": "$device 还没有给「AI 下视频」指派 AI 提供商，请在那台设备的「设置 › AI」里指派。",
-  "ai_video_acquire_remote_not_ready": "$device 的下载还没配好（下载后端或受管视频来源）。"
+  "ai_video_acquire_remote_not_ready": "$device 的下载还没配好（下载后端或受管视频来源）。",
+  "video_library_delete_rows_failed": "$n 个视频删除失败，仍保留在媒体库中。",
+  "video_library_delete_failed": "删除失败：$reason",
+  "media_source_remove_download_refs": "有 $subscriptions 个下载订阅和 $jobs 个未完成的下载保存到此来源。迁移到：",
+  "media_source_remove_download_keep": "不迁移（暂停这些订阅）"
 }
