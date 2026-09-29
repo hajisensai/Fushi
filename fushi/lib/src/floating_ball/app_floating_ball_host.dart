@@ -34,7 +34,6 @@ import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 import 'package:fushi/utils.dart';
-import 'package:image_picker/image_picker.dart';
 
 /// 截屏识字送给系统 OCR 的语言。Fushi 的查词对象是日语；ML Kit / Vision 的日文
 /// 识别器同时认拉丁字母与汉字。
@@ -347,13 +346,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   /// 走系统拍照 intent / UIImagePickerController，Android 不需要 CAMERA 运行时
   /// 权限（manifest 没声明它，见 `AppModel.requestExternalStoragePermissions`）。
   Future<void> _cameraOcr() async {
-    final XFile? photo;
+    final Uint8List? photo;
     try {
-      photo = await ImagePicker().pickImage(
-        source: ImageSource.camera,
-        maxWidth: kCameraOcrMaxSide.toDouble(),
-        maxHeight: kCameraOcrMaxSide.toDouble(),
-      );
+      photo = await pickCameraPhotoBytes(maxSide: kCameraOcrMaxSide);
     } on PlatformException catch (error, stack) {
       // iOS 拒绝过相机权限（camera_access_denied）、没有相机等。
       ErrorLogService.instance.log('floating_ball.camera_ocr', error, stack);
@@ -361,10 +356,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       return;
     }
     if (photo == null) return; // 用户在相机里取消。
-    final Uint8List? bytes = await compute(
-      normalizeCameraOcrPhoto,
-      await photo.readAsBytes(),
-    );
+    final Uint8List? bytes = await compute(normalizeCameraOcrPhoto, photo);
     if (bytes == null) {
       _toast(t.floating_ball_ocr_failed);
       return;
