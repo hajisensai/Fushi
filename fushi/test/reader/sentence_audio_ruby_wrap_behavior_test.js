@@ -1,4 +1,4 @@
-// BUG-2778 behavior test: the audiobook follow highlight must paint one continuous
+// BUG-2780 behavior test: the audiobook follow highlight must paint one continuous
 // block across <ruby> elements.
 //
 // Root cause: applySentenceAudioCues wrapped every plain-text segment in its own

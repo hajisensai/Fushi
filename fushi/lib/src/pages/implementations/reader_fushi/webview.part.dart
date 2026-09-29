@@ -831,7 +831,7 @@ install: function(C) {
   $selectionJs
   $paginationJs
   window.__fushiInstallShell(C);
-  // BUG-2777: WebKit ruby annotations snap to the base by measured font metrics.
+  // BUG-2779: WebKit ruby annotations snap to the base by measured font metrics.
   $kReaderRubyMetricsJs
   $caretJs
   // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve

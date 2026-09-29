@@ -1,4 +1,4 @@
-// BUG-2777 behavior test: the WebKit ruby metrics script turns the measured font
+// BUG-2779 behavior test: the WebKit ruby metrics script turns the measured font
 // geometry into --fushi-ruby-pull.
 //
 // Root cause: the Apple ruby rule pulled annotations toward the base by a fixed

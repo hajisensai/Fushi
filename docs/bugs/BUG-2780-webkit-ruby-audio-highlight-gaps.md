@@ -1,4 +1,4 @@
-## BUG-2778 · WebKit 有声书跟随高亮在振假名处断开/叠色
+## BUG-2780 · WebKit 有声书跟随高亮在振假名处断开/叠色
 - **报告**：2026-09-29（用户：「有声书 振假名的高亮也得修一下」，截图为 iOS 竖排有声书当前句高亮在「会|釈|をす」之间断成三截、中间露黑缝，「平塚|先」交界一条细线）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/reader/reader_pagination_scripts.dart` 的 `applySentenceAudioCues`：整句高亮由「每段普通文字一个 `span.fushi-sentence-audio-cue` + 每个 `<ruby>` 加 `fushi-sentence-audio-ruby-active` class」分别刷背景拼成。注音比基字宽（しゃく 1.5em > 釈 1em）时引擎在基字两侧撑出间距，这段间距归谁由引擎决定：用户 iPhone 上它落在 ruby 背景盒外（断缝约 6 CSS px = 注音超出量的一半）；iOS 26.5 模拟器上 ruby 背景盒反而与后文 span 叠 7.7px（半透明高亮色下一条深色带）。
 - **[x] ① 已修复** — `applySentenceAudioCues` 改为先经 `sentenceAudioWrapItems` 把一条 cue 的片段折组：ruby 内的片段提升为整颗 ruby（去重，多组基字的 ruby 只算一次），相邻两项父节点相同且中间只有行内内容（`sentenceAudioInlineGap`，夹块级元素就断开）就并组；每组用一个 wrapper 包住（`setStartBefore` / `setEndAfter` 把 ruby 整颗移入），wrapper 一次刷背景，缝与叠色都消失，注音仍在 wrapper 内容区外（BUG-716 的形态不变）。ruby 在书自带的 `<a>` / `<span>` 里时单独成组、wrapper 留在书的元素内，不拆书的元素；只有包裹抛异常时才退回 ruby class。iOS 模拟器（生产 CSS + 从源码切出的真函数）与 Chrome headless（Android CSS）截图：整句一块连续高亮。

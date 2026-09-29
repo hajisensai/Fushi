@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2778：有声书跟随高亮在带振假名的词上断开留缝（iOS 真机「会|釈|をす」）或
+/// BUG-2780：有声书跟随高亮在带振假名的词上断开留缝（iOS 真机「会|釈|をす」）或
 /// 叠出一条深色带（iOS 26.5 模拟器，ruby 背景盒与后文 span 叠 7.7px）。
 ///
 /// 根因：`applySentenceAudioCues` 把整句拆成「每段文字一个 span + 每个 ruby 各加 class」
@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// ruby 只算一次。撤掉修复即红。
 void main() {
   test(
-      'BUG-2778: sentence audio highlight wraps text and rubies in one '
+      'BUG-2780: sentence audio highlight wraps text and rubies in one '
       'wrapper (executes reader JS via node)', () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {

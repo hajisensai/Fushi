@@ -222,7 +222,7 @@ class ReaderContentStyles {
   /// 6.7），40px Hiragino Sans 与行高 2.2 下本行仍 1.0–1.7px、不压基字。它同时让
   /// 注音在流中的高度再少 0.2em，与上面的抵消同向，不会让行盒重新长高。
   ///
-  /// BUG-2777：上面两截空白都由**字体度量**决定，`-0.2em` 只对 Hiragino 成立（它的
+  /// BUG-2779：上面两截空白都由**字体度量**决定，`-0.2em` 只对 Hiragino 成立（它的
   /// 内容区几乎就是 em 盒）。换 Klee One（ascent+descent = 1.45em）后 iOS 模拟器实测
   /// 注音 em 盒离基字 em 盒 6.08px、贴上一列，用户真机同样。CSS 拿不到字体 ascent，
   /// 所以由 `reader_ruby_metrics_script.dart` 在页面里量真实 ruby，把两截空白折成注音
@@ -232,7 +232,7 @@ class ReaderContentStyles {
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
         TargetPlatform.iOS || TargetPlatform.macOS => '''
-/* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2777: WebKit only — see _webKitRubyAnnotationCss. */
+/* BUG-2472 / BUG-2482 / BUG-2724 / BUG-2779: WebKit only — see _webKitRubyAnnotationCss. */
 :root {
   --fushi-ruby-snap: 1;
 }

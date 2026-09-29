@@ -52,7 +52,7 @@ final RegExp _kAnyNegativeMarginBlockStart = RegExp(r'margin-block-start:\s*-');
 
 /// BUG-2724：「含 `rt` 的选择器块里带一个负的 `margin-block-end`」——WebKit
 /// 注音贴回本行的不变式，同样不钉数值与写法（字面负值或以负项开头的 `calc()`，
-/// BUG-2777 起是后者）。
+/// BUG-2779 起是后者）。
 final RegExp _kNegativeRtMarginBlockEnd = RegExp(
     r'rt\b[^{}]*\{[^}]*margin-block-end:\s*(?:-\s*[\d.]+[a-z]+|calc\(\s*-)',
     dotAll: true);
@@ -176,7 +176,7 @@ void main() {
     });
 
     test(
-        'BUG-2777：Apple 端注音负块尾边距吃运行时量出的字体度量变量（缺省即 '
+        'BUG-2779：Apple 端注音负块尾边距吃运行时量出的字体度量变量（缺省即 '
         'BUG-2724 的 -0.2em），并打出给度量脚本的开关；其它平台都不发', () async {
       // 变量缺省值必须让 calc 退回旧的 -0.2em：脚本没跑到（首帧 / 无 ruby）时行为不变。
       final RegExp pullRule = RegExp(

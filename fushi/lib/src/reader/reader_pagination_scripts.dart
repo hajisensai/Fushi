@@ -1813,7 +1813,7 @@ window.__fushiInstallShell = function(C) {
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 fushi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
     //
-    // BUG-2778：同一父节点下**连续**的片段（普通文字 + 整个 <ruby>）合并进同一个 wrapper，
+    // BUG-2780：同一父节点下**连续**的片段（普通文字 + 整个 <ruby>）合并进同一个 wrapper，
     // 由 wrapper 一次刷背景。旧实现「每段文字一个 span、每个 ruby 各自加 class 刷背景」
     // 拼出整句，长注音（しゃく 比 釈 宽）撑出的间距归谁由引擎决定：iOS 真机上它落在 ruby
     // 背景盒外（高亮在「会|釈|をす」间断开留缝），iOS 26.5 WebKit 又让 ruby 背景盒与后文
@@ -1855,7 +1855,7 @@ window.__fushiInstallShell = function(C) {
     }
     this.buildNodeOffsets();
   },
-  // BUG-2778：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：ruby 内的片段
+  // BUG-2780：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：ruby 内的片段
   // 提升为整颗 ruby（去重），相邻两项父节点相同就并进同一组。组内首尾之间的兄弟节点
   // 全部被完整包含（range 两端落在同一父节点的子节点上），extractContents 不会拆开书的元素。
   sentenceAudioWrapItems: function(segments) {

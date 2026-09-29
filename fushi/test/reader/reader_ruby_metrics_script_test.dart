@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2777：iOS 换 Klee One 这类 ascent/descent 大的字体后，振假名离本列远、贴上一列。
+/// BUG-2779：iOS 换 Klee One 这类 ascent/descent 大的字体后，振假名离本列远、贴上一列。
 ///
 /// 根因：Apple 注音规则用固定 `-0.2em` 把注音往基字拉，那是按 Hiragino（内容区≈em 盒）
 /// 标定的；注音与基字间的两截空白（基字内容区超出 em 盒的量 + 注音盒半行距）由字体
@@ -15,7 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///    否则变量永远不写、CSS 永远落回旧的 `-0.2em`。
 void main() {
   test(
-      'BUG-2777: ruby metrics script writes --fushi-ruby-pull from measured '
+      'BUG-2779: ruby metrics script writes --fushi-ruby-pull from measured '
       'font geometry (executes script via node)', () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {
@@ -32,7 +32,7 @@ void main() {
     expect(result.stdout.toString(), contains('all assertions passed'));
   });
 
-  test('BUG-2777: the metrics script is installed by the reader engine', () {
+  test('BUG-2779: the metrics script is installed by the reader engine', () {
     final String webview = File(
       'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
