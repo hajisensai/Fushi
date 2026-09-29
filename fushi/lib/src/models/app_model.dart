@@ -7363,6 +7363,19 @@ class AppModel with ChangeNotifier {
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
 
+  /// 底部停靠在 [module] 的媒体页里是否启用（总开关之下的按模块细分，默认开）。
+  /// 偏好仓库未装配时 fail-open（同 [moduleEnabled]）：总开关才是真正的门。
+  bool popupBottomDockedIn(ModuleId module) =>
+      isPreferencesReady ? prefsRepo.popupBottomDockedIn(module) : true;
+  Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
+      prefsRepo.setPopupBottomDockedIn(module, value);
+
+  /// 查词弹窗宿主实际是否走底部停靠：总开关 ∧ 宿主所属模块的细分开关。
+  /// [module] 为 `null`（查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的
+  /// 宿主）时只听总开关。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
+  bool popupBottomDockedFor(ModuleId? module) =>
+      popupBottomDocked && (module == null || popupBottomDockedIn(module));
+
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();
 
