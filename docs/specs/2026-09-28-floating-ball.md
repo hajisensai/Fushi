@@ -54,7 +54,8 @@
 
 | id | 动作 | 平台 |
 |---|---|---|
-| `lookup` | 输入框查词 → 应用内查词弹窗（`FloatingLyricLookupHost`） | 全部 |
+| `lookup` | 主窗查词：应用内是输入框 → 应用内查词弹窗（`FloatingLyricLookupHost`）；应用外球把 Fushi 唤到前台并打开查词页（`requestHomeDictionaryTab(focusSearch: true)`，与桌面「唤起主窗并打开查词页」同一语义） | 全部 |
+| `popup_lookup` | 应用外查词：不进主窗，弹出与系统「处理文本」/ 截屏识字同一个独立查词窗 `PopupDictFlutterActivity`（只有搜索栏）。2026-09-29 用户提出：两个查词按钮是相反的取舍，别合并 | Android |
 | `clipboard` | 读剪贴板 → 查词 | 全部 |
 | `screen_ocr` | 截屏 → 系统 OCR → 点选文字行查词 | Android、iOS |
 
@@ -91,6 +92,9 @@ Dart → 原生：
 | `isSystemBallRunning` | — | bool | Android |
 | `setAppForeground` | `{foreground: bool}` | null | Android |
 | `startScreenOcr` | `{language: String, labels: Map<String,String>}` | bool（流程是否已启动；无悬浮窗权限或已有一次在进行时 false） | Android |
+| `openPopupLookup` | — | null（弹出独立查词窗） | Android |
+| `takePendingOpenLookupPage` | — | bool（系统球「查词」时主引擎不在而排队的请求；取即清） | Android |
+| `takeSystemBallClosedByUser` | — | bool（用户点过系统球关闭的持久标记；取即清。Dart 起系统球前先取，为 true 就改为关掉「应用外」开关） | Android |
 | `captureScreen` | — | `Uint8List` PNG（失败抛 PlatformException） | iOS |
 
 | `takePendingIntentLookup` | — | String?（冷启动时排队的 App Intent 词；调用即表示 Dart 已就绪） | iOS |
@@ -105,16 +109,19 @@ Dart → 原生：
 |---|---|---|---|
 | `lookupFromIntent` | `{word: String}` | iOS | App Intent 触发；Dart 侧与 `fushi://lookup` 同一处理 |
 | `screenOcrFinished` | — | Android | 每次 `startScreenOcr` 返回 true 后恰好一次：截到帧或流程放弃时发出。Dart 在调用前藏起 Flutter 球，收到后放回来（原生只藏得了原生球） |
+| `openLookupPage` | — | Android | 系统球「查词」，Fushi 随后被拉到前台；Dart 就绪后打开查词页。主引擎不在时改为排队，由 `takePendingOpenLookupPage` 取 |
+| `systemBallClosedByUser` | — | Android | 系统球 / 常驻通知上点了关闭；Dart 把「应用外」开关关掉 |
 
 Android 系统球的按钮：
 
 | id | 行为 |
 |---|---|
-| `lookup` | 拉起 `PopupDictFlutterActivity`（`openSearch=true`），空词；热引擎上原生以 `allowBlank` 推空词，Dart 查词页清掉上一次的结果，只剩搜索栏 |
+| `lookup` | 把 Fushi 带回前台并打开查词页（经 `openLookupPage` / `takePendingOpenLookupPage`） |
+| `popup_lookup` | 拉起 `PopupDictFlutterActivity`（`openSearch=true`），空词；热引擎上原生以 `allowBlank` 推空词，Dart 查词页清掉上一次的结果，只剩搜索栏 |
 | `clipboard` | 拉起 `PopupDictFlutterActivity` 并带 `readClipboard=true`；activity 拿到窗口焦点后自己读剪贴板（Android 10+ 后台服务读不到剪贴板） |
 | `screen_ocr` | 走截屏 OCR 流程。选取层是一次性的：点一个字就关（它在所有 Activity 之上，不关会盖住查词窗），同一行别的字在查词窗的原句条里点 |
 | `open_app` | 把 Fushi 带回前台 |
-| `close` | 停服务（模式偏好不变，下次启动 app 时再起） |
+| `close` | 用户关掉应用外悬浮球：落持久标记 + 推 `systemBallClosedByUser`，停服务；Dart 同步关掉设置里的「应用外」开关，两边保持一致（2026-09-29 用户要求；此前是「停服务、偏好不变，下次启动 app 时再起」）。常驻通知上的关闭同此 |
 
 ## 不做的
 
