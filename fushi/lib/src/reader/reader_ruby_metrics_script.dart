@@ -43,10 +43,14 @@ const String kReaderRubyMetricsJs = r'''
     for (var i = 0; i < list.length && i < 50; i++) {
       var ruby = list[i];
       var rt = ruby.querySelector('rt');
-      var base = ruby.firstChild;
-      if (base && base.nodeType === 1 && base.tagName.toLowerCase() === 'rb') base = base.firstChild;
-      while (base && !(base.nodeType === 3 && base.nodeValue.trim())) {
-        base = base.nextSibling;
+      // 基字文本可能包在 <rb> 或有声书跟随高亮的 wrapper 里（BUG-2800：wrapper 落在 ruby
+      // 内部），所以按文档序找第一个不在 rt / rp 里的非空文本节点。
+      var base = null;
+      var walker = document.createTreeWalker(ruby, NodeFilter.SHOW_TEXT);
+      for (var t = walker.nextNode(); t; t = walker.nextNode()) {
+        var owner = t.parentNode;
+        if (owner && owner.closest && owner.closest('rt, rp')) continue;
+        if (t.nodeValue.trim()) { base = t; break; }
       }
       if (!rt || !base) continue;
       var tr = rt.getBoundingClientRect();

@@ -34,11 +34,26 @@ function run(opts) {
     nodeType: 1, tagName: 'RT',
     getBoundingClientRect: () => opts.rtRect,
   };
-  const baseText = { nodeType: 3, nodeValue: '稀', nextSibling: null };
+  const rtText = { nodeType: 3, nodeValue: 'まれ', parentNode: rt };
+  rt.childNodes = [rtText];
+  rt.closest = (s) => (s === 'rt, rp' ? rt : null);
+  const baseText = { nodeType: 3, nodeValue: '稀' };
   const ruby = {
-    nodeType: 1, tagName: 'RUBY', firstChild: baseText,
+    nodeType: 1, tagName: 'RUBY',
     querySelector: (s) => (s === 'rt' ? rt : null),
+    closest: () => null,
   };
+  rt.parentNode = ruby;
+  // BUG-2800: the audiobook follow highlight wraps the base text in a span INSIDE
+  // the ruby; the probe must still find it.
+  if (opts.wrappedBase) {
+    const wrapper = { nodeType: 1, tagName: 'SPAN', childNodes: [baseText], parentNode: ruby, closest: () => null };
+    baseText.parentNode = wrapper;
+    ruby.childNodes = [wrapper, rt];
+  } else {
+    baseText.parentNode = ruby;
+    ruby.childNodes = [baseText, rt];
+  }
   const styles = new Map([
     [ruby, { fontSize: opts.fs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X' }],
     [rt, { fontSize: opts.rfs + 'px', writingMode: opts.wm, fontStyle: 'normal', fontWeight: '400', fontFamily: 'X' }],
@@ -52,7 +67,10 @@ function run(opts) {
     document: {
       documentElement: root,
       body: { getElementsByTagName: () => (opts.noRuby ? [] : [ruby]) },
-      createRange: () => ({ selectNodeContents() {}, getBoundingClientRect: () => opts.baseRect }),
+      createRange: () => ({
+        selectNodeContents(n) { assert.strictEqual(n, baseText, 'must measure the base text node'); },
+        getBoundingClientRect: () => opts.baseRect,
+      }),
       createElement: () => ({
         getContext: () => ({
           font: '',
@@ -70,7 +88,17 @@ function run(opts) {
       }),
       getElementById: () => null,
       fonts: null,
+      createTreeWalker: (root) => {
+        const texts = [];
+        (function walk(n) {
+          if (n.nodeType === 3) { texts.push(n); return; }
+          (n.childNodes || []).forEach(walk);
+        })(root);
+        let i = 0;
+        return { nextNode: () => texts[i++] || null };
+      },
     },
+    NodeFilter: { SHOW_TEXT: 4 },
     getComputedStyle: (el) => {
       if (el === root) return { getPropertyValue: (k) => (k === '--fushi-ruby-snap' ? (opts.snap === false ? '' : ' 1') : '') };
       return styles.get(el);
@@ -93,6 +121,12 @@ assert.strictEqual(run({
   wm: 'vertical-rl', fs: 22, rfs: 9.9, canvas: klee,
   baseRect: { width: 33, height: 22 }, rtRect: { width: 15, height: 22 },
 }), '0.813', 'Klee One vertical: (5.5 + 2.55) / 9.9');
+
+// BUG-2800: base text wrapped by the audiobook follow highlight inside the ruby.
+assert.strictEqual(run({
+  wrappedBase: true, wm: 'vertical-rl', fs: 22, rfs: 9.9, canvas: klee,
+  baseRect: { width: 33, height: 22 }, rtRect: { width: 15, height: 22 },
+}), '0.813', 'base text inside a highlight wrapper is still measured');
 
 // Vertical, Hiragino: stays at the legacy ~0.1 (default of the CSS var).
 assert.strictEqual(run({

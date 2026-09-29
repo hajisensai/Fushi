@@ -1821,6 +1821,14 @@ window.__fushiInstallShell = function(C) {
     // 叠色都没有了；注音仍在 wrapper 内容区外（BUG-716 的形态不变）。父节点不同的片段
     // （ruby 在书自带的 <a>/<span> 里）各成一组，ruby 仍整颗包进 wrapper；只有片段落在
     // ruby 内部、ruby 却不能整颗移动时（理论上不会发生）才退回 ruby class。
+    //
+    // BUG-2800：把整颗 <ruby> 移进 wrapper 会**改排版**。WebKit 只在 ruby 与相邻文字同处
+    // 一个父级行内盒边缘之外时才让长注音悬挂到邻字上方；ruby 一进 span，悬挂即被取消，
+    // 注音撑出的间距回到行内——iOS 模拟器实测「会釈を」+3.9px、「自嘲気味」注音与「気」
+    // 叠的 3px 变成 8px 空隙。包裹在章节加载后异步执行（图片就绪之后），用户看到的就是
+    // 翻进新章节后正文「突然岔开」。现在 ruby 永远留在原位：ruby 内的基字文本就地包进
+    // ruby 内部的 wrapper（排版与原书逐像素一致），长注音留下的缝由
+    // fillSentenceAudioRubyGaps 在高亮时用不参与排版的 box-shadow 补上。
     var range = document.createRange();
     for (var i = cueSegments.length - 1; i >= 0; i--) {
       var id = cueSegments[i].id;
@@ -1833,10 +1841,8 @@ window.__fushiInstallShell = function(C) {
         var first = items[g][0];
         var last = items[g][items[g].length - 1];
         try {
-          if (first.ruby) range.setStartBefore(first.ruby);
-          else range.setStart(first.node, first.start);
-          if (last.ruby) range.setEndAfter(last.ruby);
-          else range.setEnd(last.node, last.end);
+          range.setStart(first.node, first.start);
+          range.setEnd(last.node, last.end);
           var wrapper = document.createElement('span');
           wrapper.className = 'fushi-sentence-audio-cue';
           wrapper.appendChild(range.extractContents());
@@ -1844,7 +1850,8 @@ window.__fushiInstallShell = function(C) {
           wrappers.push(wrapper);
         } catch (e) {
           for (var k = 0; k < items[g].length; k++) {
-            if (items[g][k].ruby && rubyElements.indexOf(items[g][k].ruby) < 0) rubyElements.push(items[g][k].ruby);
+            var ruby = this.rubyForNode(items[g][k].node);
+            if (ruby && rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
           }
         }
       }
@@ -1855,24 +1862,22 @@ window.__fushiInstallShell = function(C) {
     }
     this.buildNodeOffsets();
   },
-  // BUG-2780：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：ruby 内的片段
-  // 提升为整颗 ruby（去重），相邻两项父节点相同就并进同一组。组内首尾之间的兄弟节点
-  // 全部被完整包含（range 两端落在同一父节点的子节点上），extractContents 不会拆开书的元素。
+  // BUG-2780 / BUG-2800：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：相邻两项
+  // 父节点相同就并进同一组，组内首尾之间的兄弟节点全部被完整包含（range 两端落在同一父节点
+  // 的子节点上），extractContents 不会拆开书的元素。ruby 内的基字片段各自单独成组（wrapper
+  // 落在 ruby / rb 里、不跨 rt），ruby 本身永远不被移动（见 applySentenceAudioCues）。
   sentenceAudioWrapItems: function(segments) {
     var groups = [];
     var current = null;
-    var lastRuby = null;
     for (var j = 0; j < segments.length; j++) {
-      var ruby = this.rubyForNode(segments[j].node);
-      var item;
-      if (ruby) {
-        if (ruby === lastRuby) continue;
-        lastRuby = ruby;
-        item = { ruby: ruby, parent: ruby.parentNode };
-      } else {
-        item = { node: segments[j].node, start: segments[j].start, end: segments[j].end, parent: segments[j].node.parentNode };
-      }
+      var node = segments[j].node;
+      var item = { node: node, start: segments[j].start, end: segments[j].end, parent: node.parentNode };
       if (!item.parent) continue;
+      if (this.rubyForNode(node)) {
+        groups.push([item]);
+        current = null;
+        continue;
+      }
       if (current && current[0].parent === item.parent &&
           this.sentenceAudioInlineGap(current[current.length - 1], item)) {
         current.push(item);
@@ -1883,18 +1888,66 @@ window.__fushiInstallShell = function(C) {
     }
     return groups;
   },
-  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）。
+  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）；
+  // 夹着 <ruby>（或含 ruby 的行内元素）也断开——ruby 一进 wrapper，WebKit 就取消注音悬挂、
+  // 改排版（BUG-2800）。
   sentenceAudioInlineGap: function(prev, next) {
-    var a = prev.ruby || prev.node;
-    var b = next.ruby || next.node;
+    var a = prev.node;
+    var b = next.node;
     if (a === b) return true;
     for (var n = a.nextSibling; n; n = n.nextSibling) {
       if (n === b) return true;
       if (n.nodeType !== 1) continue;
+      if (n.tagName === 'RUBY' || (n.querySelector && n.querySelector('ruby'))) return false;
       var display = getComputedStyle(n).display;
-      if (display.indexOf('inline') !== 0 && display.indexOf('ruby') !== 0 && display !== 'contents' && display !== 'none') return false;
+      if (display.indexOf('inline') !== 0 && display !== 'contents' && display !== 'none') return false;
     }
     return false;
+  },
+  // BUG-2800：ruby 留在原位后，注音比基字长、又不能悬挂到邻字上（邻字是汉字、注音超出
+  // 悬挂上限）时，基字 wrapper 与相邻 wrapper 之间会露出 ruby 自己撑出的间距（iOS 模拟器：
+  // 「大喝采」3.9px、6 假名注音单字 13.8px），整句高亮在那里断开（BUG-2780 的原始症状）。
+  // 高亮时量出同一行相邻两个 wrapper 之间的缝，由 ruby 内那个 wrapper 用 box-shadow 伸过去
+  // 补色：外阴影只画在元素边框盒外、不参与排版，量多少补多少，不会与邻 wrapper 叠色。
+  // 只处理当前高亮句，取消高亮时 clearSentenceAudioRubyGaps 撤掉。
+  fillSentenceAudioRubyGaps: function(wrappers) {
+    var fills = [];
+    for (var i = 1; i < wrappers.length; i++) {
+      var prev = wrappers[i - 1];
+      var next = wrappers[i];
+      var prevInRuby = !!this.rubyForNode(prev);
+      var nextInRuby = !!this.rubyForNode(next);
+      if (!prevInRuby && !nextInRuby) continue;
+      var pr = prev.getClientRects();
+      var nr = next.getClientRects();
+      if (!pr.length || !nr.length) continue;
+      var a = pr[pr.length - 1];
+      var b = nr[0];
+      var vertical = getComputedStyle(next).writingMode.indexOf('vertical') === 0;
+      var sameLine = vertical ? (a.left < b.right && b.left < a.right) : (a.top < b.bottom && b.top < a.bottom);
+      if (!sameLine) continue;
+      var gap = vertical ? b.top - a.bottom : b.left - a.right;
+      if (!(gap > 0.5) || gap > parseFloat(getComputedStyle(next).fontSize) * 3) continue;
+      if (nextInRuby) fills.push({ el: next, dx: vertical ? 0 : -gap, dy: vertical ? -gap : 0 });
+      else fills.push({ el: prev, dx: vertical ? 0 : gap, dy: vertical ? gap : 0 });
+    }
+    var shadows = new Map();
+    fills.forEach(function(f) {
+      var list = shadows.get(f.el) || [];
+      list.push(f.dx + 'px ' + f.dy + 'px 0 0 var(--fushi-sentence-audio-background-color)');
+      shadows.set(f.el, list);
+    });
+    var filled = [];
+    shadows.forEach(function(list, el) {
+      el.style.boxShadow = list.join(', ');
+      filled.push(el);
+    });
+    this.sentenceAudioGapFilled = filled;
+  },
+  clearSentenceAudioRubyGaps: function() {
+    var filled = this.sentenceAudioGapFilled || [];
+    filled.forEach(function(el) { el.style.boxShadow = ''; });
+    this.sentenceAudioGapFilled = [];
   },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -1913,6 +1966,7 @@ window.__fushiInstallShell = function(C) {
     wrappers.forEach(function(wrapper) { wrapper.classList.add('fushi-sentence-audio-active'); });
     // ruby 元素用 class 高亮（背景画在元素上，避免 ::highlight 对 ruby 双绘，BUG-110）
     rubyElements.forEach(function(ruby) { ruby.classList.add('fushi-sentence-audio-ruby-active'); });
+    this.fillSentenceAudioRubyGaps(wrappers);
     if (reveal) {
       var target = wrappers.length ? wrappers[0] : rubyElements[0];
       if (target && this.revealElement && this.revealElement(target)) {
@@ -1972,10 +2026,14 @@ window.__fushiInstallShell = function(C) {
       if (found) return JSON.stringify({ type: 'frag', id: found });
     }
     if (this.cueWrappers && this.cueWrappers.size) {
+      // BUG-2800：基字 wrapper 在 ruby 内部，不再包住 rt——点在注音上时按「同一颗 ruby」归属。
+      var self = this;
+      var pointRuby = this.rubyForNode(node);
       this.cueWrappers.forEach(function(wrappers, id) {
         if (found) return;
         for (var i = 0; i < wrappers.length; i++) {
-          if (wrappers[i].contains(node)) { found = id; break; }
+          if (wrappers[i].contains(node) ||
+              (pointRuby && self.rubyForNode(wrappers[i]) === pointRuby)) { found = id; break; }
         }
       });
       if (found) return JSON.stringify({ type: 'frag', id: found });
@@ -1989,6 +2047,7 @@ window.__fushiInstallShell = function(C) {
     rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     var wrappers = this.cueWrappers.get(this.activeCueId) || [];
     wrappers.forEach(function(wrapper) { wrapper.classList.remove('fushi-sentence-audio-active'); });
+    this.clearSentenceAudioRubyGaps();
     this.activeCueId = null;
   },
   resetSentenceAudioCues: function() {
@@ -1997,6 +2056,7 @@ window.__fushiInstallShell = function(C) {
     this.cueRubyElements.forEach(function(rubyElements) {
       rubyElements.forEach(function(ruby) { ruby.classList.remove('fushi-sentence-audio-ruby-active'); });
     });
+    this.clearSentenceAudioRubyGaps();
     this.cueRubyElements.clear();
     this.cueRangesMap.clear();
     var self = this;
