@@ -5,7 +5,9 @@
 //   legacy 无身份行（mediaKey 为空）不归入任何作品，只进每日字数。
 // - 书 / 漫画：`epub_books`（format manga → 漫画），读完 = completedAt 非空。
 // - 视频：作品单位 = 刮削作品（剧 = collectionId，电影 = bookUid），无作品则按主合集，
-//   再无则单个视频；读完 = 单位内全部成员都有 completedAt。**只上报经外部资料源刮削过
+//   再无则单个视频；电影读完 = 单位内全部成员都有 completedAt；剧集读完 = 同一作品身份
+//   的全部单元合起来，季集骨架里每个正片集都有看完的本地文件（没骨架时只认合集单元的
+//   全部成员看完）——服务端合并同一作品取「任一读完」，只看完一集不能让整部剧读完。**只上报经外部资料源刮削过
 //   的作品**（作品上有非 local 的 provider 身份）：否则标题只能是文件名 / 合集名，既会
 //   当公开标题泄露，弱键 `t:` 又会把所有人的「Season 1」并成一部。
 // - 游戏：`galgames`，playStatus 2 = 玩过（读完），3 = 在玩。与视频同口径**只上报刮削过
@@ -540,7 +542,6 @@ Future<List<LocalShelfEntry>> _videoEntries(
   FushiDatabase db,
   _ShelfBuild build,
 ) async {
-  final _Totals totals = build.totals;
   final List<VideoBookRow> videos = await db.select(db.videoBooks).get();
   if (videos.isEmpty) return const <LocalShelfEntry>[];
   final List<VideoMetadataWorkRow> works = await db.getAllVideoMetadataWorks();
@@ -591,22 +592,13 @@ Future<List<LocalShelfEntry>> _videoEntries(
   final Map<int, List<VideoMetadataProviderIdentityRow>> identities =
       await _videoWorkIdentities(db);
   final Map<int, String> posters = await _videoWorkPosters(db);
-  final List<LocalShelfEntry> out = <LocalShelfEntry>[];
+  final Map<int, List<_EpisodeSlot>> episodes = await _videoWorkEpisodes(db);
+  final Map<String, DateTime?> completedAt = <String, DateTime?>{
+    for (final VideoBookRow v in videos) v.bookUid: v.completedAt,
+  };
+
+  final List<_VideoCandidate> candidates = <_VideoCandidate>[];
   for (final _VideoUnit unit in units.values) {
-    int chars = 0;
-    int ms = 0;
-    int? finishedAt = 0;
-    for (final VideoBookRow m in unit.members) {
-      final (int c, int t) = totals.of(kActivityMediaVideo, m.bookUid);
-      chars += c;
-      ms += t;
-      final int? done = m.completedAt?.millisecondsSinceEpoch;
-      finishedAt = done == null || finishedAt == null
-          ? null
-          : (done > finishedAt ? done : finishedAt);
-    }
-    final bool finished = finishedAt != null;
-    if (!finished && chars <= 0 && ms <= 0) continue;
     if (build.requireFacts &&
         !build.hasFacts(
           kActivityMediaVideo,
@@ -624,46 +616,192 @@ Future<List<LocalShelfEntry>> _videoEntries(
     // 没刮削过（无作品，或只有本地索引出的临时作品）：标题只能是文件名 / 合集名，不上报。
     if (!ids.scraped) continue;
     final String? scrapedTitle = _nonEmpty(work?.title);
-    final MediaCollectionRow? collection = unit.collectionId == null
-        ? null
-        : collections[unit.collectionId];
-    final LocalShelfEntry? e = _entry(
-      build,
-      localKey: unit.localKey,
-      kind: LeaderboardKind.video,
-      refs: buildWorkRefs(
-        bgmSubjectId: ids.bgm,
-        anidbAid: ids.anidb,
-        malId: ids.mal,
-        tmdbRef: ids.tmdb,
-        title: scrapedTitle ?? '',
-      ),
-      // 刮削作品没有标题时用它的资料源键占位（服务端按众数取别人的标题展示）。
-      title: scrapedTitle ?? ids.fallbackTitle,
-      coverUrl: work == null ? null : posters[work.id],
-      nsfw:
-          isAdultVideoContentRating(work?.contentRating) ||
-          unit.members.any(
-            (VideoBookRow m) =>
-                build.isNsfwExtension(_animeSourceExtension(m.streamSpecJson)),
-          ),
-      finished: finished,
-      finishedAt: finished ? finishedAt : null,
-      chars: chars,
-      ms: ms,
-      localCoverPath:
-          _nonEmpty(collection?.coverPath) ??
-          unit.members
-              .map((VideoBookRow m) => _nonEmpty(m.coverPath))
-              .whereType<String>()
-              .firstOrNull,
-      lastActiveAt: _maxOrNull(
-        unit.members.map(
-          (VideoBookRow m) => totals.lastActive(kActivityMediaVideo, m.bookUid),
+    candidates.add(
+      _VideoCandidate(
+        unit,
+        ids,
+        buildWorkRefs(
+          bgmSubjectId: ids.bgm,
+          anidbAid: ids.anidb,
+          malId: ids.mal,
+          tmdbRef: ids.tmdb,
+          title: scrapedTitle ?? '',
         ),
+        scrapedTitle,
       ),
     );
-    if (e != null) out.add(e);
+  }
+
+  // 「读完」是作品级事实：服务端把映射到同一作品的条目合并时取「任一读完」，所以每条
+  // 上报的 finished 必须代表整部作品。剧集按作品身份分组，组内按季集骨架统一判定。
+  final Map<String, List<_VideoCandidate>> groups =
+      <String, List<_VideoCandidate>>{};
+  for (final _VideoCandidate c in candidates) {
+    (groups[c.groupKey] ??= <_VideoCandidate>[]).add(c);
+  }
+  final List<LocalShelfEntry> out = <LocalShelfEntry>[];
+  for (final List<_VideoCandidate> group in groups.values) {
+    final int? finishedAt = group.first.isSeries
+        ? _seriesFinishedAt(group, episodes, completedAt)
+        : _allCompletedAt(group.single.unit.members);
+    final bool finished = finishedAt != null;
+    for (final _VideoCandidate c in group) {
+      final LocalShelfEntry? e = _videoEntry(
+        build,
+        c,
+        finished: finished,
+        finishedAt: finishedAt,
+        cover: c.unit.work == null ? null : posters[c.unit.work!.id],
+        collections: collections,
+      );
+      if (e != null) out.add(e);
+    }
+  }
+  return out;
+}
+
+LocalShelfEntry? _videoEntry(
+  _ShelfBuild build,
+  _VideoCandidate c, {
+  required bool finished,
+  required int? finishedAt,
+  required String? cover,
+  required Map<int, MediaCollectionRow> collections,
+}) {
+  final _Totals totals = build.totals;
+  final _VideoUnit unit = c.unit;
+  int chars = 0;
+  int ms = 0;
+  for (final VideoBookRow m in unit.members) {
+    final (int ch, int t) = totals.of(kActivityMediaVideo, m.bookUid);
+    chars += ch;
+    ms += t;
+  }
+  if (!finished && chars <= 0 && ms <= 0) return null;
+  final MediaCollectionRow? collection = unit.collectionId == null
+      ? null
+      : collections[unit.collectionId];
+  return _entry(
+    build,
+    localKey: unit.localKey,
+    kind: LeaderboardKind.video,
+    refs: c.refs,
+    // 刮削作品没有标题时用它的资料源键占位（服务端按众数取别人的标题展示）。
+    title: c.scrapedTitle ?? c.ids.fallbackTitle,
+    coverUrl: cover,
+    nsfw:
+        isAdultVideoContentRating(unit.work?.contentRating) ||
+        unit.members.any(
+          (VideoBookRow m) =>
+              build.isNsfwExtension(_animeSourceExtension(m.streamSpecJson)),
+        ),
+    finished: finished,
+    finishedAt: finished ? finishedAt : null,
+    chars: chars,
+    ms: ms,
+    localCoverPath:
+        _nonEmpty(collection?.coverPath) ??
+        unit.members
+            .map((VideoBookRow m) => _nonEmpty(m.coverPath))
+            .whereType<String>()
+            .firstOrNull,
+    lastActiveAt: _maxOrNull(
+      unit.members.map(
+        (VideoBookRow m) => totals.lastActive(kActivityMediaVideo, m.bookUid),
+      ),
+    ),
+  );
+}
+
+/// 一个刮削过的视频单元及其上报身份。
+class _VideoCandidate {
+  _VideoCandidate(this.unit, this.ids, this.refs, this.scrapedTitle);
+
+  final _VideoUnit unit;
+  final _VideoRefs ids;
+  final List<String> refs;
+  final String? scrapedTitle;
+
+  /// 剧集作品：读完要看完整部，不是看完本单元里的文件。
+  bool get isSeries => unit.work?.mediaType == _mediaTypeTv;
+
+  /// 剧集按作品身份（refs 首键，与服务端合并同一作品的依据一致）分组：同一部剧可能
+  /// 散在多个单元里（每集各自刮成 `book:` 作品、多个合集指向同一作品）。电影各自一组。
+  String get groupKey =>
+      isSeries && refs.isNotEmpty ? 'tv|${refs.first}' : 'u|${unit.localKey}';
+}
+
+const String _mediaTypeTv = 'tv';
+
+/// 全部成员都看完 → 最晚的看完时刻；否则 null。
+int? _allCompletedAt(List<VideoBookRow> members) {
+  int? at = 0;
+  for (final VideoBookRow m in members) {
+    final int? done = m.completedAt?.millisecondsSinceEpoch;
+    at = done == null || at == null ? null : (done > at ? done : at);
+  }
+  return members.isEmpty ? null : at;
+}
+
+/// 剧集作品看完 = 季集骨架里每个正片集（季号 > 0）都绑着看完的本地文件；返回最晚的看完
+/// 时刻，否则 null。骨架里没绑本地文件的集（没下载 / 没入库）就是没看。
+///
+/// 作品没有骨架（资料源没给分集）时只能退回成员口径，而且只认合集单元——合集才代表
+/// 「这部剧在本地的全部集」；单个文件刮成剧集作品（`book:` 单元）只是其中一集，看完它
+/// 不能说明看完了整部剧。
+int? _seriesFinishedAt(
+  List<_VideoCandidate> group,
+  Map<int, List<_EpisodeSlot>> episodes,
+  Map<String, DateTime?> completedAt,
+) {
+  final Map<(int, int), int?> slots = <(int, int), int?>{};
+  for (final _VideoCandidate c in group) {
+    for (final _EpisodeSlot e
+        in episodes[c.unit.work!.id] ?? <_EpisodeSlot>[]) {
+      final int? done = e.bookUid == null
+          ? null
+          : completedAt[e.bookUid]?.millisecondsSinceEpoch;
+      slots[(e.season, e.episode)] = _maxOrNull(<int?>[
+        slots[(e.season, e.episode)],
+        done,
+      ]);
+    }
+  }
+  if (slots.isEmpty) {
+    final Iterable<_VideoCandidate> collectionUnits = group.where(
+      (_VideoCandidate c) => c.unit.collectionId != null,
+    );
+    if (collectionUnits.isEmpty) return null;
+    return _allCompletedAt(<VideoBookRow>[
+      for (final _VideoCandidate c in group) ...c.unit.members,
+    ]);
+  }
+  if (slots.values.any((int? v) => v == null)) return null;
+  return _maxOrNull(slots.values);
+}
+
+/// 季集骨架的一格：(季, 集) 与绑定的本地文件（null = 本地没有这一集）。
+typedef _EpisodeSlot = ({int season, int episode, String? bookUid});
+
+/// 作品 → 正片季集骨架（季 0 = 特典，不算进「看完整部」）。一个文件可以绑多集
+/// （`01-02` 合集文件），同一集也可以有多行，由调用方按 (季, 集) 归并。
+Future<Map<int, List<_EpisodeSlot>>> _videoWorkEpisodes(
+  FushiDatabase db,
+) async {
+  final $VideoMetadataEpisodesTable e = db.videoMetadataEpisodes;
+  final $VideoMetadataSeasonsTable s = db.videoMetadataSeasons;
+  final List<TypedResult> rows = await (db.select(e).join(<Join>[
+    innerJoin(s, s.id.equalsExp(e.seasonId)),
+  ])..where(s.seasonNumber.isBiggerThanValue(0))).get();
+  final Map<int, List<_EpisodeSlot>> out = <int, List<_EpisodeSlot>>{};
+  for (final TypedResult r in rows) {
+    final VideoMetadataEpisodeRow ep = r.readTable(e);
+    final VideoMetadataSeasonRow season = r.readTable(s);
+    (out[season.workId] ??= <_EpisodeSlot>[]).add((
+      season: season.seasonNumber,
+      episode: ep.episodeNumber,
+      bookUid: ep.bookUid,
+    ));
   }
   return out;
 }
