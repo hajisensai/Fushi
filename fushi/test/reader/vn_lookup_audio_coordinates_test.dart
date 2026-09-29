@@ -1,3 +1,6 @@
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
