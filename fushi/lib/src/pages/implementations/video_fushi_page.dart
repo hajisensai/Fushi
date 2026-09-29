@@ -6060,6 +6060,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                           onSwipeDismiss: _dismissTopNestedPopup,
                           swipeEnabled:
                               ReaderFushiSource.instance.enableSwipeToClose,
+                          // BUG-2770：触摸半边未设置时所有平台默认开。
+                          touchSwipeEnabled: ReaderFushiSource
+                              .instance
+                              .enableTouchSwipeToClose,
                           sensitivity:
                               ReaderFushiSource.instance.dismissSwipeSensitivity,
                           onPointerHover: _onDismissBarrierHover,

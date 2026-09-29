@@ -392,6 +392,10 @@ class GlobalLookupWindow {
   // composition controller（SendMouseInput），否则透明面板点不动/滚不动。windowed
   // 瞬态窗的 WebView2 子窗自动收输入，不经此路径。
   void ForwardCompositionMouse(UINT message, WPARAM wparam, LPARAM lparam);
+  // BUG-2770：触摸 / 触控笔的 WM_POINTER* 经 SendPointerInput 原样进 WebView2。
+  // 返回 false（鼠标指针、非 composition、取不到指针信息）时调用方落回
+  // DefWindowProc，由系统照旧提升成鼠标消息走 ForwardCompositionMouse。
+  bool ForwardCompositionPointer(UINT message, WPARAM wparam);
   void RecoverDeadWebView(const std::string& replay_script);
   RouteContext RouteForMessage(const std::string& json) const;
   // TODO-1153 -- logs + reports an overlay WebView2 bring-up failure (never

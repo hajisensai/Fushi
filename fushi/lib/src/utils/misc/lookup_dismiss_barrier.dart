@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart'
     show domMouseButtonFromPointerButtons;
 import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
-    show swipeDismissThreshold;
+    show isTouchLikePointer, swipeDismissThreshold;
 
 /// BUG-1757：查词弹窗全屏 dismiss barrier 的**唯一**构造入口。
 ///
@@ -47,6 +47,7 @@ class LookupDismissBarrier extends StatefulWidget {
     required this.onSwipeDismiss,
     required this.swipeEnabled,
     required this.sensitivity,
+    this.touchSwipeEnabled,
     this.onPointerHover,
     this.onPointerSignal,
     this.onNonPrimaryButtonDown,
@@ -65,6 +66,12 @@ class LookupDismissBarrier extends StatefulWidget {
   /// 用户偏好「滑动关闭弹窗」（`enable_swipe_to_close`）。关闭时 barrier 只认 tap，
   /// 与 TODO-716 之前的桌面行为一致（never break userspace）。
   final bool swipeEnabled;
+
+  /// BUG-2770：「滑动关闭弹窗」的触摸半边（手指 / 触控笔）。[swipeEnabled] 为假而本值
+  /// 为真时，只有触摸类指针（[isTouchLikePointer]）能在 barrier 上横拖关一层，鼠标
+  /// 仍只认 tap。宿主传 `ReaderFushiSource.enableTouchSwipeToClose`；null = 跟随
+  /// [swipeEnabled]（旧调用点语义逐字不变）。
+  final bool? touchSwipeEnabled;
 
   /// 滑关灵敏度（`dismissSwipeSensitivity`）。同时决定判轴距离与过阈位移，
   /// 阈值公式与顶栏 [SwipeDismissWrapper] 共用 [swipeDismissThreshold]，不漂移。
@@ -140,6 +147,12 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
 
   bool get _swipeActive => widget.swipeEnabled;
 
+  /// BUG-2770：本次按下的指针能否参与横拖关层。
+  bool _swipeAccepts(PointerDeviceKind kind) =>
+      _swipeActive ||
+      ((widget.touchSwipeEnabled ?? widget.swipeEnabled) &&
+          isTouchLikePointer(kind));
+
   final BarrierScrollDismissTracker _scroll = BarrierScrollDismissTracker();
 
   /// 滚动关窗跟踪的指针（与 [_tracked] 独立：滑关开关关闭时滚动关窗照样生效）。
@@ -187,8 +200,8 @@ class _LookupDismissBarrierState extends State<LookupDismissBarrier> {
         _beginScrollTracking(event.pointer);
       }
     }
-    if (!_swipeActive) return;
-    // 不按设备类型过滤：TODO-716 的整个目的就是「桌面对齐手机」——桌面开了滑关
+    if (!_swipeAccepts(event.kind)) return;
+    // 鼠标开关开时不按设备类型过滤：TODO-716 的整个目的就是「桌面对齐手机」——桌面开了滑关
     // 开关后，**鼠标**在 barrier 上横拖同样要能关一层。这与弹窗**本体**的
     // `_BodySwipeDismissDetector` 不同（本体上鼠标拖是框选正文，必须排除鼠标）；
     // barrier 是纯空白，没有可框选的内容，横拖只有关窗一种语义。

@@ -30,7 +30,11 @@ import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
+import 'package:fushi/src/reader/popup_swipe_close_script.dart'
+    show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/utils/misc/swipe_dismiss_wrapper.dart'
+    show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -1731,8 +1735,32 @@ class GlobalLookupController {
     // 下滑（桌面 pointer/mouse）后 callHandler('topPullReleased')；是否真正关闭
     // 尊重用户「滑动关闭弹窗」(enableSwipeToClose) 偏好——关时忽略，与 in-app
     // 弹窗一致（Windows 默认 false，鼠标框选与下滑同形）。
+    // BUG-2770：JS 带上指针种类，触摸 / 触控笔改看触摸半边
+    // （enableTouchSwipeToClose，未设置时默认开）——瞬态覆盖窗是 windowed WebView2，
+    // 触屏手指在这里就是真 touch 事件，此前却被鼠标默认值一并关掉。
     if (handler == 'topPullReleased') {
-      if (ReaderFushiSource.instance.enableSwipeToClose) {
+      final Object? args = message['args'];
+      if (popupTopPullDismissAllowed(
+        pointerKind: args is List && args.isNotEmpty ? args.first : null,
+        mouseSwipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+        touchSwipeEnabled: ReaderFushiSource.instance.enableTouchSwipeToClose,
+      )) {
+        GlobalLookupChannel.hide();
+      }
+      return;
+    }
+    // BUG-2770：覆盖窗横滑关闭（kPopupTouchSideSwipeReleaseJs 只认单指触摸）。
+    // 与应用内正文横滑同口径：触摸半边开关 + swipeDismissThreshold(灵敏度)。
+    if (handler == 'sideSwipeReleased') {
+      final Object? args = message['args'];
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      if (popupSideSwipeDismissAllowed(
+        pointerKind: args is List && args.isNotEmpty ? args.first : null,
+        dx: args is List && args.length > 1 ? args[1] : null,
+        threshold: swipeDismissThreshold(source.dismissSwipeSensitivity),
+        mouseSwipeEnabled: source.enableSwipeToClose,
+        touchSwipeEnabled: source.enableTouchSwipeToClose,
+      )) {
         GlobalLookupChannel.hide();
       }
       return;

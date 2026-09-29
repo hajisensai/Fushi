@@ -2195,6 +2195,116 @@ void GlobalLookupWindow::ForwardCompositionMouse(UINT message, WPARAM wparam,
   composition_controller_->SendMouseInput(kind, keys, mouse_data, point);
 }
 
+// BUG-2770 — 触屏 / 触控笔。composition 窗口没有子 HWND，手指落在卡片上时本窗先收
+// WM_POINTER*；交给 DefWindowProc 的话系统把它提升成鼠标消息，经上面的
+// SendMouseInput 进页面后 pointerType 恒为 'mouse'：popup.js 的触摸手势（下拉 / 横滑
+// 关闭、手指滚动）全部认不出来，关闭偏好也按鼠标那半判。这里改把触摸 / 触控笔原样
+// 经 SendPointerInput 送进 WebView2（WebView2 官方 ViewComponent::OnPointerMessage
+// 同款），处理掉的消息不再提升，鼠标路径保持不变。
+bool GlobalLookupWindow::ForwardCompositionPointer(UINT message,
+                                                   WPARAM wparam) {
+  if (!composition_active_ || composition_controller_ == nullptr ||
+      env_ == nullptr || hwnd_ == nullptr) {
+    return false;
+  }
+  // COREWEBVIEW2_POINTER_EVENT_KIND 的取值就是对应的 WM_POINTER* 消息号。
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_DOWN == WM_POINTERDOWN,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_UPDATE == WM_POINTERUPDATE,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_UP == WM_POINTERUP,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_ENTER == WM_POINTERENTER,
+                "pointer event kind drift");
+  static_assert(COREWEBVIEW2_POINTER_EVENT_KIND_LEAVE == WM_POINTERLEAVE,
+                "pointer event kind drift");
+  if (message != WM_POINTERDOWN && message != WM_POINTERUPDATE &&
+      message != WM_POINTERUP && message != WM_POINTERENTER &&
+      message != WM_POINTERLEAVE) {
+    return false;
+  }
+  const UINT32 pointer_id = GET_POINTERID_WPARAM(wparam);
+  POINTER_INPUT_TYPE type = PT_POINTER;
+  if (!GetPointerType(pointer_id, &type) ||
+      (type != PT_TOUCH && type != PT_PEN)) {
+    return false;
+  }
+  wil::com_ptr<ICoreWebView2Environment3> env3;
+  wil::com_ptr<ICoreWebView2PointerInfo> info;
+  if (FAILED(env_->QueryInterface(IID_PPV_ARGS(&env3))) ||
+      FAILED(env3->CreateCoreWebView2PointerInfo(&info)) || info == nullptr) {
+    return false;
+  }
+  POINTER_INFO pointer{};
+  if (type == PT_TOUCH) {
+    POINTER_TOUCH_INFO touch{};
+    if (!GetPointerTouchInfo(pointer_id, &touch)) return false;
+    pointer = touch.pointerInfo;
+    RECT contact = touch.rcContact;
+    RECT contact_raw = touch.rcContactRaw;
+    MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&contact), 2);
+    MapWindowPoints(nullptr, hwnd_, reinterpret_cast<POINT*>(&contact_raw), 2);
+    info->put_TouchFlags(touch.touchFlags);
+    info->put_TouchMask(touch.touchMask);
+    info->put_TouchContact(contact);
+    info->put_TouchContactRaw(contact_raw);
+    info->put_TouchOrientation(touch.orientation);
+    info->put_TouchPressure(touch.pressure);
+  } else {
+    POINTER_PEN_INFO pen{};
+    if (!GetPointerPenInfo(pointer_id, &pen)) return false;
+    pointer = pen.pointerInfo;
+    info->put_PenFlags(pen.penFlags);
+    info->put_PenMask(pen.penMask);
+    info->put_PenPressure(pen.pressure);
+    info->put_PenRotation(pen.rotation);
+    info->put_PenTiltX(pen.tiltX);
+    info->put_PenTiltY(pen.tiltY);
+  }
+  // 屏幕 → 本窗客户区（= WebView 坐标，bounds 用 RAW_PIXELS 铺满客户区）。
+  POINT location = pointer.ptPixelLocation;
+  POINT location_raw = pointer.ptPixelLocationRaw;
+  ScreenToClient(hwnd_, &location);
+  ScreenToClient(hwnd_, &location_raw);
+  // HIMETRIC 按设备的 himetric/显示矩形比例从客户区像素换算；取不到设备矩形时
+  // 退回 1px = 1 单位（Chromium 只拿它做精度补充，坐标以像素为准）。
+  POINT himetric = location;
+  POINT himetric_raw = location_raw;
+  RECT himetric_rect{};
+  RECT display_rect{};
+  if (GetPointerDeviceRects(pointer.sourceDevice, &himetric_rect,
+                            &display_rect) &&
+      display_rect.right > display_rect.left &&
+      display_rect.bottom > display_rect.top) {
+    const double sx =
+        static_cast<double>(himetric_rect.right - himetric_rect.left) /
+        (display_rect.right - display_rect.left);
+    const double sy =
+        static_cast<double>(himetric_rect.bottom - himetric_rect.top) /
+        (display_rect.bottom - display_rect.top);
+    himetric = {static_cast<LONG>(location.x * sx),
+                static_cast<LONG>(location.y * sy)};
+    himetric_raw = {static_cast<LONG>(location_raw.x * sx),
+                    static_cast<LONG>(location_raw.y * sy)};
+  }
+  info->put_PointerKind(static_cast<DWORD>(type));
+  info->put_PointerId(pointer_id);
+  info->put_FrameId(pointer.frameId);
+  info->put_PointerFlags(pointer.pointerFlags);
+  info->put_PixelLocation(location);
+  info->put_PixelLocationRaw(location_raw);
+  info->put_HimetricLocation(himetric);
+  info->put_HimetricLocationRaw(himetric_raw);
+  info->put_Time(pointer.dwTime);
+  info->put_HistoryCount(pointer.historyCount);
+  info->put_InputData(pointer.InputData);
+  info->put_KeyStates(pointer.dwKeyStates);
+  info->put_PerformanceCount(pointer.PerformanceCount);
+  info->put_ButtonChangeKind(static_cast<INT32>(pointer.ButtonChangeType));
+  return SUCCEEDED(composition_controller_->SendPointerInput(
+      static_cast<COREWEBVIEW2_POINTER_EVENT_KIND>(message), info.get()));
+}
+
 // v14 游戏内查词 — 注入侧转发来的 kind 与本地映射必须锁死在契约上。手抄 0..4 就等于
 // 在 host 侧复制一份枚举，注入侧改了这边不会红——所以直接对真相源做 static_assert。
 static_assert(fushi_voice_hook::kLookupInputMove == 0, "lookup input kind drift");
@@ -4026,6 +4136,17 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
           TrackMouseEvent(&tme);
         }
         ForwardCompositionMouse(message, wparam, lparam);
+        return 0;
+      }
+      return DefWindowProc(hwnd_, message, wparam, lparam);
+    // BUG-2770：触摸 / 触控笔原样进 WebView2；鼠标指针与失败时落 DefWindowProc，
+    // 由系统提升成上面的鼠标消息，行为不变。
+    case WM_POINTERDOWN:
+    case WM_POINTERUPDATE:
+    case WM_POINTERUP:
+    case WM_POINTERENTER:
+    case WM_POINTERLEAVE:
+      if (ForwardCompositionPointer(message, wparam)) {
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);

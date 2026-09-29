@@ -834,13 +834,15 @@ void InvalidateSiglusLookupClickTarget() {
   g_siglus_lookup_click_target.snapshot_epoch = 0;
   g_siglus_lookup_click_target.text_units = 0;
   g_siglus_lookup_click_target.geometry = {};
+  g_siglus_lookup_click_target.claims_clicks = 0;
   InterlockedExchange64(&g_siglus_lookup_click_target.seq,
                         static_cast<LONG64>(next));
 }
 
 void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
                                     int32_t client_width,
-                                    int32_t client_height) {
+                                    int32_t client_height,
+                                    bool claims_clicks) {
   fushi_voice_hook::SiglusLookupEngineView engine_view;
   if (!g_siglus_lookup_layout.current_valid ||
       !ReadSiglusLookupEngineView(game, &engine_view) ||
@@ -873,6 +875,7 @@ void PublishSiglusLookupClickTarget(HWND game, const POINT &client_origin,
          static_cast<size_t>(g_siglus_lookup_active_line_units) *
              sizeof(wchar_t));
   g_siglus_lookup_click_target.geometry = g_siglus_lookup_layout.geometry;
+  g_siglus_lookup_click_target.claims_clicks = claims_clicks ? 1u : 0u;
   InterlockedExchange64(&g_siglus_lookup_click_target.seq,
                         static_cast<LONG64>(next));
 }
@@ -1204,7 +1207,8 @@ void ProcessSiglusLookupTick() {
       direct_popup != nullptr && IsSiglusSampledInputShieldReadyPublished(game);
   const bool popup_visible = bitmap_popup_visible || direct_popup_visible;
   if (!popup_visible) {
-    PublishSiglusLookupClickTarget(game, origin, client_width, client_height);
+    PublishSiglusLookupClickTarget(game, origin, client_width, client_height,
+                                   SiglusLookupLineClaimsClicks());
   } else {
     InvalidateSiglusLookupClickTarget();
   }

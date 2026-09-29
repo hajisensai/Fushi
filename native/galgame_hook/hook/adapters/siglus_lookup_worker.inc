@@ -76,6 +76,13 @@ bool CommitSiglusLookupSelectionLine() {
   return true;
 }
 
+// A plain click may become a lookup only on dialogue. On the choice screen
+// the click is the player's selection: hover and Shift still look the choice
+// text up, but the click is left to the engine (BUG-2768).
+bool SiglusLookupLineClaimsClicks() {
+  return !g_siglus_lookup_selection_active;
+}
+
 bool IsSiglusLookupCaptureReadyForInput() {
   return g_siglus_lookup_layout.current_valid &&
          g_siglus_lookup_unpublished_glyph_frontier == 0;

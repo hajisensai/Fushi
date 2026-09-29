@@ -830,6 +830,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         onSwipeDismiss: dismissTopPopup,
                         swipeEnabled:
                             ReaderFushiSource.instance.enableSwipeToClose,
+                        // BUG-2770：触摸半边未设置时所有平台默认开。
+                        touchSwipeEnabled:
+                            ReaderFushiSource.instance.enableTouchSwipeToClose,
                         sensitivity:
                             ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
@@ -966,6 +969,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+        // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+        enableTouchSwipeToClose:
+            ReaderFushiSource.instance.enableTouchSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"并走既有关闭汇聚点 [_dismissPopupAt(0)]
         // （不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => _dismissPopupAt(index),

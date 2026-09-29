@@ -143,15 +143,62 @@ void TestLostUpAndOtherFamilies() {
                   SiglusGlyphLayoutAbi::kStackSixteenArguments}) {
     MessageFixture f(abi);
     Verify(!IsSiglusLookupMessageTransactionProfile());
-    Verify(Message(WM_LBUTTONDOWN) && Message(WM_LBUTTONUP));
-    Verify(queue_calls == 0 && !g_siglus_lookup_message_transaction.pending);
-    Verify(Sample(true) == 1); Sample(false);
-    Verify(queue_calls == 1); // Original sample-owned transaction is unchanged.
+    // A press the poller sees held stays sample-owned: one submission, no WM one.
+    Verify(Message(WM_LBUTTONDOWN));
+    Verify(g_siglus_lookup_message_tap.pending);
+    Verify(Sample(true) == 1);
+    Verify(!g_siglus_lookup_message_tap.pending);
+    Sample(false);
+    Verify(queue_calls == 1);
+    Verify(Message(WM_LBUTTONUP) && queue_calls == 1);
+    Verify(!g_siglus_lookup_message_transaction.pending);
+  }
+}
+// BUG-2769: a touch tap is promoted to WM down/up back to back, so the sampled
+// family's poller never sees the button held. The WM sink submits that press.
+void TestSampledFamilySubFrameTap() {
+  for (auto abi : {SiglusGlyphLayoutAbi::kEcxTenArguments,
+                  SiglusGlyphLayoutAbi::kStackSixteenArguments}) {
+    {
+      MessageFixture f(abi);
+      Verify(Message(WM_LBUTTONDOWN) && Message(WM_LBUTTONUP));
+      Verify(queue_calls == 1 && !g_siglus_lookup_message_tap.pending);
+      Verify(test_queued.text_identity.event_id == 42);
+      Verify(Sample(false) == 1); // The up sample of the consumed tap stays hidden.
+      Verify(queue_calls == 1);
+      Verify(!Message(WM_LBUTTONUP) && queue_calls == 1);
+    }
+    {  // A miss, a popup or a changed line never submits from the WM up.
+      MessageFixture f(abi);
+      Verify(!Message(WM_LBUTTONDOWN, 10, 10));
+      Verify(!g_siglus_lookup_message_tap.pending);
+      Verify(!Message(WM_LBUTTONUP) && queue_calls == 0);
+      Verify(Message(WM_LBUTTONDOWN));
+      ++g_siglus_lookup_click_target.geometry_generation;
+      Message(WM_LBUTTONUP);
+      Verify(queue_calls == 0);
+      Sample(false);
+      Verify(Message(WM_LBUTTONDOWN));
+      popup = true;
+      Message(WM_LBUTTONUP);
+      Verify(queue_calls == 0);
+      popup = false;
+      Sample(false);
+    }
+    {  // BUG-2768: a choice line leaves the click (mouse or touch) to the engine.
+      MessageFixture f(abi);
+      g_siglus_lookup_click_target.claims_clicks = 0;
+      Verify(!Message(WM_LBUTTONDOWN));
+      Verify(!Message(WM_LBUTTONUP) && queue_calls == 0);
+      Verify(static_cast<uint16_t>(Sample(true)) == 0x8001);
+      Verify(static_cast<uint16_t>(Sample(false)) == 1 && queue_calls == 0);
+    }
   }
 }
 } // namespace
 int main() {
   TestWmOnlyAndSamplingInterleavings(); TestMissPopupAndCaller(); TestPopupSampleTail();
   TestCancellationAndChangedTarget(); TestLostUpAndOtherFamilies();
+  TestSampledFamilySubFrameTap();
   std::printf("siglus_lookup_message_transaction: %u checks passed\n", transaction_checks);
 }
