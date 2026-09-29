@@ -5,10 +5,10 @@ compatibility_date = "2024-11-01"
 # 防计费：请把本 Worker 留在 Workers Free 计划——Free 计划超额只会报错（429/503），不会扣费。
 # 服务端另有全局日预算（src/budget.js）与 R2 配额，默认都低于免费额度。详见 README「成本」。
 
-# 域名由部署方决定（建议 rank.fushi.moe）；取消注释并改成实际域名。
-# routes = [
-#   { pattern = "rank.fushi.moe", custom_domain = true },
-# ]
+# 自定义域名（zone fushi.moe 在同一 Cloudflare 账户）；App 默认连它（kLeaderboardDefaultBaseUrl）。
+routes = [
+  { pattern = "rank.fushi.moe", custom_domain = true },
+]
 
 # 部署前：
 #   wrangler d1 create fushi-leaderboard            → 把 database_id 填到下面
@@ -18,7 +18,7 @@ compatibility_date = "2024-11-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "fushi-leaderboard"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "695fda58-dd9f-4a20-be84-a496c37b9292"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
