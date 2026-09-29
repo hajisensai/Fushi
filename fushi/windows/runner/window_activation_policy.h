@@ -19,7 +19,7 @@ inline bool ShouldRestoreChildFocus(WPARAM activation_wparam,
   return becoming_active && child_is_live && child_belongs_to_window;
 }
 
-// BUG-2782 — a WS_EX_NOACTIVATE lookup overlay must never become the
+// BUG-2788 — a WS_EX_NOACTIVATE lookup overlay must never become the
 // foreground window because of a touch / pen press on its content. The style
 // only keeps mouse clicks from activating the card. A touch press on the
 // composition card activates it through two independent paths:

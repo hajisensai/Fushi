@@ -23,7 +23,7 @@ void main() {
   test('查词浮窗不再在自己的线程上装低级鼠标钩子', () {
     final String window = read('global_lookup_window.cpp');
     // BUG-1048：WH_MOUSE_LL 必须交给 low_level_mouse_hook 的专用线程安装。
-    // BUG-2782：窗口线程上唯一允许的钩子是线程级 WH_CBT（只否决本线程查词卡被
+    // BUG-2788：窗口线程上唯一允许的钩子是线程级 WH_CBT（只否决本线程查词卡被
     // 触摸激活，不进全系统输入路径）；它必须是线程级的，不能装成全局钩子。
     final List<String> installs = RegExp(r'SetWindowsHookExW?\(([^;]*);')
         .allMatches(window)

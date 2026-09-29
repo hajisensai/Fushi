@@ -43,10 +43,10 @@ int main() {
 
   passed &= Expect(
       OverlayNoActivateReply(WM_POINTERACTIVATE) == PA_NOACTIVATE,
-      "BUG-2782: a touch press must not activate the lookup card");
+      "BUG-2788: a touch press must not activate the lookup card");
   passed &= Expect(
       OverlayNoActivateReply(WM_MOUSEACTIVATE) == MA_NOACTIVATE,
-      "BUG-2782: the pointer-down WM_MOUSEACTIVATE must not activate it");
+      "BUG-2788: the pointer-down WM_MOUSEACTIVATE must not activate it");
   passed &= Expect(OverlayNoActivateReply(WM_ACTIVATE) == 0,
                    "other messages are left to the window procedure");
 
@@ -54,7 +54,7 @@ int main() {
       WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
   passed &= Expect(
       ShouldVetoOverlayActivation(true, overlay_style, false, false),
-      "BUG-2782: Chromium's touch SetFocus must not activate the card");
+      "BUG-2788: Chromium's touch SetFocus must not activate the card");
   passed &= Expect(
       !ShouldVetoOverlayActivation(true, overlay_style, false, true),
       "the context menu's explicit foreground grab must still activate");

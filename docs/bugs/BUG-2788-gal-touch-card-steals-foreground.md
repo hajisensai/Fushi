@@ -1,4 +1,4 @@
-## BUG-2782 · Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台）
+## BUG-2788 · Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台）
 - **报告**：2026-09-29（用户：W1ght 转述别人的 Surface；CLANNAD：「点击查词后点击其他地方会推进剧情，但是鼠标点击不会」）
 - **真实性**：✅ 真 bug，本机复现（CLANNAD Steam `SiglusEngine_Steam.exe` x86 SHA-256 `116A1B6A…DEA2D`，宿主为用户在用的 debug.16118，已含 BUG-2768/2769/2770；
   触摸用 `InjectTouchInput` 真实注入）。复现序列：触摸点字弹卡 → **触摸卡片内部**（点词 / 滚动）→ 触摸卡外人物画面 → 台词推进。

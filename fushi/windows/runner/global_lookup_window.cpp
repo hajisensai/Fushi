@@ -788,7 +788,7 @@ bool WriteClipboardUnicodeText(HWND owner, const std::wstring& text) {
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
 HHOOK GlobalLookupWindow::s_activation_guard_hook_ = nullptr;
 
-// BUG-2782 — 卡片与 WebView2 的 Chromium 子窗都在本线程。触摸经 SendPointerInput
+// BUG-2788 — 卡片与 WebView2 的 Chromium 子窗都在本线程。触摸经 SendPointerInput
 // 进 WebView2 后 Chromium 会 SetFocus 子窗，连带激活 WS_EX_NOACTIVATE 的卡片
 // （实测 HCBT_SETFOCUS(Chrome_WidgetWin_0) → HCBT_ACTIVATE(卡片)）；鼠标走
 // SendMouseInput 没有这一步。这里在焦点 / 激活落地前否决，卡片不再抢游戏的前台。
@@ -3938,7 +3938,7 @@ void GlobalLookupWindow::ShowPendingContextMenu() {
   // 到不了菜单。卡片是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚发生
   // 的右键让本进程有资格这么做），菜单结束后若前台还在我们手里就原样还回去。
   const HWND previous_foreground = GetForegroundWindow();
-  // BUG-2782 — 卡片唯一一处主动激活；激活守卫只放行菜单这一窗口期。
+  // BUG-2788 — 卡片唯一一处主动激活；激活守卫只放行菜单这一窗口期。
   self_activation_allowed_ = true;
   const bool took_foreground = previous_foreground != hwnd_ &&
                                SetForegroundWindow(hwnd_) != FALSE;
@@ -4190,7 +4190,7 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);
-    // BUG-2782 — WS_EX_NOACTIVATE 只挡鼠标点击激活。触摸按下时本窗仍会收到
+    // BUG-2788 — WS_EX_NOACTIVATE 只挡鼠标点击激活。触摸按下时本窗仍会收到
     // WM_POINTERACTIVATE 与（HIWORD(lParam)=WM_POINTERDOWN 的）WM_MOUSEACTIVATE，
     // 交给 DefWindowProc 会回 MA_ACTIVATE，卡片变成前台：游戏失去前台后宿主「点卡外
     // 吞点击」的判据（前台必须是游戏）失效，触屏点过卡片再点卡外就会推进剧情。

@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2566 条。点号进各自文件。
+> 共 2567 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2788](bugs/BUG-2788-gal-touch-card-steals-foreground.md) | ✅ | ✅ | Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台） |
 | [BUG-2787](bugs/BUG-2787-ios-manga-ocr-tap-blank-popup.md) | ✅ | ✅ | iOS 漫画 OCR 后点字只弹出空白框 |
 | [BUG-2786](bugs/BUG-2786-ios-mokuro-import-sidecar-images-missing.md) | ✅ | ✅ | iOS 上导入 .mokuro 文件必失败（选单文件只拷进来 .mokuro、选文件夹无沙盒外读权限） |
 | [BUG-2785](bugs/BUG-2785-manga-folder-with-mokuro-imported-as-images.md) | ✅ | ✅ | 漫画框选「卷.mokuro + 同名页图子目录」的文件夹被当页图目录导入，OCR 静默丢失 |

@@ -158,12 +158,12 @@ ctest --test-dir build-x86 -C Release --output-on-failure
 | 动作 | 期望 |
 |---|---|
 | 触摸点字 | 弹卡、台词不推进 |
-| 触摸卡内（点词 / 竖滑滚动）后，再触摸卡外游戏画面 | 前台始终是游戏；卡外那一下被宿主吞掉并关卡（日志 `global click … consumed=1`），台词不推进（BUG-2782） |
+| 触摸卡内（点词 / 竖滑滚动）后，再触摸卡外游戏画面 | 前台始终是游戏；卡外那一下被宿主吞掉并关卡（日志 `global click … consumed=1`），台词不推进（BUG-2788） |
 | 卡上横滑 | 关卡、不推进（BUG-2770） |
 | 卡外 / 无卡时滑动、长按 | 与鼠标同操作一致（无卡时点游戏本来就推进；长按会被系统当成右键） |
 
 - 注入：本机有触摸数字化器（`GetSystemMetrics(SM_DIGITIZER)` = `0xC1`），64 位 python ctypes `InitializeTouchInjection` + `InjectTouchInput`（`PT_TOUCH`，down 带 `INRANGE|INCONTACT|DOWN`、按住期间每 ~16 ms 发一帧 `UPDATE`，否则约 0.5 s 后注入超时报 1460、触点被系统取消）。python 调 `SetWindowsHookEx`/`GetModuleHandleW` 必须声明 `restype`，否则 64 位句柄被截断、钩子静默装不上（曾因此误判「LL 钩子看不到触摸」）。
-- 事实：触摸点按在抬起时才被提升成背靠背 `WM_LBUTTONDOWN/UP`，`dwExtraInfo` 为 `0xFF5157xx`、`LLMHF_INJECTED`；宿主 `WH_MOUSE_LL` 看得到也吞得掉。每一步都记前台窗口（`GetForegroundWindow` 的类名）——覆盖窗被触摸激活成前台是 BUG-2782 的症状，台词截图只能看到结果。
+- 事实：触摸点按在抬起时才被提升成背靠背 `WM_LBUTTONDOWN/UP`，`dwExtraInfo` 为 `0xFF5157xx`、`LLMHF_INJECTED`；宿主 `WH_MOUSE_LL` 看得到也吞得掉。每一步都记前台窗口（`GetForegroundWindow` 的类名）——覆盖窗被触摸激活成前台是 BUG-2788 的症状，台词截图只能看到结果。
 - 用户原机是 Surface 这类只有触屏的设备时，报告里的「点其他地方」先按上表逐项复现，别只测「点字 → 点卡外」这一条。
 
 证据只保存元数据、哈希、结构化事件和必要截图；截图先检查个人信息与版权范围，禁止把游戏素材作为测试资产提交。随后更新 `native/galgame_hook/engine-support.yaml`，运行生成器更新 `native/galgame_hook/docs/engine-support.md`（唯一真相源，不得另存副本）。状态只能按证据从 `implemented_unverified` 提升为已验证。

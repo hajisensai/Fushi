@@ -285,7 +285,7 @@ class GlobalLookupWindow {
                                           HWND hwnd, LONG id_object,
                                           LONG id_child, DWORD thread,
                                           DWORD time);
-  // BUG-2782 — 平台线程上的 WH_CBT：否决 Chromium 在触摸时对卡片子窗的
+  // BUG-2788 — 平台线程上的 WH_CBT：否决 Chromium 在触摸时对卡片子窗的
   // SetFocus 连带激活卡片（见 window_activation_policy.h 的第 2 条路径）。
   static LRESULT CALLBACK ActivationGuardProc(int code, WPARAM wparam,
                                               LPARAM lparam);
