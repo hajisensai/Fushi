@@ -68,7 +68,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # 新 push 到来时，把同分支上「开始不足 5 分钟 / 还没开始」的旧 push run 取消掉
+  # 新 push 到来时，把同分支上「此刻开始不足 5 分钟 / 还没开始」的旧 push run 取消掉
+  # （2026-09-30 修正：按旧 run 的 job 实际开始时刻、以本 run 创建时刻为基准；
+  # 本 job 自己排队时旧 run 已跑超过 9 分钟则不砍，防砍在上传途中）
   # （2026-09-30，按实测 develop 20/65 次 push 间隔 < 5 分钟、省约 28% runner）。
   # 只看 push 事件，正式版 / 手动 dispatch 不受影响；5 分钟内任何 job 都还没到上传
   # 步骤，不会砍出半发布状态。原理与判据见 tool/cancel_superseded_runs.sh；与本
@@ -86,12 +88,13 @@ jobs:
       with:
         sparse-checkout: tool/cancel_superseded_runs.sh
         sparse-checkout-cone-mode: false
-    - name: Cancel superseded push runs (started < 5 min ago)
+    - name: Cancel superseded push runs (< 5 min old at this push, < 9 min now)
       env:
         GH_TOKEN: ${{ github.token }}
         REPO: ${{ github.repository }}
         RUN_ID: ${{ github.run_id }}
         SUPERSEDE_WINDOW_MINUTES: '5'
+        SUPERSEDE_MAX_ELAPSED_MINUTES: '9'
       run: bash tool/cancel_superseded_runs.sh
 
   build:
