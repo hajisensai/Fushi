@@ -333,7 +333,7 @@ void main() {
     });
   });
 
-  testWidgets('未开启：说明卡列出公开 / 不上传项与三个入口，零网络请求', (WidgetTester tester) async {
+  testWidgets('未开启：说明卡列出公开项与三个入口，零网络请求', (WidgetTester tester) async {
     final LeaderboardService service = buildService();
     await tester.runAsync(service.load);
     await tester.pumpWidget(wrap(service, const LeaderboardTab()));
@@ -351,7 +351,6 @@ void main() {
       find.byKey(const ValueKey<String>('leaderboard-intro-account-gone')),
       findsNothing,
     );
-    expect(find.text(t.leaderboard_intro_private_position), findsOneWidget);
     expect(find.text(t.leaderboard_intro_email_note), findsOneWidget);
     for (final String key in <String>[
       'leaderboard-intro-register',

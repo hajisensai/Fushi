@@ -112,7 +112,7 @@ String leaderboardSyncErrorText(Object error) {
   return leaderboardErrorText(error);
 }
 
-/// 「会公开 / 不会上传」清单（说明卡、注册 / 登录页、恢复码导入、打开上传的确认框共用
+/// 「会公开」清单（说明卡、注册 / 登录页、恢复码导入、打开上传的确认框共用
 /// 同一份，文案与实际上传内容一一对应：见 engine `ShelfEntryUpload` / `DailyCharsUpload`）。
 class LeaderboardPublicDataList extends StatelessWidget {
   const LeaderboardPublicDataList({super.key});
@@ -150,13 +150,6 @@ class LeaderboardPublicDataList extends StatelessWidget {
           t.leaderboard_intro_public_work_stats,
           t.leaderboard_intro_public_chars,
         ], Icons.public),
-        SizedBox(height: tokens.spacing.gap),
-        bullets(t.leaderboard_intro_private_title, <String>[
-          t.leaderboard_intro_private_position,
-          t.leaderboard_intro_private_mining,
-          t.leaderboard_intro_private_files,
-          t.leaderboard_intro_private_device,
-        ], Icons.lock_outline),
         SizedBox(height: tokens.spacing.gap),
         Text(t.leaderboard_intro_email_note, style: tokens.type.metadata),
       ],
