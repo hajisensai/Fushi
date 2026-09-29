@@ -33,13 +33,13 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
+| [BUG-2789](bugs/BUG-2789-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
 | [BUG-2788](bugs/BUG-2788-gal-touch-card-steals-foreground.md) | ✅ | ✅ | Windows 触屏点过查词卡后点卡外会推进 galgame（卡片被触摸激活成前台） |
 | [BUG-2787](bugs/BUG-2787-ios-manga-ocr-tap-blank-popup.md) | ✅ | ✅ | iOS 漫画 OCR 后点字只弹出空白框 |
 | [BUG-2786](bugs/BUG-2786-ios-mokuro-import-sidecar-images-missing.md) | ✅ | ✅ | iOS 上导入 .mokuro 文件必失败（选单文件只拷进来 .mokuro、选文件夹无沙盒外读权限） |
 | [BUG-2785](bugs/BUG-2785-manga-folder-with-mokuro-imported-as-images.md) | ✅ | ✅ | 漫画框选「卷.mokuro + 同名页图子目录」的文件夹被当页图目录导入，OCR 静默丢失 |
 | [BUG-2784](bugs/BUG-2784-lookup-symbol-only-query-blank-popup.md) | ✅ | ✅ | 点到纯符号（♡ ♪ ～ ‼）时查词弹窗是空白框 |
-| [BUG-2784](bugs/BUG-2784-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
-| [BUG-2783](bugs/BUG-2783-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
 | [BUG-2783](bugs/BUG-2783-manga-ocr-wide-vertical-bubble-routed-horizontal.md) | ✅ | ✅ | 两列竖排气泡（宽 ≥ 高）被当横排识别、落库也标横排 |
 | [BUG-2782](bugs/BUG-2782-manga-gesture-zoom-overwrites-default.md) | ✅ | ✅ | 漫画页内缩放回写「默认缩放」，16:10 笔记本「适应屏幕」装不下整页 |
 | [BUG-2781](bugs/BUG-2781-audio-paused-chapter-reload-yank.md) | ✅ | ✅ | 暂停有声书时翻到别章被拽回音频章（iOS VN 插图章回翻闪回） |

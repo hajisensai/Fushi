@@ -1,6 +1,6 @@
-## BUG-2784 · 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出
-- **报告**：2026-09-29（排查 BUG-2783 时真机发现；与用户报的「截屏识字只有一层灰」同一类症状）
-- **真实性**：✅ 真 bug，根因未定位。三星 Tab S9（Android 16）上 **release 包 `2.8.0-debug.16172` 与本地 debug 包都复现**，与 BUG-2783 的锚点布局无关：
+## BUG-2790 · 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出
+- **报告**：2026-09-29（排查 BUG-2789 时真机发现；与用户报的「截屏识字只有一层灰」同一类症状）
+- **真实性**：✅ 真 bug，根因未定位。三星 Tab S9（Android 16）上 **release 包 `2.8.0-debug.16172` 与本地 debug 包都复现**，与 BUG-2789 的锚点布局无关：
   1. 用 `PROCESS_TEXT`（或截屏识字点字）打开 app 外查词窗查一次词——词典结果 WebView（flutter_inappwebview 平台视图）在 `:popup` 热引擎里建出来；
   2. 关窗（`PopupDictFlutterActivity` finish，引擎留在 `FlutterEngineCache`）；
   3. 再用任何入口打开查词窗（悬浮球「应用外查词」/ 系统「处理文本」/ 截屏识字）。
