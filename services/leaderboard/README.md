@@ -48,6 +48,18 @@ npx wrangler deploy
 
 缺 `EMAIL_PEPPER` / `RESEND_API_KEY` 时发码与注册一律 503 `email_not_configured`（fail-closed）。
 
+> ⚠️ **部署命令一律显式指定配置，别在别的目录裸跑 `npx wrangler deploy`**：
+> `node services/leaderboard/node_modules/wrangler/bin/wrangler.js deploy --config services/leaderboard/wrangler.toml`。
+> 在没有 wrangler 配置的目录里裸跑时，`npx` 会拉最新 wrangler 4，它的 autoconfig 会把当前目录当静态站点、
+> **以目录名新建一个 Worker 并把某个子目录（实测是 `docs/`）当公开静态资源上传**，还会顺手写
+> `wrangler.jsonc` / 改 `.gitignore`（2026-09-29 实际发生过一次，已删除，上传的只是公开仓库里已入库的文档）。
+
+当前线上部署（2026-09-29）：Worker `fushi-leaderboard`（`https://rank.fushi.moe`）、D1 `fushi-leaderboard`、
+R2 `fushi-leaderboard-media`；`ADMIN_USER` / `ADMIN_PASS` / `EMAIL_PEPPER` 已设，本机副本在维护者机器
+`~/.fushi/leaderboard-secrets.json`（不入库；**`EMAIL_PEPPER` 丢了所有邮箱都对不上**）。发信渠道待定：
+Workers Paid 账户用 Cloudflare Email Service（在 `wrangler.toml` 加 `[[send_email]] name = "EMAIL"`，并在
+dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wrangler secret put RESEND_API_KEY`）。
+
 部署后还要知道的：
 
 - **App 默认连 `https://rank.fushi.moe`**（`fushi/lib/src/leaderboard/leaderboard_service.dart` 的
