@@ -116,8 +116,7 @@ String _xhtml(String title, String body) =>
 $body</body>
 </html>''';
 
-Uint8List _buildEpub(Uint8List png) {
-  const String uid = 'itest-paused-chapter-back';
+Uint8List _buildEpub(Uint8List png, String uid) {
   String textChapter(int chapter, int count) {
     final StringBuffer b = StringBuffer();
     for (int i = 0; i < count; i++) {
@@ -126,7 +125,7 @@ Uint8List _buildEpub(Uint8List png) {
     return b.toString();
   }
 
-  const String opf =
+  final String opf =
       '''<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -148,7 +147,7 @@ Uint8List _buildEpub(Uint8List png) {
     <itemref idref="c2"/>
   </spine>
 </package>''';
-  const String ncx =
+  final String ncx =
       '''<?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head><meta name="dtb:uid" content="urn:uuid:$uid"/></head>
@@ -235,6 +234,164 @@ List<AudioCue> _buildCues(String bookKey) {
   return cues;
 }
 
+/// 一轮：导入一本书、开书、播一下再暂停，然后一路往回翻到 ch0；每越过一个章界都
+/// 停 4 秒，断言阅读器停在**实际落到**的那一章（图片合并开时 ch1 被吸收进 ch2 顶部，
+/// 回翻直接落 ch0；合并关时先落插图章 ch1——两种都不许被拽回音频章）。
+Future<List<String>> _runPhase(
+  WidgetTester tester,
+  AppModel appModel, {
+  required String label,
+  required bool mergeImagePages,
+}) async {
+  final String tag = '[$_kLabel/$label]';
+  final db = appModel.database;
+  await db.setPref(
+    'src:reader_fushi:merge_image_pages',
+    mergeImagePages.toString(),
+  );
+  await ReaderFushiSource.readerSettings?.refreshFromDb();
+
+  final Uint8List png = const TestImageGenerator().pngBytes(
+    width: 800,
+    height: 1200,
+    seed: mergeImagePages ? 5 : 9,
+  );
+  final String bookKey = await EpubImporter.import(
+    db: db,
+    bytes: _buildEpub(png, 'itest-paused-chapter-back-$label'),
+    fileName: 'paused_chapter_back_$label.epub',
+  );
+  final EpubBookRow? row = await db.getEpubBook(bookKey);
+  expect(row?.chapterCount, 3, reason: '$tag fixture must have 3 chapters');
+
+  final List<AudioCue> cues = _buildCues(bookKey);
+  final Directory dir = await _fixturesDir();
+  final File audioFile = await generateSilentAudio(
+    outPath: '${dir.path}${Platform.pathSeparator}$label.m4a',
+    duration: Duration(milliseconds: cues.last.endMs + 5000),
+  );
+  final AudiobookRepository audio = AudiobookRepository(db);
+  await audio.replaceAlignment(
+    bookKey: bookKey,
+    format: 'srt',
+    path: audioFile.path,
+  );
+  await audio.replaceAudio(
+    bookKey: bookKey,
+    audioPaths: <String>[audioFile.path],
+  );
+  await audio.saveCues(bookKey: bookKey, cues: cues);
+  await audio.updateFollowAudio(bookKey: bookKey, value: true);
+  await audio.updateImagePauseSec(bookKey: bookKey, sec: 0);
+  // 音频停在 ch2 第 2 段（开书起点 = ch2，BUG-2390 音频为主）。
+  final AudioCue anchorCue = cues[_kCh0Paragraphs + 1];
+  await audio.updatePositionMs(
+    bookKey: bookKey,
+    positionMs: anchorCue.startMs + 100,
+  );
+
+  final List<String> failures = <String>[];
+  try {
+    await openBookViaProductionPath(tester, bookKey);
+    await _waitFor(tester, _webViewShown, '$label WebView');
+    await _waitFor(tester, _contentReady, '$label content');
+    AudiobookPlayerController? ctrl;
+    for (int i = 0; i < 80; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+      final AudiobookPlayerController? c = appModel.audiobookSession.controller;
+      if (c != null && c.chapterCueCount > 0) {
+        ctrl = c;
+        break;
+      }
+    }
+    expect(ctrl, isNotNull, reason: '$tag audiobook controller attaches');
+    final AudiobookPlayerController controller = ctrl!;
+    int readerSection() => controller.getCurrentReaderSection?.call() ?? -1;
+    for (int i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(
+      ReaderFushiSource.readerSettings?.isVnMode,
+      isTrue,
+      reason: '$tag reader must run in VN mode',
+    );
+    expect(readerSection(), 2, reason: '$tag open lands on the audio chapter');
+
+    // 与用户状态一致：本会话按过播放，随后暂停。
+    await controller.seekMs(anchorCue.startMs + 100);
+    await controller.play();
+    await tester.pump(const Duration(milliseconds: 300));
+    await controller.pause();
+    for (int i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    debugPrint(
+      '$tag paused cue=${controller.currentCue?.textFragmentId} '
+      'section=${readerSection()} playing=${controller.isPlaying}',
+    );
+    expect(readerSection(), 2, reason: '$tag still on the audio chapter');
+
+    final List<String> timeline = <String>[];
+    final List<int> landed = <int>[];
+    int guard = 0;
+    while (readerSection() > 0 && guard++ < 4) {
+      final int from = readerSection();
+      bool crossed = false;
+      for (int press = 0; press < 40; press++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
+        for (int i = 0; i < 3; i++) {
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+        // 换章在飞时再按键会进 BUG-2424 的翻页队列、就绪后重放成**多翻一章**——
+        // 那是测试按得太快，不是被拽回。每按一次都等内容就绪再判、再按下一次。
+        await _waitFor(tester, _contentReady, '$label content after press');
+        await tester.pump(const Duration(milliseconds: 300));
+        timeline.add('press#$press section=${readerSection()}');
+        if (readerSection() < from) {
+          crossed = true;
+          break;
+        }
+      }
+      if (!crossed) {
+        failures.add(
+          '$tag PageUp never crossed below chapter $from: $timeline',
+        );
+        break;
+      }
+      await _waitFor(tester, _contentReady, '$label content after back');
+      final int target = readerSection();
+      landed.add(target);
+      final List<int> seen = <int>[];
+      for (int i = 0; i < 16; i++) {
+        await tester.pump(const Duration(milliseconds: 250));
+        seen.add(readerSection());
+      }
+      debugPrint('$tag landed on $target, hold samples=$seen');
+      if (!seen.every((int s) => s == target)) {
+        failures.add(
+          '$tag paged back from $from to $target but was pulled while audio '
+          'was paused: $seen (timeline $timeline)',
+        );
+        break;
+      }
+    }
+    debugPrint('$tag landed chapters=$landed');
+    if (failures.isEmpty && readerSection() != 0) {
+      failures.add('$tag never reached chapter 0 (landed $landed)');
+    }
+    if (!mergeImagePages && failures.isEmpty && !landed.contains(1)) {
+      failures.add(
+        '$tag merge off: expected to land on the image chapter 1 on the way '
+        'back, landed $landed',
+      );
+    }
+    if (controller.isPlaying) failures.add('$tag audio must stay paused');
+  } finally {
+    await _closeReader(tester);
+  }
+  return failures;
+}
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -250,138 +407,34 @@ void main() {
           expect(await waitForHome(tester), isTrue, reason: 'home must render');
           await tester.pump(const Duration(seconds: 2));
           final AppModel appModel = await readyAppModel(tester);
-          final db = appModel.database;
-
-          await db.setPref('src:reader_fushi:view_mode', 'vn');
+          await appModel.database.setPref('src:reader_fushi:view_mode', 'vn');
           await ReaderFushiSource.readerSettings?.refreshFromDb();
 
-          final Uint8List png = const TestImageGenerator().pngBytes(
-            width: 800,
-            height: 1200,
-            seed: 5,
-          );
-          final String bookKey = await EpubImporter.import(
-            db: db,
-            bytes: _buildEpub(png),
-            fileName: 'paused_chapter_back.epub',
-          );
-          final EpubBookRow? row = await db.getEpubBook(bookKey);
-          expect(row?.chapterCount, 3, reason: 'fixture must have 3 chapters');
-
-          final List<AudioCue> cues = _buildCues(bookKey);
-          final Directory dir = await _fixturesDir();
-          final File audioFile = await generateSilentAudio(
-            outPath: '${dir.path}${Platform.pathSeparator}$bookKey.m4a',
-            duration: Duration(milliseconds: cues.last.endMs + 5000),
-          );
-          final AudiobookRepository audio = AudiobookRepository(db);
-          await audio.replaceAlignment(
-            bookKey: bookKey,
-            format: 'srt',
-            path: audioFile.path,
-          );
-          await audio.replaceAudio(
-            bookKey: bookKey,
-            audioPaths: <String>[audioFile.path],
-          );
-          await audio.saveCues(bookKey: bookKey, cues: cues);
-          await audio.updateFollowAudio(bookKey: bookKey, value: true);
-          await audio.updateImagePauseSec(bookKey: bookKey, sec: 0);
-          // 音频停在 ch2 第 2 段（开书起点 = ch2）。
-          final AudioCue anchorCue = cues[_kCh0Paragraphs + 1];
-          await audio.updatePositionMs(
-            bookKey: bookKey,
-            positionMs: anchorCue.startMs + 100,
-          );
-
-          try {
-            await openBookViaProductionPath(tester, bookKey);
-            await _waitFor(tester, _webViewShown, 'WebView');
-            await _waitFor(tester, _contentReady, 'content');
-            AudiobookPlayerController? ctrl;
-            for (int i = 0; i < 80; i++) {
-              await tester.pump(const Duration(milliseconds: 500));
-              final AudiobookPlayerController? c =
-                  appModel.audiobookSession.controller;
-              if (c != null && c.chapterCueCount > 0) {
-                ctrl = c;
-                break;
-              }
-            }
-            expect(ctrl, isNotNull, reason: 'audiobook controller attaches');
-            final AudiobookPlayerController controller = ctrl!;
-            int readerSection() =>
-                controller.getCurrentReaderSection?.call() ?? -1;
-            for (int i = 0; i < 6; i++) {
-              await tester.pump(const Duration(milliseconds: 500));
-            }
-            expect(
-              ReaderFushiSource.readerSettings?.isVnMode,
-              isTrue,
-              reason: 'reader must run in VN mode',
-            );
-            expect(
-              readerSection(),
-              2,
-              reason: 'open lands on the audio chapter',
-            );
-
-            // 与用户状态一致：本会话按过播放，随后暂停。
-            await controller.seekMs(anchorCue.startMs + 100);
-            await controller.play();
-            await tester.pump(const Duration(milliseconds: 300));
-            await controller.pause();
-            for (int i = 0; i < 4; i++) {
-              await tester.pump(const Duration(milliseconds: 500));
-            }
-            debugPrint(
-              '[$_kLabel] paused cue=${controller.currentCue?.textFragmentId} '
-              'section=${readerSection()} playing=${controller.isPlaying}',
-            );
-            expect(readerSection(), 2);
-
-            final List<String> timeline = <String>[];
-            Future<void> pageBackUntilBelow(int section) async {
-              for (int press = 0; press < 40; press++) {
-                if (readerSection() < section) return;
-                await tester.sendKeyEvent(LogicalKeyboardKey.pageUp);
-                for (int i = 0; i < 3; i++) {
-                  await tester.pump(const Duration(milliseconds: 300));
-                }
-                timeline.add('press#$press section=${readerSection()}');
-              }
-              fail('PageUp never crossed below chapter $section: $timeline');
-            }
-
-            Future<void> holdAndExpect(int expected, String what) async {
-              final List<int> seen = <int>[];
-              for (int i = 0; i < 16; i++) {
-                await tester.pump(const Duration(milliseconds: 250));
-                seen.add(readerSection());
-              }
-              debugPrint('[$_kLabel] $what samples=$seen');
-              expect(
-                seen.every((int s) => s == expected),
-                isTrue,
-                reason:
-                    '$what: reader must stay on chapter $expected while audio '
-                    'is paused, but was pulled: $seen (timeline $timeline)',
-              );
-            }
-
-            // ch2 → 插图章 ch1。
-            await pageBackUntilBelow(2);
-            await _waitFor(tester, _contentReady, 'image chapter content');
-            await holdAndExpect(1, 'after paging back onto the image chapter');
-
-            // 插图章 ch1 → ch0（用户原始失败点）。
-            await pageBackUntilBelow(1);
-            await _waitFor(tester, _contentReady, 'ch0 content');
-            await holdAndExpect(0, 'after paging back past the image chapter');
-            expect(controller.isPlaying, isFalse);
-          } finally {
-            await _closeReader(tester);
+          final List<String> failures = <String>[
+            // 默认：图片合并开（ch1 吸收进 ch2 顶部）。
+            ...await _runPhase(
+              tester,
+              appModel,
+              label: 'merge-on',
+              mergeImagePages: true,
+            ),
+            // 图片合并关：插图独立成章（用户录屏里的形态）。
+            ...await _runPhase(
+              tester,
+              appModel,
+              label: 'merge-off',
+              mergeImagePages: false,
+            ),
+          ];
+          debugPrint('[$_kLabel] VERDICT failures=${failures.length}');
+          for (final String f in failures) {
+            debugPrint('[$_kLabel] FAIL $f');
           }
+          expect(
+            failures,
+            isEmpty,
+            reason: '有声书暂停时往回翻章被拽回音频章：\n${failures.join('\n')}',
+          );
         },
       );
     },
