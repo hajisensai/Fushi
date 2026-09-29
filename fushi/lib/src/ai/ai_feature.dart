@@ -35,16 +35,23 @@ enum AiFeature {
   /// 自定义主题：按自然语言描述生成一组角色配色（进编辑页草稿，不直接应用）。
   customTheme,
 
-  /// AI 下视频：把用户一句话解析成结构化意图 + 多义作品选择 + 版本 tie-break，
-  /// 三处共用这一个指派。热路径（搜作品 / 搜资源 / 选版本 / 入队 / 建订阅）仍是
-  /// 本地确定性代码，AI 输出里没有自由文本字段。
-  videoAcquire,
+  /// AI 下载：视频（一句话 → 结构化意图 + 多义作品选择 + 版本 tie-break）与
+  /// 浏览 › 发现的小说 / 漫画 / 游戏（一句话 → 搜索词 + 在已取回的候选里挑推荐项）
+  /// 共用这一个指派——同一件事「跟 AI 说想要什么，由它帮着下」，设置里只列一行。
+  /// 热路径（搜作品 / 搜资源 / 选版本 / 入队 / 建订阅 / 入库）仍是本地确定性代码，
+  /// AI 输出里没有自由文本字段。
+  ///
+  /// 持久化键沿用合并前视频那一行的 `videoAcquire`（见 [storageKey]），已有指派
+  /// 原样生效；只指派过旧「AI 下载（小说 / 漫画 / 游戏）」行的用户由
+  /// [AiFeatureAssignments.fromJson] 把 [_kLegacyMediaAcquireKey] 迁过来。
+  acquire;
 
-  /// AI 下载（浏览 › 发现的小说 / 漫画 / 游戏域）：一句话 → 搜索词，再在已取回的
-  /// 候选里挑推荐项；搜索、下载与入库全是本地确定性代码，下载前由用户确认。
-  mediaAcquire;
-
-  String get storageKey => name;
+  /// 持久化键。[acquire] 钉在合并前的 `videoAcquire`，其余与枚举名一致；
+  /// 改枚举名不能改这里，否则存量指派静默失效。
+  String get storageKey => switch (this) {
+    AiFeature.acquire => 'videoAcquire',
+    _ => name,
+  };
 
   static AiFeature? fromStorageKey(String? key) {
     if (key == null) {
@@ -67,6 +74,11 @@ const String kAiFeatureDisabled = 'off';
 /// JSON 里默认提供商的键。`_` 前缀不是任何 [AiFeature.storageKey]，旧版本读到时
 /// 按「认不出的功能」忽略——降级回旧版只是默认失效，不会误指派。
 const String _kDefaultKey = '_default';
+
+/// 合并进 [AiFeature.acquire] 之前「AI 下载（小说 / 漫画 / 游戏）」单独那一行的
+/// 持久化键。读到它且没有 `videoAcquire` 指派时迁给 [AiFeature.acquire]；两者都有
+/// 时以视频那行为准（它是先有的那一行）。下次保存时这个键自然消失。
+const String _kLegacyMediaAcquireKey = 'mediaAcquire';
 
 /// 功能 → 提供商 id 的映射 + 一个默认提供商。不可变。
 ///
@@ -101,6 +113,10 @@ class AiFeatureAssignments {
         map[feature] = value;
       }
     });
+    final Object? legacyMedia = decoded[_kLegacyMediaAcquireKey];
+    if (legacyMedia is String && legacyMedia.trim().isNotEmpty) {
+      map.putIfAbsent(AiFeature.acquire, () => legacyMedia);
+    }
     final Object? rawDefault = decoded[_kDefaultKey];
     return AiFeatureAssignments(
       providerIdByFeature: Map<AiFeature, String>.unmodifiable(map),

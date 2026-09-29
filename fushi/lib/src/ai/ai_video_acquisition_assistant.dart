@@ -34,10 +34,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
 
 /// 从偏好里解析「AI 下视频」的提供商；null = 未指派 / 已删 / 没配全。
 AiProviderConfig? resolveVideoAcquireAiProvider(PreferencesRepository prefs) =>
-    prefs.aiFeatureAssignments.resolve(
-      AiFeature.videoAcquire,
-      prefs.aiProviders,
-    );
+    prefs.aiFeatureAssignments.resolve(AiFeature.acquire, prefs.aiProviders);
 
 /// 一句话解析的输入：用户原文 + 当前会话的最小快照，让模型知道「在回答哪个问题」。
 class VideoAcquisitionIntentQuery {
@@ -467,7 +464,7 @@ VideoAcquisitionIntentParser createPreferencesVideoAcquisitionIntentParser(
 };
 
 /// 生产装配：多义作品选择。语义同 [createPreferencesVideoAcquisitionIntentParser]，
-/// 只是指派槽位是 [AiFeature.videoAcquire] 而非刮削的 `videoIdentify`。
+/// 只是指派槽位是 [AiFeature.acquire] 而非刮削的 `videoIdentify`。
 AiVideoIdentityDecider createPreferencesVideoAcquisitionIdentityDecider(
   PreferencesRepository prefsRepo, {
   AiClientFactory? clientFactory,

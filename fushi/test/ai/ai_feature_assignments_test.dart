@@ -92,4 +92,36 @@ void main() {
     expect(assignments.withDefault(null).defaultProviderId, isNull);
     expect(assignments.withDefault('  ').defaultProviderId, isNull);
   });
+
+  group('AI 下载合并成一行（视频 + 小说 / 漫画 / 游戏共用一个指派）', () {
+    test('持久化键沿用合并前视频那行的 videoAcquire', () {
+      expect(AiFeature.acquire.storageKey, 'videoAcquire');
+      expect(AiFeature.fromStorageKey('videoAcquire'), AiFeature.acquire);
+      final AiFeatureAssignments stored = AiFeatureAssignments.fromJson(
+        '{"videoAcquire": "ai-b"}',
+      );
+      expect(stored.resolve(AiFeature.acquire, providers)?.id, 'ai-b');
+      expect(
+        const AiFeatureAssignments()
+            .withAssignment(AiFeature.acquire, 'ai-b')
+            .toJson(),
+        '{"videoAcquire":"ai-b"}',
+      );
+    });
+
+    test('只指派过旧「小说 / 漫画 / 游戏」那行 → 迁给合并后的一行', () {
+      final AiFeatureAssignments migrated = AiFeatureAssignments.fromJson(
+        '{"mediaAcquire": "ai-b"}',
+      );
+      expect(migrated.providerIdFor(AiFeature.acquire), 'ai-b');
+      expect(migrated.toJson(), '{"videoAcquire":"ai-b"}');
+    });
+
+    test('两行都指派过 → 以视频那行为准', () {
+      final AiFeatureAssignments both = AiFeatureAssignments.fromJson(
+        '{"videoAcquire": "ai-a", "mediaAcquire": "ai-b"}',
+      );
+      expect(both.providerIdFor(AiFeature.acquire), 'ai-a');
+    });
+  });
 }

@@ -520,10 +520,7 @@ void main() {
     Future<void> assign() async {
       await prefs.setAiProviders(<AiProviderConfig>[_provider()]);
       await prefs.setAiFeatureAssignments(
-        const AiFeatureAssignments().withAssignment(
-          AiFeature.videoAcquire,
-          'p',
-        ),
+        const AiFeatureAssignments().withAssignment(AiFeature.acquire, 'p'),
       );
     }
 
@@ -554,7 +551,7 @@ void main() {
       expect(requests, 0);
     });
 
-    test('指派了 videoAcquire（而非 videoIdentify）→ 现取提供商并发请求', () async {
+    test('指派了 acquire（而非 videoIdentify）→ 现取提供商并发请求', () async {
       await assign();
       expect(resolveVideoAcquireAiProvider(prefs)?.id, 'p');
       int requests = 0;

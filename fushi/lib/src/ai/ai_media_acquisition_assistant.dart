@@ -42,10 +42,7 @@ const int kAiMediaAcquisitionPickPool = 40;
 
 /// 从偏好里解析「AI 下载」的提供商；null = 未指派 / 已删 / 没配全。
 AiProviderConfig? resolveMediaAcquireAiProvider(PreferencesRepository prefs) =>
-    prefs.aiFeatureAssignments.resolve(
-      AiFeature.mediaAcquire,
-      prefs.aiProviders,
-    );
+    prefs.aiFeatureAssignments.resolve(AiFeature.acquire, prefs.aiProviders);
 
 /// 一句话的解析结果：拿去搜的词（原文优先）。
 class AiMediaAcquisitionIntent {
