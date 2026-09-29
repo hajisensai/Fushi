@@ -11,7 +11,7 @@ import 'video_fushi_page_source_corpus.dart';
 /// 只有 tooltip、无可见标注，用户看不懂图标。
 ///
 /// 修复：共享 [_centeredBottomControlBar] 用三区布局（左时间 / 右尾部 / 居中 seek 簇，
-/// BUG-2791 起由 VideoBottomBarSlots 排布）把 play 钉在几何中心；±10s 经 [_seekLabelButton] 带可见标注；上/下一句仍走动态
+/// BUG-2792 起由 VideoBottomBarSlots 排布）把 play 钉在几何中心；±10s 经 [_seekLabelButton] 带可见标注；上/下一句仍走动态
 /// _asbConfig.seekSeconds 不写死 ±3s。桌面/移动共用同一 helper。
 ///
 /// media_kit controls 跑不了 headless，故锁源码结构不变量。
@@ -53,7 +53,7 @@ void main() {
   });
 
   test('play 钉几何中心：三区布局（左时间 / 右尾部 / 居中 seek 簇）', () {
-    // BUG-2791：三区交 VideoBottomBarSlots 排布（放得下时钉正中、放不下时在两簇间
+    // BUG-2792：三区交 VideoBottomBarSlots 排布（放得下时钉正中、放不下时在两簇间
     // 平移 / 缩小），不再 Stack 叠放——Stack 三区互不知道对方宽度，窄了就叠画。
     // 几何行为由 test/media/video/video_bottom_bar_slots_test.dart 真布局钉住。
     expect(helper.contains('return VideoBottomBarSlots('), isTrue,
@@ -61,7 +61,7 @@ void main() {
     expect(helper.contains('center: transport'), isTrue,
         reason: 'seek 传输簇应作为居中区（play 钉几何中心）');
     expect(helper.contains('Stack('), isFalse,
-        reason: 'Stack 叠放会在底栏变窄时让传输簇与右簇重叠（BUG-2791）');
+        reason: 'Stack 叠放会在底栏变窄时让传输簇与右簇重叠（BUG-2792）');
     // 旧的 Spacer 平铺布局已从共享 helper 移除（不再用 Spacer 定位 seek 簇）。
     expect(helper.contains('Spacer()'), isFalse,
         reason: '居中布局不再依赖 Spacer 均分（那会随尾部按钮数量挤偏 play）');

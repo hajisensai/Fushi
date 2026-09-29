@@ -1,4 +1,4 @@
-## BUG-2791 · 开字幕列表后视频底栏按钮叠在一起
+## BUG-2792 · 开字幕列表后视频底栏按钮叠在一起
 - **报告**：2026-09-29（用户：截图——开右侧字幕列表后底栏「+10s」挤进音量图标，布局叠成一块，要求按宽度自适应）
 - **真实性**：✅ 真 bug。两处根因叠加：
   1. `fushi/lib/src/pages/implementations/video_fushi_page.dart` `_hasRoomyVideoBottomBar` 读的是**整屏宽** `MediaQuery.size.width >= 600`。右侧字幕列表打开后屏幕仍宽、播放区（底栏）只剩一部分，带文字标注的 ±10s 照样摆出来，把传输簇撑宽。

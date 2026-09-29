@@ -104,7 +104,7 @@ void main() {
       isTrue,
       reason: 'bottom bar width check should be shared, not mobile-only',
     );
-    // BUG-2791：按底栏自身宽度判，不再读整屏宽——右侧字幕列表打开后屏幕仍宽、
+    // BUG-2792：按底栏自身宽度判，不再读整屏宽——右侧字幕列表打开后屏幕仍宽、
     // 底栏却变窄，读屏宽会照样摆出带标注的 ±10s 把传输簇撑进右簇。
     expect(
         src.contains(

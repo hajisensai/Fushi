@@ -7780,7 +7780,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 三区布局：左区时间、右区尾部按钮、居中 seek 簇，play 恒处几何中心、两侧
   /// seek 对称，与尾部按钮数量无关。桌面/移动共用本布局（仅控件类型与播放暂停按钮不同）。
   ///
-  /// BUG-2791：三区改交 [VideoBottomBarSlots] 排布，不再 `Stack` 叠放。播放区被右侧
+  /// BUG-2792：三区改交 [VideoBottomBarSlots] 排布，不再 `Stack` 叠放。播放区被右侧
   /// 字幕列表挤窄时，`Stack` 里的居中簇与右簇互不知道对方多宽、直接叠画（「+10s」压在
   /// 音量图标上）。[VideoBottomBarSlots] 宽度够时照旧钉正中，不够时中簇在左右两簇之间
   /// 平移、再不够就等比缩小，永不重叠。±10s 带不带文字标注也改按**底栏自身宽度**判。
@@ -8058,7 +8058,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// ±10s 是否带文字标注：按**底栏自身宽度**判（BUG-2791）。旧判据读整屏宽
+  /// ±10s 是否带文字标注：按**底栏自身宽度**判（BUG-2792）。旧判据读整屏宽
   /// （`MediaQuery.size.width`），右侧字幕列表打开后屏幕仍宽、底栏却只剩一部分，
   /// 带标注的 ±10s 照样摆出来，把传输簇撑宽到压进右簇。
   bool _hasRoomyVideoBottomBar(double barWidth) => barWidth >= 600;

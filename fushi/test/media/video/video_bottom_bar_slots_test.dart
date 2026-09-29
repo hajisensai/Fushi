@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_bottom_bar_slots.dart';
 
-/// BUG-2791：开右侧字幕列表后播放区变窄，底栏旧的三区 `Stack` 让居中传输簇与右簇
+/// BUG-2792：开右侧字幕列表后播放区变窄，底栏旧的三区 `Stack` 让居中传输簇与右簇
 /// 叠画（「+10s」压在音量图标上）。这里用真布局钉住 [VideoBottomBarSlots]：
 /// 宽时 play 仍在几何正中，窄时三区互不重叠。
 void main() {
