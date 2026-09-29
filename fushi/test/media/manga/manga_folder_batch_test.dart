@@ -67,7 +67,7 @@ void main() {
       expect(_classifyWithRealPredicates(root.path), ImportCarrier.mangaFolder);
     });
 
-    // BUG-2761：mokuro 标准产物「卷.mokuro + 同名页图子目录」。页图判据递归进子目录
+    // BUG-2785：mokuro 标准产物「卷.mokuro + 同名页图子目录」。页图判据递归进子目录
     // 抢先认成页图目录，OCR 静默丢失。真文件系统判据下钉死新的优先级。
     test('卷.mokuro + 同名页图子目录 → mangaMokuro，且能换出那个 .mokuro 文件', () {
       File(p.join(root.path, 'vol1.mokuro')).writeAsStringSync('{}');

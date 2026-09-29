@@ -172,10 +172,10 @@ void main() {
     expect(find.byType(FushiPlaceholderMessage), findsOneWidget);
   });
 
-  // BUG-2760：点到 ♡ / ♪ / ～ 这类纯符号，查词前的清洗把查询词剥成空串，查询
+  // BUG-2784：点到 ♡ / ♪ / ～ 这类纯符号，查词前的清洗把查询词剥成空串，查询
   // 跑完、返回一个 searchTerm 为空的新结果。旧判据「searchTerm 非空才算查过」把它
   // 当成空闲占位，热槽上既没有词条也没有「未找到」盖板——一个空白框。
-  testWidgets('BUG-2760 热槽 + 查询词被清洗成空串的真实结果：显示「未找到」盖板', (
+  testWidgets('BUG-2784 热槽 + 查询词被清洗成空串的真实结果：显示「未找到」盖板', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -191,7 +191,7 @@ void main() {
         reason: '查过了、没东西可查也是「未找到」，不能露出空 WebView');
   });
 
-  testWidgets('BUG-2760 热槽空闲占位单例：不出现「未找到」盖板', (
+  testWidgets('BUG-2784 热槽空闲占位单例：不出现「未找到」盖板', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(

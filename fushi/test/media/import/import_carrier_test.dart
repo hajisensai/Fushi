@@ -137,9 +137,9 @@ void main() {
     });
   });
 
-  /// BUG-2761：mokuro 的标准产物是「`卷.mokuro` + 同名页图子目录」。页图判据递归
+  /// BUG-2785：mokuro 的标准产物是「`卷.mokuro` + 同名页图子目录」。页图判据递归
   /// 压平进子目录，于是装着这两样的文件夹被当成页图目录，OCR 结果被静默丢掉。
-  group('目录里有 .mokuro（BUG-2761）', () {
+  group('目录里有 .mokuro（BUG-2785）', () {
     test('恰好一个 .mokuro + 页图子目录 → mangaMokuro（不再被页图判据抢先）', () {
       expect(
         classify(

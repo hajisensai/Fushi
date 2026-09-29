@@ -148,7 +148,7 @@ class _FixedRegionDetector implements OcrDetector {
       );
 }
 
-/// BUG-2755：两列竖排气泡，宽 200 ≥ 高 100。PP 切出两条竖列 + 一截被切断的
+/// BUG-2783：两列竖排气泡，宽 200 ≥ 高 100。PP 切出两条竖列 + 一截被切断的
 /// 短列碎片（30×30，单看会被当成横行）。
 List<PpTextLine> _twoColumnVerticalBubble() => <PpTextLine>[
       _line(150, 5, 180, 95),
@@ -404,7 +404,7 @@ void main() {
     expect(mangaOcr.calls, <OcrRect>[box]);
   });
 
-  test('BUG-2755 宽 ≥ 高的多列竖排：整块交 manga-ocr、标竖排，PP rec 不跑', () async {
+  test('BUG-2783 宽 ≥ 高的多列竖排：整块交 manga-ocr、标竖排，PP rec 不跑', () async {
     final _FakeMangaOcr mangaOcr = _FakeMangaOcr();
     final _FakeLineRecognizer rec = _FakeLineRecognizer();
     final RoutingOcrRecognizer r = RoutingOcrRecognizer(
@@ -422,7 +422,7 @@ void main() {
     expect(rec.lines, isEmpty);
   });
 
-  test('BUG-2755 批路由：竖排多列块进整框批次并保留方向，横排块标横排', () async {
+  test('BUG-2783 批路由：竖排多列块进整框批次并保留方向，横排块标横排', () async {
     final _FakeBatchMangaOcr manga = _FakeBatchMangaOcr();
     final _FakeLineDetector detector = _FakeLineDetector(<PpTextLine>[])
       ..sequence = <List<PpTextLine>>[
@@ -457,7 +457,7 @@ void main() {
     expect(manga.batches.single, <OcrRect>[boxes[0], boxes[2]]);
   });
 
-  test('BUG-2755 pipeline 采用识别器给的方向，宽的竖排块落库为 vertical', () async {
+  test('BUG-2783 pipeline 采用识别器给的方向，宽的竖排块落库为 vertical', () async {
     const OcrRect wide = OcrRect(left: 50, top: 100, right: 250, bottom: 200);
     final OcrPageResult result = await MangaOcrPipeline(
       detector: _FixedRegionDetector(<OcrRect>[wide]),

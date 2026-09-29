@@ -79,7 +79,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   bool _pickerActive = false;
 
-  /// 当前选中的目录若是 iOS 整卷拷进来的暂存副本（BUG-2762），在这里记着，关框时删。
+  /// 当前选中的目录若是 iOS 整卷拷进来的暂存副本（BUG-2786），在这里记着，关框时删。
   ///
   /// 为什么不在每次导入结束就删：导入失败时对话框不关、路径还在，用户会原样重试——
   /// 那时副本已经没了，重试只会换来一句莫名其妙的「找不到文件」。成功时对话框随即
@@ -128,7 +128,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
 
   ImportCarrier _classify(String path) => _carrierResolver.resolve(path);
 
-  /// 载体判成 `.mokuro` 的**目录**（直接子层恰好一个 `.mokuro`，BUG-2761）换成那个
+  /// 载体判成 `.mokuro` 的**目录**（直接子层恰好一个 `.mokuro`，BUG-2785）换成那个
   /// 文件——`importMokuro` 吃的是文件。其余原样返回。
   String _importPathFor(String path, ImportCarrier carrier) {
     if (carrier != ImportCarrier.mangaMokuro) return path;
@@ -266,7 +266,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   }
 
   /// iOS 单选的 `.mokuro` 是被 file_picker 挪进 `NSTemporaryDirectory()` 的**孤零零
-  /// 一个文件**，同级页图不会跟过来（BUG-2762）。收下它只会在点「导入」时才炸一句
+  /// 一个文件**，同级页图不会跟过来（BUG-2786）。收下它只会在点「导入」时才炸一句
   /// 缺图——在选中这一刻就说清楚该怎么选。判据与导入门同一个
   /// （[MangaModule.canImportPath]），同级真有页图时照常放行。
   bool _isOrphanedIosMokuro(String path) =>
@@ -281,7 +281,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       final AppModel appModel =
           ProviderScope.containerOf(context, listen: false).read(appProvider);
       // 走 pickImportDirectory 而不是 pickRealDirectoryPath：iOS 上后者交回的沙盒外
-      // 路径 dart:io 读不了（BUG-2762），前者在访问窗口内把整卷拷进 app 容器。
+      // 路径 dart:io 读不了（BUG-2786），前者在访问窗口内把整卷拷进 app 容器。
       final PickedImportDirectory? picked;
       try {
         picked = await pickImportDirectory(

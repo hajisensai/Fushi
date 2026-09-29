@@ -214,7 +214,7 @@ class OcrRecognition {
 /// 可选能力：识别时顺带判定了块方向（例如块内切行后按行投票）的识别器。
 ///
 /// 方向只该有一个拥有者：长宽比只是检测框的外形，两列竖排气泡常常宽 ≥ 高，
-/// 按外形猜会把它标成横排（BUG-2755）。实现了本接口的识别器，pipeline 直接
+/// 按外形猜会把它标成横排（BUG-2783）。实现了本接口的识别器，pipeline 直接
 /// 采用它给的方向。输出与 [boxes] 严格同长、同序。
 abstract interface class OrientedOcrRecognizer implements OcrRecognizer {
   Future<List<OcrRecognition>> recognizeOriented(

@@ -43,7 +43,7 @@ List<File> mangaCarrierFilesIn(Directory dir) {
 
 /// [mangaCarrierFilesIn] 里的 `.mokuro`（同样只看直接子层）。
 ///
-/// 目录载体判定要单独数它（BUG-2761）：`卷.mokuro` + 同名页图子目录是 mokuro 的
+/// 目录载体判定要单独数它（BUG-2785）：`卷.mokuro` + 同名页图子目录是 mokuro 的
 /// 标准产物，`.mokuro` 在场时它比页图更能说明这个目录是什么。
 List<File> mangaMokuroFilesIn(Directory dir) => <File>[
       for (final File file in mangaCarrierFilesIn(dir))

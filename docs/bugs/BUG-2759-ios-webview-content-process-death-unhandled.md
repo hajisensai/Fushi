@@ -1,5 +1,5 @@
 ## BUG-2759 · iOS/macOS WebView 内容进程被回收后没人接管，常驻查词弹窗永久空白
-- **报告**：2026-09-28（BUG-2763 的根因拆分）
+- **报告**：2026-09-28（BUG-2787 的根因拆分）
 - **真实性**：✅ 真 bug（代码路径确认，未在 iPhone 上复现）。全仓 `lib/` 没有任何 `onWebContentProcessDidTerminate`；`WebViewDeathGuard`（`fushi/lib/src/webview/webview_death_guard.dart`）只挂在 Android 的 `onRenderProcessGone` 上。WebKit 在内存压力下会回收后台/屏外 WebView 的内容进程，插件（`flutter_inappwebview_ios` `InAppWebView.swift` `webViewWebContentProcessDidTerminate`）只把事件转给 Dart、不自动重载。常驻查词弹窗（`fushi/lib/src/pages/base_source_page.dart` 热槽，平时停在屏外）死后 controller 与就绪标志照旧，`_pushResults` 往死进程里 `evaluateJavascript` 既不报错也不渲染，`_showPopupWaitingForRender` 的 1.8 秒兜底只撤进度条 → 之后点任何字都是空白框，直到离开页面。整卷 OCR 的内存峰值正好触发这一条。
 - **[x] ① 已修复** — `WebViewDeathGuard.handleWebContentTerminated()`，与 renderer 死亡共用「先抢救、再按预算重建」逻辑与预算；`lib/` 下全部 11 处 WebView 构造（阅读器、漫画、查词弹窗、词典样式预览、Lapis 预览、有声书剪辑、LNReader 运行时、Aidoku/Mihon 登录与验证页、网页视频、启动预热）同时接上 `onWebContentProcessDidTerminate`。
 - **[x] ② 已加自动化测试** — `fushi/test/webview/webview_render_process_gone_guard_test.dart` 新增「每一处构造都传了非 null 的 onWebContentProcessDidTerminate」；`fushi/test/webview/webview_death_guard_test.dart` 新增 WebKit 终止走同一套抢救→重建并共享预算；`fushi/test/startup/webview_prewarm_session_test.dart` 预热终点 3→4。

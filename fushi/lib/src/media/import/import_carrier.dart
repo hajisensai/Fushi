@@ -28,7 +28,7 @@ enum ImportCarrier {
   /// mokuro v0.2+ 的 `.mokuro` OCR 结果文件（+ 同级图片）。
   /// 走 `MangaModule.importMokuro`。
   ///
-  /// 也可能是一个**目录**：直接子层恰好一个 `.mokuro`（BUG-2761）。消费方须经
+  /// 也可能是一个**目录**：直接子层恰好一个 `.mokuro`（BUG-2785）。消费方须经
   /// `MangaModule.directorySingleMokuroPath` 换成那个文件再导入。
   mangaMokuro,
 
@@ -116,7 +116,7 @@ ImportCarrier classifyImportCarrier(
   required int Function(String path) directoryMokuroFileCount,
 }) {
   if (isDirectory(path)) {
-    // `.mokuro` 先于页图（BUG-2761）：mokuro 的标准产物就是「`卷.mokuro` + 同名页图
+    // `.mokuro` 先于页图（BUG-2785）：mokuro 的标准产物就是「`卷.mokuro` + 同名页图
     // 子目录」，用户选的恰是装着这两样的文件夹。页图判据会递归压平进子目录、先把它
     // 认成页图目录，于是 OCR 结果被静默丢掉、导成一本没字的漫画。`.mokuro` 是这个
     // 目录里**信息量最大**的东西，它在就按它导：一个 = 这一卷（调用方把路径换成那个

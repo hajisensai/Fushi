@@ -229,7 +229,7 @@ class MangaOcrPipeline {
   }
 
   /// 块方向只有一个拥有者：识别器定了（[OrientedOcrRecognizer]）就用它的，
-  /// 否则按检测框外形（[isVerticalBlock]）兜底（BUG-2755）。
+  /// 否则按检测框外形（[isVerticalBlock]）兜底（BUG-2783）。
   static Future<List<OcrRecognition>> _recognizeRegions(
     OcrRecognizer recognizer,
     img.Image image,

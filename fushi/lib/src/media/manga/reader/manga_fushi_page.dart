@@ -4448,7 +4448,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 页内缩放（右键菜单 ± / 捏合 / 滚轮 / 双击）只是本次阅读的会话状态。
   ///
-  /// BUG-2754：此前它们都回写「默认缩放」偏好（`manga_zoom_percent`），笔记本
+  /// BUG-2782：此前它们都回写「默认缩放」偏好（`manga_zoom_percent`），笔记本
   /// 触控板随手一捏就把 110% 钉成以后每本漫画的起始缩放，「适应屏幕」看起来
   /// 装不下整页。默认缩放只归设置项写。
   Future<void> _setZoomPercent(int value) async {
@@ -4718,7 +4718,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ? _buildSpreadsFor(payload, nextMode)
         : _spreads;
     if (modeChanged) _readLedger.rebaseOnNextArrive();
-    // 会话缩放（捏合 / 滚轮）与默认缩放是两份状态（BUG-2754）：只有默认缩放
+    // 会话缩放（捏合 / 滚轮）与默认缩放是两份状态（BUG-2782）：只有默认缩放
     // 本身被改了才跟过去，改背景、点击区这类无关项不能把缩放跳回默认值。
     final bool zoomStartChanged =
         prefs.zoomStart != _readerPreferences.zoomStart;
@@ -5975,7 +5975,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
         );
         controller.addJavaScriptHandler(
-          // 只同步会话状态，不写默认缩放偏好（BUG-2754）。
+          // 只同步会话状态，不写默认缩放偏好（BUG-2782）。
           handlerName: 'onMangaZoomChanged',
           callback: (List<dynamic> args) {
             if (args.isEmpty) return;

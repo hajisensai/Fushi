@@ -327,7 +327,7 @@ void main() {
     expect(result?.files.single.name, 'whatever.bin');
   });
 
-  // BUG-2762：iOS 的 file_picker 用 import 模式，选中的文件被挪进
+  // BUG-2786：iOS 的 file_picker 用 import 模式，选中的文件被挪进
   // `NSTemporaryDirectory()`，只有那一个文件、同级兄弟不跟过来——那不是用户原始位置，
   // 出处必须如实标 false，否则调用方会把临时副本当成可长期引用的真实路径落库。
   for (final (TargetPlatform platform, bool real) in <(TargetPlatform, bool)>[

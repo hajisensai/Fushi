@@ -50,7 +50,7 @@ abstract final class MangaModule {
   static int directoryCarrierFileCount(String path) =>
       mangaCarrierFilesIn(Directory(path)).length;
 
-  /// 目录直接子层的 `.mokuro` 数（[ImportCarrier] 的目录分支判据，BUG-2761）。
+  /// 目录直接子层的 `.mokuro` 数（[ImportCarrier] 的目录分支判据，BUG-2785）。
   static int directoryMokuroFileCount(String path) =>
       mangaMokuroFilesIn(Directory(path)).length;
 

@@ -30,7 +30,7 @@ String? debugRealDirectoryPathOverride;
 /// 路径。app 持全文件访问，`dart:io` 可直接读该真实路径，下游全部不变。
 /// **桌面维持 `getDirectoryPath()`**（本就返回真实路径）。
 ///
-/// 🔴 **iOS 上这里交回的路径 `dart:io` 读不了**（BUG-2762）：file_picker 的
+/// 🔴 **iOS 上这里交回的路径 `dart:io` 读不了**（BUG-2786）：file_picker 的
 /// `getDirectoryPath()` 返回沙盒外的安全作用域路径，却从不调
 /// `startAccessingSecurityScopedResource()`，列目录直接被拒。要**读目录内容**
 /// 的导入入口一律改走 [pickImportDirectory]（iOS 在访问窗口内整卷拷进 app 容器）。
@@ -80,7 +80,7 @@ Future<String?> pickRealDirectoryPath({
   });
 }
 
-/// 一次「为导入而选目录」的结果（BUG-2762）。
+/// 一次「为导入而选目录」的结果（BUG-2786）。
 ///
 /// [path] 是**要读的那棵树的根**——调用方只能用它，不许自己拼：Android / 桌面是用户
 /// 原始位置的真实路径；iOS 是拷进 app 容器后的 `<暂存根>/<文件夹名>`（保留卷名，
@@ -129,7 +129,7 @@ class DirectoryImportCopyException implements Exception {
 /// 暂存根所在的子目录名（在 app 临时目录下）。
 const String kImportStagingDirName = 'import_staging';
 
-/// 「选一个目录来**导入**（读内容）」的统一入口（BUG-2762）。
+/// 「选一个目录来**导入**（读内容）」的统一入口（BUG-2786）。
 ///
 /// 与 [pickRealDirectoryPath] 的区别只在 iOS：那边交回的沙盒外路径 `dart:io` 读不了，
 /// 这里改调原生 `pickAndCopyDirectory`（`ios/Runner/FushiDirectoryImport.swift`）——
@@ -198,7 +198,7 @@ Future<PickedImportDirectory?> pickImportDirectory({
 /// **降级逃生口**：安卓未授予全文件访问时，回退到 `FilePicker.pickFiles()`（仍复制到
 /// cache，但功能可用）——不硬性要求授权。**桌面维持 `pickFiles()`**（本就返回真实
 /// 路径、不复制）。**iOS 也走 `pickFiles()`，但那是 import 模式**：选中的文件被挪进
-/// `NSTemporaryDirectory()`，只有这一个文件、没有同级兄弟（BUG-2762），出处如实标
+/// `NSTemporaryDirectory()`，只有这一个文件、没有同级兄弟（BUG-2786），出处如实标
 /// `isRealPath: false`。
 ///
 /// [allowedExtensions] 为不带点的小写扩展名集（如 `{'srt','ass'}`）；null = 不过滤
@@ -257,7 +257,7 @@ class PickedFilePath {
   /// false = 平台复制出来的**临时副本**：安卓 SAF / file_picker 的 app cache
   /// （SAF 用 `getCacheDir()/saf_pick/`，file_picker 用 `getCacheDir()/file_picker/`），
   /// 以及 iOS file_picker 的 import 模式（文件被挪进 `NSTemporaryDirectory()`，
-  /// 只有被选中的那一个文件，同级兄弟不跟过来——BUG-2762）。
+  /// 只有被选中的那一个文件，同级兄弟不跟过来——BUG-2786）。
   /// 清缓存即失效，**只能立刻复制消费，不能作为长期引用落库**。
   final bool isRealPath;
 }
@@ -272,7 +272,7 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
 }) async {
   // 桌面（Windows/macOS/Linux）：`pickFiles()` 返回真实路径、不复制。
   // iOS：file_picker 用 import 模式，交回的是 `NSTemporaryDirectory()` 里的临时副本
-  // （BUG-2762），出处必须如实标 false。
+  // （BUG-2786），出处必须如实标 false。
   if (defaultTargetPlatform != TargetPlatform.android) {
     return _detailedFallback(
       context: context,

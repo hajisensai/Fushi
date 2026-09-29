@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// BUG-2754：「默认缩放」偏好（`manga_zoom_percent`）只能由设置项写。
+/// BUG-2782：「默认缩放」偏好（`manga_zoom_percent`）只能由设置项写。
 ///
 /// 此前漫画页把捏合 / Ctrl+滚轮 / 双击 / 右键 ± 的会话缩放回写进这个偏好，
 /// 笔记本触控板随手一捏就把 110% 钉成以后每本漫画的起始缩放，「适应屏幕」

@@ -20,7 +20,7 @@
 ///
 /// 竖行占多数 = 宽 ≥ 高的**多列竖排**（两列台词的气泡常常比高还宽）：整块交
 /// manga-ocr，与竖长块同一条已验证路径；逐列切反而会被 PP 切断、短列误判成
-/// 横行（BUG-2755）。块方向由这里一次决定并经 [OrientedOcrRecognizer] 交回
+/// 横行（BUG-2783）。块方向由这里一次决定并经 [OrientedOcrRecognizer] 交回
 /// pipeline，不再由 pipeline 按长宽比另猜。
 library;
 
