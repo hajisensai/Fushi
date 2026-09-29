@@ -10,6 +10,7 @@
 #include "low_level_mouse_hook.h"
 #include "native_glog.h"
 #include "resource.h"
+#include "window_activation_policy.h"
 
 // v14 游戏内查词的输入 kind 取值真相源。只为下面那组 static_assert 而 include：
 // InjectLookupInput 的 [kind] 是跨进程契约的一部分，在这里手抄 0..4 就又造一个漂移源。
@@ -785,6 +786,52 @@ bool WriteClipboardUnicodeText(HWND owner, const std::wstring& text) {
 }  // namespace
 
 GlobalLookupWindow* GlobalLookupWindow::s_hook_owner_ = nullptr;
+HHOOK GlobalLookupWindow::s_activation_guard_hook_ = nullptr;
+
+// BUG-2782 — 卡片与 WebView2 的 Chromium 子窗都在本线程。触摸经 SendPointerInput
+// 进 WebView2 后 Chromium 会 SetFocus 子窗，连带激活 WS_EX_NOACTIVATE 的卡片
+// （实测 HCBT_SETFOCUS(Chrome_WidgetWin_0) → HCBT_ACTIVATE(卡片)）；鼠标走
+// SendMouseInput 没有这一步。这里在焦点 / 激活落地前否决，卡片不再抢游戏的前台。
+LRESULT CALLBACK GlobalLookupWindow::ActivationGuardProc(int code,
+                                                         WPARAM wparam,
+                                                         LPARAM lparam) {
+  if (code == HCBT_ACTIVATE || code == HCBT_SETFOCUS) {
+    const HWND target = reinterpret_cast<HWND>(wparam);
+    // 焦点给子窗时判的是它所在的顶层卡片。
+    const HWND root =
+        target != nullptr ? GetAncestor(target, GA_ROOT) : nullptr;
+    wchar_t class_name[64] = {};
+    const bool is_lookup_class =
+        root != nullptr &&
+        GetClassNameW(root, class_name, ARRAYSIZE(class_name)) > 0 &&
+        wcscmp(class_name, kClassName) == 0;
+    const auto* self =
+        is_lookup_class ? reinterpret_cast<const GlobalLookupWindow*>(
+                              GetWindowLongPtr(root, GWLP_USERDATA))
+                        : nullptr;
+    if (ShouldVetoOverlayActivation(
+            self != nullptr, GetWindowLongPtr(root, GWL_EXSTYLE),
+            GetForegroundWindow() == root,
+            self != nullptr && self->self_activation_allowed_)) {
+      NativeGlog("lookup activation vetoed code=" + std::to_string(code) +
+                 " tick=" + std::to_string(GetTickCount64()));
+      return 1;
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+void GlobalLookupWindow::EnsureActivationGuard() {
+  // 线程级钩子：装在创建查词窗的平台线程上，进程内一次、随进程存活。
+  if (s_activation_guard_hook_ != nullptr) return;
+  s_activation_guard_hook_ =
+      SetWindowsHookExW(WH_CBT, &GlobalLookupWindow::ActivationGuardProc,
+                        nullptr, GetCurrentThreadId());
+  if (s_activation_guard_hook_ == nullptr) {
+    NativeGlog("lookup activation guard install failed err=" +
+               std::to_string(GetLastError()));
+  }
+}
 
 void CALLBACK GlobalLookupWindow::ForegroundHookProc(HWINEVENTHOOK, DWORD,
                                                      HWND hwnd, LONG, LONG,
@@ -1101,6 +1148,7 @@ void GlobalLookupWindow::EnsureWindowClass() {
   if (s_class_registered) {
     return;
   }
+  EnsureActivationGuard();
   WNDCLASSEXW wc = {};
   wc.cbSize = sizeof(wc);
   wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -3890,6 +3938,8 @@ void GlobalLookupWindow::ShowPendingContextMenu() {
   // 到不了菜单。卡片是 WS_EX_NOACTIVATE，所以弹菜单期间临时把前台拿过来（刚发生
   // 的右键让本进程有资格这么做），菜单结束后若前台还在我们手里就原样还回去。
   const HWND previous_foreground = GetForegroundWindow();
+  // BUG-2782 — 卡片唯一一处主动激活；激活守卫只放行菜单这一窗口期。
+  self_activation_allowed_ = true;
   const bool took_foreground = previous_foreground != hwnd_ &&
                                SetForegroundWindow(hwnd_) != FALSE;
   context_menu_active_ = true;
@@ -3897,6 +3947,7 @@ void GlobalLookupWindow::ShowPendingContextMenu() {
       menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, cursor.x, cursor.y,
       hwnd_, nullptr));
   context_menu_active_ = false;
+  self_activation_allowed_ = false;
   // 同一契约的后半截：让菜单循环确实退出后再继续。
   PostMessage(hwnd_, WM_NULL, 0, 0);
   DestroyMenu(menu);
@@ -4139,6 +4190,15 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    // BUG-2782 — WS_EX_NOACTIVATE 只挡鼠标点击激活。触摸按下时本窗仍会收到
+    // WM_POINTERACTIVATE 与（HIWORD(lParam)=WM_POINTERDOWN 的）WM_MOUSEACTIVATE，
+    // 交给 DefWindowProc 会回 MA_ACTIVATE，卡片变成前台：游戏失去前台后宿主「点卡外
+    // 吞点击」的判据（前台必须是游戏）失效，触屏点过卡片再点卡外就会推进剧情。
+    // 卡片永远不因指针按下而激活（自绘右键菜单用 SetForegroundWindow 主动拿前台，
+    // 不经过这两条消息）。Chromium 随后的 SetFocus 由 ActivationGuardProc 否决。
+    case WM_POINTERACTIVATE:
+    case WM_MOUSEACTIVATE:
+      return OverlayNoActivateReply(message);
     // BUG-2770：触摸 / 触控笔原样进 WebView2；鼠标指针与失败时落 DefWindowProc，
     // 由系统提升成上面的鼠标消息，行为不变。
     case WM_POINTERDOWN:
