@@ -45,6 +45,7 @@ class _FakeServer {
   (int, String)? registerError;
 
   int? rankComputedAt = 1790000000000;
+  Map<String, dynamic>? rankMe = <String, dynamic>{'value': 3, 'rank': 2};
   bool shelfPrivate = true;
 
   /// 用户卡的 `relation`；null = 旧服务端（没有这个字段）。
@@ -118,7 +119,7 @@ class _FakeServer {
         'from': '2026-09-21',
         'computedAt': rankComputedAt,
         'total': 2,
-        'me': <String, dynamic>{'value': 3, 'rank': 2},
+        'me': rankMe,
         'rows': <Map<String, dynamic>>[
           <String, dynamic>{
             'rank': 1,
@@ -480,6 +481,35 @@ void main() {
     expect(rank.url.queryParameters['window'], 'week');
     expect(rank.url.queryParameters['scope'], 'global');
     expect(rank.headers.containsKey('X-Fushi-Sig'), isTrue);
+  });
+
+  testWidgets('快照还没刷新到我：显示实时值与「刷新后排名」；本期没数据才说还没上榜', (
+    WidgetTester tester,
+  ) async {
+    server.rankMe = <String, dynamic>{'value': 9, 'rank': null};
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+    expect(
+      find.text(
+        t.leaderboard_board_me_pending(
+          value: leaderboardMetricValue(LeaderboardMetric.book, 9),
+          time: leaderboardDateTime(
+            1790000000000 + kLeaderboardSnapshotInterval.inMilliseconds,
+          ),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text(t.leaderboard_board_me_unranked), findsNothing);
+  });
+
+  testWidgets('本期没有数据：显示「还没有上榜」', (WidgetTester tester) async {
+    server.rankMe = null;
+    final LeaderboardService service = await activeService(tester);
+    await tester.pumpWidget(wrap(service, const LeaderboardTab()));
+    await settle(tester);
+    expect(find.text(t.leaderboard_board_me_unranked), findsOneWidget);
   });
 
   testWidgets('榜单快照未生成：显示「榜单生成中」；上传设备在别处：给出接管按钮', (WidgetTester tester) async {
