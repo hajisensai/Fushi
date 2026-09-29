@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2549 条。点号进各自文件。
+> 共 2550 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2773](bugs/BUG-2773-ext-popup-flip-down-then-up.md) | ✅ | ✅ | 浏览器扩展查词弹窗先落字幕下方再翻到上方 |
 | [BUG-2772](bugs/BUG-2772-macos-tcc-adhoc-reauth.md) | ✅ | ✅ | macOS 每次更新全局查词都要重新授权辅助功能 |
 | [BUG-2771](bugs/BUG-2771-video-metadata-startup-reload.md) | ✅ | ✅ | 每次打开 app 视频资料重新加载且刮削期间严重卡顿 |
 | [BUG-2770](bugs/BUG-2770-win-touch-popup-swipe-close.md) | ✅ | ✅ | Windows 触屏不能滑动关闭查词弹窗 |
