@@ -5,6 +5,10 @@
   - 根因 2（不可见）：Nyaa 0 条算成功、不提示（`packages/fushi_engine/lib/media/external_provider.dart:132` 的 `isPartial` 只看失败）；部分失败横幅不说是哪个源（`video_discovery_acquisition_dialogs.dart:1191`）。
   - 根因 3（解析）：Nyaa HTML 任一行缺字段整页抛 `missingField`（`packages/fushi_engine/lib/media/torrent/nyaa_client.dart:757`）。
   - 核实 4（TMDB 分类）：TMDB 卡片按 `genre_ids` 含 16（Animation）判 anime（`fushi/lib/src/media/video/discovery/video_discovery_adapters.dart:497`），日本动画在 TMDB 上都带 16；不带 16 的条目没有可靠的「其实是动画」判据（原产国 JP 同样覆盖真人剧），不改。
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
+- **[x] ① 已修复** — `0dc94e848d`：
+  - 查询词按源生成：`nyaaSearchQueries`（`packages/fushi_engine/lib/media/torrent/nyaa_resource_provider.dart:184`）——显式词是作品已知标题或非拉丁文字时，补查作品的罗马字 / 日文原名，provider 逐词查、按 infohash 合并（同文件 :43）；用户手输的拉丁词视为收窄，只搜它。
+  - 别名补齐：`VideoMediaReference.hasLatinTitle` / `withWorkLatinTitles`（`packages/fushi_engine/lib/media/video/discovery/video_discovery_provider.dart:66`/`:71`），资源页 `_resolveAliasesThenSearch`（`video_discovery_acquisition_dialogs.dart:590`）在首次搜索前经宿主端口 `_videoDiscoveryItemWithSearchAliases`（`home_page.dart:1853`，复用 `loadDetails`）补齐；补齐后未被用户改过的预填词跟着换成罗马字。
+  - 逐源回执：`VideoResourceSourceReport` / `VideoResourceSearchResult`（`video_resource_provider.dart:105`/`:136`），registry 每个参与源一份（`video_resource_registry.dart:44`），apibay/Knaben 自报实际发出的词（`public_video_index_provider.dart:293`）；页面 `VideoResourceSourceStatusList`（`video_discovery_acquisition_dialogs.dart:2058`）逐源显示「N 条（词 计数 · …）/ 失败（原因）/ 未参与」。
+  - HTML 坏行：`_parseNyaaHtmlRow` 抽出单行解析（`nyaa_client.dart:736`），坏行跳过并 `engineLog.logDiagnostic`；全部行都坏才抛（:725）。
+- **[x] ② 已加自动化测试** — `0dc94e848d`：`fushi/test/torrent/nyaa_resource_source_report_test.dart`（查询词生成 / 逐查询回执 / registry 逐源回执 / HTML 坏行跳过与全坏仍抛）、`fushi/test/pages/video_resource_source_status_test.dart`（资源页：补齐别名后 Nyaa 用罗马字 + 日文原名各查一次、逐源状态文本含 0 条源与失败源、已有罗马字不调补齐端口）、`fushi/test/torrent/external_provider_adapters_test.dart`（旧「显式词独立于别名」契约改为新契约）。
 - **备注**：没有新增外部 provider；别名补齐复用 `VideoDiscoveryService.loadDetails`（TMDB 详情的罗马字来自 `alternative_titles`）。反向风险记录：TMDB 的 genre 16 也会把欧美动画判成 anime（只走 Nyaa、不走 apibay/Knaben），与本 bug 无关，未动。
