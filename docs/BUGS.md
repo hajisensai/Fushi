@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2572 条。点号进各自文件。
+> 共 2573 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2803](bugs/BUG-2803-flaky-cdp-devtools-port.md) | ✅ | ✅ | 真 Chrome 守卫在满载 CI 上偶发 DevToolsActivePort 8s 超时 |
 | [BUG-2793](bugs/BUG-2793-system-floating-ball.md) | ✅ | ✅ | 应用外悬浮球吸边不正常、点击闪烁、旋转后消失、菜单与应用内不一致 |
 | [BUG-2792](bugs/BUG-2792-video-bottom-bar-overlap.md) | ✅ | ✅ | 开字幕列表后视频底栏按钮叠在一起 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |

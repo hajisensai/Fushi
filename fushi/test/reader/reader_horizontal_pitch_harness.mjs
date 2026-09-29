@@ -64,6 +64,16 @@ function getJson(url, tries = 24) {
   });
 }
 
+/**
+ * Hang guard for a single CDP command. CDP replies are the readiness signal;
+ * this only fires when Chrome stops answering. It is sized against the
+ * enclosing 90 s Dart budget rather than a guessed "normal" latency: on a
+ * CPU-starved runner a healthy Chrome can take well over 10 s to answer the
+ * first Page.navigate (it spawns the first renderer process), which the former
+ * 10 s default reported as a failure.
+ */
+const CDP_COMMAND_HANG_GUARD_MS = 30000;
+
 /** Tiny WebSocket client (text frames only) speaking just enough for CDP. */
 class CdpSocket {
   constructor(wsUrl) {
@@ -199,7 +209,7 @@ class CdpSocket {
     this.sock.write(Buffer.concat([header, mask, masked]));
   }
 
-  send(method, params = {}, timeoutMs = 10000) {
+  send(method, params = {}, timeoutMs = CDP_COMMAND_HANG_GUARD_MS) {
     const id = this.nextId++;
     const msg = JSON.stringify({ id, method, params });
     return new Promise((resolve, reject) => {
@@ -235,35 +245,95 @@ class CdpSocket {
 }
 
 /**
+ * One hang guard for the whole cold-start sequence (spawn -> DevTools
+ * listening -> page target -> Page.enable / Runtime.enable). It is not a
+ * readiness wait: every step waits on Chrome's own signal (the
+ * `DevTools listening on ws://...` stderr line that puppeteer also waits on,
+ * which Chrome prints from the same ServerStarted callback that writes
+ * DevToolsActivePort; then the CDP replies), and a spawn error or early exit
+ * (by code or by signal) rejects at once with Chrome's stderr. The bound only
+ * fires when Chrome is alive but never becomes ready. It is sized to the
+ * enclosing budget (the Dart guards give the whole harness 90 s), not to a
+ * guessed "normal" startup time: on a 4-core CI runner executing ~30k tests
+ * with --coverage a cold Chrome start is CPU-starved, and the former stacked
+ * per-step guesses (8 s port poll, then 10 s per enable command) each fired
+ * while Chrome was merely slow.
+ */
+const CHROME_ATTACH_HANG_GUARD_MS = 60000;
+const STDERR_TAIL_CHARS = 16384;
+
+/**
+ * Keep draining Chrome's stderr for its whole life (an undrained pipe would
+ * eventually block Chrome's logging writes) while retaining a bounded tail
+ * for failure messages.
+ */
+function captureStderr(proc) {
+  let tail = '';
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (chunk) => {
+    tail = (tail + chunk).slice(-STDERR_TAIL_CHARS);
+  });
+  // A broken pipe after we kill Chrome is expected; never crash the harness.
+  proc.stderr.on('error', () => {});
+  return { text: () => tail };
+}
+
+/**
+ * Wait for Chrome to announce its browser DevTools WebSocket on stderr and
+ * resolve with the port it bound (`--remote-debugging-port=0` = ephemeral, so
+ * concurrent test processes never collide). Rejects immediately if Chrome
+ * fails to spawn or exits before becoming ready.
+ */
+function waitForDevToolsPort(proc, stderrLog, timeoutMs) {
+  const startedAt = Date.now();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let scanned = '';
+    const describe = () => {
+      const tail = stderrLog.text().trim();
+      return tail ? '\n--- chrome stderr (tail) ---\n' + tail : ' (chrome wrote no stderr)';
+    };
+    const finish = (err, port) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      proc.stderr.off('data', onData);
+      proc.off('exit', onExit);
+      proc.off('error', onError);
+      if (err) reject(err);
+      else resolve(port);
+    };
+    const onData = (chunk) => {
+      scanned = (scanned + chunk).slice(-STDERR_TAIL_CHARS);
+      const m = /DevTools listening on ws:\/\/[^\s/]+:(\d+)\//.exec(scanned);
+      if (m) finish(null, Number(m[1]));
+    };
+    const onExit = (code, signal) => {
+      finish(new Error('chrome exited before DevTools was ready (code ' + code +
+        ', signal ' + signal + ', after ' + (Date.now() - startedAt) + 'ms)' + describe()));
+    };
+    const onError = (e) => {
+      finish(new Error('chrome failed to spawn: ' + e.message));
+    };
+    const timer = setTimeout(() => {
+      finish(new Error('chrome alive but DevTools not listening after ' +
+        timeoutMs + 'ms' + describe()));
+    }, timeoutMs);
+    proc.stderr.on('data', onData);
+    proc.once('exit', onExit);
+    proc.once('error', onError);
+    // The process may already be gone before the listeners were attached.
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      onExit(proc.exitCode, proc.signalCode);
+    }
+  });
+}
+
+/**
  * Launch headless Chrome, open one page, return a driver with `evalOnPage(html, expr)`.
  * The driver navigates to a data: URL built from `html`, waits for load, then
  * evaluates `expr` (a JS expression string returning a JSON value) and returns it.
  */
-/**
- * Resolve the actual DevTools port Chrome bound to. With
- * `--remote-debugging-port=0` Chrome writes the chosen ephemeral port to
- * `<userDir>/DevToolsActivePort` only once the debugger endpoint is actually
- * listening, so reading it both avoids fixed-port collisions between concurrent
- * test processes and removes the connect-before-ready race. Returns the port.
- */
-async function readDevToolsPort(userDir, proc, timeoutMs = 8000) {
-  const portFile = path.join(userDir, 'DevToolsActivePort');
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (proc.exitCode !== null) {
-      throw new Error('chrome exited early (code ' + proc.exitCode + ')');
-    }
-    try {
-      const first = fs.readFileSync(portFile, 'utf8').split('\n')[0].trim();
-      if (first) return Number(first);
-    } catch (_) {
-      // DevToolsActivePort not written yet; keep polling.
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error('DevToolsActivePort not written within ' + timeoutMs + 'ms');
-}
-
 async function launchChromeDriver() {
   const chromePath = resolveChrome();
   if (!chromePath) throw new Error('NO_CHROME');
@@ -276,32 +346,47 @@ async function launchChromeDriver() {
       '--no-sandbox',
       '--disable-dev-shm-usage',
       `--user-data-dir=${userDir}`,
-      // Ephemeral port: let Chrome pick a free port and report it via the
-      // DevToolsActivePort file. A fixed/random port in a shared range races
-      // with concurrent `flutter test` processes (collision -> the loser never
-      // binds -> ECONNREFUSED). Port 0 + reading the real port removes both the
-      // collision and the connect-before-listen race.
+      // Ephemeral port: let Chrome pick a free port and report it on stderr
+      // ("DevTools listening on ws://..."). A fixed/random port in a shared
+      // range races with concurrent `flutter test` processes (collision -> the
+      // loser never binds -> ECONNREFUSED). Port 0 + reading the real port
+      // removes both the collision and the connect-before-listen race.
       '--remote-debugging-port=0',
       '--remote-allow-origins=*',
       '--window-size=1280,800',
       'about:blank',
     ],
-    { stdio: 'ignore' }
+    // stderr is piped: it carries the readiness signal and, on failure, the
+    // reason Chrome did not come up.
+    { stdio: ['ignore', 'ignore', 'pipe'] }
   );
+  const stderrLog = captureStderr(proc);
+  const attachDeadline = Date.now() + CHROME_ATTACH_HANG_GUARD_MS;
+  const attachRemaining = () => Math.max(1, attachDeadline - Date.now());
 
   let sock;
   try {
-    const port = await readDevToolsPort(userDir, proc);
+    const port = await waitForDevToolsPort(proc, stderrLog, attachRemaining());
     const targets = await getJson(`http://127.0.0.1:${port}/json`);
     const page = targets.find((t) => t.type === 'page');
     if (!page) throw new Error('no page target');
     sock = new CdpSocket(page.webSocketDebuggerUrl);
     await sock.connect();
-    await sock.send('Page.enable');
-    await sock.send('Runtime.enable');
+    // Still part of cold start: these wait for the renderer to come up.
+    await sock.send('Page.enable', {}, attachRemaining());
+    await sock.send('Runtime.enable', {}, attachRemaining());
   } catch (e) {
     try {
+      sock && sock.close();
+    } catch (_) {}
+    try {
       proc.kill();
+    } catch (_) {}
+    try {
+      proc.stderr.destroy();
+    } catch (_) {}
+    try {
+      fs.rmSync(userDir, { recursive: true, force: true });
     } catch (_) {}
     throw e;
   }
@@ -337,6 +422,9 @@ async function launchChromeDriver() {
     } catch (_) {}
     try {
       proc.kill();
+    } catch (_) {}
+    try {
+      proc.stderr.destroy();
     } catch (_) {}
     try {
       fs.rmSync(userDir, { recursive: true, force: true });
