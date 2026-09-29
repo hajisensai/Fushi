@@ -29,10 +29,23 @@ on:
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
+      # windows / macos job 构建并校验 Mihon 桌面 sidecar（tool/mihon/*）。
+      - 'tool/mihon/**'
       - '.github/workflows/build-multiplatform.yml'
       - '.github/actions/setup-fushi-anki-sync/**'
+      - '.github/actions/provide-baked-secrets/**'
+      - '.github/scripts/verify_torrent_abi.sh'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      # 2026-09-30 精简 CI：以下改动不改变任何一个平台的 app 编译结果。负向模式必须排在
+      # 正向模式之后。
+      # * 无头服务端：app 不依赖它；它的 analyze / 包测试 / `dart build cli` + `--help`
+      #   冒烟由 server-gate.yml 负责（本 workflow linux job 仍在 engine/core 等共享包
+      #   变动时带随包原生库做完整 serve 冒烟）。
+      # * .md：本 workflow 只做编译 + 原生 ABI 测试 + appSmoke，没有读 .md 的守卫
+      #   （那些守卫在 main.yml 的全量测试里，main.yml 不排除 .md）。
+      - '!packages/fushi_server/**'
+      - '!**/*.md'
   pull_request:
     branches: ['main', 'develop']
     paths: *multiplatform_paths
@@ -66,6 +79,17 @@ jobs:
     # gate exercising Hibiki on a real Android runtime.
     # Removal condition: once runs with KVM enabled show the appSmoke class gone,
     # drop continue-on-error so this contract becomes a real gate again.
+    #
+    # 2026-09-30 精简 CI：只在手动 workflow_dispatch 时跑。理由：它是
+    # continue-on-error，红了也不挡任何 PR / push；实测 ~75% 红，日常结果没人能据此
+    # 判断什么，却每条 PR 占一台 runner 跑模拟器 30+ 分钟。它不产 APK、不签名
+    # （Android 编译/单测门是 main.yml），关掉它不减少任何真实门。需要看真 Android
+    # 运行时的 appSmoke 时手动 dispatch 本 workflow。
+    # 恢复条件（两条同时满足再把这行 if 删掉、并去掉 continue-on-error）：
+    #   1. 手动 dispatch 连续若干次（>= 10）appSmoke 全绿，证明 KVM 修复真的消掉了
+    #      renderer crash 这类红；
+    #   2. 决定让它成为硬门（去掉 continue-on-error）——软门放回 PR 上仍是纯开销。
+    if: github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6

@@ -27,6 +27,9 @@ on:
     # 不变式守卫：fushi/test/build/release_workflow_push_branches_guard_test.dart
     # ——两条发布 workflow 产出的平台集合不相交，所以它们的 push 分支清单必须一致。
     branches: ['main', 'develop']
+    # 2026-09-30 精简 CI：push 路径 = 本 workflow 真正读到的文件，逐个列出（同
+    # release.yml 顶部注释）。以前挂整个 `tool/**` 与 `.github/workflows/**`，改
+    # tool/bug.dart 或任何一条别的 workflow 都会在 develop 上跑一整轮桌面/Apple 发布。
     paths:
       - 'fushi/**'
       - 'packages/**'
@@ -34,13 +37,26 @@ on:
       # 编译挂了要等下一个不相关改动才暴露。
       - 'native/**'
       - 'ci/**'
-      - 'tool/**'
+      - 'tool/check_release_policy.ps1'
+      - 'tool/release_sequence.sh'
+      - 'tool/publish_update_manifest.sh'
+      - 'tool/merge_update_manifest.py'
+      - 'tool/mihon/**'
+      - 'tool/ffmpeg-min/**'
+      - 'tool/sign_windows_release.ps1'
+      - 'tool/simplysign_connect.ps1'
+      - 'tool/sign_kazumi_adhoc.sh'
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
-      - '.github/workflows/**'
+      - 'tools/bundle_7za.ps1'
+      - '.github/workflows/release-desktop.yml'
+      - '.github/workflows/release.yml'
+      - '.github/actions/provide-baked-secrets/**'
       - '.github/actions/setup-fushi-anki-sync/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
+      # 无头服务端不进桌面/Apple 包（它有自己的 release-server.yml 与 server-gate.yml）。
+      - '!packages/fushi_server/**'
   release:
     types: [published]
   workflow_dispatch:
@@ -126,7 +142,12 @@ concurrency:
   # 撞号：TF 构建号 = 发布序列，同 sha 上 push 那条若也传了 TF（序列被 3 整除），串行时
   # 后传的一样被 App Store Connect 拒，排队从来挡不住它。后缀追加在末尾，前缀仍是两条
   # workflow 共用的那个字面量（check_release_policy.ps1 按包含校验）。
-  group: fushi-release-${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
+  #
+  # push 事件按**分支**分组（2026-09-30，理由与代价见 release.yml 同处注释）：正在跑的
+  # 那轮跑完，排队中的旧 pending 被后来者顶掉，仍不 cancel-in-progress。本条额外的代价：
+  # push debug 通道的 TestFlight 只在「发布序列 % 3 == 0」的那轮上传，被顶掉的 pending
+  # 若恰好是那一轮，这一次上传就跳过（下一个整除的序列照传；需要时 testflight_only 手动补）。
+  group: fushi-release-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}
   cancel-in-progress: false
 
 jobs:
