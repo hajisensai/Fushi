@@ -70,12 +70,48 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
       t.floating_ball_action_camera_ocr,
   'open_app': t.floating_ball_action_open_app,
   'close': t.floating_ball_action_close,
+  'ball': t.reader_floating_ball,
   'notification': t.floating_ball_notification,
   'ocr_notification': t.floating_ball_ocr_notification,
   'ocr_hint': t.floating_ball_ocr_pick_hint,
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,
+};
+
+/// 全局按钮的图标：应用内球与原生系统球共用这一张表（原生按码位从 app 自带的
+/// Material Icons 字体取字形），两边画出来是同一颗。
+IconData floatingBallGlobalActionIcon(FloatingBallGlobalAction action) =>
+    switch (action) {
+      FloatingBallGlobalAction.lookup => Icons.search,
+      FloatingBallGlobalAction.popupLookup =>
+        Icons.picture_in_picture_alt_outlined,
+      FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
+      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+      FloatingBallGlobalAction.cameraOcr => Icons.photo_camera_outlined,
+    };
+
+/// 「关闭悬浮球」按钮的图标（应用内 / 应用外同一颗）。
+const IconData kFloatingBallCloseIcon = Icons.close;
+
+/// 原生系统球「打开 Fushi」按钮的图标。
+const IconData kFloatingBallOpenAppIcon = Icons.open_in_new;
+
+/// 原生系统球的按钮图标（Material Icons 码位）。常量 IconData 在 Dart 里被引用，
+/// 图标字体按码位裁剪时这些字形才会留下，原生侧才取得到。
+Map<String, int> floatingBallNativeIcons() => <String, int>{
+  for (final FloatingBallGlobalAction action in FloatingBallGlobalAction.values)
+    action.storageValue: floatingBallGlobalActionIcon(action).codePoint,
+  'open_app': kFloatingBallOpenAppIcon.codePoint,
+  'close': kFloatingBallCloseIcon.codePoint,
+};
+
+/// 原生系统球的配色：取当前主题，与应用内球同源（按钮底色 = surface 叠 6%
+/// onSurface、图标 onSurface、展开环 primary）。
+Map<String, int> floatingBallNativeColors(ColorScheme colors) => <String, int>{
+  'surface': colors.surface.toARGB32(),
+  'onSurface': colors.onSurface.toARGB32(),
+  'primary': colors.primary.toARGB32(),
 };
 
 /// 本平台有没有这个全局按钮的能力。
@@ -104,6 +140,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   bool _capturing = false;
 
   bool _foreground = true;
+
+  /// 用户在当前页面点了「关闭悬浮球」；[_dismissedOwner] 是那一页的身份
+  /// （[FloatingBallSceneSnapshot.owner]），页面一换就自动恢复。
+  bool _dismissed = false;
+  Object? _dismissedOwner;
+
+  /// 当前主题给原生系统球的配色（build 里按 Theme 刷新；变了就重新下发）。
+  Map<String, int> _systemBallColors = const <String, int>{};
 
   @override
   void initState() {
@@ -185,8 +229,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
-    // 文案进签名：切换界面语言后原生球的按钮也要换。
-    final String signature = '${actions.join(',')}|${labels.values.join('|')}';
+    final Map<String, int> icons = floatingBallNativeIcons();
+    final Map<String, int> colors = _systemBallColors;
+    // 文案 / 配色进签名：切换界面语言或主题后原生球也要换。
+    final String signature =
+        '${actions.join(',')}|${labels.values.join('|')}|'
+        '${colors.values.join(',')}';
     if (!force && signature == _systemSignature) return;
     unawaited(() async {
       // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：这时按开关把球
@@ -199,6 +247,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
         labels: labels,
+        icons: icons,
+        colors: colors,
         ocrLanguage: kFloatingBallOcrLanguage,
       );
       // 没权限起不来：不记签名，回到前台时再试。
@@ -207,6 +257,25 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         await FloatingBallChannel.setAppForeground(_foreground);
       }
     }());
+  }
+
+  /// 主题变了（明暗 / 自定义主题）：原生系统球跟着换色。
+  void _syncSystemBallColors(ColorScheme scheme) {
+    final Map<String, int> colors = floatingBallNativeColors(scheme);
+    if (_mapEquals(colors, _systemBallColors)) return;
+    _systemBallColors = colors;
+    // build 里触发：等这一帧结束再下发，不在 build 期间改状态。
+    if (_prefs != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncSystemBall());
+    }
+  }
+
+  static bool _mapEquals(Map<String, int> a, Map<String, int> b) {
+    if (a.length != b.length) return false;
+    for (final MapEntry<String, int> e in a.entries) {
+      if (b[e.key] != e.value) return false;
+    }
+    return true;
   }
 
   void _attachPrefs(PreferencesRepository prefs) {
@@ -414,35 +483,49 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
+  /// 应用内球的「关闭悬浮球」：只在**这一次页面**里收起，离开这个页面就自动
+  /// 恢复（下次再进同一个视频 / 书也照常出现）。不动设置里的「应用内显示」——
+  /// 用户的原话是「这次不要，之后要」。
+  ReaderHeaderAction _closeInAppAction(FloatingBallSceneSnapshot scene) =>
+      ReaderHeaderAction(
+        key: const ValueKey<String>('floating_ball_action_close'),
+        icon: kFloatingBallCloseIcon,
+        label: t.floating_ball_action_close,
+        onPressed: () => setState(() {
+          _dismissed = true;
+          _dismissedOwner = scene.owner;
+        }),
+      );
+
   ReaderHeaderAction _globalAction(FloatingBallGlobalAction action) =>
       switch (action) {
         FloatingBallGlobalAction.lookup => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_lookup'),
-          icon: Icons.search,
+          icon: floatingBallGlobalActionIcon(action),
           label: t.floating_ball_action_lookup,
           onPressed: () => unawaited(_manualLookup()),
         ),
         FloatingBallGlobalAction.popupLookup => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_popup_lookup'),
-          icon: Icons.picture_in_picture_alt_outlined,
+          icon: floatingBallGlobalActionIcon(action),
           label: t.floating_ball_action_popup_lookup,
           onPressed: () => unawaited(FloatingBallChannel.openPopupLookup()),
         ),
         FloatingBallGlobalAction.clipboard => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_clipboard'),
-          icon: Icons.content_paste_search,
+          icon: floatingBallGlobalActionIcon(action),
           label: t.floating_ball_action_clipboard,
           onPressed: () => unawaited(_clipboardLookup()),
         ),
         FloatingBallGlobalAction.screenOcr => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_screen_ocr'),
-          icon: Icons.document_scanner_outlined,
+          icon: floatingBallGlobalActionIcon(action),
           label: t.floating_ball_action_screen_ocr,
           onPressed: () => unawaited(_screenOcr()),
         ),
         FloatingBallGlobalAction.cameraOcr => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_camera_ocr'),
-          icon: Icons.photo_camera_outlined,
+          icon: floatingBallGlobalActionIcon(action),
           label: t.floating_ball_action_camera_ocr,
           onPressed: () => unawaited(_cameraOcr()),
         ),
@@ -467,21 +550,36 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final AppModel appModel = ref.watch(appProvider);
     if (!appModel.isInitialised) return const SizedBox.shrink();
     final PreferencesRepository prefs = appModel.prefsRepo;
+    _syncSystemBallColors(Theme.of(context).colorScheme);
     _attachPrefs(prefs);
     _flushExternalLookup();
     _flushOpenLookupPage(appModel);
     _flushCameraOcr();
 
     final FloatingBallSceneSnapshot scene = _registry.current;
-    if (!prefs.floatingBallInApp || scene.hidesBall || _capturing) {
+    // 离开了点「关闭」的那一页：恢复。只清字段、不 setState（正在 build）。
+    if (_dismissed && !identical(scene.owner, _dismissedOwner)) {
+      _dismissed = false;
+      _dismissedOwner = null;
+    }
+    if (!prefs.floatingBallInApp ||
+        scene.hidesBall ||
+        _capturing ||
+        _dismissed) {
       return const SizedBox.shrink();
     }
-    final List<ReaderHeaderAction> actions = prefs
+    final List<ReaderHeaderAction> buttons = prefs
         .floatingBallButtons(scene.scope)
         .map((String id) => _resolveButton(id, scene))
         .nonNulls
         .toList();
-    if (actions.isEmpty) return const SizedBox.shrink();
+    // 勾选的按钮一颗都不剩 = 用户不要这颗球（关闭键不算数）。
+    if (buttons.isEmpty) return const SizedBox.shrink();
+    // 「关闭悬浮球」恒在、排最上（离球最远，防误触）；勾选的按钮在下、末颗紧贴球。
+    final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
+      _closeInAppAction(scene),
+      ...buttons,
+    ];
     final Size window = MediaQuery.sizeOf(context);
     final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
     final Rect viewport = Rect.fromLTRB(
