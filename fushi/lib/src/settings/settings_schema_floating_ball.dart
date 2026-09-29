@@ -152,6 +152,8 @@ String _buttonLabel(FloatingBallScope scope, String id) {
   if (global != null) {
     return switch (global) {
       FloatingBallGlobalAction.lookup => t.floating_ball_action_lookup,
+      FloatingBallGlobalAction.popupLookup =>
+        t.floating_ball_action_popup_lookup,
       FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
       FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
     };
@@ -185,6 +187,8 @@ IconData _buttonIcon(FloatingBallScope scope, String id) {
   if (global != null) {
     return switch (global) {
       FloatingBallGlobalAction.lookup => Icons.search,
+      FloatingBallGlobalAction.popupLookup =>
+        Icons.picture_in_picture_alt_outlined,
       FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
       FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
     };

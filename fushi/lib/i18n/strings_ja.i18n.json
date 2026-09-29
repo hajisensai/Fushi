@@ -6082,5 +6082,6 @@
   "floating_ball_scope_video": "Video player",
   "floating_ball_scope_general": "Other pages",
   "floating_ball_scope_system": "Outside the app",
-  "floating_ball_buttons_hint": "Buttons shown when the ball is expanded here"
+  "floating_ball_buttons_hint": "Buttons shown when the ball is expanded here",
+  "floating_ball_action_popup_lookup": "アプリ外で辞書検索"
 }

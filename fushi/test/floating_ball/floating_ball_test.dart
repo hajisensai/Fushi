@@ -1,7 +1,9 @@
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
@@ -14,7 +16,12 @@ import 'package:fushi_core/fushi_core.dart';
 ReaderHeaderAction _action(String label, {IconData icon = Icons.add}) =>
     ReaderHeaderAction(icon: icon, label: label, onPressed: () {});
 
-const List<String> _globals = <String>['lookup', 'clipboard', 'screen_ocr'];
+const List<String> _globals = <String>[
+  'lookup',
+  'popup_lookup',
+  'clipboard',
+  'screen_ocr',
+];
 
 void main() {
   group('FloatingBallScope', () {
@@ -97,6 +104,14 @@ void main() {
         ),
         isTrue,
       );
+    });
+
+    test('应用外查词（独立查词窗）只在 Android 提供', () {
+      const FloatingBallGlobalAction popup =
+          FloatingBallGlobalAction.popupLookup;
+      expect(popup.availableOn(isAndroid: true, isIOS: false), isTrue);
+      expect(popup.availableOn(isAndroid: false, isIOS: true), isFalse);
+      expect(popup.availableOn(isAndroid: false, isIOS: false), isFalse);
     });
   });
 
@@ -315,6 +330,42 @@ void main() {
         ),
         isFalse,
       );
+    });
+  });
+
+  group('悬浮球通道：原生 → Dart', () {
+    setUp(() {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      FloatingBallChannel.debugResetHandler();
+    });
+
+    tearDown(FloatingBallChannel.debugResetHandler);
+
+    Future<void> push(String method) async {
+      final ByteData message = const StandardMethodCodec().encodeMethodCall(
+        MethodCall(method),
+      );
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            FloatingBallChannel.channel.name,
+            message,
+            (_) {},
+          );
+    }
+
+    test('系统球「查词」与「关闭」都送到 Dart 回调', () async {
+      int openLookupPage = 0;
+      int closedByUser = 0;
+      await FloatingBallChannel.installHandler(
+        onLookup: (_) {},
+        onScreenOcrFinished: () {},
+        onOpenLookupPage: () => openLookupPage++,
+        onSystemBallClosedByUser: () => closedByUser++,
+      );
+      await push('openLookupPage');
+      await push('systemBallClosedByUser');
+      expect(openLookupPage, 1);
+      expect(closedByUser, 1);
     });
   });
 }

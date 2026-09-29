@@ -47,9 +47,16 @@ import app.fushi.reader.constants.PreferenceKeys;
  * 全局悬浮球的 Android 系统常驻形态（{@code floating_ball.mode = system}）。
  *
  * <p>一颗约 48dp 的圆球（app 图标），自由拖动、松手吸附到最近的左/右边缘，闲置时半透明。
- * 点一下展开竖排按钮面板：Dart 下发的动作（{@code lookup} / {@code clipboard} /
- * {@code screen_ocr}）+ 固定的 {@code open_app} / {@code close}。契约见
- * docs/specs/2026-09-28-floating-ball.md。
+ * 点一下展开竖排按钮面板：Dart 下发的动作（{@code lookup} / {@code popup_lookup} /
+ * {@code clipboard} / {@code screen_ocr}）+ 固定的 {@code open_app} / {@code close}。
+ * 契约见 docs/specs/2026-09-28-floating-ball.md。
+ *
+ * <p>两个查词按钮是两种相反的取舍，别合并：{@code lookup} 把 Fushi 主窗唤到前台并打开
+ * 查词页（桌面「唤起主窗并打开查词页」同一语义）；{@code popup_lookup} 不碰主窗，弹出
+ * 与系统「处理文本」/ 截屏识字同一个独立查词窗 {@link PopupDictFlutterActivity}。
+ *
+ * <p>{@code close}（面板按钮与常驻通知上的关闭）= 用户关掉了应用外悬浮球：除了停服务，
+ * 还要让 Dart 把设置里的「应用外」开关关掉，两边保持一致——见 {@link #closeByUser}。
  *
  * <p>可见性由两路独立状态合成，任一为真就隐藏（GONE + 不可触摸）：
  * <ul>
@@ -69,6 +76,7 @@ public class FloatingBallService extends BaseFloatingService {
 
     // ── 动作 id（与 Dart 侧 floating_ball.actions 同名，改一边必须改另一边） ──────
     static final String ACTION_LOOKUP = "lookup";
+    static final String ACTION_POPUP_LOOKUP = "popup_lookup";
     static final String ACTION_CLIPBOARD = "clipboard";
     static final String ACTION_SCREEN_OCR = "screen_ocr";
     static final String ACTION_OPEN_APP = "open_app";
@@ -76,7 +84,8 @@ public class FloatingBallService extends BaseFloatingService {
 
     /** Dart 可下发的动作；{@code open_app} / {@code close} 恒在面板末尾，不受配置控制。 */
     private static final List<String> CONFIGURABLE_ACTIONS =
-            Arrays.asList(ACTION_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
+            Arrays.asList(
+                    ACTION_LOOKUP, ACTION_POPUP_LOOKUP, ACTION_CLIPBOARD, ACTION_SCREEN_OCR);
 
     /** labels 里可选的通知标题键（原生不维护 17 种语言，缺省回退英文）。 */
     static final String LABEL_NOTIFICATION = "notification";
@@ -84,6 +93,8 @@ public class FloatingBallService extends BaseFloatingService {
     private static final String PREF_ACTIONS = "ball_actions";
     private static final String PREF_LABELS = "ball_labels";
     private static final String PREF_OCR_LANGUAGE = "ball_ocr_language";
+    /** 用户在球 / 通知上点了关闭、Dart 还没来得及把「应用外」开关关掉。 */
+    private static final String PREF_CLOSED_BY_USER = "ball_closed_by_user";
     private static final String DEFAULT_OCR_LANGUAGE = "ja";
 
     private static final String EXTRA_COMMAND = "command";
@@ -155,6 +166,8 @@ public class FloatingBallService extends BaseFloatingService {
         SharedPreferences.Editor editor = context
                 .getSharedPreferences(PreferenceKeys.FILE_FLOATING_BALL, Context.MODE_PRIVATE)
                 .edit()
+                // Dart 重新打开了应用外球：之前那次「用户关闭」已经处理完。
+                .remove(PREF_CLOSED_BY_USER)
                 .putString(PREF_ACTIONS, String.join(",", sanitized))
                 .putString(PREF_LABELS, json.toString());
         if (ocrLanguage != null && !ocrLanguage.isEmpty()) {
@@ -163,6 +176,18 @@ public class FloatingBallService extends BaseFloatingService {
         editor.apply();
         FloatingBallService svc = getInstance();
         if (svc != null) svc.reloadConfig();
+    }
+
+    /**
+     * 取走「用户点过关闭」标记（读完即清）。Dart 收到推送、或下次启动同步开关前调用，
+     * 据此把「应用外」开关关掉，而不是按旧开关把球重新拉起来。
+     */
+    static boolean takeClosedByUser(@NonNull Context context) {
+        SharedPreferences prefs = context
+                .getSharedPreferences(PreferenceKeys.FILE_FLOATING_BALL, Context.MODE_PRIVATE);
+        boolean closed = prefs.getBoolean(PREF_CLOSED_BY_USER, false);
+        if (closed) prefs.edit().remove(PREF_CLOSED_BY_USER).apply();
+        return closed;
     }
 
     /** 已落盘的 labels（Dart 直接调 startScreenOcr 没带文案时沿用）。 */
@@ -218,7 +243,7 @@ public class FloatingBallService extends BaseFloatingService {
     @Override
     protected void onServiceCommand(Intent intent) {
         if (COMMAND_CLOSE.equals(intent.getStringExtra(EXTRA_COMMAND))) {
-            stopSelf();
+            closeByUser();
         }
     }
 
@@ -355,6 +380,7 @@ public class FloatingBallService extends BaseFloatingService {
         if (label != null && !label.isEmpty()) return label;
         switch (id) {
             case ACTION_LOOKUP: return "Look up";
+            case ACTION_POPUP_LOOKUP: return "App-external lookup";
             case ACTION_CLIPBOARD: return "Clipboard";
             case ACTION_SCREEN_OCR: return "Screen OCR";
             case ACTION_OPEN_APP: return "Open Fushi";
@@ -368,12 +394,14 @@ public class FloatingBallService extends BaseFloatingService {
     private void runAction(String id) {
         setPanelExpanded(false);
         switch (id) {
-            case ACTION_LOOKUP: {
-                Intent intent = new Intent(this, PopupDictFlutterActivity.class);
-                intent.putExtra(PopupDictFlutterActivity.EXTRA_OPEN_SEARCH, true);
-                BackgroundActivityLauncher.start(this, intent);
+            case ACTION_LOOKUP:
+                // 先排请求再拉前台：冷启动时 Dart 装好 handler 后来取；热引擎直接推送。
+                FloatingBallChannel.requestOpenLookupPage();
+                BackgroundActivityLauncher.bringAppToFront(this);
                 break;
-            }
+            case ACTION_POPUP_LOOKUP:
+                startPopupLookup(this);
+                break;
             case ACTION_CLIPBOARD: {
                 Intent intent = new Intent(this, PopupDictFlutterActivity.class);
                 intent.putExtra(PopupDictFlutterActivity.EXTRA_READ_CLIPBOARD, true);
@@ -389,11 +417,31 @@ public class FloatingBallService extends BaseFloatingService {
                 BackgroundActivityLauncher.bringAppToFront(this);
                 break;
             case ACTION_CLOSE:
-                stopSelf();
+                closeByUser();
                 break;
             default:
                 Log.w(TAG, "unknown floating ball action: " + id);
         }
+    }
+
+    /** 弹出只有搜索栏的独立查词窗（应用外查词）。应用内 Flutter 球走同一个出口。 */
+    static void startPopupLookup(@NonNull Context context) {
+        Intent intent = new Intent(context, PopupDictFlutterActivity.class);
+        intent.putExtra(PopupDictFlutterActivity.EXTRA_OPEN_SEARCH, true);
+        BackgroundActivityLauncher.start(context, intent);
+    }
+
+    /**
+     * 用户关掉了应用外悬浮球：先落持久标记（主引擎可能不在，Dart 下次起来还要据此把
+     * 「应用外」开关关掉），再尽量立刻推给 Dart，最后停服务。
+     */
+    private void closeByUser() {
+        getSharedPreferences(PreferenceKeys.FILE_FLOATING_BALL, MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_CLOSED_BY_USER, true)
+                .apply();
+        FloatingBallChannel.notifySystemBallClosedByUser();
+        stopSelf();
     }
 
     // ── 面板 / 吸附 / 可见性 ──────────────────────────────────────────────────

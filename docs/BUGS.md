@@ -29,10 +29,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2558 条。点号进各自文件。
+> 共 2560 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2784](bugs/BUG-2784-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
+| [BUG-2783](bugs/BUG-2783-screen-ocr-popup-anchor-crash.md) | ✅ | ✅ | 截屏识字点字后只有一层灰、查词卡画不出来 |
 | [BUG-2781](bugs/BUG-2781-audio-paused-chapter-reload-yank.md) | ✅ | ✅ | 暂停有声书时翻到别章被拽回音频章（iOS VN 插图章回翻闪回） |
 | [BUG-2780](bugs/BUG-2780-webkit-ruby-audio-highlight-gaps.md) | ✅ | ✅ | WebKit 有声书跟随高亮在振假名处断开/叠色 |
 | [BUG-2779](bugs/BUG-2779-ios-ruby-font-metrics-gap.md) | ✅ | ✅ | iOS 换字体后振假名仍偏向上一列（固定 -0.2em 只对 Hiragino 成立） |

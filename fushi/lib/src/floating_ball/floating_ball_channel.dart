@@ -75,6 +75,20 @@ class FloatingBallChannel {
       }) ??
       false;
 
+  /// 「应用外查词」：弹出独立查词窗（与系统「处理文本」、截屏识字同一个
+  /// `PopupDictFlutterActivity`），只有搜索栏。
+  static Future<void> openPopupLookup() => _invoke<void>('openPopupLookup');
+
+  /// 取走（并清掉）原生系统球「查词」排队的「打开查词页」请求。主引擎不在时原生
+  /// 只能先把 Fushi 拉起来，请求留在这里等 Dart 就绪后来取。
+  static Future<bool> takePendingOpenLookupPage() async =>
+      await _invoke<bool>('takePendingOpenLookupPage') ?? false;
+
+  /// 取走（并清掉）「用户在系统球上点了关闭」标记。它落在原生偏好里：关闭时主
+  /// 引擎可能不在，Dart 下次起来还要据此把「应用外」开关关掉，而不是把球又拉起来。
+  static Future<bool> takeSystemBallClosedByUser() async =>
+      await _invoke<bool>('takeSystemBallClosedByUser') ?? false;
+
   // ── iOS ─────────────────────────────────────────────────────────────
 
   /// 截 app 自己的窗口，返回物理像素 PNG；失败返回 null。
@@ -87,13 +101,19 @@ class FloatingBallChannel {
 
   /// 装原生回调：
   ///  - `lookupFromIntent {word}`（iOS App Intent「在 Fushi 中查词」）→ [onLookup]；
-  ///  - `screenOcrFinished`（Android 截屏 OCR 已截到帧或已放弃）→ [onScreenOcrFinished]。
+  ///  - `screenOcrFinished`（Android 截屏 OCR 已截到帧或已放弃）→ [onScreenOcrFinished]；
+  ///  - `openLookupPage`（Android 系统球「查词」，Fushi 已被拉到前台）→ [onOpenLookupPage]；
+  ///  - `systemBallClosedByUser`（Android 系统球 / 常驻通知上点了关闭）→
+  ///    [onSystemBallClosedByUser]。
   ///
   /// 必须先装 handler、再取冷启动时排队的那个词：iOS 原生侧把这次 take 当作
-  /// 「Dart 已就绪」的信号，之后才会直接推送。
+  /// 「Dart 已就绪」的信号，之后才会直接推送。Android 同理：主引擎不在时原生只
+  /// 能排队，装好 handler 后再把排着的「打开查词页」取走。
   static Future<void> installHandler({
     required void Function(String word) onLookup,
     required void Function() onScreenOcrFinished,
+    void Function()? onOpenLookupPage,
+    void Function()? onSystemBallClosedByUser,
   }) async {
     if (_handlerInstalled) return;
     _handlerInstalled = true;
@@ -105,9 +125,17 @@ class FloatingBallChannel {
           if (word is String && word.trim().isNotEmpty) onLookup(word.trim());
         case 'screenOcrFinished':
           onScreenOcrFinished();
+        case 'openLookupPage':
+          onOpenLookupPage?.call();
+        case 'systemBallClosedByUser':
+          onSystemBallClosedByUser?.call();
       }
       return null;
     });
+    if (Platform.isAndroid) {
+      if (await takePendingOpenLookupPage()) onOpenLookupPage?.call();
+      return;
+    }
     if (!Platform.isIOS) return;
     final String? pending = await _invoke<String>('takePendingIntentLookup');
     if (pending != null && pending.trim().isNotEmpty) {

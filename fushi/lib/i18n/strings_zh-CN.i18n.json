@@ -6082,5 +6082,6 @@
   "floating_ball_scope_video": "视频",
   "floating_ball_scope_general": "其它页面",
   "floating_ball_scope_system": "应用外",
-  "floating_ball_buttons_hint": "悬浮球在这里展开时显示的按钮"
+  "floating_ball_buttons_hint": "悬浮球在这里展开时显示的按钮",
+  "floating_ball_action_popup_lookup": "应用外查词"
 }
