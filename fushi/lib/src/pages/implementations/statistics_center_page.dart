@@ -290,49 +290,63 @@ class _StatsOverviewTabState extends ConsumerState<_StatsOverviewTab> {
     }
     final StatWindow w = _window;
     final StatRange range = _range;
-    return ListView(
-      // BUG-2440：scaffold 底部安全区不再从 viewport 扣掉，tab 内容末尾自己让开
-      // home indicator / 手势条（三个域 tab 走 [buildStatTailSliver]）。
-      padding: withBottomSafeInset(
-        context,
-        EdgeInsets.only(bottom: tokens.spacing.card * 2),
-      ),
-      children: <Widget>[
-        _buildGoalCard(tokens, w),
-        _buildSummaryCards(w),
-        StatRangeBar(range: range, onChanged: _selectRange),
-        buildStatRangeCalendarSection(
-          context,
-          byDay: _byDay,
-          now: w.now,
-          onDaySelected: _selectDay,
+    StatPaneSliver box(StatPane pane, Widget child) =>
+        StatPaneSliver(pane, SliverToBoxAdapter(child: child));
+    // 与三个域 tab 同一套自适应主体：竖屏自上而下，横屏左「目标 / 时段卡 / 范围」
+    // 右「跨域会话流」。BUG-2440 的底部安全区让开由 [buildStatTailSliver] 统一补。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double _) => <StatPaneSliver>[
+        box(StatPane.overview, _buildGoalCard(tokens, w)),
+        box(StatPane.overview, _buildSummaryCards(w)),
+        box(
+          StatPane.overview,
+          StatRangeBar(range: range, onChanged: _selectRange),
         ),
-        buildStatRangeChartSection(context, range, _byDay),
-        buildStatRangeSummary(
-          context,
-          range,
-          _byDay,
-          extraLines: <StatSummaryLine>[
-            if (statBookCphOf(_daily, range.contains) case final String cph)
-              StatSummaryLine(label: t.stat_reading_speed, value: cph),
-            StatSummaryLine(
-              label: t.stat_lookup,
-              value: '${sumStatEventsInRange(_lookupEvents, range)}',
-            ),
-            StatSummaryLine(
-              label: t.stat_mined,
-              value: '${sumStatEventsInRange(_minedEvents, range)}',
-            ),
-          ],
+        box(
+          StatPane.overview,
+          buildStatRangeCalendarSection(
+            context,
+            byDay: _byDay,
+            now: w.now,
+            onDaySelected: _selectDay,
+          ),
         ),
-        buildStatSessionSection(
-          context,
-          sessions: _sessions,
-          titleOf: _sessionTitle,
-          collectionOf: _sessionCollectionName,
-          onDelete: _deleteSession,
-          onEdit: _editSession,
-          onClearAll: _clearSessions,
+        box(
+          StatPane.overview,
+          buildStatRangeChartSection(context, range, _byDay),
+        ),
+        box(
+          StatPane.overview,
+          buildStatRangeSummary(
+            context,
+            range,
+            _byDay,
+            extraLines: <StatSummaryLine>[
+              if (statBookCphOf(_daily, range.contains) case final String cph)
+                StatSummaryLine(label: t.stat_reading_speed, value: cph),
+              StatSummaryLine(
+                label: t.stat_lookup,
+                value: '${sumStatEventsInRange(_lookupEvents, range)}',
+              ),
+              StatSummaryLine(
+                label: t.stat_mined,
+                value: '${sumStatEventsInRange(_minedEvents, range)}',
+              ),
+            ],
+          ),
+        ),
+        box(
+          StatPane.detail,
+          buildStatSessionSection(
+            context,
+            sessions: _sessions,
+            titleOf: _sessionTitle,
+            collectionOf: _sessionCollectionName,
+            onDelete: _deleteSession,
+            onEdit: _editSession,
+            onClearAll: _clearSessions,
+          ),
         ),
       ],
     );

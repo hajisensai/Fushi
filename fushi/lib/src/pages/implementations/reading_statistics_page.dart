@@ -541,59 +541,76 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   /// 页面骨架与视频 / 游戏 tab 同形（用户 2026-09-08「统计全改成游戏那种」）：
   /// 时段卡 → 每日时长图 → 最近会话 → 目标卡 → 「分析」折叠 → 按书列表。
   /// KPI 条 / 趋势 / 今日环 + 速度摘要 / 来源分布 / 小时×格式全部下沉进折叠区，
-  /// 一个都没删。
+  /// 一个都没删。横屏时会话与按书列表拆到右栏（[buildStatAdaptiveScrollView]）。
   Widget _buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double card = tokens.spacing.card;
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final bool wide = constraints.maxWidth >= _kWideBreakpoint;
-        // 统计中心四个 tab 一律**全宽自适应**（用户 2026-09-10「阅读的布局不统一，
-        // 做成自适应统一布局」）：本页此前独有一层 `Center + ConstrainedBox(1040)`，
-        // 总览 / 观看 / 游戏三个 tab 都没有，横过去时阅读 tab 的卡片、图表、会话
-        // 整体缩在中间一条，左右各留一大片空白。宽屏的排布交给各区块自己的
-        // LayoutBuilder（时段卡按实际列宽判两列、[_buildMidSection] 按 [wide] 并排），
-        // 不靠一个页面级硬上限。
-        return CustomScrollView(
-          slivers: <Widget>[
-            SliverToBoxAdapter(child: _buildSummaryCards()),
-            SliverToBoxAdapter(child: _buildRangeSection()),
-            SliverToBoxAdapter(
-              child: buildStatSessionSection(
-                context,
-                sessions: _sessions,
-                titleOf: _sessionTitle,
-                collectionOf: _sessionCollectionName,
-                onDelete: _deleteSession,
-                onEdit: _editSession,
-                onClearAll: _clearSessions,
-              ),
+    // 统计中心四个 tab 一律**全宽自适应**（用户 2026-09-10「阅读的布局不统一，
+    // 做成自适应统一布局」）：本页此前独有一层 `Center + ConstrainedBox(1040)`，
+    // 总览 / 观看 / 游戏三个 tab 都没有，横过去时阅读 tab 的卡片、图表、会话
+    // 整体缩在中间一条，左右各留一大片空白。宽屏的排布交给各区块自己的
+    // LayoutBuilder（时段卡按实际列宽判两列、[_buildMidSection] 按所在栏宽并排），
+    // 不靠一个页面级硬上限。收尾留白与底部安全区（BUG-2440）由
+    // [buildStatAdaptiveScrollView] 统一补在每条滚动视图末尾。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double columnWidth) => <StatPaneSliver>[
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildSummaryCards()),
+        ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildRangeSection()),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: buildStatSessionSection(
+              context,
+              sessions: _sessions,
+              titleOf: _sessionTitle,
+              collectionOf: _sessionCollectionName,
+              onDelete: _deleteSession,
+              onEdit: _editSession,
+              onClearAll: _clearSessions,
             ),
-            SliverToBoxAdapter(child: _buildGoalPanel()),
-            SliverToBoxAdapter(child: _buildAnalysisFold(wide)),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  card,
-                  card + tokens.spacing.gap,
-                  card,
-                  tokens.spacing.gap,
-                ),
-                child: _buildByBookHeader(),
+          ),
+        ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildGoalPanel()),
+        ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(
+            child: _buildAnalysisFold(columnWidth >= _kWideBreakpoint),
+          ),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                card,
+                card + tokens.spacing.gap,
+                card,
+                tokens.spacing.gap,
               ),
+              child: _buildByBookHeader(),
             ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) => _buildBookTile(_bookData[index]),
-                childCount: _bookData.length,
-              ),
+          ),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildBookTile(_bookData[index]),
+              childCount: _bookData.length,
             ),
-            // BUG-2440：收尾留白连带补上底部安全区，否则脚手架让出 home indicator
-            // 那一段后，最后一本书会被手势条压住。
-            buildStatTailSliver(context),
-          ],
-        );
-      },
+          ),
+        ),
+      ],
     );
   }
 

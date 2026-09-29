@@ -274,42 +274,58 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   Widget _buildContent() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<_RangeGame> games = _rangeGames();
-    return CustomScrollView(
-      slivers: <Widget>[
-        SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(child: _buildRangeSection()),
-        SliverToBoxAdapter(
-          child: buildStatSessionSection(
-            context,
-            sessions: _sessions,
-            titleOf: _sessionTitle,
-            collectionOf: _sessionCollectionName,
-            onDelete: _deleteSession,
-            onEdit: _editSession,
-            onClearAll: _clearSessions,
-          ),
+    // 横屏时会话与按游戏列表拆到右栏（[buildStatAdaptiveScrollView]）。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double _) => <StatPaneSliver>[
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildSummaryCards()),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.card + tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            child: Text(
-              '${t.game_stat_by_game} · ${formatStatRange(_range)}',
-              style: Theme.of(context).textTheme.titleMedium,
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildRangeSection()),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: buildStatSessionSection(
+              context,
+              sessions: _sessions,
+              titleOf: _sessionTitle,
+              collectionOf: _sessionCollectionName,
+              onDelete: _deleteSession,
+              onEdit: _editSession,
+              onClearAll: _clearSessions,
             ),
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (BuildContext context, int index) => _buildGameRow(games[index]),
-            childCount: games.length,
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: Text(
+                '${t.game_stat_by_game} · ${formatStatRange(_range)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
           ),
         ),
-        buildStatTailSliver(context),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (BuildContext context, int index) => _buildGameRow(games[index]),
+              childCount: games.length,
+            ),
+          ),
+        ),
       ],
     );
   }
