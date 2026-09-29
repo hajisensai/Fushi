@@ -60,7 +60,7 @@ runs:
         if command -v cygpath >/dev/null 2>&1; then tmp="$(cygpath -u "$RUNNER_TEMP")"; fi
         dest="$tmp/protoc-$version"
         zip="$tmp/$asset"
-        curl -fsSL --retry 3 -o "$zip" \
+        curl -fsSL --proto "=https" --retry 3 -o "$zip" \
           "https://github.com/protocolbuffers/protobuf/releases/download/v$version/$asset"
         if command -v sha256sum >/dev/null 2>&1; then
           actual="$(sha256sum "$zip" | cut -d' ' -f1)"

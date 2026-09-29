@@ -229,8 +229,8 @@ describe('新设备登录', () => {
 describe('昵称规范化', () => {
   it('折叠空白、拒绝零宽/方向控制符与 #、限长 24 码点', () => {
     expect(normalizeNickname('  a   b ')).toBe('a b');
-    expect(normalizeNickname('a​b')).toBeNull();
-    expect(normalizeNickname('a‮b')).toBeNull();
+    expect(normalizeNickname('a\u200Bb')).toBeNull();
+    expect(normalizeNickname('a\u202Eb')).toBeNull();
     expect(normalizeNickname('a#1')).toBeNull();
     expect(normalizeNickname('字'.repeat(24))).toBe('字'.repeat(24));
     expect(normalizeNickname('字'.repeat(25))).toBeNull();
