@@ -1812,28 +1812,41 @@ window.__fushiInstallShell = function(C) {
     // line-height 行盒刷背景，导致无振假名的「の顔色が変わった」比 ruby 基字更宽。
     // 改为：ruby 节点继续收集到 cueRubyElements；普通文本包 fushi-sasayaki-cue span，
     // active 时由 CSS 画同一条 1em 正文 lane。倒序包裹，避免先拆前文导致后续 offset 漂移。
+    //
+    // BUG-2780：同一父节点下**连续**的片段（普通文字 + 整个 <ruby>）合并进同一个 wrapper，
+    // 由 wrapper 一次刷背景。旧实现「每段文字一个 span、每个 ruby 各自加 class 刷背景」
+    // 拼出整句，长注音（しゃく 比 釈 宽）撑出的间距归谁由引擎决定：iOS 真机上它落在 ruby
+    // 背景盒外（高亮在「会|釈|をす」间断开留缝），iOS 26.5 WebKit 又让 ruby 背景盒与后文
+    // span 叠 7.7px（半透明色叠深一条）。间距总在父级行内盒里，包进同一个 wrapper 后缝与
+    // 叠色都没有了；注音仍在 wrapper 内容区外（BUG-716 的形态不变）。父节点不同的片段
+    // （ruby 在书自带的 <a>/<span> 里）各成一组，ruby 仍整颗包进 wrapper；只有片段落在
+    // ruby 内部、ruby 却不能整颗移动时（理论上不会发生）才退回 ruby class。
     var range = document.createRange();
     for (var i = cueSegments.length - 1; i >= 0; i--) {
       var id = cueSegments[i].id;
       var segments = cueSegments[i].ranges;
       if (!segments.length) continue;
+      var items = this.sentenceAudioWrapItems(segments);
       var wrappers = [];
       var rubyElements = [];
-      for (var j = segments.length - 1; j >= 0; j--) {
-        var ruby = this.rubyForNode(segments[j].node);
-        if (ruby) {
-          if (rubyElements.indexOf(ruby) < 0) rubyElements.push(ruby);
-          continue;
-        }
+      for (var g = items.length - 1; g >= 0; g--) {
+        var first = items[g][0];
+        var last = items[g][items[g].length - 1];
         try {
-          range.setStart(segments[j].node, segments[j].start);
-          range.setEnd(segments[j].node, segments[j].end);
+          if (first.ruby) range.setStartBefore(first.ruby);
+          else range.setStart(first.node, first.start);
+          if (last.ruby) range.setEndAfter(last.ruby);
+          else range.setEnd(last.node, last.end);
           var wrapper = document.createElement('span');
           wrapper.className = 'fushi-sentence-audio-cue';
           wrapper.appendChild(range.extractContents());
           range.insertNode(wrapper);
           wrappers.push(wrapper);
-        } catch (e) {}
+        } catch (e) {
+          for (var k = 0; k < items[g].length; k++) {
+            if (items[g][k].ruby && rubyElements.indexOf(items[g][k].ruby) < 0) rubyElements.push(items[g][k].ruby);
+          }
+        }
       }
       wrappers.reverse();
       rubyElements.reverse();
@@ -1841,6 +1854,47 @@ window.__fushiInstallShell = function(C) {
       if (rubyElements.length) this.cueRubyElements.set(id, rubyElements);
     }
     this.buildNodeOffsets();
+  },
+  // BUG-2780：把一条 cue 的文本片段（文档序）折成「可整体包裹」的分组：ruby 内的片段
+  // 提升为整颗 ruby（去重），相邻两项父节点相同就并进同一组。组内首尾之间的兄弟节点
+  // 全部被完整包含（range 两端落在同一父节点的子节点上），extractContents 不会拆开书的元素。
+  sentenceAudioWrapItems: function(segments) {
+    var groups = [];
+    var current = null;
+    var lastRuby = null;
+    for (var j = 0; j < segments.length; j++) {
+      var ruby = this.rubyForNode(segments[j].node);
+      var item;
+      if (ruby) {
+        if (ruby === lastRuby) continue;
+        lastRuby = ruby;
+        item = { ruby: ruby, parent: ruby.parentNode };
+      } else {
+        item = { node: segments[j].node, start: segments[j].start, end: segments[j].end, parent: segments[j].node.parentNode };
+      }
+      if (!item.parent) continue;
+      if (current && current[0].parent === item.parent &&
+          this.sentenceAudioInlineGap(current[current.length - 1], item)) {
+        current.push(item);
+      } else {
+        current = [item];
+        groups.push(current);
+      }
+    }
+    return groups;
+  },
+  // 两项之间的兄弟节点都是行内内容才并组（夹着块级元素就断开，不把块包进 span）。
+  sentenceAudioInlineGap: function(prev, next) {
+    var a = prev.ruby || prev.node;
+    var b = next.ruby || next.node;
+    if (a === b) return true;
+    for (var n = a.nextSibling; n; n = n.nextSibling) {
+      if (n === b) return true;
+      if (n.nodeType !== 1) continue;
+      var display = getComputedStyle(n).display;
+      if (display.indexOf('inline') !== 0 && display.indexOf('ruby') !== 0 && display !== 'contents' && display !== 'none') return false;
+    }
+    return false;
   },
   rubyForNode: function(node) {
     var el = node && node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
