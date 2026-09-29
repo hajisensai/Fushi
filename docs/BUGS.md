@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2571 条。点号进各自文件。
+> 共 2572 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2799](bugs/BUG-2799-webkit-ruby-reserve-overridden.md) | ✅ | ✅ | Mac/iOS 分页段落之间列距/行距比段内窄（振假名页顶预留被书样式压掉一半） |
 | [BUG-2792](bugs/BUG-2792-video-bottom-bar-overlap.md) | ✅ | ✅ | 开字幕列表后视频底栏按钮叠在一起 |
 | [BUG-2791](bugs/BUG-2791-leaderboard-shelf-500-and-series-finished.md) | ✅ | ✅ | 排行榜书架/分享本月 500；只看第 1 集整季被判读完 |
 | [BUG-2790](bugs/BUG-2790-popup-reattach-egl-bad-access.md) | 🚧 | 🚧 | 查过一次词后再开 app 外查词窗只剩旧 WebView 残影、卡片画不出 |
