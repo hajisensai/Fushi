@@ -26,30 +26,18 @@ void main() {
       ]);
       expect(d.hasBottomItems, isFalse);
       expect(d.showsTitle, isTrue);
-      expect(d.itemsIn(ReaderControlSlot.floatingBall), <ReaderControlItem>[
+      // 有声书传输键出厂全在托盘（悬浮球的按钮在 设置 → 悬浮球 里配）。
+      expect(d.core.removedItems, <ReaderControlItem>{
         ReaderControlItem.audiobookPrev,
         ReaderControlItem.audiobookPlayPause,
         ReaderControlItem.audiobookNext,
-      ]);
-      // ±10s / 跟随出厂在托盘（可拖进任一槽）。
-      expect(d.core.removedItems, <ReaderControlItem>{
         ReaderControlItem.audiobookSeekBack,
         ReaderControlItem.audiobookSeekForward,
         ReaderControlItem.audiobookFollow,
       });
     });
 
-    test('悬浮球槽：必需项（返回 / 设置）进不去，传输键与普通键都能进；旧布局 JSON 自动补上出厂三键', () {
-      expect(ReaderControlItem.back.canMoveToSlot(ReaderControlSlot.floatingBall),
-          isFalse);
-      expect(
-          ReaderControlItem.settings.canMoveToSlot(ReaderControlSlot.floatingBall),
-          isFalse);
-      expect(ReaderControlItem.title.canMoveToSlot(ReaderControlSlot.floatingBall),
-          isFalse);
-      expect(
-          ReaderControlItem.gallery.canMoveToSlot(ReaderControlSlot.floatingBall),
-          isTrue);
+    test('传输键可进顶栏 / 底栏；旧布局里的悬浮球槽解码时丢弃，按钮回落出厂位置', () {
       expect(
           ReaderControlItem.audiobookPrev
               .canMoveToSlot(ReaderControlSlot.topLeft),
@@ -60,26 +48,19 @@ void main() {
           isFalse);
       for (final ReaderControlItem i in ReaderControlItem.values) {
         expect(i.isAudiobookTransport,
-            i.recoverySlot == ReaderControlSlot.floatingBall,
-            reason: '$i：传输键 ⟺ 回落槽是悬浮球');
+            i.recoverySlot == ReaderControlSlot.bottomCenter,
+            reason: '$i：传输键 ⟺ 回落槽是底栏中间');
       }
-      // 上游没有悬浮球槽时存的布局：没提到的传输键按出厂回填到悬浮球槽。
+      // 悬浮球槽已移出按钮布局（设置 → 悬浮球 是唯一入口）：旧 JSON 里的
+      // floatingBall 槽按未知槽丢弃，里面的按钮回到出厂位置。
       final ReaderControlLayout legacy = ReaderControlLayout.decode(
-        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"]}}',
+        '{"version":1,"slots":{"topLeft":["back"],"topRight":["settings"],'
+        '"floatingBall":["gallery","audiobookPrev"]}}',
       );
-      expect(legacy.itemsIn(ReaderControlSlot.floatingBall), <ReaderControlItem>[
-        ReaderControlItem.audiobookPrev,
-        ReaderControlItem.audiobookPlayPause,
-        ReaderControlItem.audiobookNext,
-      ]);
-      // 显式移除过的不回填。
-      final ReaderControlLayout cleared = ReaderControlLayout.decode(
-        '{"version":1,"slots":{"topLeft":["back"],"floatingBall":["gallery"]},'
-        '"removed":["audiobookPrev","audiobookPlayPause","audiobookNext"]}',
-      );
-      expect(cleared.itemsIn(ReaderControlSlot.floatingBall),
-          <ReaderControlItem>[ReaderControlItem.gallery]);
-      expect(cleared.core.removedItems, contains(ReaderControlItem.audiobookPrev));
+      expect(legacy.itemsIn(ReaderControlSlot.topLeft),
+          contains(ReaderControlItem.gallery));
+      expect(legacy.core.removedItems,
+          contains(ReaderControlItem.audiobookPrev));
     });
 
     test('encode / decode 往返；空 / 坏 JSON 回出厂', () {
@@ -206,9 +187,7 @@ void main() {
       for (final ReaderControlItem i in ReaderControlItem.values) {
         expect(readerControlItemIcon(i), isA<IconData>());
       }
-      expect(ReaderControlSlot.editableSlots, hasLength(7));
-      expect(ReaderControlSlot.editableSlots,
-          contains(ReaderControlSlot.floatingBall));
+      expect(ReaderControlSlot.editableSlots, hasLength(6));
       for (final ReaderControlSlot s in ReaderControlSlot.values) {
         expect(readerControlSlotLabel(s), isNotEmpty);
       }

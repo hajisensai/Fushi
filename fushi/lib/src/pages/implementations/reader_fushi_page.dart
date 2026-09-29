@@ -91,7 +91,7 @@ import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
-import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
@@ -3589,8 +3589,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       // 底栏之前，让它们盖在其上。
                       _buildProgressEdgeLine(),
                       _buildStatusFooter(),
-                      // 悬浮球：排在词典弹层 / 底栏之前，让它们盖在其上。
-                      _buildReaderFloatingBall(),
+                      // 悬浮球的阅读器场景按钮（零尺寸登记器，球画在根上）。
+                      _buildReaderFloatingBallScene(),
                       buildDictionary(),
                       // The bottom chrome returns a Positioned; it MUST stay a direct
                       // child of this Stack. The chrome FocusScope is mounted INSIDE

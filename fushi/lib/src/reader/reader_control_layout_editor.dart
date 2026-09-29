@@ -96,8 +96,6 @@ String readerControlSlotLabel(ReaderControlSlot slot) {
       return t.video_control_slot_bottom_center;
     case ReaderControlSlot.bottomRight:
       return t.video_control_slot_bottom_right;
-    case ReaderControlSlot.floatingBall:
-      return t.reader_floating_ball;
     case ReaderControlSlot.hidden:
       return t.reader_control_slot_hidden;
   }
@@ -144,15 +142,12 @@ class ReaderControlLayoutEditor extends StatelessWidget {
         target == ReaderControlSlot.topCenter) {
       if (!item.canMoveToSlot(target)) return t.reader_control_reject_title;
     }
-    if (item.pinnedRequired && target == ReaderControlSlot.floatingBall) {
-      return t.reader_control_reject_required;
-    }
     if (!item.canMoveToSlot(target)) return t.video_control_reject_unavailable;
     return null;
   }
 
-  /// 舞台：一张「阅读器」示意——顶栏一行、正文带（左侧悬浮球槽 + 书本占位）、
-  /// 底栏一行。窄窗每行折成两列 Wrap，正文带折成上下两段。
+  /// 舞台：一张「阅读器」示意——顶栏一行、正文带（书本占位）、底栏一行。窄窗
+  /// 每行折成两列 Wrap。
   Widget _buildStage(
     BuildContext context,
     ControlSlotRegionBuilder<ReaderControlSlot> buildSlotRegion,
@@ -198,50 +193,15 @@ class ReaderControlLayoutEditor extends StatelessWidget {
               ReaderControlSlot.topCenter,
               ReaderControlSlot.topRight,
             ]),
-            // 正文带：左侧是悬浮球槽（球停靠在正文视口边缘，位置感与真身一致），
-            // 其余是书本占位，让三行读出「上 / 正文 / 下」的方位感。
+            // 正文带：书本占位，让三行读出「上 / 正文 / 下」的方位感。
             Padding(
               padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap),
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final double gap = tokens.spacing.gap;
-                  final bool compact = constraints.maxWidth < 480;
-                  final Widget ball = SizedBox(
-                    width: compact
-                        ? constraints.maxWidth
-                        : (constraints.maxWidth - gap * 2) / 3,
-                    child: buildSlotRegion(
-                      ReaderControlSlot.floatingBall,
-                      growToContent: true,
-                    ),
-                  );
-                  final Widget book = Center(
-                    child: Icon(
-                      Icons.menu_book_outlined,
-                      size: 28,
-                      color: theme.colorScheme.outline,
-                    ),
-                  );
-                  if (compact) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        ball,
-                        Padding(
-                          padding: EdgeInsets.only(top: gap),
-                          child: book,
-                        ),
-                      ],
-                    );
-                  }
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: <Widget>[
-                      ball,
-                      Expanded(child: book),
-                    ],
-                  );
-                },
+              child: Center(
+                child: Icon(
+                  Icons.menu_book_outlined,
+                  size: 28,
+                  color: theme.colorScheme.outline,
+                ),
               ),
             ),
             row(const <ReaderControlSlot>[

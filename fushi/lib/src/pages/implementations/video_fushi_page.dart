@@ -108,6 +108,7 @@ import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 import 'package:fushi/src/media/video/video_slim_progress_bar.dart';
 import 'package:fushi/src/platform/desktop/desktop_mini_window_mode.dart';
 import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderHeaderAction;
@@ -8668,7 +8669,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 小窗（桌面无边框小窗 / Android 画中画）与沉浸锁定时藏球：前者窗口里放不下、
   /// 系统画中画更不该叠应用内浮层；后者锁定本就屏蔽指针控制。
   ///
-  /// 全局模式关闭时宿主不渲染，这里无条件挂载也无副作用。
+  /// 键是 [kVideoFloatingBallButtons] 里的 id；显示哪几颗由 设置 → 悬浮球 → 视频
+  /// 决定。应用内悬浮球关闭时宿主不渲染，这里无条件挂载也无副作用。
   Widget _buildVideoFloatingBallScene(VideoPlayerController? controller) {
     return ListenableBuilder(
       listenable: Listenable.merge(<Listenable?>[
@@ -8680,21 +8682,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         final bool hideBall = _inMiniWindow || _immersiveLocked.value;
         if (controller == null) {
           return FloatingBallScene(
-            actions: const <ReaderHeaderAction>[],
+            scope: FloatingBallScope.video,
+            actions: const <String, ReaderHeaderAction>{},
             hideBall: hideBall,
           );
         }
         final bool playing = controller.isPlaying;
         return FloatingBallScene(
+          scope: FloatingBallScope.video,
           hideBall: hideBall,
-          actions: <ReaderHeaderAction>[
-            ReaderHeaderAction(
+          actions: <String, ReaderHeaderAction>{
+            'play_pause': ReaderHeaderAction(
               key: const ValueKey<String>('video_floating_ball_play_pause'),
               icon: playing ? Icons.pause : Icons.play_arrow,
               label: t.video_control_play_pause,
               onPressed: () => unawaited(controller.playOrPause()),
             ),
-            ReaderHeaderAction(
+            'prev_cue': ReaderHeaderAction(
               key: const ValueKey<String>('video_floating_ball_prev_cue'),
               icon: Icons.skip_previous,
               label: t.video_control_previous_cue,
@@ -8704,7 +8708,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
               ),
             ),
-            ReaderHeaderAction(
+            'next_cue': ReaderHeaderAction(
               key: const ValueKey<String>('video_floating_ball_next_cue'),
               icon: Icons.skip_next,
               label: t.video_control_next_cue,
@@ -8714,19 +8718,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 ),
               ),
             ),
-            ReaderHeaderAction(
+            'favorite': ReaderHeaderAction(
               key: const ValueKey<String>('video_floating_ball_favorite'),
               icon: Icons.star_border,
               label: t.shortcut_action_video_toggle_favorite_sentence,
               onPressed: () => unawaited(_toggleFavoriteCurrentCue()),
             ),
-            ReaderHeaderAction(
+            'screenshot': ReaderHeaderAction(
               key: const ValueKey<String>('video_floating_ball_screenshot'),
               icon: Icons.photo_camera_outlined,
               label: t.video_control_screenshot,
               onPressed: () => unawaited(_saveScreenshot()),
             ),
-          ],
+          },
         );
       },
     );

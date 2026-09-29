@@ -1,4 +1,4 @@
-# 全局悬浮球（应用内常驻 / Android 系统常驻）
+# 悬浮球（应用内 / Android 应用外）
 
 2026-09-28 群聊需求（原话要点）：
 
@@ -8,28 +8,49 @@
 
 ## 形态
 
-全局模式偏好 `floating_ball.mode`：
+2026-09-29 用户拍板：设置里单独一个「悬浮球」一级分类，是悬浮球**唯一**的配置入口
+（此前查词页的「悬浮球」段、阅读页的「阅读器悬浮球」开关、阅读器按钮布局编辑器的
+「悬浮球」槽全部删掉）；应用内默认开、应用外默认关；按钮按场景（语料 / 应用外）分别勾选。
 
-| 值 | 含义 | 平台 |
+两个独立开关（`settings_schema_floating_ball.dart`）：
+
+| 偏好 | 默认 | 含义 | 平台 |
+|---|---|---|---|
+| `floating_ball.in_app`（bool） | 开 | Flutter 悬浮球挂在根 builder 上（`AppFloatingBallHost`），任何页面都在 | 全部 |
+| `floating_ball.system`（bool） | 关 | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 自己在前台时原生球隐藏（应用内球开着就由它接管，场景按钮仍然可用） | 仅 Android |
+
+非 Android 平台读到 `floating_ball.system = true`（例如备份从 Android 恢复）不起球。
+
+旧版三态 `floating_ball.mode`（`off` / `in_app` / `system`）只作迁移读取：新开关从没写过时，
+显式选过 `off` 的保持应用内关，选过 `system` 的两个都开。
+
+### 场景与按钮
+
+场景 `FloatingBallScope`（`floating_ball_config.dart`）：
+
+| 场景 | 专属按钮 id（目录顺序） | 出厂勾选 |
 |---|---|---|
-| `off`（默认） | 不显示全局球；阅读器旧的内置球（`reader_floating_ball`）照旧按自己的开关工作 | 全部 |
-| `in_app` | Flutter 悬浮球挂在根 builder 上（`AppFloatingBallHost`），任何页面都在 | 全部 |
-| `system` | Android 原生悬浮窗服务 `FloatingBallService`，在别的 app 上面也在；Fushi 自己在前台时原生球隐藏、改由 Flutter 球接管（这样场景按钮仍然可用） | 仅 Android |
+| `reader` 阅读器 | 按钮布局里除书名外的全部 `ReaderControlItem`（`storageValue`） | 有声书上一句 / 播放暂停 / 下一句 |
+| `manga` 漫画 | `previous` `next` `ocr_boxes` `ocr_volume` `ocr_rerun` `chapters` | 全部 |
+| `video` 视频 | `play_pause` `prev_cue` `next_cue` `favorite` `screenshot` | 全部 |
+| `general` 其它页面 | —（没有登记场景的页面） | — |
+| `system` 应用外 | —（原生侧拿不到页面按钮） | — |
 
-非 Android 平台读到 `system`（例如备份从 Android 恢复）一律按 `in_app` 处理。
+每个场景都还能勾选下面三颗全局按钮（出厂全勾）。勾选存在 `floating_ball.buttons.<场景>`
+（逗号分隔 id，按目录顺序；空串 = 出厂，`-` = 全关）。旧版单份全局勾选
+`floating_ball.actions` 只作迁移读取：没单独设过的场景沿用它对全局按钮的取舍。
 
-### 场景按钮
+`FloatingBallScene`（零尺寸 widget）挂在页面里，把「场景 + 本页此刻能提供的专属按钮
+（id → 动作）」登记进 `FloatingBallSceneRegistry`；宿主取**当前路由**上最后登记的那一组，
+再按该场景的勾选挑按钮（全局按钮看平台能力，专属按钮页面此刻没提供就跳过，例如漫画的
+整卷 OCR 只在满足条件时提供）。路由切换经 `floatingBallRouteObserver` 通知宿主重算。
 
-`FloatingBallScene`（零尺寸 widget）挂在页面里，把本页的按钮登记进
-`FloatingBallSceneRegistry`；宿主取**当前路由**上最后登记的那一组，排在全局按钮前面。
-路由切换经 `floatingBallRouteObserver` 通知宿主重算。
-
-- 阅读器：全局模式开着时，阅读器不再画自己的球，而是把布局编辑器
-  `ReaderControlSlot.floatingBall` 槽里的按钮登记成场景按钮（按钮仍在原编辑器里配置）。
+- 阅读器：登记全部可渲染的布局按钮，执行体与顶栏 / 底栏同一个 `_readerControlAction`；
+  阅读器不再画自己的球。旧布局 JSON 里的 `floatingBall` 槽解码时按未知槽丢弃，里面的
+  按钮回落出厂位置（有声书传输键在托盘）。
 - 视频 / 漫画：各自登记本页的常用动作。
-- 没有场景的页面只显示全局按钮。
 
-全局按钮（`floating_ball.actions`，逗号分隔，缺省全开）：
+全局按钮：
 
 | id | 动作 | 平台 |
 |---|---|---|

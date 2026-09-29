@@ -32,7 +32,8 @@ class SettingsNavigationGroup {
 SettingsNavigationGroupId settingsNavigationGroupFor(
   SettingsDestinationId id,
 ) => switch (id) {
-  SettingsDestinationId.appearance => SettingsNavigationGroupId.interface,
+  SettingsDestinationId.appearance ||
+  SettingsDestinationId.floatingBall => SettingsNavigationGroupId.interface,
   SettingsDestinationId.reading ||
   SettingsDestinationId.manga ||
   SettingsDestinationId.video ||

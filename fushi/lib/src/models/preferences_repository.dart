@@ -14,7 +14,7 @@ import 'package:fushi/src/ai/web_knowledge.dart'
         parseWebKnowledgeCustomSites,
         parseWebKnowledgeEnabledIds;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
-import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -694,30 +694,72 @@ class PreferencesRepository extends ChangeNotifier implements PrefStore {
     notifyListeners();
   }
 
-  /// 全局悬浮球模式（`docs/specs/2026-09-28-floating-ball.md`）。默认关：
-  /// 阅读器旧的内置球（`reader_floating_ball`）照旧按自己的开关工作。
-  FloatingBallMode get floatingBallMode => FloatingBallMode.fromStorage(
-      getPref('floating_ball.mode', defaultValue: '') as String);
+  /// 应用内悬浮球（设置 → 悬浮球，`docs/specs/2026-09-28-floating-ball.md`）。
+  /// 默认开。旧版三态 `floating_ball.mode` 里显式选过「关」的用户保持关。
+  bool get floatingBallInApp {
+    final Object? value = getPref('floating_ball.in_app', defaultValue: null);
+    if (value is bool) return value;
+    return getPref('floating_ball.mode', defaultValue: '') != 'off';
+  }
 
-  Future<void> setFloatingBallMode(FloatingBallMode mode) async {
-    await setPref('floating_ball.mode', mode.storageValue);
+  Future<void> setFloatingBallInApp(bool value) async {
+    await setPref('floating_ball.in_app', value);
     notifyListeners();
   }
 
-  /// 每个页面都有的全局按钮；从没设过 = 全开。
-  List<FloatingBallGlobalAction> get floatingBallActions =>
-      FloatingBallGlobalAction.decodeList(
-          getPref('floating_ball.actions', defaultValue: '') as String);
+  /// 应用外悬浮球（Android 系统球）。默认关。旧版选过 `system` 的用户保持开。
+  /// 只在 Android 生效；别的平台读到 true（例如备份从 Android 恢复）也不起球。
+  bool get floatingBallSystem {
+    final Object? value = getPref('floating_ball.system', defaultValue: null);
+    if (value is bool) return value;
+    return getPref('floating_ball.mode', defaultValue: '') == 'system';
+  }
 
-  Future<void> setFloatingBallActions(
-      Iterable<FloatingBallGlobalAction> actions) async {
-    await setPref(
-        'floating_ball.actions', FloatingBallGlobalAction.encodeList(actions));
+  Future<void> setFloatingBallSystem(bool value) async {
+    await setPref('floating_ball.system', value);
     notifyListeners();
   }
 
-  /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。与阅读器内置球的
-  /// `reader_floating_ball_dock` / `_y` 分开存：两者的活动范围不同（全屏 vs 正文视口）。
+  /// 某个场景的悬浮球按钮 id（目录顺序）；从没设过 =
+  /// [FloatingBallScope.defaultButtons]。旧版只有一份全局按钮勾选
+  /// （`floating_ball.actions`）：没单独设过的场景沿用它对全局按钮的取舍。
+  List<String> floatingBallButtons(FloatingBallScope scope) {
+    final String raw =
+        getPref(_floatingBallButtonsKey(scope), defaultValue: '') as String;
+    if (raw.isEmpty) {
+      final String legacy =
+          getPref('floating_ball.actions', defaultValue: '') as String;
+      if (legacy.isNotEmpty) {
+        final Set<String> kept = legacy == '-'
+            ? <String>{}
+            : legacy.split(',').map((String s) => s.trim()).toSet();
+        return <String>[
+          for (final String id in scope.defaultButtons)
+            if (FloatingBallGlobalAction.fromStorage(id) == null ||
+                kept.contains(id))
+              id,
+        ];
+      }
+    }
+    return scope.decodeButtons(raw);
+  }
+
+  Future<void> setFloatingBallButtons(
+      FloatingBallScope scope, Iterable<String> ids) async {
+    await setPref(_floatingBallButtonsKey(scope), scope.encodeButtons(ids));
+    notifyListeners();
+  }
+
+  static String _floatingBallButtonsKey(FloatingBallScope scope) =>
+      switch (scope) {
+        FloatingBallScope.reader => 'floating_ball.buttons.reader',
+        FloatingBallScope.manga => 'floating_ball.buttons.manga',
+        FloatingBallScope.video => 'floating_ball.buttons.video',
+        FloatingBallScope.general => 'floating_ball.buttons.general',
+        FloatingBallScope.system => 'floating_ball.buttons.system',
+      };
+
+  /// 应用内悬浮球停靠边（`left` / `right`）与球心纵向比例。
   String get floatingBallDock =>
       getPref('floating_ball.dock', defaultValue: 'right') as String;
 

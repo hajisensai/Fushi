@@ -91,6 +91,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderHeaderAction, ReaderSideSheetSide, showReaderSideSheet;
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
@@ -5553,15 +5554,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 条目）。翻页走与键盘 / 手柄同一个 [_executeReaderInputAction]；其余与顶栏
   /// 同名按钮同一执行体。正文没就绪时不给按钮（与顶栏动作组同一判据）。
   ///
-  /// 全局模式关闭时宿主不渲染，这里无条件挂载也无副作用。
+  /// 键是 [kMangaFloatingBallButtons] 里的 id；显示哪几颗由 设置 → 悬浮球 → 漫画
+  /// 决定。应用内悬浮球关闭时宿主不渲染，这里无条件挂载也无副作用。
   Widget _buildMangaFloatingBallScene() {
     if (!_chromeActionsEnabled) {
-      return const FloatingBallScene(actions: <ReaderHeaderAction>[]);
+      return const FloatingBallScene(
+        scope: FloatingBallScope.manga,
+        actions: <String, ReaderHeaderAction>{},
+      );
     }
     final bool rtl = _spreadDirection == 'rtl';
     return FloatingBallScene(
-      actions: <ReaderHeaderAction>[
-        ReaderHeaderAction(
+      scope: FloatingBallScope.manga,
+      actions: <String, ReaderHeaderAction>{
+        'previous': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_previous'),
           icon: rtl ? Icons.chevron_right : Icons.chevron_left,
           label: t.shortcut_action_manga_page_backward,
@@ -5570,7 +5576,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             source: _MangaReaderInputSource.floatingBall,
           ),
         ),
-        ReaderHeaderAction(
+        'next': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_next'),
           icon: rtl ? Icons.chevron_left : Icons.chevron_right,
           label: t.shortcut_action_manga_page_forward,
@@ -5579,7 +5585,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             source: _MangaReaderInputSource.floatingBall,
           ),
         ),
-        ReaderHeaderAction(
+        'ocr_boxes': ReaderHeaderAction(
           key: const ValueKey<String>('manga_floating_ball_ocr_boxes'),
           icon: _showOcrBoxes
               ? Icons.highlight_alt
@@ -5588,7 +5594,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           onPressed: () => unawaited(_toggleOcrBoxes()),
         ),
         if (_showManualVolumeOcrAction)
-          ReaderHeaderAction(
+          'ocr_volume': ReaderHeaderAction(
             key: const ValueKey<String>('manga_floating_ball_ocr_volume'),
             icon: Icons.document_scanner_outlined,
             label: t.manga_reader_ocr_volume,
@@ -5596,14 +5602,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 unawaited(_maybeStartVolumeOcr(userInitiated: true)),
           ),
         if (_showRerunVolumeOcrAction)
-          ReaderHeaderAction(
+          'ocr_rerun': ReaderHeaderAction(
             key: const ValueKey<String>('manga_floating_ball_ocr_rerun'),
             icon: Icons.document_scanner_outlined,
             label: t.manga_reader_ocr_rerun,
             onPressed: () => unawaited(_rerunVolumeOcr()),
           ),
         if (_shelfEntry != null)
-          ReaderHeaderAction(
+          'chapters': ReaderHeaderAction(
             key: const ValueKey<String>('manga_floating_ball_chapters'),
             icon: Icons.list_alt_outlined,
             label: t.manga_series_chapters_action,
@@ -5611,7 +5617,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 ? null
                 : () => unawaited(_showChapterPicker()),
           ),
-      ],
+      },
     );
   }
 
