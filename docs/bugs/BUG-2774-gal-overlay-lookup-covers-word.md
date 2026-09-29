@@ -1,7 +1,7 @@
 ## BUG-2774 · 台词浮窗贴屏幕底时查词卡压住被点的词
 - **报告**：2026-09-29（用户：「GAL的文本浮窗放下面查词会遮」，附截图：浮窗在屏幕下方，查词卡把被点的「何気なく」连同所在行右半整段盖住）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/lookup/global_lookup_controller.dart` `_lookupExternal`：逻辑锚点只把窗口种在词下方 `(left, bottom + 4)`，根卡**不带锚点**，走 `global_lookup_render.dart` 的 anchorless 分支 → `computeRootShellOffset` 只做「夹进工作区」；下方放不下时整卡被上推，正好压在词上）
-- **[x] ① 已修复** — 逻辑锚点按 dpr 换成物理矩形后与 attached 物理锚点同一套：窗口种在词左上角、根卡设锚交给 `computeFrameRect` 择上/下侧（分支 `pr/gal-overlay-popup-occlusion`）
+- **[x] ① 已修复** — 逻辑锚点按 dpr 换成物理矩形后与 attached 物理锚点同一套：窗口种在词左上角、根卡设锚交给 `computeFrameRect` 择上/下侧（`60ff7f12ee5`，分支 `pr/gal-overlay-popup-occlusion`）
 - **[x] ② 已加自动化测试** — `fushi/test/lookup/gal_attached_popup_placement_test.dart`「logical text-overlay anchor near the screen bottom flips the root card above the word」（旧代码下卡片落在 y=350..1400、词在 1225..1274，断言红）
 - **备注**：同一逻辑锚点入口还有剪贴板面板点词，一并受益。
 
