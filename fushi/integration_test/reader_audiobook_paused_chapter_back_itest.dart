@@ -31,11 +31,11 @@ import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-2779：有声书**暂停**时往回翻过章界，新章一载入就被拽回音频所在章。
+/// BUG-2781：有声书**暂停**时往回翻过章界，新章一载入就被拽回音频所在章。
 ///
 /// 用户原始路径（iOS，VN 竖排）：音频停在正文章 ch2；ch1 是独立纯图片章。在插图章
 /// 往回翻 → ch0 刚露一帧就被拉回 ch2；从 ch2 往回翻到插图章 → 又被拉回。插图位置永远
-/// 翻不过去。根因见 `docs/bugs/BUG-2779-audio-paused-chapter-reload-yank.md`。
+/// 翻不过去。根因见 `docs/bugs/BUG-2781-audio-paused-chapter-reload-yank.md`。
 ///
 /// 本测试在真 app 里按生产路径复现：
 ///   - 自造三章 EPUB：ch0 正文 / ch1 纯图片章（`<img>` 独占一章）/ ch2 正文；

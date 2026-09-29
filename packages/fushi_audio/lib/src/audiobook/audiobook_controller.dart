@@ -980,7 +980,7 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 换 cue 列表是上下文边界：任何挂起的显式 seek 抑制窗都失效，必须复位，
     // 否则下面的 _updateCurrentCue 重算会被旗挡住、_currentCue 卡 null（W-2）。
     _clearExplicitSeekSuppression();
-    // BUG-2779：换 cue 列表不是音频推进。旧列表里的当前句若仍在新列表里，就保住它的
+    // BUG-2781：换 cue 列表不是音频推进。旧列表里的当前句若仍在新列表里，就保住它的
     // 身份（只换下标）；否则按位置重算出的**同一句**会被 [_updateCurrentCue] 判成
     // 「cue 变了」，走变更分支——清掉手动翻页护栏、无视暂停直接发跨章。reader 每章
     // 文档载入都会重灌一次整书 cue（`_injectAudiobookBridge`），于是有声书暂停时

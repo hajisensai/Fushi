@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
 
-/// BUG-2779：有声书**暂停**时用户翻到别的章，新章一载入就被拽回音频所在章。
+/// BUG-2781：有声书**暂停**时用户翻到别的章，新章一载入就被拽回音频所在章。
 ///
 /// 真机形状（iOS VN，俺ガイル 1 卷）：音频停在 ch12「文芸部か」；在纯图片章 ch11
 /// 往回翻，上一章 ch10 刚露一帧就被拉回 ch12，再往回翻落到插图章又被拉回——
@@ -55,7 +55,7 @@ void main() {
     expect(
       crossRequests,
       isEmpty,
-      reason: '暂停态重灌同一份 cue 不得把阅读器拽回音频章（BUG-2779）',
+      reason: '暂停态重灌同一份 cue 不得把阅读器拽回音频章（BUG-2781）',
     );
     expect(
       controller.currentCue?.startMs,
