@@ -232,6 +232,50 @@ ruby > rt, ruby > rtc {
         _ => '',
       };
 
+  /// BUG-2761：Mac / iOS 分页翻页时，**每页首行的振假名**被画到上一页底部，本页首行
+  /// 只剩注音的下半截。根因是上面 BUG-2472 的负 `margin-block-start` 让注音不占行盒
+  /// 高度，而注音比根行盒上半 leading 高（22 号、行高 1.65：注音要 ≈10px，leading
+  /// 只有 ≈6px）——列中间的行无所谓（注音悬在上一行的下半 leading 里），但列顶那一行
+  /// 的注音就伸出了本列内容盒顶。WebKit 多列按「流线程坐标落在哪一列」分列绘制，
+  /// 非首列的顶边不外扩：伸出列顶的那截注音被本列裁掉，却落在上一列的流区间里、画在
+  /// 上一页底部（Mac 27 WKWebView 生产 CSS 实测：横排 21 处、竖排 9 处注音盒跨列；
+  /// Blink 按行片段所在列绘制，不受影响）。
+  ///
+  /// 修法利用 CSS 分页的**边距截断**：分栏处（非强制断点）相邻的外边距被截成 0。
+  /// 每个 `p` 在注音一侧（`padding-block-start`）预留 R，再由 `p::after` 的
+  /// `margin-block-end: -R` 抵消——这条负边距穿过 `p` 的块尾和下一段的上边距折叠在
+  /// 一起：页中间两者相抵，段落位置与改动前逐像素相同（书自带的段落边距照常参与
+  /// 折叠，不被覆盖）；段落落在页顶时那段折叠边距被截断，R 留下来成为注音的位置。
+  /// 竖排的块首是右侧，逻辑属性一条通吃两种书写方向。
+  ///
+  /// R 按行高算：需要的是「注音盒伸出行盒的量」，行高越大 leading 越能容下注音。
+  /// 取 `max(0, 0.65 − (lineHeight − 1) / 2)` em（行高 1.65 → 0.325em、1.0 → 0.65em、
+  /// ≥ 2.3 → 0），比实测伸出量多留约 0.1em 给注音字号大一点的书。只在分页模式发：
+  /// 连续滚动与 VN 不经多列分页，没有跨列问题。
+  static String _webKitPaginatedRubyReserveCss(double lineHeight) {
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+        break;
+      default:
+        return '';
+    }
+    final double reserveEm = math.max(0, 0.65 - (lineHeight - 1) / 2);
+    if (reserveEm <= 0) return '';
+    final String r = '${(reserveEm * 1000).round() / 1000}em';
+    return '''
+/* BUG-2761: WebKit paginated only — see _webKitPaginatedRubyReserveCss. */
+p {
+  padding-block-start: $r;
+}
+p::after {
+  content: "";
+  display: block;
+  margin-block-end: -$r;
+}
+''';
+  }
+
   /// 触屏「压掉原生长按选区」的规则（TODO-1279），按渲染引擎分流。
   ///
   /// BUG-2607：WebKit 不绘制 `user-select: none` 文字上的 `::highlight()`——
@@ -536,6 +580,11 @@ svg.block-img.blurred {
 
     final String readerStylePriority =
         settings.prioritizeReaderStyles ? '' : ' !important';
+    // BUG-2761：只有多列分页有跨列问题，连续滚动与 VN 不发。
+    final String rubyPageTopReserveCss =
+        settings.isVnMode || settings.isContinuousMode
+            ? ''
+            : _webKitPaginatedRubyReserveCss(settings.lineHeight);
 
     return '''
 $resolvedFontFaces
@@ -734,7 +783,7 @@ ruby {
   display: ruby !important;
   ruby-position: over !important;
 }
-${_webKitRubyAnnotationCss()}ruby rp {
+${_webKitRubyAnnotationCss()}${rubyPageTopReserveCss}ruby rp {
   display: none !important;
 }
 ruby rb {
