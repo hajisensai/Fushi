@@ -701,7 +701,11 @@ jobs:
             exit 1
           fi
           for abi in $abis; do
-            if ! printf '%s\n' "$listing" | grep -qx "lib/$abi/libfushi_p2p.so"; then
+            # here-string，不用 `printf | grep -q`：清单是整个 APK 的条目（远超 64KB 管道缓冲），
+            # grep -q 一命中就退出，printf 随即 SIGPIPE，在 pipefail 下整条管道判失败，`if !`
+            # 就把「找到了」读成「没有」（BUG-2804，2f08d46 / 248238cf7 两次假红，日志里是
+            # `printf: write error: Broken pipe`）。
+            if ! grep -qx "lib/$abi/libfushi_p2p.so" <<< "$listing"; then
               echo "::error title=fushi_p2p missing from APK::$apk lib/$abi/ has no libfushi_p2p.so"
               exit 1
             fi

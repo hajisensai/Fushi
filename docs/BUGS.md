@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2575 条。点号进各自文件。
+> 共 2576 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2804](bugs/BUG-2804-p2p-apk-verify-sigpipe.md) | ✅ | ✅ | 发布校验 fushi_p2p 是否进 APK 时 pipefail + grep -q 触发 SIGPIPE 假红 |
 | [BUG-2803](bugs/BUG-2803-flaky-cdp-devtools-port.md) | ✅ | ✅ | 真 Chrome 守卫在满载 CI 上偶发 DevToolsActivePort 8s 超时 |
 | [BUG-2802](bugs/BUG-2802-flaky-manga-prefetch.md) | ✅ | ✅ | 在线漫画直读预取测试靠 80ms 墙钟等待，CI 高负载下间歇红 |
 | [BUG-2801](bugs/BUG-2801-flaky-leaderboard-401.md) | ✅ | ✅ | 排行榜 401 unknown_account：UI 读榜后本机退出是 fire-and-forget，测试按固定轮数等落盘在 CI 高负载下偶发红 |
