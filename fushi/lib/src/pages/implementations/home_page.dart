@@ -2051,7 +2051,11 @@ class _HomePageState extends BasePageState<HomePage>
                 await appModelNoUpdate.currentVideoDownloadBackendTarget();
             await createLocalVideoDownloadSubscription(
               database: appModelNoUpdate.database,
-              reference: item.reference,
+              // 身份仍取发现条目；页面补齐的罗马字 / 英文别名（BUG-2794）并进来，
+              // 订阅快照与默认检索词才不会退回只有原名的状态。
+              reference: item.reference.withLeadingAliases(
+                selection.download.media.aliases,
+              ),
               coverUrl: item.posterUrl,
               selection: selection,
               target: target,
