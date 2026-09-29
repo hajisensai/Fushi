@@ -15,13 +15,13 @@
       "version": "1.3.3-debug.9114"
     },
     {
-      "name": "fushi-2.8.0-debug.16160-macos.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.16160-macos.zip",
-      "releaseSequence": 16160,
-      "tag": "v2.8.0-debug.16160+f722307",
-      "version": "2.8.0-debug.16160",
-      "size": 354644577,
-      "sha256": "ab4590bd62e9d9e8ed3aff0dbba41924c0004a102658815517004fd619f897f6"
+      "name": "fushi-2.8.0-debug.16166-macos.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-2.8.0-debug.16166-macos.zip",
+      "releaseSequence": 16166,
+      "tag": "v2.8.0-debug.16166+03eb0f9",
+      "version": "2.8.0-debug.16166",
+      "size": 354654922,
+      "sha256": "ee2f1d6c3ddbb972a6591f3f57bc0cbcb451b3a46b77e445306c48b2d4a737d7"
     },
     {
       "name": "fushi-2.8.0-debug.16166-windows-setup.exe",
