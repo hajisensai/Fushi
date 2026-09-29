@@ -78,7 +78,13 @@ void main() {
         'card_creation.anki.connect_api_key',
       ]),
     );
-    final String panel = methodBody(source, 'Widget _buildConnectionPanel(');
+    // 连接子页先放「直连同步」一节，AnkiConnect 字段收在 _buildAnkiConnectSection。
+    final String connectionPanel = methodBody(
+      source,
+      'Widget _buildConnectionPanel(',
+    );
+    expect(connectionPanel, contains('_buildAnkiConnectSection('));
+    final String panel = methodBody(source, 'Widget _buildAnkiConnectSection(');
     expect(panel, contains('if (_isMobileAnkiPlatform)'));
     expect(panel, contains('label: t.anki_connect_host'));
     expect(panel, contains('label: t.anki_connect_port'));

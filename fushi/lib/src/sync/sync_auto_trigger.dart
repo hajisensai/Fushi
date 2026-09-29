@@ -363,7 +363,9 @@ Future<SyncRunReport?> _runSyncChannelInner({
     tempDir: tempDir,
     deviceId: deviceId,
     // 待发制卡跨设备中转：只在完整 sweep 里跑（轻量路径不带）。没有任何设备认领
-    // 落地时它只读一次 landing.json，不上传任何卡。
+    // 落地时它只读一次 landing.json，不上传任何卡。每条通道各一个实例，但共用同
+    // 一个本机 store：已落地 id 的墓碑在 store 里，任一通道再送来同一张卡都不会
+    // 再落（BUG-2778）。
     pendingMineRelay: PendingMineRelay(
       store: pendingMineStoreAtSupportRoot(() => db),
       deviceId: deviceId,

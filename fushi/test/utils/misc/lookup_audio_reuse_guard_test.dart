@@ -15,10 +15,19 @@ void main() {
     final String flat = src.replaceAll(RegExp(r'\s+'), ' ');
 
     test('a single http.Client is lazily cached, not new per lookup', () {
-      expect(src, contains('http.Client? _remoteLookupHttpClient'),
-          reason: 'the client must be a cached field, not a local');
-      expect(flat, contains('_remoteLookupHttpClient ??= http.Client()'),
-          reason: 'lazy-init exactly one client and reuse it');
+      expect(
+        src,
+        contains('http.Client? _remoteLookupHttpClient'),
+        reason: 'the client must be a cached field, not a local',
+      );
+      // The shared client is an IOClient over one HttpClient carrying the
+      // interconnect connect timeout (pending-mine relay work); still exactly
+      // one lazily created client.
+      expect(
+        flat,
+        contains('_remoteLookupHttpClient ??= IOClient('),
+        reason: 'lazy-init exactly one client and reuse it',
+      );
     });
 
     test('all remote call sites pass the shared client in', () {
@@ -30,55 +39,87 @@ void main() {
       // keeps the invariant exact (one shared client, everyone reuses it): the
       // mining client threads _remoteLookupClient in exactly like the dictionary
       // and audio lookups, never new-ing up its own.
-      final int passes =
-          RegExp(r'httpClient:\s*_remoteLookupClient').allMatches(src).length;
-      expect(passes, 3,
-          reason: 'dictionary + audio lookups + server-mining forwarder all '
-              'reuse the one cached client');
+      final int passes = RegExp(
+        r'httpClient:\s*_remoteLookupClient',
+      ).allMatches(src).length;
+      expect(
+        passes,
+        3,
+        reason:
+            'dictionary + audio lookups + server-mining forwarder all '
+            'reuse the one cached client',
+      );
     });
 
     test('the cached client is closed on dispose', () {
-      expect(flat, contains('_remoteLookupHttpClient?.close()'),
-          reason: 'the reused client must be released on dispose');
+      expect(
+        flat,
+        contains('_remoteLookupHttpClient?.close()'),
+        reason: 'the reused client must be released on dispose',
+      );
     });
   });
 
   group('① Android MediaPlayer is reused via reset(), not new per play', () {
     final String java = _read(
-        'android/app/src/main/java/app/fushi/reader/TtsChannelHandler.java');
+      'android/app/src/main/java/app/fushi/reader/TtsChannelHandler.java',
+    );
     final String flat = java.replaceAll(RegExp(r'\s+'), ' ');
 
     test('play paths go through a shared startPlayback that resets', () {
-      expect(flat, contains('private void startPlayback('),
-          reason: 'playUrl/playFile must funnel through one reuse path');
-      expect(flat, contains('ensureMediaPlayer()'),
-          reason: 'the single instance must be lazily ensured, not new-ed '
-              'inside each play handler');
+      expect(
+        flat,
+        contains('private void startPlayback('),
+        reason: 'playUrl/playFile must funnel through one reuse path',
+      );
+      expect(
+        flat,
+        contains('ensureMediaPlayer()'),
+        reason:
+            'the single instance must be lazily ensured, not new-ed '
+            'inside each play handler',
+      );
     });
 
     test('no per-play "new MediaPlayer()" in the play handlers', () {
       // The only allowed construction site is ensureMediaPlayer().
-      final int constructions =
-          RegExp(r'new\s+MediaPlayer\s*\(\s*\)').allMatches(java).length;
-      expect(constructions, 1,
-          reason: 'exactly one construction site (ensureMediaPlayer); play '
-              'handlers must reset() and reuse');
+      final int constructions = RegExp(
+        r'new\s+MediaPlayer\s*\(\s*\)',
+      ).allMatches(java).length;
+      expect(
+        constructions,
+        1,
+        reason:
+            'exactly one construction site (ensureMediaPlayer); play '
+            'handlers must reset() and reuse',
+      );
     });
 
     test('a generation guard protects superseded async callbacks', () {
-      expect(java, contains('playGeneration'),
-          reason: 'stale prepare/completion callbacks must bail on a newer '
-              'play/stop so they do not act on the reused player');
-      expect(flat, contains('generation != playGeneration'),
-          reason: 'callbacks must compare their captured generation');
+      expect(
+        java,
+        contains('playGeneration'),
+        reason:
+            'stale prepare/completion callbacks must bail on a newer '
+            'play/stop so they do not act on the reused player',
+      );
+      expect(
+        flat,
+        contains('generation != playGeneration'),
+        reason: 'callbacks must compare their captured generation',
+      );
     });
 
     test('completion does not release the reused instance', () {
       // release() must only happen in destroy(); completion/stop reuse via
       // reset(). Guard: reset-based recycle helper exists and is used.
-      expect(flat, contains('resetMediaPlayerQuietly()'),
-          reason: 'completion/error/stop recycle the instance with reset(), '
-              'not release()');
+      expect(
+        flat,
+        contains('resetMediaPlayerQuietly()'),
+        reason:
+            'completion/error/stop recycle the instance with reset(), '
+            'not release()',
+      );
     });
   });
 }

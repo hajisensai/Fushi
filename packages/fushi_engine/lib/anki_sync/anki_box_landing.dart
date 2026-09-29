@@ -104,6 +104,8 @@ class AnkiBoxLanding {
           waiting++;
           // 没配置 / 没登录：后面的卡也全会撞墙，停下等下一轮。
           break;
+        case _Landed.skipped:
+          break;
       }
       if (waiting > 0) break;
     }
@@ -151,12 +153,14 @@ class AnkiBoxLanding {
       await _store.markFailed(row.id, 'The card data could not be read.');
       return _Landed.failed;
     }
-    await _store.markSending(row.id);
+    if (!await _store.markSending(row.id)) return _Landed.skipped;
     final MineOutcome outcome;
     try {
+      // 收来的卡全部来自其他设备：只认随附的媒体字节（BUG-2778）。
       outcome = await withMaterializedMiningContext<MineOutcome>(
         payload,
         _mine,
+        bundledMediaOnly: true,
       );
     } catch (e) {
       await _store.markFailed(row.id, '$e');
@@ -186,4 +190,4 @@ class AnkiBoxLanding {
   }
 }
 
-enum _Landed { delivered, failed, waiting }
+enum _Landed { delivered, failed, waiting, skipped }

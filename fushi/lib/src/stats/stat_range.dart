@@ -117,12 +117,10 @@ class StatRange {
   bool contains(String dateKey) =>
       dateKey.compareTo(fromKey) >= 0 && dateKey.compareTo(toKey) <= 0;
 
-  /// 区间内的自然日数（含首尾）。
-  int get dayCount =>
-      FushiDatabase.statDateKeyToDay(
-        toKey,
-      ).difference(FushiDatabase.statDateKeyToDay(fromKey)).inDays +
-      1;
+  /// 区间内的自然日数（含首尾）。按日历日差计算：两个本地午夜相减在 DST 切换
+  /// 段里差 1 小时（春季 6 天 23 小时 → `inDays` 少算一天），所以换到 UTC 日历
+  /// 上再减，结果只取决于年月日。
+  int get dayCount => statDateKeyDaysBetween(fromKey, toKey) + 1;
 
   /// 区间内全部 dateKey，升序（图表补齐空日期用）。
   List<String> get dayKeys => <String>[
@@ -143,9 +141,12 @@ class StatRange {
     final DateTime day = FushiDatabase.statDateKeyToDay(anchorKey);
     final DateTime target = switch (mode) {
       StatRangeMode.day => DateTime(day.year, day.month, day.day + step),
+      // 按日历日加 7 天，不能给本地午夜加固定 7×24 小时：DST 切换周不是
+      // 168 小时，秋季回拨周会落回本周六 23:00（翻不动）、春季拨快周往回会落到
+      // 更前一周的周日 23:00（多跳一周）。
       StatRangeMode.week => FushiDatabase.statDateKeyToDay(
-        fromKey,
-      ).add(Duration(days: 7 * step)),
+        FushiDatabase.statDateKeyPlusDays(fromKey, 7 * step),
+      ),
       StatRangeMode.month => DateTime(day.year, day.month + step),
       StatRangeMode.year => DateTime(day.year + step),
       StatRangeMode.all => day,
@@ -176,6 +177,17 @@ class StatRange {
 
 /// 范围图表的柱粒度。
 enum StatRangeChartGrain { day, week, month }
+
+/// 纯函数：[fromKey] 到 [toKey] 相隔的日历日数（`toKey` 更早时为负）。只看年月日，
+/// 在 UTC 日历上相减，与宿主时区 / DST 无关。
+int statDateKeyDaysBetween(String fromKey, String toKey) {
+  DateTime utcDay(String key) {
+    final DateTime local = FushiDatabase.statDateKeyToDay(key);
+    return DateTime.utc(local.year, local.month, local.day);
+  }
+
+  return utcDay(toKey).difference(utcDay(fromKey)).inDays;
+}
 
 /// 纯函数：一批 dateKey 里最早的一个（「全部」的起点）；空集合返回 null。
 String? earliestStatDateKey(Iterable<String> dateKeys) {
