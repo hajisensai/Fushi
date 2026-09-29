@@ -129,13 +129,7 @@ jobs:
       working-directory: fushi
       run: flutter analyze
 
-    # Golden image tests are gated to the reference platform (the dev host where
-    # goldens were generated); Linux CI font/raster rendering differs and would
-    # always mismatch, so exclude them here. They still run on a plain local
-    # `flutter test`. See fushi/dart_test.yaml.
-    - name: Run unit tests with coverage (main app)
-      working-directory: fushi
-      run: dart run tool/flutter_test_failures.dart --coverage --exclude-tags golden
+    # 主应用单测不在这个 job 里跑了：见下面的 unit-tests 矩阵（按文件分 4 片并行）。
 
     - name: Run package tests
       run: |
@@ -265,3 +259,56 @@ jobs:
       working-directory: fushi
       run: |
         flutter pub outdated || true
+
+  # 主应用单测按**文件**分 4 片并行（2026-09-30）。原来它是 build job 里的一步，
+  # 带 coverage 单机串行跑完 3.5k 个 suite，实测 130~175 分钟，平均一直占 6 个
+  # runner，而 coverage 产物从没被任何步骤上传或读取；release.yml 同一套不带
+  # coverage 的测试是 73 分钟。不用 flutter test 自带的 --total-shards：它交给
+  # package:test 在**每个 suite 内部**切用例，每片仍要编译加载全部 suite，编译加载
+  # 正是大头。--file-shard 由 tool/flutter_test_failures.dart 按文件大小 LPT 分配，
+  # 各片只把自己的 suite 路径交给 flutter test，并集恰好是整个 test/（契约测试
+  # fushi/test/tools/test_file_shards_test.dart）。分片数改这里的 matrix 和下面
+  # 的 --file-shard 分母，两处一起改。
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    name: unit-tests (${{ matrix.shard }}/4)
+    steps:
+    - uses: actions/checkout@v6
+
+    - uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.44.0'
+        cache: true
+
+    - name: Provide baked-in secret stubs
+      uses: ./.github/actions/provide-baked-secrets
+      with:
+        google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+        log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+        dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+        dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+        opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+
+    - name: Flutter pub get
+      working-directory: fushi
+      run: flutter pub get
+
+    - name: Apply pub cache patches
+      run: |
+        chmod +x ci/apply-patches.sh
+        bash ci/apply-patches.sh
+
+    # Golden image tests are gated to the reference platform (the dev host where
+    # goldens were generated); Linux CI font/raster rendering differs and would
+    # always mismatch, so exclude them here. They still run on a plain local
+    # `flutter test`. See fushi/dart_test.yaml.
+    - name: Run unit tests (main app, file shard ${{ matrix.shard }}/4)
+      working-directory: fushi
+      run: dart run tool/flutter_test_failures.dart --file-shard=${{ matrix.shard }}/4 --exclude-tags golden
