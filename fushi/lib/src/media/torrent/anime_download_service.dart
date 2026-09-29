@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
+    show DiscoveryImportBlockedException;
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_subtitle_resolver.dart';
@@ -925,6 +927,10 @@ class AnimeDownloadService {
       try {
         imported =
             await importer(plan, resolveAllAbsolutePaths(info, files)) ?? 0;
+      } on DiscoveryImportBlockedException catch (e) {
+        // 内容问题（缺字幕/同名书已在库/解压失败…）落稳定原因码，任务行翻译成
+        // 用户能照着做的文案，不把异常 toString 甩给用户（BUG-2775）。
+        importError = animeDownloadBlockedFailReason(e.blocker);
       } catch (e) {
         importError = 'discovery import failed: $e';
       }

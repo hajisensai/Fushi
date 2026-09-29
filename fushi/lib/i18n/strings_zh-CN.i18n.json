@@ -6076,5 +6076,13 @@
   "anki_sync_client_relogin": "重新登录",
   "anki_sync_client_discard_confirm": "还有 $count 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。",
   "anki_sync_client_discard_action": "放弃并退出",
-  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error"
+  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error",
+  "download_task_import_blocked_unknown_type": "无法识别下载内容的文件类型",
+  "download_task_import_blocked_audiobook_no_text": "有声书下载里没有 EPUB 或文本正文",
+  "download_task_import_blocked_audiobook_no_subtitle": "有声书下载里没有字幕文件，无法把音频对齐到正文",
+  "download_task_import_blocked_audiobook_no_audio": "有声书下载里没有音频文件",
+  "download_task_import_blocked_audiobook_book_exists": "库中已有同名书。有声书暂时不能自动关联到已有的 EPUB，请打开这本书手动导入有声书",
+  "download_task_import_blocked_game_no_exe": "游戏下载里找不到可执行文件",
+  "download_task_import_blocked_archive_tool_missing": "解压这个压缩包需要 7-Zip 命令行工具，本机未安装",
+  "download_task_import_blocked_archive_failed": "压缩包解压失败（可能已损坏或带密码）"
 }

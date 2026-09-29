@@ -90,8 +90,13 @@ DiscoveryDomainImporters buildProductionDiscoveryImporters({
           : await importText(plan.contentPath);
       if (bookKey == null) {
         // 同名书已在库：v1 不做「附着到既有书」的自动决策（换音频/换字幕是
-        // 有损操作，交互入口是 AudiobookImportDialog），按跳过处理。
-        return null;
+        // 有损操作，交互入口是 AudiobookImportDialog）。音频并没有入库，不能
+        // 装成「0 条新增」——那会落成一句没头没脑的 import failed（BUG-2775），
+        // 以稳定原因码报出去，UI 告诉用户去已有书里手动导入有声书。
+        throw DiscoveryImportBlockedException(
+          DiscoveryImportBlocker.audiobookBookAlreadyInLibrary,
+          _fileName(plan.contentPath),
+        );
       }
       await alignAndPersistAudiobook(
         db: db,
