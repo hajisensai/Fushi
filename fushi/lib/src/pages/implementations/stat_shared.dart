@@ -285,6 +285,99 @@ Widget buildStatTailSliver(BuildContext context) {
   );
 }
 
+/// 横屏双栏的最小内容区宽度（dp）。两栏各分一半、再扣掉左右 [FushiSpacingTokens.card]
+/// 后，每栏仍刚好能让时段卡排两列（见 [kStatPeriodSummaryMinColumnWidth]）；再窄
+/// 就是把竖排布局硬劈两半，每栏都挤，不如单列。
+const double kStatLandscapeMinWidth = 720;
+
+/// 纯函数：统计 tab 的内容区该不该走横屏双栏。
+///
+/// 判的是**内容区**（tab 内扣掉页头 / TabBar / 动作行之后）的形状，不是屏幕朝向：
+/// 手机横过来、平板横放、桌面宽窗口都落在这里；桌面窄高窗口与竖屏仍是单列。
+/// 高度无界（放进外层滚动容器）时没有「横」可言，按单列。
+bool useStatLandscapeLayout(Size size) =>
+    size.width.isFinite &&
+    size.height.isFinite &&
+    size.width > size.height &&
+    size.width >= kStatLandscapeMinWidth;
+
+/// 横屏双栏里一个区块归哪一栏。
+enum StatPane {
+  /// 左栏「概览」：目标、时段卡、图表、分析——回答「多少」。
+  overview,
+
+  /// 右栏「明细」：最近会话、按媒体列表——回答「是什么」。
+  detail,
+}
+
+/// 统计 tab 的一个区块：一条 sliver + 它在横屏下归哪一栏。
+class StatPaneSliver {
+  const StatPaneSliver(this.pane, this.sliver);
+
+  final StatPane pane;
+  final Widget sliver;
+}
+
+/// 统计 tab 的自适应滚动主体：竖屏 = 一条 [CustomScrollView]，区块按 [sections]
+/// 给出的顺序原样排（竖排布局一处不改）；横屏（[useStatLandscapeLayout]）= 按
+/// [StatPaneSliver.pane] 拆成左「概览」右「明细」两栏、各自独立滚动，栏内保持
+/// 原相对顺序。
+///
+/// 横屏下竖排布局只是被拉宽：时段卡、图表铺满一屏高度后，最近会话与按媒体列表
+/// 全被挤到折线以下，要看数字对应哪本书 / 哪次会话得来回滚。双栏让「多少」和
+/// 「是什么」同屏——左栏数字、右栏条目，任一栏滚动不影响另一栏。
+///
+/// [sections] 收到区块所在栏的宽度（竖屏即整宽），供区块自己决定是否并排。
+Widget buildStatAdaptiveScrollView(
+  BuildContext context, {
+  required List<StatPaneSliver> Function(double columnWidth) sections,
+}) {
+  return LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      if (!useStatLandscapeLayout(constraints.biggest)) {
+        return CustomScrollView(
+          slivers: <Widget>[
+            for (final StatPaneSliver s in sections(constraints.maxWidth))
+              s.sliver,
+            buildStatTailSliver(context),
+          ],
+        );
+      }
+      final List<StatPaneSliver> all = sections((constraints.maxWidth - 1) / 2);
+      List<Widget> paneSlivers(StatPane pane) => <Widget>[
+            for (final StatPaneSliver s in all)
+              if (s.pane == pane) s.sliver,
+            buildStatTailSliver(context),
+          ];
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            child: CustomScrollView(
+              key: const ValueKey<String>('stat-landscape-overview'),
+              slivers: paneSlivers(StatPane.overview),
+            ),
+          ),
+          VerticalDivider(
+            width: 1,
+            thickness: 1,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+          Expanded(
+            // 两栏都挂 PrimaryScrollController 时（移动端默认继承），状态栏点按回顶
+            // 会撞「一个控制器挂两个视图」；主栏留给左侧概览。
+            child: CustomScrollView(
+              key: const ValueKey<String>('stat-landscape-detail'),
+              primary: false,
+              slivers: paneSlivers(StatPane.detail),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
 /// 统计页共用的四周期汇总卡网格：能放下两列就 2×2，放不下才单列。
 ///
 /// BUG：旧实现按「可用宽度 ≥ 380」判两列。这层外面还有 [FushiSpacingTokens.card]

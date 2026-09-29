@@ -355,50 +355,69 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
   Widget _buildContent() {
     final tokens = FushiDesignTokens.of(context);
 
-    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频。
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(child: _buildSummaryCards()),
-        SliverToBoxAdapter(child: _buildRangeSection()),
-        SliverToBoxAdapter(
-          child: buildStatSessionSection(
-            context,
-            sessions: _sessions,
-            titleOf: (StudySession s) => s.title,
-            collectionOf: _sessionCollectionName,
-            onDelete: _deleteSession,
-            onEdit: _editSession,
-            onClearAll: _clearSessions,
-          ),
+    // 骨架与阅读 / 游戏 tab 同形：时段卡 → 每日图 → 最近会话 → 「分析」折叠 → 按视频；
+    // 横屏时会话与按视频列表拆到右栏（[buildStatAdaptiveScrollView]）。
+    return buildStatAdaptiveScrollView(
+      context,
+      sections: (double _) => <StatPaneSliver>[
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildSummaryCards()),
         ),
-        SliverToBoxAdapter(
-          child: StatAnalysisFold(
-            children: <Widget>[
-              buildStatHourlyChartSection(context, _hourlyMs),
-            ],
-          ),
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(child: _buildRangeSection()),
         ),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.card,
-              tokens.spacing.card + tokens.spacing.gap,
-              tokens.spacing.card,
-              tokens.spacing.gap,
-            ),
-            child: Text(
-              '${t.video_stat_by_video} · ${formatStatRange(_range)}',
-              style: Theme.of(context).textTheme.titleMedium,
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: buildStatSessionSection(
+              context,
+              sessions: _sessions,
+              titleOf: (StudySession s) => s.title,
+              collectionOf: _sessionCollectionName,
+              onDelete: _deleteSession,
+              onEdit: _editSession,
+              onClearAll: _clearSessions,
             ),
           ),
         ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) => _buildVideoTile(_rangeVideos[index]),
-            childCount: _rangeVideos.length,
+        StatPaneSliver(
+          StatPane.overview,
+          SliverToBoxAdapter(
+            child: StatAnalysisFold(
+              children: <Widget>[
+                buildStatHourlyChartSection(context, _hourlyMs),
+              ],
+            ),
           ),
         ),
-        buildStatTailSliver(context),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.card,
+                tokens.spacing.card + tokens.spacing.gap,
+                tokens.spacing.card,
+                tokens.spacing.gap,
+              ),
+              child: Text(
+                '${t.video_stat_by_video} · ${formatStatRange(_range)}',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ),
+        ),
+        StatPaneSliver(
+          StatPane.detail,
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _buildVideoTile(_rangeVideos[index]),
+              childCount: _rangeVideos.length,
+            ),
+          ),
+        ),
       ],
     );
   }
