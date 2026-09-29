@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2536 条。点号进各自文件。
+> 共 2537 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2765](bugs/BUG-2765-manga-system-ocr-probe.md) | ✅ | ✅ | 漫画统一引擎探测漏了系统 OCR：auto 永远用不上 Apple Vision，显式选择不校验可用性 |
 | [BUG-2764](bugs/BUG-2764-coreaudio-pack-multi-volume.md) | ✅ | ✅ | CoreAudio 有声书同一合集连点多卷下载，第二卷报「无法创建下载」 |
 | [BUG-2763](bugs/BUG-2763-ext-nested-popup-zoom-gap.md) | ✅ | ✅ | 浏览器扩展嵌套查词子层内容只占外框 1/zoom，底部右侧留大块空白 |
 | [BUG-2757](bugs/BUG-2757-favorite-sentence-no-word.md) | ✅ | ✅ | 查词弹窗顶栏收藏句子后收藏夹看不到对应的单词 |

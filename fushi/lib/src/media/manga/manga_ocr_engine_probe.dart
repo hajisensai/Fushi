@@ -8,6 +8,7 @@ library;
 
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 
@@ -21,6 +22,8 @@ class MangaOcrEngineAvailability {
     required this.lensOffered,
     required this.remoteOffered,
     required this.remoteTarget,
+    this.systemOcrOffered = false,
+    this.systemOcrReady = false,
   });
 
   /// 内置 ONNX：平台支持 / 模型齐全。
@@ -33,6 +36,12 @@ class MangaOcrEngineAvailability {
 
   /// Google Lens：入口给了 runner 即可用（它不需要本机资源）。
   final bool lensOffered;
+
+  /// 设备自带 OCR（Apple Vision / Android ML Kit）：入口给了 runner / 原生侧答
+  /// 「本机能用」。后者是异步平台问答，不能像 Lens 那样凭 runner 非空就算数——
+  /// 没有原生实现的平台（Windows / Linux）runner 照样非空。
+  final bool systemOcrOffered;
+  final bool systemOcrReady;
 
   /// 已配对主机：入口给了 runner / probe 到的目标（null = 没有可用 host）。
   final bool remoteOffered;
@@ -48,6 +57,17 @@ class MangaOcrEngineAvailability {
           id: MangaOcrEngineId.localOnnx,
           supported: builtinSupported,
           ready: builtinReady,
+          requiresNetwork: false,
+          uploadsImages: false,
+          supportsIncremental: true,
+        ),
+        // 系统 OCR 必须进能力表：`resolveMangaOcrEngine` 的 auto 回退顺序里排着
+        // 它，漏在这里 auto 就永远落不到它上——Apple 上没下本地模型时「装完即用」
+        // 的 Vision 引擎只有手动选才用得上。
+        MangaOcrEngineCapability(
+          id: MangaOcrEngineId.systemOcr,
+          supported: systemOcrOffered,
+          ready: systemOcrReady,
           requiresNetwork: false,
           uploadsImages: false,
           supportsIncremental: true,
@@ -85,8 +105,7 @@ class MangaOcrEngineAvailability {
       case MangaOcrEngineId.localOnnx:
         return builtinSupported && builtinReady;
       case MangaOcrEngineId.systemOcr:
-        // 系统 OCR 的可用性由原生侧异步回答，向导单独探测；这里不替它作答。
-        return true;
+        return systemOcrOffered && systemOcrReady;
       case MangaOcrEngineId.googleLens:
         return lensOffered;
       case MangaOcrEngineId.externalMokuro:
@@ -97,7 +116,10 @@ class MangaOcrEngineAvailability {
   }
 }
 
-/// 探测内置模型 / 外部 CLI / 已配对主机三个引擎的可用性。
+/// 系统 OCR 能力探测的上限；超时按不可用。
+const Duration kSystemOcrProbeTimeout = Duration(seconds: 5);
+
+/// 探测内置模型 / 系统 OCR / 外部 CLI / 已配对主机的可用性。
 ///
 /// 每个探测都各自吞异常成「不可用」：任何一个引擎探测失败都不该让整次判断失败。
 Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
@@ -120,6 +142,21 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
       external = false;
     }
   }
+  // 系统 OCR：原生侧没实现时 isAvailable() 自己回 false；抛异常同样按不可用。
+  // 加上限是因为向导的整块引擎选择器等这次探测：原生侧一旦不应答（平台通道
+  // 回复丢了），不能让所有引擎都跟着转圈。契约上它本该是毫秒级的查表。
+  bool systemOcr = false;
+  final SystemOcrMangaRunner? systemOcrRunner = engines.systemOcrRunner;
+  if (systemOcrRunner != null) {
+    try {
+      systemOcr = await systemOcrRunner.isAvailable().timeout(
+            kSystemOcrProbeTimeout,
+            onTimeout: () => false,
+          );
+    } on Object {
+      systemOcr = false;
+    }
+  }
   // 漫画 P3：探测已配对 host 的远程 OCR 能力（老 host 无 capabilities 字段 →
   // probe 回 null → 选项隐藏，零破坏）。host 报了「支持但模型未下载」时 probe
   // 仍返回 target，UI 据此置灰 + 说明原因（TODO-2635）。
@@ -139,6 +176,8 @@ Future<MangaOcrEngineAvailability> probeMangaOcrEngines(
     lensOffered: engines.lensRunner != null,
     remoteOffered: engines.remoteRunner != null,
     remoteTarget: remote,
+    systemOcrOffered: systemOcrRunner != null,
+    systemOcrReady: systemOcr,
   );
 }
 
