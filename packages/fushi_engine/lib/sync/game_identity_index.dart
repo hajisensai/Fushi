@@ -9,7 +9,12 @@ import 'package:fushi_core/fushi_core.dart';
 ///
 /// 1. `vndb:<id>` / `bgm:<id>`——刮削源给出的外部条目 id（[GalgameSources].externalId）；
 /// 2. `exe:<归一化 exe 路径>`——两台机器装在同一路径（常见于整盘迁移 / 同步盘）；
-/// 3. `title:<归一化标题>`——用户改的名、刮削名 / 中文名、本地默认名（exe 文件名）。
+/// 3. `title:<归一化标题>`——用户改的名、刮削名 / 中文名、入库时手填的名。
+///    未改名的默认名（= exe 文件名去扩展名，如 `game` / `start`）**不产 title 键**：
+///    它描述的是启动器文件而不是作品，大量不同的游戏都叫这个名。
+///
+/// 外部 id 是硬身份：两边都有同一刮削源（vndb / bgm）的 id 却不相交时，即使 exe
+/// 路径或标题撞上也**拒绝对号**（同名不同作 / 复刻与原版），不退到弱身份。
 ///
 /// 此外裸 `galgames.id` 总作为最后一个别名发布：从备份恢复出来的库保留原 id，
 /// 同 id 即同一款（与备份合并 `_buildGameIdMap` 的「同 id → 同刮削身份 → 同 exe
@@ -74,7 +79,7 @@ class GameIdentityIndex {
       if (key != null && !out.contains(key)) out.add(key);
     }
 
-    for (final String source in const <String>['vndb', 'bgm']) {
+    for (final String source in _externalSources) {
       for (final GalgameSourceRow s in sources) {
         final String id = (s.externalId ?? '').trim();
         if (s.source == source && id.isNotEmpty) add('$source:$id');
@@ -88,7 +93,9 @@ class GameIdentityIndex {
       add(_titleKey(data['nameCn']));
       add(_titleKey(data['name']));
     }
-    add(_titleKey(game.name));
+    if (!_isDefaultExeName(game.name, game.exePath)) {
+      add(_titleKey(game.name));
+    }
     return out;
   }
 
@@ -108,13 +115,58 @@ class GameIdentityIndex {
 
   /// 跨端身份 → 本机游戏 id。[keys] 按对端给出的可信度顺序；第一个在本机唯一
   /// 命中的键胜出。也认本机裸 id（同一台设备自己发出去又收回来）。对不上返回 null。
+  ///
+  /// 命中的本机游戏若与对端在同一刮削源上的外部 id 冲突（两边都有、互不相交），
+  /// 整体拒绝对号返回 null——那是另一款作品，不能靠 exe / 标题等弱身份凑上。
   String? resolve(Iterable<String> keys) {
-    for (final String k in keys) {
-      if (_keysById.containsKey(k)) return k;
-      final Set<String>? ids = _idsByKey[k];
-      if (ids != null && ids.length == 1) return ids.first;
+    final List<String> remote = keys.toList(growable: false);
+    for (final String k in remote) {
+      final String? hit;
+      if (_keysById.containsKey(k)) {
+        hit = k;
+      } else {
+        final Set<String>? ids = _idsByKey[k];
+        hit = (ids != null && ids.length == 1) ? ids.first : null;
+      }
+      if (hit == null) continue;
+      return _externalIdsConflict(remote, _keysById[hit]!) ? null : hit;
     }
     return null;
+  }
+
+  static const List<String> _externalSources = <String>['vndb', 'bgm'];
+
+  /// 同一刮削源上两边都有 id 且互不相交 ⇒ 不是同一款游戏。
+  static bool _externalIdsConflict(List<String> remote, List<String> local) {
+    for (final String source in _externalSources) {
+      final String prefix = '$source:';
+      final Set<String> r = <String>{
+        for (final String k in remote)
+          if (k.startsWith(prefix)) k,
+      };
+      if (r.isEmpty) continue;
+      final Set<String> l = <String>{
+        for (final String k in local)
+          if (k.startsWith(prefix)) k,
+      };
+      if (l.isNotEmpty && r.intersection(l).isEmpty) return true;
+    }
+    return false;
+  }
+
+  /// [name] 是否就是入库时由 exe 文件名推出的默认名（未改名、未刮削）。与 app 侧
+  /// `galgameNameFromExe` 同口径：文件名去扩展名，比较时忽略大小写与首尾空白。
+  static bool _isDefaultExeName(String name, String exePath) {
+    final String exe = exePath.trim();
+    final int slash = exe.lastIndexOf(RegExp(r'[\\/]'));
+    final String base = slash < 0 ? exe : exe.substring(slash + 1);
+    final int dot = base.lastIndexOf('.');
+    final String stem = dot <= 0 ? base : base.substring(0, dot);
+    final String n = name.trim().toLowerCase();
+    return n.isNotEmpty &&
+        (n == stem.toLowerCase() ||
+            n == base.toLowerCase() ||
+            n == exe.toLowerCase());
   }
 
   static String? _titleKey(Object? raw) {
