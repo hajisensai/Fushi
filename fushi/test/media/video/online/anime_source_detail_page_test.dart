@@ -93,6 +93,25 @@ void main() {
     }
   }
 
+  /// 先 [settle]，再一直转到 [done] 成立（上限 [maxRounds] 轮）。入库 / 移出走真
+  /// DB 加资产回收尾活（BUG-2754 起：批量删事务 → 一次全表读 → 回收封面 / 字幕 /
+  /// 内嵌字幕缓存 → 压缩），真实异步跳数随实现变化；押固定轮数会在操作做完、按钮
+  /// 翻转之前就断言，还把没走完的删除留在全局的 `VideoCoverMutationGate` 里拖垮
+  /// 下一条用例。到上限仍不成立就交给后面的 expect 如实报错。
+  Future<void> settleUntil(
+    WidgetTester tester,
+    bool Function() done, {
+    int maxRounds = 100,
+  }) async {
+    await settle(tester);
+    for (int i = 0; i < maxRounds && !done(); i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
   testWidgets('browse grid of an anime manager opens the anime detail page', (
     WidgetTester tester,
   ) async {
@@ -430,7 +449,7 @@ void main() {
       );
 
       await tester.tap(addButton());
-      await settle(tester);
+      await settleUntil(tester, () => removeButton().evaluate().isNotEmpty);
 
       final List<VideoBookRow> rows = (await tester.runAsync(
         database.allVideoBooks,
@@ -444,7 +463,7 @@ void main() {
       expect(removeButton(), findsOneWidget);
 
       await tester.tap(removeButton());
-      await settle(tester);
+      await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
 
       expect((await tester.runAsync(database.allVideoBooks))!, isEmpty);
       expect(addButton(), findsOneWidget);
@@ -491,7 +510,7 @@ void main() {
       expect(addButton(), findsOneWidget);
 
       await tester.tap(addButton());
-      await settle(tester);
+      await settleUntil(tester, () => addButton().evaluate().isEmpty);
       final Map<String, String> rows = await rowsByUid(tester);
       expect(rows.keys.toSet(), <String>{
         episodeId('/ep/1'),
@@ -511,7 +530,7 @@ void main() {
       expect(removeButton(), findsNothing);
 
       await tester.tap(addButton());
-      await settle(tester);
+      await settleUntil(tester, () => addButton().evaluate().isEmpty);
       final Map<String, String> rows = await rowsByUid(tester);
       // 已下载的集保持本地文件，其余集补成在线行。
       expect(isAnimeSourceVideoPath(rows[episodeId('/ep/1')]!), isFalse);
@@ -532,7 +551,7 @@ void main() {
       expect(addButton(), findsNothing);
 
       await tester.tap(removeButton());
-      await settle(tester);
+      await settleUntil(tester, () => addButton().evaluate().isNotEmpty);
       expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/1')]);
       expect(find.text(t.video_online_library_removed), findsOneWidget);
       expect(removeButton(), findsNothing);
@@ -555,7 +574,7 @@ void main() {
       await seedRow(tester, '/ep/2', downloaded: true);
 
       await tester.tap(removeButton());
-      await settle(tester);
+      await settleUntil(tester, () => removeButton().evaluate().isEmpty);
       expect(find.text(t.video_online_library_removed), findsNothing);
       expect((await rowsByUid(tester)).keys, <String>[episodeId('/ep/2')]);
       expect(removeButton(), findsNothing);
