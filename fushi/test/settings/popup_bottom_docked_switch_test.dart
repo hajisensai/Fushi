@@ -8,8 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -18,6 +20,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/fake_platform_services.dart';
 import '../helpers/test_platform_services.dart';
 
 /// TODO-108：底部固定弹窗开关的专项 widget 测试——验证 lookup 设置页确实渲染该开关、
@@ -29,7 +32,10 @@ FushiDatabase _testDb() {
   );
 }
 
-Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
+Future<AppModel> _prefsBackedAppModel(
+  FushiDatabase db, {
+  PlatformServices? platform,
+}) async {
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
   final Directory tempDir =
@@ -37,7 +43,7 @@ Future<AppModel> _prefsBackedAppModel(FushiDatabase db) async {
   addTearDown(() async {
     if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
   });
-  return AppModel(testPlatformServices())
+  return AppModel(platform ?? testPlatformServices())
     ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tempDir)
     ..wireDatabaseForTesting(db);
 }
@@ -147,5 +153,133 @@ void main() {
     tester.widget<AdaptiveSettingsSwitchRow>(rowFinder()).onChanged!(false);
     await tester.pump(const Duration(milliseconds: 50));
     expect(appModel.popupBottomDocked, isFalse, reason: '可切回 OFF');
+  });
+
+  // ---- 底部停靠按模块细分（小说 / 漫画 / 视频 / 游戏）----
+
+  PlatformServices platformOf({required bool windows, required bool ios}) =>
+      fakePlatformServices(
+        isWindows: windows,
+        isDesktop: windows,
+        isIOS: ios,
+        isAndroid: false,
+      );
+
+  Finder moduleRow(ModuleId module) {
+    final String title = switch (module) {
+      ModuleId.books => t.popup_bottom_docked_books,
+      ModuleId.manga => t.popup_bottom_docked_manga,
+      ModuleId.video => t.popup_bottom_docked_video,
+      ModuleId.games => t.popup_bottom_docked_games,
+      _ => throw StateError('$module'),
+    };
+    return find.byWidgetPredicate(
+      (Widget w) => w is AdaptiveSettingsSwitchRow && w.title == title,
+    );
+  }
+
+  testWidgets('module dock switches stay hidden while the master switch is OFF',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(
+      db,
+      platform: platformOf(windows: true, ios: false),
+    );
+
+    await tester.pumpWidget(_harness(db, appModel));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    for (final ModuleId module
+        in PreferencesRepository.kPopupBottomDockedModules) {
+      expect(moduleRow(module), findsNothing, reason: '总开关关着时不出 $module 的细分开关');
+    }
+  });
+
+  testWidgets(
+      'master ON shows novels/manga/video/games switches (default ON) and '
+      'toggling one only turns docking off in that module',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(
+      db,
+      platform: platformOf(windows: true, ios: false),
+    );
+    await appModel.setPopupBottomDocked(true);
+
+    await tester.pumpWidget(_harness(db, appModel));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    for (final ModuleId module
+        in PreferencesRepository.kPopupBottomDockedModules) {
+      expect(moduleRow(module), findsOneWidget, reason: '$module 细分开关须渲染');
+      expect(
+        tester.widget<AdaptiveSettingsSwitchRow>(moduleRow(module)).value,
+        isTrue,
+        reason: '默认开：升级用户打开总开关时行为不变',
+      );
+      expect(appModel.popupBottomDockedFor(module), isTrue);
+    }
+
+    tester
+        .widget<AdaptiveSettingsSwitchRow>(moduleRow(ModuleId.video))
+        .onChanged!(false);
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(appModel.popupBottomDockedIn(ModuleId.video), isFalse);
+    expect(await db.getPref('popup_bottom_docked_video'), isNotNull,
+        reason: '细分开关写穿到偏好 DB');
+    expect(appModel.popupBottomDockedFor(ModuleId.video), isFalse,
+        reason: '视频页不再停靠');
+    expect(appModel.popupBottomDockedFor(ModuleId.books), isTrue,
+        reason: '其余模块不受影响');
+    expect(appModel.popupBottomDockedFor(null), isTrue,
+        reason: '不属于四个模块的宿主（查词页等）只听总开关');
+
+    await appModel.setPopupBottomDocked(false);
+    for (final ModuleId module
+        in PreferencesRepository.kPopupBottomDockedModules) {
+      expect(appModel.popupBottomDockedFor(module), isFalse,
+          reason: '总开关关掉后任何模块都不停靠');
+    }
+  });
+
+  testWidgets('iOS has no games module, so no games dock switch',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(
+      db,
+      platform: platformOf(windows: false, ios: true),
+    );
+    await appModel.setPopupBottomDocked(true);
+
+    await tester.pumpWidget(_harness(db, appModel));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(moduleRow(ModuleId.games), findsNothing);
+    expect(moduleRow(ModuleId.books), findsOneWidget);
+    expect(moduleRow(ModuleId.manga), findsOneWidget);
+    expect(moduleRow(ModuleId.video), findsOneWidget);
+  });
+
+  testWidgets('a module turned off in Feature modules hides its dock switch',
+      (WidgetTester tester) async {
+    final FushiDatabase db = _testDb();
+    addTearDown(db.close);
+    final AppModel appModel = await _prefsBackedAppModel(
+      db,
+      platform: platformOf(windows: true, ios: false),
+    );
+    await appModel.setPopupBottomDocked(true);
+    await appModel.setModuleEnabled(ModuleId.manga, false);
+
+    await tester.pumpWidget(_harness(db, appModel));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(moduleRow(ModuleId.manga), findsNothing);
+    expect(moduleRow(ModuleId.books), findsOneWidget);
+    expect(moduleRow(ModuleId.games), findsOneWidget);
   });
 }

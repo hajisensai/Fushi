@@ -62,7 +62,17 @@ class DictionaryFontCss {
   /// 留成可选参数而不是直接切换：iOS / macOS 的 in-app 弹窗**不能**走这条路（它们只有
   /// WKURLSchemeHandler，构造的 URLResponse 带不了任何 header，而字体是强制 CORS 模式
   /// 的子资源，拿不到 `Access-Control-Allow-Origin` 就会被拒），那两个平台继续内联。
-  static ({String fontFamily, String fontFaces, List<String> families}) build(
+  ///
+  /// [faceSources] 是 [fontFaces] 的结构化同源版本（裸家族名 + src + format）：
+  /// 浏览器扩展不把 `@font-face` 文本写进网页 DOM，而是逐条 `new FontFace()` 注册，
+  /// 这样带鉴权 token 的字体 URL 不会出现在页面可读的样式表里。
+  static ({
+    String fontFamily,
+    String fontFaces,
+    List<String> families,
+    List<({String family, String src, String format})> faceSources,
+  })
+  build(
     Iterable<Map<String, dynamic>> fonts, {
     Iterable<String> allowedDirectories = const <String>[],
     int maxFileBytes = defaultMaxFileBytes,
@@ -75,6 +85,8 @@ class DictionaryFontCss {
     // 两份都由同一轮过滤产出，避免「哪些字体文件可内联」出现第二份判据。
     final List<String> rawFamilies = <String>[];
     final List<String> faces = <String>[];
+    final List<({String family, String src, String format})> faceSources =
+        <({String family, String src, String format})>[];
 
     for (final Map<String, dynamic> e in enabled) {
       final String? rawName = e['name'] as String?;
@@ -120,12 +132,17 @@ class DictionaryFontCss {
         'src: url("$src") format("${type.format}"); '
         'font-display: swap; }',
       );
+      faceSources.add((family: bareName, src: src, format: type.format));
     }
 
     return (
       fontFamily: families.join(', '),
       fontFaces: faces.join('\n'),
       families: List<String>.unmodifiable(rawFamilies),
+      faceSources:
+          List<({String family, String src, String format})>.unmodifiable(
+            faceSources,
+          ),
     );
   }
 

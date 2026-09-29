@@ -30,6 +30,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale_text.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/gal_text_process_editor_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
@@ -704,6 +705,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 的 galgame 表面，来源恒定是游戏域，不需要判据。
   @override
   String get dictionarySourceType => kStatSourceGame;
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.games;
 
   @override
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {

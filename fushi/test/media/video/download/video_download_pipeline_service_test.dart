@@ -2886,6 +2886,124 @@ void main() {
     });
   });
 
+  group('同包多卷选择（CoreAudio/TMW，BUG-2764）', () {
+    test('后一卷排队等上一卷让出 torrent，而不是创建失败；同一卷再点被识别为已在队列',
+        () async {
+      final Directory manualDir =
+          await Directory.systemTemp.createTemp('fushi-pack-torrents-');
+      addTearDown(() async {
+        if (await manualDir.exists()) await manualDir.delete(recursive: true);
+      });
+      final _FakePausedMetainfoBackend backend =
+          _FakePausedMetainfoBackend(fileCount: 3);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(backend: backend);
+      addTearDown(environment.close);
+      final FushiDatabase database = environment.database;
+      final VideoDownloadPipelineService service = VideoDownloadPipelineService(
+        database: database,
+        resourceRegistry: environment.resourceRegistry,
+        backendResolver: (_) async => VideoDownloadBackendBinding(
+          backend: backend,
+          identity: _expectedIdentity,
+        ),
+        scrapeCoordinator: environment.scrapeCoordinator,
+        manualTorrentDirectory: manualDir,
+        workerId: 'pack-selection-worker',
+        pollInterval: const Duration(hours: 1),
+      );
+      addTearDown(service.dispose);
+      final InspectedTorrentMetainfo metainfo =
+          inspectTorrentMetainfo(_manualPackMetainfo());
+      final String hash = metainfo.torrentId.toLowerCase();
+      Future<String> enqueueVolume(int index) => service.enqueueManual(
+            VideoDownloadManualEnqueueRequest(
+              title: 'Volume $index',
+              backendTarget: _expectedTarget,
+              metainfo: metainfo,
+              selectedFileIndexes: <int>{index},
+              discoveryKind: DiscoveryMediaKind.audiobook,
+              importAfterDownload: false,
+            ),
+          );
+
+      final String first = await enqueueVolume(0);
+      // 用户原始失败：同包第二卷在这里抛「already managed」→「无法创建下载」。
+      final String second = await enqueueVolume(1);
+      await expectLater(
+        enqueueVolume(1),
+        throwsA(isA<VideoDownloadAlreadyQueued>()),
+        reason: '同一卷点两次不能排出两个下载同一文件的任务',
+      );
+      expect((await database.getVideoDownloadJob(first))!.torrentHash, hash);
+      final VideoDownloadJobRow queued =
+          (await database.getVideoDownloadJob(second))!;
+      expect(queued.torrentHash, isNull,
+          reason: '排队的任务不占 (fingerprint, torrent_hash) 唯一槽位');
+      expect(queued.selectedResourceId.toLowerCase(), hash);
+
+      service.wake();
+      await _waitForJob(
+        database,
+        first,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.download &&
+            row.claimedBy == null,
+      );
+      final VideoDownloadJobRow waiting = await _waitForJob(
+        database,
+        second,
+        (VideoDownloadJobRow row) =>
+            row.claimedBy == null && row.nextAttemptAt != null,
+      );
+      expect(waiting.stage, VideoDownloadJobStage.enqueue);
+      expect(waiting.lifecycle, VideoDownloadJobLifecycle.active,
+          reason: '等同包持有者不是故障，不能进「需要处理」');
+      expect(waiting.lastError, isNull);
+      expect(waiting.attemptCount, 0, reason: '排队等待不耗重试预算');
+      expect(waiting.torrentHash, isNull);
+      expect(backend.pausedAdds, <String>[hash],
+          reason: '后端里同一颗 torrent 同时只归一个任务');
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        0: TorrentFilePriority.normal,
+        1: TorrentFilePriority.skip,
+        2: TorrentFilePriority.skip,
+      });
+
+      // 上一卷完成：只下载型任务把 torrent 从后端摘掉并让出槽位（与
+      // _resolveDiscoveryDownloadPaths 收尾同形）。
+      await backend.removeTorrent(hash);
+      await database.updateVideoDownloadJob(
+        first,
+        const VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.completed),
+          backendTaskId: Value<String?>(null),
+          torrentHash: Value<String?>(null),
+        ),
+      );
+      await database.updateVideoDownloadJob(
+        second,
+        const VideoDownloadJobsCompanion(nextAttemptAt: Value<int?>(null)),
+      );
+      service.wake();
+      final VideoDownloadJobRow tookOver = await _waitForJob(
+        database,
+        second,
+        (VideoDownloadJobRow row) =>
+            row.stage == VideoDownloadJobStage.download &&
+            row.claimedBy == null,
+      );
+      expect(tookOver.torrentHash, hash);
+      expect(tookOver.lastError, isNull);
+      expect(backend.pausedAdds, <String>[hash, hash]);
+      expect(backend.priorities, <int, TorrentFilePriority>{
+        0: TorrentFilePriority.skip,
+        1: TorrentFilePriority.normal,
+        2: TorrentFilePriority.skip,
+      });
+    });
+  });
+
   group('skipDownloadExtras', () {
     List<TorrentFileEntry> mixedFiles() => <TorrentFileEntry>[
           const TorrentFileEntry(
@@ -3681,6 +3799,15 @@ Uint8List _manualV1Metainfo() => Uint8List.fromList(
       ),
     );
 
+/// 三文件 v1 合集（TMW Part 这类一颗 torrent 装多卷）。
+Uint8List _manualPackMetainfo() => Uint8List.fromList(
+      utf8.encode(
+        'd4:infod5:filesld6:lengthi1e4:pathl5:a.m4beed6:lengthi1e4:pathl5:'
+        'b.m4beed6:lengthi1e4:pathl5:c.m4beee4:name4:pack6:pieces20:'
+        'aaaaaaaaaaaaaaaaaaaaee',
+      ),
+    );
+
 TorrentSnapshot _downloadingSnapshot({required double progress}) =>
     TorrentSnapshot(
       hash: _torrentHash,
@@ -4320,6 +4447,61 @@ class _FakeDetailTorrentBackend extends _FakeTorrentBackend
   ) {
     renamedIndexes.add(fileIndex);
     return super.renameFile(torrentId, fileIndex, newPath);
+  }
+}
+
+/// 能以暂停态添加 .torrent 的 fake：单文件选择（CoreAudio/TMW）走这条路。
+/// 后端当前持有哪些种子随 add/remove 变化，文件优先级按写入回读。
+class _FakePausedMetainfoBackend extends _FakeDetailTorrentBackend
+    implements TorrentPausedMetainfoBackend {
+  _FakePausedMetainfoBackend({required this.fileCount})
+      : super(
+          snapshots: const <TorrentSnapshot>[],
+          files: const <TorrentFileEntry>[],
+        );
+
+  final int fileCount;
+  final Set<String> held = <String>{};
+  final List<String> pausedAdds = <String>[];
+
+  @override
+  Future<bool> addTorrentMetainfoPaused(
+    TorrentMetainfoPayload payload, {
+    required String category,
+  }) async {
+    final String hash = (payload.torrentId ?? '').toLowerCase();
+    pausedAdds.add(hash);
+    held.add(hash);
+    return true;
+  }
+
+  @override
+  Future<List<TorrentSnapshot>> listTorrents({String? category}) async =>
+      <TorrentSnapshot>[
+        for (final String hash in held)
+          TorrentSnapshot(
+            hash: hash,
+            name: 'pack',
+            progress: 0.1,
+            state: 'downloading',
+            savePath: '/downloads',
+            contentPath: '/downloads/pack',
+            amountLeft: 100,
+          ),
+      ];
+
+  @override
+  Future<List<TorrentFilePriority>?> filePriorities(String torrentId) async =>
+      <TorrentFilePriority>[
+        for (int index = 0; index < fileCount; index++)
+          priorities[index] ?? TorrentFilePriority.normal,
+      ];
+
+  @override
+  Future<bool> removeTorrent(String torrentId,
+      {bool deleteFiles = false}) async {
+    held.remove(torrentId.toLowerCase());
+    return super.removeTorrent(torrentId, deleteFiles: deleteFiles);
   }
 }
 

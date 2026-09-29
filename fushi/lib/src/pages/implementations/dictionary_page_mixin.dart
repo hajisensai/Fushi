@@ -12,6 +12,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
@@ -74,6 +75,16 @@ mixin DictionaryPageMixin {
   /// 它已经区分了书 / 视频，而这正是排查「视频页查词卡」时唯一要分的两类。宿主想更
   /// 细分（首页词典 tab、悬浮歌词）可覆写；纯标签，不参与任何判决。
   String get lookupDiagHost => dictionarySourceType;
+
+  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 只听总开关（查词页 /
+  /// 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与 `BaseSourcePageState`
+  /// 的同名钩子对称。
+  ModuleId? get popupDockModule => null;
+
+  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  bool get _popupBottomDocked =>
+      mixinAppModel.popupBottomDockedFor(popupDockModule);
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
   ///
@@ -304,14 +315,14 @@ mixin DictionaryPageMixin {
     final Rect anchored = resolvePopupRect(
       selectionRect: layerSelection,
       screen: screen,
-      bottomDocked: mixinAppModel.popupBottomDocked,
+      bottomDocked: _popupBottomDocked,
       maxWidth: (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
           mixinAppModel.appUiScale,
       maxHeight: effectiveMaxHeight,
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug（同 base_source_page）。dock 模式不冻结。
-    if (!mixinAppModel.popupBottomDocked &&
+    if (!_popupBottomDocked &&
         _popupResizeAnchorTopLeft != null &&
         _popupResizeAnchorSelection == selectionRect) {
       return anchorPopupTopLeft(
@@ -773,7 +784,7 @@ mixin DictionaryPageMixin {
     // （[DictionaryPopupLayer.webViewOverflowHeight]）：内容增减不再改原生表面尺寸，
     // 杜绝 Windows 上旧尺寸帧被拉伸的那几帧。外壳本就是最大高度时差值为 0。
     final double fullPopupHeight = entry.autoFitHeight == null ||
-            mixinAppModel.popupBottomDocked ||
+            _popupBottomDocked ||
             _popupResizePreview != null
         ? pos.height
         : _calcMixinPopupPosition(entry.selectionRect, screen).height;
@@ -815,7 +826,7 @@ mixin DictionaryPageMixin {
             isDark: isDark,
             overrideFillColor: mixinAppModel.overrideDictionaryColor,
             // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
-            bottomDocked: mixinAppModel.popupBottomDocked,
+            bottomDocked: _popupBottomDocked,
             webViewOverflowHeight: webViewOverflowHeight,
             onDismiss: () => onPop(index),
             // BUG-1269：弹窗是原生 WebView，指针落上去后宿主收不到键盘/鼠标——把宿主
@@ -886,7 +897,7 @@ mixin DictionaryPageMixin {
             onContentMetrics: (double contentHeight, double viewportHeight) {
               if (!mounted ||
                   !controller.entries.contains(entry) ||
-                  mixinAppModel.popupBottomDocked ||
+                  _popupBottomDocked ||
                   _popupResizePreview != null) {
                 return;
               }

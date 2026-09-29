@@ -5785,5 +5785,10 @@
   "video_library_delete_rows_failed": "Could not delete $n video(s); they are still in the library.",
   "video_library_delete_failed": "Delete failed: $reason",
   "media_source_remove_download_refs": "$subscriptions download subscriptions and $jobs unfinished downloads save into this source. Move them to:",
-  "media_source_remove_download_keep": "Don't move (pause those subscriptions)"
+  "media_source_remove_download_keep": "Don't move (pause those subscriptions)",
+  "download_selection_already_queued": "This item is already in the download queue.",
+  "popup_bottom_docked_books": "小說中底部停靠",
+  "popup_bottom_docked_manga": "漫畫中底部停靠",
+  "popup_bottom_docked_video": "影片中底部停靠",
+  "popup_bottom_docked_games": "遊戲中底部停靠"
 }

@@ -8,6 +8,7 @@ import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -120,6 +121,43 @@ Future<void> _terminatePortOwnerAndRetry(
   }
   _showSettingsSnackBar(settingsContext, t.yomitan_api_server_started);
   settingsContext.refresh();
+}
+
+/// 「底部停靠」在单个媒体模块里是否启用的子开关（[AppModel.popupBottomDockedIn]）。
+SettingsSwitchItem _popupBottomDockedModuleSwitch(ModuleId module) {
+  final ({String title, IconData icon}) identity = switch (module) {
+    ModuleId.books => (
+        title: t.popup_bottom_docked_books,
+        icon: Icons.menu_book_outlined,
+      ),
+    ModuleId.manga => (
+        title: t.popup_bottom_docked_manga,
+        icon: Icons.auto_stories_outlined,
+      ),
+    ModuleId.video => (
+        title: t.popup_bottom_docked_video,
+        icon: Icons.movie_outlined,
+      ),
+    ModuleId.games => (
+        title: t.popup_bottom_docked_games,
+        icon: Icons.sports_esports_outlined,
+      ),
+    _ => throw StateError('$module 没有底部停靠细分开关'),
+  };
+  return SettingsSwitchItem(
+    id: 'lookup.popup_bottom_docked.${module.name}',
+    title: identity.title,
+    icon: identity.icon,
+    visible: (SettingsContext settingsContext) =>
+        settingsContext.appModel.popupBottomDocked &&
+        settingsContext.appModel.moduleVisibility.isEnabled(module),
+    value: (SettingsContext settingsContext) =>
+        settingsContext.appModel.popupBottomDockedIn(module),
+    onChanged: (SettingsContext settingsContext, bool value) async {
+      await settingsContext.appModel.setPopupBottomDockedIn(module, value);
+      settingsContext.refresh();
+    },
+  );
 }
 
 SettingsDestination buildLookupDestination() {
@@ -802,6 +840,12 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 底部停靠按模块细分：不是所有场景都要停靠（例如只在视频里固定弹窗）。
+          // 总开关打开后才出现；模块在本平台不存在（iOS 无游戏模块）或被用户在
+          // 功能模块里关掉时不出——判据走 [AppModel.moduleVisibility] 唯一合成。
+          for (final ModuleId module
+              in PreferencesRepository.kPopupBottomDockedModules)
+            _popupBottomDockedModuleSwitch(module),
           // TODO-436/407②/716：是否允许"水平滑动关闭查词弹窗"。这是查词弹窗窗口的
           // 关闭手势，与弹窗尺寸/停靠同组；同时经 ReaderPlacement 出现在阅读器快捷
           // 设置的查词段。开启后既驱动弹窗顶栏滑动关闭（[SwipeDismissWrapper]），也让

@@ -80,8 +80,10 @@
     const theme = data.theme && typeof data.theme === 'object' ? data.theme : {};
     const zoom = Number(data.popupZoom) > 0 ? Number(data.popupZoom) : 1;
     host.style.zoom = String(zoom);
-    host.style.width = (100 / zoom) + '%';
-    host.style.height = (100 / zoom) + '%';
+    // 百分比尺寸按包含块解析、不乘 zoom（Chrome 标准化 CSS zoom 后实测：zoom 1.25 + 80%
+    // 渲染为父盒 80%）。写 100/zoom % 会让内容只占外框的 1/zoom，底部右侧留大块空白。
+    host.style.width = '100%';
+    host.style.height = '100%';
     for (const [key, value] of Object.entries(theme)) {
       if (key.startsWith('--') && typeof value === 'string') {
         container.style.setProperty(key, value);
@@ -164,6 +166,7 @@
     chrome.runtime.sendMessage({ type: 'dictMediaConfig' }, function (response) {
       if (response && response.ok && response.base && response.token) {
         window.__fushiDictMedia = { base: response.base, token: response.token };
+        if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
       }
     });
   } catch (_) { /* The normal shared media fallback handles unavailable config. */ }
