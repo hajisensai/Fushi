@@ -67,7 +67,7 @@ void main() {
     await appModel.prefsRepo.setAiProviders(<AiProviderConfig>[provider]);
     await appModel.prefsRepo.setAiFeatureAssignments(
       appModel.prefsRepo.aiFeatureAssignments.withAssignment(
-        AiFeature.videoAcquire,
+        AiFeature.acquire,
         provider.id,
       ),
     );
