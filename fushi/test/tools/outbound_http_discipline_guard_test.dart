@@ -127,7 +127,7 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
 
 /// 登记在案的文件总数（装配点 + 豁免）。**这是自校验用的哨兵**：改清单必须同步改这个数，
 /// 光靠「新增未登记即红」挡不住「悄悄多登记一条」。
-const int kRegisteredOutboundFileCount = 23;
+const int kRegisteredOutboundFileCount = 24;
 
 /// 裸出站构造的判据。
 ///
