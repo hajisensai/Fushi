@@ -14,6 +14,7 @@
 import { HttpError, hex, timingSafeEqual } from './util.js';
 import { spend } from './budget.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
+import { sendViaSmtp, smtpConfigured } from './smtp.js';
 
 export const CODE_TTL_MS = 10 * 60 * 1000;
 export const CODE_MAX_ATTEMPTS = 5;
@@ -75,11 +76,11 @@ const MESSAGES = {
   },
 };
 
-/** 发信渠道是否已配置：Cloudflare Email Service 绑定（Workers Paid）或 Resend（免费档）二选一。 */
+/** 发信渠道是否已配置：Cloudflare Email Service 绑定（Workers Paid）/ 域名邮箱 SMTP / Resend，按此优先级取第一个。 */
 export function emailConfigured(env) {
   if (typeof env.EMAIL_SENDER === 'function') return true;
   if (!env.EMAIL_FROM) return false;
-  return Boolean((env.EMAIL && typeof env.EMAIL.send === 'function') || env.RESEND_API_KEY);
+  return Boolean((env.EMAIL && typeof env.EMAIL.send === 'function') || smtpConfigured(env) || env.RESEND_API_KEY);
 }
 
 export async function sendEmail(env, to, subject, text) {
@@ -89,6 +90,11 @@ export async function sendEmail(env, to, subject, text) {
   // 每月含 3000 封；本服务日预算 90 封 × 31 天仍在含量内。没绑定时走 Resend。
   if (env.EMAIL && typeof env.EMAIL.send === 'function') {
     await env.EMAIL.send({ to, from: env.EMAIL_FROM, subject, text });
+    return;
+  }
+  // 域名邮箱（免费档）的 SMTP 提交端口：见 smtp.js。
+  if (smtpConfigured(env)) {
+    await sendViaSmtp(env, to, subject, text);
     return;
   }
   const res = await fetch('https://api.resend.com/emails', {
