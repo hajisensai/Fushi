@@ -2356,8 +2356,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
     );
-    final BaseAnkiRepository repo = model.platformServices
-        .createAnkiRepository();
+    final BaseAnkiRepository repo = model.miningAnkiRepository;
     final TexthookerLineEntry? entry = _session.entryById(lineId);
     final String? cardSentence = entry == null
         ? sentenceOverride
@@ -2408,7 +2407,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     FushiToast.showMine(msg: described.message, status: described.status);
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
     // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。
-    final String? failureMessage = result.success ? null : described.message;
+    final String? failureMessage = described.success ? null : described.message;
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
       FushiToast.show(

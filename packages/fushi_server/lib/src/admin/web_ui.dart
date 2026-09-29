@@ -62,7 +62,7 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <nav>
 <button data-s="status" class="on">状态</button><button data-s="pairing">配对</button><button data-s="libraries">库</button>
 <button data-s="upload">上传</button><button data-s="jobs">任务</button><button data-s="downloads">下载</button>
-<button data-s="subscriptions">订阅</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
+<button data-s="subscriptions">订阅</button><button data-s="anki">Anki</button><button data-s="models">模型</button><button data-s="settings">设置</button><button data-s="logs">日志</button>
 </nav>
 <form method="post" action="/logout" style="margin:0"><button class="b sec" type="submit">退出</button></form>
 </header>
@@ -127,6 +127,17 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div class="card"><h2>ASR 模型</h2>
 <table><thead><tr><th>语言</th><th>就绪</th><th>变体 / provider</th><th>字节</th><th></th></tr></thead><tbody id="asr-models"></tbody></table></div>
 <div class="card"><h2>漫画 OCR 模型</h2><div id="ocr-model"></div></div>
+</section>
+
+<section id="s-anki">
+<div class="card"><h2>Anki 落地</h2>
+<p class="small muted">打开后，其它设备（没装 Anki 的手机等）经互联同步过来的待发卡片由本机写进 Anki，再同步到 AnkiWeb 或你的自建 Anki 同步服务器。本机需要随包的 fushi-anki-sync。</p>
+<div class="grid" id="anki-status"></div>
+<div class="row" style="margin-top:12px"><label><input type="checkbox" id="anki-landing"> 本机负责落地其它设备的卡片</label>
+<button class="b sec" id="btn-anki-run">立即落地</button><button class="b sec" id="btn-anki-retry">重试失败的卡</button></div>
+</div>
+<div class="card"><h2>Anki 同步账号</h2><div id="anki-account"></div></div>
+<div class="card"><h2>牌组 / 笔记类型 / 字段</h2><div id="anki-config"></div></div>
 </section>
 
 <section id="s-settings">
@@ -277,6 +288,96 @@ async function loadModels(){
   document.querySelectorAll('[data-pull]').forEach(b=>b.onclick=guard(async()=>{ await post('models/pull',{model:b.dataset.pull}); toast('开始下载'); loadModels(); }));
 }
 
+// ── Anki ──
+const ANKI_PHASE = {signedOut:'未登录', idle:'空闲', busy:'同步中…', blocked:'被拦：服务器要求整库上传（Fushi 不做）。请先在官方 Anki 里同步一次。', failed:'上次同步失败'};
+let ankiFormKey = null;
+let ankiRelogin = false;
+async function loadAnki(){
+  const a = await api('anki');
+  const L = a.landing, S = a.sync;
+  const kv = [
+    ['fushi-anki-sync', a.available ? '已随包' : '未找到（此服务端包不带，无法落地）'],
+    ['落地', L.enabled ? '开' : '关'],
+    ['待落地 / 失败', L.pending + ' / ' + L.failed],
+    ['上次落地', L.lastRunAt ? fmtTime(L.lastRunAt) + (L.lastReport ? `（收 ${L.lastReport.received}，落 ${L.lastReport.delivered}，失败 ${L.lastReport.failed}，等配置 ${L.lastReport.waiting}）` : '') : '—'],
+    ['同步', S ? (ANKI_PHASE[S.phase] || S.phase) + (S.message ? '：' + S.message : '') : '—'],
+    ['未同步的卡', S ? S.unsynced : '—'],
+    ['上次同步', S && S.lastSyncAt ? fmtTime(S.lastSyncAt) : '—'],
+  ];
+  if (S && S.failing) kv.push(['写入失败（会自动重试）', S.failing + ' 张：' + (S.lastError || '')]);
+  if (L.lastError) kv.push(['落地错误', L.lastError]);
+  $('#anki-status').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
+  $('#anki-landing').checked = !!L.enabled;
+  $('#anki-landing').disabled = !a.available;
+
+  // 表单只在账号 / 可选项变了时重画，否则 2.5 秒一次的轮询会冲掉正在输入的内容。
+  const key = JSON.stringify([a.available, a.account, ankiRelogin, a.settings.decks, a.settings.noteTypes, a.settings.noteType]);
+  if (key === ankiFormKey) return;
+  ankiFormKey = key;
+  if (!a.available) { $('#anki-account').innerHTML = '<p class="muted">此服务端包没有 fushi-anki-sync。</p>'; $('#anki-config').innerHTML=''; return; }
+  const showLogin = !a.account || ankiRelogin;
+  $('#anki-account').innerHTML = !showLogin
+    ? `<p>已登录：${esc(a.account.username)} <span class="muted">（${esc(a.account.server || 'AnkiWeb')}）</span></p>
+       <div class="row"><button class="b" id="btn-anki-sync">立即同步</button><button class="b sec" id="btn-anki-refresh">刷新牌组 / 笔记类型</button><button class="b sec" id="btn-anki-relogin">重新登录</button><button class="b danger" id="btn-anki-logout">退出登录</button></div>`
+    : `<div class="grid">
+       <label class="f">同步服务器（自建服务器地址，如 http://nas:8080/；留空为 AnkiWeb）<input id="anki-endpoint" value="${esc(a.account ? (a.account.server || '') : '')}"></label>
+       <label class="f">用户名<input id="anki-user" value="${esc(a.account ? a.account.username : '')}"></label>
+       <label class="f">密码<input type="password" id="anki-pass"></label></div>
+       <div class="row" style="margin-top:12px"><button class="b" id="btn-anki-login">登录并下载牌组集合</button>${a.account ? '<button class="b sec" id="btn-anki-relogin-cancel">取消</button>' : ''}</div>
+       <p class="small muted">密码只用来换取同步凭据，不保存。同一服务器与用户名重新登录只换凭据，本机的牌组集合与未同步的卡都保留。</p>`;
+  if (!showLogin) {
+    $('#btn-anki-sync').onclick = guard(async()=>{ await post('anki/sync'); toast('已同步'); ankiFormKey=null; loadAnki(); });
+    $('#btn-anki-refresh').onclick = guard(async()=>{ await post('anki/refresh'); toast('已刷新'); ankiFormKey=null; loadAnki(); });
+    $('#btn-anki-relogin').onclick = ()=>{ ankiRelogin=true; ankiFormKey=null; loadAnki(); };
+    $('#btn-anki-logout').onclick = guard(async()=>{
+      if(!confirm('退出登录会删掉本机的牌组集合副本。继续？')) return;
+      try { await post('anki/logout'); }
+      catch(e){
+        const m = /^unsynced:(\d+)$/.exec(e.message);
+        if (!m) throw e;
+        if (!confirm('还有 ' + m[1] + ' 张卡没有同步到 Anki。放弃这些卡并退出？（放弃后无法找回）')) return;
+        await post('anki/logout', {discardUnsynced: true});
+      }
+      ankiFormKey=null; loadAnki();
+    });
+  } else {
+    const cancel = $('#btn-anki-relogin-cancel');
+    if (cancel) cancel.onclick = ()=>{ ankiRelogin=false; ankiFormKey=null; loadAnki(); };
+    $('#btn-anki-login').onclick = guard(async()=>{
+      const endpoint = $('#anki-endpoint').value.trim();
+      let acceptAnkiWeb = false;
+      if (!endpoint) {
+        if (!confirm('AnkiWeb 的服务条款只允许官方 Anki 客户端同步。Fushi 会如实表明自己是 Fushi，因此 AnkiWeb 可能拒绝连接，或对你的账号采取措施。自建同步服务器没有这项限制。\n\n仍然使用 AnkiWeb？')) return;
+        acceptAnkiWeb = true;
+      }
+      await post('anki/login', {endpoint, username: $('#anki-user').value, password: $('#anki-pass').value, acceptAnkiWeb});
+      toast('已登录'); ankiRelogin=false; ankiFormKey=null; loadAnki();
+    });
+  }
+
+  const st = a.settings;
+  if (!a.account || !st.decks.length) { $('#anki-config').innerHTML = '<p class="muted">登录后显示。</p>'; return; }
+  const opt = (list, sel) => list.map(x=>`<option ${x===sel?'selected':''}>${esc(x)}</option>`).join('');
+  const ph = `<datalist id="anki-ph">${a.placeholders.map(x=>`<option value="${esc(x)}">`).join('')}</datalist>`;
+  $('#anki-config').innerHTML = `${ph}<div class="grid">
+    <label class="f">牌组<select id="anki-deck">${opt(st.decks, st.deck)}</select></label>
+    <label class="f">笔记类型<select id="anki-nt">${opt(st.noteTypes, st.noteType)}</select></label>
+    <label class="f">标签（空格分隔）<input id="anki-tags" value="${esc(st.tags)}"></label></div>
+    <h2 style="margin-top:16px">字段映射</h2><p class="small muted">每个字段填占位符，如 {expression}、{reading}、{glossary}、{sentence}；可组合。没填映射时卡片会留着等，不会丢。</p>
+    <div class="grid">${st.fields.map(f=>`<label class="f">${esc(f)}<input list="anki-ph" data-field="${esc(f)}" value="${esc(st.fieldMappings[f]||'')}"></label>`).join('')}</div>
+    <div class="row" style="margin-top:12px"><button class="b" id="btn-anki-save">保存</button></div>`;
+  $('#anki-nt').onchange = guard(async()=>{ await put('anki/settings', {noteType: $('#anki-nt').value}); ankiFormKey=null; loadAnki(); });
+  $('#btn-anki-save').onclick = guard(async()=>{
+    const fieldMappings = {};
+    document.querySelectorAll('#anki-config [data-field]').forEach(el=>{ fieldMappings[el.dataset.field] = el.value; });
+    await put('anki/settings', {deck: $('#anki-deck').value, noteType: $('#anki-nt').value, tags: $('#anki-tags').value, fieldMappings});
+    toast('已保存'); ankiFormKey=null; loadAnki();
+  });
+}
+$('#anki-landing').onchange = guard(async()=>{ await post('anki/landing', {enabled: $('#anki-landing').checked}); loadAnki(); });
+$('#btn-anki-run').onclick = guard(async()=>{ await post('anki/run'); toast('已落地一轮'); loadAnki(); });
+$('#btn-anki-retry').onclick = guard(async()=>{ const r = await post('anki/retry'); toast('已重试 ' + r.retried + ' 张'); loadAnki(); });
+
 // ── 设置 ──
 const FIELDS = [
   ['deviceName','设备名','text'],['port','互联端口','number'],['bind','绑定地址','text'],['tls','TLS','bool'],['lanRequiresPin','局域网配对必须 PIN','bool'],
@@ -308,7 +409,7 @@ async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); co
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

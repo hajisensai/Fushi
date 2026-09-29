@@ -238,4 +238,17 @@ void main() {
     expect(await queue.pending('remote/emby/1'), isEmpty);
     expect(queue.bundleDir(a).existsSync(), isFalse);
   });
+
+  test('交给仓库后进了待发制卡队列（queued）：算交接完成，出本暂存队列，不当失败', () async {
+    final int id = await stageOne('走る');
+    final VideoMineCommitSummary summary = await queue.commitAll(
+      bookUid: 'remote/emby/1',
+      repo: _Repo(<MineOutcome>[const MineOutcome.queued()]),
+    );
+    expect(summary.succeeded, 1);
+    expect(summary.failed, 0);
+    expect(await queue.failed('remote/emby/1'), isEmpty);
+    expect(await queue.pending('remote/emby/1'), isEmpty);
+    expect(queue.bundleDir(id).existsSync(), isFalse);
+  });
 }

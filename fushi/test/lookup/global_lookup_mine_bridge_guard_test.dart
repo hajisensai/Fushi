@@ -47,8 +47,12 @@ void main() {
     test('mine handler goes through the real Anki repo and resolves the bridge',
         () {
       // 真走 AnkiConnect/AnkiDroid repo（非 UI 假动作），与 in-app onMineEntry 同路径。
-      expect(src.contains('createAnkiRepository()'), isTrue,
-          reason: '制卡/查重必须调真 Anki repo');
+      // 与 in-app 入口同一条装饰器链（待发队列 / 自动重排 / 转发互联主机），
+      // 不能再直调工厂拿裸后端。
+      expect(src.contains('model.miningAnkiRepository'), isTrue,
+          reason: '制卡/查重必须走 ankiRepositoryProvider 那条仓库');
+      expect(src.contains('createAnkiRepository()'), isFalse,
+          reason: '直调工厂会绕过待发队列：Anki 没开时卡直接丢');
       expect(src.contains('repo.mineEntry('), isTrue,
           reason: '制卡走 repo.mineEntry（AnkiConnect/AnkiDroid）');
       expect(src.contains('repo.isDuplicate('), isTrue,

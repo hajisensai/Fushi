@@ -1,0 +1,6 @@
+# Same toolchain upstream Anki 26.09.3 pins (.anki-src/rust-toolchain.toml). That file is
+# not consulted here: rustup resolves the toolchain from cargo's cwd, which is this
+# directory. CI reads `channel` from this file (.github/actions/setup-fushi-anki-sync).
+[toolchain]
+channel = "1.97.1"
+profile = "minimal"

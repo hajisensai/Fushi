@@ -7,7 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
-import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -168,8 +168,8 @@ class AnkiMobileInfoReturnCoordinator {
 /// [AnkiMobileRepository]（BUG-2493）。不是 AnkiMobile 后端时返回 null（iOS 改用
 /// AnkiConnect 时就是这样，回传无事可做）。
 ///
-/// provider 现在**恒**把本地仓库包在 [AutoRepositionAnkiRepository] 里（制卡后自动
-/// 重排，d55752a5e1 起），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
+/// provider 现在**恒**把本地仓库包在 [DelegatingAnkiRepository] 系装饰器里（待发队列 ∘
+/// 制卡后自动重排），开了「制卡到已配对设备」再多一层 [RemoteMiningAnkiRepository]。
 /// 此前 `main.dart` 直接 `is! AnkiMobileRepository` 判型——自动重排那层一进来，
 /// iOS 上**每个人**的 `fushi://ankiFetch` 回调都被静默丢弃（模拟器实测第一步就撞上）。
 /// 新增包装层必须在这里登记，守卫见 ankimobile_info_return_coordinator_test.dart。
@@ -177,7 +177,9 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
   BaseAnkiRepository current = repo;
   while (true) {
     if (current is AnkiMobileRepository) return current;
-    if (current is AutoRepositionAnkiRepository) {
+    // 所有「行为同 inner、只在 mineEntry 上加料」的装饰器（自动重排、待发队列……）
+    // 都继承 DelegatingAnkiRepository：按基类拆，新增装饰器不必再回来登记。
+    if (current is DelegatingAnkiRepository) {
       current = current.inner;
       continue;
     }
@@ -187,6 +189,19 @@ AnkiMobileRepository? resolveAnkiMobileRepository(BaseAnkiRepository repo) {
     }
     return null;
   }
+}
+
+/// 制卡最终落在**本机** AnkiMobile 上吗？只拆装饰器；已经转发到互联主机的
+/// （[RemoteMiningAnkiRepository]）不算——那种情况卡写在主机的 Anki 里。
+///
+/// 与 [resolveAnkiMobileRepository] 的区别：那个要找回本地仓库去收 x-callback，
+/// 所以连互联包装一起拆；这个回答的是「卡落在哪」。
+bool minesOnLocalAnkiMobile(BaseAnkiRepository repo) {
+  BaseAnkiRepository current = repo;
+  while (current is DelegatingAnkiRepository) {
+    current = current.inner;
+  }
+  return current is AnkiMobileRepository;
 }
 
 String _encodeAnkiMobileQueryComponent(String value) =>
@@ -751,6 +766,10 @@ class AnkiMobileRepository extends BaseAnkiRepository {
   /// 编排层据此改走「让用户裁决」而不是「当成已删、直接重制」。
   @override
   bool get canVerifyExistingCards => false;
+
+  /// 每张卡都经 `anki://x-callback-url/addnote` 拉起 AnkiMobile。
+  @override
+  bool get switchesAppPerNote => true;
 
   /// 用户说「这张卡我已经在 Anki 里删了」——账本是 iOS 上唯一的真值来源，只能由他
   /// 来纠正（[AnkiMobileMinedLedger.forget] 会顺带广播刷新，✓ 立刻变回 +）。

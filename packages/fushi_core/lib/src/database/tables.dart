@@ -2170,6 +2170,57 @@ abstract final class WebMineQueueStatus {
   static const String failed = 'failed';
 }
 
+/// 设备端「待发制卡」队列（schema v116）。
+///
+/// 制卡后端（AnkiConnect / 互联 host 等）不可达、或处于批量模式时，卡片先入队、
+/// 稍后补发。载荷是 `ForwardedMinePayload` 的 JSON（含媒体字节），落在
+/// `<support>/pending_mine_queue/<id>.json`——文件名由 [id] 派生，所以表里没有
+/// 路径列；本表只存列表显示与重试调度所需的元数据。
+///
+/// 设备本地：载荷文件只在本机、状态只对本机后端有意义，不进备份/同步（与
+/// `web_mine_queue` 同列于 backup 的 device-local 清单）。
+@DataClassName('PendingMineRow')
+class PendingMineQueue extends Table {
+  /// 128-bit 随机 hex；同时决定载荷文件名。
+  TextColumn get id => text()();
+
+  /// 入队时刻（毫秒）。
+  IntColumn get createdAt => integer()();
+
+  /// 列表显示用的词条与读音。
+  TextColumn get expression => text()();
+  TextColumn get reading => text().withDefault(const Constant(''))();
+
+  /// [PendingMineStatus]。
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+
+  /// 已尝试补发次数与最近一次失败信息 / 时刻（毫秒）。
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+  IntColumn get lastAttemptAt => integer().nullable()();
+
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  TextColumn get originDeviceId => text().nullable()();
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  BoolColumn get uploaded => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+abstract final class PendingMineStatus {
+  static const String pending = 'pending';
+  static const String sending = 'sending';
+  static const String failed = 'failed';
+
+  /// 已交给 Anki，但远端中转命名空间还有这张卡的记录（本机上传过，或它来自其他
+  /// 设备），等下一轮同步清理远端后再删行。
+  static const String landed = 'landed';
+}
+
 @DataClassName('VideoDownloadJobRow')
 class VideoDownloadJobs extends Table {
   /// 调用方生成的稳定任务 id；不能用自增 id 充当跨崩溃幂等键。

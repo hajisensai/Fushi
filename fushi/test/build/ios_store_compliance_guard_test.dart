@@ -591,10 +591,13 @@ void main() {
         final String workflow = read(path);
         expect(workflow, isNot(contains('tool/aidoku/')));
         expect(workflow, isNot(contains('aidoku_runtime')));
+        // 这里曾禁 `apple-darwin`：当时 macOS Rust target 只为 Aidoku runtime 而装。
+        // 现在 native/fushi_anki_sync（Anki 同步 helper）正当地需要 universal macOS
+        // 构建，按 target 三元组禁会误伤它；改成直接禁任何 Aidoku 提及，边界不变。
         expect(
-          workflow,
-          isNot(contains('apple-darwin')),
-          reason: '$path 里的 macOS Rust target 只为 Aidoku runtime 而装。',
+          workflow.toLowerCase(),
+          isNot(contains('aidoku')),
+          reason: '$path 又出现了 Aidoku 相关构建步骤；macOS / iOS 的 Aidoku 宿主已整条移除。',
         );
       }
       expect(Directory('../tool/aidoku').existsSync(), isFalse);

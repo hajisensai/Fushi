@@ -1,0 +1,88 @@
+name: Set up fushi-anki-sync toolchain
+description: >-
+  Rust toolchain pinned by native/fushi_anki_sync/rust-toolchain.toml plus protoc v31.1
+  (the version Anki 26.09.3 pins), SHA-256 verified. Build the helper afterwards with
+  native/fushi_anki_sync/build.sh (Linux/macOS) or build.ps1 (Windows).
+
+# Why a composite action: the same two installs are needed by six jobs (PR check
+# linux/macos/windows, desktop release windows/macos, server release linux/windows).
+# One copy, so a protoc bump cannot drift between them.
+#
+# No dtolnay/rust-toolchain: every GitHub-hosted runner ships rustup, and the channel
+# lives in rust-toolchain.toml so local and CI builds cannot disagree.
+# No Swatinem/rust-cache: GitHub's 10 GB cache quota is this repo's bottleneck
+# (fushi/test/build/workflow_cache_quota_guard_test.dart); an rslib release target dir
+# per OS would evict the vcpkg caches that are far more expensive to rebuild.
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        file=native/fushi_anki_sync/rust-toolchain.toml
+        channel="$(sed -n 's/^channel = "\(.*\)"/\1/p' "$file")"
+        if [ -z "$channel" ]; then
+          echo "::error title=No Rust channel::$file has no channel = \"...\" line"
+          exit 1
+        fi
+        rustup toolchain install "$channel" --profile minimal
+        rustup run "$channel" rustc --version
+        rustup run "$channel" cargo --version
+    - name: Install pinned protoc (v31.1)
+      shell: bash
+      run: |
+        set -euo pipefail
+        version=31.1
+        case "$RUNNER_OS" in
+          Linux)
+            asset="protoc-$version-linux-x86_64.zip"
+            sha=96553041f1a91ea0efee963cb16f462f5985b4d65365f3907414c360044d8065
+            exe=protoc
+            ;;
+          macOS)
+            asset="protoc-$version-osx-universal_binary.zip"
+            sha=99ea004549c139f46da5638187a85bbe422d78939be0fa01af1aa8ab672e395f
+            exe=protoc
+            ;;
+          Windows)
+            asset="protoc-$version-win64.zip"
+            sha=70381b116ab0d71cb6a5177d9b17c7c13415866603a0fd40d513dafe32d56c35
+            exe=protoc.exe
+            ;;
+          *)
+            echo "::error title=Unsupported runner::$RUNNER_OS"
+            exit 1
+            ;;
+        esac
+        tmp="$RUNNER_TEMP"
+        # Git Bash on Windows: work in POSIX form, hand Windows form back to the runner.
+        if command -v cygpath >/dev/null 2>&1; then tmp="$(cygpath -u "$RUNNER_TEMP")"; fi
+        dest="$tmp/protoc-$version"
+        zip="$tmp/$asset"
+        curl -fsSL --retry 3 -o "$zip" \
+          "https://github.com/protocolbuffers/protobuf/releases/download/v$version/$asset"
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual="$(sha256sum "$zip" | cut -d' ' -f1)"
+        else
+          actual="$(shasum -a 256 "$zip" | cut -d' ' -f1)"
+        fi
+        if [ "$actual" != "$sha" ]; then
+          echo "::error title=protoc SHA-256 mismatch::$asset expected $sha, got $actual"
+          exit 1
+        fi
+        rm -rf "$dest"
+        unzip -q "$zip" -d "$dest"
+        chmod +x "$dest/bin/$exe"
+        bin_dir="$dest/bin"
+        if command -v cygpath >/dev/null 2>&1; then
+          bin_dir="$(cygpath -w "$bin_dir")"
+          protoc_path="$bin_dir\\$exe"
+        else
+          protoc_path="$bin_dir/$exe"
+        fi
+        # rslib's proto build uses PROTOC_BINARY verbatim (rslib/proto/rust.rs
+        # set_protoc_path); PATH is what build.sh's preflight looks at.
+        echo "$bin_dir" >> "$GITHUB_PATH"
+        echo "PROTOC_BINARY=$protoc_path" >> "$GITHUB_ENV"
+        "$dest/bin/$exe" --version

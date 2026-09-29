@@ -71,9 +71,24 @@ String sourcePeerPairingIdentity(FushiClientUrl peer) {
       .toString();
 }
 
+
+/// 转发制卡的结果未知：对端回过话（非 2xx / 坏 JSON）但没给出结果，或请求发出后
+/// 等应答超时。主机可能已经落了卡，所以不能当「没送到」去入队重发。
+class RemoteMineOutcomeUnknown implements Exception {
+  const RemoteMineOutcomeUnknown();
+
+  @override
+  String toString() =>
+      'The Fushi Interconnect server may have received the card, but did not confirm it.';
+}
+
 abstract class RemoteMineSender {
-  /// 转发一次制卡；返回服务端 `{result, message?, detail?}`，无可达候选/全失败返回 null，
-  /// token 被拒抛 [SyncAuthError]。
+  /// 转发一次制卡；返回服务端 `{result, message?, detail?}`。
+  ///
+  /// 返回 null **只**表示「确定没送到」（没有已配对设备，或全部候选在建连阶段就失败），
+  /// 调用方可以把这张卡入队稍后重发；对端回过话却没给出结果、或请求发出后超时，抛
+  /// [RemoteMineOutcomeUnknown]（主机可能已经落卡，重发会造重复卡）；token 被拒抛
+  /// [SyncAuthError]。
   Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload);
 
   /// 远端查重。三态：命中 / 未命中 / token 被拒（见 [RemoteDuplicateCheck]）。
@@ -315,12 +330,21 @@ class FushiRemoteMiningClient
   /// 转发一次制卡到已配对主机。返回服务端 `{result, message?, detail?}`；
   /// 无可达候选/全部失败返回 null；token 被拒抛 [SyncAuthError]。
   @override
-  Future<Map<String, dynamic>?> mineForward(ForwardedMinePayload payload) {
-    return _post(
+  Future<Map<String, dynamic>?> mineForward(
+    ForwardedMinePayload payload,
+  ) async {
+    final InterconnectPostOutcome outcome = await _transport.post(
       path: '/api/mine/forward',
       body: payload.toJson(),
       timeout: _mineTimeout,
+      authErrorMessage: 'Fushi server rejected remote mining token',
     );
+    if (outcome.json != null) return outcome.json;
+    // null 在契约里 = 「确定没送到」（调用方据此允许入队重发）。对端回过话（非 2xx /
+    // 坏 JSON）或请求发出后超时，主机可能已经落了卡——这不是「没送到」，重发会造
+    // 重复卡，必须报成结果未知。
+    if (outcome.mayHaveDelivered) throw const RemoteMineOutcomeUnknown();
+    return null;
   }
 
   /// 查重（`+`→`✓`）：命中主机 Anki 后端。

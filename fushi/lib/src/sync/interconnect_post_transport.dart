@@ -56,6 +56,13 @@ Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
 /// （TODO-961 gap①：注入的 keep-alive client 不得旁路证书钉扎）。
 ///
 /// 现在新增一个互联端点 = 调一次 [post]，不再复制传输代码。
+///
+/// 互联请求的**建连**超时。不设时，建连阶段也吃整次请求的超时（制卡 60 s）：对端
+/// 关机 / 走 Tailscale 或公网地址时 SYN 石沉大海，要等满整次超时，而且以
+/// `TimeoutException` 收尾——与「请求已发出、等应答超时」混在一起，被当成「可能已
+/// 送达」，卡就进不了待发队列。设了之后建连失败以 SocketException 快速返回。
+const Duration kInterconnectConnectTimeout = Duration(seconds: 10);
+
 class InterconnectPostTransport {
   InterconnectPostTransport({
     required SyncRepository repo,
@@ -77,7 +84,10 @@ class InterconnectPostTransport {
   final http.Client Function(String expectedFingerprint) _pinnedClientFactory;
 
   static http.Client _defaultPinnedClient(String expectedFingerprint) =>
-      createPinnedHttpPackageClient(expectedFingerprint: expectedFingerprint);
+      createPinnedHttpPackageClient(
+        expectedFingerprint: expectedFingerprint,
+        connectionTimeout: kInterconnectConnectTimeout,
+      );
 
   /// 向所有已启用候选按序 POST [body] 到 [path]，返回第一个拿到的可用 JSON 响应。
   ///
@@ -123,11 +133,18 @@ class InterconnectPostTransport {
     }
     if (candidates.isEmpty) {
       // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
-      return (json: null, allUnreachable: false, candidate: null);
+      return (
+        json: null,
+        allUnreachable: false,
+        mayHaveDelivered: false,
+        candidate: null,
+      );
     }
 
     bool attempted = false;
     bool anyResponse = false;
+    // 请求发出后等应答超时：对端可能已经处理了这次请求。
+    bool anyTimedOut = false;
     // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
     SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
@@ -183,10 +200,14 @@ class InterconnectPostTransport {
           return (
             json: decoded,
             allUnreachable: false,
+            mayHaveDelivered: true,
             candidate: candidate.copyWith(token: token),
           );
         }
         onRejectedResponse?.call(response.statusCode, null);
+      } on TimeoutException {
+        anyTimedOut = true;
+        continue;
       } catch (_) {
         continue;
       } finally {
@@ -203,6 +224,7 @@ class InterconnectPostTransport {
     return (
       json: null,
       allUnreachable: attempted && !anyResponse,
+      mayHaveDelivered: anyResponse || anyTimedOut,
       candidate: null,
     );
   }
@@ -334,9 +356,12 @@ Map<String, dynamic>? _responseObject(http.Response response) {
 
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
+/// [mayHaveDelivered]：至少一个候选拿到了响应，或请求发出后等应答超时——对端
+/// 可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
   bool allUnreachable,
+  bool mayHaveDelivered,
   FushiClientUrl? candidate,
 });
 

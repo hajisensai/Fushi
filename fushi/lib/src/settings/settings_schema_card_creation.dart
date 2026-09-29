@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
     show ankiMobileLedgerIsDuplicateSource;
@@ -94,6 +95,21 @@ SettingsDestination buildCardCreationDestination() {
       ),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.batch_mining',
+        title: t.anki_batch_mining_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mine_landing',
+        title: t.anki_pending_mine_landing_title,
+        hasRevealTarget: true,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.pending_mines',
+        title: t.anki_pending_mines_title,
+        hasRevealTarget: true,
+      ),
       SettingsBodySearchEntry(
         id: 'card_creation.anki.duplicate_scope',
         title: t.anki_duplicate_scope,
@@ -282,6 +298,14 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         ),
       ],
       if (panel == AnkiSettingsPanel.connection) ...[
+        // 只有带了 fushi-anki-sync 的安装包才有这一节（目前是桌面端）。
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.sync_client',
+          title: t.anki_sync_client_use_title,
+          subtitle: t.anki_sync_client_section_title,
+          hasRevealTarget: true,
+          visible: (_) => sharedAnkiSyncSession != null,
+        ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_port_auto_fix',
           title: t.anki_connect_port_auto_fix,

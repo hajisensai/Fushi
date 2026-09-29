@@ -826,7 +826,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
     }
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }

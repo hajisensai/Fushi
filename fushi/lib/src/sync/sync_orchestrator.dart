@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -167,7 +168,10 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncAggregateNamespace ||
     name == kSyncCollectionsNamespace ||
     name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace;
+    name == kSyncTombstonesNamespace ||
+    // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
+    // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
+    name == PendingMineRelay.namespace;
 
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
@@ -246,6 +250,9 @@ class SyncRunReport {
   /// interconnect channel. These require an AppModel preference-cache refresh
   /// even though no media row was imported.
   int serviceConfigsImported = 0;
+
+  /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
+  int pendingMinesReceived = 0;
 
   final List<String> errors = <String>[];
 
@@ -463,6 +470,7 @@ class SyncOrchestrator {
     this.onLocalAudioImported,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
+    this.pendingMineRelay,
   })  : _db = db,
         _backend = backend,
         _dictionaryResourceRoot = dictionaryResourceRoot,
@@ -491,6 +499,10 @@ class SyncOrchestrator {
   final String deviceId;
 
   final bool syncStats;
+
+  /// 待发制卡的跨设备中转（见 [PendingMineRelay]）。null = 本轮不跑（轻量路径、
+  /// 测试构造）。
+  final PendingMineRelay? pendingMineRelay;
 
   /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
   /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
@@ -724,6 +736,18 @@ class SyncOrchestrator {
       await _syncDeletionTombstonesLive(report, b);
     } else {
       await syncDeletionTombstones(report);
+    }
+
+    // 待发制卡跨设备中转：云与互联同走资产层（__pending_mines__ 命名空间）。失败只记
+    // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。
+    final PendingMineRelay? relay = pendingMineRelay;
+    if (relay != null) {
+      try {
+        final PendingMineRelayReport r = await relay.run(b);
+        report.pendingMinesReceived += r.received;
+      } catch (e) {
+        report.errors.add('pending mines: $e');
+      }
     }
 
     // TODO-1332: 只有整轮 sweep 完整跑到这里（书 / 词典 / 本地音频 / 有声书 / live 进度

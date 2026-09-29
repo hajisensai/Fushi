@@ -52,8 +52,9 @@ void main() {
           '改用 compactAnkiGlossaryHtml / compactAnkiGlossaryMap',
     );
 
+    // 渲染在 AnkiNoteComposer（BaseAnkiRepository 混入它；无头服务端也混入同一份）。
     for (final String path in <String>[
-      '../packages/fushi_anki/lib/src/base_anki_repository.dart',
+      '../packages/fushi_anki/lib/src/anki_note_composer.dart',
       'lib/src/anki/ankimobile_repository.dart',
     ]) {
       final String src = File(path).readAsStringSync();

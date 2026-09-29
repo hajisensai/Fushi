@@ -405,6 +405,67 @@ void main() {
       expect(interconnectEndpointUri('::::bad::::', '/api/probe'), isNull);
     });
   });
+
+  group('mayHaveDelivered：只有「确定没送到」才能让调用方重发', () {
+    Future<InterconnectPostOutcome> postWith(
+      Future<http.Response> Function(http.Request) handler, {
+      Duration timeout = const Duration(seconds: 3),
+    }) async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = await _repo(
+        db: db,
+        urls: const <FushiClientUrl>[FushiClientUrl(url: 'http://pc:8765')],
+      );
+      return InterconnectPostTransport(
+        repo: repo,
+        httpClient: MockClient(handler),
+      ).post(
+        path: '/api/mine/forward',
+        body: const <String, dynamic>{},
+        timeout: timeout,
+        authErrorMessage: 'rejected',
+      );
+    }
+
+    test('建连失败（对端关机 / 拒绝连接）→ 确定没送到', () async {
+      final InterconnectPostOutcome o = await postWith(
+        (_) async => throw http.ClientException('Connection refused'),
+      );
+      expect(o.json, isNull);
+      expect(o.allUnreachable, isTrue);
+      expect(o.mayHaveDelivered, isFalse);
+    });
+
+    test('请求发出后等应答超时 → 可能已送达', () async {
+      final InterconnectPostOutcome o = await postWith(
+        (_) => Future<http.Response>.delayed(
+          const Duration(seconds: 1),
+          () => http.Response('{}', 200),
+        ),
+        timeout: const Duration(milliseconds: 50),
+      );
+      expect(o.json, isNull);
+      expect(o.mayHaveDelivered, isTrue);
+    });
+
+    test('对端回过话（非 2xx）→ 可能已送达', () async {
+      final InterconnectPostOutcome o = await postWith(
+        (_) async => http.Response('boom', 500),
+      );
+      expect(o.json, isNull);
+      expect(o.allUnreachable, isFalse);
+      expect(o.mayHaveDelivered, isTrue);
+    });
+
+    test('拿到结果 → 已送达', () async {
+      final InterconnectPostOutcome o = await postWith(
+        (_) async => http.Response(jsonEncode(<String, dynamic>{'r': 1}), 200),
+      );
+      expect(o.json?['r'], 1);
+      expect(o.mayHaveDelivered, isTrue);
+    });
+  });
 }
 
 /// [MockClient] 不暴露「是否被 close」，而 socket 回收正是本传输层的安全约束之一，
@@ -419,4 +480,5 @@ class _ClosableMockClient extends MockClient {
     onClose();
     super.close();
   }
+
 }

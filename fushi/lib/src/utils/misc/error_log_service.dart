@@ -601,6 +601,10 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_field_mapping_mismatch;
     case AnkiErrorCode.firstFieldEmpty:
       return t.anki_error_first_field_empty;
+    case AnkiErrorCode.syncClientSignedOut:
+      return t.anki_error_sync_signed_out;
+    case AnkiErrorCode.syncClientUnavailable:
+      return t.anki_error_sync_unavailable;
     default:
       return null;
   }
@@ -661,6 +665,16 @@ String? localizeAnkiMineError(String? code) {
         success: false,
         record: false,
         status: MineToastStatus.failed,
+      );
+    case MineResult.queued:
+      // 卡已经冻结进待发队列（媒体都拷走了），对用户而言「收下了」：清草稿、画 ✓、
+      // 计入制卡统计与句子历史，与成功同待遇；toast 用蓝色说明它还没进 Anki。
+      // 代价：补发时若被 Anki 判重复，统计会多算这一张——可接受。
+      return (
+        message: t.anki_pending_mine_queued,
+        success: true,
+        record: !overwrite,
+        status: MineToastStatus.queued,
       );
     case MineResult.error:
       return (

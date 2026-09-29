@@ -126,8 +126,8 @@ void main() {
 
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 115);
-    expect(db.schemaVersion, 115);
+    expect(version.read<int>('user_version'), 116);
+    expect(db.schemaVersion, 116);
 
     final List<QueryRow> preferences = await db
         .customSelect(
@@ -294,6 +294,7 @@ void main() {
         'anidb_file_identities',
         'video_episode_binding_overrides',
         'manga_reader_overrides',
+        'pending_mine_queue',
       },
       reason: '除 v64 的 collection_scrape_meta、v65 的 Mihon 五表、v66 的 '
           'collection_relations、v68 的 media_images、v77 视频来源刮削表、'
@@ -308,7 +309,8 @@ void main() {
           'manga_download_jobs（漫画下载队列）与 v106 的 '
           'anidb_file_identities（AniDB 文件级身份）与 v111 的 '
           'video_episode_binding_overrides（用户手动钉死的季集绑定）与 v112 的 '
-          'manga_reader_overrides（漫画阅读器每作品稀疏覆盖）外，'
+          'manga_reader_overrides（漫画阅读器每作品稀疏覆盖）与 v114 的 '
+          'pending_mine_queue（设备端待发制卡队列）外，'
           '升级不得新增任何表',
     );
   });
@@ -327,7 +329,7 @@ void main() {
     expect(await db.getPref('theme'), 's:dark');
     final QueryRow version =
         await db.customSelect('PRAGMA user_version').getSingle();
-    expect(version.read<int>('user_version'), 115);
+    expect(version.read<int>('user_version'), 116);
   });
 
   test(
@@ -358,7 +360,7 @@ void main() {
     final sqlite3.Database probe =
         sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 115);
+      expect(probe.select('PRAGMA user_version').first.values.first, 116);
       expect(
         probe.select(
           'SELECT 1 FROM profile_settings '

@@ -74,11 +74,11 @@ void main() {
       isMainProcess: false,
     );
     addTearDown(migrated.close);
-    expect(migrated.schemaVersion, 115);
+    expect(migrated.schemaVersion, 116);
     final QueryRow version = await migrated
         .customSelect('PRAGMA user_version')
         .getSingle();
-    expect(version.read<int>('user_version'), 115);
+    expect(version.read<int>('user_version'), 116);
 
     Future<Set<String>> columnsOf(String table) async => <String>{
       for (final QueryRow row
@@ -114,7 +114,7 @@ void main() {
   test('fresh v115 schema has both columns', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    expect(db.schemaVersion, 115);
+    expect(db.schemaVersion, 116);
     final Set<String> epubCols = <String>{
       for (final QueryRow row
           in await db.customSelect("PRAGMA table_info('epub_books')").get())

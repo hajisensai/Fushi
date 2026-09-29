@@ -30,6 +30,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/tls/fushi_tls_identity.dart';
+import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/host_bindings.dart';
@@ -86,6 +87,7 @@ class HeadlessHost {
   MangaOcrServiceImpl? _ocrService;
   HostJobManager? _jobs;
   ServerDownloadHost? _downloads;
+  ServerAnkiLanding? _anki;
   final _AsyncMutex _mutex = _AsyncMutex();
   PendingPairing? _pendingPairing;
   String? _hostFingerprint;
@@ -103,6 +105,9 @@ class HeadlessHost {
   HostJobManager? get jobs => _jobs;
   ServerDownloadHost? get downloads => _downloads;
   HostSubscriptionHost? get subscriptions => _downloads?.subscriptions;
+
+  /// Anki 落地（手机的待发卡经互联同步进来，这里写进 Anki 并同步）。
+  ServerAnkiLanding? get anki => _anki;
 
   /// 吊销 peer 后让服务器重读 token 集（否则旧 token 还在缓存里能用到重启）。
   void invalidatePeerTokens() => _server?.invalidatePeerTokenCache();
@@ -184,6 +189,16 @@ class HeadlessHost {
     await server.start();
     _server = server;
 
+    final ServerAnkiLanding anki = ServerAnkiLanding(
+      prefs: prefs,
+      db: db,
+      support: paths.support,
+      syncData: paths.syncData,
+      deviceId: identity.deviceId,
+      deviceName: config.deviceName,
+    )..start();
+    _anki = anki;
+
     _advertiser = LanAdvertiser(
       deviceName: config.deviceName,
       deviceId: identity.deviceId,
@@ -199,6 +214,9 @@ class HeadlessHost {
   }
 
   Future<void> stop() async {
+    final ServerAnkiLanding? anki = _anki;
+    _anki = null;
+    await anki?.stop();
     final LanAdvertiser? adv = _advertiser;
     _advertiser = null;
     await adv?.stop();

@@ -518,6 +518,16 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'cardCreation/Delete automatically without asking':
       'test/anki/anki_media_dedup_auto_test.dart + '
           'test/settings/settings_flatten_anki_profile_test.dart',
+  // 批量制卡：同上，写的是 AnkiSettings（经 SharedPreferences，非本测试的内存 DB），
+  // 故 changed=false。生效点在 ankiRepositoryProvider 最外层的待发队列装饰器——
+  // 开着时制卡不碰后端、一律入队；行为由专项测试咬死。
+  'cardCreation/Batch mining':
+      'test/anki/pending_mining_anki_repository_test.dart (批量模式)',
+  // 本机作为制卡落地设备：写同步域设备本地偏好（认领时刻），生效点在下一轮同步的
+  // 跨设备中转（harness 里没有同步后端可探）；认领 / 上传 / 收卡 / 回执全流程由
+  // 专项测试用内存资产层两台设备对跑咬死。
+  'cardCreation/Deliver cards from other devices':
+      'test/anki/pending_mine_relay_test.dart',
   // PR#343: 互联「制卡到服务端」开关。写 prefsRepo mine_to_server（changed=true），
   // 生效点在 ankiRepositoryProvider——开关开时把本地仓库包一层 RemoteMiningAnkiRepository，
   // mineEntry/isDuplicate 经互联链路转发到已配对主机（用主机 Anki 落卡），配置类方法仍委派

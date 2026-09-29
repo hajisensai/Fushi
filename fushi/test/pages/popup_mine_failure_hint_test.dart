@@ -170,10 +170,11 @@ void main() {
     final String bridge = File(
       'lib/src/lookup/overlay_bridge_handlers.dart',
     ).readAsStringSync();
-    expect(
-        bridge.contains(
-            "if (outcome.result == MineResult.duplicate) 'duplicate': true"),
-        isTrue,
+    // 裸浮窗的回包由 MinePopupResult 构造（duplicate / queued 位随 toJson 带出），
+    // 不再手拼字段。
+    expect(bridge.contains('MinePopupResult.failed(outcome)'), isTrue,
         reason: 'app 外裸浮窗的制卡回程同样要带 duplicate 位');
+    expect(bridge.contains('...reply.toJson()'), isTrue,
+        reason: '回包字段必须来自 MinePopupResult.toJson');
   });
 }

@@ -705,6 +705,7 @@ void _requireOneVideoMetadataOwner({
   MangaDownloadJobs,
   AnidbFileIdentities,
   VideoEpisodeBindingOverrides,
+  PendingMineQueue,
 ])
 class FushiDatabase extends _$FushiDatabase
     with
@@ -737,7 +738,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 115;
+  int get schemaVersion => 116;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3501,6 +3502,15 @@ class FushiDatabase extends _$FushiDatabase
                 'WHERE s.game_id = galgames.id) '
                 'WHERE play_status = 2 AND completed_at IS NULL',
               );
+            }
+          }
+          if (from < 116) {
+            // v116（待发制卡队列；原定 v114，被并行合入的收藏上下文 v114 / 排行榜 v115
+            // 占用后顺延）：设备端 pending_mine_queue（后端不可达/批量模式先入队
+            // 稍后补发；载荷在 <support>/pending_mine_queue/<id>.json）。设备本地、
+            // 无 FK；fresh DB 已由 onCreate 的 createAll 建好，_tableExists 守卫幂等。
+            if (!await _tableExists('pending_mine_queue')) {
+              await m.createTable(pendingMineQueue);
             }
           }
         },
