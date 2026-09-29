@@ -5782,6 +5782,7 @@
   "stat_range_summary": "所选范围",
   "stat_range_active_days": "活跃天数",
   "stat_range_calendar": "学习日历",
+  "download_selection_already_queued": "这一项已在下载队列中。",
   "popup_bottom_docked_books": "小说中底部停靠",
   "popup_bottom_docked_manga": "漫画中底部停靠",
   "popup_bottom_docked_video": "视频中底部停靠",
