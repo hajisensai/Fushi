@@ -19,6 +19,7 @@ ImportCarrier classify(
   Set<String> imageArchives = const <String>{},
   Set<String> pageImageDirs = const <String>{},
   Map<String, int> carrierFileDirs = const <String, int>{},
+  Map<String, int> mokuroFileDirs = const <String, int>{},
 }) =>
     classifyImportCarrier(
       path,
@@ -26,6 +27,7 @@ ImportCarrier classify(
       isImageArchive: imageArchives.contains,
       directoryHasPageImages: pageImageDirs.contains,
       directoryCarrierFileCount: (String p) => carrierFileDirs[p] ?? 0,
+      directoryMokuroFileCount: (String p) => mokuroFileDirs[p] ?? 0,
     );
 
 void main() {
@@ -135,6 +137,48 @@ void main() {
     });
   });
 
+  /// BUG-2761：mokuro 的标准产物是「`卷.mokuro` + 同名页图子目录」。页图判据递归
+  /// 压平进子目录，于是装着这两样的文件夹被当成页图目录，OCR 结果被静默丢掉。
+  group('目录里有 .mokuro（BUG-2761）', () {
+    test('恰好一个 .mokuro + 页图子目录 → mangaMokuro（不再被页图判据抢先）', () {
+      expect(
+        classify(
+          '/m/vol1-dir',
+          directories: <String>{'/m/vol1-dir'},
+          pageImageDirs: <String>{'/m/vol1-dir'},
+          carrierFileDirs: <String, int>{'/m/vol1-dir': 1},
+          mokuroFileDirs: <String, int>{'/m/vol1-dir': 1},
+        ),
+        ImportCarrier.mangaMokuro,
+      );
+    });
+
+    test('两个及以上 .mokuro → mangaBatchFolder（逐卷各带各的 OCR）', () {
+      expect(
+        classify(
+          '/m/series',
+          directories: <String>{'/m/series'},
+          pageImageDirs: <String>{'/m/series'},
+          carrierFileDirs: <String, int>{'/m/series': 2},
+          mokuroFileDirs: <String, int>{'/m/series': 2},
+        ),
+        ImportCarrier.mangaBatchFolder,
+      );
+    });
+
+    test('没有 .mokuro → 原有顺序不变（页图优先）', () {
+      expect(
+        classify(
+          '/m/plain',
+          directories: <String>{'/m/plain'},
+          pageImageDirs: <String>{'/m/plain'},
+          carrierFileDirs: <String, int>{'/m/plain': 2},
+        ),
+        ImportCarrier.mangaFolder,
+      );
+    });
+  });
+
   group('书籍载体', () {
     test('.pdf → pdf（必须先于文本分支，否则二进制被转成乱码 EPUB）', () {
       expect(classify('/b/doc.pdf'), ImportCarrier.pdf);
@@ -184,6 +228,7 @@ void main() {
           },
           directoryHasPageImages: (_) => false,
           directoryCarrierFileCount: (_) => 0,
+          directoryMokuroFileCount: (_) => 0,
         );
       }
       expect(probed, isEmpty, reason: '扩展名已能定性时不得白开一次包');
@@ -200,6 +245,7 @@ void main() {
         },
         directoryHasPageImages: (_) => false,
         directoryCarrierFileCount: (_) => 0,
+        directoryMokuroFileCount: (_) => 0,
       );
       expect(probed, isEmpty, reason: '目录在读包判据之前就已早退');
     });
@@ -216,6 +262,7 @@ void main() {
           },
           directoryHasPageImages: (_) => false,
           directoryCarrierFileCount: (_) => 0,
+          directoryMokuroFileCount: (_) => 0,
         );
       }
       expect(probed, <String>['/x/a.zip', '/x/a.epub']);
@@ -253,6 +300,7 @@ void main() {
           },
           directoryHasPageImages: (String _) => false,
           directoryCarrierFileCount: (String _) => 0,
+          directoryMokuroFileCount: (String _) => 0,
         ),
         probes: probes,
       );
@@ -317,6 +365,7 @@ void main() {
         },
         directoryHasPageImages: (String _) => false,
         directoryCarrierFileCount: (String _) => 0,
+        directoryMokuroFileCount: (String _) => 0,
       );
 
       expect(resolver.resolve(f.path), ImportCarrier.epub,

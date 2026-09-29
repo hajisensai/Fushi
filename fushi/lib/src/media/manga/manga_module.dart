@@ -50,6 +50,19 @@ abstract final class MangaModule {
   static int directoryCarrierFileCount(String path) =>
       mangaCarrierFilesIn(Directory(path)).length;
 
+  /// 目录直接子层的 `.mokuro` 数（[ImportCarrier] 的目录分支判据，BUG-2761）。
+  static int directoryMokuroFileCount(String path) =>
+      mangaMokuroFilesIn(Directory(path)).length;
+
+  /// 目录直接子层**恰好一个** `.mokuro` 时返回它的路径，否则 null。
+  ///
+  /// 载体判成 [ImportCarrier.mangaMokuro] 的目录要经它换成那个文件再导入——
+  /// `importMokuro` 吃的是 `.mokuro` 文件，不是目录。
+  static String? directorySingleMokuroPath(String path) {
+    final List<File> files = mangaMokuroFilesIn(Directory(path));
+    return files.length == 1 ? files.single.path : null;
+  }
+
   /// 一个装着整卷载体文件的目录 → 逐卷导入（BUG-1649）。一卷失败不中断整批，
   /// 每卷结局在返回的报告里，由调用方一次性汇报。
   static Future<MangaBatchImportReport> importBatchFolder({

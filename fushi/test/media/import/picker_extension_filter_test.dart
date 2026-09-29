@@ -25,7 +25,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:path/path.dart' as p;
+
+import '../../helpers/test_platform_services.dart';
 
 /// 假 file_picker：记录平台**实际收到**的过滤参数，并交回指定的文件列表。
 class _RecordingFilePicker extends FilePicker {
@@ -323,4 +326,40 @@ void main() {
     expect(fake.lastAllowedExtensions, isNull);
     expect(result?.files.single.name, 'whatever.bin');
   });
+
+  // BUG-2762：iOS 的 file_picker 用 import 模式，选中的文件被挪进
+  // `NSTemporaryDirectory()`，只有那一个文件、同级兄弟不跟过来——那不是用户原始位置，
+  // 出处必须如实标 false，否则调用方会把临时副本当成可长期引用的真实路径落库。
+  for (final (TargetPlatform platform, bool real) in <(TargetPlatform, bool)>[
+    (TargetPlatform.iOS, false),
+    (TargetPlatform.windows, true),
+    (TargetPlatform.macOS, true),
+    (TargetPlatform.linux, true),
+  ]) {
+    testWidgets(
+      'pickRealFilePathDetailed：${platform.name} 出处 isRealPath=$real',
+      (WidgetTester tester) async {
+        final _RecordingFilePicker fake = _RecordingFilePicker(<String>[
+          '/private/var/mobile/tmp/vol1.mokuro',
+        ]);
+        FilePicker.platform = fake;
+        final AppModel model = AppModel(testPlatformServices());
+        try {
+          final PickedFilePath? picked = await _onPlatform(
+            tester,
+            platform,
+            (BuildContext context) => pickRealFilePathDetailed(
+              context: context,
+              appModel: model,
+              allowedExtensions: <String>{'mokuro'},
+            ),
+          );
+          expect(picked?.path, '/private/var/mobile/tmp/vol1.mokuro');
+          expect(picked?.isRealPath, real);
+        } finally {
+          model.dispose();
+        }
+      },
+    );
+  }
 }

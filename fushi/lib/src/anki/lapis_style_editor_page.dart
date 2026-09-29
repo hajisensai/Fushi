@@ -703,6 +703,8 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
       },
       onLoadStop: (_, __) => _refreshPreview(),
       // 非 null 本身就是救命动作：Java 侧据此 `return true`，不再连坐杀 app。
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_previewDeathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(_previewDeathGuard.handleDeath(

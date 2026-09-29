@@ -272,6 +272,8 @@ class WebViewLnReaderRuntime implements LnReaderRuntime {
           if (!loaded.isCompleted) loaded.completeError(error, stack);
         }
       },
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(_handleDeath()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(_handleDeath()),

@@ -203,6 +203,8 @@ Future<void> renderAudiobookClipFramesViaWebView({
       onLoadStop: (InAppWebViewController controller, WebUri? url) {
         if (!loaded.isCompleted) loaded.complete();
       },
+      onWebContentProcessDidTerminate: (InAppWebViewController _) =>
+          unawaited(deathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
               unawaited(deathGuard.handleDeath(

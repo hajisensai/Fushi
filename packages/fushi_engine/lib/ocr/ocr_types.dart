@@ -34,10 +34,14 @@ class OcrRect {
 
   /// 与 [other] 的交并比。
   double iou(OcrRect other) {
-    final double ix =
-        math.max(0, math.min(right, other.right) - math.max(left, other.left));
-    final double iy =
-        math.max(0, math.min(bottom, other.bottom) - math.max(top, other.top));
+    final double ix = math.max(
+      0,
+      math.min(right, other.right) - math.max(left, other.left),
+    );
+    final double iy = math.max(
+      0,
+      math.min(bottom, other.bottom) - math.max(top, other.top),
+    );
     final double inter = ix * iy;
     if (inter <= 0) {
       return 0;
@@ -197,4 +201,24 @@ abstract interface class OcrRecognizer {
 /// 不得在后端过滤或重排。空输入返回空列表。模型内部可再按显存限制分批。
 abstract interface class BatchOcrRecognizer implements OcrRecognizer {
   Future<List<String>> recognizeBatch(img.Image page, List<OcrRect> boxes);
+}
+
+/// 一个框的识别结果 + 识别过程中确定的排版方向。
+class OcrRecognition {
+  const OcrRecognition({required this.text, required this.vertical});
+
+  final String text;
+  final bool vertical;
+}
+
+/// 可选能力：识别时顺带判定了块方向（例如块内切行后按行投票）的识别器。
+///
+/// 方向只该有一个拥有者：长宽比只是检测框的外形，两列竖排气泡常常宽 ≥ 高，
+/// 按外形猜会把它标成横排（BUG-2755）。实现了本接口的识别器，pipeline 直接
+/// 采用它给的方向。输出与 [boxes] 严格同长、同序。
+abstract interface class OrientedOcrRecognizer implements OcrRecognizer {
+  Future<List<OcrRecognition>> recognizeOriented(
+    img.Image page,
+    List<OcrRect> boxes,
+  );
 }

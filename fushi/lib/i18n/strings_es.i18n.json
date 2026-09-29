@@ -6082,5 +6082,7 @@
   "floating_ball_scope_video": "Video player",
   "floating_ball_scope_general": "Other pages",
   "floating_ball_scope_system": "Outside the app",
-  "floating_ball_buttons_hint": "Buttons shown when the ball is expanded here"
+  "floating_ball_buttons_hint": "Buttons shown when the ball is expanded here",
+  "manga_import_ios_mokuro_needs_folder": "On iOS a single .mokuro can't bring its page images along. Pick the whole volume folder (the .mokuro plus its image folder), or a .zip/.cbz of it.",
+  "import_folder_copy_failed": "Couldn't copy the folder into the app: $error"
 }

@@ -134,8 +134,11 @@ namespace flutter_inappwebview_plugin
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
       double x, double y, double size, double pressure);
     void setPointerButtonState(InAppWebViewPointerButton button, bool isDown);
-    void sendScroll(double offset, bool horizontal);
+    void sendScroll(double offset, bool horizontal,
+      COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS extraKeys =
+        COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_NONE);
     void setScrollDelta(double delta_x, double delta_y);
+    void setPinchDelta(double delta);
     void onSurfaceSizeChanged(SurfaceSizeChangedCallback callback)
     {
       surfaceSizeChangedCallback_ = std::move(callback);
@@ -220,6 +223,8 @@ namespace flutter_inappwebview_plugin
     // needed. Single-threaded (platform-thread method-channel), no lock required.
     double scrollResidualX_ = 0.0;
     double scrollResidualY_ = 0.0;
+    // 捏合的 Ctrl+滚轮单独攒余量，不与普通滚动互相污染（BUG-2758）。
+    double pinchResidual_ = 0.0;
 
     // BUG-871: id of the first active touch contact, flagged POINTER_FLAG_PRIMARY
     // for its whole lifetime. Injected touch (SendPointerInput) carries no

@@ -132,13 +132,15 @@ void main() {
         'onLoadStop:',
         'onReceivedError:',
         'onRenderProcessGone:',
+        // BUG-2759：iOS/macOS 的 WebContent 进程终止同样是终点。
+        'onWebContentProcessDidTerminate:',
       ]) {
         expect(body, contains(callback),
             reason: '预热必须接管 $callback，否则该终点缺席：载入失败或 renderer '
                 '被 OOM kill 时 headless WebView 永不销毁，且 Android 会连坐杀 app');
       }
-      expect(body.split('session.finish(').length - 1, 3,
-          reason: '三条回调终点都必须落到同一个 session.finish（幂等收口）');
+      expect(body.split('session.finish(').length - 1, 4,
+          reason: '四条回调终点都必须落到同一个 session.finish（幂等收口）');
       expect(code, contains('session.armTimeout()'),
           reason: 'run() 之后必须装兜底表，否则回调全不来时仍然永久泄漏');
     });

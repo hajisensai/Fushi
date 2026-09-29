@@ -122,6 +122,28 @@ void main() {
           '违规处：${offenders.join(', ')}',
     );
   });
+
+  // BUG-2759：WKWebView（iOS / macOS）的内容进程被 WebKit 回收后，插件只把
+  // `onWebContentProcessDidTerminate` 转给 Dart、不会自动重载。不接 = 那块表面
+  // 永久白屏（常驻查词弹窗整卷 OCR 后点任何字只剩空白框），且不报任何错。
+  test('每一处 WebView 构造都传了非 null 的 onWebContentProcessDidTerminate', () {
+    final List<String> offenders = <String>[];
+    for (final _WebViewHost host in hosts) {
+      final String? value = _topLevelNamedArgument(
+          host.call.text, 'onWebContentProcessDidTerminate');
+      if (value == null || value.isEmpty || value == 'null') {
+        offenders.add(host.where);
+      }
+    }
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'iOS/macOS 上 WebContent 进程终止没人接管 = 永久白屏，'
+          '处置与 Android renderer 死亡同构（WebViewDeathGuard.'
+          'handleWebContentTerminated）。未接管的构造点：\n'
+          '${offenders.join('\n')}',
+    );
+  });
 }
 
 class _WebViewHost {

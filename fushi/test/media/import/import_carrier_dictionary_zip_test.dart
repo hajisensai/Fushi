@@ -72,6 +72,7 @@ void main() {
         isImageArchive: MangaModule.isImageArchive,
         directoryHasPageImages: MangaModule.directoryHasPageImages,
         directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+        directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
       );
 
   test('自带插图的 Yomitan 词典 zip 不得被判成漫画载体', () {

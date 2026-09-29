@@ -2051,7 +2051,8 @@ namespace flutter_inappwebview_plugin
       lastCursorPos_);
   }
 
-  void InAppWebView::sendScroll(double delta, bool horizontal)
+  void InAppWebView::sendScroll(double delta, bool horizontal,
+    COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS extraKeys)
   {
     if (!webViewCompositionController) {
       return;
@@ -2104,7 +2105,10 @@ namespace flutter_inappwebview_plugin
     // WebView2 → 弹窗「滚不动 / 很难滚」（鼠标一档 delta≈20→120 不受影响，每帧即过整单位）。
     // 这是 popup.js 的 TODO-1387 子像素残差修复够不到的更上游截断点：wheel 还没进 DOM 就没了。
     // 改为按轴累加被截掉的小数余量，小 delta 攒够整数 wheel 单位再发，绝不丢帧。
-    double& residual = horizontal ? scrollResidualX_ : scrollResidualY_;
+    const bool pinch =
+      (extraKeys & COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL) != 0;
+    double& residual = pinch ? pinchResidual_
+      : (horizontal ? scrollResidualX_ : scrollResidualY_);
     double scaled = delta * wheelUnitsPerLogicalPixel + residual;
     // 防极快甩动换算后溢出 short（否则环绕成反向跳变）；被夹掉的部分直接丢弃、不进余量。
     if (scaled > 32760.0) { scaled = 32760.0; }
@@ -2119,12 +2123,12 @@ namespace flutter_inappwebview_plugin
 
     if (horizontal) {
       webViewCompositionController->SendMouseInput(
-        COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL, virtualKeys_.state(),
-        offset, lastCursorPos_);
+        COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL,
+        virtualKeys_.state() | extraKeys, offset, lastCursorPos_);
     }
     else {
       webViewCompositionController->SendMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL,
-        virtualKeys_.state(), offset,
+        virtualKeys_.state() | extraKeys, offset,
         lastCursorPos_);
     }
   }
@@ -2141,6 +2145,17 @@ namespace flutter_inappwebview_plugin
     if (delta_y != 0.0) {
       sendScroll(delta_y, false);
     }
+  }
+
+  // BUG-2758：触控板捏合 → 带 Ctrl 的纵向滚轮，与 Chromium 在原生窗口里对
+  // DirectManipulation 捏合的合成方式一致（页面按 exp(-deltaY/100) 还原比例）。
+  // 换算与普通滚动同一条逻辑像素 → 滚轮单位链路，DOM 收到的 deltaY 1:1。
+  void InAppWebView::setPinchDelta(double delta)
+  {
+    if (!webViewCompositionController || delta == 0.0) {
+      return;
+    }
+    sendScroll(delta, false, COREWEBVIEW2_MOUSE_EVENT_VIRTUAL_KEYS_CONTROL);
   }
 
   bool InAppWebView::createSurface(const HWND parentWindow,

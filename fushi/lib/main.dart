@@ -594,6 +594,8 @@ void main([List<String> args = const <String>[]]) {
                 session.finish('load error: ${error.type}'),
             // 接管 renderer 死亡：Android 侧只要注册了这个回调，
             // InAppWebViewClient 就返回 true，chromium 不再连坐杀 app 进程。
+            onWebContentProcessDidTerminate: (controller) =>
+                session.finish('webkit content process terminated'),
             onRenderProcessGone: (controller, detail) =>
                 session.finish('renderer gone (didCrash=${detail.didCrash})'),
           );
