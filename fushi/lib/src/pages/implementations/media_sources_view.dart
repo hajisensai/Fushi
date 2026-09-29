@@ -1880,7 +1880,10 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              SegmentedButton<String>(
+              // 走共享分段条而非裸 SegmentedButton：手机上对话框内容区只有
+              // ~230dp，裸控件把 4 段各钳到 1/4 宽，标签被逐字断行成竖排；
+              // FushiSegmentedStrip 装不下就横向滚动，段宽不小于标签。
+              FushiSegmentedStrip<String>(
                 segments: <ButtonSegment<String>>[
                   for (final String tp in widget.transports)
                     ButtonSegment<String>(
@@ -1893,9 +1896,8 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
                       }),
                     ),
                 ],
-                selected: <String>{_transport},
-                onSelectionChanged: (Set<String> s) =>
-                    _onTransportChanged(s.first),
+                selected: _transport,
+                onChanged: _onTransportChanged,
               ),
               const SizedBox(height: 12),
               // WebDAV：整库定位靠单个集合 URL（含 scheme/host/端口/路径），故不显示
