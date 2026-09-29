@@ -186,6 +186,26 @@ describe('用户主页 / 书架 / 作品页', () => {
     expect(reading.data.rows.map((x) => x.work.title)).toEqual(['reading-now']);
   });
 
+  it('一页超过 5 部作品：读完 / 在读都 200，每部作品各带读者墙（D1 compound SELECT 只允许 5 段）', async () => {
+    const env = makeEnv();
+    const owner = await registerUser(env, 'owner', { now: NOW });
+    const fan = await registerUser(env, 'fan', { now: NOW });
+    const finished = Array.from({ length: 8 }, (_, i) => entry('book', [`t:f${i}|`], `f${i}`, at(`2026-09-1${i}`)));
+    const reading = Array.from({ length: 7 }, (_, i) => entry('book', [`t:r${i}|`], `r${i}`));
+    await upload(env, owner, [...finished, ...reading]);
+    await upload(env, fan, [...finished, ...reading]);
+
+    const done = await call(env, 'GET', `/v1/users/${owner.id}/shelf?status=finished`, { now: NOW });
+    expect(done.status).toBe(200);
+    expect(done.data.rows).toHaveLength(8);
+    for (const row of done.data.rows) expect(row.wall.map((a) => a.nickname)).toEqual(['fan']);
+    const now = await call(env, 'GET', `/v1/users/${owner.id}/shelf?status=reading`, { now: NOW });
+    expect(now.status).toBe(200);
+    expect(now.data.rows).toHaveLength(7);
+    // 在读作品没有人读完：读者墙为空。
+    for (const row of now.data.rows) expect(row.wall).toEqual([]);
+  });
+
   it('仅好友可见：陌生人 403，好友 200；该用户仍计入读者人数但不出现在陌生人的读者墙', async () => {
     const { env, tom, readers, workId } = await seed();
     const [r1, r2] = readers;

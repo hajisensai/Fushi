@@ -244,17 +244,16 @@ async function readerWalls(env, workIds, viewerId, excludeId, perWork, rel) {
     ).bind(JSON.stringify(friendIds), JSON.stringify(workIds)).all();
     fr.results.forEach(push);
   }
-  const q = params();
-  const pv = q.p(viewerId);
-  const pex = q.p(excludeId);
-  const pl = q.p(perWork);
-  const parts = workIds.map((w) => `SELECT * FROM (
-      SELECT s.work_id, a.id, a.nickname, a.discriminator, a.avatar_key
+  // 每部作品一条沿 idx_shelf_work 取前 perWork 行的语句，batch 一次往返发出。不能拼成一条
+  // UNION ALL：D1 的 compound SELECT 上限只有 5 段（线上实测第 6 段即 SQLITE_ERROR），
+  // 一页 50 部作品就整个 500。
+  const sql = `SELECT s.work_id, a.id, a.nickname, a.discriminator, a.avatar_key
       FROM shelf s JOIN accounts a ON a.id = s.account_id
-      WHERE s.work_id = ${q.p(w)} AND s.finished_at IS NOT NULL AND a.id != ${pex} AND ${visibleReaderSql('a', pv)}
-      ORDER BY s.finished_at DESC LIMIT ${pl})`);
-  const recent = await env.DB.prepare(parts.join(' UNION ALL ')).bind(...q.values).all();
-  recent.results.forEach(push);
+      WHERE s.work_id = ?1 AND s.finished_at IS NOT NULL AND a.id != ?2 AND ${visibleReaderSql('a', '?3')}
+      ORDER BY s.finished_at DESC LIMIT ?4`;
+  const stmt = env.DB.prepare(sql);
+  const recent = await env.DB.batch(workIds.map((w) => stmt.bind(w, excludeId, viewerId, perWork)));
+  for (const r of recent) r.results.forEach(push);
   return walls;
 }
 

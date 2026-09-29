@@ -500,6 +500,167 @@ void main() {
       expect(movie.localCoverPath, '/c/movie.jpg');
     });
 
+    group('剧集读完 = 看完整部（服务端合并同一作品取「任一读完」）', () {
+      Future<int> tvWork({int? collectionId, String? bookUid}) async {
+        final int w = await db
+            .into(db.videoMetadataWorks)
+            .insert(
+              VideoMetadataWorksCompanion.insert(
+                collectionId: Value<int?>(collectionId),
+                bookUid: Value<String?>(bookUid),
+                mediaType: 'tv',
+                title: 'リトルウィッチアカデミア',
+                updatedAt: 0,
+              ),
+            );
+        await db
+            .into(db.videoMetadataProviderIdentities)
+            .insert(
+              VideoMetadataProviderIdentitiesCompanion.insert(
+                identityKey: 'work:$w:anidb',
+                workId: Value<int?>(w),
+                provider: 'anidb',
+                externalId: '12346',
+                isPrimary: const Value<bool>(true),
+                updatedAt: 0,
+              ),
+            );
+        return w;
+      }
+
+      /// 季集骨架：[bound] 的第 i 个元素绑到第 i+1 集（null = 本地没有这一集）。
+      Future<void> skeleton(
+        int work,
+        List<String?> bound, {
+        int season = 1,
+      }) async {
+        final int s = await db
+            .into(db.videoMetadataSeasons)
+            .insert(
+              VideoMetadataSeasonsCompanion.insert(
+                workId: work,
+                seasonNumber: season,
+                updatedAt: 0,
+              ),
+            );
+        for (int i = 0; i < bound.length; i++) {
+          await db
+              .into(db.videoMetadataEpisodes)
+              .insert(
+                VideoMetadataEpisodesCompanion.insert(
+                  seasonId: s,
+                  episodeNumber: i + 1,
+                  bookUid: Value<String?>(bound[i]),
+                  updatedAt: 0,
+                ),
+              );
+        }
+      }
+
+      Future<int> collectionOf(List<String> uids) async {
+        final int c = await db
+            .into(db.mediaCollections)
+            .insert(
+              MediaCollectionsCompanion.insert(name: 'LWA', createdAt: 0),
+            );
+        for (final String uid in uids) {
+          await db
+              .into(db.mediaCollectionItems)
+              .insert(
+                MediaCollectionItemsCompanion.insert(
+                  collectionId: c,
+                  mediaType: 'video',
+                  entryKey: uid,
+                ),
+              );
+        }
+        return c;
+      }
+
+      test('每集各自刮成剧集作品：看完第 1 集不算看完整部', () async {
+        // 用户报告的原始路径：第 1 集看完，第 2 集之后从没打开过。
+        await video('ep1', completedAt: DateTime(2026, 9, 26, 12));
+        await video('ep2');
+        await video('ep3');
+        for (final String uid in <String>['ep1', 'ep2', 'ep3']) {
+          await skeleton(await tvWork(bookUid: uid), <String?>[
+            if (uid == 'ep1') 'ep1' else null,
+            if (uid == 'ep2') 'ep2' else null,
+            if (uid == 'ep3') 'ep3' else null,
+          ]);
+        }
+        await segment('video', 'ep1', date: '2026-09-26', chars: 1204, ms: 10);
+
+        final Map<String, LocalShelfEntry> m = byKey(
+          await buildLocalShelf(db, profileId: profile),
+        );
+        expect(m.keys, <String>['video:bep1']);
+        expect(m['video:bep1']!.upload.finished, isFalse);
+        expect(m['video:bep1']!.upload.finishedAt, isNull);
+      });
+
+      test('每集各自刮成剧集作品：全部看完才读完，组内每条都带整部的读完时刻', () async {
+        final DateTime last = DateTime(2026, 9, 27, 12);
+        await video('ep1', completedAt: DateTime(2026, 9, 26, 12));
+        await video('ep2', completedAt: last);
+        for (final String uid in <String>['ep1', 'ep2']) {
+          await skeleton(await tvWork(bookUid: uid), <String?>[
+            if (uid == 'ep1') 'ep1' else null,
+            if (uid == 'ep2') 'ep2' else null,
+          ]);
+        }
+        final Map<String, LocalShelfEntry> m = byKey(
+          await buildLocalShelf(db, profileId: profile),
+        );
+        for (final String k in <String>['video:bep1', 'video:bep2']) {
+          expect(m[k]!.upload.finished, isTrue, reason: k);
+          expect(m[k]!.upload.finishedAt, last.millisecondsSinceEpoch);
+        }
+      });
+
+      test('单个文件刮成剧集作品、没有骨架：看完它不算看完整部', () async {
+        await video('ep1', completedAt: DateTime(2026, 9, 26, 12));
+        await tvWork(bookUid: 'ep1');
+        await segment('video', 'ep1', date: '2026-09-26', ms: 10);
+        final Map<String, LocalShelfEntry> m = byKey(
+          await buildLocalShelf(db, profileId: profile),
+        );
+        expect(m['video:bep1']!.upload.finished, isFalse);
+      });
+
+      test('合集只下了前两集且都看完：骨架里还有没下的集 → 在读', () async {
+        await video('a', completedAt: DateTime(2026, 9, 1));
+        await video('b', completedAt: DateTime(2026, 9, 2));
+        final int c = await collectionOf(<String>['a', 'b']);
+        await skeleton(await tvWork(collectionId: c), <String?>[
+          'a',
+          'b',
+          null,
+        ]);
+        await segment('video', 'a', date: '2026-09-01', ms: 10);
+        final Map<String, LocalShelfEntry> m = byKey(
+          await buildLocalShelf(db, profileId: profile),
+        );
+        expect(m['video:c$c']!.upload.finished, isFalse);
+      });
+
+      test('正片全部看完即读完；季 0 特典没看不影响', () async {
+        final DateTime last = DateTime(2026, 9, 3);
+        await video('a', completedAt: DateTime(2026, 9, 1));
+        await video('b', completedAt: last);
+        await video('sp');
+        final int c = await collectionOf(<String>['a', 'b', 'sp']);
+        final int w = await tvWork(collectionId: c);
+        await skeleton(w, <String?>['a', 'b']);
+        await skeleton(w, <String?>['sp'], season: 0);
+        final Map<String, LocalShelfEntry> m = byKey(
+          await buildLocalShelf(db, profileId: profile),
+        );
+        expect(m['video:c$c']!.upload.finished, isTrue);
+        expect(m['video:c$c']!.upload.finishedAt, last.millisecondsSinceEpoch);
+      });
+    });
+
     test('没刮削过的视频不上报：本地索引的临时作品（provider local）同样不算', () async {
       await video('a1', completedAt: DateTime(2026, 8, 1, 12));
       await video('b1', completedAt: DateTime(2026, 8, 1, 12));
