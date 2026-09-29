@@ -224,6 +224,18 @@ xcodebuild -project Runner.xcodeproj -target Runner -configuration Release \
 `macos/Runner.xcodeproj` 里 hoshidicts 的构建脚本用的是 `codesign --timestamp=none`
 的 ad-hoc 签名 —— 重签这一步正是用来覆盖它的。
 
+### 没有 Developer ID 时：ad-hoc 包必须钉指定要求（BUG-2772）
+
+ad-hoc 签名默认的指定要求是 `cdhash H"…"`，每次构建都变。TCC（辅助功能等隐私授权）
+存的就是授权那一刻的指定要求，所以不钉的话**每次应用内更新都要重新授权**（全局查词
+读前台选区靠辅助功能）。workflow 的「Pin stable designated requirement for ad-hoc
+macOS app」在所有 bundle 改动之后、只在 ad-hoc 路径上，只重签外层（**不带 `--deep`**，
+否则 identifier 要求会盖到内层 Mach-O 上、`--verify --strict` 失败）并嵌入
+`designated => identifier "app.fushi.reader"`。它之后不许再出现 `--deep --sign -`
+整包重签（守卫 `fushi/test/build/macos_adhoc_designated_requirement_guard_test.dart`）。
+改 macOS bundle id 等于让所有用户重新授权一次。Developer ID 路径不需要这一步：默认
+要求锚在 Team ID 上，本就跨构建稳定。
+
 ### 捆绑 JVM 的额外 entitlement
 
 `Contents/Resources/mihon_bridge` 是一个 Temurin JDK 21 的 jlink 镜像
