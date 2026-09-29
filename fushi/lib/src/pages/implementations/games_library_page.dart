@@ -49,6 +49,7 @@ import 'package:fushi/src/pages/implementations/game_shared.dart'
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show DialogDangerAction, DialogQuickAction, MediaItemDialogFrame;
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
@@ -1362,6 +1363,17 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage> {
       onEditJapaneseLocale: () => unawaited(_editJapaneseLocaleMode(game)),
       onEditLanguage: () => unawaited(_editGameLanguage(game)),
       onOpenFileLocation: () => unawaited(_openGameFileLocation(game)),
+      onStatistics: () => unawaited(
+        showMediaItemStatsDialog(
+          context,
+          database: _appModel.database,
+          target: MediaItemStatsTarget(
+            mediaKind: kActivityMediaGame,
+            mediaKeys: <String>{game.id},
+            title: game.displayName,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1638,6 +1650,7 @@ class _GameCard extends StatelessWidget {
     required this.onEditJapaneseLocale,
     required this.onEditLanguage,
     required this.onOpenFileLocation,
+    required this.onStatistics,
     this.sortLabel,
   });
 
@@ -1669,6 +1682,9 @@ class _GameCard extends StatelessWidget {
 
   /// 在系统文件管理器里定位这个游戏的 exe（见 `_openGameFileLocation`）。
   final VoidCallback onOpenFileLocation;
+
+  /// 右键 / 长按反查这个游戏的统计（游玩时长 + 文本钩子字数，身份 = galgames.id）。
+  final VoidCallback onStatistics;
 
   /// 长按 / 右键的上下文菜单：与书卡/视频卡同款 [MediaItemDialogFrame]（封面块 +
   /// 快捷动作 chips + 底部危险区），替代旧手搓 SimpleDialog。菜单项与封面溢出菜单
@@ -1747,6 +1763,12 @@ class _GameCard extends StatelessWidget {
           action: 'status',
           label: t.game_play_status,
           icon: Icons.flag_outlined,
+          danger: false,
+        ),
+        (
+          action: 'stats',
+          label: t.media_stats_action,
+          icon: Icons.insights_outlined,
           danger: false,
         ),
         (
@@ -1840,6 +1862,8 @@ class _GameCard extends StatelessWidget {
         onDetail();
       case 'status':
         onPlayStatus();
+      case 'stats':
+        onStatistics();
       case 'scrape':
         onScrape();
       case 'rename':

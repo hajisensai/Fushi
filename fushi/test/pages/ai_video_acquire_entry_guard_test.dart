@@ -67,8 +67,20 @@ void main() {
         'return;}}',
       ),
     );
+    // 路由本体抽到 ai_settings_route.dart（「AI 下载」三域共用），首页只委托。
     expect(
       home,
+      contains(
+        'Future<void>_pushAiSettings(BuildContextcontext)=>'
+        'pushAiSettingsPage(context);',
+      ),
+    );
+    expect(
+      compactCode(
+        File(
+          'lib/src/pages/implementations/ai_settings_route.dart',
+        ).readAsStringSync(),
+      ),
       contains('destinationId:SettingsDestinationId.ai,'),
       reason: '_pushAiSettings 必须落到「设置 › AI」目的地。',
     );

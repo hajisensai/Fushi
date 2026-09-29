@@ -38,7 +38,11 @@ enum AiFeature {
   /// AI 下视频：把用户一句话解析成结构化意图 + 多义作品选择 + 版本 tie-break，
   /// 三处共用这一个指派。热路径（搜作品 / 搜资源 / 选版本 / 入队 / 建订阅）仍是
   /// 本地确定性代码，AI 输出里没有自由文本字段。
-  videoAcquire;
+  videoAcquire,
+
+  /// AI 下载（浏览 › 发现的小说 / 漫画 / 游戏域）：一句话 → 搜索词，再在已取回的
+  /// 候选里挑推荐项；搜索、下载与入库全是本地确定性代码，下载前由用户确认。
+  mediaAcquire;
 
   String get storageKey => name;
 

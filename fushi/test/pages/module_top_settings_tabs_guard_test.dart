@@ -170,7 +170,7 @@ TorrentSettingsSection()
     );
     expect(
       RegExp(
-        r'enum BrowseTab \{ sources, extensions, discover, downloads \}',
+        r'enum BrowseTab \{ discover, sources, extensions, downloads \}',
       ).hasMatch(downloadsCode),
       isTrue,
       reason: '顶部页签里不得再有 settings',

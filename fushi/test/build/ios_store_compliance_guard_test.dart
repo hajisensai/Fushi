@@ -296,7 +296,8 @@ void main() {
         section,
         contains(
           'staticbool_featureAvailableOnThisStore(AiFeaturefeature)=>'
-          'feature!=AiFeature.videoAcquire||($gates);',
+          '(feature!=AiFeature.videoAcquire&&'
+          'feature!=AiFeature.mediaAcquire)||($gates);',
         ),
       );
     });

@@ -60,6 +60,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/pages/implementations/book_css_editor_page.dart';
 import 'package:fushi/src/pages/implementations/illustrations_viewer_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
@@ -2458,6 +2459,12 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           icon: Icons.folder_open_outlined,
           onPressed: () => _openBookFileLocation(bookKey),
         ),
+      // 右键 / 长按反查本书（漫画卷同一身份 bookKey）的学习统计。
+      DialogListAction(
+        label: t.media_stats_action,
+        icon: Icons.insights_outlined,
+        onPressed: () => _openItemStatistics(item, bookKey),
+      ),
       DialogListAction(
         label: _completedBookKeys.contains(bookKey)
             ? t.book_mark_uncompleted_action

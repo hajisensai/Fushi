@@ -107,6 +107,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/activity_feed.dart',
   // 阅读器内统计浮层：今日 / 累计卡按 StatWindow.isToday 切片（BUG-2218 起走统计口径）。
   'lib/src/reader/reader_statistics_sheet.dart',
+  // 库页条目右键 / 长按「查看统计」：今日 / 近 7 天 / 近 30 天按 StatWindow 切片。
+  'lib/src/pages/implementations/media_item_stats_dialog.dart',
 ];
 
 void main() {

@@ -8,7 +8,6 @@ import 'package:fushi/src/media/discovery/discovery_labels.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/external_provider.dart';
-import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -43,6 +42,7 @@ class MediaDiscoveryPage extends StatefulWidget {
     required this.kinds,
     this.navigation,
     this.initialSourceId,
+    this.onAiAcquire,
     super.key,
   });
 
@@ -58,6 +58,9 @@ class MediaDiscoveryPage extends StatefulWidget {
   /// 那种场景下用户已经点名了来源，再让他在引导态里挑一次是多余的一步。
   /// 只作用于**首帧**——之后用户改下拉、下钻目录都以页内状态为准。
   final String? initialSourceId;
+
+  /// 「AI 下载」入口（参数 = 搜索框当前文字）；null = 宿主没接线，按钮不渲染。
+  final ValueChanged<String>? onAiAcquire;
 
   @override
   State<MediaDiscoveryPage> createState() => _MediaDiscoveryPageState();
@@ -559,89 +562,24 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
   Future<void> _download(DiscoveryResourceItem item) async {
     final AppModel? appModel = _resolveAppModel();
     if (appModel == null || !item.isDownloadable) return;
-    switch (item.payloadKind) {
-      case DiscoveryPayloadKind.torrent:
-        final String resolvingKey = '${item.sourceId}\u0000${item.id}';
-        if (!_resolvingTorrentIds.add(resolvingKey)) return;
+    // 「解析中」只对 torrent 有意义（要先向来源取种子）；直链直接入队。
+    final bool torrent = item.payloadKind == DiscoveryPayloadKind.torrent;
+    final String resolvingKey = '${item.sourceId}\u0000${item.id}';
+    if (torrent) {
+      if (!_resolvingTorrentIds.add(resolvingKey)) return;
+      if (mounted) setState(() {});
+    }
+    try {
+      await startDiscoveryItemDownload(
+        context: context,
+        appModel: appModel,
+        item: item,
+      );
+    } finally {
+      if (torrent) {
+        _resolvingTorrentIds.remove(resolvingKey);
         if (mounted) setState(() {});
-        bool resolving = true;
-        try {
-          final MediaDiscoverySource? source =
-              appModel.mediaDiscoveryService.sourceById(item.sourceId);
-          if (source == null) return;
-          final DiscoveryPayload payload =
-              item.payload ?? await source.resolvePayload(item);
-          resolving = false;
-          if (!mounted) return;
-          final GenericPushOutcome outcome;
-          if (payload is DiscoveryTorrentPayload) {
-            outcome = await pushGenericMagnet(
-              context: context,
-              appModel: appModel,
-              magnet: payload.magnetUri,
-              discoveryKind: item.kind,
-              contentKind: switch (item.kind) {
-                DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
-                DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
-                DiscoveryMediaKind.game => AnimeDownloadPlan.kindGame,
-                DiscoveryMediaKind.manga => AnimeDownloadPlan.kindAuto,
-              },
-            );
-          } else if (payload is DiscoverySelectedTorrentPayload) {
-            outcome = await enqueueSelectedDiscoveryTorrent(
-              context: context,
-              appModel: appModel,
-              title: item.title,
-              resourceTitle: payload.resourceTitle,
-              metainfo: payload.metainfo,
-              selectedFileIndexes: payload.selectedFileIndexes,
-              kind: item.kind,
-              importAfterDownload: payload.importAfterDownload,
-              coverUrl: item.coverUrl,
-              metadataProvider: item.sourceId,
-              externalId: item.id,
-            );
-          } else {
-            return;
-          }
-          if (!mounted) return;
-          FushiToast.show(
-            msg: genericPushMessage(outcome),
-            severity: outcome.isSuccess
-                ? ToastSeverity.success
-                : outcome == GenericPushOutcome.alreadyQueued
-                    ? ToastSeverity.info
-                    : ToastSeverity.error,
-          );
-        } on Object catch (error, stack) {
-          ErrorLogService.instance.log(
-            'DiscoveryTorrent.${resolving ? 'resolve' : 'enqueue'}.${item.sourceId}',
-            error,
-            stack,
-          );
-          if (mounted) {
-            FushiToast.show(
-              msg: resolving
-                  ? discoveryTorrentResolveFailureMessage(error)
-                  : genericPushMessage(GenericPushOutcome.pushFailed),
-              severity: ToastSeverity.error,
-            );
-          }
-        } finally {
-          _resolvingTorrentIds.remove(resolvingKey);
-          if (mounted) setState(() {});
-        }
-      case DiscoveryPayloadKind.httpFile:
-        final bool added = appModel.discoveryDownloadQueue.enqueue(
-          item,
-          destinationDir: appModel.discoveryDownloadDirFor(item.kind),
-        );
-        if (added) {
-          FushiToast.show(
-            msg: t.discovery_download_queued,
-            severity: ToastSeverity.success,
-          );
-        }
+      }
     }
   }
 
@@ -689,6 +627,13 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
         _queryCtrl.clear();
         _submitSearch();
       },
+      trailing: <Widget>[
+        if (widget.onAiAcquire case final ValueChanged<String> onAiAcquire)
+          DiscoveryAiAcquireButton(
+            key: const ValueKey<String>('media-discovery-ai-acquire'),
+            onPressed: () => onAiAcquire(_queryCtrl.text),
+          ),
+      ],
       leading: _buildHeaderLeading(),
     );
   }

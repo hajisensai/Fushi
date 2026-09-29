@@ -98,3 +98,14 @@
   - 空态和错误态统一用 `FushiPlaceholderMessage`。
   - 搜索**只在提交时**触发：漫画搜索是 push 全源聚合搜索页，防抖等于每停顿一下就推一页、给所有源各打一轮请求。
   - 「浏览来源」节保留：mokuro.moe / Aidoku / OPDS 没有热门行，这一节是它们在发现页唯一的入口。
+
+## 2026-09-28 追加：发现排第一 + 四域 AI 下载
+
+用户口径：「浏览模块无论是视频 小说 游戏 漫画都支持 ai 下载，浏览模块的排序发现改为排在第一个。」
+
+- **页签顺序**：发现 → 来源 → 扩展 → 下载（`BrowseTab` 枚举与 `_visibleTabs` 列表字面量同改，守卫 `downloads_center_contract_guard_test` 钉住两处）。打开浏览默认落在发现。
+- **AI 下载**：视频域沿用既有「AI 下视频」对话页；小说 / 漫画 / 游戏三个发现页的搜索行末尾各加一颗 ✨（`media-discovery-ai-acquire` / `manga-discovery-ai-acquire`），进 `AiMediaAcquisitionPage`。
+  - 新 AI 功能指派 `AiFeature.mediaAcquire`（与视频分开指派；iOS 与视频同一合规门隐藏）。未指派时点按钮先引导去「设置 › AI」（`pushAiSettingsPage`，首页的 `_pushAiSettings` 也委托它）。
+  - 流程：一句话 →（AI）最多 3 个搜索词 →（本地）各后端并发搜 →（AI）在按做种数排好的前 40 条里挑 ≤3 条推荐 → 用户逐条点「下载」。AI 任一步失败不挡流程：按原文搜、按本地分排。
+  - 后端（`lib/src/media/acquisition/media_acquisition_backends.dart`）只复用既有下载路径：发现源 → `startDiscoveryItemDownload`（从发现页 `_download` 抽出，两处共用）；Mihon 漫画 → 加入书架 + 全部未锁章节进漫画下载队列（与作品页「下载全部」同一服务）；LNReader 小说 → 作品页同一个整本下载对话框。在线源是否参与与「来源」页签同一门；漫画在线源另需 Mihon 运行时。
+  - 已知限制：Mihon / LNReader 只搜各源第 1 页；AI 推荐不做跨源同作品合并。

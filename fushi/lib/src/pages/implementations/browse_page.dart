@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
@@ -21,6 +23,11 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
+    show AiMediaAcquisitionDomain;
+import 'package:fushi/src/pages/implementations/ai_media_acquisition_page.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/pages/implementations/anime_download_dialog.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
@@ -83,7 +90,7 @@ class BrowsePage extends ConsumerStatefulWidget {
 
 /// 「浏览」的页签。**用枚举而不是下标**：页签随平台 / 模块开关增减，跨页跳转
 /// （视频发现详情「管理订阅」等）若按下标就会在页签少一个时静默落错页。
-enum BrowseTab { sources, extensions, discover, downloads }
+enum BrowseTab { discover, sources, extensions, downloads }
 
 /// 顶层页签接力（二级标签越界横滑）时，目标页签的二级标签要不要按衔接方向
 /// 重新落端（往后落首段、往前落末段）。
@@ -222,10 +229,11 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
           appModel.moduleVisibility,
           gamesForm: appModel.gamesModuleForm,
         ).isNotEmpty;
+    // 发现排第一（2026-09-28 用户拍板）：打开浏览默认落在发现页签。
     return <BrowseTab>[
+      if (discover) BrowseTab.discover,
       if (online) BrowseTab.sources,
       if (online) BrowseTab.extensions,
-      if (discover) BrowseTab.discover,
       BrowseTab.downloads,
     ];
   }
@@ -461,21 +469,71 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
 
   Widget _buildResourceDomain(_DownloadsResourceDomain domain) =>
       switch (domain) {
-        _DownloadsResourceDomain.books => const MediaDiscoveryPage(
-            kinds: <DiscoveryMediaKind>[
+        _DownloadsResourceDomain.books => MediaDiscoveryPage(
+            kinds: const <DiscoveryMediaKind>[
               DiscoveryMediaKind.novel,
               DiscoveryMediaKind.audiobook,
             ],
+            onAiAcquire: _aiAcquireAction(domain),
           ),
         _DownloadsResourceDomain.manga => MangaDiscoveryPage(
             embedded: true,
             onOpenSources: _mangaSourcesAction(),
+            onAiAcquire: _aiAcquireAction(domain),
           ),
-        _DownloadsResourceDomain.games => const MediaDiscoveryPage(
-            kinds: <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+        _DownloadsResourceDomain.games => MediaDiscoveryPage(
+            kinds: const <DiscoveryMediaKind>[DiscoveryMediaKind.game],
+            onAiAcquire: _aiAcquireAction(domain),
           ),
         _DownloadsResourceDomain.video => _buildVideoResourceTab(),
       };
+
+  /// 「AI 下载」入口（小说 / 漫画 / 游戏发现页；视频域是首页注入的「AI 下视频」）。
+  ///
+  /// 与「AI 下视频」同一组门：偏好就绪 + 下载 / 外部发现两项合规能力 + 「设置 ›
+  /// AI」未被模块开关藏起（点击时要能引导去配置提供商）；本页存在即浏览模块开着。
+  /// 不满足时回 null，按钮整颗不渲染。在线来源是否参与搜索与「来源」页签同一门。
+  ValueChanged<String>? _aiAcquireAction(_DownloadsResourceDomain domain) {
+    final AppModel appModel = ref.read(appProvider);
+    final bool gates = appModel.isPreferencesReady &&
+        StoreRestrictedCapability.downloads.isAvailable &&
+        StoreRestrictedCapability.externalDiscovery.isAvailable &&
+        isSettingsDestinationVisible(
+          SettingsDestinationId.ai,
+          appModel.moduleVisibility,
+        );
+    if (!gates) return null;
+    final (AiMediaAcquisitionDomain, OnlineSourcesDomain?)? target =
+        switch (domain) {
+      _DownloadsResourceDomain.books => (
+          AiMediaAcquisitionDomain.novel,
+          OnlineSourcesDomain.novel,
+        ),
+      _DownloadsResourceDomain.manga => (
+          AiMediaAcquisitionDomain.manga,
+          OnlineSourcesDomain.manga,
+        ),
+      _DownloadsResourceDomain.games => (AiMediaAcquisitionDomain.game, null),
+      _DownloadsResourceDomain.video => null,
+    };
+    if (target == null) return null;
+    final (AiMediaAcquisitionDomain aiDomain, OnlineSourcesDomain? online) =
+        target;
+    return (String query) {
+      final AppModel current = ref.read(appProvider);
+      unawaited(
+        openAiMediaAcquisition(
+          context,
+          appModel: current,
+          domain: aiDomain,
+          domainLabel: _resourceDomainLabel(domain),
+          includeOnlineSources: online != null &&
+              _visibleOnlineDomains(current.moduleVisibility).contains(online),
+          initialQuery: query,
+        ),
+      );
+    };
+  }
 
   /// 二级标签页只负责选择内容域；域内筛选、搜索与结果展示全部沿用各模块
   /// 自己的生产发现页。四个固定目的地直接可见，避免无标签的表单型下拉框

@@ -27,9 +27,19 @@ void main() {
     expect(
       code,
       contains(
-        'enum BrowseTab { sources, extensions, discover, downloads }',
+        'enum BrowseTab { discover, sources, extensions, downloads }',
       ),
       reason: '浏览页顶层只能有且必须有四个目的地，顺序即页头顺序',
+    );
+    // 2026-09-28 用户拍板：发现排第一（打开浏览默认落在发现）。页头顺序由
+    // _visibleTabs 的列表字面量决定，枚举顺序只是文档；两处都钉住。
+    expect(
+      compactCode(methodBody(source, 'List<BrowseTab> _visibleTabs(')),
+      contains(
+        '[if(discover)BrowseTab.discover,if(online)BrowseTab.sources,'
+        'if(online)BrowseTab.extensions,BrowseTab.downloads,]',
+      ),
+      reason: '浏览页签顺序：发现 → 来源 → 扩展 → 下载',
     );
     final String labels = compactCode(
       methodBody(source, 'String _tabLabel('),

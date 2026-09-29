@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi/src/media/downloads/download_execution_target.dart';
+import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/torrent_upload_consent_dialog.dart';
 import 'package:fushi/utils.dart';
@@ -58,8 +59,9 @@ Future<void> maybeShowTorrentUploadConsent(
   BuildContext context,
   AppModel appModel,
 ) async {
-  final QbConnectionConfig config =
-      effectiveTorrentConfig(appModel.qbConnectionConfig);
+  final QbConnectionConfig config = effectiveTorrentConfig(
+    appModel.qbConnectionConfig,
+  );
   if (appModel.torrentUploadIntroShown ||
       !appModel.isEmbeddedTorrentReady ||
       config.backend == QbConnectionConfig.backendQbittorrent) {
@@ -91,8 +93,9 @@ Future<GenericPushOutcome> pushGenericMagnet({
   // 「下载执行设备」指到互联 host 时整条磁链交给它，本机不碰下载后端。
   // [discoveryKind] 是远端按域入库用的内容域（null = 视频）；本机路径仍按
   // [contentKind] 走旧计划。
-  final DownloadExecutionResolution execution =
-      await resolveDownloadExecution(appModel);
+  final DownloadExecutionResolution execution = await resolveDownloadExecution(
+    appModel,
+  );
   switch (execution) {
     case DownloadExecutionRemote(target: final target, client: final client):
       final String? kindName = discoveryKind?.name;
@@ -124,8 +127,9 @@ Future<GenericPushOutcome> pushGenericMagnet({
   // 已经关了：同意弹窗要 context，没有宿主就别推。
   if (!context.mounted) return GenericPushOutcome.pushFailed;
   if (!torrentBackendReady(appModel)) return GenericPushOutcome.notReady;
-  final QbConnectionConfig config =
-      effectiveTorrentConfig(appModel.qbConnectionConfig);
+  final QbConnectionConfig config = effectiveTorrentConfig(
+    appModel.qbConnectionConfig,
+  );
   final String? infoHash = parseMagnetInfoHash(magnet.trim());
   if (infoHash == null) return GenericPushOutcome.invalidMagnet;
   final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
@@ -194,8 +198,8 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
   if (pipeline == null) return GenericPushOutcome.storeUnavailable;
   await maybeShowTorrentUploadConsent(context, appModel);
   try {
-    final VideoDownloadBackendTarget target =
-        await appModel.currentVideoDownloadBackendTarget();
+    final VideoDownloadBackendTarget target = await appModel
+        .currentVideoDownloadBackendTarget();
     await pipeline.enqueueManual(
       VideoDownloadManualEnqueueRequest(
         title: title,
@@ -252,4 +256,96 @@ String discoveryTorrentResolveFailureMessage(Object error) {
   }
   if (error is FormatException) return t.download_torrent_invalid;
   return t.download_resource_resolve_failed;
+}
+
+/// 下载一条发现资源（发现页「下载」与「AI 下载」共用的唯一路径）：按 payloadKind
+/// 分流——torrent 先经来源解析 payload，再交给 [pushGenericMagnet] /
+/// [enqueueSelectedDiscoveryTorrent]；http 直链进 `discoveryDownloadQueue`
+/// （下完自动入库）。结果一律 toast，失败记日志。返回是否已交给下载后端。
+///
+/// [context] 用于上传同意框等交互；调用方负责「解析中」这类页内状态。
+Future<bool> startDiscoveryItemDownload({
+  required BuildContext context,
+  required AppModel appModel,
+  required DiscoveryResourceItem item,
+}) async {
+  if (!item.isDownloadable) return false;
+  switch (item.payloadKind) {
+    case DiscoveryPayloadKind.torrent:
+      bool resolving = true;
+      try {
+        final MediaDiscoverySource? source = appModel.mediaDiscoveryService
+            .sourceById(item.sourceId);
+        if (source == null) return false;
+        final DiscoveryPayload payload =
+            item.payload ?? await source.resolvePayload(item);
+        resolving = false;
+        if (!context.mounted) return false;
+        final GenericPushOutcome outcome;
+        if (payload is DiscoveryTorrentPayload) {
+          outcome = await pushGenericMagnet(
+            context: context,
+            appModel: appModel,
+            magnet: payload.magnetUri,
+            discoveryKind: item.kind,
+            contentKind: switch (item.kind) {
+              DiscoveryMediaKind.novel => AnimeDownloadPlan.kindBook,
+              DiscoveryMediaKind.audiobook => AnimeDownloadPlan.kindAudiobook,
+              DiscoveryMediaKind.game => AnimeDownloadPlan.kindGame,
+              DiscoveryMediaKind.manga => AnimeDownloadPlan.kindAuto,
+            },
+          );
+        } else if (payload is DiscoverySelectedTorrentPayload) {
+          outcome = await enqueueSelectedDiscoveryTorrent(
+            context: context,
+            appModel: appModel,
+            title: item.title,
+            resourceTitle: payload.resourceTitle,
+            metainfo: payload.metainfo,
+            selectedFileIndexes: payload.selectedFileIndexes,
+            kind: item.kind,
+            importAfterDownload: payload.importAfterDownload,
+            coverUrl: item.coverUrl,
+            metadataProvider: item.sourceId,
+            externalId: item.id,
+          );
+        } else {
+          return false;
+        }
+        FushiToast.show(
+          msg: genericPushMessage(outcome),
+          severity: outcome.isSuccess
+              ? ToastSeverity.success
+              : outcome == GenericPushOutcome.alreadyQueued
+              ? ToastSeverity.info
+              : ToastSeverity.error,
+        );
+        return outcome.isSuccess;
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log(
+          'DiscoveryTorrent.${resolving ? 'resolve' : 'enqueue'}.${item.sourceId}',
+          error,
+          stack,
+        );
+        FushiToast.show(
+          msg: resolving
+              ? discoveryTorrentResolveFailureMessage(error)
+              : genericPushMessage(GenericPushOutcome.pushFailed),
+          severity: ToastSeverity.error,
+        );
+        return false;
+      }
+    case DiscoveryPayloadKind.httpFile:
+      final bool added = appModel.discoveryDownloadQueue.enqueue(
+        item,
+        destinationDir: appModel.discoveryDownloadDirFor(item.kind),
+      );
+      if (added) {
+        FushiToast.show(
+          msg: t.discovery_download_queued,
+          severity: ToastSeverity.success,
+        );
+      }
+      return added;
+  }
 }
