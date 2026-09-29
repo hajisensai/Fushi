@@ -461,19 +461,23 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // SwipeDismissWrapper 基于 Listener，指针移动会同时派发到所有祖先 Listener，
     // 外层若仍在，横滑嵌套层会连带平移整张卡片（BUG-051 的第二症状）。
     // 嵌套层各自持有横滑（仅返回上一层），故此处只在基础层套外层横滑。
-    // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡也不挂横滑，
-    // 用搜索栏的关闭按钮兜底。
+    // TODO-407②：平台/偏好禁用滑动关闭时（Windows/Linux 默认）整卡不给鼠标挂横滑，
+    // 用搜索栏的关闭按钮兜底；BUG-2770 起触摸 / 触控笔仍可横滑（见 _buildSwipeChrome）。
     return card;
   }
 
   Widget _buildSwipeChrome(Widget child) {
-    if (_popup.entries.length > 1 ||
-        !ReaderFushiSource.instance.enableSwipeToClose) {
+    if (_popup.entries.length > 1) return child;
+    final bool mouseSwipe = ReaderFushiSource.instance.enableSwipeToClose;
+    // BUG-2770：鼠标滑关关（Windows/Linux 默认）时整卡仍按触摸开关挂 touchOnly
+    // 横滑——此前整卡直接不包，触屏上独立查词窗怎么滑都关不掉。
+    if (!mouseSwipe && !ReaderFushiSource.instance.enableTouchSwipeToClose) {
       return child;
     }
     return SwipeDismissWrapper(
       sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
       onDismiss: _close,
+      touchOnly: !mouseSwipe,
       child: child,
     );
   }
@@ -570,6 +574,9 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       showBorder: false,
       swipeDismissible: !isBase,
       enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+      // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+      enableTouchSwipeToClose:
+          ReaderFushiSource.instance.enableTouchSwipeToClose,
       overrideFillColor: isBase
           ? Colors.transparent
           : (appModel.overrideDictionaryColor ?? tokens.surfaces.page),

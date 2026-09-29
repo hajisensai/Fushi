@@ -1,0 +1,22 @@
+## BUG-2770 · Windows 触屏不能滑动关闭查词弹窗
+- **报告**：2026-09-29（用户：W1ght；Windows 触屏设备上玩 galgame，查词弹窗在手机上能横滑关，Windows 触屏上滑不关）
+- **真实性**：✅ 真 bug，两层根因。① Dart 偏好默认值把触摸滑关一起关了（Windows / Linux 上的 in-app 弹窗、独立查词窗、遮罩、瞬态全局覆盖窗）；② 用户实际场景——galgame 游戏内查词卡片（runner 的 composition WebView2）——触摸在 runner 里被系统提升成鼠标消息再 `SendMouseInput`，页面里 `pointerType` 恒为 'mouse'，而且覆盖窗本来就没有横滑关闭识别（`fushi/windows/runner/global_lookup_window.cpp` WndProc 的鼠标分支、`global_lookup_render.dart` 只注入顶部下拉）。用户库里 `enable_swipe_to_close` 显式为 true 照样滑不关，说明他遇到的是②。
+  - 默认值：`fushi/lib/src/reader/reader_settings.dart:474` `defaultSwipeToClose` 让 Windows/Linux 默认 false（BUG-299 为**鼠标**框选误触设的防线），`fushi/lib/src/media/sources/reader_fushi_source.dart`（原 1433 行）`enableSwipeToClose` 未持久化时回退到它。
+  - 误伤触摸：正文横拖检测器 `_BodySwipeDismissDetector` 本来就只认 touch/stylus（`dictionary_popup_layer.dart` 原 1631 行），却被 `_swipeActive = swipeDismissible && enableSwipeToClose`（原 975 行）/ `bodySwipe`（原 1062 行）跟鼠标开关一起关掉；顶栏 `SwipeDismissWrapper` 同一门控；独立查词窗 `popup_dictionary_page.dart` 原 471 行在开关关时整行不包 wrapper；各页遮罩 `LookupDismissBarrier.swipeEnabled` 同一门控；全局覆盖窗 `global_lookup_controller.dart` 原 1735 行 `topPullReleased` 也只看这个开关——瞬态覆盖窗是 windowed WebView2，触屏手指在里面是真 touch 事件，照样被鼠标默认值挡掉。
+  - 顺带的缓存坑：`MediaSource.getPreference`（`fushi/lib/src/media/media_source.dart` 原 160 行）读不到值时把默认值**回填进缓存**，同一个键若按两套默认值解读，先读的那个默认值会被后读的当成「用户显式设置」，「未设置」这一态丢失。
+- **[x] ① 已修复** — 见 PR
+  - 设置项语义不变，按指针种类拆成两半读同一个键 `enable_swipe_to_close`：鼠标 / 触控板 = `ReaderFushiSource.enableSwipeToClose`（未设置时仍按平台，Windows/Linux false）；触摸 / 触控笔 = 新增 `enableTouchSwipeToClose`（未设置时所有平台 true）。显式关 → 两半都关；显式开 → 两半都开。两者都改走新增的 `MediaSource.readStoredPreference`（不回填默认值），与读取顺序无关。
+  - `SwipeDismissWrapper` 新增 `touchOnly`（只认 `isTouchLikePointer` = touch/stylus/invertedStylus，触控板 pan-zoom 整条不挂）。`DictionaryPopupLayer` 新增 `enableTouchSwipeToClose`（null = 跟随 `enableSwipeToClose`），`_touchSwipeActive` 门控正文检测器，顶栏 / 无顶栏整窗在「鼠标关、触摸开」时挂 touchOnly 包装（`_wrapSwipeDismiss`）。`popup_dictionary_page._buildSwipeChrome` 同理挂 touchOnly。`LookupDismissBarrier` 新增 `touchSwipeEnabled`（null = 跟随 `swipeEnabled`）。
+  - 覆盖窗顶部下拉：`kPopupTopPullReleaseJs` 上报时带指针种类（'touch' / 'pen' / 'mouse'），`global_lookup_controller` 经纯函数 `popupTopPullDismissAllowed` 分流（认不出的种类按鼠标保守处理）。
+  - 调用点一致传递：`base_source_page`（弹窗 + 遮罩）、`dictionary_page_mixin`、`popup_dictionary_page`、`home_dictionary_page`、`texthooker_page`、`video_fushi_page`、`web_video_fushi_page`。
+  - runner（`fushi/windows/runner/global_lookup_window.cpp` `ForwardCompositionPointer`）：composition 覆盖窗对 `PT_TOUCH` / `PT_PEN` 的 `WM_POINTER{DOWN,UPDATE,UP,ENTER,LEAVE}` 改走 `ICoreWebView2CompositionController::SendPointerInput`（坐标换到客户区，触摸接触矩形 / 笔压倾角原样带上，WebView2 官方 ViewComponent 同款），处理掉的消息不再提升成鼠标；鼠标指针与失败时仍落 DefWindowProc，鼠标路径不变。
+  - 覆盖窗横滑：新增 `kPopupTouchSideSwipeReleaseJs`（`popup_swipe_close_script.dart`），**只注入覆盖窗**（`global_lookup_render.dart`；应用内弹窗已有 Flutter 正文检测器，重复注入会一划关两层）。口径同 `_BodySwipeDismissDetector`：单指触摸、8px 判轴、|dx|>1.5|dy|、第二指作废；用 Touch Events（Chromium 接管平移会给指针发 pointercancel）；本次手势改动了选区（长按选字 / 拖选区柄）时不上报，旧选区不挡。`global_lookup_controller` 收 `sideSwipeReleased` 后经纯函数 `popupSideSwipeDismissAllowed`（触摸半边偏好 + `swipeDismissThreshold(灵敏度)`）决定关窗，与应用内正文横滑同阈值。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/dictionary_popup_touch_swipe_close_test.dart`（21 条：Windows 未设置时触摸 / 触控笔横拖顶栏与正文能关、鼠标与触控板不关；显式关触摸也不关；显式开鼠标也能关；偏好两半与读取顺序无关；touchOnly wrapper / 遮罩触摸半边 / 下拉分流真值表）；源码守卫补在 `barrier_swipe_close_surfaces_guard_test.dart`、`popup_dictionary_page_nested_test.dart`、`global_lookup_m1a_guard_test.dart`；`fushi/test/lookup/overlay_touch_side_swipe_close_test.dart`（判定真值表、只注入覆盖窗的守卫、runner 触摸走 SendPointerInput 的守卫、node 真跑横滑脚本 10 个场景：左右横滑上报 dx，竖划 / 先竖后横 / 小位移 / 双指 / 本次手势选字 / touchcancel 不上报，旧选区不挡，重复注入只装一次）。全量 `flutter analyze` 零 issue。
+- **真机验证**（2026-09-29，本机 Windows 11 触摸数字化器（`SM_DIGITIZER=0xC1`、10 点），触摸用 `InjectTouchInput` 真实注入；本分支 Debug 宿主 `gal_realgame_driver_itest.dart`（隔离根、用户库副本，删掉 `enable_swipe_to_close` 测「未设置」默认）附着 CLANNAD Steam，注入 hook 为本分支 dist（SHA-256 `5D2814DF…48E8`），`attached=activeNative`）：
+  - 触摸点「ら」→ 游戏内查词卡弹出；在卡片正文上触摸横滑 → 卡片关闭（覆盖窗 `visible=false`），游戏停在同一句、前台仍是游戏。
+  - 负向：触摸竖划卡片 → 卡片正文滚动、不关；鼠标横拖卡片 → 不关（Windows 未设置时鼠标滑关默认关，BUG-299 防线）。
+  - 发现并修正：鼠标横拖在卡片里留下的旧选区挡住了随后的触摸横滑（初版脚本「有选区即不上报」），改为只看本次手势是否改动选区，node 场景 `staleSelection` 覆盖；这一修正未在真宿主上重跑。
+- **备注**：
+  - 应用内弹窗 / 独立查词窗 / 遮罩的触摸滑关只有 widget 测试证据，未在真触屏上逐一点验。
+  - 鼠标点游戏内卡片会让卡片窗口成为前台（驱动 `windows` 显示 fg=卡片 hwnd），这是既有鼠标路径，本次未改；触摸路径前台保持在游戏。
+  - 设置页开关在 Windows 未设置时仍显示「关」（它表达的是鼠标半边），但触摸已可滑关；文案未改。

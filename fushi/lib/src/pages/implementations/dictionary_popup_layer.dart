@@ -772,6 +772,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.webViewOverflowHeight = 0,
     this.swipeDismissible = true,
     this.enableSwipeToClose = true,
+    this.enableTouchSwipeToClose,
     this.onClose,
     this.onBack,
     this.historyNav,
@@ -903,6 +904,13 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 平台/偏好是否允许滑关"（Windows/Linux 默认 false）。
   final bool enableSwipeToClose;
 
+  /// BUG-2770：「滑动关闭」的**触摸半边**开关（手指 / 触控笔）。[enableSwipeToClose]
+  /// 为假而本值为真时，顶栏 / 整窗改挂 `touchOnly` 的 [SwipeDismissWrapper]、正文仍挂
+  /// 触摸横拖检测器——鼠标照旧不能滑关（BUG-299），触屏能。宿主传
+  /// [ReaderFushiSource.enableTouchSwipeToClose]；null = 跟随 [enableSwipeToClose]
+  /// （旧调用点语义逐字不变）。
+  final bool? enableTouchSwipeToClose;
+
   /// TODO-407①：顶层右端"X 关闭"按钮的回调。非空时弹窗顶栏渲染一个始终可关的 X
   /// （任何平台、即便滑关被禁用也能关）。点 X 走各表面既有的关闭汇聚点。
   final VoidCallback? onClose;
@@ -974,6 +982,23 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 层级开关（[swipeDismissible]）同时为真才挂 [SwipeDismissWrapper]。
   bool get _swipeActive => swipeDismissible && enableSwipeToClose;
 
+  /// BUG-2770：触摸类指针的滑关是否生效。[_swipeActive] 为真时恒真（全指针都放行）。
+  bool get _touchSwipeActive =>
+      swipeDismissible &&
+      (enableSwipeToClose || (enableTouchSwipeToClose ?? enableSwipeToClose));
+
+  /// BUG-2770：给顶栏 / 整窗挂滑关包装。鼠标滑关开 → 全指针包装（旧行为）；只有触摸
+  /// 滑关开 → `touchOnly` 包装；都关 → 原样返回。
+  Widget _wrapSwipeDismiss(Widget child) {
+    if (!_touchSwipeActive) return child;
+    return SwipeDismissWrapper(
+      sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
+      onDismiss: onDismiss,
+      touchOnly: !_swipeActive,
+      child: child,
+    );
+  }
+
   static const BoxConstraints _topActionConstraints =
       BoxConstraints.tightFor(width: 36, height: 36);
 
@@ -990,13 +1015,8 @@ class DictionaryPopupLayer extends StatelessWidget {
       // TODO-406：可拖/可滑区收敛到顶栏（header + X）。WebView 正文 body 不在
       // [SwipeDismissWrapper] 的 Listener 子树内——正文里左键框选的指针位移序列
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
-      final Widget topRegion = _swipeActive
-          ? SwipeDismissWrapper(
-              sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-              onDismiss: onDismiss,
-              child: topBar,
-            )
-          : topBar;
+      // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
+      final Widget topRegion = _wrapSwipeDismiss(topBar);
       // TODO-1187：分隔线从 header widget 内的无条件底边框移到这里，只在「有 header
       // 星标/音频行」且「有可渲染词条」时才画。无结果（「未找到搜索结果」占位）/ 搜索中
       // 不画，消除悬在收藏行与占位卡之间的多余横线。app 外覆盖窗 / 嵌套返回层无
@@ -1059,20 +1079,17 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 仅有顶栏的层让本吸收层兼管「弹窗本体横拖关」（[bodySwipe]=true）；无顶栏的层
     // （popup_dictionary_page 嵌套返回层）仍交给下方整窗 [SwipeDismissWrapper]（保留其
     // 横滑动画反馈），本层只 onTap 吸收命中，避免两条路径同时触发 [onDismiss] 双关。
-    final bool bodySwipe = _swipeActive && topBar != null;
+    // BUG-2770：正文检测器本身只认触摸类指针，门控跟触摸开关走——此前跟鼠标开关
+    // （[_swipeActive]）一起关，Windows/Linux 默认触屏也滑不关，属误伤。
+    final bool bodySwipe = _touchSwipeActive && topBar != null;
     final Widget content = _BodySwipeDismissDetector(
       enableSwipeToClose: bodySwipe,
       onDismiss: onDismiss,
       child: surface,
     );
 
-    final Widget shell = (topBar != null || !_swipeActive)
-        ? content
-        : SwipeDismissWrapper(
-            sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
-            onDismiss: onDismiss,
-            child: content,
-          );
+    final Widget shell =
+        topBar != null ? content : _wrapSwipeDismiss(content);
 
     return _maybeWrapHostKeyInput(
       _maybeWrapHostPointerInput(_maybeWrapResizeGrip(shell)),

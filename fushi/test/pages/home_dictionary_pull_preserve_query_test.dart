@@ -214,7 +214,7 @@ void main() {
         read('lib/src/reader/popup_swipe_close_script.dart');
     expect(
       swipeJsSrc,
-      contains("callHandler('topPullReleased')"),
+      contains("callHandler('topPullReleased', kind)"),
       reason: 'The real definition WebView must report a top pull release; '
           'an outer Flutter scroll wrapper would not reliably receive WebView '
           'touch drags.',

@@ -29,10 +29,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2538 条。点号进各自文件。
+> 共 2541 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2770](bugs/BUG-2770-win-touch-popup-swipe-close.md) | ✅ | ✅ | Windows 触屏不能滑动关闭查词弹窗 |
+| [BUG-2769](bugs/BUG-2769-gal-touch-click-lookup.md) | ✅ | ✅ | Windows 触屏在 galgame 里点按不触发单击查词 |
+| [BUG-2768](bugs/BUG-2768-siglus-choice-click-selects.md) | ✅ | ✅ | Siglus（CLANNAD）选项画面单击选项文字弹查词、选不了选项 |
 | [BUG-2766](bugs/BUG-2766-add-network-source-segment-vertical.md) | ✅ | ✅ | 移动端添加网络来源的协议分段控制器文字竖排 |
 | [BUG-2765](bugs/BUG-2765-manga-system-ocr-probe.md) | ✅ | ✅ | 漫画统一引擎探测漏了系统 OCR：auto 永远用不上 Apple Vision，显式选择不校验可用性 |
 | [BUG-2764](bugs/BUG-2764-coreaudio-pack-multi-volume.md) | ✅ | ✅ | CoreAudio 有声书同一合集连点多卷下载，第二卷报「无法创建下载」 |

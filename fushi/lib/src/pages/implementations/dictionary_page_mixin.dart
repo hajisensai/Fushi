@@ -846,6 +846,9 @@ mixin DictionaryPageMixin {
                   },
             // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
             enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+            // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+            enableTouchSwipeToClose:
+                ReaderFushiSource.instance.enableTouchSwipeToClose,
             // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
             // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。
             onClose: () => onPop(index),

@@ -51,6 +51,11 @@ void main() {
     expect(src, contains('_buildSwipeChrome'));
     expect(src, isNot(contains('child: card')));
     expect(src, contains('ReaderFushiSource.instance.enableSwipeToClose'));
+    // BUG-2770：鼠标滑关关（Windows/Linux 默认）时 chrome 行仍按触摸开关挂
+    // touchOnly 横滑，嵌套层也把触摸半边传给 DictionaryPopupLayer。
+    expect(src, contains('ReaderFushiSource.instance.enableTouchSwipeToClose'));
+    expect(src, contains('touchOnly: !mouseSwipe'));
+    expect(src, contains('enableTouchSwipeToClose:'));
     expect(src, contains('() => _popAt(index)'));
   });
 }
