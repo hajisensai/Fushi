@@ -85,6 +85,13 @@ abstract class BaseSourcePage extends BasePage {
 /// implemented to define shortcuts for common lengthy methods across UI code.
 abstract class BaseSourcePageState<T extends BaseSourcePage>
     extends BasePageState<T> {
+  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）。`null` = 只听总开关。
+  ModuleId? get popupDockModule => null;
+
+  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  bool get popupBottomDocked => appModel.popupBottomDockedFor(popupDockModule);
+
   @override
   void initState() {
     super.initState();
@@ -955,7 +962,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         isDark: isDark,
         overrideFillColor: appModel.overrideDictionaryColor,
         // dock 面板铺满屏幕左右缘时把圆角摊平，否则边缘露出背景（BUG-2439）。
-        bottomDocked: appModel.popupBottomDocked,
+        bottomDocked: popupBottomDocked,
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
@@ -1350,7 +1357,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final Rect anchored = resolvePopupRect(
       selectionRect: sel,
       screen: screen,
-      bottomDocked: appModel.popupBottomDocked,
+      bottomDocked: popupBottomDocked,
       maxWidth: popupMaxWidth,
       maxHeight: popupMaxHeight,
       padding: popupPadding,
@@ -1360,7 +1367,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug。底部固定 dock 模式忽略选区、不冻结。
-    if (!appModel.popupBottomDocked &&
+    if (!popupBottomDocked &&
         _popupResizeAnchorTopLeft != null &&
         _popupResizeAnchorSelection == sel) {
       return anchorPopupTopLeft(

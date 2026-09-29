@@ -214,6 +214,7 @@ window.flutter_inappwebview = {
   function apply(resp) {
     if (resp && resp.ok && resp.base && resp.token) {
       window.__fushiDictMedia = { base: resp.base, token: resp.token };
+      if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
     }
   }
   function refresh() {

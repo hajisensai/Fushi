@@ -53,6 +53,8 @@ import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
 import 'package:fushi/src/pages/implementations/popup_dictionary_page.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
+    show ExtensionDictionaryFont, browserExtensionDictionaryFont;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
 import 'package:fushi/src/media/floating_dict_channel.dart';
@@ -3655,12 +3657,16 @@ class AppModel with ChangeNotifier {
     // 词典改名（v95）：必须一并进下面的缓存判定——否则改完名命中旧实例、
     // revision 不变，扩展永远拉不到新名。
     final Map<String, String> displayNames = dictionaryDisplayNameOverrides;
+    // 词典字体：与 in-app 弹窗同一份「词典字体」设置（按指纹 memo，未变时返回同一实例）。
+    final ExtensionDictionaryFont font = browserExtensionDictionaryFont(this);
     final RemotePopupDictionaryCss? cached = _browserExtensionPopupCss;
     if (cached != null &&
         identical(cached.dictionaryStyles, styles) &&
         cached.globalDictCss == globalCss &&
         _sameStringMap(cached.customDictCss, customCss) &&
-        _sameStringMap(cached.dictionaryDisplayNames, displayNames)) {
+        _sameStringMap(cached.dictionaryDisplayNames, displayNames) &&
+        identical(cached.dictionaryFontFaces, font.faces) &&
+        cached.dictionaryFontCss == font.css) {
       return cached;
     }
     return _browserExtensionPopupCss = RemotePopupDictionaryCss(
@@ -3668,6 +3674,9 @@ class AppModel with ChangeNotifier {
       globalDictCss: globalCss,
       customDictCss: customCss,
       dictionaryDisplayNames: displayNames,
+      dictionaryFontFaces: font.faces,
+      dictionaryFontCss: font.css,
+      dictionaryLanguages: font.languages,
     );
   }
 
@@ -7353,6 +7362,19 @@ class AppModel with ChangeNotifier {
   bool get popupBottomDocked => prefsRepo.popupBottomDocked;
   Future<void> setPopupBottomDocked(bool value) =>
       prefsRepo.setPopupBottomDocked(value);
+
+  /// 底部停靠在 [module] 的媒体页里是否启用（总开关之下的按模块细分，默认开）。
+  /// 偏好仓库未装配时 fail-open（同 [moduleEnabled]）：总开关才是真正的门。
+  bool popupBottomDockedIn(ModuleId module) =>
+      isPreferencesReady ? prefsRepo.popupBottomDockedIn(module) : true;
+  Future<void> setPopupBottomDockedIn(ModuleId module, bool value) =>
+      prefsRepo.setPopupBottomDockedIn(module, value);
+
+  /// 查词弹窗宿主实际是否走底部停靠：总开关 ∧ 宿主所属模块的细分开关。
+  /// [module] 为 `null`（查词页 / 外部弹窗 / 悬浮歌词等不属于四个媒体模块的
+  /// 宿主）时只听总开关。弹窗宿主一律经它判定，不再直读 [popupBottomDocked]。
+  bool popupBottomDockedFor(ModuleId? module) =>
+      popupBottomDocked && (module == null || popupBottomDockedIn(module));
 
   bool get isFirstTimeSetup => prefsRepo.isFirstTimeSetup;
   void setFirstTimeSetupFlag() => prefsRepo.setFirstTimeSetupFlag();

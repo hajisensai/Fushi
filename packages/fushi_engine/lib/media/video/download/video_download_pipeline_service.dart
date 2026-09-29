@@ -714,6 +714,12 @@ class VideoDownloadPipelineActionRequired implements Exception {
   String toString() => message;
 }
 
+/// 要下载的文件已经被同一颗 torrent 的另一个未完成任务选中（例如同一卷点了
+/// 两次）。与别的「需要处理」区分开，调用方据此提示「已在队列」而不是「失败」。
+class VideoDownloadAlreadyQueued extends VideoDownloadPipelineActionRequired {
+  const VideoDownloadAlreadyQueued(super.message);
+}
+
 class VideoDownloadLeaseLost implements Exception {
   const VideoDownloadLeaseLost();
 
@@ -1034,12 +1040,26 @@ class VideoDownloadPipelineService {
           request.backendTarget.fingerprint,
           hash.toLowerCase(),
         );
-    if (duplicate != null) {
+    // 同包多卷（CoreAudio/TMW：一颗合集 torrent、每卷一个只下载任务）：后一卷
+    // 不再被拒，而是建成独立任务、先不占 torrentHash 槽位，在 enqueue 阶段等
+    // 持有者完成时摘掉 torrent 再接手（见 [_enqueueTorrent]）。一颗 torrent 同时
+    // 仍只归一个任务管，后端里不会出现两个任务争同一个种子的优先级/删除权。
+    final bool waitsForPackHolder =
+        duplicate != null &&
+        !video &&
+        !request.importAfterDownload &&
+        _releasesPackSlot(duplicate);
+    if (duplicate != null && !waitsForPackHolder) {
       throw VideoDownloadPipelineActionRequired(
         'This torrent is already managed by job ${duplicate.jobId}; '
         'remove that task before selecting another volume from the same pack',
       );
     }
+    await _rejectOverlappingPackSelection(
+      fingerprint: request.backendTarget.fingerprint,
+      torrentHash: hash.toLowerCase(),
+      selectedFileIndexes: selectedFileIndexes,
+    );
     final String jobId = generateVideoDownloadInstallationId();
     if (metainfo != null) {
       final Directory? directory = manualTorrentDirectory;
@@ -1069,7 +1089,11 @@ class VideoDownloadPipelineService {
                 ? request.resourceTitle!.trim()
                 : title,
           ),
-          torrentHash: Value<String?>(hash.toLowerCase()),
+          // 排在同包持有者后面的任务先不占槽位（唯一索引只约束非空值）；
+          // hash 仍在 selectedResourceId 里，轮到它时由 enqueue 阶段写入。
+          torrentHash: Value<String?>(
+            waitsForPackHolder ? null : hash.toLowerCase(),
+          ),
           magnetUri: Value<String?>(magnet),
           metadataProvider: Value<String?>(request.metadataProvider),
           externalId: Value<String?>(request.externalId),
@@ -1134,6 +1158,51 @@ class VideoDownloadPipelineService {
     });
     wake();
     return jobId;
+  }
+
+  /// [holder] 会不会在完成时自己让出 torrent 槽位：只下载型手动任务完成时把
+  /// torrent 从后端摘掉并清空 `torrentHash`（见 [_resolveDiscoveryDownloadPaths]），
+  /// 同包后面排队的任务才等得到。已完成还占着槽位的任务永远不会让出。
+  static bool _releasesPackSlot(VideoDownloadJobRow holder) =>
+      holder.resourceProvider == kManualVideoDownloadResourceProvider &&
+      downloadOnlyKindOfOrganizationPolicy(holder.organizationPolicy) != null &&
+      holder.lifecycle != VideoDownloadJobLifecycle.completed;
+
+  /// 同一颗 torrent 的未完成手动任务里已经选过这些文件时拒绝再建：同一卷点两次
+  /// 只会排出两个重复下载同一文件的任务。整包任务（没有文件选择）与任何选择都
+  /// 重叠。
+  Future<void> _rejectOverlappingPackSelection({
+    required String fingerprint,
+    required String torrentHash,
+    required Set<int>? selectedFileIndexes,
+  }) async {
+    for (final VideoDownloadJobRow sibling
+        in await database.getVideoDownloadJobs()) {
+      if (sibling.fingerprint != fingerprint ||
+          sibling.resourceProvider != kManualVideoDownloadResourceProvider ||
+          sibling.lifecycle == VideoDownloadJobLifecycle.completed ||
+          (sibling.torrentHash ?? sibling.selectedResourceId).toLowerCase() !=
+              torrentHash) {
+        continue;
+      }
+      final List<VideoDownloadJobFileRow> rows = await database
+          .getVideoDownloadJobFiles(sibling.jobId);
+      final bool siblingSelective = _hasUserFileSelection(rows);
+      final bool overlaps =
+          selectedFileIndexes == null ||
+          !siblingSelective ||
+          rows.any(
+            (VideoDownloadJobFileRow row) =>
+                row.selected &&
+                row.backendFileIndex != null &&
+                selectedFileIndexes.contains(row.backendFileIndex),
+          );
+      if (overlaps) {
+        throw VideoDownloadAlreadyQueued(
+          'The selected files are already queued by job ${sibling.jobId}',
+        );
+      }
+    }
   }
 
   /// 把用户在独立字幕搜索中选中的候选附加到仍在执行的任务。这里只持久化来源
@@ -1843,6 +1912,21 @@ class VideoDownloadPipelineService {
     final VideoDownloadJobRow? duplicate = await database
         .findVideoDownloadJobByFingerprintAndTorrentHash(job.fingerprint, hash);
     if (duplicate != null && duplicate.jobId != job.jobId) {
+      if (_releasesPackSlot(job) && _releasesPackSlot(duplicate)) {
+        // 同包的上一卷还没下完：排队等它完成让出 torrent，不算失败、不耗重试
+        // 预算。持有者被暂停/出错时也继续等——用户恢复、重试或删掉它之后这里
+        // 自动接手。
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        await _releaseLeaseWith(
+          () => database.releaseVideoDownloadJobClaim(
+            jobId: job.jobId,
+            workerId: workerId,
+            nowAt: now,
+            nextAttemptAt: now + pollInterval.inMilliseconds,
+          ),
+        );
+        return;
+      }
       throw VideoDownloadPipelineActionRequired(
         'This torrent is already managed by job ${duplicate.jobId}',
       );
@@ -2175,7 +2259,8 @@ class VideoDownloadPipelineService {
     try {
       return inspectTorrentMetainfo(
         await file.readAsBytes(),
-        expectedInfoHash: job.torrentHash,
+        // 排队等同包持有者的任务还没写 torrentHash，身份在 selectedResourceId。
+        expectedInfoHash: job.torrentHash ?? job.selectedResourceId,
       ).toPayload(fileName: p.basename(file.path));
     } on TorrentMetainfoException catch (error) {
       throw VideoDownloadPipelineActionRequired(error.message);

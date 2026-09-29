@@ -760,6 +760,7 @@
   sendRuntime({ type: 'dictMediaConfig' }).then(function (response) {
     if (response && response.ok && response.base && response.token) {
       window.__fushiDictMedia = { base: response.base, token: response.token };
+      if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
     }
   });
 
