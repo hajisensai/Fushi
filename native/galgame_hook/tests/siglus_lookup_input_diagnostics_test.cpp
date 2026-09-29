@@ -151,6 +151,7 @@ struct Fixture {
     target.geometry.viewport_height = 1080;
     target.geometry.glyphs[0] = {u'A', 0, 0, {100, 200, 40, 40}};
     target.claims_clicks = 1;
+    g_siglus_lookup_message_tap = {};
   }
 };
 SHORT Sample(bool down, bool keyboard = false) {
@@ -277,12 +278,13 @@ void TestMessageAndSurfaceBoundaries() {
   assert(LastReason() == SiglusLookupPressReason::kLookupOwned);
   assert(g_siglus_lookup_press_diagnostics[1].surface == SiglusLookupPressSurface::kEngineMessage);
   assert(ConsumeSiglusLookupInputMessage(WM_LBUTTONUP, point, 0x400000 + 300));
-  assert(queue_calls == 0 && g_siglus_lookup_press_diagnostic_count == 1);
+  // BUG-2769: no poller saw that press held, so the WM sink submitted it.
+  assert(queue_calls == 1 && g_siglus_lookup_press_diagnostic_count == 1);
   Sample(true); Sample(true, true);
   assert(g_siglus_lookup_press_diagnostic_count == 3);
   assert(g_siglus_lookup_press_diagnostics[2].surface == SiglusLookupPressSurface::kKeyState);
   assert(g_siglus_lookup_press_diagnostics[3].surface == SiglusLookupPressSurface::kKeyboardState);
-  Sample(false); Sample(false, true); assert(queue_calls == 1);
+  Sample(false); Sample(false, true); assert(queue_calls == 2);
   popup = true;
   assert(ConsumeSiglusLookupInputMessage(WM_LBUTTONDBLCLK, point, 0x400000 + 300));
   assert(LastReason() == SiglusLookupPressReason::kPopupOwned);
