@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "Synchroniseer de luisterboek-audio en ondertitelpakketten van dit apparaat naar de interconnectpeer (groot).",
   "interconnect_upload_content": "Boekbestanden uploaden",
   "interconnect_upload_content_hint": "Synchroniseer de boeken en leesinhoud van dit apparaat naar de interconnectpeer.",
-  "interconnect_upload_dictionary": "Woordenboeken uploaden",
-  "interconnect_upload_dictionary_hint": "Synchroniseer de woordenboeken van dit apparaat naar de interconnectpeer.",
   "interconnect_upload_section": "Uploaden naar interconnectpeer",
   "interconnect_upload_section_footer": "Kies wat dit apparaat uploadt naar de verbonden peer. Onafhankelijk van de cloud-back-upschakelaars en standaard uitgeschakeld. Deze schakelaars gelden alleen wanneer Interconnect inschakelen aan staat: interconnect uitschakelen stopt elke upload hier.",
   "interconnect_upload_video_files": "Videobestanden uploaden",

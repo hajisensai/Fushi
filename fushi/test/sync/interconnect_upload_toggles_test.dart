@@ -10,8 +10,9 @@ import 'temp_dir_cleanup.dart';
 
 /// BUG-988：互联解耦(PR#223)后，互联通道复用云备份的共享 sync_*_enabled 开关——用户
 /// 一开「启用互联」连接，内容就跟着自动上传给对端，失去「只对互联单独控制上不上传」的
-/// 能力。修复：互联通道的「重内容」四类（书籍/词典/有声书文件/视频文件）改读互联专属
-/// 上传开关（默认关），与云备份共享开关解耦。[resolveChannelSyncFlags] 是路由的纯函数
+/// 能力。修复：互联通道的「重内容」三类（书籍/有声书文件/视频文件）改读互联专属
+/// 上传开关（默认关），与云备份共享开关解耦。词典两条通道都不再自动同步（BUG-2762），
+/// 只由设置页的显式上传 / 下载动作搬。[resolveChannelSyncFlags] 是路由的纯函数
 /// 落点，本测试直接验它。
 void main() {
   late Directory tmp;
@@ -42,7 +43,6 @@ void main() {
     final ChannelSyncFlags cloud =
         await resolveChannelSyncFlags(repo, isInterconnect: false);
     expect(cloud.syncContent, isTrue);
-    expect(cloud.syncDictionary, isFalse, reason: '云通道不再自动同步词典（改成显式上传 / 下载）');
     expect(cloud.syncAudioBookFiles, isTrue);
     expect(cloud.syncVideoFiles, isTrue);
 
@@ -50,26 +50,43 @@ void main() {
     final ChannelSyncFlags ic =
         await resolveChannelSyncFlags(repo, isInterconnect: true);
     expect(ic.syncContent, isFalse, reason: '云开着也不该自动上传书给互联对端');
-    expect(ic.syncDictionary, isFalse);
     expect(ic.syncAudioBookFiles, isFalse);
     expect(ic.syncVideoFiles, isFalse);
   });
 
   test('打开互联专属上传开关只影响互联通道，不动云通道（BUG-988）', () async {
     await repo.setInterconnectSyncContentEnabled(true);
-    await repo.setInterconnectSyncDictionaryEnabled(true);
     // 云备份内容开关保持默认关。
 
     final ChannelSyncFlags ic =
         await resolveChannelSyncFlags(repo, isInterconnect: true);
     expect(ic.syncContent, isTrue);
-    expect(ic.syncDictionary, isTrue);
     expect(ic.syncVideoFiles, isFalse, reason: '未开的类仍不传');
 
     final ChannelSyncFlags cloud =
         await resolveChannelSyncFlags(repo, isInterconnect: false);
     expect(cloud.syncContent, isFalse, reason: '云通道不受互联专属开关影响');
-    expect(cloud.syncDictionary, isFalse);
+  });
+
+  // BUG-2762：互联页「上传到互联对端」一区里「上传词典」开关与「词典 · 传输」动作
+  // 并排成两个「词典」。开关删了，它驱动的那轮自动双向 union 也必须一起走：只藏 UI
+  // 会让开过它的存量用户永远关不掉（库里那行偏好还是 true）。
+  test('自动 sweep 两条通道都不碰词典，词典只剩显式动作（BUG-2762）', () {
+    final String trigger =
+        File('lib/src/sync/sync_auto_trigger.dart').readAsStringSync();
+    expect(trigger.contains('isInterconnectSyncDictionaryEnabled'), isFalse,
+        reason: '互联词典自动同步开关已删除，不得再有读取方');
+    final int i = trigger
+        .indexOf('final SyncOrchestrator orchestrator = SyncOrchestrator(');
+    expect(i, greaterThan(0), reason: '_runSyncChannel 改形了就要同步改这条守卫');
+    final String body = trigger.substring(i, i + 1200);
+    expect(body.contains('syncDictionary: false,'), isTrue,
+        reason: '自动 sweep 必须恒不同步词典');
+
+    final String repoSrc =
+        File('lib/src/sync/sync_repository.dart').readAsStringSync();
+    expect(repoSrc.contains("= 'interconnect_sync_dictionary'"), isFalse,
+        reason: '互联词典开关的偏好键不得再有读写方');
   });
 
   test('位置不区分通道（轻量进度共享，跨设备续读是互联本意）', () async {

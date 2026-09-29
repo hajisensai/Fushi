@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "把本设备的有声书音频+字幕包上传同步到互联对端（体积较大）。",
   "interconnect_upload_content": "上传书籍文件",
   "interconnect_upload_content_hint": "把本设备的书籍/阅读内容上传同步到互联对端。",
-  "interconnect_upload_dictionary": "上传词典",
-  "interconnect_upload_dictionary_hint": "把本设备的词典上传同步到互联对端。",
   "interconnect_upload_section": "上传到互联对端",
   "interconnect_upload_section_footer": "选择本设备要把哪些内容上传给已连接的互联对端。与云备份的同名开关互不影响，且默认全部关闭。本组开关只在「启用互联」打开时生效：关掉互联，这里的上传全部停止。",
   "interconnect_upload_video_files": "上传视频文件",

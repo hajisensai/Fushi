@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "Sincroniza los audios y paquetes de subtítulos de audiolibros de este dispositivo al par de Interconnect (archivos grandes).",
   "interconnect_upload_content": "Subir archivos de libros",
   "interconnect_upload_content_hint": "Sincroniza los libros y contenido de lectura de este dispositivo al par de Interconnect.",
-  "interconnect_upload_dictionary": "Subir diccionarios",
-  "interconnect_upload_dictionary_hint": "Sincroniza los diccionarios de este dispositivo al par de Interconnect.",
   "interconnect_upload_section": "Subir al par de Interconnect",
   "interconnect_upload_section_footer": "Elija qué sube este dispositivo al par conectado. Independiente de los interruptores de respaldo en la nube y apagado por defecto. Estos interruptores solo se aplican mientras Activar Interconnect esté encendido: apagar Interconnect detiene cada subida aquí.",
   "interconnect_upload_video_files": "Subir archivos de vídeo",

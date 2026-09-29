@@ -169,26 +169,6 @@ bool isReservedSyncFolderName(String name) =>
     name == kSyncVideosNamespace ||
     name == kSyncTombstonesNamespace;
 
-/// Delete a dictionary's package from the remote `__dictionaries__` staging
-/// namespace, so deleting a dictionary locally also removes its remote copy
-/// instead of leaving an orphan that union-sync re-pulls forever (phantom
-/// dictionary + slow sync, BUG-086). Returns whether a remote package was
-/// actually deleted (false when none was present). The caller serializes this
-/// against in-flight syncs (it mutates the singleton backend's folder cache).
-Future<bool> deleteRemoteDictionaryAsset(
-  SyncBackend backend,
-  String dictionaryName,
-) async {
-  final String ns = await backend.ensureNamespace(kSyncDictionaryNamespace);
-  final AssetEntry? asset = await backend.findAsset(
-    ns,
-    '$dictionaryName$_dictionaryAssetSuffix',
-  );
-  if (asset == null) return false;
-  await backend.deleteAsset(asset.id);
-  return true;
-}
-
 /// One sync item judged a genuine fork (both sides moved off the common-ancestor
 /// baseline) and therefore skipped instead of auto-resolved. Carries everything
 /// a later resolution prompt needs, including both versions so [fingerprint] can
@@ -416,8 +396,9 @@ class SyncAuthFailure {
 /// 改成显式的上传 / 下载动作后，方向成了调用点必须携带的数据，而不是从开关反推出
 /// 来的行为。
 ///
-/// [both] 不是兼容补丁：互联通道的词典在「上传词典到互联对端」开关下**仍然**是双向
-/// union（BUG-988 的通道解耦语义），那是真实存在的第三种方向。
+/// [both] 是编排器 [SyncOrchestrator.syncDictionary] 打开时的双向 union。生产侧的
+/// 自动 sweep 已不再打开它（两条通道的词典都只剩显式动作，BUG-2762），它留作编排器
+/// 自身的能力与测试入口。
 enum SyncAssetDirection {
   /// 只把本端独有的资产推给远端。
   upload,
@@ -461,8 +442,8 @@ enum SyncAssetKind {
 /// unknown books still wait for manual download). Deletes are never propagated.
 /// 词典与本地音频源数据库**不再随自动同步跑**：它们改由设置页的显式「上传 /
 /// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
-/// 开关反推。唯一例外是互联通道的词典 —— 「上传词典到互联对端」开关仍按 BUG-988
-/// 的通道语义驱动一轮双向 union，本次不动。
+/// 开关反推。互联通道的词典也一样：原来的「上传词典到互联对端」自动 union 开关已删除
+/// （BUG-2762）。
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -662,9 +643,9 @@ class SyncOrchestrator {
     }
     _collectConflicts(bookResults, report);
 
-    // 词典只剩互联通道会自动跑（「上传词典到互联对端」开关，BUG-988 的通道语义）。
-    // 云通道的 [syncDictionary] 恒为 false：那一侧的词典改由设置页的显式上传 /
-    // 下载驱动，见 [runAssetTransferOnly]。
+    // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
+    // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
+    // 能力。
     if (syncDictionary) {
       await syncDictionaries(report, direction: SyncAssetDirection.both);
     }

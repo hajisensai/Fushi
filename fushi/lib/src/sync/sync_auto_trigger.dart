@@ -243,7 +243,6 @@ class ChannelSyncFlags {
     required this.syncContent,
     required this.syncAudioBookFiles,
     required this.syncVideoFiles,
-    required this.syncDictionary,
   });
   final bool syncStats;
 
@@ -256,30 +255,23 @@ class ChannelSyncFlags {
   final bool syncAudioBookFiles;
   final bool syncVideoFiles;
 
-  /// 这条通道是否**自动**同步词典。云通道恒为 false：那一侧的词典改由设置页的显式
-  /// 上传 / 下载动作驱动（[SyncOrchestrator.runAssetTransferOnly]）。互联通道仍读
-  /// 「上传词典到互联对端」开关（BUG-988 的通道语义，本次不动）。
-  ///
-  /// 同时是「删词典要不要传播到这条通道的远端」的门控（BUG-1566）：只有还在自动
-  /// 双向同步的通道才需要传播删除 —— 否则并集同步下轮又把它拉回来。手动上传的那份
-  /// 是用户显式放上去的备份，本地删除不该连坐删掉它。
-  final bool syncDictionary;
+  // 词典不在这里：两条通道都不再自动同步词典（云通道早就改成显式动作；互联通道的
+  // 「上传词典」开关 BUG-2762 删掉了），只由设置页的显式上传 / 下载驱动
+  // （[SyncOrchestrator.runAssetTransferOnly]）。没有自动并集，也就没有「下轮又被拉
+  // 回来」的幽灵词典要靠删除传播去防（BUG-1566 那条门控随之退役）；手动传上去的那份
+  // 是用户自己放的备份，本地删一本不该连坐删掉它。
 }
 
 /// 按通道解析分资产同步开关（BUG-988）。[isInterconnect]==true（互联通道）时「重内容」
-/// 四类——书籍/内容、词典、有声书文件、视频文件——读互联专属上传开关（默认 false，让
+/// 三类——书籍/内容、有声书文件、视频文件——读互联专属上传开关（默认 false，让
 /// 用户独立控制是否上传给互联对端，不被「启用互联连接」裹挟）；false（云备份通道）读
 /// 原共享 sync_*_enabled。统计与收藏也已分通道（互联侧读 `interconnect_sync_stats` /
 /// `interconnect_sync_favorites`；这两个新键**缺行时继承旧的 sync_stats_enabled**，
 /// 关过旧开关的存量用户升级后不会被静默复位，见 [SyncRepository]）。位置仍不区分通道
 /// （轻量进度，跨设备续读是互联本意）。
 ///
-/// 本地音频源数据库**已不在这里**：它没有任何自动同步开关了，只由设置页的显式上传 /
-/// 下载动作驱动（[SyncOrchestrator.runAssetTransferOnly]）。
-///
-/// 不再 `@visibleForTesting`：`AppModel._propagateDictionaryDeleteToRemote` 是生产
-/// 消费方——「这条通道该不该同步词典」必须复用同一份分通道门控，各处重抄必漂
-/// （BUG-1566：删词典原来只读云备份的 `isSyncDictionaryEnabled` 一刀切）。
+/// 本地音频源数据库与词典**都已不在这里**：它们没有任何自动同步开关了，只由设置页
+/// 的显式上传 / 下载动作驱动（[SyncOrchestrator.runAssetTransferOnly]）。
 Future<ChannelSyncFlags> resolveChannelSyncFlags(
   SyncRepository repo, {
   required bool isInterconnect,
@@ -304,11 +296,6 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
     syncVideoFiles: isInterconnect
         ? await repo.isInterconnectSyncVideoFilesEnabled()
         : await repo.isSyncVideoFilesEnabled(),
-    // 云通道不再有「同步词典」开关：那一侧改成设置页的显式上传 / 下载动作，自动
-    // sweep 一律不碰词典。互联侧保持原样，由互联专属上传开关驱动。
-    syncDictionary: isInterconnect
-        ? await repo.isInterconnectSyncDictionaryEnabled()
-        : false,
   );
 }
 
@@ -378,7 +365,8 @@ Future<SyncRunReport?> _runSyncChannelInner({
     syncContent: flags.syncContent,
     syncAudioBookFiles: flags.syncAudioBookFiles,
     syncVideoFiles: flags.syncVideoFiles,
-    syncDictionary: flags.syncDictionary,
+    // 自动 sweep 一律不碰词典（两条通道都是），见 [ChannelSyncFlags] 末尾注释。
+    syncDictionary: false,
     localAudioEntries: localAudioEntries,
     onLocalAudioImported: onLocalAudioImported,
     onProgress: onProgress,
@@ -874,7 +862,7 @@ class SyncAssetTransferTarget {
 ///
 /// BUG-2645：设置页「词典 / 本地音频数据库 · 传输 ▾」那几行以前只看全局
 /// [syncInProgress]，于是**任何**同步（全量 sweep、退出书单本、合集轻量）在跑时，
-/// 互联页那行「词典」都换成转圈 + 别人的阶段进度——用户没开「上传词典」，一点立即
+/// 互联页那行「词典」都换成转圈 + 别人的阶段进度——用户没点词典传输，一点立即
 /// 同步就看见词典在转，以为开关没生效。[syncActivity] 只记最后开始的那一轮、会被并发
 /// 同步覆盖，也不带资产种类与通道，所以单独维护这个精确值，由 [runManualAssetTransfer]
 /// 独占设置与清空。

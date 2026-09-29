@@ -175,7 +175,6 @@ import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
-import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
@@ -6262,11 +6261,9 @@ class AppModel with ChangeNotifier {
         // 删完把剩下的词典装回引擎（释放映射时整个引擎被清空了）。
         reloadEngine: _rebuildDictPathsCache,
       );
-      // Propagate the deletion to the remote sync staging area so the package
-      // does not become an orphan that union-sync re-pulls forever (phantom
-      // dictionary + slow sync, BUG-086). Best-effort + serialized with sync;
-      // never blocks or fails the local delete.
-      unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
+      // 不再把删除传播到远端（BUG-086 / BUG-1566 那套已退役，BUG-2762）：两条同步
+      // 通道都不再自动并集同步词典，远端那份不会被下一轮拉回来；它是用户经设置页
+      // 「词典 · 传输」显式放上去的备份，本地删一本不该连坐删掉它。
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       FushiToast.show(
@@ -6275,56 +6272,6 @@ class AppModel with ChangeNotifier {
       );
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
-    }
-  }
-
-  /// Best-effort removal of a deleted dictionary's package from **每条启用的同步
-  /// 通道** 的远端暂存命名空间（BUG-086 的删除传播 + BUG-1566 的通道覆盖）。
-  ///
-  /// BUG-1566 根因：这里原来只按「云备份 backendType」解析出的那一条通道去删，
-  /// 门控也只读云备份的 `isSyncDictionaryEnabled`。用户「云备份=Google
-  /// Drive + 互联启用」时，删词典只把云暂存删了，互联对端上那份原封不动；而词典是并集
-  /// 同步（[SyncOrchestrator] 的词典维度），下一轮又被拉回来 → 幽灵词典永远删不掉。
-  /// 通道枚举必须复用同步真正跑的那份 [enabledSyncChannelBackends]（云 + 已启用互联），
-  /// 门控按通道走 [resolveChannelSyncFlags]（互联通道读互联专属上传开关，BUG-988 语义）。
-  ///
-  /// 现在实际只剩互联通道会被传播：云通道的词典已经改成设置页的显式上传 / 下载动作，
-  /// 它的 [ChannelSyncFlags.syncDictionary] 恒 false。这不是遗漏——云那侧不再有并集
-  /// 自动同步，也就没有「下轮又被拉回来」的幽灵词典要防；反过来，用户手动传上去的那份
-  /// 是他自己放的备份，本地删一本不该连坐删掉它。
-  ///
-  /// 每条通道各自认证成功才动手；未配置/离线/出错的通道只记账并继续下一条——一条云通道
-  /// 掉线不得挡住互联通道的删除传播（BUG-1552 同型的通道隔离）。整体仍在
-  /// [runExclusiveWithSync] 里串行，避免与在飞同步抢单例后端（BUG-083）。本地删除从不
-  /// 依赖网络：所有错误都被吞掉（记 log）。
-  Future<void> _propagateDictionaryDeleteToRemote(String name) async {
-    try {
-      final SyncRepository repo = SyncRepository(database);
-      final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
-      await runExclusiveWithSync(() async {
-        for (final SyncChannel channel in channels) {
-          try {
-            final ChannelSyncFlags flags = await resolveChannelSyncFlags(
-              repo,
-              isInterconnect: channel.isInterconnect,
-            );
-            if (!flags.syncDictionary) continue;
-            final SyncBackend backend = channel.backend;
-            if (!await backend.restoreAuth(repo)) continue;
-            if (!await backend.isAuthenticated) continue;
-            // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
-            if (backend is InterconnectSyncBackend) {
-              await backend.deleteRemoteDictionary(name);
-              continue;
-            }
-            await deleteRemoteDictionaryAsset(backend, name);
-          } catch (e, stack) {
-            ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
-          }
-        }
-      });
-    } catch (e, stack) {
-      ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
     }
   }
 

@@ -3,6 +3,8 @@
 /// 根因A —— `AppModel._propagateDictionaryDeleteToRemote`：删词典只对云通道传播删除，
 /// 门控还只读云备份的 `isSyncDictionaryEnabled`。用户「云备份=Google Drive + 互联启用」
 /// 时对端那份删不掉，而词典是并集同步，下一轮又被拉回来 → 幽灵词典永远删不掉。
+/// （BUG-2762 起两条通道都不再自动并集同步词典，删除传播整条退役，根因A 的前提不再
+/// 成立；下面只钉住它不被悄悄加回来。）
 ///
 /// 根因B —— `showSyncCompareDialog`：只解析云通道去认证。只开互联、云后端从没配过的
 /// 用户恒被告知「请先设置同步」，整个互联比较入口不可达。
@@ -51,45 +53,6 @@ void main() {
       expect(channels[1].backend, isA<InterconnectSyncBackend>());
     });
 
-    test('互联通道的词典门控读互联专属开关，不读云备份共享开关', () async {
-      await repo.setBackendType(SyncBackendType.googleDrive);
-      await repo.setInterconnectEnabled(true);
-      // 互联词典上传开。云侧已**没有**词典开关（那一侧改成了设置页的显式上传 /
-      // 下载动作，flags 恒 false）——旧写法（单一 `repo.isSyncDictionaryEnabled()`
-      // 一刀切）在这里会直接 return，互联对端上的词典永远删不掉。
-      await repo.setInterconnectSyncDictionaryEnabled(true);
-
-      final ChannelSyncFlags cloud =
-          await resolveChannelSyncFlags(repo, isInterconnect: false);
-      final ChannelSyncFlags interconnect =
-          await resolveChannelSyncFlags(repo, isInterconnect: true);
-
-      expect(cloud.syncDictionary, isFalse);
-      expect(interconnect.syncDictionary, isTrue,
-          reason: '互联通道必须读 isInterconnectSyncDictionaryEnabled（BUG-988 分通道语义）');
-    });
-
-    // 反向：互联词典关 → 两条通道都不传播删除。云侧不再有开关可开，所以它恒 false；
-    // 这条同时钉住「云通道不会因为任何遗留偏好又开始自动同步/删除词典」。
-    test('互联词典关 → 两条通道都不传播（云侧已无开关）', () async {
-      await repo.setBackendType(SyncBackendType.googleDrive);
-      await repo.setInterconnectEnabled(true);
-      await repo.setInterconnectSyncDictionaryEnabled(false);
-
-      expect(
-        (await resolveChannelSyncFlags(repo, isInterconnect: false))
-            .syncDictionary,
-        isFalse,
-        reason: '云通道的词典改成显式上传 / 下载，自动路径恒不碰',
-      );
-      expect(
-        (await resolveChannelSyncFlags(repo, isInterconnect: true))
-            .syncDictionary,
-        isFalse,
-        reason: '互联专属开关关着时不得顺手动对端',
-      );
-    });
-
     test('互联未启用 → 只有云一条通道（枚举不该凭空多出互联）', () async {
       await repo.setBackendType(SyncBackendType.googleDrive);
 
@@ -105,22 +68,14 @@ void main() {
     //   'enabledSyncChannelBackends'  —— 同源通道枚举
     //   'resolveChannelSyncFlags'     —— 同源分通道门控
     //   'resolveSyncBackend'          —— 单通道解析，两个函数体里都不得再出现
-    //   'repo.isSyncDictionaryEnabled()' —— 云备份一刀切门控，不得再出现
-    test('AppModel._propagateDictionaryDeleteToRemote 遍历所有启用通道', () {
-      final String body = _functionSource(
-        _readSource('lib/src/models/app_model.dart'),
-        '  Future<void> _propagateDictionaryDeleteToRemote(String name) async {',
-        '  void clearDictionaryResultsCache()',
-      );
-
-      expect(body, contains('enabledSyncChannelBackends'),
-          reason: '通道枚举必须复用同步真正跑的那一份，不得在这里重抄');
-      expect(body, contains('resolveChannelSyncFlags'),
-          reason: '门控必须按通道解析（互联通道读互联专属开关）');
-      expect(body, isNot(contains('resolveSyncBackend')),
-          reason: '单通道解析 = 互联对端的词典删不掉（BUG-1566 根因A）');
-      expect(body, isNot(contains('repo.isSyncDictionaryEnabled()')),
-          reason: '云备份共享开关不得再对互联通道一刀切');
+    test('AppModel 删词典不再传播到远端（BUG-2762 退役根因A 那条路径）', () {
+      final String src = _readSource('lib/src/models/app_model.dart');
+      // 没有自动并集同步，远端那份就不会被拉回来；它是用户显式传上去的备份，本地删
+      // 一本不该连坐删掉它。要恢复传播，得先恢复某条通道的词典自动同步。
+      expect(src, isNot(contains('_propagateDictionaryDeleteToRemote')),
+          reason: '词典已无自动同步，删除传播不得回来');
+      expect(src, isNot(contains('deleteRemoteDictionary')),
+          reason: '本地删词典不得顺手删对端 / 云端那份手动备份');
     });
 
     test('showSyncCompareDialog 遍历所有启用通道取第一条已认证后端', () {

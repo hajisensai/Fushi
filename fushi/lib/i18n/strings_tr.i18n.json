@@ -1939,8 +1939,6 @@
   "interconnect_upload_audiobook_files_hint": "Bu cihazın sesli kitap ses ve altyazı paketlerini bağlantı eşine senkronize edin (büyük boyutlu).",
   "interconnect_upload_content": "Kitap dosyalarını yükle",
   "interconnect_upload_content_hint": "Bu cihazın kitap ve okuma içeriğini bağlantı eşine senkronize edin.",
-  "interconnect_upload_dictionary": "Sözlükleri yükle",
-  "interconnect_upload_dictionary_hint": "Bu cihazın sözlüklerini bağlantı eşine senkronize edin.",
   "interconnect_upload_section": "Bağlantı eşine yükle",
   "interconnect_upload_section_footer": "Bu cihazın bağlı eşe ne yüklediğini seçin. Bulut yedekleme anahtarlarından bağımsızdır ve varsayılan olarak kapalıdır. Bu anahtarlar yalnızca Karşılıklı bağlantıyı etkinleştir açıkken geçerlidir: karşılıklı bağlantıyı kapatmak buradaki her yüklemeyi durdurur.",
   "interconnect_upload_video_files": "Video dosyalarını yükle",
