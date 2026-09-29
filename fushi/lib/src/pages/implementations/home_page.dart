@@ -67,6 +67,7 @@ import 'package:fushi/src/media/video/video_subtitle_attach_messages.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi_engine/media/video/metadata/tmdb_video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
@@ -707,8 +708,8 @@ class _HomePageState extends BasePageState<HomePage>
     bool changed = false;
     for (final SourceLibraryRow source in sources) {
       try {
-        await indexer.index(source);
-        changed = true;
+        // 只在真写了库时才整页刷新视频库：什么都没变的启动不该让库页重载。
+        if (await indexer.index(source)) changed = true;
       } on Object catch (error, stackTrace) {
         ErrorLogService.instance.log(
           'HomePage.backfillVideoMetadataWorks.${source.id}',
@@ -2733,6 +2734,10 @@ class _HomePageState extends BasePageState<HomePage>
       isEnabled: () => appModelNoUpdate.videoLibraryAutoBackfillScrape,
       // 与协调器同一份快照：哈希就绪时纯集号文件与已识别作品的新文件也进补刮。
       isHashReady: () => config.anidbHashReady,
+      // 「自动试过 / 刷新过」落盘跨进程：否则每次启动都把查无/歧义作品重刮一轮、
+      // 把哈希查询失败的文件整份重读（用户感知为「每次打开都在重新加载资料」）。
+      ledger: VideoScrapeSweepLedger.inSupportDirectory(),
+      configFingerprint: fingerprint,
       // Shoko 式增量刷新：TMDB /tv/changes 与库内 TMDB id 求交集，只重刷变过的剧。
       tmdbChangedTvIds: ({required DateTime since}) {
         final VideoMetadataProvider? tmdb =
@@ -2751,8 +2756,21 @@ class _HomePageState extends BasePageState<HomePage>
     return _videoScrapeSweep!;
   }
 
+  /// 外壳只画「后台任务」浮钮（忙 / 有待确认两态），视频页角标读同两个量；
+  /// 进度本身由任务面板自己监听。controller 每条进度都会通知（哈希期间每 MiB
+  /// 一条），外壳若照单全收就是整棵保活 tab 树跟着重建——刮削期间卡顿的主因。
+  /// 所以只在这两态翻转时 setState。
+  (bool, bool)? _videoScrapeShellState;
+
   void _onVideoSourceScrapeTaskChanged() {
-    if (mounted) setState(() {});
+    final VideoSourceScrapeTaskController? controller =
+        _videoSourceScrapeTaskController;
+    if (!mounted || controller == null) return;
+    final (bool, bool) next =
+        (controller.isBusy, controller.pendingConfirmation != null);
+    if (next == _videoScrapeShellState) return;
+    _videoScrapeShellState = next;
+    setState(() {});
   }
 
   Future<void> _openVideoSourceScrapeTasks() async {

@@ -23,18 +23,25 @@ class VideoSourceMetadataIndexer {
 
   final FushiDatabase database;
 
-  Future<void> index(SourceLibraryRow source) {
+  /// 返回这一轮有没有真的写库（新建 / 重写作品、绑定 / 解绑特典）。
+  ///
+  /// 启动时对每个来源都跑一遍（HomePage 回填），所以「什么都没变」必须是零写入、
+  /// 零 NFO 解析：旧实现对每个带 NFO 的已有作品都整部 `apply` 重写、对每个特典
+  /// 都删一次插一次，调用方再无条件整页刷新视频库——每次打开 app 都像在重新
+  /// 加载资料。
+  Future<bool> index(SourceLibraryRow source) {
     if (source.mediaKind != 'video' || source.transport != 'local' ||
         source.videoGroupingMode == 'folder') {
-      return Future<void>.value();
+      return Future<bool>.value(false);
     }
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) return Future<void>.value();
+    if (lease == null) return Future<bool>.value(false);
     return _indexUnlocked(source).whenComplete(lease.release);
   }
 
-  Future<void> _indexUnlocked(SourceLibraryRow source) async {
+  Future<bool> _indexUnlocked(SourceLibraryRow source) async {
+    bool changed = false;
     final List<VideoSourceScrapeWork> allWorks =
         await VideoSourceWorkPlanner(database).plan(source);
     final List<VideoSourceScrapeWork> works = <VideoSourceScrapeWork>[
@@ -56,12 +63,30 @@ class VideoSourceMetadataIndexer {
               .getVideoMetadataWorkByBook(work.members.single.bookUid)
           : await database
               .getVideoMetadataWorkByCollection(work.collection!.id);
+      final List<String> videoPaths = <String>[
+        for (final VideoBookRow member in work.members) member.videoPath,
+      ];
+      if (existing != null) {
+        // 已建档作品：NFO 自作品行上次落库后没改过（或根本没有 NFO），这次读到的
+        // 内容上次已经吃进去了（在线刮削也经 mergeNfoAuthority 合并过），下面的
+        // 分支必然保留现行——只 stat 不解析，直接跳过。
+        final DateTime? nfoModifiedAt = await nfoReader.newestModifiedAt(
+          sourceRoot: source.rootPath,
+          videoPaths: videoPaths,
+        );
+        if (nfoModifiedAt == null ||
+            nfoModifiedAt.millisecondsSinceEpoch <= existing.updatedAt) {
+          indexed[existing.id] = _IndexedWorkRoot(
+            workId: existing.id,
+            root: _workRoot(work.members, source.rootPath),
+          );
+          continue;
+        }
+      }
       final VideoMetadataWork? nfoMetadata = await nfoReader.readForPaths(
         sourceRoot: source.rootPath,
         fallbackTitle: work.title,
-        videoPaths: <String>[
-          for (final VideoBookRow member in work.members) member.videoPath,
-        ],
+        videoPaths: videoPaths,
       );
       final VideoMetadataLookup? existingLookup =
           existing == null ? null : await store.confirmedLookup(work);
@@ -83,6 +108,7 @@ class VideoSourceMetadataIndexer {
           seasonEpisodesAuthoritative: metadata.seasons.isNotEmpty,
         ))
             .workId;
+        changed = true;
       }
       indexed[workId] = _IndexedWorkRoot(
         workId: workId,
@@ -113,16 +139,32 @@ class VideoSourceMetadataIndexer {
       }
       // 旧版本把 NCOP/NCED 当独立电影建立过 book-owned work。现在已能唯一绑定
       // 父作品时原地清掉这份错误规范实体；VideoBook 本身不删，仍留在“全部视频”。
-      await (database.delete(database.videoMetadataWorks)
+      final int removed = await (database.delete(database.videoMetadataWorks)
             ..where((table) => table.bookUid.equals(book.bookUid)))
           .go();
+      if (removed > 0) changed = true;
+      final String kind = _kindName(match.kind);
+      final VideoMetadataExtraRow? current =
+          await database.getVideoMetadataExtraByBook(book.bookUid);
+      if (current != null &&
+          current.extraKey == 'local:${book.bookUid}' &&
+          current.workId == candidates.first.workId &&
+          current.kind == kind &&
+          current.sourceKind == 'local' &&
+          current.title == book.title &&
+          current.thumbnailPath == book.coverPath &&
+          current.sortOrder == 0) {
+        // 绑定没变：不写，免得每次启动都刷新 updatedAt、触发展示层整页重载。
+        continue;
+      }
+      changed = true;
       final int now = DateTime.now().millisecondsSinceEpoch;
       await database.upsertVideoMetadataExtra(
         VideoMetadataExtrasCompanion.insert(
           extraKey: 'local:${book.bookUid}',
           workId: candidates.first.workId,
           bookUid: Value<String?>(book.bookUid),
-          kind: _kindName(match.kind),
+          kind: kind,
           sourceKind: 'local',
           title: book.title,
           thumbnailPath: Value<String?>(book.coverPath),
@@ -131,6 +173,7 @@ class VideoSourceMetadataIndexer {
         ),
       );
     }
+    return changed;
   }
 
   static VideoMetadataWork _provisional(VideoSourceScrapeWork work) {

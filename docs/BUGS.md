@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2538 条。点号进各自文件。
+> 共 2539 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2771](bugs/BUG-2771-video-metadata-startup-reload.md) | ✅ | ✅ | 每次打开 app 视频资料重新加载且刮削期间严重卡顿 |
 | [BUG-2766](bugs/BUG-2766-add-network-source-segment-vertical.md) | ✅ | ✅ | 移动端添加网络来源的协议分段控制器文字竖排 |
 | [BUG-2765](bugs/BUG-2765-manga-system-ocr-probe.md) | ✅ | ✅ | 漫画统一引擎探测漏了系统 OCR：auto 永远用不上 Apple Vision，显式选择不校验可用性 |
 | [BUG-2764](bugs/BUG-2764-coreaudio-pack-multi-volume.md) | ✅ | ✅ | CoreAudio 有声书同一合集连点多卷下载，第二卷报「无法创建下载」 |

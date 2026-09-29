@@ -873,11 +873,57 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
     }
   }
 
+  /// 仅文案变化（ED2K 每读 1 MiB 一条字节进度）的通知最小间隔。
+  static const Duration progressMessageInterval = Duration(milliseconds: 250);
+  DateTime? _lastProgressNotifyAt;
+  Timer? _progressNotifyTimer;
+
+  /// 进度状态总是立即更新；**通知**分两档：阶段 / 作品 / 计数 / 确认 / 报告变化
+  /// 立即发，只有 [VideoSourceScrapeProgress.message] 变的（哈希字节进度）节流到
+  /// [progressMessageInterval] 一次并补尾沿。监听方里有整页 setState 的外壳，不节流
+  /// 时一个 1.5 GB 的文件就是一千多次全树重建——刮削期间 UI 卡顿的主因。
   void _publish(VideoSourceScrapeProgress next) {
     if (_disposed) return;
+    final VideoSourceScrapeProgress previous = _progress;
     _progress = next;
+    if (!_isMessageOnlyChange(previous, next)) {
+      _notifyProgressNow();
+      return;
+    }
+    if (_progressNotifyTimer != null) return; // 尾沿已排队，届时读最新 _progress。
+    final DateTime now = DateTime.now();
+    final DateTime? last = _lastProgressNotifyAt;
+    final Duration elapsed =
+        last == null ? progressMessageInterval : now.difference(last);
+    if (elapsed >= progressMessageInterval) {
+      _notifyProgressNow();
+      return;
+    }
+    _progressNotifyTimer = Timer(progressMessageInterval - elapsed, () {
+      _progressNotifyTimer = null;
+      if (!_disposed) _notifyProgressNow();
+    });
+  }
+
+  void _notifyProgressNow() {
+    _progressNotifyTimer?.cancel();
+    _progressNotifyTimer = null;
+    _lastProgressNotifyAt = DateTime.now();
     notifyListeners();
   }
+
+  static bool _isMessageOnlyChange(
+    VideoSourceScrapeProgress a,
+    VideoSourceScrapeProgress b,
+  ) =>
+      a.phase == b.phase &&
+      a.sourceId == b.sourceId &&
+      a.sourceLabel == b.sourceLabel &&
+      a.currentWorkTitle == b.currentWorkTitle &&
+      a.current == b.current &&
+      a.total == b.total &&
+      identical(a.report, b.report) &&
+      identical(a.confirmation, b.confirmation);
 
   Future<VideoSourceScrapeConfirmationCandidate?> _requestConfirmation(
     VideoSourceScrapeConfirmation confirmation,
@@ -947,6 +993,8 @@ class VideoSourceScrapeTaskController extends EngineChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _progressNotifyTimer?.cancel();
+    _progressNotifyTimer = null;
     _token?.cancel();
     _failQueuedManualRequests(StateError('视频来源任务控制器已释放'));
     final Completer<VideoSourceScrapeConfirmationCandidate?>? completer =

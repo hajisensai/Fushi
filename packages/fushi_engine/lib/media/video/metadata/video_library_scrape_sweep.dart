@@ -24,6 +24,7 @@ library;
 
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -153,6 +154,8 @@ class VideoLibraryScrapeSweep {
     bool Function()? isHashReady,
     TmdbChangedTvIdsProbe? tmdbChangedTvIds,
     DateTime Function()? now,
+    VideoScrapeSweepLedger? ledger,
+    String configFingerprint = '',
     this.refreshProbeInterval = const Duration(hours: 12),
     this.staleAfter = const Duration(days: 14),
     this.maxRefreshPerSweep = 20,
@@ -161,6 +164,8 @@ class VideoLibraryScrapeSweep {
         _isEnabled = isEnabled,
         _isHashReady = isHashReady,
         _tmdbChangedTvIds = tmdbChangedTvIds,
+        _ledger = ledger ?? VideoScrapeSweepLedger(),
+        _configFingerprint = configFingerprint,
         _now = now ?? DateTime.now;
 
   final FushiDatabase _database;
@@ -181,11 +186,13 @@ class VideoLibraryScrapeSweep {
   final Duration refreshProbeInterval;
   final Duration staleAfter;
   final int maxRefreshPerSweep;
-  DateTime? _lastRefreshProbeAt;
 
-  /// 本进程里每部作品最近一次因刷新入批的时刻（同一部在 [refreshProbeInterval]
-  /// 内不重复刷）。
-  final Map<String, DateTime> _refreshedAt = <String, DateTime>{};
+  /// 「自动试过」「刷新过」「探针问过」三样记账（见 [VideoScrapeSweepLedger]）。
+  /// 生产装配落盘、跨进程有效；默认纯内存（= 旧的每进程语义）。
+  final VideoScrapeSweepLedger _ledger;
+
+  /// 刮削配置指纹：配置变了，旧配置下「试过没中」的记账作废。
+  final String _configFingerprint;
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
@@ -195,23 +202,29 @@ class VideoLibraryScrapeSweep {
   /// 「视频 → 媒体库」可关）。null = 不设闸（测试）。
   final bool Function()? _isEnabled;
 
-  /// 本进程已自动尝试过的作品（[VideoSourceScrapeWork.stableKey]）。
-  ///
-  /// 幂等键是**作品**不是进程（BUG-2199）：旧实现用一个 `bool _swept` 编码「这
-  /// 一轮跑过了」，于是进视频 tab 那一刻库里有什么就永远只有什么——本次会话里
-  /// 下载入库的番（管线 import 落库比首轮 sweep 晚几秒）结构上再也进不来，必须
-  /// 重启 app 才被认领，正好废掉 BUG-2004 留下的「无 AniDB 身份的下载作品由自动
-  /// 补刮认领」承诺。改成按作品记账后重复触发是廉价的：新作品每次都能进来，而
-  /// 查无/歧义的老作品仍只自动试一次——它们永远满足待确认判据，没有这层记账就
-  /// 会被每一轮重刮，白占 AniDB 的进程级限流队列。
-  final Set<String> _attemptedWorkKeys = <String>{};
+  // 已自动尝试过的作品（[VideoSourceScrapeWork.stableKey]）记在 [_ledger] 里。
+  //
+  // 幂等键是**作品**不是进程（BUG-2199）：旧实现用一个 `bool _swept` 编码「这
+  // 一轮跑过了」，于是进视频 tab 那一刻库里有什么就永远只有什么——本次会话里
+  // 下载入库的番（管线 import 落库比首轮 sweep 晚几秒）结构上再也进不来，必须
+  // 重启 app 才被认领，正好废掉 BUG-2004 留下的「无 AniDB 身份的下载作品由自动
+  // 补刮认领」承诺。改成按作品记账后重复触发是廉价的：新作品每次都能进来，而
+  // 查无/歧义的老作品在 [VideoScrapeSweepLedger.retryAttemptAfter] 内只自动试一次
+  // ——它们永远满足待确认判据，没有这层记账就会被每一轮（旧实现：每次启动）重刮，
+  // 白占 AniDB 的进程级限流队列。
 
   /// 防重入：一轮还在飞时再次触发直接返回（[pendingWorks] 要全量查库）。
   bool _sweeping = false;
 
+  /// 最近一次算出的待确认清单。批次在跑（含本调度器自己发起的那一批）时，
+  /// 重复触发直接回它：每次重算都要把所有来源重新规划一遍 + 逐作品查身份，
+  /// 批次期间每写一部作品就触发一次，正是刮削时库页卡顿的来源之一。批次结束
+  /// 后库页会再触发一轮，届时重算。
+  List<VideoPendingScrapeWork> _lastPending = const <VideoPendingScrapeWork>[];
+
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
-      (await _plannedWorks()).pending;
+      _lastPending = (await _plannedWorks()).pending;
 
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
   Future<_PlannedWorks> _plannedWorks() async {
@@ -240,7 +253,7 @@ class VideoLibraryScrapeSweep {
     final List<(VideoPendingScrapeWork, int, DateTime)> fresh =
         <(VideoPendingScrapeWork, int, DateTime)>[];
     for (final VideoPendingScrapeWork entry in identified) {
-      final DateTime? refreshed = _refreshedAt[entry.work.stableKey];
+      final DateTime? refreshed = _ledger.refreshedAt(entry.work.stableKey);
       if (refreshed != null &&
           now.difference(refreshed) < refreshProbeInterval) {
         continue;
@@ -262,7 +275,7 @@ class VideoLibraryScrapeSweep {
       ...stale,
     ];
     final TmdbChangedTvIdsProbe? probe = _tmdbChangedTvIds;
-    final DateTime? lastProbe = _lastRefreshProbeAt;
+    final DateTime? lastProbe = _ledger.lastRefreshProbeAt;
     if (probe != null &&
         fresh.isNotEmpty &&
         (lastProbe == null ||
@@ -271,7 +284,7 @@ class VideoLibraryScrapeSweep {
       for (final (_, _, DateTime scrapedAt) in fresh) {
         if (scrapedAt.isBefore(since)) since = scrapedAt;
       }
-      _lastRefreshProbeAt = now;
+      _ledger.markRefreshProbe(now);
       final Set<int> changed;
       try {
         changed = await probe(since: since);
@@ -322,20 +335,24 @@ class VideoLibraryScrapeSweep {
   /// 批次。总闸关、controller 忙、作品已试过都只是不发起批次，**清单照常返回**
   /// ——「不自动刮」不等于「不告诉用户有东西待确认」。
   Future<List<VideoPendingScrapeWork>> sweepAndListPending() async {
-    if (_sweeping) return _pendingWorksOrEmpty();
+    if (_sweeping || _controller.isBusy) return _lastPending;
     _sweeping = true;
     try {
       final _PlannedWorks planned = await _plannedWorksOrEmpty();
-      final List<VideoPendingScrapeWork> pending = planned.pending;
+      final List<VideoPendingScrapeWork> pending = _lastPending = planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
       // 不排队：已有批次在跑就放弃本轮，避免和手动刮削抢互斥门。
       if (_controller.isBusy) return pending;
+      await _ledger.ensureLoaded(fingerprint: _configFingerprint);
+      final DateTime startedAt = _now();
       final bool hashReady = _isHashReady?.call() ?? false;
       final Map<SourceLibraryRow, List<VideoSourceScrapeWork>> subsets =
           <SourceLibraryRow, List<VideoSourceScrapeWork>>{};
       final List<String> claimed = <String>[];
       void claim(VideoPendingScrapeWork entry) {
-        if (_attemptedWorkKeys.contains(entry.work.stableKey)) return;
+        if (_ledger.wasAttemptedRecently(entry.work.stableKey, startedAt)) {
+          return;
+        }
         claimed.add(entry.work.stableKey);
         subsets
             .putIfAbsent(entry.source, () => <VideoSourceScrapeWork>[])
@@ -352,7 +369,7 @@ class VideoLibraryScrapeSweep {
           claim(entry);
         }
       }
-      // 资料刷新（变过的 / 过期的已识别作品）：不走 _attemptedWorkKeys（那是
+      // 资料刷新（变过的 / 过期的已识别作品）：不走「自动试过」记账（那是
       // 「查无就不再自动试」的记账，刷新要能周期性重来），按刷新时刻自己记。
       final List<String> refreshing = <String>[];
       for (final VideoPendingScrapeWork entry
@@ -363,15 +380,17 @@ class VideoLibraryScrapeSweep {
             .putIfAbsent(entry.source, () => <VideoSourceScrapeWork>[])
             .add(entry.work);
       }
-      if (subsets.isEmpty) return pending;
+      if (subsets.isEmpty) {
+        await _saveLedger();
+        return pending;
+      }
       if (_controller.isBusy) return pending;
       // 记账放在真正提交批次前一刻：中途被互斥门挡回的作品不算「已尝试」，
-      // 否则本进程再也不会自动碰它们。
-      _attemptedWorkKeys.addAll(claimed);
-      final DateTime refreshedAt = _now();
-      for (final String key in refreshing) {
-        _refreshedAt[key] = refreshedAt;
-      }
+      // 否则再也不会自动碰它们。
+      final DateTime submittedAt = _now();
+      _ledger.markAttempted(claimed, submittedAt);
+      _ledger.markRefreshed(refreshing, submittedAt);
+      await _saveLedger();
       try {
         await _controller.scrapeWorkSubsets(subsets);
       } catch (_) {
@@ -383,13 +402,13 @@ class VideoLibraryScrapeSweep {
     }
   }
 
+  Future<void> _saveLedger() =>
+      _ledger.save(now: _now(), refreshWindow: refreshProbeInterval);
+
   /// 只补刮、不看清单的调用方入口。
   Future<void> sweepOnce() async {
     await sweepAndListPending();
   }
-
-  Future<List<VideoPendingScrapeWork>> _pendingWorksOrEmpty() async =>
-      (await _plannedWorksOrEmpty()).pending;
 
   Future<_PlannedWorks> _plannedWorksOrEmpty() async {
     try {

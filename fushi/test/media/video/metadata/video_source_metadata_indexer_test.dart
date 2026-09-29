@@ -352,7 +352,7 @@ void main() {
     final source = (await db.getMediaSourceById(sourceId))!;
     final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(db);
 
-    await indexer.index(source);
+    expect(await indexer.index(source), isTrue);
     final VideoMetadataWorkRow first =
         (await db.getVideoMetadataWorkByCollection(collectionId))!;
     expect(first.title, 'Himouto! Umaru-chan');
@@ -374,10 +374,64 @@ void main() {
     expect(extras.single.bookUid, 'himouto-ncop');
     expect(extras.single.kind, 'clip');
 
-    await indexer.index(source);
+    // 启动回填每次都会跑：什么都没变时必须零写入（不重写作品、不重插特典），
+    // 调用方据返回值决定要不要整页刷新视频库。
+    expect(await indexer.index(source), isFalse);
     final VideoMetadataWorkRow second =
         (await db.getVideoMetadataWorkByCollection(collectionId))!;
     expect(second.id, first.id);
+    expect(second.updatedAt, first.updatedAt);
     expect(await db.getVideoMetadataSeasons(first.id), hasLength(1));
+    expect(
+      (await db.getVideoMetadataExtras(first.id)).single.updatedAt,
+      extras.single.updatedAt,
+    );
+  });
+
+  test('unchanged NFO is not re-applied on every launch; an edited one is',
+      () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    final Directory root =
+        await Directory.systemTemp.createTemp('video-metadata-nfo-mtime-');
+    addTearDown(() async {
+      await db.close();
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final fixture = await _createMovieFixture(db, root);
+    await fixture.nfo.writeAsString('''
+<movie>
+  <title>First NFO Title</title>
+  <uniqueid type="tmdb" default="true">100</uniqueid>
+</movie>
+''');
+    final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(db);
+    final source = (await db.getMediaSourceById(fixture.sourceId))!;
+
+    expect(await indexer.index(source), isTrue);
+    final VideoMetadataWorkRow applied =
+        (await db.getVideoMetadataWorkByBook('movie-book'))!;
+    expect(applied.title, 'First NFO Title');
+
+    // NFO 没动：只 stat，不解析、不重写。
+    expect(await indexer.index(source), isFalse);
+    expect(
+      (await db.getVideoMetadataWorkByBook('movie-book'))!.updatedAt,
+      applied.updatedAt,
+    );
+
+    // 用户改了 NFO（晚于作品行上次落库）：重新吃进去。作品行时刻钉到过去，
+    // 免得文件系统 mtime 粒度让「刚写」与「刚落库」撞在同一刻。
+    await db.setVideoMetadataWorkUpdatedAt(applied.id, 1);
+    await fixture.nfo.writeAsString('''
+<movie>
+  <title>Edited NFO Title</title>
+  <uniqueid type="tmdb" default="true">100</uniqueid>
+</movie>
+''');
+    expect(await indexer.index(source), isTrue);
+    final VideoMetadataWorkRow edited =
+        (await db.getVideoMetadataWorkByBook('movie-book'))!;
+    expect(edited.id, applied.id);
+    expect(edited.title, 'Edited NFO Title');
   });
 }
