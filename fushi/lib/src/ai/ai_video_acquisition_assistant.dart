@@ -188,8 +188,13 @@ Rules:
   season numbers, episode numbers, resolution or codec tags. Do not guess
   titles you are unsure of; give only what the user wrote in that case. Leave
   the list empty when no work is mentioned.
-- "mode": "download" for "download / get / grab it now"; "subscribe" for
-  "follow / subscribe / keep getting new episodes".
+- "mode": only when the user explicitly chooses between one-off and following.
+  "download" when they say they want just what is out now and do not want to
+  follow new episodes (e.g. "just the existing episodes", "no need to follow",
+  "只要现在有的", "不用追"). "subscribe" for "follow / subscribe / keep getting
+  new episodes" ("订阅", "追更"). A plain request to download or get a work
+  ("download X", "get X", "帮我下X", "下载X") does NOT state a mode: omit it,
+  the app asks when the work is still airing.
 - "quality": map "best / highest / as good as possible" to "best", "4K" /
   "2160" to "2160p", "2K" / "1440" to "1440p", "1080" / "full HD" to "1080p",
   "720" to "720p", "480" / "SD" / "small" to "480p", "any / whatever" to "any".

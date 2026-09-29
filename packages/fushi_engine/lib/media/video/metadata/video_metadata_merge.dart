@@ -74,7 +74,15 @@ VideoMetadataWork supplementVideoMetadata(
     ids: _mergeIds(primary.ids, supplement.ids),
     seasonCount: primary.seasonCount ?? supplement.seasonCount,
     episodeCount: primary.episodeCount ?? supplement.episodeCount,
-    genres: _unionStrings(primary.genres, supplement.genres),
+    genres: _mergeLanguageTaggedStrings(
+      primary.genres,
+      supplement.genres,
+      primaryLanguage:
+          _providerTextLanguage(primary.provider, preferredLanguage),
+      supplementLanguage:
+          _providerTextLanguage(supplement.provider, preferredLanguage),
+      preferredLanguage: preferredLanguage,
+    ),
     studios: _unionStrings(primary.studios, supplement.studios),
     countries: _unionStrings(primary.countries, supplement.countries),
     keywords: _unionStrings(primary.keywords, supplement.keywords),
@@ -149,6 +157,8 @@ String? _providerTextLanguage(
     switch (provider) {
       VideoMetadataProviderKind.mal => 'en',
       VideoMetadataProviderKind.anidb => 'en',
+      // AniList 的 description / genres 只有英文（GraphQL 没有语言参数）。
+      VideoMetadataProviderKind.anilist => 'en',
       VideoMetadataProviderKind.tmdb => preferredLanguage,
       _ => null,
     };
@@ -215,6 +225,32 @@ List<String> _unionStrings(
     if (seen.add(_unionKey(value))) result.add(value);
   }
   return result;
+}
+
+/// 带语言的标签集合（类型）合并：两边语言已知且不同，就**不**跨语言取并集——
+/// 并集会把 `Drama` / `Slice of Life`（MAL）与 `アニメーション` / `コメディ`
+/// （TMDB ja）混排成一行。取与资料语言一致的那一边；那一边为空才退回另一边；
+/// 两边都不是资料语言时先到者（主源）优先。语言相同或任一未知时照旧取并集。
+List<String> _mergeLanguageTaggedStrings(
+  List<String> primary,
+  List<String> supplement, {
+  required String? primaryLanguage,
+  required String? supplementLanguage,
+  required String? preferredLanguage,
+}) {
+  final String? primarySubtag = _primaryLanguageSubtag(primaryLanguage);
+  final String? supplementSubtag = _primaryLanguageSubtag(supplementLanguage);
+  if (primarySubtag == null ||
+      supplementSubtag == null ||
+      primarySubtag == supplementSubtag) {
+    return _unionStrings(primary, supplement);
+  }
+  final bool preferSupplement =
+      !_matchesPreferredLanguage(primaryLanguage, preferredLanguage) &&
+          _matchesPreferredLanguage(supplementLanguage, preferredLanguage);
+  final List<String> first = preferSupplement ? supplement : primary;
+  final List<String> second = preferSupplement ? primary : supplement;
+  return List<String>.of(first.isNotEmpty ? first : second);
 }
 
 String _unionKey(String value) {
@@ -943,36 +979,54 @@ List<VideoMetadataId> _mergeIds(
 }
 
 /// 人物关系并集：主表原序保留，补充表里同一条关系（同人、同角色、同类）只往
-/// 主条目补空（照片、id、简介），新关系追加到尾部。
+/// 主条目补空（照片、id、原名、简介），新关系追加到尾部。
 ///
-/// 「同一条关系」跨源判定（BUG-2612）：MAL 声优是 `voiceActor` + 「姓, 名」，
-/// TMDB 动画演员是 `actor` + 「名 姓」+ 角色「X (voice)」——字面 key 永不相撞，
-/// 同一个声优就会出现两次，而且 MAL 那条没照片时 TMDB 的照片也补不进来。
-/// 所以 key 里 actor / voiceActor 同组、人名按词集合比较、角色名去掉配音
-/// 后缀；导演 / 编剧等职员 kind 不同组，不会被误并。
+/// 「同一条关系」跨源判定（BUG-2612 / BUG-2795）：
+///  - 类别：actor / voiceActor 同组（MAL 声优是 `voiceActor`，TMDB 动画演员是
+///    `actor`）；导演 / 编剧等职员按 kind 各自成组，不会被误并。
+///  - 人名：比较 `name` 与 `originalName` 两个写法，**任一**相同即同一人——MAL
+///    「Suzuki, Aina」与 TMDB `original_name`「Aina Suzuki」按词集合相同；汉字 /
+///    假名名去空白与间隔号后比较（「鈴木 愛奈」=「鈴木愛奈」）。
+///  - 角色：比较角色名 / 角色原名 / 去掉配音后缀的 roleName；两边角色名写法可比
+///    （同一书写系统）却不相同 → 同一声优的另一个角色，不合并；写法不可比（英文
+///    罗马字 vs 汉字假名）→ 由人名身份决定。
+///
+/// **身份不可判定时不追加**：补充条目与主表同组条目的人名没有任何共同书写系统
+/// （MAL 只给罗马字「Suzuki, Aina」、TMDB 只给「鈴木愛奈」），那就既对不上、也
+/// 没法证明是另一个人——追加就是同一批声优出现两遍。此时只保留主表（Jellyfin
+/// `MergePeople` 同样只补已匹配的人）。主表该组为空时照旧整组补进来。
 List<VideoMetadataCredit> mergeVideoMetadataCredits(
   Iterable<VideoMetadataCredit> primary,
   Iterable<VideoMetadataCredit> supplement,
 ) {
   final List<VideoMetadataCredit> result = primary.toList();
-  final Map<String, int> indexByKey = <String, int>{
-    for (int index = 0; index < result.length; index++)
-      _creditKey(result[index]): index,
-  };
+  final List<_CreditIdentity> identities = <_CreditIdentity>[
+    for (final VideoMetadataCredit credit in result) _CreditIdentity.of(credit),
+  ];
+  final Map<String, Set<_NameScript>> primaryScriptsByGroup =
+      <String, Set<_NameScript>>{};
+  for (final _CreditIdentity identity in identities) {
+    primaryScriptsByGroup
+        .putIfAbsent(identity.group, () => <_NameScript>{})
+        .addAll(identity.nameScripts);
+  }
   // 追加条目的 order 接在主表之后：补充表（第二 cour / TMDB 汇总）各自从 0 起，
   // 落库后读侧 ORDER BY sortOrder 会让第二季配角与第一季主角交错。
   int nextOrder = result.isEmpty
       ? 0
       : result.map((VideoMetadataCredit c) => c.order).reduce(max) + 1;
   for (final VideoMetadataCredit credit in supplement) {
-    final String key = _creditKey(credit);
-    final int? existingIndex = indexByKey[key];
-    if (existingIndex == null) {
-      indexByKey[key] = result.length;
-      result.add(credit.copyWith(order: nextOrder++));
-    } else {
+    final _CreditIdentity identity = _CreditIdentity.of(credit);
+    final int existingIndex = identities.indexWhere(identity.sameCreditAs);
+    if (existingIndex >= 0) {
       result[existingIndex] = _mergeCredit(result[existingIndex], credit);
+      continue;
     }
+    if (!identity.comparableWithGroup(primaryScriptsByGroup[identity.group])) {
+      continue;
+    }
+    identities.add(identity);
+    result.add(credit.copyWith(order: nextOrder++));
   }
   return result;
 }
@@ -1028,29 +1082,113 @@ VideoMetadataCharacter _mergeCharacter(
       ids: _mergeIds(primary.ids, supplement.ids),
     );
 
-String _creditKey(VideoMetadataCredit credit) => <String>[
-      switch (credit.kind) {
+/// 名字的书写系统：只用来判断两个写法「能不能比」，不做转写。
+enum _NameScript { latin, han, hangul }
+
+final RegExp _latinLetter = RegExp(r'[A-Za-z\u00C0-\u024F]');
+final RegExp _hanOrKana = RegExp(
+    r'[\u3040-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]');
+final RegExp _hangul = RegExp(r'[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]');
+final RegExp _cjkNameSeparators = RegExp(r'[\s,，、・·･=＝]+');
+final RegExp _latinNameSeparators = RegExp(r'[,\s]+');
+
+Set<_NameScript> _scriptsOf(String value) => <_NameScript>{
+      if (_latinLetter.hasMatch(value)) _NameScript.latin,
+      if (_hanOrKana.hasMatch(value)) _NameScript.han,
+      if (_hangul.hasMatch(value)) _NameScript.hangul,
+    };
+
+/// 单个写法的比较键：汉字 / 假名 / 谚文名去掉空白与间隔号（「鈴木 愛奈」=
+/// 「鈴木愛奈」，并按 [TitleNormalizer] 折叠繁简 / 全半角）；拉丁名按词集合比较
+/// （「Hanae, Natsuki」= 「Natsuki Hanae」）。配音后缀先剥掉。
+String _nameKey(String value) {
+  final String trimmed = stripVoiceRoleSuffix(value);
+  if (trimmed.isEmpty) return '';
+  if (_hanOrKana.hasMatch(trimmed) || _hangul.hasMatch(trimmed)) {
+    return TitleNormalizer.normalize(trimmed)
+        .replaceAll(_cjkNameSeparators, '');
+  }
+  final List<String> words = trimmed
+      .toLowerCase()
+      .split(_latinNameSeparators)
+      .where((String word) => word.isNotEmpty)
+      .toList()
+    ..sort();
+  return words.join(' ');
+}
+
+Set<String> _nameKeys(Iterable<String?> values) => <String>{
+      for (final String? value in values)
+        if (value != null) _nameKey(value),
+    }..remove('');
+
+Set<_NameScript> _nameScriptsOf(Iterable<String?> values) => <_NameScript>{
+      for (final String? value in values)
+        if (value != null) ..._scriptsOf(value),
+    };
+
+/// 一条人物关系的跨源身份：类别组 + 人名全部写法 + 角色名全部写法。
+class _CreditIdentity {
+  _CreditIdentity._({
+    required this.group,
+    required this.names,
+    required this.nameScripts,
+    required this.characters,
+    required this.characterScripts,
+  });
+
+  factory _CreditIdentity.of(VideoMetadataCredit credit) {
+    final List<String?> names = <String?>[
+      credit.person.name,
+      credit.person.originalName,
+    ];
+    final List<String?> characters = <String?>[
+      credit.roleName,
+      credit.character?.name,
+      credit.character?.originalName,
+    ];
+    return _CreditIdentity._(
+      group: switch (credit.kind) {
         VideoMetadataCreditKind.actor ||
         VideoMetadataCreditKind.voiceActor =>
           'cast',
         _ => credit.kind.name,
       },
-      _personNameKey(credit.person.name),
-      _textKey(stripVoiceRoleSuffix(
-          credit.roleName ?? credit.character?.name ?? '')),
-    ].join('|');
+      names: _nameKeys(names),
+      nameScripts: _nameScriptsOf(names),
+      characters: _nameKeys(characters),
+      characterScripts: _nameScriptsOf(characters),
+    );
+  }
 
-String _textKey(String value) =>
-    value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  final String group;
+  final Set<String> names;
+  final Set<_NameScript> nameScripts;
+  final Set<String> characters;
+  final Set<_NameScript> characterScripts;
 
-/// 人名按词集合比较：「Hanae, Natsuki」（MAL）与「Natsuki Hanae」（TMDB）同一人。
-String _personNameKey(String name) {
-  final List<String> words = _textKey(name)
-      .split(RegExp(r'[,\s]+'))
-      .where((String word) => word.isNotEmpty)
-      .toList()
-    ..sort();
-  return words.join(' ');
+  bool sameCreditAs(_CreditIdentity other) =>
+      group == other.group &&
+      names.intersection(other.names).isNotEmpty &&
+      _sameCharacterAs(other);
+
+  /// 人名已确认同一人之后的角色判定：任一边没有角色 → 缺角色不构成「另一个
+  /// 角色」的证据；有共同写法 → 同一角色；写法可比却不同 → 同一声优的另一个
+  /// 角色；写法不可比 → 无法反证，按同一条关系合并（只补空，不改主表字段）。
+  bool _sameCharacterAs(_CreditIdentity other) {
+    if (characters.isEmpty || other.characters.isEmpty) return true;
+    if (characters.intersection(other.characters).isNotEmpty) return true;
+    return characterScripts.intersection(other.characterScripts).isEmpty;
+  }
+
+  /// 没匹配上的补充条目能否证明是「另一个人」：主表同组为空（只补空），或人名
+  /// 与主表同组有共同书写系统（写法可比仍对不上）才算；否则身份不可判定。
+  bool comparableWithGroup(Set<_NameScript>? groupScripts) {
+    if (groupScripts == null || groupScripts.isEmpty || nameScripts.isEmpty) {
+      return true;
+    }
+    return groupScripts.intersection(nameScripts).isNotEmpty;
+  }
 }
 
 /// TMDB 给配音角色的名字带 `(voice)` 后缀（「Frieren (voice)」），Shoko 入库

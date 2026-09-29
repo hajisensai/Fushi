@@ -168,6 +168,15 @@ void main() {
       }
     });
 
+    test('「帮我下 X」不算选了模式：放送中的作品要留给 app 去问下载还是订阅', () {
+      final String prompt = buildVideoAcquisitionIntentSystemPrompt(
+        locale: 'zh-CN',
+      );
+      expect(prompt, contains('does NOT state a mode'));
+      expect(prompt, contains('帮我下X'));
+      expect(prompt, isNot(contains('"download" for "download / get')));
+    });
+
     test('quality "best" / "1440p" 是合法档位', () {
       expect(
         _parse('{"intent": "provide", "quality": "best"}').patch.quality,

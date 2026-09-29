@@ -774,6 +774,17 @@ class VideoDownloadPipelineActionRequired implements Exception {
   String toString() => message;
 }
 
+/// 刮削失败只因为资料源暂时不可用（网络 / 5xx / 限流）：刮削阶段唯一按退避
+/// 重试的失败，次数用完落 failed。
+class VideoDownloadScrapeProviderUnavailable implements Exception {
+  const VideoDownloadScrapeProviderUnavailable(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 /// 要下载的文件已经被同一颗 torrent 的另一个未完成任务选中（例如同一卷点了
 /// 两次）。与别的「需要处理」区分开，调用方据此提示「已在队列」而不是「失败」。
 class VideoDownloadAlreadyQueued extends VideoDownloadPipelineActionRequired {
@@ -2072,7 +2083,11 @@ class VideoDownloadPipelineService {
       final bool retryable =
           error is! ExternalProviderFailure || error.retryable;
       final int now = DateTime.now().millisecondsSinceEpoch;
-      if (job.stage == VideoDownloadJobStage.scrape || !retryable) {
+      // 刮削阶段只有「资料源暂时不可用」可重试；其余（映射不回来源、待确认…）
+      // 重试也不会变，交给人处理。
+      final bool scrapeNeedsHuman = job.stage == VideoDownloadJobStage.scrape &&
+          error is! VideoDownloadScrapeProviderUnavailable;
+      if (scrapeNeedsHuman || !retryable) {
         await _markNeedsAttention(
           job,
           _safeError(error.toString()),
@@ -4420,6 +4435,11 @@ class VideoDownloadPipelineService {
     );
     _ensureLeaseHeld();
     database.notifyVideoLibraryChanged();
+    if (report.failedOnlyBecauseProviderUnavailable) {
+      // 资料源临时连不上（Jikan 504 之类）：文件已在库，身份已确认，过一会儿原样
+      // 再刮就行——走任务的退避重试，不停在「需要处理」。
+      throw VideoDownloadScrapeProviderUnavailable(report.errors.first.message);
+    }
     if (report.cancelled ||
         report.failedWorks > 0 ||
         report.pendingConfirmations > 0 ||

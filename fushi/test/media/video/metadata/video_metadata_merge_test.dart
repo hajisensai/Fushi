@@ -1070,4 +1070,183 @@ void main() {
       expect(stripVoiceRoleSuffix('Himmel (young)'), 'Himmel (young)');
     });
   });
+
+  group('BUG-2795 语言感知合并与跨写法人物', () {
+    VideoMetadataWork work(
+      VideoMetadataProviderKind provider, {
+      String? plot,
+      List<String> genres = const <String>[],
+      List<VideoMetadataCredit> credits = const <VideoMetadataCredit>[],
+    }) =>
+        VideoMetadataWork(
+          provider: provider,
+          kind: VideoMetadataMediaKind.tv,
+          title: provider.name,
+          plot: plot,
+          genres: genres,
+          credits: credits,
+        );
+    VideoMetadataCredit voice(
+      String name,
+      String role, {
+      String? originalName,
+      String? photo,
+      VideoMetadataCreditKind kind = VideoMetadataCreditKind.voiceActor,
+    }) =>
+        VideoMetadataCredit(
+          kind: kind,
+          person: VideoMetadataPerson(
+            name: name,
+            originalName: originalName,
+            profileUrl: photo,
+          ),
+          character: VideoMetadataCharacter(name: role),
+          roleName: role,
+        );
+    VideoMetadataCredit staff(VideoMetadataCreditKind kind, String name) =>
+        VideoMetadataCredit(
+          kind: kind,
+          person: VideoMetadataPerson(name: name),
+          job: kind.name,
+        );
+
+    test('资料语言 zh：MAL 英文简介让位 TMDB 中文简介', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        work(
+          VideoMetadataProviderKind.mal,
+          plot: 'English synopsis (Source: Crunchyroll)',
+        ),
+        work(VideoMetadataProviderKind.tmdb, plot: '中文简介'),
+        preferredLanguage: 'zh-CN',
+      );
+      expect(merged.plot, '中文简介');
+    });
+
+    test('类型不跨语言取并集：取资料语言那一边，空了才退回另一边', () {
+      final VideoMetadataWork mal = work(
+        VideoMetadataProviderKind.mal,
+        genres: const <String>['Drama', 'Slice of Life'],
+      );
+      expect(
+        supplementVideoMetadata(
+          mal,
+          work(
+            VideoMetadataProviderKind.tmdb,
+            genres: const <String>['动画', '喜剧'],
+          ),
+          preferredLanguage: 'zh-CN',
+        ).genres,
+        <String>['动画', '喜剧'],
+      );
+      expect(
+        supplementVideoMetadata(
+          mal,
+          work(VideoMetadataProviderKind.tmdb),
+          preferredLanguage: 'zh-CN',
+        ).genres,
+        <String>['Drama', 'Slice of Life'],
+        reason: 'TMDB 没给类型时退回 MAL 的，不能留空',
+      );
+      expect(
+        supplementVideoMetadata(
+          mal,
+          work(
+            VideoMetadataProviderKind.tmdb,
+            genres: const <String>['Animation', 'Comedy'],
+          ),
+          preferredLanguage: 'en-US',
+        ).genres,
+        <String>['Drama', 'Slice of Life', 'Animation', 'Comedy'],
+        reason: '两边同为资料语言时照旧并集',
+      );
+    });
+
+    test('不传资料语言时类型照旧取并集（旧调用方行为不变）', () {
+      expect(
+        supplementVideoMetadataWithTmdb(
+          work(VideoMetadataProviderKind.mal, genres: const <String>['Drama']),
+          work(VideoMetadataProviderKind.tmdb, genres: const <String>['剧情']),
+        ).genres,
+        <String>['Drama', '剧情'],
+      );
+    });
+
+    test('AniList 文本按英文计：资料语言 ja 时类型与简介取 TMDB', () {
+      final VideoMetadataWork merged = supplementVideoMetadata(
+        work(
+          VideoMetadataProviderKind.anilist,
+          plot: 'English description',
+          genres: const <String>['Comedy'],
+        ),
+        work(
+          VideoMetadataProviderKind.tmdb,
+          plot: '日本語のあらすじ',
+          genres: const <String>['アニメーション', 'コメディ'],
+        ),
+        preferredLanguage: 'ja',
+      );
+      expect(merged.plot, '日本語のあらすじ');
+      expect(merged.genres, <String>['アニメーション', 'コメディ']);
+    });
+
+    test('TMDB original_name 是罗马字时与 MAL「姓, 名」认成同一人，角色写法不可比不拦', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[voice('Suzuki, Aina', 'Fukuga, Kurumi')],
+        <VideoMetadataCredit>[
+          voice(
+            '鈴木愛奈',
+            '福賀くるみ',
+            originalName: 'Aina Suzuki',
+            photo: 'tmdb-photo',
+            kind: VideoMetadataCreditKind.actor,
+          ),
+        ],
+      );
+      expect(merged, hasLength(1));
+      expect(merged.single.person.name, 'Suzuki, Aina', reason: '主源名字保留');
+      expect(merged.single.person.profileUrl, 'tmdb-photo');
+    });
+
+    test('汉字名去空白后比较：「鈴木 愛奈」与「鈴木愛奈」同一人同一角色', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[voice('鈴木 愛奈', '福賀 くるみ')],
+        <VideoMetadataCredit>[
+          voice('鈴木愛奈', '福賀くるみ (voice)', kind: VideoMetadataCreditKind.actor),
+        ],
+      );
+      expect(merged, hasLength(1));
+    });
+
+    test('人名写法完全不可比（罗马字 vs 汉字）时不追加，免得同一批声优出现两遍', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[
+          voice('Suzuki, Aina', 'Fukuga, Kurumi'),
+          voice('Tomita, Miyu', 'Some Character'),
+          staff(VideoMetadataCreditKind.director, 'Someone, Director'),
+        ],
+        <VideoMetadataCredit>[
+          voice('鈴木愛奈', '福賀くるみ', kind: VideoMetadataCreditKind.actor),
+          voice('富田美憂', '誰か', kind: VideoMetadataCreditKind.actor),
+          staff(VideoMetadataCreditKind.director, '監督太郎'),
+          // 主表没有编剧组：整组照旧补进来（只补空）。
+          staff(VideoMetadataCreditKind.writer, '脚本花子'),
+        ],
+      );
+      expect(
+        merged.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu', 'Someone, Director', '脚本花子'],
+      );
+    });
+
+    test('写法可比仍对不上的补充条目是另一个人，照旧追加', () {
+      final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
+        <VideoMetadataCredit>[voice('Suzuki, Aina', 'Fukuga, Kurumi')],
+        <VideoMetadataCredit>[
+          voice('Miyu Tomita', 'Another (voice)',
+              kind: VideoMetadataCreditKind.actor),
+        ],
+      );
+      expect(merged, hasLength(2));
+    });
+  });
 }

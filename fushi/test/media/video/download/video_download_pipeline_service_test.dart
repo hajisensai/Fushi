@@ -25,6 +25,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_resolver.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_config.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
@@ -1830,6 +1831,64 @@ void main() {
     final VideoBookRow book = (await environment.database
         .getVideoBookByBookUid('video/show-s01e07'))!;
     expect(book.sourceId, environment.sourceId);
+  });
+
+  test(
+      'scrape failing only because the metadata provider returned 504 is '
+      'retried with backoff instead of parking on needsAttention', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      metadataProvider: _GatewayTimeoutMalProvider(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'transient-scrape-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E01.mkv',
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/show-s01e01'),
+        title: const Value<String>('Show S01E01'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E01.mkv',
+        currentRelativePath: 'Show S01E01.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle == VideoDownloadJobLifecycle.needsAttention ||
+          row.attemptCount > 0,
+    );
+    expect(job.lifecycle, VideoDownloadJobLifecycle.active,
+        reason: '${job.lastError}');
+    expect(job.stage, VideoDownloadJobStage.scrape);
+    expect(job.attemptCount, 1);
+    expect(job.nextAttemptAt, isNotNull);
+    expect(job.lastError, contains('504'));
   });
 
   test(
@@ -4504,6 +4563,47 @@ class _UnavailableAniListMetadataProvider implements VideoMetadataProvider {
     required int seasonNumber,
   }) =>
       throw UnsupportedError('unavailable provider must not be queried');
+
+  @override
+  void close() {}
+}
+
+/// 已配置、但每次请求都 504（Jikan 抽风时的真实形态）。
+class _GatewayTimeoutMalProvider implements VideoMetadataProvider {
+  static const VideoMetadataNetworkException _error =
+      VideoMetadataNetworkException(
+    'MAL anime/42/full HTTP 504',
+    statusCode: 504,
+  );
+
+  @override
+  VideoMetadataProviderKind get providerKind => VideoMetadataProviderKind.mal;
+
+  @override
+  bool get isAvailable => true;
+
+  @override
+  Future<List<VideoMetadataWork>> search(
+    VideoMetadataSearchRequest request,
+  ) =>
+      throw _error;
+
+  @override
+  Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) =>
+      throw _error;
+
+  @override
+  Future<List<VideoMetadataSeason>> fetchSeasons(
+    VideoMetadataLookup lookup,
+  ) =>
+      throw _error;
+
+  @override
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) =>
+      throw _error;
 
   @override
   void close() {}

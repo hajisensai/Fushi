@@ -806,6 +806,7 @@ class VideoSourceScrapeCoordinator
                 resolved.status,
                 resolved.reason,
               ),
+              providerUnavailable: resolved.transient,
             ));
             continue;
           }
@@ -896,6 +897,7 @@ class VideoSourceScrapeCoordinator
           errors.add(SourceScrapeIssue(
             workTitle: localWork.title,
             message: error.toString(),
+            providerUnavailable: isTransientVideoMetadataFailure(error),
           ));
         } finally {
           await _updateRunCounts(
@@ -1450,6 +1452,7 @@ class VideoSourceScrapeCoordinator
       return _ResolvedWork(
         reason: resolution.reason,
         status: resolution.status,
+        transient: resolution.transient,
       );
     }
 
@@ -4816,9 +4819,13 @@ class _ResolvedWork {
         const <String, Map<(int, int), AnidbEpisodeXref>>{},
     this.splitInto = const <_SplitWork>[],
     this.userVerifiedBooks = const <String>{},
+    this.transient = false,
   });
 
   final VideoMetadataWork? metadata;
+
+  /// 见 `VideoMetadataResolution.transient`：失败只因资料源暂时不可用。
+  final bool transient;
 
   /// 用户手动钉死季集（UserVerified）的成员 `bookUid`：落库时先占位，同键的
   /// 自动链接 / 文件名解析成员让位。

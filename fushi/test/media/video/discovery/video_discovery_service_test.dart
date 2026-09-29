@@ -924,6 +924,101 @@ void main() {
       expect(result?.plot, 'MAL synopsis');
     });
 
+    test(
+        'BUG-2795 details follow the metadata language: TMDB zh plot, '
+        'single-language genres, no duplicate cast', () async {
+      VideoMetadataCredit voice(
+        VideoMetadataCreditKind kind,
+        String name,
+        String role, {
+        String? originalName,
+      }) =>
+          VideoMetadataCredit(
+            kind: kind,
+            person: VideoMetadataPerson(name: name, originalName: originalName),
+            character: VideoMetadataCharacter(name: role),
+            roleName: role,
+          );
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: const <VideoDiscoveryProvider>[],
+        metadataLocale: 'zh-CN',
+        metadataProviders: <VideoMetadataProvider>[
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.mal,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.mal,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX Senshi Kurumi-chan',
+              plot: 'Kurumi is a girl... (Source: Crunchyroll)',
+              genres: const <String>['Drama', 'Slice of Life'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Suzuki, Aina',
+                  'Fukuga, Kurumi',
+                ),
+                voice(
+                  VideoMetadataCreditKind.voiceActor,
+                  'Tomita, Miyu',
+                  'Someone, Else',
+                ),
+              ],
+            ),
+          ),
+          _FakeMetadataProvider(
+            kind: VideoMetadataProviderKind.tmdb,
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.tmdb,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'FX战士久留美',
+              plot: '中文简介',
+              genres: const <String>['动画', '喜剧'],
+              credits: <VideoMetadataCredit>[
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '鈴木愛奈',
+                  '福賀くるみ',
+                  originalName: '鈴木愛奈',
+                ),
+                voice(
+                  VideoMetadataCreditKind.actor,
+                  '富田美憂',
+                  '誰か',
+                  originalName: '富田美憂',
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+
+      final VideoMetadataWork? result = await service.loadDetails(
+        VideoDiscoveryItem(
+          reference: VideoMediaReference(
+            providerId: 'mal',
+            mediaId: '42',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'FX Senshi Kurumi-chan',
+            tmdbId: 7,
+            externalIds: const <String, String>{'mal': '42'},
+          ),
+        ),
+      );
+
+      expect(result?.provider, VideoMetadataProviderKind.mal);
+      expect(result?.plot, '中文简介');
+      expect(result?.genres, <String>['动画', '喜剧']);
+      expect(
+        result?.credits.map((VideoMetadataCredit c) => c.person.name).toList(),
+        <String>['Suzuki, Aina', 'Tomita, Miyu'],
+        reason: 'MAL 罗马字与 TMDB 汉字名无法互证，不得把同一批声优追加第二遍',
+      );
+      expect(result?.title, 'FX战士久留美', reason: '标题与简介同一种资料语言');
+      expect(result?.aliases, contains('FX Senshi Kurumi-chan'),
+          reason: '被换下的 MAL 标题仍进别名池，下载搜索不能丢');
+    });
+
     test('hydrates AniList details without probing a legacy Bangumi id',
         () async {
       final VideoMetadataWork anilistWork = VideoMetadataWork(
