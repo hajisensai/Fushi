@@ -59,11 +59,13 @@ enum FloatingBallScope {
       action.storageValue,
   ];
 
-  /// 出厂按钮：阅读器是有声书的上一句 / 播放暂停 / 下一句（沿用旧阅读器内置球
-  /// 的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带全部全局按钮。
+  /// 出厂按钮：阅读器是阅读计时开关 + 有声书的上一句 / 播放暂停 / 下一句（后三颗
+  /// 沿用旧阅读器内置球的出厂槽位），漫画 / 视频是全部专属按钮；各场景都带全部
+  /// 全局按钮。
   List<String> get defaultButtons => <String>[
     ...switch (this) {
       reader => <String>[
+        ReaderControlItem.studyTimer.storageValue,
         ReaderControlItem.audiobookPrev.storageValue,
         ReaderControlItem.audiobookPlayPause.storageValue,
         ReaderControlItem.audiobookNext.storageValue,
