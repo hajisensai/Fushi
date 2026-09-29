@@ -44,7 +44,8 @@ section{display:none}section.on{display:block}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .kv{display:flex;flex-direction:column;gap:2px}.kv b{font-size:12px;color:var(--muted);font-weight:500}.kv span{word-break:break-all}
 table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-weight:500;font-size:12px}
-input,select{padding:8px;border-radius:8px;border:1px solid #333;background:#0e1013;color:#eee;font-size:13px}
+input,select,textarea{padding:8px;border-radius:8px;border:1px solid #333;background:#0e1013;color:#eee;font-size:13px}
+textarea{width:100%;font-family:ui-monospace,monospace;resize:vertical}
 input[type=text],input[type=number],input[type=password]{min-width:180px}
 button.b{padding:7px 12px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer;font-size:13px}
 button.b.sec{background:#2d3138}button.b.danger{background:#7a2e2e}button.b:disabled{opacity:.5;cursor:default}
@@ -145,6 +146,13 @@ label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mu
 <div class="grid" id="settings-form"></div>
 <div class="row" style="margin-top:12px"><button class="b" id="btn-settings-save">保存</button><span class="small muted">端口 / TLS / 绑定 / qBittorrent / torrent / ffmpeg / onnxruntime 路径改后需重启 serve。</span></div>
 </div>
+<div class="card"><h2>远程访问</h2>
+<label class="f">公网地址（每行一个，http:// 或 https://；反代 / DDNS / 端口映射后的地址，已配对设备会自动学到）<textarea id="rr-public" rows="3" placeholder="https://nas.example.com:38765"></textarea></label>
+<div class="row" style="margin:12px 0"><label><input type="checkbox" id="rr-p2p"> 允许 P2P 隧道连接</label><span class="small muted">没有公网 IP 时用（iroh）；开启后会连接中继与发现服务，对端 / 中继能看到本机 IP。</span></div>
+<label class="f">自建中继（每行一个，空 = iroh 公共中继）<textarea id="rr-relays" rows="2" placeholder="https://relay.example.com"></textarea></label>
+<p class="small" id="rr-state"></p>
+<div class="row"><button class="b" id="btn-rr-save">保存</button><span class="small muted">这三项保存即生效，无需重启。</span></div>
+</div>
 </section>
 
 <section id="s-logs">
@@ -188,6 +196,7 @@ async function loadStatus(){
     ['下载后端', s.downloads ? (s.downloads.supported ? (s.downloads.backend||'ok') : '未配置') : '—'],
     ['订阅', s.subscriptionCount==null ? '—' : s.subscriptionCount],
     ['上传配额', fmtBytes(s.uploadUsedBytes)+' / '+fmtBytes(s.uploadQuotaBytes)],
+    ['P2P 隧道', p2pSummary(s.p2p)],
   ];
   $('#status-grid').innerHTML = kv.map(([k,v])=>`<div class="kv"><b>${esc(k)}</b><span>${esc(v)}</span></div>`).join('');
   $('#scan-state').textContent = s.scanning ? '扫描中…' : (s.lastScan ? `上次 ${fmtTime(s.lastScanAt)}: ${s.lastScan}` : '尚未扫描');
@@ -387,7 +396,9 @@ const FIELDS = [
 ];
 let settingsCache=null;
 async function loadSettings(){
-  const s = await api('settings'); settingsCache=s;
+  const s = await api('settings'); const first=!settingsCache; settingsCache=s;
+  // 远程访问卡片有自己的保存键：主表单保存后只刷新 P2P 状态，不冲掉它未保存的编辑。
+  if(first) renderRemoteReach(s); else renderP2pState(s.p2pStatus);
   const found = s.torrent && s.torrent.embeddedLibraryFound;
   $('#settings-form').innerHTML = FIELDS.map(([k,label,type])=>{ const v = k.includes('.') ? (s[k.split('.')[0]]||{})[k.split('.')[1]] : s[k]; const id='f-'+k.replace('.','-'); if(k==='torrent.library'&&!v) label += found ? `（已找到 ${found}）` : '（未找到随包库）';
     if(type==='bool') return `<label class="f">${esc(label)}<select id="${id}"><option value="true" ${v?'selected':''}>开</option><option value="false" ${!v?'selected':''}>关</option></select></label>`;
@@ -404,12 +415,47 @@ $('#btn-settings-save').onclick = guard(async()=>{
   await put('settings',body); toast('已保存'); loadSettings();
 });
 
+// ── 远程访问（公网地址 / P2P / 自建中继：保存即生效）──
+const lines = (s)=>s.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+const P2P_REASON = {unavailable:'不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设环境变量 FUSHI_P2P_LIB）', disabled:'未开启', host_stopped:'互联 host 未运行', loopback_bind:'未生效：bind 只监听本机（127.0.0.1），隧道不对外开', start_failed:'启动失败，详见日志'};
+function p2pSummary(st){ if(!st) return '—'; return st.active ? '已启用' : (P2P_REASON[st.reason]||st.reason||'—'); }
+function renderP2pState(st){
+  if(!st) return;
+  const cb=$('#rr-p2p');
+  // 不可用时置灰；但原本就开着（手写 yaml）时仍允许关掉。
+  cb.disabled = !st.available && !cb.checked;
+  const el=$('#rr-state');
+  if(st.active){
+    el.innerHTML = `<span class="tag ok">已启用</span> NodeId <code>${esc(st.nodeId)}</code>`
+      + (st.relayUrl?`<br><span class="muted">中继 ${esc(st.relayUrl)}</span>`:'')
+      + ((st.directAddrs||[]).length?`<br><span class="muted">直连 ${esc(st.directAddrs.join(', '))}</span>`:'');
+  } else {
+    const bad = st.reason==='unavailable'||st.reason==='start_failed'||st.reason==='loopback_bind';
+    el.innerHTML = `<span class="tag ${bad?'err':''}">${esc(p2pSummary(st))}</span>`
+      + (st.nodeId?` NodeId <code>${esc(st.nodeId)}</code>`:'')
+      + (st.lastError?`<br><span style="color:var(--err)">${esc(st.lastError)}</span>`:'');
+  }
+}
+function renderRemoteReach(s){
+  $('#rr-public').value=(s.publicUrls||[]).join('\n');
+  $('#rr-relays').value=(s.p2pRelays||[]).join('\n');
+  $('#rr-p2p').checked=!!s.p2p;
+  renderP2pState(s.p2pStatus);
+}
+$('#btn-rr-save').onclick = guard(async()=>{
+  $('#btn-rr-save').disabled=true;
+  try{
+    const s = await put('settings',{publicUrls:lines($('#rr-public').value), p2p:$('#rr-p2p').checked, p2pRelays:lines($('#rr-relays').value)});
+    settingsCache=s; renderRemoteReach(s); toast('已保存并生效');
+  } finally { $('#btn-rr-save').disabled=false; }
+});
+
 // ── 日志 ──
 async function loadLogs(){ const r = await api('logs'); const pre=$('#logs'); const atBottom = pre.scrollTop+pre.clientHeight >= pre.scrollHeight-10; pre.textContent = r.lines.join('\n'); if(atBottom) pre.scrollTop=pre.scrollHeight; }
 $('#btn-log-refresh').onclick = guard(loadLogs);
 
 // ── 轮询 ──
-const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
+const loaders = {status:loadStatus, pairing:loadPairing, libraries:loadLibraries, upload:async()=>{ await loadLibraries(); const s=await api('status'); $('#up-quota').textContent=`配额已用 ${fmtBytes(s.uploadUsedBytes)} / ${fmtBytes(s.uploadQuotaBytes)}`; }, jobs:loadJobs, downloads:loadDownloads, subscriptions:loadSubscriptions, anki:loadAnki, models:loadModels, settings:async()=>{ if(!settingsCache) await loadSettings(); else renderP2pState(await api('p2p')); }, logs:async()=>{ if($('#log-auto').checked) await loadLogs(); }};
 let busy=false;
 async function refresh(){ if(busy) return; busy=true; try{ await loaders[current](); }catch(e){ console.warn(e); } finally{ busy=false; } }
 refresh(); setInterval(refresh, 2500);

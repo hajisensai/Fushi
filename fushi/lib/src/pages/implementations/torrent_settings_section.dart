@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,6 +65,9 @@ class _TorrentSettingsSectionState
   /// 已配对且启用的互联 host（「下载执行设备」下拉的候选）。
   List<FushiClientUrl> _pairedHosts = const <FushiClientUrl>[];
 
+  /// 全部已启用地址（含同一台 host 的多条），用于把偏好里的地址归到它的 host。
+  List<FushiClientUrl> _pairedUrls = const <FushiClientUrl>[];
+
   /// 分类输入框：持 controller 是为了失焦回填——清空时存储侧兜底 'fushi'，
   /// 失焦把实际生效值写回输入框，所见即所得（不再「显示空、实际 fushi」）。
   late final TextEditingController _categoryCtrl;
@@ -88,11 +92,17 @@ class _TorrentSettingsSectionState
     final AppModel appModel = ref.read(appProvider);
     // 配对清单在 DB 的 preferences 表里；库没开（测试 seam / 极早期）就是没有 host。
     if (!appModel.isDatabaseReady) return;
-    final List<FushiClientUrl> hosts =
+    final List<FushiClientUrl> enabled =
         (await SyncRepository(appModel.database).getFushiClientUrls())
             .where((FushiClientUrl u) => u.enabled)
             .toList(growable: false);
-    if (mounted) setState(() => _pairedHosts = hosts);
+    if (mounted) {
+      setState(() {
+        _pairedUrls = enabled;
+        // 同一台 host 的多条地址只列一次（身份代表稳定，存进偏好不会变孤儿）。
+        _pairedHosts = interconnectPeerRepresentatives(enabled);
+      });
+    }
   }
 
   /// 当前偏好里的执行设备；不在配对清单里（已解绑）时退回本机显示。
@@ -103,7 +113,10 @@ class _TorrentSettingsSectionState
   String _executionHostValue(AppModel appModel) {
     final String url = appModel.prefsRepo.downloadExecutionHostUrl;
     if (url.isEmpty) return '';
-    if (_pairedHosts.any((FushiClientUrl u) => u.url == url)) return url;
+    // 按所属 host 匹配：偏好里存的那条地址可能是该 host 的另一条（旧版本存的、
+    // 或 host 换过 IP），只要那台 host 还在清单里就显示它。
+    final FushiClientUrl? host = interconnectPeerRepresentativeOf(_pairedUrls, url);
+    if (host != null) return host.url;
     unawaited(appModel.prefsRepo.setDownloadExecutionHostUrl(''));
     return '';
   }

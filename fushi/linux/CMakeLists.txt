@@ -118,6 +118,16 @@ endforeach(bundled_library)
 install(TARGETS fushidicts_ffi LIBRARY DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
+# 互联 P2P 隧道（iroh，copy-if-present）：native/fushi_p2p/build_linux_so.sh 产出
+# prebuilt/linux-x64/libfushi_p2p.so 则随包进 bundle/lib/（Dart 侧按 <exe>/lib/ 定位）；
+# 缺失时 P2P 能力判不可用，其余互联照常。与 Windows / Android 同一语义。
+set(FUSHI_P2P_SO
+  "${CMAKE_CURRENT_SOURCE_DIR}/../../native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so")
+if(EXISTS "${FUSHI_P2P_SO}")
+  install(FILES "${FUSHI_P2P_SO}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

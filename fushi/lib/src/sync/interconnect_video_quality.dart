@@ -5,6 +5,8 @@
 library;
 
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show isInterconnectTunnelOrigin;
 
 /// 互联的画质档。
 ///
@@ -78,6 +80,14 @@ bool isPrivateNetworkHost(String? hostUrl) {
   if (host == null || host.isEmpty) return false;
 
   final String lower = host.toLowerCase();
+  // P2P 隧道的本地转发口字面上是回环，背后却是跨公网（多半还经中继）——按局域网
+  // 原画直传会把中继带宽打爆（docs/specs/2026-09-28-interconnect-remote-reach.md §5）。
+  final Uri? parsed = Uri.tryParse(hostUrl!.trim());
+  if (parsed != null &&
+      parsed.hasPort &&
+      isInterconnectTunnelOrigin(lower, parsed.port)) {
+    return false;
+  }
   if (lower == 'localhost') return true;
   // mDNS / 单标签主机名只可能在同一广播域里解析得到。
   if (lower.endsWith('.local') || !lower.contains('.')) {

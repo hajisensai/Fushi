@@ -13,6 +13,8 @@ public final class ChannelNames {
     public static final String FLOATING_LYRIC = PREFIX + "/floating_lyric";
     public static final String LOOKUP_IME = PREFIX + "/lookup_ime";
     public static final String FLOATING_DICT = PREFIX + "/floating_dict";
+    /** 互联配对链接写 NFC 贴纸（{@link app.fushi.reader.NfcTagWriterChannelHandler}）。 */
+    public static final String NFC_TAG_WRITER = PREFIX + "/nfc_tag_writer";
     public static final String LIFECYCLE = PREFIX + "/lifecycle";
     public static final String FONTS = PREFIX + "/fonts";
     public static final String SAF = PREFIX + "/saf";

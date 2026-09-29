@@ -11,6 +11,13 @@ import 'package:fushi/src/sync/jellyfin_video_client.dart'
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
+    show decodeInterconnectPublicUrls, kInterconnectPublicUrlsPref;
+import 'package:fushi_engine/sync/interconnect_p2p.dart'
+    show
+        kInterconnectP2pEnabledPref,
+        kInterconnectP2pRelayUrlsPref,
+        kInterconnectP2pSecretPref;
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_engine/sync/collection_sync_baseline.dart';
@@ -34,6 +41,9 @@ class FushiClientUrl {
     this.fingerprintSha256,
     this.deviceName,
     this.token,
+    this.hostId,
+    this.learned = false,
+    this.addressKind,
   });
 
   final String url;
@@ -55,12 +65,31 @@ class FushiClientUrl {
   /// 携带出设备（与全局 token 键同待遇）。
   final String? token;
 
+  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/capabilities` 的
+  /// `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
+  /// 组网 / 公网 / P2P），选路时组内并发、列设备时合并为一台。null = 老条目或
+  /// 老 host，单独成组，行为与升级前逐字一致
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  final String? hostId;
+
+  /// 由 host 公布的地址集自动学到（而非用户手输）。只有 learned 条目会被后续
+  /// 刷新自动增删；手输条目永不被自动改动。
+  final bool learned;
+
+  /// learned 条目由 host 标注的地址种类（`InterconnectAddressKind.name`）。组网
+  /// 网卡上的私网段（ZeroTier 10.x、Tailscale fd7a::）单看 URL 会被当成局域网，
+  /// 排序要用 host 的原始判断。手输条目为 null（按 URL 推断）。
+  final String? addressKind;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
         'url': url,
         'enabled': enabled,
         if (fingerprintSha256 != null) 'fingerprintSha256': fingerprintSha256,
         if (deviceName != null) 'deviceName': deviceName,
         if (token != null && token!.isNotEmpty) 'token': token,
+        if (hostId != null) 'hostId': hostId,
+        if (learned) 'learned': true,
+        if (addressKind != null) 'kind': addressKind,
       };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
@@ -69,6 +98,9 @@ class FushiClientUrl {
         fingerprintSha256: json['fingerprintSha256'] as String?,
         deviceName: json['deviceName'] as String?,
         token: json['token'] as String?,
+        hostId: json['hostId'] as String?,
+        learned: json['learned'] as bool? ?? false,
+        addressKind: json['kind'] as String?,
       );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
@@ -78,6 +110,9 @@ class FushiClientUrl {
     String? fingerprintSha256,
     String? deviceName,
     String? token,
+    String? hostId,
+    bool? learned,
+    String? addressKind,
   }) =>
       FushiClientUrl(
         url: url ?? this.url,
@@ -85,6 +120,9 @@ class FushiClientUrl {
         fingerprintSha256: fingerprintSha256 ?? this.fingerprintSha256,
         deviceName: deviceName ?? this.deviceName,
         token: token ?? this.token,
+        hostId: hostId ?? this.hostId,
+        learned: learned ?? this.learned,
+        addressKind: addressKind ?? this.addressKind,
       );
 }
 
@@ -867,6 +905,10 @@ class SyncRepository {
   );
   static const _keyLanRequiresPin = 'sync_lan_requires_pin';
   static const _keyServerTlsEnabled = 'sync_server_tls_enabled';
+  static const _keyInterconnectPublicUrls = kInterconnectPublicUrlsPref;
+  static const _keyInterconnectP2pEnabled = kInterconnectP2pEnabledPref;
+  static const _keyInterconnectP2pSecret = kInterconnectP2pSecretPref;
+  static const _keyInterconnectP2pRelayUrls = kInterconnectP2pRelayUrlsPref;
 
   /// Single source of truth for the default Hibiki sync-server port.
   /// 38765 is in the IANA User Ports range (1024–49151) but unassigned and
@@ -914,6 +956,61 @@ class SyncRepository {
   /// TODO-961 取舍 A：LAN 自动发现的对端是否仍需 PIN 才能配对。默认 false=
   /// 自家局域网免 PIN（公网入站恒强制，与本开关无关，见配对协议
   /// [FushiPairingProtocol.computePinRequired]）。
+  /// host 侧用户填写的公网 / 反代 / DDNS 地址（有序，可多条）。经
+  /// `/api/capabilities` 的地址集公布给已配对 client 自动学习
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。设备本地：这是
+  /// 「这台机器在外网叫什么」，换一台机器就不对了。
+  Future<List<String>> getInterconnectPublicUrls() async {
+    return decodeInterconnectPublicUrls(
+      await _getStringOrNull(_keyInterconnectPublicUrls),
+    );
+  }
+
+  Future<void> setInterconnectPublicUrls(List<String> urls) async {
+    final List<String> cleaned = <String>[
+      for (final String u in urls)
+        if (u.trim().isNotEmpty) u.trim(),
+    ];
+    if (cleaned.isEmpty) {
+      await _deleteKey(_keyInterconnectPublicUrls);
+      return;
+    }
+    await _setString(_keyInterconnectPublicUrls, jsonEncode(cleaned));
+  }
+
+  /// host 侧「允许经 P2P 隧道远程连接」（默认关，见 [kInterconnectP2pEnabledPref]）。
+  Future<bool> isInterconnectP2pEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectP2pEnabled, false);
+  Future<void> setInterconnectP2pEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectP2pEnabled, v);
+
+  /// 本机 iroh 私钥（设备本地；同一把钥匙出现在两台设备上就是同一个 NodeId）。
+  Future<String?> getInterconnectP2pSecret() async {
+    final String? encoded = await _getStringOrNull(_keyInterconnectP2pSecret);
+    return encoded != null ? _decodeSecret(encoded) : null;
+  }
+
+  Future<void> setInterconnectP2pSecret(String v) =>
+      _setString(_keyInterconnectP2pSecret, _encodeSecret(v));
+
+  /// 自建 iroh-relay 地址（空 = iroh 默认公共中继）。
+  Future<List<String>> getInterconnectP2pRelayUrls() async =>
+      decodeInterconnectPublicUrls(
+        await _getStringOrNull(_keyInterconnectP2pRelayUrls),
+      );
+
+  Future<void> setInterconnectP2pRelayUrls(List<String> urls) async {
+    final List<String> cleaned = <String>[
+      for (final String u in urls)
+        if (u.trim().isNotEmpty) u.trim(),
+    ];
+    if (cleaned.isEmpty) {
+      await _deleteKey(_keyInterconnectP2pRelayUrls);
+      return;
+    }
+    await _setString(_keyInterconnectP2pRelayUrls, jsonEncode(cleaned));
+  }
+
   Future<bool> getLanRequiresPin() =>
       _db.getPrefTyped<bool>(_keyLanRequiresPin, false);
   Future<void> setLanRequiresPin(bool v) =>
@@ -1167,15 +1264,43 @@ class SyncRepository {
     return const <FushiClientUrl>[];
   }
 
+  /// 候选地址列表的进程内「已变更」广播。除了设置页，后台的地址学习
+  /// （[InterconnectAddressLearner]）也会写这个列表；设置页若只认自己的内存副本，
+  /// 下一次用户编辑就会把刚学到的地址整份覆盖掉。bump 放在**唯一的写方法**
+  /// [setFushiClientUrls] 里（与 [interconnectEnabledRevision] 同一范式），消费方
+  /// 收到后重读真值。
+  static final ValueNotifier<int> fushiClientUrlsRevision =
+      ValueNotifier<int>(0);
+
+  /// 候选列表「读-改-写」的进程级串行化：后台地址学习、链接配对各自读-改-写，
+  /// 并发时后写者会把前者的结果（甚至用户刚删掉的 host 连同 token）写回来
+  /// （审查问题 10）。[transform] 返回同一个实例 = 不写盘。
+  static Future<void> _urlsWriteChain = Future<void>.value();
+
+  Future<List<FushiClientUrl>> updateFushiClientUrls(
+    List<FushiClientUrl> Function(List<FushiClientUrl> current) transform,
+  ) {
+    final Future<List<FushiClientUrl>> result =
+        _urlsWriteChain.then((_) async {
+      final List<FushiClientUrl> before = await getFushiClientUrls();
+      final List<FushiClientUrl> after = transform(before);
+      if (!identical(after, before)) await setFushiClientUrls(after);
+      return after;
+    });
+    _urlsWriteChain = result.then<void>((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   Future<void> setFushiClientUrls(List<FushiClientUrl> urls) async {
     if (urls.isEmpty) {
       await _deleteKey(_keyFushiClientUrls);
-      return;
+    } else {
+      await _setString(
+        _keyFushiClientUrls,
+        jsonEncode(urls.map((FushiClientUrl u) => u.toJson()).toList()),
+      );
     }
-    await _setString(
-      _keyFushiClientUrls,
-      jsonEncode(urls.map((FushiClientUrl u) => u.toJson()).toList()),
-    );
+    fushiClientUrlsRevision.value++;
   }
 
   /// 追加 / 升级一个候选地址（TOFU 指纹记录器）。保持原有顺序与 token 不变，返回最终列表。
@@ -1192,14 +1317,24 @@ class SyncRepository {
     String url, {
     String? fingerprint,
     String? deviceName,
-  }) async {
-    final List<FushiClientUrl> urls = await getFushiClientUrls();
-    final int existingIdx = urls.indexWhere((FushiClientUrl u) => u.url == url);
-
+  }) {
     final String? incomingFp =
         (fingerprint != null && fingerprint.isNotEmpty) ? fingerprint : null;
-
-    if (existingIdx >= 0) {
+    // 读改写在 [updateFushiClientUrls] 的串行链里做：与后台地址学习、链接配对、
+    // 设置页编辑互斥，谁都不会拿过期快照覆盖别人刚写的条目。
+    return updateFushiClientUrls((List<FushiClientUrl> urls) {
+      final int existingIdx =
+          urls.indexWhere((FushiClientUrl u) => u.url == url);
+      if (existingIdx < 0) {
+        return <FushiClientUrl>[
+          ...urls,
+          FushiClientUrl(
+            url: url,
+            fingerprintSha256: incomingFp,
+            deviceName: deviceName,
+          ),
+        ];
+      }
       final FushiClientUrl existing = urls[existingIdx];
       final String? storedFp = existing.fingerprintSha256;
       // MITM 守卫：已记录非空指纹且新指纹非空且不符 → 拒绝覆盖，抛异常告警。
@@ -1225,22 +1360,8 @@ class SyncRepository {
           upgraded.deviceName == existing.deviceName) {
         return urls; // 无变化，避免无谓写盘。
       }
-      final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
-      updated[existingIdx] = upgraded;
-      await setFushiClientUrls(updated);
-      return updated;
-    }
-
-    final List<FushiClientUrl> updated = <FushiClientUrl>[
-      ...urls,
-      FushiClientUrl(
-        url: url,
-        fingerprintSha256: incomingFp,
-        deviceName: deviceName,
-      ),
-    ];
-    await setFushiClientUrls(updated);
-    return updated;
+      return <FushiClientUrl>[...urls]..[existingIdx] = upgraded;
+    });
   }
 
   /// 指纹相等比较——直接用铉扎层那份归一化（BUG-1557：原本这里自己又写了一遍
@@ -1269,30 +1390,32 @@ class SyncRepository {
   /// [url] 不在列表里时只写全局键（配对流程会在此之前把地址 append 进去，正常路径
   /// 不会走到；防御性处理避免凭据丢失）。
   Future<void> setFushiClientTokenForUrl(String url, String token) async {
-    final List<FushiClientUrl> urls = await getFushiClientUrls();
-    final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
-    if (idx >= 0 && urls[idx].token != token) {
-      final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
-      updated[idx] = urls[idx].copyWith(token: token);
-      await setFushiClientUrls(updated);
-    }
+    await updateFushiClientUrls((List<FushiClientUrl> urls) {
+      final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
+      if (idx < 0 || urls[idx].token == token) return urls;
+      return <FushiClientUrl>[...urls]..[idx] = urls[idx].copyWith(token: token);
+    });
     await setFushiClientToken(token);
   }
 
   /// BUG-1550：清空所有地址行上的 per-peer token，让全局键重新成为唯一凭据。
   /// 用户在设置页手贴 token 时调用——那是显式覆盖，不该被残留的行内凭据压过。
   Future<void> clearFushiClientUrlTokens() async {
-    final List<FushiClientUrl> urls = await getFushiClientUrls();
-    if (!urls.any((FushiClientUrl u) => u.token != null)) return;
-    await setFushiClientUrls(<FushiClientUrl>[
-      for (final FushiClientUrl u in urls)
-        FushiClientUrl(
-          url: u.url,
-          enabled: u.enabled,
-          fingerprintSha256: u.fingerprintSha256,
-          deviceName: u.deviceName,
-        ),
-    ]);
+    await updateFushiClientUrls((List<FushiClientUrl> urls) {
+      if (!urls.any((FushiClientUrl u) => u.token != null)) return urls;
+      return <FushiClientUrl>[
+        for (final FushiClientUrl u in urls)
+          FushiClientUrl(
+            url: u.url,
+            enabled: u.enabled,
+            fingerprintSha256: u.fingerprintSha256,
+            deviceName: u.deviceName,
+            hostId: u.hostId,
+            learned: u.learned,
+            addressKind: u.addressKind,
+          ),
+      ];
+    });
   }
 
   /// BUG-1557：某条地址已铉扎的证书指纹（未铉扎 / 地址不在列表里 → null）。
@@ -1316,22 +1439,26 @@ class SyncRepository {
   /// 显式的重置入口，否则 host 真换了机器 / 重置了证书时，那条 URL 永远连不上也
   /// 修不好（只能删了重加，而用户根本不知道要那么做）。
   Future<bool> clearFushiClientFingerprint(String url) async {
-    final List<FushiClientUrl> urls = await getFushiClientUrls();
-    final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
-    if (idx < 0) return false;
-    final FushiClientUrl existing = urls[idx];
-    final String? fp = existing.fingerprintSha256;
-    if (fp == null || fp.isEmpty) return false;
-    final List<FushiClientUrl> updated = <FushiClientUrl>[...urls];
-    // 显式构造而非 copyWith：copyWith 的 `?? this.x` 语义根本清不掉字段。
-    updated[idx] = FushiClientUrl(
-      url: existing.url,
-      enabled: existing.enabled,
-      deviceName: existing.deviceName,
-      token: existing.token,
-    );
-    await setFushiClientUrls(updated);
-    return true;
+    bool cleared = false;
+    await updateFushiClientUrls((List<FushiClientUrl> urls) {
+      final int idx = urls.indexWhere((FushiClientUrl u) => u.url == url);
+      if (idx < 0) return urls;
+      final FushiClientUrl existing = urls[idx];
+      final String? fp = existing.fingerprintSha256;
+      if (fp == null || fp.isEmpty) return urls;
+      cleared = true;
+      // 显式构造而非 copyWith：copyWith 的 `?? this.x` 语义根本清不掉字段。
+      return <FushiClientUrl>[...urls]..[idx] = FushiClientUrl(
+          url: existing.url,
+          enabled: existing.enabled,
+          deviceName: existing.deviceName,
+          token: existing.token,
+          hostId: existing.hostId,
+          learned: existing.learned,
+          addressKind: existing.addressKind,
+        );
+    });
+    return cleared;
   }
 
   // ── Device-local key catalog ──────────────────────────────────────
@@ -1406,6 +1533,11 @@ class SyncRepository {
     _keyDeviceId,
     _keyLanRequiresPin,
     _keyServerTlsEnabled,
+    _keyInterconnectPublicUrls,
+    // P2P：私钥外带 = 两台设备同一个 NodeId；开关与中继是本机的意愿与网络环境。
+    _keyInterconnectP2pEnabled,
+    _keyInterconnectP2pSecret,
+    _keyInterconnectP2pRelayUrls,
     _keyFushiClientUrls,
     _keyFushiClientToken,
     _keyFushiClientUrl,

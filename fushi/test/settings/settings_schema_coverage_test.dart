@@ -1064,6 +1064,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'interconnect/Interconnect encryption (HTTPS/TLS)':
       'test/sync/interconnect_tls_entry_guard_test.dart + '
       'test/sync/tls/fushi_tls_identity_test.dart',
+  // 互联 P2P 隧道（host 侧许可，默认关）：写设备本地键（changed=true），生效点是
+  // FushiServerController 起 iroh 端点 + host 信任区监听口；harness 里没有 server
+  // 也没有原生库，探不到。专项测试咬住信任区判据（隧道请求按公网走 PIN、审批框标
+  // 「P2P tunnel」）与真隧道端到端；跨 NAT 真打洞仍是设备 backlog。
+  'interconnect/Allow remote connections over a P2P tunnel':
+      'test/sync/interconnect_p2p_tunnel_test.dart + '
+          'INTEGRATION: 跨 NAT 真机打洞',
   // 远端查词：与 lookup 分类共享同一份 item 定义。⚠️ 门本身
   // （AppModel._searchRemoteDictionary 开头的 remoteLookupEnabled 短路）没有守卫，
   // 仍是设备 backlog；下面两个文件只覆盖偏好往返与开关打开后的客户端链路。

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
@@ -118,15 +119,21 @@ class InterconnectPostTransport {
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
+    List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
         .where((FushiClientUrl u) => u.enabled)
         .toList();
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (onlyCandidate != null) {
+      final String? onlyHost = onlyCandidate.hostId;
       candidates.removeWhere(
         (FushiClientUrl candidate) =>
-            candidate.url != onlyCandidate.url ||
-            candidate.fingerprintSha256 != onlyCandidate.fingerprintSha256 ||
+            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
+            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
+            (onlyHost != null
+                ? candidate.hostId != onlyHost
+                : (candidate.url != onlyCandidate.url ||
+                    candidate.fingerprintSha256 !=
+                        onlyCandidate.fingerprintSha256)) ||
             interconnectTokenFor(candidate, fallbackToken) !=
                 onlyCandidate.token,
       );
@@ -140,6 +147,8 @@ class InterconnectPostTransport {
         candidate: null,
       );
     }
+    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
+    candidates = await rankInterconnectCandidates(candidates);
 
     bool attempted = false;
     bool anyResponse = false;

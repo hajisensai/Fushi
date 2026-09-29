@@ -24,6 +24,9 @@ import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/interconnect_device_name.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi/src/sync/lan_discovery_service.dart';
+import 'package:fushi/src/sync/interconnect_p2p_app.dart';
+import 'package:fushi_engine/sync/interconnect_p2p.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -616,6 +619,8 @@ class FushiSyncServerController extends ChangeNotifier {
       hostFingerprint = identity.fingerprintSha256;
     }
     final String deviceName = await _deviceName();
+    // 与 LAN 广播 TXT `id=` 同一个值：client 靠它把本机的多条地址归为一台 host。
+    final String hostId = await repo.getOrCreateDeviceId();
     final HostJobManager? hostJobs = await _hostJobsFactory?.call();
     final FushiSyncServer server = FushiSyncServer(
       syncDataDir: _syncDataDir(),
@@ -662,7 +667,11 @@ class FushiSyncServerController extends ChangeNotifier {
       // TODO-961 M1b: confirm 成功后把 per-peer 凭据落库 + 供给 auth 校验的有效 token
       // 集合。server 不直连 DB，经这两个回调打通存储层（清缓存在 server 内部完成）。
       ..onPeerPaired = _persistPairedPeer
-      ..pairedPeerTokensProvider = _loadPairedPeerTokens;
+      ..pairedPeerTokensProvider = _loadPairedPeerTokens
+      // 地址集（docs/specs/2026-09-28-interconnect-remote-reach.md §1）：公网 /
+      // 反代地址每次 capabilities 实时读，改完不必重启互联服务。
+      ..hostId = hostId
+      ..publicUrlsProvider = repo.getInterconnectPublicUrls;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着
@@ -686,6 +695,7 @@ class FushiSyncServerController extends ChangeNotifier {
     }
     _server = server;
     await repo.setServerEnabled(true);
+    await _attachP2p(server, tls: securityContext != null);
     // Advertise the ACTUAL bound port so peers discover the host even when the
     // requested port was 0/auto or differs from the configured one.
     // TODO-961: TXT 带上 tls 标志，发现方按它优先走 https 探测。
@@ -730,6 +740,8 @@ class FushiSyncServerController extends ChangeNotifier {
     _broadcast = null;
     final FushiSyncServer? server = _server;
     _server = null;
+    // 端点留着（client 选路也用它），只停入站；信任区监听口随 server.stop 关。
+    currentAppInterconnectP2pRuntime?.current?.hostStop();
     await broadcast?.stop();
     await server?.stop();
     await _gameStreamHost?.stop(reason: 'host_shutdown');
@@ -742,6 +754,90 @@ class FushiSyncServerController extends ChangeNotifier {
     if (persistDisabled) await _repo.setServerEnabled(false);
     notifyListeners();
   }
+
+  /// P2P 隧道（docs/specs/2026-09-28-interconnect-remote-reach.md §5）：用户开了
+  /// 「允许经 P2P 隧道远程连接」且原生库可用时，起端点、开信任区监听口、把
+  /// `p2p://<nodeId>` 加进地址集。失败只留痕，不影响 host 本身。
+  /// P2P 挂载 / 卸载 / 换中继一律串行（审查问题 5）：并发的「开了又立刻关」会让
+  /// 后到的 detach 先落空、先到的 attach 随后才挂上，偏好显示已关、隧道却对公网
+  /// 开着。每一步 await 之后都重核「偏好还开着 / 还是这台 server」。
+  Future<void> _p2pOps = Future<void>.value();
+
+  Future<void> _serializeP2p(Future<void> Function() op) {
+    final Future<void> next = _p2pOps.then((_) => op());
+    _p2pOps = next.then<void>((_) {}, onError: (Object e, StackTrace st) {
+      ErrorLogService.instance.log('FushiServerController.p2p', e, st);
+    });
+    return _p2pOps;
+  }
+
+  Future<void> _attachP2p(FushiSyncServer server, {required bool tls}) =>
+      _serializeP2p(() async {
+        if (!InterconnectP2pRuntime.isAvailable) return;
+        bool stillWanted() => identical(_server, server);
+        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) return;
+        final InterconnectP2pRuntime runtime = appInterconnectP2pRuntime(_repo);
+        final InterconnectP2pNode? node = await runtime.ensure();
+        if (node == null || !stillWanted()) return;
+        if (!await _repo.isInterconnectP2pEnabled()) return;
+        final int port = await server.startP2pListener();
+        if (!stillWanted() || !await _repo.isInterconnectP2pEnabled()) {
+          await server.stopP2pListener();
+          return;
+        }
+        // 先挂身份解析器再放流量进来：限流按隧道对端 NodeId 分桶。查当前 node
+        // 而不是捕获这一个——换中继会重建端点。
+        server.p2pPeerResolver = (int p) => runtime.current?.hostPeer(p);
+        node.hostListen(port);
+        server.extraAddressesProvider = () => runtime.hostAddresses(tls: tls);
+      });
+
+  Future<void> _detachP2p(FushiSyncServer server) => _serializeP2p(() async {
+        currentAppInterconnectP2pRuntime?.current?.hostStop();
+        server.extraAddressesProvider = null;
+        server.p2pPeerResolver = null;
+        await server.stopP2pListener();
+      });
+
+  /// 切换「允许经 P2P 隧道远程连接」，host 正在跑时即时生效。
+  Future<void> setP2pEnabled(bool enabled) async {
+    await _repo.setInterconnectP2pEnabled(enabled);
+    final FushiSyncServer? server = _server;
+    if (server != null) {
+      if (enabled) {
+        await _attachP2p(server, tls: _serverUsesTls(server));
+      } else {
+        await _detachP2p(server);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 改自建中继：重建端点（NodeId 不变，私钥是持久的），host 在跑时重新挂上。
+  Future<void> setP2pRelayUrls(List<String> urls) async {
+    await _repo.setInterconnectP2pRelayUrls(urls);
+    final FushiSyncServer? server = _server;
+    if (server != null) await _detachP2p(server);
+    await _serializeP2p(
+      () async => currentAppInterconnectP2pRuntime?.restart(),
+    );
+    if (server != null) await _attachP2p(server, tls: _serverUsesTls(server));
+    notifyListeners();
+  }
+
+  bool _serverUsesTls(FushiSyncServer server) => server.usesTls;
+
+  /// 扫码配对：签发一次性票据并组装二维码 / 复制链接用的配对链接
+  /// （docs/specs/2026-09-28-interconnect-remote-reach.md §4）。host 没在跑 → null。
+  /// 重新调用即作废上一张票据（同时只有一张）。
+  Future<FushiPairLink?> createPairLink() async {
+    final FushiSyncServer? server = _server;
+    if (server == null) return null;
+    return server.buildPairLink(ticket: server.issuePairTicket());
+  }
+
+  /// 二维码窗口关闭：票据立即作废。
+  void revokePairTicket() => _server?.revokePairTicket();
 
   /// Bounce the server so a freshly-persisted token / port takes effect.
   Future<FushiServerStartOutcome> restart() async {

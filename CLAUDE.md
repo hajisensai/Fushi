@@ -43,7 +43,7 @@
   - `installAsrHostBindings()` 在 `main()` 里调一次，**不放 `AppModel.initialise()`**：弹窗词典与悬浮词典是另外两个 entry point，不经 `initialise()`。
   - 转录产物是单时间轴 SRT 喂既有匹配链路，旁边同序写逐 token 时间 sidecar `transcript.tokens.jsonl`；`attachAsrCueTokenTiming`（`audiobook_alignment_service.dart`）把它挂到 `AudioCue.tokenTiming` 上，**行数与 cue 数不符时一条都不挂**（行号错位比没有更糟，下游照样跑完、照样落库，只是跳播全偏）。
   - OCR 也经 `fushi/lib/src/ocr/ocr_inference.dart` 复用同一套 ONNX 抽象（那层的 re-export 是**窄的 show 清单**，整份 re-export 会和本仓同名符号撞成 ambiguous import）。
-- 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。
+- 互联/同步：`fushi/lib/src/sync/`（`interconnect_*.dart`、`aggregate_sync_service.dart`、`backup_*`）。**远程可达（2026-09-28）**：host 经需鉴权的 `GET /api/host/addresses` 公布地址集（LAN / IPv6 / 组网 / 公网 / `p2p://`），client 的 `FushiClientUrl.hostId` 把同一台 host 的多条地址归组、`learned` 条目随 host 自动增删；选路统一走 `interconnect_peer_addresses.dart` 的 `rankInterconnectCandidates`（组内并发、ping 核对 hostId、直连全败才建 P2P 隧道），「记住某台 host」的地方一律按 hostId 认而不是按 URL；扫码 / 深链 / NFC 配对走一次性票据（`fushi_pair_link.dart`），`fushi://pair` 深链**必须**先弹确认框。隧道流量落在 server 的信任区监听口（`fushi.zone=p2p`），配对判据按公网处理。设计见 `docs/specs/2026-09-28-interconnect-remote-reach.md`。
 - galgame 制卡：Flutter 侧 `fushi/lib/src/lookup/`（overlay 浮窗）+ `fushi/lib/src/mining/galgame_*`；C++ hook（injector + hook DLL + vendored LunaHook）在本仓 `native/galgame_hook/`。`tools/build_distribution.ps1` 单独构建两架构 helper zip，再由 `tools/install_into_bundle.ps1` 在**构建期**解压进 `fushi.exe` 同级 `voice_hook/<arch>/`（BUG-1449），与本体同一次构建产出、同一个安装包落地，运行期不下载任何组件。helper **不链接进 `fushi.exe`**，运行时仍是隔离子进程/DLL。
 - 浏览器扩展：`tools/browser-extension/`（注意是根级 `tools/`，与 `tool/` 不同目录）。
 - 动画刮削上游参考：`references/ShokoServer/`（官方 ShokoServer git submodule，只作只读架构参考，不参与本仓构建/运行）；Aniyomi / Mihon 扩展适配参考：`references/mangayomi/`（kodjodevf/mangayomi git submodule，同一 M-Extension-Server sidecar 血统，只读，看它的 `lib/eval/mihon/service.dart` 与 `lib/services/get_video_list.dart`）。
@@ -165,6 +165,8 @@
 | `packages/fushi_platform/` | Dart | TTS/平台集成/存储路径抽象 | [CLAUDE.md](packages/fushi_platform/CLAUDE.md) |
 | `packages/flutter_inappwebview_windows/` | Dart+C++ | inappwebview Windows fork | [CLAUDE.md](packages/flutter_inappwebview_windows/CLAUDE.md) |
 | `packages/fushi_torrent/` | Dart | 内置 torrent 引擎 FFI 绑定 + `EmbeddedTorrentEngine`（path 依赖） | — |
+| `packages/fushi_p2p/` | Dart | 互联 P2P 隧道（iroh，dumbpipe 形态）纯 Dart FFI；引擎侧运行时 `fushi_engine/lib/sync/interconnect_p2p.dart`，原生库缺失时能力判不可用 | 设计 `docs/specs/2026-09-28-interconnect-remote-reach.md` |
+| `native/fushi_p2p/` | Rust | iroh 1.x TCP-over-P2P 转发 C ABI；`build_windows_dll.ps1` / `build_android_so.*` / `build_linux_so.sh` 产出到 `prebuilt/`（不入库），Windows CMake / Android jniLibs 有则随包 | [README.md](native/fushi_p2p/README.md) |
 | `packages/fushi_engine/` | Dart | 无 Flutter 的共享引擎：互联 host / 库服务 / OCR / ASR 任务 / 下载管线 / EPUB 导入 / 视频元数据（app 与服务端共用；纯度守卫在 fushi/test/build） | 设计 `docs/specs/2026-09-08-fushi-server-headless-design.md` |
 | `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI linux job 随包 torrent bridge `.so` + onnxruntime | [README.md](packages/fushi_server/README.md) |
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |

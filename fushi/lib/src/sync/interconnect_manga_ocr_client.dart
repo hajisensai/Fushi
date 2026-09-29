@@ -25,6 +25,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
         enumerateMangaPages,
         kMangaOcrOutDirName,
         kMangaOcrOutputFileName;
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
@@ -197,7 +198,10 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
     final String? fallbackToken = await _repo.getFushiClientToken();
     final List<FushiClientUrl> urls = await _repo.getFushiClientUrls();
     for (final FushiClientUrl u in urls) {
-      if (u.url == baseUrl) return interconnectTokenFor(u, fallbackToken);
+      // 走 P2P 时 baseUrl 是本次的本地转发口，换回持久的 p2p:// 再认。
+      if (u.url == interconnectPersistedUrl(baseUrl)) {
+        return interconnectTokenFor(u, fallbackToken);
+      }
     }
     return (fallbackToken != null && fallbackToken.isNotEmpty)
         ? fallbackToken
@@ -206,9 +210,11 @@ class InterconnectMangaOcrClient implements MangaOcrRemoteRunner {
 
   @override
   Future<MangaOcrRemoteTarget?> probe() async {
-    final List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList(growable: false);
+    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
+      (await _repo.getFushiClientUrls())
+          .where((FushiClientUrl u) => u.enabled)
+          .toList(growable: false),
+    );
     final String? fallbackToken = await _repo.getFushiClientToken();
     if (candidates.isEmpty) return null;
 
