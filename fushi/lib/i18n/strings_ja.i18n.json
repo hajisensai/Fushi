@@ -6123,5 +6123,13 @@
   "floating_ball_action_popup_lookup": "アプリ外で辞書検索",
   "leaderboard_board_me_pending": "You: ${value} · ranked after the next board refresh (${time})",
   "floating_ball_action_camera_ocr": "Photo lookup",
-  "floating_ball_camera_unavailable": "Couldn't open the camera"
+  "floating_ball_camera_unavailable": "Couldn't open the camera",
+  "video_resource_source_result": "${name}: ${n} results (${queries})",
+  "video_resource_source_failed": "${name}: failed (${reason})",
+  "video_resource_source_skipped": "${name}: not searched (this source can't handle the query)",
+  "video_resource_query_failed": "${query} failed",
+  "video_resource_failure_timeout": "timed out",
+  "video_resource_failure_network": "network error",
+  "video_resource_failure_rate_limited": "rate limited",
+  "video_resource_failure_other": "request failed"
 }

@@ -1846,6 +1846,19 @@ class _HomePageState extends BasePageState<HomePage>
     return retried;
   }
 
+  /// 资源搜索 / 订阅页的别名补齐端口（BUG-2794）：发现卡片没有拉丁标题时，用
+  /// 作品详情（按卡片已有的 MAL / AniList / TMDB 身份取，TMDB 的罗马字来自
+  /// alternative_titles）把罗马字 / 英文名前置进别名。与详情页同一条
+  /// [VideoDiscoveryService.loadDetails]，不另起 provider；失败返回原条目。
+  Future<VideoDiscoveryItem> _videoDiscoveryItemWithSearchAliases(
+    VideoDiscoveryItem item,
+  ) async {
+    final VideoMetadataWork? work = await _videoDiscoveryService?.loadDetails(
+      item,
+    );
+    return item.withReference(item.reference.withWorkLatinTitles(work));
+  }
+
   Future<void> _openVideoDiscoveryResourceSearch(
     BuildContext context,
     VideoDiscoveryItem item,
@@ -1891,6 +1904,7 @@ class _HomePageState extends BasePageState<HomePage>
           // 失败必然发生在页面里。页面自己拿不到 AppModel，把配置引导按端口注入，
           // 失败态那句话才有一颗能真正解决它的按钮。
           onConfigureBackend: _promptDownloadBackendSetup,
+          resolveAliases: _videoDiscoveryItemWithSearchAliases,
           remoteTargets: remoteTargets,
           defaultRemoteTargetUrl:
               appModelNoUpdate.prefsRepo.downloadExecutionHostUrl,
@@ -1998,6 +2012,7 @@ class _HomePageState extends BasePageState<HomePage>
               appModelNoUpdate.prefsRepo.videoDownloadTargetSourceId,
           // 同资源搜索页：后端没配好这条失败落在页面里，配置引导按端口注入。
           onConfigureBackend: _promptDownloadBackendSetup,
+          resolveAliases: _videoDiscoveryItemWithSearchAliases,
           remoteTargets: remoteTargets,
           onRemoteSubmit:
               (VideoDiscoveryRemoteSubscriptionSelection selection) async {
