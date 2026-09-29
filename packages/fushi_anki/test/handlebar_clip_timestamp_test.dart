@@ -18,8 +18,7 @@ class _RenderPathRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) =>
@@ -38,16 +37,15 @@ class _RenderPathRepo extends BaseAnkiRepository {
     required AnkiMiningContext context,
     String? coverRef,
     String? sentenceAudioRef,
-  }) =>
-      renderMediaPayload(
-        settings: settings,
-        payload: payload,
-        context: context,
-        coverRef: coverRef,
-        sentenceAudioRef: sentenceAudioRef,
-        processedAudio: '',
-        dictionaryMediaTags: const <String, String>{},
-      );
+  }) => renderMediaPayload(
+    settings: settings,
+    payload: payload,
+    context: context,
+    coverRef: coverRef,
+    sentenceAudioRef: sentenceAudioRef,
+    processedAudio: '',
+    dictionaryMediaTags: const <String, String>{},
+  );
 }
 
 /// 片段时间窗占位符 `{clip-timestamp}`：卡片底部「Misc. info → === Details ===」
@@ -171,11 +169,11 @@ void main() {
     final _RenderPathRepo repo = _RenderPathRepo();
 
     AnkiSettings settingsWithLapisMiscInfo() => AnkiSettings(
-          fieldMappings: <String, String>{
-            'Expression': '{expression}',
-            'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
-          },
-        );
+      fieldMappings: <String, String>{
+        'Expression': '{expression}',
+        'MiscInfo': LapisNoteType.defaultFieldMappings['MiscInfo']!,
+      },
+    );
 
     test('作品标题是唯一来源链接且保留时间窗和HTML转义', () {
       final CardSourceLink link = CardSourceLink(
@@ -225,7 +223,8 @@ void main() {
       expect(
         out.fields['MiscInfo'],
         'Initial.D.Third.Stage 00:12:34 - 00:12:38',
-        reason: 'renderMediaPayload 重建 context 时漏带 clipStartMs/clipEndMs，'
+        reason:
+            'renderMediaPayload 重建 context 时漏带 clipStartMs/clipEndMs，'
             '整条落卡路径就恒空串——这正是纯渲染器测试照不到的那一跳',
       );
     });
@@ -275,7 +274,8 @@ void main() {
       expect(
         out.fields.containsKey('Picture'),
         isFalse,
-        reason: 'coverRef 为 null 时若退回 context.coverPath，'
+        reason:
+            'coverRef 为 null 时若退回 context.coverPath，'
             '会把 Anki 读不到的本地路径写进卡片',
       );
     });
@@ -293,27 +293,35 @@ void main() {
   group('源码守卫：落卡路径不许再手抄 AnkiMiningContext', () {
     // 手抄逐字段重建 context 是本次 bug 的根：每给 AnkiMiningContext 加一个字段
     // 就漏一次，而直调渲染器的测试结构上照不到。落卡路径必须走 withMediaRefs。
-    test('base_anki_repository 的渲染路径用 withMediaRefs 而非重建构造', () {
+    test('anki_note_composer 的渲染路径用 withMediaRefs 而非重建构造', () {
+      // renderMediaPayload 已从 base_anki_repository 移到 anki_note_composer。
       final String src = File(
-        'lib/src/base_anki_repository.dart',
+        'lib/src/anki_note_composer.dart',
       ).readAsStringSync();
       expect(
         src.contains('context.withMediaRefs('),
         isTrue,
         reason: 'renderMediaPayload 必须经 withMediaRefs 带全字段',
       );
-      final int renderStart =
-          src.indexOf('RenderedMinedFields renderMediaPayload(');
+      final int renderStart = src.indexOf(
+        'RenderedMinedFields renderMediaPayload(',
+      );
       expect(renderStart, greaterThan(-1), reason: '锚点漂移，守卫失效');
       // 结束锚必须先跳过**命名参数表**的收尾（`\n  }) {` / `\n  }) async {`）：
       // 直接从 renderStart 找 `\n  }` 命中的是参数表，截出的 body 只有形参、
       // 函数体一行都不在里面 → contains 恒 false、断言恒真（死断言，本仓反复踩的形态）。
       final int paramsEnd = src.indexOf('\n  }) ', renderStart);
-      expect(paramsEnd, greaterThan(renderStart),
-          reason: '找不到 renderMediaPayload 命名参数表的收尾');
+      expect(
+        paramsEnd,
+        greaterThan(renderStart),
+        reason: '找不到 renderMediaPayload 命名参数表的收尾',
+      );
       final int renderEnd = src.indexOf('\n  }', paramsEnd + 5);
-      expect(renderEnd, greaterThan(paramsEnd),
-          reason: '找不到 renderMediaPayload 的函数体收尾');
+      expect(
+        renderEnd,
+        greaterThan(paramsEnd),
+        reason: '找不到 renderMediaPayload 的函数体收尾',
+      );
       final String body = src.substring(paramsEnd, renderEnd);
       // 自检：截出来的必须真是函数体。守卫自己证明锚点没落回参数表，
       // 否则下面那条 isFalse 断言又会变成恒真的空转。
