@@ -354,6 +354,25 @@ class FavoriteBatchMiningRunner {
             message: warning == null || warning.isEmpty ? null : warning,
           ),
         );
+      case MineResult.queued:
+        // Anki 暂不可达，卡已冻结进待发队列、稍后自动补发：对批量结果而言与
+        // 成功同待遇（记账、计入已添加），message 说明它还没进 Anki。
+        if (described.record) {
+          await _recordLanded(
+            item,
+            fields,
+            outcome.noteId,
+            documentTitle: documentTitle,
+            statTitle: statTitle,
+          );
+        }
+        return FavoriteBatchMineOutcome(
+          FavoriteBatchItemResult(
+            status: FavoriteBatchItemStatus.added,
+            textOnlyReason: textOnlyReason,
+            message: described.message,
+          ),
+        );
       case MineResult.duplicate:
         return FavoriteBatchMineOutcome(
           FavoriteBatchItemResult(
