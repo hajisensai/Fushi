@@ -758,6 +758,10 @@ jobs:
           bash ../native/fushi_p2p/verify_abi.sh "$bin" nm
   windows:
     runs-on: windows-2022
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
     steps:
       - uses: actions/checkout@v6
       # Windows 只缓存 pub、不缓存 SDK：run 36365037668 实测 1.8 GB SDK 缓存在 NTFS 上
@@ -783,17 +787,6 @@ jobs:
           dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
           tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
           opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
-      # TODO-1208: cache media_kit's libmpv + ANGLE .7z archives it downloads into
-      # the CMake binary dir (fushi/build/windows/x64). media_kit skips the
-      # download when the .7z exists with a matching MD5, so caching just the
-      # blobs (NOT the build tree / CMakeCache) cuts the slow GitHub fetch.
-      - name: Cache media_kit Windows mpv/ANGLE archives
-        uses: actions/cache@v4
-        with:
-          path: fushi/build/windows/x64/*.7z
-          key: ${{ runner.os }}-mediakit7z-${{ hashFiles('pubspec.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-mediakit7z-
       - name: Flutter pub get
         working-directory: fushi
         run: flutter pub get
@@ -828,12 +821,51 @@ jobs:
           # 别换成 `Out-File -Encoding utf8`：那在 Windows PowerShell 5.1 下会写 BOM，
           # BOM 会跟着糊进第一个 key，GITHUB_OUTPUT 的 key=value 解析当场失效。
           "image=$image" >> $env:GITHUB_OUTPUT
+      # 原生产物持久库（.github/actions/native-artifact-store）：名字 = 全部构建输入的哈希
+      # （源码树 + runner 镜像 + 工具链钉版），在**任何东西被构建之前**算好一次：此时
+      # gitignore 的 build/ prebuilt/ target/ dist/ .anki-src/ 都还不存在，所以不写排除模式
+      # （release_workflow_path_filter_guard 要求每个 hashFiles 模式都能匹配到文件）；
+      # 之后这些目录出现在树里，再算就不是同一个值了。
+      # 为什么不用 actions/cache：仓库 10 GB 配额常年超额，整个缓存约 1 小时换一轮，
+      # 这几条 Windows 条目几乎总在下一次读之前被 LRU 驱逐（实测数据见该 action 头注释）。
+      # 名字在两条 workflow 里逐字一致，develop 上 release-desktop 存的件 PR 门直接复用。
+      - name: Resolve native artifact store names
+        id: native_store
+        shell: pwsh
+        env:
+          IMAGE: ${{ steps.vcpkg_cache_id.outputs.image }}
+          TORRENT_HASH: ${{ hashFiles('native/fushi_torrent/**') }}
+          P2P_HASH: ${{ hashFiles('native/fushi_p2p/**') }}
+          MIHON_HASH: ${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
+          GALGAME_HASH: ${{ hashFiles('native/galgame_hook/**') }}
+          ANKI_SYNC_HASH: ${{ hashFiles('native/fushi_anki_sync/**', '.github/actions/setup-fushi-anki-sync/**') }}
+        run: |
+          foreach ($v in 'TORRENT_HASH', 'P2P_HASH', 'MIHON_HASH', 'GALGAME_HASH', 'ANKI_SYNC_HASH') {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "env:$v").Value)) { throw "$v is empty: hashFiles matched nothing" }
+          }
+          # fushi_p2p 的 Rust 工具链钉在下面 dtolnay 步骤的 toolchain（1.95.0），改那里要同步改这里。
+          @(
+            "torrent=win-x64-fushi-torrent-dll-v1-$env:IMAGE-$env:TORRENT_HASH"
+            "p2p=win-x64-fushi-p2p-dll-v1-rust1.95.0-$env:IMAGE-$env:P2P_HASH"
+            "mihon=win-x64-mihon-runtime-v1-$env:MIHON_HASH"
+            "galgame=win-galgame-helper-dist-v1-$env:IMAGE-$env:GALGAME_HASH"
+            "anki_sync_release=win-x64-fushi-anki-sync-release-v1-$env:IMAGE-$env:ANKI_SYNC_HASH"
+            "anki_sync_debug=win-x64-fushi-anki-sync-debug-v1-$env:IMAGE-$env:ANKI_SYNC_HASH"
+          ) | ForEach-Object { Write-Host $_; $_ >> $env:GITHUB_OUTPUT }
+      - name: Restore libtorrent DLLs from native artifact store
+        id: torrent_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native\fushi_torrent\prebuilt\windows-x64
       # 第二层，只兜「新镜像上线那一次必然冷编」的残余：缓存 vcpkg 的 distfile 目录，
       # 等价于官方 asset cache 但不需要额外存储。distfile 全部 SHA512 校验，故前缀
       # restore-key 拿回上一个镜像的目录是安全的；那 4 个高危非 GitHub 主机上的件跨
       # vcpkg 修订几乎不变，前缀命中即可把高危取件面清零。排除 downloads\tools（解压
       # 后的树）以免条目撑到 GB 级；重新解压是纯本地操作，不碰网络。
       - name: Cache vcpkg source distfiles (libtorrent)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -843,6 +875,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
+        if: steps.torrent_store.outputs.hit != 'true'
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
@@ -856,6 +889,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-libtorrent-x64-windows-v3-${{ steps.vcpkg_cache_id.outputs.image }}
       - name: Build embedded libtorrent DLL (vcpkg)
+        if: steps.torrent_store.outputs.hit != 'true'
         shell: pwsh
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}\vcpkg-downloads
@@ -893,20 +927,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "dart pub get failed ($LASTEXITCODE)" }
           dart test
           if ($LASTEXITCODE -ne 0) { throw "fushi_torrent FFI tests failed" }
+      - name: Save libtorrent DLLs to native artifact store
+        if: steps.torrent_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.torrent }}
+          path: native\fushi_torrent\prebuilt\windows-x64
       # 互联 P2P 隧道（iroh）Windows DLL：产物落 native/fushi_p2p/prebuilt/windows-x64/，
       # 供下面 flutter build windows 的 copy-if-present 随包。失败口径同 libtorrent：
       # 构建失败即 job 失败。随后用它跑 packages/fushi_p2p 的真隧道 FFI 测试。
+      - name: Restore fushi_p2p DLL from native artifact store
+        id: p2p_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native\fushi_p2p\prebuilt\windows-x64
       - name: Set up Rust (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.95.0'
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
+        if: steps.p2p_store.outputs.hit != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
       - name: Build fushi_p2p DLL
+        if: steps.p2p_store.outputs.hit != 'true'
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_p2p/build_windows_dll.ps1
@@ -926,6 +978,14 @@ jobs:
             echo "::error::fushi_p2p tests were skipped: $FUSHI_P2P_LIB did not load"
             exit 1
           fi
+      - name: Save fushi_p2p DLL to native artifact store
+        if: steps.p2p_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.p2p }}
+          path: native\fushi_p2p\prebuilt\windows-x64
       # Windows is the ONLY platform that renders EPUB via the forked
       # flutter_inappwebview_windows C++ plugin; an MSVC/native break here was
       # previously invisible to CI (the audit: Windows never built anywhere).
@@ -952,20 +1012,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "game-stream input regression failed ($LASTEXITCODE)" }
       # Mihon runtime 完全由 vendored 源码（m_extension_server + 离线 jogamp 仓库）+ 构建
       # 脚本决定（JDK / 服务端 commit 均在脚本里钉死；脚本再多读仓库里别的目录，必须同步
-      # 加进 key）：输入没变就复用上次产物，省掉 gradle + jlink 的 150~220 s。产物先落缓存目录
-      # 再拷进 bundle，签名/校验只动 bundle 里的副本，缓存永远是原始构建输出。
-      # key 与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
+      # 加进 Resolve native artifact store names 的 MIHON_HASH）：输入没变就复用上次产物，
+      # 省掉 gradle + jlink 的 150~220 s。产物先落 $RUNNER_TEMP\mihon-runtime 再拷进 bundle，
+      # 签名/校验只动 bundle 里的副本，存进持久库的永远是原始构建输出。
+      # 名字与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
       - name: Restore pinned Mihon desktop runtime
-        id: mihon_runtime_cache
-        uses: actions/cache@v4
+        id: mihon_runtime_store
+        uses: ./.github/actions/native-artifact-store
         with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.mihon }}
           path: ${{ runner.temp }}\mihon-runtime
-          key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
       - name: Bundle and verify pinned Mihon desktop runtime
         shell: pwsh
         run: |
           $built = "$env:RUNNER_TEMP\mihon-runtime"
-          if ('${{ steps.mihon_runtime_cache.outputs.cache-hit }}' -ne 'true') {
+          if ('${{ steps.mihon_runtime_store.outputs.hit }}' -ne 'true') {
             .\tool\mihon\build_desktop_runtime.ps1 `
               -OutputDirectory $built `
               -DownloadCache "$env:RUNNER_TEMP\hibiki-mihon-downloads"
@@ -986,28 +1048,38 @@ jobs:
             }
           }
           .\tool\mihon\verify_desktop_runtime.ps1 -RuntimeDirectory $runtime
+      - name: Save Mihon desktop runtime to native artifact store
+        if: steps.mihon_runtime_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.mihon }}
+          path: ${{ runner.temp }}\mihon-runtime
       # helper 双架构 cmake + ctest 每次 270~400 s。key = runner 镜像 + native/galgame_hook
       # 全树哈希。镜像决定 MSVC / CMake / 自带 .NET 运行时，工具链一变就重编并重跑 ctest；
       # 树哈希**含测试**：只改 ctest 用例也必须 miss 重跑，所以不能拿只覆盖出包输入的
-      # helper_source_fingerprint 当 key。actions/cache 只在 job 成功时回存，所以命中
+      # helper_source_fingerprint 当 key。持久库只在 build_distribution.ps1 -RunTests 与
+      # install_into_bundle.ps1 都成功之后才存（下面的 Save 步骤），所以命中
       # = 这棵树已经完整编译并通过过 -RunTests，跳过是重复劳动而不是跳过门。
-      # install_into_bundle.ps1 仍会按当前源码指纹复核 dist，缓存串号在那里 fail-closed。
-      # 本步必须排在 build_distribution.ps1 之前：此时 build/ 与 dist/ 还不存在，哈希只
-      # 覆盖入库文件（hashFiles 不认 .gitignore）。
-      # key 与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
+      # install_into_bundle.ps1 仍会按当前源码指纹复核 dist，串号在那里 fail-closed。
+      # 哈希在 Resolve native artifact store names 里算：那时 build/ 与 dist/ 还不存在，
+      # 只覆盖入库文件（hashFiles 不认 .gitignore）。
+      # 名字与 release-desktop.yml windows job 逐字一致，两条 workflow 共用同一份。
       - name: Restore galgame helper archives
-        id: galgame_helper_cache
-        uses: actions/cache@v4
+        id: galgame_helper_store
+        uses: ./.github/actions/native-artifact-store
         with:
-          path: native/galgame_hook/dist
-          key: ${{ runner.os }}-galgame-helper-v1-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/galgame_hook/**') }}
+          mode: restore
+          name: ${{ steps.native_store.outputs.galgame }}
+          path: native\galgame_hook\dist
       - name: Build and bundle galgame helper archives
         shell: pwsh
         run: |
           # 同 release-desktop.yml 的孪生副本：这段今天是「意外安全」的（块内只有
           # 这一条 native 命令，后面全是不重置 $LASTEXITCODE 的 cmdlet），但只要
           # 有人插入第二条 native 命令，双架构 ctest 的判决就被静默顶掉。显式断言。
-          if ('${{ steps.galgame_helper_cache.outputs.cache-hit }}' -ne 'true') {
+          if ('${{ steps.galgame_helper_store.outputs.hit }}' -ne 'true') {
             powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/build_distribution.ps1 -RunTests
             if ($LASTEXITCODE -ne 0) { throw "build_distribution.ps1 -RunTests failed ($LASTEXITCODE)" }
           }
@@ -1015,6 +1087,14 @@ jobs:
           # voice_hook\<arch>\，与本体同源；解压/校验走共用脚本，不要复制粘贴回来。
           powershell -NoProfile -ExecutionPolicy Bypass -File native/galgame_hook/tools/install_into_bundle.ps1 -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
           if ($LASTEXITCODE -ne 0) { throw "install_into_bundle.ps1 failed ($LASTEXITCODE)" }
+      - name: Save galgame helper archives to native artifact store
+        if: steps.galgame_helper_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.galgame }}
+          path: native\galgame_hook\dist
       - name: Bundle slim Magpie for offline upscaling install
         shell: pwsh
         run: |
@@ -1049,12 +1129,34 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
       # fushi-anki-sync：同 release-desktop.yml 的发布步骤，PR 门编 debug 抓编译断裂，
       # 装进 Debug bundle（fushi.exe 同级）并由 build.ps1 跑 version 冒烟。
+      - name: Restore fushi-anki-sync from native artifact store
+        id: anki_sync_store
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: ${{ runner.temp }}\fushi-anki-sync-prebuilt
       - name: Set up fushi-anki-sync toolchain
+        if: steps.anki_sync_store.outputs.hit != 'true'
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync (debug)
         shell: pwsh
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -DebugBuild -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
+          # 持久库命中 = 同一棵 native/fushi_anki_sync 树已在可信 run 里编过；只跳 cargo，
+          # 安装 + SOURCE.txt + version 冒烟照跑。
+          $prebuilt = @()
+          if ('${{ steps.anki_sync_store.outputs.hit }}' -eq 'true') {
+            $prebuilt = @('-PrebuiltBinary', "$env:RUNNER_TEMP\fushi-anki-sync-prebuilt\fushi-anki-sync.exe")
+          }
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -DebugBuild -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Debug" @prebuilt
           if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
+      - name: Save fushi-anki-sync to native artifact store
+        if: steps.anki_sync_store.outputs.hit != 'true'
+        continue-on-error: true
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.anki_sync_debug }}
+          path: native\fushi_anki_sync\target\debug\fushi-anki-sync.exe
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke
