@@ -35,6 +35,15 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# The build below runs from $HERE, so a relative --install-dir must be resolved against
+# the caller's working directory first (CI passes paths relative to the repo root).
+if [ -n "$INSTALL_DIR" ]; then
+  case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$PWD/$INSTALL_DIR" ;;
+  esac
+fi
+
 if [ ! -d "$SRC/.git" ]; then
   git clone --depth 1 --branch "$ANKI_TAG" https://github.com/ankitects/anki "$SRC"
   git -C "$SRC" submodule update --init --depth 1 ftl/core-repo ftl/qt-repo
