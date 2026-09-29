@@ -1,7 +1,7 @@
 ## BUG-2776 · 改来源后旧来源的已完成种子仍做种且文件删后重下
 - **报告**：2026-09-29（用户：把订阅都改成 `D:\smb\动漫` 后仍在 `D:\smb` 下载，删掉还在下。用户拍板：改来源也要把旧的种子清掉）
 - **真实性**：✅ 真 bug（用户真实数据取证 + 沿代码路径确认，见下「根因」）
-- **[x] ① 已修复** — （提交哈希见下「修复」一节所在提交，分支 claude/video-dl-prune-orphan-seeds）
+- **[x] ① 已修复** — `a5e47afb99a`（PR 分支 pr/video-dl-prune-orphan-seeds）
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/download/video_download_pipeline_service_test.dart`（group `BUG-2776 completed seeds leave the engine with their source`，3 条）、`fushi/test/media/torrent/resume_prune_guard_test.dart`（keepIds 走 `loadEmbeddedTorrentResumeIds`）
 - **备注**：未真机验证；用户现存的 19 颗孤儿种子要装上含本修复的构建后重启一次才会被剪掉。
 
