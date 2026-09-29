@@ -5784,5 +5784,10 @@
   "popup_bottom_docked_books": "小說中底部停靠",
   "popup_bottom_docked_manga": "漫畫中底部停靠",
   "popup_bottom_docked_video": "影片中底部停靠",
-  "popup_bottom_docked_games": "遊戲中底部停靠"
+  "popup_bottom_docked_games": "遊戲中底部停靠",
+  "ai_video_acquire_remote_executor": "Running on $device",
+  "ai_video_acquire_failure_remote_unavailable": "Lost connection to the device running this conversation. Check that it's online and try again.",
+  "ai_video_acquire_remote_unsupported": "$device doesn't support AI video download. Update Fushi on that device.",
+  "ai_video_acquire_remote_no_provider": "$device has no AI provider assigned to AI video download. Assign one in Settings › AI on that device.",
+  "ai_video_acquire_remote_not_ready": "$device isn't ready to download yet (download backend or managed video source not set up)."
 }

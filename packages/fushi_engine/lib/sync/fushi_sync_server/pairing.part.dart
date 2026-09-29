@@ -345,12 +345,14 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? jobs = await _hostJobs?.capability();
     final Map<String, Object?>? downloads = await _downloads?.capability();
     final Map<String, Object?>? subscriptions = await _subscriptions?.capability();
+    final Map<String, Object?>? assistant = await _assistant?.capability();
     return jsonResponse(<String, dynamic>{
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
       if (jobs != null) 'jobs': jobs,
       if (downloads != null) 'downloads': downloads,
       if (subscriptions != null) 'subscriptions': subscriptions,
+      if (assistant != null) 'assistant': assistant,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,

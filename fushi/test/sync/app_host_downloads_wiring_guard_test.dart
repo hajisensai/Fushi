@@ -34,6 +34,19 @@ void main() {
         reason: '任务管理器要 load() 磁盘记录后再挂，工厂必须被 await');
   });
 
+  test('AI 助手会话面（手机把一句话交给电脑办）接到 server，且首页与 host 共用同一份装配', () {
+    final String model = read('lib/src/models/app_model.dart');
+    expect(model,
+        contains('assistantFactory: () => createAppAssistantHost(this)'));
+    final String controller = read('lib/src/sync/fushi_server_controller.dart');
+    expect(controller, contains('assistant: _assistantFactory?.call()'));
+    final String home = read('lib/src/pages/implementations/home_page.dart');
+    expect(home, contains('createAppVideoAcquisitionService('),
+        reason: '首页入口与 host 会话必须同一份端口装配，否则两边行为悄悄分叉');
+    expect(home, isNot(contains('VideoAcquisitionPorts(')),
+        reason: '端口装配只许在 app_video_acquisition_assembly.dart 写一次');
+  });
+
   test('AppDownloadHost 的落点 / 后端判据来自 AppModel 同一真相源', () {
     final String src = read('lib/src/models/app_model.dart');
     expect(src, contains('backendTarget: currentVideoDownloadBackendTarget'));
