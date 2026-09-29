@@ -11,7 +11,24 @@ import 'package:http/http.dart' as http;
 ///
 /// 双栈 socket 把 v4 对端报成 `::ffff:a.b.c.d`：不还原的话 LAN 免 PIN 整个失效、
 /// 限速来源 key 与 `lastSeenIp` 也会分裂成两种写法。
-void main() {
+/// 容器 / CI 可能整个关掉 IPv6（连 `::1` 都没有，errno 97）。这时 v6 回环用例
+/// 无从验证，跳过而不是误报红；有 v6 的机器照常跑。
+Future<bool> _hostHasIPv6Loopback() async {
+  try {
+    final ServerSocket probe = await ServerSocket.bind(
+      InternetAddress.loopbackIPv6,
+      0,
+    );
+    await probe.close();
+    return true;
+  } on SocketException {
+    return false;
+  }
+}
+
+Future<void> main() async {
+  final bool hasIPv6Loopback = await _hostHasIPv6Loopback();
+
   group('unmapIPv4MappedAddress', () {
     test('还原 v4 映射地址', () {
       expect(
@@ -64,24 +81,26 @@ void main() {
       tempDir = Directory.systemTemp.createTempSync('fushi_dual_stack_test');
       SecurityContext? ctx;
       if (tls) {
-        final FushiTlsIdentity id =
-            await FushiTlsIdentityStore(dataDir: tempDir.path).loadOrCreate();
+        final FushiTlsIdentity id = await FushiTlsIdentityStore(
+          dataDir: tempDir.path,
+        ).loadOrCreate();
         ctx = SecurityContext()
           ..useCertificateChainBytes(utf8.encode(id.certificatePem))
           ..usePrivateKeyBytes(utf8.encode(id.privateKeyPem));
       }
-      server = FushiSyncServer(
-        syncDataDir: tempDir.path,
-        port: 0,
-        token: 'dual-stack-token',
-        allowLan: true,
-        securityContext: ctx,
-      )
-        ..onPairRequest = ((FushiPairRequest r) async {
-          approvalRemotes.add(r.remoteAddress);
-          return true;
-        })
-        ..lanRequiresPinProvider = (() async => false);
+      server =
+          FushiSyncServer(
+              syncDataDir: tempDir.path,
+              port: 0,
+              token: 'dual-stack-token',
+              allowLan: true,
+              securityContext: ctx,
+            )
+            ..onPairRequest = ((FushiPairRequest r) async {
+              approvalRemotes.add(r.remoteAddress);
+              return true;
+            })
+            ..lanRequiresPinProvider = (() async => false);
       await server.start();
     }
 
@@ -91,12 +110,18 @@ void main() {
     });
 
     /// 自签证书的测试 client（生产走指纹钉扎，这里只验监听面）。
-    Future<Map<String, dynamic>> pairV2(String host, {required bool tls}) async {
+    Future<Map<String, dynamic>> pairV2(
+      String host, {
+      required bool tls,
+    }) async {
       final HttpClient client = HttpClient()
         ..badCertificateCallback = (X509Certificate c, String h, int p) => true;
       try {
-        final HttpClientRequest req = await client.postUrl(Uri.parse(
-            '${tls ? 'https' : 'http'}://$host:${server.port}/api/pair/v2'));
+        final HttpClientRequest req = await client.postUrl(
+          Uri.parse(
+            '${tls ? 'https' : 'http'}://$host:${server.port}/api/pair/v2',
+          ),
+        );
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(<String, String>{'clientNonce': 'cn-dual'}));
         final HttpClientResponse resp = await req.close();
@@ -123,10 +148,14 @@ void main() {
       expect((await pairV2('127.0.0.1', tls: true))['pinRequired'], isFalse);
     });
 
-    test('TLS host 双栈：v6 回环可达且判 LAN', () async {
-      await start(tls: true);
-      expect((await pairV2('[::1]', tls: true))['pinRequired'], isFalse);
-    });
+    test(
+      'TLS host 双栈：v6 回环可达且判 LAN',
+      () async {
+        await start(tls: true);
+        expect((await pairV2('[::1]', tls: true))['pinRequired'], isFalse);
+      },
+      skip: hasIPv6Loopback ? false : '本机没有 IPv6 回环（::1 不可绑定）',
+    );
 
     test('审批里的来源地址是还原后的 v4，而不是 ::ffff: 写法', () async {
       await start(tls: true);
@@ -134,8 +163,9 @@ void main() {
       final HttpClient client = HttpClient()
         ..badCertificateCallback = (X509Certificate c, String h, int p) => true;
       try {
-        final HttpClientRequest req = await client.postUrl(Uri.parse(
-            'https://127.0.0.1:${server.port}/api/pair/v2/confirm'));
+        final HttpClientRequest req = await client.postUrl(
+          Uri.parse('https://127.0.0.1:${server.port}/api/pair/v2/confirm'),
+        );
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(<String, String>{'sessionId': body['sessionId']}));
         final HttpClientResponse resp = await req.close();
