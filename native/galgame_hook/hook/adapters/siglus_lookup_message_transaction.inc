@@ -112,7 +112,7 @@ bool ConsumeSiglusLookupMessageTransaction(UINT message, LPARAM lparam,
   if (admitted && game != nullptr && ClientToScreen(game, &point)) {
     diagnostic.screen_x = point.x;
     diagnostic.screen_y = point.y;
-    hit = ReadSiglusLookupClickTarget(&target, &diagnostic) &&
+    hit = ReadSiglusLookupClickClaimTarget(&target, &diagnostic) &&
         BuildSiglusLookupPayloadAtPress(target, game, point, &payload,
                                        &glyph_index, &diagnostic);
   }

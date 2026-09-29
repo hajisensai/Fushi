@@ -12,6 +12,7 @@ enum class SiglusLookupPressReason : uint32_t {
   kCharacterIndex,
   kPendingUnavailable, kPendingTextIdentity, kPendingEpoch,
   kPendingGeneration, kPendingClient, kSampleEpochReset,
+  kTargetLeavesClicks,
 };
 enum class SiglusLookupPressSurface : uint32_t {
   kKeyState = 1, kKeyboardState = 2, kEngineMessage = 3,

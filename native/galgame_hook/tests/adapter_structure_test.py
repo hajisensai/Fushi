@@ -610,6 +610,36 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertLess(tick.index("ConsumeSiglusLookupCaptures()"),
                         tick.index("ProcessSiglusLookupClickSubmissions("))
 
+    def test_siglus_choice_click_is_left_to_the_engine(self) -> None:
+        # BUG-2768: on the choice screen a click picks the choice. Every plain
+        # click path must go through the claim reader; Shift keeps the plain one.
+        adapters = ROOT / "hook" / "adapters"
+        siglus = self._strip_comments(self._siglus_source())
+        transaction = self._strip_comments(
+            (adapters / "siglus_lookup_message_transaction.inc").read_text(
+                encoding="utf-8"))
+        claims = self._function_body(siglus, "bool SiglusLookupLineClaimsClicks()")
+        self.assertIn("return !g_siglus_lookup_selection_active;", claims)
+        publish = self._function_body(siglus, "void PublishSiglusLookupClickTarget(")
+        self.assertIn("g_siglus_lookup_click_target.claims_clicks = claims_clicks ? 1u : 0u;",
+                      publish)
+        tick = self._function_body(siglus, "void ProcessSiglusLookupTick()")
+        self.assertIn("SiglusLookupLineClaimsClicks()", tick)
+        self.assertIn("ReadSiglusLookupClickTarget(&target)", tick)  # Shift
+        claim_reader = self._function_body(
+            siglus, "bool ReadSiglusLookupClickClaimTarget(")
+        self.assertIn("copy->claims_clicks == 1", claim_reader)
+        for name, source in (
+            ("FilterSiglusLookupLeftButtonSample",
+             self._function_body(siglus, "SHORT FilterSiglusLookupLeftButtonSample(")),
+            ("ConsumeSiglusLookupInputMessage",
+             self._function_body(siglus, "bool ConsumeSiglusLookupInputMessage(")),
+            ("message transaction", transaction),
+        ):
+            with self.subTest(path=name):
+                self.assertIn("ReadSiglusLookupClickClaimTarget(", source)
+                self.assertNotIn("ReadSiglusLookupClickTarget(", source)
+
     def test_exact_engine_signatures_are_portable_unique_and_fail_closed(
         self,
     ) -> None:

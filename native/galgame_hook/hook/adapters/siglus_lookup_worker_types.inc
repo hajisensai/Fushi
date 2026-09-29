@@ -56,6 +56,10 @@ struct SiglusLookupClickTarget {
   wchar_t text[kSiglusLookupMaxTextUnits] = {};
   fushi_voice_hook::SiglusLookupGeometry geometry;
   uint64_t snapshot_epoch = 0;
+  // 1 when a plain click on this line may be claimed as a lookup. A choice
+  // line is published for hover/Shift lookup only: a click on a choice is how
+  // the player picks it, so it must reach the engine (BUG-2768).
+  uint32_t claims_clicks = 0;
 };
 
 struct SiglusLookupClickEvent {

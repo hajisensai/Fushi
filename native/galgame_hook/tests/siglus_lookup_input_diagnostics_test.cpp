@@ -150,6 +150,7 @@ struct Fixture {
     target.geometry.glyph_count = 1; target.geometry.viewport_width = 1920;
     target.geometry.viewport_height = 1080;
     target.geometry.glyphs[0] = {u'A', 0, 0, {100, 200, 40, 40}};
+    target.claims_clicks = 1;
   }
 };
 SHORT Sample(bool down, bool keyboard = false) {

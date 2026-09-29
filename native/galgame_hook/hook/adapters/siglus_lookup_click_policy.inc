@@ -149,7 +149,7 @@ SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
     diagnostic.flags |= native_input_allowed ? 4u : 0u;
   }
   if (fresh_down && native_input_allowed && !popup_shield && pointer_valid &&
-      ReadSiglusLookupClickTarget(&g_siglus_lookup_click_read_target, observed)) {
+      ReadSiglusLookupClickClaimTarget(&g_siglus_lookup_click_read_target, observed)) {
     hit =
         BuildSiglusLookupPayloadAtPress(g_siglus_lookup_click_read_target, game,
                                         pointer, &pressed_payload, &hit_index, observed);
@@ -286,7 +286,7 @@ bool ConsumeSiglusLookupInputMessage(UINT message, LPARAM lparam,
       diagnostic.screen_y = screen_point.y;
       if (!screen_valid) diagnostic.reason = SiglusLookupPressReason::kClientUnavailable;
     }
-    if (screen_valid && ReadSiglusLookupClickTarget(&target, observed)) {
+    if (screen_valid && ReadSiglusLookupClickClaimTarget(&target, observed)) {
       glyph_hit = BuildSiglusLookupPayloadAtPress(target, game, screen_point,
                                                   &payload, &glyph_index, observed);
     }
