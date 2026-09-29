@@ -125,6 +125,7 @@
 - **每条 PR 合入 `develop` 后固定加跑「目录枚举型守卫」整批**（51 条，一条命令 ~62 秒）——这批守卫用 `listSync(recursive: true)` 扫 `lib/` / `test/` / `integration_test/` 全树，**新 PR 的新文件自动落进它们的扫描面，而定向测试按功能域挑，结构上永远挑不到它们**。实测代价：不跑就是「刚合的 PR 把红带进 develop」，一天翻车四次、其中一条在 develop 上躺了一整天跨 5 条 PR；跑了之后累计 30 条合并零红。完整清单、单条命令、以及「清单过期了怎么按行为反向枚举重新推导」见 [docs/agent/fast-workflow.md](docs/agent/fast-workflow.md) 的「合并后必跑：目录枚举型守卫清单」。
 - Android 资源/manifest/Gradle/权限/通知/前台服务/打包改动：再加 `gradlew :app:assembleRelease`（在 `fushi/android/`；Windows 用 `.\gradlew.bat`）。
 - 阅读器/导入/播放/布局问题，声明「修好了」前必须用真实模拟器或用户指定设备复测原始失败路径并留证据（见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md)）。
+- **Android 设备选择：真机优先**（用户 2026-09-30 拍板）。开发 / 复现 / 验证前先 `adb devices`：列出了真机（非 `emulator-*`）就直接用 adb 操控真机，**检测不到 adb 设备才起模拟器**。真机上的纪律：① 不卸载、不覆盖用户装的 app——签名或版本对不上时用临时 `applicationIdSuffix` 编测试包并行安装（`build.gradle` 这行不提交），绝不为装测试包清用户数据；② 要模拟别的形态（手机尺寸 / 横屏等）用 `wm size` / `wm density` / `cmd window user-rotation`，测前记下原值（用户可能本来就有 density 覆盖），测完按原值还原，连同改过的常亮、旋转一起还原，并卸掉自己装的测试包。
 - 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `fushi/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试两端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `fushi/tool/run_windows_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
 
 ## 提交
