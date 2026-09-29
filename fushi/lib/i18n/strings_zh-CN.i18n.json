@@ -6123,5 +6123,6 @@
   "floating_ball_action_popup_lookup": "应用外查词",
   "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名",
   "floating_ball_action_camera_ocr": "拍照查词",
-  "floating_ball_camera_unavailable": "无法打开相机"
+  "floating_ball_camera_unavailable": "无法打开相机",
+  "floating_ball_system_hint_desktop": "切到其他程序后悬浮球仍浮在最上层"
 }

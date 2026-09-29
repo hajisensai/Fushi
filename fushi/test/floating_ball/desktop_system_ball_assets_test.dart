@@ -1,0 +1,61 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/floating_ball/desktop_system_ball_assets.dart';
+
+/// 桌面应用外球的按钮图标由 Dart 画成 PNG 交给原生窗口（原生不加载图标字体），
+/// 球面是同一张资源图。这里钉住「画得出、尺寸对、确实画上了东西、颜色是给的」。
+void main() {
+  testWidgets('按钮图标画成 66×66 透明底 PNG，字形用给定颜色', (WidgetTester tester) async {
+    const Color color = Color(0xFF123456);
+    final Uint8List? png = await tester.runAsync<Uint8List?>(
+      () => renderFloatingBallIconPng(Icons.search, color),
+    );
+    expect(png, isNotNull);
+    // PNG 签名。
+    expect(png!.sublist(0, 8), <int>[137, 80, 78, 71, 13, 10, 26, 10]);
+    final ui.Image image = (await tester.runAsync(() async {
+      final ui.Codec codec = await ui.instantiateImageCodec(png);
+      return (await codec.getNextFrame()).image;
+    }))!;
+    expect(image.width, kDesktopSystemBallIconPx);
+    expect(image.height, kDesktopSystemBallIconPx);
+    final ByteData rgba = (await tester.runAsync<ByteData?>(
+      () => image.toByteData(format: ui.ImageByteFormat.rawStraightRgba),
+    ))!;
+    int opaque = 0;
+    int transparent = 0;
+    bool colorMatches = true;
+    for (int i = 0; i < rgba.lengthInBytes; i += 4) {
+      final int a = rgba.getUint8(i + 3);
+      if (a == 0) {
+        transparent++;
+      } else if (a == 255) {
+        opaque++;
+        if (rgba.getUint8(i) != 0x12 ||
+            rgba.getUint8(i + 1) != 0x34 ||
+            rgba.getUint8(i + 2) != 0x56) {
+          colorMatches = false;
+        }
+      }
+    }
+    image.dispose();
+    expect(opaque, greaterThan(50), reason: '字形确实画上了');
+    expect(transparent, greaterThan(opaque), reason: '背景透明');
+    expect(colorMatches, isTrue, reason: '实心像素就是给的颜色');
+  });
+
+  testWidgets('每颗原生按钮都有图标 PNG（含打开 / 关闭）', (WidgetTester tester) async {
+    final Map<String, Uint8List> pngs = (await tester.runAsync(
+      () => renderFloatingBallIconPngs(
+        floatingBallNativeIconData(),
+        Colors.black,
+      ),
+    ))!;
+    expect(pngs.keys.toSet(), floatingBallNativeIconData().keys.toSet());
+    expect(pngs.keys, containsAll(<String>['open_app', 'close', 'lookup']));
+  });
+}

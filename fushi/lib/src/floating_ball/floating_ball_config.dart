@@ -22,17 +22,25 @@ enum FloatingBallScope {
   /// 其它没有登记场景的应用内页面（书架、首页、设置……）。
   general('general'),
 
-  /// 应用外：Android 原生系统球（别的 app 在前台时）。
+  /// 应用外：原生系统球——Android 悬浮窗服务，Windows / macOS 置顶窗口。
   system('system');
 
   const FloatingBallScope(this.storageValue);
 
   final String storageValue;
 
-  /// 本平台能配置的场景：应用外只有 Android 做得到（iOS 不允许应用外悬浮，
-  /// 桌面没有这个概念）。
-  static List<FloatingBallScope> availableOn({required bool isAndroid}) =>
-      isAndroid
+  /// 本平台有没有应用外悬浮球：Android（悬浮窗服务）与 Windows / macOS（原生
+  /// 置顶窗口）有；iOS 不允许应用外悬浮，Linux 没有实现。
+  static bool systemBallSupported({
+    required bool isAndroid,
+    bool isDesktop = false,
+  }) => isAndroid || isDesktop;
+
+  /// 本平台能配置的场景（应用外那组见 [systemBallSupported]）。
+  static List<FloatingBallScope> availableOn({
+    required bool isAndroid,
+    bool isDesktop = false,
+  }) => systemBallSupported(isAndroid: isAndroid, isDesktop: isDesktop)
       ? values
       : <FloatingBallScope>[
           for (final FloatingBallScope scope in values)
@@ -159,4 +167,25 @@ enum FloatingBallGlobalAction {
         FloatingBallGlobalAction.popupLookup => isAndroid,
         _ => true,
       };
+
+  /// 在某个场景的球上有没有这颗按钮。只有桌面的应用外球与众不同：它浮在别的程序
+  /// 上面，「应用外查词」在那里就是查前台程序当前选中的文字（与全局查词热键同一条
+  /// 路径），截屏识字 / 拍照查词桌面不提供；其余场景同 [availableOn]。
+  bool availableIn(
+    FloatingBallScope scope, {
+    required bool isAndroid,
+    required bool isIOS,
+    required bool isDesktop,
+  }) {
+    if (scope == FloatingBallScope.system && isDesktop) {
+      return switch (this) {
+        FloatingBallGlobalAction.lookup ||
+        FloatingBallGlobalAction.popupLookup ||
+        FloatingBallGlobalAction.clipboard => true,
+        FloatingBallGlobalAction.screenOcr ||
+        FloatingBallGlobalAction.cameraOcr => false,
+      };
+    }
+    return availableOn(isAndroid: isAndroid, isIOS: isIOS);
+  }
 }
