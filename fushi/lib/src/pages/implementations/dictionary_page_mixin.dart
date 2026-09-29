@@ -12,6 +12,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/pages/base_source_page.dart'
@@ -591,6 +592,11 @@ mixin DictionaryPageMixin {
   @protected
   ({String? bookKey, String? title})? get lookupBookIdentity => null;
 
+  /// 收藏词时的上下文（原句 + 定位锚点，口径见 [FavoriteLookupContext]）。视频页覆写
+  /// 返回查词所在字幕句与 cue 时间窗；其余宿主默认 null（只落词形与释义）。
+  @protected
+  FavoriteLookupContext? get favoriteLookupContext => null;
+
   /// TODO-1204：[DictionaryPopupController.onLookupStarted] 注入点——每次查词
   /// （顶层 / 嵌套 / 重复查各一次）累加 [FushiDatabase.addLookupCount]。宿主构造
   /// controller 后调 [attachLookupCounter] 接线。best-effort。
@@ -676,6 +682,7 @@ mixin DictionaryPageMixin {
     // TODO-1252：把当前书 / 视频身份（视频页覆写 lookupBookIdentity）随收藏落库，供
     // 统计页 per-book/video tile 聚合「收藏 N」；无书来源为 null / '' → 只进汇总。
     final ({String? bookKey, String? title})? favIdentity = lookupBookIdentity;
+    final FavoriteLookupContext? favContext = favoriteLookupContext;
     await db.addFavoriteWord(
       expression: expression,
       reading: reading,
@@ -684,6 +691,10 @@ mixin DictionaryPageMixin {
       dateKey: _statTodayKey(),
       bookKey: favIdentity?.bookKey,
       title: favIdentity?.title ?? '',
+      sentence: favContext?.sentence ?? '',
+      sectionIndex: favContext?.sectionIndex,
+      normCharOffset: favContext?.normCharOffset,
+      normCharLength: favContext?.normCharLength,
     );
     FushiToast.show(
       msg: t.word_favorite_added,

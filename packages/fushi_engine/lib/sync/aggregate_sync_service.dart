@@ -891,6 +891,7 @@ class AggregateSyncService {
             sourceType: r.sourceType,
             dateKey: r.dateKey,
             createdAt: r.createdAt,
+            sentence: r.sentence,
           ),
       ],
       favoriteSentences: favSentences,
@@ -1211,6 +1212,7 @@ class AggregateSyncService {
         glossary: r.glossary,
         sourceType: r.sourceType,
         dateKey: r.dateKey,
+        sentence: r.sentence,
       );
     }
     await _writeFavoriteSentences(snapshot.favoriteSentences);

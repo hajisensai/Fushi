@@ -744,6 +744,16 @@ class FavoriteWords extends Table {
   TextColumn get dateKey => text()();
   IntColumn get createdAt => integer()();
 
+  // v114：收藏时的上下文——查词所在的原句 [sentence] 与定位锚点。锚点口径与收藏句
+  // （`FavoriteSentence`）逐字段相同：书 = 章节下标 + 章内归一化字符偏移 / 长度；
+  // 视频 = 集下标 + cue 起点毫秒 / 时长毫秒（存进同名两列，**非字符偏移**）。收藏夹
+  // 据此展示原句、跳回原文、截音频，批量制卡时作例句。无上下文的来源（首页查词 /
+  // 外部覆盖窗 / 同步回灌 / 存量行）为 '' / null。不进唯一键。
+  TextColumn get sentence => text().withDefault(const Constant(''))();
+  IntColumn get sectionIndex => integer().nullable()();
+  IntColumn get normCharOffset => integer().nullable()();
+  IntColumn get normCharLength => integer().nullable()();
+
   @override
   List<Set<Column>> get uniqueKeys => [
         {expression, reading, sourceType},
