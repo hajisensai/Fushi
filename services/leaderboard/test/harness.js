@@ -23,6 +23,20 @@ function checkBind(v) {
 }
 
 /**
+ * D1 的 compound SELECT 上限（SQLITE_LIMIT_COMPOUND_SELECT）只有 5 段，本地 SQLite 默认 500：
+ * 线上实测第 6 段即报错。node:sqlite 调不了这个上限，这里按同一口径拒绝，免得拼 UNION 的
+ * 查询在测试里全绿、上线就 500。子查询里的 UNION 也一并计入（比 SQLite 严，不会放过真错误）。
+ */
+export const D1_MAX_COMPOUND_TERMS = 5;
+
+function checkCompound(sql) {
+  const ops = sql.match(/\b(UNION|INTERSECT|EXCEPT)\b/gi);
+  if (ops && ops.length + 1 > D1_MAX_COMPOUND_TERMS) {
+    throw new Error('D1_ERROR: too many terms in compound SELECT: SQLITE_ERROR');
+  }
+}
+
+/**
  * delayMs > 0：每次 D1 往返前真实等待（setTimeout），模拟线上网络往返——同步的 node:sqlite
  * 否则复现不出「两个并发请求都在对方提交前读到旧状态」的竞争窗口。
  */
@@ -32,6 +46,7 @@ export function makeD1({ delayMs = 0 } = {}) {
   db.exec(readFileSync(MIGRATION, 'utf8'));
   const plain = (r) => (r ? { ...r } : null);
   function stmt(sql, args) {
+    checkCompound(sql);
     return {
       sql,
       args,
@@ -62,7 +77,8 @@ export function makeD1({ delayMs = 0 } = {}) {
         const out = [];
         // 与 D1 一致：batch 的每条结果都带 results（RETURNING 行）与 meta.changes。
         for (const s of stmts) {
-          if (/\bRETURNING\b/i.test(s.sql)) {
+          // 读语句（SELECT / RETURNING）与 D1 一样带回结果行。
+          if (db.prepare(s.sql).columns().length > 0) {
             const rows = db.prepare(s.sql).all(...s.args).map(plain);
             out.push({ success: true, results: rows, meta: { changes: rows.length } });
           } else {

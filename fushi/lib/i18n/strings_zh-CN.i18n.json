@@ -6121,6 +6121,7 @@
   "sync_p2p_path_relay": "P2P 经中继 · $rtt 毫秒",
   "sync_p2p_relay_only_hint": "一直在走中继（较慢）。任一端开着 Clash TUN、全局 VPN 等会改写 UDP 端口的工具时打洞通常会失败——把 Fushi 或 UDP 流量加进它的直连规则。",
   "floating_ball_action_popup_lookup": "应用外查词",
+  "leaderboard_board_me_pending": "我的数据：${value} · 榜单 ${time} 刷新后排名",
   "floating_ball_action_camera_ocr": "拍照查词",
   "floating_ball_camera_unavailable": "无法打开相机"
 }

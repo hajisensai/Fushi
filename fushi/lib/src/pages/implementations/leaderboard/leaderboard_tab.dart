@@ -652,6 +652,26 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
     );
   }
 
+  /// 「我」这一行。服务端对不在快照里的观看者带回实时值、名次为空（快照每
+  /// [kLeaderboardSnapshotInterval] 刷新一次，刚同步完的人一定还不在里面）：此时说「下次
+  /// 刷新后排名」，只有本期确实没有数据才说「还没有上榜」。
+  String _meText(RankPage page) {
+    final UserStanding? me = page.me;
+    if (me == null || me.value <= 0) return t.leaderboard_board_me_unranked;
+    final String value = leaderboardMetricValue(_metric, me.value);
+    final int? rank = me.rank;
+    if (rank != null) return t.leaderboard_board_me(rank: rank, value: value);
+    final int? computedAt = page.computedAt;
+    return t.leaderboard_board_me_pending(
+      value: value,
+      time: computedAt == null
+          ? t.leaderboard_board_generating
+          : leaderboardDateTime(
+              computedAt + kLeaderboardSnapshotInterval.inMilliseconds,
+            ),
+    );
+  }
+
   String _computedLabel(int? computedAt) => computedAt == null
       ? t.leaderboard_board_generating
       : t.leaderboard_board_updated(time: leaderboardDateTime(computedAt));
@@ -684,13 +704,7 @@ class _LeaderboardActiveViewState extends ConsumerState<LeaderboardActiveView> {
   List<Widget> _buildRankBoard(FushiDesignTokens tokens) {
     final RankPage? page = _rank;
     if (page == null) return const <Widget>[];
-    final UserStanding? me = page.me;
-    final String meText = me == null || me.rank == null
-        ? t.leaderboard_board_me_unranked
-        : t.leaderboard_board_me(
-            rank: me.rank!,
-            value: leaderboardMetricValue(_metric, me.value),
-          );
+    final String meText = _meText(page);
     return <Widget>[
       LeaderboardSectionTitle(
         _computedLabel(page.computedAt),

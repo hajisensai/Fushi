@@ -186,6 +186,26 @@ describe('用户主页 / 书架 / 作品页', () => {
     expect(reading.data.rows.map((x) => x.work.title)).toEqual(['reading-now']);
   });
 
+  it('一页超过 5 部作品：读完 / 在读都 200，每部作品各带读者墙（D1 compound SELECT 只允许 5 段）', async () => {
+    const env = makeEnv();
+    const owner = await registerUser(env, 'owner', { now: NOW });
+    const fan = await registerUser(env, 'fan', { now: NOW });
+    const finished = Array.from({ length: 8 }, (_, i) => entry('book', [`t:f${i}|`], `f${i}`, at(`2026-09-1${i}`)));
+    const reading = Array.from({ length: 7 }, (_, i) => entry('book', [`t:r${i}|`], `r${i}`));
+    await upload(env, owner, [...finished, ...reading]);
+    await upload(env, fan, [...finished, ...reading]);
+
+    const done = await call(env, 'GET', `/v1/users/${owner.id}/shelf?status=finished`, { now: NOW });
+    expect(done.status).toBe(200);
+    expect(done.data.rows).toHaveLength(8);
+    for (const row of done.data.rows) expect(row.wall.map((a) => a.nickname)).toEqual(['fan']);
+    const now = await call(env, 'GET', `/v1/users/${owner.id}/shelf?status=reading`, { now: NOW });
+    expect(now.status).toBe(200);
+    expect(now.data.rows).toHaveLength(7);
+    // 在读作品没有人读完：读者墙为空。
+    for (const row of now.data.rows) expect(row.wall).toEqual([]);
+  });
+
   it('仅好友可见：陌生人 403，好友 200；该用户仍计入读者人数但不出现在陌生人的读者墙', async () => {
     const { env, tom, readers, workId } = await seed();
     const [r1, r2] = readers;
@@ -309,6 +329,21 @@ describe('游标分页、缓存键与快照（审查修复回归）', () => {
     expect(r.data.rows).toEqual([]);
     expect(r.data.computedAt).toBeNull();
     expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM rank_snapshots').get().n).toBe(0);
+  });
+
+  it('快照还没刷新到我：签名读榜带回我的实时值（名次待定），匿名读不带', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const u = await registerUser(env, 'fresh', { now: NOW });
+    await upload(env, u, [entry('book', ['t:x|'], 'x', at('2026-09-29')), entry('book', ['t:y|'], 'y', at('2025-01-01'))],
+      [{ date: '2026-09-29', chars: 700 }]);
+    const week = await rank(env, 'metric=book&window=week', u);
+    expect(week.data.rows).toEqual([]);
+    expect(week.data.me).toEqual({ rank: null, value: 1 });
+    expect((await rank(env, 'metric=book&window=all', u)).data.me).toEqual({ rank: null, value: 2 });
+    expect((await rank(env, 'metric=chars&window=month', u)).data.me).toEqual({ rank: null, value: 700 });
+    // 本期没有数据：仍是 null（「还没有上榜」是真话）。
+    expect((await rank(env, 'metric=manga&window=week', u)).data.me).toBeNull();
+    expect((await rank(env, 'metric=book&window=week')).data.me).toBeNull();
   });
 
   it('快照分块：超过一块的榜单完整读回', async () => {
