@@ -32,11 +32,16 @@ class SourceScrapeIssue {
     required this.message,
     this.path,
     this.providerUnavailable = false,
+    this.workKey,
   });
 
   final String workTitle;
   final String message;
   final String? path;
+
+  /// 出问题的作品（[VideoSourceScrapeWork.stableKey]）；来源级问题为 null。
+  /// 补刮据此把「只因资料源临时不可用而失败」的作品撤出「已尝试」记账。
+  final String? workKey;
 
   /// 失败原因是资料源暂时连不上（网络 / 5xx / 限流），不是作品本身有问题：
   /// 过一会儿原样再刮就可能成功。下载管线据此退避重试，而不是停下来等人处理。

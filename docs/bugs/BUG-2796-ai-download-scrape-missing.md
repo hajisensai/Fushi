@@ -9,4 +9,10 @@
   2. `FushiDatabase.resolveVideoMetadataWorkForCollection`（`packages/fushi_core/lib/src/database/database_video_domain.part.dart`）：合集行优先，没有时视频成员上恰好一条作品行即是；多条不猜。只读消费方（作品详情页、演职员仓库、字幕合集面板、播放页字幕检索种子）切过去；写路径（upsert 回读、索引器、TMDB 排序选择）不动。
   3. 提示词：只有明确「只要现有的 / 不用追」才填 download，「帮我下X」不填 mode，交给 reducer 按放送状态问。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_metadata_resolver_test.dart`（504 → transient、404 / 没配置 → 非 transient）、`fushi/test/media/video/download/video_download_pipeline_service_test.dart`（504 → 退避重试不停 needsAttention；既有「没配置 → needsAttention」用例不变）、`packages/fushi_core/test/video_metadata_v77_test.dart`（resolveVideoMetadataWorkForCollection 4 条）、`fushi/test/ai/ai_video_acquisition_assistant_test.dart`（mode 提示契约）。
-- **备注**：已落在 needsAttention 的旧任务不会自动重试（需要用户在下载面板点重试，或等下一集下载时重刮）。刮削时主源 504 而任务身份里另有 TMDB id 时仍不换源——那是「用户确认的身份失败不回退」的既有约定，这里只让它稍后重试。
+- **[x] ③ 二期：下载确认的身份持久化（同日）** — 只靠任务重试不够：Jikan 宕机常以小时计，6 次退避（约 10 分钟）用完仍会落 failed；而库内补刮既按标题搜（用不上下载确认的身份），又把任何失败记成「已尝试」挡 7 天。根治：
+  1. `packages/fushi_engine/lib/media/video/download/download_confirmed_identity.dart`：「任务 → 作品」判据（`downloadJobWork`，合集 id / 唯一路径匹配 / 多电影只给主片）从管线抽出成共享函数，管线 scrape 阶段与刮削协调器共用；`downloadConfirmedLookupsForWorks` 按落地文件反查任务身份（多任务身份不一致则不选）。
+  2. 协调器 `_scrapeSourceUnlocked`：作品没有规范身份（`hasCanonicalVideoMetadataIdentity`，与补刮同一判据）且调用方没显式给身份时，按下载确认的身份直取——补刮 / 整源刮削不再对下载来的作品按俗称搜。已有规范身份的作品不覆盖。
+  3. 补刮：下载确认过身份的作品即使标题是集号标签也进批次；只因资料源临时不可用失败的作品（`SourceScrapeIssue.workKey` + `providerUnavailable`）撤出记账（`VideoScrapeSweepLedger.forgetAttempts`），下次触发就重试。
+  4. 管线：临时故障重试次数用完 → 下载任务 completed（文件已入库），刮削交给补刮；不再落 failed 留一个永远不会自己好的「出错」。
+  测试：`fushi/test/media/video/download/download_confirmed_identity_test.dart`（6 条）、`fushi/test/media/video/metadata/download_confirmed_identity_coordinator_test.dart`（2 条，变异实测：去掉注入正向用例变红）、`video_library_scrape_sweep_test.dart`（+2）、`video_download_pipeline_service_test.dart`（+1 用完判 completed）。
+- **备注**：本修复之前已落在 needsAttention 的旧任务仍需在下载面板点一次重试（或等补刮：它现在会用那条任务确认的身份）。刮削时主源 504 而任务身份里另有 TMDB id 时仍不换源——那是「用户确认的身份失败不回退」的既有约定，靠重试与补刮收敛。

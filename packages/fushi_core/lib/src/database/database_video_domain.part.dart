@@ -2028,6 +2028,22 @@ mixin _FushiDbVideoDomain
     );
   }
 
+  /// 所有任务里已经落进库的视频文件（`kind = video` 且有最终路径）。「这部作品
+  /// 是哪条下载任务下来的」按它反查，一次查完，不逐任务查。
+  Future<List<VideoDownloadJobFileRow>> getImportedVideoDownloadJobFiles() =>
+      (select(videoDownloadJobFiles)
+            ..where(($VideoDownloadJobFilesTable t) =>
+                t.kind.equals('video') & t.finalAbsolutePath.isNotNull())
+            ..orderBy(<OrderingTerm Function($VideoDownloadJobFilesTable)>[
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.jobId),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.backendFileIndex),
+              ($VideoDownloadJobFilesTable t) =>
+                  OrderingTerm(expression: t.originalRelativePath),
+            ]))
+          .get();
+
   Future<List<VideoDownloadJobFileRow>> getVideoDownloadJobFiles(
     String jobId,
   ) =>

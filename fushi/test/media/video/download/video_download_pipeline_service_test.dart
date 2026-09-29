@@ -1892,6 +1892,68 @@ void main() {
   });
 
   test(
+      'provider still 504 on the last attempt: the download completes and '
+      'the scrape is left to the library backfill (not failed)', () async {
+    final _PipelineEnvironment environment = await _PipelineEnvironment.create(
+      backend: _FakeTorrentBackend(),
+      metadataProvider: _GatewayTimeoutMalProvider(),
+    );
+    addTearDown(environment.close);
+    const String jobId = 'transient-scrape-exhausted-job';
+    await environment.insertJob(
+      jobId: jobId,
+      stage: VideoDownloadJobStage.scrape,
+      identityJson: encodeVideoMediaReference(_confirmedReference()),
+    );
+    final VideoDownloadJobRow inserted =
+        (await environment.database.getVideoDownloadJob(jobId))!;
+    await (environment.database.update(environment.database.videoDownloadJobs)
+          ..where((tbl) => tbl.jobId.equals(jobId)))
+        .write(
+      VideoDownloadJobsCompanion(
+        attemptCount: Value<int>(inserted.maxAttempts - 1),
+      ),
+    );
+    final String videoPath = p.join(
+      environment.root.path,
+      'Show (2026)',
+      'Show S01E01.mkv',
+    );
+    await environment.database.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value<String>('video/show-s01e01'),
+        title: const Value<String>('Show S01E01'),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(environment.sourceId),
+      ),
+    );
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    await environment.database.upsertVideoDownloadJobFile(
+      VideoDownloadJobFilesCompanion.insert(
+        jobId: jobId,
+        backendFileIndex: const Value<int?>(0),
+        originalRelativePath: 'Show S01E01.mkv',
+        currentRelativePath: 'Show S01E01.mkv',
+        finalAbsolutePath: Value<String?>(videoPath),
+        kind: const Value<String>('video'),
+        status: const Value<String>(VideoDownloadJobFileStatus.imported),
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    environment.service.wake();
+    final VideoDownloadJobRow job = await _waitForJob(
+      environment.database,
+      jobId,
+      (VideoDownloadJobRow row) =>
+          row.lifecycle != VideoDownloadJobLifecycle.active,
+    );
+    expect(job.lifecycle, VideoDownloadJobLifecycle.completed,
+        reason: '${job.lastError}');
+  });
+
+  test(
       'a confirmed download into a folder-grouped source completes without '
       'a metadata scrape', () async {
     // 「按文件夹」来源只整理不刮削：计划器对它恒空，之前会把每条带身份的任务
