@@ -195,6 +195,17 @@ gh api "repos/hajisensai/Fushi/actions/caches?per_page=100"   --jq '.actions_cac
 
 删存量缓存前先确认没有 in-flight 的 run 在用它（`gh run list --status in_progress`）。
 
+**Windows 原生产物不再走 actions/cache，走持久库**（`.github/actions/native-artifact-store`）。
+2026-09-29 实测整个缓存约 1 小时换一轮（10.8 GB / 21 条，最老条目 68 分钟前创建；
+一条 15:27 存下的 vcpkg 二进制缓存 15:52 就已被驱逐），于是 libtorrent（冷编 20~27 min）
+在 37 次桌面发布里 miss 22 次、18 次 PR 门里 miss 15 次，galgame helper / Mihon runtime
+大多也在 miss。现在 libtorrent / fushi_p2p DLL、galgame helper dist、Mihon runtime、
+fushi-anki-sync 五样按「输入哈希 + runner 镜像 + 工具链钉版」命名，存成 workflow
+artifact（不占缓存配额，develop/main 保留 30 天、PR 7 天），下次按名字取；只认本仓
+develop/main 产出的件（PR run 另外认同一 PR head 自己产出的件），并先核 SHA256SUMS。
+取不到就照旧从源码编，所以它不会重演 TODO-416「跨 workflow artifact 过期即静默缺件」。
+vcpkg 的两条 actions/cache 只在 libtorrent 持久库 miss 时才挂。
+
 ## 依赖补丁
 
 Flutter 3.44.0 下部分上游依赖未适配，两种补法并存（对个别包**有重叠**）：

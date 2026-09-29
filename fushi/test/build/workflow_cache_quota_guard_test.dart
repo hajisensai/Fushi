@@ -100,7 +100,11 @@ void main() {
         }
       }
       final List<String> block = masked.sublist(i, end);
-      if (!block.any((String l) => l.contains('uses: actions/cache@'))) {
+      // `actions/cache/restore@` 也算：它读同一份配额里的条目，只是不写。
+      final bool restoreOnly =
+          block.any((String l) => l.contains('uses: actions/cache/restore@'));
+      if (!restoreOnly &&
+          !block.any((String l) => l.contains('uses: actions/cache@'))) {
         continue;
       }
 
@@ -153,6 +157,7 @@ void main() {
         paths: paths,
         key: keyText,
         restoreKeys: restoreKeys,
+        restoreOnly: restoreOnly,
       ));
     }
   }
@@ -216,6 +221,21 @@ void main() {
               '`Linux-gradle-5709404c…` 只差 89,953 B。当前形状：\n'
               '${gradleSteps.map((_CacheStep s) => "${s.workflow}:${s.line} "
                   "path=${s.paths} key=${s.key}").join("\n")}');
+    });
+
+    // 2026-09-30 实测：缓存 10.8 GB > 10 GB 配额、约一小时整体轮换一遍，最大的搅动是
+    // 每个 PR ref 各存一份约 1.7 GB 的 `Linux-gradle-v2`。PR 本来就能读到基线分支
+    // （develop）的条目，精确命中时不会再存；可一旦 develop 那份被挤掉，每个 PR 都
+    // miss、都各存一份，再把更多条目挤掉——恶性循环。所以只让 push develop/main 的
+    // release.yml 写，PR 侧的 main.yml / build-multiplatform.yml 只读。
+    test('只有 release.yml 写 Gradle 缓存，PR 侧只读', () {
+      final List<String> writers = gradleSteps
+          .where((_CacheStep s) => !s.restoreOnly)
+          .map((_CacheStep s) => s.workflow)
+          .toList();
+      expect(writers, equals(<String>['release.yml']),
+          reason: '每个 PR ref 各存一份 1.7 GB Gradle 缓存会把整个配额冲掉；'
+              'PR 侧请用 actions/cache/restore@。实际写入方：$writers');
     });
 
     test('只缓存下载物，不缓存 transforms 之类的派生产物', () {
@@ -295,6 +315,7 @@ class _CacheStep {
     required this.paths,
     required this.key,
     required this.restoreKeys,
+    required this.restoreOnly,
   });
 
   final String workflow;
@@ -305,4 +326,7 @@ class _CacheStep {
   final List<String> paths;
   final String key;
   final List<String> restoreKeys;
+
+  /// `actions/cache/restore@`：只读，不写配额。
+  final bool restoreOnly;
 }
