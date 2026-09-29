@@ -1457,6 +1457,36 @@ jobs:
           fi
           echo "macos_signed=$SIGN" >> "$GITHUB_OUTPUT"
           echo "Developer ID signing: $SIGN"
+      # ---- ad-hoc 包钉稳定的指定要求（TCC 授权跨更新保留）------------------
+      # 没有 Developer ID 时 app 是 `--sign -` 的 ad-hoc 签名，它默认的指定要求
+      # （designated requirement）是 `cdhash H"…"`——每次构建都变。TCC（辅助功能、
+      # 屏幕录制等隐私授权）记下的正是授权那一刻的指定要求，于是每次应用内更新后
+      # 新版本都满足不了旧记录：全局查词读前台选区要的辅助功能授权每更新一次就得
+      # 重新勾一次（设置里那一项看着还是开的，实际已失效）。
+      # 修法：最外层 bundle 显式嵌入只按 bundle id 判定的指定要求，后续所有构建都
+      # 满足同一条要求，授权一次长期有效。只重签外层（不带 --deep），内层 Mach-O
+      # 保持各自默认要求，`--verify --deep --strict` 照常通过。
+      # Developer ID 路径不需要：它的默认指定要求锚在 Team ID 上，本就跨构建稳定。
+      - name: Pin stable designated requirement for ad-hoc macOS app
+        if: steps.signing.outputs.macos_signed != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_dir/Contents/Info.plist")"
+          if [ "$bundle_id" != "app.fushi.reader" ]; then
+            echo "::error title=Unexpected bundle id::$bundle_id（TCC 授权按 bundle id 钉，改包名等于让所有用户重新授权，须同步这里）"
+            exit 1
+          fi
+          codesign --force --sign - --timestamp=none \
+            -r="designated => identifier \"$bundle_id\"" "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          designated="$(codesign -d -r- "$app_dir" 2>&1 | grep '^designated')"
+          echo "$designated"
+          if [ "$designated" != "designated => identifier \"$bundle_id\"" ]; then
+            echo "::error title=Designated requirement not pinned::$designated"
+            exit 1
+          fi
       - name: Import Developer ID certificate
         if: steps.signing.outputs.macos_signed == 'true'
         shell: bash

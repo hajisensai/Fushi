@@ -476,6 +476,12 @@ let fushiResizeDrag = null;
 // fushiUserResizedPopup：Phase D 拖拽把手动过尺寸后停止自动复位（手动优先，避免打架）。
 let fushiPlaceObserver = null;
 let fushiPlaceAnchor = null;
+// BUG-2773：弹窗「落词上方 / 下方」的选边。fushiPlacedSide 是最近一次落点实际用的一侧；
+// 弹窗一显示（reveal）就把它锁进 fushiPlaceSide，此后渲染长高的复算只在同侧夹高，不再翻边——
+// 否则首帧按「首词条 + 1 块」的矮高度判下方放得下、显示出来，尾批长高后又翻到上方，
+// 用户看到的就是弹窗先往下弹一下再跳上去。
+let fushiPlaceSide = null;
+let fushiPlacedSide = null;
 let fushiHostBaseMaxHeight = '';
 let fushiThemeMaxHeightPx = 0;
 let fushiUserResizedPopup = false;
@@ -2113,6 +2119,8 @@ function fushiRemoveContainer() {
     try { fushiPlaceObserver.disconnect(); } catch (_) { /* no-op */ }
   }
   fushiPlaceAnchor = null;
+  fushiPlaceSide = null;
+  fushiPlacedSide = null;
   fushiUserResizedPopup = false;
   fushiNotifySidePanelLookupGone();
 }
@@ -2604,7 +2612,9 @@ window.__fushiOnLinkClick = function (query, anchor, highlight) {
 // viewport：{width, height}。返回 {left, top, maxHeight}；maxHeight!=null 表示上下两侧
 // 都放不下整只弹窗，需把弹窗高度夹到所选一侧的可用空间（内部滚动），故渲染后不会压到词上。
 // 旧实现只把 top 夹到边距 8，弹窗高时（词典结果多）会从 8 往下铺开盖住上半屏的词——本函数修掉。
-function fushiComputePlacement(anchor, size, viewport) {
+// side（可选，'below' | 'above'）：BUG-2773 强制落在指定一侧（弹窗已显示后锁边复算用）；
+// 该侧放不下整只时照样夹高，仍永不覆盖被查词。返回值多带 side = 实际所落一侧。
+function fushiComputePlacement(anchor, size, viewport, side) {
   const M = 8; // 视口边距
   const G = 4; // 词与弹窗之间的间隙
   const vw = viewport.width;
@@ -2623,6 +2633,20 @@ function fushiComputePlacement(anchor, size, viewport) {
   const aboveSpace = ay - M;             // 视口顶 → 词顶
   let top;
   let maxHeight = null;
+  if (side === 'below') {
+    top = ay + ah + G;
+    if (ph + G > belowSpace) maxHeight = Math.max(64, belowSpace - G);
+    return { left, top, maxHeight, side };
+  }
+  if (side === 'above') {
+    if (ph + G <= aboveSpace) {
+      top = ay - G - ph;
+    } else {
+      maxHeight = Math.max(64, aboveSpace - G);
+      top = Math.max(M, ay - G - maxHeight);
+    }
+    return { left, top, maxHeight, side };
+  }
   if (ph + G <= belowSpace) {
     top = ay + ah + G;                   // 下方放得下整只弹窗：落词下方
   } else if (ph + G <= aboveSpace) {
@@ -2634,7 +2658,7 @@ function fushiComputePlacement(anchor, size, viewport) {
     maxHeight = Math.max(64, aboveSpace - G); // 上方空间更大：夹高度使弹窗底恰落词顶之上
     top = Math.max(M, ay - G - maxHeight);
   }
-  return { left, top, maxHeight };
+  return { left, top, maxHeight, side: top >= ay + ah ? 'below' : 'above' };
 }
 
 // BUG-1726 纯函数：按 fushiComputePlacement 的落点结果算「所选一侧的可用空间上限」（视口 px）。
@@ -2967,9 +2991,13 @@ function fushiRender(popupJson, termLen, theme, anchorRect) {
   // BUG-1726：新一次查词重置落点会话——锚点重记、手动尺寸标记清零（applyBox 刚把宽高从
   // theme 重写，上一窗的手动尺寸本就随新查词失效，自动复算恢复接管）。
   fushiPlaceAnchor = wordRect || null;
+  fushiPlaceSide = null;
+  fushiPlacedSide = null;
   fushiUserResizedPopup = false;
   fushiRenderEntries(popupJson);
   const reveal = () => {
+    // BUG-2773：显示即锁边——此后尾批长高只在这一侧夹高/伸展，不再上下翻。
+    fushiPlaceSide = fushiPlacedSide;
     c.style.visibility = 'visible';
     fushiReportVisibleAfterPaint(fushiLookupPerfContext, c);
   };
@@ -3007,12 +3035,12 @@ function fushiApplyPlacement() {
     const contentH = c.getBoundingClientRect().height;
     if (contentH > height) height = contentH;
   } catch (_) { /* 容器 rect 不可量：用 host 可见高 */ }
-  if (fushiThemeMaxHeightPx > 0) {
-    // CSS zoom 下 px 长度渲染值 ×zoom、vh 不随 zoom 缩放——与 fushiApplyTheme 写入的
-    // min(<theme px>, 80vh) 的真实渲染上限对齐。
-    const themeCap = Math.min(fushiThemeMaxHeightPx * zoom, 0.8 * window.innerHeight);
-    if (height > themeCap) height = themeCap;
-  }
+  // CSS zoom 下 px 长度渲染值 ×zoom、vh 不随 zoom 缩放——与 fushiApplyTheme 写入的
+  // min(<theme px>, 80vh) 的真实渲染上限对齐。
+  const themeCap = fushiThemeMaxHeightPx > 0
+      ? Math.min(fushiThemeMaxHeightPx * zoom, 0.8 * window.innerHeight)
+      : 0;
+  if (themeCap > 0 && height > themeCap) height = themeCap;
   // 锚点=被查词的视口坐标。容器 position:fixed（BUG-530 全屏可见），坐标即视口系，故**不加**
   // scrollX/Y（加了反而在滚动页面上错位）。拿不到 bbox → 回落最后鼠标视口坐标。
   const ax = wordRect ? wordRect.x : fushiLastX;
@@ -3020,9 +3048,19 @@ function fushiApplyPlacement() {
   const ah = wordRect ? wordRect.height : 0;
   const anchor = { x: ax, y: ay, height: ah };
   const viewport = { width: window.innerWidth, height: window.innerHeight };
+  // BUG-2773：选边。已显示的弹窗沿用锁定的一侧；未锁时若 popup.js 尾批仍在追加词典块
+  // （_renderInProgress），此刻的高度只是首词条，按它选边必然「先落下方、长高后翻上去」——
+  // 改按弹窗最终可能长到的高度（theme 上限）选边，位置仍按当前实测高度算，贴词不留空。
+  let side = fushiPlaceSide;
+  if (!side) {
+    const planHeight = (window._renderInProgress && themeCap > height) ? themeCap : height;
+    side = fushiComputePlacement(
+      anchor, { width: hostRect.width, height: planHeight }, viewport).side;
+  }
   // BUG-767：落点交给纯函数算，保证永不覆盖被查词（旧逻辑翻到词上方时会被夹到边距 8 → 盖住词）。
   const pos = fushiComputePlacement(
-    anchor, { width: hostRect.width, height: height }, viewport);
+    anchor, { width: hostRect.width, height: height }, viewport, side);
+  fushiPlacedSide = pos.side;
   // BUG-767/BUG-1726：maxHeight 恒夹到所选一侧可用空间（两侧都放不下时 pos.maxHeight 本身就是
   // 该值），并与 theme 原始上限取 min——即使此刻放得下，渲染继续把弹窗撑高时任何时序下都不出
   // 视口、不压词（ResizeObserver 不可用的老 WebView 也被这一层兜住）。

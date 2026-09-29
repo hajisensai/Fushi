@@ -147,13 +147,12 @@ class _AiProviderSettingsSectionState
     );
   }
 
-  /// 「AI 下视频」属于下载中心 + 在线发现两类 App Store 合规受限能力：入口与
+  /// 「AI 下载」属于下载中心 + 在线发现两类 App Store 合规受限能力：入口与
   /// 设置分类都已按 [StoreRestrictedCapability] 门控，指派行也不能漏——它的文案
   /// 写着「然后下载或订阅」，iOS 上留这一行等于把被拆掉的能力写在审核员眼前。
   /// 判据只在 store_compliance.dart 写一次，这里只是消费。
   static bool _featureAvailableOnThisStore(AiFeature feature) =>
-      (feature != AiFeature.videoAcquire &&
-          feature != AiFeature.mediaAcquire) ||
+      feature != AiFeature.acquire ||
       (StoreRestrictedCapability.downloads.isAvailable &&
           StoreRestrictedCapability.externalDiscovery.isAvailable);
 
@@ -754,8 +753,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoIdentify => t.ai_feature_video_identify,
     AiFeature.videoSearch => t.ai_feature_video_search,
     AiFeature.customTheme => t.ai_feature_custom_theme,
-    AiFeature.videoAcquire => t.ai_feature_video_acquire,
-    AiFeature.mediaAcquire => t.ai_feature_media_acquire,
+    AiFeature.acquire => t.ai_feature_acquire,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -765,8 +763,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoIdentify => t.ai_feature_video_identify_summary,
     AiFeature.videoSearch => t.ai_feature_video_search_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
-    AiFeature.videoAcquire => t.ai_feature_video_acquire_summary,
-    AiFeature.mediaAcquire => t.ai_feature_media_acquire_summary,
+    AiFeature.acquire => t.ai_feature_acquire_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

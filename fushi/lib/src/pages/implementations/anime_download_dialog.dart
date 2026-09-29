@@ -8,6 +8,7 @@ import 'package:fushi/src/media/downloads/download_task_entry.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
+import 'package:fushi/src/media/torrent/anime_download_fail_reason.dart';
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
 import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/torrent/anime_download_service.dart';
@@ -2715,7 +2716,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
         : null;
     final String? failReason =
         (failed && (plan.failReason?.isNotEmpty ?? false))
-            ? plan.failReason
+            ? describeAnimeDownloadFailReason(plan.failReason!)
             : null;
     // 字幕的时序对用户是可见的（BUG-1206）：推送时不再预下字幕，所以必须在这里
     // 说清「还没配」「没配上」，否则用户会以为字幕功能没了。
@@ -2779,7 +2780,8 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
           if (failReason != null)
             Text(
               failReason,
-              maxLines: 2,
+              // 入库被挡下的原因带补救说明（BUG-2775），两行放不下。
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
             ),

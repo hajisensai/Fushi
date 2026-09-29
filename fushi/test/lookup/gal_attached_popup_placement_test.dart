@@ -134,11 +134,13 @@ void main() {
   final TestWidgetsFlutterBinding binding =
       TestWidgetsFlutterBinding.ensureInitialized();
   const MethodChannel channel = MethodChannel('app.fushi.reader/global_lookup');
+  // GlobalLookupController is a singleton whose start() binds the FIRST app
+  // model only; every case must share it or later renders lose their context.
+  final _LookupAppModel appModel = _LookupAppModel();
 
   testWidgets(
     'attached physical placement uses its viewport and does not leak to desktop lookup',
     (WidgetTester tester) async {
-      final _LookupAppModel appModel = _LookupAppModel();
       final List<MethodCall> calls = <MethodCall>[];
       final List<Map<String, Object?>> showAtCalls = <Map<String, Object?>>[];
       const double monitorDpr = 1.5;
@@ -291,6 +293,115 @@ void main() {
 
       // Let the ready-driven safety timer complete before the test isolate tears
       // down the mock channel; the handler deliberately acknowledges that path.
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+    },
+  );
+
+  testWidgets(
+    'logical text-overlay anchor near the screen bottom flips the root card '
+    'above the word instead of covering it (BUG-2774)',
+    (WidgetTester tester) async {
+      final List<MethodCall> calls = <MethodCall>[];
+      final List<Map<String, Object?>> showAtCalls = <Map<String, Object?>>[];
+      // Main-window DPR and the anchor monitor share one scale, as in the
+      // reported single-monitor game setup.
+      const double dpr = 1.75;
+      // 台词浮窗贴屏幕底：被点的词（逻辑 px）离工作区底边只剩几十 px，
+      // 420x600 的卡片放不下，只能翻到词上方。
+      const Rect workArea = Rect.fromLTWH(0, 0, 2560, 1400);
+      const Rect wordLogical = Rect.fromLTWH(560.0, 700.0, 48.0, 28.0);
+
+      GlobalLookupController.platformOverride = true;
+      addTearDown(() {
+        GlobalLookupController.instance.setPhysicalCap();
+        GlobalLookupController.platformOverride = null;
+        binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+      });
+
+      binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        MethodCall call,
+      ) async {
+        calls.add(call);
+        if (call.method == 'showAt') {
+          final Map<String, Object?> args = _mapArguments(call);
+          showAtCalls.add(args);
+          return <String, Object?>{
+            'ok': true,
+            'workW': workArea.width,
+            'workH': workArea.height,
+            'cursorWorkX': (args['x'] as int) - workArea.left.round(),
+            'cursorWorkY': (args['y'] as int) - workArea.top.round(),
+            'monitorDpr': dpr,
+          };
+        }
+        if (call.method == 'isWebViewReady') return true;
+        if (call.method == 'isShowing') return false;
+        return null;
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: appModel.navigatorKey,
+          builder: (BuildContext context, Widget? child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(devicePixelRatio: dpr),
+            child: child ?? const SizedBox.shrink(),
+          ),
+          home: const SizedBox.shrink(),
+        ),
+      );
+      await tester.pump();
+
+      final GlobalLookupController controller = GlobalLookupController.instance;
+      await controller.start(appModel: appModel);
+      await tester.pump();
+
+      final bool result = await controller.lookupText(
+        '何気なく',
+        autoRead: false,
+        anchorScreenRect: wordLogical,
+      );
+      expect(result, isTrue);
+      expect(showAtCalls, hasLength(1));
+      final Map<String, Object?> shown = showAtCalls.single;
+      expect(shown['atCursor'], isFalse);
+
+      final Map<String, Object?> renderPayload = _decodeRenderStackPayload(
+        _mapArguments(
+              calls.singleWhere((MethodCall call) => call.method == 'render'),
+            )['json']
+            as String,
+      );
+      final Map<String, Object?> root = Map<String, Object?>.from(
+        (renderPayload['popups'] as List<Object?>).single as Map,
+      );
+      final Map<String, Object?> frame = Map<String, Object?>.from(
+        root['frame'] as Map,
+      );
+      final int showX = shown['x'] as int;
+      final int showY = shown['y'] as int;
+      final Rect frameOnScreen = Rect.fromLTWH(
+        showX + _number(frame['left']) * dpr,
+        showY + _number(frame['top']) * dpr,
+        _number(frame['width']) * dpr,
+        _number(frame['height']) * dpr,
+      );
+      final Rect wordPhysical = Rect.fromLTRB(
+        wordLogical.left * dpr,
+        wordLogical.top * dpr,
+        wordLogical.right * dpr,
+        wordLogical.bottom * dpr,
+      );
+      expect(frameOnScreen.top, greaterThanOrEqualTo(workArea.top - 1e-6));
+      expect(frameOnScreen.bottom, lessThanOrEqualTo(workArea.bottom + 1e-6));
+      expect(
+        frameOnScreen.bottom,
+        lessThanOrEqualTo(wordPhysical.top + 1),
+        reason:
+            'no room below the word: the root card must sit above it, never '
+            'be clamped up over it (frame=$frameOnScreen word=$wordPhysical)',
+      );
+
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump();
     },

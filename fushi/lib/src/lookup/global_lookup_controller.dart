@@ -829,7 +829,7 @@ class GlobalLookupController {
   /// coordinates). Returns false when the overlay cannot take the lookup
   /// (unsupported platform / [start] never ran / blank term) so the caller
   /// falls back to its existing in-app route — a tap is never silently lost.
-  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片锚定在该矩形下方（台词浮窗
+  /// [anchorScreenRect]（屏幕逻辑 px）：给出时卡片放在该矩形上/下侧、不压字（台词浮窗
   /// 点词=被点文字处），null 保持 OS 光标语义。
   /// 游戏内查词的**物理像素**尺寸上限（宽, 高）。null = 不限（桌面浮窗）。
   ///
@@ -1027,7 +1027,8 @@ class GlobalLookupController {
   /// Never throws (logs and returns false, matching the old _onHotKey contract).
   ///
   /// [anchorScreenRect]（屏幕逻辑 px）：台词浮窗点词给出被点文字的屏幕矩形，
-  /// 卡片锚定在文字正下方（同 in-app 嵌套卡观感），而不是光标点右下。
+  /// 卡片放在文字正下方、下方放不下则翻到上方（同 in-app 嵌套卡观感），
+  /// 而不是光标点右下。
   /// null = 原 atCursor 语义（热键/悬浮字幕路径零变化）。native
   /// showAt 在 atCursor:false 时直接用传入点并以该点算工作区偏移，级联种子
   /// （cursorWorkX/Y）自动对齐锚点，无需 native 改动。
@@ -1137,26 +1138,32 @@ class GlobalLookupController {
       _layoutBoundsH = cardH * kGlobalLookupLayoutBoundsHeightFactor;
       final int w0 = (_layoutBoundsW * dpr).round();
       final int h0 = (_layoutBoundsH * dpr).round();
-      // Legacy logical anchors seed the window below the word. Attached hits
-      // seed it at the physical word origin; the root frame handles avoidance.
+      // Both anchor kinds seed the window at the physical word origin; the
+      // anchored root frame handles above/below avoidance.
       // Native chooses the monitor from this point; anchorless calls use cursor.
       // 布局工作区上限：游戏内查词时可用空间是**游戏视口**，不是显示器工作区。
       // 不传就会按 2560x1440 排版、排完再被裁（runner 超尺寸是裁不是缩）。
       final bool usePhysicalAnchor = physicalPlacement != null;
       final Rect? effectiveAnchor =
           physicalPlacement?.anchorScreenRect ?? anchorScreenRect;
+      // 两种锚点统一到物理像素：逻辑锚点（台词浮窗 / 剪贴板面板点词）曾把窗口
+      // 种在词下方且根卡不带锚，下方放不下时根卡只被夹回工作区——整卡上推正好
+      // 压在被点的词上（浮窗贴屏幕底时必现）。现在与 attached 一样种在词左上角，
+      // 根卡带锚交给 computeFrameRect 择上/下侧。
+      final Rect? anchorPhysical = effectiveAnchor == null
+          ? null
+          : usePhysicalAnchor
+          ? effectiveAnchor
+          : Rect.fromLTRB(
+              effectiveAnchor.left * dpr,
+              effectiveAnchor.top * dpr,
+              effectiveAnchor.right * dpr,
+              effectiveAnchor.bottom * dpr,
+            );
       final Rect? destinationViewport =
           physicalPlacement?.destinationViewportScreenRect;
-      final int showX = effectiveAnchor == null
-          ? 0
-          : usePhysicalAnchor
-          ? effectiveAnchor.left.round()
-          : (effectiveAnchor.left * dpr).round();
-      final int showY = effectiveAnchor == null
-          ? 0
-          : usePhysicalAnchor
-          ? effectiveAnchor.top.round()
-          : ((effectiveAnchor.bottom + 4) * dpr).round();
+      final int showX = anchorPhysical?.left.round() ?? 0;
+      final int showY = anchorPhysical?.top.round() ?? 0;
       // A galCard lookup keeps using its session-owned layout viewport. An
       // attached desktop lookup gets a viewport from the same native hit event;
       // all other desktop lookups must use the monitor work area reported by
@@ -1231,11 +1238,11 @@ class GlobalLookupController {
       // reserve-to-edge clamp invariant). Fall back to the main dpr when the
       // native monitor query failed (monitorDpr 0).
       final double workDpr = shown.monitorDpr > 0 ? shown.monitorDpr : dpr;
-      if (physicalPlacement != null && _stack.frames.isNotEmpty) {
+      if (anchorPhysical != null && _stack.frames.isNotEmpty) {
         // The existing root-frame layout chooses above/below the hit and fits
         // the card to that side. Its anchor is window-local CSS pixels; the
         // viewport origin offset below lifts it into the common layout space.
-        final Rect hit = physicalPlacement.anchorScreenRect;
+        final Rect hit = anchorPhysical;
         _frameAnchors[_stack.frames.first.id] = Rect.fromLTWH(
           (hit.left - showX) / workDpr,
           (hit.top - showY) / workDpr,
