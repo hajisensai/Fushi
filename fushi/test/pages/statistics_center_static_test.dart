@@ -16,9 +16,21 @@ void main() {
   ).readAsStringSync();
 
   test('三域 tab 以 embedded 模式复用现有统计页', () {
-    expect(center, contains('ReadingStatisticsPage(embedded: true)'));
-    expect(center, contains('VideoStatisticsPage(embedded: true)'));
-    expect(center, contains('GameStatisticsPage(embedded: true)'));
+    expect(
+      center,
+      matches(RegExp(
+          r'ReadingStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+    );
+    expect(
+      center,
+      matches(RegExp(
+          r'VideoStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+    );
+    expect(
+      center,
+      matches(RegExp(
+          r'GameStatisticsPage\(\s*embedded: true,\s*rangeSelection: _rangeSelection,')),
+    );
     expect(
       center,
       isNot(contains('FushiPageScaffold(embedded')),

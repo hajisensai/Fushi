@@ -1042,6 +1042,10 @@ mixin _FushiDbStatistics
     required String dateKey,
     String? bookKey,
     String title = '',
+    String sentence = '',
+    int? sectionIndex,
+    int? normCharOffset,
+    int? normCharLength,
   }) =>
       transaction(() async {
         final existing = await (select(favoriteWords)
@@ -1067,6 +1071,11 @@ mixin _FushiDbStatistics
             sourceType: sourceType,
             bookKey: Value(bookKey),
             title: Value(title),
+            // v114：收藏上下文（原句 + 定位锚点），口径见 [FavoriteWords.sentence]。
+            sentence: Value(sentence),
+            sectionIndex: Value(sectionIndex),
+            normCharOffset: Value(normCharOffset),
+            normCharLength: Value(normCharLength),
             dateKey: dateKey,
             createdAt: DateTime.now().millisecondsSinceEpoch,
           ),

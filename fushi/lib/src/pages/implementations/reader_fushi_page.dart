@@ -55,6 +55,7 @@ import 'package:fushi/src/media/audiobook/audiobook_clip_webview_render.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show extractAudioSegmentViaFfmpeg;
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/audiobook/reader_quick_settings_sheet.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -1457,6 +1458,23 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   ({String? bookKey, String? title})? get lookupBookIdentity =>
       (bookKey: widget.bookKey, title: _book?.title);
+
+  /// 收藏词的上下文：查词所在句 + 与收藏句同口径的锚点（选区时刻锁定的章号、句子
+  /// 的章内归一化范围），收藏夹据此显示原句、跳回原文、截有声书音频。
+  @override
+  FavoriteLookupContext? get favoriteLookupContext {
+    final String sentence =
+        appModel.currentMediaSource?.currentSentence.text.trim() ?? '';
+    if (sentence.isEmpty) return null;
+    final ({int offset, int length})? range = _cachedSentenceRange;
+    return FavoriteLookupContext(
+      sentence: sentence,
+      sectionIndex: _favoriteSectionIndex,
+      normCharOffset: range?.offset,
+      normCharLength: range?.length,
+    );
+  }
+
   EpubSpreadMap? _spreadMap;
 
   /// BUG-1280：**上一次交给 WebView 的文档是不是 spread 独立文档**

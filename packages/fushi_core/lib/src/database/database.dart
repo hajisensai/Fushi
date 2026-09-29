@@ -737,7 +737,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 113;
+  int get schemaVersion => 114;
 
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
@@ -3454,6 +3454,24 @@ class FushiDatabase extends _$FushiDatabase
                 if (foreignKeysWereOn) {
                   await customStatement('PRAGMA foreign_keys = ON');
                 }
+              }
+            }
+          }
+          if (from < 114) {
+            // v114：favorite_words 加收藏上下文（原句 + 定位锚点四列）。存量行
+            // 取默认 '' / null——旧收藏本来就没记，不回填。幂等守卫同 v111。
+            if (await _tableExists('favorite_words')) {
+              if (!await _columnExists('favorite_words', 'sentence')) {
+                await m.addColumn(favoriteWords, favoriteWords.sentence);
+              }
+              if (!await _columnExists('favorite_words', 'section_index')) {
+                await m.addColumn(favoriteWords, favoriteWords.sectionIndex);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_offset')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharOffset);
+              }
+              if (!await _columnExists('favorite_words', 'norm_char_length')) {
+                await m.addColumn(favoriteWords, favoriteWords.normCharLength);
               }
             }
           }

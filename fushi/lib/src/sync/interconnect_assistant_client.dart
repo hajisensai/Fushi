@@ -201,11 +201,18 @@ class InterconnectAssistantClient {
         ),
       );
 
-  Future<void> close(HostAssistantTarget target, String id) => _call(
-        target,
-        'DELETE',
-        '/api/assistant/sessions/${Uri.encodeComponent(id)}',
-      );
+  /// 关 host 上的会话。
+  ///
+  /// 必须是真正的 `Future<void>`：若直接 `=> _call(...)`，运行时拿到的是
+  /// `Future<Map<String, dynamic>>`，调用方挂的 `catchError` 处理器返回
+  /// void 会在断线时反抛 `ArgumentError`（onError 返回值不符 future 类型）。
+  Future<void> close(HostAssistantTarget target, String id) async {
+    await _call(
+      target,
+      'DELETE',
+      '/api/assistant/sessions/${Uri.encodeComponent(id)}',
+    );
+  }
 
   Future<Map<String, dynamic>> _call(
     HostAssistantTarget target,

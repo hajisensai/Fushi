@@ -119,8 +119,19 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
     _disposed = true;
     _views.close();
     if (_lost) return;
-    // 页面退出即关 host 上的会话；失败无所谓（host 闲置回收兜底）。
-    unawaited(_client.close(_target, _id).catchError((Object _) {}));
+    // 页面退出即关 host 上的会话；失败只记诊断（host 闲置回收兜底）。
+    unawaited(_closeHostSession());
+  }
+
+  Future<void> _closeHostSession() async {
+    try {
+      await _client.close(_target, _id);
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'RemoteVideoAcquisition.close',
+        '${_target.label}: $error',
+      );
+    }
   }
 
   Future<void> _act(Map<String, Object?> action) async {
