@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -687,6 +688,63 @@ void main() {
       expect(anilist.discoverCalls, 1);
     });
 
+    test('onProgress reports the fast provider before the slow one returns',
+        () async {
+      ProviderBatchResult<VideoDiscoveryPage> only(String id, String title) =>
+          ProviderBatchResult<VideoDiscoveryPage>.success(
+            <VideoDiscoveryPage>[
+              VideoDiscoveryPage(
+                items: <VideoDiscoveryItem>[
+                  _item(provider: id, id: id, title: title, year: 2026),
+                ],
+                page: 1,
+                hasMore: false,
+              ),
+            ],
+          );
+      final Completer<void> slowGate = Completer<void>();
+      final VideoDiscoveryService service = VideoDiscoveryService(
+        providers: <VideoDiscoveryProvider>[
+          _FakeProvider(
+            id: 'slow',
+            priority: 1,
+            response: only('mal', 'Slow Title'),
+            gate: slowGate.future,
+          ),
+          _FakeProvider(
+            id: 'fast',
+            priority: 2,
+            response: only('tmdb', 'Fast Title'),
+          ),
+        ],
+      );
+      addTearDown(service.close);
+      final List<List<String>> progress = <List<String>>[];
+      final Future<ProviderBatchResult<VideoDiscoveryPage>> done = service.load(
+        const VideoDiscoveryRequest(query: 'x'),
+        onProgress: (ProviderBatchResult<VideoDiscoveryPage> partial) =>
+            progress.add(<String>[
+          for (final VideoDiscoveryPage page in partial.items)
+            for (final VideoDiscoveryItem item in page.items)
+              item.reference.title,
+        ]),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(progress, <List<String>>[
+        <String>['Fast Title'],
+      ]);
+      slowGate.complete();
+      final ProviderBatchResult<VideoDiscoveryPage> result = await done;
+      expect(progress, hasLength(1), reason: '最后一个来源到齐走返回值，不再回调');
+      expect(
+        <String>[
+          for (final VideoDiscoveryItem item in result.items.single.items)
+            item.reference.title,
+        ],
+        unorderedEquals(<String>['Slow Title', 'Fast Title']),
+      );
+    });
+
     test('preserves successful items when another provider fails', () async {
       final _FakeProvider success = _FakeProvider(
         id: 'success',
@@ -1332,6 +1390,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     required this.priority,
     required this.response,
     this.supportsPaging = true,
+    this.gate,
   });
 
   @override
@@ -1345,6 +1404,9 @@ class _FakeProvider implements VideoDiscoveryProvider {
 
   final ProviderBatchResult<VideoDiscoveryPage> response;
   final bool supportsPaging;
+
+  /// 设了就等它完成才返回（模拟慢来源）。
+  final Future<void>? gate;
   int searchCalls = 0;
   int discoverCalls = 0;
 
@@ -1367,6 +1429,7 @@ class _FakeProvider implements VideoDiscoveryProvider {
     VideoDiscoveryRequest request,
   ) async {
     searchCalls++;
+    await gate;
     return response;
   }
 

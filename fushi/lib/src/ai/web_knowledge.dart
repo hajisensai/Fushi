@@ -392,22 +392,67 @@ class WebKnowledgeClient {
       ),
     );
     // opensearch 形如 [query, [标题…], [描述…], [URL…]]。
-    if (search is! List || search.length < 2 || search[1] is! List) return;
-    final List<Object?> titles = search[1] as List<Object?>;
-    final List<Object?> urls = search.length > 3 && search[3] is List
+    final List<Object?> titles =
+        search is List && search.length > 1 && search[1] is List
+        ? search[1] as List<Object?>
+        : const <Object?>[];
+    final List<Object?> urls =
+        search is List && search.length > 3 && search[3] is List
         ? search[3] as List<Object?>
         : const <Object?>[];
-    for (int i = 0; i < titles.length && i < limit; i++) {
+    final Map<String, Uri?> hits = <String, Uri?>{};
+    for (int i = 0; i < titles.length && hits.length < limit; i++) {
       final Object? title = titles[i];
       if (title is! String || title.isEmpty) continue;
       final Object? rawUrl = i < urls.length ? urls[i] : null;
+      hits[title] = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+    }
+    // opensearch 只做标题前缀匹配：俗称 / 译名 / 简称不是条目标题的前缀就查不到。
+    // 名额没满时再用全文检索补（精确标题能命中时行为不变）。
+    if (hits.length < limit) {
+      for (final String title in await _mediaWikiFullText(api, query, limit)) {
+        if (hits.length >= limit) break;
+        hits.putIfAbsent(title, () => null);
+      }
+    }
+    for (final MapEntry<String, Uri?> hit in hits.entries) {
       final WebKnowledgePage? page = await _mediaWikiPage(
         site,
-        title,
-        rawUrl is String ? Uri.tryParse(rawUrl) : null,
+        hit.key,
+        hit.value,
       );
       if (page != null) yield page;
     }
+  }
+
+  /// `list=search` 全文检索，返回条目标题。站点不开放这个接口（萌娘百科回
+  /// `action-notallowed`）是它的正常答复，不是故障：返回空，不让整站进冷却。
+  Future<List<String>> _mediaWikiFullText(
+    Uri api,
+    String query,
+    int limit,
+  ) async {
+    final Object? json = jsonDecode(
+      await _get(
+        _withQuery(api, <String, String>{
+          'action': 'query',
+          'format': 'json',
+          'formatversion': '2',
+          'list': 'search',
+          'srnamespace': '0',
+          'srsearch': query,
+          'srlimit': '$limit',
+          'srprop': '',
+        }),
+      ),
+    );
+    final Object? results = _path(json, <String>['query', 'search']);
+    if (results is! List) return const <String>[];
+    return <String>[
+      for (final Object? result in results)
+        if (result is Map && result['title'] is String)
+          result['title'] as String,
+    ];
   }
 
   Future<WebKnowledgePage?> _mediaWikiPage(

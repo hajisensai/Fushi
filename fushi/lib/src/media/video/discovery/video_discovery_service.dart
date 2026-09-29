@@ -85,10 +85,7 @@ class VideoDiscoveryService {
               ),
         if (discoveryAvailable) AniListVideoDiscoveryProvider(),
       ],
-      metadataProviders: <VideoMetadataProvider>[
-        ...catalog.providers,
-        anilist,
-      ],
+      metadataProviders: <VideoMetadataProvider>[...catalog.providers, anilist],
       // AniList 也是搜索源：它只属于发现域（不进刮削 registry），但单靠 MAL 撑
       // 番剧搜索时，Jikan 一挂（它常年间歇性 504）且 TMDB 没配 key，搜索就一条
       // 都出不来；AniList 的 `SEARCH_MATCH` 还认中文/日文别名，结果带 MAL id，
@@ -144,9 +141,13 @@ class VideoDiscoveryService {
             provider.id,
       };
 
+  /// 聚合所有支持该请求的来源。[onProgress]：每有一个来源返回（且还有来源没
+  /// 返回）就以「已返回来源」的合并结果回调一次，页面据此先显示快的来源，不必等
+  /// 最慢的那个；返回值恒是全部来源到齐后的最终结果。
   Future<ProviderBatchResult<VideoDiscoveryPage>> load(
-    VideoDiscoveryRequest request,
-  ) async {
+    VideoDiscoveryRequest request, {
+    void Function(ProviderBatchResult<VideoDiscoveryPage> partial)? onProgress,
+  }) async {
     if (_closed) {
       return ProviderBatchResult<VideoDiscoveryPage>.failure(
         const ExternalProviderFailure(
@@ -176,11 +177,38 @@ class VideoDiscoveryService {
       );
     }
 
-    final List<_ProviderResponse> responses =
-        await Future.wait(<Future<_ProviderResponse>>[
-      for (final VideoDiscoveryProvider provider in selected)
-        _invokeWindow(provider, request),
+    // 按 selected 的顺序占位：合并结果只取决于「哪些来源已返回」，与返回先后
+    // 无关（round-robin 的轮次顺序固定），渐进结果与最终结果同一口径。
+    final List<_ProviderResponse?> slots = List<_ProviderResponse?>.filled(
+      selected.length,
+      null,
+    );
+    int pending = selected.length;
+    await Future.wait(<Future<void>>[
+      for (int i = 0; i < selected.length; i++)
+        _invokeWindow(selected[i], request).then((_ProviderResponse response) {
+          slots[i] = response;
+          pending -= 1;
+          if (pending > 0 && onProgress != null && !_closed) {
+            onProgress(
+              _aggregate(<_ProviderResponse>[
+                for (final _ProviderResponse? slot in slots)
+                  if (slot != null) slot,
+              ], request),
+            );
+          }
+        }),
     ]);
+    return _aggregate(<_ProviderResponse>[
+      for (final _ProviderResponse? slot in slots) slot!,
+    ], request);
+  }
+
+  /// 把已返回来源的响应合并成一页。
+  ProviderBatchResult<VideoDiscoveryPage> _aggregate(
+    List<_ProviderResponse> responses,
+    VideoDiscoveryRequest request,
+  ) {
     final List<ExternalProviderFailure> failures = <ExternalProviderFailure>[];
     int successfulProviders = 0;
     bool hasMore = false;

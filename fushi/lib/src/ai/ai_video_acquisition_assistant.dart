@@ -479,7 +479,12 @@ Future<List<String>> requestAiVideoAlias({
 }) async {
   if (!web.isEnabled || query.trim().isEmpty) return const <String>[];
   final List<WebKnowledgePage> pages = pickDiverseWebKnowledgePages(
-    await web.search(query, maxCharsPerPage: kAiAliasReferenceMaxChars),
+    // 每站两页：opensearch 若只命中一个不相干的前缀条目，第二个名额留给全文检索。
+    await web.search(
+      query,
+      pagesPerSource: 2,
+      maxCharsPerPage: kAiAliasReferenceMaxChars,
+    ),
     kAiAliasReferenceMaxPages,
   );
   if (pages.isEmpty) return const <String>[];
