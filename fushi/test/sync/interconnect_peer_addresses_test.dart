@@ -221,8 +221,9 @@ void main() {
           ),
         ],
       );
-      expect(merged.map((FushiClientUrl u) => u.url),
-          <String>['https://home.example']);
+      expect(merged.map((FushiClientUrl u) => u.url), <String>[
+        'https://home.example',
+      ]);
     });
 
     test('host 不再公布的 learned 地址被删；手输条目永不删', () {
@@ -257,6 +258,98 @@ void main() {
       expect(merged[0].learned, isFalse);
     });
 
+    test('已配对的别台 host 自报真 host 的 hostId：不并组、不删真 host 的地址（审查 B1）', () {
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        const FushiClientUrl(
+          url: 'https://a.example',
+          token: 'TA',
+          fingerprintSha256: 'aa:aa',
+          hostId: 'A',
+        ),
+        const FushiClientUrl(
+          url: 'https://10.0.0.5:38765',
+          token: 'TA',
+          fingerprintSha256: 'aa:aa',
+          hostId: 'A',
+          learned: true,
+        ),
+        const FushiClientUrl(
+          url: 'https://m.example',
+          token: 'TM',
+          fingerprintSha256: 'mm:mm',
+        ),
+      ];
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        list,
+        anchorUrl: 'https://m.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[
+          InterconnectHostAddress(
+            url: 'https://evil.example:38765',
+            kind: InterconnectAddressKind.public,
+          ),
+        ],
+      );
+      expect(merged, same(list));
+    });
+
+    test('明文锚点不能并入已有的组（链接走 http 配对，指纹只是链接声明，审查 B2）', () {
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        const FushiClientUrl(
+          url: 'https://a.example',
+          fingerprintSha256: 'aa:aa',
+          hostId: 'A',
+        ),
+        const FushiClientUrl(url: 'http://attacker:38765'),
+      ];
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        list,
+        anchorUrl: 'http://attacker:38765',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[],
+      );
+      expect(merged, same(list));
+    });
+
+    test('同一张证书的新地址可以加入已有的组', () {
+      final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
+        <FushiClientUrl>[
+          const FushiClientUrl(
+            url: 'https://a.example',
+            fingerprintSha256: 'aa:aa',
+            hostId: 'A',
+          ),
+          const FushiClientUrl(
+            url: 'https://a2.example',
+            fingerprintSha256: 'AA:AA',
+          ),
+        ],
+        anchorUrl: 'https://a2.example',
+        hostId: 'A',
+        addresses: const <InterconnectHostAddress>[],
+      );
+      expect(merged[1].hostId, 'A');
+    });
+
+    test('锚点已属别的 hostId：拒绝换组', () {
+      final List<FushiClientUrl> list = <FushiClientUrl>[
+        const FushiClientUrl(
+          url: 'https://b.example',
+          fingerprintSha256: 'bb:bb',
+          hostId: 'B',
+        ),
+      ];
+      expect(
+        mergeLearnedHostAddresses(
+          list,
+          anchorUrl: 'https://b.example',
+          hostId: 'A',
+          addresses: const <InterconnectHostAddress>[],
+        ),
+        same(list),
+      );
+    });
+
     test('锚点已被删 → 原样返回', () {
       final List<FushiClientUrl> list = <FushiClientUrl>[url('http://x:1')];
       expect(
@@ -284,9 +377,7 @@ void main() {
 
     test('组网私网段按 host 标注的种类排在物理 LAN 之后', () {
       final List<FushiClientUrl> merged = mergeLearnedHostAddresses(
-        <FushiClientUrl>[
-          url('https://home.example'),
-        ],
+        <FushiClientUrl>[url('https://home.example')],
         anchorUrl: 'https://home.example',
         hostId: 'A',
         addresses: const <InterconnectHostAddress>[
@@ -318,27 +409,29 @@ void main() {
       dir = await Directory.systemTemp.createTemp('fushi_peer_addr_test');
       SecurityContext? ctx;
       if (tls) {
-        final FushiTlsIdentity id =
-            await FushiTlsIdentityStore(dataDir: dir.path).loadOrCreate();
+        final FushiTlsIdentity id = await FushiTlsIdentityStore(
+          dataDir: dir.path,
+        ).loadOrCreate();
         fingerprint = id.fingerprintSha256;
         ctx = SecurityContext()
           ..useCertificateChainBytes(utf8.encode(id.certificatePem))
           ..usePrivateKeyBytes(utf8.encode(id.privateKeyPem));
       }
-      server = FushiSyncServer(
-        syncDataDir: dir.path,
-        port: 0,
-        token: 'shared-token',
-        allowLan: true,
-        securityContext: ctx,
-        hostFingerprint: tls ? fingerprint : null,
-      )
-        ..hostId = 'HOST-1'
-        ..publicUrlsProvider = (() async => <String>[
+      server =
+          FushiSyncServer(
+              syncDataDir: dir.path,
+              port: 0,
+              token: 'shared-token',
+              allowLan: true,
+              securityContext: ctx,
+              hostFingerprint: tls ? fingerprint : null,
+            )
+            ..hostId = 'HOST-1'
+            ..publicUrlsProvider = (() async => <String>[
               'https://home.example',
               'http://plain.example',
             ])
-        ..interfaceLister = (() async => <NetworkInterface>[
+            ..interfaceLister = (() async => <NetworkInterface>[
               _FakeNic('Ethernet', <InternetAddress>[
                 InternetAddress('192.168.77.5'),
                 InternetAddress('2408:8207::5'),
@@ -391,15 +484,20 @@ void main() {
       expect(changed, isTrue);
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
       final int port = server.port;
-      expect(urls.map((FushiClientUrl u) => u.url), <String>[
-        'https://192.168.77.5:$port',
-        'https://[2408:8207::5]:$port',
-        anchor,
-        'https://home.example',
-      ], reason: 'http://plain.example 与 docker 网桥都不公布');
+      expect(
+        urls.map((FushiClientUrl u) => u.url),
+        <String>[
+          'https://192.168.77.5:$port',
+          'https://[2408:8207::5]:$port',
+          anchor,
+          'https://home.example',
+        ],
+        reason: 'http://plain.example 与 docker 网桥都不公布',
+      );
       expect(urls.every((FushiClientUrl u) => u.hostId == 'HOST-1'), isTrue);
       expect(
-        urls.firstWhere((FushiClientUrl u) => u.url.contains('77.5'))
+        urls
+            .firstWhere((FushiClientUrl u) => u.url.contains('77.5'))
             .fingerprintSha256,
         fingerprint,
         reason: '同一张自签证书，learned 地址照样钉扎',
@@ -445,8 +543,9 @@ void main() {
         FushiClientUrl(url: anchor, token: 'shared-token'),
       ]);
       expect(
-        await InterconnectAddressLearner(repo)
-            .refresh((await repo.getFushiClientUrls()).single),
+        await InterconnectAddressLearner(
+          repo,
+        ).refresh((await repo.getFushiClientUrls()).single),
         isFalse,
         reason: '明文锚点背后可能是冒名者，它公布的地址集会带着 token 落库',
       );

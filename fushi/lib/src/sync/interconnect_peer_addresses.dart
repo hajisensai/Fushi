@@ -362,6 +362,34 @@ List<FushiClientUrl> moveInterconnectUrlBefore(
   return out;
 }
 
+/// 锚点能否以 [hostId] 的身份并组。hostId 是公开值（ping / mDNS 都能拿到），任何
+/// 被配对过一次的 host 都能在 `/api/host/addresses` 里自报别人的 hostId；只认它就会
+/// 把真 host 的 learned 地址删掉、把冒名者并进那一组（审查 B1 / B2）。所以：
+/// - 锚点已标了别的 hostId → 拒绝（一条地址不会中途换主人）；
+/// - 锚点已是该组成员 → 放行（入组时已核对过）；
+/// - 锚点要**加入**一个已有条目的组 → 锚点必须钉扎了证书指纹，且与组内已钉扎的
+///   指纹相等（指纹 = 那台 host 的私钥，冒名者给不出同一个；明文锚点没有指纹，一律
+///   不能并入已有的组）。
+bool _anchorMayClaimHostId(
+  List<FushiClientUrl> list,
+  int anchorIndex,
+  String hostId,
+) {
+  final FushiClientUrl anchor = list[anchorIndex];
+  final String? current = anchor.hostId;
+  if (current != null && current.isNotEmpty) return current == hostId;
+  final String? anchorFp = anchor.fingerprintSha256;
+  for (int i = 0; i < list.length; i++) {
+    if (i == anchorIndex || list[i].hostId != hostId) continue;
+    if (anchorFp == null || anchorFp.isEmpty) return false;
+    final String? fp = list[i].fingerprintSha256;
+    if (fp != null && fp.isNotEmpty && !fingerprintEquals(fp, anchorFp)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// 把 host 公布的地址集合并进候选列表（纯函数，便于单测）。
 ///
 /// - [anchorUrl] 是本次拿到地址集时用的那条地址；它被标上 [hostId]。列表里找不
@@ -381,6 +409,7 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     (FushiClientUrl u) => u.url == anchorUrl,
   );
   if (anchorIndex < 0) return list;
+  if (!_anchorMayClaimHostId(list, anchorIndex, hostId)) return list;
   final FushiClientUrl anchor = list[anchorIndex].copyWith(hostId: hostId);
   final Set<String> published = <String>{
     for (final InterconnectHostAddress a in addresses) a.url,
@@ -410,8 +439,10 @@ List<FushiClientUrl> mergeLearnedHostAddresses(
     if (out.any((FushiClientUrl u) => u.url == a.url)) continue;
     // 指纹只给走 TLS 的地址：https，或 host 开着 TLS 时的 `p2p://…?tls=1`
     // （隧道里跑的仍是同一张自签证书）。
-    final bool https = a.url.toLowerCase().startsWith('https://') ||
-        (_isP2pUrl(a.url) && Uri.tryParse(a.url)?.queryParameters['tls'] == '1');
+    final bool https =
+        a.url.toLowerCase().startsWith('https://') ||
+        (_isP2pUrl(a.url) &&
+            Uri.tryParse(a.url)?.queryParameters['tls'] == '1');
     final FushiClientUrl learned = FushiClientUrl(
       url: a.url,
       fingerprintSha256: https ? anchor.fingerprintSha256 : null,
