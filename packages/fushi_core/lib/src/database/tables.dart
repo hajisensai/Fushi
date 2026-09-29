@@ -521,9 +521,10 @@ class BookTags extends Table {
 ///    过滤兜底；[tagId] 对 [BookTags] 的真 FK 保留（删标签仍 cascade）。
 ///  - **[addedAt] 统一都记**：记的是「何时打的标签」这一事实，写入成本为零。
 ///    旧决策让 game/collection 不带时钟（怕被误读成在同步），代价是把「不进
-///    sync」编码进表的形状里、真要同步时只能回填 0 丢失真实时间。哪些 kind
-///    参与 sync 由合并层一处写死（当前仅 epub/video；game/collection 不进
-///    live-sync 的事实不变）。旧行迁移填 0（最古 add，语义同旧 book/video 表）。
+///    sync」编码进表的形状里、真要同步时只能回填 0 丢失真实时间。五个 kind
+///    现在都进互联标签同步（`fushi_engine/sync/tag_sync.dart`，game 经游戏跨端
+///    身份换算、collection 按合集自然键）。旧行迁移填 0（最古 add，语义同旧
+///    book/video 表）。
 ///  - 墓碑不变：[BookTagMembershipTombstones] 本就是 (itemKey, mediaType,
 ///    tagName) 通用形，天然覆盖全部 kind。
 @DataClassName('TagAssignmentRow')
@@ -1086,8 +1087,9 @@ class MediaCollectionItems extends Table {
   TextColumn get mediaType => text()();
 
   /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
-  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：与 exe 路径同为
-  /// 本机事实，跨端同步时对端无对应行则该成员静默忽略）。
+  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：跨端同步时经
+  /// `GameIdentityIndex` 换成外部 id / exe 路径 / 标题等跨端身份，对端解析不到
+  /// 本机游戏则透传保存、静默不渲染）。
   TextColumn get entryKey => text()();
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
@@ -2739,7 +2741,8 @@ class StudySegmentTombstones extends Table {
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
-// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync；
+// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏用户标签经互联标签同步
+// 跨端（游戏跨端身份见 fushi_engine 的 GameIdentityIndex）；
 // 备份合并导入自 `BackupCategory.games` 起经游戏身份映射（同 id / 刮削身份 /
 // exe 路径）落到本机游戏行上，见 backup_merge_engine.dart 的 `_buildGameIdMap`。）
 

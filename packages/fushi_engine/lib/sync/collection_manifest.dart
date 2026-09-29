@@ -267,9 +267,10 @@ class CollectionManifestMember {
   /// 引擎对值透传不解引用）。
   final String mediaType;
 
-  /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
-  /// （game 是本机局域身份：对端无对应 galgames 行时该成员在对端静默不渲染，
-  /// 归属关系仍随清单往返、不丢失）。
+  /// 条目跨端身份：epub=wire bookKey / srt=uid / video=bookUid / game=游戏跨端
+  /// 身份（`GameIdentityIndex`：外部 id / exe 路径 / 标题，都不唯一时退回本机
+  /// galgames.id；对端解析不到本机游戏时透传保存、静默不渲染，归属关系仍随清单
+  /// 往返、不丢失）。
   final String entryKey;
 
   /// 合集内序（整合集 LWW 覆盖的载荷）。
