@@ -5780,10 +5780,6 @@
   "stat_range_summary": "所选范围",
   "stat_range_active_days": "活跃天数",
   "stat_range_calendar": "学习日历",
-  "video_library_delete_rows_failed": "$n 个视频删除失败，仍保留在媒体库中。",
-  "video_library_delete_failed": "删除失败：$reason",
-  "media_source_remove_download_refs": "有 $subscriptions 个下载订阅和 $jobs 个未完成的下载保存到此来源。迁移到：",
-  "media_source_remove_download_keep": "不迁移（暂停这些订阅）",
   "download_selection_already_queued": "这一项已在下载队列中。",
   "popup_bottom_docked_books": "小说中底部停靠",
   "popup_bottom_docked_manga": "漫画中底部停靠",
@@ -6080,6 +6076,5 @@
   "anki_sync_client_relogin": "重新登录",
   "anki_sync_client_discard_confirm": "还有 $count 张卡没有同步到 Anki。放弃这些卡并退出登录？放弃后无法找回。",
   "anki_sync_client_discard_action": "放弃并退出",
-  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error",
-  "popup_bottom_docked_games": "游戏中底部停靠"
+  "anki_sync_client_status_failing": "$count 张卡写入牌组集合失败，会自动重试：$error"
 }
