@@ -331,6 +331,21 @@ describe('游标分页、缓存键与快照（审查修复回归）', () => {
     expect(env.DB.raw.prepare('SELECT COUNT(*) AS n FROM rank_snapshots').get().n).toBe(0);
   });
 
+  it('快照还没刷新到我：签名读榜带回我的实时值（名次待定），匿名读不带', async () => {
+    const env = makeEnv({ autoSnapshot: false });
+    const u = await registerUser(env, 'fresh', { now: NOW });
+    await upload(env, u, [entry('book', ['t:x|'], 'x', at('2026-09-29')), entry('book', ['t:y|'], 'y', at('2025-01-01'))],
+      [{ date: '2026-09-29', chars: 700 }]);
+    const week = await rank(env, 'metric=book&window=week', u);
+    expect(week.data.rows).toEqual([]);
+    expect(week.data.me).toEqual({ rank: null, value: 1 });
+    expect((await rank(env, 'metric=book&window=all', u)).data.me).toEqual({ rank: null, value: 2 });
+    expect((await rank(env, 'metric=chars&window=month', u)).data.me).toEqual({ rank: null, value: 700 });
+    // 本期没有数据：仍是 null（「还没有上榜」是真话）。
+    expect((await rank(env, 'metric=manga&window=week', u)).data.me).toBeNull();
+    expect((await rank(env, 'metric=book&window=week')).data.me).toBeNull();
+  });
+
   it('快照分块：超过一块的榜单完整读回', async () => {
     const snaps = await import('../src/snapshots.js');
     const env = makeEnv({ autoSnapshot: false });

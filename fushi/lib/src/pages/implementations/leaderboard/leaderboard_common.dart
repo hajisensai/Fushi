@@ -255,6 +255,9 @@ String leaderboardDate(int ms) {
 }
 
 /// 毫秒时刻 → 本地 `YYYY-MM-DD HH:mm`。
+/// 服务端榜单快照的刷新周期（`services/leaderboard/wrangler.toml` 的 `*/30` cron）。
+const Duration kLeaderboardSnapshotInterval = Duration(minutes: 30);
+
 String leaderboardDateTime(int ms) {
   final DateTime d = DateTime.fromMillisecondsSinceEpoch(ms);
   return '${leaderboardDate(ms)} ${_two(d.hour)}:${_two(d.minute)}';

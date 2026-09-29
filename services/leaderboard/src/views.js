@@ -18,6 +18,7 @@ import {
   competitionRanks,
   popularSnapshot,
   rankSnapshot,
+  windowPeriod,
   windowStartKey,
 } from './snapshots.js';
 
@@ -133,11 +134,26 @@ export async function leaderboard(env, url, viewer, now) {
     from: snap.from,
     computedAt: snap.computedAt,
     total: list.length,
-    me: mine ? { rank: mine[2], value: mine[1] } : null,
+    me: mine ? { rank: mine[2], value: mine[1] } : await liveStanding(env, viewerId, metric, window, now),
     rows: page
       .filter((r) => accounts.has(r[0]))
       .map((r) => ({ rank: r[2], value: r[1], account: publicAccount(accounts.get(r[0])) })),
   };
+}
+
+/**
+ * 观看者自己不在快照里时的实时值（快照最多滞后 30 分钟：刚同步完的人一定不在里面）。
+ * 只读观看者自己的一行计分，返回 {rank: null, value}——名次要等下次刷新；没有数据 = null。
+ */
+async function liveStanding(env, viewerId, metric, window, now) {
+  if (!viewerId) return null;
+  const period = windowPeriod(window, now);
+  // metric 已经过 METRICS 白名单校验，可以直接当列名。
+  const row = period === null
+    ? await env.DB.prepare(`SELECT ${metric} AS v FROM account_totals WHERE account_id = ?1`).bind(viewerId).first()
+    : await env.DB.prepare(`SELECT ${metric} AS v FROM account_periods WHERE period = ?1 AND account_id = ?2`)
+      .bind(period, viewerId).first();
+  return row && row.v > 0 ? { rank: null, value: row.v } : null;
 }
 
 /** 单账户在全局某指标下的名次（快照）；没上榜 = null。 */
@@ -244,16 +260,24 @@ async function readerWalls(env, workIds, viewerId, excludeId, perWork, rel) {
     ).bind(JSON.stringify(friendIds), JSON.stringify(workIds)).all();
     fr.results.forEach(push);
   }
-  // 每部作品一条沿 idx_shelf_work 取前 perWork 行的语句，batch 一次往返发出。不能拼成一条
-  // UNION ALL：D1 的 compound SELECT 上限只有 5 段（线上实测第 6 段即 SQLITE_ERROR），
-  // 一页 50 部作品就整个 500。
-  const sql = `SELECT s.work_id, a.id, a.nickname, a.discriminator, a.avatar_key
-      FROM shelf s JOIN accounts a ON a.id = s.account_id
-      WHERE s.work_id = ?1 AND s.finished_at IS NOT NULL AND a.id != ?2 AND ${visibleReaderSql('a', '?3')}
-      ORDER BY s.finished_at DESC LIMIT ?4`;
-  const stmt = env.DB.prepare(sql);
-  const recent = await env.DB.batch(workIds.map((w) => stmt.bind(w, excludeId, viewerId, perWork)));
-  for (const r of recent) r.results.forEach(push);
+  // 一条语句：对每部作品用关联子查询沿 idx_shelf_work 取最近 perWork 位可见读者，
+  // 打成 JSON 数组带回。语句数与参数个数都不随页大小变。
+  // 不拼 UNION ALL：D1 的 compound SELECT 上限只有 5 段（线上实测第 6 段即 SQLITE_ERROR）；
+  // 也不按作品各发一条：免费计划每次调用的 D1 查询数有上限，一页 50 部作品会越界。
+  const rows = (await env.DB.prepare(
+    `SELECT j.value AS work_id,
+       (SELECT json_group_array(json_object('id', id, 'nickname', nickname,
+                 'discriminator', discriminator, 'avatar_key', avatar_key))
+        FROM (SELECT a.id, a.nickname, a.discriminator, a.avatar_key
+              FROM shelf s JOIN accounts a ON a.id = s.account_id
+              WHERE s.work_id = j.value AND s.finished_at IS NOT NULL AND a.id != ?2
+                AND ${visibleReaderSql('a', '?3')}
+              ORDER BY s.finished_at DESC LIMIT ?4)) AS wall
+     FROM json_each(?1) j`,
+  ).bind(JSON.stringify(workIds), excludeId, viewerId, perWork).all()).results;
+  for (const r of rows) {
+    for (const a of JSON.parse(r.wall)) push({ work_id: r.work_id, ...a });
+  }
   return walls;
 }
 
