@@ -6,6 +6,7 @@ import 'package:fushi/src/settings/settings_schema_ai.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
 import 'package:fushi/src/settings/settings_schema_downloads.dart';
+import 'package:fushi/src/settings/settings_schema_floating_ball.dart';
 import 'package:fushi/src/settings/settings_schema_game.dart';
 import 'package:fushi/src/settings/settings_schema_lookup.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
@@ -87,6 +88,7 @@ List<SettingsDestination> _buildDestinations() {
   // 导航分组与此处共用固定顺序；平台/模块可见性仍在展示时求值。
   return List<SettingsDestination>.unmodifiable(<SettingsDestination>[
     buildAppearanceDestination(),
+    buildFloatingBallDestination(),
     buildReadingDestination(),
     buildMangaDestination(),
     buildVideoDestination(),

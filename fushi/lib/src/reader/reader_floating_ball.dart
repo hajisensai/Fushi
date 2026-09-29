@@ -191,8 +191,9 @@ class ReaderFloatingBallLayout {
 /// 向屏幕中央方向续排第二列（及后续列），见 [ReaderFloatingBallLayout]；再点球收起。拖球可沿边上下挪、也可拖到另一侧
 /// 换边，松手吸附到最近边并经 [onDockChanged] 落库。
 ///
-/// 按钮来自阅读器按钮布局的 [ReaderControlSlot.floatingBall] 槽（用户在设置的
-/// 布局编辑器里拖），这里只吃现成的 [ReaderHeaderAction]，不知道按钮是什么。
+/// 唯一的挂载点是根上的应用内悬浮球宿主（`AppFloatingBallHost`）；按钮由它按
+/// 设置 → 悬浮球 里当前场景的勾选给出，这里只吃现成的 [ReaderHeaderAction]，
+/// 不知道按钮是什么。
 ///
 /// 返回的是 [Positioned]，**必须**作为页面 Stack 的直接子节点挂载（与底部 chrome
 /// 同一约束）；包围盒只覆盖球 + 按钮列那一块，自带 [RepaintBoundary]（BUG-1692：

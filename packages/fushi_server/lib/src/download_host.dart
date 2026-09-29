@@ -170,7 +170,7 @@ class ServerDownloadHost implements HostDownloadHost {
     if (existing != null) return existing;
     await paths.torrentResume.create(recursive: true);
     // 计划集合 = video_download_jobs 里仍活着的 embedded 任务；resume 目录只是它的镜像。
-    final Set<String> restoreIds = legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs());
+    final Set<String> restoreIds = await loadEmbeddedTorrentResumeIds(db);
     final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
       libraryPath: _torrentLibraryPath,
       baseSavePath: downloadRoot.path,
@@ -227,7 +227,7 @@ class ServerDownloadHost implements HostDownloadHost {
     final EmbeddedTorrentHost? embedded = _embedded;
     _embedded = null;
     if (embedded != null) {
-      embedded.dispose(keepIds: legacyEmbeddedTorrentResumeIds(await db.getVideoDownloadJobs()));
+      embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
     }
   }
 

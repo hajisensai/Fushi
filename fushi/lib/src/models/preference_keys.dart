@@ -111,10 +111,19 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'extension_popup_max_height',
   'extension_popup_max_width',
   'first_time_setup',
-  // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）。
+  // 悬浮球（docs/specs/2026-09-28-floating-ball.md）。`.actions` / `.mode` 是
+  // 旧版单份全局按钮 / 三态模式，只作迁移读取；新值是 `.in_app` / `.system`
+  // 两个 bool 开关与每场景一份的 `.buttons.<场景>`（逗号分隔按钮 id）。
   'floating_ball.actions',
+  'floating_ball.buttons.general',
+  'floating_ball.buttons.manga',
+  'floating_ball.buttons.reader',
+  'floating_ball.buttons.system',
+  'floating_ball.buttons.video',
   'floating_ball.dock',
+  'floating_ball.in_app',
   'floating_ball.mode',
+  'floating_ball.system',
   'floating_ball.y',
   'floating_lyric_bg_opacity',
   'floating_lyric_button_bg_opacity',

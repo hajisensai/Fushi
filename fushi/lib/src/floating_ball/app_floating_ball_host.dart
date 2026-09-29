@@ -2,10 +2,12 @@
 /// 宿主之下），任何页面都在。设计见 `docs/specs/2026-09-28-floating-ball.md`。
 ///
 /// 三件事：
-///  1. 应用内球：复用阅读器的 [ReaderFloatingBall]（同一套停靠 / 拖动 / 展开几何），
-///     活动范围是整窗扣掉系统 inset；按钮 = 当前路由的场景按钮 + 全局按钮。
-///  2. Android 系统常驻：按偏好起停原生 `FloatingBallService`，并把前后台状态告诉它
-///     （前台时原生球隐藏、由本球接管）。
+///  1. 应用内球（设置 → 悬浮球 → 应用内，默认开）：复用 [ReaderFloatingBall]（同一套
+///     停靠 / 拖动 / 展开几何），活动范围是整窗扣掉系统 inset；按钮 = 用户为当前
+///     路由所属场景勾选的按钮（页面此刻提供不了的专属按钮跳过）。
+///  2. Android 应用外（设置 → 悬浮球 → 应用外，默认关）：按偏好起停原生
+///     `FloatingBallService`，并把前后台状态告诉它（前台时原生球隐藏，应用内球
+///     开着就由本球接管）。
 ///  3. 外部查词入口（iOS App Intent / `fushi://lookup` 深链）：排队到 app 初始化
 ///     完成，再交给应用内查词弹窗。
 library;
@@ -18,7 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
-import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
@@ -61,17 +63,9 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_failed': t.floating_ball_ocr_failed,
 };
 
-/// 本平台可用、且用户开着的全局按钮。
-List<FloatingBallGlobalAction> enabledFloatingBallActions(
-  PreferencesRepository prefs,
-) => <FloatingBallGlobalAction>[
-  for (final FloatingBallGlobalAction action in prefs.floatingBallActions)
-    if (action.availableOn(
-      isAndroid: Platform.isAndroid,
-      isIOS: Platform.isIOS,
-    ))
-      action,
-];
+/// 本平台有没有这个全局按钮的能力。
+bool floatingBallGlobalActionAvailable(FloatingBallGlobalAction action) =>
+    action.availableOn(isAndroid: Platform.isAndroid, isIOS: Platform.isIOS);
 
 class AppFloatingBallHost extends ConsumerStatefulWidget {
   const AppFloatingBallHost({super.key});
@@ -147,26 +141,26 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (foreground) _syncSystemBall(force: true);
   }
 
-  FloatingBallMode _mode(PreferencesRepository prefs) =>
-      prefs.floatingBallMode.effectiveOn(isAndroid: Platform.isAndroid);
-
   /// 按偏好起停 Android 原生系统球。
   void _syncSystemBall({bool force = false}) {
     final PreferencesRepository? prefs = _prefs;
     if (prefs == null || !Platform.isAndroid) return;
-    final bool wanted = _mode(prefs) == FloatingBallMode.system;
-    if (!wanted) {
+    if (!prefs.floatingBallSystem) {
       if (_systemSignature != null) {
         _systemSignature = null;
         unawaited(FloatingBallChannel.stopSystemBall());
       }
       return;
     }
+    // 应用外只有全局按钮（原生侧拿不到任何页面的场景按钮）。
     final List<String> actions = <String>[
-      for (final FloatingBallGlobalAction a in enabledFloatingBallActions(
-        prefs,
+      for (final String id in prefs.floatingBallButtons(
+        FloatingBallScope.system,
       ))
-        a.storageValue,
+        if (FloatingBallGlobalAction.fromStorage(id)
+            case final FloatingBallGlobalAction action
+            when floatingBallGlobalActionAvailable(action))
+          action.storageValue,
     ];
     final Map<String, String> labels = floatingBallNativeLabels();
     // 文案进签名：切换界面语言后原生球的按钮也要换。
@@ -345,6 +339,20 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ),
       };
 
+  /// 勾选的按钮 id → 此刻能显示的动作：全局按钮看平台能力，专属按钮看页面此刻
+  /// 有没有提供（例如漫画的整卷 OCR 只在满足条件时提供）。
+  ReaderHeaderAction? _resolveButton(
+    String id,
+    FloatingBallSceneSnapshot scene,
+  ) {
+    final FloatingBallGlobalAction? global =
+        FloatingBallGlobalAction.fromStorage(id);
+    if (global == null) return scene.actions[id];
+    return floatingBallGlobalActionAvailable(global)
+        ? _globalAction(global)
+        : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final AppModel appModel = ref.watch(appProvider);
@@ -353,18 +361,15 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _attachPrefs(prefs);
     _flushExternalLookup();
 
-    final FloatingBallMode mode = _mode(prefs);
     final FloatingBallSceneSnapshot scene = _registry.current;
-    if (!mode.showsInAppBall || scene.hidesBall || _capturing) {
+    if (!prefs.floatingBallInApp || scene.hidesBall || _capturing) {
       return const SizedBox.shrink();
     }
-    final List<ReaderHeaderAction> actions = <ReaderHeaderAction>[
-      ...scene.actions,
-      for (final FloatingBallGlobalAction action in enabledFloatingBallActions(
-        prefs,
-      ))
-        _globalAction(action),
-    ];
+    final List<ReaderHeaderAction> actions = prefs
+        .floatingBallButtons(scene.scope)
+        .map((String id) => _resolveButton(id, scene))
+        .nonNulls
+        .toList();
     if (actions.isEmpty) return const SizedBox.shrink();
     final Size window = MediaQuery.sizeOf(context);
     final EdgeInsets padding = MediaQuery.viewPaddingOf(context);
@@ -386,6 +391,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             actions: actions,
             dock: ReaderFloatingBallDock.decode(prefs.floatingBallDock),
             verticalFraction: prefs.floatingBallVerticalFraction,
+            animate: !appModel.einkMode,
             onDockChanged: (ReaderFloatingBallDock dock, double fraction) {
               unawaited(prefs.setFloatingBallPosition(dock.id, fraction));
             },
