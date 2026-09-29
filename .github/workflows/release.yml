@@ -457,7 +457,12 @@ jobs:
       with:
         path: ~/.cache/vcpkg/archives
         # v1 -> v2：同 Windows，manifest 钉版换了 ABI hash（BUG-1772）。
-        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
+        # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
+        # bump vN（命中即不回存，忘了 bump 就每次重编改过的包）。restore-keys 只在同一
+        # 镜像内前缀回退，没变的包照样从归档恢复；跨镜像不回退的约束不变。
+        key: ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
+        restore-keys: |
+          ${{ runner.os }}-vcpkg-libtorrent-arm64-android-v2-${{ steps.vcpkg_cache_id.outputs.image }}
     - name: Build embedded libtorrent Android .so (vcpkg)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
       timeout-minutes: 90
