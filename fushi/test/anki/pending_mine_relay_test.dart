@@ -325,16 +325,149 @@ void main() {
     expect(row.lastError, contains('Too large'));
   });
 
-  test('制卡设备自己先交给了 Anki：撤掉远端记录，落地设备不再落', () async {
+  test('制卡设备上传前自己先交给了 Anki：不再上传，落地设备不落', () async {
     await phone.relay(landing: 100).run(assets);
     await eink.mineOffline('魚');
-    await eink.relay().run(assets);
 
-    await eink.flushInto(_Anki());
-    expect(await eink.store.count(), 0);
-    await eink.relay().run(assets);
+    final _Anki einkAnki = _Anki();
+    await eink.flushInto(einkAnki);
+    expect(einkAnki.added, hasLength(1));
+    expect(await eink.store.rows(), isEmpty);
+    expect((await eink.relay().run(assets)).uploaded, 0);
     expect(records(), isEmpty);
     expect((await phone.relay(landing: 100).run(assets)).received, 0);
+  });
+
+  test('BUG-2773：已上传到中转的卡本机不再补发，只由落地设备落一次', () async {
+    await phone.relay(landing: 100).run(assets);
+    await eink.mineOffline('魚');
+    expect((await eink.relay().run(assets)).uploaded, 1);
+
+    final _Anki einkAnki = _Anki();
+    await eink.flushInto(einkAnki);
+    expect(einkAnki.added, isEmpty, reason: '已交给落地设备，本机不补发');
+    expect(await eink.store.sendable(), isEmpty);
+    expect(await eink.store.count(), 1, reason: '等回执才出队');
+
+    await phone.relay(landing: 100).run(assets);
+    final _Anki phoneAnki = _Anki();
+    await phone.flushInto(phoneAnki);
+    expect(phoneAnki.added, hasLength(1));
+
+    await phone.relay(landing: 100).run(assets);
+    await eink.relay().run(assets);
+    await eink.flushInto(einkAnki);
+    expect(einkAnki.added, isEmpty);
+    expect(await eink.store.rows(), isEmpty);
+  });
+
+  test('BUG-2773：本机补发已认领（sending）的卡不会再被上传', () async {
+    await phone.relay(landing: 100).run(assets);
+    await eink.mineOffline('鴨');
+    final PendingMineRow row = (await eink.store.all()).single;
+    expect(await eink.store.markSending(row.id), isTrue);
+
+    expect((await eink.relay().run(assets)).uploaded, 0);
+    expect(records(), isEmpty);
+    expect(await eink.store.markUploaded(row.id), isFalse);
+  });
+
+  test('BUG-2773：制卡设备改当落地设备——撤回远端记录，交回本机补发', () async {
+    await phone.relay(landing: 100).run(assets);
+    await eink.mineOffline('鶴');
+    await eink.relay().run(assets);
+    expect(records(), hasLength(1));
+
+    // eink 后认领，成了落地设备。
+    await eink.relay(landing: 200).run(assets);
+    expect(records(), isEmpty, reason: '远端记录撤回');
+    expect((await eink.store.all()).single.uploaded, isFalse);
+
+    final _Anki einkAnki = _Anki();
+    await eink.flushInto(einkAnki);
+    expect(einkAnki.added, hasLength(1));
+    expect((await phone.relay(landing: 100).run(assets)).received, 0);
+  });
+
+  test('BUG-2773：远端文件名当 id——恶意 id（../x 等）被拒，不写出载荷目录', () async {
+    await phone.relay(landing: 100).run(assets);
+    Map<String, Object?> body(String id) => <String, Object?>{
+      'id': id,
+      'createdAt': 1,
+      'expression': '毒',
+      'reading': '',
+      'originDeviceId': 'attacker',
+      'payload': <String, Object?>{
+        'rawPayloadJson': '{"expression":"毒"}',
+        'sentence': '',
+      },
+    };
+    for (final String id in <String>[
+      '../x',
+      '..',
+      r'..\x',
+      'a/b',
+      'x' * 129,
+      '',
+    ]) {
+      assets.spaces[ns]!['$id.json'] = utf8.encode(jsonEncode(body(id)));
+    }
+
+    final PendingMineRelayReport r = await phone
+        .relay(landing: 100)
+        .run(assets);
+    expect(r.received, 0);
+    expect(await phone.store.rows(), isEmpty);
+    expect(File('${tmp.path}/phone/x.json').existsSync(), isFalse);
+    expect(PendingMineStore.isValidId('../x'), isFalse);
+    expect(PendingMineStore.isValidId(PendingMineStore.newId()), isTrue);
+    await expectLater(
+      phone.store.insertRemote(
+        id: '../x',
+        createdAt: 1,
+        expression: '毒',
+        reading: '',
+        originDeviceId: 'attacker',
+        payloadJson: '{}',
+      ),
+      throwsArgumentError,
+    );
+  });
+
+  test('BUG-2773：同一张卡经两条同步通道各传一份，落地设备只落一次', () async {
+    final _MemoryAssets drive = assets;
+    final _MemoryAssets webdav = _MemoryAssets();
+    await phone.relay(landing: 100).run(drive);
+    await phone.relay(landing: 100).run(webdav);
+
+    await eink.mineOffline('狐');
+    expect((await eink.relay().run(drive)).uploaded, 1);
+    // 第二条通道看到「上传过但这里没有记录」，再传一份。
+    expect((await eink.relay().run(webdav)).uploaded, 1);
+
+    final _Anki phoneAnki = _Anki();
+    expect((await phone.relay(landing: 100).run(drive)).received, 1);
+    await phone.flushInto(phoneAnki);
+    expect(phoneAnki.added, hasLength(1));
+    await phone.relay(landing: 100).run(drive); // 回执、删行
+
+    // 另一条通道再见到同 id：墓碑拦下，只写回执、撤记录。
+    final PendingMineRelayReport second = await phone
+        .relay(landing: 100)
+        .run(webdav);
+    expect(second.received, 0);
+    expect(second.acknowledged, 1);
+    await phone.flushInto(phoneAnki);
+    expect(phoneAnki.added, hasLength(1), reason: '不重复落地');
+    expect(
+      webdav
+          .names(ns)
+          .where(
+            (String n) => !n.startsWith('landing.') && !n.contains('.landed.'),
+          ),
+      isEmpty,
+    );
+    expect(await phone.store.rows(), isEmpty);
   });
 
   test('用户在制卡设备上删掉已上传的卡：远端记录一并撤掉', () async {

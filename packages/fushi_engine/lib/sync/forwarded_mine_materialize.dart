@@ -16,16 +16,28 @@ import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 ///
 /// 走的是与 app 内本地制卡**完全同一**的渲染链路：字段映射、牌组都用执行这一步的
 /// 那台设备自己的 Anki 配置。
+///
+/// [bundledMediaOnly]：载荷来自跨设备中转（任何能写同步后端的一方都能放进来）时
+/// 必须为 true。此时 rawPayloadJson 里凡不是本载荷随附字节的媒体引用一律剥掉——
+/// 单词音频只能指向这里刚写出的临时文件，否则置空；词典外字只留随附了字节的条目。
+/// 绝不透传对端给的本地路径 / URL：下游 `materializeAnkiWordAudio` 会读本地文件、
+/// 对任意 URL 发 GET（BUG-2773）。rawPayloadJson 不是 JSON 对象时抛
+/// [FormatException]（无法剥离就不落）。
 Future<T> withMaterializedMiningContext<T>(
   ForwardedMinePayload payload,
-  Future<T> Function(String rawPayloadJson, AnkiMiningContext context) action,
-) async {
+  Future<T> Function(String rawPayloadJson, AnkiMiningContext context) action, {
+  bool bundledMediaOnly = false,
+}) async {
+  // 先剥离再落文件：剥不了就不必建临时目录。
+  String rawPayloadJson = bundledMediaOnly
+      ? _stripUnbundledMedia(payload)
+      : payload.rawPayloadJson;
   final Directory tmp = Directory.systemTemp.createTempSync('fushi_fwd_mine_');
   try {
     // ① 封面 → 临时文件 → context.coverPath
     String? coverPath;
     if (payload.coverBytes != null) {
-      final File f = File('${tmp.path}/cover.${payload.coverExt ?? 'bin'}');
+      final File f = File('${tmp.path}/cover.${_ext(payload.coverExt)}');
       await f.writeAsBytes(payload.coverBytes!, flush: true);
       coverPath = f.path;
     }
@@ -33,16 +45,15 @@ Future<T> withMaterializedMiningContext<T>(
     String? sentenceAudioPath = payload.synchronizedVideo ? coverPath : null;
     if (payload.sentenceAudioBytes != null && !payload.synchronizedVideo) {
       final File f = File(
-        '${tmp.path}/sentence_audio.${payload.sentenceAudioExt ?? 'bin'}',
+        '${tmp.path}/sentence_audio.${_ext(payload.sentenceAudioExt)}',
       );
       await f.writeAsBytes(payload.sentenceAudioBytes!, flush: true);
       sentenceAudioPath = f.path;
     }
     // ③ 单词音频（本地文件）→ 临时文件 → 改写 rawPayloadJson 的 audio 字段为本机路径
-    String rawPayloadJson = payload.rawPayloadJson;
     if (payload.wordAudioBytes != null) {
       final File f = File(
-        '${tmp.path}/word_audio.${payload.wordAudioExt ?? 'bin'}',
+        '${tmp.path}/word_audio.${_ext(payload.wordAudioExt)}',
       );
       await f.writeAsBytes(payload.wordAudioBytes!, flush: true);
       rawPayloadJson = _rewriteAudioField(rawPayloadJson, f.path);
@@ -80,6 +91,57 @@ Future<T> withMaterializedMiningContext<T>(
     }
   }
 }
+
+/// 临时文件扩展名：再过一遍 [ForwardedMinePayload.sanitizeExt]（载荷也可能不经
+/// `fromJson` 直接构造），缺失 / 非法退回 `bin`。
+String _ext(String? ext) => ForwardedMinePayload.sanitizeExt(ext) ?? 'bin';
+
+/// 跨设备中转载荷的媒体剥离：`audio` 置空（有随附字节时稍后改写成临时文件），
+/// `dictionaryMedia` 只留随附了字节的 `(dictionary, path)`。
+String _stripUnbundledMedia(ForwardedMinePayload payload) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(payload.rawPayloadJson);
+  } on FormatException {
+    throw const FormatException('forwarded mine fields are not a JSON object');
+  }
+  if (decoded is! Map) {
+    throw const FormatException('forwarded mine fields are not a JSON object');
+  }
+  final Map<String, dynamic> map = Map<String, dynamic>.from(decoded);
+  if (map.containsKey('audio')) map['audio'] = '';
+
+  final Set<String> bundled = <String>{
+    for (final ForwardedDictMedia m in payload.dictionaryMedia)
+      if (m.bytes != null && m.bytes!.isNotEmpty)
+        _dictKey(m.dictionary, m.path),
+  };
+  final Object? dmRaw = map['dictionaryMedia'];
+  if (dmRaw != null) {
+    Object? list = dmRaw;
+    final bool encoded = dmRaw is String;
+    if (dmRaw is String) {
+      try {
+        list = dmRaw.isEmpty ? const <Object?>[] : jsonDecode(dmRaw);
+      } on FormatException {
+        list = const <Object?>[];
+      }
+    }
+    final List<Map<String, dynamic>> kept = <Map<String, dynamic>>[
+      if (list is List)
+        for (final Object? e in list)
+          if (e is Map &&
+              bundled.contains(
+                _dictKey('${e['dictionary'] ?? ''}', '${e['path'] ?? ''}'),
+              ))
+            Map<String, dynamic>.from(e),
+    ];
+    map['dictionaryMedia'] = encoded ? jsonEncode(kept) : kept;
+  }
+  return jsonEncode(map);
+}
+
+String _dictKey(String dictionary, String path) => '$dictionary\u0000$path';
 
 /// 把 rawPayloadJson 里的 `audio` 字段改写成本机文件路径。
 String _rewriteAudioField(String rawJson, String newAudioPath) {

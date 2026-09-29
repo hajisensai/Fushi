@@ -33,6 +33,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2773](bugs/BUG-2773-pending-mine-relay-security.md) | ✅ | ✅ | 待发制卡跨设备中转：远端载荷可读本地文件/发任意请求、id 路径穿越、同一张卡重复落地 |
 | [BUG-2772](bugs/BUG-2772-stat-range-dst-paging.md) | ✅ | ✅ | 统计范围「周」翻段在 DST 切换周翻不动 / 多跳一周 |
 | [BUG-2771](bugs/BUG-2771-video-metadata-startup-reload.md) | ✅ | ✅ | 每次打开 app 视频资料重新加载且刮削期间严重卡顿 |
 | [BUG-2770](bugs/BUG-2770-win-touch-popup-swipe-close.md) | ✅ | ✅ | Windows 触屏不能滑动关闭查词弹窗 |

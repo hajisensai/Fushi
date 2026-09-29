@@ -237,6 +237,8 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         case _SendResult.opened:
           // 只有 switchesAppPerNote 的后端会「只拉起、未确认」，不走这条路。
           break;
+        case _SendResult.skipped:
+          break;
         case _SendResult.unreachable:
           return PendingFlushReport(
             delivered: delivered,
@@ -281,7 +283,8 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
             awaitingConfirmation: true,
           );
         case _SendResult.delivered:
-          // Anki 判重复：已在库里，看下一张。
+        case _SendResult.skipped:
+          // Anki 判重复：已在库里 / 已交给落地设备，看下一张。
           continue;
         case _SendResult.failed:
           failed++;
@@ -300,7 +303,9 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 标成 failed 让用户处理，而不是当成「不可达」——那样它会永远挡在队首。
   Future<_SendResult> _sendOne(PendingMineRow row) async {
     try {
-      await _store.markSending(row.id);
+      // 快照可能已过期：这期间跨设备中转把它交给了落地设备（BUG-2773），本机
+      // 就不再补发。
+      if (!await _store.markSending(row.id)) return _SendResult.skipped;
       final ForwardedMinePayload? payload = await _store.readPayload(row.id);
       if (payload == null) {
         await _store.markFailed(row.id, 'The saved card data is missing.');
@@ -310,6 +315,8 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
         payload,
         (String raw, AnkiMiningContext context) =>
             inner.mineEntry(rawPayloadJson: raw, context: context),
+        // 其他设备经中转发来的卡：只认随附的媒体字节，不跟随对端给的本地路径 / URL。
+        bundledMediaOnly: row.originDeviceId != null,
       );
       return await _record(row, outcome);
     } catch (e) {
@@ -351,4 +358,5 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
 }
 
 /// [opened]：每张卡都切 app 的后端已拉起、等回跳确认（行仍在队列里）。
-enum _SendResult { delivered, opened, failed, unreachable }
+/// [skipped]：这张已不归本机补发（已上传给落地设备 / 已落地 / 已删）。
+enum _SendResult { delivered, opened, failed, unreachable, skipped }

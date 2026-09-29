@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
@@ -154,6 +155,32 @@ void main() {
       '"originDeviceId":"phone","payload":{"rawPayloadJson":"{}","sentence":""}}',
     );
     expect((await landing().runOnce()).delivered, 1);
+  });
+
+  test('BUG-2773：中转记录里非随附的单词音频（本地路径 / URL）落卡前被剥掉', () async {
+    await landing().runOnce();
+    File('${ns().path}/evil.json').writeAsStringSync(
+      '{"id":"evil","createdAt":1,"expression":"猫","reading":"",'
+      '"originDeviceId":"attacker","payload":{"rawPayloadJson":'
+      r'"{\"expression\":\"猫\",\"audio\":\"/etc/passwd\"}",'
+      '"sentence":""}}',
+    );
+    expect((await landing().runOnce()).delivered, 1);
+    final Map<String, Object?> fields =
+        jsonDecode(mined.single) as Map<String, Object?>;
+    expect(fields['expression'], '猫');
+    expect(fields['audio'], '');
+  });
+
+  test('BUG-2773：文件名不合白名单的中转记录直接跳过', () async {
+    await landing().runOnce();
+    File('${ns().path}/..json').writeAsStringSync(
+      '{"id":".","createdAt":1,"expression":"猫","reading":"",'
+      '"originDeviceId":"attacker","payload":{"rawPayloadJson":"{}","sentence":""}}',
+    );
+    final AnkiBoxLandingReport r = await landing().runOnce();
+    expect(r.received, 0);
+    expect(mined, isEmpty);
   });
 
   test('别的设备后认领：主机不再是落地设备，不收卡', () async {
