@@ -924,8 +924,9 @@ void main() {
       expect(result?.plot, 'MAL synopsis');
     });
 
-    // anime：MAL → AniList → TMDB；tv：TMDB → AniList → MAL——后者 AniList 排在
-    // 罗马字来源之前没法靠逐步补 originalName 连上，必须靠合并前收齐的写法桥。
+    // anime：MAL → AniList → TMDB；tv：TMDB → AniList → MAL。后者主条目的
+    // name / originalName 都是汉字，AniList 只能补空、罗马字写法进不了主条目，
+    // MAL 那条只能靠合并前收齐的写法桥认出来。
     for (final (
           VideoDiscoveryCategory category,
           VideoMetadataProviderKind primary,
@@ -938,7 +939,7 @@ void main() {
             'Suzuki, Aina',
           ),
           (VideoDiscoveryCategory.tv, VideoMetadataProviderKind.tmdb, '鈴木愛奈'),
-        ])
+        ]) {
       test('BUG-2797 AniList bridges MAL romaji and TMDB kanji cast into one '
           'entry with every photo and id (${category.name})', () async {
         VideoMetadataCredit voice(
@@ -1049,6 +1050,7 @@ void main() {
           containsAll(<String>['mal:1', 'anilist:100', 'tmdb:10']),
         );
       });
+    }
 
     test(
         'BUG-2795 details follow the metadata language: TMDB zh plot, '
