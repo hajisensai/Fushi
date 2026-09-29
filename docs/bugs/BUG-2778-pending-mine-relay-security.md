@@ -1,4 +1,4 @@
-## BUG-2773 · 待发制卡跨设备中转：远端载荷可读本地文件/发任意请求、id 路径穿越、同一张卡重复落地
+## BUG-2778 · 待发制卡跨设备中转：远端载荷可读本地文件/发任意请求、id 路径穿越、同一张卡重复落地
 - **报告**：2026-09-29（PR #1719「待发制卡队列 + 跨设备中转」合并后审查确认的四个阻塞问题）
 - **真实性**：✅ 真 bug（沿真实代码路径静态定位；本骨架因环境无 dart 手写，号按全分支 + 各工作区扫描取下一个空号）。行号为修复前 origin/develop `7e32e586`：
   1. **SSRF / 读本地文件**：`packages/fushi_engine/lib/sync/forwarded_mine_materialize.dart:42-48` 只在载荷带单词音频字节时改写 `audio`，否则远端给的 rawPayloadJson 原样透传；下游 `packages/fushi_anki/lib/src/anki_local_media.dart:45`（本地路径直接当文件读进卡）/ `:50-53`（对任意 URL GET，不限大小）。任何能写同步后端 `__pending_mines__/` 的一方都能让落地设备读本机文件进 Anki 或打内网地址。

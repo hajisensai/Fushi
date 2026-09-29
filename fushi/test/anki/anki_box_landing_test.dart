@@ -157,7 +157,7 @@ void main() {
     expect((await landing().runOnce()).delivered, 1);
   });
 
-  test('BUG-2773：中转记录里非随附的单词音频（本地路径 / URL）落卡前被剥掉', () async {
+  test('BUG-2778：中转记录里非随附的单词音频（本地路径 / URL）落卡前被剥掉', () async {
     await landing().runOnce();
     File('${ns().path}/evil.json').writeAsStringSync(
       '{"id":"evil","createdAt":1,"expression":"猫","reading":"",'
@@ -172,7 +172,7 @@ void main() {
     expect(fields['audio'], '');
   });
 
-  test('BUG-2773：文件名不合白名单的中转记录直接跳过', () async {
+  test('BUG-2778：文件名不合白名单的中转记录直接跳过', () async {
     await landing().runOnce();
     File('${ns().path}/..json').writeAsStringSync(
       '{"id":".","createdAt":1,"expression":"猫","reading":"",'

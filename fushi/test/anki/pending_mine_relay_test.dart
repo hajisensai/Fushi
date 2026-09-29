@@ -338,7 +338,7 @@ void main() {
     expect((await phone.relay(landing: 100).run(assets)).received, 0);
   });
 
-  test('BUG-2773：已上传到中转的卡本机不再补发，只由落地设备落一次', () async {
+  test('BUG-2778：已上传到中转的卡本机不再补发，只由落地设备落一次', () async {
     await phone.relay(landing: 100).run(assets);
     await eink.mineOffline('魚');
     expect((await eink.relay().run(assets)).uploaded, 1);
@@ -361,7 +361,7 @@ void main() {
     expect(await eink.store.rows(), isEmpty);
   });
 
-  test('BUG-2773：本机补发已认领（sending）的卡不会再被上传', () async {
+  test('BUG-2778：本机补发已认领（sending）的卡不会再被上传', () async {
     await phone.relay(landing: 100).run(assets);
     await eink.mineOffline('鴨');
     final PendingMineRow row = (await eink.store.all()).single;
@@ -372,7 +372,7 @@ void main() {
     expect(await eink.store.markUploaded(row.id), isFalse);
   });
 
-  test('BUG-2773：制卡设备改当落地设备——撤回远端记录，交回本机补发', () async {
+  test('BUG-2778：制卡设备改当落地设备——撤回远端记录，交回本机补发', () async {
     await phone.relay(landing: 100).run(assets);
     await eink.mineOffline('鶴');
     await eink.relay().run(assets);
@@ -389,7 +389,7 @@ void main() {
     expect((await phone.relay(landing: 100).run(assets)).received, 0);
   });
 
-  test('BUG-2773：远端文件名当 id——恶意 id（../x 等）被拒，不写出载荷目录', () async {
+  test('BUG-2778：远端文件名当 id——恶意 id（../x 等）被拒，不写出载荷目录', () async {
     await phone.relay(landing: 100).run(assets);
     Map<String, Object?> body(String id) => <String, Object?>{
       'id': id,
@@ -434,7 +434,7 @@ void main() {
     );
   });
 
-  test('BUG-2773：同一张卡经两条同步通道各传一份，落地设备只落一次', () async {
+  test('BUG-2778：同一张卡经两条同步通道各传一份，落地设备只落一次', () async {
     final _MemoryAssets drive = assets;
     final _MemoryAssets webdav = _MemoryAssets();
     await phone.relay(landing: 100).run(drive);

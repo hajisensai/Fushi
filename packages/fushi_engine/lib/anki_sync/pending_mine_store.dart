@@ -48,7 +48,7 @@ class PendingMineStore {
 
   /// 记录 id 的白名单：本机 [newId] 只产 32 位十六进制；远端中转发来的 id 来自
   /// 对端文件名，不可信——id 要拼进本机载荷路径（`<root>/<id>.json`）与墓碑路径，
-  /// 含 `..`、分隔符或过长的一律拒收（BUG-2773 路径穿越）。
+  /// 含 `..`、分隔符或过长的一律拒收（BUG-2778 路径穿越）。
   static final RegExp _idPattern = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 
   /// [id] 能不能当本机记录 id（能安全拼进文件路径）。
@@ -61,7 +61,7 @@ class PendingMineStore {
     return id;
   }
 
-  /// 已落地墓碑保留多久。同一张卡可能经多条同步通道各传一份（BUG-2773），
+  /// 已落地墓碑保留多久。同一张卡可能经多条同步通道各传一份（BUG-2778），
   /// 任一通道落地后其它通道的副本要靠墓碑认出来；每条通道见到副本就会顺手清掉
   /// 远端，所以只需覆盖「最久不同步的那条通道」的间隔。
   static const Duration landedTombstoneRetention = Duration(days: 180);
@@ -138,7 +138,7 @@ class PendingMineStore {
     if (!isValidId(id)) {
       throw ArgumentError.value(id, 'id', 'invalid pending mine record id');
     }
-    // 幂等键：本机已经落过这张（另一条通道送来过），不再收（BUG-2773）。
+    // 幂等键：本机已经落过这张（另一条通道送来过），不再收（BUG-2778）。
     if (await hasLanded(id)) return false;
     if (await byId(id) != null) return false;
     await _writeRecord(
@@ -159,7 +159,7 @@ class PendingMineStore {
   ///
   /// 只在这张卡此刻没在本机补发（`pending` / `failed`）时才成立，返回是否成立。
   /// 与 [markSending] 在同一个事务里互斥：一张卡要么交给落地设备、要么本机补发，
-  /// 不会两边各落一张（BUG-2773）。
+  /// 不会两边各落一张（BUG-2778）。
   Future<bool> markUploaded(String id) => _db.transaction(() async {
     final PendingMineRow? row = await byId(id);
     if (row == null) return false;
@@ -235,7 +235,7 @@ class PendingMineStore {
   /// `failed` 要等用户点「重试」；`landed` 已经交给 Anki 了。
   ///
   /// 本机制的、已经上传到跨设备中转的卡不在其中：它已交给落地设备，本机再补发
-  /// 就是两台设备各落一张（BUG-2773）。落地设备易主成本机时，中转会先撤回远端
+  /// 就是两台设备各落一张（BUG-2778）。落地设备易主成本机时，中转会先撤回远端
   /// 记录、清掉 `uploaded`，它才回到这里。
   Future<List<PendingMineRow>> sendable() async =>
       (await rows()).where(_isSendable).toList(growable: false);
@@ -273,7 +273,7 @@ class PendingMineStore {
 
   /// 认领一张卡开始补发，返回是否认领成功。已被中转上传（交给别的设备落地）、
   /// 已落地或已不存在的卡返回 false，调用方跳过它——判据读库里此刻的行，与
-  /// [markUploaded] 在事务里互斥（BUG-2773）。
+  /// [markUploaded] 在事务里互斥（BUG-2778）。
   Future<bool> markSending(String id) => _db.transaction(() async {
     final PendingMineRow? row = await byId(id);
     if (row == null ||
@@ -321,7 +321,7 @@ class PendingMineStore {
   /// 的 `uploaded` 可能已经过期——按过期的 false 直接删行，远端那份就没人撤了。
   ///
   /// 来自其他设备的卡另外留一块本地墓碑（[hasLanded]），行删掉之后其它同步通道
-  /// 再送来同 id 的副本也不会再落（BUG-2773）。
+  /// 再送来同 id 的副本也不会再落（BUG-2778）。
   Future<void> markDelivered(PendingMineRow row) async {
     final bool remoteCopy = await _db.transaction(() async {
       final PendingMineRow? now = await byId(row.id);

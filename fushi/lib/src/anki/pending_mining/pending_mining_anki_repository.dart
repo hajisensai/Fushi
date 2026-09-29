@@ -303,7 +303,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
   /// 标成 failed 让用户处理，而不是当成「不可达」——那样它会永远挡在队首。
   Future<_SendResult> _sendOne(PendingMineRow row) async {
     try {
-      // 快照可能已过期：这期间跨设备中转把它交给了落地设备（BUG-2773），本机
+      // 快照可能已过期：这期间跨设备中转把它交给了落地设备（BUG-2778），本机
       // 就不再补发。
       if (!await _store.markSending(row.id)) return _SendResult.skipped;
       final ForwardedMinePayload? payload = await _store.readPayload(row.id);

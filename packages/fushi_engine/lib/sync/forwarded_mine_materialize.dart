@@ -21,7 +21,7 @@ import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 /// 必须为 true。此时 rawPayloadJson 里凡不是本载荷随附字节的媒体引用一律剥掉——
 /// 单词音频只能指向这里刚写出的临时文件，否则置空；词典外字只留随附了字节的条目。
 /// 绝不透传对端给的本地路径 / URL：下游 `materializeAnkiWordAudio` 会读本地文件、
-/// 对任意 URL 发 GET（BUG-2773）。rawPayloadJson 不是 JSON 对象时抛
+/// 对任意 URL 发 GET（BUG-2778）。rawPayloadJson 不是 JSON 对象时抛
 /// [FormatException]（无法剥离就不落）。
 Future<T> withMaterializedMiningContext<T>(
   ForwardedMinePayload payload,

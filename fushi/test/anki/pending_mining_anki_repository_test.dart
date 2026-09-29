@@ -332,7 +332,7 @@ void main() {
     );
   });
 
-  test('BUG-2773：本机制、已上传到中转的卡不在本机补发，留给落地设备', () async {
+  test('BUG-2778：本机制、已上传到中转的卡不在本机补发，留给落地设备', () async {
     await mine(repoOver(_FakeBackend(batchMining: true)), 'up');
     final PendingMineRow row = (await store.all()).single;
     await (db.update(db.pendingMineQueue)

@@ -50,7 +50,7 @@ class PendingMineRelayReport {
 /// 收敛纪律：每一步先把本地意图落库，再改远端；任何两步之间进程被杀，下一轮都能
 /// 从库里的状态继续。重复落地（落地后、写回执前被杀）由落地设备 Anki 查重兜底。
 ///
-/// 幂等键是记录 id（BUG-2773）：
+/// 幂等键是记录 id（BUG-2778）：
 /// * 已上传的卡只由落地设备落，制卡设备本机不再补发（[PendingMineStore.sendable]）；
 ///   本机自己成了落地设备时先撤回远端记录，再回到本机补发。
 /// * 同一张卡可能经多条同步通道（每条通道各一个本类实例）各传一份。落地设备落过
@@ -311,7 +311,7 @@ class PendingMineRelay {
     // 制卡设备自己交给 Anki 了 / 用户在那边删了：远端记录已撤，本机别再落。
     // 本轮刚收下的行，其记录必在 entries 里，不会走到这里。正在交给 Anki 的
     // （sending）不能删：删了它，落完后 markDelivered 找不到行、留不下墓碑，别的
-    // 通道再送来同一张就会再落一次（BUG-2773）。
+    // 通道再送来同一张就会再落一次（BUG-2778）。
     if (record == null) {
       if (row.status != PendingMineStatus.sending) await _store.remove(row.id);
       return false;
@@ -353,7 +353,7 @@ class PendingMineRelay {
   /// `<id>.json` → id；回执、认领与其它文件返回 null。
   ///
   /// 文件名来自同步后端，任何能写这块目录的一方都能放进来：id 要拼进本机载荷
-  /// 路径，不合白名单（`..`、分隔符、过长）的一律丢弃并记日志（BUG-2773）。
+  /// 路径，不合白名单（`..`、分隔符、过长）的一律丢弃并记日志（BUG-2778）。
   static String? _recordId(String name) {
     if (name.startsWith(_claimPrefix) || name.endsWith(_landedSuffix)) {
       return null;

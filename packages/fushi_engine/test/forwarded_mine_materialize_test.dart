@@ -7,7 +7,7 @@ import 'package:fushi_engine/sync/forwarded_mine_materialize.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:test/test.dart';
 
-/// BUG-2773：跨设备中转的载荷来自任何能写同步后端的一方。凡不是本载荷随附字节的
+/// BUG-2778：跨设备中转的载荷来自任何能写同步后端的一方。凡不是本载荷随附字节的
 /// 媒体引用都要剥掉，绝不把对端给的本地路径 / URL 交给下游（下游会读本地文件、
 /// 对任意 URL 发 GET）。
 void main() {

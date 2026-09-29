@@ -156,7 +156,7 @@ class AnkiBoxLanding {
     if (!await _store.markSending(row.id)) return _Landed.skipped;
     final MineOutcome outcome;
     try {
-      // 收来的卡全部来自其他设备：只认随附的媒体字节（BUG-2773）。
+      // 收来的卡全部来自其他设备：只认随附的媒体字节（BUG-2778）。
       outcome = await withMaterializedMiningContext<MineOutcome>(
         payload,
         _mine,

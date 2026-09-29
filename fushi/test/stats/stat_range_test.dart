@@ -243,13 +243,13 @@ void main() {
     );
   });
 
-  // BUG-2772：周翻段曾给本地午夜加 `Duration(days: 7 * step)`，dayCount 曾用两个
+  // BUG-2777：周翻段曾给本地午夜加 `Duration(days: 7 * step)`，dayCount 曾用两个
   // 本地午夜相减取 `inDays`。DST 切换周不是 168 小时：秋季回拨周「下一段」落回
   // 本周六 23:00（翻不动），春季拨快周「上一段」落到前前周周日 23:00（多跳一周），
   // 含春季切换日的区间 dayCount 少一天。下面的日期覆盖欧盟 / 美国 2026 年四个切换
   // 周：在有 DST 的宿主时区上直接复现旧行为；UTC 宿主上旧代码不出错，所以另加
   // 纯键算术断言与源码守卫，保证任何宿主时区都能拦住同类回归。
-  group('BUG-2772 DST 切换周翻段 / 日数', () {
+  group('BUG-2777 DST 切换周翻段 / 日数', () {
     StatRange week(String anchor) => StatRange.resolve(
       StatRangeSelection(mode: StatRangeMode.week, anchorKey: anchor),
       todayKey: '2026-12-31',
