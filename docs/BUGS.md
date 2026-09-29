@@ -29,10 +29,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 2557 条。点号进各自文件。
+> 共 2558 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-2781](bugs/BUG-2781-audio-paused-chapter-reload-yank.md) | ✅ | ✅ | 暂停有声书时翻到别章被拽回音频章（iOS VN 插图章回翻闪回） |
 | [BUG-2780](bugs/BUG-2780-webkit-ruby-audio-highlight-gaps.md) | ✅ | ✅ | WebKit 有声书跟随高亮在振假名处断开/叠色 |
 | [BUG-2779](bugs/BUG-2779-ios-ruby-font-metrics-gap.md) | ✅ | ✅ | iOS 换字体后振假名仍偏向上一列（固定 -0.2em 只对 Hiragino 成立） |
 | [BUG-2778](bugs/BUG-2778-pending-mine-relay-security.md) | ✅ | ✅ | 待发制卡跨设备中转：远端载荷可读本地文件/发任意请求、id 路径穿越、同一张卡重复落地 |
