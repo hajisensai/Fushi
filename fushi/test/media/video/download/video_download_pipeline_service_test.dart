@@ -4468,6 +4468,7 @@ class _FakePausedMetainfoBackend extends _FakeDetailTorrentBackend
   Future<bool> addTorrentMetainfoPaused(
     TorrentMetainfoPayload payload, {
     required String category,
+    String? savePath,
   }) async {
     final String hash = (payload.torrentId ?? '').toLowerCase();
     pausedAdds.add(hash);
