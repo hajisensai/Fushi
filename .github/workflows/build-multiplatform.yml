@@ -97,8 +97,9 @@ jobs:
       # 之前不得 sed 改 build.gradle / settings.gradle —— 否则同一份内容会被存成
       # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
       # fushi/test/build/workflow_cache_quota_guard_test.dart。
+      # 只读（2026-09-30）：只有 release.yml 的 push 写 Gradle 缓存，见 workflow_cache_quota_guard_test。
       - name: Cache Gradle caches
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches/modules-2

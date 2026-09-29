@@ -130,6 +130,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 新 push 到来时，把同分支上「开始不足 5 分钟 / 还没开始」的旧 push run 取消掉
+  # （2026-09-30，按实测 develop 20/65 次 push 间隔 < 5 分钟、省约 28% runner）。
+  # 只看 push 事件，正式版 / 手动 dispatch 不受影响；5 分钟内任何 job 都还没到上传
+  # 步骤，不会砍出半发布状态。原理与判据见 tool/cancel_superseded_runs.sh；与本
+  # workflow 的 concurrency 组（按 sha、不取消）互不冲突，那条仍原样保留。
+  # 守卫：fushi/test/build/release_workflow_supersede_guard_test.dart。
+  cancel-superseded:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        sparse-checkout: tool/cancel_superseded_runs.sh
+        sparse-checkout-cone-mode: false
+    - name: Cancel superseded push runs (started < 5 min ago)
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        RUN_ID: ${{ github.run_id }}
+        SUPERSEDE_WINDOW_MINUTES: '5'
+      run: bash tool/cancel_superseded_runs.sh
+
   windows:
     if: ${{ github.event.inputs.kazumi_adhoc != 'true' && github.event.inputs.testflight_only != 'true' }}
     runs-on: windows-2022
