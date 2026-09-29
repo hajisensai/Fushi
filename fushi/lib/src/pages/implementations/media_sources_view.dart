@@ -1310,6 +1310,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
       migrateVideoDownloadsTo: choice.migrateVideoDownloadsTo,
       disableVideoDownloadSubscriptions:
           hasDownloadRefs && choice.migrateVideoDownloadsTo == null,
+      videoDownloadPipeline: _appModel.videoDownloadPipelineService,
     );
     await _load();
   }

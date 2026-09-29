@@ -2220,19 +2220,8 @@ mixin _FushiDbVideoDomain
         final int? target =
             patch.targetSourceId.present ? patch.targetSourceId.value : null;
         if (changed == 0 || target == null) return 0;
-        final List<String> jobIds = await (selectOnly(
-          videoDownloadSubscriptionItems,
-          distinct: true,
-        )
-              ..addColumns(<Expression<Object>>[
-                videoDownloadSubscriptionItems.jobId,
-              ])
-              ..where(videoDownloadSubscriptionItems.subscriptionId
-                      .equals(subscriptionId) &
-                  videoDownloadSubscriptionItems.jobId.isNotNull()))
-            .map((TypedResult row) =>
-                row.read(videoDownloadSubscriptionItems.jobId)!)
-            .get();
+        final List<String> jobIds =
+            await getVideoDownloadSubscriptionJobIds(subscriptionId);
         if (jobIds.isEmpty) return 0;
         return (update(videoDownloadJobs)
               ..where(($VideoDownloadJobsTable t) =>
@@ -2246,6 +2235,21 @@ mixin _FushiDbVideoDomain
           updatedAt: Value<int>(nowAt),
         ));
       });
+
+  /// 订阅 [subscriptionId] 派生过的全部任务 id（经 `subscription_items.job_id`，去重）。
+  Future<List<String>> getVideoDownloadSubscriptionJobIds(
+    String subscriptionId,
+  ) =>
+      (selectOnly(videoDownloadSubscriptionItems, distinct: true)
+            ..addColumns(<Expression<Object>>[
+              videoDownloadSubscriptionItems.jobId,
+            ])
+            ..where(videoDownloadSubscriptionItems.subscriptionId
+                    .equals(subscriptionId) &
+                videoDownloadSubscriptionItems.jobId.isNotNull()))
+          .map((TypedResult row) =>
+              row.read(videoDownloadSubscriptionItems.jobId)!)
+          .get();
 
   /// 认领任务 [jobId] 的订阅（经 `subscription_items.job_id`）；非订阅任务为 null。
   Future<VideoDownloadSubscriptionRow?> getVideoDownloadSubscriptionForJob(
