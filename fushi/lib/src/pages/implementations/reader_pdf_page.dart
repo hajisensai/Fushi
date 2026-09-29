@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/epub/book_file_location.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
@@ -47,6 +48,9 @@ class ReaderPdfPage extends BaseSourcePage {
 class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     with WidgetsBindingObserver {
   final PdfViewerController _pdfController = PdfViewerController();
+
+  @override
+  ModuleId? get popupDockModule => ModuleId.books;
 
   /// 每页结构化文本缓存（`loadStructuredText` 有解析成本，点一次查一次会卡）。
   /// key = 0-based 页索引。

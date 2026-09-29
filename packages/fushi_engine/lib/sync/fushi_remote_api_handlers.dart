@@ -36,6 +36,9 @@ class RemotePopupDictionaryCss {
     required this.globalDictCss,
     required this.customDictCss,
     this.dictionaryDisplayNames = const <String, String>{},
+    this.dictionaryFontFaces = const <Map<String, String>>[],
+    this.dictionaryFontCss = '',
+    this.dictionaryLanguages = const <String, String>{},
   });
 
   final Map<String, String> dictionaryStyles;
@@ -49,6 +52,17 @@ class RemotePopupDictionaryCss {
   /// 挂在本类而不是另开一条通道：它与 CSS 三件套同属「弹窗渲染用的旁路数据」，
   /// 共用下面的 revision 门控——改名改 revision，扩展下次查词即拉到新表。
   final Map<String, String> dictionaryDisplayNames;
+
+  /// 用户「词典字体」：`{family, src, format}`，src 是 app 端点的相对 URL
+  /// （扩展补 base + token 后 `new FontFace()` 注册）。与 in-app 弹窗同一份设置。
+  final List<Map<String, String>> dictionaryFontFaces;
+
+  /// 按内容语言分流的字体链 CSS（用户字体接在每条链首），根选择器是扩展弹窗的
+  /// `#entries-container`。
+  final String dictionaryFontCss;
+
+  /// 词典名 -> 释义语言，popup.js 的 `__fushiDictionaryLanguages`。
+  final Map<String, String> dictionaryLanguages;
 
   late final String revision = _computeRevision();
 
@@ -64,6 +78,14 @@ class RemotePopupDictionaryCss {
     // 改名必须进 revision，否则扩展会一直命中旧缓存、改了不生效。
     for (final MapEntry<String, String> e in dictionaryDisplayNames.entries) {
       h = Object.hash(h, e.key, e.value.hashCode);
+    }
+    // 换字体 / 改语言同理：不进 revision，扩展就一直用旧字体。
+    for (final Map<String, String> face in dictionaryFontFaces) {
+      h = Object.hash(h, face['family'], face['src'], face['format']);
+    }
+    h = Object.hash(h, dictionaryFontCss.length, dictionaryFontCss.hashCode);
+    for (final MapEntry<String, String> e in dictionaryLanguages.entries) {
+      h = Object.hash(h, e.key, e.value);
     }
     return '${dictionaryStyles.length}.${customDictCss.length}.'
         '${dictionaryDisplayNames.length}.'
@@ -152,6 +174,9 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       'globalDictCSS': popupCss.globalDictCss,
       'customDictCSS': popupCss.customDictCss,
       'dictionaryDisplayNames': popupCss.dictionaryDisplayNames,
+      'dictionaryFontFaces': popupCss.dictionaryFontFaces,
+      'dictionaryFontCss': popupCss.dictionaryFontCss,
+      'dictionaryLanguages': popupCss.dictionaryLanguages,
     },
   };
   final String term = body['term']?.toString() ?? '';

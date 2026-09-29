@@ -607,8 +607,11 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           if (!mounted) return;
           FushiToast.show(
             msg: genericPushMessage(outcome),
-            severity:
-                outcome.isSuccess ? ToastSeverity.success : ToastSeverity.error,
+            severity: outcome.isSuccess
+                ? ToastSeverity.success
+                : outcome == GenericPushOutcome.alreadyQueued
+                    ? ToastSeverity.info
+                    : ToastSeverity.error,
           );
         } on Object catch (error, stack) {
           ErrorLogService.instance.log(

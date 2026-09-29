@@ -111,8 +111,8 @@ test('render forwards shared CSS, audio, theme and queue state without changing 
   assert.equal(w.window.sentenceContextPreviewEnabled, true);
   assert.equal(w.autoReadOptions.enabled, true);
   assert.equal(w.host.style.zoom, '1.25');
-  assert.equal(w.host.style.width, '80%');
-  assert.equal(w.host.style.height, '80%');
+  assert.equal(w.host.style.width, '100%');
+  assert.equal(w.host.style.height, '100%');
   w.receive({ type: 'hasChild', value: true });
   assert.equal(w.window.__hasChildPopup, true);
   assert.equal(w.renders, 1);

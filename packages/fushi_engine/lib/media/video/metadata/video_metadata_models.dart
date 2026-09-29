@@ -644,6 +644,8 @@ class VideoMetadataWork {
     this.originalTitle,
     this.tagline,
     List<String> aliases = const <String>[],
+    this.romajiTitle,
+    this.englishTitle,
     this.year,
     this.premiered,
     this.endDate,
@@ -686,6 +688,15 @@ class VideoMetadataWork {
   final String? originalTitle;
   final String? tagline;
   final List<String> aliases;
+
+  /// 罗马音标题（日本作品的拉丁转写：AniDB x-jat / AniList romaji / MAL
+  /// `title` / TMDB 日本区 romaji 别名）。资源站发布名多用它，同时也在
+  /// [aliases] 里；单列出来是为了让 UI 与资源搜索不必从一堆多语言别名里猜。
+  final String? romajiTitle;
+
+  /// 官方英文标题（AniDB en official / AniList english / MAL `title_english`
+  /// / TMDB 英文译名）。
+  final String? englishTitle;
   final int? year;
   final String? premiered;
   final String? endDate;
@@ -718,6 +729,8 @@ class VideoMetadataWork {
     String? originalTitle,
     String? tagline,
     List<String>? aliases,
+    String? romajiTitle,
+    String? englishTitle,
     int? year,
     String? premiered,
     String? endDate,
@@ -750,6 +763,8 @@ class VideoMetadataWork {
         originalTitle: originalTitle ?? this.originalTitle,
         tagline: tagline ?? this.tagline,
         aliases: aliases ?? this.aliases,
+        romajiTitle: romajiTitle ?? this.romajiTitle,
+        englishTitle: englishTitle ?? this.englishTitle,
         year: year ?? this.year,
         premiered: premiered ?? this.premiered,
         endDate: endDate ?? this.endDate,
@@ -786,6 +801,8 @@ class VideoMetadataWork {
           originalTitle == other.originalTitle &&
           tagline == other.tagline &&
           const ListEquality<String>().equals(aliases, other.aliases) &&
+          romajiTitle == other.romajiTitle &&
+          englishTitle == other.englishTitle &&
           year == other.year &&
           premiered == other.premiered &&
           endDate == other.endDate &&
@@ -823,6 +840,8 @@ class VideoMetadataWork {
         originalTitle,
         tagline,
         const ListEquality<String>().hash(aliases),
+        romajiTitle,
+        englishTitle,
         year,
         premiered,
         endDate,

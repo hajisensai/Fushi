@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
@@ -237,5 +238,62 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('详情显示可复制的罗马音与英文名', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final List<String> copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (MethodCall call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+              (call.arguments as Map<Object?, Object?>)['text']! as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    final VideoDiscoveryItem listItem = _item('romaji', '银河特急');
+    final VideoDiscoveryItem detailed = VideoDiscoveryItem(
+      reference: listItem.reference,
+      overview: listItem.overview,
+      metadataWork: VideoMetadataWork(
+        provider: VideoMetadataProviderKind.tmdb,
+        kind: VideoMetadataMediaKind.tv,
+        title: '银河特急',
+        romajiTitle: 'Ginga Tokkyuu Milky Subway',
+        englishTitle: 'Milky Subway: The Galactic Limited Express',
+      ),
+    );
+
+    await tester.pumpWidget(
+      _harness(
+        VideoDiscoveryDetailPage(
+          item: listItem,
+          actions: VideoDiscoveryActions(
+            loadDetails: (_) async => VideoDiscoveryDetailData(item: detailed),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ginga Tokkyuu Milky Subway'), findsOneWidget);
+    expect(
+      find.text('Milky Subway: The Galactic Limited Express'),
+      findsOneWidget,
+    );
+    final Finder copyButtons = find.byTooltip(t.copy);
+    expect(copyButtons, findsNWidgets(2));
+    await tester.tap(copyButtons.first);
+    await tester.pumpAndSettle();
+    expect(copied, <String>['Ginga Tokkyuu Milky Subway']);
   });
 }

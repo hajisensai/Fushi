@@ -65,3 +65,12 @@ List<String> metadataUniqueStrings(Iterable<String?> values) {
   }
   return result;
 }
+
+final RegExp _latinLetter = RegExp(r'[A-Za-z]');
+final RegExp _nonLatinScript =
+    RegExp(r'[\u0400-\u04ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]');
+
+/// 标题是否是拉丁字母写成的（罗马音 / 英文等）：至少一个 A–Z，且不含假名、
+/// 汉字、谚文、西里尔字母。`☆`、`:` 之类的符号不影响判断。
+bool isLatinScriptTitle(String value) =>
+    _latinLetter.hasMatch(value) && !_nonLatinScript.hasMatch(value);
