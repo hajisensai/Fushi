@@ -149,7 +149,7 @@ class _AssetTransferMenuRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // BUG-2645：只有**本行这类资产、这类通道**的传输在跑时才显示进度。以前看的是
     // 全局 syncInProgress，任何同步（全量 sweep / 单本 / 合集）都会让「词典」行转圈
-    // 并显示别人的阶段进度，用户没开上传词典也以为词典在同步。别的同步在飞时本行
+    // 并显示别人的阶段进度，用户没点词典传输也以为词典在同步。别的同步在飞时本行
     // 保持静态；点菜单由 [runAssetTransferWithFeedback] 的 busy guard 提示「同步
     // 进行中」并挡住重复触发 —— 后端是单例，两轮并行会互相踩。
     final SyncAssetTransferTarget target = SyncAssetTransferTarget(kind, scope);

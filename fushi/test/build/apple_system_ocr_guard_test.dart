@@ -132,6 +132,36 @@ void main() {
     expect(swift, contains('queue.async'));
   });
 
+  group('BUG-2767：竖排走 RecognizeDocumentsRequest + 切片', () {
+    test('新请求编译期、运行期双重门控，旧系统保留老路径', () {
+      // `VNRecognizeTextRequest` 不读竖排（实测字召回 7.4%）；新请求只在 Xcode 26
+      // 的 SDK 里有，裸用会让旧 Xcode 编不过、在 iOS 15~25 上直接崩。
+      expect(swift, contains('#if compiler(>=6.2)'));
+      expect(swift, contains('if #available(iOS 26.0, macOS 26.0, *)'));
+      expect(swift, contains('@available(iOS 26.0, macOS 26.0, *)'));
+      expect(swift, contains('RecognizeDocumentsRequest()'));
+      expect(swift, contains('VNRecognizeTextRequest()'),
+          reason: '旧系统没有新请求，老路径必须留着');
+      final int gate = swift.indexOf('#if compiler(>=6.2)');
+      expect(swift.indexOf('RecognizeDocumentsRequest()'), greaterThan(gate),
+          reason: '新符号必须落在编译期门控之内');
+    });
+
+    test('切片参数读 tiles，逐片裁剪识别，坐标加回片的左上角', () {
+      expect(swift, contains('args["tiles"]'));
+      expect(swift, contains('cropping(to:'));
+      // 片内坐标不加 origin，整页文字层会全部挤到左上角——又是一种「这页没字」。
+      expect(swift, contains('origin.x + box.minX * w'));
+      expect(swift, contains('origin.y + (1 - box.maxY) * h'));
+      expect(dart, contains("'tiles':"));
+    });
+
+    test('切片识别的行带 tile 下标，Dart 解析端认这个键', () {
+      expect(swift, contains('entry["tile"] = tile'));
+      expect(dart, contains("entry['tile']"));
+    });
+  });
+
   test('isAvailable 便宜作答：不做真识别、不触发下载', () {
     // Dart 侧会把这个答案缓存进一次能力探测（system_ocr_channel.dart 的接口文档）。
     final int start = swift.indexOf('case "isAvailable":');

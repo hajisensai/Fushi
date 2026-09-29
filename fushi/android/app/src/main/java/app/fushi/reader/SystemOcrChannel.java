@@ -124,8 +124,12 @@ public final class SystemOcrChannel {
             });
     }
 
-    /** 取（或建）该语言的识别器。调用恒在平台主线程，无需额外同步。 */
-    private static TextRecognizer recognizerFor(@Nullable String language) {
+    /**
+     * 取（或建）该语言的识别器。调用恒在平台主线程，无需额外同步。
+     *
+     * <p>包内可见：截屏 OCR（ScreenOcrService）复用同一份缓存，不再各加载一套模型。
+     */
+    static TextRecognizer recognizerFor(@Nullable String language) {
         final String key = scriptKeyFor(language);
         TextRecognizer cached = RECOGNIZERS.get(key);
         if (cached == null) {

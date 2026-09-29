@@ -1429,11 +1429,14 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   /// TODO-407②：查词弹窗是否允许"水平滑动关闭"。读全局偏好 `enable_swipe_to_close`；
   /// 未持久化时回退到 [ReaderSettings.defaultSwipeToClose]（桌面 Windows/Linux 默认
-  /// false，触摸平台 true）。
-  bool get enableSwipeToClose => getPreference<bool>(
-        key: 'enable_swipe_to_close',
-        defaultValue: ReaderSettings.defaultSwipeToClose(defaultTargetPlatform),
-      );
+  /// false，触摸平台 true）。这是**鼠标 / 触控板**那半边；触摸半边见
+  /// [enableTouchSwipeToClose]。
+  ///
+  /// BUG-2770：走 [readStoredPreference] 而不是 [getPreference]——后者会把平台默认
+  /// false 回填进缓存，[enableTouchSwipeToClose] 随后就把它误当成「用户显式关闭」。
+  bool get enableSwipeToClose =>
+      readStoredPreference<bool>('enable_swipe_to_close') ??
+      ReaderSettings.defaultSwipeToClose(defaultTargetPlatform);
 
   Future<void> setEnableSwipeToClose(bool value) async {
     await setPreference<bool>(
@@ -1441,6 +1444,15 @@ class ReaderFushiSource extends ReaderMediaSource {
       value: value,
     );
   }
+
+  /// BUG-2770：「滑动关闭弹窗」的**触摸半边**（手指 / 触控笔）。读同一个偏好键
+  /// `enable_swipe_to_close`，但未持久化时恒为 true（所有平台）——
+  /// [ReaderSettings.defaultSwipeToClose] 让 Windows/Linux 默认 false 是 BUG-299 为
+  /// **鼠标**框选误触设的防线，此前连触屏一起关掉，Windows 触屏玩 galgame 时查词弹窗
+  /// 怎么横滑都关不掉。用户显式关掉开关 → 触摸也关；显式开 → 与 [enableSwipeToClose]
+  /// 同为 true。鼠标 / 触控板那半边仍只看 [enableSwipeToClose]。
+  bool get enableTouchSwipeToClose =>
+      readStoredPreference<bool>('enable_swipe_to_close') ?? true;
 
   /// 滑动关闭查词弹窗时，松手后是否播放「补间滑出屏外 / 弹回原位」动画。默认 true
   /// （保持既有手感）；关掉则松手当帧就关，与墨水屏模式下的行为一致。唯一消费点是

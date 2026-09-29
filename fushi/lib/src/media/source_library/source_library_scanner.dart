@@ -39,6 +39,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/torrent/download_save_root.dart'
+    show isSourceIncomingPath;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart';
@@ -337,6 +339,23 @@ class SourceScanSummary {
 String _extOf(String name) =>
     p.extension(name).toLowerCase().replaceFirst('.', '');
 
+/// Drops entries inside the source's video download staging directory
+/// (`.fushi-incoming`, BUG-2755). Managed video downloads land there
+/// while they are still downloading; importing them would register half-written
+/// files that the organize stage then renames away. Only local sources can be
+/// download targets, so network listings pass through unchanged.
+List<SourceFileEntry> excludeSourceIncomingEntries(
+  List<SourceFileEntry> entries, {
+  required String sourceRoot,
+  required bool isLocal,
+}) {
+  if (!isLocal) return entries;
+  return entries
+      .where((SourceFileEntry entry) =>
+          !isSourceIncomingPath(sourceRoot, entry.path))
+      .toList(growable: false);
+}
+
 /// Pure function: classifies a listed [files] set into a scan plan. No IO.
 ///
 /// - Skips directory entries (recursive listing yields only files anyway).
@@ -623,9 +642,13 @@ class SourceLibraryScanner {
           !kStreamableVideoSourceTransports.contains(source.transport)) {
         throw StateError('Network video sources support WebDAV/AList only');
       }
-      final List<SourceFileEntry> entries = await files.listFiles(
-        source.rootPath,
-        recursive: source.recursive,
+      final List<SourceFileEntry> entries = excludeSourceIncomingEntries(
+        await files.listFiles(
+          source.rootPath,
+          recursive: source.recursive,
+        ),
+        sourceRoot: source.rootPath,
+        isLocal: files.isLocal,
       );
       final ScanPlan plan = planScanFromFileList(
         entries,

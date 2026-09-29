@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -54,6 +55,14 @@ Duration popupDismissAnimationDuration(
 bool popupSwipeDismissIsInstant() =>
     !ReaderFushiSource.instance.popupDismissAnimation;
 
+/// BUG-2770：「触摸类」指针——手指、触控笔（含笔尾橡皮擦）。查词弹窗滑关的触摸
+/// 半边只认这三种；鼠标与触控板（[PointerDeviceKind.trackpad] 与 pan-zoom 事件）
+/// 属于 BUG-299 防线的「鼠标半边」，照旧由 `enable_swipe_to_close` 的平台默认值门控。
+bool isTouchLikePointer(PointerDeviceKind kind) =>
+    kind == PointerDeviceKind.touch ||
+    kind == PointerDeviceKind.stylus ||
+    kind == PointerDeviceKind.invertedStylus;
+
 // BUG-1757：`BarrierSwipeDismissTracker` 已迁到 `lookup_dismiss_barrier.dart`，
 // 并入唯一的 barrier 构造入口 [LookupDismissBarrier]。页面不再自己持有 tracker、
 // 更不再把横拖挂进手势竞技场（那会堵死 barrier 下面的 platform view 滚动）。
@@ -70,11 +79,18 @@ class SwipeDismissWrapper extends StatefulWidget {
     required this.child,
     required this.onDismiss,
     this.sensitivity = 0.3,
+    this.touchOnly = false,
     super.key,
   });
   final Widget child;
   final VoidCallback onDismiss;
   final double sensitivity;
+
+  /// BUG-2770：只认触摸类指针（[isTouchLikePointer]），鼠标拖动与触控板 pan-zoom
+  /// 一律不参与判定。宿主在「鼠标滑关关、触摸滑关开」时用这一档——Windows/Linux
+  /// 未显式设置 `enable_swipe_to_close` 的默认状态：BUG-299 担心的鼠标框选误触仍被
+  /// 挡住，触屏用户照样能像手机一样横滑关弹窗。
+  final bool touchOnly;
 
   @override
   State<SwipeDismissWrapper> createState() => _SwipeDismissWrapperState();
@@ -99,6 +115,10 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
   double _animStart = 0;
   double _animTarget = 0;
   double _layerWidth = 0;
+
+  /// BUG-2770：[SwipeDismissWrapper.touchOnly] 下本轮是否由触摸类指针发起。非触摸
+  /// 按下后的 move/up 一律忽略（否则鼠标拖动的位移仍会累进 [_dragX]）。
+  bool _trackingAccepted = true;
 
   double get _threshold => swipeDismissThreshold(widget.sensitivity);
   double get _decisionDistance => 10 + (1.0 - widget.sensitivity) * 20;
@@ -238,19 +258,37 @@ class _SwipeDismissWrapperState extends State<SwipeDismissWrapper>
     _reset();
   }
 
+  /// BUG-2770：[SwipeDismissWrapper.touchOnly] 下只让触摸类指针开一轮；非 touchOnly
+  /// 与改动前逐字一致（任何指针都开一轮）。
+  void _onPointerDown(PointerDownEvent event) {
+    _trackingAccepted = !widget.touchOnly || isTouchLikePointer(event.kind);
+    if (!_trackingAccepted) return;
+    _beginDrag();
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool active =
         !_instant && ((_decided && _isHorizontal) || _dismissing);
+    final bool touchOnly = widget.touchOnly;
     return Listener(
       behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _beginDrag(),
-      onPointerMove: (e) => _handleDragDelta(e.delta),
-      onPointerUp: (_) => _finishDrag(),
-      onPointerCancel: (_) => _reset(),
-      onPointerPanZoomStart: (_) => _beginDrag(),
-      onPointerPanZoomUpdate: (e) => _handleDragDelta(e.panDelta),
-      onPointerPanZoomEnd: (_) => _finishDrag(),
+      onPointerDown: _onPointerDown,
+      onPointerMove: (e) {
+        if (_trackingAccepted) _handleDragDelta(e.delta);
+      },
+      onPointerUp: (_) {
+        if (_trackingAccepted) _finishDrag();
+      },
+      onPointerCancel: (_) {
+        if (_trackingAccepted) _reset();
+      },
+      // 触控板双指平移是鼠标半边（BUG-2770）：touchOnly 下整条不挂。
+      onPointerPanZoomStart: touchOnly ? null : (_) => _beginDrag(),
+      onPointerPanZoomUpdate: touchOnly
+          ? null
+          : (e) => _handleDragDelta(e.panDelta),
+      onPointerPanZoomEnd: touchOnly ? null : (_) => _finishDrag(),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           if (constraints.maxWidth.isFinite) {

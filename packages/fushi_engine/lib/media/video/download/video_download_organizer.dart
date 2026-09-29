@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
+import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
@@ -51,10 +52,16 @@ class VideoOrganizationFilePlan {
 class VideoOrganizationPlan {
   VideoOrganizationPlan({
     required this.remoteSourceRoot,
+    required this.kind,
     required List<VideoOrganizationFilePlan> files,
   }) : files = List<VideoOrganizationFilePlan>.unmodifiable(files);
 
   final String remoteSourceRoot;
+
+  /// 实际采用的整理形态。通常等于请求的 kind；请求为 movie、但种子是多集
+  /// 合集包（[looksLikeEpisodicPack]）时改判为 episodic（BUG-2760）——调用方
+  /// 据此把任务改成剧集，导入才会建合集、逐集命名。
+  final VideoOrganizationKind kind;
   final List<VideoOrganizationFilePlan> files;
 }
 
@@ -103,8 +110,19 @@ class VideoDownloadOrganizer {
     if (videoFiles.isEmpty) {
       throw const FormatException('torrent has no supported video files');
     }
-    final TorrentFileEntry? mainMovie =
-        request.kind == VideoOrganizationKind.movie
+    // 身份说是电影、种子却是一整套分集（BUG-2760：TMDB 电影身份配上 12 集合集
+    // 包）：按电影整理只会把最大的一集抬成正片、其余 11 集原名塞进 Extras。
+    // 文件名给出的「多个不同集号」是比身份 kind 更直接的证据，按剧集整理。
+    final VideoOrganizationKind kind =
+        request.kind == VideoOrganizationKind.movie &&
+            looksLikeEpisodicPack(
+              videoFiles
+                  .map((TorrentFileEntry file) => file.name)
+                  .toList(growable: false),
+            )
+        ? VideoOrganizationKind.episodic
+        : request.kind;
+    final TorrentFileEntry? mainMovie = kind == VideoOrganizationKind.movie
         ? (videoFiles.toList()..sort(
                 (TorrentFileEntry a, TorrentFileEntry b) =>
                     b.size.compareTo(a.size),
@@ -119,16 +137,18 @@ class VideoDownloadOrganizer {
     _OrganizationPass pass = _planFiles(
       request,
       videoFiles,
+      kind: kind,
       displayRoot: displayRoot,
       sharedRoot: sharedRoot,
       mainMovie: mainMovie,
       classifyExtras: true,
     );
-    if (request.kind == VideoOrganizationKind.episodic &&
+    if (kind == VideoOrganizationKind.episodic &&
         pass.recognizedEpisodes == 0) {
       pass = _planFiles(
         request,
         videoFiles,
+        kind: kind,
         displayRoot: displayRoot,
         sharedRoot: sharedRoot,
         mainMovie: mainMovie,
@@ -137,7 +157,7 @@ class VideoDownloadOrganizer {
     }
     // 两种口径都一集认不出，才是真的与「剧集」判定不符（比如误标 kind）：全
     // Extras 的静默入库只会把问题藏起来，仍然显式失败。
-    if (request.kind == VideoOrganizationKind.episodic &&
+    if (kind == VideoOrganizationKind.episodic &&
         pass.recognizedEpisodes == 0) {
       throw FormatException(
         'unable to determine episode number: ${videoFiles.first.name}',
@@ -145,6 +165,7 @@ class VideoDownloadOrganizer {
     }
     return VideoOrganizationPlan(
       remoteSourceRoot: remoteRoot,
+      kind: kind,
       files: pass.files,
     );
   }
@@ -156,6 +177,7 @@ class VideoDownloadOrganizer {
   _OrganizationPass _planFiles(
     VideoOrganizationRequest request,
     List<TorrentFileEntry> videoFiles, {
+    required VideoOrganizationKind kind,
     required String displayRoot,
     required String? sharedRoot,
     required TorrentFileEntry? mainMovie,
@@ -179,7 +201,7 @@ class VideoDownloadOrganizer {
       // 「Making Video Collection - 05」和真正的第 5 集抢同一个目标名。所以
       // 先按目录判正片/特典、再解析集号；顺序反过来就只能靠撞号事后发现，
       // 而**没撞上的那些会被静默改名成正片**——后者才是更贵的一半。
-      if (request.kind == VideoOrganizationKind.episodic &&
+      if (kind == VideoOrganizationKind.episodic &&
           !(classifyExtras &&
               _isExplicitExtra(file.name, sharedRoot: sharedRoot))) {
         final VideoNameInfo parsed = parseVideoFilename(
@@ -417,10 +439,15 @@ class VideoDownloadOrganizer {
 
   /// 单根种子的发布目录名（所有视频文件共享的第一段）；平铺种子返回 null。
   /// Extras 镜像时剥掉它，免得多出一层 `[Group] Title [1080p]` 噪音目录。
-  static String? _sharedRootSegment(List<TorrentFileEntry> files) {
+  static String? _sharedRootSegment(List<TorrentFileEntry> files) =>
+      _sharedRootOfNames(
+        files.map((TorrentFileEntry file) => file.name).toList(growable: false),
+      );
+
+  static String? _sharedRootOfNames(List<String> names) {
     String? root;
-    for (final TorrentFileEntry file in files) {
-      final List<String> segments = _segments(file.name);
+    for (final String name in names) {
+      final List<String> segments = _segments(name);
       if (segments.length < 2) return null;
       if (root == null) {
         root = segments.first;
@@ -483,7 +510,9 @@ class VideoDownloadOrganizer {
   /// 并列正片判据（BUG-2007，只在 movie 形态种子里用）：
   /// * 不在发布组标记的特典目录、文件名也不是显式附件（NCOP/PV 等）；
   /// * 体量 ≥ 最大正片的 1/4——菜单/CM/预告即使躺在根目录也够不着这个门；
-  /// * 文件名不带集号（带集号的是误标 kind 的剧集，不在本判据修复范围）。
+  /// * 文件名不带集号。带集号的多集种子根本走不到这里：[plan] 已先用
+  ///   [looksLikeEpisodicPack] 把它改判成剧集整理（BUG-2760）；这里仍排除带
+  ///   集号的文件，免得零散的 `Bonus - 01` 被抬成并列正片。
   static bool _isStandaloneMovieCandidate(
     TorrentFileEntry file, {
     required TorrentFileEntry mainMovie,
@@ -594,4 +623,32 @@ class _OrganizationPass {
 
   final List<VideoOrganizationFilePlan> files;
   final int recognizedEpisodes;
+}
+
+/// 一组视频文件（种子内相对路径）是否是**多集合集包**（BUG-2760）。
+///
+/// 判据刻意保守——误判的代价是把一部真电影拆成「第 N 集」，比漏判更贵：
+/// * 发布组标出的特典（特典目录 / NCOP / PV / Trailer 等，同整理器口径）不参与；
+/// * 带电影提示（`劇場版` / `Movie` …）的文件不参与：`Movie 01`…`Movie 25`
+///   这类剧场版合集是多部电影，不是分集；
+/// * 其余每一个视频都必须解析得出集号——真电影种子的正片没有集号，只要它在场
+///   就不算合集包（`正片 + Bonus - 01/02` 仍按电影整理）；
+/// * 至少两个**不同**集号（同一集的两个版本不构成合集）。
+bool looksLikeEpisodicPack(List<String> fileNames) {
+  final List<String> videos = fileNames
+      .where(VideoDownloadOrganizer._isVideo)
+      .toList(growable: false);
+  final String? sharedRoot = VideoDownloadOrganizer._sharedRootOfNames(videos);
+  final Set<int> episodes = <int>{};
+  for (final String name in videos) {
+    if (VideoDownloadOrganizer._isExplicitExtra(name, sharedRoot: sharedRoot)) {
+      continue;
+    }
+    final String fileName = VideoDownloadOrganizer._segments(name).last;
+    if (FilenameParser.parse(fileName).isMovieHint) continue;
+    final int? episode = parseVideoFilename(fileName).episode;
+    if (episode == null) return false;
+    episodes.add(episode);
+  }
+  return episodes.length >= 2;
 }

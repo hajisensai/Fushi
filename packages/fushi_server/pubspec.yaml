@@ -20,6 +20,9 @@ executables:
 dependencies:
   fushi_core:
     path: ../fushi_core
+  # 只许 import 零 Flutter 的 fushi_anki_core.dart（纯度守卫 fushi_engine_purity_guard_test）。
+  fushi_anki:
+    path: ../fushi_anki
   fushi_audio:
     path: ../fushi_audio
   fushi_engine:

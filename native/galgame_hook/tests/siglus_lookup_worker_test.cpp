@@ -872,6 +872,8 @@ void TestChoiceRetiresDisplacedDialogueAndBecomesTheLine() {
   ChoicePass();
   Consume();
   assert(g_siglus_lookup_selection_active);
+  // BUG-2768: a click on a choice selects it; only hover/Shift look it up.
+  assert(!SiglusLookupLineClaimsClicks());
   assert(g_siglus_lookup_active_line_units == 0);
   assert(!g_siglus_lookup_layout.current_valid);
   assert(!g_siglus_lookup_layout.line_has_complete_layout);
@@ -884,6 +886,7 @@ void TestChoiceRetiresDisplacedDialogueAndBecomesTheLine() {
   Consume();
   assert(ActiveLineIs(L"XY\nZ"));
   assert(g_siglus_lookup_layout.current_valid);
+  assert(!SiglusLookupLineClaimsClicks());
   const auto choice = PressActiveGlyph(2);
   assert(choice.char_index == 3);
   QueueSiglusLookupClickSubmit(choice);
@@ -932,6 +935,7 @@ void TestDialogueRedrawEndsChoice() {
   FullRedraw();
   Consume();
   assert(!g_siglus_lookup_selection_active);
+  assert(SiglusLookupLineClaimsClicks());
   assert(ActiveLineIs(L"ABC"));
   assert(g_siglus_lookup_layout.current_valid);
   QueueSiglusLookupClickSubmit(Press(0));
@@ -951,6 +955,7 @@ void TestNewDialogueEndsChoiceButRepublishedBodyDoesNot() {
   PublishSiglusLookupTextSnapshot(L"DEF", 3, {43, 7});
   Consume();
   assert(!g_siglus_lookup_selection_active);
+  assert(SiglusLookupLineClaimsClicks());
   assert(ActiveLineIs(L"DEF"));
   assert(g_siglus_lookup_text_identity.event_id == 43);
   assert(!g_siglus_lookup_layout.line_has_complete_layout);

@@ -1069,6 +1069,55 @@ void main() {
       expect(result, hasLength(2));
     });
 
+    test(
+        'an airing anime without an episode count is not absorbed by a '
+        'same-title movie identity (BUG-2760)', () {
+      // 放送中的 TV 动画搜索摘要常常没有集数；修前集数未知 = 聚合类型未知，
+      // 同名同年的 TMDB 电影弱匹配把它并成一张「电影」卡，AI 下载按电影下整包。
+      VideoDiscoveryItem anime({String? status}) =>
+          VideoDiscoveryItem.fromMetadataWork(
+            work: VideoMetadataWork(
+              provider: VideoMetadataProviderKind.anilist,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'Same title',
+              year: 2026,
+              status: status,
+              ids: const <VideoMetadataId>[
+                VideoMetadataId(type: 'anilist', value: '99', isDefault: true),
+              ],
+            ),
+            discoveryCategory: VideoDiscoveryCategory.anime,
+          );
+      final VideoDiscoveryItem movie = _item(
+        provider: 'tmdb',
+        id: '100',
+        title: 'Same title',
+        year: 2026,
+      );
+
+      final List<VideoDiscoveryItem> airing = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anime(status: 'RELEASING'), movie],
+        request: const VideoDiscoveryRequest(query: 'Same title'),
+      );
+      expect(airing, hasLength(2));
+      expect(
+        airing
+            .singleWhere(
+              (VideoDiscoveryItem item) => item.reference.anilistId == 99,
+            )
+            .reference
+            .mediaKind,
+        VideoMetadataMediaKind.tv,
+      );
+
+      // 状态也未知时仍按 BUG-1531 口径弱合并（单集 ONA 与电影身份是同一作品）。
+      final List<VideoDiscoveryItem> unknown = mergeVideoDiscoveryItems(
+        <VideoDiscoveryItem>[anime(), movie],
+        request: const VideoDiscoveryRequest(query: 'Same title'),
+      );
+      expect(unknown, hasLength(1));
+    });
+
     test('a shared strong id merges even when one side omits the episode count',
         () {
       // 非对称字段：AniList 详情带 episodeCount，Bangumi/TMDB 搜索摘要不带。

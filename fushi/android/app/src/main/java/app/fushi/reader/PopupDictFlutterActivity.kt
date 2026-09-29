@@ -1,5 +1,7 @@
 package app.fushi.reader
 
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -48,6 +50,21 @@ class PopupDictFlutterActivity : FlutterActivity() {
         const val EXTRA_SUBTITLE_RIGHT: String = "subtitleRight"
         const val EXTRA_SUBTITLE_BOTTOM: String = "subtitleBottom"
 
+        /**
+         * 悬浮球「剪贴板查词」：activity 拿到窗口焦点后**自己**读剪贴板再查。
+         * Android 10+ 只有前台且有输入焦点的 app 能读剪贴板，后台的悬浮球服务读不到，
+         * 所以不能由服务读好再塞进 EXTRA_PROCESS_TEXT。剪贴板为空时留一个只有搜索栏
+         * 的空查词窗。
+         */
+        const val EXTRA_READ_CLIPBOARD: String = "readClipboard"
+
+        /**
+         * 悬浮球「查词」：有意打开空查词窗（只有搜索栏）。冷引擎靠空的 pendingText
+         * 天然成立；热引擎要把空词显式推给 Dart（见 [PopupEngineHolder.pushProcessText]
+         * 的 allowBlank），否则窗里还是上一次的词。
+         */
+        const val EXTRA_OPEN_SEARCH: String = "openSearch"
+
         @Volatile
         private var webViewDataDirConfigured = false
 
@@ -75,6 +92,9 @@ class PopupDictFlutterActivity : FlutterActivity() {
 
     private var engineWasCold: Boolean = false
 
+    /** 本次 intent 是否还欠一次「读剪贴板」（拿到焦点后消费，每个 intent 只读一次）。 */
+    private var clipboardReadPending: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // Give the :popup WebView its own data directory before anything in this
         // process touches WebView (the engine renders entries via inappwebview).
@@ -93,11 +113,22 @@ class PopupDictFlutterActivity : FlutterActivity() {
         // 查词弹窗是独立 :popup 进程、独立 window，绝不继承 MainActivity 的高刷偏好；
         // 不主动请求就被系统按默认策略压到 60Hz，滚动列表明显卡顿。安全 no-op 退化。
         HighRefreshRate.applyToActivity(this)
+        clipboardReadPending = intent?.getBooleanExtra(EXTRA_READ_CLIPBOARD, false) == true
         if (!engineWasCold) {
             // Warm reuse: Dart is already mounted and won't re-poll
             // getInitialProcessText, so push the new term explicitly.
             PopupEngineHolder.pushProcessText(text, charIndex, anchor, subtitle)
+            // 悬浮球空查词窗：热引擎上把空词也推过去，清掉上一次的词。剪贴板查词等拿到
+            // 焦点读完剪贴板再决定推什么，避免先清空再填词闪一下。
+            if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
+                PopupEngineHolder.pushProcessText("", allowBlank = true)
+            }
         }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) consumeClipboardRequest()
     }
 
     override fun getCachedEngineId(): String = PopupEngineHolder.ENGINE_ID
@@ -109,12 +140,53 @@ class PopupDictFlutterActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        val text: String = extractProcessText(intent).orEmpty()
         PopupEngineHolder.pushProcessText(
-            extractProcessText(intent).orEmpty(),
+            text,
             extractCharIndex(intent),
             extractAnchorRect(intent),
             extractSubtitleRect(intent),
         )
+        clipboardReadPending = intent.getBooleanExtra(EXTRA_READ_CLIPBOARD, false)
+        if (text.isBlank() && !clipboardReadPending && wantsEmptySearch(intent)) {
+            PopupEngineHolder.pushProcessText("", allowBlank = true)
+        }
+        // singleTop 复用时窗口可能一直有焦点，onWindowFocusChanged 不会再来。
+        if (hasWindowFocus()) consumeClipboardRequest()
+    }
+
+    private fun wantsEmptySearch(intent: Intent?): Boolean =
+        intent?.getBooleanExtra(EXTRA_OPEN_SEARCH, false) == true ||
+            intent?.getBooleanExtra(EXTRA_READ_CLIPBOARD, false) == true
+
+    /**
+     * 读剪贴板并推给 Dart。冷引擎同样走 pushProcessText：它先更新 pendingText（Dart
+     * 还没轮询 getInitialProcessText 时直接拿到），再发 onNewProcessText（Dart 侧
+     * PopupChannel.init 先挂 handler 再轮询；更早到达的消息由 Flutter ChannelBuffers
+     * 暂存到 handler 挂上为止）。两条都到时只是同一个词查两次，结果一致。
+     */
+    private fun consumeClipboardRequest() {
+        if (!clipboardReadPending) return
+        clipboardReadPending = false
+        val clip: String = readClipboardText().trim()
+        if (clip.isNotEmpty()) {
+            PopupEngineHolder.pushProcessText(clip)
+        } else {
+            PopupEngineHolder.pushProcessText("", allowBlank = true)
+        }
+    }
+
+    private fun readClipboardText(): String {
+        return try {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: return ""
+            val clip = cm.primaryClip ?: return ""
+            if (clip.itemCount <= 0) return ""
+            clip.getItemAt(0).coerceToText(this)?.toString().orEmpty()
+        } catch (e: SecurityException) {
+            // 没拿到焦点 / ROM 额外限制：当作空剪贴板，留空查词窗让用户手输。
+            ""
+        }
     }
 
     override fun onDestroy() {

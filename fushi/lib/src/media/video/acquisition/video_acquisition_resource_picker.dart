@@ -241,7 +241,9 @@ int? estimatedBytesPerEpisode(VideoResourceVersionGroup group) {
 
 /// 一张卡在当前模式 / 集选择下的落地计划；null = 这张卡给不出（进下一张）。
 ///
-/// - movie → 代表条；
+/// - movie → 代表条；代表条是多集合集包时标 `usesBatch`（仍整包下载，由整理器
+///   改判成剧集整理，BUG-2760）；逐集发布的剧集卡（代表条是单集、组内 ≥2 个
+///   不同集号）给不出电影计划 → null，不拿其中一集冒充电影；
 /// - 订阅 → 代表条 + [StrictVideoSubscriptionFilter] + `startAfterEpisode = episodes.min`；
 /// - 下载 tv：`Single(n)` → `pickResourceVersionCandidate(group, episode: n)`；
 ///   `Range` → 组内集号落在范围内的成员（同集取代表序最优），缺的集进 `missingEpisodes`；
@@ -270,13 +272,41 @@ VideoAcquisitionResourcePlan? planResourceFromGroup(
       );
     case VideoAcquisitionMode.download:
       if (kind == VideoMetadataMediaKind.movie) {
-        return VideoAcquisitionResourcePlan(
-          group: group,
-          picks: <VideoResourceCandidate>[representative],
-        );
+        return _planMovieDownload(group);
       }
       return _planEpisodesDownload(group, episodes);
   }
+}
+
+/// 电影身份下的下载计划（BUG-2760）。
+///
+/// 电影身份并不保证资源是电影：发现页可能把集数未知的 TV 动画合并到一条电影
+/// 身份下，资源搜索于是拿回整季合集包或逐集发布。
+/// * 代表条是合集包（`isLikelyBatchVideoRelease`）→ 照旧整包下，但如实标
+///   `usesBatch`，摘要说「合集」而不是「一部电影」；落地时整理器按文件名集号
+///   改判剧集（`looksLikeEpisodicPack`）。
+/// * 代表条本身是某一集、组里还有别的集号 → 这是一张逐集发布的剧集卡，拿一集
+///   当电影下只会得到「一部只有第 N 集的电影」，这张卡给不出计划（进下一张）。
+/// * 其余（真电影、解析不出集号）→ 代表条，与修前一致。
+VideoAcquisitionResourcePlan? _planMovieDownload(
+  VideoResourceVersionGroup group,
+) {
+  final VideoResourceCandidate representative = group.representative;
+  if (isLikelyBatchVideoRelease(representative.title)) {
+    return VideoAcquisitionResourcePlan(
+      group: group,
+      picks: <VideoResourceCandidate>[representative],
+      usesBatch: true,
+    );
+  }
+  if (episodeNumberFromReleaseTitle(representative.title) != null &&
+      group.episodes.length >= 2) {
+    return null;
+  }
+  return VideoAcquisitionResourcePlan(
+    group: group,
+    picks: <VideoResourceCandidate>[representative],
+  );
 }
 
 VideoAcquisitionResourcePlan? _planEpisodesDownload(

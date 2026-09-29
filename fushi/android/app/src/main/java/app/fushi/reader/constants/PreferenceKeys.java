@@ -19,6 +19,11 @@ public final class PreferenceKeys {
     /** Prefs file used by {@code FloatingLyricService} and its {@code BaseFloatingService} base. */
     public static final String FILE_FLOATING_LYRIC = "floating_lyric_prefs";
 
+    /**
+     * Prefs file used by {@code FloatingBallService}（位置 + 按钮配置，服务重建时重放）.
+     */
+    public static final String FILE_FLOATING_BALL = "floating_ball_prefs";
+
     /** Prefs file used by {@code MainActivity} for splash/theme persistence. */
     public static final String FILE_SPLASH = "hibiki_splash";
 

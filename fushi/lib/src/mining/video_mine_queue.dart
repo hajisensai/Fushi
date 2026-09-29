@@ -219,7 +219,10 @@ class VideoMineQueue {
       await _store.markFailed(row.id, reason);
       return reason;
     }
-    if (outcome.result != MineResult.success) {
+    // queued：卡已冻结进待发制卡队列（媒体已拷走），交接完成——与成功同样记账、
+    // 出本暂存队列；当失败留着会让「重试」把同一张卡再入队一次。
+    if (outcome.result != MineResult.success &&
+        outcome.result != MineResult.queued) {
       final String reason = outcome.result == MineResult.duplicate
           ? 'duplicate'
           : (outcome.errorDetail ?? outcome.result.name);

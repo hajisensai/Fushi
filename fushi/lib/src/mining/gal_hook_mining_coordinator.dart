@@ -105,6 +105,10 @@ class GalHookMiningResult {
   /// 不必回查 Anki（TODO-448 禁止失败后回查把按钮翻成 ✓）。
   bool get duplicate => outcome?.result == MineResult.duplicate;
 
+  /// 后端暂不可达（或批量制卡），卡进了本机待发队列、之后补发。浮窗画 ✓ 不回查
+  /// （popup.js `reply.queued`），也不带失败原因——卡没有丢。
+  bool get queued => outcome?.result == MineResult.queued;
+
   /// BUG-1908：[message] 是**失败时给用户看的原因**，由调用方（浮窗控制器）填入
   /// 已本地化的文案。
   ///
@@ -116,8 +120,10 @@ class GalHookMiningResult {
   Map<String, Object?> toPopupReply({String? message}) => <String, Object?>{
     'ankiConnect': success,
     'noteId': success ? outcome?.noteId : null,
-    if (!success && message != null && message.isNotEmpty) 'message': message,
+    if (!success && !queued && message != null && message.isNotEmpty)
+      'message': message,
     if (duplicate) 'duplicate': true,
+    if (queued) 'queued': true,
   };
 }
 

@@ -274,3 +274,22 @@ class DiscoveryShelf extends StatelessWidget {
     );
   }
 }
+
+/// 「AI 下载」入口（小说 / 漫画 / 游戏发现页搜索行末尾，与视频发现页的
+/// 「AI 下视频」同形同位）：把搜索框里当前的文字带进 AI 下载页。
+class DiscoveryAiAcquireButton extends StatelessWidget {
+  const DiscoveryAiAcquireButton({super.key, required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton.filledTonal(
+    constraints: const BoxConstraints(
+      minWidth: kFushiSearchFieldHeight,
+      minHeight: kFushiSearchFieldHeight,
+    ),
+    tooltip: t.ai_media_acquire_entry,
+    onPressed: onPressed,
+    icon: const Icon(Icons.auto_awesome_outlined),
+  );
+}

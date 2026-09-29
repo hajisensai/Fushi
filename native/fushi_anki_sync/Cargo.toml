@@ -1,0 +1,31 @@
+[package]
+name = "fushi-anki-sync"
+version = "0.1.0"
+edition = "2021"
+# 链接 Anki 官方 rslib（AGPL-3.0-or-later），本程序随之是 AGPL。它是一个独立进程，
+# 由 Fushi 以子进程方式调用（stdin/stdout JSON 行），AGPL 义务只落在它自己身上。
+license = "AGPL-3.0-or-later"
+publish = false
+
+[dependencies]
+# 官方 Anki 26.09.3。版本串补丁由 build 脚本在构建时打到 .anki-src/ 的检出上，
+# 下面的 [patch] 把依赖改指向那份检出（见 README）。
+anki = { git = "https://github.com/ankitects/anki", tag = "26.09.3", features = ["rustls"] }
+anki_proto = { git = "https://github.com/ankitects/anki", tag = "26.09.3" }
+tokio = { version = "1", features = ["rt"] }
+reqwest = { version = "0.12", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# anki 与 anki_proto 必须一起改指向同一份检出，否则 anki_proto 会被解析成两份，
+# NoteFieldsState 等类型对不上。
+[patch."https://github.com/ankitects/anki"]
+anki = { path = ".anki-src/rslib" }
+anki_proto = { path = ".anki-src/rslib/proto" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

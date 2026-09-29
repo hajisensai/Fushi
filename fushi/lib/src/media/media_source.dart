@@ -161,6 +161,19 @@ abstract class MediaSource {
     return defaultValue;
   }
 
+  /// 读**已持久化**（或本会话显式写过）的偏好值；没有就返回 null，且**不**像
+  /// [getPreference] 那样把默认值回填进缓存。
+  ///
+  /// BUG-2770：同一个键要按两套默认值解读时必须走这里——`enable_swipe_to_close`
+  /// 的鼠标半边默认按平台（Windows/Linux false）、触摸半边默认 true。经
+  /// [getPreference] 读的话，先被读到的那个默认值会写进缓存，另一半再读就把它当成
+  /// 「用户设置」，「未设置」这一态就丢了。
+  @protected
+  T? readStoredPreference<T>(String key) {
+    final value = _preferences[key];
+    return value is T ? value : null;
+  }
+
   /// Set the preference [value] for a certain parameter [key] for this source.
   Future<void> setPreference<T>({required String key, required T value}) async {
     _preferences[key] = value;

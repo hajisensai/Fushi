@@ -1,11 +1,15 @@
 /// `/api/admin/*`：WebUI 的 JSON 面。鉴权在 [AdminServer] 的 middleware。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_asr_core/asr_core.dart' as asr;
+import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/anki_sync/anki_box_landing.dart';
+import 'package:fushi_engine/anki_sync/anki_sync_session.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
@@ -14,6 +18,7 @@ import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart' show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
@@ -134,6 +139,34 @@ class AdminApi {
         return _settings();
       case ('PUT', '/api/admin/settings'):
         return _putSettings(await _body(request));
+      case ('GET', '/api/admin/anki'):
+        return _anki();
+      case ('POST', '/api/admin/anki/login'):
+        return _ankiLogin(await _body(request));
+      case ('POST', '/api/admin/anki/logout'):
+        final Map<String, dynamic> body = await _body(request);
+        try {
+          await _ankiSession().signOut(discardUnsynced: body['discardUnsynced'] == true);
+        } on AnkiSyncHasUnsyncedNotes catch (e) {
+          return _err(409, 'unsynced:${e.count}');
+        }
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/sync'):
+        final AnkiSyncState synced = await _ankiSession().syncNow();
+        return _json(<String, Object?>{'phase': synced.phase.name});
+      case ('POST', '/api/admin/anki/refresh'):
+        return _json(<String, Object?>{'ok': await _ankiLanding().refreshMeta()});
+      case ('PUT', '/api/admin/anki/settings'):
+        return _putAnkiSettings(await _body(request));
+      case ('POST', '/api/admin/anki/landing'):
+        final Map<String, dynamic> body = await _body(request);
+        await _ankiLanding().setLandingEnabled(body['enabled'] == true);
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/run'):
+        await _ankiLanding().runNow();
+        return _json(const <String, Object?>{'ok': true});
+      case ('POST', '/api/admin/anki/retry'):
+        return _json(<String, Object?>{'retried': await _ankiLanding().retryFailed()});
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
@@ -498,5 +531,153 @@ class AdminApi {
     );
     if (r.complete) ctx.log.info('upload complete: $target');
     return _json(<String, Object?>{'received': r.received, 'complete': r.complete});
+  }
+
+  // ── Anki 落地 ─────────────────────────────────────────────────────
+
+  ServerAnkiLanding _ankiLanding() {
+    final ServerAnkiLanding? anki = ctx.host.anki;
+    if (anki == null) throw const FormatException('the interconnect host is not running');
+    return anki;
+  }
+
+  AnkiSyncSession _ankiSession() {
+    final AnkiSyncSession? session = _ankiLanding().session;
+    if (session == null) {
+      throw const FormatException('fushi-anki-sync is not bundled with this server');
+    }
+    return session;
+  }
+
+  Future<shelf.Response> _anki() async {
+    final ServerAnkiLanding anki = _ankiLanding();
+    final AnkiSyncSession? session = anki.session;
+    final AnkiSyncAccount? account = await session?.account();
+    final AnkiSyncState? state = session == null ? null : await session.refresh();
+    final AnkiSettings s = anki.settings;
+    final AnkiNoteType? noteType = s.availableNoteTypes
+        .where((AnkiNoteType t) => t.name == s.selectedNoteTypeName)
+        .firstOrNull;
+    int pending = 0;
+    int failed = 0;
+    for (final PendingMineRow row in await anki.store.all()) {
+      if (row.status == PendingMineStatus.failed) {
+        failed++;
+      } else {
+        pending++;
+      }
+    }
+    final AnkiBoxLandingReport? r = anki.lastReport;
+    return _json(<String, Object?>{
+      'available': anki.available,
+      'account': account == null
+          ? null
+          : <String, Object?>{
+              'server': account.server,
+              'endpoint': account.endpoint,
+              'username': account.username,
+            },
+      'sync': state == null
+          ? null
+          : <String, Object?>{
+              'phase': state.phase.name,
+              'unsynced': state.unsynced,
+              'failing': state.failing,
+              'lastError': state.lastError,
+              'lastSyncAt': state.lastSyncAt,
+              'message': state.message,
+            },
+      'landing': <String, Object?>{
+        'enabled': anki.landingEnabled,
+        'pending': pending,
+        'failed': failed,
+        'lastRunAt': anki.lastRunAt,
+        'lastError': anki.lastError,
+        'lastReport': r == null
+            ? null
+            : <String, Object?>{
+                'received': r.received,
+                'delivered': r.delivered,
+                'failed': r.failed,
+                'waiting': r.waiting,
+              },
+      },
+      'settings': <String, Object?>{
+        'decks': <String>[for (final AnkiDeck d in s.availableDecks) d.name],
+        'noteTypes': <String>[for (final AnkiNoteType t in s.availableNoteTypes) t.name],
+        'deck': s.selectedDeckName,
+        'noteType': s.selectedNoteTypeName,
+        'fields': noteType?.fields ?? const <String>[],
+        'fieldMappings': s.fieldMappings,
+        'tags': s.tags,
+      },
+      'placeholders': AnkiHandlebarOptions.coreOptions,
+    });
+  }
+
+  Future<shelf.Response> _ankiLogin(Map<String, dynamic> body) async {
+    final String server = (body['endpoint'] as String? ?? '').trim();
+    final String username = (body['username'] as String? ?? '').trim();
+    final String password = body['password'] as String? ?? '';
+    if (username.isEmpty || password.isEmpty) {
+      throw const FormatException('username and password are required');
+    }
+    // AnkiWeb 的条款只允许官方客户端；WebUI 先让用户确认风险再带上这一位。
+    if (server.isEmpty && body['acceptAnkiWeb'] != true) {
+      throw const FormatException('confirm the AnkiWeb risk first');
+    }
+    try {
+      await _ankiSession().signIn(
+        endpoint: server.isEmpty ? null : server,
+        username: username,
+        password: password,
+      );
+    } on AnkiSyncHasUnsyncedNotes catch (e) {
+      return _err(409, '${e.count} card(s) have not synced yet; sync them before switching account');
+    }
+    await _ankiLanding().refreshMeta();
+    return _json(const <String, Object?>{'ok': true});
+  }
+
+  Future<shelf.Response> _putAnkiSettings(Map<String, dynamic> body) async {
+    final ServerAnkiLanding anki = _ankiLanding();
+    final AnkiSettings current = anki.settings;
+    AnkiSettings next = current;
+    final Object? deck = body['deck'];
+    if (deck is String) {
+      final AnkiDeck? d = current.availableDecks.where((AnkiDeck x) => x.name == deck).firstOrNull;
+      if (d == null) throw FormatException('unknown deck $deck');
+      next = next.copyWith(selectedDeckId: d.id, selectedDeckName: d.name);
+    }
+    final Object? noteType = body['noteType'];
+    if (noteType is String) {
+      final AnkiNoteType? t =
+          current.availableNoteTypes.where((AnkiNoteType x) => x.name == noteType).firstOrNull;
+      if (t == null) throw FormatException('unknown note type $noteType');
+      next = next.copyWith(
+        selectedNoteTypeId: t.id,
+        selectedNoteTypeName: t.name,
+        // 换了笔记类型：只保留新类型里还有的字段的映射，旧字段名不带过去。
+        fieldMappings: <String, String>{
+          for (final MapEntry<String, String> e in next.fieldMappings.entries)
+            if (t.fields.contains(e.key)) e.key: e.value,
+        },
+      );
+    }
+    final Object? mappings = body['fieldMappings'];
+    if (mappings is Map) {
+      next = next.copyWith(
+        fieldMappings: <String, String>{
+          for (final MapEntry<Object?, Object?> e in mappings.entries)
+            if (e.key is String && e.value is String) e.key! as String: e.value! as String,
+        },
+      );
+    }
+    final Object? tags = body['tags'];
+    if (tags is String) next = next.copyWith(tags: tags);
+    await anki.saveSettings(next);
+    // 刚配好：等着的卡立刻落一轮。
+    unawaited(anki.runNow());
+    return _json(const <String, Object?>{'ok': true});
   }
 }

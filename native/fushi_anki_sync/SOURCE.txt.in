@@ -1,0 +1,16 @@
+fushi-anki-sync @VERSION@
+
+License: GNU Affero General Public License, version 3 or (at your option) any
+later version (AGPL-3.0-or-later). Full text: https://www.gnu.org/licenses/agpl-3.0.txt
+
+This is a separate helper program that Fushi starts as a child process. It links
+the official Anki Rust library (rslib) from Anki @ANKI_TAG@, which is itself
+AGPL-3.0-or-later, with the patches in native/fushi_anki_sync/patches/ applied
+(they only change the sync client identity to "fushi,<version> (anki @ANKI_TAG@),<os>").
+
+Corresponding source for this binary:
+  Helper and patches: https://github.com/@REPO@/tree/@COMMIT@/native/fushi_anki_sync
+  Anki upstream:      https://github.com/ankitects/anki/tree/@ANKI_TAG@ (commit @ANKI_COMMIT@)
+
+Build instructions: native/fushi_anki_sync/README.md (build.sh on Linux/macOS,
+build.ps1 on Windows).

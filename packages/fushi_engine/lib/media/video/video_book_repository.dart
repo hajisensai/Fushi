@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show QueryRow, Value;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -48,6 +48,52 @@ typedef SplitPlaylistImportResult = ({
   int collectionId,
   List<String> episodeUids,
   List<String> createdEpisodeUids,
+});
+
+/// 批量删除里一条视频行删失败的记录（BUG-2754）。
+class VideoBookDeleteFailure {
+  const VideoBookDeleteFailure({
+    required this.bookUid,
+    required this.error,
+    required this.stackTrace,
+  });
+
+  final String bookUid;
+  final Object error;
+  final StackTrace stackTrace;
+
+  @override
+  String toString() => 'VideoBookDeleteFailure($bookUid): $error';
+}
+
+/// [VideoBookRepository.deleteVideoBooksAndReclaimAssets] 部分失败时抛出
+/// （BUG-2754）：[deletedCount] 条已删完并回收完资产，[failures] 里的行保留在库。
+///
+/// 抛在**所有尾活之后**——成功的那些照常回收副本 / 删原件 / 压缩，UI 拿到后
+/// 退出多选、刷新并如实提示失败条数，而不是半截中断、静默无提示。
+class VideoBooksDeleteException implements Exception {
+  const VideoBooksDeleteException({
+    required this.deletedCount,
+    required this.failures,
+  });
+
+  final int deletedCount;
+  final List<VideoBookDeleteFailure> failures;
+
+  @override
+  String toString() => 'VideoBooksDeleteException(deleted: $deletedCount, '
+      'failed: ${failures.length}, first: ${failures.first})';
+}
+
+/// 被删行删前的快照：行一删，封面/字幕/附加图路径就再也推导不出来。
+typedef _DeletedVideoSnapshot = ({
+  String bookUid,
+  String? coverPath,
+  String? subtitlePath,
+  String? secondarySubtitlePath,
+  String videoPath,
+  String? playlistJson,
+  List<String> imagePaths,
 });
 
 /// VideoBooks 仓库：视频元数据 + 进度；字幕 cue 复用 audioCues 表。
@@ -754,18 +800,41 @@ class VideoBookRepository {
     String bookUid, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
-    await _db.deleteVideoBook(bookUid);
-    // 统一合集：删条目时清其全部合集引用（逻辑外键无 DB cascade）；被清空的 playlist
-    // 合集随之自删，避免留孤儿成员 / 合集卡数量虚高。
-    await _db.removeEntryFromAllCollections(MediaKind.video, bookUid);
-    // 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布到远端
-    // 标记、其他设备逐条确认后也删。keepLocalOnly 不记，避免删本地→回写墓碑循环。best-effort。
+    await deleteVideoBooks(<String>[bookUid], scope: scope);
+  }
+
+  /// 批量删视频书（BUG-2754）：行、cue、shelf entry、标签、规格缓存、本地花絮、
+  /// **合集成员**全在 [FushiDatabase.deleteVideoBooks] 的**一个事务**里完成（被清空
+  /// 的 playlist 合集随之自删，避免留孤儿成员 / 合集卡数量虚高），不再每条两三个
+  /// 独立事务。返回删前快照的行（不存在的 uid 不在其中）。
+  ///
+  /// 一个事务 = 全有或全无：任何一条违反约束都会让整批回滚。需要「某条失败不拖累
+  /// 其余条」的调用方（批量删除 UI）走 [deleteVideoBooksAndReclaimAssets]，那里
+  /// 整批失败时退回逐条重试并汇总失败。
+  Future<List<VideoBookRow>> deleteVideoBooks(
+    Iterable<String> bookUids, {
+    DeleteScope scope = DeleteScope.keepLocalOnly,
+  }) async {
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    if (uids.isEmpty) return const <VideoBookRow>[];
+    final List<VideoBookRow> deleted = await _db.deleteVideoBooks(uids);
+    // keepLocalOnly 不记墓碑，避免删本地→回写墓碑循环。
     if (scope == DeleteScope.syncEverywhere) {
+      await _writeVideoDeletionTombstones(uids);
+    }
+    return deleted;
+  }
+
+  /// 删除传播（显式确认式）：仅当用户选「同步删除」才记 sync 删除墓碑，供同步发布
+  /// 到远端标记、其他设备逐条确认后也删。best-effort：记账失败不影响视频已删。
+  Future<void> _writeVideoDeletionTombstones(Iterable<String> bookUids) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final String bookUid in bookUids) {
       try {
         await _db.writeSyncDeletionTombstone(
           SyncTombstoneKind.video.dbValue,
           bookUid,
-          DateTime.now().millisecondsSinceEpoch,
+          now,
         );
       } catch (_) {
         // best-effort：记账失败不影响视频已删。
@@ -845,55 +914,77 @@ class VideoBookRepository {
     required LocalVideoFileDeleteHooks? localFileHooks,
     required Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
-    final deleted = <({
-      String bookUid,
-      String? coverPath,
-      String? subtitlePath,
-      String? secondarySubtitlePath,
-      String videoPath,
-      String? playlistJson,
-      List<String> imagePaths,
-    })>[];
-    for (final String bookUid in bookUids.toSet()) {
-      final VideoBookRow? book = await getByBookUid(bookUid);
-      if (book == null) continue;
-      // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与
-      // coverPath 同一顺序约束——行一删就再也推导不出来）。
-      final List<String> imagePaths = <String>[
-        for (final MediaImageRow row in await _db.getMediaImagesForBook(
-          bookUid,
-        ))
-          row.path,
-      ];
-      await deleteVideoBook(bookUid, scope: scope);
-      deleted.add((
-        bookUid: bookUid,
-        coverPath: book.coverPath,
-        subtitlePath: book.subtitleSource,
-        secondarySubtitlePath: book.secondarySubtitleSource,
-        videoPath: book.videoPath,
-        playlistJson: book.playlistJson,
-        imagePaths: imagePaths,
-      ));
+    final List<String> uids = bookUids.toSet().toList(growable: false);
+    // v68：附加图行随删行 FK cascade 消失，路径必须删行**前**快照（与 coverPath
+    // 同一顺序约束——行一删就再也推导不出来）。全表读一次按 bookUid 分组，
+    // 不再每条一次查询（BUG-2754）。
+    final Map<String, List<String>> imagePathsByBook = <String, List<String>>{};
+    if (uids.isNotEmpty) {
+      final Set<String> targets = uids.toSet();
+      for (final MediaImageRow row in await _db.getAllMediaImages()) {
+        final String? owner = row.bookUid;
+        if (owner == null || !targets.contains(owner)) continue;
+        (imagePathsByBook[owner] ??= <String>[]).add(row.path);
+      }
     }
+    final List<VideoBookDeleteFailure> failures = <VideoBookDeleteFailure>[];
+    List<VideoBookRow> deletedRows;
+    try {
+      // 快路径：整批一个事务（BUG-2754：原来每条 2~3 个独立事务）。
+      deletedRows = await deleteVideoBooks(uids);
+    } catch (batchError, batchStack) {
+      // 一个事务全有或全无：任一条违反约束整批回滚。退回逐条删，让坏的那条只
+      // 拖累它自己，其余照删；失败条目逐条记下并在尾活跑完后汇总抛出。
+      engineLog.log(
+        'VideoBookRepository.deleteVideoBooks.batch',
+        batchError,
+        batchStack,
+      );
+      deletedRows = <VideoBookRow>[];
+      for (final String bookUid in uids) {
+        try {
+          deletedRows.addAll(await deleteVideoBooks(<String>[bookUid]));
+        } catch (e, stack) {
+          engineLog.log('VideoBookRepository.deleteVideoBooks.row', e, stack);
+          failures.add(
+            VideoBookDeleteFailure(bookUid: bookUid, error: e, stackTrace: stack),
+          );
+        }
+      }
+    }
+    // 墓碑只记真删掉的行（与原逐条路径一致：不存在的 uid 直接跳过、不记账）。
+    if (scope == DeleteScope.syncEverywhere) {
+      await _writeVideoDeletionTombstones(
+        deletedRows.map((VideoBookRow row) => row.bookUid),
+      );
+    }
+    final List<_DeletedVideoSnapshot> deleted = <_DeletedVideoSnapshot>[
+      for (final VideoBookRow book in deletedRows)
+        (
+          bookUid: book.bookUid,
+          coverPath: book.coverPath,
+          subtitlePath: book.subtitleSource,
+          secondarySubtitlePath: book.secondarySubtitleSource,
+          videoPath: book.videoPath,
+          playlistJson: book.playlistJson,
+          imagePaths: imagePathsByBook[book.bookUid] ?? const <String>[],
+        ),
+    ];
 
     try {
       await afterDeleteBeforeReclaim?.call();
     } finally {
-      for (final snapshot in deleted) {
-        await _reclaimDeletedVideoBookAssetsUnlocked(
-          deletedBookUid: snapshot.bookUid,
-          deletedCoverPath: snapshot.coverPath,
-          deletedSubtitlePath: snapshot.subtitlePath,
-          deletedSecondarySubtitlePath: snapshot.secondarySubtitlePath,
-          deletedVideoPath: snapshot.videoPath,
-          deletedImagePaths: snapshot.imagePaths,
-        );
+      // 幸存行全表只读一次，app 副本回收与原件删除护栏共用（BUG-2754：原来每条
+      // 被删行各读一到两次全表 = 全选 O(N²)）。
+      final List<VideoBookRow> survivors = deleted.isEmpty
+          ? const <VideoBookRow>[]
+          : await listAll();
+      if (deleted.isNotEmpty) {
+        await _reclaimDeletedVideoBooksAssetsUnlocked(deleted, survivors);
       }
       if (deleteLocalFiles && deleted.isNotEmpty) {
         // 原件删除排在 app 副本回收之后、compact 之前：行早已消失，这里是尾活；
         // 单文件失败逐条回传（[LocalFileDeleteReport]），不翻转删除结果。
-        final List<VideoBookRow> survivors = await listAll();
         final Set<String> stillReferenced = <String>{
           ...referencedLocalVideoPaths(survivors),
           // 幸存行手动挂着的外挂字幕也进护栏：它可能正躺在被删视频旁边、名字还
@@ -943,6 +1034,13 @@ class VideoBookRepository {
         await compactAfterVideoDeleteBestEffort();
       }
     }
+    if (failures.isNotEmpty) {
+      // 成功的那些已经删完、回收完；把失败条数交给 UI 如实告知，而不是静默。
+      throw VideoBooksDeleteException(
+        deletedCount: deleted.length,
+        failures: List<VideoBookDeleteFailure>.unmodifiable(failures),
+      );
+    }
     return deleted.length;
   }
 
@@ -981,40 +1079,80 @@ class VideoBookRepository {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) return Future<void>.value();
-    return VideoCoverMutationGate.runExclusive(
-      () => _reclaimDeletedVideoBookAssetsUnlocked(
-        deletedBookUid: deletedBookUid,
-        deletedCoverPath: deletedCoverPath,
-        deletedSubtitlePath: deletedSubtitlePath,
-        deletedSecondarySubtitlePath: deletedSecondarySubtitlePath,
-        deletedVideoPath: deletedVideoPath,
-        deletedImagePaths: deletedImagePaths,
-      ),
-    ).whenComplete(lease.release);
+    return VideoCoverMutationGate.runExclusive(() async {
+      final _DeletedVideoSnapshot snapshot = (
+        bookUid: deletedBookUid,
+        coverPath: deletedCoverPath,
+        subtitlePath: deletedSubtitlePath,
+        secondarySubtitlePath: deletedSecondarySubtitlePath,
+        videoPath: deletedVideoPath,
+        playlistJson: null,
+        imagePaths: deletedImagePaths,
+      );
+      List<VideoBookRow> survivors;
+      try {
+        survivors = await listAll();
+      } catch (e, stack) {
+        fushiDebugPrint(
+          'VideoBookRepository: video asset cleanup failed: $e\n$stack',
+        );
+        return;
+      }
+      await _reclaimDeletedVideoBooksAssetsUnlocked(
+        <_DeletedVideoSnapshot>[snapshot],
+        survivors,
+      );
+    }).whenComplete(lease.release);
   }
 
-  Future<void> _reclaimDeletedVideoBookAssetsUnlocked({
-    required String deletedBookUid,
-    required String? deletedCoverPath,
-    required String? deletedSubtitlePath,
-    required String deletedVideoPath,
-    required List<String> deletedImagePaths,
-    String? deletedSecondarySubtitlePath,
-  }) async {
-    try {
-      final ({Set<String> covers, Set<String> subtitles}) refs =
-          await collectReferencedAssetPaths(excludeBookUid: deletedBookUid);
-      await VideoStorage.deleteBookAssets(
-        deletedCoverPath: deletedCoverPath,
-        deletedSubtitlePath: deletedSubtitlePath,
-        deletedSecondarySubtitlePath: deletedSecondarySubtitlePath,
-        stillReferencedCoverPaths: refs.covers,
-        stillReferencedSubtitlePaths: refs.subtitles,
-      );
-      // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
-      // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
-      // 但护栏与封面/字幕同纪律，宁可漏删）。
-      if (deletedImagePaths.isNotEmpty) {
+  /// 批量回收一组已删行的 app 副本（BUG-2754）。
+  ///
+  /// 全表读取与目录遍历**与被删条数无关**：幸存行引用集由调用方传入的
+  /// [survivors]（一次 `listAll`）派生，附加图幸存集读一次、`gcOrphanCovers`
+  /// 遍历封面目录一次；循环内只做集合查询与被删行自己的文件删除。原实现每条
+  /// 被删行各做一遍（全表 listAll ×2、全表附加图、封面目录遍历）——全选删除
+  /// 退化成 O(N²)。
+  ///
+  /// 语义不变：仍被幸存行引用的封面/字幕/附加图/内嵌字幕缓存一律保留。每一步
+  /// 单独 best-effort，一步失败不拦后续步骤、不翻转「行已删」。
+  Future<void> _reclaimDeletedVideoBooksAssetsUnlocked(
+    List<_DeletedVideoSnapshot> deleted,
+    List<VideoBookRow> survivors,
+  ) async {
+    if (deleted.isEmpty) return;
+    final Set<String> deletedUids = <String>{
+      for (final _DeletedVideoSnapshot snapshot in deleted) snapshot.bookUid,
+    };
+    final List<VideoBookRow> others = <VideoBookRow>[
+      for (final VideoBookRow row in survivors)
+        if (!deletedUids.contains(row.bookUid)) row,
+    ];
+    final ({Set<String> covers, Set<String> subtitles}) refs =
+        referencedAssetPathsOf(others);
+    for (final _DeletedVideoSnapshot snapshot in deleted) {
+      try {
+        await VideoStorage.deleteBookAssets(
+          deletedCoverPath: snapshot.coverPath,
+          deletedSubtitlePath: snapshot.subtitlePath,
+          deletedSecondarySubtitlePath: snapshot.secondarySubtitlePath,
+          stillReferencedCoverPaths: refs.covers,
+          stillReferencedSubtitlePaths: refs.subtitles,
+        );
+      } catch (e, stack) {
+        fushiDebugPrint(
+          'VideoBookRepository: video asset cleanup failed: $e\n$stack',
+        );
+      }
+    }
+    // v68：附加图文件（video_covers/images/，行已 cascade 删除）。护栏：仍被
+    // 幸存行引用的路径保留（同名共享理论上不存在——文件名按 bookUid 派生——
+    // 但护栏与封面/字幕同纪律，宁可漏删）。
+    final List<String> deletedImagePaths = <String>[
+      for (final _DeletedVideoSnapshot snapshot in deleted)
+        ...snapshot.imagePaths,
+    ];
+    if (deletedImagePaths.isNotEmpty) {
+      try {
         final Set<String> survivingImagePaths = <String>{
           for (final MediaImageRow row in await _db.getAllMediaImages())
             row.path,
@@ -1024,33 +1162,86 @@ class VideoBookRepository {
           stillReferencedPaths: survivingImagePaths,
           ownedDir: await VideoStorage.imagesDir(),
         );
-      }
-      await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
-      if (!await isDuplicateVideoPath(
-        deletedVideoPath,
-        excludeBookUid: deletedBookUid,
-      )) {
-        await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(
-          deletedVideoPath,
+      } catch (e, stack) {
+        fushiDebugPrint(
+          'VideoBookRepository: video image cleanup failed: $e\n$stack',
         );
       }
+    }
+    try {
+      await VideoStorage.gcOrphanCovers(referencedCoverPaths: refs.covers);
     } catch (e, stack) {
-      fushiDebugPrint('VideoBookRepository: video asset cleanup failed: $e\n$stack');
+      fushiDebugPrint(
+        'VideoBookRepository: orphan cover GC failed: $e\n$stack',
+      );
+    }
+    // 与 [isDuplicateVideoPath] 同一比对语义（两侧 [normalizeVideoPath]），只是
+    // 幸存路径集算一次、循环内查集合。
+    final Set<String> survivingVideoPaths = <String>{
+      for (final VideoBookRow row in others) normalizeVideoPath(row.videoPath),
+    };
+    for (final _DeletedVideoSnapshot snapshot in deleted) {
+      final String videoPath = snapshot.videoPath;
+      if (videoPath.isNotEmpty &&
+          survivingVideoPaths.contains(normalizeVideoPath(videoPath))) {
+        continue;
+      }
+      try {
+        await VideoStorage.deleteEmbeddedSubtitleCacheForVideoPath(videoPath);
+      } catch (e, stack) {
+        fushiDebugPrint(
+          'VideoBookRepository: embedded subtitle cache cleanup failed: '
+          '$e\n$stack',
+        );
+      }
     }
   }
 
-  /// Best-effort SQLite space reclamation after video deletion. Keep this
-  /// outside delete transactions; callers doing batch deletes should call it
-  /// once after the batch, not once per row.
+  /// 删视频后的 SQLite 空间回收（best-effort，必须在删除事务之外）。
+  ///
+  /// 取舍（BUG-2754）：原来每次删除都同步跑整库 `VACUUM`——它按**整库大小**重写
+  /// 数据库文件，与删了几条无关；库大了之后删一条视频也要卡几秒，且批量删、同步
+  /// 消费删除标记、下载任务删除都会各跑一遍。改为：
+  /// - 每次都做 `wal_checkpoint(TRUNCATE)`：把 WAL 折回主库并截断，便宜，删除后
+  ///   WAL 不会无限涨；
+  /// - 只有空闲页（freelist）占到整库 [kVacuumFreelistRatio] 以上才 `VACUUM`
+  ///   （见 [shouldVacuumAfterVideoDelete]）。删得少时空闲页留给后续写入复用，不
+  ///   归还磁盘但也不会增长；真删掉一大块（BUG-276「删了占用不降」的场景）时照旧
+  ///   归还。小库本来 VACUUM 就快，比例阈值天然放行。
   Future<void> compactAfterVideoDeleteBestEffort() async {
     try {
-      await _db.customStatement('VACUUM');
+      final int freelistPages = await _readPragmaInt('freelist_count');
+      final int pageCount = await _readPragmaInt('page_count');
+      if (shouldVacuumAfterVideoDelete(
+        freelistPages: freelistPages,
+        pageCount: pageCount,
+      )) {
+        await _db.customStatement('VACUUM');
+      }
       await _db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
     } catch (e, stack) {
       fushiDebugPrint(
         'VideoBookRepository: compact after video delete failed: $e\n$stack',
       );
     }
+  }
+
+  Future<int> _readPragmaInt(String pragma) async {
+    final QueryRow row =
+        await _db.customSelect('PRAGMA $pragma').getSingle();
+    return row.read<int>(pragma);
+  }
+
+  /// 空闲页比例达到多少才值得整库 VACUUM（见 [compactAfterVideoDeleteBestEffort]）。
+  static const double kVacuumFreelistRatio = 0.25;
+
+  /// 删除后是否整库 VACUUM：空闲页占整库 [kVacuumFreelistRatio] 及以上。
+  static bool shouldVacuumAfterVideoDelete({
+    required int freelistPages,
+    required int pageCount,
+  }) {
+    if (pageCount <= 0 || freelistPages <= 0) return false;
+    return freelistPages / pageCount >= kVacuumFreelistRatio;
   }
 
   /// 收集「当前 DB 仍引用的、app 拥有的视频副本路径」，供删除回收做护栏 / 封面历史
@@ -1069,10 +1260,20 @@ class VideoBookRepository {
   Future<({Set<String> covers, Set<String> subtitles})>
       collectReferencedAssetPaths({String? excludeBookUid}) async {
     final List<VideoBookRow> all = await listAll();
+    return referencedAssetPathsOf(<VideoBookRow>[
+      for (final VideoBookRow row in all)
+        if (excludeBookUid == null || row.bookUid != excludeBookUid) row,
+    ]);
+  }
+
+  /// [collectReferencedAssetPaths] 的纯函数内核：从一份已读好的行列表派生引用集
+  /// （批量删除回收时幸存行只读一次、多处复用，BUG-2754）。
+  static ({Set<String> covers, Set<String> subtitles}) referencedAssetPathsOf(
+    Iterable<VideoBookRow> rows,
+  ) {
     final Set<String> covers = <String>{};
     final Set<String> subtitles = <String>{};
-    for (final VideoBookRow row in all) {
-      if (excludeBookUid != null && row.bookUid == excludeBookUid) continue;
+    for (final VideoBookRow row in rows) {
       final String? cover = row.coverPath;
       if (cover != null && cover.isNotEmpty) covers.add(cover);
       // 主 + 副两条指针都进护栏：同一份 app 字幕副本可以是 A 的主字幕、同时是

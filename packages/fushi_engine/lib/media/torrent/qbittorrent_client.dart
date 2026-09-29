@@ -478,6 +478,9 @@ class QBittorrentClient {
         'urls': urls.join('\n'),
         if (category != null) 'category': category,
         if (savePath != null) 'savepath': savePath,
+        // 显式落点必须关自动种子管理：分类开了 autoTMM 时 qB 会无视 savepath
+        // 按分类目录落盘（BUG-2755）。
+        if (savePath != null) 'autoTMM': 'false',
         if (sequentialDownload) 'sequentialDownload': 'true',
         if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
       },
@@ -504,6 +507,9 @@ class QBittorrentClient {
       form: <String, String>{
         if (category != null) 'category': category,
         if (savePath != null) 'savepath': savePath,
+        // 显式落点必须关自动种子管理：分类开了 autoTMM 时 qB 会无视 savepath
+        // 按分类目录落盘（BUG-2755）。
+        if (savePath != null) 'autoTMM': 'false',
         if (sequentialDownload) 'sequentialDownload': 'true',
         if (firstLastPiecePrio) 'firstLastPiecePrio': 'true',
         // qB 4.x 使用 paused，5.x 政名 stopped；同时发送可覆盖两代 WebUI。

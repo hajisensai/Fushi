@@ -300,6 +300,9 @@ void main() {
         'urls': 'magnet:?xt=urn:btih:aaa\nmagnet:?xt=urn:btih:bbb',
         'category': 'hibiki-anime',
         'savepath': '/downloads/anime',
+        // BUG-2755：显式落点必须关自动种子管理，否则分类开了 autoTMM 时 qB
+        // 无视 savepath 落到分类目录。
+        'autoTMM': 'false',
       });
       client.close();
     });

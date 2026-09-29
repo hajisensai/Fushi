@@ -82,6 +82,16 @@ class MinePopupResult {
         duplicate = false,
         queued = true;
 
+  /// 一次**被收下**的制卡结果（成功，或进了待发制卡队列）。
+  ///
+  /// 进了队列的卡此刻还不在 Anki 里：必须走 [MinePopupResult.queued]（画 ✓、不回查
+  /// Anki）。若按成功返回 `ankiConnect:true`，popup.js 会去问 Anki 查重、查不到就把
+  /// 按钮翻回「+」，诱导用户再制一张。判据只在这里。
+  factory MinePopupResult.mined(MineOutcome outcome) =>
+      outcome.result == MineResult.queued
+          ? const MinePopupResult.queued()
+          : MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+
   /// BUG-1915：一次**未成功**的制卡结果。
   ///
   /// 此前所有失败结局（重复 / 未配置 / 出错 / addNote 响应丢失）都被压成同一个

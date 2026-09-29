@@ -152,7 +152,8 @@ class _AiProviderSettingsSectionState
   /// 写着「然后下载或订阅」，iOS 上留这一行等于把被拆掉的能力写在审核员眼前。
   /// 判据只在 store_compliance.dart 写一次，这里只是消费。
   static bool _featureAvailableOnThisStore(AiFeature feature) =>
-      feature != AiFeature.videoAcquire ||
+      (feature != AiFeature.videoAcquire &&
+          feature != AiFeature.mediaAcquire) ||
       (StoreRestrictedCapability.downloads.isAvailable &&
           StoreRestrictedCapability.externalDiscovery.isAvailable);
 
@@ -754,6 +755,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoSearch => t.ai_feature_video_search,
     AiFeature.customTheme => t.ai_feature_custom_theme,
     AiFeature.videoAcquire => t.ai_feature_video_acquire,
+    AiFeature.mediaAcquire => t.ai_feature_media_acquire,
   };
 
   String _featureSummary(AiFeature feature) => switch (feature) {
@@ -764,6 +766,7 @@ class _AiProviderSettingsSectionState
     AiFeature.videoSearch => t.ai_feature_video_search_summary,
     AiFeature.customTheme => t.ai_feature_custom_theme_summary,
     AiFeature.videoAcquire => t.ai_feature_video_acquire_summary,
+    AiFeature.mediaAcquire => t.ai_feature_media_acquire_summary,
   };
 
   /// 协议名是 wire 事实（各家 API 文档里的原名），不翻译。

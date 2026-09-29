@@ -101,8 +101,13 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // 同一帧同一结果下这段 renderJs 跨渲染字节稳定（host 以 settingsJs 变更为
   // 重渲判据）：这里不得再掺任何每次查词都会变的上下文（曾经的句子横幅文本
   // 注入已随桌面剪贴板查词一并移除）。
+  //
+  // BUG-2770 — the overlay has no Flutter pointer tree, so the mobile-style
+  // horizontal "swipe to close" has to be recognised in the page. Overlay only:
+  // the in-app popup already has the Flutter body detector for the same swipe.
   const String renderJs = '''
     $kPopupTopPullReleaseJs
+    $kPopupTouchSideSwipeReleaseJs
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();

@@ -113,8 +113,10 @@ Future<void> _openCardSource({
   if (!navigator.mounted) return;
 
   final BaseAnkiRepository configured = ref.read(ankiRepositoryProvider);
+  // provider 恒返回装饰器链（待发队列 / 自动重排），`configured is
+  // AnkiMobileRepository` 永远不成立——必须拆装饰器判「卡落在哪」。
   final BaseAnkiRepository repository =
-      Platform.isIOS && configured is AnkiMobileRepository
+      Platform.isIOS && minesOnLocalAnkiMobile(configured)
           ? RemoteMiningAnkiRepository(
               local: configured,
               client: app.createRemoteMiningClient(),

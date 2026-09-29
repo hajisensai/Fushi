@@ -479,11 +479,11 @@ void main() {
         );
         // BUG-988：互联专属上传分项开关，与云备份/连接开关解耦，默认全关；仅互联启用时
         // 可见（host 无 outbound 时进一步隐藏）。
-        // BUG-2494：「上传词典」开关之后紧跟一行互联通道专属的词典显式传输动作
-        // （上传 / 下载），补上互联页此前缺失的「下载对端词典」入口。
+        // BUG-2494：一行互联通道专属的词典显式传输动作（上传 / 下载）。
+        // BUG-2762：它是本区唯一的词典行——旧的「上传词典」自动同步开关曾与它
+        // 并排成两个「词典」，已删除。
         expect(idsOf(dest.sections[2]), <String>[
           'interconnect.upload_content',
-          'interconnect.upload_dictionary',
           'interconnect.dictionary_transfer',
           'interconnect.upload_audiobook_files',
           'interconnect.upload_video_files',
@@ -623,19 +623,20 @@ void main() {
     test('upload section carries an explicit dictionary transfer row scoped to '
         'the interconnect channel (BUG-2494)', () {
       // 互联页此前没有任何「把对端的词典拉下来」的入口：云备份页那行「词典 · 传输 ▾」
-      // 在同步方式=互联时被藏掉，且 runManualAssetTransfer 显式跳过互联通道；互联页
-      // 只有一个文案叫「上传词典」的开关。这一行必须与上传开关同区、同门控（互联开
-      // 启且非 host），并且跑在互联通道范围上——不能复用云通道的默认范围，否则点一下
-      // 就把词典推上云盘而不是对端。
+      // 在同步方式=互联时被藏掉，且 runManualAssetTransfer 显式跳过互联通道。这一行
+      // 必须与上传开关同区、同门控（互联开启且非 host），并且跑在互联通道范围上——
+      // 不能复用云通道的默认范围，否则点一下就把词典推上云盘而不是对端。
       final SettingsSection upload = dest.sections.firstWhere(
         (SettingsSection s) => s.id == 'interconnect.upload.section',
       );
       final List<String> ids = idsOf(upload);
       expect(ids, contains('interconnect.dictionary_transfer'));
+      // BUG-2762：词典在这一区只能出现一次。旧的「上传词典」开关与本行并排，用户
+      // 看到两个「词典」；开关已删，这里钉住它不回来。
       expect(
-        ids.indexOf('interconnect.dictionary_transfer'),
-        ids.indexOf('interconnect.upload_dictionary') + 1,
-        reason: '传输动作紧跟在「上传词典」开关之后，用户在同一处看到开关与显式动作',
+        ids,
+        isNot(contains('interconnect.upload_dictionary')),
+        reason: '互联页词典只留显式传输一行，不得再有自动同步开关',
       );
       expect(upload.visible, isNotNull, reason: '整区按互联开启 + 非 host 门控，动作行随区隐藏');
 

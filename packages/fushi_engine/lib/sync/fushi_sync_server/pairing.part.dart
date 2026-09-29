@@ -345,12 +345,14 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? jobs = await _hostJobs?.capability();
     final Map<String, Object?>? downloads = await _downloads?.capability();
     final Map<String, Object?>? subscriptions = await _subscriptions?.capability();
+    final Map<String, Object?>? assistant = await _assistant?.capability();
     return jsonResponse(<String, dynamic>{
       if (mangaOcr != null) 'mangaOcr': mangaOcr,
       // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
       if (jobs != null) 'jobs': jobs,
       if (downloads != null) 'downloads': downloads,
       if (subscriptions != null) 'subscriptions': subscriptions,
+      if (assistant != null) 'assistant': assistant,
       'liveLibrary': <String, dynamic>{
         'dictionaries': lib,
         'books': lib,
@@ -363,6 +365,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 视频刮削元数据同步 / 远程刮削 / 代刮回写（`/api/library/metadata*`）。老
         // host 无此字段 → client 跳过元数据同步并隐藏远程刮削入口。
         'videoMetadata': _libraryService is VideoMetadataHost,
+        // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
+        // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
+        'tags': _libraryService is TagSyncHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。

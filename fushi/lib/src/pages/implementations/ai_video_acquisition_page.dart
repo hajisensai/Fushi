@@ -6,6 +6,10 @@
 ///
 /// 不挂 Riverpod（与 `VideoDiscoveryResourceSearchPage` 同一姿态）：所有外部能力经
 /// service 的端口注入，widget 测试不带 `ProviderScope` 直接 pump。
+///
+/// 页面只认 [VideoAcquisitionSession] 与它的 [VideoAcquisitionView]：会话可以是本机
+/// 的 `VideoAcquisitionService`，也可以是经互联交给电脑代办的远端会话（此时
+/// [AiVideoAcquisitionPage.executorLabel] 是那台设备的名字，显示在标题下）。
 library;
 
 import 'dart:async';
@@ -15,19 +19,13 @@ import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart'
 import 'package:fushi/src/media/discovery/discovery_labels.dart'
     show formatDiscoveryBytes;
 import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_resource_picker.dart';
-import 'package:fushi/src/media/video/acquisition/video_acquisition_service.dart';
-import 'package:fushi/src/media/video/download/video_resource_version_groups.dart';
+import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart'
     show aiFailureText;
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart'
     show VideoDownloadBackendSetupPrompt;
 import 'package:fushi/utils.dart';
-import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart'
-    show VideoDownloadBackendUnavailable;
-import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
-    show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
     show subtitleLanguageNativeName;
 
@@ -36,16 +34,20 @@ class AiVideoAcquisitionPage extends StatefulWidget {
     required this.service,
     this.initialQuery,
     this.onConfigureBackend,
+    this.executorLabel,
     super.key,
   });
 
-  final VideoAcquisitionService service;
+  final VideoAcquisitionSession service;
 
   /// 入口处已经输入的文字（发现页搜索框）：非空就直接当第一句话发出去。
   final String? initialQuery;
 
   /// 「去配置下载后端」端口；宿主没接线时失败态只报事实、不渲染按不动的按钮。
   final VideoDownloadBackendSetupPrompt? onConfigureBackend;
+
+  /// 会话交给了哪台设备执行（远端代办时非空）；null = 本机。
+  final String? executorLabel;
 
   @override
   State<AiVideoAcquisitionPage> createState() => _AiVideoAcquisitionPageState();
@@ -55,12 +57,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   final TextEditingController _input = TextEditingController();
   final FocusNode _inputFocus = FocusNode(debugLabel: 'ai-video-acquire-input');
   final ScrollController _scroll = ScrollController();
-  StreamSubscription<VideoAcquisitionState>? _subscription;
-  late VideoAcquisitionState _state = widget.service.state;
+  StreamSubscription<VideoAcquisitionView>? _subscription;
+  late VideoAcquisitionView _state = widget.service.view;
 
   /// 当前问题里「以后默认」勾选框的值（问题切换时重置为 `rememberDefault`）。
+  /// 按问题的结构签名判断「切换」：远端会话每次更新都是新解码的对象，按对象身份
+  /// 比会把用户刚改的勾选冲掉。
   bool _remember = true;
-  VideoAcquisitionQuestion? _rememberFor;
+  String? _rememberFor;
 
   /// 已经用 SnackBar 报过的失败条目数，避免同一条 failed 重复弹。
   int _reportedFailures = 0;
@@ -68,9 +72,9 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   @override
   void initState() {
     super.initState();
-    _subscription = widget.service.states.listen(_onState);
+    _subscription = widget.service.views.listen(_onState);
     final String initial = widget.initialQuery?.trim() ?? '';
-    if (initial.isNotEmpty && widget.service.state.transcript.isEmpty) {
+    if (initial.isNotEmpty && widget.service.view.transcript.isEmpty) {
       unawaited(widget.service.submitText(initial));
     }
   }
@@ -84,7 +88,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     super.dispose();
   }
 
-  void _onState(VideoAcquisitionState state) {
+  void _onState(VideoAcquisitionView state) {
     if (!mounted) return;
     setState(() => _state = state);
     _reportNewFailure(state);
@@ -95,7 +99,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   }
 
   /// 失败气泡已经在记录里；SnackBar 只为给一颗**能解决它**的按钮（配置后端 / 重试）。
-  void _reportNewFailure(VideoAcquisitionState state) {
+  void _reportNewFailure(VideoAcquisitionView state) {
     final int failures = state.transcript
         .whereType<VideoAcquisitionAssistantMessage>()
         .where(
@@ -105,21 +109,23 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         .length;
     if (failures <= _reportedFailures) return;
     _reportedFailures = failures;
-    final Object? error = widget.service.lastError;
     SnackBarAction? action;
     String message = _sayText(
       state.transcript.whereType<VideoAcquisitionAssistantMessage>().last.say,
     );
-    if (error is VideoDownloadBackendUnavailable) {
-      action = _backendSetupAction();
-    } else if (error is ArgumentError) {
-      message = t.download_backend_not_configured;
-      action = _backendSetupAction();
-    } else if (error is VideoDownloadPipelineActionRequired) {
-      action = SnackBarAction(
-        label: t.retry,
-        onPressed: () => unawaited(widget.service.confirm()),
-      );
+    switch (state.failureHint) {
+      case VideoAcquisitionFailureHint.configureBackend:
+        action = _backendSetupAction();
+      case VideoAcquisitionFailureHint.backendNotConfigured:
+        message = t.download_backend_not_configured;
+        action = _backendSetupAction();
+      case VideoAcquisitionFailureHint.retry:
+        action = SnackBarAction(
+          label: t.retry,
+          onPressed: () => unawaited(widget.service.confirm()),
+        );
+      case VideoAcquisitionFailureHint.none:
+        break;
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -254,6 +260,8 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     kVideoAcquisitionFailureNoSources => t.ai_video_acquire_failure_no_sources,
     kVideoAcquisitionFailureNothingSelected =>
       t.ai_video_acquire_failure_nothing_selected,
+    kVideoAcquisitionFailureRemoteUnavailable =>
+      t.ai_video_acquire_failure_remote_unavailable,
     _ => message,
   };
 
@@ -337,7 +345,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       case kVideoAcquisitionOptionSubmitAll:
         return t.ai_video_acquire_option_submit_all(
           count:
-              '${_state.franchiseEntries.where((VideoAcquisitionFranchiseEntry e) => e.submittable).length}',
+              '${_state.franchise.where((VideoAcquisitionFranchiseRowView r) => r.submittable).length}',
         );
     }
     if (o.id.startsWith(kVideoAcquisitionOptionAltPrefix)) {
@@ -365,20 +373,12 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     final int? index = int.tryParse(
       optionId.substring(kVideoAcquisitionOptionAltPrefix.length),
     );
-    if (index == null || index < 0 || index >= _state.eligibleGroups.length) {
+    if (index == null ||
+        index < 0 ||
+        index >= _state.alternativeLabels.length) {
       return optionId;
     }
-    return _versionLabel(_state.eligibleGroups[index]);
-  }
-
-  String _versionLabel(VideoResourceVersionGroup group) {
-    final int? bytes = estimatedBytesPerEpisode(group);
-    return <String>[
-      if (group.releaseGroup != null) group.releaseGroup!,
-      if (group.resolution != null) group.resolution!,
-      if (videoResourceSourceTag(group) case final String source) source,
-      if (bytes != null) formatDiscoveryBytes(bytes),
-    ].join(' · ');
+    return _state.alternativeLabels[index];
   }
 
   String _categoryLabel(VideoDiscoveryCategory category) => switch (category) {
@@ -390,12 +390,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   /// 作品候选的副标题：reducer 给的年份 / 原名 + 这里翻译的类别。
   String? _workHint(VideoAcquisitionOption o) {
     final int? index = int.tryParse(o.id);
-    if (index == null || index < 0 || index >= _state.workCandidates.length) {
+    if (index == null ||
+        index < 0 ||
+        index >= _state.workCandidateCategories.length) {
       return o.hint;
     }
-    final String category = _categoryLabel(
-      _state.workCandidates[index].reference.discoveryCategory,
-    );
+    final VideoDiscoveryCategory? kind = _state.workCandidateCategories[index];
+    if (kind == null) return o.hint;
+    final String category = _categoryLabel(kind);
     return o.hint == null ? category : '${o.hint} · $category';
   }
 
@@ -446,19 +448,41 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final VideoAcquisitionQuestion? question = _state.question;
-    if (question != _rememberFor) {
-      _rememberFor = question;
+    final String? questionKey = question == null
+        ? null
+        : '${question.slot.name}|'
+              '${question.options.map((VideoAcquisitionOption o) => o.id).join(',')}|'
+              '${_state.transcript.length}';
+    if (questionKey != _rememberFor) {
+      _rememberFor = questionKey;
       _remember = question?.rememberDefault ?? true;
     }
-    final bool finished =
-        _state.stage == VideoAcquisitionStage.done ||
-        _state.stage == VideoAcquisitionStage.cancelled;
+    final bool finished = _state.finished;
     final bool submitting = _state.stage == VideoAcquisitionStage.submitting;
     // 提交在飞时不许退出：返回会让用户以为「没下」，而入队仍在后台继续。
     return PopScope(
       canPop: !submitting,
       child: Scaffold(
-        appBar: AppBar(title: Text(t.ai_video_acquire_title)),
+        appBar: AppBar(
+          title: widget.executorLabel == null
+              ? Text(t.ai_video_acquire_title)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(t.ai_video_acquire_title),
+                    Text(
+                      t.ai_video_acquire_remote_executor(
+                        device: widget.executorLabel!,
+                      ),
+                      key: const ValueKey<String>(
+                        'ai-video-acquire-remote-executor',
+                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+        ),
         body: SafeArea(
           child: Column(
             children: <Widget>[
@@ -496,12 +520,10 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
                             ),
                           ),
                       },
-                    if (_state.franchiseEntries.isNotEmpty)
-                      _franchiseCard(context),
+                    if (_state.franchise.isNotEmpty) _franchiseCard(context),
                     if (question != null && !finished)
                       _questionChips(context, question),
-                    if (videoAcquisitionWorkActions(_state).isNotEmpty)
-                      _workActions(context),
+                    if (_state.workActions.isNotEmpty) _workActions(context),
                     if (finished)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -622,7 +644,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
         spacing: 8,
         runSpacing: 8,
         children: <Widget>[
-          for (final String id in videoAcquisitionWorkActions(_state))
+          for (final String id in _state.workActions)
             ActionChip(
               key: ValueKey<String>('ai-video-acquire-action-$id'),
               avatar: Icon(
@@ -646,8 +668,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     final bool editable =
         _state.stage == VideoAcquisitionStage.awaitingFranchiseConfirm &&
         !_state.busy;
-    final List<VideoAcquisitionFranchiseEntry> entries =
-        _state.franchiseEntries;
+    final List<VideoAcquisitionFranchiseRowView> entries = _state.franchise;
     return FushiCard(
       key: const ValueKey<String>('ai-video-acquire-franchise'),
       margin: const EdgeInsets.only(top: 8),
@@ -673,7 +694,7 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
 
   Widget _franchiseRow({
     required int index,
-    required VideoAcquisitionFranchiseEntry entry,
+    required VideoAcquisitionFranchiseRowView entry,
     required VoidCallback? toggle,
   }) {
     return FushiListItem(
@@ -689,14 +710,10 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
     );
   }
 
-  String _franchiseTitle(VideoAcquisitionFranchiseEntry entry) {
-    final VideoMediaReference reference = entry.item.reference;
-    return reference.year == null
-        ? reference.title
-        : '${reference.title} (${reference.year})';
-  }
+  String _franchiseTitle(VideoAcquisitionFranchiseRowView entry) =>
+      entry.year == null ? entry.title : '${entry.title} (${entry.year})';
 
-  String _franchiseStatus(VideoAcquisitionFranchiseEntry entry) {
+  String _franchiseStatus(VideoAcquisitionFranchiseRowView entry) {
     final String status = switch (entry.status) {
       VideoAcquisitionFranchiseEntryStatus.pending =>
         t.ai_video_acquire_franchise_entry_pending,
@@ -705,11 +722,11 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionFranchiseEntryStatus.ready => switch (entry.mode) {
         VideoAcquisitionMode.download =>
           t.ai_video_acquire_franchise_entry_download(
-            version: _versionLabel(entry.plan!.group),
+            version: entry.versionLabel ?? '',
           ),
         VideoAcquisitionMode.subscribe =>
           t.ai_video_acquire_franchise_entry_subscribe(
-            version: _versionLabel(entry.plan!.group),
+            version: entry.versionLabel ?? '',
           ),
       },
     };

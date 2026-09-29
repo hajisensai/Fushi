@@ -830,6 +830,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
                         onSwipeDismiss: dismissTopPopup,
                         swipeEnabled:
                             ReaderFushiSource.instance.enableSwipeToClose,
+                        // BUG-2770：触摸半边未设置时所有平台默认开。
+                        touchSwipeEnabled:
+                            ReaderFushiSource.instance.enableTouchSwipeToClose,
                         sensitivity:
                             ReaderFushiSource.instance.dismissSwipeSensitivity,
                         onPointerHover: onDismissBarrierHover,
@@ -966,6 +969,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         onDismiss: () => _dismissPopupAt(index),
         // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
         enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+        // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+        enableTouchSwipeToClose:
+            ReaderFushiSource.instance.enableTouchSwipeToClose,
         // TODO-407①：顶层仍渲染"X 关闭"并走既有关闭汇聚点 [_dismissPopupAt(0)]
         // （不破坏 BUG-072 续播 / 清句 / 清栈）。
         onClose: () => _dismissPopupAt(index),
@@ -1504,6 +1510,9 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
+    // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（queued 画 ✓、不回查
+    // Anki），下面那个二元组装不下这个状态。
+    MinePopupResult? minedNew;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -1516,6 +1525,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final res = await onMineFromPopup(
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
+        minedNew = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
@@ -1525,6 +1535,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
+    if (minedNew?.queued ?? false) return minedNew!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 

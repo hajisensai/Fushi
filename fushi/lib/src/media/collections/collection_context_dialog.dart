@@ -6,6 +6,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart'
     show showCollectionNameDialog;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_picker_page.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -91,6 +92,18 @@ Future<void> showCollectionContextDialog({
                 context: context,
                 collection: collection,
                 onChanged: onChanged,
+              ),
+            ),
+          ),
+          // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
+          DialogListAction(
+            label: t.media_stats_action,
+            icon: Icons.insights_outlined,
+            onPressed: () => closeThen(
+              () => _openCollectionStatistics(
+                context: context,
+                db: db,
+                collection: collection,
               ),
             ),
           ),
@@ -253,4 +266,23 @@ Future<void> _deleteCollection({
   }
   await deleteMediaCollectionWithAssets(db, collection.id);
   onChanged();
+}
+
+/// 合集「查看统计」：成员身份现取（与删除 / 排序同一张成员表），合并成一个统计目标。
+Future<void> _openCollectionStatistics({
+  required BuildContext context,
+  required FushiDatabase db,
+  required MediaCollectionRow collection,
+}) async {
+  final List<MediaCollectionItemRow> members =
+      await db.getCollectionItems(collection.id);
+  if (!context.mounted) return;
+  await showMediaItemStatsDialog(
+    context,
+    database: db,
+    target: MediaItemStatsTarget.collection(
+      members: members,
+      title: collection.name,
+    ),
+  );
 }

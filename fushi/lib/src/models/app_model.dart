@@ -22,6 +22,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:remove_emoji/remove_emoji.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -169,13 +170,13 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show createAsrTranscriptionService;
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/media/video/acquisition/app_video_acquisition_assembly.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
-import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
 import 'package:fushi/src/sync/game_stream_library_host.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
@@ -209,12 +210,15 @@ import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/anki_integration.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
+import 'package:fushi/src/sync/interconnect_post_transport.dart'
+    show kInterconnectConnectTimeout;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/sync/remote_audio_lookup_bytes.dart';
 import 'package:fushi/src/utils/misc/lookup_audio_playback.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show extractVideoCover;
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
+import 'package:fushi/src/anki/forwarded_mine_codec.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi/src/mining/bilibili_clip_miner.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -640,6 +644,9 @@ class AppModel with ChangeNotifier {
     },
     downloadsFactory: () => appDownloadHost,
     subscriptionsFactory: () => appDownloadHost.subscriptions,
+    // AI 助手会话：手机经互联把「下载 xxx」交给本机，用本机的 AI 指派 / 资源
+    // 搜索 / 下载管线办（装配与首页对话页入口同一份）。
+    assistantFactory: () => createAppAssistantHost(this),
     // 引擎按请求实时读的 host 偏好（「允许为对端转码视频」）：给仓库本体而不是
     // 启动时的快照，用户改完设置不必重启互联服务。
     prefsStore: () => prefsRepo,
@@ -5323,6 +5330,8 @@ class AppModel with ChangeNotifier {
       manualTorrentDirectory:
           Directory(path.join(appDirectory.path, 'manual_torrents')),
       updateFeed: updateFeedService,
+      // 目标来源被删的任务重试时改绑到默认下载来源（BUG-2755）。
+      defaultTargetSourceId: _defaultVideoDownloadSourceId,
     )..start();
     _videoDownloadPipelineService = pipeline;
     _videoDownloadKeepAlive =
@@ -6262,11 +6271,9 @@ class AppModel with ChangeNotifier {
         // 删完把剩下的词典装回引擎（释放映射时整个引擎被清空了）。
         reloadEngine: _rebuildDictPathsCache,
       );
-      // Propagate the deletion to the remote sync staging area so the package
-      // does not become an orphan that union-sync re-pulls forever (phantom
-      // dictionary + slow sync, BUG-086). Best-effort + serialized with sync;
-      // never blocks or fails the local delete.
-      unawaited(_propagateDictionaryDeleteToRemote(dictionary.name));
+      // 不再把删除传播到远端（BUG-086 / BUG-1566 那套已退役，BUG-2762）：两条同步
+      // 通道都不再自动并集同步词典，远端那份不会被下一轮拉回来；它是用户经设置页
+      // 「词典 · 传输」显式放上去的备份，本地删一本不该连坐删掉它。
     } catch (e, stack) {
       ErrorLogService.instance.log('deleteDictionary', e, stack);
       FushiToast.show(
@@ -6275,56 +6282,6 @@ class AppModel with ChangeNotifier {
       );
     } finally {
       dictionarySearchAgainNotifier.notifyListeners();
-    }
-  }
-
-  /// Best-effort removal of a deleted dictionary's package from **每条启用的同步
-  /// 通道** 的远端暂存命名空间（BUG-086 的删除传播 + BUG-1566 的通道覆盖）。
-  ///
-  /// BUG-1566 根因：这里原来只按「云备份 backendType」解析出的那一条通道去删，
-  /// 门控也只读云备份的 `isSyncDictionaryEnabled`。用户「云备份=Google
-  /// Drive + 互联启用」时，删词典只把云暂存删了，互联对端上那份原封不动；而词典是并集
-  /// 同步（[SyncOrchestrator] 的词典维度），下一轮又被拉回来 → 幽灵词典永远删不掉。
-  /// 通道枚举必须复用同步真正跑的那份 [enabledSyncChannelBackends]（云 + 已启用互联），
-  /// 门控按通道走 [resolveChannelSyncFlags]（互联通道读互联专属上传开关，BUG-988 语义）。
-  ///
-  /// 现在实际只剩互联通道会被传播：云通道的词典已经改成设置页的显式上传 / 下载动作，
-  /// 它的 [ChannelSyncFlags.syncDictionary] 恒 false。这不是遗漏——云那侧不再有并集
-  /// 自动同步，也就没有「下轮又被拉回来」的幽灵词典要防；反过来，用户手动传上去的那份
-  /// 是他自己放的备份，本地删一本不该连坐删掉它。
-  ///
-  /// 每条通道各自认证成功才动手；未配置/离线/出错的通道只记账并继续下一条——一条云通道
-  /// 掉线不得挡住互联通道的删除传播（BUG-1552 同型的通道隔离）。整体仍在
-  /// [runExclusiveWithSync] 里串行，避免与在飞同步抢单例后端（BUG-083）。本地删除从不
-  /// 依赖网络：所有错误都被吞掉（记 log）。
-  Future<void> _propagateDictionaryDeleteToRemote(String name) async {
-    try {
-      final SyncRepository repo = SyncRepository(database);
-      final List<SyncChannel> channels = await enabledSyncChannelBackends(repo);
-      await runExclusiveWithSync(() async {
-        for (final SyncChannel channel in channels) {
-          try {
-            final ChannelSyncFlags flags = await resolveChannelSyncFlags(
-              repo,
-              isInterconnect: channel.isInterconnect,
-            );
-            if (!flags.syncDictionary) continue;
-            final SyncBackend backend = channel.backend;
-            if (!await backend.restoreAuth(repo)) continue;
-            if (!await backend.isAuthenticated) continue;
-            // 互联（live）后端直接走 host DELETE 端点；云后端走暂存删除路径。
-            if (backend is InterconnectSyncBackend) {
-              await backend.deleteRemoteDictionary(name);
-              continue;
-            }
-            await deleteRemoteDictionaryAsset(backend, name);
-          } catch (e, stack) {
-            ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
-          }
-        }
-      });
-    } catch (e, stack) {
-      ErrorLogService.instance.log('deleteDictionary.remote', e, stack);
     }
   }
 
@@ -8112,8 +8069,9 @@ class AppModel with ChangeNotifier {
   // 避免每次查词都新建 client + 重做 DNS/TCP/TLS 握手）。SyncRepository 每次
   // 现读 URL/token，所以服务器配置变更无需失效此 client；进程退出在 dispose 关。
   http.Client? _remoteLookupHttpClient;
-  http.Client get _remoteLookupClient =>
-      _remoteLookupHttpClient ??= http.Client();
+  http.Client get _remoteLookupClient => _remoteLookupHttpClient ??= IOClient(
+    HttpClient()..connectionTimeout = kInterconnectConnectTimeout,
+  );
 
   Future<String?> lookupRemoteAudio(
     String expression,
@@ -8314,6 +8272,20 @@ class AppModel with ChangeNotifier {
   /// Riverpod 图里，无法直接触达 [ProfileViewModel]，由 main.dart 在根容器建好
   /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser)`）。
   Future<void> Function()? browserLookupProfileApplier;
+
+  /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条
+  /// 装饰器链里）。AppModel 不在 Riverpod 图里，由 main.dart 在根容器建好后注入。
+  BaseAnkiRepository Function()? ankiRepositoryReader;
+
+  /// **本机用户**在 app 外的制卡入口（Windows 查词浮窗 / gal 浮窗 / Android 原生悬浮窗）
+  /// 用的仓库——必须与 app 内入口是同一条装饰器链，否则 Anki 没开时卡直接丢、
+  /// 不自动重排、「制卡到互联主机」不生效。
+  ///
+  /// 替**别的设备**制卡的入口（互联主机收转发、浏览器扩展、游戏串流）不走这里：
+  /// 对端有自己的待发队列，主机侧再排一次会让「送没送到」变得不确定。
+  /// 未注入（测试、弹窗 / 悬浮词典引擎）时退回裸后端，与注入前行为一致。
+  BaseAnkiRepository get miningAnkiRepository =>
+      ankiRepositoryReader?.call() ?? platformServices.createAnkiRepository();
 
   // TODO-2936：扩展查词请求可能成串到达（termEntries + tokenize + mine），一趟
   // 在途时后续命中直接跳过——绑定应用本身幂等，重复趟次只是浪费快照/应用开销。
@@ -8684,7 +8656,7 @@ class AppModel with ChangeNotifier {
       },
       onAnkiExport: (String word, String reading, String meaning) async {
         debugPrint('[FloatingDict] Anki export: $word / $reading');
-        final BaseAnkiRepository repo = platformServices.createAnkiRepository();
+        final BaseAnkiRepository repo = miningAnkiRepository;
         final Map<String, String> fields = <String, String>{
           'expression': word,
           'reading': reading,
@@ -8994,6 +8966,8 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
       );
     case MineResult.duplicate:
     case MineResult.notConfigured:
+    // 主机端落卡用本机原始仓库（不套待发队列），不会产生 queued；列出只为穷尽。
+    case MineResult.queued:
       return RemoteMineResult(result: outcome.result.name);
   }
 }
@@ -9095,6 +9069,9 @@ class _AppModelRemoteLookupService
         repo.prepareSourceNoteFields(rawPayloadJson: raw, context: context),
   );
 
+  /// 互联「制卡到服务端」：客户端已把未渲染的 rawPayloadJson + context 文本 + 全部本地
+  /// 媒体字节发来。还原成本机文件后走与 app 内本地制卡**完全同一**的 repo.mineEntry
+  /// 渲染链路（服务端用自己的字段映射/牌组）。
   Future<T> _withForwardedMiningContext<T>(
     ForwardedMinePayload payload,
     Future<T> Function(
@@ -9103,114 +9080,13 @@ class _AppModelRemoteLookupService
       AnkiMiningContext context,
     )
     action,
-  ) async {
-    // 互联「制卡到服务端」：客户端已把未渲染的 rawPayloadJson + context 文本 + 全部本地
-    // 媒体字节发来。这里把字节落成本机临时文件 / 词典缓存、重建 AnkiMiningContext，再走
-    // 与 app 内本地制卡**完全同一**的 repo.mineEntry 渲染链路（服务端用自己的字段映射/牌组）。
+  ) {
     final BaseAnkiRepository repo =
         _appModel.platformServices.createAnkiRepository();
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('fushi_fwd_mine_');
-    try {
-      // ① 封面 → 临时文件 → context.coverPath
-      String? coverPath;
-      if (payload.coverBytes != null) {
-        final File f = File('${tmp.path}/cover.${payload.coverExt ?? 'bin'}');
-        await f.writeAsBytes(payload.coverBytes!, flush: true);
-        coverPath = f.path;
-      }
-      // ② 句子音频 → 临时文件 → context.sasayakiAudioPath
-      String? sentenceAudioPath = payload.synchronizedVideo ? coverPath : null;
-      if (payload.sentenceAudioBytes != null && !payload.synchronizedVideo) {
-        final File f = File(
-            '${tmp.path}/sentence_audio.${payload.sentenceAudioExt ?? 'bin'}');
-        await f.writeAsBytes(payload.sentenceAudioBytes!, flush: true);
-        sentenceAudioPath = f.path;
-      }
-      // ③ 单词音频（本地文件）→ 临时文件 → 改写 rawPayloadJson 的 audio 字段为本机路径
-      String rawPayloadJson = payload.rawPayloadJson;
-      if (payload.wordAudioBytes != null) {
-        final File f =
-            File('${tmp.path}/word_audio.${payload.wordAudioExt ?? 'bin'}');
-        await f.writeAsBytes(payload.wordAudioBytes!, flush: true);
-        rawPayloadJson = _rewriteForwardedAudioField(rawPayloadJson, f.path);
-      }
-      // ④ 词典外字 → 落到 repo 会读取的共享缓存目录（按 path 派生同名，与 repo 读取对齐）
-      await _materializeForwardedDictionaryMedia(payload.dictionaryMedia);
-      // ⑤ 重建 context 后走本地渲染链路落卡
-      final AnkiMiningContext context = AnkiMiningContext(
-        sentence: payload.sentence,
-        cueSentence: payload.cueSentence,
-        documentTitle: payload.documentTitle,
-        coverPath: coverPath,
-        sentenceAudioPath: sentenceAudioPath,
-        synchronizedVideo: payload.synchronizedVideo,
-        sentenceOffset: payload.sentenceOffset,
-        source: _forwardedSourceFromName(payload.source),
-        sourceLink: payload.sourceLink,
-        bookTitleTag: payload.bookTitleTag,
-        collectionTag: payload.collectionTag,
-        charPositionTag: payload.charPositionTag,
-        // 转发 payload 本来就带片段时间窗（Netflix / YouTube 扩展制卡按视频
-        // 时间轴填）。原样透传，有效性由 formatClipTimestamp 单点判定——非视频
-        // 转发两端为 null，渲染成空串。
-        clipStartMs: payload.clipStartMs,
-        clipEndMs: payload.clipEndMs,
-      );
-      return await action(repo, rawPayloadJson, context);
-    } finally {
-      // 临时封面/音频在 mineEntry 落卡（读+storeMedia）完成后回收；词典缓存目录是共享的
-      // （与本地 writeDictionaryMediaCache 同址），下次覆盖即可，不在此删。
-      try {
-        tmp.deleteSync(recursive: true);
-      } catch (_) {}
-    }
-  }
-
-  /// 把 rawPayloadJson 里的 `audio` 字段改写成本机临时文件路径（客户端单词音频是本地文件时）。
-  String _rewriteForwardedAudioField(String rawJson, String newAudioPath) {
-    try {
-      final Map<String, dynamic> map =
-          jsonDecode(rawJson) as Map<String, dynamic>;
-      map['audio'] = newAudioPath;
-      return jsonEncode(map);
-    } catch (_) {
-      return rawJson;
-    }
-  }
-
-  /// 把转发来的词典外字字节落到 [ankiDictionaryMediaCacheDirPath]，命名与 repo 读取对齐
-  /// （[ankiDictionaryMediaCacheFilename]）。服务端未必装同款词典，故必须用客户端字节。
-  Future<void> _materializeForwardedDictionaryMedia(
-      List<ForwardedDictMedia> media) async {
-    if (media.isEmpty) return;
-    final Directory dir = Directory(ankiDictionaryMediaCacheDirPath());
-    if (!dir.existsSync()) dir.createSync(recursive: true);
-    for (final ForwardedDictMedia m in media) {
-      final bytes = m.bytes;
-      if (bytes == null || bytes.isEmpty || m.path.isEmpty) continue;
-      final String fname =
-          ankiDictionaryMediaCacheFilename(m.dictionary, m.path);
-      // 防御：文件名扩展名派生自 client 提供的 path，理论上可含分隔符（`ankiDictionary…`
-      // 未过滤 ext）。落在缓存目录之外/嵌套子目录是不可接受的——直接跳过该条（外字缺失即
-      // 降级，与其它媒体一致），绝不写出目录。SHA-1 前缀已让路径不可上溯，这里再堵横向。
-      if (fname.contains('/') || fname.contains('\\')) continue;
-      final File f = File('${dir.path}/$fname');
-      await f.writeAsBytes(bytes, flush: true);
-    }
-  }
-
-  AnkiMiningSource? _forwardedSourceFromName(String? name) {
-    switch (name) {
-      case 'book':
-        return AnkiMiningSource.book;
-      case 'video':
-        return AnkiMiningSource.video;
-      case 'game':
-        return AnkiMiningSource.game;
-      default:
-        return null;
-    }
+    return withMaterializedMiningContext<T>(
+      payload,
+      (String raw, AnkiMiningContext context) => action(repo, raw, context),
+    );
   }
 
   // ── 互联 Lapis 客制化：客户端（手机等）经互联读写本机 Anki 的 note type。

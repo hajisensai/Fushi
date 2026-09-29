@@ -172,6 +172,36 @@ mixin _FushiDbContentMisc
     return rows.map((TypedResult row) => row.read(epubBooks.bookKey)!).toSet();
   }
 
+  /// v115：还没有 ISBN 的 EPUB（`format='epub'` 且 `isbn IS NULL`）的
+  /// `(bookKey, extractDir)`，供引擎侧 `backfillEpubIsbns` 只读 OPF 回填。PDF /
+  /// 漫画不在内：前者没有 OPF，后者的解压树是页图 + manga.json。
+  Future<List<({String bookKey, String extractDir})>>
+      getEpubBooksMissingIsbn() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(epubBooks)
+          ..addColumns(<Expression<Object>>[
+            epubBooks.bookKey,
+            epubBooks.extractDir,
+          ])
+          ..where(epubBooks.isbn.isNull() &
+              epubBooks.format.equals(BookFormat.epub.dbValue));
+    final List<TypedResult> rows = await query.get();
+    return <({String bookKey, String extractDir})>[
+      for (final TypedResult row in rows)
+        (
+          bookKey: row.read(epubBooks.bookKey)!,
+          extractDir: row.read(epubBooks.extractDir)!,
+        ),
+    ];
+  }
+
+  /// v115：只写一本书的 ISBN（调用方负责传已规范化的 ISBN-13）。只在列仍为空时
+  /// 写入——回填与用户/导入已写的值并发时不覆盖先到的值。返回受影响行数。
+  Future<int> setEpubBookIsbnIfMissing(String bookKey, String isbn) =>
+      (update(epubBooks)
+            ..where((t) => t.bookKey.equals(bookKey) & t.isbn.isNull()))
+          .write(EpubBooksCompanion(isbn: Value<String?>(isbn)));
+
   /// Inserts a book; returns its bookKey (the primary key) on success.
   ///
   /// v81：companion 未携带（或空）本机稳定 uid 时在此**单点自动生成**——

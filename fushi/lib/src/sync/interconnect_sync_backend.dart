@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
 import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -1384,6 +1385,41 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/collections');
     final String body = await _readBodyBounded(res);
     return CollectionManifest.fromJson(jsonDecode(body));
+  }
+
+  // ── Live tags (interconnect-only) ─────────────────────────────────────
+  // 互联标签同步（`tag_sync.dart`）：直打 /api/library/tags，同合集清单的读-合并-写。
+
+  /// GET 对端 host 标签清单。老 host 无端点（404）返回 null，调用方跳过标签维度。
+  Future<TagManifest?> getRemoteTagManifest() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase/api/library/tags',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET /api/library/tags');
+    final String body = await _readBodyBounded(res);
+    return TagManifest.fromJson(jsonDecode(body));
+  }
+
+  /// POST 本机标签清单到 host，host 按 LWW 并入自己 DB 并回并入后的清单。
+  Future<TagManifest> putRemoteTagManifest(TagManifest manifest) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'POST',
+      '$_apiBase/api/library/tags',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'POST /api/library/tags');
+    final String body = await _readBodyBounded(res);
+    return TagManifest.fromJson(jsonDecode(body));
   }
 
   // ── Live video metadata (interconnect-only, #7) ────────────────────────

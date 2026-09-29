@@ -100,7 +100,9 @@ void main() {
 
       final int start = service.indexOf('private void readInitialState()');
       expect(start, isNonNegative, reason: 'readInitialState must exist');
-      final int end = service.indexOf('private void bringAppToFront()', start);
+      // readInitialState 之后紧跟的方法（bringAppToFront 已随后台启动逻辑抽进
+      // BackgroundActivityLauncher）。
+      final int end = service.indexOf('private static String extractLabel(', start);
       expect(end, greaterThan(start));
       final String body = service.substring(start, end);
 

@@ -442,7 +442,7 @@ mixin DictionaryPageMixin {
     if (described.success) {
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     // BUG-1908/1915：重复是「卡已在 Anki 里」而不是「没有卡」，把这个确定事实带回
     // 弹窗，否则 ✓ 被画成 ＋ 且 ↗ 入口消失（弹窗侧不许回查 Anki——TODO-448）。
@@ -477,7 +477,7 @@ mixin DictionaryPageMixin {
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     FushiToast.showMine(msg: described.message, status: described.status);
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }
@@ -537,6 +537,8 @@ mixin DictionaryPageMixin {
     final repo = ref.read(ankiRepositoryProvider);
     final expression = fields['expression'] ?? '';
     final reading = fields['reading'] ?? '';
+    // 「新增」分支的原始结果：进了待发队列时要原样交回弹窗（同 base_source_page）。
+    MinePopupResult? minedNew;
     final r = await runAnkiMinedCardAction(
       context: context,
       repo: repo,
@@ -548,6 +550,7 @@ mixin DictionaryPageMixin {
         final res = await onMineEntry(
           AnkiMiningPayload.withAllowDuplicate(fields),
         );
+        minedNew = res;
         return (ankiConnect: res.ankiConnect, noteId: res.noteId);
       },
       overwrite: (noteId) async {
@@ -557,6 +560,7 @@ mixin DictionaryPageMixin {
       // BUG-1040：对话框期间停靠查词弹窗，否则原生平台视图盖住它（用户报「看不见」）。
       runHidden: runWithLookupPopupHidden,
     );
+    if (minedNew?.queued ?? false) return minedNew!;
     return MinePopupResult(ankiConnect: r.ankiConnect, noteId: r.noteId);
   }
 
@@ -846,6 +850,9 @@ mixin DictionaryPageMixin {
                   },
             // TODO-407②：平台/偏好级"滑动关闭"开关（Windows/Linux 默认 false）。
             enableSwipeToClose: ReaderFushiSource.instance.enableSwipeToClose,
+            // BUG-2770：触摸 / 触控笔滑关未设置时所有平台默认开（鼠标仍按上一行）。
+            enableTouchSwipeToClose:
+                ReaderFushiSource.instance.enableTouchSwipeToClose,
             // TODO-407①：顶层仍渲染"X 关闭"，走既有关闭汇聚点 onPop(0)
             // （清整栈，不破坏 BUG-072 续播 / 清句 / 清栈）。
             onClose: () => onPop(index),

@@ -11,28 +11,23 @@
 /// 后端会覆盖的成员都必须逐个委派。漏掉一个就会掉回 [BaseAnkiRepository] 的降级
 /// 默认（例如 `supportsNoteTypeEditing` 变 false、`noteFields` 恒返回 null），而且
 /// **不会报错**——只会表现为「开了自动重排以后某个功能莫名其妙不工作了」。
-/// 守卫测试 `fushi/test/anki/auto_reposition_repository_delegation_test.dart` 钉死
-/// 这份清单：基类里新增或被任一后端覆盖的成员，没在本文件委派就会红。
+/// 委派清单只写一次，在 [DelegatingAnkiRepository]；守卫测试
+/// `fushi/test/anki/auto_reposition_repository_delegation_test.dart` 钉死那份清单。
 library;
 
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
+import 'package:fushi/src/anki/delegating_anki_repository.dart';
 
 /// 包装 [inner]，制卡成功后触发自动重排。
-class AutoRepositionAnkiRepository extends BaseAnkiRepository {
+class AutoRepositionAnkiRepository extends DelegatingAnkiRepository {
   AutoRepositionAnkiRepository({
-    required BaseAnkiRepository inner,
+    required super.inner,
     required AnkiAutoRepositionScheduler scheduler,
-  })  : _inner = inner,
-        _scheduler = scheduler;
+  }) : _scheduler = scheduler;
 
-  final BaseAnkiRepository _inner;
   final AnkiAutoRepositionScheduler _scheduler;
-
-  /// 被包装的仓库（测试与诊断用）。
-  BaseAnkiRepository get inner => _inner;
 
   // --- 唯一一处有额外行为的方法 ---------------------------------------------
 
@@ -42,14 +37,14 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
   /// * 结果必须是成功——失败/重复/未配置都没有新卡产生。
   /// * [MineOutcome.deckName] 必须非空——它才是真正落卡的牌组（BUG-1549）；
   ///   拿设置里的 `selectedDeckName` 猜会在旧存档上猜空。
-  /// * [_inner] 必须支持卡片级读写——AnkiDroid / AnkiMobile / 「制卡到已配对
+  /// * [inner] 必须支持卡片级读写——AnkiDroid / AnkiMobile / 「制卡到已配对
   ///   设备」都没有，喂进去只会让调度器空跑一轮。
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
-    final MineOutcome outcome = await _inner.mineEntry(
+    final MineOutcome outcome = await inner.mineEntry(
       rawPayloadJson: rawPayloadJson,
       context: context,
     );
@@ -57,181 +52,9 @@ class AutoRepositionAnkiRepository extends BaseAnkiRepository {
     if (outcome.result == MineResult.success &&
         deck != null &&
         deck.isNotEmpty &&
-        _inner.supportsDeckReposition) {
+        inner.supportsDeckReposition) {
       _scheduler.notifyMined(deck);
     }
     return outcome;
   }
-
-  // --- 以下全部是纯委派 -----------------------------------------------------
-
-  @override
-  Future<String?> readSettingsJson(SharedPreferences prefs) =>
-      _inner.readSettingsJson(prefs);
-
-  @override
-  Future<AnkiSettings> loadSettings() => _inner.loadSettings();
-
-  @override
-  Future<void> saveSettings(AnkiSettings settings) =>
-      _inner.saveSettings(settings);
-
-  @override
-  Future<AnkiSettings> updateSettings(
-    AnkiSettings Function(AnkiSettings) transform,
-  ) =>
-      _inner.updateSettings(transform);
-
-  @override
-  Future<AnkiFetchResult> fetchConfiguration() => _inner.fetchConfiguration();
-
-  @override
-  Future<MineOutcome> updateMinedNote({
-    required int noteId,
-    required String rawPayloadJson,
-    required AnkiMiningContext context,
-  }) =>
-      _inner.updateMinedNote(
-        noteId: noteId,
-        rawPayloadJson: rawPayloadJson,
-        context: context,
-      );
-
-  @override
-  Future<int?> findOverwriteTargetNoteId(String expression, String reading) =>
-      _inner.findOverwriteTargetNoteId(expression, reading);
-
-  @override
-  Future<List<MinedNoteRef>> findMatchingNotes(
-    String expression,
-    String reading,
-  ) =>
-      _inner.findMatchingNotes(expression, reading);
-
-  @override
-  Future<Map<String, String>?> noteFields(int noteId) =>
-      _inner.noteFields(noteId);
-
-  @override
-  Future<bool> openNoteInAnki(int noteId) => _inner.openNoteInAnki(noteId);
-
-  @override
-  Future<Map<String, String>> prepareSourceNoteFields({
-    required String rawPayloadJson,
-    required AnkiMiningContext context,
-  }) =>
-      _inner.prepareSourceNoteFields(
-        rawPayloadJson: rawPayloadJson,
-        context: context,
-      );
-
-  @override
-  Future<List<int>> findSourceNoteCandidates(String sourceId) =>
-      _inner.findSourceNoteCandidates(sourceId);
-
-  @override
-  Future<Map<String, String>?> sourceNoteFields(int noteId) =>
-      _inner.sourceNoteFields(noteId);
-
-  @override
-  Future<void> writeSourceNoteFields(int noteId, Map<String, String> fields) =>
-      _inner.writeSourceNoteFields(noteId, fields);
-
-  @override
-  Future<AnkiSourceNote?> readSourceNote(String sourceId) =>
-      _inner.readSourceNote(sourceId);
-
-  @override
-  Future<void> patchSourceNote({
-    required AnkiSourceNote original,
-    required Map<String, String> fields,
-  }) =>
-      _inner.patchSourceNote(original: original, fields: fields);
-
-  @override
-  Future<AnkiOpenWordOutcome> openWordInAnki(
-    String expression,
-    String reading,
-  ) =>
-      _inner.openWordInAnki(expression, reading);
-
-  @override
-  Future<Set<int>> findDeletedNotes(Set<int> noteIds) =>
-      _inner.findDeletedNotes(noteIds);
-
-  @override
-  Future<bool> isDuplicate(String expression, String reading) =>
-      _inner.isDuplicate(expression, reading);
-
-  /// 不委派的后果不是「少个功能」而是**正确性回归**：装饰器会拿到基类默认 `true`，
-  /// 于是开了自动重排的 iOS 用户点 ✓ 时，编排层以为「这个后端能回读 Anki」，把
-  /// AnkiMobile 恒空的反查当成「卡已被删」，默默再制一张重复卡。
-  @override
-  bool get canVerifyExistingCards => _inner.canVerifyExistingCards;
-
-  @override
-  Future<bool> forgetMinedCard(String expression) =>
-      _inner.forgetMinedCard(expression);
-
-  @override
-  Future<bool> createNoteType(AnkiNoteTypeTemplate template) =>
-      _inner.createNoteType(template);
-
-  @override
-  Future<bool> createDeck(String name) => _inner.createDeck(name);
-
-  @override
-  bool get supportsNoteTypeEditing => _inner.supportsNoteTypeEditing;
-
-  @override
-  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) =>
-      _inner.readNoteTypeDefinition(modelName);
-
-  @override
-  Future<bool> updateNoteTypeStyling(String modelName, String css) =>
-      _inner.updateNoteTypeStyling(modelName, css);
-
-  @override
-  Future<bool> updateNoteTypeTemplates(
-    String modelName,
-    List<AnkiCardTemplate> templates,
-  ) =>
-      _inner.updateNoteTypeTemplates(modelName, templates);
-
-  @override
-  bool get supportsMediaMaintenance => _inner.supportsMediaMaintenance;
-
-  @override
-  Future<bool> probeMediaMaintenance() => _inner.probeMediaMaintenance();
-
-  @override
-  bool get supportsMediaMaintenanceProgress =>
-      _inner.supportsMediaMaintenanceProgress;
-
-  @override
-  Future<AnkiMediaDedupReport?> runMediaDedup({
-    bool dryRun = false,
-    Future<void> Function(Map<String, dynamic> entry)? onJournal,
-    AnkiMediaDedupOnProgress? onProgress,
-    bool Function()? shouldCancel,
-  }) =>
-      _inner.runMediaDedup(
-        dryRun: dryRun,
-        onJournal: onJournal,
-        onProgress: onProgress,
-        shouldCancel: shouldCancel,
-      );
-
-  @override
-  bool get supportsDeckReposition => _inner.supportsDeckReposition;
-
-  @override
-  Future<List<AnkiCardInfo>> listNewCards(String deckName) =>
-      _inner.listNewCards(deckName);
-
-  @override
-  Future<AnkiCardDueWriteResult> setNewCardPositions(
-    List<AnkiCardDueUpdate> updates,
-  ) =>
-      _inner.setNewCardPositions(updates);
 }

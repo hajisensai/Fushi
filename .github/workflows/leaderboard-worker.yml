@@ -1,0 +1,39 @@
+# 排行榜 / 公开书架 Cloudflare Worker（services/leaderboard）的 PR 测试门。
+#
+# 只在 Worker 目录或本文件变动时触发；测试用 Node 22+ 自带的 node:sqlite 跑真实
+# D1 迁移与全部 SQL（见 services/leaderboard/test/harness.js），不需要 Cloudflare
+# 账号或网络上的 D1。本 workflow 只读：不部署、不上传产物（部署由维护者手动
+# `wrangler deploy`）。
+name: leaderboard-worker
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'services/leaderboard/**'
+      - '.github/workflows/leaderboard-worker.yml'
+  push:
+    branches: ['develop']
+    paths:
+      - 'services/leaderboard/**'
+      - '.github/workflows/leaderboard-worker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/leaderboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund --ignore-scripts
+      - run: npm test

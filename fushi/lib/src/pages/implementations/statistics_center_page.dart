@@ -10,6 +10,7 @@ import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/game_statistics_page.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
+import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_delete_confirm_dialog.dart';
@@ -27,8 +28,8 @@ import 'package:fushi/utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 
-/// 统计中心的四个 tab（阶段 2：三个独立统计页收进一个入口）。
-enum StatsCenterTab { overview, reading, video, game }
+/// 统计中心的 tab（阶段 2：三个独立统计页收进一个入口；排行榜 2026-09-28 追加为第 5 个）。
+enum StatsCenterTab { overview, reading, video, game, leaderboard }
 
 /// 统计中心（阶段 2，统计中心大改造）：总览 + 阅读/观看/游戏三域 tab。
 ///
@@ -98,6 +99,7 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                 Tab(text: t.home_filter_read),
                 Tab(text: t.home_filter_watch),
                 Tab(text: t.home_filter_game),
+                Tab(text: t.leaderboard_tab),
               ],
             ),
             Expanded(
@@ -116,6 +118,8 @@ class _StatisticsCenterPageState extends BasePageState<StatisticsCenterPage> {
                     embedded: true,
                     rangeSelection: _rangeSelection,
                   ),
+                  // 排行榜自带周/月/总窗口，不吃统计中心的时间范围选择。
+                  const LeaderboardTab(),
                 ],
               ),
             ),

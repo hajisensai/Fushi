@@ -27,6 +27,7 @@ String _stripCssComments(String css) => maskCssComments(css);
 Future<String> _readerCss({
   required String writingMode,
   required String viewMode,
+  double? lineHeight,
 }) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
@@ -34,6 +35,7 @@ Future<String> _readerCss({
   await settings.refreshFromDb();
   await settings.setWritingMode(writingMode);
   await settings.setViewMode(viewMode);
+  if (lineHeight != null) await settings.setLineHeight(lineHeight);
   return ReaderContentStyles.css(settings: settings);
 }
 
@@ -165,6 +167,86 @@ void main() {
               writingMode: 'vertical-rl', viewMode: 'paginated'));
           expect(css, isNot(matches(_kAnyNegativeMarginBlockEnd)),
               reason: '$p：Blink 的注音本就紧贴基字，这条 WebKit 位置补偿不得发给它');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+    });
+
+    test(
+        'BUG-2761：Apple 端分页给段落块首预留注音位置，并用 p::after 的负块尾边距'
+        '抵消（页中零位移、页顶边距截断后留出预留）；其它平台 / 滚动 / VN 不发',
+        () async {
+      // 段落块首预留 R，与 p::after 块尾 −R 等量相抵：页中段落位置不变，只有落在
+      // 页顶（分栏处边距被截断）时 R 留下来装注音。钉「两者同值且都在」，不钉数值。
+      final RegExp reserve = RegExp(
+          r'(?:^|[\s,}])p\s*\{[^}]*padding-block-start:\s*([\d.]+)em',
+          multiLine: true);
+      final RegExp cancel = RegExp(
+          r'p::after\s*\{[^}]*display:\s*block[^}]*margin-block-end:\s*-\s*([\d.]+)em');
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.iOS,
+        TargetPlatform.macOS,
+      ]) {
+        for (final String wm in <String>['horizontal-tb', 'vertical-rl']) {
+          debugDefaultTargetPlatformOverride = p;
+          try {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: wm, viewMode: 'paginated'));
+            final RegExpMatch? r = reserve.firstMatch(css);
+            final RegExpMatch? c = cancel.firstMatch(css);
+            expect(r, isNotNull,
+                reason: '$p/$wm：WebKit 多列把伸出列顶的注音画进上一列底部，'
+                    '页顶那一行必须在段落块首留出注音的位置');
+            expect(c, isNotNull,
+                reason: '$p/$wm：预留必须由可在分栏处被截断的负边距抵消，'
+                    '否则每个段落都多出一截、整本书排版变样');
+            expect(double.parse(r!.group(1)!), greaterThan(0));
+            expect(c!.group(1), r.group(1),
+                reason: '$p/$wm：预留与抵消必须等量，页中段落才零位移');
+          } finally {
+            debugDefaultTargetPlatformOverride = null;
+          }
+        }
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          for (final String vm in <String>['continuous', 'vn']) {
+            final String css = _stripCssComments(
+                await _readerCss(writingMode: 'vertical-rl', viewMode: vm));
+            expect(css, isNot(matches(cancel)),
+                reason: '$p/$vm：不经多列分页，没有跨列问题，不发');
+          }
+          final String loose = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb',
+              viewMode: 'paginated',
+              lineHeight: 2.4));
+          expect(loose, isNot(matches(cancel)),
+              reason: '$p：行高 2.4 的上半 leading 已容得下注音，不需要预留');
+          final String tight = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb',
+              viewMode: 'paginated',
+              lineHeight: 1.0));
+          final String normal = _stripCssComments(await _readerCss(
+              writingMode: 'horizontal-tb', viewMode: 'paginated'));
+          expect(
+              double.parse(reserve.firstMatch(tight)!.group(1)!),
+              greaterThan(double.parse(reserve.firstMatch(normal)!.group(1)!)),
+              reason: '$p：行高越小 leading 越装不下注音，预留要跟着变大');
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      }
+      for (final TargetPlatform p in <TargetPlatform>[
+        TargetPlatform.android,
+        TargetPlatform.windows,
+        TargetPlatform.linux,
+      ]) {
+        debugDefaultTargetPlatformOverride = p;
+        try {
+          final String css = _stripCssComments(await _readerCss(
+              writingMode: 'vertical-rl', viewMode: 'paginated'));
+          expect(css, isNot(matches(cancel)),
+              reason: '$p：Blink 按行片段所在列绘制注音，不跨列，不发');
         } finally {
           debugDefaultTargetPlatformOverride = null;
         }

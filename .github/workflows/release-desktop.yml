@@ -38,6 +38,7 @@ on:
       - 'third_party/**'
       - 'tools/build_magpie_slim.ps1'
       - '.github/workflows/**'
+      - '.github/actions/setup-fushi-anki-sync/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   release:
@@ -561,6 +562,19 @@ jobs:
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Release" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
+      # fushi-anki-sync（native/fushi_anki_sync）：链接 Anki 官方 rslib 的独立 helper 进程，
+      # Dart 侧在 fushi.exe 同级找 fushi-anki-sync.exe。它是 AGPL-3.0-or-later，所以旁边
+      # 必带 fushi-anki-sync.SOURCE.txt（指向本次 checkout 的 commit 与上游 tag），由
+      # build.ps1 从 SOURCE.txt.in 生成并对装好的副本跑一次 version 冒烟。
+      # 排在签名步骤之前：「Sign Windows bundle binaries」递归签整个 Release 目录，
+      # fushi.iss 的 `Source: {#SourceDir}\*` 整目录收包，不需要改 iss。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Release"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       # ffmpeg.exe and its MinGW runtime DLLs are vendored at
       # third_party/ffmpeg-min/windows/
       # (TODO-416). It used to be fetched from another workflow's build artifact,
@@ -1372,8 +1386,40 @@ jobs:
               esac
             done
           done
+      # fushi-anki-sync：与 Windows 同一个 helper，放 Contents/MacOS/（Platform.resolvedExecutable
+      # 所在目录，Dart 按它找）。app 是 universal，helper 也必须是 —— build.sh --universal
+      # 分别编 arm64 / x86_64 再 lipo，下面按 app 本体的架构逐个核对（BUG-1668 同一不变式）。
+      # AGPL 源码说明放 Contents/Resources/ 而不是 MacOS/：Apple 的 bundle 规则是
+      # Contents/MacOS 只放代码，那里的非 Mach-O 文件会被 codesign 当代码签（签名写进
+      # 扩展属性），打 zip 丢了扩展属性就验不过。
+      # 必须排在 Developer ID 签名之前（那一步按 `file` 找出 Contents 下全部 Mach-O 重签）。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (universal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="fushi/build/macos/Build/Products/Release/fushi.app"
+          target_dir="$app_dir/Contents/MacOS"
+          bash native/fushi_anki_sync/build.sh --universal --install-dir "$target_dir"
+          mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
+          codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+          app_archs="$(lipo -archs "$target_dir/fushi")"
+          helper_archs="$(lipo -archs "$target_dir/fushi-anki-sync")"
+          echo "app archs: $app_archs / fushi-anki-sync archs: $helper_archs"
+          for want in $app_archs; do
+            case " $helper_archs " in
+              *" $want "*) ;;
+              *)
+                echo "::error title=Bundled helper arch mismatch::fushi-anki-sync 缺 $want（app: $app_archs / helper: $helper_archs）。该架构的 Mac 上 Anki 同步会整条不可用。"
+                exit 1
+                ;;
+            esac
+          done
       # ---- Developer ID 签名 + 公证（Gatekeeper）-------------------------
-      # **必须排在上面 Mihon / ffmpeg 两步之后**：那两步往 bundle 里塞可执行文件
+      # **必须排在上面 Mihon / ffmpeg / fushi-anki-sync 三步之后**：这几步往 bundle 里塞可执行文件
       # 并用 `codesign --force --deep --sign -` 重签整个 app，签在前面的
       # Developer ID 签名会被那个 ad-hoc 签名整个盖掉。
       # 每一项 Apple 凭据都是可选的：没有它们（fork，或本仓开发者账号存在之前）

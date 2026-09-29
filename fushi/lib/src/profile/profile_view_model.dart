@@ -379,6 +379,7 @@ final profileViewModelProvider =
       ankiSettings.useAnkiConnectOnMobile,
       apiKey: ankiSettings.ankiConnectApiKey,
     );
+    platformServices.setUseAnkiSyncClient(ankiSettings.useAnkiSyncClient);
     ref.invalidate(ankiRepositoryProvider);
     final appModel = ref.read(appProvider);
     await appModel.refreshPrefCache();

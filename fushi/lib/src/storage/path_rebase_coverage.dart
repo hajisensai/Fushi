@@ -450,6 +450,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   PathRebaseColumn('WebMineQueue', 'fieldsJson', PathRebaseKind.notAPath,
       '弹窗点击时冻结的 Anki 字段映射 JSON（词头/释义/句子文本），不含本机路径。'),
 
+  // ── pending_mine_queue（schema v116，设备端待发制卡队列，device-local）──
+  PathRebaseColumn(
+      'PendingMineQueue',
+      'id',
+      PathRebaseKind.notAPath,
+      '128-bit 随机 hex 行身份；载荷文件 <support>/pending_mine_queue/<id>.json 的文件名'
+          '由它派生，表内不存任何路径列——数据根迁移整目录搬 support 即可，无需改写。'),
+
   // ── video_download_*（schema v78，device-local 持久流水线）────────
   PathRebaseColumn('VideoDownloadJobs', 'resourceProvider',
       PathRebaseKind.notAPath, '资源 provider/实例身份，不是路径。'),

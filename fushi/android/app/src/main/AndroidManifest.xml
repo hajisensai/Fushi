@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <!-- 全局悬浮球的截屏 OCR（ScreenOcrService）：每次截屏都经系统确认框，
+         只截一帧即停止投屏。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
@@ -17,6 +20,8 @@
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon_squircle"
         android:networkSecurityConfig="@xml/network_security_config"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
         xmlns:tools="http://schemas.android.com/tools"
         tools:replace="android:label">
@@ -206,6 +211,30 @@
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="clipboard_dictionary_overlay"/>
         </service>
+        <!-- 全局悬浮球（floating_ball.mode = system），契约见
+             docs/specs/2026-09-28-floating-ball.md。 -->
+        <service android:name=".FloatingBallService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="floating_ball_overlay"/>
+        </service>
+        <!-- 截屏 OCR：mediaProjection 前台服务，截一帧 → ML Kit → 全屏选取层。 -->
+        <service android:name=".ScreenOcrService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+        <!-- 截屏确认框的透明宿主。独立 taskAffinity：从悬浮球（Fushi 在后台）拉起时不能
+             把 Fushi 主任务带到前台，否则截到的是 Fushi 而不是用户眼前的 app。
+             不用 noHistory：noHistory 的 Activity 收不到 onActivityResult。 -->
+        <activity
+            android:name=".ScreenCaptureRequestActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:taskAffinity="app.fushi.reader.screencapture"
+            android:excludeFromRecents="true"
+            android:autoRemoveFromRecents="true"
+            android:launchMode="singleTop"
+            android:exported="false"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
         <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
              防止切到后台后进程被杀、下载随之中断。 -->
         <service android:name=".DownloadKeepAliveService"

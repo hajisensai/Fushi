@@ -46,7 +46,6 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi/src/media/video/video_folder_collection_policy.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_delete.dart';
-import 'package:fushi/src/sync/local_file_delete_feedback.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/video_subtitle_attach.dart';
@@ -89,6 +88,7 @@ import 'package:fushi/src/media/collections/collection_shelf_row.dart';
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
 import 'package:fushi/src/pages/implementations/video_work_detail_page.dart';
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/media_item_stats_dialog.dart';
 import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -539,6 +539,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _scrapePresentationSub = appModelNoUpdate.database
         .watchVideoScrapePresentationChanged()
         .listen(_onScrapePresentationChanged);
+    _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
+    widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
     // 「已更新未看」行：订阅增删（订阅面板）后重解析订阅→合集映射。新订阅表走
     // Drift 流；旧 AniList JSON 订阅 store 没有表，用它的 revision 通知。入库落
     // 合集那一步已由上面的合集表流覆盖，这里只补「订阅本身变了」。
@@ -583,6 +585,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   @override
   void didUpdateWidget(covariant HomeVideoPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.scrapeTaskController, widget.scrapeTaskController)) {
+      oldWidget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
+      widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
+      _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
+    }
     if (oldWidget.libraryRefreshSignal == widget.libraryRefreshSignal) return;
     oldWidget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
@@ -605,6 +612,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     _collectionsReloadDebounce?.cancel();
     _scrapePresentationSub?.cancel();
     _scrapePresentationReloadDebounce?.cancel();
+    widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
@@ -680,17 +688,55 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
 
   void _onLegacySubscriptionStoreChanged() => _onCollectionTablesChanged(null);
 
+  /// 刮削批次进行中，展示层表变化的整页重载最小间隔。
+  ///
+  /// 批次里每部作品要写好几轮（run 表进度、作品/分集/图片、sidecar 账本），相邻
+  /// 两次写入常隔几百毫秒到几秒（AniDB 限流），300 ms 尾沿防抖挡不住——每次重载
+  /// 又是书架全表 + 十几张映射表 + 封面自愈，批次期间就成了持续掉帧。批次中改成
+  /// 定距节流（不重置计时，结果仍会逐步出现），批次结束由
+  /// [_onScrapeTaskBusyChanged] 补一次完整刷新。
+  static const Duration _scrapeBatchReloadInterval = Duration(seconds: 2);
+
+  bool _scrapeBatchWasBusy = false;
+
   void _onScrapePresentationChanged(void _) {
+    if (widget.scrapeTaskController?.isBusy == true) {
+      if (_scrapePresentationReloadDebounce?.isActive == true) return;
+      _scrapePresentationReloadDebounce = Timer(
+        _scrapeBatchReloadInterval,
+        _reloadAfterScrapePresentationChanged,
+      );
+      return;
+    }
     _scrapePresentationReloadDebounce?.cancel();
     _scrapePresentationReloadDebounce = Timer(
       const Duration(milliseconds: 300),
-      () {
-        if (!mounted) return;
-        _refresh();
-        // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。
-        unawaited(_refreshPendingScrape());
-      },
+      _reloadAfterScrapePresentationChanged,
     );
+  }
+
+  void _reloadAfterScrapePresentationChanged() {
+    if (!mounted) return;
+    if (widget.scrapeTaskController?.isBusy == true) {
+      // 批次中只刷列表与映射：封面回填与待确认清单（每次都要全来源重新规划 +
+      // 逐作品查身份）留给批次结束那一次。
+      _refresh(backfillCovers: false);
+      return;
+    }
+    _refresh();
+    // 刚确认完一个作品的身份，提醒条上的数字要跟着掉下去。
+    unawaited(_refreshPendingScrape());
+  }
+
+  /// 批次忙 → 闲：补一次完整刷新（节流窗口里最后的写入、封面回填、待确认数）。
+  void _onScrapeTaskBusyChanged() {
+    final bool busy = widget.scrapeTaskController?.isBusy == true;
+    if (busy == _scrapeBatchWasBusy) return;
+    _scrapeBatchWasBusy = busy;
+    if (busy) return;
+    _scrapePresentationReloadDebounce?.cancel();
+    _scrapePresentationReloadDebounce = null;
+    _reloadAfterScrapePresentationChanged();
   }
 
   /// 刷新库页。默认只刷**本地**（书架列表 + 分组映射 + 封面自愈）；远端互联清单
@@ -698,14 +744,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
   /// 重新加载」（远端那层 FutureBuilder 无缓存顶值，future 一换即清空重拉）。
   /// 只有真正改变远端来源的路径（[_openManageSources]）才传 `remote: true` 重拉清单；
   /// 用户主动刷新走下拉 [_pullToRefresh]。
-  void _refresh({bool remote = false}) {
+  void _refresh({bool remote = false, bool backfillCovers = true}) {
     setState(() {
       // TODO-1255：书架展示走 listForShelf（自愈数据根迁移遗弃的封面路径）。
       _future = widget.repo.listForShelf();
       if (remote) _remoteFuture = _loadRemoteVideos();
     });
     _loadLibraryMaps();
-    _maybeBackfillCovers();
+    if (backfillCovers) _maybeBackfillCovers();
   }
 
   /// 下拉刷新 = **手动同步**：先跑一遍云备份 / 互联同步，再强制重拉远端视频列表 + 本地
@@ -1742,19 +1788,35 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
     // 目标集在确认框弹出前就定死（[targetUids]），删除时不重新读 `_selectedUids`
     // ——否则删除量与用户刚点头的数字对不上。
     final Set<String> toDelete = targetUids;
-    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
-      repo: widget.repo,
-      database: db,
-      pipeline: appModel.videoDownloadPipelineService,
-      bookUids: toDelete,
-      decision: decision,
-      afterDeleteBeforeReclaim: () async {
-        if (!mounted) return;
-        _exitSelectionMode();
-        _refreshAfterTagChange();
-        await _waitForVideoCardsToUnmount();
-      },
-    );
+    final VideoLibraryDeleteResult result;
+    try {
+      result = await deleteVideoBooksWithDecision(
+        repo: widget.repo,
+        database: db,
+        pipeline: appModel.videoDownloadPipelineService,
+        bookUids: toDelete,
+        decision: decision,
+        afterDeleteBeforeReclaim: () async {
+          if (!mounted) return;
+          _exitSelectionMode();
+          _refreshAfterTagChange();
+          await _waitForVideoCardsToUnmount();
+        },
+      );
+    } catch (e, stack) {
+      // BUG-2754：整批删除抛出（如刮削清理占着操作闸门）不能半截中断、无提示、
+      // 卡在多选里——退出多选、刷新到库里真实状态，并把原因告诉用户。逐条失败
+      // 不走这里（它们汇总在 result.failed 里，由下方统一提示）。
+      ErrorLogService.instance.log('HomeVideoPage.batchDelete', e, stack);
+      if (!mounted) return;
+      _exitSelectionMode();
+      _refreshAfterTagChange();
+      FushiToast.show(
+        msg: t.video_library_delete_failed(reason: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     final int deleted = result.deleted;
     // 纯解散合集时上面的视频删除集合为空，仍需刷新页面。
     if (toDelete.isEmpty && mounted) {
@@ -1774,14 +1836,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             : collectionCount == 0
                 ? t.batch_delete_success_video(n: deleted)
                 : t.batch_dissolve_success(m: dissolved);
-    FushiToast.show(
-      msg: successMsg,
-      severity: deleted > 0 || dissolved > 0
-          ? ToastSeverity.success
-          : ToastSeverity.warning,
-    );
-    reportLocalFileDeleteFailures(
-      result.localFiles,
+    // 全部失败时只报失败（下方 reportVideoLibraryDeleteFailures），不再叠一条
+    // 「已删除 0 个」。
+    if (deleted > 0 || dissolved > 0 || result.failed.isEmpty) {
+      FushiToast.show(
+        msg: successMsg,
+        severity: deleted > 0 || dissolved > 0
+            ? ToastSeverity.success
+            : ToastSeverity.warning,
+      );
+    }
+    reportVideoLibraryDeleteFailures(
+      result,
       source: 'HomeVideoPage.batchDeleteLocalFiles',
     );
   }
@@ -3066,6 +3132,25 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
         // `sourceId` 的手动导入 / 互联下载、远端来源、目录分组模式、特典都不画，
         // 画出来就一定定位得到作品单元。
         listActions: <DialogListAction>[
+          // 右键 / 长按反查这一集的观看统计（身份 = bookUid）。
+          DialogListAction(
+            label: t.media_stats_action,
+            icon: Icons.insights_outlined,
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              unawaited(
+                showMediaItemStatsDialog(
+                  context,
+                  database: appModelNoUpdate.database,
+                  target: MediaItemStatsTarget(
+                    mediaKind: kActivityMediaVideo,
+                    mediaKeys: <String>{book.bookUid},
+                    title: book.title,
+                  ),
+                ),
+              );
+            },
+          ),
           if (widget.scrapeTaskController != null &&
               videoBookHasScrapePlan(book, _videoSourcesById[book.sourceId]))
             DialogListAction(
@@ -3388,21 +3473,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
       statisticsSubtitle: t.delete_statistics_video_desc,
     );
     if (decision == null || !mounted) return;
-    final VideoLibraryDeleteResult result = await deleteVideoBooksWithDecision(
-      repo: widget.repo,
-      database: appModel.database,
-      pipeline: appModel.videoDownloadPipelineService,
-      bookUids: <String>[book.bookUid],
-      decision: decision,
-      afterDeleteBeforeReclaim: () async {
-        if (!mounted) return;
-        _refreshAfterTagChange();
-        await _waitForVideoCardsToUnmount();
-      },
-    );
+    final VideoLibraryDeleteResult result;
+    try {
+      result = await deleteVideoBooksWithDecision(
+        repo: widget.repo,
+        database: appModel.database,
+        pipeline: appModel.videoDownloadPipelineService,
+        bookUids: <String>[book.bookUid],
+        decision: decision,
+        afterDeleteBeforeReclaim: () async {
+          if (!mounted) return;
+          _refreshAfterTagChange();
+          await _waitForVideoCardsToUnmount();
+        },
+      );
+    } catch (e, stack) {
+      // BUG-2754：删除抛出不能无声无息——刷新到真实状态并告知原因。
+      ErrorLogService.instance.log('HomeVideoPage.deleteVideo', e, stack);
+      if (!mounted) return;
+      _refreshAfterTagChange();
+      FushiToast.show(
+        msg: t.video_library_delete_failed(reason: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
-    reportLocalFileDeleteFailures(
-      result.localFiles,
+    reportVideoLibraryDeleteFailures(
+      result,
       source: 'HomeVideoPage.deleteLocalFiles',
     );
   }
@@ -6884,8 +6982,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
             deleteStatistics: deleteStatistics,
           ),
         );
-        reportLocalFileDeleteFailures(
-          result.localFiles,
+        reportVideoLibraryDeleteFailures(
+          result,
           source: 'HomeVideoPage.deleteCollectionMembers',
         );
       },
@@ -7598,8 +7696,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage> {
                 deleteStatistics: deleteStatistics,
               ),
             );
-            reportLocalFileDeleteFailures(
-              result.localFiles,
+            reportVideoLibraryDeleteFailures(
+              result,
               source: 'VideoWorkDetailPage.deleteCollectionMembers',
             );
           },

@@ -68,6 +68,7 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
     this.navigation,
     this.embedded = false,
     this.onOpenSources,
+    this.onAiAcquire,
     this.sourceFeedsOverride,
     this.catalogOverride,
   });
@@ -83,6 +84,9 @@ class MangaDiscoveryPage extends ConsumerStatefulWidget {
   /// （切到「来源 › 漫画」）；为 null 时退回库页壳的「来源」视图，都没有就只给
   /// 文案不给按钮。
   final VoidCallback? onOpenSources;
+
+  /// 「AI 下载」入口（参数 = 搜索框当前文字）；null = 宿主没接线，按钮不渲染。
+  final ValueChanged<String>? onAiAcquire;
 
   /// 测试注入：给定时跳过平台来源发现，直接渲染这些来源热门行。
   final List<MangaDiscoverySourceFeed>? sourceFeedsOverride;
@@ -388,7 +392,14 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: DiscoveryHeaderControls(
-              trailing: <Widget>[if (!_headerVisible) _refreshButton()],
+              trailing: <Widget>[
+                if (widget.onAiAcquire case final ValueChanged<String> onAi)
+                  DiscoveryAiAcquireButton(
+                    key: const ValueKey<String>('manga-discovery-ai-acquire'),
+                    onPressed: () => onAi(_searchController.text),
+                  ),
+                if (!_headerVisible) _refreshButton(),
+              ],
               sources: options,
               selectedSourceId: selected,
               onSourceSelected: (String id) => setState(() {

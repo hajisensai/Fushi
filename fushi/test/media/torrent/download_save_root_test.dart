@@ -202,4 +202,55 @@ void main() {
           DownloadSaveRootIssue.createFailed);
     });
   });
+
+  // BUG-2755：受管视频任务直落 `<来源根>/.fushi-incoming/<category>`。这些目录不在
+  // 任何下载根下，内置引擎按分类列任务时必须认它们，否则下载阶段轮询找不到种子，
+  // 把正在下的任务判成「引擎里丢了」反复倒回 enqueue。
+  group('BUG-2755 来源暂存目录', () {
+    final String sourceRoot = p.join('D:', 'Anime');
+
+    test('暂存目录路径 = <来源根>/.fushi-incoming/<category>', () {
+      expect(
+        sourceIncomingCategoryPath(sourceRoot, 'fushi'),
+        p.join(sourceRoot, kSourceIncomingDirName, 'fushi'),
+      );
+      expect(kSourceIncomingDirName, startsWith('.'));
+    });
+
+    test('分类过滤认领任意来源下的同分类暂存目录（含子目录），不认别的分类', () {
+      final TorrentSaveRoots roots = TorrentSaveRoots(
+        active: p.join('C:', 'downloads'),
+      );
+      final String incoming = sourceIncomingCategoryPath(sourceRoot, 'fushi');
+      expect(roots.ownsCategoryPath(incoming, 'fushi'), isTrue);
+      expect(roots.ownsCategoryPath(p.join(incoming, 'Show'), 'fushi'), isTrue);
+      expect(roots.ownsCategoryPath(incoming, 'other'), isFalse);
+      expect(
+        roots.ownsCategoryPath(p.join(sourceRoot, 'fushi'), 'fushi'),
+        isFalse,
+        reason: '来源根下的同名普通目录不是暂存目录',
+      );
+    });
+
+    test('isSourceIncomingPath 只认该来源自己的暂存目录', () {
+      expect(
+        isSourceIncomingPath(
+          sourceRoot,
+          p.join(sourceRoot, kSourceIncomingDirName, 'fushi', 'a.mkv'),
+        ),
+        isTrue,
+      );
+      expect(
+        isSourceIncomingPath(sourceRoot, p.join(sourceRoot, 'Show', 'a.mkv')),
+        isFalse,
+      );
+      expect(
+        isSourceIncomingPath(
+          sourceRoot,
+          p.join('E:', kSourceIncomingDirName, 'fushi', 'a.mkv'),
+        ),
+        isFalse,
+      );
+    });
+  });
 }

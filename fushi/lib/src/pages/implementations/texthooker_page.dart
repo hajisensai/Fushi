@@ -826,7 +826,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
     }
     if (described.success) {
-      return MinePopupResult(ankiConnect: true, noteId: outcome.noteId);
+      return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome);
   }
@@ -2477,6 +2477,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 popNestedPopupAt(_topVisiblePopupIndex, _popup),
             onSwipeDismiss: _dismissTopNestedPopup,
             swipeEnabled: ReaderFushiSource.instance.enableSwipeToClose,
+            // BUG-2770：触摸半边未设置时所有平台默认开。
+            touchSwipeEnabled:
+                ReaderFushiSource.instance.enableTouchSwipeToClose,
             sensitivity: ReaderFushiSource.instance.dismissSwipeSensitivity,
             // 弹窗可见时 barrier 吃掉全部指针，页面根收不到——「浮窗矩形之外」
             // 按鼠标非主键这半边只能在这里接（见钩子文档）。

@@ -1153,6 +1153,20 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     _rebuild(() {});
   }
 
+  /// 书卡菜单「查看统计」：关掉菜单后按本书身份反查统计（书 / 漫画同走 bookKey）。
+  Future<void> _openItemStatistics(MediaItem item, String bookKey) async {
+    Navigator.pop(context);
+    await showMediaItemStatsDialog(
+      context,
+      database: appModel.database,
+      target: MediaItemStatsTarget(
+        mediaKind: kActivityMediaBook,
+        mediaKeys: <String>{bookKey},
+        title: item.title,
+      ),
+    );
+  }
+
   Future<void> _openIllustrations(MediaItem item, String bookKey) async {
     Navigator.pop(context);
     final EpubBookRow? row = await appModel.database.getEpubBook(bookKey);

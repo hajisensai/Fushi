@@ -30,6 +30,7 @@ on:
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
       - '.github/workflows/build-multiplatform.yml'
+      - '.github/actions/setup-fushi-anki-sync/**'
       - 'pubspec.yaml'
       - 'pubspec.lock'
   pull_request:
@@ -321,6 +322,17 @@ jobs:
             --output build/fushi_server_linux
           ls -la build/fushi_server_linux/bundle
           build/fushi_server_linux/bundle/bin/fushi_server --help
+      # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）：
+      # 发布包里它随 app / 服务端可执行文件同级（release-desktop.yml / release-server.yml）。
+      # PR 门编 debug（不走 LTO，只为抓编译/补丁断裂），装进服务端 bundle/bin，
+      # build.sh 顺带生成 SOURCE.txt 并对装好的副本跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build fushi-anki-sync (Linux, debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin
       # 第 4 期：无头服务端的两块随包原生库，都落 bundle/lib/（服务端按
       # `<exe>/../lib/<裸名>` 定位，见 packages/fushi_server/lib/src/native_libs.dart）。
       #
@@ -497,6 +509,21 @@ jobs:
           done < <(find "$runtime_dir" -type f)
           chmod +x tool/mihon/verify_desktop_runtime.sh
           tool/mihon/verify_desktop_runtime.sh "$runtime_dir" "$app_dir/Contents/MacOS/fushi"
+          codesign --force --deep --sign - --timestamp=none "$app_dir"
+          codesign --verify --deep --strict --verbose=2 "$app_dir"
+      # fushi-anki-sync：PR 门只编本机架构 debug 抓编译断裂；universal（--universal，
+      # arm64 + x86_64 lipo）由 release-desktop.yml 的发布构建负责。放置与签名同发布包。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (debug)
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_dir="fushi/build/macos/Build/Products/Debug/fushi.app"
+          target_dir="$app_dir/Contents/MacOS"
+          bash native/fushi_anki_sync/build.sh --debug --install-dir "$target_dir"
+          mv "$target_dir/fushi-anki-sync.SOURCE.txt" "$app_dir/Contents/Resources/fushi-anki-sync.SOURCE.txt"
+          codesign --force --sign - --timestamp=none "$target_dir/fushi-anki-sync"
           codesign --force --deep --sign - --timestamp=none "$app_dir"
           codesign --verify --deep --strict --verbose=2 "$app_dir"
       - name: Verify macOS fushidicts dylib bundle
@@ -797,5 +824,14 @@ jobs:
             -BundleDirectory "$PWD\fushi\build\windows\x64\runner\Debug" `
             -DownloadCache "$env:RUNNER_TEMP\hibiki-7za-cache"
           if ($LASTEXITCODE -ne 0) { throw "bundle_7za.ps1 failed ($LASTEXITCODE)" }
+      # fushi-anki-sync：同 release-desktop.yml 的发布步骤，PR 门编 debug 抓编译断裂，
+      # 装进 Debug bundle（fushi.exe 同级）并由 build.ps1 跑 version 冒烟。
+      - name: Set up fushi-anki-sync toolchain
+        uses: ./.github/actions/setup-fushi-anki-sync
+      - name: Build and bundle fushi-anki-sync (debug)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File native/fushi_anki_sync/build.ps1 -DebugBuild -InstallDirectory "$PWD\fushi\build\windows\x64\runner\Debug"
+          if ($LASTEXITCODE -ne 0) { throw "fushi_anki_sync build.ps1 failed ($LASTEXITCODE)" }
       - name: Run Windows comprehensive automation contract
         run: .\ci\comprehensive-test.ps1 -Platform windows -Only appSmoke

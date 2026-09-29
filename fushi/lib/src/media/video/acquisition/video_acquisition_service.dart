@@ -16,6 +16,7 @@ import 'package:fushi/src/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:fushi/src/ai/ai_video_acquisition_assistant.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/media/video/acquisition/video_acquisition_reducer.dart';
+import 'package:fushi/src/media/video/acquisition/video_acquisition_view.dart';
 import 'package:fushi/src/media/video/download/video_discovery_submit.dart';
 import 'package:fushi/src/media/video/discovery/video_franchise.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -99,7 +100,8 @@ class VideoAcquisitionPorts {
   final Future<VideoFranchise?> Function(VideoDiscoveryItem item) loadFranchise;
 }
 
-class VideoAcquisitionService {
+/// 本机会话：页面经 [VideoAcquisitionSession] 消费它，互联 host 也用它代办。
+class VideoAcquisitionService implements VideoAcquisitionSession {
   VideoAcquisitionService({
     required VideoAcquisitionPorts ports,
     required VideoAcquisitionDefaults defaults,
@@ -125,7 +127,18 @@ class VideoAcquisitionService {
   VideoAcquisitionDefaults get defaults => _defaults;
   Stream<VideoAcquisitionState> get states => _states.stream;
 
+  @override
+  VideoAcquisitionView get view =>
+      projectVideoAcquisitionView(_state, lastError: lastError);
+
+  @override
+  Stream<VideoAcquisitionView> get views => _states.stream.map(
+    (VideoAcquisitionState state) =>
+        projectVideoAcquisitionView(state, lastError: lastError),
+  );
+
   /// 用户输入了一句话。
+  @override
   Future<void> submitText(String text) {
     final String trimmed = text.trim();
     if (trimmed.isEmpty) return Future<void>.value();
@@ -133,6 +146,7 @@ class VideoAcquisitionService {
   }
 
   /// 用户点了当前问题的一个选项。
+  @override
   Future<void> choose(
     VideoAcquisitionSlot slot,
     String optionId, {
@@ -150,6 +164,7 @@ class VideoAcquisitionService {
       choose(VideoAcquisitionSlot.resource, kVideoAcquisitionOptionNext);
 
   /// 「就这个」。
+  @override
   Future<void> confirm() =>
       choose(VideoAcquisitionSlot.resource, kVideoAcquisitionOptionConfirm);
 
@@ -157,6 +172,7 @@ class VideoAcquisitionService {
   /// **立即**归约，不排在那个效果后面：reducer 是纯函数，取消只产出 Close，结果
   /// 回来时会话已是终态、回灌事件被丢弃。在飞的请求本身跑完即止，不再有后续。
   /// 提交在飞时 reducer 不接取消（见 `_cancel`），这里不会把它撕开。
+  @override
   Future<void> cancel() {
     if (!_draining) return dispatch(const VideoAcquisitionCancelEvent());
     if (_disposed) return Future<void>.value();
@@ -174,9 +190,11 @@ class VideoAcquisitionService {
   }
 
   /// 「再下一部」。
+  @override
   Future<void> restart() => dispatch(const VideoAcquisitionRestartEvent());
 
   /// 整套清单上勾 / 取消勾一部。
+  @override
   Future<void> toggleFranchiseEntry(int index) =>
       dispatch(VideoAcquisitionFranchiseEntryToggledEvent(index));
 
@@ -215,6 +233,7 @@ class VideoAcquisitionService {
     }
   }
 
+  @override
   void dispose() {
     _disposed = true;
     _queue.clear();

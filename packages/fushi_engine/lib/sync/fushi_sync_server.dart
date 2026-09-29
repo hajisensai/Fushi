@@ -19,6 +19,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
@@ -30,6 +31,8 @@ import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/sync/assistant/host_assistant_routes.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/downloads/host_download_routes.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
@@ -230,6 +233,7 @@ class FushiSyncServer {
     HostJobManager? hostJobs,
     HostSubscriptionHost? subscriptions,
     HostDownloadHost? downloads,
+    HostAssistantProvider? assistant,
     SecurityContext? securityContext,
     String? hostFingerprint,
     String? deviceName,
@@ -252,6 +256,8 @@ class FushiSyncServer {
         _mangaOcrJobs = mangaOcrJobs,
         _hostJobs = hostJobs,
         _downloads = downloads,
+        _assistant =
+            assistant == null ? null : HostAssistantSessions(assistant),
         _subscriptions = subscriptions,
         _dictionaryMediaProvider = dictionaryMediaProvider,
         _gameStreamService = gameStreamService,
@@ -289,6 +295,10 @@ class FushiSyncServer {
 
   /// 代下载（设计 §3.3）。null = host 不提供，`/api/downloads` 404、能力位无 `downloads`。
   final HostDownloadHost? _downloads;
+
+  /// AI 助手会话（手机把一句话交给电脑的 AI 去办）。null = host 不提供，
+  /// `/api/assistant` 404、能力位无 `assistant`。
+  final HostAssistantSessions? _assistant;
 
   /// 内容订阅（host 自建自跑）。null = 不提供，`/api/subscriptions` 404、能力位无 `subscriptions`。
   final HostSubscriptionHost? _subscriptions;
@@ -433,6 +443,7 @@ class FushiSyncServer {
     // 漫画 P3：host 停机时中止在跑的 OCR 任务（页边界停，断点缓存保留）。
     await _mangaOcrJobs?.disposeAll();
     await _hostJobs?.disposeAll();
+    await _assistant?.dispose();
   }
 
   /// gzip 压缩 JSON/XML 文本响应（`Accept-Encoding: gzip` 内容协商）。
@@ -570,6 +581,13 @@ class FushiSyncServer {
         return shelf.Response.notFound('Host downloads off');
       return handleHostDownloadRequest(downloads, request, method, reqPath);
     }
+    if (reqPath == '/api/assistant' || reqPath.startsWith('/api/assistant/')) {
+      final HostAssistantSessions? assistant = _assistant;
+      if (assistant == null) {
+        return shelf.Response.notFound('Host assistant off');
+      }
+      return handleHostAssistantRequest(assistant, request, method, reqPath);
+    }
     if (reqPath == '/api/subscriptions' ||
         reqPath.startsWith('/api/subscriptions/')) {
       final HostSubscriptionHost? subscriptions = _subscriptions;
@@ -619,6 +637,9 @@ class FushiSyncServer {
     }
     if (reqPath == '/api/library/collections') {
       return _handleLibraryCollections(request, method, reqPath);
+    }
+    if (reqPath == '/api/library/tags') {
+      return _handleLibraryTags(request, method);
     }
     if (reqPath == '/api/interconnect/service-config') {
       return _handleInterconnectServiceConfig(request, method);

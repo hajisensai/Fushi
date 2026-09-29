@@ -21,3 +21,10 @@ enum TagHostKind {
 String collectionTagEntryKey(int collectionId) => collectionId.toString();
 
 int? collectionIdOfTagEntryKey(String entryKey) => int.tryParse(entryKey);
+
+/// 一个标签宿主的同步时钟：当前标签「名 → 加入毫秒戳」与移除墓碑「名 → 移除
+/// 毫秒戳」（LWW-element-set 的两半，互联标签同步清单的载荷单位）。
+typedef TagClockSet = ({
+  Map<String, int> addedAt,
+  Map<String, int> tombstones,
+});

@@ -69,6 +69,8 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
+import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/app_shortcuts.dart';
@@ -79,6 +81,8 @@ import 'package:fushi/src/platform/desktop/desktop_lifecycle_service.dart';
 import 'package:fushi/src/platform/ios/ios_url_event_channel.dart';
 import 'package:fushi/src/platform/engine_deep_link_route_guard.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
+import 'package:fushi/src/floating_ball/app_floating_ball_host.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/manga/aidoku/aidoku_cloudflare_challenge_page.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
@@ -538,6 +542,7 @@ void main([List<String> args = const <String>[]]) {
     appModel.browserLookupProfileApplier = () => container
         .read(profileViewModelProvider.notifier)
         .autoApplyBinding(mediaType: ProfileMediaKind.browser);
+    appModel.ankiRepositoryReader = () => container.read(ankiRepositoryProvider);
     await appModel.initialise();
 
     // ── 预热 WebView 引擎 ──────────────────────────────────────────────
@@ -721,6 +726,10 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// BUG-1666：同上——`fushi://lookup` 深链查词只触发一次。
   bool _lookupDeepLinkHandled = false;
 
+  /// 初始化完成后补发一次待发制卡 / 补一次 Anki 同步（桌面冷启动不一定有
+  /// resumed 生命周期事件）。只触发一次。
+  bool _startupPendingMinesFlushed = false;
+
   /// 长按 app 图标点下的快捷方式（`fushi://shortcut/<id>`）。冷启动时 URL 比
   /// `initialise()` 先到，而 HomePage.initState 会把 [homeShellTabNotifier]
   /// 重置成启动 tab，所以先排队，等 home 挂载后的首帧再落地。
@@ -729,6 +738,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     run: _runAppShortcut,
   );
   StreamSubscription<String>? _sourceUrlSubscription;
+  /// 跨设备中转收到新卡（本机是落地设备）→ 补发，见 [PendingMineRelay.arrivals]。
+  StreamSubscription<int>? _pendingMineArrivals;
   bool _sourceNavigationScheduled = false;
   bool _sourceNavigationRunning = false;
   String? _openingCardSourceUrl;
@@ -816,6 +827,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     super.initState();
 
     WidgetsBinding.instance.addObserver(this);
+    _pendingMineArrivals =
+        PendingMineRelay.arrivals.listen((_) => _flushPendingMines());
     // BUG-772：仅 Windows 挂 present-watchdog——runApp 后 30s 仍无一帧 rasterize
     // （firstFrameRasterized==false）判定 raster/present 楔死（快速进出视频的
     // libmpv/ANGLE/WGC churn 污染进程共享 D3D device），落盘取证 + 一次性自动重启。
@@ -923,10 +936,25 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     return swallowEngineDeepLinkRoute(routeInformation);
   }
 
+  /// 回到前台补发待发制卡队列：桌面 / Android 上连续补发；AnkiMobile 只有在用户
+  /// 点过「全部发送」的会话里才发下一张（每张卡 `x-success` 跳回都会走到这里）。
+  void _flushPendingMines() {
+    if (!ref.read(appProvider).isInitialised) return;
+    // 「Anki 同步客户端」后端：上次没同步成功（离线等）的卡留在它自己的日志里，
+    // 回到前台补一次。没登录时 syncNow 在读账号那一步就停，不会拉起 helper。
+    final PlatformServices platform = ref.read(platformServicesProvider);
+    if (platform.useAnkiSyncClient) platform.ankiSyncSession?.scheduleSync();
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    // 补发失败只影响那几张待发卡（它们留在队列里），不能冒泡成未处理异常。
+    unawaited(repo.flush().then((_) {}, onError: (Object _) {}));
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(appProvider).refreshSystemPalette();
+      _flushPendingMines();
       if (Platform.isIOS) {
         unawaited(_consumeAnkiMobileInfoReturn(
           AnkiMobileInfoReturnTrigger.appResumed,
@@ -1146,6 +1174,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   @override
   void dispose() {
     _sourceUrlSubscription?.cancel();
+    _pendingMineArrivals?.cancel();
     _intentsSubscription?.cancel();
     _iosUrlSubscription?.cancel();
     _systemColorRefreshDebounce?.cancel();
@@ -1192,6 +1221,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     final AppShortcut? shortcut = AppShortcut.tryParse(data);
     if (shortcut != null) {
       _queueAppShortcut(shortcut);
+      return true;
+    }
+    // iOS：快捷指令 / 其它 app 打开的 `fushi://lookup?word=` 交给应用内查词弹窗
+    // （Android 的这条链接由 manifest 直接路由到 :popup 查词窗，到不了这里；
+    // Windows 走 argv / WM_COPYDATA，见 [lookupWordFromDeepLink]）。
+    final String? lookupWord = lookupWordFromDeepLink(data);
+    if (lookupWord != null) {
+      deliverExternalLookup(lookupWord);
       return true;
     }
     final String normalized = data.toLowerCase();
@@ -1298,6 +1335,14 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       await AnkiMobileMinedLedger.instance.record(expression);
     } catch (e, stack) {
       debugPrint('AnkiMobile mined ledger record failed: $e\n$stack');
+    }
+    // 待发队列的「全部发送」：回跳是这张卡真正进了 Anki 的唯一证据，据此出队并发下一张。
+    final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    if (repo is! PendingMiningAnkiRepository) return;
+    try {
+      await repo.confirmAnkiMobileDelivery(expression);
+    } catch (e, stack) {
+      debugPrint('Pending mine AnkiMobile confirm failed: $e\n$stack');
     }
   }
 
@@ -2052,6 +2097,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       disabledMessage: t.module_disabled_hint,
     );
 
+    if (!_startupPendingMinesFlushed) {
+      _startupPendingMinesFlushed = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _flushPendingMines());
+    }
+
     // app 已初始化完成（走到这里说明 home 即将渲染）：若本次启动是「从 app 外
     // 打开视频」，在首帧后建/取 VideoBook 并打开播放页。只触发一次。
     if (!_externalVideoHandled && _pendingExternalVideoPath != null) {
@@ -2096,7 +2146,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
           // lit by keyboard/gamepad navigation on one page is not carried onto the
           // freshly-entered page (BUG-398).
           navigatorObservers: <NavigatorObserver>[
-            appModel.focusHighlightObserver
+            appModel.focusHighlightObserver,
+            floatingBallRouteObserver,
           ],
           home: home,
           locale: locale,
@@ -2178,9 +2229,12 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                           // TODO-354 ①：常驻悬浮字幕查词宿主覆盖在导航之上，让书架/
                           // 首页开的悬浮字幕（无 reader）点词也能在主窗口弹查词。无
                           // 挂起请求时整层 IgnorePointer 透传，不抢任何页面的命中测试。
+                          // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）
+                          // 在查词宿主之下：球点出的查词弹窗要盖在球上。
                           child: Stack(
                             children: <Widget>[
                               child!,
+                              const AppFloatingBallHost(),
                               const FloatingLyricLookupHost(),
                             ],
                           ),

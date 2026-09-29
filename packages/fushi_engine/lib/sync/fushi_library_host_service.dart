@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
@@ -2459,6 +2460,19 @@ abstract interface class VideoDeletionHost {
   ///
   /// 幂等：[id] 不存在时静默返回。[id] 含路径穿越字符时抛 [ArgumentError]。
   Future<void> deleteVideo(String id);
+}
+
+/// host 端「标签清单」的**可选**能力（互联标签同步，`tag_sync.dart`）。
+///
+/// 与 [VideoMetadataHost] 同范式：不扩大主接口（十余个测试 fake 全量 implements），
+/// server 用 `is` 探测，不实现 → `/api/library/tags` 404，能力位
+/// `liveLibrary.tags=false`，client 记一条「对端版本过旧」后跳过标签维度。
+abstract interface class TagSyncHost {
+  /// host 全部宿主（书 / 漫画 / 字幕书 / 视频 / 合集 / 游戏）的标签时钟清单。纯读。
+  Future<TagManifest> getTagManifest();
+
+  /// 把 client 上报的标签清单按 LWW 并入 host DB，返回并入后的 host 清单。
+  Future<TagManifest> mergeTagManifest(TagManifest incoming);
 }
 
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。

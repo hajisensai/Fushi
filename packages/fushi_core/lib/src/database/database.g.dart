@@ -7583,6 +7583,15 @@ class $EpubBooksTable extends EpubBooks
       'REFERENCES media_sources (id) ON DELETE SET NULL',
     ),
   );
+  static const VerificationMeta _isbnMeta = const VerificationMeta('isbn');
+  @override
+  late final GeneratedColumn<String> isbn = GeneratedColumn<String>(
+    'isbn',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     bookKey,
@@ -7602,6 +7611,7 @@ class $EpubBooksTable extends EpubBooks
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -7746,6 +7756,12 @@ class $EpubBooksTable extends EpubBooks
         sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
       );
     }
+    if (data.containsKey('isbn')) {
+      context.handle(
+        _isbnMeta,
+        isbn.isAcceptableOrUnknown(data['isbn']!, _isbnMeta),
+      );
+    }
     return context;
   }
 
@@ -7823,6 +7839,10 @@ class $EpubBooksTable extends EpubBooks
         DriftSqlType.int,
         data['${effectivePrefix}source_id'],
       ),
+      isbn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}isbn'],
+      ),
     );
   }
 
@@ -7888,6 +7908,12 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
   /// TODO-817：归属的网络/本地来源库（[MediaSources].id）。可空 = 手动导入无来源。
   /// onDelete:setNull = 移除来源时保留书目（归 NULL），不连坐删条目。
   final int? sourceId;
+
+  /// v115（排行榜作品匹配）：OPF `dc:identifier` 里解析出的 ISBN，**统一存 ISBN-13**
+  /// （ISBN-10 转换后存），校验位不对的一律不存。null = 包里没有合法 ISBN、或是
+  /// v115 前导入且尚未回填（`backfillEpubIsbns` 只读 OPF 回填，不重新导入）。
+  /// 规范化唯一口径见 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`。
+  final String? isbn;
   const EpubBookRow({
     required this.bookKey,
     required this.uid,
@@ -7906,6 +7932,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     this.mangaReadingMode,
     this.completedAt,
     this.sourceId,
+    this.isbn,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7942,6 +7969,9 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     }
     if (!nullToAbsent || sourceId != null) {
       map['source_id'] = Variable<int>(sourceId);
+    }
+    if (!nullToAbsent || isbn != null) {
+      map['isbn'] = Variable<String>(isbn);
     }
     return map;
   }
@@ -7981,6 +8011,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       sourceId: sourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceId),
+      isbn: isbn == null && nullToAbsent ? const Value.absent() : Value(isbn),
     );
   }
 
@@ -8007,6 +8038,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       mangaReadingMode: serializer.fromJson<String?>(json['mangaReadingMode']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       sourceId: serializer.fromJson<int?>(json['sourceId']),
+      isbn: serializer.fromJson<String?>(json['isbn']),
     );
   }
   @override
@@ -8030,6 +8062,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
       'mangaReadingMode': serializer.toJson<String?>(mangaReadingMode),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'sourceId': serializer.toJson<int?>(sourceId),
+      'isbn': serializer.toJson<String?>(isbn),
     };
   }
 
@@ -8051,6 +8084,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     Value<String?> mangaReadingMode = const Value.absent(),
     Value<DateTime?> completedAt = const Value.absent(),
     Value<int?> sourceId = const Value.absent(),
+    Value<String?> isbn = const Value.absent(),
   }) => EpubBookRow(
     bookKey: bookKey ?? this.bookKey,
     uid: uid ?? this.uid,
@@ -8073,6 +8107,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
         : this.mangaReadingMode,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     sourceId: sourceId.present ? sourceId.value : this.sourceId,
+    isbn: isbn.present ? isbn.value : this.isbn,
   );
   EpubBookRow copyWithCompanion(EpubBooksCompanion data) {
     return EpubBookRow(
@@ -8107,6 +8142,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ? data.completedAt.value
           : this.completedAt,
       sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      isbn: data.isbn.present ? data.isbn.value : this.isbn,
     );
   }
 
@@ -8129,7 +8165,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           ..write('format: $format, ')
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
-          ..write('sourceId: $sourceId')
+          ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn')
           ..write(')'))
         .toString();
   }
@@ -8153,6 +8190,7 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
     mangaReadingMode,
     completedAt,
     sourceId,
+    isbn,
   );
   @override
   bool operator ==(Object other) =>
@@ -8174,7 +8212,8 @@ class EpubBookRow extends DataClass implements Insertable<EpubBookRow> {
           other.format == this.format &&
           other.mangaReadingMode == this.mangaReadingMode &&
           other.completedAt == this.completedAt &&
-          other.sourceId == this.sourceId);
+          other.sourceId == this.sourceId &&
+          other.isbn == this.isbn);
 }
 
 class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
@@ -8195,6 +8234,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
   final Value<String?> mangaReadingMode;
   final Value<DateTime?> completedAt;
   final Value<int?> sourceId;
+  final Value<String?> isbn;
   final Value<int> rowid;
   const EpubBooksCompanion({
     this.bookKey = const Value.absent(),
@@ -8214,6 +8254,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   EpubBooksCompanion.insert({
@@ -8234,6 +8275,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     this.mangaReadingMode = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.sourceId = const Value.absent(),
+    this.isbn = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : bookKey = Value(bookKey),
        title = Value(title),
@@ -8260,6 +8302,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Expression<String>? mangaReadingMode,
     Expression<DateTime>? completedAt,
     Expression<int>? sourceId,
+    Expression<String>? isbn,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -8280,6 +8323,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       if (mangaReadingMode != null) 'manga_reading_mode': mangaReadingMode,
       if (completedAt != null) 'completed_at': completedAt,
       if (sourceId != null) 'source_id': sourceId,
+      if (isbn != null) 'isbn': isbn,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -8302,6 +8346,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     Value<String?>? mangaReadingMode,
     Value<DateTime?>? completedAt,
     Value<int?>? sourceId,
+    Value<String?>? isbn,
     Value<int>? rowid,
   }) {
     return EpubBooksCompanion(
@@ -8322,6 +8367,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
       mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
       completedAt: completedAt ?? this.completedAt,
       sourceId: sourceId ?? this.sourceId,
+      isbn: isbn ?? this.isbn,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -8380,6 +8426,9 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
     if (sourceId.present) {
       map['source_id'] = Variable<int>(sourceId.value);
     }
+    if (isbn.present) {
+      map['isbn'] = Variable<String>(isbn.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -8406,6 +8455,7 @@ class EpubBooksCompanion extends UpdateCompanion<EpubBookRow> {
           ..write('mangaReadingMode: $mangaReadingMode, ')
           ..write('completedAt: $completedAt, ')
           ..write('sourceId: $sourceId, ')
+          ..write('isbn: $isbn, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -24510,6 +24560,17 @@ class $GalgamesTable extends Galgames
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _completedAtMeta = const VerificationMeta(
+    'completedAt',
+  );
+  @override
+  late final GeneratedColumn<int> completedAt = GeneratedColumn<int>(
+    'completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -24527,6 +24588,7 @@ class $GalgamesTable extends Galgames
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -24652,6 +24714,15 @@ class $GalgamesTable extends Galgames
         sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
       );
     }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+        _completedAtMeta,
+        completedAt.isAcceptableOrUnknown(
+          data['completed_at']!,
+          _completedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -24721,6 +24792,10 @@ class $GalgamesTable extends Galgames
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      completedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}completed_at'],
+      ),
     );
   }
 
@@ -24804,6 +24879,15 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
 
   /// 手动排序位（预留，M1 不做拖拽排序）。
   final int sortOrder;
+
+  /// v115（排行榜「读完时刻」）：[playStatus] 进入 2（玩过）的毫秒戳；null = 不是
+  /// 「玩过」，或是 v115 前就已玩过但一条游玩会话都没有（日期未知）。
+  ///
+  /// 只由 DB 层一处判据维护（`resolveGalgameCompletedAt`，经 `setGalgamePlayStatus`
+  /// / `upsertGalgame` 写入）：从非 2 变成 2 时写当前时刻，保持 2 时原值不动，
+  /// 离开 2 时清空。调用方不直接写本列。v115 迁移用该游戏最后一次会话的
+  /// `end_ms` 回填存量「玩过」。
+  final int? completedAt;
   const GalgameRow({
     required this.id,
     required this.name,
@@ -24820,6 +24904,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     this.releaseDate,
     this.customDataJson,
     required this.sortOrder,
+    this.completedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -24849,6 +24934,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       map['custom_data_json'] = Variable<String>(customDataJson);
     }
     map['sort_order'] = Variable<int>(sortOrder);
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<int>(completedAt);
+    }
     return map;
   }
 
@@ -24879,6 +24967,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? const Value.absent()
           : Value(customDataJson),
       sortOrder: Value(sortOrder),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
     );
   }
 
@@ -24905,6 +24996,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       releaseDate: serializer.fromJson<String?>(json['releaseDate']),
       customDataJson: serializer.fromJson<String?>(json['customDataJson']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      completedAt: serializer.fromJson<int?>(json['completedAt']),
     );
   }
   @override
@@ -24926,6 +25018,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
       'releaseDate': serializer.toJson<String?>(releaseDate),
       'customDataJson': serializer.toJson<String?>(customDataJson),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'completedAt': serializer.toJson<int?>(completedAt),
     };
   }
 
@@ -24945,6 +25038,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     Value<String?> releaseDate = const Value.absent(),
     Value<String?> customDataJson = const Value.absent(),
     int? sortOrder,
+    Value<int?> completedAt = const Value.absent(),
   }) => GalgameRow(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -24965,6 +25059,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
         ? customDataJson.value
         : this.customDataJson,
     sortOrder: sortOrder ?? this.sortOrder,
+    completedAt: completedAt.present ? completedAt.value : this.completedAt,
   );
   GalgameRow copyWithCompanion(GalgamesCompanion data) {
     return GalgameRow(
@@ -24997,6 +25092,9 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ? data.customDataJson.value
           : this.customDataJson,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      completedAt: data.completedAt.present
+          ? data.completedAt.value
+          : this.completedAt,
     );
   }
 
@@ -25017,7 +25115,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           ..write('primarySource: $primarySource, ')
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt')
           ..write(')'))
         .toString();
   }
@@ -25039,6 +25138,7 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
     releaseDate,
     customDataJson,
     sortOrder,
+    completedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -25058,7 +25158,8 @@ class GalgameRow extends DataClass implements Insertable<GalgameRow> {
           other.primarySource == this.primarySource &&
           other.releaseDate == this.releaseDate &&
           other.customDataJson == this.customDataJson &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.completedAt == this.completedAt);
 }
 
 class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
@@ -25077,6 +25178,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
   final Value<String?> releaseDate;
   final Value<String?> customDataJson;
   final Value<int> sortOrder;
+  final Value<int?> completedAt;
   final Value<int> rowid;
   const GalgamesCompanion({
     this.id = const Value.absent(),
@@ -25094,6 +25196,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   GalgamesCompanion.insert({
@@ -25112,6 +25215,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     this.releaseDate = const Value.absent(),
     this.customDataJson = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.completedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -25134,6 +25238,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Expression<String>? releaseDate,
     Expression<String>? customDataJson,
     Expression<int>? sortOrder,
+    Expression<int>? completedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -25153,6 +25258,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       if (releaseDate != null) 'release_date': releaseDate,
       if (customDataJson != null) 'custom_data_json': customDataJson,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (completedAt != null) 'completed_at': completedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -25173,6 +25279,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     Value<String?>? releaseDate,
     Value<String?>? customDataJson,
     Value<int>? sortOrder,
+    Value<int?>? completedAt,
     Value<int>? rowid,
   }) {
     return GalgamesCompanion(
@@ -25191,6 +25298,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
       releaseDate: releaseDate ?? this.releaseDate,
       customDataJson: customDataJson ?? this.customDataJson,
       sortOrder: sortOrder ?? this.sortOrder,
+      completedAt: completedAt ?? this.completedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -25243,6 +25351,9 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<int>(completedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -25267,6 +25378,7 @@ class GalgamesCompanion extends UpdateCompanion<GalgameRow> {
           ..write('releaseDate: $releaseDate, ')
           ..write('customDataJson: $customDataJson, ')
           ..write('sortOrder: $sortOrder, ')
+          ..write('completedAt: $completedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -55159,6 +55271,641 @@ class VideoEpisodeBindingOverridesCompanion
   }
 }
 
+class $PendingMineQueueTable extends PendingMineQueue
+    with TableInfo<$PendingMineQueueTable, PendingMineRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingMineQueueTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _expressionMeta = const VerificationMeta(
+    'expression',
+  );
+  @override
+  late final GeneratedColumn<String> expression = GeneratedColumn<String>(
+    'expression',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _readingMeta = const VerificationMeta(
+    'reading',
+  );
+  @override
+  late final GeneratedColumn<String> reading = GeneratedColumn<String>(
+    'reading',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pending'),
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lastAttemptAtMeta = const VerificationMeta(
+    'lastAttemptAt',
+  );
+  @override
+  late final GeneratedColumn<int> lastAttemptAt = GeneratedColumn<int>(
+    'last_attempt_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _originDeviceIdMeta = const VerificationMeta(
+    'originDeviceId',
+  );
+  @override
+  late final GeneratedColumn<String> originDeviceId = GeneratedColumn<String>(
+    'origin_device_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _uploadedMeta = const VerificationMeta(
+    'uploaded',
+  );
+  @override
+  late final GeneratedColumn<bool> uploaded = GeneratedColumn<bool>(
+    'uploaded',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("uploaded" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    createdAt,
+    expression,
+    reading,
+    status,
+    attempts,
+    lastError,
+    lastAttemptAt,
+    originDeviceId,
+    uploaded,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_mine_queue';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PendingMineRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('expression')) {
+      context.handle(
+        _expressionMeta,
+        expression.isAcceptableOrUnknown(data['expression']!, _expressionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_expressionMeta);
+    }
+    if (data.containsKey('reading')) {
+      context.handle(
+        _readingMeta,
+        reading.isAcceptableOrUnknown(data['reading']!, _readingMeta),
+      );
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    if (data.containsKey('last_attempt_at')) {
+      context.handle(
+        _lastAttemptAtMeta,
+        lastAttemptAt.isAcceptableOrUnknown(
+          data['last_attempt_at']!,
+          _lastAttemptAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('origin_device_id')) {
+      context.handle(
+        _originDeviceIdMeta,
+        originDeviceId.isAcceptableOrUnknown(
+          data['origin_device_id']!,
+          _originDeviceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('uploaded')) {
+      context.handle(
+        _uploadedMeta,
+        uploaded.isAcceptableOrUnknown(data['uploaded']!, _uploadedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PendingMineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingMineRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      expression: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}expression'],
+      )!,
+      reading: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reading'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+      lastAttemptAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_attempt_at'],
+      ),
+      originDeviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_device_id'],
+      ),
+      uploaded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}uploaded'],
+      )!,
+    );
+  }
+
+  @override
+  $PendingMineQueueTable createAlias(String alias) {
+    return $PendingMineQueueTable(attachedDatabase, alias);
+  }
+}
+
+class PendingMineRow extends DataClass implements Insertable<PendingMineRow> {
+  /// 128-bit 随机 hex；同时决定载荷文件名。
+  final String id;
+
+  /// 入队时刻（毫秒）。
+  final int createdAt;
+
+  /// 列表显示用的词条与读音。
+  final String expression;
+  final String reading;
+
+  /// [PendingMineStatus]。
+  final String status;
+
+  /// 已尝试补发次数与最近一次失败信息 / 时刻（毫秒）。
+  final int attempts;
+  final String? lastError;
+  final int? lastAttemptAt;
+
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  final String? originDeviceId;
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  final bool uploaded;
+  const PendingMineRow({
+    required this.id,
+    required this.createdAt,
+    required this.expression,
+    required this.reading,
+    required this.status,
+    required this.attempts,
+    this.lastError,
+    this.lastAttemptAt,
+    this.originDeviceId,
+    required this.uploaded,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['created_at'] = Variable<int>(createdAt);
+    map['expression'] = Variable<String>(expression);
+    map['reading'] = Variable<String>(reading);
+    map['status'] = Variable<String>(status);
+    map['attempts'] = Variable<int>(attempts);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    if (!nullToAbsent || lastAttemptAt != null) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt);
+    }
+    if (!nullToAbsent || originDeviceId != null) {
+      map['origin_device_id'] = Variable<String>(originDeviceId);
+    }
+    map['uploaded'] = Variable<bool>(uploaded);
+    return map;
+  }
+
+  PendingMineQueueCompanion toCompanion(bool nullToAbsent) {
+    return PendingMineQueueCompanion(
+      id: Value(id),
+      createdAt: Value(createdAt),
+      expression: Value(expression),
+      reading: Value(reading),
+      status: Value(status),
+      attempts: Value(attempts),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+      lastAttemptAt: lastAttemptAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAttemptAt),
+      originDeviceId: originDeviceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originDeviceId),
+      uploaded: Value(uploaded),
+    );
+  }
+
+  factory PendingMineRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingMineRow(
+      id: serializer.fromJson<String>(json['id']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      expression: serializer.fromJson<String>(json['expression']),
+      reading: serializer.fromJson<String>(json['reading']),
+      status: serializer.fromJson<String>(json['status']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+      lastAttemptAt: serializer.fromJson<int?>(json['lastAttemptAt']),
+      originDeviceId: serializer.fromJson<String?>(json['originDeviceId']),
+      uploaded: serializer.fromJson<bool>(json['uploaded']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'expression': serializer.toJson<String>(expression),
+      'reading': serializer.toJson<String>(reading),
+      'status': serializer.toJson<String>(status),
+      'attempts': serializer.toJson<int>(attempts),
+      'lastError': serializer.toJson<String?>(lastError),
+      'lastAttemptAt': serializer.toJson<int?>(lastAttemptAt),
+      'originDeviceId': serializer.toJson<String?>(originDeviceId),
+      'uploaded': serializer.toJson<bool>(uploaded),
+    };
+  }
+
+  PendingMineRow copyWith({
+    String? id,
+    int? createdAt,
+    String? expression,
+    String? reading,
+    String? status,
+    int? attempts,
+    Value<String?> lastError = const Value.absent(),
+    Value<int?> lastAttemptAt = const Value.absent(),
+    Value<String?> originDeviceId = const Value.absent(),
+    bool? uploaded,
+  }) => PendingMineRow(
+    id: id ?? this.id,
+    createdAt: createdAt ?? this.createdAt,
+    expression: expression ?? this.expression,
+    reading: reading ?? this.reading,
+    status: status ?? this.status,
+    attempts: attempts ?? this.attempts,
+    lastError: lastError.present ? lastError.value : this.lastError,
+    lastAttemptAt: lastAttemptAt.present
+        ? lastAttemptAt.value
+        : this.lastAttemptAt,
+    originDeviceId: originDeviceId.present
+        ? originDeviceId.value
+        : this.originDeviceId,
+    uploaded: uploaded ?? this.uploaded,
+  );
+  PendingMineRow copyWithCompanion(PendingMineQueueCompanion data) {
+    return PendingMineRow(
+      id: data.id.present ? data.id.value : this.id,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      expression: data.expression.present
+          ? data.expression.value
+          : this.expression,
+      reading: data.reading.present ? data.reading.value : this.reading,
+      status: data.status.present ? data.status.value : this.status,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+      lastAttemptAt: data.lastAttemptAt.present
+          ? data.lastAttemptAt.value
+          : this.lastAttemptAt,
+      originDeviceId: data.originDeviceId.present
+          ? data.originDeviceId.value
+          : this.originDeviceId,
+      uploaded: data.uploaded.present ? data.uploaded.value : this.uploaded,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingMineRow(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    createdAt,
+    expression,
+    reading,
+    status,
+    attempts,
+    lastError,
+    lastAttemptAt,
+    originDeviceId,
+    uploaded,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingMineRow &&
+          other.id == this.id &&
+          other.createdAt == this.createdAt &&
+          other.expression == this.expression &&
+          other.reading == this.reading &&
+          other.status == this.status &&
+          other.attempts == this.attempts &&
+          other.lastError == this.lastError &&
+          other.lastAttemptAt == this.lastAttemptAt &&
+          other.originDeviceId == this.originDeviceId &&
+          other.uploaded == this.uploaded);
+}
+
+class PendingMineQueueCompanion extends UpdateCompanion<PendingMineRow> {
+  final Value<String> id;
+  final Value<int> createdAt;
+  final Value<String> expression;
+  final Value<String> reading;
+  final Value<String> status;
+  final Value<int> attempts;
+  final Value<String?> lastError;
+  final Value<int?> lastAttemptAt;
+  final Value<String?> originDeviceId;
+  final Value<bool> uploaded;
+  final Value<int> rowid;
+  const PendingMineQueueCompanion({
+    this.id = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.expression = const Value.absent(),
+    this.reading = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingMineQueueCompanion.insert({
+    required String id,
+    required int createdAt,
+    required String expression,
+    this.reading = const Value.absent(),
+    this.status = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.lastAttemptAt = const Value.absent(),
+    this.originDeviceId = const Value.absent(),
+    this.uploaded = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       createdAt = Value(createdAt),
+       expression = Value(expression);
+  static Insertable<PendingMineRow> custom({
+    Expression<String>? id,
+    Expression<int>? createdAt,
+    Expression<String>? expression,
+    Expression<String>? reading,
+    Expression<String>? status,
+    Expression<int>? attempts,
+    Expression<String>? lastError,
+    Expression<int>? lastAttemptAt,
+    Expression<String>? originDeviceId,
+    Expression<bool>? uploaded,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (createdAt != null) 'created_at': createdAt,
+      if (expression != null) 'expression': expression,
+      if (reading != null) 'reading': reading,
+      if (status != null) 'status': status,
+      if (attempts != null) 'attempts': attempts,
+      if (lastError != null) 'last_error': lastError,
+      if (lastAttemptAt != null) 'last_attempt_at': lastAttemptAt,
+      if (originDeviceId != null) 'origin_device_id': originDeviceId,
+      if (uploaded != null) 'uploaded': uploaded,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingMineQueueCompanion copyWith({
+    Value<String>? id,
+    Value<int>? createdAt,
+    Value<String>? expression,
+    Value<String>? reading,
+    Value<String>? status,
+    Value<int>? attempts,
+    Value<String?>? lastError,
+    Value<int?>? lastAttemptAt,
+    Value<String?>? originDeviceId,
+    Value<bool>? uploaded,
+    Value<int>? rowid,
+  }) {
+    return PendingMineQueueCompanion(
+      id: id ?? this.id,
+      createdAt: createdAt ?? this.createdAt,
+      expression: expression ?? this.expression,
+      reading: reading ?? this.reading,
+      status: status ?? this.status,
+      attempts: attempts ?? this.attempts,
+      lastError: lastError ?? this.lastError,
+      lastAttemptAt: lastAttemptAt ?? this.lastAttemptAt,
+      originDeviceId: originDeviceId ?? this.originDeviceId,
+      uploaded: uploaded ?? this.uploaded,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (expression.present) {
+      map['expression'] = Variable<String>(expression.value);
+    }
+    if (reading.present) {
+      map['reading'] = Variable<String>(reading.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (lastAttemptAt.present) {
+      map['last_attempt_at'] = Variable<int>(lastAttemptAt.value);
+    }
+    if (originDeviceId.present) {
+      map['origin_device_id'] = Variable<String>(originDeviceId.value);
+    }
+    if (uploaded.present) {
+      map['uploaded'] = Variable<bool>(uploaded.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingMineQueueCompanion(')
+          ..write('id: $id, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('expression: $expression, ')
+          ..write('reading: $reading, ')
+          ..write('status: $status, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError, ')
+          ..write('lastAttemptAt: $lastAttemptAt, ')
+          ..write('originDeviceId: $originDeviceId, ')
+          ..write('uploaded: $uploaded, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$FushiDatabase extends GeneratedDatabase {
   _$FushiDatabase(QueryExecutor e) : super(e);
   $FushiDatabaseManager get managers => $FushiDatabaseManager(this);
@@ -55324,6 +56071,9 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $AnidbFileIdentitiesTable(this);
   late final $VideoEpisodeBindingOverridesTable videoEpisodeBindingOverrides =
       $VideoEpisodeBindingOverridesTable(this);
+  late final $PendingMineQueueTable pendingMineQueue = $PendingMineQueueTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -55418,6 +56168,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     mangaDownloadJobs,
     anidbFileIdentities,
     videoEpisodeBindingOverrides,
+    pendingMineQueue,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -60327,6 +61078,7 @@ typedef $$EpubBooksTableCreateCompanionBuilder =
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 typedef $$EpubBooksTableUpdateCompanionBuilder =
@@ -60348,6 +61100,7 @@ typedef $$EpubBooksTableUpdateCompanionBuilder =
       Value<String?> mangaReadingMode,
       Value<DateTime?> completedAt,
       Value<int?> sourceId,
+      Value<String?> isbn,
       Value<int> rowid,
     });
 
@@ -60459,6 +61212,11 @@ class $$EpubBooksTableFilterComposer
 
   ColumnFilters<DateTime> get completedAt => $composableBuilder(
     column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get isbn => $composableBuilder(
+    column: $table.isbn,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -60575,6 +61333,11 @@ class $$EpubBooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get isbn => $composableBuilder(
+    column: $table.isbn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$MediaSourcesTableOrderingComposer get sourceId {
     final $$MediaSourcesTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -60670,6 +61433,9 @@ class $$EpubBooksTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get isbn =>
+      $composableBuilder(column: $table.isbn, builder: (column) => column);
+
   $$MediaSourcesTableAnnotationComposer get sourceId {
     final $$MediaSourcesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -60739,6 +61505,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion(
                 bookKey: bookKey,
@@ -60758,6 +61525,7 @@ class $$EpubBooksTableTableManager
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -60779,6 +61547,7 @@ class $$EpubBooksTableTableManager
                 Value<String?> mangaReadingMode = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int?> sourceId = const Value.absent(),
+                Value<String?> isbn = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => EpubBooksCompanion.insert(
                 bookKey: bookKey,
@@ -60798,6 +61567,7 @@ class $$EpubBooksTableTableManager
                 mangaReadingMode: mangaReadingMode,
                 completedAt: completedAt,
                 sourceId: sourceId,
+                isbn: isbn,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -72536,6 +73306,7 @@ typedef $$GalgamesTableCreateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 typedef $$GalgamesTableUpdateCompanionBuilder =
@@ -72555,6 +73326,7 @@ typedef $$GalgamesTableUpdateCompanionBuilder =
       Value<String?> releaseDate,
       Value<String?> customDataJson,
       Value<int> sortOrder,
+      Value<int?> completedAt,
       Value<int> rowid,
     });
 
@@ -72662,6 +73434,11 @@ class $$GalgamesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -72774,6 +73551,11 @@ class $$GalgamesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$GalgamesTableAnnotationComposer
@@ -72844,6 +73626,11 @@ class $$GalgamesTableAnnotationComposer
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 
+  GeneratedColumn<int> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => column,
+  );
+
   Expression<T> galgameSourcesRefs<T extends Object>(
     Expression<T> Function($$GalgameSourcesTableAnnotationComposer a) f,
   ) {
@@ -72913,6 +73700,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion(
                 id: id,
@@ -72930,6 +73718,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -72949,6 +73738,7 @@ class $$GalgamesTableTableManager
                 Value<String?> releaseDate = const Value.absent(),
                 Value<String?> customDataJson = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<int?> completedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => GalgamesCompanion.insert(
                 id: id,
@@ -72966,6 +73756,7 @@ class $$GalgamesTableTableManager
                 releaseDate: releaseDate,
                 customDataJson: customDataJson,
                 sortOrder: sortOrder,
+                completedAt: completedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -95535,6 +96326,313 @@ typedef $$VideoEpisodeBindingOverridesTableProcessedTableManager =
       VideoEpisodeBindingOverrideRow,
       PrefetchHooks Function({bool bookUid})
     >;
+typedef $$PendingMineQueueTableCreateCompanionBuilder =
+    PendingMineQueueCompanion Function({
+      required String id,
+      required int createdAt,
+      required String expression,
+      Value<String> reading,
+      Value<String> status,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
+      Value<int> rowid,
+    });
+typedef $$PendingMineQueueTableUpdateCompanionBuilder =
+    PendingMineQueueCompanion Function({
+      Value<String> id,
+      Value<int> createdAt,
+      Value<String> expression,
+      Value<String> reading,
+      Value<String> status,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int?> lastAttemptAt,
+      Value<String?> originDeviceId,
+      Value<bool> uploaded,
+      Value<int> rowid,
+    });
+
+class $$PendingMineQueueTableFilterComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PendingMineQueueTableOrderingComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reading => $composableBuilder(
+    column: $table.reading,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get uploaded => $composableBuilder(
+    column: $table.uploaded,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PendingMineQueueTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $PendingMineQueueTable> {
+  $$PendingMineQueueTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get expression => $composableBuilder(
+    column: $table.expression,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reading =>
+      $composableBuilder(column: $table.reading, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+
+  GeneratedColumn<int> get lastAttemptAt => $composableBuilder(
+    column: $table.lastAttemptAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get originDeviceId => $composableBuilder(
+    column: $table.originDeviceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get uploaded =>
+      $composableBuilder(column: $table.uploaded, builder: (column) => column);
+}
+
+class $$PendingMineQueueTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $PendingMineQueueTable,
+          PendingMineRow,
+          $$PendingMineQueueTableFilterComposer,
+          $$PendingMineQueueTableOrderingComposer,
+          $$PendingMineQueueTableAnnotationComposer,
+          $$PendingMineQueueTableCreateCompanionBuilder,
+          $$PendingMineQueueTableUpdateCompanionBuilder,
+          (
+            PendingMineRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $PendingMineQueueTable,
+              PendingMineRow
+            >,
+          ),
+          PendingMineRow,
+          PrefetchHooks Function()
+        > {
+  $$PendingMineQueueTableTableManager(
+    _$FushiDatabase db,
+    $PendingMineQueueTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingMineQueueTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingMineQueueTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingMineQueueTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<String> expression = const Value.absent(),
+                Value<String> reading = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingMineQueueCompanion(
+                id: id,
+                createdAt: createdAt,
+                expression: expression,
+                reading: reading,
+                status: status,
+                attempts: attempts,
+                lastError: lastError,
+                lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required int createdAt,
+                required String expression,
+                Value<String> reading = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int?> lastAttemptAt = const Value.absent(),
+                Value<String?> originDeviceId = const Value.absent(),
+                Value<bool> uploaded = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingMineQueueCompanion.insert(
+                id: id,
+                createdAt: createdAt,
+                expression: expression,
+                reading: reading,
+                status: status,
+                attempts: attempts,
+                lastError: lastError,
+                lastAttemptAt: lastAttemptAt,
+                originDeviceId: originDeviceId,
+                uploaded: uploaded,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PendingMineQueueTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $PendingMineQueueTable,
+      PendingMineRow,
+      $$PendingMineQueueTableFilterComposer,
+      $$PendingMineQueueTableOrderingComposer,
+      $$PendingMineQueueTableAnnotationComposer,
+      $$PendingMineQueueTableCreateCompanionBuilder,
+      $$PendingMineQueueTableUpdateCompanionBuilder,
+      (
+        PendingMineRow,
+        BaseReferences<_$FushiDatabase, $PendingMineQueueTable, PendingMineRow>,
+      ),
+      PendingMineRow,
+      PrefetchHooks Function()
+    >;
 
 class $FushiDatabaseManager {
   final _$FushiDatabase _db;
@@ -95765,4 +96863,6 @@ class $FushiDatabaseManager {
         _db,
         _db.videoEpisodeBindingOverrides,
       );
+  $$PendingMineQueueTableTableManager get pendingMineQueue =>
+      $$PendingMineQueueTableTableManager(_db, _db.pendingMineQueue);
 }

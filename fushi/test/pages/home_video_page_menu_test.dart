@@ -64,17 +64,20 @@ class PausingBatchDeleteVideoBookRepository extends VideoBookRepository {
   int deleteCalls = 0;
   int compactCalls = 0;
 
+  // BUG-2754 起批量删除一个事务落库（单条删也委托到这里），按真删掉的行计数。
   @override
-  Future<void> deleteVideoBook(
-    String bookUid, {
+  Future<List<VideoBookRow>> deleteVideoBooks(
+    Iterable<String> bookUids, {
     DeleteScope scope = DeleteScope.keepLocalOnly,
   }) async {
-    await super.deleteVideoBook(bookUid, scope: scope);
-    deleteCalls++;
-    if (deleteCalls == pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
+    final List<VideoBookRow> deleted =
+        await super.deleteVideoBooks(bookUids, scope: scope);
+    deleteCalls += deleted.length;
+    if (deleteCalls >= pauseAfterDeleteCount && !deletesCommitted.isCompleted) {
       deletesCommitted.complete();
       await allowDeleteReturn.future;
     }
+    return deleted;
   }
 
   @override

@@ -180,10 +180,11 @@ class SyncRepository {
   static const _keySyncContent = 'sync_content_enabled';
   // BUG-988：互联通道专属的「上传内容到互联对端」开关，独立于云备份的
   // sync_*_enabled（那套只管云通道）。互联解耦(PR#223)后互联通道曾复用云备份的
-  // 共享开关，用户失去「只对互联单独控制上不上传」的能力；这四个键把互联通道的内容
+  // 共享开关，用户失去「只对互联单独控制上不上传」的能力；这几个键把互联通道的内容
   // 上传拆出来单独控制。默认 false（用户显式 opt-in，不被「启用互联连接」裹挟着自动传）。
+  // 词典原本也有一个（`interconnect_sync_dictionary`），BUG-2762 删掉了：互联词典只由
+  // 设置页的显式上传 / 下载动作搬，库里残留的旧行不再有读取方。
   static const _keyInterconnectSyncContent = 'interconnect_sync_content';
-  static const _keyInterconnectSyncDictionary = 'interconnect_sync_dictionary';
   static const _keyInterconnectSyncAudioBookFiles =
       'interconnect_sync_audiobook_files';
   static const _keyInterconnectSyncVideoFiles = 'interconnect_sync_video_files';
@@ -599,17 +600,13 @@ class SyncRepository {
   // 只作用于互联通道（[_runSyncChannel] 的 isInterconnect==true），与上面的云备份
   // sync_*_enabled 完全解耦；默认 false，让用户独立控制「要不要把本设备内容上传到
   // 互联对端」，不被「启用互联连接」自动裹挟。位置/统计等轻量进度仍走共享开关（跨设备
-  // 续读是互联本意），此处仅拆「重内容」四类：书籍/内容、词典、有声书文件、视频文件。
+  // 续读是互联本意），此处仅拆「重内容」三类：书籍/内容、有声书文件、视频文件（词典
+  // 已无自动同步开关，见 BUG-2762）。
 
   Future<bool> isInterconnectSyncContentEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectSyncContent, false);
   Future<void> setInterconnectSyncContentEnabled(bool v) =>
       _db.setPrefTyped<bool>(_keyInterconnectSyncContent, v);
-
-  Future<bool> isInterconnectSyncDictionaryEnabled() =>
-      _db.getPrefTyped<bool>(_keyInterconnectSyncDictionary, false);
-  Future<void> setInterconnectSyncDictionaryEnabled(bool v) =>
-      _db.setPrefTyped<bool>(_keyInterconnectSyncDictionary, v);
 
   Future<bool> isInterconnectSyncAudioBookFilesEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectSyncAudioBookFiles, false);
@@ -854,6 +851,20 @@ class SyncRepository {
   static const _keyServerPort = 'sync_server_port';
   static const _keyServerPassword = 'sync_server_password';
   static const _keyDeviceId = 'sync_device_id';
+
+  /// 「本机作为制卡落地设备」开关打开的时刻（毫秒）；0 = 关。跨设备中转按它与远端
+  /// 认领比大小决定谁是落地设备（后打开者胜），见 `PendingMineRelay`。设备本地。
+  static const _keyPendingMineLandingClaimedAt =
+      'sync_pending_mine_landing_claimed_at';
+
+  Future<int> getPendingMineLandingClaimedAt() =>
+      _db.getPrefTyped<int>(_keyPendingMineLandingClaimedAt, 0);
+
+  /// 打开时记下此刻（作为新的认领），关闭写 0。
+  Future<void> setPendingMineLanding(bool enabled) => _db.setPrefTyped<int>(
+    _keyPendingMineLandingClaimedAt,
+    enabled ? DateTime.now().millisecondsSinceEpoch : 0,
+  );
   static const _keyLanRequiresPin = 'sync_lan_requires_pin';
   static const _keyServerTlsEnabled = 'sync_server_tls_enabled';
 
@@ -1368,6 +1379,9 @@ class SyncRepository {
     // 「允许配对设备远程启动游戏」是本机安全开关：从另一台电脑恢复备份不得替
     // 这台电脑打开远程起进程的门。
     kGameStreamRemoteLaunchPrefKey,
+    // 「本机作为制卡落地设备」：换设备恢复备份若把它带过去，就会同时有两台落地设备，
+    // 同一张卡被两边各落一次。
+    _keyPendingMineLandingClaimedAt,
     // （旧键 google_drive_hoshi_compat 已由 fushi_core v72 迁移清行：Hoshi 共享
     // 空间功能删除后它无任何读写方；导入的旧备份库开库时同样被清，故无需再列。）
     _keyDesktopCredentials,

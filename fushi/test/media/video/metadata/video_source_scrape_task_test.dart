@@ -25,6 +25,38 @@ void main() {
         createdAt: 1,
       );
 
+  test('哈希字节进度只节流通知，阶段/作品变化立即通知，尾沿补上最后一条', () async {
+    final _HashProgressRunner runner = _HashProgressRunner();
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+    final List<String?> seen = <String?>[];
+    controller.addListener(() => seen.add(controller.progress.message));
+
+    final Future<SourceScrapeReport> task =
+        controller.scrapeSource(source(1));
+    await runner.hashed.future;
+    // ED2K 每读 1 MiB 一条：外壳页面监听这个 controller，不节流就是每条一次
+    // 整棵保活 tab 树重建（刮削期间卡顿的主因）。
+    final int afterBurst = seen.length;
+    expect(afterBurst, lessThan(10),
+        reason: '200 条只变文案的进度不能各发一次通知');
+    await Future<void>.delayed(
+      VideoSourceScrapeTaskController.progressMessageInterval * 2,
+    );
+    expect(controller.progress.message, 'bytes 199');
+    expect(seen.last, 'bytes 199', reason: '尾沿必须补发最后一条，面板不会停在旧字节数');
+
+    final int beforePhase = seen.length;
+    runner.nextPhase.complete();
+    await runner.phaseSent.future;
+    expect(seen.length, beforePhase + 1, reason: '阶段切换不节流');
+    expect(controller.progress.phase, VideoSourceScrapePhase.applying);
+
+    runner.finish.complete();
+    await task;
+  });
+
   test('全部来源共用单批次锁，重复入口返回同一个任务', () async {
     final _BlockingRunner runner = _BlockingRunner();
     final VideoSourceScrapeTaskController controller =
@@ -505,6 +537,45 @@ class _ManualRunner
       totalWorks: 1,
       succeededWorks: 1,
     );
+  }
+}
+
+class _HashProgressRunner implements VideoSourceScrapeRunner {
+  final Completer<void> hashed = Completer<void>();
+  final Completer<void> nextPhase = Completer<void>();
+  final Completer<void> phaseSent = Completer<void>();
+  final Completer<void> finish = Completer<void>();
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async {
+    for (int i = 0; i < 200; i++) {
+      onProgress(VideoSourceScrapeProgress(
+        phase: VideoSourceScrapePhase.recognizing,
+        sourceId: source.id,
+        currentWorkTitle: 'Show',
+        total: 1,
+        message: 'bytes $i',
+      ));
+    }
+    hashed.complete();
+    await nextPhase.future;
+    onProgress(VideoSourceScrapeProgress(
+      phase: VideoSourceScrapePhase.applying,
+      sourceId: source.id,
+      currentWorkTitle: 'Show',
+      total: 1,
+    ));
+    phaseSent.complete();
+    await finish.future;
+    return SourceScrapeReport(sourceIds: <int>[source.id]);
   }
 }
 

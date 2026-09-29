@@ -492,6 +492,12 @@ class EpubBooks extends Table {
       .nullable()
       .references(MediaSources, #id, onDelete: KeyAction.setNull)();
 
+  /// v115（排行榜作品匹配）：OPF `dc:identifier` 里解析出的 ISBN，**统一存 ISBN-13**
+  /// （ISBN-10 转换后存），校验位不对的一律不存。null = 包里没有合法 ISBN、或是
+  /// v115 前导入且尚未回填（`backfillEpubIsbns` 只读 OPF 回填，不重新导入）。
+  /// 规范化唯一口径见 `fushi_engine/epub/isbn.dart` 的 `normalizeIsbn13`。
+  TextColumn get isbn => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {bookKey};
 }
@@ -521,9 +527,10 @@ class BookTags extends Table {
 ///    过滤兜底；[tagId] 对 [BookTags] 的真 FK 保留（删标签仍 cascade）。
 ///  - **[addedAt] 统一都记**：记的是「何时打的标签」这一事实，写入成本为零。
 ///    旧决策让 game/collection 不带时钟（怕被误读成在同步），代价是把「不进
-///    sync」编码进表的形状里、真要同步时只能回填 0 丢失真实时间。哪些 kind
-///    参与 sync 由合并层一处写死（当前仅 epub/video；game/collection 不进
-///    live-sync 的事实不变）。旧行迁移填 0（最古 add，语义同旧 book/video 表）。
+///    sync」编码进表的形状里、真要同步时只能回填 0 丢失真实时间。五个 kind
+///    现在都进互联标签同步（`fushi_engine/sync/tag_sync.dart`，game 经游戏跨端
+///    身份换算、collection 按合集自然键）。旧行迁移填 0（最古 add，语义同旧
+///    book/video 表）。
 ///  - 墓碑不变：[BookTagMembershipTombstones] 本就是 (itemKey, mediaType,
 ///    tagName) 通用形，天然覆盖全部 kind。
 @DataClassName('TagAssignmentRow')
@@ -1086,8 +1093,9 @@ class MediaCollectionItems extends Table {
   TextColumn get mediaType => text()();
 
   /// 条目稳定身份：epub=bookKey / srt=uid / video=bookUid / game=galgames.id
-  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：与 exe 路径同为
-  /// 本机事实，跨端同步时对端无对应行则该成员静默忽略）。
+  /// （game 的 id 是添加时刻微秒时间戳字符串，**本机局域身份**：跨端同步时经
+  /// `GameIdentityIndex` 换成外部 id / exe 路径 / 标题等跨端身份，对端解析不到
+  /// 本机游戏则透传保存、静默不渲染）。
   TextColumn get entryKey => text()();
 
   /// 合集内序：playlist 的播放顺序 / collection 的展示顺序。
@@ -2100,6 +2108,21 @@ abstract final class VideoDownloadJobStage {
   static const String scrape = 'scrape';
 }
 
+/// 文件还没进受管来源的阶段：种子排队中或下载中（BUG-2755）。改订阅目标来源时
+/// 只带走这些任务——已进整理的任务可能已把文件改名进旧来源，中途换根会拆散它。
+const List<String> kVideoDownloadPreOrganizeStages = <String>[
+  VideoDownloadJobStage.enqueue,
+  VideoDownloadJobStage.download,
+];
+
+/// 目标来源失效时仍可重绑到别的来源的阶段（BUG-2755）：整理没做完，文件还没
+/// 最终落进来源目录；来源都没了，整理只能在新来源里重来。
+const List<String> kVideoDownloadSourceRebindableStages = <String>[
+  VideoDownloadJobStage.enqueue,
+  VideoDownloadJobStage.download,
+  VideoDownloadJobStage.organize,
+];
+
 /// 网页播放器自动制卡队列（schema v93）。
 ///
 /// 观看网页流媒体（Netflix 等）时点「制卡」**只入队**：观看档可能是硬件 DRM 的 4K 窗口宿主
@@ -2145,6 +2168,57 @@ abstract final class WebMineQueueStatus {
   static const String pending = 'pending';
   static const String done = 'done';
   static const String failed = 'failed';
+}
+
+/// 设备端「待发制卡」队列（schema v116）。
+///
+/// 制卡后端（AnkiConnect / 互联 host 等）不可达、或处于批量模式时，卡片先入队、
+/// 稍后补发。载荷是 `ForwardedMinePayload` 的 JSON（含媒体字节），落在
+/// `<support>/pending_mine_queue/<id>.json`——文件名由 [id] 派生，所以表里没有
+/// 路径列；本表只存列表显示与重试调度所需的元数据。
+///
+/// 设备本地：载荷文件只在本机、状态只对本机后端有意义，不进备份/同步（与
+/// `web_mine_queue` 同列于 backup 的 device-local 清单）。
+@DataClassName('PendingMineRow')
+class PendingMineQueue extends Table {
+  /// 128-bit 随机 hex；同时决定载荷文件名。
+  TextColumn get id => text()();
+
+  /// 入队时刻（毫秒）。
+  IntColumn get createdAt => integer()();
+
+  /// 列表显示用的词条与读音。
+  TextColumn get expression => text()();
+  TextColumn get reading => text().withDefault(const Constant(''))();
+
+  /// [PendingMineStatus]。
+  TextColumn get status => text().withDefault(const Constant('pending'))();
+
+  /// 已尝试补发次数与最近一次失败信息 / 时刻（毫秒）。
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get lastError => text().nullable()();
+  IntColumn get lastAttemptAt => integer().nullable()();
+
+  /// 制卡来源设备（同步 deviceId）。null = 本机制的；非 null = 经跨设备中转
+  /// 收到、由本机（落地设备）负责交给 Anki 的。
+  TextColumn get originDeviceId => text().nullable()();
+
+  /// 本机制的卡是否已上传到同步后端的中转命名空间。上传过的卡落地后要先删掉远端
+  /// 那份，否则落地设备会再落一次。
+  BoolColumn get uploaded => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+abstract final class PendingMineStatus {
+  static const String pending = 'pending';
+  static const String sending = 'sending';
+  static const String failed = 'failed';
+
+  /// 已交给 Anki，但远端中转命名空间还有这张卡的记录（本机上传过，或它来自其他
+  /// 设备），等下一轮同步清理远端后再删行。
+  static const String landed = 'landed';
 }
 
 @DataClassName('VideoDownloadJobRow')
@@ -2545,6 +2619,15 @@ class Galgames extends Table {
   /// 手动排序位（预留，M1 不做拖拽排序）。
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
 
+  /// v115（排行榜「读完时刻」）：[playStatus] 进入 2（玩过）的毫秒戳；null = 不是
+  /// 「玩过」，或是 v115 前就已玩过但一条游玩会话都没有（日期未知）。
+  ///
+  /// 只由 DB 层一处判据维护（`resolveGalgameCompletedAt`，经 `setGalgamePlayStatus`
+  /// / `upsertGalgame` 写入）：从非 2 变成 2 时写当前时刻，保持 2 时原值不动，
+  /// 离开 2 时清空。调用方不直接写本列。v115 迁移用该游戏最后一次会话的
+  /// `end_ms` 回填存量「玩过」。
+  IntColumn get completedAt => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -2739,7 +2822,8 @@ class StudySegmentTombstones extends Table {
 // （v79：galgame_tag_mappings 已并入 [TagAssignments]。与游戏**元数据标签**
 // （bgm/vndb 刮削字符串，存 [GalgameSources].dataJson + [Galgames].customDataJson）
 // 仍是两条正交轴，刻意不合并：元数据标签是外部事实、动辄上百个且随刮削变动，
-// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏标签依旧不进 live-sync；
+// 塞进用户标签池会污染书/视频共享的那份手工标签。游戏用户标签经互联标签同步
+// 跨端（游戏跨端身份见 fushi_engine 的 GameIdentityIndex）；
 // 备份合并导入自 `BackupCategory.games` 起经游戏身份映射（同 id / 刮削身份 /
 // exe 路径）落到本机游戏行上，见 backup_merge_engine.dart 的 `_buildGameIdMap`。）
 

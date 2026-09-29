@@ -1,5 +1,27 @@
 #include "siglus_lookup_message_transaction.inc"
 
+// Sub-frame press on the sampled (ten-argument) family. A touch tap is
+// promoted to WM_LBUTTONDOWN/UP back to back, so the exact GetKeyState poller
+// can miss the whole press while the engine WM sink below has already consumed
+// its down. The WM sink records the down's payload; the poller cancels it as
+// soon as it observes the button held (it then owns the one submission), and
+// only a press the poller never saw is submitted from the WM up (BUG-2769).
+SiglusLookupMessageTransaction g_siglus_lookup_message_tap;
+
+void CancelSiglusLookupMessageTap() {
+  g_siglus_lookup_message_tap.pending = false;
+}
+
+bool TakeSiglusLookupMessageTap(uint32_t epoch, DWORD thread_id,
+                                SiglusLookupPayload *payload) {
+  const auto tap = g_siglus_lookup_message_tap;
+  g_siglus_lookup_message_tap = {};
+  if (!tap.pending || tap.epoch != epoch || tap.thread_id != thread_id)
+    return false;
+  *payload = tap.payload;
+  return true;
+}
+
 SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
                                          bool keyboard_table) {
   if (!g_capture_enabled) {
@@ -93,6 +115,8 @@ SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
     g_siglus_lookup_left_button_filter_latched.store(false,
                                                      std::memory_order_release);
   }
+  // The poller saw this press held: it owns the submission, not the WM up.
+  if (button_down) CancelSiglusLookupMessageTap();
   if (!runtime_enabled && !popup_shield && !lookup_press_latched &&
       g_siglus_lookup_click_sample_state.owner ==
           fushi_voice_hook::SiglusLookupClickOwner::kIdle) {
@@ -149,7 +173,7 @@ SHORT FilterSiglusLookupLeftButtonSample(SHORT raw, uintptr_t return_address,
     diagnostic.flags |= native_input_allowed ? 4u : 0u;
   }
   if (fresh_down && native_input_allowed && !popup_shield && pointer_valid &&
-      ReadSiglusLookupClickTarget(&g_siglus_lookup_click_read_target, observed)) {
+      ReadSiglusLookupClickClaimTarget(&g_siglus_lookup_click_read_target, observed)) {
     hit =
         BuildSiglusLookupPayloadAtPress(g_siglus_lookup_click_read_target, game,
                                         pointer, &pressed_payload, &hit_index, observed);
@@ -286,11 +310,17 @@ bool ConsumeSiglusLookupInputMessage(UINT message, LPARAM lparam,
       diagnostic.screen_y = screen_point.y;
       if (!screen_valid) diagnostic.reason = SiglusLookupPressReason::kClientUnavailable;
     }
-    if (screen_valid && ReadSiglusLookupClickTarget(&target, observed)) {
+    if (screen_valid && ReadSiglusLookupClickClaimTarget(&target, observed)) {
       glyph_hit = BuildSiglusLookupPayloadAtPress(target, game, screen_point,
                                                   &payload, &glyph_index, observed);
     }
+    if (glyph_hit) {
+      g_siglus_lookup_message_tap = {
+          payload, g_siglus_lookup_click_epoch.load(std::memory_order_acquire),
+          GetCurrentThreadId(), true};
+    }
   }
+  if (is_down && !glyph_hit) CancelSiglusLookupMessageTap();
 
   const bool latched = g_siglus_lookup_message_left_button_latched.load(
       std::memory_order_acquire);
@@ -307,6 +337,24 @@ bool ConsumeSiglusLookupInputMessage(UINT message, LPARAM lparam,
   }
   g_siglus_lookup_message_left_button_latched.store(decision.next_latched,
                                                     std::memory_order_release);
+  if (is_down && !decision.consume) CancelSiglusLookupMessageTap();
+  if (is_up) {
+    SiglusLookupPayload tap;
+    if (TakeSiglusLookupMessageTap(
+            g_siglus_lookup_click_epoch.load(std::memory_order_acquire),
+            GetCurrentThreadId(), &tap) &&
+        latched && !popup_shield &&
+        g_siglus_lookup_click_runtime_enabled.load(std::memory_order_acquire) &&
+        game != nullptr && GetForegroundWindow() == game &&
+        tap.game_window == reinterpret_cast<uintptr_t>(game) &&
+        SiglusLookupViewAllowsInput(game) &&
+        fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
+            g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+            fushi_voice_hook::kLookupGeometryProviderIdSiglus) &&
+        SiglusLookupPayloadMatchesPublishedTarget(tap)) {
+      QueueSiglusLookupClickSubmit(tap);
+    }
+  }
   if (decision.consume) {
     // The exact GetKeyState poller still observes physical state and owns the
     // one lookup submission. This latch only makes every other state consumer
