@@ -92,6 +92,7 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_settings_side_dialog.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/reader/reader_collection_volumes.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart';
 import 'package:fushi/src/reader/reader_gallery_page.dart';

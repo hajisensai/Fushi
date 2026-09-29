@@ -108,6 +108,9 @@ import 'package:fushi/src/media/video/video_controls_theme_pair.dart';
 import 'package:fushi/src/media/video/video_slim_progress_bar.dart';
 import 'package:fushi/src/platform/desktop/desktop_mini_window_mode.dart';
 import 'package:fushi/src/platform/mobile/android_picture_in_picture.dart';
+import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/reader/reader_desktop_chrome.dart'
+    show ReaderHeaderAction;
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_danmaku_overlay.dart';
 import 'package:fushi/src/media/video/video_backing_render_size.dart';
@@ -8653,6 +8656,78 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ));
   }
 
+  /// 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）的视频场景按钮：播放 /
+  /// 暂停、上 / 下一句、收藏当前句、截图。执行体与底栏同名按钮同一条
+  /// （[_activateVideoControlItem] 的对应分支 / [_toggleFavoriteCurrentCue]），
+  /// 只是不唤起控制条——球存在的意义就是控制条不在时也能操作。
+  ///
+  /// 小窗（桌面无边框小窗 / Android 画中画）与沉浸锁定时藏球：前者窗口里放不下、
+  /// 系统画中画更不该叠应用内浮层；后者锁定本就屏蔽指针控制。
+  ///
+  /// 全局模式关闭时宿主不渲染，这里无条件挂载也无副作用。
+  Widget _buildVideoFloatingBallScene(VideoPlayerController? controller) {
+    return ListenableBuilder(
+      listenable: Listenable.merge(<Listenable?>[
+        controller,
+        _miniSurface,
+        _immersiveLocked,
+      ]),
+      builder: (BuildContext _, Widget? __) {
+        final bool hideBall = _inMiniWindow || _immersiveLocked.value;
+        if (controller == null) {
+          return FloatingBallScene(
+            actions: const <ReaderHeaderAction>[],
+            hideBall: hideBall,
+          );
+        }
+        final bool playing = controller.isPlaying;
+        return FloatingBallScene(
+          hideBall: hideBall,
+          actions: <ReaderHeaderAction>[
+            ReaderHeaderAction(
+              key: const ValueKey<String>('video_floating_ball_play_pause'),
+              icon: playing ? Icons.pause : Icons.play_arrow,
+              label: t.video_control_play_pause,
+              onPressed: () => unawaited(controller.playOrPause()),
+            ),
+            ReaderHeaderAction(
+              key: const ValueKey<String>('video_floating_ball_prev_cue'),
+              icon: Icons.skip_previous,
+              label: t.video_control_previous_cue,
+              onPressed: () => unawaited(
+                controller.skipToPrevCueOrSeekBack(
+                  seekSeconds: _asbConfig.seekSeconds,
+                ),
+              ),
+            ),
+            ReaderHeaderAction(
+              key: const ValueKey<String>('video_floating_ball_next_cue'),
+              icon: Icons.skip_next,
+              label: t.video_control_next_cue,
+              onPressed: () => unawaited(
+                controller.skipToNextCueOrSeekForward(
+                  seekSeconds: _asbConfig.seekSeconds,
+                ),
+              ),
+            ),
+            ReaderHeaderAction(
+              key: const ValueKey<String>('video_floating_ball_favorite'),
+              icon: Icons.star_border,
+              label: t.shortcut_action_video_toggle_favorite_sentence,
+              onPressed: () => unawaited(_toggleFavoriteCurrentCue()),
+            ),
+            ReaderHeaderAction(
+              key: const ValueKey<String>('video_floating_ball_screenshot'),
+              icon: Icons.photo_camera_outlined,
+              label: t.video_control_screenshot,
+              onPressed: () => unawaited(_saveScreenshot()),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   AudioCue? _currentCueForAction() {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return null;
@@ -9093,6 +9168,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         backgroundColor: hdrHost ? Colors.transparent : cs.surface,
         body: Column(
           children: <Widget>[
+            // 全局悬浮球的场景按钮（零尺寸，见 [_buildVideoFloatingBallScene]）。
+            _buildVideoFloatingBallScene(controller),
             // 继续观看后这条栏必须整条消失：此刻已是普通观看，页面要和平时看视频
             // 完全一样，不能再留第二条常驻顶栏把画面挤下去（BUG-102 的单一顶栏原
             // 则）。要回卡片片段就重新点一次 Anki 里的来源链接，走完整回看链路。

@@ -41,4 +41,7 @@ public final class ChannelNames {
     // Hibiki→Fushi 跨包名迁移（改名迁移计划 P1-3/P1-4）：探测/拉起新包、
     // 发起卸载、注销 PROCESS_TEXT 系统入口。
     public static final String MIGRATION = PREFIX + "/migration";
+    // 全局悬浮球：Android 系统常驻球（FloatingBallService）+ 截屏 OCR（ScreenOcrService）。
+    // 契约见 docs/specs/2026-09-28-floating-ball.md，实现见 FloatingBallChannel。
+    public static final String FLOATING_BALL = PREFIX + "/floating_ball";
 }

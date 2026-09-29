@@ -1858,8 +1858,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
   /// 有声书）就不画球。活动范围是扣掉顶栏 / 底栏 / 状态行预留后的正文视口，与焦点
   /// 环用同一组 inset（[_readerTopOffset] / [_readerBottomReserve]），所以永远压
   /// 不到 chrome。排在底栏之前挂载：悬浮底栏短暂唤出时盖在球上，词典弹层同理。
+  ///
+  /// 全局悬浮球开着时（docs/specs/2026-09-28-floating-ball.md）不画本球，改把
+  /// 同一槽里的按钮登记成场景按钮，由根上的全局球展示——同屏两颗球只会互相遮挡。
   Widget _buildReaderFloatingBall() {
     final ReaderFushiSource src = ReaderFushiSource.instance;
+    if (appModel.prefsRepo.floatingBallMode
+        .effectiveOn(isAndroid: Platform.isAndroid)
+        .showsInAppBall) {
+      return FloatingBallScene(
+        actions: _hasEverLoaded
+            ? _readerControlActionsIn(ReaderControlSlot.floatingBall)
+            : const <ReaderHeaderAction>[],
+      );
+    }
     if (!_hasEverLoaded || !src.readerFloatingBall) {
       return const SizedBox.shrink();
     }

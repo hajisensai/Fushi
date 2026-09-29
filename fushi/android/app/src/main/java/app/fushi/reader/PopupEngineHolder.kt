@@ -155,14 +155,22 @@ object PopupEngineHolder {
         return true
     }
 
-    /** Warm-reuse / onNewIntent path: push a new term into the running Dart app. */
+    /**
+     * Warm-reuse / onNewIntent path: push a new term into the running Dart app.
+     *
+     * [allowBlank]：悬浮球「查词 / 剪贴板查词」是**有意**打开一个空查词窗（只有搜索栏）。
+     * 默认仍丢弃空词（系统 PROCESS_TEXT 偶发空选区不该清掉当前结果）；只有显式要求
+     * 空窗的入口（[PopupDictFlutterActivity.EXTRA_OPEN_SEARCH] / EXTRA_READ_CLIPBOARD
+     * 且剪贴板为空）才把空词推过去，让热引擎上的 Dart 侧清掉上一次的词和锚点。
+     */
     fun pushProcessText(
         text: String,
         charIndex: Int = -1,
         anchor: IntArray? = null,
         subtitle: IntArray? = null,
+        allowBlank: Boolean = false,
     ) {
-        if (text.isBlank()) return
+        if (text.isBlank() && !allowBlank) return
         pendingText = text
         pendingCharIndex = charIndex
         pendingAnchor = anchor

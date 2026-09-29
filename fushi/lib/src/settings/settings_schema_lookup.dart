@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/pages.dart';
+import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
+import 'package:fushi/src/floating_ball/floating_ball_mode.dart';
 import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
@@ -566,6 +569,79 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+        ],
+      ),
+      // 全局悬浮球（docs/specs/2026-09-28-floating-ball.md）：应用内常驻 / Android
+      // 系统常驻；各页面自己的按钮由页面登记，这里只配模式与全局按钮。
+      SettingsSection(
+        id: 'lookup.section.floating_ball',
+        title: t.floating_ball_mode_title,
+        items: <SettingsItem>[
+          SettingsSegmentedItem<FloatingBallMode>(
+            id: 'lookup.floating_ball_mode',
+            title: t.floating_ball_mode_title,
+            subtitle: t.floating_ball_mode_hint,
+            icon: Icons.blur_circular_outlined,
+            dropdown: true,
+            options: <SettingsSegmentOption<FloatingBallMode>>[
+              for (final FloatingBallMode mode in FloatingBallMode.availableOn(
+                  isAndroid: Platform.isAndroid))
+                SettingsSegmentOption<FloatingBallMode>(
+                  value: mode,
+                  label: _floatingBallModeLabel(mode),
+                ),
+            ],
+            selected: (SettingsContext settingsContext) => settingsContext
+                .appModel.prefsRepo.floatingBallMode
+                .effectiveOn(isAndroid: Platform.isAndroid),
+            onChanged:
+                (SettingsContext settingsContext, FloatingBallMode mode) async {
+              await settingsContext.appModel.prefsRepo
+                  .setFloatingBallMode(mode);
+              settingsContext.refresh();
+              // 系统常驻要「显示在其他应用上层」权限：没有就说明原因并跳授权页，
+              // 回到前台时悬浮球宿主会再试一次起服务。
+              if (mode == FloatingBallMode.system &&
+                  !await FloatingBallChannel.canDrawOverlays()) {
+                _showSettingsSnackBar(
+                  settingsContext,
+                  t.floating_ball_overlay_permission_needed,
+                );
+                await FloatingBallChannel.requestOverlayPermission();
+              }
+            },
+          ),
+          for (final FloatingBallGlobalAction action
+              in FloatingBallGlobalAction.values)
+            SettingsSwitchItem(
+              id: 'lookup.floating_ball_action.${action.storageValue}',
+              title: _floatingBallActionLabel(action),
+              subtitle: t.floating_ball_actions_title,
+              icon: _floatingBallActionIcon(action),
+              visible: (SettingsContext settingsContext) =>
+                  action.availableOn(
+                    isAndroid: Platform.isAndroid,
+                    isIOS: Platform.isIOS,
+                  ) &&
+                  settingsContext.appModel.prefsRepo.floatingBallMode !=
+                      FloatingBallMode.off,
+              value: (SettingsContext settingsContext) => settingsContext
+                  .appModel.prefsRepo.floatingBallActions
+                  .contains(action),
+              onChanged: (SettingsContext settingsContext, bool value) async {
+                final Set<FloatingBallGlobalAction> actions = settingsContext
+                    .appModel.prefsRepo.floatingBallActions
+                    .toSet();
+                if (value) {
+                  actions.add(action);
+                } else {
+                  actions.remove(action);
+                }
+                await settingsContext.appModel.prefsRepo
+                    .setFloatingBallActions(actions);
+                settingsContext.refresh();
+              },
+            ),
         ],
       ),
       // 朗读与反馈：查中词后的语音朗读与播放暂停联动。
@@ -1191,3 +1267,23 @@ Future<void> _restartYomitanApiServerIfEnabled(
     _showYomitanPortConflictSnackBar(settingsContext);
   }
 }
+
+String _floatingBallModeLabel(FloatingBallMode mode) => switch (mode) {
+      FloatingBallMode.off => t.floating_ball_mode_off,
+      FloatingBallMode.inApp => t.floating_ball_mode_in_app,
+      FloatingBallMode.system => t.floating_ball_mode_system,
+    };
+
+String _floatingBallActionLabel(FloatingBallGlobalAction action) =>
+    switch (action) {
+      FloatingBallGlobalAction.lookup => t.floating_ball_action_lookup,
+      FloatingBallGlobalAction.clipboard => t.floating_ball_action_clipboard,
+      FloatingBallGlobalAction.screenOcr => t.floating_ball_action_screen_ocr,
+    };
+
+IconData _floatingBallActionIcon(FloatingBallGlobalAction action) =>
+    switch (action) {
+      FloatingBallGlobalAction.lookup => Icons.search,
+      FloatingBallGlobalAction.clipboard => Icons.content_paste_search,
+      FloatingBallGlobalAction.screenOcr => Icons.document_scanner_outlined,
+    };
