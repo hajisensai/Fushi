@@ -398,27 +398,38 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // TODO-708 P1 ⑥：避让锚优先用「整条字幕窗矩形」（超集，覆盖被查字与未点的其它字），
     // 弹窗不遮整条字幕窗；无字幕窗矩形时回退被查字单字（TODO-872 行为）。
     final Rect avoidRect = widget.subtitleWindowRect ?? anchor;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // TODO-1352: 同上——避让锚定分支也用用户的 popupMaxWidth，不再硬编码 480。
-        final double maxCardWidth = _externalPopupMaxWidth;
-        final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
-        final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
-        final Rect rect = computeFloatingLyricPopupRect(
-          glyphRect: avoidRect,
-          screen: screen,
-          maxWidth: maxCardWidth,
-          maxHeight: maxHeight,
-          gap: gap,
-        );
-        return Positioned(
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          child: _buildCard(tokens),
-        );
-      },
+    // [Positioned] 只能是 Stack 的直接子节点：LayoutBuilder 自己是一个 RenderObject，
+    // 直接在它的 builder 里返回 Positioned 会抛 `BoxParentData is not a subtype of
+    // StackParentData`，整张卡片画不出来、只剩背后的透明关闭层（截屏识字 / 悬浮字幕
+    // 点字弹出来是一层灰、没有查词卡）。所以先用 Positioned.fill 占满外层 Stack，
+    // 在里面量尺寸，再由自带的 Stack 承载定位后的卡片。
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // TODO-1352: 同上——避让锚定分支也用用户的 popupMaxWidth，不再硬编码 480。
+          final double maxCardWidth = _externalPopupMaxWidth;
+          final Size screen = Size(constraints.maxWidth, constraints.maxHeight);
+          final double maxHeight = (constraints.maxHeight - gap * 2) * 0.72;
+          final Rect rect = computeFloatingLyricPopupRect(
+            glyphRect: avoidRect,
+            screen: screen,
+            maxWidth: maxCardWidth,
+            maxHeight: maxHeight,
+            gap: gap,
+          );
+          return Stack(
+            children: <Widget>[
+              Positioned(
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                child: _buildCard(tokens),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

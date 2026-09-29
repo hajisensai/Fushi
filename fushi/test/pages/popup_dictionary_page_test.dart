@@ -485,6 +485,49 @@ void main() {
     expect(closed, isTrue);
   });
 
+  testWidgets(
+      'anchored point-lookup renders the card beside the anchor, not a bare '
+      'scrim', (WidgetTester tester) async {
+    // 截屏识字 / 悬浮字幕点字都带 anchorRect。LayoutBuilder 里直接返回 Positioned
+    // 会抛 StackParentData 类型错，卡片整张画不出来，只剩一层透明关闭层（真机上是
+    // 一层灰、点什么都没反应）。这里真渲染这条分支，而不只扫源码。
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    bool closed = false;
+    final AppModel appModel = AppModel(testPlatformServices());
+    const Rect anchor = Rect.fromLTWH(600, 80, 24, 24);
+
+    await tester.pumpWidget(
+      buildTestApp(
+        appModel: appModel,
+        home: PopupDictionaryPage(
+          searchTerm: 'search',
+          closeInApp: () => closed = true,
+          autoSearchOnOpen: false,
+          showSearchBar: false,
+          anchorRect: anchor,
+          subtitleWindowRect: const Rect.fromLTWH(200, 76, 900, 32),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    final Finder card = find.byType(FushiPopupSurface);
+    expect(card, findsOneWidget);
+    final Rect cardRect = tester.getRect(card);
+    expect(cardRect.width, greaterThan(0));
+    expect(cardRect.height, greaterThan(0));
+    // 避让整条字幕窗：卡片落在字幕窗下方，不盖住被点的那一行。
+    expect(cardRect.top, greaterThanOrEqualTo(108));
+
+    // 卡片外仍是透明关闭层：点空白处关闭。
+    await tester.tapAt(const Offset(20, 780));
+    await tester.pump();
+    expect(closed, isTrue);
+  });
+
   test(
       'TODO-708 P3: popup_main routes point-lookup (anchorRect) to no search bar',
       () {

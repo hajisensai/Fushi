@@ -109,6 +109,11 @@ void main() {
       byKey('floating_ball_action_screen_ocr'),
       Platform.isAndroid || Platform.isIOS ? findsOneWidget : findsNothing,
     );
+    // 应用外查词（独立查词窗）只有 Android 有。
+    expect(
+      byKey('floating_ball_action_popup_lookup'),
+      Platform.isAndroid ? findsOneWidget : findsNothing,
+    );
   });
 
   testWidgets('设置里关掉应用内悬浮球：不画球', (WidgetTester tester) async {

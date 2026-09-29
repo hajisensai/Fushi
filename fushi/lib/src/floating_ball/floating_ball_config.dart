@@ -119,8 +119,13 @@ const List<String> kMangaFloatingBallButtons = <String>[
 
 /// 不随场景变化、任何场景都能放的按钮。
 enum FloatingBallGlobalAction {
-  /// 输入框查词。
+  /// 在主窗里查词：应用内是输入框 → 应用内查词弹窗；应用外球把 Fushi 唤到前台并
+  /// 打开查词页（与桌面「唤起主窗并打开查词页」同一语义）。
   lookup('lookup'),
+
+  /// 应用外查词：不进主窗，弹出与系统「处理文本」/ 截屏识字同一个独立查词窗
+  /// （Android `PopupDictFlutterActivity`，盖在当前画面上，只有搜索栏）。
+  popupLookup('popup_lookup'),
 
   /// 读剪贴板查词。
   clipboard('clipboard'),
@@ -140,10 +145,12 @@ enum FloatingBallGlobalAction {
   }
 
   /// 本平台有没有这个能力：截屏 OCR 只有 Android（MediaProjection）与 iOS
-  /// （截自己的窗口）接了。
+  /// （截自己的窗口）接了；独立查词窗只有 Android 有（`:popup` 进程的透明
+  /// Activity），iOS / 桌面没有对应组件。
   bool availableOn({required bool isAndroid, required bool isIOS}) =>
       switch (this) {
         FloatingBallGlobalAction.screenOcr => isAndroid || isIOS,
+        FloatingBallGlobalAction.popupLookup => isAndroid,
         _ => true,
       };
 }

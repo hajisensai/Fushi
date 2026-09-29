@@ -39,6 +39,10 @@ final class FloatingBallChannel {
 
     /** 原生 → Dart：截屏 OCR 已截到帧，或流程没截到就结束了。Dart 据此放回自己的球。 */
     static final String METHOD_SCREEN_OCR_FINISHED = "screenOcrFinished";
+    /** 原生 → Dart：系统球「查词」，Fushi 已被拉到前台，请打开查词页。 */
+    static final String METHOD_OPEN_LOOKUP_PAGE = "openLookupPage";
+    /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
+    static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
 
     /** 主引擎上的通道；MainActivity 销毁时 {@link #detach} 置空，之后回调安全跳过。 */
     @Nullable
@@ -52,6 +56,12 @@ final class FloatingBallChannel {
      * 只在主线程读写。悬浮球发起的 OCR 不置位——Dart 没藏球，也就不需要回调。
      */
     private static boolean dartOcrPending = false;
+
+    /**
+     * 系统球「查词」发生时主引擎不在（MainActivity 已销毁）：先记下，等新引擎上的 Dart
+     * 装好 handler 后经 {@code takePendingOpenLookupPage} 取走。只在主线程读写。
+     */
+    private static boolean pendingOpenLookupPage = false;
 
     private FloatingBallChannel() {}
 
@@ -95,6 +105,38 @@ final class FloatingBallChannel {
             ch.invokeMethod(METHOD_SCREEN_OCR_FINISHED, null);
         } catch (RuntimeException e) {
             Log.w(TAG, "screenOcrFinished could not be delivered", e);
+        }
+    }
+
+    /**
+     * 系统球「查词」：主引擎在就直接推 {@code openLookupPage}（Fushi 随后被拉到前台）；
+     * 不在就排队，由冷启动的 Dart 来取。主线程调用。
+     */
+    static void requestOpenLookupPage() {
+        MethodChannel ch = channel;
+        if (ch == null) {
+            pendingOpenLookupPage = true;
+            return;
+        }
+        try {
+            ch.invokeMethod(METHOD_OPEN_LOOKUP_PAGE, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "openLookupPage could not be delivered; queued", e);
+            pendingOpenLookupPage = true;
+        }
+    }
+
+    /**
+     * 用户关掉了系统球：主引擎在就立刻通知 Dart 关开关；不在也无妨，持久标记已由
+     * {@link FloatingBallService} 落盘，Dart 下次同步开关前会取走。主线程调用。
+     */
+    static void notifySystemBallClosedByUser() {
+        MethodChannel ch = channel;
+        if (ch == null) return;
+        try {
+            ch.invokeMethod(METHOD_SYSTEM_BALL_CLOSED_BY_USER, null);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "systemBallClosedByUser could not be delivered", e);
         }
     }
 
@@ -152,6 +194,19 @@ final class FloatingBallChannel {
                 result.success(null);
                 return;
             }
+            case "openPopupLookup":
+                FloatingBallService.startPopupLookup(context);
+                result.success(null);
+                return;
+            case "takePendingOpenLookupPage": {
+                boolean pending = pendingOpenLookupPage;
+                pendingOpenLookupPage = false;
+                result.success(pending);
+                return;
+            }
+            case "takeSystemBallClosedByUser":
+                result.success(FloatingBallService.takeClosedByUser(app));
+                return;
             case "startScreenOcr": {
                 String language = call.argument("language");
                 Map<String, String> labels = stringMap(call.argument("labels"));

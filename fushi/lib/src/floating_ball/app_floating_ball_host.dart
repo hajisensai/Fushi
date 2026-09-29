@@ -9,7 +9,9 @@
 ///     `FloatingBallService`，并把前后台状态告诉它（前台时原生球隐藏，应用内球
 ///     开着就由本球接管）。
 ///  3. 外部查词入口（iOS App Intent / `fushi://lookup` 深链）：排队到 app 初始化
-///     完成，再交给应用内查词弹窗。
+///     完成，再交给应用内查词弹窗；Android 系统球「查词」（打开查词页）同样排队。
+///  4. 系统球上点「关闭」= 用户关掉了应用外悬浮球：同步关掉设置里的「应用外」开关，
+///     两边始终一致（否则下次回到 Fushi 又会按开关把球拉起来）。
 library;
 
 import 'dart:async';
@@ -39,6 +41,9 @@ final ValueNotifier<String?> pendingExternalLookup = ValueNotifier<String?>(
   null,
 );
 
+/// Android 系统球「查词」：Fushi 已被拉到前台，等 app 就绪后打开查词页。
+final ValueNotifier<bool> pendingOpenLookupPage = ValueNotifier<bool>(false);
+
 /// 从应用外交来一个要查的词（iOS App Intent、`fushi://lookup?word=`）。
 void deliverExternalLookup(String word) {
   final String trimmed = word.trim();
@@ -49,6 +54,8 @@ void deliverExternalLookup(String word) {
 /// 原生系统球的按钮文案（原生侧不维护多语言）。
 Map<String, String> floatingBallNativeLabels() => <String, String>{
   FloatingBallGlobalAction.lookup.storageValue: t.floating_ball_action_lookup,
+  FloatingBallGlobalAction.popupLookup.storageValue:
+      t.floating_ball_action_popup_lookup,
   FloatingBallGlobalAction.clipboard.storageValue:
       t.floating_ball_action_clipboard,
   FloatingBallGlobalAction.screenOcr.storageValue:
@@ -96,11 +103,14 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     WidgetsBinding.instance.addObserver(this);
     _registry.addListener(_onChanged);
     pendingExternalLookup.addListener(_onChanged);
+    pendingOpenLookupPage.addListener(_onChanged);
     if (Platform.isIOS || Platform.isAndroid) {
       unawaited(
         FloatingBallChannel.installHandler(
           onLookup: deliverExternalLookup,
           onScreenOcrFinished: _onScreenOcrFinished,
+          onOpenLookupPage: () => pendingOpenLookupPage.value = true,
+          onSystemBallClosedByUser: _onSystemBallClosedByUser,
         ),
       );
     }
@@ -111,6 +121,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     WidgetsBinding.instance.removeObserver(this);
     _registry.removeListener(_onChanged);
     pendingExternalLookup.removeListener(_onChanged);
+    pendingOpenLookupPage.removeListener(_onChanged);
     _prefs?.removeListener(_onPrefsChanged);
     super.dispose();
   }
@@ -167,6 +178,13 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final String signature = '${actions.join(',')}|${labels.values.join('|')}';
     if (!force && signature == _systemSignature) return;
     unawaited(() async {
+      // 用户在系统球上点过关闭、而当时主引擎不在（没收到推送）：这时按开关把球
+      // 拉起来就违背了用户刚做的事，改为把开关关掉。
+      if (await FloatingBallChannel.takeSystemBallClosedByUser()) {
+        _systemSignature = null;
+        await prefs.setFloatingBallSystem(false);
+        return;
+      }
       final bool started = await FloatingBallChannel.startSystemBall(
         actions: actions,
         labels: labels,
@@ -186,6 +204,30 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     _prefs = prefs;
     prefs.addListener(_onPrefsChanged);
     _syncSystemBall(force: true);
+  }
+
+  /// 系统球 / 常驻通知上点了关闭：服务已经自己停了，把「应用外」开关同步关掉。
+  void _onSystemBallClosedByUser() {
+    unawaited(() async {
+      // 清掉原生的持久标记，免得下次启动再处理一遍。
+      await FloatingBallChannel.takeSystemBallClosedByUser();
+      _systemSignature = null;
+      final PreferencesRepository? prefs = _prefs;
+      if (prefs != null && prefs.floatingBallSystem) {
+        await prefs.setFloatingBallSystem(false);
+      }
+    }());
+  }
+
+  /// 系统球「查词」：app 就绪后切到查词页并聚焦搜索框（与桌面「唤起主窗并打开
+  /// 查词页」同一出口 [AppModel.requestHomeDictionaryTab]）。
+  void _flushOpenLookupPage(AppModel appModel) {
+    if (!pendingOpenLookupPage.value) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!pendingOpenLookupPage.value) return;
+      pendingOpenLookupPage.value = false;
+      appModel.requestHomeDictionaryTab(focusSearch: true);
+    });
   }
 
   /// 外部查词：app 就绪后才交给查词弹窗（弹窗要用已初始化的词典）。
@@ -325,6 +367,12 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           label: t.floating_ball_action_lookup,
           onPressed: () => unawaited(_manualLookup()),
         ),
+        FloatingBallGlobalAction.popupLookup => ReaderHeaderAction(
+          key: const ValueKey<String>('floating_ball_action_popup_lookup'),
+          icon: Icons.picture_in_picture_alt_outlined,
+          label: t.floating_ball_action_popup_lookup,
+          onPressed: () => unawaited(FloatingBallChannel.openPopupLookup()),
+        ),
         FloatingBallGlobalAction.clipboard => ReaderHeaderAction(
           key: const ValueKey<String>('floating_ball_action_clipboard'),
           icon: Icons.content_paste_search,
@@ -360,6 +408,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     final PreferencesRepository prefs = appModel.prefsRepo;
     _attachPrefs(prefs);
     _flushExternalLookup();
+    _flushOpenLookupPage(appModel);
 
     final FloatingBallSceneSnapshot scene = _registry.current;
     if (!prefs.floatingBallInApp || scene.hidesBall || _capturing) {
