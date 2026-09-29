@@ -1447,6 +1447,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 模块时请先把它落成局部变量再问，别在同一帧里反复读。
   ModuleVisibility get _moduleVisibility => appModelNoUpdate.moduleVisibility;
 
+  @override
+  ModuleId? get popupDockModule => ModuleId.books;
+
   EpubBook? _book;
 
   /// 歌词模式下按 cue 反查 EPUB 原文的解析器，与 [_book] 同生命周期；只经

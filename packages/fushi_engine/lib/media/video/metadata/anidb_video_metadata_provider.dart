@@ -707,6 +707,8 @@ class AniDbVideoMetadataProvider
       title: selected.title,
       originalTitle: selected.originalTitle,
       aliases: selected.aliases,
+      romajiTitle: selected.romajiTitle,
+      englishTitle: selected.englishTitle,
       year: metadataYear(anime.premiered),
       premiered: anime.premiered,
       endDate: anime.endDate,
@@ -807,6 +809,8 @@ class AniDbVideoMetadataProvider
       title: selected.title,
       originalTitle: selected.originalTitle,
       aliases: aliases,
+      romajiTitle: selected.romajiTitle,
+      englishTitle: selected.englishTitle,
       homepage: 'https://anidb.net/anime/${record.animeId}',
       seasonCount: kind == VideoMetadataMediaKind.tv ? 1 : null,
       ids: <VideoMetadataId>[
@@ -1074,6 +1078,14 @@ class AniDbVideoMetadataProvider
         for (final AniDbTitle value in record.titles)
           if (value.value != title) value.value,
       ]),
+      // x-jat main 就是 AniDB 的罗马音主标题；en 取 official，没有再退任意 en。
+      romajiTitle: (_findTitle(record.titles, 'x-jat', 'main') ??
+              _findTitle(record.titles, 'x-jat', 'official') ??
+              _findTitle(record.titles, 'x-jat', null))
+          ?.value,
+      englishTitle: (_findTitle(record.titles, 'en', 'official') ??
+              _findTitle(record.titles, 'en', null))
+          ?.value,
     );
   }
 
@@ -1383,9 +1395,13 @@ class _SelectedTitles {
     required this.title,
     required this.originalTitle,
     required this.aliases,
+    this.romajiTitle,
+    this.englishTitle,
   });
 
   final String title;
   final String? originalTitle;
   final List<String> aliases;
+  final String? romajiTitle;
+  final String? englishTitle;
 }

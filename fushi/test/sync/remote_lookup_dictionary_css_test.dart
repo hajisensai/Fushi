@@ -91,6 +91,34 @@ void main() {
       expect(r['customDictCSS'], css.customDictCss);
     });
 
+    test('词典字体随同一条 revision 门控下发，换字体即换指纹', () async {
+      RemotePopupDictionaryCss withFont(String family) =>
+          RemotePopupDictionaryCss(
+            dictionaryStyles: const <String, String>{},
+            globalDictCss: '',
+            customDictCss: const <String, String>{},
+            dictionaryFontFaces: <Map<String, String>>[
+              <String, String>{
+                'family': family,
+                'src': '/api/extension/fonts/dictionary?path=x',
+                'format': 'truetype',
+              },
+            ],
+            dictionaryFontCss: '#entries-container { font-family: "$family"; }',
+            dictionaryLanguages: const <String, String>{'明鏡': 'ja'},
+          );
+      final RemotePopupDictionaryCss klee = withFont('Klee One');
+      final Map<String, dynamic> r = await _lookup(
+        <String, dynamic>{'term': '猫', 'stylesRevision': null},
+        css: klee,
+      );
+      expect(r['dictionaryFontFaces'], klee.dictionaryFontFaces);
+      expect(r['dictionaryFontCss'], klee.dictionaryFontCss);
+      expect(r['dictionaryLanguages'], <String, String>{'明鏡': 'ja'});
+      expect(withFont('Noto Sans JP').revision, isNot(klee.revision),
+          reason: '换词典字体不换指纹，扩展会一直用旧字体');
+    });
+
     test('指纹一致 ⇒ 只回指纹（命中客户端缓存）', () async {
       final RemotePopupDictionaryCss css = _css();
       final Map<String, dynamic> r = await _lookup(

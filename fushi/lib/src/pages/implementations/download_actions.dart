@@ -33,7 +33,10 @@ enum GenericPushOutcome {
   remoteKindUnsupported,
 
   /// host 只收磁链，`.torrent` 文件 / 单文件选择走不了远端。
-  remoteMagnetOnly;
+  remoteMagnetOnly,
+
+  /// 选中的文件已经在同一颗 torrent 的未完成任务里（例如同一卷点了两次）。
+  alreadyQueued;
 
   bool get isSuccess => this == ok || this == remoteQueued;
 }
@@ -209,6 +212,8 @@ Future<GenericPushOutcome> enqueueSelectedDiscoveryTorrent({
       ),
     );
     return GenericPushOutcome.ok;
+  } on VideoDownloadAlreadyQueued {
+    return GenericPushOutcome.alreadyQueued;
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('DiscoveryTorrent.enqueue', error, stack);
     return GenericPushOutcome.pushFailed;
@@ -236,6 +241,8 @@ String genericPushMessage(GenericPushOutcome outcome) {
       return t.download_execution_remote_kind_unsupported;
     case GenericPushOutcome.remoteMagnetOnly:
       return t.download_execution_remote_magnet_only;
+    case GenericPushOutcome.alreadyQueued:
+      return t.download_selection_already_queued;
   }
 }
 
@@ -304,8 +311,11 @@ Future<bool> startDiscoveryItemDownload({
         }
         FushiToast.show(
           msg: genericPushMessage(outcome),
-          severity:
-              outcome.isSuccess ? ToastSeverity.success : ToastSeverity.error,
+          severity: outcome.isSuccess
+              ? ToastSeverity.success
+              : outcome == GenericPushOutcome.alreadyQueued
+                  ? ToastSeverity.info
+                  : ToastSeverity.error,
         );
         return outcome.isSuccess;
       } on Object catch (error, stack) {

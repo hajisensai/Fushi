@@ -1717,8 +1717,16 @@ class _HomePageState extends BasePageState<HomePage>
     final VideoMetadataWork? work =
         await _videoDiscoveryService?.loadDetails(item);
     if (work == null) return VideoDiscoveryDetailData(item: item);
+    final String? romajiTitle =
+        work.romajiTitle ?? item.metadataWork?.romajiTitle;
+    final String? englishTitle =
+        work.englishTitle ?? item.metadataWork?.englishTitle;
     final VideoDiscoveryItem detailedItem = VideoDiscoveryItem(
-      reference: item.reference,
+      // 列表条目（尤其 TMDB）只带原名；详情里的罗马音 / 英文名前置进别名，
+      // 「搜索资源」的默认检索词才会优先它们（nyaa 发布名多用罗马音）。
+      reference: item.reference.withLeadingAliases(
+        <String?>[romajiTitle, englishTitle],
+      ),
       overview: work.plot ?? item.overview,
       posterUrl: _videoMetadataImageUrl(
             work,
@@ -1733,7 +1741,10 @@ class _HomePageState extends BasePageState<HomePage>
       score: work.rating ?? item.score,
       releaseDate: work.premiered ?? item.releaseDate,
       genres: work.genres.isEmpty ? item.genres : work.genres,
-      metadataWork: work,
+      metadataWork: work.copyWith(
+        romajiTitle: romajiTitle,
+        englishTitle: englishTitle,
+      ),
       confirmedLookup: item.confirmedLookup,
     );
     final Map<String, VideoDiscoveryPerson> people =

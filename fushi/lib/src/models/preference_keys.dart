@@ -244,6 +244,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'player_hardware_acceleration',
   'popup_auto_expand_dictionaries',
   'popup_bottom_docked',
+  // bool（默认 true）：底部停靠按模块细分，总开关 popup_bottom_docked 之下生效。
+  'popup_bottom_docked_books',
+  'popup_bottom_docked_games',
+  'popup_bottom_docked_manga',
+  'popup_bottom_docked_video',
   // bool：查词弹窗释义紧凑排版（对齐 Hoshi Reader Android
   // "Compact Glossaries"）。默认 false。
   'popup_compact_glossaries',

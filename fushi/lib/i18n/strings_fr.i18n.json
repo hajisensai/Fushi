@@ -5807,5 +5807,10 @@
   "stat_range_next": "Next period",
   "stat_range_summary": "Selected range",
   "stat_range_active_days": "Active days",
-  "stat_range_calendar": "Study calendar"
+  "stat_range_calendar": "Study calendar",
+  "download_selection_already_queued": "This item is already in the download queue.",
+  "popup_bottom_docked_books": "Dock in novels",
+  "popup_bottom_docked_manga": "Dock in manga",
+  "popup_bottom_docked_video": "Dock in videos",
+  "popup_bottom_docked_games": "Dock in games"
 }

@@ -1892,6 +1892,8 @@ function fushiEnsureContainer() {
     shadow.appendChild(c);
     fushiContainer = c;
     window.__fushiRoot = shadow; // popup.js 的 DOM 查询/浮层/选区都相对它解析
+    // 词典字体链挂在弹窗根上：根是每次开窗新建的，建好这里补挂一次（见 dict-media.js）。
+    if (typeof fushiRetryDictionaryFont === 'function') fushiRetryDictionaryFont();
     // 先在 ShadowRoot 消费共享查词交互，再截住向站点冒泡的事件。document 委托太晚：
     // 播放器可能先把正文点击当成播放，再由 play 监听关闭整个查词会话。
     if (typeof window.__fushiBindPopupInteractions === 'function') {

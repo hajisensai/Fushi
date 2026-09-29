@@ -285,6 +285,82 @@ function applyFushiPopupCss(data) {
     window.dictionaryDisplayNames =
         (data.dictionaryDisplayNames && typeof data.dictionaryDisplayNames === 'object')
             ? data.dictionaryDisplayNames : {};
+    // popup.js 的 dictionaryLanguageOf 读这张表给释义区标 lang（app 内由 Dart 注入同名全局）。
+    window.__fushiDictionaryLanguages =
+        (data.dictionaryLanguages && typeof data.dictionaryLanguages === 'object')
+            ? data.dictionaryLanguages : {};
+    fushiApplyDictionaryFont(data);
+}
+
+// 用户在 app 里设的「词典字体」（设置 · 字体 · 词典），与 app 内弹窗同一份设置：
+//   - dictionaryFontCss：按内容语言分流的字体链（用户字体接在每条链首），挂进弹窗根
+//     （shadow root / 嵌套层文档），根选择器是 #entries-container；
+//   - dictionaryFontFaces：[{family, src, format}]，src 是 app 端点的相对路径。
+// 字体字节与图片同一约定：token 只出现在 fetch 参数里，拿到字节后 new FontFace(family, buffer)
+// 注册进 document.fonts——带 token 的 URL 不进任何网页可读的样式表 / DOM。
+// @font-face 写进 shadow root 本就不生效（Blink 只认文档级），FontFaceSet 是文档级的，正合适。
+// 同一 realm 里每个 (family, src) 只取一次；配置还没到（__fushiDictMedia 未就绪）就留给下次渲染。
+const __fushiDictFontFaces = new Map(); // family + '|' + src -> FontFace | Promise | null
+let __fushiLastDictFontData = null;
+// __fushiDictMedia 是异步拿到的（嵌套层 iframe 尤其常晚于首次渲染）：拿到后补一次字体。
+function fushiRetryDictionaryFont() {
+    if (__fushiLastDictFontData) fushiApplyDictionaryFont(__fushiLastDictFontData);
+}
+function fushiApplyDictionaryFont(data) {
+    __fushiLastDictFontData = data;
+    const css = typeof data.dictionaryFontCss === 'string' ? data.dictionaryFontCss : '';
+    // 只挂弹窗根，**绝不**回落到 document.head：页面弹窗的 shadow root 要到首次渲染才建，
+    // 那之前落进宿主页 <head> 的 :lang(ja) 规则会改掉整张网页的字体。根建好后由 content.js
+    // 调 fushiRetryDictionaryFont 补挂。
+    const root = (typeof window !== 'undefined' && window.__fushiRoot) || null;
+    if (root && typeof root.getElementById === 'function') {
+        let style = root.getElementById('fushi-dict-font');
+        if (css) {
+            if (!style) {
+                style = document.createElement('style');
+                style.id = 'fushi-dict-font';
+                root.appendChild(style);
+            }
+            if (style.textContent !== css) style.textContent = css;
+        } else if (style && style.parentNode) {
+            style.parentNode.removeChild(style);
+        }
+    }
+
+    const faces = Array.isArray(data.dictionaryFontFaces) ? data.dictionaryFontFaces : [];
+    const wanted = new Set();
+    for (const face of faces) {
+        const family = face && typeof face.family === 'string' ? face.family.trim() : '';
+        const src = face && typeof face.src === 'string' ? face.src : '';
+        if (!family || !src.startsWith('/api/extension/fonts/dictionary?')) continue;
+        const key = family + '|' + src;
+        wanted.add(key);
+        if (__fushiDictFontFaces.has(key)) continue;
+        const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
+        if (!media || !media.base || !media.token) continue;
+        if (typeof FontFace !== 'function' || typeof document === 'undefined' || !document.fonts) continue;
+        const url = media.base + src + '&token=' + encodeURIComponent(media.token);
+        const pending = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null)).then((buffer) => {
+            if (!buffer || __fushiDictFontFaces.get(key) !== pending) return null;
+            const fontFace = new FontFace(family, buffer, { display: 'swap' });
+            document.fonts.add(fontFace);
+            __fushiDictFontFaces.set(key, fontFace);
+            return fontFace;
+        }).catch(() => {
+            // 取不到就落回字体链的下一位；记 null 防止每次渲染都重打一遍失败请求。
+            if (__fushiDictFontFaces.get(key) === pending) __fushiDictFontFaces.set(key, null);
+            return null;
+        });
+        __fushiDictFontFaces.set(key, pending);
+    }
+    // 用户换掉 / 停用的字体：从 document.fonts 摘掉，别让旧字体继续命中同名家族。
+    for (const [key, value] of Array.from(__fushiDictFontFaces.entries())) {
+        if (wanted.has(key)) continue;
+        __fushiDictFontFaces.delete(key);
+        if (value && typeof value.then !== 'function' && document.fonts) {
+            try { document.fonts.delete(value); } catch (_) { /* 已被移除 */ }
+        }
+    }
 }
 
 /* ---------------------------------------------------------------------------
