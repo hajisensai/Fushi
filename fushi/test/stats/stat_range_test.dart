@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -239,5 +241,107 @@ void main() {
       formatStatRange(_resolve(StatRangeMode.all)),
       '2025-03-10 ~ 2026-09-28',
     );
+  });
+
+  // BUG-2772：周翻段曾给本地午夜加 `Duration(days: 7 * step)`，dayCount 曾用两个
+  // 本地午夜相减取 `inDays`。DST 切换周不是 168 小时：秋季回拨周「下一段」落回
+  // 本周六 23:00（翻不动），春季拨快周「上一段」落到前前周周日 23:00（多跳一周），
+  // 含春季切换日的区间 dayCount 少一天。下面的日期覆盖欧盟 / 美国 2026 年四个切换
+  // 周：在有 DST 的宿主时区上直接复现旧行为；UTC 宿主上旧代码不出错，所以另加
+  // 纯键算术断言与源码守卫，保证任何宿主时区都能拦住同类回归。
+  group('BUG-2772 DST 切换周翻段 / 日数', () {
+    StatRange week(String anchor) => StatRange.resolve(
+      StatRangeSelection(mode: StatRangeMode.week, anchorKey: anchor),
+      todayKey: '2026-12-31',
+      earliestKey: '2020-01-01',
+    );
+
+    StatRange resolveSel(StatRangeSelection sel) => StatRange.resolve(
+      sel,
+      todayKey: '2026-12-31',
+      earliestKey: '2020-01-01',
+    );
+
+    test('秋季回拨周（EU 10-25 / US 11-01）「下一段」进到下一周', () {
+      final StatRange eu = week('2026-10-21');
+      expect(eu.fromKey, '2026-10-19');
+      expect(eu.toKey, '2026-10-25');
+      final StatRange euNext = resolveSel(eu.shifted(1));
+      expect(euNext.fromKey, '2026-10-26');
+      expect(euNext.toKey, '2026-11-01');
+
+      final StatRange us = week('2026-10-28');
+      expect(us.toKey, '2026-11-01');
+      final StatRange usNext = resolveSel(us.shifted(1));
+      expect(usNext.fromKey, '2026-11-02');
+      expect(usNext.toKey, '2026-11-08');
+    });
+
+    test('春季拨快周（EU 03-29 / US 03-08）「上一段」只退一周', () {
+      final StatRange euPrev = resolveSel(week('2026-03-31').shifted(-1));
+      expect(euPrev.fromKey, '2026-03-23');
+      expect(euPrev.toKey, '2026-03-29');
+      final StatRange euPrev2 = resolveSel(euPrev.shifted(-1));
+      expect(euPrev2.fromKey, '2026-03-16');
+
+      final StatRange usPrev = resolveSel(week('2026-03-10').shifted(-1));
+      expect(usPrev.fromKey, '2026-03-02');
+      expect(usPrev.toKey, '2026-03-08');
+      final StatRange usPrev2 = resolveSel(usPrev.shifted(-1));
+      expect(usPrev2.fromKey, '2026-02-23');
+    });
+
+    test('含切换日的区间 dayCount / dayKeys 不少一天', () {
+      final StatRange springWeek = week('2026-03-25');
+      expect(springWeek.dayCount, 7);
+      expect(springWeek.dayKeys.last, '2026-03-29');
+      final StatRange fallWeek = week('2026-10-21');
+      expect(fallWeek.dayCount, 7);
+      final StatRange march = resolveSel(
+        const StatRangeSelection(
+          mode: StatRangeMode.month,
+          anchorKey: '2026-03-15',
+        ),
+      );
+      expect(march.dayCount, 31);
+      expect(march.dayKeys.last, '2026-03-31');
+      final StatRange year = resolveSel(
+        const StatRangeSelection(
+          mode: StatRangeMode.year,
+          anchorKey: '2025-06-01',
+        ),
+      );
+      expect(year.dayCount, 365);
+    });
+
+    test('statDateKeyDaysBetween 只看日历日（跨 DST / 闰年 / 反向）', () {
+      expect(statDateKeyDaysBetween('2026-03-23', '2026-03-30'), 7);
+      expect(statDateKeyDaysBetween('2026-03-01', '2026-03-31'), 30);
+      expect(statDateKeyDaysBetween('2026-10-19', '2026-10-26'), 7);
+      expect(statDateKeyDaysBetween('2024-02-28', '2024-03-01'), 2);
+      expect(statDateKeyDaysBetween('2026-11-02', '2026-10-26'), -7);
+      expect(statDateKeyDaysBetween('2026-09-28', '2026-09-28'), 0);
+    });
+
+    test('源码守卫：stat_range.dart 不给本地时刻加减 Duration 做日期算术', () {
+      final String src = File(
+        'lib/src/stats/stat_range.dart',
+      ).readAsStringSync();
+      expect(
+        RegExp(r'Duration\(\s*days').hasMatch(src),
+        isFalse,
+        reason: '日期翻段必须走 dateKey 日历算术（statDateKeyPlusDays）',
+      );
+      // `.inDays` 只允许出现在 UTC 日历差 helper 里。
+      expect(RegExp(r'\.inDays').allMatches(src).length, 1);
+      final int helper = src.indexOf('int statDateKeyDaysBetween(');
+      expect(helper, isNonNegative);
+      final String helperBody = src.substring(
+        helper,
+        src.indexOf('\n}', helper),
+      );
+      expect(helperBody, contains('DateTime.utc('));
+      expect(helperBody, contains('.inDays'));
+    });
   });
 }
